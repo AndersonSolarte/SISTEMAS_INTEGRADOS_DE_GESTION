@@ -9,6 +9,14 @@ const authService = {
     }
     return response.data;
   },
+
+  changePassword: async (currentPassword, newPassword) => {
+    const response = await api.post('/auth/change-password', { currentPassword, newPassword });
+    if (response.data.success && response.data.data?.user) {
+      localStorage.setItem('user', JSON.stringify(response.data.data.user));
+    }
+    return response.data;
+  },
   
   logout: () => {
     localStorage.removeItem('token');
@@ -25,6 +33,10 @@ const authService = {
   isAdmin: () => {
     const user = authService.getCurrentUser();
     return user && user.role === 'administrador';
+  },
+
+  updateCurrentUser: (user) => {
+    localStorage.setItem('user', JSON.stringify(user));
   }
 };
 

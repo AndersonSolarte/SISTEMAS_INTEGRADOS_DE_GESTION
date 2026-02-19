@@ -1,15 +1,84 @@
 import React, { useState, useEffect } from 'react';
-import { Box, Paper, Typography, Grid, TextField, Button, Table, TableBody, TableCell, TableContainer, TableHead, TableRow, TablePagination, FormControl, Select, MenuItem, CircularProgress, Chip, IconButton, Tooltip, Card, CardContent, Fade, Slide, Stack, Divider } from '@mui/material';
-import { Search as SearchIcon, Clear as ClearIcon, Visibility as ViewIcon, Download as DownloadIcon, FilterList as FilterIcon, Description as DescriptionIcon, Article as ArticleIcon, AssignmentTurnedIn as AssignmentIcon, ListAlt as ListIcon, Policy as PolicyIcon, AccountTree as AccountTreeIcon, Upload as UploadIcon, GetApp as DownloadTemplateIcon } from '@mui/icons-material';
+import { Box, Paper, Typography, Grid, TextField, Button, Table, TableBody, TableCell, TableContainer, TableHead, TableRow, TablePagination, FormControl, Select, MenuItem, CircularProgress, Chip, IconButton, Tooltip, Fade, Slide, Stack, Divider } from '@mui/material';
+import { Search as SearchIcon, Clear as ClearIcon, OpenInNew as OpenInNewIcon, FileDownloadOutlined as FileDownloadOutlinedIcon, FilterList as FilterIcon, Description as DescriptionIcon, Article as ArticleIcon, AssignmentTurnedIn as AssignmentIcon, ListAlt as ListIcon, Policy as PolicyIcon, AccountTree as AccountTreeIcon, Upload as UploadIcon, GetApp as DownloadTemplateIcon } from '@mui/icons-material';
 import { useSnackbar } from 'notistack';
+import { useLocation } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import documentoService from '../services/documentoService';
 import catalogoService from '../services/catalogoService';
 import api from '../services/api';
 
+// Función para extraer el ID de archivos de Google Drive
+const extractGoogleDriveId = (url) => {
+  if (!url) return null;
+  
+  const patterns = [
+    /\/file\/d\/([^\/]+)/,
+    /id=([^&]+)/,
+    /\/d\/([^\/]+)\/view/,
+  ];
+  
+  for (const pattern of patterns) {
+    const match = url.match(pattern);
+    if (match && match[1]) {
+      return match[1];
+    }
+  }
+  
+  return null;
+};
+
+const isDocumentCode = (value = '') => /^[A-Z0-9]{2,6}(?:-[A-Z0-9]{2,6}){1,6}$/.test(String(value).trim().toUpperCase());
+
+const isDocTypeLabel = (value = '') => {
+  const text = String(value).toLowerCase();
+  return [
+    'manual',
+    'procedimiento',
+    'instructivo',
+    'formato',
+    'política',
+    'politica',
+    'programa',
+    'plan',
+    'guía',
+    'guia',
+    'caracterización',
+    'caracterizacion'
+  ].some((keyword) => text.includes(keyword));
+};
+
+const normalizeDocFields = (doc) => {
+  let tipo = doc?.tipoDocumentacion?.nombre || '';
+  let codigo = doc?.codigo || '';
+  let titulo = doc?.titulo || '';
+
+  if (isDocumentCode(tipo) && !isDocumentCode(codigo) && isDocTypeLabel(titulo)) {
+    const originalTipo = tipo;
+    tipo = titulo;
+    titulo = codigo;
+    codigo = originalTipo;
+  }
+
+  return { tipo, codigo, titulo };
+};
+
+const getPreviewUrl = (url) => {
+  const fileId = extractGoogleDriveId(url);
+  if (!fileId) return url;
+  return `https://drive.google.com/file/d/${fileId}/preview`;
+};
+
+const getDownloadUrl = (url) => {
+  const fileId = extractGoogleDriveId(url);
+  if (!fileId) return url;
+  return `https://drive.google.com/uc?export=download&id=${fileId}`;
+};
+
 function AseguramientoCalidad() {
   const { enqueueSnackbar } = useSnackbar();
   const { user } = useAuth();
+  const location = useLocation();
   const [filters, setFilters] = useState({ macro_proceso_id: '', proceso_id: '', subproceso_id: '', tipo_documentacion_id: '', titulo: '', estado: '' });
   const [macroProcesos, setMacroProcesos] = useState([]);
   const [procesos, setProcesos] = useState([]);
@@ -27,6 +96,25 @@ function AseguramientoCalidad() {
     catalogoService.getMacroProcesos().then(r => setMacroProcesos(r.data.macroProcesos || []));
     catalogoService.getTiposDocumentacion().then(r => setTiposDocumentacion(r.data.tipos || []));
   }, []);
+
+  useEffect(() => {
+    const params = new URLSearchParams(location.search);
+    const quickTitulo = params.get('titulo');
+    if (quickTitulo) {
+      const nextFilters = { macro_proceso_id: '', proceso_id: '', subproceso_id: '', tipo_documentacion_id: '', titulo: quickTitulo, estado: '' };
+      setFilters(nextFilters);
+      setLoading(true);
+      documentoService.getDocumentos(nextFilters, 1, 10)
+        .then((response) => {
+          if (response.success) {
+            setDocumentos(response.data.documentos);
+            setTotalDocumentos(response.data.pagination.total);
+          }
+        })
+        .catch(() => enqueueSnackbar('Error al buscar documentos', { variant: 'error' }))
+        .finally(() => setLoading(false));
+    }
+  }, [location.search, enqueueSnackbar]);
 
   useEffect(() => {
     if (filters.macro_proceso_id) {
@@ -144,7 +232,8 @@ function AseguramientoCalidad() {
         handleSearch();
       }
     } catch (error) {
-      enqueueSnackbar('Error al importar archivo', { variant: 'error' });
+      const backendMessage = error?.response?.data?.message;
+      enqueueSnackbar(backendMessage || 'Error al importar archivo', { variant: 'error' });
     } finally {
       setImporting(false);
     }
@@ -166,23 +255,30 @@ function AseguramientoCalidad() {
   };
 
   const activeFiltersCount = Object.values(filters).filter(f => f !== '').length;
+  const tiposDocumentacionDisplay = tiposDocumentacion.filter((td) => !isDocumentCode(td.nombre));
 
   return (
     <Fade in={true} timeout={500}>
       <Box>
         <Box sx={{ mb: 4 }}>
-          <Typography variant="h4" sx={{ fontWeight: 700, color: '#1e293b', mb: 1 }}>
-            📋 Aseguramiento de la Calidad
-          </Typography>
+          <Stack direction="row" spacing={1.2} alignItems="center" sx={{ mb: 1 }}>
+            <DescriptionIcon sx={{ color: '#1d4ed8' }} />
+            <Typography variant="h4" sx={{ fontWeight: 700, color: '#1e293b' }}>
+              Consultar Documentos
+            </Typography>
+          </Stack>
           <Typography variant="body2" sx={{ color: '#64748b' }}>
-            Consulta y gestiona la documentación del sistema de calidad
+            Consulta documentación institucional con filtros claros y resultados rápidos
           </Typography>
         </Box>
 
         {/* IMPORTAR EXCEL (solo admin) */}
         {user?.role === 'administrador' && (
           <Paper elevation={0} sx={{ p: 3, mb: 3, border: '1px solid #e2e8f0', borderRadius: 3 }}>
-            <Typography variant="h6" sx={{ fontWeight: 600, mb: 2 }}>📤 Importar Documentos</Typography>
+            <Stack direction="row" spacing={1} alignItems="center" sx={{ mb: 2 }}>
+              <UploadIcon sx={{ color: '#1d4ed8' }} />
+              <Typography variant="h6" sx={{ fontWeight: 600 }}>Importar Documentos</Typography>
+            </Stack>
             <Grid container spacing={2} alignItems="center">
               <Grid item xs={12} md={4}>
                 <Button variant="outlined" fullWidth component="label" startIcon={<UploadIcon />} sx={{ borderRadius: 2, py: 1.5 }}>
@@ -263,7 +359,7 @@ function AseguramientoCalidad() {
                   <FormControl fullWidth>
                     <Select value={filters.tipo_documentacion_id} onChange={(e) => setFilters({ ...filters, tipo_documentacion_id: e.target.value })} displayEmpty sx={{ borderRadius: 2, bgcolor: filters.tipo_documentacion_id ? '#eff6ff' : 'white', '& .MuiOutlinedInput-notchedOutline': { borderColor: filters.tipo_documentacion_id ? '#3b82f6' : '#e2e8f0', borderWidth: 2 } }}>
                       <MenuItem value=""><em>Seleccionar...</em></MenuItem>
-                      {tiposDocumentacion.map((td) => <MenuItem key={td.id} value={td.id}>{td.nombre}</MenuItem>)}
+                      {tiposDocumentacionDisplay.map((td) => <MenuItem key={td.id} value={td.id}>{td.nombre}</MenuItem>)}
                     </Select>
                   </FormControl>
                 </Box>
@@ -303,37 +399,6 @@ function AseguramientoCalidad() {
           </Paper>
         </Slide>
 
-        {documentos.length > 0 && (
-          <Fade in={true} timeout={800}>
-            <Grid container spacing={3} sx={{ mb: 3 }}>
-              <Grid item xs={12} sm={4}>
-                <Card sx={{ borderRadius: 3, background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)', boxShadow: '0 4px 14px rgba(102, 126, 234, 0.3)' }}>
-                  <CardContent>
-                    <Typography variant="caption" sx={{ color: 'rgba(255,255,255,0.8)', fontWeight: 600 }}>TOTAL DOCUMENTOS</Typography>
-                    <Typography variant="h3" sx={{ fontWeight: 800, color: 'white', mt: 1 }}>{totalDocumentos}</Typography>
-                  </CardContent>
-                </Card>
-              </Grid>
-              <Grid item xs={12} sm={4}>
-                <Card sx={{ borderRadius: 3, background: 'linear-gradient(135deg, #f093fb 0%, #f5576c 100%)', boxShadow: '0 4px 14px rgba(240, 147, 251, 0.3)' }}>
-                  <CardContent>
-                    <Typography variant="caption" sx={{ color: 'rgba(255,255,255,0.8)', fontWeight: 600 }}>PÁGINA ACTUAL</Typography>
-                    <Typography variant="h3" sx={{ fontWeight: 800, color: 'white', mt: 1 }}>{page + 1} / {Math.ceil(totalDocumentos / rowsPerPage)}</Typography>
-                  </CardContent>
-                </Card>
-              </Grid>
-              <Grid item xs={12} sm={4}>
-                <Card sx={{ borderRadius: 3, background: 'linear-gradient(135deg, #4facfe 0%, #00f2fe 100%)', boxShadow: '0 4px 14px rgba(79, 172, 254, 0.3)' }}>
-                  <CardContent>
-                    <Typography variant="caption" sx={{ color: 'rgba(255,255,255,0.8)', fontWeight: 600 }}>EN PANTALLA</Typography>
-                    <Typography variant="h3" sx={{ fontWeight: 800, color: 'white', mt: 1 }}>{documentos.length}</Typography>
-                  </CardContent>
-                </Card>
-              </Grid>
-            </Grid>
-          </Fade>
-        )}
-
         <Slide direction="up" in={true} timeout={700}>
           <Paper elevation={0} sx={{ border: '1px solid #e2e8f0', borderRadius: 3, overflow: 'hidden' }}>
             {documentos.length === 0 && !loading ? (
@@ -371,14 +436,15 @@ function AseguramientoCalidad() {
                           </TableCell>
                         </TableRow>
                       ) : (
-                        documentos.map((doc, index) => (
-                          <Fade in={true} timeout={300 + (index * 50)} key={doc.id}>
+                        documentos.map((doc) => {
+                          const normalized = normalizeDocFields(doc);
+                          return (
                             <TableRow hover sx={{ '&:hover': { bgcolor: '#f8fafc' }, transition: 'all 0.2s', cursor: 'pointer' }}>
-                              <TableCell sx={{ fontWeight: 700, color: '#3b82f6', fontSize: 14, fontFamily: 'monospace' }}>{doc.codigo}</TableCell>
+                              <TableCell sx={{ fontWeight: 700, color: '#3b82f6', fontSize: 14, fontFamily: 'monospace' }}>{normalized.codigo}</TableCell>
                               <TableCell>
-                                <Chip icon={getTipoIcon(doc.tipoDocumentacion?.nombre)} label={doc.tipoDocumentacion?.nombre || 'N/A'} size="small" sx={{ bgcolor: getTipoColor(doc.tipoDocumentacion?.nombre).bg, color: getTipoColor(doc.tipoDocumentacion?.nombre).color, fontWeight: 700, fontSize: 12, borderRadius: 2, px: 1 }} />
+                                <Chip icon={getTipoIcon(normalized.tipo)} label={normalized.tipo || 'N/A'} size="small" sx={{ bgcolor: getTipoColor(normalized.tipo).bg, color: getTipoColor(normalized.tipo).color, fontWeight: 700, fontSize: 12, borderRadius: 2, px: 1 }} />
                               </TableCell>
-                              <TableCell sx={{ color: '#1e293b', fontWeight: 600, fontSize: 14 }}>{doc.titulo}</TableCell>
+                              <TableCell sx={{ color: '#1e293b', fontWeight: 600, fontSize: 14 }}>{normalized.titulo}</TableCell>
                               <TableCell>
                                 <Chip label={`v${doc.version || '1.0'}`} size="small" sx={{ bgcolor: '#f1f5f9', color: '#475569', fontWeight: 700, fontFamily: 'monospace', borderRadius: 1.5 }} />
                               </TableCell>
@@ -388,26 +454,81 @@ function AseguramientoCalidad() {
                               <TableCell align="center">
                                 <Stack direction="row" spacing={1} justifyContent="center">
                                   <Tooltip title="Ver documento" arrow>
-                                    <IconButton size="small" sx={{ color: '#3b82f6', bgcolor: '#eff6ff', '&:hover': { bgcolor: '#dbeafe' } }} disabled={!doc.link_acceso}>
-                                      <ViewIcon fontSize="small" />
-                                    </IconButton>
+                                    <span>
+                                      <IconButton 
+                                        size="small" 
+                                        sx={{ 
+                                          color: '#2563eb', 
+                                          bgcolor: '#eff6ff', 
+                                          '&:hover': { bgcolor: '#dbeafe' },
+                                          '&:disabled': { opacity: 0.3 }
+                                        }} 
+                                        disabled={!doc.link_acceso}
+                                        onClick={() => {
+                                          if (doc.link_acceso) {
+                                            const previewUrl = getPreviewUrl(doc.link_acceso);
+                                            window.open(previewUrl, '_blank', 'noopener,noreferrer');
+                                          }
+                                        }}
+                                      >
+                                        <OpenInNewIcon fontSize="small" />
+                                      </IconButton>
+                                    </span>
                                   </Tooltip>
-                                  <Tooltip title="Descargar" arrow>
-                                    <IconButton size="small" sx={{ color: '#10b981', bgcolor: '#d1fae5', '&:hover': { bgcolor: '#a7f3d0' } }} disabled={!doc.link_acceso} onClick={() => doc.link_acceso && window.open(doc.link_acceso, '_blank')}>
-                                      <DownloadIcon fontSize="small" />
-                                    </IconButton>
+                                  
+                                  <Tooltip title="Descargar documento" arrow>
+                                    <span>
+                                      <IconButton 
+                                        size="small" 
+                                        sx={{ 
+                                          color: '#059669', 
+                                          bgcolor: '#d1fae5', 
+                                          '&:hover': { bgcolor: '#a7f3d0' },
+                                          '&:disabled': { opacity: 0.3 }
+                                        }} 
+                                        disabled={!doc.link_acceso}
+                                        onClick={() => {
+                                          if (doc.link_acceso) {
+                                            const downloadUrl = getDownloadUrl(doc.link_acceso);
+                                            const link = document.createElement('a');
+                                            link.href = downloadUrl;
+                                            link.download = `${normalized.codigo}_${normalized.titulo}`;
+                                            link.target = '_blank';
+                                            link.rel = 'noopener noreferrer';
+                                            document.body.appendChild(link);
+                                            link.click();
+                                            document.body.removeChild(link);
+                                          }
+                                        }}
+                                      >
+                                        <FileDownloadOutlinedIcon fontSize="small" />
+                                      </IconButton>
+                                    </span>
                                   </Tooltip>
                                 </Stack>
                               </TableCell>
                             </TableRow>
-                          </Fade>
-                        ))
+                          );
+                        })
                       )}
                     </TableBody>
                   </Table>
                 </TableContainer>
                 
-                <TablePagination rowsPerPageOptions={[5, 10, 25, 50]} component="div" count={totalDocumentos} rowsPerPage={rowsPerPage} page={page} onPageChange={handleChangePage} onRowsPerPageChange={(e) => { setRowsPerPage(parseInt(e.target.value, 10)); setPage(0); }} labelRowsPerPage="Mostrar:" sx={{ borderTop: '2px solid #e2e8f0', bgcolor: '#f8fafc' }} />
+                <TablePagination 
+                  rowsPerPageOptions={[5, 10, 25, 50]} 
+                  component="div" 
+                  count={totalDocumentos} 
+                  rowsPerPage={rowsPerPage} 
+                  page={page} 
+                  onPageChange={handleChangePage} 
+                  onRowsPerPageChange={(e) => { 
+                    setRowsPerPage(parseInt(e.target.value, 10)); 
+                    setPage(0); 
+                  }} 
+                  labelRowsPerPage="Mostrar:" 
+                  sx={{ borderTop: '2px solid #e2e8f0', bgcolor: '#f8fafc' }} 
+                />
               </>
             )}
           </Paper>

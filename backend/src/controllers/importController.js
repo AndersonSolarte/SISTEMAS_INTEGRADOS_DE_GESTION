@@ -1,11 +1,56 @@
 const XLSX = require('xlsx');
 const { MacroProceso, Proceso, SubProceso, TipoDocumentacion, Documento } = require('../models');
-const { sequelize } = require('../config/database');
 const fs = require('fs');
 
+const toText = (value, maxLength = null) => {
+  if (value === null || value === undefined) return null;
+  const text = String(value).trim();
+  if (!text) return null;
+  return maxLength ? text.slice(0, maxLength) : text;
+};
+
+const normalizeEstado = (value) => {
+  const estado = toText(value)?.toLowerCase();
+  if (!estado) return 'vigente';
+  if (estado === 'activo' || estado === 'activos') return 'vigente';
+  if (['vigente', 'obsoleto', 'en_revision'].includes(estado)) return estado;
+  return 'vigente';
+};
+
+const excelDateToISO = (value) => {
+  if (!value && value !== 0) return null;
+  if (typeof value === 'number') {
+    const parsed = XLSX.SSF.parse_date_code(value);
+    if (!parsed) return null;
+    const y = String(parsed.y).padStart(4, '0');
+    const m = String(parsed.m).padStart(2, '0');
+    const d = String(parsed.d).padStart(2, '0');
+    return `${y}-${m}-${d}`;
+  }
+  const text = toText(value);
+  return text || null;
+};
+
+const normalizeMappedFields = (row) => {
+  let tipoDocumentacion = toText(row.tipo_documentacion, 200);
+  let codigo = toText(row.codigo, 50);
+  let titulo = toText(row.titulo, 300);
+
+  const rawTipo = toText(row.tipo_documentacion);
+  const rawCodigo = toText(row.codigo);
+  const rawTitulo = toText(row.titulo);
+  const codigoDemasiadoLargo = rawCodigo && rawCodigo.length > 50;
+
+  if (codigoDemasiadoLargo && rawTipo && rawTitulo) {
+    codigo = toText(rawTipo, 50);
+    titulo = toText(rawCodigo, 300);
+    tipoDocumentacion = toText(rawTitulo, 200);
+  }
+
+  return { tipoDocumentacion, codigo, titulo };
+};
+
 const importFromExcel = async (req, res) => {
-  const transaction = await sequelize.transaction();
-  
   try {
     if (!req.file) {
       return res.status(400).json({
@@ -19,10 +64,9 @@ const importFromExcel = async (req, res) => {
     const workbook = XLSX.readFile(req.file.path);
     const sheetName = workbook.SheetNames[0];
     const worksheet = workbook.Sheets[sheetName];
-    const data = XLSX.utils.sheet_to_json(worksheet);
+    const data = XLSX.utils.sheet_to_json(worksheet, { defval: null });
 
     if (data.length === 0) {
-      await transaction.rollback();
       fs.unlinkSync(req.file.path);
       return res.status(400).json({
         success: false,
@@ -44,8 +88,10 @@ const importFromExcel = async (req, res) => {
       const rowNumber = i + 2; // +2 porque Excel empieza en 1 y la primera fila son headers
 
       try {
+        const { tipoDocumentacion, codigo, titulo } = normalizeMappedFields(row);
+
         // Validar campos requeridos
-        if (!row.macro_proceso || !row.proceso || !row.subproceso || !row.tipo_documentacion || !row.codigo || !row.titulo) {
+        if (!row.macro_proceso || !row.proceso || !row.subproceso || !tipoDocumentacion || !codigo || !titulo) {
           results.errores.push({
             fila: rowNumber,
             error: 'Faltan campos requeridos (macro_proceso, proceso, subproceso, tipo_documentacion, codigo, titulo)'
@@ -55,78 +101,68 @@ const importFromExcel = async (req, res) => {
 
         // Crear o encontrar Macro Proceso
         const [macroProceso] = await MacroProceso.findOrCreate({
-          where: { nombre: String(row.macro_proceso).trim() },
-          defaults: { nombre: String(row.macro_proceso).trim() },
-          transaction
+          where: { nombre: toText(row.macro_proceso, 255) },
+          defaults: { nombre: toText(row.macro_proceso, 255) }
         });
 
         // Crear o encontrar Proceso
         const [proceso] = await Proceso.findOrCreate({
           where: { 
-            nombre: String(row.proceso).trim(),
+            nombre: toText(row.proceso, 255),
             macro_proceso_id: macroProceso.id 
           },
           defaults: { 
-            nombre: String(row.proceso).trim(),
+            nombre: toText(row.proceso, 255),
             macro_proceso_id: macroProceso.id 
-          },
-          transaction
+          }
         });
 
         // Crear o encontrar Subproceso
         const [subproceso] = await SubProceso.findOrCreate({
           where: { 
-            nombre: String(row.subproceso).trim(),
+            nombre: toText(row.subproceso, 255),
             proceso_id: proceso.id 
           },
           defaults: { 
-            nombre: String(row.subproceso).trim(),
+            nombre: toText(row.subproceso, 255),
             proceso_id: proceso.id 
-          },
-          transaction
+          }
         });
 
         // Crear o encontrar Tipo de Documentación
         const [tipoDoc] = await TipoDocumentacion.findOrCreate({
-          where: { nombre: String(row.tipo_documentacion).trim() },
-          defaults: { nombre: String(row.tipo_documentacion).trim() },
-          transaction
+          where: { nombre: tipoDocumentacion },
+          defaults: { nombre: tipoDocumentacion }
         });
 
         // Preparar datos del documento
         const documentoData = {
           subproceso_id: subproceso.id,
           tipo_documentacion_id: tipoDoc.id,
-          codigo: String(row.codigo).trim(),
-          titulo: String(row.titulo).trim(),
-          version: row.version ? String(row.version).trim() : null,
-          fecha_creacion: row.fecha_creacion || null,
-          revisa: row.revisa ? String(row.revisa).trim() : null,
-          aprueba: row.aprueba ? String(row.aprueba).trim() : null,
-          fecha_aprobacion: row.fecha_aprobacion || null,
-          autor: row.autor ? String(row.autor).trim() : null,
-          estado: row.estado ? String(row.estado).toLowerCase().trim() : 'vigente',
-          link_acceso: row.link_acceso ? String(row.link_acceso).trim() : null
+          codigo,
+          titulo,
+          version: toText(row.version, 20),
+          fecha_creacion: excelDateToISO(row.fecha_creacion),
+          revisa: toText(row.revisa, 200),
+          aprueba: toText(row.aprueba, 200),
+          fecha_aprobacion: excelDateToISO(row.fecha_aprobacion),
+          autor: toText(row.autor, 200),
+          estado: normalizeEstado(row.estado),
+          link_acceso: toText(row.link_acceso)
         };
-
-        // Validar estado
-        if (!['vigente', 'obsoleto', 'en_revision'].includes(documentoData.estado)) {
-          documentoData.estado = 'vigente';
-        }
 
         // Verificar si ya existe
         const existente = await Documento.findOne({
-          where: { codigo: documentoData.codigo },
-          transaction
+          where: { codigo: documentoData.codigo }
         });
 
         if (existente) {
           // Actualizar
-          await existente.update(documentoData, { transaction });
+          await existente.update(documentoData);
           results.actualizados++;
         } else {
           // Crear nuevo
-          await Documento.create(documentoData, { transaction });
+          await Documento.create(documentoData);
           results.importados++;
         }
 
@@ -141,7 +177,6 @@ const importFromExcel = async (req, res) => {
       }
     }
 
-    await transaction.commit();
     fs.unlinkSync(req.file.path);
 
     console.log('');
@@ -161,8 +196,6 @@ const importFromExcel = async (req, res) => {
     });
 
   } catch (error) {
-    await transaction.rollback();
-    
     if (req.file && req.file.path && fs.existsSync(req.file.path)) {
       fs.unlinkSync(req.file.path);
     }

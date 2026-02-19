@@ -17,11 +17,30 @@ export const AuthProvider = ({ children }) => {
       const response = await authService.login(email, password);
       if (response.success) {
         setUser(response.data.user);
-        return { success: true };
+        return {
+          success: true,
+          requiresPasswordChange: Boolean(response.data.requiresPasswordChange),
+          message: response.message
+        };
       }
       return { success: false, message: response.message };
     } catch (error) {
       return { success: false, message: error.response?.data?.message || 'Error al iniciar sesión' };
+    }
+  };
+
+  const changePassword = async (currentPassword, newPassword) => {
+    try {
+      const response = await authService.changePassword(currentPassword, newPassword);
+      if (response.success) {
+        setUser(response.data.user);
+      }
+      return response;
+    } catch (error) {
+      return {
+        success: false,
+        message: error.response?.data?.message || 'No se pudo actualizar la contraseña'
+      };
     }
   };
 
@@ -31,7 +50,7 @@ export const AuthProvider = ({ children }) => {
   };
 
   return (
-    <AuthContext.Provider value={{ user, loading, login, logout, isAuthenticated: () => !!user, isAdmin: () => user?.role === 'administrador' }}>
+    <AuthContext.Provider value={{ user, loading, login, changePassword, logout, isAuthenticated: () => !!user, isAdmin: () => user?.role === 'administrador' }}>
       {children}
     </AuthContext.Provider>
   );
