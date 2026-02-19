@@ -1,7 +1,11 @@
 import React, { useState } from 'react';
 import { Outlet, useNavigate, useLocation } from 'react-router-dom';
 import { Box, Drawer, AppBar, Toolbar, List, Typography, IconButton, ListItemButton, ListItemIcon, ListItemText, Menu, MenuItem, Avatar, Chip, Divider, Tooltip } from '@mui/material';
-import { Menu as MenuIcon, AccountCircle, Dashboard as DashboardIcon, CheckCircle as CheckIcon, Logout as LogoutIcon, Settings as SettingsIcon } from '@mui/icons-material';
+import {
+  Menu as MenuIcon, DashboardCustomize as DashboardIcon,
+  Verified as CheckIcon, Logout as LogoutIcon, Settings as SettingsIcon,
+  GroupOutlined as PeopleIcon, DescriptionOutlined as DescriptionIcon, ManageSearch as ExploreIcon
+} from '@mui/icons-material';
 import { useAuth } from '../context/AuthContext';
 
 const drawerWidth = 280;
@@ -21,24 +25,38 @@ function DashboardLayout() {
 
   const isActive = (path) => location.pathname === path;
 
-  const menuItems = [
+  const adminMenuItems = [
     { path: '/dashboard', label: 'Inicio', icon: <DashboardIcon /> },
-    { path: '/dashboard/aseguramiento-calidad', label: 'Aseguramiento de Calidad', icon: <CheckIcon /> }
+    { path: '/dashboard/aseguramiento-calidad', label: 'Aseguramiento de Calidad', icon: <CheckIcon /> },
+    { path: '/dashboard/gestion-usuarios', label: 'Gestión de Usuarios', icon: <PeopleIcon /> },
+    { path: '/dashboard/gestion-documentos', label: 'Gestión de Documentos', icon: <DescriptionIcon /> }
   ];
 
+  const consultaMenuItems = [
+    { path: '/dashboard', label: 'Inicio', icon: <DashboardIcon /> },
+    { path: '/dashboard/buscar-documentos', label: 'Buscar Documentos', icon: <ExploreIcon /> }
+  ];
+
+  const menuItems = user?.role === 'administrador' ? adminMenuItems : consultaMenuItems;
+
   const drawer = (
-    <Box sx={{ height: '100%', display: 'flex', flexDirection: 'column', bgcolor: '#1e293b' }}>
-      <Toolbar sx={{ bgcolor: '#0f172a', display: 'flex', alignItems: 'center', gap: 2, py: 2 }}>
-        <Box sx={{ width: 40, height: 40, borderRadius: 2, bgcolor: '#3b82f6', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-          <Typography sx={{ color: 'white', fontWeight: 700, fontSize: 20 }}>SGC</Typography>
+    <Box sx={{ height: '100%', display: 'flex', flexDirection: 'column', bgcolor: '#0f1f3a' }}>
+      <Toolbar sx={{ bgcolor: '#0b1730', display: 'flex', alignItems: 'center', gap: 2, py: 2 }}>
+        <Box sx={{ width: 56, height: 56, borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden' }}>
+          <Box
+            component="img"
+            src="/escudo.png"
+            alt="Escudo CESMAG"
+            sx={{ width: '100%', height: '100%', objectFit: 'contain' }}
+          />
         </Box>
         <Box>
-          <Typography variant="h6" sx={{ color: 'white', fontWeight: 600, fontSize: 16 }}>Sistema de Gestión</Typography>
-          <Typography variant="caption" sx={{ color: '#94a3b8', fontSize: 11 }}>de Calidad</Typography>
+          <Typography variant="h6" sx={{ color: 'white', fontWeight: 600, fontSize: 16 }}>Sistemas de Gestión</Typography>
+          <Typography variant="caption" sx={{ color: '#94a3b8', fontSize: 11 }}>por Procesos</Typography>
         </Box>
       </Toolbar>
       
-      <Divider sx={{ borderColor: '#334155' }} />
+      <Divider sx={{ borderColor: '#27406b' }} />
       
       <List sx={{ px: 2, py: 2, flexGrow: 1 }}>
         {menuItems.map((item) => (
@@ -48,16 +66,17 @@ function DashboardLayout() {
             sx={{
               mb: 1,
               borderRadius: 2,
-              bgcolor: isActive(item.path) ? '#3b82f6' : 'transparent',
-              color: isActive(item.path) ? 'white' : '#cbd5e1',
+              bgcolor: isActive(item.path) ? 'linear-gradient(90deg, #1d4ed8, #be123c)' : 'transparent',
+              color: isActive(item.path) ? 'white' : '#d7e2f1',
+              background: isActive(item.path) ? 'linear-gradient(90deg, #1d4ed8, #be123c)' : 'transparent',
               transition: 'all 0.2s',
               '&:hover': {
-                bgcolor: isActive(item.path) ? '#2563eb' : '#334155',
+                bgcolor: isActive(item.path) ? '#1d4ed8' : '#1f3358',
                 transform: 'translateX(4px)'
               }
             }}
           >
-            <ListItemIcon sx={{ color: isActive(item.path) ? 'white' : '#94a3b8', minWidth: 40 }}>
+            <ListItemIcon sx={{ color: isActive(item.path) ? 'white' : '#9fb5d6', minWidth: 40 }}>
               {item.icon}
             </ListItemIcon>
             <ListItemText 
@@ -68,18 +87,22 @@ function DashboardLayout() {
         ))}
       </List>
 
-      <Divider sx={{ borderColor: '#334155' }} />
+      <Divider sx={{ borderColor: '#27406b' }} />
       
       <Box sx={{ p: 2 }}>
-        <Box sx={{ bgcolor: '#0f172a', borderRadius: 2, p: 2 }}>
-          <Typography variant="caption" sx={{ color: '#94a3b8', display: 'block', mb: 1 }}>Usuario activo</Typography>
+        <Box sx={{ bgcolor: '#081227', borderRadius: 2, p: 2, border: '1px solid #1f3358' }}>
+          <Typography variant="caption" sx={{ color: '#9fb5d6', display: 'block', mb: 1 }}>Usuario activo</Typography>
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
             <Avatar sx={{ width: 32, height: 32, bgcolor: '#3b82f6', fontSize: 14 }}>
               {user?.nombre?.charAt(0) || 'U'}
             </Avatar>
             <Box sx={{ flexGrow: 1 }}>
               <Typography sx={{ color: 'white', fontSize: 13, fontWeight: 500 }}>{user?.nombre}</Typography>
-              <Chip label={user?.role === 'administrador' ? 'Admin' : 'Consulta'} size="small" sx={{ height: 18, fontSize: 10, bgcolor: user?.role === 'administrador' ? '#10b981' : '#6366f1', color: 'white' }} />
+              <Chip 
+                label={user?.role === 'administrador' ? 'Admin' : 'Consulta'} 
+                size="small" 
+                sx={{ height: 18, fontSize: 10, bgcolor: user?.role === 'administrador' ? '#10b981' : '#6366f1', color: 'white' }} 
+              />
             </Box>
           </Box>
         </Box>
@@ -94,7 +117,7 @@ function DashboardLayout() {
           <IconButton color="primary" edge="start" onClick={() => setMobileOpen(!mobileOpen)} sx={{ mr: 2, display: { sm: 'none' } }}>
             <MenuIcon />
           </IconButton>
-          <Typography variant="h6" sx={{ flexGrow: 1, color: '#1e293b', fontWeight: 600 }}>Sistema de Gestión de Calidad</Typography>
+          <Typography variant="h6" sx={{ flexGrow: 1, color: '#1e293b', fontWeight: 600 }}>Sistemas de Gestión por Procesos</Typography>
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
             <Tooltip title="Configuración">
               <IconButton size="small" sx={{ color: '#64748b' }}>

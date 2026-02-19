@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { Container, Paper, TextField, Button, Typography, Box, Alert, CircularProgress, InputAdornment, IconButton, Fade, Slide } from '@mui/material';
+import { useNavigate, Link } from 'react-router-dom';
+import { Container, Paper, TextField, Button, Typography, Box, Alert, CircularProgress, InputAdornment, IconButton, Fade, Slide, Divider } from '@mui/material';
 import { LockOutlined as LockIcon, Email as EmailIcon, Visibility, VisibilityOff, Login as LoginIcon } from '@mui/icons-material';
 import { useAuth } from '../context/AuthContext';
 
@@ -19,6 +19,10 @@ function Login() {
     const result = await login(formData.email, formData.password);
     setLoading(false);
     if (result.success) {
+      if (result.requiresPasswordChange) {
+        navigate('/primer-acceso');
+        return;
+      }
       navigate('/dashboard');
     } else {
       setError(result.message || 'Credenciales inválidas');
@@ -26,60 +30,59 @@ function Login() {
   };
 
   return (
-    <Box sx={{ 
-      minHeight: '100vh', 
-      display: 'flex', 
-      background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+    <Box sx={{
+      minHeight: '100vh',
+      display: 'flex',
+      background: '#ffffff',
       position: 'relative',
       overflow: 'hidden'
     }}>
-      {/* Decoración de fondo */}
-      <Box sx={{ position: 'absolute', top: -100, right: -100, width: 400, height: 400, borderRadius: '50%', background: 'rgba(255,255,255,0.1)', filter: 'blur(60px)' }} />
-      <Box sx={{ position: 'absolute', bottom: -150, left: -150, width: 500, height: 500, borderRadius: '50%', background: 'rgba(255,255,255,0.08)', filter: 'blur(80px)' }} />
+      <Box sx={{ position: 'absolute', inset: 0, background: 'linear-gradient(130deg, #ffffff 0%, #f1f5f9 42%, #eff6ff 100%)' }} />
+      <Box sx={{ position: 'absolute', top: -110, right: -120, width: 420, height: 420, borderRadius: '50%', background: 'radial-gradient(circle, rgba(0,84,166,0.16) 0%, rgba(0,84,166,0) 70%)' }} />
+      <Box sx={{ position: 'absolute', bottom: -180, left: -130, width: 460, height: 460, borderRadius: '50%', background: 'radial-gradient(circle, rgba(193,33,50,0.14) 0%, rgba(193,33,50,0) 70%)' }} />
       
       <Container maxWidth="sm" sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', position: 'relative', zIndex: 1 }}>
         <Fade in={true} timeout={800}>
-          <Paper elevation={24} sx={{ 
-            p: 5, 
+          <Paper elevation={24} sx={{
+            p: 5,
             borderRadius: 4, 
             width: '100%',
-            maxWidth: 480,
-            background: 'rgba(255,255,255,0.95)',
-            backdropFilter: 'blur(20px)',
-            boxShadow: '0 8px 32px rgba(0,0,0,0.1)'
+            maxWidth: 520,
+            background: '#ffffff',
+            border: '1px solid #d7e5f7',
+            boxShadow: '0 20px 55px rgba(10, 24, 47, 0.14)'
           }}>
             <Slide direction="down" in={true} timeout={600}>
               <Box>
-                {/* Logo y Título */}
                 <Box sx={{ textAlign: 'center', mb: 4 }}>
                   <Box sx={{ 
-                    width: 80, 
-                    height: 80, 
-                    borderRadius: 4, 
-                    background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+                    width: 150, 
+                    height: 150, 
+                    borderRadius: '50%', 
                     display: 'flex', 
                     alignItems: 'center', 
                     justifyContent: 'center',
                     margin: '0 auto',
                     mb: 3,
-                    boxShadow: '0 8px 24px rgba(102, 126, 234, 0.4)',
-                    transform: 'rotate(-5deg)',
-                    transition: 'all 0.3s ease',
-                    '&:hover': {
-                      transform: 'rotate(0deg) scale(1.05)'
-                    }
+                    overflow: 'hidden'
                   }}>
-                    <LockIcon sx={{ color: 'white', fontSize: 40 }} />
+                    <Box
+                      component="img"
+                      src="/escudo.png"
+                      alt="Escudo CESMAG"
+                      sx={{ width: '100%', height: '100%', objectFit: 'contain' }}
+                    />
                   </Box>
-                  <Typography variant="h4" sx={{ fontWeight: 800, color: '#1e293b', mb: 1, letterSpacing: -0.5 }}>
-                    Bienvenido
+                  <Typography variant="h4" sx={{ fontWeight: 900, color: '#0f172a', mb: 1, letterSpacing: -0.6 }}>
+                    Plataforma Institucional
                   </Typography>
-                  <Typography variant="h6" sx={{ fontWeight: 600, background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)', backgroundClip: 'text', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', mb: 1 }}>
-                    Sistema de Gestión de Calidad
+                  <Typography variant="h6" sx={{ fontWeight: 800, color: '#0b5cab', mb: 0.8 }}>
+                    Sistemas de Gestión por Procesos
                   </Typography>
-                  <Typography variant="body2" sx={{ color: '#64748b', fontSize: 13 }}>
-                    Ingresa tus credenciales para continuar
+                  <Typography variant="body2" sx={{ color: '#475569', fontSize: 13, mb: 1.8 }}>
+                    Accede con tus credenciales institucionales para consultar la documentación oficial.
                   </Typography>
+                  <Divider sx={{ borderColor: '#e2e8f0' }} />
                 </Box>
 
                 {error && (
@@ -95,9 +98,9 @@ function Login() {
                     margin="normal"
                     required
                     fullWidth
-                    label="Correo Electrónico"
+                    label="Correo o Usuario"
                     name="email"
-                    autoComplete="email"
+                    autoComplete="username"
                     autoFocus
                     value={formData.email}
                     onChange={(e) => setFormData({ ...formData, email: e.target.value })}
@@ -105,7 +108,7 @@ function Login() {
                     InputProps={{
                       startAdornment: (
                         <InputAdornment position="start">
-                          <EmailIcon sx={{ color: '#667eea' }} />
+                          <EmailIcon sx={{ color: '#0b5cab' }} />
                         </InputAdornment>
                       ),
                     }}
@@ -113,10 +116,10 @@ function Login() {
                       mb: 2,
                       '& .MuiOutlinedInput-root': {
                         borderRadius: 2,
-                        bgcolor: '#f8fafc',
+                        bgcolor: '#ffffff',
                         transition: 'all 0.3s',
                         '&:hover': {
-                          bgcolor: '#f1f5f9'
+                          bgcolor: '#f8fafc'
                         },
                         '&.Mui-focused': {
                           bgcolor: 'white'
@@ -139,7 +142,7 @@ function Login() {
                     InputProps={{
                       startAdornment: (
                         <InputAdornment position="start">
-                          <LockIcon sx={{ color: '#667eea' }} />
+                          <LockIcon sx={{ color: '#0b5cab' }} />
                         </InputAdornment>
                       ),
                       endAdornment: (
@@ -151,13 +154,13 @@ function Login() {
                       )
                     }}
                     sx={{
-                      mb: 3,
+                      mb: 1,
                       '& .MuiOutlinedInput-root': {
                         borderRadius: 2,
-                        bgcolor: '#f8fafc',
+                        bgcolor: '#ffffff',
                         transition: 'all 0.3s',
                         '&:hover': {
-                          bgcolor: '#f1f5f9'
+                          bgcolor: '#f8fafc'
                         },
                         '&.Mui-focused': {
                           bgcolor: 'white'
@@ -165,6 +168,20 @@ function Login() {
                       }
                     }}
                   />
+
+                  <Box sx={{ textAlign: 'right', mb: 3 }}>
+                    <Link 
+                      to="/forgot-password" 
+                      style={{ 
+                        color: '#0b5cab',
+                        textDecoration: 'none', 
+                        fontSize: 14,
+                        fontWeight: 600
+                      }}
+                    >
+                      ¿Olvidaste tu contraseña?
+                    </Link>
+                  </Box>
 
                   <Button
                     type="submit"
@@ -179,16 +196,12 @@ function Login() {
                       textTransform: 'none',
                       fontSize: 16,
                       fontWeight: 700,
-                      background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
-                      boxShadow: '0 4px 14px rgba(102, 126, 234, 0.4)',
+                      background: 'linear-gradient(135deg, #0054a6 0%, #c12132 100%)',
+                      boxShadow: '0 8px 20px rgba(0, 84, 166, 0.35)',
                       transition: 'all 0.3s',
                       '&:hover': {
-                        background: 'linear-gradient(135deg, #5568d3 0%, #6a3f8f 100%)',
-                        boxShadow: '0 6px 20px rgba(102, 126, 234, 0.6)',
-                        transform: 'translateY(-2px)'
-                      },
-                      '&:active': {
-                        transform: 'translateY(0)'
+                        background: 'linear-gradient(135deg, #004786 0%, #a80f24 100%)',
+                        boxShadow: '0 12px 26px rgba(0, 70, 138, 0.42)'
                       }
                     }}
                   >
@@ -196,10 +209,9 @@ function Login() {
                   </Button>
                 </Box>
 
-                {/* Usuarios de prueba */}
-                <Box sx={{ mt: 4, p: 2, bgcolor: '#f8fafc', borderRadius: 2, border: '1px dashed #cbd5e1' }}>
+                <Box sx={{ mt: 4, p: 2, bgcolor: '#f8fafc', borderRadius: 2, border: '1px dashed #bfd4ea' }}>
                   <Typography variant="caption" sx={{ color: '#64748b', fontWeight: 600, display: 'block', mb: 1 }}>
-                    👤 Usuarios de prueba:
+                    Usuarios de prueba:
                   </Typography>
                   <Typography variant="caption" sx={{ color: '#475569', display: 'block', fontFamily: 'monospace', fontSize: 11 }}>
                     • admin@sgc.com / Admin123!
