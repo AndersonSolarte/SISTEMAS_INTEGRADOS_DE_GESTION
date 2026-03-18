@@ -1,0 +1,15 @@
+node_modules
+build
+dist
+.git
+.gitignore
+*.log
+frontend/node_modules
+frontend/build
+backend/node_modules
+python-service/__pycache__
+python-service/.pytest_cache
+backend/uploads
+backend/keys
+db
+backups

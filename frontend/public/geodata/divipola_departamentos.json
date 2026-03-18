@@ -1,0 +1,266 @@
+[
+  {
+    "code": "91",
+    "name": "AMAZONAS",
+    "name_normalized": "AMAZONAS",
+    "municipalities_count": 11,
+    "centroid_latitude": -1.817071,
+    "centroid_longitude": -71.454173
+  },
+  {
+    "code": "05",
+    "name": "ANTIOQUIA",
+    "name_normalized": "ANTIOQUIA",
+    "municipalities_count": 125,
+    "centroid_latitude": 6.543971,
+    "centroid_longitude": -75.56049
+  },
+  {
+    "code": "81",
+    "name": "ARAUCA",
+    "name_normalized": "ARAUCA",
+    "municipalities_count": 7,
+    "centroid_latitude": 6.698438,
+    "centroid_longitude": -71.268261
+  },
+  {
+    "code": "88",
+    "name": "ARCHIPIÉLAGO DE SAN ANDRÉS, PROVIDENCIA Y SANTA CATALINA",
+    "name_normalized": "ARCHIPIELAGO DE SAN ANDRES, PROVIDENCIA Y SANTA CATALINA",
+    "municipalities_count": 2,
+    "centroid_latitude": 12.975646,
+    "centroid_longitude": -81.537784
+  },
+  {
+    "code": "08",
+    "name": "ATLÁNTICO",
+    "name_normalized": "ATLANTICO",
+    "municipalities_count": 23,
+    "centroid_latitude": 10.698521,
+    "centroid_longitude": -74.903653
+  },
+  {
+    "code": "11",
+    "name": "BOGOTÁ, D.C.",
+    "name_normalized": "BOGOTA, D.C.",
+    "municipalities_count": 1,
+    "centroid_latitude": 4.649251,
+    "centroid_longitude": -74.106992
+  },
+  {
+    "code": "13",
+    "name": "BOLÍVAR",
+    "name_normalized": "BOLIVAR",
+    "municipalities_count": 46,
+    "centroid_latitude": 9.348825,
+    "centroid_longitude": -74.649513
+  },
+  {
+    "code": "15",
+    "name": "BOYACÁ",
+    "name_normalized": "BOYACA",
+    "municipalities_count": 123,
+    "centroid_latitude": 5.666555,
+    "centroid_longitude": -73.208477
+  },
+  {
+    "code": "17",
+    "name": "CALDAS",
+    "name_normalized": "CALDAS",
+    "municipalities_count": 27,
+    "centroid_latitude": 5.283082,
+    "centroid_longitude": -75.437532
+  },
+  {
+    "code": "18",
+    "name": "CAQUETÁ",
+    "name_normalized": "CAQUETA",
+    "municipalities_count": 16,
+    "centroid_latitude": 1.39772,
+    "centroid_longitude": -75.492781
+  },
+  {
+    "code": "85",
+    "name": "CASANARE",
+    "name_normalized": "CASANARE",
+    "municipalities_count": 19,
+    "centroid_latitude": 5.378863,
+    "centroid_longitude": -72.304513
+  },
+  {
+    "code": "19",
+    "name": "CAUCA",
+    "name_normalized": "CAUCA",
+    "municipalities_count": 42,
+    "centroid_latitude": 2.497873,
+    "centroid_longitude": -76.674244
+  },
+  {
+    "code": "20",
+    "name": "CESAR",
+    "name_normalized": "CESAR",
+    "municipalities_count": 25,
+    "centroid_latitude": 9.304605,
+    "centroid_longitude": -73.54132
+  },
+  {
+    "code": "27",
+    "name": "CHOCÓ",
+    "name_normalized": "CHOCO",
+    "municipalities_count": 31,
+    "centroid_latitude": 5.800946,
+    "centroid_longitude": -76.824489
+  },
+  {
+    "code": "23",
+    "name": "CÓRDOBA",
+    "name_normalized": "CORDOBA",
+    "municipalities_count": 30,
+    "centroid_latitude": 8.760054,
+    "centroid_longitude": -75.732234
+  },
+  {
+    "code": "25",
+    "name": "CUNDINAMARCA",
+    "name_normalized": "CUNDINAMARCA",
+    "municipalities_count": 116,
+    "centroid_latitude": 4.818657,
+    "centroid_longitude": -74.181681
+  },
+  {
+    "code": "94",
+    "name": "GUAINÍA",
+    "name_normalized": "GUAINIA",
+    "municipalities_count": 8,
+    "centroid_latitude": 2.661164,
+    "centroid_longitude": -68.209201
+  },
+  {
+    "code": "95",
+    "name": "GUAVIARE",
+    "name_normalized": "GUAVIARE",
+    "municipalities_count": 4,
+    "centroid_latitude": 2.048654,
+    "centroid_longitude": -72.468043
+  },
+  {
+    "code": "41",
+    "name": "HUILA",
+    "name_normalized": "HUILA",
+    "municipalities_count": 37,
+    "centroid_latitude": 2.431761,
+    "centroid_longitude": -75.659129
+  },
+  {
+    "code": "44",
+    "name": "LA GUAJIRA",
+    "name_normalized": "LA GUAJIRA",
+    "municipalities_count": 15,
+    "centroid_latitude": 11.048834,
+    "centroid_longitude": -72.803706
+  },
+  {
+    "code": "47",
+    "name": "MAGDALENA",
+    "name_normalized": "MAGDALENA",
+    "municipalities_count": 30,
+    "centroid_latitude": 10.125802,
+    "centroid_longitude": -74.482
+  },
+  {
+    "code": "50",
+    "name": "META",
+    "name_normalized": "META",
+    "municipalities_count": 29,
+    "centroid_latitude": 3.672573,
+    "centroid_longitude": -73.487007
+  },
+  {
+    "code": "52",
+    "name": "NARIÑO",
+    "name_normalized": "NARINO",
+    "municipalities_count": 64,
+    "centroid_latitude": 1.400515,
+    "centroid_longitude": -77.570785
+  },
+  {
+    "code": "54",
+    "name": "NORTE DE SANTANDER",
+    "name_normalized": "NORTE DE SANTANDER",
+    "municipalities_count": 40,
+    "centroid_latitude": 7.852623,
+    "centroid_longitude": -72.822067
+  },
+  {
+    "code": "86",
+    "name": "PUTUMAYO",
+    "name_normalized": "PUTUMAYO",
+    "municipalities_count": 13,
+    "centroid_latitude": 0.791243,
+    "centroid_longitude": -76.617574
+  },
+  {
+    "code": "63",
+    "name": "QUINDÍO",
+    "name_normalized": "QUINDIO",
+    "municipalities_count": 12,
+    "centroid_latitude": 4.493634,
+    "centroid_longitude": -75.701299
+  },
+  {
+    "code": "66",
+    "name": "RISARALDA",
+    "name_normalized": "RISARALDA",
+    "municipalities_count": 14,
+    "centroid_latitude": 5.061129,
+    "centroid_longitude": -75.844131
+  },
+  {
+    "code": "68",
+    "name": "SANTANDER",
+    "name_normalized": "SANTANDER",
+    "municipalities_count": 87,
+    "centroid_latitude": 6.554152,
+    "centroid_longitude": -73.261618
+  },
+  {
+    "code": "70",
+    "name": "SUCRE",
+    "name_normalized": "SUCRE",
+    "municipalities_count": 26,
+    "centroid_latitude": 9.195532,
+    "centroid_longitude": -75.208664
+  },
+  {
+    "code": "73",
+    "name": "TOLIMA",
+    "name_normalized": "TOLIMA",
+    "municipalities_count": 47,
+    "centroid_latitude": 4.323421,
+    "centroid_longitude": -75.041262
+  },
+  {
+    "code": "76",
+    "name": "VALLE DEL CAUCA",
+    "name_normalized": "VALLE DEL CAUCA",
+    "municipalities_count": 42,
+    "centroid_latitude": 4.11143,
+    "centroid_longitude": -76.237145
+  },
+  {
+    "code": "97",
+    "name": "VAUPÉS",
+    "name_normalized": "VAUPES",
+    "municipalities_count": 6,
+    "centroid_latitude": 0.707041,
+    "centroid_longitude": -70.356489
+  },
+  {
+    "code": "99",
+    "name": "VICHADA",
+    "name_normalized": "VICHADA",
+    "municipalities_count": 4,
+    "centroid_latitude": 5.313923,
+    "centroid_longitude": -69.63816
+  }
+]

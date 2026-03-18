@@ -1,0 +1,12 @@
+﻿PAQUETE DE TRASLADO - SISTEMAS_INTEGRADOS_DE_GESTION
+Fecha: 2026-03-04 19:02:07
+
+CONTENIDO:
+- db\\sgc_db_backup_20260304_185819.dump
+- db\\sgc_db_backup_20260304_185819.sql
+- db\\cluster_full_20260304_185819.sql
+- src\\project_source.zip
+- config\\*
+
+RESTAURAR (CASA, puerto 5433 ejemplo):
+pg_restore -h localhost -p 5433 -U postgres -d sgc_db --clean --if-exists --no-owner db\\sgc_db_backup_20260304_185819.dump

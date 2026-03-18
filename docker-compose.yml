@@ -1,0 +1,97 @@
+services:
+  db:
+    image: postgres:16-alpine
+    container_name: sgc-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${DB_NAME}
+      POSTGRES_USER: ${DB_USER}
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+    ports:
+      - "${DB_PORT_HOST:-5433}:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER} -d ${DB_NAME}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  python-service:
+    build:
+      context: ./python-service
+      dockerfile: Dockerfile
+    container_name: sgc-python-service
+    restart: unless-stopped
+    environment:
+      FRONTEND_URL: ${PUBLIC_APP_URL}
+      DB_HOST: db
+      DB_PORT: 5432
+      DB_NAME: ${DB_NAME}
+      DB_USER: ${DB_USER}
+      DB_PASSWORD: ${DB_PASSWORD}
+    depends_on:
+      db:
+        condition: service_healthy
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: sgc-backend
+    restart: unless-stopped
+    environment:
+      PORT: 5000
+      NODE_ENV: production
+      DB_HOST: db
+      DB_PORT: 5432
+      DB_NAME: ${DB_NAME}
+      DB_USER: ${DB_USER}
+      DB_PASSWORD: ${DB_PASSWORD}
+      JWT_SECRET: ${JWT_SECRET}
+      JWT_EXPIRE: ${JWT_EXPIRE:-7d}
+      FRONTEND_URL: ${PUBLIC_APP_URL}
+      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
+      INSTITUTIONAL_EMAIL_DOMAIN: ${INSTITUTIONAL_EMAIL_DOMAIN:-unicesmag.edu.co}
+      AUTH_GOOGLE_ONLY: ${AUTH_GOOGLE_ONLY:-true}
+      GOOGLE_SHEETS_ID: ${GOOGLE_SHEETS_ID:-}
+      GOOGLE_SHEETS_TAB: ${GOOGLE_SHEETS_TAB:-}
+      GOOGLE_SERVICE_ACCOUNT_JSON: /app/keys/google-service-account.json
+      SMTP_HOST: ${SMTP_HOST:-}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_USER: ${SMTP_USER:-}
+      SMTP_PASS: ${SMTP_PASS:-}
+      SMTP_FROM: ${SMTP_FROM:-}
+      SABER_PRO_PYTHON_URL: http://python-service:8000
+      SABER_PRO_PYTHON_TIMEOUT_MS: ${SABER_PRO_PYTHON_TIMEOUT_MS:-15000}
+    depends_on:
+      db:
+        condition: service_healthy
+      python-service:
+        condition: service_started
+    ports:
+      - "${BACKEND_PORT_HOST:-5000}:5000"
+    volumes:
+      - backend_uploads:/app/uploads
+      - ./backend/keys:/app/keys:ro
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      args:
+        REACT_APP_API_URL: /api
+        REACT_APP_NAME: ${REACT_APP_NAME:-Sistema de Gestion de Calidad}
+        REACT_APP_VERSION: ${REACT_APP_VERSION:-1.0.0}
+        REACT_APP_GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
+    container_name: sgc-frontend
+    restart: unless-stopped
+    depends_on:
+      backend:
+        condition: service_started
+    ports:
+      - "${FRONTEND_PORT_HOST:-8080}:80"
+
+volumes:
+  postgres_data:
+  backend_uploads:

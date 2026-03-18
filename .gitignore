@@ -1,0 +1,41 @@
+# Dependencias Node
+node_modules/
+
+# Archivos de entorno
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+config/backend_.env
+config/frontend_.env
+
+# Build
+dist/
+build/
+
+# Logs
+logs
+*.log
+
+# Python
+__pycache__/
+*.pyc
+
+# Archivos del sistema
+.DS_Store
+Thumbs.db
+# Backups locales (no versionar)
+/backups/
+/db/
+/sgc_db_*.sql
+/sgc_db_*.zip
+*.dump
+*.tar
+*.zip
+
+/sgc_db_*/
+
+# Cargas temporales de importacion
+/backend/uploads/
+/backend/keys/*.json

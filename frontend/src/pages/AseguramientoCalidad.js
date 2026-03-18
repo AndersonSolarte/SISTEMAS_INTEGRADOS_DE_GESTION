@@ -1,0 +1,1215 @@
+import React, { useState, useEffect, useMemo } from 'react';
+import { Box, Paper, Typography, Grid, TextField, Button, Table, TableBody, TableCell, TableContainer, TableHead, TableRow, TablePagination, FormControl, Select, MenuItem, CircularProgress, Chip, IconButton, Tooltip, Fade, Slide, Stack, Divider, Dialog, DialogTitle, DialogContent, DialogActions, InputAdornment } from '@mui/material';
+import { Search as SearchIcon, Clear as ClearIcon, VisibilityOutlined as VisibilityOutlinedIcon, FileDownloadOutlined as FileDownloadOutlinedIcon, FilterList as FilterIcon, Description as DescriptionIcon, Article as ArticleIcon, AssignmentTurnedIn as AssignmentIcon, ListAlt as ListIcon, Policy as PolicyIcon, AccountTree as AccountTreeIcon, Upload as UploadIcon, GetApp as DownloadTemplateIcon, DeleteSweep as DeleteSweepIcon, Favorite as FavoriteIcon, FavoriteBorder as FavoriteBorderIcon } from '@mui/icons-material';import { useSnackbar } from 'notistack';
+import { useLocation } from 'react-router-dom';
+import { useAuth } from '../context/AuthContext';
+import documentoService from '../services/documentoService';
+import catalogoService from '../services/catalogoService';
+import favoritoService from '../services/favoritoService';
+import api from '../services/api';
+
+// Extrae ID y metadatos de enlaces de Google Drive/Docs.
+// Conserva 'resourcekey' porque algunos enlaces compartidos dejan de funcionar sin ese parametro.
+const extractGoogleDriveMeta = (rawUrl) => {
+  if (!rawUrl) return null;
+
+  const url = String(rawUrl).trim();
+  let parsed = null;
+
+  try {
+    parsed = new URL(url);
+  } catch {
+    parsed = null;
+  }
+  
+  const patterns = [
+    /\/file\/d\/([^/?#]+)/,
+    /\/document\/d\/([^/?#]+)/,
+    /\/spreadsheets\/d\/([^/?#]+)/,
+    /\/presentation\/d\/([^/?#]+)/,
+    /[?&]id=([^&#]+)/,
+    /\/d\/([^/?#]+)(?:\/|$)/,
+  ];
+  
+  let fileId = null;
+  for (const pattern of patterns) {
+    const match = url.match(pattern);
+    if (match && match[1]) {
+      fileId = match[1];
+      break;
+    }
+  }
+
+  if (!fileId) return null;
+
+  const host = parsed?.hostname || '';
+  const pathname = parsed?.pathname || '';
+  const resourceKey = parsed?.searchParams?.get('resourcekey') || '';
+  const gid = parsed?.searchParams?.get('gid') || '';
+
+  let kind = 'drive-file';
+  if (host.includes('docs.google.com')) {
+    if (pathname.includes('/document/')) kind = 'google-doc';
+    else if (pathname.includes('/spreadsheets/')) kind = 'google-sheet';
+    else if (pathname.includes('/presentation/')) kind = 'google-slide';
+  }
+  
+  return { fileId, resourceKey, gid, kind };
+};
+
+const isDocumentCode = (value = '') => /^[A-Z0-9]{2,6}(?:-[A-Z0-9]{2,6}){1,6}$/.test(String(value).trim().toUpperCase());
+
+const isDocTypeLabel = (value = '') => {
+  const text = String(value).toLowerCase();
+  return [
+    'manual',
+    'procedimiento',
+    'instructivo',
+    'formato',
+    'política',
+    'politica',
+    'programa',
+    'plan',
+    'guía',
+    'guia',
+    'caracterización',
+    'caracterizacion'
+  ].some((keyword) => text.includes(keyword));
+};
+
+const normalizeDocFields = (doc) => {
+  let tipo = doc?.tipoDocumentacion?.nombre || '';
+  let codigo = doc?.codigo || '';
+  let titulo = doc?.titulo || '';
+
+  if (isDocumentCode(tipo) && !isDocumentCode(codigo) && isDocTypeLabel(titulo)) {
+    const originalTipo = tipo;
+    tipo = titulo;
+    titulo = codigo;
+    codigo = originalTipo;
+  }
+
+  return { tipo, codigo, titulo };
+};
+
+const getPreviewUrl = (url) => {
+  const meta = extractGoogleDriveMeta(url);
+  if (!meta) {
+    const safeUrl = String(url || '');
+    if (safeUrl.includes('docs.google.com')) {
+      return safeUrl
+        .replace('/edit', '/preview')
+        .replace('/view', '/preview')
+        .replace('/copy', '/preview');
+    }
+    return url;
+  }
+
+  const { fileId, resourceKey, gid, kind } = meta;
+  const rkQuery = resourceKey ? `?resourcekey=${encodeURIComponent(resourceKey)}` : '';
+
+  if (kind === 'google-doc') return `https://docs.google.com/document/d/${fileId}/preview${rkQuery}${rkQuery ? '&' : '?'}rm=minimal`;
+  if (kind === 'google-sheet') {
+    const params = new URLSearchParams();
+    params.set('rm', 'minimal');
+    if (gid) params.set('gid', gid);
+    if (resourceKey) params.set('resourcekey', resourceKey);
+    return `https://docs.google.com/spreadsheets/d/${fileId}/preview?${params.toString()}`;
+  }
+  if (kind === 'google-slide') return `https://docs.google.com/presentation/d/${fileId}/preview${rkQuery}`;
+
+  return `https://drive.google.com/file/d/${fileId}/preview${rkQuery}`;
+};
+
+const getDownloadUrl = (url) => {
+  const meta = extractGoogleDriveMeta(url);
+  if (!meta) return url;
+
+  const { fileId, resourceKey, kind } = meta;
+  const driveExtra = resourceKey ? `&resourcekey=${encodeURIComponent(resourceKey)}` : '';
+
+  if (kind === 'google-doc') {
+    const extra = resourceKey ? `&resourcekey=${encodeURIComponent(resourceKey)}` : '';
+    return `https://docs.google.com/document/d/${fileId}/export?format=docx${extra}`;
+  }
+
+  if (kind === 'google-sheet') {
+    const extra = resourceKey ? `&resourcekey=${encodeURIComponent(resourceKey)}` : '';
+    return `https://docs.google.com/spreadsheets/d/${fileId}/export?format=xlsx${extra}`;
+  }
+
+  if (kind === 'google-slide') {
+    const extra = resourceKey ? `?resourcekey=${encodeURIComponent(resourceKey)}` : '';
+    return `https://docs.google.com/presentation/d/${fileId}/export/pdf${extra}`;
+  }
+
+  return `https://drive.google.com/uc?export=download&id=${fileId}${driveExtra}`;
+};
+
+const toAbsoluteDocumentUrl = (url) => {
+  if (!url) return '';
+  const value = String(url).trim();
+  if (/^https?:\/\//i.test(value)) return value;
+  if (value.startsWith('/uploads/')) {
+    const apiBase = process.env.REACT_APP_API_URL || 'http://localhost:5000/api';
+    const backendBase = apiBase.replace(/\/api\/?$/, '');
+    return `${backendBase}${value}`;
+  }
+  return value;
+};
+
+const sanitizeFileName = (value = '') =>
+  Array.from(String(value))
+    .map((char) => {
+      const code = char.charCodeAt(0);
+      if (code < 32 || /[<>:"/\\|?*]/.test(char)) return '_';
+      return char;
+    })
+    .join('')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+const getExtensionFromUrl = (url) => {
+  if (!url) return '';
+
+  const meta = extractGoogleDriveMeta(url);
+  if (meta?.kind === 'google-doc') return 'docx';
+  if (meta?.kind === 'google-sheet') return 'xlsx';
+  if (meta?.kind === 'google-slide') return 'pptx';
+
+  try {
+    const parsed = new URL(url, window.location.origin);
+    const path = parsed.pathname || '';
+    const match = path.match(/\.([a-zA-Z0-9]{2,8})$/);
+    return match?.[1]?.toLowerCase() || '';
+  } catch {
+    const clean = String(url).split('?')[0];
+    const match = clean.match(/\.([a-zA-Z0-9]{2,8})$/);
+    return match?.[1]?.toLowerCase() || '';
+  }
+};
+
+const buildDownloadFileName = (doc, normalized) => {
+  const base = sanitizeFileName(`${normalized?.codigo || 'documento'}_${normalized?.titulo || 'archivo'}`);
+  const ext = getExtensionFromUrl(doc?.link_acceso);
+  return ext ? `${base}.${ext}` : base;
+};
+
+const formatDate = (value) => {
+  if (!value) return '-';
+  const str = String(value).slice(0, 10);
+  if (/^\d{4}-\d{2}-\d{2}$/.test(str)) {
+    const [y, m, d] = str.split('-');
+    return `${d}/${m}/${y}`;
+  }
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return String(value);
+  return date.toLocaleDateString('es-CO');
+};
+
+const getLabelById = (items = [], id) => {
+  if (!id) return '';
+  const found = items.find((item) => String(item.id) === String(id));
+  return found?.nombre || '';
+};
+
+function AseguramientoCalidad() {
+  const { enqueueSnackbar } = useSnackbar();
+  const { user } = useAuth();
+  const location = useLocation();
+  const searchParams = useMemo(() => new URLSearchParams(location.search || ''), [location.search]);
+  const forceReadOnly = useMemo(
+    () => searchParams.get('readonly') === '1' || searchParams.get('mode') === 'consulta',
+    [searchParams]
+  );
+  const normalizedRole = useMemo(
+    () =>
+      String(user?.role || '')
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, '_')
+        .replace(/^_+|_+$/g, ''),
+    [user?.role]
+  );
+  const canManageDocumental = useMemo(
+    () => ['administrador', 'gestion_por_procesos', 'gestion_procesos'].includes(normalizedRole) && !forceReadOnly,
+    [normalizedRole, forceReadOnly]
+  );
+  const [filters, setFilters] = useState({ macro_proceso_id: '', proceso_id: '', subproceso_id: '', tipo_documentacion_id: '', titulo: '', estado: '' });
+  const [macroProcesos, setMacroProcesos] = useState([]);
+  const [procesos, setProcesos] = useState([]);
+  const [subprocesos, setSubprocesos] = useState([]);
+  const [tiposDocumentacion, setTiposDocumentacion] = useState([]);
+  const [documentos, setDocumentos] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [page, setPage] = useState(0);
+  const [rowsPerPage, setRowsPerPage] = useState(10);
+  const [totalDocumentos, setTotalDocumentos] = useState(0);
+  const [importing, setImporting] = useState(false);
+  const [selectedFile, setSelectedFile] = useState(null);
+  const [openClearDialog, setOpenClearDialog] = useState(false);
+  const [clearIdentifier, setClearIdentifier] = useState('');
+  const [clearPassword, setClearPassword] = useState('');
+  const [clearingDb, setClearingDb] = useState(false);
+  const [openPreviewDialog, setOpenPreviewDialog] = useState(false);
+  const [previewUrl, setPreviewUrl] = useState('');
+  const [previewTitle, setPreviewTitle] = useState('');
+  const [previewDownloadUrl, setPreviewDownloadUrl] = useState('');
+  const [previewDownloadName, setPreviewDownloadName] = useState('');
+  const [autoSearching, setAutoSearching] = useState(false);
+  const [favoriteIds, setFavoriteIds] = useState(new Set());
+  const [loadingFavorites, setLoadingFavorites] = useState(false);
+  const [syncingSheet, setSyncingSheet] = useState(false);
+
+  useEffect(() => {
+    Promise.all([
+      catalogoService.getMacroProcesos(),
+      catalogoService.getProcesos(),
+      catalogoService.getSubProcesos(),
+      catalogoService.getTiposDocumentacion()
+    ]).then(([macroRes, procesoRes, subRes, tiposRes]) => {
+      setMacroProcesos(macroRes?.data?.macroProcesos || []);
+      setProcesos(procesoRes?.data?.procesos || []);
+      setSubprocesos(subRes?.data?.subprocesos || []);
+      setTiposDocumentacion(tiposRes?.data?.tipos || []);
+    });
+  }, []);
+
+  useEffect(() => {
+    if (!user?.id) return;
+    setLoadingFavorites(true);
+    favoritoService
+      .getFavoriteIds()
+      .then((response) => {
+        const ids = response?.data?.ids || [];
+        setFavoriteIds(new Set(ids.map((id) => String(id))));
+      })
+      .catch(() => {})
+      .finally(() => setLoadingFavorites(false));
+  }, [user?.id]);
+
+  useEffect(() => {
+    const params = new URLSearchParams(location.search);
+    const quickTitulo = params.get('titulo');
+    if (quickTitulo) {
+      const nextFilters = { macro_proceso_id: '', proceso_id: '', subproceso_id: '', tipo_documentacion_id: '', titulo: quickTitulo, estado: '' };
+      setFilters(nextFilters);
+      setLoading(true);
+      documentoService.getDocumentos(nextFilters, 1, 10)
+        .then((response) => {
+          if (response.success) {
+            setDocumentos(response.data.documentos);
+            setTotalDocumentos(response.data.pagination.total);
+          }
+        })
+        .catch(() => enqueueSnackbar('Error al buscar documentos', { variant: 'error' }))
+        .finally(() => setLoading(false));
+    }
+  }, [location.search, enqueueSnackbar]);
+
+
+  const handleSearch = async () => {
+    setLoading(true);
+    setPage(0);
+    try {
+      const response = await documentoService.getDocumentos(filters, 1, rowsPerPage);
+      if (response.success) {
+        setDocumentos(response.data.documentos);
+        setTotalDocumentos(response.data.pagination.total);
+        if (response.data.documentos.length === 0) {
+          enqueueSnackbar(response.message || 'No se encontraron documentos', { variant: 'info' });
+        } else {
+          enqueueSnackbar(`✓ ${response.data.pagination.total} documentos encontrados`, { variant: 'success' });
+        }
+      }
+    } catch (error) {
+      enqueueSnackbar('Error al buscar documentos', { variant: 'error' });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleClearFilters = () => {
+    setFilters({ macro_proceso_id: '', proceso_id: '', subproceso_id: '', tipo_documentacion_id: '', titulo: '', estado: '' });
+    setDocumentos([]);
+    setTotalDocumentos(0);
+    setPage(0);
+  };
+
+  useEffect(() => {
+    const hasActiveFilters = Object.values(filters).some((value) => String(value).trim() !== '');
+    if (!hasActiveFilters) return;
+
+    setAutoSearching(true);
+    const debounceId = setTimeout(async () => {
+      setLoading(true);
+      setPage(0);
+      try {
+        const response = await documentoService.getDocumentos(filters, 1, rowsPerPage);
+        if (response.success) {
+          setDocumentos(response.data.documentos);
+          setTotalDocumentos(response.data.pagination.total);
+        }
+      } catch (_error) {
+        enqueueSnackbar('Error al aplicar filtros', { variant: 'error' });
+      } finally {
+        setLoading(false);
+        setAutoSearching(false);
+      }
+    }, 450);
+
+    return () => clearTimeout(debounceId);
+  }, [filters, rowsPerPage, enqueueSnackbar, documentos.length, totalDocumentos]);
+
+  const handleChangePage = async (event, newPage) => {
+    setPage(newPage);
+    setLoading(true);
+    try {
+      const response = await documentoService.getDocumentos(filters, newPage + 1, rowsPerPage);
+      if (response.success) {
+        setDocumentos(response.data.documentos);
+      }
+    } catch (error) {
+      enqueueSnackbar('Error al cargar documentos', { variant: 'error' });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+
+  const toggleFavorite = async (docId) => {
+    if (!docId) return;
+    const key = String(docId);
+    const exists = favoriteIds.has(key);
+
+    try {
+      if (exists) {
+        await favoritoService.removeFavorite(docId);
+      } else {
+        await favoritoService.addFavorite(docId);
+      }
+
+      setFavoriteIds((prev) => {
+        const next = new Set(prev);
+        if (exists) next.delete(key);
+        else next.add(key);
+        return next;
+      });
+
+      enqueueSnackbar(exists ? 'Eliminado de favoritos' : 'Agregado a favoritos', { variant: 'success' });
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('favorites:updated'));
+      }
+    } catch (error) {
+      const backendMessage = error?.response?.data?.message;
+      const backendDetail = error?.response?.data?.detail;
+      const message = backendDetail ? `${backendMessage || 'No se pudo actualizar favoritos'}: ${backendDetail}` : (backendMessage || 'No se pudo actualizar favoritos');
+      enqueueSnackbar(message, { variant: 'error' });
+    }
+  };
+
+  const getEstadoColor = (estado) => {
+    switch (estado) {
+      case 'vigente': return 'success';
+      case 'obsoleto': return 'error';
+      case 'en_revision': return 'warning';
+      default: return 'default';
+    }
+  };
+
+  const getTipoIcon = (tipo) => {
+    const nombre = tipo?.toLowerCase() || '';
+    if (nombre.includes('manual')) return <DescriptionIcon sx={{ fontSize: 20 }} />;
+    if (nombre.includes('procedimiento')) return <ListIcon sx={{ fontSize: 20 }} />;
+    if (nombre.includes('instructivo')) return <ArticleIcon sx={{ fontSize: 20 }} />;
+    if (nombre.includes('formato')) return <AssignmentIcon sx={{ fontSize: 20 }} />;
+    if (nombre.includes('política')) return <PolicyIcon sx={{ fontSize: 20 }} />;
+    if (nombre.includes('caracterización')) return <AccountTreeIcon sx={{ fontSize: 20 }} />;
+    return <DescriptionIcon sx={{ fontSize: 20 }} />;
+  };
+
+  const getTipoColor = (tipo) => {
+    const nombre = tipo?.toLowerCase() || '';
+    if (nombre.includes('manual')) return { bg: '#dbeafe', color: '#1e40af' };
+    if (nombre.includes('procedimiento')) return { bg: '#dcfce7', color: '#15803d' };
+    if (nombre.includes('instructivo')) return { bg: '#fef3c7', color: '#a16207' };
+    if (nombre.includes('formato')) return { bg: '#f3e8ff', color: '#7c3aed' };
+    if (nombre.includes('política')) return { bg: '#ffe4e6', color: '#be123c' };
+    return { bg: '#f1f5f9', color: '#475569' };
+  };
+
+  const handleFileSelect = (event) => {
+    setSelectedFile(event.target.files[0]);
+  };
+
+  const handleImport = async () => {
+    if (!selectedFile) {
+      enqueueSnackbar('Selecciona un archivo Excel', { variant: 'warning' });
+      return;
+    }
+
+    setImporting(true);
+    const formData = new FormData();
+    formData.append('file', selectedFile);
+
+    try {
+      const response = await api.post('/import/excel', formData, {
+        headers: { 'Content-Type': 'multipart/form-data' }
+      });
+
+      if (response.data.success) {
+        enqueueSnackbar(response.data.message, { variant: 'success' });
+        setSelectedFile(null);
+        handleSearch();
+      }
+    } catch (error) {
+      const backendMessage = error?.response?.data?.message;
+      enqueueSnackbar(backendMessage || 'Error al importar archivo', { variant: 'error' });
+    } finally {
+      setImporting(false);
+    }
+  };
+
+  const handleDownloadTemplate = async () => {
+    try {
+      const response = await api.get('/import/template', { responseType: 'blob' });
+      const url = window.URL.createObjectURL(new Blob([response.data]));
+      triggerDownload(url, 'plantilla_documentos_sgc.xlsx');
+    } catch (error) {
+      enqueueSnackbar('Error al descargar plantilla', { variant: 'error' });
+    }
+  };
+
+  const handleSyncFromSheets = async (mode) => {
+    setSyncingSheet(true);
+    try {
+      const response = await api.post('/import/sheets', { mode });
+      if (response.data?.success) {
+        enqueueSnackbar(response.data.message || 'Sincronización completada', { variant: 'success' });
+        handleSearch();
+      }
+    } catch (error) {
+      const backendMessage = error?.response?.data?.message;
+      const backendDetail = error?.response?.data?.error;
+      const message = backendDetail ? `${backendMessage || 'Error al sincronizar desde Google Sheets'}: ${backendDetail}` : (backendMessage || 'Error al sincronizar desde Google Sheets');
+      enqueueSnackbar(message, { variant: 'error' });
+    } finally {
+      setSyncingSheet(false);
+    }
+  };
+
+  const resetClearDialog = () => {
+    setOpenClearDialog(false);
+    setClearIdentifier('');
+    setClearPassword('');
+    setClearingDb(false);
+  };
+
+  const openDocumentPreview = (doc, normalized) => {
+    if (!doc?.link_acceso) return;
+    const resolved = toAbsoluteDocumentUrl(doc.link_acceso);
+    setPreviewUrl(getPreviewUrl(resolved));
+    setPreviewTitle(`${normalized?.codigo || ''} ${normalized?.titulo || ''}`.trim());
+    setPreviewDownloadUrl(getDownloadUrl(resolved));
+    setPreviewDownloadName(buildDownloadFileName(doc, normalized));
+    setOpenPreviewDialog(true);
+  };
+
+  const closeDocumentPreview = () => {
+    setOpenPreviewDialog(false);
+    setPreviewUrl('');
+    setPreviewTitle('');
+    setPreviewDownloadUrl('');
+    setPreviewDownloadName('');
+  };
+
+  const triggerDownload = (url, filename) => {
+    if (!url) return;
+    const link = document.createElement('a');
+    link.href = url;
+    if (filename) link.download = filename;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
+  const handleClearDatabase = async () => {
+    if (!clearIdentifier.trim() || !clearPassword) {
+      enqueueSnackbar('Ingresa usuario/correo y contraseña para confirmar', { variant: 'warning' });
+      return;
+    }
+
+    setClearingDb(true);
+    try {
+      const response = await api.post('/import/clear', {
+        identifier: clearIdentifier.trim(),
+        password: clearPassword
+      });
+
+      enqueueSnackbar(response.data?.message || 'Base de datos limpiada correctamente', { variant: 'success' });
+      resetClearDialog();
+      handleSearch();
+    } catch (error) {
+      const backendMessage = error?.response?.data?.message;
+      enqueueSnackbar(backendMessage || 'No se pudo limpiar la base de datos', { variant: 'error' });
+      setClearingDb(false);
+    }
+  };
+
+  const activeFiltersCount = Object.values(filters).filter(f => f !== '').length;
+  const hasActiveFilters = activeFiltersCount > 0;
+  const tiposDocumentacionDisplay = tiposDocumentacion.filter((td) => !isDocumentCode(td.nombre));
+
+  const availableTipoIds = useMemo(() => {
+    const tipo = new Set();
+    documentos.forEach((doc) => {
+      const tipoId = doc?.tipo_documentacion_id || doc?.tipoDocumentacion?.id;
+      if (tipoId) tipo.add(String(tipoId));
+    });
+    return tipo;
+  }, [documentos]);
+
+  const shouldRestrictTipo = documentos.length > 0;
+
+  const macroOptions = macroProcesos;
+  const procesoOptions = procesos;
+  const subprocesoOptions = subprocesos;
+  const tipoOptions = tiposDocumentacionDisplay;
+  const macroLabel = getLabelById(macroProcesos, filters.macro_proceso_id);
+  const procesoLabel = getLabelById(procesos, filters.proceso_id);
+  const subprocesoLabel = getLabelById(subprocesos, filters.subproceso_id);
+  const tipoLabel = getLabelById(tiposDocumentacionDisplay, filters.tipo_documentacion_id);
+  const isFiltering = loading || autoSearching;
+
+  useEffect(() => {
+    if (!shouldRestrictTipo || documentos.length === 0) return;
+
+    setFilters((prev) => {
+      if (prev.tipo_documentacion_id && !availableTipoIds.has(String(prev.tipo_documentacion_id))) {
+        return { ...prev, tipo_documentacion_id: '' };
+      }
+      return prev;
+    });
+  }, [availableTipoIds, documentos.length, shouldRestrictTipo]);
+
+  return (
+    <Fade in={true} timeout={500}>
+      <Box>
+        <Paper
+          elevation={0}
+          sx={{
+            mb: 3,
+            p: { xs: 2.5, md: 3 },
+            borderRadius: 3.5,
+            border: '1px solid #dbeafe',
+            color: 'white',
+            position: 'relative',
+            overflow: 'hidden',
+            background: 'linear-gradient(120deg, #0f1f3a 0%, #1d4ed8 45%, #be185d 100%)',
+            boxShadow: '0 14px 34px rgba(15, 23, 42, 0.28)'
+          }}
+        >
+          <Box sx={{ position: 'absolute', right: -60, top: -40, width: 220, height: 220, borderRadius: '50%', background: 'rgba(255,255,255,0.12)' }} />
+          <Box sx={{ position: 'absolute', right: 40, bottom: -80, width: 180, height: 180, borderRadius: '50%', background: 'rgba(255,255,255,0.08)' }} />
+          <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2.5} alignItems={{ sm: 'center' }} sx={{ position: 'relative', zIndex: 1 }}>
+            <Box sx={{ width: 62, height: 62, borderRadius: 2.5, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(255,255,255,0.18)', color: 'white', border: '1px solid rgba(255,255,255,0.35)' }}>
+              <SearchIcon sx={{ fontSize: 28 }} />
+            </Box>
+            <Box sx={{ flexGrow: 1 }}>
+              <Typography variant="h5" sx={{ fontWeight: 800, letterSpacing: -0.2 }}>
+                Inicio de Consulta Documental
+              </Typography>
+              <Typography variant="body2" sx={{ color: 'rgba(255,255,255,0.9)' }}>
+                Accede al mapa de procesos y encuentra documentos institucionales de forma rápida y clara.
+              </Typography>
+            </Box>
+            <Button
+              variant="contained"
+              onClick={handleSearch}
+              startIcon={<SearchIcon />}
+              sx={{
+                bgcolor: 'white',
+                color: '#0f1f3a',
+                textTransform: 'none',
+                fontWeight: 700,
+                px: 3,
+                py: 1.2,
+                borderRadius: 2,
+                boxShadow: '0 8px 18px rgba(15, 23, 42, 0.25)',
+                '&:hover': { bgcolor: '#f8fafc' }
+              }}
+            >
+              Consulta de documentos
+            </Button>
+          </Stack>
+        </Paper>
+
+        {/* IMPORTAR EXCEL (administrador y gestion por procesos) */}
+        {canManageDocumental && (
+          <Paper elevation={0} sx={{ p: 3, mb: 3, border: '1px solid #e2e8f0', borderRadius: 3 }}>
+            <Stack direction="row" spacing={1} alignItems="center" sx={{ mb: 2 }}>
+              <UploadIcon sx={{ color: '#1d4ed8' }} />
+              <Typography variant="h6" sx={{ fontWeight: 600 }}>Importar Documentos</Typography>
+            </Stack>
+            <Grid container spacing={2} alignItems="center">
+              <Grid item xs={12} md={4}>
+                <Button variant="outlined" fullWidth component="label" startIcon={<UploadIcon />} sx={{ borderRadius: 2, py: 1.5 }}>
+                  {selectedFile ? selectedFile.name : 'Seleccionar Excel'}
+                  <input type="file" hidden accept=".xlsx,.xls" onChange={handleFileSelect} />
+                </Button>
+              </Grid>
+              <Grid item xs={12} md={3}>
+                <Button variant="contained" fullWidth disabled={!selectedFile || importing} onClick={handleImport} sx={{ borderRadius: 2, py: 1.5 }}>
+                  {importing ? 'Importando...' : 'Importar Ahora'}
+                </Button>
+              </Grid>
+              <Grid item xs={12} md={3}>
+                <Button variant="outlined" fullWidth startIcon={<DownloadTemplateIcon />} onClick={handleDownloadTemplate} sx={{ borderRadius: 2, py: 1.5 }}>
+                  Descargar Plantilla
+                </Button>
+              </Grid>
+              <Grid item xs={12} md={2}>
+                <Button
+                  variant="outlined"
+                  color="error"
+                  fullWidth
+                  startIcon={<DeleteSweepIcon />}
+                  onClick={() => setOpenClearDialog(true)}
+                  sx={{ borderRadius: 2, py: 1.5 }}
+                >
+                  Limpiar Base
+                </Button>
+              </Grid>
+              <Grid item xs={12} md={6}>
+                <Button
+                  variant="contained"
+                  fullWidth
+                  disabled={syncingSheet}
+                  onClick={() => handleSyncFromSheets('incremental')}
+                  sx={{ borderRadius: 2, py: 1.4, textTransform: 'none', fontWeight: 700 }}
+                >
+                  {syncingSheet ? 'Sincronizando...' : 'Sincronizar desde Sheets (Incremental)'}
+                </Button>
+              </Grid>
+              <Grid item xs={12} md={6}>
+                <Button
+                  variant="outlined"
+                  color="warning"
+                  fullWidth
+                  disabled={syncingSheet}
+                  onClick={() => handleSyncFromSheets('reemplazar')}
+                  sx={{ borderRadius: 2, py: 1.4, textTransform: 'none', fontWeight: 700 }}
+                >
+                  Reemplazar todo desde Sheets
+                </Button>
+              </Grid>
+            </Grid>
+          </Paper>
+        )}
+
+        <Slide direction="down" in={true} timeout={600}>
+          <Paper
+            elevation={0}
+            sx={{
+              p: { xs: 2, sm: 2.5 },
+              mb: 3,
+              border: '1px solid rgba(59,130,246,0.25)',
+              borderRadius: 3,
+              bgcolor: 'white',
+              position: 'relative',
+              overflow: 'hidden',
+              boxShadow: '0 18px 40px rgba(59, 130, 246, 0.12)',
+              transition: 'transform 220ms ease, box-shadow 220ms ease',
+              '&:hover': {
+                transform: 'translateY(-2px)',
+                boxShadow: '0 22px 50px rgba(59, 130, 246, 0.16)'
+              },
+              ...(hasActiveFilters && {
+                border: '1px solid rgba(59,130,246,0.55)',
+                boxShadow: '0 22px 55px rgba(59, 130, 246, 0.28)'
+              }),
+              '&::after': {
+                content: '""',
+                position: 'absolute',
+                inset: 0,
+                pointerEvents: 'none',
+                opacity: 0.18,
+                backgroundImage: 'linear-gradient(135deg, rgba(59,130,246,0.12) 0%, transparent 40%)',
+                mixBlendMode: 'multiply'
+              }
+            }}
+          >
+            <Box
+              sx={{
+                position: 'absolute',
+                inset: 0,
+                pointerEvents: 'none',
+                background: `
+                  radial-gradient(circle at 15% 0%, rgba(59,130,246,0.18), transparent 45%),
+                  radial-gradient(circle at 90% 20%, rgba(219,39,119,0.12), transparent 45%)
+                `,
+                backgroundSize: '140% 140%',
+                animation: 'bgDrift 12s ease-in-out infinite',
+                '@keyframes bgDrift': {
+                  '0%': { backgroundPosition: '0% 0%' },
+                  '50%': { backgroundPosition: '100% 20%' },
+                  '100%': { backgroundPosition: '0% 0%' }
+                }
+              }}
+            />
+            <Box
+              sx={{
+                position: 'absolute',
+                top: 0,
+                left: 0,
+                right: 0,
+                height: 4,
+                background: 'linear-gradient(90deg, #2563eb, #7c3aed, #db2777, #2563eb)',
+                backgroundSize: '300% 100%',
+                animation: 'titleGlow 6s ease-in-out infinite',
+                '@keyframes titleGlow': {
+                  '0%': { backgroundPosition: '0% 50%' },
+                  '50%': { backgroundPosition: '100% 50%' },
+                  '100%': { backgroundPosition: '0% 50%' }
+                }
+              }}
+            />
+            <Box sx={{ position: 'relative', zIndex: 1 }}>
+            <Box sx={{ display: 'flex', justifyContent: 'center', mb: 2 }}>
+              <Box sx={{ width: '100%', maxWidth: 860 }}>
+                <Typography variant="caption" sx={{ color: '#64748b', fontWeight: 600, mb: 1, display: 'block', textAlign: 'center' }}>
+                  Buscar por título, código, palabras clave y consecutivos
+                </Typography>
+                <TextField
+                  fullWidth
+                  size="small"
+                  value={filters.titulo}
+                  onChange={(e) => setFilters({ ...filters, titulo: e.target.value })}
+                  placeholder="Ej: plan estratégico, SES-EN, 2024, FR-001, seguridad vial..."
+                  InputProps={{
+                    startAdornment: (
+                      <InputAdornment position="start">
+                        <SearchIcon sx={{ color: '#94a3b8' }} />
+                      </InputAdornment>
+                    )
+                  }}
+                  sx={{
+                    '& .MuiOutlinedInput-root': {
+                      borderRadius: 2.5,
+                      bgcolor: 'white',
+                      '& fieldset': { borderColor: '#bfdbfe' },
+                      '&:hover fieldset': { borderColor: '#60a5fa' },
+                      '&.Mui-focused fieldset': { borderColor: '#2563eb' },
+                      '&.Mui-focused': { boxShadow: '0 0 0 5px rgba(59,130,246,0.2)' }
+                    }
+                  }}
+                />
+              </Box>
+            </Box>
+
+            <Box sx={{ overflowX: 'auto' }}>
+              <Box
+                sx={{
+                  display: 'grid',
+                  gap: 2,
+                  gridTemplateColumns: '1.2fr 1.2fr 1.2fr 1.2fr',
+                  minWidth: 820,
+                  '& .MuiFormControl-root': { minWidth: 0 },
+                  '& .MuiSelect-select': { whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }
+                }}
+              >
+                <Box sx={{ minWidth: 0 }}>
+                  <Typography variant="caption" sx={{ color: '#64748b', fontWeight: 600, mb: 1, display: 'block' }}>Macroproceso</Typography>
+                  <FormControl fullWidth size="small">
+                    <Select
+                      value={filters.macro_proceso_id}
+                      onChange={(e) => setFilters({ ...filters, macro_proceso_id: e.target.value })}
+                      displayEmpty
+                      renderValue={(selected) => (
+                        <Box sx={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }} title={macroLabel || 'Seleccionar...'}>
+                          {selected ? macroLabel : 'Seleccionar...'}
+                        </Box>
+                      )}
+                      sx={{
+                        borderRadius: 2,
+                        bgcolor: filters.macro_proceso_id ? '#eff6ff' : 'white',
+                        '& .MuiOutlinedInput-notchedOutline': { borderColor: filters.macro_proceso_id ? '#60a5fa' : '#bfdbfe', borderWidth: 2 },
+                        '&.Mui-focused': { boxShadow: '0 0 0 3px rgba(59,130,246,0.12)' }
+                      }}
+                    >
+                      <MenuItem value=""><em>Seleccionar...</em></MenuItem>
+                      {macroOptions.map((mp) => <MenuItem key={mp.id} value={mp.id}>{mp.nombre}</MenuItem>)}
+                    </Select>
+                  </FormControl>
+                </Box>
+
+                <Box sx={{ minWidth: 0 }}>
+                  <Typography variant="caption" sx={{ color: '#64748b', fontWeight: 600, mb: 1, display: 'block' }}>Proceso</Typography>
+                <FormControl fullWidth size="small">
+                    <Select
+                      value={filters.proceso_id}
+                      onChange={(e) => setFilters({ ...filters, proceso_id: e.target.value })}
+                      displayEmpty
+                      renderValue={(selected) => (
+                        <Box sx={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }} title={procesoLabel || 'Seleccionar...'}>
+                          {selected ? procesoLabel : 'Seleccionar...'}
+                        </Box>
+                      )}
+                      sx={{
+                        borderRadius: 2,
+                        bgcolor: filters.proceso_id ? '#eff6ff' : 'white',
+                        '& .MuiOutlinedInput-notchedOutline': { borderColor: filters.proceso_id ? '#60a5fa' : '#bfdbfe', borderWidth: 2 },
+                        '&.Mui-focused': { boxShadow: '0 0 0 3px rgba(59,130,246,0.12)' }
+                      }}
+                    >
+                      <MenuItem value=""><em>Seleccionar...</em></MenuItem>
+                      {procesoOptions.map((p) => <MenuItem key={p.id} value={p.id}>{p.nombre}</MenuItem>)}
+                    </Select>
+                  </FormControl>
+                </Box>
+
+                <Box sx={{ minWidth: 0 }}>
+                  <Typography variant="caption" sx={{ color: '#64748b', fontWeight: 600, mb: 1, display: 'block' }}>Subproceso</Typography>
+                <FormControl fullWidth size="small">
+                    <Select
+                      value={filters.subproceso_id}
+                      onChange={(e) => setFilters({ ...filters, subproceso_id: e.target.value })}
+                      displayEmpty
+                      renderValue={(selected) => (
+                        <Box sx={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }} title={subprocesoLabel || 'Seleccionar...'}>
+                          {selected ? subprocesoLabel : 'Seleccionar...'}
+                        </Box>
+                      )}
+                      sx={{
+                        borderRadius: 2,
+                        bgcolor: filters.subproceso_id ? '#eff6ff' : 'white',
+                        '& .MuiOutlinedInput-notchedOutline': { borderColor: filters.subproceso_id ? '#60a5fa' : '#bfdbfe', borderWidth: 2 },
+                        '&.Mui-focused': { boxShadow: '0 0 0 3px rgba(59,130,246,0.12)' }
+                      }}
+                    >
+                      <MenuItem value=""><em>Seleccionar...</em></MenuItem>
+                      {subprocesoOptions.map((sp) => <MenuItem key={sp.id} value={sp.id}>{sp.nombre}</MenuItem>)}
+                    </Select>
+                  </FormControl>
+                </Box>
+
+                <Box sx={{ minWidth: 0 }}>
+                  <Typography variant="caption" sx={{ color: '#64748b', fontWeight: 600, mb: 1, display: 'block' }}>Tipo documento</Typography>
+                  <FormControl fullWidth size="small">
+                    <Select
+                      value={filters.tipo_documentacion_id}
+                      onChange={(e) => setFilters({ ...filters, tipo_documentacion_id: e.target.value })}
+                      displayEmpty
+                      renderValue={(selected) => (
+                        <Box sx={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }} title={tipoLabel || 'Seleccionar...'}>
+                          {selected ? tipoLabel : 'Seleccionar...'}
+                        </Box>
+                      )}
+                      sx={{
+                        borderRadius: 2,
+                        bgcolor: filters.tipo_documentacion_id ? '#eff6ff' : 'white',
+                        '& .MuiOutlinedInput-notchedOutline': { borderColor: filters.tipo_documentacion_id ? '#60a5fa' : '#bfdbfe', borderWidth: 2 },
+                        '&.Mui-focused': { boxShadow: '0 0 0 3px rgba(59,130,246,0.12)' }
+                      }}
+                    >
+                      <MenuItem value=""><em>Seleccionar...</em></MenuItem>
+                      {tipoOptions.map((td) => <MenuItem key={td.id} value={td.id}>{td.nombre}</MenuItem>)}
+                    </Select>
+                  </FormControl>
+                </Box>
+              </Box>
+            </Box>
+
+            <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2} justifyContent="center" sx={{ mt: 2.5 }}>
+              <Button
+                variant="contained"
+                startIcon={<SearchIcon />}
+                onClick={handleSearch}
+                sx={{
+                  borderRadius: 2,
+                  textTransform: 'none',
+                  fontWeight: 700,
+                  py: 1.5,
+                  fontSize: 15,
+                  minWidth: { xs: '100%', sm: 260 },
+                  background: 'linear-gradient(135deg, #2563eb 0%, #7c3aed 60%, #db2777 100%)',
+                  boxShadow: '0 8px 22px rgba(59, 130, 246, 0.45)',
+                  '&:hover': { background: 'linear-gradient(135deg, #1d4ed8 0%, #6d28d9 60%, #be185d 100%)', boxShadow: '0 12px 26px rgba(59, 130, 246, 0.6)' },
+                  ...(isFiltering && {
+                    background: 'linear-gradient(135deg, #2563eb 0%, #7c3aed 60%, #db2777 100%)',
+                    animation: 'pulseGlow 1.4s ease-in-out infinite',
+                    '@keyframes pulseGlow': {
+                      '0%': { boxShadow: '0 0 0 rgba(59,130,246,0.0)' },
+                      '50%': { boxShadow: '0 0 34px rgba(59,130,246,0.45)' },
+                      '100%': { boxShadow: '0 0 0 rgba(59,130,246,0.0)' }
+                    }
+                  })
+                }}
+              >
+                Buscar
+              </Button>
+              <Button
+                variant="outlined"
+                startIcon={<ClearIcon />}
+                onClick={handleClearFilters}
+                sx={{
+                  minWidth: { xs: '100%', sm: 200 },
+                  borderRadius: 2,
+                  textTransform: 'none',
+                  fontWeight: 700,
+                  py: 1.5,
+                  px: 2.5,
+                  borderColor: '#bfdbfe',
+                  color: '#1e3a8a',
+                  bgcolor: '#eff6ff',
+                  borderWidth: 2,
+                  whiteSpace: 'nowrap',
+                  '&:hover': { borderColor: '#60a5fa', bgcolor: '#dbeafe', borderWidth: 2 }
+                }}
+              >
+                Limpiar filtros
+              </Button>
+            </Stack>
+            </Box>
+          </Paper>
+        </Slide>
+
+        <Slide direction="up" in={true} timeout={700}>
+          <Paper elevation={0} sx={{ border: '1px solid #e2e8f0', borderRadius: 3, overflow: 'hidden' }}>
+            {documentos.length === 0 && !loading ? (
+              <Box sx={{ p: 10, textAlign: 'center' }}>
+                <Box sx={{ width: 100, height: 100, borderRadius: '50%', bgcolor: '#f1f5f9', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto', mb: 3 }}>
+                  <SearchIcon sx={{ fontSize: 50, color: '#94a3b8' }} />
+                </Box>
+                <Typography variant="h5" sx={{ color: '#475569', fontWeight: 700, mb: 1 }}>
+                  {Object.values(filters).some(f => f !== '') ? 'No se encontraron documentos' : 'Aplica filtros para comenzar'}
+                </Typography>
+                <Typography variant="body2" sx={{ color: '#94a3b8', maxWidth: 400, mx: 'auto' }}>
+                  {Object.values(filters).some(f => f !== '') ? 'Intenta ajustar los criterios de búsqueda o limpia los filtros' : 'Selecciona al menos un criterio y presiona el botón "Buscar"'}
+                </Typography>
+              </Box>
+            ) : (
+              <>
+                <TableContainer>
+                  <Table>
+                    <TableHead>
+                      <TableRow sx={{ bgcolor: '#f8fafc' }}>
+                        <TableCell sx={{ fontWeight: 700, color: '#1e293b', fontSize: 13, borderBottom: '2px solid #e2e8f0', textTransform: 'uppercase', letterSpacing: 0.5 }}>Código</TableCell>
+                        <TableCell sx={{ fontWeight: 700, color: '#1e293b', fontSize: 13, borderBottom: '2px solid #e2e8f0', textTransform: 'uppercase', letterSpacing: 0.5 }}>Tipo</TableCell>
+                        <TableCell sx={{ fontWeight: 700, color: '#1e293b', fontSize: 13, borderBottom: '2px solid #e2e8f0', textTransform: 'uppercase', letterSpacing: 0.5 }}>Nombre Documento</TableCell>
+                        <TableCell sx={{ fontWeight: 700, color: '#1e293b', fontSize: 13, borderBottom: '2px solid #e2e8f0', textTransform: 'uppercase', letterSpacing: 0.5 }}>Autor</TableCell>
+                        <TableCell sx={{ fontWeight: 700, color: '#1e293b', fontSize: 13, borderBottom: '2px solid #e2e8f0', textTransform: 'uppercase', letterSpacing: 0.5 }}>Fecha Creacion</TableCell>
+                        <TableCell sx={{ fontWeight: 700, color: '#1e293b', fontSize: 13, borderBottom: '2px solid #e2e8f0', textTransform: 'uppercase', letterSpacing: 0.5 }}>Versión</TableCell>
+                        <TableCell sx={{ fontWeight: 700, color: '#1e293b', fontSize: 13, borderBottom: '2px solid #e2e8f0', textTransform: 'uppercase', letterSpacing: 0.5 }}>Estado</TableCell>
+                        <TableCell align="center" sx={{ fontWeight: 700, color: '#1e293b', fontSize: 13, borderBottom: '2px solid #e2e8f0', textTransform: 'uppercase', letterSpacing: 0.5 }}>Acciones</TableCell>
+                      </TableRow>
+                    </TableHead>
+                    <TableBody>
+                      {loading ? (
+                        <TableRow>
+                          <TableCell colSpan={8} align="center" sx={{ py: 10 }}>
+                            <CircularProgress size={50} thickness={4} />
+                            <Typography variant="body1" sx={{ color: '#64748b', mt: 3, fontWeight: 600 }}>Cargando documentos...</Typography>
+                          </TableCell>
+                        </TableRow>
+                      ) : (
+                        documentos.map((doc) => {
+                          const isFavorite = favoriteIds.has(String(doc.id));
+                          const normalized = normalizeDocFields(doc);
+                          return (
+                            <TableRow key={doc.id} hover sx={{ '&:hover': { bgcolor: '#f8fafc' }, transition: 'all 0.2s', cursor: 'pointer' }}>
+                              <TableCell sx={{ fontWeight: 700, color: '#3b82f6', fontSize: 14, fontFamily: 'monospace' }}>{normalized.codigo}</TableCell>
+                              <TableCell>
+                                <Chip icon={getTipoIcon(normalized.tipo)} label={normalized.tipo || 'N/A'} size="small" sx={{ bgcolor: getTipoColor(normalized.tipo).bg, color: getTipoColor(normalized.tipo).color, fontWeight: 700, fontSize: 12, borderRadius: 2, px: 1 }} />
+                              </TableCell>
+                              <TableCell sx={{ color: '#1e293b', fontWeight: 600, fontSize: 14 }}>{normalized.titulo}</TableCell>
+                              <TableCell sx={{ color: '#475569', fontSize: 13 }}>{doc.autor || '-'}</TableCell>
+                              <TableCell sx={{ color: '#475569', fontSize: 13, whiteSpace: 'nowrap' }}>{formatDate(doc.fecha_creacion)}</TableCell>
+                              <TableCell>
+                                <Chip label={`v${doc.version || '1.0'}`} size="small" sx={{ bgcolor: '#f1f5f9', color: '#475569', fontWeight: 700, fontFamily: 'monospace', borderRadius: 1.5 }} />
+                              </TableCell>
+                              <TableCell>
+                                <Chip label={doc.estado} color={getEstadoColor(doc.estado)} size="small" sx={{ fontWeight: 700, textTransform: 'uppercase', fontSize: 11, borderRadius: 1.5 }} />
+                              </TableCell>
+                              <TableCell align="center">
+                                <Stack direction="row" spacing={1} justifyContent="center">
+
+                                  <Tooltip title={isFavorite ? 'Quitar de favoritos' : 'Agregar a favoritos'} arrow>
+                                    <span>
+                                      <IconButton
+                                        size="small"
+                                        onClick={() => toggleFavorite(doc.id)}
+                                        disabled={loadingFavorites}
+                                        sx={{
+                                          color: isFavorite ? '#ef4444' : '#94a3b8',
+                                          bgcolor: isFavorite ? '#fee2e2' : '#f1f5f9',
+                                          '&:hover': { bgcolor: isFavorite ? '#fecaca' : '#e2e8f0' },
+                                          '&:disabled': { opacity: 0.5 }
+                                        }}
+                                      >
+                                        {isFavorite ? <FavoriteIcon fontSize="small" /> : <FavoriteBorderIcon fontSize="small" />}
+                                      </IconButton>
+                                    </span>
+                                  </Tooltip>
+                                  <Tooltip title="Ver documento" arrow>
+                                    <span>
+                                      <IconButton 
+                                        size="small" 
+                                        sx={{ 
+                                          color: '#2563eb', 
+                                          bgcolor: '#eff6ff', 
+                                          '&:hover': { bgcolor: '#dbeafe' },
+                                          '&:disabled': { opacity: 0.3 }
+                                        }} 
+                                        disabled={!doc.link_acceso}
+                                        onClick={() => {
+                                          if (doc.link_acceso) {
+                                            openDocumentPreview(doc, normalized);
+                                          }
+                                        }}
+                                      >
+                                        <VisibilityOutlinedIcon fontSize="small" />
+                                      </IconButton>
+                                    </span>
+                                  </Tooltip>
+                                  
+                                  <Tooltip title="Descargar documento" arrow>
+                                    <span>
+                                      <IconButton 
+                                        size="small" 
+                                        sx={{ 
+                                          color: '#059669', 
+                                          bgcolor: '#d1fae5', 
+                                          '&:hover': { bgcolor: '#a7f3d0' },
+                                          '&:disabled': { opacity: 0.3 }
+                                        }} 
+                                        disabled={!doc.link_acceso}
+                                        onClick={() => {
+                                          if (doc.link_acceso) {
+                                            const absoluteUrl = toAbsoluteDocumentUrl(doc.link_acceso);
+                                            const downloadUrl = getDownloadUrl(absoluteUrl);
+                                            triggerDownload(downloadUrl, buildDownloadFileName(doc, normalized));
+                                          }
+                                        }}
+                                      >
+                                        <FileDownloadOutlinedIcon fontSize="small" />
+                                      </IconButton>
+                                    </span>
+                                  </Tooltip>
+                                </Stack>
+                              </TableCell>
+                            </TableRow>
+                          );
+                        })
+                      )}
+                    </TableBody>
+                  </Table>
+                </TableContainer>
+                
+                <TablePagination 
+                  rowsPerPageOptions={[5, 10, 25, 50]} 
+                  component="div" 
+                  count={totalDocumentos} 
+                  rowsPerPage={rowsPerPage} 
+                  page={page} 
+                  onPageChange={handleChangePage} 
+                  onRowsPerPageChange={(e) => { 
+                    setRowsPerPage(parseInt(e.target.value, 10)); 
+                    setPage(0); 
+                  }} 
+                  labelRowsPerPage="Mostrar:" 
+                  sx={{ borderTop: '2px solid #e2e8f0', bgcolor: '#f8fafc' }} 
+                />
+              </>
+            )}
+          </Paper>
+        </Slide>
+        <Dialog open={openPreviewDialog} onClose={closeDocumentPreview} maxWidth="lg" fullWidth>
+          <DialogTitle sx={{ fontWeight: 700, pr: 2 }}>
+            <Stack direction="row" spacing={2} alignItems="center" justifyContent="space-between">
+              <Box sx={{ fontWeight: 700, color: '#1e293b', pr: 1 }}>
+                {previewTitle || 'Previsualizar documento'}
+              </Box>
+              <Button
+                variant="contained"
+                color="success"
+                size="small"
+                startIcon={<FileDownloadOutlinedIcon />}
+                onClick={() => triggerDownload(previewDownloadUrl, previewDownloadName)}
+                disabled={!previewDownloadUrl}
+                sx={{ borderRadius: 2, textTransform: 'none', fontWeight: 700, px: 2 }}
+              >
+                Descargar
+              </Button>
+            </Stack>
+          </DialogTitle>
+          <DialogContent dividers sx={{ p: 0, height: { xs: '70vh', md: '80vh' } }}>
+            {previewUrl ? (
+              <Box sx={{ width: '100%', height: '100%', bgcolor: '#f8fafc' }}>
+                <Box
+                  component="iframe"
+                  title={previewTitle || 'Previsualizacion de documento'}
+                  src={previewUrl}
+                  sx={{ width: '100%', height: '100%', border: 0, bgcolor: 'white' }}
+                />
+              </Box>
+            ) : (
+              <Box sx={{ p: 3 }}>
+                <Typography variant="body2" color="text.secondary">
+                  No se pudo generar la previsualizacion del documento.
+                </Typography>
+              </Box>
+            )}
+          </DialogContent>
+          <DialogActions sx={{ px: 3, py: 2 }}>
+            <Button onClick={closeDocumentPreview}>Cerrar</Button>
+          </DialogActions>
+        </Dialog>
+        <Dialog open={openClearDialog} onClose={clearingDb ? undefined : resetClearDialog} maxWidth="xs" fullWidth>
+          <DialogTitle sx={{ fontWeight: 700 }}>Confirmar limpieza de base de datos</DialogTitle>
+          <DialogContent>
+            <Typography variant="body2" sx={{ color: '#64748b', mb: 2 }}>
+              Esta acción eliminará todos los documentos existentes. Ingresa tus credenciales de usuario autorizado para continuar.
+            </Typography>
+            <Stack spacing={2}>
+              <TextField
+                label="Usuario o correo"
+                value={clearIdentifier}
+                onChange={(e) => setClearIdentifier(e.target.value)}
+                fullWidth
+                autoFocus
+              />
+              <TextField
+                label="Contraseña"
+                type="password"
+                value={clearPassword}
+                onChange={(e) => setClearPassword(e.target.value)}
+                fullWidth
+              />
+            </Stack>
+          </DialogContent>
+          <DialogActions sx={{ px: 3, pb: 2 }}>
+            <Button onClick={resetClearDialog} disabled={clearingDb}>
+              Cancelar
+            </Button>
+            <Button
+              variant="contained"
+              color="error"
+              onClick={handleClearDatabase}
+              disabled={clearingDb}
+              startIcon={<DeleteSweepIcon />}
+            >
+              {clearingDb ? 'Limpiando...' : 'Confirmar limpieza'}
+            </Button>
+          </DialogActions>
+        </Dialog>
+      </Box>
+    </Fade>
+  );
+}
+
+export default AseguramientoCalidad;
+
+
+
