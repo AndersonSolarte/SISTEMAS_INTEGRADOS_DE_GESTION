@@ -30,6 +30,7 @@ import { useAuth } from '../../context/AuthContext';
 import SaberProDashboard from './SaberProDashboard';
 import SaberProAgregadosDashboard from './SaberProAgregadosDashboard';
 import ConsultaValidacion from './ConsultaValidacion';
+import ValorAgregadoDashboardBI from './ValorAgregadoDashboardBI';
 
 /* ═══════════════════════════════════════════════════════════════════
    NAV CONFIG
@@ -1092,7 +1093,7 @@ function SaberProLandingPage({ onBack, allowedDashboards = [] }) {
     }
     if (activeGroup === 'individuales')   return <SaberProDashboard initialSection={activeSection} allowedSections={(activeVisibleGroupConfig?.items || []).map((item) => item.key)} />;
     if (activeGroup === 'agregados')      return <SaberProAgregadosDashboard initialSection={activeSection} allowedSections={(activeVisibleGroupConfig?.items || []).map((item) => item.key)} />;
-    if (activeGroup === 'valor_agregado') return <ValorAgregadoPlaceholder section={activeSection} />;
+    if (activeGroup === 'valor_agregado') return <ValorAgregadoDashboardBI initialSection={activeSection} />;
     if (activeGroup === 'consulta')       return <ConsultaValidacion initialSection={activeSection} allowedSections={(activeVisibleGroupConfig?.items || []).map((item) => item.key)} />;
     return null;
   };

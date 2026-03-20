@@ -130,7 +130,7 @@ const CONTEXTO_EXTERNO_LISTAS = [
   'MATRICULADOS CONTEXTO EXTERNO',
   'GRADUADOS CONTEXTO EXTERNO'
 ];
-const SUBBASES_SABER_PRO = ['Resultados individuales', 'Resultados agregados', 'Valor agregado'];
+const SUBBASES_SABER_PRO = ['Resultados individuales', 'Resultados agregados', 'Resultados Saber 11'];
 const SUBBASES_RECURSO_HUMANO = ['Docentes', 'Administrativos', 'Outsourcing', 'Ondas'];
 const SUBBASE_ORDER = SUBBASES_POBLACIONAL.reduce((acc, item, index) => ({ ...acc, [item]: index + 1 }), {});
 
@@ -368,8 +368,8 @@ const SABER_PRO_REPORT_SECTIONS = [
   },
   {
     key: 'valor_agregado',
-    title: 'Valor agregado',
-    description: 'Cruce de variables de ingreso (Saber 11) y salida (Saber Pro) para estimar valor agregado.'
+    title: 'Resultados Saber 11',
+    description: 'Base histórica de ingreso para cruces posteriores con Saber Pro y cálculo de valor agregado.'
   }
 ];
 
@@ -10516,6 +10516,11 @@ const renderCategoryBars = (items = [], options = {}) => {
               {baseSeleccionada === 'saber_pro' && subBaseSeleccionada === 'Resultados agregados' && (
                 <Alert severity="info" sx={{ mt: 2.2, borderRadius: 2 }}>
                   La subbase <strong>Resultados agregados</strong> solo acepta la nueva plantilla de 7 columnas con una sola hoja. El nombre puede variar, pero los encabezados deben coincidir exactamente con la plantilla descargada.
+                </Alert>
+              )}
+              {baseSeleccionada === 'saber_pro' && subBaseSeleccionada === 'Resultados Saber 11' && (
+                <Alert severity="info" sx={{ mt: 2.2, borderRadius: 2 }}>
+                  La subbase <strong>Resultados Saber 11</strong> acepta un libro Excel con siete hojas obligatorias: <strong>Tipo_1</strong> a <strong>Tipo_7</strong>. La plantilla descargada ahora replica exactamente las columnas reales de cada tipo para que suban el archivo con la misma estructura fuente.
                 </Alert>
               )}
             </Paper>

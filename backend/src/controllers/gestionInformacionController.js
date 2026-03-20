@@ -21,6 +21,7 @@ const {
   RefMunicipio,
   RefDivipolaCarga,
   MatriculadosUbicacionIncidencia,
+  Saber11Resultado,
   SaberProResultadoIndividual,
   SaberProResultadoAgregado,
   GeorreferenciaDepartamento,
@@ -119,12 +120,15 @@ const clearDatasetStorage = async ({
   }
 
   if (categoria === 'Saber Pro') {
-    if (saberProConfig?.label === 'Resultados individuales') {
+    if (saberProConfig?.label === 'Resultados Saber 11') {
+      await Saber11Resultado.destroy({ where: {} });
+    } else if (saberProConfig?.label === 'Resultados individuales') {
       await SaberProResultadoIndividual.destroy({ where: {} });
     } else if (saberProConfig?.label === 'Resultados agregados') {
       await SaberProResultadoAgregado.destroy({ where: {} });
     } else if (!subcategoria) {
       await Promise.all([
+        Saber11Resultado.destroy({ where: {} }),
         SaberProResultadoIndividual.destroy({ where: {} }),
         SaberProResultadoAgregado.destroy({ where: {} })
       ]);
@@ -288,6 +292,170 @@ const SABER_PRO_TEMPLATE_HEADERS = {
     'PUNTAJE GRUPO DE REFERENCIA',
     'TIPO_PRUEBA'
   ]
+};
+
+const SABER11_TEMPLATE_HEADERS = {
+  Tipo_1: [
+    'AÑO',
+    'PERIODO',
+    'JORNADA',
+    'PROGRAMA',
+    'APELLIDOS',
+    'NOMBRES',
+    'IDENTIFICACION',
+    'CODIGO',
+    'TIPO',
+    'CODIGO_ICFES',
+    'GENERO',
+    'APTITUD MATEMATICA',
+    'APTITUD VERBAL',
+    'BIOLOGIA',
+    'CONOCIMIENTO MATEMATICO',
+    'ELECTIVA',
+    'ESPAÑOL Y LITERATURA',
+    'FISICA',
+    'QUIMICA',
+    'SOCIALES'
+  ],
+  Tipo_2: [
+    'AÑO',
+    'PERIODO',
+    'JORNADA',
+    'PROGRAMA',
+    'APELLIDOS',
+    'NOMBRES',
+    'IDENTIFICACION',
+    'CODIGO',
+    'TIPO',
+    'CODIGO_ICFES',
+    'GENERO',
+    'APTITUD MATEMATICA',
+    'BIOLOGIA',
+    'CONOCIMIENTO MATEMATICO',
+    'ELECTIVA',
+    'FISICA',
+    'LENGUAJE',
+    'QUIMICA',
+    'SOCIALES'
+  ],
+  Tipo_3: [
+    'AÑO',
+    'PERIODO',
+    'JORNADA',
+    'PROGRAMA',
+    'APELLIDOS',
+    'NOMBRES',
+    'IDENTIFICACION',
+    'CODIGO',
+    'TIPO',
+    'CODIGO_ICFES',
+    'GENERO',
+    'BIOLOGIA',
+    'ELECTIVA',
+    'FILOSOFIA',
+    'FISICA',
+    'GEOGRAFIA',
+    'HISTORIA',
+    'INGLES',
+    'LENGUAJE',
+    'MATEMATICAS',
+    'QUIMICA'
+  ],
+  Tipo_4: [
+    'AÑO',
+    'PERIODO',
+    'JORNADA',
+    'PROGRAMA',
+    'APELLIDOS',
+    'NOMBRES',
+    'IDENTIFICACION',
+    'CODIGO',
+    'TIPO',
+    'CODIGO_ICFES',
+    'GENERO',
+    'BIOLOGIA',
+    'ELECTIVA',
+    'FILOSOFIA',
+    'FISICA',
+    'INGLES',
+    'LENGUAJE',
+    'MATEMATICAS',
+    'QUIMICA',
+    'SOCIALES'
+  ],
+  Tipo_5: [
+    'AÑO',
+    'PERIODO',
+    'JORNADA',
+    'PROGRAMA',
+    'APELLIDOS',
+    'NOMBRES',
+    'IDENTIFICACION',
+    'CODIGO',
+    'TIPO',
+    'CODIGO_ICFES',
+    'GENERO',
+    'CIENCIAS NATURALES',
+    'COMPETENCIAS CIUDADANAS',
+    'INGLES',
+    'LECTURA CRITICA',
+    'MATEMATICAS',
+    'RAZONAMIENTO CUANTITATIVO',
+    'SOCIALES Y CIUDADANA'
+  ],
+  Tipo_6: [
+    'AÑO',
+    'PERIODO',
+    'JORNADA',
+    'PROGRAMA',
+    'APELLIDOS',
+    'NOMBRES',
+    'IDENTIFICACION',
+    'CODIGO',
+    'TIPO',
+    'CODIGO_ICFES',
+    'GENERO',
+    'CIENCIAS NATURALES',
+    'INGLES',
+    'LECTURA CRITICA',
+    'MATEMATICAS',
+    'SOCIALES Y CIUDADANA'
+  ],
+  Tipo_7: [
+    'AÑO',
+    'PERIODO',
+    'JORNADA',
+    'PROGRAMA',
+    'APELLIDOS',
+    'NOMBRES',
+    'IDENTIFICACION',
+    'CODIGO',
+    'TIPO',
+    'CODIGO_ICFES',
+    'GENERO',
+    'ABSTRACTA',
+    'LOGICA',
+    'VERBAL'
+  ]
+};
+const SABER11_SHEET_NAMES = Object.keys(SABER11_TEMPLATE_HEADERS);
+const SABER11_FIELD_MAP = {
+  documento: ['documento', 'Documento', 'IDENTIFICACION'],
+  anio: ['anio', 'AÑO', 'ANO', 'ANIO', 'Ano'],
+  tipo_examen: ['tipo_examen', 'Tipo examen', 'TIPO'],
+  lectura_critica: ['lectura_critica', 'LECTURA CRITICA', 'APTITUD VERBAL', 'VERBAL'],
+  matematicas: ['matematicas', 'MATEMATICAS', 'CONOCIMIENTO MATEMATICO', 'APTITUD MATEMATICA', 'RAZONAMIENTO CUANTITATIVO', 'LOGICA'],
+  sociales: ['sociales', 'SOCIALES', 'SOCIALES Y CIUDADANA', 'COMPETENCIAS CIUDADANAS'],
+  biologia: ['biologia', 'BIOLOGIA'],
+  fisica: ['fisica', 'FISICA'],
+  quimica: ['quimica', 'QUIMICA'],
+  lenguaje: ['lenguaje', 'LENGUAJE', 'ESPAÑOL Y LITERATURA', 'ESPANOL Y LITERATURA'],
+  filosofia: ['filosofia', 'FILOSOFIA'],
+  historia: ['historia', 'HISTORIA'],
+  geografia: ['geografia', 'GEOGRAFIA'],
+  ingles: ['ingles', 'INGLES'],
+  global: ['global', 'GLOBAL'],
+  tipo_prueba: ['tipo_prueba', 'Tipo prueba', 'TIPO PRUEBA']
 };
 
 const RECURSO_HUMANO_TEMPLATE_HEADERS = {
@@ -1164,6 +1332,37 @@ const parseAnio = (value) => {
   return null;
 };
 
+const normalizeSaber11SheetName = (value = '') => {
+  const match = normalizeHeader(value).match(/^TIPO[_ ]?([1-7])$/);
+  return match ? `Tipo_${match[1]}` : null;
+};
+
+const normalizeDocumentoKey = (value) => {
+  if (value === null || value === undefined) return null;
+  const text = String(value).trim().replace(/\.0+$/, '');
+  return text || null;
+};
+
+const resolveSaber11ScoreRange = (field) => (field === 'global'
+  ? { min: 0, max: 500 }
+  : { min: 0, max: 100 });
+
+const parseSaber11Score = (value, field, label) => {
+  if (value === null || value === undefined || String(value).trim() === '') return null;
+  const numeric = toNumber(value);
+  if (numeric === null) {
+    throw new Error(`Valor inválido en ${label}`);
+  }
+  const { min, max } = resolveSaber11ScoreRange(field);
+  if (numeric < min || numeric > max) {
+    throw new Error(`Puntaje fuera de rango en ${label} (${min}-${max})`);
+  }
+  return numeric;
+};
+
+const readSaber11SheetRows = (worksheet) =>
+  XLSX.utils.sheet_to_json(worksheet, { defval: null, raw: false });
+
 const parsePeriodoLabelToAnio = (value) => {
   const text = String(value || '').trim();
   const match = text.match(/\b(19|20)\d{2}\b/);
@@ -1398,6 +1597,17 @@ const resolvePoblacionalConfig = (subcategoria = '') => {
 };
 
 const SABER_PRO_SUBCATEGORY_CONFIG = {
+  RESULTADOS_SABER_11: {
+    label: 'Resultados Saber 11',
+    model: Saber11Resultado,
+    headers: SABER11_TEMPLATE_HEADERS.Tipo_1,
+    sheetTemplates: SABER11_SHEET_NAMES.map((sheetName) => ({
+      sheetName,
+      headers: SABER11_TEMPLATE_HEADERS[sheetName],
+      tipoPrueba: sheetName
+    })),
+    map: SABER11_FIELD_MAP
+  },
   RESULTADOS_INDIVIDUALES: {
     label: 'Resultados individuales',
     model: SaberProResultadoIndividual,
@@ -1447,8 +1657,7 @@ const SABER_PRO_SUBCATEGORY_CONFIG = {
       puntaje_grupo_referencia: ['PUNTAJE GRUPO DE REFERENCIA', 'Puntaje grupo de referencia'],
       tipo_prueba: ['TIPO_PRUEBA', 'TIPO PRUEBA', 'Tipo_prueba', 'Tipo prueba']
     }
-  },
-  VALOR_AGREGADO: { label: 'Valor agregado', pending: true }
+  }
 };
 
 const resolveSaberProConfig = (subcategoria = '') => {
@@ -4976,6 +5185,142 @@ const importFromExcel = async (req, res) => {
       return res.json({
         success: true,
         message: `Importación finalizada para Deserción: ${result.importados}/${result.total} registros`,
+        data: result
+      });
+    }
+
+    if (categoria === 'Saber Pro' && saberProConfig?.label === 'Resultados Saber 11') {
+      if (isCsvUpload) {
+        return res.status(400).json({
+          success: false,
+          message: 'Resultados Saber 11 solo acepta un libro Excel con siete hojas: Tipo_1 a Tipo_7.'
+        });
+      }
+
+      const result = { total: 0, importados: 0, errores: [], hojasProcesadas: [] };
+      const workbookSheetsByKey = Object.fromEntries(
+        workbook.SheetNames.map((name) => [normalizeHeader(name), name])
+      );
+      const sheetTemplates = saberProConfig.sheetTemplates || [];
+      const seenDocumentYear = new Set();
+      const usuarioCarga = normalizeText(req.user?.email || req.user?.username || req.user?.name) || null;
+
+      await clearDatasetStorage({
+        categoria: 'Saber Pro',
+        subcategoria: saberProConfig.label,
+        saberProConfig
+      });
+
+      for (const template of sheetTemplates) {
+        const matchedSheetName = workbookSheetsByKey[normalizeHeader(template.sheetName)];
+        if (!matchedSheetName) {
+          return res.status(400).json({
+            success: false,
+            message: `No se encontro la hoja ${template.sheetName} en el archivo Excel`
+          });
+        }
+
+        const worksheet = workbook.Sheets[matchedSheetName];
+        const sheetRows = readSaber11SheetRows(worksheet);
+        const sheetResult = {
+          hoja: matchedSheetName,
+          tipo_prueba: template.tipoPrueba,
+          total: sheetRows.length,
+          importados: 0,
+          errores: []
+        };
+
+        for (let i = 0; i < sheetRows.length; i += 1) {
+          const row = sheetRows[i];
+          const fila = Number.isFinite(row?.__rowNum__) ? Number(row.__rowNum__) + 1 : i + 2;
+
+          try {
+            const payload = mapPoblacionalRecord(row, { map: saberProConfig.map });
+            const documento = normalizeDocumentoKey(payload.documento);
+            const anio = parseAnio(payload.anio);
+            const tipoPrueba = normalizeSaber11SheetName(payload.tipo_prueba) || normalizeSaber11SheetName(template.tipoPrueba);
+            const tipoExamen = normalizeText(payload.tipo_examen) || tipoPrueba;
+
+            if (!documento || !anio) {
+              const error = 'Campos obligatorios faltantes: documento y anio';
+              sheetResult.errores.push({ fila, error });
+              result.errores.push({ hoja: matchedSheetName, fila, error });
+              continue;
+            }
+
+            const duplicateKey = `${documento}|${anio}`;
+            if (seenDocumentYear.has(duplicateKey)) {
+              const error = `Registro duplicado para documento ${documento} y anio ${anio}`;
+              sheetResult.errores.push({ fila, error });
+              result.errores.push({ hoja: matchedSheetName, fila, error });
+              continue;
+            }
+
+            const record = {
+              documento,
+              anio,
+              tipo_examen: tipoExamen,
+              lectura_critica: parseSaber11Score(payload.lectura_critica, 'lectura_critica', 'lectura_critica'),
+              matematicas: parseSaber11Score(payload.matematicas, 'matematicas', 'matematicas'),
+              sociales: parseSaber11Score(payload.sociales, 'sociales', 'sociales'),
+              biologia: parseSaber11Score(payload.biologia, 'biologia', 'biologia'),
+              fisica: parseSaber11Score(payload.fisica, 'fisica', 'fisica'),
+              quimica: parseSaber11Score(payload.quimica, 'quimica', 'quimica'),
+              lenguaje: parseSaber11Score(payload.lenguaje, 'lenguaje', 'lenguaje'),
+              filosofia: parseSaber11Score(payload.filosofia, 'filosofia', 'filosofia'),
+              historia: parseSaber11Score(payload.historia, 'historia', 'historia'),
+              geografia: parseSaber11Score(payload.geografia, 'geografia', 'geografia'),
+              ingles: parseSaber11Score(payload.ingles, 'ingles', 'ingles'),
+              global: parseSaber11Score(payload.global, 'global', 'global'),
+              tipo_prueba: tipoPrueba,
+              fecha_carga: new Date(),
+              usuario: usuarioCarga,
+              nombre_archivo: req.file?.originalname || null,
+              creado_por: req.user?.id || null,
+              actualizado_por: req.user?.id || null
+            };
+
+            await saberProConfig.model.create(record);
+            seenDocumentYear.add(duplicateKey);
+            sheetResult.importados += 1;
+            result.importados += 1;
+          } catch (sheetErr) {
+            const error = sheetErr?.name === 'SequelizeUniqueConstraintError'
+              ? 'Registro duplicado para documento + anio'
+              : sheetErr.message;
+            sheetResult.errores.push({ fila, error });
+            result.errores.push({ hoja: matchedSheetName, fila, error });
+          }
+        }
+
+        result.total += sheetResult.total;
+        result.hojasProcesadas.push(sheetResult);
+      }
+
+      if (!result.total) {
+        return res.status(400).json({ success: false, message: 'El archivo está vacío' });
+      }
+
+      const porcentaje = result.total > 0 ? Number(((result.importados / result.total) * 100).toFixed(2)) : 0;
+      const estado = porcentaje === 100 ? 'exitoso' : (result.importados > 0 ? 'parcial' : 'fallido');
+
+      await GestionInformacionCarga.create({
+        categoria: 'Saber Pro',
+        subcategoria: saberProConfig.label,
+        variable: saberProConfig.label,
+        archivo_nombre: req.file?.originalname || null,
+        total_plantilla: result.total,
+        total_cargados: result.importados,
+        total_omitidos: result.total - result.importados,
+        porcentaje_cargado: porcentaje,
+        estado,
+        detalle: result.errores.length ? JSON.stringify(result.errores.slice(0, 100)) : null,
+        creado_por: req.user?.id || null
+      });
+
+      return res.json({
+        success: true,
+        message: `Importación finalizada para Resultados Saber 11: ${result.importados}/${result.total} registros`,
         data: result
       });
     }

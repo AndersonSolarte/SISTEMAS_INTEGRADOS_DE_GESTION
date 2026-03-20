@@ -1,6 +1,6 @@
 require('dotenv').config();
 const { sequelize, testConnection } = require('../config/database');
-const { DataTypes } = require('sequelize');
+const { DataTypes, QueryTypes } = require('sequelize');
 const models = require('../models');
 
 const ensureColumn = async (qi, table, column, definition) => {
@@ -39,6 +39,8 @@ const runMigrations = async () => {
     await models.PoblacionalDesercionAnual.sync();
     await models.PoblacionalContextoExterno.sync();
     await models.PoblacionalEmpleabilidad.sync();
+    await models.Saber11Resultado.sync();
+    await models.VaEquivalenciaConfig.sync();
     await models.SaberProResultadoIndividual.sync();
     await models.SaberProResultadoAgregado.sync();
     await models.RecursoHumanoDocente.sync();
@@ -74,6 +76,116 @@ const runMigrations = async () => {
     await ensureColumn(qi, 'saber_pro_resultados_individuales', 'periodo_icfes', { type: DataTypes.STRING(40), allowNull: true });
     await ensureColumn(qi, 'saber_pro_resultados_individuales', 'lugar_presentacion', { type: DataTypes.STRING(180), allowNull: true });
     await ensureColumn(qi, 'saber_pro_resultados_individuales', 'modalidad', { type: DataTypes.STRING(120), allowNull: true });
+
+    // Nuevas columnas Saber 11 para tipos de examen adicionales
+    await ensureColumn(qi, 'resultados_saber11', 'espanol_y_literatura',    { type: DataTypes.DECIMAL(10, 2), allowNull: true });
+    await ensureColumn(qi, 'resultados_saber11', 'conocimiento_matematico', { type: DataTypes.DECIMAL(10, 2), allowNull: true });
+    await ensureColumn(qi, 'resultados_saber11', 'aptitud_matematica',      { type: DataTypes.DECIMAL(10, 2), allowNull: true });
+    await ensureColumn(qi, 'resultados_saber11', 'electiva',                { type: DataTypes.DECIMAL(10, 2), allowNull: true });
+    await ensureColumn(qi, 'resultados_saber11', 'ciencias_naturales',      { type: DataTypes.DECIMAL(10, 2), allowNull: true });
+    await ensureColumn(qi, 'resultados_saber11', 'razonamiento_cuantitativo', { type: DataTypes.DECIMAL(10, 2), allowNull: true });
+    await ensureColumn(qi, 'resultados_saber11', 'competencias_ciudadanas', { type: DataTypes.DECIMAL(10, 2), allowNull: true });
+    await ensureColumn(qi, 'resultados_saber11', 'sociales_y_ciudadana',    { type: DataTypes.DECIMAL(10, 2), allowNull: true });
+
+    // Sembrar los 7 tipos de equivalencias si la tabla está vacía
+    const countRows = await sequelize.query('SELECT COUNT(*) AS cnt FROM va_equivalencias_config', { type: QueryTypes.SELECT });
+    if (Number(countRows[0]?.cnt || 0) === 0) {
+      const TIPOS = [
+        {
+          tipo_numero: 1, nombre: 'TIPO_1', orden_deteccion: 1,
+          detector_col: 'espanol_y_literatura', detector_extra: null,
+          descripcion: 'Saber 11 con Español y Literatura, Conocimiento Matemático, Física, Química, Sociales, Electiva',
+          reglas: {
+            lectura_critica:           ['espanol_y_literatura'],
+            razonamiento_cuantitativo: ['conocimiento_matematico', 'fisica', 'quimica'],
+            competencias_ciudadanas:   ['sociales'],
+            comunicacion_escrita:      ['espanol_y_literatura'],
+            ingles:                    ['electiva']
+          }
+        },
+        {
+          tipo_numero: 2, nombre: 'TIPO_2', orden_deteccion: 2,
+          detector_col: 'aptitud_matematica', detector_extra: null,
+          descripcion: 'Saber 11 con Aptitud Matemática, Biología, Conocimiento Matemático, Física, Química, Lenguaje, Sociales, Electiva',
+          reglas: {
+            lectura_critica:           ['lenguaje'],
+            razonamiento_cuantitativo: ['aptitud_matematica', 'biologia', 'conocimiento_matematico', 'fisica', 'quimica'],
+            competencias_ciudadanas:   ['sociales'],
+            comunicacion_escrita:      ['lenguaje'],
+            ingles:                    ['electiva']
+          }
+        },
+        {
+          tipo_numero: 3, nombre: 'TIPO_3', orden_deteccion: 3,
+          detector_col: 'filosofia', detector_extra: 'geografia',
+          descripcion: 'Saber 11 con Filosofía, Lenguaje, Biología, Física, Matemáticas, Química, Geografía, Historia, Inglés',
+          reglas: {
+            lectura_critica:           ['filosofia', 'lenguaje'],
+            razonamiento_cuantitativo: ['biologia', 'fisica', 'matematicas', 'quimica'],
+            competencias_ciudadanas:   ['geografia', 'historia'],
+            comunicacion_escrita:      ['lenguaje'],
+            ingles:                    ['ingles']
+          }
+        },
+        {
+          tipo_numero: 4, nombre: 'TIPO_4', orden_deteccion: 4,
+          detector_col: 'filosofia', detector_extra: null,
+          descripcion: 'Saber 11 con Filosofía, Lenguaje, Biología, Física, Matemáticas, Química, Sociales, Inglés',
+          reglas: {
+            lectura_critica:           ['filosofia', 'lenguaje'],
+            razonamiento_cuantitativo: ['biologia', 'fisica', 'matematicas', 'quimica'],
+            competencias_ciudadanas:   ['sociales'],
+            comunicacion_escrita:      ['lenguaje'],
+            ingles:                    ['ingles']
+          }
+        },
+        {
+          tipo_numero: 5, nombre: 'TIPO_5', orden_deteccion: 5,
+          detector_col: 'razonamiento_cuantitativo', detector_extra: 'competencias_ciudadanas',
+          descripcion: 'Saber 11 moderno con Lectura Crítica, Ciencias Naturales, Matemáticas, Razonamiento Cuantitativo, Competencias Ciudadanas, Sociales y Ciudadana, Inglés',
+          reglas: {
+            lectura_critica:           ['lectura_critica'],
+            razonamiento_cuantitativo: ['ciencias_naturales', 'matematicas', 'razonamiento_cuantitativo'],
+            competencias_ciudadanas:   ['competencias_ciudadanas', 'sociales_y_ciudadana'],
+            comunicacion_escrita:      ['lectura_critica'],
+            ingles:                    ['ingles']
+          }
+        },
+        {
+          tipo_numero: 6, nombre: 'TIPO_6', orden_deteccion: 6,
+          detector_col: 'ciencias_naturales', detector_extra: null,
+          descripcion: 'Saber 11 moderno con Lectura Crítica, Ciencias Naturales, Matemáticas, Sociales y Ciudadana, Inglés',
+          reglas: {
+            lectura_critica:           ['lectura_critica'],
+            razonamiento_cuantitativo: ['ciencias_naturales', 'matematicas'],
+            competencias_ciudadanas:   ['sociales_y_ciudadana'],
+            comunicacion_escrita:      ['lectura_critica'],
+            ingles:                    ['ingles']
+          }
+        },
+        {
+          tipo_numero: 7, nombre: 'TIPO_7', orden_deteccion: 7,
+          detector_col: 'lectura_critica', detector_extra: 'matematicas',
+          descripcion: 'Saber 11 con Lectura Crítica, Ciencias Naturales, Matemáticas, Sociales y Ciudadana, Inglés (variante)',
+          reglas: {
+            lectura_critica:           ['lectura_critica'],
+            razonamiento_cuantitativo: ['ciencias_naturales', 'matematicas'],
+            competencias_ciudadanas:   ['sociales_y_ciudadana'],
+            comunicacion_escrita:      ['lectura_critica'],
+            ingles:                    ['ingles']
+          }
+        }
+      ];
+      for (const t of TIPOS) {
+        await sequelize.query(
+          `INSERT INTO va_equivalencias_config
+            (tipo_numero, nombre, descripcion, detector_col, detector_extra, reglas, activo, orden_deteccion, created_at, updated_at)
+           VALUES (?, ?, ?, ?, ?, ?::jsonb, true, ?, NOW(), NOW())`,
+          { replacements: [t.tipo_numero, t.nombre, t.descripcion, t.detector_col, t.detector_extra, JSON.stringify(t.reglas), t.orden_deteccion], type: QueryTypes.INSERT }
+        );
+      }
+      console.log('[migrate] Sembrados 7 tipos de equivalencias VA');
+    }
 
     await qi.addIndex('ref_departamentos', ['nombre_normalizado'], { name: 'idx_ref_departamentos_nombre_normalizado' }).catch(() => {});
     await qi.addIndex('ref_municipios', ['codigo_departamento', 'nombre_normalizado'], { name: 'idx_ref_municipios_depto_nombre_norm' }).catch(() => {});

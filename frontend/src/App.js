@@ -1,8 +1,9 @@
 import React, { useEffect, useState } from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
-import { ThemeProvider, createTheme } from '@mui/material/styles';
+import { ThemeProvider } from '@mui/material/styles';
 import { SnackbarProvider } from 'notistack';
 import CssBaseline from '@mui/material/CssBaseline';
+import theme from './theme';
 import { AuthProvider } from './context/AuthContext';
 import { useAuth } from './context/AuthContext';
 import PrivateRoute from './components/PrivateRoute';
@@ -20,13 +21,6 @@ import PlaneacionEfectividad from './pages/PlaneacionEfectividad';
 import Autoevaluacion from './pages/Autoevaluacion';
 import GestionInformacion from './pages/GestionInformacion';
 import { ROLES } from './constants/roles';
-
-const theme = createTheme({
-  palette: {
-    primary: { main: '#3b82f6' },
-    secondary: { main: '#8b5cf6' }
-  }
-});
 
 /* Tiempo mínimo que el loader permanece visible antes de iniciar el fade-out */
 const MIN_LOADER_MS = 3500;

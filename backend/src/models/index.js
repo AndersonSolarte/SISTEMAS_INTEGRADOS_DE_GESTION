@@ -20,6 +20,7 @@ const PoblacionalDesercionCohorte = require('./PoblacionalDesercionCohorte');
 const PoblacionalDesercionAnual = require('./PoblacionalDesercionAnual');
 const PoblacionalContextoExterno = require('./PoblacionalContextoExterno');
 const PoblacionalEmpleabilidad = require('./PoblacionalEmpleabilidad');
+const Saber11Resultado = require('./Saber11Resultado');
 const SaberProResultadoIndividual = require('./SaberProResultadoIndividual');
 const SaberProResultadoAgregado = require('./SaberProResultadoAgregado');
 const GestionInformacionCarga = require('./GestionInformacionCarga');
@@ -34,6 +35,7 @@ const RefMunicipio = require('./RefMunicipio');
 const RefDivipolaCarga = require('./RefDivipolaCarga');
 const MatriculadosUbicacionIncidencia = require('./MatriculadosUbicacionIncidencia');
 const UserActivityLog = require('./UserActivityLog');
+const VaEquivalenciaConfig = require('./VaEquivalenciaConfig');
 
 // Relaciones existentes
 MacroProceso.hasMany(Proceso, { foreignKey: 'macro_proceso_id', as: 'procesos' });
@@ -125,6 +127,11 @@ PoblacionalEmpleabilidad.belongsTo(User, { foreignKey: 'creado_por', as: 'creado
 User.hasMany(PoblacionalEmpleabilidad, { foreignKey: 'actualizado_por', as: 'empleabilidadActualizados' });
 PoblacionalEmpleabilidad.belongsTo(User, { foreignKey: 'actualizado_por', as: 'actualizador' });
 
+User.hasMany(Saber11Resultado, { foreignKey: 'creado_por', as: 'saber11ResultadosCreados' });
+Saber11Resultado.belongsTo(User, { foreignKey: 'creado_por', as: 'creador' });
+User.hasMany(Saber11Resultado, { foreignKey: 'actualizado_por', as: 'saber11ResultadosActualizados' });
+Saber11Resultado.belongsTo(User, { foreignKey: 'actualizado_por', as: 'actualizador' });
+
 User.hasMany(SaberProResultadoIndividual, { foreignKey: 'creado_por', as: 'saberProResultadosIndividualesCreados' });
 SaberProResultadoIndividual.belongsTo(User, { foreignKey: 'creado_por', as: 'creador' });
 User.hasMany(SaberProResultadoIndividual, { foreignKey: 'actualizado_por', as: 'saberProResultadosIndividualesActualizados' });
@@ -183,6 +190,7 @@ module.exports = {
   PoblacionalDesercionAnual,
   PoblacionalContextoExterno,
   PoblacionalEmpleabilidad,
+  Saber11Resultado,
   SaberProResultadoIndividual,
   SaberProResultadoAgregado,
   GestionInformacionCarga,
@@ -196,5 +204,6 @@ module.exports = {
   RefMunicipio,
   RefDivipolaCarga,
   MatriculadosUbicacionIncidencia,
-  UserActivityLog
+  UserActivityLog,
+  VaEquivalenciaConfig
 };

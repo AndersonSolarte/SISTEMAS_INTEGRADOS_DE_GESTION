@@ -52,7 +52,7 @@ const getStats = async (req, res) => {
         attributes: ['module', [fn('COUNT', col('id')), 'total']],
         where: { created_at: { [Op.gte]: since } },
         group: ['module'],
-        order: [[literal('total'), 'DESC']],
+        order: [[fn('COUNT', col('id')), 'DESC']],
         raw: true
       }),
 
@@ -61,31 +61,31 @@ const getStats = async (req, res) => {
         attributes: ['user_role', [fn('COUNT', col('id')), 'total']],
         where: { created_at: { [Op.gte]: since } },
         group: ['user_role'],
-        order: [[literal('total'), 'DESC']],
+        order: [[fn('COUNT', col('id')), 'DESC']],
         raw: true
       }),
 
-      /* events per day */
+      /* events per day — PostgreSQL: DATE_TRUNC('day', created_at) */
       UserActivityLog.findAll({
         attributes: [
-          [fn('DATE', col('created_at')), 'date'],
+          [literal(`DATE_TRUNC('day', "created_at")`), 'date'],
           [fn('COUNT', col('id')), 'total']
         ],
         where: { created_at: { [Op.gte]: since } },
-        group: [fn('DATE', col('created_at'))],
-        order: [[fn('DATE', col('created_at')), 'ASC']],
+        group: [literal(`DATE_TRUNC('day', "created_at")`)],
+        order: [[literal(`DATE_TRUNC('day', "created_at")`), 'ASC']],
         raw: true
       }),
 
-      /* events by hour of day */
+      /* events by hour of day — PostgreSQL: EXTRACT(HOUR FROM created_at) */
       UserActivityLog.findAll({
         attributes: [
-          [fn('HOUR', col('created_at')), 'hora'],
+          [literal(`EXTRACT(HOUR FROM "created_at")`), 'hora'],
           [fn('COUNT', col('id')), 'total']
         ],
         where: { created_at: { [Op.gte]: since } },
-        group: [fn('HOUR', col('created_at'))],
-        order: [[fn('HOUR', col('created_at')), 'ASC']],
+        group: [literal(`EXTRACT(HOUR FROM "created_at")`)],
+        order: [[literal(`EXTRACT(HOUR FROM "created_at")`), 'ASC']],
         raw: true
       }),
 
@@ -98,7 +98,7 @@ const getStats = async (req, res) => {
         ],
         where: { created_at: { [Op.gte]: since }, user_id: { [Op.ne]: null } },
         group: ['user_id', 'user_name', 'user_email', 'user_role'],
-        order: [[literal('total'), 'DESC']],
+        order: [[fn('COUNT', col('id')), 'DESC']],
         limit: 10,
         raw: true
       }),

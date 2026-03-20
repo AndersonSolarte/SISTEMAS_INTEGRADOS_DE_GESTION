@@ -65,7 +65,8 @@ const canManageBasesByPermission = hasAnyRoleOrModulePermission({
   moduleKeys: [
     'gestion_informacion',
     'gestion_bases_datos',
-    'poblacional'
+    'poblacional',
+    'saber_pro'
   ]
 });
 

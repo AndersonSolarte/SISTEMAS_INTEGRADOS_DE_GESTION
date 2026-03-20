@@ -10,6 +10,10 @@
 
 # production
 /build
+/build-codex-check
+/build-codex-check-*
+/build-codex-check-ui
+/build-codex-check-ui-*
 
 # misc
 .DS_Store

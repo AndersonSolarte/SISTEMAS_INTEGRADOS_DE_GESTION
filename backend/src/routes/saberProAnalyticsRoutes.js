@@ -4,10 +4,23 @@ const { auth, hasAnyRoleOrModulePermission } = require('../middlewares/auth');
 const { ROLES } = require('../constants/roles');
 const {
   getSaberProFiltros,
+  getSaberProFiltrosCascade,
   getSaberProOverview,
   getSaberProCharts,
   getSaberProTable,
-  getSaberProControlChart
+  getSaberProControlChart,
+  getValueAddedIndividual,
+  getValueAddedGeneral,
+  getValueAddedStats,
+  getValueAddedNbc,
+  getResultadosNbc,
+  getResultadosNbcDetalle,
+  getResultadosProgramas,
+  getResultadosProgramaDetalle,
+  getResultadosInstitucional,
+  getResultadosComparativaS11Spr,
+  getDocumentosEstudiantes,
+  getComparativaEstudianteDetalle
 } = require('../controllers/saberProAnalyticsController');
 
 const SABER_PRO_ANALYTICS_MODULE_KEYS = [
@@ -42,9 +55,22 @@ const canViewEstadisticaInstitucional = hasAnyRoleOrModulePermission({
 });
 
 router.get('/filtros', auth, canViewEstadisticaInstitucional, getSaberProFiltros);
+router.post('/filtros/cascade', auth, canViewEstadisticaInstitucional, getSaberProFiltrosCascade);
 router.post('/overview', auth, canViewEstadisticaInstitucional, getSaberProOverview);
 router.post('/charts', auth, canViewEstadisticaInstitucional, getSaberProCharts);
 router.post('/table', auth, canViewEstadisticaInstitucional, getSaberProTable);
 router.post('/control-chart', auth, canViewEstadisticaInstitucional, getSaberProControlChart);
+router.post('/value-added/individual', auth, canViewEstadisticaInstitucional, getValueAddedIndividual);
+router.post('/value-added/general', auth, canViewEstadisticaInstitucional, getValueAddedGeneral);
+router.post('/value-added/stats', auth, canViewEstadisticaInstitucional, getValueAddedStats);
+router.post('/value-added/nbc', auth, canViewEstadisticaInstitucional, getValueAddedNbc);
+router.post('/resultados/nbc', auth, canViewEstadisticaInstitucional, getResultadosNbc);
+router.post('/resultados/nbc/detalle', auth, canViewEstadisticaInstitucional, getResultadosNbcDetalle);
+router.post('/resultados/programas', auth, canViewEstadisticaInstitucional, getResultadosProgramas);
+router.post('/resultados/programas/detalle', auth, canViewEstadisticaInstitucional, getResultadosProgramaDetalle);
+router.post('/resultados/institucional', auth, canViewEstadisticaInstitucional, getResultadosInstitucional);
+router.post('/resultados/comparativa-s11-spr', auth, canViewEstadisticaInstitucional, getResultadosComparativaS11Spr);
+router.post('/resultados/documentos-estudiantes', auth, canViewEstadisticaInstitucional, getDocumentosEstudiantes);
+router.post('/resultados/comparativa-estudiante', auth, canViewEstadisticaInstitucional, getComparativaEstudianteDetalle);
 
 module.exports = router;
