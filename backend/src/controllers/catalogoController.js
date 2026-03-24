@@ -1,5 +1,5 @@
 const { MacroProceso, Proceso, SubProceso, TipoDocumentacion, Documento } = require('../models');
-const { Op } = require('sequelize');
+const { Op, literal } = require('sequelize');
 
 const buildSearchWhere = (search = '') => {
   const terms = String(search).trim().split(/\s+/).filter(Boolean);
@@ -17,26 +17,13 @@ const buildSearchWhere = (search = '') => {
 const getMacroProcesos = async (req, res) => {
   try {
     const macroProcesos = await MacroProceso.findAll({
-      include: [{
-        model: Proceso,
-        as: 'procesos',
-        attributes: [],
-        required: true,
-        include: [{
-          model: SubProceso,
-          as: 'subprocesos',
-          attributes: [],
-          required: true,
-          include: [{
-            model: Documento,
-            as: 'documentos',
-            attributes: [],
-            required: true
-          }]
-        }]
-      }],
-      order: [['nombre', 'ASC']],
-      distinct: true
+      where: literal(`EXISTS (
+        SELECT 1 FROM procesos p
+        JOIN subprocesos sp ON sp.proceso_id = p.id
+        JOIN documentos d ON d.subproceso_id = sp.id
+        WHERE p.macro_proceso_id = "macro_procesos"."id"
+      )`),
+      order: [['nombre', 'ASC']]
     });
     res.json({ success: true, data: { macroProcesos } });
   } catch (error) {
@@ -47,23 +34,22 @@ const getMacroProcesos = async (req, res) => {
 const getProcesos = async (req, res) => {
   try {
     const { macro_proceso_id } = req.query;
-    const where = macro_proceso_id ? { macro_proceso_id } : {};
+    const ids = macro_proceso_id
+      ? String(macro_proceso_id).split(',').map(Number).filter(Number.isFinite)
+      : [];
+    const macroWhere = ids.length
+      ? { macro_proceso_id: ids.length === 1 ? ids[0] : { [Op.in]: ids } }
+      : {};
     const procesos = await Proceso.findAll({
-      where,
-      include: [{
-        model: SubProceso,
-        as: 'subprocesos',
-        attributes: [],
-        required: true,
-        include: [{
-          model: Documento,
-          as: 'documentos',
-          attributes: [],
-          required: true
-        }]
-      }],
-      order: [['nombre', 'ASC']],
-      distinct: true
+      where: {
+        ...macroWhere,
+        [Op.and]: literal(`EXISTS (
+          SELECT 1 FROM subprocesos sp
+          JOIN documentos d ON d.subproceso_id = sp.id
+          WHERE sp.proceso_id = "procesos"."id"
+        )`)
+      },
+      order: [['nombre', 'ASC']]
     });
     res.json({ success: true, data: { procesos } });
   } catch (error) {
@@ -74,17 +60,21 @@ const getProcesos = async (req, res) => {
 const getSubProcesos = async (req, res) => {
   try {
     const { proceso_id } = req.query;
-    const where = proceso_id ? { proceso_id } : {};
+    const ids = proceso_id
+      ? String(proceso_id).split(',').map(Number).filter(Number.isFinite)
+      : [];
+    const procWhere = ids.length
+      ? { proceso_id: ids.length === 1 ? ids[0] : { [Op.in]: ids } }
+      : {};
     const subprocesos = await SubProceso.findAll({
-      where,
-      include: [{
-        model: Documento,
-        as: 'documentos',
-        attributes: [],
-        required: true
-      }],
-      order: [['nombre', 'ASC']],
-      distinct: true
+      where: {
+        ...procWhere,
+        [Op.and]: literal(`EXISTS (
+          SELECT 1 FROM documentos d
+          WHERE d.subproceso_id = "subprocesos"."id"
+        )`)
+      },
+      order: [['nombre', 'ASC']]
     });
     res.json({ success: true, data: { subprocesos } });
   } catch (error) {
@@ -94,15 +84,27 @@ const getSubProcesos = async (req, res) => {
 
 const getTiposDocumentacion = async (req, res) => {
   try {
+    const { macro_proceso_id, proceso_id, subproceso_id } = req.query;
+    const macroIds = macro_proceso_id ? String(macro_proceso_id).split(',').map(Number).filter(Number.isFinite) : [];
+    const procIds  = proceso_id     ? String(proceso_id).split(',').map(Number).filter(Number.isFinite) : [];
+    const subIds   = subproceso_id  ? String(subproceso_id).split(',').map(Number).filter(Number.isFinite) : [];
+
+    let subFilter = '';
+    if (subIds.length) {
+      subFilter = `AND d.subproceso_id IN (${subIds.join(',')})`;
+    } else if (procIds.length) {
+      subFilter = `AND d.subproceso_id IN (SELECT id FROM subprocesos WHERE proceso_id IN (${procIds.join(',')}))`;
+    } else if (macroIds.length) {
+      subFilter = `AND d.subproceso_id IN (SELECT sp.id FROM subprocesos sp JOIN procesos p ON sp.proceso_id = p.id WHERE p.macro_proceso_id IN (${macroIds.join(',')}))`;
+    }
+
     const tipos = await TipoDocumentacion.findAll({
-      include: [{
-        model: Documento,
-        as: 'documentos',
-        attributes: [],
-        required: true
-      }],
-      order: [['nombre', 'ASC']],
-      distinct: true
+      where: literal(`EXISTS (
+        SELECT 1 FROM documentos d
+        WHERE d.tipo_documentacion_id = "tipos_documentacion"."id"
+        ${subFilter}
+      )`),
+      order: [['nombre', 'ASC']]
     });
     res.json({ success: true, data: { tipos } });
   } catch (error) {

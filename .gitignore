@@ -21,6 +21,8 @@ logs
 # Python
 __pycache__/
 *.pyc
+.venv/
+/.npm-cache/
 
 # Archivos del sistema
 .DS_Store

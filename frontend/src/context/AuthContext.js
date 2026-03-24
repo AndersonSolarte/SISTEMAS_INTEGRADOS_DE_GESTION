@@ -1,17 +1,31 @@
-import React, { createContext, useState, useContext, useEffect, useCallback, useMemo } from 'react';
+import React, { createContext, useState, useContext, useEffect, useCallback, useMemo, useRef } from 'react';
 import authService from '../services/authService';
 
 const AuthContext = createContext(null);
-const SESSION_IDLE_TIMEOUT_MS = Number(process.env.REACT_APP_SESSION_IDLE_TIMEOUT_MS || 30 * 60 * 1000);
+const SESSION_IDLE_TIMEOUT_MS = Number(process.env.REACT_APP_SESSION_IDLE_TIMEOUT_MS || 10 * 60 * 1000);
 const SESSION_MAX_DURATION_MS = Number(process.env.REACT_APP_SESSION_MAX_DURATION_MS || 8 * 60 * 60 * 1000);
 
 export const AuthProvider = ({ children }) => {
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [showSessionTimeoutModal, setShowSessionTimeoutModal] = useState(false);
+  const timeoutModalShownRef = useRef(false);
 
   const logout = useCallback(() => {
     authService.logout();
     setUser(null);
+  }, []);
+
+  const confirmRelogin = useCallback(() => {
+    timeoutModalShownRef.current = false;
+    setShowSessionTimeoutModal(false);
+    logout();
+  }, [logout]);
+
+  const cancelSessionTimeout = useCallback(() => {
+    timeoutModalShownRef.current = false;
+    setShowSessionTimeoutModal(false);
+    authService.touchSessionActivity();
   }, []);
 
   const touchActivity = useCallback(() => {
@@ -31,11 +45,13 @@ export const AuthProvider = ({ children }) => {
         return;
       }
 
+      // Resetear timestamps al inicio para evitar que datos viejos de
+      // localStorage disparen el modal antes de los 10 minutos de inactividad.
+      authService.resetSessionStart();
+
       try {
         const profile = await authService.getProfile();
         if (mounted && profile?.success && profile?.data?.user) {
-          authService.ensureSessionStart();
-          authService.touchSessionActivity();
           setUser(profile.data.user);
         }
       } catch (_error) {
@@ -59,11 +75,17 @@ export const AuthProvider = ({ children }) => {
   useEffect(() => {
     if (!user || !authService.isAuthenticated()) return undefined;
 
+    // Siempre resetear ambos timestamps al montar el monitor.
+    // Esto evita que loginAt o lastActivityAt antiguos (de sesiones previas
+    // guardadas en localStorage) disparen maxExceeded o idleExceeded de inmediato.
+    authService.resetSessionStart();
+
     const events = ['mousemove', 'mousedown', 'keydown', 'scroll', 'touchstart', 'click'];
     const onActivity = () => touchActivity();
     events.forEach((evt) => window.addEventListener(evt, onActivity, { passive: true }));
 
     const checkSession = () => {
+      if (timeoutModalShownRef.current) return;
       const now = Date.now();
       const { loginAt, lastActivityAt } = authService.getSessionMeta();
       const safeLoginAt = loginAt || now;
@@ -72,7 +94,8 @@ export const AuthProvider = ({ children }) => {
       const idleExceeded = now - safeLastActivityAt > SESSION_IDLE_TIMEOUT_MS;
       const maxExceeded = now - safeLoginAt > SESSION_MAX_DURATION_MS;
       if (idleExceeded || maxExceeded) {
-        logout();
+        timeoutModalShownRef.current = true;
+        setShowSessionTimeoutModal(true);
       }
     };
 
@@ -132,8 +155,11 @@ export const AuthProvider = ({ children }) => {
     user, loading, loginWithGoogle, hydrateFromToken, logout,
     isAuthenticated: () => !!user,
     isAdmin: () => user?.role === 'administrador',
-    hasAnyRole
-  }), [user, loading, logout]);
+    hasAnyRole,
+    showSessionTimeoutModal,
+    confirmRelogin,
+    cancelSessionTimeout,
+  }), [user, loading, logout, showSessionTimeoutModal, confirmRelogin, cancelSessionTimeout]);
 
   return (
     <AuthContext.Provider value={value}>

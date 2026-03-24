@@ -77,6 +77,15 @@ const authService = {
     }
   },
 
+  // Siempre resetea loginAt y lastActivityAt a "ahora".
+  // Usar al montar el monitor de sesión para evitar que timestamps
+  // viejos de localStorage disparen el modal de expiración de inmediato.
+  resetSessionStart: () => {
+    const now = Date.now().toString();
+    localStorage.setItem(SESSION_LOGIN_AT_KEY, now);
+    localStorage.setItem(SESSION_LAST_ACTIVITY_KEY, now);
+  },
+
   getSessionMeta: () => ({
     loginAt: Number(localStorage.getItem(SESSION_LOGIN_AT_KEY) || 0),
     lastActivityAt: Number(localStorage.getItem(SESSION_LAST_ACTIVITY_KEY) || 0)

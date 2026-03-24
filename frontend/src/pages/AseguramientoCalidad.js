@@ -1,4 +1,5 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
+import ReactDOM from 'react-dom';
 import { Box, Paper, Typography, Grid, TextField, Button, Table, TableBody, TableCell, TableContainer, TableHead, TableRow, TablePagination, FormControl, Select, MenuItem, CircularProgress, Chip, IconButton, Tooltip, Fade, Slide, Stack, Divider, Dialog, DialogTitle, DialogContent, DialogActions, InputAdornment } from '@mui/material';
 import { Search as SearchIcon, Clear as ClearIcon, VisibilityOutlined as VisibilityOutlinedIcon, FileDownloadOutlined as FileDownloadOutlinedIcon, FilterList as FilterIcon, Description as DescriptionIcon, Article as ArticleIcon, AssignmentTurnedIn as AssignmentIcon, ListAlt as ListIcon, Policy as PolicyIcon, AccountTree as AccountTreeIcon, Upload as UploadIcon, GetApp as DownloadTemplateIcon, DeleteSweep as DeleteSweepIcon, Favorite as FavoriteIcon, FavoriteBorder as FavoriteBorderIcon } from '@mui/icons-material';import { useSnackbar } from 'notistack';
 import { useLocation } from 'react-router-dom';
@@ -213,6 +214,103 @@ const getLabelById = (items = [], id) => {
   return found?.nombre || '';
 };
 
+// ── DocFilterPanel: checklist con búsqueda, seleccionar todos y cascada ──────
+function DocFilterPanel({ label, options, value, onChange, disabled, placeholder }) {
+  const [open, setOpen] = useState(false);
+  const [search, setSearch] = useState('');
+  const triggerRef = useRef(null);
+  const dropdownRef = useRef(null);
+  const [dropPos, setDropPos] = useState({ top: 0, left: 0, width: 0 });
+
+  // Calcular posición del dropdown al abrirse (position:fixed → coords de viewport, sin scrollY)
+  useEffect(() => {
+    if (!open || !triggerRef.current) return;
+    const rect = triggerRef.current.getBoundingClientRect();
+    setDropPos({ top: rect.bottom + 4, left: rect.left, width: rect.width });
+  }, [open]);
+
+  // Cerrar al hacer click fuera
+  useEffect(() => {
+    if (!open) return;
+    const h = (e) => {
+      if (triggerRef.current?.contains(e.target) || dropdownRef.current?.contains(e.target)) return;
+      setOpen(false); setSearch('');
+    };
+    document.addEventListener('mousedown', h);
+    return () => document.removeEventListener('mousedown', h);
+  }, [open]);
+
+  const filtered = options.filter((o) => o.nombre.toLowerCase().includes(search.toLowerCase()));
+  const allSelected = value.length === 0;
+  const isSel = (id) => value.includes(id);
+  const toggle = (id) => onChange(isSel(id) ? value.filter((v) => v !== id) : [...value, id]);
+  const toggleAll = () => onChange(allSelected ? options.map((o) => o.id) : []);
+  const displayText = value.length === 0 ? 'TODOS' : `${value.length} SELECCIONADO${value.length > 1 ? 'S' : ''}`;
+  const C = '#2563eb';
+
+  const dropdown = open ? ReactDOM.createPortal(
+    <div
+      ref={dropdownRef}
+      style={{ position: 'fixed', top: dropPos.top, left: dropPos.left, width: Math.max(dropPos.width, 240), zIndex: 9999, background: '#fff', borderRadius: 10, boxShadow: '0 12px 36px rgba(0,0,0,0.18)', border: '1px solid #e2e8f0', overflow: 'hidden' }}
+    >
+      <div style={{ padding: '8px', borderBottom: '1px solid #f1f5f9' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6, background: '#f8fafc', borderRadius: 6, padding: '4px 8px', border: '1px solid #e2e8f0' }}>
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#94a3b8" strokeWidth="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+          <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder={placeholder || 'Buscar...'} style={{ border: 'none', outline: 'none', background: 'transparent', fontSize: 12, flex: 1, color: '#334155', minWidth: 0 }} />
+        </div>
+      </div>
+      <div onClick={toggleAll} style={{ padding: '6px 12px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 8, borderBottom: '1px solid #f1f5f9', background: 'transparent' }}
+        onMouseEnter={e => e.currentTarget.style.background='#eff6ff'} onMouseLeave={e => e.currentTarget.style.background='transparent'}>
+        <div style={{ width: 14, height: 14, flexShrink: 0, borderRadius: 3, border: `2px solid ${allSelected ? C : '#d1d5db'}`, background: allSelected ? C : '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          {allSelected && <svg width="7" height="7" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="3"><polyline points="20 6 9 17 4 12"/></svg>}
+        </div>
+        <span style={{ fontSize: 11, fontWeight: 700, color: C }}>SELECCIONAR TODOS ({options.length})</span>
+      </div>
+      <div style={{ maxHeight: 210, overflowY: 'auto' }}>
+        {filtered.length === 0
+          ? <div style={{ padding: '12px 16px', textAlign: 'center', fontSize: 12, color: '#94a3b8' }}>Sin resultados</div>
+          : filtered.map((opt) => (
+            <div key={opt.id} onClick={() => toggle(opt.id)}
+              style={{ padding: '5px 12px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 8, background: 'transparent' }}
+              onMouseEnter={e => e.currentTarget.style.background='#eff6ff'} onMouseLeave={e => e.currentTarget.style.background='transparent'}>
+              <div style={{ width: 14, height: 14, flexShrink: 0, borderRadius: 3, border: `2px solid ${isSel(opt.id) ? C : '#d1d5db'}`, background: isSel(opt.id) ? C : '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                {isSel(opt.id) && <svg width="7" height="7" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="3"><polyline points="20 6 9 17 4 12"/></svg>}
+              </div>
+              <span style={{ fontSize: 12, color: '#334155', textTransform: 'uppercase' }}>{opt.nombre}</span>
+            </div>
+          ))}
+      </div>
+      <div style={{ padding: '4px 12px', borderTop: '1px solid #f1f5f9', background: '#f8fafc' }}>
+        <span style={{ fontSize: 10, color: '#94a3b8' }}>{value.length > 0 ? `${value.length} de ${options.length} seleccionados` : `${options.length} opciones`}</span>
+      </div>
+    </div>,
+    document.body
+  ) : null;
+
+  return (
+    <Box ref={triggerRef} sx={{ position: 'relative', opacity: disabled ? 0.5 : 1, pointerEvents: disabled ? 'none' : 'auto' }}>
+      <Box onClick={() => !disabled && setOpen((o) => !o)} sx={{ cursor: 'pointer', borderRadius: '8px', p: '8px 12px', minHeight: 48, bgcolor: value.length ? '#eff6ff' : '#fff', border: `1.5px solid ${value.length ? C : '#bfdbfe'}`, display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 1, transition: 'all 0.15s', userSelect: 'none', '&:hover': { borderColor: C } }}>
+        <Box sx={{ minWidth: 0, flex: 1 }}>
+          <Typography sx={{ fontSize: '9px', fontWeight: 700, color: C, letterSpacing: '0.8px', textTransform: 'uppercase', mb: 0.25 }}>{label}</Typography>
+          <Typography sx={{ fontSize: '12px', fontWeight: 600, color: '#1e3a5f', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{displayText}</Typography>
+        </Box>
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, flexShrink: 0 }}>
+          {value.length > 0 && (
+            <Box onClick={(e) => { e.stopPropagation(); onChange([]); }} sx={{ width: 16, height: 16, borderRadius: '50%', bgcolor: C, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}>
+              <svg width="7" height="7" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="3"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+            </Box>
+          )}
+          <Box sx={{ transition: 'transform 0.15s', transform: open ? 'rotate(180deg)' : 'none' }}>
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke={C} strokeWidth="2.5"><polyline points="6 9 12 15 18 9"/></svg>
+          </Box>
+        </Box>
+      </Box>
+      {dropdown}
+    </Box>
+  );
+}
+// ── fin DocFilterPanel ─────────────────────────────────────────────────────────
+
 function AseguramientoCalidad() {
   const { enqueueSnackbar } = useSnackbar();
   const { user } = useAuth();
@@ -237,6 +335,10 @@ function AseguramientoCalidad() {
     [normalizedRole, forceReadOnly]
   );
   const [filters, setFilters] = useState({ macro_proceso_id: '', proceso_id: '', subproceso_id: '', tipo_documentacion_id: '', titulo: '', estado: '' });
+  const [selMacros, setSelMacros] = useState([]);
+  const [selProcesos, setSelProcesos] = useState([]);
+  const [selSubprocesos, setSelSubprocesos] = useState([]);
+  const [selTipos, setSelTipos] = useState([]);
   const [macroProcesos, setMacroProcesos] = useState([]);
   const [procesos, setProcesos] = useState([]);
   const [subprocesos, setSubprocesos] = useState([]);
@@ -276,6 +378,25 @@ function AseguramientoCalidad() {
     });
   }, []);
 
+  // Recargar tipos dinámicamente según los filtros superiores seleccionados
+  useEffect(() => {
+    const params = {};
+    if (selMacros.length)     params.macro_proceso_id = selMacros.join(',');
+    if (selProcesos.length)   params.proceso_id       = selProcesos.join(',');
+    if (selSubprocesos.length) params.subproceso_id   = selSubprocesos.join(',');
+    catalogoService.getTiposDocumentacion(params)
+      .then(res => {
+        const tipos = res?.data?.tipos || [];
+        setTiposDocumentacion(tipos);
+        // Deseleccionar tipos que ya no están disponibles
+        if (selTipos.length > 0) {
+          const validIds = tipos.map(t => t.id);
+          setSelTipos(prev => prev.filter(id => validIds.includes(id)));
+        }
+      })
+      .catch(() => {});
+  }, [selMacros, selProcesos, selSubprocesos]); // eslint-disable-line react-hooks/exhaustive-deps
+
   useEffect(() => {
     if (!user?.id) return;
     setLoadingFavorites(true);
@@ -294,6 +415,7 @@ function AseguramientoCalidad() {
     const quickTitulo = params.get('titulo');
     if (quickTitulo) {
       const nextFilters = { macro_proceso_id: '', proceso_id: '', subproceso_id: '', tipo_documentacion_id: '', titulo: quickTitulo, estado: '' };
+      setSelMacros([]); setSelProcesos([]); setSelSubprocesos([]); setSelTipos([]);
       setFilters(nextFilters);
       setLoading(true);
       documentoService.getDocumentos(nextFilters, 1, 10)
@@ -332,10 +454,17 @@ function AseguramientoCalidad() {
 
   const handleClearFilters = () => {
     setFilters({ macro_proceso_id: '', proceso_id: '', subproceso_id: '', tipo_documentacion_id: '', titulo: '', estado: '' });
+    setSelMacros([]); setSelProcesos([]); setSelSubprocesos([]); setSelTipos([]);
     setDocumentos([]);
     setTotalDocumentos(0);
     setPage(0);
   };
+
+  // Sync multi-select arrays → filters (comma-separated IDs for backend)
+  useEffect(() => { setFilters(prev => ({ ...prev, macro_proceso_id: selMacros.join(',') })); }, [selMacros]);
+  useEffect(() => { setFilters(prev => ({ ...prev, proceso_id: selProcesos.join(',') })); }, [selProcesos]);
+  useEffect(() => { setFilters(prev => ({ ...prev, subproceso_id: selSubprocesos.join(',') })); }, [selSubprocesos]);
+  useEffect(() => { setFilters(prev => ({ ...prev, tipo_documentacion_id: selTipos.join(',') })); }, [selTipos]);
 
   useEffect(() => {
     const hasActiveFilters = Object.values(filters).some((value) => String(value).trim() !== '');
@@ -573,13 +702,15 @@ function AseguramientoCalidad() {
   const shouldRestrictTipo = documentos.length > 0;
 
   const macroOptions = macroProcesos;
-  const procesoOptions = procesos;
-  const subprocesoOptions = subprocesos;
+  const procesoOptions = selMacros.length > 0
+    ? procesos.filter(p => selMacros.includes(p.macro_proceso_id))
+    : procesos;
+  const subprocesoOptions = selProcesos.length > 0
+    ? subprocesos.filter(sp => selProcesos.includes(sp.proceso_id))
+    : selMacros.length > 0
+      ? subprocesos.filter(sp => procesoOptions.some(p => p.id === sp.proceso_id))
+      : subprocesos;
   const tipoOptions = tiposDocumentacionDisplay;
-  const macroLabel = getLabelById(macroProcesos, filters.macro_proceso_id);
-  const procesoLabel = getLabelById(procesos, filters.proceso_id);
-  const subprocesoLabel = getLabelById(subprocesos, filters.subproceso_id);
-  const tipoLabel = getLabelById(tiposDocumentacionDisplay, filters.tipo_documentacion_id);
   const isFiltering = loading || autoSearching;
 
   useEffect(() => {
@@ -809,115 +940,37 @@ function AseguramientoCalidad() {
             </Box>
 
             <Box sx={{ overflowX: 'auto' }}>
-              <Box
-                sx={{
-                  display: 'grid',
-                  gap: 2,
-                  gridTemplateColumns: '1.2fr 1.2fr 1.2fr 1.2fr',
-                  minWidth: 820,
-                  '& .MuiFormControl-root': { minWidth: 0 },
-                  '& .MuiSelect-select': { whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }
-                }}
-              >
-                <Box sx={{ minWidth: 0 }}>
-                  <Typography variant="caption" sx={{ color: '#64748b', fontWeight: 600, mb: 1, display: 'block' }}>Macroproceso</Typography>
-                  <FormControl fullWidth size="small">
-                    <Select
-                      value={filters.macro_proceso_id}
-                      onChange={(e) => setFilters({ ...filters, macro_proceso_id: e.target.value })}
-                      displayEmpty
-                      renderValue={(selected) => (
-                        <Box sx={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }} title={macroLabel || 'Seleccionar...'}>
-                          {selected ? macroLabel : 'Seleccionar...'}
-                        </Box>
-                      )}
-                      sx={{
-                        borderRadius: 2,
-                        bgcolor: filters.macro_proceso_id ? '#eff6ff' : 'white',
-                        '& .MuiOutlinedInput-notchedOutline': { borderColor: filters.macro_proceso_id ? '#60a5fa' : '#bfdbfe', borderWidth: 2 },
-                        '&.Mui-focused': { boxShadow: '0 0 0 3px rgba(59,130,246,0.12)' }
-                      }}
-                    >
-                      <MenuItem value=""><em>Seleccionar...</em></MenuItem>
-                      {macroOptions.map((mp) => <MenuItem key={mp.id} value={mp.id}>{mp.nombre}</MenuItem>)}
-                    </Select>
-                  </FormControl>
-                </Box>
-
-                <Box sx={{ minWidth: 0 }}>
-                  <Typography variant="caption" sx={{ color: '#64748b', fontWeight: 600, mb: 1, display: 'block' }}>Proceso</Typography>
-                <FormControl fullWidth size="small">
-                    <Select
-                      value={filters.proceso_id}
-                      onChange={(e) => setFilters({ ...filters, proceso_id: e.target.value })}
-                      displayEmpty
-                      renderValue={(selected) => (
-                        <Box sx={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }} title={procesoLabel || 'Seleccionar...'}>
-                          {selected ? procesoLabel : 'Seleccionar...'}
-                        </Box>
-                      )}
-                      sx={{
-                        borderRadius: 2,
-                        bgcolor: filters.proceso_id ? '#eff6ff' : 'white',
-                        '& .MuiOutlinedInput-notchedOutline': { borderColor: filters.proceso_id ? '#60a5fa' : '#bfdbfe', borderWidth: 2 },
-                        '&.Mui-focused': { boxShadow: '0 0 0 3px rgba(59,130,246,0.12)' }
-                      }}
-                    >
-                      <MenuItem value=""><em>Seleccionar...</em></MenuItem>
-                      {procesoOptions.map((p) => <MenuItem key={p.id} value={p.id}>{p.nombre}</MenuItem>)}
-                    </Select>
-                  </FormControl>
-                </Box>
-
-                <Box sx={{ minWidth: 0 }}>
-                  <Typography variant="caption" sx={{ color: '#64748b', fontWeight: 600, mb: 1, display: 'block' }}>Subproceso</Typography>
-                <FormControl fullWidth size="small">
-                    <Select
-                      value={filters.subproceso_id}
-                      onChange={(e) => setFilters({ ...filters, subproceso_id: e.target.value })}
-                      displayEmpty
-                      renderValue={(selected) => (
-                        <Box sx={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }} title={subprocesoLabel || 'Seleccionar...'}>
-                          {selected ? subprocesoLabel : 'Seleccionar...'}
-                        </Box>
-                      )}
-                      sx={{
-                        borderRadius: 2,
-                        bgcolor: filters.subproceso_id ? '#eff6ff' : 'white',
-                        '& .MuiOutlinedInput-notchedOutline': { borderColor: filters.subproceso_id ? '#60a5fa' : '#bfdbfe', borderWidth: 2 },
-                        '&.Mui-focused': { boxShadow: '0 0 0 3px rgba(59,130,246,0.12)' }
-                      }}
-                    >
-                      <MenuItem value=""><em>Seleccionar...</em></MenuItem>
-                      {subprocesoOptions.map((sp) => <MenuItem key={sp.id} value={sp.id}>{sp.nombre}</MenuItem>)}
-                    </Select>
-                  </FormControl>
-                </Box>
-
-                <Box sx={{ minWidth: 0 }}>
-                  <Typography variant="caption" sx={{ color: '#64748b', fontWeight: 600, mb: 1, display: 'block' }}>Tipo documento</Typography>
-                  <FormControl fullWidth size="small">
-                    <Select
-                      value={filters.tipo_documentacion_id}
-                      onChange={(e) => setFilters({ ...filters, tipo_documentacion_id: e.target.value })}
-                      displayEmpty
-                      renderValue={(selected) => (
-                        <Box sx={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }} title={tipoLabel || 'Seleccionar...'}>
-                          {selected ? tipoLabel : 'Seleccionar...'}
-                        </Box>
-                      )}
-                      sx={{
-                        borderRadius: 2,
-                        bgcolor: filters.tipo_documentacion_id ? '#eff6ff' : 'white',
-                        '& .MuiOutlinedInput-notchedOutline': { borderColor: filters.tipo_documentacion_id ? '#60a5fa' : '#bfdbfe', borderWidth: 2 },
-                        '&.Mui-focused': { boxShadow: '0 0 0 3px rgba(59,130,246,0.12)' }
-                      }}
-                    >
-                      <MenuItem value=""><em>Seleccionar...</em></MenuItem>
-                      {tipoOptions.map((td) => <MenuItem key={td.id} value={td.id}>{td.nombre}</MenuItem>)}
-                    </Select>
-                  </FormControl>
-                </Box>
+              <Box sx={{ display: 'grid', gap: 2, gridTemplateColumns: '1fr 1fr 1fr 1fr', minWidth: 820 }}>
+                <DocFilterPanel
+                  label="Macroproceso"
+                  options={macroOptions}
+                  value={selMacros}
+                  onChange={(v) => { setSelMacros(v); setSelProcesos([]); setSelSubprocesos([]); setSelTipos([]); }}
+                  placeholder="Buscar macroproceso..."
+                />
+                <DocFilterPanel
+                  label="Proceso"
+                  options={procesoOptions}
+                  value={selProcesos}
+                  onChange={(v) => { setSelProcesos(v); setSelSubprocesos([]); setSelTipos([]); }}
+                  disabled={procesoOptions.length === 0}
+                  placeholder="Buscar proceso..."
+                />
+                <DocFilterPanel
+                  label="Subproceso"
+                  options={subprocesoOptions}
+                  value={selSubprocesos}
+                  onChange={(v) => { setSelSubprocesos(v); setSelTipos([]); }}
+                  disabled={subprocesoOptions.length === 0}
+                  placeholder="Buscar subproceso..."
+                />
+                <DocFilterPanel
+                  label="Tipo documento"
+                  options={tipoOptions}
+                  value={selTipos}
+                  onChange={setSelTipos}
+                  placeholder="Buscar tipo..."
+                />
               </Box>
             </Box>
 

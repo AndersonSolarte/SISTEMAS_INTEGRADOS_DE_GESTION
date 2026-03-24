@@ -850,16 +850,8 @@ function ValorAgregadoDashboardBI({ initialSection = 'va_individual' }) {
             sort: [{ field: 'va_global', direction: 'desc' }]
           });
         } else if (section === 'va_general') {
-          if (active) setVaGeneralDocsLoading(true);
-          try {
-            const r = await saberProAnalyticsService.getDocumentosEstudiantes(filters);
-            if (active) setVaGeneralDocs(r?.data || []);
-          } catch (e) {
-            if (active) setVaGeneralDocs([]);
-            console.error('Error documentos estudiantes:', e?.response?.data?.message || e?.message);
-          } finally {
-            if (active) setVaGeneralDocsLoading(false);
-          }
+          // La carga de documentos para va_general la maneja fetchDocsBySearch
+          // (respeta vaOnlyPositive). No duplicar aquí para evitar conflictos.
           return;
         } else if (section === 'va_nbc') {
           const r = await saberProAnalyticsService.getResultadosNbc(nbcFilters);
@@ -931,7 +923,7 @@ function ValorAgregadoDashboardBI({ initialSection = 'va_individual' }) {
 
   useEffect(() => {
     if (section !== 'va_general') return;
-    fetchDocsBySearch('');
+    return fetchDocsBySearch('');
   }, [section, fetchDocsBySearch]);
 
   const selectedStudentRow = useMemo(

@@ -20,6 +20,7 @@ import PlaneacionEstrategica from './pages/PlaneacionEstrategica';
 import PlaneacionEfectividad from './pages/PlaneacionEfectividad';
 import Autoevaluacion from './pages/Autoevaluacion';
 import GestionInformacion from './pages/GestionInformacion';
+import SessionTimeoutModal from './components/SessionTimeoutModal';
 import { ROLES } from './constants/roles';
 
 /* Tiempo mínimo que el loader permanece visible antes de iniciar el fade-out */
@@ -56,6 +57,7 @@ function App() {
       <CssBaseline />
       <SnackbarProvider maxSnack={3} anchorOrigin={{ vertical: 'top', horizontal: 'right' }}>
         <AuthProvider>
+          <SessionTimeoutModal />
           <AppContent>
             <Router>
               <Routes>

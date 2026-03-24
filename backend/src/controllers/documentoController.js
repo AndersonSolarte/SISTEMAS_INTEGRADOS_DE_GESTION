@@ -1,4 +1,4 @@
-const { Op } = require('sequelize');
+const { Op, literal } = require('sequelize');
 const {
   Documento,
   SubProceso,
@@ -83,14 +83,21 @@ const getDocumentos = async (req, res) => {
       }
     ];
 
-    // Aplicar filtros solo si existen
-    if (subproceso_id) {
-      where.subproceso_id = subproceso_id;
-    }
+    // Parsea IDs separados por coma → array de enteros
+    const parseIds = (val) => {
+      if (!val) return null;
+      const ids = String(val).split(',').map(Number).filter(Number.isFinite);
+      return ids.length ? ids : null;
+    };
+    const toInOrEq = (ids) => ids.length === 1 ? ids[0] : { [Op.in]: ids };
 
-    if (tipo_documentacion_id) {
-      where.tipo_documentacion_id = tipo_documentacion_id;
-    }
+    const subIds   = parseIds(subproceso_id);
+    const tipoIds  = parseIds(tipo_documentacion_id);
+    const procIds  = parseIds(proceso_id);
+    const macroIds = parseIds(macro_proceso_id);
+
+    if (subIds)  where.subproceso_id         = toInOrEq(subIds);
+    if (tipoIds) where.tipo_documentacion_id = toInOrEq(tipoIds);
 
     if (titulo) {
       const searchWhere = buildSearchWhere(titulo);
@@ -101,15 +108,15 @@ const getDocumentos = async (req, res) => {
       where.estado = estado;
     }
 
-    if (proceso_id && !subproceso_id) {
-      include[0].where = { proceso_id };
+    if (procIds && !subIds) {
+      include[0].where    = { proceso_id: toInOrEq(procIds) };
       include[0].required = true;
     }
 
-    if (macro_proceso_id && !proceso_id && !subproceso_id) {
-      include[0].include[0].where = { macro_proceso_id };
+    if (macroIds && !procIds && !subIds) {
+      include[0].include[0].where    = { macro_proceso_id: toInOrEq(macroIds) };
       include[0].include[0].required = true;
-      include[0].required = true;
+      include[0].required            = true;
     }
 
     const { count, rows } = await Documento.findAndCountAll({
@@ -117,7 +124,7 @@ const getDocumentos = async (req, res) => {
       include,
       limit: parseInt(limit),
       offset: parseInt(offset),
-      order: [['created_at', 'DESC']],
+      order: [literal('fecha_creacion DESC NULLS LAST'), ['created_at', 'DESC']],
       distinct: true
     });
 

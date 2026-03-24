@@ -1998,6 +1998,15 @@ const getComparativaEstudianteDetalle = async (req, res) => {
         const v = parseFloat(r[`s11_${col}`]);
         s11Raw[col] = (!isNaN(v) && v > 0) ? v : null;
       }
+      // Compatibilidad formatos antiguos Saber 11:
+      // sociales_y_ciudadana (formato nuevo) usa sociales (formato antiguo) como fallback
+      if (s11Raw['sociales_y_ciudadana'] == null && s11Raw['sociales'] != null) {
+        s11Raw['sociales_y_ciudadana'] = s11Raw['sociales'];
+      }
+      // competencias_ciudadanas (col migrada) usa sociales como fallback
+      if (s11Raw['competencias_ciudadanas'] == null && s11Raw['sociales'] != null) {
+        s11Raw['competencias_ciudadanas'] = s11Raw['sociales'];
+      }
       const hasS11 = Object.values(s11Raw).some((v) => v !== null);
 
       // Detectar tipo de equivalencia
