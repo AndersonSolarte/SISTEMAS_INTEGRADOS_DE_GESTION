@@ -8,7 +8,8 @@ import {
   Insights as InsightsIcon, Timeline as TimelineIcon, FactCheck as FactCheckIcon,
   ExpandLess as ExpandLessIcon, ExpandMore as ExpandMoreIcon,
   Storage as StorageIcon, QueryStats as QueryStatsIcon,
-  Hub as HubIcon, ArrowBack as ArrowBackIcon
+  Hub as HubIcon, ArrowBack as ArrowBackIcon,
+  Favorite as FavoriteIcon
 } from '@mui/icons-material';
 import { useAuth } from '../context/AuthContext';
 import { ROLE_LABELS, ROLES } from '../constants/roles';
@@ -195,7 +196,8 @@ function DashboardLayout() {
 
   const consultaMenuItems = [
     { key: 'dashboard', path: '/dashboard', label: 'Inicio', icon: <DashboardIcon /> },
-    { key: 'buscar_documentos', path: '/dashboard/buscar-documentos', label: 'Consulta de documentos', icon: <ExploreIcon /> }
+    { key: 'buscar_documentos', path: '/dashboard/buscar-documentos', label: 'Consulta de documentos', icon: <ExploreIcon /> },
+    { key: 'favoritos', path: '/dashboard?section=favoritos', label: 'Documentos Favoritos', icon: <FavoriteIcon /> }
   ];
 
   const planeacionMenuItems = [
@@ -206,27 +208,31 @@ function DashboardLayout() {
       openKey: 'planeacion_estrategica',
       items: planeacionSectionItems
     },
-    { key: 'buscar_documentos', path: '/dashboard/buscar-documentos', label: 'Consulta de documentos', icon: <ExploreIcon /> }
+    { key: 'buscar_documentos', path: '/dashboard/buscar-documentos', label: 'Consulta de documentos', icon: <ExploreIcon /> },
+    { key: 'favoritos', path: '/dashboard?section=favoritos', label: 'Documentos Favoritos', icon: <FavoriteIcon /> }
   ];
 
   const planeacionEfectividadMenuItems = [
     { key: 'dashboard', path: '/dashboard', label: 'Inicio', icon: <DashboardIcon /> },
     { key: 'planeacion_efectividad', path: '/dashboard/planeacion-efectividad', label: 'Planeación y Efectividad', icon: <TimelineIcon /> },
     { key: 'gestion_informacion', path: '/dashboard/gestion-informacion', label: 'Estadística Institucional', icon: <InsightsIcon /> },
-    { key: 'buscar_documentos', path: '/dashboard/buscar-documentos', label: 'Consulta de documentos', icon: <ExploreIcon /> }
+    { key: 'buscar_documentos', path: '/dashboard/buscar-documentos', label: 'Consulta de documentos', icon: <ExploreIcon /> },
+    { key: 'favoritos', path: '/dashboard?section=favoritos', label: 'Documentos Favoritos', icon: <FavoriteIcon /> }
   ];
 
   const autoevaluacionMenuItems = [
     { key: 'dashboard', path: '/dashboard', label: 'Inicio', icon: <DashboardIcon /> },
     { key: 'autoevaluacion', path: '/dashboard/autoevaluacion', label: 'Autoevaluación', icon: <FactCheckIcon /> },
     { key: 'gestion_informacion', path: '/dashboard/gestion-informacion', label: 'Estadística Institucional', icon: <InsightsIcon /> },
-    { key: 'buscar_documentos', path: '/dashboard/buscar-documentos', label: 'Consulta de documentos', icon: <ExploreIcon /> }
+    { key: 'buscar_documentos', path: '/dashboard/buscar-documentos', label: 'Consulta de documentos', icon: <ExploreIcon /> },
+    { key: 'favoritos', path: '/dashboard?section=favoritos', label: 'Documentos Favoritos', icon: <FavoriteIcon /> }
   ];
 
   const gestionInformacionMenuItems = [
     { key: 'dashboard', path: '/dashboard', label: 'Inicio', icon: <DashboardIcon /> },
     { key: 'gestion_informacion', path: '/dashboard/gestion-informacion', label: 'Gestión de la Información', icon: <InsightsIcon /> },
-    { key: 'buscar_documentos', path: '/dashboard/buscar-documentos', label: 'Consulta de documentos', icon: <ExploreIcon /> }
+    { key: 'buscar_documentos', path: '/dashboard/buscar-documentos', label: 'Consulta de documentos', icon: <ExploreIcon /> },
+    { key: 'favoritos', path: '/dashboard?section=favoritos', label: 'Documentos Favoritos', icon: <FavoriteIcon /> }
   ];
 
   const gestionProcesosMenuItems = [
@@ -240,6 +246,7 @@ function DashboardLayout() {
         { key: 'aseguramiento_calidad', path: '/dashboard/aseguramiento-calidad', label: 'Administración del Sistema Documental', icon: <CheckIcon /> },
         { key: 'gestion_documentos', path: '/dashboard/gestion-documentos', label: 'Gestión individual de documentos', icon: <DescriptionIcon /> },
         { key: 'buscar_documentos', path: '/dashboard/buscar-documentos', label: 'Consulta de documentos', icon: <ExploreIcon /> },
+        { key: 'favoritos', path: '/dashboard?section=favoritos', label: 'Documentos Favoritos', icon: <FavoriteIcon /> },
         { key: 'gestion_usuarios', path: '/dashboard/gestion-usuarios', label: 'Gestión de Usuarios', icon: <PeopleIcon /> }
       ]
     }
@@ -254,7 +261,8 @@ function DashboardLayout() {
     { key: 'autoevaluacion', path: '/dashboard/autoevaluacion', label: 'Autoevaluación', icon: <FactCheckIcon /> },
     { key: 'gestion_usuarios', path: '/dashboard/gestion-usuarios', label: 'Gestión de Usuarios', icon: <PeopleIcon /> },
     { key: 'gestion_documentos', path: '/dashboard/gestion-documentos', label: 'Gestión individual de documentos', icon: <DescriptionIcon /> },
-    { key: 'buscar_documentos', path: '/dashboard/buscar-documentos', label: 'Consulta de documentos', icon: <ExploreIcon /> }
+    { key: 'buscar_documentos', path: '/dashboard/buscar-documentos', label: 'Consulta de documentos', icon: <ExploreIcon /> },
+    { key: 'favoritos', path: '/dashboard?section=favoritos', label: 'Documentos Favoritos', icon: <FavoriteIcon /> }
   ];
 
   let menuItems = consultaMenuItems;
@@ -365,6 +373,19 @@ function DashboardLayout() {
   }
 
   menuItems = normalizeMenuByBlocks(menuItems);
+
+  // "Documentos Favoritos" se activa automáticamente cuando el usuario tiene "Consulta de documentos"
+  const tieneBuscarDocs = menuItems.some(
+    (it) => it.key === 'buscar_documentos' ||
+    (Array.isArray(it.items) && it.items.some((c) => c.key === 'buscar_documentos'))
+  );
+  const yaTieneFavorito = menuItems.some(
+    (it) => it.key === 'favoritos' ||
+    (Array.isArray(it.items) && it.items.some((c) => c.key === 'favoritos'))
+  );
+  if (tieneBuscarDocs && !yaTieneFavorito) {
+    menuItems = [...menuItems, { key: 'favoritos', path: '/dashboard?section=favoritos', label: 'Documentos Favoritos', icon: <FavoriteIcon /> }];
+  }
 
   const drawer = (
     <Box sx={{ height: '100%', display: 'flex', flexDirection: 'column', bgcolor: '#0f1f3a' }}>
@@ -656,7 +677,7 @@ function DashboardLayout() {
         </Drawer>
       </Box>
       
-      <Box component="main" sx={{ flexGrow: 1, p: { xs: 2, sm: 2.5 }, width: { sm: `calc(100% - ${drawerWidth}px)` }, bgcolor: '#f8fafc', minHeight: '100vh' }}>
+      <Box component="main" sx={{ flexGrow: 1, p: { xs: 1.5, sm: 2, md: 2.5, lg: 3 }, width: { sm: `calc(100% - ${drawerWidth}px)` }, bgcolor: '#f8fafc', minHeight: '100vh', boxSizing: 'border-box' }}>
         <Toolbar variant="dense" />
         <Outlet />
       </Box>

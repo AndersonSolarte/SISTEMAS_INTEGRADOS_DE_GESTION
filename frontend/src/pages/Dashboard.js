@@ -1,5 +1,5 @@
-﻿import React, { useEffect, useMemo, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+﻿import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { useNavigate, useLocation } from 'react-router-dom';
 import {
   Alert,
   Box,
@@ -48,7 +48,9 @@ import { ROLES, ROLE_LABELS } from '../constants/roles';
 
 function Dashboard() {
   const navigate = useNavigate();
+  const location = useLocation();
   const { user } = useAuth();
+  const favoritosRef = useRef(null);
 
   const [favorites, setFavorites] = useState([]);
   const [loadingFavorites, setLoadingFavorites] = useState(false);
@@ -104,6 +106,16 @@ function Dashboard() {
 
     return () => window.removeEventListener('favorites:updated', handler);
   }, [isConsultaLikeRole]);
+
+  // Auto-scroll a favoritos cuando viene del menú
+  useEffect(() => {
+    const params = new URLSearchParams(location.search || '');
+    if (params.get('section') === 'favoritos' && favoritosRef.current) {
+      setTimeout(() => {
+        favoritosRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      }, 400);
+    }
+  }, [location.search]);
 
   const filteredFavorites = useMemo(() => {
     const term = String(favoriteSearch || '').trim().toLowerCase();
@@ -325,14 +337,14 @@ function Dashboard() {
 
   if (isConsultaLikeRole) {
     return (
-      <Container maxWidth="xl">
+      <Container maxWidth="xl" sx={{ px: { xs: 0, sm: 1, md: 2, lg: 3 } }}>
         <Fade in={true} timeout={500}>
           <Box>
             <Paper
               elevation={0}
               sx={{
-                mb: { xs: 3, md: 4 },
-                p: { xs: 2.5, sm: 3, md: 4 },
+                mb: { xs: 3, md: 4, lg: 5 },
+                p: { xs: 2.5, sm: 3, md: 4, lg: 4.5 },
                 borderRadius: { xs: 3, md: 4 },
                 border: '1px solid #d7e3f5',
                 background: 'linear-gradient(135deg, #0f172a 0%, #1d4ed8 40%, #be123c 100%)',
@@ -342,16 +354,16 @@ function Dashboard() {
               }}
             >
               <Box sx={{ position: 'absolute', inset: 0, opacity: 0.25, background: 'radial-gradient(circle at 15% 10%, rgba(255,255,255,0.18), transparent 45%)' }} />
-              <Box sx={{ position: 'absolute', right: -80, bottom: -80, width: 240, height: 240, borderRadius: '50%', background: 'rgba(255,255,255,0.12)' }} />
+              <Box sx={{ position: 'absolute', right: -80, bottom: -80, width: { xs: 200, lg: 280, xl: 320 }, height: { xs: 200, lg: 280, xl: 320 }, borderRadius: '50%', background: 'rgba(255,255,255,0.12)' }} />
               <Stack direction={{ xs: 'column', md: 'row' }} spacing={{ xs: 2, md: 3 }} alignItems={{ md: 'center' }} sx={{ position: 'relative', zIndex: 1 }}>
-                <Box sx={{ width: { xs: 72, md: 96 }, height: { xs: 72, md: 96 }, borderRadius: 3, display: 'flex', alignItems: 'center', justifyContent: 'center', bgcolor: 'rgba(255,255,255,0.18)', border: '1px solid rgba(255,255,255,0.45)', boxShadow: '0 8px 26px rgba(15, 23, 42, 0.35)' }}>
-                  <ProcessIcon sx={{ fontSize: { xs: 34, md: 42 }, color: 'white' }} />
+                <Box sx={{ width: { xs: 72, md: 96, xl: 112 }, height: { xs: 72, md: 96, xl: 112 }, borderRadius: 3, display: 'flex', alignItems: 'center', justifyContent: 'center', bgcolor: 'rgba(255,255,255,0.18)', border: '1px solid rgba(255,255,255,0.45)', boxShadow: '0 8px 26px rgba(15, 23, 42, 0.35)', flexShrink: 0 }}>
+                  <ProcessIcon sx={{ fontSize: { xs: 34, md: 42, xl: 50 }, color: 'white' }} />
                 </Box>
-                <Box sx={{ flexGrow: 1 }}>
-                  <Typography variant="h4" sx={{ fontWeight: 900, mb: 1, letterSpacing: 0.2, fontSize: { xs: 22, sm: 26, md: 32 } }}>
+                <Box sx={{ flexGrow: 1, minWidth: 0 }}>
+                  <Typography variant="h4" sx={{ fontWeight: 900, mb: 1, letterSpacing: 0.2, fontSize: { xs: 22, sm: 26, md: 32, lg: 34, xl: 36 } }}>
                     Inicio de Consulta Documental
                   </Typography>
-                  <Typography variant="body1" sx={{ color: 'rgba(255,255,255,0.9)', fontSize: { xs: 13, sm: 14, md: 16 } }}>
+                  <Typography variant="body1" sx={{ color: 'rgba(255,255,255,0.9)', fontSize: { xs: 13, sm: 14, md: 16, lg: 17 } }}>
                     Accede al mapa de procesos y encuentra documentos institucionales de forma rápida y clara.
                   </Typography>
                 </Box>
@@ -377,11 +389,11 @@ function Dashboard() {
 
             <Grid container spacing={3}>
               <Grid item xs={12}>
-                <Paper elevation={0} sx={{ p: 2.5, borderRadius: 3, border: '1px solid #e2e8f0' }}>
+                <Paper elevation={0} sx={{ p: { xs: 2, sm: 2.5, lg: 3 }, borderRadius: 3, border: '1px solid #e2e8f0' }}>
                   <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1.5} alignItems={{ sm: 'center' }} justifyContent="space-between" sx={{ mb: 2 }}>
                     <Stack direction="row" spacing={1} alignItems="center">
                       <ProcessIcon sx={{ color: '#1d4ed8' }} />
-                      <Typography variant="h6" sx={{ fontWeight: 800, color: '#1e293b' }}>
+                      <Typography variant="h6" sx={{ fontWeight: 800, color: '#1e293b', fontSize: { xs: 16, md: 18, lg: 20 } }}>
                         Mapa de Procesos Institucional
                       </Typography>
                     </Stack>
@@ -412,7 +424,8 @@ function Dashboard() {
                       border: '1px solid #93c5fd',
                       bgcolor: '#f8fafc',
                       boxShadow: 'inset 0 0 0 1px rgba(29, 78, 216, 0.08)',
-                      p: { xs: 1, sm: 1.5 }
+                      p: { xs: 1, sm: 1.5 },
+                      overflow: 'hidden'
                     }}
                   >
                     <Box
@@ -423,9 +436,9 @@ function Dashboard() {
                         width: '100%',
                         height: 'auto',
                         display: 'block',
-                        maxHeight: { xs: 520, md: 760, lg: 860 },
+                        maxHeight: { xs: 420, sm: 580, md: 760, lg: 900, xl: 1060 },
                         objectFit: 'contain',
-                        objectPosition: 'center',
+                        objectPosition: 'center top',
                         mx: 'auto'
                       }}
                     />
@@ -436,10 +449,10 @@ function Dashboard() {
               <Grid item xs={12}>
                 <Stack spacing={2.5}>
 
-                  <Paper elevation={0} sx={{ p: 2.5, borderRadius: 3, border: '1px solid #e2e8f0' }}>
+                  <Paper ref={favoritosRef} elevation={0} sx={{ p: { xs: 2, sm: 2.5, lg: 3 }, borderRadius: 3, border: '1px solid #e2e8f0', scrollMarginTop: 72 }}>
                     <Stack direction="row" spacing={1} alignItems="center" sx={{ mb: 2 }}>
                       <FavoriteIcon sx={{ color: '#ef4444' }} />
-                      <Typography variant="h6" sx={{ fontWeight: 800, color: '#1e293b' }}>
+                      <Typography variant="h6" sx={{ fontWeight: 800, color: '#1e293b', fontSize: { xs: 16, md: 18, lg: 20 } }}>
                         Documentos Favoritos
                       </Typography>
                     </Stack>
