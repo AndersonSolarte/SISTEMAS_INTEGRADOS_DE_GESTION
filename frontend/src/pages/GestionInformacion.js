@@ -584,6 +584,25 @@ const computeRingsBBox = (rings = []) => {
   };
 };
 
+const isPointInRing = (pointLon, pointLat, ring = []) => {
+  if (!Array.isArray(ring) || ring.length < 3) return false;
+  let inside = false;
+  for (let i = 0, j = ring.length - 1; i < ring.length; j = i, i += 1) {
+    const xi = Number(ring[i]?.[0]);
+    const yi = Number(ring[i]?.[1]);
+    const xj = Number(ring[j]?.[0]);
+    const yj = Number(ring[j]?.[1]);
+    if (![xi, yi, xj, yj].every(Number.isFinite)) continue;
+    const intersect = ((yi > pointLat) !== (yj > pointLat))
+      && (pointLon < ((xj - xi) * (pointLat - yi)) / ((yj - yi) || 1e-12) + xi);
+    if (intersect) inside = !inside;
+  }
+  return inside;
+};
+
+const isPointInAnyRing = (pointLon, pointLat, rings = []) =>
+  Array.isArray(rings) && rings.some((ring) => isPointInRing(pointLon, pointLat, ring));
+
 const projectLonLatToSvg = ({ lon, lat, bbox, width = 1000, height = 700, padding = 18 }) => {
   const safe = {
     minLon: Number.isFinite(bbox?.minLon) ? bbox.minLon : (Number.isFinite(bbox?.lonMin) ? bbox.lonMin : -81.8),
@@ -682,34 +701,44 @@ const buildGeoLabelLayout = ({
       180
     );
     const boxHeight = 40;
-    const preferAbove = item.y > height * 0.22;
-    const xVariants = [0, 14, -14, 28, -28, 42, -42];
-    const yVariants = [0, -18, 18, -34, 34, -50, 50, -66, 66];
+    const preferAbove = item.y > height * 0.24;
     let chosen = null;
+    const candidateOffsets = [];
+    const baseYOffset = preferAbove ? -58 : 18;
+    for (let ring = 0; ring <= 10; ring += 1) {
+      const ringRadius = ring * 18;
+      const angles = ring === 0
+        ? [preferAbove ? -90 : 90]
+        : [-90, -60, -30, 0, 30, 60, 90, 120, 150, 180, -120, -150];
+      angles.forEach((angleDeg) => {
+        const angle = (angleDeg * Math.PI) / 180;
+        candidateOffsets.push({
+          xOffset: Math.cos(angle) * ringRadius,
+          yOffset: baseYOffset + (Math.sin(angle) * ringRadius)
+        });
+      });
+    }
 
-    for (const yOffset of yVariants) {
-      for (const xOffset of xVariants) {
-        const rawX = item.x - (boxWidth / 2) + xOffset;
-        const rawY = item.y + (preferAbove ? (-58 + yOffset) : (18 + yOffset));
-        const candidate = {
-          x: clampValue(rawX, padding, width - boxWidth - padding),
-          y: clampValue(rawY, padding, height - boxHeight - padding),
-          width: boxWidth,
-          height: boxHeight,
-          anchorX: item.x,
-          anchorY: item.y,
-          name,
-          value,
-          key: item.key || `${name}-${index}`,
-          total: normalizeNumber(item.total || 0),
-          percent: Number(item.percent || 0)
-        };
-        if (!placed.some((other) => rectsOverlap(candidate, other, labelGap))) {
-          chosen = candidate;
-          break;
-        }
+    for (const offset of candidateOffsets) {
+      const rawX = item.x - (boxWidth / 2) + offset.xOffset;
+      const rawY = item.y + offset.yOffset;
+      const candidate = {
+        x: clampValue(rawX, padding, width - boxWidth - padding),
+        y: clampValue(rawY, padding, height - boxHeight - padding),
+        width: boxWidth,
+        height: boxHeight,
+        anchorX: item.x,
+        anchorY: item.y,
+        name,
+        value,
+        key: item.key || `${name}-${index}`,
+        total: normalizeNumber(item.total || 0),
+        percent: Number(item.percent || 0)
+      };
+      if (!placed.some((other) => rectsOverlap(candidate, other, labelGap))) {
+        chosen = candidate;
+        break;
       }
-      if (chosen) break;
     }
 
     if (!chosen) {
@@ -2590,10 +2619,6 @@ function GestionInformacion() {
         normalizeNumber(item?.total || 0)
       ])
     );
-    const deptMunicipalityNameSet = new Set((selectedMatriculadosDepartment?.municipios || [])
-      .map((item) => normalizeGeoNameKey(item?.municipio || ''))
-      .filter(Boolean));
-
     const rows = adm2GeoFeatures
       .map((feature) => {
         const shapeName = String(feature?.properties?.shapeName || '').trim();
@@ -2610,8 +2635,7 @@ function GestionInformacion() {
           && centroidLat >= deptBbox.minLat
           && centroidLat <= deptBbox.maxLat;
         if (!inDeptBbox) return null;
-
-        if (deptMunicipalityNameSet.size > 0 && !deptMunicipalityNameSet.has(muniKey)) return null;
+        if (!isPointInAnyRing(centroidLon, centroidLat, selectedDeptGeoPolygon.rings)) return null;
 
         const total = nameToTotal.get(muniKey) || 0;
         return {
@@ -2626,7 +2650,7 @@ function GestionInformacion() {
             maxLon: muniMapBounds.lonMax,
             minLat: muniMapBounds.latMin,
             maxLat: muniMapBounds.latMax
-          }, 600, 480, 12)
+          }, DEPARTMENT_MAP_CANVAS_WIDTH, DEPARTMENT_MAP_CANVAS_HEIGHT, DEPARTMENT_MAP_CANVAS_PADDING)
         };
       })
       .filter(Boolean);
@@ -2661,50 +2685,35 @@ function GestionInformacion() {
       .filter((item) => Number.isFinite(item.x) && Number.isFinite(item.y))
       .sort((a, b) => normalizeNumber(b.total || 0) - normalizeNumber(a.total || 0))
   ), [deptGeoPolygons, deptMapBbox, total]);
-  const departmentMunicipalityMapLabels = useMemo(() => buildGeoLabelLayout({
-    items: ((selectedMatriculadosDepartment?.municipios || []).map((item) => {
-      const muniName = String(item?.municipio || '').trim();
-      const muniKey = normalizeGeoNameKey(muniName);
-      const deptKey = normalizeGeoNameKey(selectedMatriculadosDepartment?.name || '');
-      const geoPoint = municipalityGeoIndex[`${deptKey}|${muniKey}`];
-      const polygon = (deptMunicipalityPolygons || []).find((poly) => poly.muniKey === muniKey) || null;
-      const lon = Number.isFinite(Number(geoPoint?.lon)) ? Number(geoPoint.lon) : Number.isFinite(Number(item?.lon)) ? Number(item.lon) : Number(polygon?.centroidLon);
-      const lat = Number.isFinite(Number(geoPoint?.lat)) ? Number(geoPoint.lat) : Number.isFinite(Number(item?.lat)) ? Number(item.lat) : Number(polygon?.centroidLat);
-      const point = projectLonLatToSvg({
-        lon,
-        lat,
-        bbox: {
-          minLon: muniMapBounds.lonMin,
-          maxLon: muniMapBounds.lonMax,
-          minLat: muniMapBounds.latMin,
-          maxLat: muniMapBounds.latMax
-        },
-        width: DEPARTMENT_MAP_CANVAS_WIDTH,
-        height: DEPARTMENT_MAP_CANVAS_HEIGHT,
-        padding: DEPARTMENT_MAP_CANVAS_PADDING
-      });
-      return {
-        key: `${deptKey}|${muniKey}`,
-        muniKey,
-        name: normalizeUiUpper(muniName),
-        total: normalizeNumber(item?.total || 0),
-        percent: normalizeNumber(selectedMatriculadosDepartment?.total || 0) > 0
-          ? (normalizeNumber(item?.total || 0) / normalizeNumber(selectedMatriculadosDepartment?.total || 0)) * 100
-          : 0,
-        x: point.x,
-        y: point.y
-      };
-    }).filter((item) => Number.isFinite(item.x) && Number.isFinite(item.y))),
-    width: DEPARTMENT_MAP_CANVAS_WIDTH,
-    height: DEPARTMENT_MAP_CANVAS_HEIGHT,
-    padding: 20,
-    labelGap: 14,
-    maxLabels: 40,
-    estimateWidth: ({ name, value }) => clampValue(Math.max((String(name || '').length * 7.1) + 28, (value.length * 8) + 26, 116), 116, 220)
-  }), [deptMunicipalityPolygons, municipalityGeoIndex, muniMapBounds, selectedMatriculadosDepartment]);
-  const municipalityMarkerClusters = useMemo(
-    () => buildGeoMarkerClusters({ items: departmentMunicipalityMapLabels, radius: 34, minItems: 2 }),
-    [departmentMunicipalityMapLabels]
+  const municipalityPins = useMemo(
+    () => deptMunicipalityPolygons
+      .filter((item) => normalizeNumber(item.total || 0) > 0)
+      .map((item) => {
+        const point = projectLonLatToSvg({
+          lon: Number(item.centroidLon),
+          lat: Number(item.centroidLat),
+          bbox: {
+            minLon: muniMapBounds.lonMin,
+            maxLon: muniMapBounds.lonMax,
+            minLat: muniMapBounds.latMin,
+            maxLat: muniMapBounds.latMax
+          },
+          width: DEPARTMENT_MAP_CANVAS_WIDTH,
+          height: DEPARTMENT_MAP_CANVAS_HEIGHT,
+          padding: DEPARTMENT_MAP_CANVAS_PADDING
+        });
+        return {
+          key: item.key,
+          muniKey: item.muniKey,
+          name: normalizeUiUpper(item.name || ''),
+          total: normalizeNumber(item.total || 0),
+          x: point.x,
+          y: point.y
+        };
+      })
+      .filter((item) => Number.isFinite(item.x) && Number.isFinite(item.y))
+      .sort((a, b) => normalizeNumber(b.total || 0) - normalizeNumber(a.total || 0)),
+    [deptMunicipalityPolygons, muniMapBounds]
   );
   const sexoPalette = useMemo(() => ({
     Femenino: '#EC4899',
@@ -8424,7 +8433,16 @@ const renderCategoryBars = (items = [], options = {}) => {
     }));
 
     /* ── Municipality markers ── */
-    const muniMaxVal = Math.max(...matriculadosMunicipiosGeoPoints.map((p) => p.total || 0), 1);
+    const muniMaxVal = Math.max(...municipalityPins.map((p) => normalizeNumber(p.total || 0)), 1);
+    const municipalityMarkerGroups = buildGeoMarkerClusters({
+      items: municipalityPins.map((item) => ({
+        ...item,
+        percent: selectedDeptTotal > 0 ? (normalizeNumber(item.total || 0) / selectedDeptTotal) * 100 : 0
+      })),
+      radius: 20,
+      minItems: 2
+    })
+      .sort((a, b) => normalizeNumber(b.total || 0) - normalizeNumber(a.total || 0));
 
     /* ── Number formatter (compact: 10k, 1.2M) ── */
     const fmtCompact = (n) => {
@@ -8555,7 +8573,7 @@ const renderCategoryBars = (items = [], options = {}) => {
                 width: '100%',
                 display: 'grid',
                 gap: 2,
-                gridTemplateColumns: { xs: '1fr', md: 'minmax(0, 1fr) minmax(0, 1fr)' },
+                gridTemplateColumns: { xs: '1fr', md: 'minmax(0, 1.55fr) minmax(0, 0.95fr)' },
                 alignItems: 'stretch'
               }}
             >
@@ -8564,9 +8582,9 @@ const renderCategoryBars = (items = [], options = {}) => {
                 <Box
                   sx={{
                     width: '100%',
-                    minHeight: { xs: 300, sm: 340, md: 380 },
-                    height: { xs: 360, sm: 440, md: 560, lg: 640 },
-                    maxHeight: { xs: 400, sm: 500, md: 620, lg: 700 },
+                    minHeight: { xs: 400, sm: 500, md: 620, lg: 720 },
+                    height: { xs: 480, sm: 620, md: 780, lg: 900 },
+                    maxHeight: { xs: 540, sm: 700, md: 860, lg: 980 },
                     position: 'relative',
                     bgcolor: '#f0f7ff',
                     border: '1px solid #dbeafe',
@@ -8596,8 +8614,8 @@ const renderCategoryBars = (items = [], options = {}) => {
                           key={shape.key}
                           d={shape.path}
                           fill={fillColor}
-                          stroke="#fff"
-                          strokeWidth="1.2"
+                          stroke="#f8fbff"
+                          strokeWidth="0.8"
                           style={{ cursor: shape.total > 0 ? 'pointer' : 'default', transition: 'fill 0.18s ease' }}
                           onClick={() => {
                             if (shape.total > 0) {
@@ -8617,14 +8635,18 @@ const renderCategoryBars = (items = [], options = {}) => {
                   >
                     {deptPins.map((m) => {
                       const totalLabel = formatNumber(m.total);
-                      const badgeWidth = clampValue(Math.max((totalLabel.length * 9.2) + 18, 44), 44, 88);
-                      const badgeHeight = 24;
-                      const badgeX = m.x - (badgeWidth / 2);
-                      const badgeY = m.y - 42;
+                      const badgeWidth = clampValue(Math.max((totalLabel.length * 8.6) + 14, 40), 40, 78);
+                      const badgeHeight = 22;
+                      const spreadSeed = hashString(m.key || m.name || '');
+                      const spreadX = ((spreadSeed % 9) - 4) * 8;
+                      const spreadY = ((Math.floor(spreadSeed / 9) % 7) - 3) * 6;
+                      const badgeX = clampValue((m.x - (badgeWidth / 2)) + spreadX, 10, COLOMBIA_MAP_CANVAS_WIDTH - badgeWidth - 10);
+                      const badgeY = clampValue((m.y - 36) + spreadY, 10, COLOMBIA_MAP_CANVAS_HEIGHT - badgeHeight - 10);
                       const markerColor = m.isSelected ? '#dc2626' : '#1d4ed8';
                       const shadowColor = m.isSelected ? 'rgba(220,38,38,0.22)' : 'rgba(29,78,216,0.20)';
-                      const deptLabel = m.name.length > 15 ? m.name.substring(0, 13) + '…' : m.name;
+                      const deptLabel = m.name.length > 15 ? m.name.substring(0, 13) + '...' : m.name;
                       const nameY = badgeY - 7;
+                      const textX = badgeX + (badgeWidth / 2);
                       return (
                         <g
                           key={m.key}
@@ -8634,10 +8656,10 @@ const renderCategoryBars = (items = [], options = {}) => {
                           <ellipse cx={m.x} cy={m.y + 20} rx="18" ry="7" fill={shadowColor} />
                           {/* Department name label above badge */}
                           <text
-                            x={m.x}
+                            x={textX}
                             y={nameY}
                             textAnchor="middle"
-                            fontSize="11"
+                            fontSize="9.8"
                             fill="#0f172a"
                             fontWeight="700"
                             fontFamily="system-ui,sans-serif"
@@ -8650,10 +8672,10 @@ const renderCategoryBars = (items = [], options = {}) => {
                           {/* Count badge */}
                           <rect x={badgeX} y={badgeY} width={badgeWidth} height={badgeHeight} rx="12" fill="#ffffff" stroke={markerColor} strokeWidth="1.8" />
                           <text
-                            x={m.x}
-                            y={badgeY + 16}
+                            x={textX}
+                            y={badgeY + 15}
                             textAnchor="middle"
-                            fontSize="11.8"
+                            fontSize="10.6"
                             fill={markerColor}
                             fontWeight="900"
                             fontFamily="system-ui,sans-serif"
@@ -8745,8 +8767,8 @@ const renderCategoryBars = (items = [], options = {}) => {
                     display: 'flex',
                     flexDirection: 'column',
                     p: { xs: 2, sm: 2 },
-                    minHeight: { xs: 300, sm: 340, md: 380 },
-                    maxHeight: { xs: 400, sm: 500, md: 620, lg: 700 },
+                    minHeight: { xs: 400, sm: 500, md: 620, lg: 720 },
+                    maxHeight: { xs: 540, sm: 700, md: 860, lg: 980 },
                     border: '1px solid #dbeafe',
                     borderRadius: 2.5,
                     bgcolor: '#fff'
@@ -8855,49 +8877,49 @@ const renderCategoryBars = (items = [], options = {}) => {
                 alignItems: 'stretch'
               }}
             >
-              <Box
-                sx={{
-                  display: 'flex',
-                  flexDirection: 'column',
-                  minHeight: { xs: 420, sm: 540, md: 660 },
-                  border: '1px solid #b7e4d7',
-                  borderRadius: 2.5,
-                  overflow: 'hidden',
-                  bgcolor: '#ecfdf5',
-                  boxShadow: '0 10px 30px rgba(15,118,110,0.08)'
-                }}
-              >
-                <Box sx={{ px: 1.8, py: 1.1, borderBottom: '1px solid #ccefe3', background: 'linear-gradient(135deg, rgba(15,118,110,0.12) 0%, rgba(15,118,110,0.03) 100%)' }}>
-                  <Typography sx={{ fontWeight: 900, color: '#064e3b', fontSize: 13.5 }}>
+                <Box
+                  sx={{
+                    display: 'flex',
+                    flexDirection: 'column',
+                    minHeight: { xs: 580, sm: 740, md: 900, lg: 1020 },
+                    border: '1px solid #c9d9ef',
+                    borderRadius: 2.5,
+                    overflow: 'hidden',
+                    bgcolor: '#eef4ff',
+                    boxShadow: '0 10px 30px rgba(30,58,138,0.08)'
+                  }}
+                >
+                <Box sx={{ px: 1.8, py: 1.1, borderBottom: '1px solid #dbeafe', background: 'linear-gradient(135deg, rgba(30,64,175,0.14) 0%, rgba(30,64,175,0.04) 100%)' }}>
+                  <Typography sx={{ fontWeight: 900, color: '#1e3a8a', fontSize: 13.5 }}>
                     {matriculadosGeoSelection ? `Departamento seleccionado: ${normalizeUiUpper(matriculadosGeoSelection)}` : 'Mapa del departamento'}
                   </Typography>
-                  <Typography sx={{ color: '#0f766e', fontSize: 11.2, mt: 0.2 }}>
+                  <Typography sx={{ color: '#1e40af', fontSize: 11.2, mt: 0.2 }}>
                     {matriculadosGeoSelection
-                      ? 'Silueta departamental y division municipal con etiquetas de registros'
+                      ? 'Silueta departamental y división municipal (clic sobre municipio para seleccionar)'
                       : 'La seccion inferior se activa al hacer clic en un departamento del mapa de Colombia'}
                   </Typography>
                 </Box>
-                <Box sx={{ width: '100%', flex: 1, minHeight: 0, bgcolor: '#f0fdf4', overflow: 'hidden', position: 'relative' }}>
+                <Box sx={{ width: '100%', flex: 1, minHeight: 0, bgcolor: '#edf3ff', overflow: 'hidden', position: 'relative' }}>
                 {matriculadosGeoSelection && selectedDeptGeoPolygon ? (
                   <svg
                     viewBox={`0 0 ${DEPARTMENT_MAP_CANVAS_WIDTH} ${DEPARTMENT_MAP_CANVAS_HEIGHT}`}
                     style={{ width: '100%', height: '100%', display: 'block', position: 'absolute', top: 0, left: 0 }}
                     preserveAspectRatio="xMidYMid meet"
                   >
-                    <path d={buildSvgPathFromRings(selectedDeptGeoPolygon.rings, { minLon: muniMapBounds.lonMin, maxLon: muniMapBounds.lonMax, minLat: muniMapBounds.latMin, maxLat: muniMapBounds.latMax }, DEPARTMENT_MAP_CANVAS_WIDTH, DEPARTMENT_MAP_CANVAS_HEIGHT, DEPARTMENT_MAP_CANVAS_PADDING)} fill="#d1fae5" stroke="#a7f3d0" strokeWidth="1.5" />
+                    <path d={buildSvgPathFromRings(selectedDeptGeoPolygon.rings, { minLon: muniMapBounds.lonMin, maxLon: muniMapBounds.lonMax, minLat: muniMapBounds.latMin, maxLat: muniMapBounds.latMax }, DEPARTMENT_MAP_CANVAS_WIDTH, DEPARTMENT_MAP_CANVAS_HEIGHT, DEPARTMENT_MAP_CANVAS_PADDING)} fill="#eef4ff" stroke="#bfdbfe" strokeWidth="1.1" />
                     {deptMunicipalityPolygons.map((poly) => {
                       const isSelected = normalizeGeoNameKey(matriculadosMunicipioSelection || '') === poly.muniKey;
                       const pct = selectedDeptTotal > 0 ? (normalizeNumber(poly.total || 0) / selectedDeptTotal) * 100 : 0;
                       const fillColor = poly.total > 0
-                        ? `rgba(15,118,110,${Math.min(0.86, 0.14 + (poly.intensity * 0.74)).toFixed(2)})`
-                        : 'rgba(148,163,184,0.24)';
+                        ? `rgba(59,130,246,${Math.min(0.58, 0.10 + (poly.intensity * 0.46)).toFixed(2)})`
+                        : 'rgba(255,255,255,0.48)';
                       return (
                         <path
                           key={poly.key}
                           d={poly.path}
-                          fill={isSelected ? '#0f766e' : fillColor}
-                          stroke={isSelected ? '#022c22' : '#ecfeff'}
-                          strokeWidth={isSelected ? 1.6 : 1}
+                          fill={isSelected ? '#3b82f6' : fillColor}
+                          stroke={isSelected ? '#2563eb' : '#f8fbff'}
+                          strokeWidth={isSelected ? 1.05 : 0.75}
                           style={{ cursor: 'pointer', transition: 'all .15s ease' }}
                           onClick={() => setMatriculadosMunicipioSelection((prev) => (prev === poly.name ? '' : poly.name))}
                           onMouseEnter={() => {
@@ -8917,70 +8939,95 @@ const renderCategoryBars = (items = [], options = {}) => {
                         </path>
                       );
                     })}
-                    {municipalityMarkerClusters.map((labelItem) => {
-                      const isSelected = !labelItem.isCluster && normalizeGeoNameKey(matriculadosMunicipioSelection || '') === labelItem.muniKey;
-                      const pinColor = labelItem.isCluster ? '#0f766e' : (isSelected ? '#065f46' : '#1e3a8a');
-                      const clusterCaption = labelItem.isCluster ? `${labelItem.clusterCount} municipios` : '';
+                    {municipalityMarkerGroups.map((group) => {
+                      const isCluster = Boolean(group.isCluster && Number(group.clusterCount || 0) > 1);
+                      const isSelected = !isCluster && normalizeGeoNameKey(matriculadosMunicipioSelection || '') === normalizeGeoNameKey(group.muniKey || '');
+                      const markerColor = isSelected ? '#dc2626' : '#2563eb';
+                      const normalizedTotal = normalizeNumber(group.total || 0);
+                      const radius = isCluster
+                        ? clampValue(6 + (Number(group.clusterCount || 0) * 0.35), 6, 10)
+                        : clampValue(4.6 + ((normalizedTotal / muniMaxVal) * 2.1), 4.6, 7.8);
+                      const labelText = fmtCompact(group.total || 0);
+                      const seed = hashString(group.key || group.name || '');
+                      const labelX = clampValue(group.x + (((seed % 7) - 3) * 4), 8, DEPARTMENT_MAP_CANVAS_WIDTH - 8);
+                      const labelY = clampValue(group.y - 10 + (((Math.floor(seed / 7) % 5) - 2) * 3), 10, DEPARTMENT_MAP_CANVAS_HEIGHT - 10);
+                      const title = isCluster
+                        ? `Cluster: ${formatNumber(group.total)} matriculados en ${group.clusterCount} municipios`
+                        : `${group.name}: ${formatNumber(group.total)} matriculados`;
                       return (
                         <g
-                          key={`${labelItem.key}|lbl`}
-                          style={{ cursor: labelItem.isCluster ? 'default' : 'pointer' }}
+                          key={`muni-group-${group.key}`}
+                          style={{ cursor: isCluster ? 'default' : 'pointer' }}
                           onClick={() => {
-                            if (labelItem.isCluster) return;
-                            setMatriculadosMunicipioSelection((prev) => (prev === labelItem.name ? '' : labelItem.name));
+                            if (!isCluster) {
+                              setMatriculadosMunicipioSelection((prev) => (normalizeGeoNameKey(prev || '') === normalizeGeoNameKey(group.name || '') ? '' : group.name));
+                            }
                           }}
-                          onMouseEnter={() => setGeoHoverCard({
-                            x: labelItem.x,
-                            y: labelItem.y,
-                            title: labelItem.isCluster ? `Cluster municipal (${labelItem.clusterCount})` : normalizeUiUpper(labelItem.name),
-                            total: labelItem.total,
-                            percent: labelItem.percent
-                          })}
+                          onMouseEnter={() => {
+                            const pct = selectedDeptTotal > 0 ? (normalizeNumber(group.total || 0) / selectedDeptTotal) * 100 : 0;
+                            setGeoHoverCard({
+                              x: group.x,
+                              y: group.y,
+                              title: isCluster ? `Cluster (${group.clusterCount} municipios)` : String(group.name || ''),
+                              total: normalizeNumber(group.total || 0),
+                              percent: pct
+                            });
+                          }}
                           onMouseLeave={() => setGeoHoverCard(null)}
                         >
-                          <line x1={labelItem.x} y1={labelItem.y + (labelItem.isCluster ? 6 : 2)} x2={labelItem.x} y2={labelItem.y + 16} stroke={pinColor} strokeWidth="1.3" opacity="0.9" />
-                          <circle cx={labelItem.x} cy={labelItem.y} r={labelItem.isCluster ? 5.8 : 4.4} fill={pinColor} stroke="#fff" strokeWidth="1.4" />
-                          <rect x={labelItem.x - (labelItem.width / 2)} y={labelItem.y + 18} width={labelItem.width} height={labelItem.isCluster ? 54 : labelItem.height} rx="10" fill={pinColor} opacity="0.98" />
-                          <text
-                            x={labelItem.x}
-                            y={labelItem.y + 34}
-                            textAnchor="middle"
-                            fontSize="10.8"
-                            fill="#fff"
-                            fontWeight="900"
-                            fontFamily="system-ui,sans-serif"
-                          >{labelItem.isCluster ? 'Cluster' : String(labelItem.name || '').slice(0, 22)}</text>
-                          <text
-                            x={labelItem.x}
-                            y={labelItem.y + 49}
-                            textAnchor="middle"
-                            fontSize="12.5"
-                            fill="#fff"
-                            fontWeight="900"
-                            fontFamily="system-ui,sans-serif"
-                          >{labelItem.value}</text>
-                          {clusterCaption && (
-                            <text x={labelItem.x} y={labelItem.y + 64} textAnchor="middle" fontSize="10" fill="rgba(255,255,255,0.84)" fontWeight="700" fontFamily="system-ui,sans-serif">{clusterCaption}</text>
+                          {isCluster && (
+                            <circle
+                              cx={group.x}
+                              cy={group.y}
+                              r={radius + 2.2}
+                              fill="none"
+                              stroke={markerColor}
+                              strokeOpacity="0.30"
+                              strokeWidth="1.2"
+                            />
                           )}
-                          <title>Municipio: {labelItem.name} | Total estudiantes: {formatNumber(labelItem.total)}</title>
+                          <circle
+                            cx={group.x}
+                            cy={group.y}
+                            r={radius}
+                            fill={markerColor}
+                            fillOpacity={isCluster ? 0.90 : 0.84}
+                            stroke="#eff6ff"
+                            strokeWidth="1.15"
+                          />
+                          <text
+                            x={labelX}
+                            y={labelY}
+                            textAnchor="middle"
+                            fontSize={isCluster ? '8.4' : '8.1'}
+                            fill={markerColor}
+                            fontWeight="800"
+                            fontFamily="system-ui,sans-serif"
+                            stroke="#ffffff"
+                            strokeWidth="2.2"
+                            paintOrder="stroke"
+                          >
+                            {labelText}
+                          </text>
+                          <title>{title}</title>
                         </g>
                       );
                     })}
-                    {deptMunicipalityPolygons.length === 0 && matriculadosMunicipiosGeoPoints.length === 0 && (
+                    {deptMunicipalityPolygons.length === 0 && (
                       <text x={DEPARTMENT_MAP_CANVAS_WIDTH / 2} y={DEPARTMENT_MAP_CANVAS_HEIGHT - 40} textAnchor="middle" fontSize="13" fill="#6b7280" fontFamily="system-ui,sans-serif">Sin datos de municipio normalizado en los registros</text>
                     )}
                     {geoHoverCard && (
                       <g style={{ pointerEvents: 'none' }}>
                         <rect x={clampValue(geoHoverCard.x + 16, 16, DEPARTMENT_MAP_CANVAS_WIDTH - 206)} y={clampValue(geoHoverCard.y - 14, 16, DEPARTMENT_MAP_CANVAS_HEIGHT - 74)} width="190" height="58" rx="8" fill="#0f172a" opacity="0.94" />
-                        <text x={clampValue(geoHoverCard.x + 28, 28, DEPARTMENT_MAP_CANVAS_WIDTH - 194)} y={clampValue(geoHoverCard.y + 4, 30, DEPARTMENT_MAP_CANVAS_HEIGHT - 48)} fontSize="11" fill="#fff" fontWeight="800" fontFamily="system-ui,sans-serif">{geoHoverCard.title}</text>
-                        <text x={clampValue(geoHoverCard.x + 28, 28, DEPARTMENT_MAP_CANVAS_WIDTH - 194)} y={clampValue(geoHoverCard.y + 22, 46, DEPARTMENT_MAP_CANVAS_HEIGHT - 30)} fontSize="11" fill="#bfdbfe" fontWeight="700" fontFamily="system-ui,sans-serif">{`Total matriculados: ${formatNumber(geoHoverCard.total)}`}</text>
-                        <text x={clampValue(geoHoverCard.x + 28, 28, DEPARTMENT_MAP_CANVAS_WIDTH - 194)} y={clampValue(geoHoverCard.y + 38, 62, DEPARTMENT_MAP_CANVAS_HEIGHT - 12)} fontSize="11" fill="#93c5fd" fontWeight="700" fontFamily="system-ui,sans-serif">{`Participación: ${Number(geoHoverCard.percent || 0).toFixed(1)}%`}</text>
+                        <text x={clampValue(geoHoverCard.x + 28, 28, DEPARTMENT_MAP_CANVAS_WIDTH - 194)} y={clampValue(geoHoverCard.y + 4, 30, DEPARTMENT_MAP_CANVAS_HEIGHT - 48)} fontSize="9.8" fill="#fff" fontWeight="800" fontFamily="system-ui,sans-serif">{geoHoverCard.title}</text>
+                        <text x={clampValue(geoHoverCard.x + 28, 28, DEPARTMENT_MAP_CANVAS_WIDTH - 194)} y={clampValue(geoHoverCard.y + 22, 46, DEPARTMENT_MAP_CANVAS_HEIGHT - 30)} fontSize="9.8" fill="#bfdbfe" fontWeight="700" fontFamily="system-ui,sans-serif">{`Total matriculados: ${formatNumber(geoHoverCard.total)}`}</text>
+                        <text x={clampValue(geoHoverCard.x + 28, 28, DEPARTMENT_MAP_CANVAS_WIDTH - 194)} y={clampValue(geoHoverCard.y + 38, 62, DEPARTMENT_MAP_CANVAS_HEIGHT - 12)} fontSize="9.8" fill="#93c5fd" fontWeight="700" fontFamily="system-ui,sans-serif">{`Participación: ${Number(geoHoverCard.percent || 0).toFixed(1)}%`}</text>
                       </g>
                     )}
                   </svg>
                 ) : (
                   <Stack alignItems="center" justifyContent="center" spacing={2} sx={{
-                    height: '100%', minHeight: { xs: 420, md: 660 },
+                    height: '100%', minHeight: { xs: 580, md: 900, lg: 1020 },
                     background: 'linear-gradient(160deg, #f0fdf4 0%, #dcfce7 60%, #bbf7d0 100%)'
                   }}>
                     <LocationCityIcon sx={{ fontSize: 60, color: '#6ee7b7' }} />
@@ -8995,7 +9042,7 @@ const renderCategoryBars = (items = [], options = {}) => {
                 sx={{
                   display: 'flex',
                   flexDirection: 'column',
-                  minHeight: { xs: 420, sm: 540, md: 660 },
+                  minHeight: { xs: 500, sm: 620, md: 760, lg: 860 },
                   border: '1px solid #b7e4d7',
                   borderRadius: 2.5,
                   overflow: 'hidden',
