@@ -10,6 +10,155 @@ const ensureColumn = async (qi, table, column, definition) => {
   }
 };
 
+const getTableCount = async (tableName) => {
+  const rows = await sequelize.query(`SELECT COUNT(*)::int AS c FROM ${tableName}`, { type: QueryTypes.SELECT });
+  return Number(rows?.[0]?.c || 0);
+};
+
+const repairMatriculadosFromEstadisticas = async () => {
+  const hasMatriculados = await getTableCount('poblacional_matriculados');
+  if (hasMatriculados > 0) {
+    console.log(`[migrate] poblacional_matriculados ya tiene datos (${hasMatriculados})`);
+    return;
+  }
+
+  const sourceCountRows = await sequelize.query(
+    `SELECT COUNT(*)::int AS c
+     FROM estadisticas
+     WHERE categoria = 'Poblacional' AND subcategoria = 'Matriculados'`,
+    { type: QueryTypes.SELECT }
+  );
+  const sourceCount = Number(sourceCountRows?.[0]?.c || 0);
+  if (sourceCount === 0) {
+    console.log('[migrate] No hay filas fuente en estadisticas para Matriculados; se omite backfill');
+    return;
+  }
+
+  console.log(`[migrate] Backfill Matriculados desde estadisticas (${sourceCount} filas fuente)...`);
+  await sequelize.query(`
+    INSERT INTO poblacional_matriculados (
+      anio,
+      semestre,
+      programa,
+      departamento,
+      pais,
+      fuente,
+      fecha_ultimo_cargue,
+      created_at,
+      updated_at
+    )
+    SELECT
+      e.anio,
+      CASE
+        WHEN COALESCE(e.observaciones, '') ~* '(periodo\\s*:\\s*(2|II|IIP|2P)|\\b(II|IIP|2)\\b)' THEN '2'
+        ELSE '1'
+      END AS semestre,
+      NULLIF(TRIM(COALESCE(e.programa, '')), ''),
+      NULLIF(TRIM(COALESCE(e.dependencia, '')), ''),
+      'COLOMBIA',
+      NULLIF(TRIM(COALESCE(e.fuente, '')), ''),
+      TO_CHAR(NOW(), 'YYYY-MM-DD'),
+      NOW(),
+      NOW()
+    FROM estadisticas e
+    JOIN LATERAL generate_series(
+      1,
+      GREATEST(
+        1,
+        LEAST(200, ROUND(COALESCE(CAST(e.valor AS numeric), 1))::int)
+      )
+    ) AS gs(n) ON TRUE
+    WHERE e.categoria = 'Poblacional'
+      AND e.subcategoria = 'Matriculados'
+      AND COALESCE(e.anio, 0) > 0
+  `);
+
+  const finalCount = await getTableCount('poblacional_matriculados');
+  console.log(`[migrate] Matriculados restaurados: ${finalCount}`);
+};
+
+const repairGeorreferenciaFromDivipola = async () => {
+  const geoDeptCount = await getTableCount('georreferencia_departamentos');
+  const geoMuniCount = await getTableCount('georreferencia_municipios');
+  if (geoDeptCount > 0 && geoMuniCount > 0) {
+    console.log(`[migrate] georreferencia_* ya tiene datos (dept=${geoDeptCount}, muni=${geoMuniCount})`);
+    return;
+  }
+
+  const refDeptCount = await getTableCount('ref_departamentos');
+  const refMuniCount = await getTableCount('ref_municipios');
+  if (refDeptCount === 0 || refMuniCount === 0) {
+    console.log('[migrate] ref_departamentos/ref_municipios sin datos; se omite backfill de georreferencia');
+    return;
+  }
+
+  console.log('[migrate] Backfill georreferencia_* desde ref_*...');
+
+  if (geoDeptCount === 0) {
+    await sequelize.query(`
+      INSERT INTO georreferencia_departamentos (
+        codigo_departamento,
+        nombre_departamento,
+        nombre_normalizado,
+        latitud,
+        longitud,
+        fuente,
+        vigente,
+        created_at,
+        updated_at
+      )
+      SELECT
+        d.codigo_dane,
+        d.nombre_oficial,
+        d.nombre_normalizado,
+        AVG(m.latitud)::numeric(10,6) AS latitud,
+        AVG(m.longitud)::numeric(10,6) AS longitud,
+        'REF_DIVIPOLA',
+        true,
+        NOW(),
+        NOW()
+      FROM ref_departamentos d
+      LEFT JOIN ref_municipios m ON m.codigo_departamento = d.codigo_dane AND m.activo = true
+      WHERE d.activo = true
+      GROUP BY d.codigo_dane, d.nombre_oficial, d.nombre_normalizado
+    `);
+  }
+
+  if (geoMuniCount === 0) {
+    await sequelize.query(`
+      INSERT INTO georreferencia_municipios (
+        codigo_departamento,
+        codigo_municipio,
+        nombre_municipio,
+        nombre_normalizado,
+        latitud,
+        longitud,
+        fuente,
+        vigente,
+        created_at,
+        updated_at
+      )
+      SELECT
+        m.codigo_departamento,
+        m.codigo_dane,
+        m.nombre_oficial,
+        m.nombre_normalizado,
+        m.latitud,
+        m.longitud,
+        'REF_DIVIPOLA',
+        true,
+        NOW(),
+        NOW()
+      FROM ref_municipios m
+      WHERE m.activo = true
+    `);
+  }
+
+  const finalDept = await getTableCount('georreferencia_departamentos');
+  const finalMuni = await getTableCount('georreferencia_municipios');
+  console.log(`[migrate] Georreferencia restaurada: dept=${finalDept}, muni=${finalMuni}`);
+};
+
 const runMigrations = async () => {
   try {
     console.log('[migrate] Ejecutando migraciones...');
@@ -29,7 +178,6 @@ const runMigrations = async () => {
     await models.PoblacionalInscrito.sync();
     await models.PoblacionalAdmitido.sync();
     await models.PoblacionalPrimerCurso.sync();
-    await qi.dropTable('poblacional_matriculados').catch(() => {});
     await models.PoblacionalMatriculado.sync();
     await models.PoblacionalGraduado.sync();
     await models.PoblacionalCaracterizacion.sync();
@@ -193,6 +341,9 @@ const runMigrations = async () => {
     await qi.addIndex('poblacional_matriculados', ['codigo_departamento'], { name: 'idx_poblacional_matriculados_codigo_departamento' }).catch(() => {});
     await qi.addIndex('poblacional_matriculados', ['codigo_dane_nacimiento'], { name: 'idx_poblacional_matriculados_codigo_municipio_nacimiento' }).catch(() => {});
     await qi.addIndex('poblacional_matriculados', ['codigo_departamento_nacimiento'], { name: 'idx_poblacional_matriculados_codigo_departamento_nacimiento' }).catch(() => {});
+
+    await repairMatriculadosFromEstadisticas();
+    await repairGeorreferenciaFromDivipola();
 
     console.log('[migrate] Migraciones completadas');
     await sequelize.close();

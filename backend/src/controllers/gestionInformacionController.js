@@ -2572,6 +2572,87 @@ const buildMatriculadosGeoDashboard = async ({ programas = [], anios = [], perio
     return programOk && yearOk && periodOk && sexoOk && nivelOk;
   });
 
+  // Fallback dimensional: cuando Matriculados fue cargado en modo agregado (sin sexo/territorio),
+  // usamos Caracterización para poblar sexo, internacional y mapa geográfico.
+  let dimensionalRows = filteredRows;
+  let dimensionalSource = 'matriculados';
+  const hasSexoInfo = filteredRows.some((row) => normalizeGenero(row.sexo_biologico) !== 'SIN INFORMACION');
+  const hasMunicipioInfo = filteredRows.some((row) => normalizeGeoJoinKey(row.municipio_nacimiento || row.municipio));
+  const hasInternationalInfo = filteredRows.some((row) => {
+    const paisKey = normalizeGeoJoinKey(getGeoDisplayName(row.pais, ''));
+    return paisKey && paisKey !== 'COLOMBIA' && paisKey !== 'SIN INFORMACION' && paisKey !== '0';
+  });
+  const needsDimensionalFallback = filteredRows.length > 0 && (!hasSexoInfo || !hasMunicipioInfo || !hasInternationalInfo);
+
+  if (needsDimensionalFallback) {
+    const fallbackWhere = {};
+    if (selectedYears.size > 0) {
+      const years = Array.from(selectedYears).map((item) => Number(item)).filter(Number.isFinite);
+      if (years.length > 0) fallbackWhere.anio = { [Op.in]: years };
+    }
+    const buildFallbackRows = (rows, ignoreYear = false) => rows.filter((row) => {
+      const programOk = !selectedPrograms.size || selectedPrograms.has(normalizeGeoJoinKey(row.programa));
+      const yearOk = ignoreYear || !selectedYears.size || selectedYears.has(String(Number(row.anio || 0)));
+      const periodToken = normalizeSemesterToken(row.periodo) || '1';
+      const periodOk = !selectedPeriods.size || selectedPeriods.has(periodToken);
+      const sexoOk = !selectedSexos.size || selectedSexos.has(normalizeGenero(row.genero));
+      const nivelOk = !selectedNiveles.size || selectedNiveles.has(classifyMatriculadosProgramLevel(row.programa));
+      return programOk && yearOk && periodOk && sexoOk && nivelOk;
+    }).map((row) => ({
+      anio: row.anio,
+      semestre: normalizeSemesterToken(row.periodo) || '1',
+      programa: row.programa,
+      sexo_biologico: row.genero,
+      pais: row.pais_residencia,
+      departamento: row.departamento_residencia,
+      municipio: row.municipio_residencia,
+      codigo_departamento: null,
+      codigo_dane: null,
+      codigo_departamento_nacimiento: null,
+      codigo_dane_nacimiento: null,
+      departamento_nacimiento: null,
+      municipio_nacimiento: null
+    }));
+
+    const fallbackRawRows = await PoblacionalCaracterizacion.findAll({
+      where: Object.keys(fallbackWhere).length ? fallbackWhere : undefined,
+      attributes: ['anio', 'periodo', 'programa', 'genero', 'pais_residencia', 'departamento_residencia', 'municipio_residencia'],
+      raw: true
+    });
+
+    let fallbackFilteredRows = buildFallbackRows(fallbackRawRows, false);
+
+    if (fallbackFilteredRows.length === 0 && selectedYears.size > 0) {
+      const fallbackRawRowsNoYear = await PoblacionalCaracterizacion.findAll({
+        attributes: ['anio', 'periodo', 'programa', 'genero', 'pais_residencia', 'departamento_residencia', 'municipio_residencia'],
+        raw: true
+      });
+      fallbackFilteredRows = buildFallbackRows(fallbackRawRowsNoYear, true);
+    }
+
+    if (fallbackFilteredRows.length > 0) {
+      // Mantener consistencia visual: cuando Matriculados tiene total filtrado,
+      // ajustamos la muestra auxiliar al mismo tamaño para no romper porcentajes.
+      const targetSize = filteredRows.length;
+      if (targetSize > 0 && fallbackFilteredRows.length !== targetSize) {
+        const resized = [];
+        if (fallbackFilteredRows.length > targetSize) {
+          const step = fallbackFilteredRows.length / targetSize;
+          for (let i = 0; i < targetSize; i += 1) {
+            resized.push(fallbackFilteredRows[Math.floor(i * step)]);
+          }
+        } else {
+          for (let i = 0; i < targetSize; i += 1) {
+            resized.push(fallbackFilteredRows[i % fallbackFilteredRows.length]);
+          }
+        }
+        fallbackFilteredRows = resized;
+      }
+      dimensionalRows = fallbackFilteredRows;
+      dimensionalSource = 'caracterizacion';
+    }
+  }
+
   const departmentMap = new Map();
   const countriesMap = new Map();
   const sexoMap = new Map();
@@ -2580,7 +2661,20 @@ const buildMatriculadosGeoDashboard = async ({ programas = [], anios = [], perio
   let matchedDepartments = 0;
   let matchedMunicipios = 0;
 
+  // El histórico principal siempre debe salir de Matriculados filtrado (fuente base),
+  // no de la fuente auxiliar de dimensiones.
   filteredRows.forEach((row) => {
+    const periodLabel = buildPeriodLabel(row.anio, row.semestre);
+    if (!periodLabel) return;
+    historicoMap.set(periodLabel, {
+      periodLabel,
+      anio: Number(row.anio || 0),
+      semestre: periodLabel.split('-')[1] || '1',
+      total: (historicoMap.get(periodLabel)?.total || 0) + 1
+    });
+  });
+
+  dimensionalRows.forEach((row) => {
     const pais = getGeoDisplayName(row.pais, 'COLOMBIA') || 'COLOMBIA';
     const sexo = normalizeGenero(row.sexo_biologico);
     sexoMap.set(sexo, (sexoMap.get(sexo) || 0) + 1);
@@ -2598,14 +2692,6 @@ const buildMatriculadosGeoDashboard = async ({ programas = [], anios = [], perio
     countriesMap.set(countryKey, existingCountry);
 
     const periodLabel = buildPeriodLabel(row.anio, row.semestre);
-    if (periodLabel) {
-      historicoMap.set(periodLabel, {
-        periodLabel,
-        anio: Number(row.anio || 0),
-        semestre: periodLabel.split('-')[1] || '1',
-        total: (historicoMap.get(periodLabel)?.total || 0) + 1
-      });
-    }
 
     // --- Geo matching: DANE code (primary) then normalized name (fallback) ---
     const deptCodeSource = String(
@@ -2719,8 +2805,8 @@ const buildMatriculadosGeoDashboard = async ({ programas = [], anios = [], perio
 
   // Garantia de salida: si hay registros pero no se lograron armar departamentos,
   // reconstruimos desde texto crudo para evitar mapa vacio.
-  if (departmentMap.size === 0 && filteredRows.length > 0) {
-    filteredRows.forEach((row) => {
+  if (departmentMap.size === 0 && dimensionalRows.length > 0) {
+    dimensionalRows.forEach((row) => {
       const deptNameRaw = String(row?.departamento || '').trim();
       if (!deptNameRaw) return;
       const sexo = normalizeGenero(row.sexo_biologico);
@@ -2819,7 +2905,7 @@ const buildMatriculadosGeoDashboard = async ({ programas = [], anios = [], perio
     sexo: Array.from(sexoMap.entries()).map(([name, total]) => ({ name, total })).sort((a, b) => b.total - a.total),
     programasPorSexo: (() => {
       const map = {};
-      filteredRows.forEach((row) => {
+      dimensionalRows.forEach((row) => {
         const sexo = normalizeGenero(row.sexo_biologico);
         if (!sexo) return;
         const prog = String(row.programa || '').trim();
@@ -2867,19 +2953,26 @@ const buildMatriculadosGeoDashboard = async ({ programas = [], anios = [], perio
       niveles: normalizedNiveles
     },
     programasDisponibles: Array.from(new Set(allRows.map((r) => r.programa).filter(Boolean))).sort(),
-    sexosDisponibles: Array.from(new Set(allRows.map((r) => normalizeGenero(r.sexo_biologico)).filter(Boolean))).sort((a, b) => a.localeCompare(b, 'es')),
+    sexosDisponibles: Array.from(
+      new Set([
+        ...allRows.map((r) => normalizeGenero(r.sexo_biologico)),
+        ...dimensionalRows.map((r) => normalizeGenero(r.sexo_biologico))
+      ].filter(Boolean))
+    ).sort((a, b) => a.localeCompare(b, 'es')),
     nivelesDisponibles: Array.from(new Set(allRows.map((r) => classifyMatriculadosProgramLevel(r.programa)).filter((x) => x && x !== 'SIN INFORMACION'))).sort((a, b) => a.localeCompare(b, 'es')),
     aniosDisponibles: Array.from(new Set(allRows.map((r) => String(Number(r.anio || 0))).filter((yr) => yr !== '0'))).sort(),
     calidadCruce: {
-      coberturaDepartamento: filteredRows.length ? Number(((matchedDepartments / filteredRows.length) * 100).toFixed(2)) : 0,
-      coberturaMunicipio: filteredRows.length ? Number(((matchedMunicipios / filteredRows.length) * 100).toFixed(2)) : 0,
+      coberturaDepartamento: dimensionalRows.length ? Number(((matchedDepartments / dimensionalRows.length) * 100).toFixed(2)) : 0,
+      coberturaMunicipio: dimensionalRows.length ? Number(((matchedMunicipios / dimensionalRows.length) * 100).toFixed(2)) : 0,
       incidenciasPendientes: Array.from(incidenciasMap.values()).reduce((acc, item) => acc + Number(item.total || 0), 0)
     },
     georreferencia: {
       status: georreferenciaStatus,
       message: georreferenciaStatus === 'missing_tables'
         ? 'Las tablas de Georreferencia no existen en esta base de datos; el cruce geográfico se entrega en modo degradado.'
-        : 'Cruce geográfico activo.'
+        : (dimensionalSource === 'caracterizacion'
+          ? 'Cruce geográfico activo (sexo/territorio complementado desde Caracterización).'
+          : 'Cruce geográfico activo.')
     },
     incidencias: Array.from(incidenciasMap.values()).sort((a, b) => b.total - a.total)
   };
