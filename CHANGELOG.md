@@ -6,6 +6,11 @@ El formato sigue una estructura inspirada en `Keep a Changelog`.
 
 ## [Unreleased]
 
+### Changed
+- Se unifico la ejecucion local para usar `frontend`, `backend` y `python-service` en Docker, conectando contra PostgreSQL 18 local por `host.docker.internal:5432`.
+- El servicio `db` de Docker quedo como opcional mediante el perfil `docker-db`, para evitar duplicidad de datos y conflictos de puertos con la base local.
+- Se actualizaron los puertos operativos locales a `8081` para frontend y `5001` para backend.
+
 ## [2026-02-23] - Gestion de la Informacion y dashboards poblacionales
 
 ### Added

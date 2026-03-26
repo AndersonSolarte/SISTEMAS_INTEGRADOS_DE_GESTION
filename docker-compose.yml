@@ -2,6 +2,7 @@ services:
   db:
     image: postgres:16-alpine
     container_name: sgc-db
+    profiles: ["docker-db"]
     restart: unless-stopped
     environment:
       POSTGRES_DB: ${DB_NAME}
@@ -25,14 +26,13 @@ services:
     restart: unless-stopped
     environment:
       FRONTEND_URL: ${PUBLIC_APP_URL}
-      DB_HOST: db
-      DB_PORT: 5432
+      DB_HOST: ${HOST_DB_HOST:-host.docker.internal}
+      DB_PORT: ${HOST_DB_PORT:-5432}
       DB_NAME: ${DB_NAME}
       DB_USER: ${DB_USER}
       DB_PASSWORD: ${DB_PASSWORD}
-    depends_on:
-      db:
-        condition: service_healthy
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
 
   backend:
     build:
@@ -43,8 +43,8 @@ services:
     environment:
       PORT: 5000
       NODE_ENV: production
-      DB_HOST: db
-      DB_PORT: 5432
+      DB_HOST: ${HOST_DB_HOST:-host.docker.internal}
+      DB_PORT: ${HOST_DB_PORT:-5432}
       DB_NAME: ${DB_NAME}
       DB_USER: ${DB_USER}
       DB_PASSWORD: ${DB_PASSWORD}
@@ -64,9 +64,9 @@ services:
       SMTP_FROM: ${SMTP_FROM:-}
       SABER_PRO_PYTHON_URL: http://python-service:8000
       SABER_PRO_PYTHON_TIMEOUT_MS: ${SABER_PRO_PYTHON_TIMEOUT_MS:-15000}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     depends_on:
-      db:
-        condition: service_healthy
       python-service:
         condition: service_started
     ports:

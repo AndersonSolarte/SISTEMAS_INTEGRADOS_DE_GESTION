@@ -41,3 +41,4 @@ Thumbs.db
 # Cargas temporales de importacion
 /backend/uploads/
 /backend/keys/*.json
+/.docker-tmp/
