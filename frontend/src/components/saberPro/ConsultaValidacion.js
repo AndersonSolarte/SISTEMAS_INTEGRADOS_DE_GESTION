@@ -510,6 +510,22 @@ function CargaMasiva() {
   const [filterState, setFilter]    = useState('Todos');
   const inputRef = useRef();
 
+  const handleDownloadTemplate = async () => {
+    try {
+      const response = await api.get(`${BASE_URL}/template`, { responseType: 'blob' });
+      const blobUrl = window.URL.createObjectURL(new Blob([response.data]));
+      const link = document.createElement('a');
+      link.href = blobUrl;
+      link.download = 'plantilla_validacion_documentos.xlsx';
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.URL.revokeObjectURL(blobUrl);
+    } catch (_error) {
+      setError('No se pudo descargar la plantilla. Intenta nuevamente.');
+    }
+  };
+
   const handleFile = (f) => {
     if (!f) return;
     if (!f.name.match(/\.(xlsx|xls|csv)$/i)) { setError('Formato no válido. Use .xlsx, .xls o .csv'); return; }
@@ -687,9 +703,28 @@ function CargaMasiva() {
           <Box>
             <Typography sx={{ fontWeight: 800, fontSize: 13.5, color: '#1e293b' }}>Carga Masiva de Documentos</Typography>
             <Typography sx={{ fontSize: 11.5, color: '#94a3b8' }}>
-              Suba un archivo Excel o CSV con una columna llamada <b>Documento</b>
+              Suba un archivo Excel o CSV con la primera columna llamada <b>Documento</b>
             </Typography>
           </Box>
+        </Stack>
+
+        <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1} sx={{ mb: 2 }}>
+          <Button
+            variant="outlined"
+            startIcon={<DownloadRoundedIcon />}
+            onClick={handleDownloadTemplate}
+            sx={{
+              textTransform: 'none',
+              fontWeight: 700,
+              borderRadius: 1.5,
+              alignSelf: 'flex-start'
+            }}
+          >
+            Descargar plantilla
+          </Button>
+          <Typography sx={{ fontSize: 11.5, color: '#64748b', alignSelf: 'center' }}>
+            Usa esta plantilla para evitar errores de formato. Solo debe contener la columna <b>Documento</b>.
+          </Typography>
         </Stack>
 
         <Box

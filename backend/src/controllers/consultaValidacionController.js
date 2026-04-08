@@ -202,4 +202,31 @@ const consultaMasiva = async (req, res) => {
   }
 };
 
-module.exports = { consultaIndividual, consultaMasiva };
+const downloadConsultaMasivaTemplate = async (_req, res) => {
+  try {
+    const rows = [
+      { Documento: '1085327166' },
+      { Documento: '1234567890' },
+      { Documento: '9988776655' }
+    ];
+
+    const worksheet = XLSX.utils.json_to_sheet(rows, { header: ['Documento'] });
+    worksheet['!cols'] = [{ wch: 22 }];
+
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, worksheet, 'Documentos');
+
+    const buffer = XLSX.write(workbook, { type: 'buffer', bookType: 'xlsx' });
+    res.setHeader('Content-Disposition', 'attachment; filename=plantilla_validacion_documentos.xlsx');
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    return res.send(buffer);
+  } catch (error) {
+    console.error('[downloadConsultaMasivaTemplate]', error);
+    return res.status(500).json({
+      success: false,
+      message: 'No se pudo generar la plantilla de validación masiva.'
+    });
+  }
+};
+
+module.exports = { consultaIndividual, consultaMasiva, downloadConsultaMasivaTemplate };

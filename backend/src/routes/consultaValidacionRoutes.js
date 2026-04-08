@@ -3,7 +3,7 @@ const router = express.Router();
 const multer = require('multer');
 const { auth, hasAnyRoleOrModulePermission } = require('../middlewares/auth');
 const { ROLES } = require('../constants/roles');
-const { consultaIndividual, consultaMasiva } = require('../controllers/consultaValidacionController');
+const { consultaIndividual, consultaMasiva, downloadConsultaMasivaTemplate } = require('../controllers/consultaValidacionController');
 
 const SABER_PRO_CONSULTA_MODULE_KEYS = [
   'gestion_informacion',
@@ -42,6 +42,7 @@ const canConsultar = hasAnyRoleOrModulePermission({
 });
 
 router.get('/individual', auth, canConsultar, consultaIndividual);
+router.get('/template', auth, canConsultar, downloadConsultaMasivaTemplate);
 router.post('/masiva', auth, canConsultar, upload.single('archivo'), consultaMasiva);
 
 module.exports = router;
