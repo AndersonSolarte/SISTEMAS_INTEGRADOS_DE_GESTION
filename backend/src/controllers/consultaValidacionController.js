@@ -204,13 +204,7 @@ const consultaMasiva = async (req, res) => {
 
 const downloadConsultaMasivaTemplate = async (_req, res) => {
   try {
-    const rows = [
-      { Documento: '1085327166' },
-      { Documento: '1234567890' },
-      { Documento: '9988776655' }
-    ];
-
-    const worksheet = XLSX.utils.json_to_sheet(rows, { header: ['Documento'] });
+    const worksheet = XLSX.utils.json_to_sheet([], { header: ['Documento'] });
     worksheet['!cols'] = [{ wch: 22 }];
 
     const workbook = XLSX.utils.book_new();
