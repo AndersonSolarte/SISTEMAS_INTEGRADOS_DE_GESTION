@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
+import ResultadosDestacados from './ResultadosDestacados';
 import {
   Box,
   Button,
@@ -733,40 +734,8 @@ function SaberProDashboard({ initialSection, allowedSections = [] } = {}) {
         </Paper>
       )}
 
-      {activeSection === 'destacados' && canRenderAnalyticsPanels && (
-        <Paper elevation={0} sx={{ p: 2, borderRadius: 3, border: '1px solid #dbe6f5', bgcolor: '#fcfdff' }}>
-          <Stack direction={{ xs: 'column', md: 'row' }} justifyContent="space-between" spacing={1.5} sx={{ mb: 1.5 }}>
-            <Box>
-              <Typography sx={{ fontWeight: 900, color: '#0f172a' }}>Resultados destacados</Typography>
-              <Typography variant="body2" sx={{ color: '#64748b' }}>
-                Selección automática de los mejores puntajes globales para los filtros activos.
-              </Typography>
-            </Box>
-            <Chip color="primary" variant="outlined" label={`Top visible: ${highlightedRows.length}`} />
-          </Stack>
-          <TableContainer>
-            <Table size="small">
-              <TableHead>
-                <TableRow>
-                  <TableCell sx={{ fontWeight: 800 }}>Programa</TableCell>
-                  <TableCell sx={{ fontWeight: 800 }}>Estudiante</TableCell>
-                  <TableCell sx={{ fontWeight: 800 }} align="right">Puntaje global</TableCell>
-                  <TableCell sx={{ fontWeight: 800 }} align="right">Percentil</TableCell>
-                </TableRow>
-              </TableHead>
-              <TableBody>
-                {highlightedRows.map((row, index) => (
-                  <TableRow key={`${row.id || row.documento || row.nombre_estudiante || 'top'}-${index}`}>
-                    <TableCell>{row.programa || row.programa_academico || '-'}</TableCell>
-                    <TableCell>{row.nombre_estudiante || row.estudiante || row.documento || 'Registro institucional'}</TableCell>
-                    <TableCell align="right">{formatValue(row.puntaje_global)}</TableCell>
-                    <TableCell align="right">{row.percentil_global == null ? '-' : formatValue(row.percentil_global)}</TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          </TableContainer>
-        </Paper>
+      {activeSection === 'destacados' && (
+        <ResultadosDestacados activeSection={activeSection} />
       )}
 
       {activeSection === 'becas' && canRenderAnalyticsPanels && (
