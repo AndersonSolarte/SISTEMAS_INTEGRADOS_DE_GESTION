@@ -334,24 +334,37 @@ function SaberProDashboard({ initialSection, allowedSections = [] } = {}) {
   const invalidYearSelection = filters.anios.length === 0;
   const selectionInvalidForCurrentDashboard = invalidProgramSelection || invalidNbcSelection || invalidYearSelection;
 
-  useEffect(() => {
-    let active = true;
-    const loadData = async () => {
-      if (selectionInvalidForCurrentDashboard) {
-        setOverview(null);
+    useEffect(() => {
+      let active = true;
+      const loadData = async () => {
+        if (selectionInvalidForCurrentDashboard) {
+          setOverview(null);
         setCharts(null);
         setControlChart(null);
         setTableData({ rows: [], pagination: { total: 0 } });
         return;
-      }
-      setLoadingData(true);
-      setError('');
-      try {
-        const [o, c, t, ctrl] = await Promise.all([
-          saberProAnalyticsService.getOverview(effectiveFilters),
-          saberProAnalyticsService.getCharts(effectiveFilters),
-          saberProAnalyticsService.getTable({ filters: effectiveFilters, pagination: { page: 1, pageSize: 20 }, sort: [{ field: 'puntaje_global', direction: 'desc' }] }),
-          saberProAnalyticsService.getControlChart(effectiveFilters)
+        }
+        setLoadingData(true);
+        setError('');
+        try {
+          if (activeSection === 'destacados') {
+            const t = await saberProAnalyticsService.getTable({
+              filters: effectiveFilters,
+              pagination: { page: 1, pageSize: 50 },
+              sort: [{ field: 'puntaje_global', direction: 'desc' }]
+            });
+            if (!active) return;
+            setOverview(null);
+            setCharts(null);
+            setControlChart(null);
+            setTableData(t?.data || { rows: [], pagination: { total: 0 } });
+            return;
+          }
+          const [o, c, t, ctrl] = await Promise.all([
+            saberProAnalyticsService.getOverview(effectiveFilters),
+            saberProAnalyticsService.getCharts(effectiveFilters),
+            saberProAnalyticsService.getTable({ filters: effectiveFilters, pagination: { page: 1, pageSize: 20 }, sort: [{ field: 'puntaje_global', direction: 'desc' }] }),
+            saberProAnalyticsService.getControlChart(effectiveFilters)
         ]);
         if (!active) return;
         setOverview(o?.data || null);
@@ -364,10 +377,10 @@ function SaberProDashboard({ initialSection, allowedSections = [] } = {}) {
       } finally {
         if (active) setLoadingData(false);
       }
-    };
-    loadData();
-    return () => { active = false; };
-  }, [effectiveFilters, selectionInvalidForCurrentDashboard]);
+      };
+      loadData();
+      return () => { active = false; };
+    }, [activeSection, effectiveFilters, selectionInvalidForCurrentDashboard]);
 
   const handleFilterChange = (key) => (event) => {
     const value = event.target.value;

@@ -5,6 +5,8 @@ import {
   Stack, Table, TableBody, TableCell, TableContainer,
   TableHead, TableRow, Tooltip, Typography
 } from '@mui/material';
+import Checkbox                    from '@mui/material/Checkbox';
+import ListItemText                from '@mui/material/ListItemText';
 import EmojiEventsRoundedIcon      from '@mui/icons-material/EmojiEventsRounded';
 import GroupsRoundedIcon           from '@mui/icons-material/GroupsRounded';
 import SchoolRoundedIcon           from '@mui/icons-material/SchoolRounded';
@@ -24,6 +26,7 @@ const MEDAL = {
 const fmt  = (v) => v == null ? '—' : Number(v).toLocaleString('es-CO', { maximumFractionDigits: 2 });
 const fmtAvg = (v) => v == null ? '—' : (Number(v) / NUM_MODULES).toLocaleString('es-CO', { maximumFractionDigits: 2 });
 const SEL = { PaperProps: { style: { maxHeight: 300 } } };
+const uniq = (items = []) => Array.from(new Set(items.filter(Boolean)));
 
 const selSx = {
   fontSize: 13, fontWeight: 600, height: 36, bgcolor: '#fff',
@@ -45,6 +48,15 @@ export default function ResultadosDestacados({
   loading = false,
   error = ''
 }) {
+  const yearOptions = useMemo(
+    () => uniq((catalogs.anios.length ? catalogs.anios : ALL_YEARS).map(String)).sort((a, b) => Number(a) - Number(b)),
+    [catalogs.anios]
+  );
+  const periodOptions = useMemo(
+    () => uniq((catalogs.periodos.length ? catalogs.periodos : ALL_PERIODS).map(String)),
+    [catalogs.periodos]
+  );
+
 
   /* KPIs */
   const kpis = useMemo(() => {
@@ -132,11 +144,22 @@ export default function ResultadosDestacados({
             multiple value={anios}
             onChange={(e) => setAnios(typeof e.target.value === 'string' ? e.target.value.split(',') : e.target.value)}
             input={<OutlinedInput label="Años" />}
-            renderValue={(s) => s.join(', ')}
+            renderValue={(s) => s.length ? `${s.length} año(s)` : 'Todos'}
             MenuProps={SEL} sx={selSx}
           >
-            {(catalogs.anios.length ? catalogs.anios : ALL_YEARS).map((y) => (
-              <MenuItem key={y} value={String(y)} sx={{ fontSize: 13 }}>{y}</MenuItem>
+            <MenuItem onClick={() => setAnios(yearOptions)}>
+              <Checkbox checked={yearOptions.length > 0 && anios.length === yearOptions.length} size="small" />
+              <ListItemText primary={`Seleccionar todos (${yearOptions.length})`} />
+            </MenuItem>
+            <MenuItem onClick={() => setAnios([])}>
+              <Checkbox checked={anios.length === 0} size="small" />
+              <ListItemText primary="Limpiar selección" />
+            </MenuItem>
+            {yearOptions.map((y) => (
+              <MenuItem key={y} value={String(y)} sx={{ fontSize: 13 }}>
+                <Checkbox checked={anios.includes(String(y))} size="small" />
+                <ListItemText primary={String(y)} />
+              </MenuItem>
             ))}
           </Select>
         </FormControl>
@@ -148,11 +171,22 @@ export default function ResultadosDestacados({
             multiple value={periodos}
             onChange={(e) => setPeriodos(typeof e.target.value === 'string' ? e.target.value.split(',') : e.target.value)}
             input={<OutlinedInput label="Periodo" />}
-            renderValue={(s) => s.join(', ')}
+            renderValue={(s) => s.length ? `${s.length} periodo(s)` : 'Todos'}
             MenuProps={SEL} sx={selSx}
           >
-            {(catalogs.periodos.length ? catalogs.periodos : ALL_PERIODS).map((p) => (
-              <MenuItem key={p} value={p} sx={{ fontSize: 13 }}>{p}</MenuItem>
+            <MenuItem onClick={() => setPeriodos(periodOptions)}>
+              <Checkbox checked={periodOptions.length > 0 && periodos.length === periodOptions.length} size="small" />
+              <ListItemText primary={`Seleccionar todos (${periodOptions.length})`} />
+            </MenuItem>
+            <MenuItem onClick={() => setPeriodos([])}>
+              <Checkbox checked={periodos.length === 0} size="small" />
+              <ListItemText primary="Limpiar selección" />
+            </MenuItem>
+            {periodOptions.map((p) => (
+              <MenuItem key={p} value={p} sx={{ fontSize: 13 }}>
+                <Checkbox checked={periodos.includes(String(p))} size="small" />
+                <ListItemText primary={String(p)} />
+              </MenuItem>
             ))}
           </Select>
         </FormControl>
