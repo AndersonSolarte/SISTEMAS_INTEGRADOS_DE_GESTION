@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useMemo } from 'react';
 import {
   Box, Button, Chip, CircularProgress, FormControl,
   InputLabel, MenuItem, OutlinedInput, Paper, Select,
@@ -10,7 +10,6 @@ import GroupsRoundedIcon           from '@mui/icons-material/GroupsRounded';
 import SchoolRoundedIcon           from '@mui/icons-material/SchoolRounded';
 import WorkspacePremiumRoundedIcon from '@mui/icons-material/WorkspacePremiumRounded';
 import CloseRoundedIcon            from '@mui/icons-material/CloseRounded';
-import saberProAnalyticsService    from '../../services/saberProAnalyticsService';
 
 /* ─── constantes ──────────────────────────────────────────────────── */
 const NUM_MODULES = 8;
@@ -34,42 +33,18 @@ const selSx = {
 };
 
 /* ═══════════════════════════════════════════════════════════════════ */
-export default function ResultadosDestacados() {
-  const [tipoPrueba, setTipoPrueba] = useState('saber_pro');
-  const [anios,      setAnios]      = useState([]);
-  const [periodos,   setPeriodos]   = useState([]);
-
-  const [rows,     setRows]     = useState([]);
-  const [catalogs, setCatalogs] = useState({ anios: [], periodos: [] });
-  const [loading,  setLoading]  = useState(false);
-  const [error,    setError]    = useState(null);
-
-  /* cargar catálogos una vez */
-  useEffect(() => {
-    saberProAnalyticsService.getFiltros()
-      .then((d) => setCatalogs({
-        anios:    (d?.anios    || []).map(String).sort((a, b) => b - a),
-        periodos: d?.periodos  || []
-      }))
-      .catch(() => {});
-  }, []);
-
-  /* cargar datos */
-  const fetchData = useCallback(() => {
-    setLoading(true);
-    setError(null);
-    const filters = {
-      tipoPrueba:  [tipoPrueba],
-      ...(anios.length    && { anios    }),
-      ...(periodos.length && { periodos })
-    };
-    saberProAnalyticsService
-      .getTable({ filters, pagination: { page: 1, pageSize: 100 }, sort: [{ field: 'puntaje_global', direction: 'desc' }] })
-      .then((res) => { setRows(res?.data?.rows || res?.rows || []); setLoading(false); })
-      .catch(() => { setError('No se pudieron cargar los datos.'); setLoading(false); });
-  }, [tipoPrueba, anios, periodos]);
-
-  useEffect(() => { fetchData(); }, [fetchData]);
+export default function ResultadosDestacados({
+  tipoPrueba = 'saber_pro',
+  setTipoPrueba = () => {},
+  anios = [],
+  setAnios = () => {},
+  periodos = [],
+  setPeriodos = () => {},
+  rows = [],
+  catalogs = { anios: [], periodos: [] },
+  loading = false,
+  error = ''
+}) {
 
   /* KPIs */
   const kpis = useMemo(() => {

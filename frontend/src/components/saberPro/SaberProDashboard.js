@@ -499,7 +499,21 @@ function SaberProDashboard({ initialSection, allowedSections = [] } = {}) {
   if (activeSection === 'destacados') {
     return (
       <Box sx={{ bgcolor: '#f1f5f9', minHeight: '100%', p: { xs: 1.5, md: 2 } }}>
-        <ResultadosDestacados />
+          <ResultadosDestacados
+            tipoPrueba={institutionalTestType}
+            setTipoPrueba={setInstitutionalTestType}
+            anios={filters.anios}
+            setAnios={(next) => setFilters((prev) => ({ ...prev, anios: next }))}
+            periodos={filters.periodos}
+            setPeriodos={(next) => setFilters((prev) => ({ ...prev, periodos: next }))}
+            rows={tableData?.rows || []}
+            catalogs={{
+              anios: (catalogs?.anios || []).map(String),
+              periodos: catalogs?.periodos || []
+            }}
+            loading={loadingData}
+            error={error}
+          />
       </Box>
     );
   }
