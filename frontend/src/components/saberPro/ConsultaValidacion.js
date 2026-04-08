@@ -650,7 +650,6 @@ function CargaMasiva() {
 
     /* Filas de datos */
     dataRows.forEach(({ excelRow: er, isFirst, row, sub, subEstado, docSeq, sharedCellStyle, subCellStyle }) => {
-      const periodo = sub.periodo && sub.periodo !== '—' ? `-${sub.periodo}` : '';
 
       /* Celdas compartidas (solo escribir en primera sub-fila; las demás quedan fusionadas) */
       if (isFirst) {
@@ -663,11 +662,12 @@ function CargaMasiva() {
 
       /* Celdas variables */
       const varValues = [
-        String(sub.tipo_prueba || '—').toUpperCase(),
-        `${sub.anio}${periodo}`,
-        sub.puntaje_global ?? '—',
-        sub.numero_registro || '—',
-        sub.observaciones || '—',
+        String(sub.tipo_prueba || '').toUpperCase() || '-',
+        sub.anio ?? '-',
+        sub.periodo ?? '-',
+        sub.puntaje_global ?? '-',
+        sub.numero_registro || '-',
+        sub.observaciones || '-',
         subEstado
       ];
       varValues.forEach((v, i) => {
@@ -679,7 +679,7 @@ function CargaMasiva() {
 
     ws['!ref']    = XLSXStyle.utils.encode_range(range);
     ws['!merges'] = merges;
-    ws['!cols']   = [4, 14, 22, 22, 12, 10, 11, 18, 28, 16].map((w) => ({ wch: w }));
+    ws['!cols']   = [4, 14, 22, 22, 14, 10, 10, 14, 18, 28, 16].map((w) => ({ wch: w }));
     ws['!rows']   = [{ hpt: 22 }, ...Array(totalDataRows).fill({ hpt: 18 })];
 
     const wb = XLSXStyle.utils.book_new();
