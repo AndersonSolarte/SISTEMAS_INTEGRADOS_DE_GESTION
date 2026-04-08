@@ -35,7 +35,7 @@ const selSx = {
 
 /* ═══════════════════════════════════════════════════════════════════ */
 export default function ResultadosDestacados() {
-  const [tipoPrueba, setTipoPrueba] = useState('Saber Pro');
+  const [tipoPrueba, setTipoPrueba] = useState('saber_pro');
   const [anios,      setAnios]      = useState([]);
   const [periodos,   setPeriodos]   = useState([]);
 
@@ -59,7 +59,7 @@ export default function ResultadosDestacados() {
     setLoading(true);
     setError(null);
     const filters = {
-      tipoPrueba: [tipoPrueba],
+      tipoPrueba:  [tipoPrueba],
       ...(anios.length    && { anios    }),
       ...(periodos.length && { periodos })
     };
@@ -87,8 +87,8 @@ export default function ResultadosDestacados() {
   const displayRows = rows.slice(0, 50);
   const topScore    = Number(displayRows[0]?.puntaje_global) || 1;
 
-  const hasFilters = anios.length || periodos.length || tipoPrueba !== 'Saber Pro';
-  const clearFilters = () => { setAnios([]); setPeriodos([]); setTipoPrueba('Saber Pro'); };
+  const hasFilters = anios.length || periodos.length || tipoPrueba !== 'saber_pro';
+  const clearFilters = () => { setAnios([]); setPeriodos([]); setTipoPrueba('saber_pro'); };
 
   /* ── render ─────────────────────────────────────────────────────── */
   return (
@@ -110,7 +110,7 @@ export default function ResultadosDestacados() {
               Mejores Resultados UNICESMAG
             </Typography>
             <Typography sx={{ fontSize: 12, color: 'rgba(255,255,255,0.7)', mt: 0.3 }}>
-              Top 50 estudiantes con mayor puntaje global · {tipoPrueba}
+              Top 50 estudiantes con mayor puntaje global · {tipoPrueba === 'saber_pro' ? 'Saber Pro' : 'TyT'}
             </Typography>
           </Box>
         </Stack>
@@ -145,8 +145,8 @@ export default function ResultadosDestacados() {
         <FormControl size="small" sx={{ minWidth: 130 }}>
           <InputLabel sx={{ fontSize: 12 }}>Prueba</InputLabel>
           <Select label="Prueba" value={tipoPrueba} onChange={(e) => setTipoPrueba(e.target.value)} sx={selSx}>
-            <MenuItem value="Saber Pro" sx={{ fontSize: 13 }}>Saber Pro</MenuItem>
-            <MenuItem value="TyT"       sx={{ fontSize: 13 }}>TyT</MenuItem>
+            <MenuItem value="saber_pro" sx={{ fontSize: 13 }}>Saber Pro</MenuItem>
+            <MenuItem value="tyt"       sx={{ fontSize: 13 }}>TyT</MenuItem>
           </Select>
         </FormControl>
 

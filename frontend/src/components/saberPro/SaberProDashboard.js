@@ -496,6 +496,14 @@ function SaberProDashboard({ initialSection, allowedSections = [] } = {}) {
     '&.Mui-focused .MuiOutlinedInput-notchedOutline': { borderColor: '#2563eb', borderWidth: 1.5 }
   };
 
+  if (activeSection === 'destacados') {
+    return (
+      <Box sx={{ bgcolor: '#f1f5f9', minHeight: '100%', p: { xs: 1.5, md: 2 } }}>
+        <ResultadosDestacados />
+      </Box>
+    );
+  }
+
   return (
     <Box sx={{ bgcolor: '#f1f5f9', minHeight: '100%', p: { xs: 1.5, md: 2 } }}>
 
