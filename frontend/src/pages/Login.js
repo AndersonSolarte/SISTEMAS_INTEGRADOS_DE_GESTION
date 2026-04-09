@@ -28,6 +28,23 @@ function Login() {
   const clientId = process.env.REACT_APP_GOOGLE_CLIENT_ID;
   const currentOrigin = window.location.origin;
 
+  const handleGoogleButtonClick = useCallback(() => {
+    if (loading || !googleReady) return;
+
+    setError('');
+    setShowContactDialog(false);
+
+    const googleNativeButton = googleButtonRef.current?.querySelector('[role="button"]');
+    if (googleNativeButton) {
+      googleNativeButton.click();
+      return;
+    }
+
+    if (window.google?.accounts?.id) {
+      window.google.accounts.id.prompt();
+    }
+  }, [googleReady, loading]);
+
   /* Muestra el AppLoader durante AUTH_LOADER_MS y luego navega.
      replace:true evita que el usuario pueda volver al login con el botón Atrás. */
   const navigateWithLoader = useCallback((path) => {
@@ -107,7 +124,7 @@ function Login() {
         }
       });
     }
-  }, [hydrateFromToken, navigate]);
+  }, [hydrateFromToken, navigateWithLoader]);
 
   /* ── Seguridad: consola + clic derecho ── */
   useEffect(() => {
@@ -501,20 +518,64 @@ function Login() {
             <Box
               ref={googleButtonRef}
               sx={{
-                minHeight: 48,
-                width: '100%',
-                maxWidth: 420,
-                display: 'flex',
-                justifyContent: 'center',
-                alignItems: 'center',
-                p: 1,
-                borderRadius: 3,
-                transition: 'opacity 0.25s ease',
-                opacity: loading ? 0 : 1,
-                pointerEvents: loading ? 'none' : 'auto',
-                '&:hover': { background: 'rgba(59,130,246,0.04)' }
+                position: 'absolute',
+                width: 1,
+                height: 1,
+                overflow: 'hidden',
+                opacity: 0,
+                pointerEvents: 'none'
               }}
             />
+
+            {!loading && (
+              <Button
+                fullWidth
+                variant="contained"
+                size="large"
+                onClick={handleGoogleButtonClick}
+                disabled={!googleReady}
+                startIcon={(
+                  <Box
+                    component="span"
+                    sx={{
+                      width: 22,
+                      height: 22,
+                      borderRadius: '50%',
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      background: '#fff',
+                      color: '#1d4ed8',
+                      fontWeight: 800,
+                      fontSize: 13,
+                      lineHeight: 1
+                    }}
+                  >
+                    G
+                  </Box>
+                )}
+                sx={{
+                  py: 1.65,
+                  borderRadius: 3,
+                  textTransform: 'none',
+                  fontSize: 15,
+                  fontWeight: 700,
+                  letterSpacing: 0.2,
+                  background: 'linear-gradient(135deg, #1d4ed8 0%, #4f46e5 50%, #7c3aed 100%)',
+                  boxShadow: '0 10px 30px rgba(37,99,235,0.28)',
+                  '&:hover': {
+                    background: 'linear-gradient(135deg, #1e40af 0%, #4338ca 50%, #6d28d9 100%)'
+                  },
+                  '&.Mui-disabled': {
+                    background: 'linear-gradient(135deg, #1d4ed8 0%, #4f46e5 50%, #7c3aed 100%)',
+                    color: '#fff',
+                    opacity: 0.8
+                  }
+                }}
+              >
+                Acceder con Google
+              </Button>
+            )}
 
             {/* Estado de carga — se muestra mientras se valida con Google */}
             {loading && (
