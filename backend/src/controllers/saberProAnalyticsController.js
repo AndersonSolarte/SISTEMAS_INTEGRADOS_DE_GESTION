@@ -791,23 +791,64 @@ const getResultadosDestacados = async (req, res) => {
     const offset = (page - 1) * pageSize;
     const { whereSql, params } = buildDirectWhereSql(req.body?.filters || {});
     const topPerProgram = req.body?.options?.topPerProgram === true || req.body?.options?.topPerProgram === 'true';
+    const moduloNormalizedSql = `TRANSLATE(UPPER(TRIM(COALESCE(modulo, ''))), CHR(193) || CHR(201) || CHR(205) || CHR(211) || CHR(218), 'AEIOU')`;
+    const competenciaGrupoSql = `
+      CASE
+        WHEN UPPER(TRIM(COALESCE(competencias, ''))) LIKE '%GENERIC%' THEN 'GENERICAS'
+        WHEN UPPER(TRIM(COALESCE(competencias, ''))) LIKE '%ESPEC%' THEN 'ESPECIFICAS'
+        WHEN ${moduloNormalizedSql} IN (
+          'COMPETENCIAS CIUDADANAS',
+          'COMUNICACION ESCRITA',
+          'INGLES',
+          'LECTURA CRITICA',
+          'RAZONAMIENTO CUANTITATIVO'
+        ) THEN 'GENERICAS'
+        ELSE 'ESPECIFICAS'
+      END
+    `;
 
     const rows = await sequelize.query(
       `
-        WITH grouped AS (
+        WITH detailed AS (
+          SELECT
+            id,
+            documento,
+            nombre,
+            numero_registro,
+            programa,
+            anio,
+            periodo,
+            tipo_prueba,
+            puntaje_global,
+            percentil_nacional_global,
+            puntaje_modulo,
+            ${moduloNormalizedSql} AS modulo_normalizado,
+            ${competenciaGrupoSql} AS competencia_grupo
+          FROM saber_pro_resultados_individuales
+          ${whereSql}
+        ),
+        grouped AS (
           SELECT
             MAX(id) AS id,
             documento,
             MAX(nombre) AS nombre,
-            MAX(numero_registro) AS numero_registro,
-            MAX(programa) AS programa,
+            numero_registro,
+            programa,
             anio,
-            MAX(periodo) AS periodo,
-            MAX(tipo_prueba) AS tipo_prueba,
+            periodo,
+            tipo_prueba,
             MAX(puntaje_global) AS puntaje_global,
             MAX(percentil_nacional_global) AS percentil_nacional_global,
             AVG(puntaje_modulo) FILTER (WHERE puntaje_modulo IS NOT NULL) AS promedio_competencias,
             COUNT(puntaje_modulo) FILTER (WHERE puntaje_modulo IS NOT NULL) AS total_competencias_evaluadas,
+            COUNT(DISTINCT CASE
+              WHEN competencia_grupo = 'GENERICAS' AND puntaje_modulo IS NOT NULL THEN modulo_normalizado
+              ELSE NULL
+            END) AS total_genericas_presentadas,
+            COUNT(DISTINCT CASE
+              WHEN competencia_grupo = 'ESPECIFICAS' AND puntaje_modulo IS NOT NULL THEN modulo_normalizado
+              ELSE NULL
+            END) AS total_especificas_presentadas,
             CASE
               WHEN SUM(CASE WHEN UPPER(COALESCE(tipo_prueba, '')) LIKE '%TYT%' THEN 1 ELSE 0 END) > 0 THEN 200.0
               ELSE 300.0
@@ -822,22 +863,31 @@ const getResultadosDestacados = async (req, res) => {
               ) * 100.0,
               2
             ) AS indice_destacado
-          FROM saber_pro_resultados_individuales
-          ${whereSql}
-          GROUP BY documento, anio
+          FROM detailed
+          GROUP BY documento, numero_registro, programa, anio, periodo, tipo_prueba
         ),
         ranked AS (
           SELECT
             grouped.*,
+            (
+              grouped.total_genericas_presentadas = 5
+              AND grouped.total_especificas_presentadas > 0
+            ) AS cumple_competencias_top_programa,
             ROW_NUMBER() OVER (
               PARTITION BY COALESCE(grouped.programa, 'SIN PROGRAMA')
-              ORDER BY grouped.indice_destacado DESC NULLS LAST,
+              ORDER BY CASE
+                         WHEN grouped.total_genericas_presentadas = 5
+                           AND grouped.total_especificas_presentadas > 0
+                         THEN 0 ELSE 1
+                       END ASC,
                        grouped.promedio_competencias DESC NULLS LAST,
+                       grouped.indice_destacado DESC NULLS LAST,
                        grouped.puntaje_global DESC NULLS LAST,
                        grouped.percentil_nacional_global DESC NULLS LAST,
                        grouped.nombre ASC,
                        grouped.documento ASC,
-                       grouped.anio DESC
+                       grouped.anio DESC,
+                       grouped.periodo DESC
             ) AS program_rank
           FROM grouped
         )
@@ -852,14 +902,17 @@ const getResultadosDestacados = async (req, res) => {
           tipo_prueba,
           promedio_competencias,
           total_competencias_evaluadas,
+          total_genericas_presentadas,
+          total_especificas_presentadas,
+          cumple_competencias_top_programa,
           escala_prueba,
           indice_destacado,
           puntaje_global,
           percentil_nacional_global
         FROM ranked
-        ${topPerProgram ? 'WHERE program_rank = 1' : ''}
-        ORDER BY indice_destacado DESC NULLS LAST,
-                 promedio_competencias DESC NULLS LAST,
+        ${topPerProgram ? 'WHERE program_rank = 1 AND cumple_competencias_top_programa = TRUE' : ''}
+        ORDER BY promedio_competencias DESC NULLS LAST,
+                 indice_destacado DESC NULLS LAST,
                  puntaje_global DESC NULLS LAST,
                  percentil_nacional_global DESC NULLS LAST,
                  nombre ASC
@@ -873,15 +926,43 @@ const getResultadosDestacados = async (req, res) => {
 
     const totalRows = await sequelize.query(
       `
-        WITH grouped AS (
+        WITH detailed AS (
+          SELECT
+            documento,
+            nombre,
+            numero_registro,
+            programa,
+            anio,
+            periodo,
+            tipo_prueba,
+            puntaje_global,
+            percentil_nacional_global,
+            puntaje_modulo,
+            ${moduloNormalizedSql} AS modulo_normalizado,
+            ${competenciaGrupoSql} AS competencia_grupo
+          FROM saber_pro_resultados_individuales
+          ${whereSql}
+        ),
+        grouped AS (
           SELECT
             documento,
             MAX(nombre) AS nombre,
-            MAX(programa) AS programa,
+            numero_registro,
+            programa,
             anio,
+            periodo,
+            tipo_prueba,
             MAX(puntaje_global) AS puntaje_global,
             MAX(percentil_nacional_global) AS percentil_nacional_global,
             AVG(puntaje_modulo) FILTER (WHERE puntaje_modulo IS NOT NULL) AS promedio_competencias,
+            COUNT(DISTINCT CASE
+              WHEN competencia_grupo = 'GENERICAS' AND puntaje_modulo IS NOT NULL THEN modulo_normalizado
+              ELSE NULL
+            END) AS total_genericas_presentadas,
+            COUNT(DISTINCT CASE
+              WHEN competencia_grupo = 'ESPECIFICAS' AND puntaje_modulo IS NOT NULL THEN modulo_normalizado
+              ELSE NULL
+            END) AS total_especificas_presentadas,
             ROUND(
               (
                 AVG(puntaje_modulo) FILTER (WHERE puntaje_modulo IS NOT NULL) /
@@ -892,28 +973,37 @@ const getResultadosDestacados = async (req, res) => {
               ) * 100.0,
               2
             ) AS indice_destacado
-          FROM saber_pro_resultados_individuales
-          ${whereSql}
-          GROUP BY documento, anio
+          FROM detailed
+          GROUP BY documento, numero_registro, programa, anio, periodo, tipo_prueba
         ),
         ranked AS (
           SELECT
             grouped.*,
+            (
+              grouped.total_genericas_presentadas = 5
+              AND grouped.total_especificas_presentadas > 0
+            ) AS cumple_competencias_top_programa,
             ROW_NUMBER() OVER (
               PARTITION BY COALESCE(grouped.programa, 'SIN PROGRAMA')
-              ORDER BY grouped.indice_destacado DESC NULLS LAST,
+              ORDER BY CASE
+                         WHEN grouped.total_genericas_presentadas = 5
+                           AND grouped.total_especificas_presentadas > 0
+                         THEN 0 ELSE 1
+                       END ASC,
                        grouped.promedio_competencias DESC NULLS LAST,
+                       grouped.indice_destacado DESC NULLS LAST,
                        grouped.puntaje_global DESC NULLS LAST,
                        grouped.percentil_nacional_global DESC NULLS LAST,
                        grouped.nombre ASC,
                        grouped.documento ASC,
-                       grouped.anio DESC
+                       grouped.anio DESC,
+                       grouped.periodo DESC
             ) AS program_rank
           FROM grouped
         )
         SELECT COUNT(*) AS total
         FROM ranked
-        ${topPerProgram ? 'WHERE program_rank = 1' : ''}
+        ${topPerProgram ? 'WHERE program_rank = 1 AND cumple_competencias_top_programa = TRUE' : ''}
       `,
       {
         replacements: params,

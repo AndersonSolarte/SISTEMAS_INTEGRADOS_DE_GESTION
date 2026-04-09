@@ -224,7 +224,7 @@ export default function ResultadosDestacados({
 
   const rankingTitle = onlyTopPerProgram ? 'Mejor resultado por programa' : 'Ranking general';
   const rankingDescription = onlyTopPerProgram
-    ? 'Se muestra solo el estudiante con mayor promedio general dentro de cada programa.'
+    ? 'Se muestra solo el estudiante con mayor promedio general dentro de cada programa que tenga 5 genéricas y al menos 1 específica.'
     : 'Ordenado por promedio general descendente';
 
   return (
@@ -275,6 +275,11 @@ export default function ResultadosDestacados({
               <Typography sx={{ fontSize: 12, color: '#64748b', mt: 0.5 }}>
                 Usa el mismo esquema de filtros de Valor Agregado para perfilar el ranking institucional.
               </Typography>
+              {onlyTopPerProgram && (
+                <Typography sx={{ fontSize: 11.5, color: '#7c2d12', mt: 0.75, fontWeight: 700 }}>
+                  Regla activa: 1 por programa solo considera estudiantes con las 5 competencias genéricas y al menos 1 específica.
+                </Typography>
+              )}
             </Box>
             <Chip
               label={onlyTopPerProgram ? 'MEJOR POR PROGRAMA' : 'TOP GENERAL'}
