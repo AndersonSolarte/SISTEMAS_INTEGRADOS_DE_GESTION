@@ -300,6 +300,14 @@ function SaberProDashboard({ initialSection, allowedSections = [] } = {}) {
 
   const effectiveFilters = useMemo(() => {
     const base = { ...BASE_FILTERS };
+    if (activeSection === 'destacados') {
+      return {
+        ...base,
+        anios: filters.anios,
+        periodos: filters.periodos,
+        tipoPrueba: [institutionalTestType]
+      };
+    }
     if (subDashboard === 'programas') {
       return {
         ...base,
@@ -327,22 +335,25 @@ function SaberProDashboard({ initialSection, allowedSections = [] } = {}) {
       competencias: genericCompetenciasFromCatalog,
       tipoPrueba: [institutionalTestType]
     };
-  }, [filters, subDashboard, genericCompetenciasFromCatalog, institutionalTestType]);
+  }, [activeSection, filters, subDashboard, genericCompetenciasFromCatalog, institutionalTestType]);
 
   const invalidProgramSelection = subDashboard === 'programas' && filters.programas.length !== 1;
   const invalidNbcSelection = subDashboard === 'nbc' && filters.gruposReferencia.length !== 1;
   const invalidYearSelection = filters.anios.length === 0;
-  const selectionInvalidForCurrentDashboard = invalidProgramSelection || invalidNbcSelection || invalidYearSelection;
+  const selectionInvalidForCurrentDashboard = activeSection === 'destacados'
+    ? invalidYearSelection
+    : (invalidProgramSelection || invalidNbcSelection || invalidYearSelection);
 
     useEffect(() => {
       let active = true;
       const loadData = async () => {
         if (selectionInvalidForCurrentDashboard) {
+          setError('');
           setOverview(null);
-        setCharts(null);
-        setControlChart(null);
-        setTableData({ rows: [], pagination: { total: 0 } });
-        return;
+          setCharts(null);
+          setControlChart(null);
+          setTableData({ rows: [], pagination: { total: 0 } });
+          return;
         }
         setLoadingData(true);
         setError('');
