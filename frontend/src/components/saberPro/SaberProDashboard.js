@@ -528,12 +528,17 @@ function SaberProDashboard({ initialSection, allowedSections = [] } = {}) {
           <ResultadosDestacados
             tipoPrueba={institutionalTestType}
             setTipoPrueba={setInstitutionalTestType}
+            programas={filters.programas}
+            setProgramas={(next) => setFilters((prev) => ({ ...prev, programas: next }))}
             anios={filters.anios}
             setAnios={(next) => setFilters((prev) => ({ ...prev, anios: next }))}
             periodos={filters.periodos}
             setPeriodos={(next) => setFilters((prev) => ({ ...prev, periodos: next }))}
+            onlyTopPerProgram={destacadosTopPerProgram}
+            setOnlyTopPerProgram={setDestacadosTopPerProgram}
             rows={tableData?.rows || []}
             catalogs={{
+              programas: catalogs?.programas || [],
               anios: (catalogs?.anios || []).map(String),
               periodos: catalogs?.periodos || []
             }}
