@@ -107,38 +107,22 @@ const getDefaultPermissionsByRole = (role) => {
         'dashboard',
         'planeacion_estrategica',
         'planeacion_efectividad',
-        'autoevaluacion',
-        'gestion_informacion',
         'buscar_documentos'
       ],
-      allowedModules: ['estadistica_institucional'],
-      allowedGestionProcesosDashboards: ['estadistica_documental'],
-      allowedPoblacionalDashboards: Array.from(POBLACIONAL_DASHBOARD_KEYS),
-      allowedSaberProDashboards: Array.from(SABER_PRO_DASHBOARD_KEYS)
+      allowedModules: [],
+      allowedGestionProcesosDashboards: [],
+      allowedPoblacionalDashboards: [],
+      allowedSaberProDashboards: []
     };
   }
 
   if ([ROLES.PLANEACION_EFECTIVIDAD].includes(role)) {
     return {
-      menuPermissions: ['dashboard', 'planeacion_efectividad', 'gestion_informacion', 'buscar_documentos'],
-      allowedModules: ['estadistica_institucional'],
+      menuPermissions: ['dashboard', 'planeacion_efectividad', 'buscar_documentos'],
+      allowedModules: [],
       allowedGestionProcesosDashboards: [],
-      allowedPoblacionalDashboards: ['poblacional_flujo', 'poblacional_matriculados', 'poblacional_graduados', 'poblacional_caracterizacion', 'poblacional_resumen_estadistico'],
-      allowedSaberProDashboards: [
-        'saber_pro_consulta_individual',
-        'saber_pro_validacion_masiva',
-        'saber_pro_individuales_general',
-        'saber_pro_individuales_saber_pro',
-        'saber_pro_individuales_tyt',
-        'saber_pro_individuales_destacados',
-        'saber_pro_individuales_competencias',
-        'saber_pro_individuales_becas',
-        'saber_pro_agregados_general',
-        'saber_pro_agregados_competencias_especificas',
-        'saber_pro_agregados_competencias_genericas',
-        'saber_pro_agregados_comparativo_general',
-        'saber_pro_agregados_comparativo_especificas'
-      ]
+      allowedPoblacionalDashboards: [],
+      allowedSaberProDashboards: []
     };
   }
 
