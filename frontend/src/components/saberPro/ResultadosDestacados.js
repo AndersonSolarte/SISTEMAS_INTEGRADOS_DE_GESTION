@@ -1,37 +1,9 @@
-import React, { useMemo, useState } from 'react';
-import {
-  Box,
-  Button,
-  Chip,
-  CircularProgress,
-  FormControl,
-  InputAdornment,
-  InputLabel,
-  ListItemText,
-  MenuItem,
-  OutlinedInput,
-  Paper,
-  Select,
-  Stack,
-  Table,
-  TableBody,
-  TableCell,
-  TableContainer,
-  TableHead,
-  TableRow,
-  TextField,
-  ToggleButton,
-  ToggleButtonGroup,
-  Tooltip,
-  Typography
-} from '@mui/material';
-import Checkbox from '@mui/material/Checkbox';
-import SearchRoundedIcon from '@mui/icons-material/SearchRounded';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { Box, Chip, CircularProgress, FormControl, InputLabel, MenuItem, Paper, Select, Stack, Table, TableBody, TableCell, TableContainer, TableHead, TableRow, Tooltip, Typography } from '@mui/material';
 import EmojiEventsRoundedIcon from '@mui/icons-material/EmojiEventsRounded';
 import GroupsRoundedIcon from '@mui/icons-material/GroupsRounded';
 import SchoolRoundedIcon from '@mui/icons-material/SchoolRounded';
 import WorkspacePremiumRoundedIcon from '@mui/icons-material/WorkspacePremiumRounded';
-import CloseRoundedIcon from '@mui/icons-material/CloseRounded';
 
 const NUM_MODULES = 8;
 const ALL_YEARS = ['2021', '2022', '2023', '2024'];
@@ -42,7 +14,6 @@ const MEDAL = {
   2: { bg: '#fff7ed', border: '#fdba74', color: '#c2410c', emoji: '🥉' }
 };
 
-const SELECT_MENU_PROPS = { PaperProps: { style: { maxHeight: 360, maxWidth: 340 } } };
 const fmt = (value) => (value == null ? '—' : Number(value).toLocaleString('es-CO', { maximumFractionDigits: 2 }));
 const fmtAvg = (value) => (value == null ? '—' : (Number(value) / NUM_MODULES).toLocaleString('es-CO', { maximumFractionDigits: 2 }));
 const uniq = (items = []) => Array.from(new Set(items.map((item) => String(item || '').trim()).filter(Boolean)));
@@ -58,98 +29,125 @@ const selectSx = {
   '&.Mui-focused .MuiOutlinedInput-notchedOutline': { borderColor: '#7c3aed', borderWidth: 1.5 }
 };
 
-function FilterMultiSelect({
+function SmartFilterPanel({
   label,
   value = [],
   onChange = () => {},
   options = [],
-  renderSelectedLabel,
   searchable = false
 }) {
+  const [open, setOpen] = useState(false);
   const [search, setSearch] = useState('');
+  const ref = useRef(null);
   const normalizedOptions = useMemo(() => uniq(options), [options]);
   const selected = useMemo(() => uniq(value), [value]);
+
+  useEffect(() => {
+    if (!open) return undefined;
+    const handler = (event) => {
+      if (ref.current && !ref.current.contains(event.target)) {
+        setOpen(false);
+        setSearch('');
+      }
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [open]);
+
   const filteredOptions = useMemo(() => {
     if (!searchable || !search.trim()) return normalizedOptions;
     const query = search.trim().toLowerCase();
     return normalizedOptions.filter((option) => option.toLowerCase().includes(query));
   }, [normalizedOptions, search, searchable]);
-  const allSelected = normalizedOptions.length > 0 && selected.length === normalizedOptions.length;
-
-  const handleChange = (event) => {
-    const next = typeof event.target.value === 'string' ? event.target.value.split(',') : event.target.value;
-    if (next.includes('__all__')) {
-      onChange(normalizedOptions);
-      return;
-    }
-    if (next.includes('__clear__')) {
-      onChange([]);
-      return;
-    }
-    onChange(next.filter((item) => !['__all__', '__clear__'].includes(item)));
-  };
+  const allSelected = selected.length === 0;
+  const isSelected = (option) => selected.includes(option);
+  const toggle = (option) => onChange(isSelected(option) ? selected.filter((item) => item !== option) : [...selected, option]);
+  const toggleAll = () => onChange(allSelected ? normalizedOptions : []);
 
   return (
-    <FormControl size="small" sx={{ width: '100%' }}>
-      <InputLabel sx={{ fontSize: 12, fontWeight: 800 }}>{label}</InputLabel>
-      <Select
-        multiple
-        value={selected}
-        onChange={handleChange}
-        input={<OutlinedInput label={label} />}
-        renderValue={() => (renderSelectedLabel ? renderSelectedLabel(selected) : (selected.length ? `${selected.length} seleccionados` : 'Todos'))}
-        MenuProps={SELECT_MENU_PROPS}
-        sx={selectSx}
-        onClose={() => setSearch('')}
+    <Box ref={ref} sx={{ position: 'relative' }}>
+      <Box
+        onClick={() => setOpen((current) => !current)}
+        sx={{
+          cursor: 'pointer',
+          borderRadius: '10px',
+          p: '10px 14px',
+          minHeight: 52,
+          bgcolor: selected.length ? '#ede9fe' : '#fff',
+          border: `1.5px solid ${selected.length ? '#7c3aed' : '#e2e8f0'}`,
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          gap: 1,
+          transition: 'all 0.15s',
+          userSelect: 'none',
+          '&:hover': { borderColor: '#7c3aed', bgcolor: selected.length ? '#e9d5ff' : '#faf8ff' }
+        }}
       >
-        {searchable && (
-          <MenuItem
-            disableRipple
-            disableTouchRipple
-            disableGutters
-            dense
-            sx={{ px: 1.2, py: 1, cursor: 'default', '&:hover': { bgcolor: 'transparent' } }}
-            onKeyDown={(event) => event.stopPropagation()}
-          >
-            <TextField
-              fullWidth
-              size="small"
-              value={search}
-              onChange={(event) => setSearch(event.target.value)}
-              placeholder="Buscar..."
-              onClick={(event) => event.stopPropagation()}
-              onKeyDown={(event) => event.stopPropagation()}
-              InputProps={{
-                startAdornment: (
-                  <InputAdornment position="start">
-                    <SearchRoundedIcon sx={{ fontSize: 18, color: '#94a3b8' }} />
-                  </InputAdornment>
-                )
-              }}
-            />
-          </MenuItem>
-        )}
-        <MenuItem value="__all__" sx={{ fontSize: 13, fontWeight: 700 }}>
-          <Checkbox checked={allSelected} size="small" />
-          <ListItemText primary={`Seleccionar todos (${normalizedOptions.length})`} />
-        </MenuItem>
-        <MenuItem value="__clear__" sx={{ fontSize: 13, fontWeight: 700 }}>
-          <Checkbox checked={selected.length === 0} size="small" />
-          <ListItemText primary="Limpiar selección" />
-        </MenuItem>
-        {filteredOptions.map((option) => (
-          <MenuItem key={option} value={option} sx={{ fontSize: 13 }}>
-            <Checkbox checked={selected.includes(option)} size="small" />
-            <ListItemText primary={option} />
-          </MenuItem>
-        ))}
-        {!filteredOptions.length && (
-          <MenuItem disabled sx={{ fontSize: 13, color: '#94a3b8' }}>
-            Sin coincidencias
-          </MenuItem>
-        )}
-      </Select>
-    </FormControl>
+        <Box sx={{ minWidth: 0, flex: 1 }}>
+          <Typography sx={{ fontSize: '9px', fontWeight: 700, color: '#7c3aed', letterSpacing: '0.8px', textTransform: 'uppercase', mb: 0.25 }}>
+            {label}
+          </Typography>
+          <Typography sx={{ fontSize: '12px', fontWeight: 600, color: '#312e81', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+            {selected.length ? `${selected.length} seleccionado${selected.length > 1 ? 's' : ''}` : 'Todos'}
+          </Typography>
+        </Box>
+        <Stack direction="row" alignItems="center" spacing={0.5} sx={{ flexShrink: 0 }}>
+          {selected.length > 0 && (
+            <Box
+              onClick={(event) => { event.stopPropagation(); onChange([]); }}
+              sx={{ width: 18, height: 18, borderRadius: '50%', bgcolor: '#7c3aed', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', '&:hover': { bgcolor: '#6d28d9' } }}
+            >
+              <svg width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="3"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+            </Box>
+          )}
+          <Box sx={{ transition: 'transform 0.15s', transform: open ? 'rotate(180deg)' : 'none' }}>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#7c3aed" strokeWidth="2.5"><polyline points="6 9 12 15 18 9" /></svg>
+          </Box>
+        </Stack>
+      </Box>
+
+      {open && (
+        <Box sx={{ position: 'absolute', top: 'calc(100% + 6px)', left: 0, zIndex: 1400, width: '100%', minWidth: 220, bgcolor: '#fff', borderRadius: '12px', boxShadow: '0 12px 40px rgba(0,0,0,0.14)', border: '1px solid #e2e8f0', overflow: 'hidden' }}>
+          {searchable && (
+            <Box sx={{ p: 1.25, borderBottom: '1px solid #f1f5f9' }}>
+              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, bgcolor: '#f8fafc', borderRadius: '8px', px: 1.25, py: 0.75, border: '1px solid #e2e8f0' }}>
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#94a3b8" strokeWidth="2"><circle cx="11" cy="11" r="8" /><line x1="21" y1="21" x2="16.65" y2="16.65" /></svg>
+                <input autoFocus value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Buscar..." style={{ border: 'none', outline: 'none', background: 'transparent', fontSize: 12, flex: 1, color: '#334155', minWidth: 0 }} />
+              </Box>
+            </Box>
+          )}
+
+          <Box onClick={toggleAll} sx={{ px: 1.5, py: 0.875, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 1.25, borderBottom: '1px solid #f1f5f9', '&:hover': { bgcolor: '#f5f3ff' } }}>
+            <Box sx={{ width: 15, height: 15, flexShrink: 0, borderRadius: '4px', border: `2px solid ${allSelected ? '#7c3aed' : '#d1d5db'}`, bgcolor: allSelected ? '#7c3aed' : '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              {allSelected && <svg width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="3"><polyline points="20 6 9 17 4 12" /></svg>}
+            </Box>
+            <Typography sx={{ fontSize: 11, fontWeight: 700, color: '#7c3aed' }}>Seleccionar todos ({normalizedOptions.length})</Typography>
+          </Box>
+
+          <Box sx={{ maxHeight: 200, overflow: 'auto' }}>
+            {filteredOptions.length === 0 ? (
+              <Box sx={{ px: 2, py: 2, textAlign: 'center' }}>
+                <Typography sx={{ fontSize: 12, color: '#94a3b8' }}>Sin resultados</Typography>
+              </Box>
+            ) : filteredOptions.map((option) => (
+              <Box key={option} onClick={() => toggle(option)} sx={{ px: 1.5, py: 0.75, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 1.25, '&:hover': { bgcolor: '#f5f3ff' } }}>
+                <Box sx={{ width: 15, height: 15, flexShrink: 0, borderRadius: '4px', border: `2px solid ${isSelected(option) ? '#7c3aed' : '#d1d5db'}`, bgcolor: isSelected(option) ? '#7c3aed' : '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                  {isSelected(option) && <svg width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="3"><polyline points="20 6 9 17 4 12" /></svg>}
+                </Box>
+                <Typography sx={{ fontSize: 12, color: '#334155' }}>{option}</Typography>
+              </Box>
+            ))}
+          </Box>
+
+          <Box sx={{ px: 1.5, py: 0.75, borderTop: '1px solid #f1f5f9', bgcolor: '#f8fafc' }}>
+            <Typography sx={{ fontSize: '10px', color: '#94a3b8' }}>
+              {selected.length > 0 ? `${selected.length} de ${normalizedOptions.length} seleccionados` : `${normalizedOptions.length} opciones`}
+            </Typography>
+          </Box>
+        </Box>
+      )}
+    </Box>
   );
 }
 
@@ -257,47 +255,30 @@ export default function ResultadosDestacados({
         ))}
       </Box>
 
-      <Paper elevation={0} sx={{ p: { xs: 1.5, md: 2 }, borderRadius: 3, border: '1px solid #e2e8f0', bgcolor: '#fff' }}>
+      <Paper elevation={0} sx={{ p: 2.2, borderRadius: 4, border: '1px solid #ddd6fe', background: 'linear-gradient(135deg, #ffffff 0%, #f5f3ff 48%, #eff6ff 100%)' }}>
         <Stack spacing={1.6}>
-          <Stack direction={{ xs: 'column', lg: 'row' }} justifyContent="space-between" spacing={1.5} alignItems={{ xs: 'stretch', lg: 'center' }}>
+          <Stack direction={{ xs: 'column', lg: 'row' }} justifyContent="space-between" spacing={1.5}>
             <Box>
-              <Typography sx={{ fontSize: 13.5, fontWeight: 900, color: '#0f172a' }}>
-                Filtros del ranking destacado
+              <Typography sx={{ fontSize: 28, fontWeight: 900, color: '#312e81', letterSpacing: '-0.03em' }}>
+                Filtros Destacados
               </Typography>
-              <Typography sx={{ fontSize: 12, color: '#64748b', mt: 0.35 }}>
-                Ajusta prueba, programa, año y periodo para perfilar el ranking institucional.
+              <Typography sx={{ fontSize: 12, color: '#64748b', mt: 0.5 }}>
+                Usa el mismo esquema de filtros de Valor Agregado para perfilar el ranking institucional.
               </Typography>
             </Box>
-            <ToggleButtonGroup
-              exclusive
-              value={onlyTopPerProgram ? 'programa' : 'general'}
-              onChange={(_event, value) => {
-                if (value) setOnlyTopPerProgram(value === 'programa');
-              }}
-              size="small"
+            <Chip
+              label={onlyTopPerProgram ? 'MEJOR POR PROGRAMA' : 'TOP GENERAL'}
               sx={{
-                '& .MuiToggleButton-root': {
-                  textTransform: 'none',
-                  fontWeight: 800,
-                  px: 1.8,
-                  py: 0.9,
-                  borderRadius: 2,
-                  borderColor: '#dbe4f0',
-                  color: '#475569'
-                },
-                '& .Mui-selected': {
-                  bgcolor: '#eff6ff',
-                  color: '#1d4ed8',
-                  borderColor: '#bfdbfe'
-                }
+                alignSelf: { xs: 'flex-start', lg: 'center' },
+                bgcolor: onlyTopPerProgram ? '#dcfce7' : '#eff6ff',
+                color: onlyTopPerProgram ? '#166534' : '#1d4ed8',
+                border: `1px solid ${onlyTopPerProgram ? '#86efac' : '#bfdbfe'}`,
+                fontWeight: 900
               }}
-            >
-              <ToggleButton value="general">Top general</ToggleButton>
-              <ToggleButton value="programa">1 por programa</ToggleButton>
-            </ToggleButtonGroup>
+            />
           </Stack>
 
-          <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', md: 'repeat(2, minmax(0, 1fr))', xl: '180px 1.3fr 220px 220px' }, gap: 1.4 }}>
+          <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', sm: 'repeat(2, 1fr)', md: 'repeat(4, 1fr)' }, gap: 1.5 }}>
             <FormControl size="small" sx={{ width: '100%' }}>
               <InputLabel sx={{ fontSize: 12, fontWeight: 800 }}>Prueba</InputLabel>
               <Select label="Prueba" value={tipoPrueba} onChange={(event) => setTipoPrueba(event.target.value)} sx={selectSx}>
@@ -306,61 +287,71 @@ export default function ResultadosDestacados({
               </Select>
             </FormControl>
 
-            <FilterMultiSelect
+            <SmartFilterPanel
               label="Programas"
               value={programas}
               onChange={setProgramas}
               options={programOptions}
               searchable
-              renderSelectedLabel={(selected) => {
-                if (!selected.length) return 'Todos';
-                if (selected.length === 1) return selected[0];
-                return `${selected.length} programa(s)`;
-              }}
             />
 
-            <FilterMultiSelect
+            <SmartFilterPanel
               label="Años"
               value={anios}
               onChange={setAnios}
               options={yearOptions}
-              renderSelectedLabel={(selected) => (selected.length ? `${selected.length} año(s)` : 'Todos')}
             />
 
-            <FilterMultiSelect
+            <SmartFilterPanel
               label="Periodos"
               value={periodos}
               onChange={setPeriodos}
               options={periodOptions}
-              renderSelectedLabel={(selected) => (selected.length ? `${selected.length} periodo(s)` : 'Todos')}
             />
           </Box>
 
-          <Stack direction={{ xs: 'column', md: 'row' }} spacing={1} alignItems={{ xs: 'stretch', md: 'center' }}>
+          <Stack direction="row" spacing={1} flexWrap="wrap">
+            {[
+              ['general', 'Top General'],
+              ['programa', '1 por Programa']
+            ].map(([key, label]) => (
+              <Chip
+                key={key}
+                label={label}
+                onClick={() => setOnlyTopPerProgram(key === 'programa')}
+                sx={{
+                  bgcolor: (onlyTopPerProgram ? 'programa' : 'general') === key ? '#7c3aed' : '#fff',
+                  color: (onlyTopPerProgram ? 'programa' : 'general') === key ? '#fff' : '#5b21b6',
+                  border: '1px solid #ddd6fe',
+                  fontWeight: 800,
+                  cursor: 'pointer',
+                  '&:hover': { bgcolor: (onlyTopPerProgram ? 'programa' : 'general') === key ? '#6d28d9' : '#f5f3ff' }
+                }}
+              />
+            ))}
+            {hasFilters && (
+              <Chip
+                label="Limpiar filtros"
+                onClick={clearFilters}
+                sx={{
+                  bgcolor: '#fff1f2',
+                  color: '#be123c',
+                  border: '1px solid #fecdd3',
+                  fontWeight: 800,
+                  cursor: 'pointer',
+                  '&:hover': { bgcolor: '#ffe4e6' }
+                }}
+              />
+            )}
+            <Box sx={{ flexGrow: 1 }} />
             <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
-              <Chip size="small" label={onlyTopPerProgram ? 'Modo: 1 mejor por programa' : 'Modo: top general'} sx={{ fontWeight: 800, bgcolor: '#eff6ff', color: '#1d4ed8', border: '1px solid #bfdbfe' }} />
               {!!programas.length && <Chip size="small" label={`${programas.length} programa(s)`} sx={{ fontWeight: 700, bgcolor: '#f8fafc', color: '#475569' }} />}
               {!!anios.length && <Chip size="small" label={`${anios.length} año(s)`} sx={{ fontWeight: 700, bgcolor: '#f8fafc', color: '#475569' }} />}
               {!!periodos.length && <Chip size="small" label={`${periodos.length} periodo(s)`} sx={{ fontWeight: 700, bgcolor: '#f8fafc', color: '#475569' }} />}
-            </Stack>
-
-            <Box sx={{ flexGrow: 1 }} />
-
-            <Stack direction="row" spacing={1} alignItems="center">
-              {hasFilters && (
-                <Button
-                  size="small"
-                  startIcon={<CloseRoundedIcon sx={{ fontSize: 13 }} />}
-                  onClick={clearFilters}
-                  sx={{ height: 34, fontSize: 12, fontWeight: 700, color: '#ef4444', textTransform: 'none', px: 1.3, borderRadius: 1.8, '&:hover': { bgcolor: '#fff1f2' } }}
-                >
-                  Limpiar
-                </Button>
-              )}
               <Chip
                 label={loading ? 'Cargando...' : `${displayRows.length} de ${rows.length}`}
                 size="small"
-                sx={{ height: 28, fontSize: 11.5, fontWeight: 800, bgcolor: '#fffbeb', color: '#b45309', border: '1.5px solid #fde68a' }}
+                sx={{ fontWeight: 800, bgcolor: '#fffbeb', color: '#b45309', border: '1.5px solid #fde68a' }}
               />
             </Stack>
           </Stack>
