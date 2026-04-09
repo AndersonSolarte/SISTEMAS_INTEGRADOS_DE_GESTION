@@ -359,10 +359,9 @@ function SaberProDashboard({ initialSection, allowedSections = [] } = {}) {
         setError('');
         try {
           if (activeSection === 'destacados') {
-            const t = await saberProAnalyticsService.getTable({
+            const t = await saberProAnalyticsService.getResultadosDestacados({
               filters: effectiveFilters,
-              pagination: { page: 1, pageSize: 50 },
-              sort: [{ field: 'puntaje_global', direction: 'desc' }]
+              pagination: { page: 1, pageSize: 50 }
             });
             if (!active) return;
             setOverview(null);

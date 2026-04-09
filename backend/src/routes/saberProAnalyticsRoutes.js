@@ -8,6 +8,7 @@ const {
   getSaberProOverview,
   getSaberProCharts,
   getSaberProTable,
+  getResultadosDestacados,
   getSaberProControlChart,
   getValueAddedIndividual,
   getValueAddedGeneral,
@@ -59,6 +60,7 @@ router.post('/filtros/cascade', auth, canViewEstadisticaInstitucional, getSaberP
 router.post('/overview', auth, canViewEstadisticaInstitucional, getSaberProOverview);
 router.post('/charts', auth, canViewEstadisticaInstitucional, getSaberProCharts);
 router.post('/table', auth, canViewEstadisticaInstitucional, getSaberProTable);
+router.post('/resultados/destacados', auth, canViewEstadisticaInstitucional, getResultadosDestacados);
 router.post('/control-chart', auth, canViewEstadisticaInstitucional, getSaberProControlChart);
 router.post('/value-added/individual', auth, canViewEstadisticaInstitucional, getValueAddedIndividual);
 router.post('/value-added/general', auth, canViewEstadisticaInstitucional, getValueAddedGeneral);

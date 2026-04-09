@@ -784,6 +784,71 @@ const getSaberProTable = async (req, res) => {
   }
 };
 
+const getResultadosDestacados = async (req, res) => {
+  try {
+    const page = Math.max(Number(req.body?.pagination?.page) || 1, 1);
+    const pageSize = Math.min(Math.max(Number(req.body?.pagination?.pageSize) || 50, 1), 200);
+    const offset = (page - 1) * pageSize;
+    const { whereSql, params } = buildDirectWhereSql(req.body?.filters || {});
+
+    const rows = await sequelize.query(
+      `
+        SELECT
+          MAX(id) AS id,
+          documento,
+          MAX(nombre) AS nombre,
+          MAX(numero_registro) AS numero_registro,
+          MAX(programa) AS programa,
+          anio,
+          MAX(periodo) AS periodo,
+          MAX(tipo_prueba) AS tipo_prueba,
+          MAX(puntaje_global) AS puntaje_global,
+          MAX(percentil_nacional_global) AS percentil_nacional_global
+        FROM saber_pro_resultados_individuales
+        ${whereSql}
+        GROUP BY documento, anio
+        ORDER BY MAX(puntaje_global) DESC NULLS LAST, MAX(percentil_nacional_global) DESC NULLS LAST, MAX(nombre) ASC
+        LIMIT ? OFFSET ?
+      `,
+      {
+        replacements: [...params, pageSize, offset],
+        type: QueryTypes.SELECT
+      }
+    );
+
+    const totalRows = await sequelize.query(
+      `
+        SELECT COUNT(*) AS total
+        FROM (
+          SELECT documento, anio
+          FROM saber_pro_resultados_individuales
+          ${whereSql}
+          GROUP BY documento, anio
+        ) q
+      `,
+      {
+        replacements: params,
+        type: QueryTypes.SELECT
+      }
+    );
+
+    return res.json({
+      success: true,
+      data: {
+        rows,
+        pagination: {
+          page,
+          pageSize,
+          total: Number(totalRows?.[0]?.total || 0)
+        }
+      }
+    });
+  } catch (error) {
+    console.error('Error en resultados destacados Saber Pro:', error);
+    return res.status(500).json({ success: false, message: 'Error al consultar resultados destacados' });
+  }
+};
+
 const getValueAddedIndividual = async (req, res) => {
   try {
     const page = Math.max(Number(req.body?.pagination?.page) || 1, 1);
@@ -2079,6 +2144,7 @@ module.exports = {
   getSaberProOverview,
   getSaberProCharts,
   getSaberProTable,
+  getResultadosDestacados,
   getSaberProControlChart,
   getValueAddedIndividual,
   getValueAddedGeneral,

@@ -29,6 +29,8 @@ const saberProAnalyticsService = {
     api.post('/planeacion/gestion-informacion/saber-pro/resultados/programas/detalle', { filters }).then((r) => r.data),
   getResultadosInstitucional: (filters = {}) =>
     api.post('/planeacion/gestion-informacion/saber-pro/resultados/institucional', { filters }).then((r) => r.data),
+  getResultadosDestacados: ({ filters = {}, pagination = { page: 1, pageSize: 50 } } = {}) =>
+    api.post('/planeacion/gestion-informacion/saber-pro/resultados/destacados', { filters, pagination }).then((r) => r.data),
   getResultadosComparativaS11Spr: (filters = {}) =>
     api.post('/planeacion/gestion-informacion/saber-pro/resultados/comparativa-s11-spr', { filters }, { timeout: 60000 }).then((r) => r.data),
   getDocumentosEstudiantes: (filters = {}) =>
