@@ -228,6 +228,7 @@ function ChartCard({ title, subtitle, children, height = 440 }) {
 
 function SaberProDashboard({ initialSection, allowedSections = [] } = {}) {
   const [catalogs, setCatalogs] = useState({ programas: [], anios: [], periodos: [], modulos: [], gruposReferencia: [], competencias: [] });
+  const [cascadeCatalogs, setCascadeCatalogs] = useState({ programas: [], anios: [], periodos: [], gruposReferencia: [] });
   const [filters, setFilters] = useState(BASE_FILTERS);
   const [destacadosTopPerProgram, setDestacadosTopPerProgram] = useState(false);
   const [subDashboard, setSubDashboard] = useState('programas');
@@ -345,6 +346,36 @@ function SaberProDashboard({ initialSection, allowedSections = [] } = {}) {
   const selectionInvalidForCurrentDashboard = activeSection === 'destacados'
     ? invalidYearSelection
     : (invalidProgramSelection || invalidNbcSelection || invalidYearSelection);
+
+  useEffect(() => {
+    if (activeSection !== 'destacados') return undefined;
+    let active = true;
+    const loadCascadeCatalogs = async () => {
+      try {
+        const response = await saberProAnalyticsService.getFiltrosCascade({
+          programas: filters.programas,
+          anios: filters.anios,
+          periodos: filters.periodos
+        });
+        if (!active) return;
+        setCascadeCatalogs(response?.data || { programas: [], anios: [], periodos: [], gruposReferencia: [] });
+      } catch (_error) {
+        if (!active) return;
+        setCascadeCatalogs({ programas: [], anios: [], periodos: [], gruposReferencia: [] });
+      }
+    };
+    loadCascadeCatalogs();
+    return () => { active = false; };
+  }, [activeSection, filters.programas, filters.anios, filters.periodos]);
+
+  const destacadosCatalogs = useMemo(() => {
+    const rowPrograms = Array.from(new Set((tableData?.rows || []).map((row) => String(row.programa || '').trim()).filter(Boolean)));
+    return {
+      programas: (cascadeCatalogs.programas && cascadeCatalogs.programas.length ? cascadeCatalogs.programas : catalogs.programas) || rowPrograms,
+      anios: (cascadeCatalogs.anios && cascadeCatalogs.anios.length ? cascadeCatalogs.anios : catalogs.anios) || [],
+      periodos: (cascadeCatalogs.periodos && cascadeCatalogs.periodos.length ? cascadeCatalogs.periodos : catalogs.periodos) || []
+    };
+  }, [cascadeCatalogs, catalogs, tableData]);
 
     useEffect(() => {
       let active = true;
@@ -538,9 +569,9 @@ function SaberProDashboard({ initialSection, allowedSections = [] } = {}) {
             setOnlyTopPerProgram={setDestacadosTopPerProgram}
             rows={tableData?.rows || []}
             catalogs={{
-              programas: catalogs?.programas || [],
-              anios: (catalogs?.anios || []).map(String),
-              periodos: catalogs?.periodos || []
+              programas: destacadosCatalogs.programas || [],
+              anios: (destacadosCatalogs.anios || []).map(String),
+              periodos: destacadosCatalogs.periodos || []
             }}
             loading={loadingData}
             error={error}
