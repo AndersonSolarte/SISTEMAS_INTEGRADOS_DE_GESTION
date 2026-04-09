@@ -805,7 +805,23 @@ const getResultadosDestacados = async (req, res) => {
             MAX(periodo) AS periodo,
             MAX(tipo_prueba) AS tipo_prueba,
             MAX(puntaje_global) AS puntaje_global,
-            MAX(percentil_nacional_global) AS percentil_nacional_global
+            MAX(percentil_nacional_global) AS percentil_nacional_global,
+            AVG(puntaje_modulo) FILTER (WHERE puntaje_modulo IS NOT NULL) AS promedio_competencias,
+            COUNT(puntaje_modulo) FILTER (WHERE puntaje_modulo IS NOT NULL) AS total_competencias_evaluadas,
+            CASE
+              WHEN SUM(CASE WHEN UPPER(COALESCE(tipo_prueba, '')) LIKE '%TYT%' THEN 1 ELSE 0 END) > 0 THEN 200.0
+              ELSE 300.0
+            END AS escala_prueba,
+            ROUND(
+              (
+                AVG(puntaje_modulo) FILTER (WHERE puntaje_modulo IS NOT NULL) /
+                CASE
+                  WHEN SUM(CASE WHEN UPPER(COALESCE(tipo_prueba, '')) LIKE '%TYT%' THEN 1 ELSE 0 END) > 0 THEN 200.0
+                  ELSE 300.0
+                END
+              ) * 100.0,
+              2
+            ) AS indice_destacado
           FROM saber_pro_resultados_individuales
           ${whereSql}
           GROUP BY documento, anio
@@ -815,7 +831,9 @@ const getResultadosDestacados = async (req, res) => {
             grouped.*,
             ROW_NUMBER() OVER (
               PARTITION BY COALESCE(grouped.programa, 'SIN PROGRAMA')
-              ORDER BY grouped.puntaje_global DESC NULLS LAST,
+              ORDER BY grouped.indice_destacado DESC NULLS LAST,
+                       grouped.promedio_competencias DESC NULLS LAST,
+                       grouped.puntaje_global DESC NULLS LAST,
                        grouped.percentil_nacional_global DESC NULLS LAST,
                        grouped.nombre ASC,
                        grouped.documento ASC,
@@ -832,11 +850,19 @@ const getResultadosDestacados = async (req, res) => {
           anio,
           periodo,
           tipo_prueba,
+          promedio_competencias,
+          total_competencias_evaluadas,
+          escala_prueba,
+          indice_destacado,
           puntaje_global,
           percentil_nacional_global
         FROM ranked
         ${topPerProgram ? 'WHERE program_rank = 1' : ''}
-        ORDER BY puntaje_global DESC NULLS LAST, percentil_nacional_global DESC NULLS LAST, nombre ASC
+        ORDER BY indice_destacado DESC NULLS LAST,
+                 promedio_competencias DESC NULLS LAST,
+                 puntaje_global DESC NULLS LAST,
+                 percentil_nacional_global DESC NULLS LAST,
+                 nombre ASC
         LIMIT ? OFFSET ?
       `,
       {
@@ -854,7 +880,18 @@ const getResultadosDestacados = async (req, res) => {
             MAX(programa) AS programa,
             anio,
             MAX(puntaje_global) AS puntaje_global,
-            MAX(percentil_nacional_global) AS percentil_nacional_global
+            MAX(percentil_nacional_global) AS percentil_nacional_global,
+            AVG(puntaje_modulo) FILTER (WHERE puntaje_modulo IS NOT NULL) AS promedio_competencias,
+            ROUND(
+              (
+                AVG(puntaje_modulo) FILTER (WHERE puntaje_modulo IS NOT NULL) /
+                CASE
+                  WHEN SUM(CASE WHEN UPPER(COALESCE(tipo_prueba, '')) LIKE '%TYT%' THEN 1 ELSE 0 END) > 0 THEN 200.0
+                  ELSE 300.0
+                END
+              ) * 100.0,
+              2
+            ) AS indice_destacado
           FROM saber_pro_resultados_individuales
           ${whereSql}
           GROUP BY documento, anio
@@ -864,7 +901,9 @@ const getResultadosDestacados = async (req, res) => {
             grouped.*,
             ROW_NUMBER() OVER (
               PARTITION BY COALESCE(grouped.programa, 'SIN PROGRAMA')
-              ORDER BY grouped.puntaje_global DESC NULLS LAST,
+              ORDER BY grouped.indice_destacado DESC NULLS LAST,
+                       grouped.promedio_competencias DESC NULLS LAST,
+                       grouped.puntaje_global DESC NULLS LAST,
                        grouped.percentil_nacional_global DESC NULLS LAST,
                        grouped.nombre ASC,
                        grouped.documento ASC,
