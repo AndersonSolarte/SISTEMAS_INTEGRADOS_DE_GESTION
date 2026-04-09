@@ -790,24 +790,53 @@ const getResultadosDestacados = async (req, res) => {
     const pageSize = Math.min(Math.max(Number(req.body?.pagination?.pageSize) || 50, 1), 200);
     const offset = (page - 1) * pageSize;
     const { whereSql, params } = buildDirectWhereSql(req.body?.filters || {});
+    const topPerProgram = req.body?.options?.topPerProgram === true || req.body?.options?.topPerProgram === 'true';
 
     const rows = await sequelize.query(
       `
+        WITH grouped AS (
+          SELECT
+            MAX(id) AS id,
+            documento,
+            MAX(nombre) AS nombre,
+            MAX(numero_registro) AS numero_registro,
+            MAX(programa) AS programa,
+            anio,
+            MAX(periodo) AS periodo,
+            MAX(tipo_prueba) AS tipo_prueba,
+            MAX(puntaje_global) AS puntaje_global,
+            MAX(percentil_nacional_global) AS percentil_nacional_global
+          FROM saber_pro_resultados_individuales
+          ${whereSql}
+          GROUP BY documento, anio
+        ),
+        ranked AS (
+          SELECT
+            grouped.*,
+            ROW_NUMBER() OVER (
+              PARTITION BY COALESCE(grouped.programa, 'SIN PROGRAMA')
+              ORDER BY grouped.puntaje_global DESC NULLS LAST,
+                       grouped.percentil_nacional_global DESC NULLS LAST,
+                       grouped.nombre ASC,
+                       grouped.documento ASC,
+                       grouped.anio DESC
+            ) AS program_rank
+          FROM grouped
+        )
         SELECT
-          MAX(id) AS id,
+          id,
           documento,
-          MAX(nombre) AS nombre,
-          MAX(numero_registro) AS numero_registro,
-          MAX(programa) AS programa,
+          nombre,
+          numero_registro,
+          programa,
           anio,
-          MAX(periodo) AS periodo,
-          MAX(tipo_prueba) AS tipo_prueba,
-          MAX(puntaje_global) AS puntaje_global,
-          MAX(percentil_nacional_global) AS percentil_nacional_global
-        FROM saber_pro_resultados_individuales
-        ${whereSql}
-        GROUP BY documento, anio
-        ORDER BY MAX(puntaje_global) DESC NULLS LAST, MAX(percentil_nacional_global) DESC NULLS LAST, MAX(nombre) ASC
+          periodo,
+          tipo_prueba,
+          puntaje_global,
+          percentil_nacional_global
+        FROM ranked
+        ${topPerProgram ? 'WHERE program_rank = 1' : ''}
+        ORDER BY puntaje_global DESC NULLS LAST, percentil_nacional_global DESC NULLS LAST, nombre ASC
         LIMIT ? OFFSET ?
       `,
       {
@@ -818,13 +847,34 @@ const getResultadosDestacados = async (req, res) => {
 
     const totalRows = await sequelize.query(
       `
-        SELECT COUNT(*) AS total
-        FROM (
-          SELECT documento, anio
+        WITH grouped AS (
+          SELECT
+            documento,
+            MAX(nombre) AS nombre,
+            MAX(programa) AS programa,
+            anio,
+            MAX(puntaje_global) AS puntaje_global,
+            MAX(percentil_nacional_global) AS percentil_nacional_global
           FROM saber_pro_resultados_individuales
           ${whereSql}
           GROUP BY documento, anio
-        ) q
+        ),
+        ranked AS (
+          SELECT
+            grouped.*,
+            ROW_NUMBER() OVER (
+              PARTITION BY COALESCE(grouped.programa, 'SIN PROGRAMA')
+              ORDER BY grouped.puntaje_global DESC NULLS LAST,
+                       grouped.percentil_nacional_global DESC NULLS LAST,
+                       grouped.nombre ASC,
+                       grouped.documento ASC,
+                       grouped.anio DESC
+            ) AS program_rank
+          FROM grouped
+        )
+        SELECT COUNT(*) AS total
+        FROM ranked
+        ${topPerProgram ? 'WHERE program_rank = 1' : ''}
       `,
       {
         replacements: params,
@@ -836,6 +886,9 @@ const getResultadosDestacados = async (req, res) => {
       success: true,
       data: {
         rows,
+        options: {
+          topPerProgram
+        },
         pagination: {
           page,
           pageSize,

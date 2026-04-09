@@ -229,6 +229,7 @@ function ChartCard({ title, subtitle, children, height = 440 }) {
 function SaberProDashboard({ initialSection, allowedSections = [] } = {}) {
   const [catalogs, setCatalogs] = useState({ programas: [], anios: [], periodos: [], modulos: [], gruposReferencia: [], competencias: [] });
   const [filters, setFilters] = useState(BASE_FILTERS);
+  const [destacadosTopPerProgram, setDestacadosTopPerProgram] = useState(false);
   const [subDashboard, setSubDashboard] = useState('programas');
   const [institutionalTestType, setInstitutionalTestType] = useState('saber_pro');
   const availableNavOptions = useMemo(() => {
@@ -303,6 +304,7 @@ function SaberProDashboard({ initialSection, allowedSections = [] } = {}) {
     if (activeSection === 'destacados') {
       return {
         ...base,
+        programas: filters.programas,
         anios: filters.anios,
         periodos: filters.periodos,
         tipoPrueba: [institutionalTestType]
@@ -361,7 +363,8 @@ function SaberProDashboard({ initialSection, allowedSections = [] } = {}) {
           if (activeSection === 'destacados') {
             const t = await saberProAnalyticsService.getResultadosDestacados({
               filters: effectiveFilters,
-              pagination: { page: 1, pageSize: 50 }
+              pagination: { page: 1, pageSize: destacadosTopPerProgram ? 200 : 50 },
+              options: { topPerProgram: destacadosTopPerProgram }
             });
             if (!active) return;
             setOverview(null);
@@ -390,7 +393,7 @@ function SaberProDashboard({ initialSection, allowedSections = [] } = {}) {
       };
       loadData();
       return () => { active = false; };
-    }, [activeSection, effectiveFilters, selectionInvalidForCurrentDashboard]);
+    }, [activeSection, destacadosTopPerProgram, effectiveFilters, selectionInvalidForCurrentDashboard]);
 
   const handleFilterChange = (key) => (event) => {
     const value = event.target.value;
@@ -773,14 +776,33 @@ function SaberProDashboard({ initialSection, allowedSections = [] } = {}) {
       <Stack spacing={2} sx={{ width: '100%' }}>
 
       {(loadingCatalogs || loadingData) && <LinearProgress />}
-      {error && (
+      {error && activeSection !== 'destacados' && (
         <Paper elevation={0} sx={{ p: 1.5, borderRadius: 2, border: '1px solid #fecaca', bgcolor: '#fff1f2' }}>
           <Typography variant="body2" sx={{ color: '#991b1b', fontWeight: 700 }}>{error}</Typography>
         </Paper>
       )}
 
       {activeSection === 'destacados' && (
-        <ResultadosDestacados activeSection={activeSection} />
+        <ResultadosDestacados
+          tipoPrueba={institutionalTestType}
+          setTipoPrueba={setInstitutionalTestType}
+          programas={filters.programas}
+          setProgramas={(value) => setFilters((prev) => ({ ...prev, programas: value }))}
+          anios={filters.anios}
+          setAnios={(value) => setFilters((prev) => ({ ...prev, anios: value }))}
+          periodos={filters.periodos}
+          setPeriodos={(value) => setFilters((prev) => ({ ...prev, periodos: value }))}
+          onlyTopPerProgram={destacadosTopPerProgram}
+          setOnlyTopPerProgram={setDestacadosTopPerProgram}
+          rows={tableData?.rows || []}
+          catalogs={{
+            programas: catalogs?.programas || [],
+            anios: (catalogs?.anios || []).map(String),
+            periodos: catalogs?.periodos || []
+          }}
+          loading={loadingData}
+          error={error}
+        />
       )}
 
       {activeSection === 'becas' && canRenderAnalyticsPanels && (
