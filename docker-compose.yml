@@ -91,6 +91,9 @@ services:
         condition: service_started
     ports:
       - "${FRONTEND_PORT_HOST:-8080}:80"
+      - "${FRONTEND_SSL_PORT_HOST:-443}:443"
+    volumes:
+      - ./Cert_planeacion.pem:/etc/nginx/certs/Cert_planeacion.pem:ro
 
 volumes:
   postgres_data:
