@@ -9,6 +9,8 @@ node_modules/
 .env.production.local
 config/backend_.env
 config/frontend_.env
+/backend/.env
+/frontend/.env
 
 # Build
 dist/
@@ -42,3 +44,10 @@ Thumbs.db
 /backend/uploads/
 /backend/keys/*.json
 /.docker-tmp/
+
+# Certificados y archivos sensibles del servidor
+/Cert_planeacion.pem
+/Cert_planeacion.key
+/fullchain.pem
+/.env.save
+/docker-compose.yml.bak_ssl_fix
