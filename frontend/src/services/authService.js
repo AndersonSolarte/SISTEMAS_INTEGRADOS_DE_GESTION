@@ -75,15 +75,20 @@ const authService = {
     if (!localStorage.getItem(SESSION_LOGIN_AT_KEY)) {
       localStorage.setItem(SESSION_LOGIN_AT_KEY, Date.now().toString());
     }
+    if (!localStorage.getItem(SESSION_LAST_ACTIVITY_KEY)) {
+      localStorage.setItem(SESSION_LAST_ACTIVITY_KEY, Date.now().toString());
+    }
   },
 
-  // Siempre resetea loginAt y lastActivityAt a "ahora".
-  // Usar al montar el monitor de sesión para evitar que timestamps
-  // viejos de localStorage disparen el modal de expiración de inmediato.
-  resetSessionStart: () => {
+  // Mantiene el inicio de sesión original y solo completa timestamps faltantes.
+  // Esto permite forzar reautenticación real por duración máxima de sesión.
+  syncSessionTimestamps: () => {
+    const existingLoginAt = localStorage.getItem(SESSION_LOGIN_AT_KEY);
     const now = Date.now().toString();
-    localStorage.setItem(SESSION_LOGIN_AT_KEY, now);
-    localStorage.setItem(SESSION_LAST_ACTIVITY_KEY, now);
+    localStorage.setItem(SESSION_LOGIN_AT_KEY, existingLoginAt || now);
+    if (!localStorage.getItem(SESSION_LAST_ACTIVITY_KEY)) {
+      localStorage.setItem(SESSION_LAST_ACTIVITY_KEY, existingLoginAt || now);
+    }
   },
 
   getSessionMeta: () => ({

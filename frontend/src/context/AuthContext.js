@@ -3,7 +3,7 @@ import authService from '../services/authService';
 
 const AuthContext = createContext(null);
 const SESSION_IDLE_TIMEOUT_MS = Number(process.env.REACT_APP_SESSION_IDLE_TIMEOUT_MS || 10 * 60 * 1000);
-const SESSION_MAX_DURATION_MS = Number(process.env.REACT_APP_SESSION_MAX_DURATION_MS || 8 * 60 * 60 * 1000);
+const SESSION_MAX_DURATION_MS = Number(process.env.REACT_APP_SESSION_MAX_DURATION_MS || 2 * 24 * 60 * 60 * 1000);
 
 export const AuthProvider = ({ children }) => {
   const [user, setUser] = useState(null);
@@ -45,9 +45,8 @@ export const AuthProvider = ({ children }) => {
         return;
       }
 
-      // Resetear timestamps al inicio para evitar que datos viejos de
-      // localStorage disparen el modal antes de los 10 minutos de inactividad.
-      authService.resetSessionStart();
+      // Conserva el inicio real de sesión y completa timestamps faltantes.
+      authService.syncSessionTimestamps();
 
       try {
         const profile = await authService.getProfile();
@@ -75,10 +74,9 @@ export const AuthProvider = ({ children }) => {
   useEffect(() => {
     if (!user || !authService.isAuthenticated()) return undefined;
 
-    // Siempre resetear ambos timestamps al montar el monitor.
-    // Esto evita que loginAt o lastActivityAt antiguos (de sesiones previas
-    // guardadas en localStorage) disparen maxExceeded o idleExceeded de inmediato.
-    authService.resetSessionStart();
+    // Conserva la fecha real de login para poder forzar reautenticación
+    // después del tiempo máximo permitido.
+    authService.syncSessionTimestamps();
 
     const events = ['mousemove', 'mousedown', 'keydown', 'scroll', 'touchstart', 'click'];
     const onActivity = () => touchActivity();
