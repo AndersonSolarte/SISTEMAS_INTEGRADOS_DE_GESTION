@@ -100,6 +100,7 @@ const googleLogin = async (req, res) => {
     const { credential } = req.body;
     const result = await verifyGoogleCredentialAndBuildSession(credential);
     if (result?.error) {
+      console.warn('[auth/google] Acceso rechazado:', result.error.message);
       return res.status(result.error.status).json({ success: false, message: result.error.message });
     }
 
@@ -109,6 +110,7 @@ const googleLogin = async (req, res) => {
       data: result.data
     });
   } catch (error) {
+    console.error('[auth/google] Error verificando credencial:', error?.message || error);
     const detail = String(error?.message || '').toLowerCase();
     if (detail.includes('wrong number of segments')) {
       return res.status(400).json({

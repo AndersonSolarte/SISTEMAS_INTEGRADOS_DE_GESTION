@@ -14,7 +14,7 @@ const AUTH_FADE_MS   = 560;
 
 function Login() {
   const navigate = useNavigate();
-  const { loginWithGoogle, hydrateFromToken } = useAuth();
+  const { user, loading: authLoading, loginWithGoogle, hydrateFromToken } = useAuth();
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const [googleReady, setGoogleReady] = useState(false);
@@ -34,6 +34,12 @@ function Login() {
     setTimeout(() => setTransitionFadeOut(true), AUTH_LOADER_MS - AUTH_FADE_MS);
     setTimeout(() => navigate(path, { replace: true }), AUTH_LOADER_MS);
   }, [navigate]);
+
+  useEffect(() => {
+    if (!authLoading && user?.id && !transitioning) {
+      navigateWithLoader('/dashboard');
+    }
+  }, [authLoading, user?.id, transitioning, navigateWithLoader]);
 
   const getContactCopy = (message = '') => {
     const text = String(message || '').toLowerCase();
