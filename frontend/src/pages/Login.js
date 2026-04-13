@@ -154,16 +154,20 @@ function Login() {
         client_id: clientId,
         callback: handleGoogleCredential,
         ux_mode: 'popup',
-        auto_select: false
+        auto_select: false,
+        use_fedcm_for_button: false
       });
 
       if (googleButtonRef.current) {
         googleButtonRef.current.innerHTML = '';
         window.google.accounts.id.renderButton(googleButtonRef.current, {
-          type: 'icon',
+          type: 'standard',
           theme: 'outline',
           size: 'large',
-          shape: 'circle'
+          shape: 'pill',
+          text: 'signin_with',
+          logo_alignment: 'left',
+          width: 360
         });
       }
 
@@ -484,7 +488,7 @@ function Login() {
           {/* ── Google sign-in section ── */}
           <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2 }}>
 
-            {/* Google SDK button en modo icono para no mostrar correo sugerido */}
+            {/* Boton oficial de Google, sin selector personalizado de cuenta */}
             <Box
               ref={googleButtonRef}
               sx={{
@@ -500,7 +504,7 @@ function Login() {
                 opacity: loading ? 0 : 1,
                 pointerEvents: loading ? 'none' : 'auto',
                 '&:hover': { background: 'rgba(59,130,246,0.04)' },
-                '& iframe': { maxWidth: '52px !important' }
+                '& iframe': { maxWidth: '100% !important' }
               }}
             />
 
