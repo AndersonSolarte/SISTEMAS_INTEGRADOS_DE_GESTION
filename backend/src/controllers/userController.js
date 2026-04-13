@@ -1,4 +1,5 @@
-const { User, Documento, DocumentoFavorito, UserActivityLog, UserModulePermission } = require('../models');
+const models = require('../models');
+const { User } = models;
 const { Op, literal } = require('sequelize');
 const crypto = require('crypto');
 const XLSX = require('xlsx');
@@ -218,15 +219,31 @@ const sanitizeUserPayload = ({ nombre, email, username, role, estado } = {}) => 
   estado
 });
 
-const detachUserReferences = async (userId, transaction) => {
-  await Documento.update({ creado_por: null }, { where: { creado_por: userId }, transaction });
-  await Documento.update({ actualizado_por: null }, { where: { actualizado_por: userId }, transaction });
-  await Documento.update({ eliminado_por: null }, { where: { eliminado_por: userId }, transaction });
-  await DocumentoFavorito.destroy({ where: { user_id: userId }, transaction });
-  await UserModulePermission.destroy({ where: { user_id: userId }, transaction });
+const USER_REFERENCE_FIELDS = ['creado_por', 'actualizado_por', 'eliminado_por', 'resuelto_por', 'user_id'];
+const USER_DEPENDENCY_DESTROY_MODELS = new Set(['documento_favoritos', 'user_module_permissions']);
 
-  if (UserActivityLog) {
-    await UserActivityLog.update({ user_id: null }, { where: { user_id: userId }, transaction });
+const detachUserReferences = async (userId, transaction) => {
+  const skipped = new Set(['users']);
+
+  for (const model of Object.values(models)) {
+    const tableName = String(model.tableName || model.name || '');
+    if (!model?.rawAttributes || !model?.getTableName || skipped.has(tableName)) continue;
+
+    const referenceFields = USER_REFERENCE_FIELDS.filter((field) => model.rawAttributes[field]);
+    if (referenceFields.length === 0) continue;
+
+    const shouldDestroy = USER_DEPENDENCY_DESTROY_MODELS.has(tableName) || USER_DEPENDENCY_DESTROY_MODELS.has(model.name);
+
+    for (const field of referenceFields) {
+      if (shouldDestroy && field === 'user_id') {
+        await model.destroy({ where: { [field]: userId }, transaction });
+        continue;
+      }
+
+      if (model.rawAttributes[field]?.allowNull === false) continue;
+
+      await model.update({ [field]: null }, { where: { [field]: userId }, transaction });
+    }
   }
 };
 
