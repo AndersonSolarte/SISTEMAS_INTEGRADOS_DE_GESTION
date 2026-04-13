@@ -100,6 +100,7 @@ function GestionUsuarios() {
   const [selectedUser, setSelectedUser] = useState(null);
   const [uploadFile, setUploadFile] = useState(null);
   const [uploading, setUploading] = useState(false);
+  const [deletingUserIds, setDeletingUserIds] = useState(() => new Set());
   const [openPermissionsDialog, setOpenPermissionsDialog] = useState(false);
   const [permissionsUser, setPermissionsUser] = useState(null);
   const [permissionsLoading, setPermissionsLoading] = useState(false);
@@ -259,7 +260,9 @@ function GestionUsuarios() {
   };
 
   const handleDelete = async (user) => {
+    if (deletingUserIds.has(user.id)) return;
     if (window.confirm(`¿Eliminar permanentemente al usuario ${user.nombre}? Esta acción no se puede deshacer.`)) {
+      setDeletingUserIds((prev) => new Set(prev).add(user.id));
       try {
         const response = await userService.deleteUser(user.id);
         const deletedPhysically = response?.data?.deletedPhysically !== false;
@@ -274,11 +277,29 @@ function GestionUsuarios() {
           );
         });
         setTotal((prev) => (deletedPhysically ? Math.max(prev - 1, 0) : prev));
+        if (deletedPhysically && users.length === 1 && page > 0) {
+          setPage((prev) => Math.max(prev - 1, 0));
+        }
 
         enqueueSnackbar(response.message || 'Usuario eliminado permanentemente', { variant: 'success' });
-        loadUsers();
       } catch (error) {
+        if (Number(error.response?.status) === 404) {
+          setUsers((prev) => prev.filter((item) => item.id !== user.id));
+          setTotal((prev) => Math.max(prev - 1, 0));
+          if (users.length === 1 && page > 0) {
+            setPage((prev) => Math.max(prev - 1, 0));
+          }
+          enqueueSnackbar('El usuario ya no estaba en la base de datos. La tabla fue actualizada.', { variant: 'info' });
+          return;
+        }
+
         enqueueSnackbar(error.response?.data?.message || 'Error al eliminar usuario', { variant: 'error' });
+      } finally {
+        setDeletingUserIds((prev) => {
+          const next = new Set(prev);
+          next.delete(user.id);
+          return next;
+        });
       }
     }
   };
@@ -754,7 +775,9 @@ function GestionUsuarios() {
                     </TableCell>
                   </TableRow>
                 ) : (
-                  visibleUsers.map((user, index) => (
+                  visibleUsers.map((user, index) => {
+                    const isDeleting = deletingUserIds.has(user.id);
+                    return (
                     <TableRow
                       key={user.id}
                       hover
@@ -791,6 +814,7 @@ function GestionUsuarios() {
                             <IconButton
                               size="small"
                               onClick={() => handleOpenDialog('edit', user)}
+                              disabled={isDeleting}
                               sx={{ color: '#3b82f6', bgcolor: '#eff6ff', '&:hover': { bgcolor: '#dbeafe' } }}
                             >
                               <EditIcon fontSize="small" />
@@ -800,6 +824,7 @@ function GestionUsuarios() {
                             <IconButton
                               size="small"
                               onClick={() => handleOpenPermissionsDialog(user)}
+                              disabled={isDeleting}
                               sx={{ color: '#0ea5e9', bgcolor: '#e0f2fe', '&:hover': { bgcolor: '#bae6fd' } }}
                             >
                               <SecurityIcon fontSize="small" />
@@ -809,6 +834,7 @@ function GestionUsuarios() {
                             <IconButton
                               size="small"
                               onClick={() => handleToggleStatus(user)}
+                              disabled={isDeleting}
                               sx={{ color: user.estado === 'activo' ? '#f59e0b' : '#10b981', bgcolor: '#fef3c7', '&:hover': { bgcolor: '#fde68a' } }}
                             >
                               {user.estado === 'activo' ? <BlockIcon fontSize="small" /> : <CheckCircleIcon fontSize="small" />}
@@ -818,15 +844,17 @@ function GestionUsuarios() {
                             <IconButton
                               size="small"
                               onClick={() => handleDelete(user)}
+                              disabled={isDeleting}
                               sx={{ color: '#ef4444', bgcolor: '#fee2e2', '&:hover': { bgcolor: '#fecaca' } }}
                             >
-                              <DeleteIcon fontSize="small" />
+                              {isDeleting ? <CircularProgress size={16} color="inherit" /> : <DeleteIcon fontSize="small" />}
                             </IconButton>
                           </Tooltip>
                         </Stack>
                       </TableCell>
                     </TableRow>
-                  ))
+                    );
+                  })
                 )}
               </TableBody>
             </Table>
