@@ -293,6 +293,13 @@ function GestionUsuarios() {
           return;
         }
 
+        await loadUsers();
+
+        if (error.code === 'ECONNABORTED') {
+          enqueueSnackbar('La eliminación tardó más de lo esperado. La tabla fue sincronizada nuevamente.', { variant: 'warning' });
+          return;
+        }
+
         enqueueSnackbar(error.response?.data?.message || 'Error al eliminar usuario', { variant: 'error' });
       } finally {
         setDeletingUserIds((prev) => {

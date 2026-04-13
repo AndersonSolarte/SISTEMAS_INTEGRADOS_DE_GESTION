@@ -284,6 +284,18 @@ const hasModelTable = async (model) => {
   return exists;
 };
 
+const getModelTableColumns = async (model) => {
+  const tableName = model.getTableName ? model.getTableName() : model.tableName;
+  const key = `columns:${typeof tableName === 'string' ? tableName : JSON.stringify(tableName)}`;
+  if (modelTableAvailability.has(key)) return modelTableAvailability.get(key);
+
+  const queryInterface = User.sequelize.getQueryInterface();
+  const described = await queryInterface.describeTable(tableName).catch(() => null);
+  const columns = new Set(Object.keys(described || {}));
+  modelTableAvailability.set(key, columns);
+  return columns;
+};
+
 const detachUserReferences = async (userId, transaction) => {
   const skipped = new Set(['users']);
 
@@ -292,7 +304,10 @@ const detachUserReferences = async (userId, transaction) => {
     if (!model?.rawAttributes || !model?.getTableName || skipped.has(tableName)) continue;
     if (!await hasModelTable(model)) continue;
 
-    const referenceFields = USER_REFERENCE_FIELDS.filter((field) => model.rawAttributes[field]);
+    const tableColumns = await getModelTableColumns(model);
+    const referenceFields = USER_REFERENCE_FIELDS.filter((field) =>
+      model.rawAttributes[field] && tableColumns.has(field)
+    );
     if (referenceFields.length === 0) continue;
 
     const shouldDestroy = USER_DEPENDENCY_DESTROY_MODELS.has(tableName) || USER_DEPENDENCY_DESTROY_MODELS.has(model.name);
