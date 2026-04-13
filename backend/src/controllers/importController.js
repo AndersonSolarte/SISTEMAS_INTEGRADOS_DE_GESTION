@@ -119,6 +119,33 @@ const normalizeMappedFields = (row) => {
   return { tipoDocumentacion, codigo, titulo };
 };
 
+const documentNeedsUpdate = (documento, nextData) => {
+  const fields = [
+    'subproceso_id',
+    'tipo_documentacion_id',
+    'codigo',
+    'titulo',
+    'version',
+    'fecha_creacion',
+    'revisa',
+    'aprueba',
+    'fecha_aprobacion',
+    'autor',
+    'estado',
+    'link_acceso'
+  ];
+
+  return fields.some((field) => String(documento.get(field) ?? '') !== String(nextData[field] ?? ''));
+};
+
+const buildSyncMessage = ({ mode, results }) => {
+  if (mode === 'incremental') {
+    return `Sincronizacion incremental completada: ${results.importados} nuevos, ${results.actualizados} actualizados, ${results.omitidos} sin cambios, ${results.errores.length} con error de ${results.total} registros`;
+  }
+
+  return `Reemplazo completo completado: ${results.importados} registros cargados, ${results.errores.length} con error de ${results.total} registros`;
+};
+
 const extractSpreadsheetId = (value) => {
   const raw = String(value || '').trim();
   if (!raw) return '';
@@ -851,16 +878,13 @@ const importFromSheetFixed = async (req, res) => {
       errores: []
     };
 
-    const existingCodes = mode === 'incremental'
-      ? new Set(
-          (await Documento.findAll({
-            attributes: ['codigo'],
-            raw: true
-          }))
-            .map((doc) => toText(doc.codigo))
-            .filter(Boolean)
+    const existingDocumentsByCode = mode === 'incremental'
+      ? new Map(
+          (await Documento.findAll())
+            .map((doc) => [toText(doc.codigo), doc])
+            .filter(([codigo]) => Boolean(codigo))
         )
-      : new Set();
+      : new Map();
 
     for (let i = 0; i < data.length; i++) {
       const row = mapRowKeys(data[i]);
@@ -924,14 +948,19 @@ const importFromSheetFixed = async (req, res) => {
           link_acceso: toText(row.link_acceso)
         };
 
-        if (mode === 'incremental' && existingCodes.has(documentoData.codigo)) {
-          results.omitidos++;
-          continue;
+        const existente = existingDocumentsByCode.get(documentoData.codigo);
+        if (existente) {
+          if (documentNeedsUpdate(existente, documentoData)) {
+            await existente.update(documentoData);
+            results.actualizados++;
+          } else {
+            results.omitidos++;
+          }
+        } else {
+          const nuevoDocumento = await Documento.create(documentoData);
+          results.importados++;
+          existingDocumentsByCode.set(documentoData.codigo, nuevoDocumento);
         }
-
-        await Documento.create(documentoData);
-        results.importados++;
-        existingCodes.add(documentoData.codigo);
       } catch (error) {
         results.errores.push({
           fila: rowNumber,
@@ -964,9 +993,7 @@ const importFromSheetFixed = async (req, res) => {
 
     return res.json({
       success: true,
-      message: mode === 'incremental'
-        ? `Sincronizacion incremental completada: ${results.importados} nuevos, ${results.omitidos} omitidos por duplicado, ${results.errores.length} con error de ${results.total} registros`
-        : `Reemplazo completo completado: ${results.importados} registros cargados, ${results.errores.length} con error de ${results.total} registros`,
+      message: buildSyncMessage({ mode, results }),
       data: {
         ...results,
         source: sheetRead.source,
