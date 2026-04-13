@@ -19,12 +19,10 @@ function Login() {
   const [loading, setLoading] = useState(false);
   const [googleReady, setGoogleReady] = useState(false);
   const [showContactDialog, setShowContactDialog] = useState(false);
-  const [googleButtonWidth, setGoogleButtonWidth] = useState(320);
   /* Loader de transición post-autenticación */
   const [transitioning, setTransitioning] = useState(false);
   const [transitionFadeOut, setTransitionFadeOut] = useState(false);
   const googleButtonRef = useRef(null);
-  const loginCardRef = useRef(null);
   const clientId = process.env.REACT_APP_GOOGLE_CLIENT_ID;
   const currentOrigin = window.location.origin;
 
@@ -131,21 +129,6 @@ function Login() {
     return () => document.removeEventListener('contextmenu', blockCtx);
   }, []);
 
-  /* ── Google button responsive width ── */
-  useEffect(() => {
-    const updateWidth = () => {
-      const viewportWidth = Math.max(220, Math.min(420, Math.floor(window.innerWidth - 72)));
-      const cardWidth = loginCardRef.current
-        ? Math.max(220, Math.floor(loginCardRef.current.clientWidth - 48))
-        : viewportWidth;
-      setGoogleButtonWidth(Math.min(viewportWidth, cardWidth));
-    };
-
-    updateWidth();
-    window.addEventListener('resize', updateWidth);
-    return () => window.removeEventListener('resize', updateWidth);
-  }, []);
-
   /* ── Google SDK init ── */
   useEffect(() => {
     let cancelled = false;
@@ -171,11 +154,10 @@ function Login() {
       if (googleButtonRef.current) {
         googleButtonRef.current.innerHTML = '';
         window.google.accounts.id.renderButton(googleButtonRef.current, {
+          type: 'icon',
           theme: 'outline',
           size: 'large',
-          width: googleButtonWidth,
-          shape: 'pill',
-          text: 'signin_with'
+          shape: 'circle'
         });
       }
 
@@ -190,7 +172,7 @@ function Login() {
         window.google.accounts.id.cancel();
       }
     };
-  }, [clientId, handleGoogleCredential, googleButtonWidth]);
+  }, [clientId, handleGoogleCredential]);
 
   const features = [
     { icon: <ShieldIcon sx={{ fontSize: 22 }} />, label: 'Acceso seguro institucional' },
@@ -318,7 +300,6 @@ function Login() {
 
         {/* ── Login card ── */}
         <Paper
-          ref={loginCardRef}
           elevation={0}
           sx={{
             px: { xs: 3, sm: 4.5 },
@@ -497,7 +478,7 @@ function Login() {
           {/* ── Google sign-in section ── */}
           <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2 }}>
 
-            {/* Google SDK button — siempre montado para el ciclo de vida del SDK; se oculta durante loading */}
+            {/* Google SDK button en modo icono para no mostrar correo sugerido */}
             <Box
               ref={googleButtonRef}
               sx={{
@@ -512,7 +493,8 @@ function Login() {
                 transition: 'opacity 0.25s ease',
                 opacity: loading ? 0 : 1,
                 pointerEvents: loading ? 'none' : 'auto',
-                '&:hover': { background: 'rgba(59,130,246,0.04)' }
+                '&:hover': { background: 'rgba(59,130,246,0.04)' },
+                '& iframe': { maxWidth: '52px !important' }
               }}
             />
 

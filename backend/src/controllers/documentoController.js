@@ -1,4 +1,6 @@
 const { Op, literal } = require('sequelize');
+const path = require('path');
+const fs = require('fs');
 const {
   Documento,
   SubProceso,
@@ -6,6 +8,34 @@ const {
   MacroProceso,
   TipoDocumentacion
 } = require('../models');
+const { encryptPayload, decryptPayload } = require('../utils/secureUrlToken');
+
+const LOCAL_UPLOAD_PREFIX = '/uploads/';
+
+const isLocalUploadLink = (value = '') => String(value || '').trim().startsWith(LOCAL_UPLOAD_PREFIX);
+
+const getSignedDocumentUrl = (req, documento) => {
+  const link = String(documento?.link_acceso || '').trim();
+  if (!isLocalUploadLink(link)) return link;
+
+  const ttlSeconds = Number(process.env.DOCUMENT_URL_TTL_SECONDS || 600);
+  const token = encryptPayload({
+    purpose: 'document_file',
+    documentoId: documento.id
+  }, ttlSeconds);
+
+  return `/api/documentos/archivo/${encodeURIComponent(token)}`;
+};
+
+const serializeDocumento = (req, documento) => {
+  if (!documento) return documento;
+  const data = typeof documento.toJSON === 'function' ? documento.toJSON() : { ...documento };
+  if (isLocalUploadLink(data.link_acceso)) {
+    data.link_acceso = getSignedDocumentUrl(req, data);
+    data.url_segura = true;
+  }
+  return data;
+};
 
 const getPeriodoFromDate = (value) => {
   if (!value) return null;
@@ -131,7 +161,7 @@ const getDocumentos = async (req, res) => {
     res.json({
       success: true,
       data: {
-        documentos: rows,
+        documentos: rows.map((doc) => serializeDocumento(req, doc)),
         pagination: {
           total: count,
           page: parseInt(page),
@@ -146,6 +176,52 @@ const getDocumentos = async (req, res) => {
       success: false,
       message: 'Error al listar documentos'
     });
+  }
+};
+
+const getDocumentoArchivoSeguro = async (req, res) => {
+  try {
+    const payload = decryptPayload(req.params.token);
+    if (payload?.purpose !== 'document_file' || !payload?.documentoId) {
+      return res.status(403).json({ success: false, message: 'Enlace no autorizado' });
+    }
+
+    const documento = await Documento.findOne({
+      where: { id: payload.documentoId, eliminado: false }
+    });
+
+    if (!documento || !isLocalUploadLink(documento.link_acceso)) {
+      return res.status(404).json({ success: false, message: 'Documento no encontrado' });
+    }
+
+    const uploadsRoot = path.resolve(__dirname, '../../uploads');
+    const relativePath = String(documento.link_acceso).replace(/^\/uploads\/?/, '');
+    const filePath = path.resolve(uploadsRoot, relativePath);
+
+    if (!filePath.startsWith(`${uploadsRoot}${path.sep}`) || !fs.existsSync(filePath)) {
+      return res.status(404).json({ success: false, message: 'Archivo no encontrado' });
+    }
+
+    const filename = `${documento.codigo || 'documento'}_${documento.titulo || 'archivo'}.pdf`
+      .replace(/[<>:"/\\|?*\x00-\x1F]/g, '_')
+      .replace(/\s+/g, ' ')
+      .trim();
+
+    res.setHeader('X-Content-Type-Options', 'nosniff');
+    res.setHeader('Cache-Control', 'private, max-age=300');
+
+    if (String(req.query.download || '').toLowerCase() === '1') {
+      return res.download(filePath, filename);
+    }
+
+    return res.sendFile(filePath, {
+      headers: {
+        'Content-Type': 'application/pdf',
+        'Content-Disposition': `inline; filename="${filename}"`
+      }
+    });
+  } catch (_error) {
+    return res.status(403).json({ success: false, message: 'Enlace expirado o invalido' });
   }
 };
 
@@ -281,4 +357,4 @@ const getEstadisticaDocumental = async (req, res) => {
   }
 };
 
-module.exports = { getDocumentos, getEstadisticaDocumental };
+module.exports = { getDocumentos, getEstadisticaDocumental, getDocumentoArchivoSeguro, serializeDocumento };

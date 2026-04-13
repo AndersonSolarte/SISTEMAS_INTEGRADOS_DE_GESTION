@@ -3,6 +3,7 @@ const { Op } = require('sequelize');
 const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
+const { serializeDocumento } = require('./documentoController');
 
 // Configuración de multer para subida de archivos
 const storage = multer.diskStorage({
@@ -133,7 +134,7 @@ const createDocumento = async (req, res) => {
     res.status(201).json({
       success: true,
       message: 'Documento creado exitosamente',
-      data: { documento: documentoCompleto }
+      data: { documento: serializeDocumento(req, documentoCompleto) }
     });
   } catch (error) {
     console.error('Error al crear documento:', error);
@@ -186,7 +187,7 @@ const getDocumentosManagement = async (req, res) => {
     res.json({
       success: true,
       data: {
-        documentos: rows,
+        documentos: rows.map((doc) => serializeDocumento(req, doc)),
         pagination: {
           total: count,
           page: parseInt(page),
@@ -235,7 +236,7 @@ const getDocumento = async (req, res) => {
 
     res.json({
       success: true,
-      data: { documento }
+      data: { documento: serializeDocumento(req, documento) }
     });
   } catch (error) {
     console.error('Error al obtener documento:', error);
@@ -337,7 +338,7 @@ const updateDocumento = async (req, res) => {
     res.json({
       success: true,
       message: 'Documento actualizado exitosamente',
-      data: { documento: documentoActualizado }
+      data: { documento: serializeDocumento(req, documentoActualizado) }
     });
   } catch (error) {
     console.error('Error al actualizar documento:', error);

@@ -8,17 +8,37 @@ const compression = require('compression');
 const multer = require('multer');
 const fs = require('fs');
 const { testConnection } = require('./config/database');
+const {
+  corsOptions,
+  apiLimiter,
+  authLimiter,
+  methodGuard,
+  payloadShapeGuard,
+  noStore,
+  uploadsStaticOptions
+} = require('./middlewares/security');
 
 const app = express();
 
-app.use(helmet());
-app.use(cors({ origin: process.env.FRONTEND_URL || 'http://localhost:3000' }));
-app.use(express.json());
-app.use(express.urlencoded({ extended: false }));
+app.disable('x-powered-by');
+app.set('trust proxy', 1);
+
+app.use(helmet({
+  crossOriginResourcePolicy: { policy: 'same-origin' },
+  referrerPolicy: { policy: 'no-referrer' }
+}));
+app.use(cors(corsOptions));
+app.options('*', cors(corsOptions));
+app.use(express.json({ limit: process.env.JSON_BODY_LIMIT || '1mb' }));
+app.use(express.urlencoded({ extended: false, limit: process.env.URLENCODED_BODY_LIMIT || '256kb' }));
 app.use(morgan('dev'));
 app.use(compression());
 
-app.use('/uploads', express.static(path.join(__dirname, '../uploads')));
+if (String(process.env.PUBLIC_UPLOADS_ENABLED || '').toLowerCase() === 'true') {
+  app.use('/uploads', express.static(path.join(__dirname, '../uploads'), uploadsStaticOptions));
+}
+app.use('/api/auth', authLimiter);
+app.use('/api', methodGuard, apiLimiter, noStore, payloadShapeGuard);
 
 app.use('/api/auth', require('./routes/authRoutes'));
 app.use('/api/documentos', require('./routes/documentoRoutes'));

@@ -125,7 +125,7 @@ const googleLogin = async (req, res) => {
     return res.status(500).json({
       success: false,
       message: 'Error al iniciar sesion con Google',
-      detail: error?.message || null
+      detail: process.env.NODE_ENV === 'production' ? undefined : (error?.message || null)
     });
   }
 };

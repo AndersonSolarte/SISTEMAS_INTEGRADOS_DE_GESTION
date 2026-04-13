@@ -9,7 +9,7 @@ services:
       POSTGRES_USER: ${DB_USER}
       POSTGRES_PASSWORD: ${DB_PASSWORD}
     ports:
-      - "${DB_PORT_HOST:-5433}:5432"
+      - "127.0.0.1:${DB_PORT_HOST:-5433}:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
@@ -70,7 +70,7 @@ services:
       python-service:
         condition: service_started
     ports:
-      - "${BACKEND_PORT_HOST:-5000}:5000"
+      - "127.0.0.1:${BACKEND_PORT_HOST:-5000}:5000"
     volumes:
       - backend_uploads:/app/uploads
       - ./backend/keys:/app/keys:ro
@@ -93,7 +93,8 @@ services:
       - "${FRONTEND_PORT_HOST:-8080}:80"
       - "${FRONTEND_SSL_PORT_HOST:-443}:443"
     volumes:
-      - ./Cert_planeacion.pem:/etc/nginx/certs/Cert_planeacion.pem:ro
+      - ./fullchain.pem:/etc/nginx/certs/fullchain.pem:ro
+      - ./Cert_planeacion.key:/etc/nginx/certs/Cert_planeacion.key:ro
 
 volumes:
   postgres_data:

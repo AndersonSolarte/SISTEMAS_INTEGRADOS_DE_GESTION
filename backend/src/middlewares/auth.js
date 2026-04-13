@@ -1,5 +1,5 @@
 const jwt = require('jsonwebtoken');
-const { jwtSecret } = require('../config/jwt');
+const { jwtSecret, verifyOptions } = require('../config/jwt');
 const { Op } = require('sequelize');
 const { User, UserModulePermission } = require('../models');
 const trackActivity = require('./trackActivity');
@@ -9,7 +9,7 @@ const auth = async (req, res, next) => {
     const token = req.header('Authorization')?.replace('Bearer ', '');
     if (!token) return res.status(401).json({ success: false, message: 'No se proporcionó token' });
 
-    const decoded = jwt.verify(token, jwtSecret);
+    const decoded = jwt.verify(token, jwtSecret, verifyOptions);
     const user = await User.findByPk(decoded.id);
 
     if (!user || user.estado !== 'activo') {

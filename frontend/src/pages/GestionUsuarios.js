@@ -337,8 +337,12 @@ function GestionUsuarios() {
       }
       
       if (response.data.archivoErrores) {
-        // Descargar archivo de errores
-        const blob = new Blob([Buffer.from(response.data.archivoErrores, 'base64')], {
+        const binary = atob(response.data.archivoErrores);
+        const bytes = new Uint8Array(binary.length);
+        for (let i = 0; i < binary.length; i += 1) {
+          bytes[i] = binary.charCodeAt(i);
+        }
+        const blob = new Blob([bytes], {
           type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
         });
         const url = window.URL.createObjectURL(blob);

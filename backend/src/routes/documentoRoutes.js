@@ -1,9 +1,10 @@
 const express = require('express');
 const router = express.Router();
-const { getDocumentos, getEstadisticaDocumental } = require('../controllers/documentoController');
+const { getDocumentos, getEstadisticaDocumental, getDocumentoArchivoSeguro } = require('../controllers/documentoController');
 const { auth, hasAnyRoleOrModulePermission } = require('../middlewares/auth');
 const { ROLES } = require('../constants/roles');
 
+router.get('/archivo/:token', getDocumentoArchivoSeguro);
 router.get('/', auth, getDocumentos);
 router.get(
   '/estadistica-documental',

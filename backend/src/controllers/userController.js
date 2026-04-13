@@ -1,4 +1,4 @@
-const { User, Documento, UserModulePermission } = require('../models');
+const { User, Documento, DocumentoFavorito, UserActivityLog, UserModulePermission } = require('../models');
 const { Op, literal } = require('sequelize');
 const crypto = require('crypto');
 const XLSX = require('xlsx');
@@ -200,12 +200,49 @@ const normalizarDocumento = (value) => String(value || '').trim();
 
 const esDocumentoValido = (value) => /^[0-9]{4,15}$/.test(String(value || '').trim());
 
+const normalizePagination = ({ page = 1, limit = 10 } = {}) => {
+  const cleanPage = Math.max(Number.parseInt(page, 10) || 1, 1);
+  const cleanLimit = Math.min(Math.max(Number.parseInt(limit, 10) || 10, 1), 100);
+  return {
+    page: cleanPage,
+    limit: cleanLimit,
+    offset: (cleanPage - 1) * cleanLimit
+  };
+};
+
+const sanitizeUserPayload = ({ nombre, email, username, role, estado } = {}) => ({
+  nombre: String(nombre || '').trim().replace(/\s+/g, ' '),
+  email: String(email || '').trim().toLowerCase(),
+  username: normalizarDocumento(username),
+  role,
+  estado
+});
+
+const detachUserReferences = async (userId, transaction) => {
+  await Documento.update({ creado_por: null }, { where: { creado_por: userId }, transaction });
+  await Documento.update({ actualizado_por: null }, { where: { actualizado_por: userId }, transaction });
+  await Documento.update({ eliminado_por: null }, { where: { eliminado_por: userId }, transaction });
+  await DocumentoFavorito.destroy({ where: { user_id: userId }, transaction });
+  await UserModulePermission.destroy({ where: { user_id: userId }, transaction });
+
+  if (UserActivityLog) {
+    await UserActivityLog.update({ user_id: null }, { where: { user_id: userId }, transaction });
+  }
+};
+
+const inactivateUserAfterDeleteFailure = async (userId) => {
+  await User.sequelize.transaction(async (t) => {
+    await detachUserReferences(userId, t);
+    await User.update({ estado: 'inactivo' }, { where: { id: userId }, transaction: t });
+  });
+};
+
 // CREAR USUARIO INDIVIDUAL
 const createUser = async (req, res) => {
   try {
-    const { nombre, email, username, role } = req.body;
-    const numeroDocumento = normalizarDocumento(username);
-    const cleanEmail = String(email || '').trim().toLowerCase();
+    const { nombre, email, username, role } = sanitizeUserPayload(req.body);
+    const numeroDocumento = username;
+    const cleanEmail = email;
     
     // Validar dominio
     if (!validarDominio(cleanEmail)) {
@@ -317,8 +354,8 @@ const createUser = async (req, res) => {
 // LISTAR USUARIOS
 const getUsers = async (req, res) => {
   try {
-    const { page = 1, limit = 10, search = '', role = '' } = req.query;
-    const offset = (page - 1) * limit;
+    const { search = '', role = '' } = req.query;
+    const pagination = normalizePagination(req.query);
     
     const where = {};
     
@@ -340,7 +377,7 @@ const getUsers = async (req, res) => {
           success: true,
           data: {
             users: [],
-            pagination: { total: 0, page: parseInt(page), limit: parseInt(limit), totalPages: 0 }
+            pagination: { total: 0, page: pagination.page, limit: pagination.limit, totalPages: 0 }
           }
         });
       }
@@ -356,7 +393,7 @@ const getUsers = async (req, res) => {
           success: true,
           data: {
             users: [],
-            pagination: { total: 0, page: parseInt(page), limit: parseInt(limit), totalPages: 0 }
+            pagination: { total: 0, page: pagination.page, limit: pagination.limit, totalPages: 0 }
           }
         });
       }
@@ -368,8 +405,8 @@ const getUsers = async (req, res) => {
     
     const { count, rows } = await User.findAndCountAll({
       where,
-      limit: parseInt(limit),
-      offset: parseInt(offset),
+      limit: pagination.limit,
+      offset: pagination.offset,
       order: [
         [literal('CAST("role" AS TEXT)'), 'ASC'],
         ['nombre', 'ASC'],
@@ -384,9 +421,9 @@ const getUsers = async (req, res) => {
         users: rows,
         pagination: {
           total: count,
-          page: parseInt(page),
-          limit: parseInt(limit),
-          totalPages: Math.ceil(count / limit)
+          page: pagination.page,
+          limit: pagination.limit,
+          totalPages: Math.ceil(count / pagination.limit)
         }
       }
     });
@@ -403,7 +440,7 @@ const getUsers = async (req, res) => {
 const updateUser = async (req, res) => {
   try {
     const { id } = req.params;
-    const { nombre, email, username, role, estado } = req.body;
+    const { nombre, email, username, role, estado } = sanitizeUserPayload(req.body);
     
     const user = await User.findByPk(id);
     
@@ -438,11 +475,14 @@ const updateUser = async (req, res) => {
     }
     
     // Verificar duplicados
-    if (email !== user.email || username !== user.username) {
+    if ((email && email !== user.email) || (username && username !== user.username)) {
       const existente = await User.findOne({
         where: {
           id: { [Op.ne]: id },
-          [Op.or]: [{ email }, { username }]
+          [Op.or]: [
+            ...(email ? [{ email }] : []),
+            ...(username ? [{ username }] : [])
+          ]
         }
       });
       
@@ -461,7 +501,13 @@ const updateUser = async (req, res) => {
       });
     }
 
-    await user.update({ nombre, email, username, role: targetRole, estado });
+    await user.update({
+      nombre: nombre || user.nombre,
+      email: email || user.email,
+      username: username || user.username,
+      role: targetRole,
+      estado: estado || user.estado
+    });
     
     res.json({
       success: true,
@@ -613,23 +659,18 @@ const deleteUser = async (req, res) => {
       }
     }
 
-    let deletedPhysically = false;
+    let deletedPhysically = true;
 
-    await User.sequelize.transaction(async (t) => {
-      // Liberar referencias de auditoría antes del borrado físico
-      await Documento.update({ creado_por: null }, { where: { creado_por: id }, transaction: t });
-      await Documento.update({ actualizado_por: null }, { where: { actualizado_por: id }, transaction: t });
-      await Documento.update({ eliminado_por: null }, { where: { eliminado_por: id }, transaction: t });
-
-      await UserModulePermission.destroy({ where: { user_id: id }, transaction: t });
-      try {
+    try {
+      await User.sequelize.transaction(async (t) => {
+        await detachUserReferences(id, t);
         await user.destroy({ transaction: t });
-        deletedPhysically = true;
-      } catch (destroyError) {
-        await user.update({ estado: 'inactivo' }, { transaction: t });
-        deletedPhysically = false;
-      }
-    });
+      });
+    } catch (destroyError) {
+      console.warn('No se pudo eliminar fisicamente el usuario; se inactivara:', destroyError?.message || destroyError);
+      await inactivateUserAfterDeleteFailure(id);
+      deletedPhysically = false;
+    }
     
     res.json({
       success: true,
