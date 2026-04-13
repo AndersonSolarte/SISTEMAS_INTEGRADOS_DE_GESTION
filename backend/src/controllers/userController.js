@@ -1,6 +1,6 @@
 const models = require('../models');
-const { User } = models;
-const { Op, literal } = require('sequelize');
+const { User, UserModulePermission } = models;
+const { DataTypes, Op, literal } = require('sequelize');
 const crypto = require('crypto');
 const XLSX = require('xlsx');
 const fs = require('fs');
@@ -221,6 +221,68 @@ const sanitizeUserPayload = ({ nombre, email, username, role, estado } = {}) => 
 
 const USER_REFERENCE_FIELDS = ['creado_por', 'actualizado_por', 'eliminado_por', 'resuelto_por', 'user_id'];
 const USER_DEPENDENCY_DESTROY_MODELS = new Set(['documento_favoritos', 'user_module_permissions']);
+let userModulePermissionsReadyPromise = null;
+const modelTableAvailability = new Map();
+
+const ensureUserModulePermissionsReady = async () => {
+  if (userModulePermissionsReadyPromise) return userModulePermissionsReadyPromise;
+
+  userModulePermissionsReadyPromise = (async () => {
+    await UserModulePermission.sync();
+
+    const queryInterface = User.sequelize.getQueryInterface();
+    const tableName = UserModulePermission.getTableName();
+    const described = await queryInterface.describeTable(tableName).catch(() => null);
+    if (!described) return;
+
+    const addColumnIfMissing = async (column, definition) => {
+      if (described[column]) return;
+      await queryInterface.addColumn(tableName, column, definition);
+    };
+
+    await addColumnIfMissing('can_view', {
+      type: DataTypes.BOOLEAN,
+      allowNull: false,
+      defaultValue: true
+    });
+    await addColumnIfMissing('can_manage', {
+      type: DataTypes.BOOLEAN,
+      allowNull: false,
+      defaultValue: false
+    });
+    await addColumnIfMissing('created_at', {
+      type: DataTypes.DATE,
+      allowNull: false,
+      defaultValue: literal('CURRENT_TIMESTAMP')
+    });
+    await addColumnIfMissing('updated_at', {
+      type: DataTypes.DATE,
+      allowNull: false,
+      defaultValue: literal('CURRENT_TIMESTAMP')
+    });
+
+    await queryInterface.addIndex(tableName, ['user_id', 'module_key'], {
+      unique: true,
+      name: 'user_module_permissions_user_id_module_key'
+    }).catch(() => {});
+  })().catch((error) => {
+    userModulePermissionsReadyPromise = null;
+    throw error;
+  });
+
+  return userModulePermissionsReadyPromise;
+};
+
+const hasModelTable = async (model) => {
+  const tableName = model.getTableName ? model.getTableName() : model.tableName;
+  const key = typeof tableName === 'string' ? tableName : JSON.stringify(tableName);
+  if (modelTableAvailability.has(key)) return modelTableAvailability.get(key);
+
+  const queryInterface = User.sequelize.getQueryInterface();
+  const exists = Boolean(await queryInterface.describeTable(tableName).catch(() => null));
+  modelTableAvailability.set(key, exists);
+  return exists;
+};
 
 const detachUserReferences = async (userId, transaction) => {
   const skipped = new Set(['users']);
@@ -228,6 +290,7 @@ const detachUserReferences = async (userId, transaction) => {
   for (const model of Object.values(models)) {
     const tableName = String(model.tableName || model.name || '');
     if (!model?.rawAttributes || !model?.getTableName || skipped.has(tableName)) continue;
+    if (!await hasModelTable(model)) continue;
 
     const referenceFields = USER_REFERENCE_FIELDS.filter((field) => model.rawAttributes[field]);
     if (referenceFields.length === 0) continue;
@@ -235,23 +298,29 @@ const detachUserReferences = async (userId, transaction) => {
     const shouldDestroy = USER_DEPENDENCY_DESTROY_MODELS.has(tableName) || USER_DEPENDENCY_DESTROY_MODELS.has(model.name);
 
     for (const field of referenceFields) {
-      if (shouldDestroy && field === 'user_id') {
-        await model.destroy({ where: { [field]: userId }, transaction });
-        continue;
+      try {
+        if (shouldDestroy && field === 'user_id') {
+          await model.destroy({ where: { [field]: userId }, transaction });
+          continue;
+        }
+
+        if (model.rawAttributes[field]?.allowNull === false) continue;
+
+        await model.update({ [field]: null }, { where: { [field]: userId }, transaction });
+      } catch (error) {
+        const message = String(error?.message || '');
+        if (/does not exist|relation .* does not exist|no existe/i.test(message)) {
+          console.warn(`Tabla no disponible al limpiar referencias de usuario (${tableName}.${field}):`, message);
+          continue;
+        }
+        throw error;
       }
-
-      if (model.rawAttributes[field]?.allowNull === false) continue;
-
-      await model.update({ [field]: null }, { where: { [field]: userId }, transaction });
     }
   }
 };
 
 const inactivateUserAfterDeleteFailure = async (userId) => {
-  await User.sequelize.transaction(async (t) => {
-    await detachUserReferences(userId, t);
-    await User.update({ estado: 'inactivo' }, { where: { id: userId }, transaction: t });
-  });
+  await User.update({ estado: 'inactivo' }, { where: { id: userId } });
 };
 
 // CREAR USUARIO INDIVIDUAL
@@ -1070,6 +1139,8 @@ const getUserModulePermissions = async (req, res) => {
       return res.status(403).json({ success: false, message: 'No tienes permisos para este usuario' });
     }
 
+    await ensureUserModulePermissionsReady();
+
     const rows = await UserModulePermission.findAll({
       where: { user_id: id },
       attributes: ['module_key', 'can_view', 'can_manage'],
@@ -1123,6 +1194,8 @@ const updateUserModulePermissions = async (req, res) => {
     if (!canManageRole(req.user, user.role)) {
       return res.status(403).json({ success: false, message: 'No tienes permisos para este usuario' });
     }
+
+    await ensureUserModulePermissionsReady();
 
     const cleanMenu = Array.from(new Set((Array.isArray(menuPermissions) ? menuPermissions : [])
       .map((x) => String(x || '').trim())
