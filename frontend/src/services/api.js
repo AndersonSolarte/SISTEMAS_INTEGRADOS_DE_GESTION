@@ -22,11 +22,11 @@ const api = axios.create({
 });
 
 const HTTP_STATUS_MESSAGES = {
-  400: 'Solicitud invalida',
-  401: 'Sesion expirada o no autenticada',
-  403: 'No tienes permisos para esta accion',
+  400: 'Solicitud inválida',
+  401: 'Sesión expirada o no autenticada',
+  403: 'No tienes permisos para esta acción',
   404: 'Recurso no encontrado',
-  405: 'Metodo no permitido',
+  405: 'Método no permitido',
   409: 'Conflicto de datos',
   413: 'Archivo o carga demasiado grande',
   415: 'Tipo de archivo no soportado',

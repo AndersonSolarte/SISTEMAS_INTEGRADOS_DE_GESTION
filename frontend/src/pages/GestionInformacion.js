@@ -107,16 +107,16 @@ import { EstadisticaDocumentalPanel } from './EstadisticaDocumental';
 import ActivityDashboard from './ActivityDashboard';
 
 const BASES = [
-  { key: 'poblacional', label: 'Poblacional', description: 'Historicos de inscritos, admitidos, matriculados y graduados.' },
-  { key: 'georreferencia', label: 'Georreferencia', description: 'Catalogo oficial DIVIPOLA para departamentos y municipios.' },
-  { key: 'biblioteca', label: 'Biblioteca', description: 'Indicadores de uso, colecciones y servicios bibliograficos.' },
+  { key: 'poblacional', label: 'Poblacional', description: 'Históricos de inscritos, admitidos, matriculados y graduados.' },
+  { key: 'georreferencia', label: 'Georreferencia', description: 'Catálogo oficial DIVIPOLA para departamentos y municipios.' },
+  { key: 'biblioteca', label: 'Biblioteca', description: 'Indicadores de uso, colecciones y servicios bibliográficos.' },
   { key: 'medios_educativos', label: 'Medios Educativos', description: 'Seguimiento de recursos y apoyos para docencia.' },
-  { key: 'internacionalizacion', label: 'Internacionalizacion', description: 'Movilidad, convenios y actividades de cooperacion.' },
-  { key: 'investigacion', label: 'Investigacion', description: 'Produccion investigativa, grupos y semilleros.' },
-  { key: 'proyectos_convenios', label: 'Proyectos y Convenios', description: 'Gestion de iniciativas y acuerdos institucionales.' },
-  { key: 'recurso_humano', label: 'Recurso Humano', description: 'Historicos de personal y trazabilidad por dependencia.' },
-  { key: 'saber_pro', label: 'Saber Pro', description: 'Resultados historicos de pruebas y desempeno academico.' },
-  { key: 'gestion_procesos', label: 'Gestion por Procesos', description: 'Monitoreo estadistico documental para operacion por procesos.' }
+  { key: 'internacionalizacion', label: 'Internacionalización', description: 'Movilidad, convenios y actividades de cooperación.' },
+  { key: 'investigacion', label: 'Investigación', description: 'Producción investigativa, grupos y semilleros.' },
+  { key: 'proyectos_convenios', label: 'Proyectos y Convenios', description: 'Gestión de iniciativas y acuerdos institucionales.' },
+  { key: 'recurso_humano', label: 'Recurso Humano', description: 'Históricos de personal y trazabilidad por dependencia.' },
+  { key: 'saber_pro', label: 'Saber Pro', description: 'Resultados históricos de pruebas y desempeño académico.' },
+  { key: 'gestion_procesos', label: 'Gestión por Procesos', description: 'Monitoreo estadístico documental para operación por procesos.' }
 ];
 
 const SUBBASES_POBLACIONAL = ['Inscritos', 'Admitidos', 'Primer Curso', 'Matriculados', 'Graduados', 'Cantidad Total Egresados', 'Caracterizacion', 'Desercion', 'Empleabilidad', 'Contexto Externo'];
@@ -2045,7 +2045,7 @@ function GestionInformacion() {
 
   const handleResolveMatriculadosIncidencia = useCallback(async (item, action) => {
     const accion = action === 'apply_suggested' ? 'aplicar la sugerencia' : 'marcar como ignorada';
-    enqueueSnackbar(`La acción para ${accion} aun no esta disponible en esta version.`, { variant: 'info' });
+    enqueueSnackbar(`La acción para ${accion} aún no está disponible en esta versión.`, { variant: 'info' });
     if (item?.id) {
       fetchMatriculadosIncidencias();
     }
@@ -5851,7 +5851,7 @@ const renderCategoryBars = (items = [], options = {}) => {
                 boxShadow: '0 10px 22px rgba(37,99,235,.22)'
               }}
             >
-              Ingresar al modulo
+              Ingresar al módulo
             </Button>
             <Typography variant="caption" sx={{ display: 'block', mt: 0.9, color: '#64748b' }}>
               {base.key === 'poblacional' ? `${countMap.Poblacional || 0} registros disponibles` : 'Interfaz preparada para activacion'}
@@ -5905,7 +5905,7 @@ const renderCategoryBars = (items = [], options = {}) => {
                 Monitor de Actividad
               </Typography>
               <Typography sx={{ mt: 0.8, color: '#475569', lineHeight: 1.32, fontSize: { xs: 14, md: 15 } }}>
-                Seguimiento de interaccion de usuarios con el sistema. Estadisticas de uso por modulo, rol y periodo.
+                Seguimiento de interacción de usuarios con el sistema. Estadísticas de uso por módulo, rol y período.
               </Typography>
             </Box>
           </Stack>
@@ -5927,7 +5927,7 @@ const renderCategoryBars = (items = [], options = {}) => {
                 boxShadow: '0 10px 22px rgba(37,99,235,.28)'
               }}
             >
-              Ver estadisticas
+              Ver estadísticas
             </Button>
             <Typography variant="caption" sx={{ display: 'block', mt: 0.9, color: '#64748b' }}>
               Dashboard exclusivo del administrador
@@ -7583,7 +7583,7 @@ const renderCategoryBars = (items = [], options = {}) => {
             { key: 'matriculados', label: 'Matriculados', type: 'number' },
             { key: 'primerCurso', label: 'Primer curso', type: 'number' },
             { key: 'tasaAbsorcion', label: 'Tasa de absorción', type: 'rate' },
-            { key: 'graduados', label: 'NÂ° total de graduados', type: 'number' },
+            { key: 'graduados', label: 'N° total de graduados', type: 'number' },
             { key: 'desercionSpadies', label: 'Tasa de deserción programa anual según SPADIES', type: 'rate' },
             { key: 'promedioSaberPro', label: 'Promedio del puntaje global del Programa en Saber Pro', type: 'number' },
             { key: 'movilidadSalienteNacional', label: 'Movilidad saliente nacional', type: 'number' },
@@ -7940,7 +7940,7 @@ const renderCategoryBars = (items = [], options = {}) => {
                   <TableCell rowSpan={2} align="center" sx={{ bgcolor: '#eff6ff', fontWeight: 800, minWidth: 118 }}>Tasa de selectividad</TableCell>
                   <TableCell colSpan={2} align="center" sx={{ bgcolor: '#f8fafc', fontWeight: 900 }}>Matriculados</TableCell>
                   <TableCell rowSpan={2} align="center" sx={{ bgcolor: '#eff6ff', fontWeight: 800, minWidth: 118 }}>Tasa de absorción</TableCell>
-                  <TableCell rowSpan={2} align="center" sx={{ bgcolor: '#f8fafc', fontWeight: 800, minWidth: 120 }}>NÂ° total de graduados</TableCell>
+                  <TableCell rowSpan={2} align="center" sx={{ bgcolor: '#f8fafc', fontWeight: 800, minWidth: 120 }}>N° total de graduados</TableCell>
                   <TableCell rowSpan={2} align="center" sx={{ bgcolor: '#f8fafc', fontWeight: 800, minWidth: 140 }}>Tasa de deserción programa anual según SPADIES</TableCell>
                   <TableCell rowSpan={2} align="center" sx={{ bgcolor: '#f8fafc', fontWeight: 800, minWidth: 140 }}>Promedio del puntaje global del Programa en Saber Pro</TableCell>
                   <TableCell colSpan={2} align="center" sx={{ bgcolor: '#f8fafc', fontWeight: 900 }}>Total Estudiantes en movilidad saliente</TableCell>
@@ -10464,11 +10464,11 @@ const renderCategoryBars = (items = [], options = {}) => {
             <Stack direction="row" spacing={1.5} alignItems="center">
               <InsightsIcon sx={{ color: 'white' }} />
               <Box>
-                <Typography variant="h4" sx={{ color: 'white', fontWeight: 800 }}>Gestion de la Informacion</Typography>
+                <Typography variant="h4" sx={{ color: 'white', fontWeight: 800 }}>Gestión de la Información</Typography>
                 <Typography sx={{ color: 'rgba(255,255,255,0.86)' }}>
                   {isPlaneacionGpInfoContext
-                    ? 'Visualizacion de modulos estadisticos institucionales.'
-                    : 'Administracion de bases de datos e indicadores institucionales.'}
+                    ? 'Visualización de módulos estadísticos institucionales.'
+                    : 'Administración de bases de datos e indicadores institucionales.'}
                 </Typography>
               </Box>
             </Stack>

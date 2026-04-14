@@ -18,6 +18,7 @@ const { createExcelUpload } = require('../middlewares/excelUpload');
 const upload = createExcelUpload('uploads/temp/');
 
 const canManageUsers = hasAnyRole(ROLES.ADMINISTRADOR, ROLES.PLANEACION_ESTRATEGICA, ROLES.GESTION_PROCESOS);
+const canManageModulePermissions = hasAnyRole(ROLES.ADMINISTRADOR);
 
 // Rutas protegidas - admin general y planeación estratégica (con restricciones internas por rol objetivo)
 router.post('/', auth, canManageUsers, createUser);
@@ -26,8 +27,8 @@ router.put('/:id', auth, canManageUsers, updateUser);
 router.patch('/:id/status', auth, canManageUsers, updateUserStatus);
 router.delete('/:id', auth, canManageUsers, deleteUser);
 router.get('/template', auth, canManageUsers, downloadUsersTemplate);
-router.get('/:id/module-permissions', auth, canManageUsers, getUserModulePermissions);
-router.put('/:id/module-permissions', auth, canManageUsers, updateUserModulePermissions);
+router.get('/:id/module-permissions', auth, canManageModulePermissions, getUserModulePermissions);
+router.put('/:id/module-permissions', auth, canManageModulePermissions, updateUserModulePermissions);
 router.post('/bulk-upload', auth, canManageUsers, upload.single('file'), bulkUploadUsers);
 
 module.exports = router;

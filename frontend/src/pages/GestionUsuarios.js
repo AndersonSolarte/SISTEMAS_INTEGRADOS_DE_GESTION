@@ -47,10 +47,10 @@ function GestionUsuarios() {
 
   const SABER_PRO_PERMISSION_GROUPS = [
     {
-      title: 'Consulta y validacion',
+      title: 'Consulta y validación',
       options: [
         { key: 'saber_pro_consulta_individual', label: 'Consulta individual' },
-        { key: 'saber_pro_validacion_masiva', label: 'Validacion masiva' }
+        { key: 'saber_pro_validacion_masiva', label: 'Validación masiva' }
       ]
     },
     {
@@ -68,10 +68,10 @@ function GestionUsuarios() {
       title: 'Resultados agregados',
       options: [
         { key: 'saber_pro_agregados_general', label: 'Resultados Saber Pro agregados' },
-        { key: 'saber_pro_agregados_competencias_especificas', label: 'Agregados competencias especificas' },
-        { key: 'saber_pro_agregados_competencias_genericas', label: 'Agregados competencias genericas' },
+        { key: 'saber_pro_agregados_competencias_especificas', label: 'Agregados competencias específicas' },
+        { key: 'saber_pro_agregados_competencias_genericas', label: 'Agregados competencias genéricas' },
         { key: 'saber_pro_agregados_comparativo_general', label: 'Comparativo Saber Pro' },
-        { key: 'saber_pro_agregados_comparativo_especificas', label: 'Comparativo especificas' }
+        { key: 'saber_pro_agregados_comparativo_especificas', label: 'Comparativo específicas' }
       ]
     },
     {
@@ -79,7 +79,7 @@ function GestionUsuarios() {
       options: [
         { key: 'saber_pro_valor_agregado_individual', label: 'Valor agregado individual' },
         { key: 'saber_pro_valor_agregado_resultado_general', label: 'Valor agregado resultado general' },
-        { key: 'saber_pro_valor_agregado_estadistica_general', label: 'Valor agregado estadistica general' },
+        { key: 'saber_pro_valor_agregado_estadistica_general', label: 'Valor agregado estadística general' },
         { key: 'saber_pro_valor_agregado_nbc', label: 'Valor agregado NBC' }
       ]
     }
@@ -160,6 +160,7 @@ function GestionUsuarios() {
   }, [currentUser?.role]);
 
   const defaultAssignableRole = allowedRolesForManager[0] || ROLES.CONSULTA;
+  const canManageModulePermissions = currentUser?.role === ROLES.ADMINISTRADOR;
 
   const loadUsers = useCallback(async () => {
     setLoading(true);
@@ -528,6 +529,11 @@ function GestionUsuarios() {
   };
 
   const handleOpenPermissionsDialog = async (user) => {
+    if (!canManageModulePermissions) {
+      enqueueSnackbar('Solo el Administrador General puede asignar permisos de módulos', { variant: 'warning' });
+      return;
+    }
+
     setPermissionsUser(user);
     setOpenPermissionsDialog(true);
     setPermissionsLoading(true);
@@ -576,7 +582,7 @@ function GestionUsuarios() {
   };
 
   const handleSavePermissions = async () => {
-    if (!permissionsUser) return;
+    if (!permissionsUser || !canManageModulePermissions) return;
     setPermissionsSaving(true);
     try {
       const response = await userService.updateModulePermissions(permissionsUser.id, modulePermissionsForm);
@@ -936,16 +942,18 @@ function GestionUsuarios() {
                               <EditIcon fontSize="small" />
                             </IconButton>
                           </Tooltip>
-                          <Tooltip title="Permisos de módulos">
-                            <IconButton
-                              size="small"
-                              onClick={() => handleOpenPermissionsDialog(user)}
-                              disabled={isDeleting}
-                              sx={{ color: '#0ea5e9', bgcolor: '#e0f2fe', '&:hover': { bgcolor: '#bae6fd' } }}
-                            >
-                              <SecurityIcon fontSize="small" />
-                            </IconButton>
-                          </Tooltip>
+                          {canManageModulePermissions && (
+                            <Tooltip title="Permisos de módulos">
+                              <IconButton
+                                size="small"
+                                onClick={() => handleOpenPermissionsDialog(user)}
+                                disabled={isDeleting}
+                                sx={{ color: '#0ea5e9', bgcolor: '#e0f2fe', '&:hover': { bgcolor: '#bae6fd' } }}
+                              >
+                                <SecurityIcon fontSize="small" />
+                              </IconButton>
+                            </Tooltip>
+                          )}
                           <Tooltip title={user.estado === 'activo' ? 'Inactivar' : 'Reactivar'}>
                             <IconButton
                               size="small"
@@ -1183,7 +1191,7 @@ function GestionUsuarios() {
                 >
                   <Typography sx={{ fontWeight: 800, mb: 0.6, color: '#0f172a' }}>Permisos modulares de Saber Pro</Typography>
                   <Typography variant="body2" sx={{ color: '#64748b', mb: 1.6 }}>
-                    Activa solo los bloques que necesite el usuario: consulta y validaciÃ³n, resultados individuales, agregados o valor agregado.
+                    Activa solo los bloques que necesite el usuario: consulta y validación, resultados individuales, agregados o valor agregado.
                   </Typography>
                   <Stack spacing={1.5}>
                     {SABER_PRO_PERMISSION_GROUPS.map((group) => (
