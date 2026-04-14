@@ -222,7 +222,7 @@ const sanitizeUserPayload = ({ nombre, email, username, role, estado } = {}) => 
 const USER_REFERENCE_FIELDS = ['creado_por', 'actualizado_por', 'eliminado_por', 'resuelto_por', 'user_id'];
 const USER_DEPENDENCY_DESTROY_MODELS = new Set(['documento_favoritos', 'user_module_permissions']);
 const USER_DELETE_STATEMENT_TIMEOUT_MS = Math.max(
-  Number(process.env.USER_DELETE_STATEMENT_TIMEOUT_MS || 15000),
+  Number(process.env.USER_DELETE_STATEMENT_TIMEOUT_MS || 60000),
   500
 );
 const USER_DELETE_RESPONSE_TIMEOUT_MS = Math.max(
@@ -230,6 +230,7 @@ const USER_DELETE_RESPONSE_TIMEOUT_MS = Math.max(
   500
 );
 let userModulePermissionsReadyPromise = null;
+let userReferenceIndexesReadyPromise = null;
 const modelTableAvailability = new Map();
 const pendingUserDeletions = new Set();
 
@@ -305,6 +306,71 @@ const getModelTableColumns = async (model) => {
   return columns;
 };
 
+const getUserForeignKeyReferences = async (transaction) => {
+  const [references] = await User.sequelize.query(`
+    SELECT
+      tc.table_schema AS schema_name,
+      tc.table_name,
+      kcu.column_name,
+      c.is_nullable,
+      rc.delete_rule
+    FROM information_schema.table_constraints tc
+    JOIN information_schema.referential_constraints rc
+      ON rc.constraint_name = tc.constraint_name
+      AND rc.constraint_schema = tc.table_schema
+    JOIN information_schema.key_column_usage kcu
+      ON tc.constraint_name = kcu.constraint_name
+      AND tc.table_schema = kcu.table_schema
+    JOIN information_schema.constraint_column_usage ccu
+      ON ccu.constraint_name = tc.constraint_name
+      AND ccu.table_schema = tc.table_schema
+    JOIN information_schema.columns c
+      ON c.table_schema = tc.table_schema
+      AND c.table_name = tc.table_name
+      AND c.column_name = kcu.column_name
+    WHERE tc.constraint_type = 'FOREIGN KEY'
+      AND ccu.table_schema = 'public'
+      AND ccu.table_name = 'users'
+      AND ccu.column_name = 'id'
+  `, { transaction });
+
+  return (references || []).filter((reference) => {
+    const tableName = String(reference.table_name || '');
+    const columnName = String(reference.column_name || '');
+    return tableName && columnName && tableName !== 'users';
+  });
+};
+
+const ensureUserReferenceIndexes = async () => {
+  if (userReferenceIndexesReadyPromise) return userReferenceIndexesReadyPromise;
+
+  userReferenceIndexesReadyPromise = (async () => {
+    const queryInterface = User.sequelize.getQueryInterface();
+    const quote = (identifier) => queryInterface.quoteIdentifier(identifier);
+    const references = await getUserForeignKeyReferences();
+
+    for (const reference of references) {
+      const schemaName = String(reference.schema_name || 'public');
+      const tableName = String(reference.table_name || '');
+      const columnName = String(reference.column_name || '');
+      const indexName = `idx_users_fk_${tableName}_${columnName}`
+        .replace(/[^a-zA-Z0-9_]/g, '_')
+        .slice(0, 60);
+
+      await User.sequelize.query(
+        `CREATE INDEX CONCURRENTLY IF NOT EXISTS ${quote(indexName)} ON ${quote(schemaName)}.${quote(tableName)} (${quote(columnName)})`
+      ).catch((error) => {
+        console.warn(`No se pudo crear/verificar indice ${indexName}:`, error?.message || error);
+      });
+    }
+  })().catch((error) => {
+    userReferenceIndexesReadyPromise = null;
+    throw error;
+  });
+
+  return userReferenceIndexesReadyPromise;
+};
+
 const detachUserReferences = async (userId, transaction) => {
   const skipped = new Set(['users']);
 
@@ -347,30 +413,7 @@ const detachUserForeignKeyReferences = async (userId, transaction) => {
   const queryInterface = User.sequelize.getQueryInterface();
   const quote = (identifier) => queryInterface.quoteIdentifier(identifier);
 
-  await User.sequelize.query("SET LOCAL statement_timeout = '15000ms'", { transaction });
-
-  const [references] = await User.sequelize.query(`
-    SELECT
-      tc.table_schema AS schema_name,
-      tc.table_name,
-      kcu.column_name,
-      c.is_nullable
-    FROM information_schema.table_constraints tc
-    JOIN information_schema.key_column_usage kcu
-      ON tc.constraint_name = kcu.constraint_name
-      AND tc.table_schema = kcu.table_schema
-    JOIN information_schema.constraint_column_usage ccu
-      ON ccu.constraint_name = tc.constraint_name
-      AND ccu.table_schema = tc.table_schema
-    JOIN information_schema.columns c
-      ON c.table_schema = tc.table_schema
-      AND c.table_name = tc.table_name
-      AND c.column_name = kcu.column_name
-    WHERE tc.constraint_type = 'FOREIGN KEY'
-      AND ccu.table_schema = 'public'
-      AND ccu.table_name = 'users'
-      AND ccu.column_name = 'id'
-  `, { transaction });
+  const references = await getUserForeignKeyReferences(transaction);
 
   for (const reference of references || []) {
     const schemaName = String(reference.schema_name || 'public');
@@ -381,6 +424,9 @@ const detachUserForeignKeyReferences = async (userId, transaction) => {
     const qualifiedTable = `${quote(schemaName)}.${quote(tableName)}`;
     const quotedColumn = quote(columnName);
     const shouldDestroy = USER_DEPENDENCY_DESTROY_MODELS.has(tableName);
+    const deleteRule = String(reference.delete_rule || '').toUpperCase();
+
+    if (deleteRule === 'CASCADE' || deleteRule === 'SET NULL') continue;
 
     if (shouldDestroy) {
       await User.sequelize.query(
@@ -417,6 +463,8 @@ const cleanupDirectUserDependencies = async (userId, transaction) => {
 };
 
 const performPhysicalUserDelete = async (userId) => {
+  await ensureUserReferenceIndexes();
+
   await User.sequelize.transaction(async (t) => {
     await User.sequelize.query(
       `SET LOCAL statement_timeout = '${USER_DELETE_STATEMENT_TIMEOUT_MS}ms'`,
@@ -879,7 +927,7 @@ const deleteUser = async (req, res) => {
       success: true,
       message: deleteResult.completed
         ? 'Usuario eliminado permanentemente'
-        : 'Eliminacion iniciada. El usuario fue retirado de la lista mientras se completa el borrado.',
+        : 'Eliminacion en proceso',
       data: {
         id: user.id,
         deletedPhysically: true,

@@ -273,19 +273,19 @@ function GestionUsuarios() {
         const deletedPhysically = response?.data?.deletedPhysically !== false;
 
         enqueueSnackbar(
-          response.message || (deletedPhysically ? 'Usuario eliminado permanentemente' : 'Usuario retirado de la lista'),
+          response.message || (deletedPhysically ? 'Usuario eliminado' : 'Eliminacion en proceso'),
           { variant: 'success' }
         );
       } catch (error) {
         if (Number(error.response?.status) === 404) {
-          enqueueSnackbar('El usuario ya no estaba en la base de datos. La tabla fue actualizada.', { variant: 'info' });
+          enqueueSnackbar('Usuario ya retirado', { variant: 'info' });
           return;
         }
 
         await loadUsers();
 
         if (error.code === 'ECONNABORTED') {
-          enqueueSnackbar('La eliminación tardó más de lo esperado. La tabla fue sincronizada nuevamente.', { variant: 'warning' });
+          enqueueSnackbar('Tabla sincronizada', { variant: 'warning' });
           return;
         }
 
@@ -1109,5 +1109,3 @@ function GestionUsuarios() {
 }
 
 export default GestionUsuarios;
-
-
