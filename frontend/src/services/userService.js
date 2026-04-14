@@ -21,7 +21,7 @@ const userService = {
 
   // Eliminar usuario
   deleteUser: async (id) => {
-    const response = await api.delete(`/users/${id}`, { timeout: 120000 });
+    const response = await api.delete(`/users/${id}`, { timeout: 15000 });
     return response.data;
   },
 

@@ -263,17 +263,14 @@ function GestionUsuarios() {
     if (deletingUserIds.has(user.id)) return;
     if (window.confirm(`¿Eliminar permanentemente al usuario ${user.nombre}? Esta acción no se puede deshacer.`)) {
       setDeletingUserIds((prev) => new Set(prev).add(user.id));
+      setUsers((prev) => prev.filter((item) => item.id !== user.id));
+      setTotal((prev) => Math.max(prev - 1, 0));
+      if (users.length === 1 && page > 0) {
+        setPage((prev) => Math.max(prev - 1, 0));
+      }
       try {
         const response = await userService.deleteUser(user.id);
         const deletedPhysically = response?.data?.deletedPhysically !== false;
-
-        setUsers((prev) => {
-          return prev.filter((item) => item.id !== user.id);
-        });
-        setTotal((prev) => Math.max(prev - 1, 0));
-        if (users.length === 1 && page > 0) {
-          setPage((prev) => Math.max(prev - 1, 0));
-        }
 
         enqueueSnackbar(
           response.message || (deletedPhysically ? 'Usuario eliminado permanentemente' : 'Usuario retirado de la lista'),
@@ -281,11 +278,6 @@ function GestionUsuarios() {
         );
       } catch (error) {
         if (Number(error.response?.status) === 404) {
-          setUsers((prev) => prev.filter((item) => item.id !== user.id));
-          setTotal((prev) => Math.max(prev - 1, 0));
-          if (users.length === 1 && page > 0) {
-            setPage((prev) => Math.max(prev - 1, 0));
-          }
           enqueueSnackbar('El usuario ya no estaba en la base de datos. La tabla fue actualizada.', { variant: 'info' });
           return;
         }

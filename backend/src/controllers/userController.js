@@ -221,6 +221,10 @@ const sanitizeUserPayload = ({ nombre, email, username, role, estado } = {}) => 
 
 const USER_REFERENCE_FIELDS = ['creado_por', 'actualizado_por', 'eliminado_por', 'resuelto_por', 'user_id'];
 const USER_DEPENDENCY_DESTROY_MODELS = new Set(['documento_favoritos', 'user_module_permissions']);
+const USER_DELETE_STATEMENT_TIMEOUT_MS = Math.max(
+  Number(process.env.USER_DELETE_STATEMENT_TIMEOUT_MS || 2000),
+  500
+);
 let userModulePermissionsReadyPromise = null;
 const modelTableAvailability = new Map();
 
@@ -394,6 +398,17 @@ const detachUserForeignKeyReferences = async (userId, transaction) => {
 
 const inactivateUserAfterDeleteFailure = async (userId) => {
   await User.update({ estado: 'inactivo' }, { where: { id: userId } });
+};
+
+const cleanupDirectUserDependencies = async (userId, transaction) => {
+  const directDependencyModels = [UserModulePermission, models.DocumentoFavorito].filter(Boolean);
+
+  for (const model of directDependencyModels) {
+    if (!await hasModelTable(model)) continue;
+    const columns = await getModelTableColumns(model);
+    if (!columns.has('user_id')) continue;
+    await model.destroy({ where: { user_id: userId }, transaction });
+  }
 };
 
 // CREAR USUARIO INDIVIDUAL
@@ -822,12 +837,19 @@ const deleteUser = async (req, res) => {
 
     try {
       await User.sequelize.transaction(async (t) => {
-        await detachUserForeignKeyReferences(id, t);
+        await User.sequelize.query(
+          `SET LOCAL statement_timeout = '${USER_DELETE_STATEMENT_TIMEOUT_MS}ms'`,
+          { transaction: t }
+        );
+        await cleanupDirectUserDependencies(id, t);
         await user.destroy({ transaction: t });
       });
     } catch (destroyError) {
       console.warn('No se pudo eliminar fisicamente el usuario; se inactivara:', destroyError?.message || destroyError);
-      await inactivateUserAfterDeleteFailure(id);
+      await User.sequelize.transaction(async (t) => {
+        await cleanupDirectUserDependencies(id, t);
+        await User.update({ estado: 'inactivo' }, { where: { id }, transaction: t });
+      });
       deletedPhysically = false;
     }
     
