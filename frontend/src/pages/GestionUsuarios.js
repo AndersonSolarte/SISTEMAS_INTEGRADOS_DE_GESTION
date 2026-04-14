@@ -845,6 +845,7 @@ function GestionUsuarios() {
               Sincronizados: {(bulkImportResult.importados || 0) + (bulkImportResult.actualizados || 0)}
               {' | '}Nuevos: {bulkImportResult.importados || 0}
               {' | '}Actualizados: {bulkImportResult.actualizados || 0}
+              {' | '}Correos: {bulkImportResult.correosEnviados || 0}
               {' | '}Errores: {bulkImportResult.errores?.length || 0}
             </Alert>
           )}

@@ -1193,6 +1193,7 @@ const bulkUploadUsers = async (req, res) => {
       total: data.length,
       importados: 0,
       actualizados: 0,
+      correosEnviados: 0,
       errores: [],
       advertencias: []
     };
@@ -1315,7 +1316,7 @@ const bulkUploadUsers = async (req, res) => {
       }
     }
 
-    const sendBulkEmails = String(process.env.BULK_USER_SEND_EMAILS || '').toLowerCase() === 'true';
+    const sendBulkEmails = String(process.env.BULK_USER_SEND_EMAILS || 'true').toLowerCase() !== 'false';
     const hashedImportPassword = await bcrypt.hash(generarPasswordInterna(), 10);
 
     await User.sequelize.transaction(async (transaction) => {
@@ -1358,7 +1359,7 @@ const bulkUploadUsers = async (req, res) => {
       results.advertencias.push({
         fila: '',
         email: '',
-        warning: 'No se enviaron correos individuales durante la carga masiva para acelerar el proceso. Los usuarios pueden ingresar con Google institucional.'
+        warning: 'El envio de correos individuales esta desactivado por configuracion del servidor. Los usuarios pueden ingresar con Google institucional.'
       });
     }
 
@@ -1374,6 +1375,8 @@ const bulkUploadUsers = async (req, res) => {
             email: user.email,
             warning: `No se pudo enviar correo institucional: ${emailResult.error}`
           });
+        } else {
+          results.correosEnviados++;
         }
       }
     }
@@ -1383,7 +1386,7 @@ const bulkUploadUsers = async (req, res) => {
     const processed = results.importados + results.actualizados;
     const message = results.errores.length
       ? `Carga finalizada: ${processed}/${results.total} sincronizados, ${results.errores.length} con error`
-      : `Carga finalizada: ${processed} usuarios sincronizados`;
+      : `Carga finalizada: ${processed} usuarios sincronizados, ${results.correosEnviados} correos enviados`;
 
     res.json({
       success: true,
