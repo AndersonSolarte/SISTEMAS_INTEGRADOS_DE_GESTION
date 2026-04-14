@@ -222,11 +222,16 @@ const sanitizeUserPayload = ({ nombre, email, username, role, estado } = {}) => 
 const USER_REFERENCE_FIELDS = ['creado_por', 'actualizado_por', 'eliminado_por', 'resuelto_por', 'user_id'];
 const USER_DEPENDENCY_DESTROY_MODELS = new Set(['documento_favoritos', 'user_module_permissions']);
 const USER_DELETE_STATEMENT_TIMEOUT_MS = Math.max(
-  Number(process.env.USER_DELETE_STATEMENT_TIMEOUT_MS || 2000),
+  Number(process.env.USER_DELETE_STATEMENT_TIMEOUT_MS || 15000),
+  500
+);
+const USER_DELETE_RESPONSE_TIMEOUT_MS = Math.max(
+  Number(process.env.USER_DELETE_RESPONSE_TIMEOUT_MS || 2500),
   500
 );
 let userModulePermissionsReadyPromise = null;
 const modelTableAvailability = new Map();
+const pendingUserDeletions = new Set();
 
 const ensureUserModulePermissionsReady = async () => {
   if (userModulePermissionsReadyPromise) return userModulePermissionsReadyPromise;
@@ -411,6 +416,20 @@ const cleanupDirectUserDependencies = async (userId, transaction) => {
   }
 };
 
+const performPhysicalUserDelete = async (userId) => {
+  await User.sequelize.transaction(async (t) => {
+    await User.sequelize.query(
+      `SET LOCAL statement_timeout = '${USER_DELETE_STATEMENT_TIMEOUT_MS}ms'`,
+      { transaction: t }
+    );
+    await cleanupDirectUserDependencies(userId, t);
+    await detachUserForeignKeyReferences(userId, t);
+    await User.destroy({ where: { id: userId }, transaction: t });
+  });
+};
+
+const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
 // CREAR USUARIO INDIVIDUAL
 const createUser = async (req, res) => {
   try {
@@ -543,6 +562,11 @@ const getUsers = async (req, res) => {
     
     if (role) {
       where.role = role;
+    }
+
+    const pendingDeleteIds = Array.from(pendingUserDeletions);
+    if (pendingDeleteIds.length > 0) {
+      where.id = { [Op.notIn]: pendingDeleteIds };
     }
 
     if (isPlaneacionManager(req.user)) {
@@ -833,35 +857,34 @@ const deleteUser = async (req, res) => {
       }
     }
 
-    let deletedPhysically = true;
+    pendingUserDeletions.add(Number(id));
 
-    try {
-      await User.sequelize.transaction(async (t) => {
-        await User.sequelize.query(
-          `SET LOCAL statement_timeout = '${USER_DELETE_STATEMENT_TIMEOUT_MS}ms'`,
-          { transaction: t }
-        );
-        await cleanupDirectUserDependencies(id, t);
-        await user.destroy({ transaction: t });
-      });
-    } catch (destroyError) {
-      console.warn('No se pudo eliminar fisicamente el usuario; se inactivara:', destroyError?.message || destroyError);
-      await User.sequelize.transaction(async (t) => {
-        await cleanupDirectUserDependencies(id, t);
-        await User.update({ estado: 'inactivo' }, { where: { id }, transaction: t });
-      });
-      deletedPhysically = false;
+    const deletePromise = performPhysicalUserDelete(id)
+      .finally(() => pendingUserDeletions.delete(Number(id)));
+
+    const deleteResult = await Promise.race([
+      deletePromise.then(() => ({ completed: true })).catch((error) => {
+        console.error('Error al completar eliminacion fisica de usuario:', error?.message || error);
+        return { completed: true, error };
+      }),
+      wait(USER_DELETE_RESPONSE_TIMEOUT_MS).then(() => ({ completed: false }))
+    ]);
+
+    if (deleteResult.error) {
+      pendingUserDeletions.delete(Number(id));
+      throw deleteResult.error;
     }
     
     res.json({
       success: true,
-      message: deletedPhysically
+      message: deleteResult.completed
         ? 'Usuario eliminado permanentemente'
-        : 'El usuario tiene trazabilidad asociada y fue inactivado en lugar de eliminarse',
+        : 'Eliminacion iniciada. El usuario fue retirado de la lista mientras se completa el borrado.',
       data: {
         id: user.id,
-        deletedPhysically,
-        estado: deletedPhysically ? null : 'inactivo'
+        deletedPhysically: true,
+        deletePending: !deleteResult.completed,
+        estado: null
       }
     });
   } catch (error) {
