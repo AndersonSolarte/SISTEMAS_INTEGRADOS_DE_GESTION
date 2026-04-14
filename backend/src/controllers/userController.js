@@ -4,6 +4,7 @@ const { DataTypes, Op, literal } = require('sequelize');
 const crypto = require('crypto');
 const XLSX = require('xlsx');
 const fs = require('fs');
+const bcrypt = require('bcryptjs');
 const { ROLES } = require('../constants/roles');
 const { sendWelcomeEmail, sendPasswordResetEmail } = require('../services/emailService');
 const MAX_BULK_USER_IMPORT_ROWS = Number(process.env.MAX_BULK_USER_IMPORT_ROWS || 2000);
@@ -200,6 +201,19 @@ const mapRowKeys = (row = {}) => {
 const normalizarDocumento = (value) => String(value || '').trim();
 
 const esDocumentoValido = (value) => /^[0-9]{4,15}$/.test(String(value || '').trim());
+
+const buildWorkbookBase64 = (rows = [], sheetName = 'Errores') => {
+  if (!Array.isArray(rows) || rows.length === 0) return null;
+
+  const worksheet = XLSX.utils.json_to_sheet(rows);
+  worksheet['!cols'] = Object.keys(rows[0] || {}).map((key) => ({
+    wch: Math.min(Math.max(String(key).length + 8, 14), 60)
+  }));
+
+  const workbook = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(workbook, worksheet, sheetName);
+  return XLSX.write(workbook, { type: 'buffer', bookType: 'xlsx' }).toString('base64');
+};
 
 const normalizePagination = ({ page = 1, limit = 10 } = {}) => {
   const cleanPage = Math.max(Number.parseInt(page, 10) || 1, 1);
@@ -966,7 +980,7 @@ const downloadUsersTemplate = async (req, res) => {
 };
 
 // CARGA MASIVA DE USUARIOS
-const bulkUploadUsers = async (req, res) => {
+const bulkUploadUsersLegacy = async (req, res) => {
   try {
     if (!req.file) {
       return res.status(400).json({
@@ -1152,6 +1166,245 @@ const bulkUploadUsers = async (req, res) => {
 };
 
 // RECUPERAR CONTRASEÑA
+const bulkUploadUsers = async (req, res) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({
+        success: false,
+        message: 'No se proporciono archivo Excel'
+      });
+    }
+
+    const workbook = XLSX.readFile(req.file.path);
+    const data = XLSX.utils.sheet_to_json(workbook.Sheets[workbook.SheetNames[0]], {
+      defval: '',
+      raw: false
+    });
+
+    if (data.length > MAX_BULK_USER_IMPORT_ROWS) {
+      return res.status(400).json({
+        success: false,
+        message: `El archivo supera el limite permitido (${MAX_BULK_USER_IMPORT_ROWS} filas)`
+      });
+    }
+
+    const allowedRoles = getManageableRoles(req.user);
+    const results = {
+      total: data.length,
+      importados: 0,
+      actualizados: 0,
+      errores: [],
+      advertencias: []
+    };
+
+    const normalizedRows = data.map((row, index) => {
+      const mapped = mapRowKeys(row);
+      const cleanEmail = String(mapped.email || '').trim().toLowerCase();
+      const username = normalizarDocumento(mapped.username);
+      const roleInput = String(mapped.role || '').trim();
+      const role = normalizeRoleInput(roleInput);
+      return {
+        fila: index + 2,
+        nombre: String(mapped.nombre || '').trim().replace(/\s+/g, ' '),
+        email: cleanEmail,
+        username,
+        roleInput,
+        role,
+        targetRole: role || ROLES.CONSULTA
+      };
+    }).filter((row) => row.nombre || row.email || row.username || row.roleInput);
+
+    results.total = normalizedRows.length;
+
+    const addError = (row, error) => {
+      results.errores.push({
+        fila: row?.fila || '',
+        documento: row?.username || '',
+        nombre: row?.nombre || '',
+        email: row?.email || '',
+        rol: row?.roleInput || row?.targetRole || '',
+        error
+      });
+    };
+
+    const emailsEnArchivo = new Set();
+    const documentosEnArchivo = new Set();
+    const validRows = [];
+
+    for (const row of normalizedRows) {
+      if (!row.nombre || !row.email || !row.username) {
+        addError(row, 'Campos obligatorios vacios');
+        continue;
+      }
+
+      if (!validarDominio(row.email)) {
+        addError(row, 'Dominio no valido. Debe ser @unicesmag.edu.co');
+        continue;
+      }
+
+      if (!esDocumentoValido(row.username)) {
+        addError(row, 'Numero de documento invalido');
+        continue;
+      }
+
+      if (row.roleInput && !row.role) {
+        addError(row, `Rol invalido. Roles permitidos: ${allowedRoles.join(', ')}`);
+        continue;
+      }
+
+      if (!canManageRole(req.user, row.targetRole)) {
+        addError(row, `Sin permisos para crear/actualizar este rol. Roles permitidos: ${allowedRoles.join(', ')}`);
+        continue;
+      }
+
+      if (emailsEnArchivo.has(row.email)) {
+        addError(row, 'Correo duplicado en el archivo');
+        continue;
+      }
+
+      if (documentosEnArchivo.has(row.username)) {
+        addError(row, 'Documento duplicado en el archivo');
+        continue;
+      }
+
+      emailsEnArchivo.add(row.email);
+      documentosEnArchivo.add(row.username);
+      validRows.push(row);
+    }
+
+    const existingUsers = validRows.length
+      ? await User.findAll({
+        where: {
+          [Op.or]: [
+            { email: { [Op.in]: validRows.map((row) => row.email) } },
+            { username: { [Op.in]: validRows.map((row) => row.username) } }
+          ]
+        },
+        attributes: ['id', 'email', 'username', 'role']
+      })
+      : [];
+
+    const existingByEmail = new Map();
+    const existingByUsername = new Map();
+    existingUsers.forEach((user) => {
+      existingByEmail.set(String(user.email || '').toLowerCase(), user);
+      existingByUsername.set(String(user.username || ''), user);
+    });
+
+    const rowsToCreate = [];
+    const rowsToUpdate = [];
+    for (const row of validRows) {
+      const byEmail = existingByEmail.get(row.email);
+      const byUsername = existingByUsername.get(row.username);
+      const existing = byEmail || byUsername;
+
+      if (byEmail && byUsername && Number(byEmail.id) !== Number(byUsername.id)) {
+        addError(row, 'El correo y el documento pertenecen a usuarios diferentes en la base de datos');
+        continue;
+      }
+
+      if (existing && !canManageRole(req.user, existing.role)) {
+        addError(row, 'Sin permisos para actualizar el usuario existente');
+        continue;
+      }
+
+      if (existing) {
+        rowsToUpdate.push({ row, existing });
+      } else {
+        rowsToCreate.push(row);
+      }
+    }
+
+    const sendBulkEmails = String(process.env.BULK_USER_SEND_EMAILS || '').toLowerCase() === 'true';
+    const hashedImportPassword = await bcrypt.hash(generarPasswordInterna(), 10);
+
+    await User.sequelize.transaction(async (transaction) => {
+      for (const { row, existing } of rowsToUpdate) {
+        await User.update({
+          nombre: row.nombre,
+          email: row.email,
+          username: row.username,
+          role: row.targetRole,
+          estado: 'activo',
+          must_change_password: false
+        }, {
+          where: { id: existing.id },
+          transaction
+        });
+        results.actualizados++;
+      }
+
+      const chunkSize = 500;
+      for (let i = 0; i < rowsToCreate.length; i += chunkSize) {
+        const chunk = rowsToCreate.slice(i, i + chunkSize);
+        await User.bulkCreate(chunk.map((row) => ({
+          nombre: row.nombre,
+          email: row.email,
+          username: row.username,
+          password: hashedImportPassword,
+          role: row.targetRole,
+          estado: 'activo',
+          must_change_password: false
+        })), {
+          hooks: false,
+          validate: true,
+          transaction
+        });
+        results.importados += chunk.length;
+      }
+    });
+
+    if (!sendBulkEmails && rowsToCreate.length > 0) {
+      results.advertencias.push({
+        fila: '',
+        email: '',
+        warning: 'No se enviaron correos individuales durante la carga masiva para acelerar el proceso. Los usuarios pueden ingresar con Google institucional.'
+      });
+    }
+
+    if (sendBulkEmails && rowsToCreate.length > 0) {
+      const createdUsers = await User.findAll({
+        where: { email: { [Op.in]: rowsToCreate.map((row) => row.email) } }
+      });
+      for (const user of createdUsers) {
+        const emailResult = await sendWelcomeEmail(user);
+        if (!emailResult.success) {
+          results.advertencias.push({
+            fila: '',
+            email: user.email,
+            warning: `No se pudo enviar correo institucional: ${emailResult.error}`
+          });
+        }
+      }
+    }
+
+    const archivoErrores = buildWorkbookBase64(results.errores, 'Errores');
+    const archivoAdvertencias = buildWorkbookBase64(results.advertencias, 'Advertencias');
+    const processed = results.importados + results.actualizados;
+    const message = results.errores.length
+      ? `Carga finalizada: ${processed}/${results.total} sincronizados, ${results.errores.length} con error`
+      : `Carga finalizada: ${processed} usuarios sincronizados`;
+
+    res.json({
+      success: true,
+      message,
+      data: results,
+      archivoErrores,
+      archivoAdvertencias
+    });
+  } catch (error) {
+    console.error('Error en carga masiva:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Error en carga masiva de usuarios'
+    });
+  } finally {
+    if (req.file?.path && fs.existsSync(req.file.path)) {
+      fs.unlinkSync(req.file.path);
+    }
+  }
+};
+
 const requestPasswordReset = async (req, res) => {
   try {
     const { email } = req.body;

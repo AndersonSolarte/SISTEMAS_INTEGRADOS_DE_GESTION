@@ -99,6 +99,10 @@ function GestionUsuarios() {
   const [dialogMode, setDialogMode] = useState('create'); // create | edit
   const [selectedUser, setSelectedUser] = useState(null);
   const [uploadFile, setUploadFile] = useState(null);
+  const [uploadInputKey, setUploadInputKey] = useState(0);
+  const [bulkImportResult, setBulkImportResult] = useState(null);
+  const [bulkErrorFile, setBulkErrorFile] = useState(null);
+  const [bulkWarningFile, setBulkWarningFile] = useState(null);
   const [uploading, setUploading] = useState(false);
   const [deletingUserIds, setDeletingUserIds] = useState(() => new Set());
   const [openPermissionsDialog, setOpenPermissionsDialog] = useState(false);
@@ -335,6 +339,36 @@ function GestionUsuarios() {
     }
   };
 
+  const downloadBase64Excel = (base64, filename) => {
+    if (!base64) return;
+    const binary = atob(base64);
+    const bytes = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; i += 1) {
+      bytes[i] = binary.charCodeAt(i);
+    }
+    const blob = new Blob([bytes], {
+      type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+    });
+    const url = window.URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = filename;
+    link.click();
+    window.URL.revokeObjectURL(url);
+  };
+
+  const handleClearTools = () => {
+    setSearch('');
+    setUploadFile(null);
+    setBulkImportResult(null);
+    setBulkErrorFile(null);
+    setBulkWarningFile(null);
+    setUploadInputKey((prev) => prev + 1);
+    setPage(0);
+    loadUsers();
+  };
+
+  // eslint-disable-next-line no-unused-vars
   const handleBulkUpload = async () => {
     if (!uploadFile) {
       enqueueSnackbar('Seleccione un archivo Excel', { variant: 'warning' });
@@ -374,6 +408,49 @@ function GestionUsuarios() {
       loadUsers();
     } catch (error) {
       enqueueSnackbar(error.response?.data?.message || 'Error en carga masiva', { variant: 'error' });
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  const handleBulkUploadProfessional = async () => {
+    if (!uploadFile) {
+      enqueueSnackbar('Seleccione un archivo Excel', { variant: 'warning' });
+      return;
+    }
+
+    setUploading(true);
+    setBulkImportResult(null);
+    setBulkErrorFile(null);
+    setBulkWarningFile(null);
+    try {
+      const response = await userService.bulkUpload(uploadFile);
+      const result = response?.data || {};
+
+      setBulkImportResult(result);
+      setBulkErrorFile(response.archivoErrores || null);
+      setBulkWarningFile(response.archivoAdvertencias || null);
+
+      if (response.archivoErrores) {
+        downloadBase64Excel(response.archivoErrores, 'errores_carga_usuarios.xlsx');
+      }
+
+      enqueueSnackbar(response.message || 'Carga masiva finalizada', {
+        variant: result.errores?.length ? 'warning' : 'success'
+      });
+      setUploadFile(null);
+      setUploadInputKey((prev) => prev + 1);
+      loadUsers();
+    } catch (error) {
+      const response = error.response?.data;
+      if (response?.archivoErrores) {
+        setBulkErrorFile(response.archivoErrores);
+        downloadBase64Excel(response.archivoErrores, 'errores_carga_usuarios.xlsx');
+      }
+      if (response?.data) {
+        setBulkImportResult(response.data);
+      }
+      enqueueSnackbar(response?.message || 'Error en carga masiva', { variant: 'error' });
     } finally {
       setUploading(false);
     }
@@ -580,6 +657,7 @@ function GestionUsuarios() {
               </Typography>
             </Box>
           </Stack>
+
         </Paper>
 
         {/* Panel principal: buscador + acciones */}
@@ -666,17 +744,23 @@ function GestionUsuarios() {
             >
               {uploadFile ? uploadFile.name : 'Seleccionar Excel'}
               <input
+                key={uploadInputKey}
                 type="file"
                 hidden
                 accept=".xlsx,.xls"
-                onChange={(e) => setUploadFile(e.target.files[0])}
+                onChange={(e) => {
+                  setUploadFile(e.target.files[0] || null);
+                  setBulkImportResult(null);
+                  setBulkErrorFile(null);
+                  setBulkWarningFile(null);
+                }}
               />
             </Button>
 
             <Button
               variant="contained"
               disabled={!uploadFile || uploading}
-              onClick={handleBulkUpload}
+              onClick={handleBulkUploadProfessional}
               sx={{
                 minWidth: { xs: '100%', sm: 160 },
                 borderRadius: 2,
@@ -713,7 +797,7 @@ function GestionUsuarios() {
             <Button
               variant="outlined"
               startIcon={<ClearIcon />}
-              onClick={() => setSearch('')}
+              onClick={handleClearTools}
               sx={{
                 minWidth: { xs: '100%', sm: 180 },
                 borderRadius: 2,
@@ -729,6 +813,41 @@ function GestionUsuarios() {
               Limpiar búsqueda
             </Button>
           </Stack>
+
+          {bulkImportResult && (
+            <Alert
+              severity={bulkImportResult.errores?.length ? 'warning' : 'success'}
+              sx={{ mt: 2, borderRadius: 2, alignItems: 'center' }}
+              action={
+                <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1}>
+                  {bulkErrorFile && (
+                    <Button
+                      size="small"
+                      variant="contained"
+                      color="warning"
+                      onClick={() => downloadBase64Excel(bulkErrorFile, 'errores_carga_usuarios.xlsx')}
+                    >
+                      Descargar errores
+                    </Button>
+                  )}
+                  {bulkWarningFile && (
+                    <Button
+                      size="small"
+                      variant="outlined"
+                      onClick={() => downloadBase64Excel(bulkWarningFile, 'advertencias_carga_usuarios.xlsx')}
+                    >
+                      Advertencias
+                    </Button>
+                  )}
+                </Stack>
+              }
+            >
+              Sincronizados: {(bulkImportResult.importados || 0) + (bulkImportResult.actualizados || 0)}
+              {' | '}Nuevos: {bulkImportResult.importados || 0}
+              {' | '}Actualizados: {bulkImportResult.actualizados || 0}
+              {' | '}Errores: {bulkImportResult.errores?.length || 0}
+            </Alert>
+          )}
         </Paper>
 
         {/* Tabla de usuarios */}

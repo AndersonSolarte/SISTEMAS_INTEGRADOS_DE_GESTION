@@ -53,7 +53,8 @@ const userService = {
     const formData = new FormData();
     formData.append('file', file);
     const response = await api.post('/users/bulk-upload', formData, {
-      headers: { 'Content-Type': 'multipart/form-data' }
+      headers: { 'Content-Type': 'multipart/form-data' },
+      timeout: 300000
     });
     return response.data;
   },
