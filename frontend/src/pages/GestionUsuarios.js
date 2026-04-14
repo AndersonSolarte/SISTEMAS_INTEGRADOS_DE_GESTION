@@ -268,20 +268,17 @@ function GestionUsuarios() {
         const deletedPhysically = response?.data?.deletedPhysically !== false;
 
         setUsers((prev) => {
-          if (deletedPhysically) {
-            return prev.filter((item) => item.id !== user.id);
-          }
-
-          return prev.map((item) =>
-            item.id === user.id ? { ...item, estado: 'inactivo' } : item
-          );
+          return prev.filter((item) => item.id !== user.id);
         });
-        setTotal((prev) => (deletedPhysically ? Math.max(prev - 1, 0) : prev));
-        if (deletedPhysically && users.length === 1 && page > 0) {
+        setTotal((prev) => Math.max(prev - 1, 0));
+        if (users.length === 1 && page > 0) {
           setPage((prev) => Math.max(prev - 1, 0));
         }
 
-        enqueueSnackbar(response.message || 'Usuario eliminado permanentemente', { variant: 'success' });
+        enqueueSnackbar(
+          response.message || (deletedPhysically ? 'Usuario eliminado permanentemente' : 'Usuario retirado de la lista'),
+          { variant: 'success' }
+        );
       } catch (error) {
         if (Number(error.response?.status) === 404) {
           setUsers((prev) => prev.filter((item) => item.id !== user.id));

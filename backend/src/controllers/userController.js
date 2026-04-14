@@ -334,6 +334,64 @@ const detachUserReferences = async (userId, transaction) => {
   }
 };
 
+const detachUserForeignKeyReferences = async (userId, transaction) => {
+  const queryInterface = User.sequelize.getQueryInterface();
+  const quote = (identifier) => queryInterface.quoteIdentifier(identifier);
+
+  await User.sequelize.query("SET LOCAL statement_timeout = '15000ms'", { transaction });
+
+  const [references] = await User.sequelize.query(`
+    SELECT
+      tc.table_schema AS schema_name,
+      tc.table_name,
+      kcu.column_name,
+      c.is_nullable
+    FROM information_schema.table_constraints tc
+    JOIN information_schema.key_column_usage kcu
+      ON tc.constraint_name = kcu.constraint_name
+      AND tc.table_schema = kcu.table_schema
+    JOIN information_schema.constraint_column_usage ccu
+      ON ccu.constraint_name = tc.constraint_name
+      AND ccu.table_schema = tc.table_schema
+    JOIN information_schema.columns c
+      ON c.table_schema = tc.table_schema
+      AND c.table_name = tc.table_name
+      AND c.column_name = kcu.column_name
+    WHERE tc.constraint_type = 'FOREIGN KEY'
+      AND ccu.table_schema = 'public'
+      AND ccu.table_name = 'users'
+      AND ccu.column_name = 'id'
+  `, { transaction });
+
+  for (const reference of references || []) {
+    const schemaName = String(reference.schema_name || 'public');
+    const tableName = String(reference.table_name || '');
+    const columnName = String(reference.column_name || '');
+    if (!tableName || !columnName || tableName === 'users') continue;
+
+    const qualifiedTable = `${quote(schemaName)}.${quote(tableName)}`;
+    const quotedColumn = quote(columnName);
+    const shouldDestroy = USER_DEPENDENCY_DESTROY_MODELS.has(tableName);
+
+    if (shouldDestroy) {
+      await User.sequelize.query(
+        `DELETE FROM ${qualifiedTable} WHERE ${quotedColumn} = :userId`,
+        { replacements: { userId }, transaction }
+      );
+      continue;
+    }
+
+    if (String(reference.is_nullable || '').toUpperCase() !== 'YES') {
+      throw new Error(`No se puede separar la referencia obligatoria ${tableName}.${columnName}`);
+    }
+
+    await User.sequelize.query(
+      `UPDATE ${qualifiedTable} SET ${quotedColumn} = NULL WHERE ${quotedColumn} = :userId`,
+      { replacements: { userId }, transaction }
+    );
+  }
+};
+
 const inactivateUserAfterDeleteFailure = async (userId) => {
   await User.update({ estado: 'inactivo' }, { where: { id: userId } });
 };
@@ -764,7 +822,7 @@ const deleteUser = async (req, res) => {
 
     try {
       await User.sequelize.transaction(async (t) => {
-        await detachUserReferences(id, t);
+        await detachUserForeignKeyReferences(id, t);
         await user.destroy({ transaction: t });
       });
     } catch (destroyError) {
