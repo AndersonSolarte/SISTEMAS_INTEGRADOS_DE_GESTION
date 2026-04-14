@@ -222,17 +222,12 @@ const sanitizeUserPayload = ({ nombre, email, username, role, estado } = {}) => 
 const USER_REFERENCE_FIELDS = ['creado_por', 'actualizado_por', 'eliminado_por', 'resuelto_por', 'user_id'];
 const USER_DEPENDENCY_DESTROY_MODELS = new Set(['documento_favoritos', 'user_module_permissions']);
 const USER_DELETE_STATEMENT_TIMEOUT_MS = Math.max(
-  Number(process.env.USER_DELETE_STATEMENT_TIMEOUT_MS || 60000),
-  500
-);
-const USER_DELETE_RESPONSE_TIMEOUT_MS = Math.max(
-  Number(process.env.USER_DELETE_RESPONSE_TIMEOUT_MS || 2500),
+  Number(process.env.USER_DELETE_STATEMENT_TIMEOUT_MS || 120000),
   500
 );
 let userModulePermissionsReadyPromise = null;
 let userReferenceIndexesReadyPromise = null;
 const modelTableAvailability = new Map();
-const pendingUserDeletions = new Set();
 
 const ensureUserModulePermissionsReady = async () => {
   if (userModulePermissionsReadyPromise) return userModulePermissionsReadyPromise;
@@ -447,10 +442,6 @@ const detachUserForeignKeyReferences = async (userId, transaction) => {
   }
 };
 
-const inactivateUserAfterDeleteFailure = async (userId) => {
-  await User.update({ estado: 'inactivo' }, { where: { id: userId } });
-};
-
 const cleanupDirectUserDependencies = async (userId, transaction) => {
   const directDependencyModels = [UserModulePermission, models.DocumentoFavorito].filter(Boolean);
 
@@ -475,8 +466,6 @@ const performPhysicalUserDelete = async (userId) => {
     await User.destroy({ where: { id: userId }, transaction: t });
   });
 };
-
-const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 // CREAR USUARIO INDIVIDUAL
 const createUser = async (req, res) => {
@@ -610,11 +599,6 @@ const getUsers = async (req, res) => {
     
     if (role) {
       where.role = role;
-    }
-
-    const pendingDeleteIds = Array.from(pendingUserDeletions);
-    if (pendingDeleteIds.length > 0) {
-      where.id = { [Op.notIn]: pendingDeleteIds };
     }
 
     if (isPlaneacionManager(req.user)) {
@@ -905,41 +889,27 @@ const deleteUser = async (req, res) => {
       }
     }
 
-    pendingUserDeletions.add(Number(id));
-
-    const deletePromise = performPhysicalUserDelete(id)
-      .finally(() => pendingUserDeletions.delete(Number(id)));
-
-    const deleteResult = await Promise.race([
-      deletePromise.then(() => ({ completed: true })).catch((error) => {
-        console.error('Error al completar eliminacion fisica de usuario:', error?.message || error);
-        return { completed: true, error };
-      }),
-      wait(USER_DELETE_RESPONSE_TIMEOUT_MS).then(() => ({ completed: false }))
-    ]);
-
-    if (deleteResult.error) {
-      pendingUserDeletions.delete(Number(id));
-      throw deleteResult.error;
-    }
+    await performPhysicalUserDelete(id);
     
     res.json({
       success: true,
-      message: deleteResult.completed
-        ? 'Usuario eliminado permanentemente'
-        : 'Eliminacion en proceso',
+      message: 'Usuario eliminado',
       data: {
         id: user.id,
         deletedPhysically: true,
-        deletePending: !deleteResult.completed,
+        deletePending: false,
         estado: null
       }
     });
   } catch (error) {
     console.error('Error al eliminar usuario:', error);
+    const errorMessage = /statement timeout|canceling statement due to statement timeout/i.test(String(error?.message || ''))
+      ? 'No se pudo eliminar definitivamente por tiempo de espera en la base de datos. Intenta nuevamente cuando termine la preparación de índices.'
+      : 'Error al eliminar usuario';
+
     res.status(500).json({
       success: false,
-      message: 'Error al eliminar usuario'
+      message: errorMessage
     });
   }
 };

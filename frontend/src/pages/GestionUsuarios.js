@@ -273,7 +273,7 @@ function GestionUsuarios() {
         const deletedPhysically = response?.data?.deletedPhysically !== false;
 
         enqueueSnackbar(
-          response.message || (deletedPhysically ? 'Usuario eliminado' : 'Eliminacion en proceso'),
+          response.message || (deletedPhysically ? 'Usuario eliminado' : 'Usuario retirado'),
           { variant: 'success' }
         );
       } catch (error) {
