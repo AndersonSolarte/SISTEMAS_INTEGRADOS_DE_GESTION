@@ -103,7 +103,7 @@ import SaberProAgregadosDashboard from '../components/saberPro/SaberProAgregados
 import SaberProLandingPage from '../components/saberPro/SaberProLandingPage';
 import RecursoHumanoDashboard from '../components/recursoHumano/RecursoHumanoDashboard';
 import { ROLES } from '../constants/roles';
-import { EstadisticaDocumentalPanel } from './EstadisticaDocumental';
+import { EstadisticaDocumentalPanel } from './EstadisticaDocumentalImpact';
 import ActivityDashboard from './ActivityDashboard';
 
 const BASES = [
