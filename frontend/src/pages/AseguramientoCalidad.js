@@ -369,15 +369,58 @@ function AseguramientoCalidad() {
   const [loadingFavorites, setLoadingFavorites] = useState(false);
   const [syncingSheet, setSyncingSheet] = useState(false);
 
-  const loadCatalogos = useCallback(async (activeFilters = {}) => {
-    const response = await catalogoService.getFilterOptions(activeFilters);
-    const data = response?.data || {};
-
+  const syncCatalogosFromPayload = useCallback((data = {}) => {
     setMacroProcesos(data.macroProcesos || []);
     setProcesos(data.procesos || []);
     setSubprocesos(data.subprocesos || []);
     setTiposDocumentacion(data.tipos || []);
   }, []);
+
+  const syncCatalogosFromDocuments = useCallback((rows = []) => {
+    const maps = {
+      macros: new Map(),
+      procesos: new Map(),
+      subprocesos: new Map(),
+      tipos: new Map()
+    };
+
+    rows.forEach((doc) => {
+      const macro = doc?.subproceso?.proceso?.macroProceso;
+      const proceso = doc?.subproceso?.proceso;
+      const subproceso = doc?.subproceso;
+      const tipo = doc?.tipoDocumentacion;
+
+      if (macro?.id) maps.macros.set(String(macro.id), macro);
+      if (proceso?.id) maps.procesos.set(String(proceso.id), proceso);
+      if (subproceso?.id) maps.subprocesos.set(String(subproceso.id), subproceso);
+      if (tipo?.id) maps.tipos.set(String(tipo.id), tipo);
+    });
+
+    const byName = (a, b) => String(a.nombre || '').localeCompare(String(b.nombre || ''));
+    setMacroProcesos(Array.from(maps.macros.values()).sort(byName));
+    setProcesos(Array.from(maps.procesos.values()).sort(byName));
+    setSubprocesos(Array.from(maps.subprocesos.values()).sort(byName));
+    setTiposDocumentacion(Array.from(maps.tipos.values()).sort(byName));
+  }, []);
+
+  const loadCatalogos = useCallback(async (activeFilters = {}) => {
+    const response = await catalogoService.getFilterOptions(activeFilters);
+    const data = response?.data || {};
+    const hasOptions = Boolean(
+      (data.macroProcesos || []).length ||
+      (data.procesos || []).length ||
+      (data.subprocesos || []).length ||
+      (data.tipos || []).length
+    );
+
+    if (hasOptions) {
+      syncCatalogosFromPayload(data);
+      return;
+    }
+
+    const fallback = await documentoService.getDocumentos(activeFilters, 1, 500);
+    syncCatalogosFromDocuments(fallback?.data?.documentos || []);
+  }, [syncCatalogosFromDocuments, syncCatalogosFromPayload]);
 
   useEffect(() => {
     loadCatalogos().catch(() => {
@@ -410,8 +453,12 @@ function AseguramientoCalidad() {
     if (selTipos.length) params.tipo_documentacion_id = selTipos.join(',');
     if (filters.titulo) params.titulo = filters.titulo;
     if (filters.estado) params.estado = filters.estado;
-    catalogoService.getFilterOptions(params)
+    loadCatalogos(params)
+      .then(() => {
+        return;
+      })
       .then(res => {
+        if (!res) return;
         const data = res?.data || {};
         const tipos = data.tipos || [];
         setMacroProcesos(data.macroProcesos || []);
@@ -425,7 +472,7 @@ function AseguramientoCalidad() {
         }
       })
       .catch(() => {});
-  }, [selMacros, selProcesos, selSubprocesos, selTipos, filters.titulo, filters.estado]);
+  }, [loadCatalogos, selMacros, selProcesos, selSubprocesos, selTipos, filters.titulo, filters.estado]);
 
   useEffect(() => {
     if (!user?.id) return;
