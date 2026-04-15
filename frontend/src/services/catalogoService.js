@@ -11,9 +11,9 @@ const freshRequest = (params = {}) => ({
 });
 
 const catalogoService = {
-  getMacroProcesos: async () => (await api.get('/macro-procesos', freshRequest())).data,
-  getProcesos: async (macroProcesoId = null) => (await api.get('/procesos', freshRequest(macroProcesoId ? { macro_proceso_id: macroProcesoId } : {}))).data,
-  getSubProcesos: async (procesoId = null) => (await api.get('/subprocesos', freshRequest(procesoId ? { proceso_id: procesoId } : {}))).data,
+  getMacroProcesos: async (params = {}) => (await api.get('/macro-procesos', freshRequest(params))).data,
+  getProcesos: async (macroProcesoId = null, params = {}) => (await api.get('/procesos', freshRequest(macroProcesoId ? { macro_proceso_id: macroProcesoId, ...params } : params))).data,
+  getSubProcesos: async (procesoId = null, params = {}) => (await api.get('/subprocesos', freshRequest(procesoId ? { proceso_id: procesoId, ...params } : params))).data,
   getTiposDocumentacion: async (params = {}) => (await api.get('/tipos-documentacion', freshRequest(params))).data,
   getFilterOptions: async (filters = {}) => (await api.get('/filtro-opciones', freshRequest(filters))).data
 };

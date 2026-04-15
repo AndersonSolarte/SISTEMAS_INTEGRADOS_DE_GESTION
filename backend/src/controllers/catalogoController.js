@@ -33,13 +33,16 @@ const buildSearchWhere = (search = '') => {
 
 const getMacroProcesos = async (req, res) => {
   try {
+    const includeInactive = String(req.query.include_inactive || '').toLowerCase() === 'true'
+      && canViewAllDocumentStates(req.user);
+    const estadoSql = includeInactive ? '1=1' : publicDocumentStateSql('d');
     const macroProcesos = await MacroProceso.findAll({
       where: literal(`EXISTS (
         SELECT 1 FROM procesos p
         JOIN subprocesos sp ON sp.proceso_id = p.id
         JOIN documentos d ON d.subproceso_id = sp.id
         WHERE p.macro_proceso_id = "macro_procesos"."id"
-        AND ${publicDocumentStateSql('d')}
+        AND ${estadoSql}
       )`),
       order: [['nombre', 'ASC']]
     });
@@ -52,6 +55,9 @@ const getMacroProcesos = async (req, res) => {
 const getProcesos = async (req, res) => {
   try {
     const { macro_proceso_id } = req.query;
+    const includeInactive = String(req.query.include_inactive || '').toLowerCase() === 'true'
+      && canViewAllDocumentStates(req.user);
+    const estadoSql = includeInactive ? '1=1' : publicDocumentStateSql('d');
     const ids = macro_proceso_id
       ? String(macro_proceso_id).split(',').map(Number).filter(Number.isFinite)
       : [];
@@ -65,7 +71,7 @@ const getProcesos = async (req, res) => {
           SELECT 1 FROM subprocesos sp
           JOIN documentos d ON d.subproceso_id = sp.id
           WHERE sp.proceso_id = "procesos"."id"
-          AND ${publicDocumentStateSql('d')}
+          AND ${estadoSql}
         )`)
       },
       order: [['nombre', 'ASC']]
@@ -79,6 +85,9 @@ const getProcesos = async (req, res) => {
 const getSubProcesos = async (req, res) => {
   try {
     const { proceso_id } = req.query;
+    const includeInactive = String(req.query.include_inactive || '').toLowerCase() === 'true'
+      && canViewAllDocumentStates(req.user);
+    const estadoSql = includeInactive ? '1=1' : publicDocumentStateSql('d');
     const ids = proceso_id
       ? String(proceso_id).split(',').map(Number).filter(Number.isFinite)
       : [];
@@ -91,7 +100,7 @@ const getSubProcesos = async (req, res) => {
         [Op.and]: literal(`EXISTS (
           SELECT 1 FROM documentos d
           WHERE d.subproceso_id = "subprocesos"."id"
-          AND ${publicDocumentStateSql('d')}
+          AND ${estadoSql}
         )`)
       },
       order: [['nombre', 'ASC']]
@@ -105,6 +114,9 @@ const getSubProcesos = async (req, res) => {
 const getTiposDocumentacion = async (req, res) => {
   try {
     const { macro_proceso_id, proceso_id, subproceso_id } = req.query;
+    const includeInactive = String(req.query.include_inactive || '').toLowerCase() === 'true'
+      && canViewAllDocumentStates(req.user);
+    const estadoSql = includeInactive ? '1=1' : publicDocumentStateSql('d');
     const macroIds = macro_proceso_id ? String(macro_proceso_id).split(',').map(Number).filter(Number.isFinite) : [];
     const procIds  = proceso_id     ? String(proceso_id).split(',').map(Number).filter(Number.isFinite) : [];
     const subIds   = subproceso_id  ? String(subproceso_id).split(',').map(Number).filter(Number.isFinite) : [];
@@ -122,7 +134,7 @@ const getTiposDocumentacion = async (req, res) => {
       where: literal(`EXISTS (
         SELECT 1 FROM documentos d
         WHERE d.tipo_documentacion_id = "tipos_documentacion"."id"
-        AND ${publicDocumentStateSql('d')}
+        AND ${estadoSql}
         ${subFilter}
       )`),
       order: [['nombre', 'ASC']]
@@ -165,6 +177,11 @@ const getFilterOptions = async (req, res) => {
         ? { id: toInOrEq(filters.subprocesoIds) }
         : {};
 
+      // TipoDocumentacion: LEFT JOIN (no requerido) para no excluir documentos
+      // sin tipo al calcular facetas de macro/proceso/subproceso.
+      // Solo los documentos con tipo válido contribuyen a la faceta 'tipo'.
+      const tipoRequired = Boolean(filters.tipoIds);
+
       return Documento.findAll({
         where: documentoWhere,
         attributes: ['id'],
@@ -172,7 +189,7 @@ const getFilterOptions = async (req, res) => {
           {
             model: TipoDocumentacion,
             as: 'tipoDocumentacion',
-            required: true,
+            required: tipoRequired,
             attributes: ['id', 'nombre']
           },
           {

@@ -458,23 +458,39 @@ function AseguramientoCalidad() {
   }, []);
 
   const loadCatalogos = useCallback(async (activeFilters = {}) => {
-    const response = await catalogoService.getFilterOptions(activeFilters);
-    const data = response?.data || {};
-    const hasOptions = Boolean(
-      (data.macroProcesos || []).length ||
-      (data.procesos || []).length ||
-      (data.subprocesos || []).length ||
-      (data.tipos || []).length
-    );
+    // 1. Intentar endpoint facetado (más eficiente, actualiza todos al filtrar)
+    try {
+      const response = await catalogoService.getFilterOptions(activeFilters);
+      const data = response?.data || {};
+      const hasOptions = Boolean(
+        (data.macroProcesos || []).length ||
+        (data.procesos || []).length ||
+        (data.subprocesos || []).length ||
+        (data.tipos || []).length
+      );
+      if (hasOptions) {
+        syncCatalogosFromPayload(data);
+        return;
+      }
+    } catch (_e) { /* ignorar, intentar endpoints individuales */ }
 
-    if (hasOptions) {
-      syncCatalogosFromPayload(data);
-      return;
-    }
-
-    const fallback = await documentoService.getDocumentos(activeFilters, 1, 500);
-    syncCatalogosFromDocuments(fallback?.data?.documentos || []);
-  }, [syncCatalogosFromDocuments, syncCatalogosFromPayload]);
+    // 2. Fallback confiable: endpoints individuales con EXISTS subquery
+    try {
+      const extraParams = activeFilters.include_inactive ? { include_inactive: activeFilters.include_inactive } : {};
+      const [macroRes, procRes, subRes, tipoRes] = await Promise.all([
+        catalogoService.getMacroProcesos(extraParams),
+        catalogoService.getProcesos(activeFilters.macro_proceso_id || null, extraParams),
+        catalogoService.getSubProcesos(activeFilters.proceso_id || null, extraParams),
+        catalogoService.getTiposDocumentacion({ ...activeFilters, ...extraParams })
+      ]);
+      syncCatalogosFromPayload({
+        macroProcesos: macroRes?.data?.macroProcesos || [],
+        procesos:      procRes?.data?.procesos      || [],
+        subprocesos:   subRes?.data?.subprocesos    || [],
+        tipos:         tipoRes?.data?.tipos         || []
+      });
+    } catch (_e) { /* nada */ }
+  }, [syncCatalogosFromPayload]);
 
   useEffect(() => {
     loadCatalogos().catch(() => {
