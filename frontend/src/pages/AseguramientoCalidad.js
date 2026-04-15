@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
-import { Box, Paper, Typography, Grid, TextField, Button, Table, TableBody, TableCell, TableContainer, TableHead, TableRow, TablePagination, FormControl, Select, MenuItem, CircularProgress, Chip, IconButton, Tooltip, Fade, Slide, Stack, Divider, Dialog, DialogTitle, DialogContent, DialogActions, InputAdornment } from '@mui/material';
+import ReactDOM from 'react-dom';
+import { Box, Paper, Typography, Grid, TextField, Button, Table, TableBody, TableCell, TableContainer, TableHead, TableRow, TablePagination, FormControl, Select, MenuItem, CircularProgress, Chip, IconButton, Tooltip, Fade, Slide, Stack, Divider, Dialog, DialogTitle, DialogContent, DialogActions, InputAdornment, Switch, FormControlLabel } from '@mui/material';
 import { Search as SearchIcon, Clear as ClearIcon, VisibilityOutlined as VisibilityOutlinedIcon, FileDownloadOutlined as FileDownloadOutlinedIcon, FilterList as FilterIcon, Description as DescriptionIcon, Article as ArticleIcon, AssignmentTurnedIn as AssignmentIcon, ListAlt as ListIcon, Policy as PolicyIcon, AccountTree as AccountTreeIcon, Upload as UploadIcon, GetApp as DownloadTemplateIcon, DeleteSweep as DeleteSweepIcon, Favorite as FavoriteIcon, FavoriteBorder as FavoriteBorderIcon } from '@mui/icons-material';import { useSnackbar } from 'notistack';
 import { useLocation } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
@@ -221,19 +222,34 @@ const getLabelById = (items = [], id) => {
 };
 
 // ── DocFilterPanel: checklist con búsqueda, seleccionar todos y cascada ──────
+// El dropdown se renderiza via portal en document.body para no ser recortado
+// por ningún contenedor con overflow oculto o scroll.
 function DocFilterPanel({ label, options, value, onChange, disabled, placeholder }) {
   const [open, setOpen] = useState(false);
   const [search, setSearch] = useState('');
   const [visibleOptions, setVisibleOptions] = useState(options);
+  const [portalStyle, setPortalStyle] = useState({});
   const triggerRef = useRef(null);
   const dropdownRef = useRef(null);
+
+  const computePosition = useCallback(() => {
+    if (!triggerRef.current) return;
+    const rect = triggerRef.current.getBoundingClientRect();
+    setPortalStyle({
+      position: 'fixed',
+      top: rect.bottom + 6,
+      left: rect.left,
+      width: rect.width,
+      minWidth: 240,
+      zIndex: 9999,
+    });
+  }, []);
 
   useEffect(() => {
     if (!open) {
       setVisibleOptions(options);
       return;
     }
-
     setVisibleOptions((prev) => {
       const map = new Map();
       [...prev, ...options].forEach((item) => {
@@ -243,30 +259,29 @@ function DocFilterPanel({ label, options, value, onChange, disabled, placeholder
     });
   }, [open, options]);
 
+  // Calcular posición y cerrar en scroll/resize
+  useEffect(() => {
+    if (!open) return;
+    computePosition();
+    const onScrollResize = () => { setOpen(false); setSearch(''); };
+    window.addEventListener('scroll', onScrollResize, true);
+    window.addEventListener('resize', onScrollResize);
+    return () => {
+      window.removeEventListener('scroll', onScrollResize, true);
+      window.removeEventListener('resize', onScrollResize);
+    };
+  }, [open, computePosition]);
+
   // Cerrar al hacer click fuera
   useEffect(() => {
     if (!open) return;
     const h = (e) => {
       if (triggerRef.current?.contains(e.target) || dropdownRef.current?.contains(e.target)) return;
-      setOpen(false); setSearch('');
-    };
-    document.addEventListener('mousedown', h);
-    return () => document.removeEventListener('mousedown', h);
-  }, [open]);
-
-  useEffect(() => {
-    if (!open) return;
-    const closeOnPageMove = (e) => {
-      if (dropdownRef.current?.contains(e.target)) return;
       setOpen(false);
       setSearch('');
     };
-    window.addEventListener('scroll', closeOnPageMove, true);
-    window.addEventListener('resize', closeOnPageMove);
-    return () => {
-      window.removeEventListener('scroll', closeOnPageMove, true);
-      window.removeEventListener('resize', closeOnPageMove);
-    };
+    document.addEventListener('mousedown', h);
+    return () => document.removeEventListener('mousedown', h);
   }, [open]);
 
   const effectiveOptions = open ? visibleOptions : options;
@@ -282,10 +297,10 @@ function DocFilterPanel({ label, options, value, onChange, disabled, placeholder
   const displayText = selectedIds.length === 0 ? 'TODOS' : `${selectedIds.length} SELECCIONADO${selectedIds.length > 1 ? 'S' : ''}`;
   const C = '#2563eb';
 
-  const dropdown = open ? (
+  const dropdownPortal = open ? ReactDOM.createPortal(
     <div
       ref={dropdownRef}
-      style={{ position: 'absolute', top: 'calc(100% + 6px)', left: 0, zIndex: 50, width: '100%', minWidth: 240, background: '#fff', borderRadius: 10, boxShadow: '0 12px 36px rgba(0,0,0,0.18)', border: '1px solid #e2e8f0', overflow: 'hidden' }}
+      style={{ ...portalStyle, background: '#fff', borderRadius: 10, boxShadow: '0 12px 36px rgba(0,0,0,0.22)', border: '1px solid #e2e8f0', overflow: 'hidden' }}
     >
       <div style={{ padding: '8px', borderBottom: '1px solid #f1f5f9' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 6, background: '#f8fafc', borderRadius: 6, padding: '4px 8px', border: '1px solid #e2e8f0' }}>
@@ -300,7 +315,7 @@ function DocFilterPanel({ label, options, value, onChange, disabled, placeholder
         </div>
         <span style={{ fontSize: 11, fontWeight: 700, color: C }}>SELECCIONAR TODOS ({effectiveOptions.length})</span>
       </div>
-      <div style={{ maxHeight: 210, overflowY: 'auto' }}>
+      <div style={{ maxHeight: 220, overflowY: 'auto' }}>
         {filtered.length === 0
           ? <div style={{ padding: '12px 16px', textAlign: 'center', fontSize: 12, color: '#94a3b8' }}>Sin resultados</div>
           : filtered.map((opt) => (
@@ -317,11 +332,12 @@ function DocFilterPanel({ label, options, value, onChange, disabled, placeholder
       <div style={{ padding: '4px 12px', borderTop: '1px solid #f1f5f9', background: '#f8fafc' }}>
         <span style={{ fontSize: 10, color: '#94a3b8' }}>{selectedIds.length > 0 ? `${selectedIds.length} de ${effectiveOptions.length} seleccionados` : `${effectiveOptions.length} opciones`}</span>
       </div>
-    </div>
+    </div>,
+    document.body
   ) : null;
 
   return (
-    <Box ref={triggerRef} sx={{ position: 'relative', zIndex: open ? 30 : 1, opacity: disabled ? 0.5 : 1, pointerEvents: disabled ? 'none' : 'auto' }}>
+    <Box ref={triggerRef} sx={{ position: 'relative', opacity: disabled ? 0.5 : 1, pointerEvents: disabled ? 'none' : 'auto' }}>
       <Box onClick={() => !disabled && setOpen((o) => !o)} sx={{ cursor: 'pointer', borderRadius: '8px', p: '8px 12px', minHeight: 48, bgcolor: selectedIds.length ? '#eff6ff' : '#fff', border: `1.5px solid ${selectedIds.length ? C : '#bfdbfe'}`, display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 1, transition: 'all 0.15s', userSelect: 'none', '&:hover': { borderColor: C } }}>
         <Box sx={{ minWidth: 0, flex: 1 }}>
           <Typography sx={{ fontSize: '9px', fontWeight: 700, color: C, letterSpacing: '0.8px', textTransform: 'uppercase', mb: 0.25 }}>{label}</Typography>
@@ -338,7 +354,7 @@ function DocFilterPanel({ label, options, value, onChange, disabled, placeholder
           </Box>
         </Box>
       </Box>
-      {dropdown}
+      {dropdownPortal}
     </Box>
   );
 }
@@ -367,7 +383,7 @@ function AseguramientoCalidad() {
     () => ['administrador', 'gestion_por_procesos', 'gestion_procesos'].includes(normalizedRole) && !forceReadOnly,
     [normalizedRole, forceReadOnly]
   );
-  const [filters, setFilters] = useState({ macro_proceso_id: '', proceso_id: '', subproceso_id: '', tipo_documentacion_id: '', titulo: '', estado: '' });
+  const [filters, setFilters] = useState({ macro_proceso_id: '', proceso_id: '', subproceso_id: '', tipo_documentacion_id: '', titulo: '', estado: '', include_inactive: '' });
   const [selMacros, setSelMacros] = useState([]);
   const [selProcesos, setSelProcesos] = useState([]);
   const [selSubprocesos, setSelSubprocesos] = useState([]);
@@ -466,17 +482,18 @@ function AseguramientoCalidad() {
     });
   }, [loadCatalogos, enqueueSnackbar]);
 
-  // Recargar tipos dinámicamente según los filtros superiores seleccionados
+  // Recargar opciones dinámicamente según los filtros activos (faceted search)
   useEffect(() => {
     const params = {};
-    if (selMacros.length)     params.macro_proceso_id = selMacros.join(',');
-    if (selProcesos.length)   params.proceso_id       = selProcesos.join(',');
-    if (selSubprocesos.length) params.subproceso_id   = selSubprocesos.join(',');
-    if (selTipos.length) params.tipo_documentacion_id = selTipos.join(',');
-    if (filters.titulo) params.titulo = filters.titulo;
-    if (filters.estado) params.estado = filters.estado;
+    if (selMacros.length)      params.macro_proceso_id      = selMacros.join(',');
+    if (selProcesos.length)    params.proceso_id             = selProcesos.join(',');
+    if (selSubprocesos.length) params.subproceso_id          = selSubprocesos.join(',');
+    if (selTipos.length)       params.tipo_documentacion_id  = selTipos.join(',');
+    if (filters.titulo)        params.titulo                 = filters.titulo;
+    if (filters.estado)        params.estado                 = filters.estado;
+    if (filters.include_inactive) params.include_inactive    = filters.include_inactive;
     loadCatalogos(params).catch(() => {});
-  }, [loadCatalogos, selMacros, selProcesos, selSubprocesos, selTipos, filters.titulo, filters.estado]);
+  }, [loadCatalogos, selMacros, selProcesos, selSubprocesos, selTipos, filters.titulo, filters.estado, filters.include_inactive]);
 
   useEffect(() => {
     if (!user?.id) return;
@@ -534,7 +551,7 @@ function AseguramientoCalidad() {
   };
 
   const handleClearFilters = () => {
-    setFilters({ macro_proceso_id: '', proceso_id: '', subproceso_id: '', tipo_documentacion_id: '', titulo: '', estado: '' });
+    setFilters({ macro_proceso_id: '', proceso_id: '', subproceso_id: '', tipo_documentacion_id: '', titulo: '', estado: '', include_inactive: '' });
     setSelMacros([]); setSelProcesos([]); setSelSubprocesos([]); setSelTipos([]);
     setDocumentos([]);
     setTotalDocumentos(0);
@@ -1041,6 +1058,31 @@ function AseguramientoCalidad() {
                 />
               </Box>
             </Box>
+
+            {canManageDocumental && (
+              <Box sx={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', mt: 1.5, px: 0.5 }}>
+                <Box sx={{
+                  display: 'flex', alignItems: 'center', gap: 1.5, px: 2, py: 0.75,
+                  borderRadius: 2, border: `1.5px solid ${filters.include_inactive === 'true' ? '#f59e0b' : '#e2e8f0'}`,
+                  bgcolor: filters.include_inactive === 'true' ? '#fffbeb' : '#f8fafc',
+                  transition: 'all 0.2s'
+                }}>
+                  <Box sx={{ width: 8, height: 8, borderRadius: '50%', bgcolor: filters.include_inactive === 'true' ? '#f59e0b' : '#10b981', flexShrink: 0 }} />
+                  <Typography sx={{ fontSize: 11, fontWeight: 700, color: filters.include_inactive === 'true' ? '#92400e' : '#065f46', letterSpacing: '0.4px', textTransform: 'uppercase', userSelect: 'none' }}>
+                    {filters.include_inactive === 'true' ? 'Todos los estados' : 'Solo documentos activos'}
+                  </Typography>
+                  <Switch
+                    checked={filters.include_inactive === 'true'}
+                    onChange={(e) => setFilters(prev => ({ ...prev, include_inactive: e.target.checked ? 'true' : '' }))}
+                    size="small"
+                    sx={{
+                      '& .MuiSwitch-switchBase.Mui-checked': { color: '#f59e0b' },
+                      '& .MuiSwitch-switchBase.Mui-checked + .MuiSwitch-track': { bgcolor: '#f59e0b' }
+                    }}
+                  />
+                </Box>
+              </Box>
+            )}
 
             <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2} justifyContent="center" sx={{ mt: 2.5 }}>
               <Button

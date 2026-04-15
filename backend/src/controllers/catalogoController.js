@@ -1,9 +1,12 @@
 const { MacroProceso, Proceso, SubProceso, TipoDocumentacion, Documento } = require('../models');
 const { Op, literal } = require('sequelize');
+const { ROLES } = require('../constants/roles');
 
 const PUBLIC_DOCUMENT_STATE = 'vigente';
 const publicDocumentStateSql = (alias = 'd') =>
   `${alias}.estado = '${PUBLIC_DOCUMENT_STATE}'`;
+const canViewAllDocumentStates = (user = {}) =>
+  [ROLES.ADMINISTRADOR, ROLES.GESTION_PROCESOS].includes(user.role);
 
 const parseIdList = (value) => {
   const ids = String(value || '')
@@ -137,11 +140,13 @@ const getFilterOptions = async (req, res) => {
       procesoIds: parseIdList(req.query.proceso_id),
       subprocesoIds: parseIdList(req.query.subproceso_id),
       tipoIds: parseIdList(req.query.tipo_documentacion_id),
-      titulo: req.query.titulo
+      titulo: req.query.titulo,
+      includeInactive: String(req.query.include_inactive || '').toLowerCase() === 'true'
+        && canViewAllDocumentStates(req.user)
     };
 
     const fetchDocumentsForFacet = async (ignoredFacet) => {
-      const documentoWhere = { estado: PUBLIC_DOCUMENT_STATE };
+      const documentoWhere = filters.includeInactive ? {} : { estado: PUBLIC_DOCUMENT_STATE };
       if (ignoredFacet !== 'tipo' && filters.tipoIds) {
         documentoWhere.tipo_documentacion_id = toInOrEq(filters.tipoIds);
       }

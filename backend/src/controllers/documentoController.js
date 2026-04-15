@@ -8,10 +8,13 @@ const {
   MacroProceso,
   TipoDocumentacion
 } = require('../models');
+const { ROLES } = require('../constants/roles');
 const { encryptPayload, decryptPayload } = require('../utils/secureUrlToken');
 
 const LOCAL_UPLOAD_PREFIX = '/uploads/';
 const PUBLIC_DOCUMENT_STATE = 'vigente';
+const canViewAllDocumentStates = (user = {}) =>
+  [ROLES.ADMINISTRADOR, ROLES.GESTION_PROCESOS].includes(user.role);
 
 const isLocalUploadLink = (value = '') => String(value || '').trim().startsWith(LOCAL_UPLOAD_PREFIX);
 
@@ -110,7 +113,7 @@ const getDocumentos = async (req, res) => {
       subproceso_id,
       tipo_documentacion_id,
       titulo,
-      estado,
+      include_inactive,
       page = 1,
       limit = 10
     } = req.query;
@@ -182,7 +185,10 @@ const getDocumentos = async (req, res) => {
       if (searchWhere) Object.assign(where, searchWhere);
     }
 
-    where.estado = PUBLIC_DOCUMENT_STATE;
+    const includeInactive = String(include_inactive || '').toLowerCase() === 'true';
+    if (!includeInactive || !canViewAllDocumentStates(req.user)) {
+      where.estado = PUBLIC_DOCUMENT_STATE;
+    }
 
     const { count, rows } = await Documento.findAndCountAll({
       where,
