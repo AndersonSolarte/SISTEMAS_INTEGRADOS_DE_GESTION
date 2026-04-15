@@ -2,8 +2,7 @@ import React, { createContext, useState, useContext, useEffect, useCallback, use
 import authService from '../services/authService';
 
 const AuthContext = createContext(null);
-const SESSION_IDLE_TIMEOUT_MS = Number(process.env.REACT_APP_SESSION_IDLE_TIMEOUT_MS || 60 * 60 * 1000);
-const SESSION_MAX_DURATION_MS = Number(process.env.REACT_APP_SESSION_MAX_DURATION_MS || 2 * 24 * 60 * 60 * 1000);
+const SESSION_IDLE_TIMEOUT_MS = Number(process.env.REACT_APP_SESSION_IDLE_TIMEOUT_MS || 10 * 60 * 1000);
 
 export const AuthProvider = ({ children }) => {
   const [user, setUser] = useState(null);
@@ -47,6 +46,7 @@ export const AuthProvider = ({ children }) => {
 
       // Conserva el inicio real de sesión y completa timestamps faltantes.
       authService.syncSessionTimestamps();
+      authService.touchSessionActivity();
 
       try {
         const profile = await authService.getProfile();
@@ -77,6 +77,7 @@ export const AuthProvider = ({ children }) => {
     // Conserva la fecha real de login para poder forzar reautenticación
     // después del tiempo máximo permitido.
     authService.syncSessionTimestamps();
+    authService.touchSessionActivity();
 
     const events = ['mousemove', 'mousedown', 'keydown', 'scroll', 'touchstart', 'click'];
     const onActivity = () => touchActivity();
@@ -85,13 +86,11 @@ export const AuthProvider = ({ children }) => {
     const checkSession = () => {
       if (timeoutModalShownRef.current) return;
       const now = Date.now();
-      const { loginAt, lastActivityAt } = authService.getSessionMeta();
-      const safeLoginAt = loginAt || now;
-      const safeLastActivityAt = lastActivityAt || safeLoginAt;
+      const { lastActivityAt } = authService.getSessionMeta();
+      const safeLastActivityAt = lastActivityAt || now;
 
       const idleExceeded = now - safeLastActivityAt > SESSION_IDLE_TIMEOUT_MS;
-      const maxExceeded = now - safeLoginAt > SESSION_MAX_DURATION_MS;
-      if (idleExceeded || maxExceeded) {
+      if (idleExceeded) {
         timeoutModalShownRef.current = true;
         setShowSessionTimeoutModal(true);
       }
