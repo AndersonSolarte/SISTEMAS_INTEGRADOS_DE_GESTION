@@ -1,11 +1,9 @@
 const { MacroProceso, Proceso, SubProceso, TipoDocumentacion, Documento } = require('../models');
 const { Op, literal } = require('sequelize');
 
-const PUBLIC_DOCUMENT_STATE_VALUES = ['vigente', 'activo', 'activos'];
+const PUBLIC_DOCUMENT_STATE = 'vigente';
 const publicDocumentStateSql = (alias = 'd') =>
-  `LOWER(CAST(${alias}.estado AS TEXT)) IN (${PUBLIC_DOCUMENT_STATE_VALUES.map((value) => `'${value}'`).join(',')})`;
-const publicDocumentStateLiteral = (alias = 'documentos') =>
-  literal(`LOWER(CAST("${alias}"."estado" AS TEXT)) IN (${PUBLIC_DOCUMENT_STATE_VALUES.map((value) => `'${value}'`).join(',')})`);
+  `${alias}.estado = '${PUBLIC_DOCUMENT_STATE}'`;
 
 const parseIdList = (value) => {
   const ids = String(value || '')
@@ -141,15 +139,12 @@ const getFilterOptions = async (req, res) => {
     const tipoIds = parseIdList(tipo_documentacion_id);
 
     const documentoWhere = {};
+    documentoWhere.estado = PUBLIC_DOCUMENT_STATE;
     if (tipoIds) documentoWhere.tipo_documentacion_id = toInOrEq(tipoIds);
     if (titulo) {
       const searchWhere = buildSearchWhere(titulo);
       if (searchWhere) Object.assign(documentoWhere, searchWhere);
     }
-    documentoWhere[Op.and] = [
-      ...(Array.isArray(documentoWhere[Op.and]) ? documentoWhere[Op.and] : documentoWhere[Op.and] ? [documentoWhere[Op.and]] : []),
-      publicDocumentStateLiteral('documentos')
-    ];
 
     const macroWhere = macroIds ? { id: toInOrEq(macroIds) } : {};
     const procesoWhere = procesoIds ? { id: toInOrEq(procesoIds) } : {};
