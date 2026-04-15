@@ -1,6 +1,8 @@
 const { MacroProceso, Proceso, SubProceso, TipoDocumentacion, Documento } = require('../models');
 const { Op, literal } = require('sequelize');
 
+const PUBLIC_DOCUMENT_STATE = 'vigente';
+
 const parseIdList = (value) => {
   const ids = String(value || '')
     .split(',')
@@ -32,6 +34,7 @@ const getMacroProcesos = async (req, res) => {
         JOIN subprocesos sp ON sp.proceso_id = p.id
         JOIN documentos d ON d.subproceso_id = sp.id
         WHERE p.macro_proceso_id = "macro_procesos"."id"
+        AND d.estado = '${PUBLIC_DOCUMENT_STATE}'
       )`),
       order: [['nombre', 'ASC']]
     });
@@ -57,6 +60,7 @@ const getProcesos = async (req, res) => {
           SELECT 1 FROM subprocesos sp
           JOIN documentos d ON d.subproceso_id = sp.id
           WHERE sp.proceso_id = "procesos"."id"
+          AND d.estado = '${PUBLIC_DOCUMENT_STATE}'
         )`)
       },
       order: [['nombre', 'ASC']]
@@ -82,6 +86,7 @@ const getSubProcesos = async (req, res) => {
         [Op.and]: literal(`EXISTS (
           SELECT 1 FROM documentos d
           WHERE d.subproceso_id = "subprocesos"."id"
+          AND d.estado = '${PUBLIC_DOCUMENT_STATE}'
         )`)
       },
       order: [['nombre', 'ASC']]
@@ -112,6 +117,7 @@ const getTiposDocumentacion = async (req, res) => {
       where: literal(`EXISTS (
         SELECT 1 FROM documentos d
         WHERE d.tipo_documentacion_id = "tipos_documentacion"."id"
+        AND d.estado = '${PUBLIC_DOCUMENT_STATE}'
         ${subFilter}
       )`),
       order: [['nombre', 'ASC']]
@@ -132,7 +138,7 @@ const getFilterOptions = async (req, res) => {
 
     const documentoWhere = {};
     if (tipoIds) documentoWhere.tipo_documentacion_id = toInOrEq(tipoIds);
-    if (estado) documentoWhere.estado = estado;
+    documentoWhere.estado = PUBLIC_DOCUMENT_STATE;
     if (titulo) {
       const searchWhere = buildSearchWhere(titulo);
       if (searchWhere) Object.assign(documentoWhere, searchWhere);

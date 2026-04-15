@@ -434,10 +434,8 @@ function MapaProcesos() {
             <FormControl size="small" sx={{ minWidth: 160 }}>
               <InputLabel>Estado</InputLabel>
               <Select value={estado} label="Estado" onChange={(e) => setEstado(e.target.value)}>
-                <MenuItem value="">Todos</MenuItem>
-                <MenuItem value="vigente">Vigente</MenuItem>
-                <MenuItem value="en_revision">En Revisión</MenuItem>
-                <MenuItem value="obsoleto">Obsoleto</MenuItem>
+                <MenuItem value="">Solo activos</MenuItem>
+                <MenuItem value="vigente">Activos</MenuItem>
               </Select>
             </FormControl>
 

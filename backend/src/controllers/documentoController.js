@@ -11,6 +11,7 @@ const {
 const { encryptPayload, decryptPayload } = require('../utils/secureUrlToken');
 
 const LOCAL_UPLOAD_PREFIX = '/uploads/';
+const PUBLIC_DOCUMENT_STATE = 'vigente';
 
 const isLocalUploadLink = (value = '') => String(value || '').trim().startsWith(LOCAL_UPLOAD_PREFIX);
 
@@ -134,9 +135,7 @@ const getDocumentos = async (req, res) => {
       if (searchWhere) Object.assign(where, searchWhere);
     }
 
-    if (estado) {
-      where.estado = estado;
-    }
+    where.estado = PUBLIC_DOCUMENT_STATE;
 
     if (procIds && !subIds) {
       include[0].where    = { proceso_id: toInOrEq(procIds) };
