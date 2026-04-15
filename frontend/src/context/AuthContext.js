@@ -2,7 +2,7 @@ import React, { createContext, useState, useContext, useEffect, useCallback, use
 import authService from '../services/authService';
 
 const AuthContext = createContext(null);
-const SESSION_IDLE_TIMEOUT_MS = Number(process.env.REACT_APP_SESSION_IDLE_TIMEOUT_MS || 10 * 60 * 1000);
+const SESSION_IDLE_TIMEOUT_MS = Number(process.env.REACT_APP_SESSION_IDLE_TIMEOUT_MS || 60 * 60 * 1000);
 const SESSION_MAX_DURATION_MS = Number(process.env.REACT_APP_SESSION_MAX_DURATION_MS || 2 * 24 * 60 * 60 * 1000);
 
 export const AuthProvider = ({ children }) => {

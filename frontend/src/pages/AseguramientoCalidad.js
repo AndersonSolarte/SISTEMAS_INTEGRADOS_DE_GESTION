@@ -281,7 +281,7 @@ function DocFilterPanel({ label, options, value, onChange, disabled, placeholder
   const dropdown = open ? (
     <div
       ref={dropdownRef}
-      style={{ marginTop: 6, width: '100%', minWidth: 240, background: '#fff', borderRadius: 10, boxShadow: '0 12px 36px rgba(0,0,0,0.18)', border: '1px solid #e2e8f0', overflow: 'hidden' }}
+      style={{ position: 'absolute', top: 'calc(100% + 6px)', left: 0, zIndex: 50, width: '100%', minWidth: 240, background: '#fff', borderRadius: 10, boxShadow: '0 12px 36px rgba(0,0,0,0.18)', border: '1px solid #e2e8f0', overflow: 'hidden' }}
     >
       <div style={{ padding: '8px', borderBottom: '1px solid #f1f5f9' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 6, background: '#f8fafc', borderRadius: 6, padding: '4px 8px', border: '1px solid #e2e8f0' }}>
@@ -317,7 +317,7 @@ function DocFilterPanel({ label, options, value, onChange, disabled, placeholder
   ) : null;
 
   return (
-    <Box ref={triggerRef} sx={{ position: 'relative', opacity: disabled ? 0.5 : 1, pointerEvents: disabled ? 'none' : 'auto' }}>
+    <Box ref={triggerRef} sx={{ position: 'relative', zIndex: open ? 30 : 1, opacity: disabled ? 0.5 : 1, pointerEvents: disabled ? 'none' : 'auto' }}>
       <Box onClick={() => !disabled && setOpen((o) => !o)} sx={{ cursor: 'pointer', borderRadius: '8px', p: '8px 12px', minHeight: 48, bgcolor: value.length ? '#eff6ff' : '#fff', border: `1.5px solid ${value.length ? C : '#bfdbfe'}`, display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 1, transition: 'all 0.15s', userSelect: 'none', '&:hover': { borderColor: C } }}>
         <Box sx={{ minWidth: 0, flex: 1 }}>
           <Typography sx={{ fontSize: '9px', fontWeight: 700, color: C, letterSpacing: '0.8px', textTransform: 'uppercase', mb: 0.25 }}>{label}</Typography>
@@ -946,7 +946,7 @@ function AseguramientoCalidad() {
               borderRadius: 3,
               bgcolor: 'white',
               position: 'relative',
-              overflow: 'hidden',
+              overflow: 'visible',
               boxShadow: '0 18px 40px rgba(59, 130, 246, 0.12)',
               transition: 'transform 220ms ease, box-shadow 220ms ease',
               '&:hover': {
