@@ -38,10 +38,12 @@ const corsOptions = {
 };
 
 const apiLimiter = rateLimit({
-  windowMs: Number(process.env.RATE_LIMIT_WINDOW_MS || 15 * 60 * 1000),
-  limit: Number(process.env.RATE_LIMIT_MAX || 600),
+  windowMs: Number(process.env.RATE_LIMIT_WINDOW_MS || 5 * 60 * 1000),
+  limit: Number(process.env.RATE_LIMIT_MAX || 3000),
   standardHeaders: true,
   legacyHeaders: false,
+  skip: (req) => req.method === 'OPTIONS',
+  skipSuccessfulRequests: true,
   message: {
     success: false,
     message: 'Demasiadas solicitudes. Intenta nuevamente mas tarde.'
