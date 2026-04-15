@@ -49,13 +49,15 @@ const apiLimiter = rateLimit({
 });
 
 const authLimiter = rateLimit({
-  windowMs: Number(process.env.AUTH_RATE_LIMIT_WINDOW_MS || 15 * 60 * 1000),
-  limit: Number(process.env.AUTH_RATE_LIMIT_MAX || 30),
+  windowMs: Number(process.env.AUTH_RATE_LIMIT_WINDOW_MS || 5 * 60 * 1000),
+  limit: Number(process.env.AUTH_RATE_LIMIT_MAX || 120),
   standardHeaders: true,
   legacyHeaders: false,
+  skip: (req) => req.method === 'GET' || req.method === 'OPTIONS',
+  skipSuccessfulRequests: true,
   message: {
     success: false,
-    message: 'Demasiados intentos de acceso. Intenta nuevamente mas tarde.'
+    message: 'Se alcanzaron muchos intentos seguidos. Espera unos minutos e intenta nuevamente.'
   }
 });
 

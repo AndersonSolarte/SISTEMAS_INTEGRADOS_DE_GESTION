@@ -43,6 +43,9 @@ function Login() {
 
   const getContactCopy = (message = '') => {
     const text = String(message || '').toLowerCase();
+    if (text.includes('demasiad') || text.includes('muchos intentos') || text.includes('429')) {
+      return 'El acceso se bloqueó temporalmente por demasiados intentos seguidos. Espera unos minutos y vuelve a intentar.';
+    }
     if (text.includes('inactivo')) {
       return 'Tu usuario está inactivo. Comunícate con el administrador para reactivarlo.';
     }
@@ -75,7 +78,8 @@ function Login() {
       navigateWithLoader('/dashboard');
     } else {
       setError(result.message || 'No fue posible iniciar sesión con Google');
-      setShowContactDialog(true);
+      const message = String(result.message || '').toLowerCase();
+      setShowContactDialog(!(message.includes('demasiad') || message.includes('muchos intentos') || message.includes('429')));
     }
   }, [currentOrigin, loginWithGoogle, navigateWithLoader]);
 
