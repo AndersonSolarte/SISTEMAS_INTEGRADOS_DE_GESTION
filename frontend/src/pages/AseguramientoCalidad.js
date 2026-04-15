@@ -391,8 +391,18 @@ function AseguramientoCalidad() {
       const tipo = doc?.tipoDocumentacion;
 
       if (macro?.id) maps.macros.set(String(macro.id), macro);
-      if (proceso?.id) maps.procesos.set(String(proceso.id), proceso);
-      if (subproceso?.id) maps.subprocesos.set(String(subproceso.id), subproceso);
+      if (proceso?.id) {
+        maps.procesos.set(String(proceso.id), {
+          ...proceso,
+          macro_proceso_id: proceso.macro_proceso_id || macro?.id || ''
+        });
+      }
+      if (subproceso?.id) {
+        maps.subprocesos.set(String(subproceso.id), {
+          ...subproceso,
+          proceso_id: subproceso.proceso_id || proceso?.id || ''
+        });
+      }
       if (tipo?.id) maps.tipos.set(String(tipo.id), tipo);
     });
 

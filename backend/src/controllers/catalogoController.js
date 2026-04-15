@@ -164,14 +164,14 @@ const getFilterOptions = async (req, res) => {
           model: SubProceso,
           as: 'subproceso',
           required: true,
-          attributes: ['id', 'nombre'],
+          attributes: ['id', 'nombre', 'proceso_id'],
           where: subWhere,
           include: [
             {
               model: Proceso,
               as: 'proceso',
               required: true,
-              attributes: ['id', 'nombre'],
+              attributes: ['id', 'nombre', 'macro_proceso_id'],
               where: procesoWhere,
               include: [
                 {
