@@ -8,6 +8,13 @@ import catalogoService from '../services/catalogoService';
 import favoritoService from '../services/favoritoService';
 import api from '../services/api';
 
+const getApiErrorMessage = (error, fallback) => (
+  error?.response?.data?.error
+  || error?.response?.data?.message
+  || error?.message
+  || fallback
+);
+
 // Extrae ID y metadatos de enlaces de Google Drive/Docs.
 // Conserva 'resourcekey' porque algunos enlaces compartidos dejan de funcionar sin ese parametro.
 const extractGoogleDriveMeta = (rawUrl) => {
@@ -217,8 +224,24 @@ const getLabelById = (items = [], id) => {
 function DocFilterPanel({ label, options, value, onChange, disabled, placeholder }) {
   const [open, setOpen] = useState(false);
   const [search, setSearch] = useState('');
+  const [visibleOptions, setVisibleOptions] = useState(options);
   const triggerRef = useRef(null);
   const dropdownRef = useRef(null);
+
+  useEffect(() => {
+    if (!open) {
+      setVisibleOptions(options);
+      return;
+    }
+
+    setVisibleOptions((prev) => {
+      const map = new Map();
+      [...prev, ...options].forEach((item) => {
+        if (item?.id) map.set(String(item.id), item);
+      });
+      return Array.from(map.values());
+    });
+  }, [open, options]);
 
   // Cerrar al hacer click fuera
   useEffect(() => {
@@ -246,11 +269,12 @@ function DocFilterPanel({ label, options, value, onChange, disabled, placeholder
     };
   }, [open]);
 
-  const filtered = options.filter((o) => o.nombre.toLowerCase().includes(search.toLowerCase()));
+  const effectiveOptions = open ? visibleOptions : options;
+  const filtered = effectiveOptions.filter((o) => o.nombre.toLowerCase().includes(search.toLowerCase()));
   const allSelected = value.length === 0;
   const isSel = (id) => value.includes(id);
   const toggle = (id) => onChange(isSel(id) ? value.filter((v) => v !== id) : [...value, id]);
-  const toggleAll = () => onChange(allSelected ? options.map((o) => o.id) : []);
+  const toggleAll = () => onChange(allSelected ? effectiveOptions.map((o) => o.id) : []);
   const displayText = value.length === 0 ? 'TODOS' : `${value.length} SELECCIONADO${value.length > 1 ? 'S' : ''}`;
   const C = '#2563eb';
 
@@ -270,7 +294,7 @@ function DocFilterPanel({ label, options, value, onChange, disabled, placeholder
         <div style={{ width: 14, height: 14, flexShrink: 0, borderRadius: 3, border: `2px solid ${allSelected ? C : '#d1d5db'}`, background: allSelected ? C : '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
           {allSelected && <svg width="7" height="7" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="3"><polyline points="20 6 9 17 4 12"/></svg>}
         </div>
-        <span style={{ fontSize: 11, fontWeight: 700, color: C }}>SELECCIONAR TODOS ({options.length})</span>
+        <span style={{ fontSize: 11, fontWeight: 700, color: C }}>SELECCIONAR TODOS ({effectiveOptions.length})</span>
       </div>
       <div style={{ maxHeight: 210, overflowY: 'auto' }}>
         {filtered.length === 0
@@ -287,7 +311,7 @@ function DocFilterPanel({ label, options, value, onChange, disabled, placeholder
           ))}
       </div>
       <div style={{ padding: '4px 12px', borderTop: '1px solid #f1f5f9', background: '#f8fafc' }}>
-        <span style={{ fontSize: 10, color: '#94a3b8' }}>{value.length > 0 ? `${value.length} de ${options.length} seleccionados` : `${options.length} opciones`}</span>
+        <span style={{ fontSize: 10, color: '#94a3b8' }}>{value.length > 0 ? `${value.length} de ${effectiveOptions.length} seleccionados` : `${effectiveOptions.length} opciones`}</span>
       </div>
     </div>
   ) : null;
@@ -494,7 +518,7 @@ function AseguramientoCalidad() {
             setTotalDocumentos(response.data.pagination.total);
           }
         })
-        .catch(() => enqueueSnackbar('Error al buscar documentos', { variant: 'error' }))
+        .catch((error) => enqueueSnackbar(getApiErrorMessage(error, 'Error al buscar documentos'), { variant: 'error' }))
         .finally(() => setLoading(false));
     }
   }, [location.search, enqueueSnackbar]);
@@ -515,7 +539,7 @@ function AseguramientoCalidad() {
         }
       }
     } catch (error) {
-      enqueueSnackbar('Error al buscar documentos', { variant: 'error' });
+      enqueueSnackbar(getApiErrorMessage(error, 'Error al buscar documentos'), { variant: 'error' });
     } finally {
       setLoading(false);
     }
@@ -549,8 +573,8 @@ function AseguramientoCalidad() {
           setDocumentos(response.data.documentos);
           setTotalDocumentos(response.data.pagination.total);
         }
-      } catch (_error) {
-        enqueueSnackbar('Error al aplicar filtros', { variant: 'error' });
+      } catch (error) {
+        enqueueSnackbar(getApiErrorMessage(error, 'Error al aplicar filtros'), { variant: 'error' });
       } finally {
         setLoading(false);
         setAutoSearching(false);
@@ -569,7 +593,7 @@ function AseguramientoCalidad() {
         setDocumentos(response.data.documentos);
       }
     } catch (error) {
-      enqueueSnackbar('Error al cargar documentos', { variant: 'error' });
+      enqueueSnackbar(getApiErrorMessage(error, 'Error al cargar documentos'), { variant: 'error' });
     } finally {
       setLoading(false);
     }
