@@ -271,11 +271,15 @@ function DocFilterPanel({ label, options, value, onChange, disabled, placeholder
 
   const effectiveOptions = open ? visibleOptions : options;
   const filtered = effectiveOptions.filter((o) => o.nombre.toLowerCase().includes(search.toLowerCase()));
-  const allSelected = value.length === 0;
-  const isSel = (id) => value.includes(id);
-  const toggle = (id) => onChange(isSel(id) ? value.filter((v) => v !== id) : [...value, id]);
-  const toggleAll = () => onChange(allSelected ? effectiveOptions.map((o) => o.id) : []);
-  const displayText = value.length === 0 ? 'TODOS' : `${value.length} SELECCIONADO${value.length > 1 ? 'S' : ''}`;
+  const selectedIds = value.map((id) => String(id));
+  const allSelected = selectedIds.length === 0;
+  const isSel = (id) => selectedIds.includes(String(id));
+  const toggle = (id) => {
+    const key = String(id);
+    onChange(isSel(key) ? selectedIds.filter((valueId) => valueId !== key) : [...selectedIds, key]);
+  };
+  const toggleAll = () => onChange(allSelected ? effectiveOptions.map((o) => String(o.id)) : []);
+  const displayText = selectedIds.length === 0 ? 'TODOS' : `${selectedIds.length} SELECCIONADO${selectedIds.length > 1 ? 'S' : ''}`;
   const C = '#2563eb';
 
   const dropdown = open ? (
@@ -311,20 +315,20 @@ function DocFilterPanel({ label, options, value, onChange, disabled, placeholder
           ))}
       </div>
       <div style={{ padding: '4px 12px', borderTop: '1px solid #f1f5f9', background: '#f8fafc' }}>
-        <span style={{ fontSize: 10, color: '#94a3b8' }}>{value.length > 0 ? `${value.length} de ${effectiveOptions.length} seleccionados` : `${effectiveOptions.length} opciones`}</span>
+        <span style={{ fontSize: 10, color: '#94a3b8' }}>{selectedIds.length > 0 ? `${selectedIds.length} de ${effectiveOptions.length} seleccionados` : `${effectiveOptions.length} opciones`}</span>
       </div>
     </div>
   ) : null;
 
   return (
     <Box ref={triggerRef} sx={{ position: 'relative', zIndex: open ? 30 : 1, opacity: disabled ? 0.5 : 1, pointerEvents: disabled ? 'none' : 'auto' }}>
-      <Box onClick={() => !disabled && setOpen((o) => !o)} sx={{ cursor: 'pointer', borderRadius: '8px', p: '8px 12px', minHeight: 48, bgcolor: value.length ? '#eff6ff' : '#fff', border: `1.5px solid ${value.length ? C : '#bfdbfe'}`, display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 1, transition: 'all 0.15s', userSelect: 'none', '&:hover': { borderColor: C } }}>
+      <Box onClick={() => !disabled && setOpen((o) => !o)} sx={{ cursor: 'pointer', borderRadius: '8px', p: '8px 12px', minHeight: 48, bgcolor: selectedIds.length ? '#eff6ff' : '#fff', border: `1.5px solid ${selectedIds.length ? C : '#bfdbfe'}`, display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 1, transition: 'all 0.15s', userSelect: 'none', '&:hover': { borderColor: C } }}>
         <Box sx={{ minWidth: 0, flex: 1 }}>
           <Typography sx={{ fontSize: '9px', fontWeight: 700, color: C, letterSpacing: '0.8px', textTransform: 'uppercase', mb: 0.25 }}>{label}</Typography>
           <Typography sx={{ fontSize: '12px', fontWeight: 600, color: '#1e3a5f', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{displayText}</Typography>
         </Box>
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, flexShrink: 0 }}>
-          {value.length > 0 && (
+          {selectedIds.length > 0 && (
             <Box onClick={(e) => { e.stopPropagation(); onChange([]); }} sx={{ width: 16, height: 16, borderRadius: '50%', bgcolor: C, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}>
               <svg width="7" height="7" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="3"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
             </Box>
@@ -461,22 +465,6 @@ function AseguramientoCalidad() {
       enqueueSnackbar('No fue posible cargar los filtros actualizados', { variant: 'warning' });
     });
   }, [loadCatalogos, enqueueSnackbar]);
-
-  useEffect(() => {
-    setSelMacros((prev) => prev.filter((id) => macroProcesos.some((item) => String(item.id) === String(id))));
-  }, [macroProcesos]);
-
-  useEffect(() => {
-    setSelProcesos((prev) => prev.filter((id) => procesos.some((item) => String(item.id) === String(id))));
-  }, [procesos]);
-
-  useEffect(() => {
-    setSelSubprocesos((prev) => prev.filter((id) => subprocesos.some((item) => String(item.id) === String(id))));
-  }, [subprocesos]);
-
-  useEffect(() => {
-    setSelTipos((prev) => prev.filter((id) => tiposDocumentacion.some((item) => String(item.id) === String(id))));
-  }, [tiposDocumentacion]);
 
   // Recargar tipos dinámicamente según los filtros superiores seleccionados
   useEffect(() => {
@@ -791,17 +779,6 @@ function AseguramientoCalidad() {
   const hasActiveFilters = activeFiltersCount > 0;
   const tiposDocumentacionDisplay = tiposDocumentacion.filter((td) => !isDocumentCode(td.nombre));
 
-  const availableTipoIds = useMemo(() => {
-    const tipo = new Set();
-    documentos.forEach((doc) => {
-      const tipoId = doc?.tipo_documentacion_id || doc?.tipoDocumentacion?.id;
-      if (tipoId) tipo.add(String(tipoId));
-    });
-    return tipo;
-  }, [documentos]);
-
-  const shouldRestrictTipo = documentos.length > 0;
-
   const hasSelectedId = (ids, id) => ids.some((value) => String(value) === String(id));
   const macroOptions = macroProcesos;
   const procesoOptions = selMacros.length > 0
@@ -814,12 +791,6 @@ function AseguramientoCalidad() {
       : subprocesos;
   const tipoOptions = tiposDocumentacionDisplay;
   const isFiltering = loading || autoSearching;
-
-  useEffect(() => {
-    if (!shouldRestrictTipo || documentos.length === 0) return;
-
-    setSelTipos((prev) => prev.filter((id) => availableTipoIds.has(String(id))));
-  }, [availableTipoIds, documentos.length, shouldRestrictTipo]);
 
   return (
     <Fade in={true} timeout={500}>
