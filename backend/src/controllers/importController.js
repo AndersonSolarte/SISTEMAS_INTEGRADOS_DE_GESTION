@@ -20,6 +20,8 @@ const normalizeEstado = (value) => {
   return 'obsoleto';
 };
 
+const isActiveSheetEstado = (value) => normalizeEstado(value) === 'vigente';
+
 const excelDateToISO = (value) => {
   if (!value && value !== 0) return null;
   if (typeof value === 'number') {
@@ -431,6 +433,15 @@ const importFromExcel = async (req, res) => {
       try {
         const { tipoDocumentacion, codigo, titulo } = normalizeMappedFields(row);
 
+        if (codigo && !isActiveSheetEstado(row.estado)) {
+          const existente = await Documento.findOne({ where: { codigo } });
+          if (existente && existente.estado !== 'obsoleto') {
+            await existente.update({ estado: 'obsoleto' });
+            results.actualizados++;
+          }
+          continue;
+        }
+
         // Validar campos requeridos
         if (!row.macro_proceso || !row.proceso || !row.subproceso || !tipoDocumentacion || !codigo || !titulo) {
           results.errores.push({
@@ -716,6 +727,15 @@ const importFromSheet = async (req, res) => {
       try {
         const { tipoDocumentacion, codigo, titulo } = normalizeMappedFields(row);
 
+        if (codigo && !isActiveSheetEstado(row.estado)) {
+          const existente = await Documento.findOne({ where: { codigo } });
+          if (existente && existente.estado !== 'obsoleto') {
+            await existente.update({ estado: 'obsoleto' });
+            results.actualizados++;
+          }
+          continue;
+        }
+
         if (!row.macro_proceso || !row.proceso || !row.subproceso || !tipoDocumentacion || !codigo || !titulo) {
           results.errores.push({
             fila: rowNumber,
@@ -890,6 +910,17 @@ const importFromSheetFixed = async (req, res) => {
 
       try {
         const { tipoDocumentacion, codigo, titulo } = normalizeMappedFields(row);
+
+        if (codigo && !isActiveSheetEstado(row.estado)) {
+          const existente = existingDocumentsByCode.get(codigo);
+          if (existente && existente.estado !== 'obsoleto') {
+            await existente.update({ estado: 'obsoleto' });
+            results.actualizados++;
+          } else {
+            results.omitidos++;
+          }
+          continue;
+        }
 
         if (!row.macro_proceso || !row.proceso || !row.subproceso || !tipoDocumentacion || !codigo || !titulo) {
           results.errores.push({
