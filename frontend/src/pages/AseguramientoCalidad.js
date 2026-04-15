@@ -616,6 +616,11 @@ function AseguramientoCalidad() {
     }
   };
 
+  const getEstadoLabel = (estado) => {
+    if (String(estado || '').toLowerCase() === 'vigente') return 'ACTIVOS';
+    return String(estado || '').toUpperCase();
+  };
+
   const getTipoIcon = (tipo) => {
     const nombre = tipo?.toLowerCase() || '';
     if (nombre.includes('manual')) return <DescriptionIcon sx={{ fontSize: 20 }} />;
@@ -1151,7 +1156,7 @@ function AseguramientoCalidad() {
                                 <Chip label={`v${doc.version || '1.0'}`} size="small" sx={{ bgcolor: '#f1f5f9', color: '#475569', fontWeight: 700, fontFamily: 'monospace', borderRadius: 1.5 }} />
                               </TableCell>
                               <TableCell>
-                                <Chip label={doc.estado} color={getEstadoColor(doc.estado)} size="small" sx={{ fontWeight: 700, textTransform: 'uppercase', fontSize: 11, borderRadius: 1.5 }} />
+                                <Chip label={getEstadoLabel(doc.estado)} color={getEstadoColor(doc.estado)} size="small" sx={{ fontWeight: 700, textTransform: 'uppercase', fontSize: 11, borderRadius: 1.5 }} />
                               </TableCell>
                               <TableCell align="center">
                                 <Stack direction="row" spacing={1} justifyContent="center">

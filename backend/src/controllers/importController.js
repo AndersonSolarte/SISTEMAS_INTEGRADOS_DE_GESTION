@@ -16,10 +16,8 @@ const toText = (value, maxLength = null) => {
 
 const normalizeEstado = (value) => {
   const estado = toText(value)?.toLowerCase();
-  if (!estado) return 'vigente';
   if (estado === 'activo' || estado === 'activos') return 'vigente';
-  if (['vigente', 'obsoleto', 'en_revision'].includes(estado)) return estado;
-  return 'vigente';
+  return 'obsoleto';
 };
 
 const excelDateToISO = (value) => {

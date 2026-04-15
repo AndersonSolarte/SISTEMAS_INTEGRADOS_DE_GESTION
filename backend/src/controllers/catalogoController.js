@@ -132,94 +132,109 @@ const getTiposDocumentacion = async (req, res) => {
 
 const getFilterOptions = async (req, res) => {
   try {
-    const { macro_proceso_id, proceso_id, subproceso_id, tipo_documentacion_id, titulo, estado } = req.query;
-    const macroIds = parseIdList(macro_proceso_id);
-    const procesoIds = parseIdList(proceso_id);
-    const subprocesoIds = parseIdList(subproceso_id);
-    const tipoIds = parseIdList(tipo_documentacion_id);
+    const filters = {
+      macroIds: parseIdList(req.query.macro_proceso_id),
+      procesoIds: parseIdList(req.query.proceso_id),
+      subprocesoIds: parseIdList(req.query.subproceso_id),
+      tipoIds: parseIdList(req.query.tipo_documentacion_id),
+      titulo: req.query.titulo
+    };
 
-    const documentoWhere = {};
-    documentoWhere.estado = PUBLIC_DOCUMENT_STATE;
-    if (tipoIds) documentoWhere.tipo_documentacion_id = toInOrEq(tipoIds);
-    if (titulo) {
-      const searchWhere = buildSearchWhere(titulo);
-      if (searchWhere) Object.assign(documentoWhere, searchWhere);
-    }
+    const fetchDocumentsForFacet = async (ignoredFacet) => {
+      const documentoWhere = { estado: PUBLIC_DOCUMENT_STATE };
+      if (ignoredFacet !== 'tipo' && filters.tipoIds) {
+        documentoWhere.tipo_documentacion_id = toInOrEq(filters.tipoIds);
+      }
+      if (filters.titulo) {
+        const searchWhere = buildSearchWhere(filters.titulo);
+        if (searchWhere) Object.assign(documentoWhere, searchWhere);
+      }
 
-    const macroWhere = macroIds ? { id: toInOrEq(macroIds) } : {};
-    const procesoWhere = procesoIds ? { id: toInOrEq(procesoIds) } : {};
-    const subWhere = subprocesoIds ? { id: toInOrEq(subprocesoIds) } : {};
+      const macroWhere = ignoredFacet !== 'macro' && filters.macroIds
+        ? { id: toInOrEq(filters.macroIds) }
+        : {};
+      const procesoWhere = ignoredFacet !== 'proceso' && filters.procesoIds
+        ? { id: toInOrEq(filters.procesoIds) }
+        : {};
+      const subWhere = ignoredFacet !== 'subproceso' && filters.subprocesoIds
+        ? { id: toInOrEq(filters.subprocesoIds) }
+        : {};
 
-    const documentos = await Documento.findAll({
-      where: documentoWhere,
-      attributes: ['id'],
-      include: [
-        {
-          model: TipoDocumentacion,
-          as: 'tipoDocumentacion',
-          required: true,
-          attributes: ['id', 'nombre']
-        },
-        {
-          model: SubProceso,
-          as: 'subproceso',
-          required: true,
-          attributes: ['id', 'nombre', 'proceso_id'],
-          where: subWhere,
-          include: [
-            {
-              model: Proceso,
-              as: 'proceso',
-              required: true,
-              attributes: ['id', 'nombre', 'macro_proceso_id'],
-              where: procesoWhere,
-              include: [
-                {
-                  model: MacroProceso,
-                  as: 'macroProceso',
-                  required: true,
-                  attributes: ['id', 'nombre'],
-                  where: macroWhere
-                }
-              ]
-            }
-          ]
-        }
-      ]
-    });
+      return Documento.findAll({
+        where: documentoWhere,
+        attributes: ['id'],
+        include: [
+          {
+            model: TipoDocumentacion,
+            as: 'tipoDocumentacion',
+            required: true,
+            attributes: ['id', 'nombre']
+          },
+          {
+            model: SubProceso,
+            as: 'subproceso',
+            required: true,
+            attributes: ['id', 'nombre', 'proceso_id'],
+            where: subWhere,
+            include: [
+              {
+                model: Proceso,
+                as: 'proceso',
+                required: true,
+                attributes: ['id', 'nombre', 'macro_proceso_id'],
+                where: procesoWhere,
+                include: [
+                  {
+                    model: MacroProceso,
+                    as: 'macroProceso',
+                    required: true,
+                    attributes: ['id', 'nombre'],
+                    where: macroWhere
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      });
+    };
 
-    const macroMap = new Map();
-    const procesoMap = new Map();
-    const subMap = new Map();
-    const tipoMap = new Map();
+    const toPlain = (value) => (typeof value?.toJSON === 'function' ? value.toJSON() : value);
+    const sortByName = (a, b) => String(a.nombre || '').localeCompare(String(b.nombre || ''));
+    const collectFacet = (documents, facet) => {
+      const map = new Map();
+      documents.forEach((doc) => {
+        const macro = toPlain(doc?.subproceso?.proceso?.macroProceso);
+        const proceso = toPlain(doc?.subproceso?.proceso);
+        const subproceso = toPlain(doc?.subproceso);
+        const tipo = toPlain(doc?.tipoDocumentacion);
 
-    documentos.forEach((doc) => {
-      const macro = doc?.subproceso?.proceso?.macroProceso;
-      const proceso = doc?.subproceso?.proceso;
-      const sub = doc?.subproceso;
-      const tipo = doc?.tipoDocumentacion;
+        if (facet === 'macro' && macro?.id) map.set(String(macro.id), macro);
+        if (facet === 'proceso' && proceso?.id) map.set(String(proceso.id), proceso);
+        if (facet === 'subproceso' && subproceso?.id) map.set(String(subproceso.id), subproceso);
+        if (facet === 'tipo' && tipo?.id) map.set(String(tipo.id), tipo);
+      });
+      return Array.from(map.values()).sort(sortByName);
+    };
 
-      if (macro) macroMap.set(String(macro.id), macro);
-      if (proceso) procesoMap.set(String(proceso.id), proceso);
-      if (sub) subMap.set(String(sub.id), sub);
-      if (tipo) tipoMap.set(String(tipo.id), tipo);
-    });
-
-    const macroProcesos = Array.from(macroMap.values()).sort((a, b) => a.nombre.localeCompare(b.nombre));
-    const procesos = Array.from(procesoMap.values()).sort((a, b) => a.nombre.localeCompare(b.nombre));
-    const subprocesos = Array.from(subMap.values()).sort((a, b) => a.nombre.localeCompare(b.nombre));
-    const tipos = Array.from(tipoMap.values()).sort((a, b) => a.nombre.localeCompare(b.nombre));
+    const [macroDocs, procesoDocs, subprocesoDocs, tipoDocs] = await Promise.all([
+      fetchDocumentsForFacet('macro'),
+      fetchDocumentsForFacet('proceso'),
+      fetchDocumentsForFacet('subproceso'),
+      fetchDocumentsForFacet('tipo')
+    ]);
 
     res.json({
       success: true,
       data: {
-        macroProcesos,
-        procesos,
-        subprocesos,
-        tipos
+        macroProcesos: collectFacet(macroDocs, 'macro'),
+        procesos: collectFacet(procesoDocs, 'proceso'),
+        subprocesos: collectFacet(subprocesoDocs, 'subproceso'),
+        tipos: collectFacet(tipoDocs, 'tipo')
       }
     });
   } catch (error) {
+    console.error('Error al cargar opciones de filtros:', error);
     res.status(500).json({ success: false, message: 'Error' });
   }
 };
