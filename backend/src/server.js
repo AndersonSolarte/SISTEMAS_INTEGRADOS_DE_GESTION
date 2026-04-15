@@ -10,7 +10,6 @@ const fs = require('fs');
 const { testConnection } = require('./config/database');
 const {
   corsOptions,
-  apiLimiter,
   authLimiter,
   methodGuard,
   payloadShapeGuard,
@@ -38,7 +37,7 @@ if (String(process.env.PUBLIC_UPLOADS_ENABLED || '').toLowerCase() === 'true') {
   app.use('/uploads', express.static(path.join(__dirname, '../uploads'), uploadsStaticOptions));
 }
 app.use('/api/auth', authLimiter);
-app.use('/api', methodGuard, apiLimiter, noStore, payloadShapeGuard);
+app.use('/api', methodGuard, noStore, payloadShapeGuard);
 
 app.use('/api/auth', require('./routes/authRoutes'));
 app.use('/api/documentos', require('./routes/documentoRoutes'));
