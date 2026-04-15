@@ -72,6 +72,36 @@ const buildSearchWhere = (search = '') => {
   };
 };
 
+const toInOrEq = (ids) => (ids.length === 1 ? ids[0] : { [Op.in]: ids });
+
+const resolveSubprocesoIds = async ({ subIds, procIds, macroIds }) => {
+  if (!subIds && !procIds && !macroIds) return null;
+
+  const where = {};
+  const include = [];
+
+  if (subIds) where.id = toInOrEq(subIds);
+  if (procIds) where.proceso_id = toInOrEq(procIds);
+  if (macroIds) {
+    include.push({
+      model: Proceso,
+      as: 'proceso',
+      required: true,
+      attributes: [],
+      where: { macro_proceso_id: toInOrEq(macroIds) }
+    });
+  }
+
+  const rows = await SubProceso.findAll({
+    where,
+    include,
+    attributes: ['id'],
+    raw: true
+  });
+
+  return rows.map((row) => Number(row.id)).filter(Number.isFinite);
+};
+
 const getDocumentos = async (req, res) => {
   try {
     const {
@@ -120,15 +150,32 @@ const getDocumentos = async (req, res) => {
       const ids = String(val).split(',').map(Number).filter(Number.isFinite);
       return ids.length ? ids : null;
     };
-    const toInOrEq = (ids) => ids.length === 1 ? ids[0] : { [Op.in]: ids };
 
     const subIds   = parseIds(subproceso_id);
     const tipoIds  = parseIds(tipo_documentacion_id);
     const procIds  = parseIds(proceso_id);
     const macroIds = parseIds(macro_proceso_id);
 
-    if (subIds)  where.subproceso_id         = toInOrEq(subIds);
     if (tipoIds) where.tipo_documentacion_id = toInOrEq(tipoIds);
+
+    const resolvedSubprocesoIds = await resolveSubprocesoIds({ subIds, procIds, macroIds });
+    if (Array.isArray(resolvedSubprocesoIds)) {
+      if (resolvedSubprocesoIds.length === 0) {
+        return res.json({
+          success: true,
+          data: {
+            documentos: [],
+            pagination: {
+              total: 0,
+              page: parseInt(page),
+              limit: parseInt(limit),
+              totalPages: 0
+            }
+          }
+        });
+      }
+      where.subproceso_id = toInOrEq(resolvedSubprocesoIds);
+    }
 
     if (titulo) {
       const searchWhere = buildSearchWhere(titulo);
@@ -136,17 +183,6 @@ const getDocumentos = async (req, res) => {
     }
 
     where.estado = PUBLIC_DOCUMENT_STATE;
-
-    if (procIds && !subIds) {
-      include[0].where    = { proceso_id: toInOrEq(procIds) };
-      include[0].required = true;
-    }
-
-    if (macroIds && !procIds && !subIds) {
-      include[0].include[0].where    = { macro_proceso_id: toInOrEq(macroIds) };
-      include[0].include[0].required = true;
-      include[0].required            = true;
-    }
 
     const { count, rows } = await Documento.findAndCountAll({
       where,

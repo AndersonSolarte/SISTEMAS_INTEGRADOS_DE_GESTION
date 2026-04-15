@@ -2,6 +2,7 @@ import api from './api';
 
 const freshRequest = (params = {}) => ({
   params: { ...params, _ts: Date.now() },
+  timeout: 60000,
   headers: {
     'Cache-Control': 'no-cache',
     Pragma: 'no-cache',

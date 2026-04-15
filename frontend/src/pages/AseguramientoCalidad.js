@@ -453,25 +453,7 @@ function AseguramientoCalidad() {
     if (selTipos.length) params.tipo_documentacion_id = selTipos.join(',');
     if (filters.titulo) params.titulo = filters.titulo;
     if (filters.estado) params.estado = filters.estado;
-    loadCatalogos(params)
-      .then(() => {
-        return;
-      })
-      .then(res => {
-        if (!res) return;
-        const data = res?.data || {};
-        const tipos = data.tipos || [];
-        setMacroProcesos(data.macroProcesos || []);
-        setProcesos(data.procesos || []);
-        setSubprocesos(data.subprocesos || []);
-        setTiposDocumentacion(tipos);
-        // Deseleccionar tipos que ya no están disponibles
-        if (selTipos.length > 0) {
-          const validIds = new Set(tipos.map(t => String(t.id)));
-          setSelTipos(prev => prev.filter(id => validIds.has(String(id))));
-        }
-      })
-      .catch(() => {});
+    loadCatalogos(params).catch(() => {});
   }, [loadCatalogos, selMacros, selProcesos, selSubprocesos, selTipos, filters.titulo, filters.estado]);
 
   useEffect(() => {
@@ -566,7 +548,7 @@ function AseguramientoCalidad() {
     }, 450);
 
     return () => clearTimeout(debounceId);
-  }, [filters, rowsPerPage, enqueueSnackbar, documentos.length, totalDocumentos]);
+  }, [filters, rowsPerPage, enqueueSnackbar]);
 
   const handleChangePage = async (event, newPage) => {
     setPage(newPage);
@@ -691,7 +673,7 @@ function AseguramientoCalidad() {
   const handleSyncFromSheets = async (mode) => {
     setSyncingSheet(true);
     try {
-      const response = await api.post('/import/sheets', { mode });
+      const response = await api.post('/import/sheets', { mode }, { timeout: 300000 });
       await loadCatalogos();
       if (response.data?.success) {
         enqueueSnackbar(response.data.message || 'Sincronización completada', { variant: 'success' });
