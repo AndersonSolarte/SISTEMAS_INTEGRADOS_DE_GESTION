@@ -47,6 +47,16 @@ function DocFilterPanel({ label, options, value, onChange, disabled, placeholder
     return () => document.removeEventListener('mousedown', handler);
   }, [open]);
 
+  useEffect(() => {
+    if (!open) return;
+    const closeOnScroll = () => {
+      setOpen(false);
+      setSearch('');
+    };
+    window.addEventListener('scroll', closeOnScroll, true);
+    return () => window.removeEventListener('scroll', closeOnScroll, true);
+  }, [open]);
+
   const filtered = options.filter((o) =>
     o.nombre.toLowerCase().includes(search.toLowerCase())
   );
@@ -104,7 +114,7 @@ function DocFilterPanel({ label, options, value, onChange, disabled, placeholder
       {/* Dropdown */}
       {open && (
         <Box sx={{
-          position: 'absolute', top: 'calc(100% + 6px)', left: 0, zIndex: 1400,
+          mt: 0.75,
           width: '100%', minWidth: 240, bgcolor: '#fff', borderRadius: '12px',
           boxShadow: '0 12px 40px rgba(0,0,0,0.14)', border: '1px solid #e2e8f0', overflow: 'hidden'
         }}>

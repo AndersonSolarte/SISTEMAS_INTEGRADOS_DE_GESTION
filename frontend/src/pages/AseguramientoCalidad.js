@@ -1,5 +1,4 @@
 import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
-import ReactDOM from 'react-dom';
 import { Box, Paper, Typography, Grid, TextField, Button, Table, TableBody, TableCell, TableContainer, TableHead, TableRow, TablePagination, FormControl, Select, MenuItem, CircularProgress, Chip, IconButton, Tooltip, Fade, Slide, Stack, Divider, Dialog, DialogTitle, DialogContent, DialogActions, InputAdornment } from '@mui/material';
 import { Search as SearchIcon, Clear as ClearIcon, VisibilityOutlined as VisibilityOutlinedIcon, FileDownloadOutlined as FileDownloadOutlinedIcon, FilterList as FilterIcon, Description as DescriptionIcon, Article as ArticleIcon, AssignmentTurnedIn as AssignmentIcon, ListAlt as ListIcon, Policy as PolicyIcon, AccountTree as AccountTreeIcon, Upload as UploadIcon, GetApp as DownloadTemplateIcon, DeleteSweep as DeleteSweepIcon, Favorite as FavoriteIcon, FavoriteBorder as FavoriteBorderIcon } from '@mui/icons-material';import { useSnackbar } from 'notistack';
 import { useLocation } from 'react-router-dom';
@@ -220,14 +219,6 @@ function DocFilterPanel({ label, options, value, onChange, disabled, placeholder
   const [search, setSearch] = useState('');
   const triggerRef = useRef(null);
   const dropdownRef = useRef(null);
-  const [dropPos, setDropPos] = useState({ top: 0, left: 0, width: 0 });
-
-  // Calcular posición del dropdown al abrirse (position:fixed → coords de viewport, sin scrollY)
-  useEffect(() => {
-    if (!open || !triggerRef.current) return;
-    const rect = triggerRef.current.getBoundingClientRect();
-    setDropPos({ top: rect.bottom + 4, left: rect.left, width: rect.width });
-  }, [open]);
 
   // Cerrar al hacer click fuera
   useEffect(() => {
@@ -263,10 +254,10 @@ function DocFilterPanel({ label, options, value, onChange, disabled, placeholder
   const displayText = value.length === 0 ? 'TODOS' : `${value.length} SELECCIONADO${value.length > 1 ? 'S' : ''}`;
   const C = '#2563eb';
 
-  const dropdown = open ? ReactDOM.createPortal(
+  const dropdown = open ? (
     <div
       ref={dropdownRef}
-      style={{ position: 'fixed', top: dropPos.top, left: dropPos.left, width: Math.max(dropPos.width, 240), zIndex: 9999, background: '#fff', borderRadius: 10, boxShadow: '0 12px 36px rgba(0,0,0,0.18)', border: '1px solid #e2e8f0', overflow: 'hidden' }}
+      style={{ marginTop: 6, width: '100%', minWidth: 240, background: '#fff', borderRadius: 10, boxShadow: '0 12px 36px rgba(0,0,0,0.18)', border: '1px solid #e2e8f0', overflow: 'hidden' }}
     >
       <div style={{ padding: '8px', borderBottom: '1px solid #f1f5f9' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 6, background: '#f8fafc', borderRadius: 6, padding: '4px 8px', border: '1px solid #e2e8f0' }}>
@@ -298,8 +289,7 @@ function DocFilterPanel({ label, options, value, onChange, disabled, placeholder
       <div style={{ padding: '4px 12px', borderTop: '1px solid #f1f5f9', background: '#f8fafc' }}>
         <span style={{ fontSize: 10, color: '#94a3b8' }}>{value.length > 0 ? `${value.length} de ${options.length} seleccionados` : `${options.length} opciones`}</span>
       </div>
-    </div>,
-    document.body
+    </div>
   ) : null;
 
   return (
