@@ -201,6 +201,40 @@ function MapaProcesos() {
   const [loadingDocs,      setLoadingDocs]      = useState(false);
   const [documentos,       setDocumentos]       = useState([]);
 
+  const syncCatalogsFromPayload = useCallback((data = {}) => {
+    setMacroProcesos(data.macroProcesos || []);
+    setProcesos(data.procesos || []);
+    setSubprocesos(data.subprocesos || []);
+    setTipos(data.tipos || []);
+  }, []);
+
+  const syncCatalogsFromDocuments = useCallback((rows = []) => {
+    const maps = {
+      macros: new Map(),
+      procesos: new Map(),
+      subprocesos: new Map(),
+      tipos: new Map()
+    };
+
+    rows.forEach((doc) => {
+      const macro = doc?.subproceso?.proceso?.macroProceso;
+      const proceso = doc?.subproceso?.proceso;
+      const subproceso = doc?.subproceso;
+      const tipo = doc?.tipoDocumentacion;
+
+      if (macro?.id) maps.macros.set(String(macro.id), macro);
+      if (proceso?.id) maps.procesos.set(String(proceso.id), proceso);
+      if (subproceso?.id) maps.subprocesos.set(String(subproceso.id), subproceso);
+      if (tipo?.id) maps.tipos.set(String(tipo.id), tipo);
+    });
+
+    const byName = (a, b) => String(a.nombre || '').localeCompare(String(b.nombre || ''));
+    setMacroProcesos(Array.from(maps.macros.values()).sort(byName));
+    setProcesos(Array.from(maps.procesos.values()).sort(byName));
+    setSubprocesos(Array.from(maps.subprocesos.values()).sort(byName));
+    setTipos(Array.from(maps.tipos.values()).sort(byName));
+  }, []);
+
   // Construye params para el backend (solo envía si hay selección)
   const buildParams = useCallback((macros, procs, subs, tipos, text, est) => {
     const p = {};
@@ -217,71 +251,72 @@ function MapaProcesos() {
     setLoadingDocs(true);
     try {
       const response = await documentoService.getDocumentos(params, 1, 50);
-      setDocumentos(response?.data?.documentos || []);
+      const rows = response?.data?.documentos || [];
+      setDocumentos(rows);
+      return rows;
     } catch {
       enqueueSnackbar('No fue posible cargar los documentos', { variant: 'error' });
+      return [];
     } finally {
       setLoadingDocs(false);
     }
   }, [enqueueSnackbar]);
 
+  const loadFilterOptions = useCallback(async (params = {}, fallbackRows = []) => {
+    setLoadingCatalogs(true);
+    try {
+      const response = await catalogoService.getFilterOptions(params);
+      const data = response?.data || {};
+      const hasOptions = Boolean(
+        (data.macroProcesos || []).length ||
+        (data.procesos || []).length ||
+        (data.subprocesos || []).length ||
+        (data.tipos || []).length
+      );
+
+      if (hasOptions) syncCatalogsFromPayload(data);
+      else syncCatalogsFromDocuments(fallbackRows);
+    } catch {
+      syncCatalogsFromDocuments(fallbackRows);
+      enqueueSnackbar('No fue posible cargar catálogos', { variant: 'warning' });
+    } finally {
+      setLoadingCatalogs(false);
+    }
+  }, [enqueueSnackbar, syncCatalogsFromDocuments, syncCatalogsFromPayload]);
+
   // Carga inicial: macroprocesos + tipos
   useEffect(() => {
     const loadInitial = async () => {
-      setLoadingCatalogs(true);
-      try {
-        const [macroRes, tiposRes] = await Promise.all([
-          catalogoService.getMacroProcesos(),
-          catalogoService.getTiposDocumentacion()
-        ]);
-        setMacroProcesos(macroRes?.data?.macroProcesos || []);
-        setTipos(tiposRes?.data?.tipos || []);
-      } catch {
-        enqueueSnackbar('No fue posible cargar catálogos', { variant: 'error' });
-      } finally {
-        setLoadingCatalogs(false);
-      }
+      const rows = await loadDocumentos({});
+      await loadFilterOptions({}, rows);
     };
     loadInitial();
-    loadDocumentos({});
-  }, [enqueueSnackbar, loadDocumentos]);
+  }, [loadDocumentos, loadFilterOptions]);
 
   // Cascada: macros → procesos
   useEffect(() => {
     if (!selectedMacros.length) {
-      setProcesos([]);
-      setSelectedProcesos([]);
-      setSubprocesos([]);
-      setSelectedSubprocesos([]);
       return;
     }
-    setLoadingProcesos(true);
-    catalogoService
-      .getProcesos(selectedMacros.join(','))
-      .then((r) => setProcesos(r?.data?.procesos || []))
-      .catch(() => enqueueSnackbar('No fue posible cargar procesos', { variant: 'warning' }))
-      .finally(() => setLoadingProcesos(false));
     // Resetear selección dependiente
-    setSelectedProcesos([]);
-    setSubprocesos([]);
-    setSelectedSubprocesos([]);
-  }, [selectedMacros, enqueueSnackbar]);
+    const params = buildParams(selectedMacros, selectedProcesos, selectedSubprocesos, selectedTipos, searchText, estado);
+    loadFilterOptions(params, documentos);
+  }, [buildParams, documentos, estado, loadFilterOptions, searchText, selectedMacros, selectedProcesos, selectedSubprocesos, selectedTipos]);
 
   // Cascada: procesos → subprocesos
   useEffect(() => {
     if (!selectedProcesos.length) {
-      setSubprocesos([]);
-      setSelectedSubprocesos([]);
       return;
     }
-    setLoadingSubproces(true);
-    catalogoService
-      .getSubProcesos(selectedProcesos.join(','))
-      .then((r) => setSubprocesos(r?.data?.subprocesos || []))
-      .catch(() => enqueueSnackbar('No fue posible cargar subprocesos', { variant: 'warning' }))
-      .finally(() => setLoadingSubproces(false));
-    setSelectedSubprocesos([]);
-  }, [selectedProcesos, enqueueSnackbar]);
+    const params = buildParams(selectedMacros, selectedProcesos, selectedSubprocesos, selectedTipos, searchText, estado);
+    loadFilterOptions(params, documentos);
+  }, [buildParams, documentos, estado, loadFilterOptions, searchText, selectedMacros, selectedProcesos, selectedSubprocesos, selectedTipos]);
+
+  useEffect(() => {
+    const params = buildParams(selectedMacros, selectedProcesos, selectedSubprocesos, selectedTipos, searchText, estado);
+    const timer = setTimeout(() => loadFilterOptions(params, documentos), 250);
+    return () => clearTimeout(timer);
+  }, [buildParams, documentos, estado, loadFilterOptions, searchText, selectedMacros, selectedProcesos, selectedSubprocesos, selectedTipos]);
 
   const handleSearch = () => {
     const params = buildParams(selectedMacros, selectedProcesos, selectedSubprocesos, selectedTipos, searchText, estado);
@@ -366,7 +401,7 @@ function MapaProcesos() {
                 options={procesos}
                 value={selectedProcesos}
                 onChange={setSelectedProcesos}
-                disabled={loadingCatalogs || loadingProcesos || !selectedMacros.length}
+                disabled={loadingCatalogs || loadingProcesos}
                 placeholder="Buscar proceso..."
               />
             </Grid>
@@ -377,7 +412,7 @@ function MapaProcesos() {
                 options={subprocesos}
                 value={selectedSubprocesos}
                 onChange={setSelectedSubprocesos}
-                disabled={loadingCatalogs || loadingSubproces || !selectedProcesos.length}
+                disabled={loadingCatalogs || loadingSubproces}
                 placeholder="Buscar subproceso..."
               />
             </Grid>
