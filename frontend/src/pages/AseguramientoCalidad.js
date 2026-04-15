@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useRef } from 'react';
+import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import ReactDOM from 'react-dom';
 import { Box, Paper, Typography, Grid, TextField, Button, Table, TableBody, TableCell, TableContainer, TableHead, TableRow, TablePagination, FormControl, Select, MenuItem, CircularProgress, Chip, IconButton, Tooltip, Fade, Slide, Stack, Divider, Dialog, DialogTitle, DialogContent, DialogActions, InputAdornment } from '@mui/material';
 import { Search as SearchIcon, Clear as ClearIcon, VisibilityOutlined as VisibilityOutlinedIcon, FileDownloadOutlined as FileDownloadOutlinedIcon, FilterList as FilterIcon, Description as DescriptionIcon, Article as ArticleIcon, AssignmentTurnedIn as AssignmentIcon, ListAlt as ListIcon, Policy as PolicyIcon, AccountTree as AccountTreeIcon, Upload as UploadIcon, GetApp as DownloadTemplateIcon, DeleteSweep as DeleteSweepIcon, Favorite as FavoriteIcon, FavoriteBorder as FavoriteBorderIcon } from '@mui/icons-material';import { useSnackbar } from 'notistack';
@@ -240,6 +240,21 @@ function DocFilterPanel({ label, options, value, onChange, disabled, placeholder
     return () => document.removeEventListener('mousedown', h);
   }, [open]);
 
+  useEffect(() => {
+    if (!open) return;
+    const closeOnPageMove = (e) => {
+      if (dropdownRef.current?.contains(e.target)) return;
+      setOpen(false);
+      setSearch('');
+    };
+    window.addEventListener('scroll', closeOnPageMove, true);
+    window.addEventListener('resize', closeOnPageMove);
+    return () => {
+      window.removeEventListener('scroll', closeOnPageMove, true);
+      window.removeEventListener('resize', closeOnPageMove);
+    };
+  }, [open]);
+
   const filtered = options.filter((o) => o.nombre.toLowerCase().includes(search.toLowerCase()));
   const allSelected = value.length === 0;
   const isSel = (id) => value.includes(id);
@@ -364,19 +379,37 @@ function AseguramientoCalidad() {
   const [loadingFavorites, setLoadingFavorites] = useState(false);
   const [syncingSheet, setSyncingSheet] = useState(false);
 
-  useEffect(() => {
-    Promise.all([
-      catalogoService.getMacroProcesos(),
-      catalogoService.getProcesos(),
-      catalogoService.getSubProcesos(),
-      catalogoService.getTiposDocumentacion()
-    ]).then(([macroRes, procesoRes, subRes, tiposRes]) => {
-      setMacroProcesos(macroRes?.data?.macroProcesos || []);
-      setProcesos(procesoRes?.data?.procesos || []);
-      setSubprocesos(subRes?.data?.subprocesos || []);
-      setTiposDocumentacion(tiposRes?.data?.tipos || []);
-    });
+  const loadCatalogos = useCallback(async (activeFilters = {}) => {
+    const response = await catalogoService.getFilterOptions(activeFilters);
+    const data = response?.data || {};
+
+    setMacroProcesos(data.macroProcesos || []);
+    setProcesos(data.procesos || []);
+    setSubprocesos(data.subprocesos || []);
+    setTiposDocumentacion(data.tipos || []);
   }, []);
+
+  useEffect(() => {
+    loadCatalogos().catch(() => {
+      enqueueSnackbar('No fue posible cargar los filtros actualizados', { variant: 'warning' });
+    });
+  }, [loadCatalogos, enqueueSnackbar]);
+
+  useEffect(() => {
+    setSelMacros((prev) => prev.filter((id) => macroProcesos.some((item) => String(item.id) === String(id))));
+  }, [macroProcesos]);
+
+  useEffect(() => {
+    setSelProcesos((prev) => prev.filter((id) => procesos.some((item) => String(item.id) === String(id))));
+  }, [procesos]);
+
+  useEffect(() => {
+    setSelSubprocesos((prev) => prev.filter((id) => subprocesos.some((item) => String(item.id) === String(id))));
+  }, [subprocesos]);
+
+  useEffect(() => {
+    setSelTipos((prev) => prev.filter((id) => tiposDocumentacion.some((item) => String(item.id) === String(id))));
+  }, [tiposDocumentacion]);
 
   // Recargar tipos dinámicamente según los filtros superiores seleccionados
   useEffect(() => {
@@ -384,18 +417,25 @@ function AseguramientoCalidad() {
     if (selMacros.length)     params.macro_proceso_id = selMacros.join(',');
     if (selProcesos.length)   params.proceso_id       = selProcesos.join(',');
     if (selSubprocesos.length) params.subproceso_id   = selSubprocesos.join(',');
-    catalogoService.getTiposDocumentacion(params)
+    if (selTipos.length) params.tipo_documentacion_id = selTipos.join(',');
+    if (filters.titulo) params.titulo = filters.titulo;
+    if (filters.estado) params.estado = filters.estado;
+    catalogoService.getFilterOptions(params)
       .then(res => {
-        const tipos = res?.data?.tipos || [];
+        const data = res?.data || {};
+        const tipos = data.tipos || [];
+        setMacroProcesos(data.macroProcesos || []);
+        setProcesos(data.procesos || []);
+        setSubprocesos(data.subprocesos || []);
         setTiposDocumentacion(tipos);
         // Deseleccionar tipos que ya no están disponibles
         if (selTipos.length > 0) {
-          const validIds = tipos.map(t => t.id);
-          setSelTipos(prev => prev.filter(id => validIds.includes(id)));
+          const validIds = new Set(tipos.map(t => String(t.id)));
+          setSelTipos(prev => prev.filter(id => validIds.has(String(id))));
         }
       })
       .catch(() => {});
-  }, [selMacros, selProcesos, selSubprocesos]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [selMacros, selProcesos, selSubprocesos, selTipos, filters.titulo, filters.estado]);
 
   useEffect(() => {
     if (!user?.id) return;
@@ -590,6 +630,7 @@ function AseguramientoCalidad() {
       if (response.data.success) {
         enqueueSnackbar(response.data.message, { variant: 'success' });
         setSelectedFile(null);
+        await loadCatalogos();
         handleSearch();
       }
     } catch (error) {
@@ -614,6 +655,7 @@ function AseguramientoCalidad() {
     setSyncingSheet(true);
     try {
       const response = await api.post('/import/sheets', { mode });
+      await loadCatalogos();
       if (response.data?.success) {
         enqueueSnackbar(response.data.message || 'Sincronización completada', { variant: 'success' });
         handleSearch();
@@ -678,6 +720,7 @@ function AseguramientoCalidad() {
 
       enqueueSnackbar(response.data?.message || 'Base de datos limpiada correctamente', { variant: 'success' });
       resetClearDialog();
+      await loadCatalogos();
       handleSearch();
     } catch (error) {
       const backendMessage = error?.response?.data?.message;
@@ -701,14 +744,15 @@ function AseguramientoCalidad() {
 
   const shouldRestrictTipo = documentos.length > 0;
 
+  const hasSelectedId = (ids, id) => ids.some((value) => String(value) === String(id));
   const macroOptions = macroProcesos;
   const procesoOptions = selMacros.length > 0
-    ? procesos.filter(p => selMacros.includes(p.macro_proceso_id))
+    ? procesos.filter(p => hasSelectedId(selMacros, p.macro_proceso_id))
     : procesos;
   const subprocesoOptions = selProcesos.length > 0
-    ? subprocesos.filter(sp => selProcesos.includes(sp.proceso_id))
+    ? subprocesos.filter(sp => hasSelectedId(selProcesos, sp.proceso_id))
     : selMacros.length > 0
-      ? subprocesos.filter(sp => procesoOptions.some(p => p.id === sp.proceso_id))
+      ? subprocesos.filter(sp => procesoOptions.some(p => String(p.id) === String(sp.proceso_id)))
       : subprocesos;
   const tipoOptions = tiposDocumentacionDisplay;
   const isFiltering = loading || autoSearching;
@@ -716,12 +760,7 @@ function AseguramientoCalidad() {
   useEffect(() => {
     if (!shouldRestrictTipo || documentos.length === 0) return;
 
-    setFilters((prev) => {
-      if (prev.tipo_documentacion_id && !availableTipoIds.has(String(prev.tipo_documentacion_id))) {
-        return { ...prev, tipo_documentacion_id: '' };
-      }
-      return prev;
-    });
+    setSelTipos((prev) => prev.filter((id) => availableTipoIds.has(String(id))));
   }, [availableTipoIds, documentos.length, shouldRestrictTipo]);
 
   return (

@@ -1,6 +1,16 @@
 const { MacroProceso, Proceso, SubProceso, TipoDocumentacion, Documento } = require('../models');
 const { Op, literal } = require('sequelize');
 
+const parseIdList = (value) => {
+  const ids = String(value || '')
+    .split(',')
+    .map((item) => Number(item))
+    .filter(Number.isFinite);
+  return ids.length ? ids : null;
+};
+
+const toInOrEq = (ids) => (ids.length === 1 ? ids[0] : { [Op.in]: ids });
+
 const buildSearchWhere = (search = '') => {
   const terms = String(search).trim().split(/\s+/).filter(Boolean);
   if (!terms.length) return null;
@@ -114,18 +124,23 @@ const getTiposDocumentacion = async (req, res) => {
 
 const getFilterOptions = async (req, res) => {
   try {
-    const { macro_proceso_id, proceso_id, subproceso_id, tipo_documentacion_id, titulo } = req.query;
+    const { macro_proceso_id, proceso_id, subproceso_id, tipo_documentacion_id, titulo, estado } = req.query;
+    const macroIds = parseIdList(macro_proceso_id);
+    const procesoIds = parseIdList(proceso_id);
+    const subprocesoIds = parseIdList(subproceso_id);
+    const tipoIds = parseIdList(tipo_documentacion_id);
 
     const documentoWhere = {};
-    if (tipo_documentacion_id) documentoWhere.tipo_documentacion_id = tipo_documentacion_id;
+    if (tipoIds) documentoWhere.tipo_documentacion_id = toInOrEq(tipoIds);
+    if (estado) documentoWhere.estado = estado;
     if (titulo) {
       const searchWhere = buildSearchWhere(titulo);
       if (searchWhere) Object.assign(documentoWhere, searchWhere);
     }
 
-    const macroWhere = macro_proceso_id ? { id: macro_proceso_id } : {};
-    const procesoWhere = proceso_id ? { id: proceso_id } : {};
-    const subWhere = subproceso_id ? { id: subproceso_id } : {};
+    const macroWhere = macroIds ? { id: toInOrEq(macroIds) } : {};
+    const procesoWhere = procesoIds ? { id: toInOrEq(procesoIds) } : {};
+    const subWhere = subprocesoIds ? { id: toInOrEq(subprocesoIds) } : {};
 
     const documentos = await Documento.findAll({
       where: documentoWhere,
