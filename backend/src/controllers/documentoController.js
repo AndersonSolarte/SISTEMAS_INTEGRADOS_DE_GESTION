@@ -11,7 +11,9 @@ const {
 const { encryptPayload, decryptPayload } = require('../utils/secureUrlToken');
 
 const LOCAL_UPLOAD_PREFIX = '/uploads/';
-const PUBLIC_DOCUMENT_STATE = 'vigente';
+const PUBLIC_DOCUMENT_STATE_VALUES = ['vigente', 'activo', 'activos'];
+const publicDocumentStateLiteral = (alias = 'documentos') =>
+  literal(`LOWER(CAST("${alias}"."estado" AS TEXT)) IN (${PUBLIC_DOCUMENT_STATE_VALUES.map((value) => `'${value}'`).join(',')})`);
 
 const isLocalUploadLink = (value = '') => String(value || '').trim().startsWith(LOCAL_UPLOAD_PREFIX);
 
@@ -135,7 +137,10 @@ const getDocumentos = async (req, res) => {
       if (searchWhere) Object.assign(where, searchWhere);
     }
 
-    where.estado = PUBLIC_DOCUMENT_STATE;
+    where[Op.and] = [
+      ...(Array.isArray(where[Op.and]) ? where[Op.and] : where[Op.and] ? [where[Op.and]] : []),
+      publicDocumentStateLiteral('documentos')
+    ];
 
     if (procIds && !subIds) {
       include[0].where    = { proceso_id: toInOrEq(procIds) };
