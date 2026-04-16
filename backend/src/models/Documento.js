@@ -14,7 +14,8 @@ const Documento = sequelize.define('documentos', {
   fecha_aprobacion: DataTypes.DATEONLY,
   autor: DataTypes.STRING(200),
   estado: { type: DataTypes.ENUM('vigente', 'obsoleto', 'en_revision'), allowNull: false, defaultValue: 'vigente' },
-  link_acceso: DataTypes.TEXT
+  link_acceso: DataTypes.TEXT,
+  observaciones: DataTypes.TEXT
 }, {
   timestamps: true,
   createdAt: 'created_at',

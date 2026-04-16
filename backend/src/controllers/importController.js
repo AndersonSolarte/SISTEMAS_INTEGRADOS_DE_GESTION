@@ -144,7 +144,8 @@ const documentNeedsUpdate = (documento, nextData) => {
     'fecha_aprobacion',
     'autor',
     'estado',
-    'link_acceso'
+    'link_acceso',
+    'observaciones'
   ];
 
   return fields.some((field) => String(documento.get(field) ?? '') !== String(nextData[field] ?? ''));
@@ -508,7 +509,8 @@ const importFromExcel = async (req, res) => {
           fecha_aprobacion: excelDateToISO(row.fecha_aprobacion),
           autor: toText(row.autor, 200),
           estado: normalizeEstado(row.estado),
-          link_acceso: toText(row.link_acceso)
+          link_acceso: toText(row.link_acceso),
+          observaciones: toText(row.observaciones)
         };
 
         // Verificar si ya existe
@@ -792,7 +794,8 @@ const importFromSheet = async (req, res) => {
           fecha_aprobacion: excelDateToISO(row.fecha_aprobacion),
           autor: toText(row.autor, 200),
           estado: normalizeEstado(row.estado),
-          link_acceso: toText(row.link_acceso)
+          link_acceso: toText(row.link_acceso),
+          observaciones: toText(row.observaciones)
         };
 
         const existente = await Documento.findOne({
@@ -899,7 +902,6 @@ const importFromSheetFixed = async (req, res) => {
       omitidos: 0,
       errores: []
     };
-    const activeCodes = collectActiveCodes(data);
 
     const existingDocumentsByCode = mode === 'incremental'
       ? new Map(
@@ -916,58 +918,57 @@ const importFromSheetFixed = async (req, res) => {
       try {
         const { tipoDocumentacion, codigo, titulo } = normalizeMappedFields(row);
 
-        if (codigo && !isActiveSheetEstado(row.estado)) {
-          if (activeCodes.has(codigo)) {
-            results.omitidos++;
-            continue;
-          }
-        }
-
-        if (!row.macro_proceso || !row.proceso || !row.subproceso || !tipoDocumentacion || !codigo || !titulo) {
-          results.errores.push({
-            fila: rowNumber,
-            error: 'Faltan campos requeridos (macro_proceso, proceso, subproceso, tipo_documentacion, codigo, titulo)'
-          });
+        // Saltar solo filas completamente vacías (sin codigo ni titulo)
+        if (!codigo && !titulo) {
+          results.omitidos++;
           continue;
         }
 
+        // Usar valores por defecto para campos de jerarquía vacíos
+        const macroNombre = toText(row.macro_proceso, 255) || 'SIN DEFINIR';
+        const procesoNombre = toText(row.proceso, 255) || 'SIN DEFINIR';
+        const subprocesoNombre = toText(row.subproceso, 255) || 'SIN DEFINIR';
+        const tipoNombre = tipoDocumentacion || 'SIN TIPO';
+        const codigoFinal = codigo || `SIN-CODIGO-${rowNumber}`;
+        const tituloFinal = titulo || codigoFinal;
+
         const [macroProceso] = await MacroProceso.findOrCreate({
-          where: { nombre: toText(row.macro_proceso, 255) },
-          defaults: { nombre: toText(row.macro_proceso, 255) }
+          where: { nombre: macroNombre },
+          defaults: { nombre: macroNombre }
         });
 
         const [proceso] = await Proceso.findOrCreate({
           where: {
-            nombre: toText(row.proceso, 255),
+            nombre: procesoNombre,
             macro_proceso_id: macroProceso.id
           },
           defaults: {
-            nombre: toText(row.proceso, 255),
+            nombre: procesoNombre,
             macro_proceso_id: macroProceso.id
           }
         });
 
         const [subproceso] = await SubProceso.findOrCreate({
           where: {
-            nombre: toText(row.subproceso, 255),
+            nombre: subprocesoNombre,
             proceso_id: proceso.id
           },
           defaults: {
-            nombre: toText(row.subproceso, 255),
+            nombre: subprocesoNombre,
             proceso_id: proceso.id
           }
         });
 
         const [tipoDoc] = await TipoDocumentacion.findOrCreate({
-          where: { nombre: tipoDocumentacion },
-          defaults: { nombre: tipoDocumentacion }
+          where: { nombre: tipoNombre },
+          defaults: { nombre: tipoNombre }
         });
 
         const documentoData = {
           subproceso_id: subproceso.id,
           tipo_documentacion_id: tipoDoc.id,
-          codigo,
-          titulo,
+          codigo: codigoFinal,
+          titulo: tituloFinal,
           version: toText(row.version, 20),
           fecha_creacion: excelDateToISO(row.fecha_creacion),
           revisa: toText(row.revisa, 200),
@@ -975,7 +976,8 @@ const importFromSheetFixed = async (req, res) => {
           fecha_aprobacion: excelDateToISO(row.fecha_aprobacion),
           autor: toText(row.autor, 200),
           estado: normalizeEstado(row.estado),
-          link_acceso: toText(row.link_acceso)
+          link_acceso: toText(row.link_acceso),
+          observaciones: toText(row.observaciones)
         };
 
         const existente = existingDocumentsByCode.get(documentoData.codigo);
