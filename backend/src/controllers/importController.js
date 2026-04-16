@@ -184,6 +184,19 @@ const buildSyncMessage = ({ mode, results }) => {
   return `Servidor actualizado desde Sheets sin eliminar registros: ${results.importados} nuevos, ${results.actualizados} actualizados, ${results.omitidos} sin cambios, ${results.errores.length} con error de ${results.total} registros`;
 };
 
+const ensureDocumentImportColumns = async () => {
+  await sequelize.query(`
+    ALTER TABLE documentos ADD COLUMN IF NOT EXISTS macroproceso VARCHAR(255);
+    ALTER TABLE documentos ADD COLUMN IF NOT EXISTS proceso VARCHAR(255);
+    ALTER TABLE documentos ADD COLUMN IF NOT EXISTS subproceso VARCHAR(255);
+    ALTER TABLE documentos ADD COLUMN IF NOT EXISTS tipo_documento VARCHAR(200);
+    ALTER TABLE documentos ADD COLUMN IF NOT EXISTS observaciones TEXT;
+    ALTER TABLE documentos ADD COLUMN IF NOT EXISTS orden_origen INTEGER;
+    ALTER TABLE documentos ADD COLUMN IF NOT EXISTS fila_origen INTEGER;
+    ALTER TABLE documentos ADD COLUMN IF NOT EXISTS datos_originales JSONB;
+  `);
+};
+
 const extractSpreadsheetId = (value) => {
   const raw = String(value || '').trim();
   if (!raw) return '';
@@ -432,6 +445,8 @@ const importFromExcel = async (req, res) => {
       });
     }
 
+    await ensureDocumentImportColumns();
+
     console.log('📁 Procesando archivo:', req.file.originalname);
 
     const workbook = XLSX.readFile(req.file.path);
@@ -640,6 +655,8 @@ const importFromSheet = async (req, res) => {
         message: 'Modo inválido. Usa "reemplazar" o "incremental".'
       });
     }
+
+    await ensureDocumentImportColumns();
 
     const rawSheetRef = req.body.sheetId || req.body.sheetUrl || process.env.GOOGLE_SHEETS_ID;
     const sheetId = extractSpreadsheetId(rawSheetRef);
@@ -912,6 +929,8 @@ const importFromSheetFixed = async (req, res) => {
         message: 'Modo invalido. Usa "reemplazar" o "incremental".'
       });
     }
+
+    await ensureDocumentImportColumns();
 
     const rawSheetRef = req.body.sheetId || req.body.sheetUrl || process.env.GOOGLE_SHEETS_ID;
     const sheetId = extractSpreadsheetId(rawSheetRef);
