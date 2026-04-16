@@ -160,9 +160,9 @@ const getFilterOptions = async (req, res) => {
       estadoWhere: documentStateWhere(req.query, req.user)
     };
 
-    const fetchDocumentsForFacet = async (ignoredFacet) => {
+    const fetchDocumentsForFacet = async () => {
       const documentoWhere = { ...filters.estadoWhere };
-      if (ignoredFacet !== 'tipo' && filters.tipoIds) {
+      if (filters.tipoIds) {
         documentoWhere.tipo_documentacion_id = toInOrEq(filters.tipoIds);
       }
       if (filters.titulo) {
@@ -170,13 +170,13 @@ const getFilterOptions = async (req, res) => {
         if (searchWhere) Object.assign(documentoWhere, searchWhere);
       }
 
-      const macroWhere = ignoredFacet !== 'macro' && filters.macroIds
+      const macroWhere = filters.macroIds
         ? { id: toInOrEq(filters.macroIds) }
         : {};
-      const procesoWhere = ignoredFacet !== 'proceso' && filters.procesoIds
+      const procesoWhere = filters.procesoIds
         ? { id: toInOrEq(filters.procesoIds) }
         : {};
-      const subWhere = ignoredFacet !== 'subproceso' && filters.subprocesoIds
+      const subWhere = filters.subprocesoIds
         ? { id: toInOrEq(filters.subprocesoIds) }
         : {};
 
@@ -242,20 +242,15 @@ const getFilterOptions = async (req, res) => {
       return Array.from(map.values()).sort(sortByName);
     };
 
-    const [macroDocs, procesoDocs, subprocesoDocs, tipoDocs] = await Promise.all([
-      fetchDocumentsForFacet('macro'),
-      fetchDocumentsForFacet('proceso'),
-      fetchDocumentsForFacet('subproceso'),
-      fetchDocumentsForFacet('tipo')
-    ]);
+    const filteredDocs = await fetchDocumentsForFacet();
 
     res.json({
       success: true,
       data: {
-        macroProcesos: collectFacet(macroDocs, 'macro'),
-        procesos: collectFacet(procesoDocs, 'proceso'),
-        subprocesos: collectFacet(subprocesoDocs, 'subproceso'),
-        tipos: collectFacet(tipoDocs, 'tipo')
+        macroProcesos: collectFacet(filteredDocs, 'macro'),
+        procesos: collectFacet(filteredDocs, 'proceso'),
+        subprocesos: collectFacet(filteredDocs, 'subproceso'),
+        tipos: collectFacet(filteredDocs, 'tipo')
       }
     });
   } catch (error) {

@@ -448,12 +448,6 @@ const importFromExcel = async (req, res) => {
 
         if (codigo && !isActiveSheetEstado(row.estado)) {
           if (activeCodes.has(codigo)) continue;
-          const existente = await Documento.findOne({ where: { codigo } });
-          if (existente && existente.estado !== 'obsoleto') {
-            await existente.update({ estado: 'obsoleto' });
-            results.actualizados++;
-          }
-          continue;
         }
 
         // Validar campos requeridos
@@ -744,12 +738,6 @@ const importFromSheet = async (req, res) => {
 
         if (codigo && !isActiveSheetEstado(row.estado)) {
           if (activeCodes.has(codigo)) continue;
-          const existente = await Documento.findOne({ where: { codigo } });
-          if (existente && existente.estado !== 'obsoleto') {
-            await existente.update({ estado: 'obsoleto' });
-            results.actualizados++;
-          }
-          continue;
         }
 
         if (!row.macro_proceso || !row.proceso || !row.subproceso || !tipoDocumentacion || !codigo || !titulo) {
@@ -933,14 +921,6 @@ const importFromSheetFixed = async (req, res) => {
             results.omitidos++;
             continue;
           }
-          const existente = existingDocumentsByCode.get(codigo);
-          if (existente && existente.estado !== 'obsoleto') {
-            await existente.update({ estado: 'obsoleto' });
-            results.actualizados++;
-          } else {
-            results.omitidos++;
-          }
-          continue;
         }
 
         if (!row.macro_proceso || !row.proceso || !row.subproceso || !tipoDocumentacion || !codigo || !titulo) {

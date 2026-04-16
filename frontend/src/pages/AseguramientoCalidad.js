@@ -238,6 +238,11 @@ const mergeSelectedOptions = (available = [], base = [], selectedIds = []) => {
   return Array.from(map.values()).sort(byName);
 };
 
+const withoutFilterKey = (filters = {}, keyToRemove) =>
+  Object.fromEntries(
+    Object.entries(filters).filter(([, value]) => String(value || '').trim() !== '').filter(([key]) => key !== keyToRemove)
+  );
+
 function DocFilterPanel({ label, options, value, onChange, disabled, placeholder }) {
   const [open, setOpen] = useState(false);
   const [search, setSearch] = useState('');
@@ -469,18 +474,20 @@ function AseguramientoCalidad() {
     }
 
     try {
-      const response = await catalogoService.getFilterOptions(activeFilters);
-      const data = response?.data || {};
-      if ((data.macroProcesos||[]).length || (data.procesos||[]).length ||
-          (data.subprocesos||[]).length   || (data.tipos||[]).length) {
-        setFilterOptions({
-          macroProcesos: data.macroProcesos || [],
-          procesos: data.procesos || [],
-          subprocesos: data.subprocesos || [],
-          tipos: data.tipos || []
-        });
-        return;
-      }
+      const [macroRes, procesoRes, subprocesoRes, tipoRes] = await Promise.all([
+        catalogoService.getFilterOptions(withoutFilterKey(activeFilters, 'macro_proceso_id')),
+        catalogoService.getFilterOptions(withoutFilterKey(activeFilters, 'proceso_id')),
+        catalogoService.getFilterOptions(withoutFilterKey(activeFilters, 'subproceso_id')),
+        catalogoService.getFilterOptions(withoutFilterKey(activeFilters, 'tipo_documentacion_id'))
+      ]);
+
+      setFilterOptions({
+        macroProcesos: macroRes?.data?.macroProcesos || [],
+        procesos: procesoRes?.data?.procesos || [],
+        subprocesos: subprocesoRes?.data?.subprocesos || [],
+        tipos: tipoRes?.data?.tipos || []
+      });
+      return;
     } catch (_e) {}
 
     setFilterOptions(emptyFilterOptions);
