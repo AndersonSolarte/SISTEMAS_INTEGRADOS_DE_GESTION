@@ -138,9 +138,9 @@ const renderAggregateLineLabelFactory = ({ color = '#334155', evenDy = -14, oddD
   );
 };
 
-/* Colores institucionales */
-const INST_BLUE       = '#1e3a8a';
-const INST_BLUE_MED   = '#1d4ed8';
+/* Colores institucionales — azul medio, no tan intenso */
+const INST_BLUE       = '#2563eb';
+const INST_BLUE_MED   = '#3b82f6';
 const INST_BLUE_LIGHT = '#eff6ff';
 const INST_BLUE_PALE  = '#dbeafe';
 
@@ -393,6 +393,31 @@ function SaberProAgregadosDashboard({ initialSection, allowedSections = [] } = {
       max: Math.min(300, Math.ceil((maxVal + pad) / 5) * 5)
     };
   }, [comparativeTrendData]);
+
+  /* Serie fija del PUNTAJE GENERAL (PROMEDIO) — siempre muestra el total, no cambia con clicks */
+  const comparativeTotalSeries = useMemo(
+    () => (comparativeData.totalRow?.series || []).map((s) => ({
+      anio: s.anio,
+      programa: s.programa,
+      grupo: s.grupo
+    })),
+    [comparativeData]
+  );
+
+  const comparativeTotalYBounds = useMemo(() => {
+    const vals = comparativeTotalSeries
+      .flatMap((r) => [Number(r.programa), Number(r.grupo)])
+      .filter((v) => Number.isFinite(v));
+    if (!vals.length) return { min: 0, max: 300 };
+    const minVal = Math.min(...vals);
+    const maxVal = Math.max(...vals);
+    const span = Math.max(maxVal - minVal, 1);
+    const pad = Math.max(span * 0.5, 2);
+    return {
+      min: Math.max(0, Math.floor((minVal - pad) / 5) * 5),
+      max: Math.min(300, Math.ceil((maxVal + pad) / 5) * 5)
+    };
+  }, [comparativeTotalSeries]);
 
   const barDataMax = useMemo(
     () => Math.max(...competenciaBarData.map((r) => Number(r.promedio) || 0), 0),
@@ -885,7 +910,9 @@ function SaberProAgregadosDashboard({ initialSection, allowedSections = [] } = {
           </Paper>
 
           {/* ══════════════════════════════════════════
-              SECCIÓN 3 — Comparativo
+              SECCIÓN 3 — PUNTAJE GENERAL (PROMEDIO)
+              Gráfica fija del promedio general —
+              siempre muestra el total, no cambia con clicks
           ══════════════════════════════════════════ */}
           <Paper
             elevation={0}
@@ -896,7 +923,65 @@ function SaberProAgregadosDashboard({ initialSection, allowedSections = [] } = {
               border: '1px solid #e2e8f0'
             }}
           >
-            {/* Header institucional */}
+            <Box sx={sectionHeaderSx}>
+              <Typography sx={{ fontWeight: 900, color: '#ffffff', fontSize: 16 }}>
+                PUNTAJE GENERAL (PROMEDIO)
+              </Typography>
+              <Typography variant="caption" sx={{ color: '#bfdbfe' }}>
+                Comparativo de líneas entre Programa y Grupo de Referencia
+              </Typography>
+            </Box>
+            <Box sx={{ px: 3, pt: 2.5, pb: 3 }}>
+              <Box sx={{ height: 340 }}>
+                <ResponsiveContainer width="100%" height="100%">
+                  <LineChart data={comparativeTotalSeries} margin={{ top: 30, right: 44, left: 14, bottom: 10 }}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+                    <XAxis dataKey="anio" interval={0} padding={{ left: 18, right: 22 }} tick={{ fontSize: 12, fill: '#64748b' }} />
+                    <YAxis domain={[comparativeTotalYBounds.min, comparativeTotalYBounds.max]} width={48} tick={{ fontSize: 11, fill: '#94a3b8' }} />
+                    <RechartsTooltip formatter={(v) => (v == null ? '-' : Number(v).toFixed(2))} />
+                    <Legend wrapperStyle={{ fontSize: 12, paddingTop: 8 }} />
+                    <Line
+                      type="monotone"
+                      dataKey="grupo"
+                      name="Grupo de referencia"
+                      connectNulls
+                      stroke="#94a3b8"
+                      strokeWidth={2.5}
+                      dot={{ r: 4, fill: '#fff', stroke: '#94a3b8', strokeWidth: 2 }}
+                      activeDot={{ r: 6 }}
+                    >
+                      <LabelList dataKey="grupo" content={renderAggregateLineLabelFactory({ color: '#64748b', evenDy: -16, oddDy: -28 })} />
+                    </Line>
+                    <Line
+                      type="monotone"
+                      dataKey="programa"
+                      name="Programa académico"
+                      connectNulls
+                      stroke={INST_BLUE}
+                      strokeWidth={3}
+                      dot={{ r: 4, fill: '#fff', stroke: INST_BLUE, strokeWidth: 2 }}
+                      activeDot={{ r: 6 }}
+                    >
+                      <LabelList dataKey="programa" content={renderAggregateLineLabelFactory({ color: INST_BLUE, evenDy: 20, oddDy: 32 })} />
+                    </Line>
+                  </LineChart>
+                </ResponsiveContainer>
+              </Box>
+            </Box>
+          </Paper>
+
+          {/* ══════════════════════════════════════════
+              SECCIÓN 4 — Comparativo: tablas simétricas
+          ══════════════════════════════════════════ */}
+          <Paper
+            elevation={0}
+            sx={{
+              borderRadius: '14px',
+              overflow: 'hidden',
+              boxShadow: '0 4px 24px rgba(15,23,42,0.08)',
+              border: '1px solid #e2e8f0'
+            }}
+          >
             <Box sx={sectionHeaderSx}>
               <Typography sx={{ fontWeight: 900, color: '#ffffff', fontSize: 16 }}>
                 Comparativo
@@ -907,23 +992,32 @@ function SaberProAgregadosDashboard({ initialSection, allowedSections = [] } = {
             </Box>
 
             <Box sx={{ p: { xs: 2, md: 3 } }}>
-              {/* Tabla comparativa + Tabla soporte */}
+              {/* Dos tablas de igual altura — grid con alignItems stretch */}
               <Box
                 sx={{
                   display: 'grid',
                   gridTemplateColumns: { xs: '1fr', lg: 'repeat(2, 1fr)' },
                   gap: 2.5,
-                  mb: 2.5
+                  alignItems: 'stretch'
                 }}
               >
                 {/* Tabla principal comparativa */}
-                <Paper elevation={0} sx={{ borderRadius: '10px', overflow: 'hidden', border: '1px solid #e2e8f0' }}>
-                  <Box sx={{ px: 2, py: 1.2, bgcolor: INST_BLUE_LIGHT, borderBottom: `1px solid ${INST_BLUE_PALE}` }}>
+                <Paper
+                  elevation={0}
+                  sx={{
+                    borderRadius: '10px',
+                    overflow: 'hidden',
+                    border: '1px solid #e2e8f0',
+                    display: 'flex',
+                    flexDirection: 'column'
+                  }}
+                >
+                  <Box sx={{ px: 2, py: 1.4, bgcolor: INST_BLUE_LIGHT, borderBottom: `1px solid ${INST_BLUE_PALE}`, flexShrink: 0 }}>
                     <Typography sx={{ fontWeight: 800, color: INST_BLUE, fontSize: 13 }}>
                       Resumen por competencia
                     </Typography>
                   </Box>
-                  <TableContainer sx={{ maxHeight: 340 }}>
+                  <TableContainer sx={{ flex: 1, overflow: 'auto' }}>
                     <Table stickyHeader size="small">
                       <TableHead>
                         <TableRow>
@@ -951,7 +1045,7 @@ function SaberProAgregadosDashboard({ initialSection, allowedSections = [] } = {
                                     : rowIdx % 2 === 0 ? '#ffffff' : '#f8fafc',
                                 transition: 'background-color 0.12s',
                                 '&:hover td': { bgcolor: isTotal ? INST_BLUE_PALE : selected ? '#ede9fe' : '#f0f9ff' },
-                                '& td': { fontWeight: isTotal ? 800 : 500, borderBottom: '1px solid #f1f5f9', fontSize: 12.5, py: 1 }
+                                '& td': { fontWeight: isTotal ? 800 : 500, borderBottom: '1px solid #f1f5f9', fontSize: 12.5, py: 1.1 }
                               }}
                             >
                               <TableCell sx={{ color: isTotal ? INST_BLUE : selected ? '#6d28d9' : '#1f2937' }}>
@@ -981,17 +1075,26 @@ function SaberProAgregadosDashboard({ initialSection, allowedSections = [] } = {
                 </Paper>
 
                 {/* Tabla soporte por año */}
-                <Paper elevation={0} sx={{ borderRadius: '10px', overflow: 'hidden', border: '1px solid #e2e8f0' }}>
-                  <Box sx={{ px: 2, py: 1.2, bgcolor: INST_BLUE_LIGHT, borderBottom: `1px solid ${INST_BLUE_PALE}` }}>
+                <Paper
+                  elevation={0}
+                  sx={{
+                    borderRadius: '10px',
+                    overflow: 'hidden',
+                    border: '1px solid #e2e8f0',
+                    display: 'flex',
+                    flexDirection: 'column'
+                  }}
+                >
+                  <Box sx={{ px: 2, py: 1.4, bgcolor: INST_BLUE_LIGHT, borderBottom: `1px solid ${INST_BLUE_PALE}`, flexShrink: 0 }}>
                     <Typography sx={{ fontWeight: 800, color: INST_BLUE, fontSize: 13 }}>
                       Soporte de datos por año
                     </Typography>
                     <Typography variant="caption" sx={{ color: '#475569' }}>
-                      Valores anuales para:{' '}
+                      Valores para:{' '}
                       <strong>{selectedComparativoCompetencia || 'PUNTAJE GENERAL (PROMEDIO)'}</strong>
                     </Typography>
                   </Box>
-                  <TableContainer sx={{ maxHeight: 340 }}>
+                  <TableContainer sx={{ flex: 1, overflow: 'auto' }}>
                     <Table stickyHeader size="small">
                       <TableHead>
                         <TableRow>
@@ -1012,7 +1115,7 @@ function SaberProAgregadosDashboard({ initialSection, allowedSections = [] } = {
                               hover
                               sx={{
                                 bgcolor: rowIdx % 2 === 0 ? '#ffffff' : '#f8fafc',
-                                '& td': { borderBottom: '1px solid #f1f5f9', fontSize: 12.5, py: 1 }
+                                '& td': { borderBottom: '1px solid #f1f5f9', fontSize: 12.5, py: 1.1 }
                               }}
                             >
                               <TableCell sx={{ fontWeight: 700, color: INST_BLUE }}>{row.anio}</TableCell>
@@ -1039,54 +1142,6 @@ function SaberProAgregadosDashboard({ initialSection, allowedSections = [] } = {
                   </TableContainer>
                 </Paper>
               </Box>
-
-              {/* Gráfica comparativa — full width */}
-              <Paper elevation={0} sx={{ borderRadius: '10px', overflow: 'hidden', border: '1px solid #e2e8f0' }}>
-                <Box sx={{ px: 2.5, py: 1.5, bgcolor: INST_BLUE_LIGHT, borderBottom: `1px solid ${INST_BLUE_PALE}` }}>
-                  <Typography sx={{ fontWeight: 800, color: INST_BLUE, fontSize: 13 }}>
-                    {selectedComparativoCompetencia || 'PUNTAJE GENERAL (PROMEDIO)'}
-                  </Typography>
-                  <Typography variant="caption" sx={{ color: '#475569' }}>
-                    Línea azul: Programa académico &nbsp;·&nbsp; Línea gris: Grupo de referencia
-                    &nbsp;·&nbsp; Clic en una fila de la tabla para cambiar la comparación
-                  </Typography>
-                </Box>
-                <Box sx={{ p: 2.5, height: 340 }}>
-                  <ResponsiveContainer width="100%" height="100%">
-                    <LineChart data={comparativeTrendData} margin={{ top: 30, right: 44, left: 14, bottom: 10 }}>
-                      <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
-                      <XAxis dataKey="anio" interval={0} padding={{ left: 18, right: 22 }} tick={{ fontSize: 12, fill: '#64748b' }} />
-                      <YAxis domain={[comparativeYBounds.min, comparativeYBounds.max]} width={48} tick={{ fontSize: 11, fill: '#94a3b8' }} />
-                      <RechartsTooltip formatter={(v) => (v == null ? '-' : Number(v).toFixed(2))} />
-                      <Legend wrapperStyle={{ fontSize: 12, paddingTop: 8 }} />
-                      <Line
-                        type="monotone"
-                        dataKey="grupo"
-                        name="Grupo de referencia"
-                        connectNulls
-                        stroke="#64748b"
-                        strokeWidth={2.5}
-                        dot={{ r: 4, fill: '#fff', stroke: '#64748b', strokeWidth: 2 }}
-                        activeDot={{ r: 6 }}
-                      >
-                        <LabelList dataKey="grupo" content={renderAggregateLineLabelFactory({ color: '#475569', evenDy: -16, oddDy: -28 })} />
-                      </Line>
-                      <Line
-                        type="monotone"
-                        dataKey="programa"
-                        name="Programa académico"
-                        connectNulls
-                        stroke={INST_BLUE_MED}
-                        strokeWidth={3}
-                        dot={{ r: 4, fill: '#fff', stroke: INST_BLUE_MED, strokeWidth: 2 }}
-                        activeDot={{ r: 6 }}
-                      >
-                        <LabelList dataKey="programa" content={renderAggregateLineLabelFactory({ color: INST_BLUE, evenDy: 20, oddDy: 32 })} />
-                      </Line>
-                    </LineChart>
-                  </ResponsiveContainer>
-                </Box>
-              </Paper>
             </Box>
           </Paper>
 
