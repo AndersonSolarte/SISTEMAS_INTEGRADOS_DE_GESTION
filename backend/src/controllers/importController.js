@@ -124,6 +124,11 @@ const normalizeMappedFields = (row) => {
 const getDocumentIdentityKey = (codigo, version) =>
   `${toText(codigo, 50) || ''}::${toText(version, 20) || ''}`;
 
+const comparableValue = (value) => {
+  if (value && typeof value === 'object') return JSON.stringify(value);
+  return String(value ?? '');
+};
+
 const documentNeedsUpdate = (documento, nextData) => {
   const fields = [
     'subproceso_id',
@@ -142,10 +147,11 @@ const documentNeedsUpdate = (documento, nextData) => {
     'autor',
     'estado',
     'link_acceso',
-    'observaciones'
+    'observaciones',
+    'datos_originales'
   ];
 
-  return fields.some((field) => String(documento.get(field) ?? '') !== String(nextData[field] ?? ''));
+  return fields.some((field) => comparableValue(documento.get(field)) !== comparableValue(nextData[field]));
 };
 
 const buildExistingDocumentBuckets = async () => {
@@ -534,7 +540,8 @@ const importFromExcel = async (req, res) => {
           autor: toText(row.autor, 200),
           estado: normalizeEstado(row.estado),
           link_acceso: toText(row.link_acceso),
-          observaciones: toText(row.observaciones)
+          observaciones: toText(row.observaciones),
+          datos_originales: data[i]
         };
 
         const documentKey = getDocumentIdentityKey(documentoData.codigo, documentoData.version);
@@ -825,7 +832,8 @@ const importFromSheet = async (req, res) => {
           autor: toText(row.autor, 200),
           estado: normalizeEstado(row.estado),
           link_acceso: toText(row.link_acceso),
-          observaciones: toText(row.observaciones)
+          observaciones: toText(row.observaciones),
+          datos_originales: data[i]
         };
 
         const documentKey = getDocumentIdentityKey(documentoData.codigo, documentoData.version);
@@ -1005,7 +1013,8 @@ const importFromSheetFixed = async (req, res) => {
           autor: toText(row.autor, 200),
           estado: normalizeEstado(row.estado),
           link_acceso: toText(row.link_acceso),
-          observaciones: toText(row.observaciones)
+          observaciones: toText(row.observaciones),
+          datos_originales: data[i]
         };
 
         const documentKey = getDocumentIdentityKey(documentoData.codigo, documentoData.version);

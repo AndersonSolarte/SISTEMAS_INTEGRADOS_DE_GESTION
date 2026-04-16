@@ -19,7 +19,8 @@ const Documento = sequelize.define('documentos', {
   autor: DataTypes.STRING(200),
   estado: { type: DataTypes.ENUM('vigente', 'obsoleto', 'en_revision'), allowNull: false, defaultValue: 'vigente' },
   link_acceso: DataTypes.TEXT,
-  observaciones: DataTypes.TEXT
+  observaciones: DataTypes.TEXT,
+  datos_originales: DataTypes.JSONB
 }, {
   timestamps: true,
   createdAt: 'created_at',
