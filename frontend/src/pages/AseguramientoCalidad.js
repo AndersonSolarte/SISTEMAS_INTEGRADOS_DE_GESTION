@@ -747,13 +747,13 @@ function AseguramientoCalidad() {
       const response = await api.post('/import/sheets', { mode }, { timeout: 300000 });
       await loadCatalogos();
       if (response.data?.success) {
-        enqueueSnackbar(response.data.message || 'Sincronización completada', { variant: 'success' });
+        enqueueSnackbar(response.data.message || 'Base del servidor actualizada', { variant: 'success' });
         handleSearch();
       }
     } catch (error) {
       const backendMessage = error?.response?.data?.message;
       const backendDetail = error?.response?.data?.error;
-      const message = backendDetail ? `${backendMessage || 'Error al sincronizar desde Google Sheets'}: ${backendDetail}` : (backendMessage || 'Error al sincronizar desde Google Sheets');
+      const message = backendDetail ? `${backendMessage || 'Error al cargar Sheets al servidor'}: ${backendDetail}` : (backendMessage || 'Error al cargar Sheets al servidor');
       enqueueSnackbar(message, { variant: 'error' });
     } finally {
       setSyncingSheet(false);
@@ -902,18 +902,23 @@ function AseguramientoCalidad() {
           <Paper elevation={0} sx={{ p: 3, mb: 3, border: '1px solid #e2e8f0', borderRadius: 3 }}>
             <Stack direction="row" spacing={1} alignItems="center" sx={{ mb: 2 }}>
               <UploadIcon sx={{ color: '#1d4ed8' }} />
-              <Typography variant="h6" sx={{ fontWeight: 600 }}>Importar Documentos</Typography>
+              <Box>
+                <Typography variant="h6" sx={{ fontWeight: 600 }}>Cargar documentos a la base del servidor</Typography>
+                <Typography variant="body2" sx={{ color: '#64748b' }}>
+                  Excel y Google Sheets solo alimentan PostgreSQL. La consulta y los filtros trabajan siempre con la base alojada en el servidor.
+                </Typography>
+              </Box>
             </Stack>
             <Grid container spacing={2} alignItems="center">
               <Grid item xs={12} md={4}>
                 <Button variant="outlined" fullWidth component="label" startIcon={<UploadIcon />} sx={{ borderRadius: 2, py: 1.5 }}>
-                  {selectedFile ? selectedFile.name : 'Seleccionar Excel'}
+                  {selectedFile ? selectedFile.name : 'Seleccionar plantilla Excel'}
                   <input type="file" hidden accept=".xlsx,.xls" onChange={handleFileSelect} />
                 </Button>
               </Grid>
               <Grid item xs={12} md={3}>
                 <Button variant="contained" fullWidth disabled={!selectedFile || importing} onClick={handleImport} sx={{ borderRadius: 2, py: 1.5 }}>
-                  {importing ? 'Importando...' : 'Importar Ahora'}
+                  {importing ? 'Cargando al servidor...' : 'Cargar Excel al servidor'}
                 </Button>
               </Grid>
               <Grid item xs={12} md={3}>
@@ -930,8 +935,16 @@ function AseguramientoCalidad() {
                   onClick={() => setOpenClearDialog(true)}
                   sx={{ borderRadius: 2, py: 1.5 }}
                 >
-                  Limpiar Base
+                  Limpiar base servidor
                 </Button>
+              </Grid>
+              <Grid item xs={12}>
+                <Typography variant="caption" sx={{ display: 'block', color: '#475569', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.4px' }}>
+                  Fuente externa autorizada
+                </Typography>
+                <Typography variant="body2" sx={{ color: '#64748b' }}>
+                  Usa Sheets para traer datos al servidor. Despues de cargar, la pantalla deja de depender de Sheets y consulta la informacion guardada en PostgreSQL.
+                </Typography>
               </Grid>
               <Grid item xs={12} md={6}>
                 <Button
@@ -941,8 +954,11 @@ function AseguramientoCalidad() {
                   onClick={() => handleSyncFromSheets('incremental')}
                   sx={{ borderRadius: 2, py: 1.4, textTransform: 'none', fontWeight: 700 }}
                 >
-                  {syncingSheet ? 'Sincronizando...' : 'Sincronizar desde Sheets (Incremental)'}
+                  {syncingSheet ? 'Cargando Sheets al servidor...' : 'Actualizar servidor desde Sheets'}
                 </Button>
+                <Typography variant="caption" sx={{ display: 'block', mt: 0.75, color: '#64748b' }}>
+                  Agrega nuevos documentos y actualiza los existentes sin borrar la base.
+                </Typography>
               </Grid>
               <Grid item xs={12} md={6}>
                 <Button
@@ -950,11 +966,18 @@ function AseguramientoCalidad() {
                   color="warning"
                   fullWidth
                   disabled={syncingSheet}
-                  onClick={() => handleSyncFromSheets('reemplazar')}
+                  onClick={() => {
+                    if (window.confirm('Esto reemplaza la base documental del servidor con la informacion actual de Sheets. Deseas continuar?')) {
+                      handleSyncFromSheets('reemplazar');
+                    }
+                  }}
                   sx={{ borderRadius: 2, py: 1.4, textTransform: 'none', fontWeight: 700 }}
                 >
-                  Reemplazar todo desde Sheets
+                  Reemplazar base servidor desde Sheets
                 </Button>
+                <Typography variant="caption" sx={{ display: 'block', mt: 0.75, color: '#64748b' }}>
+                  Borra los documentos actuales y carga una copia completa desde Sheets.
+                </Typography>
               </Grid>
             </Grid>
           </Paper>

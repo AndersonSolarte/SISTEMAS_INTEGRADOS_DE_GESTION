@@ -152,10 +152,10 @@ const documentNeedsUpdate = (documento, nextData) => {
 
 const buildSyncMessage = ({ mode, results }) => {
   if (mode === 'incremental') {
-    return `Sincronizacion incremental completada: ${results.importados} nuevos, ${results.actualizados} actualizados, ${results.omitidos} sin cambios, ${results.errores.length} con error de ${results.total} registros`;
+    return `Servidor actualizado desde Sheets: ${results.importados} nuevos, ${results.actualizados} actualizados, ${results.omitidos} sin cambios, ${results.errores.length} con error de ${results.total} registros`;
   }
 
-  return `Reemplazo completo completado: ${results.importados} registros cargados, ${results.errores.length} con error de ${results.total} registros`;
+  return `Base del servidor reemplazada desde Sheets: ${results.importados} registros cargados, ${results.errores.length} con error de ${results.total} registros`;
 };
 
 const extractSpreadsheetId = (value) => {
@@ -573,7 +573,7 @@ const importFromExcel = async (req, res) => {
 
     res.json({
       success: true,
-      message: `Importación completada: ${results.importados} nuevos, ${results.actualizados} actualizados de ${results.total} registros`,
+      message: `Excel cargado en la base del servidor: ${results.importados} nuevos, ${results.actualizados} actualizados de ${results.total} registros`,
       data: results
     });
 
@@ -838,7 +838,7 @@ const importFromSheet = async (req, res) => {
 
     return res.json({
       success: true,
-      message: `Importación completada: ${results.importados} nuevos, ${results.actualizados} actualizados de ${results.total} registros`,
+      message: `Sheets cargado en la base del servidor: ${results.importados} nuevos, ${results.actualizados} actualizados de ${results.total} registros`,
       data: results
     });
   } catch (error) {
