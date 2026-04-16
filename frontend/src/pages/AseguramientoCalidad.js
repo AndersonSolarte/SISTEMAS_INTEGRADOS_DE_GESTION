@@ -1,7 +1,8 @@
 import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import ReactDOM from 'react-dom';
-import { Box, Paper, Typography, Grid, TextField, Button, Table, TableBody, TableCell, TableContainer, TableHead, TableRow, TablePagination, FormControl, Select, MenuItem, CircularProgress, Chip, IconButton, Tooltip, Fade, Slide, Stack, Divider, Dialog, DialogTitle, DialogContent, DialogActions, InputAdornment, Switch, FormControlLabel } from '@mui/material';
-import { Search as SearchIcon, Clear as ClearIcon, VisibilityOutlined as VisibilityOutlinedIcon, FileDownloadOutlined as FileDownloadOutlinedIcon, FilterList as FilterIcon, Description as DescriptionIcon, Article as ArticleIcon, AssignmentTurnedIn as AssignmentIcon, ListAlt as ListIcon, Policy as PolicyIcon, AccountTree as AccountTreeIcon, Upload as UploadIcon, GetApp as DownloadTemplateIcon, DeleteSweep as DeleteSweepIcon, Favorite as FavoriteIcon, FavoriteBorder as FavoriteBorderIcon } from '@mui/icons-material';import { useSnackbar } from 'notistack';
+import { Box, Paper, Typography, Grid, TextField, Button, Table, TableBody, TableCell, TableContainer, TableHead, TableRow, TablePagination, CircularProgress, Chip, IconButton, Tooltip, Fade, Slide, Stack, Dialog, DialogTitle, DialogContent, DialogActions, InputAdornment, Switch } from '@mui/material';
+import { Search as SearchIcon, Clear as ClearIcon, VisibilityOutlined as VisibilityOutlinedIcon, FileDownloadOutlined as FileDownloadOutlinedIcon, Description as DescriptionIcon, Article as ArticleIcon, AssignmentTurnedIn as AssignmentIcon, ListAlt as ListIcon, Policy as PolicyIcon, AccountTree as AccountTreeIcon, Upload as UploadIcon, GetApp as DownloadTemplateIcon, DeleteSweep as DeleteSweepIcon, Favorite as FavoriteIcon, FavoriteBorder as FavoriteBorderIcon } from '@mui/icons-material';
+import { useSnackbar } from 'notistack';
 import { useLocation } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import documentoService from '../services/documentoService';
@@ -215,15 +216,6 @@ const formatDate = (value) => {
   return date.toLocaleDateString('es-CO');
 };
 
-const getLabelById = (items = [], id) => {
-  if (!id) return '';
-  const found = items.find((item) => String(item.id) === String(id));
-  return found?.nombre || '';
-};
-
-// ── DocFilterPanel: checklist con búsqueda, seleccionar todos y cascada ──────
-// El dropdown se renderiza via portal en document.body para no ser recortado
-// por ningún contenedor con overflow oculto o scroll.
 function DocFilterPanel({ label, options, value, onChange, disabled, placeholder }) {
   const [open, setOpen] = useState(false);
   const [search, setSearch] = useState('');
@@ -420,102 +412,43 @@ function AseguramientoCalidad() {
     setTiposDocumentacion(data.tipos || []);
   }, []);
 
-  const syncCatalogosFromDocuments = useCallback((rows = []) => {
-    const maps = {
-      macros: new Map(),
-      procesos: new Map(),
-      subprocesos: new Map(),
-      tipos: new Map()
-    };
-
-    rows.forEach((doc) => {
-      const macro = doc?.subproceso?.proceso?.macroProceso;
-      const proceso = doc?.subproceso?.proceso;
-      const subproceso = doc?.subproceso;
-      const tipo = doc?.tipoDocumentacion;
-
-      if (macro?.id) maps.macros.set(String(macro.id), macro);
-      if (proceso?.id) {
-        maps.procesos.set(String(proceso.id), {
-          ...proceso,
-          macro_proceso_id: proceso.macro_proceso_id || macro?.id || ''
-        });
-      }
-      if (subproceso?.id) {
-        maps.subprocesos.set(String(subproceso.id), {
-          ...subproceso,
-          proceso_id: subproceso.proceso_id || proceso?.id || ''
-        });
-      }
-      if (tipo?.id) maps.tipos.set(String(tipo.id), tipo);
+  const loadCatalogosDirecto = useCallback(async (opts = {}) => {
+    const extra = opts.include_inactive ? { include_inactive: opts.include_inactive } : {};
+    const [macroRes, procRes, subRes, tipoRes] = await Promise.all([
+      catalogoService.getMacroProcesos(extra),
+      catalogoService.getProcesos(null, extra),
+      catalogoService.getSubProcesos(null, extra),
+      catalogoService.getTiposDocumentacion(extra)
+    ]);
+    syncCatalogosFromPayload({
+      macroProcesos: macroRes?.data?.macroProcesos || [],
+      procesos:      procRes?.data?.procesos       || [],
+      subprocesos:   subRes?.data?.subprocesos     || [],
+      tipos:         tipoRes?.data?.tipos          || []
     });
-
-    const byName = (a, b) => String(a.nombre || '').localeCompare(String(b.nombre || ''));
-    setMacroProcesos(Array.from(maps.macros.values()).sort(byName));
-    setProcesos(Array.from(maps.procesos.values()).sort(byName));
-    setSubprocesos(Array.from(maps.subprocesos.values()).sort(byName));
-    setTiposDocumentacion(Array.from(maps.tipos.values()).sort(byName));
-  }, []);
+  }, [syncCatalogosFromPayload]);
 
   const loadCatalogos = useCallback(async (activeFilters = {}) => {
-    // Nivel 1: endpoint facetado (eficiente, actualiza todos al filtrar)
+    const scope = activeFilters.include_inactive ? { include_inactive: activeFilters.include_inactive } : {};
     try {
-      const response = await catalogoService.getFilterOptions(activeFilters);
+      const response = await catalogoService.getFilterOptions(scope);
       const data = response?.data || {};
-      const hasOptions = Boolean(
-        (data.macroProcesos || []).length ||
-        (data.procesos || []).length ||
-        (data.subprocesos || []).length ||
-        (data.tipos || []).length
-      );
-      if (hasOptions) { syncCatalogosFromPayload(data); return; }
-    } catch (_e) { /* continuar */ }
+      if ((data.macroProcesos||[]).length || (data.procesos||[]).length ||
+          (data.subprocesos||[]).length   || (data.tipos||[]).length) {
+        syncCatalogosFromPayload(data);
+        return;
+      }
+    } catch (_e) {}
 
-    // Nivel 2: endpoints individuales con EXISTS subquery
-    try {
-      const extraParams = activeFilters.include_inactive ? { include_inactive: activeFilters.include_inactive } : {};
-      const [macroRes, procRes, subRes, tipoRes] = await Promise.all([
-        catalogoService.getMacroProcesos(extraParams),
-        catalogoService.getProcesos(activeFilters.macro_proceso_id || null, extraParams),
-        catalogoService.getSubProcesos(activeFilters.proceso_id || null, extraParams),
-        catalogoService.getTiposDocumentacion({ ...activeFilters, ...extraParams })
-      ]);
-      const payload = {
-        macroProcesos: macroRes?.data?.macroProcesos || [],
-        procesos:      procRes?.data?.procesos      || [],
-        subprocesos:   subRes?.data?.subprocesos    || [],
-        tipos:         tipoRes?.data?.tipos         || []
-      };
-      const hasAny = Object.values(payload).some((arr) => arr.length > 0);
-      if (hasAny) { syncCatalogosFromPayload(payload); return; }
-    } catch (_e) { /* continuar */ }
-
-    // Nivel 3: extraer opciones desde los mismos documentos (garantizado si Buscar funciona)
-    try {
-      const fallback = await documentoService.getDocumentos(activeFilters, 1, 500);
-      const docs = fallback?.data?.documentos || [];
-      if (docs.length > 0) syncCatalogosFromDocuments(docs);
-    } catch (_e) { /* nada */ }
-  }, [syncCatalogosFromDocuments, syncCatalogosFromPayload]);
+    await loadCatalogosDirecto(scope);
+  }, [loadCatalogosDirecto, syncCatalogosFromPayload]);
 
   useEffect(() => {
-    loadCatalogos().catch(() => {
-      enqueueSnackbar('No fue posible cargar los filtros actualizados', { variant: 'warning' });
+    const extra = filters.include_inactive ? { include_inactive: filters.include_inactive } : {};
+    loadCatalogosDirecto(extra).catch(() => {
+      enqueueSnackbar('No fue posible cargar los filtros', { variant: 'warning' });
     });
-  }, [loadCatalogos, enqueueSnackbar]);
-
-  // Recargar opciones dinámicamente según los filtros activos (faceted search)
-  useEffect(() => {
-    const params = {};
-    if (selMacros.length)      params.macro_proceso_id      = selMacros.join(',');
-    if (selProcesos.length)    params.proceso_id             = selProcesos.join(',');
-    if (selSubprocesos.length) params.subproceso_id          = selSubprocesos.join(',');
-    if (selTipos.length)       params.tipo_documentacion_id  = selTipos.join(',');
-    if (filters.titulo)        params.titulo                 = filters.titulo;
-    if (filters.estado)        params.estado                 = filters.estado;
-    if (filters.include_inactive) params.include_inactive    = filters.include_inactive;
-    loadCatalogos(params).catch(() => {});
-  }, [loadCatalogos, selMacros, selProcesos, selSubprocesos, selTipos, filters.titulo, filters.estado, filters.include_inactive]);
+  }, [filters.include_inactive, loadCatalogosDirecto, enqueueSnackbar]);
 
   useEffect(() => {
     if (!user?.id) return;
