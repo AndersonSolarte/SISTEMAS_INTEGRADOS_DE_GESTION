@@ -15,6 +15,10 @@ const LOCAL_UPLOAD_PREFIX = '/uploads/';
 const PUBLIC_DOCUMENT_STATE = 'vigente';
 const canViewAllDocumentStates = (user = {}) =>
   [ROLES.ADMINISTRADOR, ROLES.GESTION_PROCESOS].includes(user.role);
+const isInactiveScope = (query = {}, user = {}) =>
+  String(query.estado_scope || '').toLowerCase() === 'inactive'
+  && String(query.include_inactive || '').toLowerCase() === 'true'
+  && canViewAllDocumentStates(user);
 
 const isLocalUploadLink = (value = '') => String(value || '').trim().startsWith(LOCAL_UPLOAD_PREFIX);
 
@@ -114,6 +118,7 @@ const getDocumentos = async (req, res) => {
       tipo_documentacion_id,
       titulo,
       include_inactive,
+      estado_scope,
       page = 1,
       limit = 10
     } = req.query;
@@ -185,8 +190,12 @@ const getDocumentos = async (req, res) => {
       if (searchWhere) Object.assign(where, searchWhere);
     }
 
-    const includeInactive = String(include_inactive || '').toLowerCase() === 'true';
-    if (!includeInactive || !canViewAllDocumentStates(req.user)) {
+    if (isInactiveScope({ include_inactive, estado_scope }, req.user)) {
+      where[Op.or] = [
+        { estado: { [Op.ne]: PUBLIC_DOCUMENT_STATE } },
+        { estado: null }
+      ];
+    } else {
       where.estado = PUBLIC_DOCUMENT_STATE;
     }
 

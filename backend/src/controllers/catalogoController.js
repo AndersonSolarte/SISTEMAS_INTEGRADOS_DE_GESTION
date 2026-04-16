@@ -5,8 +5,20 @@ const { ROLES } = require('../constants/roles');
 const PUBLIC_DOCUMENT_STATE = 'vigente';
 const publicDocumentStateSql = (alias = 'd') =>
   `${alias}.estado = '${PUBLIC_DOCUMENT_STATE}'`;
+const inactiveDocumentStateSql = (alias = 'd') =>
+  `COALESCE(${alias}.estado, '') <> '${PUBLIC_DOCUMENT_STATE}'`;
 const canViewAllDocumentStates = (user = {}) =>
   [ROLES.ADMINISTRADOR, ROLES.GESTION_PROCESOS].includes(user.role);
+const isInactiveScope = (query = {}, user = {}) =>
+  String(query.estado_scope || '').toLowerCase() === 'inactive'
+  && String(query.include_inactive || '').toLowerCase() === 'true'
+  && canViewAllDocumentStates(user);
+const documentStateSql = (query = {}, user = {}, alias = 'd') =>
+  isInactiveScope(query, user) ? inactiveDocumentStateSql(alias) : publicDocumentStateSql(alias);
+const documentStateWhere = (query = {}, user = {}) =>
+  isInactiveScope(query, user)
+    ? { [Op.or]: [{ estado: { [Op.ne]: PUBLIC_DOCUMENT_STATE } }, { estado: null }] }
+    : { estado: PUBLIC_DOCUMENT_STATE };
 
 const parseIdList = (value) => {
   const ids = String(value || '')
@@ -33,9 +45,7 @@ const buildSearchWhere = (search = '') => {
 
 const getMacroProcesos = async (req, res) => {
   try {
-    const includeInactive = String(req.query.include_inactive || '').toLowerCase() === 'true'
-      && canViewAllDocumentStates(req.user);
-    const estadoSql = includeInactive ? '1=1' : publicDocumentStateSql('d');
+    const estadoSql = documentStateSql(req.query, req.user, 'd');
     const macroProcesos = await MacroProceso.findAll({
       where: literal(`EXISTS (
         SELECT 1 FROM procesos p
@@ -55,9 +65,7 @@ const getMacroProcesos = async (req, res) => {
 const getProcesos = async (req, res) => {
   try {
     const { macro_proceso_id } = req.query;
-    const includeInactive = String(req.query.include_inactive || '').toLowerCase() === 'true'
-      && canViewAllDocumentStates(req.user);
-    const estadoSql = includeInactive ? '1=1' : publicDocumentStateSql('d');
+    const estadoSql = documentStateSql(req.query, req.user, 'd');
     const ids = macro_proceso_id
       ? String(macro_proceso_id).split(',').map(Number).filter(Number.isFinite)
       : [];
@@ -85,9 +93,7 @@ const getProcesos = async (req, res) => {
 const getSubProcesos = async (req, res) => {
   try {
     const { proceso_id } = req.query;
-    const includeInactive = String(req.query.include_inactive || '').toLowerCase() === 'true'
-      && canViewAllDocumentStates(req.user);
-    const estadoSql = includeInactive ? '1=1' : publicDocumentStateSql('d');
+    const estadoSql = documentStateSql(req.query, req.user, 'd');
     const ids = proceso_id
       ? String(proceso_id).split(',').map(Number).filter(Number.isFinite)
       : [];
@@ -114,9 +120,7 @@ const getSubProcesos = async (req, res) => {
 const getTiposDocumentacion = async (req, res) => {
   try {
     const { macro_proceso_id, proceso_id, subproceso_id } = req.query;
-    const includeInactive = String(req.query.include_inactive || '').toLowerCase() === 'true'
-      && canViewAllDocumentStates(req.user);
-    const estadoSql = includeInactive ? '1=1' : publicDocumentStateSql('d');
+    const estadoSql = documentStateSql(req.query, req.user, 'd');
     const macroIds = macro_proceso_id ? String(macro_proceso_id).split(',').map(Number).filter(Number.isFinite) : [];
     const procIds  = proceso_id     ? String(proceso_id).split(',').map(Number).filter(Number.isFinite) : [];
     const subIds   = subproceso_id  ? String(subproceso_id).split(',').map(Number).filter(Number.isFinite) : [];
@@ -153,12 +157,11 @@ const getFilterOptions = async (req, res) => {
       subprocesoIds: parseIdList(req.query.subproceso_id),
       tipoIds: parseIdList(req.query.tipo_documentacion_id),
       titulo: req.query.titulo,
-      includeInactive: String(req.query.include_inactive || '').toLowerCase() === 'true'
-        && canViewAllDocumentStates(req.user)
+      estadoWhere: documentStateWhere(req.query, req.user)
     };
 
     const fetchDocumentsForFacet = async (ignoredFacet) => {
-      const documentoWhere = filters.includeInactive ? {} : { estado: PUBLIC_DOCUMENT_STATE };
+      const documentoWhere = { ...filters.estadoWhere };
       if (ignoredFacet !== 'tipo' && filters.tipoIds) {
         documentoWhere.tipo_documentacion_id = toInOrEq(filters.tipoIds);
       }

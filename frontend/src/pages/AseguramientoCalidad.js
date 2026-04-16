@@ -404,7 +404,7 @@ function AseguramientoCalidad() {
     () => ['administrador', 'gestion_por_procesos', 'gestion_procesos'].includes(normalizedRole) && !forceReadOnly,
     [normalizedRole, forceReadOnly]
   );
-  const [filters, setFilters] = useState({ macro_proceso_id: '', proceso_id: '', subproceso_id: '', tipo_documentacion_id: '', titulo: '', estado: '', include_inactive: '' });
+  const [filters, setFilters] = useState({ macro_proceso_id: '', proceso_id: '', subproceso_id: '', tipo_documentacion_id: '', titulo: '', estado: '', include_inactive: '', estado_scope: '' });
   const [selMacros, setSelMacros] = useState([]);
   const [selProcesos, setSelProcesos] = useState([]);
   const [selSubprocesos, setSelSubprocesos] = useState([]);
@@ -443,7 +443,7 @@ function AseguramientoCalidad() {
   }, []);
 
   const loadCatalogosDirecto = useCallback(async (opts = {}) => {
-    const extra = opts.include_inactive ? { include_inactive: opts.include_inactive } : {};
+    const extra = opts.include_inactive ? { include_inactive: opts.include_inactive, estado_scope: opts.estado_scope || 'inactive' } : {};
     const [macroRes, procRes, subRes, tipoRes] = await Promise.all([
       catalogoService.getMacroProcesos(extra),
       catalogoService.getProcesos(null, extra),
@@ -460,7 +460,7 @@ function AseguramientoCalidad() {
 
   const loadCatalogos = useCallback(async (activeFilters = {}) => {
     const hasUserFilter = Object.entries(activeFilters).some(
-      ([key, value]) => key !== 'include_inactive' && String(value || '').trim() !== ''
+      ([key, value]) => !['include_inactive', 'estado_scope'].includes(key) && String(value || '').trim() !== ''
     );
     if (!hasUserFilter) {
       setFilterOptions(emptyFilterOptions);
@@ -487,12 +487,12 @@ function AseguramientoCalidad() {
   }, [loadCatalogosDirecto]);
 
   useEffect(() => {
-    const extra = filters.include_inactive ? { include_inactive: filters.include_inactive } : {};
+    const extra = filters.include_inactive ? { include_inactive: filters.include_inactive, estado_scope: filters.estado_scope || 'inactive' } : {};
     setFilterOptions(emptyFilterOptions);
     loadCatalogosDirecto(extra).catch(() => {
       enqueueSnackbar('No fue posible cargar los filtros', { variant: 'warning' });
     });
-  }, [filters.include_inactive, loadCatalogosDirecto, enqueueSnackbar]);
+  }, [filters.include_inactive, filters.estado_scope, loadCatalogosDirecto, enqueueSnackbar]);
 
   useEffect(() => {
     const params = {};
@@ -501,16 +501,19 @@ function AseguramientoCalidad() {
     if (selSubprocesos.length) params.subproceso_id = selSubprocesos.join(',');
     if (selTipos.length) params.tipo_documentacion_id = selTipos.join(',');
     if (filters.titulo) params.titulo = filters.titulo;
-    if (filters.include_inactive) params.include_inactive = filters.include_inactive;
+    if (filters.include_inactive) {
+      params.include_inactive = filters.include_inactive;
+      params.estado_scope = filters.estado_scope || 'inactive';
+    }
 
-    const hasUserFilter = Object.keys(params).some((key) => key !== 'include_inactive');
+    const hasUserFilter = Object.keys(params).some((key) => !['include_inactive', 'estado_scope'].includes(key));
     if (!hasUserFilter) {
       setFilterOptions(emptyFilterOptions);
       return;
     }
 
     loadCatalogos(params).catch(() => setFilterOptions(emptyFilterOptions));
-  }, [loadCatalogos, selMacros, selProcesos, selSubprocesos, selTipos, filters.titulo, filters.include_inactive]);
+  }, [loadCatalogos, selMacros, selProcesos, selSubprocesos, selTipos, filters.titulo, filters.include_inactive, filters.estado_scope]);
 
   useEffect(() => {
     if (!user?.id) return;
@@ -529,7 +532,7 @@ function AseguramientoCalidad() {
     const params = new URLSearchParams(location.search);
     const quickTitulo = params.get('titulo');
     if (quickTitulo) {
-      const nextFilters = { macro_proceso_id: '', proceso_id: '', subproceso_id: '', tipo_documentacion_id: '', titulo: quickTitulo, estado: '' };
+      const nextFilters = { macro_proceso_id: '', proceso_id: '', subproceso_id: '', tipo_documentacion_id: '', titulo: quickTitulo, estado: '', include_inactive: '', estado_scope: '' };
       setSelMacros([]); setSelProcesos([]); setSelSubprocesos([]); setSelTipos([]);
       setFilters(nextFilters);
       setLoading(true);
@@ -568,7 +571,7 @@ function AseguramientoCalidad() {
   };
 
   const handleClearFilters = () => {
-    setFilters({ macro_proceso_id: '', proceso_id: '', subproceso_id: '', tipo_documentacion_id: '', titulo: '', estado: '', include_inactive: '' });
+    setFilters({ macro_proceso_id: '', proceso_id: '', subproceso_id: '', tipo_documentacion_id: '', titulo: '', estado: '', include_inactive: '', estado_scope: '' });
     setSelMacros([]); setSelProcesos([]); setSelSubprocesos([]); setSelTipos([]);
     setDocumentos([]);
     setTotalDocumentos(0);
@@ -809,7 +812,9 @@ function AseguramientoCalidad() {
     }
   };
 
-  const activeFiltersCount = Object.values(filters).filter(f => f !== '').length;
+  const activeFiltersCount = Object.entries(filters)
+    .filter(([key, value]) => key !== 'estado_scope' && value !== '')
+    .length;
   const hasActiveFilters = activeFiltersCount > 0;
   const tiposDocumentacionDisplay = tiposDocumentacion.filter((td) => !isDocumentCode(td.nombre));
 
@@ -1098,11 +1103,15 @@ function AseguramientoCalidad() {
                 }}>
                   <Box sx={{ width: 8, height: 8, borderRadius: '50%', bgcolor: filters.include_inactive === 'true' ? '#f59e0b' : '#10b981', flexShrink: 0 }} />
                   <Typography sx={{ fontSize: 11, fontWeight: 700, color: filters.include_inactive === 'true' ? '#92400e' : '#065f46', letterSpacing: '0.4px', textTransform: 'uppercase', userSelect: 'none' }}>
-                    {filters.include_inactive === 'true' ? 'Todos los estados' : 'Solo documentos activos'}
+                    {filters.include_inactive === 'true' ? 'Solo no activos' : 'Solo documentos activos'}
                   </Typography>
                   <Switch
                     checked={filters.include_inactive === 'true'}
-                    onChange={(e) => setFilters(prev => ({ ...prev, include_inactive: e.target.checked ? 'true' : '' }))}
+                    onChange={(e) => setFilters(prev => ({
+                      ...prev,
+                      include_inactive: e.target.checked ? 'true' : '',
+                      estado_scope: e.target.checked ? 'inactive' : ''
+                    }))}
                     size="small"
                     sx={{
                       '& .MuiSwitch-switchBase.Mui-checked': { color: '#f59e0b' },
