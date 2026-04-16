@@ -458,7 +458,7 @@ function AseguramientoCalidad() {
   }, []);
 
   const loadCatalogos = useCallback(async (activeFilters = {}) => {
-    // 1. Intentar endpoint facetado (más eficiente, actualiza todos al filtrar)
+    // Nivel 1: endpoint facetado (eficiente, actualiza todos al filtrar)
     try {
       const response = await catalogoService.getFilterOptions(activeFilters);
       const data = response?.data || {};
@@ -468,13 +468,10 @@ function AseguramientoCalidad() {
         (data.subprocesos || []).length ||
         (data.tipos || []).length
       );
-      if (hasOptions) {
-        syncCatalogosFromPayload(data);
-        return;
-      }
-    } catch (_e) { /* ignorar, intentar endpoints individuales */ }
+      if (hasOptions) { syncCatalogosFromPayload(data); return; }
+    } catch (_e) { /* continuar */ }
 
-    // 2. Fallback confiable: endpoints individuales con EXISTS subquery
+    // Nivel 2: endpoints individuales con EXISTS subquery
     try {
       const extraParams = activeFilters.include_inactive ? { include_inactive: activeFilters.include_inactive } : {};
       const [macroRes, procRes, subRes, tipoRes] = await Promise.all([
@@ -483,14 +480,23 @@ function AseguramientoCalidad() {
         catalogoService.getSubProcesos(activeFilters.proceso_id || null, extraParams),
         catalogoService.getTiposDocumentacion({ ...activeFilters, ...extraParams })
       ]);
-      syncCatalogosFromPayload({
+      const payload = {
         macroProcesos: macroRes?.data?.macroProcesos || [],
         procesos:      procRes?.data?.procesos      || [],
         subprocesos:   subRes?.data?.subprocesos    || [],
         tipos:         tipoRes?.data?.tipos         || []
-      });
+      };
+      const hasAny = Object.values(payload).some((arr) => arr.length > 0);
+      if (hasAny) { syncCatalogosFromPayload(payload); return; }
+    } catch (_e) { /* continuar */ }
+
+    // Nivel 3: extraer opciones desde los mismos documentos (garantizado si Buscar funciona)
+    try {
+      const fallback = await documentoService.getDocumentos(activeFilters, 1, 500);
+      const docs = fallback?.data?.documentos || [];
+      if (docs.length > 0) syncCatalogosFromDocuments(docs);
     } catch (_e) { /* nada */ }
-  }, [syncCatalogosFromPayload]);
+  }, [syncCatalogosFromDocuments, syncCatalogosFromPayload]);
 
   useEffect(() => {
     loadCatalogos().catch(() => {
