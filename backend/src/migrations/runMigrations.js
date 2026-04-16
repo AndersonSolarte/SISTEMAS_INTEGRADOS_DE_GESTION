@@ -194,6 +194,36 @@ const ensureDocumentTextColumns = async (qi) => {
   `);
 };
 
+const ensureDocumentSheetsView = async () => {
+  await sequelize.query(`
+    CREATE OR REPLACE VIEW documentos_sheets AS
+    SELECT
+      d.macroproceso AS "MACROPROCESO",
+      d.proceso AS "PROCESO",
+      d.subproceso AS "SUBPROCESO",
+      d.codigo AS "CODIGO",
+      d.titulo AS "TITULO_DOCUMENTO",
+      d.tipo_documento AS "TIPO_DOCUMENTO",
+      d.version AS "VERSIÓN",
+      d.fecha_creacion AS "FECHA_CREACION",
+      d.revisa AS "REVISA",
+      d.aprueba AS "APRUEBA",
+      d.fecha_aprobacion AS "FECHA_APROBACION",
+      d.autor AS "AUTOR",
+      COALESCE(
+        d.datos_originales ->> 'ESTADO',
+        CASE d.estado
+          WHEN 'vigente' THEN 'ACTIVOS'
+          WHEN 'en_revision' THEN 'PENDIENTE APROBACIÓN'
+          ELSE 'INACTIVO'
+        END
+      ) AS "ESTADO",
+      d.link_acceso AS "LINK_ACCESO",
+      d.observaciones AS "OBSERVACIONES"
+    FROM documentos d
+  `);
+};
+
 const runMigrations = async () => {
   try {
     console.log('[migrate] Ejecutando migraciones...');
@@ -209,6 +239,7 @@ const runMigrations = async () => {
     await models.TipoDocumentacion.sync();
     await models.Documento.sync();
     await ensureDocumentTextColumns(qi);
+    await ensureDocumentSheetsView();
     await models.DocumentoFavorito.sync();
     await models.Estadistica.sync();
     await models.PoblacionalInscrito.sync();
