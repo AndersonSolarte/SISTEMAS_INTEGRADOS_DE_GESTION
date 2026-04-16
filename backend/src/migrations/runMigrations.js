@@ -159,6 +159,34 @@ const repairGeorreferenciaFromDivipola = async () => {
   console.log(`[migrate] Georreferencia restaurada: dept=${finalDept}, muni=${finalMuni}`);
 };
 
+const ensureDocumentTextColumns = async (qi) => {
+  await ensureColumn(qi, 'documentos', 'macroproceso', { type: DataTypes.STRING(255), allowNull: true });
+  await ensureColumn(qi, 'documentos', 'proceso', { type: DataTypes.STRING(255), allowNull: true });
+  await ensureColumn(qi, 'documentos', 'subproceso', { type: DataTypes.STRING(255), allowNull: true });
+  await ensureColumn(qi, 'documentos', 'tipo_documento', { type: DataTypes.STRING(200), allowNull: true });
+  await ensureColumn(qi, 'documentos', 'observaciones', { type: DataTypes.TEXT, allowNull: true });
+
+  await sequelize.query(`
+    UPDATE documentos d
+    SET
+      macroproceso = COALESCE(d.macroproceso, mp.nombre),
+      proceso = COALESCE(d.proceso, p.nombre),
+      subproceso = COALESCE(d.subproceso, sp.nombre),
+      tipo_documento = COALESCE(d.tipo_documento, td.nombre)
+    FROM subprocesos sp
+    LEFT JOIN procesos p ON p.id = sp.proceso_id
+    LEFT JOIN macro_procesos mp ON mp.id = p.macro_proceso_id
+    LEFT JOIN tipos_documentacion td ON td.id = d.tipo_documentacion_id
+    WHERE d.subproceso_id = sp.id
+      AND (
+        d.macroproceso IS NULL
+        OR d.proceso IS NULL
+        OR d.subproceso IS NULL
+        OR d.tipo_documento IS NULL
+      )
+  `);
+};
+
 const runMigrations = async () => {
   try {
     console.log('[migrate] Ejecutando migraciones...');
@@ -173,6 +201,7 @@ const runMigrations = async () => {
     await models.SubProceso.sync();
     await models.TipoDocumentacion.sync();
     await models.Documento.sync();
+    await ensureDocumentTextColumns(qi);
     await models.DocumentoFavorito.sync();
     await models.Estadistica.sync();
     await models.PoblacionalInscrito.sync();
