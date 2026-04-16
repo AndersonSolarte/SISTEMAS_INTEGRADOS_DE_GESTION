@@ -1,5 +1,6 @@
 const { MacroProceso, Proceso, SubProceso, TipoDocumentacion, Documento } = require('../models');
-const { Op, literal } = require('sequelize');
+const { literal, QueryTypes } = require('sequelize');
+const { sequelize } = require('../config/database');
 const { ROLES } = require('../constants/roles');
 
 const PUBLIC_DOCUMENT_STATE = 'vigente';
@@ -15,32 +16,12 @@ const isInactiveScope = (query = {}, user = {}) =>
   && canViewAllDocumentStates(user);
 const documentStateSql = (query = {}, user = {}, alias = 'd') =>
   isInactiveScope(query, user) ? inactiveDocumentStateSql(alias) : publicDocumentStateSql(alias);
-const documentStateWhere = (query = {}, user = {}) =>
-  isInactiveScope(query, user)
-    ? { [Op.or]: [{ estado: { [Op.ne]: PUBLIC_DOCUMENT_STATE } }, { estado: null }] }
-    : { estado: PUBLIC_DOCUMENT_STATE };
-
 const parseIdList = (value) => {
   const ids = String(value || '')
     .split(',')
     .map((item) => Number(item))
     .filter(Number.isFinite);
   return ids.length ? ids : null;
-};
-
-const toInOrEq = (ids) => (ids.length === 1 ? ids[0] : { [Op.in]: ids });
-
-const buildSearchWhere = (search = '') => {
-  const terms = String(search).trim().split(/\s+/).filter(Boolean);
-  if (!terms.length) return null;
-  return {
-    [Op.and]: terms.map((term) => ({
-      [Op.or]: [
-        { titulo: { [Op.iLike]: `%${term}%` } },
-        { codigo: { [Op.iLike]: `%${term}%` } }
-      ]
-    }))
-  };
 };
 
 const getMacroProcesos = async (req, res) => {
@@ -151,106 +132,84 @@ const getTiposDocumentacion = async (req, res) => {
 
 const getFilterOptions = async (req, res) => {
   try {
-    const filters = {
-      macroIds: parseIdList(req.query.macro_proceso_id),
-      procesoIds: parseIdList(req.query.proceso_id),
-      subprocesoIds: parseIdList(req.query.subproceso_id),
-      tipoIds: parseIdList(req.query.tipo_documentacion_id),
-      titulo: req.query.titulo,
-      estadoWhere: documentStateWhere(req.query, req.user)
-    };
+    const macroIds = parseIdList(req.query.macro_proceso_id);
+    const procesoIds = parseIdList(req.query.proceso_id);
+    const subprocesoIds = parseIdList(req.query.subproceso_id);
+    const tipoIds = parseIdList(req.query.tipo_documentacion_id);
+    const replacements = { publicState: PUBLIC_DOCUMENT_STATE };
+    const conditions = [
+      isInactiveScope(req.query, req.user)
+        ? "COALESCE(d.estado, '') <> :publicState"
+        : 'd.estado = :publicState'
+    ];
 
-    const fetchDocumentsForFacet = async () => {
-      const documentoWhere = { ...filters.estadoWhere };
-      if (filters.tipoIds) {
-        documentoWhere.tipo_documentacion_id = toInOrEq(filters.tipoIds);
-      }
-      if (filters.titulo) {
-        const searchWhere = buildSearchWhere(filters.titulo);
-        if (searchWhere) Object.assign(documentoWhere, searchWhere);
-      }
+    if (macroIds) {
+      conditions.push('mp.id IN (:macroIds)');
+      replacements.macroIds = macroIds;
+    }
+    if (procesoIds) {
+      conditions.push('p.id IN (:procesoIds)');
+      replacements.procesoIds = procesoIds;
+    }
+    if (subprocesoIds) {
+      conditions.push('sp.id IN (:subprocesoIds)');
+      replacements.subprocesoIds = subprocesoIds;
+    }
+    if (tipoIds) {
+      conditions.push('td.id IN (:tipoIds)');
+      replacements.tipoIds = tipoIds;
+    }
 
-      const macroWhere = filters.macroIds
-        ? { id: toInOrEq(filters.macroIds) }
-        : {};
-      const procesoWhere = filters.procesoIds
-        ? { id: toInOrEq(filters.procesoIds) }
-        : {};
-      const subWhere = filters.subprocesoIds
-        ? { id: toInOrEq(filters.subprocesoIds) }
-        : {};
-
-      // TipoDocumentacion: LEFT JOIN (no requerido) para no excluir documentos
-      // sin tipo al calcular facetas de macro/proceso/subproceso.
-      // Solo los documentos con tipo válido contribuyen a la faceta 'tipo'.
-      const tipoRequired = Boolean(filters.tipoIds);
-
-      return Documento.findAll({
-        where: documentoWhere,
-        attributes: ['id'],
-        include: [
-          {
-            model: TipoDocumentacion,
-            as: 'tipoDocumentacion',
-            required: tipoRequired,
-            attributes: ['id', 'nombre']
-          },
-          {
-            model: SubProceso,
-            as: 'subproceso',
-            required: true,
-            attributes: ['id', 'nombre', 'proceso_id'],
-            where: subWhere,
-            include: [
-              {
-                model: Proceso,
-                as: 'proceso',
-                required: true,
-                attributes: ['id', 'nombre', 'macro_proceso_id'],
-                where: procesoWhere,
-                include: [
-                  {
-                    model: MacroProceso,
-                    as: 'macroProceso',
-                    required: true,
-                    attributes: ['id', 'nombre'],
-                    where: macroWhere
-                  }
-                ]
-              }
-            ]
-          }
-        ]
+    String(req.query.titulo || '')
+      .trim()
+      .split(/\s+/)
+      .filter(Boolean)
+      .forEach((term, index) => {
+        const key = `term${index}`;
+        conditions.push(`(d.titulo ILIKE :${key} OR d.codigo ILIKE :${key})`);
+        replacements[key] = `%${term}%`;
       });
-    };
 
-    const toPlain = (value) => (typeof value?.toJSON === 'function' ? value.toJSON() : value);
-    const sortByName = (a, b) => String(a.nombre || '').localeCompare(String(b.nombre || ''));
-    const collectFacet = (documents, facet) => {
+    const rows = await sequelize.query(
+      `
+        SELECT DISTINCT
+          mp.id AS macro_id,
+          mp.nombre AS macro_nombre,
+          p.id AS proceso_id,
+          p.nombre AS proceso_nombre,
+          sp.id AS subproceso_id,
+          sp.nombre AS subproceso_nombre,
+          td.id AS tipo_id,
+          td.nombre AS tipo_nombre
+        FROM documentos d
+        JOIN subprocesos sp ON sp.id = d.subproceso_id
+        JOIN procesos p ON p.id = sp.proceso_id
+        JOIN macro_procesos mp ON mp.id = p.macro_proceso_id
+        JOIN tipos_documentacion td ON td.id = d.tipo_documentacion_id
+        WHERE ${conditions.join(' AND ')}
+      `,
+      { replacements, type: QueryTypes.SELECT }
+    );
+
+    const sortByName = (a, b) => String(a.nombre || '').localeCompare(String(b.nombre || ''), 'es');
+    const collectFacet = (facet) => {
       const map = new Map();
-      documents.forEach((doc) => {
-        const macro = toPlain(doc?.subproceso?.proceso?.macroProceso);
-        const proceso = toPlain(doc?.subproceso?.proceso);
-        const subproceso = toPlain(doc?.subproceso);
-        const tipo = toPlain(doc?.tipoDocumentacion);
-
-        if (facet === 'macro' && macro?.id) map.set(String(macro.id), macro);
-        if (facet === 'proceso' && proceso?.id) map.set(String(proceso.id), proceso);
-        if (facet === 'subproceso' && subproceso?.id) map.set(String(subproceso.id), subproceso);
-        if (facet === 'tipo' && tipo?.id) map.set(String(tipo.id), tipo);
+      rows.forEach((row) => {
+        if (facet === 'macro' && row.macro_id) map.set(String(row.macro_id), { id: row.macro_id, nombre: row.macro_nombre });
+        if (facet === 'proceso' && row.proceso_id) map.set(String(row.proceso_id), { id: row.proceso_id, nombre: row.proceso_nombre, macro_proceso_id: row.macro_id });
+        if (facet === 'subproceso' && row.subproceso_id) map.set(String(row.subproceso_id), { id: row.subproceso_id, nombre: row.subproceso_nombre, proceso_id: row.proceso_id });
+        if (facet === 'tipo' && row.tipo_id) map.set(String(row.tipo_id), { id: row.tipo_id, nombre: row.tipo_nombre });
       });
       return Array.from(map.values()).sort(sortByName);
     };
 
-    const filteredDocs = await fetchDocumentsForFacet();
-
     res.json({
       success: true,
       data: {
-        macroProcesos: collectFacet(filteredDocs, 'macro'),
-        procesos: collectFacet(filteredDocs, 'proceso'),
-        subprocesos: collectFacet(filteredDocs, 'subproceso'),
-        tipos: collectFacet(filteredDocs, 'tipo')
+        macroProcesos: collectFacet('macro'),
+        procesos: collectFacet('proceso'),
+        subprocesos: collectFacet('subproceso'),
+        tipos: collectFacet('tipo')
       }
     });
   } catch (error) {
@@ -258,5 +217,4 @@ const getFilterOptions = async (req, res) => {
     res.status(500).json({ success: false, message: 'Error' });
   }
 };
-
 module.exports = { getMacroProcesos, getProcesos, getSubProcesos, getTiposDocumentacion, getFilterOptions };

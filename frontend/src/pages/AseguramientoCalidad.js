@@ -832,8 +832,7 @@ function AseguramientoCalidad() {
   const resolveFacetOptions = (dynamicOptions, baseOptions, selectedIds, clean = (items) => items) => {
     if (!dynamicOptions) return baseOptions;
     const cleanedDynamic = clean(dynamicOptions);
-    const selectedMerged = mergeSelectedOptions(cleanedDynamic, baseOptions, selectedIds);
-    return selectedMerged.length > 0 ? selectedMerged : baseOptions;
+    return mergeSelectedOptions(cleanedDynamic, baseOptions, selectedIds);
   };
   const macroOptions = resolveFacetOptions(filterOptions.macroProcesos, baseMacroOptions, selMacros);
   const procesoOptions = resolveFacetOptions(filterOptions.procesos, baseProcesoOptions, selProcesos);
