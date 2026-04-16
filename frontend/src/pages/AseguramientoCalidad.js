@@ -216,6 +216,28 @@ const formatDate = (value) => {
   return date.toLocaleDateString('es-CO');
 };
 
+const emptyFilterOptions = {
+  macroProcesos: null,
+  procesos: null,
+  subprocesos: null,
+  tipos: null
+};
+
+const byName = (a, b) => String(a.nombre || '').localeCompare(String(b.nombre || ''), 'es');
+
+const mergeSelectedOptions = (available = [], base = [], selectedIds = []) => {
+  const map = new Map();
+  (available || []).forEach((item) => {
+    if (item?.id) map.set(String(item.id), item);
+  });
+  (base || []).forEach((item) => {
+    if (item?.id && selectedIds.some((id) => String(id) === String(item.id))) {
+      map.set(String(item.id), item);
+    }
+  });
+  return Array.from(map.values()).sort(byName);
+};
+
 function DocFilterPanel({ label, options, value, onChange, disabled, placeholder }) {
   const [open, setOpen] = useState(false);
   const [search, setSearch] = useState('');
@@ -255,12 +277,16 @@ function DocFilterPanel({ label, options, value, onChange, disabled, placeholder
   useEffect(() => {
     if (!open) return;
     computePosition();
-    const onScrollResize = () => { setOpen(false); setSearch(''); };
-    window.addEventListener('scroll', onScrollResize, true);
-    window.addEventListener('resize', onScrollResize);
+    const onScroll = (event) => {
+      if (dropdownRef.current?.contains(event.target)) return;
+      computePosition();
+    };
+    const onResize = () => computePosition();
+    window.addEventListener('scroll', onScroll, true);
+    window.addEventListener('resize', onResize);
     return () => {
-      window.removeEventListener('scroll', onScrollResize, true);
-      window.removeEventListener('resize', onScrollResize);
+      window.removeEventListener('scroll', onScroll, true);
+      window.removeEventListener('resize', onResize);
     };
   }, [open, computePosition]);
 
@@ -307,7 +333,10 @@ function DocFilterPanel({ label, options, value, onChange, disabled, placeholder
         </div>
         <span style={{ fontSize: 11, fontWeight: 700, color: C }}>SELECCIONAR TODOS ({effectiveOptions.length})</span>
       </div>
-      <div style={{ maxHeight: 220, overflowY: 'auto' }}>
+      <div
+        onWheel={(event) => event.stopPropagation()}
+        style={{ maxHeight: 220, overflowY: 'auto', overscrollBehavior: 'contain', scrollbarWidth: 'thin' }}
+      >
         {filtered.length === 0
           ? <div style={{ padding: '12px 16px', textAlign: 'center', fontSize: 12, color: '#94a3b8' }}>Sin resultados</div>
           : filtered.map((opt) => (
@@ -404,6 +433,7 @@ function AseguramientoCalidad() {
   const [favoriteIds, setFavoriteIds] = useState(new Set());
   const [loadingFavorites, setLoadingFavorites] = useState(false);
   const [syncingSheet, setSyncingSheet] = useState(false);
+  const [filterOptions, setFilterOptions] = useState(emptyFilterOptions);
 
   const syncCatalogosFromPayload = useCallback((data = {}) => {
     setMacroProcesos(data.macroProcesos || []);
@@ -429,26 +459,58 @@ function AseguramientoCalidad() {
   }, [syncCatalogosFromPayload]);
 
   const loadCatalogos = useCallback(async (activeFilters = {}) => {
-    const scope = activeFilters.include_inactive ? { include_inactive: activeFilters.include_inactive } : {};
+    const hasUserFilter = Object.entries(activeFilters).some(
+      ([key, value]) => key !== 'include_inactive' && String(value || '').trim() !== ''
+    );
+    if (!hasUserFilter) {
+      setFilterOptions(emptyFilterOptions);
+      await loadCatalogosDirecto(activeFilters);
+      return;
+    }
+
     try {
-      const response = await catalogoService.getFilterOptions(scope);
+      const response = await catalogoService.getFilterOptions(activeFilters);
       const data = response?.data || {};
       if ((data.macroProcesos||[]).length || (data.procesos||[]).length ||
           (data.subprocesos||[]).length   || (data.tipos||[]).length) {
-        syncCatalogosFromPayload(data);
+        setFilterOptions({
+          macroProcesos: data.macroProcesos || [],
+          procesos: data.procesos || [],
+          subprocesos: data.subprocesos || [],
+          tipos: data.tipos || []
+        });
         return;
       }
     } catch (_e) {}
 
-    await loadCatalogosDirecto(scope);
-  }, [loadCatalogosDirecto, syncCatalogosFromPayload]);
+    setFilterOptions(emptyFilterOptions);
+  }, [loadCatalogosDirecto]);
 
   useEffect(() => {
     const extra = filters.include_inactive ? { include_inactive: filters.include_inactive } : {};
+    setFilterOptions(emptyFilterOptions);
     loadCatalogosDirecto(extra).catch(() => {
       enqueueSnackbar('No fue posible cargar los filtros', { variant: 'warning' });
     });
   }, [filters.include_inactive, loadCatalogosDirecto, enqueueSnackbar]);
+
+  useEffect(() => {
+    const params = {};
+    if (selMacros.length) params.macro_proceso_id = selMacros.join(',');
+    if (selProcesos.length) params.proceso_id = selProcesos.join(',');
+    if (selSubprocesos.length) params.subproceso_id = selSubprocesos.join(',');
+    if (selTipos.length) params.tipo_documentacion_id = selTipos.join(',');
+    if (filters.titulo) params.titulo = filters.titulo;
+    if (filters.include_inactive) params.include_inactive = filters.include_inactive;
+
+    const hasUserFilter = Object.keys(params).some((key) => key !== 'include_inactive');
+    if (!hasUserFilter) {
+      setFilterOptions(emptyFilterOptions);
+      return;
+    }
+
+    loadCatalogos(params).catch(() => setFilterOptions(emptyFilterOptions));
+  }, [loadCatalogos, selMacros, selProcesos, selSubprocesos, selTipos, filters.titulo, filters.include_inactive]);
 
   useEffect(() => {
     if (!user?.id) return;
@@ -752,16 +814,28 @@ function AseguramientoCalidad() {
   const tiposDocumentacionDisplay = tiposDocumentacion.filter((td) => !isDocumentCode(td.nombre));
 
   const hasSelectedId = (ids, id) => ids.some((value) => String(value) === String(id));
-  const macroOptions = macroProcesos;
-  const procesoOptions = selMacros.length > 0
+  const baseMacroOptions = macroProcesos;
+  const baseProcesoOptions = selMacros.length > 0
     ? procesos.filter(p => hasSelectedId(selMacros, p.macro_proceso_id))
     : procesos;
-  const subprocesoOptions = selProcesos.length > 0
+  const baseSubprocesoOptions = selProcesos.length > 0
     ? subprocesos.filter(sp => hasSelectedId(selProcesos, sp.proceso_id))
     : selMacros.length > 0
-      ? subprocesos.filter(sp => procesoOptions.some(p => String(p.id) === String(sp.proceso_id)))
+      ? subprocesos.filter(sp => baseProcesoOptions.some(p => String(p.id) === String(sp.proceso_id)))
       : subprocesos;
-  const tipoOptions = tiposDocumentacionDisplay;
+  const baseTipoOptions = tiposDocumentacionDisplay;
+  const macroOptions = filterOptions.macroProcesos
+    ? mergeSelectedOptions(filterOptions.macroProcesos, baseMacroOptions, selMacros)
+    : baseMacroOptions;
+  const procesoOptions = filterOptions.procesos
+    ? mergeSelectedOptions(filterOptions.procesos, baseProcesoOptions, selProcesos)
+    : baseProcesoOptions;
+  const subprocesoOptions = filterOptions.subprocesos
+    ? mergeSelectedOptions(filterOptions.subprocesos, baseSubprocesoOptions, selSubprocesos)
+    : baseSubprocesoOptions;
+  const tipoOptions = filterOptions.tipos
+    ? mergeSelectedOptions(filterOptions.tipos.filter((td) => !isDocumentCode(td.nombre)), baseTipoOptions, selTipos)
+    : baseTipoOptions;
   const isFiltering = loading || autoSearching;
 
   return (
