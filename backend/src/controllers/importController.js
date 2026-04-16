@@ -980,18 +980,25 @@ const importFromSheetFixed = async (req, res) => {
           observaciones: toText(row.observaciones)
         };
 
-        const existente = existingDocumentsByCode.get(documentoData.codigo);
-        if (existente) {
-          if (documentNeedsUpdate(existente, documentoData)) {
-            await existente.update(documentoData);
-            results.actualizados++;
-          } else {
-            results.omitidos++;
-          }
-        } else {
-          const nuevoDocumento = await Documento.create(documentoData);
+        if (mode === 'reemplazar') {
+          // En reemplazar: insertar siempre sin deduplicar — cada fila de Sheets = un registro en BD
+          await Documento.create(documentoData);
           results.importados++;
-          existingDocumentsByCode.set(documentoData.codigo, nuevoDocumento);
+        } else {
+          // En incremental: upsert por codigo
+          const existente = existingDocumentsByCode.get(documentoData.codigo);
+          if (existente) {
+            if (documentNeedsUpdate(existente, documentoData)) {
+              await existente.update(documentoData);
+              results.actualizados++;
+            } else {
+              results.omitidos++;
+            }
+          } else {
+            const nuevoDocumento = await Documento.create(documentoData);
+            results.importados++;
+            existingDocumentsByCode.set(documentoData.codigo, nuevoDocumento);
+          }
         }
       } catch (error) {
         results.errores.push({
