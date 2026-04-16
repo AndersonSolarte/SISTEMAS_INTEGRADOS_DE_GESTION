@@ -173,20 +173,23 @@ const getFilterOptions = async (req, res) => {
     const rows = await sequelize.query(
       `
         SELECT DISTINCT
-          mp.id AS macro_id,
+          mp.id   AS macro_id,
           mp.nombre AS macro_nombre,
-          p.id AS proceso_id,
-          p.nombre AS proceso_nombre,
-          sp.id AS subproceso_id,
+          p.id    AS proceso_id,
+          p.nombre  AS proceso_nombre,
+          sp.id   AS subproceso_id,
           sp.nombre AS subproceso_nombre,
-          td.id AS tipo_id,
+          td.id   AS tipo_id,
           td.nombre AS tipo_nombre
         FROM documentos d
-        JOIN subprocesos sp ON sp.id = d.subproceso_id
-        JOIN procesos p ON p.id = sp.proceso_id
-        JOIN macro_procesos mp ON mp.id = p.macro_proceso_id
-        JOIN tipos_documentacion td ON td.id = d.tipo_documentacion_id
+        LEFT JOIN subprocesos sp       ON sp.id = d.subproceso_id
+        LEFT JOIN procesos p           ON p.id  = sp.proceso_id
+        LEFT JOIN macro_procesos mp    ON mp.id = p.macro_proceso_id
+        LEFT JOIN tipos_documentacion td ON td.id = d.tipo_documentacion_id
         WHERE ${conditions.join(' AND ')}
+          AND sp.id IS NOT NULL
+          AND p.id IS NOT NULL
+          AND mp.id IS NOT NULL
       `,
       { replacements, type: QueryTypes.SELECT }
     );
