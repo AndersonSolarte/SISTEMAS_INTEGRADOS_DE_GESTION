@@ -169,21 +169,25 @@ const ensureDocumentTextColumns = async (qi) => {
   await sequelize.query(`
     UPDATE documentos d
     SET
-      macroproceso = COALESCE(d.macroproceso, mp.nombre),
-      proceso = COALESCE(d.proceso, p.nombre),
-      subproceso = COALESCE(d.subproceso, sp.nombre),
-      tipo_documento = COALESCE(d.tipo_documento, td.nombre)
-    FROM subprocesos sp
-    LEFT JOIN procesos p ON p.id = sp.proceso_id
-    LEFT JOIN macro_procesos mp ON mp.id = p.macro_proceso_id
-    LEFT JOIN tipos_documentacion td ON td.id = d.tipo_documentacion_id
-    WHERE d.subproceso_id = sp.id
-      AND (
-        d.macroproceso IS NULL
-        OR d.proceso IS NULL
-        OR d.subproceso IS NULL
-        OR d.tipo_documento IS NULL
-      )
+      macroproceso = COALESCE(d.macroproceso, x.macroproceso),
+      proceso = COALESCE(d.proceso, x.proceso),
+      subproceso = COALESCE(d.subproceso, x.subproceso),
+      tipo_documento = COALESCE(d.tipo_documento, x.tipo_documento)
+    FROM (
+      SELECT
+        doc.id,
+        mp.nombre AS macroproceso,
+        p.nombre AS proceso,
+        sp.nombre AS subproceso,
+        td.nombre AS tipo_documento
+      FROM documentos doc
+      LEFT JOIN subprocesos sp ON sp.id = doc.subproceso_id
+      LEFT JOIN procesos p ON p.id = sp.proceso_id
+      LEFT JOIN macro_procesos mp ON mp.id = p.macro_proceso_id
+      LEFT JOIN tipos_documentacion td ON td.id = doc.tipo_documentacion_id
+    ) x
+    WHERE d.id = x.id
+      AND (d.macroproceso IS NULL OR d.proceso IS NULL OR d.subproceso IS NULL OR d.tipo_documento IS NULL)
   `);
 };
 
