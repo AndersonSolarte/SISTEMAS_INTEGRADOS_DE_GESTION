@@ -1105,12 +1105,12 @@ const downloadTemplate = (req, res) => {
 
 const clearDocumentos = async (req, res) => {
   try {
-    const { identifier, password } = req.body;
+    const { identifier } = req.body;
 
-    if (!identifier || !password) {
+    if (!identifier) {
       return res.status(400).json({
         success: false,
-        message: 'Debe enviar usuario/correo y contraseña de administrador'
+        message: 'Debe enviar el correo del usuario autorizado'
       });
     }
 
@@ -1121,7 +1121,7 @@ const clearDocumentos = async (req, res) => {
     if (normalizedIdentifier !== currentEmail && normalizedIdentifier !== currentUsername) {
       return res.status(403).json({
         success: false,
-        message: 'El usuario de confirmación debe ser el administrador autenticado'
+        message: 'El correo de confirmación no coincide con el usuario autenticado'
       });
     }
 
@@ -1134,14 +1134,6 @@ const clearDocumentos = async (req, res) => {
       return res.status(403).json({
         success: false,
         message: 'No autorizado para esta operación'
-      });
-    }
-
-    const isMatch = await admin.comparePassword(password);
-    if (!isMatch) {
-      return res.status(401).json({
-        success: false,
-        message: 'Credenciales del usuario autorizado inválidas'
       });
     }
 

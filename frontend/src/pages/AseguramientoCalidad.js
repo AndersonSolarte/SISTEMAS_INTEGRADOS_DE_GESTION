@@ -427,7 +427,7 @@ function AseguramientoCalidad() {
   const [selectedFile, setSelectedFile] = useState(null);
   const [openClearDialog, setOpenClearDialog] = useState(false);
   const [clearIdentifier, setClearIdentifier] = useState('');
-  const [clearPassword, setClearPassword] = useState('');
+  const [clearConfirmText, setClearConfirmText] = useState('');
   const [clearingDb, setClearingDb] = useState(false);
   const [openPreviewDialog, setOpenPreviewDialog] = useState(false);
   const [previewUrl, setPreviewUrl] = useState('');
@@ -763,7 +763,7 @@ function AseguramientoCalidad() {
   const resetClearDialog = () => {
     setOpenClearDialog(false);
     setClearIdentifier('');
-    setClearPassword('');
+    setClearConfirmText('');
     setClearingDb(false);
   };
 
@@ -796,16 +796,19 @@ function AseguramientoCalidad() {
   };
 
   const handleClearDatabase = async () => {
-    if (!clearIdentifier.trim() || !clearPassword) {
-      enqueueSnackbar('Ingresa usuario/correo y contraseña para confirmar', { variant: 'warning' });
+    if (!clearIdentifier.trim()) {
+      enqueueSnackbar('Ingresa tu correo para confirmar', { variant: 'warning' });
+      return;
+    }
+    if (clearConfirmText.trim().toUpperCase() !== 'CONFIRMAR') {
+      enqueueSnackbar('Escribe CONFIRMAR para continuar', { variant: 'warning' });
       return;
     }
 
     setClearingDb(true);
     try {
       const response = await api.post('/import/clear', {
-        identifier: clearIdentifier.trim(),
-        password: clearPassword
+        identifier: clearIdentifier.trim()
       });
 
       enqueueSnackbar(response.data?.message || 'Base de datos limpiada correctamente', { variant: 'success' });
@@ -1394,22 +1397,23 @@ function AseguramientoCalidad() {
           <DialogTitle sx={{ fontWeight: 700 }}>Confirmar limpieza de base de datos</DialogTitle>
           <DialogContent>
             <Typography variant="body2" sx={{ color: '#64748b', mb: 2 }}>
-              Esta acción eliminará todos los documentos existentes. Ingresa tus credenciales de usuario autorizado para continuar.
+              Esta acción eliminará todos los documentos existentes. Ingresa tu correo y escribe <strong>CONFIRMAR</strong> para continuar.
             </Typography>
             <Stack spacing={2}>
               <TextField
-                label="Usuario o correo"
+                label="Correo electrónico"
                 value={clearIdentifier}
                 onChange={(e) => setClearIdentifier(e.target.value)}
                 fullWidth
                 autoFocus
               />
               <TextField
-                label="Contraseña"
-                type="password"
-                value={clearPassword}
-                onChange={(e) => setClearPassword(e.target.value)}
+                label='Escribe "CONFIRMAR" para continuar'
+                value={clearConfirmText}
+                onChange={(e) => setClearConfirmText(e.target.value)}
                 fullWidth
+                error={clearConfirmText.length > 0 && clearConfirmText.trim().toUpperCase() !== 'CONFIRMAR'}
+                helperText={clearConfirmText.length > 0 && clearConfirmText.trim().toUpperCase() !== 'CONFIRMAR' ? 'Debe escribir exactamente CONFIRMAR' : ''}
               />
             </Stack>
           </DialogContent>
