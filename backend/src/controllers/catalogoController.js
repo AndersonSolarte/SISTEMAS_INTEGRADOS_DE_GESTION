@@ -1,5 +1,5 @@
 const { MacroProceso, Proceso, SubProceso, TipoDocumentacion, Documento } = require('../models');
-const { literal, QueryTypes } = require('sequelize');
+const { literal, QueryTypes, Op } = require('sequelize');
 const { sequelize } = require('../config/database');
 const { ROLES } = require('../constants/roles');
 
