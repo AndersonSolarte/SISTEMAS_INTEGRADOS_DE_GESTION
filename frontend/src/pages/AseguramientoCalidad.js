@@ -825,29 +825,25 @@ function AseguramientoCalidad() {
   const hasActiveFilters = activeFiltersCount > 0;
   const tiposDocumentacionDisplay = tiposDocumentacion.filter((td) => !isDocumentCode(td.nombre));
 
-  const hasSelectedId = (ids, id) => ids.some((value) => String(value) === String(id));
   const baseMacroOptions = macroProcesos;
-  const baseProcesoOptions = selMacros.length > 0
-    ? procesos.filter(p => hasSelectedId(selMacros, p.macro_proceso_id))
-    : procesos;
-  const baseSubprocesoOptions = selProcesos.length > 0
-    ? subprocesos.filter(sp => hasSelectedId(selProcesos, sp.proceso_id))
-    : selMacros.length > 0
-      ? subprocesos.filter(sp => baseProcesoOptions.some(p => String(p.id) === String(sp.proceso_id)))
-      : subprocesos;
+  const baseProcesoOptions = procesos;
+  const baseSubprocesoOptions = subprocesos;
   const baseTipoOptions = tiposDocumentacionDisplay;
-  const macroOptions = filterOptions.macroProcesos
-    ? mergeSelectedOptions(filterOptions.macroProcesos, baseMacroOptions, selMacros)
-    : baseMacroOptions;
-  const procesoOptions = filterOptions.procesos
-    ? mergeSelectedOptions(filterOptions.procesos, baseProcesoOptions, selProcesos)
-    : baseProcesoOptions;
-  const subprocesoOptions = filterOptions.subprocesos
-    ? mergeSelectedOptions(filterOptions.subprocesos, baseSubprocesoOptions, selSubprocesos)
-    : baseSubprocesoOptions;
-  const tipoOptions = filterOptions.tipos
-    ? mergeSelectedOptions(filterOptions.tipos.filter((td) => !isDocumentCode(td.nombre)), baseTipoOptions, selTipos)
-    : baseTipoOptions;
+  const resolveFacetOptions = (dynamicOptions, baseOptions, selectedIds, clean = (items) => items) => {
+    if (!dynamicOptions) return baseOptions;
+    const cleanedDynamic = clean(dynamicOptions);
+    const selectedMerged = mergeSelectedOptions(cleanedDynamic, baseOptions, selectedIds);
+    return selectedMerged.length > 0 ? selectedMerged : baseOptions;
+  };
+  const macroOptions = resolveFacetOptions(filterOptions.macroProcesos, baseMacroOptions, selMacros);
+  const procesoOptions = resolveFacetOptions(filterOptions.procesos, baseProcesoOptions, selProcesos);
+  const subprocesoOptions = resolveFacetOptions(filterOptions.subprocesos, baseSubprocesoOptions, selSubprocesos);
+  const tipoOptions = resolveFacetOptions(
+    filterOptions.tipos,
+    baseTipoOptions,
+    selTipos,
+    (items) => items.filter((td) => !isDocumentCode(td.nombre))
+  );
   const isFiltering = loading || autoSearching;
 
   return (
