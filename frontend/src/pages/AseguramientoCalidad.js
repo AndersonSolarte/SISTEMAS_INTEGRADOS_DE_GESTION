@@ -1071,23 +1071,21 @@ function AseguramientoCalidad() {
                   label="Macroproceso"
                   options={macroOptions}
                   value={selMacros}
-                  onChange={(v) => { setSelMacros(v); setSelProcesos([]); setSelSubprocesos([]); setSelTipos([]); }}
+                  onChange={setSelMacros}
                   placeholder="Buscar macroproceso..."
                 />
                 <DocFilterPanel
                   label="Proceso"
                   options={procesoOptions}
                   value={selProcesos}
-                  onChange={(v) => { setSelProcesos(v); setSelSubprocesos([]); setSelTipos([]); }}
-                  disabled={procesoOptions.length === 0}
+                  onChange={setSelProcesos}
                   placeholder="Buscar proceso..."
                 />
                 <DocFilterPanel
                   label="Subproceso"
                   options={subprocesoOptions}
                   value={selSubprocesos}
-                  onChange={(v) => { setSelSubprocesos(v); setSelTipos([]); }}
-                  disabled={subprocesoOptions.length === 0}
+                  onChange={setSelSubprocesos}
                   placeholder="Buscar subproceso..."
                 />
                 <DocFilterPanel
