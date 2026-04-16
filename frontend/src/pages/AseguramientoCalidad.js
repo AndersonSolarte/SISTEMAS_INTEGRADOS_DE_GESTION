@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import ReactDOM from 'react-dom';
 import { Box, Paper, Typography, Grid, TextField, Button, Table, TableBody, TableCell, TableContainer, TableHead, TableRow, TablePagination, CircularProgress, Chip, IconButton, Tooltip, Fade, Slide, Stack, Dialog, DialogTitle, DialogContent, DialogActions, InputAdornment, Switch } from '@mui/material';
-import { Search as SearchIcon, Clear as ClearIcon, VisibilityOutlined as VisibilityOutlinedIcon, FileDownloadOutlined as FileDownloadOutlinedIcon, Description as DescriptionIcon, Article as ArticleIcon, AssignmentTurnedIn as AssignmentIcon, ListAlt as ListIcon, Policy as PolicyIcon, AccountTree as AccountTreeIcon, Upload as UploadIcon, GetApp as DownloadTemplateIcon, Favorite as FavoriteIcon, FavoriteBorder as FavoriteBorderIcon } from '@mui/icons-material';
+import { Search as SearchIcon, Clear as ClearIcon, VisibilityOutlined as VisibilityOutlinedIcon, FileDownloadOutlined as FileDownloadOutlinedIcon, Description as DescriptionIcon, Article as ArticleIcon, AssignmentTurnedIn as AssignmentIcon, ListAlt as ListIcon, Policy as PolicyIcon, AccountTree as AccountTreeIcon, Upload as UploadIcon, GetApp as DownloadTemplateIcon, DeleteSweep as DeleteSweepIcon, Favorite as FavoriteIcon, FavoriteBorder as FavoriteBorderIcon } from '@mui/icons-material';
 import { useSnackbar } from 'notistack';
 import { useLocation } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
@@ -434,6 +434,10 @@ function AseguramientoCalidad() {
   const [favoriteIds, setFavoriteIds] = useState(new Set());
   const [loadingFavorites, setLoadingFavorites] = useState(false);
   const [syncingSheet, setSyncingSheet] = useState(false);
+  const [openClearDialog, setOpenClearDialog] = useState(false);
+  const [clearEmail, setClearEmail] = useState('');
+  const [clearConfirmation, setClearConfirmation] = useState('');
+  const [clearingDocuments, setClearingDocuments] = useState(false);
   const [filterOptions, setFilterOptions] = useState(emptyFilterOptions);
 
   const syncCatalogosFromPayload = useCallback((data = {}) => {
@@ -756,6 +760,37 @@ function AseguramientoCalidad() {
     }
   };
 
+  const handleOpenClearDialog = () => {
+    setClearEmail(user?.email || '');
+    setClearConfirmation('');
+    setOpenClearDialog(true);
+  };
+
+  const handleCloseClearDialog = () => {
+    if (clearingDocuments) return;
+    setOpenClearDialog(false);
+  };
+
+  const handleClearServerDocuments = async () => {
+    setClearingDocuments(true);
+    try {
+      const response = await api.post('/import/clear', {
+        email: clearEmail,
+        confirmText: clearConfirmation
+      });
+
+      enqueueSnackbar(response.data?.message || 'Base documental limpiada', { variant: 'success' });
+      setOpenClearDialog(false);
+      setDocumentos([]);
+      setTotalDocumentos(0);
+      await loadCatalogos();
+    } catch (error) {
+      enqueueSnackbar(getApiErrorMessage(error, 'Error al limpiar la base documental'), { variant: 'error' });
+    } finally {
+      setClearingDocuments(false);
+    }
+  };
+
   const openDocumentPreview = (doc, normalized) => {
     if (!doc?.link_acceso) return;
     const resolved = toAbsoluteDocumentUrl(doc.link_acceso);
@@ -889,6 +924,18 @@ function AseguramientoCalidad() {
               <Grid item xs={12} md={3}>
                 <Button variant="outlined" fullWidth startIcon={<DownloadTemplateIcon />} onClick={handleDownloadTemplate} sx={{ borderRadius: 2, py: 1.5 }}>
                   Descargar Plantilla
+                </Button>
+              </Grid>
+              <Grid item xs={12} md={2}>
+                <Button
+                  variant="outlined"
+                  color="error"
+                  fullWidth
+                  startIcon={<DeleteSweepIcon />}
+                  onClick={handleOpenClearDialog}
+                  sx={{ borderRadius: 2, py: 1.5, textTransform: 'none', fontWeight: 700 }}
+                >
+                  Limpiar base
                 </Button>
               </Grid>
               <Grid item xs={12}>
@@ -1298,6 +1345,46 @@ function AseguramientoCalidad() {
             )}
           </Paper>
         </Slide>
+        <Dialog open={openClearDialog} onClose={handleCloseClearDialog} maxWidth="sm" fullWidth>
+          <DialogTitle sx={{ fontWeight: 800 }}>
+            Confirmar limpieza de base de datos
+          </DialogTitle>
+          <DialogContent>
+            <Typography variant="body2" sx={{ color: '#64748b', mb: 2 }}>
+              Esta accion eliminara todos los documentos y favoritos asociados. Ingresa tu correo y escribe CONFIRMAR para continuar.
+            </Typography>
+            <TextField
+              fullWidth
+              label="Correo electronico"
+              value={clearEmail}
+              onChange={(event) => setClearEmail(event.target.value)}
+              disabled={clearingDocuments}
+              sx={{ mb: 2 }}
+            />
+            <TextField
+              fullWidth
+              label='Escribe "CONFIRMAR" para continuar'
+              value={clearConfirmation}
+              onChange={(event) => setClearConfirmation(event.target.value)}
+              disabled={clearingDocuments}
+            />
+          </DialogContent>
+          <DialogActions sx={{ px: 3, py: 2 }}>
+            <Button onClick={handleCloseClearDialog} disabled={clearingDocuments}>
+              Cancelar
+            </Button>
+            <Button
+              variant="contained"
+              color="error"
+              startIcon={<DeleteSweepIcon />}
+              onClick={handleClearServerDocuments}
+              disabled={clearingDocuments || clearConfirmation.trim().toUpperCase() !== 'CONFIRMAR'}
+              sx={{ borderRadius: 2, textTransform: 'none', fontWeight: 700 }}
+            >
+              {clearingDocuments ? 'Limpiando...' : 'Confirmar limpieza'}
+            </Button>
+          </DialogActions>
+        </Dialog>
         <Dialog open={openPreviewDialog} onClose={closeDocumentPreview} maxWidth="lg" fullWidth>
           <DialogTitle sx={{ fontWeight: 700, pr: 2 }}>
             <Stack direction="row" spacing={2} alignItems="center" justifyContent="space-between">

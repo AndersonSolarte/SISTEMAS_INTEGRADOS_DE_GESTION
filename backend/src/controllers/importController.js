@@ -1,7 +1,8 @@
 const XLSX = require('xlsx');
 const { google } = require('googleapis');
 const path = require('path');
-const { MacroProceso, Proceso, SubProceso, TipoDocumentacion, Documento, GestionInformacionCarga } = require('../models');
+const { MacroProceso, Proceso, SubProceso, TipoDocumentacion, Documento, DocumentoFavorito, GestionInformacionCarga, User } = require('../models');
+const { sequelize } = require('../config/database');
 const fs = require('fs');
 const MAX_DOCUMENT_IMPORT_ROWS = Number(process.env.MAX_DOCUMENT_IMPORT_ROWS || 10000);
 const GOOGLE_SHEETS_PUBLIC_TIMEOUT_MS = Number(process.env.GOOGLE_SHEETS_PUBLIC_TIMEOUT_MS || 15000);
@@ -1146,10 +1147,47 @@ const downloadTemplate = (req, res) => {
 };
 
 const clearDocumentos = async (req, res) => {
-  return res.status(403).json({
-    success: false,
-    message: 'La limpieza de documentos esta deshabilitada para conservar toda la informacion del servidor'
-  });
+  const { email, confirmText } = req.body || {};
+  const typedEmail = String(email || '').trim().toLowerCase();
+  const typedConfirmation = String(confirmText || '').trim().toUpperCase();
+
+  try {
+    const currentUser = await User.findByPk(req.user?.id);
+    const currentEmail = String(currentUser?.email || req.user?.email || '').trim().toLowerCase();
+
+    if (!currentEmail || typedEmail !== currentEmail) {
+      return res.status(400).json({
+        success: false,
+        message: 'El correo de confirmacion no coincide con el usuario activo'
+      });
+    }
+
+    if (typedConfirmation !== 'CONFIRMAR') {
+      return res.status(400).json({
+        success: false,
+        message: 'Debes escribir CONFIRMAR para limpiar la base de documentos'
+      });
+    }
+
+    const result = await sequelize.transaction(async (transaction) => {
+      const favoritosEliminados = await DocumentoFavorito.destroy({ where: {}, transaction });
+      const documentosEliminados = await Documento.destroy({ where: {}, transaction });
+      return { favoritosEliminados, documentosEliminados };
+    });
+
+    return res.json({
+      success: true,
+      message: `Base documental limpiada: ${result.documentosEliminados} documentos eliminados`,
+      data: result
+    });
+  } catch (error) {
+    console.error('Error al limpiar documentos:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Error al limpiar documentos',
+      error: error.message
+    });
+  }
 };
 
 module.exports = { importFromExcel, importFromSheet: importFromSheetFixed, downloadTemplate, clearDocumentos };
