@@ -19,6 +19,7 @@ import {
   Select,
   MenuItem
 } from '@mui/material';
+import FilterListRoundedIcon from '@mui/icons-material/FilterListRounded';
 import { useSnackbar } from 'notistack';
 import {
   ResponsiveContainer,
@@ -36,12 +37,9 @@ import {
 } from 'recharts';
 import gestionInformacionService from '../../services/gestionInformacionService';
 
+/* Solo se mantiene la vista general */
 const AGGREGATED_NAV_OPTIONS = [
-  { key: 'general', label: 'Resultados Saber Pro agregados', description: 'Vista general institucional agregada por años y programas.' },
-  { key: 'competencias_especificas', label: 'Agregados competencias específicas', description: 'Lectura enfocada en competencias específicas.' },
-  { key: 'competencias_genericas', label: 'Agregados competencias genéricas', description: 'Lectura enfocada en competencias genéricas.' },
-  { key: 'comparativo_general', label: 'Comparativo Saber Pro', description: 'Comparativo de programa frente al grupo de referencia.' },
-  { key: 'comparativo_especificas', label: 'Comparativo específicas', description: 'Comparativo centrado en competencias específicas.' }
+  { key: 'general', label: 'Resultados Saber Pro Agregados', description: 'Vista general institucional agregada por años y programas.' }
 ];
 
 const normalizeNumber = (value) => {
@@ -50,11 +48,6 @@ const normalizeNumber = (value) => {
   let text = String(value).trim();
   if (!text) return 0;
 
-  // Soporta:
-  // - "139.45" (decimal con punto)
-  // - "139,45" (decimal con coma)
-  // - "1.234,56" (miles + decimal coma)
-  // - "1,234.56" (miles + decimal punto)
   const hasDot = text.includes('.');
   const hasComma = text.includes(',');
   if (hasDot && hasComma) {
@@ -145,13 +138,19 @@ const renderAggregateLineLabelFactory = ({ color = '#334155', evenDy = -14, oddD
   );
 };
 
+/* Colores institucionales */
+const INST_BLUE       = '#1e3a8a';
+const INST_BLUE_MED   = '#1d4ed8';
+const INST_BLUE_LIGHT = '#eff6ff';
+const INST_BLUE_PALE  = '#dbeafe';
+
 function SaberProAgregadosDashboard({ initialSection, allowedSections = [] } = {}) {
   const { enqueueSnackbar } = useSnackbar();
   const [loading, setLoading] = useState(false);
   const [rows, setRows] = useState([]);
   const [selectedYears, setSelectedYears] = useState([]);
   const [selectedPrograms, setSelectedPrograms] = useState([]);
-  const [competenciaScope, setCompetenciaScope] = useState('genericas');
+  const [competenciaScope, setCompetenciaScope] = useState('todas');
   const availableNavOptions = useMemo(() => {
     if (!Array.isArray(allowedSections) || allowedSections.length === 0) {
       return AGGREGATED_NAV_OPTIONS;
@@ -159,7 +158,7 @@ function SaberProAgregadosDashboard({ initialSection, allowedSections = [] } = {
     const allowedSet = new Set(allowedSections);
     return AGGREGATED_NAV_OPTIONS.filter((item) => allowedSet.has(item.key));
   }, [allowedSections]);
-  const [activeSection, setActiveSection] = useState(initialSection || availableNavOptions[0]?.key || 'general');
+  const [activeSection] = useState(initialSection || 'general');
   const [selectedCompetencia, setSelectedCompetencia] = useState('');
   const [selectedComparativoCompetencia, setSelectedComparativoCompetencia] = useState('');
 
@@ -200,24 +199,6 @@ function SaberProAgregadosDashboard({ initialSection, allowedSections = [] } = {
     load();
     return () => { active = false; };
   }, [enqueueSnackbar]);
-
-  useEffect(() => {
-    if (!availableNavOptions.some((item) => item.key === activeSection)) {
-      setActiveSection(availableNavOptions[0]?.key || 'general');
-    }
-  }, [activeSection, availableNavOptions]);
-
-  useEffect(() => {
-    if (activeSection === 'competencias_especificas' || activeSection === 'comparativo_especificas') {
-      setCompetenciaScope('especificas');
-      return;
-    }
-    if (activeSection === 'competencias_genericas') {
-      setCompetenciaScope('genericas');
-      return;
-    }
-    setCompetenciaScope('todas');
-  }, [activeSection]);
 
   const availableYears = useMemo(
     () => Array.from(new Set(rows.map((r) => r.anio).filter((x) => Number.isFinite(x)))).sort((a, b) => a - b),
@@ -291,7 +272,7 @@ function SaberProAgregadosDashboard({ initialSection, allowedSections = [] } = {
   const activeTrendMeta = useMemo(() => ({
     key: selectedCompetencia ? 'competenciaSeleccionada' : 'promedioGeneral',
     name: selectedCompetencia || 'PROMEDIO',
-    color: selectedCompetencia ? '#7c3aed' : '#2563eb'
+    color: selectedCompetencia ? '#7c3aed' : INST_BLUE_MED
   }), [selectedCompetencia]);
 
   const generalTrendData = useMemo(() => {
@@ -436,296 +417,524 @@ function SaberProAgregadosDashboard({ initialSection, allowedSections = [] } = {
     }
     setter(currentValues.includes(value) ? currentValues.filter((v) => v !== value) : [...currentValues, value]);
   };
-  const activeSectionMeta = availableNavOptions.find((item) => item.key === activeSection) || availableNavOptions[0] || AGGREGATED_NAV_OPTIONS[0];
+
+  const handleClearFilters = () => {
+    setSelectedYears(availableYears.slice(-8));
+    setSelectedPrograms(availablePrograms);
+    setCompetenciaScope('todas');
+    setSelectedCompetencia('');
+    setSelectedComparativoCompetencia('');
+  };
+
+  /* ─── Estilos reutilizables ─────────────────────────────── */
+  const sectionHeaderSx = {
+    px: 3,
+    py: 2,
+    background: `linear-gradient(90deg, ${INST_BLUE} 0%, ${INST_BLUE_MED} 100%)`
+  };
+
+  const tableHeadCellSx = {
+    fontWeight: 800,
+    bgcolor: INST_BLUE,
+    color: '#ffffff',
+    borderBottom: 'none'
+  };
+
+  const tableHeadCellAccentSx = {
+    fontWeight: 800,
+    bgcolor: INST_BLUE_MED,
+    color: '#ffffff',
+    borderBottom: 'none'
+  };
 
   return (
-    <Stack spacing={2}>
-      <Paper elevation={0} sx={{ p: 2, border: '1px solid #dbe6f5', borderRadius: 2, bgcolor: '#f8fbff' }}>
-        <Stack direction={{ xs: 'column', md: 'row' }} justifyContent="space-between" spacing={1.5} sx={{ mb: 2 }}>
+    <Stack spacing={2.5} sx={{ p: { xs: 1.5, md: 2 } }}>
+
+      {/* ══════════════════════════════════════════════
+          FILTROS — card profesional
+      ══════════════════════════════════════════════ */}
+      <Paper
+        elevation={0}
+        sx={{
+          p: 3,
+          borderRadius: '14px',
+          boxShadow: '0 4px 24px rgba(15,23,42,0.08)',
+          border: '1px solid #e2e8f0',
+          bgcolor: '#ffffff'
+        }}
+      >
+        {/* Encabezado */}
+        <Stack direction={{ xs: 'column', sm: 'row' }} justifyContent="space-between" alignItems={{ xs: 'flex-start', sm: 'center' }} spacing={1.5} sx={{ mb: 2.5 }}>
           <Box>
-            <Typography sx={{ fontWeight: 900, color: '#0f172a', fontSize: 20 }}>
-              Resultados agregados
-            </Typography>
-            <Typography variant="body2" sx={{ color: '#64748b' }}>
-              Menú ejecutivo para navegar por agregados, competencias y comparativos.
+            <Stack direction="row" spacing={1} alignItems="center" sx={{ mb: 0.4 }}>
+              <FilterListRoundedIcon sx={{ fontSize: 18, color: INST_BLUE }} />
+              <Typography sx={{ fontWeight: 900, color: '#0f172a', fontSize: 18, letterSpacing: '-0.02em' }}>
+                Resultados Saber Pro Agregados
+              </Typography>
+            </Stack>
+            <Typography variant="body2" sx={{ color: '#64748b', ml: 3.5 }}>
+              Vista general institucional agregada por años y programas.
             </Typography>
           </Box>
-          <FormControl size="small" sx={{ minWidth: 320 }}>
-            <InputLabel>Navegación</InputLabel>
-            <Select
-              label="Navegación"
-              value={activeSection}
-              onChange={(event) => setActiveSection(event.target.value)}
-              sx={{ bgcolor: '#ffffff', borderRadius: 999, fontWeight: 800 }}
-            >
-              {availableNavOptions.map((item) => (
-                <MenuItem key={item.key} value={item.key}>
-                  {item.label}
-                </MenuItem>
-              ))}
-            </Select>
-          </FormControl>
+          <Button
+            variant="outlined"
+            size="small"
+            onClick={handleClearFilters}
+            sx={{
+              borderRadius: '8px',
+              fontWeight: 700,
+              fontSize: 12.5,
+              borderColor: '#e2e8f0',
+              color: '#64748b',
+              px: 2,
+              whiteSpace: 'nowrap',
+              '&:hover': { borderColor: '#94a3b8', bgcolor: '#f8fafc', color: '#334155' }
+            }}
+          >
+            Limpiar filtros
+          </Button>
         </Stack>
-        <Chip size="small" color="primary" variant="outlined" label={activeSectionMeta.description} sx={{ mb: 2 }} />
-        <Stack direction={{ xs: 'column', lg: 'row' }} spacing={2} alignItems={{ xs: 'stretch', lg: 'center' }}>
-          <FormControl size="small" sx={{ minWidth: 260 }}>
+
+        {/* Grid de filtros */}
+        <Box
+          sx={{
+            display: 'grid',
+            gridTemplateColumns: { xs: '1fr', sm: '1fr 1fr', lg: '1fr 2fr auto' },
+            gap: 2,
+            alignItems: 'end'
+          }}
+        >
+          {/* Años */}
+          <FormControl size="small" fullWidth>
             <InputLabel>Años</InputLabel>
             <Select
               multiple
               value={selectedYears}
               label="Años"
-              renderValue={(selected) => selected.length ? `${selected.length} año(s)` : 'Sin selección'}
+              renderValue={(selected) => selected.length ? `${selected.length} año(s) seleccionado(s)` : 'Sin selección'}
+              sx={{ borderRadius: '10px', bgcolor: '#f8fafc', '& .MuiOutlinedInput-notchedOutline': { borderColor: '#e2e8f0' } }}
             >
               <MenuItem onClick={() => handleToggleSelection(setSelectedYears, selectedYears, availableYears, '__all__')}>
-                <Checkbox checked={availableYears.length > 0 && selectedYears.length === availableYears.length} />
-                <ListItemText primary="Seleccionar todos" />
+                <Checkbox checked={availableYears.length > 0 && selectedYears.length === availableYears.length} size="small" />
+                <ListItemText primary="Seleccionar todos" primaryTypographyProps={{ fontWeight: 700, fontSize: 13 }} />
               </MenuItem>
               {availableYears.map((anio) => (
                 <MenuItem key={anio} value={anio} onClick={() => handleToggleSelection(setSelectedYears, selectedYears, availableYears, anio)}>
-                  <Checkbox checked={selectedYears.includes(anio)} />
+                  <Checkbox checked={selectedYears.includes(anio)} size="small" />
                   <ListItemText primary={String(anio)} />
                 </MenuItem>
               ))}
             </Select>
           </FormControl>
 
-          <FormControl size="small" sx={{ minWidth: 320, flex: 1 }}>
-            <InputLabel>Programas</InputLabel>
+          {/* Programas */}
+          <FormControl size="small" fullWidth>
+            <InputLabel>Programa</InputLabel>
             <Select
               multiple
               value={selectedPrograms}
-              label="Programas"
+              label="Programa"
               renderValue={(selected) => selected.length ? `${selected.length} programa(s)` : 'Sin selección'}
+              sx={{ borderRadius: '10px', bgcolor: '#f8fafc', '& .MuiOutlinedInput-notchedOutline': { borderColor: '#e2e8f0' } }}
             >
               <MenuItem onClick={() => handleToggleSelection(setSelectedPrograms, selectedPrograms, availablePrograms, '__all__')}>
-                <Checkbox checked={availablePrograms.length > 0 && selectedPrograms.length === availablePrograms.length} />
-                <ListItemText primary="Seleccionar todos" />
+                <Checkbox checked={availablePrograms.length > 0 && selectedPrograms.length === availablePrograms.length} size="small" />
+                <ListItemText primary="Seleccionar todos" primaryTypographyProps={{ fontWeight: 700, fontSize: 13 }} />
               </MenuItem>
               {availablePrograms.map((programa) => (
                 <MenuItem key={programa} value={programa} onClick={() => handleToggleSelection(setSelectedPrograms, selectedPrograms, availablePrograms, programa)}>
-                  <Checkbox checked={selectedPrograms.includes(programa)} />
+                  <Checkbox checked={selectedPrograms.includes(programa)} size="small" />
                   <ListItemText primary={programa} />
                 </MenuItem>
               ))}
             </Select>
           </FormControl>
 
+          {/* Tipo de competencia */}
           <Stack
             direction="row"
-            spacing={1}
-            flexWrap="wrap"
-            useFlexGap
-            justifyContent="center"
-            sx={{ width: { xs: '100%', lg: 'auto' }, '& .MuiButton-root': { minHeight: 40, px: 2.1, fontWeight: 800, borderRadius: 2 } }}
+            spacing={0.8}
+            sx={{
+              bgcolor: '#f1f5f9',
+              borderRadius: '10px',
+              p: 0.6,
+              '& .MuiButton-root': {
+                borderRadius: '8px',
+                fontWeight: 700,
+                fontSize: 12.5,
+                textTransform: 'none',
+                minHeight: 34,
+                px: 1.8,
+                border: 'none'
+              }
+            }}
           >
-            <Button
-              size="medium"
-              variant={competenciaScope === 'genericas' ? 'contained' : 'outlined'}
-              onClick={() => setCompetenciaScope('genericas')}
-            >
-              Genéricas
-            </Button>
-            <Button
-              size="medium"
-              variant={competenciaScope === 'especificas' ? 'contained' : 'outlined'}
-              onClick={() => setCompetenciaScope('especificas')}
-            >
-              Específicas
-            </Button>
-            <Button
-              size="medium"
-              variant={competenciaScope === 'todas' ? 'contained' : 'outlined'}
-              onClick={() => setCompetenciaScope('todas')}
-            >
-              Todas
-            </Button>
-            <Button size="medium" variant="text" onClick={() => setSelectedCompetencia('')}>
-              Limpiar fila
-            </Button>
+            {[
+              { key: 'genericas',   label: 'Genéricas' },
+              { key: 'especificas', label: 'Específicas' },
+              { key: 'todas',       label: 'Todas' }
+            ].map(({ key, label }) => (
+              <Button
+                key={key}
+                size="small"
+                variant={competenciaScope === key ? 'contained' : 'text'}
+                onClick={() => setCompetenciaScope(key)}
+                sx={competenciaScope === key
+                  ? { bgcolor: INST_BLUE, color: '#fff', boxShadow: '0 2px 8px rgba(30,58,138,0.22)', '&:hover': { bgcolor: '#1e40af' } }
+                  : { color: '#475569', '&:hover': { bgcolor: '#e2e8f0', color: '#0f172a' } }
+                }
+              >
+                {label}
+              </Button>
+            ))}
           </Stack>
-        </Stack>
-        <Stack direction="row" spacing={1} sx={{ mt: 1.2 }} flexWrap="wrap" useFlexGap>
-          <Chip size="small" label={`Registros: ${formatNumber(summaryCards.totalRegs)}`} />
-          <Chip size="small" label={`Programas visibles: ${summaryCards.programas}`} />
-          <Chip size="small" color="primary" variant="outlined" label={`Promedio general: ${summaryCards.promedioGeneral ? Number(summaryCards.promedioGeneral).toFixed(1) : 'N/A'}`} />
-          <Chip size="small" color={selectedCompetencia ? 'secondary' : 'default'} variant="outlined" label={`Fila activa: ${selectedCompetencia || 'General'}`} />
+        </Box>
+
+        {/* Chips resumen */}
+        <Stack direction="row" spacing={1} sx={{ mt: 2 }} flexWrap="wrap" useFlexGap alignItems="center">
+          <Chip
+            size="small"
+            label={`${formatNumber(summaryCards.totalRegs)} registros`}
+            sx={{ bgcolor: '#f1f5f9', color: '#475569', fontWeight: 600 }}
+          />
+          <Chip
+            size="small"
+            label={`${summaryCards.programas} programas visibles`}
+            sx={{ bgcolor: '#f1f5f9', color: '#475569', fontWeight: 600 }}
+          />
+          <Chip
+            size="small"
+            color="primary"
+            variant="outlined"
+            label={`Promedio general: ${summaryCards.promedioGeneral ? Number(summaryCards.promedioGeneral).toFixed(1) : 'N/A'}`}
+            sx={{ fontWeight: 700 }}
+          />
+          {selectedCompetencia && (
+            <Chip
+              size="small"
+              color="secondary"
+              variant="outlined"
+              label={`Fila activa: ${selectedCompetencia}`}
+              onDelete={() => setSelectedCompetencia('')}
+              sx={{ fontWeight: 700 }}
+            />
+          )}
         </Stack>
       </Paper>
 
+      {/* ══════════════════════════════════════════════
+          ESTADOS: cargando / sin datos
+      ══════════════════════════════════════════════ */}
       {loading ? (
-        <Paper elevation={0} sx={{ p: 4, border: '1px solid #dbe6f5', borderRadius: 2 }}>
-          <Typography align="center">Cargando resultados agregados...</Typography>
+        <Paper elevation={0} sx={{ p: 5, borderRadius: '14px', border: '1px solid #e2e8f0', textAlign: 'center' }}>
+          <Typography sx={{ color: '#64748b', fontWeight: 600 }}>Cargando resultados agregados...</Typography>
         </Paper>
       ) : filteredRows.length === 0 ? (
-        <Paper elevation={0} sx={{ p: 4, border: '1px solid #dbe6f5', borderRadius: 2 }}>
-          <Typography align="center" sx={{ color: '#334155', fontWeight: 700 }}>
+        <Paper elevation={0} sx={{ p: 5, borderRadius: '14px', border: '1px solid #e2e8f0', textAlign: 'center' }}>
+          <Typography sx={{ color: '#334155', fontWeight: 700 }}>
             No hay datos para la combinación de filtros seleccionada.
           </Typography>
         </Paper>
       ) : (
         <>
-          <Stack spacing={2} sx={{ width: '100%' }}>
-            <Paper elevation={0} sx={{ width: '100%', border: '1px solid #dbe6f5', borderRadius: 3, overflow: 'hidden', boxShadow: '0 6px 22px rgba(15,23,42,0.04)' }}>
-                <Box sx={{ p: 1.5, borderBottom: '1px solid #e2e8f0', bgcolor: '#f8fafc' }}>
-                  <Typography sx={{ fontWeight: 800, color: '#0f172a' }}>
-                    Tabla interactiva por competencia (clic en fila para filtrar gráfico)
-                  </Typography>
-                  <Typography variant="caption" sx={{ color: '#64748b' }}>
-                    Al seleccionar una fila, la gráfica muestra solo esa competencia. Sin selección, muestra la fila PROMEDIO.
-                  </Typography>
-                </Box>
-                <TableContainer sx={{ width: '100%', maxHeight: 460 }}>
-                  <Table stickyHeader size="small" sx={{ width: '100%', tableLayout: 'auto' }}>
-                    <TableHead>
-                      <TableRow>
-                        <TableCell sx={{ fontWeight: 800, minWidth: 220, bgcolor: '#eff6ff', color: '#1e3a8a' }}>Competencia</TableCell>
-                        {matrixYears.map((anio) => (
-                          <TableCell key={anio} align="right" sx={{ fontWeight: 800, bgcolor: '#eff6ff', color: '#1e3a8a' }}>{anio}</TableCell>
-                        ))}
-                        <TableCell align="right" sx={{ fontWeight: 800, bgcolor: '#dbeafe', color: '#1e3a8a' }}>Prom.</TableCell>
-                      </TableRow>
-                    </TableHead>
-                    <TableBody>
-                      {[...matrixRows.rows, matrixRows.promedioRow].map((row) => {
-                        const isProm = row.competencia === 'PROMEDIO';
-                        const selected = selectedCompetencia === row.competencia;
-                        return (
-                          <TableRow
-                            key={row.competencia}
-                            hover
-                            onClick={() => !isProm && setSelectedCompetencia((prev) => (prev === row.competencia ? '' : row.competencia))}
-                            sx={{
-                              cursor: isProm ? 'default' : 'pointer',
-                              bgcolor: isProm ? '#eff6ff' : (selected ? '#f5f3ff' : 'inherit'),
-                              '&:nth-of-type(even)': isProm ? {} : { bgcolor: selected ? '#f5f3ff' : '#fbfdff' },
-                              '& td': {
-                                fontWeight: isProm ? 800 : 500,
-                                borderBottom: '1px solid #edf2f7'
-                              }
-                            }}
-                          >
-                            <TableCell sx={{ color: isProm ? '#1e3a8a' : (selected ? '#6d28d9' : '#1f2937') }}>
-                              {row.competencia}
-                            </TableCell>
-                            {matrixYears.map((anio) => (
-                              <TableCell key={`${row.competencia}-${anio}`} align="right" sx={{ color: row.byYear?.[anio] == null ? '#94a3b8' : '#334155' }}>
-                                {row.byYear?.[anio] == null ? '-' : Number(row.byYear[anio]).toFixed(2)}
-                              </TableCell>
-                            ))}
-                            <TableCell align="right" sx={{ fontWeight: 800, color: isProm ? '#1e3a8a' : '#111827' }}>
-                              {row.promedio == null ? '-' : Number(row.promedio).toFixed(2)}
-                            </TableCell>
-                          </TableRow>
-                        );
-                      })}
-                    </TableBody>
-                  </Table>
-                </TableContainer>
-              </Paper>
-            <Box
-              sx={{
-                width: '100%',
-                display: 'grid',
-                gridTemplateColumns: { xs: '1fr', lg: 'repeat(2, minmax(0, 1fr))' },
-                gap: 2,
-                alignItems: 'stretch'
-              }}
-            >
-                <Paper elevation={0} sx={{ p: 1.6, border: '1px solid #dbe6f5', borderRadius: 3, height: 360, boxShadow: '0 6px 22px rgba(15,23,42,0.04)', minWidth: 0 }}>
-                  <Typography sx={{ fontWeight: 800, color: '#0f172a', mb: 0.5 }}>
-                    Evolución del resultado {selectedCompetencia ? `- ${selectedCompetencia}` : '(fila PROMEDIO)'}
-                  </Typography>
-                  <Typography variant="caption" sx={{ color: '#64748b' }}>
-                    Línea única de comportamiento con eje Y ajustado para resaltar mejor la fluctuación anual.
-                  </Typography>
-                  <Box sx={{ height: 300, mt: 1 }}>
-                    <ResponsiveContainer width="100%" height="100%">
-                      <LineChart data={generalTrendData} margin={{ top: 30, right: 40, left: 12, bottom: 10 }}>
-                        <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
-                        <XAxis dataKey="anio" interval={0} padding={{ left: 18, right: 22 }} tick={false} axisLine={false} tickLine={false} />
-                        <YAxis domain={[trendYMin, trendYMax]} width={48} />
-                        <RechartsTooltip formatter={(v, name) => (v == null ? ['-', name] : [Number(v).toFixed(2), name])} />
-                        <Line
-                          type="monotone"
-                          dataKey={activeTrendMeta.key}
-                          name={activeTrendMeta.name}
-                          connectNulls
-                          stroke={activeTrendMeta.color}
-                          strokeWidth={3}
-                          dot={{ r: 4, fill: '#fff', stroke: activeTrendMeta.color, strokeWidth: 2 }}
-                          activeDot={{ r: 6 }}
-                        >
-                          <LabelList dataKey={activeTrendMeta.key} content={renderAggregateLineLabel} />
-                        </Line>
-                      </LineChart>
-                    </ResponsiveContainer>
-                  </Box>
-                </Paper>
 
-                <Paper elevation={0} sx={{ p: 1.6, border: '1px solid #dbe6f5', borderRadius: 3, height: 360, boxShadow: '0 6px 22px rgba(15,23,42,0.04)', minWidth: 0 }}>
-                  <Typography sx={{ fontWeight: 800, color: '#0f172a', mb: 0.5 }}>
-                    Resultado por competencia (promedio del programa)
-                  </Typography>
-                  <Typography variant="caption" sx={{ color: '#64748b' }}>
-                    Ranking de competencias con los filtros actuales. Clic en barra para activar la misma vista que en la tabla.
-                  </Typography>
-                  <Box sx={{ height: 300, mt: 1 }}>
-                    <ResponsiveContainer width="100%" height="100%">
-                      <BarChart
-                        data={competenciaBarData}
-                        layout="vertical"
-                        margin={{ top: 8, right: 46, left: 8, bottom: 8 }}
-                        onClick={(e) => {
-                          const comp = e?.activePayload?.[0]?.payload?.competencia;
-                          if (comp) setSelectedCompetencia((prev) => (prev === comp ? '' : comp));
+          {/* ══════════════════════════════════════════
+              SECCIÓN 1 — Tabla interactiva + Gráficas
+          ══════════════════════════════════════════ */}
+          <Paper
+            elevation={0}
+            sx={{
+              borderRadius: '14px',
+              overflow: 'hidden',
+              boxShadow: '0 4px 24px rgba(15,23,42,0.08)',
+              border: '1px solid #e2e8f0'
+            }}
+          >
+            {/* Header institucional */}
+            <Box sx={sectionHeaderSx}>
+              <Typography sx={{ fontWeight: 900, color: '#ffffff', fontSize: 16 }}>
+                Tabla interactiva por competencia
+              </Typography>
+              <Typography variant="caption" sx={{ color: '#bfdbfe' }}>
+                Clic en fila para filtrar las gráficas. Sin selección muestra la fila PROMEDIO.
+              </Typography>
+            </Box>
+
+            {/* Tabla */}
+            <TableContainer sx={{ maxHeight: 460 }}>
+              <Table stickyHeader size="small" sx={{ tableLayout: 'auto' }}>
+                <TableHead>
+                  <TableRow>
+                    <TableCell sx={{ ...tableHeadCellSx, minWidth: 220 }}>Competencia</TableCell>
+                    {matrixYears.map((anio) => (
+                      <TableCell key={anio} align="right" sx={tableHeadCellSx}>{anio}</TableCell>
+                    ))}
+                    <TableCell align="right" sx={tableHeadCellAccentSx}>Prom.</TableCell>
+                  </TableRow>
+                </TableHead>
+                <TableBody>
+                  {[...matrixRows.rows, matrixRows.promedioRow].map((row, rowIdx) => {
+                    const isProm = row.competencia === 'PROMEDIO';
+                    const selected = selectedCompetencia === row.competencia;
+                    return (
+                      <TableRow
+                        key={row.competencia}
+                        hover
+                        onClick={() => !isProm && setSelectedCompetencia((prev) => (prev === row.competencia ? '' : row.competencia))}
+                        sx={{
+                          cursor: isProm ? 'default' : 'pointer',
+                          bgcolor: isProm
+                            ? INST_BLUE_LIGHT
+                            : selected
+                              ? '#f5f3ff'
+                              : rowIdx % 2 === 0 ? '#ffffff' : '#f8fafc',
+                          transition: 'background-color 0.12s',
+                          '&:hover td': {
+                            bgcolor: isProm ? INST_BLUE_PALE : selected ? '#ede9fe' : '#f0f9ff'
+                          },
+                          '& td': {
+                            fontWeight: isProm ? 800 : 500,
+                            borderBottom: '1px solid #f1f5f9',
+                            fontSize: 13,
+                            py: 1.1
+                          }
                         }}
                       >
-                        <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
-                        <XAxis type="number" domain={[0, barXAxisMax]} tick={false} axisLine={false} tickLine={false} />
-                        <YAxis type="category" dataKey="competencia" width={190} tick={{ fontSize: 11 }} />
-                        <RechartsTooltip formatter={(v) => Number(v).toFixed(2)} />
-                        <Bar dataKey="promedio" radius={[0, 8, 8, 0]}>
-                          {competenciaBarData.map((item, idx) => (
-                            <Cell key={item.competencia} fill={item.competencia === selectedCompetencia ? '#7c3aed' : ['#2563eb', '#0ea5e9', '#f59e0b', '#ef4444', '#10b981'][idx % 5]} />
-                          ))}
-                          <LabelList dataKey="promedio" position="right" formatter={(v) => Number(v).toFixed(1)} style={{ fontSize: 13, fontWeight: 800, fill: '#334155' }} />
-                        </Bar>
-                      </BarChart>
-                    </ResponsiveContainer>
-                  </Box>
-                </Paper>
-              </Box>
-            <Paper elevation={0} sx={{ width: '100%', p: 1.6, border: '1px solid #dbe6f5', borderRadius: 3, boxShadow: '0 6px 22px rgba(15,23,42,0.04)' }}>
-              <Box sx={{ mb: 1.5 }}>
-                <Typography sx={{ fontWeight: 900, fontSize: 18, color: '#0f172a' }}>
-                  Comparativo
+                        <TableCell
+                          sx={{
+                            color: isProm ? INST_BLUE : selected ? '#6d28d9' : '#1f2937',
+                            fontWeight: isProm ? 900 : selected ? 700 : 500
+                          }}
+                        >
+                          {row.competencia}
+                        </TableCell>
+                        {matrixYears.map((anio) => (
+                          <TableCell
+                            key={`${row.competencia}-${anio}`}
+                            align="right"
+                            sx={{ color: row.byYear?.[anio] == null ? '#cbd5e1' : '#334155' }}
+                          >
+                            {row.byYear?.[anio] == null ? '–' : Number(row.byYear[anio]).toFixed(2)}
+                          </TableCell>
+                        ))}
+                        <TableCell
+                          align="right"
+                          sx={{ fontWeight: 800, color: isProm ? INST_BLUE : '#111827' }}
+                        >
+                          {row.promedio == null ? '–' : Number(row.promedio).toFixed(2)}
+                        </TableCell>
+                      </TableRow>
+                    );
+                  })}
+                </TableBody>
+              </Table>
+            </TableContainer>
+
+            {/* Gráficas lado a lado */}
+            <Box
+              sx={{
+                display: 'grid',
+                gridTemplateColumns: { xs: '1fr', lg: 'repeat(2, 1fr)' },
+                borderTop: '1px solid #e2e8f0'
+              }}
+            >
+              {/* Evolución del resultado */}
+              <Box
+                sx={{
+                  p: 2.5,
+                  borderRight: { xs: 'none', lg: '1px solid #e2e8f0' },
+                  borderBottom: { xs: '1px solid #e2e8f0', lg: 'none' }
+                }}
+              >
+                <Typography sx={{ fontWeight: 800, color: '#0f172a', mb: 0.3, fontSize: 14 }}>
+                  Evolución del resultado{selectedCompetencia ? ` — ${selectedCompetencia}` : ' (fila PROMEDIO)'}
                 </Typography>
-                <Typography variant="caption" sx={{ color: '#64748b' }}>
-                  Comparativo de líneas entre Programa y Grupo de Referencia. La tabla filtra la gráfica al hacer clic en la fila.
+                <Typography variant="caption" sx={{ color: '#64748b', display: 'block', mb: 1.5 }}>
+                  Comportamiento anual con eje Y ajustado para resaltar la fluctuación.
                 </Typography>
+                <Box sx={{ height: 280 }}>
+                  <ResponsiveContainer width="100%" height="100%">
+                    <LineChart data={generalTrendData} margin={{ top: 30, right: 40, left: 12, bottom: 10 }}>
+                      <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+                      <XAxis dataKey="anio" interval={0} padding={{ left: 18, right: 22 }} tick={false} axisLine={false} tickLine={false} />
+                      <YAxis domain={[trendYMin, trendYMax]} width={48} tick={{ fontSize: 11, fill: '#94a3b8' }} />
+                      <RechartsTooltip formatter={(v, name) => (v == null ? ['-', name] : [Number(v).toFixed(2), name])} />
+                      <Line
+                        type="monotone"
+                        dataKey={activeTrendMeta.key}
+                        name={activeTrendMeta.name}
+                        connectNulls
+                        stroke={activeTrendMeta.color}
+                        strokeWidth={3}
+                        dot={{ r: 4, fill: '#fff', stroke: activeTrendMeta.color, strokeWidth: 2 }}
+                        activeDot={{ r: 6 }}
+                      >
+                        <LabelList dataKey={activeTrendMeta.key} content={renderAggregateLineLabel} />
+                      </Line>
+                    </LineChart>
+                  </ResponsiveContainer>
+                </Box>
               </Box>
 
+              {/* Resultado por competencia */}
+              <Box sx={{ p: 2.5 }}>
+                <Typography sx={{ fontWeight: 800, color: '#0f172a', mb: 0.3, fontSize: 14 }}>
+                  Resultado por competencia (promedio del programa)
+                </Typography>
+                <Typography variant="caption" sx={{ color: '#64748b', display: 'block', mb: 1.5 }}>
+                  Ranking de competencias. Clic en barra para activar la vista en la tabla.
+                </Typography>
+                <Box sx={{ height: 280 }}>
+                  <ResponsiveContainer width="100%" height="100%">
+                    <BarChart
+                      data={competenciaBarData}
+                      layout="vertical"
+                      margin={{ top: 8, right: 46, left: 8, bottom: 8 }}
+                      onClick={(e) => {
+                        const comp = e?.activePayload?.[0]?.payload?.competencia;
+                        if (comp) setSelectedCompetencia((prev) => (prev === comp ? '' : comp));
+                      }}
+                    >
+                      <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+                      <XAxis type="number" domain={[0, barXAxisMax]} tick={false} axisLine={false} tickLine={false} />
+                      <YAxis type="category" dataKey="competencia" width={190} tick={{ fontSize: 11, fill: '#475569' }} />
+                      <RechartsTooltip formatter={(v) => Number(v).toFixed(2)} />
+                      <Bar dataKey="promedio" radius={[0, 8, 8, 0]}>
+                        {competenciaBarData.map((item, idx) => (
+                          <Cell
+                            key={item.competencia}
+                            fill={item.competencia === selectedCompetencia
+                              ? '#7c3aed'
+                              : [INST_BLUE_MED, '#0ea5e9', '#f59e0b', '#ef4444', '#10b981'][idx % 5]
+                            }
+                          />
+                        ))}
+                        <LabelList
+                          dataKey="promedio"
+                          position="right"
+                          formatter={(v) => Number(v).toFixed(1)}
+                          style={{ fontSize: 13, fontWeight: 800, fill: '#334155' }}
+                        />
+                      </Bar>
+                    </BarChart>
+                  </ResponsiveContainer>
+                </Box>
+              </Box>
+            </Box>
+          </Paper>
+
+          {/* ══════════════════════════════════════════
+              SECCIÓN 2 — Puntaje General (KPI)
+          ══════════════════════════════════════════ */}
+          <Paper
+            elevation={0}
+            sx={{
+              p: { xs: 3, md: 4 },
+              borderRadius: '14px',
+              boxShadow: '0 4px 24px rgba(15,23,42,0.08)',
+              border: `1.5px solid ${INST_BLUE_PALE}`,
+              background: `linear-gradient(135deg, #ffffff 0%, ${INST_BLUE_LIGHT} 100%)`,
+              textAlign: 'center'
+            }}
+          >
+            <Typography
+              sx={{
+                fontSize: 11,
+                fontWeight: 800,
+                color: INST_BLUE,
+                textTransform: 'uppercase',
+                letterSpacing: '0.12em',
+                mb: 1.5
+              }}
+            >
+              Puntaje General
+            </Typography>
+            <Typography
+              sx={{
+                fontSize: { xs: 56, md: 80 },
+                fontWeight: 900,
+                color: INST_BLUE,
+                lineHeight: 1,
+                letterSpacing: '-0.04em',
+                mb: 1
+              }}
+            >
+              {summaryCards.promedioGeneral ? Number(summaryCards.promedioGeneral).toFixed(1) : '—'}
+            </Typography>
+            <Typography sx={{ fontSize: 15, color: '#475569', fontWeight: 500, mb: 2.5 }}>
+              Promedio general del programa
+            </Typography>
+            <Stack direction="row" spacing={1.5} justifyContent="center" flexWrap="wrap" useFlexGap>
+              <Chip
+                label={`${summaryCards.competenciasVisibles} competencias`}
+                sx={{ bgcolor: INST_BLUE_PALE, color: INST_BLUE, fontWeight: 700, fontSize: 12.5 }}
+              />
+              <Chip
+                label={`${summaryCards.aniosVisibles} años analizados`}
+                sx={{ bgcolor: INST_BLUE_PALE, color: INST_BLUE, fontWeight: 700, fontSize: 12.5 }}
+              />
+              <Chip
+                label={`${summaryCards.programas} programas`}
+                sx={{ bgcolor: INST_BLUE_PALE, color: INST_BLUE, fontWeight: 700, fontSize: 12.5 }}
+              />
+              <Chip
+                label={`Puntaje máx. competencia: ${Number(summaryCards.maxPuntaje).toFixed(1)}`}
+                sx={{ bgcolor: INST_BLUE_PALE, color: INST_BLUE, fontWeight: 700, fontSize: 12.5 }}
+              />
+            </Stack>
+          </Paper>
+
+          {/* ══════════════════════════════════════════
+              SECCIÓN 3 — Comparativo
+          ══════════════════════════════════════════ */}
+          <Paper
+            elevation={0}
+            sx={{
+              borderRadius: '14px',
+              overflow: 'hidden',
+              boxShadow: '0 4px 24px rgba(15,23,42,0.08)',
+              border: '1px solid #e2e8f0'
+            }}
+          >
+            {/* Header institucional */}
+            <Box sx={sectionHeaderSx}>
+              <Typography sx={{ fontWeight: 900, color: '#ffffff', fontSize: 16 }}>
+                Comparativo
+              </Typography>
+              <Typography variant="caption" sx={{ color: '#bfdbfe' }}>
+                Comparativo de líneas entre Programa y Grupo de Referencia
+              </Typography>
+            </Box>
+
+            <Box sx={{ p: { xs: 2, md: 3 } }}>
+              {/* Tabla comparativa + Tabla soporte */}
               <Box
                 sx={{
                   display: 'grid',
-                  gridTemplateColumns: { xs: '1fr', lg: 'repeat(2, minmax(0, 1fr))' },
-                  gap: 2,
-                  alignItems: 'stretch'
+                  gridTemplateColumns: { xs: '1fr', lg: 'repeat(2, 1fr)' },
+                  gap: 2.5,
+                  mb: 2.5
                 }}
               >
-                <Paper elevation={0} sx={{ border: '1px solid #e2e8f0', borderRadius: 2, overflow: 'hidden', minWidth: 0 }}>
-                  <TableContainer sx={{ maxHeight: 360 }}>
+                {/* Tabla principal comparativa */}
+                <Paper elevation={0} sx={{ borderRadius: '10px', overflow: 'hidden', border: '1px solid #e2e8f0' }}>
+                  <Box sx={{ px: 2, py: 1.2, bgcolor: INST_BLUE_LIGHT, borderBottom: `1px solid ${INST_BLUE_PALE}` }}>
+                    <Typography sx={{ fontWeight: 800, color: INST_BLUE, fontSize: 13 }}>
+                      Resumen por competencia
+                    </Typography>
+                  </Box>
+                  <TableContainer sx={{ maxHeight: 340 }}>
                     <Table stickyHeader size="small">
                       <TableHead>
                         <TableRow>
-                          <TableCell sx={{ fontWeight: 800, bgcolor: '#eff6ff', color: '#1e3a8a' }}>Competencia</TableCell>
-                          <TableCell align="right" sx={{ fontWeight: 800, bgcolor: '#eff6ff', color: '#1e3a8a' }}>Programa</TableCell>
-                          <TableCell align="right" sx={{ fontWeight: 800, bgcolor: '#eff6ff', color: '#1e3a8a' }}>Grupo ref.</TableCell>
-                          <TableCell align="right" sx={{ fontWeight: 800, bgcolor: '#dbeafe', color: '#1e3a8a' }}>Brecha</TableCell>
+                          <TableCell sx={tableHeadCellSx}>Competencia</TableCell>
+                          <TableCell align="right" sx={tableHeadCellSx}>Programa</TableCell>
+                          <TableCell align="right" sx={tableHeadCellSx}>Grupo ref.</TableCell>
+                          <TableCell align="right" sx={tableHeadCellAccentSx}>Brecha</TableCell>
                         </TableRow>
                       </TableHead>
                       <TableBody>
-                        {[comparativeData.totalRow, ...comparativeData.rows].map((row) => {
+                        {[comparativeData.totalRow, ...comparativeData.rows].map((row, rowIdx) => {
                           const isTotal = row.competencia === 'PUNTAJE GENERAL (PROMEDIO)';
                           const selected = selectedComparativoCompetencia === row.competencia;
                           return (
@@ -735,24 +944,33 @@ function SaberProAgregadosDashboard({ initialSection, allowedSections = [] } = {
                               onClick={() => setSelectedComparativoCompetencia((prev) => (prev === row.competencia || isTotal ? '' : row.competencia))}
                               sx={{
                                 cursor: 'pointer',
-                                bgcolor: isTotal ? '#eff6ff' : (selected ? '#f5f3ff' : 'inherit'),
-                                '&:nth-of-type(even)': isTotal ? {} : { bgcolor: selected ? '#f5f3ff' : '#fbfdff' },
-                                '& td': { borderBottom: '1px solid #edf2f7', fontWeight: isTotal ? 800 : 500 }
+                                bgcolor: isTotal
+                                  ? INST_BLUE_LIGHT
+                                  : selected
+                                    ? '#f5f3ff'
+                                    : rowIdx % 2 === 0 ? '#ffffff' : '#f8fafc',
+                                transition: 'background-color 0.12s',
+                                '&:hover td': { bgcolor: isTotal ? INST_BLUE_PALE : selected ? '#ede9fe' : '#f0f9ff' },
+                                '& td': { fontWeight: isTotal ? 800 : 500, borderBottom: '1px solid #f1f5f9', fontSize: 12.5, py: 1 }
                               }}
                             >
-                              <TableCell sx={{ color: isTotal ? '#1e3a8a' : (selected ? '#6d28d9' : '#1f2937') }}>
+                              <TableCell sx={{ color: isTotal ? INST_BLUE : selected ? '#6d28d9' : '#1f2937' }}>
                                 {row.competencia}
                               </TableCell>
-                              <TableCell align="right">{row.promPrograma == null ? '-' : Number(row.promPrograma).toFixed(2)}</TableCell>
-                              <TableCell align="right">{row.promGrupo == null ? '-' : Number(row.promGrupo).toFixed(2)}</TableCell>
+                              <TableCell align="right" sx={{ color: '#334155' }}>
+                                {row.promPrograma == null ? '–' : Number(row.promPrograma).toFixed(2)}
+                              </TableCell>
+                              <TableCell align="right" sx={{ color: '#334155' }}>
+                                {row.promGrupo == null ? '–' : Number(row.promGrupo).toFixed(2)}
+                              </TableCell>
                               <TableCell
                                 align="right"
                                 sx={{
                                   fontWeight: 800,
-                                  color: row.brecha == null ? '#64748b' : row.brecha >= 0 ? '#166534' : '#b91c1c'
+                                  color: row.brecha == null ? '#94a3b8' : row.brecha >= 0 ? '#166534' : '#b91c1c'
                                 }}
                               >
-                                {row.brecha == null ? '-' : `${row.brecha >= 0 ? '+' : ''}${Number(row.brecha).toFixed(2)}`}
+                                {row.brecha == null ? '–' : `${row.brecha >= 0 ? '+' : ''}${Number(row.brecha).toFixed(2)}`}
                               </TableCell>
                             </TableRow>
                           );
@@ -762,38 +980,56 @@ function SaberProAgregadosDashboard({ initialSection, allowedSections = [] } = {
                   </TableContainer>
                 </Paper>
 
-                <Paper elevation={0} sx={{ border: '1px solid #e2e8f0', borderRadius: 2, overflow: 'hidden', minWidth: 0 }}>
-                  <Box sx={{ p: 1.2, borderBottom: '1px solid #e2e8f0', bgcolor: '#f8fafc' }}>
-                    <Typography sx={{ fontWeight: 800, color: '#0f172a', fontSize: 14 }}>
-                      Soporte de datos (Grupo de referencia)
+                {/* Tabla soporte por año */}
+                <Paper elevation={0} sx={{ borderRadius: '10px', overflow: 'hidden', border: '1px solid #e2e8f0' }}>
+                  <Box sx={{ px: 2, py: 1.2, bgcolor: INST_BLUE_LIGHT, borderBottom: `1px solid ${INST_BLUE_PALE}` }}>
+                    <Typography sx={{ fontWeight: 800, color: INST_BLUE, fontSize: 13 }}>
+                      Soporte de datos por año
                     </Typography>
-                    <Typography variant="caption" sx={{ color: '#64748b' }}>
-                      Valores anuales usados para trazar las dos líneas comparativas.
+                    <Typography variant="caption" sx={{ color: '#475569' }}>
+                      Valores anuales para:{' '}
+                      <strong>{selectedComparativoCompetencia || 'PUNTAJE GENERAL (PROMEDIO)'}</strong>
                     </Typography>
                   </Box>
-                  <TableContainer sx={{ maxHeight: 360 }}>
+                  <TableContainer sx={{ maxHeight: 340 }}>
                     <Table stickyHeader size="small">
                       <TableHead>
                         <TableRow>
-                          <TableCell sx={{ fontWeight: 800, bgcolor: '#eff6ff', color: '#1e3a8a' }}>Año</TableCell>
-                          <TableCell align="right" sx={{ fontWeight: 800, bgcolor: '#eff6ff', color: '#1e3a8a' }}>Programa</TableCell>
-                          <TableCell align="right" sx={{ fontWeight: 800, bgcolor: '#eff6ff', color: '#1e3a8a' }}>Grupo ref.</TableCell>
-                          <TableCell align="right" sx={{ fontWeight: 800, bgcolor: '#dbeafe', color: '#1e3a8a' }}>Brecha</TableCell>
+                          <TableCell sx={tableHeadCellSx}>Año</TableCell>
+                          <TableCell align="right" sx={tableHeadCellSx}>Programa</TableCell>
+                          <TableCell align="right" sx={tableHeadCellSx}>Grupo ref.</TableCell>
+                          <TableCell align="right" sx={tableHeadCellAccentSx}>Brecha</TableCell>
                         </TableRow>
                       </TableHead>
                       <TableBody>
-                        {(comparativeActiveMeta?.series || []).map((row) => {
-                          const brecha = Number.isFinite(row.programa) && Number.isFinite(row.grupo) ? row.programa - row.grupo : null;
+                        {(comparativeActiveMeta?.series || []).map((row, rowIdx) => {
+                          const brecha = Number.isFinite(row.programa) && Number.isFinite(row.grupo)
+                            ? row.programa - row.grupo
+                            : null;
                           return (
-                            <TableRow key={`cmp-year-${row.anio}`} hover>
-                              <TableCell sx={{ fontWeight: 700 }}>{row.anio}</TableCell>
-                              <TableCell align="right">{row.programa == null ? '-' : Number(row.programa).toFixed(2)}</TableCell>
-                              <TableCell align="right">{row.grupo == null ? '-' : Number(row.grupo).toFixed(2)}</TableCell>
+                            <TableRow
+                              key={`cmp-year-${row.anio}`}
+                              hover
+                              sx={{
+                                bgcolor: rowIdx % 2 === 0 ? '#ffffff' : '#f8fafc',
+                                '& td': { borderBottom: '1px solid #f1f5f9', fontSize: 12.5, py: 1 }
+                              }}
+                            >
+                              <TableCell sx={{ fontWeight: 700, color: INST_BLUE }}>{row.anio}</TableCell>
+                              <TableCell align="right" sx={{ color: '#334155' }}>
+                                {row.programa == null ? '–' : Number(row.programa).toFixed(2)}
+                              </TableCell>
+                              <TableCell align="right" sx={{ color: '#334155' }}>
+                                {row.grupo == null ? '–' : Number(row.grupo).toFixed(2)}
+                              </TableCell>
                               <TableCell
                                 align="right"
-                                sx={{ fontWeight: 800, color: brecha == null ? '#64748b' : brecha >= 0 ? '#166534' : '#b91c1c' }}
+                                sx={{
+                                  fontWeight: 800,
+                                  color: brecha == null ? '#94a3b8' : brecha >= 0 ? '#166534' : '#b91c1c'
+                                }}
                               >
-                                {brecha == null ? '-' : `${brecha >= 0 ? '+' : ''}${Number(brecha).toFixed(2)}`}
+                                {brecha == null ? '–' : `${brecha >= 0 ? '+' : ''}${Number(brecha).toFixed(2)}`}
                               </TableCell>
                             </TableRow>
                           );
@@ -802,68 +1038,62 @@ function SaberProAgregadosDashboard({ initialSection, allowedSections = [] } = {
                     </Table>
                   </TableContainer>
                 </Paper>
+              </Box>
 
-                <Paper
-                  elevation={0}
-                  sx={{
-                    p: 1.4,
-                    border: '1px solid #e2e8f0',
-                    borderRadius: 2,
-                    minWidth: 0,
-                    gridColumn: { xs: 'auto', lg: '1 / -1' }
-                  }}
-                >
-                  <Typography sx={{ fontWeight: 800, color: '#0f172a', mb: 0.4 }}>
+              {/* Gráfica comparativa — full width */}
+              <Paper elevation={0} sx={{ borderRadius: '10px', overflow: 'hidden', border: '1px solid #e2e8f0' }}>
+                <Box sx={{ px: 2.5, py: 1.5, bgcolor: INST_BLUE_LIGHT, borderBottom: `1px solid ${INST_BLUE_PALE}` }}>
+                  <Typography sx={{ fontWeight: 800, color: INST_BLUE, fontSize: 13 }}>
                     {selectedComparativoCompetencia || 'PUNTAJE GENERAL (PROMEDIO)'}
                   </Typography>
-                  <Typography variant="caption" sx={{ color: '#64748b' }}>
-                    Línea azul: Programa académico. Línea gris: Grupo de referencia. Clic en una fila para cambiar la comparación.
+                  <Typography variant="caption" sx={{ color: '#475569' }}>
+                    Línea azul: Programa académico &nbsp;·&nbsp; Línea gris: Grupo de referencia
+                    &nbsp;·&nbsp; Clic en una fila de la tabla para cambiar la comparación
                   </Typography>
-                  <Box sx={{ height: 340, mt: 1 }}>
-                    <ResponsiveContainer width="100%" height="100%">
-                      <LineChart data={comparativeTrendData} margin={{ top: 30, right: 44, left: 14, bottom: 10 }}>
-                        <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
-                        <XAxis dataKey="anio" interval={0} padding={{ left: 18, right: 22 }} />
-                        <YAxis domain={[comparativeYBounds.min, comparativeYBounds.max]} width={48} />
-                        <RechartsTooltip formatter={(v) => (v == null ? '-' : Number(v).toFixed(2))} />
-                        <Legend />
-                        <Line
-                          type="monotone"
-                          dataKey="grupo"
-                          name="Grupo de referencia"
-                          connectNulls
-                          stroke="#64748b"
-                          strokeWidth={2.5}
-                          dot={{ r: 4, fill: '#fff', stroke: '#64748b', strokeWidth: 2 }}
-                          activeDot={{ r: 6 }}
-                        >
-                          <LabelList dataKey="grupo" content={renderAggregateLineLabelFactory({ color: '#475569', evenDy: -16, oddDy: -28 })} />
-                        </Line>
-                        <Line
-                          type="monotone"
-                          dataKey="programa"
-                          name="Programa académico"
-                          connectNulls
-                          stroke="#2563eb"
-                          strokeWidth={3}
-                          dot={{ r: 4, fill: '#fff', stroke: '#2563eb', strokeWidth: 2 }}
-                          activeDot={{ r: 6 }}
-                        >
-                          <LabelList dataKey="programa" content={renderAggregateLineLabelFactory({ color: '#1d4ed8', evenDy: 20, oddDy: 32 })} />
-                        </Line>
-                      </LineChart>
-                    </ResponsiveContainer>
-                  </Box>
-                </Paper>
-              </Box>
-            </Paper>
-          </Stack>
+                </Box>
+                <Box sx={{ p: 2.5, height: 340 }}>
+                  <ResponsiveContainer width="100%" height="100%">
+                    <LineChart data={comparativeTrendData} margin={{ top: 30, right: 44, left: 14, bottom: 10 }}>
+                      <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+                      <XAxis dataKey="anio" interval={0} padding={{ left: 18, right: 22 }} tick={{ fontSize: 12, fill: '#64748b' }} />
+                      <YAxis domain={[comparativeYBounds.min, comparativeYBounds.max]} width={48} tick={{ fontSize: 11, fill: '#94a3b8' }} />
+                      <RechartsTooltip formatter={(v) => (v == null ? '-' : Number(v).toFixed(2))} />
+                      <Legend wrapperStyle={{ fontSize: 12, paddingTop: 8 }} />
+                      <Line
+                        type="monotone"
+                        dataKey="grupo"
+                        name="Grupo de referencia"
+                        connectNulls
+                        stroke="#64748b"
+                        strokeWidth={2.5}
+                        dot={{ r: 4, fill: '#fff', stroke: '#64748b', strokeWidth: 2 }}
+                        activeDot={{ r: 6 }}
+                      >
+                        <LabelList dataKey="grupo" content={renderAggregateLineLabelFactory({ color: '#475569', evenDy: -16, oddDy: -28 })} />
+                      </Line>
+                      <Line
+                        type="monotone"
+                        dataKey="programa"
+                        name="Programa académico"
+                        connectNulls
+                        stroke={INST_BLUE_MED}
+                        strokeWidth={3}
+                        dot={{ r: 4, fill: '#fff', stroke: INST_BLUE_MED, strokeWidth: 2 }}
+                        activeDot={{ r: 6 }}
+                      >
+                        <LabelList dataKey="programa" content={renderAggregateLineLabelFactory({ color: INST_BLUE, evenDy: 20, oddDy: 32 })} />
+                      </Line>
+                    </LineChart>
+                  </ResponsiveContainer>
+                </Box>
+              </Paper>
+            </Box>
+          </Paper>
+
         </>
       )}
     </Stack>
   );
 }
-
-
 
 export default SaberProAgregadosDashboard;

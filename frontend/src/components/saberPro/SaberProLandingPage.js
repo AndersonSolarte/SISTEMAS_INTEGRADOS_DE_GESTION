@@ -51,11 +51,7 @@ const NAV_CONFIG = [
     key: 'agregados', label: 'Resultados Agregados',
     color: '#0891b2', lightBg: '#ecfeff', icon: BarChartRoundedIcon,
     items: [
-      { key: 'general',                  label: 'Resultados Saber Pro Agregados',    desc: 'Promedios institucionales por año y programa.',  icon: BarChartRoundedIcon,      color: '#0891b2' },
-      { key: 'competencias_especificas', label: 'Agregado Competencias Específicas', desc: 'Competencias específicas del programa.',         icon: AssessmentRoundedIcon,    color: '#059669' },
-      { key: 'competencias_genericas',   label: 'Agregado Competencias Genéricas',   desc: 'Razonamiento, lectura crítica, inglés…',         icon: TrendingUpRoundedIcon,    color: '#0d9488' },
-      { key: 'comparativo_general',      label: 'Comparativo Saber Pro',             desc: 'Institución vs grupo de referencia.',           icon: CompareArrowsRoundedIcon, color: '#0284c7' },
-      { key: 'comparativo_especificas',  label: 'Comparativo Específicas',           desc: 'Específicas comparadas con referencia.',        icon: CompareArrowsRoundedIcon, color: '#14b8a6' }
+      { key: 'general', label: 'Resultados Saber Pro Agregados', desc: 'Promedios institucionales por año y programa.', icon: BarChartRoundedIcon, color: '#0891b2' }
     ]
   },
   {
