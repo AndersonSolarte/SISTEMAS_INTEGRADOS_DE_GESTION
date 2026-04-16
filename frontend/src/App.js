@@ -84,6 +84,7 @@ function App() {
                       <RoleRoute
                         allowedRoles={[
                           ROLES.ADMINISTRADOR,
+                          ROLES.GESTION_PROCESOS,
                           ROLES.PLANEACION_ESTRATEGICA,
                           ROLES.PLANEACION_EFECTIVIDAD,
                           ROLES.AUTOEVALUACION,
