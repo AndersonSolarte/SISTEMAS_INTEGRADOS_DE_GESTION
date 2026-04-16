@@ -119,6 +119,18 @@ const normalizeMappedFields = (row) => {
   return { tipoDocumentacion, codigo, titulo };
 };
 
+const collectActiveCodes = (rows = []) => {
+  const activeCodes = new Set();
+  rows.forEach((rawRow) => {
+    const row = mapRowKeys(rawRow);
+    const { codigo } = normalizeMappedFields(row);
+    if (codigo && isActiveSheetEstado(row.estado)) {
+      activeCodes.add(codigo);
+    }
+  });
+  return activeCodes;
+};
+
 const documentNeedsUpdate = (documento, nextData) => {
   const fields = [
     'subproceso_id',
@@ -425,6 +437,7 @@ const importFromExcel = async (req, res) => {
       actualizados: 0,
       errores: []
     };
+    const activeCodes = collectActiveCodes(data);
 
     for (let i = 0; i < data.length; i++) {
       const row = mapRowKeys(data[i]);
@@ -434,6 +447,7 @@ const importFromExcel = async (req, res) => {
         const { tipoDocumentacion, codigo, titulo } = normalizeMappedFields(row);
 
         if (codigo && !isActiveSheetEstado(row.estado)) {
+          if (activeCodes.has(codigo)) continue;
           const existente = await Documento.findOne({ where: { codigo } });
           if (existente && existente.estado !== 'obsoleto') {
             await existente.update({ estado: 'obsoleto' });
@@ -719,6 +733,7 @@ const importFromSheet = async (req, res) => {
       actualizados: 0,
       errores: []
     };
+    const activeCodes = collectActiveCodes(data);
 
     for (let i = 0; i < data.length; i++) {
       const row = mapRowKeys(data[i]);
@@ -728,6 +743,7 @@ const importFromSheet = async (req, res) => {
         const { tipoDocumentacion, codigo, titulo } = normalizeMappedFields(row);
 
         if (codigo && !isActiveSheetEstado(row.estado)) {
+          if (activeCodes.has(codigo)) continue;
           const existente = await Documento.findOne({ where: { codigo } });
           if (existente && existente.estado !== 'obsoleto') {
             await existente.update({ estado: 'obsoleto' });
@@ -895,6 +911,7 @@ const importFromSheetFixed = async (req, res) => {
       omitidos: 0,
       errores: []
     };
+    const activeCodes = collectActiveCodes(data);
 
     const existingDocumentsByCode = mode === 'incremental'
       ? new Map(
@@ -912,6 +929,10 @@ const importFromSheetFixed = async (req, res) => {
         const { tipoDocumentacion, codigo, titulo } = normalizeMappedFields(row);
 
         if (codigo && !isActiveSheetEstado(row.estado)) {
+          if (activeCodes.has(codigo)) {
+            results.omitidos++;
+            continue;
+          }
           const existente = existingDocumentsByCode.get(codigo);
           if (existente && existente.estado !== 'obsoleto') {
             await existente.update({ estado: 'obsoleto' });
