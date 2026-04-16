@@ -24,6 +24,8 @@ const addUserManagement = async () => {
       ALTER TABLE documentos ADD COLUMN IF NOT EXISTS subproceso VARCHAR(255);
       ALTER TABLE documentos ADD COLUMN IF NOT EXISTS tipo_documento VARCHAR(200);
       ALTER TABLE documentos ADD COLUMN IF NOT EXISTS observaciones TEXT;
+      ALTER TABLE documentos ADD COLUMN IF NOT EXISTS orden_origen INTEGER;
+      ALTER TABLE documentos ADD COLUMN IF NOT EXISTS fila_origen INTEGER;
       ALTER TABLE documentos ADD COLUMN IF NOT EXISTS datos_originales JSONB;
       
       -- Crear índices

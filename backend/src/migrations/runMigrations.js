@@ -165,6 +165,8 @@ const ensureDocumentTextColumns = async (qi) => {
   await ensureColumn(qi, 'documentos', 'subproceso', { type: DataTypes.STRING(255), allowNull: true });
   await ensureColumn(qi, 'documentos', 'tipo_documento', { type: DataTypes.STRING(200), allowNull: true });
   await ensureColumn(qi, 'documentos', 'observaciones', { type: DataTypes.TEXT, allowNull: true });
+  await ensureColumn(qi, 'documentos', 'orden_origen', { type: DataTypes.INTEGER, allowNull: true });
+  await ensureColumn(qi, 'documentos', 'fila_origen', { type: DataTypes.INTEGER, allowNull: true });
   await ensureColumn(qi, 'documentos', 'datos_originales', { type: DataTypes.JSONB, allowNull: true });
 
   await sequelize.query(`

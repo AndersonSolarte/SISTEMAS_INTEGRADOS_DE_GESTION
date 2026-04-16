@@ -149,6 +149,8 @@ const documentNeedsUpdate = (documento, nextData) => {
     'estado',
     'link_acceso',
     'observaciones',
+    'orden_origen',
+    'fila_origen',
     'datos_originales'
   ];
 
@@ -542,6 +544,8 @@ const importFromExcel = async (req, res) => {
           estado: normalizeEstado(row.estado),
           link_acceso: toText(row.link_acceso),
           observaciones: toText(row.observaciones),
+          orden_origen: i + 1,
+          fila_origen: rowNumber,
           datos_originales: data[i]
         };
 
@@ -834,6 +838,8 @@ const importFromSheet = async (req, res) => {
           estado: normalizeEstado(row.estado),
           link_acceso: toText(row.link_acceso),
           observaciones: toText(row.observaciones),
+          orden_origen: i + 1,
+          fila_origen: rowNumber,
           datos_originales: data[i]
         };
 
@@ -1015,6 +1021,8 @@ const importFromSheetFixed = async (req, res) => {
           estado: normalizeEstado(row.estado),
           link_acceso: toText(row.link_acceso),
           observaciones: toText(row.observaciones),
+          orden_origen: i + 1,
+          fila_origen: rowNumber,
           datos_originales: data[i]
         };
 
