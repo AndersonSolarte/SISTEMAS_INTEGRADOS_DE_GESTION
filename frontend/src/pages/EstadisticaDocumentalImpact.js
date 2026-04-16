@@ -13,9 +13,16 @@ import {
 } from '@mui/material';
 import {
   Analytics as AnalyticsIcon,
+  Article as ArticleIcon,
+  AssignmentTurnedIn as AssignmentTurnedInIcon,
   Clear as ClearIcon,
   Description as DescriptionIcon,
   FilterAlt as FilterAltIcon,
+  FolderCopy as FolderCopyIcon,
+  InsertDriveFile as InsertDriveFileIcon,
+  LibraryBooks as LibraryBooksIcon,
+  MenuBook as MenuBookIcon,
+  RuleFolder as RuleFolderIcon,
   Search as SearchIcon,
   WorkspacePremium as WorkspacePremiumIcon
 } from '@mui/icons-material';
@@ -24,15 +31,28 @@ import documentoService from '../services/documentoService';
 import catalogoService from '../services/catalogoService';
 
 const CARD_TONES = [
-  { bg: 'linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%)', soft: '#dbeafe', fg: '#1d4ed8' },
-  { bg: 'linear-gradient(135deg, #0f766e 0%, #0d9488 100%)', soft: '#ccfbf1', fg: '#0f766e' },
-  { bg: 'linear-gradient(135deg, #dc2626 0%, #be123c 100%)', soft: '#fee2e2', fg: '#dc2626' },
-  { bg: 'linear-gradient(135deg, #7c3aed 0%, #5b21b6 100%)', soft: '#ede9fe', fg: '#7c3aed' },
-  { bg: 'linear-gradient(135deg, #0891b2 0%, #0369a1 100%)', soft: '#cffafe', fg: '#0891b2' },
-  { bg: 'linear-gradient(135deg, #ca8a04 0%, #a16207 100%)', soft: '#fef3c7', fg: '#ca8a04' },
-  { bg: 'linear-gradient(135deg, #475569 0%, #1e293b 100%)', soft: '#e2e8f0', fg: '#475569' },
-  { bg: 'linear-gradient(135deg, #16a34a 0%, #15803d 100%)', soft: '#dcfce7', fg: '#16a34a' }
+  { soft: '#e0f2fe', fg: '#0369a1', border: '#bae6fd' },
+  { soft: '#dcfce7', fg: '#15803d', border: '#bbf7d0' },
+  { soft: '#fee2e2', fg: '#b91c1c', border: '#fecaca' },
+  { soft: '#fef3c7', fg: '#a16207', border: '#fde68a' },
+  { soft: '#e2e8f0', fg: '#475569', border: '#cbd5e1' },
+  { soft: '#fce7f3', fg: '#be185d', border: '#fbcfe8' },
+  { soft: '#f0fdfa', fg: '#0f766e', border: '#99f6e4' },
+  { soft: '#eef2ff', fg: '#4338ca', border: '#c7d2fe' }
 ];
+
+const DOCUMENT_TYPE_ICONS = [
+  { pattern: /FORMATO/i, Icon: AssignmentTurnedInIcon },
+  { pattern: /PROCEDIMIENTO/i, Icon: RuleFolderIcon },
+  { pattern: /INSTRUCTIVO/i, Icon: ArticleIcon },
+  { pattern: /MANUAL/i, Icon: MenuBookIcon },
+  { pattern: /PLAN/i, Icon: LibraryBooksIcon },
+  { pattern: /PROGRAMA/i, Icon: FolderCopyIcon },
+  { pattern: /PROTOCOLO/i, Icon: InsertDriveFileIcon }
+];
+
+const getDocumentTypeIcon = (name = '') =>
+  (DOCUMENT_TYPE_ICONS.find((item) => item.pattern.test(String(name))) || { Icon: DescriptionIcon }).Icon;
 
 const emptyData = {
   periodosDisponibles: [],
@@ -186,7 +206,7 @@ function CompactFilter({ label, options = [], value, onChange, disabled, placeho
 
 function KpiCard({ label, value, helper, tone = '#2563eb' }) {
   return (
-    <Paper elevation={0} sx={{ p: 2.2, height: '100%', borderRadius: 2.5, border: '1px solid #dbe6f5', bgcolor: '#ffffff' }}>
+    <Paper elevation={0} sx={{ p: 2.2, height: '100%', borderRadius: 2, border: '1px solid #dbe6f5', bgcolor: '#ffffff', boxShadow: '0 10px 28px rgba(15, 23, 42, 0.04)' }}>
       <Typography sx={{ color: '#475569', fontSize: 11, fontWeight: 900, letterSpacing: 0.6, textTransform: 'uppercase' }}>
         {label}
       </Typography>
@@ -194,7 +214,7 @@ function KpiCard({ label, value, helper, tone = '#2563eb' }) {
         {value}
       </Typography>
       {helper && (
-        <Typography sx={{ mt: 0.8, color: tone, fontWeight: 800, fontSize: 12 }}>
+        <Typography sx={{ mt: 0.8, color: tone, fontWeight: 800, fontSize: 12, lineHeight: 1.35 }}>
           {helper}
         </Typography>
       )}
@@ -206,39 +226,40 @@ function DocumentTypeCard({ row, index, total }) {
   const tone = CARD_TONES[index % CARD_TONES.length];
   const cantidad = Number(row.cantidad || 0);
   const pct = total > 0 ? Math.round((cantidad / total) * 100) : 0;
+  const Icon = getDocumentTypeIcon(row.tipo_documento);
 
   return (
     <Paper
       elevation={0}
       sx={{
-        p: 2,
-        minHeight: 158,
-        borderRadius: 2.5,
-        color: '#fff',
-        background: tone.bg,
-        position: 'relative',
-        overflow: 'hidden',
-        boxShadow: '0 18px 38px rgba(15, 23, 42, 0.12)'
+        p: { xs: 1.8, md: 2 },
+        minHeight: 154,
+        borderRadius: 2,
+        color: '#0f172a',
+        bgcolor: '#ffffff',
+        border: `1px solid ${tone.border}`,
+        boxShadow: '0 12px 30px rgba(15, 23, 42, 0.06)'
       }}
     >
-      <Box sx={{ position: 'absolute', right: -28, top: -28, width: 120, height: 120, borderRadius: '50%', bgcolor: 'rgba(255,255,255,0.12)' }} />
-      <Stack direction="row" justifyContent="space-between" alignItems="flex-start" spacing={1} sx={{ position: 'relative', zIndex: 1 }}>
-        <Chip size="small" label="Tipo documental" sx={{ bgcolor: 'rgba(255,255,255,0.9)', color: tone.fg, fontWeight: 900, height: 22, fontSize: 10 }} />
-        <DescriptionIcon sx={{ color: 'rgba(255,255,255,0.82)' }} />
+      <Stack direction="row" justifyContent="space-between" alignItems="flex-start" spacing={1}>
+        <Box sx={{ width: 42, height: 42, borderRadius: 2, bgcolor: tone.soft, color: tone.fg, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+          <Icon sx={{ fontSize: 23 }} />
+        </Box>
+        <Chip size="small" label={`${pct}%`} sx={{ bgcolor: '#f8fafc', color: tone.fg, border: `1px solid ${tone.border}`, fontWeight: 900, height: 24, fontSize: 11 }} />
       </Stack>
-      <Typography sx={{ position: 'relative', zIndex: 1, mt: 1.5, fontSize: { xs: 30, md: 36 }, lineHeight: 1, fontWeight: 950 }}>
-        {cantidad}
-      </Typography>
-      <Typography sx={{ position: 'relative', zIndex: 1, mt: 0.6, fontSize: 18, fontWeight: 900, lineHeight: 1.15, minHeight: 42 }}>
+      <Typography sx={{ mt: 1.5, fontSize: 12, fontWeight: 900, color: '#64748b', letterSpacing: 0.5, textTransform: 'uppercase', minHeight: 34 }}>
         {row.tipo_documento}
       </Typography>
-      <Box sx={{ position: 'relative', zIndex: 1, mt: 1.5 }}>
+      <Typography sx={{ mt: 0.8, fontSize: { xs: 31, md: 34 }, lineHeight: 1, fontWeight: 950, color: '#0f172a' }}>
+        {cantidad}
+      </Typography>
+      <Box sx={{ mt: 1.5 }}>
         <Stack direction="row" justifyContent="space-between" sx={{ mb: 0.6 }}>
-          <Typography sx={{ fontSize: 11, fontWeight: 800, color: 'rgba(255,255,255,0.86)' }}>Participación</Typography>
-          <Typography sx={{ fontSize: 11, fontWeight: 900 }}>{pct}%</Typography>
+          <Typography sx={{ fontSize: 11, fontWeight: 800, color: '#64748b' }}>Participacion</Typography>
+          <Typography sx={{ fontSize: 11, fontWeight: 900, color: tone.fg }}>{pct}%</Typography>
         </Stack>
-        <Box sx={{ height: 7, borderRadius: 99, bgcolor: 'rgba(255,255,255,0.25)', overflow: 'hidden' }}>
-          <Box sx={{ width: `${pct}%`, height: '100%', bgcolor: '#fff', borderRadius: 99 }} />
+        <Box sx={{ height: 7, borderRadius: 99, bgcolor: '#e2e8f0', overflow: 'hidden' }}>
+          <Box sx={{ width: `${pct}%`, height: '100%', bgcolor: tone.fg, borderRadius: 99 }} />
         </Box>
       </Box>
     </Paper>
@@ -314,11 +335,18 @@ export function EstadisticaDocumentalPanel({ embedded = false }) {
     });
   }, [loadCatalogs, loadDashboard]);
 
+  useEffect(() => {
+    if (initialLoading) return undefined;
+    const debounceId = setTimeout(() => {
+      loadDashboard(filters);
+    }, 250);
+    return () => clearTimeout(debounceId);
+  }, [filters, initialLoading, loadDashboard]);
+
   const handleSearch = () => loadDashboard(filters);
   const handleClear = () => {
     const clean = { macro_proceso_id: '', tipo_documentacion_id: '', periodo: '' };
     setFilters(clean);
-    loadDashboard(clean);
   };
 
   const macroOptions = useMemo(() => macroProcesos.map((item) => ({ value: item.id, label: item.nombre })), [macroProcesos]);
@@ -433,7 +461,7 @@ export function EstadisticaDocumentalPanel({ embedded = false }) {
               <Box
                 sx={{
                   display: 'grid',
-                  gridTemplateColumns: { xs: '1fr', sm: 'repeat(2, minmax(0, 1fr))', lg: 'repeat(3, minmax(0, 1fr))', xl: 'repeat(4, minmax(0, 1fr))' },
+                  gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))',
                   gap: 2,
                   width: '100%'
                 }}
