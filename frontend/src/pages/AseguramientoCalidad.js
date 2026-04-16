@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import ReactDOM from 'react-dom';
 import { Box, Paper, Typography, Grid, TextField, Button, Table, TableBody, TableCell, TableContainer, TableHead, TableRow, TablePagination, CircularProgress, Chip, IconButton, Tooltip, Fade, Slide, Stack, Dialog, DialogTitle, DialogContent, DialogActions, InputAdornment, Switch } from '@mui/material';
-import { Search as SearchIcon, Clear as ClearIcon, VisibilityOutlined as VisibilityOutlinedIcon, FileDownloadOutlined as FileDownloadOutlinedIcon, Description as DescriptionIcon, Article as ArticleIcon, AssignmentTurnedIn as AssignmentIcon, ListAlt as ListIcon, Policy as PolicyIcon, AccountTree as AccountTreeIcon, Upload as UploadIcon, GetApp as DownloadTemplateIcon, DeleteSweep as DeleteSweepIcon, Favorite as FavoriteIcon, FavoriteBorder as FavoriteBorderIcon } from '@mui/icons-material';
+import { Search as SearchIcon, Clear as ClearIcon, VisibilityOutlined as VisibilityOutlinedIcon, FileDownloadOutlined as FileDownloadOutlinedIcon, Description as DescriptionIcon, Article as ArticleIcon, AssignmentTurnedIn as AssignmentIcon, ListAlt as ListIcon, Policy as PolicyIcon, AccountTree as AccountTreeIcon, Upload as UploadIcon, GetApp as DownloadTemplateIcon, Favorite as FavoriteIcon, FavoriteBorder as FavoriteBorderIcon } from '@mui/icons-material';
 import { useSnackbar } from 'notistack';
 import { useLocation } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
@@ -425,10 +425,6 @@ function AseguramientoCalidad() {
   const [totalDocumentos, setTotalDocumentos] = useState(0);
   const [importing, setImporting] = useState(false);
   const [selectedFile, setSelectedFile] = useState(null);
-  const [openClearDialog, setOpenClearDialog] = useState(false);
-  const [clearIdentifier, setClearIdentifier] = useState('');
-  const [clearConfirmText, setClearConfirmText] = useState('');
-  const [clearingDb, setClearingDb] = useState(false);
   const [openPreviewDialog, setOpenPreviewDialog] = useState(false);
   const [previewUrl, setPreviewUrl] = useState('');
   const [previewTitle, setPreviewTitle] = useState('');
@@ -760,13 +756,6 @@ function AseguramientoCalidad() {
     }
   };
 
-  const resetClearDialog = () => {
-    setOpenClearDialog(false);
-    setClearIdentifier('');
-    setClearConfirmText('');
-    setClearingDb(false);
-  };
-
   const openDocumentPreview = (doc, normalized) => {
     if (!doc?.link_acceso) return;
     const resolved = toAbsoluteDocumentUrl(doc.link_acceso);
@@ -793,33 +782,6 @@ function AseguramientoCalidad() {
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
-  };
-
-  const handleClearDatabase = async () => {
-    if (!clearIdentifier.trim()) {
-      enqueueSnackbar('Ingresa tu correo para confirmar', { variant: 'warning' });
-      return;
-    }
-    if (clearConfirmText.trim().toUpperCase() !== 'CONFIRMAR') {
-      enqueueSnackbar('Escribe CONFIRMAR para continuar', { variant: 'warning' });
-      return;
-    }
-
-    setClearingDb(true);
-    try {
-      const response = await api.post('/import/clear', {
-        identifier: clearIdentifier.trim()
-      });
-
-      enqueueSnackbar(response.data?.message || 'Base de datos limpiada correctamente', { variant: 'success' });
-      resetClearDialog();
-      await loadCatalogos();
-      handleSearch();
-    } catch (error) {
-      const backendMessage = error?.response?.data?.message;
-      enqueueSnackbar(backendMessage || 'No se pudo limpiar la base de datos', { variant: 'error' });
-      setClearingDb(false);
-    }
   };
 
   const activeFiltersCount = Object.entries(filters)
@@ -929,18 +891,6 @@ function AseguramientoCalidad() {
                   Descargar Plantilla
                 </Button>
               </Grid>
-              <Grid item xs={12} md={2}>
-                <Button
-                  variant="outlined"
-                  color="error"
-                  fullWidth
-                  startIcon={<DeleteSweepIcon />}
-                  onClick={() => setOpenClearDialog(true)}
-                  sx={{ borderRadius: 2, py: 1.5 }}
-                >
-                  Limpiar base servidor
-                </Button>
-              </Grid>
               <Grid item xs={12}>
                 <Typography variant="caption" sx={{ display: 'block', color: '#475569', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.4px' }}>
                   Fuente externa autorizada
@@ -969,17 +919,13 @@ function AseguramientoCalidad() {
                   color="warning"
                   fullWidth
                   disabled={syncingSheet}
-                  onClick={() => {
-                    if (window.confirm('Esto reemplaza la base documental del servidor con la informacion actual de Sheets. Deseas continuar?')) {
-                      handleSyncFromSheets('reemplazar');
-                    }
-                  }}
+                  onClick={() => handleSyncFromSheets('reemplazar')}
                   sx={{ borderRadius: 2, py: 1.4, textTransform: 'none', fontWeight: 700 }}
                 >
-                  Reemplazar base servidor desde Sheets
+                  Sincronizar todo desde Sheets
                 </Button>
                 <Typography variant="caption" sx={{ display: 'block', mt: 0.75, color: '#64748b' }}>
-                  Borra los documentos actuales y carga una copia completa desde Sheets.
+                  Revisa todas las filas de Sheets y conserva los registros existentes del servidor.
                 </Typography>
               </Grid>
             </Grid>
@@ -1393,51 +1339,9 @@ function AseguramientoCalidad() {
             <Button onClick={closeDocumentPreview}>Cerrar</Button>
           </DialogActions>
         </Dialog>
-        <Dialog open={openClearDialog} onClose={clearingDb ? undefined : resetClearDialog} maxWidth="xs" fullWidth>
-          <DialogTitle sx={{ fontWeight: 700 }}>Confirmar limpieza de base de datos</DialogTitle>
-          <DialogContent>
-            <Typography variant="body2" sx={{ color: '#64748b', mb: 2 }}>
-              Esta acción eliminará todos los documentos existentes. Ingresa tu correo y escribe <strong>CONFIRMAR</strong> para continuar.
-            </Typography>
-            <Stack spacing={2}>
-              <TextField
-                label="Correo electrónico"
-                value={clearIdentifier}
-                onChange={(e) => setClearIdentifier(e.target.value)}
-                fullWidth
-                autoFocus
-              />
-              <TextField
-                label='Escribe "CONFIRMAR" para continuar'
-                value={clearConfirmText}
-                onChange={(e) => setClearConfirmText(e.target.value)}
-                fullWidth
-                error={clearConfirmText.length > 0 && clearConfirmText.trim().toUpperCase() !== 'CONFIRMAR'}
-                helperText={clearConfirmText.length > 0 && clearConfirmText.trim().toUpperCase() !== 'CONFIRMAR' ? 'Debe escribir exactamente CONFIRMAR' : ''}
-              />
-            </Stack>
-          </DialogContent>
-          <DialogActions sx={{ px: 3, pb: 2 }}>
-            <Button onClick={resetClearDialog} disabled={clearingDb}>
-              Cancelar
-            </Button>
-            <Button
-              variant="contained"
-              color="error"
-              onClick={handleClearDatabase}
-              disabled={clearingDb}
-              startIcon={<DeleteSweepIcon />}
-            >
-              {clearingDb ? 'Limpiando...' : 'Confirmar limpieza'}
-            </Button>
-          </DialogActions>
-        </Dialog>
       </Box>
     </Fade>
   );
 }
 
 export default AseguramientoCalidad;
-
-
-

@@ -1,8 +1,7 @@
 const XLSX = require('xlsx');
 const { google } = require('googleapis');
 const path = require('path');
-const { User, MacroProceso, Proceso, SubProceso, TipoDocumentacion, Documento, GestionInformacionCarga } = require('../models');
-const { ROLES } = require('../constants/roles');
+const { MacroProceso, Proceso, SubProceso, TipoDocumentacion, Documento, GestionInformacionCarga } = require('../models');
 const fs = require('fs');
 const MAX_DOCUMENT_IMPORT_ROWS = Number(process.env.MAX_DOCUMENT_IMPORT_ROWS || 10000);
 const GOOGLE_SHEETS_PUBLIC_TIMEOUT_MS = Number(process.env.GOOGLE_SHEETS_PUBLIC_TIMEOUT_MS || 15000);
@@ -15,12 +14,15 @@ const toText = (value, maxLength = null) => {
 };
 
 const normalizeEstado = (value) => {
-  const estado = toText(value)?.toLowerCase();
-  if (estado === 'activo' || estado === 'activos') return 'vigente';
+  const estado = String(value || '')
+    .trim()
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '');
+  if (['activo', 'activos', 'activa', 'activas', 'vigente', 'vigentes'].includes(estado)) return 'vigente';
+  if (['revision', 'en revision', 'en_revision', 'pendiente aprobacion', 'pendiente de aprobacion'].includes(estado)) return 'en_revision';
   return 'obsoleto';
 };
-
-const isActiveSheetEstado = (value) => normalizeEstado(value) === 'vigente';
 
 const excelDateToISO = (value) => {
   if (!value && value !== 0) return null;
@@ -119,22 +121,17 @@ const normalizeMappedFields = (row) => {
   return { tipoDocumentacion, codigo, titulo };
 };
 
-const collectActiveCodes = (rows = []) => {
-  const activeCodes = new Set();
-  rows.forEach((rawRow) => {
-    const row = mapRowKeys(rawRow);
-    const { codigo } = normalizeMappedFields(row);
-    if (codigo && isActiveSheetEstado(row.estado)) {
-      activeCodes.add(codigo);
-    }
-  });
-  return activeCodes;
-};
+const getDocumentIdentityKey = (codigo, version) =>
+  `${toText(codigo, 50) || ''}::${toText(version, 20) || ''}`;
 
 const documentNeedsUpdate = (documento, nextData) => {
   const fields = [
     'subproceso_id',
     'tipo_documentacion_id',
+    'macroproceso',
+    'proceso_texto',
+    'subproceso_texto',
+    'tipo_documento',
     'codigo',
     'titulo',
     'version',
@@ -151,12 +148,31 @@ const documentNeedsUpdate = (documento, nextData) => {
   return fields.some((field) => String(documento.get(field) ?? '') !== String(nextData[field] ?? ''));
 };
 
+const buildExistingDocumentBuckets = async () => {
+  const buckets = new Map();
+  const documents = await Documento.findAll({ order: [['id', 'ASC']] });
+  documents.forEach((doc) => {
+    const key = getDocumentIdentityKey(doc.codigo, doc.version);
+    if (key.startsWith('::')) return;
+    const bucket = buckets.get(key) || [];
+    bucket.push(doc);
+    buckets.set(key, bucket);
+  });
+  return buckets;
+};
+
+const nextDocumentOccurrence = (occurrences, key) => {
+  const index = occurrences.get(key) || 0;
+  occurrences.set(key, index + 1);
+  return index;
+};
+
 const buildSyncMessage = ({ mode, results }) => {
   if (mode === 'incremental') {
     return `Servidor actualizado desde Sheets: ${results.importados} nuevos, ${results.actualizados} actualizados, ${results.omitidos} sin cambios, ${results.errores.length} con error de ${results.total} registros`;
   }
 
-  return `Base del servidor reemplazada desde Sheets: ${results.importados} registros cargados, ${results.errores.length} con error de ${results.total} registros`;
+  return `Servidor actualizado desde Sheets sin eliminar registros: ${results.importados} nuevos, ${results.actualizados} actualizados, ${results.omitidos} sin cambios, ${results.errores.length} con error de ${results.total} registros`;
 };
 
 const extractSpreadsheetId = (value) => {
@@ -438,7 +454,8 @@ const importFromExcel = async (req, res) => {
       actualizados: 0,
       errores: []
     };
-    const activeCodes = collectActiveCodes(data);
+    const existingDocumentBuckets = await buildExistingDocumentBuckets();
+    const occurrenceIndexes = new Map();
 
     for (let i = 0; i < data.length; i++) {
       const row = mapRowKeys(data[i]);
@@ -447,33 +464,36 @@ const importFromExcel = async (req, res) => {
       try {
         const { tipoDocumentacion, codigo, titulo } = normalizeMappedFields(row);
 
-        if (codigo && !isActiveSheetEstado(row.estado)) {
-          if (activeCodes.has(codigo)) continue;
-        }
-
         // Validar campos requeridos
-        if (!row.macro_proceso || !row.proceso || !row.subproceso || !tipoDocumentacion || !codigo || !titulo) {
+        if (!codigo && !titulo) {
           results.errores.push({
             fila: rowNumber,
-            error: 'Faltan campos requeridos (macro_proceso, proceso, subproceso, tipo_documentacion, codigo, titulo)'
+            error: 'Faltan campos requeridos (codigo o titulo)'
           });
           continue;
         }
 
+        const macroNombre = toText(row.macro_proceso, 255) || 'SIN DEFINIR';
+        const procesoNombre = toText(row.proceso, 255) || 'SIN DEFINIR';
+        const subprocesoNombre = toText(row.subproceso, 255) || 'SIN DEFINIR';
+        const tipoNombre = tipoDocumentacion || 'SIN TIPO';
+        const codigoFinal = codigo || `SIN-CODIGO-${rowNumber}`;
+        const tituloFinal = titulo || codigoFinal;
+
         // Crear o encontrar Macro Proceso
         const [macroProceso] = await MacroProceso.findOrCreate({
-          where: { nombre: toText(row.macro_proceso, 255) },
-          defaults: { nombre: toText(row.macro_proceso, 255) }
+          where: { nombre: macroNombre },
+          defaults: { nombre: macroNombre }
         });
 
         // Crear o encontrar Proceso
         const [proceso] = await Proceso.findOrCreate({
           where: { 
-            nombre: toText(row.proceso, 255),
+            nombre: procesoNombre,
             macro_proceso_id: macroProceso.id 
           },
           defaults: { 
-            nombre: toText(row.proceso, 255),
+            nombre: procesoNombre,
             macro_proceso_id: macroProceso.id 
           }
         });
@@ -481,27 +501,31 @@ const importFromExcel = async (req, res) => {
         // Crear o encontrar Subproceso
         const [subproceso] = await SubProceso.findOrCreate({
           where: { 
-            nombre: toText(row.subproceso, 255),
+            nombre: subprocesoNombre,
             proceso_id: proceso.id 
           },
           defaults: { 
-            nombre: toText(row.subproceso, 255),
+            nombre: subprocesoNombre,
             proceso_id: proceso.id 
           }
         });
 
         // Crear o encontrar Tipo de Documentación
         const [tipoDoc] = await TipoDocumentacion.findOrCreate({
-          where: { nombre: tipoDocumentacion },
-          defaults: { nombre: tipoDocumentacion }
+          where: { nombre: tipoNombre },
+          defaults: { nombre: tipoNombre }
         });
 
         // Preparar datos del documento
         const documentoData = {
           subproceso_id: subproceso.id,
           tipo_documentacion_id: tipoDoc.id,
-          codigo,
-          titulo,
+          macroproceso: macroNombre,
+          proceso_texto: procesoNombre,
+          subproceso_texto: subprocesoNombre,
+          tipo_documento: tipoNombre,
+          codigo: codigoFinal,
+          titulo: tituloFinal,
           version: toText(row.version, 20),
           fecha_creacion: excelDateToISO(row.fecha_creacion),
           revisa: toText(row.revisa, 200),
@@ -513,10 +537,9 @@ const importFromExcel = async (req, res) => {
           observaciones: toText(row.observaciones)
         };
 
-        // Verificar si ya existe
-        const existente = await Documento.findOne({
-          where: { codigo: documentoData.codigo }
-        });
+        const documentKey = getDocumentIdentityKey(documentoData.codigo, documentoData.version);
+        const occurrenceIndex = nextDocumentOccurrence(occurrenceIndexes, documentKey);
+        const existente = existingDocumentBuckets.get(documentKey)?.[occurrenceIndex] || null;
 
         if (existente) {
           // Actualizar
@@ -524,7 +547,10 @@ const importFromExcel = async (req, res) => {
           results.actualizados++;
         } else {
           // Crear nuevo
-          await Documento.create(documentoData);
+          const nuevoDocumento = await Documento.create(documentoData);
+          const bucket = existingDocumentBuckets.get(documentKey) || [];
+          bucket.push(nuevoDocumento);
+          existingDocumentBuckets.set(documentKey, bucket);
           results.importados++;
         }
 
@@ -719,17 +745,14 @@ const importFromSheet = async (req, res) => {
       });
     }
 
-    if (mode === 'reemplazar') {
-      await Documento.destroy({ where: {} });
-    }
-
     const results = {
       total: data.length,
       importados: 0,
       actualizados: 0,
       errores: []
     };
-    const activeCodes = collectActiveCodes(data);
+    const existingDocumentBuckets = await buildExistingDocumentBuckets();
+    const occurrenceIndexes = new Map();
 
     for (let i = 0; i < data.length; i++) {
       const row = mapRowKeys(data[i]);
@@ -738,55 +761,62 @@ const importFromSheet = async (req, res) => {
       try {
         const { tipoDocumentacion, codigo, titulo } = normalizeMappedFields(row);
 
-        if (codigo && !isActiveSheetEstado(row.estado)) {
-          if (activeCodes.has(codigo)) continue;
-        }
-
-        if (!row.macro_proceso || !row.proceso || !row.subproceso || !tipoDocumentacion || !codigo || !titulo) {
+        if (!codigo && !titulo) {
           results.errores.push({
             fila: rowNumber,
-            error: 'Faltan campos requeridos (macro_proceso, proceso, subproceso, tipo_documentacion, codigo, titulo)'
+            error: 'Faltan campos requeridos (codigo o titulo)'
           });
           continue;
         }
 
+        const macroNombre = toText(row.macro_proceso, 255) || 'SIN DEFINIR';
+        const procesoNombre = toText(row.proceso, 255) || 'SIN DEFINIR';
+        const subprocesoNombre = toText(row.subproceso, 255) || 'SIN DEFINIR';
+        const tipoNombre = tipoDocumentacion || 'SIN TIPO';
+        const codigoFinal = codigo || `SIN-CODIGO-${rowNumber}`;
+        const tituloFinal = titulo || codigoFinal;
+
         const [macroProceso] = await MacroProceso.findOrCreate({
-          where: { nombre: toText(row.macro_proceso, 255) },
-          defaults: { nombre: toText(row.macro_proceso, 255) }
+          where: { nombre: macroNombre },
+          defaults: { nombre: macroNombre }
         });
 
         const [proceso] = await Proceso.findOrCreate({
           where: {
-            nombre: toText(row.proceso, 255),
+            nombre: procesoNombre,
             macro_proceso_id: macroProceso.id
           },
           defaults: {
-            nombre: toText(row.proceso, 255),
+            nombre: procesoNombre,
             macro_proceso_id: macroProceso.id
           }
         });
 
         const [subproceso] = await SubProceso.findOrCreate({
           where: {
-            nombre: toText(row.subproceso, 255),
+            nombre: subprocesoNombre,
             proceso_id: proceso.id
           },
           defaults: {
-            nombre: toText(row.subproceso, 255),
+            nombre: subprocesoNombre,
             proceso_id: proceso.id
           }
         });
 
         const [tipoDoc] = await TipoDocumentacion.findOrCreate({
-          where: { nombre: tipoDocumentacion },
-          defaults: { nombre: tipoDocumentacion }
+          where: { nombre: tipoNombre },
+          defaults: { nombre: tipoNombre }
         });
 
         const documentoData = {
           subproceso_id: subproceso.id,
           tipo_documentacion_id: tipoDoc.id,
-          codigo,
-          titulo,
+          macroproceso: macroNombre,
+          proceso_texto: procesoNombre,
+          subproceso_texto: subprocesoNombre,
+          tipo_documento: tipoNombre,
+          codigo: codigoFinal,
+          titulo: tituloFinal,
           version: toText(row.version, 20),
           fecha_creacion: excelDateToISO(row.fecha_creacion),
           revisa: toText(row.revisa, 200),
@@ -798,15 +828,18 @@ const importFromSheet = async (req, res) => {
           observaciones: toText(row.observaciones)
         };
 
-        const existente = await Documento.findOne({
-          where: { codigo: documentoData.codigo }
-        });
+        const documentKey = getDocumentIdentityKey(documentoData.codigo, documentoData.version);
+        const occurrenceIndex = nextDocumentOccurrence(occurrenceIndexes, documentKey);
+        const existente = existingDocumentBuckets.get(documentKey)?.[occurrenceIndex] || null;
 
         if (existente) {
           await existente.update(documentoData);
           results.actualizados++;
         } else {
-          await Documento.create(documentoData);
+          const nuevoDocumento = await Documento.create(documentoData);
+          const bucket = existingDocumentBuckets.get(documentKey) || [];
+          bucket.push(nuevoDocumento);
+          existingDocumentBuckets.set(documentKey, bucket);
           results.importados++;
         }
       } catch (error) {
@@ -891,10 +924,6 @@ const importFromSheetFixed = async (req, res) => {
 
     const data = parsedSheet.data;
 
-    if (mode === 'reemplazar') {
-      await Documento.destroy({ where: {} });
-    }
-
     const results = {
       total: data.length,
       importados: 0,
@@ -903,13 +932,8 @@ const importFromSheetFixed = async (req, res) => {
       errores: []
     };
 
-    const existingDocumentsByCode = mode === 'incremental'
-      ? new Map(
-          (await Documento.findAll())
-            .map((doc) => [toText(doc.codigo), doc])
-            .filter(([codigo]) => Boolean(codigo))
-        )
-      : new Map();
+    const existingDocumentBuckets = await buildExistingDocumentBuckets();
+    const occurrenceIndexes = new Map();
 
     for (let i = 0; i < data.length; i++) {
       const row = mapRowKeys(data[i]);
@@ -967,6 +991,10 @@ const importFromSheetFixed = async (req, res) => {
         const documentoData = {
           subproceso_id: subproceso.id,
           tipo_documentacion_id: tipoDoc.id,
+          macroproceso: macroNombre,
+          proceso_texto: procesoNombre,
+          subproceso_texto: subprocesoNombre,
+          tipo_documento: tipoNombre,
           codigo: codigoFinal,
           titulo: tituloFinal,
           version: toText(row.version, 20),
@@ -980,25 +1008,23 @@ const importFromSheetFixed = async (req, res) => {
           observaciones: toText(row.observaciones)
         };
 
-        if (mode === 'reemplazar') {
-          // En reemplazar: insertar siempre sin deduplicar — cada fila de Sheets = un registro en BD
-          await Documento.create(documentoData);
-          results.importados++;
-        } else {
-          // En incremental: upsert por codigo
-          const existente = existingDocumentsByCode.get(documentoData.codigo);
-          if (existente) {
-            if (documentNeedsUpdate(existente, documentoData)) {
-              await existente.update(documentoData);
-              results.actualizados++;
-            } else {
-              results.omitidos++;
-            }
+        const documentKey = getDocumentIdentityKey(documentoData.codigo, documentoData.version);
+        const occurrenceIndex = nextDocumentOccurrence(occurrenceIndexes, documentKey);
+        const existente = existingDocumentBuckets.get(documentKey)?.[occurrenceIndex] || null;
+
+        if (existente) {
+          if (documentNeedsUpdate(existente, documentoData)) {
+            await existente.update(documentoData);
+            results.actualizados++;
           } else {
-            const nuevoDocumento = await Documento.create(documentoData);
-            results.importados++;
-            existingDocumentsByCode.set(documentoData.codigo, nuevoDocumento);
+            results.omitidos++;
           }
+        } else {
+          const nuevoDocumento = await Documento.create(documentoData);
+          const bucket = existingDocumentBuckets.get(documentKey) || [];
+          bucket.push(nuevoDocumento);
+          existingDocumentBuckets.set(documentKey, bucket);
+          results.importados++;
         }
       } catch (error) {
         results.errores.push({
@@ -1111,53 +1137,10 @@ const downloadTemplate = (req, res) => {
 };
 
 const clearDocumentos = async (req, res) => {
-  try {
-    const { identifier } = req.body;
-
-    if (!identifier) {
-      return res.status(400).json({
-        success: false,
-        message: 'Debe enviar el correo del usuario autorizado'
-      });
-    }
-
-    const normalizedIdentifier = String(identifier).trim().toLowerCase();
-    const currentEmail = String(req.user.email || '').trim().toLowerCase();
-    const currentUsername = String(req.user.username || '').trim().toLowerCase();
-
-    if (normalizedIdentifier !== currentEmail && normalizedIdentifier !== currentUsername) {
-      return res.status(403).json({
-        success: false,
-        message: 'El correo de confirmación no coincide con el usuario autenticado'
-      });
-    }
-
-    const admin = await User.findByPk(req.user.id);
-    if (
-      !admin ||
-      ![ROLES.ADMINISTRADOR, ROLES.GESTION_PROCESOS].includes(admin.role) ||
-      admin.estado !== 'activo'
-    ) {
-      return res.status(403).json({
-        success: false,
-        message: 'No autorizado para esta operación'
-      });
-    }
-
-    const deletedCount = await Documento.destroy({ where: {} });
-
-    return res.json({
-      success: true,
-      message: `Limpieza completada. Registros eliminados: ${deletedCount}`,
-      data: { deletedCount }
-    });
-  } catch (error) {
-    console.error('Error al limpiar documentos:', error);
-    return res.status(500).json({
-      success: false,
-      message: 'Error al limpiar la base de datos de documentos'
-    });
-  }
+  return res.status(403).json({
+    success: false,
+    message: 'La limpieza de documentos esta deshabilitada para conservar toda la informacion del servidor'
+  });
 };
 
 module.exports = { importFromExcel, importFromSheet: importFromSheetFixed, downloadTemplate, clearDocumentos };

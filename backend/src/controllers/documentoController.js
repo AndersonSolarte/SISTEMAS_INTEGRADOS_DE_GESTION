@@ -42,6 +42,26 @@ const serializeDocumento = (req, documento) => {
     data.link_acceso = getSignedDocumentUrl(req, data);
     data.url_segura = true;
   }
+  if (data.tipo_documento) {
+    data.tipoDocumentacion = {
+      ...(data.tipoDocumentacion || {}),
+      nombre: data.tipo_documento
+    };
+  }
+  if (data.subproceso_texto || data.proceso_texto || data.macroproceso) {
+    data.subproceso = {
+      ...(typeof data.subproceso === 'object' ? data.subproceso : {}),
+      nombre: data.subproceso_texto || data.subproceso?.nombre,
+      proceso: {
+        ...((typeof data.subproceso === 'object' && data.subproceso?.proceso) || {}),
+        nombre: data.proceso_texto || data.subproceso?.proceso?.nombre,
+        macroProceso: {
+          ...((typeof data.subproceso === 'object' && data.subproceso?.proceso?.macroProceso) || {}),
+          nombre: data.macroproceso || data.subproceso?.proceso?.macroProceso?.nombre
+        }
+      }
+    };
+  }
   return data;
 };
 

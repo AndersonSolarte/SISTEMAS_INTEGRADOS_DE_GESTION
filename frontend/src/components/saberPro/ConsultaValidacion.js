@@ -83,15 +83,6 @@ const stateChip = (estado, filled = false) => {
   );
 };
 
-const getRowStyle = (row) => {
-  const alert = isAlertRow(row);
-  if (alert) return { bgcolor: '#fde8e8', borderLeft: '4px solid #ef4444', '&:hover': { bgcolor: '#fdd5d5' } };
-  if (row.estado === 'No encontrado') return { bgcolor: '#fff8f8', borderLeft: '4px solid #fca5a5', '&:hover': { bgcolor: '#fee2e2' } };
-  if (row.estado === 'Duplicado')    return { bgcolor: '#fffbeb', borderLeft: '4px solid #fcd34d', '&:hover': { bgcolor: '#fef9c3' } };
-  if (row.estado === 'Encontrado')   return { bgcolor: '#f0fdf4', borderLeft: '4px solid #86efac', '&:hover': { bgcolor: '#dcfce7' } };
-  return { '&:hover': { bgcolor: '#f8fafc' } };
-};
-
 const KpiMini = ({ label, value, color, icon: Icon }) => (
   <Paper elevation={0} sx={{ p: 1.5, borderRadius: 2, border: `1.5px solid ${color}18`,
     background: `linear-gradient(145deg,#fff 0%,${color}06 100%)`, minWidth: 110, textAlign: 'center' }}>
@@ -557,12 +548,6 @@ function CargaMasiva() {
 
     const COLS = ['#', 'Documento', 'Nombre', 'Programa', 'Tipo Prueba',
       'Año', 'Periodo', 'Puntaje Global', 'N° Registro', 'Observaciones', 'Estado'];
-
-    const cellStyle = (fill, bold = false) => ({
-      font: { name: 'Calibri', sz: 11, bold },
-      alignment: { vertical: 'center', wrapText: true },
-      ...(fill ? { fill: { patternType: 'solid', fgColor: { rgb: fill } } } : {})
-    });
 
     const headerStyle = {
       font: { name: 'Calibri', sz: 11, bold: true, color: { rgb: 'FFFFFF' } },

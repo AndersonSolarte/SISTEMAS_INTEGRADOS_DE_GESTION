@@ -13,22 +13,17 @@ const addUserManagement = async () => {
       ALTER TABLE users ADD COLUMN IF NOT EXISTS last_login TIMESTAMP;
       ALTER TABLE users ADD COLUMN IF NOT EXISTS must_change_password BOOLEAN DEFAULT FALSE;
       
-      -- Crear tabla de auditoría de usuarios
-      CREATE TABLE IF NOT EXISTS user_audit (
-        id SERIAL PRIMARY KEY,
-        user_id INTEGER REFERENCES users(id),
-        action VARCHAR(50) NOT NULL,
-        description TEXT,
-        ip_address VARCHAR(45),
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-      );
-      
       -- Agregar campos de auditoría a documentos
       ALTER TABLE documentos ADD COLUMN IF NOT EXISTS creado_por INTEGER REFERENCES users(id);
       ALTER TABLE documentos ADD COLUMN IF NOT EXISTS actualizado_por INTEGER REFERENCES users(id);
       ALTER TABLE documentos ADD COLUMN IF NOT EXISTS eliminado BOOLEAN DEFAULT FALSE;
       ALTER TABLE documentos ADD COLUMN IF NOT EXISTS eliminado_por INTEGER REFERENCES users(id);
       ALTER TABLE documentos ADD COLUMN IF NOT EXISTS eliminado_en TIMESTAMP;
+      ALTER TABLE documentos ADD COLUMN IF NOT EXISTS macroproceso VARCHAR(255);
+      ALTER TABLE documentos ADD COLUMN IF NOT EXISTS proceso VARCHAR(255);
+      ALTER TABLE documentos ADD COLUMN IF NOT EXISTS subproceso VARCHAR(255);
+      ALTER TABLE documentos ADD COLUMN IF NOT EXISTS tipo_documento VARCHAR(200);
+      ALTER TABLE documentos ADD COLUMN IF NOT EXISTS observaciones TEXT;
       
       -- Crear índices
       CREATE INDEX IF NOT EXISTS idx_users_username ON users(username);

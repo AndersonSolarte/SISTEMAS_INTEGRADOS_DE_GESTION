@@ -1,5 +1,4 @@
-const { MacroProceso, Proceso, SubProceso, TipoDocumentacion, Documento } = require('../models');
-const { literal, QueryTypes, Op } = require('sequelize');
+const { QueryTypes } = require('sequelize');
 const { sequelize } = require('../config/database');
 const { ROLES } = require('../constants/roles');
 
@@ -27,16 +26,19 @@ const parseIdList = (value) => {
 const getMacroProcesos = async (req, res) => {
   try {
     const estadoSql = documentStateSql(req.query, req.user, 'd');
-    const macroProcesos = await MacroProceso.findAll({
-      where: literal(`EXISTS (
-        SELECT 1 FROM procesos p
-        JOIN subprocesos sp ON sp.proceso_id = p.id
-        JOIN documentos d ON d.subproceso_id = sp.id
-        WHERE p.macro_proceso_id = "macro_procesos"."id"
-        AND ${estadoSql}
-      )`),
-      order: [['nombre', 'ASC']]
-    });
+    const macroProcesos = await sequelize.query(
+      `
+        SELECT DISTINCT mp.*
+        FROM documentos d
+        LEFT JOIN subprocesos sp ON sp.id = d.subproceso_id
+        LEFT JOIN procesos p ON p.id = sp.proceso_id
+        LEFT JOIN macro_procesos mp ON mp.id = p.macro_proceso_id
+        WHERE ${estadoSql}
+          AND mp.id IS NOT NULL
+        ORDER BY mp.nombre ASC
+      `,
+      { type: QueryTypes.SELECT }
+    );
     res.json({ success: true, data: { macroProcesos } });
   } catch (error) {
     res.status(500).json({ success: false, message: 'Error' });
@@ -47,24 +49,23 @@ const getProcesos = async (req, res) => {
   try {
     const { macro_proceso_id } = req.query;
     const estadoSql = documentStateSql(req.query, req.user, 'd');
-    const ids = macro_proceso_id
-      ? String(macro_proceso_id).split(',').map(Number).filter(Number.isFinite)
-      : [];
-    const macroWhere = ids.length
-      ? { macro_proceso_id: ids.length === 1 ? ids[0] : { [Op.in]: ids } }
-      : {};
-    const procesos = await Proceso.findAll({
-      where: {
-        ...macroWhere,
-        [Op.and]: literal(`EXISTS (
-          SELECT 1 FROM subprocesos sp
-          JOIN documentos d ON d.subproceso_id = sp.id
-          WHERE sp.proceso_id = "procesos"."id"
-          AND ${estadoSql}
-        )`)
-      },
-      order: [['nombre', 'ASC']]
-    });
+    const ids = parseIdList(macro_proceso_id);
+    const replacements = {};
+    const macroFilter = ids ? 'AND p.macro_proceso_id IN (:macroIds)' : '';
+    if (ids) replacements.macroIds = ids;
+    const procesos = await sequelize.query(
+      `
+        SELECT DISTINCT p.*
+        FROM documentos d
+        LEFT JOIN subprocesos sp ON sp.id = d.subproceso_id
+        LEFT JOIN procesos p ON p.id = sp.proceso_id
+        WHERE ${estadoSql}
+          AND p.id IS NOT NULL
+          ${macroFilter}
+        ORDER BY p.nombre ASC
+      `,
+      { replacements, type: QueryTypes.SELECT }
+    );
     res.json({ success: true, data: { procesos } });
   } catch (error) {
     res.status(500).json({ success: false, message: 'Error' });
@@ -75,23 +76,22 @@ const getSubProcesos = async (req, res) => {
   try {
     const { proceso_id } = req.query;
     const estadoSql = documentStateSql(req.query, req.user, 'd');
-    const ids = proceso_id
-      ? String(proceso_id).split(',').map(Number).filter(Number.isFinite)
-      : [];
-    const procWhere = ids.length
-      ? { proceso_id: ids.length === 1 ? ids[0] : { [Op.in]: ids } }
-      : {};
-    const subprocesos = await SubProceso.findAll({
-      where: {
-        ...procWhere,
-        [Op.and]: literal(`EXISTS (
-          SELECT 1 FROM documentos d
-          WHERE d.subproceso_id = "subprocesos"."id"
-          AND ${estadoSql}
-        )`)
-      },
-      order: [['nombre', 'ASC']]
-    });
+    const ids = parseIdList(proceso_id);
+    const replacements = {};
+    const procesoFilter = ids ? 'AND sp.proceso_id IN (:procesoIds)' : '';
+    if (ids) replacements.procesoIds = ids;
+    const subprocesos = await sequelize.query(
+      `
+        SELECT DISTINCT sp.*
+        FROM documentos d
+        LEFT JOIN subprocesos sp ON sp.id = d.subproceso_id
+        WHERE ${estadoSql}
+          AND sp.id IS NOT NULL
+          ${procesoFilter}
+        ORDER BY sp.nombre ASC
+      `,
+      { replacements, type: QueryTypes.SELECT }
+    );
     res.json({ success: true, data: { subprocesos } });
   } catch (error) {
     res.status(500).json({ success: false, message: 'Error' });
@@ -102,28 +102,34 @@ const getTiposDocumentacion = async (req, res) => {
   try {
     const { macro_proceso_id, proceso_id, subproceso_id } = req.query;
     const estadoSql = documentStateSql(req.query, req.user, 'd');
-    const macroIds = macro_proceso_id ? String(macro_proceso_id).split(',').map(Number).filter(Number.isFinite) : [];
-    const procIds  = proceso_id     ? String(proceso_id).split(',').map(Number).filter(Number.isFinite) : [];
-    const subIds   = subproceso_id  ? String(subproceso_id).split(',').map(Number).filter(Number.isFinite) : [];
-
-    let subFilter = '';
-    if (subIds.length) {
-      subFilter = `AND d.subproceso_id IN (${subIds.join(',')})`;
-    } else if (procIds.length) {
-      subFilter = `AND d.subproceso_id IN (SELECT id FROM subprocesos WHERE proceso_id IN (${procIds.join(',')}))`;
-    } else if (macroIds.length) {
-      subFilter = `AND d.subproceso_id IN (SELECT sp.id FROM subprocesos sp JOIN procesos p ON sp.proceso_id = p.id WHERE p.macro_proceso_id IN (${macroIds.join(',')}))`;
+    const macroIds = parseIdList(macro_proceso_id);
+    const procIds = parseIdList(proceso_id);
+    const subIds = parseIdList(subproceso_id);
+    const replacements = {};
+    const conditions = [estadoSql, 'td.id IS NOT NULL'];
+    if (subIds) {
+      conditions.push('d.subproceso_id IN (:subIds)');
+      replacements.subIds = subIds;
+    } else if (procIds) {
+      conditions.push('sp.proceso_id IN (:procIds)');
+      replacements.procIds = procIds;
+    } else if (macroIds) {
+      conditions.push('p.macro_proceso_id IN (:macroIds)');
+      replacements.macroIds = macroIds;
     }
 
-    const tipos = await TipoDocumentacion.findAll({
-      where: literal(`EXISTS (
-        SELECT 1 FROM documentos d
-        WHERE d.tipo_documentacion_id = "tipos_documentacion"."id"
-        AND ${estadoSql}
-        ${subFilter}
-      )`),
-      order: [['nombre', 'ASC']]
-    });
+    const tipos = await sequelize.query(
+      `
+        SELECT DISTINCT td.*
+        FROM documentos d
+        LEFT JOIN subprocesos sp ON sp.id = d.subproceso_id
+        LEFT JOIN procesos p ON p.id = sp.proceso_id
+        LEFT JOIN tipos_documentacion td ON td.id = d.tipo_documentacion_id
+        WHERE ${conditions.join(' AND ')}
+        ORDER BY td.nombre ASC
+      `,
+      { replacements, type: QueryTypes.SELECT }
+    );
     res.json({ success: true, data: { tipos } });
   } catch (error) {
     res.status(500).json({ success: false, message: 'Error' });

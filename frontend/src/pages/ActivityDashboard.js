@@ -3,7 +3,7 @@ import {
   Box, Paper, Typography, Stack, Chip, CircularProgress,
   Select, MenuItem, Table, TableBody, TableCell, TableHead,
   TableRow, TableContainer, Avatar, Tooltip as MuiTooltip,
-  FormControl, InputLabel, Alert, Divider
+  FormControl, InputLabel, Alert
 } from '@mui/material';
 import {
   AreaChart, Area, BarChart, Bar, PieChart, Pie, Cell,
@@ -14,7 +14,6 @@ import TodayRoundedIcon         from '@mui/icons-material/TodayRounded';
 import InsightsRoundedIcon      from '@mui/icons-material/InsightsRounded';
 import BoltRoundedIcon          from '@mui/icons-material/BoltRounded';
 import AccessTimeRoundedIcon    from '@mui/icons-material/AccessTimeRounded';
-import PersonRoundedIcon        from '@mui/icons-material/PersonRounded';
 import LoginRoundedIcon         from '@mui/icons-material/LoginRounded';
 import api from '../services/api';
 
@@ -40,12 +39,6 @@ const ROLE_COLORS = {
   autoevaluacion:         '#10b981',
   gestion_informacion:    '#f59e0b',
   gestion_procesos:       '#ef4444',
-};
-
-const fmtDate = (d) => {
-  if (!d) return '—';
-  const dt = new Date(d);
-  return dt.toLocaleDateString('es-CO', { day: '2-digit', month: 'short', year: 'numeric' });
 };
 
 const fmtTime = (d) => {
