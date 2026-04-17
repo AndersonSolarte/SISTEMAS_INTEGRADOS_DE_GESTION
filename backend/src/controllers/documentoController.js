@@ -139,6 +139,7 @@ const getDocumentos = async (req, res) => {
       titulo,
       include_inactive,
       estado_scope,
+      sort,
       page = 1,
       limit = 10
     } = req.query;
@@ -224,7 +225,9 @@ const getDocumentos = async (req, res) => {
       include,
       limit: parseInt(limit),
       offset: parseInt(offset),
-      order: [literal('orden_origen ASC NULLS LAST'), ['id', 'ASC']],
+      order: sort === 'recent'
+        ? [literal('fecha_creacion DESC NULLS LAST'), literal('created_at DESC'), ['id', 'DESC']]
+        : [literal('orden_origen ASC NULLS LAST'), ['id', 'ASC']],
       distinct: true
     });
 

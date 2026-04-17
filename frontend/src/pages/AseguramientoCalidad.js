@@ -439,6 +439,7 @@ function AseguramientoCalidad() {
   const [clearConfirmation, setClearConfirmation] = useState('');
   const [clearingDocuments, setClearingDocuments] = useState(false);
   const [filterOptions, setFilterOptions] = useState(emptyFilterOptions);
+  const [recentDocumentos, setRecentDocumentos] = useState([]);
 
   const syncCatalogosFromPayload = useCallback((data = {}) => {
     setMacroProcesos(data.macroProcesos || []);
@@ -534,6 +535,12 @@ function AseguramientoCalidad() {
       .catch(() => {})
       .finally(() => setLoadingFavorites(false));
   }, [user?.id]);
+
+  useEffect(() => {
+    documentoService.getDocumentos({ sort: 'recent' }, 1, 10)
+      .then((res) => { if (res.success) setRecentDocumentos(res.data.documentos || []); })
+      .catch(() => {});
+  }, []);
 
   useEffect(() => {
     const params = new URLSearchParams(location.search);
@@ -825,25 +832,23 @@ function AseguramientoCalidad() {
   const hasActiveFilters = activeFiltersCount > 0;
   const tiposDocumentacionDisplay = tiposDocumentacion.filter((td) => !isDocumentCode(td.nombre));
 
-  const baseMacroOptions = macroProcesos;
-  const baseProcesoOptions = procesos;
-  const baseSubprocesoOptions = subprocesos;
-  const baseTipoOptions = tiposDocumentacionDisplay;
-  const resolveFacetOptions = (dynamicOptions, baseOptions, selectedIds, clean = (items) => items) => {
-    if (!dynamicOptions) return baseOptions;
-    const cleanedDynamic = clean(dynamicOptions);
-    return mergeSelectedOptions(cleanedDynamic, baseOptions, selectedIds);
-  };
-  const macroOptions = resolveFacetOptions(filterOptions.macroProcesos, baseMacroOptions, selMacros);
-  const procesoOptions = resolveFacetOptions(filterOptions.procesos, baseProcesoOptions, selProcesos);
-  const subprocesoOptions = resolveFacetOptions(filterOptions.subprocesos, baseSubprocesoOptions, selSubprocesos);
-  const tipoOptions = resolveFacetOptions(
-    filterOptions.tipos,
-    baseTipoOptions,
-    selTipos,
-    (items) => items.filter((td) => !isDocumentCode(td.nombre))
-  );
+  // Filtrado client-side usando relaciones del catálogo (macro_proceso_id, proceso_id)
+  const macroOptions = macroProcesos;
+
+  const procesoOptions = selMacros.length > 0
+    ? procesos.filter(p => selMacros.some(mId => String(p.macro_proceso_id) === String(mId)))
+    : procesos;
+
+  const subprocesoOptions = selProcesos.length > 0
+    ? subprocesos.filter(sp => selProcesos.some(pId => String(sp.proceso_id) === String(pId)))
+    : selMacros.length > 0
+      ? subprocesos.filter(sp => procesoOptions.some(p => String(p.id) === String(sp.proceso_id)))
+      : subprocesos;
+
+  const tipoOptions = tiposDocumentacionDisplay;
   const isFiltering = loading || autoSearching;
+  const showingRecents = !hasActiveFilters && !loading && documentos.length === 0 && recentDocumentos.length > 0;
+  const displayDocumentos = showingRecents ? recentDocumentos : documentos;
 
   return (
     <Fade in={true} timeout={500}>
@@ -1197,26 +1202,35 @@ function AseguramientoCalidad() {
 
         <Slide direction="up" in={true} timeout={700}>
           <Paper elevation={0} sx={{ border: '1px solid #e2e8f0', borderRadius: 3, overflow: 'hidden' }}>
-            {documentos.length === 0 && !loading ? (
+            {displayDocumentos.length === 0 && !loading ? (
               <Box sx={{ p: 10, textAlign: 'center' }}>
                 <Box sx={{ width: 100, height: 100, borderRadius: '50%', bgcolor: '#f1f5f9', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto', mb: 3 }}>
                   <SearchIcon sx={{ fontSize: 50, color: '#94a3b8' }} />
                 </Box>
                 <Typography variant="h5" sx={{ color: '#475569', fontWeight: 700, mb: 1 }}>
-                  {Object.values(filters).some(f => f !== '') ? 'No se encontraron documentos' : 'Aplica filtros para comenzar'}
+                  {hasActiveFilters ? 'No se encontraron documentos' : 'Aplica filtros para comenzar'}
                 </Typography>
                 <Typography variant="body2" sx={{ color: '#94a3b8', maxWidth: 400, mx: 'auto' }}>
-                  {Object.values(filters).some(f => f !== '') ? 'Intenta ajustar los criterios de búsqueda o limpia los filtros' : 'Selecciona al menos un criterio y presiona el botón "Buscar"'}
+                  {hasActiveFilters ? 'Intenta ajustar los criterios de búsqueda o limpia los filtros' : 'Selecciona al menos un criterio y presiona el botón "Buscar"'}
                 </Typography>
               </Box>
             ) : (
               <>
+                {showingRecents && (
+                  <Box sx={{ px: 3, py: 1.25, bgcolor: '#f0f9ff', borderBottom: '1px solid #bae6fd', display: 'flex', alignItems: 'center', gap: 1.5 }}>
+                    <Typography sx={{ fontSize: 11, fontWeight: 800, color: '#0369a1', letterSpacing: '0.6px', textTransform: 'uppercase' }}>Últimos documentos</Typography>
+                    <Typography sx={{ fontSize: 11, color: '#64748b' }}>— Aplica filtros para una búsqueda específica</Typography>
+                  </Box>
+                )}
                 <TableContainer>
                   <Table>
                     <TableHead>
                       <TableRow sx={{ bgcolor: '#f8fafc' }}>
                         <TableCell sx={{ fontWeight: 700, color: '#1e293b', fontSize: 13, borderBottom: '2px solid #e2e8f0', textTransform: 'uppercase', letterSpacing: 0.5 }}>Código</TableCell>
-                        <TableCell sx={{ fontWeight: 700, color: '#1e293b', fontSize: 13, borderBottom: '2px solid #e2e8f0', textTransform: 'uppercase', letterSpacing: 0.5 }}>Tipo</TableCell>
+                        <TableCell sx={{ fontWeight: 700, color: '#1e293b', fontSize: 13, borderBottom: '2px solid #e2e8f0', textTransform: 'uppercase', letterSpacing: 0.5 }}>Macroproceso</TableCell>
+                        <TableCell sx={{ fontWeight: 700, color: '#1e293b', fontSize: 13, borderBottom: '2px solid #e2e8f0', textTransform: 'uppercase', letterSpacing: 0.5 }}>Proceso</TableCell>
+                        <TableCell sx={{ fontWeight: 700, color: '#1e293b', fontSize: 13, borderBottom: '2px solid #e2e8f0', textTransform: 'uppercase', letterSpacing: 0.5 }}>Subproceso</TableCell>
+                        <TableCell sx={{ fontWeight: 700, color: '#1e293b', fontSize: 13, borderBottom: '2px solid #e2e8f0', textTransform: 'uppercase', letterSpacing: 0.5 }}>Tipo Documento</TableCell>
                         <TableCell sx={{ fontWeight: 700, color: '#1e293b', fontSize: 13, borderBottom: '2px solid #e2e8f0', textTransform: 'uppercase', letterSpacing: 0.5 }}>Nombre Documento</TableCell>
                         <TableCell sx={{ fontWeight: 700, color: '#1e293b', fontSize: 13, borderBottom: '2px solid #e2e8f0', textTransform: 'uppercase', letterSpacing: 0.5 }}>Autor</TableCell>
                         <TableCell sx={{ fontWeight: 700, color: '#1e293b', fontSize: 13, borderBottom: '2px solid #e2e8f0', textTransform: 'uppercase', letterSpacing: 0.5 }}>Fecha Creacion</TableCell>
@@ -1228,18 +1242,37 @@ function AseguramientoCalidad() {
                     <TableBody>
                       {loading ? (
                         <TableRow>
-                          <TableCell colSpan={8} align="center" sx={{ py: 10 }}>
+                          <TableCell colSpan={11} align="center" sx={{ py: 10 }}>
                             <CircularProgress size={50} thickness={4} />
                             <Typography variant="body1" sx={{ color: '#64748b', mt: 3, fontWeight: 600 }}>Cargando documentos...</Typography>
                           </TableCell>
                         </TableRow>
                       ) : (
-                        documentos.map((doc) => {
+                        displayDocumentos.map((doc) => {
                           const isFavorite = favoriteIds.has(String(doc.id));
                           const normalized = normalizeDocFields(doc);
+                          const macroProcNombre = doc.subproceso?.proceso?.macroProceso?.nombre || doc.macroproceso || '-';
+                          const procNombre = doc.subproceso?.proceso?.nombre || doc.proceso_texto || '-';
+                          const subprocNombre = doc.subproceso?.nombre || doc.subproceso_texto || '-';
+                          const cellClamp = { maxWidth: 160, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' };
                           return (
                             <TableRow key={doc.id} hover sx={{ '&:hover': { bgcolor: '#f8fafc' }, transition: 'all 0.2s', cursor: 'pointer' }}>
                               <TableCell sx={{ fontWeight: 700, color: '#3b82f6', fontSize: 14, fontFamily: 'monospace' }}>{normalized.codigo}</TableCell>
+                              <TableCell sx={{ color: '#475569', fontSize: 12, ...cellClamp }}>
+                                <Tooltip title={macroProcNombre} placement="top" arrow>
+                                  <span>{macroProcNombre}</span>
+                                </Tooltip>
+                              </TableCell>
+                              <TableCell sx={{ color: '#475569', fontSize: 12, ...cellClamp }}>
+                                <Tooltip title={procNombre} placement="top" arrow>
+                                  <span>{procNombre}</span>
+                                </Tooltip>
+                              </TableCell>
+                              <TableCell sx={{ color: '#475569', fontSize: 12, ...cellClamp }}>
+                                <Tooltip title={subprocNombre} placement="top" arrow>
+                                  <span>{subprocNombre}</span>
+                                </Tooltip>
+                              </TableCell>
                               <TableCell>
                                 <Chip icon={getTipoIcon(normalized.tipo)} label={normalized.tipo || 'N/A'} size="small" sx={{ bgcolor: getTipoColor(normalized.tipo).bg, color: getTipoColor(normalized.tipo).color, fontWeight: 700, fontSize: 12, borderRadius: 2, px: 1 }} />
                               </TableCell>
@@ -1274,14 +1307,14 @@ function AseguramientoCalidad() {
                                   </Tooltip>
                                   <Tooltip title="Ver documento" arrow>
                                     <span>
-                                      <IconButton 
-                                        size="small" 
-                                        sx={{ 
-                                          color: '#2563eb', 
-                                          bgcolor: '#eff6ff', 
+                                      <IconButton
+                                        size="small"
+                                        sx={{
+                                          color: '#2563eb',
+                                          bgcolor: '#eff6ff',
                                           '&:hover': { bgcolor: '#dbeafe' },
                                           '&:disabled': { opacity: 0.3 }
-                                        }} 
+                                        }}
                                         disabled={!doc.link_acceso}
                                         onClick={() => {
                                           if (doc.link_acceso) {
@@ -1293,17 +1326,17 @@ function AseguramientoCalidad() {
                                       </IconButton>
                                     </span>
                                   </Tooltip>
-                                  
+
                                   <Tooltip title="Descargar documento" arrow>
                                     <span>
-                                      <IconButton 
-                                        size="small" 
-                                        sx={{ 
-                                          color: '#059669', 
-                                          bgcolor: '#d1fae5', 
+                                      <IconButton
+                                        size="small"
+                                        sx={{
+                                          color: '#059669',
+                                          bgcolor: '#d1fae5',
                                           '&:hover': { bgcolor: '#a7f3d0' },
                                           '&:disabled': { opacity: 0.3 }
-                                        }} 
+                                        }}
                                         disabled={!doc.link_acceso}
                                         onClick={() => {
                                           if (doc.link_acceso) {
@@ -1330,7 +1363,7 @@ function AseguramientoCalidad() {
                 <TablePagination 
                   rowsPerPageOptions={[5, 10, 25, 50]} 
                   component="div" 
-                  count={totalDocumentos} 
+                  count={showingRecents ? recentDocumentos.length : totalDocumentos}
                   rowsPerPage={rowsPerPage} 
                   page={page} 
                   onPageChange={handleChangePage} 
