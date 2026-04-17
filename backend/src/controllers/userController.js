@@ -18,7 +18,6 @@ const MENU_PERMISSION_KEYS = [
   'planeacion_efectividad',
   'autoevaluacion',
   'gestion_usuarios',
-  'gestion_documentos',
   'buscar_documentos'
 ];
 const GESTION_INFO_MODULE_KEYS = [

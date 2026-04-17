@@ -5,26 +5,31 @@ import {
   Button,
   Chip,
   CircularProgress,
+  Collapse,
   Fade,
-  Grid,
   Paper,
   Stack,
+  Tooltip,
   Typography
 } from '@mui/material';
 import {
   Analytics as AnalyticsIcon,
+  AccountTree as AccountTreeIcon,
   Article as ArticleIcon,
   AssignmentTurnedIn as AssignmentTurnedInIcon,
+  AutoGraph as AutoGraphIcon,
   Clear as ClearIcon,
   Description as DescriptionIcon,
+  DonutSmall as DonutSmallIcon,
+  ExpandMore as ExpandMoreIcon,
   FilterAlt as FilterAltIcon,
   FolderCopy as FolderCopyIcon,
   InsertDriveFile as InsertDriveFileIcon,
+  Layers as LayersIcon,
   LibraryBooks as LibraryBooksIcon,
   MenuBook as MenuBookIcon,
   RuleFolder as RuleFolderIcon,
-  Search as SearchIcon,
-  WorkspacePremium as WorkspacePremiumIcon
+  Search as SearchIcon
 } from '@mui/icons-material';
 import { useSnackbar } from 'notistack';
 import documentoService from '../services/documentoService';
@@ -60,13 +65,26 @@ const emptyData = {
     totalDocumentos: 0,
     totalTipos: 0,
     totalMacroProcesos: 0,
+    totalProcesos: 0,
+    totalSubprocesos: 0,
     periodoSeleccionado: 'Todos',
     tipoMasFrecuente: null,
-    macroMasFrecuente: null
+    macroMasFrecuente: null,
+    procesoMasFrecuente: null,
+    subprocesoMasFrecuente: null
+  },
+  filtrosDisponibles: {
+    macroProcesos: [],
+    procesos: [],
+    subprocesos: [],
+    tiposDocumentacion: [],
+    periodos: []
   },
   distribucion: {
     porTipoDocumento: [],
-    porMacroProceso: []
+    porMacroProceso: [],
+    porProceso: [],
+    porSubproceso: []
   }
 };
 
@@ -121,7 +139,7 @@ function CompactFilter({ label, options = [], value, onChange, disabled, placeho
           </Typography>
         </Box>
         <Box sx={{ color: '#0891b2', fontWeight: 900, transform: open ? 'rotate(180deg)' : 'none', transition: 'transform 0.18s ease' }}>
-          ▾
+          v
         </Box>
       </Box>
 
@@ -204,19 +222,100 @@ function CompactFilter({ label, options = [], value, onChange, disabled, placeho
   );
 }
 
-function KpiCard({ label, value, helper, tone = '#2563eb' }) {
+function KpiCard({ label, value, helper, tone = '#2563eb', soft = '#eff6ff', accent = '#bfdbfe', Icon = AutoGraphIcon, details = [] }) {
+  const detailRows = Array.isArray(details) ? details.filter((item) => item?.label) : [];
   return (
-    <Paper elevation={0} sx={{ p: 2.2, height: '100%', borderRadius: 2, border: '1px solid #dbe6f5', bgcolor: '#ffffff', boxShadow: '0 10px 28px rgba(15, 23, 42, 0.04)' }}>
-      <Typography sx={{ color: '#475569', fontSize: 11, fontWeight: 900, letterSpacing: 0.6, textTransform: 'uppercase' }}>
-        {label}
-      </Typography>
-      <Typography sx={{ color: '#0f172a', fontSize: { xs: 28, md: 34 }, lineHeight: 1.1, fontWeight: 950, mt: 0.7 }}>
-        {value}
-      </Typography>
+    <Paper
+      elevation={0}
+      sx={{
+        p: 2.3,
+        height: '100%',
+        minHeight: 152,
+        borderRadius: '8px',
+        border: `1px solid ${accent}`,
+        background: `linear-gradient(135deg, #ffffff 0%, ${soft} 100%)`,
+        position: 'relative',
+        overflow: 'hidden',
+        boxShadow: '0 14px 30px rgba(15, 23, 42, 0.08)',
+        display: 'flex',
+        flexDirection: 'column',
+        justifyContent: 'space-between',
+        '&::before': {
+          content: '""',
+          position: 'absolute',
+          left: 0,
+          top: 0,
+          bottom: 0,
+          width: 6,
+          bgcolor: tone
+        }
+      }}
+    >
+      <Stack direction="row" justifyContent="space-between" alignItems="flex-start" spacing={1} sx={{ position: 'relative', zIndex: 1 }}>
+        <Box sx={{ minWidth: 0, pr: 1 }}>
+          <Typography sx={{ color: '#334155', fontSize: 11, fontWeight: 950, letterSpacing: 0.6, textTransform: 'uppercase', minHeight: 30 }}>
+            {label}
+          </Typography>
+          <Typography sx={{ color: '#0f172a', fontSize: { xs: 31, md: 37 }, lineHeight: 1, fontWeight: 950, mt: 0.8 }}>
+            {value}
+          </Typography>
+        </Box>
+        <Box sx={{ width: 46, height: 46, borderRadius: '8px', bgcolor: '#ffffff', color: tone, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, border: `1px solid ${accent}`, boxShadow: '0 8px 18px rgba(15,23,42,0.08)' }}>
+          <Icon sx={{ fontSize: 24 }} />
+        </Box>
+      </Stack>
       {helper && (
-        <Typography sx={{ mt: 0.8, color: tone, fontWeight: 800, fontSize: 12, lineHeight: 1.35 }}>
+        <Typography sx={{ mt: 1.2, color: tone, fontWeight: 900, fontSize: 12, lineHeight: 1.35, position: 'relative', zIndex: 1 }}>
           {helper}
         </Typography>
+      )}
+      {detailRows.length > 0 && (
+        <Tooltip
+          arrow
+          placement="top"
+          title={(
+            <Box sx={{ p: 0.5, minWidth: 240, maxWidth: 360 }}>
+              <Typography sx={{ color: '#fff', fontWeight: 900, fontSize: 12, mb: 0.8 }}>
+                Detalle del indicador
+              </Typography>
+              <Stack spacing={0.7}>
+                {detailRows.slice(0, 12).map((item, index) => (
+                  <Stack key={`${item.label}-${index}`} direction="row" spacing={1} alignItems="center" justifyContent="space-between">
+                    <Typography sx={{ color: 'rgba(255,255,255,0.92)', fontSize: 11.5, fontWeight: 700, lineHeight: 1.2 }}>
+                      {index + 1}. {item.label}
+                    </Typography>
+                    {item.cantidad !== undefined && (
+                      <Typography sx={{ color: '#bfdbfe', fontSize: 11.5, fontWeight: 900, flexShrink: 0 }}>
+                        {item.cantidad}
+                      </Typography>
+                    )}
+                  </Stack>
+                ))}
+              </Stack>
+              {detailRows.length > 12 && (
+                <Typography sx={{ mt: 0.8, color: '#cbd5e1', fontSize: 11, fontWeight: 800 }}>
+                  + {detailRows.length - 12} adicionales
+                </Typography>
+              )}
+            </Box>
+          )}
+        >
+          <Chip
+            size="small"
+            label="Ver detalle"
+            sx={{
+              mt: 1.4,
+              alignSelf: 'flex-start',
+              position: 'relative',
+              zIndex: 1,
+              bgcolor: '#ffffff',
+              color: tone,
+              border: `1px solid ${accent}`,
+              fontWeight: 900,
+              height: 24
+            }}
+          />
+        </Tooltip>
       )}
     </Paper>
   );
@@ -227,39 +326,56 @@ function DocumentTypeCard({ row, index, total }) {
   const cantidad = Number(row.cantidad || 0);
   const pct = total > 0 ? Math.round((cantidad / total) * 100) : 0;
   const Icon = getDocumentTypeIcon(row.tipo_documento);
+  const intensity = Math.max(8, pct);
 
   return (
     <Paper
       elevation={0}
       sx={{
-        p: { xs: 1.8, md: 2 },
-        minHeight: 154,
-        borderRadius: 2,
+        p: 2.3,
+        minHeight: 152,
+        height: '100%',
+        borderRadius: '8px',
         color: '#0f172a',
-        bgcolor: '#ffffff',
+        background: `linear-gradient(135deg, #ffffff 0%, ${tone.soft} 100%)`,
         border: `1px solid ${tone.border}`,
-        boxShadow: '0 12px 30px rgba(15, 23, 42, 0.06)'
+        boxShadow: '0 14px 30px rgba(15, 23, 42, 0.08)',
+        position: 'relative',
+        overflow: 'hidden',
+        display: 'flex',
+        flexDirection: 'column',
+        justifyContent: 'space-between',
+        '&::before': {
+          content: '""',
+          position: 'absolute',
+          left: 0,
+          top: 0,
+          bottom: 0,
+          width: 6,
+          bgcolor: tone.fg
+        }
       }}
     >
-      <Stack direction="row" justifyContent="space-between" alignItems="flex-start" spacing={1}>
-        <Box sx={{ width: 42, height: 42, borderRadius: 2, bgcolor: tone.soft, color: tone.fg, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-          <Icon sx={{ fontSize: 23 }} />
+      <Stack direction="row" justifyContent="space-between" alignItems="flex-start" spacing={1} sx={{ position: 'relative', zIndex: 1 }}>
+        <Box sx={{ minWidth: 0, pr: 1 }}>
+          <Typography sx={{ fontSize: 11, fontWeight: 950, color: '#334155', letterSpacing: 0.6, textTransform: 'uppercase', minHeight: 30, overflow: 'hidden', textOverflow: 'ellipsis' }}>
+            {row.tipo_documento}
+          </Typography>
+          <Typography sx={{ mt: 0.8, fontSize: { xs: 31, md: 37 }, lineHeight: 1, fontWeight: 950, color: '#0f172a' }}>
+            {cantidad}
+          </Typography>
         </Box>
-        <Chip size="small" label={`${pct}%`} sx={{ bgcolor: '#f8fafc', color: tone.fg, border: `1px solid ${tone.border}`, fontWeight: 900, height: 24, fontSize: 11 }} />
+        <Box sx={{ width: 46, height: 46, borderRadius: '8px', bgcolor: '#ffffff', color: tone.fg, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, border: `1px solid ${tone.border}`, boxShadow: '0 8px 18px rgba(15,23,42,0.08)' }}>
+          <Icon sx={{ fontSize: 24 }} />
+        </Box>
       </Stack>
-      <Typography sx={{ mt: 1.5, fontSize: 12, fontWeight: 900, color: '#64748b', letterSpacing: 0.5, textTransform: 'uppercase', minHeight: 34 }}>
-        {row.tipo_documento}
-      </Typography>
-      <Typography sx={{ mt: 0.8, fontSize: { xs: 31, md: 34 }, lineHeight: 1, fontWeight: 950, color: '#0f172a' }}>
-        {cantidad}
-      </Typography>
-      <Box sx={{ mt: 1.5 }}>
+      <Box sx={{ mt: 1.2, position: 'relative', zIndex: 1 }}>
         <Stack direction="row" justifyContent="space-between" sx={{ mb: 0.6 }}>
-          <Typography sx={{ fontSize: 11, fontWeight: 800, color: '#64748b' }}>Participacion</Typography>
+          <Typography sx={{ fontSize: 12, fontWeight: 900, color: tone.fg }}>Participacion</Typography>
           <Typography sx={{ fontSize: 11, fontWeight: 900, color: tone.fg }}>{pct}%</Typography>
         </Stack>
-        <Box sx={{ height: 7, borderRadius: 99, bgcolor: '#e2e8f0', overflow: 'hidden' }}>
-          <Box sx={{ width: `${pct}%`, height: '100%', bgcolor: tone.fg, borderRadius: 99 }} />
+        <Box sx={{ height: 8, borderRadius: 99, bgcolor: 'rgba(148,163,184,0.25)', overflow: 'hidden' }}>
+          <Box sx={{ width: `${intensity}%`, height: '100%', bgcolor: tone.fg, borderRadius: 99 }} />
         </Box>
       </Box>
     </Paper>
@@ -269,8 +385,8 @@ function DocumentTypeCard({ row, index, total }) {
 function RankingList({ title, rows = [], nameKey }) {
   const max = Math.max(...rows.map((row) => Number(row.cantidad || 0)), 1);
   return (
-    <Paper elevation={0} sx={{ p: 2.4, height: '100%', borderRadius: 2.5, border: '1px solid #dbe6f5', bgcolor: '#fff' }}>
-      <Typography sx={{ color: '#0f172a', fontWeight: 900, fontSize: 18, mb: 1.7 }}>
+    <Paper elevation={0} sx={{ p: 2.4, height: '100%', minHeight: 278, borderRadius: '8px', border: '1px solid #cfe0f4', bgcolor: '#ffffff', boxShadow: '0 14px 30px rgba(15, 23, 42, 0.06)' }}>
+      <Typography sx={{ color: '#0f172a', fontWeight: 950, fontSize: 18, mb: 1.7 }}>
         {title}
       </Typography>
       <Stack spacing={1.3}>
@@ -298,12 +414,19 @@ function RankingList({ title, rows = [], nameKey }) {
 
 export function EstadisticaDocumentalPanel({ embedded = false }) {
   const { enqueueSnackbar } = useSnackbar();
-  const [filters, setFilters] = useState({ macro_proceso_id: '', tipo_documentacion_id: '', periodo: '' });
+  const [filters, setFilters] = useState({
+    macro_proceso_id: '',
+    proceso: '',
+    subproceso: '',
+    tipo_documentacion_id: '',
+    periodo: ''
+  });
   const [macroProcesos, setMacroProcesos] = useState([]);
   const [tiposDocumentacion, setTiposDocumentacion] = useState([]);
   const [data, setData] = useState(emptyData);
   const [loading, setLoading] = useState(false);
   const [initialLoading, setInitialLoading] = useState(true);
+  const [generalOpen, setGeneralOpen] = useState(true);
 
   const loadCatalogs = useCallback(async () => {
     const [macroRes, tipoRes] = await Promise.all([
@@ -320,7 +443,7 @@ export function EstadisticaDocumentalPanel({ embedded = false }) {
       const response = await documentoService.getEstadisticaDocumental(currentFilters);
       setData(response?.data || emptyData);
     } catch (error) {
-      enqueueSnackbar(error?.response?.data?.message || 'No se pudo cargar la estadística documental', { variant: 'error' });
+      enqueueSnackbar(error?.response?.data?.message || 'No se pudo cargar la estadistica documental', { variant: 'error' });
       setData(emptyData);
     } finally {
       setLoading(false);
@@ -329,7 +452,7 @@ export function EstadisticaDocumentalPanel({ embedded = false }) {
   }, [enqueueSnackbar]);
 
   useEffect(() => {
-    const initialFilters = { macro_proceso_id: '', tipo_documentacion_id: '', periodo: '' };
+    const initialFilters = { macro_proceso_id: '', proceso: '', subproceso: '', tipo_documentacion_id: '', periodo: '' };
     Promise.all([loadCatalogs(), loadDashboard(initialFilters)]).catch(() => {
       setInitialLoading(false);
     });
@@ -345,31 +468,77 @@ export function EstadisticaDocumentalPanel({ embedded = false }) {
 
   const handleSearch = () => loadDashboard(filters);
   const handleClear = () => {
-    const clean = { macro_proceso_id: '', tipo_documentacion_id: '', periodo: '' };
+    const clean = { macro_proceso_id: '', proceso: '', subproceso: '', tipo_documentacion_id: '', periodo: '' };
     setFilters(clean);
   };
 
-  const macroOptions = useMemo(() => macroProcesos.map((item) => ({ value: item.id, label: item.nombre })), [macroProcesos]);
-  const tipoOptions = useMemo(() => tiposDocumentacion.map((item) => ({ value: item.id, label: item.nombre })), [tiposDocumentacion]);
+  const buildServerOptions = useCallback((rows = [], fallbackRows = []) => {
+    if (Array.isArray(rows) && rows.length) {
+      return rows.map((item) => ({
+        value: item.value ?? item.id ?? item.label,
+        label: item.cantidad ? `${item.label} (${item.cantidad})` : item.label
+      }));
+    }
+    return fallbackRows.map((item) => ({ value: item.nombre || item.id, label: item.nombre }));
+  }, []);
+
+  const filtrosDisponibles = data?.filtrosDisponibles || emptyData.filtrosDisponibles;
+  const macroOptions = useMemo(
+    () => buildServerOptions(filtrosDisponibles.macroProcesos, macroProcesos),
+    [buildServerOptions, filtrosDisponibles.macroProcesos, macroProcesos]
+  );
+  const procesoOptions = useMemo(
+    () => buildServerOptions(filtrosDisponibles.procesos),
+    [buildServerOptions, filtrosDisponibles.procesos]
+  );
+  const subprocesoOptions = useMemo(
+    () => buildServerOptions(filtrosDisponibles.subprocesos),
+    [buildServerOptions, filtrosDisponibles.subprocesos]
+  );
+  const tipoOptions = useMemo(
+    () => buildServerOptions(filtrosDisponibles.tiposDocumentacion, tiposDocumentacion),
+    [buildServerOptions, filtrosDisponibles.tiposDocumentacion, tiposDocumentacion]
+  );
   const periodoOptions = useMemo(
-    () => (data?.periodosDisponibles || []).map((item) => ({ value: item.value, label: `${item.label} (${item.cantidad})` })),
-    [data?.periodosDisponibles]
+    () => ((filtrosDisponibles.periodos?.length ? filtrosDisponibles.periodos : data?.periodosDisponibles) || [])
+      .map((item) => ({ value: item.value, label: `${item.label} (${item.cantidad})` })),
+    [data?.periodosDisponibles, filtrosDisponibles.periodos]
   );
 
   const resumen = data?.resumen || emptyData.resumen;
-  const tipos = data?.distribucion?.porTipoDocumento || [];
-  const macros = data?.distribucion?.porMacroProceso || [];
+  const tipos = useMemo(() => data?.distribucion?.porTipoDocumento || [], [data?.distribucion?.porTipoDocumento]);
+  const macros = useMemo(() => data?.distribucion?.porMacroProceso || [], [data?.distribucion?.porMacroProceso]);
+  const procesos = useMemo(() => data?.distribucion?.porProceso || [], [data?.distribucion?.porProceso]);
+  const subprocesos = useMemo(() => data?.distribucion?.porSubproceso || [], [data?.distribucion?.porSubproceso]);
   const total = Number(resumen.totalDocumentos || 0);
-  const topTipo = resumen?.tipoMasFrecuente;
-  const topMacro = resumen?.macroMasFrecuente;
-  const topTipoPct = total > 0 && topTipo?.cantidad ? Math.round((Number(topTipo.cantidad) / total) * 100) : 0;
-  const topMacroPct = total > 0 && topMacro?.cantidad ? Math.round((Number(topMacro.cantidad) / total) * 100) : 0;
+  const macroDetails = useMemo(
+    () => macros.map((item) => ({ label: item.macro_proceso, cantidad: item.cantidad })),
+    [macros]
+  );
+  const procesoDetails = useMemo(
+    () => procesos.map((item) => ({ label: item.proceso, cantidad: item.cantidad })),
+    [procesos]
+  );
+  const subprocesoDetails = useMemo(
+    () => subprocesos.map((item) => ({ label: item.subproceso, cantidad: item.cantidad })),
+    [subprocesos]
+  );
 
   const activeChips = [
     filters.macro_proceso_id && {
       key: 'macro',
       label: macroOptions.find((item) => String(item.value) === String(filters.macro_proceso_id))?.label,
       onDelete: () => setFilters((prev) => ({ ...prev, macro_proceso_id: '' }))
+    },
+    filters.proceso && {
+      key: 'proceso',
+      label: procesoOptions.find((item) => String(item.value) === String(filters.proceso))?.label,
+      onDelete: () => setFilters((prev) => ({ ...prev, proceso: '' }))
+    },
+    filters.subproceso && {
+      key: 'subproceso',
+      label: subprocesoOptions.find((item) => String(item.value) === String(filters.subproceso))?.label,
+      onDelete: () => setFilters((prev) => ({ ...prev, subproceso: '' }))
     },
     filters.tipo_documentacion_id && {
       key: 'tipo',
@@ -393,7 +562,7 @@ export function EstadisticaDocumentalPanel({ embedded = false }) {
         <Box
           sx={{
             display: 'grid',
-            gridTemplateColumns: { xs: '1fr', md: 'repeat(3, minmax(0, 1fr))' },
+            gridTemplateColumns: { xs: '1fr', md: 'repeat(2, minmax(0, 1fr))', xl: 'repeat(5, minmax(0, 1fr))' },
             gap: 1.5,
             width: '100%'
           }}
@@ -402,10 +571,16 @@ export function EstadisticaDocumentalPanel({ embedded = false }) {
             <CompactFilter label="Macroproceso" options={macroOptions} value={filters.macro_proceso_id} onChange={(value) => setFilters((prev) => ({ ...prev, macro_proceso_id: value }))} disabled={loading} placeholder="Buscar macroproceso..." />
           </Box>
           <Box sx={{ minWidth: 0 }}>
+            <CompactFilter label="Proceso" options={procesoOptions} value={filters.proceso} onChange={(value) => setFilters((prev) => ({ ...prev, proceso: value }))} disabled={loading} placeholder="Buscar proceso..." />
+          </Box>
+          <Box sx={{ minWidth: 0 }}>
+            <CompactFilter label="Subproceso" options={subprocesoOptions} value={filters.subproceso} onChange={(value) => setFilters((prev) => ({ ...prev, subproceso: value }))} disabled={loading} placeholder="Buscar subproceso..." />
+          </Box>
+          <Box sx={{ minWidth: 0 }}>
             <CompactFilter label="Tipo de documento" options={tipoOptions} value={filters.tipo_documentacion_id} onChange={(value) => setFilters((prev) => ({ ...prev, tipo_documentacion_id: value }))} disabled={loading} placeholder="Buscar tipo..." />
           </Box>
           <Box sx={{ minWidth: 0 }}>
-            <CompactFilter label="Periodo académico" options={periodoOptions} value={filters.periodo} onChange={(value) => setFilters((prev) => ({ ...prev, periodo: value }))} disabled={loading} placeholder="Buscar periodo..." />
+            <CompactFilter label="Periodo academico" options={periodoOptions} value={filters.periodo} onChange={(value) => setFilters((prev) => ({ ...prev, periodo: value }))} disabled={loading} placeholder="Buscar periodo..." />
           </Box>
         </Box>
         <Stack direction={{ xs: 'column', md: 'row' }} spacing={1.2} alignItems={{ xs: 'stretch', md: 'center' }} sx={{ mt: 2, width: '100%' }}>
@@ -432,36 +607,76 @@ export function EstadisticaDocumentalPanel({ embedded = false }) {
         </Paper>
       ) : (
         <>
-          <Grid container spacing={2} sx={{ mb: 3 }}>
-            <Grid item xs={12} sm={6} lg={3}>
-              <KpiCard label="Total documentos" value={resumen.totalDocumentos} helper="Documentos en el alcance actual" tone="#0f766e" />
-            </Grid>
-            <Grid item xs={12} sm={6} lg={3}>
-              <KpiCard label="Tipos activos" value={resumen.totalTipos} helper="Categorías con registros" tone="#2563eb" />
-            </Grid>
-            <Grid item xs={12} sm={6} lg={3}>
-              <KpiCard label="Macroprocesos" value={resumen.totalMacroProcesos} helper="Frentes institucionales" tone="#dc2626" />
-            </Grid>
-            <Grid item xs={12} sm={6} lg={3}>
-              <KpiCard label="Periodo" value={resumen.periodoSeleccionado} helper="Filtro temporal aplicado" tone="#7c3aed" />
-            </Grid>
-          </Grid>
+          <Paper elevation={0} sx={{ mb: 3, borderRadius: 3, border: '1px solid #dbe6f5', bgcolor: '#ffffff', overflow: 'hidden' }}>
+            <Box
+              onClick={() => setGeneralOpen((prev) => !prev)}
+              sx={{
+                p: { xs: 2, md: 2.4 },
+                cursor: 'pointer',
+                background: 'linear-gradient(135deg, #f8fafc 0%, #eef6ff 55%, #f0fdfa 100%)',
+                borderBottom: generalOpen ? '1px solid #dbe6f5' : 'none'
+              }}
+            >
+              <Stack direction={{ xs: 'column', md: 'row' }} spacing={1.5} alignItems={{ xs: 'flex-start', md: 'center' }} justifyContent="space-between">
+                <Stack direction="row" spacing={1.3} alignItems="center">
+                  <Box sx={{ width: 44, height: 44, borderRadius: 2, bgcolor: '#0f766e', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                    <AnalyticsIcon sx={{ fontSize: 25 }} />
+                  </Box>
+                  <Box>
+                    <Typography sx={{ color: '#0f172a', fontWeight: 950, fontSize: { xs: 20, md: 24 }, lineHeight: 1.1 }}>
+                      Estadistica general documental
+                    </Typography>
+                    <Typography sx={{ color: '#64748b', fontWeight: 650, fontSize: 13, mt: 0.4 }}>
+                      Indicadores activos del sistema. Todo cambia con los filtros seleccionados.
+                    </Typography>
+                  </Box>
+                </Stack>
+                <Chip
+                  icon={<ExpandMoreIcon sx={{ transform: generalOpen ? 'rotate(180deg)' : 'none', transition: 'transform 0.2s' }} />}
+                  label={generalOpen ? 'Ocultar indicadores' : 'Ver indicadores'}
+                  sx={{ bgcolor: '#ffffff', color: '#0f766e', border: '1px solid #99f6e4', fontWeight: 900 }}
+                />
+              </Stack>
+            </Box>
+            <Collapse in={generalOpen} timeout="auto">
+              <Box sx={{ p: { xs: 2, md: 2.4 } }}>
+                <Box
+                  sx={{
+                    display: 'grid',
+                    gridTemplateColumns: { xs: '1fr', sm: 'repeat(2, minmax(0, 1fr))', xl: 'repeat(4, minmax(0, 1fr))' },
+                    gap: 2,
+                    alignItems: 'stretch'
+                  }}
+                >
+                    <KpiCard label="Informacion documentada activa" value={resumen.totalDocumentos} helper="Registros vigentes en el alcance actual" tone="#0f766e" soft="#ecfdf5" accent="#99f6e4" Icon={DescriptionIcon} />
+                    <KpiCard label="Macroprocesos" value={resumen.totalMacroProcesos} helper="Frentes institucionales con documentos" tone="#1d4ed8" soft="#eff6ff" accent="#bfdbfe" Icon={AccountTreeIcon} details={macroDetails} />
+                    <KpiCard label="Procesos" value={resumen.totalProcesos} helper="Procesos documentados activos" tone="#be123c" soft="#fff1f2" accent="#fecdd3" Icon={LayersIcon} details={procesoDetails} />
+                    <KpiCard label="Subprocesos" value={resumen.totalSubprocesos} helper="Subprocesos con informacion" tone="#a16207" soft="#fffbeb" accent="#fde68a" Icon={DonutSmallIcon} details={subprocesoDetails} />
+                </Box>
+              </Box>
+            </Collapse>
+          </Paper>
+
 
           <Paper elevation={0} sx={{ p: { xs: 2, md: 2.5 }, mb: 3, borderRadius: 3, border: '1px solid #dbe6f5', bgcolor: '#fff' }}>
             <Stack direction={{ xs: 'column', md: 'row' }} spacing={1.2} justifyContent="space-between" alignItems={{ xs: 'flex-start', md: 'center' }} sx={{ mb: 2 }}>
               <Box>
                 <Typography sx={{ color: '#0f172a', fontWeight: 950, fontSize: { xs: 20, md: 24 } }}>Inventario por tipo documental</Typography>
-                <Typography sx={{ color: '#64748b', fontWeight: 600, fontSize: 13, mt: 0.4 }}>Cantidad existente de formatos, procedimientos, instructivos, manuales, planes, protocolos y demás documentos del sistema.</Typography>
+                <Typography sx={{ color: '#64748b', fontWeight: 600, fontSize: 13, mt: 0.4 }}>Cantidad existente de formatos, procedimientos, instructivos, manuales, planes, protocolos y demas documentos del sistema.</Typography>
               </Box>
               <Chip label={`${tipos.length} tipos visibles`} sx={{ bgcolor: '#f0fdfa', color: '#0f766e', border: '1px solid #99f6e4', fontWeight: 900 }} />
             </Stack>
             {tipos.length === 0 ? (
-              <Alert severity="info">No hay información para los filtros seleccionados.</Alert>
+              <Alert severity="info">No hay informacion para los filtros seleccionados.</Alert>
             ) : (
               <Box
                 sx={{
                   display: 'grid',
-                  gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))',
+                  gridTemplateColumns: {
+                    xs: '1fr',
+                    sm: 'repeat(2, minmax(0, 1fr))',
+                    lg: 'repeat(4, minmax(0, 1fr))'
+                  },
                   gap: 2,
                   width: '100%'
                 }}
@@ -471,31 +686,51 @@ export function EstadisticaDocumentalPanel({ embedded = false }) {
             )}
           </Paper>
 
-          <Grid container spacing={2.5}>
-            <Grid item xs={12} lg={4}>
-              <Paper elevation={0} sx={{ p: 2.5, height: '100%', borderRadius: 3, border: '1px solid #dbe6f5', bgcolor: '#ffffff' }}>
-                <Stack direction="row" spacing={1} alignItems="center" sx={{ mb: 1.2 }}>
-                  <WorkspacePremiumIcon sx={{ color: '#0f766e' }} />
-                  <Typography sx={{ fontWeight: 950, color: '#0f172a', fontSize: 18 }}>Tipo líder</Typography>
+          <Paper elevation={0} sx={{ p: { xs: 2, md: 2.7 }, borderRadius: '8px', border: '1px solid #dbe6f5', bgcolor: '#ffffff', boxShadow: '0 16px 36px rgba(15, 23, 42, 0.05)' }}>
+            <Stack direction={{ xs: 'column', md: 'row' }} spacing={1.3} alignItems={{ xs: 'flex-start', md: 'center' }} justifyContent="space-between" sx={{ mb: 2.2 }}>
+              <Box>
+                <Typography sx={{ fontWeight: 950, color: '#0f172a', fontSize: { xs: 20, md: 24 } }}>Lectura institucional</Typography>
+                <Typography sx={{ mt: 0.4, color: '#64748b', fontWeight: 650, fontSize: 13 }}>
+                  Concentracion, lideres documentales y rankings principales del alcance filtrado.
+                </Typography>
+              </Box>
+              <Chip label={`${total} documentos activos`} sx={{ bgcolor: '#ecfdf5', color: '#0f766e', border: '1px solid #99f6e4', fontWeight: 900 }} />
+            </Stack>
+
+            <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', md: 'repeat(3, minmax(0, 1fr))' }, gap: 2, alignItems: 'stretch' }}>
+              <Paper elevation={0} sx={{ p: 2.4, height: '100%', minHeight: 278, borderRadius: '8px', border: '1px solid #bfdbfe', background: 'linear-gradient(135deg, #ffffff 0%, #eff6ff 100%)', boxShadow: '0 14px 30px rgba(15, 23, 42, 0.06)' }}>
+                <Stack direction="row" alignItems="center" justifyContent="space-between" spacing={1} sx={{ mb: 1.7 }}>
+                  <Typography sx={{ fontWeight: 950, color: '#0f172a', fontSize: 18 }}>Concentracion institucional</Typography>
+                  <Chip size="small" label={`${macros.length} macroprocesos`} sx={{ bgcolor: '#ffffff', color: '#1d4ed8', border: '1px solid #bfdbfe', fontWeight: 900 }} />
                 </Stack>
-                <Typography sx={{ color: '#0f172a', fontWeight: 900, fontSize: 24, lineHeight: 1.18 }}>{topTipo?.tipo_documento || 'N/A'}</Typography>
-                <Typography sx={{ mt: 1, color: '#64748b', fontWeight: 700 }}>{topTipo?.cantidad || 0} documentos · {topTipoPct}% del total filtrado</Typography>
-              </Paper>
-            </Grid>
-            <Grid item xs={12} lg={4}>
-              <Paper elevation={0} sx={{ p: 2.5, height: '100%', borderRadius: 3, border: '1px solid #dbe6f5', bgcolor: '#ffffff' }}>
-                <Stack direction="row" spacing={1} alignItems="center" sx={{ mb: 1.2 }}>
-                  <WorkspacePremiumIcon sx={{ color: '#dc2626' }} />
-                  <Typography sx={{ fontWeight: 950, color: '#0f172a', fontSize: 18 }}>Macroproceso líder</Typography>
+                <Stack spacing={1.25}>
+                  {macros.slice(0, 6).map((row, index) => {
+                    const cantidad = Number(row.cantidad || 0);
+                    const pct = total > 0 ? Math.round((cantidad / total) * 100) : 0;
+                    const tone = CARD_TONES[index % CARD_TONES.length];
+                    return (
+                      <Box key={`${row.macro_proceso}-${index}`}>
+                        <Stack direction="row" spacing={1.2} alignItems="center" justifyContent="space-between">
+                          <Typography sx={{ color: '#0f172a', fontWeight: 900, fontSize: 12.5, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                            {index + 1}. {row.macro_proceso}
+                          </Typography>
+                          <Chip size="small" label={`${cantidad}`} sx={{ bgcolor: tone.soft, color: tone.fg, fontWeight: 900, height: 23 }} />
+                        </Stack>
+                        <Box sx={{ mt: 0.65, height: 7, borderRadius: 99, bgcolor: '#e2e8f0', overflow: 'hidden' }}>
+                          <Box sx={{ width: `${pct}%`, height: '100%', bgcolor: tone.fg, borderRadius: 99 }} />
+                        </Box>
+                      </Box>
+                    );
+                  })}
+                  {macros.length === 0 && <Alert severity="info">Sin informacion para los filtros seleccionados.</Alert>}
                 </Stack>
-                <Typography sx={{ color: '#0f172a', fontWeight: 900, fontSize: 24, lineHeight: 1.18 }}>{topMacro?.macro_proceso || 'N/A'}</Typography>
-                <Typography sx={{ mt: 1, color: '#64748b', fontWeight: 700 }}>{topMacro?.cantidad || 0} documentos · {topMacroPct}% del total filtrado</Typography>
               </Paper>
-            </Grid>
-            <Grid item xs={12} lg={4}>
-              <RankingList title="Ranking por macroproceso" rows={macros} nameKey="macro_proceso" />
-            </Grid>
-          </Grid>
+
+              <RankingList title="Procesos con mayor documentacion" rows={procesos} nameKey="proceso" />
+              <RankingList title="Subprocesos con mayor documentacion" rows={subprocesos} nameKey="subproceso" />
+            </Box>
+          </Paper>
+
         </>
       )}
     </Box>
@@ -511,9 +746,9 @@ export function EstadisticaDocumentalPanel({ embedded = false }) {
               <AnalyticsIcon sx={{ fontSize: 38 }} />
             </Box>
             <Box>
-              <Typography variant="h4" sx={{ fontWeight: 950, letterSpacing: 0.2, fontSize: { xs: 25, md: 34 } }}>Estadística Documental</Typography>
+              <Typography variant="h4" sx={{ fontWeight: 950, letterSpacing: 0.2, fontSize: { xs: 25, md: 34 } }}>Estadistica Documental</Typography>
               <Typography sx={{ mt: 0.8, color: 'rgba(255,255,255,0.9)', fontSize: { xs: 14, md: 16 } }}>
-                Lectura ejecutiva de volumen, concentración documental y macroprocesos con mayor carga institucional.
+                Lectura institucional de volumen, concentracion documental y macroprocesos con mayor carga.
               </Typography>
             </Box>
           </Stack>
@@ -525,3 +760,5 @@ export function EstadisticaDocumentalPanel({ embedded = false }) {
 }
 
 export default EstadisticaDocumentalPanel;
+
+

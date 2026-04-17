@@ -9,7 +9,6 @@ const detectModule = (url = '', method = '') => {
   if (u.includes('/saber-pro'))                     return 'Saber Pro Analytics';
   if (u.includes('/matriculados'))                  return 'Matriculados';
   if (u.includes('/gestion-informacion'))           return 'Gestión de Información';
-  if (u.includes('/management/documentos'))         return 'Gestión Documental';
   if (u.includes('/documentos'))                    return 'Documentos';
   if (u.includes('/users'))                         return 'Administración Usuarios';
   if (u.includes('/import'))                        return 'Importación de Datos';

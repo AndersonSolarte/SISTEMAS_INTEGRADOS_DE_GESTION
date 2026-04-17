@@ -7,7 +7,6 @@ const MENU_KEYS = new Set([
   'aseguramiento_calidad',
   'gestion_informacion',
   'gestion_usuarios',
-  'gestion_documentos',
   'buscar_documentos',
   'planeacion_efectividad',
   'autoevaluacion'
@@ -74,7 +73,6 @@ const getDefaultPermissionsByRole = (role) => {
         'aseguramiento_calidad',
         'gestion_informacion',
         'gestion_usuarios',
-        'gestion_documentos',
         'buscar_documentos'
       ],
       allowedModules: ['gestion_bases_datos', 'estadistica_institucional'],
@@ -89,7 +87,6 @@ const getDefaultPermissionsByRole = (role) => {
       menuPermissions: [
         'dashboard',
         'aseguramiento_calidad',
-        'gestion_documentos',
         'buscar_documentos',
         'gestion_usuarios',
         'gestion_informacion'

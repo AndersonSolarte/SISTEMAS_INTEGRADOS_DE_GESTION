@@ -20,7 +20,6 @@ function GestionUsuarios() {
   const MENU_PERMISSION_OPTIONS = [
     { key: 'dashboard', label: 'Inicio' },
     { key: 'gestion_informacion', label: 'Gestión de la Información' },
-    { key: 'gestion_documentos', label: 'Gestión individual de documentos' },
     { key: 'buscar_documentos', label: 'Consulta de documentos' },
     { key: 'planeacion_estrategica', label: 'Planeación Estratégica' },
     { key: 'planeacion_efectividad', label: 'Planeación y Efectividad' },

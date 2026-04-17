@@ -4,7 +4,7 @@ import { Box, Drawer, AppBar, Toolbar, List, Typography, IconButton, ListItemBut
 import {
   Menu as MenuIcon, DashboardCustomize as DashboardIcon,
   Verified as CheckIcon, Logout as LogoutIcon, Settings as SettingsIcon,
-  GroupOutlined as PeopleIcon, DescriptionOutlined as DescriptionIcon, ManageSearch as ExploreIcon,
+  GroupOutlined as PeopleIcon, ManageSearch as ExploreIcon,
   Insights as InsightsIcon, Timeline as TimelineIcon, FactCheck as FactCheckIcon,
   ExpandLess as ExpandLessIcon, ExpandMore as ExpandMoreIcon,
   Storage as StorageIcon, QueryStats as QueryStatsIcon,
@@ -51,7 +51,6 @@ function DashboardLayout() {
       '/dashboard/autoevaluacion': 'Autoevaluación',
       '/dashboard/gestion-informacion': 'Gestión de la Información',
       '/dashboard/aseguramiento-calidad': 'Administración del Sistema Documental',
-      '/dashboard/gestion-documentos': 'Gestión individual de documentos',
       '/dashboard/buscar-documentos': 'Consulta de documentos',
       '/dashboard/gestion-usuarios': 'Administración del Sistema / Gestión de Usuarios'
     };
@@ -188,7 +187,6 @@ function DashboardLayout() {
       openKey: 'gestion_procesos',
       items: [
         { key: 'aseguramiento_calidad', path: '/dashboard/aseguramiento-calidad', label: 'Administración del Sistema Documental', icon: <CheckIcon /> },
-        { key: 'gestion_documentos', path: '/dashboard/gestion-documentos', label: 'Gestión individual de documentos', icon: <DescriptionIcon /> },
         { key: 'buscar_documentos', path: '/dashboard/buscar-documentos', label: 'Consulta de documentos', icon: <ExploreIcon /> }
       ]
     }
@@ -244,7 +242,6 @@ function DashboardLayout() {
       items: [
         { key: 'gestion_informacion', path: '/dashboard/gestion-informacion?tab=estadistica&module=gestion_procesos&panel=estadistica_documental', label: 'Estadística Documental', icon: <InsightsIcon /> },
         { key: 'aseguramiento_calidad', path: '/dashboard/aseguramiento-calidad', label: 'Administración del Sistema Documental', icon: <CheckIcon /> },
-        { key: 'gestion_documentos', path: '/dashboard/gestion-documentos', label: 'Gestión individual de documentos', icon: <DescriptionIcon /> },
         { key: 'buscar_documentos', path: '/dashboard/buscar-documentos', label: 'Consulta de documentos', icon: <ExploreIcon /> },
         { key: 'favoritos', path: '/dashboard?section=favoritos', label: 'Documentos Favoritos', icon: <FavoriteIcon /> },
         { key: 'gestion_usuarios', path: '/dashboard/gestion-usuarios', label: 'Gestión de Usuarios', icon: <PeopleIcon /> }
@@ -260,7 +257,6 @@ function DashboardLayout() {
     { key: 'planeacion_efectividad', path: '/dashboard/planeacion-efectividad', label: 'Planeación y Efectividad', icon: <TimelineIcon /> },
     { key: 'autoevaluacion', path: '/dashboard/autoevaluacion', label: 'Autoevaluación', icon: <FactCheckIcon /> },
     { key: 'gestion_usuarios', path: '/dashboard/gestion-usuarios', label: 'Gestión de Usuarios', icon: <PeopleIcon /> },
-    { key: 'gestion_documentos', path: '/dashboard/gestion-documentos', label: 'Gestión individual de documentos', icon: <DescriptionIcon /> },
     { key: 'buscar_documentos', path: '/dashboard/buscar-documentos', label: 'Consulta de documentos', icon: <ExploreIcon /> },
     { key: 'favoritos', path: '/dashboard?section=favoritos', label: 'Documentos Favoritos', icon: <FavoriteIcon /> }
   ];
@@ -282,7 +278,7 @@ function DashboardLayout() {
     menuItems = menuCatalog.filter((item) => explicitMenuPermissions.includes(item.key));
 
     if (user?.role === ROLES.ADMINISTRADOR) {
-      const procesosKeys = ['aseguramiento_calidad', 'gestion_documentos', 'buscar_documentos'];
+      const procesosKeys = ['aseguramiento_calidad', 'buscar_documentos'];
       const planeacionKeys = ['planeacion_estrategica', 'planeacion_efectividad', 'autoevaluacion', 'gestion_informacion'];
       const adminSistemaKeys = ['gestion_usuarios'];
       const visibleChildren = adminMenuItems
@@ -352,7 +348,7 @@ function DashboardLayout() {
     }
 
     if (user?.role === ROLES.GESTION_PROCESOS) {
-      const procesosKeys = ['gestion_informacion', 'aseguramiento_calidad', 'gestion_documentos', 'buscar_documentos', 'gestion_usuarios'];
+      const procesosKeys = ['gestion_informacion', 'aseguramiento_calidad', 'buscar_documentos', 'gestion_usuarios'];
       const visibleChildren = gestionProcesosMenuItems
         .filter((item) => item.section)
         .flatMap((section) => section.items)
@@ -388,7 +384,7 @@ function DashboardLayout() {
   }
 
   const drawer = (
-    <Box sx={{ height: '100%', display: 'flex', flexDirection: 'column', bgcolor: '#0f1f3a' }}>
+    <Box sx={{ height: '100dvh', display: 'flex', flexDirection: 'column', bgcolor: '#0f1f3a', overflow: 'hidden' }}>
       <Toolbar
         sx={{
           bgcolor: '#0b1730',
@@ -396,18 +392,23 @@ function DashboardLayout() {
           flexDirection: 'column',
           alignItems: 'center',
           justifyContent: 'center',
-          gap: 0.8,
-          py: 2.6,
-          minHeight: 188
+          gap: 1.1,
+          px: 2,
+          py: 2,
+          minHeight: 228,
+          height: 228,
+          flexShrink: 0,
+          boxSizing: 'border-box'
         }}
       >
         <Box
           sx={{
-            width: 132,
-            height: 132,
+            width: 118,
+            height: 118,
             display: 'flex',
             alignItems: 'center',
-            justifyContent: 'center'
+            justifyContent: 'center',
+            flexShrink: 0
           }}
         >
           <Box
@@ -422,19 +423,44 @@ function DashboardLayout() {
             }}
           />
         </Box>
-        <Box sx={{ textAlign: 'center', lineHeight: 1.15 }}>
-          <Typography variant="h6" sx={{ color: '#ffffff', fontWeight: 700, fontSize: 16, letterSpacing: 0.15 }}>
-            Sistema de Gestión{' '}
-            <Box component="span" sx={{ fontWeight: 500 }}>
-              por Procesos
+        <Box sx={{ textAlign: 'center', lineHeight: 1.25, width: '100%' }}>
+          <Typography
+            variant="h6"
+            sx={{
+              color: '#ffffff',
+              fontWeight: 800,
+              fontSize: 16,
+              letterSpacing: 0.15,
+              lineHeight: 1.25,
+              overflowWrap: 'anywhere'
+            }}
+          >
+            Sistema de Gestión por
+            <Box component="span" sx={{ display: 'block', fontWeight: 700 }}>
+              Procesos
             </Box>
           </Typography>
         </Box>
       </Toolbar>
       
-      <Divider sx={{ borderColor: '#27406b' }} />
+      <Divider sx={{ borderColor: '#27406b', flexShrink: 0 }} />
       
-      <List sx={{ px: 2, py: 2, flexGrow: 1, bgcolor: '#0f1f3a' }}>
+      <List
+        sx={{
+          px: 2,
+          py: 2,
+          flex: '1 1 auto',
+          minHeight: 0,
+          overflowY: 'auto',
+          overflowX: 'hidden',
+          bgcolor: '#0f1f3a',
+          scrollbarWidth: 'thin',
+          scrollbarColor: '#365783 #0f1f3a',
+          '&::-webkit-scrollbar': { width: 8 },
+          '&::-webkit-scrollbar-track': { bgcolor: '#0f1f3a' },
+          '&::-webkit-scrollbar-thumb': { bgcolor: '#365783', borderRadius: 8 }
+        }}
+      >
         {menuItems.map((item) => {
           if (item.section) {
             const isSectionActive = Array.isArray(item.items) && item.items.some((child) => isContextualActive(child));
@@ -561,9 +587,9 @@ function DashboardLayout() {
         })}
       </List>
 
-      <Divider sx={{ borderColor: '#27406b' }} />
+      <Divider sx={{ borderColor: '#27406b', flexShrink: 0 }} />
       
-      <Box sx={{ p: 2 }}>
+      <Box sx={{ p: 2, flexShrink: 0 }}>
         <Box sx={{ bgcolor: '#081227', borderRadius: 2, p: 2, border: '1px solid #1f3358' }}>
           <Typography variant="caption" sx={{ color: '#9fb5d6', display: 'block', mb: 1 }}>Usuario activo</Typography>
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
@@ -583,7 +609,7 @@ function DashboardLayout() {
       </Box>
 
       {/* Sello Vigilada MINEDUCACIÓN */}
-      <Box sx={{ pb: 1.8, pt: 0.5, display: 'flex', justifyContent: 'center' }}>
+      <Box sx={{ pb: 1.8, pt: 0.5, display: 'flex', justifyContent: 'center', flexShrink: 0 }}>
         <VigiladaMineducacion variant="dark" size="sm" />
       </Box>
     </Box>

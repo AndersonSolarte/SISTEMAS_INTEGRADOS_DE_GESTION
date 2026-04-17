@@ -45,7 +45,6 @@ app.use('/api/favoritos', require('./routes/favoritoRoutes'));
 app.use('/api', require('./routes/catalogoRoutes'));
 app.use('/api/import', require('./routes/importRoutes'));
 app.use('/api/users', require('./routes/userRoutes'));
-app.use('/api/management/documentos', require('./routes/documentoManagementRoutes'));
 app.use('/api/planeacion/gestion-informacion', require('./routes/gestionInformacionRoutes'));
 app.use('/api/planeacion/gestion-informacion/saber-pro', require('./routes/saberProAnalyticsRoutes'));
 app.use('/api/planeacion/gestion-informacion/saber-pro/consulta', require('./routes/consultaValidacionRoutes'));

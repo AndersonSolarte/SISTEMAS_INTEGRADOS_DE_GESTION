@@ -67,10 +67,13 @@ const serializeDocumento = (req, documento) => {
 
 const getPeriodoFromDate = (value) => {
   if (!value) return null;
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return null;
-  const year = date.getFullYear();
-  const semester = date.getMonth() < 6 ? 'I' : 'II';
+  const raw = String(value || '').trim();
+  const isoMatch = raw.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  const year = isoMatch ? Number(isoMatch[1]) : new Date(value).getFullYear();
+  const month = isoMatch ? Number(isoMatch[2]) : new Date(value).getMonth() + 1;
+  if (!year || !month || Number.isNaN(year) || Number.isNaN(month)) return null;
+  // Periodos academicos institucionales: enero-junio = I, julio-diciembre = II.
+  const semester = month <= 6 ? 'I' : 'II';
   return `${year}-${semester}`;
 };
 
@@ -84,6 +87,36 @@ const normalizePeriodoFilter = (value = '') => {
   const match = String(value || '').trim().toUpperCase().match(/^(\d{4})\s*[- ]?\s*(I|II)$/);
   if (!match) return '';
   return `${match[1]}-${match[2]}`;
+};
+
+const normalizeStatFilterValue = (value = '') => String(value || '').trim().toLowerCase();
+
+const matchesStatFilter = (row, key, value) => {
+  const needle = normalizeStatFilterValue(value);
+  if (!needle) return true;
+  const candidates = {
+    macro: [row.macroId, row.macroNombre],
+    proceso: [row.procesoId, row.procesoNombre],
+    subproceso: [row.subprocesoId, row.subprocesoNombre],
+    tipo: [row.tipoId, row.tipoNombre],
+    periodo: [row.periodo]
+  }[key] || [];
+  return candidates.some((candidate) => normalizeStatFilterValue(candidate) === needle);
+};
+
+const countStatOptions = (rows, { idKey, nameKey, valueKey = nameKey, labelKey = nameKey }) => {
+  const map = new Map();
+  rows.forEach((row) => {
+    const label = String(row[labelKey] || '').trim();
+    const value = String(row[valueKey] || label).trim();
+    if (!label || !value) return;
+    const id = row[idKey] || value;
+    const key = `${id}::${value}`;
+    const current = map.get(key) || { id, value, label, cantidad: 0 };
+    current.cantidad += 1;
+    map.set(key, current);
+  });
+  return Array.from(map.values()).sort((a, b) => b.cantidad - a.cantidad || String(a.label).localeCompare(String(b.label), 'es'));
 };
 
 const buildSearchWhere = (search = '') => {
@@ -291,9 +324,16 @@ const getDocumentoArchivoSeguro = async (req, res) => {
 
 const getEstadisticaDocumental = async (req, res) => {
   try {
-    const { macro_proceso_id, tipo_documentacion_id, periodo } = req.query;
+    const {
+      macro_proceso_id,
+      proceso,
+      proceso_id,
+      subproceso,
+      subproceso_id,
+      tipo_documentacion_id,
+      periodo
+    } = req.query;
     const normalizedPeriodo = normalizePeriodoFilter(periodo);
-    const where = {};
     const include = [
       {
         model: SubProceso,
@@ -321,34 +361,62 @@ const getEstadisticaDocumental = async (req, res) => {
       }
     ];
 
-    if (tipo_documentacion_id) {
-      where.tipo_documentacion_id = tipo_documentacion_id;
-    }
-
-    if (macro_proceso_id) {
-      include[0].include[0].where = { macro_proceso_id };
-      include[0].include[0].required = true;
-      include[0].required = true;
-    }
-
     const docs = await Documento.findAll({
-      where,
+      where: { estado: PUBLIC_DOCUMENT_STATE },
       include,
-      attributes: ['id', 'fecha_creacion', 'created_at'],
-      order: [['created_at', 'DESC']]
+      attributes: [
+        'id',
+        'fecha_creacion',
+        'created_at',
+        'estado',
+        'macroproceso',
+        'proceso_texto',
+        'subproceso_texto',
+        'tipo_documento',
+        'tipo_documentacion_id',
+        'subproceso_id'
+      ],
+      order: [
+        [literal('fecha_creacion DESC NULLS LAST')],
+        ['created_at', 'DESC']
+      ]
     });
 
     const baseRows = docs.map((doc) => {
       const periodoValue = getPeriodoFromDate(doc.fecha_creacion || doc.created_at);
+      const subprocesoModel = doc.subproceso || null;
+      const procesoModel = subprocesoModel?.proceso || null;
+      const macroModel = procesoModel?.macroProceso || null;
       return {
         id: doc.id,
         periodo: periodoValue,
-        tipoId: doc.tipoDocumentacion?.id || null,
-        tipoNombre: String(doc.tipoDocumentacion?.nombre || 'SIN TIPO'),
-        macroId: doc.subproceso?.proceso?.macroProceso?.id || null,
-        macroNombre: String(doc.subproceso?.proceso?.macroProceso?.nombre || 'SIN MACROPROCESO')
+        tipoId: doc.tipoDocumentacion?.id || doc.tipo_documentacion_id || null,
+        tipoNombre: String(doc.tipo_documento || doc.tipoDocumentacion?.nombre || 'SIN TIPO').trim(),
+        macroId: macroModel?.id || null,
+        macroNombre: String(doc.macroproceso || macroModel?.nombre || 'SIN MACROPROCESO').trim(),
+        procesoId: procesoModel?.id || null,
+        procesoNombre: String(doc.proceso_texto || procesoModel?.nombre || 'SIN PROCESO').trim(),
+        subprocesoId: subprocesoModel?.id || doc.subproceso_id || null,
+        subprocesoNombre: String(doc.subproceso_texto || subprocesoModel?.nombre || 'SIN SUBPROCESO').trim()
       };
     });
+
+    const currentFilters = {
+      macro: macro_proceso_id,
+      proceso: proceso_id || proceso,
+      subproceso: subproceso_id || subproceso,
+      tipo: tipo_documentacion_id,
+      periodo: normalizedPeriodo
+    };
+
+    const applyStatFilters = (rows, excludeKey = '') =>
+      rows.filter((row) =>
+        Object.entries(currentFilters).every(([key, value]) =>
+          key === excludeKey ? true : matchesStatFilter(row, key, value)
+        )
+      );
+
+    const rowsForDashboard = applyStatFilters(baseRows);
 
     const periodosMap = baseRows.reduce((acc, row) => {
       if (!row.periodo) return acc;
@@ -364,11 +432,21 @@ const getEstadisticaDocumental = async (req, res) => {
         cantidad
       }));
 
-    const filteredRows = normalizedPeriodo
-      ? baseRows.filter((row) => row.periodo === normalizedPeriodo)
-      : baseRows;
+    const periodosCruzadosMap = applyStatFilters(baseRows, 'periodo').reduce((acc, row) => {
+      if (!row.periodo) return acc;
+      acc[row.periodo] = (acc[row.periodo] || 0) + 1;
+      return acc;
+    }, {});
 
-    const byTipoMap = filteredRows.reduce((acc, row) => {
+    const periodosCruzados = Object.entries(periodosCruzadosMap)
+      .sort(([a], [b]) => b.localeCompare(a, 'es'))
+      .map(([value, cantidad]) => ({
+        value,
+        label: formatPeriodoLabel(value),
+        cantidad
+      }));
+
+    const byTipoMap = rowsForDashboard.reduce((acc, row) => {
       const key = `${row.tipoId || 'na'}::${row.tipoNombre}`;
       if (!acc[key]) {
         acc[key] = { tipo_documentacion_id: row.tipoId, tipo_documento: row.tipoNombre, cantidad: 0 };
@@ -377,7 +455,7 @@ const getEstadisticaDocumental = async (req, res) => {
       return acc;
     }, {});
 
-    const byMacroMap = filteredRows.reduce((acc, row) => {
+    const byMacroMap = rowsForDashboard.reduce((acc, row) => {
       const key = `${row.macroId || 'na'}::${row.macroNombre}`;
       if (!acc[key]) {
         acc[key] = { macro_proceso_id: row.macroId, macro_proceso: row.macroNombre, cantidad: 0 };
@@ -386,29 +464,76 @@ const getEstadisticaDocumental = async (req, res) => {
       return acc;
     }, {});
 
+    const byProcesoMap = rowsForDashboard.reduce((acc, row) => {
+      const key = `${row.procesoId || 'na'}::${row.procesoNombre}`;
+      if (!acc[key]) {
+        acc[key] = { proceso_id: row.procesoId, proceso: row.procesoNombre, cantidad: 0 };
+      }
+      acc[key].cantidad += 1;
+      return acc;
+    }, {});
+
+    const bySubprocesoMap = rowsForDashboard.reduce((acc, row) => {
+      const key = `${row.subprocesoId || 'na'}::${row.subprocesoNombre}`;
+      if (!acc[key]) {
+        acc[key] = { subproceso_id: row.subprocesoId, subproceso: row.subprocesoNombre, cantidad: 0 };
+      }
+      acc[key].cantidad += 1;
+      return acc;
+    }, {});
+
     const byTipo = Object.values(byTipoMap).sort((a, b) => b.cantidad - a.cantidad);
     const byMacroProceso = Object.values(byMacroMap).sort((a, b) => b.cantidad - a.cantidad);
+    const byProceso = Object.values(byProcesoMap).sort((a, b) => b.cantidad - a.cantidad);
+    const bySubproceso = Object.values(bySubprocesoMap).sort((a, b) => b.cantidad - a.cantidad);
 
     return res.json({
       success: true,
       data: {
         filtrosAplicados: {
           macro_proceso_id: macro_proceso_id || '',
+          proceso: proceso_id || proceso || '',
+          subproceso: subproceso_id || subproceso || '',
           tipo_documentacion_id: tipo_documentacion_id || '',
           periodo: normalizedPeriodo || ''
         },
         periodosDisponibles,
+        filtrosDisponibles: {
+          macroProcesos: countStatOptions(applyStatFilters(baseRows, 'macro'), {
+            idKey: 'macroId',
+            nameKey: 'macroNombre'
+          }),
+          procesos: countStatOptions(applyStatFilters(baseRows, 'proceso'), {
+            idKey: 'procesoId',
+            nameKey: 'procesoNombre'
+          }),
+          subprocesos: countStatOptions(applyStatFilters(baseRows, 'subproceso'), {
+            idKey: 'subprocesoId',
+            nameKey: 'subprocesoNombre'
+          }),
+          tiposDocumentacion: countStatOptions(applyStatFilters(baseRows, 'tipo'), {
+            idKey: 'tipoId',
+            nameKey: 'tipoNombre'
+          }),
+          periodos: periodosCruzados
+        },
         resumen: {
-          totalDocumentos: filteredRows.length,
+          totalDocumentos: rowsForDashboard.length,
           totalTipos: byTipo.length,
           totalMacroProcesos: byMacroProceso.length,
+          totalProcesos: byProceso.length,
+          totalSubprocesos: bySubproceso.length,
           periodoSeleccionado: normalizedPeriodo ? formatPeriodoLabel(normalizedPeriodo) : 'Todos',
           tipoMasFrecuente: byTipo[0] || null,
-          macroMasFrecuente: byMacroProceso[0] || null
+          macroMasFrecuente: byMacroProceso[0] || null,
+          procesoMasFrecuente: byProceso[0] || null,
+          subprocesoMasFrecuente: bySubproceso[0] || null
         },
         distribucion: {
           porTipoDocumento: byTipo,
-          porMacroProceso: byMacroProceso
+          porMacroProceso: byMacroProceso,
+          porProceso: byProceso,
+          porSubproceso: bySubproceso
         }
       }
     });

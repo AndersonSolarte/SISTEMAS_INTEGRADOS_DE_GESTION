@@ -14,7 +14,6 @@ import Login from './pages/Login';
 import Dashboard from './pages/Dashboard';
 import AseguramientoCalidad from './pages/AseguramientoCalidad';
 import GestionUsuarios from './pages/GestionUsuarios';
-import GestionDocumentos from './pages/GestionDocumentos';
 import MapaProcesos from './pages/MapaProcesos';
 import PlaneacionEstrategica from './pages/PlaneacionEstrategica';
 import PlaneacionEfectividad from './pages/PlaneacionEfectividad';
@@ -153,17 +152,6 @@ function App() {
                         <GestionUsuarios />
                       </RoleRoute>
                     }
-                  />
-                  <Route
-                    path="gestion-documentos"
-                    element={(
-                      <RoleRoute
-                        allowedRoles={[ROLES.ADMINISTRADOR]}
-                        permissionKey="gestion_documentos"
-                      >
-                        <GestionDocumentos />
-                      </RoleRoute>
-                    )}
                   />
                   {/* Ruta legado */}
                   <Route path="mapa-procesos" element={<MapaProcesos />} />
