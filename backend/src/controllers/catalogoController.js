@@ -38,10 +38,10 @@ const addCommonFilters = (conditions, replacements, query, user, skipKey = '') =
   addStateCondition(conditions, replacements, query, user);
 
   const filters = [
-    ['macro_proceso_id', 'd.macroproceso', 'macroValues'],
-    ['proceso_id', 'd.proceso', 'procesoValues'],
-    ['subproceso_id', 'd.subproceso', 'subprocesoValues'],
-    ['tipo_documentacion_id', 'd.tipo_documento', 'tipoValues']
+    ['macro_proceso_id', 'TRIM(d.macroproceso)', 'macroValues'],
+    ['proceso_id', 'TRIM(d.proceso)', 'procesoValues'],
+    ['subproceso_id', 'TRIM(d.subproceso)', 'subprocesoValues'],
+    ['tipo_documentacion_id', 'TRIM(d.tipo_documento)', 'tipoValues']
   ];
 
   filters.forEach(([queryKey, column, replacementKey]) => {
@@ -73,10 +73,10 @@ const getMacroProcesos = async (req, res) => {
   try {
     const { whereSql, replacements } = buildWhere(req, 'macro_proceso_id');
     const macroProcesos = await sequelize.query(
-      `SELECT DISTINCT d.macroproceso AS id, d.macroproceso AS nombre
+      `SELECT DISTINCT TRIM(d.macroproceso) AS id, TRIM(d.macroproceso) AS nombre
        FROM documentos d
        WHERE ${whereSql} AND NULLIF(TRIM(d.macroproceso), '') IS NOT NULL
-       ORDER BY d.macroproceso ASC`,
+       ORDER BY nombre ASC`,
       { replacements, type: QueryTypes.SELECT }
     );
     res.json({ success: true, data: { macroProcesos } });
@@ -90,10 +90,10 @@ const getProcesos = async (req, res) => {
   try {
     const { whereSql, replacements } = buildWhere(req, 'proceso_id');
     const procesos = await sequelize.query(
-      `SELECT DISTINCT d.proceso AS id, d.proceso AS nombre, d.macroproceso AS macro_proceso_id
+      `SELECT DISTINCT TRIM(d.proceso) AS id, TRIM(d.proceso) AS nombre, TRIM(d.macroproceso) AS macro_proceso_id
        FROM documentos d
        WHERE ${whereSql} AND NULLIF(TRIM(d.proceso), '') IS NOT NULL
-       ORDER BY d.proceso ASC`,
+       ORDER BY nombre ASC`,
       { replacements, type: QueryTypes.SELECT }
     );
     res.json({ success: true, data: { procesos } });
@@ -107,10 +107,10 @@ const getSubProcesos = async (req, res) => {
   try {
     const { whereSql, replacements } = buildWhere(req, 'subproceso_id');
     const subprocesos = await sequelize.query(
-      `SELECT DISTINCT d.subproceso AS id, d.subproceso AS nombre, d.proceso AS proceso_id, d.macroproceso AS macro_proceso_id
+      `SELECT DISTINCT TRIM(d.subproceso) AS id, TRIM(d.subproceso) AS nombre, TRIM(d.proceso) AS proceso_id, TRIM(d.macroproceso) AS macro_proceso_id
        FROM documentos d
        WHERE ${whereSql} AND NULLIF(TRIM(d.subproceso), '') IS NOT NULL
-       ORDER BY d.subproceso ASC`,
+       ORDER BY nombre ASC`,
       { replacements, type: QueryTypes.SELECT }
     );
     res.json({ success: true, data: { subprocesos } });
@@ -124,10 +124,10 @@ const getTiposDocumentacion = async (req, res) => {
   try {
     const { whereSql, replacements } = buildWhere(req, 'tipo_documentacion_id');
     const tipos = await sequelize.query(
-      `SELECT DISTINCT d.tipo_documento AS id, d.tipo_documento AS nombre
+      `SELECT DISTINCT TRIM(d.tipo_documento) AS id, TRIM(d.tipo_documento) AS nombre
        FROM documentos d
        WHERE ${whereSql} AND NULLIF(TRIM(d.tipo_documento), '') IS NOT NULL
-       ORDER BY d.tipo_documento ASC`,
+       ORDER BY nombre ASC`,
       { replacements, type: QueryTypes.SELECT }
     );
     res.json({ success: true, data: { tipos } });
@@ -139,13 +139,13 @@ const getTiposDocumentacion = async (req, res) => {
 
 const getFilterOptions = async (req, res) => {
   try {
-    const load = async (facet, skipKey) => {
-      const { whereSql, replacements } = buildWhere(req, skipKey);
+    const load = async (facet) => {
+      const { whereSql, replacements } = buildWhere(req);
       const columns = {
-        macro: `d.macroproceso AS id, d.macroproceso AS nombre`,
-        proceso: `d.proceso AS id, d.proceso AS nombre, d.macroproceso AS macro_proceso_id`,
-        subproceso: `d.subproceso AS id, d.subproceso AS nombre, d.proceso AS proceso_id, d.macroproceso AS macro_proceso_id`,
-        tipo: `d.tipo_documento AS id, d.tipo_documento AS nombre`
+        macro: `TRIM(d.macroproceso) AS id, TRIM(d.macroproceso) AS nombre`,
+        proceso: `TRIM(d.proceso) AS id, TRIM(d.proceso) AS nombre, TRIM(d.macroproceso) AS macro_proceso_id`,
+        subproceso: `TRIM(d.subproceso) AS id, TRIM(d.subproceso) AS nombre, TRIM(d.proceso) AS proceso_id, TRIM(d.macroproceso) AS macro_proceso_id`,
+        tipo: `TRIM(d.tipo_documento) AS id, TRIM(d.tipo_documento) AS nombre`
       };
       const notEmpty = {
         macro: 'd.macroproceso',
@@ -163,10 +163,10 @@ const getFilterOptions = async (req, res) => {
     };
 
     const [macroProcesos, procesos, subprocesos, tipos] = await Promise.all([
-      load('macro', 'macro_proceso_id'),
-      load('proceso', 'proceso_id'),
-      load('subproceso', 'subproceso_id'),
-      load('tipo', 'tipo_documentacion_id')
+      load('macro'),
+      load('proceso'),
+      load('subproceso'),
+      load('tipo')
     ]);
 
     res.json({ success: true, data: { macroProcesos, procesos, subprocesos, tipos } });
@@ -176,4 +176,35 @@ const getFilterOptions = async (req, res) => {
   }
 };
 
-module.exports = { getMacroProcesos, getProcesos, getSubProcesos, getTiposDocumentacion, getFilterOptions };
+const getFilterRelations = async (req, res) => {
+  try {
+    const { whereSql, replacements } = buildWhere(req);
+    const rows = await sequelize.query(
+      `SELECT DISTINCT
+         TRIM(d.macroproceso) AS macro_id,
+         TRIM(d.macroproceso) AS macro_nombre,
+         TRIM(d.proceso) AS proceso_id,
+         TRIM(d.proceso) AS proceso_nombre,
+         TRIM(d.subproceso) AS subproceso_id,
+         TRIM(d.subproceso) AS subproceso_nombre,
+         TRIM(d.tipo_documento) AS tipo_id,
+         TRIM(d.tipo_documento) AS tipo_nombre,
+         d.codigo,
+         d.titulo
+       FROM documentos d
+       WHERE ${whereSql}
+         AND NULLIF(TRIM(d.macroproceso), '') IS NOT NULL
+         AND NULLIF(TRIM(d.proceso), '') IS NOT NULL
+         AND NULLIF(TRIM(d.subproceso), '') IS NOT NULL
+         AND NULLIF(TRIM(d.tipo_documento), '') IS NOT NULL
+       ORDER BY macro_nombre ASC, proceso_nombre ASC, subproceso_nombre ASC, tipo_nombre ASC`,
+      { replacements, type: QueryTypes.SELECT }
+    );
+    res.json({ success: true, data: { relaciones: rows } });
+  } catch (error) {
+    console.error('Error al cargar relaciones de filtros:', error);
+    res.status(500).json({ success: false, message: 'Error' });
+  }
+};
+
+module.exports = { getMacroProcesos, getProcesos, getSubProcesos, getTiposDocumentacion, getFilterOptions, getFilterRelations };

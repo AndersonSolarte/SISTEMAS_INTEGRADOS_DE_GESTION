@@ -223,10 +223,73 @@ const emptyFilterOptions = {
   tipos: null
 };
 
-const withoutFilterKey = (filters = {}, keyToRemove) =>
-  Object.fromEntries(
-    Object.entries(filters).filter(([, value]) => String(value || '').trim() !== '').filter(([key]) => key !== keyToRemove)
-  );
+const byNombre = (a, b) => String(a?.nombre || '').localeCompare(String(b?.nombre || ''), 'es', { sensitivity: 'base' });
+
+const buildCatalogosFromRelaciones = (relaciones = [], filters = {}) => {
+  const macroValues = new Set((filters.macro_proceso_id || []).map(String));
+  const procesoValues = new Set((filters.proceso_id || []).map(String));
+  const subprocesoValues = new Set((filters.subproceso_id || []).map(String));
+  const tipoValues = new Set((filters.tipo_documentacion_id || []).map(String));
+  const terms = String(filters.titulo || '').trim().toLowerCase().split(/\s+/).filter(Boolean);
+  const maps = {
+    macroProcesos: new Map(),
+    procesos: new Map(),
+    subprocesos: new Map(),
+    tipos: new Map()
+  };
+
+  relaciones
+    .filter((row) => {
+      if (macroValues.size && !macroValues.has(String(row.macro_id))) return false;
+      if (procesoValues.size && !procesoValues.has(String(row.proceso_id))) return false;
+      if (subprocesoValues.size && !subprocesoValues.has(String(row.subproceso_id))) return false;
+      if (tipoValues.size && !tipoValues.has(String(row.tipo_id))) return false;
+      if (!terms.length) return true;
+      const text = `${row.codigo || ''} ${row.titulo || ''}`.toLowerCase();
+      return terms.every((term) => text.includes(term));
+    })
+    .forEach((row) => {
+      maps.macroProcesos.set(String(row.macro_id), { id: String(row.macro_id), nombre: String(row.macro_nombre) });
+      maps.procesos.set(String(row.proceso_id), { id: String(row.proceso_id), nombre: String(row.proceso_nombre), macro_proceso_id: String(row.macro_id) });
+      maps.subprocesos.set(String(row.subproceso_id), { id: String(row.subproceso_id), nombre: String(row.subproceso_nombre), proceso_id: String(row.proceso_id), macro_proceso_id: String(row.macro_id) });
+      maps.tipos.set(String(row.tipo_id), { id: String(row.tipo_id), nombre: String(row.tipo_nombre) });
+    });
+
+  return {
+    macroProcesos: Array.from(maps.macroProcesos.values()).sort(byNombre),
+    procesos: Array.from(maps.procesos.values()).sort(byNombre),
+    subprocesos: Array.from(maps.subprocesos.values()).sort(byNombre),
+    tipos: Array.from(maps.tipos.values()).sort(byNombre)
+  };
+};
+
+const buildRelacionesFromDocumentos = (docs = []) => {
+  const map = new Map();
+
+  docs.forEach((doc) => {
+    const macro = doc?.macroproceso || doc?.subproceso?.proceso?.macroProceso?.nombre || '';
+    const proceso = doc?.proceso_texto || doc?.subproceso?.proceso?.nombre || '';
+    const subproceso = doc?.subproceso_texto || doc?.subproceso?.nombre || '';
+    const tipo = doc?.tipo_documento || doc?.tipoDocumentacion?.nombre || '';
+    if (!macro || !proceso || !subproceso || !tipo) return;
+
+    const key = [macro, proceso, subproceso, tipo, doc?.codigo || '', doc?.titulo || ''].join('::');
+    map.set(key, {
+      macro_id: String(macro),
+      macro_nombre: String(macro),
+      proceso_id: String(proceso),
+      proceso_nombre: String(proceso),
+      subproceso_id: String(subproceso),
+      subproceso_nombre: String(subproceso),
+      tipo_id: String(tipo),
+      tipo_nombre: String(tipo),
+      codigo: doc?.codigo || '',
+      titulo: doc?.titulo || ''
+    });
+  });
+
+  return Array.from(map.values());
+};
 
 function DocFilterPanel({ label, options, value, onChange, disabled, placeholder }) {
   const [open, setOpen] = useState(false);
@@ -250,17 +313,7 @@ function DocFilterPanel({ label, options, value, onChange, disabled, placeholder
   }, []);
 
   useEffect(() => {
-    if (!open) {
-      setVisibleOptions(options);
-      return;
-    }
-    setVisibleOptions((prev) => {
-      const map = new Map();
-      [...prev, ...options].forEach((item) => {
-        if (item?.id) map.set(String(item.id), item);
-      });
-      return Array.from(map.values());
-    });
+    setVisibleOptions(options);
   }, [open, options]);
 
   // Calcular posición y cerrar en scroll/resize
@@ -415,7 +468,8 @@ function AseguramientoCalidad() {
   const [previewTitle, setPreviewTitle] = useState('');
   const [previewDownloadUrl, setPreviewDownloadUrl] = useState('');
   const [previewDownloadName, setPreviewDownloadName] = useState('');
-  const [autoSearching, setAutoSearching] = useState(false);
+  const [hasSearched, setHasSearched] = useState(false);
+  const [manualSearchMode, setManualSearchMode] = useState(false);
   const [favoriteIds, setFavoriteIds] = useState(new Set());
   const [loadingFavorites, setLoadingFavorites] = useState(false);
   const [syncingSheet, setSyncingSheet] = useState(false);
@@ -423,8 +477,10 @@ function AseguramientoCalidad() {
   const [clearEmail, setClearEmail] = useState('');
   const [clearConfirmation, setClearConfirmation] = useState('');
   const [clearingDocuments, setClearingDocuments] = useState(false);
-  const [, setFilterOptions] = useState(emptyFilterOptions);
-  const [recentDocumentos, setRecentDocumentos] = useState([]);
+  const [filterOptions, setFilterOptions] = useState(emptyFilterOptions);
+  const [filterRelations, setFilterRelations] = useState([]);
+  const [visibleRelations, setVisibleRelations] = useState([]);
+  const catalogRequestId = useRef(0);
 
   const syncCatalogosFromPayload = useCallback((data = {}) => {
     setMacroProcesos(data.macroProcesos || []);
@@ -434,19 +490,21 @@ function AseguramientoCalidad() {
   }, []);
 
   const loadCatalogosDirecto = useCallback(async (opts = {}) => {
+    const requestId = ++catalogRequestId.current;
     const extra = opts.include_inactive ? { include_inactive: opts.include_inactive, estado_scope: opts.estado_scope || 'inactive' } : {};
-    const [macroRes, procRes, subRes, tipoRes] = await Promise.all([
-      catalogoService.getMacroProcesos(extra),
-      catalogoService.getProcesos(null, extra),
-      catalogoService.getSubProcesos(null, extra),
-      catalogoService.getTiposDocumentacion(extra)
-    ]);
-    syncCatalogosFromPayload({
-      macroProcesos: macroRes?.data?.macroProcesos || [],
-      procesos:      procRes?.data?.procesos       || [],
-      subprocesos:   subRes?.data?.subprocesos     || [],
-      tipos:         tipoRes?.data?.tipos          || []
-    });
+    try {
+      const response = await catalogoService.getFilterRelations(extra);
+      if (requestId !== catalogRequestId.current) return;
+      const relaciones = response?.data?.relaciones || [];
+      setFilterRelations(relaciones);
+      syncCatalogosFromPayload(buildCatalogosFromRelaciones(relaciones));
+    } catch (error) {
+      const fallback = await documentoService.getDocumentos(extra, 1, 5000);
+      if (requestId !== catalogRequestId.current) return;
+      const relaciones = buildRelacionesFromDocumentos(fallback?.data?.documentos || []);
+      setFilterRelations(relaciones);
+      syncCatalogosFromPayload(buildCatalogosFromRelaciones(relaciones));
+    }
   }, [syncCatalogosFromPayload]);
 
   const loadCatalogos = useCallback(async (activeFilters = {}) => {
@@ -459,25 +517,21 @@ function AseguramientoCalidad() {
       return;
     }
 
-    try {
-      const [macroRes, procesoRes, subprocesoRes, tipoRes] = await Promise.all([
-        catalogoService.getFilterOptions(withoutFilterKey(activeFilters, 'macro_proceso_id')),
-        catalogoService.getFilterOptions(withoutFilterKey(activeFilters, 'proceso_id')),
-        catalogoService.getFilterOptions(withoutFilterKey(activeFilters, 'subproceso_id')),
-        catalogoService.getFilterOptions(withoutFilterKey(activeFilters, 'tipo_documentacion_id'))
-      ]);
-
-      setFilterOptions({
-        macroProcesos: macroRes?.data?.macroProcesos || [],
-        procesos: procesoRes?.data?.procesos || [],
-        subprocesos: subprocesoRes?.data?.subprocesos || [],
-        tipos: tipoRes?.data?.tipos || []
+    if (filterRelations.length) {
+      const nextOptions = buildCatalogosFromRelaciones(filterRelations, {
+        macro_proceso_id: selMacros,
+        proceso_id: selProcesos,
+        subproceso_id: selSubprocesos,
+        tipo_documentacion_id: selTipos,
+        titulo: activeFilters.titulo || ''
       });
+      setFilterOptions(nextOptions);
+      syncCatalogosFromPayload(nextOptions);
       return;
-    } catch (_e) {}
+    }
 
     setFilterOptions(emptyFilterOptions);
-  }, [loadCatalogosDirecto]);
+  }, [filterRelations, loadCatalogosDirecto, selMacros, selProcesos, selSubprocesos, selTipos, syncCatalogosFromPayload]);
 
   useEffect(() => {
     const extra = filters.include_inactive ? { include_inactive: filters.include_inactive, estado_scope: filters.estado_scope || 'inactive' } : {};
@@ -502,11 +556,12 @@ function AseguramientoCalidad() {
     const hasUserFilter = Object.keys(params).some((key) => !['include_inactive', 'estado_scope'].includes(key));
     if (!hasUserFilter) {
       setFilterOptions(emptyFilterOptions);
+      if (filterRelations.length) syncCatalogosFromPayload(buildCatalogosFromRelaciones(filterRelations));
       return;
     }
 
     loadCatalogos(params).catch(() => setFilterOptions(emptyFilterOptions));
-  }, [loadCatalogos, selMacros, selProcesos, selSubprocesos, selTipos, filters.titulo, filters.include_inactive, filters.estado_scope]);
+  }, [filterRelations, loadCatalogos, selMacros, selProcesos, selSubprocesos, selTipos, filters.titulo, filters.include_inactive, filters.estado_scope, syncCatalogosFromPayload]);
 
   useEffect(() => {
     if (!user?.id) return;
@@ -522,23 +577,21 @@ function AseguramientoCalidad() {
   }, [user?.id]);
 
   useEffect(() => {
-    documentoService.getDocumentos({}, 1, 10)
-      .then((res) => { if (res.success) setRecentDocumentos(res.data.documentos || []); })
-      .catch(() => {});
-  }, []);
-
-  useEffect(() => {
     const params = new URLSearchParams(location.search);
     const quickTitulo = params.get('titulo');
     if (quickTitulo) {
       const nextFilters = { macro_proceso_id: '', proceso_id: '', subproceso_id: '', tipo_documentacion_id: '', titulo: quickTitulo, estado: '', include_inactive: '', estado_scope: '' };
       setSelMacros([]); setSelProcesos([]); setSelSubprocesos([]); setSelTipos([]);
       setFilters(nextFilters);
+      setHasSearched(true);
+      setManualSearchMode(false);
       setLoading(true);
       documentoService.getDocumentos(nextFilters, 1, 10)
         .then((response) => {
           if (response.success) {
-            setDocumentos(response.data.documentos);
+            const nextDocs = response.data.documentos || [];
+            setDocumentos(nextDocs);
+            setVisibleRelations(buildRelacionesFromDocumentos(nextDocs));
             setTotalDocumentos(response.data.pagination.total);
           }
         })
@@ -551,10 +604,14 @@ function AseguramientoCalidad() {
   const handleSearch = async () => {
     setLoading(true);
     setPage(0);
+    setHasSearched(true);
+    setManualSearchMode(true);
     try {
       const response = await documentoService.getDocumentos(filters, 1, rowsPerPage);
       if (response.success) {
-        setDocumentos(response.data.documentos);
+        const nextDocs = response.data.documentos || [];
+        setDocumentos(nextDocs);
+        setVisibleRelations(buildRelacionesFromDocumentos(nextDocs));
         setTotalDocumentos(response.data.pagination.total);
         if (response.data.documentos.length === 0) {
           enqueueSnackbar(response.message || 'No se encontraron documentos', { variant: 'info' });
@@ -573,19 +630,19 @@ function AseguramientoCalidad() {
     setFilters({ macro_proceso_id: '', proceso_id: '', subproceso_id: '', tipo_documentacion_id: '', titulo: '', estado: '', include_inactive: '', estado_scope: '' });
     setSelMacros([]); setSelProcesos([]); setSelSubprocesos([]); setSelTipos([]);
     setDocumentos([]);
+    setVisibleRelations([]);
     setTotalDocumentos(0);
+    setHasSearched(false);
+    setManualSearchMode(false);
     setPage(0);
   };
 
   const handleMacroChange = (values) => {
     setSelMacros(values);
-    setSelProcesos([]);
-    setSelSubprocesos([]);
   };
 
   const handleProcesoChange = (values) => {
     setSelProcesos(values);
-    setSelSubprocesos([]);
   };
 
   // Sync multi-select arrays → filters (comma-separated IDs for backend)
@@ -595,29 +652,43 @@ function AseguramientoCalidad() {
   useEffect(() => { setFilters(prev => ({ ...prev, tipo_documentacion_id: selTipos.join(',') })); }, [selTipos]);
 
   useEffect(() => {
-    const hasActiveFilters = Object.values(filters).some((value) => String(value).trim() !== '');
-    if (!hasActiveFilters) return;
+    const hasUserFilter = Object.entries(filters).some(
+      ([key, value]) => !['estado_scope'].includes(key) && String(value || '').trim() !== ''
+    );
 
-    setAutoSearching(true);
+    if (!hasUserFilter) {
+      if (!manualSearchMode) {
+        setDocumentos([]);
+        setVisibleRelations([]);
+        setTotalDocumentos(0);
+        setHasSearched(false);
+        setPage(0);
+      }
+      return;
+    }
+
+    setManualSearchMode(false);
+    setHasSearched(true);
     const debounceId = setTimeout(async () => {
       setLoading(true);
       setPage(0);
       try {
         const response = await documentoService.getDocumentos(filters, 1, rowsPerPage);
         if (response.success) {
-          setDocumentos(response.data.documentos);
+          const nextDocs = response.data.documentos || [];
+          setDocumentos(nextDocs);
+          setVisibleRelations(buildRelacionesFromDocumentos(nextDocs));
           setTotalDocumentos(response.data.pagination.total);
         }
       } catch (error) {
         enqueueSnackbar(getApiErrorMessage(error, 'Error al aplicar filtros'), { variant: 'error' });
       } finally {
         setLoading(false);
-        setAutoSearching(false);
       }
-    }, 450);
+    }, 350);
 
     return () => clearTimeout(debounceId);
-  }, [filters, rowsPerPage, enqueueSnackbar]);
+  }, [filters, manualSearchMode, rowsPerPage, enqueueSnackbar]);
 
   const handleChangePage = async (event, newPage) => {
     setPage(newPage);
@@ -625,7 +696,9 @@ function AseguramientoCalidad() {
     try {
       const response = await documentoService.getDocumentos(filters, newPage + 1, rowsPerPage);
       if (response.success) {
-        setDocumentos(response.data.documentos);
+        const nextDocs = response.data.documentos || [];
+        setDocumentos(nextDocs);
+        setVisibleRelations(buildRelacionesFromDocumentos(nextDocs));
       }
     } catch (error) {
       enqueueSnackbar(getApiErrorMessage(error, 'Error al cargar documentos'), { variant: 'error' });
@@ -785,7 +858,10 @@ function AseguramientoCalidad() {
       enqueueSnackbar(response.data?.message || 'Base documental limpiada', { variant: 'success' });
       setOpenClearDialog(false);
       setDocumentos([]);
+      setVisibleRelations([]);
       setTotalDocumentos(0);
+      setHasSearched(false);
+      setManualSearchMode(false);
       await loadCatalogos();
     } catch (error) {
       enqueueSnackbar(getApiErrorMessage(error, 'Error al limpiar la base documental'), { variant: 'error' });
@@ -827,24 +903,68 @@ function AseguramientoCalidad() {
     .length;
   const hasActiveFilters = activeFiltersCount > 0;
   const tiposDocumentacionDisplay = tiposDocumentacion.filter((td) => !isDocumentCode(td.nombre));
+  const selectedRelationFilters = useMemo(() => ({
+    macro_proceso_id: selMacros,
+    proceso_id: selProcesos,
+    subproceso_id: selSubprocesos,
+    tipo_documentacion_id: selTipos,
+    titulo: filters.titulo
+  }), [filters.titulo, selMacros, selProcesos, selSubprocesos, selTipos]);
+  const activeRelationRows = filterRelations.length ? filterRelations : visibleRelations;
+  const buildFacetOptions = useCallback((skipKey = '') => {
+    if (!activeRelationRows.length) return null;
+    return buildCatalogosFromRelaciones(activeRelationRows, {
+      ...selectedRelationFilters,
+      [skipKey]: []
+    });
+  }, [activeRelationRows, selectedRelationFilters]);
+
+  const macroRelationOptions = useMemo(() => buildFacetOptions('macro_proceso_id'), [buildFacetOptions]);
+  const procesoRelationOptions = useMemo(() => buildFacetOptions('proceso_id'), [buildFacetOptions]);
+  const subprocesoRelationOptions = useMemo(() => buildFacetOptions('subproceso_id'), [buildFacetOptions]);
+  const tipoRelationOptions = useMemo(() => buildFacetOptions('tipo_documentacion_id'), [buildFacetOptions]);
 
   // Filtrado client-side usando relaciones del catálogo (macro_proceso_id, proceso_id)
-  const macroOptions = macroProcesos;
+  const resolveFilterOptions = (key, fallback) => (
+    Array.isArray(filterOptions[key]) ? filterOptions[key] : fallback
+  );
 
-  const procesoOptions = selMacros.length > 0
-    ? procesos.filter(p => selMacros.some(mId => String(p.macro_proceso_id) === String(mId)))
-    : procesos;
+  const macroOptions = macroRelationOptions?.macroProcesos || resolveFilterOptions('macroProcesos', macroProcesos);
+  const procesoSource = procesoRelationOptions?.procesos || resolveFilterOptions('procesos', procesos);
+  const subprocesoSource = subprocesoRelationOptions?.subprocesos || resolveFilterOptions('subprocesos', subprocesos);
+  const tipoSource = tipoRelationOptions?.tipos || resolveFilterOptions('tipos', tiposDocumentacionDisplay);
 
-  const subprocesoOptions = selProcesos.length > 0
-    ? subprocesos.filter(sp => selProcesos.some(pId => String(sp.proceso_id) === String(pId)))
+  const procesoOptions = procesoRelationOptions?.procesos || (selMacros.length > 0
+    ? procesoSource.filter(p => selMacros.some(mId => String(p.macro_proceso_id) === String(mId)))
+    : procesoSource);
+
+  const subprocesoOptions = subprocesoRelationOptions?.subprocesos || (selProcesos.length > 0
+    ? subprocesoSource.filter(sp => selProcesos.some(pId => String(sp.proceso_id) === String(pId)))
     : selMacros.length > 0
-      ? subprocesos.filter(sp => procesoOptions.some(p => String(p.id) === String(sp.proceso_id)))
-      : subprocesos;
+      ? subprocesoSource.filter(sp => procesoOptions.some(p => String(p.id) === String(sp.proceso_id)))
+      : subprocesoSource);
 
-  const tipoOptions = tiposDocumentacionDisplay;
-  const isFiltering = loading || autoSearching;
-  const showingRecents = !hasActiveFilters && !loading && documentos.length === 0 && recentDocumentos.length > 0;
-  const displayDocumentos = showingRecents ? recentDocumentos : documentos;
+  const tipoOptions = tipoSource.filter((td) => !isDocumentCode(td.nombre));
+  const isFiltering = loading;
+  const displayDocumentos = documentos;
+
+  useEffect(() => {
+    const keepValidSelections = (selected, options) => {
+      if (!selected.length) return selected;
+      const validIds = new Set(options.map((option) => String(option.id)));
+      return selected.filter((id) => validIds.has(String(id)));
+    };
+
+    const nextMacros = keepValidSelections(selMacros, macroOptions);
+    const nextProcesos = keepValidSelections(selProcesos, procesoOptions);
+    const nextSubprocesos = keepValidSelections(selSubprocesos, subprocesoOptions);
+    const nextTipos = keepValidSelections(selTipos, tipoOptions);
+
+    if (nextMacros.length !== selMacros.length) setSelMacros(nextMacros);
+    if (nextProcesos.length !== selProcesos.length) setSelProcesos(nextProcesos);
+    if (nextSubprocesos.length !== selSubprocesos.length) setSelSubprocesos(nextSubprocesos);
+    if (nextTipos.length !== selTipos.length) setSelTipos(nextTipos);
+  }, [macroOptions, procesoOptions, selMacros, selProcesos, selSubprocesos, selTipos, subprocesoOptions, tipoOptions]);
 
   return (
     <Fade in={true} timeout={500}>
@@ -1204,7 +1324,7 @@ function AseguramientoCalidad() {
                   <SearchIcon sx={{ fontSize: 50, color: '#94a3b8' }} />
                 </Box>
                 <Typography variant="h5" sx={{ color: '#475569', fontWeight: 700, mb: 1 }}>
-                  {hasActiveFilters ? 'No se encontraron documentos' : 'Aplica filtros para comenzar'}
+                  {hasSearched ? 'No se encontraron documentos' : 'Selecciona un filtro o presiona Buscar'}
                 </Typography>
                 <Typography variant="body2" sx={{ color: '#94a3b8', maxWidth: 400, mx: 'auto' }}>
                   {hasActiveFilters ? 'Intenta ajustar los criterios de búsqueda o limpia los filtros' : 'Selecciona al menos un criterio y presiona el botón "Buscar"'}
@@ -1212,12 +1332,6 @@ function AseguramientoCalidad() {
               </Box>
             ) : (
               <>
-                {showingRecents && (
-                  <Box sx={{ px: 3, py: 1.25, bgcolor: '#f0f9ff', borderBottom: '1px solid #bae6fd', display: 'flex', alignItems: 'center', gap: 1.5 }}>
-                    <Typography sx={{ fontSize: 11, fontWeight: 800, color: '#0369a1', letterSpacing: '0.6px', textTransform: 'uppercase' }}>Últimos documentos</Typography>
-                    <Typography sx={{ fontSize: 11, color: '#64748b' }}>— Aplica filtros para una búsqueda específica</Typography>
-                  </Box>
-                )}
                 <TableContainer>
                   <Table>
                     <TableHead>
@@ -1337,7 +1451,7 @@ function AseguramientoCalidad() {
                 <TablePagination 
                   rowsPerPageOptions={[5, 10, 25, 50]} 
                   component="div" 
-                  count={showingRecents ? recentDocumentos.length : totalDocumentos}
+                  count={totalDocumentos}
                   rowsPerPage={rowsPerPage} 
                   page={page} 
                   onPageChange={handleChangePage} 

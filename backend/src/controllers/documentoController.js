@@ -1,4 +1,4 @@
-const { Op, literal } = require('sequelize');
+const { Op, col, fn, literal, where: sequelizeWhere } = require('sequelize');
 const path = require('path');
 const fs = require('fs');
 const {
@@ -174,22 +174,31 @@ const getDocumentos = async (req, res) => {
     ];
 
     const parseTextList = (val) => String(val || '').split(',').map((item) => item.trim()).filter(Boolean);
-    const toInOrEqText = (values) => (values.length === 1 ? values[0] : { [Op.in]: values });
+    const andConditions = [];
+    const addTrimmedTextFilter = (column, values) => {
+      if (!values.length) return;
+      andConditions.push(sequelizeWhere(
+        fn('TRIM', col(`documentos.${column}`)),
+        values.length === 1 ? values[0] : { [Op.in]: values }
+      ));
+    };
 
     const macroValues = parseTextList(macro_proceso_id);
     const procesoValues = parseTextList(proceso_id);
     const subprocesoValues = parseTextList(subproceso_id);
     const tipoValues = parseTextList(tipo_documentacion_id);
 
-    if (macroValues.length) where.macroproceso = toInOrEqText(macroValues);
-    if (procesoValues.length) where.proceso_texto = toInOrEqText(procesoValues);
-    if (subprocesoValues.length) where.subproceso_texto = toInOrEqText(subprocesoValues);
-    if (tipoValues.length) where.tipo_documento = toInOrEqText(tipoValues);
+    addTrimmedTextFilter('macroproceso', macroValues);
+    addTrimmedTextFilter('proceso', procesoValues);
+    addTrimmedTextFilter('subproceso', subprocesoValues);
+    addTrimmedTextFilter('tipo_documento', tipoValues);
 
     if (titulo) {
       const searchWhere = buildSearchWhere(titulo);
-      if (searchWhere) Object.assign(where, searchWhere);
+      if (searchWhere?.[Op.and]) andConditions.push(...searchWhere[Op.and]);
     }
+
+    if (andConditions.length) where[Op.and] = andConditions;
 
     if (isInactiveScope({ include_inactive, estado_scope }, req.user)) {
       where[Op.or] = [
@@ -205,7 +214,11 @@ const getDocumentos = async (req, res) => {
       include,
       limit: parseInt(limit),
       offset: parseInt(offset),
-      order: [literal('orden_origen ASC NULLS LAST'), ['id', 'ASC']],
+      order: [
+        literal('fecha_creacion DESC NULLS LAST'),
+        literal('orden_origen ASC NULLS LAST'),
+        ['id', 'ASC']
+      ],
       distinct: true
     });
 

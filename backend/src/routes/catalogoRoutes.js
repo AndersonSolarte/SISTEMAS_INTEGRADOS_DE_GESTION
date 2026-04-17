@@ -1,6 +1,6 @@
 const express = require('express');
 const router = express.Router();
-const { getMacroProcesos, getProcesos, getSubProcesos, getTiposDocumentacion, getFilterOptions } = require('../controllers/catalogoController');
+const { getMacroProcesos, getProcesos, getSubProcesos, getTiposDocumentacion, getFilterOptions, getFilterRelations } = require('../controllers/catalogoController');
 const { auth } = require('../middlewares/auth');
 
 router.use((req, res, next) => {
@@ -15,5 +15,6 @@ router.get('/procesos', auth, getProcesos);
 router.get('/subprocesos', auth, getSubProcesos);
 router.get('/tipos-documentacion', auth, getTiposDocumentacion);
 router.get('/filtro-opciones', auth, getFilterOptions);
+router.get('/filtro-relaciones', auth, getFilterRelations);
 
 module.exports = router;
