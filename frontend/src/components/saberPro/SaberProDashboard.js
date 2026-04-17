@@ -1,5 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import ResultadosDestacados from './ResultadosDestacados';
+import ResultadosIndividualesSaberPro from './ResultadosIndividualesSaberPro';
+import ResultadosIndividualesDestacados from './ResultadosIndividualesDestacados';
 import {
   Box,
   Button,
@@ -48,9 +50,9 @@ const COLORS = ['#2563eb', '#0ea5e9', '#f59e0b', '#ef4444', '#10b981', '#8b5cf6'
 const BASE_FILTERS = { programas: [], anios: [], periodos: [], modulos: [], gruposReferencia: [], competencias: [] };
 const INDIVIDUAL_NAV_OPTIONS = [
   { key: 'general', label: 'General resultados individuales', description: 'Vista ejecutiva institucional con filtros generales.' },
-  { key: 'saber_pro', label: 'Resultados Saber Pro', description: 'Análisis institucional filtrado para Saber Pro.' },
-  { key: 'tyt', label: 'Resultados TyT', description: 'Análisis institucional filtrado para TyT.' },
-  { key: 'destacados', label: 'Resultados destacados', description: 'Ranking rápido de mejores resultados visibles.' },
+  { key: 'saber_pro', label: 'Resultados Individuales Saber Pro', description: 'Análisis institucional filtrado para Saber Pro.' },
+  { key: 'tyt', label: 'Resultados Individuales TyT', description: 'Análisis institucional filtrado para TyT.' },
+  { key: 'destacados', label: 'Resultados Individuales Destacados', description: 'Ranking rápido de mejores resultados visibles.' },
   { key: 'competencias', label: 'Rendimiento por competencia', description: 'Lectura enfocada por núcleo y competencia genérica.' },
   { key: 'becas', label: 'Becas por rendimiento general', description: 'Priorización institucional para apoyos y reconocimientos.' }
 ];
@@ -553,7 +555,15 @@ function SaberProDashboard({ initialSection, allowedSections = [] } = {}) {
     '&.Mui-focused .MuiOutlinedInput-notchedOutline': { borderColor: '#2563eb', borderWidth: 1.5 }
   };
 
+  if (activeSection === 'saber_pro') {
+    return <ResultadosIndividualesSaberPro />;
+  }
+
   if (activeSection === 'destacados') {
+    return <ResultadosIndividualesDestacados />;
+  }
+
+  if (activeSection === 'destacados_legacy') {
     return (
       <Box sx={{ bgcolor: '#f1f5f9', minHeight: '100%', p: { xs: 1.5, md: 2 } }}>
           <ResultadosDestacados

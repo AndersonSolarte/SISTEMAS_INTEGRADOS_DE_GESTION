@@ -21,7 +21,9 @@ const {
   getResultadosInstitucional,
   getResultadosComparativaS11Spr,
   getDocumentosEstudiantes,
-  getComparativaEstudianteDetalle
+  getComparativaEstudianteDetalle,
+  getTablaModulosAnio,
+  getResultadosDestacadosMejores
 } = require('../controllers/saberProAnalyticsController');
 
 const SABER_PRO_ANALYTICS_MODULE_KEYS = [
@@ -74,5 +76,7 @@ router.post('/resultados/institucional', auth, canViewEstadisticaInstitucional, 
 router.post('/resultados/comparativa-s11-spr', auth, canViewEstadisticaInstitucional, getResultadosComparativaS11Spr);
 router.post('/resultados/documentos-estudiantes', auth, canViewEstadisticaInstitucional, getDocumentosEstudiantes);
 router.post('/resultados/comparativa-estudiante', auth, canViewEstadisticaInstitucional, getComparativaEstudianteDetalle);
+router.post('/resultados/individuales/tabla-modulos', auth, canViewEstadisticaInstitucional, getTablaModulosAnio);
+router.post('/resultados/individuales/destacados', auth, canViewEstadisticaInstitucional, getResultadosDestacadosMejores);
 
 module.exports = router;

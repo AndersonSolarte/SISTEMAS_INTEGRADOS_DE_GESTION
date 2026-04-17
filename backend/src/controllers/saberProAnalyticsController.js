@@ -2320,6 +2320,278 @@ const getComparativaEstudianteDetalle = async (req, res) => {
   }
 };
 
+const getResultadosDestacadosMejores = async (req, res) => {
+  try {
+    const filters = req.body?.filters || {};
+    const topPerProgram = req.body?.options?.topPerProgram === true || req.body?.options?.topPerProgram === 'true';
+
+    const clauses = [
+      "(novedades IS NULL OR TRIM(COALESCE(novedades::text, '')) = '')",
+      'puntaje_global IS NOT NULL',
+      'puntaje_global != 0'
+    ];
+    const params = [];
+
+    const tipoPrueba = normalizeText(filters.tipoPrueba) || 'saber_pro';
+    clauses.push('tipo_prueba = ?');
+    params.push(tipoPrueba);
+
+    const programas = toArray(filters.programas).map(normalizeText).filter(Boolean);
+    if (programas.length) {
+      clauses.push(`programa IN (${programas.map(() => '?').join(', ')})`);
+      params.push(...programas);
+    }
+
+    const anios = toArray(filters.anios).map((x) => Number(x)).filter(Number.isFinite);
+    if (anios.length) {
+      clauses.push(`anio IN (${anios.map(() => '?').join(', ')})`);
+      params.push(...anios);
+    }
+
+    const periodos = toArray(filters.periodos).map(normalizeText).filter(Boolean);
+    if (periodos.length) {
+      clauses.push(`periodo IN (${periodos.map(() => '?').join(', ')})`);
+      params.push(...periodos);
+    }
+
+    const whereBase = 'WHERE ' + clauses.join(' AND ');
+    const moduloNormalizedSql = `TRANSLATE(UPPER(TRIM(COALESCE(modulo, ''))), CHR(193)||CHR(201)||CHR(205)||CHR(211)||CHR(218), 'AEIOU')`;
+    const competenciaGrupoSql = `
+      CASE
+        WHEN UPPER(TRIM(COALESCE(competencias,''))) LIKE '%GENERIC%' THEN 'GENERICAS'
+        WHEN UPPER(TRIM(COALESCE(competencias,''))) LIKE '%ESPEC%' THEN 'ESPECIFICAS'
+        WHEN ${moduloNormalizedSql} IN (
+          'COMPETENCIAS CIUDADANAS','COMUNICACION ESCRITA','INGLES','LECTURA CRITICA','RAZONAMIENTO CUANTITATIVO'
+        ) THEN 'GENERICAS'
+        ELSE 'ESPECIFICAS'
+      END`;
+
+    const [rows, aniosRows, programasRows, periodosRows] = await Promise.all([
+      sequelize.query(`
+        WITH detailed AS (
+          SELECT documento, nombre, numero_registro, programa, anio, periodo,
+            puntaje_global, percentil_nacional_global,
+            puntaje_modulo, modulo,
+            ${moduloNormalizedSql} AS modulo_norm,
+            ${competenciaGrupoSql} AS comp_grupo
+          FROM saber_pro_resultados_individuales
+          ${whereBase} AND puntaje_modulo IS NOT NULL
+        ),
+        grouped AS (
+          SELECT
+            documento,
+            MAX(nombre) AS nombre,
+            MAX(numero_registro) AS numero_registro,
+            programa, anio,
+            MAX(periodo) AS periodo,
+            MAX(puntaje_global) AS puntaje_global,
+            MAX(percentil_nacional_global) AS percentil_nacional_global,
+            ROUND(SUM(puntaje_modulo)::numeric, 0) AS resultado_global,
+            ROUND(AVG(puntaje_modulo)::numeric, 2) AS promedio_general,
+            COUNT(DISTINCT modulo_norm) AS total_competencias,
+            COUNT(DISTINCT CASE WHEN comp_grupo = 'GENERICAS' THEN modulo_norm END) AS total_genericas,
+            COUNT(DISTINCT CASE WHEN comp_grupo = 'ESPECIFICAS' THEN modulo_norm END) AS total_especificas,
+            json_agg(json_build_object('modulo', modulo, 'puntaje', puntaje_modulo) ORDER BY modulo) AS detalle
+          FROM detailed
+          GROUP BY documento, programa, anio
+        ),
+        con_media AS (
+          SELECT
+            g.*,
+            (
+              SELECT ROUND(AVG(a.puntaje_grupo_referencia)::numeric, 2)
+              FROM saber_pro_resultados_agregados a
+              WHERE TRANSLATE(UPPER(TRIM(COALESCE(a.programa::text,''))),
+                      CHR(193)||CHR(201)||CHR(205)||CHR(211)||CHR(218), 'AEIOU')
+                  = TRANSLATE(UPPER(TRIM(COALESCE(g.programa::text,''))),
+                      CHR(193)||CHR(201)||CHR(205)||CHR(211)||CHR(218), 'AEIOU')
+                AND a.anio = g.anio
+                AND a.puntaje_grupo_referencia IS NOT NULL
+            ) AS media_nacional,
+            (g.total_genericas = 5 AND g.total_especificas > 0) AS cumple_ambas,
+            ROW_NUMBER() OVER (
+              PARTITION BY g.programa
+              ORDER BY
+                CASE WHEN g.total_genericas = 5 AND g.total_especificas > 0 THEN 0 ELSE 1 END ASC,
+                g.promedio_general DESC NULLS LAST
+            ) AS rk
+          FROM grouped g
+        )
+        SELECT documento, nombre, numero_registro, programa, anio, periodo,
+          puntaje_global, percentil_nacional_global,
+          resultado_global, promedio_general, total_competencias,
+          total_genericas, total_especificas, media_nacional, detalle, cumple_ambas
+        FROM con_media
+        ${topPerProgram ? 'WHERE rk = 1 AND cumple_ambas = TRUE' : 'WHERE rk = 1'}
+        ORDER BY promedio_general DESC NULLS LAST
+        ${topPerProgram ? '' : 'LIMIT 50'}
+      `, { replacements: params, type: QueryTypes.SELECT }),
+      sequelize.query(
+        `SELECT DISTINCT anio FROM saber_pro_resultados_individuales
+         WHERE (novedades IS NULL OR TRIM(COALESCE(novedades::text,'')) = '')
+           AND puntaje_global IS NOT NULL AND puntaje_global != 0
+         ORDER BY anio`,
+        { type: QueryTypes.SELECT }
+      ),
+      sequelize.query(
+        `SELECT DISTINCT programa FROM saber_pro_resultados_individuales
+         WHERE (novedades IS NULL OR TRIM(COALESCE(novedades::text,'')) = '')
+           AND puntaje_global IS NOT NULL AND puntaje_global != 0
+           AND programa IS NOT NULL
+         ORDER BY programa`,
+        { type: QueryTypes.SELECT }
+      ),
+      sequelize.query(
+        `SELECT DISTINCT periodo FROM saber_pro_resultados_individuales
+         WHERE (novedades IS NULL OR TRIM(COALESCE(novedades::text,'')) = '')
+           AND puntaje_global IS NOT NULL AND puntaje_global != 0
+           AND periodo IS NOT NULL
+         ORDER BY periodo`,
+        { type: QueryTypes.SELECT }
+      )
+    ]);
+
+    const promedios = rows.map((r) => Number(r.promedio_general || 0)).filter((v) => v > 0);
+    const percentiles = rows.map((r) => Number(r.percentil_nacional_global)).filter(Number.isFinite);
+    const resultadosGlobales = rows.map((r) => Number(r.resultado_global || 0)).filter((v) => v > 0);
+    const kpis = {
+      total: rows.length,
+      promedio_global: promedios.length ? Number((promedios.reduce((a, b) => a + b, 0) / promedios.length).toFixed(2)) : 0,
+      mejor_resultado: resultadosGlobales.length ? Number(Math.max(...resultadosGlobales).toFixed(0)) : 0,
+      mejor_promedio: promedios.length ? Number(Math.max(...promedios).toFixed(2)) : 0,
+      percentil_promedio: percentiles.length ? Number((percentiles.reduce((a, b) => a + b, 0) / percentiles.length).toFixed(0)) : null,
+      programas: new Set(rows.map((r) => String(r.programa || '').trim()).filter(Boolean)).size
+    };
+
+    return res.json({
+      success: true,
+      data: {
+        rows: rows.map((r) => ({
+          ...r,
+          resultado_global: Number(r.resultado_global || 0),
+          promedio_general: Number(r.promedio_general || 0),
+          total_competencias: Number(r.total_competencias || 0),
+          media_nacional: r.media_nacional != null ? Number(r.media_nacional) : null,
+          detalle: Array.isArray(r.detalle) ? r.detalle : (typeof r.detalle === 'string' ? JSON.parse(r.detalle) : [])
+        })),
+        kpis,
+        options: { topPerProgram },
+        catalogs: {
+          anios: aniosRows.map((r) => Number(r.anio)).filter(Number.isFinite),
+          programas: programasRows.map((r) => String(r.programa || '').trim()).filter(Boolean),
+          periodos: periodosRows.map((r) => String(r.periodo || '').trim()).filter(Boolean)
+        }
+      }
+    });
+  } catch (error) {
+    console.error('Error en resultados destacados mejores:', error);
+    return res.status(500).json({ success: false, message: 'Error al obtener resultados destacados' });
+  }
+};
+
+const MODULOS_GENERICOS_SPR = [
+  'RAZONAMIENTO CUANTITATIVO',
+  'LECTURA CRÍTICA',
+  'INGLÉS',
+  'COMUNICACIÓN ESCRITA',
+  'COMPETENCIAS CIUDADANAS'
+];
+
+const getTablaModulosAnio = async (req, res) => {
+  try {
+    const filters = req.body?.filters || {};
+    const clauses = [
+      "tipo_prueba = 'saber_pro'",
+      "(novedades IS NULL OR TRIM(COALESCE(novedades::text, '')) = '')",
+      'puntaje_global IS NOT NULL',
+      'puntaje_global != 0'
+    ];
+    const params = [];
+
+    const programas = toArray(filters.programas).map(normalizeText).filter(Boolean);
+    if (programas.length) {
+      clauses.push(`programa IN (${programas.map(() => '?').join(', ')})`);
+      params.push(...programas);
+    }
+    const anios = toArray(filters.anios).map((x) => Number(x)).filter(Number.isFinite);
+    if (anios.length) {
+      clauses.push(`anio IN (${anios.map(() => '?').join(', ')})`);
+      params.push(...anios);
+    }
+
+    const modPlaceholders = MODULOS_GENERICOS_SPR.map(() => '?').join(', ');
+    const whereBase = clauses.join(' AND ');
+
+    const [moduloRows, aniosDisponiblesRows, programasRows] = await Promise.all([
+      sequelize.query(
+        `SELECT modulo, anio,
+           ROUND(AVG(puntaje_modulo)::numeric, 2) AS promedio,
+           COUNT(DISTINCT documento) AS n
+         FROM saber_pro_resultados_individuales
+         WHERE ${whereBase}
+           AND puntaje_modulo IS NOT NULL
+           AND modulo IN (${modPlaceholders})
+         GROUP BY modulo, anio
+         ORDER BY modulo, anio`,
+        { replacements: [...params, ...MODULOS_GENERICOS_SPR], type: QueryTypes.SELECT }
+      ),
+      sequelize.query(
+        `SELECT DISTINCT anio FROM saber_pro_resultados_individuales
+         WHERE tipo_prueba = 'saber_pro'
+           AND (novedades IS NULL OR TRIM(COALESCE(novedades::text, '')) = '')
+           AND puntaje_global IS NOT NULL AND puntaje_global != 0
+         ORDER BY anio`,
+        { type: QueryTypes.SELECT }
+      ),
+      sequelize.query(
+        `SELECT DISTINCT programa FROM saber_pro_resultados_individuales
+         WHERE tipo_prueba = 'saber_pro'
+           AND (novedades IS NULL OR TRIM(COALESCE(novedades::text, '')) = '')
+           AND puntaje_global IS NOT NULL AND puntaje_global != 0
+           AND programa IS NOT NULL
+         ORDER BY programa`,
+        { type: QueryTypes.SELECT }
+      )
+    ]);
+
+    const years = aniosDisponiblesRows.map((r) => Number(r.anio)).filter(Number.isFinite).sort((a, b) => a - b);
+    const programasList = programasRows.map((r) => String(r.programa || '').trim()).filter(Boolean);
+
+    const byModuloYear = {};
+    for (const row of moduloRows) {
+      const mod = String(row.modulo || '').trim();
+      if (!byModuloYear[mod]) byModuloYear[mod] = {};
+      byModuloYear[mod][Number(row.anio)] = { promedio: Number(row.promedio), n: Number(row.n || 0) };
+    }
+
+    const modulosOrdenados = MODULOS_GENERICOS_SPR.filter((m) => byModuloYear[m]);
+    const tablaModulos = modulosOrdenados.map((modulo) => {
+      const entry = { modulo, years: {} };
+      for (const y of years) {
+        entry.years[y] = byModuloYear[modulo]?.[y]?.promedio ?? null;
+      }
+      return entry;
+    });
+
+    const promedioRow = { modulo: 'PROMEDIO', years: {} };
+    for (const y of years) {
+      const vals = modulosOrdenados.map((m) => byModuloYear[m]?.[y]?.promedio).filter((v) => v != null);
+      promedioRow.years[y] = vals.length ? Number((vals.reduce((a, b) => a + b, 0) / vals.length).toFixed(2)) : null;
+    }
+    tablaModulos.push(promedioRow);
+
+    const trendByYear = years.map((y) => ({ anio: y, promedio: promedioRow.years[y] })).filter((r) => r.promedio != null);
+
+    return res.json({
+      success: true,
+      data: { years, modulos: tablaModulos, trendByYear, programas: programasList, aniosDisponibles: years }
+    });
+  } catch (error) {
+    console.error('Error en tabla módulos × año Saber Pro:', error);
+    return res.status(500).json({ success: false, message: 'Error al calcular tabla módulos Saber Pro' });
+  }
+};
+
 module.exports = {
   getSaberProFiltros,
   getSaberProFiltrosCascade,
@@ -2339,5 +2611,7 @@ module.exports = {
   getResultadosInstitucional,
   getResultadosComparativaS11Spr,
   getDocumentosEstudiantes,
-  getComparativaEstudianteDetalle
+  getComparativaEstudianteDetalle,
+  getTablaModulosAnio,
+  getResultadosDestacadosMejores
 };

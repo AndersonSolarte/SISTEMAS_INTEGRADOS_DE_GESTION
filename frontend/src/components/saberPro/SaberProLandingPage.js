@@ -40,9 +40,9 @@ const NAV_CONFIG = [
     key: 'individuales', label: 'Resultados Individuales',
     color: '#2563eb', lightBg: '#eff6ff', icon: SchoolRoundedIcon,
     items: [
-      { key: 'saber_pro',    label: 'Resultados Saber Pro',          desc: 'Puntajes y percentiles por estudiante.',                    icon: AssessmentRoundedIcon,       color: '#2563eb' },
-      { key: 'tyt',          label: 'Resultados TyT',                desc: 'Análisis filtrado para prueba Saber TyT.',                  icon: BarChartRoundedIcon,          color: '#0ea5e9' },
-      { key: 'destacados',   label: 'Resultados Destacados',         desc: 'Ranking de estudiantes con mejor desempeño.',               icon: EmojiEventsRoundedIcon,       color: '#f59e0b' },
+      { key: 'saber_pro',    label: 'Resultados Individuales Saber Pro', desc: 'Puntajes y percentiles por estudiante.',                    icon: AssessmentRoundedIcon,       color: '#2563eb' },
+      { key: 'tyt',          label: 'Resultados Individuales TyT',      desc: 'Análisis filtrado para prueba Saber TyT.',                  icon: BarChartRoundedIcon,          color: '#0ea5e9' },
+      { key: 'destacados',   label: 'Resultados Individuales Destacados', desc: 'Ranking de estudiantes con mejor desempeño.',               icon: EmojiEventsRoundedIcon,       color: '#f59e0b' },
       { key: 'competencias', label: 'Rendimiento por Competencia',   desc: 'Análisis por núcleo y competencia genérica.',               icon: TrendingUpRoundedIcon,        color: '#10b981' },
       { key: 'becas',        label: 'Becas por Rendimiento General', desc: 'Priorización para apoyos y reconocimientos.',               icon: WorkspacePremiumRoundedIcon,  color: '#8b5cf6' }
     ]
