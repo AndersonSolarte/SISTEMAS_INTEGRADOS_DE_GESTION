@@ -48,22 +48,12 @@ const getMacroProcesos = async (req, res) => {
 const getProcesos = async (req, res) => {
   try {
     const { macro_proceso_id } = req.query;
-    const estadoSql = documentStateSql(req.query, req.user, 'd');
     const ids = parseIdList(macro_proceso_id);
     const replacements = {};
-    const macroFilter = ids ? 'AND p.macro_proceso_id IN (:macroIds)' : '';
+    const macroFilter = ids ? 'WHERE macro_proceso_id IN (:macroIds)' : '';
     if (ids) replacements.macroIds = ids;
     const procesos = await sequelize.query(
-      `
-        SELECT DISTINCT p.*
-        FROM documentos d
-        LEFT JOIN subprocesos sp ON sp.id = d.subproceso_id
-        LEFT JOIN procesos p ON p.id = sp.proceso_id
-        WHERE ${estadoSql}
-          AND p.id IS NOT NULL
-          ${macroFilter}
-        ORDER BY p.nombre ASC
-      `,
+      `SELECT id, nombre, macro_proceso_id FROM procesos ${macroFilter} ORDER BY nombre ASC`,
       { replacements, type: QueryTypes.SELECT }
     );
     res.json({ success: true, data: { procesos } });
@@ -75,21 +65,12 @@ const getProcesos = async (req, res) => {
 const getSubProcesos = async (req, res) => {
   try {
     const { proceso_id } = req.query;
-    const estadoSql = documentStateSql(req.query, req.user, 'd');
     const ids = parseIdList(proceso_id);
     const replacements = {};
-    const procesoFilter = ids ? 'AND sp.proceso_id IN (:procesoIds)' : '';
+    const procesoFilter = ids ? 'WHERE proceso_id IN (:procesoIds)' : '';
     if (ids) replacements.procesoIds = ids;
     const subprocesos = await sequelize.query(
-      `
-        SELECT DISTINCT sp.*
-        FROM documentos d
-        LEFT JOIN subprocesos sp ON sp.id = d.subproceso_id
-        WHERE ${estadoSql}
-          AND sp.id IS NOT NULL
-          ${procesoFilter}
-        ORDER BY sp.nombre ASC
-      `,
+      `SELECT id, nombre, proceso_id FROM subprocesos ${procesoFilter} ORDER BY nombre ASC`,
       { replacements, type: QueryTypes.SELECT }
     );
     res.json({ success: true, data: { subprocesos } });

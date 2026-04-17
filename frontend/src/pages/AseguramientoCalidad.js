@@ -1227,10 +1227,7 @@ function AseguramientoCalidad() {
                     <TableHead>
                       <TableRow sx={{ bgcolor: '#f8fafc' }}>
                         <TableCell sx={{ fontWeight: 700, color: '#1e293b', fontSize: 13, borderBottom: '2px solid #e2e8f0', textTransform: 'uppercase', letterSpacing: 0.5 }}>Código</TableCell>
-                        <TableCell sx={{ fontWeight: 700, color: '#1e293b', fontSize: 13, borderBottom: '2px solid #e2e8f0', textTransform: 'uppercase', letterSpacing: 0.5 }}>Macroproceso</TableCell>
-                        <TableCell sx={{ fontWeight: 700, color: '#1e293b', fontSize: 13, borderBottom: '2px solid #e2e8f0', textTransform: 'uppercase', letterSpacing: 0.5 }}>Proceso</TableCell>
-                        <TableCell sx={{ fontWeight: 700, color: '#1e293b', fontSize: 13, borderBottom: '2px solid #e2e8f0', textTransform: 'uppercase', letterSpacing: 0.5 }}>Subproceso</TableCell>
-                        <TableCell sx={{ fontWeight: 700, color: '#1e293b', fontSize: 13, borderBottom: '2px solid #e2e8f0', textTransform: 'uppercase', letterSpacing: 0.5 }}>Tipo Documento</TableCell>
+                        <TableCell sx={{ fontWeight: 700, color: '#1e293b', fontSize: 13, borderBottom: '2px solid #e2e8f0', textTransform: 'uppercase', letterSpacing: 0.5 }}>Tipo</TableCell>
                         <TableCell sx={{ fontWeight: 700, color: '#1e293b', fontSize: 13, borderBottom: '2px solid #e2e8f0', textTransform: 'uppercase', letterSpacing: 0.5 }}>Nombre Documento</TableCell>
                         <TableCell sx={{ fontWeight: 700, color: '#1e293b', fontSize: 13, borderBottom: '2px solid #e2e8f0', textTransform: 'uppercase', letterSpacing: 0.5 }}>Autor</TableCell>
                         <TableCell sx={{ fontWeight: 700, color: '#1e293b', fontSize: 13, borderBottom: '2px solid #e2e8f0', textTransform: 'uppercase', letterSpacing: 0.5 }}>Fecha Creacion</TableCell>
@@ -1242,7 +1239,7 @@ function AseguramientoCalidad() {
                     <TableBody>
                       {loading ? (
                         <TableRow>
-                          <TableCell colSpan={11} align="center" sx={{ py: 10 }}>
+                          <TableCell colSpan={8} align="center" sx={{ py: 10 }}>
                             <CircularProgress size={50} thickness={4} />
                             <Typography variant="body1" sx={{ color: '#64748b', mt: 3, fontWeight: 600 }}>Cargando documentos...</Typography>
                           </TableCell>
@@ -1251,28 +1248,9 @@ function AseguramientoCalidad() {
                         displayDocumentos.map((doc) => {
                           const isFavorite = favoriteIds.has(String(doc.id));
                           const normalized = normalizeDocFields(doc);
-                          const macroProcNombre = doc.subproceso?.proceso?.macroProceso?.nombre || doc.macroproceso || '-';
-                          const procNombre = doc.subproceso?.proceso?.nombre || doc.proceso_texto || '-';
-                          const subprocNombre = doc.subproceso?.nombre || doc.subproceso_texto || '-';
-                          const cellClamp = { maxWidth: 160, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' };
                           return (
                             <TableRow key={doc.id} hover sx={{ '&:hover': { bgcolor: '#f8fafc' }, transition: 'all 0.2s', cursor: 'pointer' }}>
                               <TableCell sx={{ fontWeight: 700, color: '#3b82f6', fontSize: 14, fontFamily: 'monospace' }}>{normalized.codigo}</TableCell>
-                              <TableCell sx={{ color: '#475569', fontSize: 12, ...cellClamp }}>
-                                <Tooltip title={macroProcNombre} placement="top" arrow>
-                                  <span>{macroProcNombre}</span>
-                                </Tooltip>
-                              </TableCell>
-                              <TableCell sx={{ color: '#475569', fontSize: 12, ...cellClamp }}>
-                                <Tooltip title={procNombre} placement="top" arrow>
-                                  <span>{procNombre}</span>
-                                </Tooltip>
-                              </TableCell>
-                              <TableCell sx={{ color: '#475569', fontSize: 12, ...cellClamp }}>
-                                <Tooltip title={subprocNombre} placement="top" arrow>
-                                  <span>{subprocNombre}</span>
-                                </Tooltip>
-                              </TableCell>
                               <TableCell>
                                 <Chip icon={getTipoIcon(normalized.tipo)} label={normalized.tipo || 'N/A'} size="small" sx={{ bgcolor: getTipoColor(normalized.tipo).bg, color: getTipoColor(normalized.tipo).color, fontWeight: 700, fontSize: 12, borderRadius: 2, px: 1 }} />
                               </TableCell>
