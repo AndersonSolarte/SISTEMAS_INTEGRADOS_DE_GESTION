@@ -173,38 +173,18 @@ const getDocumentos = async (req, res) => {
       }
     ];
 
-    // Parsea IDs separados por coma → array de enteros
-    const parseIds = (val) => {
-      if (!val) return null;
-      const ids = String(val).split(',').map(Number).filter(Number.isFinite);
-      return ids.length ? ids : null;
-    };
+    const parseTextList = (val) => String(val || '').split(',').map((item) => item.trim()).filter(Boolean);
+    const toInOrEqText = (values) => (values.length === 1 ? values[0] : { [Op.in]: values });
 
-    const subIds   = parseIds(subproceso_id);
-    const tipoIds  = parseIds(tipo_documentacion_id);
-    const procIds  = parseIds(proceso_id);
-    const macroIds = parseIds(macro_proceso_id);
+    const macroValues = parseTextList(macro_proceso_id);
+    const procesoValues = parseTextList(proceso_id);
+    const subprocesoValues = parseTextList(subproceso_id);
+    const tipoValues = parseTextList(tipo_documentacion_id);
 
-    if (tipoIds) where.tipo_documentacion_id = toInOrEq(tipoIds);
-
-    const resolvedSubprocesoIds = await resolveSubprocesoIds({ subIds, procIds, macroIds });
-    if (Array.isArray(resolvedSubprocesoIds)) {
-      if (resolvedSubprocesoIds.length === 0) {
-        return res.json({
-          success: true,
-          data: {
-            documentos: [],
-            pagination: {
-              total: 0,
-              page: parseInt(page),
-              limit: parseInt(limit),
-              totalPages: 0
-            }
-          }
-        });
-      }
-      where.subproceso_id = toInOrEq(resolvedSubprocesoIds);
-    }
+    if (macroValues.length) where.macroproceso = toInOrEqText(macroValues);
+    if (procesoValues.length) where.proceso_texto = toInOrEqText(procesoValues);
+    if (subprocesoValues.length) where.subproceso_texto = toInOrEqText(subprocesoValues);
+    if (tipoValues.length) where.tipo_documento = toInOrEqText(tipoValues);
 
     if (titulo) {
       const searchWhere = buildSearchWhere(titulo);
@@ -225,7 +205,7 @@ const getDocumentos = async (req, res) => {
       include,
       limit: parseInt(limit),
       offset: parseInt(offset),
-      order: [literal('fecha_creacion DESC NULLS LAST'), ['id', 'DESC']],
+      order: [literal('orden_origen ASC NULLS LAST'), ['id', 'ASC']],
       distinct: true
     });
 

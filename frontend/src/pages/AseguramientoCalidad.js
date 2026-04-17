@@ -223,21 +223,6 @@ const emptyFilterOptions = {
   tipos: null
 };
 
-const byName = (a, b) => String(a.nombre || '').localeCompare(String(b.nombre || ''), 'es');
-
-const mergeSelectedOptions = (available = [], base = [], selectedIds = []) => {
-  const map = new Map();
-  (available || []).forEach((item) => {
-    if (item?.id) map.set(String(item.id), item);
-  });
-  (base || []).forEach((item) => {
-    if (item?.id && selectedIds.some((id) => String(id) === String(item.id))) {
-      map.set(String(item.id), item);
-    }
-  });
-  return Array.from(map.values()).sort(byName);
-};
-
 const withoutFilterKey = (filters = {}, keyToRemove) =>
   Object.fromEntries(
     Object.entries(filters).filter(([, value]) => String(value || '').trim() !== '').filter(([key]) => key !== keyToRemove)
@@ -438,7 +423,7 @@ function AseguramientoCalidad() {
   const [clearEmail, setClearEmail] = useState('');
   const [clearConfirmation, setClearConfirmation] = useState('');
   const [clearingDocuments, setClearingDocuments] = useState(false);
-  const [filterOptions, setFilterOptions] = useState(emptyFilterOptions);
+  const [, setFilterOptions] = useState(emptyFilterOptions);
   const [recentDocumentos, setRecentDocumentos] = useState([]);
 
   const syncCatalogosFromPayload = useCallback((data = {}) => {
@@ -537,7 +522,7 @@ function AseguramientoCalidad() {
   }, [user?.id]);
 
   useEffect(() => {
-    documentoService.getDocumentos({ sort: 'recent' }, 1, 10)
+    documentoService.getDocumentos({}, 1, 10)
       .then((res) => { if (res.success) setRecentDocumentos(res.data.documentos || []); })
       .catch(() => {});
   }, []);
@@ -590,6 +575,17 @@ function AseguramientoCalidad() {
     setDocumentos([]);
     setTotalDocumentos(0);
     setPage(0);
+  };
+
+  const handleMacroChange = (values) => {
+    setSelMacros(values);
+    setSelProcesos([]);
+    setSelSubprocesos([]);
+  };
+
+  const handleProcesoChange = (values) => {
+    setSelProcesos(values);
+    setSelSubprocesos([]);
   };
 
   // Sync multi-select arrays → filters (comma-separated IDs for backend)
@@ -1090,14 +1086,14 @@ function AseguramientoCalidad() {
                   label="Macroproceso"
                   options={macroOptions}
                   value={selMacros}
-                  onChange={setSelMacros}
+                  onChange={handleMacroChange}
                   placeholder="Buscar macroproceso..."
                 />
                 <DocFilterPanel
                   label="Proceso"
                   options={procesoOptions}
                   value={selProcesos}
-                  onChange={setSelProcesos}
+                  onChange={handleProcesoChange}
                   placeholder="Buscar proceso..."
                 />
                 <DocFilterPanel
