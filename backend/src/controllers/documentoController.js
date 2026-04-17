@@ -225,9 +225,7 @@ const getDocumentos = async (req, res) => {
       include,
       limit: parseInt(limit),
       offset: parseInt(offset),
-      order: sort === 'recent'
-        ? [literal('fecha_creacion DESC NULLS LAST'), literal('created_at DESC'), ['id', 'DESC']]
-        : [literal('orden_origen ASC NULLS LAST'), ['id', 'ASC']],
+      order: [literal('fecha_creacion DESC NULLS LAST'), ['id', 'DESC']],
       distinct: true
     });
 

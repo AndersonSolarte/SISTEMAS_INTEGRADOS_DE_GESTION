@@ -25,18 +25,8 @@ const parseIdList = (value) => {
 
 const getMacroProcesos = async (req, res) => {
   try {
-    const estadoSql = documentStateSql(req.query, req.user, 'd');
     const macroProcesos = await sequelize.query(
-      `
-        SELECT DISTINCT mp.*
-        FROM documentos d
-        LEFT JOIN subprocesos sp ON sp.id = d.subproceso_id
-        LEFT JOIN procesos p ON p.id = sp.proceso_id
-        LEFT JOIN macro_procesos mp ON mp.id = p.macro_proceso_id
-        WHERE ${estadoSql}
-          AND mp.id IS NOT NULL
-        ORDER BY mp.nombre ASC
-      `,
+      `SELECT id, nombre FROM macro_procesos ORDER BY nombre ASC`,
       { type: QueryTypes.SELECT }
     );
     res.json({ success: true, data: { macroProcesos } });
@@ -81,35 +71,9 @@ const getSubProcesos = async (req, res) => {
 
 const getTiposDocumentacion = async (req, res) => {
   try {
-    const { macro_proceso_id, proceso_id, subproceso_id } = req.query;
-    const estadoSql = documentStateSql(req.query, req.user, 'd');
-    const macroIds = parseIdList(macro_proceso_id);
-    const procIds = parseIdList(proceso_id);
-    const subIds = parseIdList(subproceso_id);
-    const replacements = {};
-    const conditions = [estadoSql, 'td.id IS NOT NULL'];
-    if (subIds) {
-      conditions.push('d.subproceso_id IN (:subIds)');
-      replacements.subIds = subIds;
-    } else if (procIds) {
-      conditions.push('sp.proceso_id IN (:procIds)');
-      replacements.procIds = procIds;
-    } else if (macroIds) {
-      conditions.push('p.macro_proceso_id IN (:macroIds)');
-      replacements.macroIds = macroIds;
-    }
-
     const tipos = await sequelize.query(
-      `
-        SELECT DISTINCT td.*
-        FROM documentos d
-        LEFT JOIN subprocesos sp ON sp.id = d.subproceso_id
-        LEFT JOIN procesos p ON p.id = sp.proceso_id
-        LEFT JOIN tipos_documentacion td ON td.id = d.tipo_documentacion_id
-        WHERE ${conditions.join(' AND ')}
-        ORDER BY td.nombre ASC
-      `,
-      { replacements, type: QueryTypes.SELECT }
+      `SELECT id, nombre FROM tipos_documentacion ORDER BY nombre ASC`,
+      { type: QueryTypes.SELECT }
     );
     res.json({ success: true, data: { tipos } });
   } catch (error) {
