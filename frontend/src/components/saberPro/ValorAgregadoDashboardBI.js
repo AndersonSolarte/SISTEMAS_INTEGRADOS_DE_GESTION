@@ -893,7 +893,6 @@ function ValorAgregadoDashboardBI({ initialSection = 'va_individual' }) {
   }, [filters, nbcFilters, section]);
 
   const coverage = payload.coverage || buildEmptyCoverage();
-  const isBlocked = !coverage.es_valido_valor_agregado;
 
   const filteredIndividualRows = useMemo(() => {
     const rows = payload.rows || [];
@@ -1184,9 +1183,6 @@ function ValorAgregadoDashboardBI({ initialSection = 'va_individual' }) {
 
         {loading ? <LinearProgress sx={{ borderRadius: 999 }} /> : null}
         {error ? <Alert severity="error" sx={{ borderRadius: 3 }}>{error}</Alert> : null}
-        {section === 'va_individual' && isBlocked ? (
-          <CoverageBlocked coverage={coverage} />
-        ) : null}
 
         {section === 'va_individual' ? (
           <Grid container spacing={2}>
@@ -1202,7 +1198,7 @@ function ValorAgregadoDashboardBI({ initialSection = 'va_individual' }) {
           </Grid>
         ) : null}
 
-        {!isBlocked && section === 'va_individual' ? (
+        {section === 'va_individual' ? (
           <TablaDinamica columns={individualColumns} rows={filteredIndividualRows} search={searchDocumento} onSearchChange={setSearchDocumento} />
         ) : null}
 

@@ -182,8 +182,8 @@ const VALUE_ADDED_DATASET_SQL = `
     pc.estudiantes_con_match,
     pc.porcentaje_cobertura,
     pc.estado_cobertura,
-    pc.es_valido_valor_agregado,
-    CASE WHEN pc.es_valido_valor_agregado THEN NULL ELSE 'Cobertura insuficiente' END AS mensaje_cobertura,
+    TRUE AS es_valido_valor_agregado,
+    NULL AS mensaje_cobertura,
     (COALESCE(s11.lectura_critica, s11.lenguaje) / 100.0) AS lectura_entrada,
     (
       CASE
@@ -205,13 +205,13 @@ const VALUE_ADDED_DATASET_SQL = `
     (COALESCE(s11.lenguaje, s11.lectura_critica) / 100.0) AS comunicacion_entrada,
     (s11.ingles / 100.0) AS ingles_entrada,
     CASE
-      WHEN pc.es_valido_valor_agregado
+      WHEN s11.documento IS NOT NULL
       THEN ((base.lectura_critica / 300.0) - (COALESCE(s11.lectura_critica, s11.lenguaje) / 100.0))
       ELSE NULL
     END AS va_lectura,
     (
       CASE
-        WHEN pc.es_valido_valor_agregado THEN (
+        WHEN s11.documento IS NOT NULL THEN (
           (base.razonamiento_cuantitativo / 300.0) -
           (
             CASE
@@ -230,7 +230,7 @@ const VALUE_ADDED_DATASET_SQL = `
     ) AS va_razonamiento,
     (
       CASE
-        WHEN pc.es_valido_valor_agregado THEN (
+        WHEN s11.documento IS NOT NULL THEN (
           (base.competencias_ciudadanas / 300.0) -
           (
             COALESCE(
@@ -243,18 +243,18 @@ const VALUE_ADDED_DATASET_SQL = `
       END
     ) AS va_ciudadanas,
     CASE
-      WHEN pc.es_valido_valor_agregado
+      WHEN s11.documento IS NOT NULL
       THEN ((base.comunicacion_escrita / 300.0) - (COALESCE(s11.lenguaje, s11.lectura_critica) / 100.0))
       ELSE NULL
     END AS va_comunicacion,
     CASE
-      WHEN pc.es_valido_valor_agregado
+      WHEN s11.documento IS NOT NULL
       THEN ((base.ingles / 300.0) - (s11.ingles / 100.0))
       ELSE NULL
     END AS va_ingles,
     (
       CASE
-        WHEN pc.es_valido_valor_agregado THEN (
+        WHEN s11.documento IS NOT NULL THEN (
           (
             ((base.lectura_critica / 300.0) - (COALESCE(s11.lectura_critica, s11.lenguaje) / 100.0)) +
             (
@@ -1057,7 +1057,6 @@ const getValueAddedIndividual = async (req, res) => {
         )
         SELECT *
         FROM dataset
-        WHERE lectura_entrada IS NOT NULL
         ORDER BY ${sortField} ${sortDirection}, dataset.id DESC
         LIMIT ? OFFSET ?
       `,
@@ -1071,7 +1070,6 @@ const getValueAddedIndividual = async (req, res) => {
         )
         SELECT COUNT(*) AS total
         FROM dataset
-        WHERE lectura_entrada IS NOT NULL
       `,
       { replacements: params, type: QueryTypes.SELECT }
     );
