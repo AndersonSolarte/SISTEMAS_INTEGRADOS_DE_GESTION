@@ -138,19 +138,33 @@ function SmartFilterPanel({ label, value = [], onChange = () => {}, options = []
   );
 }
 
-/* ── Tooltip de competencias al hover ── */
+/* ── Tooltip de competencias al hover (fixed para evitar clip por overflow) ── */
 function PromedioConTooltip({ promedio, detalle = [], isTop3, medalColor }) {
-  const [visible, setVisible] = useState(false);
+  const [pos, setPos] = useState(null);
+  const anchorRef = useRef(null);
+
+  const handleEnter = () => {
+    if (!anchorRef.current || !detalle.length) return;
+    const rect = anchorRef.current.getBoundingClientRect();
+    setPos({ top: rect.top - 8, left: rect.right });
+  };
+
   return (
-    <Box sx={{ position: 'relative', display: 'inline-block' }}
-      onMouseEnter={() => setVisible(true)} onMouseLeave={() => setVisible(false)}>
-      <Typography sx={{ fontWeight: 800, fontSize: 14, color: isTop3 ? medalColor : '#334155', cursor: 'default' }}>{fmt2(promedio)}</Typography>
-      {visible && detalle.length > 0 && (
-        <Box sx={{
-          position: 'absolute', bottom: 'calc(100% + 8px)', right: 0, zIndex: 2000,
+    <>
+      <Box ref={anchorRef} onMouseEnter={handleEnter} onMouseLeave={() => setPos(null)}
+        sx={{ display: 'inline-block', cursor: 'default' }}>
+        <Typography sx={{ fontWeight: 800, fontSize: 14, color: isTop3 ? medalColor : '#334155' }}>{fmt2(promedio)}</Typography>
+      </Box>
+      {pos && detalle.length > 0 && (
+        <Box onMouseLeave={() => setPos(null)} sx={{
+          position: 'fixed',
+          top: pos.top,
+          left: pos.left,
+          transform: 'translateY(-100%)',
+          zIndex: 9999,
           bgcolor: '#1e3a5f', color: '#fff', borderRadius: 2, p: 1.5, minWidth: 260, maxWidth: 360,
           boxShadow: '0 4px 20px rgba(0,0,0,0.35)', border: '2px solid #00D9A3',
-          '&::after': { content: '""', position: 'absolute', top: '100%', right: 14, borderWidth: 6, borderStyle: 'solid', borderColor: '#1e3a5f transparent transparent transparent' }
+          pointerEvents: 'none'
         }}>
           <Typography sx={{ fontSize: 11, fontWeight: 900, color: '#00D9A3', mb: 0.8 }}>Competencias evaluadas:</Typography>
           {detalle.map((d, i) => (
@@ -161,7 +175,7 @@ function PromedioConTooltip({ promedio, detalle = [], isTop3, medalColor }) {
           ))}
         </Box>
       )}
-    </Box>
+    </>
   );
 }
 
