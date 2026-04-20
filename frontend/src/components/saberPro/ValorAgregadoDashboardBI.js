@@ -26,6 +26,7 @@ import CardKPI from './valueAdded/CardKPI';
 import GraficoBar from './valueAdded/GraficoBar';
 import ResumenCobertura from './valueAdded/ResumenCobertura';
 import TablaDinamica from './valueAdded/TablaDinamica';
+import TablaComparativaEstudiante from './valueAdded/TablaComparativaEstudiante';
 
 const BASE_FILTERS = { programas: [], anios: [], periodos: [], gruposReferencia: [] };
 const SELECT_MENU_PROPS = { PaperProps: { style: { maxHeight: 360 } } };
@@ -788,6 +789,7 @@ function ValorAgregadoDashboardBI({ initialSection = 'va_individual' }) {
   const [error, setError] = useState('');
   const [section, setSection] = useState(initialSection);
   const [searchDocumento, setSearchDocumento] = useState('');
+  const [selectedStudent, setSelectedStudent] = useState(null);
   const [selectedDocumento, setSelectedDocumento] = useState('');
   const [selectedNbc, setSelectedNbc] = useState('');
   const [selectedPrograma, setSelectedPrograma] = useState('');
@@ -1107,25 +1109,30 @@ function ValorAgregadoDashboardBI({ initialSection = 'va_individual' }) {
   }, [payload.statsRows, selectedNbc]);
 
   const individualColumns = useMemo(() => ([
+    { key: '_detalle', label: '🔍', render: (_v, row) => {
+      const isSel = selectedStudent && selectedStudent.documento === row.documento && selectedStudent.anio === row.anio;
+      return <span style={{ fontSize: 13, color: isSel ? '#1d4ed8' : '#94a3b8', fontWeight: 700 }}>{isSel ? '▼' : '▶'}</span>;
+    }},
+    { key: 'nombre', label: 'Nombre', render: (v) => <span style={{ fontWeight: 600 }}>{v || '—'}</span> },
     { key: 'documento', label: 'Documento' },
     { key: 'programa', label: 'Programa' },
-    { key: 'va_global', label: 'VA Global', render: (v) => <span style={{ color: Number(v) >= 0 ? '#047857' : '#b91c1c', fontWeight: 800 }}>{formatNumber(v, 3)}</span> },
-    { key: 'lectura_entrada', label: 'Lectura E', render: (v) => formatNumber(v, 3) },
-    { key: 'lectura_salida', label: 'Lectura S', render: (v) => formatNumber(v, 3) },
-    { key: 'va_lectura', label: 'VA Lectura', render: (v) => <span style={{ color: Number(v) >= 0 ? '#047857' : '#b91c1c', fontWeight: 700 }}>{formatNumber(v, 3)}</span> },
-    { key: 'razonamiento_entrada', label: 'Raz. E', render: (v) => formatNumber(v, 3) },
-    { key: 'razonamiento_salida', label: 'Raz. S', render: (v) => formatNumber(v, 3) },
-    { key: 'va_razonamiento', label: 'VA Raz.', render: (v) => <span style={{ color: Number(v) >= 0 ? '#047857' : '#b91c1c', fontWeight: 700 }}>{formatNumber(v, 3)}</span> },
-    { key: 'ciudadanas_entrada', label: 'Ciud. E', render: (v) => formatNumber(v, 3) },
-    { key: 'ciudadanas_salida', label: 'Ciud. S', render: (v) => formatNumber(v, 3) },
-    { key: 'va_ciudadanas', label: 'VA Ciud.', render: (v) => <span style={{ color: Number(v) >= 0 ? '#047857' : '#b91c1c', fontWeight: 700 }}>{formatNumber(v, 3)}</span> },
-    { key: 'comunicacion_entrada', label: 'Com. E', render: (v) => formatNumber(v, 3) },
-    { key: 'comunicacion_salida', label: 'Com. S', render: (v) => formatNumber(v, 3) },
-    { key: 'va_comunicacion', label: 'VA Com.', render: (v) => <span style={{ color: Number(v) >= 0 ? '#047857' : '#b91c1c', fontWeight: 700 }}>{formatNumber(v, 3)}</span> },
-    { key: 'ingles_entrada', label: 'Ing. E', render: (v) => formatNumber(v, 3) },
-    { key: 'ingles_salida', label: 'Ing. S', render: (v) => formatNumber(v, 3) },
-    { key: 'va_ingles', label: 'VA Ing.', render: (v) => <span style={{ color: Number(v) >= 0 ? '#047857' : '#b91c1c', fontWeight: 700 }}>{formatNumber(v, 3)}</span> }
-  ]), []);
+    { key: 'anio', label: 'Año' },
+    { key: 'va_global', label: 'VA Global', render: (v) => {
+      const n = Number(v);
+      if (!Number.isFinite(n)) return <span style={{ color: '#94a3b8' }}>Sin S11</span>;
+      return <span style={{ color: n >= 0 ? '#047857' : '#b91c1c', fontWeight: 800 }}>{n >= 0 ? '+' : ''}{(n * 100).toFixed(2)}%</span>;
+    }},
+    { key: 'lectura_salida', label: 'Lec. SPR', render: (v) => formatNumber(v, 0) },
+    { key: 'va_lectura', label: 'VA Lec.', render: (v) => { const n = Number(v); return !Number.isFinite(n) ? '—' : <span style={{ color: n >= 0 ? '#047857' : '#b91c1c', fontWeight: 700 }}>{n >= 0 ? '+' : ''}{(n * 100).toFixed(2)}%</span>; }},
+    { key: 'razonamiento_salida', label: 'Raz. SPR', render: (v) => formatNumber(v, 0) },
+    { key: 'va_razonamiento', label: 'VA Raz.', render: (v) => { const n = Number(v); return !Number.isFinite(n) ? '—' : <span style={{ color: n >= 0 ? '#047857' : '#b91c1c', fontWeight: 700 }}>{n >= 0 ? '+' : ''}{(n * 100).toFixed(2)}%</span>; }},
+    { key: 'ciudadanas_salida', label: 'Ciud. SPR', render: (v) => formatNumber(v, 0) },
+    { key: 'va_ciudadanas', label: 'VA Ciud.', render: (v) => { const n = Number(v); return !Number.isFinite(n) ? '—' : <span style={{ color: n >= 0 ? '#047857' : '#b91c1c', fontWeight: 700 }}>{n >= 0 ? '+' : ''}{(n * 100).toFixed(2)}%</span>; }},
+    { key: 'comunicacion_salida', label: 'Com. SPR', render: (v) => formatNumber(v, 0) },
+    { key: 'va_comunicacion', label: 'VA Com.', render: (v) => { const n = Number(v); return !Number.isFinite(n) ? '—' : <span style={{ color: n >= 0 ? '#047857' : '#b91c1c', fontWeight: 700 }}>{n >= 0 ? '+' : ''}{(n * 100).toFixed(2)}%</span>; }},
+    { key: 'ingles_salida', label: 'Ing. SPR', render: (v) => formatNumber(v, 0) },
+    { key: 'va_ingles', label: 'VA Ing.', render: (v) => { const n = Number(v); return !Number.isFinite(n) ? '—' : <span style={{ color: n >= 0 ? '#047857' : '#b91c1c', fontWeight: 700 }}>{n >= 0 ? '+' : ''}{(n * 100).toFixed(2)}%</span>; }}
+  ]), [selectedStudent]);
 
   return (
     <Box sx={{ p: { xs: 2, md: 3 }, maxWidth: 1400, mx: 'auto', width: '100%' }}>
@@ -1198,8 +1205,28 @@ function ValorAgregadoDashboardBI({ initialSection = 'va_individual' }) {
           </Grid>
         ) : null}
 
+        {section === 'va_individual' && selectedStudent ? (
+          <TablaComparativaEstudiante
+            student={selectedStudent}
+            onClose={() => setSelectedStudent(null)}
+          />
+        ) : null}
+
         {section === 'va_individual' ? (
-          <TablaDinamica columns={individualColumns} rows={filteredIndividualRows} search={searchDocumento} onSearchChange={setSearchDocumento} />
+          <TablaDinamica
+            columns={individualColumns}
+            rows={filteredIndividualRows}
+            search={searchDocumento}
+            onSearchChange={setSearchDocumento}
+            onRowClick={(row) => setSelectedStudent((prev) => (prev?.documento === row.documento && prev?.anio === row.anio ? null : row))}
+            selectedRowKey={selectedStudent ? `${selectedStudent.documento}-${selectedStudent.anio}` : null}
+            rowKey={(row) => `${row.documento}-${row.anio}`}
+          />
+          {section === 'va_individual' && !filteredIndividualRows.length && !loading ? null : (
+            <Typography variant="caption" sx={{ color: '#94a3b8', mt: 0.5, display: 'block', textAlign: 'center' }}>
+              Haz clic en una fila para ver la tabla comparativa Saber 11 vs Saber Pro del estudiante.
+            </Typography>
+          )}
         ) : null}
 
         {section === 'va_general' ? (

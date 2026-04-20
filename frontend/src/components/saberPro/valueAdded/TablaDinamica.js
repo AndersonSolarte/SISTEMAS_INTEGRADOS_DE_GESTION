@@ -10,7 +10,12 @@ import {
   TextField
 } from '@mui/material';
 
-function TablaDinamica({ columns, rows, search = '', onSearchChange = null }) {
+const getRowKey = (row, rowKey) => {
+  if (typeof rowKey === 'function') return rowKey(row);
+  return row[rowKey];
+};
+
+function TablaDinamica({ columns, rows, search = '', onSearchChange = null, onRowClick = null, selectedRowKey = null, rowKey = 'documento' }) {
   return (
     <Paper elevation={0} sx={{ borderRadius: 3, border: '1px solid #dbe6f5', overflow: 'hidden' }}>
       {onSearchChange ? (
@@ -35,15 +40,28 @@ function TablaDinamica({ columns, rows, search = '', onSearchChange = null }) {
             </TableRow>
           </TableHead>
           <TableBody>
-            {rows.map((row, index) => (
-              <TableRow key={`${row.documento || row.programa || row.nucleo_basico_conocimiento || 'row'}-${index}`} hover>
-                {columns.map((column) => (
-                  <TableCell key={column.key} sx={{ whiteSpace: 'nowrap' }}>
-                    {column.render ? column.render(row[column.key], row) : row[column.key]}
-                  </TableCell>
-                ))}
-              </TableRow>
-            ))}
+            {rows.map((row, index) => {
+              const isSelected = selectedRowKey != null && String(getRowKey(row, rowKey)) === String(selectedRowKey);
+              return (
+                <TableRow
+                  key={`${row.documento || row.programa || row.nucleo_basico_conocimiento || 'row'}-${index}`}
+                  hover
+                  onClick={onRowClick ? () => onRowClick(row) : undefined}
+                  sx={{
+                    cursor: onRowClick ? 'pointer' : 'default',
+                    bgcolor: isSelected ? '#eff6ff !important' : undefined,
+                    outline: isSelected ? '2px solid #3b82f6' : 'none',
+                    outlineOffset: '-2px'
+                  }}
+                >
+                  {columns.map((column) => (
+                    <TableCell key={column.key} sx={{ whiteSpace: 'nowrap' }}>
+                      {column.render ? column.render(row[column.key], row) : row[column.key]}
+                    </TableCell>
+                  ))}
+                </TableRow>
+              );
+            })}
             {rows.length === 0 && (
               <TableRow>
                 <TableCell colSpan={columns.length} sx={{ py: 4, textAlign: 'center', color: '#64748b' }}>
