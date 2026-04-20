@@ -184,120 +184,75 @@ const VALUE_ADDED_DATASET_SQL = `
     pc.estado_cobertura,
     TRUE AS es_valido_valor_agregado,
     NULL AS mensaje_cobertura,
-    (COALESCE(s11.lectura_critica, s11.lenguaje) / 100.0) AS lectura_entrada,
-    (
-      CASE
-        WHEN s11.tipo_examen_num = 1 THEN
-          (s11.matematicas + s11.fisica + s11.quimica) / 3.0
-        WHEN s11.tipo_examen_num IN (2, 3, 4) THEN
-          (s11.matematicas + s11.biologia + s11.fisica + s11.quimica) / 4.0
-        WHEN s11.tipo_examen_num IN (5, 6, 7) THEN
-          (s11.matematicas + ((s11.biologia + s11.fisica + s11.quimica) / 3.0)) / 2.0
-        ELSE NULL
-      END
-    ) / 100.0 AS razonamiento_entrada,
-    (
-      COALESCE(
-        s11.sociales,
-        (s11.historia + s11.geografia) / 2.0
-      ) / 100.0
-    ) AS ciudadanas_entrada,
-    (COALESCE(s11.lenguaje, s11.lectura_critica) / 100.0) AS comunicacion_entrada,
-    (s11.ingles / 100.0) AS ingles_entrada,
-    CASE
-      WHEN s11.documento IS NOT NULL
-      THEN ((base.lectura_critica / 300.0) - (COALESCE(s11.lectura_critica, s11.lenguaje) / 100.0))
-      ELSE NULL
-    END AS va_lectura,
-    (
-      CASE
-        WHEN s11.documento IS NOT NULL THEN (
-          (base.razonamiento_cuantitativo / 300.0) -
-          (
-            CASE
-              WHEN s11.tipo_examen_num = 1 THEN
-                (s11.matematicas + s11.fisica + s11.quimica) / 3.0
-              WHEN s11.tipo_examen_num IN (2, 3, 4) THEN
-                (s11.matematicas + s11.biologia + s11.fisica + s11.quimica) / 4.0
-              WHEN s11.tipo_examen_num IN (5, 6, 7) THEN
-                (s11.matematicas + ((s11.biologia + s11.fisica + s11.quimica) / 3.0)) / 2.0
-              ELSE NULL
-            END
-          ) / 100.0
-        )
-        ELSE NULL
-      END
-    ) AS va_razonamiento,
-    (
-      CASE
-        WHEN s11.documento IS NOT NULL THEN (
-          (base.competencias_ciudadanas / 300.0) -
-          (
-            COALESCE(
-              s11.sociales,
-              (s11.historia + s11.geografia) / 2.0
-            ) / 100.0
-          )
-        )
-        ELSE NULL
-      END
-    ) AS va_ciudadanas,
-    CASE
-      WHEN s11.documento IS NOT NULL
-      THEN ((base.comunicacion_escrita / 300.0) - (COALESCE(s11.lenguaje, s11.lectura_critica) / 100.0))
-      ELSE NULL
-    END AS va_comunicacion,
-    CASE
-      WHEN s11.documento IS NOT NULL
-      THEN ((base.ingles / 300.0) - (s11.ingles / 100.0))
-      ELSE NULL
-    END AS va_ingles,
-    (
-      CASE
-        WHEN s11.documento IS NOT NULL THEN (
-          (
-            ((base.lectura_critica / 300.0) - (COALESCE(s11.lectura_critica, s11.lenguaje) / 100.0)) +
-            (
-              (base.razonamiento_cuantitativo / 300.0) -
-              (
-                CASE
-                  WHEN s11.tipo_examen_num = 1 THEN
-                    (s11.matematicas + s11.fisica + s11.quimica) / 3.0
-                  WHEN s11.tipo_examen_num IN (2, 3, 4) THEN
-                    (s11.matematicas + s11.biologia + s11.fisica + s11.quimica) / 4.0
-                  WHEN s11.tipo_examen_num IN (5, 6, 7) THEN
-                    (s11.matematicas + ((s11.biologia + s11.fisica + s11.quimica) / 3.0)) / 2.0
-                  ELSE NULL
-                END
-              ) / 100.0
-            ) +
-            (
-              (base.competencias_ciudadanas / 300.0) -
-              (
-                COALESCE(
-                  s11.sociales,
-                  (s11.historia + s11.geografia) / 2.0
-                ) / 100.0
-              )
-            ) +
-            ((base.comunicacion_escrita / 300.0) - (COALESCE(s11.lenguaje, s11.lectura_critica) / 100.0)) +
-            ((base.ingles / 300.0) - (s11.ingles / 100.0))
-          ) / 5.0
-        )
-        ELSE NULL
-      END
-    ) AS va_global
+    s11.lectura_s11   AS lectura_entrada,
+    s11.razonamiento_s11 AS razonamiento_entrada,
+    s11.ciudadanas_s11   AS ciudadanas_entrada,
+    s11.comunicacion_s11 AS comunicacion_entrada,
+    s11.ingles_s11       AS ingles_entrada,
+    CASE WHEN s11.documento IS NOT NULL
+      THEN (base.lectura_critica        / 300.0) - s11.lectura_s11
+      ELSE NULL END AS va_lectura,
+    CASE WHEN s11.documento IS NOT NULL
+      THEN (base.razonamiento_cuantitativo / 300.0) - s11.razonamiento_s11
+      ELSE NULL END AS va_razonamiento,
+    CASE WHEN s11.documento IS NOT NULL
+      THEN (base.competencias_ciudadanas / 300.0) - s11.ciudadanas_s11
+      ELSE NULL END AS va_ciudadanas,
+    CASE WHEN s11.documento IS NOT NULL
+      THEN (base.comunicacion_escrita   / 300.0) - s11.comunicacion_s11
+      ELSE NULL END AS va_comunicacion,
+    CASE WHEN s11.documento IS NOT NULL
+      THEN (base.ingles                 / 300.0) - s11.ingles_s11
+      ELSE NULL END AS va_ingles,
+    CASE WHEN s11.documento IS NOT NULL THEN (
+      (
+        ((base.lectura_critica           / 300.0) - s11.lectura_s11)    +
+        ((base.razonamiento_cuantitativo / 300.0) - s11.razonamiento_s11) +
+        ((base.competencias_ciudadanas   / 300.0) - s11.ciudadanas_s11) +
+        ((base.comunicacion_escrita      / 300.0) - s11.comunicacion_s11) +
+        ((base.ingles                    / 300.0) - s11.ingles_s11)
+      ) / 5.0
+    ) ELSE NULL END AS va_global
   FROM base
-  LEFT JOIN program_coverage pc
-    ON pc.programa = base.programa
+  LEFT JOIN program_coverage pc ON pc.programa = base.programa
   LEFT JOIN LATERAL (
     SELECT
-      s11.*,
-      CAST(NULLIF(REGEXP_REPLACE(COALESCE(s11.tipo_examen, ''), '[^0-9]+', '', 'g'), '') AS INTEGER) AS tipo_examen_num
-    FROM resultados_saber11 s11
-    WHERE TRIM(s11.documento::text) = TRIM(base.documento::text)
-      AND s11.anio < base.anio
-    ORDER BY s11.anio DESC
+      s.*,
+      -- Promedio normalizado de columnas S11 según la equivalencia detectada (÷100 para escala 0-1)
+      (
+        SELECT AVG(NULLIF(to_jsonb(s.*) ->> col_name, 'null')::numeric)
+        FROM jsonb_array_elements_text(eq.reglas -> 'lectura_critica') AS col_name
+      ) / 100.0 AS lectura_s11,
+      (
+        SELECT AVG(NULLIF(to_jsonb(s.*) ->> col_name, 'null')::numeric)
+        FROM jsonb_array_elements_text(eq.reglas -> 'razonamiento_cuantitativo') AS col_name
+      ) / 100.0 AS razonamiento_s11,
+      (
+        SELECT AVG(NULLIF(to_jsonb(s.*) ->> col_name, 'null')::numeric)
+        FROM jsonb_array_elements_text(eq.reglas -> 'competencias_ciudadanas') AS col_name
+      ) / 100.0 AS ciudadanas_s11,
+      (
+        SELECT AVG(NULLIF(to_jsonb(s.*) ->> col_name, 'null')::numeric)
+        FROM jsonb_array_elements_text(eq.reglas -> 'comunicacion_escrita') AS col_name
+      ) / 100.0 AS comunicacion_s11,
+      (
+        SELECT AVG(NULLIF(to_jsonb(s.*) ->> col_name, 'null')::numeric)
+        FROM jsonb_array_elements_text(eq.reglas -> 'ingles') AS col_name
+      ) / 100.0 AS ingles_s11
+    FROM resultados_saber11 s
+    LEFT JOIN LATERAL (
+      SELECT vec.*
+      FROM va_equivalencias_config vec
+      WHERE (to_jsonb(s.*) ->> vec.detector_col) IS NOT NULL
+        AND (vec.detector_extra IS NULL OR (to_jsonb(s.*) ->> vec.detector_extra) IS NOT NULL)
+      ORDER BY
+        (CASE WHEN vec.detector_extra IS NOT NULL THEN 0 ELSE 1 END),
+        vec.orden_deteccion
+      LIMIT 1
+    ) eq ON TRUE
+    WHERE TRIM(s.documento::text) = TRIM(base.documento::text)
+      AND s.anio < base.anio
+    ORDER BY s.anio DESC
     LIMIT 1
   ) s11 ON TRUE
 `;
