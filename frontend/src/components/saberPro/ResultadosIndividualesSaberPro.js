@@ -155,18 +155,18 @@ function fmt(val) {
   return Number(val).toFixed(2);
 }
 
-export default function ResultadosIndividualesSaberPro() {
+export default function ResultadosIndividualesSaberPro({ tipoPrueba = 'saber_pro' }) {
   const [programa, setPrograma] = useState('');
   const [anio, setAnio] = useState('');
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
-  const load = useCallback(async (prog, yr) => {
+  const load = useCallback(async (prog, yr, tp) => {
     setLoading(true);
     setError('');
     try {
-      const filters = {};
+      const filters = { tipoPrueba: tp };
       if (prog) filters.programas = [prog];
       if (yr) filters.anios = [Number(yr)];
       const res = await saberProAnalyticsService.getTablaModulosAnio(filters);
@@ -178,7 +178,7 @@ export default function ResultadosIndividualesSaberPro() {
     }
   }, []);
 
-  useEffect(() => { load(programa, anio); }, [load, programa, anio]);
+  useEffect(() => { load(programa, anio, tipoPrueba); }, [load, programa, anio, tipoPrueba]);
 
   const programaOptions = (data?.programas || []).map((p) => ({ value: p, label: p }));
   const anioOptions = (data?.aniosDisponibles || []).map((y) => ({ value: String(y), label: String(y) }));

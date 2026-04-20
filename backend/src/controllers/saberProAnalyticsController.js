@@ -2504,13 +2504,14 @@ const MODULOS_GENERICOS_SPR = [
 const getTablaModulosAnio = async (req, res) => {
   try {
     const filters = req.body?.filters || {};
+    const tipoPrueba = normalizeText(filters.tipoPrueba) || 'saber_pro';
     const clauses = [
-      "tipo_prueba = 'saber_pro'",
+      'tipo_prueba = ?',
       "(novedades IS NULL OR TRIM(COALESCE(novedades::text, '')) = '')",
       'puntaje_global IS NOT NULL',
       'puntaje_global != 0'
     ];
-    const params = [];
+    const params = [tipoPrueba];
 
     const programas = toArray(filters.programas).map(normalizeText).filter(Boolean);
     if (programas.length) {
@@ -2541,20 +2542,20 @@ const getTablaModulosAnio = async (req, res) => {
       ),
       sequelize.query(
         `SELECT DISTINCT anio FROM saber_pro_resultados_individuales
-         WHERE tipo_prueba = 'saber_pro'
+         WHERE tipo_prueba = ?
            AND (novedades IS NULL OR TRIM(COALESCE(novedades::text, '')) = '')
            AND puntaje_global IS NOT NULL AND puntaje_global != 0
          ORDER BY anio`,
-        { type: QueryTypes.SELECT }
+        { replacements: [tipoPrueba], type: QueryTypes.SELECT }
       ),
       sequelize.query(
         `SELECT DISTINCT programa FROM saber_pro_resultados_individuales
-         WHERE tipo_prueba = 'saber_pro'
+         WHERE tipo_prueba = ?
            AND (novedades IS NULL OR TRIM(COALESCE(novedades::text, '')) = '')
            AND puntaje_global IS NOT NULL AND puntaje_global != 0
            AND programa IS NOT NULL
          ORDER BY programa`,
-        { type: QueryTypes.SELECT }
+        { replacements: [tipoPrueba], type: QueryTypes.SELECT }
       )
     ]);
 

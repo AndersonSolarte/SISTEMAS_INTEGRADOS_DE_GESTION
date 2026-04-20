@@ -31,6 +31,8 @@ import SaberProDashboard from './SaberProDashboard';
 import SaberProAgregadosDashboard from './SaberProAgregadosDashboard';
 import ConsultaValidacion from './ConsultaValidacion';
 import ValorAgregadoDashboardBI from './ValorAgregadoDashboardBI';
+import ResultadosIndividualesSaberPro from './ResultadosIndividualesSaberPro';
+import ResultadosIndividualesDestacados from './ResultadosIndividualesDestacados';
 
 /* ═══════════════════════════════════════════════════════════════════
    NAV CONFIG
@@ -1087,7 +1089,12 @@ function SaberProLandingPage({ onBack, allowedDashboards = [] }) {
     if ((singleVisibleTarget || singleVisibleGroup) && !activeSection) {
       return null;
     }
-    if (activeGroup === 'individuales')   return <SaberProDashboard initialSection={activeSection} allowedSections={(activeVisibleGroupConfig?.items || []).map((item) => item.key)} />;
+    if (activeGroup === 'individuales') {
+      if (activeSection === 'saber_pro')  return <ResultadosIndividualesSaberPro tipoPrueba="saber_pro" />;
+      if (activeSection === 'tyt')        return <ResultadosIndividualesSaberPro tipoPrueba="tyt" />;
+      if (activeSection === 'destacados') return <ResultadosIndividualesDestacados />;
+      return <SaberProDashboard key={activeSection} initialSection={activeSection} allowedSections={(activeVisibleGroupConfig?.items || []).map((item) => item.key)} />;
+    }
     if (activeGroup === 'agregados')      return <SaberProAgregadosDashboard initialSection={activeSection} allowedSections={(activeVisibleGroupConfig?.items || []).map((item) => item.key)} />;
     if (activeGroup === 'valor_agregado') return <ValorAgregadoDashboardBI initialSection={activeSection} />;
     if (activeGroup === 'consulta')       return <ConsultaValidacion initialSection={activeSection} allowedSections={(activeVisibleGroupConfig?.items || []).map((item) => item.key)} />;
