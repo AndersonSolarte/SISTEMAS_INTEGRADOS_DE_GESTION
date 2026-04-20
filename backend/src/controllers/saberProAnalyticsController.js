@@ -2333,6 +2333,7 @@ const getResultadosDestacadosMejores = async (req, res) => {
     const params = [];
 
     const tipoPrueba = normalizeText(filters.tipoPrueba) || 'saber_pro';
+    const isTyt = tipoPrueba.toLowerCase().includes('tyt');
     clauses.push('tipo_prueba = ?');
     params.push(tipoPrueba);
 
@@ -2408,11 +2409,11 @@ const getResultadosDestacadosMejores = async (req, res) => {
                 AND a.anio = g.anio
                 AND a.puntaje_grupo_referencia IS NOT NULL
             ) AS media_nacional,
-            (g.total_genericas = 5 AND g.total_especificas > 0) AS cumple_ambas,
+            (${isTyt ? 'g.total_genericas >= 4' : 'g.total_genericas = 5 AND g.total_especificas > 0'}) AS cumple_ambas,
             ROW_NUMBER() OVER (
               PARTITION BY g.programa
               ORDER BY
-                CASE WHEN g.total_genericas = 5 AND g.total_especificas > 0 THEN 0 ELSE 1 END ASC,
+                CASE WHEN ${isTyt ? 'g.total_genericas >= 4' : 'g.total_genericas = 5 AND g.total_especificas > 0'} THEN 0 ELSE 1 END ASC,
                 g.promedio_general DESC NULLS LAST
             ) AS rk
           FROM grouped g
@@ -2430,24 +2431,27 @@ const getResultadosDestacadosMejores = async (req, res) => {
         `SELECT DISTINCT anio FROM saber_pro_resultados_individuales
          WHERE (novedades IS NULL OR TRIM(COALESCE(novedades::text,'')) = '')
            AND puntaje_global IS NOT NULL AND puntaje_global != 0
+           AND tipo_prueba = ?
          ORDER BY anio`,
-        { type: QueryTypes.SELECT }
+        { replacements: [tipoPrueba], type: QueryTypes.SELECT }
       ),
       sequelize.query(
         `SELECT DISTINCT programa FROM saber_pro_resultados_individuales
          WHERE (novedades IS NULL OR TRIM(COALESCE(novedades::text,'')) = '')
            AND puntaje_global IS NOT NULL AND puntaje_global != 0
+           AND tipo_prueba = ?
            AND programa IS NOT NULL
          ORDER BY programa`,
-        { type: QueryTypes.SELECT }
+        { replacements: [tipoPrueba], type: QueryTypes.SELECT }
       ),
       sequelize.query(
         `SELECT DISTINCT periodo FROM saber_pro_resultados_individuales
          WHERE (novedades IS NULL OR TRIM(COALESCE(novedades::text,'')) = '')
            AND puntaje_global IS NOT NULL AND puntaje_global != 0
+           AND tipo_prueba = ?
            AND periodo IS NOT NULL
          ORDER BY periodo`,
-        { type: QueryTypes.SELECT }
+        { replacements: [tipoPrueba], type: QueryTypes.SELECT }
       )
     ]);
 
