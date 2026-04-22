@@ -8,7 +8,6 @@ import {
   Checkbox,
   Chip,
   FormControl,
-  Grid,
   InputLabel,
   ListItemText,
   LinearProgress,
@@ -17,14 +16,12 @@ import {
   Paper,
   Select,
   Stack,
-  Tab,
   Table,
   TableBody,
   TableCell,
   TableContainer,
   TableHead,
   TableRow,
-  Tabs,
   Typography
 } from '@mui/material';
 import {
@@ -505,6 +502,7 @@ function SaberProDashboard({ initialSection, allowedSections = [] } = {}) {
     `Tipo prueba: ${institutionalTestType === 'saber_pro' ? 'Saber Pro' : 'TyT'}`,
     'Competencias: Genéricas (fijo)'
   ]), [filters, subDashboard, institutionalTestType]);
+  void chips;
 
   const kpis = overview?.kpis || {};
   const describeStats = overview?.describePuntajeGlobal || null;
@@ -536,6 +534,7 @@ function SaberProDashboard({ initialSection, allowedSections = [] } = {}) {
   };
   const activeSectionMeta = availableNavOptions.find((item) => item.key === activeSection) || availableNavOptions[0] || INDIVIDUAL_NAV_OPTIONS[0];
   const highlightedRows = (tableData?.rows || []).slice(0, 8);
+  void highlightedRows;
   const scholarshipRows = (tableData?.rows || []).slice(0, 12);
 
   /* ── Vista selector: qué sub-dashboard mostrar ── */

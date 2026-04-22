@@ -3,6 +3,40 @@ const { SaberProResultadoIndividual } = require('../models');
 const { sequelize } = require('../config/database');
 const saberProPythonClient = require('../services/saberProPythonClient');
 
+const SIMPLE_CACHE = new Map();
+const SIMPLE_CACHE_TTL_MS = 5 * 60 * 1000;
+const SIMPLE_CACHE_MAX = 80;
+
+const cacheKey = (prefix, filters = {}) => `${prefix}::${JSON.stringify({
+  programas: (filters.programas || []).slice().sort(),
+  anios: (filters.anios || []).slice().sort(),
+  periodos: (filters.periodos || []).slice().sort(),
+  gruposReferencia: (filters.gruposReferencia || []).slice().sort(),
+  tipoEvaluado: (filters.tipoEvaluado || []).slice().sort(),
+  tipoPrueba: (filters.tipoPrueba || filters.tiposPrueba || []).slice().sort(),
+  onlyPositiveVa: !!filters.onlyPositiveVa
+})}`;
+
+const cacheGet = (key) => {
+  const entry = SIMPLE_CACHE.get(key);
+  if (!entry) return null;
+  if (Date.now() - entry.ts > SIMPLE_CACHE_TTL_MS) {
+    SIMPLE_CACHE.delete(key);
+    return null;
+  }
+  SIMPLE_CACHE.delete(key);
+  SIMPLE_CACHE.set(key, entry);
+  return entry.data;
+};
+
+const cacheSet = (key, data) => {
+  if (SIMPLE_CACHE.size >= SIMPLE_CACHE_MAX) {
+    const first = SIMPLE_CACHE.keys().next().value;
+    if (first) SIMPLE_CACHE.delete(first);
+  }
+  SIMPLE_CACHE.set(key, { ts: Date.now(), data });
+};
+
 const toArray = (value) => {
   if (Array.isArray(value)) return value.filter((x) => x !== null && x !== undefined && String(x).trim() !== '');
   if (value === null || value === undefined || value === '') return [];
@@ -986,59 +1020,157 @@ const getResultadosDestacados = async (req, res) => {
   }
 };
 
+/* Versión optimizada: evita jsonb lookups usando columnas directas y DISTINCT ON */
+const VA_FAST_S11_ENTRADA = (tipo) => {
+  const lecturaExpr = `
+    CASE
+      WHEN s11.filosofia IS NOT NULL AND s11.geografia IS NOT NULL
+        THEN ((COALESCE(s11.filosofia,0)*(s11.filosofia IS NOT NULL)::int + COALESCE(s11.lenguaje,0)*(s11.lenguaje IS NOT NULL)::int)
+               / NULLIF((s11.filosofia IS NOT NULL)::int + (s11.lenguaje IS NOT NULL)::int, 0)) / 100.0
+      WHEN s11.razonamiento_cuantitativo IS NOT NULL AND s11.competencias_ciudadanas IS NOT NULL
+        THEN s11.lectura_critica / 100.0
+      WHEN s11.espanol_y_literatura IS NOT NULL THEN s11.espanol_y_literatura / 100.0
+      WHEN s11.aptitud_matematica    IS NOT NULL THEN s11.lenguaje / 100.0
+      WHEN s11.filosofia             IS NOT NULL THEN ((COALESCE(s11.filosofia,0) + COALESCE(s11.lenguaje,0)) / NULLIF((s11.filosofia IS NOT NULL)::int + (s11.lenguaje IS NOT NULL)::int, 0)) / 100.0
+      WHEN s11.ciencias_naturales    IS NOT NULL THEN s11.lectura_critica / 100.0
+      WHEN s11.lectura_critica       IS NOT NULL THEN s11.lectura_critica / 100.0
+      ELSE NULL
+    END`;
+  const razExpr = `
+    CASE
+      WHEN s11.filosofia IS NOT NULL AND s11.geografia IS NOT NULL
+        THEN ((COALESCE(s11.biologia,0)*(s11.biologia IS NOT NULL)::int + COALESCE(s11.fisica,0)*(s11.fisica IS NOT NULL)::int + COALESCE(s11.matematicas,0)*(s11.matematicas IS NOT NULL)::int + COALESCE(s11.quimica,0)*(s11.quimica IS NOT NULL)::int)
+               / NULLIF((s11.biologia IS NOT NULL)::int+(s11.fisica IS NOT NULL)::int+(s11.matematicas IS NOT NULL)::int+(s11.quimica IS NOT NULL)::int, 0)) / 100.0
+      WHEN s11.razonamiento_cuantitativo IS NOT NULL AND s11.competencias_ciudadanas IS NOT NULL
+        THEN ((COALESCE(s11.ciencias_naturales,0)*(s11.ciencias_naturales IS NOT NULL)::int + COALESCE(s11.matematicas,0)*(s11.matematicas IS NOT NULL)::int + COALESCE(s11.razonamiento_cuantitativo,0)*(s11.razonamiento_cuantitativo IS NOT NULL)::int)
+               / NULLIF((s11.ciencias_naturales IS NOT NULL)::int+(s11.matematicas IS NOT NULL)::int+(s11.razonamiento_cuantitativo IS NOT NULL)::int, 0)) / 100.0
+      WHEN s11.espanol_y_literatura IS NOT NULL
+        THEN ((COALESCE(s11.conocimiento_matematico,0)*(s11.conocimiento_matematico IS NOT NULL)::int + COALESCE(s11.fisica,0)*(s11.fisica IS NOT NULL)::int + COALESCE(s11.quimica,0)*(s11.quimica IS NOT NULL)::int)
+               / NULLIF((s11.conocimiento_matematico IS NOT NULL)::int+(s11.fisica IS NOT NULL)::int+(s11.quimica IS NOT NULL)::int, 0)) / 100.0
+      WHEN s11.aptitud_matematica IS NOT NULL
+        THEN ((COALESCE(s11.aptitud_matematica,0)*(s11.aptitud_matematica IS NOT NULL)::int + COALESCE(s11.biologia,0)*(s11.biologia IS NOT NULL)::int + COALESCE(s11.conocimiento_matematico,0)*(s11.conocimiento_matematico IS NOT NULL)::int + COALESCE(s11.fisica,0)*(s11.fisica IS NOT NULL)::int + COALESCE(s11.quimica,0)*(s11.quimica IS NOT NULL)::int)
+               / NULLIF((s11.aptitud_matematica IS NOT NULL)::int+(s11.biologia IS NOT NULL)::int+(s11.conocimiento_matematico IS NOT NULL)::int+(s11.fisica IS NOT NULL)::int+(s11.quimica IS NOT NULL)::int, 0)) / 100.0
+      WHEN s11.filosofia IS NOT NULL
+        THEN ((COALESCE(s11.biologia,0)*(s11.biologia IS NOT NULL)::int + COALESCE(s11.fisica,0)*(s11.fisica IS NOT NULL)::int + COALESCE(s11.matematicas,0)*(s11.matematicas IS NOT NULL)::int + COALESCE(s11.quimica,0)*(s11.quimica IS NOT NULL)::int)
+               / NULLIF((s11.biologia IS NOT NULL)::int+(s11.fisica IS NOT NULL)::int+(s11.matematicas IS NOT NULL)::int+(s11.quimica IS NOT NULL)::int, 0)) / 100.0
+      WHEN s11.ciencias_naturales IS NOT NULL OR s11.lectura_critica IS NOT NULL
+        THEN ((COALESCE(s11.ciencias_naturales,0)*(s11.ciencias_naturales IS NOT NULL)::int + COALESCE(s11.matematicas,0)*(s11.matematicas IS NOT NULL)::int)
+               / NULLIF((s11.ciencias_naturales IS NOT NULL)::int+(s11.matematicas IS NOT NULL)::int, 0)) / 100.0
+      ELSE NULL
+    END`;
+  const ciudExpr = `
+    CASE
+      WHEN s11.filosofia IS NOT NULL AND s11.geografia IS NOT NULL
+        THEN ((COALESCE(s11.geografia,0)*(s11.geografia IS NOT NULL)::int + COALESCE(s11.historia,0)*(s11.historia IS NOT NULL)::int)
+               / NULLIF((s11.geografia IS NOT NULL)::int+(s11.historia IS NOT NULL)::int, 0)) / 100.0
+      WHEN s11.razonamiento_cuantitativo IS NOT NULL AND s11.competencias_ciudadanas IS NOT NULL
+        THEN ((COALESCE(s11.competencias_ciudadanas,0)*(s11.competencias_ciudadanas IS NOT NULL)::int + COALESCE(s11.sociales_y_ciudadana,0)*(s11.sociales_y_ciudadana IS NOT NULL)::int)
+               / NULLIF((s11.competencias_ciudadanas IS NOT NULL)::int+(s11.sociales_y_ciudadana IS NOT NULL)::int, 0)) / 100.0
+      WHEN s11.espanol_y_literatura IS NOT NULL OR s11.aptitud_matematica IS NOT NULL OR s11.filosofia IS NOT NULL
+        THEN s11.sociales / 100.0
+      WHEN s11.ciencias_naturales IS NOT NULL OR s11.lectura_critica IS NOT NULL
+        THEN s11.sociales_y_ciudadana / 100.0
+      ELSE NULL
+    END`;
+  const comExpr = `
+    CASE
+      WHEN s11.razonamiento_cuantitativo IS NOT NULL AND s11.competencias_ciudadanas IS NOT NULL
+        THEN s11.lectura_critica / 100.0
+      WHEN s11.espanol_y_literatura IS NOT NULL THEN s11.espanol_y_literatura / 100.0
+      WHEN s11.aptitud_matematica IS NOT NULL OR s11.filosofia IS NOT NULL
+        THEN s11.lenguaje / 100.0
+      WHEN s11.ciencias_naturales IS NOT NULL OR s11.lectura_critica IS NOT NULL
+        THEN s11.lectura_critica / 100.0
+      ELSE NULL
+    END`;
+  const ingExpr = `
+    CASE
+      WHEN s11.espanol_y_literatura IS NOT NULL OR s11.aptitud_matematica IS NOT NULL
+        THEN s11.electiva / 100.0
+      ELSE s11.ingles / 100.0
+    END`;
+  return { lecturaExpr, razExpr, ciudExpr, comExpr, ingExpr };
+};
+
+const NORM_MODULO = `TRANSLATE(UPPER(COALESCE(raw.modulo,'')),CHR(193)||CHR(201)||CHR(205)||CHR(211)||CHR(218),'AEIOU')`;
+
 const getValueAddedIndividual = async (req, res) => {
   try {
     const page = Math.max(Number(req.body?.pagination?.page) || 1, 1);
-    const pageSize = Math.min(Math.max(Number(req.body?.pagination?.pageSize) || 25, 1), 200);
+    const pageSize = Math.min(Math.max(Number(req.body?.pagination?.pageSize) || 25, 1), 500);
     const offset = (page - 1) * pageSize;
-    const sortFieldMap = {
-      documento: 'dataset.documento',
-      programa: 'dataset.programa',
-      anio: 'dataset.anio',
-      va_global: 'dataset.va_global',
-      va_lectura: 'dataset.va_lectura',
-      va_razonamiento: 'dataset.va_razonamiento'
-    };
-    const requestedSort = Array.isArray(req.body?.sort) ? req.body.sort[0] : null;
-    const sortField = sortFieldMap[requestedSort?.field] || 'dataset.anio';
-    const sortDirection = String(requestedSort?.direction || 'desc').toUpperCase() === 'ASC' ? 'ASC' : 'DESC';
     const { whereSql, params } = buildWhereSql(req.body?.filters || {});
-    const coverage = await getCoverageSummary(req.body?.filters || {});
+    const { lecturaExpr, razExpr, ciudExpr, comExpr, ingExpr } = VA_FAST_S11_ENTRADA();
 
-    const rows = await sequelize.query(
-      `
-        WITH dataset AS (
-          ${VALUE_ADDED_DATASET_SQL.replace('__WHERE_SQL__', whereSql || '')}
-        )
-        SELECT *
-        FROM dataset
-        ORDER BY ${sortField} ${sortDirection}, dataset.id DESC
-        LIMIT ? OFFSET ?
-      `,
-      { replacements: [...params, pageSize, offset], type: QueryTypes.SELECT }
-    );
+    const baseSql = `
+      WITH spr_base AS (
+        SELECT
+          MAX(raw.id) AS id, raw.documento, MAX(raw.nombre) AS nombre,
+          MAX(raw.programa) AS programa, raw.anio, MAX(raw.periodo) AS periodo,
+          MAX(raw.numero_registro) AS numero_registro,
+          MAX(raw.puntaje_global) AS puntaje_global,
+          MAX(raw.percentil_nacional_global) AS percentil_nacional_global,
+          MAX(CASE WHEN ${NORM_MODULO} = 'LECTURA CRITICA'          THEN raw.puntaje_modulo END) AS lectura_salida,
+          MAX(CASE WHEN ${NORM_MODULO} = 'RAZONAMIENTO CUANTITATIVO' THEN raw.puntaje_modulo END) AS razonamiento_salida,
+          MAX(CASE WHEN ${NORM_MODULO} = 'COMPETENCIAS CIUDADANAS'   THEN raw.puntaje_modulo END) AS ciudadanas_salida,
+          MAX(CASE WHEN ${NORM_MODULO} = 'COMUNICACION ESCRITA'      THEN raw.puntaje_modulo END) AS comunicacion_salida,
+          MAX(CASE WHEN ${NORM_MODULO} = 'INGLES'                    THEN raw.puntaje_modulo END) AS ingles_salida
+        FROM saber_pro_resultados_individuales raw
+        ${whereSql}
+        GROUP BY raw.documento, raw.anio
+      ),
+      s11_matched AS (
+        SELECT DISTINCT ON (spr.documento, spr.anio)
+          spr.documento AS doc, spr.anio AS spr_anio, s11.*
+        FROM spr_base spr
+        JOIN resultados_saber11 s11
+          ON TRIM(s11.documento::text) = TRIM(spr.documento::text)
+         AND s11.anio < spr.anio
+        ORDER BY spr.documento, spr.anio, s11.anio DESC
+      )
+      SELECT
+        spr.id, spr.documento, spr.nombre, spr.programa, spr.anio, spr.periodo,
+        spr.numero_registro, spr.puntaje_global, spr.percentil_nacional_global,
+        spr.lectura_salida, spr.razonamiento_salida, spr.ciudadanas_salida,
+        spr.comunicacion_salida, spr.ingles_salida,
+        CASE WHEN s11.doc IS NOT NULL THEN ${lecturaExpr} END AS lectura_entrada,
+        CASE WHEN s11.doc IS NOT NULL THEN ${razExpr}    END AS razonamiento_entrada,
+        CASE WHEN s11.doc IS NOT NULL THEN ${ciudExpr}   END AS ciudadanas_entrada,
+        CASE WHEN s11.doc IS NOT NULL THEN ${comExpr}    END AS comunicacion_entrada,
+        CASE WHEN s11.doc IS NOT NULL THEN ${ingExpr}    END AS ingles_entrada,
+        CASE WHEN s11.doc IS NOT NULL AND spr.lectura_salida        IS NOT NULL THEN spr.lectura_salida/300.0        - (${lecturaExpr}) END AS va_lectura,
+        CASE WHEN s11.doc IS NOT NULL AND spr.razonamiento_salida   IS NOT NULL THEN spr.razonamiento_salida/300.0   - (${razExpr})    END AS va_razonamiento,
+        CASE WHEN s11.doc IS NOT NULL AND spr.ciudadanas_salida     IS NOT NULL THEN spr.ciudadanas_salida/300.0     - (${ciudExpr})   END AS va_ciudadanas,
+        CASE WHEN s11.doc IS NOT NULL AND spr.comunicacion_salida   IS NOT NULL THEN spr.comunicacion_salida/300.0   - (${comExpr})    END AS va_comunicacion,
+        CASE WHEN s11.doc IS NOT NULL AND spr.ingles_salida         IS NOT NULL THEN spr.ingles_salida/300.0         - (${ingExpr})    END AS va_ingles,
+        CASE WHEN s11.doc IS NOT NULL THEN (
+          (COALESCE(spr.lectura_salida/300.0 - (${lecturaExpr}), 0)
+          + COALESCE(spr.razonamiento_salida/300.0 - (${razExpr}), 0)
+          + COALESCE(spr.ciudadanas_salida/300.0 - (${ciudExpr}), 0)
+          + COALESCE(spr.comunicacion_salida/300.0 - (${comExpr}), 0)
+          + COALESCE(spr.ingles_salida/300.0 - (${ingExpr}), 0)) / 5.0
+        ) END AS va_global
+      FROM spr_base spr
+      LEFT JOIN s11_matched s11 ON s11.doc = spr.documento AND s11.spr_anio = spr.anio`;
 
-    const totalRows = await sequelize.query(
-      `
-        WITH dataset AS (
-          ${VALUE_ADDED_DATASET_SQL.replace('__WHERE_SQL__', whereSql || '')}
-        )
-        SELECT COUNT(*) AS total
-        FROM dataset
-      `,
-      { replacements: params, type: QueryTypes.SELECT }
-    );
+    const [coverage, rows, totalRows] = await Promise.all([
+      getCoverageSummary(req.body?.filters || {}),
+      sequelize.query(
+        `${baseSql} ORDER BY va_global DESC NULLS LAST, spr.anio DESC LIMIT ? OFFSET ?`,
+        { replacements: [...params, pageSize, offset], type: QueryTypes.SELECT }
+      ),
+      sequelize.query(
+        `SELECT COUNT(*) AS total FROM (${baseSql}) AS t`,
+        { replacements: params, type: QueryTypes.SELECT }
+      )
+    ]);
 
     return res.json({
       success: true,
       data: {
         coverage,
         rows,
-        pagination: {
-          page,
-          pageSize,
-          total: Number(totalRows?.[0]?.total || 0)
-        }
+        pagination: { page, pageSize, total: Number(totalRows?.[0]?.total || 0) }
       }
     });
   } catch (error) {
@@ -1758,40 +1890,66 @@ const getResultadosInstitucional = async (req, res) => {
 const getResultadosComparativaS11Spr = async (req, res) => {
   try {
     const filters = req.body?.filters || {};
+    const key = cacheKey('comparativa_s11_spr', filters);
+    const cached = cacheGet(key);
+    if (cached) {
+      return res.json({ success: true, data: cached, cached: true });
+    }
     const { whereSql, params } = buildWhereSql(filters);
     const { whereSql: whereNoAnio, params: paramsNoAnio } = buildWhereSql({ ...filters, anios: [], periodos: [] });
+
+    const onlyPositiveVa = filters.onlyPositiveVa === true || filters.onlyPositiveVa === 'true';
+    const positiveVaClause = onlyPositiveVa ? ' AND va_global IS NOT NULL AND va_global >= 0' : '';
 
     const dsBase = (w) => VALUE_ADDED_DATASET_SQL.replace('__WHERE_SQL__', w || '');
     const n = (v) => (v == null ? null : Number(v));
     const va = (spr, s11) => (spr != null && s11 != null ? Number((spr - s11).toFixed(2)) : null);
+    const tipoNumero = (tipo) => {
+      const raw = String(tipo || '').trim().toUpperCase();
+      const match = raw.match(/TIPO[\s_]*([1-7])/);
+      return match ? Number(match[1]) : null;
+    };
+    const tipoEquivalencias = {
+      1: { lectura: ['Espa\u00f1ol y Literatura'], razonamiento: ['Conocimiento Matem\u00e1tico', 'F\u00edsica', 'Qu\u00edmica'], ciudadanas: ['Sociales'], comunicacion: ['Espa\u00f1ol y Literatura'], ingles: ['Electiva'] },
+      2: { lectura: ['Lenguaje'], razonamiento: ['Aptitud Matem\u00e1tica', 'Biolog\u00eda', 'Conocimiento Matem\u00e1tico', 'F\u00edsica', 'Qu\u00edmica'], ciudadanas: ['Sociales'], comunicacion: ['Lenguaje'], ingles: ['Electiva'] },
+      3: { lectura: ['Filosof\u00eda', 'Lenguaje'], razonamiento: ['Biolog\u00eda', 'F\u00edsica', 'Matem\u00e1ticas', 'Qu\u00edmica'], ciudadanas: ['Geograf\u00eda', 'Historia'], comunicacion: ['Lenguaje'], ingles: ['Ingl\u00e9s'] },
+      4: { lectura: ['Filosof\u00eda', 'Lenguaje'], razonamiento: ['Biolog\u00eda', 'F\u00edsica', 'Matem\u00e1ticas', 'Qu\u00edmica'], ciudadanas: ['Sociales'], comunicacion: ['Lenguaje'], ingles: ['Ingl\u00e9s'] },
+      5: { lectura: ['Lectura Cr\u00edtica'], razonamiento: ['Ciencias Naturales', 'Matem\u00e1ticas', 'Razonamiento Cuantitativo'], ciudadanas: ['Competencias Ciudadanas', 'Sociales y Ciudadana'], comunicacion: ['Lectura Cr\u00edtica'], ingles: ['Ingl\u00e9s'] },
+      6: { lectura: ['Lectura Cr\u00edtica'], razonamiento: ['Ciencias Naturales', 'Matem\u00e1ticas'], ciudadanas: ['Sociales y Ciudadana'], comunicacion: ['Lectura Cr\u00edtica'], ingles: ['Ingl\u00e9s'] },
+      7: { lectura: ['Lectura Cr\u00edtica'], razonamiento: ['Ciencias Naturales', 'Matem\u00e1ticas'], ciudadanas: ['Sociales y Ciudadana'], comunicacion: ['Lectura Cr\u00edtica'], ingles: ['Ingl\u00e9s'] }
+    };
 
-    // Run coverage and both queries in parallel — historical query covers VA + per-competency in ONE pass
-    const [coverage, competenciasRows, historicalRows] = await Promise.all([
-      getCoverageSummary(filters),
+    // Run both queries in parallel; the historical query covers VA + per-competency in one pass.
+    const [competenciasRows, historicalRows, tipoRows] = await Promise.all([
       sequelize.query(
         `WITH dataset AS (${dsBase(whereSql)})
         SELECT
           COUNT(DISTINCT documento) AS estudiantes,
           ROUND(AVG(lectura_entrada * 100.0)::numeric, 2) AS s11_lec_raw,
-          ROUND(AVG(lectura_entrada * 60.0)::numeric, 2)  AS s11_lec_pct,
+          ROUND(AVG(lectura_entrada * 100.0)::numeric, 2) AS s11_lec_pct,
           ROUND(AVG(lectura_salida)::numeric, 2) AS spr_lec_raw,
           ROUND(AVG(lectura_salida / 300.0 * 100.0)::numeric, 2) AS spr_lec_pct,
           ROUND(AVG(razonamiento_entrada * 100.0)::numeric, 2) AS s11_raz_raw,
-          ROUND(AVG(razonamiento_entrada * 60.0)::numeric, 2)  AS s11_raz_pct,
+          ROUND(AVG(razonamiento_entrada * 100.0)::numeric, 2) AS s11_raz_pct,
           ROUND(AVG(razonamiento_salida)::numeric, 2) AS spr_raz_raw,
           ROUND(AVG(razonamiento_salida / 300.0 * 100.0)::numeric, 2) AS spr_raz_pct,
           ROUND(AVG(ciudadanas_entrada * 100.0)::numeric, 2) AS s11_ciu_raw,
-          ROUND(AVG(ciudadanas_entrada * 60.0)::numeric, 2)  AS s11_ciu_pct,
+          ROUND(AVG(ciudadanas_entrada * 100.0)::numeric, 2) AS s11_ciu_pct,
           ROUND(AVG(ciudadanas_salida)::numeric, 2) AS spr_ciu_raw,
           ROUND(AVG(ciudadanas_salida / 300.0 * 100.0)::numeric, 2) AS spr_ciu_pct,
+          ROUND(AVG(comunicacion_entrada * 100.0)::numeric, 2) AS s11_com_raw,
+          ROUND(AVG(comunicacion_entrada * 100.0)::numeric, 2) AS s11_com_pct,
+          ROUND(AVG(comunicacion_salida)::numeric, 2) AS spr_com_raw,
+          ROUND(AVG(comunicacion_salida / 300.0 * 100.0)::numeric, 2) AS spr_com_pct,
           ROUND(AVG(ingles_entrada * 100.0)::numeric, 2) AS s11_ing_raw,
+          ROUND(AVG(ingles_entrada * 100.0)::numeric, 2) AS s11_ing_pct,
           ROUND(AVG(ingles_salida)::numeric, 2) AS spr_ing_raw,
           ROUND(AVG(ingles_salida / 300.0 * 100.0)::numeric, 2) AS spr_ing_pct
         FROM dataset
         WHERE lectura_entrada IS NOT NULL
           AND razonamiento_entrada IS NOT NULL
           AND ciudadanas_entrada IS NOT NULL
-          AND ingles_entrada IS NOT NULL`,
+          AND ingles_entrada IS NOT NULL${positiveVaClause}`,
         { replacements: params, type: QueryTypes.SELECT }
       ),
       // One combined historical query: VA by year + S11/SPR per-competency by year
@@ -1800,67 +1958,187 @@ const getResultadosComparativaS11Spr = async (req, res) => {
         SELECT
           anio,
           COUNT(DISTINCT documento) AS estudiantes,
-          ROUND(AVG(lectura_entrada * 60.0)::numeric, 2)              AS s11_lec,
+          ROUND(AVG(lectura_entrada * 100.0)::numeric, 2)             AS s11_lec,
           ROUND(AVG(lectura_salida / 300.0 * 100.0)::numeric, 2)      AS spr_lec,
-          ROUND(AVG(razonamiento_entrada * 60.0)::numeric, 2)          AS s11_raz,
+          ROUND(AVG(razonamiento_entrada * 100.0)::numeric, 2)         AS s11_raz,
           ROUND(AVG(razonamiento_salida / 300.0 * 100.0)::numeric, 2)  AS spr_raz,
-          ROUND(AVG(ciudadanas_entrada * 60.0)::numeric, 2)            AS s11_ciu,
+          ROUND(AVG(ciudadanas_entrada * 100.0)::numeric, 2)           AS s11_ciu,
           ROUND(AVG(ciudadanas_salida / 300.0 * 100.0)::numeric, 2)    AS spr_ciu,
+          ROUND(AVG(comunicacion_entrada * 100.0)::numeric, 2)         AS s11_com,
+          ROUND(AVG(comunicacion_salida / 300.0 * 100.0)::numeric, 2)  AS spr_com,
           ROUND(AVG(ingles_entrada * 100.0)::numeric, 2)               AS s11_ing,
           ROUND(AVG(ingles_salida / 300.0 * 100.0)::numeric, 2)        AS spr_ing,
-          ROUND(AVG((lectura_salida/300.0*100.0)   - (lectura_entrada*60.0))::numeric, 2)      AS va_lec,
-          ROUND(AVG((razonamiento_salida/300.0*100.0) - (razonamiento_entrada*60.0))::numeric, 2) AS va_raz,
-          ROUND(AVG((ciudadanas_salida/300.0*100.0)  - (ciudadanas_entrada*60.0))::numeric, 2)  AS va_ciu,
-          ROUND(AVG((ingles_salida/300.0*100.0)     - (ingles_entrada*100.0))::numeric, 2)     AS va_ing,
+          ROUND(AVG((lectura_salida/300.0*100.0)      - (lectura_entrada*100.0))::numeric, 2)     AS va_lec,
+          ROUND(AVG((razonamiento_salida/300.0*100.0) - (razonamiento_entrada*100.0))::numeric, 2) AS va_raz,
+          ROUND(AVG((ciudadanas_salida/300.0*100.0)   - (ciudadanas_entrada*100.0))::numeric, 2)  AS va_ciu,
+          ROUND(AVG((comunicacion_salida/300.0*100.0) - (comunicacion_entrada*100.0))::numeric, 2) AS va_com,
+          ROUND(AVG((ingles_salida/300.0*100.0)       - (ingles_entrada*100.0))::numeric, 2)     AS va_ing,
           ROUND(AVG(
-            ((lectura_salida/300.0*100.0)    - (lectura_entrada*60.0)    +
-             (razonamiento_salida/300.0*100.0) - (razonamiento_entrada*60.0) +
-             (ciudadanas_salida/300.0*100.0)   - (ciudadanas_entrada*60.0)   +
-             (ingles_salida/300.0*100.0)      - (ingles_entrada*100.0)) / 4.0
+            ((lectura_salida/300.0*100.0)     - (lectura_entrada*100.0)     +
+             (razonamiento_salida/300.0*100.0) - (razonamiento_entrada*100.0) +
+             (ciudadanas_salida/300.0*100.0)   - (ciudadanas_entrada*100.0)   +
+             (comunicacion_salida/300.0*100.0) - (comunicacion_entrada*100.0) +
+             (ingles_salida/300.0*100.0)       - (ingles_entrada*100.0)) / 5.0
           )::numeric, 2) AS va_promedio
         FROM dataset
-        WHERE lectura_entrada IS NOT NULL AND anio IS NOT NULL
+        WHERE lectura_entrada IS NOT NULL AND anio IS NOT NULL${positiveVaClause}
         GROUP BY anio ORDER BY anio`,
         { replacements: paramsNoAnio, type: QueryTypes.SELECT }
+      ),
+      sequelize.query(
+        `WITH dataset AS (${dsBase(whereSql)})
+         SELECT UPPER(TRIM(COALESCE(s11.tipo_examen, ''))) AS tipo_examen, COUNT(*) AS total
+         FROM dataset d
+         JOIN LATERAL (
+           SELECT tipo_examen
+           FROM resultados_saber11 s11
+           WHERE TRIM(s11.documento::text) = TRIM(d.documento::text)
+             AND s11.anio < d.anio
+           ORDER BY s11.anio DESC
+           LIMIT 1
+         ) s11 ON TRUE
+         WHERE COALESCE(TRIM(s11.tipo_examen), '') <> ''
+         GROUP BY 1
+         ORDER BY total DESC, tipo_examen ASC
+         LIMIT 1`,
+        { replacements: params, type: QueryTypes.SELECT }
       )
     ]);
 
     const c = competenciasRows?.[0] || {};
+    const tipoExamenPredominante = tipoRows?.[0]?.tipo_examen || null;
+    const tipoPredominanteNumero = tipoNumero(tipoExamenPredominante);
+    const eq = tipoPredominanteNumero != null ? tipoEquivalencias[tipoPredominanteNumero] || null : null;
 
     const competencias = [
-      { label: 'Lectura Crítica', s11_raw: n(c.s11_lec_raw), s11_ponderado: n(c.s11_lec_raw) != null ? Number((n(c.s11_lec_raw) * 3).toFixed(2)) : null, s11_pct: n(c.s11_lec_pct), spr_raw: n(c.spr_lec_raw), spr_pct: n(c.spr_lec_pct), va: va(n(c.spr_lec_pct), n(c.s11_lec_pct)) },
-      { label: 'Razonamiento Cuantitativo', s11_raw: n(c.s11_raz_raw), s11_ponderado: n(c.s11_raz_raw) != null ? Number((n(c.s11_raz_raw) * 3).toFixed(2)) : null, s11_pct: n(c.s11_raz_pct), spr_raw: n(c.spr_raz_raw), spr_pct: n(c.spr_raz_pct), va: va(n(c.spr_raz_pct), n(c.s11_raz_pct)) },
-      { label: 'Competencias Ciudadanas', s11_raw: n(c.s11_ciu_raw), s11_ponderado: n(c.s11_ciu_raw) != null ? Number((n(c.s11_ciu_raw) * 3).toFixed(2)) : null, s11_pct: n(c.s11_ciu_pct), spr_raw: n(c.spr_ciu_raw), spr_pct: n(c.spr_ciu_pct), va: va(n(c.spr_ciu_pct), n(c.s11_ciu_pct)) },
-      { label: 'Inglés', s11_raw: n(c.s11_ing_raw), s11_ponderado: n(c.s11_ing_raw), s11_pct: n(c.s11_ing_raw), spr_raw: n(c.spr_ing_raw), spr_pct: n(c.spr_ing_pct), va: va(n(c.spr_ing_pct), n(c.s11_ing_raw)) }
+      { key: 'lectura', label: 'Lectura Cr\u00edtica', s11_label: eq?.lectura || ['Lectura Cr\u00edtica'], spr_label: 'Lectura Cr\u00edtica', s11_raw: n(c.s11_lec_raw), s11_ponderado: n(c.s11_lec_raw) != null ? Number((n(c.s11_lec_raw) * 3).toFixed(2)) : null, s11_pct: n(c.s11_lec_pct), spr_raw: n(c.spr_lec_raw), spr_pct: n(c.spr_lec_pct), va: va(n(c.spr_lec_pct), n(c.s11_lec_pct)) },
+      { key: 'razonamiento', label: 'Razonamiento Cuantitativo', s11_label: eq?.razonamiento || ['Matem\u00e1ticas'], spr_label: 'Razonamiento Cuantitativo', s11_raw: n(c.s11_raz_raw), s11_ponderado: n(c.s11_raz_raw) != null ? Number((n(c.s11_raz_raw) * 3).toFixed(2)) : null, s11_pct: n(c.s11_raz_pct), spr_raw: n(c.spr_raz_raw), spr_pct: n(c.spr_raz_pct), va: va(n(c.spr_raz_pct), n(c.s11_raz_pct)) },
+      { key: 'ciudadanas', label: 'Competencias Ciudadanas', s11_label: eq?.ciudadanas || ['Sociales y Ciudadanas'], spr_label: 'Competencias Ciudadanas', s11_raw: n(c.s11_ciu_raw), s11_ponderado: n(c.s11_ciu_raw) != null ? Number((n(c.s11_ciu_raw) * 3).toFixed(2)) : null, s11_pct: n(c.s11_ciu_pct), spr_raw: n(c.spr_ciu_raw), spr_pct: n(c.spr_ciu_pct), va: va(n(c.spr_ciu_pct), n(c.s11_ciu_pct)) },
+      { key: 'comunicacion', label: 'Comunicaci\u00f3n Escrita', s11_label: eq?.comunicacion || ['Lectura Cr\u00edtica'], spr_label: 'Comunicaci\u00f3n Escrita', s11_raw: n(c.s11_com_raw), s11_ponderado: n(c.s11_com_raw), s11_pct: n(c.s11_com_pct), spr_raw: n(c.spr_com_raw), spr_pct: n(c.spr_com_pct), va: va(n(c.spr_com_pct), n(c.s11_com_pct)) },
+      { key: 'ingles', label: 'Ingl\u00e9s', s11_label: eq?.ingles || ['Ingl\u00e9s'], spr_label: 'Ingl\u00e9s', s11_raw: n(c.s11_ing_raw), s11_ponderado: n(c.s11_ing_raw), s11_pct: n(c.s11_ing_pct), spr_raw: n(c.spr_ing_raw), spr_pct: n(c.spr_ing_pct), va: va(n(c.spr_ing_pct), n(c.s11_ing_pct)) }
     ];
 
     const vaVals = competencias.map((comp) => comp.va).filter((v) => v != null);
     const vaPromedio = vaVals.length ? Number((vaVals.reduce((a, b) => a + b, 0) / vaVals.length).toFixed(2)) : null;
 
-    return res.json({
-      success: true,
-      data: {
-        coverage,
-        estudiantes: Number(c.estudiantes || 0),
-        competencias,
-        va_promedio: vaPromedio,
-        historico: historicalRows.map((r) => ({
-          anio: Number(r.anio), estudiantes: Number(r.estudiantes || 0),
-          va_lec: n(r.va_lec), va_raz: n(r.va_raz), va_ciu: n(r.va_ciu), va_ing: n(r.va_ing),
-          va_promedio: n(r.va_promedio)
-        })),
-        historicoPorCompetencia: historicalRows.map((r) => ({
-          anio: Number(r.anio), estudiantes: Number(r.estudiantes || 0),
-          s11_lec: n(r.s11_lec), spr_lec: n(r.spr_lec),
-          s11_raz: n(r.s11_raz), spr_raz: n(r.spr_raz),
-          s11_ciu: n(r.s11_ciu), spr_ciu: n(r.spr_ciu),
-          s11_ing: n(r.s11_ing), spr_ing: n(r.spr_ing)
-        }))
-      }
-    });
+    const payload = {
+      estudiantes: Number(c.estudiantes || 0),
+      tipo_saber11: tipoExamenPredominante,
+      competencias,
+      va_promedio: vaPromedio,
+      historico: historicalRows.map((r) => ({
+        anio: Number(r.anio), estudiantes: Number(r.estudiantes || 0),
+        va_lec: n(r.va_lec), va_raz: n(r.va_raz), va_ciu: n(r.va_ciu), va_com: n(r.va_com), va_ing: n(r.va_ing),
+        va_promedio: n(r.va_promedio)
+      })),
+      historicoPorCompetencia: historicalRows.map((r) => ({
+        anio: Number(r.anio), estudiantes: Number(r.estudiantes || 0),
+        s11_lec: n(r.s11_lec), spr_lec: n(r.spr_lec),
+        s11_raz: n(r.s11_raz), spr_raz: n(r.spr_raz),
+        s11_ciu: n(r.s11_ciu), spr_ciu: n(r.spr_ciu),
+        s11_com: n(r.s11_com), spr_com: n(r.spr_com),
+        s11_ing: n(r.s11_ing), spr_ing: n(r.spr_ing)
+      }))
+    };
+
+    cacheSet(key, payload);
+    return res.json({ success: true, data: payload, cached: false });
   } catch (error) {
     console.error('Error en comparativa S11 vs SPR:', error);
     return res.status(500).json({ success: false, message: 'Error al consultar comparativa S11 vs SPR' });
+  }
+};
+
+const getEstudiantesPositivosEstadistica = async (req, res) => {
+  try {
+    const filters = req.body?.filters || {};
+    const key = cacheKey('positivos_estadistica', { ...filters, onlyPositiveVa: true });
+    const cached = cacheGet(key);
+    if (cached) {
+      return res.json({ success: true, data: cached, cached: true });
+    }
+    // Este endpoint siempre aplica el filtro de VA positivo
+    const { whereSql, params } = buildWhereSql(filters);
+    const dataset = VALUE_ADDED_DATASET_SQL.replace('__WHERE_SQL__', whereSql || '');
+
+    const rows = await sequelize.query(
+      `WITH dataset AS (${dataset})
+       SELECT
+         documento,
+         nombre,
+         programa,
+         anio,
+         periodo,
+         numero_registro,
+         ROUND((lectura_entrada * 100.0)::numeric, 2)      AS s11_lec,
+         ROUND((razonamiento_entrada * 100.0)::numeric, 2) AS s11_raz,
+         ROUND((ciudadanas_entrada * 100.0)::numeric, 2)   AS s11_ciu,
+         ROUND((comunicacion_entrada * 100.0)::numeric, 2) AS s11_com,
+         ROUND((ingles_entrada * 100.0)::numeric, 2)       AS s11_ing,
+         ROUND((lectura_salida)::numeric, 2)               AS spr_lec_pts,
+         ROUND((razonamiento_salida)::numeric, 2)          AS spr_raz_pts,
+         ROUND((ciudadanas_salida)::numeric, 2)            AS spr_ciu_pts,
+         ROUND((comunicacion_salida)::numeric, 2)          AS spr_com_pts,
+         ROUND((ingles_salida)::numeric, 2)                AS spr_ing_pts,
+         ROUND((lectura_salida / 300.0 * 100.0)::numeric, 2)      AS spr_lec_pct,
+         ROUND((razonamiento_salida / 300.0 * 100.0)::numeric, 2) AS spr_raz_pct,
+         ROUND((ciudadanas_salida / 300.0 * 100.0)::numeric, 2)   AS spr_ciu_pct,
+         ROUND((comunicacion_salida / 300.0 * 100.0)::numeric, 2) AS spr_com_pct,
+         ROUND((ingles_salida / 300.0 * 100.0)::numeric, 2)       AS spr_ing_pct,
+         ROUND(((lectura_salida/300.0*100.0)      - (lectura_entrada*100.0))::numeric, 2)     AS va_lec,
+         ROUND(((razonamiento_salida/300.0*100.0) - (razonamiento_entrada*100.0))::numeric, 2) AS va_raz,
+         ROUND(((ciudadanas_salida/300.0*100.0)   - (ciudadanas_entrada*100.0))::numeric, 2)  AS va_ciu,
+         ROUND(((comunicacion_salida/300.0*100.0) - (comunicacion_entrada*100.0))::numeric, 2) AS va_com,
+         ROUND(((ingles_salida/300.0*100.0)       - (ingles_entrada*100.0))::numeric, 2)     AS va_ing,
+         ROUND((va_global * 100.0)::numeric, 2) AS va_promedio
+       FROM dataset
+       WHERE va_global IS NOT NULL AND va_global >= 0
+         AND lectura_entrada IS NOT NULL
+         AND razonamiento_entrada IS NOT NULL
+         AND ciudadanas_entrada IS NOT NULL
+         AND ingles_entrada IS NOT NULL
+       ORDER BY va_global DESC, nombre ASC`,
+      { replacements: params, type: QueryTypes.SELECT }
+    );
+
+    const payload = {
+      total: rows.length,
+      rows: rows.map((r) => ({
+        documento: r.documento,
+        nombre: r.nombre,
+        programa: r.programa,
+        anio: Number(r.anio),
+        periodo: r.periodo,
+        numero_registro: r.numero_registro,
+        s11_lec: r.s11_lec == null ? null : Number(r.s11_lec),
+        s11_raz: r.s11_raz == null ? null : Number(r.s11_raz),
+        s11_ciu: r.s11_ciu == null ? null : Number(r.s11_ciu),
+        s11_com: r.s11_com == null ? null : Number(r.s11_com),
+        s11_ing: r.s11_ing == null ? null : Number(r.s11_ing),
+        spr_lec_pts: r.spr_lec_pts == null ? null : Number(r.spr_lec_pts),
+        spr_raz_pts: r.spr_raz_pts == null ? null : Number(r.spr_raz_pts),
+        spr_ciu_pts: r.spr_ciu_pts == null ? null : Number(r.spr_ciu_pts),
+        spr_com_pts: r.spr_com_pts == null ? null : Number(r.spr_com_pts),
+        spr_ing_pts: r.spr_ing_pts == null ? null : Number(r.spr_ing_pts),
+        spr_lec_pct: r.spr_lec_pct == null ? null : Number(r.spr_lec_pct),
+        spr_raz_pct: r.spr_raz_pct == null ? null : Number(r.spr_raz_pct),
+        spr_ciu_pct: r.spr_ciu_pct == null ? null : Number(r.spr_ciu_pct),
+        spr_com_pct: r.spr_com_pct == null ? null : Number(r.spr_com_pct),
+        spr_ing_pct: r.spr_ing_pct == null ? null : Number(r.spr_ing_pct),
+        va_lec: r.va_lec == null ? null : Number(r.va_lec),
+        va_raz: r.va_raz == null ? null : Number(r.va_raz),
+        va_ciu: r.va_ciu == null ? null : Number(r.va_ciu),
+        va_com: r.va_com == null ? null : Number(r.va_com),
+        va_ing: r.va_ing == null ? null : Number(r.va_ing),
+        va_promedio: r.va_promedio == null ? null : Number(r.va_promedio)
+      }))
+    };
+
+    cacheSet(key, payload);
+    return res.json({ success: true, data: payload, cached: false });
+  } catch (error) {
+    console.error('Error en exportar estudiantes positivos:', error);
+    return res.status(500).json({ success: false, message: 'Error al exportar estudiantes con VA positivo' });
   }
 };
 
@@ -1900,6 +2178,7 @@ const getDocumentosEstudiantes = async (req, res) => {
   try {
     const filters = req.body?.filters || {};
     const search = normalizeText(filters.search || '');
+    const tiposExamen = toArray(filters.tipoExamen || filters.tiposExamen).map(normalizeText).filter(Boolean);
     const { whereSql, params } = buildDirectWhereSql(filters);
 
     // Build search clause (by documento, nombre or numero_registro)
@@ -1915,14 +2194,21 @@ const getDocumentosEstudiantes = async (req, res) => {
 
     // AND connector: append EXISTS after existing WHERE/AND clauses
     // Requires a Saber 11 record with at least one non-null score (not just an empty row)
+    const tipoExamenClause = tiposExamen.length
+      ? ` AND UPPER(TRIM(COALESCE(s11.tipo_examen, ''))) IN (${tiposExamen.map(() => 'UPPER(TRIM(?))').join(', ')})`
+      : '';
+
     const existsClause = `${whereSql || searchClause ? ' AND' : 'WHERE'} EXISTS (
          SELECT 1 FROM resultados_saber11 s11
          WHERE TRIM(s11.documento) = TRIM(saber_pro_resultados_individuales.documento)
            AND s11.anio < saber_pro_resultados_individuales.anio
+           ${tipoExamenClause}
            AND COALESCE(s11.lectura_critica, s11.matematicas, s11.lenguaje, s11.biologia,
                         s11.fisica, s11.quimica, s11.filosofia, s11.historia,
                         s11.geografia, s11.ingles) IS NOT NULL
        )`;
+
+    if (tiposExamen.length) searchParams.push(...tiposExamen);
 
     // Helper: avg of non-null non-zero values using PostgreSQL CASE trick
     const avgNz = (...cols) => {
@@ -1947,13 +2233,24 @@ const getDocumentosEstudiantes = async (req, res) => {
       END`;
 
     const onlyPositiveVa = filters.onlyPositiveVa === true || filters.onlyPositiveVa === 'true';
+    const allCompetenciesPositive = filters.allCompetenciesPositive === true || filters.allCompetenciesPositive === 'true';
+    const { lecturaExpr, razExpr, ciudExpr, comExpr, ingExpr } = VA_FAST_S11_ENTRADA();
+    const lecturaExprB = lecturaExpr.replace(/s11\./g, 's11b.');
+    const razExprB = razExpr.replace(/s11\./g, 's11b.');
+    const ciudExprB = ciudExpr.replace(/s11\./g, 's11b.');
+    const comExprB = comExpr.replace(/s11\./g, 's11b.');
+    const ingExprB = ingExpr.replace(/s11\./g, 's11b.');
     const T = `TRANSLATE(UPPER(TRIM(modulo)),CHR(193)||CHR(201)||CHR(205)||CHR(211)||CHR(218),'AEIOU')`;
 
     let rows;
-    if (onlyPositiveVa) {
+    if (onlyPositiveVa || allCompetenciesPositive) {
       // CTE: compute VA for each student (base cols only) and filter to VA >= 0
       const vaWhere = whereSql ? whereSql.replace(/\bWHERE\b/i, 'WHERE spr.') : '';
       const vaParams = [...params];
+      const tipoExamenLatestClause = tiposExamen.length
+        ? ` AND UPPER(TRIM(COALESCE(s11r.tipo_examen, ''))) IN (${tiposExamen.map(() => 'UPPER(TRIM(?))').join(', ')})`
+        : '';
+      if (tiposExamen.length) vaParams.push(...tiposExamen);
       if (search) vaParams.push(`%${search}%`, `%${search}%`, `%${search}%`);
       try {
         rows = await sequelize.query(
@@ -1975,14 +2272,23 @@ const getDocumentosEstudiantes = async (req, res) => {
            s11_latest AS (
              SELECT DISTINCT ON (b.documento)
                b.documento AS doc_key,
+               s11r.tipo_examen,
                s11r.lectura_critica, s11r.matematicas, s11r.sociales, s11r.biologia,
                s11r.fisica, s11r.quimica, s11r.lenguaje, s11r.filosofia,
-               s11r.historia, s11r.geografia, s11r.ingles
+               s11r.historia, s11r.geografia, s11r.ingles,
+               s11r.ciencias_naturales, s11r.razonamiento_cuantitativo,
+               s11r.competencias_ciudadanas, s11r.sociales_y_ciudadana,
+               s11r.espanol_y_literatura, s11r.conocimiento_matematico,
+               s11r.aptitud_matematica, s11r.electiva
              FROM spr_agg b
              JOIN resultados_saber11 s11r ON TRIM(s11r.documento) = TRIM(b.documento)
                AND s11r.anio < b.last_anio
+               ${tipoExamenLatestClause}
                AND COALESCE(s11r.lectura_critica, s11r.matematicas, s11r.lenguaje, s11r.biologia,
-                            s11r.fisica, s11r.quimica, s11r.filosofia, s11r.historia, s11r.geografia, s11r.ingles) IS NOT NULL
+                            s11r.fisica, s11r.quimica, s11r.filosofia, s11r.historia, s11r.geografia, s11r.ingles,
+                            s11r.ciencias_naturales, s11r.razonamiento_cuantitativo, s11r.competencias_ciudadanas,
+                            s11r.sociales_y_ciudadana, s11r.espanol_y_literatura, s11r.conocimiento_matematico,
+                            s11r.aptitud_matematica, s11r.electiva) IS NOT NULL
              ORDER BY b.documento, s11r.anio DESC
            ),
            va_data AS (
@@ -1990,13 +2296,20 @@ const getDocumentosEstudiantes = async (req, res) => {
                (COALESCE(b.spr_lec,0)*(b.spr_lec IS NOT NULL)::int + COALESCE(b.spr_raz,0)*(b.spr_raz IS NOT NULL)::int + COALESCE(b.spr_ciu,0)*(b.spr_ciu IS NOT NULL)::int + COALESCE(b.spr_ing,0)*(b.spr_ing IS NOT NULL)::int + COALESCE(b.spr_com,0)*(b.spr_com IS NOT NULL)::int)
                  * 100.0 / GREATEST((b.spr_lec IS NOT NULL)::int+(b.spr_raz IS NOT NULL)::int+(b.spr_ciu IS NOT NULL)::int+(b.spr_ing IS NOT NULL)::int+(b.spr_com IS NOT NULL)::int, 1)
                  / b.max_pts AS va_spr_pct,
-               ${s11VaPctExprBase} AS va_s11_pct
+               ${s11VaPctExprBase} AS va_s11_pct,
+               CASE WHEN b.spr_lec IS NOT NULL THEN (b.spr_lec * 100.0 / b.max_pts) - ((${lecturaExprB}) * 100.0) END AS va_lec,
+               CASE WHEN b.spr_raz IS NOT NULL THEN (b.spr_raz * 100.0 / b.max_pts) - ((${razExprB}) * 100.0) END AS va_raz,
+               CASE WHEN b.spr_ciu IS NOT NULL THEN (b.spr_ciu * 100.0 / b.max_pts) - ((${ciudExprB}) * 100.0) END AS va_ciu,
+               CASE WHEN b.spr_com IS NOT NULL THEN (b.spr_com * 100.0 / b.max_pts) - ((${comExprB}) * 100.0) END AS va_com,
+               CASE WHEN b.spr_ing IS NOT NULL THEN (b.spr_ing * 100.0 / b.max_pts) - ((${ingExprB}) * 100.0) END AS va_ing
              FROM spr_agg b
              LEFT JOIN s11_latest s11b ON s11b.doc_key = b.documento
            )
            SELECT documento, nombre, programa, anio, periodo, numero_registro
            FROM va_data
-           WHERE va_spr_pct IS NOT NULL AND va_s11_pct IS NOT NULL AND va_spr_pct >= va_s11_pct
+           WHERE va_spr_pct IS NOT NULL AND va_s11_pct IS NOT NULL
+             ${onlyPositiveVa ? 'AND va_spr_pct >= va_s11_pct' : ''}
+             ${allCompetenciesPositive ? 'AND COALESCE(va_lec, 0) >= 0 AND COALESCE(va_raz, 0) >= 0 AND COALESCE(va_ciu, 0) >= 0 AND COALESCE(va_com, 0) >= 0 AND COALESCE(va_ing, 0) >= 0' : ''}
            ${search ? `AND (UPPER(documento) LIKE UPPER(?) OR UPPER(nombre) LIKE UPPER(?) OR UPPER(numero_registro) LIKE UPPER(?))` : ''}
            ORDER BY nombre ASC NULLS LAST, documento ASC
            LIMIT 300`,
@@ -2080,6 +2393,25 @@ function detectTipo(s11Row, tiposConfig) {
   return null;
 }
 
+function normalizeTipoExamenNumero(tipoExamen) {
+  const raw = String(tipoExamen || '').trim().toUpperCase();
+  if (!raw) return null;
+  const match = raw.match(/TIPO[\s_]*([1-7])/);
+  return match ? Number(match[1]) : null;
+}
+
+function resolveTipoFromS11(s11Row, tiposConfig) {
+  if (!s11Row || !tiposConfig || !tiposConfig.length) return null;
+
+  const explicitTipo = normalizeTipoExamenNumero(s11Row.tipo_examen);
+  if (explicitTipo != null) {
+    const found = tiposConfig.find((tipo) => Number(tipo.tipo_numero) === explicitTipo);
+    if (found) return found;
+  }
+
+  return detectTipo(s11Row, tiposConfig);
+}
+
 // Calcula el equivalente S11 para cada módulo SPR según las reglas del tipo
 function calcEquivalencias(s11Row, reglas) {
   const moduleResults = {}; // { spr_module: { score, s11_cols: [{col, label, score}] } }
@@ -2138,10 +2470,17 @@ const getComparativaEstudianteDetalle = async (req, res) => {
     const anios = toArray(filters.anios).map((x) => Number(x)).filter(Number.isFinite);
     const periodos = toArray(filters.periodos).map(normalizeText).filter(Boolean);
     const programas = toArray(filters.programas).map(normalizeText).filter(Boolean);
+    const tiposPrueba = toArray(filters.tipoPrueba || filters.tiposPrueba).map(normalizeText).filter(Boolean);
+    const tiposExamen = toArray(filters.tipoExamen || filters.tiposExamen).map(normalizeText).filter(Boolean);
     if (anios.length) { sprClauses.push(`anio IN (${anios.map(() => '?').join(',')})`); sprParams.push(...anios); }
     if (periodos.length) { sprClauses.push(`periodo IN (${periodos.map(() => '?').join(',')})`); sprParams.push(...periodos); }
     if (programas.length) { sprClauses.push(`programa IN (${programas.map(() => '?').join(',')})`); sprParams.push(...programas); }
+    if (tiposPrueba.length) { sprClauses.push(`tipo_prueba IN (${tiposPrueba.map(() => '?').join(',')})`); sprParams.push(...tiposPrueba); }
     const sprWhere = `WHERE ${sprClauses.join(' AND ')}`;
+    const s11TipoClause = tiposExamen.length
+      ? ` AND UPPER(TRIM(COALESCE(tipo_examen, ''))) IN (${tiposExamen.map(() => 'UPPER(TRIM(?))').join(', ')})`
+      : '';
+    if (tiposExamen.length) sprParams.push(...tiposExamen);
 
     // Saber Pro: máx 300 pts por módulo; Saber TyT: máx 200 pts
     const buildSprSql = (s11Cols) => `
@@ -2166,16 +2505,17 @@ const getComparativaEstudianteDetalle = async (req, res) => {
         SELECT
           spr.documento, spr.anio AS spr_anio,
           s11.anio AS s11_anio,
+          s11.tipo_examen AS s11_tipo_examen,
           ${s11Cols.map((c) => `s11.${c} AS s11_${c}`).join(',\n          ')}
         FROM spr_pivot spr
         LEFT JOIN LATERAL (
-          SELECT anio, ${s11Cols.join(', ')}
+          SELECT anio, tipo_examen, ${s11Cols.join(', ')}
           FROM resultados_saber11
-          WHERE TRIM(documento) = TRIM(spr.documento) AND anio < spr.anio
+          WHERE TRIM(documento) = TRIM(spr.documento) AND anio < spr.anio ${s11TipoClause}
           ORDER BY anio DESC LIMIT 1
         ) s11 ON true
       )
-      SELECT p.*, l.s11_anio, ${s11Cols.map((c) => `l.s11_${c}`).join(', ')}
+      SELECT p.*, l.s11_anio, l.s11_tipo_examen, ${s11Cols.map((c) => `l.s11_${c}`).join(', ')}
       FROM spr_pivot p
       LEFT JOIN s11_lateral l ON l.documento = p.documento AND l.spr_anio = p.anio
       ORDER BY p.anio DESC, p.periodo DESC
@@ -2198,6 +2538,7 @@ const getComparativaEstudianteDetalle = async (req, res) => {
         const v = parseFloat(r[`s11_${col}`]);
         s11Raw[col] = (!isNaN(v) && v > 0) ? v : null;
       }
+      s11Raw.tipo_examen = r.s11_tipo_examen || null;
       // Compatibilidad formatos antiguos Saber 11:
       // sociales_y_ciudadana (formato nuevo) usa sociales (formato antiguo) como fallback
       if (s11Raw['sociales_y_ciudadana'] == null && s11Raw['sociales'] != null) {
@@ -2210,7 +2551,7 @@ const getComparativaEstudianteDetalle = async (req, res) => {
       const hasS11 = Object.values(s11Raw).some((v) => v !== null);
 
       // Detectar tipo de equivalencia
-      const tipoDetectado = detectTipo(s11Raw, tiposConfig);
+      const tipoDetectado = resolveTipoFromS11(s11Raw, tiposConfig);
       const reglas = tipoDetectado ? tipoDetectado.reglas : null;
 
       // Calcular equivalencias por módulo
@@ -2246,6 +2587,7 @@ const getComparativaEstudianteDetalle = async (req, res) => {
         tipo_prueba: r.tipo_prueba,
         is_tyt: isTyt,
         s11_anio: r.s11_anio,
+        s11_tipo_examen: r.s11_tipo_examen || null,
         s11_tipo: tipoDetectado ? { tipo_numero: tipoDetectado.tipo_numero, nombre: tipoDetectado.nombre } : null,
         s11_tiene_datos: hasS11,
         // Equivalencias por módulo SPR (con detalle de columnas S11 usadas)
@@ -2286,6 +2628,7 @@ const getResultadosDestacadosMejores = async (req, res) => {
     const params = [];
 
     const tipoPrueba = normalizeText(filters.tipoPrueba) || 'saber_pro';
+    const isTyt = tipoPrueba.toLowerCase().includes('tyt');
     const isTyt = tipoPrueba.toLowerCase().includes('tyt');
     clauses.push('tipo_prueba = ?');
     params.push(tipoPrueba);
@@ -2502,11 +2845,13 @@ const getTablaModulosAnio = async (req, res) => {
         { replacements: [tipoPrueba], type: QueryTypes.SELECT }
       ),
       sequelize.query(
-        `SELECT DISTINCT programa FROM saber_pro_resultados_individuales
+        `SELECT programa FROM saber_pro_resultados_individuales
          WHERE tipo_prueba = ?
            AND (novedades IS NULL OR TRIM(COALESCE(novedades::text, '')) = '')
            AND puntaje_global IS NOT NULL AND puntaje_global != 0
            AND programa IS NOT NULL
+         GROUP BY programa
+         ${isTyt ? 'HAVING COUNT(DISTINCT documento) > 1' : ''}
          ORDER BY programa`,
         { replacements: [tipoPrueba], type: QueryTypes.SELECT }
       )
@@ -2550,6 +2895,52 @@ const getTablaModulosAnio = async (req, res) => {
   }
 };
 
+const getValueAddedFiltros = async (req, res) => {
+  try {
+    const anioFiltro = req.query.anio ? Number(req.query.anio) : null;
+    const programaFiltro = req.query.programa ? String(req.query.programa).trim() : null;
+
+    const baseCondition = `
+      spr.programa IS NOT NULL
+      AND (spr.novedades IS NULL OR TRIM(COALESCE(spr.novedades::text, '')) = '')
+      AND spr.puntaje_global IS NOT NULL AND spr.puntaje_global != 0
+      AND EXISTS (
+        SELECT 1 FROM resultados_saber11 s11
+        WHERE TRIM(s11.documento::text) = TRIM(spr.documento::text)
+          AND s11.anio < spr.anio
+      )`;
+
+    const [programasRows, aniosRows] = await Promise.all([
+      sequelize.query(
+        `SELECT DISTINCT spr.programa
+         FROM saber_pro_resultados_individuales spr
+         WHERE ${baseCondition}
+           ${anioFiltro ? 'AND spr.anio = $1' : ''}
+         ORDER BY spr.programa`,
+        { bind: anioFiltro ? [anioFiltro] : [], type: QueryTypes.SELECT }
+      ),
+      sequelize.query(
+        `SELECT DISTINCT spr.anio
+         FROM saber_pro_resultados_individuales spr
+         WHERE ${baseCondition}
+           ${programaFiltro ? 'AND spr.programa = $1' : ''}
+         ORDER BY spr.anio DESC`,
+        { bind: programaFiltro ? [programaFiltro] : [], type: QueryTypes.SELECT }
+      )
+    ]);
+    return res.json({
+      success: true,
+      data: {
+        programas: programasRows.map((r) => r.programa),
+        anios: aniosRows.map((r) => r.anio)
+      }
+    });
+  } catch (error) {
+    console.error('Error en filtros valor agregado:', error);
+    return res.status(500).json({ success: false, message: 'Error al obtener filtros de valor agregado' });
+  }
+};
+
 module.exports = {
   getSaberProFiltros,
   getSaberProFiltrosCascade,
@@ -2559,6 +2950,7 @@ module.exports = {
   getResultadosDestacados,
   getSaberProControlChart,
   getValueAddedIndividual,
+  getValueAddedFiltros,
   getValueAddedGeneral,
   getValueAddedStats,
   getValueAddedNbc,
@@ -2568,6 +2960,7 @@ module.exports = {
   getResultadosProgramaDetalle,
   getResultadosInstitucional,
   getResultadosComparativaS11Spr,
+  getEstudiantesPositivosEstadistica,
   getDocumentosEstudiantes,
   getComparativaEstudianteDetalle,
   getTablaModulosAnio,

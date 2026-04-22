@@ -271,7 +271,7 @@ export default function ResultadosIndividualesSaberPro({ tipoPrueba = 'saber_pro
           {/* Gráfico tendencia */}
           {trendData.length > 0 && (
             <Paper elevation={0} sx={{ p: 2.5, borderRadius: 2.5, border: '1px solid #dbe6f5' }}>
-              <Typography sx={{ fontWeight: 900, fontSize: 13, color: '#1e3a5f', textAlign: 'center', textTransform: 'uppercase', letterSpacing: 1, mb: 0.5, bgcolor: '#1e3a5f', color: '#fff', py: 1, borderRadius: 1 }}>
+              <Typography sx={{ fontWeight: 900, fontSize: 13, textAlign: 'center', textTransform: 'uppercase', letterSpacing: 1, mb: 0.5, bgcolor: '#1e3a5f', color: '#fff', py: 1, borderRadius: 1 }}>
                 Competencias Genéricas
               </Typography>
               <ResponsiveContainer width="100%" height={320}>

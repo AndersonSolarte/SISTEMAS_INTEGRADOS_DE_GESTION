@@ -31,6 +31,7 @@ import SaberProDashboard from './SaberProDashboard';
 import SaberProAgregadosDashboard from './SaberProAgregadosDashboard';
 import ConsultaValidacion from './ConsultaValidacion';
 import ValorAgregadoDashboardBI from './ValorAgregadoDashboardBI';
+import ValorAgregadoIndividual from './ValorAgregadoIndividual';
 import ResultadosIndividualesSaberPro from './ResultadosIndividualesSaberPro';
 import ResultadosIndividualesDestacados from './ResultadosIndividualesDestacados';
 
@@ -1096,7 +1097,10 @@ function SaberProLandingPage({ onBack, allowedDashboards = [] }) {
       return <SaberProDashboard key={activeSection} initialSection={activeSection} allowedSections={(activeVisibleGroupConfig?.items || []).map((item) => item.key)} />;
     }
     if (activeGroup === 'agregados')      return <SaberProAgregadosDashboard initialSection={activeSection} allowedSections={(activeVisibleGroupConfig?.items || []).map((item) => item.key)} />;
-    if (activeGroup === 'valor_agregado') return <ValorAgregadoDashboardBI initialSection={activeSection} />;
+    if (activeGroup === 'valor_agregado') {
+      if (activeSection === 'va_individual') return <ValorAgregadoIndividual />;
+      return <ValorAgregadoDashboardBI initialSection={activeSection} />;
+    }
     if (activeGroup === 'consulta')       return <ConsultaValidacion initialSection={activeSection} allowedSections={(activeVisibleGroupConfig?.items || []).map((item) => item.key)} />;
     return null;
   };

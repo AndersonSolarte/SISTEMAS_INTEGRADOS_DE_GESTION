@@ -11,6 +11,7 @@ const {
   getResultadosDestacados,
   getSaberProControlChart,
   getValueAddedIndividual,
+  getValueAddedFiltros,
   getValueAddedGeneral,
   getValueAddedStats,
   getValueAddedNbc,
@@ -20,6 +21,7 @@ const {
   getResultadosProgramaDetalle,
   getResultadosInstitucional,
   getResultadosComparativaS11Spr,
+  getEstudiantesPositivosEstadistica,
   getDocumentosEstudiantes,
   getComparativaEstudianteDetalle,
   getTablaModulosAnio,
@@ -65,6 +67,7 @@ router.post('/table', auth, canViewEstadisticaInstitucional, getSaberProTable);
 router.post('/resultados/destacados', auth, canViewEstadisticaInstitucional, getResultadosDestacados);
 router.post('/control-chart', auth, canViewEstadisticaInstitucional, getSaberProControlChart);
 router.post('/value-added/individual', auth, canViewEstadisticaInstitucional, getValueAddedIndividual);
+router.get('/value-added/filtros', auth, canViewEstadisticaInstitucional, getValueAddedFiltros);
 router.post('/value-added/general', auth, canViewEstadisticaInstitucional, getValueAddedGeneral);
 router.post('/value-added/stats', auth, canViewEstadisticaInstitucional, getValueAddedStats);
 router.post('/value-added/nbc', auth, canViewEstadisticaInstitucional, getValueAddedNbc);
@@ -74,6 +77,7 @@ router.post('/resultados/programas', auth, canViewEstadisticaInstitucional, getR
 router.post('/resultados/programas/detalle', auth, canViewEstadisticaInstitucional, getResultadosProgramaDetalle);
 router.post('/resultados/institucional', auth, canViewEstadisticaInstitucional, getResultadosInstitucional);
 router.post('/resultados/comparativa-s11-spr', auth, canViewEstadisticaInstitucional, getResultadosComparativaS11Spr);
+router.post('/resultados/estadistica-positivos', auth, canViewEstadisticaInstitucional, getEstudiantesPositivosEstadistica);
 router.post('/resultados/documentos-estudiantes', auth, canViewEstadisticaInstitucional, getDocumentosEstudiantes);
 router.post('/resultados/comparativa-estudiante', auth, canViewEstadisticaInstitucional, getComparativaEstudianteDetalle);
 router.post('/resultados/individuales/tabla-modulos', auth, canViewEstadisticaInstitucional, getTablaModulosAnio);

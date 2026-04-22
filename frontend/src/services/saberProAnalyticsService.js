@@ -11,8 +11,10 @@ const saberProAnalyticsService = {
     api.post('/planeacion/gestion-informacion/saber-pro/table', { filters, pagination, sort }).then((r) => r.data),
   getControlChart: (filters = {}) =>
     api.post('/planeacion/gestion-informacion/saber-pro/control-chart', { filters }).then((r) => r.data),
+  getValueAddedFiltros: (params = {}) =>
+    api.get('/planeacion/gestion-informacion/saber-pro/value-added/filtros', { params }).then((r) => r.data),
   getValueAddedIndividual: ({ filters = {}, pagination = { page: 1, pageSize: 20 }, sort = [{ field: 'anio', direction: 'desc' }] } = {}) =>
-    api.post('/planeacion/gestion-informacion/saber-pro/value-added/individual', { filters, pagination, sort }).then((r) => r.data),
+    api.post('/planeacion/gestion-informacion/saber-pro/value-added/individual', { filters, pagination, sort }, { timeout: 30000 }).then((r) => r.data),
   getValueAddedGeneral: (filters = {}) =>
     api.post('/planeacion/gestion-informacion/saber-pro/value-added/general', { filters }).then((r) => r.data),
   getValueAddedStats: (filters = {}) =>
@@ -33,6 +35,8 @@ const saberProAnalyticsService = {
     api.post('/planeacion/gestion-informacion/saber-pro/resultados/destacados', { filters, pagination, options }).then((r) => r.data),
   getResultadosComparativaS11Spr: (filters = {}) =>
     api.post('/planeacion/gestion-informacion/saber-pro/resultados/comparativa-s11-spr', { filters }, { timeout: 60000 }).then((r) => r.data),
+  getEstudiantesPositivosEstadistica: (filters = {}) =>
+    api.post('/planeacion/gestion-informacion/saber-pro/resultados/estadistica-positivos', { filters }, { timeout: 60000 }).then((r) => r.data),
   getDocumentosEstudiantes: (filters = {}) =>
     api.post('/planeacion/gestion-informacion/saber-pro/resultados/documentos-estudiantes', { filters }).then((r) => r.data),
   getComparativaEstudianteDetalle: (filters = {}) =>

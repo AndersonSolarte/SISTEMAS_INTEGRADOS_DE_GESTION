@@ -1,17 +1,16 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+﻿import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Alert,
   Autocomplete,
   Box,
+  Button,
   Chip,
   CircularProgress,
   FormControl,
   Grid,
   InputAdornment,
-  InputLabel,
   LinearProgress,
   MenuItem,
-  OutlinedInput,
   Paper,
   Select,
   Stack,
@@ -19,25 +18,16 @@ import {
   Typography
 } from '@mui/material';
 import SearchIcon from '@mui/icons-material/Search';
-import { Bar, BarChart, CartesianGrid, Cell, Line, LineChart, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
+import FilterAltOffIcon from '@mui/icons-material/FilterAltOff';
+import { Bar, BarChart, CartesianGrid, Cell, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import saberProAnalyticsService from '../../services/saberProAnalyticsService';
 import BadgeEstado from './valueAdded/BadgeEstado';
 import CardKPI from './valueAdded/CardKPI';
-import GraficoBar from './valueAdded/GraficoBar';
 import ResumenCobertura from './valueAdded/ResumenCobertura';
 import TablaDinamica from './valueAdded/TablaDinamica';
 import TablaComparativaEstudiante from './valueAdded/TablaComparativaEstudiante';
 
 const BASE_FILTERS = { programas: [], anios: [], periodos: [], gruposReferencia: [] };
-const SELECT_MENU_PROPS = { PaperProps: { style: { maxHeight: 360 } } };
-
-const SPR_MODULE_ORDER = [
-  { key: 'lectura_critica',           label: 'Lectura Crítica' },
-  { key: 'razonamiento_cuantitativo', label: 'Razonamiento Cuantitativo' },
-  { key: 'competencias_ciudadanas',   label: 'Competencias Ciudadanas' },
-  { key: 'comunicacion_escrita',      label: 'Comunicación Escrita' },
-  { key: 'ingles',                    label: 'Inglés' }
-];
 
 const formatNumber = (value, digits = 2) => {
   if (value === null || value === undefined || value === '') return '—';
@@ -61,7 +51,7 @@ function CoverageBlocked({ coverage }) {
     <Alert severity="warning" sx={{ borderRadius: 3 }}>
       <Typography sx={{ fontWeight: 800 }}>Cobertura insuficiente para análisis</Typography>
       <Typography variant="body2">
-        La cobertura actual es {formatNumber(coverage?.porcentaje_cobertura || 0)}%. El sistema bloquea visualizaciones hasta superar el 30%.
+        La cobertura actual es {formatNumber(coverage.porcentaje_cobertura || 0)}%. El sistema bloquea visualizaciones hasta superar el 30%.
       </Typography>
     </Alert>
   );
@@ -69,11 +59,11 @@ function CoverageBlocked({ coverage }) {
 
 function BoxplotCard({ boxplot }) {
   const items = [
-    ['Min', boxplot?.min],
-    ['Q1', boxplot?.q1],
-    ['Mediana', boxplot?.mediana],
-    ['Q3', boxplot?.q3],
-    ['Max', boxplot?.max]
+    ['Min', boxplot.min],
+    ['Q1', boxplot.q1],
+    ['Mediana', boxplot.mediana],
+    ['Q3', boxplot.q3],
+    ['Max', boxplot.max]
   ];
   return (
     <Paper elevation={0} sx={{ p: 2, borderRadius: 3, border: '1px solid #dbe6f5', minHeight: 220 }}>
@@ -189,6 +179,239 @@ function StudentGeneralCard({ row }) {
           </Box>
         </Stack>
       </Box>
+    </Paper>
+  );
+}
+
+const GENERAL_RESULT_ORDER = [
+  { key: 'lectura_critica', label: 'LECTURA CRITICA', sprKey: 'lectura' },
+  { key: 'razonamiento_cuantitativo', label: 'RAZONAMIENTO CUANTITATIVO', sprKey: 'razonamiento' },
+  { key: 'competencias_ciudadanas', label: 'COMPETENCIAS CIUDADANAS', sprKey: 'ciudadanas' },
+  { key: 'ingles', label: 'INGLES', sprKey: 'ingles' },
+  { key: 'comunicacion_escrita', label: 'COMUNICACION ESCRITA', sprKey: 'comunicacion' }
+];
+
+function ValorAgregadoResultadoGeneralCard({ detail }) {
+  if (!detail) {
+    return (
+      <Paper elevation={0} sx={{ p: 4, borderRadius: 4, border: '1px solid #dbeafe', textAlign: 'center', color: '#64748b' }}>
+        Selecciona un documento para ver el resultado general.
+      </Paper>
+    );
+  }
+
+  const s11Entries = [];
+  const seenS11Cols = new Set();
+  GENERAL_RESULT_ORDER.forEach((item) => {
+    const eq = (detail.equivalencias && detail.equivalencias[item.key]) || {};
+    const s11Cols = Array.isArray(eq.s11_cols) ? eq.s11_cols : [];
+    s11Cols.forEach((col) => {
+      const key = String(col.col || col.label || '').trim();
+      if (!key || seenS11Cols.has(key)) return;
+      seenS11Cols.add(key);
+      if (col.score == null) return;
+      s11Entries.push({
+        key,
+        label: String(col.label || key).trim().toUpperCase(),
+        pct: Number(col.score)
+      });
+    });
+  });
+
+  const sprEntries = GENERAL_RESULT_ORDER.map((item) => {
+    const sprScore = detail.saberPro && detail.saberPro[item.sprKey] != null ? Number(detail.saberPro[item.sprKey]) : null;
+    const maxPts = Number(detail.saberPro.max_pts || (detail.is_tyt ? 200 : 300));
+    const sprPct = sprScore != null && maxPts > 0 ? Number(((sprScore * 100) / maxPts).toFixed(2)) : null;
+    return {
+      key: item.key,
+      label: item.label,
+      score: sprScore,
+      sprPct
+    };
+  }).filter((row) => row.score != null || row.sprPct != null);
+
+  const totalRows = Math.max(s11Entries.length, sprEntries.length);
+  void totalRows;
+  const s11AvgPct = s11Entries.length
+    ? Number((s11Entries.reduce((acc, item) => acc + (item.pct || 0), 0) / s11Entries.length).toFixed(2))
+    : null;
+  const sprAverageScore = sprEntries.length
+    ? Number((sprEntries.reduce((acc, item) => acc + (item.score || 0), 0) / sprEntries.length).toFixed(2))
+    : null;
+  const sprAvgPct = sprEntries.length
+    ? Number((sprEntries.reduce((acc, item) => acc + (item.sprPct || 0), 0) / sprEntries.length).toFixed(2))
+    : null;
+  const finalVa = s11AvgPct != null && sprAvgPct != null ? Number((sprAvgPct - s11AvgPct).toFixed(2)) : null;
+  const finalPositive = finalVa != null && finalVa >= 0;
+
+  return (
+    <Paper elevation={0} sx={{ borderRadius: 4, overflow: 'hidden', border: '1px solid #bfdbfe' }}>
+      <Box sx={{ p: { xs: 2.2, md: 3 }, background: 'linear-gradient(135deg, #3b82f6 0%, #60a5fa 100%)', color: '#fff' }}>
+        <Typography sx={{ fontSize: { xs: 22, md: 30 }, fontWeight: 900, lineHeight: 1.05 }}>
+          COMPARATIVA SABER 11 VS {detail.is_tyt ? 'SABER TYT' : 'SABER PRO'}
+        </Typography>
+        <Typography sx={{ mt: 1.4, fontSize: 18, fontWeight: 800 }}>{detail.nombre || detail.documento}</Typography>
+        <Typography sx={{ mt: 0.5, fontSize: 13, fontWeight: 700, opacity: 0.95 }}>
+          {detail.programa || 'SIN PROGRAMA'}
+        </Typography>
+        <Stack direction={{ xs: 'column', md: 'row' }} spacing={2.5} mt={0.8} flexWrap="wrap">
+          <Typography sx={{ fontSize: 11, opacity: 0.9 }}>DOCUMENTO: {detail.documento || '—'}</Typography>
+          <Typography sx={{ fontSize: 11, opacity: 0.9 }}>REGISTRO: {detail.numero_registro || '—'}</Typography>
+          <Typography sx={{ fontSize: 11, opacity: 0.9 }}>
+            SABER 11: {detail.s11_anio || '—'} {detail.s11_tipo.nombre ? `· ${detail.s11_tipo.nombre}` : ''}
+          </Typography>
+          <Typography sx={{ fontSize: 11, opacity: 0.9 }}>
+            {detail.is_tyt ? 'SABER TYT' : 'SABER PRO'}: {detail.anio || '—'}{detail.periodo ? `-${detail.periodo}` : ''}
+          </Typography>
+        </Stack>
+      </Box>
+
+      <Box sx={{ bgcolor: '#fff' }}>
+        <Box
+          sx={{
+            display: 'grid',
+            gridTemplateColumns: { xs: '1fr', sm: 'repeat(2, minmax(0, 1fr))', lg: 'repeat(3, minmax(0, 1fr))' },
+            gap: { xs: 1.25, md: 1.5 },
+            px: { xs: 1.25, md: 2, lg: 2.5 },
+            pt: { xs: 1.25, md: 1.75 },
+            pb: 1
+          }}
+        >
+          <Box>
+            <Paper elevation={0} sx={{ p: 1.6, minHeight: 112, borderRadius: 3, border: '1px solid #dbeafe', bgcolor: '#f8fbff', display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
+              <Typography sx={{ fontSize: 11, fontWeight: 900, color: '#1d4ed8', textTransform: 'uppercase' }}>Saber 11</Typography>
+              <Typography sx={{ mt: 0.35, fontSize: 28, fontWeight: 900, color: '#1e3a8a' }}>
+                {s11AvgPct != null ? `${formatNumber(s11AvgPct, 2)}%` : '—'}
+              </Typography>
+              <Typography sx={{ fontSize: 12, color: '#64748b', fontWeight: 700 }}>Promedio de todas las competencias evaluadas</Typography>
+            </Paper>
+          </Box>
+          <Box>
+            <Paper elevation={0} sx={{ p: 1.6, minHeight: 112, borderRadius: 3, border: '1px solid #dbeafe', bgcolor: '#f8fbff', display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
+              <Typography sx={{ fontSize: 11, fontWeight: 900, color: '#1d4ed8', textTransform: 'uppercase' }}>
+                {detail.is_tyt ? 'Saber TyT' : 'Saber Pro'}
+              </Typography>
+              <Typography sx={{ mt: 0.35, fontSize: 28, fontWeight: 900, color: '#1e3a8a' }}>
+                {sprAvgPct != null ? `${formatNumber(sprAvgPct, 2)}%` : '—'}
+              </Typography>
+              <Typography sx={{ fontSize: 12, color: '#64748b', fontWeight: 700 }}>
+                Promedio del porcentaje normalizado
+              </Typography>
+            </Paper>
+          </Box>
+          <Box sx={{ gridColumn: { xs: '1', sm: '1 / -1', lg: 'auto' } }}>
+            <Paper elevation={0} sx={{ p: 1.6, minHeight: 112, borderRadius: 3, border: `1px solid ${finalPositive ? '#86efac' : '#fca5a5'}`, bgcolor: finalPositive ? '#f0fdf4' : '#fef2f2', display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
+              <Typography sx={{ fontSize: 11, fontWeight: 900, color: finalPositive ? '#059669' : '#b91c1c', textTransform: 'uppercase' }}>
+                Valor Agregado
+              </Typography>
+              <Typography sx={{ mt: 0.35, fontSize: 28, fontWeight: 900, color: finalPositive ? '#10b981' : '#ef4444' }}>
+                {finalVa != null ? `${finalPositive ? '+' : ''}${formatNumber(finalVa, 2)}%` : '—'}
+              </Typography>
+              <Typography sx={{ fontSize: 12, color: '#64748b', fontWeight: 700 }}>Diferencia entre ambos resultados</Typography>
+            </Paper>
+          </Box>
+        </Box>
+
+        <Box
+          sx={{
+            display: 'grid',
+            gridTemplateColumns: { xs: '1fr', xl: 'minmax(0, 0.95fr) minmax(0, 1.25fr)' },
+            gap: { xs: 1.25, md: 1.75 },
+            px: { xs: 1.25, md: 2, lg: 2.5 },
+            pb: 2.2,
+            alignItems: 'stretch'
+          }}
+        >
+          <Box sx={{ minWidth: 0 }}>
+            <Paper elevation={0} sx={{ overflow: 'hidden', borderRadius: 3, border: '1px solid #dbeafe', height: '100%', display: 'flex', flexDirection: 'column' }}>
+              <Box sx={{ px: 2, py: 1.2, bgcolor: '#2563eb' }}>
+                <Typography sx={{ color: '#fff', fontSize: 14, fontWeight: 900 }}>
+                  {`SABER 11${detail.s11_tipo.nombre ? ` - ${String(detail.s11_tipo.nombre).replace('_', ' ')}` : ''}`}
+                </Typography>
+              </Box>
+              <Box component="table" sx={{ width: '100%', borderCollapse: 'collapse', flex: 1 }}>
+                <Box component="thead" sx={{ bgcolor: '#eff6ff' }}>
+                  <Box component="tr">
+                    <Box component="th" sx={{ px: 2, py: 1, textAlign: 'left', fontSize: 11, fontWeight: 900, color: '#1d4ed8', borderBottom: '1px solid #dbeafe' }}>
+                      COMPETENCIA EVALUADA
+                    </Box>
+                    <Box component="th" sx={{ width: 92, px: 2, py: 1, textAlign: 'center', fontSize: 11, fontWeight: 900, color: '#1d4ed8', borderBottom: '1px solid #dbeafe' }}>
+                      %
+                    </Box>
+                  </Box>
+                </Box>
+                <Box component="tbody">
+                  {s11Entries.map((row, index) => (
+                    <Box key={row.key} component="tr" sx={{ bgcolor: index % 2 === 0 ? '#fff' : '#f8fbff' }}>
+                      <Box component="td" sx={{ px: 2, py: 1.12, borderBottom: '1px solid #dbeafe' }}>
+                        <Typography sx={{ fontSize: 12, fontWeight: 700, color: '#334155' }}>{row.label}</Typography>
+                      </Box>
+                      <Box component="td" sx={{ width: 92, px: 2, py: 1.12, textAlign: 'center', borderBottom: '1px solid #dbeafe' }}>
+                        <Typography sx={{ fontSize: 12, fontWeight: 900, color: '#2563eb' }}>{formatNumber(row.pct, 2)}%</Typography>
+                      </Box>
+                    </Box>
+                  ))}
+                  <Box component="tr" sx={{ bgcolor: '#60a5fa' }}>
+                    <Box component="td" sx={{ px: 2, py: 1.15, color: '#fff', fontSize: 11, fontWeight: 900 }}>RESULTADO GENERAL NORMALIZADO</Box>
+                    <Box component="td" sx={{ width: 92, px: 2, py: 1.15, textAlign: 'center', color: '#fff', fontSize: 20, fontWeight: 900 }}>
+                      {s11AvgPct != null ? `${formatNumber(s11AvgPct, 2)}%` : '—'}
+                    </Box>
+                  </Box>
+                </Box>
+              </Box>
+            </Paper>
+          </Box>
+
+          <Box sx={{ minWidth: 0 }}>
+            <Paper elevation={0} sx={{ overflow: 'hidden', borderRadius: 3, border: '1px solid #dbeafe', height: '100%', display: 'flex', flexDirection: 'column' }}>
+              <Box sx={{ px: 2, py: 1.2, bgcolor: '#2563eb' }}>
+                <Typography sx={{ color: '#fff', fontSize: 14, fontWeight: 900 }}>{detail.is_tyt ? 'SABER TYT' : 'SABER PRO'}</Typography>
+              </Box>
+              <Box component="table" sx={{ width: '100%', borderCollapse: 'collapse', flex: 1 }}>
+                <Box component="thead" sx={{ bgcolor: '#eff6ff' }}>
+                  <Box component="tr">
+                    <Box component="th" sx={{ px: 2, py: 1, textAlign: 'left', fontSize: 11, fontWeight: 900, color: '#1d4ed8', borderBottom: '1px solid #dbeafe' }}>
+                      COMPETENCIA GENERICA
+                    </Box>
+                    <Box component="th" sx={{ width: 108, px: 2, py: 1, textAlign: 'center', fontSize: 11, fontWeight: 900, color: '#1d4ed8', borderBottom: '1px solid #dbeafe' }}>
+                      PUNTAJE
+                    </Box>
+                    <Box component="th" sx={{ width: 96, px: 2, py: 1, textAlign: 'center', fontSize: 11, fontWeight: 900, color: '#1d4ed8', borderBottom: '1px solid #dbeafe' }}>
+                      %
+                    </Box>
+                  </Box>
+                </Box>
+                <Box component="tbody">
+                  {sprEntries.map((row, index) => (
+                    <Box key={row.key} component="tr" sx={{ bgcolor: index % 2 === 0 ? '#fff' : '#f8fbff' }}>
+                      <Box component="td" sx={{ px: 2, py: 1.12, borderBottom: '1px solid #dbeafe' }}>
+                        <Typography sx={{ fontSize: 12, fontWeight: 700, color: '#334155' }}>{row.label}</Typography>
+                      </Box>
+                      <Box component="td" sx={{ width: 108, px: 2, py: 1.12, textAlign: 'center', borderBottom: '1px solid #dbeafe' }}>
+                        <Typography sx={{ fontSize: 12, fontWeight: 900, color: '#2563eb' }}>{formatNumber(row.score, 2)}</Typography>
+                      </Box>
+                      <Box component="td" sx={{ width: 96, px: 2, py: 1.12, textAlign: 'center', borderBottom: '1px solid #dbeafe' }}>
+                        <Typography sx={{ fontSize: 12, fontWeight: 900, color: '#2563eb' }}>{formatNumber(row.sprPct, 2)}%</Typography>
+                      </Box>
+                    </Box>
+                  ))}
+                  <Box component="tr" sx={{ bgcolor: '#60a5fa' }}>
+                    <Box component="td" sx={{ px: 2, py: 1.15, color: '#fff', fontSize: 11, fontWeight: 900 }}>PROMEDIO NORMALIZADO</Box>
+                    <Box component="td" sx={{ width: 108, px: 2, py: 1.15, textAlign: 'center', color: '#fff', fontWeight: 800 }}>
+                      {sprAverageScore != null ? formatNumber(sprAverageScore, 2) : '—'}
+                    </Box>
+                    <Box component="td" sx={{ width: 96, px: 2, py: 1.15, textAlign: 'center', color: '#fff', fontSize: 20, fontWeight: 900 }}>
+                      {sprAvgPct != null ? `${formatNumber(sprAvgPct, 2)}%` : '—'}
+                    </Box>
+                  </Box>
+                </Box>
+              </Box>
+            </Paper>
+          </Box>
+        </Box>
+
+      </Box>
+
     </Paper>
   );
 }
@@ -328,7 +551,7 @@ function InstitutionalAnalysisCard({ summary, competencyRows, quintilMeta, yearL
         <Stack direction={{ xs: 'column', md: 'row' }} justifyContent="space-between" spacing={1.5}>
           <Box>
             <Typography sx={{ fontWeight: 900, fontSize: 24 }}>Analisis Institucional Saber Pro</Typography>
-            <Typography sx={{ fontSize: 13, opacity: 0.92 }}>Universidad CESMAG · Competencias Genericas</Typography>
+            <Typography sx={{ fontSize: 13, opacity: 0.92 }}>Universidad CESMAG · Competencias Genéricas</Typography>
           </Box>
           <Stack direction="row" spacing={1}>
             <CardKPI label="Periodo" value={yearLabel} tone="#fff" />
@@ -419,7 +642,7 @@ function InstitutionalAnalysisCard({ summary, competencyRows, quintilMeta, yearL
             <Stack direction="row" spacing={1}>
               <CardKPI label="Puntaje" value={formatNumber(summary.promedioInstitucional, 1)} tone="#1d4ed8" />
               <CardKPI label="Percentil" value={`${formatNumber(summary.percentilInstitucional, 1)}%`} tone="#7c3aed" />
-              <CardKPI label="Cobertura" value={`${formatNumber(coverage?.porcentaje_cobertura || 0, 1)}%`} tone="#d97706" />
+              <CardKPI label="Cobertura" value={`${formatNumber(coverage.porcentaje_cobertura || 0, 1)}%`} tone="#d97706" />
               <CardKPI label="Quintil" value={summary.quintil} tone={quintilMeta.color} />
             </Stack>
           </Stack>
@@ -429,7 +652,7 @@ function InstitutionalAnalysisCard({ summary, competencyRows, quintilMeta, yearL
   );
 }
 
-// ── NBC professional design system ────────────────────────────────────────────
+// â”€â”€ NBC professional design system â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 const QUINTIL_SCALE = {
   1: { color: '#DC2626', bg: '#FEF2F2', label: 'BAJO', labelEs: 'Bajo' },
   2: { color: '#EA580C', bg: '#FFF7ED', label: 'BÁSICO', labelEs: 'Básico' },
@@ -602,8 +825,8 @@ function ClasificacionBanner({ summary }) {
 
 function EvolucionHistoricaCard({ historico }) {
   if (!historico || !historico.length) return null;
-  const firstY = historico[0]?.anio;
-  const lastY = historico[historico.length - 1]?.anio;
+  const firstY = historico[0].anio;
+  const lastY = historico[historico.length - 1].anio;
   return (
     <Paper elevation={0} sx={{ p: 2.5, borderRadius: 3, border: '1px solid #e2e8f0' }}>
       <Stack direction="row" alignItems="center" spacing={1} sx={{ mb: 2.5 }}>
@@ -631,7 +854,7 @@ function EvolucionHistoricaCard({ historico }) {
             <Typography sx={{ fontSize: '10px', fontWeight: 700, color: '#1e3a8a', mb: 1.5 }}>DETALLE POR AÑO</Typography>
             <Box sx={{ border: '1px solid #e2e8f0', borderRadius: 1.5, overflow: 'hidden' }}>
               <Box sx={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr', bgcolor: '#f1f5f9', p: '8px 10px' }}>
-                {['AÑO', 'PUNT.', 'P.NAC', 'N'].map((h) => (
+                {['AÑO', 'PUNT.', 'P. NAC', 'N'].map((h) => (
                   <Typography key={h} sx={{ fontSize: '9px', fontWeight: 600, color: '#64748b', textAlign: 'center' }}>{h}</Typography>
                 ))}
               </Box>
@@ -656,23 +879,31 @@ function EvolucionHistoricaCard({ historico }) {
   );
 }
 
+void CoverageBlocked;
+void BoxplotCard;
+void StudentGeneralCard;
+void ProgramAnalysisCard;
+void InstitutionalAnalysisCard;
+void NbcHeaderBadge;
+void EvolucionHistoricaCard;
+
 function MetodologiaFooter() {
   return (
     <Box sx={{ bgcolor: '#fff', borderRadius: 2, p: '14px 20px', borderLeft: '4px solid #2563eb', boxShadow: '0 2px 10px rgba(0,0,0,0.04)' }}>
       <Stack direction={{ xs: 'column', md: 'row' }} justifyContent="space-between" alignItems={{ xs: 'flex-start', md: 'center' }} spacing={1} flexWrap="wrap">
         <Box>
           <Typography component="span" sx={{ fontSize: '9px', color: '#1e3a8a', fontWeight: 700, letterSpacing: '1px' }}>METODOLOGÍA: </Typography>
-          <Typography component="span" sx={{ fontSize: '10px', color: '#64748b' }}>Q1 (≤20%) Bajo • Q2 (21-40%) Básico • Q3 (41-60%) Medio • Q4 (61-80%) Alto • Q5 ({'>'}{'>'}80%) Superior</Typography>
+          <Typography component="span" sx={{ fontSize: '10px', color: '#64748b' }}>Q1 (≤20%) Bajo • Q2 (21-40%) Básico • Q3 (41-60%) Medio • Q4 (61-80%) Alto • Q5 (&gt;80%) Superior</Typography>
         </Box>
         <Typography sx={{ fontSize: '9px', color: '#94a3b8' }}>Quintil General = Promedio de Puntaje y P. Nacional</Typography>
       </Stack>
     </Box>
   );
 }
-// ── end NBC design system ──────────────────────────────────────────────────────
+// â”€â”€ end NBC design system â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
-// ── SmartFilterPanel: checklist con búsqueda, select all y cascada ─────────────
-function SmartFilterPanel({ label, options, value, onChange }) {
+// â”€â”€ SmartFilterPanel: checklist con bÃºsqueda, select all y cascada â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+function SmartFilterPanel({ label, options, value, onChange, singleSelect = false }) {
   const [open, setOpen] = useState(false);
   const [search, setSearch] = useState('');
   const ref = useRef(null);
@@ -687,7 +918,15 @@ function SmartFilterPanel({ label, options, value, onChange }) {
   const filtered = options.filter((opt) => String(opt).toLowerCase().includes(search.toLowerCase()));
   const allSelected = value.length === 0;
   const isSelected = (opt) => value.includes(opt);
-  const toggle = (opt) => onChange(isSelected(opt) ? value.filter((v) => v !== opt) : [...value, opt]);
+  const toggle = (opt) => {
+    if (singleSelect) {
+      onChange(isSelected(opt) ? [] : [opt]);
+      setOpen(false);
+      setSearch('');
+      return;
+    }
+    onChange(isSelected(opt) ? value.filter((v) => v !== opt) : [...value, opt]);
+  };
   const toggleAll = () => onChange(allSelected ? options : []);
 
   return (
@@ -706,7 +945,9 @@ function SmartFilterPanel({ label, options, value, onChange }) {
         <Box sx={{ minWidth: 0, flex: 1 }}>
           <Typography sx={{ fontSize: '9px', fontWeight: 700, color: '#7c3aed', letterSpacing: '0.8px', textTransform: 'uppercase', mb: 0.25 }}>{label}</Typography>
           <Typography sx={{ fontSize: '12px', fontWeight: 600, color: '#312e81', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-            {value.length ? `${value.length} seleccionado${value.length > 1 ? 's' : ''}` : 'Todos'}
+            {value.length
+              ? (singleSelect ? String(value[0]) : `${value.length} seleccionado${value.length > 1 ? 's' : ''}`)
+              : 'Todos'}
           </Typography>
         </Box>
         <Stack direction="row" alignItems="center" spacing={0.5} sx={{ flexShrink: 0 }}>
@@ -730,12 +971,14 @@ function SmartFilterPanel({ label, options, value, onChange }) {
             </Box>
           </Box>
 
-          <Box onClick={toggleAll} sx={{ px: 1.5, py: 0.875, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 1.25, borderBottom: '1px solid #f1f5f9', '&:hover': { bgcolor: '#f5f3ff' } }}>
-            <Box sx={{ width: 15, height: 15, flexShrink: 0, borderRadius: '4px', border: `2px solid ${allSelected ? '#7c3aed' : '#d1d5db'}`, bgcolor: allSelected ? '#7c3aed' : '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-              {allSelected && <svg width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="3"><polyline points="20 6 9 17 4 12"/></svg>}
+          {!singleSelect ? (
+            <Box onClick={toggleAll} sx={{ px: 1.5, py: 0.875, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 1.25, borderBottom: '1px solid #f1f5f9', '&:hover': { bgcolor: '#f5f3ff' } }}>
+              <Box sx={{ width: 15, height: 15, flexShrink: 0, borderRadius: '4px', border: `2px solid ${allSelected ? '#7c3aed' : '#d1d5db'}`, bgcolor: allSelected ? '#7c3aed' : '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                {allSelected && <svg width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="3"><polyline points="20 6 9 17 4 12"/></svg>}
+              </Box>
+              <Typography sx={{ fontSize: 11, fontWeight: 700, color: '#7c3aed' }}>Seleccionar todos ({options.length})</Typography>
             </Box>
-            <Typography sx={{ fontSize: 11, fontWeight: 700, color: '#7c3aed' }}>Seleccionar todos ({options.length})</Typography>
-          </Box>
+          ) : null}
 
           <Box sx={{ maxHeight: 200, overflow: 'auto' }}>
             {filtered.length === 0 ? (
@@ -754,7 +997,9 @@ function SmartFilterPanel({ label, options, value, onChange }) {
 
           <Box sx={{ px: 1.5, py: 0.75, borderTop: '1px solid #f1f5f9', bgcolor: '#f8fafc' }}>
             <Typography sx={{ fontSize: '10px', color: '#94a3b8' }}>
-              {value.length > 0 ? `${value.length} de ${options.length} seleccionados` : `${options.length} opciones`}
+              {singleSelect
+                ? (value.length > 0 ? '1 seleccionado' : `${options.length} opciones`)
+                : (value.length > 0 ? `${value.length} de ${options.length} seleccionados` : `${options.length} opciones`)}
             </Typography>
           </Box>
         </Box>
@@ -762,7 +1007,7 @@ function SmartFilterPanel({ label, options, value, onChange }) {
     </Box>
   );
 }
-// ── end SmartFilterPanel ────────────────────────────────────────────────────────
+// â”€â”€ end SmartFilterPanel â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 const quintileLabel = (position, total) => {
   if (!total) return 'Q1';
@@ -812,8 +1057,106 @@ function ValorAgregadoDashboardBI({ initialSection = 'va_individual' }) {
   const [vaGeneralDocsLoading, setVaGeneralDocsLoading] = useState(false);
   const vaSearchTimer = useRef(null);
   const [vaOnlyPositive, setVaOnlyPositive] = useState(false);
-  const nbcFilters = useMemo(() => ({ ...filters, programas: [], gruposReferencia: [] }), [filters]);
-  const catalogFilters = section === 'va_nbc' ? nbcFilters : filters;
+  const [exportingPositivos, setExportingPositivos] = useState(false);
+  const [vaTrendYears, setVaTrendYears] = useState([]);
+  const [vaCompYears, setVaCompYears] = useState([]);
+  const [vaDualYears, setVaDualYears] = useState([]);
+
+  const handleExportPositivos = useCallback(async () => {
+    setExportingPositivos(true);
+    try {
+      const r = await saberProAnalyticsService.getEstudiantesPositivosEstadistica({ ...filters, onlyPositiveVa: true });
+      const rows = (r.data && r.data.rows) || [];
+      if (!rows.length) {
+        alert('No hay estudiantes con valor agregado positivo para los filtros actuales.');
+        return;
+      }
+      const headers = [
+        'Documento', 'Nombre', 'Programa', 'Año', 'Periodo', 'Registro',
+        'S11 Lectura %', 'S11 Razonamiento %', 'S11 Ciudadanas %', 'S11 Comunicación %', 'S11 Inglés %',
+        'SPR Lectura (pts)', 'SPR Razonamiento (pts)', 'SPR Ciudadanas (pts)', 'SPR Comunicación (pts)', 'SPR Inglés (pts)',
+        'SPR Lectura %', 'SPR Razonamiento %', 'SPR Ciudadanas %', 'SPR Comunicación %', 'SPR Inglés %',
+        'VA Lectura %', 'VA Razonamiento %', 'VA Ciudadanas %', 'VA Comunicación %', 'VA Inglés %',
+        'VA Promedio %'
+      ];
+      const esc = (v) => {
+        if (v == null) return '';
+        const s = String(v);
+        return /[",\n;]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+      };
+      const lines = [headers.join(';')];
+      rows.forEach((x) => {
+        lines.push([
+          x.documento, x.nombre, x.programa, x.anio, x.periodo, x.numero_registro,
+          x.s11_lec, x.s11_raz, x.s11_ciu, x.s11_com, x.s11_ing,
+          x.spr_lec_pts, x.spr_raz_pts, x.spr_ciu_pts, x.spr_com_pts, x.spr_ing_pts,
+          x.spr_lec_pct, x.spr_raz_pct, x.spr_ciu_pct, x.spr_com_pct, x.spr_ing_pct,
+          x.va_lec, x.va_raz, x.va_ciu, x.va_com, x.va_ing,
+          x.va_promedio
+        ].map(esc).join(';'));
+      });
+      const blob = new Blob(['﻿' + lines.join('\n')], { type: 'text/csv;charset=utf-8;' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `estudiantes_va_positivos_${new Date().toISOString().slice(0, 10)}.csv`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    } catch (e) {
+      console.error('Error exportando positivos:', e);
+      alert('No se pudo exportar los estudiantes positivos.');
+    } finally {
+      setExportingPositivos(false);
+    }
+  }, [filters]);
+  const nbcFilters = useMemo(() => ({
+    programas: [],
+    anios: filters.anios || [],
+    periodos: [],
+    gruposReferencia: filters.gruposReferencia || []
+  }), [filters.anios, filters.gruposReferencia]);
+  const programFilters = useMemo(() => ({
+    programas: filters.programas || [],
+    anios: filters.anios || [],
+    periodos: [],
+    gruposReferencia: []
+  }), [filters.programas, filters.anios]);
+  const institutionalFilters = useMemo(() => ({
+    programas: [],
+    anios: filters.anios || [],
+    periodos: [],
+    gruposReferencia: []
+  }), [filters.anios]);
+  const hasNbcFilters = !!((filters.anios && filters.anios.length) || (filters.gruposReferencia && filters.gruposReferencia.length));
+  const hasProgramFilters = !!((filters.anios && filters.anios.length) || (filters.programas && filters.programas.length));
+  const hasInstitutionalFilters = !!(filters.anios && filters.anios.length);
+  const catalogFilters = section === 'va_nbc'
+    ? nbcFilters
+    : section === 'va_programas'
+      ? programFilters
+      : section === 'va_institucional'
+        ? institutionalFilters
+        : filters;
+
+  const hasActiveFilters = useMemo(() => (
+    (filters.programas && filters.programas.length > 0) ||
+    (filters.anios && filters.anios.length > 0) ||
+    (filters.periodos && filters.periodos.length > 0) ||
+    (filters.gruposReferencia && filters.gruposReferencia.length > 0) ||
+    vaOnlyPositive ||
+    !!selectedDocumento
+  ), [filters, vaOnlyPositive, selectedDocumento]);
+
+  const handleClearFilters = useCallback(() => {
+    setFilters(BASE_FILTERS);
+    setVaOnlyPositive(false);
+    setSelectedDocumento('');
+    setEstudianteDetallePayload(null);
+    setSelectedNbc('');
+    setSelectedPrograma('');
+  }, []);
 
   useEffect(() => {
     setSection(initialSection);
@@ -824,7 +1167,7 @@ function ValorAgregadoDashboardBI({ initialSection = 'va_individual' }) {
     saberProAnalyticsService.getFiltrosCascade(catalogFilters)
       .then((response) => {
         if (!active) return;
-        const data = response?.data || {};
+        const data = response.data || {};
         setCatalogs({
           programas: data.programas || [],
           anios: data.anios || [],
@@ -856,43 +1199,61 @@ function ValorAgregadoDashboardBI({ initialSection = 'va_individual' }) {
           // (respeta vaOnlyPositive). No duplicar aquí para evitar conflictos.
           return;
         } else if (section === 'va_nbc') {
+          if (!hasNbcFilters) {
+            if (active) setNbcPayload({ total_estudiantes: 0, rows: [] });
+            return;
+          }
           const r = await saberProAnalyticsService.getResultadosNbc(nbcFilters);
-          if (active) setNbcPayload(r?.data || { total_estudiantes: 0, rows: [] });
+          if (active) setNbcPayload(r.data || { total_estudiantes: 0, rows: [] });
           return;
         } else if (section === 'va_programas') {
-          const r = await saberProAnalyticsService.getResultadosProgramas(filters);
-          if (active) setProgramasPayload(r?.data || { total_estudiantes: 0, rows: [] });
+          if (!hasProgramFilters) {
+            if (active) setProgramasPayload({ total_estudiantes: 0, rows: [] });
+            return;
+          }
+          const r = await saberProAnalyticsService.getResultadosProgramas(programFilters);
+          if (active) setProgramasPayload(r.data || { total_estudiantes: 0, rows: [] });
           return;
         } else if (section === 'va_institucional') {
+          if (!hasInstitutionalFilters) {
+            if (active) { setInstitucionalPayload(null); setInstitucionalLoading(false); }
+            return;
+          }
           if (active) setInstitucionalLoading(true);
-          const r = await saberProAnalyticsService.getResultadosInstitucional(filters);
-          if (active) { setInstitucionalPayload(r?.data || null); setInstitucionalLoading(false); }
+          const r = await saberProAnalyticsService.getResultadosInstitucional(institutionalFilters);
+          if (active) { setInstitucionalPayload(r.data || null); setInstitucionalLoading(false); }
           return;
         } else if (section === 'va_estadistica') {
           if (active) setComparativaLoading(true);
           try {
-            const r = await saberProAnalyticsService.getResultadosComparativaS11Spr(filters);
-            if (active) setComparativaPayload(r?.data || null);
+            const r = await saberProAnalyticsService.getResultadosComparativaS11Spr({ ...filters, onlyPositiveVa: vaOnlyPositive });
+            if (active) setComparativaPayload(r.data || null);
           } catch (e) {
             if (active) setComparativaPayload(null);
-            console.error('Error comparativa S11 SPR:', e?.response?.data?.message || e?.message);
+            console.error('Error comparativa S11 SPR:', e.response.data.message || e.message);
           } finally {
             if (active) setComparativaLoading(false);
           }
           return;
         }
         if (!active) return;
-        setPayload(response?.data || { coverage: buildEmptyCoverage(), rows: [] });
+        setPayload(response.data || { coverage: buildEmptyCoverage(), rows: [] });
       } catch (err) {
         if (!active) return;
-        setError(err?.response?.data?.message || 'No fue posible cargar el dashboard de valor agregado.');
+        setError(err.response.data.message || 'No fue posible cargar el dashboard de valor agregado.');
       } finally {
         if (active) setLoading(false);
       }
     };
-    load();
-    return () => { active = false; };
-  }, [filters, nbcFilters, section]);
+    // Debounce para evitar disparar múltiples consultas pesadas mientras el
+    // usuario sigue ajustando filtros (especialmente útil en va_estadistica).
+    const debounceMs = section === 'va_estadistica' || section === 'va_institucional' ? 400 : 0;
+    const timerId = setTimeout(load, debounceMs);
+    return () => {
+      active = false;
+      clearTimeout(timerId);
+    };
+  }, [filters, nbcFilters, programFilters, institutionalFilters, section, vaOnlyPositive, hasNbcFilters, hasProgramFilters, hasInstitutionalFilters]);
 
   const coverage = payload.coverage || buildEmptyCoverage();
 
@@ -916,7 +1277,7 @@ function ValorAgregadoDashboardBI({ initialSection = 'va_individual' }) {
     let active = true;
     setVaGeneralDocsLoading(true);
     saberProAnalyticsService.getDocumentosEstudiantes({ ...filters, search: searchTerm, onlyPositiveVa: vaOnlyPositive })
-      .then((r) => { if (active) setVaGeneralDocs(r?.data || []); })
+      .then((r) => { if (active) setVaGeneralDocs(r.data || []); })
       .catch(() => { if (active) setVaGeneralDocs([]); })
       .finally(() => { if (active) setVaGeneralDocsLoading(false); });
     return () => { active = false; };
@@ -931,6 +1292,7 @@ function ValorAgregadoDashboardBI({ initialSection = 'va_individual' }) {
     () => (payload.rows || []).find((row) => String(row.documento || '') === String(selectedDocumento || '')) || null,
     [payload.rows, selectedDocumento]
   );
+  void selectedStudentRow;
 
   const programOptions = useMemo(
     () => (programasPayload.rows || []).map((row) => row.programa).filter(Boolean),
@@ -939,12 +1301,25 @@ function ValorAgregadoDashboardBI({ initialSection = 'va_individual' }) {
 
   useEffect(() => {
     if (section !== 'va_programas') return;
-    const fromFilter = filters.programas?.[0] || '';
-    const first = fromFilter || programOptions[0] || '';
-    if (!selectedPrograma || !programOptions.includes(selectedPrograma)) {
-      setSelectedPrograma(first);
+    const fromFilter = (filters.programas && filters.programas[0]) || '';
+    const firstAvailable = fromFilter || programOptions[0] || '';
+    if (!hasProgramFilters) {
+      if (selectedPrograma) setSelectedPrograma('');
+      return;
     }
-  }, [section, programOptions, selectedPrograma, filters.programas]);
+    if (!firstAvailable) {
+      if (selectedPrograma) setSelectedPrograma('');
+      return;
+    }
+    if (!fromFilter && programOptions[0]) {
+      setFilters((prev) => ({ ...prev, programas: [programOptions[0]] }));
+      if (selectedPrograma !== programOptions[0]) setSelectedPrograma(programOptions[0]);
+      return;
+    }
+    if (!selectedPrograma || selectedPrograma !== firstAvailable) {
+      setSelectedPrograma(firstAvailable);
+    }
+  }, [section, programOptions, selectedPrograma, filters.programas, hasProgramFilters, setFilters]);
 
   useEffect(() => {
     if (section !== 'va_general' || !selectedDocumento) {
@@ -954,22 +1329,25 @@ function ValorAgregadoDashboardBI({ initialSection = 'va_individual' }) {
     let active = true;
     setEstudianteDetalleLoading(true);
     saberProAnalyticsService.getComparativaEstudianteDetalle({ ...filters, documento: selectedDocumento })
-      .then((r) => { if (active) setEstudianteDetallePayload(r?.data || null); })
+      .then((r) => { if (active) setEstudianteDetallePayload(r.data || null); })
       .catch(() => { if (active) setEstudianteDetallePayload(null); })
       .finally(() => { if (active) setEstudianteDetalleLoading(false); });
     return () => { active = false; };
   }, [section, selectedDocumento, filters]);
 
   useEffect(() => {
-    if (section !== 'va_programas' || !selectedPrograma) return;
+    if (section !== 'va_programas' || !selectedPrograma) {
+      setProgramaDetallePayload(null);
+      return;
+    }
     let active = true;
     setProgramaDetalleLoading(true);
-    saberProAnalyticsService.getResultadosProgramaDetalle({ programas: [selectedPrograma], anios: filters.anios, periodos: filters.periodos })
-      .then((r) => { if (active) setProgramaDetallePayload(r?.data || null); })
+    saberProAnalyticsService.getResultadosProgramaDetalle({ programas: [selectedPrograma], anios: filters.anios, periodos: [] })
+      .then((r) => { if (active) setProgramaDetallePayload(r.data || null); })
       .catch(() => { if (active) setProgramaDetallePayload(null); })
       .finally(() => { if (active) setProgramaDetalleLoading(false); });
     return () => { active = false; };
-  }, [section, selectedPrograma, filters.anios, filters.periodos]);
+  }, [section, selectedPrograma, filters.anios]);
 
   const rankedProgramRows = useMemo(
     () => [...(payload.rows || [])]
@@ -991,6 +1369,7 @@ function ValorAgregadoDashboardBI({ initialSection = 'va_individual' }) {
     () => rankedProgramRows.find((row) => row.programa === selectedPrograma) || null,
     [rankedProgramRows, selectedPrograma]
   );
+  void selectedProgramRow;
 
   const selectedProgramCompetencies = useMemo(() => {
     const rows = (payload.statsRows || []).filter((row) => row.programa === selectedPrograma);
@@ -1014,6 +1393,7 @@ function ValorAgregadoDashboardBI({ initialSection = 'va_individual' }) {
       };
     });
   }, [payload.statsRows, selectedPrograma]);
+  void selectedProgramCompetencies;
 
   const nbcOptions = useMemo(
     () => (nbcPayload.rows || []).map((row) => row.grupo_referencia).filter(Boolean),
@@ -1022,12 +1402,25 @@ function ValorAgregadoDashboardBI({ initialSection = 'va_individual' }) {
 
   useEffect(() => {
     if (section !== 'va_nbc') return;
-    const fromFilter = filters.gruposReferencia?.[0] || '';
-    const first = fromFilter || nbcOptions[0] || '';
-    if (!selectedNbc || !nbcOptions.includes(selectedNbc)) {
-      setSelectedNbc(first);
+    const fromFilter = (filters.gruposReferencia && filters.gruposReferencia[0]) || '';
+    const firstAvailable = fromFilter || nbcOptions[0] || '';
+    if (!hasNbcFilters) {
+      if (selectedNbc) setSelectedNbc('');
+      return;
     }
-  }, [filters.gruposReferencia, nbcOptions, section, selectedNbc]);
+    if (!firstAvailable) {
+      if (selectedNbc) setSelectedNbc('');
+      return;
+    }
+    if (!fromFilter && nbcOptions[0]) {
+      setFilters((prev) => ({ ...prev, gruposReferencia: [nbcOptions[0]] }));
+      if (selectedNbc !== nbcOptions[0]) setSelectedNbc(nbcOptions[0]);
+      return;
+    }
+    if (!selectedNbc || selectedNbc !== firstAvailable) {
+      setSelectedNbc(firstAvailable);
+    }
+  }, [filters.gruposReferencia, nbcOptions, section, selectedNbc, hasNbcFilters, setFilters]);
 
   useEffect(() => {
     if (section !== 'va_nbc' || !selectedNbc) {
@@ -1037,7 +1430,7 @@ function ValorAgregadoDashboardBI({ initialSection = 'va_individual' }) {
     let active = true;
     setNbcDetalleLoading(true);
     saberProAnalyticsService.getResultadosNbcDetalle({ ...nbcFilters, gruposReferencia: [selectedNbc] })
-      .then((r) => { if (active) setNbcDetalle(r?.data || null); })
+      .then((r) => { if (active) setNbcDetalle(r.data || null); })
       .catch(() => { if (active) setNbcDetalle(null); })
       .finally(() => { if (active) setNbcDetalleLoading(false); });
     return () => { active = false; };
@@ -1058,6 +1451,7 @@ function ValorAgregadoDashboardBI({ initialSection = 'va_individual' }) {
     () => rankedNbcRows.find((row) => row.grupo_referencia === selectedNbc) || null,
     [rankedNbcRows, selectedNbc]
   );
+  void selectedRankedNbc;
 
   const nbcDistribution = useMemo(() => {
     const base = ['Q1', 'Q2', 'Q3', 'Q4', 'Q5'].map((q) => ({ quintil: q, total: 0 }));
@@ -1072,6 +1466,7 @@ function ValorAgregadoDashboardBI({ initialSection = 'va_individual' }) {
       ...quintileTone(item.quintil)
     }));
   }, [rankedNbcRows]);
+  void nbcDistribution;
 
   const nbcHistoryByYear = useMemo(() => {
     const rows = (payload.statsRows || []).filter((row) => row.nucleo_basico_conocimiento === selectedNbc);
@@ -1107,9 +1502,10 @@ function ValorAgregadoDashboardBI({ initialSection = 'va_individual' }) {
         n: row.va.length
       }));
   }, [payload.statsRows, selectedNbc]);
+  void nbcHistoryByYear;
 
   const individualColumns = useMemo(() => ([
-    { key: '_detalle', label: '🔍', render: (_v, row) => {
+    { key: '_detalle', label: 'Detalle', render: (_v, row) => {
       const isSel = selectedStudent && selectedStudent.documento === row.documento && selectedStudent.anio === row.anio;
       return <span style={{ fontSize: 13, color: isSel ? '#1d4ed8' : '#94a3b8', fontWeight: 700 }}>{isSel ? '▼' : '▶'}</span>;
     }},
@@ -1139,48 +1535,234 @@ function ValorAgregadoDashboardBI({ initialSection = 'va_individual' }) {
       <Stack spacing={2.2}>
         <Paper elevation={0} sx={{ p: 2.2, borderRadius: 4, border: '1px solid #ddd6fe', background: 'linear-gradient(135deg, #ffffff 0%, #f5f3ff 48%, #eff6ff 100%)' }}>
           <Stack spacing={1.8}>
-            <Stack direction={{ xs: 'column', lg: 'row' }} justifyContent="space-between" spacing={1.5}>
+            <Stack direction={{ xs: 'column', lg: 'row' }} justifyContent="space-between" alignItems={{ xs: 'flex-start', lg: 'center' }} spacing={1.5}>
               <Box>
                 <Typography sx={{ fontSize: 28, fontWeight: 900, color: '#312e81', letterSpacing: '-0.03em' }}>
                   Valor Agregado
                 </Typography>
               </Box>
-              <BadgeEstado estado={coverage.estado_cobertura} label={coverage.etiqueta_cobertura} />
-            </Stack>
-
-            <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', sm: 'repeat(2, 1fr)', md: section === 'va_nbc' ? 'repeat(3, 1fr)' : 'repeat(4, 1fr)' }, gap: 1.5 }}>
-              {section !== 'va_nbc' ? (
-                <SmartFilterPanel label="Programas" options={catalogs.programas} value={filters.programas} onChange={(v) => setFilters((prev) => ({ ...prev, programas: v }))} />
-              ) : null}
-              <SmartFilterPanel label="Años" options={catalogs.anios} value={filters.anios} onChange={(v) => setFilters((prev) => ({ ...prev, anios: v }))} />
-              <SmartFilterPanel label="Periodos" options={catalogs.periodos} value={filters.periodos} onChange={(v) => setFilters((prev) => ({ ...prev, periodos: v }))} />
-              <SmartFilterPanel label="NBC / Grupo Referencia" options={catalogs.gruposReferencia} value={filters.gruposReferencia} onChange={(v) => setFilters((prev) => ({ ...prev, gruposReferencia: v }))} />
-            </Box>
-
-            <Stack direction="row" spacing={1} flexWrap="wrap">
-              {[
-                ['va_individual', 'Individual'],
-                ['va_general', 'General'],
-                ['va_estadistica', 'Estadística'],
-                ['va_nbc', 'NBC'],
-                ['va_programas', 'Programas'],
-                ['va_institucional', 'Institucional']
-              ].map(([key, label]) => (
-                <Chip
-                  key={key}
-                  label={label}
-                  onClick={() => setSection(key)}
+              <Stack direction="row" spacing={1.2} alignItems="center">
+                <Button
+                  size="small"
+                  variant="outlined"
+                  startIcon={<FilterAltOffIcon sx={{ fontSize: 18 }} />}
+                  onClick={handleClearFilters}
+                  disabled={!hasActiveFilters}
                   sx={{
-                    bgcolor: section === key ? '#7c3aed' : '#fff',
-                    color: section === key ? '#fff' : '#5b21b6',
-                    border: '1px solid #ddd6fe',
+                    textTransform: 'none',
                     fontWeight: 800,
-                    cursor: 'pointer',
-                    '&:hover': { bgcolor: section === key ? '#6d28d9' : '#f5f3ff' }
+                    borderRadius: 99,
+                    borderColor: '#c4b5fd',
+                    color: '#6d28d9',
+                    bgcolor: '#fff',
+                    px: 1.5,
+                    '&:hover': { borderColor: '#7c3aed', bgcolor: '#f5f3ff' },
+                    '&.Mui-disabled': { borderColor: '#e5e7eb', color: '#cbd5e1', bgcolor: '#f8fafc' }
                   }}
-                />
-              ))}
+                >
+                  Limpiar filtros
+                </Button>
+                {section !== 'va_general' && section !== 'va_estadistica' ? (
+                  <BadgeEstado estado={coverage.estado_cobertura} label={coverage.etiqueta_cobertura} />
+                ) : null}
+              </Stack>
             </Stack>
+
+            {['va_nbc', 'va_programas', 'va_institucional'].includes(section) ? (
+              <>
+                <Box
+                  sx={{
+                    display: 'grid',
+                    gridTemplateColumns: { xs: '1fr', md: 'repeat(3, minmax(0, 1fr))' },
+                    gap: 1.25,
+                    width: '100%'
+                  }}
+                >
+                  {[
+                    ['va_nbc', 'NBC'],
+                    ['va_programas', 'Programas'],
+                    ['va_institucional', 'Institucional']
+                  ].map(([key, label]) => (
+                    <Box
+                      key={key}
+                      onClick={() => setSection(key)}
+                      sx={{
+                        width: '100%',
+                        minHeight: 54,
+                        px: 2.25,
+                        py: 1.25,
+                        borderRadius: 2.5,
+                        border: '1px solid #ddd6fe',
+                        background: section === key ? 'linear-gradient(135deg, #8b5cf6 0%, #6d28d9 100%)' : '#fff',
+                        color: section === key ? '#fff' : '#5b21b6',
+                        fontWeight: 900,
+                        fontSize: 15,
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        boxShadow: section === key ? '0 10px 22px rgba(109,40,217,0.22)' : '0 2px 10px rgba(15,23,42,0.04)',
+                        userSelect: 'none',
+                        cursor: 'pointer',
+                        transition: 'all .18s ease',
+                        '&:hover': {
+                          background: section === key ? 'linear-gradient(135deg, #7c3aed 0%, #5b21b6 100%)' : '#f5f3ff',
+                          transform: 'translateY(-1px)'
+                        }
+                      }}
+                    >
+                      {label}
+                    </Box>
+                  ))}
+                </Box>
+
+                <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', md: section === 'va_institucional' ? '1fr' : 'repeat(2, 1fr)' }, gap: 1.5 }}>
+                  <SmartFilterPanel
+                    label="Años"
+                    options={catalogs.anios}
+                    value={filters.anios}
+                    onChange={(v) => setFilters((prev) => ({ ...prev, anios: v, periodos: [] }))}
+                  />
+
+                  {section === 'va_nbc' ? (
+                    <SmartFilterPanel
+                      label="Grupo de referencia"
+                      options={catalogs.gruposReferencia}
+                      value={filters.gruposReferencia}
+                      singleSelect
+                      onChange={(v) => {
+                        setFilters((prev) => ({ ...prev, gruposReferencia: v, programas: [], periodos: [] }));
+                        setSelectedNbc(v[0] || '');
+                      }}
+                    />
+                  ) : null}
+
+                  {section === 'va_programas' ? (
+                    <SmartFilterPanel
+                      label="Programas"
+                      options={catalogs.programas}
+                      value={filters.programas}
+                      singleSelect
+                      onChange={(v) => {
+                        setFilters((prev) => ({ ...prev, programas: v, gruposReferencia: [], periodos: [] }));
+                        setSelectedPrograma(v[0] || '');
+                      }}
+                    />
+                  ) : null}
+                </Box>
+              </>
+            ) : (
+              <>
+                <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', sm: 'repeat(2, 1fr)', md: section === 'va_general' ? 'repeat(4, 1fr)' : section === 'va_estadistica' ? 'repeat(2, 1fr)' : 'repeat(4, 1fr)' }, gap: 1.5 }}>
+                  {section !== 'va_nbc' ? (
+                    <SmartFilterPanel
+                      label="Programas"
+                      options={catalogs.programas}
+                      value={filters.programas}
+                      onChange={(v) => {
+                        setFilters((prev) => ({ ...prev, programas: v }));
+                        if (section === 'va_general') {
+                          setSelectedDocumento('');
+                          setEstudianteDetallePayload(null);
+                        }
+                      }}
+                    />
+                  ) : null}
+                  <SmartFilterPanel
+                    label="Años"
+                    options={catalogs.anios}
+                    value={filters.anios}
+                    onChange={(v) => {
+                      setFilters((prev) => ({ ...prev, anios: v }));
+                      if (section === 'va_general') {
+                        setSelectedDocumento('');
+                        setEstudianteDetallePayload(null);
+                      }
+                    }}
+                  />
+                  {section !== 'va_general' && section !== 'va_estadistica' ? (
+                    <SmartFilterPanel label="Periodos" options={catalogs.periodos} value={filters.periodos} onChange={(v) => setFilters((prev) => ({ ...prev, periodos: v }))} />
+                  ) : (
+                    section === 'va_general' ? (
+                    <Paper elevation={0} sx={{ p: 1.2, borderRadius: 3, border: '1px solid #ddd6fe', background: '#fff' }}>
+                      <Typography sx={{ fontSize: '9px', fontWeight: 700, color: '#7c3aed', letterSpacing: '0.8px', textTransform: 'uppercase', mb: 0.75 }}>
+                        Documento
+                      </Typography>
+                      <Autocomplete
+                        size="small"
+                        options={documentOptions}
+                        getOptionLabel={(opt) => (
+                          opt && opt.documento
+                            ? `${opt.documento}${opt.nombre ? ` · ${opt.nombre}` : ''}${opt.numero_registro ? ` · ${opt.numero_registro}` : ''}`
+                            : ''
+                        )}
+                        isOptionEqualToValue={(opt, val) => opt.documento === val.documento}
+                        value={documentOptions.find((d) => d.documento === selectedDocumento) || null}
+                        onChange={(_e, newVal) => setSelectedDocumento((newVal && newVal.documento) || '')}
+                        onInputChange={(_e, newInput, reason) => {
+                          if (reason === 'reset') return;
+                          clearTimeout(vaSearchTimer.current);
+                          vaSearchTimer.current = setTimeout(() => fetchDocsBySearch(reason === 'clear' ? '' : newInput), 350);
+                        }}
+                        onOpen={() => {
+                          clearTimeout(vaSearchTimer.current);
+                          fetchDocsBySearch('');
+                        }}
+                        loading={vaGeneralDocsLoading}
+                        filterOptions={(x) => x}
+                        noOptionsText="Sin resultados"
+                        loadingText="Buscando..."
+                        renderInput={(params) => (
+                          <TextField
+                            {...params}
+                            placeholder="Buscar por documento, nombre o registro"
+                            InputProps={{
+                              ...params.InputProps,
+                              startAdornment: (
+                                <InputAdornment position="start">
+                                  <SearchIcon sx={{ color: '#94a3b8', fontSize: 18 }} />
+                                </InputAdornment>
+                              ),
+                              endAdornment: (
+                                <>
+                                  {vaGeneralDocsLoading ? <CircularProgress color="inherit" size={14} /> : null}
+                                  {params.InputProps.endAdornment}
+                                </>
+                              )
+                            }}
+                          />
+                        )}
+                      />
+                    </Paper>
+                    ) : null
+                  )}
+                  {section !== 'va_general' && section !== 'va_estadistica' ? (
+                    <SmartFilterPanel label="NBC / Grupo Referencia" options={catalogs.gruposReferencia} value={filters.gruposReferencia} onChange={(v) => setFilters((prev) => ({ ...prev, gruposReferencia: v }))} />
+                  ) : (
+                    (section === 'va_general' || section === 'va_estadistica') ? (
+                    <Paper elevation={0} sx={{ p: 1.2, borderRadius: 3, border: '1px solid #ddd6fe', background: '#fff' }}>
+                      <Typography sx={{ fontSize: '9px', fontWeight: 700, color: '#7c3aed', letterSpacing: '0.8px', textTransform: 'uppercase', mb: 0.75 }}>
+                        Filtro final
+                      </Typography>
+                      <FormControl size="small" fullWidth>
+                        <Select
+                          value={vaOnlyPositive ? 'positivo' : 'general'}
+                          onChange={(event) => {
+                            const nextPositive = event.target.value === 'positivo';
+                            setVaOnlyPositive(nextPositive);
+                            setSelectedDocumento('');
+                            setEstudianteDetallePayload(null);
+                          }}
+                        >
+                          <MenuItem value="general">General</MenuItem>
+                          <MenuItem value="positivo">Solo valor agregado positivo</MenuItem>
+                        </Select>
+                      </FormControl>
+                    </Paper>
+                    ) : null
+                  )}
+                </Box>
+              </>
+            )}
           </Stack>
         </Paper>
 
@@ -1213,332 +1795,44 @@ function ValorAgregadoDashboardBI({ initialSection = 'va_individual' }) {
         ) : null}
 
         {section === 'va_individual' ? (
-          <TablaDinamica
-            columns={individualColumns}
-            rows={filteredIndividualRows}
-            search={searchDocumento}
-            onSearchChange={setSearchDocumento}
-            onRowClick={(row) => setSelectedStudent((prev) => (prev?.documento === row.documento && prev?.anio === row.anio ? null : row))}
-            selectedRowKey={selectedStudent ? `${selectedStudent.documento}-${selectedStudent.anio}` : null}
-            rowKey={(row) => `${row.documento}-${row.anio}`}
-          />
-          {section === 'va_individual' && !filteredIndividualRows.length && !loading ? null : (
-            <Typography variant="caption" sx={{ color: '#94a3b8', mt: 0.5, display: 'block', textAlign: 'center' }}>
-              Haz clic en una fila para ver la tabla comparativa Saber 11 vs Saber Pro del estudiante.
-            </Typography>
-          )}
+          <>
+            <TablaDinamica
+              columns={individualColumns}
+              rows={filteredIndividualRows}
+              search={searchDocumento}
+              onSearchChange={setSearchDocumento}
+              onRowClick={(row) => setSelectedStudent((prev) => (prev.documento === row.documento && prev.anio === row.anio ? null : row))}
+              selectedRowKey={selectedStudent ? `${selectedStudent.documento}-${selectedStudent.anio}` : null}
+              rowKey={(row) => `${row.documento}-${row.anio}`}
+            />
+            {filteredIndividualRows.length > 0 && !loading && (
+              <Typography variant="caption" sx={{ color: '#94a3b8', mt: 0.5, display: 'block', textAlign: 'center' }}>
+                Haz clic en una fila para ver la tabla comparativa Saber 11 vs Saber Pro del estudiante.
+              </Typography>
+            )}
+          </>
         ) : null}
 
         {section === 'va_general' ? (
           <Stack spacing={2}>
-            {/* Filtro estratégico VA+ */}
-            <Paper elevation={0} sx={{ p: '8px 14px', borderRadius: 2, border: '1px solid #e2e8f0', bgcolor: '#f8fafc', display: 'inline-flex', alignItems: 'center', gap: 1.5, alignSelf: 'flex-start' }}>
-              <Typography sx={{ fontSize: 11, fontWeight: 700, color: '#475569', textTransform: 'uppercase', letterSpacing: '0.6px', mr: 0.5 }}>
-                Filtro estratégico
+            <Paper elevation={0} sx={{ p: 2, borderRadius: 3, border: '1px solid #dbeafe', background: 'linear-gradient(135deg, #ffffff 0%, #f8fbff 100%)' }}>
+              <Typography sx={{ fontSize: 11, fontWeight: 900, color: '#1d4ed8', letterSpacing: '0.08em', textTransform: 'uppercase' }}>
+                Filtros Iniciales
               </Typography>
-              <Box sx={{ display: 'flex', bgcolor: '#e2e8f0', borderRadius: '20px', p: '3px', gap: '3px' }}>
-                <Box
-                  onClick={() => { if (vaOnlyPositive) { setVaOnlyPositive(false); setSelectedDocumento(''); } }}
-                  sx={{
-                    px: 2, py: 0.6, borderRadius: '16px', cursor: 'pointer', transition: 'all .15s',
-                    bgcolor: !vaOnlyPositive ? '#fff' : 'transparent',
-                    boxShadow: !vaOnlyPositive ? '0 1px 4px rgba(0,0,0,.12)' : 'none',
-                    color: !vaOnlyPositive ? '#0f172a' : '#94a3b8',
-                    fontWeight: !vaOnlyPositive ? 800 : 600,
-                    fontSize: 12,
-                    userSelect: 'none',
-                    '&:hover': { color: !vaOnlyPositive ? '#0f172a' : '#475569' }
-                  }}
-                >
-                  Todos
-                </Box>
-                <Box
-                  onClick={() => { if (!vaOnlyPositive) { setVaOnlyPositive(true); setSelectedDocumento(''); } }}
-                  sx={{
-                    px: 2, py: 0.6, borderRadius: '16px', cursor: 'pointer', transition: 'all .15s',
-                    bgcolor: vaOnlyPositive ? '#10b981' : 'transparent',
-                    boxShadow: vaOnlyPositive ? '0 1px 4px rgba(16,185,129,.35)' : 'none',
-                    color: vaOnlyPositive ? '#fff' : '#94a3b8',
-                    fontWeight: vaOnlyPositive ? 800 : 600,
-                    fontSize: 12,
-                    userSelect: 'none',
-                    display: 'flex', alignItems: 'center', gap: 0.5,
-                    '&:hover': { color: vaOnlyPositive ? '#fff' : '#475569' }
-                  }}
-                >
-                  {vaOnlyPositive && <span>✓</span>} Solo VA Positivo
-                </Box>
-              </Box>
-              {vaOnlyPositive && (
-                <Typography sx={{ fontSize: 11, color: '#059669', fontWeight: 600, ml: 0.5 }}>
-                  — mostrando solo VA ≥ 0
-                </Typography>
-              )}
+              <Typography sx={{ mt: 0.5, fontSize: 13, color: '#475569', fontWeight: 700 }}>
+                Trabaja el resultado general por estudiante con los filtros: Programa, Año y Documento.
+              </Typography>
             </Paper>
 
-            {/* Barra de búsqueda por cédula, nombre o EK */}
-            <Paper elevation={0} sx={{ p: 2, borderRadius: 3, border: '1px solid #dbe6f5' }}>
-              <Autocomplete
-                size="small"
-                options={documentOptions}
-                getOptionLabel={(opt) => opt.documento
-                  ? `${opt.documento}${opt.nombre ? ` · ${opt.nombre}` : ''}${opt.numero_registro ? ` · ${opt.numero_registro}` : ''}`
-                  : ''}
-                isOptionEqualToValue={(opt, val) => opt.documento === val.documento}
-                value={documentOptions.find((d) => d.documento === selectedDocumento) || null}
-                onChange={(_e, newVal) => setSelectedDocumento(newVal?.documento || '')}
-                onInputChange={(_e, newInput, reason) => {
-                  if (reason === 'reset') return;
-                  clearTimeout(vaSearchTimer.current);
-                  vaSearchTimer.current = setTimeout(() => fetchDocsBySearch(reason === 'clear' ? '' : newInput), 350);
-                }}
-                onOpen={() => { clearTimeout(vaSearchTimer.current); fetchDocsBySearch(''); }}
-                loading={vaGeneralDocsLoading}
-                filterOptions={(x) => x}
-                noOptionsText="Sin resultados"
-                loadingText="Buscando..."
-                renderInput={(params) => (
-                  <TextField
-                    {...params}
-                    label="Buscar por cédula, nombre o EK (registro)"
-                    InputProps={{
-                      ...params.InputProps,
-                      startAdornment: (
-                        <InputAdornment position="start"><SearchIcon sx={{ color: '#94a3b8', fontSize: 18 }} /></InputAdornment>
-                      ),
-                      endAdornment: (
-                        <>
-                          {vaGeneralDocsLoading ? <CircularProgress color="inherit" size={14} /> : null}
-                          {params.InputProps.endAdornment}
-                        </>
-                      )
-                    }}
-                  />
-                )}
-                renderOption={(props, opt) => (
-                  <Box component="li" {...props} key={opt.documento}>
-                    <Stack>
-                      <Typography sx={{ fontSize: 13, fontWeight: 700, color: '#1e293b' }}>{opt.documento}</Typography>
-                      {opt.nombre && <Typography sx={{ fontSize: 11, color: '#64748b' }}>{opt.nombre}</Typography>}
-                      {opt.numero_registro && <Typography sx={{ fontSize: 10, color: '#94a3b8' }}>EK: {opt.numero_registro}</Typography>}
-                    </Stack>
-                  </Box>
-                )}
-              />
-            </Paper>
-
-            {/* Detalle estudiante */}
             {estudianteDetalleLoading ? (
               <Box sx={{ display: 'flex', justifyContent: 'center', py: 6 }}><CircularProgress /></Box>
             ) : !estudianteDetallePayload || estudianteDetallePayload.length === 0 ? (
-              <Paper elevation={0} sx={{ p: 3, borderRadius: 3, border: '1px solid #dbe6f5', textAlign: 'center', color: '#64748b' }}>
-                {selectedDocumento ? 'Sin datos Saber Pro para este estudiante con los filtros seleccionados.' : 'Selecciona un estudiante para ver el resultado general.'}
+              <Paper elevation={0} sx={{ p: 4, borderRadius: 4, border: '1px solid #dbeafe', textAlign: 'center', color: '#64748b' }}>
+                {selectedDocumento ? 'No hay comparativa general para este documento con los filtros seleccionados.' : 'Selecciona un documento para ver el resultado general.'}
               </Paper>
-            ) : (() => {
-              const det = estudianteDetallePayload[0];
-              const s11 = det.saber11 || {};
-              const spr = det.saberPro || {};
-              const equivalencias = det.equivalencias || {};
-              const vaFinal = det.va_final;
-              const vaPositive = vaFinal != null && vaFinal >= 0;
-              const vaColor = vaPositive ? '#10b981' : '#ef4444';
-              const vaBg = vaPositive ? '#ecfdf5' : '#fef2f2';
-              const vaBorder = vaPositive ? '#6ee7b7' : '#fca5a5';
-              const maxPts = spr.max_pts || 300;
-              const sprLabel = det.is_tyt ? 'SABER TYT' : 'SABER PRO';
-
-              const sprRows = [
-                { key: 'lectura_critica',           label: 'Lectura Crítica',           score: spr.lectura },
-                { key: 'razonamiento_cuantitativo', label: 'Razonamiento Cuantitativo', score: spr.razonamiento },
-                { key: 'competencias_ciudadanas',   label: 'Competencias Ciudadanas',   score: spr.ciudadanas },
-                { key: 'ingles',                    label: 'Inglés',                    score: spr.ingles },
-                { key: 'comunicacion_escrita',      label: 'Comunicación Escrita',      score: spr.comunicacion }
-              ];
-
-              return (
-                <Paper elevation={0} sx={{ borderRadius: 4, overflow: 'hidden', border: '1px solid #bfdbfe' }}>
-                  {/* Header */}
-                  <Box sx={{ p: { xs: 2.2, md: '20px 28px' }, background: 'linear-gradient(135deg, #0f172a 0%, #1e3a8a 60%, #2563eb 100%)' }}>
-                    <Stack direction="row" justifyContent="space-between" alignItems="flex-start" flexWrap="wrap" gap={1}>
-                      <Typography sx={{ color: 'rgba(255,255,255,0.5)', fontSize: 10, fontWeight: 700, letterSpacing: '2px' }}>
-                        COMPARATIVA SABER 11 VS {sprLabel} — RESULTADO GENERAL
-                      </Typography>
-                      <Stack direction="row" spacing={0.8}>
-                        {det.is_tyt && <Chip size="small" label="TyT" sx={{ bgcolor: '#fef3c7', color: '#b45309', fontWeight: 800 }} />}
-                        {det.s11_tipo && <Chip size="small" label={det.s11_tipo.nombre} sx={{ bgcolor: 'rgba(255,255,255,0.15)', color: '#fff', fontWeight: 700 }} />}
-                      </Stack>
-                    </Stack>
-                    <Typography sx={{ color: '#fff', fontSize: { xs: 18, md: 22 }, fontWeight: 900, lineHeight: 1.2, mt: 0.5 }}>
-                      {det.nombre || det.documento}
-                    </Typography>
-                    <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2} mt={0.8} flexWrap="wrap">
-                      <Typography sx={{ color: 'rgba(255,255,255,0.85)', fontSize: 13 }}>{det.programa || '—'}</Typography>
-                      <Typography sx={{ color: 'rgba(255,255,255,0.6)', fontSize: 13 }}>
-                        Año {sprLabel}: {det.anio || '—'}{det.periodo ? ` · Período: ${det.periodo}` : ''}
-                        {det.s11_anio ? ` · Año S11: ${det.s11_anio}` : ''}
-                      </Typography>
-                    </Stack>
-                    <Typography sx={{ fontSize: 11, color: 'rgba(255,255,255,0.6)', mt: 0.5 }}>
-                      Doc: {det.documento || '—'} · Reg: {det.numero_registro || '—'}
-                    </Typography>
-                  </Box>
-
-                  {/* Tabla comparativa unificada */}
-                  <Box sx={{ p: { xs: 1.5, md: 2 } }}>
-                    {/* Cabecera de tabla */}
-                    <Box sx={{
-                      display: 'grid', gridTemplateColumns: '200px 90px 1fr 80px',
-                      bgcolor: '#1e3a8a', borderRadius: '8px 8px 0 0', px: 1.5, py: 1.2, gap: 0
-                    }}>
-                      {[
-                        [`MÓDULO ${sprLabel}`, 'left'],
-                        [`PUNTAJE (/${maxPts})`, 'center'],
-                        [`EQUIVALENCIAS SABER 11 · Año ${det.s11_anio || '—'}${det.s11_tipo ? ' · ' + det.s11_tipo.nombre : ''}`, 'left'],
-                        ['EQUIV.', 'center']
-                      ].map(([txt, align], i) => (
-                        <Typography key={i} sx={{ fontSize: 11, fontWeight: 800, color: i < 2 ? '#93c5fd' : '#7dd3fc', textTransform: 'uppercase', letterSpacing: '0.7px', textAlign: align, pl: i === 2 ? 1.5 : 0 }}>
-                          {txt}
-                        </Typography>
-                      ))}
-                    </Box>
-
-                    {/* Filas por módulo */}
-                    {SPR_MODULE_ORDER.map(({ key, label }, idx) => {
-                      const sprScore = sprRows.find((r) => r.key === key)?.score ?? null;
-                      const eq = equivalencias[key];
-                      const eqScore = eq?.score ?? null;
-                      return (
-                        <Box key={key} sx={{
-                          display: 'grid', gridTemplateColumns: '200px 90px 1fr 80px',
-                          bgcolor: idx % 2 === 0 ? '#f8fafc' : '#ffffff',
-                          borderLeft: '1px solid #e2e8f0', borderRight: '1px solid #e2e8f0',
-                          borderBottom: '1px solid #e2e8f0', minHeight: 54, alignItems: 'center'
-                        }}>
-                          {/* Nombre módulo */}
-                          <Box sx={{ px: 1.5, py: 1, borderRight: '1px solid #e2e8f0' }}>
-                            <Typography sx={{ fontSize: 14, fontWeight: 700, color: '#1e293b' }}>{label}</Typography>
-                          </Box>
-                          {/* Puntaje SPR */}
-                          <Box sx={{ px: 1, py: 1, borderRight: '1px solid #e2e8f0', textAlign: 'center' }}>
-                            <Typography sx={{ fontSize: 18, fontWeight: 900, color: sprScore != null ? '#0369a1' : '#cbd5e1' }}>
-                              {formatNumber(sprScore, 1)}
-                            </Typography>
-                          </Box>
-                          {/* Equivalencias S11 */}
-                          <Box sx={{ px: 1.5, py: 1, borderRight: '1px solid #e2e8f0' }}>
-                            {det.s11_tiene_datos && eq ? (
-                              <Stack direction="row" spacing={0.5} flexWrap="wrap" useFlexGap>
-                                {eq.s11_cols.map((col) => (
-                                  <Chip key={col.col} size="small"
-                                    label={`${col.label}: ${col.score != null ? formatNumber(col.score, 1) : '—'}`}
-                                    sx={{
-                                      height: 24, fontSize: 11, fontWeight: 700,
-                                      bgcolor: col.score != null ? '#eff6ff' : '#f1f5f9',
-                                      color: col.score != null ? '#1d4ed8' : '#94a3b8',
-                                      border: col.score != null ? '1px solid #bfdbfe' : '1px solid #e2e8f0'
-                                    }} />
-                                ))}
-                              </Stack>
-                            ) : (
-                              <Typography sx={{ fontSize: 12, color: '#94a3b8', fontStyle: 'italic' }}>Sin datos S11</Typography>
-                            )}
-                          </Box>
-                          {/* Score equivalente */}
-                          <Box sx={{ px: 1, py: 1, textAlign: 'center' }}>
-                            <Typography sx={{ fontSize: 18, fontWeight: 900, color: eqScore != null ? '#1d4ed8' : '#cbd5e1' }}>
-                              {eqScore != null ? formatNumber(eqScore, 1) : '—'}
-                            </Typography>
-                          </Box>
-                        </Box>
-                      );
-                    })}
-
-                    {/* Resumen alineado con columnas de tabla */}
-                    <Box sx={{ display: 'grid', gridTemplateColumns: '200px 90px 1fr 80px', borderTop: '2px solid #1e3a8a', borderRadius: '0 0 8px 8px', overflow: 'hidden' }}>
-                      {/* Cabecera resumen SPR */}
-                      <Box sx={{ gridColumn: '1 / span 2', px: 1.5, py: 0.8, bgcolor: '#0c4a6e', display: 'flex', alignItems: 'center', gap: 1, borderRight: '2px solid #7dd3fc' }}>
-                        <Box sx={{ width: 9, height: 9, borderRadius: '50%', bgcolor: '#38bdf8' }} />
-                        <Typography sx={{ fontSize: 11, fontWeight: 800, color: '#e0f2fe', textTransform: 'uppercase', letterSpacing: '0.8px' }}>
-                          {sprLabel} · Año {det.anio} · P{det.periodo}
-                        </Typography>
-                      </Box>
-                      {/* Cabecera resumen S11 */}
-                      <Box sx={{ gridColumn: '3 / span 2', px: 1.5, py: 0.8, bgcolor: '#1e1b4b', display: 'flex', alignItems: 'center', gap: 1 }}>
-                        <Box sx={{ width: 9, height: 9, borderRadius: '50%', bgcolor: '#818cf8' }} />
-                        <Typography sx={{ fontSize: 11, fontWeight: 800, color: '#e0e7ff', textTransform: 'uppercase', letterSpacing: '0.8px' }}>
-                          SABER 11 · Año {det.s11_anio || '—'} · Equivalencias
-                        </Typography>
-                      </Box>
-                      {/* Fila: Fórmula SPR | Promedio S11 */}
-                      <Box sx={{ px: 1.5, py: 1, bgcolor: '#f0f9ff', borderRight: '1px solid #bae6fd', borderTop: '1px solid #e2e8f0' }}>
-                        <Typography sx={{ fontSize: 11, color: '#64748b', fontWeight: 600 }}>Fórmula (Σn/n)</Typography>
-                      </Box>
-                      <Box sx={{ px: 1, py: 1, bgcolor: '#f0f9ff', textAlign: 'center', borderRight: '2px solid #7dd3fc', borderTop: '1px solid #e2e8f0' }}>
-                        <Typography sx={{ fontSize: 17, fontWeight: 900, color: '#0369a1' }}>{formatNumber(spr.formula, 2)}</Typography>
-                      </Box>
-                      <Box sx={{ px: 1.5, py: 1, bgcolor: '#eef2ff', borderRight: '1px solid #c7d2fe', borderTop: '1px solid #e2e8f0' }}>
-                        <Typography sx={{ fontSize: 11, color: '#64748b', fontWeight: 600 }}>Promedio Equiv. S11</Typography>
-                      </Box>
-                      <Box sx={{ px: 1, py: 1, bgcolor: '#eef2ff', textAlign: 'center', borderTop: '1px solid #e2e8f0' }}>
-                        <Typography sx={{ fontSize: 17, fontWeight: 900, color: '#1d4ed8' }}>{formatNumber(s11.resultado_ponderado, 2)}</Typography>
-                      </Box>
-                      {/* Fila: VA SPR% | VA S11% */}
-                      <Box sx={{ px: 1.5, py: 1, bgcolor: '#e0f2fe', borderRight: '1px solid #bae6fd', borderTop: '1px solid #bae6fd' }}>
-                        <Typography sx={{ fontSize: 11, color: '#0369a1', fontWeight: 700 }}>VA {det.is_tyt ? 'TyT' : 'SPR'}% (×100/{maxPts})</Typography>
-                      </Box>
-                      <Box sx={{ px: 1, py: 1, bgcolor: '#e0f2fe', textAlign: 'center', borderRight: '2px solid #7dd3fc', borderTop: '1px solid #bae6fd' }}>
-                        <Typography sx={{ fontSize: 18, fontWeight: 900, color: '#0284c7' }}>{formatNumber(spr.va_pct, 2)}%</Typography>
-                      </Box>
-                      <Box sx={{ px: 1.5, py: 1, bgcolor: '#ede9fe', borderRight: '1px solid #c7d2fe', borderTop: '1px solid #c7d2fe' }}>
-                        <Typography sx={{ fontSize: 11, color: '#6d28d9', fontWeight: 700 }}>VA S11%</Typography>
-                      </Box>
-                      <Box sx={{ px: 1, py: 1, bgcolor: '#ede9fe', textAlign: 'center', borderTop: '1px solid #c7d2fe' }}>
-                        <Typography sx={{ fontSize: 18, fontWeight: 900, color: '#7c3aed' }}>{formatNumber(s11.va_pct, 2)}%</Typography>
-                      </Box>
-                    </Box>
-                  </Box>
-
-                  {/* VA Final */}
-                  <Box sx={{ p: { xs: 2, md: '16px 24px' }, bgcolor: vaBg, borderTop: `3px solid ${vaColor}` }}>
-                    <Stack direction={{ xs: 'column', md: 'row' }} justifyContent="space-between" alignItems={{ md: 'center' }} spacing={2}>
-                      <Box>
-                        <Typography sx={{ fontSize: 10, fontWeight: 700, color: vaColor, textTransform: 'uppercase', letterSpacing: '1.5px' }}>
-                          Valor Agregado Resultado General
-                        </Typography>
-                        <Typography sx={{ fontSize: 20, fontWeight: 900, color: vaColor, mt: 0.3 }}>
-                          {vaPositive ? 'Valor Agregado Positivo' : 'Valor Agregado Negativo'}
-                        </Typography>
-                        <Typography sx={{ fontSize: 11, color: '#64748b', mt: 0.4 }}>
-                          VA_Final = VA_{det.is_tyt ? 'TyT' : 'SPR'}% − VA_S11% = {formatNumber(spr.va_pct, 2)}% − {formatNumber(s11.va_pct, 2)}%
-                        </Typography>
-                      </Box>
-                      <Box sx={{ px: 3, py: 1.5, borderRadius: 3, bgcolor: '#fff', border: `2px solid ${vaBorder}`, textAlign: 'center', minWidth: 120 }}>
-                        <Typography sx={{ fontSize: 10, color: '#94a3b8', fontWeight: 700, textTransform: 'uppercase' }}>VA Final</Typography>
-                        <Typography sx={{ fontSize: 32, fontWeight: 900, color: vaColor, lineHeight: 1.1 }}>
-                          {vaFinal != null ? `${vaPositive ? '+' : ''}${formatNumber(vaFinal, 2)}%` : '—'}
-                        </Typography>
-                      </Box>
-                    </Stack>
-                  </Box>
-
-                  {/* Múltiples registros (otros periodos) */}
-                  {estudianteDetallePayload.length > 1 && (
-                    <Box sx={{ p: 2, borderTop: '1px solid #e2e8f0', bgcolor: '#fafafa' }}>
-                      <Typography sx={{ fontSize: 12, fontWeight: 700, color: '#64748b', mb: 1 }}>
-                        Otros registros ({estudianteDetallePayload.length - 1} más):
-                      </Typography>
-                      <Stack direction="row" spacing={1} flexWrap="wrap" gap={1}>
-                        {estudianteDetallePayload.slice(1).map((r, i) => (
-                          <Chip key={i} size="small"
-                            label={`${r.anio} · ${r.periodo || '—'} · VA ${r.va_final != null ? `${r.va_final >= 0 ? '+' : ''}${formatNumber(r.va_final, 2)}%` : '—'}`}
-                            sx={{ bgcolor: r.va_final >= 0 ? '#d1fae5' : '#fee2e2', color: r.va_final >= 0 ? '#065f46' : '#991b1b', fontWeight: 700 }} />
-                        ))}
-                      </Stack>
-                    </Box>
-                  )}
-                </Paper>
-              );
-            })()}
+            ) : (
+              <ValorAgregadoResultadoGeneralCard detail={estudianteDetallePayload[0]} />
+            )}
           </Stack>
         ) : null}
 
@@ -1548,55 +1842,94 @@ function ValorAgregadoDashboardBI({ initialSection = 'va_individual' }) {
               <Box sx={{ display: 'flex', justifyContent: 'center', py: 6 }}><CircularProgress /></Box>
             ) : !comparativaPayload ? (
               <Paper elevation={0} sx={{ p: 4, borderRadius: 3, border: '1px solid #e2e8f0', textAlign: 'center', color: '#64748b' }}>
-                Sin datos disponibles para los filtros seleccionados.
+                <Typography sx={{ fontSize: 14, fontWeight: 700, mb: 0.5 }}>No se pudieron cargar los datos.</Typography>
+                <Typography sx={{ fontSize: 12 }}>Revisa la conexión o intenta ajustar los filtros.</Typography>
               </Paper>
             ) : (() => {
               const cp = comparativaPayload;
               const comps = cp.competencias || [];
               const historico = cp.historico || [];
               const histComp = cp.historicoPorCompetencia || [];
-              const cov = cp.coverage || {};
               const COMP_KEYS = [
                 { label: 'Lectura Crítica', s11Key: 's11_lec', sprKey: 'spr_lec', color: '#6366f1' },
                 { label: 'Razon. Cuantitativo', s11Key: 's11_raz', sprKey: 'spr_raz', color: '#0ea5e9' },
                 { label: 'Comp. Ciudadanas', s11Key: 's11_ciu', sprKey: 'spr_ciu', color: '#10b981' },
+                { label: 'Comunicación Escrita', s11Key: 's11_com', sprKey: 'spr_com', color: '#8b5cf6' },
                 { label: 'Inglés', s11Key: 's11_ing', sprKey: 'spr_ing', color: '#f59e0b' }
               ];
-              const avgS11 = comps.length ? Number((comps.reduce((s, c) => s + (c.s11_pct || 0), 0) / comps.length).toFixed(2)) : 0;
-              const avgSpr = comps.length ? Number((comps.reduce((s, c) => s + (c.spr_pct || 0), 0) / comps.length).toFixed(2)) : 0;
+              const COMP_CHARTS = COMP_KEYS.map((ck, index) => {
+                const comp = comps[index] || {};
+                const s11Labels = Array.isArray(comp.s11_label) && comp.s11_label.length
+                  ? comp.s11_label
+                  : [comp.label || ck.label];
+                return {
+                  ...ck,
+                  sprLabel: comp.spr_label || ck.label,
+                  s11Labels
+                };
+              });
+              const avgS11 = comps.length ? (comps.reduce((s, c) => s + (c.s11_pct || 0), 0) / comps.length) : 0;
+              const avgSpr = comps.length ? (comps.reduce((s, c) => s + (c.spr_pct || 0), 0) / comps.length) : 0;
               const vaGlobal = cp.va_promedio;
               const vaColor = vaGlobal >= 0 ? '#10b981' : '#ef4444';
+              const tableRows = [
+                ...comps,
+                {
+                  label: 'PROMEDIO GENERAL',
+                  s11_label: [cp.tipo_saber11 ? `Saber 11 - ${cp.tipo_saber11}` : 'Promedio general'],
+                  spr_label: 'Promedio general',
+                  s11_raw: comps.length ? comps.reduce((s, c) => s + (c.s11_raw || 0), 0) / comps.length : null,
+                  s11_ponderado: comps.length ? comps.reduce((s, c) => s + (c.s11_ponderado || 0), 0) / comps.length : null,
+                  s11_pct: avgS11,
+                  spr_raw: comps.length ? comps.reduce((s, c) => s + (c.spr_raw || 0), 0) / comps.length : null,
+                  spr_pct: avgSpr,
+                  va: vaGlobal,
+                  _footer: true
+                }
+              ];
 
               return (
                 <Stack spacing={2.5}>
-                  {/* ── HEADER banner ── */}
+                  {/* Header banner */}
                   <Paper elevation={0} sx={{ background: 'linear-gradient(135deg, #0f172a 0%, #1e3a8a 60%, #2563eb 100%)', borderRadius: '18px', overflow: 'hidden', boxShadow: '0 10px 36px rgba(37,99,235,0.2)' }}>
                     <Box sx={{ p: { xs: 2.5, md: '28px 36px' } }}>
-                      <Typography sx={{ color: 'rgba(255,255,255,0.5)', fontSize: '10px', fontWeight: 700, letterSpacing: '2.5px', mb: 0.5 }}>
-                        SABER PRO — ESTADÍSTICA COMPARATIVA
-                      </Typography>
-                      <Typography sx={{ color: '#fff', fontSize: { xs: 20, md: 26 }, fontWeight: 900, lineHeight: 1.2, mb: 1 }}>
-                        Comparativa Saber 11 vs Saber Pro
-                      </Typography>
-                      <Stack direction="row" spacing={3} flexWrap="wrap" gap={1}>
-                        <Stack direction="row" spacing={1} alignItems="center">
-                          <Box sx={{ width: 10, height: 10, borderRadius: '50%', bgcolor: '#60a5fa' }} />
-                          <Typography sx={{ color: 'rgba(255,255,255,0.8)', fontSize: 13 }}>{cp.estudiantes || 0} estudiantes con cruce S11</Typography>
-                        </Stack>
-                        <Stack direction="row" spacing={1} alignItems="center">
-                          <Box sx={{ width: 10, height: 10, borderRadius: '50%', bgcolor: cov.estado_cobertura === 'ALTO' ? '#10b981' : cov.estado_cobertura === 'MEDIO' ? '#f59e0b' : '#ef4444' }} />
-                          <Typography sx={{ color: 'rgba(255,255,255,0.8)', fontSize: 13 }}>Cobertura: {formatNumber(cov.porcentaje_cobertura, 1)}% — {cov.etiqueta_cobertura}</Typography>
-                        </Stack>
-                        <Stack direction="row" spacing={1} alignItems="center">
-                          <Box sx={{ width: 10, height: 10, borderRadius: '50%', bgcolor: vaColor }} />
-                          <Typography sx={{ color: 'rgba(255,255,255,0.8)', fontSize: 13 }}>VA Promedio Global: {vaGlobal >= 0 ? '+' : ''}{formatNumber(vaGlobal, 2)}%</Typography>
-                        </Stack>
+                      <Stack direction={{ xs: 'column', md: 'row' }} justifyContent="space-between" alignItems={{ xs: 'flex-start', md: 'center' }} gap={2}>
+                        <Box>
+                          <Typography sx={{ color: 'rgba(255,255,255,0.5)', fontSize: '10px', fontWeight: 700, letterSpacing: '2.5px', mb: 0.5 }}>
+                            SABER PRO - ESTADÍSTICA COMPARATIVA {vaOnlyPositive ? '· FILTRO: SOLO VA POSITIVO' : '· FILTRO: GENERAL'}
+                          </Typography>
+                          <Typography sx={{ color: '#fff', fontSize: { xs: 20, md: 26 }, fontWeight: 900, lineHeight: 1.2, mb: 1 }}>
+                            Comparativa Saber 11 vs Saber Pro
+                          </Typography>
+                          <Stack direction="row" spacing={3} flexWrap="wrap" gap={1}>
+                            <Stack direction="row" spacing={1} alignItems="center">
+                              <Box sx={{ width: 10, height: 10, borderRadius: '50%', bgcolor: vaOnlyPositive ? '#10b981' : '#60a5fa' }} />
+                              <Typography sx={{ color: '#fff', fontSize: 13, fontWeight: 800 }}>
+                                {cp.estudiantes || 0} estudiantes contabilizados{vaOnlyPositive ? ' (solo con VA ≥ 0)' : ' (con cruce S11)'}
+                              </Typography>
+                            </Stack>
+                            <Stack direction="row" spacing={1} alignItems="center">
+                              <Box sx={{ width: 10, height: 10, borderRadius: '50%', bgcolor: vaColor }} />
+                              <Typography sx={{ color: 'rgba(255,255,255,0.85)', fontSize: 13 }}>VA Promedio Global: {vaGlobal >= 0 ? '+' : ''}{formatNumber(vaGlobal, 2)}%</Typography>
+                            </Stack>
+                          </Stack>
+                        </Box>
+                        {vaOnlyPositive ? (
+                          <Button
+                            variant="contained"
+                            disabled={exportingPositivos}
+                            onClick={handleExportPositivos}
+                            sx={{ bgcolor: '#10b981', color: '#fff', fontWeight: 800, borderRadius: 2, textTransform: 'none', px: 2.5, py: 1.2, fontSize: 13, boxShadow: '0 4px 14px rgba(16,185,129,0.35)', '&:hover': { bgcolor: '#059669' } }}
+                          >
+                            {exportingPositivos ? 'Exportando…' : `⬇ Exportar base de datos (${cp.estudiantes || 0} estudiantes)`}
+                          </Button>
+                        ) : null}
                       </Stack>
                     </Box>
                   </Paper>
 
-                  {/* ── 4 KPI cards VA por competencia ── */}
-                  <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 1.5 }}>
+                  {/* KPI cards VA por competencia */}
+                  <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', sm: 'repeat(2, 1fr)', xl: 'repeat(5, 1fr)' }, gap: 1.5 }}>
                     {comps.map((c, i) => {
                       const vc = c.va;
                       const vColor = vc >= 0 ? '#10b981' : '#ef4444';
@@ -1611,11 +1944,11 @@ function ValorAgregadoDashboardBI({ initialSection = 'va_individual' }) {
                           <Stack direction="row" justifyContent="space-between" sx={{ mt: 1.5, pt: 1, borderTop: '1px solid #f1f5f9' }}>
                             <Box sx={{ textAlign: 'center' }}>
                               <Typography sx={{ fontSize: 9, color: '#94a3b8', fontWeight: 700 }}>S11</Typography>
-                              <Typography sx={{ fontSize: 13, fontWeight: 800, color: '#60a5fa' }}>{formatNumber(c.s11_pct, 1)}%</Typography>
+                              <Typography sx={{ fontSize: 13, fontWeight: 800, color: '#60a5fa' }}>{formatNumber(c.s11_pct, 2)}%</Typography>
                             </Box>
                             <Box sx={{ textAlign: 'center' }}>
                               <Typography sx={{ fontSize: 9, color: '#94a3b8', fontWeight: 700 }}>SPR</Typography>
-                              <Typography sx={{ fontSize: 13, fontWeight: 800, color: '#34d399' }}>{formatNumber(c.spr_pct, 1)}%</Typography>
+                              <Typography sx={{ fontSize: 13, fontWeight: 800, color: '#34d399' }}>{formatNumber(c.spr_pct, 2)}%</Typography>
                             </Box>
                           </Stack>
                         </Paper>
@@ -1623,34 +1956,40 @@ function ValorAgregadoDashboardBI({ initialSection = 'va_individual' }) {
                     })}
                   </Box>
 
-                  {/* ── TABLA RESULTADOS GENERALES ── */}
+                  {/* Tabla resultados generales */}
                   <Paper elevation={0} sx={{ borderRadius: 4, overflow: 'hidden', border: '1px solid #bfdbfe' }}>
-                    <Box sx={{ p: '18px 24px', background: 'linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%)', display: 'grid', gridTemplateColumns: '1fr 3fr 2fr 1.5fr', gap: 1 }}>
-                      <Typography sx={{ color: '#fff', fontWeight: 900, fontSize: 13 }}>COMPETENCIA</Typography>
-                      <Box sx={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 1 }}>
-                        <Typography sx={{ color: '#bfdbfe', fontWeight: 700, fontSize: 11, textAlign: 'center' }}>S11 PUNTAJE</Typography>
-                        <Typography sx={{ color: '#bfdbfe', fontWeight: 700, fontSize: 11, textAlign: 'center' }}>PONDERADO</Typography>
-                        <Typography sx={{ color: '#bfdbfe', fontWeight: 700, fontSize: 11, textAlign: 'center' }}>S11 %</Typography>
+                    <Box sx={{ p: '16px 24px', background: 'linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%)', display: 'grid', gridTemplateColumns: '2.8fr 2.4fr 1.2fr', gap: 1 }}>
+                      <Box sx={{ display: 'grid', gridTemplateColumns: '1.6fr 0.8fr 0.8fr', gap: 1 }}>
+                        <Typography sx={{ color: '#fff', fontWeight: 900, fontSize: 13, textAlign: 'left' }}>SABER 11</Typography>
+                        <Typography sx={{ color: '#bfdbfe', fontWeight: 700, fontSize: 11, textAlign: 'center' }}>PUNTAJE</Typography>
+                        <Typography sx={{ color: '#bfdbfe', fontWeight: 700, fontSize: 11, textAlign: 'center' }}>%</Typography>
                       </Box>
-                      <Box sx={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 1 }}>
-                        <Typography sx={{ color: '#bfdbfe', fontWeight: 700, fontSize: 11, textAlign: 'center' }}>SPR PUNTAJE</Typography>
-                        <Typography sx={{ color: '#bfdbfe', fontWeight: 700, fontSize: 11, textAlign: 'center' }}>SPR %</Typography>
+                      <Box sx={{ display: 'grid', gridTemplateColumns: '1.6fr 0.8fr 0.8fr', gap: 1 }}>
+                        <Typography sx={{ color: '#fff', fontWeight: 900, fontSize: 13, textAlign: 'left' }}>SABER PRO</Typography>
+                        <Typography sx={{ color: '#bfdbfe', fontWeight: 700, fontSize: 11, textAlign: 'center' }}>PUNTAJE</Typography>
+                        <Typography sx={{ color: '#bfdbfe', fontWeight: 700, fontSize: 11, textAlign: 'center' }}>%</Typography>
                       </Box>
                       <Typography sx={{ color: '#fef08a', fontWeight: 900, fontSize: 12, textAlign: 'center' }}>VA GENERAL</Typography>
                     </Box>
-                    {[...comps, { label: 'PROMEDIO GENERAL', s11_raw: comps.length ? comps.reduce((s, c) => s + (c.s11_raw || 0), 0) / comps.length : null, s11_ponderado: comps.length ? comps.reduce((s, c) => s + (c.s11_ponderado || 0), 0) / comps.length : null, s11_pct: avgS11, spr_raw: comps.length ? comps.reduce((s, c) => s + (c.spr_raw || 0), 0) / comps.length : null, spr_pct: avgSpr, va: vaGlobal, _footer: true }].map((c, i) => {
+                    {tableRows.map((c, i) => {
                       const isFooter = c._footer;
                       const vc = c.va;
                       const vColor = vc >= 0 ? '#10b981' : '#ef4444';
                       return (
-                        <Box key={c.label} sx={{ display: 'grid', gridTemplateColumns: '1fr 3fr 2fr 1.5fr', gap: 1, p: '12px 24px', bgcolor: isFooter ? '#eff6ff' : (i % 2 === 0 ? '#fff' : '#f8fafc'), borderBottom: isFooter ? 'none' : '1px solid #e2e8f0', borderTop: isFooter ? '2px solid #bfdbfe' : 'none' }}>
-                          <Typography sx={{ fontWeight: isFooter ? 900 : 700, fontSize: 13, color: isFooter ? '#1d4ed8' : '#334155', alignSelf: 'center' }}>{c.label}</Typography>
-                          <Box sx={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 1, alignItems: 'center' }}>
+                        <Box key={`${c.key || c.label}-${i}`} sx={{ display: 'grid', gridTemplateColumns: '2.8fr 2.4fr 1.2fr', gap: 1, p: '12px 24px', bgcolor: isFooter ? '#eff6ff' : (i % 2 === 0 ? '#fff' : '#f8fafc'), borderBottom: isFooter ? 'none' : '1px solid #e2e8f0', borderTop: isFooter ? '2px solid #bfdbfe' : 'none' }}>
+                          <Box sx={{ display: 'grid', gridTemplateColumns: '1.6fr 0.8fr 0.8fr', gap: 1, alignItems: 'center' }}>
+                            <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.35 }}>
+                              {(Array.isArray(c.s11_label) && c.s11_label.length ? c.s11_label : [c.label]).map((entry) => (
+                                <Typography key={`${c.key || c.label}-${entry}`} sx={{ fontSize: 13, fontWeight: 800, color: isFooter ? '#1d4ed8' : '#334155', lineHeight: 1.25 }}>
+                                  {entry}
+                                </Typography>
+                              ))}
+                            </Box>
                             <Typography sx={{ textAlign: 'center', fontSize: 13, fontWeight: 700, color: '#60a5fa' }}>{formatNumber(c.s11_raw, 1)}</Typography>
-                            <Typography sx={{ textAlign: 'center', fontSize: 13, fontWeight: 700, color: '#3b82f6' }}>{formatNumber(c.s11_ponderado, 1)}</Typography>
                             <Typography sx={{ textAlign: 'center', fontSize: 13, fontWeight: 800, color: '#2563eb' }}>{formatNumber(c.s11_pct, 2)}%</Typography>
                           </Box>
-                          <Box sx={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 1, alignItems: 'center' }}>
+                          <Box sx={{ display: 'grid', gridTemplateColumns: '1.6fr 0.8fr 0.8fr', gap: 1, alignItems: 'center' }}>
+                            <Typography sx={{ fontSize: 12, fontWeight: 800, color: isFooter ? '#1d4ed8' : '#334155' }}>{c.spr_label || c.label}</Typography>
                             <Typography sx={{ textAlign: 'center', fontSize: 13, fontWeight: 700, color: '#10b981' }}>{formatNumber(c.spr_raw, 1)}</Typography>
                             <Typography sx={{ textAlign: 'center', fontSize: 13, fontWeight: 800, color: '#059669' }}>{formatNumber(c.spr_pct, 2)}%</Typography>
                           </Box>
@@ -1662,145 +2001,451 @@ function ValorAgregadoDashboardBI({ initialSection = 'va_individual' }) {
                     })}
                   </Paper>
 
-                  {/* ── GRÁFICO COMPARATIVO HORIZONTAL ── */}
+                  {/* Gráfico comparativo horizontal (Saber 11 vs Saber Pro) */}
                   <Paper elevation={0} sx={{ p: 2.5, borderRadius: 3, border: '1px solid #dbe6f5' }}>
-                    <Typography sx={{ fontWeight: 900, color: '#0f172a', fontSize: 15, mb: 0.5 }}>
-                      Comparativa por Competencia — Saber 11 vs Saber Pro
-                    </Typography>
-                    <Typography sx={{ fontSize: 12, color: '#64748b', mb: 2 }}>
-                      Porcentaje normalizado · {cp.estudiantes || 0} estudiantes con cruce S11
-                    </Typography>
-                    <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2.5 }}>
-                      {comps.map((c, i) => {
-                        const vc = c.va;
-                        const vColor = vc >= 0 ? '#10b981' : '#ef4444';
-                        const accent = COMP_KEYS[i]?.color || '#6366f1';
-                        const maxBar = 100;
-                        return (
-                          <Box key={c.label}>
-                            <Stack direction="row" justifyContent="space-between" alignItems="center" sx={{ mb: 0.75 }}>
-                              <Typography sx={{ fontWeight: 800, fontSize: 13, color: '#1e293b' }}>{c.label}</Typography>
-                              <Box sx={{ px: 1.5, py: 0.25, borderRadius: 99, bgcolor: `${vColor}18`, border: `1px solid ${vColor}40` }}>
-                                <Typography sx={{ fontSize: 12, fontWeight: 900, color: vColor }}>
-                                  VA: {vc >= 0 ? '+' : ''}{formatNumber(vc, 2)}%
-                                </Typography>
-                              </Box>
-                            </Stack>
-                            <Stack spacing={0.75}>
-                              <Box>
-                                <Stack direction="row" justifyContent="space-between" sx={{ mb: 0.3 }}>
-                                  <Typography sx={{ fontSize: 10, fontWeight: 700, color: '#60a5fa' }}>SABER 11</Typography>
-                                  <Typography sx={{ fontSize: 11, fontWeight: 800, color: '#60a5fa' }}>{formatNumber(c.s11_pct, 1)}%</Typography>
-                                </Stack>
-                                <Box sx={{ height: 14, borderRadius: 99, bgcolor: '#f1f5f9', overflow: 'hidden' }}>
-                                  <Box sx={{ height: '100%', width: `${Math.min((c.s11_pct || 0) / maxBar * 100, 100)}%`, bgcolor: '#60a5fa', borderRadius: 99, transition: 'width 0.6s ease' }} />
-                                </Box>
-                              </Box>
-                              <Box>
-                                <Stack direction="row" justifyContent="space-between" sx={{ mb: 0.3 }}>
-                                  <Typography sx={{ fontSize: 10, fontWeight: 700, color: '#34d399' }}>SABER PRO</Typography>
-                                  <Typography sx={{ fontSize: 11, fontWeight: 800, color: '#34d399' }}>{formatNumber(c.spr_pct, 1)}%</Typography>
-                                </Stack>
-                                <Box sx={{ height: 14, borderRadius: 99, bgcolor: '#f1f5f9', overflow: 'hidden' }}>
-                                  <Box sx={{ height: '100%', width: `${Math.min((c.spr_pct || 0) / maxBar * 100, 100)}%`, bgcolor: '#34d399', borderRadius: 99, transition: 'width 0.6s ease' }} />
-                                </Box>
-                              </Box>
-                            </Stack>
-                          </Box>
-                        );
-                      })}
-                    </Box>
-                    <Stack direction="row" spacing={3} sx={{ mt: 2.5, pt: 1.5, borderTop: '1px solid #f1f5f9' }}>
-                      <Stack direction="row" spacing={1} alignItems="center">
-                        <Box sx={{ width: 16, height: 8, borderRadius: 99, bgcolor: '#60a5fa' }} />
-                        <Typography sx={{ fontSize: 11, color: '#64748b' }}>Saber 11 (S11 % normalizado)</Typography>
-                      </Stack>
-                      <Stack direction="row" spacing={1} alignItems="center">
-                        <Box sx={{ width: 16, height: 8, borderRadius: 99, bgcolor: '#34d399' }} />
-                        <Typography sx={{ fontSize: 11, color: '#64748b' }}>Saber Pro (puntaje / 300 × 100)</Typography>
+                    <Stack direction={{ xs: 'column', md: 'row' }} justifyContent="space-between" alignItems={{ xs: 'flex-start', md: 'center' }} spacing={1.2} sx={{ mb: 1.5 }}>
+                      <Box>
+                        <Typography sx={{ fontWeight: 900, color: '#0f172a', fontSize: 15, letterSpacing: '0.3px' }}>
+                          SABER 11 vs SABER PRO · Muestra: {cp.estudiantes || 0} estudiantes
+                        </Typography>
+                        <Typography sx={{ fontSize: 11, color: '#64748b' }}>
+                          Porcentaje normalizado por competencia
+                        </Typography>
+                      </Box>
+                      <Stack direction="row" spacing={2} alignItems="center">
+                        <Stack direction="row" spacing={0.75} alignItems="center">
+                          <Box sx={{ width: 14, height: 10, borderRadius: 2, bgcolor: '#60a5fa' }} />
+                          <Typography sx={{ fontSize: 11, color: '#334155', fontWeight: 700 }}>SABER 11</Typography>
+                        </Stack>
+                        <Stack direction="row" spacing={0.75} alignItems="center">
+                          <Box sx={{ width: 14, height: 10, borderRadius: 2, bgcolor: '#34d399' }} />
+                          <Typography sx={{ fontSize: 11, color: '#334155', fontWeight: 700 }}>SABER PRO</Typography>
+                        </Stack>
                       </Stack>
                     </Stack>
+                    {(!comps || comps.length === 0 || (cp.estudiantes || 0) === 0) ? (
+                      <Box sx={{ py: 6, textAlign: 'center', color: '#94a3b8' }}>
+                        <Typography sx={{ fontSize: 13, fontWeight: 700 }}>
+                          Sin estudiantes con cruce Saber 11 para los filtros aplicados.
+                        </Typography>
+                        <Typography sx={{ fontSize: 11, mt: 0.5 }}>
+                          Ajusta los filtros o limpia los filtros para ver la comparativa.
+                        </Typography>
+                      </Box>
+                    ) : (() => {
+                      const chartData = comps.map((c) => ({
+                        name: c.label,
+                        sprLabel: c.spr_label || c.label,
+                        s11Labels: Array.isArray(c.s11_label) && c.s11_label.length ? c.s11_label : [c.label],
+                        s11: c.s11_pct || 0,
+                        spr: c.spr_pct || 0
+                      }));
+                      const maxVal = Math.max(0, ...chartData.map((d) => Math.max(d.s11 || 0, d.spr || 0)));
+                      const xMax = Math.min(100, Math.max(40, Math.ceil((maxVal + 10) / 10) * 10));
+                      const BAR_SIZE = 36;
+                      const BAR_GAP = 10;
+                      const BAR_OFFSET = (BAR_SIZE + BAR_GAP) / 2;
+                      const CustomYTick = (props) => {
+                        const { x, y, payload } = props;
+                        const entry = chartData.find((d) => d.name === payload.value);
+                        if (!entry) return null;
+                        const s11List = entry.s11Labels || [];
+                        const lineH = 13;
+                        const s11Start = -BAR_OFFSET - ((s11List.length - 1) * lineH) / 2 + 4;
+                        return (
+                          <g transform={`translate(${x},${y})`}>
+                            <circle cx={-7} cy={-BAR_OFFSET} r={4} fill="#60a5fa" />
+                            {s11List.map((s, idx) => (
+                              <text
+                                key={`s11-${idx}`}
+                                x={-16}
+                                y={s11Start + (idx * lineH)}
+                                textAnchor="end"
+                                fontSize="11.5"
+                                fontWeight="700"
+                                fill="#2563eb"
+                              >
+                                {s}
+                              </text>
+                            ))}
+                            <circle cx={-7} cy={BAR_OFFSET} r={4} fill="#34d399" />
+                            <text
+                              x={-16}
+                              y={BAR_OFFSET + 4}
+                              textAnchor="end"
+                              fontSize="13"
+                              fontWeight="800"
+                              fill="#059669"
+                            >
+                              {entry.sprLabel}
+                            </text>
+                          </g>
+                        );
+                      };
+                      const rowHeight = 150;
+                      const chartHeight = Math.max(520, comps.length * rowHeight);
+                      return (
+                        <Box
+                          sx={{
+                            display: 'grid',
+                            gridTemplateColumns: { xs: '1fr', md: 'minmax(0, 1fr) 112px' },
+                            columnGap: { xs: 0, md: 0 },
+                            rowGap: 1,
+                            alignItems: 'stretch'
+                          }}
+                        >
+                          <Box sx={{ width: '100%', height: chartHeight }}>
+                            <ResponsiveContainer width="100%" height="100%">
+                              <BarChart
+                                data={chartData}
+                                layout="vertical"
+                                margin={{ top: 12, right: 18, left: 12, bottom: 12 }}
+                                barCategoryGap="30%"
+                                barGap={BAR_GAP}
+                              >
+                                <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" horizontal={false} />
+                                <XAxis type="number" domain={[0, xMax]} tickFormatter={(v) => `${v}%`} tick={{ fontSize: 12, fill: '#64748b' }} />
+                                <YAxis
+                                  type="category"
+                                  dataKey="name"
+                                  width={240}
+                                  interval={0}
+                                  tickLine={false}
+                                  axisLine={false}
+                                  tick={<CustomYTick />}
+                                />
+                                <Tooltip
+                                  formatter={(v, key) => [`${formatNumber(v, 2)}%`, key === 's11' ? 'SABER 11' : 'SABER PRO']}
+                                  labelFormatter={(label) => {
+                                    const entry = chartData.find((d) => d.name === label);
+                                    if (!entry) return label;
+                                    return `${entry.sprLabel} · S11: ${entry.s11Labels.join(', ')}`;
+                                  }}
+                                />
+                                <Bar dataKey="s11" name="SABER 11" fill="#60a5fa" barSize={BAR_SIZE} radius={[0, 8, 8, 0]} label={{ position: 'right', fontSize: 12.5, fontWeight: 800, fill: '#2563eb', formatter: (v) => `${formatNumber(v, 2)}%` }} />
+                                <Bar dataKey="spr" name="SABER PRO" fill="#34d399" barSize={BAR_SIZE} radius={[0, 8, 8, 0]} label={{ position: 'right', fontSize: 12.5, fontWeight: 800, fill: '#059669', formatter: (v) => `${formatNumber(v, 2)}%` }} />
+                              </BarChart>
+                            </ResponsiveContainer>
+                          </Box>
+                          <Stack
+                            spacing={1.2}
+                            justifyContent="space-around"
+                            sx={{
+                              py: 2,
+                              pl: { xs: 0, md: 0.5 },
+                              ml: { xs: 0, md: -1.5 }
+                            }}
+                          >
+                            {comps.map((c) => {
+                              const vc = c.va;
+                              const vColor = vc >= 0 ? '#10b981' : '#ef4444';
+                              return (
+                                <Box
+                                  key={`va-badge-${c.label}`}
+                                  sx={{
+                                    px: 1.1,
+                                    py: 0.75,
+                                    minWidth: { xs: 110, md: 104 },
+                                    borderRadius: 99,
+                                    border: `1.5px solid ${vColor}`,
+                                    bgcolor: `${vColor}10`,
+                                    textAlign: 'center',
+                                    alignSelf: { xs: 'flex-end', md: 'flex-start' }
+                                  }}
+                                >
+                                  <Typography sx={{ fontSize: 12.5, fontWeight: 900, color: vColor, letterSpacing: '0.3px' }}>
+                                    VA: {vc >= 0 ? '+' : ''}{formatNumber(vc, 2)}%
+                                  </Typography>
+                                </Box>
+                              );
+                            })}
+                          </Stack>
+                        </Box>
+                      );
+                    })()}
                   </Paper>
 
-                  {/* ── EVOLUCIÓN VA PROMEDIO POR AÑO ── */}
-                  {historico.length > 0 ? (
-                    <Paper elevation={0} sx={{ p: 2.5, borderRadius: 3, border: '1px solid #dbe6f5', height: 380 }}>
-                      <Typography sx={{ fontWeight: 900, color: '#0f172a', fontSize: 15, mb: 0.3 }}>
-                        Evolución del Valor Agregado Promedio por Año
-                      </Typography>
-                      <Typography sx={{ fontSize: 12, color: '#64748b', mb: 1.5 }}>
-                        Promedio de las 4 competencias · n = estudiantes con cruce
-                      </Typography>
-                      <ResponsiveContainer width="100%" height="84%">
-                        <BarChart data={historico} margin={{ top: 20, right: 24, left: 0, bottom: 4 }}>
-                          <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" vertical={false} />
-                          <XAxis dataKey="anio" tick={{ fontSize: 12, fontWeight: 700 }} />
-                          <YAxis tick={{ fontSize: 11 }} tickFormatter={(v) => `${v}%`} />
-                          <Tooltip formatter={(v, name) => name === 'va_promedio' ? [`${v >= 0 ? '+' : ''}${formatNumber(v, 2)}%`, 'VA Promedio'] : [v, 'Estudiantes']} />
-                          <ReferenceLine y={0} stroke="#94a3b8" strokeDasharray="4 4" />
-                          <Bar dataKey="va_promedio" radius={[8, 8, 0, 0]} label={{ position: 'top', fontSize: 11, fontWeight: 700, formatter: (v) => `${v >= 0 ? '+' : ''}${formatNumber(v, 2)}%` }}>
-                            {historico.map((item) => (
-                              <Cell key={item.anio} fill={(item.va_promedio || 0) >= 0 ? '#34d399' : '#f87171'} />
-                            ))}
-                          </Bar>
-                        </BarChart>
-                      </ResponsiveContainer>
-                    </Paper>
-                  ) : null}
+                  {/* Evolución VA promedio por año */}
+                  {historico.length > 0 ? (() => {
+                    const yearOptions = [...new Set(historico.map((item) => String(item.anio)).filter(Boolean))].sort((a, b) => Number(a) - Number(b));
+                    const activeYears = vaTrendYears.filter((year) => yearOptions.includes(year));
+                    const historicoFiltrado = activeYears.length ? historico.filter((item) => activeYears.includes(String(item.anio))) : historico;
+                    const toggleTrendYear = (year) => {
+                      setVaTrendYears((prev) => (
+                        prev.includes(year) ? prev.filter((item) => item !== year) : [...prev, year]
+                      ));
+                    };
 
-                  {/* ── 2×2 GRID POR COMPETENCIA S11 vs SPR POR AÑO ── */}
-                  {histComp.length > 0 ? (
+                    return (
+                      <Paper elevation={0} sx={{ p: 2.5, borderRadius: 3, border: '1px solid #dbe6f5', minHeight: 380 }}>
+                        <Stack
+                          direction={{ xs: 'column', lg: 'row' }}
+                          justifyContent="space-between"
+                          alignItems={{ xs: 'flex-start', lg: 'center' }}
+                          spacing={1.5}
+                          sx={{ mb: 1.5 }}
+                        >
+                          <Box>
+                            <Typography sx={{ fontWeight: 900, color: '#0f172a', fontSize: 15, mb: 0.3 }}>
+                              Evolución del Valor Agregado Promedio por Año
+                            </Typography>
+                            <Typography sx={{ fontSize: 12, color: '#64748b' }}>
+                              Promedio de las 4 competencias · n = estudiantes con cruce
+                            </Typography>
+                          </Box>
+
+                          <Stack direction="row" spacing={0.8} flexWrap="wrap" useFlexGap>
+                            <Chip
+                              label="Todos"
+                              size="small"
+                              onClick={() => setVaTrendYears([])}
+                              color={activeYears.length === 0 ? 'primary' : 'default'}
+                              variant={activeYears.length === 0 ? 'filled' : 'outlined'}
+                              sx={{ fontWeight: 700 }}
+                            />
+                            {yearOptions.map((year) => {
+                              const selected = activeYears.includes(year);
+                              return (
+                                <Chip
+                                  key={`va-trend-year-${year}`}
+                                  label={year}
+                                  size="small"
+                                  onClick={() => toggleTrendYear(year)}
+                                  color={selected ? 'primary' : 'default'}
+                                  variant={selected ? 'filled' : 'outlined'}
+                                  sx={{ fontWeight: 700 }}
+                                />
+                              );
+                            })}
+                          </Stack>
+                        </Stack>
+
+                        <ResponsiveContainer width="100%" height={300}>
+                          <BarChart data={historicoFiltrado} margin={{ top: 20, right: 24, left: 0, bottom: 4 }}>
+                            <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" vertical={false} />
+                            <XAxis dataKey="anio" tick={{ fontSize: 12, fontWeight: 700 }} />
+                            <YAxis tick={{ fontSize: 11 }} tickFormatter={(v) => `${v}%`} />
+                            <Tooltip formatter={(v, name) => name === 'va_promedio' ? [`${v >= 0 ? '+' : ''}${formatNumber(v, 2)}%`, 'VA Promedio'] : [v, 'Estudiantes']} />
+                            <ReferenceLine y={0} stroke="#94a3b8" strokeDasharray="4 4" />
+                            <Bar dataKey="va_promedio" radius={[8, 8, 0, 0]} label={{ position: 'top', fontSize: 11, fontWeight: 700, formatter: (v) => `${v >= 0 ? '+' : ''}${formatNumber(v, 2)}%` }}>
+                              {historicoFiltrado.map((item) => (
+                                <Cell key={item.anio} fill={(item.va_promedio || 0) >= 0 ? '#34d399' : '#f87171'} />
+                              ))}
+                            </Bar>
+                          </BarChart>
+                        </ResponsiveContainer>
+                      </Paper>
+                    );
+                  })() : null}
+
+                  {/* Grid por competencia S11 vs Saber Pro por año */}
+                  {histComp.length > 0 ? (() => {
+                    const compYearOptions = [...new Set(histComp.map((item) => String(item.anio)).filter(Boolean))].sort((a, b) => Number(a) - Number(b));
+                    const activeCompYears = vaCompYears.filter((year) => compYearOptions.includes(year));
+                    const histCompFiltrado = activeCompYears.length ? histComp.filter((item) => activeCompYears.includes(String(item.anio))) : histComp;
+                    const toggleCompYear = (year) => {
+                      setVaCompYears((prev) => (
+                        prev.includes(year) ? prev.filter((item) => item !== year) : [...prev, year]
+                      ));
+                    };
+
+                    return (
                     <Paper elevation={0} sx={{ p: 2.5, borderRadius: 3, border: '1px solid #dbe6f5' }}>
-                      <Typography sx={{ fontWeight: 900, color: '#0f172a', fontSize: 15, mb: 0.3 }}>
-                        Evolución por Competencia — S11 vs Saber Pro
-                      </Typography>
-                      <Typography sx={{ fontSize: 12, color: '#64748b', mb: 2 }}>
-                        Comparativa anual por competencia
-                      </Typography>
-                      <Box sx={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 2 }}>
-                        {COMP_KEYS.map((ck) => (
-                          <Paper key={ck.label} elevation={0} sx={{ p: 1.5, borderRadius: 3, border: `1px solid ${ck.color}30`, height: 280 }}>
-                            <Typography sx={{ fontWeight: 800, color: '#334155', fontSize: 13, mb: 1, textAlign: 'center' }}>{ck.label}</Typography>
+                      <Stack
+                        direction={{ xs: 'column', lg: 'row' }}
+                        justifyContent="space-between"
+                        alignItems={{ xs: 'flex-start', lg: 'center' }}
+                        spacing={1.5}
+                        sx={{ mb: 2 }}
+                      >
+                        <Box>
+                          <Typography sx={{ fontWeight: 900, color: '#0f172a', fontSize: 15, mb: 0.3 }}>
+                            Evolución por Competencia - S11 vs Saber Pro
+                          </Typography>
+                          <Typography sx={{ fontSize: 12, color: '#64748b', mb: 0.5 }}>
+                            Comparativa anual por competencia
+                          </Typography>
+                          <Typography sx={{ fontSize: 11, color: '#475569', fontWeight: 700 }}>
+                            Muestra usada en este gráfico: {cp.estudiantes || 0} estudiantes con cruce
+                          </Typography>
+                        </Box>
+
+                        <Stack direction="row" spacing={0.8} flexWrap="wrap" useFlexGap>
+                          <Chip
+                            label="Todos"
+                            size="small"
+                            onClick={() => setVaCompYears([])}
+                            color={activeCompYears.length === 0 ? 'primary' : 'default'}
+                            variant={activeCompYears.length === 0 ? 'filled' : 'outlined'}
+                            sx={{ fontWeight: 700 }}
+                          />
+                          {compYearOptions.map((year) => {
+                            const selected = activeCompYears.includes(year);
+                            return (
+                              <Chip
+                                key={`va-comp-year-${year}`}
+                                label={year}
+                                size="small"
+                                onClick={() => toggleCompYear(year)}
+                                color={selected ? 'primary' : 'default'}
+                                variant={selected ? 'filled' : 'outlined'}
+                                sx={{ fontWeight: 700 }}
+                              />
+                            );
+                          })}
+                        </Stack>
+                      </Stack>
+
+                      <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', xl: '1fr 1fr' }, gap: 2 }}>
+                        {COMP_CHARTS.map((ck) => (
+                          <Paper key={ck.label} elevation={0} sx={{ p: 1.5, borderRadius: 3, border: `1px solid ${ck.color}30`, minHeight: 320 }}>
+                            <Box sx={{ mb: 1.2, textAlign: 'center' }}>
+                              <Stack spacing={0.35} alignItems="center">
+                                <Stack direction="row" spacing={0.7} alignItems="center">
+                                  <Box sx={{ width: 8, height: 8, borderRadius: '50%', bgcolor: '#34d399' }} />
+                                  <Typography sx={{ fontWeight: 600, color: '#334155', fontSize: 12, lineHeight: 1.2 }}>
+                                    Saber Pro: {ck.sprLabel}
+                                  </Typography>
+                                </Stack>
+                                <Stack direction="row" spacing={0.7} alignItems="center" justifyContent="center" flexWrap="wrap" useFlexGap>
+                                  <Box sx={{ width: 8, height: 8, borderRadius: '50%', bgcolor: '#60a5fa' }} />
+                                  <Typography sx={{ fontSize: 10.5, color: '#64748b', lineHeight: 1.35, fontWeight: 500 }}>
+                                    Saber 11: {ck.s11Labels.join(' / ')}
+                                  </Typography>
+                                </Stack>
+                              </Stack>
+                            </Box>
                             <ResponsiveContainer width="100%" height="88%">
-                              <BarChart data={histComp} margin={{ top: 8, right: 8, left: -16, bottom: 0 }} barCategoryGap={8}>
+                              <BarChart data={histCompFiltrado} margin={{ top: 8, right: 8, left: -16, bottom: 0 }} barCategoryGap={8}>
                                 <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" vertical={false} />
                                 <XAxis dataKey="anio" tick={{ fontSize: 10 }} />
                                 <YAxis tick={{ fontSize: 10 }} tickFormatter={(v) => `${v}%`} />
-                                <Tooltip formatter={(v, name) => [`${formatNumber(v, 1)}%`, name === ck.s11Key ? 'S11' : 'SPR']} />
-                                <Bar dataKey={ck.s11Key} fill="#60a5fa" radius={[4, 4, 0, 0]} name="S11" />
-                                <Bar dataKey={ck.sprKey} fill="#34d399" radius={[4, 4, 0, 0]} name="SPR" />
+                                <Tooltip
+                                  formatter={(v, name) => [`${formatNumber(v, 2)}%`, name === ck.s11Key ? `Saber 11: ${ck.s11Labels.join(' / ')}` : `Saber Pro: ${ck.sprLabel}`]}
+                                />
+                                <Bar
+                                  dataKey={ck.s11Key}
+                                  fill="#60a5fa"
+                                  radius={[4, 4, 0, 0]}
+                                  name="S11"
+                                  label={{ position: 'top', fontSize: 9, fontWeight: 700, fill: '#2563eb', formatter: (v) => `${formatNumber(v, 2)}%` }}
+                                />
+                                <Bar
+                                  dataKey={ck.sprKey}
+                                  fill="#34d399"
+                                  radius={[4, 4, 0, 0]}
+                                  name="SPR"
+                                  label={{ position: 'top', fontSize: 9, fontWeight: 700, fill: '#059669', formatter: (v) => `${formatNumber(v, 2)}%` }}
+                                />
                               </BarChart>
                             </ResponsiveContainer>
                           </Paper>
                         ))}
                       </Box>
                     </Paper>
-                  ) : null}
+                    );
+                  })() : null}
 
-                  {/* ── EVOLUCIÓN S11 vs SPR SIDE BY SIDE ── */}
-                  {histComp.length > 0 ? (
-                    <Box sx={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 2 }}>
-                      {[
-                        { title: 'Evolución Promedio Saber 11', keys: [{ key: 's11_lec', color: '#818cf8', label: 'LC' }, { key: 's11_raz', color: '#60a5fa', label: 'RC' }, { key: 's11_ciu', color: '#34d399', label: 'CC' }, { key: 's11_ing', color: '#f59e0b', label: 'Ing' }] },
-                        { title: 'Evolución Promedio Saber Pro', keys: [{ key: 'spr_lec', color: '#818cf8', label: 'LC' }, { key: 'spr_raz', color: '#60a5fa', label: 'RC' }, { key: 'spr_ciu', color: '#34d399', label: 'CC' }, { key: 'spr_ing', color: '#f59e0b', label: 'Ing' }] }
-                      ].map((chart) => (
-                        <Paper key={chart.title} elevation={0} sx={{ p: 2, borderRadius: 3, border: '1px solid #dbe6f5', height: 300 }}>
-                          <Typography sx={{ fontWeight: 800, color: '#334155', fontSize: 13, mb: 1, textAlign: 'center' }}>{chart.title}</Typography>
-                          <ResponsiveContainer width="100%" height="88%">
-                            <BarChart data={histComp} margin={{ top: 8, right: 8, left: -16, bottom: 0 }} barCategoryGap={6}>
-                              <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" vertical={false} />
-                              <XAxis dataKey="anio" tick={{ fontSize: 10 }} />
-                              <YAxis tick={{ fontSize: 10 }} tickFormatter={(v) => `${v}%`} />
-                              <Tooltip formatter={(v, name) => [`${formatNumber(v, 1)}%`, name]} />
-                              {chart.keys.map((k) => (
-                                <Bar key={k.key} dataKey={k.key} fill={k.color} radius={[3, 3, 0, 0]} name={k.label} />
-                              ))}
-                            </BarChart>
-                          </ResponsiveContainer>
-                        </Paper>
-                      ))}
-                    </Box>
-                  ) : null}
+                  {/* Evolución general S11 y Saber Pro */}
+                  {histComp.length > 0 ? (() => {
+                    const dualYearOptions = [...new Set(histComp.map((item) => String(item.anio)).filter(Boolean))].sort((a, b) => Number(a) - Number(b));
+                    const activeDualYears = vaDualYears.filter((year) => dualYearOptions.includes(year));
+                    const histCompDual = activeDualYears.length ? histComp.filter((item) => activeDualYears.includes(String(item.anio))) : histComp;
+                    const toggleDualYear = (year) => {
+                      setVaDualYears((prev) => (
+                        prev.includes(year) ? prev.filter((item) => item !== year) : [...prev, year]
+                      ));
+                    };
+                    const avgPct = (row, keys) => {
+                      const nums = keys
+                        .map((key) => Number(row[key]))
+                        .filter((value) => Number.isFinite(value));
+                      if (!nums.length) return 0;
+                      return nums.reduce((sum, value) => sum + value, 0) / nums.length;
+                    };
+                    const dualData = histCompDual.map((row) => ({
+                      anio: String(row.anio),
+                      s11_promedio: avgPct(row, ['s11_lec', 's11_raz', 's11_ciu', 's11_com', 's11_ing']),
+                      spr_promedio: avgPct(row, ['spr_lec', 'spr_raz', 'spr_ciu', 'spr_com', 'spr_ing'])
+                    }));
+
+                    return (
+                      <Paper elevation={0} sx={{ p: 2.5, borderRadius: 3, border: '1px solid #dbe6f5' }}>
+                        <Stack
+                          direction={{ xs: 'column', lg: 'row' }}
+                          justifyContent="space-between"
+                          alignItems={{ xs: 'flex-start', lg: 'center' }}
+                          spacing={1.5}
+                          sx={{ mb: 2 }}
+                        >
+                          <Box>
+                            <Typography sx={{ fontWeight: 900, color: '#0f172a', fontSize: 15, mb: 0.3 }}>
+                              Evolución del Desempeño Promedio por Año
+                            </Typography>
+                            <Typography sx={{ fontSize: 12, color: '#64748b', mb: 0.4 }}>
+                              Porcentaje promedio anual de Saber 11 y Saber Pro
+                            </Typography>
+                            <Typography sx={{ fontSize: 11, color: '#475569', fontWeight: 700 }}>
+                              Muestra usada en este gráfico: {cp.estudiantes || 0} estudiantes con cruce
+                            </Typography>
+                          </Box>
+
+                          <Stack direction="row" spacing={0.8} flexWrap="wrap" useFlexGap>
+                            <Chip
+                              label="Todos"
+                              size="small"
+                              onClick={() => setVaDualYears([])}
+                              color={activeDualYears.length === 0 ? 'primary' : 'default'}
+                              variant={activeDualYears.length === 0 ? 'filled' : 'outlined'}
+                              sx={{ fontWeight: 700 }}
+                            />
+                            {dualYearOptions.map((year) => {
+                              const selected = activeDualYears.includes(year);
+                              return (
+                                <Chip
+                                  key={`va-dual-year-${year}`}
+                                  label={year}
+                                  size="small"
+                                  onClick={() => toggleDualYear(year)}
+                                  color={selected ? 'primary' : 'default'}
+                                  variant={selected ? 'filled' : 'outlined'}
+                                  sx={{ fontWeight: 700 }}
+                                />
+                              );
+                            })}
+                          </Stack>
+                        </Stack>
+
+                        <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', xl: '1fr 1fr' }, gap: 2 }}>
+                          {[
+                            { title: 'Promedio General Saber 11', key: 's11_promedio', color: '#60a5fa', textColor: '#2563eb' },
+                            { title: 'Promedio General Saber Pro', key: 'spr_promedio', color: '#34d399', textColor: '#059669' }
+                          ].map((chart) => (
+                            <Paper key={chart.title} elevation={0} sx={{ p: 1.75, borderRadius: 3, border: `1px solid ${chart.color}40`, minHeight: 320 }}>
+                              <Typography sx={{ fontWeight: 800, color: '#334155', fontSize: 13, mb: 1.2, textAlign: 'center' }}>
+                                {chart.title}
+                              </Typography>
+                              <ResponsiveContainer width="100%" height={250}>
+                                <BarChart data={dualData} margin={{ top: 12, right: 16, left: 4, bottom: 0 }} barCategoryGap="12%">
+                                  <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" vertical={false} />
+                                  <XAxis dataKey="anio" tick={{ fontSize: 10, fontWeight: 700 }} />
+                                  <YAxis domain={[0, 100]} tick={{ fontSize: 10 }} tickFormatter={(v) => `${v}%`} />
+                                  <Tooltip formatter={(v) => [`${formatNumber(v, 2)}%`, chart.title]} />
+                                  <Bar
+                                    dataKey={chart.key}
+                                    fill={chart.color}
+                                    barSize={50}
+                                    radius={[6, 6, 0, 0]}
+                                    label={{ position: 'top', fontSize: 11, fontWeight: 800, fill: chart.textColor, formatter: (v) => `${formatNumber(v, 2)}%` }}
+                                  />
+                                </BarChart>
+                              </ResponsiveContainer>
+                            </Paper>
+                          ))}
+                        </Box>
+                      </Paper>
+                    );
+                  })() : null}
                 </Stack>
               );
             })()}
@@ -1809,8 +2454,18 @@ function ValorAgregadoDashboardBI({ initialSection = 'va_individual' }) {
 
         {section === 'va_nbc' ? (
           <Stack spacing={3}>
+            {!hasNbcFilters ? (
+              <Box sx={{ textAlign: 'center', py: 8 }}>
+                <Typography sx={{ fontSize: 14, color: '#94a3b8' }}>
+                  Aplica filtros de Año o Grupo de referencia para construir el tablero NBC.
+                </Typography>
+              </Box>
+            ) : null}
 
-            {/* ── HEADER: gradient banner con selector integrado ── */}
+            {hasNbcFilters ? (
+              <>
+
+            {/* â”€â”€ HEADER: gradient banner con selector integrado â”€â”€ */}
             <Paper elevation={0} sx={{ background: 'linear-gradient(135deg, #1e3a8a 0%, #2563eb 65%, #3b82f6 100%)', borderRadius: '20px', overflow: 'hidden', boxShadow: '0 12px 40px rgba(37,99,235,0.22)' }}>
               <Box sx={{ p: { xs: 2.5, md: '28px 36px' } }}>
                 <Stack direction={{ xs: 'column', lg: 'row' }} justifyContent="space-between" alignItems={{ xs: 'flex-start', lg: 'center' }} gap={3}>
@@ -1831,22 +2486,15 @@ function ValorAgregadoDashboardBI({ initialSection = 'va_individual' }) {
                       </Typography>
                     </Stack>
                   </Box>
-                  <Box sx={{ minWidth: { xs: '100%', lg: 340 } }}>
-                    <Typography sx={{ color: 'rgba(255,255,255,0.65)', fontSize: '10px', fontWeight: 600, letterSpacing: '1px', mb: 1 }}>
-                      SELECCIONAR GRUPO DE REFERENCIA
-                    </Typography>
-                    <FormControl fullWidth size="small" sx={{
-                      '& .MuiOutlinedInput-root': { bgcolor: 'rgba(255,255,255,0.12)', borderRadius: '12px', color: '#fff', backdropFilter: 'blur(8px)' },
-                      '& .MuiOutlinedInput-notchedOutline': { borderColor: 'rgba(255,255,255,0.25)' },
-                      '& .MuiOutlinedInput-root:hover .MuiOutlinedInput-notchedOutline': { borderColor: 'rgba(255,255,255,0.5)' },
-                      '& .MuiInputLabel-root': { color: 'rgba(255,255,255,0.7)' },
-                      '& .MuiSelect-icon': { color: 'rgba(255,255,255,0.8)' }
-                    }}>
-                      <InputLabel>Grupo de referencia</InputLabel>
-                      <Select value={selectedNbc} onChange={(e) => setSelectedNbc(e.target.value)} input={<OutlinedInput label="Grupo de referencia" />} MenuProps={SELECT_MENU_PROPS}>
-                        {nbcOptions.map((item) => <MenuItem key={item} value={item}>{item}</MenuItem>)}
-                      </Select>
-                    </FormControl>
+                  <Box sx={{ minWidth: { xs: '100%', lg: 280 }, alignSelf: 'stretch', display: 'flex', alignItems: 'center', justifyContent: { xs: 'flex-start', lg: 'flex-end' } }}>
+                    <Box sx={{ px: 2, py: 1.25, borderRadius: '14px', bgcolor: 'rgba(255,255,255,0.12)', border: '1px solid rgba(255,255,255,0.22)', backdropFilter: 'blur(8px)' }}>
+                      <Typography sx={{ color: 'rgba(255,255,255,0.65)', fontSize: '10px', fontWeight: 600, letterSpacing: '1px', mb: 0.45 }}>
+                        GRUPO DE REFERENCIA ACTIVO
+                      </Typography>
+                      <Typography sx={{ color: '#fff', fontSize: 14, fontWeight: 800 }}>
+                        {selectedNbc || 'Todos'}
+                      </Typography>
+                    </Box>
                   </Box>
                 </Stack>
               </Box>
@@ -1858,43 +2506,43 @@ function ValorAgregadoDashboardBI({ initialSection = 'va_individual' }) {
             {nbcDetalle ? (
               <Stack spacing={3}>
 
-                {/* ── FILA 1: 4 KPIs — CSS Grid igual tamaño garantizado ── */}
+                {/* â”€â”€ FILA 1: 4 KPIs â€” CSS Grid igual tamaÃ±o garantizado â”€â”€ */}
                 <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', sm: 'repeat(2, 1fr)', md: 'repeat(4, 1fr)' }, gap: 2 }}>
                   <KpiDetailCard
                     icon={<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="2"/></svg>}
                     label="Puntaje Global"
-                    value={formatNumber(nbcDetalle.summary?.promedio_global, 1)}
+                    value={formatNumber(nbcDetalle.summary.promedio_global, 1)}
                     subtitle="de 300 puntos"
-                    percent={nbcDetalle.summary?.pct_puntaje ?? 0}
-                    quintil={`Q${nbcDetalle.summary?.q_puntaje}`}
-                    color={qScale(nbcDetalle.summary?.q_puntaje).color}
+                    percent={nbcDetalle.summary.pct_puntaje || 0}
+                    quintil={`Q${nbcDetalle.summary.q_puntaje}`}
+                    color={qScale(nbcDetalle.summary.q_puntaje).color}
                   />
                   <KpiDetailCard
                     icon={<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>}
                     label="Percentil Nacional"
-                    value={formatNumber(nbcDetalle.summary?.promedio_percentil, 1)}
+                    value={formatNumber(nbcDetalle.summary.promedio_percentil, 1)}
                     subtitle="percentil promedio"
-                    percent={nbcDetalle.summary?.promedio_percentil ?? 0}
-                    quintil={`Q${nbcDetalle.summary?.q_nacional}`}
-                    color={qScale(nbcDetalle.summary?.q_nacional).color}
+                    percent={nbcDetalle.summary.promedio_percentil || 0}
+                    quintil={`Q${nbcDetalle.summary.q_nacional}`}
+                    color={qScale(nbcDetalle.summary.q_nacional).color}
                   />
                   <Paper elevation={0} sx={{
                     p: 2.5, borderRadius: 3,
-                    background: `linear-gradient(135deg, ${qScale(nbcDetalle.summary?.q_general).color}14, ${qScale(nbcDetalle.summary?.q_general).color}28)`,
-                    border: `2px solid ${qScale(nbcDetalle.summary?.q_general).color}55`,
+                    background: `linear-gradient(135deg, ${qScale(nbcDetalle.summary.q_general).color}14, ${qScale(nbcDetalle.summary.q_general).color}28)`,
+                    border: `2px solid ${qScale(nbcDetalle.summary.q_general).color}55`,
                     display: 'flex', flexDirection: 'column', justifyContent: 'space-between'
                   }}>
                     <Stack direction="row" alignItems="center" spacing={1}>
-                      <Box sx={{ color: qScale(nbcDetalle.summary?.q_general).color, display: 'flex' }}>
+                      <Box sx={{ color: qScale(nbcDetalle.summary.q_general).color, display: 'flex' }}>
                         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="8" r="7"/><polyline points="8.21 13.89 7 23 12 20 17 23 15.79 13.88"/></svg>
                       </Box>
-                      <Typography sx={{ fontSize: '10px', color: qScale(nbcDetalle.summary?.q_general).color, fontWeight: 700, letterSpacing: '0.5px', textTransform: 'uppercase' }}>Quintil General</Typography>
+                      <Typography sx={{ fontSize: '10px', color: qScale(nbcDetalle.summary.q_general).color, fontWeight: 700, letterSpacing: '0.5px', textTransform: 'uppercase' }}>Quintil General</Typography>
                     </Stack>
-                    <Typography sx={{ fontSize: '48px', fontWeight: 900, color: qScale(nbcDetalle.summary?.q_general).color, lineHeight: 1, my: 1 }}>
-                      Q{nbcDetalle.summary?.q_general}
+                    <Typography sx={{ fontSize: '48px', fontWeight: 900, color: qScale(nbcDetalle.summary.q_general).color, lineHeight: 1, my: 1 }}>
+                      Q{nbcDetalle.summary.q_general}
                     </Typography>
-                    <Box sx={{ display: 'inline-block', bgcolor: qScale(nbcDetalle.summary?.q_general).color, color: '#fff', px: 2, py: 0.5, borderRadius: '20px', fontSize: '11px', fontWeight: 700, alignSelf: 'flex-start' }}>
-                      {nbcDetalle.summary?.etiqueta}
+                    <Box sx={{ display: 'inline-block', bgcolor: qScale(nbcDetalle.summary.q_general).color, color: '#fff', px: 2, py: 0.5, borderRadius: '20px', fontSize: '11px', fontWeight: 700, alignSelf: 'flex-start' }}>
+                      {nbcDetalle.summary.etiqueta}
                     </Box>
                   </Paper>
                   <Paper elevation={0} sx={{
@@ -1905,25 +2553,25 @@ function ValorAgregadoDashboardBI({ initialSection = 'va_individual' }) {
                       <Box sx={{ color: '#312e81', display: 'flex' }}>
                         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
                       </Box>
-                      <Typography sx={{ fontSize: '10px', color: '#64748b', fontWeight: 700, letterSpacing: '0.5px', textTransform: 'uppercase' }}>Total Estudiantes</Typography>
+                      <Typography sx={{ fontSize: '10px', color: '#64748b', fontWeight: 700, letterSpacing: '0.5px', textTransform: 'uppercase' }}>En este grupo</Typography>
                     </Stack>
                     <Typography sx={{ fontSize: '40px', fontWeight: 800, color: '#1e3a8a', lineHeight: 1, my: 1 }}>
-                      {nbcDetalle.summary?.estudiantes ?? 0}
+                      {nbcDetalle.summary.estudiantes || 0}
                     </Typography>
-                    <Typography sx={{ fontSize: '11px', color: '#64748b' }}>evaluados en este grupo</Typography>
+                    <Typography sx={{ fontSize: '11px', color: '#64748b' }}>subconjunto del total filtrado</Typography>
                   </Paper>
                 </Box>
 
-                {/* ── FILA 2: Distribución (50%) + Resumen (50%) — CSS Grid igual altura ── */}
+                {/* â”€â”€ FILA 2: DistribuciÃ³n (50%) + Resumen (50%) â€” CSS Grid igual altura â”€â”€ */}
                 <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', md: 'repeat(2, 1fr)' }, gap: 2 }}>
                   <DistribucionQuintilCard distribucion={nbcDetalle.distribucion || []} />
                   <ResumenIndicadoresCard summary={nbcDetalle.summary} distribucion={nbcDetalle.distribucion || []} />
                 </Box>
 
-                {/* ── Clasificación banner ── */}
+                {/* â”€â”€ ClasificaciÃ³n banner â”€â”€ */}
                 <ClasificacionBanner summary={nbcDetalle.summary} />
 
-                {/* ── FILA 3: Evolución — últimos 5 años, siempre dinámico ── */}
+                {/* â”€â”€ FILA 3: EvoluciÃ³n â€” Ãºltimos 5 aÃ±os, siempre dinÃ¡mico â”€â”€ */}
                 {(() => {
                   const allHist = (nbcDetalle.historico || []).slice().sort((a, b) => Number(a.anio) - Number(b.anio));
                   const hist5 = allHist.slice(-5);
@@ -1938,11 +2586,11 @@ function ValorAgregadoDashboardBI({ initialSection = 'va_individual' }) {
 
                   if (!hist5.length && !periodoData.length) return null;
 
-                  const firstY = hist5[0]?.anio || last5Years[0];
-                  const lastY = hist5[hist5.length - 1]?.anio || last5Years[last5Years.length - 1];
+                  const firstY = hist5[0].anio || last5Years[0];
+                  const lastY = hist5[hist5.length - 1].anio || last5Years[last5Years.length - 1];
 
                   const PeriodTick = ({ x, y, payload }) => {
-                    const parts = String(payload?.value || '').split('-');
+                    const parts = String(payload.value || '').split('-');
                     const anio = parts[0];
                     const periodo = parts.slice(1).join('-') || '';
                     return (
@@ -2040,7 +2688,7 @@ function ValorAgregadoDashboardBI({ initialSection = 'va_individual' }) {
                             <Typography sx={{ fontSize: '10px', fontWeight: 700, color: '#1e3a8a', mb: 1.5, letterSpacing: '0.5px' }}>DETALLE POR AÑO</Typography>
                             <Box sx={{ border: '1px solid #e2e8f0', borderRadius: 2, overflow: 'hidden' }}>
                               <Box sx={{ display: 'grid', gridTemplateColumns: '1fr 1.1fr 1.1fr 0.8fr', background: 'linear-gradient(135deg, #1e3a8a, #2563eb)', p: '10px 14px' }}>
-                                {['AÑO', 'PUNTAJE', 'P.NAC', 'N'].map((h) => (
+                                {['AÑO', 'PUNTAJE', 'P. NAC', 'N'].map((h) => (
                                   <Typography key={h} sx={{ fontSize: '9px', fontWeight: 700, color: '#fff', textAlign: 'center' }}>{h}</Typography>
                                 ))}
                               </Box>
@@ -2057,7 +2705,7 @@ function ValorAgregadoDashboardBI({ initialSection = 'va_individual' }) {
                               })}
                             </Box>
                             <Box sx={{ mt: 1.5 }}>
-                              {[['PUNTAJE', 'Puntaje Global (0–300)'], ['P.NAC', 'Percentil Nacional'], ['N', 'Estudiantes evaluados']].map(([k, v]) => (
+                              {[['PUNTAJE', 'Puntaje Global (0–300)'], ['P. NAC', 'Percentil Nacional'], ['N', 'Estudiantes evaluados']].map(([k, v]) => (
                                 <Typography key={k} sx={{ fontSize: '9px', color: '#94a3b8' }}>
                                   <Typography component="span" sx={{ fontWeight: 700, fontSize: '9px', color: '#2563eb' }}>{k}</Typography>
                                   {` = ${v}`}
@@ -2067,7 +2715,7 @@ function ValorAgregadoDashboardBI({ initialSection = 'va_individual' }) {
                           </Box>
                         </Box>
                       ) : (
-                        /* PERIODOS MODE — chart + table */
+                        /* PERIODOS MODE â€” chart + table */
                         periodoData.length ? (
                           <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', lg: '3fr 2fr' }, gap: 0 }}>
                             <Box sx={{ p: '24px 28px 16px', borderRight: { lg: '1px solid #f0f4f8' } }}>
@@ -2118,7 +2766,7 @@ function ValorAgregadoDashboardBI({ initialSection = 'va_individual' }) {
                               <Typography sx={{ fontSize: '10px', fontWeight: 700, color: '#1e3a8a', mb: 1.5, letterSpacing: '0.5px' }}>DETALLE POR PERÍODO</Typography>
                               <Box sx={{ border: '1px solid #e2e8f0', borderRadius: 2, overflow: 'hidden' }}>
                                 <Box sx={{ display: 'grid', gridTemplateColumns: '0.9fr 0.6fr 1fr 1fr 0.6fr', background: 'linear-gradient(135deg, #1e3a8a, #2563eb)', p: '10px 14px' }}>
-                                  {['AÑO', 'PER.', 'PUNTAJE', 'P.NAC', 'N'].map((h) => (
+                                  {['AÑO', 'PER.', 'PUNTAJE', 'P. NAC', 'N'].map((h) => (
                                     <Typography key={h} sx={{ fontSize: '9px', fontWeight: 700, color: '#fff', textAlign: 'center' }}>{h}</Typography>
                                   ))}
                                 </Box>
@@ -2136,7 +2784,7 @@ function ValorAgregadoDashboardBI({ initialSection = 'va_individual' }) {
                                 })}
                               </Box>
                               <Box sx={{ mt: 1.5 }}>
-                                {[['PUNTAJE', 'Puntaje Global (0–300)'], ['P.NAC', 'Percentil Nacional'], ['N', 'Estudiantes evaluados']].map(([k, v]) => (
+                                {[['PUNTAJE', 'Puntaje Global (0–300)'], ['P. NAC', 'Percentil Nacional'], ['N', 'Estudiantes evaluados']].map(([k, v]) => (
                                   <Typography key={k} sx={{ fontSize: '9px', color: '#94a3b8' }}>
                                     <Typography component="span" sx={{ fontWeight: 700, fontSize: '9px', color: '#2563eb' }}>{k}</Typography>
                                     {` = ${v}`}
@@ -2155,14 +2803,24 @@ function ValorAgregadoDashboardBI({ initialSection = 'va_individual' }) {
                   );
                 })()}
 
-                {/* ── Metodología footer ── */}
+                {/* â”€â”€ MetodologÃ­a footer â”€â”€ */}
                 <MetodologiaFooter />
               </Stack>
-            ) : (!nbcDetalleLoading && selectedNbc ? (
-              <Alert severity="info" sx={{ borderRadius: 3 }}>Sin datos disponibles para el grupo seleccionado.</Alert>
-            ) : null)}
+            ) : null}
 
-            {/* ── FILA 4+5: Ranking + Tabla — 2 columnas con toggle Anual/Periodos ── */}
+            {!nbcDetalle && !nbcDetalleLoading && selectedNbc ? (
+              <Alert severity="info" sx={{ borderRadius: 3 }}>Sin datos disponibles para el grupo seleccionado.</Alert>
+            ) : null}
+
+            {!nbcDetalle && !nbcDetalleLoading && !selectedNbc ? (
+              <Box sx={{ textAlign: 'center', py: 6 }}>
+                <Typography sx={{ fontSize: 14, color: '#94a3b8' }}>
+                  Selecciona un Grupo de referencia para ver el análisis detallado NBC.
+                </Typography>
+              </Box>
+            ) : null}
+
+            {/* â”€â”€ FILA 4+5: Ranking + Tabla â€” 2 columnas con toggle Anual/Periodos â”€â”€ */}
             <Paper elevation={0} sx={{ borderRadius: 3, border: '1px solid #e2e8f0', overflow: 'hidden' }}>
               {/* Header */}
               <Box sx={{ background: 'linear-gradient(135deg, #1e3a8a, #2563eb)', p: '18px 24px' }}>
@@ -2278,30 +2936,21 @@ function ValorAgregadoDashboardBI({ initialSection = 'va_individual' }) {
                 </Box>
               )}
             </Paper>
+            </>
+            ) : null}
 
           </Stack>
         ) : null}
 
         {section === 'va_programas' ? (
           <Stack spacing={2.5}>
-            {/* Program selector */}
-            <Paper elevation={0} sx={{ p: 2.5, borderRadius: 3, border: '1px solid #e2e8f0', background: 'linear-gradient(135deg,#f8fafc 0%,#eff6ff 100%)' }}>
-              <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2} alignItems={{ sm: 'center' }} justifyContent="space-between">
-                <Box>
-                  <Typography sx={{ fontSize: 11, fontWeight: 700, color: '#64748b', letterSpacing: '0.08em', textTransform: 'uppercase', mb: 0.5 }}>Análisis por Programa</Typography>
-                  <Typography sx={{ fontSize: 13, color: '#475569' }}>{(programasPayload.rows || []).length} programas · {programasPayload.total_estudiantes} estudiantes evaluados</Typography>
-                </Box>
-                <Box sx={{ minWidth: { xs: '100%', sm: 300 } }}>
-                  <Typography sx={{ fontSize: 10, fontWeight: 700, color: '#64748b', mb: 0.5, textTransform: 'uppercase', letterSpacing: '0.06em' }}>Seleccionar Programa</Typography>
-                  <Box component="select" value={selectedPrograma} onChange={(e) => setSelectedPrograma(e.target.value)}
-                    sx={{ width: '100%', px: 1.5, py: 1, borderRadius: '10px', border: '1.5px solid #bfdbfe', fontSize: 12, fontWeight: 600, color: '#1e40af', background: '#fff', outline: 'none', cursor: 'pointer', '&:focus': { borderColor: '#2563eb' } }}>
-                    {(programasPayload.rows || []).map((r) => <option key={r.programa} value={r.programa}>{r.programa}</option>)}
-                  </Box>
-                </Box>
-              </Stack>
-            </Paper>
-
-            {programaDetalleLoading ? (
+            {!hasProgramFilters ? (
+              <Box sx={{ textAlign: 'center', py: 8 }}>
+                <Typography sx={{ fontSize: 14, color: '#94a3b8' }}>
+                  Aplica filtros de Año o Programa para construir el tablero de Programas.
+                </Typography>
+              </Box>
+            ) : programaDetalleLoading ? (
               <Box sx={{ display: 'flex', justifyContent: 'center', py: 6 }}>
                 <CircularProgress size={40} sx={{ color: '#2563eb' }} />
               </Box>
@@ -2324,53 +2973,99 @@ function ValorAgregadoDashboardBI({ initialSection = 'va_individual' }) {
               return (
                 <Stack spacing={2}>
                   {/* Header banner */}
-                  <Paper elevation={0} sx={{ borderRadius: 3, overflow: 'hidden', border: `1.5px solid ${qColor.color}30` }}>
-                    <Box sx={{ background: `linear-gradient(135deg,${qColor.color}18 0%,${qColor.color}06 100%)`, px: 3, py: 2.5, display: 'flex', flexWrap: 'wrap', gap: 2, alignItems: 'center', justifyContent: 'space-between' }}>
-                      <Box sx={{ flex: 1, minWidth: 200 }}>
-                        <Typography sx={{ fontSize: 10, fontWeight: 700, color: '#64748b', letterSpacing: '0.1em', textTransform: 'uppercase', mb: 0.25 }}>Programa Académico</Typography>
-                        <Typography sx={{ fontSize: 16, fontWeight: 900, color: '#0f172a', lineHeight: 1.25 }}>{sum.programa || selectedPrograma}</Typography>
-                      </Box>
-                      <Stack direction="row" spacing={3} alignItems="center" flexWrap="wrap">
-                        <Box sx={{ textAlign: 'center' }}>
-                          <Typography sx={{ fontSize: 24, fontWeight: 900, color: '#1e40af', lineHeight: 1 }}>{sum.estudiantes || 0}</Typography>
-                          <Typography sx={{ fontSize: 10, color: '#64748b', fontWeight: 600 }}>Evaluados</Typography>
+                  <Paper elevation={0} sx={{ borderRadius: 3.5, overflow: 'hidden', boxShadow: '0 14px 34px rgba(37,99,235,0.16)' }}>
+                    <Box
+                      sx={{
+                        background: 'linear-gradient(135deg, #2563eb 0%, #1d4ed8 55%, #1e3a8a 100%)',
+                        px: { xs: 2.25, md: 3.5 },
+                        py: { xs: 2.25, md: 2.75 },
+                        display: 'flex',
+                        flexWrap: 'wrap',
+                        gap: 2,
+                        alignItems: 'center',
+                        justifyContent: 'space-between'
+                      }}
+                    >
+                      <Stack direction="row" spacing={1.5} alignItems="center" sx={{ flex: 1, minWidth: 220 }}>
+                        <Box sx={{ width: 42, height: 42, borderRadius: 2, bgcolor: 'rgba(255,255,255,0.14)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2">
+                            <rect x="4" y="3" width="16" height="18" rx="2" />
+                            <line x1="8" y1="7" x2="16" y2="7" />
+                            <line x1="8" y1="12" x2="16" y2="12" />
+                            <line x1="8" y1="17" x2="13" y2="17" />
+                          </svg>
                         </Box>
-                        <Box sx={{ textAlign: 'center' }}>
-                          <Typography sx={{ fontSize: 24, fontWeight: 900, color: '#1e40af', lineHeight: 1 }}>{formatNumber(sum.promedio_global, 1)}</Typography>
-                          <Typography sx={{ fontSize: 10, color: '#64748b', fontWeight: 600 }}>Puntaje Global</Typography>
-                        </Box>
-                        <Box sx={{ textAlign: 'center', px: 2.5, py: 1.25, borderRadius: 2.5, bgcolor: qColor.color }}>
-                          <Typography sx={{ fontSize: 20, fontWeight: 900, color: '#fff', lineHeight: 1 }}>Q{sum.q_general}</Typography>
-                          <Typography sx={{ fontSize: 10, fontWeight: 700, color: '#fff' }}>{sum.etiqueta}</Typography>
+                        <Box>
+                          <Typography sx={{ fontSize: { xs: 18, md: 20 }, fontWeight: 900, color: '#fff', lineHeight: 1.15 }}>
+                            ANÁLISIS POR PROGRAMA ACADÉMICO
+                          </Typography>
+                          <Typography sx={{ fontSize: 13, color: 'rgba(255,255,255,0.88)', mt: 0.75, fontWeight: 700 }}>
+                            {sum.programa || selectedPrograma}
+                          </Typography>
+                          <Typography sx={{ fontSize: 12, color: 'rgba(255,255,255,0.72)', mt: 0.65 }}>
+                            {(programasPayload.rows || []).length} programas · {programasPayload.total_estudiantes} estudiantes evaluados
+                          </Typography>
                         </Box>
                       </Stack>
+
+                      <Box
+                        sx={{
+                          display: 'grid',
+                          gridTemplateColumns: { xs: 'repeat(3, minmax(88px, 1fr))', md: 'repeat(3, minmax(92px, 112px))' },
+                          gap: 1.25,
+                          width: { xs: '100%', md: 'auto' }
+                        }}
+                      >
+                        <Box sx={{ textAlign: 'center', px: 1.5, py: 1.2, borderRadius: 2, bgcolor: 'rgba(255,255,255,0.12)' }}>
+                          <Typography sx={{ fontSize: 9, color: 'rgba(255,255,255,0.7)', fontWeight: 700, letterSpacing: '0.08em' }}>AÑO</Typography>
+                          <Typography sx={{ fontSize: 28, fontWeight: 900, color: '#fff', lineHeight: 1.05, mt: 0.35 }}>
+                            {filters.anios.length === 1 ? filters.anios[0] : 'Todos'}
+                          </Typography>
+                        </Box>
+                        <Box sx={{ textAlign: 'center', px: 1.5, py: 1.2, borderRadius: 2, bgcolor: 'rgba(255,255,255,0.12)' }}>
+                          <Typography sx={{ fontSize: 9, color: 'rgba(255,255,255,0.7)', fontWeight: 700, letterSpacing: '0.08em' }}>TOTAL BASE</Typography>
+                          <Typography sx={{ fontSize: 28, fontWeight: 900, color: '#fff', lineHeight: 1.05, mt: 0.35 }}>
+                            {programasPayload.total_estudiantes || 0}
+                          </Typography>
+                        </Box>
+                        <Box sx={{ textAlign: 'center', px: 1.5, py: 1.2, borderRadius: 2, bgcolor: '#d89200', boxShadow: '0 8px 18px rgba(216,146,0,0.28)' }}>
+                          <Typography sx={{ fontSize: 9, color: 'rgba(255,255,255,0.78)', fontWeight: 700, letterSpacing: '0.08em' }}>QUINTIL</Typography>
+                          <Typography sx={{ fontSize: 28, fontWeight: 900, color: '#fff', lineHeight: 1.05, mt: 0.35 }}>
+                            Q{sum.q_general}
+                          </Typography>
+                        </Box>
+                      </Box>
                     </Box>
                   </Paper>
 
                   {/* 5 KPI cards */}
-                  <Box sx={{ display: 'grid', gridTemplateColumns: { xs: 'repeat(2,1fr)', sm: 'repeat(3,1fr)', md: 'repeat(5,1fr)' }, gap: 1.5 }}>
+                  <Box sx={{ display: 'grid', gridTemplateColumns: { xs: 'repeat(2,1fr)', sm: 'repeat(3,1fr)', xl: 'repeat(5,1fr)' }, gap: 1.5 }}>
                     {comps.map((c) => {
                       const qc = quintileTone(`Q${c.quintil}`);
                       return (
-                        <Paper key={c.modulo} elevation={0} sx={{ p: 2, borderRadius: 2.5, border: `1.5px solid ${qc.color}30`, background: `linear-gradient(155deg,${qc.color}12 0%,#fff 65%)`, textAlign: 'center' }}>
+                        <Paper key={c.modulo} elevation={0} sx={{ p: 2, borderRadius: 2.5, border: `1.5px solid ${qc.color}30`, borderTop: `4px solid ${qc.color}`, background: '#fff', textAlign: 'left', boxShadow: '0 3px 14px rgba(15,23,42,0.05)' }}>
                           <Typography sx={{ fontSize: 9, fontWeight: 800, color: '#64748b', letterSpacing: '0.06em', textTransform: 'uppercase', mb: 0.75, lineHeight: 1.3 }}>{COMP_LABELS[c.modulo] || c.modulo}</Typography>
                           <Typography sx={{ fontSize: 28, fontWeight: 900, color: '#0f172a', lineHeight: 1 }}>{c.puntaje != null ? formatNumber(c.puntaje, 1) : '—'}</Typography>
-                          <Typography sx={{ fontSize: 9, color: '#94a3b8', mb: 0.75 }}>/300 pts</Typography>
-                          <Box sx={{ display: 'inline-block', px: 1.25, py: 0.3, borderRadius: 1, bgcolor: qc.color }}>
-                            <Typography sx={{ fontSize: 9, fontWeight: 800, color: '#fff' }}>Q{c.quintil} · {qc.label}</Typography>
+                          <Stack direction="row" justifyContent="space-between" alignItems="center" sx={{ mt: 1.1 }}>
+                            <Typography sx={{ fontSize: 10, fontWeight: 700, color: qc.color }}>{formatNumber(c.pct_puntaje, 1)}%</Typography>
+                            <Box sx={{ display: 'inline-block', px: 1.15, py: 0.28, borderRadius: 999, bgcolor: '#d89200' }}>
+                              <Typography sx={{ fontSize: 9, fontWeight: 800, color: '#fff' }}>Q{c.quintil}</Typography>
+                            </Box>
+                          </Stack>
+                          <Box sx={{ mt: 1.1, height: 6, borderRadius: 999, bgcolor: '#eef2ff', overflow: 'hidden' }}>
+                            <Box sx={{ width: `${Math.max(0, Math.min(c.pct_puntaje || 0, 100))}%`, height: '100%', bgcolor: '#d89200', borderRadius: 999 }} />
                           </Box>
-                          <Typography sx={{ fontSize: 9, color: '#64748b', mt: 0.5 }}>{formatNumber(c.pct_puntaje, 1)}% del máx.</Typography>
                         </Paper>
                       );
                     })}
                   </Box>
 
                   {/* 3-col grid */}
-                  <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', lg: '2fr 1.1fr 1.4fr' }, gap: 2 }}>
+                  <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', xl: '1.15fr 1fr 1fr' }, gap: 2 }}>
                     {/* Comparativa */}
                     <Paper elevation={0} sx={{ p: 2.5, borderRadius: 3, border: '1px solid #e2e8f0' }}>
                       <Typography sx={{ fontSize: 12, fontWeight: 800, color: '#1e3a8a', mb: 0.25 }}>Comparativa de Puntajes</Typography>
-                      <Typography sx={{ fontSize: 10, color: '#94a3b8', mb: 1.5 }}>Promedio por competencia genérica · escala 0–300</Typography>
+                      <Typography sx={{ fontSize: 10, color: '#94a3b8', mb: 1.5 }}>Promedio por competencia genérica · escala 0–300 · programa activo: {sum.estudiantes || 0} estudiantes</Typography>
                       <ResponsiveContainer width="100%" height={200}>
                         <BarChart data={comps.map((c) => ({ name: COMP_LABELS[c.modulo] || c.modulo, puntaje: c.puntaje || 0 }))} layout="vertical" margin={{ top: 4, right: 44, left: 4, bottom: 4 }} barCategoryGap="30%">
                           <defs>
@@ -2391,7 +3086,7 @@ function ValorAgregadoDashboardBI({ initialSection = 'va_individual' }) {
                     {/* Percentil table */}
                     <Paper elevation={0} sx={{ p: 2.5, borderRadius: 3, border: '1px solid #e2e8f0' }}>
                       <Typography sx={{ fontSize: 12, fontWeight: 800, color: '#1e3a8a', mb: 0.25 }}>Percentil por Competencia</Typography>
-                      <Typography sx={{ fontSize: 10, color: '#94a3b8', mb: 1.5 }}>Posición nacional por módulo</Typography>
+                      <Typography sx={{ fontSize: 10, color: '#94a3b8', mb: 1.5 }}>Posición nacional por módulo · programa activo: {sum.estudiantes || 0} estudiantes</Typography>
                       <Box component="table" sx={{ width: '100%', borderCollapse: 'collapse' }}>
                         <Box component="thead">
                           <Box component="tr" sx={{ borderBottom: '2px solid #e2e8f0' }}>
@@ -2441,10 +3136,10 @@ function ValorAgregadoDashboardBI({ initialSection = 'va_individual' }) {
                       </Box>
                     </Paper>
 
-                    {/* Distribución por nivel */}
+                    {/* DistribuciÃ³n por nivel */}
                     <Paper elevation={0} sx={{ p: 2.5, borderRadius: 3, border: '1px solid #e2e8f0' }}>
                       <Typography sx={{ fontSize: 12, fontWeight: 800, color: '#1e3a8a', mb: 0.25 }}>Distribución por Nivel</Typography>
-                      <Typography sx={{ fontSize: 10, color: '#94a3b8', mb: 1 }}>Competencias genéricas (N1–N4) · Inglés (MCER)</Typography>
+                      <Typography sx={{ fontSize: 10, color: '#94a3b8', mb: 1 }}>Competencias genéricas (N1–N4) · Inglés (MCER) · programa activo: {sum.estudiantes || 0} estudiantes</Typography>
                       <Typography sx={{ fontSize: 9, fontWeight: 700, color: '#475569', mb: 0.5 }}>COMPETENCIAS GENÉRICAS</Typography>
                       {(() => {
                         const totalGen = genData.reduce((s, e) => s + e.cantidad, 0);
@@ -2534,7 +3229,13 @@ function ValorAgregadoDashboardBI({ initialSection = 'va_individual' }) {
 
         {section === 'va_institucional' ? (
           <Stack spacing={2.5}>
-            {institucionalLoading ? (
+            {!hasInstitutionalFilters ? (
+              <Box sx={{ textAlign: 'center', py: 8 }}>
+                <Typography sx={{ fontSize: 14, color: '#94a3b8' }}>
+                  Aplica un filtro de Año para construir el tablero Institucional.
+                </Typography>
+              </Box>
+            ) : institucionalLoading ? (
               <Box sx={{ display: 'flex', justifyContent: 'center', py: 8 }}><CircularProgress size={40} sx={{ color: '#2563eb' }} /></Box>
             ) : !institucionalPayload ? (
               <Box sx={{ textAlign: 'center', py: 8 }}><Typography sx={{ fontSize: 14, color: '#94a3b8' }}>Sin datos disponibles para los filtros seleccionados</Typography></Box>
@@ -2561,15 +3262,15 @@ function ValorAgregadoDashboardBI({ initialSection = 'va_individual' }) {
               const totN = genData.reduce((s, e) => s + e.cantidad, 0);
               const totI = ingData.reduce((s, e) => s + e.cantidad, 0);
               const avgPct = comps.length ? comps.reduce((s, c) => s + (c.percentil != null ? c.percentil : c.pct_puntaje), 0) / comps.length : 0;
-              const anioLabel = filters.anios?.length === 1 ? String(filters.anios[0]) : (filters.anios?.length > 1 ? filters.anios.join(', ') : 'Todos');
+              const anioLabel = filters.anios.length === 1 ? String(filters.anios[0]) : (filters.anios.length > 1 ? filters.anios.join(', ') : 'Todos');
 
               return (
                 <Stack spacing={2}>
                   {/* Header */}
-                  <Box sx={{ background: 'linear-gradient(135deg,#2563eb,#1e3a8a)', p: '22px 28px', borderRadius: 3 }}>
+                  <Box sx={{ background: 'linear-gradient(135deg,#2563eb 0%, #1d4ed8 55%, #1e3a8a 100%)', p: { xs: 2.25, md: '22px 28px' }, borderRadius: 3.5, boxShadow: '0 14px 34px rgba(37,99,235,0.16)' }}>
                     <Stack direction={{ xs: 'column', md: 'row' }} justifyContent="space-between" alignItems={{ md: 'center' }} gap={2}>
-                      <Stack direction="row" gap={1.5} alignItems="center">
-                        <Box sx={{ p: 1.25, borderRadius: 1.5, bgcolor: 'rgba(255,255,255,0.15)', display: 'flex' }}>
+                      <Stack direction="row" gap={1.5} alignItems="center" sx={{ flex: 1, minWidth: 240 }}>
+                        <Box sx={{ p: 1.25, borderRadius: 1.5, bgcolor: 'rgba(255,255,255,0.15)', display: 'flex', boxShadow: 'inset 0 0 0 1px rgba(255,255,255,0.08)' }}>
                           <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="1.5"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
                         </Box>
                         <Box>
@@ -2577,44 +3278,43 @@ function ValorAgregadoDashboardBI({ initialSection = 'va_individual' }) {
                           <Typography sx={{ fontSize: 12, color: 'rgba(255,255,255,0.8)', mt: 0.25 }}>Universidad CESMAG · Competencias Genéricas</Typography>
                         </Box>
                       </Stack>
-                      <Stack direction="row" gap={1.5} flexWrap="wrap">
+                      <Stack direction="row" gap={1.25} flexWrap="wrap">
                         {[['PERÍODO', anioLabel], ['EVALUADOS', String(sum.estudiantes || 0)], ['PROGRAMAS', String(sum.programas || 0)]].map(([lbl, val]) => (
-                          <Box key={lbl} sx={{ px: 2.5, py: 1.25, borderRadius: 1.5, bgcolor: 'rgba(255,255,255,0.12)', textAlign: 'center' }}>
+                          <Box key={lbl} sx={{ minWidth: 92, px: 2, py: 1.1, borderRadius: 1.5, bgcolor: 'rgba(255,255,255,0.12)', textAlign: 'center' }}>
                             <Typography sx={{ fontSize: 9, color: 'rgba(255,255,255,0.7)', letterSpacing: '0.08em', fontWeight: 600 }}>{lbl}</Typography>
-                            <Typography sx={{ fontSize: 20, fontWeight: 900, color: '#fff', lineHeight: 1.1 }}>{val}</Typography>
+                            <Typography sx={{ fontSize: 18, fontWeight: 900, color: '#fff', lineHeight: 1.1 }}>{val}</Typography>
                           </Box>
                         ))}
-                        <Box sx={{ px: 2.5, py: 1.25, borderRadius: 1.5, bgcolor: qColor.color, textAlign: 'center', boxShadow: `0 4px 16px ${qColor.color}60` }}>
+                        <Box sx={{ minWidth: 92, px: 2, py: 1.1, borderRadius: 1.5, bgcolor: '#d89200', textAlign: 'center', boxShadow: '0 8px 18px rgba(216,146,0,0.28)' }}>
                           <Typography sx={{ fontSize: 9, color: 'rgba(255,255,255,0.85)', letterSpacing: '0.08em', fontWeight: 600 }}>QUINTIL</Typography>
-                          <Typography sx={{ fontSize: 20, fontWeight: 900, color: '#fff', lineHeight: 1.1 }}>Q{sum.q_general}</Typography>
+                          <Typography sx={{ fontSize: 18, fontWeight: 900, color: '#fff', lineHeight: 1.1 }}>Q{sum.q_general}</Typography>
                         </Box>
                       </Stack>
                     </Stack>
                   </Box>
 
                   {/* 5 KPI cards */}
-                  <Box sx={{ display: 'grid', gridTemplateColumns: { xs: 'repeat(2,1fr)', sm: 'repeat(3,1fr)', md: 'repeat(5,1fr)' }, gap: 1.5 }}>
+                  <Box sx={{ display: 'grid', gridTemplateColumns: { xs: 'repeat(2,1fr)', sm: 'repeat(3,1fr)', xl: 'repeat(5,1fr)' }, gap: 1.5 }}>
                     {comps.map((c) => {
-                      const qc = quintileTone(`Q${c.quintil}`);
                       const dispPct = c.percentil != null ? c.percentil : c.pct_puntaje;
                       return (
-                        <Paper key={c.modulo} elevation={0} sx={{ p: 2, borderRadius: 2.5, border: '1px solid #e2e8f0', borderTop: `4px solid ${qc.color}` }}>
+                        <Paper key={c.modulo} elevation={0} sx={{ p: 2, borderRadius: 2.5, border: '1px solid #e2e8f0', borderTop: '4px solid #d89200', boxShadow: '0 3px 14px rgba(15,23,42,0.05)' }}>
                           <Stack direction="row" alignItems="center" gap={0.75} mb={1}>
-                            <Box sx={{ color: qc.color, display: 'flex' }}>{COMP_ICONS[c.modulo]}</Box>
+                            <Box sx={{ color: '#d89200', display: 'flex' }}>{COMP_ICONS[c.modulo]}</Box>
                             <Typography sx={{ fontSize: 8, fontWeight: 700, color: '#64748b', letterSpacing: '0.06em', textTransform: 'uppercase', lineHeight: 1.25 }}>{COMP_SHORT[c.modulo] || c.modulo}</Typography>
                           </Stack>
-                          <Typography sx={{ fontSize: 26, fontWeight: 800, color: '#1e3a8a', lineHeight: 1 }}>{c.puntaje != null ? formatNumber(c.puntaje, 1) : '—'}</Typography>
+                          <Typography sx={{ fontSize: 26, fontWeight: 900, color: '#1e3a8a', lineHeight: 1 }}>{c.puntaje != null ? formatNumber(c.puntaje, 1) : '—'}</Typography>
                           <Stack direction="row" justifyContent="space-between" alignItems="center" mt={1.25}>
                             <Stack direction="row" alignItems="center" gap={0.5}>
-                              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke={qc.color} strokeWidth="2.5"><polyline points="18 15 12 9 6 15"/></svg>
-                              <Typography sx={{ fontSize: 11, fontWeight: 700, color: qc.color }}>{formatNumber(dispPct, 1)}%</Typography>
+                              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="#d89200" strokeWidth="2.5"><polyline points="18 15 12 9 6 15"/></svg>
+                              <Typography sx={{ fontSize: 11, fontWeight: 700, color: '#d89200' }}>{formatNumber(dispPct, 1)}%</Typography>
                             </Stack>
-                            <Box sx={{ px: 1.25, py: 0.3, borderRadius: 1.5, bgcolor: qc.color }}>
+                            <Box sx={{ px: 1.25, py: 0.3, borderRadius: 1.5, bgcolor: '#d89200' }}>
                               <Typography sx={{ fontSize: 9, fontWeight: 800, color: '#fff' }}>Q{c.quintil}</Typography>
                             </Box>
                           </Stack>
                           <Box sx={{ mt: 1.25, height: 5, borderRadius: 3, bgcolor: '#f1f5f9', overflow: 'hidden' }}>
-                            <Box sx={{ height: '100%', width: `${Math.min(dispPct, 100)}%`, bgcolor: qc.color, borderRadius: 3 }} />
+                            <Box sx={{ height: '100%', width: `${Math.min(dispPct, 100)}%`, bgcolor: '#d89200', borderRadius: 3 }} />
                           </Box>
                         </Paper>
                       );
@@ -2622,7 +3322,7 @@ function ValorAgregadoDashboardBI({ initialSection = 'va_individual' }) {
                   </Box>
 
                   {/* 3-column grid */}
-                  <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', lg: '1fr 1fr 1fr' }, gap: 2 }}>
+                  <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', xl: '1.15fr 1fr 1fr' }, gap: 2 }}>
                     {/* Comparativa */}
                     <Paper elevation={0} sx={{ p: 2.5, borderRadius: 3, border: '1px solid #e2e8f0' }}>
                       <Stack direction="row" alignItems="center" gap={1} mb={2}>
@@ -2701,7 +3401,7 @@ function ValorAgregadoDashboardBI({ initialSection = 'va_individual' }) {
                       </Box>
                     </Paper>
 
-                    {/* Distribución por nivel */}
+                    {/* DistribuciÃ³n por nivel */}
                     <Paper elevation={0} sx={{ p: 2.5, borderRadius: 3, border: '1px solid #e2e8f0' }}>
                       <Stack direction="row" alignItems="center" gap={1} mb={2}>
                         <Box sx={{ color: '#2563eb', display: 'flex' }}><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M3 3v18h18"/><rect x="7" y="13" width="3" height="7"/><rect x="12" y="9" width="3" height="11"/><rect x="17" y="5" width="3" height="15"/></svg></Box>
@@ -2743,16 +3443,16 @@ function ValorAgregadoDashboardBI({ initialSection = 'va_individual' }) {
                     </Paper>
                   </Box>
 
-                  {/* Clasificación */}
-                  <Box sx={{ background: `linear-gradient(135deg,${qColor.color}14,${qColor.color}22)`, borderRadius: 3, p: '22px 28px', border: `2px solid ${qColor.color}` }}>
+                  {/* ClasificaciÃ³n */}
+                  <Box sx={{ background: 'linear-gradient(135deg,#fffdf5,#eef5f6)', borderRadius: 3, p: '22px 28px', border: '2px solid #d89200' }}>
                     <Stack direction={{ xs: 'column', md: 'row' }} justifyContent="space-between" alignItems={{ md: 'center' }} gap={2}>
                       <Stack direction="row" alignItems="center" gap={2}>
-                        <Box sx={{ color: qColor.color, display: 'flex' }}>
+                        <Box sx={{ color: '#d89200', display: 'flex' }}>
                           <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="8" r="7"/><polyline points="8.21 13.89 7 23 12 20 17 23 15.79 13.88"/></svg>
                         </Box>
                         <Box>
-                          <Typography sx={{ fontSize: 10, color: qColor.color, fontWeight: 700, letterSpacing: '0.1em', mb: 0.25 }}>CLASIFICACIÓN INSTITUCIONAL UNICESMAG</Typography>
-                          <Typography sx={{ fontSize: 26, fontWeight: 900, color: qColor.color, lineHeight: 1 }}>QUINTIL {sum.q_general} — {sum.etiqueta}</Typography>
+                          <Typography sx={{ fontSize: 10, color: '#d89200', fontWeight: 700, letterSpacing: '0.1em', mb: 0.25 }}>CLASIFICACIÓN INSTITUCIONAL UNICESMAG</Typography>
+                          <Typography sx={{ fontSize: 26, fontWeight: 900, color: '#d89200', lineHeight: 1 }}>QUINTIL {sum.q_general} — {sum.etiqueta}</Typography>
                         </Box>
                       </Stack>
                       <Stack direction="row" gap={1.25}>
@@ -2762,7 +3462,7 @@ function ValorAgregadoDashboardBI({ initialSection = 'va_individual' }) {
                             <Typography sx={{ fontSize: 18, fontWeight: 800, color: clr, mt: 0.25 }}>{val}</Typography>
                           </Box>
                         ))}
-                        <Box sx={{ px: 2.5, py: 1.5, bgcolor: qColor.color, borderRadius: 1.5, textAlign: 'center', boxShadow: `0 4px 16px ${qColor.color}40` }}>
+                        <Box sx={{ px: 2.5, py: 1.5, bgcolor: '#d89200', borderRadius: 1.5, textAlign: 'center', boxShadow: '0 8px 18px rgba(216,146,0,0.22)' }}>
                           <Typography sx={{ fontSize: 9, color: 'rgba(255,255,255,0.85)', fontWeight: 600 }}>QUINTIL</Typography>
                           <Typography sx={{ fontSize: 18, fontWeight: 900, color: '#fff', mt: 0.25 }}>Q{sum.q_general}</Typography>
                         </Box>
