@@ -1880,7 +1880,9 @@ function GestionInformacion() {
         'saber_pro_valor_agregado_individual',
         'saber_pro_valor_agregado_resultado_general',
         'saber_pro_valor_agregado_estadistica_general',
-        'saber_pro_valor_agregado_nbc'
+        'saber_pro_valor_agregado_nbc',
+        'saber_pro_valor_agregado_programas',
+        'saber_pro_valor_agregado_institucional'
       ];
     }
     return normalizeModulePermissionList(user?.allowedSaberProDashboards);

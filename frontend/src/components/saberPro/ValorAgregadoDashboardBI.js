@@ -1027,7 +1027,7 @@ const quintileTone = (quintil) => {
   return { color: '#ef4444', label: 'Bajo' };
 };
 
-function ValorAgregadoDashboardBI({ initialSection = 'va_individual' }) {
+function ValorAgregadoDashboardBI({ initialSection = 'va_individual', allowedDashboards = [] }) {
   const [catalogs, setCatalogs] = useState({ programas: [], anios: [], periodos: [], gruposReferencia: [] });
   const [filters, setFilters] = useState(BASE_FILTERS);
   const [loading, setLoading] = useState(false);
@@ -1061,6 +1061,18 @@ function ValorAgregadoDashboardBI({ initialSection = 'va_individual' }) {
   const [vaTrendYears, setVaTrendYears] = useState([]);
   const [vaCompYears, setVaCompYears] = useState([]);
   const [vaDualYears, setVaDualYears] = useState([]);
+  const allowedDashboardSet = useMemo(() => new Set(Array.isArray(allowedDashboards) ? allowedDashboards : []), [allowedDashboards]);
+  const restrictedByPermissions = allowedDashboardSet.size > 0;
+  const modularOptions = useMemo(() => ([
+    { key: 'va_nbc', label: 'NBC', permission: 'saber_pro_valor_agregado_nbc' },
+    { key: 'va_programas', label: 'Programas', permission: 'saber_pro_valor_agregado_programas' },
+    { key: 'va_institucional', label: 'Institucional', permission: 'saber_pro_valor_agregado_institucional' }
+  ]), []);
+  const visibleModularOptions = useMemo(() => {
+    if (!restrictedByPermissions) return modularOptions;
+    return modularOptions.filter((item) => allowedDashboardSet.has(item.permission));
+  }, [restrictedByPermissions, modularOptions, allowedDashboardSet]);
+  const firstVisibleModularSection = visibleModularOptions[0]?.key || 'va_nbc';
 
   const handleExportPositivos = useCallback(async () => {
     setExportingPositivos(true);
@@ -1159,8 +1171,23 @@ function ValorAgregadoDashboardBI({ initialSection = 'va_individual' }) {
   }, []);
 
   useEffect(() => {
+    if (['va_nbc', 'va_programas', 'va_institucional'].includes(initialSection)) {
+      if (visibleModularOptions.some((item) => item.key === initialSection)) {
+        setSection(initialSection);
+      } else {
+        setSection(firstVisibleModularSection);
+      }
+      return;
+    }
     setSection(initialSection);
-  }, [initialSection]);
+  }, [initialSection, visibleModularOptions, firstVisibleModularSection]);
+
+  useEffect(() => {
+    if (!['va_nbc', 'va_programas', 'va_institucional'].includes(section)) return;
+    if (!visibleModularOptions.some((item) => item.key === section)) {
+      setSection(firstVisibleModularSection);
+    }
+  }, [section, visibleModularOptions, firstVisibleModularSection]);
 
   useEffect(() => {
     let active = true;
@@ -1578,11 +1605,7 @@ function ValorAgregadoDashboardBI({ initialSection = 'va_individual' }) {
                     width: '100%'
                   }}
                 >
-                  {[
-                    ['va_nbc', 'NBC'],
-                    ['va_programas', 'Programas'],
-                    ['va_institucional', 'Institucional']
-                  ].map(([key, label]) => (
+                  {visibleModularOptions.map(({ key, label }) => (
                     <Box
                       key={key}
                       onClick={() => setSection(key)}

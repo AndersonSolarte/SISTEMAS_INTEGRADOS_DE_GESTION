@@ -61,7 +61,9 @@ const SABER_PRO_DASHBOARD_KEYS = new Set([
   'saber_pro_valor_agregado_individual',
   'saber_pro_valor_agregado_resultado_general',
   'saber_pro_valor_agregado_estadistica_general',
-  'saber_pro_valor_agregado_nbc'
+  'saber_pro_valor_agregado_nbc',
+  'saber_pro_valor_agregado_programas',
+  'saber_pro_valor_agregado_institucional'
 ]);
 
 const getDefaultPermissionsByRole = (role) => {
@@ -142,7 +144,13 @@ const getDefaultPermissionsByRole = (role) => {
         'saber_pro_agregados_competencias_especificas',
         'saber_pro_agregados_competencias_genericas',
         'saber_pro_agregados_comparativo_general',
-        'saber_pro_agregados_comparativo_especificas'
+        'saber_pro_agregados_comparativo_especificas',
+        'saber_pro_valor_agregado_individual',
+        'saber_pro_valor_agregado_resultado_general',
+        'saber_pro_valor_agregado_estadistica_general',
+        'saber_pro_valor_agregado_nbc',
+        'saber_pro_valor_agregado_programas',
+        'saber_pro_valor_agregado_institucional'
       ]
     };
   }
@@ -166,7 +174,13 @@ const getDefaultPermissionsByRole = (role) => {
         'saber_pro_agregados_competencias_especificas',
         'saber_pro_agregados_competencias_genericas',
         'saber_pro_agregados_comparativo_general',
-        'saber_pro_agregados_comparativo_especificas'
+        'saber_pro_agregados_comparativo_especificas',
+        'saber_pro_valor_agregado_individual',
+        'saber_pro_valor_agregado_resultado_general',
+        'saber_pro_valor_agregado_estadistica_general',
+        'saber_pro_valor_agregado_nbc',
+        'saber_pro_valor_agregado_programas',
+        'saber_pro_valor_agregado_institucional'
       ]
     };
   }

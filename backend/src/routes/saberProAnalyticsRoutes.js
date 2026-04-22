@@ -45,7 +45,9 @@ const SABER_PRO_ANALYTICS_MODULE_KEYS = [
   'saber_pro_valor_agregado_individual',
   'saber_pro_valor_agregado_resultado_general',
   'saber_pro_valor_agregado_estadistica_general',
-  'saber_pro_valor_agregado_nbc'
+  'saber_pro_valor_agregado_nbc',
+  'saber_pro_valor_agregado_programas',
+  'saber_pro_valor_agregado_institucional'
 ];
 
 const canViewEstadisticaInstitucional = hasAnyRoleOrModulePermission({

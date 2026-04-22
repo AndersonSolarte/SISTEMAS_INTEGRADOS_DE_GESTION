@@ -24,7 +24,7 @@ import UploadFileRoundedIcon     from '@mui/icons-material/UploadFileRounded';
 import {
   ResponsiveContainer, LineChart, Line, BarChart, Bar,
   XAxis, YAxis, CartesianGrid, Tooltip, Legend, ReferenceLine,
-  Cell, LabelList
+  Cell
 } from 'recharts';
 import { useAuth } from '../../context/AuthContext';
 import SaberProDashboard from './SaberProDashboard';
@@ -64,7 +64,7 @@ const NAV_CONFIG = [
       { key: 'va_individual',  label: 'Valor Agregado Individual',          desc: 'Trayectoria Saber 11 → Saber Pro por estudiante.', icon: SchoolRoundedIcon,     color: '#7c3aed' },
       { key: 'va_general',     label: 'Valor Agregado Resultado General',   desc: 'Estimación institucional agregada.',               icon: TrendingUpRoundedIcon, color: '#8b5cf6' },
       { key: 'va_estadistica', label: 'Valor Agregado Estadística General', desc: 'KPIs y distribución estadística.',                 icon: AutoGraphRoundedIcon,  color: '#a78bfa' },
-      { key: 'va_nbc',         label: 'Valor Agregado NBC',                 desc: 'Por Núcleo Básico del Conocimiento.',             icon: AssessmentRoundedIcon, color: '#6d28d9' }
+      { key: 'va_nbc',         label: 'Valor Agregado Modular',             desc: 'Análisis por NBC, programas e institucional.',    icon: AssessmentRoundedIcon, color: '#6d28d9' }
     ]
   },
   {
@@ -104,7 +104,11 @@ const SABER_PRO_PERMISSION_BY_GROUP = {
     va_individual: 'saber_pro_valor_agregado_individual',
     va_general: 'saber_pro_valor_agregado_resultado_general',
     va_estadistica: 'saber_pro_valor_agregado_estadistica_general',
-    va_nbc: 'saber_pro_valor_agregado_nbc'
+    va_nbc: [
+      'saber_pro_valor_agregado_nbc',
+      'saber_pro_valor_agregado_programas',
+      'saber_pro_valor_agregado_institucional'
+    ]
   },
   consulta: {
     individual: 'saber_pro_consulta_individual',
@@ -994,6 +998,7 @@ function ValorAgregadoPlaceholder({ section }) {
     </Box>
   );
 }
+void ValorAgregadoPlaceholder;
 
 /* ═══════════════════════════════════════════════════════════════════
    LANDING PAGE PRINCIPAL
@@ -1019,7 +1024,13 @@ function SaberProLandingPage({ onBack, allowedDashboards = [] }) {
     return NAV_CONFIG
       .map((group) => {
         const permissionMap = SABER_PRO_PERMISSION_BY_GROUP[group.key] || {};
-        const items = group.items.filter((item) => allowedSet.has(permissionMap[item.key]));
+        const items = group.items.filter((item) => {
+          const permissionKey = permissionMap[item.key];
+          if (Array.isArray(permissionKey)) {
+            return permissionKey.some((key) => allowedSet.has(key));
+          }
+          return allowedSet.has(permissionKey);
+        });
         return items.length > 0 ? { ...group, items } : null;
       })
       .filter(Boolean);
@@ -1099,7 +1110,7 @@ function SaberProLandingPage({ onBack, allowedDashboards = [] }) {
     if (activeGroup === 'agregados')      return <SaberProAgregadosDashboard initialSection={activeSection} allowedSections={(activeVisibleGroupConfig?.items || []).map((item) => item.key)} />;
     if (activeGroup === 'valor_agregado') {
       if (activeSection === 'va_individual') return <ValorAgregadoIndividual />;
-      return <ValorAgregadoDashboardBI initialSection={activeSection} />;
+      return <ValorAgregadoDashboardBI initialSection={activeSection} allowedDashboards={explicitSaberProPermissions} />;
     }
     if (activeGroup === 'consulta')       return <ConsultaValidacion initialSection={activeSection} allowedSections={(activeVisibleGroupConfig?.items || []).map((item) => item.key)} />;
     return null;

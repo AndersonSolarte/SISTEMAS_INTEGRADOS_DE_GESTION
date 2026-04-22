@@ -54,7 +54,9 @@ const SABER_PRO_DASHBOARD_PERMISSION_KEYS = [
   'saber_pro_valor_agregado_individual',
   'saber_pro_valor_agregado_resultado_general',
   'saber_pro_valor_agregado_estadistica_general',
-  'saber_pro_valor_agregado_nbc'
+  'saber_pro_valor_agregado_nbc',
+  'saber_pro_valor_agregado_programas',
+  'saber_pro_valor_agregado_institucional'
 ];
 const ALL_MODULE_PERMISSION_KEYS = [
   ...MENU_PERMISSION_KEYS,

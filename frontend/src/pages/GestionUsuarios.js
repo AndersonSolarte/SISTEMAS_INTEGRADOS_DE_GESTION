@@ -79,7 +79,9 @@ function GestionUsuarios() {
         { key: 'saber_pro_valor_agregado_individual', label: 'Valor agregado individual' },
         { key: 'saber_pro_valor_agregado_resultado_general', label: 'Valor agregado resultado general' },
         { key: 'saber_pro_valor_agregado_estadistica_general', label: 'Valor agregado estadística general' },
-        { key: 'saber_pro_valor_agregado_nbc', label: 'Valor agregado NBC' }
+        { key: 'saber_pro_valor_agregado_nbc', label: 'Valor agregado NBC' },
+        { key: 'saber_pro_valor_agregado_programas', label: 'Valor agregado programas' },
+        { key: 'saber_pro_valor_agregado_institucional', label: 'Valor agregado institucional' }
       ]
     }
   ];

@@ -2629,7 +2629,6 @@ const getResultadosDestacadosMejores = async (req, res) => {
 
     const tipoPrueba = normalizeText(filters.tipoPrueba) || 'saber_pro';
     const isTyt = tipoPrueba.toLowerCase().includes('tyt');
-    const isTyt = tipoPrueba.toLowerCase().includes('tyt');
     clauses.push('tipo_prueba = ?');
     params.push(tipoPrueba);
 
@@ -2801,6 +2800,14 @@ const getTablaModulosAnio = async (req, res) => {
   try {
     const filters = req.body?.filters || {};
     const tipoPrueba = normalizeText(filters.tipoPrueba) || 'saber_pro';
+    const isTyt = tipoPrueba.toLowerCase().includes('tyt');
+    const modulosGenericos = [
+      'RAZONAMIENTO CUANTITATIVO',
+      'LECTURA CRÍTICA',
+      'INGLÉS',
+      'COMUNICACIÓN ESCRITA',
+      'COMPETENCIAS CIUDADANAS'
+    ];
     const clauses = [
       'tipo_prueba = ?',
       "(novedades IS NULL OR TRIM(COALESCE(novedades::text, '')) = '')",
@@ -2820,7 +2827,7 @@ const getTablaModulosAnio = async (req, res) => {
       params.push(...anios);
     }
 
-    const modPlaceholders = MODULOS_GENERICOS_SPR.map(() => '?').join(', ');
+    const modPlaceholders = modulosGenericos.map(() => '?').join(', ');
     const whereBase = clauses.join(' AND ');
 
     const [moduloRows, aniosDisponiblesRows, programasRows] = await Promise.all([
@@ -2834,7 +2841,7 @@ const getTablaModulosAnio = async (req, res) => {
            AND modulo IN (${modPlaceholders})
          GROUP BY modulo, anio
          ORDER BY modulo, anio`,
-        { replacements: [...params, ...MODULOS_GENERICOS_SPR], type: QueryTypes.SELECT }
+        { replacements: [...params, ...modulosGenericos], type: QueryTypes.SELECT }
       ),
       sequelize.query(
         `SELECT DISTINCT anio FROM saber_pro_resultados_individuales
@@ -2867,7 +2874,7 @@ const getTablaModulosAnio = async (req, res) => {
       byModuloYear[mod][Number(row.anio)] = { promedio: Number(row.promedio), n: Number(row.n || 0) };
     }
 
-    const modulosOrdenados = MODULOS_GENERICOS_SPR.filter((m) => byModuloYear[m]);
+    const modulosOrdenados = modulosGenericos.filter((m) => byModuloYear[m]);
     const tablaModulos = modulosOrdenados.map((modulo) => {
       const entry = { modulo, years: {} };
       for (const y of years) {
