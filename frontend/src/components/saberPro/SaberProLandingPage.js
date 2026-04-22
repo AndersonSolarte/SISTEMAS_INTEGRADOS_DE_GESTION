@@ -14,7 +14,6 @@ import AutoGraphRoundedIcon      from '@mui/icons-material/AutoGraphRounded';
 import EmojiEventsRoundedIcon    from '@mui/icons-material/EmojiEventsRounded';
 import AssessmentRoundedIcon     from '@mui/icons-material/AssessmentRounded';
 import CompareArrowsRoundedIcon  from '@mui/icons-material/CompareArrowsRounded';
-import WorkspacePremiumRoundedIcon from '@mui/icons-material/WorkspacePremiumRounded';
 import StarRoundedIcon           from '@mui/icons-material/StarRounded';
 import GroupsRoundedIcon         from '@mui/icons-material/GroupsRounded';
 import FilterListRoundedIcon     from '@mui/icons-material/FilterListRounded';
@@ -34,6 +33,7 @@ import ValorAgregadoDashboardBI from './ValorAgregadoDashboardBI';
 import ValorAgregadoIndividual from './ValorAgregadoIndividual';
 import ResultadosIndividualesSaberPro from './ResultadosIndividualesSaberPro';
 import ResultadosIndividualesDestacados from './ResultadosIndividualesDestacados';
+import RendimientoCompetenciasContainer from './RendimientoCompetenciasContainer';
 
 /* ═══════════════════════════════════════════════════════════════════
    NAV CONFIG
@@ -45,16 +45,15 @@ const NAV_CONFIG = [
     items: [
       { key: 'saber_pro',    label: 'Resultados Individuales Saber Pro', desc: 'Puntajes y percentiles por estudiante.',                    icon: AssessmentRoundedIcon,       color: '#2563eb' },
       { key: 'tyt',          label: 'Resultados Individuales TyT',      desc: 'Análisis filtrado para prueba Saber TyT.',                  icon: BarChartRoundedIcon,          color: '#0ea5e9' },
-      { key: 'destacados',   label: 'Resultados Individuales Destacados', desc: 'Ranking de estudiantes con mejor desempeño.',               icon: EmojiEventsRoundedIcon,       color: '#f59e0b' },
-      { key: 'competencias', label: 'Rendimiento por Competencia',   desc: 'Análisis por núcleo y competencia genérica.',               icon: TrendingUpRoundedIcon,        color: '#10b981' },
-      { key: 'becas',        label: 'Becas por Rendimiento General', desc: 'Priorización para apoyos y reconocimientos.',               icon: WorkspacePremiumRoundedIcon,  color: '#8b5cf6' }
+      { key: 'destacados',   label: 'Resultados Individuales Destacados', desc: 'Ranking de estudiantes con mejor desempeño.',               icon: EmojiEventsRoundedIcon,       color: '#f59e0b' }
     ]
   },
   {
     key: 'agregados', label: 'Resultados Agregados',
     color: '#0891b2', lightBg: '#ecfeff', icon: BarChartRoundedIcon,
     items: [
-      { key: 'general', label: 'Resultados Saber Pro Agregados', desc: 'Promedios institucionales por año y programa.', icon: BarChartRoundedIcon, color: '#0891b2' }
+      { key: 'general',      label: 'Resultados Saber Pro Agregados', desc: 'Promedios institucionales por año y programa.',                             icon: BarChartRoundedIcon,  color: '#0891b2' },
+      { key: 'competencias', label: 'Rendimiento por Competencia',    desc: 'Competencias genéricas y específicas vs grupo de referencia.',              icon: TrendingUpRoundedIcon, color: '#10b981' }
     ]
   },
   {
@@ -89,14 +88,14 @@ const SABER_PRO_PERMISSION_BY_GROUP = {
     general: 'saber_pro_individuales_general',
     saber_pro: 'saber_pro_individuales_saber_pro',
     tyt: 'saber_pro_individuales_tyt',
-    destacados: 'saber_pro_individuales_destacados',
-    competencias: 'saber_pro_individuales_competencias',
-    becas: 'saber_pro_individuales_becas'
+    destacados: 'saber_pro_individuales_destacados'
   },
   agregados: {
     general: 'saber_pro_agregados_general',
-    competencias_especificas: 'saber_pro_agregados_competencias_especificas',
-    competencias_genericas: 'saber_pro_agregados_competencias_genericas',
+    competencias: [
+      'saber_pro_agregados_competencias_genericas',
+      'saber_pro_agregados_competencias_especificas'
+    ],
     comparativo_general: 'saber_pro_agregados_comparativo_general',
     comparativo_especificas: 'saber_pro_agregados_comparativo_especificas'
   },
@@ -810,7 +809,7 @@ function DashboardOverview({ onNavigate }) {
             <Chip
               size="small"
               label="Ver detalle →"
-              onClick={() => onNavigate('agregados', 'competencias_genericas')}
+              onClick={() => onNavigate('agregados', 'competencias')}
               sx={{ fontSize: 11, fontWeight: 700, cursor: 'pointer', bgcolor: '#ecfeff', color: '#0891b2', border: '1px solid #a5f3fc' }}
             />
           </Stack>
@@ -1107,7 +1106,10 @@ function SaberProLandingPage({ onBack, allowedDashboards = [] }) {
       if (activeSection === 'destacados') return <ResultadosIndividualesDestacados />;
       return <SaberProDashboard key={activeSection} initialSection={activeSection} allowedSections={(activeVisibleGroupConfig?.items || []).map((item) => item.key)} />;
     }
-    if (activeGroup === 'agregados')      return <SaberProAgregadosDashboard initialSection={activeSection} allowedSections={(activeVisibleGroupConfig?.items || []).map((item) => item.key)} />;
+    if (activeGroup === 'agregados') {
+      if (activeSection === 'competencias') return <RendimientoCompetenciasContainer />;
+      return <SaberProAgregadosDashboard initialSection={activeSection} allowedSections={(activeVisibleGroupConfig?.items || []).map((item) => item.key)} />;
+    }
     if (activeGroup === 'valor_agregado') {
       if (activeSection === 'va_individual') return <ValorAgregadoIndividual />;
       return <ValorAgregadoDashboardBI initialSection={activeSection} allowedDashboards={explicitSaberProPermissions} />;

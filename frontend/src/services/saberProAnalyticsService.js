@@ -44,7 +44,9 @@ const saberProAnalyticsService = {
   getTablaModulosAnio: (filters = {}) =>
     api.post('/planeacion/gestion-informacion/saber-pro/resultados/individuales/tabla-modulos', { filters }).then((r) => r.data),
   getResultadosDestacadosMejores: ({ filters = {}, options = {} } = {}) =>
-    api.post('/planeacion/gestion-informacion/saber-pro/resultados/individuales/destacados', { filters, options }).then((r) => r.data)
+    api.post('/planeacion/gestion-informacion/saber-pro/resultados/individuales/destacados', { filters, options }).then((r) => r.data),
+  getAgregadosCompetencias: (filters = {}) =>
+    api.post('/planeacion/gestion-informacion/saber-pro/agregados/competencias', { filters }).then((r) => r.data)
 };
 
 export default saberProAnalyticsService;

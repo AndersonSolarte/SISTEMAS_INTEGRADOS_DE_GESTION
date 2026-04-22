@@ -2948,6 +2948,186 @@ const getValueAddedFiltros = async (req, res) => {
   }
 };
 
+const COMPETENCIAS_GENERICAS_CANON = [
+  'RAZONAMIENTO CUANTITATIVO',
+  'LECTURA CRITICA',
+  'INGLES',
+  'COMUNICACION ESCRITA',
+  'COMPETENCIAS CIUDADANAS'
+];
+
+const stripAccents = (text = '') => String(text || '')
+  .normalize('NFD')
+  .replace(/[̀-ͯ]/g, '')
+  .trim()
+  .toUpperCase();
+
+const isCompetenciaGenerica = (competencia) => COMPETENCIAS_GENERICAS_CANON.includes(stripAccents(competencia));
+
+const GRUPO_TO_TIPO_PRUEBA = {
+  genericas: 'COMPETENCIAS GENERICAS',
+  especificas: 'COMPETENCIAS ESPECIFICAS'
+};
+
+const getAgregadosCompetencias = async (req, res) => {
+  try {
+    const filters = req.body?.filters || {};
+    const grupoRaw = String(filters.grupo || 'genericas').toLowerCase();
+    const grupo = grupoRaw === 'especificas' ? 'especificas' : 'genericas';
+    const grupoTipoPrueba = GRUPO_TO_TIPO_PRUEBA[grupo];
+    const programas = toArray(filters.programas).map(normalizeText).filter(Boolean);
+    const anios = toArray(filters.anios).map((x) => Number(x)).filter(Number.isFinite);
+
+    const clauses = [
+      "TRIM(COALESCE(competencia, '')) <> ''",
+      'puntaje_programa IS NOT NULL',
+      "UPPER(TRIM(COALESCE(tipo_prueba, ''))) = ?"
+    ];
+    const params = [grupoTipoPrueba];
+
+    if (programas.length) {
+      clauses.push(`programa IN (${programas.map(() => '?').join(', ')})`);
+      params.push(...programas);
+    }
+    if (anios.length) {
+      clauses.push(`anio IN (${anios.map(() => '?').join(', ')})`);
+      params.push(...anios);
+    }
+
+    const whereSql = clauses.length ? `WHERE ${clauses.join(' AND ')}` : '';
+
+    const [dataRows, aniosRows, programasRows, competenciasRows] = await Promise.all([
+      sequelize.query(
+        `SELECT anio, programa, competencia,
+            ROUND(AVG(puntaje_programa)::numeric, 2)         AS puntaje_programa,
+            ROUND(AVG(puntaje_institucion)::numeric, 2)      AS puntaje_institucion,
+            ROUND(AVG(puntaje_grupo_referencia)::numeric, 2) AS puntaje_grupo_referencia
+         FROM saber_pro_resultados_agregados
+         ${whereSql}
+         GROUP BY anio, programa, competencia
+         ORDER BY anio, competencia`,
+        { replacements: params, type: QueryTypes.SELECT }
+      ),
+      sequelize.query(
+        `SELECT DISTINCT anio
+         FROM saber_pro_resultados_agregados
+         WHERE anio IS NOT NULL
+           AND UPPER(TRIM(COALESCE(tipo_prueba, ''))) = ?
+         ORDER BY anio`,
+        { replacements: [grupoTipoPrueba], type: QueryTypes.SELECT }
+      ),
+      sequelize.query(
+        `SELECT DISTINCT programa
+         FROM saber_pro_resultados_agregados
+         WHERE programa IS NOT NULL AND TRIM(programa) <> ''
+           AND UPPER(TRIM(COALESCE(tipo_prueba, ''))) = ?
+         ORDER BY programa`,
+        { replacements: [grupoTipoPrueba], type: QueryTypes.SELECT }
+      ),
+      sequelize.query(
+        `SELECT DISTINCT competencia
+         FROM saber_pro_resultados_agregados
+         WHERE competencia IS NOT NULL AND TRIM(competencia) <> ''
+           AND UPPER(TRIM(COALESCE(tipo_prueba, ''))) = ?
+         ORDER BY competencia`,
+        { replacements: [grupoTipoPrueba], type: QueryTypes.SELECT }
+      )
+    ]);
+
+    const filtered = dataRows;
+
+    const competenciasCatalogo = competenciasRows
+      .map((r) => String(r.competencia || '').trim())
+      .filter(Boolean);
+
+    const aniosCatalogo = aniosRows.map((r) => Number(r.anio)).filter(Number.isFinite);
+    const programasCatalogo = programasRows.map((r) => String(r.programa || '').trim()).filter(Boolean);
+    const tiposCatalogo = [grupoTipoPrueba];
+
+    const competenciasPresentes = Array.from(new Set(filtered.map((r) => String(r.competencia || '').trim()).filter(Boolean)));
+    const competenciasFinal = competenciasCatalogo.length
+      ? competenciasCatalogo.filter((c) => competenciasPresentes.includes(c))
+      : competenciasPresentes;
+
+    const aniosPresentes = Array.from(new Set(filtered.map((r) => Number(r.anio)).filter(Number.isFinite))).sort((a, b) => a - b);
+
+    const asValidNumber = (v) => {
+      if (v == null) return null;
+      const n = Number(v);
+      if (!Number.isFinite(n)) return null;
+      if (n <= 0) return null;
+      return n;
+    };
+
+    const agrupado = new Map();
+    for (const row of filtered) {
+      const key = `${String(row.competencia || '').trim()}|${Number(row.anio)}`;
+      if (!agrupado.has(key)) agrupado.set(key, { programa: [], institucion: [], grupo: [] });
+      const bucket = agrupado.get(key);
+      const p = asValidNumber(row.puntaje_programa);
+      const i = asValidNumber(row.puntaje_institucion);
+      const g = asValidNumber(row.puntaje_grupo_referencia);
+      if (p != null) bucket.programa.push(p);
+      if (i != null) bucket.institucion.push(i);
+      if (g != null) bucket.grupo.push(g);
+    }
+
+    const avg = (arr) => (arr && arr.length ? Number((arr.reduce((a, b) => a + b, 0) / arr.length).toFixed(2)) : null);
+
+    const matriz = competenciasFinal.map((competencia) => {
+      const byYear = {};
+      aniosPresentes.forEach((anio) => {
+        const bucket = agrupado.get(`${competencia}|${anio}`) || { programa: [], institucion: [], grupo: [] };
+        byYear[anio] = {
+          programa: avg(bucket.programa),
+          institucion: avg(bucket.institucion),
+          grupo: avg(bucket.grupo)
+        };
+      });
+      const programaValues = Object.values(byYear).map((c) => c.programa).filter((v) => Number.isFinite(v));
+      const grupoValues = Object.values(byYear).map((c) => c.grupo).filter((v) => Number.isFinite(v));
+      return {
+        competencia,
+        byYear,
+        promedio: avg(programaValues),
+        promedioGrupo: avg(grupoValues)
+      };
+    });
+
+    const filaPromedio = {
+      competencia: 'PROMEDIO',
+      byYear: (() => {
+        const out = {};
+        aniosPresentes.forEach((anio) => {
+          const progList = matriz.map((m) => m.byYear[anio]?.programa).filter((v) => Number.isFinite(v));
+          const grpList = matriz.map((m) => m.byYear[anio]?.grupo).filter((v) => Number.isFinite(v));
+          out[anio] = { programa: avg(progList), institucion: null, grupo: avg(grpList) };
+        });
+        return out;
+      })()
+    };
+
+    return res.json({
+      success: true,
+      data: {
+        grupo,
+        grupoTipoPrueba,
+        programas: programasCatalogo,
+        anios: aniosCatalogo,
+        aniosPresentes,
+        competencias: competenciasFinal,
+        tiposPrueba: tiposCatalogo,
+        matriz,
+        promedio: filaPromedio,
+        scope: programas.length === 1 ? 'programa' : (programas.length > 1 ? 'programas' : 'institucional')
+      }
+    });
+  } catch (error) {
+    console.error('Error en agregados competencias:', error);
+    return res.status(500).json({ success: false, message: 'Error al obtener competencias agregadas' });
+  }
+};
+
 module.exports = {
   getSaberProFiltros,
   getSaberProFiltrosCascade,
@@ -2971,5 +3151,6 @@ module.exports = {
   getDocumentosEstudiantes,
   getComparativaEstudianteDetalle,
   getTablaModulosAnio,
-  getResultadosDestacadosMejores
+  getResultadosDestacadosMejores,
+  getAgregadosCompetencias
 };
