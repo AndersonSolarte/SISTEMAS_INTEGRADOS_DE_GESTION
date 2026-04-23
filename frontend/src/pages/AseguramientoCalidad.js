@@ -55,6 +55,7 @@ const extractGoogleDriveMeta = (rawUrl) => {
   const pathname = parsed?.pathname || '';
   const resourceKey = parsed?.searchParams?.get('resourcekey') || '';
   const gid = parsed?.searchParams?.get('gid') || '';
+  const isOfficeFile = parsed?.searchParams?.get('rtpof') === 'true' || parsed?.searchParams?.get('sd') === 'true';
 
   let kind = 'drive-file';
   if (host.includes('docs.google.com')) {
@@ -63,7 +64,7 @@ const extractGoogleDriveMeta = (rawUrl) => {
     else if (pathname.includes('/presentation/')) kind = 'google-slide';
   }
   
-  return { fileId, resourceKey, gid, kind };
+  return { fileId, resourceKey, gid, kind, isOfficeFile };
 };
 
 const isDocumentCode = (value = '') => /^[A-Z0-9]{2,6}(?:-[A-Z0-9]{2,6}){1,6}$/.test(String(value).trim().toUpperCase());
@@ -114,16 +115,19 @@ const getPreviewUrl = (url) => {
     return url;
   }
 
-  const { fileId, resourceKey, gid, kind } = meta;
+  const { fileId, resourceKey, gid, kind, isOfficeFile } = meta;
   const rkQuery = resourceKey ? `?resourcekey=${encodeURIComponent(resourceKey)}` : '';
 
+  if (isOfficeFile) return `https://drive.google.com/file/d/${fileId}/preview${rkQuery}`;
   if (kind === 'google-doc') return `https://docs.google.com/document/d/${fileId}/preview${rkQuery}${rkQuery ? '&' : '?'}rm=minimal`;
   if (kind === 'google-sheet') {
     const params = new URLSearchParams();
-    params.set('rm', 'minimal');
+    params.set('single', 'true');
+    params.set('widget', 'false');
+    params.set('headers', 'false');
     if (gid) params.set('gid', gid);
     if (resourceKey) params.set('resourcekey', resourceKey);
-    return `https://docs.google.com/spreadsheets/d/${fileId}/preview?${params.toString()}`;
+    return `https://docs.google.com/spreadsheets/d/${fileId}/htmlview?${params.toString()}`;
   }
   if (kind === 'google-slide') return `https://docs.google.com/presentation/d/${fileId}/preview${rkQuery}`;
 
@@ -134,9 +138,10 @@ const getDownloadUrl = (url) => {
   const meta = extractGoogleDriveMeta(url);
   if (!meta) return url;
 
-  const { fileId, resourceKey, kind } = meta;
+  const { fileId, resourceKey, kind, isOfficeFile } = meta;
   const driveExtra = resourceKey ? `&resourcekey=${encodeURIComponent(resourceKey)}` : '';
 
+  if (isOfficeFile) return `https://drive.google.com/uc?export=download&id=${fileId}${driveExtra}`;
   if (kind === 'google-doc') {
     const extra = resourceKey ? `&resourcekey=${encodeURIComponent(resourceKey)}` : '';
     return `https://docs.google.com/document/d/${fileId}/export?format=docx${extra}`;
@@ -206,15 +211,39 @@ const buildDownloadFileName = (doc, normalized) => {
 
 const formatDate = (value) => {
   if (!value) return '-';
-  const str = String(value).slice(0, 10);
-  if (/^\d{4}-\d{2}-\d{2}$/.test(str)) {
-    const [y, m, d] = str.split('-');
+  const text = String(value).trim();
+  const isoMatch = text.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (isoMatch) {
+    const [, y, m, d] = isoMatch;
     return `${d}/${m}/${y}`;
+  }
+  const dmyMatch = text.match(/^(\d{1,2})[/-](\d{1,2})[/-](\d{4})$/);
+  if (dmyMatch) {
+    const [, d, m, y] = dmyMatch;
+    return `${String(d).padStart(2, '0')}/${String(m).padStart(2, '0')}/${y}`;
   }
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return String(value);
-  return date.toLocaleDateString('es-CO');
+  return [
+    String(date.getDate()).padStart(2, '0'),
+    String(date.getMonth() + 1).padStart(2, '0'),
+    date.getFullYear()
+  ].join('/');
 };
+
+const getOriginalDateValue = (doc, keys = []) => {
+  const original = doc?.datos_originales || {};
+  for (const key of keys) {
+    const value = original[key] ?? original[key.toLowerCase()] ?? original[key.toUpperCase()];
+    if (typeof value === 'string' && value.trim()) return value;
+  }
+  return null;
+};
+
+const getDocumentoFechaCreacion = (doc) => (
+  getOriginalDateValue(doc, ['FECHA_CREACION', 'fecha_creacion'])
+  || doc?.fecha_creacion
+);
 
 const emptyFilterOptions = {
   macroProcesos: null,
@@ -1366,7 +1395,7 @@ function AseguramientoCalidad() {
                               </TableCell>
                               <TableCell sx={{ color: '#1e293b', fontWeight: 600, fontSize: 14 }}>{normalized.titulo}</TableCell>
                               <TableCell sx={{ color: '#475569', fontSize: 13 }}>{doc.autor || '-'}</TableCell>
-                              <TableCell sx={{ color: '#475569', fontSize: 13, whiteSpace: 'nowrap' }}>{formatDate(doc.fecha_creacion)}</TableCell>
+                              <TableCell sx={{ color: '#475569', fontSize: 13, whiteSpace: 'nowrap' }}>{formatDate(getDocumentoFechaCreacion(doc))}</TableCell>
                               <TableCell>
                                 <Chip label={`v${doc.version || '1.0'}`} size="small" sx={{ bgcolor: '#f1f5f9', color: '#475569', fontWeight: 700, fontFamily: 'monospace', borderRadius: 1.5 }} />
                               </TableCell>

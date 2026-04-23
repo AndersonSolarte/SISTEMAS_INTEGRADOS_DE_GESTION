@@ -271,7 +271,12 @@ const parseSheetMatrix = (values = []) => {
   return { success: true, data };
 };
 
-const readWorksheetMatrix = (worksheet) => XLSX.utils.sheet_to_json(worksheet, { header: 1, defval: null });
+const readWorksheetMatrix = (worksheet) => XLSX.utils.sheet_to_json(worksheet, {
+  header: 1,
+  defval: null,
+  raw: false,
+  dateNF: 'dd/mm/yyyy'
+});
 
 const readWorkbookBuffer = (buffer, preferredSheetName) => {
   const workbook = XLSX.read(buffer, { type: 'buffer' });
@@ -452,7 +457,7 @@ const importFromExcel = async (req, res) => {
     const workbook = XLSX.readFile(req.file.path);
     const sheetName = workbook.SheetNames[0];
     const worksheet = workbook.Sheets[sheetName];
-    const data = XLSX.utils.sheet_to_json(worksheet, { defval: null });
+    const data = XLSX.utils.sheet_to_json(worksheet, { defval: null, raw: false, dateNF: 'dd/mm/yyyy' });
 
     if (data.length === 0) {
       fs.unlinkSync(req.file.path);
@@ -733,7 +738,7 @@ const importFromSheet = async (req, res) => {
             message: 'No se encontró la hoja indicada en el archivo de Drive'
           });
         }
-        values = XLSX.utils.sheet_to_json(targetSheet, { header: 1, defval: null });
+        values = XLSX.utils.sheet_to_json(targetSheet, { header: 1, defval: null, raw: false, dateNF: 'dd/mm/yyyy' });
       } else {
         throw sheetError;
       }

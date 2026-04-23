@@ -248,7 +248,7 @@ const getDocumentos = async (req, res) => {
       limit: parseInt(limit),
       offset: parseInt(offset),
       order: [
-        literal('fecha_creacion DESC NULLS LAST'),
+        literal(`CASE WHEN fecha_creacion <= CURRENT_DATE THEN fecha_creacion ELSE NULL END DESC NULLS LAST`),
         literal('orden_origen ASC NULLS LAST'),
         ['id', 'ASC']
       ],
