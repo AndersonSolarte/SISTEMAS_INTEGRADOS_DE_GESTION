@@ -1,6 +1,6 @@
 const { GoogleGenerativeAI } = require('@google/generative-ai');
 
-const DEFAULT_MODEL = process.env.GEMINI_MODEL || 'gemini-flash-latest';
+const DEFAULT_MODEL = process.env.GEMINI_MODEL || 'gemini-2.0-flash';
 
 let cachedClient = null;
 const getClient = () => {
@@ -94,6 +94,26 @@ const callGemini = async (model, prompt) => {
   return result?.response?.text?.() || '';
 };
 
+const classifyGeminiError = (error) => {
+  const msg = String(error?.message || '');
+  const status = Number(error?.status || error?.response?.status || 0);
+  const code = String(error?.code || '');
+
+  if (status === 401 || status === 403 || /API_KEY_INVALID|permission denied|unauthorized|forbidden|invalid api key/i.test(msg)) {
+    return { status: 502, code: 'GEMINI_AUTH_ERROR', message: 'La clave de Gemini no es válida o no tiene permisos.' };
+  }
+  if (status === 404 || /model .*not found|not found for API version|not found/i.test(msg)) {
+    return { status: 502, code: 'GEMINI_MODEL_ERROR', message: 'El modelo de Gemini configurado no está disponible.' };
+  }
+  if (status === 429 || isRateLimitError(error)) {
+    return { status: 429, code: 'GEMINI_QUOTA_ERROR', message: 'Gemini superó la cuota temporal o recibió demasiadas solicitudes.' };
+  }
+  if (/CERT_|certificate|TLS|SSL|ENOTFOUND|ECONNRESET|ETIMEDOUT|EAI_AGAIN|fetch failed/i.test(`${code} ${msg}`)) {
+    return { status: 502, code: 'GEMINI_NETWORK_ERROR', message: 'El servidor no pudo conectarse correctamente con Gemini.' };
+  }
+  return { status: 502, code: 'GEMINI_ERROR', message: 'No fue posible generar indicadores con Gemini.' };
+};
+
 const suggestIndicators = async (actividad) => {
   const cleanActividad = String(actividad || '').trim();
   if (!cleanActividad) {
@@ -132,7 +152,14 @@ const suggestIndicators = async (actividad) => {
       break;
     } catch (error) {
       lastError = error;
-      if (!isRateLimitError(error) || attempt === retryDelays.length - 1) throw error;
+      if (!isRateLimitError(error) || attempt === retryDelays.length - 1) {
+        const classified = classifyGeminiError(error);
+        const err = new Error(classified.message);
+        err.status = classified.status;
+        err.code = classified.code;
+        err.cause = error;
+        throw err;
+      }
     }
   }
   if (lastError) throw lastError;
