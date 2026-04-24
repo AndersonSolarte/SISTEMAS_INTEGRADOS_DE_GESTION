@@ -70,8 +70,11 @@ services:
       SMTP_FROM: ${SMTP_FROM:-}
       SABER_PRO_PYTHON_URL: http://python-service:8000
       SABER_PRO_PYTHON_TIMEOUT_MS: ${SABER_PRO_PYTHON_TIMEOUT_MS:-15000}
+      AI_PROVIDER: ${AI_PROVIDER:-auto}
       GEMINI_API_KEY: ${GEMINI_API_KEY:-}
       GEMINI_MODEL: ${GEMINI_MODEL:-gemini-2.0-flash}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      OPENAI_MODEL: ${OPENAI_MODEL:-gpt-4.1-mini}
     extra_hosts:
       - "host.docker.internal:host-gateway"
     depends_on:
