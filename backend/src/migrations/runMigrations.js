@@ -270,6 +270,7 @@ const runMigrations = async () => {
     await models.GeorreferenciaDepartamento.sync();
     await models.GeorreferenciaMunicipio.sync();
     await models.UserActivityLog.sync();
+    await models.PlanAccion.sync();
 
     await qi.changeColumn('estadisticas', 'programa', { type: DataTypes.STRING(500), allowNull: true });
     await qi.changeColumn('estadisticas', 'dependencia', { type: DataTypes.STRING(500), allowNull: true });

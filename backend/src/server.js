@@ -183,6 +183,13 @@ testConnection()
     } catch (e) {
       console.warn('[activity] No se pudo sincronizar user_activity_logs:', e?.message);
     }
+    try {
+      const PlanAccion = require('./models/PlanAccion');
+      await PlanAccion.sync();
+      console.log('[gestion-informacion] Tabla plan_accion lista.');
+    } catch (e) {
+      console.warn('[gestion-informacion] No se pudo sincronizar plan_accion:', e?.message);
+    }
     startServer(DEFAULT_PORT);
   })
   .catch((error) => {

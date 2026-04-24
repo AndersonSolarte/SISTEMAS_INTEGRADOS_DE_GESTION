@@ -2790,9 +2790,9 @@ const getResultadosDestacadosMejores = async (req, res) => {
 
 const MODULOS_GENERICOS_SPR = [
   'RAZONAMIENTO CUANTITATIVO',
-  'LECTURA CRÍTICA',
-  'INGLÉS',
-  'COMUNICACIÓN ESCRITA',
+  'LECTURA CRITICA',
+  'INGLES',
+  'COMUNICACION ESCRITA',
   'COMPETENCIAS CIUDADANAS'
 ];
 
@@ -2801,13 +2801,7 @@ const getTablaModulosAnio = async (req, res) => {
     const filters = req.body?.filters || {};
     const tipoPrueba = normalizeText(filters.tipoPrueba) || 'saber_pro';
     const isTyt = tipoPrueba.toLowerCase().includes('tyt');
-    const modulosGenericos = [
-      'RAZONAMIENTO CUANTITATIVO',
-      'LECTURA CRÍTICA',
-      'INGLÉS',
-      'COMUNICACIÓN ESCRITA',
-      'COMPETENCIAS CIUDADANAS'
-    ];
+    const modulosGenericos = [...MODULOS_GENERICOS_SPR];
     const clauses = [
       'tipo_prueba = ?',
       "(novedades IS NULL OR TRIM(COALESCE(novedades::text, '')) = '')",
@@ -2832,15 +2826,26 @@ const getTablaModulosAnio = async (req, res) => {
 
     const [moduloRows, aniosDisponiblesRows, programasRows] = await Promise.all([
       sequelize.query(
-        `SELECT modulo, anio,
+        `SELECT modulo_canon AS modulo, anio,
            ROUND(AVG(puntaje_modulo)::numeric, 2) AS promedio,
            COUNT(DISTINCT documento) AS n
-         FROM saber_pro_resultados_individuales
-         WHERE ${whereBase}
-           AND puntaje_modulo IS NOT NULL
-           AND modulo IN (${modPlaceholders})
-         GROUP BY modulo, anio
-         ORDER BY modulo, anio`,
+         FROM (
+           SELECT
+             TRANSLATE(
+               UPPER(TRIM(COALESCE(modulo, ''))),
+               CHR(193) || CHR(201) || CHR(205) || CHR(211) || CHR(218),
+               'AEIOU'
+             ) AS modulo_canon,
+             anio,
+             puntaje_modulo,
+             documento
+           FROM saber_pro_resultados_individuales
+           WHERE ${whereBase}
+             AND puntaje_modulo IS NOT NULL
+         ) src
+         WHERE modulo_canon IN (${modPlaceholders})
+         GROUP BY modulo_canon, anio
+         ORDER BY modulo_canon, anio`,
         { replacements: [...params, ...modulosGenericos], type: QueryTypes.SELECT }
       ),
       sequelize.query(
@@ -2897,11 +2902,10 @@ const getTablaModulosAnio = async (req, res) => {
       data: { years, modulos: tablaModulos, trendByYear, programas: programasList, aniosDisponibles: years }
     });
   } catch (error) {
-    console.error('Error en tabla módulos × año Saber Pro:', error);
-    return res.status(500).json({ success: false, message: 'Error al calcular tabla módulos Saber Pro' });
+    console.error('Error en tabla modulos x anio Saber Pro:', error);
+    return res.status(500).json({ success: false, message: 'Error al calcular tabla modulos Saber Pro' });
   }
 };
-
 const getValueAddedFiltros = async (req, res) => {
   try {
     const anioFiltro = req.query.anio ? Number(req.query.anio) : null;

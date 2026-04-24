@@ -29,13 +29,17 @@ const {
   RecursoHumanoDocente,
   RecursoHumanoAdministrativo,
   RecursoHumanoOutsourcing,
-  RecursoHumanoOnda
+  RecursoHumanoOnda,
+  PlanAccion
 } = require('../models');
 const XLSX = require('xlsx');
 const fs = require('fs');
 const path = require('path');
 const readline = require('readline');
 const divipolaMatchService = require('../services/divipolaMatchService');
+const { generatePlanAccionBuffer } = require('../services/planAccionExportService');
+const { generateActaBuffer } = require('../services/actaExportService');
+const { suggestIndicators } = require('../services/geminiIndicatorService');
 
 const validateAdminConfirmation = async (req, res) => {
   const { identifier, password } = req.body || {};
@@ -155,6 +159,11 @@ const clearDatasetStorage = async ({
     ]);
   }
 
+  if (categoria === 'Plan de Acción') {
+    await ensurePlanAccionTable();
+    await PlanAccion.destroy({ where: {} });
+  }
+
   return { deleted, deletedLogs };
 };
 
@@ -168,8 +177,175 @@ const DATASET_CATEGORIES = {
   investigacion: 'InvestigaciÃƒÆ’Ã‚Â³n',
   proyectos_convenios: 'Proyectos y Convenios',
   recurso_humano: 'Recurso Humano',
-  saber_pro: 'Saber Pro'
+  saber_pro: 'Saber Pro',
+  plan_accion: 'Plan de Acción'
 };
+
+const PLAN_ACCION_TEMPLATE_HEADERS = [
+  'AÑO',
+  'PED',
+  'OBJETIVOS ESTRATÉGICOS',
+  'LINEAMIENTOS ESTRATÉGICOS',
+  'MACROACTIVIDADES ESTRATEGICAS',
+  'ACTIVIDADES',
+  'TIPO DE INDICADOR',
+  'FECHA INICIO',
+  'FECHA FIN',
+  'INDICADOR',
+  'META',
+  'RESPONSABLE DE EJECUCIÓN',
+  'CORRESPONSABLE',
+  'PORCENTAJE AVANCE IP',
+  'OBSERVACIONES IP',
+  'PORCENTAJE AVANCE IIP',
+  'OBSERVACIONES IIP',
+  'TOTAL EJECUCION'
+];
+
+const PLAN_ACCION_ESTRUCTURA_ROWS = [
+  ['AÑO', 'Año de vigencia del plan (numérico, ej. 2026).'],
+  ['PED', 'Plan Estratégico de Desarrollo al que pertenece la actividad.'],
+  ['OBJETIVOS ESTRATÉGICOS', 'Objetivo estratégico institucional asociado.'],
+  ['LINEAMIENTOS ESTRATÉGICOS', 'Lineamiento estratégico derivado del objetivo.'],
+  ['MACROACTIVIDADES ESTRATEGICAS', 'Macroactividad estratégica del lineamiento.'],
+  ['ACTIVIDADES', 'Actividad operativa concreta a ejecutar.'],
+  ['TIPO DE INDICADOR', 'Tipo de indicador (Gestión / Resultado / Impacto / etc.).'],
+  ['FECHA INICIO', 'Fecha planeada de inicio (dd/mm/aaaa).'],
+  ['FECHA FIN', 'Fecha planeada de cierre (dd/mm/aaaa).'],
+  ['INDICADOR', 'Nombre o fórmula del indicador.'],
+  ['META', 'Meta cuantitativa o cualitativa planteada.'],
+  ['RESPONSABLE DE EJECUCIÓN', 'Dependencia o cargo responsable principal.'],
+  ['CORRESPONSABLE', 'Dependencia o cargo corresponsable (opcional).'],
+  ['PORCENTAJE AVANCE IP', 'Avance reportado en el primer periodo (0-100).'],
+  ['OBSERVACIONES IP', 'Observaciones cualitativas del primer periodo.'],
+  ['PORCENTAJE AVANCE IIP', 'Avance reportado en el segundo periodo (0-100).'],
+  ['OBSERVACIONES IIP', 'Observaciones cualitativas del segundo periodo.'],
+  ['TOTAL EJECUCION', 'Porcentaje total de ejecución anual (0-100).']
+];
+
+const PLAN_ACCION_ROW_ALIASES = {
+  anio: ['AÑO', 'ANIO', 'ANO', 'AÃ‘O'],
+  ped: ['PED'],
+  objetivo_estrategico: ['OBJETIVOS ESTRATÉGICOS', 'OBJETIVO ESTRATEGICO', 'OBJETIVOS ESTRATEGICOS'],
+  lineamiento_estrategico: ['LINEAMIENTOS ESTRATÉGICOS', 'LINEAMIENTO ESTRATEGICO', 'LINEAMIENTOS ESTRATEGICOS'],
+  macroactividad: ['MACROACTIVIDADES ESTRATEGICAS', 'MACROACTIVIDAD'],
+  actividad: ['ACTIVIDADES', 'ACTIVIDAD'],
+  tipo_indicador: ['TIPO DE INDICADOR'],
+  fecha_inicio: ['FECHA INICIO', 'FECHA DE INICIO'],
+  fecha_fin: ['FECHA FIN', 'FECHA DE FIN', 'FECHA FINAL'],
+  indicador: ['INDICADOR'],
+  meta: ['META'],
+  responsable: ['RESPONSABLE DE EJECUCIÓN', 'RESPONSABLE DE EJECUCION', 'RESPONSABLE'],
+  corresponsable: ['CORRESPONSABLE'],
+  avance_ip: ['PORCENTAJE AVANCE IP', '% AVANCE IP', 'AVANCE IP'],
+  observaciones_ip: ['OBSERVACIONES IP'],
+  avance_iip: ['PORCENTAJE AVANCE IIP', '% AVANCE IIP', 'AVANCE IIP'],
+  observaciones_iip: ['OBSERVACIONES IIP'],
+  total_ejecucion: ['TOTAL EJECUCION', 'TOTAL EJECUCIÓN', '% EJECUCION', 'EJECUCION TOTAL']
+};
+
+const normalizeHeaderKey = (value = '') =>
+  stripDiacritics(String(value || ''))
+    .toUpperCase()
+    .replace(/\s+/g, ' ')
+    .trim();
+
+const pickPlanAccionCell = (row = {}, field) => {
+  const aliases = PLAN_ACCION_ROW_ALIASES[field] || [];
+  const keys = Object.keys(row);
+  const normalizedRow = keys.reduce((acc, key) => {
+    acc[normalizeHeaderKey(key)] = row[key];
+    return acc;
+  }, {});
+  for (const alias of aliases) {
+    const key = normalizeHeaderKey(alias);
+    if (normalizedRow[key] !== undefined && normalizedRow[key] !== null && String(normalizedRow[key]).trim() !== '') {
+      return normalizedRow[key];
+    }
+  }
+  return null;
+};
+
+const buildValidDateOnly = (year, month, day) => {
+  const y = Number(year);
+  const m = Number(month);
+  const d = Number(day);
+  if (!Number.isInteger(y) || !Number.isInteger(m) || !Number.isInteger(d)) return null;
+  if (y < 1900 || y > 2200 || m < 1 || m > 12 || d < 1 || d > 31) return null;
+  const candidate = new Date(Date.UTC(y, m - 1, d));
+  if (
+    candidate.getUTCFullYear() !== y
+    || candidate.getUTCMonth() !== (m - 1)
+    || candidate.getUTCDate() !== d
+  ) {
+    return null;
+  }
+  return `${String(y).padStart(4, '0')}-${String(m).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+};
+
+const parsePlanAccionFecha = (value) => {
+  if (value === null || value === undefined || value === '') return null;
+  if (typeof value === 'number' && Number.isFinite(value) && value > 20000 && value < 90000) {
+    const parsed = XLSX.SSF.parse_date_code(value);
+    if (parsed?.y && parsed?.m && parsed?.d) {
+      return buildValidDateOnly(parsed.y, parsed.m, parsed.d);
+    }
+  }
+  if (value instanceof Date && !Number.isNaN(value.getTime())) {
+    return buildValidDateOnly(value.getUTCFullYear(), value.getUTCMonth() + 1, value.getUTCDate());
+  }
+  const text = String(value).trim();
+  if (!text) return null;
+  const dmy = text.match(/^(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{2,4})$/);
+  if (dmy) {
+    let y = dmy[3];
+    if (y.length === 2) y = (Number(y) < 70 ? '20' : '19') + y;
+    return buildValidDateOnly(y, dmy[2], dmy[1]);
+  }
+  const ymd = text.match(/^(\d{4})[\/\-.](\d{1,2})[\/\-.](\d{1,2})$/);
+  if (ymd) {
+    return buildValidDateOnly(ymd[1], ymd[2], ymd[3]);
+  }
+  const iso = new Date(text);
+  if (!Number.isNaN(iso.getTime())) {
+    return buildValidDateOnly(iso.getUTCFullYear(), iso.getUTCMonth() + 1, iso.getUTCDate());
+  }
+  return null;
+};
+
+const parsePlanAccionPorcentaje = (value) => {
+  if (value === null || value === undefined || value === '') return null;
+  if (typeof value === 'number') {
+    if (!Number.isFinite(value)) return null;
+    return value > 0 && value <= 1 ? Number((value * 100).toFixed(2)) : Number(value.toFixed(2));
+  }
+  const text = String(value).replace('%', '').replace(',', '.').trim();
+  if (!text) return null;
+  const numeric = Number(text);
+  if (!Number.isFinite(numeric)) return null;
+  return numeric > 0 && numeric <= 1 ? Number((numeric * 100).toFixed(2)) : Number(numeric.toFixed(2));
+};
+
+const mapPlanAccionRow = (row) => ({
+  anio: parseAnio(pickPlanAccionCell(row, 'anio')),
+  ped: normalizeText(pickPlanAccionCell(row, 'ped')),
+  objetivo_estrategico: normalizeText(pickPlanAccionCell(row, 'objetivo_estrategico')),
+  lineamiento_estrategico: normalizeText(pickPlanAccionCell(row, 'lineamiento_estrategico')),
+  macroactividad: normalizeText(pickPlanAccionCell(row, 'macroactividad')),
+  actividad: normalizeText(pickPlanAccionCell(row, 'actividad')),
+  tipo_indicador: normalizeText(pickPlanAccionCell(row, 'tipo_indicador')),
+  fecha_inicio: parsePlanAccionFecha(pickPlanAccionCell(row, 'fecha_inicio')),
+  fecha_fin: parsePlanAccionFecha(pickPlanAccionCell(row, 'fecha_fin')),
+  indicador: normalizeText(pickPlanAccionCell(row, 'indicador')),
+  meta: normalizeText(pickPlanAccionCell(row, 'meta')),
+  responsable: normalizeText(pickPlanAccionCell(row, 'responsable')),
+  corresponsable: normalizeText(pickPlanAccionCell(row, 'corresponsable')),
+  avance_ip: parsePlanAccionPorcentaje(pickPlanAccionCell(row, 'avance_ip')),
+  observaciones_ip: normalizeText(pickPlanAccionCell(row, 'observaciones_ip')),
+  avance_iip: parsePlanAccionPorcentaje(pickPlanAccionCell(row, 'avance_iip')),
+  observaciones_iip: normalizeText(pickPlanAccionCell(row, 'observaciones_iip')),
+  total_ejecucion: parsePlanAccionPorcentaje(pickPlanAccionCell(row, 'total_ejecucion'))
+});
 
 const GEOREFERENCIA_TEMPLATE_HEADERS = {
   'DIVIPOLA Departamento': {
@@ -2271,7 +2447,28 @@ const matrixToRows = (worksheet, expectedHeaders = [], loose = false) => {
   return { rows, headerRowIndex };
 };
 
+const resolveDefaultImportSheetName = (workbook, categoria) => {
+  const sheetNames = Array.isArray(workbook?.SheetNames) ? workbook.SheetNames : [];
+  if (!sheetNames.length) return null;
+
+  const validSheetNames = sheetNames.filter((name) => {
+    const sheet = workbook?.Sheets?.[name];
+    return Boolean(sheet && sheet['!ref']);
+  });
+
+  if (!validSheetNames.length) return null;
+
+  if (categoria === 'Plan de Acción') {
+    const exactPlanSheet = validSheetNames.find((name) => normalizeHeader(name) === 'PLAN DE ACCION');
+    if (exactPlanSheet) return exactPlanSheet;
+  }
+
+  const firstDataSheet = validSheetNames.find((name) => !normalizeHeader(name).includes('ESTRUCTURA'));
+  return firstDataSheet || validSheetNames[0];
+};
+
 let georreferenciaSyncPromise = null;
+let planAccionSyncPromise = null;
 
 const isMissingRelationError = (error) => {
   const errorCode = String(error?.original?.code || error?.parent?.code || '');
@@ -2290,6 +2487,16 @@ const ensureGeorreferenciaTables = async () => {
     });
   }
   return georreferenciaSyncPromise;
+};
+
+const ensurePlanAccionTable = async () => {
+  if (!planAccionSyncPromise) {
+    planAccionSyncPromise = PlanAccion.sync().catch((error) => {
+      planAccionSyncPromise = null;
+      throw error;
+    });
+  }
+  return planAccionSyncPromise;
 };
 
 const importGeorreferenciaRows = async ({ rows = [], fileName = '', userId = null, sourceLabel = 'archivo' }) => {
@@ -3031,6 +3238,81 @@ const buildHeaderOnlyWorksheet = (headers = []) => {
   return XLSX.utils.aoa_to_sheet([safeHeaders]);
 };
 
+const normalizePlanAccionPercent = (value) => {
+  if (value === null || value === undefined || value === '') return null;
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric)) return null;
+  const normalized = numeric > 0 && numeric <= 1 ? numeric * 100 : numeric;
+  return Number(normalized.toFixed(2));
+};
+
+const resolvePlanAccionEstado = (value) => {
+  const percent = normalizePlanAccionPercent(value);
+  if (percent === null) return 'Sin dato';
+  if (percent <= 0) return 'Sin iniciar';
+  if (percent >= 100) return 'Completado';
+  return 'En ejecución';
+};
+
+const buildPlanAccionDashboardPayload = (rows = []) => {
+  const mappedRows = (Array.isArray(rows) ? rows : []).map((row) => {
+    const avanceIp = normalizePlanAccionPercent(row.avance_ip);
+    const avanceIip = normalizePlanAccionPercent(row.avance_iip);
+    const avanceTotal = normalizePlanAccionPercent(row.total_ejecucion);
+    return {
+      id: row.id,
+      anio: Number(row.anio || 0) || null,
+      ped: normalizeText(row.ped),
+      objetivo_estrategico: normalizeText(row.objetivo_estrategico),
+      lineamiento_estrategico: normalizeText(row.lineamiento_estrategico),
+      macroactividad: normalizeText(row.macroactividad),
+      actividad: normalizeText(row.actividad),
+      tipo_indicador: normalizeText(row.tipo_indicador),
+      fecha_inicio: row.fecha_inicio || null,
+      fecha_fin: row.fecha_fin || null,
+      indicador: normalizeText(row.indicador),
+      meta: normalizeText(row.meta),
+      responsable: normalizeText(row.responsable),
+      corresponsable: normalizeText(row.corresponsable),
+      avance_ip: avanceIp,
+      observaciones_ip: normalizeText(row.observaciones_ip),
+      avance_iip: avanceIip,
+      observaciones_iip: normalizeText(row.observaciones_iip),
+      avance_total: avanceTotal,
+      estado: resolvePlanAccionEstado(avanceTotal),
+      creado_en: row.createdAt || row.created_at || null,
+      actualizado_en: row.updatedAt || row.updated_at || null
+    };
+  });
+
+  const uniqueSorted = (selector, formatter = (value) => value) =>
+    Array.from(
+      new Set(
+        mappedRows
+          .map(selector)
+          .filter((value) => value !== null && value !== undefined && String(value).trim() !== '')
+      )
+    )
+      .sort((a, b) => String(a).localeCompare(String(b), 'es'))
+      .map(formatter);
+
+  return {
+    rows: mappedRows,
+    filters: {
+      anios: Array.from(new Set(mappedRows.map((row) => row.anio).filter((value) => Number.isFinite(value)))).sort((a, b) => a - b),
+      peds: uniqueSorted((row) => row.ped),
+      responsables: uniqueSorted((row) => row.responsable),
+      tiposIndicador: uniqueSorted((row) => row.tipo_indicador),
+      estados: ['Sin iniciar', 'En ejecución', 'Completado', 'Sin dato']
+    },
+    meta: {
+      totalRows: mappedRows.length,
+      totalAnios: new Set(mappedRows.map((row) => row.anio).filter((value) => Number.isFinite(value))).size,
+      totalResponsables: new Set(mappedRows.map((row) => row.responsable).filter(Boolean)).size
+    }
+  };
+};
+
 const getEstadisticas = async (req, res) => {
   try {
     const {
@@ -3068,6 +3350,18 @@ const getEstadisticas = async (req, res) => {
         { subcategoria: { [Op.iLike]: `%${search}%` } },
         { fuente: { [Op.iLike]: `%${search}%` } }
       ];
+    }
+
+    if (aggregate === 'plan_accion_dashboard' && (!where.categoria || where.categoria === 'Plan de Acción')) {
+      await ensurePlanAccionTable();
+      const rows = await PlanAccion.findAll({
+        order: [['anio', 'DESC'], ['objetivo_estrategico', 'ASC'], ['lineamiento_estrategico', 'ASC'], ['actividad', 'ASC'], ['id', 'ASC']],
+        raw: true
+      });
+      return res.json({
+        success: true,
+        data: buildPlanAccionDashboardPayload(rows)
+      });
     }
 
     if (aggregate === 'poblacional_series' && where.categoria === 'Poblacional') {
@@ -3704,6 +3998,25 @@ const downloadTemplate = async (req, res) => {
       XLSX.utils.book_append_sheet(workbook, worksheet, 'Listado Vigentes');
       const buffer = XLSX.write(workbook, { type: 'buffer', bookType: 'xlsx' });
       res.setHeader('Content-Disposition', 'attachment; filename=plantilla_georreferencia_divipola.xlsx');
+      res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+      return res.send(buffer);
+    }
+
+    if (categoria === 'Plan de Acción') {
+      const workbook = XLSX.utils.book_new();
+
+      const estructuraSheet = XLSX.utils.aoa_to_sheet([['Nombre de campo', 'Contenido'], ...PLAN_ACCION_ESTRUCTURA_ROWS]);
+      estructuraSheet['!cols'] = [{ wch: 32 }, { wch: 70 }];
+      XLSX.utils.book_append_sheet(workbook, estructuraSheet, 'ESTRUCTURA');
+
+      const dataSheet = buildHeaderOnlyWorksheet(PLAN_ACCION_TEMPLATE_HEADERS);
+      dataSheet['!cols'] = PLAN_ACCION_TEMPLATE_HEADERS.map((header) => ({
+        wch: Math.max(16, Math.min(42, String(header).length + 6))
+      }));
+      XLSX.utils.book_append_sheet(workbook, dataSheet, 'PLAN DE ACCION');
+
+      const buffer = XLSX.write(workbook, { type: 'buffer', bookType: 'xlsx' });
+      res.setHeader('Content-Disposition', 'attachment; filename=plantilla_plan_de_accion.xlsx');
       res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
       return res.send(buffer);
     }
@@ -5562,7 +5875,10 @@ const importFromExcel = async (req, res) => {
         return cleanRow;
       });
     } else {
-      const sheetName = workbook.SheetNames[0];
+      const sheetName = resolveDefaultImportSheetName(workbook, categoria);
+      if (!sheetName) {
+        return res.status(400).json({ success: false, message: 'El archivo Excel no contiene hojas con datos válidos' });
+      }
       const worksheet = workbook.Sheets[sheetName];
       const matrix = XLSX.utils.sheet_to_json(worksheet, { header: 1, defval: null, blankrows: false });
 
@@ -5647,6 +5963,9 @@ const importFromExcel = async (req, res) => {
         subcategoria: saberProConfig.label,
         saberProConfig
       });
+    }
+    if (categoria === 'Plan de Acción') {
+      await clearDatasetStorage({ categoria: 'Plan de Acción' });
     }
 
     // Deduplicación en-memoria para subcategorías con uniqueKeys definidos (ej. Matriculados: codigo_estudiante+periodo)
@@ -5935,6 +6254,22 @@ const importFromExcel = async (req, res) => {
             actualizado_por: req.user?.id || null
           });
         }
+        result.importados += 1;
+        continue;
+      }
+
+      if (categoria === 'Plan de Acción') {
+        await ensurePlanAccionTable();
+        const payload = mapPlanAccionRow(row);
+        if (!payload.anio) {
+          result.errores.push({ fila, error: 'Campo obligatorio inválido: AÑO' });
+          continue;
+        }
+        await PlanAccion.create({
+          ...payload,
+          creado_por: req.user?.id || null,
+          actualizado_por: req.user?.id || null
+        });
         result.importados += 1;
         continue;
       }
@@ -6346,6 +6681,30 @@ const downloadCargueBase = async (req, res) => {
         records = rows.map((row) => normalizeExcelRecordKeys(row));
         sheetName = normalizeHeader(subcategoriaResolved || 'RECURSO_HUMANO').slice(0, 31);
       }
+    } else if (categoriaResolved === 'Plan de Acción') {
+      await ensurePlanAccionTable();
+      const rows = await PlanAccion.findAll({ order: [['anio', 'ASC'], ['id', 'ASC']], raw: true });
+      records = rows.map((row) => ({
+        'AÑO': row.anio,
+        'PED': row.ped,
+        'OBJETIVOS ESTRATÉGICOS': row.objetivo_estrategico,
+        'LINEAMIENTOS ESTRATÉGICOS': row.lineamiento_estrategico,
+        'MACROACTIVIDADES ESTRATEGICAS': row.macroactividad,
+        'ACTIVIDADES': row.actividad,
+        'TIPO DE INDICADOR': row.tipo_indicador,
+        'FECHA INICIO': row.fecha_inicio,
+        'FECHA FIN': row.fecha_fin,
+        'INDICADOR': row.indicador,
+        'META': row.meta,
+        'RESPONSABLE DE EJECUCIÓN': row.responsable,
+        'CORRESPONSABLE': row.corresponsable,
+        'PORCENTAJE AVANCE IP': row.avance_ip,
+        'OBSERVACIONES IP': row.observaciones_ip,
+        'PORCENTAJE AVANCE IIP': row.avance_iip,
+        'OBSERVACIONES IIP': row.observaciones_iip,
+        'TOTAL EJECUCION': row.total_ejecucion
+      }));
+      sheetName = 'PLAN_DE_ACCION';
     } else if (categoriaResolved === 'Georreferencia') {
       const [deptRows, muniRows] = await Promise.all([
         GeorreferenciaDepartamento.findAll({ order: [['codigo_departamento', 'ASC']], raw: true }),
@@ -6542,6 +6901,73 @@ const resolveDivipolaIncidencia = async (req, res) => {
   }
 };
 
+const safeFilenameFragment = (value, fallback = 'plan') => {
+  const base = String(value || fallback)
+    .normalize('NFD')
+    .replace(/[̀-ͯ]/g, '')
+    .replace(/[^A-Za-z0-9_-]+/g, '_')
+    .replace(/_+/g, '_')
+    .replace(/^_|_$/g, '');
+  return base || fallback;
+};
+
+const exportPlanAccionInstitucional = async (req, res) => {
+  try {
+    const { planData = {}, actividades = [] } = req.body || {};
+    if (!Array.isArray(actividades) || actividades.length === 0) {
+      return res.status(400).json({ success: false, message: 'Debes enviar al menos una actividad del plan.' });
+    }
+    const buffer = await generatePlanAccionBuffer({ planData, actividades });
+    const year = planData.anio || new Date().getFullYear();
+    const fragment = safeFilenameFragment(planData.codigoPlan || planData.nombrePlan || 'plan_accion');
+    const filename = `plan_accion_${fragment}_${year}.xlsx`;
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    return res.send(buffer);
+  } catch (error) {
+    console.error('Error al exportar Plan de Acción institucional:', error);
+    return res.status(500).json({ success: false, message: 'No se pudo generar la plantilla institucional del Plan de Acción.' });
+  }
+};
+
+const exportActaInstitucional = async (req, res) => {
+  try {
+    const payload = req.body || {};
+    const buffer = await generateActaBuffer(payload);
+    const year = payload.anio || new Date().getFullYear();
+    const fragment = safeFilenameFragment(payload.codigoPlan || payload.dependencia || 'acta_reunion');
+    const filename = `acta_asistencia_reunion_${fragment}_${year}.docx`;
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document');
+    return res.send(buffer);
+  } catch (error) {
+    console.error('Error al exportar acta institucional:', error);
+    return res.status(500).json({ success: false, message: 'No se pudo generar el acta institucional.' });
+  }
+};
+
+const sugerirIndicadorPlanAccion = async (req, res) => {
+  try {
+    const actividad = String(req.body?.actividad || '').trim();
+    if (!actividad) {
+      return res.status(400).json({ success: false, message: 'La actividad es obligatoria.' });
+    }
+    const result = await suggestIndicators(actividad);
+    return res.json({ success: true, data: result });
+  } catch (error) {
+    const status = error?.status || 500;
+    const payload = {
+      success: false,
+      message: error?.message || 'No fue posible generar indicadores con IA.',
+      code: error?.code || 'GEMINI_ERROR'
+    };
+    if (status >= 500) {
+      console.error('Error al sugerir indicadores con Gemini:', error);
+    }
+    return res.status(status).json(payload);
+  }
+};
+
 module.exports = {
   getEstadisticas,
   getMatriculadosIncidencias,
@@ -6558,6 +6984,9 @@ module.exports = {
   resolveDivipolaIncidencia,
   importFromExcel,
   clearByCategoria,
+  exportPlanAccionInstitucional,
+  exportActaInstitucional,
+  sugerirIndicadorPlanAccion,
   DATASET_CATEGORIES
 };
 

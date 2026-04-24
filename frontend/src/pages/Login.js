@@ -245,33 +245,25 @@ function Login() {
           <Typography sx={{
             fontFamily: '"Montserrat", "Segoe UI", sans-serif',
             fontWeight: 800,
-            fontSize: { lg: '2.4rem', xl: '2.8rem' },
+            fontSize: { lg: '2.35rem', xl: '2.7rem' },
             lineHeight: 1.15,
             color: '#ffffff',
-            mb: 2,
+            mb: 0,
+            maxWidth: 640,
             textShadow: '0 2px 20px rgba(0,0,0,0.4)'
           }}>
-            Plataforma de{' '}
+            Sistema Institucional de{' '}
             <Box component="span" sx={{
               background: 'linear-gradient(90deg, #60a5fa 0%, #a78bfa 50%, #f472b6 100%)',
               WebkitBackgroundClip: 'text',
               WebkitTextFillColor: 'transparent',
               backgroundClip: 'text'
             }}>
-              Gestión Institucional
+              Gestión
             </Box>
+            {' '}por Procesos
           </Typography>
-          <Typography sx={{
-            fontFamily: '"Montserrat", "Segoe UI", sans-serif',
-            color: 'rgba(203,213,225,0.9)',
-            fontSize: 16,
-            lineHeight: 1.6,
-            mb: 4,
-            maxWidth: 480
-          }}>
-            Accede a la documentación oficial, estadísticas institucionales y herramientas de gestión de la Universidad CESMAG.
-          </Typography>
-          <Stack spacing={1.5}>
+          <Stack spacing={1.5} sx={{ mt: 4 }}>
             {features.map((item, idx) => (
               <Stack
                 key={idx}
@@ -423,20 +415,10 @@ function Login() {
               fontSize: { xs: '1.5rem', sm: '1.65rem' },
               lineHeight: 1.2,
               color: '#0f172a',
-              mb: 0.6,
+              mb: 1.5,
               letterSpacing: -0.3
             }}>
-              Sistemas de Gestión
-            </Typography>
-            <Typography sx={{
-              fontFamily: '"Montserrat", "Segoe UI", sans-serif',
-              fontWeight: 700,
-              fontSize: { xs: '0.95rem', sm: '1.05rem' },
-              color: '#1d4ed8',
-              mb: 1.5,
-              letterSpacing: 0.8
-            }}>
-              por Procesos
+              Ingreso al sistema
             </Typography>
             <Typography variant="body2" sx={{
               fontFamily: '"Montserrat", "Segoe UI", sans-serif',

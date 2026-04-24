@@ -9,13 +9,14 @@ import {
   Verified as VerifiedIcon,
   Hub as HubIcon
 } from '@mui/icons-material';
+import PlaneacionEfectividad from './PlaneacionEfectividad';
 
 function PlaneacionEstrategica() {
   const navigate = useNavigate();
   const location = useLocation();
   const view = useMemo(() => new URLSearchParams(location.search).get('view') || '', [location.search]);
   const gpPanel = useMemo(() => new URLSearchParams(location.search).get('panel') || '', [location.search]);
-  const isConstructionView = ['planeacion-efectividad', 'autoevaluacion', 'registros-calificados'].includes(view);
+  const isConstructionView = ['autoevaluacion', 'registros-calificados'].includes(view);
   const isGestionProcesosInfoView = view === 'gestion-procesos-informacion';
   const isGestionProcesosModulesView = isGestionProcesosInfoView && gpPanel === 'gestion_procesos';
 
@@ -69,7 +70,7 @@ function PlaneacionEstrategica() {
       path: '/dashboard/planeacion-estrategica?view=planeacion-efectividad',
       icon: <TimelineIcon sx={{ fontSize: 44 }} />,
       active: true,
-      construction: true
+      construction: false
     },
     {
       title: 'Autoevaluación',
@@ -99,32 +100,34 @@ function PlaneacionEstrategica() {
   return (
     <Fade in={true}>
       <Box>
-        <Paper
-          elevation={0}
-          sx={{
-            mb: 3,
-            p: { xs: 2, md: 3 },
-            borderRadius: 2.5,
-            border: '1px solid #dbeafe',
-            background: 'linear-gradient(135deg, #0f1f3a 0%, #1d4ed8 55%, #2563eb 100%)',
-            color: 'white',
-            position: 'relative',
-            overflow: 'hidden'
-          }}
-        >
-          <Box sx={{ position: 'absolute', right: -60, top: -50, width: 220, height: 220, borderRadius: '50%', background: 'rgba(255,255,255,0.09)' }} />
-          <Stack direction="row" spacing={1.2} alignItems="center" sx={{ mb: 0.8, position: 'relative', zIndex: 1 }}>
-            <Box sx={{ color: 'white' }}>{headerConfig.icon}</Box>
-            <Typography variant="h4" sx={{ fontWeight: 800, color: 'white', letterSpacing: -0.2 }}>
-              {headerConfig.title}
+        {view !== 'planeacion-efectividad' && (
+          <Paper
+            elevation={0}
+            sx={{
+              mb: 3,
+              p: { xs: 2, md: 3 },
+              borderRadius: 2.5,
+              border: '1px solid #dbeafe',
+              background: 'linear-gradient(135deg, #0f1f3a 0%, #1d4ed8 55%, #2563eb 100%)',
+              color: 'white',
+              position: 'relative',
+              overflow: 'hidden'
+            }}
+          >
+            <Box sx={{ position: 'absolute', right: -60, top: -50, width: 220, height: 220, borderRadius: '50%', background: 'rgba(255,255,255,0.09)' }} />
+            <Stack direction="row" spacing={1.2} alignItems="center" sx={{ mb: 0.8, position: 'relative', zIndex: 1 }}>
+              <Box sx={{ color: 'white' }}>{headerConfig.icon}</Box>
+              <Typography variant="h4" sx={{ fontWeight: 800, color: 'white', letterSpacing: -0.2 }}>
+                {headerConfig.title}
+              </Typography>
+            </Stack>
+            <Typography variant="body1" sx={{ color: 'rgba(255,255,255,0.92)', position: 'relative', zIndex: 1 }}>
+              {headerConfig.subtitle}
             </Typography>
-          </Stack>
-          <Typography variant="body1" sx={{ color: 'rgba(255,255,255,0.92)', position: 'relative', zIndex: 1 }}>
-            {headerConfig.subtitle}
-          </Typography>
-        </Paper>
+          </Paper>
+        )}
 
-        {!isConstructionView && !isGestionProcesosInfoView && (
+        {!view && !isGestionProcesosInfoView && (
           <Box
             sx={{
               display: 'grid',
@@ -175,6 +178,12 @@ function PlaneacionEstrategica() {
             <Alert severity="info">
               Este módulo está en construcción. Ya quedó habilitado en menú y con acceso para ir organizándolo por fases.
             </Alert>
+          </Box>
+        )}
+
+        {view === 'planeacion-efectividad' && (
+          <Box sx={{ mt: 3 }}>
+            <PlaneacionEfectividad />
           </Box>
         )}
 
@@ -367,7 +376,7 @@ function PlaneacionEstrategica() {
           </Box>
         )}
 
-        {!isGestionProcesosInfoView && (
+        {!view && !isGestionProcesosInfoView && (
           <Box sx={{ mt: 3 }}>
           <Button
             variant="outlined"

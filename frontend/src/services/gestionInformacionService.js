@@ -9,6 +9,11 @@ const gestionInformacionService = {
     api.get('/planeacion/gestion-informacion/resumen', { params, timeout: 60000 }).then((r) => r.data),
   getCargues: (params = {}) =>
     api.get('/planeacion/gestion-informacion/cargues', { params, timeout: 60000 }).then((r) => r.data),
+  getPlanAccionDashboard: () =>
+    api.get('/planeacion/gestion-informacion', {
+      params: { aggregate: 'plan_accion_dashboard', categoria: 'Plan de Acción' },
+      timeout: 120000
+    }).then((r) => r.data),
   downloadTemplate: (categoria, subcategoria = '', subsubcategoria = '') =>
     api.get('/planeacion/gestion-informacion/template', {
       params: { categoria, subcategoria, subsubcategoria, _ts: Date.now() },
@@ -56,6 +61,12 @@ const gestionInformacionService = {
   },
   clearCategoria: (categoria, subcategoria = '', subsubcategoria = '', credentials = {}) =>
     api.delete('/planeacion/gestion-informacion/clear', { data: { categoria, subcategoria, subsubcategoria, ...credentials } }).then((r) => r.data),
+  exportPlanAccionPlantilla: (payload) =>
+    api.post('/planeacion/gestion-informacion/plan-accion/export', payload, { responseType: 'blob', timeout: 120000 }),
+  exportPlanAccionActa: (payload) =>
+    api.post('/planeacion/gestion-informacion/plan-accion/acta/export', payload, { responseType: 'blob', timeout: 120000 }),
+  sugerirIndicadorPlanAccion: (actividad) =>
+    api.post('/planeacion/gestion-informacion/plan-accion/sugerir-indicador', { actividad }, { timeout: 60000 }).then((r) => r.data),
   createEstadistica: (payload) => api.post('/planeacion/gestion-informacion', payload).then((r) => r.data),
   updateEstadistica: (id, payload) => api.put(`/planeacion/gestion-informacion/${id}`, payload).then((r) => r.data),
   deleteEstadistica: (id) => api.delete(`/planeacion/gestion-informacion/${id}`).then((r) => r.data)

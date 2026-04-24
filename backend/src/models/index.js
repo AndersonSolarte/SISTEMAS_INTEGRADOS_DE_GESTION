@@ -36,6 +36,7 @@ const RefDivipolaCarga = require('./RefDivipolaCarga');
 const MatriculadosUbicacionIncidencia = require('./MatriculadosUbicacionIncidencia');
 const UserActivityLog = require('./UserActivityLog');
 const VaEquivalenciaConfig = require('./VaEquivalenciaConfig');
+const PlanAccion = require('./PlanAccion');
 
 // Relaciones existentes
 MacroProceso.hasMany(Proceso, { foreignKey: 'macro_proceso_id', as: 'procesos' });
@@ -167,6 +168,11 @@ DiccionarioCorreccionTexto.belongsTo(User, { foreignKey: 'creado_por', as: 'crea
 User.hasMany(DiccionarioCorreccionTexto, { foreignKey: 'actualizado_por', as: 'diccionarioCorreccionesActualizadas' });
 DiccionarioCorreccionTexto.belongsTo(User, { foreignKey: 'actualizado_por', as: 'actualizador' });
 
+User.hasMany(PlanAccion, { foreignKey: 'creado_por', as: 'planAccionCreados' });
+PlanAccion.belongsTo(User, { foreignKey: 'creado_por', as: 'creador' });
+User.hasMany(PlanAccion, { foreignKey: 'actualizado_por', as: 'planAccionActualizados' });
+PlanAccion.belongsTo(User, { foreignKey: 'actualizado_por', as: 'actualizador' });
+
 module.exports = {
   User,
   UserModulePermission,
@@ -205,5 +211,6 @@ module.exports = {
   RefDivipolaCarga,
   MatriculadosUbicacionIncidencia,
   UserActivityLog,
-  VaEquivalenciaConfig
+  VaEquivalenciaConfig,
+  PlanAccion
 };

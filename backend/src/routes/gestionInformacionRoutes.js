@@ -16,7 +16,10 @@ const {
   getDivipolaIncidencias,
   resolveDivipolaIncidencia,
   importFromExcel,
-  clearByCategoria
+  clearByCategoria,
+  exportPlanAccionInstitucional,
+  exportActaInstitucional,
+  sugerirIndicadorPlanAccion
 } = require('../controllers/gestionInformacionController');
 const { ROLES } = require('../constants/roles');
 const { createExcelUpload } = require('../middlewares/excelUpload');
@@ -53,7 +56,8 @@ const canViewEstadisticaInstitucionalByPermission = hasAnyRoleOrModulePermission
     'recurso_humano',
     'saber_pro',
     'gestion_procesos',
-    'estadistica_documental'
+    'estadistica_documental',
+    'plan_accion'
   ]
 });
 
@@ -66,7 +70,8 @@ const canManageBasesByPermission = hasAnyRoleOrModulePermission({
     'gestion_informacion',
     'gestion_bases_datos',
     'poblacional',
-    'saber_pro'
+    'saber_pro',
+    'plan_accion'
   ]
 });
 
@@ -80,6 +85,9 @@ router.get('/cargues/errors/export', auth, canManageBasesByPermission, downloadC
 router.get('/cargues/base/export', auth, canManageBasesByPermission, downloadCargueBase);
 router.get('/divipola/incidencias', auth, canViewEstadisticaInstitucionalByPermission, getDivipolaIncidencias);
 router.put('/divipola/incidencias/:id', auth, canViewEstadisticaInstitucionalByPermission, resolveDivipolaIncidencia);
+router.post('/plan-accion/export', auth, canManageBasesByPermission, exportPlanAccionInstitucional);
+router.post('/plan-accion/acta/export', auth, canManageBasesByPermission, exportActaInstitucional);
+router.post('/plan-accion/sugerir-indicador', auth, canManageBasesByPermission, sugerirIndicadorPlanAccion);
 router.post('/import', auth, canManageBasesByPermission, upload.single('file'), importFromExcel);
 router.delete('/clear', auth, canManageBasesByPermission, clearByCategoria);
 router.post('/', auth, canManageBasesByPermission, createEstadistica);

@@ -33,6 +33,12 @@ services:
       DB_PASSWORD: ${DB_PASSWORD}
     extra_hosts:
       - "host.docker.internal:host-gateway"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=5)"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 10s
 
   backend:
     build:
@@ -68,12 +74,18 @@ services:
       - "host.docker.internal:host-gateway"
     depends_on:
       python-service:
-        condition: service_started
+        condition: service_healthy
     ports:
       - "127.0.0.1:${BACKEND_PORT_HOST:-5000}:5000"
     volumes:
       - backend_uploads:/app/uploads
       - ./backend/keys:/app/keys:ro
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:5000/api/health').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
 
   frontend:
     build:
@@ -88,7 +100,7 @@ services:
     restart: unless-stopped
     depends_on:
       backend:
-        condition: service_started
+        condition: service_healthy
     ports:
       - "${FRONTEND_PORT_HOST:-8080}:80"
       - "${FRONTEND_SSL_PORT_HOST:-443}:443"

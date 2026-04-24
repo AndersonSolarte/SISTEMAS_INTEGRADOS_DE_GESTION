@@ -116,7 +116,8 @@ const BASES = [
   { key: 'proyectos_convenios', label: 'Proyectos y Convenios', description: 'Gestión de iniciativas y acuerdos institucionales.' },
   { key: 'recurso_humano', label: 'Recurso Humano', description: 'Históricos de personal y trazabilidad por dependencia.' },
   { key: 'saber_pro', label: 'Saber Pro', description: 'Resultados históricos de pruebas y desempeño académico.' },
-  { key: 'gestion_procesos', label: 'Gestión por Procesos', description: 'Monitoreo estadístico documental para operación por procesos.' }
+  { key: 'gestion_procesos', label: 'Gestión por Procesos', description: 'Monitoreo estadístico documental para operación por procesos.' },
+  { key: 'plan_accion', label: 'Plan de Acción', description: 'Seguimiento anual del Plan de Acción institucional: metas, avances IP/IIP y ejecución total.' }
 ];
 
 const SUBBASES_POBLACIONAL = ['Inscritos', 'Admitidos', 'Primer Curso', 'Matriculados', 'Graduados', 'Cantidad Total Egresados', 'Caracterizacion', 'Desercion', 'Empleabilidad', 'Contexto Externo'];
