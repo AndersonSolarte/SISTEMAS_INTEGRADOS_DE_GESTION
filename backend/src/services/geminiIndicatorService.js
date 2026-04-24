@@ -2,8 +2,10 @@ const { GoogleGenerativeAI } = require('@google/generative-ai');
 
 const DEFAULT_GEMINI_MODEL = process.env.GEMINI_MODEL || 'gemini-2.0-flash';
 const DEFAULT_OPENAI_MODEL = process.env.OPENAI_MODEL || 'gpt-4.1-mini';
+const DEFAULT_OLLAMA_MODEL = process.env.OLLAMA_MODEL || 'llama3.1:8b';
 const AI_PROVIDER = String(process.env.AI_PROVIDER || 'auto').trim().toLowerCase();
 const OPENAI_RESPONSES_URL = 'https://api.openai.com/v1/responses';
+const OLLAMA_URL = String(process.env.OLLAMA_URL || 'http://host.docker.internal:11434').replace(/\/+$/, '');
 
 let cachedGeminiClient = null;
 const getGeminiClient = () => {
@@ -140,6 +142,20 @@ const classifyOpenAIError = (error) => {
   return { status: 502, code: 'OPENAI_ERROR', message: 'No fue posible generar indicadores con OpenAI.' };
 };
 
+const classifyOllamaError = (error) => {
+  const msg = String(error?.message || '');
+  const status = Number(error?.status || 0);
+  const code = String(error?.code || '');
+
+  if (status === 404 || /model.*not found|not found|pull model/i.test(msg)) {
+    return { status: 502, code: 'OLLAMA_MODEL_ERROR', message: 'El modelo local de Ollama no esta instalado en el servidor.' };
+  }
+  if (/ECONNREFUSED|ENOTFOUND|ECONNRESET|ETIMEDOUT|EAI_AGAIN|fetch failed/i.test(`${code} ${msg}`)) {
+    return { status: 502, code: 'OLLAMA_NOT_AVAILABLE', message: 'Ollama no esta disponible en el servidor.' };
+  }
+  return { status: 502, code: 'OLLAMA_ERROR', message: 'No fue posible generar indicadores con Ollama.' };
+};
+
 const extractOpenAIText = (payload) => {
   if (payload?.output_text) return payload.output_text;
   const output = Array.isArray(payload?.output) ? payload.output : [];
@@ -251,21 +267,62 @@ const callOpenAI = async (prompt) => {
   }
 };
 
+const callOllama = async (prompt) => {
+  try {
+    const response = await fetch(`${OLLAMA_URL}/api/generate`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        model: DEFAULT_OLLAMA_MODEL,
+        prompt: `${SYSTEM_PROMPT}\n\n${prompt}`,
+        stream: false,
+        format: 'json',
+        options: {
+          temperature: 0.3,
+          num_predict: 1200
+        }
+      })
+    });
+
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      const err = new Error(payload?.error || `Ollama respondio con estado ${response.status}.`);
+      err.status = response.status;
+      throw err;
+    }
+    return payload?.response || '';
+  } catch (error) {
+    const classified = classifyOllamaError(error);
+    throw buildServiceError({ ...classified, cause: error });
+  }
+};
+
 const generateRawSuggestion = async (prompt) => {
   const providers = AI_PROVIDER === 'openai'
     ? ['openai']
     : AI_PROVIDER === 'gemini'
       ? ['gemini']
-      : ['openai', 'gemini'];
+      : AI_PROVIDER === 'ollama'
+        ? ['ollama']
+        : ['openai', 'gemini', 'ollama'];
   let lastError = null;
 
   for (const provider of providers) {
     try {
-      return provider === 'openai' ? await callOpenAI(prompt) : await callGemini(prompt);
+      if (provider === 'openai') return await callOpenAI(prompt);
+      if (provider === 'gemini') return await callGemini(prompt);
+      return await callOllama(prompt);
     } catch (error) {
       lastError = error;
       const canFallback = AI_PROVIDER === 'auto'
-        && ['OPENAI_NOT_CONFIGURED', 'GEMINI_NOT_CONFIGURED', 'OPENAI_QUOTA_ERROR', 'GEMINI_QUOTA_ERROR'].includes(error?.code);
+        && [
+          'OPENAI_NOT_CONFIGURED',
+          'GEMINI_NOT_CONFIGURED',
+          'OPENAI_QUOTA_ERROR',
+          'GEMINI_QUOTA_ERROR',
+          'OLLAMA_NOT_AVAILABLE',
+          'OLLAMA_MODEL_ERROR'
+        ].includes(error?.code);
       if (!canFallback) throw error;
     }
   }
