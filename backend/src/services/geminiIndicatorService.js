@@ -7,6 +7,9 @@ const AI_PROVIDER = String(process.env.AI_PROVIDER || 'auto').trim().toLowerCase
 const AI_PROVIDER_TIMEOUT_MS = Number(process.env.AI_PROVIDER_TIMEOUT_MS || 7000);
 const OPENAI_RESPONSES_URL = 'https://api.openai.com/v1/responses';
 const OLLAMA_URL = String(process.env.OLLAMA_URL || 'http://host.docker.internal:11434').replace(/\/+$/, '');
+const WEB_SEARCH_PROVIDER = String(process.env.WEB_SEARCH_PROVIDER || 'tavily').trim().toLowerCase();
+const TAVILY_SEARCH_URL = 'https://api.tavily.com/search';
+const BRAVE_SEARCH_URL = 'https://api.search.brave.com/res/v1/web/search';
 
 let cachedGeminiClient = null;
 const getGeminiClient = () => {
@@ -215,6 +218,49 @@ const buildLocalFallbackPayload = (actividad) => {
   };
 };
 
+const buildSearchQuery = (actividad) =>
+  `${String(actividad || '').trim()} indicadores gestion KPI lineamientos ejemplos`;
+
+const normalizeSearchResults = (items = []) =>
+  items
+    .map((item) => ({
+      title: String(item.title || item.name || '').trim(),
+      url: String(item.url || '').trim(),
+      snippet: String(item.content || item.description || item.snippet || item.extra_snippets?.[0] || '').trim()
+    }))
+    .filter((item) => item.title && item.url)
+    .slice(0, 5);
+
+const buildWebSearchPayload = ({ actividad, answer, results }) => {
+  const base = buildLocalFallbackPayload(actividad);
+  const cleanAnswer = String(answer || '').trim();
+  const sources = normalizeSearchResults(results);
+  const snippets = sources
+    .map((source, index) => `${index + 1}. ${source.title}: ${source.snippet || source.url}`)
+    .join('\n');
+  const sourceLines = sources
+    .map((source, index) => `${index + 1}. ${source.title} - ${source.url}`)
+    .join('\n');
+  const webSummary = cleanAnswer || snippets || 'La busqueda web no devolvio un resumen suficiente; se sugieren indicadores con base en la actividad.';
+
+  return {
+    titulo_general: 'Consulta web aplicada',
+    indicadores: base.indicadores,
+    bullets: [
+      'Consulta web aplicada',
+      '',
+      'Resumen encontrado:',
+      webSummary,
+      '',
+      'Indicadores sugeridos:',
+      ...base.indicadores.map((indicator, index) => `${index + 1}. ${indicator}`),
+      '',
+      'Fuentes consultadas:',
+      sourceLines || 'No se recibieron fuentes web suficientes.'
+    ].join('\n')
+  };
+};
+
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 const withProviderTimeout = (promise, provider) =>
@@ -296,6 +342,23 @@ const classifyOllamaError = (error) => {
     return { status: 502, code: 'OLLAMA_NOT_AVAILABLE', message: 'Ollama no esta disponible en el servidor.' };
   }
   return { status: 502, code: 'OLLAMA_ERROR', message: 'No fue posible generar indicadores con Ollama.' };
+};
+
+const classifyWebSearchError = (error) => {
+  const msg = String(error?.message || '');
+  const status = Number(error?.status || 0);
+  const code = String(error?.code || '');
+
+  if (status === 401 || status === 403 || /unauthorized|forbidden|invalid api key|subscription token/i.test(msg)) {
+    return { status: 502, code: 'WEB_SEARCH_AUTH_ERROR', message: 'La clave de busqueda web no es valida o no tiene permisos.' };
+  }
+  if (status === 429 || /rate limit|quota|too many requests|credits/i.test(msg)) {
+    return { status: 429, code: 'WEB_SEARCH_QUOTA_ERROR', message: 'La busqueda web supero la cuota o limite disponible.' };
+  }
+  if (/CERT_|certificate|TLS|SSL|ENOTFOUND|ECONNRESET|ETIMEDOUT|EAI_AGAIN|fetch failed/i.test(`${code} ${msg}`)) {
+    return { status: 502, code: 'WEB_SEARCH_NETWORK_ERROR', message: 'El servidor no pudo conectarse con la busqueda web.' };
+  }
+  return { status: 502, code: 'WEB_SEARCH_ERROR', message: 'No fue posible consultar informacion en internet.' };
 };
 
 const extractOpenAIText = (payload) => {
@@ -440,9 +503,100 @@ const callOllama = async (prompt) => {
   }
 };
 
+const callTavilySearch = async (actividad) => {
+  const apiKey = process.env.TAVILY_API_KEY;
+  if (!apiKey) {
+    throw buildServiceError({
+      status: 503,
+      code: 'WEB_SEARCH_NOT_CONFIGURED',
+      message: 'TAVILY_API_KEY no esta configurada en el servidor.'
+    });
+  }
+
+  const response = await fetch(TAVILY_SEARCH_URL, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${apiKey}`,
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify({
+      query: buildSearchQuery(actividad),
+      topic: 'general',
+      search_depth: 'basic',
+      include_answer: true,
+      include_raw_content: false,
+      max_results: 5
+    })
+  });
+
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    const err = new Error(payload?.error || payload?.message || `Tavily respondio con estado ${response.status}.`);
+    err.status = response.status;
+    throw err;
+  }
+  return buildWebSearchPayload({
+    actividad,
+    answer: payload.answer,
+    results: payload.results || []
+  });
+};
+
+const callBraveSearch = async (actividad) => {
+  const apiKey = process.env.BRAVE_SEARCH_API_KEY;
+  if (!apiKey) {
+    throw buildServiceError({
+      status: 503,
+      code: 'WEB_SEARCH_NOT_CONFIGURED',
+      message: 'BRAVE_SEARCH_API_KEY no esta configurada en el servidor.'
+    });
+  }
+
+  const url = new URL(BRAVE_SEARCH_URL);
+  url.searchParams.set('q', buildSearchQuery(actividad));
+  url.searchParams.set('count', '5');
+  url.searchParams.set('country', 'co');
+  url.searchParams.set('search_lang', 'es');
+
+  const response = await fetch(url, {
+    headers: {
+      Accept: 'application/json',
+      'X-Subscription-Token': apiKey
+    }
+  });
+
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    const err = new Error(payload?.error?.detail || payload?.message || `Brave respondio con estado ${response.status}.`);
+    err.status = response.status;
+    throw err;
+  }
+  return buildWebSearchPayload({
+    actividad,
+    answer: payload?.summarizer?.summary || '',
+    results: payload?.web?.results || []
+  });
+};
+
+const callWebSearch = async (actividad) => {
+  try {
+    const payload = WEB_SEARCH_PROVIDER === 'brave'
+      ? await callBraveSearch(actividad)
+      : await callTavilySearch(actividad);
+    return JSON.stringify(payload);
+  } catch (error) {
+    if (error?.code?.startsWith('WEB_SEARCH')) throw error;
+    const classified = classifyWebSearchError(error);
+    throw buildServiceError({ ...classified, cause: error });
+  }
+};
+
 const generateRawSuggestion = async (prompt) => {
   if (AI_PROVIDER === 'local') {
     return JSON.stringify(buildLocalFallbackPayload(extractActivityFromPrompt(prompt)));
+  }
+  if (AI_PROVIDER === 'web') {
+    return await callWebSearch(extractActivityFromPrompt(prompt));
   }
 
   const providers = AI_PROVIDER === 'openai'
@@ -503,7 +657,7 @@ const suggestIndicators = async (actividad) => {
     tipo: 'Resultado',
     tituloGeneral: parsed.titulo_general || '',
     indicadores: parsed.indicadores,
-    bullets: formatIndicadoresAsBullets(parsed)
+    bullets: parsed.bullets || formatIndicadoresAsBullets(parsed)
   };
 };
 
