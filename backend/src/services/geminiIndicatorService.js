@@ -10,6 +10,7 @@ const OLLAMA_URL = String(process.env.OLLAMA_URL || 'http://host.docker.internal
 const WEB_SEARCH_PROVIDER = String(process.env.WEB_SEARCH_PROVIDER || 'tavily').trim().toLowerCase();
 const TAVILY_SEARCH_URL = 'https://api.tavily.com/search';
 const BRAVE_SEARCH_URL = 'https://api.search.brave.com/res/v1/web/search';
+const SERPER_SEARCH_URL = 'https://google.serper.dev/search';
 
 let cachedGeminiClient = null;
 const getGeminiClient = () => {
@@ -578,12 +579,64 @@ const callBraveSearch = async (actividad) => {
   });
 };
 
+const callSerperSearch = async (actividad) => {
+  const apiKey = process.env.SERPER_API_KEY;
+  if (!apiKey) {
+    throw buildServiceError({
+      status: 503,
+      code: 'WEB_SEARCH_NOT_CONFIGURED',
+      message: 'SERPER_API_KEY no esta configurada en el servidor.'
+    });
+  }
+
+  const response = await fetch(SERPER_SEARCH_URL, {
+    method: 'POST',
+    headers: {
+      'X-API-KEY': apiKey,
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify({
+      q: buildSearchQuery(actividad),
+      gl: 'co',
+      hl: 'es',
+      num: 5
+    })
+  });
+
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    const err = new Error(payload?.message || payload?.error || `Serper respondio con estado ${response.status}.`);
+    err.status = response.status;
+    throw err;
+  }
+
+  return buildWebSearchPayload({
+    actividad,
+    answer: payload?.answerBox?.answer || payload?.answerBox?.snippet || payload?.knowledgeGraph?.description || '',
+    results: payload?.organic || []
+  });
+};
+
 const callWebSearch = async (actividad) => {
   try {
-    const payload = WEB_SEARCH_PROVIDER === 'brave'
-      ? await callBraveSearch(actividad)
-      : await callTavilySearch(actividad);
-    return JSON.stringify(payload);
+    const providers = WEB_SEARCH_PROVIDER === 'auto'
+      ? ['tavily', 'serper']
+      : [WEB_SEARCH_PROVIDER];
+    let lastError = null;
+    for (const provider of providers) {
+      try {
+        const payload = provider === 'brave'
+          ? await callBraveSearch(actividad)
+          : provider === 'serper'
+            ? await callSerperSearch(actividad)
+            : await callTavilySearch(actividad);
+        return JSON.stringify(payload);
+      } catch (error) {
+        lastError = error;
+        if (WEB_SEARCH_PROVIDER !== 'auto') throw error;
+      }
+    }
+    throw lastError;
   } catch (error) {
     if (error?.code?.startsWith('WEB_SEARCH')) throw error;
     const classified = classifyWebSearchError(error);
