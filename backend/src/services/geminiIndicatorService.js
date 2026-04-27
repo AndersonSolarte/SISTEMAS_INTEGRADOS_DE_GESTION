@@ -4,6 +4,7 @@ const DEFAULT_GEMINI_MODEL = process.env.GEMINI_MODEL || 'gemini-2.0-flash';
 const DEFAULT_OPENAI_MODEL = process.env.OPENAI_MODEL || 'gpt-4.1-mini';
 const DEFAULT_OLLAMA_MODEL = process.env.OLLAMA_MODEL || 'llama3.1:8b';
 const AI_PROVIDER = String(process.env.AI_PROVIDER || 'auto').trim().toLowerCase();
+const AI_PROVIDER_TIMEOUT_MS = Number(process.env.AI_PROVIDER_TIMEOUT_MS || 7000);
 const OPENAI_RESPONSES_URL = 'https://api.openai.com/v1/responses';
 const OLLAMA_URL = String(process.env.OLLAMA_URL || 'http://host.docker.internal:11434').replace(/\/+$/, '');
 
@@ -115,6 +116,20 @@ const buildLocalFallbackPayload = (actividad) => {
 };
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+const withProviderTimeout = (promise, provider) =>
+  Promise.race([
+    promise,
+    new Promise((_, reject) => {
+      setTimeout(() => {
+        reject(buildServiceError({
+          status: 504,
+          code: 'AI_PROVIDER_TIMEOUT',
+          message: `${provider} tardo mas de lo permitido para generar indicadores.`
+        }));
+      }, AI_PROVIDER_TIMEOUT_MS);
+    })
+  ]);
 
 const isRateLimitError = (error) => {
   const msg = String(error?.message || '');
@@ -326,6 +341,10 @@ const callOllama = async (prompt) => {
 };
 
 const generateRawSuggestion = async (prompt) => {
+  if (AI_PROVIDER === 'local') {
+    return JSON.stringify(buildLocalFallbackPayload(extractActivityFromPrompt(prompt)));
+  }
+
   const providers = AI_PROVIDER === 'openai'
     ? ['openai']
     : AI_PROVIDER === 'gemini'
@@ -337,13 +356,14 @@ const generateRawSuggestion = async (prompt) => {
 
   for (const provider of providers) {
     try {
-      if (provider === 'openai') return await callOpenAI(prompt);
-      if (provider === 'gemini') return await callGemini(prompt);
-      return await callOllama(buildOllamaPrompt(extractActivityFromPrompt(prompt)));
+      if (provider === 'openai') return await withProviderTimeout(callOpenAI(prompt), provider);
+      if (provider === 'gemini') return await withProviderTimeout(callGemini(prompt), provider);
+      return await withProviderTimeout(callOllama(buildOllamaPrompt(extractActivityFromPrompt(prompt))), provider);
     } catch (error) {
       lastError = error;
       const canFallback = AI_PROVIDER === 'auto'
         && [
+          'AI_PROVIDER_TIMEOUT',
           'OPENAI_NOT_CONFIGURED',
           'GEMINI_NOT_CONFIGURED',
           'OPENAI_QUOTA_ERROR',
