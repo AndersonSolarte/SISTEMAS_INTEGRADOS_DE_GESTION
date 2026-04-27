@@ -66,7 +66,7 @@ const gestionInformacionService = {
   exportPlanAccionActa: (payload) =>
     api.post('/planeacion/gestion-informacion/plan-accion/acta/export', payload, { responseType: 'blob', timeout: 120000 }),
   sugerirIndicadorPlanAccion: (actividad) =>
-    api.post('/planeacion/gestion-informacion/plan-accion/sugerir-indicador', { actividad }, { timeout: 60000 }).then((r) => r.data),
+    api.post('/planeacion/gestion-informacion/plan-accion/sugerir-indicador', { actividad }, { timeout: 180000 }).then((r) => r.data),
   createEstadistica: (payload) => api.post('/planeacion/gestion-informacion', payload).then((r) => r.data),
   updateEstadistica: (id, payload) => api.put(`/planeacion/gestion-informacion/${id}`, payload).then((r) => r.data),
   deleteEstadistica: (id) => api.delete(`/planeacion/gestion-informacion/${id}`).then((r) => r.data)

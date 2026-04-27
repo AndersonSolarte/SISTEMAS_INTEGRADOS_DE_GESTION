@@ -279,7 +279,7 @@ const callOllama = async (prompt) => {
         format: 'json',
         options: {
           temperature: 0.3,
-          num_predict: 1200
+          num_predict: 700
         }
       })
     });
