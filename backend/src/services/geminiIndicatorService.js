@@ -45,6 +45,17 @@ Reglas obligatorias:
 const buildUserPrompt = (actividad) =>
   `Actividad: "${actividad}".\nResponde con el JSON solicitado.`;
 
+const buildOllamaPrompt = (actividad) => `Devuelve solo JSON valido, sin markdown.
+Actividad: "${actividad}".
+Genera exactamente este esquema:
+{"titulo_general":"3 a 6 palabras","indicadores":["Definir entregable verificable.","Elaborar entregable verificable.","Socializar entregable verificable.","Implementar entregable verificable.","Verificar entregable verificable.","Actualizar entregable verificable."]}
+Reglas: cada indicador inicia con verbo en infinitivo, maximo 25 palabras, espanol de Colombia, sin porcentajes ni formulas.`;
+
+const extractActivityFromPrompt = (prompt = '') => {
+  const match = String(prompt).match(/^Actividad:\s*"([\s\S]*)"\.\nResponde con el JSON solicitado\.$/);
+  return match ? match[1] : String(prompt || '').trim();
+};
+
 const stripCodeFences = (text = '') => {
   const trimmed = String(text || '').trim();
   if (trimmed.startsWith('```')) {
@@ -85,6 +96,22 @@ const formatIndicadoresAsBullets = (payload) => {
 
   const header = payload.titulo_general ? `${String(payload.titulo_general).trim()}\n\n` : '';
   return `${header}${lines.join('\n')}`.trim();
+};
+
+const buildLocalFallbackPayload = (actividad) => {
+  const cleanActividad = String(actividad || '').trim().replace(/\s+/g, ' ');
+  const shortActivity = cleanActividad.length > 120 ? `${cleanActividad.slice(0, 117).trim()}...` : cleanActividad;
+  return {
+    titulo_general: 'Ejecucion actividad institucional',
+    indicadores: [
+      `Definir el alcance operativo para ejecutar la actividad: ${shortActivity}.`,
+      'Elaborar el cronograma de trabajo con responsables, entregables y fechas de seguimiento.',
+      'Formalizar los recursos y soportes requeridos para desarrollar la actividad institucional.',
+      'Socializar la actividad con las dependencias responsables y grupos de interes relacionados.',
+      'Implementar las acciones programadas y recopilar evidencias verificables de ejecucion.',
+      'Verificar resultados, registrar avances y documentar oportunidades de mejora para el cierre.'
+    ]
+  };
 };
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -274,12 +301,13 @@ const callOllama = async (prompt) => {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         model: DEFAULT_OLLAMA_MODEL,
-        prompt: `${SYSTEM_PROMPT}\n\n${prompt}`,
+        prompt,
         stream: false,
         format: 'json',
         options: {
           temperature: 0.3,
-          num_predict: 700
+          num_ctx: 2048,
+          num_predict: 420
         }
       })
     });
@@ -311,7 +339,7 @@ const generateRawSuggestion = async (prompt) => {
     try {
       if (provider === 'openai') return await callOpenAI(prompt);
       if (provider === 'gemini') return await callGemini(prompt);
-      return await callOllama(prompt);
+      return await callOllama(buildOllamaPrompt(extractActivityFromPrompt(prompt)));
     } catch (error) {
       lastError = error;
       const canFallback = AI_PROVIDER === 'auto'
@@ -339,14 +367,16 @@ const suggestIndicators = async (actividad) => {
     });
   }
 
-  const raw = await generateRawSuggestion(buildUserPrompt(cleanActividad));
-  const parsed = tryParseJson(raw);
+  let raw = '';
+  try {
+    raw = await generateRawSuggestion(buildUserPrompt(cleanActividad));
+  } catch (error) {
+    console.warn('[ai] Proveedores IA no disponibles, usando generador local:', error?.code || error?.message);
+    raw = JSON.stringify(buildLocalFallbackPayload(cleanActividad));
+  }
+  let parsed = tryParseJson(raw);
   if (!parsed || !Array.isArray(parsed.indicadores) || parsed.indicadores.length === 0) {
-    throw buildServiceError({
-      status: 502,
-      code: 'AI_BAD_RESPONSE',
-      message: 'La respuesta de IA no tiene el formato esperado.'
-    });
+    parsed = buildLocalFallbackPayload(cleanActividad);
   }
 
   return {
