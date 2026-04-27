@@ -101,17 +101,117 @@ const formatIndicadoresAsBullets = (payload) => {
 
 const buildLocalFallbackPayload = (actividad) => {
   const cleanActividad = String(actividad || '').trim().replace(/\s+/g, ' ');
-  const shortActivity = cleanActividad.length > 120 ? `${cleanActividad.slice(0, 117).trim()}...` : cleanActividad;
-  return {
-    titulo_general: 'Ejecucion actividad institucional',
-    indicadores: [
-      `Definir el alcance operativo para ejecutar la actividad: ${shortActivity}.`,
-      'Elaborar el cronograma de trabajo con responsables, entregables y fechas de seguimiento.',
-      'Formalizar los recursos y soportes requeridos para desarrollar la actividad institucional.',
-      'Socializar la actividad con las dependencias responsables y grupos de interes relacionados.',
-      'Implementar las acciones programadas y recopilar evidencias verificables de ejecucion.',
-      'Verificar resultados, registrar avances y documentar oportunidades de mejora para el cierre.'
+  const normalized = cleanActividad
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase();
+  const hasAny = (terms) => terms.some((term) => normalized.includes(term));
+  const trimSentence = (text) => String(text || '').replace(/[.;:\s]+$/g, '').trim();
+  const activitySubject = trimSentence(cleanActividad) || 'la actividad institucional';
+  const shortSubject = activitySubject.length > 95 ? `${activitySubject.slice(0, 92).trim()}...` : activitySubject;
+
+  const profiles = [
+    {
+      match: ['manual', 'guia', 'protocolo', 'procedimiento', 'lineamiento', 'instructivo'],
+      title: 'Formalizacion documental',
+      indicators: [
+        `Diagnosticar requisitos y referentes institucionales aplicables a ${shortSubject}.`,
+        'Estructurar el documento tecnico con alcance, responsables, actividades, controles y evidencias.',
+        'Validar el contenido con las dependencias responsables antes de su formalizacion institucional.',
+        'Aprobar la version final mediante el flujo documental definido por la institucion.',
+        'Socializar el documento aprobado con usuarios, lideres de proceso y partes interesadas.',
+        'Registrar evidencias de aplicacion y actualizar el documento segun resultados de seguimiento.'
+      ]
+    },
+    {
+      match: ['capacitar', 'capacitacion', 'formacion', 'taller', 'sensibilizacion', 'socializar'],
+      title: 'Fortalecimiento de capacidades',
+      indicators: [
+        `Identificar necesidades de formacion asociadas a ${shortSubject}.`,
+        'Disenar la agenda pedagogica con objetivos, contenidos, metodologia y criterios de evaluacion.',
+        'Convocar a los participantes definidos y confirmar asistencia de las dependencias involucradas.',
+        'Ejecutar las jornadas de formacion con soportes, materiales y registro de asistencia.',
+        'Evaluar la apropiacion de conocimientos mediante instrumento aplicado a los participantes.',
+        'Consolidar informe de resultados con evidencias, conclusiones y acciones de mejora.'
+      ]
+    },
+    {
+      match: ['sistema', 'plataforma', 'software', 'aplicativo', 'automatizar', 'digital', 'herramienta'],
+      title: 'Implementacion tecnologica',
+      indicators: [
+        `Levantar requerimientos funcionales y tecnicos para ${shortSubject}.`,
+        'Disenar el flujo operativo de la solucion con roles, permisos, entradas y salidas.',
+        'Configurar o desarrollar los componentes necesarios para soportar el proceso institucional.',
+        'Realizar pruebas funcionales con usuarios responsables y registrar hallazgos de ajuste.',
+        'Implementar la solucion en ambiente operativo con guia de uso y soporte inicial.',
+        'Monitorear uso, incidencias y mejoras requeridas durante el periodo de estabilizacion.'
+      ]
+    },
+    {
+      match: ['convenio', 'alianza', 'articulacion', 'cooperacion', 'sector externo', 'empresa'],
+      title: 'Gestion de alianzas',
+      indicators: [
+        `Identificar aliados estrategicos pertinentes para ${shortSubject}.`,
+        'Definir compromisos, responsables, beneficios y alcance de la articulacion institucional.',
+        'Formalizar el acuerdo mediante documento, acta, convenio o instrumento correspondiente.',
+        'Ejecutar las actividades pactadas con seguimiento a cronograma y responsables asignados.',
+        'Recopilar evidencias de participacion, productos generados y resultados alcanzados.',
+        'Evaluar la continuidad de la alianza con recomendaciones para fortalecimiento institucional.'
+      ]
+    },
+    {
+      match: ['evaluar', 'evaluacion', 'autoevaluacion', 'medir', 'seguimiento', 'indicador', 'monitoreo'],
+      title: 'Seguimiento y evaluacion',
+      indicators: [
+        `Definir criterios, fuentes e instrumentos para evaluar ${shortSubject}.`,
+        'Recolectar informacion verificable desde las dependencias y sistemas institucionales definidos.',
+        'Analizar resultados frente a metas, tendencias, brechas y oportunidades de mejora.',
+        'Presentar informe ejecutivo con hallazgos, evidencias y recomendaciones priorizadas.',
+        'Concertar acciones de mejora con responsables, plazos y mecanismos de seguimiento.',
+        'Verificar el cumplimiento de acciones y documentar avances en los soportes institucionales.'
+      ]
+    },
+    {
+      match: ['publicar', 'difundir', 'comunicar', 'campana', 'divulgar', 'visibilizar'],
+      title: 'Comunicacion institucional',
+      indicators: [
+        `Definir mensaje, publico objetivo y canales para comunicar ${shortSubject}.`,
+        'Elaborar piezas, contenidos o materiales comunicativos alineados con identidad institucional.',
+        'Validar contenidos con las areas responsables antes de su publicacion o divulgacion.',
+        'Publicar la campana en los canales institucionales definidos y registrar evidencias.',
+        'Medir alcance, participacion o interaccion generada por la estrategia de comunicacion.',
+        'Consolidar resultados y recomendaciones para fortalecer proximas acciones comunicativas.'
+      ]
+    },
+    {
+      match: ['identidad', 'pertenencia', 'arraigo', 'cultura', 'valores', 'unicesmag'],
+      title: 'Identidad institucional',
+      indicators: [
+        `Caracterizar percepciones y necesidades relacionadas con ${shortSubject}.`,
+        'Disenar estrategia de apropiacion institucional con mensajes, actividades y poblacion objetivo.',
+        'Implementar acciones participativas que fortalezcan identidad, pertenencia y cultura institucional.',
+        'Vincular dependencias academicas y administrativas en el desarrollo de la estrategia.',
+        'Recopilar evidencias de participacion, productos comunicativos y resultados de apropiacion.',
+        'Evaluar impacto percibido y definir mejoras para la continuidad de la estrategia.'
+      ]
+    }
+  ];
+
+  const selected = profiles.find((profile) => hasAny(profile.match)) || {
+    title: 'Gestion actividad institucional',
+    indicators: [
+      `Precisar objetivo, alcance y entregables esperados para ${shortSubject}.`,
+      'Definir responsables, recursos, cronograma y evidencias requeridas para la ejecucion.',
+      'Formalizar el plan de trabajo con las dependencias involucradas y criterios de seguimiento.',
+      'Ejecutar las acciones programadas garantizando registro documental de los avances.',
+      'Verificar cumplimiento de entregables frente a fechas, responsables y resultados previstos.',
+      'Consolidar informe de cierre con evidencias, aprendizajes y acciones de mejora.'
     ]
+  };
+
+  return {
+    titulo_general: selected.title,
+    indicadores: selected.indicators
   };
 };
 
