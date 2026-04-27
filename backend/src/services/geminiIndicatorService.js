@@ -262,6 +262,16 @@ const buildWebSearchPayload = ({ actividad, answer, results }) => {
   };
 };
 
+const assertWebSearchHasSources = (payload, provider) => {
+  const sources = normalizeSearchResults(payload?.results || []);
+  if (sources.length > 0 || String(payload?.answer || '').trim()) return;
+  throw buildServiceError({
+    status: 502,
+    code: 'WEB_SEARCH_EMPTY_RESULTS',
+    message: `${provider} no devolvio resultados web suficientes.`
+  });
+};
+
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 const withProviderTimeout = (promise, provider) =>
@@ -536,6 +546,7 @@ const callTavilySearch = async (actividad) => {
     err.status = response.status;
     throw err;
   }
+  assertWebSearchHasSources(payload, 'Tavily');
   return buildWebSearchPayload({
     actividad,
     answer: payload.answer,
@@ -572,6 +583,7 @@ const callBraveSearch = async (actividad) => {
     err.status = response.status;
     throw err;
   }
+  assertWebSearchHasSources({ answer: payload?.summarizer?.summary || '', results: payload?.web?.results || [] }, 'Brave');
   return buildWebSearchPayload({
     actividad,
     answer: payload?.summarizer?.summary || '',
@@ -610,6 +622,10 @@ const callSerperSearch = async (actividad) => {
     throw err;
   }
 
+  assertWebSearchHasSources({
+    answer: payload?.answerBox?.answer || payload?.answerBox?.snippet || payload?.knowledgeGraph?.description || '',
+    results: payload?.organic || []
+  }, 'Serper');
   return buildWebSearchPayload({
     actividad,
     answer: payload?.answerBox?.answer || payload?.answerBox?.snippet || payload?.knowledgeGraph?.description || '',
