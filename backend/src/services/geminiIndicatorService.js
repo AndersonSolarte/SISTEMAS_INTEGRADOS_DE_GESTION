@@ -226,7 +226,7 @@ const normalizeSearchResults = (items = []) =>
   items
     .map((item) => ({
       title: String(item.title || item.name || '').trim(),
-      url: String(item.url || '').trim(),
+      url: String(item.url || item.link || '').trim(),
       snippet: String(item.content || item.description || item.snippet || item.extra_snippets?.[0] || '').trim()
     }))
     .filter((item) => item.title && item.url)
