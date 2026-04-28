@@ -103,13 +103,25 @@ const formatIndicadoresAsBullets = (payload) => {
   return `${header}${lines.join('\n')}`.trim();
 };
 
-const buildLocalFallbackPayload = (actividad) => {
-  const cleanActividad = String(actividad || '').trim().replace(/\s+/g, ' ');
-  const normalized = cleanActividad
+const cleanSourceTitle = (title = '') =>
+  String(title || '')
+    .replace(/^\s*\[(PDF|DOC|DOCX|PPT|PPTX|XLS|XLSX|HTML|TXT)\]\s*[-:]?\s*/i, '')
+    .replace(/\s+\|\s+.+$/, '')
+    .replace(/\s*-\s*(Universidad\s+CESMAG|UNICESMAG)\s*$/i, '')
+    .trim();
+
+const normalizeForMatching = (text = '') =>
+  String(text || '')
     .normalize('NFD')
     .replace(/[\u0300-\u036f]/g, '')
     .toLowerCase();
-  const hasAny = (terms) => terms.some((term) => normalized.includes(term));
+
+const buildLocalFallbackPayload = (actividad, extraContext = '') => {
+  const cleanActividad = String(actividad || '').trim().replace(/\s+/g, ' ');
+  const cleanExtra = String(extraContext || '').trim().replace(/\s+/g, ' ');
+  const normalizedActivity = normalizeForMatching(cleanActividad);
+  const normalizedAll = `${normalizedActivity} ${normalizeForMatching(cleanExtra)}`.trim();
+  const hasAny = (terms) => terms.some((term) => normalizedAll.includes(term));
   const trimSentence = (text) => String(text || '').replace(/[.;:\s]+$/g, '').trim();
   const activitySubject = trimSentence(cleanActividad) || 'la actividad institucional';
   const shortSubject = activitySubject.length > 95 ? `${activitySubject.slice(0, 92).trim()}...` : activitySubject;
@@ -225,7 +237,7 @@ const buildSearchQuery = (actividad) =>
 const normalizeSearchResults = (items = []) =>
   items
     .map((item) => ({
-      title: String(item.title || item.name || '').trim(),
+      title: cleanSourceTitle(String(item.title || item.name || '').trim()),
       url: String(item.url || item.link || '').trim(),
       snippet: String(item.content || item.description || item.snippet || item.extra_snippets?.[0] || '').trim()
     }))
@@ -233,25 +245,38 @@ const normalizeSearchResults = (items = []) =>
     .slice(0, 5);
 
 const buildWebSearchPayload = ({ actividad, answer, results }) => {
-  const base = buildLocalFallbackPayload(actividad);
   const cleanAnswer = String(answer || '').trim();
   const sources = normalizeSearchResults(results);
-  const snippets = sources
-    .map((source, index) => `${index + 1}. ${source.title}: ${source.snippet || source.url}`)
-    .join('\n');
+  const webContext = [cleanAnswer, ...sources.map((s) => `${s.title}. ${s.snippet}`)].join(' ');
+  const base = buildLocalFallbackPayload(actividad, webContext);
+
+  const resumenItems = [];
+  if (cleanAnswer) {
+    resumenItems.push({ title: 'Síntesis de la consulta', summary: cleanAnswer });
+  }
+  for (const src of sources) {
+    if (src.snippet) {
+      resumenItems.push({ title: src.title || 'Fuente', summary: src.snippet });
+    }
+  }
+
   const sourceLines = sources
     .map((source, index) => `${index + 1}. ${source.title} - ${source.url}`)
     .join('\n');
-  const webSummary = cleanAnswer || snippets || 'La busqueda web no devolvio un resumen suficiente; se sugieren indicadores con base en la actividad.';
+  const resumenTextoPlano = resumenItems.length
+    ? resumenItems.map((it, i) => `${i + 1}. ${it.title}: ${it.summary}`).join('\n')
+    : 'La búsqueda web no devolvió hallazgos relevantes.';
 
   return {
     titulo_general: 'Consulta web aplicada',
     indicadores: base.indicadores,
+    resumen: resumenItems,
+    fuentes: sources,
     bullets: [
       'Consulta web aplicada',
       '',
       'Resumen encontrado:',
-      webSummary,
+      resumenTextoPlano,
       '',
       'Indicadores sugeridos:',
       ...base.indicadores.map((indicator, index) => `${index + 1}. ${indicator}`),
@@ -722,10 +747,30 @@ const suggestIndicators = async (actividad) => {
     parsed = buildLocalFallbackPayload(cleanActividad);
   }
 
+  let resumenOut = '';
+  if (Array.isArray(parsed.resumen)) {
+    resumenOut = parsed.resumen
+      .map((item) => ({
+        title: String(item?.title || '').trim(),
+        summary: String(item?.summary || '').trim()
+      }))
+      .filter((item) => item.title || item.summary);
+  } else if (typeof parsed.resumen === 'string') {
+    resumenOut = parsed.resumen;
+  }
+
   return {
     tipo: 'Resultado',
     tituloGeneral: parsed.titulo_general || '',
     indicadores: parsed.indicadores,
+    resumen: resumenOut,
+    fuentes: Array.isArray(parsed.fuentes)
+      ? parsed.fuentes.map((s) => ({
+          title: cleanSourceTitle(String(s?.title || '').trim()),
+          url: String(s?.url || '').trim(),
+          snippet: String(s?.snippet || '').trim()
+        })).filter((s) => s.title || s.url)
+      : [],
     bullets: parsed.bullets || formatIndicadoresAsBullets(parsed)
   };
 };

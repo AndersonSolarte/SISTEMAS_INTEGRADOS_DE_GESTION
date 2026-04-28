@@ -1,6 +1,7 @@
-import React, { useDeferredValue, useEffect, useMemo, useState } from 'react';
+import React, { useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Alert,
+  Autocomplete,
   Box,
   Button,
   Chip,
@@ -9,6 +10,7 @@ import {
   FormControl,
   IconButton,
   InputLabel,
+  Link as MuiLink,
   MenuItem,
   Paper,
   Select,
@@ -43,6 +45,8 @@ import {
   HourglassBottom as HourglassBottomIcon,
   Insights as InsightsIcon,
   ListAlt as ListAltIcon,
+  MenuBook as MenuBookIcon,
+  OpenInNew as OpenInNewIcon,
   Save as SaveIcon,
   ShowChart as ShowChartIcon,
   Timeline as TimelineIcon,
@@ -63,6 +67,16 @@ import { useSnackbar } from 'notistack';
 import gestionInformacionService from '../services/gestionInformacionService';
 
 const PED_YEAR_WEIGHT = 14.28;
+
+const DEPENDENCIA_QUE_CITA_FIJA = 'Dirección de Planeación y Aseguramiento de la Calidad - Planeación y Efectividad';
+
+const LUGARES_REUNION = [
+  'Sala Juntas Rectoría',
+  'Sala de Juntas San Damián',
+  'Sala Reunión H201F',
+  'Sala Bellina',
+  'I308'
+];
 
 const STRUCTURE_CARDS = [
   { key: 'totalObjetivos', label: 'Objetivos Estratégicos', color: '#1e40af', gradient: 'linear-gradient(135deg,#1e40af,#3b82f6)', shadow: 'rgba(30,64,175,.24)', icon: <FlagIcon sx={{ color: 'white', fontSize: 28 }} /> },
@@ -1548,20 +1562,19 @@ function GestionPlanesWorkspaceV2({ sourceRows = [] }) {
   const [exporting, setExporting] = useState(false);
   const [editingId, setEditingId] = useState(null);
   const [generatingIndicator, setGeneratingIndicator] = useState(false);
+  const [aiSuggestion, setAiSuggestion] = useState(null);
+  const [showRawIndicador, setShowRawIndicador] = useState(false);
+  const [showAiSources, setShowAiSources] = useState(false);
   const [savedPlans, setSavedPlans] = useState([]);
 
   const emptyPlan = useMemo(() => ({
-    nombrePlan: '',
     anio: String(new Date().getFullYear()),
     ped: 'PED 2022-2029',
-    responsable: '',
-    corresponsable: '',
     estado: 'Borrador',
     dependencia: '',
     objetivoSesion: '',
     fechaReunion: new Date().toISOString().slice(0, 10),
-    lugarReunion: '',
-    observacionesGenerales: ''
+    lugarReunion: ''
   }), []);
 
   const emptyActividad = useMemo(() => ({
@@ -1586,6 +1599,7 @@ function GestionPlanesWorkspaceV2({ sourceRows = [] }) {
   }), []);
 
   const [planData, setPlanData] = useState(emptyPlan);
+  const lastAutoObjetivoRef = useRef('');
   const [actividadForm, setActividadForm] = useState(emptyActividad);
   const [actividades, setActividades] = useState([]);
 
@@ -1668,6 +1682,44 @@ function GestionPlanesWorkspaceV2({ sourceRows = [] }) {
     localStorage.setItem(WORKSPACE_KEY, JSON.stringify({ planData, actividadForm, actividades }));
   }, [planData, actividadForm, actividades]);
 
+  const buildObjetivoSesion = (data = {}) => {
+    const estado = String(data.estado || '').trim();
+    const dependencia = String(data.dependencia || '').trim();
+    const anio = String(data.anio || '').trim();
+
+    if (!estado || !dependencia) return '';
+
+    const espacioAnio = anio ? `${anio} ` : '';
+    const planFraseBase = `Plan de Acción ${espacioAnio}de la ${dependencia}`;
+
+    switch (estado) {
+      case 'Borrador':
+        return `Formular el ${planFraseBase}, mediante un proceso colaborativo para definir acciones, indicadores, metas y compromisos institucionales.`;
+      case 'En revisión':
+        return `Validar la versión preliminar del ${planFraseBase}, identificando ajustes y oportunidades de mejora previas a su formalización institucional.`;
+      case 'Listo para acta':
+        return `Consolidar el ${planFraseBase}, dejando los insumos institucionales necesarios para su formalización mediante acta de reunión, con la participación de los responsables y corresponsables del plan.`;
+      case 'Listo para exportación':
+        return `Formalizar el ${planFraseBase}, para su exportación oficial al formato institucional vigente y posterior socialización con las instancias competentes.`;
+      default:
+        return `Definir el ${planFraseBase}.`;
+    }
+  };
+
+  useEffect(() => {
+    const generated = buildObjetivoSesion(planData);
+    if (!generated) return;
+    const current = String(planData.objetivoSesion || '').trim();
+    if (current === '' || current === lastAutoObjetivoRef.current) {
+      if (generated !== current) {
+        lastAutoObjetivoRef.current = generated;
+        setPlanData((prev) => ({ ...prev, objetivoSesion: generated }));
+      } else {
+        lastAutoObjetivoRef.current = generated;
+      }
+    }
+  }, [planData.estado, planData.dependencia, planData.anio]);
+
   const calculateTotal = (ip, iip) => {
     const left = Number(ip || 0);
     const right = Number(iip || 0);
@@ -1728,6 +1780,14 @@ function GestionPlanesWorkspaceV2({ sourceRows = [] }) {
         tipo_indicador: data.tipo || prev.tipo_indicador,
         indicador: data.bullets
       }));
+      setAiSuggestion({
+        tituloGeneral: data.tituloGeneral || data.titulo_general || '',
+        resumen: data.resumen ?? '',
+        indicadores: Array.isArray(data.indicadores) ? data.indicadores : [],
+        fuentes: Array.isArray(data.fuentes) ? data.fuentes : []
+      });
+      setShowRawIndicador(false);
+      setShowAiSources(false);
       enqueueSnackbar('Indicadores generados.', { variant: 'success' });
     } catch (error) {
       const code = error?.response?.data?.code;
@@ -1747,9 +1807,7 @@ function GestionPlanesWorkspaceV2({ sourceRows = [] }) {
     setActividadForm({
       ...emptyActividad,
       anio: planData.anio || emptyActividad.anio,
-      ped: planData.ped || emptyActividad.ped,
-      responsable: planData.responsable || '',
-      corresponsable: planData.corresponsable || ''
+      ped: planData.ped || emptyActividad.ped
     });
     setEditingId(null);
   };
@@ -1765,8 +1823,8 @@ function GestionPlanesWorkspaceV2({ sourceRows = [] }) {
       id: editingId || Date.now(),
       anio: actividadForm.anio || planData.anio,
       ped: actividadForm.ped || planData.ped,
-      responsable: actividadForm.responsable || planData.responsable,
-      corresponsable: actividadForm.corresponsable || planData.corresponsable,
+      responsable: actividadForm.responsable || '',
+      corresponsable: actividadForm.corresponsable || '',
       total_ejecucion: calculateTotal(actividadForm.avance_ip, actividadForm.avance_iip)
     };
 
@@ -1841,17 +1899,15 @@ function GestionPlanesWorkspaceV2({ sourceRows = [] }) {
       const response = await gestionInformacionService.exportPlanAccionPlantilla({
         planData: {
           anio: planData.anio,
-          nombrePlan: planData.nombrePlan,
-          codigoPlan: planData.codigoPlan || planData.nombrePlan,
-          responsable: planData.responsable,
-          corresponsable: planData.corresponsable,
+          nombrePlan: planData.dependencia,
+          codigoPlan: planData.codigoPlan || planData.dependencia,
           dependencia: planData.dependencia,
           ped: planData.ped
         },
         actividades
       });
       const blob = new Blob([response.data], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
-      const fname = `plan_accion_${(planData.nombrePlan || 'plan').replace(/\s+/g, '_')}_${planData.anio || new Date().getFullYear()}.xlsx`;
+      const fname = `plan_accion_${(planData.dependencia || 'plan').replace(/\s+/g, '_')}_${planData.anio || new Date().getFullYear()}.xlsx`;
       triggerDownload(blob, fname);
       enqueueSnackbar('Plantilla institucional generada con formato oficial.', { variant: 'success' });
     } catch (error) {
@@ -1861,86 +1917,87 @@ function GestionPlanesWorkspaceV2({ sourceRows = [] }) {
     }
   };
 
-  const actaBlocks = useMemo(() => {
-    const observations = actividades
-      .flatMap((item) => [item.observaciones_ip, item.observaciones_iip].filter(Boolean))
-      .map((text) => String(text).trim())
+  const actaPreviewData = useMemo(() => {
+    // Participantes únicos derivados de las actividades.
+    // Cada nombre aparece UNA sola vez. Si una persona figura como responsable en
+    // alguna actividad, queda con ese cargo aunque sea corresponsable en otra.
+    const participantesMap = new Map();
+    actividades.forEach((act) => {
+      const nombre = String(act?.responsable || '').trim();
+      if (nombre && !participantesMap.has(nombre)) {
+        participantesMap.set(nombre, { nombre, cargo: 'Responsable de Ejecución' });
+      }
+    });
+    actividades.forEach((act) => {
+      const nombre = String(act?.corresponsable || '').trim();
+      if (nombre && !participantesMap.has(nombre)) {
+        participantesMap.set(nombre, { nombre, cargo: 'Corresponsable' });
+      }
+    });
+    const participantes = Array.from(participantesMap.values());
+
+    // Lista de responsables únicos (texto legible para el campo "Responsable(s)" del acta).
+    const responsablesUnicos = Array.from(new Set(
+      actividades.map((act) => String(act?.responsable || '').trim()).filter(Boolean)
+    ));
+
+    const actividadesActa = actividades.slice(0, 12).map((item, index) => {
+      const indicador = item.indicador ? ` — Indicador: ${item.indicador}` : '';
+      const meta = item.meta ? ` | Meta: ${item.meta}` : '';
+      return `${index + 1}. ${item.actividad || 'Actividad sin nombre'}${indicador}${meta}`;
+    });
+
+    const observacionesActa = actividades
+      .flatMap((item) => [item.observaciones_ip, item.observaciones_iip])
+      .map((text) => (text ? String(text).trim() : ''))
       .filter(Boolean);
 
-    const topActivities = actividades.slice(0, 8).map((item, index) => `${index + 1}. ${item.actividad || 'Actividad sin nombre'}${item.indicador ? ` - Indicador: ${item.indicador}` : ''}`);
-    const acuerdos = observations.length
-      ? observations.map((text, index) => `${index + 1}. ${text}`)
-      : ['1. No se han registrado observaciones todavía; el acta se completará con lo que el profesional vaya consignando durante la construcción del plan.'];
+    const desarrollo = [
+      `En la sesión del ${planData.fechaReunion || 'fecha por definir'}, el componente de Planeación y Efectividad lideró la construcción del Plan de Acción ${planData.anio || ''} de la ${planData.dependencia || 'dependencia responsable'}.`,
+      '',
+      'Actividades consolidadas:',
+      ...(actividadesActa.length ? actividadesActa : ['- No se han agregado actividades todavía.']),
+      '',
+      observacionesActa.length ? 'Observaciones relevantes de la sesión:' : '',
+      ...observacionesActa.map((obs, index) => `${index + 1}. ${obs}`),
+      '',
+      audioFile
+        ? `Audio de apoyo: se adjuntó "${audioFile.name}" para transcripción temporal.`
+        : 'No se adjuntó audio temporal en esta sesión.'
+    ].filter((line) => line !== '');
+
+    const conclusiones = observacionesActa.length
+      ? observacionesActa.map((obs, index) => `${index + 1}. ${obs}`)
+      : ['1. Pendiente registrar compromisos y próximas acciones derivadas de la sesión.'];
+
+    const objetivoTexto = planData.objetivoSesion ||
+      buildObjetivoSesion(planData) ||
+      `Formular el Plan de Acción ${planData.anio || ''} de la ${planData.dependencia || 'dependencia responsable'}.`;
 
     return {
-      intro: `En la sesión del ${planData.fechaReunion || 'fecha por definir'}, el equipo adelantó la construcción del Plan de Acción ${planData.anio || ''}.`,
-      asistentes: [planData.responsable, planData.corresponsable].filter(Boolean),
-      topActivities,
-      acuerdos,
-      audioNote: audioFile
-        ? `Se adjuntó un audio temporal de apoyo (${audioFile.name}) para futura transcripción IA sin almacenamiento permanente.`
-        : 'No se adjuntó audio temporal en esta sesión.'
+      responsables: responsablesUnicos.join(', '),
+      dependencia: DEPENDENCIA_QUE_CITA_FIJA,
+      lugar: planData.lugarReunion || '',
+      fecha: planData.fechaReunion || '',
+      horario: planData.horarioReunion || '',
+      participantes,
+      objetivo: [objetivoTexto],
+      desarrollo,
+      conclusiones
     };
   }, [actividades, audioFile, planData]);
 
   const exportActaWord = async () => {
     try {
-      const participantes = [planData.responsable, planData.corresponsable]
-        .filter(Boolean)
-        .map((nombre, index) => ({
-          nombre,
-          cargo: index === 0 ? 'Responsable de Ejecución' : 'Corresponsable'
-        }));
-
-      const actividadesActa = actividades.slice(0, 12).map((item, index) => {
-        const indicador = item.indicador ? ` — Indicador: ${item.indicador}` : '';
-        const meta = item.meta ? ` | Meta: ${item.meta}` : '';
-        return `${index + 1}. ${item.actividad || 'Actividad sin nombre'}${indicador}${meta}`;
-      });
-
-      const observacionesActa = actividades
-        .flatMap((item) => [item.observaciones_ip, item.observaciones_iip])
-        .map((text) => (text ? String(text).trim() : ''))
-        .filter(Boolean);
-
-      const desarrollo = [
-        `En la sesión del ${planData.fechaReunion || 'fecha por definir'}, el equipo adelantó la construcción del Plan de Acción ${planData.anio || ''} para ${planData.dependencia || planData.responsable || 'la dependencia responsable'}.`,
-        '',
-        'Actividades consolidadas:',
-        ...(actividadesActa.length ? actividadesActa : ['- No se han agregado actividades todavía.']),
-        '',
-        observacionesActa.length ? 'Observaciones relevantes de la sesión:' : '',
-        ...observacionesActa.map((obs, index) => `${index + 1}. ${obs}`),
-        '',
-        audioFile
-          ? `Audio de apoyo: se adjuntó "${audioFile.name}" para transcripción temporal.`
-          : 'No se adjuntó audio temporal en esta sesión.'
-      ].filter((line) => line !== '');
-
-      const conclusiones = observacionesActa.length
-        ? observacionesActa.map((obs, index) => `${index + 1}. ${obs}`)
-        : ['1. Pendiente registrar compromisos y próximas acciones derivadas de la sesión.'];
-
       const payload = {
         anio: planData.anio,
-        codigoPlan: planData.codigoPlan || planData.nombrePlan,
-        responsables: planData.responsable || '',
-        dependencia: planData.dependencia || planData.responsable || '',
-        lugar: planData.lugarReunion || '',
-        fecha: planData.fechaReunion || '',
-        horario: planData.horarioReunion || '',
-        participantes,
-        objetivo: [
-          planData.objetivoSesion ||
-            `Construir y validar el Plan de Acción ${planData.anio || ''} del plan "${planData.nombrePlan || 'sin nombre'}".`
-        ],
-        desarrollo,
-        conclusiones
+        codigoPlan: planData.codigoPlan || planData.dependencia,
+        ...actaPreviewData
       };
 
       const response = await gestionInformacionService.exportPlanAccionActa(payload);
       const blob = new Blob([response.data], { type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' });
-      const fname = `acta_asistencia_reunion_${(planData.nombrePlan || 'plan').replace(/\s+/g, '_')}_${planData.anio || new Date().getFullYear()}.docx`;
+      const fname = `acta_asistencia_reunion_${(planData.dependencia || 'plan').replace(/\s+/g, '_')}_${planData.anio || new Date().getFullYear()}.docx`;
       triggerDownload(blob, fname);
       enqueueSnackbar('Acta institucional generada con formato oficial.', { variant: 'success' });
     } catch (error) {
@@ -1962,40 +2019,53 @@ function GestionPlanesWorkspaceV2({ sourceRows = [] }) {
     { title: 'Paso 4', subtitle: 'Acta y exportación', detail: 'Genera el acta preliminar y la plantilla institucional.' }
   ];
 
-  const renderSelectField = (label, value, onChange, options, helperText = '', config = {}) => (
-    <FormControl fullWidth size="small">
-      <InputLabel>{label}</InputLabel>
-      <Select
-        value={value}
-        label={label}
-        onChange={(e) => onChange(e.target.value)}
-        sx={{
-          '& .MuiSelect-select': {
-            whiteSpace: 'nowrap',
-            overflow: 'hidden',
-            textOverflow: 'ellipsis'
-          },
-          ...(config.selectSx || {})
-        }}
-        MenuProps={{
-          PaperProps: {
-            sx: {
-              maxWidth: config.menuMaxWidth || 560,
-              '& .MuiMenuItem-root': {
-                whiteSpace: 'normal',
-                lineHeight: 1.35,
-                alignItems: 'flex-start'
+  const renderSelectField = (label, value, onChange, options, helperText = '', config = {}) => {
+    const safeOptions = Array.isArray(options) ? options.filter((opt) => opt !== null && opt !== undefined && String(opt).trim() !== '') : [];
+    const isFreeSolo = Boolean(config.freeSolo);
+    const currentValue = value === null || value === undefined || value === ''
+      ? (isFreeSolo ? '' : null)
+      : String(value);
+    return (
+      <Box sx={{ width: '100%' }}>
+        <Autocomplete
+          size="small"
+          fullWidth
+          freeSolo={isFreeSolo}
+          value={currentValue}
+          onChange={(_, newValue) => onChange(newValue || '')}
+          onInputChange={isFreeSolo ? (_, newInput) => onChange(newInput || '') : undefined}
+          options={safeOptions}
+          isOptionEqualToValue={(option, val) => String(option || '') === String(val || '')}
+          autoHighlight
+          clearOnEscape
+          blurOnSelect={!isFreeSolo}
+          handleHomeEndKeys
+          noOptionsText="Sin coincidencias"
+          slotProps={{
+            paper: { sx: { maxWidth: config.menuMaxWidth || 560 } },
+            listbox: {
+              sx: {
+                '& .MuiAutocomplete-option': {
+                  whiteSpace: 'normal',
+                  lineHeight: 1.35,
+                  alignItems: 'flex-start'
+                }
               }
             }
-          }
-        }}
-      >
-        <MenuItem value="">Seleccionar</MenuItem>
-        {options.map((item) => <MenuItem key={item} value={item}>{item}</MenuItem>)}
-      </Select>
-      {helperText ? <Typography sx={{ mt: 0.6, fontSize: 11, color: '#94a3b8' }}>{helperText}</Typography> : null}
-    </FormControl>
-  );
+          }}
+          renderInput={(params) => (
+            <TextField
+              {...params}
+              label={label}
+              size="small"
+              placeholder={config.placeholder || 'Escribe para buscar...'}
+            />
+          )}
+        />
+        {helperText ? <Typography sx={{ mt: 0.6, fontSize: 11, color: '#94a3b8' }}>{helperText}</Typography> : null}
+      </Box>
+    );
+  };
 
   return (
     <Stack spacing={2.4}>
@@ -2046,7 +2116,7 @@ function GestionPlanesWorkspaceV2({ sourceRows = [] }) {
               <Paper key={record.id} elevation={0} sx={{ p: 2, borderRadius: 3, border: '1px solid #dbeafe', boxShadow: '0 10px 24px rgba(15,23,42,.04)' }}>
                 <Stack direction={{ xs: 'column', md: 'row' }} spacing={1.4} justifyContent="space-between" alignItems={{ xs: 'flex-start', md: 'center' }}>
                   <Box>
-                    <Typography sx={{ fontWeight: 900, color: '#0f172a' }}>{record.planData?.nombrePlan || 'Plan sin nombre'}</Typography>
+                    <Typography sx={{ fontWeight: 900, color: '#0f172a' }}>{record.planData?.dependencia || 'Plan sin dependencia'}</Typography>
                     <Typography sx={{ color: '#64748b', mt: 0.4 }}>
                       Año {record.planData?.anio || '-'} — {record.planData?.responsable || 'Sin responsable'} — {formatNumber((record.actividades || []).length)} actividades
                     </Typography>
@@ -2083,18 +2153,41 @@ function GestionPlanesWorkspaceV2({ sourceRows = [] }) {
           <Paper elevation={0} sx={{ p: 2.4, borderRadius: 4, border: '1px solid #dbeafe', background: 'linear-gradient(180deg,#ffffff 0%,#f8fbff 100%)' }}>
             <SectionTitle title="Paso 1 · Datos Base del Plan" subtitle="Empieza por la cabecera general y reutiliza listas institucionales donde ya exista información." />
             <Box sx={{ display: 'grid', gap: 1.4, gridTemplateColumns: { xs: '1fr', md: 'repeat(2, 1fr)', xl: 'repeat(4, minmax(0, 1fr))' } }}>
-              <TextField label="Nombre del plan" value={planData.nombrePlan} onChange={(e) => handlePlanField('nombrePlan', e.target.value)} fullWidth />
+              <Box sx={{ gridColumn: { xs: 'auto', xl: 'span 2' } }}>
+                {renderSelectField('Dependencia / Unidad', planData.dependencia, (value) => handlePlanField('dependencia', value), catalogs.dependencias, '', { menuMaxWidth: 760 })}
+              </Box>
               {renderSelectField('Año', planData.anio, (value) => handlePlanField('anio', value), catalogs.anios.length ? catalogs.anios : [String(new Date().getFullYear())])}
               {renderSelectField('PED', planData.ped, (value) => handlePlanField('ped', value), catalogs.peds)}
               {renderSelectField('Estado', planData.estado, (value) => handlePlanField('estado', value), catalogs.estados)}
-              {renderSelectField('Responsable', planData.responsable, (value) => handlePlanField('responsable', value), catalogs.responsables)}
-              {renderSelectField('Corresponsable', planData.corresponsable, (value) => handlePlanField('corresponsable', value), catalogs.responsables)}
-              {renderSelectField('Dependencia / Unidad', planData.dependencia, (value) => handlePlanField('dependencia', value), catalogs.dependencias)}
               <TextField label="Fecha de reunión" type="date" value={planData.fechaReunion} onChange={(e) => handlePlanField('fechaReunion', e.target.value)} fullWidth InputLabelProps={{ shrink: true }} />
-              <TextField label="Lugar / medio" value={planData.lugarReunion} onChange={(e) => handlePlanField('lugarReunion', e.target.value)} fullWidth />
-              <TextField label="Objetivo de la sesión" value={planData.objetivoSesion} onChange={(e) => handlePlanField('objetivoSesion', e.target.value)} fullWidth sx={{ gridColumn: { xs: 'auto', xl: 'span 3' } }} />
+              <Box sx={{ gridColumn: { xs: 'auto', xl: 'span 2' } }}>
+                {renderSelectField('Lugar / medio', planData.lugarReunion, (value) => handlePlanField('lugarReunion', value), LUGARES_REUNION, '', { freeSolo: true, placeholder: 'Selecciona o escribe el lugar / medio' })}
+              </Box>
             </Box>
-            <TextField label="Observaciones generales" value={planData.observacionesGenerales} onChange={(e) => handlePlanField('observacionesGenerales', e.target.value)} fullWidth multiline minRows={4} sx={{ mt: 1.5 }} />
+            <Box sx={{ position: 'relative', mt: 1.4 }}>
+              <TextField
+                label="Objetivo de la sesión"
+                value={planData.objetivoSesion}
+                onChange={(e) => handlePlanField('objetivoSesion', e.target.value)}
+                fullWidth
+                multiline
+                minRows={2}
+                maxRows={6}
+              />
+              <Tooltip
+                arrow
+                placement="top"
+                title="Se construye automáticamente a partir del Estado, nombre del plan y dependencia. Puedes editarlo manualmente."
+              >
+                <IconButton
+                  size="small"
+                  sx={{ position: 'absolute', top: 4, right: 6, p: 0.4, color: '#94a3b8' }}
+                  aria-label="Ayuda sobre el objetivo de la sesión"
+                >
+                  <HelpOutlineIcon sx={{ fontSize: 16 }} />
+                </IconButton>
+              </Tooltip>
+            </Box>
           </Paper>
 
           <Paper elevation={0} sx={{ p: 2.4, borderRadius: 4, border: '1px solid #e2e8f0' }}>
@@ -2106,6 +2199,10 @@ function GestionPlanesWorkspaceV2({ sourceRows = [] }) {
             </Box>
             <Box sx={{ mt: 1.4 }}>
               <TextField label="Actividad" size="small" value={actividadForm.actividad} onChange={(e) => handleActividadField('actividad', e.target.value)} placeholder="Redacta aquí la actividad concreta." fullWidth />
+            </Box>
+            <Box sx={{ display: 'grid', gap: 1.4, gridTemplateColumns: { xs: '1fr', md: 'repeat(2, minmax(0, 1fr))' }, mt: 1.4 }}>
+              {renderSelectField('Responsable de la actividad', actividadForm.responsable, (value) => handleActividadField('responsable', value), catalogs.responsables)}
+              {renderSelectField('Corresponsable de la actividad', actividadForm.corresponsable, (value) => handleActividadField('corresponsable', value), catalogs.responsables)}
             </Box>
             <Box sx={{ display: 'grid', gap: 1.4, gridTemplateColumns: { xs: '1fr', md: 'repeat(2, minmax(0, 1fr))', xl: 'repeat(4, minmax(0, 1fr))' }, mt: 1.4 }}>
               {renderSelectField('Tipo de indicador', actividadForm.tipo_indicador, (value) => handleActividadField('tipo_indicador', value), catalogs.tiposIndicador)}
@@ -2157,7 +2254,163 @@ function GestionPlanesWorkspaceV2({ sourceRows = [] }) {
                   {generatingIndicator ? 'Generando…' : 'Generar desde la actividad'}
                 </Button>
               </Stack>
-              <TextField value={actividadForm.indicador} onChange={(e) => handleActividadField('indicador', e.target.value)} multiline minRows={6} fullWidth placeholder="Redacta la actividad y presiona 'Generar desde la actividad' para que la IA proponga los pasos e indicadores clave." />
+              {aiSuggestion && (Array.isArray(aiSuggestion.indicadores) && aiSuggestion.indicadores.length > 0) ? (
+                <Stack spacing={1.4}>
+                  {aiSuggestion.tituloGeneral && (
+                    <Stack direction="row" spacing={1} alignItems="center">
+                      <Chip
+                        size="small"
+                        icon={<AutoAwesomeIcon sx={{ fontSize: 14 }} />}
+                        label={aiSuggestion.tituloGeneral}
+                        sx={{ bgcolor: '#eff6ff', color: '#1d4ed8', fontWeight: 800, border: '1px solid #bfdbfe' }}
+                      />
+                    </Stack>
+                  )}
+
+                  {aiSuggestion.resumen && (Array.isArray(aiSuggestion.resumen) ? aiSuggestion.resumen.length > 0 : true) && (
+                    <Paper elevation={0} sx={{ p: 1.8, borderRadius: 3, border: '1px solid #e2e8f0', bgcolor: '#f8fafc' }}>
+                      <Stack direction="row" spacing={0.8} alignItems="center" sx={{ mb: 1.1 }}>
+                        <MenuBookIcon sx={{ fontSize: 16, color: '#475569' }} />
+                        <Typography sx={{ fontSize: 11, fontWeight: 900, color: '#475569', textTransform: 'uppercase', letterSpacing: .4 }}>
+                          Hallazgos del contexto
+                        </Typography>
+                      </Stack>
+                      {Array.isArray(aiSuggestion.resumen) ? (
+                        <Stack spacing={1}>
+                          {aiSuggestion.resumen.map((item, index) => (
+                            <Box key={index} sx={{ p: 1.1, borderRadius: 2, border: '1px solid #e2e8f0', bgcolor: '#fff' }}>
+                              <Typography sx={{ fontSize: 12.5, fontWeight: 800, color: '#0f172a', mb: 0.3, lineHeight: 1.4 }}>
+                                {item.title || `Hallazgo ${index + 1}`}
+                              </Typography>
+                              {item.summary && (
+                                <Typography sx={{ fontSize: 13, color: '#475569', lineHeight: 1.55 }}>
+                                  {item.summary}
+                                </Typography>
+                              )}
+                            </Box>
+                          ))}
+                        </Stack>
+                      ) : (
+                        <Typography sx={{ fontSize: 13.5, color: '#334155', lineHeight: 1.6, whiteSpace: 'pre-line' }}>
+                          {aiSuggestion.resumen}
+                        </Typography>
+                      )}
+                    </Paper>
+                  )}
+
+                  <Paper elevation={0} sx={{ p: 1.8, borderRadius: 3, border: '1px solid #c7d2fe', background: 'linear-gradient(180deg,#ffffff 0%,#eef2ff 100%)' }}>
+                    <Stack direction="row" spacing={0.8} alignItems="center" sx={{ mb: 1.2 }}>
+                      <InsightsIcon sx={{ fontSize: 18, color: '#4338ca' }} />
+                      <Typography sx={{ fontSize: 11, fontWeight: 900, color: '#4338ca', textTransform: 'uppercase', letterSpacing: .4 }}>
+                        Indicadores sugeridos
+                      </Typography>
+                    </Stack>
+                    <Stack spacing={1}>
+                      {aiSuggestion.indicadores.map((item, index) => (
+                        <Stack key={index} direction="row" spacing={1.2} alignItems="flex-start">
+                          <Box sx={{
+                            flexShrink: 0,
+                            width: 26,
+                            height: 26,
+                            borderRadius: '50%',
+                            bgcolor: '#4338ca',
+                            color: '#fff',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            fontSize: 12,
+                            fontWeight: 900,
+                            mt: 0.2
+                          }}>
+                            {index + 1}
+                          </Box>
+                          <Typography sx={{ fontSize: 14, color: '#1e1b4b', lineHeight: 1.55, flex: 1 }}>
+                            {String(item).trim()}
+                          </Typography>
+                        </Stack>
+                      ))}
+                    </Stack>
+                  </Paper>
+
+                  {Array.isArray(aiSuggestion.fuentes) && aiSuggestion.fuentes.length > 0 && (
+                    <Paper elevation={0} sx={{ p: 1.4, borderRadius: 3, border: '1px solid #e2e8f0', bgcolor: '#fff' }}>
+                      <Stack
+                        direction="row"
+                        spacing={0.8}
+                        alignItems="center"
+                        onClick={() => setShowAiSources((v) => !v)}
+                        sx={{ cursor: 'pointer', userSelect: 'none' }}
+                      >
+                        <OpenInNewIcon sx={{ fontSize: 16, color: '#0f766e' }} />
+                        <Typography sx={{ fontSize: 11, fontWeight: 900, color: '#0f766e', textTransform: 'uppercase', letterSpacing: .4 }}>
+                          Fuentes consultadas ({aiSuggestion.fuentes.length})
+                        </Typography>
+                        <Box sx={{ flex: 1 }} />
+                        <Typography sx={{ fontSize: 11, fontWeight: 800, color: '#0f766e' }}>
+                          {showAiSources ? 'Ocultar' : 'Ver'}
+                        </Typography>
+                      </Stack>
+                      {showAiSources && (
+                        <Stack spacing={0.7} sx={{ mt: 1 }}>
+                          {aiSuggestion.fuentes.map((src, index) => (
+                            <Box key={index} sx={{ p: 1, borderRadius: 2, border: '1px solid #e2e8f0', bgcolor: '#f8fafc' }}>
+                              <MuiLink
+                                href={src.url}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                underline="hover"
+                                sx={{ fontWeight: 800, fontSize: 13, color: '#0f172a', display: 'inline-flex', alignItems: 'center', gap: 0.6 }}
+                              >
+                                {index + 1}. {src.title || src.url}
+                                <OpenInNewIcon sx={{ fontSize: 13, color: '#64748b' }} />
+                              </MuiLink>
+                              {src.snippet && (
+                                <Typography sx={{ fontSize: 12, color: '#475569', mt: 0.3, lineHeight: 1.5 }}>
+                                  {src.snippet}
+                                </Typography>
+                              )}
+                            </Box>
+                          ))}
+                        </Stack>
+                      )}
+                    </Paper>
+                  )}
+
+                  <Stack direction="row" spacing={1} alignItems="center" sx={{ pt: 0.4 }}>
+                    <Button
+                      size="small"
+                      variant="text"
+                      startIcon={<EditIcon fontSize="small" />}
+                      onClick={() => setShowRawIndicador((v) => !v)}
+                      sx={{ textTransform: 'none', fontWeight: 800, color: '#475569' }}
+                    >
+                      {showRawIndicador ? 'Ocultar texto editable' : 'Editar texto'}
+                    </Button>
+                    <Button
+                      size="small"
+                      variant="text"
+                      startIcon={<DeleteOutlineIcon fontSize="small" />}
+                      onClick={() => { setAiSuggestion(null); setShowRawIndicador(false); handleActividadField('indicador', ''); }}
+                      sx={{ textTransform: 'none', fontWeight: 800, color: '#b91c1c' }}
+                    >
+                      Limpiar sugerencia
+                    </Button>
+                  </Stack>
+
+                  {showRawIndicador && (
+                    <TextField
+                      value={actividadForm.indicador}
+                      onChange={(e) => handleActividadField('indicador', e.target.value)}
+                      multiline
+                      minRows={6}
+                      fullWidth
+                      helperText="Este es el texto que se guarda en la actividad y se exporta. Puedes editarlo manualmente."
+                    />
+                  )}
+                </Stack>
+              ) : (
+                <TextField value={actividadForm.indicador} onChange={(e) => handleActividadField('indicador', e.target.value)} multiline minRows={6} fullWidth placeholder="Redacta la actividad y presiona 'Generar desde la actividad' para que la IA proponga los pasos e indicadores clave." />
+              )}
             </Box>
             <Box sx={{ display: 'grid', gap: 1.4, gridTemplateColumns: { xs: '1fr', md: 'repeat(2, minmax(0, 1fr))' }, mt: 1.6 }}>
               <TextField label="Observaciones IP" size="small" value={actividadForm.observaciones_ip} onChange={(e) => handleActividadField('observaciones_ip', e.target.value)} multiline minRows={4} />
@@ -2249,34 +2502,106 @@ function GestionPlanesWorkspaceV2({ sourceRows = [] }) {
           </Paper>
 
           <Paper elevation={0} sx={{ p: 2.4, borderRadius: 4, border: '1px solid #e2e8f0', background: '#fff', boxShadow: '0 10px 24px rgba(15,23,42,.05)' }}>
-            <SectionTitle title="Borrador de Acta" subtitle="Versión preliminar generada desde la sesión de construcción del plan." />
-            <Box sx={{ whiteSpace: 'pre-line', color: '#334155', lineHeight: 1.8, fontSize: 14 }}>
-{`ACTA PRELIMINAR DE CONSTRUCCIÓN DEL PLAN DE ACCIÓN
+            <SectionTitle title="Vista previa del Acta" subtitle="Mismo formato institucional COM-IF-FR-002 que se exporta a Word." />
 
-Plan: ${planData.nombrePlan || 'Sin nombre definido'}
-Año: ${planData.anio || 'Sin año'}
-PED: ${planData.ped || 'Sin PED'}
-Fecha de sesión: ${planData.fechaReunion || 'Pendiente'}
-Responsable: ${planData.responsable || 'Pendiente'}
-Corresponsable: ${planData.corresponsable || 'Pendiente'}
+            <Box sx={{
+              border: '1px solid #000',
+              fontFamily: 'Arial, Helvetica, sans-serif',
+              fontSize: 11.5,
+              color: '#000',
+              bgcolor: '#fff',
+              overflow: 'hidden'
+            }}>
+              {/* Header: Logo | Título | Código/Versión/Fecha */}
+              <Box sx={{ display: 'grid', gridTemplateColumns: '20% 60% 20%', borderBottom: '1px solid #000', minHeight: 90 }}>
+                <Box sx={{ borderRight: '1px solid #000', p: 0.6, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                  <Box component="img" src="/Logo Universidad CESMAG.png" alt="CESMAG" sx={{ maxHeight: 70, maxWidth: '100%', objectFit: 'contain' }} />
+                </Box>
+                <Box sx={{ borderRight: '1px solid #000', p: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', textAlign: 'center', fontWeight: 900, fontSize: 14 }}>
+                  REGISTRO DE ASISTENCIA Y REUNIÓN
+                </Box>
+                <Box sx={{ p: 0.8, display: 'flex', flexDirection: 'column', justifyContent: 'center', fontSize: 10.5, fontWeight: 800, lineHeight: 1.5 }}>
+                  <Box>CÓDIGO: COM-IF-FR-002</Box>
+                  <Box>VERSIÓN: 1</Box>
+                  <Box>FECHA: 6/MAR/2020</Box>
+                </Box>
+              </Box>
 
-Contexto:
-${actaBlocks.intro}
+              {/* Responsable(s) */}
+              <Box sx={{ p: 0.7, borderBottom: '1px solid #000', minHeight: 28 }}>
+                <strong>Responsable(s):</strong> {actaPreviewData.responsables || ''}
+              </Box>
 
-Asistentes:
-${(actaBlocks.asistentes.length ? actaBlocks.asistentes : ['Pendiente de completar']).map((item) => `- ${item}`).join('\n')}
+              {/* Dependencia que cita */}
+              <Box sx={{ p: 0.7, borderBottom: '1px solid #000', minHeight: 28 }}>
+                <strong>Dependencia que cita:</strong> {actaPreviewData.dependencia || ''}
+              </Box>
 
-Actividades consolidadas:
-${(actaBlocks.topActivities.length ? actaBlocks.topActivities : ['- No se han agregado actividades todavía.']).join('\n')}
+              {/* Sección: Información de la Reunión */}
+              <Box sx={{ bgcolor: '#D9D9D9', p: 0.7, textAlign: 'center', fontWeight: 900, borderBottom: '1px solid #000' }}>
+                Información de la Reunión
+              </Box>
+              <Box sx={{ p: 0.7, borderBottom: '1px solid #000', minHeight: 26 }}>
+                <strong>Lugar:</strong> {actaPreviewData.lugar || ''}
+              </Box>
+              <Box sx={{ display: 'grid', gridTemplateColumns: '70% 30%', borderBottom: '1px solid #000', minHeight: 26 }}>
+                <Box sx={{ p: 0.7, borderRight: '1px solid #000' }}>
+                  <strong>Fecha:</strong> {actaPreviewData.fecha || ''}
+                </Box>
+                <Box sx={{ p: 0.7 }}>
+                  <strong>Horario:</strong> {actaPreviewData.horario || ''}
+                </Box>
+              </Box>
 
-Observaciones y acuerdos:
-${actaBlocks.acuerdos.map((item) => `- ${item}`).join('\n')}
+              {/* Sección: Participantes */}
+              <Box sx={{ bgcolor: '#D9D9D9', p: 0.7, textAlign: 'center', fontWeight: 900, borderBottom: '1px solid #000' }}>
+                Participantes
+              </Box>
+              <Box sx={{ display: 'grid', gridTemplateColumns: '7% 43% 25% 25%', bgcolor: '#F2F2F2', fontWeight: 900, borderBottom: '1px solid #000', fontSize: 11 }}>
+                <Box sx={{ p: 0.5, textAlign: 'center', borderRight: '1px solid #000' }}>&nbsp;</Box>
+                <Box sx={{ p: 0.5, textAlign: 'center', borderRight: '1px solid #000' }}>Nombres y Apellidos</Box>
+                <Box sx={{ p: 0.5, textAlign: 'center', borderRight: '1px solid #000' }}>Cargo</Box>
+                <Box sx={{ p: 0.5, textAlign: 'center' }}>Firma</Box>
+              </Box>
+              {Array.from({ length: 10 }).map((_, i) => {
+                const p = actaPreviewData.participantes[i] || {};
+                return (
+                  <Box key={i} sx={{ display: 'grid', gridTemplateColumns: '7% 43% 25% 25%', borderBottom: '1px solid #000', minHeight: 24 }}>
+                    <Box sx={{ p: 0.4, textAlign: 'center', borderRight: '1px solid #000', fontWeight: 800 }}>{i + 1}</Box>
+                    <Box sx={{ p: 0.4, borderRight: '1px solid #000' }}>{p.nombre || ''}</Box>
+                    <Box sx={{ p: 0.4, borderRight: '1px solid #000' }}>{p.cargo || ''}</Box>
+                    <Box sx={{ p: 0.4 }}>&nbsp;</Box>
+                  </Box>
+                );
+              })}
 
-Audio de apoyo:
-${actaBlocks.audioNote}`}
+              {/* Sección: Objetivo */}
+              <Box sx={{ bgcolor: '#D9D9D9', p: 0.7, textAlign: 'center', fontWeight: 900, borderBottom: '1px solid #000' }}>
+                Objetivo
+              </Box>
+              <Box sx={{ p: 0.9, borderBottom: '1px solid #000', minHeight: 60, whiteSpace: 'pre-line', textAlign: 'justify' }}>
+                {(actaPreviewData.objetivo || []).join('\n')}
+              </Box>
+
+              {/* Sección: Desarrollo */}
+              <Box sx={{ bgcolor: '#D9D9D9', p: 0.7, textAlign: 'center', fontWeight: 900, borderBottom: '1px solid #000' }}>
+                Desarrollo
+              </Box>
+              <Box sx={{ p: 0.9, borderBottom: '1px solid #000', minHeight: 90, whiteSpace: 'pre-line', textAlign: 'justify' }}>
+                {(actaPreviewData.desarrollo || []).join('\n')}
+              </Box>
+
+              {/* Sección: Conclusiones / Compromisos */}
+              <Box sx={{ bgcolor: '#D9D9D9', p: 0.7, textAlign: 'center', fontWeight: 900, borderBottom: '1px solid #000' }}>
+                Conclusiones / Compromisos
+              </Box>
+              <Box sx={{ p: 0.9, minHeight: 70, whiteSpace: 'pre-line', textAlign: 'justify' }}>
+                {(actaPreviewData.conclusiones || []).join('\n')}
+              </Box>
             </Box>
+
             <Stack direction={{ xs: 'column', md: 'row' }} spacing={1.2} sx={{ mt: 2 }}>
-              <Button startIcon={<DescriptionIcon />} variant="contained" onClick={exportActaWord} sx={{ borderRadius: 2.5, textTransform: 'none', fontWeight: 900 }}>Exportar acta preliminar</Button>
+              <Button startIcon={<DescriptionIcon />} variant="contained" onClick={exportActaWord} sx={{ borderRadius: 2.5, textTransform: 'none', fontWeight: 900 }}>Exportar acta a Word</Button>
               <Button startIcon={<SaveIcon />} variant="outlined" onClick={saveCurrentPlan} sx={{ borderRadius: 2.5, textTransform: 'none', fontWeight: 900 }}>Guardar borrador del acta</Button>
             </Stack>
           </Paper>
@@ -2289,8 +2614,9 @@ ${actaBlocks.audioNote}`}
             <SectionTitle title="Chequeo de Salida" subtitle="Validaciones previas a compartir el plan y el acta." />
             <Stack spacing={1.1}>
               {[
-                { ok: Boolean(planData.nombrePlan), label: 'Nombre del plan definido' },
-                { ok: Boolean(planData.responsable), label: 'Responsable principal registrado' },
+                { ok: Boolean(planData.dependencia), label: 'Dependencia / Unidad registrada' },
+                { ok: Boolean(planData.fechaReunion), label: 'Fecha de reunión definida' },
+                { ok: actividades.some((act) => Boolean(String(act?.responsable || '').trim())), label: 'Al menos una actividad con responsable' },
                 { ok: actividades.length > 0, label: 'Al menos una actividad cargada' },
                 { ok: totalObservaciones > 0, label: 'Existen observaciones útiles para el acta' }
               ].map((item) => (
