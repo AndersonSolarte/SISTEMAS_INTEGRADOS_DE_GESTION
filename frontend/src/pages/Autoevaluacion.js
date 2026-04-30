@@ -171,7 +171,7 @@ const PROGRAM_CATALOG = [
   { programa: 'ESPECIALIZACION EN SEGURIDAD INFORMATICA', codigoSnies: '117789', facultad: 'Ingenieria', nivelFormacion: 'Posgrado' }
 ];
 
-const FACULTY_OPTIONS = Array.from(new Set(PROGRAM_CATALOG.map((item) => item.facultad))).sort((a, b) => a.localeCompare(b, 'es'));
+const FACULTY_OPTIONS = Array.from(new Set((PROGRAM_CATALOG || []).map((item) => item?.facultad).filter(Boolean))).sort((a, b) => String(a).localeCompare(String(b), 'es'));
 const PROGRAM_BY_NAME = PROGRAM_CATALOG.reduce((acc, item) => {
   acc[item.programa] = item;
   return acc;
@@ -1772,26 +1772,7 @@ function Autoevaluacion() {
             </Paper>
               </Box>
 
-              <Box sx={{ width: '100%', minWidth: 0, display: 'none' }}>
-            <Paper elevation={0} sx={{ p: 2.2, border: '1px solid #e2e8f0', borderRadius: 3, height: 390, width: '100%', boxSizing: 'border-box' }}>
-              <Typography sx={{ fontWeight: 950, color: '#0f172a', textAlign: 'center', mb: 1 }}>Mapa importancia / calificación</Typography>
-              <ResponsiveContainer width="100%" height={320}>
-                <ScatterChart margin={{ top: 18, right: 24, bottom: 34, left: 12 }}>
-                  <CartesianGrid strokeDasharray="3 3" />
-                  <XAxis type="number" dataKey="importancia" name="grado de importancia" domain={[0, 'dataMax + 1']} tick={{ fontSize: 12 }} label={{ value: 'Grado de importancia', position: 'insideBottom', offset: -10 }} />
-                  <YAxis type="number" dataKey="calificacion" name="calificación" domain={[0, 5]} tick={{ fontSize: 12 }} label={{ value: 'Calificación', angle: -90, position: 'insideLeft' }} />
-                  <ZAxis range={[120, 220]} />
-                  <Tooltip cursor={{ strokeDasharray: '3 3' }} />
-                  <Scatter data={factorCaracteristicas || []} name="Características">
-                    <LabelList dataKey="codigo" position="top" style={{ fontSize: 11, fontWeight: 900, fill: '#0f172a' }} />
-                    {factorCaracteristicas?.map((item) => (
-                      <Cell key={item.caracteristica} fill={(item.cumplimiento || '').includes('ALTO') || (item.cumplimiento || '').includes('PLENAMENTE') ? '#1f4e95' : '#d97706'} />
-                    ))}
-                  </Scatter>
-                </ScatterChart>
-              </ResponsiveContainer>
-            </Paper>
-              </Box>
+              {/* Mapa importancia / calificación removido temporalmente por estabilidad */}
             </Box>
           </Box>
 
