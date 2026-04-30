@@ -1082,15 +1082,17 @@ function Autoevaluacion() {
       acc[name].total += 1;
       return acc;
     }, {})
-  ).sort((a, b) => b.total - a.total);
-  Object.assign(resumen, scopedResumen);
-  cumplimiento.splice(0, cumplimiento.length, ...scopedCumplimiento);
-  factores.splice(0, factores.length, ...scopedFactores);
-  instrumentos.splice(0, instrumentos.length, ...scopedInstrumentos);
+  ).sort((a, b) => (b.total || 0) - (a.total || 0));
+  
+  // Eliminadas variables globales que causaban inestabilidad...
+
+  const factores = [...(scopedFactores || [])];
+  const instrumentos = [...(scopedInstrumentos || [])];
+  const cumplimiento = [...(scopedCumplimiento || [])];
 
   const selectedFactorNumber = factorNumber(selectedFactor);
-  const selectedFactorData = scopedFactores.find((item) => factorNumber(item.factor) === selectedFactorNumber) || scopedFactores[0];
-  const factorAspectos = scopedAspectos.filter((item) => factorNumber(item.factor) === factorNumber(selectedFactorData?.factor));
+  const selectedFactorData = (scopedFactores || []).find((item) => factorNumber(item.factor) === selectedFactorNumber) || scopedFactores[0];
+  const factorAspectos = (scopedAspectos || []).filter((item) => factorNumber(item.factor) === factorNumber(selectedFactorData?.factor));
   const factorCaracteristicas = Object.values(
     (factorAspectos || []).reduce((acc, item) => {
       if (!item) return acc;
