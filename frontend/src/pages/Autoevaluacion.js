@@ -94,7 +94,7 @@ const VIEW_TONES = {
 
 const AUTOEVALUACION_BASES = [
   {
-    key: 'Autoevaluación',
+    key: 'autoevaluacion_base',
     title: 'Autoevaluacion',
     description: 'Factores, caracteristicas, aspectos, indicadores, calificaciones y evidencias.',
     color: '#1f4e95',
@@ -450,7 +450,7 @@ function Autoevaluacion() {
   const [selectedFactor, setSelectedFactor] = useState('');
   const [dashboard, setDashboard] = useState(null);
   const [baseManagerOpen, setBaseManagerOpen] = useState(false);
-  const [activeDataSegment, setActiveDataSegment] = useState('AutoevaluaciÃ³n');
+  const [activeDataSegment, setActiveDataSegment] = useState('autoevaluacion_base');
   const [importingSubbase, setImportingSubbase] = useState('');
   const [editMode, setEditMode] = useState(false);
   const [savingEdits, setSavingEdits] = useState(false);
@@ -1283,7 +1283,7 @@ function Autoevaluacion() {
             <Button
               key={item.key}
               onClick={() => setActiveDataSegment(item.key)}
-              startIcon={item.icon ? React.cloneElement(item.icon, { fontSize: 'small' }) : null}
+              startIcon={item.icon || null}
               sx={{
                 minHeight: 58,
                 borderRadius: 2,
@@ -1306,7 +1306,7 @@ function Autoevaluacion() {
             <Stack direction={{ xs: 'column', lg: 'row' }} spacing={1.5} justifyContent="space-between" alignItems={{ xs: 'stretch', lg: 'center' }}>
               <Stack direction="row" spacing={1.2} alignItems="center">
                 <Box sx={{ width: 42, height: 42, borderRadius: 2, display: 'grid', placeItems: 'center', bgcolor: `${item.color}16`, color: item.color }}>
-                  {item.icon ? React.cloneElement(item.icon, { fontSize: 'small' }) : null}
+                  {item.icon || null}
                 </Box>
                 <Box>
                   <Typography sx={{ fontWeight: 950, color: '#0f172a' }}>{item.title}</Typography>
