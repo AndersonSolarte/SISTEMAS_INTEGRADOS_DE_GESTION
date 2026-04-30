@@ -1279,11 +1279,11 @@ function Autoevaluacion() {
           </Typography>
         </Box>
         <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', md: 'repeat(3, minmax(0, 1fr))' }, gap: 1 }}>
-          {AUTOEVALUACION_BASES.map((item) => (
+          {(AUTOEVALUACION_BASES || []).map((item) => (
             <Button
               key={item.key}
               onClick={() => setActiveDataSegment(item.key)}
-              startIcon={React.cloneElement(item.icon, { fontSize: 'small' })}
+              startIcon={item.icon ? React.cloneElement(item.icon, { fontSize: 'small' }) : null}
               sx={{
                 minHeight: 58,
                 borderRadius: 2,
@@ -1301,12 +1301,12 @@ function Autoevaluacion() {
             </Button>
           ))}
         </Box>
-        {AUTOEVALUACION_BASES.filter((item) => item.key === activeDataSegment).map((item) => (
+        {(AUTOEVALUACION_BASES || []).filter((item) => item.key === activeDataSegment).map((item) => (
           <Paper key={item.key} elevation={0} sx={{ p: 1.8, border: `1px solid ${item.color}44`, borderRadius: 3, bgcolor: 'white' }}>
             <Stack direction={{ xs: 'column', lg: 'row' }} spacing={1.5} justifyContent="space-between" alignItems={{ xs: 'stretch', lg: 'center' }}>
               <Stack direction="row" spacing={1.2} alignItems="center">
                 <Box sx={{ width: 42, height: 42, borderRadius: 2, display: 'grid', placeItems: 'center', bgcolor: `${item.color}16`, color: item.color }}>
-                  {React.cloneElement(item.icon, { fontSize: 'small' })}
+                  {item.icon ? React.cloneElement(item.icon, { fontSize: 'small' }) : null}
                 </Box>
                 <Box>
                   <Typography sx={{ fontWeight: 950, color: '#0f172a' }}>{item.title}</Typography>
@@ -1330,8 +1330,8 @@ function Autoevaluacion() {
           <Paper elevation={0} sx={{ p: 1.8, border: '1px solid #99d5ca', borderRadius: 3, bgcolor: 'white' }}>
             <Typography sx={{ fontWeight: 950, mb: 1 }}>Formulario Equipo de autoevaluacion</Typography>
             <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', md: 'repeat(2, minmax(0, 1fr))' }, gap: 1 }}>
-              <TextField select size="small" label="Programa" value={newParticipant.programa || programa || resumen.programaActivo || ''} onChange={(event) => setNewParticipant((prev) => ({ ...prev, programa: event.target.value }))}>
-                {PROGRAM_CATALOG.map((item) => <MenuItem key={item.programa} value={item.programa}>{item.programa}</MenuItem>)}
+              <TextField select size="small" label="Programa" value={newParticipant.programa || programa || resumen?.programaActivo || ''} onChange={(event) => setNewParticipant((prev) => ({ ...prev, programa: event.target.value }))}>
+                {(PROGRAM_CATALOG || []).map((item) => <MenuItem key={item.programa} value={item.programa}>{item.programa}</MenuItem>)}
               </TextField>
               <TextField select size="small" label="Alcance" value={newParticipant.alcance} onChange={(event) => setNewParticipant((prev) => ({ ...prev, alcance: event.target.value }))}>
                 <MenuItem value="RENOVACION REGISTRO CALIFICADO">RENOVACION REGISTRO CALIFICADO</MenuItem>
