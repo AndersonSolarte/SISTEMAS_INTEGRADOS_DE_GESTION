@@ -10,14 +10,25 @@ import {
   Hub as HubIcon
 } from '@mui/icons-material';
 import PlaneacionEfectividad from './PlaneacionEfectividad';
+import Autoevaluacion from './Autoevaluacion';
+import { useAuth } from '../context/AuthContext';
+import { ROLES } from '../constants/roles';
 
 function PlaneacionEstrategica() {
   const navigate = useNavigate();
   const location = useLocation();
+  const { user } = useAuth();
   const view = useMemo(() => new URLSearchParams(location.search).get('view') || '', [location.search]);
   const gpPanel = useMemo(() => new URLSearchParams(location.search).get('panel') || '', [location.search]);
-  const isConstructionView = ['autoevaluacion', 'registros-calificados'].includes(view);
-  const isGestionProcesosInfoView = view === 'gestion-procesos-informacion';
+  const allowedViews = useMemo(() => {
+    if (user?.role === ROLES.REGISTROS_CALIFICADOS) {
+      return new Set(['registros-calificados']);
+    }
+    return new Set(['planeacion-efectividad', 'autoevaluacion', 'registros-calificados', 'gestion-procesos-informacion']);
+  }, [user?.role]);
+  const currentView = view && allowedViews.has(view) ? view : '';
+  const isConstructionView = ['registros-calificados'].includes(currentView);
+  const isGestionProcesosInfoView = currentView === 'gestion-procesos-informacion';
   const isGestionProcesosModulesView = isGestionProcesosInfoView && gpPanel === 'gestion_procesos';
 
   const headerConfig = useMemo(() => {
@@ -28,21 +39,21 @@ function PlaneacionEstrategica() {
         icon: <HubIcon sx={{ color: '#1d4ed8' }} />
       };
     }
-    if (view === 'planeacion-efectividad') {
+    if (currentView === 'planeacion-efectividad') {
       return {
         title: 'Planeación y Efectividad',
         subtitle: 'Seguimiento, control y resultados del módulo estratégico.',
         icon: <TimelineIcon sx={{ color: '#1d4ed8' }} />
       };
     }
-    if (view === 'autoevaluacion') {
+    if (currentView === 'autoevaluacion') {
       return {
         title: 'Autoevaluación',
         subtitle: 'Planeación de mejora y evaluación continua del módulo.',
         icon: <FactCheckIcon sx={{ color: '#1d4ed8' }} />
       };
     }
-    if (view === 'registros-calificados') {
+    if (currentView === 'registros-calificados') {
       return {
         title: 'Registros Calificados y Acreditación',
         subtitle: 'Gestión estratégica de evidencias, renovaciones y acreditación.',
@@ -61,11 +72,12 @@ function PlaneacionEstrategica() {
       subtitle: 'Administra submódulos, consolidados y resultados institucionales.',
       icon: <InsightsIcon sx={{ color: '#1d4ed8' }} />
     };
-  }, [isGestionProcesosInfoView, isGestionProcesosModulesView, view]);
+  }, [currentView, isGestionProcesosInfoView, isGestionProcesosModulesView]);
 
   const modules = [
     {
       title: 'Planeación y Efectividad',
+      view: 'planeacion-efectividad',
       description: 'Planes de acción, seguimiento y dashboard de cumplimiento.',
       path: '/dashboard/planeacion-estrategica?view=planeacion-efectividad',
       icon: <TimelineIcon sx={{ fontSize: 44 }} />,
@@ -74,14 +86,16 @@ function PlaneacionEstrategica() {
     },
     {
       title: 'Autoevaluación',
+      view: 'autoevaluacion',
       description: 'Planes de mejoramiento y tableros de autoevaluación.',
       path: '/dashboard/planeacion-estrategica?view=autoevaluacion',
       icon: <FactCheckIcon sx={{ fontSize: 44 }} />,
       active: true,
-      construction: true
+      construction: false
     },
     {
       title: 'Registros Calificados y Acreditación',
+      view: 'registros-calificados',
       description: 'Seguimiento de evidencias, renovaciones y acreditación institucional.',
       path: '/dashboard/planeacion-estrategica?view=registros-calificados',
       icon: <VerifiedIcon sx={{ fontSize: 44 }} />,
@@ -90,17 +104,19 @@ function PlaneacionEstrategica() {
     },
     {
       title: 'Gestión por Procesos y la Información',
+      view: 'gestion-procesos-informacion',
       description: 'Acceso a tableros estadísticos y consulta documental.',
       path: '/dashboard/planeacion-estrategica?view=gestion-procesos-informacion',
       icon: <HubIcon sx={{ fontSize: 44 }} />,
       active: true
     }
   ];
+  const visibleModules = modules.filter((module) => allowedViews.has(module.view));
 
   return (
     <Fade in={true}>
       <Box>
-        {view !== 'planeacion-efectividad' && (
+        {currentView !== 'planeacion-efectividad' && currentView !== 'autoevaluacion' && (
           <Paper
             elevation={0}
             sx={{
@@ -127,7 +143,7 @@ function PlaneacionEstrategica() {
           </Paper>
         )}
 
-        {!view && !isGestionProcesosInfoView && (
+        {!currentView && !isGestionProcesosInfoView && (
           <Box
             sx={{
               display: 'grid',
@@ -136,7 +152,7 @@ function PlaneacionEstrategica() {
               alignItems: 'stretch'
             }}
           >
-            {modules.map((module) => (
+            {visibleModules.map((module) => (
               <Card
                 key={module.title}
                 sx={{
@@ -181,9 +197,15 @@ function PlaneacionEstrategica() {
           </Box>
         )}
 
-        {view === 'planeacion-efectividad' && (
+        {currentView === 'planeacion-efectividad' && (
           <Box sx={{ mt: 3 }}>
             <PlaneacionEfectividad />
+          </Box>
+        )}
+
+        {currentView === 'autoevaluacion' && (
+          <Box sx={{ mt: 3 }}>
+            <Autoevaluacion />
           </Box>
         )}
 
@@ -376,7 +398,7 @@ function PlaneacionEstrategica() {
           </Box>
         )}
 
-        {!view && !isGestionProcesosInfoView && (
+        {!currentView && !isGestionProcesosInfoView && (
           <Box sx={{ mt: 3 }}>
           <Button
             variant="outlined"

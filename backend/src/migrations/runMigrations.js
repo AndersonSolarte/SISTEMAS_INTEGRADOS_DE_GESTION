@@ -15,6 +15,36 @@ const getTableCount = async (tableName) => {
   return Number(rows?.[0]?.c || 0);
 };
 
+const ensureUserRoleEnumValues = async () => {
+  const roleValues = [
+    'planeacion_estrategica',
+    'planeacion_efectividad',
+    'autoevaluacion',
+    'gestion_informacion',
+    'gestion_por_procesos',
+    'registros_calificados_acreditacion'
+  ];
+
+  for (const role of roleValues) {
+    await sequelize.query(`
+      DO $$
+      BEGIN
+        IF EXISTS (SELECT 1 FROM pg_type WHERE typname = 'enum_users_role')
+          AND NOT EXISTS (
+            SELECT 1
+            FROM pg_enum e
+            JOIN pg_type t ON e.enumtypid = t.oid
+            WHERE t.typname = 'enum_users_role' AND e.enumlabel = '${role}'
+          )
+        THEN
+          ALTER TYPE "enum_users_role" ADD VALUE '${role}';
+        END IF;
+      END
+      $$;
+    `);
+  }
+};
+
 const repairMatriculadosFromEstadisticas = async () => {
   const hasMatriculados = await getTableCount('poblacional_matriculados');
   if (hasMatriculados > 0) {
@@ -230,6 +260,7 @@ const runMigrations = async () => {
     await testConnection();
     const qi = sequelize.getQueryInterface();
 
+    await ensureUserRoleEnumValues();
     await models.User.sync();
     await models.UserModulePermission.sync();
     await models.DiccionarioCorreccionTexto.sync();
@@ -271,6 +302,28 @@ const runMigrations = async () => {
     await models.GeorreferenciaMunicipio.sync();
     await models.UserActivityLog.sync();
     await models.PlanAccion.sync();
+    await models.Autoevaluacion.sync();
+    await models.AutoevaluacionParticipante.sync();
+    await models.AutoevaluacionPrograma.sync();
+
+    // Workflow plan_accion: agregar columnas no destructivas + backfill de filas legadas como 'Aprobado'.
+    await ensureColumn(qi, 'plan_accion', 'dependencia', { type: DataTypes.STRING(400), allowNull: true });
+    await ensureColumn(qi, 'plan_accion', 'plan_codigo', { type: DataTypes.STRING(80), allowNull: true });
+    await ensureColumn(qi, 'plan_accion', 'estado_workflow', { type: DataTypes.STRING(40), allowNull: true });
+    await ensureColumn(qi, 'plan_accion', 'revisor_estrategico_id', { type: DataTypes.INTEGER, allowNull: true });
+    await ensureColumn(qi, 'plan_accion', 'responsable_id', { type: DataTypes.INTEGER, allowNull: true });
+    await ensureColumn(qi, 'plan_accion', 'aprobado_por', { type: DataTypes.INTEGER, allowNull: true });
+    await ensureColumn(qi, 'plan_accion', 'fecha_envio_estrategica', { type: DataTypes.DATE, allowNull: true });
+    await ensureColumn(qi, 'plan_accion', 'fecha_revisado_estrategica', { type: DataTypes.DATE, allowNull: true });
+    await ensureColumn(qi, 'plan_accion', 'fecha_envio_responsable', { type: DataTypes.DATE, allowNull: true });
+    await ensureColumn(qi, 'plan_accion', 'fecha_revisado_responsable', { type: DataTypes.DATE, allowNull: true });
+    await ensureColumn(qi, 'plan_accion', 'fecha_aprobado', { type: DataTypes.DATE, allowNull: true });
+    await ensureColumn(qi, 'plan_accion', 'cabecera_plan', { type: DataTypes.JSONB, allowNull: true });
+    await ensureColumn(qi, 'plan_accion', 'deleted_at', { type: DataTypes.DATE, allowNull: true });
+    await sequelize.query("UPDATE plan_accion SET estado_workflow = 'Aprobado' WHERE estado_workflow IS NULL");
+    await sequelize.query("CREATE INDEX IF NOT EXISTS plan_accion_plan_codigo_idx ON plan_accion (plan_codigo)");
+    await sequelize.query("CREATE INDEX IF NOT EXISTS plan_accion_estado_idx ON plan_accion (estado_workflow)");
+    await sequelize.query("CREATE INDEX IF NOT EXISTS plan_accion_responsable_idx ON plan_accion (responsable_id)");
 
     await qi.changeColumn('estadisticas', 'programa', { type: DataTypes.STRING(500), allowNull: true });
     await qi.changeColumn('estadisticas', 'dependencia', { type: DataTypes.STRING(500), allowNull: true });

@@ -37,6 +37,9 @@ const MatriculadosUbicacionIncidencia = require('./MatriculadosUbicacionIncidenc
 const UserActivityLog = require('./UserActivityLog');
 const VaEquivalenciaConfig = require('./VaEquivalenciaConfig');
 const PlanAccion = require('./PlanAccion');
+const Autoevaluacion = require('./Autoevaluacion');
+const AutoevaluacionParticipante = require('./AutoevaluacionParticipante');
+const AutoevaluacionPrograma = require('./AutoevaluacionPrograma');
 
 // Relaciones existentes
 MacroProceso.hasMany(Proceso, { foreignKey: 'macro_proceso_id', as: 'procesos' });
@@ -173,6 +176,19 @@ PlanAccion.belongsTo(User, { foreignKey: 'creado_por', as: 'creador' });
 User.hasMany(PlanAccion, { foreignKey: 'actualizado_por', as: 'planAccionActualizados' });
 PlanAccion.belongsTo(User, { foreignKey: 'actualizado_por', as: 'actualizador' });
 
+User.hasMany(Autoevaluacion, { foreignKey: 'creado_por', as: 'autoevaluacionCreadas' });
+Autoevaluacion.belongsTo(User, { foreignKey: 'creado_por', as: 'creador' });
+User.hasMany(Autoevaluacion, { foreignKey: 'actualizado_por', as: 'autoevaluacionActualizadas' });
+Autoevaluacion.belongsTo(User, { foreignKey: 'actualizado_por', as: 'actualizador' });
+User.hasMany(AutoevaluacionParticipante, { foreignKey: 'creado_por', as: 'autoevaluacionParticipantesCreados' });
+AutoevaluacionParticipante.belongsTo(User, { foreignKey: 'creado_por', as: 'creador' });
+User.hasMany(AutoevaluacionParticipante, { foreignKey: 'actualizado_por', as: 'autoevaluacionParticipantesActualizados' });
+AutoevaluacionParticipante.belongsTo(User, { foreignKey: 'actualizado_por', as: 'actualizador' });
+User.hasMany(AutoevaluacionPrograma, { foreignKey: 'creado_por', as: 'autoevaluacionProgramasCreados' });
+AutoevaluacionPrograma.belongsTo(User, { foreignKey: 'creado_por', as: 'creador' });
+User.hasMany(AutoevaluacionPrograma, { foreignKey: 'actualizado_por', as: 'autoevaluacionProgramasActualizados' });
+AutoevaluacionPrograma.belongsTo(User, { foreignKey: 'actualizado_por', as: 'actualizador' });
+
 module.exports = {
   User,
   UserModulePermission,
@@ -212,5 +228,8 @@ module.exports = {
   MatriculadosUbicacionIncidencia,
   UserActivityLog,
   VaEquivalenciaConfig,
-  PlanAccion
+  PlanAccion,
+  Autoevaluacion,
+  AutoevaluacionParticipante,
+  AutoevaluacionPrograma
 };

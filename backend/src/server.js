@@ -45,7 +45,9 @@ app.use('/api/favoritos', require('./routes/favoritoRoutes'));
 app.use('/api', require('./routes/catalogoRoutes'));
 app.use('/api/import', require('./routes/importRoutes'));
 app.use('/api/users', require('./routes/userRoutes'));
+app.use('/api/evidencias', require('./routes/evidenciaRoutes'));
 app.use('/api/planeacion/gestion-informacion', require('./routes/gestionInformacionRoutes'));
+app.use('/api/planeacion/plan-accion-workflow', require('./routes/planAccionWorkflowRoutes'));
 app.use('/api/planeacion/gestion-informacion/saber-pro', require('./routes/saberProAnalyticsRoutes'));
 app.use('/api/planeacion/gestion-informacion/saber-pro/consulta', require('./routes/consultaValidacionRoutes'));
 app.use('/api/admin/activity', require('./routes/activityRoutes'));
@@ -189,6 +191,17 @@ testConnection()
       console.log('[gestion-informacion] Tabla plan_accion lista.');
     } catch (e) {
       console.warn('[gestion-informacion] No se pudo sincronizar plan_accion:', e?.message);
+    }
+    try {
+      const Autoevaluacion = require('./models/Autoevaluacion');
+      const AutoevaluacionParticipante = require('./models/AutoevaluacionParticipante');
+      const AutoevaluacionPrograma = require('./models/AutoevaluacionPrograma');
+      await Autoevaluacion.sync();
+      await AutoevaluacionParticipante.sync();
+      await AutoevaluacionPrograma.sync();
+      console.log('[gestion-informacion] Tablas autoevaluacion listas.');
+    } catch (e) {
+      console.warn('[gestion-informacion] No se pudo sincronizar autoevaluacion:', e?.message);
     }
     startServer(DEFAULT_PORT);
   })

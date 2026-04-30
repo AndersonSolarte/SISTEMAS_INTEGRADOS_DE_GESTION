@@ -6,7 +6,8 @@ const roleValues = [
   'planeacion_efectividad',
   'autoevaluacion',
   'gestion_informacion',
-  'gestion_por_procesos'
+  'gestion_por_procesos',
+  'registros_calificados_acreditacion'
 ];
 
 const run = async () => {

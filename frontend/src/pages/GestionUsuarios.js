@@ -24,12 +24,14 @@ function GestionUsuarios() {
     { key: 'planeacion_estrategica', label: 'Planeación Estratégica' },
     { key: 'planeacion_efectividad', label: 'Planeación y Efectividad' },
     { key: 'autoevaluacion', label: 'Autoevaluación' },
+    { key: 'registros_calificados', label: 'Registros Calificados y Acreditación' },
     { key: 'aseguramiento_calidad', label: 'Administración del Sistema Documental' },
     { key: 'gestion_usuarios', label: 'Gestión de Usuarios' }
   ];
   const GI_MODULE_OPTIONS = [
     { key: 'gestion_bases_datos', label: 'Gestión de Bases de Datos' },
-    { key: 'estadistica_institucional', label: 'Estadística Institucional' }
+    { key: 'estadistica_institucional', label: 'Estadística Institucional' },
+    { key: 'autoevaluacion', label: 'Autoevaluación' }
   ];
   const GESTION_PROCESOS_DASHBOARD_OPTIONS = [
     { key: 'estadistica_documental', label: 'Estadística Documental' }
@@ -138,6 +140,7 @@ function GestionUsuarios() {
         ROLES.PLANEACION_ESTRATEGICA,
         ROLES.PLANEACION_EFECTIVIDAD,
         ROLES.AUTOEVALUACION,
+        ROLES.REGISTROS_CALIFICADOS,
         ROLES.GESTION_INFORMACION,
         ROLES.GESTION_PROCESOS,
         ROLES.CONSULTA
@@ -149,6 +152,7 @@ function GestionUsuarios() {
         ROLES.PLANEACION_ESTRATEGICA,
         ROLES.PLANEACION_EFECTIVIDAD,
         ROLES.AUTOEVALUACION,
+        ROLES.REGISTROS_CALIFICADOS,
         ROLES.GESTION_INFORMACION
       ];
     }
@@ -602,6 +606,7 @@ function GestionUsuarios() {
     if (role === ROLES.GESTION_INFORMACION) return 'success';
     if (role === ROLES.GESTION_PROCESOS) return 'info';
     if (role === ROLES.AUTOEVALUACION) return 'warning';
+    if (role === ROLES.REGISTROS_CALIFICADOS) return 'default';
     return 'primary';
   };
 

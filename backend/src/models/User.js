@@ -17,7 +17,8 @@ const User = sequelize.define('users', {
       ROLES.PLANEACION_ESTRATEGICA,
       ROLES.PLANEACION_EFECTIVIDAD,
       ROLES.AUTOEVALUACION,
-      ROLES.GESTION_INFORMACION
+      ROLES.GESTION_INFORMACION,
+      ROLES.REGISTROS_CALIFICADOS
     ),
     allowNull: false,
     defaultValue: ROLES.CONSULTA

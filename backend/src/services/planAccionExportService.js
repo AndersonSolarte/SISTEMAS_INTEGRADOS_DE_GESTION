@@ -123,7 +123,7 @@ const COLUMN_WIDTHS = [
   { col: 'R', w: 10 }
 ];
 
-const buildPlanAccionWorkbook = async ({ planData = {}, actividades = [] } = {}) => {
+const buildPlanAccionWorkbook = async ({ planData = {}, actividades = [], corresponsabilidades = [] } = {}) => {
   const workbook = new ExcelJS.Workbook();
   workbook.creator = 'Sistema de Gestión por Procesos - Universidad CESMAG';
   workbook.created = new Date();
@@ -221,20 +221,21 @@ const buildPlanAccionWorkbook = async ({ planData = {}, actividades = [] } = {})
     applyHeaderStyle(cell, { red: Boolean(red) });
   });
 
-  const totalRows = Math.max(MIN_DATA_ROWS, actividades.length);
+  const tieneCorresponsabilidades = Array.isArray(corresponsabilidades) && corresponsabilidades.length > 0;
+  const totalRows = tieneCorresponsabilidades
+    ? Math.max(1, actividades.length)
+    : Math.max(MIN_DATA_ROWS, actividades.length);
   const firstDataRow = HEADER_ROWS_BEFORE_DATA + 1;
 
-  for (let i = 0; i < totalRows; i += 1) {
-    const rowNumber = firstDataRow + i;
+  const writeActivityRow = (activity = {}, rowNumber, idx) => {
     const row = sheet.getRow(rowNumber);
     row.height = 42;
 
-    const activity = actividades[i] || {};
     const avanceIp = normalizePercentValue(activity.avance_ip);
     const avanceIip = normalizePercentValue(activity.avance_iip);
 
     const cells = [
-      { col: 'B', value: i + 1, opts: { center: true, number: true } },
+      { col: 'B', value: idx + 1, opts: { center: true, number: true } },
       { col: 'C', value: activity.objetivo_estrategico || '' },
       { col: 'D', value: activity.lineamiento_estrategico || '' },
       { col: 'E', value: activity.actividad || '' },
@@ -266,41 +267,76 @@ const buildPlanAccionWorkbook = async ({ planData = {}, actividades = [] } = {})
     };
     applyDataStyle(totalCell, { percent: true });
     totalCell.font = { name: 'Calibri', bold: true, size: 10 };
+  };
+
+  for (let i = 0; i < totalRows; i += 1) {
+    writeActivityRow(actividades[i] || {}, firstDataRow + i, i);
   }
 
-  const lastDataRow = firstDataRow + totalRows - 1;
+  const directLastDataRow = firstDataRow + totalRows - 1;
+  let corrFirstDataRow = null;
+  let corrLastDataRow = null;
 
-  sheet.addConditionalFormatting({
-    ref: `R${firstDataRow}:R${lastDataRow}`,
-    rules: [
-      {
-        type: 'expression',
-        formulae: [`AND(ISNUMBER(R${firstDataRow}),R${firstDataRow}>=1)`],
-        style: {
-          fill: { type: 'pattern', pattern: 'solid', bgColor: { argb: COLORS.greenOk } },
-          font: { bold: true }
+  if (tieneCorresponsabilidades) {
+    const titleRowNumber = directLastDataRow + 1;
+    sheet.getRow(titleRowNumber).height = 24;
+    sheet.mergeCells(`B${titleRowNumber}:R${titleRowNumber}`);
+    const title = sheet.getCell(`B${titleRowNumber}`);
+    title.value = 'ACTIVIDADES EN CORRESPONSABILIDAD';
+    title.font = { name: 'Calibri', bold: true, italic: true, size: 12, color: { argb: 'FF92400E' } };
+    title.alignment = { vertical: 'middle', horizontal: 'center' };
+    fillCell(title, COLORS.yellowMid);
+    setBorders(title, COLORS.softBorder);
+
+    corresponsabilidades.forEach((activity, idx) => {
+      const rowNumber = titleRowNumber + 1 + idx;
+      writeActivityRow(activity || {}, rowNumber, idx);
+      ['B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'K', 'L', 'M', 'N', 'P', 'Q', 'R'].forEach((col) => {
+        fillCell(sheet.getCell(`${col}${rowNumber}`), 'FFFFFBEB');
+      });
+    });
+
+    corrFirstDataRow = titleRowNumber + 1;
+    corrLastDataRow = titleRowNumber + corresponsabilidades.length;
+  }
+
+  const addTotalConditionalFormatting = (startRow, endRow) => {
+    if (!startRow || !endRow || endRow < startRow) return;
+    sheet.addConditionalFormatting({
+      ref: `R${startRow}:R${endRow}`,
+      rules: [
+        {
+          type: 'expression',
+          formulae: [`AND(ISNUMBER(R${startRow}),R${startRow}>=1)`],
+          style: {
+            fill: { type: 'pattern', pattern: 'solid', bgColor: { argb: COLORS.greenOk } },
+            font: { bold: true }
+          },
+          priority: 1
         },
-        priority: 1
-      },
-      {
-        type: 'expression',
-        formulae: [`AND(ISNUMBER(R${firstDataRow}),R${firstDataRow}>=0.5,R${firstDataRow}<1)`],
-        style: {
-          fill: { type: 'pattern', pattern: 'solid', bgColor: { argb: COLORS.yellowMid } },
-          font: { bold: true }
+        {
+          type: 'expression',
+          formulae: [`AND(ISNUMBER(R${startRow}),R${startRow}>=0.5,R${startRow}<1)`],
+          style: {
+            fill: { type: 'pattern', pattern: 'solid', bgColor: { argb: COLORS.yellowMid } },
+            font: { bold: true }
+          },
+          priority: 2
         },
-        priority: 2
-      },
-      {
-        type: 'expression',
-        formulae: [`OR(NOT(ISNUMBER(R${firstDataRow})),R${firstDataRow}<0.5)`],
-        style: {
-          fill: { type: 'pattern', pattern: 'solid', bgColor: { argb: COLORS.redEmpty } }
-        },
-        priority: 3
-      }
-    ]
-  });
+        {
+          type: 'expression',
+          formulae: [`OR(NOT(ISNUMBER(R${startRow})),R${startRow}<0.5)`],
+          style: {
+            fill: { type: 'pattern', pattern: 'solid', bgColor: { argb: COLORS.redEmpty } }
+          },
+          priority: 3
+        }
+      ]
+    });
+  };
+
+  addTotalConditionalFormatting(firstDataRow, directLastDataRow);
+  addTotalConditionalFormatting(corrFirstDataRow, corrLastDataRow);
 
   sheet.pageSetup.margins = { left: 0.3, right: 0.3, top: 0.4, bottom: 0.4, header: 0.2, footer: 0.2 };
 

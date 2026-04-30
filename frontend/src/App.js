@@ -19,6 +19,8 @@ import PlaneacionEstrategica from './pages/PlaneacionEstrategica';
 import PlaneacionEfectividad from './pages/PlaneacionEfectividad';
 import Autoevaluacion from './pages/Autoevaluacion';
 import GestionInformacion from './pages/GestionInformacion';
+import PlanAccionRevision from './pages/PlanAccionRevision';
+import PlanAccionConsulta from './pages/PlanAccionConsulta';
 import SessionTimeoutModal from './components/SessionTimeoutModal';
 import { ROLES } from './constants/roles';
 
@@ -88,6 +90,7 @@ function App() {
                           ROLES.PLANEACION_EFECTIVIDAD,
                           ROLES.AUTOEVALUACION,
                           ROLES.GESTION_INFORMACION,
+                          ROLES.REGISTROS_CALIFICADOS,
                           ROLES.CONSULTA
                         ]}
                         permissionKey="buscar_documentos"
@@ -100,8 +103,9 @@ function App() {
                     path="planeacion-estrategica"
                     element={
                       <RoleRoute
-                        allowedRoles={[ROLES.ADMINISTRADOR, ROLES.PLANEACION_ESTRATEGICA]}
+                        allowedRoles={[ROLES.ADMINISTRADOR, ROLES.PLANEACION_ESTRATEGICA, ROLES.REGISTROS_CALIFICADOS]}
                         permissionKey="planeacion_estrategica"
+                        deniedRoles={[ROLES.PLANEACION_EFECTIVIDAD, ROLES.AUTOEVALUACION]}
                       >
                         <PlaneacionEstrategica />
                       </RoleRoute>
@@ -111,8 +115,9 @@ function App() {
                     path="planeacion-efectividad"
                     element={
                       <RoleRoute
-                        allowedRoles={[ROLES.ADMINISTRADOR, ROLES.PLANEACION_ESTRATEGICA, ROLES.PLANEACION_EFECTIVIDAD]}
+                        allowedRoles={[ROLES.ADMINISTRADOR, ROLES.PLANEACION_EFECTIVIDAD]}
                         permissionKey="planeacion_efectividad"
+                        deniedRoles={[ROLES.PLANEACION_ESTRATEGICA, ROLES.AUTOEVALUACION, ROLES.REGISTROS_CALIFICADOS]}
                       >
                         <PlaneacionEfectividad />
                       </RoleRoute>
@@ -124,6 +129,7 @@ function App() {
                       <RoleRoute
                         allowedRoles={[ROLES.ADMINISTRADOR, ROLES.PLANEACION_ESTRATEGICA, ROLES.AUTOEVALUACION]}
                         permissionKey="autoevaluacion"
+                        deniedRoles={[ROLES.REGISTROS_CALIFICADOS, ROLES.PLANEACION_EFECTIVIDAD]}
                       >
                         <Autoevaluacion />
                       </RoleRoute>
@@ -133,10 +139,35 @@ function App() {
                     path="gestion-informacion"
                     element={
                       <RoleRoute
-                        allowedRoles={[ROLES.ADMINISTRADOR, ROLES.PLANEACION_ESTRATEGICA, ROLES.PLANEACION_EFECTIVIDAD, ROLES.AUTOEVALUACION, ROLES.GESTION_INFORMACION, ROLES.GESTION_PROCESOS]}
+                        allowedRoles={[ROLES.ADMINISTRADOR, ROLES.PLANEACION_ESTRATEGICA, ROLES.GESTION_INFORMACION, ROLES.GESTION_PROCESOS]}
                         permissionKey="gestion_informacion"
+                        deniedRoles={[ROLES.PLANEACION_EFECTIVIDAD, ROLES.AUTOEVALUACION, ROLES.REGISTROS_CALIFICADOS]}
                       >
                         <GestionInformacion />
+                      </RoleRoute>
+                    }
+                  />
+
+                  {/* Bandeja de revisión Plan de Acción - Planeación Estratégica */}
+                  <Route
+                    path="plan-accion-revision"
+                    element={
+                      <RoleRoute
+                        allowedRoles={[ROLES.ADMINISTRADOR, ROLES.PLANEACION_ESTRATEGICA]}
+                      >
+                        <PlanAccionRevision />
+                      </RoleRoute>
+                    }
+                  />
+
+                  {/* Plan de Acción del responsable de dependencia - Consulta */}
+                  <Route
+                    path="plan-accion-mi-plan"
+                    element={
+                      <RoleRoute
+                        allowedRoles={[ROLES.ADMINISTRADOR, ROLES.CONSULTA]}
+                      >
+                        <PlanAccionConsulta />
                       </RoleRoute>
                     }
                   />
@@ -148,6 +179,7 @@ function App() {
                       <RoleRoute
                         allowedRoles={[ROLES.ADMINISTRADOR, ROLES.PLANEACION_ESTRATEGICA, ROLES.GESTION_PROCESOS]}
                         permissionKey="gestion_usuarios"
+                        deniedRoles={[ROLES.PLANEACION_EFECTIVIDAD, ROLES.AUTOEVALUACION, ROLES.REGISTROS_CALIFICADOS, ROLES.GESTION_INFORMACION, ROLES.CONSULTA]}
                       >
                         <GestionUsuarios />
                       </RoleRoute>

@@ -1,4 +1,4 @@
-import React, { useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Alert,
   Autocomplete,
@@ -6,6 +6,10 @@ import {
   Button,
   Chip,
   CircularProgress,
+  Dialog,
+  DialogActions,
+  DialogContent,
+  DialogTitle,
   Fade,
   FormControl,
   IconButton,
@@ -29,6 +33,7 @@ import {
 } from '@mui/material';
 import {
   AccountTree as AccountTreeIcon,
+  ArrowBack as ArrowBackIcon,
   AutoAwesome as AutoAwesomeIcon,
   AssignmentTurnedIn as AssignmentTurnedInIcon,
   CalendarMonth as CalendarMonthIcon,
@@ -65,6 +70,8 @@ import {
 } from 'recharts';
 import { useSnackbar } from 'notistack';
 import gestionInformacionService from '../services/gestionInformacionService';
+import planAccionWorkflowService, { ESTADOS_WORKFLOW, ESTADO_LABEL, ESTADO_COLOR } from '../services/planAccionWorkflowService';
+import { useAuth } from '../context/AuthContext';
 
 const PED_YEAR_WEIGHT = 14.28;
 
@@ -1553,10 +1560,19 @@ function SeguimientoTabV2({ rows, filtersNode }) {
   );
 }
 
-function GestionPlanesWorkspaceV2({ sourceRows = [] }) {
+function GestionPlanesWorkspaceV2({ sourceRows = [], onWorkflowChanged }) {
   const { enqueueSnackbar } = useSnackbar();
+  const { user: authUser } = useAuth();
+  const userRole = authUser?.role || '';
+  const userId = authUser?.id || null;
+  const ROL_PYE = 'planeacion_efectividad';
+  const ROL_ESTRATEGICA = 'planeacion_estrategica';
+  const ROL_CONSULTA = 'consulta';
+  const ROL_ADMIN = 'administrador';
+
   const WORKSPACE_KEY = 'plan_accion_workspace_v2';
   const SAVED_PLANS_KEY = 'plan_accion_saved_plans_v2';
+  const ACTA_OVERRIDES_KEY = 'plan_accion_acta_overrides_v2';
   const [workspaceTab, setWorkspaceTab] = useState('constructor');
   const [audioFile, setAudioFile] = useState(null);
   const [exporting, setExporting] = useState(false);
@@ -1566,6 +1582,23 @@ function GestionPlanesWorkspaceV2({ sourceRows = [] }) {
   const [showRawIndicador, setShowRawIndicador] = useState(false);
   const [showAiSources, setShowAiSources] = useState(false);
   const [savedPlans, setSavedPlans] = useState([]);
+  const [editingActa, setEditingActa] = useState(false);
+  const [actaOverrides, setActaOverrides] = useState({});
+
+  // === Workflow del Plan de Acción (backend) ===
+  const [currentPlanCodigo, setCurrentPlanCodigo] = useState('');
+  const [currentPlanEstado, setCurrentPlanEstado] = useState('');
+  const [currentPlanResponsableId, setCurrentPlanResponsableId] = useState(null);
+  const [currentPuedeEditar, setCurrentPuedeEditar] = useState(true);
+  const [pendientes, setPendientes] = useState([]);
+  const [misPlanes, setMisPlanes] = useState([]);
+  const [usuariosConsulta, setUsuariosConsulta] = useState([]);
+  const [loadingWorkflow, setLoadingWorkflow] = useState(false);
+  const [openAsignarResponsable, setOpenAsignarResponsable] = useState(false);
+  const [responsableSeleccionadoId, setResponsableSeleccionadoId] = useState('');
+  const [selectedYear, setSelectedYear] = useState(String(new Date().getFullYear()));
+  const [activeSegment, setActiveSegment] = useState('creacion');
+  const [confirmDelete, setConfirmDelete] = useState(null); // { plan_codigo, dependencia, estado_workflow } | null
 
   const emptyPlan = useMemo(() => ({
     anio: String(new Date().getFullYear()),
@@ -1663,6 +1696,7 @@ function GestionPlanesWorkspaceV2({ sourceRows = [] }) {
     try {
       const storedWorkspace = localStorage.getItem(WORKSPACE_KEY);
       const storedSavedPlans = localStorage.getItem(SAVED_PLANS_KEY);
+      const storedActaOverrides = localStorage.getItem(ACTA_OVERRIDES_KEY);
       if (storedWorkspace) {
         const parsed = JSON.parse(storedWorkspace);
         setPlanData({ ...emptyPlan, ...(parsed.planData || {}) });
@@ -1673,6 +1707,12 @@ function GestionPlanesWorkspaceV2({ sourceRows = [] }) {
         const parsedPlans = JSON.parse(storedSavedPlans);
         setSavedPlans(Array.isArray(parsedPlans) ? parsedPlans : []);
       }
+      if (storedActaOverrides) {
+        const parsedOverrides = JSON.parse(storedActaOverrides);
+        if (parsedOverrides && typeof parsedOverrides === 'object') {
+          setActaOverrides(parsedOverrides);
+        }
+      }
     } catch (error) {
       console.warn('No se pudo recuperar el workspace local de planes:', error);
     }
@@ -1681,6 +1721,320 @@ function GestionPlanesWorkspaceV2({ sourceRows = [] }) {
   useEffect(() => {
     localStorage.setItem(WORKSPACE_KEY, JSON.stringify({ planData, actividadForm, actividades }));
   }, [planData, actividadForm, actividades]);
+
+  useEffect(() => {
+    localStorage.setItem(ACTA_OVERRIDES_KEY, JSON.stringify(actaOverrides || {}));
+  }, [actaOverrides]);
+
+  // === Workflow: cargar bandejas al montar ===
+  const refrescarBandejas = useCallback(async () => {
+    if (!userRole) return;
+    try {
+      setLoadingWorkflow(true);
+      const [pend, mios] = await Promise.all([
+        planAccionWorkflowService.listarPendientes().catch(() => ({ data: [] })),
+        planAccionWorkflowService.listarMisPlanes().catch(() => ({ data: [] }))
+      ]);
+      setPendientes(Array.isArray(pend?.data) ? pend.data : []);
+      setMisPlanes(Array.isArray(mios?.data) ? mios.data : []);
+      if (typeof onWorkflowChanged === 'function') {
+        await onWorkflowChanged({ silent: true });
+      }
+    } catch (error) {
+      // silencioso: si el backend no tiene el módulo aún, no bloqueamos UI
+    } finally {
+      setLoadingWorkflow(false);
+    }
+  }, [userRole, onWorkflowChanged]);
+
+  useEffect(() => { refrescarBandejas(); }, [refrescarBandejas]);
+
+  // Cargar lista de Usuarios Consulta solo cuando PyE/Admin la necesita
+  useEffect(() => {
+    if (userRole !== ROL_PYE && userRole !== ROL_ADMIN) return;
+    planAccionWorkflowService.listarUsuariosConsulta()
+      .then((r) => setUsuariosConsulta(Array.isArray(r?.data) ? r.data : []))
+      .catch(() => setUsuariosConsulta([]));
+  }, [userRole]);
+
+  // Aplica el contenido recibido del backend al workspace local
+  const aplicarPlanRemoto = useCallback((data) => {
+    if (!data) return;
+    setCurrentPlanCodigo(data.plan_codigo || '');
+    setCurrentPlanEstado(data.estado_workflow || '');
+    setCurrentPlanResponsableId(data.responsable_id || null);
+    setCurrentPuedeEditar(Boolean(data.puedeEditar));
+
+    const cab = data.cabecera_plan || {};
+    setPlanData((prev) => ({
+      ...prev,
+      anio: data.anio ? String(data.anio) : prev.anio,
+      ped: data.ped || prev.ped,
+      dependencia: data.dependencia || prev.dependencia,
+      estado: cab.estado || prev.estado,
+      fechaReunion: cab.fechaReunion || prev.fechaReunion,
+      lugarReunion: cab.lugarReunion || prev.lugarReunion,
+      objetivoSesion: cab.objetivoSesion || prev.objetivoSesion
+    }));
+
+    if (cab.actaOverrides && typeof cab.actaOverrides === 'object') {
+      setActaOverrides(cab.actaOverrides);
+    } else {
+      setActaOverrides({});
+    }
+
+    const acts = Array.isArray(data.actividades) ? data.actividades : [];
+    setActividades(acts.map((a) => ({
+      ...a,
+      id: a.id || Date.now() + Math.random(),
+      anio: a.anio ? String(a.anio) : (data.anio ? String(data.anio) : ''),
+      ped: a.ped || data.ped || '',
+      avance_ip: a.avance_ip == null ? '0' : String(a.avance_ip),
+      avance_iip: a.avance_iip == null ? '0' : String(a.avance_iip),
+      total_ejecucion: a.total_ejecucion == null ? '0' : String(a.total_ejecucion)
+    })));
+  }, []);
+
+  const cargarPlan = useCallback(async (planCodigo) => {
+    try {
+      setLoadingWorkflow(true);
+      const res = await planAccionWorkflowService.obtenerPlan(planCodigo);
+      if (res?.success && res?.data) {
+        aplicarPlanRemoto(res.data);
+        setWorkspaceTab('constructor');
+        enqueueSnackbar('Plan cargado.', { variant: 'success' });
+      }
+    } catch (error) {
+      enqueueSnackbar(error?.response?.data?.message || 'No fue posible cargar el plan.', { variant: 'error' });
+    } finally {
+      setLoadingWorkflow(false);
+    }
+  }, [aplicarPlanRemoto, enqueueSnackbar]);
+
+  const construirPayloadActual = useCallback(() => {
+    const cabecera_plan = {
+      estado: planData.estado,
+      fechaReunion: planData.fechaReunion,
+      lugarReunion: planData.lugarReunion,
+      objetivoSesion: planData.objetivoSesion,
+      actaOverrides: actaOverrides || {}
+    };
+    return {
+      cabecera_plan,
+      actividades: actividades.map((a) => ({
+        objetivo_estrategico: a.objetivo_estrategico,
+        lineamiento_estrategico: a.lineamiento_estrategico,
+        macroactividad: a.macroactividad,
+        actividad: a.actividad,
+        tipo_indicador: a.tipo_indicador,
+        fecha_inicio: a.fecha_inicio,
+        fecha_fin: a.fecha_fin,
+        indicador: a.indicador,
+        meta: a.meta,
+        responsable: a.responsable,
+        corresponsable: a.corresponsable,
+        avance_ip: a.avance_ip,
+        observaciones_ip: a.observaciones_ip,
+        avance_iip: a.avance_iip,
+        observaciones_iip: a.observaciones_iip,
+        total_ejecucion: a.total_ejecucion
+      }))
+    };
+  }, [planData, actividades, actaOverrides]);
+
+  const crearPlanEnServidor = useCallback(async () => {
+    if (!planData.dependencia) {
+      enqueueSnackbar('Selecciona la Dependencia / Unidad antes de crear el plan en el servidor.', { variant: 'warning' });
+      return;
+    }
+    if (!planData.anio) {
+      enqueueSnackbar('Selecciona el Año del plan.', { variant: 'warning' });
+      return;
+    }
+    try {
+      setLoadingWorkflow(true);
+      const payload = {
+        anio: Number(planData.anio),
+        dependencia: planData.dependencia,
+        ped: planData.ped,
+        ...construirPayloadActual()
+      };
+      const res = await planAccionWorkflowService.crearPlan(payload);
+      if (res?.success) {
+        enqueueSnackbar('Plan creado en el servidor.', { variant: 'success' });
+        await cargarPlan(res.data.plan_codigo);
+        await refrescarBandejas();
+      }
+    } catch (error) {
+      const msg = error?.response?.data?.message || 'No fue posible crear el plan.';
+      enqueueSnackbar(msg, { variant: 'error' });
+    } finally {
+      setLoadingWorkflow(false);
+    }
+  }, [planData, construirPayloadActual, cargarPlan, refrescarBandejas, enqueueSnackbar]);
+
+  // Acción de la papelera:
+  // - Si el plan está en BORRADOR (Creación): eliminación definitiva.
+  // - Si el plan está en cualquier otro estado (Revisión / Aprobación): se devuelve a Borrador
+  //   para que vuelva al segmento de Creación.
+  const ejecutarAccionPapelera = useCallback(async (item) => {
+    if (!item?.plan_codigo) return;
+    const esBorrador = item.estado_workflow === ESTADOS_WORKFLOW.BORRADOR;
+    try {
+      setLoadingWorkflow(true);
+      if (esBorrador) {
+        await planAccionWorkflowService.eliminarPlan(item.plan_codigo);
+        enqueueSnackbar(`Plan ${item.plan_codigo} eliminado definitivamente.`, { variant: 'success' });
+      } else {
+        await planAccionWorkflowService.resetearABorrador(item.plan_codigo);
+        enqueueSnackbar(`Plan ${item.plan_codigo} devuelto a Creación (Borrador).`, { variant: 'success' });
+      }
+      // Si el plan procesado era el que estaba cargado en el constructor, descargarlo.
+      if (currentPlanCodigo === item.plan_codigo) {
+        setCurrentPlanCodigo('');
+        setCurrentPlanEstado('');
+        setCurrentPlanResponsableId(null);
+      }
+      await refrescarBandejas();
+    } catch (error) {
+      const msg = error?.response?.data?.message || 'No fue posible completar la acción.';
+      enqueueSnackbar(msg, { variant: 'error' });
+    } finally {
+      setLoadingWorkflow(false);
+      setConfirmDelete(null);
+    }
+  }, [currentPlanCodigo, refrescarBandejas, enqueueSnackbar]);
+
+  // Crea un plan vacío para una dependencia específica y luego lo carga en el constructor.
+  const crearPlanParaDependencia = useCallback(async (dependencia, anio) => {
+    if (!dependencia) return;
+    try {
+      setLoadingWorkflow(true);
+      const payload = {
+        anio: Number(anio || selectedYear || new Date().getFullYear()),
+        dependencia,
+        ped: planData.ped || '',
+        cabecera_plan: { dependencia, anio: String(anio || selectedYear), estado: 'Borrador' },
+        actividades: [{}]
+      };
+      const res = await planAccionWorkflowService.crearPlan(payload);
+      if (res?.success) {
+        enqueueSnackbar(`Plan creado para ${dependencia}.`, { variant: 'success' });
+        await cargarPlan(res.data.plan_codigo);
+        await refrescarBandejas();
+      }
+    } catch (error) {
+      const msg = error?.response?.data?.message || 'No fue posible crear el plan.';
+      enqueueSnackbar(msg, { variant: 'error' });
+    } finally {
+      setLoadingWorkflow(false);
+    }
+  }, [selectedYear, planData.ped, cargarPlan, refrescarBandejas, enqueueSnackbar]);
+
+  const guardarPlanEnServidor = useCallback(async () => {
+    if (!currentPlanCodigo) {
+      enqueueSnackbar('Primero crea el plan en el servidor.', { variant: 'warning' });
+      return;
+    }
+    try {
+      setLoadingWorkflow(true);
+      await planAccionWorkflowService.guardarPlan(currentPlanCodigo, construirPayloadActual());
+      enqueueSnackbar('Plan guardado en el servidor.', { variant: 'success' });
+    } catch (error) {
+      const msg = error?.response?.data?.message || 'No fue posible guardar el plan.';
+      enqueueSnackbar(msg, { variant: 'error' });
+    } finally {
+      setLoadingWorkflow(false);
+    }
+  }, [currentPlanCodigo, construirPayloadActual, enqueueSnackbar]);
+
+  const ejecutarTransicion = useCallback(async (accion, extra = {}) => {
+    if (!currentPlanCodigo) return;
+    try {
+      setLoadingWorkflow(true);
+      // Guardar primero los cambios pendientes si el usuario puede editar
+      if (currentPuedeEditar) {
+        try {
+          await planAccionWorkflowService.guardarPlan(currentPlanCodigo, construirPayloadActual());
+        } catch (_) { /* tolerar fallo de guardado para no bloquear la transición si lo único que falla es validación de edición */ }
+      }
+      const res = await planAccionWorkflowService.transicionar(currentPlanCodigo, { accion, ...extra });
+      if (res?.success) {
+        enqueueSnackbar('Estado actualizado.', { variant: 'success' });
+        await cargarPlan(currentPlanCodigo);
+        await refrescarBandejas();
+      }
+    } catch (error) {
+      const msg = error?.response?.data?.message || 'No fue posible cambiar el estado del plan.';
+      enqueueSnackbar(msg, { variant: 'error' });
+    } finally {
+      setLoadingWorkflow(false);
+    }
+  }, [currentPlanCodigo, currentPuedeEditar, construirPayloadActual, cargarPlan, refrescarBandejas, enqueueSnackbar]);
+
+  const limpiarPlanCargado = useCallback(() => {
+    setCurrentPlanCodigo('');
+    setCurrentPlanEstado('');
+    setCurrentPlanResponsableId(null);
+    setCurrentPuedeEditar(true);
+    // Refrescar listas para reflejar cualquier cambio de estado al volver a la bandeja
+    refrescarBandejas();
+  }, [refrescarBandejas]);
+
+  const responsableActualNombre = useMemo(() => {
+    if (!currentPlanResponsableId) return null;
+    const u = usuariosConsulta.find((x) => Number(x.id) === Number(currentPlanResponsableId));
+    return u ? `${u.nombre} (${u.email})` : `Usuario #${currentPlanResponsableId}`;
+  }, [currentPlanResponsableId, usuariosConsulta]);
+
+  // Bloqueo de edición: cuando hay plan del servidor cargado pero el usuario no puede editar.
+  const currentPuedeEditarEnVista = currentPuedeEditar && userRole !== ROL_ESTRATEGICA;
+  const planBloqueado = Boolean(currentPlanCodigo) && !currentPuedeEditarEnVista;
+
+  // Descarga del .xlsx aprobado (Usuario Consulta tras Aprobado)
+  const descargarPlanAprobado = useCallback(async () => {
+    if (!currentPlanCodigo) return;
+    try {
+      setExporting(true);
+      const response = await gestionInformacionService.exportPlanAccionPlantilla({
+        planData: {
+          anio: planData.anio,
+          nombrePlan: planData.dependencia,
+          codigoPlan: currentPlanCodigo,
+          dependencia: planData.dependencia,
+          ped: planData.ped
+        },
+        actividades
+      });
+      const blob = new Blob([response.data], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+      const fname = `plan_accion_${(planData.dependencia || 'plan').replace(/\s+/g, '_')}_${planData.anio || new Date().getFullYear()}.xlsx`;
+      triggerDownload(blob, fname);
+      enqueueSnackbar('Plan aprobado descargado.', { variant: 'success' });
+    } catch (error) {
+      enqueueSnackbar(error?.response?.data?.message || 'No se pudo descargar el plan aprobado.', { variant: 'error' });
+    } finally {
+      setExporting(false);
+    }
+  }, [currentPlanCodigo, planData, actividades, enqueueSnackbar]);
+
+  // Apertura del cliente de correo predeterminado del usuario para enviar a rectoría
+  const abrirCorreoRectoria = useCallback(() => {
+    const dependencia = planData.dependencia || '';
+    const anio = planData.anio || new Date().getFullYear();
+    const asunto = `Plan de Acción ${anio} - ${dependencia}`;
+    const cuerpo = [
+      'Cordial saludo,',
+      '',
+      `Adjunto a la presente el Plan de Acción ${anio} de la ${dependencia}, aprobado por Planeación y Efectividad.`,
+      '',
+      'Por favor adjuntar el archivo descargado al enviar este correo.',
+      '',
+      'Atentamente,',
+      authUser?.nombre || ''
+    ].join('\n');
+    const url = `mailto:rectoria@unicesmag.edu.co?subject=${encodeURIComponent(asunto)}&body=${encodeURIComponent(cuerpo)}`;
+    window.location.href = url;
+  }, [planData, authUser]);
 
   const buildObjetivoSesion = (data = {}) => {
     const estado = String(data.estado || '').trim();
@@ -1987,12 +2341,79 @@ function GestionPlanesWorkspaceV2({ sourceRows = [] }) {
     };
   }, [actividades, audioFile, planData]);
 
+  // Merge: cualquier campo en actaOverrides reemplaza el auto-generado.
+  // Para arrays (objetivo/desarrollo/conclusiones/participantes), si existe
+  // override (incluso vacío) se usa; null/undefined cae al auto.
+  const actaFinalData = useMemo(() => {
+    const ov = actaOverrides || {};
+    const pickStr = (key) => (ov[key] !== undefined && ov[key] !== null ? ov[key] : actaPreviewData[key]);
+    const pickArr = (key) => (Array.isArray(ov[key]) ? ov[key] : actaPreviewData[key]);
+    return {
+      responsables: pickStr('responsables') ?? '',
+      dependencia: pickStr('dependencia') ?? '',
+      lugar: pickStr('lugar') ?? '',
+      fecha: pickStr('fecha') ?? '',
+      horario: pickStr('horario') ?? '',
+      participantes: pickArr('participantes') ?? [],
+      objetivo: pickArr('objetivo') ?? [],
+      desarrollo: pickArr('desarrollo') ?? [],
+      conclusiones: pickArr('conclusiones') ?? []
+    };
+  }, [actaPreviewData, actaOverrides]);
+
+  const totalObservaciones = actividades
+    .flatMap((item) => [item.observaciones_ip, item.observaciones_iip])
+    .filter((text) => String(text || '').trim()).length;
+
+  const setActaField = (field, value) => {
+    setActaOverrides((prev) => ({ ...prev, [field]: value }));
+  };
+
+  const setActaParticipante = (index, key, value) => {
+    setActaOverrides((prev) => {
+      const base = Array.isArray(prev?.participantes) ? prev.participantes : actaFinalData.participantes;
+      const next = base.slice();
+      next[index] = { ...(next[index] || { nombre: '', cargo: '' }), [key]: value };
+      return { ...prev, participantes: next };
+    });
+  };
+
+  const addActaParticipante = () => {
+    setActaOverrides((prev) => {
+      const base = Array.isArray(prev?.participantes) ? prev.participantes : actaFinalData.participantes;
+      return { ...prev, participantes: [...base, { nombre: '', cargo: '' }] };
+    });
+  };
+
+  const removeActaParticipante = (index) => {
+    setActaOverrides((prev) => {
+      const base = Array.isArray(prev?.participantes) ? prev.participantes : actaFinalData.participantes;
+      return { ...prev, participantes: base.filter((_, i) => i !== index) };
+    });
+  };
+
+  const startEditActa = () => setEditingActa(true);
+
+  const saveActaEdits = () => {
+    setEditingActa(false);
+    enqueueSnackbar('Cambios del acta guardados.', { variant: 'success' });
+  };
+
+  const resetActaEdits = () => {
+    setActaOverrides({});
+    setEditingActa(false);
+    enqueueSnackbar('Acta restaurada al contenido automático.', { variant: 'info' });
+  };
+
+  const arrayToText = (arr) => (Array.isArray(arr) ? arr.join('\n') : String(arr || ''));
+  const textToArray = (txt) => String(txt || '').split('\n');
+
   const exportActaWord = async () => {
     try {
       const payload = {
         anio: planData.anio,
         codigoPlan: planData.codigoPlan || planData.dependencia,
-        ...actaPreviewData
+        ...actaFinalData
       };
 
       const response = await gestionInformacionService.exportPlanAccionActa(payload);
@@ -2005,12 +2426,7 @@ function GestionPlanesWorkspaceV2({ sourceRows = [] }) {
     }
   };
 
-  const totalObservaciones = actividades.reduce((acc, item) => acc + (item.observaciones_ip ? 1 : 0) + (item.observaciones_iip ? 1 : 0), 0);
-  const cards = [
-    { label: 'Actividades cargadas', value: actividades.length, tone: '#2563eb' },
-    { label: 'Observaciones para acta', value: totalObservaciones, tone: '#f97316' },
-    { label: 'Audio temporal', value: audioFile ? 1 : 0, tone: '#10b981' }
-  ];
+  // KPIs eliminados a petición del usuario (2026-04-29).
 
   const steps = [
     { title: 'Paso 1', subtitle: 'Configura el plan', detail: 'Define año, PED, responsables y dependencia.' },
@@ -2080,15 +2496,465 @@ function GestionPlanesWorkspaceV2({ sourceRows = [] }) {
         </Stack>
       </Paper>
 
-      <Box sx={{ display: 'grid', gap: 1.5, gridTemplateColumns: { xs: '1fr', md: 'repeat(3, 1fr)' } }}>
-        {cards.map((card) => (
-          <Paper key={card.label} elevation={0} sx={{ p: 2, borderRadius: 3, border: '1px solid #e2e8f0', boxShadow: '0 10px 24px rgba(15,23,42,.05)' }}>
-            <Typography sx={{ fontSize: 11, textTransform: 'uppercase', fontWeight: 800, color: '#64748b' }}>{card.label}</Typography>
-            <Typography sx={{ fontSize: 34, lineHeight: 1, fontWeight: 900, color: card.tone, mt: 1 }}>{formatNumber(card.value)}</Typography>
-          </Paper>
-        ))}
-      </Box>
+      {/* Panel del workflow del plan (servidor) */}
+      <Paper elevation={0} sx={{ p: 1.8, borderRadius: 3.5, border: '1px solid #dbeafe', background: 'linear-gradient(180deg,#ffffff 0%,#f8fbff 100%)' }}>
+        {/* Header del workflow: SOLO cuando hay un plan cargado */}
+        {currentPlanCodigo && (
+        <Stack direction={{ xs: 'column', md: 'row' }} spacing={1.4} alignItems={{ xs: 'stretch', md: 'center' }} justifyContent="space-between">
+          <Stack direction="row" spacing={1.2} alignItems="center" flexWrap="wrap" sx={{ rowGap: 0.6 }}>
+            <Button
+              size="small"
+              variant="text"
+              startIcon={<ArrowBackIcon fontSize="small" />}
+              onClick={limpiarPlanCargado}
+              sx={{ textTransform: 'none', fontWeight: 900, color: '#1e3a8a', minWidth: 'auto' }}
+            >
+              Volver a la lista
+            </Button>
+            <Typography sx={{ fontSize: 12, fontWeight: 900, color: '#1e3a8a', textTransform: 'uppercase', letterSpacing: .4 }}>
+              Workflow del plan
+            </Typography>
+            <Chip size="small" label={currentPlanCodigo} sx={{ bgcolor: '#eef2ff', color: '#3730a3', fontWeight: 800 }} />
+            <Chip
+              size="small"
+              label={ESTADO_LABEL[currentPlanEstado] || currentPlanEstado || 'Sin estado'}
+              sx={{
+                bgcolor: (ESTADO_COLOR[currentPlanEstado] || {}).bg || '#e2e8f0',
+                color: (ESTADO_COLOR[currentPlanEstado] || {}).fg || '#0f172a',
+                fontWeight: 900
+              }}
+            />
+            {responsableActualNombre && (
+              <Chip size="small" label={`Responsable: ${responsableActualNombre}`} sx={{ bgcolor: '#fef3c7', color: '#92400e', fontWeight: 700 }} />
+            )}
+            {!currentPuedeEditarEnVista && (
+              <Chip size="small" color="warning" label="Solo lectura en este estado" sx={{ fontWeight: 800 }} />
+            )}
+          </Stack>
 
+          <Stack direction="row" spacing={1} flexWrap="wrap" sx={{ rowGap: 0.6 }}>
+            {/* Acciones según rol + estado */}
+            {(userRole === ROL_PYE || userRole === ROL_ADMIN) && !currentPlanCodigo && (
+              <Button size="small" variant="contained" startIcon={<SaveIcon fontSize="small" />} disabled={loadingWorkflow || !planData.dependencia} onClick={crearPlanEnServidor} sx={{ borderRadius: 2, textTransform: 'none', fontWeight: 900 }}>
+                Crear en servidor
+              </Button>
+            )}
+            {currentPlanCodigo && currentPuedeEditarEnVista && (
+              <Button size="small" variant="outlined" startIcon={<SaveIcon fontSize="small" />} disabled={loadingWorkflow} onClick={guardarPlanEnServidor} sx={{ borderRadius: 2, textTransform: 'none', fontWeight: 800 }}>
+                Guardar en servidor
+              </Button>
+            )}
+            {currentPlanCodigo && (userRole === ROL_PYE || userRole === ROL_ADMIN) && currentPlanEstado === ESTADOS_WORKFLOW.BORRADOR && (
+              <Button size="small" variant="contained" color="primary" disabled={loadingWorkflow} onClick={() => ejecutarTransicion('enviar_a_estrategica')} sx={{ borderRadius: 2, textTransform: 'none', fontWeight: 900 }}>
+                Enviar a revisión estratégica
+              </Button>
+            )}
+            {/* La revisión estratégica se atiende solo desde la bandeja propia de Planeación Estratégica. */}
+            {currentPlanCodigo && (userRole === ROL_PYE || userRole === ROL_ADMIN) && currentPlanEstado === ESTADOS_WORKFLOW.REVISADO_POR_ESTRATEGICA && (
+              <Button size="small" variant="contained" color="primary" disabled={loadingWorkflow} onClick={() => { setResponsableSeleccionadoId(''); setOpenAsignarResponsable(true); }} sx={{ borderRadius: 2, textTransform: 'none', fontWeight: 900 }}>
+                Enviar al responsable
+              </Button>
+            )}
+            {currentPlanCodigo && userRole === ROL_CONSULTA && currentPlanEstado === ESTADOS_WORKFLOW.EN_REVISION_RESPONSABLE && Number(currentPlanResponsableId) === Number(userId) && (
+              <Button size="small" variant="contained" color="success" disabled={loadingWorkflow} onClick={() => ejecutarTransicion('marcar_revisado_responsable')} sx={{ borderRadius: 2, textTransform: 'none', fontWeight: 900 }}>
+                Marcar como revisado
+              </Button>
+            )}
+            {currentPlanCodigo && (userRole === ROL_PYE || userRole === ROL_ADMIN) && currentPlanEstado === ESTADOS_WORKFLOW.REVISADO_POR_RESPONSABLE && (
+              <Button size="small" variant="contained" color="success" disabled={loadingWorkflow} onClick={() => ejecutarTransicion('aprobar')} sx={{ borderRadius: 2, textTransform: 'none', fontWeight: 900 }}>
+                Aprobar plan
+              </Button>
+            )}
+            {currentPlanCodigo && currentPlanEstado === ESTADOS_WORKFLOW.APROBADO && userRole === ROL_CONSULTA && Number(currentPlanResponsableId) === Number(userId) && (
+              <>
+                <Button size="small" variant="contained" color="success" startIcon={<DownloadIcon fontSize="small" />} disabled={exporting} onClick={descargarPlanAprobado} sx={{ borderRadius: 2, textTransform: 'none', fontWeight: 900 }}>
+                  {exporting ? 'Descargando...' : 'Descargar plan aprobado'}
+                </Button>
+                <Button size="small" variant="outlined" color="primary" startIcon={<DescriptionIcon fontSize="small" />} onClick={abrirCorreoRectoria} sx={{ borderRadius: 2, textTransform: 'none', fontWeight: 900 }}>
+                  Enviar a rectoría
+                </Button>
+              </>
+            )}
+            {currentPlanCodigo && (userRole === ROL_PYE || userRole === ROL_ADMIN) && (() => {
+              const esBorradorActual = currentPlanEstado === ESTADOS_WORKFLOW.BORRADOR;
+              const labelBtn = esBorradorActual ? 'Eliminar' : 'Devolver a Creación';
+              const colorBtn = esBorradorActual ? 'error' : 'warning';
+              const tooltipBtn = esBorradorActual
+                ? 'Eliminar borrador definitivamente'
+                : 'Limpia el flujo y devuelve el plan al segmento de Creación como Borrador';
+              const disabledBtn = loadingWorkflow || (userRole === ROL_PYE && !esBorradorActual && currentPlanEstado !== ESTADOS_WORKFLOW.BORRADOR && false);
+              return (
+                <Tooltip title={tooltipBtn} arrow>
+                  <span>
+                    <Button
+                      size="small"
+                      variant="outlined"
+                      color={colorBtn}
+                      startIcon={<DeleteOutlineIcon fontSize="small" />}
+                      disabled={disabledBtn}
+                      onClick={() => setConfirmDelete({ plan_codigo: currentPlanCodigo, dependencia: planData.dependencia, estado_workflow: currentPlanEstado })}
+                      sx={{ borderRadius: 2, textTransform: 'none', fontWeight: 800 }}
+                    >
+                      {labelBtn}
+                    </Button>
+                  </span>
+                </Tooltip>
+              );
+            })()}
+            {currentPlanCodigo && (
+              <Tooltip title="Cerrar plan cargado y volver al borrador local" arrow>
+                <Button size="small" variant="text" disabled={loadingWorkflow} onClick={limpiarPlanCargado} sx={{ borderRadius: 2, textTransform: 'none', fontWeight: 800, color: '#64748b' }}>
+                  Cerrar plan
+                </Button>
+              </Tooltip>
+            )}
+          </Stack>
+        </Stack>
+        )}
+
+        {/* === Filtro de año + 3 segmentos: solo cuando NO hay plan cargado === */}
+        {(userRole === ROL_PYE || userRole === ROL_ADMIN) && !currentPlanCodigo && (() => {
+          const dependenciasInst = catalogs.dependencias || [];
+          const dependenciasKeys = new Set(
+            dependenciasInst.map((dep) => String(dep || '').trim().toLowerCase()).filter(Boolean)
+          );
+          const ESTADOS_CICLO = new Set([
+            ESTADOS_WORKFLOW.BORRADOR,
+            ESTADOS_WORKFLOW.EN_REVISION_ESTRATEGICA,
+            ESTADOS_WORKFLOW.REVISADO_POR_ESTRATEGICA,
+            ESTADOS_WORKFLOW.EN_REVISION_RESPONSABLE,
+            ESTADOS_WORKFLOW.REVISADO_POR_RESPONSABLE,
+            ESTADOS_WORKFLOW.APROBADO
+          ]);
+          const planesDelAnio = misPlanes.filter((p) => {
+            const depKey = String(p.dependencia || '').trim().toLowerCase();
+            return String(p.anio) === String(selectedYear)
+              && ESTADOS_CICLO.has(p.estado_workflow)
+              && dependenciasKeys.has(depKey);
+          });
+          const planesPorDep = new Map(
+            planesDelAnio.map((p) => [String(p.dependencia || '').trim().toLowerCase(), p])
+          );
+          // Creación: SOLO dependencias sin plan o con plan en Borrador.
+          // Una vez el plan pasa a revisión, desaparece de aquí y aparece en Revisión.
+          const filasCreacion = dependenciasInst
+            .map((dep) => ({
+              dependencia: dep,
+              plan: planesPorDep.get(String(dep || '').trim().toLowerCase()) || null
+            }))
+            .filter((f) => !f.plan || f.plan.estado_workflow === ESTADOS_WORKFLOW.BORRADOR);
+          const sinPlanCount = filasCreacion.filter((f) => !f.plan).length;
+          const enBorradorCount = filasCreacion.filter((f) => f.plan?.estado_workflow === ESTADOS_WORKFLOW.BORRADOR).length;
+          const ESTADOS_REVISION = new Set([
+            ESTADOS_WORKFLOW.EN_REVISION_ESTRATEGICA,
+            ESTADOS_WORKFLOW.REVISADO_POR_ESTRATEGICA,
+            ESTADOS_WORKFLOW.EN_REVISION_RESPONSABLE,
+            ESTADOS_WORKFLOW.REVISADO_POR_RESPONSABLE
+          ]);
+          const planesEnRevision = planesDelAnio.filter((p) => ESTADOS_REVISION.has(p.estado_workflow));
+          const planesAprobados = planesDelAnio.filter((p) => p.estado_workflow === ESTADOS_WORKFLOW.APROBADO);
+
+          const accionRequeridaPyE = (estado) => {
+            switch (estado) {
+              case ESTADOS_WORKFLOW.REVISADO_POR_ESTRATEGICA: return { label: 'Revisar y continuar', color: 'warning' };
+              case ESTADOS_WORKFLOW.REVISADO_POR_RESPONSABLE: return { label: 'Revisar y aprobar', color: 'success' };
+              default: return { label: 'Ver estado', color: 'primary', variant: 'outlined' };
+            }
+          };
+
+          // Estadística agregada del año (trazabilidad)
+          const totalDependencias = dependenciasInst.length;
+          const planesCreados = planesDelAnio.length;
+          const completitud = totalDependencias > 0 ? Math.round((planesAprobados.length / totalDependencias) * 100) : 0;
+          const sinIniciar = sinPlanCount;
+          return (
+            <Box sx={{ mt: 1.6, p: 1.6, borderRadius: 3, border: '1px solid #dbeafe', background: 'linear-gradient(180deg,#ffffff 0%,#f8fbff 100%)' }}>
+              {/* Encabezado: filtro de año + estadística del año */}
+              <Stack direction={{ xs: 'column', md: 'row' }} spacing={1.5} alignItems={{ xs: 'flex-start', md: 'center' }} justifyContent="space-between" sx={{ mb: 1.6 }}>
+                <Stack direction="row" spacing={1.5} alignItems="center">
+                  <Typography sx={{ fontSize: 12, fontWeight: 900, color: '#1e3a8a', textTransform: 'uppercase', letterSpacing: .4 }}>
+                    Ciclo del año
+                  </Typography>
+                  <TextField
+                    select
+                    size="small"
+                    value={selectedYear}
+                    onChange={(e) => setSelectedYear(e.target.value)}
+                    sx={{ minWidth: 130 }}
+                  >
+                    {FIXED_PLAN_YEARS.map((y) => (
+                      <MenuItem key={y} value={y}>{y}</MenuItem>
+                    ))}
+                  </TextField>
+                </Stack>
+                <Typography sx={{ fontSize: 11, fontWeight: 800, color: '#64748b', textTransform: 'uppercase', letterSpacing: .4 }}>
+                  Trazabilidad — Estadística del año {selectedYear}
+                </Typography>
+              </Stack>
+
+              {/* KPIs del año (trazabilidad anual) */}
+              <Box sx={{ display: 'grid', gap: 1.2, gridTemplateColumns: { xs: 'repeat(2, 1fr)', sm: 'repeat(3, 1fr)', md: 'repeat(5, 1fr)' }, mb: 1.6 }}>
+                {[
+                  { label: 'Dependencias', value: totalDependencias, color: '#1e3a8a', bg: '#eff6ff', border: '#dbeafe' },
+                  { label: 'Planes creados', value: planesCreados, color: '#3730a3', bg: '#eef2ff', border: '#e0e7ff' },
+                  { label: 'En revisión', value: planesEnRevision.length, color: '#1e40af', bg: '#dbeafe', border: '#bfdbfe' },
+                  { label: 'Aprobados vigentes', value: planesAprobados.length, color: '#166534', bg: '#dcfce7', border: '#bbf7d0' },
+                  { label: 'Sin iniciar', value: sinIniciar, color: '#92400e', bg: '#fef3c7', border: '#fde68a' }
+                ].map((card) => (
+                  <Box
+                    key={card.label}
+                    sx={{
+                      p: 1.4,
+                      borderRadius: 2.5,
+                      border: `1px solid ${card.border}`,
+                      bgcolor: card.bg,
+                      textAlign: 'center'
+                    }}
+                  >
+                    <Typography sx={{ fontSize: 28, fontWeight: 900, color: card.color, lineHeight: 1 }}>{card.value}</Typography>
+                    <Typography sx={{ fontSize: 10.5, fontWeight: 800, color: card.color, textTransform: 'uppercase', letterSpacing: 0.4, mt: 0.6 }}>{card.label}</Typography>
+                  </Box>
+                ))}
+              </Box>
+
+              {/* Barra de completitud institucional */}
+              <Box sx={{ mb: 1.6, p: 1.4, borderRadius: 2.5, border: '1px solid #d1fae5', bgcolor: '#ecfdf5' }}>
+                <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1.2} alignItems={{ xs: 'flex-start', sm: 'center' }} justifyContent="space-between" sx={{ mb: 0.8 }}>
+                  <Typography sx={{ fontSize: 12, fontWeight: 800, color: '#065f46', textTransform: 'uppercase', letterSpacing: 0.4 }}>
+                    Completitud institucional del ciclo {selectedYear}
+                  </Typography>
+                  <Typography sx={{ fontSize: 14, fontWeight: 900, color: '#047857' }}>
+                    {planesAprobados.length} / {totalDependencias} dependencias · <span style={{ color: '#065f46' }}>{completitud}%</span>
+                  </Typography>
+                </Stack>
+                <Box sx={{ position: 'relative', height: 10, borderRadius: 5, bgcolor: '#d1fae5', overflow: 'hidden' }}>
+                  <Box sx={{ position: 'absolute', left: 0, top: 0, bottom: 0, width: `${completitud}%`, background: 'linear-gradient(90deg, #10b981 0%, #059669 100%)', borderRadius: 5, transition: 'width .3s' }} />
+                </Box>
+              </Box>
+
+              {/* 3 Segmentos */}
+              <Tabs
+                value={activeSegment}
+                onChange={(_, v) => setActiveSegment(v)}
+                variant="fullWidth"
+                sx={{
+                  minHeight: 48,
+                  mb: 1.4,
+                  '& .MuiTabs-indicator': { height: 0 },
+                  '& .MuiTab-root': { textTransform: 'none', fontWeight: 900, minHeight: 44, borderRadius: 2.5, color: '#64748b', gap: 0.8 },
+                  '& .MuiTab-root.Mui-selected': { color: '#1d4ed8', background: 'linear-gradient(135deg,#eff6ff 0%,#dbeafe 100%)', boxShadow: 'inset 0 0 0 1px rgba(59,130,246,.22)' }
+                }}
+              >
+                <Tab value="creacion" label={
+                  <Stack direction="row" spacing={1} alignItems="center">
+                    <span>1 · Creación</span>
+                    <Chip size="small" sx={{ height: 20, bgcolor: '#fef3c7', color: '#92400e', fontWeight: 900 }} label={sinPlanCount + enBorradorCount} />
+                  </Stack>
+                } />
+                <Tab value="revision" label={
+                  <Stack direction="row" spacing={1} alignItems="center">
+                    <span>2 · Revisión</span>
+                    <Chip size="small" sx={{ height: 20, bgcolor: '#dbeafe', color: '#1e40af', fontWeight: 900 }} label={planesEnRevision.length} />
+                  </Stack>
+                } />
+                <Tab value="aprobacion" label={
+                  <Stack direction="row" spacing={1} alignItems="center">
+                    <span>3 · Aprobación</span>
+                    <Chip size="small" sx={{ height: 20, bgcolor: '#dcfce7', color: '#166534', fontWeight: 900 }} label={planesAprobados.length} />
+                  </Stack>
+                } />
+              </Tabs>
+
+              {/* === SEGMENTO 1: CREACIÓN === */}
+              {activeSegment === 'creacion' && (
+                <TableContainer component={Paper} elevation={0} sx={{ border: '1px solid #e2e8f0', borderRadius: 2.5, maxHeight: 460 }}>
+                  <Table stickyHeader size="small">
+                    <TableHead>
+                      <TableRow>
+                        <TableCell sx={{ fontWeight: 900, fontSize: 12, color: '#0f172a', bgcolor: '#f8fafc', borderBottom: '2px solid #e2e8f0', textTransform: 'uppercase', letterSpacing: 0.3, width: 44 }}>#</TableCell>
+                        <TableCell sx={{ fontWeight: 900, fontSize: 12, color: '#0f172a', bgcolor: '#f8fafc', borderBottom: '2px solid #e2e8f0', textTransform: 'uppercase', letterSpacing: 0.3 }}>Dependencia</TableCell>
+                        <TableCell sx={{ fontWeight: 900, fontSize: 12, color: '#0f172a', bgcolor: '#f8fafc', borderBottom: '2px solid #e2e8f0', textTransform: 'uppercase', letterSpacing: 0.3, width: 200 }}>Estado</TableCell>
+                        <TableCell sx={{ fontWeight: 900, fontSize: 12, color: '#0f172a', bgcolor: '#f8fafc', borderBottom: '2px solid #e2e8f0', textTransform: 'uppercase', letterSpacing: 0.3, width: 220, textAlign: 'right' }}>Acción</TableCell>
+                      </TableRow>
+                    </TableHead>
+                    <TableBody>
+                      {filasCreacion.length === 0 ? (
+                        <TableRow>
+                          <TableCell colSpan={4} sx={{ textAlign: 'center', color: '#94a3b8', py: 4 }}>
+                            No hay dependencias institucionales cargadas en el catálogo.
+                          </TableCell>
+                        </TableRow>
+                      ) : filasCreacion.map((f, idx) => {
+                        const sinPlan = !f.plan;
+                        const enBorrador = f.plan?.estado_workflow === ESTADOS_WORKFLOW.BORRADOR;
+                        return (
+                          <TableRow key={f.dependencia} hover>
+                            <TableCell sx={{ fontSize: 12.5, fontWeight: 800, color: '#475569' }}>{idx + 1}</TableCell>
+                            <TableCell sx={{ fontSize: 13, fontWeight: 700, color: '#0f172a' }}>{f.dependencia}</TableCell>
+                            <TableCell>
+                              {sinPlan && <Chip size="small" sx={{ bgcolor: '#fef9c3', color: '#854d0e', fontWeight: 800 }} label="Sin crear" />}
+                              {enBorrador && <Chip size="small" sx={{ bgcolor: '#fef3c7', color: '#92400e', fontWeight: 800 }} label="Borrador en construcción" />}
+                            </TableCell>
+                            <TableCell sx={{ textAlign: 'right' }}>
+                              <Stack direction="row" spacing={0.8} justifyContent="flex-end" alignItems="center">
+                                {sinPlan && (
+                                  <Button size="small" variant="contained" disabled={loadingWorkflow} onClick={() => crearPlanParaDependencia(f.dependencia, selectedYear)} sx={{ borderRadius: 2, textTransform: 'none', fontWeight: 800 }}>
+                                    Crear plan
+                                  </Button>
+                                )}
+                                {enBorrador && (
+                                  <>
+                                    <Button size="small" variant="contained" color="warning" disabled={loadingWorkflow} onClick={() => cargarPlan(f.plan.plan_codigo)} sx={{ borderRadius: 2, textTransform: 'none', fontWeight: 800 }}>
+                                      Continuar editando
+                                    </Button>
+                                    <Tooltip title="Eliminar borrador" arrow>
+                                      <IconButton
+                                        size="small"
+                                        color="error"
+                                        disabled={loadingWorkflow}
+                                        onClick={() => setConfirmDelete({ plan_codigo: f.plan.plan_codigo, dependencia: f.dependencia, estado_workflow: f.plan.estado_workflow })}
+                                      >
+                                        <DeleteOutlineIcon fontSize="small" />
+                                      </IconButton>
+                                    </Tooltip>
+                                  </>
+                                )}
+                              </Stack>
+                            </TableCell>
+                          </TableRow>
+                        );
+                      })}
+                    </TableBody>
+                  </Table>
+                </TableContainer>
+              )}
+
+              {/* === SEGMENTO 2: REVISIÓN === */}
+              {activeSegment === 'revision' && (
+                planesEnRevision.length === 0 ? (
+                  <Alert severity="info" sx={{ borderRadius: 2.5 }}>
+                    No hay planes en proceso de revisión para el año {selectedYear}. Cuando envíes un borrador a Planeación Estratégica aparecerá aquí.
+                  </Alert>
+                ) : (
+                  <TableContainer component={Paper} elevation={0} sx={{ border: '1px solid #e2e8f0', borderRadius: 2.5, maxHeight: 460 }}>
+                    <Table stickyHeader size="small">
+                      <TableHead>
+                        <TableRow>
+                          <TableCell sx={{ fontWeight: 900, fontSize: 12, color: '#0f172a', bgcolor: '#f8fafc', borderBottom: '2px solid #e2e8f0', textTransform: 'uppercase', letterSpacing: 0.3, width: 44 }}>#</TableCell>
+                          <TableCell sx={{ fontWeight: 900, fontSize: 12, color: '#0f172a', bgcolor: '#f8fafc', borderBottom: '2px solid #e2e8f0', textTransform: 'uppercase', letterSpacing: 0.3 }}>Dependencia</TableCell>
+                          <TableCell sx={{ fontWeight: 900, fontSize: 12, color: '#0f172a', bgcolor: '#f8fafc', borderBottom: '2px solid #e2e8f0', textTransform: 'uppercase', letterSpacing: 0.3, width: 220 }}>Estado actual</TableCell>
+                          <TableCell sx={{ fontWeight: 900, fontSize: 12, color: '#0f172a', bgcolor: '#f8fafc', borderBottom: '2px solid #e2e8f0', textTransform: 'uppercase', letterSpacing: 0.3, width: 200 }}>Última actualización</TableCell>
+                          <TableCell sx={{ fontWeight: 900, fontSize: 12, color: '#0f172a', bgcolor: '#f8fafc', borderBottom: '2px solid #e2e8f0', textTransform: 'uppercase', letterSpacing: 0.3, width: 220, textAlign: 'right' }}>Acción</TableCell>
+                        </TableRow>
+                      </TableHead>
+                      <TableBody>
+                        {planesEnRevision.map((p, idx) => {
+                          const accion = accionRequeridaPyE(p.estado_workflow);
+                          const fecha = p.fecha_envio_responsable || p.fecha_revisado_estrategica || p.fecha_envio_estrategica || p.updatedAt;
+                          return (
+                            <TableRow key={p.plan_codigo} hover>
+                              <TableCell sx={{ fontSize: 12.5, fontWeight: 800, color: '#475569' }}>{idx + 1}</TableCell>
+                              <TableCell sx={{ fontSize: 13, fontWeight: 700, color: '#0f172a' }}>{p.dependencia || '—'}</TableCell>
+                              <TableCell>
+                                <Chip
+                                  size="small"
+                                  sx={{ bgcolor: (ESTADO_COLOR[p.estado_workflow] || {}).bg, color: (ESTADO_COLOR[p.estado_workflow] || {}).fg, fontWeight: 800 }}
+                                  label={ESTADO_LABEL[p.estado_workflow] || p.estado_workflow}
+                                />
+                              </TableCell>
+                              <TableCell sx={{ fontSize: 12.5, color: '#475569' }}>
+                                {fecha ? new Date(fecha).toLocaleDateString('es-CO', { day: '2-digit', month: 'short', year: 'numeric' }) : '—'}
+                              </TableCell>
+                              <TableCell sx={{ textAlign: 'right' }}>
+                                <Stack direction="row" spacing={0.8} justifyContent="flex-end" alignItems="center">
+                                  <Button
+                                    size="small"
+                                    variant={accion.variant || 'contained'}
+                                    color={accion.color}
+                                    disabled={loadingWorkflow}
+                                    onClick={() => cargarPlan(p.plan_codigo)}
+                                    sx={{ borderRadius: 2, textTransform: 'none', fontWeight: 800 }}
+                                  >
+                                    {accion.label}
+                                  </Button>
+                                  {(userRole === ROL_PYE || userRole === ROL_ADMIN) && (
+                                    <Tooltip title="Devolver a Creación (Planeación y Efectividad)" arrow>
+                                      <IconButton size="small" color="warning" disabled={loadingWorkflow} onClick={() => setConfirmDelete({ plan_codigo: p.plan_codigo, dependencia: p.dependencia, estado_workflow: p.estado_workflow })}>
+                                        <DeleteOutlineIcon fontSize="small" />
+                                      </IconButton>
+                                    </Tooltip>
+                                  )}
+                                </Stack>
+                              </TableCell>
+                            </TableRow>
+                          );
+                        })}
+                      </TableBody>
+                    </Table>
+                  </TableContainer>
+                )
+              )}
+
+              {/* === SEGMENTO 3: APROBACIÓN === */}
+              {activeSegment === 'aprobacion' && (
+                planesAprobados.length === 0 ? (
+                  <Alert severity="info" sx={{ borderRadius: 2.5 }}>
+                    No hay planes aprobados para el año {selectedYear}. Cuando completes el flujo de revisión y aprobación, los planes aparecerán aquí listos para enviar a rectoría.
+                  </Alert>
+                ) : (
+                  <TableContainer component={Paper} elevation={0} sx={{ border: '1px solid #d1fae5', borderRadius: 2.5, maxHeight: 460 }}>
+                    <Table stickyHeader size="small">
+                      <TableHead>
+                        <TableRow>
+                          <TableCell sx={{ fontWeight: 900, fontSize: 12, color: '#166534', bgcolor: '#ecfdf5', borderBottom: '2px solid #d1fae5', textTransform: 'uppercase', letterSpacing: 0.3, width: 44 }}>#</TableCell>
+                          <TableCell sx={{ fontWeight: 900, fontSize: 12, color: '#166534', bgcolor: '#ecfdf5', borderBottom: '2px solid #d1fae5', textTransform: 'uppercase', letterSpacing: 0.3 }}>Dependencia</TableCell>
+                          <TableCell sx={{ fontWeight: 900, fontSize: 12, color: '#166534', bgcolor: '#ecfdf5', borderBottom: '2px solid #d1fae5', textTransform: 'uppercase', letterSpacing: 0.3, width: 200 }}>Aprobado el</TableCell>
+                          <TableCell sx={{ fontWeight: 900, fontSize: 12, color: '#166534', bgcolor: '#ecfdf5', borderBottom: '2px solid #d1fae5', textTransform: 'uppercase', letterSpacing: 0.3, width: 240, textAlign: 'right' }}>Acción</TableCell>
+                        </TableRow>
+                      </TableHead>
+                      <TableBody>
+                        {planesAprobados.map((p, idx) => (
+                          <TableRow key={p.plan_codigo} hover sx={{ bgcolor: 'rgba(220,252,231,.25)' }}>
+                            <TableCell sx={{ fontSize: 12.5, fontWeight: 800, color: '#475569' }}>{idx + 1}</TableCell>
+                            <TableCell sx={{ fontSize: 13, fontWeight: 700, color: '#0f172a' }}>{p.dependencia || '—'}</TableCell>
+                            <TableCell sx={{ fontSize: 12.5, color: '#475569' }}>
+                              {p.fecha_aprobado ? new Date(p.fecha_aprobado).toLocaleDateString('es-CO', { day: '2-digit', month: 'short', year: 'numeric' }) : '—'}
+                            </TableCell>
+                            <TableCell sx={{ textAlign: 'right' }}>
+                              <Stack direction="row" spacing={0.8} justifyContent="flex-end" alignItems="center">
+                              <Button
+                                size="small"
+                                variant="outlined"
+                                color="success"
+                                disabled={loadingWorkflow}
+                                onClick={() => cargarPlan(p.plan_codigo)}
+                                sx={{ borderRadius: 2, textTransform: 'none', fontWeight: 800 }}
+                              >
+                                Abrir aprobado
+                              </Button>
+                              {(userRole === ROL_PYE || userRole === ROL_ADMIN) && (
+                                <Tooltip title="Devolver a Creación (Planeación y Efectividad)" arrow>
+                                  <IconButton size="small" color="warning" disabled={loadingWorkflow} onClick={() => setConfirmDelete({ plan_codigo: p.plan_codigo, dependencia: p.dependencia, estado_workflow: p.estado_workflow })}>
+                                    <DeleteOutlineIcon fontSize="small" />
+                                  </IconButton>
+                                </Tooltip>
+                              )}
+                              </Stack>
+                            </TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </TableContainer>
+                )
+              )}
+            </Box>
+          );
+        })()}
+      </Paper>
+
+      {/* Tabs del constructor: SOLO cuando hay un plan cargado */}
+      {currentPlanCodigo && (
       <Paper elevation={0} sx={{ p: 0.8, borderRadius: 3.5, border: '1px solid #dbeafe', background: 'linear-gradient(180deg,#ffffff 0%,#f8fbff 100%)' }}>
         <Tabs value={workspaceTab} onChange={(_, next) => setWorkspaceTab(next)} variant="fullWidth" sx={{ minHeight: 60, '& .MuiTabs-indicator': { height: 0 }, '& .MuiTabs-flexContainer': { gap: 1 }, '& .MuiTab-root': { textTransform: 'none', fontWeight: 900, minHeight: 52, borderRadius: 2.5, color: '#64748b' }, '& .MuiTab-root.Mui-selected': { color: '#1d4ed8', background: 'linear-gradient(135deg,#eff6ff 0%,#dbeafe 100%)', boxShadow: 'inset 0 0 0 1px rgba(59,130,246,.22)' } }}>
           <Tab value="constructor" icon={<AssignmentTurnedInIcon fontSize="small" />} iconPosition="start" label={'Paso 1 · Plan y Actividades'} />
@@ -2097,8 +2963,94 @@ function GestionPlanesWorkspaceV2({ sourceRows = [] }) {
           <Tab value="listado" icon={<DescriptionIcon fontSize="small" />} iconPosition="start" label="Borradores" />
         </Tabs>
       </Paper>
+      )}
 
-{workspaceTab === 'listado' && (
+      {/* Diálogo: confirmación adaptativa (eliminar definitivo vs devolver a Creación) */}
+      {(() => {
+        const esBorrador = confirmDelete?.estado_workflow === ESTADOS_WORKFLOW.BORRADOR;
+        const tituloDialog = esBorrador ? 'Eliminar borrador definitivamente' : 'Devolver plan a Creación';
+        const colorPrincipal = esBorrador ? '#b91c1c' : '#92400e';
+        const severityAlert = esBorrador ? 'error' : 'info';
+        const mensajeAlert = esBorrador
+          ? 'Esta acción es irreversible. El plan y todas sus actividades quedarán marcados como eliminados.'
+          : 'El plan volverá al segmento de Creación como Borrador. Se limpiarán las fechas de revisión, el responsable asignado y el estado de aprobación. El contenido del plan (actividades, indicadores) se conserva.';
+        const labelBoton = esBorrador ? 'Eliminar definitivamente' : 'Devolver a Creación';
+        const colorBoton = esBorrador ? 'error' : 'warning';
+        return (
+          <Dialog open={Boolean(confirmDelete)} onClose={() => setConfirmDelete(null)} maxWidth="xs" fullWidth>
+            <DialogTitle sx={{ fontWeight: 900, color: colorPrincipal }}>{tituloDialog}</DialogTitle>
+            <DialogContent dividers>
+              <Typography sx={{ mb: 1, fontWeight: 800, color: '#0f172a' }}>
+                ¿Confirmas la acción sobre este plan?
+              </Typography>
+              {confirmDelete && (
+                <Stack spacing={0.6} sx={{ mb: 1 }}>
+                  <Typography sx={{ fontSize: 13, color: '#475569' }}>
+                    <strong>Código:</strong> {confirmDelete.plan_codigo}
+                  </Typography>
+                  <Typography sx={{ fontSize: 13, color: '#475569' }}>
+                    <strong>Dependencia:</strong> {confirmDelete.dependencia || '—'}
+                  </Typography>
+                  <Typography sx={{ fontSize: 13, color: '#475569' }}>
+                    <strong>Estado actual:</strong> {ESTADO_LABEL[confirmDelete.estado_workflow] || confirmDelete.estado_workflow}
+                  </Typography>
+                </Stack>
+              )}
+              <Alert severity={severityAlert} sx={{ borderRadius: 2 }}>
+                {mensajeAlert}
+              </Alert>
+            </DialogContent>
+            <DialogActions>
+              <Button onClick={() => setConfirmDelete(null)} sx={{ textTransform: 'none', fontWeight: 800 }}>Cancelar</Button>
+              <Button
+                variant="contained"
+                color={colorBoton}
+                disabled={loadingWorkflow}
+                onClick={() => ejecutarAccionPapelera(confirmDelete)}
+                sx={{ textTransform: 'none', fontWeight: 900 }}
+              >
+                {labelBoton}
+              </Button>
+            </DialogActions>
+          </Dialog>
+        );
+      })()}
+
+      {/* Diálogo: asignar responsable al enviar a Usuario Consulta */}
+      <Dialog open={openAsignarResponsable} onClose={() => setOpenAsignarResponsable(false)} maxWidth="sm" fullWidth>
+        <DialogTitle sx={{ fontWeight: 900 }}>Asignar responsable del plan</DialogTitle>
+        <DialogContent dividers>
+          <Typography sx={{ mb: 1.5, color: '#475569' }}>
+            Escoge el Usuario Consulta que será responsable de este plan. Solo él podrá revisar y editar el plan en su bandeja.
+          </Typography>
+          <Autocomplete
+            size="small"
+            options={usuariosConsulta}
+            value={usuariosConsulta.find((u) => Number(u.id) === Number(responsableSeleccionadoId)) || null}
+            onChange={(_, val) => setResponsableSeleccionadoId(val?.id || '')}
+            getOptionLabel={(opt) => opt ? `${opt.nombre} — ${opt.email}` : ''}
+            isOptionEqualToValue={(a, b) => Number(a?.id) === Number(b?.id)}
+            renderInput={(params) => <TextField {...params} label="Usuario Consulta" placeholder="Escribe para buscar..." />}
+            noOptionsText="No hay Usuarios Consulta activos"
+          />
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setOpenAsignarResponsable(false)} sx={{ textTransform: 'none', fontWeight: 800 }}>Cancelar</Button>
+          <Button
+            variant="contained"
+            disabled={!responsableSeleccionadoId || loadingWorkflow}
+            onClick={async () => {
+              await ejecutarTransicion('enviar_a_responsable', { responsable_id: responsableSeleccionadoId });
+              setOpenAsignarResponsable(false);
+            }}
+            sx={{ textTransform: 'none', fontWeight: 900 }}
+          >
+            Enviar al responsable
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+{currentPlanCodigo && workspaceTab === 'listado' && (
         <Paper elevation={0} sx={{ p: 2.4, borderRadius: 4, border: '1px solid #dbeafe', background: 'linear-gradient(180deg,#ffffff 0%,#f8fbff 100%)' }}>
           <SectionTitle title="Borradores Disponibles" subtitle="Sesiones guardadas localmente en este navegador para continuar sin perder avance." />
           {!!savedPlans.length && (
@@ -2138,8 +3090,14 @@ function GestionPlanesWorkspaceV2({ sourceRows = [] }) {
         </Paper>
       )}
 
-      {workspaceTab === 'constructor' && (
-        <Stack spacing={2}>
+      {currentPlanCodigo && workspaceTab === 'constructor' && (
+        <Stack spacing={2} sx={{ ...(planBloqueado ? { position: 'relative' } : {}) }}>
+          {planBloqueado && (
+            <Alert severity="info" sx={{ borderRadius: 3 }}>
+              Este plan está en estado <strong>{ESTADO_LABEL[currentPlanEstado] || currentPlanEstado}</strong> y no es editable por tu rol en este momento. Puedes verlo en modo lectura.
+            </Alert>
+          )}
+          <Box sx={{ ...(planBloqueado ? { pointerEvents: 'none', opacity: 0.78 } : {}) }}>
           <Box sx={{ display: 'grid', gap: 1.5, gridTemplateColumns: { xs: '1fr', md: 'repeat(4, 1fr)' } }}>
             {steps.map((step) => (
               <Paper key={step.title} elevation={0} sx={{ p: 1.6, borderRadius: 3, border: '1px solid #dbeafe', background: '#fff', minHeight: 120 }}>
@@ -2465,11 +3423,12 @@ function GestionPlanesWorkspaceV2({ sourceRows = [] }) {
               </Table>
             </TableContainer>
           </Paper>
+          </Box>
         </Stack>
       )}
 
-      {workspaceTab === 'acta' && (
-        <Box sx={{ display: 'grid', gap: 2, gridTemplateColumns: { xs: '1fr', xl: '.9fr 1.1fr' } }}>
+      {currentPlanCodigo && workspaceTab === 'acta' && (
+        <Box sx={{ display: 'grid', gap: 2, gridTemplateColumns: { xs: '1fr', xl: '.9fr 1.1fr' }, ...(planBloqueado ? { pointerEvents: 'none', opacity: 0.78 } : {}) }}>
           <Paper elevation={0} sx={{ p: 2.4, borderRadius: 4, border: '1px solid #dbeafe', background: 'linear-gradient(180deg,#ffffff 0%,#f8fbff 100%)' }}>
             <SectionTitle title="Acta Asistida por IA" subtitle="El acta se alimenta de observaciones, actividades y audio temporal." />
             <Stack spacing={1.4}>
@@ -2502,7 +3461,31 @@ function GestionPlanesWorkspaceV2({ sourceRows = [] }) {
           </Paper>
 
           <Paper elevation={0} sx={{ p: 2.4, borderRadius: 4, border: '1px solid #e2e8f0', background: '#fff', boxShadow: '0 10px 24px rgba(15,23,42,.05)' }}>
-            <SectionTitle title="Vista previa del Acta" subtitle="Mismo formato institucional COM-IF-FR-002 que se exporta a Word." />
+            <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1} alignItems={{ xs: 'flex-start', sm: 'center' }} justifyContent="space-between" sx={{ mb: 1.5 }}>
+              <Box sx={{ flex: 1 }}>
+                <SectionTitle title="Vista previa del Acta" subtitle={editingActa ? 'Modo edición. Modifica los campos y guarda los cambios.' : 'Mismo formato institucional COM-IF-FR-002 que se exporta a Word.'} />
+              </Box>
+              <Stack direction="row" spacing={1} sx={{ flexShrink: 0 }}>
+                {!editingActa ? (
+                  <Tooltip title="Editar el contenido del acta" arrow>
+                    <Button size="small" variant="outlined" startIcon={<EditIcon fontSize="small" />} onClick={startEditActa} sx={{ borderRadius: 2, textTransform: 'none', fontWeight: 800 }}>
+                      Editar acta
+                    </Button>
+                  </Tooltip>
+                ) : (
+                  <>
+                    <Button size="small" variant="contained" color="success" startIcon={<SaveIcon fontSize="small" />} onClick={saveActaEdits} sx={{ borderRadius: 2, textTransform: 'none', fontWeight: 800 }}>
+                      Guardar cambios
+                    </Button>
+                    <Tooltip title="Descartar ediciones y volver al contenido auto-generado" arrow>
+                      <Button size="small" variant="outlined" color="warning" startIcon={<FilterAltOffIcon fontSize="small" />} onClick={resetActaEdits} sx={{ borderRadius: 2, textTransform: 'none', fontWeight: 800 }}>
+                        Restaurar automático
+                      </Button>
+                    </Tooltip>
+                  </>
+                )}
+              </Stack>
+            </Stack>
 
             <Box sx={{
               border: '1px solid #000',
@@ -2528,28 +3511,53 @@ function GestionPlanesWorkspaceV2({ sourceRows = [] }) {
               </Box>
 
               {/* Responsable(s) */}
-              <Box sx={{ p: 0.7, borderBottom: '1px solid #000', minHeight: 28 }}>
-                <strong>Responsable(s):</strong> {actaPreviewData.responsables || ''}
+              <Box sx={{ p: 0.7, borderBottom: '1px solid #000', minHeight: 28, display: 'flex', alignItems: 'center', gap: 1 }}>
+                <strong>Responsable(s):</strong>
+                {editingActa ? (
+                  <TextField size="small" variant="standard" fullWidth value={actaFinalData.responsables || ''} onChange={(e) => setActaField('responsables', e.target.value)} />
+                ) : (
+                  <span>{actaFinalData.responsables || ''}</span>
+                )}
               </Box>
 
               {/* Dependencia que cita */}
-              <Box sx={{ p: 0.7, borderBottom: '1px solid #000', minHeight: 28 }}>
-                <strong>Dependencia que cita:</strong> {actaPreviewData.dependencia || ''}
+              <Box sx={{ p: 0.7, borderBottom: '1px solid #000', minHeight: 28, display: 'flex', alignItems: 'center', gap: 1 }}>
+                <strong>Dependencia que cita:</strong>
+                {editingActa ? (
+                  <TextField size="small" variant="standard" fullWidth value={actaFinalData.dependencia || ''} onChange={(e) => setActaField('dependencia', e.target.value)} />
+                ) : (
+                  <span>{actaFinalData.dependencia || ''}</span>
+                )}
               </Box>
 
               {/* Sección: Información de la Reunión */}
               <Box sx={{ bgcolor: '#D9D9D9', p: 0.7, textAlign: 'center', fontWeight: 900, borderBottom: '1px solid #000' }}>
                 Información de la Reunión
               </Box>
-              <Box sx={{ p: 0.7, borderBottom: '1px solid #000', minHeight: 26 }}>
-                <strong>Lugar:</strong> {actaPreviewData.lugar || ''}
+              <Box sx={{ p: 0.7, borderBottom: '1px solid #000', minHeight: 26, display: 'flex', alignItems: 'center', gap: 1 }}>
+                <strong>Lugar:</strong>
+                {editingActa ? (
+                  <TextField size="small" variant="standard" fullWidth value={actaFinalData.lugar || ''} onChange={(e) => setActaField('lugar', e.target.value)} />
+                ) : (
+                  <span>{actaFinalData.lugar || ''}</span>
+                )}
               </Box>
               <Box sx={{ display: 'grid', gridTemplateColumns: '70% 30%', borderBottom: '1px solid #000', minHeight: 26 }}>
-                <Box sx={{ p: 0.7, borderRight: '1px solid #000' }}>
-                  <strong>Fecha:</strong> {actaPreviewData.fecha || ''}
+                <Box sx={{ p: 0.7, borderRight: '1px solid #000', display: 'flex', alignItems: 'center', gap: 1 }}>
+                  <strong>Fecha:</strong>
+                  {editingActa ? (
+                    <TextField size="small" variant="standard" type="date" value={actaFinalData.fecha || ''} onChange={(e) => setActaField('fecha', e.target.value)} InputLabelProps={{ shrink: true }} />
+                  ) : (
+                    <span>{actaFinalData.fecha || ''}</span>
+                  )}
                 </Box>
-                <Box sx={{ p: 0.7 }}>
-                  <strong>Horario:</strong> {actaPreviewData.horario || ''}
+                <Box sx={{ p: 0.7, display: 'flex', alignItems: 'center', gap: 1 }}>
+                  <strong>Horario:</strong>
+                  {editingActa ? (
+                    <TextField size="small" variant="standard" fullWidth value={actaFinalData.horario || ''} onChange={(e) => setActaField('horario', e.target.value)} placeholder="08:00 - 10:00" />
+                  ) : (
+                    <span>{actaFinalData.horario || ''}</span>
+                  )}
                 </Box>
               </Box>
 
@@ -2557,58 +3565,100 @@ function GestionPlanesWorkspaceV2({ sourceRows = [] }) {
               <Box sx={{ bgcolor: '#D9D9D9', p: 0.7, textAlign: 'center', fontWeight: 900, borderBottom: '1px solid #000' }}>
                 Participantes
               </Box>
-              <Box sx={{ display: 'grid', gridTemplateColumns: '7% 43% 25% 25%', bgcolor: '#F2F2F2', fontWeight: 900, borderBottom: '1px solid #000', fontSize: 11 }}>
+              <Box sx={{ display: 'grid', gridTemplateColumns: editingActa ? '7% 38% 25% 22% 8%' : '7% 43% 25% 25%', bgcolor: '#F2F2F2', fontWeight: 900, borderBottom: '1px solid #000', fontSize: 11 }}>
                 <Box sx={{ p: 0.5, textAlign: 'center', borderRight: '1px solid #000' }}>&nbsp;</Box>
                 <Box sx={{ p: 0.5, textAlign: 'center', borderRight: '1px solid #000' }}>Nombres y Apellidos</Box>
                 <Box sx={{ p: 0.5, textAlign: 'center', borderRight: '1px solid #000' }}>Cargo</Box>
-                <Box sx={{ p: 0.5, textAlign: 'center' }}>Firma</Box>
+                <Box sx={{ p: 0.5, textAlign: 'center', borderRight: editingActa ? '1px solid #000' : 'none' }}>Firma</Box>
+                {editingActa && <Box sx={{ p: 0.5, textAlign: 'center' }}>&nbsp;</Box>}
               </Box>
-              {Array.from({ length: 10 }).map((_, i) => {
-                const p = actaPreviewData.participantes[i] || {};
-                return (
-                  <Box key={i} sx={{ display: 'grid', gridTemplateColumns: '7% 43% 25% 25%', borderBottom: '1px solid #000', minHeight: 24 }}>
-                    <Box sx={{ p: 0.4, textAlign: 'center', borderRight: '1px solid #000', fontWeight: 800 }}>{i + 1}</Box>
-                    <Box sx={{ p: 0.4, borderRight: '1px solid #000' }}>{p.nombre || ''}</Box>
-                    <Box sx={{ p: 0.4, borderRight: '1px solid #000' }}>{p.cargo || ''}</Box>
-                    <Box sx={{ p: 0.4 }}>&nbsp;</Box>
+              {(() => {
+                const list = actaFinalData.participantes || [];
+                const visibles = editingActa ? list : Array.from({ length: Math.max(10, list.length) }).map((_, i) => list[i] || {});
+                return visibles.map((p, i) => (
+                  <Box key={i} sx={{ display: 'grid', gridTemplateColumns: editingActa ? '7% 38% 25% 22% 8%' : '7% 43% 25% 25%', borderBottom: '1px solid #000', minHeight: 24 }}>
+                    <Box sx={{ p: 0.4, textAlign: 'center', borderRight: '1px solid #000', fontWeight: 800, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>{i + 1}</Box>
+                    <Box sx={{ p: 0.4, borderRight: '1px solid #000', display: 'flex', alignItems: 'center' }}>
+                      {editingActa ? (
+                        <TextField size="small" variant="standard" fullWidth value={p?.nombre || ''} onChange={(e) => setActaParticipante(i, 'nombre', e.target.value)} />
+                      ) : (
+                        <span>{p?.nombre || ''}</span>
+                      )}
+                    </Box>
+                    <Box sx={{ p: 0.4, borderRight: '1px solid #000', display: 'flex', alignItems: 'center' }}>
+                      {editingActa ? (
+                        <TextField size="small" variant="standard" fullWidth value={p?.cargo || ''} onChange={(e) => setActaParticipante(i, 'cargo', e.target.value)} />
+                      ) : (
+                        <span>{p?.cargo || ''}</span>
+                      )}
+                    </Box>
+                    <Box sx={{ p: 0.4, borderRight: editingActa ? '1px solid #000' : 'none' }}>&nbsp;</Box>
+                    {editingActa && (
+                      <Box sx={{ p: 0.2, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                        <Tooltip title="Quitar fila" arrow>
+                          <IconButton size="small" onClick={() => removeActaParticipante(i)} sx={{ p: 0.3, color: '#b91c1c' }}>
+                            <DeleteOutlineIcon sx={{ fontSize: 16 }} />
+                          </IconButton>
+                        </Tooltip>
+                      </Box>
+                    )}
                   </Box>
-                );
-              })}
+                ));
+              })()}
+              {editingActa && (
+                <Box sx={{ p: 0.6, borderBottom: '1px solid #000', textAlign: 'center', bgcolor: '#fafafa' }}>
+                  <Button size="small" startIcon={<AutoAwesomeIcon fontSize="small" />} onClick={addActaParticipante} sx={{ textTransform: 'none', fontWeight: 800 }}>
+                    Agregar participante
+                  </Button>
+                </Box>
+              )}
 
               {/* Sección: Objetivo */}
               <Box sx={{ bgcolor: '#D9D9D9', p: 0.7, textAlign: 'center', fontWeight: 900, borderBottom: '1px solid #000' }}>
                 Objetivo
               </Box>
-              <Box sx={{ p: 0.9, borderBottom: '1px solid #000', minHeight: 60, whiteSpace: 'pre-line', textAlign: 'justify' }}>
-                {(actaPreviewData.objetivo || []).join('\n')}
+              <Box sx={{ p: 0.9, borderBottom: '1px solid #000', minHeight: 60, textAlign: 'justify' }}>
+                {editingActa ? (
+                  <TextField size="small" variant="standard" fullWidth multiline minRows={2} value={arrayToText(actaFinalData.objetivo)} onChange={(e) => setActaField('objetivo', textToArray(e.target.value))} />
+                ) : (
+                  <Box sx={{ whiteSpace: 'pre-line' }}>{(actaFinalData.objetivo || []).join('\n')}</Box>
+                )}
               </Box>
 
               {/* Sección: Desarrollo */}
               <Box sx={{ bgcolor: '#D9D9D9', p: 0.7, textAlign: 'center', fontWeight: 900, borderBottom: '1px solid #000' }}>
                 Desarrollo
               </Box>
-              <Box sx={{ p: 0.9, borderBottom: '1px solid #000', minHeight: 90, whiteSpace: 'pre-line', textAlign: 'justify' }}>
-                {(actaPreviewData.desarrollo || []).join('\n')}
+              <Box sx={{ p: 0.9, borderBottom: '1px solid #000', minHeight: 90, textAlign: 'justify' }}>
+                {editingActa ? (
+                  <TextField size="small" variant="standard" fullWidth multiline minRows={4} value={arrayToText(actaFinalData.desarrollo)} onChange={(e) => setActaField('desarrollo', textToArray(e.target.value))} />
+                ) : (
+                  <Box sx={{ whiteSpace: 'pre-line' }}>{(actaFinalData.desarrollo || []).join('\n')}</Box>
+                )}
               </Box>
 
               {/* Sección: Conclusiones / Compromisos */}
               <Box sx={{ bgcolor: '#D9D9D9', p: 0.7, textAlign: 'center', fontWeight: 900, borderBottom: '1px solid #000' }}>
                 Conclusiones / Compromisos
               </Box>
-              <Box sx={{ p: 0.9, minHeight: 70, whiteSpace: 'pre-line', textAlign: 'justify' }}>
-                {(actaPreviewData.conclusiones || []).join('\n')}
+              <Box sx={{ p: 0.9, minHeight: 70, textAlign: 'justify' }}>
+                {editingActa ? (
+                  <TextField size="small" variant="standard" fullWidth multiline minRows={3} value={arrayToText(actaFinalData.conclusiones)} onChange={(e) => setActaField('conclusiones', textToArray(e.target.value))} />
+                ) : (
+                  <Box sx={{ whiteSpace: 'pre-line' }}>{(actaFinalData.conclusiones || []).join('\n')}</Box>
+                )}
               </Box>
             </Box>
 
             <Stack direction={{ xs: 'column', md: 'row' }} spacing={1.2} sx={{ mt: 2 }}>
-              <Button startIcon={<DescriptionIcon />} variant="contained" onClick={exportActaWord} sx={{ borderRadius: 2.5, textTransform: 'none', fontWeight: 900 }}>Exportar acta a Word</Button>
+              <Button startIcon={<DescriptionIcon />} variant="contained" onClick={exportActaWord} disabled={editingActa} sx={{ borderRadius: 2.5, textTransform: 'none', fontWeight: 900 }}>Exportar acta a Word</Button>
               <Button startIcon={<SaveIcon />} variant="outlined" onClick={saveCurrentPlan} sx={{ borderRadius: 2.5, textTransform: 'none', fontWeight: 900 }}>Guardar borrador del acta</Button>
             </Stack>
           </Paper>
         </Box>
       )}
 
-      {workspaceTab === 'exportacion' && (
+      {currentPlanCodigo && workspaceTab === 'exportacion' && (
         <Box sx={{ display: 'grid', gap: 2, gridTemplateColumns: { xs: '1fr', xl: '1fr 1fr' } }}>
           <Paper elevation={0} sx={{ p: 2.4, borderRadius: 4, border: '1px solid #dbeafe', background: 'linear-gradient(180deg,#ffffff 0%,#f8fbff 100%)' }}>
             <SectionTitle title="Chequeo de Salida" subtitle="Validaciones previas a compartir el plan y el acta." />
@@ -2682,6 +3732,36 @@ function PlaneacionEfectividad() {
     load();
     return () => { active = false; };
   }, [enqueueSnackbar]);
+
+  const cargarDashboardPlanAccion = useCallback(async ({ silent = false } = {}) => {
+    if (!silent) setLoading(true);
+    try {
+      const response = await gestionInformacionService.getPlanAccionDashboard();
+      setDashboard(response.data || { rows: [], filters: {}, meta: {} });
+    } catch (error) {
+      enqueueSnackbar(error.response?.data?.message || 'No fue posible cargar PlaneaciÃ³n y Efectividad', { variant: 'error' });
+    } finally {
+      if (!silent) setLoading(false);
+    }
+  }, [enqueueSnackbar]);
+
+  useEffect(() => {
+    const refreshOnVisible = () => {
+      if (document.visibilityState === 'visible') {
+        cargarDashboardPlanAccion({ silent: true });
+      }
+    };
+    document.addEventListener('visibilitychange', refreshOnVisible);
+    window.addEventListener('focus', refreshOnVisible);
+    return () => {
+      document.removeEventListener('visibilitychange', refreshOnVisible);
+      window.removeEventListener('focus', refreshOnVisible);
+    };
+  }, [cargarDashboardPlanAccion]);
+
+  useEffect(() => {
+    cargarDashboardPlanAccion({ silent: true });
+  }, [section, cargarDashboardPlanAccion]);
 
   const activeFilters = filtersByTab[tab] || filtersByTab.estadistica;
 
@@ -2767,7 +3847,7 @@ function PlaneacionEfectividad() {
           </Paper>
 
           {section === 'gestion' ? (
-            <GestionPlanesWorkspaceV2 sourceRows={dashboard.rows || []} />
+            <GestionPlanesWorkspaceV2 sourceRows={dashboard.rows || []} onWorkflowChanged={cargarDashboardPlanAccion} />
           ) : (
             <>
           <Paper

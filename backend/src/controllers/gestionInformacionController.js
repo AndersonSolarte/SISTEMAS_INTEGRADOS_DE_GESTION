@@ -30,7 +30,10 @@ const {
   RecursoHumanoAdministrativo,
   RecursoHumanoOutsourcing,
   RecursoHumanoOnda,
-  PlanAccion
+  PlanAccion,
+  Autoevaluacion,
+  AutoevaluacionParticipante,
+  AutoevaluacionPrograma
 } = require('../models');
 const XLSX = require('xlsx');
 const fs = require('fs');
@@ -164,6 +167,24 @@ const clearDatasetStorage = async ({
     await PlanAccion.destroy({ where: {} });
   }
 
+  if (categoria === 'Autoevaluación') {
+    await ensureAutoevaluacionTable();
+    const subKey = normalizeCategoryToken(subcategoria);
+    if (subKey === 'participantes') {
+      await AutoevaluacionParticipante.destroy({ where: {} });
+    } else if (subKey === 'informacion_programas' || subKey === 'informacion_programa' || subKey === 'programas') {
+      await AutoevaluacionPrograma.destroy({ where: {} });
+    } else if (subKey === 'autoevaluacion') {
+      await Autoevaluacion.destroy({ where: {} });
+    } else {
+      await Promise.all([
+        Autoevaluacion.destroy({ where: {} }),
+        AutoevaluacionParticipante.destroy({ where: {} }),
+        AutoevaluacionPrograma.destroy({ where: {} })
+      ]);
+    }
+  }
+
   return { deleted, deletedLogs };
 };
 
@@ -178,7 +199,128 @@ const DATASET_CATEGORIES = {
   proyectos_convenios: 'Proyectos y Convenios',
   recurso_humano: 'Recurso Humano',
   saber_pro: 'Saber Pro',
-  plan_accion: 'Plan de Acción'
+  plan_accion: 'Plan de Acción',
+  autoevaluacion: 'Autoevaluación'
+};
+
+const AUTOEVALUACION_TEMPLATE_HEADERS = [
+  'Acuerdo MEN',
+  'PROGRAMA',
+  'FACTOR',
+  'CARACTERÍSTICA',
+  'ASPECTOS POR EVALUAR',
+  'INDICADOR',
+  'Instrumento',
+  'SCRIT',
+  'Componente Programa / Institución',
+  'Calificación Indicador',
+  'Evidencias',
+  'Información para tener en cuenta'
+];
+
+const AUTOEVALUACION_ESTRUCTURA_ROWS = [
+  ['Acuerdo MEN', 'Acuerdo o referente normativo asociado al proceso de autoevaluación.'],
+  ['PROGRAMA', 'Programa académico o dependencia que reporta la información.'],
+  ['FACTOR', 'Factor de autoevaluación al que pertenece el indicador.'],
+  ['CARACTERÍSTICA', 'Característica evaluada dentro del factor.'],
+  ['ASPECTOS POR EVALUAR', 'Aspecto específico que será valorado.'],
+  ['INDICADOR', 'Indicador cualitativo o cuantitativo del aspecto evaluado.'],
+  ['Instrumento', 'Instrumento, fuente o mecanismo de medición.'],
+  ['SCRIT', 'Criterio o código SCRIT asociado, si aplica.'],
+  ['Componente Programa / Institución', 'Componente de análisis del indicador: programa, institución o ambos.'],
+  ['Calificación Indicador', 'Calificación numérica del indicador, si aplica.'],
+  ['Evidencias', 'Evidencias que soportan la valoración.'],
+  ['Información para tener en cuenta', 'Notas, contexto o información complementaria.']
+];
+
+const AUTOEVALUACION_PARTICIPANTES_TEMPLATE_HEADERS = [
+  'PROGRAMA',
+  'ALCANCE AUTOEVALUACIÓN',
+  'ACTA INICIO PROCESO DE AUTOEVALUACIÓN',
+  'CRONOGRAMA DE AUTOEVALUACIÓN',
+  'NOMBRES COMPLETOS',
+  'DOCUMENTO',
+  'CARGO',
+  'ROL EN EL PROCESO'
+];
+
+const AUTOEVALUACION_PARTICIPANTES_ESTRUCTURA_ROWS = [
+  ['PROGRAMA', 'Programa académico que adelanta el proceso de autoevaluación.'],
+  ['ALCANCE AUTOEVALUACIÓN', 'Renovación Registro Calificado o Acreditación Alta Calidad.'],
+  ['ACTA INICIO PROCESO DE AUTOEVALUACIÓN', 'Enlace al acta de inicio del proceso.'],
+  ['CRONOGRAMA DE AUTOEVALUACIÓN', 'Enlace al cronograma de autoevaluación.'],
+  ['NOMBRES COMPLETOS', 'Nombre completo del integrante del comité o equipo.'],
+  ['DOCUMENTO', 'Número de documento del integrante.'],
+  ['CARGO', 'Cargo institucional del integrante.'],
+  ['ROL EN EL PROCESO', 'Rol que cumple dentro del proceso de autoevaluación.']
+];
+
+const AUTOEVALUACION_PROGRAMAS_TEMPLATE_HEADERS = [
+  'PROGRAMA',
+  'PROCESO AUTOEVALUACIÓN',
+  'FACULTAD A LA QUE ESTÁ ADSCRITO',
+  'NIVEL DE FORMACIÓN',
+  'RENOVACIÓN REGISTRO CALIFICADO',
+  'CÓDIGO SNIES',
+  'TÍTULO QUE OTORGA',
+  'E-MAIL DEL PROGRAMA',
+  'DURACIÓN DE FORMACIÓN',
+  'NÚMERO DE CRÉDITOS',
+  'NÚMERO DE ESTUDIANTES A ADMITIR A PRIMER CURSO'
+];
+
+const AUTOEVALUACION_PROGRAMAS_ESTRUCTURA_ROWS = [
+  ['PROGRAMA', 'Nombre oficial del programa académico.'],
+  ['PROCESO AUTOEVALUACIÓN', 'Proceso al que pertenece la información: Renovación Registro Calificado, Acreditación Alta Calidad u otro.'],
+  ['FACULTAD A LA QUE ESTÁ ADSCRITO', 'Facultad o unidad académica responsable del programa.'],
+  ['NIVEL DE FORMACIÓN', 'Pregrado, especialización, maestría, doctorado u otro nivel.'],
+  ['RENOVACIÓN REGISTRO CALIFICADO', 'Estado, fecha, resolución o información relacionada con la renovación del registro calificado.'],
+  ['CÓDIGO SNIES', 'Código SNIES del programa.'],
+  ['TÍTULO QUE OTORGA', 'Título académico otorgado al graduado.'],
+  ['E-MAIL DEL PROGRAMA', 'Correo institucional del programa.'],
+  ['DURACIÓN DE FORMACIÓN', 'Duración del programa en semestres, periodos o años.'],
+  ['NÚMERO DE CRÉDITOS', 'Total de créditos académicos del programa.'],
+  ['NÚMERO DE ESTUDIANTES A ADMITIR A PRIMER CURSO', 'Cupo o número de estudiantes a admitir en primer curso.']
+];
+
+const AUTOEVALUACION_ROW_ALIASES = {
+  acuerdo_men: ['Acuerdo MEN'],
+  programa: ['PROGRAMA', 'Programa'],
+  factor: ['FACTOR', 'Factor'],
+  caracteristica: ['CARACTERÍSTICA', 'CARACTERISTICA'],
+  aspectos_por_evaluar: ['ASPECTOS POR EVALUAR', 'Aspectos por evaluar'],
+  indicador: ['INDICADOR', 'Indicador'],
+  instrumento: ['Instrumento', 'INSTRUMENTO'],
+  scrit: ['SCRIT'],
+  componente: ['Componente Programa / Institución', 'Componente Programa / Institucion', 'Componente ', 'Componente', 'COMPONENTE'],
+  calificacion_indicador: ['Calificación Indicador', 'Calificacion Indicador', 'CALIFICACIÓN INDICADOR'],
+  evidencias: ['Evidencias', 'EVIDENCIAS'],
+  informacion_para_tener_en_cuenta: ['Información para tener en cuenta', 'Informacion para tener en cuenta']
+};
+
+const AUTOEVALUACION_PARTICIPANTE_ROW_ALIASES = {
+  programa: ['PROGRAMA', 'Programa'],
+  alcance_autoevaluacion: ['ALCANCE AUTOEVALUACIÓN', 'ALCANCE AUTOEVALUACION', 'Alcance de la autoevaluación'],
+  acta_inicio_url: ['ACTA INICIO PROCESO DE AUTOEVALUACIÓN', 'ACTA INICIO PROCESO DE AUTOEVALUACION', 'Acta inicio proceso de autoevaluación'],
+  cronograma_url: ['CRONOGRAMA DE AUTOEVALUACIÓN', 'CRONOGRAMA DE AUTOEVALUACION', 'Cronograma de Autoevaluación'],
+  nombres_completos: ['NOMBRES COMPLETOS', 'Nombres Completos', 'Integrantes del Comité/equipo de Autoevaluación'],
+  documento: ['DOCUMENTO', 'Documento'],
+  cargo: ['CARGO', 'Cargo'],
+  rol_en_proceso: ['ROL EN EL PROCESO', 'Rol en el proceso']
+};
+
+const AUTOEVALUACION_PROGRAMA_ROW_ALIASES = {
+  programa: ['PROGRAMA', 'Nombre del Programa', 'Nombre del programa'],
+  proceso_autoevaluacion: ['PROCESO AUTOEVALUACIÓN', 'PROCESO AUTOEVALUACION', 'Proceso de autoevaluación', 'Proceso autoevaluacion'],
+  facultad: ['FACULTAD A LA QUE ESTÁ ADSCRITO', 'FACULTAD A LA QUE ESTA ADSCRITO', 'Facultad a la que está adscrito'],
+  nivel_formacion: ['NIVEL DE FORMACIÓN', 'NIVEL DE FORMACION', 'Nivel de Formación'],
+  renovacion_registro_calificado: ['RENOVACIÓN REGISTRO CALIFICADO', 'RENOVACION REGISTRO CALIFICADO', 'Renovación Registro Calificado'],
+  codigo_snies: ['CÓDIGO SNIES', 'CODIGO SNIES', 'Código SNIES:', 'Código SNIES'],
+  titulo_otorga: ['TÍTULO QUE OTORGA', 'TITULO QUE OTORGA', 'Título que Otorga'],
+  email_programa: ['E-MAIL DEL PROGRAMA', 'EMAIL DEL PROGRAMA', 'E-mail del Programa'],
+  duracion_formacion: ['DURACIÓN DE FORMACIÓN', 'DURACION DE FORMACION', 'Duración de Formación'],
+  numero_creditos: ['NÚMERO DE CRÉDITOS', 'NUMERO DE CREDITOS', 'Número de Créditos'],
+  estudiantes_primer_curso: ['NÚMERO DE ESTUDIANTES A ADMITIR A PRIMER CURSO', 'NUMERO DE ESTUDIANTES A ADMITIR A PRIMER CURSO', 'Número de estudiantes a admitir a primer curso']
 };
 
 const PLAN_ACCION_TEMPLATE_HEADERS = [
@@ -265,6 +407,106 @@ const pickPlanAccionCell = (row = {}, field) => {
   }
   return null;
 };
+
+const pickAutoevaluacionCell = (row = {}, field) => {
+  const aliases = AUTOEVALUACION_ROW_ALIASES[field] || [];
+  const keys = Object.keys(row);
+  const normalizedRow = keys.reduce((acc, key) => {
+    acc[normalizeHeaderKey(key)] = row[key];
+    return acc;
+  }, {});
+  for (const alias of aliases) {
+    const key = normalizeHeaderKey(alias);
+    if (normalizedRow[key] !== undefined && normalizedRow[key] !== null && String(normalizedRow[key]).trim() !== '') {
+      return normalizedRow[key];
+    }
+  }
+  return null;
+};
+
+const pickAutoevaluacionParticipanteCell = (row = {}, field) => {
+  const aliases = AUTOEVALUACION_PARTICIPANTE_ROW_ALIASES[field] || [];
+  const keys = Object.keys(row);
+  const normalizedRow = keys.reduce((acc, key) => {
+    acc[normalizeHeaderKey(key)] = row[key];
+    return acc;
+  }, {});
+  for (const alias of aliases) {
+    const key = normalizeHeaderKey(alias);
+    if (normalizedRow[key] !== undefined && normalizedRow[key] !== null && String(normalizedRow[key]).trim() !== '') {
+      return normalizedRow[key];
+    }
+  }
+  return null;
+};
+
+const pickAutoevaluacionProgramaCell = (row = {}, field) => {
+  const aliases = AUTOEVALUACION_PROGRAMA_ROW_ALIASES[field] || [];
+  const keys = Object.keys(row);
+  const normalizedRow = keys.reduce((acc, key) => {
+    acc[normalizeHeaderKey(key)] = row[key];
+    return acc;
+  }, {});
+  for (const alias of aliases) {
+    const key = normalizeHeaderKey(alias);
+    if (normalizedRow[key] !== undefined && normalizedRow[key] !== null && String(normalizedRow[key]).trim() !== '') {
+      return normalizedRow[key];
+    }
+  }
+  return null;
+};
+
+const mapAutoevaluacionRow = (row) => ({
+  acuerdo_men: normalizeText(pickAutoevaluacionCell(row, 'acuerdo_men')),
+  programa: normalizeText(pickAutoevaluacionCell(row, 'programa')),
+  factor: normalizeText(pickAutoevaluacionCell(row, 'factor')),
+  caracteristica: normalizeText(pickAutoevaluacionCell(row, 'caracteristica')),
+  aspectos_por_evaluar: normalizeText(pickAutoevaluacionCell(row, 'aspectos_por_evaluar')),
+  indicador: normalizeText(pickAutoevaluacionCell(row, 'indicador')),
+  instrumento: normalizeText(pickAutoevaluacionCell(row, 'instrumento')),
+  scrit: normalizeText(pickAutoevaluacionCell(row, 'scrit')),
+  componente: normalizeText(pickAutoevaluacionCell(row, 'componente')),
+  calificacion_indicador: parsePlanAccionPorcentaje(pickAutoevaluacionCell(row, 'calificacion_indicador')),
+  evidencias: normalizeText(pickAutoevaluacionCell(row, 'evidencias')),
+  informacion_para_tener_en_cuenta: normalizeText(pickAutoevaluacionCell(row, 'informacion_para_tener_en_cuenta')),
+  raw_data: row
+});
+
+const normalizeAutoevaluacionAlcance = (value) => {
+  const text = normalizeText(value);
+  if (!text) return null;
+  const key = stripDiacritics(text).toUpperCase();
+  if (key.includes('ACREDITACION')) return 'ACREDITACIÓN ALTA CALIDAD';
+  if (key.includes('RENOVACION') || key.includes('REGISTRO')) return 'RENOVACIÓN REGISTRO CALIFICADO';
+  return text;
+};
+
+const mapAutoevaluacionParticipanteRow = (row) => ({
+  programa: normalizeText(pickAutoevaluacionParticipanteCell(row, 'programa')),
+  alcance_autoevaluacion: normalizeAutoevaluacionAlcance(pickAutoevaluacionParticipanteCell(row, 'alcance_autoevaluacion')),
+  acta_inicio_url: normalizeText(pickAutoevaluacionParticipanteCell(row, 'acta_inicio_url')),
+  cronograma_url: normalizeText(pickAutoevaluacionParticipanteCell(row, 'cronograma_url')),
+  nombres_completos: normalizeText(pickAutoevaluacionParticipanteCell(row, 'nombres_completos')),
+  documento: normalizeText(pickAutoevaluacionParticipanteCell(row, 'documento')),
+  cargo: normalizeText(pickAutoevaluacionParticipanteCell(row, 'cargo')),
+  rol_en_proceso: normalizeText(pickAutoevaluacionParticipanteCell(row, 'rol_en_proceso')),
+  raw_data: row
+});
+
+const mapAutoevaluacionProgramaRow = (row) => ({
+  programa: normalizeText(pickAutoevaluacionProgramaCell(row, 'programa')),
+  proceso_autoevaluacion: normalizeAutoevaluacionAlcance(pickAutoevaluacionProgramaCell(row, 'proceso_autoevaluacion')) || normalizeText(pickAutoevaluacionProgramaCell(row, 'proceso_autoevaluacion')),
+  facultad: normalizeText(pickAutoevaluacionProgramaCell(row, 'facultad')),
+  nivel_formacion: normalizeText(pickAutoevaluacionProgramaCell(row, 'nivel_formacion')),
+  renovacion_registro_calificado: normalizeText(pickAutoevaluacionProgramaCell(row, 'renovacion_registro_calificado')),
+  codigo_snies: normalizeText(pickAutoevaluacionProgramaCell(row, 'codigo_snies')),
+  titulo_otorga: normalizeText(pickAutoevaluacionProgramaCell(row, 'titulo_otorga')),
+  email_programa: normalizeText(pickAutoevaluacionProgramaCell(row, 'email_programa')),
+  duracion_formacion: normalizeText(pickAutoevaluacionProgramaCell(row, 'duracion_formacion')),
+  numero_creditos: normalizeText(pickAutoevaluacionProgramaCell(row, 'numero_creditos')),
+  estudiantes_primer_curso: normalizeText(pickAutoevaluacionProgramaCell(row, 'estudiantes_primer_curso')),
+  raw_data: row
+});
 
 const buildValidDateOnly = (year, month, day) => {
   const y = Number(year);
@@ -1004,6 +1246,17 @@ const resolveCategoria = (value = '') => {
   if (!raw) return null;
   const normalized = normalizeCategoryToken(raw);
   return DATASET_CATEGORIES[raw] || DATASET_CATEGORIES[raw.toLowerCase()] || CATEGORY_BY_NORMALIZED[normalized] || raw;
+};
+
+const isAutoevaluacionRole = (req) => String(req.user?.role || '').trim() === 'autoevaluacion';
+
+const enforceAutoevaluacionDatasetScope = (req, res, categoria) => {
+  if (!isAutoevaluacionRole(req) || categoria === 'Autoevaluación') return true;
+  res.status(403).json({
+    success: false,
+    message: 'El usuario de Autoevaluación solo puede gestionar la base Autoevaluación'
+  });
+  return false;
 };
 
 const repairImportedText = (value = '') => {
@@ -2469,6 +2722,7 @@ const resolveDefaultImportSheetName = (workbook, categoria) => {
 
 let georreferenciaSyncPromise = null;
 let planAccionSyncPromise = null;
+let autoevaluacionSyncPromise = null;
 
 const isMissingRelationError = (error) => {
   const errorCode = String(error?.original?.code || error?.parent?.code || '');
@@ -2497,6 +2751,224 @@ const ensurePlanAccionTable = async () => {
     });
   }
   return planAccionSyncPromise;
+};
+
+const ensureAutoevaluacionTable = async () => {
+  if (!autoevaluacionSyncPromise) {
+    autoevaluacionSyncPromise = Promise.all([
+      Autoevaluacion.sync(),
+      AutoevaluacionParticipante.sync(),
+      AutoevaluacionPrograma.sync()
+    ]).catch((error) => {
+      autoevaluacionSyncPromise = null;
+      throw error;
+    });
+  }
+  return autoevaluacionSyncPromise;
+};
+
+const parseAutoevaluacionPrefix = (value = '', fallbackPrefix = '') => {
+  const text = String(value || '').trim();
+  const match = text.match(/^([A-Z]+)\s*0*([0-9]+)/i);
+  if (!match) return { code: null, number: null, label: text };
+  return {
+    code: `${match[1].toUpperCase()}${Number(match[2])}`,
+    number: Number(match[2]),
+    label: text.replace(/^[A-Z]+\s*0*[0-9]+\.?\s*/i, '').trim() || `${fallbackPrefix}${Number(match[2])}`
+  };
+};
+
+const getAutoevaluacionJudgement = (value) => {
+  const score = Number(value);
+  if (!Number.isFinite(score)) return { label: 'SIN CALIFICAR', tone: '#64748b' };
+  if (score >= 4.6) return { label: 'SE CUMPLE PLENAMENTE', tone: '#047857' };
+  if (score >= 4.0) return { label: 'SE CUMPLE EN ALTO GRADO', tone: '#2563eb' };
+  if (score >= 3.0) return { label: 'SE CUMPLE ACEPTABLEMENTE', tone: '#d97706' };
+  if (score >= 2.0) return { label: 'SE CUMPLE INSATISFACTORIAMENTE', tone: '#dc2626' };
+  return { label: 'NO SE CUMPLE', tone: '#991b1b' };
+};
+
+const averageNumbers = (values = []) => {
+  const nums = values.map((v) => Number(v)).filter((v) => Number.isFinite(v));
+  if (!nums.length) return null;
+  return Number((nums.reduce((acc, item) => acc + item, 0) / nums.length).toFixed(2));
+};
+
+const isAutoevaluacionProgramasSubbase = (subcategoria = '') => {
+  const key = normalizeCategoryToken(subcategoria);
+  return key === 'informacion_programas' || key === 'informacion_programa' || key === 'programas';
+};
+
+const buildAutoevaluacionDashboardPayload = ({ aspectosRows = [], participantesRows = [], programasRows = [], programa = '' }) => {
+  const normalizedPrograma = normalizeHeader(programa);
+  const rows = normalizedPrograma
+    ? aspectosRows.filter((row) => normalizeHeader(row.programa).includes(normalizedPrograma))
+    : aspectosRows;
+  const participantes = normalizedPrograma
+    ? participantesRows.filter((row) => normalizeHeader(row.programa).includes(normalizedPrograma))
+    : participantesRows;
+  const programasInfo = normalizedPrograma
+    ? programasRows.filter((row) => normalizeHeader(row.programa).includes(normalizedPrograma))
+    : programasRows;
+
+  const programasDisponibles = Array.from(new Set([
+    ...aspectosRows.map((row) => row.programa).filter(Boolean),
+    ...participantesRows.map((row) => row.programa).filter(Boolean),
+    ...programasRows.map((row) => row.programa).filter(Boolean)
+  ])).sort((a, b) => String(a).localeCompare(String(b), 'es'));
+
+  const factorMap = new Map();
+  const caracteristicaMap = new Map();
+  const instrumentoMap = new Map();
+  const componenteMap = new Map();
+  const judgementMap = new Map();
+
+  rows.forEach((row) => {
+    const factorInfo = parseAutoevaluacionPrefix(row.factor, 'F');
+    const factorKey = factorInfo.code || row.factor || 'SIN FACTOR';
+    if (!factorMap.has(factorKey)) {
+      factorMap.set(factorKey, {
+        factor: factorKey,
+        factorNumero: factorInfo.number || 999,
+        nombre: factorInfo.label || factorKey,
+        calificaciones: [],
+        aspectos: 0,
+        indicadores: new Set(),
+        evidencias: 0
+      });
+    }
+    const factorData = factorMap.get(factorKey);
+    factorData.aspectos += 1;
+    if (row.indicador) factorData.indicadores.add(row.indicador);
+    if (row.evidencias) factorData.evidencias += 1;
+    const score = Number(row.calificacion_indicador);
+    if (Number.isFinite(score)) factorData.calificaciones.push(score);
+
+    const carInfo = parseAutoevaluacionPrefix(row.caracteristica, 'C');
+    const carKey = carInfo.code || row.caracteristica || 'SIN CARACTERISTICA';
+    if (!caracteristicaMap.has(carKey)) {
+      caracteristicaMap.set(carKey, {
+        caracteristica: carKey,
+        factor: factorKey,
+        nombre: carInfo.label || carKey,
+        calificaciones: [],
+        aspectos: 0
+      });
+    }
+    const carData = caracteristicaMap.get(carKey);
+    carData.aspectos += 1;
+    if (Number.isFinite(score)) carData.calificaciones.push(score);
+
+    const instrumento = normalizeText(row.instrumento) || 'Sin instrumento';
+    instrumentoMap.set(instrumento, (instrumentoMap.get(instrumento) || 0) + 1);
+    const componente = normalizeText(row.componente) || 'Sin componente';
+    componenteMap.set(componente, (componenteMap.get(componente) || 0) + 1);
+    const judgement = getAutoevaluacionJudgement(score).label;
+    judgementMap.set(judgement, (judgementMap.get(judgement) || 0) + 1);
+  });
+
+  const factores = Array.from(factorMap.values())
+    .map((item) => {
+      const promedio = averageNumbers(item.calificaciones);
+      return {
+        factor: item.factor,
+        nombre: item.nombre,
+        aspectos: item.aspectos,
+        indicadores: item.indicadores.size,
+        evidencias: item.evidencias,
+        calificacion: promedio,
+        cumplimiento: getAutoevaluacionJudgement(promedio)
+      };
+    })
+    .sort((a, b) => {
+      const aNum = Number(String(a.factor).replace(/[^0-9]/g, '')) || 999;
+      const bNum = Number(String(b.factor).replace(/[^0-9]/g, '')) || 999;
+      return aNum - bNum;
+    });
+
+  const caracteristicas = Array.from(caracteristicaMap.values())
+    .map((item) => ({
+      caracteristica: item.caracteristica,
+      factor: item.factor,
+      nombre: item.nombre,
+      aspectos: item.aspectos,
+      calificacion: averageNumbers(item.calificaciones),
+      cumplimiento: getAutoevaluacionJudgement(averageNumbers(item.calificaciones))
+    }))
+    .sort((a, b) => {
+      const aNum = Number(String(a.caracteristica).replace(/[^0-9]/g, '')) || 999;
+      const bNum = Number(String(b.caracteristica).replace(/[^0-9]/g, '')) || 999;
+      return aNum - bNum;
+    });
+
+  const calificaciones = rows.map((row) => Number(row.calificacion_indicador)).filter((v) => Number.isFinite(v));
+  const promedioGeneral = averageNumbers(calificaciones);
+  const evidencias = rows.filter((row) => normalizeText(row.evidencias)).length;
+  const indicadores = new Set(rows.map((row) => normalizeText(row.indicador)).filter(Boolean)).size;
+  const aspectos = rows.length;
+
+  return {
+    filtros: { programa: programa || null },
+    programasDisponibles,
+    resumen: {
+      programaActivo: programa || programasDisponibles[0] || null,
+      promedioGeneral,
+      cumplimientoGeneral: getAutoevaluacionJudgement(promedioGeneral),
+      factores: factores.length,
+      caracteristicas: caracteristicas.length,
+      aspectos,
+      indicadores,
+      evidencias,
+      coberturaEvidencias: aspectos ? Number(((evidencias / aspectos) * 100).toFixed(2)) : 0,
+      participantes: participantes.length
+    },
+    factores,
+    caracteristicas,
+    aspectos: rows.map((row) => ({
+      id: row.id,
+      acuerdoMen: row.acuerdo_men,
+      programa: row.programa,
+      factor: row.factor,
+      caracteristica: row.caracteristica,
+      aspecto: row.aspectos_por_evaluar,
+      indicador: row.indicador,
+      instrumento: row.instrumento,
+      scrit: row.scrit,
+      componente: row.componente,
+      calificacion: Number(row.calificacion_indicador),
+      evidencia: row.evidencias,
+      informacion: row.informacion_para_tener_en_cuenta,
+      cumplimiento: getAutoevaluacionJudgement(row.calificacion_indicador)
+    })),
+    instrumentos: Array.from(instrumentoMap.entries()).map(([name, total]) => ({ name, total })).sort((a, b) => b.total - a.total),
+    componentes: Array.from(componenteMap.entries()).map(([name, total]) => ({ name, total })).sort((a, b) => b.total - a.total),
+    cumplimiento: Array.from(judgementMap.entries()).map(([name, total]) => ({ name, total })),
+    participantes: participantes.map((row) => ({
+      id: row.id,
+      programa: row.programa,
+      alcance: row.alcance_autoevaluacion,
+      nombres: row.nombres_completos,
+      documento: row.documento,
+      cargo: row.cargo,
+      rol: row.rol_en_proceso,
+      actaInicio: row.acta_inicio_url,
+      cronograma: row.cronograma_url
+    })),
+    programasInfo: programasInfo.map((row) => ({
+      id: row.id,
+      programa: row.programa,
+      procesoAutoevaluacion: row.proceso_autoevaluacion,
+      facultad: row.facultad,
+      nivelFormacion: row.nivel_formacion,
+      renovacionRegistroCalificado: row.renovacion_registro_calificado,
+      codigoSnies: row.codigo_snies,
+      tituloOtorga: row.titulo_otorga,
+      emailPrograma: row.email_programa,
+      duracionFormacion: row.duracion_formacion,
+      numeroCreditos: row.numero_creditos,
+      estudiantesPrimerCurso: row.estudiantes_primer_curso
+    }))
+  };
 };
 
 const importGeorreferenciaRows = async ({ rows = [], fileName = '', userId = null, sourceLabel = 'archivo' }) => {
@@ -3355,12 +3827,34 @@ const getEstadisticas = async (req, res) => {
     if (aggregate === 'plan_accion_dashboard' && (!where.categoria || where.categoria === 'Plan de Acción')) {
       await ensurePlanAccionTable();
       const rows = await PlanAccion.findAll({
+        where: {
+          estado_workflow: 'Aprobado',
+          deleted_at: null
+        },
         order: [['anio', 'DESC'], ['objetivo_estrategico', 'ASC'], ['lineamiento_estrategico', 'ASC'], ['actividad', 'ASC'], ['id', 'ASC']],
         raw: true
       });
       return res.json({
         success: true,
         data: buildPlanAccionDashboardPayload(rows)
+      });
+    }
+
+    if (aggregate === 'autoevaluacion_dashboard') {
+      await ensureAutoevaluacionTable();
+      const [aspectosRows, participantesRows, programasRows] = await Promise.all([
+        Autoevaluacion.findAll({ order: [['programa', 'ASC'], ['factor', 'ASC'], ['caracteristica', 'ASC'], ['id', 'ASC']], raw: true }),
+        AutoevaluacionParticipante.findAll({ order: [['programa', 'ASC'], ['nombres_completos', 'ASC'], ['id', 'ASC']], raw: true }),
+        AutoevaluacionPrograma.findAll({ order: [['programa', 'ASC'], ['id', 'ASC']], raw: true })
+      ]);
+      return res.json({
+        success: true,
+        data: buildAutoevaluacionDashboardPayload({
+          aspectosRows,
+          participantesRows,
+          programasRows,
+          programa
+        })
       });
     }
 
@@ -3720,6 +4214,7 @@ const getResumen = async (req, res) => {
   try {
     const { anio = '' } = req.query;
     const where = {};
+    if (isAutoevaluacionRole(req)) where.categoria = 'Autoevaluación';
     if (anio) where.anio = Number(anio);
 
     const [totalRegistros, totalCategorias, aniosActivos, totalValor] = await Promise.all([
@@ -3774,6 +4269,7 @@ const getCargues = async (req, res) => {
     const where = {};
     if (categoria) where.categoria = categoria;
     if (subcategoria) where.subcategoria = subcategoria;
+    if (isAutoevaluacionRole(req)) where.categoria = 'Autoevaluación';
 
     const currentPage = Math.max(Number(page) || 1, 1);
     const currentLimit = Math.min(Math.max(Number(limit) || 50, 1), 200);
@@ -3802,6 +4298,7 @@ const getCargues = async (req, res) => {
     const fallbackWhere = {};
     if (categoria) fallbackWhere.categoria = categoria;
     if (subcategoria) fallbackWhere.subcategoria = subcategoria;
+    if (isAutoevaluacionRole(req)) fallbackWhere.categoria = 'Autoevaluación';
 
     const agregados = await Estadistica.findAll({
       where: fallbackWhere,
@@ -3936,6 +4433,200 @@ const updateEstadistica = async (req, res) => {
   }
 };
 
+const AUTOEVALUACION_EDITABLE_FIELDS = [
+  'acuerdo_men',
+  'programa',
+  'factor',
+  'caracteristica',
+  'aspectos_por_evaluar',
+  'indicador',
+  'instrumento',
+  'scrit',
+  'componente',
+  'evidencias',
+  'informacion_para_tener_en_cuenta'
+];
+
+const AUTOEVALUACION_PARTICIPANTE_EDITABLE_FIELDS = [
+  'programa',
+  'alcance_autoevaluacion',
+  'acta_inicio_url',
+  'cronograma_url',
+  'nombres_completos',
+  'documento',
+  'cargo',
+  'rol_en_proceso'
+];
+
+const AUTOEVALUACION_PROGRAMA_EDITABLE_FIELDS = [
+  'programa',
+  'proceso_autoevaluacion',
+  'facultad',
+  'nivel_formacion',
+  'renovacion_registro_calificado',
+  'codigo_snies',
+  'titulo_otorga',
+  'email_programa',
+  'duracion_formacion',
+  'numero_creditos',
+  'estudiantes_primer_curso'
+];
+
+const pickEditableAutoevaluacionFields = (body = {}, allowedFields = []) => (
+  allowedFields.reduce((acc, field) => {
+    if (Object.prototype.hasOwnProperty.call(body, field)) {
+      acc[field] = normalizeText(body[field]);
+    }
+    return acc;
+  }, {})
+);
+
+const updateAutoevaluacionAspecto = async (req, res) => {
+  try {
+    const row = await Autoevaluacion.findByPk(req.params.id);
+    if (!row) {
+      return res.status(404).json({ success: false, message: 'Aspecto de autoevaluaciÃƒÆ’Ã‚Â³n no encontrado' });
+    }
+
+    const nextData = {
+      ...pickEditableAutoevaluacionFields(req.body, AUTOEVALUACION_EDITABLE_FIELDS),
+      actualizado_por: req.user?.id || null
+    };
+
+    await row.update(nextData);
+    return res.json({
+      success: true,
+      message: 'Texto de autoevaluaciÃƒÆ’Ã‚Â³n actualizado',
+      data: { aspecto: row }
+    });
+  } catch (error) {
+    console.error('Error al actualizar aspecto de autoevaluaciÃƒÆ’Ã‚Â³n:', error);
+    return res.status(500).json({ success: false, message: 'Error al actualizar aspecto de autoevaluaciÃƒÆ’Ã‚Â³n' });
+  }
+};
+
+const updateAutoevaluacionParticipante = async (req, res) => {
+  try {
+    const row = await AutoevaluacionParticipante.findByPk(req.params.id);
+    if (!row) {
+      return res.status(404).json({ success: false, message: 'Participante de autoevaluaciÃƒÆ’Ã‚Â³n no encontrado' });
+    }
+
+    const nextData = {
+      ...pickEditableAutoevaluacionFields(req.body, AUTOEVALUACION_PARTICIPANTE_EDITABLE_FIELDS),
+      actualizado_por: req.user?.id || null
+    };
+
+    await row.update(nextData);
+    return res.json({
+      success: true,
+      message: 'Participante de autoevaluaciÃƒÆ’Ã‚Â³n actualizado',
+      data: { participante: row }
+    });
+  } catch (error) {
+    console.error('Error al actualizar participante de autoevaluaciÃƒÆ’Ã‚Â³n:', error);
+    return res.status(500).json({ success: false, message: 'Error al actualizar participante de autoevaluaciÃƒÆ’Ã‚Â³n' });
+  }
+};
+
+const deleteAutoevaluacionParticipante = async (req, res) => {
+  try {
+    const row = await AutoevaluacionParticipante.findByPk(req.params.id);
+    if (!row) {
+      return res.status(404).json({ success: false, message: 'Participante de autoevaluación no encontrado' });
+    }
+
+    await row.destroy();
+    return res.json({
+      success: true,
+      message: 'Participante eliminado del equipo de autoevaluación'
+    });
+  } catch (error) {
+    console.error('Error al eliminar participante de autoevaluación:', error);
+    return res.status(500).json({ success: false, message: 'Error al eliminar participante de autoevaluación' });
+  }
+};
+
+const createAutoevaluacionParticipante = async (req, res) => {
+  try {
+    await ensureAutoevaluacionTable();
+    const payload = pickEditableAutoevaluacionFields(req.body, AUTOEVALUACION_PARTICIPANTE_EDITABLE_FIELDS);
+    if (!payload.programa || !payload.alcance_autoevaluacion || !payload.nombres_completos) {
+      return res.status(400).json({
+        success: false,
+        message: 'Campos obligatorios: programa, alcance y nombres completos'
+      });
+    }
+
+    const row = await AutoevaluacionParticipante.create({
+      ...payload,
+      creado_por: req.user?.id || null,
+      actualizado_por: req.user?.id || null
+    });
+
+    return res.status(201).json({
+      success: true,
+      message: 'Participante de autoevaluaciÃƒÆ’Ã‚Â³n creado',
+      data: { participante: row }
+    });
+  } catch (error) {
+    console.error('Error al crear participante de autoevaluaciÃƒÆ’Ã‚Â³n:', error);
+    return res.status(500).json({ success: false, message: 'Error al crear participante de autoevaluaciÃƒÆ’Ã‚Â³n' });
+  }
+};
+
+const updateAutoevaluacionPrograma = async (req, res) => {
+  try {
+    const row = await AutoevaluacionPrograma.findByPk(req.params.id);
+    if (!row) {
+      return res.status(404).json({ success: false, message: 'Información del programa no encontrada' });
+    }
+
+    const nextData = {
+      ...pickEditableAutoevaluacionFields(req.body, AUTOEVALUACION_PROGRAMA_EDITABLE_FIELDS),
+      actualizado_por: req.user?.id || null
+    };
+
+    await row.update(nextData);
+    return res.json({
+      success: true,
+      message: 'Información del programa actualizada',
+      data: { programa: row }
+    });
+  } catch (error) {
+    console.error('Error al actualizar información del programa:', error);
+    return res.status(500).json({ success: false, message: 'Error al actualizar información del programa' });
+  }
+};
+
+const createAutoevaluacionPrograma = async (req, res) => {
+  try {
+    await ensureAutoevaluacionTable();
+    const payload = pickEditableAutoevaluacionFields(req.body, AUTOEVALUACION_PROGRAMA_EDITABLE_FIELDS);
+    if (!payload.programa) {
+      return res.status(400).json({
+        success: false,
+        message: 'Campo obligatorio: programa'
+      });
+    }
+
+    const row = await AutoevaluacionPrograma.create({
+      ...payload,
+      creado_por: req.user?.id || null,
+      actualizado_por: req.user?.id || null
+    });
+
+    return res.status(201).json({
+      success: true,
+      message: 'Información del programa creada',
+      data: { programa: row }
+    });
+  } catch (error) {
+    console.error('Error al crear información del programa:', error);
+    return res.status(500).json({ success: false, message: 'Error al crear información del programa' });
+  }
+};
+
 const deleteEstadistica = async (req, res) => {
   try {
     const { id } = req.params;
@@ -3974,6 +4665,7 @@ const downloadTemplate = async (req, res) => {
     if (!categoria) {
       return res.status(400).json({ success: false, message: 'Debes enviar la categoria de la base de datos' });
     }
+    if (!enforceAutoevaluacionDatasetScope(req, res, categoria)) return null;
 
     if (categoria === 'Georreferencia') {
       const worksheet = buildHeaderOnlyWorksheet(DIVIPOLA_TEMPLATE_HEADERS);
@@ -4017,6 +4709,52 @@ const downloadTemplate = async (req, res) => {
 
       const buffer = XLSX.write(workbook, { type: 'buffer', bookType: 'xlsx' });
       res.setHeader('Content-Disposition', 'attachment; filename=plantilla_plan_de_accion.xlsx');
+      res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+      return res.send(buffer);
+    }
+
+    if (categoria === 'Autoevaluación') {
+      const workbook = XLSX.utils.book_new();
+      const subbaseToken = normalizeCategoryToken(subcategoriaRaw);
+      const autoevaluacionSubbase = subbaseToken === 'participantes'
+        ? 'participantes'
+        : isAutoevaluacionProgramasSubbase(subcategoriaRaw)
+          ? 'informacion_programas'
+        : 'autoevaluacion';
+
+      const structureRows = autoevaluacionSubbase === 'participantes'
+        ? AUTOEVALUACION_PARTICIPANTES_ESTRUCTURA_ROWS
+        : autoevaluacionSubbase === 'informacion_programas'
+          ? AUTOEVALUACION_PROGRAMAS_ESTRUCTURA_ROWS
+          : AUTOEVALUACION_ESTRUCTURA_ROWS;
+      const headers = autoevaluacionSubbase === 'participantes'
+        ? AUTOEVALUACION_PARTICIPANTES_TEMPLATE_HEADERS
+        : autoevaluacionSubbase === 'informacion_programas'
+          ? AUTOEVALUACION_PROGRAMAS_TEMPLATE_HEADERS
+          : AUTOEVALUACION_TEMPLATE_HEADERS;
+      const dataSheetName = autoevaluacionSubbase === 'participantes'
+        ? 'PARTICIPANTES'
+        : autoevaluacionSubbase === 'informacion_programas'
+          ? 'INFORMACION_PROGRAMAS'
+          : 'AUTOEVALUACION';
+
+      const estructuraSheet = XLSX.utils.aoa_to_sheet([['Nombre de campo', 'Contenido'], ...structureRows]);
+      estructuraSheet['!cols'] = [{ wch: 36 }, { wch: 78 }];
+      XLSX.utils.book_append_sheet(workbook, estructuraSheet, 'ESTRUCTURA');
+
+      const dataSheet = buildHeaderOnlyWorksheet(headers);
+      dataSheet['!cols'] = headers.map((header) => ({
+        wch: Math.max(16, Math.min(48, String(header).length + 8))
+      }));
+      XLSX.utils.book_append_sheet(workbook, dataSheet, dataSheetName);
+
+      const buffer = XLSX.write(workbook, { type: 'buffer', bookType: 'xlsx' });
+      const filename = autoevaluacionSubbase === 'participantes'
+        ? 'plantilla_autoevaluacion_participantes.xlsx'
+        : autoevaluacionSubbase === 'informacion_programas'
+          ? 'plantilla_autoevaluacion_informacion_programas.xlsx'
+          : 'plantilla_autoevaluacion.xlsx';
+      res.setHeader('Content-Disposition', `attachment; filename=${filename}`);
       res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
       return res.send(buffer);
     }
@@ -4137,6 +4875,7 @@ const importFromExcel = async (req, res) => {
     if (!categoria) {
       return res.status(400).json({ success: false, message: 'Debes seleccionar la base de datos destino' });
     }
+    if (!enforceAutoevaluacionDatasetScope(req, res, categoria)) return null;
 
     if (!req.file) {
       return res.status(400).json({ success: false, message: 'No se proporciono archivo Excel o CSV' });
@@ -4147,6 +4886,7 @@ const importFromExcel = async (req, res) => {
     const isCsvUpload = uploadExt === '.csv';
     const allowsCsvStreaming = (
       categoria === 'Georreferencia'
+      || categoria === 'Autoevaluación'
       || (categoria === 'Poblacional' && poblacionalConfig?.label === 'Matriculados')
       || (categoria === 'Poblacional'
         && poblacionalConfig?.customImport === 'contexto_externo'
@@ -4157,7 +4897,7 @@ const importFromExcel = async (req, res) => {
     if (isCsvUpload && !allowsCsvStreaming) {
       return res.status(400).json({
         success: false,
-        message: 'El formato CSV solo esta habilitado para Georreferencia, Matriculados y Contexto Externo (listas de series).'
+        message: 'El formato CSV solo esta habilitado para Georreferencia, Autoevaluación, Matriculados y Contexto Externo (listas de series).'
       });
     }
 
@@ -5886,6 +6626,15 @@ const importFromExcel = async (req, res) => {
         ? detectHeaderRowIndex(matrix, poblacionalConfig.headers)
         : 0;
 
+      if (categoria === 'Autoevaluación') {
+        const expectedAutoHeaders = normalizeCategoryToken(fixedSubcategoria) === 'participantes'
+          ? AUTOEVALUACION_PARTICIPANTES_TEMPLATE_HEADERS
+          : isAutoevaluacionProgramasSubbase(fixedSubcategoria)
+            ? AUTOEVALUACION_PROGRAMAS_TEMPLATE_HEADERS
+            : AUTOEVALUACION_TEMPLATE_HEADERS;
+        headerRowIndex = detectHeaderRowIndex(matrix, expectedAutoHeaders);
+      }
+
       if ((categoria === 'Poblacional' && poblacionalConfig?.strictHeaders) || (categoria === 'Saber Pro' && saberProConfig?.strictHeaders)) {
         const strictHeaders = categoria === 'Poblacional' ? poblacionalConfig.headers : saberProConfig.headers;
         const strictLabel = categoria === 'Poblacional' ? poblacionalConfig.label : saberProConfig.label;
@@ -5966,6 +6715,9 @@ const importFromExcel = async (req, res) => {
     }
     if (categoria === 'Plan de Acción') {
       await clearDatasetStorage({ categoria: 'Plan de Acción' });
+    }
+    if (categoria === 'Autoevaluación') {
+      await clearDatasetStorage({ categoria: 'Autoevaluación', subcategoria: fixedSubcategoria });
     }
 
     // Deduplicación en-memoria para subcategorías con uniqueKeys definidos (ej. Matriculados: codigo_estudiante+periodo)
@@ -6274,6 +7026,54 @@ const importFromExcel = async (req, res) => {
         continue;
       }
 
+      if (categoria === 'Autoevaluación') {
+        await ensureAutoevaluacionTable();
+        const isParticipantesSubbase = normalizeCategoryToken(fixedSubcategoria) === 'participantes';
+        const isProgramasSubbase = isAutoevaluacionProgramasSubbase(fixedSubcategoria);
+        const payload = isParticipantesSubbase
+          ? mapAutoevaluacionParticipanteRow(row)
+          : isProgramasSubbase
+            ? mapAutoevaluacionProgramaRow(row)
+          : mapAutoevaluacionRow(row);
+        if (isParticipantesSubbase) {
+          if (!payload.programa || !payload.alcance_autoevaluacion || !payload.nombres_completos) {
+            result.errores.push({ fila, error: 'Campos obligatorios: PROGRAMA, ALCANCE AUTOEVALUACIÓN y NOMBRES COMPLETOS' });
+            continue;
+          }
+          await AutoevaluacionParticipante.create({
+            ...payload,
+            creado_por: req.user?.id || null,
+            actualizado_por: req.user?.id || null
+          });
+          result.importados += 1;
+          continue;
+        }
+        if (isProgramasSubbase) {
+          if (!payload.programa) {
+            result.errores.push({ fila, error: 'Campo obligatorio: PROGRAMA' });
+            continue;
+          }
+          await AutoevaluacionPrograma.create({
+            ...payload,
+            creado_por: req.user?.id || null,
+            actualizado_por: req.user?.id || null
+          });
+          result.importados += 1;
+          continue;
+        }
+        if (!payload.programa && !payload.factor && !payload.caracteristica && !payload.indicador) {
+          result.errores.push({ fila, error: 'Fila sin información mínima: PROGRAMA, FACTOR, CARACTERÍSTICA o INDICADOR' });
+          continue;
+        }
+        await Autoevaluacion.create({
+          ...payload,
+          creado_por: req.user?.id || null,
+          actualizado_por: req.user?.id || null
+        });
+        result.importados += 1;
+        continue;
+      }
+
       const anio = Number(row.anio);
       const indicador = normalizeText(row.indicador);
       const valor = toNumber(row.valor);
@@ -6317,7 +7117,9 @@ const importFromExcel = async (req, res) => {
 
     const porcentaje = result.total > 0 ? Number(((result.importados / result.total) * 100).toFixed(2)) : 0;
     const estado = porcentaje === 100 ? 'exitoso' : (result.importados > 0 ? 'parcial' : 'fallido');
-    const variable = categoria === 'Poblacional' && poblacionalConfig ? poblacionalConfig.label : (fixedSubcategoria || categoria);
+    const variable = categoria === 'Poblacional' && poblacionalConfig
+      ? poblacionalConfig.label
+      : (fixedSubcategoria || categoria);
     const detalle = result.errores.length ? JSON.stringify(result.errores.slice(0, 20)) : null;
 
     await GestionInformacionCarga.create({
@@ -6373,6 +7175,7 @@ const clearByCategoria = async (req, res) => {
     if (!categoria) {
       return res.status(400).json({ success: false, message: 'Debes seleccionar la base de datos destino' });
     }
+    if (!enforceAutoevaluacionDatasetScope(req, res, categoria)) return null;
 
     const { deleted, deletedLogs } = await clearDatasetStorage({
       categoria,
@@ -6496,8 +7299,14 @@ const downloadCargueErrores = async (req, res) => {
     const variable = normalizeText(req.query?.variable);
 
     let cargue = null;
+    if (isAutoevaluacionRole(req) && categoria && resolveCategoria(categoria) !== 'Autoevaluación') {
+      return res.status(403).json({ success: false, message: 'El usuario de Autoevaluación solo puede exportar errores de su base' });
+    }
     if (id) {
       cargue = await GestionInformacionCarga.findByPk(id, { raw: true });
+    }
+    if (isAutoevaluacionRole(req) && cargue && resolveCategoria(cargue.categoria) !== 'Autoevaluación') {
+      return res.status(403).json({ success: false, message: 'El usuario de Autoevaluación solo puede exportar errores de su base' });
     }
     if (!cargue) {
       const categoriaResolved = categoria ? resolveCategoria(categoria) : null;
@@ -6585,8 +7394,14 @@ const downloadCargueBase = async (req, res) => {
     const variable = normalizeText(req.query?.variable);
 
     let cargue = null;
+    if (isAutoevaluacionRole(req) && categoria && resolveCategoria(categoria) !== 'Autoevaluación') {
+      return res.status(403).json({ success: false, message: 'El usuario de Autoevaluación solo puede exportar su base' });
+    }
     if (id) {
       cargue = await GestionInformacionCarga.findByPk(id, { raw: true });
+    }
+    if (isAutoevaluacionRole(req) && cargue && resolveCategoria(cargue.categoria) !== 'Autoevaluación') {
+      return res.status(403).json({ success: false, message: 'El usuario de Autoevaluación solo puede exportar su base' });
     }
     if (!cargue) {
       const categoriaResolved = categoria ? resolveCategoria(categoria) : null;
@@ -6705,6 +7520,55 @@ const downloadCargueBase = async (req, res) => {
         'TOTAL EJECUCION': row.total_ejecucion
       }));
       sheetName = 'PLAN_DE_ACCION';
+    } else if (categoriaResolved === 'Autoevaluación') {
+      await ensureAutoevaluacionTable();
+      if (normalizeCategoryToken(subcategoriaResolved) === 'participantes') {
+        const rows = await AutoevaluacionParticipante.findAll({ order: [['programa', 'ASC'], ['nombres_completos', 'ASC'], ['id', 'ASC']], raw: true });
+        records = rows.map((row) => ({
+          'PROGRAMA': row.programa,
+          'ALCANCE AUTOEVALUACIÓN': row.alcance_autoevaluacion,
+          'ACTA INICIO PROCESO DE AUTOEVALUACIÓN': row.acta_inicio_url,
+          'CRONOGRAMA DE AUTOEVALUACIÓN': row.cronograma_url,
+          'NOMBRES COMPLETOS': row.nombres_completos,
+          'DOCUMENTO': row.documento,
+          'CARGO': row.cargo,
+          'ROL EN EL PROCESO': row.rol_en_proceso
+        }));
+        sheetName = 'PARTICIPANTES';
+      } else if (isAutoevaluacionProgramasSubbase(subcategoriaResolved)) {
+        const rows = await AutoevaluacionPrograma.findAll({ order: [['programa', 'ASC'], ['id', 'ASC']], raw: true });
+        records = rows.map((row) => ({
+          'PROGRAMA': row.programa,
+          'PROCESO AUTOEVALUACIÓN': row.proceso_autoevaluacion,
+          'FACULTAD A LA QUE ESTÁ ADSCRITO': row.facultad,
+          'NIVEL DE FORMACIÓN': row.nivel_formacion,
+          'RENOVACIÓN REGISTRO CALIFICADO': row.renovacion_registro_calificado,
+          'CÓDIGO SNIES': row.codigo_snies,
+          'TÍTULO QUE OTORGA': row.titulo_otorga,
+          'E-MAIL DEL PROGRAMA': row.email_programa,
+          'DURACIÓN DE FORMACIÓN': row.duracion_formacion,
+          'NÚMERO DE CRÉDITOS': row.numero_creditos,
+          'NÚMERO DE ESTUDIANTES A ADMITIR A PRIMER CURSO': row.estudiantes_primer_curso
+        }));
+        sheetName = 'INFORMACION_PROGRAMAS';
+      } else {
+        const rows = await Autoevaluacion.findAll({ order: [['id', 'ASC']], raw: true });
+        records = rows.map((row) => ({
+          'Acuerdo MEN': row.acuerdo_men,
+          'PROGRAMA': row.programa,
+          'FACTOR': row.factor,
+          'CARACTERÍSTICA': row.caracteristica,
+          'ASPECTOS POR EVALUAR': row.aspectos_por_evaluar,
+          'INDICADOR': row.indicador,
+          'Instrumento': row.instrumento,
+          'SCRIT': row.scrit,
+          'Componente Programa / Institución': row.componente,
+          'Calificación Indicador': row.calificacion_indicador,
+          'Evidencias': row.evidencias,
+          'Información para tener en cuenta': row.informacion_para_tener_en_cuenta
+        }));
+        sheetName = 'AUTOEVALUACION';
+      }
     } else if (categoriaResolved === 'Georreferencia') {
       const [deptRows, muniRows] = await Promise.all([
         GeorreferenciaDepartamento.findAll({ order: [['codigo_departamento', 'ASC']], raw: true }),
@@ -6913,11 +7777,11 @@ const safeFilenameFragment = (value, fallback = 'plan') => {
 
 const exportPlanAccionInstitucional = async (req, res) => {
   try {
-    const { planData = {}, actividades = [] } = req.body || {};
+    const { planData = {}, actividades = [], corresponsabilidades = [] } = req.body || {};
     if (!Array.isArray(actividades) || actividades.length === 0) {
       return res.status(400).json({ success: false, message: 'Debes enviar al menos una actividad del plan.' });
     }
-    const buffer = await generatePlanAccionBuffer({ planData, actividades });
+    const buffer = await generatePlanAccionBuffer({ planData, actividades, corresponsabilidades });
     const year = planData.anio || new Date().getFullYear();
     const fragment = safeFilenameFragment(planData.codigoPlan || planData.nombrePlan || 'plan_accion');
     const filename = `plan_accion_${fragment}_${year}.xlsx`;
@@ -6975,6 +7839,12 @@ module.exports = {
   getCargues,
   createEstadistica,
   updateEstadistica,
+  createAutoevaluacionParticipante,
+  createAutoevaluacionPrograma,
+  updateAutoevaluacionAspecto,
+  updateAutoevaluacionParticipante,
+  updateAutoevaluacionPrograma,
+  deleteAutoevaluacionParticipante,
   deleteEstadistica,
   downloadTemplate,
   downloadContextoExternoNormalizado,

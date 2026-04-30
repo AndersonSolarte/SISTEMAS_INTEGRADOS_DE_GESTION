@@ -5,7 +5,8 @@ const ROLES = {
   PLANEACION_ESTRATEGICA: 'planeacion_estrategica',
   PLANEACION_EFECTIVIDAD: 'planeacion_efectividad',
   AUTOEVALUACION: 'autoevaluacion',
-  GESTION_INFORMACION: 'gestion_informacion'
+  GESTION_INFORMACION: 'gestion_informacion',
+  REGISTROS_CALIFICADOS: 'registros_calificados_acreditacion'
 };
 
 const ROLES_PLANEACION = [
@@ -13,7 +14,8 @@ const ROLES_PLANEACION = [
   ROLES.PLANEACION_ESTRATEGICA,
   ROLES.PLANEACION_EFECTIVIDAD,
   ROLES.AUTOEVALUACION,
-  ROLES.GESTION_INFORMACION
+  ROLES.GESTION_INFORMACION,
+  ROLES.REGISTROS_CALIFICADOS
 ];
 
 module.exports = {

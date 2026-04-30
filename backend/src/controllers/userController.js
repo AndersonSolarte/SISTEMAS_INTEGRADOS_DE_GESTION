@@ -17,12 +17,14 @@ const MENU_PERMISSION_KEYS = [
   'gestion_informacion',
   'planeacion_efectividad',
   'autoevaluacion',
+  'registros_calificados',
   'gestion_usuarios',
   'buscar_documentos'
 ];
 const GESTION_INFO_MODULE_KEYS = [
   'gestion_bases_datos',
-  'estadistica_institucional'
+  'estadistica_institucional',
+  'autoevaluacion'
 ];
 const GESTION_PROCESOS_DASHBOARD_PERMISSION_KEYS = [
   'estadistica_documental'
@@ -69,7 +71,8 @@ const MANAGED_PLANEACION_ROLES = [
   ROLES.PLANEACION_ESTRATEGICA,
   ROLES.PLANEACION_EFECTIVIDAD,
   ROLES.AUTOEVALUACION,
-  ROLES.GESTION_INFORMACION
+  ROLES.GESTION_INFORMACION,
+  ROLES.REGISTROS_CALIFICADOS
 ];
 const MANAGED_GESTION_PROCESOS_ROLES = [ROLES.CONSULTA];
 const ROLE_LABELS = {
@@ -79,7 +82,8 @@ const ROLE_LABELS = {
   [ROLES.PLANEACION_ESTRATEGICA]: 'Planeacion Estrategica',
   [ROLES.PLANEACION_EFECTIVIDAD]: 'Planeacion y Efectividad',
   [ROLES.AUTOEVALUACION]: 'Autoevaluacion',
-  [ROLES.GESTION_INFORMACION]: 'Gestion de la Informacion'
+  [ROLES.GESTION_INFORMACION]: 'Gestion de la Informacion',
+  [ROLES.REGISTROS_CALIFICADOS]: 'Registros Calificados y Acreditacion'
 };
 
 const isSuperAdmin = (user) => user?.role === ROLES.ADMINISTRADOR;
@@ -647,7 +651,7 @@ const getUsers = async (req, res) => {
         where.role = { [Op.in]: MANAGED_GESTION_PROCESOS_ROLES };
       }
     }
-    
+
     const { count, rows } = await User.findAndCountAll({
       where,
       limit: pagination.limit,

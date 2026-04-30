@@ -9,7 +9,8 @@ const MENU_KEYS = new Set([
   'gestion_usuarios',
   'buscar_documentos',
   'planeacion_efectividad',
-  'autoevaluacion'
+  'autoevaluacion',
+  'registros_calificados'
 ]);
 
 const GESTION_INFO_MODULE_KEYS = new Set([
@@ -72,6 +73,9 @@ const getDefaultPermissionsByRole = (role) => {
       menuPermissions: [
         'dashboard',
         'planeacion_estrategica',
+        'planeacion_efectividad',
+        'autoevaluacion',
+        'registros_calificados',
         'aseguramiento_calidad',
         'gestion_informacion',
         'gestion_usuarios',
@@ -106,6 +110,9 @@ const getDefaultPermissionsByRole = (role) => {
         'dashboard',
         'planeacion_estrategica',
         'planeacion_efectividad',
+        'autoevaluacion',
+        'registros_calificados',
+        'gestion_informacion',
         'buscar_documentos'
       ],
       allowedModules: [],
@@ -125,33 +132,23 @@ const getDefaultPermissionsByRole = (role) => {
     };
   }
 
+  if ([ROLES.REGISTROS_CALIFICADOS].includes(role)) {
+    return {
+      menuPermissions: ['dashboard', 'registros_calificados', 'buscar_documentos'],
+      allowedModules: [],
+      allowedGestionProcesosDashboards: [],
+      allowedPoblacionalDashboards: [],
+      allowedSaberProDashboards: []
+    };
+  }
+
   if ([ROLES.AUTOEVALUACION].includes(role)) {
     return {
-      menuPermissions: ['dashboard', 'autoevaluacion', 'gestion_informacion', 'buscar_documentos'],
-      allowedModules: ['estadistica_institucional'],
+      menuPermissions: ['dashboard', 'autoevaluacion', 'buscar_documentos'],
+      allowedModules: [],
       allowedGestionProcesosDashboards: [],
-      allowedPoblacionalDashboards: ['poblacional_flujo', 'poblacional_matriculados', 'poblacional_graduados', 'poblacional_caracterizacion', 'poblacional_resumen_estadistico'],
-      allowedSaberProDashboards: [
-        'saber_pro_consulta_individual',
-        'saber_pro_validacion_masiva',
-        'saber_pro_individuales_general',
-        'saber_pro_individuales_saber_pro',
-        'saber_pro_individuales_tyt',
-        'saber_pro_individuales_destacados',
-        'saber_pro_individuales_competencias',
-        'saber_pro_individuales_becas',
-        'saber_pro_agregados_general',
-        'saber_pro_agregados_competencias_especificas',
-        'saber_pro_agregados_competencias_genericas',
-        'saber_pro_agregados_comparativo_general',
-        'saber_pro_agregados_comparativo_especificas',
-        'saber_pro_valor_agregado_individual',
-        'saber_pro_valor_agregado_resultado_general',
-        'saber_pro_valor_agregado_estadistica_general',
-        'saber_pro_valor_agregado_nbc',
-        'saber_pro_valor_agregado_programas',
-        'saber_pro_valor_agregado_institucional'
-      ]
+      allowedPoblacionalDashboards: [],
+      allowedSaberProDashboards: []
     };
   }
 
@@ -196,6 +193,8 @@ const getDefaultPermissionsByRole = (role) => {
 
 const getUserModulePermissions = async (userId, role) => {
   const defaults = getDefaultPermissionsByRole(role);
+
+  if (role === ROLES.ADMINISTRADOR) return defaults;
 
   if (!UserModulePermission) return defaults;
 
@@ -246,6 +245,22 @@ const getUserModulePermissions = async (userId, role) => {
   if (allowedSaberProDashboards.length > 0) {
     if (!menuPermissions.includes('gestion_informacion')) menuPermissions.push('gestion_informacion');
     if (!allowedModules.includes('estadistica_institucional')) allowedModules.push('estadistica_institucional');
+  }
+
+  const restrictedMenusByRole = {
+    [ROLES.PLANEACION_EFECTIVIDAD]: ['dashboard', 'planeacion_efectividad', 'buscar_documentos'],
+    [ROLES.AUTOEVALUACION]: ['dashboard', 'autoevaluacion', 'buscar_documentos'],
+    [ROLES.REGISTROS_CALIFICADOS]: ['dashboard', 'registros_calificados', 'buscar_documentos']
+  };
+  const restrictedMenu = restrictedMenusByRole[role];
+  if (restrictedMenu) {
+    return {
+      menuPermissions: restrictedMenu,
+      allowedModules: [],
+      allowedGestionProcesosDashboards: [],
+      allowedPoblacionalDashboards: [],
+      allowedSaberProDashboards: []
+    };
   }
 
   return {

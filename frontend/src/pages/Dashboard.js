@@ -698,8 +698,13 @@ function Dashboard() {
       description: 'Planeación y efectividad, autoevaluación y gestión de la información',
       icon: <AssessmentIcon sx={{ fontSize: 60 }} />,
       color: 'linear-gradient(135deg, #0ea5e9 0%, #0369a1 100%)',
-      path: '/dashboard/planeacion-estrategica',
-      active: [ROLES.ADMINISTRADOR, ROLES.PLANEACION_ESTRATEGICA].includes(user?.role) || hasMenuPermission('planeacion_estrategica')
+      path: user?.role === ROLES.REGISTROS_CALIFICADOS
+        ? '/dashboard/planeacion-estrategica?view=registros-calificados'
+        : '/dashboard/planeacion-estrategica',
+      active:
+        [ROLES.ADMINISTRADOR, ROLES.PLANEACION_ESTRATEGICA, ROLES.REGISTROS_CALIFICADOS].includes(user?.role) ||
+        hasMenuPermission('planeacion_estrategica') ||
+        hasMenuPermission('registros_calificados')
     },
     {
       title: 'Gestión de la Información',

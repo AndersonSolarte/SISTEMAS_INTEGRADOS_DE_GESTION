@@ -8,6 +8,12 @@ const {
   getCargues,
   createEstadistica,
   updateEstadistica,
+  createAutoevaluacionParticipante,
+  createAutoevaluacionPrograma,
+  updateAutoevaluacionAspecto,
+  updateAutoevaluacionParticipante,
+  updateAutoevaluacionPrograma,
+  deleteAutoevaluacionParticipante,
   deleteEstadistica,
   downloadTemplate,
   downloadContextoExternoNormalizado,
@@ -57,21 +63,24 @@ const canViewEstadisticaInstitucionalByPermission = hasAnyRoleOrModulePermission
     'saber_pro',
     'gestion_procesos',
     'estadistica_documental',
-    'plan_accion'
+    'plan_accion',
+    'autoevaluacion'
   ]
 });
 
 const canManageBasesByPermission = hasAnyRoleOrModulePermission({
   roles: [
     ROLES.ADMINISTRADOR,
-    ROLES.PLANEACION_ESTRATEGICA
+    ROLES.PLANEACION_ESTRATEGICA,
+    ROLES.AUTOEVALUACION
   ],
   moduleKeys: [
     'gestion_informacion',
     'gestion_bases_datos',
     'poblacional',
     'saber_pro',
-    'plan_accion'
+    'plan_accion',
+    'autoevaluacion'
   ]
 });
 
@@ -88,6 +97,12 @@ router.put('/divipola/incidencias/:id', auth, canViewEstadisticaInstitucionalByP
 router.post('/plan-accion/export', auth, canManageBasesByPermission, exportPlanAccionInstitucional);
 router.post('/plan-accion/acta/export', auth, canManageBasesByPermission, exportActaInstitucional);
 router.post('/plan-accion/sugerir-indicador', auth, canManageBasesByPermission, sugerirIndicadorPlanAccion);
+router.post('/autoevaluacion/participantes', auth, canManageBasesByPermission, createAutoevaluacionParticipante);
+router.post('/autoevaluacion/programas', auth, canManageBasesByPermission, createAutoevaluacionPrograma);
+router.put('/autoevaluacion/aspectos/:id', auth, canManageBasesByPermission, updateAutoevaluacionAspecto);
+router.put('/autoevaluacion/participantes/:id', auth, canManageBasesByPermission, updateAutoevaluacionParticipante);
+router.delete('/autoevaluacion/participantes/:id', auth, canManageBasesByPermission, deleteAutoevaluacionParticipante);
+router.put('/autoevaluacion/programas/:id', auth, canManageBasesByPermission, updateAutoevaluacionPrograma);
 router.post('/import', auth, canManageBasesByPermission, upload.single('file'), importFromExcel);
 router.delete('/clear', auth, canManageBasesByPermission, clearByCategoria);
 router.post('/', auth, canManageBasesByPermission, createEstadistica);

@@ -11,9 +11,26 @@ const gestionInformacionService = {
     api.get('/planeacion/gestion-informacion/cargues', { params, timeout: 60000 }).then((r) => r.data),
   getPlanAccionDashboard: () =>
     api.get('/planeacion/gestion-informacion', {
-      params: { aggregate: 'plan_accion_dashboard', categoria: 'Plan de Acción' },
+      params: { aggregate: 'plan_accion_dashboard', categoria: 'Plan de Acción', _ts: Date.now() },
       timeout: 120000
     }).then((r) => r.data),
+  getAutoevaluacionDashboard: (params = {}) =>
+    api.get('/planeacion/gestion-informacion', {
+      params: { aggregate: 'autoevaluacion_dashboard', categoria: 'Autoevaluación', ...params },
+      timeout: 120000
+    }).then((r) => r.data),
+  updateAutoevaluacionAspecto: (id, payload) =>
+    api.put(`/planeacion/gestion-informacion/autoevaluacion/aspectos/${id}`, payload).then((r) => r.data),
+  createAutoevaluacionParticipante: (payload) =>
+    api.post('/planeacion/gestion-informacion/autoevaluacion/participantes', payload).then((r) => r.data),
+  updateAutoevaluacionParticipante: (id, payload) =>
+    api.put(`/planeacion/gestion-informacion/autoevaluacion/participantes/${id}`, payload).then((r) => r.data),
+  deleteAutoevaluacionParticipante: (id) =>
+    api.delete(`/planeacion/gestion-informacion/autoevaluacion/participantes/${id}`).then((r) => r.data),
+  createAutoevaluacionPrograma: (payload) =>
+    api.post('/planeacion/gestion-informacion/autoevaluacion/programas', payload).then((r) => r.data),
+  updateAutoevaluacionPrograma: (id, payload) =>
+    api.put(`/planeacion/gestion-informacion/autoevaluacion/programas/${id}`, payload).then((r) => r.data),
   downloadTemplate: (categoria, subcategoria = '', subsubcategoria = '') =>
     api.get('/planeacion/gestion-informacion/template', {
       params: { categoria, subcategoria, subsubcategoria, _ts: Date.now() },
@@ -67,6 +84,8 @@ const gestionInformacionService = {
     api.post('/planeacion/gestion-informacion/plan-accion/acta/export', payload, { responseType: 'blob', timeout: 120000 }),
   sugerirIndicadorPlanAccion: (actividad) =>
     api.post('/planeacion/gestion-informacion/plan-accion/sugerir-indicador', { actividad }, { timeout: 180000 }).then((r) => r.data),
+  getEvidenciasDrive: (folderUrl) =>
+    api.get('/evidencias', { params: { folderUrl }, timeout: 60000 }).then((r) => r.data),
   createEstadistica: (payload) => api.post('/planeacion/gestion-informacion', payload).then((r) => r.data),
   updateEstadistica: (id, payload) => api.put(`/planeacion/gestion-informacion/${id}`, payload).then((r) => r.data),
   deleteEstadistica: (id) => api.delete(`/planeacion/gestion-informacion/${id}`).then((r) => r.data)

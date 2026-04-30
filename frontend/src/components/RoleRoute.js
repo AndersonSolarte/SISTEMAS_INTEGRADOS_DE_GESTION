@@ -9,7 +9,7 @@ const normalizePermissionList = (raw) => {
   return raw.map((x) => String(x || '').trim()).filter(Boolean);
 };
 
-function RoleRoute({ children, allowedRoles = [], permissionKey = null }) {
+function RoleRoute({ children, allowedRoles = [], permissionKey = null, deniedRoles = [] }) {
   const { user, loading } = useAuth();
 
   if (loading) return null;
@@ -17,7 +17,8 @@ function RoleRoute({ children, allowedRoles = [], permissionKey = null }) {
 
   const menuPermissions = normalizePermissionList(user?.menuPermissions);
   const hasExplicitPermission = permissionKey ? menuPermissions.includes(permissionKey) : false;
-  const hasAccess = allowedRoles.includes(user.role) || hasExplicitPermission;
+  const isDenied = deniedRoles.includes(user.role);
+  const hasAccess = !isDenied && (allowedRoles.includes(user.role) || hasExplicitPermission);
 
   if (!hasAccess) {
     return (

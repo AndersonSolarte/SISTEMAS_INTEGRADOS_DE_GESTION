@@ -117,7 +117,8 @@ const BASES = [
   { key: 'recurso_humano', label: 'Recurso Humano', description: 'Históricos de personal y trazabilidad por dependencia.' },
   { key: 'saber_pro', label: 'Saber Pro', description: 'Resultados históricos de pruebas y desempeño académico.' },
   { key: 'gestion_procesos', label: 'Gestión por Procesos', description: 'Monitoreo estadístico documental para operación por procesos.' },
-  { key: 'plan_accion', label: 'Plan de Acción', description: 'Seguimiento anual del Plan de Acción institucional: metas, avances IP/IIP y ejecución total.' }
+  { key: 'plan_accion', label: 'Plan de Acción', description: 'Seguimiento anual del Plan de Acción institucional: metas, avances IP/IIP y ejecución total.' },
+  { key: 'autoevaluacion', label: 'Autoevaluación', description: 'Estructura base de factores, características, aspectos, indicadores y evidencias.' }
 ];
 
 const SUBBASES_POBLACIONAL = ['Inscritos', 'Admitidos', 'Primer Curso', 'Matriculados', 'Graduados', 'Cantidad Total Egresados', 'Caracterizacion', 'Desercion', 'Empleabilidad', 'Contexto Externo'];
@@ -133,6 +134,7 @@ const CONTEXTO_EXTERNO_LISTAS = [
 ];
 const SUBBASES_SABER_PRO = ['Resultados individuales', 'Resultados agregados', 'Resultados Saber 11'];
 const SUBBASES_RECURSO_HUMANO = ['Docentes', 'Administrativos', 'Outsourcing', 'Ondas'];
+const SUBBASES_AUTOEVALUACION = ['Autoevaluación', 'Participantes', 'informacion_programas'];
 const SUBBASE_ORDER = SUBBASES_POBLACIONAL.reduce((acc, item, index) => ({ ...acc, [item]: index + 1 }), {});
 
 const BASE_LABEL = BASES.reduce((acc, item) => ({ ...acc, [item.key]: item.label }), {});
@@ -200,7 +202,11 @@ const getVisibleBaseKeysForUser = (user) => {
     return BASES.map((b) => b.key);
   }
 
-  if ([ROLES.PLANEACION_EFECTIVIDAD, ROLES.AUTOEVALUACION, ROLES.GESTION_INFORMACION].includes(user?.role)) {
+  if (user?.role === ROLES.AUTOEVALUACION) {
+    return ['autoevaluacion'];
+  }
+
+  if ([ROLES.PLANEACION_EFECTIVIDAD, ROLES.GESTION_INFORMACION].includes(user?.role)) {
     return ['poblacional', 'saber_pro'];
   }
 
@@ -1835,7 +1841,7 @@ function GestionInformacion() {
   }, [location.search]);
 
   const canManageBases = useMemo(
-    () => user?.role === ROLES.ADMINISTRADOR || explicitGiModules.includes('gestion_bases_datos'),
+    () => [ROLES.ADMINISTRADOR, ROLES.AUTOEVALUACION].includes(user?.role) || explicitGiModules.includes('gestion_bases_datos'),
     [user?.role, explicitGiModules]
   );
   const canManageBasesInView = canManageBases && !isPlaneacionGpInfoContext;
@@ -1894,7 +1900,8 @@ function GestionInformacion() {
     poblacional: SUBBASES_POBLACIONAL,
     georreferencia: SUBBASES_GEOREFERENCIA,
     saber_pro: SUBBASES_SABER_PRO,
-    recurso_humano: SUBBASES_RECURSO_HUMANO
+    recurso_humano: SUBBASES_RECURSO_HUMANO,
+    autoevaluacion: SUBBASES_AUTOEVALUACION
   };
   const availableSubbases = subbasesByBase[baseSeleccionada] || [];
   const aplicaSubbase = availableSubbases.length > 0;
@@ -2059,6 +2066,15 @@ function GestionInformacion() {
     const tab = params.get('tab');
     const module = params.get('module');
     const panel = params.get('panel');
+    const base = params.get('base');
+    const subbase = params.get('subbase');
+    if (base && BASES.some((item) => item.key === base)) {
+      setBaseSeleccionada(base);
+      setSubBaseSeleccionada(subbase || '');
+      setSubSubBaseSeleccionada('');
+      setMenuView(canManageBasesInView ? 'gestion_bases' : 'estadistica');
+      return;
+    }
     if (tab === 'gestion_bases') {
       setMenuView(canManageBasesInView ? 'gestion_bases' : 'estadistica');
       return;
@@ -10493,7 +10509,8 @@ const renderCategoryBars = (items = [], options = {}) => {
                         const nextBase = e.target.value;
                         setBaseSeleccionada(nextBase);
                         if (nextBase === 'georreferencia') setSubBaseSeleccionada(GEOREFERENCIA_CANONICAL_SUBBASE);
-                        else if (!['poblacional', 'georreferencia', 'saber_pro', 'recurso_humano'].includes(nextBase)) setSubBaseSeleccionada('');
+                        else if (nextBase === 'autoevaluacion') setSubBaseSeleccionada('Autoevaluación');
+                        else if (!['poblacional', 'georreferencia', 'saber_pro', 'recurso_humano', 'autoevaluacion'].includes(nextBase)) setSubBaseSeleccionada('');
                         setSubSubBaseSeleccionada('');
                         setPage(0);
                       }}
@@ -10571,6 +10588,11 @@ const renderCategoryBars = (items = [], options = {}) => {
               {baseSeleccionada === 'saber_pro' && subBaseSeleccionada === 'Resultados Saber 11' && (
                 <Alert severity="info" sx={{ mt: 2.2, borderRadius: 2 }}>
                   La subbase <strong>Resultados Saber 11</strong> acepta un libro Excel con siete hojas obligatorias: <strong>Tipo_1</strong> a <strong>Tipo_7</strong>. La plantilla descargada ahora replica exactamente las columnas reales de cada tipo para que suban el archivo con la misma estructura fuente.
+                </Alert>
+              )}
+              {baseSeleccionada === 'autoevaluacion' && subBaseSeleccionada === 'Participantes' && (
+                <Alert severity="info" sx={{ mt: 2.2, borderRadius: 2 }}>
+                  La subbase <strong>Participantes</strong> registra el programa, alcance, enlaces de acta/cronograma y el equipo de trabajo asociado al proceso de autoevaluación.
                 </Alert>
               )}
             </Paper>
