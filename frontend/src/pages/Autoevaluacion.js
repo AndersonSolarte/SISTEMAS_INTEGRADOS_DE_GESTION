@@ -1782,10 +1782,10 @@ function Autoevaluacion() {
                   <YAxis type="number" dataKey="calificacion" name="calificación" domain={[0, 5]} tick={{ fontSize: 12 }} label={{ value: 'Calificación', angle: -90, position: 'insideLeft' }} />
                   <ZAxis range={[120, 220]} />
                   <Tooltip cursor={{ strokeDasharray: '3 3' }} />
-                  <Scatter data={factorCaracteristicas} name="Características">
+                  <Scatter data={factorCaracteristicas || []} name="Características">
                     <LabelList dataKey="codigo" position="top" style={{ fontSize: 11, fontWeight: 900, fill: '#0f172a' }} />
-                    {factorCaracteristicas.map((item) => (
-                      <Cell key={item.caracteristica} fill={item.cumplimiento.includes('ALTO') || item.cumplimiento.includes('PLENAMENTE') ? '#1f4e95' : '#d97706'} />
+                    {factorCaracteristicas?.map((item) => (
+                      <Cell key={item.caracteristica} fill={(item.cumplimiento || '').includes('ALTO') || (item.cumplimiento || '').includes('PLENAMENTE') ? '#1f4e95' : '#d97706'} />
                     ))}
                   </Scatter>
                 </ScatterChart>
