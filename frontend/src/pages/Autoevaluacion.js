@@ -1092,10 +1092,11 @@ function Autoevaluacion() {
   const selectedFactorData = scopedFactores.find((item) => factorNumber(item.factor) === selectedFactorNumber) || scopedFactores[0];
   const factorAspectos = scopedAspectos.filter((item) => factorNumber(item.factor) === factorNumber(selectedFactorData?.factor));
   const factorCaracteristicas = Object.values(
-    factorAspectos.reduce((acc, item) => {
-      const key = item.caracteristica || 'Sin característica';
+    (factorAspectos || []).reduce((acc, item) => {
+      if (!item) return acc;
+      const key = item.caracteristica || 'Sin caracteristica';
       if (!acc[key]) {
-      acc[key] = {
+        acc[key] = {
           caracteristica: key,
           codigo: characteristicCode(key),
           componentes: new Set(),
@@ -1104,23 +1105,23 @@ function Autoevaluacion() {
         };
       }
       acc[key].aspectos.push(item);
-      acc[key].componentes.add(normalizeComponentCode(item.componente));
+      if (item.componente) acc[key].componentes.add(normalizeComponentCode(item.componente));
       const score = Number(item.calificacion);
       if (Number.isFinite(score)) acc[key].calificaciones.push(score);
       return acc;
     }, {})
   ).map((item, index, all) => {
-    const avg = item.calificaciones.length
-      ? item.calificaciones.reduce((acc, score) => acc + score, 0) / item.calificaciones.length
-      : 0;
-    const importancia = Math.max(1, item.aspectos.length);
-    const totalImportancia = all.reduce((acc, current) => acc + Math.max(1, current.aspectos.length), 0) || 1;
+    const scores = item.calificaciones || [];
+    const avg = scores.length ? scores.reduce((a, b) => a + b, 0) / scores.length : 0;
+    const aspectos = item.aspectos || [];
+    const importancia = Math.max(1, aspectos.length);
+    const totalImportancia = all.reduce((acc, current) => acc + Math.max(1, (current.aspectos || []).length), 0) || 1;
     const ponderacion = (importancia / totalImportancia) * 100;
-    const label = item.aspectos[0]?.cumplimiento?.label || 'SIN CALIFICAR';
-    const componenteResumen = resolveComponentSummary(Array.from(item.componentes));
-    const evidencias = item.aspectos
-      .map((aspecto) => getEvidenceUrl(aspecto.evidencia))
-      .filter(Boolean);
+    const firstAspect = aspectos[0] || {};
+    const label = firstAspect.cumplimiento?.label || 'SIN CALIFICAR';
+    const componenteResumen = resolveComponentSummary(Array.from(item.componentes || []));
+    const evidencias = aspectos.map((a) => getEvidenceUrl(a?.evidencia)).filter(Boolean);
+    
     return {
       ...item,
       componenteResumen,
@@ -1141,9 +1142,9 @@ function Autoevaluacion() {
     cumplimiento: item.cumplimiento?.label || 'SIN CALIFICAR'
   }));
   const factorChartStats = {
-    critical: factorCaracteristicas.filter((item) => Number(item.calificacion) < 3.5),
-    best: [...factorCaracteristicas].sort((a, b) => Number(b.calificacion || 0) - Number(a.calificacion || 0))[0],
-    lowest: [...factorCaracteristicas].sort((a, b) => Number(a.calificacion || 0) - Number(b.calificacion || 0))[0]
+    critical: (factorCaracteristicas || []).filter((item) => Number(item.calificacion || 0) < 3.5),
+    best: (factorCaracteristicas || []).length ? [...factorCaracteristicas].sort((a, b) => Number(b.calificacion || 0) - Number(a.calificacion || 0))[0] : null,
+    lowest: (factorCaracteristicas || []).length ? [...factorCaracteristicas].sort((a, b) => Number(a.calificacion || 0) - Number(b.calificacion || 0))[0] : null
   };
 
   const riesgos = scopedAspectos
