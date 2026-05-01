@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   Alert,
   Box,
@@ -441,6 +441,7 @@ const formatEvidenceDate = (value) => {
 function Autoevaluacion() {
   const { enqueueSnackbar } = useSnackbar();
   const [loading, setLoading] = useState(true);
+  const dashboardCacheRef = useRef(new Map());
   const [programa, setPrograma] = useState('');
   const [componentScope, setComponentScope] = useState('general');
   const [view, setView] = useState('resumen');
@@ -475,13 +476,27 @@ function Autoevaluacion() {
   });
   const [newProgramInfo, setNewProgramInfo] = useState(EMPTY_PROGRAM_INFO_FORM);
 
-  const loadDashboard = useCallback(async (programaSeleccionado = programa) => {
+  const loadDashboard = useCallback(async (programaSeleccionado = '', options = {}) => {
+    const cacheKey = String(programaSeleccionado || '__todos__');
+    if (options.force) {
+      dashboardCacheRef.current.clear();
+    }
+    if (!options.force && dashboardCacheRef.current.has(cacheKey)) {
+      const cached = dashboardCacheRef.current.get(cacheKey);
+      setDashboard(cached);
+      const firstFactor = cached?.factores?.[0]?.factor || '';
+      setSelectedFactor((current) => current || firstFactor);
+      setLoading(false);
+      return;
+    }
+
     setLoading(true);
     try {
       const response = await gestionInformacionService.getAutoevaluacionDashboard(
         programaSeleccionado ? { programa: programaSeleccionado } : {}
       );
       setDashboard(response.data);
+      dashboardCacheRef.current.set(cacheKey, response.data);
       const firstFactor = response.data?.factores?.[0]?.factor || '';
       setSelectedFactor((current) => current || firstFactor);
     } catch (error) {
@@ -489,7 +504,7 @@ function Autoevaluacion() {
     } finally {
       setLoading(false);
     }
-  }, [enqueueSnackbar, programa]);
+  }, [enqueueSnackbar]);
 
   useEffect(() => {
     loadDashboard('');
@@ -703,7 +718,7 @@ function Autoevaluacion() {
       setParticipantDrafts({});
       setProgramDrafts({});
       setEditMode(false);
-      await loadDashboard(programa);
+      await loadDashboard(programa, { force: true });
     } catch (error) {
       enqueueSnackbar(error.response?.data?.message || 'Error al guardar cambios de autoevaluaciÃ³n', { variant: 'error' });
     } finally {
@@ -742,7 +757,7 @@ function Autoevaluacion() {
         actaInicio: payload.acta_inicio_url || '',
         cronograma: payload.cronograma_url || ''
       });
-      await loadDashboard(programa);
+      await loadDashboard(programa, { force: true });
     } catch (error) {
       enqueueSnackbar(error.response?.data?.message || 'Error al agregar participante', { variant: 'error' });
     } finally {
@@ -765,7 +780,7 @@ function Autoevaluacion() {
         return next;
       });
       enqueueSnackbar('Participante eliminado del equipo', { variant: 'success' });
-      await loadDashboard(programa);
+      await loadDashboard(programa, { force: true });
     } catch (error) {
       enqueueSnackbar(error.response?.data?.message || 'Error al eliminar participante', { variant: 'error' });
     } finally {
@@ -808,7 +823,7 @@ function Autoevaluacion() {
         numeroCreditos: '',
         estudiantesPrimerCurso: ''
       });
-      await loadDashboard(programa);
+      await loadDashboard(programa, { force: true });
     } catch (error) {
       enqueueSnackbar(error.response?.data?.message || 'Error al agregar informacion del programa', { variant: 'error' });
     } finally {
@@ -842,7 +857,7 @@ function Autoevaluacion() {
     try {
       await gestionInformacionService.importExcel('autoevaluacion', file, subbase);
       enqueueSnackbar(`Base ${subbase} cargada correctamente`, { variant: 'success' });
-      await loadDashboard(programa);
+      await loadDashboard(programa, { force: true });
     } catch (error) {
       enqueueSnackbar(error.response?.data?.message || `No se pudo importar ${subbase}`, { variant: 'error' });
     } finally {
@@ -2175,6 +2190,7 @@ function Autoevaluacion() {
                   onChange={(event) => {
                     const next = event.target.value;
                     setPrograma(next);
+                    setSelectedFactor('');
                     loadDashboard(next);
                   }}
                 >

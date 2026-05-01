@@ -2799,7 +2799,7 @@ const isAutoevaluacionProgramasSubbase = (subcategoria = '') => {
   return key === 'informacion_programas' || key === 'informacion_programa' || key === 'programas';
 };
 
-const buildAutoevaluacionDashboardPayload = ({ aspectosRows = [], participantesRows = [], programasRows = [], programa = '' }) => {
+const buildAutoevaluacionDashboardPayload = ({ aspectosRows = [], participantesRows = [], programasRows = [], programasCatalogRows = [], programa = '' }) => {
   const normalizedPrograma = normalizeHeader(programa);
   const rows = normalizedPrograma
     ? aspectosRows.filter((row) => normalizeHeader(row.programa).includes(normalizedPrograma))
@@ -2814,7 +2814,8 @@ const buildAutoevaluacionDashboardPayload = ({ aspectosRows = [], participantesR
   const programasDisponibles = Array.from(new Set([
     ...aspectosRows.map((row) => row.programa).filter(Boolean),
     ...participantesRows.map((row) => row.programa).filter(Boolean),
-    ...programasRows.map((row) => row.programa).filter(Boolean)
+    ...programasRows.map((row) => row.programa).filter(Boolean),
+    ...programasCatalogRows.map((row) => row.programa).filter(Boolean)
   ])).sort((a, b) => String(a).localeCompare(String(b), 'es'));
 
   const factorMap = new Map();
@@ -3842,10 +3843,32 @@ const getEstadisticas = async (req, res) => {
 
     if (aggregate === 'autoevaluacion_dashboard') {
       await ensureAutoevaluacionTable();
-      const [aspectosRows, participantesRows, programasRows] = await Promise.all([
-        Autoevaluacion.findAll({ order: [['programa', 'ASC'], ['factor', 'ASC'], ['caracteristica', 'ASC'], ['id', 'ASC']], raw: true }),
-        AutoevaluacionParticipante.findAll({ order: [['programa', 'ASC'], ['nombres_completos', 'ASC'], ['id', 'ASC']], raw: true }),
-        AutoevaluacionPrograma.findAll({ order: [['programa', 'ASC'], ['id', 'ASC']], raw: true })
+      const normalizedPrograma = normalizeHeader(programa);
+      const scopedWhere = normalizedPrograma
+        ? { programa: { [Op.iLike]: `%${String(programa).trim()}%` } }
+        : {};
+      const aspectosAttrs = [
+        'id',
+        'acuerdo_men',
+        'programa',
+        'factor',
+        'caracteristica',
+        'aspectos_por_evaluar',
+        'indicador',
+        'instrumento',
+        'scrit',
+        'componente',
+        'calificacion_indicador',
+        'evidencias',
+        'informacion_para_tener_en_cuenta'
+      ];
+      const participantesAttrs = ['id', 'programa', 'alcance_autoevaluacion', 'nombres_completos', 'documento', 'cargo', 'rol_en_proceso', 'acta_inicio_url', 'cronograma_url'];
+      const programasAttrs = ['id', 'programa', 'proceso_autoevaluacion', 'facultad', 'nivel_formacion', 'renovacion_registro_calificado', 'codigo_snies', 'titulo_otorga', 'email_programa', 'duracion_formacion', 'numero_creditos', 'estudiantes_primer_curso'];
+      const [aspectosRows, participantesRows, programasRows, programasCatalogRows] = await Promise.all([
+        Autoevaluacion.findAll({ attributes: aspectosAttrs, where: scopedWhere, order: [['programa', 'ASC'], ['factor', 'ASC'], ['caracteristica', 'ASC'], ['id', 'ASC']], raw: true }),
+        AutoevaluacionParticipante.findAll({ attributes: participantesAttrs, where: scopedWhere, order: [['programa', 'ASC'], ['nombres_completos', 'ASC'], ['id', 'ASC']], raw: true }),
+        AutoevaluacionPrograma.findAll({ attributes: programasAttrs, where: scopedWhere, order: [['programa', 'ASC'], ['id', 'ASC']], raw: true }),
+        Autoevaluacion.findAll({ attributes: ['programa'], group: ['programa'], raw: true })
       ]);
       return res.json({
         success: true,
@@ -3853,6 +3876,7 @@ const getEstadisticas = async (req, res) => {
           aspectosRows,
           participantesRows,
           programasRows,
+          programasCatalogRows,
           programa
         })
       });
