@@ -69,12 +69,9 @@ import {
   PieChart,
   ReferenceLine,
   ResponsiveContainer,
-  Scatter,
-  ScatterChart,
   Tooltip,
   XAxis,
-  YAxis,
-  ZAxis
+  YAxis
 } from 'recharts';
 import { useSnackbar } from 'notistack';
 import gestionInformacionService from '../services/gestionInformacionService';
@@ -567,12 +564,9 @@ function Autoevaluacion() {
 
   const resumen = dashboard?.resumen || {};
   const programas = dashboard?.programasDisponibles || [];
-  const factores = dashboard?.factores || [];
   const aspectos = dashboard?.aspectos || [];
   const participantes = dashboard?.participantes || [];
   const programasInfo = dashboard?.programasInfo || [];
-  const cumplimiento = dashboard?.cumplimiento || [];
-  const instrumentos = dashboard?.instrumentos || [];
 
   const getAspectValue = (item, field) => item ? (aspectDrafts[item.id]?.[field] ?? item[field] ?? '') : '';
   const getParticipantValue = (item, field) => item ? (participantDrafts[item.id]?.[field] ?? item[field] ?? '') : '';
