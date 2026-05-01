@@ -1012,6 +1012,34 @@ function Autoevaluacion() {
     </Stack>
   );
 
+  const renderEvidenceAction = ({ title, folderUrl, emptyLabel = 'Sin evidencias' }) => {
+    const cleanUrl = getEvidenceUrl(folderUrl);
+    if (!cleanUrl) {
+      return <Chip size="small" label={emptyLabel} sx={{ bgcolor: '#f1f5f9', color: '#64748b', fontWeight: 800 }} />;
+    }
+
+    return (
+      <Button
+        size="small"
+        variant="outlined"
+        startIcon={<FolderOpenIcon />}
+        onClick={() => openEvidenceModal({ title, folderUrl: cleanUrl })}
+        sx={{
+          textTransform: 'none',
+          fontWeight: 900,
+          borderRadius: 2,
+          whiteSpace: 'nowrap',
+          color: '#1d4ed8',
+          borderColor: '#bfdbfe',
+          bgcolor: '#eff6ff',
+          '&:hover': { bgcolor: '#dbeafe', borderColor: '#2563eb' }
+        }}
+      >
+        Ver evidencias
+      </Button>
+    );
+  };
+
   const scopedAspectos = aspectos.filter((item) => {
     const component = normalizeComponentCode(item.componente);
     if (componentScope === 'programa') return component === 'P' || component === 'P/I';
@@ -1804,6 +1832,7 @@ function Autoevaluacion() {
                       <TableCell sx={{ fontWeight: 950, bgcolor: '#f8fafc', width: 118, textAlign: 'center' }}>Calificación</TableCell>
                       <TableCell sx={{ fontWeight: 950, bgcolor: '#f8fafc', width: 44, textAlign: 'center' }} />
                       <TableCell sx={{ fontWeight: 950, bgcolor: '#f8fafc', width: 190 }}>Grado de cumplimiento</TableCell>
+                      <TableCell sx={{ fontWeight: 950, bgcolor: '#f8fafc', width: 150, textAlign: 'center' }}>Evidencias</TableCell>
                     </TableRow>
                   </TableHead>
                   <TableBody>
@@ -1881,6 +1910,23 @@ function Autoevaluacion() {
                             >
                               {item.cumplimiento?.label}
                             </TableCell>
+                            <TableCell align="center">
+                              {editMode ? (
+                                <EditableText
+                                  editing
+                                  value={getAspectValue(item, 'evidencia')}
+                                  onChange={(value) => updateAspectDraft(item, 'evidencia', value)}
+                                  minWidth={150}
+                                  multiline
+                                  placeholder="-"
+                                />
+                              ) : (
+                                renderEvidenceAction({
+                                  title: `${characteristicCode(item.caracteristica) || 'C'} - ${item.caracteristica || item.aspecto}`,
+                                  folderUrl: item.evidencia
+                                })
+                              )}
+                            </TableCell>
                           </TableRow>
                         ))}
                         <TableRow sx={{ bgcolor: isCriticalCompliance(caracteristica.cumplimiento, caracteristica.calificacion) ? '#fee2e2' : '#e5e7eb' }}>
@@ -1888,6 +1934,7 @@ function Autoevaluacion() {
                           <TableCell align="center" sx={{ fontWeight: 950, color: isCriticalCompliance(caracteristica.cumplimiento, caracteristica.calificacion) ? '#991b1b' : '#0f172a' }}>{formatScore(caracteristica.calificacion)}</TableCell>
                           <TableCell align="center"><ComplianceMark label={caracteristica.cumplimiento} /></TableCell>
                           <TableCell sx={{ fontSize: 12, fontWeight: 950, color: isCriticalCompliance(caracteristica.cumplimiento, caracteristica.calificacion) ? '#991b1b' : '#0f172a' }}>{caracteristica.cumplimiento}</TableCell>
+                          <TableCell />
                         </TableRow>
                       </React.Fragment>
                     ))}
@@ -1955,7 +2002,10 @@ function Autoevaluacion() {
                   {editMode ? (
                     <EditableText editing value={getAspectValue(item, 'evidencia')} onChange={(value) => updateAspectDraft(item, 'evidencia', value)} minWidth={220} multiline />
                   ) : (
-                    item.evidencia ? <Button size="small" href={item.evidencia} target="_blank" rel="noreferrer">Abrir</Button> : '-'
+                    renderEvidenceAction({
+                      title: `${characteristicCode(item.caracteristica) || 'C'} - ${item.caracteristica || item.aspecto}`,
+                      folderUrl: item.evidencia
+                    })
                   )}
                 </TableCell>
                 <TableCell sx={{ minWidth: 300 }}>
@@ -2109,6 +2159,7 @@ function Autoevaluacion() {
                 <TableRow>
                   <TableCell sx={{ fontWeight: 950 }}>Factor</TableCell>
                   <TableCell sx={{ fontWeight: 950 }}>Aspecto</TableCell>
+                  <TableCell sx={{ fontWeight: 950, textAlign: 'center' }}>Evidencias</TableCell>
                   <TableCell sx={{ fontWeight: 950 }}>Calificación</TableCell>
                   <TableCell sx={{ fontWeight: 950 }}>Acción sugerida</TableCell>
                 </TableRow>
@@ -2118,6 +2169,12 @@ function Autoevaluacion() {
                   <TableRow key={`${item.aspecto}-${index}`}>
                     <TableCell>{item.factor}</TableCell>
                     <TableCell>{item.aspecto}</TableCell>
+                    <TableCell align="center">
+                      {renderEvidenceAction({
+                        title: `${characteristicCode(item.caracteristica) || 'C'} - ${item.caracteristica || item.aspecto}`,
+                        folderUrl: item.evidencia
+                      })}
+                    </TableCell>
                     <TableCell><ScoreChip value={item.calificacion} label={item.cumplimiento?.label} /></TableCell>
                     <TableCell>Crear acción de mejora prioritaria</TableCell>
                   </TableRow>
