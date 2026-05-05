@@ -99,6 +99,7 @@ const serializeForm = (form, responseCount = null) => {
 
 const syncFormChildren = async (formId, payload, transaction) => {
   const sectionIdMap = new Map();
+  const questionIdMap = new Map();
 
   if (payload.sections !== undefined) {
     await InstrumentSection.destroy({ where: { form_id: formId }, transaction });
@@ -121,7 +122,7 @@ const syncFormChildren = async (formId, payload, transaction) => {
       const incomingSectionId = question.section_id ? sectionIdMap.get(String(question.section_id)) || Number(question.section_id) : null;
       const tempSectionId = question.section_temp_id ? sectionIdMap.get(String(question.section_temp_id)) : null;
       const sectionIndexId = Number.isInteger(Number(question.section_index)) ? sectionIdMap.get(`index:${Number(question.section_index)}`) : null;
-      await InstrumentQuestion.create({
+      const savedQuestion = await InstrumentQuestion.create({
         form_id: formId,
         section_id: tempSectionId || sectionIndexId || incomingSectionId || null,
         question_text: normalizeText(question.question_text || question.text) || `Pregunta ${index + 1}`,
@@ -133,18 +134,37 @@ const syncFormChildren = async (formId, payload, transaction) => {
         options: asArray(question.options),
         validation_rules: question.validation_rules || {}
       }, { transaction });
+      if (question.id) questionIdMap.set(String(question.id), savedQuestion.id);
+      if (question.temp_id) questionIdMap.set(String(question.temp_id), savedQuestion.id);
+      questionIdMap.set(`index:${index}`, savedQuestion.id);
     }
   }
 
   if (payload.conditions !== undefined) {
     await InstrumentCondition.destroy({ where: { form_id: formId }, transaction });
     for (const condition of asArray(payload.conditions)) {
+      const sourceQuestionId = questionIdMap.get(String(condition.source_question_id)) || Number(condition.source_question_id) || null;
+      const targetId = condition.target_type === 'section'
+        ? (sectionIdMap.get(String(condition.target_id)) || Number(condition.target_id) || null)
+        : (questionIdMap.get(String(condition.target_id)) || Number(condition.target_id) || null);
+      if (!sourceQuestionId || !targetId) continue;
+      const conditionLogic = condition.condition_logic || {};
+      const rules = Array.isArray(conditionLogic.rules) ? conditionLogic.rules : [];
+      const nextConditionLogic = rules.length
+        ? {
+          ...conditionLogic,
+          rules: rules.map((rule) => ({
+            ...rule,
+            source_question_id: questionIdMap.get(String(rule.source_question_id || rule.source)) || sourceQuestionId
+          }))
+        }
+        : conditionLogic;
       await InstrumentCondition.create({
         form_id: formId,
-        source_question_id: Number(condition.source_question_id) || null,
+        source_question_id: sourceQuestionId,
         target_type: normalizeText(condition.target_type) || 'question',
-        target_id: Number(condition.target_id) || null,
-        condition_logic: condition.condition_logic || {},
+        target_id: targetId,
+        condition_logic: nextConditionLogic,
         action: normalizeText(condition.action) || 'show'
       }, { transaction });
     }
@@ -436,6 +456,15 @@ const submitPublicResponse = async (req, res) => {
     if (!form || form.status !== 'publicado') {
       await tx.rollback();
       return res.status(423).json({ success: false, message: form?.closed_message || 'Este instrumento no se encuentra disponible' });
+    }
+    const now = new Date();
+    if (form.opens_at && new Date(form.opens_at) > now) {
+      await tx.rollback();
+      return res.status(423).json({ success: false, message: 'Este instrumento aun no ha abierto.' });
+    }
+    if (form.closes_at && new Date(form.closes_at) < now) {
+      await tx.rollback();
+      return res.status(423).json({ success: false, message: form.closed_message || 'Este instrumento ya se encuentra cerrado.' });
     }
     const responseCount = await InstrumentResponse.count({ where: { form_id: form.id }, transaction: tx });
     if (form.response_limit && responseCount >= form.response_limit) {

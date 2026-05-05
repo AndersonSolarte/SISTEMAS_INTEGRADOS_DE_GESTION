@@ -1398,6 +1398,16 @@ function InstrumentosPanel() {
     }
   };
 
+  const downloadInstrumentFile = async (action, successMessage) => {
+    if (!details?.id) return;
+    try {
+      await action(details.id);
+      enqueueSnackbar(successMessage, { variant: 'success' });
+    } catch (error) {
+      enqueueSnackbar(error.response?.data?.message || 'No fue posible descargar el archivo', { variant: 'error' });
+    }
+  };
+
   const goToFilteredList = (status = '') => {
     setFilters((current) => ({ ...current, status, include_archived: status === 'archivado' || current.include_archived }));
     setTab('historico');
@@ -1568,7 +1578,9 @@ function InstrumentosPanel() {
         <>
           <Stack direction="row" justifyContent="space-between" sx={{ mb: 1.5 }}>
             <Typography sx={{ fontWeight: 950 }}>Resultados reales: {details.title}</Typography>
-            <Button size="small" component="a" href={`${process.env.REACT_APP_API_URL || 'http://localhost:5000/api'}/autoevaluacion/instrumentos/${details.id}/export/excel`} target="_blank">Exportar Excel</Button>
+            <Button size="small" onClick={() => downloadInstrumentFile(instrumentosApi.downloadExcel, 'Excel generado')}>
+              Exportar Excel
+            </Button>
           </Stack>
           <TableContainer sx={{ border: '1px solid #e2e8f0', borderRadius: 2 }}>
             <Table size="small">
@@ -1659,7 +1671,7 @@ function InstrumentosPanel() {
     <Paper elevation={0} sx={{ p: 2, borderRadius: 2.5, border: '1px solid #e2e8f0' }}>
       <Alert severity="info" sx={{ mb: 1.5 }}>Los backups respetan el alcance del usuario: creador solo sus instrumentos, administrador todos los que puede consultar.</Alert>
       {details ? (
-        <Button variant="contained" startIcon={<BackupIcon />} component="a" href={`${process.env.REACT_APP_API_URL || 'http://localhost:5000/api'}/autoevaluacion/instrumentos/${details.id}/backup`} target="_blank">
+        <Button variant="contained" startIcon={<BackupIcon />} onClick={() => downloadInstrumentFile(instrumentosApi.downloadBackup, 'Backup generado')}>
           Generar backup del instrumento seleccionado
         </Button>
       ) : (

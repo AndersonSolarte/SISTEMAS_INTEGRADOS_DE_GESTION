@@ -262,9 +262,12 @@ const getUserModulePermissions = async (userId, role) => {
   };
   const restrictedMenu = restrictedMenusByRole[role];
   if (restrictedMenu) {
+    const restrictedAllowedModules = role === ROLES.AUTOEVALUACION
+      ? allowedModules.filter((key) => key === 'autoevaluacion.instrumentos.access')
+      : [];
     return {
       menuPermissions: restrictedMenu,
-      allowedModules: [],
+      allowedModules: restrictedAllowedModules,
       allowedGestionProcesosDashboards: [],
       allowedPoblacionalDashboards: [],
       allowedSaberProDashboards: []

@@ -76,6 +76,8 @@ import {
 import { useSnackbar } from 'notistack';
 import gestionInformacionService from '../services/gestionInformacionService';
 import InstrumentosPanel from '../modules/planeacionEstrategica/autoevaluacion/instrumentos/InstrumentosPanel';
+import { useAuth } from '../context/AuthContext';
+import { ROLES } from '../constants/roles';
 
 const VIEWS = [
   { key: 'resumen', label: 'Resumen', icon: <AutoGraphIcon /> },
@@ -443,6 +445,7 @@ const formatEvidenceDate = (value) => {
 
 function Autoevaluacion() {
   const { enqueueSnackbar } = useSnackbar();
+  const { user } = useAuth();
   const [loading, setLoading] = useState(true);
   const dashboardCacheRef = useRef(new Map());
   const [programa, setPrograma] = useState('');
@@ -463,6 +466,9 @@ function Autoevaluacion() {
   const [creatingProgramInfo, setCreatingProgramInfo] = useState(false);
   const [evidenceModal, setEvidenceModal] = useState({ open: false, title: '', folderUrl: '', files: [], loading: false, error: '' });
   const [evidenceBreadcrumbs, setEvidenceBreadcrumbs] = useState([]);
+  const canAccessInstrumentos = [ROLES.ADMINISTRADOR, ROLES.PLANEACION_ESTRATEGICA].includes(user?.role)
+    || (user?.allowedModules || []).includes('autoevaluacion.instrumentos.access');
+  const visibleViews = canAccessInstrumentos ? VIEWS : VIEWS.filter((item) => item.key !== 'instrumentos');
   const [evidenceSearch, setEvidenceSearch] = useState('');
   const [evidenceTypeFilter, setEvidenceTypeFilter] = useState('todos');
   const [evidenceSort, setEvidenceSort] = useState('fecha_desc');
@@ -514,8 +520,12 @@ function Autoevaluacion() {
   }, [loadDashboard]);
 
   useEffect(() => {
+    if (view === 'instrumentos' && !canAccessInstrumentos) {
+      setView('resumen');
+      return;
+    }
     if (!VIEWS.some((item) => item.key === view)) setView('resumen');
-  }, [view]);
+  }, [view, canAccessInstrumentos]);
 
   const loadEvidenceFolder = useCallback(async ({ title, folderUrl, breadcrumbs }) => {
     setEvidenceModal((current) => ({ ...current, open: true, title, folderUrl, files: [], loading: true, error: '' }));
@@ -2248,7 +2258,7 @@ function Autoevaluacion() {
   );
 
   const renderView = () => {
-    if (view === 'instrumentos') return <InstrumentosPanel />;
+    if (view === 'instrumentos') return canAccessInstrumentos ? <InstrumentosPanel /> : <EmptyState />;
     if (!hasData) return <EmptyState />;
     if (view === 'factores') return renderFactores();
     if (view === 'equipo') return renderEquipo();
@@ -2364,7 +2374,7 @@ function Autoevaluacion() {
                   width: '100%'
                 }}
               >
-                {VIEWS.map((item) => {
+                {visibleViews.map((item) => {
                   const active = view === item.key;
                   const tone = VIEW_TONES[item.key] || VIEW_TONES.resumen;
                   return (
