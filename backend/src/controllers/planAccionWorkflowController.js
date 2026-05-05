@@ -59,7 +59,7 @@ const PERMISOS_EDICION = {
   [ESTADOS.REVISADO_POR_ESTRATEGICA]: [ROLES.PLANEACION_EFECTIVIDAD, ROLES.ADMINISTRADOR],
   [ESTADOS.EN_REVISION_RESPONSABLE]: [ROLES.CONSULTA, ROLES.PLANEACION_EFECTIVIDAD, ROLES.ADMINISTRADOR],
   [ESTADOS.REVISADO_POR_RESPONSABLE]: [ROLES.PLANEACION_EFECTIVIDAD, ROLES.ADMINISTRADOR],
-  [ESTADOS.APROBADO]: [ROLES.ADMINISTRADOR]
+  [ESTADOS.APROBADO]: [ROLES.PLANEACION_EFECTIVIDAD, ROLES.ADMINISTRADOR]
 };
 
 // === Helpers ===
@@ -735,8 +735,8 @@ const guardarSeguimiento = async (req, res) => {
         const avIP = a.avance_ip === '' || a.avance_ip === undefined || a.avance_ip === null ? null : Number(a.avance_ip);
         const avIIP = a.avance_iip === '' || a.avance_iip === undefined || a.avance_iip === null ? null : Number(a.avance_iip);
         const total = (avIP !== null && avIIP !== null)
-          ? Math.round(((avIP + avIIP) / 2) * 100) / 100
-          : (avIP ?? avIIP ?? null);
+          ? Math.min(Math.round((avIP + avIIP) * 100) / 100, 100)
+          : (avIP !== null ? avIP : (avIIP !== null ? avIIP : null));
         await PlanAccion.update(
           {
             avance_ip: avIP,
