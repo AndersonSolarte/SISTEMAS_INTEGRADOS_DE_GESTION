@@ -31,7 +31,15 @@ function GestionUsuarios() {
   const GI_MODULE_OPTIONS = [
     { key: 'gestion_bases_datos', label: 'Gestión de Bases de Datos' },
     { key: 'estadistica_institucional', label: 'Estadística Institucional' },
-    { key: 'autoevaluacion', label: 'Autoevaluación' }
+    { key: 'autoevaluacion', label: 'Autoevaluación' },
+    { key: 'autoevaluacion.instrumentos.access', label: 'Autoevaluación - Gestión de Instrumentos' },
+    { key: 'seguridad_aplicativa.ver', label: 'Seguridad Aplicativa - Ver modulo' },
+    { key: 'seguridad_aplicativa.escanear', label: 'Seguridad Aplicativa - Ejecutar escaneo' },
+    { key: 'seguridad_aplicativa.ver_hallazgos', label: 'Seguridad Aplicativa - Ver hallazgos' },
+    { key: 'seguridad_aplicativa.gestionar_hallazgos', label: 'Seguridad Aplicativa - Gestionar hallazgos' },
+    { key: 'seguridad_aplicativa.analizar_remediacion', label: 'Seguridad Aplicativa - Analizar remediacion' },
+    { key: 'seguridad_aplicativa.exportar', label: 'Seguridad Aplicativa - Exportar' },
+    { key: 'seguridad_aplicativa.configurar', label: 'Seguridad Aplicativa - Configurar' }
   ];
   const GESTION_PROCESOS_DASHBOARD_OPTIONS = [
     { key: 'estadistica_documental', label: 'Estadística Documental' }

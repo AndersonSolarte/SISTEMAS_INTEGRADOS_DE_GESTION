@@ -48,6 +48,11 @@ const planAccionWorkflowService = {
   guardarCumplimiento: (planCodigo, payload) =>
     api.put(`${BASE}/${encodeURIComponent(planCodigo)}/cumplimiento`, payload, { timeout: 60000 }).then((r) => r.data),
 
+  // Registrar seguimiento de avance en plan aprobado (UPDATE por id de fila, no reemplaza datos estructurales).
+  // payload: { actividades: [{ id, avance_ip, avance_iip, observaciones_ip, observaciones_iip }] }
+  guardarSeguimiento: (planCodigo, payload) =>
+    api.put(`${BASE}/${encodeURIComponent(planCodigo)}/seguimiento`, payload, { timeout: 60000 }).then((r) => r.data),
+
   // Devolver un plan a estado Borrador (de Revisión/Aprobación → Creación). Solo PyE/Admin.
   resetearABorrador: (planCodigo) =>
     api.post(`${BASE}/${encodeURIComponent(planCodigo)}/reset`, {}, { timeout: 60000 }).then((r) => r.data),
@@ -68,8 +73,8 @@ export const ESTADOS_WORKFLOW = {
 
 export const ESTADO_LABEL = {
   Borrador: 'Borrador',
-  EnRevisionEstrategica: 'En revisión estratégica',
-  RevisadoPorEstrategica: 'Revisado por estratégica',
+  EnRevisionEstrategica: 'En revisión — Dirección de Planeación',
+  RevisadoPorEstrategica: 'Revisado por Dirección de Planeación',
   EnRevisionResponsable: 'En revisión del responsable',
   RevisadoPorResponsable: 'Revisado por responsable',
   Aprobado: 'Aprobado'

@@ -22,6 +22,7 @@ import GestionInformacion from './pages/GestionInformacion';
 import PlanAccionRevision from './pages/PlanAccionRevision';
 import PlanAccionConsulta from './pages/PlanAccionConsulta';
 import SessionTimeoutModal from './components/SessionTimeoutModal';
+import InstrumentoPublicView from './modules/planeacionEstrategica/autoevaluacion/instrumentos/InstrumentoPublicView';
 import { ROLES } from './constants/roles';
 
 /* Tiempo mínimo que el loader permanece visible antes de iniciar el fade-out */
@@ -64,6 +65,9 @@ function App() {
               <Routes>
                 {/* Rutas públicas */}
                 <Route path="/login" element={<Login />} />
+                <Route path="/f/:code" element={<InstrumentoPublicView />} />
+                <Route path="/instrumentos/responder/:code" element={<InstrumentoPublicView />} />
+                <Route path="/instrumentos/preview/:id" element={<PrivateRoute><InstrumentoPublicView previewMode /></PrivateRoute>} />
 
                 {/* Rutas protegidas */}
                 <Route path="/dashboard" element={<PrivateRoute><DashboardLayout /></PrivateRoute>}>

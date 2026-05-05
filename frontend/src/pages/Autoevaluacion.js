@@ -75,18 +75,21 @@ import {
 } from 'recharts';
 import { useSnackbar } from 'notistack';
 import gestionInformacionService from '../services/gestionInformacionService';
+import InstrumentosPanel from '../modules/planeacionEstrategica/autoevaluacion/instrumentos/InstrumentosPanel';
 
 const VIEWS = [
   { key: 'resumen', label: 'Resumen', icon: <AutoGraphIcon /> },
   { key: 'factores', label: 'Factores', icon: <HubIcon /> },
-  { key: 'mejora', label: 'Mejoramiento', icon: <TimelineIcon /> }
+  { key: 'mejora', label: 'Mejoramiento', icon: <TimelineIcon /> },
+  { key: 'instrumentos', label: 'Gestion de Instrumentos', icon: <FactCheckIcon /> }
 ];
 
 const VIEW_TONES = {
   resumen: { color: '#1f4e95', soft: '#eff6ff' },
   factores: { color: '#2563eb', soft: '#eff6ff' },
   equipo: { color: '#0f766e', soft: '#ecfdf5' },
-  mejora: { color: '#d97706', soft: '#fff7ed' }
+  mejora: { color: '#d97706', soft: '#fff7ed' },
+  instrumentos: { color: '#0f766e', soft: '#ecfdf5' }
 };
 
 const AUTOEVALUACION_BASES = [
@@ -1185,6 +1188,56 @@ function Autoevaluacion() {
     best: (factorCaracteristicas || []).length ? [...factorCaracteristicas].sort((a, b) => Number(b.calificacion || 0) - Number(a.calificacion || 0))[0] : null,
     lowest: (factorCaracteristicas || []).length ? [...factorCaracteristicas].sort((a, b) => Number(a.calificacion || 0) - Number(b.calificacion || 0))[0] : null
   };
+  const factorChartData = factorCaracteristicas.map((item) => ({
+    ...item,
+    chartLabel: String(item.caracteristica || 'Caracteristica').replace(/^C\d+\.\s*/i, '')
+  }));
+  const splitChartLabel = (value = '', maxLength = 30) => {
+    const words = String(value).split(' ');
+    const lines = words.reduce((acc, word) => {
+      const last = acc[acc.length - 1] || '';
+      if (!last || `${last} ${word}`.length > maxLength) return [...acc, word];
+      return [...acc.slice(0, -1), `${last} ${word}`];
+    }, []);
+    return lines.slice(0, 3);
+  };
+  const renderCharacteristicTick = ({ x, y, payload }) => {
+    const lines = splitChartLabel(payload?.value || '');
+    return (
+      <g transform={`translate(${x},${y + 10})`}>
+        <text textAnchor="middle" fill="#334155" fontSize={10.5} fontWeight={800}>
+          {lines.map((line, index) => (
+            <tspan key={line} x={0} dy={index === 0 ? 0 : 13}>{line}</tspan>
+          ))}
+        </text>
+      </g>
+    );
+  };
+  const renderComplianceBarLabel = ({ x, y, width, index }) => {
+    const item = factorChartData[index] || {};
+    const score = formatScore(item.calificacion);
+    const compliance = item.cumplimiento || 'SIN CALIFICAR';
+    const critical = Number(item.calificacion || 0) < 3.5;
+    const badgeWidth = Math.max(162, Math.min(246, String(compliance).length * 6.3 + 34));
+    const centerX = x + width / 2;
+    const badgeX = centerX - badgeWidth / 2;
+    const badgeY = Math.max(4, y - 48);
+    const color = critical ? '#b45309' : '#1f4e95';
+    const bg = critical ? '#fff7ed' : '#eff6ff';
+    const border = critical ? '#fdba74' : '#bfdbfe';
+    return (
+      <g>
+        <rect x={badgeX + 2} y={badgeY + 3} width={badgeWidth} height={42} rx={12} fill="rgba(15,23,42,.10)" opacity="0.22" />
+        <rect x={badgeX} y={badgeY} width={badgeWidth} height={42} rx={12} fill={bg} stroke={border} />
+        <text x={centerX} y={badgeY + 15} textAnchor="middle" fill={color} fontSize={9.4} fontWeight={700}>
+          {compliance}
+        </text>
+        <text x={centerX} y={badgeY + 33} textAnchor="middle" fill="#0f172a" fontSize={15} fontWeight={950}>
+          {score}
+        </text>
+      </g>
+    );
+  };
 
   const riesgos = scopedAspectos
     .filter((item) => Number(item.calificacion) < 3.5)
@@ -1789,16 +1842,22 @@ function Autoevaluacion() {
                   <Chip size="small" label={`${factorChartStats.critical.length} bajo meta`} sx={{ bgcolor: factorChartStats.critical.length ? '#ffedd5' : '#dcfce7', color: factorChartStats.critical.length ? '#c2410c' : '#15803d', fontWeight: 900 }} />
                 </Stack>
               </Stack>
-              <ResponsiveContainer width="100%" height={360}>
-                <BarChart data={factorCaracteristicas} margin={{ top: 24, right: 28, left: 8, bottom: 34 }}>
+              <ResponsiveContainer width="100%" height={420}>
+                <BarChart data={factorChartData} margin={{ top: 54, right: 28, left: 8, bottom: 92 }}>
                   <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#dbeafe" />
-                  <XAxis dataKey="codigo" tick={{ fontSize: 12, fontWeight: 800 }} label={{ value: 'Características', position: 'insideBottom', offset: -8 }} />
+                  <XAxis dataKey="chartLabel" interval={0} height={88} tick={renderCharacteristicTick} label={{ value: 'Caracteristicas', position: 'insideBottom', offset: -6 }} />
                   <YAxis domain={[0, 5]} tick={{ fontSize: 12 }} label={{ value: 'Calificación', angle: -90, position: 'insideLeft' }} />
-                  <Tooltip formatter={(value) => [formatScore(value), 'Calificación']} labelFormatter={(label) => `Característica ${label}`} />
+                  <Tooltip
+                    formatter={(value, name, item) => [
+                      `${formatScore(value)} - ${item?.payload?.cumplimiento || 'SIN CALIFICAR'}`,
+                      'Calificacion / grado de cumplimiento'
+                    ]}
+                    labelFormatter={(label) => label}
+                  />
                   <ReferenceLine y={3.5} stroke="#ea580c" strokeDasharray="6 6" label={{ value: 'Meta 3.5', position: 'right', fill: '#ea580c', fontSize: 12, fontWeight: 900 }} />
                   <Bar dataKey="calificacion" radius={[10, 10, 0, 0]} maxBarSize={96}>
-                    <LabelList dataKey="calificacion" position="top" formatter={(value) => formatScore(value)} style={{ fontSize: 12, fontWeight: 900, fill: '#0f172a' }} />
-                    {factorCaracteristicas.map((item) => (
+                    <LabelList content={renderComplianceBarLabel} />
+                    {factorChartData.map((item) => (
                       <Cell key={item.caracteristica} fill={Number(item.calificacion) < 3.5 ? '#d97706' : '#1f4e95'} />
                     ))}
                   </Bar>
@@ -2189,6 +2248,7 @@ function Autoevaluacion() {
   );
 
   const renderView = () => {
+    if (view === 'instrumentos') return <InstrumentosPanel />;
     if (!hasData) return <EmptyState />;
     if (view === 'factores') return renderFactores();
     if (view === 'equipo') return renderEquipo();
@@ -2299,7 +2359,7 @@ function Autoevaluacion() {
               <Box
                 sx={{
                   display: 'grid',
-                  gridTemplateColumns: { xs: '1fr', sm: 'repeat(3, minmax(0, 1fr))' },
+                  gridTemplateColumns: { xs: '1fr', sm: 'repeat(2, minmax(0, 1fr))', lg: 'repeat(4, minmax(0, 1fr))' },
                   gap: 1,
                   width: '100%'
                 }}

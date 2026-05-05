@@ -105,6 +105,7 @@ import RecursoHumanoDashboard from '../components/recursoHumano/RecursoHumanoDas
 import { ROLES } from '../constants/roles';
 import { EstadisticaDocumentalPanel } from './EstadisticaDocumentalImpact';
 import ActivityDashboard from './ActivityDashboard';
+import SecurityApplicationDashboard from './SecurityApplicationDashboard';
 
 const BASES = [
   { key: 'poblacional', label: 'Poblacional', description: 'Históricos de inscritos, admitidos, matriculados y graduados.' },
@@ -219,6 +220,24 @@ const getVisibleBaseKeysForUser = (user) => {
   }
 
   return [];
+};
+
+const SECURITY_PERMISSION_KEYS = [
+  'seguridad_aplicativa.ver',
+  'seguridad_aplicativa.escanear',
+  'seguridad_aplicativa.ver_hallazgos',
+  'seguridad_aplicativa.gestionar_hallazgos',
+  'seguridad_aplicativa.analizar_remediacion',
+  'seguridad_aplicativa.exportar',
+  'seguridad_aplicativa.configurar'
+];
+
+const canViewSecurityApplication = (user) => {
+  if ([ROLES.ADMINISTRADOR, ROLES.PLANEACION_ESTRATEGICA].includes(user?.role)) return true;
+  const permissions = normalizeModulePermissionList(user?.allowedModules)
+    .concat(normalizeModulePermissionList(user?.modulePermissions))
+    .concat(normalizeModulePermissionList(user?.permissions?.modules));
+  return permissions.some((key) => SECURITY_PERMISSION_KEYS.includes(key));
 };
 
 const getVisiblePoblacionalDashboardKeysForUser = (user) => {
@@ -1854,6 +1873,7 @@ function GestionInformacion() {
   }, [isPlaneacionGpInfoContext, user]);
   const visiblePoblacionalDashboardKeys = useMemo(() => getVisiblePoblacionalDashboardKeysForUser(user), [user]);
   const visibleBases = useMemo(() => BASES.filter((base) => visibleBaseKeys.includes(base.key)), [visibleBaseKeys]);
+  const canAccessSecurityApplication = useMemo(() => canViewSecurityApplication(user), [user]);
   const visiblePoblacionalDashboardCards = useMemo(
     () => POBLACIONAL_DASHBOARD_CARDS.filter((card) => visiblePoblacionalDashboardKeys.includes(`poblacional_${card.key}`)),
     [visiblePoblacionalDashboardKeys]
@@ -2110,8 +2130,8 @@ function GestionInformacion() {
 
   useEffect(() => {
     if (isGestionProcesosStatsRoute) return;
-    /* activity_monitor no pertenece a visibleBaseKeys pero es una tarjeta válida */
-    if (selectedCard === 'activity_monitor') return;
+    /* activity_monitor y security_application no pertenecen a visibleBaseKeys pero son tarjetas válidas */
+    if (selectedCard === 'activity_monitor' || (selectedCard === 'security_application' && canAccessSecurityApplication)) return;
     if (selectedCard && !visibleBaseKeys.includes(selectedCard)) {
       setSelectedCard(null);
     }
@@ -2119,7 +2139,7 @@ function GestionInformacion() {
       setBaseSeleccionada('');
       setSubBaseSeleccionada('');
     }
-  }, [isGestionProcesosStatsRoute, selectedCard, baseSeleccionada, visibleBaseKeys]);
+  }, [isGestionProcesosStatsRoute, selectedCard, baseSeleccionada, visibleBaseKeys, canAccessSecurityApplication]);
 
   useEffect(() => {
     fetchData();
@@ -3705,8 +3725,12 @@ function GestionInformacion() {
   };
 
   const enterCard = (key) => {
-    if (!['poblacional', 'saber_pro', 'recurso_humano', 'gestion_procesos', 'activity_monitor'].includes(key)) {
+    if (!['poblacional', 'saber_pro', 'recurso_humano', 'gestion_procesos', 'activity_monitor', 'security_application'].includes(key)) {
       enqueueSnackbar('Modulo en construccion. La estructura ya quedo lista para activarlo.', { variant: 'info' });
+      return;
+    }
+    if (key === 'security_application' && !canAccessSecurityApplication) {
+      enqueueSnackbar('No tienes permiso para Gestion de Seguridad Aplicativa.', { variant: 'warning' });
       return;
     }
     if (key === 'poblacional') {
@@ -5950,6 +5974,81 @@ const renderCategoryBars = (items = [], options = {}) => {
             </Button>
             <Typography variant="caption" sx={{ display: 'block', mt: 0.9, color: '#64748b' }}>
               Dashboard exclusivo del administrador
+            </Typography>
+          </Box>
+        </Paper>
+      )}
+
+      {canAccessSecurityApplication && (
+        <Paper
+          elevation={0}
+          sx={{
+            borderRadius: 4,
+            p: { xs: 2.2, md: 2.6 },
+            border: '1.5px solid #bfdbfe',
+            minHeight: { xs: 220, md: 250 },
+            display: 'flex',
+            flexDirection: 'column',
+            justifyContent: 'space-between',
+            background: 'linear-gradient(160deg, #f8fbff 0%, #ffffff 100%)',
+            boxShadow: '0 10px 28px rgba(15,23,42,0.06)',
+            transition: 'transform .18s ease, box-shadow .18s ease, border-color .18s ease',
+            '&:hover': {
+              transform: 'translateY(-2px)',
+              boxShadow: '0 14px 34px rgba(15,23,42,0.12)',
+              borderColor: '#93c5fd'
+            }
+          }}
+        >
+          <Stack spacing={1.8}>
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.2 }}>
+              <Box
+                sx={{
+                  width: 74,
+                  height: 74,
+                  borderRadius: 2.5,
+                  background: 'linear-gradient(145deg, #0f172a, #1d4ed8 55%, #0f766e)',
+                  display: 'grid',
+                  placeItems: 'center',
+                  boxShadow: '0 10px 22px rgba(15,23,42,0.28)'
+                }}
+              >
+                <SecurityIcon sx={{ color: '#fff', fontSize: 36 }} />
+              </Box>
+              <Chip label="DevSecOps" size="small" sx={{ bgcolor: '#ecfdf5', color: '#0f766e', fontWeight: 800, fontSize: 10, border: '1px solid #99f6e4' }} />
+            </Box>
+
+            <Box sx={{ minHeight: 92 }}>
+              <Typography sx={{ fontSize: { xs: 22, md: 24 }, fontWeight: 900, color: '#0f172a', lineHeight: 1.08, letterSpacing: '-0.02em' }}>
+                Gestión de Seguridad Aplicativa
+              </Typography>
+              <Typography sx={{ mt: 0.8, color: '#475569', lineHeight: 1.32, fontSize: { xs: 14, md: 15 } }}>
+                Monitoreo de vulnerabilidades, hallazgos técnicos y propuestas de remediación segura asistida.
+              </Typography>
+            </Box>
+          </Stack>
+
+          <Box sx={{ pt: 1 }}>
+            <Button
+              fullWidth
+              variant="contained"
+              endIcon={<ArrowForwardRoundedIcon />}
+              onClick={() => enterCard('security_application')}
+              sx={{
+                mt: 1,
+                borderRadius: 999,
+                py: 1.15,
+                textTransform: 'none',
+                fontWeight: 800,
+                letterSpacing: '-0.01em',
+                background: 'linear-gradient(140deg, #0f172a, #1d4ed8)',
+                boxShadow: '0 10px 22px rgba(15,23,42,.22)'
+              }}
+            >
+              Abrir centro de seguridad
+            </Button>
+            <Typography variant="caption" sx={{ display: 'block', mt: 0.9, color: '#64748b' }}>
+              Escáner interno por reglas y remediación con revisión humana
             </Typography>
           </Box>
         </Paper>
@@ -10835,6 +10934,17 @@ const renderCategoryBars = (items = [], options = {}) => {
                       <Chip label="Monitor de Actividad" color="primary" variant="outlined" />
                     </Stack>
                     <ActivityDashboard embedded />
+                  </Box>
+                )}
+                {selectedCard === 'security_application' && canAccessSecurityApplication && (
+                  <Box>
+                    <Stack direction="row" spacing={1} sx={{ mb: 2.5 }} alignItems="center">
+                      <Button variant="outlined" startIcon={<ArrowBackRoundedIcon />} onClick={() => setSelectedCard(null)}>
+                        Volver a tarjetas
+                      </Button>
+                      <Chip label="Gestión de Seguridad Aplicativa" color="primary" variant="outlined" />
+                    </Stack>
+                    <SecurityApplicationDashboard embedded />
                   </Box>
                 )}
               </>

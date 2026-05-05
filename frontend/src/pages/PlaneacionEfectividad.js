@@ -1599,6 +1599,11 @@ function GestionPlanesWorkspaceV2({ sourceRows = [], onWorkflowChanged }) {
   const [selectedYear, setSelectedYear] = useState(String(new Date().getFullYear()));
   const [activeSegment, setActiveSegment] = useState('creacion');
   const [confirmDelete, setConfirmDelete] = useState(null); // { plan_codigo, dependencia, estado_workflow } | null
+  const [observacionesRevision, setObservacionesRevision] = useState({ estrategica: '', responsable: '' });
+  const [busquedaSegmento, setBusquedaSegmento] = useState('');
+  const [seguimientoPlan, setSeguimientoPlan] = useState(null); // plan abierto en modo seguimiento
+  const [seguimientoActividades, setSeguimientoActividades] = useState([]); // copia editable de actividades
+  const [savingSeguimiento, setSavingSeguimiento] = useState(false);
 
   const emptyPlan = useMemo(() => ({
     anio: String(new Date().getFullYear()),
@@ -1692,6 +1697,37 @@ function GestionPlanesWorkspaceV2({ sourceRows = [], onWorkflowChanged }) {
     )).sort((a, b) => String(a).localeCompare(String(b), 'es'));
   }, [actividadForm.objetivo_estrategico, actividadForm.lineamiento_estrategico, combinedRows]);
 
+  const actividadSugeridas = useMemo(() => {
+    const yaAgregadas = new Set(
+      actividades.map((a) => String(a.actividad || '').trim().toLowerCase())
+    );
+    const mapa = new Map();
+    for (const row of combinedRows) {
+      const texto = String(row.actividad || '').trim();
+      if (!texto) continue;
+      const key = texto.toLowerCase();
+      if (yaAgregadas.has(key)) continue;
+      if (mapa.has(key)) continue;
+      if (actividadForm.objetivo_estrategico && row.objetivo_estrategico !== actividadForm.objetivo_estrategico) continue;
+      if (actividadForm.lineamiento_estrategico && row.lineamiento_estrategico !== actividadForm.lineamiento_estrategico) continue;
+      if (actividadForm.macroactividad && row.macroactividad !== actividadForm.macroactividad) continue;
+      mapa.set(key, {
+        label: texto,
+        actividad: texto,
+        responsable: row.responsable || '',
+        corresponsable: row.corresponsable || '',
+        indicador: row.indicador || '',
+        meta: row.meta || '',
+        tipo_indicador: row.tipo_indicador || '',
+        fecha_inicio: row.fecha_inicio || '',
+        fecha_fin: row.fecha_fin || '',
+        dependencia: row.dependencia || '',
+        anio: row.anio || '',
+      });
+    }
+    return Array.from(mapa.values());
+  }, [combinedRows, actividades, actividadForm.objetivo_estrategico, actividadForm.lineamiento_estrategico, actividadForm.macroactividad]);
+
   useEffect(() => {
     try {
       const storedWorkspace = localStorage.getItem(WORKSPACE_KEY);
@@ -1749,6 +1785,109 @@ function GestionPlanesWorkspaceV2({ sourceRows = [], onWorkflowChanged }) {
 
   useEffect(() => { refrescarBandejas(); }, [refrescarBandejas]);
 
+  // Resetea panel de seguimiento y búsqueda solo al cambiar de año
+  useEffect(() => {
+    setSeguimientoPlan(null);
+    setSeguimientoActividades([]);
+    setBusquedaSegmento('');
+  }, [selectedYear]);
+
+  // Auto-navega al segmento con más prioridad cuando hay resultados de búsqueda.
+  // No depende de activeSegment para evitar loops; el reset de búsqueda ya NO borra
+  // al cambiar segmento, por eso este effect es seguro.
+  useEffect(() => {
+    const q = busquedaSegmento.trim().toLowerCase();
+    if (!q || !misPlanes.length) return;
+    const dependenciasInst = catalogs?.dependencias || [];
+    const ESTADOS_REVISION_SET = new Set([
+      ESTADOS_WORKFLOW.EN_REVISION_ESTRATEGICA,
+      ESTADOS_WORKFLOW.REVISADO_POR_ESTRATEGICA,
+      ESTADOS_WORKFLOW.EN_REVISION_RESPONSABLE,
+      ESTADOS_WORKFLOW.REVISADO_POR_RESPONSABLE,
+    ]);
+    const planesAnio = misPlanes.filter((p) => String(p.anio) === String(selectedYear));
+    const planesPorDep = new Map(planesAnio.map((p) => [String(p.dependencia || '').trim().toLowerCase(), p]));
+    const matchCreacion = dependenciasInst.filter((dep) => {
+      const key = String(dep || '').trim().toLowerCase();
+      if (!key.includes(q)) return false;
+      const plan = planesPorDep.get(key);
+      return !plan || plan.estado_workflow === ESTADOS_WORKFLOW.BORRADOR;
+    }).length;
+    const matchRevision = planesAnio.filter((p) =>
+      ESTADOS_REVISION_SET.has(p.estado_workflow) &&
+      ((p.dependencia || '').toLowerCase().includes(q) || (ESTADO_LABEL[p.estado_workflow] || '').toLowerCase().includes(q))
+    ).length;
+    const matchAprobacion = planesAnio.filter((p) =>
+      p.estado_workflow === ESTADOS_WORKFLOW.APROBADO && (p.dependencia || '').toLowerCase().includes(q)
+    ).length;
+    // Prioridad: el estado más avanzado donde haya coincidencia
+    const priority = [
+      { key: 'aprobacion', count: matchAprobacion },
+      { key: 'seguimiento', count: matchAprobacion },
+      { key: 'revision', count: matchRevision },
+      { key: 'creacion', count: matchCreacion },
+    ];
+    const best = priority.find((c) => c.count > 0);
+    if (best) setActiveSegment(best.key);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [busquedaSegmento, misPlanes, selectedYear]);
+
+  // === Helpers de cumplimiento ===
+  const estadoCumplimiento = (total) => {
+    if (total === null || total === undefined || total === '') return { label: 'Sin datos', bg: '#f1f5f9', fg: '#64748b' };
+    const v = Number(total);
+    if (v >= 100) return { label: 'Cumplió', bg: '#dcfce7', fg: '#166534' };
+    if (v >= 60)  return { label: 'Cumplió parcialmente', bg: '#fef9c3', fg: '#854d0e' };
+    if (v >= 40)  return { label: 'Cumplió parcialmente', bg: '#ffedd5', fg: '#9a3412' };
+    return { label: 'No cumplió', bg: '#fee2e2', fg: '#991b1b' };
+  };
+
+  const promedioSeguimiento = (acts) => {
+    const validos = acts.filter((a) => a.total_ejecucion !== null && a.total_ejecucion !== undefined && a.total_ejecucion !== '');
+    if (!validos.length) return null;
+    return Math.round(validos.reduce((s, a) => s + Number(a.total_ejecucion), 0) / validos.length * 100) / 100;
+  };
+
+  // === Seguimiento: abrir / guardar ===
+  const abrirSeguimiento = useCallback(async (planCodigo) => {
+    try {
+      setLoadingWorkflow(true);
+      const res = await planAccionWorkflowService.obtenerPlan(planCodigo);
+      if (res?.success) {
+        setSeguimientoPlan(res.data);
+        setSeguimientoActividades(
+          (res.data.actividades || []).map((a) => ({ ...a }))
+        );
+      }
+    } catch (_) {
+      // error silencioso, no bloquea UI
+    } finally {
+      setLoadingWorkflow(false);
+    }
+  }, []);
+
+  const guardarSeguimientoActual = useCallback(async () => {
+    if (!seguimientoPlan) return;
+    try {
+      setSavingSeguimiento(true);
+      await planAccionWorkflowService.guardarSeguimiento(seguimientoPlan.plan_codigo, {
+        actividades: seguimientoActividades.map((a) => ({
+          id: a.id,
+          avance_ip: a.avance_ip,
+          avance_iip: a.avance_iip,
+          observaciones_ip: a.observaciones_ip || '',
+          observaciones_iip: a.observaciones_iip || '',
+        }))
+      });
+      if (typeof onWorkflowChanged === 'function') await onWorkflowChanged({ silent: true });
+      await refrescarBandejas();
+    } catch (_) {
+      // error silencioso
+    } finally {
+      setSavingSeguimiento(false);
+    }
+  }, [seguimientoPlan, seguimientoActividades, onWorkflowChanged, refrescarBandejas]);
+
   // Cargar lista de Usuarios Consulta solo cuando PyE/Admin la necesita
   useEffect(() => {
     if (userRole !== ROL_PYE && userRole !== ROL_ADMIN) return;
@@ -1776,6 +1915,10 @@ function GestionPlanesWorkspaceV2({ sourceRows = [], onWorkflowChanged }) {
       lugarReunion: cab.lugarReunion || prev.lugarReunion,
       objetivoSesion: cab.objetivoSesion || prev.objetivoSesion
     }));
+    setObservacionesRevision({
+      estrategica: cab.comentarios_estrategica || '',
+      responsable: cab.comentarios_responsable || ''
+    });
 
     if (cab.actaOverrides && typeof cab.actaOverrides === 'object') {
       setActaOverrides(cab.actaOverrides);
@@ -1988,7 +2131,10 @@ function GestionPlanesWorkspaceV2({ sourceRows = [], onWorkflowChanged }) {
   }, [currentPlanResponsableId, usuariosConsulta]);
 
   // Bloqueo de edición: cuando hay plan del servidor cargado pero el usuario no puede editar.
-  const currentPuedeEditarEnVista = currentPuedeEditar && userRole !== ROL_ESTRATEGICA;
+  // P&E y Admin siempre pueden editar en cualquier estado; Estratégica nunca edita en esta vista.
+  const currentPuedeEditarEnVista = (userRole === ROL_PYE || userRole === ROL_ADMIN)
+    ? Boolean(currentPlanCodigo)
+    : currentPuedeEditar && userRole !== ROL_ESTRATEGICA;
   const planBloqueado = Boolean(currentPlanCodigo) && !currentPuedeEditarEnVista;
 
   // Descarga del .xlsx aprobado (Usuario Consulta tras Aprobado)
@@ -2546,7 +2692,7 @@ function GestionPlanesWorkspaceV2({ sourceRows = [], onWorkflowChanged }) {
             )}
             {currentPlanCodigo && (userRole === ROL_PYE || userRole === ROL_ADMIN) && currentPlanEstado === ESTADOS_WORKFLOW.BORRADOR && (
               <Button size="small" variant="contained" color="primary" disabled={loadingWorkflow} onClick={() => ejecutarTransicion('enviar_a_estrategica')} sx={{ borderRadius: 2, textTransform: 'none', fontWeight: 900 }}>
-                Enviar a revisión estratégica
+                Enviar a Dirección de Planeación
               </Button>
             )}
             {/* La revisión estratégica se atiende solo desde la bandeja propia de Planeación Estratégica. */}
@@ -2664,9 +2810,7 @@ function GestionPlanesWorkspaceV2({ sourceRows = [], onWorkflowChanged }) {
 
           // Estadística agregada del año (trazabilidad)
           const totalDependencias = dependenciasInst.length;
-          const planesCreados = planesDelAnio.length;
           const completitud = totalDependencias > 0 ? Math.round((planesAprobados.length / totalDependencias) * 100) : 0;
-          const sinIniciar = sinPlanCount;
           return (
             <Box sx={{ mt: 1.6, p: 1.6, borderRadius: 3, border: '1px solid #dbeafe', background: 'linear-gradient(180deg,#ffffff 0%,#f8fbff 100%)' }}>
               {/* Encabezado: filtro de año + estadística del año */}
@@ -2692,31 +2836,6 @@ function GestionPlanesWorkspaceV2({ sourceRows = [], onWorkflowChanged }) {
                 </Typography>
               </Stack>
 
-              {/* KPIs del año (trazabilidad anual) */}
-              <Box sx={{ display: 'grid', gap: 1.2, gridTemplateColumns: { xs: 'repeat(2, 1fr)', sm: 'repeat(3, 1fr)', md: 'repeat(5, 1fr)' }, mb: 1.6 }}>
-                {[
-                  { label: 'Dependencias', value: totalDependencias, color: '#1e3a8a', bg: '#eff6ff', border: '#dbeafe' },
-                  { label: 'Planes creados', value: planesCreados, color: '#3730a3', bg: '#eef2ff', border: '#e0e7ff' },
-                  { label: 'En revisión', value: planesEnRevision.length, color: '#1e40af', bg: '#dbeafe', border: '#bfdbfe' },
-                  { label: 'Aprobados vigentes', value: planesAprobados.length, color: '#166534', bg: '#dcfce7', border: '#bbf7d0' },
-                  { label: 'Sin iniciar', value: sinIniciar, color: '#92400e', bg: '#fef3c7', border: '#fde68a' }
-                ].map((card) => (
-                  <Box
-                    key={card.label}
-                    sx={{
-                      p: 1.4,
-                      borderRadius: 2.5,
-                      border: `1px solid ${card.border}`,
-                      bgcolor: card.bg,
-                      textAlign: 'center'
-                    }}
-                  >
-                    <Typography sx={{ fontSize: 28, fontWeight: 900, color: card.color, lineHeight: 1 }}>{card.value}</Typography>
-                    <Typography sx={{ fontSize: 10.5, fontWeight: 800, color: card.color, textTransform: 'uppercase', letterSpacing: 0.4, mt: 0.6 }}>{card.label}</Typography>
-                  </Box>
-                ))}
-              </Box>
-
               {/* Barra de completitud institucional */}
               <Box sx={{ mb: 1.6, p: 1.4, borderRadius: 2.5, border: '1px solid #d1fae5', bgcolor: '#ecfdf5' }}>
                 <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1.2} alignItems={{ xs: 'flex-start', sm: 'center' }} justifyContent="space-between" sx={{ mb: 0.8 }}>
@@ -2732,41 +2851,277 @@ function GestionPlanesWorkspaceV2({ sourceRows = [], onWorkflowChanged }) {
                 </Box>
               </Box>
 
-              {/* 3 Segmentos */}
-              <Tabs
-                value={activeSegment}
-                onChange={(_, v) => setActiveSegment(v)}
-                variant="fullWidth"
-                sx={{
-                  minHeight: 48,
-                  mb: 1.4,
-                  '& .MuiTabs-indicator': { height: 0 },
-                  '& .MuiTab-root': { textTransform: 'none', fontWeight: 900, minHeight: 44, borderRadius: 2.5, color: '#64748b', gap: 0.8 },
-                  '& .MuiTab-root.Mui-selected': { color: '#1d4ed8', background: 'linear-gradient(135deg,#eff6ff 0%,#dbeafe 100%)', boxShadow: 'inset 0 0 0 1px rgba(59,130,246,.22)' }
-                }}
-              >
-                <Tab value="creacion" label={
-                  <Stack direction="row" spacing={1} alignItems="center">
-                    <span>1 · Creación</span>
-                    <Chip size="small" sx={{ height: 20, bgcolor: '#fef3c7', color: '#92400e', fontWeight: 900 }} label={sinPlanCount + enBorradorCount} />
-                  </Stack>
-                } />
-                <Tab value="revision" label={
-                  <Stack direction="row" spacing={1} alignItems="center">
-                    <span>2 · Revisión</span>
-                    <Chip size="small" sx={{ height: 20, bgcolor: '#dbeafe', color: '#1e40af', fontWeight: 900 }} label={planesEnRevision.length} />
-                  </Stack>
-                } />
-                <Tab value="aprobacion" label={
-                  <Stack direction="row" spacing={1} alignItems="center">
-                    <span>3 · Aprobación</span>
-                    <Chip size="small" sx={{ height: 20, bgcolor: '#dcfce7', color: '#166534', fontWeight: 900 }} label={planesAprobados.length} />
-                  </Stack>
-                } />
-              </Tabs>
+              {/* 4 Etapas — tarjetas-botón */}
+              {(() => {
+                const etapas = [
+                  {
+                    key: 'creacion',
+                    paso: '01',
+                    label: 'Creación',
+                    desc: 'Construir y enviar',
+                    count: sinPlanCount + enBorradorCount,
+                    countLabel: 'pendientes',
+                    icon: <EditIcon sx={{ fontSize: 22 }} />,
+                    activeGrad: 'linear-gradient(135deg,#f59e0b 0%,#d97706 100%)',
+                    activeBorder: '#f59e0b',
+                    activeFg: '#fff',
+                    inactiveBg: '#fffbeb',
+                    inactiveFg: '#92400e',
+                    inactiveBorder: '#fde68a',
+                    countBg: 'rgba(255,255,255,.25)',
+                    countFgActive: '#fff',
+                    countBgInactive: '#fef3c7',
+                    countFgInactive: '#92400e',
+                  },
+                  {
+                    key: 'revision',
+                    paso: '02',
+                    label: 'Revisión',
+                    desc: 'En curso de revisión',
+                    count: planesEnRevision.length,
+                    countLabel: 'en proceso',
+                    icon: <HourglassBottomIcon sx={{ fontSize: 22 }} />,
+                    activeGrad: 'linear-gradient(135deg,#3b82f6 0%,#1d4ed8 100%)',
+                    activeBorder: '#3b82f6',
+                    activeFg: '#fff',
+                    inactiveBg: '#eff6ff',
+                    inactiveFg: '#1e40af',
+                    inactiveBorder: '#bfdbfe',
+                    countBg: 'rgba(255,255,255,.25)',
+                    countFgActive: '#fff',
+                    countBgInactive: '#dbeafe',
+                    countFgInactive: '#1e40af',
+                  },
+                  {
+                    key: 'aprobacion',
+                    paso: '03',
+                    label: 'Aprobación',
+                    desc: 'Planes vigentes',
+                    count: planesAprobados.length,
+                    countLabel: 'aprobados',
+                    icon: <CheckCircleIcon sx={{ fontSize: 22 }} />,
+                    activeGrad: 'linear-gradient(135deg,#10b981 0%,#059669 100%)',
+                    activeBorder: '#10b981',
+                    activeFg: '#fff',
+                    inactiveBg: '#ecfdf5',
+                    inactiveFg: '#166534',
+                    inactiveBorder: '#a7f3d0',
+                    countBg: 'rgba(255,255,255,.25)',
+                    countFgActive: '#fff',
+                    countBgInactive: '#dcfce7',
+                    countFgInactive: '#166534',
+                  },
+                  {
+                    key: 'seguimiento',
+                    paso: '04',
+                    label: 'Seguimiento',
+                    desc: 'Avance y cumplimiento',
+                    count: planesAprobados.length,
+                    countLabel: 'a seguir',
+                    icon: <TrendingUpIcon sx={{ fontSize: 22 }} />,
+                    activeGrad: 'linear-gradient(135deg,#0ea5e9 0%,#0369a1 100%)',
+                    activeBorder: '#0ea5e9',
+                    activeFg: '#fff',
+                    inactiveBg: '#f0f9ff',
+                    inactiveFg: '#0369a1',
+                    inactiveBorder: '#bae6fd',
+                    countBg: 'rgba(255,255,255,.25)',
+                    countFgActive: '#fff',
+                    countBgInactive: '#e0f2fe',
+                    countFgInactive: '#0369a1',
+                  },
+                ];
+                // Conteo dinámico de coincidencias por segmento cuando hay búsqueda activa
+                const qCards = busquedaSegmento.trim().toLowerCase();
+                const matchCounts = qCards ? {
+                  creacion: filasCreacion.filter((f) => f.dependencia.toLowerCase().includes(qCards)).length,
+                  revision: planesEnRevision.filter((p) => (p.dependencia || '').toLowerCase().includes(qCards) || (ESTADO_LABEL[p.estado_workflow] || '').toLowerCase().includes(qCards)).length,
+                  aprobacion: planesAprobados.filter((p) => (p.dependencia || '').toLowerCase().includes(qCards)).length,
+                  seguimiento: planesAprobados.filter((p) => (p.dependencia || '').toLowerCase().includes(qCards)).length,
+                } : null;
+                return (
+                  <Box sx={{ display: 'grid', gap: 1.2, gridTemplateColumns: 'repeat(4, 1fr)', mb: 1.6 }}>
+                    {etapas.map((e) => {
+                      const active = activeSegment === e.key;
+                      const matchN = matchCounts ? matchCounts[e.key] : null;
+                      const hasMatch = matchN !== null && matchN > 0;
+                      const noMatch = matchN !== null && matchN === 0;
+                      const displayCount = matchN !== null ? matchN : e.count;
+                      return (
+                        <Box
+                          key={e.key}
+                          onClick={() => { setActiveSegment(e.key); }}
+                          sx={{
+                            cursor: 'pointer',
+                            borderRadius: 3,
+                            p: '14px 16px',
+                            border: active
+                              ? `2px solid ${e.activeBorder}`
+                              : hasMatch
+                                ? '2px solid #16a34a'
+                                : noMatch
+                                  ? `2px solid ${e.inactiveBorder}`
+                                  : `2px solid ${e.inactiveBorder}`,
+                            background: active ? e.activeGrad : e.inactiveBg,
+                            boxShadow: active
+                              ? `0 6px 20px ${e.activeBorder}44`
+                              : hasMatch
+                                ? '0 0 0 3px rgba(22,163,74,.18), 0 2px 8px rgba(22,163,74,.15)'
+                                : '0 1px 3px rgba(0,0,0,.06)',
+                            opacity: noMatch ? 0.45 : 1,
+                            filter: noMatch ? 'grayscale(0.5)' : 'none',
+                            transition: 'all .18s ease',
+                            userSelect: 'none',
+                            '&:hover': {
+                              boxShadow: noMatch ? '0 1px 3px rgba(0,0,0,.06)' : `0 8px 24px ${e.activeBorder}55`,
+                              transform: noMatch ? 'none' : 'translateY(-1px)',
+                              border: noMatch ? `2px solid ${e.inactiveBorder}` : `2px solid ${e.activeBorder}`,
+                            },
+                            display: 'flex',
+                            flexDirection: 'column',
+                            gap: '10px',
+                            position: 'relative',
+                          }}
+                        >
+                          {/* Badge de resultado de búsqueda */}
+                          {hasMatch && !active && (
+                            <Box sx={{
+                              position: 'absolute', top: 8, right: 8,
+                              bgcolor: '#16a34a', color: '#fff',
+                              fontSize: 9, fontWeight: 900, px: 0.7, py: 0.2,
+                              borderRadius: 1, textTransform: 'uppercase', letterSpacing: 0.5,
+                            }}>
+                              {matchN} coincid.
+                            </Box>
+                          )}
+                          {/* Fila superior: icono + número de paso */}
+                          <Stack direction="row" alignItems="center" justifyContent="space-between">
+                            <Box sx={{
+                              width: 38, height: 38, borderRadius: 2,
+                              bgcolor: active ? 'rgba(255,255,255,.22)' : hasMatch ? 'rgba(22,163,74,.12)' : `${e.activeBorder}22`,
+                              display: 'flex', alignItems: 'center', justifyContent: 'center',
+                              color: active ? '#fff' : hasMatch ? '#15803d' : e.inactiveFg,
+                              flexShrink: 0,
+                            }}>
+                              {e.icon}
+                            </Box>
+                            <Box sx={{
+                              minWidth: 36, height: 36, borderRadius: '50%',
+                              bgcolor: active ? e.countBg : hasMatch ? 'rgba(22,163,74,.15)' : e.countBgInactive,
+                              display: 'flex', alignItems: 'center', justifyContent: 'center',
+                              flexShrink: 0,
+                            }}>
+                              <Typography sx={{ fontSize: 15, fontWeight: 900, color: active ? e.countFgActive : hasMatch ? '#15803d' : e.countFgInactive, lineHeight: 1 }}>
+                                {displayCount}
+                              </Typography>
+                            </Box>
+                          </Stack>
+                          {/* Fila inferior: paso + label + desc */}
+                          <Box>
+                            <Typography sx={{ fontSize: 10, fontWeight: 800, color: active ? 'rgba(255,255,255,.75)' : '#94a3b8', textTransform: 'uppercase', letterSpacing: 0.8, lineHeight: 1, mb: 0.3 }}>
+                              Paso {e.paso}
+                            </Typography>
+                            <Typography sx={{ fontSize: 14, fontWeight: 900, color: active ? '#fff' : hasMatch ? '#15803d' : e.inactiveFg, lineHeight: 1.2 }}>
+                              {e.label}
+                            </Typography>
+                            <Typography sx={{ fontSize: 11, color: active ? 'rgba(255,255,255,.8)' : hasMatch ? '#16a34a' : '#64748b', mt: 0.3, lineHeight: 1.3 }}>
+                              {matchN !== null
+                                ? (matchN > 0 ? `${matchN} encontrado${matchN !== 1 ? 's' : ''}` : 'Sin coincidencias')
+                                : `${e.count} ${e.countLabel}`}
+                            </Typography>
+                          </Box>
+                        </Box>
+                      );
+                    })}
+                  </Box>
+                );
+              })()}
+
+              {/* === BARRA DE BÚSQUEDA INTELIGENTE === */}
+              {(() => {
+                const q = busquedaSegmento.trim().toLowerCase();
+                const totalSegmento = activeSegment === 'creacion' ? filasCreacion.length
+                  : activeSegment === 'revision' ? planesEnRevision.length
+                  : activeSegment === 'aprobacion' ? planesAprobados.length
+                  : planesAprobados.length;
+                const filtradas = q ? (() => {
+                  if (activeSegment === 'creacion') return filasCreacion.filter(f => f.dependencia.toLowerCase().includes(q));
+                  const lista = activeSegment === 'revision' ? planesEnRevision : planesAprobados;
+                  return lista.filter(p => (p.dependencia || '').toLowerCase().includes(q) || (ESTADO_LABEL[p.estado_workflow] || '').toLowerCase().includes(q));
+                })().length : null;
+                return (
+                  <Box sx={{ mb: 1.4, position: 'relative' }}>
+                    <Box sx={{
+                      display: 'flex', alignItems: 'center', gap: 1.2,
+                      p: '10px 16px',
+                      borderRadius: 3,
+                      border: busquedaSegmento ? '2px solid #3b82f6' : '2px solid #e2e8f0',
+                      bgcolor: '#fff',
+                      boxShadow: busquedaSegmento ? '0 0 0 3px rgba(59,130,246,.12)' : '0 1px 4px rgba(0,0,0,.06)',
+                      transition: 'all .15s ease',
+                    }}>
+                      {/* Icono lupa */}
+                      <Box sx={{ color: busquedaSegmento ? '#3b82f6' : '#94a3b8', display: 'flex', flexShrink: 0 }}>
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                          <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
+                        </svg>
+                      </Box>
+                      {/* Input */}
+                      <input
+                        type="text"
+                        value={busquedaSegmento}
+                        onChange={(e) => setBusquedaSegmento(e.target.value)}
+                        placeholder={`Buscar en ${activeSegment === 'creacion' ? 'Creación' : activeSegment === 'revision' ? 'Revisión' : activeSegment === 'aprobacion' ? 'Aprobación' : 'Seguimiento'} — dependencia, estado, responsable…`}
+                        style={{
+                          flex: 1, border: 'none', outline: 'none',
+                          fontSize: 14, fontWeight: 500, color: '#0f172a',
+                          background: 'transparent', fontFamily: 'inherit',
+                        }}
+                      />
+                      {/* Contador de resultados */}
+                      {q && filtradas !== null && (
+                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.8, flexShrink: 0 }}>
+                          <Typography sx={{ fontSize: 12, fontWeight: 700, color: filtradas > 0 ? '#3b82f6' : '#ef4444', whiteSpace: 'nowrap' }}>
+                            {filtradas} de {totalSegmento}
+                          </Typography>
+                          <Box sx={{ width: 1, height: 16, bgcolor: '#e2e8f0' }} />
+                        </Box>
+                      )}
+                      {/* Botón limpiar */}
+                      {busquedaSegmento && (
+                        <Box
+                          onClick={() => setBusquedaSegmento('')}
+                          sx={{ cursor: 'pointer', color: '#94a3b8', display: 'flex', flexShrink: 0, borderRadius: '50%', p: 0.3, '&:hover': { color: '#ef4444', bgcolor: '#fee2e2' }, transition: 'all .12s' }}
+                        >
+                          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
+                            <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+                          </svg>
+                        </Box>
+                      )}
+                    </Box>
+                    {/* Chips de ayuda (cuando está vacío) */}
+                    {!busquedaSegmento && (
+                      <Stack direction="row" spacing={0.8} sx={{ mt: 0.8, flexWrap: 'wrap', rowGap: 0.5 }}>
+                        {['Sin crear', 'Borrador', 'Revisión', 'Aprobado', 'Dirección', 'Vicerrectoría', 'Departamento'].map((hint) => (
+                          <Chip
+                            key={hint}
+                            label={hint}
+                            size="small"
+                            onClick={() => setBusquedaSegmento(hint)}
+                            sx={{ fontSize: 11, height: 22, cursor: 'pointer', bgcolor: '#f1f5f9', color: '#475569', fontWeight: 600, '&:hover': { bgcolor: '#dbeafe', color: '#1d4ed8' } }}
+                          />
+                        ))}
+                      </Stack>
+                    )}
+                  </Box>
+                );
+              })()}
 
               {/* === SEGMENTO 1: CREACIÓN === */}
-              {activeSegment === 'creacion' && (
+              {activeSegment === 'creacion' && (() => {
+                const q = busquedaSegmento.trim().toLowerCase();
+                const filasFiltradas = q ? filasCreacion.filter(f => f.dependencia.toLowerCase().includes(q)) : filasCreacion;
+                return (
                 <TableContainer component={Paper} elevation={0} sx={{ border: '1px solid #e2e8f0', borderRadius: 2.5, maxHeight: 460 }}>
                   <Table stickyHeader size="small">
                     <TableHead>
@@ -2778,17 +3133,18 @@ function GestionPlanesWorkspaceV2({ sourceRows = [], onWorkflowChanged }) {
                       </TableRow>
                     </TableHead>
                     <TableBody>
-                      {filasCreacion.length === 0 ? (
+                      {filasFiltradas.length === 0 ? (
                         <TableRow>
                           <TableCell colSpan={4} sx={{ textAlign: 'center', color: '#94a3b8', py: 4 }}>
-                            No hay dependencias institucionales cargadas en el catálogo.
+                            {busquedaSegmento ? `Sin resultados para "${busquedaSegmento}"` : 'No hay dependencias institucionales cargadas en el catálogo.'}
                           </TableCell>
                         </TableRow>
-                      ) : filasCreacion.map((f, idx) => {
+                      ) : filasFiltradas.map((f, idx) => {
                         const sinPlan = !f.plan;
                         const enBorrador = f.plan?.estado_workflow === ESTADOS_WORKFLOW.BORRADOR;
+                        const esMatch = q && f.dependencia.toLowerCase().includes(q);
                         return (
-                          <TableRow key={f.dependencia} hover>
+                          <TableRow key={f.dependencia} hover sx={{ bgcolor: esMatch ? 'rgba(254,249,195,.8)' : 'inherit', outline: esMatch ? '2px solid #fbbf24' : 'none', outlineOffset: '-2px' }}>
                             <TableCell sx={{ fontSize: 12.5, fontWeight: 800, color: '#475569' }}>{idx + 1}</TableCell>
                             <TableCell sx={{ fontSize: 13, fontWeight: 700, color: '#0f172a' }}>{f.dependencia}</TableCell>
                             <TableCell>
@@ -2827,13 +3183,17 @@ function GestionPlanesWorkspaceV2({ sourceRows = [], onWorkflowChanged }) {
                     </TableBody>
                   </Table>
                 </TableContainer>
-              )}
+                );
+              })()}
 
               {/* === SEGMENTO 2: REVISIÓN === */}
-              {activeSegment === 'revision' && (
-                planesEnRevision.length === 0 ? (
+              {activeSegment === 'revision' && (() => {
+                const q = busquedaSegmento.trim().toLowerCase();
+                const planesFiltrados = q ? planesEnRevision.filter(p => (p.dependencia || '').toLowerCase().includes(q) || (ESTADO_LABEL[p.estado_workflow] || '').toLowerCase().includes(q)) : planesEnRevision;
+                return (
+                planesFiltrados.length === 0 ? (
                   <Alert severity="info" sx={{ borderRadius: 2.5 }}>
-                    No hay planes en proceso de revisión para el año {selectedYear}. Cuando envíes un borrador a Planeación Estratégica aparecerá aquí.
+                    {q ? `Sin resultados para "${busquedaSegmento}"` : `No hay planes en proceso de revisión para el año ${selectedYear}. Cuando envíes un borrador a Planeación Estratégica aparecerá aquí.`}
                   </Alert>
                 ) : (
                   <TableContainer component={Paper} elevation={0} sx={{ border: '1px solid #e2e8f0', borderRadius: 2.5, maxHeight: 460 }}>
@@ -2848,11 +3208,12 @@ function GestionPlanesWorkspaceV2({ sourceRows = [], onWorkflowChanged }) {
                         </TableRow>
                       </TableHead>
                       <TableBody>
-                        {planesEnRevision.map((p, idx) => {
+                        {planesFiltrados.map((p, idx) => {
                           const accion = accionRequeridaPyE(p.estado_workflow);
                           const fecha = p.fecha_envio_responsable || p.fecha_revisado_estrategica || p.fecha_envio_estrategica || p.updatedAt;
+                          const esMatch = q && ((p.dependencia || '').toLowerCase().includes(q) || (ESTADO_LABEL[p.estado_workflow] || '').toLowerCase().includes(q));
                           return (
-                            <TableRow key={p.plan_codigo} hover>
+                            <TableRow key={p.plan_codigo} hover sx={{ bgcolor: esMatch ? 'rgba(254,249,195,.8)' : 'inherit', outline: esMatch ? '2px solid #fbbf24' : 'none', outlineOffset: '-2px' }}>
                               <TableCell sx={{ fontSize: 12.5, fontWeight: 800, color: '#475569' }}>{idx + 1}</TableCell>
                               <TableCell sx={{ fontSize: 13, fontWeight: 700, color: '#0f172a' }}>{p.dependencia || '—'}</TableCell>
                               <TableCell>
@@ -2893,13 +3254,17 @@ function GestionPlanesWorkspaceV2({ sourceRows = [], onWorkflowChanged }) {
                     </Table>
                   </TableContainer>
                 )
-              )}
+                );
+              })()}
 
               {/* === SEGMENTO 3: APROBACIÓN === */}
-              {activeSegment === 'aprobacion' && (
-                planesAprobados.length === 0 ? (
+              {activeSegment === 'aprobacion' && (() => {
+                const q = busquedaSegmento.trim().toLowerCase();
+                const planesFiltrados = q ? planesAprobados.filter(p => (p.dependencia || '').toLowerCase().includes(q)) : planesAprobados;
+                return (
+                planesFiltrados.length === 0 ? (
                   <Alert severity="info" sx={{ borderRadius: 2.5 }}>
-                    No hay planes aprobados para el año {selectedYear}. Cuando completes el flujo de revisión y aprobación, los planes aparecerán aquí listos para enviar a rectoría.
+                    {q ? `Sin resultados para "${busquedaSegmento}"` : `No hay planes aprobados para el año ${selectedYear}.`}
                   </Alert>
                 ) : (
                   <TableContainer component={Paper} elevation={0} sx={{ border: '1px solid #d1fae5', borderRadius: 2.5, maxHeight: 460 }}>
@@ -2913,8 +3278,10 @@ function GestionPlanesWorkspaceV2({ sourceRows = [], onWorkflowChanged }) {
                         </TableRow>
                       </TableHead>
                       <TableBody>
-                        {planesAprobados.map((p, idx) => (
-                          <TableRow key={p.plan_codigo} hover sx={{ bgcolor: 'rgba(220,252,231,.25)' }}>
+                        {planesFiltrados.map((p, idx) => {
+                          const esMatchAprobado = q && (p.dependencia || '').toLowerCase().includes(q);
+                          return (
+                          <TableRow key={p.plan_codigo} hover sx={{ bgcolor: esMatchAprobado ? 'rgba(254,249,195,.8)' : 'rgba(220,252,231,.25)', outline: esMatchAprobado ? '2px solid #fbbf24' : 'none', outlineOffset: '-2px' }}>
                             <TableCell sx={{ fontSize: 12.5, fontWeight: 800, color: '#475569' }}>{idx + 1}</TableCell>
                             <TableCell sx={{ fontSize: 13, fontWeight: 700, color: '#0f172a' }}>{p.dependencia || '—'}</TableCell>
                             <TableCell sx={{ fontSize: 12.5, color: '#475569' }}>
@@ -2942,12 +3309,172 @@ function GestionPlanesWorkspaceV2({ sourceRows = [], onWorkflowChanged }) {
                               </Stack>
                             </TableCell>
                           </TableRow>
-                        ))}
+                        ); })}
                       </TableBody>
                     </Table>
                   </TableContainer>
                 )
-              )}
+                );
+              })()}
+
+              {/* === SEGMENTO 4: SEGUIMIENTO === */}
+              {activeSegment === 'seguimiento' && (() => {
+                // Panel de seguimiento de un plan individual (inline)
+                if (seguimientoPlan) {
+                  const promedio = promedioSeguimiento(seguimientoActividades);
+                  const estadoGeneral = estadoCumplimiento(promedio);
+                  return (
+                    <Box>
+                      {/* Encabezado del plan en seguimiento */}
+                      <Stack direction="row" spacing={1.5} alignItems="center" justifyContent="space-between" sx={{ mb: 2, p: 1.8, borderRadius: 2.5, bgcolor: '#f0f9ff', border: '1px solid #bae6fd' }}>
+                        <Box>
+                          <Typography sx={{ fontSize: 13, fontWeight: 900, color: '#0369a1' }}>{seguimientoPlan.dependencia}</Typography>
+                          <Typography sx={{ fontSize: 11.5, color: '#64748b' }}>Plan {seguimientoPlan.anio} · {seguimientoPlan.plan_codigo}</Typography>
+                        </Box>
+                        <Stack direction="row" spacing={1} alignItems="center">
+                          {promedio !== null && (
+                            <Chip size="small" label={`${promedio}% promedio`} sx={{ bgcolor: estadoGeneral.bg, color: estadoGeneral.fg, fontWeight: 900 }} />
+                          )}
+                          <Button size="small" variant="outlined" onClick={() => setSeguimientoPlan(null)} sx={{ borderRadius: 2, textTransform: 'none', fontWeight: 800 }}>
+                            Volver a la lista
+                          </Button>
+                        </Stack>
+                      </Stack>
+
+                      {/* Tabla de actividades con campos de avance editables */}
+                      <Box sx={{ overflowX: 'auto', borderRadius: 2.5, border: '1px solid #e2e8f0' }}>
+                        <Table size="small" sx={{ minWidth: 900, borderCollapse: 'collapse' }}>
+                          <TableHead>
+                            <TableRow sx={{ bgcolor: '#0c4a6e' }}>
+                              {['#', 'Actividad', 'Indicador', 'Meta', 'Avance IP (%)', 'Observaciones IP', 'Avance IIP (%)', 'Observaciones IIP', 'Total (%)', 'Estado'].map((h) => (
+                                <TableCell key={h} sx={{ color: '#fff', fontWeight: 900, fontSize: 11, textTransform: 'uppercase', letterSpacing: 0.3, py: 1.2, px: 1.4, whiteSpace: 'nowrap', borderBottom: 'none' }}>{h}</TableCell>
+                              ))}
+                            </TableRow>
+                          </TableHead>
+                          <TableBody>
+                            {seguimientoActividades.map((act, idx) => {
+                              const avIP = act.avance_ip === null || act.avance_ip === undefined ? '' : String(act.avance_ip);
+                              const avIIP = act.avance_iip === null || act.avance_iip === undefined ? '' : String(act.avance_iip);
+                              const total = act.total_ejecucion;
+                              const ec = estadoCumplimiento(total);
+                              const bgRow = idx % 2 === 0 ? '#fff' : '#f8fafc';
+                              const updateAct = (key, val) => {
+                                setSeguimientoActividades((prev) => prev.map((a, i) => {
+                                  if (i !== idx) return a;
+                                  const next = { ...a, [key]: val };
+                                  const ip = key === 'avance_ip' ? val : next.avance_ip;
+                                  const iip = key === 'avance_iip' ? val : next.avance_iip;
+                                  const ipN = ip === '' || ip === null || ip === undefined ? null : Number(ip);
+                                  const iipN = iip === '' || iip === null || iip === undefined ? null : Number(iip);
+                                  next.total_ejecucion = (ipN !== null && iipN !== null) ? Math.round((ipN + iipN) / 2 * 100) / 100 : (ipN ?? iipN ?? null);
+                                  return next;
+                                }));
+                              };
+                              return (
+                                <TableRow key={act.id || idx} sx={{ bgcolor: bgRow, '&:hover': { bgcolor: '#f0f9ff' } }}>
+                                  <TableCell sx={{ fontSize: 12, fontWeight: 700, color: '#64748b', px: 1.4, py: 1, verticalAlign: 'top', whiteSpace: 'nowrap' }}>{idx + 1}</TableCell>
+                                  <TableCell sx={{ fontSize: 12.5, fontWeight: 600, color: '#0f172a', px: 1.4, py: 1, maxWidth: 220, verticalAlign: 'top' }}>{act.actividad}</TableCell>
+                                  <TableCell sx={{ fontSize: 11.5, color: '#334155', px: 1.4, py: 1, maxWidth: 200, verticalAlign: 'top' }}>{act.indicador}</TableCell>
+                                  <TableCell sx={{ fontSize: 12.5, fontWeight: 700, color: '#1e293b', px: 1.4, py: 1, textAlign: 'center', verticalAlign: 'top', whiteSpace: 'nowrap' }}>{act.meta}</TableCell>
+                                  <TableCell sx={{ px: 1, py: 0.8, verticalAlign: 'top' }}>
+                                    <TextField size="small" type="number" value={avIP} onChange={(e) => updateAct('avance_ip', e.target.value)} inputProps={{ min: 0, max: 100, step: 1, style: { textAlign: 'center', padding: '4px 6px', fontSize: 13 } }} sx={{ width: 72 }} />
+                                  </TableCell>
+                                  <TableCell sx={{ px: 1, py: 0.8, verticalAlign: 'top' }}>
+                                    <TextField size="small" multiline minRows={1} value={act.observaciones_ip || ''} onChange={(e) => updateAct('observaciones_ip', e.target.value)} inputProps={{ style: { fontSize: 12 } }} sx={{ width: 160 }} />
+                                  </TableCell>
+                                  <TableCell sx={{ px: 1, py: 0.8, verticalAlign: 'top' }}>
+                                    <TextField size="small" type="number" value={avIIP} onChange={(e) => updateAct('avance_iip', e.target.value)} inputProps={{ min: 0, max: 100, step: 1, style: { textAlign: 'center', padding: '4px 6px', fontSize: 13 } }} sx={{ width: 72 }} />
+                                  </TableCell>
+                                  <TableCell sx={{ px: 1, py: 0.8, verticalAlign: 'top' }}>
+                                    <TextField size="small" multiline minRows={1} value={act.observaciones_iip || ''} onChange={(e) => updateAct('observaciones_iip', e.target.value)} inputProps={{ style: { fontSize: 12 } }} sx={{ width: 160 }} />
+                                  </TableCell>
+                                  <TableCell sx={{ px: 1.4, py: 1, textAlign: 'center', verticalAlign: 'top', whiteSpace: 'nowrap' }}>
+                                    <Typography sx={{ fontSize: 13, fontWeight: 900, color: total !== null && total !== undefined ? ec.fg : '#94a3b8' }}>{total !== null && total !== undefined ? `${total}%` : '—'}</Typography>
+                                  </TableCell>
+                                  <TableCell sx={{ px: 1, py: 1, verticalAlign: 'top' }}>
+                                    <Chip size="small" label={ec.label} sx={{ bgcolor: ec.bg, color: ec.fg, fontWeight: 800, fontSize: 10.5, height: 22 }} />
+                                  </TableCell>
+                                </TableRow>
+                              );
+                            })}
+                            {seguimientoActividades.length === 0 && (
+                              <TableRow><TableCell colSpan={10} sx={{ textAlign: 'center', py: 4, color: '#94a3b8' }}>Este plan no tiene actividades registradas.</TableCell></TableRow>
+                            )}
+                          </TableBody>
+                        </Table>
+                      </Box>
+
+                      <Stack direction="row" spacing={1.2} sx={{ mt: 1.8 }}>
+                        <Button variant="contained" disabled={savingSeguimiento} onClick={guardarSeguimientoActual} startIcon={savingSeguimiento ? <CircularProgress size={14} sx={{ color: 'inherit' }} /> : <SaveIcon fontSize="small" />} sx={{ borderRadius: 2.5, textTransform: 'none', fontWeight: 900, bgcolor: '#0369a1', '&:hover': { bgcolor: '#075985' } }}>
+                          {savingSeguimiento ? 'Guardando…' : 'Guardar seguimiento'}
+                        </Button>
+                        <Button variant="outlined" onClick={() => setSeguimientoPlan(null)} sx={{ borderRadius: 2.5, textTransform: 'none', fontWeight: 800 }}>
+                          Cancelar
+                        </Button>
+                      </Stack>
+                    </Box>
+                  );
+                }
+
+                // Lista de planes aprobados para seleccionar seguimiento
+                const todosConSeguimiento = misPlanes.filter(
+                  (p) => p.estado_workflow === ESTADOS_WORKFLOW.APROBADO && String(p.anio) === String(selectedYear)
+                );
+                const qSeg = busquedaSegmento.trim().toLowerCase();
+                const planesConSeguimiento = qSeg ? todosConSeguimiento.filter(p => (p.dependencia || '').toLowerCase().includes(qSeg)) : todosConSeguimiento;
+                return planesConSeguimiento.length === 0 ? (
+                  <Alert severity="info" sx={{ borderRadius: 2.5 }}>
+                    {qSeg ? `Sin resultados para "${busquedaSegmento}"` : `No hay planes aprobados para el año ${selectedYear}. El seguimiento se habilita una vez que los planes estén aprobados.`}
+                  </Alert>
+                ) : (
+                  <Box sx={{ overflowX: 'auto', borderRadius: 2.5, border: '1px solid #bae6fd' }}>
+                    <Table size="small" sx={{ minWidth: 700 }}>
+                      <TableHead>
+                        <TableRow sx={{ bgcolor: '#0c4a6e' }}>
+                          {['#', 'Dependencia', 'Aprobado el', 'Avance promedio', 'Estado cumplimiento', 'Acción'].map((h) => (
+                            <TableCell key={h} sx={{ color: '#fff', fontWeight: 900, fontSize: 11, textTransform: 'uppercase', letterSpacing: 0.3, py: 1.2, px: 1.4, whiteSpace: 'nowrap', borderBottom: 'none' }}>{h}</TableCell>
+                          ))}
+                        </TableRow>
+                      </TableHead>
+                      <TableBody>
+                        {planesConSeguimiento.map((p, idx) => {
+                          const datosPlan = sourceRows.filter((r) => r.plan_codigo === p.plan_codigo);
+                          const promActs = datosPlan.filter((r) => r.total_ejecucion !== null && r.total_ejecucion !== undefined);
+                          const prom = promActs.length ? Math.round(promActs.reduce((s, r) => s + Number(r.total_ejecucion), 0) / promActs.length * 100) / 100 : null;
+                          const ec = estadoCumplimiento(prom);
+                          return (
+                            <TableRow key={p.plan_codigo} hover sx={{ bgcolor: idx % 2 === 0 ? '#fff' : '#f0f9ff', '&:hover': { bgcolor: '#e0f2fe' } }}>
+                              <TableCell sx={{ fontSize: 12, fontWeight: 700, color: '#64748b', px: 1.4 }}>{idx + 1}</TableCell>
+                              <TableCell sx={{ fontSize: 13, fontWeight: 700, color: '#0f172a', px: 1.4 }}>{p.dependencia || '—'}</TableCell>
+                              <TableCell sx={{ fontSize: 12.5, color: '#475569', px: 1.4 }}>
+                                {p.fecha_aprobado ? new Date(p.fecha_aprobado).toLocaleDateString('es-CO', { day: '2-digit', month: 'short', year: 'numeric' }) : '—'}
+                              </TableCell>
+                              <TableCell sx={{ fontSize: 13, fontWeight: 900, color: prom !== null ? ec.fg : '#94a3b8', px: 1.4 }}>
+                                {prom !== null ? `${prom}%` : 'Sin datos'}
+                              </TableCell>
+                              <TableCell sx={{ px: 1.4 }}>
+                                <Chip size="small" label={ec.label} sx={{ bgcolor: ec.bg, color: ec.fg, fontWeight: 800, fontSize: 10.5, height: 22 }} />
+                              </TableCell>
+                              <TableCell sx={{ px: 1.4 }}>
+                                {(userRole === ROL_PYE || userRole === ROL_ADMIN) && (
+                                  <Button size="small" variant="contained" disabled={loadingWorkflow} onClick={() => abrirSeguimiento(p.plan_codigo)} sx={{ borderRadius: 2, textTransform: 'none', fontWeight: 800, bgcolor: '#0369a1', '&:hover': { bgcolor: '#075985' } }}>
+                                    Realizar seguimiento
+                                  </Button>
+                                )}
+                                {(userRole === ROL_ESTRATEGICA) && (
+                                  <Button size="small" variant="outlined" disabled={loadingWorkflow} onClick={() => abrirSeguimiento(p.plan_codigo)} sx={{ borderRadius: 2, textTransform: 'none', fontWeight: 800 }}>
+                                    Ver seguimiento
+                                  </Button>
+                                )}
+                              </TableCell>
+                            </TableRow>
+                          );
+                        })}
+                      </TableBody>
+                    </Table>
+                  </Box>
+                );
+              })()}
             </Box>
           );
         })()}
@@ -2957,10 +3484,9 @@ function GestionPlanesWorkspaceV2({ sourceRows = [], onWorkflowChanged }) {
       {currentPlanCodigo && (
       <Paper elevation={0} sx={{ p: 0.8, borderRadius: 3.5, border: '1px solid #dbeafe', background: 'linear-gradient(180deg,#ffffff 0%,#f8fbff 100%)' }}>
         <Tabs value={workspaceTab} onChange={(_, next) => setWorkspaceTab(next)} variant="fullWidth" sx={{ minHeight: 60, '& .MuiTabs-indicator': { height: 0 }, '& .MuiTabs-flexContainer': { gap: 1 }, '& .MuiTab-root': { textTransform: 'none', fontWeight: 900, minHeight: 52, borderRadius: 2.5, color: '#64748b' }, '& .MuiTab-root.Mui-selected': { color: '#1d4ed8', background: 'linear-gradient(135deg,#eff6ff 0%,#dbeafe 100%)', boxShadow: 'inset 0 0 0 1px rgba(59,130,246,.22)' } }}>
-          <Tab value="constructor" icon={<AssignmentTurnedInIcon fontSize="small" />} iconPosition="start" label={'Paso 1 · Plan y Actividades'} />
-          <Tab value="acta" icon={<AutoAwesomeIcon fontSize="small" />} iconPosition="start" label={'Paso 2 · Acta IA'} />
-          <Tab value="exportacion" icon={<DownloadIcon fontSize="small" />} iconPosition="start" label={'Paso 3 · Exportación'} />
-          <Tab value="listado" icon={<DescriptionIcon fontSize="small" />} iconPosition="start" label="Borradores" />
+          <Tab value="constructor" icon={<AssignmentTurnedInIcon fontSize="small" />} iconPosition="start" label="Paso 1 · Plan y Actividades" />
+          <Tab value="acta" icon={<AutoAwesomeIcon fontSize="small" />} iconPosition="start" label="Paso 2 · Acta IA" />
+          <Tab value="exportacion" icon={<DownloadIcon fontSize="small" />} iconPosition="start" label="Paso 3 · Exportación" />
         </Tabs>
       </Paper>
       )}
@@ -3097,6 +3623,28 @@ function GestionPlanesWorkspaceV2({ sourceRows = [], onWorkflowChanged }) {
               Este plan está en estado <strong>{ESTADO_LABEL[currentPlanEstado] || currentPlanEstado}</strong> y no es editable por tu rol en este momento. Puedes verlo en modo lectura.
             </Alert>
           )}
+          {/* Observaciones de Dirección de Planeación (visibles para P&E cuando el plan regresa revisado) */}
+          {(userRole === ROL_PYE || userRole === ROL_ADMIN) && observacionesRevision.estrategica && (
+            <Alert severity="warning" icon={false} sx={{ borderRadius: 3, border: '1px solid #fbbf24', bgcolor: '#fffbeb' }}>
+              <Typography sx={{ fontSize: 11, fontWeight: 900, color: '#92400e', textTransform: 'uppercase', letterSpacing: 0.4, mb: 0.5 }}>
+                Observaciones de Dirección de Planeación
+              </Typography>
+              <Typography sx={{ fontSize: 13, color: '#78350f', lineHeight: 1.6 }}>
+                {observacionesRevision.estrategica}
+              </Typography>
+            </Alert>
+          )}
+          {/* Observaciones del responsable de la dependencia */}
+          {(userRole === ROL_PYE || userRole === ROL_ADMIN) && observacionesRevision.responsable && (
+            <Alert severity="info" icon={false} sx={{ borderRadius: 3, border: '1px solid #93c5fd', bgcolor: '#eff6ff' }}>
+              <Typography sx={{ fontSize: 11, fontWeight: 900, color: '#1e40af', textTransform: 'uppercase', letterSpacing: 0.4, mb: 0.5 }}>
+                Observaciones del responsable de la dependencia
+              </Typography>
+              <Typography sx={{ fontSize: 13, color: '#1e3a8a', lineHeight: 1.6 }}>
+                {observacionesRevision.responsable}
+              </Typography>
+            </Alert>
+          )}
           <Box sx={{ ...(planBloqueado ? { pointerEvents: 'none', opacity: 0.78 } : {}) }}>
           <Box sx={{ display: 'grid', gap: 1.5, gridTemplateColumns: { xs: '1fr', md: 'repeat(4, 1fr)' } }}>
             {steps.map((step) => (
@@ -3156,7 +3704,61 @@ function GestionPlanesWorkspaceV2({ sourceRows = [], onWorkflowChanged }) {
               {renderSelectField('Macroactividad estratégica', actividadForm.macroactividad, (value) => handleActividadField('macroactividad', value), filteredMacroactividades)}
             </Box>
             <Box sx={{ mt: 1.4 }}>
-              <TextField label="Actividad" size="small" value={actividadForm.actividad} onChange={(e) => handleActividadField('actividad', e.target.value)} placeholder="Redacta aquí la actividad concreta." fullWidth />
+              <Autocomplete
+                freeSolo
+                size="small"
+                options={actividadSugeridas}
+                getOptionLabel={(opt) => (typeof opt === 'string' ? opt : opt.label)}
+                filterOptions={(options, { inputValue }) => {
+                  const q = inputValue.trim().toLowerCase();
+                  if (!q) return options.slice(0, 8);
+                  return options.filter((o) => o.label.toLowerCase().includes(q)).slice(0, 14);
+                }}
+                inputValue={actividadForm.actividad}
+                onInputChange={(_, value, reason) => {
+                  if (reason !== 'reset') handleActividadField('actividad', value);
+                }}
+                onChange={(_, option) => {
+                  if (!option || typeof option === 'string') return;
+                  setActividadForm((prev) => ({
+                    ...prev,
+                    actividad: option.actividad,
+                    indicador: '',
+                    ...(option.responsable && !prev.responsable ? { responsable: option.responsable } : {}),
+                    ...(option.corresponsable && !prev.corresponsable ? { corresponsable: option.corresponsable } : {}),
+                    ...(option.tipo_indicador && !prev.tipo_indicador ? { tipo_indicador: option.tipo_indicador } : {}),
+                    ...(option.meta && !prev.meta ? { meta: option.meta } : {}),
+                    ...(option.fecha_inicio && !prev.fecha_inicio ? { fecha_inicio: option.fecha_inicio } : {}),
+                    ...(option.fecha_fin && !prev.fecha_fin ? { fecha_fin: option.fecha_fin } : {}),
+                  }));
+                }}
+                renderOption={(props, option) => {
+                  const { key, ...rest } = props;
+                  return (
+                    <Box component="li" key={key} {...rest} sx={{ py: 1, px: 1.5, flexDirection: 'column', alignItems: 'flex-start !important' }}>
+                      <Typography sx={{ fontSize: 13, fontWeight: 600, lineHeight: 1.4, color: '#1e293b' }}>
+                        {option.label}
+                      </Typography>
+                      <Typography sx={{ fontSize: 11, color: '#64748b', mt: 0.3 }}>
+                        {[option.dependencia, option.anio].filter(Boolean).join(' · ')}
+                        {option.responsable ? ` · ${option.responsable}` : ''}
+                      </Typography>
+                    </Box>
+                  );
+                }}
+                noOptionsText="Sin coincidencias — escribe para registrar nueva actividad"
+                renderInput={(params) => (
+                  <TextField
+                    {...params}
+                    label="Actividad"
+                    placeholder="Escribe palabras clave para buscar o redacta una nueva actividad..."
+                    fullWidth
+                    multiline
+                    minRows={2}
+                  />
+                )}
+                slotProps={{ paper: { elevation: 4, sx: { borderRadius: 2, mt: 0.5 } } }}
+              />
             </Box>
             <Box sx={{ display: 'grid', gap: 1.4, gridTemplateColumns: { xs: '1fr', md: 'repeat(2, minmax(0, 1fr))' }, mt: 1.4 }}>
               {renderSelectField('Responsable de la actividad', actividadForm.responsable, (value) => handleActividadField('responsable', value), catalogs.responsables)}
@@ -3377,51 +3979,80 @@ function GestionPlanesWorkspaceV2({ sourceRows = [], onWorkflowChanged }) {
           </Paper>
 
           <Paper elevation={0} sx={{ p: 2.2, borderRadius: 4, border: '1px solid #dbeafe', background: '#f8fbff' }}>
-            <SectionTitle title="Paso 3 · Revisar y Guardar" subtitle="Antes de continuar, guarda el borrador o agrega la actividad al plan vivo." />
-            <Stack direction={{ xs: 'column', md: 'row' }} spacing={1.2}>
-              <Button startIcon={<SaveIcon />} variant="contained" onClick={addActividad} sx={{ borderRadius: 2.5, textTransform: 'none', fontWeight: 900 }}>
-                {editingId ? 'Actualizar actividad' : 'Agregar actividad'}
+            <SectionTitle title="Paso 3 · Registrar actividad" subtitle="Agrega la actividad al plan o guarda el avance en el servidor." />
+            <Stack direction="row" spacing={1.2} flexWrap="wrap" sx={{ rowGap: 1 }}>
+              <Button startIcon={<SaveIcon />} variant="contained" onClick={addActividad} sx={{ borderRadius: 2.5, textTransform: 'none', fontWeight: 900, minWidth: 180 }}>
+                {editingId ? 'Actualizar actividad' : 'Agregar al plan'}
               </Button>
-              <Button startIcon={<FilterAltOffIcon />} variant="outlined" onClick={resetActividadForm} sx={{ borderRadius: 2.5, textTransform: 'none', fontWeight: 900 }}>Limpiar formulario</Button>
-              <Button startIcon={<SaveIcon />} variant="outlined" onClick={saveCurrentPlan} sx={{ borderRadius: 2.5, textTransform: 'none', fontWeight: 900 }}>Guardar borrador</Button>
+              <Button startIcon={<FilterAltOffIcon />} variant="outlined" color="inherit" onClick={resetActividadForm} sx={{ borderRadius: 2.5, textTransform: 'none', fontWeight: 800, minWidth: 180, color: '#475569', borderColor: '#cbd5e1' }}>
+                Limpiar formulario
+              </Button>
+              <Button startIcon={<SaveIcon />} variant="outlined" color="success" onClick={saveCurrentPlan} sx={{ borderRadius: 2.5, textTransform: 'none', fontWeight: 900, minWidth: 180 }}>
+                Guardar en servidor
+              </Button>
             </Stack>
           </Paper>
 
           <Paper elevation={0} sx={{ p: 1.8, borderRadius: 4, border: '1px solid #e2e8f0' }}>
-            <SectionTitle title="Plan Vivo" subtitle="Valida en tiempo real cómo va quedando el plan antes de pasar al acta y la exportación." />
-            <TableContainer sx={{ maxHeight: 420 }}>
-              <Table stickyHeader size="small">
+            <SectionTitle title="Plan de acción editable" subtitle="Valida en tiempo real cómo va quedando el plan. Haz clic en el lápiz para editar una actividad." />
+            <Box sx={{ overflowX: 'auto', borderRadius: 2, border: '1px solid #cbd5e1' }}>
+              <Table size="small" sx={{ minWidth: 900, borderCollapse: 'collapse' }}>
                 <TableHead>
-                  <TableRow>
-                    {['Actividad', 'Indicador', 'Meta', 'IP', 'IIP', 'Total', 'Observaciones', 'Acciones'].map((header) => <TableCell key={header} sx={{ fontWeight: 900, bgcolor: '#f8fafc' }}>{header}</TableCell>)}
+                  <TableRow sx={{ bgcolor: '#1e3a8a' }}>
+                    {['#', 'Objetivo estratégico', 'Actividad', 'Indicador', 'Meta', 'Resp.', 'Fechas', 'IP%', 'IIP%', 'Total%', ''].map((h) => (
+                      <TableCell key={h} sx={{ color: '#fff', fontWeight: 900, fontSize: 10.5, textTransform: 'uppercase', letterSpacing: 0.3, py: 1.2, px: 1.2, whiteSpace: 'nowrap', borderBottom: 'none', borderRight: '1px solid rgba(255,255,255,.15)' }}>{h}</TableCell>
+                    ))}
                   </TableRow>
                 </TableHead>
                 <TableBody>
-                  {actividades.map((item) => (
-                    <TableRow key={item.id} hover>
-                      <TableCell sx={{ minWidth: 220 }}>{item.actividad}</TableCell>
-                      <TableCell sx={{ minWidth: 240 }}>{item.indicador}</TableCell>
-                      <TableCell>{item.meta}</TableCell>
-                      <TableCell>{item.avance_ip}%</TableCell>
-                      <TableCell>{item.avance_iip}%</TableCell>
-                      <TableCell>{item.total_ejecucion}%</TableCell>
-                      <TableCell sx={{ minWidth: 260 }}>{item.observaciones_ip || item.observaciones_iip || '—'}</TableCell>
-                      <TableCell>
-                        <Stack direction="row" spacing={0.5}>
-                          <IconButton size="small" onClick={() => editActividad(item)}><EditIcon fontSize="small" /></IconButton>
-                          <IconButton size="small" color="error" onClick={() => removeActividad(item.id)}><DeleteOutlineIcon fontSize="small" /></IconButton>
-                        </Stack>
-                      </TableCell>
-                    </TableRow>
-                  ))}
+                  {actividades.map((item, idx) => {
+                    const ec = estadoCumplimiento(item.total_ejecucion);
+                    const bgRow = idx % 2 === 0 ? '#fff' : '#f8fafc';
+                    return (
+                      <TableRow key={item.id} hover sx={{ bgcolor: bgRow, '&:hover': { bgcolor: '#eff6ff' } }}>
+                        <TableCell sx={{ fontSize: 11.5, fontWeight: 800, color: '#64748b', px: 1.2, py: 1, textAlign: 'center', verticalAlign: 'top', borderRight: '1px solid #e2e8f0', whiteSpace: 'nowrap' }}>{idx + 1}</TableCell>
+                        <TableCell sx={{ fontSize: 11.5, color: '#334155', px: 1.2, py: 1, maxWidth: 160, verticalAlign: 'top', borderRight: '1px solid #e2e8f0' }}>{item.objetivo_estrategico || '—'}</TableCell>
+                        <TableCell sx={{ fontSize: 12.5, fontWeight: 600, color: '#0f172a', px: 1.2, py: 1, maxWidth: 220, verticalAlign: 'top', borderRight: '1px solid #e2e8f0' }}>{item.actividad}</TableCell>
+                        <TableCell sx={{ fontSize: 11.5, color: '#334155', px: 1.2, py: 1, maxWidth: 200, verticalAlign: 'top', borderRight: '1px solid #e2e8f0' }}>{item.indicador}</TableCell>
+                        <TableCell sx={{ fontSize: 12.5, fontWeight: 700, color: '#1e293b', px: 1.2, py: 1, textAlign: 'center', verticalAlign: 'top', whiteSpace: 'nowrap', borderRight: '1px solid #e2e8f0' }}>{item.meta}</TableCell>
+                        <TableCell sx={{ fontSize: 11.5, color: '#334155', px: 1.2, py: 1, maxWidth: 120, verticalAlign: 'top', borderRight: '1px solid #e2e8f0' }}>{item.responsable || '—'}</TableCell>
+                        <TableCell sx={{ fontSize: 11, color: '#64748b', px: 1.2, py: 1, verticalAlign: 'top', whiteSpace: 'nowrap', borderRight: '1px solid #e2e8f0' }}>
+                          {item.fecha_inicio && <Box>{item.fecha_inicio}</Box>}
+                          {item.fecha_fin && <Box>{item.fecha_fin}</Box>}
+                        </TableCell>
+                        <TableCell sx={{ fontSize: 12, fontWeight: 700, color: '#1d4ed8', px: 1.2, py: 1, textAlign: 'center', verticalAlign: 'top', whiteSpace: 'nowrap', borderRight: '1px solid #e2e8f0' }}>{item.avance_ip ?? '—'}%</TableCell>
+                        <TableCell sx={{ fontSize: 12, fontWeight: 700, color: '#1d4ed8', px: 1.2, py: 1, textAlign: 'center', verticalAlign: 'top', whiteSpace: 'nowrap', borderRight: '1px solid #e2e8f0' }}>{item.avance_iip ?? '—'}%</TableCell>
+                        <TableCell sx={{ px: 1.2, py: 1, textAlign: 'center', verticalAlign: 'top', whiteSpace: 'nowrap', borderRight: '1px solid #e2e8f0' }}>
+                          <Stack spacing={0.4} alignItems="center">
+                            <Typography sx={{ fontSize: 13, fontWeight: 900, color: item.total_ejecucion !== null && item.total_ejecucion !== undefined ? ec.fg : '#94a3b8' }}>
+                              {item.total_ejecucion !== null && item.total_ejecucion !== undefined ? `${item.total_ejecucion}%` : '—'}
+                            </Typography>
+                            <Chip size="small" label={ec.label} sx={{ bgcolor: ec.bg, color: ec.fg, fontWeight: 800, fontSize: 9.5, height: 18 }} />
+                          </Stack>
+                        </TableCell>
+                        <TableCell sx={{ px: 0.8, py: 0.6, verticalAlign: 'top' }}>
+                          <Stack direction="row" spacing={0.4}>
+                            <Tooltip title="Editar actividad" arrow>
+                              <IconButton size="small" onClick={() => editActividad(item)} sx={{ color: '#3b82f6' }}><EditIcon sx={{ fontSize: 15 }} /></IconButton>
+                            </Tooltip>
+                            <Tooltip title="Eliminar actividad" arrow>
+                              <IconButton size="small" color="error" onClick={() => removeActividad(item.id)}><DeleteOutlineIcon sx={{ fontSize: 15 }} /></IconButton>
+                            </Tooltip>
+                          </Stack>
+                        </TableCell>
+                      </TableRow>
+                    );
+                  })}
                   {!actividades.length && (
                     <TableRow>
-                      <TableCell colSpan={8} align="center" sx={{ py: 6, color: '#64748b' }}>Aún no se han agregado actividades al plan.</TableCell>
+                      <TableCell colSpan={11} sx={{ textAlign: 'center', py: 6, color: '#94a3b8', fontStyle: 'italic' }}>
+                        Aún no se han agregado actividades al plan.
+                      </TableCell>
                     </TableRow>
                   )}
                 </TableBody>
               </Table>
-            </TableContainer>
+            </Box>
           </Paper>
           </Box>
         </Stack>

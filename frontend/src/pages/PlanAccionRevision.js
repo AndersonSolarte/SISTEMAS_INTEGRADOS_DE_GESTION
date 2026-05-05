@@ -130,7 +130,8 @@ function PlanAccionRevision() {
         });
       }
       await planAccionWorkflowService.transicionar(planSeleccionado.plan_codigo, {
-        accion: 'marcar_revisado_estrategica'
+        accion: 'marcar_revisado_estrategica',
+        ...(comentarios.trim() ? { comentarios: comentarios.trim() } : {})
       });
       enqueueSnackbar('Plan marcado como revisado. Devuelto a Planeación y Efectividad.', { variant: 'success' });
       setPlanSeleccionado(null);

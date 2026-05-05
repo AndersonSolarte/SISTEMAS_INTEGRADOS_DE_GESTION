@@ -15,7 +15,15 @@ const MENU_KEYS = new Set([
 
 const GESTION_INFO_MODULE_KEYS = new Set([
   'gestion_bases_datos',
-  'estadistica_institucional'
+  'estadistica_institucional',
+  'autoevaluacion.instrumentos.access',
+  'seguridad_aplicativa.ver',
+  'seguridad_aplicativa.escanear',
+  'seguridad_aplicativa.ver_hallazgos',
+  'seguridad_aplicativa.gestionar_hallazgos',
+  'seguridad_aplicativa.analizar_remediacion',
+  'seguridad_aplicativa.exportar',
+  'seguridad_aplicativa.configurar'
 ]);
 
 const GESTION_PROCESOS_DASHBOARD_KEYS = new Set([

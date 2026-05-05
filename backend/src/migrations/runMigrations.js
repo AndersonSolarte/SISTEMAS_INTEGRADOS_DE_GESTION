@@ -305,6 +305,23 @@ const runMigrations = async () => {
     await models.Autoevaluacion.sync();
     await models.AutoevaluacionParticipante.sync();
     await models.AutoevaluacionPrograma.sync();
+    await models.InstrumentForm.sync();
+    await models.InstrumentSection.sync();
+    await models.InstrumentQuestion.sync();
+    await models.InstrumentCondition.sync();
+    await models.InstrumentResponse.sync();
+    await models.InstrumentAnswer.sync();
+    await models.InstrumentAttachment.sync();
+    await models.InstrumentQuestionBank.sync();
+    await models.InstrumentBackup.sync();
+    await models.SecurityScan.sync();
+    await models.SecurityFinding.sync();
+    await models.SecurityRemediationProposal.sync();
+    await models.SecurityFindingComment.sync();
+    await sequelize.query("CREATE INDEX IF NOT EXISTS instrument_forms_created_by_status_idx ON instrument_forms (created_by, status)");
+    await sequelize.query("CREATE INDEX IF NOT EXISTS instrument_responses_form_submitted_idx ON instrument_responses (form_id, submitted_at)");
+    await sequelize.query("CREATE INDEX IF NOT EXISTS security_findings_scan_severity_idx ON security_findings (scan_id, severity)");
+    await sequelize.query("CREATE INDEX IF NOT EXISTS security_findings_status_component_idx ON security_findings (status, affected_component)");
 
     // Workflow plan_accion: agregar columnas no destructivas + backfill de filas legadas como 'Aprobado'.
     await ensureColumn(qi, 'plan_accion', 'dependencia', { type: DataTypes.STRING(400), allowNull: true });

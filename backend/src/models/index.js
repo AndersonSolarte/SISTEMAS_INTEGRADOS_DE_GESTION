@@ -40,6 +40,19 @@ const PlanAccion = require('./PlanAccion');
 const Autoevaluacion = require('./Autoevaluacion');
 const AutoevaluacionParticipante = require('./AutoevaluacionParticipante');
 const AutoevaluacionPrograma = require('./AutoevaluacionPrograma');
+const InstrumentForm = require('./InstrumentForm');
+const InstrumentSection = require('./InstrumentSection');
+const InstrumentQuestion = require('./InstrumentQuestion');
+const InstrumentCondition = require('./InstrumentCondition');
+const InstrumentResponse = require('./InstrumentResponse');
+const InstrumentAnswer = require('./InstrumentAnswer');
+const InstrumentAttachment = require('./InstrumentAttachment');
+const InstrumentQuestionBank = require('./InstrumentQuestionBank');
+const InstrumentBackup = require('./InstrumentBackup');
+const SecurityScan = require('./SecurityScan');
+const SecurityFinding = require('./SecurityFinding');
+const SecurityRemediationProposal = require('./SecurityRemediationProposal');
+const SecurityFindingComment = require('./SecurityFindingComment');
 
 // Relaciones existentes
 MacroProceso.hasMany(Proceso, { foreignKey: 'macro_proceso_id', as: 'procesos' });
@@ -189,6 +202,42 @@ AutoevaluacionPrograma.belongsTo(User, { foreignKey: 'creado_por', as: 'creador'
 User.hasMany(AutoevaluacionPrograma, { foreignKey: 'actualizado_por', as: 'autoevaluacionProgramasActualizados' });
 AutoevaluacionPrograma.belongsTo(User, { foreignKey: 'actualizado_por', as: 'actualizador' });
 
+User.hasMany(InstrumentForm, { foreignKey: 'created_by', as: 'instrumentForms' });
+InstrumentForm.belongsTo(User, { foreignKey: 'created_by', as: 'creator' });
+InstrumentForm.hasMany(InstrumentSection, { foreignKey: 'form_id', as: 'sections', onDelete: 'CASCADE' });
+InstrumentSection.belongsTo(InstrumentForm, { foreignKey: 'form_id', as: 'form' });
+InstrumentForm.hasMany(InstrumentQuestion, { foreignKey: 'form_id', as: 'questions', onDelete: 'CASCADE' });
+InstrumentQuestion.belongsTo(InstrumentForm, { foreignKey: 'form_id', as: 'form' });
+InstrumentSection.hasMany(InstrumentQuestion, { foreignKey: 'section_id', as: 'questions' });
+InstrumentQuestion.belongsTo(InstrumentSection, { foreignKey: 'section_id', as: 'section' });
+InstrumentForm.hasMany(InstrumentCondition, { foreignKey: 'form_id', as: 'conditions', onDelete: 'CASCADE' });
+InstrumentCondition.belongsTo(InstrumentForm, { foreignKey: 'form_id', as: 'form' });
+InstrumentForm.hasMany(InstrumentResponse, { foreignKey: 'form_id', as: 'responses', onDelete: 'CASCADE' });
+InstrumentResponse.belongsTo(InstrumentForm, { foreignKey: 'form_id', as: 'form' });
+InstrumentResponse.hasMany(InstrumentAnswer, { foreignKey: 'response_id', as: 'answers', onDelete: 'CASCADE' });
+InstrumentAnswer.belongsTo(InstrumentResponse, { foreignKey: 'response_id', as: 'response' });
+InstrumentQuestion.hasMany(InstrumentAnswer, { foreignKey: 'question_id', as: 'answers' });
+InstrumentAnswer.belongsTo(InstrumentQuestion, { foreignKey: 'question_id', as: 'question' });
+InstrumentResponse.hasMany(InstrumentAttachment, { foreignKey: 'response_id', as: 'attachments', onDelete: 'CASCADE' });
+InstrumentAttachment.belongsTo(InstrumentResponse, { foreignKey: 'response_id', as: 'response' });
+User.hasMany(InstrumentQuestionBank, { foreignKey: 'created_by', as: 'instrumentQuestionBank' });
+InstrumentQuestionBank.belongsTo(User, { foreignKey: 'created_by', as: 'creator' });
+User.hasMany(InstrumentBackup, { foreignKey: 'created_by', as: 'instrumentBackups' });
+InstrumentBackup.belongsTo(User, { foreignKey: 'created_by', as: 'creator' });
+
+User.hasMany(SecurityScan, { foreignKey: 'executed_by', as: 'securityScans' });
+SecurityScan.belongsTo(User, { foreignKey: 'executed_by', as: 'executor' });
+SecurityScan.hasMany(SecurityFinding, { foreignKey: 'scan_id', as: 'findings', onDelete: 'CASCADE' });
+SecurityFinding.belongsTo(SecurityScan, { foreignKey: 'scan_id', as: 'scan' });
+User.hasMany(SecurityFinding, { foreignKey: 'responsible_user_id', as: 'assignedSecurityFindings' });
+SecurityFinding.belongsTo(User, { foreignKey: 'responsible_user_id', as: 'responsible' });
+SecurityFinding.hasMany(SecurityRemediationProposal, { foreignKey: 'finding_id', as: 'remediationProposals', onDelete: 'CASCADE' });
+SecurityRemediationProposal.belongsTo(SecurityFinding, { foreignKey: 'finding_id', as: 'finding' });
+SecurityFinding.hasMany(SecurityFindingComment, { foreignKey: 'finding_id', as: 'comments', onDelete: 'CASCADE' });
+SecurityFindingComment.belongsTo(SecurityFinding, { foreignKey: 'finding_id', as: 'finding' });
+User.hasMany(SecurityFindingComment, { foreignKey: 'user_id', as: 'securityFindingComments' });
+SecurityFindingComment.belongsTo(User, { foreignKey: 'user_id', as: 'user' });
+
 module.exports = {
   User,
   UserModulePermission,
@@ -231,5 +280,18 @@ module.exports = {
   PlanAccion,
   Autoevaluacion,
   AutoevaluacionParticipante,
-  AutoevaluacionPrograma
+  AutoevaluacionPrograma,
+  InstrumentForm,
+  InstrumentSection,
+  InstrumentQuestion,
+  InstrumentCondition,
+  InstrumentResponse,
+  InstrumentAnswer,
+  InstrumentAttachment,
+  InstrumentQuestionBank,
+  InstrumentBackup,
+  SecurityScan,
+  SecurityFinding,
+  SecurityRemediationProposal,
+  SecurityFindingComment
 };

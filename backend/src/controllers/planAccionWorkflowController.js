@@ -52,11 +52,12 @@ const TRANSICIONES = {
 };
 
 // === Permisos para EDITAR contenido del plan ===
+// P&E puede editar en cualquier estado (excepto Aprobado donde usamos guardarSeguimiento).
 const PERMISOS_EDICION = {
   [ESTADOS.BORRADOR]: [ROLES.PLANEACION_EFECTIVIDAD, ROLES.ADMINISTRADOR],
-  [ESTADOS.EN_REVISION_ESTRATEGICA]: [ROLES.PLANEACION_ESTRATEGICA, ROLES.ADMINISTRADOR],
+  [ESTADOS.EN_REVISION_ESTRATEGICA]: [ROLES.PLANEACION_ESTRATEGICA, ROLES.PLANEACION_EFECTIVIDAD, ROLES.ADMINISTRADOR],
   [ESTADOS.REVISADO_POR_ESTRATEGICA]: [ROLES.PLANEACION_EFECTIVIDAD, ROLES.ADMINISTRADOR],
-  [ESTADOS.EN_REVISION_RESPONSABLE]: [ROLES.CONSULTA, ROLES.ADMINISTRADOR],
+  [ESTADOS.EN_REVISION_RESPONSABLE]: [ROLES.CONSULTA, ROLES.PLANEACION_EFECTIVIDAD, ROLES.ADMINISTRADOR],
   [ESTADOS.REVISADO_POR_RESPONSABLE]: [ROLES.PLANEACION_EFECTIVIDAD, ROLES.ADMINISTRADOR],
   [ESTADOS.APROBADO]: [ROLES.ADMINISTRADOR]
 };
@@ -392,7 +393,7 @@ const guardarPlan = async (req, res) => {
 const transicionarPlan = async (req, res) => {
   try {
     const { planCodigo } = req.params;
-    const { accion, responsable_id } = req.body || {};
+    const { accion, responsable_id, comentarios } = req.body || {};
     const { id: userId, role } = req.user;
 
     const transicion = TRANSICIONES[accion];
@@ -438,6 +439,20 @@ const transicionarPlan = async (req, res) => {
 
     if (transicion.setAprobador) {
       updates.aprobado_por = userId;
+    }
+
+    // Guardar comentarios/observaciones del revisor en cabecera_plan
+    if (comentarios && typeof comentarios === 'string' && comentarios.trim()) {
+      const cabeceraActual = cab.cabecera_plan || {};
+      const comentariosKey = accion === 'marcar_revisado_estrategica' ? 'comentarios_estrategica'
+        : accion === 'marcar_revisado_responsable' ? 'comentarios_responsable' : null;
+      if (comentariosKey) {
+        updates.cabecera_plan = {
+          ...cabeceraActual,
+          [comentariosKey]: comentarios.trim(),
+          [`fecha_${comentariosKey}`]: new Date().toISOString()
+        };
+      }
     }
 
     await PlanAccion.update(updates, {
@@ -691,12 +706,65 @@ const listarUsuariosConsulta = async (req, res) => {
   }
 };
 
+// Actualiza solo los campos de seguimiento (avances, observaciones) de las actividades
+// de un plan aprobado. Usa UPDATE por id de fila en vez de DELETE+INSERT.
+const guardarSeguimiento = async (req, res) => {
+  try {
+    const { planCodigo } = req.params;
+    const { actividades } = req.body || {};
+    const { id: userId, role } = req.user;
+
+    const ROLES_SEGUIMIENTO = [ROLES.ADMINISTRADOR, ROLES.PLANEACION_EFECTIVIDAD];
+    if (!ROLES_SEGUIMIENTO.includes(role)) {
+      return res.status(403).json({ success: false, message: 'Sin permiso para registrar seguimiento' });
+    }
+
+    const cab = await findPlanCabecera(planCodigo);
+    if (!cab) return res.status(404).json({ success: false, message: 'Plan no encontrado' });
+    if (cab.estado_workflow !== ESTADOS.APROBADO) {
+      return res.status(400).json({ success: false, message: 'Solo se puede registrar seguimiento en planes aprobados' });
+    }
+
+    if (!Array.isArray(actividades) || actividades.length === 0) {
+      return res.status(400).json({ success: false, message: 'Se requiere el arreglo de actividades' });
+    }
+
+    await sequelize.transaction(async (t) => {
+      for (const a of actividades) {
+        if (!a.id) continue;
+        const avIP = a.avance_ip === '' || a.avance_ip === undefined || a.avance_ip === null ? null : Number(a.avance_ip);
+        const avIIP = a.avance_iip === '' || a.avance_iip === undefined || a.avance_iip === null ? null : Number(a.avance_iip);
+        const total = (avIP !== null && avIIP !== null)
+          ? Math.round(((avIP + avIIP) / 2) * 100) / 100
+          : (avIP ?? avIIP ?? null);
+        await PlanAccion.update(
+          {
+            avance_ip: avIP,
+            observaciones_ip: a.observaciones_ip || null,
+            avance_iip: avIIP,
+            observaciones_iip: a.observaciones_iip || null,
+            total_ejecucion: total,
+            actualizado_por: userId
+          },
+          { where: { id: a.id, plan_codigo: planCodigo }, transaction: t }
+        );
+      }
+    });
+
+    return res.json({ success: true, data: { plan_codigo: planCodigo } });
+  } catch (error) {
+    console.error('Error guardarSeguimiento:', error);
+    return res.status(500).json({ success: false, message: 'Error al guardar seguimiento' });
+  }
+};
+
 module.exports = {
   listarMisPlanes,
   listarPendientes,
   obtenerPlan,
   crearPlan,
   guardarPlan,
+  guardarSeguimiento,
   transicionarPlan,
   eliminarPlan,
   listarUsuariosConsulta,

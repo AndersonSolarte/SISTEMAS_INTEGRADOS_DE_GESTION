@@ -48,6 +48,9 @@ app.use('/api/users', require('./routes/userRoutes'));
 app.use('/api/evidencias', require('./routes/evidenciaRoutes'));
 app.use('/api/planeacion/gestion-informacion', require('./routes/gestionInformacionRoutes'));
 app.use('/api/planeacion/plan-accion-workflow', require('./routes/planAccionWorkflowRoutes'));
+app.use('/api/autoevaluacion/instrumentos', require('./routes/instrumentosRoutes'));
+app.use('/api/public/instrumentos', require('./routes/publicInstrumentosRoutes'));
+app.use('/api/security', require('./routes/securityRoutes'));
 app.use('/api/planeacion/gestion-informacion/saber-pro', require('./routes/saberProAnalyticsRoutes'));
 app.use('/api/planeacion/gestion-informacion/saber-pro/consulta', require('./routes/consultaValidacionRoutes'));
 app.use('/api/admin/activity', require('./routes/activityRoutes'));
@@ -196,9 +199,37 @@ testConnection()
       const Autoevaluacion = require('./models/Autoevaluacion');
       const AutoevaluacionParticipante = require('./models/AutoevaluacionParticipante');
       const AutoevaluacionPrograma = require('./models/AutoevaluacionPrograma');
+      const {
+        InstrumentForm,
+        InstrumentSection,
+        InstrumentQuestion,
+        InstrumentCondition,
+        InstrumentResponse,
+        InstrumentAnswer,
+        InstrumentAttachment,
+        InstrumentQuestionBank,
+        InstrumentBackup,
+        SecurityScan,
+        SecurityFinding,
+        SecurityRemediationProposal,
+        SecurityFindingComment
+      } = require('./models');
       await Autoevaluacion.sync();
       await AutoevaluacionParticipante.sync();
       await AutoevaluacionPrograma.sync();
+      await InstrumentForm.sync();
+      await InstrumentSection.sync();
+      await InstrumentQuestion.sync();
+      await InstrumentCondition.sync();
+      await InstrumentResponse.sync();
+      await InstrumentAnswer.sync();
+      await InstrumentAttachment.sync();
+      await InstrumentQuestionBank.sync();
+      await InstrumentBackup.sync();
+      await SecurityScan.sync();
+      await SecurityFinding.sync();
+      await SecurityRemediationProposal.sync();
+      await SecurityFindingComment.sync();
       console.log('[gestion-informacion] Tablas autoevaluacion listas.');
     } catch (e) {
       console.warn('[gestion-informacion] No se pudo sincronizar autoevaluacion:', e?.message);

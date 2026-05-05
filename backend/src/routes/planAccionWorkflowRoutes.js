@@ -9,6 +9,7 @@ const {
   obtenerPlan,
   crearPlan,
   guardarPlan,
+  guardarSeguimiento,
   transicionarPlan,
   eliminarPlan,
   listarUsuariosConsulta,
@@ -63,6 +64,9 @@ router.post('/', auth, hasAnyRole(ROLES.ADMINISTRADOR, ROLES.PLANEACION_EFECTIVI
 // Guardar/editar el contenido (DELETE+INSERT atómico). La autorización fina
 // según estado y rol del usuario se hace dentro del controller.
 router.put('/:planCodigo', auth, hasAnyRole(...ROLES_WORKFLOW), guardarPlan);
+
+// Registrar seguimiento (actualiza solo avances/observaciones por id de fila). Solo PyE/Admin sobre planes Aprobados.
+router.put('/:planCodigo/seguimiento', auth, hasAnyRole(ROLES.ADMINISTRADOR, ROLES.PLANEACION_EFECTIVIDAD), guardarSeguimiento);
 
 // Cambiar de estado (transición). Validación de rol+estado en el controller.
 router.post('/:planCodigo/transicion', auth, hasAnyRole(...ROLES_WORKFLOW), transicionarPlan);
