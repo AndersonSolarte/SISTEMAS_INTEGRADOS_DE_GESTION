@@ -1797,7 +1797,8 @@ function GestionPlanesWorkspaceV2({ sourceRows = [], onWorkflowChanged }) {
   // al cambiar segmento, por eso este effect es seguro.
   useEffect(() => {
     const q = busquedaSegmento.trim().toLowerCase();
-    if (!q || !misPlanes.length) return;
+    if (!q) { setActiveSegment('creacion'); return; }
+    if (!misPlanes.length) return;
     const dependenciasInst = catalogs?.dependencias || [];
     const ESTADOS_REVISION_SET = new Set([
       ESTADOS_WORKFLOW.EN_REVISION_ESTRATEGICA,
