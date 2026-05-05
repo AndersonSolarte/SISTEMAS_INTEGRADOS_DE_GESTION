@@ -1573,6 +1573,7 @@ function GestionPlanesWorkspaceV2({ sourceRows = [], onWorkflowChanged }) {
   const WORKSPACE_KEY = 'plan_accion_workspace_v2';
   const SAVED_PLANS_KEY = 'plan_accion_saved_plans_v2';
   const ACTA_OVERRIDES_KEY = 'plan_accion_acta_overrides_v2';
+  const actividadFormRef = useRef(null);
   const [workspaceTab, setWorkspaceTab] = useState('constructor');
   const [audioFile, setAudioFile] = useState(null);
   const [exporting, setExporting] = useState(false);
@@ -2225,7 +2226,7 @@ function GestionPlanesWorkspaceV2({ sourceRows = [], onWorkflowChanged }) {
     const left = Number(ip || 0);
     const right = Number(iip || 0);
     if (left <= 0 && right <= 0) return '0';
-    return String(Number((((left + right) / 2)).toFixed(2)));
+    return String(Number((Math.min(left + right, 100)).toFixed(2)));
   };
 
   const handlePlanField = (key, value) => {
@@ -2338,6 +2339,7 @@ function GestionPlanesWorkspaceV2({ sourceRows = [], onWorkflowChanged }) {
     setActividadForm({ ...item });
     setEditingId(item.id);
     setWorkspaceTab('constructor');
+    setTimeout(() => actividadFormRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 80);
   };
 
   const removeActividad = (id) => {
@@ -3697,7 +3699,7 @@ function GestionPlanesWorkspaceV2({ sourceRows = [], onWorkflowChanged }) {
             </Box>
           </Paper>
 
-          <Paper elevation={0} sx={{ p: 2.4, borderRadius: 4, border: '1px solid #e2e8f0' }}>
+          <Paper ref={actividadFormRef} elevation={0} sx={{ p: 2.4, borderRadius: 4, border: editingId ? '2px solid #3b82f6' : '1px solid #e2e8f0', transition: 'border .2s' }}>
             <SectionTitle title="Paso 2 · Registrar Actividad" subtitle="Selecciona primero la estructura estratégica y luego completa el indicador y la medición." />
             <Box sx={{ display: 'grid', gap: 1.4, gridTemplateColumns: { xs: '1fr', xl: 'repeat(3, minmax(0, 1fr))' } }}>
               {renderSelectField('Objetivo estratégico', actividadForm.objetivo_estrategico, (value) => handleActividadField('objetivo_estrategico', value), catalogs.objetivos, '', { menuMaxWidth: 760 })}
@@ -3780,7 +3782,7 @@ function GestionPlanesWorkspaceV2({ sourceRows = [], onWorkflowChanged }) {
                 value={actividadForm.total_ejecucion}
                 InputProps={{ readOnly: true }}
                 disabled
-                helperText="Promedio automático de Avance IP e IIP"
+                helperText="Suma IP + IIP (máximo 100%)"
               />
             </Box>
             <Box sx={{ mt: 1.6 }}>
@@ -4009,8 +4011,9 @@ function GestionPlanesWorkspaceV2({ sourceRows = [], onWorkflowChanged }) {
                   {actividades.map((item, idx) => {
                     const ec = estadoCumplimiento(item.total_ejecucion);
                     const bgRow = idx % 2 === 0 ? '#fff' : '#f8fafc';
+                    const isEditing = editingId === item.id;
                     return (
-                      <TableRow key={item.id} hover sx={{ bgcolor: bgRow, '&:hover': { bgcolor: '#eff6ff' } }}>
+                      <TableRow key={item.id} hover sx={{ bgcolor: isEditing ? '#eff6ff' : bgRow, outline: isEditing ? '2px solid #3b82f6' : 'none', outlineOffset: '-2px', '&:hover': { bgcolor: '#eff6ff' } }}>
                         <TableCell sx={{ fontSize: 11.5, fontWeight: 800, color: '#64748b', px: 1.2, py: 1, textAlign: 'center', verticalAlign: 'top', borderRight: '1px solid #e2e8f0', whiteSpace: 'nowrap' }}>{idx + 1}</TableCell>
                         <TableCell sx={{ fontSize: 11.5, color: '#334155', px: 1.2, py: 1, maxWidth: 160, verticalAlign: 'top', borderRight: '1px solid #e2e8f0' }}>{item.objetivo_estrategico || '—'}</TableCell>
                         <TableCell sx={{ fontSize: 12.5, fontWeight: 600, color: '#0f172a', px: 1.2, py: 1, maxWidth: 220, verticalAlign: 'top', borderRight: '1px solid #e2e8f0' }}>{item.actividad}</TableCell>
