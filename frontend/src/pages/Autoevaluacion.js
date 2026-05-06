@@ -36,6 +36,7 @@ import {
   CheckCircle as CheckCircleIcon,
   Close as CloseIcon,
   CloudDownload as CloudDownloadIcon,
+  ContentCopy as ContentCopyIcon,
   Description as DescriptionIcon,
   DeleteOutline as DeleteOutlineIcon,
   Edit as EditIcon,
@@ -49,6 +50,7 @@ import {
   OpenInNew as OpenInNewIcon,
   PersonAdd as PersonAddIcon,
   PictureAsPdf as PictureAsPdfIcon,
+  ArrowBack as ArrowBackIcon,
   Search as SearchIcon,
   TableChart as TableChartIcon,
   Timeline as TimelineIcon,
@@ -56,6 +58,7 @@ import {
   Slideshow as SlideshowIcon,
   VideoFile as VideoFileIcon,
   Save as SaveIcon,
+  SwapHoriz as SwapHorizIcon,
   Visibility as VisibilityIcon,
   WarningAmber as WarningAmberIcon
 } from '@mui/icons-material';
@@ -67,7 +70,6 @@ import {
   LabelList,
   Pie,
   PieChart,
-  ReferenceLine,
   ResponsiveContainer,
   Tooltip,
   XAxis,
@@ -179,12 +181,38 @@ const PROGRAM_BY_NAME = PROGRAM_CATALOG.reduce((acc, item) => {
   return acc;
 }, {});
 
-const normalizeProgramName = (value = '') => String(value || '').trim().replace(/\s+/g, ' ').toUpperCase();
+const normalizeText = (value = '') => String(value || '')
+  .trim()
+  .toUpperCase()
+  .normalize('NFD')
+  .replace(/[\u0300-\u036f]/g, '')
+  .replace(/\s+/g, ' ');
+const normalizeProgramName = (value = '') => normalizeText(value);
+const isPsychologyProgram = (value = '') => normalizeProgramName(value).includes('PSICOLOGIA');
+const isHealthAreaExclusiveAspect = (item = {}) => normalizeText([
+  item.aspecto,
+  item.indicador,
+  item.caracteristica,
+  item.informacion
+].filter(Boolean).join(' ')).includes('PROGRAMAS ACADEMICOS DEL AREA DE LA SALUD');
 const normalizeComponentCode = (value = '') => {
-  const key = String(value || '').trim().toUpperCase().replace(/\s+/g, '');
-  if (key.includes('P/I') || key.includes('I/P') || key === 'PI' || key.includes('PROGRAMA/INSTITUCION')) return 'P/I';
-  if (key === 'P' || key.includes('PROGRAMA')) return 'P';
-  if (key === 'I' || key.includes('INSTITUCION')) return 'I';
+  const raw = String(value || '')
+    .trim()
+    .toUpperCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '');
+  const key = raw.replace(/\s+/g, '');
+  const hasPrograma = raw.includes('PROGRAMA') || key === 'P';
+  const hasInstitucional = raw.includes('INSTITUCION') || raw.includes('INSTITUCIONAL') || key === 'I';
+  if (
+    key.includes('P/I')
+    || key.includes('I/P')
+    || key === 'PI'
+    || key === 'IP'
+    || (hasPrograma && hasInstitucional)
+  ) return 'P/I';
+  if (hasPrograma) return 'P';
+  if (hasInstitucional) return 'I';
   return key || 'SIN COMPONENTE';
 };
 const componentDisplayLabel = (component, scope = 'general') => {
@@ -231,22 +259,42 @@ const EMPTY_PROGRAM_INFO_FORM = {
 
 const cumplimientoColor = (label = '') => {
   const key = String(label || '').toUpperCase();
-  if (key.includes('PLENAMENTE')) return '#047857';
-  if (key.includes('ALTO')) return '#2563eb';
-  if (key.includes('ACEPTABLE')) return '#d97706';
-  if (key.includes('INSATISFACTORIA')) return '#dc2626';
-  if (key.includes('NO SE')) return '#991b1b';
+  if (key.includes('PLENAMENTE')) return '#065f46';
+  if (key.includes('ALTO')) return '#16a34a';
+  if (key.includes('ACEPTABLE')) return '#ca8a04';
+  if (key.includes('INSATISFACTORIA')) return '#ea580c';
+  if (key.includes('NO SE')) return '#dc2626';
   return '#64748b';
+};
+
+const cumplimientoSoftColor = (label = '') => {
+  const key = String(label || '').toUpperCase();
+  if (key.includes('PLENAMENTE')) return '#d1fae5';
+  if (key.includes('ALTO')) return '#dcfce7';
+  if (key.includes('ACEPTABLE')) return '#fef9c3';
+  if (key.includes('INSATISFACTORIA')) return '#ffedd5';
+  if (key.includes('NO SE')) return '#fee2e2';
+  return '#f1f5f9';
+};
+
+const cumplimientoChartColor = (label = '') => {
+  const key = String(label || '').toUpperCase();
+  if (key.includes('PLENAMENTE')) return '#17366f';
+  if (key.includes('ALTO')) return '#1f4e95';
+  if (key.includes('ACEPTABLE')) return '#2f67ad';
+  if (key.includes('INSATISFACTORIA')) return '#4f86c6';
+  if (key.includes('NO SE')) return '#7fb0dc';
+  return '#94a3b8';
 };
 
 const getScoreLabel = (value) => {
   const score = Number(value);
   if (!Number.isFinite(score)) return 'SIN CALIFICAR';
-  if (score >= 4.6) return 'SE CUMPLE PLENAMENTE';
-  if (score >= 4.0) return 'SE CUMPLE EN ALTO GRADO';
-  if (score >= 3.0) return 'SE CUMPLE ACEPTABLEMENTE';
-  if (score >= 2.0) return 'SE CUMPLE INSATISFACTORIAMENTE';
-  return 'NO SE CUMPLE';
+  if (score >= 4.5) return 'SE CUMPLE PLENAMENTE';//verde oscuro
+  if (score >= 4.0) return 'SE CUMPLE EN ALTO GRADO';//verde claro
+  if (score >= 3.5) return 'SE CUMPLE ACEPTABLEMENTE';//amarillo
+  if (score >= 2.6) return 'SE CUMPLE INSATISFACTORIAMENTE';//naranja
+  return 'NO SE CUMPLE';//rojo
 };
 
 const scoreTone = (score) => cumplimientoColor(score?.label || score);
@@ -288,7 +336,7 @@ function ScoreChip({ value, label }) {
     <Chip
       size="small"
       label={`${formatScore(value)} · ${label || 'SIN CALIFICAR'}`}
-      sx={{ bgcolor: `${color}17`, color, fontWeight: 900, maxWidth: '100%' }}
+      sx={{ bgcolor: cumplimientoSoftColor(label), color, fontWeight: 900, maxWidth: '100%' }}
     />
   );
 }
@@ -315,12 +363,6 @@ function ComplianceMark({ label }) {
     </Box>
   );
 }
-
-const isCriticalCompliance = (label = '', value = null) => {
-  const key = String(label || '').toUpperCase();
-  const score = Number(value);
-  return key.includes('INSATISFACTORIA') || key.includes('NO SE') || (Number.isFinite(score) && score < 3);
-};
 
 function EmptyState() {
   return (
@@ -448,6 +490,7 @@ function Autoevaluacion() {
   const { user } = useAuth();
   const [loading, setLoading] = useState(true);
   const dashboardCacheRef = useRef(new Map());
+  const characteristicChartCardRef = useRef(null);
   const [programa, setPrograma] = useState('');
   const [componentScope, setComponentScope] = useState('general');
   const [view, setView] = useState('resumen');
@@ -464,6 +507,10 @@ function Autoevaluacion() {
   const [programDrafts, setProgramDrafts] = useState({});
   const [creatingParticipant, setCreatingParticipant] = useState(false);
   const [creatingProgramInfo, setCreatingProgramInfo] = useState(false);
+  const [copyingCharacteristicChart, setCopyingCharacteristicChart] = useState(false);
+  const [isCharacteristicChartInverted, setIsCharacteristicChartInverted] = useState(false);
+  const [editingCharacteristicChartText, setEditingCharacteristicChartText] = useState(false);
+  const [characteristicChartLabelDrafts, setCharacteristicChartLabelDrafts] = useState({});
   const [evidenceModal, setEvidenceModal] = useState({ open: false, title: '', folderUrl: '', files: [], loading: false, error: '' });
   const [evidenceBreadcrumbs, setEvidenceBreadcrumbs] = useState([]);
   const canAccessInstrumentos = [ROLES.ADMINISTRADOR, ROLES.PLANEACION_ESTRATEGICA].includes(user?.role)
@@ -589,6 +636,94 @@ function Autoevaluacion() {
     setEvidenceBreadcrumbs([]);
     setPreviewFile(null);
   };
+
+  const copyCharacteristicChart = useCallback(async () => {
+    const node = characteristicChartCardRef.current;
+    if (!node) return;
+
+    if (!navigator.clipboard?.write || !window.ClipboardItem) {
+      enqueueSnackbar('El navegador no permite copiar imagenes al portapapeles en este contexto', { variant: 'warning' });
+      return;
+    }
+
+    setCopyingCharacteristicChart(true);
+    try {
+      const rect = node.getBoundingClientRect();
+      const width = Math.ceil(rect.width);
+      const height = Math.ceil(rect.height);
+      const clone = node.cloneNode(true);
+
+      const inlineComputedStyles = (source, target) => {
+        if (!source || !target || !target.style) return;
+        const computed = window.getComputedStyle(source);
+        Array.from(computed).forEach((property) => {
+          target.style.setProperty(
+            property,
+            computed.getPropertyValue(property),
+            computed.getPropertyPriority(property)
+          );
+        });
+
+        Array.from(source.children).forEach((child, index) => {
+          inlineComputedStyles(child, target.children[index]);
+        });
+      };
+
+      inlineComputedStyles(node, clone);
+      clone.querySelectorAll('[data-copy-exclude="true"]').forEach((element) => element.remove());
+      clone.setAttribute('xmlns', 'http://www.w3.org/1999/xhtml');
+      clone.style.width = `${width}px`;
+      clone.style.height = `${height}px`;
+      clone.style.margin = '0';
+      clone.style.background = '#ffffff';
+
+      const serializedNode = new XMLSerializer().serializeToString(clone);
+      const svg = `
+        <svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}">
+          <foreignObject width="100%" height="100%">
+            ${serializedNode}
+          </foreignObject>
+        </svg>
+      `;
+      const image = new Image();
+      const scale = Math.max(2, Math.min(3, window.devicePixelRatio || 2));
+      const canvas = document.createElement('canvas');
+      canvas.width = Math.ceil(width * scale);
+      canvas.height = Math.ceil(height * scale);
+      const context = canvas.getContext('2d');
+      context.scale(scale, scale);
+      context.fillStyle = '#ffffff';
+      context.fillRect(0, 0, width, height);
+
+      await new Promise((resolve, reject) => {
+        image.onload = () => {
+          context.drawImage(image, 0, 0, width, height);
+          canvas.toBlob(async (blob) => {
+            if (!blob) {
+              reject(new Error('No fue posible generar la imagen'));
+              return;
+            }
+            try {
+              await navigator.clipboard.write([
+                new window.ClipboardItem({ 'image/png': blob })
+              ]);
+              resolve();
+            } catch (error) {
+              reject(error);
+            }
+          }, 'image/png');
+        };
+        image.onerror = () => reject(new Error('No fue posible preparar la imagen'));
+        image.src = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;
+      });
+
+      enqueueSnackbar('Grafico copiado al portapapeles', { variant: 'success' });
+    } catch (error) {
+      enqueueSnackbar('No se pudo copiar el grafico como imagen', { variant: 'error' });
+    } finally {
+      setCopyingCharacteristicChart(false);
+    }
+  }, [enqueueSnackbar]);
 
   const resumen = dashboard?.resumen || {};
   const programas = dashboard?.programasDisponibles || [];
@@ -1053,12 +1188,27 @@ function Autoevaluacion() {
     );
   };
 
-  const scopedAspectos = aspectos.filter((item) => {
-    const component = normalizeComponentCode(item.componente);
-    if (componentScope === 'programa') return component === 'P' || component === 'P/I';
-    if (componentScope === 'institucional') return component === 'I' || component === 'P/I';
-    return true;
-  });
+  const scopedAspectos = aspectos
+    .filter((item) => {
+      if (isHealthAreaExclusiveAspect(item)) {
+        const effectiveProgram = programa || item.programa || resumen?.programaActivo || '';
+        return isPsychologyProgram(effectiveProgram);
+      }
+      const component = normalizeComponentCode(item.componente);
+      if (componentScope === 'programa') return component === 'P' || component === 'P/I';
+      if (componentScope === 'institucional') return component === 'I' || component === 'P/I';
+      return true;
+    })
+    .map((item) => {
+      const label = getScoreLabel(item.calificacion);
+      return {
+        ...item,
+        cumplimiento: {
+          label,
+          tone: cumplimientoColor(label)
+        }
+      };
+    });
 
   const scopedFactores = Object.values(
     scopedAspectos.reduce((acc, item) => {
@@ -1111,7 +1261,7 @@ function Autoevaluacion() {
 
   const scopedCumplimiento = Object.values(
     scopedAspectos.reduce((acc, item) => {
-      const name = item.cumplimiento?.label || getScoreLabel(item.calificacion);
+      const name = getScoreLabel(item.calificacion);
       acc[name] = acc[name] || { name, total: 0 };
       acc[name].total += 1;
       return acc;
@@ -1133,7 +1283,7 @@ function Autoevaluacion() {
       return acc;
     }, {})
   ).sort((a, b) => (b.total || 0) - (a.total || 0));
-  
+
   // Eliminadas variables globales que causaban inestabilidad...
 
   const factores = [...(scopedFactores || [])];
@@ -1169,11 +1319,11 @@ function Autoevaluacion() {
     const importancia = Math.max(1, aspectos.length);
     const totalImportancia = all.reduce((acc, current) => acc + Math.max(1, (current.aspectos || []).length), 0) || 1;
     const ponderacion = (importancia / totalImportancia) * 100;
-    const firstAspect = aspectos[0] || {};
-    const label = firstAspect.cumplimiento?.label || 'SIN CALIFICAR';
+    const calificacion = Number(avg.toFixed(2));
+    const label = getScoreLabel(calificacion);
     const componenteResumen = resolveComponentSummary(Array.from(item.componentes || []));
     const evidencias = aspectos.map((a) => getEvidenceUrl(a?.evidencia)).filter(Boolean);
-    
+
     return {
       ...item,
       componenteResumen,
@@ -1181,7 +1331,7 @@ function Autoevaluacion() {
       evidencias,
       importancia,
       ponderacion,
-      calificacion: Number(avg.toFixed(2)),
+      calificacion,
       cumplimiento: label,
       color: cumplimientoColor(label)
     };
@@ -1200,50 +1350,140 @@ function Autoevaluacion() {
   };
   const factorChartData = factorCaracteristicas.map((item) => ({
     ...item,
-    chartLabel: String(item.caracteristica || 'Caracteristica').replace(/^C\d+\.\s*/i, '')
+    chartLabel: characteristicChartLabelDrafts[item.caracteristica] || String(item.caracteristica || 'Caracteristica')
   }));
-  const splitChartLabel = (value = '', maxLength = 30) => {
-    const words = String(value).split(' ');
-    const lines = words.reduce((acc, word) => {
-      const last = acc[acc.length - 1] || '';
-      if (!last || `${last} ${word}`.length > maxLength) return [...acc, word];
-      return [...acc.slice(0, -1), `${last} ${word}`];
-    }, []);
-    return lines.slice(0, 3);
+  const isCharacteristicChartDense = factorChartData.length > 6
+    || factorChartData.some((item) => String(item.chartLabel || '').length > 36);
+  const standingCharacteristicChartHeight = 470;
+  const invertedCharacteristicChartHeight = isCharacteristicChartDense
+    ? Math.max(360, factorChartData.length * 62 + 86)
+    : 420;
+  const characteristicChartHeight = isCharacteristicChartInverted
+    ? invertedCharacteristicChartHeight
+    : standingCharacteristicChartHeight;
+  const standingCharacteristicChartMinWidth = Math.max(920, factorChartData.length * 142);
+  const invertedCharacteristicChartMinWidth = 920;
+  const compactComplianceLabel = (value = '') => {
+    const label = String(value || '').trim().toUpperCase();
+    if (label.includes('ALTO GRADO')) return 'Alto grado';
+    if (label.includes('ACEPTABLEMENTE')) return 'Aceptable';
+    if (label.includes('PLENAMENTE')) return 'Pleno';
+    if (label.includes('BAJO')) return 'Bajo';
+    return value || 'Sin calificar';
   };
-  const renderCharacteristicTick = ({ x, y, payload }) => {
-    const lines = splitChartLabel(payload?.value || '');
+  const splitComplianceLabel = (value = '') => {
+    const label = String(value || 'SIN CALIFICAR').trim().toUpperCase();
+    if (label === 'SIN CALIFICAR') return ['SIN', 'CALIFICAR'];
+    if (label.includes('PLENAMENTE')) return ['SE CUMPLE', 'PLENAMENTE'];
+    if (label.includes('ALTO GRADO')) return ['SE CUMPLE EN', 'ALTO GRADO'];
+    if (label.includes('ACEPTABLEMENTE')) return ['SE CUMPLE', 'ACEPTABLEMENTE'];
+    if (label.includes('INSATISFACTORIAMENTE')) return ['SE CUMPLE', 'INSATISFACTORIAMENTE'];
+    if (label.includes('NO SE CUMPLE')) return ['NO SE', 'CUMPLE'];
+    return label.split(/\s+/).reduce((acc, word) => {
+      const target = acc[0].length <= acc[1].length ? 0 : 1;
+      acc[target] = [acc[target], word].filter(Boolean).join(' ');
+      return acc;
+    }, ['', '']);
+  };
+  const renderStandingCharacteristicTick = ({ x, y, payload }) => {
+    const tickWidth = 126;
     return (
-      <g transform={`translate(${x},${y + 10})`}>
-        <text textAnchor="middle" fill="#334155" fontSize={10.5} fontWeight={800}>
-          {lines.map((line, index) => (
-            <tspan key={line} x={0} dy={index === 0 ? 0 : 13}>{line}</tspan>
-          ))}
-        </text>
+      <g transform={`translate(${x - tickWidth / 2},${y + 8})`}>
+        <foreignObject width={tickWidth} height={86}>
+          <Box
+            xmlns="http://www.w3.org/1999/xhtml"
+            sx={{
+              width: tickWidth,
+              height: 86,
+              display: 'flex',
+              justifyContent: 'center',
+              alignItems: 'flex-start',
+              color: '#0f172a',
+              fontSize: 10.4,
+              fontWeight: 850,
+              lineHeight: 1.18,
+              textAlign: 'center',
+              overflowWrap: 'anywhere'
+            }}
+          >
+            {payload?.value || ''}
+          </Box>
+        </foreignObject>
       </g>
     );
   };
-  const renderComplianceBarLabel = ({ x, y, width, index }) => {
+  const renderInvertedCharacteristicTick = ({ x, y, payload }) => {
+    return (
+      <g transform={`translate(${x - 300},${y - 27})`}>
+        <foreignObject width={280} height={54}>
+          <Box
+            xmlns="http://www.w3.org/1999/xhtml"
+            sx={{
+              width: 280,
+              height: 54,
+              display: 'flex',
+              alignItems: 'center',
+              color: '#0f172a',
+              fontSize: 12,
+              fontWeight: 850,
+              lineHeight: 1.25,
+              textAlign: 'left',
+              overflowWrap: 'anywhere'
+            }}
+          >
+            {payload?.value || ''}
+          </Box>
+        </foreignObject>
+      </g>
+    );
+  };
+  const renderStandingComplianceBarLabel = ({ x, y, width, index }) => {
     const item = factorChartData[index] || {};
     const score = formatScore(item.calificacion);
-    const compliance = item.cumplimiento || 'SIN CALIFICAR';
-    const critical = Number(item.calificacion || 0) < 3.5;
-    const badgeWidth = Math.max(162, Math.min(246, String(compliance).length * 6.3 + 34));
-    const centerX = x + width / 2;
-    const badgeX = centerX - badgeWidth / 2;
-    const badgeY = Math.max(4, y - 48);
-    const color = critical ? '#b45309' : '#1f4e95';
-    const bg = critical ? '#fff7ed' : '#eff6ff';
-    const border = critical ? '#fdba74' : '#bfdbfe';
+    const complianceLines = splitComplianceLabel(item.cumplimiento);
+    const labelWidth = Math.max(116, Math.min(150, width + 58));
+    return (
+      <g transform={`translate(${x + width / 2 - labelWidth / 2},${Math.max(4, y - 49)})`}>
+        <foreignObject width={labelWidth} height={46}>
+          <Box
+            xmlns="http://www.w3.org/1999/xhtml"
+            sx={{
+              width: labelWidth,
+              height: 46,
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: 'center',
+              justifyContent: 'center',
+              color: '#17366f',
+              fontWeight: 900,
+              lineHeight: 1.02,
+              textAlign: 'center'
+            }}
+          >
+            <Box sx={{ fontSize: 8.1, maxWidth: '100%', whiteSpace: 'nowrap' }}>{complianceLines[0]}</Box>
+            <Box sx={{ fontSize: 8.1, maxWidth: '100%', whiteSpace: 'nowrap' }}>{complianceLines[1]}</Box>
+            <Box sx={{ fontSize: 14, color: '#0f172a' }}>{score}</Box>
+          </Box>
+        </foreignObject>
+      </g>
+    );
+  };
+  const renderCompactComplianceBarLabel = ({ x, y, width, height, index }) => {
+    const item = factorChartData[index] || {};
+    const score = formatScore(item.calificacion);
+    const compliance = compactComplianceLabel(item.cumplimiento);
+    const scoreInside = width >= 64;
+    const scoreX = scoreInside ? x + width - 10 : x + width + 10;
+    const scoreAnchor = scoreInside ? 'end' : 'start';
+    const complianceX = x + width + (scoreInside ? 18 : 58);
+    const textY = y + height / 2 + 4;
     return (
       <g>
-        <rect x={badgeX + 2} y={badgeY + 3} width={badgeWidth} height={42} rx={12} fill="rgba(15,23,42,.10)" opacity="0.22" />
-        <rect x={badgeX} y={badgeY} width={badgeWidth} height={42} rx={12} fill={bg} stroke={border} />
-        <text x={centerX} y={badgeY + 15} textAnchor="middle" fill={color} fontSize={9.4} fontWeight={700}>
-          {compliance}
-        </text>
-        <text x={centerX} y={badgeY + 33} textAnchor="middle" fill="#0f172a" fontSize={15} fontWeight={950}>
+        <text x={scoreX} y={textY} textAnchor={scoreAnchor} fill={scoreInside ? '#ffffff' : '#0f172a'} fontSize={13} fontWeight={950}>
           {score}
+        </text>
+        <text x={complianceX} y={textY} textAnchor="start" fill="#17366f" fontSize={11} fontWeight={850}>
+          {compliance}
         </text>
       </g>
     );
@@ -1545,61 +1785,61 @@ function Autoevaluacion() {
           maxWidth: 'none'
         }}
       >
-      <Box sx={{ minWidth: 0, width: '100%' }}>
-        <Paper elevation={0} sx={{ p: 2.4, border: '1px solid #e2e8f0', borderRadius: 3, height: { xs: 460, lg: 520 }, width: '100%', boxSizing: 'border-box' }}>
-          <Stack direction="row" justifyContent="space-between" alignItems="center" sx={{ mb: 1.5 }}>
-            <Box>
-              <Typography sx={{ fontWeight: 950, color: '#0f172a' }}>Mapa de desempeño por factor</Typography>
-              <Typography variant="body2" sx={{ color: '#64748b' }}>El color representa el juicio de valor del libro de autoevaluación.</Typography>
-            </Box>
-          </Stack>
-          <ResponsiveContainer width="100%" height={410}>
-            <BarChart data={chartFactores} margin={{ top: 18, right: 28, left: 8, bottom: 38 }}>
-              <CartesianGrid strokeDasharray="3 3" vertical={false} />
-              <XAxis dataKey="factor" tick={{ fontSize: 12, fontWeight: 800 }} label={{ value: 'Factores', position: 'insideBottom', offset: -10 }} />
-              <YAxis domain={[0, 5]} tick={{ fontSize: 12 }} label={{ value: 'Calificación', angle: -90, position: 'insideLeft', offset: 0 }} />
-              <Tooltip formatter={(value) => [formatScore(value), 'Calificación']} />
-              <Bar dataKey="calificacion" radius={[8, 8, 0, 0]} maxBarSize={72}>
-                <LabelList dataKey="calificacion" position="top" formatter={(value) => formatScore(value)} style={{ fontSize: 12, fontWeight: 900, fill: '#0f172a' }} />
-                {chartFactores.map((entry) => (
-                  <Cell key={entry.factor} fill={entry.cumplimiento.includes('ALTO') || entry.cumplimiento.includes('PLENAMENTE') ? '#1f4e95' : '#d97706'} />
-                ))}
-              </Bar>
-            </BarChart>
-          </ResponsiveContainer>
-        </Paper>
-      </Box>
+        <Box sx={{ minWidth: 0, width: '100%' }}>
+          <Paper elevation={0} sx={{ p: 2.4, border: '1px solid #e2e8f0', borderRadius: 3, height: { xs: 460, lg: 520 }, width: '100%', boxSizing: 'border-box' }}>
+            <Stack direction="row" justifyContent="space-between" alignItems="center" sx={{ mb: 1.5 }}>
+              <Box>
+                <Typography sx={{ fontWeight: 950, color: '#0f172a' }}>Mapa de desempeño por factor</Typography>
+                <Typography variant="body2" sx={{ color: '#64748b' }}>El color representa el juicio de valor del libro de autoevaluación.</Typography>
+              </Box>
+            </Stack>
+            <ResponsiveContainer width="100%" height={410}>
+              <BarChart data={chartFactores} margin={{ top: 18, right: 28, left: 8, bottom: 38 }}>
+                <CartesianGrid strokeDasharray="3 3" vertical={false} />
+                <XAxis dataKey="factor" tick={{ fontSize: 12, fontWeight: 800 }} label={{ value: 'Factores', position: 'insideBottom', offset: -10 }} />
+                <YAxis domain={[0, 5]} tick={{ fontSize: 12 }} label={{ value: 'Calificación', angle: -90, position: 'insideLeft', offset: 0 }} />
+                <Tooltip formatter={(value) => [formatScore(value), 'Calificación']} />
+                <Bar dataKey="calificacion" radius={[8, 8, 0, 0]} maxBarSize={72}>
+                  <LabelList dataKey="calificacion" position="top" formatter={(value) => formatScore(value)} style={{ fontSize: 12, fontWeight: 900, fill: '#0f172a' }} />
+                  {chartFactores.map((entry) => (
+                  <Cell key={entry.factor} fill={cumplimientoChartColor(entry.cumplimiento)} />
+                  ))}
+                </Bar>
+              </BarChart>
+            </ResponsiveContainer>
+          </Paper>
+        </Box>
 
-      <Box sx={{ minWidth: 0, width: '100%' }}>
-        <Paper elevation={0} sx={{ p: 2.4, border: '1px solid #e2e8f0', borderRadius: 3, height: { xs: 'auto', lg: 520 }, width: '100%', boxSizing: 'border-box' }}>
-          <Typography sx={{ fontWeight: 950, color: '#0f172a', mb: 1 }}>Balance de cumplimiento</Typography>
-          <ResponsiveContainer width="100%" height={330}>
-            <PieChart>
-              <Pie
-                data={cumplimiento}
-                dataKey="total"
-                nameKey="name"
-                innerRadius={56}
-                outerRadius={92}
-                paddingAngle={2}
-                labelLine={false}
-                label={({ percent, total }) => total ? `${total} (${(percent * 100).toFixed(0)}%)` : ''}
-              >
-                {cumplimiento.map((entry) => <Cell key={entry.name} fill={cumplimientoColor(entry.name)} />)}
-              </Pie>
-              <Tooltip formatter={(value) => [value, 'Aspectos']} />
-            </PieChart>
-          </ResponsiveContainer>
-          <Stack spacing={0.7}>
-            {cumplimiento.map((item) => (
-              <Stack key={item.name} direction="row" justifyContent="space-between" alignItems="center">
-                <Typography variant="caption" sx={{ color: '#475569', fontWeight: 800 }}>{item.name}</Typography>
-                <Chip size="small" label={item.total} sx={{ fontWeight: 900 }} />
-              </Stack>
-            ))}
-          </Stack>
-        </Paper>
-      </Box>
+        <Box sx={{ minWidth: 0, width: '100%' }}>
+          <Paper elevation={0} sx={{ p: 2.4, border: '1px solid #e2e8f0', borderRadius: 3, height: { xs: 'auto', lg: 520 }, width: '100%', boxSizing: 'border-box' }}>
+            <Typography sx={{ fontWeight: 950, color: '#0f172a', mb: 1 }}>Balance de cumplimiento</Typography>
+            <ResponsiveContainer width="100%" height={330}>
+              <PieChart>
+                <Pie
+                  data={cumplimiento}
+                  dataKey="total"
+                  nameKey="name"
+                  innerRadius={56}
+                  outerRadius={92}
+                  paddingAngle={2}
+                  labelLine={false}
+                  label={({ percent, total }) => total ? `${total} (${(percent * 100).toFixed(0)}%)` : ''}
+                >
+                  {cumplimiento.map((entry) => <Cell key={entry.name} fill={cumplimientoChartColor(entry.name)} />)}
+                </Pie>
+                <Tooltip formatter={(value) => [value, 'Aspectos']} />
+              </PieChart>
+            </ResponsiveContainer>
+            <Stack spacing={0.7}>
+              {cumplimiento.map((item) => (
+                <Stack key={item.name} direction="row" justifyContent="space-between" alignItems="center">
+                  <Typography variant="caption" sx={{ color: '#475569', fontWeight: 800 }}>{item.name}</Typography>
+                  <Chip size="small" label={item.total} sx={{ fontWeight: 900 }} />
+                </Stack>
+              ))}
+            </Stack>
+          </Paper>
+        </Box>
       </Box>
 
       <Box
@@ -1611,43 +1851,43 @@ function Autoevaluacion() {
           maxWidth: 'none'
         }}
       >
-      <Box sx={{ minWidth: 0, width: '100%' }}>
-        <Paper elevation={0} sx={{ p: 2.2, border: '1px solid #e2e8f0', borderRadius: 3, width: '100%', boxSizing: 'border-box' }}>
-          <Typography sx={{ fontWeight: 950, color: '#0f172a', mb: 1 }}>Alertas para mejoramiento</Typography>
-          <Stack spacing={1}>
-            {riesgos.map((item, index) => (
-              <Box key={`${item.aspecto}-${index}`} sx={{ p: 1.3, border: '1px solid #fee2e2', borderRadius: 2, bgcolor: '#fff7f7' }}>
-                <Stack direction="row" spacing={1} alignItems="flex-start">
-                  <WarningAmberIcon sx={{ color: '#dc2626', mt: 0.2 }} />
-                  <Box>
-                    <Typography variant="body2" sx={{ color: '#0f172a', fontWeight: 900 }}>{item.factor} · {item.caracteristica}</Typography>
-                    <Typography variant="caption" sx={{ color: '#475569' }}>{item.aspecto}</Typography>
-                    <Box sx={{ mt: 0.7 }}><ScoreChip value={item.calificacion} label={item.cumplimiento?.label} /></Box>
-                  </Box>
-                </Stack>
-              </Box>
-            ))}
-            {!riesgos.length && <Alert severity="success">No se detectan aspectos por debajo de 3.5.</Alert>}
-          </Stack>
-        </Paper>
-      </Box>
+        <Box sx={{ minWidth: 0, width: '100%' }}>
+          <Paper elevation={0} sx={{ p: 2.2, border: '1px solid #e2e8f0', borderRadius: 3, width: '100%', boxSizing: 'border-box' }}>
+            <Typography sx={{ fontWeight: 950, color: '#0f172a', mb: 1 }}>Alertas para mejoramiento</Typography>
+            <Stack spacing={1}>
+              {riesgos.map((item, index) => (
+                <Box key={`${item.aspecto}-${index}`} sx={{ p: 1.3, border: '1px solid #fee2e2', borderRadius: 2, bgcolor: '#fff7f7' }}>
+                  <Stack direction="row" spacing={1} alignItems="flex-start">
+                    <WarningAmberIcon sx={{ color: '#dc2626', mt: 0.2 }} />
+                    <Box>
+                      <Typography variant="body2" sx={{ color: '#0f172a', fontWeight: 900 }}>{item.factor} · {item.caracteristica}</Typography>
+                      <Typography variant="caption" sx={{ color: '#475569' }}>{item.aspecto}</Typography>
+                      <Box sx={{ mt: 0.7 }}><ScoreChip value={item.calificacion} label={item.cumplimiento?.label} /></Box>
+                    </Box>
+                  </Stack>
+                </Box>
+              ))}
+              {!riesgos.length && <Alert severity="success">No se detectan aspectos por debajo de 3.5.</Alert>}
+            </Stack>
+          </Paper>
+        </Box>
 
-      <Box sx={{ minWidth: 0, width: '100%' }}>
-        <Paper elevation={0} sx={{ p: 2.2, border: '1px solid #e2e8f0', borderRadius: 3, width: '100%', boxSizing: 'border-box' }}>
-          <Typography sx={{ fontWeight: 950, color: '#0f172a', mb: 1 }}>Fuentes de evidencia</Typography>
-          <Stack spacing={1}>
-            {instrumentos.slice(0, 8).map((item) => (
-              <Box key={item.name} sx={{ p: 1.2, bgcolor: '#f8fafc', borderRadius: 2 }}>
-                <Stack direction="row" justifyContent="space-between" sx={{ mb: 0.7 }}>
-                  <Typography variant="body2" sx={{ fontWeight: 900 }}>{item.name}</Typography>
-                  <Typography variant="body2" sx={{ fontWeight: 900 }}>{item.total}</Typography>
-                </Stack>
-                <LinearProgress variant="determinate" value={Math.min(100, (item.total / Math.max(resumen.aspectos || 1, 1)) * 100)} sx={{ height: 7, borderRadius: 8 }} />
-              </Box>
-            ))}
-          </Stack>
-        </Paper>
-      </Box>
+        <Box sx={{ minWidth: 0, width: '100%' }}>
+          <Paper elevation={0} sx={{ p: 2.2, border: '1px solid #e2e8f0', borderRadius: 3, width: '100%', boxSizing: 'border-box' }}>
+            <Typography sx={{ fontWeight: 950, color: '#0f172a', mb: 1 }}>Fuentes de evidencia</Typography>
+            <Stack spacing={1}>
+              {instrumentos.slice(0, 8).map((item) => (
+                <Box key={item.name} sx={{ p: 1.2, bgcolor: '#f8fafc', borderRadius: 2 }}>
+                  <Stack direction="row" justifyContent="space-between" sx={{ mb: 0.7 }}>
+                    <Typography variant="body2" sx={{ fontWeight: 900 }}>{item.name}</Typography>
+                    <Typography variant="body2" sx={{ fontWeight: 900 }}>{item.total}</Typography>
+                  </Stack>
+                  <LinearProgress variant="determinate" value={Math.min(100, (item.total / Math.max(resumen.aspectos || 1, 1)) * 100)} sx={{ height: 7, borderRadius: 8 }} />
+                </Box>
+              ))}
+            </Stack>
+          </Paper>
+        </Box>
       </Box>
     </Box>
   );
@@ -1733,7 +1973,7 @@ function Autoevaluacion() {
               </Box>
               {renderTableEditActions('Puedes corregir la redaccion de las caracteristicas. Importancia, peso y calificacion siguen protegidos por el calculo.')}
               <TableContainer sx={{ width: '100%', overflowX: 'auto' }}>
-                  <Table size="small" sx={{ minWidth: 1120, '& td, & th': { borderColor: '#cbd5e1' } }}>
+                <Table size="small" sx={{ minWidth: 1120, '& td, & th': { borderColor: '#cbd5e1' } }}>
                   <TableHead>
                     <TableRow sx={{ bgcolor: '#f8fafc' }}>
                       <TableCell sx={{ fontWeight: 950, width: 72 }}>Código</TableCell>
@@ -1753,8 +1993,8 @@ function Autoevaluacion() {
                         key={item.caracteristica}
                         hover
                         sx={{
-                          bgcolor: isCriticalCompliance(item.cumplimiento, item.calificacion) ? '#fff1f2' : 'inherit',
-                          '&:hover': { bgcolor: isCriticalCompliance(item.cumplimiento, item.calificacion) ? '#ffe4e6' : '#f8fafc' }
+                          bgcolor: 'white',
+                          '&:hover': { bgcolor: '#f8fafc' }
                         }}
                       >
                         <TableCell sx={{ fontWeight: 950 }}>{item.codigo || 'C'}</TableCell>
@@ -1775,17 +2015,18 @@ function Autoevaluacion() {
                               sx={{
                                 height: 24,
                                 fontWeight: 950,
-                                bgcolor: item.componenteResumen === 'P' ? '#ecfdf5' : item.componenteResumen === 'I' ? '#eff6ff' : '#fff7ed',
-                                color: item.componenteResumen === 'P' ? '#047857' : item.componenteResumen === 'I' ? '#1d4ed8' : '#d97706'
+                                bgcolor: 'white',
+                                color: '#0f172a',
+                                border: '1px solid #e2e8f0'
                               }}
                             />
                           </Stack>
                         </TableCell>
                         <TableCell align="center">{item.importancia}</TableCell>
                         <TableCell align="center">{item.ponderacion.toFixed(0)}%</TableCell>
-                        <TableCell align="center" sx={{ fontWeight: 950, color: isCriticalCompliance(item.cumplimiento, item.calificacion) ? '#991b1b' : '#0f172a' }}>{formatScore(item.calificacion)}</TableCell>
+                        <TableCell align="center" sx={{ fontWeight: 950, color: '#0f172a' }}>{formatScore(item.calificacion)}</TableCell>
                         <TableCell align="center"><ComplianceMark label={item.cumplimiento} /></TableCell>
-                        <TableCell sx={{ fontSize: 12, fontWeight: 850, color: isCriticalCompliance(item.cumplimiento, item.calificacion) ? '#991b1b' : '#0f172a' }}>{item.cumplimiento}</TableCell>
+                        <TableCell sx={{ fontSize: 12, fontWeight: 850, color: cumplimientoColor(item.cumplimiento) }}>{item.cumplimiento}</TableCell>
                         <TableCell align="center">
                           {item.evidencia ? (
                             <Button
@@ -1815,13 +2056,24 @@ function Autoevaluacion() {
                         </TableCell>
                       </TableRow>
                     ))}
-                    <TableRow sx={{ bgcolor: '#eef2ff' }}>
+                    <TableRow sx={{ bgcolor: 'white' }}>
                       <TableCell colSpan={3} sx={{ fontWeight: 950 }}>Ponderación calculada y nota del factor</TableCell>
                       <TableCell align="center" sx={{ fontWeight: 950 }}>{factorCaracteristicas.reduce((acc, item) => acc + item.importancia, 0)}</TableCell>
                       <TableCell align="center" sx={{ fontWeight: 950 }}>100%</TableCell>
-                      <TableCell align="center" sx={{ fontWeight: 950, bgcolor: '#315895', color: 'white' }}>{formatScore(selectedFactorData?.calificacion)}</TableCell>
+                      <TableCell
+                        align="center"
+                        sx={{
+                          fontWeight: 950,
+                          bgcolor: '#1f4e95',
+                          color: 'white',
+                          fontSize: 16,
+                          boxShadow: 'inset 0 0 0 1px rgba(255,255,255,.18)'
+                        }}
+                      >
+                        {formatScore(selectedFactorData?.calificacion)}
+                      </TableCell>
                       <TableCell align="center"><ComplianceMark label={selectedFactorData?.cumplimiento?.label} /></TableCell>
-                      <TableCell sx={{ fontSize: 12, fontWeight: 950 }}>{selectedFactorData?.cumplimiento?.label}</TableCell>
+                      <TableCell sx={{ fontSize: 12, fontWeight: 950, color: cumplimientoColor(selectedFactorData?.cumplimiento?.label) }}>{selectedFactorData?.cumplimiento?.label}</TableCell>
                       <TableCell />
                     </TableRow>
                   </TableBody>
@@ -1841,44 +2093,167 @@ function Autoevaluacion() {
               }}
             >
               <Box sx={{ width: '100%', minWidth: 0 }}>
-            <Paper elevation={0} sx={{ p: 2.2, border: '1px solid #dbeafe', borderRadius: 3, width: '100%', boxSizing: 'border-box', bgcolor: 'white' }}>
-              <Stack direction={{ xs: 'column', md: 'row' }} spacing={1} justifyContent="space-between" alignItems={{ xs: 'flex-start', md: 'center' }} sx={{ mb: 1.2 }}>
-                <Box>
-                  <Typography sx={{ fontWeight: 950, color: '#0f172a' }}>Calificación por característica</Typography>
-                  <Typography variant="caption" sx={{ color: '#64748b' }}>{shortFactorLabel(selectedFactorData?.factor)}. {selectedFactorData?.nombre}</Typography>
-                </Box>
-                <Stack direction="row" spacing={1} sx={{ flexWrap: 'wrap', rowGap: 1 }}>
-                  <Chip size="small" label={`Promedio ${formatScore(selectedFactorData?.calificacion)}`} sx={{ bgcolor: '#dbeafe', color: '#1d4ed8', fontWeight: 900 }} />
-                  <Chip size="small" label={`${factorChartStats.critical.length} bajo meta`} sx={{ bgcolor: factorChartStats.critical.length ? '#ffedd5' : '#dcfce7', color: factorChartStats.critical.length ? '#c2410c' : '#15803d', fontWeight: 900 }} />
-                </Stack>
-              </Stack>
-              <ResponsiveContainer width="100%" height={420}>
-                <BarChart data={factorChartData} margin={{ top: 54, right: 28, left: 8, bottom: 92 }}>
-                  <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#dbeafe" />
-                  <XAxis dataKey="chartLabel" interval={0} height={88} tick={renderCharacteristicTick} label={{ value: 'Caracteristicas', position: 'insideBottom', offset: -6 }} />
-                  <YAxis domain={[0, 5]} tick={{ fontSize: 12 }} label={{ value: 'Calificación', angle: -90, position: 'insideLeft' }} />
-                  <Tooltip
-                    formatter={(value, name, item) => [
-                      `${formatScore(value)} - ${item?.payload?.cumplimiento || 'SIN CALIFICAR'}`,
-                      'Calificacion / grado de cumplimiento'
-                    ]}
-                    labelFormatter={(label) => label}
-                  />
-                  <ReferenceLine y={3.5} stroke="#ea580c" strokeDasharray="6 6" label={{ value: 'Meta 3.5', position: 'right', fill: '#ea580c', fontSize: 12, fontWeight: 900 }} />
-                  <Bar dataKey="calificacion" radius={[10, 10, 0, 0]} maxBarSize={96}>
-                    <LabelList content={renderComplianceBarLabel} />
-                    {factorChartData.map((item) => (
-                      <Cell key={item.caracteristica} fill={Number(item.calificacion) < 3.5 ? '#d97706' : '#1f4e95'} />
-                    ))}
-                  </Bar>
-                </BarChart>
-              </ResponsiveContainer>
-              <Alert severity={factorChartStats.critical.length ? 'warning' : 'success'} sx={{ mt: 1.5, borderRadius: 2 }}>
-                {factorChartStats.critical.length
-                  ? `Prioriza ${factorChartStats.critical.map((item) => item.codigo).join(', ')} porque se encuentran por debajo de la meta institucional.`
-                  : `Todas las características del factor cumplen la meta institucional. La mejor valoración es ${factorChartStats.best?.codigo || 'N/A'} con ${formatScore(factorChartStats.best?.calificacion)}.`}
-              </Alert>
-            </Paper>
+                <Paper ref={characteristicChartCardRef} elevation={0} sx={{ p: 2.2, border: '1px solid #dbeafe', borderRadius: 3, width: '100%', boxSizing: 'border-box', bgcolor: 'white' }}>
+                  <Stack direction={{ xs: 'column', md: 'row' }} spacing={1} justifyContent="space-between" alignItems={{ xs: 'flex-start', md: 'center' }} sx={{ mb: 1.2 }}>
+                    <Box>
+                      <Typography sx={{ fontWeight: 950, color: '#0f172a' }}>Calificación por característica</Typography>
+                      <Typography variant="caption" sx={{ color: '#64748b' }}>{shortFactorLabel(selectedFactorData?.factor)}. {selectedFactorData?.nombre}</Typography>
+                    </Box>
+                    <Stack direction="row" spacing={1} sx={{ flexWrap: 'wrap', rowGap: 1 }}>
+                      <Button
+                        data-copy-exclude="true"
+                        size="small"
+                        variant={editingCharacteristicChartText ? 'contained' : 'outlined'}
+                        startIcon={<EditIcon />}
+                        onClick={() => setEditingCharacteristicChartText((current) => !current)}
+                        sx={{
+                          textTransform: 'none',
+                          fontWeight: 900,
+                          borderRadius: 2,
+                          color: editingCharacteristicChartText ? 'white' : '#1d4ed8',
+                          borderColor: '#bfdbfe',
+                          bgcolor: editingCharacteristicChartText ? '#1f4e95' : '#eff6ff',
+                          '&:hover': { bgcolor: editingCharacteristicChartText ? '#1d4ed8' : '#dbeafe', borderColor: '#2563eb' }
+                        }}
+                      >
+                        Editar texto gráfico
+                      </Button>
+                      <Button
+                        data-copy-exclude="true"
+                        size="small"
+                        variant={isCharacteristicChartInverted ? 'contained' : 'outlined'}
+                        startIcon={<SwapHorizIcon />}
+                        onClick={() => setIsCharacteristicChartInverted((current) => !current)}
+                        sx={{
+                          textTransform: 'none',
+                          fontWeight: 900,
+                          borderRadius: 2,
+                          color: isCharacteristicChartInverted ? 'white' : '#1d4ed8',
+                          borderColor: '#bfdbfe',
+                          bgcolor: isCharacteristicChartInverted ? '#1f4e95' : '#eff6ff',
+                          '&:hover': { bgcolor: isCharacteristicChartInverted ? '#1d4ed8' : '#dbeafe', borderColor: '#2563eb' }
+                        }}
+                      >
+                        {isCharacteristicChartInverted ? 'Grafico vertical' : 'Invertir grafico'}
+                      </Button>
+                      <Button
+                        data-copy-exclude="true"
+                        size="small"
+                        variant="outlined"
+                        startIcon={<ContentCopyIcon />}
+                        onClick={copyCharacteristicChart}
+                        disabled={copyingCharacteristicChart}
+                        sx={{
+                          textTransform: 'none',
+                          fontWeight: 900,
+                          borderRadius: 2,
+                          color: '#1d4ed8',
+                          borderColor: '#bfdbfe',
+                          bgcolor: '#eff6ff',
+                          '&:hover': { bgcolor: '#dbeafe', borderColor: '#2563eb' }
+                        }}
+                      >
+                        {copyingCharacteristicChart ? 'Copiando...' : 'Copiar grafico'}
+                      </Button>
+                      <Chip size="small" label={`Promedio ${formatScore(selectedFactorData?.calificacion)}`} sx={{ bgcolor: '#dbeafe', color: '#1d4ed8', fontWeight: 900 }} />
+                      <Chip size="small" label={`${factorChartStats.critical.length} bajo meta`} sx={{ bgcolor: factorChartStats.critical.length ? '#ffedd5' : '#dcfce7', color: factorChartStats.critical.length ? '#c2410c' : '#15803d', fontWeight: 900 }} />
+                    </Stack>
+                  </Stack>
+                  {editingCharacteristicChartText && (
+                    <Box
+                      data-copy-exclude="true"
+                      sx={{
+                        mb: 1.5,
+                        p: 1.4,
+                        border: '1px solid #dbeafe',
+                        borderRadius: 2,
+                        bgcolor: '#f8fbff'
+                      }}
+                    >
+                      <Stack direction={{ xs: 'column', md: 'row' }} spacing={1} justifyContent="space-between" alignItems={{ xs: 'stretch', md: 'center' }} sx={{ mb: 1 }}>
+                        <Typography variant="caption" sx={{ color: '#475569', fontWeight: 850 }}>
+                          Estos textos solo cambian las etiquetas visibles del gráfico.
+                        </Typography>
+                        <Button
+                          size="small"
+                          variant="text"
+                          onClick={() => setCharacteristicChartLabelDrafts({})}
+                          sx={{ textTransform: 'none', fontWeight: 850, color: '#1d4ed8' }}
+                        >
+                          Restaurar textos
+                        </Button>
+                      </Stack>
+                      <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', lg: 'repeat(2, minmax(0, 1fr))' }, gap: 1 }}>
+                        {factorCaracteristicas.map((item) => (
+                          <TextField
+                            key={item.caracteristica}
+                            size="small"
+                            label={item.codigo || 'Característica'}
+                            value={characteristicChartLabelDrafts[item.caracteristica] ?? item.caracteristica}
+                            onChange={(event) => setCharacteristicChartLabelDrafts((current) => ({
+                              ...current,
+                              [item.caracteristica]: event.target.value
+                            }))}
+                            multiline
+                            minRows={2}
+                          />
+                        ))}
+                      </Box>
+                    </Box>
+                  )}
+                  <Box sx={{ width: '100%', overflowX: 'auto', overflowY: 'hidden', pb: 0.5 }}>
+                    <Box sx={{ minWidth: isCharacteristicChartInverted ? invertedCharacteristicChartMinWidth : standingCharacteristicChartMinWidth }}>
+                      <ResponsiveContainer width="100%" height={characteristicChartHeight}>
+                        {isCharacteristicChartInverted ? (
+                          <BarChart layout="vertical" data={factorChartData} margin={{ top: 18, right: 122, left: 8, bottom: 34 }} barCategoryGap={12}>
+                            <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="#dbeafe" />
+                            <XAxis type="number" domain={[0, 5]} tick={{ fontSize: 12 }} label={{ value: 'Calificacion', position: 'insideBottom', offset: -6 }} />
+                            <YAxis type="category" dataKey="chartLabel" width={320} interval={0} tick={renderInvertedCharacteristicTick} />
+                            <Tooltip
+                              formatter={(value, name, item) => [
+                                `${formatScore(value)} - ${item?.payload?.cumplimiento || 'SIN CALIFICAR'}`,
+                                'Calificacion / grado de cumplimiento'
+                              ]}
+                              labelFormatter={(label) => label}
+                            />
+                            <Bar dataKey="calificacion" radius={[0, 10, 10, 0]} maxBarSize={30}>
+                              <LabelList content={renderCompactComplianceBarLabel} />
+                              {factorChartData.map((item) => (
+                            <Cell key={item.caracteristica} fill={cumplimientoChartColor(item.cumplimiento)} />
+                              ))}
+                            </Bar>
+                          </BarChart>
+                        ) : (
+                          <BarChart data={factorChartData} margin={{ top: 54, right: 26, left: 8, bottom: 116 }} barCategoryGap={24}>
+                            <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#dbeafe" />
+                            <XAxis dataKey="chartLabel" interval={0} height={106} tick={renderStandingCharacteristicTick} label={{ value: 'Caracteristicas', position: 'insideBottom', offset: -8 }} />
+                            <YAxis domain={[0, 5]} tick={{ fontSize: 12 }} label={{ value: 'Calificacion', angle: -90, position: 'insideLeft' }} />
+                            <Tooltip
+                              formatter={(value, name, item) => [
+                                `${formatScore(value)} - ${item?.payload?.cumplimiento || 'SIN CALIFICAR'}`,
+                                'Calificacion / grado de cumplimiento'
+                              ]}
+                              labelFormatter={(label) => label}
+                            />
+                            <Bar dataKey="calificacion" radius={[6, 6, 0, 0]} maxBarSize={76}>
+                              <LabelList content={renderStandingComplianceBarLabel} />
+                              {factorChartData.map((item) => (
+                            <Cell key={item.caracteristica} fill={cumplimientoChartColor(item.cumplimiento)} />
+                              ))}
+                            </Bar>
+                          </BarChart>
+                        )}
+                      </ResponsiveContainer>
+                    </Box>
+                  </Box>
+                  {false && (
+                  <Alert severity={factorChartStats.critical.length ? 'warning' : 'success'} sx={{ mt: 1.5, borderRadius: 2 }}>
+                    {factorChartStats.critical.length
+                      ? `Prioriza ${factorChartStats.critical.map((item) => item.codigo).join(', ')} porque se encuentran por debajo de la meta institucional.`
+                      : `Todas las características del factor cumplen la meta institucional. La mejor valoración es ${factorChartStats.best?.codigo || 'N/A'} con ${formatScore(factorChartStats.best?.calificacion)}.`}
+                  </Alert>
+                  )}
+                </Paper>
               </Box>
 
               {/* Mapa importancia / calificación removido temporalmente por estabilidad */}
@@ -1912,12 +2287,12 @@ function Autoevaluacion() {
                             key={`${item.aspecto}-${index}`}
                             hover
                             sx={{
-                              bgcolor: isCriticalCompliance(item.cumplimiento?.label, item.calificacion) ? '#fff1f2' : 'inherit',
-                              '&:hover': { bgcolor: isCriticalCompliance(item.cumplimiento?.label, item.calificacion) ? '#ffe4e6' : '#f8fafc' }
+                              bgcolor: 'white',
+                              '&:hover': { bgcolor: '#f8fafc' }
                             }}
                           >
                             {index === 0 && (
-                              <TableCell rowSpan={caracteristica.aspectos.length + 1} sx={{ verticalAlign: 'top', bgcolor: '#fbfdff', borderRight: '1px solid #cbd5e1' }}>
+                              <TableCell rowSpan={caracteristica.aspectos.length + 1} sx={{ verticalAlign: 'top', bgcolor: 'white', borderRight: '1px solid #cbd5e1' }}>
                                 <EditableText
                                   editing={editMode}
                                   value={getAspectValue(caracteristica.aspectos[0], 'caracteristica') || caracteristica.caracteristica}
@@ -1955,8 +2330,9 @@ function Autoevaluacion() {
                                 sx={{
                                   height: 24,
                                   fontWeight: 950,
-                                  bgcolor: normalizeComponentCode(item.componente) === 'P' ? '#ecfdf5' : normalizeComponentCode(item.componente) === 'I' ? '#eff6ff' : '#fff7ed',
-                                  color: normalizeComponentCode(item.componente) === 'P' ? '#047857' : normalizeComponentCode(item.componente) === 'I' ? '#1d4ed8' : '#d97706'
+                                  bgcolor: 'white',
+                                  color: '#0f172a',
+                                  border: '1px solid #e2e8f0'
                                 }}
                               />
                             </TableCell>
@@ -1964,7 +2340,7 @@ function Autoevaluacion() {
                               align="center"
                               sx={{
                                 fontWeight: 950,
-                                color: isCriticalCompliance(item.cumplimiento?.label, item.calificacion) ? '#991b1b' : '#0f172a'
+                                color: '#0f172a'
                               }}
                             >
                               {formatScore(item.calificacion)}
@@ -1974,7 +2350,7 @@ function Autoevaluacion() {
                               sx={{
                                 fontSize: 12,
                                 fontWeight: 850,
-                                color: isCriticalCompliance(item.cumplimiento?.label, item.calificacion) ? '#991b1b' : '#0f172a'
+                                color: cumplimientoColor(item.cumplimiento?.label)
                               }}
                             >
                               {item.cumplimiento?.label}
@@ -1998,11 +2374,11 @@ function Autoevaluacion() {
                             </TableCell>
                           </TableRow>
                         ))}
-                        <TableRow sx={{ bgcolor: isCriticalCompliance(caracteristica.cumplimiento, caracteristica.calificacion) ? '#fee2e2' : '#e5e7eb' }}>
+                        <TableRow sx={{ bgcolor: 'white' }}>
                           <TableCell colSpan={2} sx={{ fontWeight: 950, textTransform: 'uppercase' }}>Calificación y grado de cumplimiento característica</TableCell>
-                          <TableCell align="center" sx={{ fontWeight: 950, color: isCriticalCompliance(caracteristica.cumplimiento, caracteristica.calificacion) ? '#991b1b' : '#0f172a' }}>{formatScore(caracteristica.calificacion)}</TableCell>
+                          <TableCell align="center" sx={{ fontWeight: 950, color: '#0f172a' }}>{formatScore(caracteristica.calificacion)}</TableCell>
                           <TableCell align="center"><ComplianceMark label={caracteristica.cumplimiento} /></TableCell>
-                          <TableCell sx={{ fontSize: 12, fontWeight: 950, color: isCriticalCompliance(caracteristica.cumplimiento, caracteristica.calificacion) ? '#991b1b' : '#0f172a' }}>{caracteristica.cumplimiento}</TableCell>
+                          <TableCell sx={{ fontSize: 12, fontWeight: 950, color: cumplimientoColor(caracteristica.cumplimiento) }}>{caracteristica.cumplimiento}</TableCell>
                           <TableCell />
                         </TableRow>
                       </React.Fragment>
@@ -2297,6 +2673,9 @@ function Autoevaluacion() {
               </Typography>
             </Box>
             <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1}>
+              <Button variant="text" startIcon={<ArrowBackIcon />} onClick={() => window.history.back()} sx={{ color: 'rgba(255,255,255,.85)', fontWeight: 800, textTransform: 'none', '&:hover': { bgcolor: 'rgba(255,255,255,.12)' } }}>
+                Volver
+              </Button>
               <Button variant="contained" startIcon={<UploadFileIcon />} onClick={() => setBaseManagerOpen((current) => !current)} sx={{ bgcolor: 'white', color: '#1d4ed8', fontWeight: 900, textTransform: 'none', '&:hover': { bgcolor: '#eff6ff' } }}>
                 Gestion de datos
               </Button>
