@@ -260,9 +260,9 @@ const buildPlanAccionWorkbook = async ({ planData = {}, actividades = [], corres
 
     const totalCell = sheet.getCell(`R${rowNumber}`);
     totalCell.value = {
-      formula: `IFERROR(IF(AND(ISBLANK(M${rowNumber}),ISBLANK(P${rowNumber})),"",ROUND((IF(ISNUMBER(M${rowNumber}),M${rowNumber},0)+IF(ISNUMBER(P${rowNumber}),P${rowNumber},0))/2,4)),"")`,
+      formula: `IFERROR(IF(AND(ISBLANK(M${rowNumber}),ISBLANK(P${rowNumber})),"",ROUND(MIN(IF(ISNUMBER(M${rowNumber}),M${rowNumber},0)+IF(ISNUMBER(P${rowNumber}),P${rowNumber},0),1),4)),"")`,
       result: avanceIp !== null || avanceIip !== null
-        ? Number((((avanceIp || 0) + (avanceIip || 0)) / 2).toFixed(4))
+        ? Number(Math.min((avanceIp || 0) + (avanceIip || 0), 1).toFixed(4))
         : null
     };
     applyDataStyle(totalCell, { percent: true });

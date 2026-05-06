@@ -1875,6 +1875,9 @@ function GestionPlanesWorkspaceV2({ sourceRows = [], onWorkflowChanged }) {
       await planAccionWorkflowService.guardarSeguimiento(seguimientoPlan.plan_codigo, {
         actividades: seguimientoActividades.map((a) => ({
           id: a.id,
+          actividad: a.actividad,
+          indicador: a.indicador,
+          meta: a.meta,
           avance_ip: a.avance_ip,
           avance_iip: a.avance_iip,
           observaciones_ip: a.observaciones_ip || '',
@@ -1909,13 +1912,13 @@ function GestionPlanesWorkspaceV2({ sourceRows = [], onWorkflowChanged }) {
     const cab = data.cabecera_plan || {};
     setPlanData((prev) => ({
       ...prev,
-      anio: data.anio ? String(data.anio) : prev.anio,
-      ped: data.ped || prev.ped,
-      dependencia: data.dependencia || prev.dependencia,
-      estado: cab.estado || prev.estado,
-      fechaReunion: cab.fechaReunion || prev.fechaReunion,
-      lugarReunion: cab.lugarReunion || prev.lugarReunion,
-      objetivoSesion: cab.objetivoSesion || prev.objetivoSesion
+      anio: data.anio ? String(data.anio) : '',
+      ped: data.ped || '',
+      dependencia: data.dependencia || '',
+      estado: cab.estado || '',
+      fechaReunion: cab.fechaReunion || '',
+      lugarReunion: cab.lugarReunion || '',
+      objetivoSesion: cab.objetivoSesion || ''
     }));
     setObservacionesRevision({
       estrategica: cab.comentarios_estrategica || '',
@@ -2144,18 +2147,24 @@ function GestionPlanesWorkspaceV2({ sourceRows = [], onWorkflowChanged }) {
     if (!currentPlanCodigo) return;
     try {
       setExporting(true);
+      const planRes = await planAccionWorkflowService.obtenerPlan(currentPlanCodigo);
+      if (!planRes?.success || !planRes?.data) {
+        enqueueSnackbar('No se pudo obtener los datos del plan.', { variant: 'error' });
+        return;
+      }
+      const fresh = planRes.data;
       const response = await gestionInformacionService.exportPlanAccionPlantilla({
         planData: {
-          anio: planData.anio,
-          nombrePlan: planData.dependencia,
-          codigoPlan: currentPlanCodigo,
-          dependencia: planData.dependencia,
-          ped: planData.ped
+          anio: fresh.anio,
+          nombrePlan: fresh.dependencia,
+          codigoPlan: fresh.plan_codigo,
+          dependencia: fresh.dependencia,
+          ped: fresh.ped
         },
-        actividades
+        actividades: fresh.actividades || []
       });
       const blob = new Blob([response.data], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
-      const fname = `plan_accion_${(planData.dependencia || 'plan').replace(/\s+/g, '_')}_${planData.anio || new Date().getFullYear()}.xlsx`;
+      const fname = `plan_accion_${(fresh.dependencia || 'plan').replace(/\s+/g, '_')}_${fresh.anio || new Date().getFullYear()}.xlsx`;
       triggerDownload(blob, fname);
       enqueueSnackbar('Plan aprobado descargado.', { variant: 'success' });
     } catch (error) {
@@ -2163,7 +2172,7 @@ function GestionPlanesWorkspaceV2({ sourceRows = [], onWorkflowChanged }) {
     } finally {
       setExporting(false);
     }
-  }, [currentPlanCodigo, planData, actividades, enqueueSnackbar]);
+  }, [currentPlanCodigo, enqueueSnackbar]);
 
   // Apertura del cliente de correo predeterminado del usuario para enviar a rectoría
   const abrirCorreoRectoria = useCallback(() => {
@@ -3346,11 +3355,23 @@ function GestionPlanesWorkspaceV2({ sourceRows = [], onWorkflowChanged }) {
 
                       {/* Tabla de actividades con campos de avance editables */}
                       <Box sx={{ overflowX: 'auto', borderRadius: 2.5, border: '1px solid #e2e8f0' }}>
-                        <Table size="small" sx={{ minWidth: 900, borderCollapse: 'collapse' }}>
+                        <Table size="small" sx={{ minWidth: 1160, borderCollapse: 'collapse', tableLayout: 'fixed' }}>
+                          <colgroup>
+                            <col style={{ width: 40 }} />
+                            <col style={{ width: 180 }} />
+                            <col style={{ width: 200 }} />
+                            <col style={{ width: 80 }} />
+                            <col style={{ width: 82 }} />
+                            <col style={{ width: 154 }} />
+                            <col style={{ width: 86 }} />
+                            <col style={{ width: 154 }} />
+                            <col style={{ width: 78 }} />
+                            <col style={{ width: 90 }} />
+                          </colgroup>
                           <TableHead>
                             <TableRow sx={{ bgcolor: '#0c4a6e' }}>
                               {['#', 'Actividad', 'Indicador', 'Meta', 'Avance IP (%)', 'Observaciones IP', 'Avance IIP (%)', 'Observaciones IIP', 'Total (%)', 'Estado'].map((h) => (
-                                <TableCell key={h} sx={{ color: '#fff', fontWeight: 900, fontSize: 11, textTransform: 'uppercase', letterSpacing: 0.3, py: 1.2, px: 1.4, whiteSpace: 'nowrap', borderBottom: 'none' }}>{h}</TableCell>
+                                <TableCell key={h} sx={{ color: '#fff', fontWeight: 900, fontSize: 11, textTransform: 'uppercase', letterSpacing: 0.3, py: 1.2, px: 1.4, overflow: 'hidden', borderBottom: 'none' }}>{h}</TableCell>
                               ))}
                             </TableRow>
                           </TableHead>
@@ -3361,37 +3382,62 @@ function GestionPlanesWorkspaceV2({ sourceRows = [], onWorkflowChanged }) {
                               const total = act.total_ejecucion;
                               const ec = estadoCumplimiento(total);
                               const bgRow = idx % 2 === 0 ? '#fff' : '#f8fafc';
+                              const soloLectura = userRole === ROL_ESTRATEGICA;
                               const updateAct = (key, val) => {
                                 setSeguimientoActividades((prev) => prev.map((a, i) => {
                                   if (i !== idx) return a;
                                   const next = { ...a, [key]: val };
-                                  const ip = key === 'avance_ip' ? val : next.avance_ip;
-                                  const iip = key === 'avance_iip' ? val : next.avance_iip;
-                                  const ipN = ip === '' || ip === null || ip === undefined ? null : Number(ip);
-                                  const iipN = iip === '' || iip === null || iip === undefined ? null : Number(iip);
-                                  next.total_ejecucion = (ipN !== null && iipN !== null) ? Math.round((ipN + iipN) / 2 * 100) / 100 : (ipN ?? iipN ?? null);
+                                  if (key === 'avance_ip' || key === 'avance_iip') {
+                                    const ip = key === 'avance_ip' ? val : next.avance_ip;
+                                    const iip = key === 'avance_iip' ? val : next.avance_iip;
+                                    const ipN = ip === '' || ip === null || ip === undefined ? null : Number(ip);
+                                    const iipN = iip === '' || iip === null || iip === undefined ? null : Number(iip);
+                                    next.total_ejecucion = (ipN !== null && iipN !== null) ? Math.min(Math.round((ipN + iipN) * 100) / 100, 100) : (ipN !== null ? ipN : (iipN !== null ? iipN : null));
+                                  }
                                   return next;
                                 }));
                               };
                               return (
                                 <TableRow key={act.id || idx} sx={{ bgcolor: bgRow, '&:hover': { bgcolor: '#f0f9ff' } }}>
-                                  <TableCell sx={{ fontSize: 12, fontWeight: 700, color: '#64748b', px: 1.4, py: 1, verticalAlign: 'top', whiteSpace: 'nowrap' }}>{idx + 1}</TableCell>
-                                  <TableCell sx={{ fontSize: 12.5, fontWeight: 600, color: '#0f172a', px: 1.4, py: 1, maxWidth: 220, verticalAlign: 'top' }}>{act.actividad}</TableCell>
-                                  <TableCell sx={{ fontSize: 11.5, color: '#334155', px: 1.4, py: 1, maxWidth: 200, verticalAlign: 'top' }}>{act.indicador}</TableCell>
-                                  <TableCell sx={{ fontSize: 12.5, fontWeight: 700, color: '#1e293b', px: 1.4, py: 1, textAlign: 'center', verticalAlign: 'top', whiteSpace: 'nowrap' }}>{act.meta}</TableCell>
-                                  <TableCell sx={{ px: 1, py: 0.8, verticalAlign: 'top' }}>
-                                    <TextField size="small" type="number" value={avIP} onChange={(e) => updateAct('avance_ip', e.target.value)} inputProps={{ min: 0, max: 100, step: 1, style: { textAlign: 'center', padding: '4px 6px', fontSize: 13 } }} sx={{ width: 72 }} />
+                                  <TableCell sx={{ fontSize: 12, fontWeight: 700, color: '#64748b', px: 1.4, py: 1, verticalAlign: 'top' }}>{idx + 1}</TableCell>
+                                  <TableCell sx={{ verticalAlign: 'top', overflow: 'hidden', px: soloLectura ? 1.4 : 0.6, py: soloLectura ? 1 : 0.6 }}>
+                                    {soloLectura ? (
+                                      <Tooltip title={act.actividad || ''} arrow placement="top-start">
+                                        <Box sx={{ fontSize: 12.5, fontWeight: 600, color: '#0f172a', display: '-webkit-box', WebkitLineClamp: 3, WebkitBoxOrient: 'vertical', overflow: 'hidden', cursor: 'default' }}>{act.actividad}</Box>
+                                      </Tooltip>
+                                    ) : (
+                                      <TextField size="small" multiline minRows={2} maxRows={5} value={act.actividad || ''} onChange={(e) => updateAct('actividad', e.target.value)} sx={{ width: '100%', '& .MuiInputBase-input': { fontSize: 12.5, lineHeight: 1.4 } }} />
+                                    )}
+                                  </TableCell>
+                                  <TableCell sx={{ verticalAlign: 'top', overflow: 'hidden', px: soloLectura ? 1.4 : 0.6, py: soloLectura ? 1 : 0.6 }}>
+                                    {soloLectura ? (
+                                      <Tooltip title={act.indicador || ''} arrow placement="top-start">
+                                        <Box sx={{ fontSize: 11.5, color: '#334155', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden', cursor: 'default' }}>{act.indicador}</Box>
+                                      </Tooltip>
+                                    ) : (
+                                      <TextField size="small" multiline minRows={2} maxRows={5} value={act.indicador || ''} onChange={(e) => updateAct('indicador', e.target.value)} sx={{ width: '100%', '& .MuiInputBase-input': { fontSize: 11.5, lineHeight: 1.4 } }} />
+                                    )}
+                                  </TableCell>
+                                  <TableCell sx={{ verticalAlign: 'top', px: soloLectura ? 1.4 : 0.6, py: soloLectura ? 1 : 0.6 }}>
+                                    {soloLectura ? (
+                                      <Typography sx={{ fontSize: 12.5, fontWeight: 700, color: '#1e293b', textAlign: 'center' }}>{act.meta}</Typography>
+                                    ) : (
+                                      <TextField size="small" value={act.meta || ''} onChange={(e) => updateAct('meta', e.target.value)} inputProps={{ style: { textAlign: 'center', fontSize: 12.5 } }} sx={{ width: '100%' }} />
+                                    )}
                                   </TableCell>
                                   <TableCell sx={{ px: 1, py: 0.8, verticalAlign: 'top' }}>
-                                    <TextField size="small" multiline minRows={1} value={act.observaciones_ip || ''} onChange={(e) => updateAct('observaciones_ip', e.target.value)} inputProps={{ style: { fontSize: 12 } }} sx={{ width: 160 }} />
+                                    <TextField size="small" type="number" value={avIP} onChange={(e) => !soloLectura && updateAct('avance_ip', e.target.value)} InputProps={{ readOnly: soloLectura }} inputProps={{ min: 0, max: 100, step: 1, style: { textAlign: 'center', padding: '4px 6px', fontSize: 13 } }} sx={{ width: '100%', '& .MuiInputBase-root': { bgcolor: soloLectura ? '#f8fafc' : undefined } }} />
                                   </TableCell>
                                   <TableCell sx={{ px: 1, py: 0.8, verticalAlign: 'top' }}>
-                                    <TextField size="small" type="number" value={avIIP} onChange={(e) => updateAct('avance_iip', e.target.value)} inputProps={{ min: 0, max: 100, step: 1, style: { textAlign: 'center', padding: '4px 6px', fontSize: 13 } }} sx={{ width: 72 }} />
+                                    <TextField size="small" multiline minRows={1} maxRows={3} value={act.observaciones_ip || ''} onChange={(e) => !soloLectura && updateAct('observaciones_ip', e.target.value)} InputProps={{ readOnly: soloLectura }} inputProps={{ style: { fontSize: 12 } }} sx={{ width: '100%', '& .MuiInputBase-root': { bgcolor: soloLectura ? '#f8fafc' : undefined } }} />
                                   </TableCell>
                                   <TableCell sx={{ px: 1, py: 0.8, verticalAlign: 'top' }}>
-                                    <TextField size="small" multiline minRows={1} value={act.observaciones_iip || ''} onChange={(e) => updateAct('observaciones_iip', e.target.value)} inputProps={{ style: { fontSize: 12 } }} sx={{ width: 160 }} />
+                                    <TextField size="small" type="number" value={avIIP} onChange={(e) => !soloLectura && updateAct('avance_iip', e.target.value)} InputProps={{ readOnly: soloLectura }} inputProps={{ min: 0, max: 100, step: 1, style: { textAlign: 'center', padding: '4px 6px', fontSize: 13 } }} sx={{ width: '100%', '& .MuiInputBase-root': { bgcolor: soloLectura ? '#f8fafc' : undefined } }} />
                                   </TableCell>
-                                  <TableCell sx={{ px: 1.4, py: 1, textAlign: 'center', verticalAlign: 'top', whiteSpace: 'nowrap' }}>
+                                  <TableCell sx={{ px: 1, py: 0.8, verticalAlign: 'top' }}>
+                                    <TextField size="small" multiline minRows={1} maxRows={3} value={act.observaciones_iip || ''} onChange={(e) => !soloLectura && updateAct('observaciones_iip', e.target.value)} InputProps={{ readOnly: soloLectura }} inputProps={{ style: { fontSize: 12 } }} sx={{ width: '100%', '& .MuiInputBase-root': { bgcolor: soloLectura ? '#f8fafc' : undefined } }} />
+                                  </TableCell>
+                                  <TableCell sx={{ px: 1.4, py: 1, textAlign: 'center', verticalAlign: 'top' }}>
                                     <Typography sx={{ fontSize: 13, fontWeight: 900, color: total !== null && total !== undefined ? ec.fg : '#94a3b8' }}>{total !== null && total !== undefined ? `${total}%` : '—'}</Typography>
                                   </TableCell>
                                   <TableCell sx={{ px: 1, py: 1, verticalAlign: 'top' }}>
@@ -3408,11 +3454,13 @@ function GestionPlanesWorkspaceV2({ sourceRows = [], onWorkflowChanged }) {
                       </Box>
 
                       <Stack direction="row" spacing={1.2} sx={{ mt: 1.8 }}>
-                        <Button variant="contained" disabled={savingSeguimiento} onClick={guardarSeguimientoActual} startIcon={savingSeguimiento ? <CircularProgress size={14} sx={{ color: 'inherit' }} /> : <SaveIcon fontSize="small" />} sx={{ borderRadius: 2.5, textTransform: 'none', fontWeight: 900, bgcolor: '#0369a1', '&:hover': { bgcolor: '#075985' } }}>
-                          {savingSeguimiento ? 'Guardando…' : 'Guardar seguimiento'}
-                        </Button>
+                        {(userRole === ROL_PYE || userRole === ROL_ADMIN) && (
+                          <Button variant="contained" disabled={savingSeguimiento} onClick={guardarSeguimientoActual} startIcon={savingSeguimiento ? <CircularProgress size={14} sx={{ color: 'inherit' }} /> : <SaveIcon fontSize="small" />} sx={{ borderRadius: 2.5, textTransform: 'none', fontWeight: 900, bgcolor: '#0369a1', '&:hover': { bgcolor: '#075985' } }}>
+                            {savingSeguimiento ? 'Guardando…' : 'Guardar seguimiento'}
+                          </Button>
+                        )}
                         <Button variant="outlined" onClick={() => setSeguimientoPlan(null)} sx={{ borderRadius: 2.5, textTransform: 'none', fontWeight: 800 }}>
-                          Cancelar
+                          Volver a la lista
                         </Button>
                       </Stack>
                     </Box>
@@ -4017,7 +4065,11 @@ function GestionPlanesWorkspaceV2({ sourceRows = [], onWorkflowChanged }) {
                         <TableCell sx={{ fontSize: 11.5, fontWeight: 800, color: '#64748b', px: 1.2, py: 1, textAlign: 'center', verticalAlign: 'top', borderRight: '1px solid #e2e8f0', whiteSpace: 'nowrap' }}>{idx + 1}</TableCell>
                         <TableCell sx={{ fontSize: 11.5, color: '#334155', px: 1.2, py: 1, maxWidth: 160, verticalAlign: 'top', borderRight: '1px solid #e2e8f0' }}>{item.objetivo_estrategico || '—'}</TableCell>
                         <TableCell sx={{ fontSize: 12.5, fontWeight: 600, color: '#0f172a', px: 1.2, py: 1, maxWidth: 220, verticalAlign: 'top', borderRight: '1px solid #e2e8f0' }}>{item.actividad}</TableCell>
-                        <TableCell sx={{ fontSize: 11.5, color: '#334155', px: 1.2, py: 1, maxWidth: 200, verticalAlign: 'top', borderRight: '1px solid #e2e8f0' }}>{item.indicador}</TableCell>
+                        <TableCell sx={{ fontSize: 11.5, color: '#334155', px: 1.2, py: 1, maxWidth: 200, verticalAlign: 'top', borderRight: '1px solid #e2e8f0' }}>
+                          <Tooltip title={item.indicador || ''} arrow placement="top-start">
+                            <Box sx={{ display: '-webkit-box', WebkitLineClamp: 3, WebkitBoxOrient: 'vertical', overflow: 'hidden', cursor: 'default' }}>{item.indicador}</Box>
+                          </Tooltip>
+                        </TableCell>
                         <TableCell sx={{ fontSize: 12.5, fontWeight: 700, color: '#1e293b', px: 1.2, py: 1, textAlign: 'center', verticalAlign: 'top', whiteSpace: 'nowrap', borderRight: '1px solid #e2e8f0' }}>{item.meta}</TableCell>
                         <TableCell sx={{ fontSize: 11.5, color: '#334155', px: 1.2, py: 1, maxWidth: 120, verticalAlign: 'top', borderRight: '1px solid #e2e8f0' }}>{item.responsable || '—'}</TableCell>
                         <TableCell sx={{ fontSize: 11, color: '#64748b', px: 1.2, py: 1, verticalAlign: 'top', whiteSpace: 'nowrap', borderRight: '1px solid #e2e8f0' }}>

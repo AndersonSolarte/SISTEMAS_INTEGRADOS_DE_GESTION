@@ -546,9 +546,6 @@ const obtenerMisCorresponsabilidades = async (req, res) => {
       raw: true
     });
     const codigosPropios = new Set(propios.map((r) => r.plan_codigo));
-    if (codigosPropios.size === 0) {
-      return res.json({ success: true, data: [] });
-    }
     const filtradas = rows.filter((r) => !codigosPropios.has(r.plan_codigo));
 
     return res.json({ success: true, data: filtradas });
@@ -737,17 +734,18 @@ const guardarSeguimiento = async (req, res) => {
         const total = (avIP !== null && avIIP !== null)
           ? Math.min(Math.round((avIP + avIIP) * 100) / 100, 100)
           : (avIP !== null ? avIP : (avIIP !== null ? avIIP : null));
-        await PlanAccion.update(
-          {
-            avance_ip: avIP,
-            observaciones_ip: a.observaciones_ip || null,
-            avance_iip: avIIP,
-            observaciones_iip: a.observaciones_iip || null,
-            total_ejecucion: total,
-            actualizado_por: userId
-          },
-          { where: { id: a.id, plan_codigo: planCodigo }, transaction: t }
-        );
+        const updateData = {
+          avance_ip: avIP,
+          observaciones_ip: a.observaciones_ip || null,
+          avance_iip: avIIP,
+          observaciones_iip: a.observaciones_iip || null,
+          total_ejecucion: total,
+          actualizado_por: userId
+        };
+        if (a.actividad !== undefined) updateData.actividad = a.actividad || null;
+        if (a.indicador !== undefined) updateData.indicador = a.indicador || null;
+        if (a.meta !== undefined) updateData.meta = a.meta || null;
+        await PlanAccion.update(updateData, { where: { id: a.id, plan_codigo: planCodigo }, transaction: t });
       }
     });
 

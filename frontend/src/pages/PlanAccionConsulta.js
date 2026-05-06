@@ -420,12 +420,15 @@ function PlanAccionConsulta() {
                 <TableCell sx={{ fontWeight: 900, fontSize: 12, color: '#0f172a', bgcolor: '#f8fafc', borderBottom: '2px solid #e2e8f0', minWidth: 180 }}>Responsable</TableCell>
                 <TableCell sx={{ fontWeight: 900, fontSize: 12, color: '#0f172a', bgcolor: '#f8fafc', borderBottom: '2px solid #e2e8f0', width: 110 }}>Inicio</TableCell>
                 <TableCell sx={{ fontWeight: 900, fontSize: 12, color: '#0f172a', bgcolor: '#f8fafc', borderBottom: '2px solid #e2e8f0', width: 110 }}>Fin</TableCell>
+                {esAprobado && <TableCell sx={{ fontWeight: 900, fontSize: 12, color: '#0369a1', bgcolor: '#f0f9ff', borderBottom: '2px solid #bae6fd', textTransform: 'uppercase', letterSpacing: 0.3, width: 88, textAlign: 'center' }}>Avance IP %</TableCell>}
+                {esAprobado && <TableCell sx={{ fontWeight: 900, fontSize: 12, color: '#0369a1', bgcolor: '#f0f9ff', borderBottom: '2px solid #bae6fd', textTransform: 'uppercase', letterSpacing: 0.3, width: 94, textAlign: 'center' }}>Avance IIP %</TableCell>}
+                {esAprobado && <TableCell sx={{ fontWeight: 900, fontSize: 12, color: '#0369a1', bgcolor: '#f0f9ff', borderBottom: '2px solid #bae6fd', textTransform: 'uppercase', letterSpacing: 0.3, width: 78, textAlign: 'center' }}>Total %</TableCell>}
               </TableRow>
             </TableHead>
             <TableBody>
               {actividades.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={esAprobado ? 11 : 10} sx={{ textAlign: 'center', color: '#94a3b8', py: 4 }}>
+                  <TableCell colSpan={esAprobado ? 14 : 10} sx={{ textAlign: 'center', color: '#94a3b8', py: 4 }}>
                     Este plan no tiene actividades registradas.
                   </TableCell>
                 </TableRow>
@@ -467,6 +470,14 @@ function PlanAccionConsulta() {
                     </TableCell>
                     <TableCell sx={{ fontSize: 12.5, color: '#475569' }}>{formatFecha(a.fecha_inicio)}</TableCell>
                     <TableCell sx={{ fontSize: 12.5, color: '#475569' }}>{formatFecha(a.fecha_fin)}</TableCell>
+                    {esAprobado && (() => {
+                      const fmtPct = (v) => (v !== null && v !== undefined && v !== '' && Number.isFinite(Number(v))) ? `${Number(v).toFixed(1)}%` : '—';
+                      return (<>
+                        <TableCell sx={{ fontSize: 12.5, color: '#0369a1', fontWeight: 600, textAlign: 'center' }}>{fmtPct(a.avance_ip)}</TableCell>
+                        <TableCell sx={{ fontSize: 12.5, color: '#0369a1', fontWeight: 600, textAlign: 'center' }}>{fmtPct(a.avance_iip)}</TableCell>
+                        <TableCell sx={{ fontSize: 13, color: a.total_ejecucion != null ? '#047857' : '#94a3b8', fontWeight: 900, textAlign: 'center' }}>{fmtPct(a.total_ejecucion)}</TableCell>
+                      </>);
+                    })()}
                   </TableRow>
                 );
               })}
@@ -496,10 +507,15 @@ function PlanAccionConsulta() {
                   <TableCell sx={{ fontWeight: 900, fontSize: 12, color: '#92400e', bgcolor: '#fef9c3', borderBottom: '2px solid #fde68a', textTransform: 'uppercase', letterSpacing: 0.3, minWidth: 180 }}>Responsable principal</TableCell>
                   <TableCell sx={{ fontWeight: 900, fontSize: 12, color: '#92400e', bgcolor: '#fef9c3', borderBottom: '2px solid #fde68a', textTransform: 'uppercase', letterSpacing: 0.3, width: 110 }}>Inicio</TableCell>
                   <TableCell sx={{ fontWeight: 900, fontSize: 12, color: '#92400e', bgcolor: '#fef9c3', borderBottom: '2px solid #fde68a', textTransform: 'uppercase', letterSpacing: 0.3, width: 110 }}>Fin</TableCell>
+                  <TableCell sx={{ fontWeight: 900, fontSize: 12, color: '#0369a1', bgcolor: '#f0f9ff', borderBottom: '2px solid #bae6fd', textTransform: 'uppercase', letterSpacing: 0.3, width: 88, textAlign: 'center' }}>Avance IP %</TableCell>
+                  <TableCell sx={{ fontWeight: 900, fontSize: 12, color: '#0369a1', bgcolor: '#f0f9ff', borderBottom: '2px solid #bae6fd', textTransform: 'uppercase', letterSpacing: 0.3, width: 94, textAlign: 'center' }}>Avance IIP %</TableCell>
+                  <TableCell sx={{ fontWeight: 900, fontSize: 12, color: '#0369a1', bgcolor: '#f0f9ff', borderBottom: '2px solid #bae6fd', textTransform: 'uppercase', letterSpacing: 0.3, width: 78, textAlign: 'center' }}>Total %</TableCell>
                 </TableRow>
               </TableHead>
               <TableBody>
-                {corresponsabilidades.map((a, idx) => (
+                {corresponsabilidades.map((a, idx) => {
+                  const fmtPct = (v) => (v !== null && v !== undefined && v !== '' && Number.isFinite(Number(v))) ? `${Number(v).toFixed(1)}%` : '—';
+                  return (
                   <TableRow key={`${a.plan_codigo}-${a.id || idx}`} hover>
                     <TableCell sx={{ fontSize: 12.5, fontWeight: 800, color: '#475569' }}>{idx + 1}</TableCell>
                     <TableCell sx={{ fontSize: 12.5, color: '#0f172a', fontWeight: 700 }}>{a.dependencia || '—'}</TableCell>
@@ -509,8 +525,12 @@ function PlanAccionConsulta() {
                     <TableCell sx={{ fontSize: 12.5, color: '#475569' }}>{a.responsable || '—'}</TableCell>
                     <TableCell sx={{ fontSize: 12.5, color: '#475569' }}>{formatFecha(a.fecha_inicio)}</TableCell>
                     <TableCell sx={{ fontSize: 12.5, color: '#475569' }}>{formatFecha(a.fecha_fin)}</TableCell>
+                    <TableCell sx={{ fontSize: 12.5, color: '#0369a1', fontWeight: 600, textAlign: 'center' }}>{fmtPct(a.avance_ip)}</TableCell>
+                    <TableCell sx={{ fontSize: 12.5, color: '#0369a1', fontWeight: 600, textAlign: 'center' }}>{fmtPct(a.avance_iip)}</TableCell>
+                    <TableCell sx={{ fontSize: 13, color: a.total_ejecucion != null ? '#047857' : '#94a3b8', fontWeight: 900, textAlign: 'center' }}>{fmtPct(a.total_ejecucion)}</TableCell>
                   </TableRow>
-                ))}
+                  );
+                })}
               </TableBody>
             </Table>
           </TableContainer>

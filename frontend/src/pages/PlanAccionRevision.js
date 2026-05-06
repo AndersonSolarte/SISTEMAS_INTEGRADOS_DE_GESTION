@@ -41,7 +41,10 @@ const COLS = [
   { key: 'responsable', label: 'Responsable', minWidth: 180, editable: true },
   { key: 'corresponsable', label: 'Corresponsable', minWidth: 180, editable: true },
   { key: 'fecha_inicio', label: 'Inicio', width: 140, editable: true, kind: 'date' },
-  { key: 'fecha_fin', label: 'Fin', width: 140, editable: true, kind: 'date' }
+  { key: 'fecha_fin', label: 'Fin', width: 140, editable: true, kind: 'date' },
+  { key: 'avance_ip', label: 'Avance IP %', width: 95, editable: false, onlyReadonly: true, kind: 'percent' },
+  { key: 'avance_iip', label: 'Avance IIP %', width: 100, editable: false, onlyReadonly: true, kind: 'percent' },
+  { key: 'total_ejecucion', label: 'Total %', width: 80, editable: false, onlyReadonly: true, kind: 'percent' }
 ];
 
 function PlanAccionRevision() {
@@ -366,13 +369,13 @@ function PlanAccionRevision() {
           <Table stickyHeader size="small">
             <TableHead>
               <TableRow>
-                {COLS.map((col) => (
+                {COLS.filter((col) => !col.onlyReadonly || !esPendiente).map((col) => (
                   <TableCell
                     key={col.key}
                     sx={{
-                      fontWeight: 900, fontSize: 12, color: '#0f172a', bgcolor: '#f8fafc',
-                      borderBottom: '2px solid #e2e8f0', textTransform: 'uppercase', letterSpacing: 0.3,
-                      minWidth: col.minWidth, width: col.width
+                      fontWeight: 900, fontSize: 12, color: col.onlyReadonly ? '#0369a1' : '#0f172a', bgcolor: col.onlyReadonly ? '#f0f9ff' : '#f8fafc',
+                      borderBottom: `2px solid ${col.onlyReadonly ? '#bae6fd' : '#e2e8f0'}`, textTransform: 'uppercase', letterSpacing: 0.3,
+                      minWidth: col.minWidth, width: col.width, textAlign: col.onlyReadonly ? 'center' : undefined
                     }}
                   >
                     {col.label}
@@ -383,19 +386,28 @@ function PlanAccionRevision() {
             <TableBody>
               {actividadesEdit.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={COLS.length} sx={{ textAlign: 'center', color: '#94a3b8', py: 4 }}>
+                  <TableCell colSpan={COLS.filter((col) => !col.onlyReadonly || !esPendiente).length} sx={{ textAlign: 'center', color: '#94a3b8', py: 4 }}>
                     Este plan no tiene actividades registradas.
                   </TableCell>
                 </TableRow>
               ) : actividadesEdit.map((a, idx) => (
                 <TableRow key={a.id || idx} hover>
                   <TableCell sx={{ fontSize: 12.5, fontWeight: 800, color: '#475569' }}>{idx + 1}</TableCell>
-                  {COLS.filter((c) => c.key !== 'idx').map((col) => {
+                  {COLS.filter((c) => c.key !== 'idx' && (!c.onlyReadonly || !esPendiente)).map((col) => {
                     const value = a[col.key];
-                    if (!esPendiente) {
-                      const display = col.kind === 'date' ? formatFecha(value) : (value || '—');
+                    if (!esPendiente || col.onlyReadonly) {
+                      let display;
+                      if (col.kind === 'percent') {
+                        const num = Number(value);
+                        display = (value !== null && value !== undefined && value !== '' && Number.isFinite(num))
+                          ? `${num.toFixed(1)}%` : '—';
+                      } else if (col.kind === 'date') {
+                        display = formatFecha(value);
+                      } else {
+                        display = value || '—';
+                      }
                       return (
-                        <TableCell key={col.key} sx={{ fontSize: 12.5, color: col.key === 'actividad' ? '#0f172a' : '#334155', fontWeight: col.key === 'meta' ? 700 : 400 }}>
+                        <TableCell key={col.key} sx={{ fontSize: 12.5, color: col.onlyReadonly ? '#0369a1' : col.key === 'actividad' ? '#0f172a' : '#334155', fontWeight: col.key === 'meta' || col.key === 'total_ejecucion' ? 700 : 400, textAlign: col.onlyReadonly ? 'center' : undefined }}>
                           {col.key === 'responsable' && value ? (
                             <Stack direction="row" spacing={0.5} alignItems="center">
                               <PersonIcon sx={{ fontSize: 14, color: '#64748b' }} />
