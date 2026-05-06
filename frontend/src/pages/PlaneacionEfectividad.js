@@ -2355,6 +2355,16 @@ function GestionPlanesWorkspaceV2({ sourceRows = [], onWorkflowChanged }) {
     setTimeout(() => actividadFormRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 80);
   };
 
+  // Abre la actividad del seguimiento en el formulario completo del constructor
+  const editarActividadDesdeSeguimiento = useCallback((act) => {
+    if (!seguimientoPlan) return;
+    aplicarPlanRemoto(seguimientoPlan);
+    setActividadForm({ ...act });
+    setEditingId(act.id);
+    setWorkspaceTab('constructor');
+    setTimeout(() => actividadFormRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 120);
+  }, [aplicarPlanRemoto, seguimientoPlan]);
+
   const removeActividad = (id) => {
     setActividades((prev) => prev.filter((item) => item.id !== id));
     if (editingId === id) resetActividadForm();
@@ -3359,7 +3369,7 @@ function GestionPlanesWorkspaceV2({ sourceRows = [], onWorkflowChanged }) {
 
                       {/* Tabla de actividades con campos de avance editables */}
                       <Box sx={{ overflowX: 'auto', borderRadius: 2.5, border: '1px solid #e2e8f0' }}>
-                        <Table size="small" sx={{ minWidth: 1160, borderCollapse: 'collapse', tableLayout: 'fixed' }}>
+                        <Table size="small" sx={{ minWidth: 1210, borderCollapse: 'collapse', tableLayout: 'fixed' }}>
                           <colgroup>
                             <col style={{ width: 40 }} />
                             <col style={{ width: 180 }} />
@@ -3371,10 +3381,11 @@ function GestionPlanesWorkspaceV2({ sourceRows = [], onWorkflowChanged }) {
                             <col style={{ width: 154 }} />
                             <col style={{ width: 78 }} />
                             <col style={{ width: 90 }} />
+                            <col style={{ width: 50 }} />
                           </colgroup>
                           <TableHead>
                             <TableRow sx={{ bgcolor: '#0c4a6e' }}>
-                              {['#', 'Actividad', 'Indicador', 'Meta', 'Avance IP (%)', 'Observaciones IP', 'Avance IIP (%)', 'Observaciones IIP', 'Total (%)', 'Estado'].map((h) => (
+                              {['#', 'Actividad', 'Indicador', 'Meta', 'Avance IP (%)', 'Observaciones IP', 'Avance IIP (%)', 'Observaciones IIP', 'Total (%)', 'Estado', ''].map((h) => (
                                 <TableCell key={h} sx={{ color: '#fff', fontWeight: 900, fontSize: 11, textTransform: 'uppercase', letterSpacing: 0.3, py: 1.2, px: 1.4, overflow: 'hidden', borderBottom: 'none' }}>{h}</TableCell>
                               ))}
                             </TableRow>
@@ -3447,11 +3458,20 @@ function GestionPlanesWorkspaceV2({ sourceRows = [], onWorkflowChanged }) {
                                   <TableCell sx={{ px: 1, py: 1, verticalAlign: 'top' }}>
                                     <Chip size="small" label={ec.label} sx={{ bgcolor: ec.bg, color: ec.fg, fontWeight: 800, fontSize: 10.5, height: 22 }} />
                                   </TableCell>
+                                  <TableCell sx={{ px: 0.5, py: 0.8, verticalAlign: 'top', textAlign: 'center' }}>
+                                    {(userRole === ROL_PYE || userRole === ROL_ADMIN) && (
+                                      <Tooltip title="Editar actividad completa" arrow>
+                                        <IconButton size="small" onClick={() => editarActividadDesdeSeguimiento(act)} sx={{ color: '#0369a1', '&:hover': { bgcolor: '#e0f2fe' } }}>
+                                          <EditIcon fontSize="small" />
+                                        </IconButton>
+                                      </Tooltip>
+                                    )}
+                                  </TableCell>
                                 </TableRow>
                               );
                             })}
                             {seguimientoActividades.length === 0 && (
-                              <TableRow><TableCell colSpan={10} sx={{ textAlign: 'center', py: 4, color: '#94a3b8' }}>Este plan no tiene actividades registradas.</TableCell></TableRow>
+                              <TableRow><TableCell colSpan={11} sx={{ textAlign: 'center', py: 4, color: '#94a3b8' }}>Este plan no tiene actividades registradas.</TableCell></TableRow>
                             )}
                           </TableBody>
                         </Table>
