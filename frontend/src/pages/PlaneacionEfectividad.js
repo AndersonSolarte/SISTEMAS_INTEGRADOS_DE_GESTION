@@ -63,6 +63,7 @@ import {
   BarChart,
   CartesianGrid,
   Cell,
+  LabelList,
   ResponsiveContainer,
   Tooltip as RechartsTooltip,
   XAxis,
@@ -779,6 +780,7 @@ function EstadisticaTab({ rows, metrics }) {
                 <RechartsTooltip formatter={(value) => [formatNumber(value), 'Registros']} />
                 <Bar dataKey="total" radius={[10, 10, 0, 0]}>
                   {estadoChart.map((entry) => <Cell key={entry.label} fill={entry.color} />)}
+                  <LabelList dataKey="total" position="top" style={{ fontSize: 13, fontWeight: 700, fill: '#1e293b' }} formatter={(v) => formatNumber(v)} />
                 </Bar>
               </BarChart>
             </ResponsiveContainer>
@@ -794,7 +796,9 @@ function EstadisticaTab({ rows, metrics }) {
                 <XAxis dataKey="anio" tick={{ fontSize: 12 }} />
                 <YAxis domain={[0, 100]} tickFormatter={(value) => `${value}%`} />
                 <RechartsTooltip formatter={(value) => [formatPercent(value), 'Avance promedio']} />
-                <Bar dataKey="avance" fill="#2563eb" radius={[10, 10, 0, 0]} />
+                <Bar dataKey="avance" fill="#2563eb" radius={[10, 10, 0, 0]}>
+                  <LabelList dataKey="avance" position="top" style={{ fontSize: 13, fontWeight: 700, fill: '#1e293b' }} formatter={(v) => formatPercent(v)} />
+                </Bar>
               </BarChart>
             </ResponsiveContainer>
           </Box>
