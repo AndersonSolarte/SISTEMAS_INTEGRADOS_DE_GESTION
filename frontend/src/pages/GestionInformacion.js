@@ -2393,8 +2393,14 @@ function GestionInformacion() {
   const isSeriesInitialLoad = seriesLoading && seriesRows.length === 0;
   const isSeriesBackgroundRefresh = seriesLoading && seriesRows.length > 0;
   const cantidadTotalEgresadosRows = useMemo(
-    () => filteredSeriesRows.filter((row) => row.subcategoria === 'Cantidad Total Egresados'),
-    [filteredSeriesRows]
+    () => applyStatsFiltersToRows({
+      rows: activeSectionCatalog.rows.filter((row) => row.subcategoria === 'Cantidad Total Egresados'),
+      filters: { ...activeStatsFilters, periodos: [] },
+      programasDisponibles,
+      aniosDisponibles,
+      periodosDisponibles: []
+    }),
+    [activeSectionCatalog.rows, activeStatsFilters, programasDisponibles, aniosDisponibles]
   );
   const cantidadTotalEgresadosDashboard = useMemo(
     () => buildCantidadTotalEgresadosDashboard(cantidadTotalEgresadosRows),
@@ -6372,6 +6378,328 @@ const renderCategoryBars = (items = [], options = {}) => {
     );
   };
 
+  const renderGraduadosDashboard = () => {
+    const GRAD_COLOR = '#0f766e';
+    const GRAD_DARK = '#065f46';
+    const periodFilterOptions = periodosDisponibles.map((item) => item.label);
+    const allYears = aniosDisponibles.map((x) => String(x));
+    const allSelected = (value = [], options = []) => options.length > 0 && value.length === options.length;
+    const renderFilterValue = (value, allLabel, partialLabel, optionsLength) => {
+      const count = Array.isArray(value) ? value.length : 0;
+      if (!count || (optionsLength > 0 && count === optionsLength)) return allLabel;
+      return `${count} ${partialLabel}`;
+    };
+    const filterSelectSx = {
+      minWidth: { xs: '100%', md: 210 },
+      '& .MuiOutlinedInput-root': {
+        borderRadius: 2,
+        bgcolor: '#ffffff',
+        '& fieldset': { borderColor: '#bfdbfe' },
+        '&:hover fieldset': { borderColor: GRAD_COLOR },
+        '&.Mui-focused fieldset': { borderColor: GRAD_COLOR, borderWidth: 1.5 }
+      }
+    };
+    const chartData = activeSeries.map((row) => ({
+      ...row,
+      graduados: normalizeNumber(row.graduados),
+      periodDisplay: formatAcademicPeriodLabel(row.periodLabel),
+      semester: splitPeriodLabel(row.periodLabel).part
+    }));
+    const lastBySemester = new Map();
+    const trendData = chartData.map((row) => {
+      const previousSame = lastBySemester.get(row.semester) || null;
+      const diff = previousSame ? row.graduados - previousSame.graduados : null;
+      const delta = previousSame ? getDeltaPct(previousSame.graduados, row.graduados) : null;
+      const next = {
+        ...row,
+        compareAgainst: previousSame?.periodDisplay || '',
+        diffSamePeriod: diff,
+        deltaSamePeriod: delta,
+        comparativeLabel: delta === null
+          ? 'Base'
+          : `${diff >= 0 ? 'Subio' : 'Bajo'} ${Math.abs(delta).toFixed(1)}%`
+      };
+      lastBySemester.set(row.semester, next);
+      return next;
+    });
+    const totalGraduados = chartData.reduce((acc, row) => acc + normalizeNumber(row.graduados), 0);
+    const latest = trendData[trendData.length - 1] || null;
+    const samePeriodDelta = latest?.deltaSamePeriod ?? null;
+    const peak = trendData.reduce((best, row) => row.graduados > normalizeNumber(best?.graduados) ? row : best, trendData[0] || null);
+    const graduadosRows = filteredSeriesRows.filter((row) => row.subcategoria === 'Graduados');
+    const programRows = Array.from(
+      graduadosRows.reduce((map, row) => {
+        const key = String(row.programa || 'Sin informacion').trim() || 'Sin informacion';
+        map.set(key, (map.get(key) || 0) + normalizeNumber(row.valor));
+        return map;
+      }, new Map()).entries()
+    ).map(([programa, total]) => ({ programa, total })).sort((a, b) => b.total - a.total);
+    const tableRows = graduadosRows
+      .map((row) => {
+        const { periodLabel, periodOrder } = getRowPeriodMeta(row);
+        return {
+          periodLabel,
+          periodDisplay: formatAcademicPeriodLabel(periodLabel),
+          periodOrder,
+          anio: Number(row.anio) || 0,
+          periodo: splitPeriodLabel(periodLabel).part,
+          programa: row.programa || 'Sin informacion',
+          facultad: row.dependencia || 'Sin facultad',
+          graduados: normalizeNumber(row.valor)
+        };
+      })
+      .sort((a, b) => a.periodOrder - b.periodOrder || b.graduados - a.graduados || String(a.programa).localeCompare(String(b.programa), 'es'));
+    const maxProgram = Math.max(...programRows.map((row) => row.total), 1);
+    const formatPct = (value) => value === null || value === undefined ? '-' : `${value >= 0 ? '+' : ''}${value.toFixed(1)}%`;
+    const lineValueLabel = ({ x, y, payload }) => {
+      if (!payload) return null;
+      const delta = payload.deltaSamePeriod;
+      const deltaColor = delta === null ? '#64748b' : delta >= 0 ? '#15803d' : '#dc2626';
+      return (
+        <text x={x} y={y - 18} textAnchor="middle" style={{ fontFamily: 'Inter, sans-serif' }}>
+          <tspan x={x} dy="0" fontSize="11" fontWeight="900" fill={GRAD_DARK}>{formatNumber(payload.graduados)}</tspan>
+          <tspan x={x} dy="13" fontSize="9.5" fontWeight="800" fill={deltaColor}>{payload.comparativeLabel}</tspan>
+        </text>
+      );
+    };
+    const kpiCards = [
+      { label: 'Graduados acumulados', value: formatNumber(totalGraduados), helper: `${formatNumber(trendData.length)} periodos visibles`, tone: GRAD_COLOR },
+      { label: 'Ultimo periodo', value: latest ? formatNumber(latest.graduados) : '-', helper: latest?.periodDisplay || 'Sin datos', tone: '#2563eb' },
+      { label: 'Variacion par', value: formatPct(samePeriodDelta), helper: latest?.compareAgainst ? `${latest.compareAgainst} -> ${latest.periodDisplay}` : 'Sin periodo par previo', tone: samePeriodDelta !== null && samePeriodDelta < 0 ? '#dc2626' : '#15803d' },
+      { label: 'Pico visible', value: peak ? formatNumber(peak.graduados) : '-', helper: peak?.periodDisplay || 'Sin datos', tone: '#d97706' }
+    ];
+
+    return (
+      <Stack spacing={1.6}>
+        <Paper elevation={0} sx={{ p: 1.4, border: '1px solid #dbe6f5', borderRadius: 2.5, bgcolor: '#f8fbff' }}>
+          <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1} alignItems={{ xs: 'stretch', sm: 'center' }} justifyContent="space-between">
+            <Button variant="outlined" startIcon={<ArrowBackRoundedIcon />} onClick={() => setPoblacionalPanel('hub')}>
+              Volver a dashboards Poblacional
+            </Button>
+            <Chip label="Graduados + Cantidad Total Egresados" sx={{ bgcolor: '#ecfdf5', color: GRAD_DARK, fontWeight: 900 }} />
+          </Stack>
+        </Paper>
+
+        <Paper elevation={0} sx={{ p: { xs: 1.6, md: 2 }, borderRadius: 3, border: '1px solid #cfe0f9', bgcolor: '#ffffff' }}>
+          <Stack spacing={1.4}>
+            <Stack direction={{ xs: 'column', lg: 'row' }} spacing={1.2} alignItems={{ xs: 'stretch', lg: 'center' }}>
+              <FormControl size="small" sx={filterSelectSx}>
+                <InputLabel>Año</InputLabel>
+                <Select
+                  multiple
+                  label="Año"
+                  value={activeStatsFilters.anios}
+                  renderValue={(value) => renderFilterValue(value, 'Todos los años', 'años', allYears.length)}
+                  onChange={(event) => handleMultiFilterChange('anios', event.target.value, allYears)}
+                >
+                  <MenuItem value="__ALL__">
+                    <Checkbox checked={allSelected(activeStatsFilters.anios, allYears)} />
+                    <ListItemText primary="Todos los años" />
+                  </MenuItem>
+                  {allYears.map((year) => (
+                    <MenuItem key={year} value={year}>
+                      <Checkbox checked={activeStatsFilters.anios.includes(year)} />
+                      <ListItemText primary={year} />
+                    </MenuItem>
+                  ))}
+                </Select>
+              </FormControl>
+              <FormControl size="small" sx={filterSelectSx}>
+                <InputLabel>Periodo</InputLabel>
+                <Select
+                  multiple
+                  label="Periodo"
+                  value={activeStatsFilters.periodos}
+                  renderValue={(value) => renderFilterValue(value.map(formatAcademicPeriodLabel), 'Todos los periodos', 'periodos', periodFilterOptions.length)}
+                  onChange={(event) => handleMultiFilterChange('periodos', event.target.value, periodFilterOptions)}
+                >
+                  <MenuItem value="__ALL__">
+                    <Checkbox checked={allSelected(activeStatsFilters.periodos, periodFilterOptions)} />
+                    <ListItemText primary="Todos los periodos" />
+                  </MenuItem>
+                  {periodFilterOptions.map((period) => (
+                    <MenuItem key={period} value={period}>
+                      <Checkbox checked={activeStatsFilters.periodos.includes(period)} />
+                      <ListItemText primary={formatAcademicPeriodLabel(period)} />
+                    </MenuItem>
+                  ))}
+                </Select>
+              </FormControl>
+              <FormControl size="small" sx={{ ...filterSelectSx, flex: 1, minWidth: { xs: '100%', lg: 320 } }}>
+                <InputLabel>Programa</InputLabel>
+                <Select
+                  multiple
+                  label="Programa"
+                  value={activeStatsFilters.programas}
+                  renderValue={(value) => renderFilterValue(value, 'Todos los programas', 'programas', programasDisponibles.length)}
+                  onChange={(event) => handleMultiFilterChange('programas', event.target.value, programasDisponibles)}
+                >
+                  <MenuItem value="__ALL__">
+                    <Checkbox checked={allSelected(activeStatsFilters.programas, programasDisponibles)} />
+                    <ListItemText primary="Todos los programas" />
+                  </MenuItem>
+                  {programasDisponibles.map((programa) => (
+                    <MenuItem key={programa} value={programa}>
+                      <Checkbox checked={activeStatsFilters.programas.includes(programa)} />
+                      <ListItemText primary={programa} />
+                    </MenuItem>
+                  ))}
+                </Select>
+              </FormControl>
+              <Button variant="outlined" onClick={resetActiveStatsFilters} sx={{ ...GI_OUTLINE_ACTION_BTN_SX, height: 40, px: 2 }}>
+                Restablecer
+              </Button>
+            </Stack>
+
+            {isSeriesInitialLoad ? (
+              <Typography sx={{ py: 4, textAlign: 'center', color: '#334155' }}>Cargando dashboard...</Typography>
+            ) : trendData.length === 0 ? (
+              <Typography sx={{ py: 4, textAlign: 'center', color: '#334155' }}>No hay datos para los filtros seleccionados.</Typography>
+            ) : (
+              <>
+                <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', md: 'repeat(4, minmax(0, 1fr))' }, gap: 1 }}>
+                  {kpiCards.map((item) => (
+                    <Paper key={item.label} elevation={0} sx={{ p: 1.4, borderRadius: 2.4, border: '1px solid #dbe6f5', bgcolor: '#fff', borderLeft: `5px solid ${item.tone}` }}>
+                      <Typography sx={{ color: '#64748b', fontSize: 11.5, fontWeight: 900, textTransform: 'uppercase' }}>{item.label}</Typography>
+                      <Typography sx={{ color: '#0f172a', fontWeight: 950, fontSize: 27, lineHeight: 1.05, mt: 0.4 }}>{item.value}</Typography>
+                      <Typography sx={{ color: '#475569', fontSize: 12, mt: 0.4, fontWeight: 700 }}>{item.helper}</Typography>
+                    </Paper>
+                  ))}
+                </Box>
+
+                <Grid container spacing={1.4}>
+                  <Grid item xs={12} lg={6}>
+                    <Paper elevation={0} sx={{ p: 1.4, borderRadius: 2.5, border: '1px solid #dbe6f5', height: '100%' }}>
+                      <Typography sx={{ fontWeight: 900, color: '#0f172a', fontSize: 15 }}>Graduados por periodo</Typography>
+                      <Box sx={{ height: 335, mt: 1 }}>
+                        <ResponsiveContainer width="100%" height="100%">
+                          <BarChart data={trendData} margin={{ top: 24, right: 16, bottom: 44, left: 4 }} barCategoryGap="18%">
+                            <CartesianGrid strokeDasharray="4 4" stroke="#e2e8f0" />
+                            <XAxis dataKey="periodDisplay" tick={{ fontSize: 10.5, fill: '#334155', fontWeight: 700 }} angle={-25} textAnchor="end" height={52} interval={0} />
+                            <YAxis tickFormatter={(v) => v >= 1000 ? `${(v / 1000).toFixed(1)}k` : v} tick={{ fontSize: 11, fill: '#64748b' }} axisLine={false} tickLine={false} />
+                            <RechartsTooltip formatter={(value) => [formatNumber(value), 'Graduados']} />
+                            <Bar dataKey="graduados" fill={GRAD_COLOR} radius={[6, 6, 0, 0]} maxBarSize={48} isAnimationActive={false}>
+                              <LabelList dataKey="graduados" position="top" formatter={(value) => formatNumber(value)} style={{ fontSize: 11, fill: GRAD_DARK, fontWeight: 900 }} />
+                            </Bar>
+                          </BarChart>
+                        </ResponsiveContainer>
+                      </Box>
+                    </Paper>
+                  </Grid>
+                  <Grid item xs={12} lg={6}>
+                    <Paper elevation={0} sx={{ p: 1.4, borderRadius: 2.5, border: '1px solid #dbe6f5', height: '100%' }}>
+                      <Typography sx={{ fontWeight: 900, color: '#0f172a', fontSize: 15 }}>Tendencia y variacion entre periodos pares</Typography>
+                      <Box sx={{ height: 335, mt: 1 }}>
+                        <ResponsiveContainer width="100%" height="100%">
+                          <LineChart data={trendData} margin={{ top: 48, right: 22, bottom: 44, left: 4 }}>
+                            <CartesianGrid strokeDasharray="4 4" stroke="#e2e8f0" />
+                            <XAxis dataKey="periodDisplay" tick={{ fontSize: 10.5, fill: '#334155', fontWeight: 700 }} angle={-25} textAnchor="end" height={52} interval={0} />
+                            <YAxis tickFormatter={(v) => v >= 1000 ? `${(v / 1000).toFixed(1)}k` : v} tick={{ fontSize: 11, fill: '#64748b' }} axisLine={false} tickLine={false} />
+                            <RechartsTooltip
+                              formatter={(value, name, item) => {
+                                const row = item?.payload || {};
+                                return [formatNumber(value), row.compareAgainst ? `${name} (${row.compareAgainst}: ${formatNumber(row.graduados - row.diffSamePeriod)})` : name];
+                              }}
+                              labelFormatter={(label) => `Periodo ${label}`}
+                            />
+                            <Line type="linear" dataKey="graduados" name="Graduados" stroke={GRAD_COLOR} strokeWidth={3} dot={{ r: 4, fill: GRAD_COLOR, strokeWidth: 0 }} activeDot={{ r: 6 }} isAnimationActive={false}>
+                              <LabelList content={lineValueLabel} />
+                            </Line>
+                          </LineChart>
+                        </ResponsiveContainer>
+                      </Box>
+                    </Paper>
+                  </Grid>
+                </Grid>
+
+                <Grid container spacing={1.4}>
+                  <Grid item xs={12} md={5}>
+                    <Paper elevation={0} sx={{ p: 1.4, borderRadius: 2.5, border: '1px solid #dbe6f5', height: '100%' }}>
+                      <Typography sx={{ fontWeight: 900, color: '#0f172a', fontSize: 15 }}>Top programas</Typography>
+                      <Stack spacing={0.9} sx={{ mt: 1 }}>
+                        {programRows.slice(0, 8).map((item) => {
+                          const pct = maxProgram > 0 ? (item.total / maxProgram) * 100 : 0;
+                          return (
+                            <Box key={item.programa}>
+                              <Stack direction="row" spacing={1} justifyContent="space-between">
+                                <Typography sx={{ fontSize: 12.5, color: '#0f172a', fontWeight: 800, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{item.programa}</Typography>
+                                <Typography sx={{ fontSize: 12.5, color: GRAD_DARK, fontWeight: 900 }}>{formatNumber(item.total)}</Typography>
+                              </Stack>
+                              <LinearProgress variant="determinate" value={Math.min(100, pct)} sx={{ mt: 0.45, height: 7, borderRadius: 99, bgcolor: '#dbeafe', '& .MuiLinearProgress-bar': { bgcolor: GRAD_COLOR, borderRadius: 99 } }} />
+                            </Box>
+                          );
+                        })}
+                      </Stack>
+                    </Paper>
+                  </Grid>
+                  <Grid item xs={12} md={7}>
+                    <Paper elevation={0} sx={{ p: 1.4, borderRadius: 2.5, border: '1px solid #dbe6f5', height: '100%' }}>
+                      <Typography sx={{ fontWeight: 900, color: '#0f172a', fontSize: 15 }}>Lectura comparativa</Typography>
+                      <TableContainer sx={{ maxHeight: 330, mt: 1 }}>
+                        <Table size="small" stickyHeader>
+                          <TableHead>
+                            <TableRow>
+                              <TableCell sx={{ fontWeight: 900, bgcolor: '#f8fafc' }}>Periodo</TableCell>
+                              <TableCell align="right" sx={{ fontWeight: 900, bgcolor: '#f8fafc' }}>Graduados</TableCell>
+                              <TableCell sx={{ fontWeight: 900, bgcolor: '#f8fafc' }}>Comparado con</TableCell>
+                              <TableCell align="right" sx={{ fontWeight: 900, bgcolor: '#f8fafc' }}>Variacion</TableCell>
+                            </TableRow>
+                          </TableHead>
+                          <TableBody>
+                            {trendData.map((row) => (
+                              <TableRow key={row.periodLabel} hover>
+                                <TableCell sx={{ fontWeight: 800 }}>{row.periodDisplay}</TableCell>
+                                <TableCell align="right" sx={{ fontWeight: 900, color: GRAD_DARK }}>{formatNumber(row.graduados)}</TableCell>
+                                <TableCell>{row.compareAgainst || 'Sin par anterior'}</TableCell>
+                                <TableCell align="right" sx={{ fontWeight: 900, color: row.deltaSamePeriod === null ? '#64748b' : row.deltaSamePeriod >= 0 ? '#15803d' : '#dc2626' }}>
+                                  {row.deltaSamePeriod === null ? '-' : `${row.diffSamePeriod >= 0 ? '+' : ''}${formatNumber(row.diffSamePeriod)} (${formatPct(row.deltaSamePeriod)})`}
+                                </TableCell>
+                              </TableRow>
+                            ))}
+                          </TableBody>
+                        </Table>
+                      </TableContainer>
+                    </Paper>
+                  </Grid>
+                </Grid>
+
+                <Paper elevation={0} sx={{ p: 1.4, borderRadius: 2.5, border: '1px solid #dbe6f5' }}>
+                  <Typography sx={{ fontWeight: 900, color: '#0f172a', fontSize: 15 }}>Detalle por programa y periodo</Typography>
+                  <TableContainer sx={{ maxHeight: 390, mt: 1 }}>
+                    <Table size="small" stickyHeader>
+                      <TableHead>
+                        <TableRow>
+                          <TableCell sx={{ fontWeight: 900, bgcolor: '#f8fafc' }}>Año</TableCell>
+                          <TableCell sx={{ fontWeight: 900, bgcolor: '#f8fafc' }}>Periodo</TableCell>
+                          <TableCell sx={{ fontWeight: 900, bgcolor: '#f8fafc' }}>Programa</TableCell>
+                          <TableCell sx={{ fontWeight: 900, bgcolor: '#f8fafc' }}>Facultad</TableCell>
+                          <TableCell align="right" sx={{ fontWeight: 900, bgcolor: '#f8fafc' }}>Graduados</TableCell>
+                        </TableRow>
+                      </TableHead>
+                      <TableBody>
+                        {tableRows.map((row) => (
+                          <TableRow key={`${row.periodLabel}-${row.programa}-${row.facultad}`} hover>
+                            <TableCell>{row.anio}</TableCell>
+                            <TableCell sx={{ fontWeight: 800 }}>{row.periodo}</TableCell>
+                            <TableCell sx={{ fontWeight: 700 }}>{row.programa}</TableCell>
+                            <TableCell>{row.facultad}</TableCell>
+                            <TableCell align="right" sx={{ fontWeight: 900, color: GRAD_DARK }}>{formatNumber(row.graduados)}</TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </TableContainer>
+                </Paper>
+              </>
+            )}
+          </Stack>
+        </Paper>
+
+        {renderCantidadTotalEgresadosCards()}
+      </Stack>
+    );
+  };
+
   const renderPoblacionalHub = () => (
     <Stack spacing={2.2}>
       <Paper elevation={0} sx={{ p: 2.5, border: '1px solid #dbe6f5', borderRadius: 3, background: 'linear-gradient(120deg, #f8fbff 0%, #eef6ff 100%)' }}>
@@ -8708,7 +9036,7 @@ const renderCategoryBars = (items = [], options = {}) => {
         <Box sx={{ px: { xs: 2, sm: 2.5 }, py: { xs: 1.6, sm: 2 }, bgcolor: '#f0f7ff', borderBottom: '1px solid #bfdbfe', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 2 }}>
           <Stack direction="row" spacing={1.8} alignItems="center">
             <Box sx={{ bgcolor: '#1d4ed8', borderRadius: 2, p: { xs: 0.9, sm: 1.1 }, display: 'flex', flexShrink: 0 }}>
-              <SchoolIcon sx={{ fontSize: { xs: 22, sm: 26 }, color: '#fff' }} />
+              <GroupsIcon sx={{ fontSize: { xs: 22, sm: 26 }, color: '#fff' }} />
             </Box>
             <Box>
               <Typography sx={{ color: '#1d4ed8', fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: 1.4, mb: 0.15 }}>
@@ -10286,16 +10614,6 @@ const renderCategoryBars = (items = [], options = {}) => {
                     Estadística institucional · {periodosDisp > 0 ? `${periodosDisp} períodos disponibles` : 'Cargando...'}
                   </Typography>
                 </Box>
-                {totalRegistros > 0 && (
-                  <Box sx={{ textAlign: { xs: 'left', sm: 'right' }, flexShrink: 0 }}>
-                    <Typography sx={{ color: '#0369a1', fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: 1.2, mb: 0.1 }}>
-                      Registros totales
-                    </Typography>
-                    <Typography sx={{ color: '#0c4a6e', fontWeight: 900, fontSize: { xs: 22, sm: 28 }, lineHeight: 1, letterSpacing: -0.5 }}>
-                      {formatNumber(totalRegistros)}
-                    </Typography>
-                  </Box>
-                )}
               </Stack>
             </Box>
           </Paper>
@@ -11238,20 +11556,7 @@ const renderCategoryBars = (items = [], options = {}) => {
     if (poblacionalPanel === 'analytics' && statSection === 'flujo') return renderFlujoOnlyDashboard();
     if (poblacionalPanel === 'analytics' && statSection === 'matriculados') return renderMatriculadosOnlyDashboard();
     if (poblacionalPanel === 'analytics' && statSection === 'graduados') {
-      return (
-        <Stack spacing={2}>
-          <Paper elevation={0} sx={{ p: 1.4, border: '1px solid #dbe6f5', borderRadius: 2.5, bgcolor: '#f8fbff' }}>
-            <Button variant="outlined" startIcon={<ArrowBackRoundedIcon />} onClick={() => setPoblacionalPanel('hub')}>
-              Volver a dashboards Poblacional
-            </Button>
-          </Paper>
-          <Paper elevation={0} sx={{ p: 1.6, borderRadius: 3, border: '1px solid #dbe6f5', bgcolor: '#fff' }}>
-            <Typography sx={{ fontWeight: 900, color: '#0f172a', fontSize: 20, mb: 1 }}>Graduados</Typography>
-            {renderSimpleBars(activeSeries, 'graduados', '#0f766e')}
-            {renderCantidadTotalEgresadosCards()}
-          </Paper>
-        </Stack>
-      );
+      return renderGraduadosDashboard();
     }
     if (poblacionalPanel === 'analytics' && statSection === 'caracterizacion') {
       return (
