@@ -401,6 +401,7 @@ const SABER_PRO_REPORT_SECTIONS = [
 ];
 
 const PERIOD_LABEL_TO_SORT = { IP: 1, I: 1, '1': 1, IIP: 2, II: 2, '2': 2 };
+const INSCRITOS_BAR_BLUE = '#2f6df6';
 const initialStatsFilters = { programas: [], anios: [], periodos: [] };
 const SUMMARY_ESTADISTICO_YEAR_WINDOW = 6;
 const getMaxClosedAcademicYear = () => new Date().getFullYear() - 1;
@@ -1637,6 +1638,7 @@ function GestionInformacion() {
   const matriculadosPanelDataRef = useRef(null);
   const geoFiltersRef = useRef({ sexos: [], niveles: [] });
   const [matFilters, setMatFilters] = useState({ anios: [], periodos: [], programas: [] });
+  const [matHistoricoCache, setMatHistoricoCache] = useState(null);
   const municipalSectionRef = useRef(null);
   const GI_FILTER_LABEL_SX = { mb: 0.6, color: '#475569', fontWeight: 700, fontSize: 12.5 };
   const GI_FILTER_SELECT_SX = {
@@ -2010,6 +2012,9 @@ function GestionInformacion() {
       if (matriculadosPanelReqRef.current !== requestId) return;
       const payload = response?.data || null;
       setMatriculadosPanelData(payload);
+      if ((matFilters.periodos || []).length === 0 && (payload?.historico || []).length > 0) {
+        setMatHistoricoCache(payload.historico);
+      }
       setMatriculadosGeoSelection((prev) => {
         if (!prev) return '';
         const exists = (payload?.geography?.departments || []).some((item) => item.name === prev);
@@ -10405,8 +10410,8 @@ const renderCategoryBars = (items = [], options = {}) => {
               </Box>
             ) : (
               <>
-                {/* Historical chart — always visible once loaded */}
-                {(matriculadosPanelData?.historico || []).length > 0 && (
+                {/* Historical chart — always visible, always full series from cache */}
+                {(matHistoricoCache || matriculadosPanelData?.historico || []).length > 0 && (
                   <Box sx={{ borderBottom: '1px solid #e2e8f0' }}>
                     <Box sx={{ px: 2.2, py: 1.2, borderBottom: '1px solid #f1f5f9', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                       <Typography sx={{ fontWeight: 800, color: '#0f172a', fontSize: 14 }}>Matriculados por período</Typography>
@@ -10419,7 +10424,7 @@ const renderCategoryBars = (items = [], options = {}) => {
                     </Box>
                     <Box sx={{ px: { xs: 1.2, md: 1.8 }, pt: 0.5, pb: 1.2 }}>
                       {renderMatriculadosRechartsChart(
-                        matriculadosPanelData.historico.map((h) => ({ periodLabel: h.periodLabel, matriculados: h.total }))
+                        (matHistoricoCache || matriculadosPanelData?.historico || []).map((h) => ({ periodLabel: h.periodLabel, matriculados: h.total }))
                       )}
                     </Box>
                   </Box>
@@ -10475,10 +10480,10 @@ const renderCategoryBars = (items = [], options = {}) => {
       if (!active || !payload || !payload.length) return null;
       const isSelected = hasSelection && selectedPeriods.some((p) => p.replace(/-1$/, '-I').replace(/-2$/, '-II').toUpperCase() === label);
       return (
-        <Box sx={{ bgcolor: '#fff', border: `1px solid ${isSelected ? '#f59e0b' : '#dbeafe'}`, borderRadius: 2, p: 1.5, boxShadow: '0 8px 24px -6px rgba(29,78,216,0.22)', minWidth: 160 }}>
-          <Typography sx={{ fontSize: 11, color: isSelected ? '#d97706' : '#1d4ed8', fontWeight: 800, mb: 0.6 }}>{label}</Typography>
+        <Box sx={{ bgcolor: '#fff', border: `1.5px solid ${isSelected ? '#1d4ed8' : '#dbeafe'}`, borderRadius: 2, p: 1.5, boxShadow: '0 8px 24px -6px rgba(29,78,216,0.22)', minWidth: 160 }}>
+          <Typography sx={{ fontSize: 11, color: '#1d4ed8', fontWeight: 800, mb: 0.6 }}>{label}</Typography>
           <Stack direction="row" spacing={0.8} alignItems="center">
-            <Box sx={{ width: 10, height: 10, borderRadius: 1, bgcolor: isSelected ? '#f59e0b' : '#3b82f6' }} />
+            <Box sx={{ width: 10, height: 10, borderRadius: 1, background: 'linear-gradient(135deg,#1d4ed8,#3b82f6)' }} />
             <Typography sx={{ fontSize: 14, color: '#0f172a', fontWeight: 900 }}>{formatNumber(payload[0].value)}</Typography>
           </Stack>
           <Typography sx={{ fontSize: 10, color: '#94a3b8', mt: 0.3 }}>
@@ -10494,7 +10499,7 @@ const renderCategoryBars = (items = [], options = {}) => {
       const isDimmed = hasSelection && !isSelected;
       return (
         <text x={x + width / 2} y={y - 6} textAnchor="middle"
-          fill={isSelected ? '#d97706' : isDimmed ? '#cbd5e1' : '#1d4ed8'}
+          fill={isDimmed ? '#bfdbfe' : '#1d4ed8'}
           fontSize={isSelected ? 13 : 11}
           fontWeight={isSelected ? 900 : 700}>
           {formatNumber(value)}
@@ -10510,7 +10515,7 @@ const renderCategoryBars = (items = [], options = {}) => {
               size="small"
               label={`Filtro activo: ${selectedPeriods.map((p) => p.replace(/-1$/, '-I').replace(/-2$/, '-II').toUpperCase()).join(', ')}`}
               onDelete={() => setMatFilters((prev) => ({ ...prev, periodos: [] }))}
-              sx={{ bgcolor: '#fff8ed', color: '#d97706', fontWeight: 700, fontSize: 11, border: '1px solid #fed7aa' }}
+              sx={{ bgcolor: '#eff6ff', color: '#1d4ed8', fontWeight: 700, fontSize: 11, border: '1px solid #bfdbfe' }}
             />
             <Typography sx={{ fontSize: 10.5, color: '#94a3b8' }}>Haz clic en la barra para deseleccionar</Typography>
           </Box>
@@ -10531,24 +10536,29 @@ const renderCategoryBars = (items = [], options = {}) => {
                       <stop offset="100%" stopColor="#1d4ed8" stopOpacity={0.92} />
                     </linearGradient>
                     <linearGradient id="matBarGradSel" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="0%" stopColor="#f59e0b" stopOpacity={1} />
-                      <stop offset="100%" stopColor="#d97706" stopOpacity={0.95} />
+                      <stop offset="0%" stopColor="#60a5fa" stopOpacity={1} />
+                      <stop offset="100%" stopColor="#2563eb" stopOpacity={1} />
                     </linearGradient>
+                    <filter id="matBarGlow" x="-20%" y="-20%" width="140%" height="140%">
+                      <feDropShadow dx="0" dy="2" stdDeviation="4" floodColor="#3b82f6" floodOpacity="0.5" />
+                    </filter>
                   </defs>
                   <CartesianGrid strokeDasharray="4 3" stroke="#93b8d8" strokeWidth={0.9} />
                   <XAxis dataKey="name" tick={{ fontSize: 10.5, fill: '#334155', fontWeight: 700 }} axisLine={{ stroke: '#94a3b8', strokeWidth: 1 }} tickLine={false} interval={0} />
                   <YAxis tick={{ fontSize: 10, fill: '#64748b' }} axisLine={false} tickLine={false} tickFormatter={fmtAxis} width={48} />
                   <RechartsTooltip content={<CustomTooltip />} cursor={{ fill: 'rgba(29,78,216,0.05)' }} />
-                  <Bar dataKey="value" radius={[5, 5, 0, 0]} cursor="pointer" onClick={handleBarClick}>
+                  <Bar dataKey="value" radius={[5, 5, 0, 0]} cursor="pointer" onClick={handleBarClick} isAnimationActive={false}>
                     {chartData.map((entry, index) => {
                       const isSelected = selectedPeriods.includes(entry.rawPeriod);
                       const isDimmed = hasSelection && !isSelected;
                       return (
                         <Cell
                           key={`cell-${index}`}
-                          fill={isSelected ? 'url(#matBarGradSel)' : 'url(#matBarGrad2)'}
-                          opacity={isDimmed ? 0.32 : 1}
-                          style={isSelected ? { filter: 'drop-shadow(0 3px 8px rgba(245,158,11,0.5))' } : {}}
+                          fill="url(#matBarGrad2)"
+                          opacity={isDimmed ? 0.28 : 1}
+                          stroke={isSelected ? '#1e40af' : 'none'}
+                          strokeWidth={isSelected ? 2 : 0}
+                          style={isSelected ? { filter: 'url(#matBarGlow)' } : {}}
                         />
                       );
                     })}
@@ -10565,7 +10575,7 @@ const renderCategoryBars = (items = [], options = {}) => {
 
   const renderFlujoOnlyDashboard = () => {
     const kpis = [
-      { label: 'Inscritos', value: flujoDashboardMetrics.inscritos, color: '#2563eb', sub: 'Demanda registrada', icon: BarChartIcon },
+      { label: 'Inscritos', value: flujoDashboardMetrics.inscritos, color: INSCRITOS_BAR_BLUE, sub: 'Demanda registrada', icon: BarChartIcon },
       { label: 'Admitidos', value: flujoDashboardMetrics.admitidos, color: '#dc2626', sub: `${flujoDashboardMetrics.selectividad.toFixed(1)}% selectividad`, icon: InsightsIcon },
       { label: 'Primer Curso', value: flujoDashboardMetrics.primerCurso, color: '#475569', sub: `${flujoDashboardMetrics.absorcion.toFixed(1)}% absorcion`, icon: AutoGraphIcon }
     ];
@@ -10579,12 +10589,12 @@ const renderCategoryBars = (items = [], options = {}) => {
       return String(numeric);
     };
     const variableCharts = [
-      { key: 'inscritos', title: 'Inscritos por periodo', color: '#2563eb' },
+      { key: 'inscritos', title: 'Inscritos por periodo', color: INSCRITOS_BAR_BLUE },
       { key: 'admitidos', title: 'Admitidos por periodo', color: '#dc2626' },
       { key: 'primerCurso', title: 'Primer Curso por periodo', color: '#64748b' }
     ];
     const legendItems = [
-      { label: 'Inscritos', color: '#2563eb' },
+      { label: 'Inscritos', color: INSCRITOS_BAR_BLUE },
       { label: 'Admitidos', color: '#dc2626' },
       { label: 'Primer Curso', color: '#64748b' }
     ];
@@ -10943,13 +10953,13 @@ const renderCategoryBars = (items = [], options = {}) => {
                           <XAxis dataKey="periodo" tick={false} axisLine={{ stroke: '#cbd5e1' }} height={10} />
                           <YAxis tickFormatter={fmtAxis} tick={{ fontSize: 13, fill: '#475569', fontWeight: 700 }} axisLine={false} tickLine={false} width={52} />
                           <RechartsTooltip formatter={(value, name) => [formatNumber(value), name]} labelFormatter={(label) => `Periodo ${label}`} />
-                          <Bar dataKey="inscritos" name="Inscritos" stackId="flujo" fill="#2563eb" radius={[0, 0, 5, 5]} maxBarSize={54}>
+                          <Bar dataKey="inscritos" name="Inscritos" stackId="flujo" fill={INSCRITOS_BAR_BLUE} radius={[0, 0, 5, 5]} maxBarSize={54} isAnimationActive={false}>
                             <LabelList dataKey="inscritos" position="center" formatter={(v) => formatNumber(v)} style={{ fontSize: 11, fill: '#fff', fontWeight: 900 }} />
                           </Bar>
-                          <Bar dataKey="admitidos" name="Admitidos" stackId="flujo" fill="#dc2626" maxBarSize={54}>
+                          <Bar dataKey="admitidos" name="Admitidos" stackId="flujo" fill="#dc2626" maxBarSize={54} isAnimationActive={false}>
                             <LabelList dataKey="admitidos" position="center" formatter={(v) => formatNumber(v)} style={{ fontSize: 11, fill: '#fff', fontWeight: 900 }} />
                           </Bar>
-                          <Bar dataKey="primerCurso" name="Primer Curso" stackId="flujo" fill="#64748b" radius={[5, 5, 0, 0]} maxBarSize={54}>
+                          <Bar dataKey="primerCurso" name="Primer Curso" stackId="flujo" fill="#64748b" radius={[5, 5, 0, 0]} maxBarSize={54} isAnimationActive={false}>
                             <LabelList dataKey="primerCurso" position="center" formatter={(v) => formatNumber(v)} style={{ fontSize: 11, fill: '#fff', fontWeight: 900 }} />
                           </Bar>
                         </BarChart>
@@ -10996,7 +11006,7 @@ const renderCategoryBars = (items = [], options = {}) => {
                   </Box>
                   <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', sm: 'repeat(2, minmax(0, 1fr))', lg: 'repeat(5, minmax(0, 1fr))' }, gap: 1, flex: 1, width: '100%' }}>
                     {[
-                      ['Inscritos', latest.inscritos, '#2563eb', BarChartIcon],
+                      ['Inscritos', latest.inscritos, INSCRITOS_BAR_BLUE, BarChartIcon],
                       ['Admitidos', latest.admitidos, '#dc2626', InsightsIcon],
                       ['Primer Curso', latest.primerCurso, '#64748b', AutoGraphIcon]
                     ].map(([label, value, color, Icon]) => (
@@ -11093,7 +11103,7 @@ const renderCategoryBars = (items = [], options = {}) => {
                             <XAxis dataKey="periodo" tick={false} axisLine={{ stroke: '#cbd5e1' }} height={10} />
                             <YAxis tickFormatter={fmtAxis} tick={{ fontSize: 13, fill: '#475569', fontWeight: 700 }} axisLine={false} tickLine={false} width={46} />
                             <RechartsTooltip formatter={(value) => [formatNumber(value), chart.title]} labelFormatter={(label) => `Periodo ${label}`} />
-                            <Bar dataKey={chart.key} fill={chart.color} radius={[6, 6, 0, 0]} maxBarSize={54}>
+                            <Bar dataKey={chart.key} fill={chart.color} radius={[6, 6, 0, 0]} maxBarSize={54} isAnimationActive={false}>
                               <LabelList dataKey={chart.key} position="top" offset={7} formatter={(v) => formatNumber(v)} style={{ fontSize: 11, fill: chart.color, fontWeight: 900, stroke: '#ffffff', strokeWidth: 2.4, paintOrder: 'stroke' }} />
                             </Bar>
                           </BarChart>
@@ -11119,10 +11129,10 @@ const renderCategoryBars = (items = [], options = {}) => {
                       <YAxis tickFormatter={(v) => `${v}%`} tick={{ fontSize: 13, fill: '#475569', fontWeight: 700 }} axisLine={false} tickLine={false} width={50} />
                       <RechartsTooltip formatter={(value, name) => [`${Number(value || 0).toFixed(1)}%`, name]} labelFormatter={(label) => `Periodo ${label}`} />
                       <Legend wrapperStyle={{ fontSize: 12, fontWeight: 700 }} />
-                      <Line type="monotone" dataKey="selectividad" name="Selectividad" stroke="#dc2626" strokeWidth={3} dot={{ r: 3 }} activeDot={{ r: 5 }}>
+                      <Line type="monotone" dataKey="selectividad" name="Selectividad" stroke="#dc2626" strokeWidth={3} dot={{ r: 3 }} activeDot={{ r: 5 }} isAnimationActive={false}>
                         <LabelList dataKey="selectividad" content={renderRateValueLabel('#dc2626', -15)} />
                       </Line>
-                      <Line type="monotone" dataKey="absorcion" name="Absorcion" stroke="#475569" strokeWidth={3} dot={{ r: 3 }} activeDot={{ r: 5 }}>
+                      <Line type="monotone" dataKey="absorcion" name="Absorcion" stroke="#475569" strokeWidth={3} dot={{ r: 3 }} activeDot={{ r: 5 }} isAnimationActive={false}>
                         <LabelList dataKey="absorcion" content={renderRateValueLabel('#475569', 15)} />
                       </Line>
                     </LineChart>
