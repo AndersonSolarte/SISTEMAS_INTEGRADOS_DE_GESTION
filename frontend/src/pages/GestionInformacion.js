@@ -10397,29 +10397,43 @@ const renderCategoryBars = (items = [], options = {}) => {
 
           {/* Integrated content card: chart + dashboard panel */}
           <Paper elevation={0} sx={{ p: 0, border: '1px solid #dbe6f5', borderRadius: 3, overflow: 'hidden', bgcolor: '#fff' }}>
-            {matriculadosPanelLoading ? (
-              <Box sx={{ py: 7, textAlign: 'center' }}>
+            {matriculadosPanelData === null && matriculadosPanelLoading ? (
+              /* Initial load — no data yet, show full spinner */
+              <Box sx={{ py: 8, textAlign: 'center' }}>
                 <CircularProgress size={38} sx={{ color: '#3b82f6' }} />
                 <Typography sx={{ mt: 1.5, color: '#475569', fontWeight: 600, fontSize: 14 }}>Cargando datos...</Typography>
               </Box>
             ) : (
               <>
+                {/* Historical chart — always visible once loaded */}
                 {(matriculadosPanelData?.historico || []).length > 0 && (
                   <Box sx={{ borderBottom: '1px solid #e2e8f0' }}>
                     <Box sx={{ px: 2.2, py: 1.2, borderBottom: '1px solid #f1f5f9', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                       <Typography sx={{ fontWeight: 800, color: '#0f172a', fontSize: 14 }}>Matriculados por período</Typography>
-                      {activeFilterTags.length > 0 && (
-                        <Typography sx={{ fontSize: 11, color: '#64748b' }}>{activeFilterTags.join(' · ')}</Typography>
+                      {matriculadosPanelLoading && (
+                        <Stack direction="row" spacing={0.8} alignItems="center">
+                          <CircularProgress size={14} sx={{ color: '#3b82f6' }} />
+                          <Typography sx={{ fontSize: 11, color: '#64748b' }}>Actualizando...</Typography>
+                        </Stack>
                       )}
                     </Box>
-                    <Box sx={{ px: { xs: 1.2, md: 1.8 }, pt: 1, pb: 1.2 }}>
+                    <Box sx={{ px: { xs: 1.2, md: 1.8 }, pt: 0.5, pb: 1.2 }}>
                       {renderMatriculadosRechartsChart(
                         matriculadosPanelData.historico.map((h) => ({ periodLabel: h.periodLabel, matriculados: h.total }))
                       )}
                     </Box>
                   </Box>
                 )}
-                {renderMatriculadosDashboardPanel()}
+
+                {/* Dashboard panel — shows mini-spinner overlay while re-fetching */}
+                {matriculadosPanelLoading && matriculadosPanelData !== null ? (
+                  <Box sx={{ py: 5, textAlign: 'center', borderTop: (matriculadosPanelData?.historico || []).length === 0 ? '1px solid #f1f5f9' : 'none' }}>
+                    <CircularProgress size={28} sx={{ color: '#3b82f6' }} />
+                    <Typography sx={{ mt: 1, color: '#64748b', fontWeight: 600, fontSize: 13 }}>Actualizando panel...</Typography>
+                  </Box>
+                ) : (
+                  renderMatriculadosDashboardPanel()
+                )}
               </>
             )}
           </Paper>
@@ -10432,52 +10446,117 @@ const renderCategoryBars = (items = [], options = {}) => {
   const renderMatriculadosRechartsChart = (series) => {
     if (!series || series.length === 0) return null;
     const showLabels = series.length <= 22;
+    const selectedPeriods = matFilters.periodos || [];
+    const hasSelection = selectedPeriods.length > 0;
+
     const chartData = series.map((row) => {
-      const raw = String(row.periodLabel || '').toUpperCase();
-      const fmtName = raw.replace(/-1$/, '-I').replace(/-2$/, '-II');
-      return { name: fmtName, value: normalizeNumber(row.matriculados || 0) };
+      const rawPeriod = String(row.periodLabel || '').toLowerCase();
+      const fmtName = rawPeriod.replace(/-1$/, '-I').replace(/-2$/, '-II').toUpperCase();
+      return { name: fmtName, rawPeriod, value: normalizeNumber(row.matriculados || 0) };
     });
+
+    const handleBarClick = (_, index) => {
+      const period = chartData[index]?.rawPeriod;
+      if (!period) return;
+      setMatFilters((prev) => {
+        const cur = prev.periodos || [];
+        if (cur.length === 1 && cur[0] === period) return { ...prev, periodos: [] };
+        return { ...prev, periodos: [period] };
+      });
+    };
+
     const fmtAxis = (v) => {
       if (v >= 1000000) return (v / 1000000).toFixed(1) + 'M';
       if (v >= 1000) return (v / 1000).toFixed(v >= 10000 ? 0 : 1) + 'k';
       return String(v);
     };
+
     const CustomTooltip = ({ active, payload, label }) => {
       if (!active || !payload || !payload.length) return null;
+      const isSelected = hasSelection && selectedPeriods.some((p) => p.replace(/-1$/, '-I').replace(/-2$/, '-II').toUpperCase() === label);
       return (
-        <Box sx={{ bgcolor: '#fff', border: '1px solid #dbeafe', borderRadius: 2, p: 1.5, boxShadow: '0 8px 24px -6px rgba(29,78,216,0.22)', minWidth: 150 }}>
-          <Typography sx={{ fontSize: 11, color: '#1d4ed8', fontWeight: 800, mb: 0.6 }}>{label}</Typography>
+        <Box sx={{ bgcolor: '#fff', border: `1px solid ${isSelected ? '#f59e0b' : '#dbeafe'}`, borderRadius: 2, p: 1.5, boxShadow: '0 8px 24px -6px rgba(29,78,216,0.22)', minWidth: 160 }}>
+          <Typography sx={{ fontSize: 11, color: isSelected ? '#d97706' : '#1d4ed8', fontWeight: 800, mb: 0.6 }}>{label}</Typography>
           <Stack direction="row" spacing={0.8} alignItems="center">
-            <Box sx={{ width: 10, height: 10, borderRadius: 1, background: 'linear-gradient(135deg,#1d4ed8,#3b82f6)' }} />
+            <Box sx={{ width: 10, height: 10, borderRadius: 1, bgcolor: isSelected ? '#f59e0b' : '#3b82f6' }} />
             <Typography sx={{ fontSize: 14, color: '#0f172a', fontWeight: 900 }}>{formatNumber(payload[0].value)}</Typography>
           </Stack>
-          <Typography sx={{ fontSize: 10, color: '#94a3b8', mt: 0.3 }}>matriculados</Typography>
+          <Typography sx={{ fontSize: 10, color: '#94a3b8', mt: 0.3 }}>
+            {isSelected ? 'seleccionado — clic para quitar filtro' : 'matriculados · clic para filtrar'}
+          </Typography>
         </Box>
       );
     };
+
+    const CustomLabel = ({ value, x, y, width, index }) => {
+      if (!showLabels || value == null) return null;
+      const isSelected = hasSelection && selectedPeriods.includes(chartData[index]?.rawPeriod);
+      const isDimmed = hasSelection && !isSelected;
+      return (
+        <text x={x + width / 2} y={y - 6} textAnchor="middle"
+          fill={isSelected ? '#d97706' : isDimmed ? '#cbd5e1' : '#1d4ed8'}
+          fontSize={isSelected ? 13 : 11}
+          fontWeight={isSelected ? 900 : 700}>
+          {formatNumber(value)}
+        </text>
+      );
+    };
+
     return (
-      <Box sx={{ width: '100%', overflowX: 'auto', pb: 1 }}>
-        <Box sx={{ width: '100%' }}>
-          <Box sx={{ height: 360 }}>
-            <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={chartData} margin={{ top: showLabels ? 32 : 14, right: 16, left: 0, bottom: 4 }} barCategoryGap="12%">
-                <defs>
-                  <linearGradient id="matBarGrad2" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="0%" stopColor="#3b82f6" stopOpacity={1} />
-                    <stop offset="100%" stopColor="#1d4ed8" stopOpacity={0.92} />
-                  </linearGradient>
-                </defs>
-                <CartesianGrid strokeDasharray="4 3" stroke="#93b8d8" strokeWidth={0.9} />
-                <XAxis dataKey="name" tick={{ fontSize: 10.5, fill: '#334155', fontWeight: 700 }} axisLine={{ stroke: '#94a3b8', strokeWidth: 1 }} tickLine={false} interval={0} />
-                <YAxis tick={{ fontSize: 10, fill: '#64748b' }} axisLine={false} tickLine={false} tickFormatter={fmtAxis} width={48} />
-                <RechartsTooltip content={<CustomTooltip />} cursor={{ fill: 'rgba(29,78,216,0.07)' }} />
-                <Bar dataKey="value" fill="url(#matBarGrad2)" radius={[5, 5, 0, 0]}>
-                  {showLabels && (
-                    <LabelList dataKey="value" position="top" formatter={(v) => formatNumber(v)} style={{ fontSize: 12, fill: '#1d4ed8', fontWeight: 900 }} />
-                  )}
-                </Bar>
-              </BarChart>
-            </ResponsiveContainer>
+      <Box>
+        {hasSelection && (
+          <Box sx={{ px: 2.2, pb: 0.5, display: 'flex', alignItems: 'center', gap: 1 }}>
+            <Chip
+              size="small"
+              label={`Filtro activo: ${selectedPeriods.map((p) => p.replace(/-1$/, '-I').replace(/-2$/, '-II').toUpperCase()).join(', ')}`}
+              onDelete={() => setMatFilters((prev) => ({ ...prev, periodos: [] }))}
+              sx={{ bgcolor: '#fff8ed', color: '#d97706', fontWeight: 700, fontSize: 11, border: '1px solid #fed7aa' }}
+            />
+            <Typography sx={{ fontSize: 10.5, color: '#94a3b8' }}>Haz clic en la barra para deseleccionar</Typography>
+          </Box>
+        )}
+        {!hasSelection && (
+          <Box sx={{ px: 2.2, pb: 0.5 }}>
+            <Typography sx={{ fontSize: 10.5, color: '#94a3b8' }}>Haz clic en una barra para filtrar el dashboard</Typography>
+          </Box>
+        )}
+        <Box sx={{ width: '100%', overflowX: 'auto', pb: 1 }}>
+          <Box sx={{ width: '100%' }}>
+            <Box sx={{ height: 360 }}>
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={chartData} margin={{ top: showLabels ? 32 : 14, right: 16, left: 0, bottom: 4 }} barCategoryGap="12%">
+                  <defs>
+                    <linearGradient id="matBarGrad2" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="0%" stopColor="#3b82f6" stopOpacity={1} />
+                      <stop offset="100%" stopColor="#1d4ed8" stopOpacity={0.92} />
+                    </linearGradient>
+                    <linearGradient id="matBarGradSel" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="0%" stopColor="#f59e0b" stopOpacity={1} />
+                      <stop offset="100%" stopColor="#d97706" stopOpacity={0.95} />
+                    </linearGradient>
+                  </defs>
+                  <CartesianGrid strokeDasharray="4 3" stroke="#93b8d8" strokeWidth={0.9} />
+                  <XAxis dataKey="name" tick={{ fontSize: 10.5, fill: '#334155', fontWeight: 700 }} axisLine={{ stroke: '#94a3b8', strokeWidth: 1 }} tickLine={false} interval={0} />
+                  <YAxis tick={{ fontSize: 10, fill: '#64748b' }} axisLine={false} tickLine={false} tickFormatter={fmtAxis} width={48} />
+                  <RechartsTooltip content={<CustomTooltip />} cursor={{ fill: 'rgba(29,78,216,0.05)' }} />
+                  <Bar dataKey="value" radius={[5, 5, 0, 0]} cursor="pointer" onClick={handleBarClick}>
+                    {chartData.map((entry, index) => {
+                      const isSelected = selectedPeriods.includes(entry.rawPeriod);
+                      const isDimmed = hasSelection && !isSelected;
+                      return (
+                        <Cell
+                          key={`cell-${index}`}
+                          fill={isSelected ? 'url(#matBarGradSel)' : 'url(#matBarGrad2)'}
+                          opacity={isDimmed ? 0.32 : 1}
+                          style={isSelected ? { filter: 'drop-shadow(0 3px 8px rgba(245,158,11,0.5))' } : {}}
+                        />
+                      );
+                    })}
+                    <LabelList dataKey="value" position="top" content={<CustomLabel />} />
+                  </Bar>
+                </BarChart>
+              </ResponsiveContainer>
+            </Box>
           </Box>
         </Box>
       </Box>
