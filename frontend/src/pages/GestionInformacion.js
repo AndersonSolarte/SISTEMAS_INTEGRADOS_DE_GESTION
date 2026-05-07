@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+﻿import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Box,
   Paper,
@@ -69,7 +69,8 @@ import {
   Science as ScienceIcon,
   AccountBalance as AccountBalanceIcon,
   BarChart as BarChartIcon,
-  MonitorHeart as MonitorHeartIcon
+  MonitorHeart as MonitorHeartIcon,
+  ExpandMore as ExpandMoreIcon
 } from '@mui/icons-material';
 import ZoomInIcon from '@mui/icons-material/ZoomIn';
 import CloseIcon from '@mui/icons-material/Close';
@@ -9472,12 +9473,12 @@ const renderCategoryBars = (items = [], options = {}) => {
                                 display: 'flex', alignItems: 'center', justifyContent: 'center',
                                 transition: 'all 0.25s'
                               }}>
-                                <Typography sx={{
-                                  fontSize: 11, fontWeight: 900, lineHeight: 1,
+                                <ExpandMoreIcon sx={{
+                                  fontSize: 14,
                                   color: isExpanded ? '#fff' : '#94a3b8',
                                   transform: isExpanded ? 'rotate(180deg)' : 'rotate(0deg)',
-                                  transition: 'transform 0.25s', userSelect: 'none'
-                                }}>â–¾</Typography>
+                                  transition: 'transform 0.25s'
+                                }} />
                               </Box>
                             </Box>
 
@@ -9629,14 +9630,12 @@ const renderCategoryBars = (items = [], options = {}) => {
                               display: 'flex', alignItems: 'center', justifyContent: 'center',
                               transition: 'all 0.25s'
                             }}>
-                              <Typography sx={{
-                                fontSize: 11, fontWeight: 900,
+                              <ExpandMoreIcon sx={{
+                                fontSize: 14,
                                 color: isExpanded ? '#fff' : '#94a3b8',
-                                lineHeight: 1,
                                 transform: isExpanded ? 'rotate(180deg)' : 'rotate(0deg)',
-                                transition: 'transform 0.25s',
-                                userSelect: 'none'
-                              }}>â–¾</Typography>
+                                transition: 'transform 0.25s'
+                              }} />
                             </Box>
                           </Box>
 
@@ -9794,7 +9793,7 @@ const renderCategoryBars = (items = [], options = {}) => {
                           <Typography sx={{ fontSize: 10, color: '#94a3b8', minWidth: 44 }}>({pct.toFixed(1)}%)</Typography>
                           <Box sx={{ minWidth: 18, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                             {hasPrograms && (
-                              <Box component="span" sx={{ fontSize: 13, color: '#d97706', transition: 'transform 0.22s', display: 'inline-block', transform: isExpanded ? 'rotate(180deg)' : 'rotate(0deg)', lineHeight: 1 }}>â–¾</Box>
+                              <ExpandMoreIcon sx={{ fontSize: 14, color: '#d97706', transition: 'transform 0.22s', transform: isExpanded ? 'rotate(180deg)' : 'rotate(0deg)' }} />
                             )}
                           </Box>
                         </Box>
@@ -9844,7 +9843,7 @@ const renderCategoryBars = (items = [], options = {}) => {
                                     )}
                                     <Typography sx={{ fontSize: 12, fontWeight: 800, color: '#92400e', minWidth: 20, textAlign: 'right' }}>{formatNumber(prog.total)}</Typography>
                                     {hasSexo && (
-                                      <Box component="span" sx={{ fontSize: 11, color: '#b45309', transition: 'transform 0.2s', display: 'inline-block', transform: isProgramExpanded ? 'rotate(180deg)' : 'rotate(0deg)', lineHeight: 1, minWidth: 14 }}>â–¾</Box>
+                                      <ExpandMoreIcon sx={{ fontSize: 13, color: '#b45309', transition: 'transform 0.2s', transform: isProgramExpanded ? 'rotate(180deg)' : 'rotate(0deg)' }} />
                                     )}
                                   </Box>
 
@@ -10002,11 +10001,11 @@ const renderCategoryBars = (items = [], options = {}) => {
         {(() => {
           /* Aggregate matriculados by programa — usa programasPorSexo del geo-dashboard (dinámico) */
           const PROG_NIVEL_META = {
-            TECNOLOGICO:    { label: 'Tecnológico',     color: '#b45309', bg: '#fffbeb', border: '#fde68a', icon: 'ðŸ”§' },
-            PROFESIONAL:    { label: 'Profesional',     color: '#1d4ed8', bg: '#eff6ff', border: '#bfdbfe', icon: 'ðŸŽ“' },
-            ESPECIALIZACION:{ label: 'Especialización', color: '#0f766e', bg: '#f0fdf4', border: '#bbf7d0', icon: 'ðŸ“‹' },
-            MAESTRIA:       { label: 'Maestría',        color: '#7c3aed', bg: '#f5f3ff', border: '#ddd6fe', icon: 'ðŸ”¬' },
-            DOCTORADO:      { label: 'Doctorado',       color: '#9f1239', bg: '#fff1f2', border: '#fecdd3', icon: 'ðŸ›ï¸' },
+            TECNOLOGICO:    { label: 'Tecnológico',     color: '#b45309', bg: '#fffbeb', border: '#fde68a', IconComp: EngineeringIcon },
+            PROFESIONAL:    { label: 'Profesional',     color: '#1d4ed8', bg: '#eff6ff', border: '#bfdbfe', IconComp: SchoolGradIcon },
+            ESPECIALIZACION:{ label: 'Especialización', color: '#0f766e', bg: '#f0fdf4', border: '#bbf7d0', IconComp: MenuBookIcon },
+            MAESTRIA:       { label: 'Maestría',        color: '#7c3aed', bg: '#f5f3ff', border: '#ddd6fe', IconComp: ScienceIcon },
+            DOCTORADO:      { label: 'Doctorado',       color: '#9f1239', bg: '#fff1f2', border: '#fecdd3', IconComp: AccountBalanceIcon },
           };
           const PROG_NIVEL_ORDER = ['TECNOLOGICO', 'PROFESIONAL', 'ESPECIALIZACION', 'MAESTRIA', 'DOCTORADO'];
 
@@ -10112,7 +10111,7 @@ const renderCategoryBars = (items = [], options = {}) => {
                         display: 'flex', alignItems: 'center', justifyContent: 'space-between'
                       }}>
                         <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.8 }}>
-                          <Typography sx={{ fontSize: 15, lineHeight: 1 }}>{meta.icon}</Typography>
+                          {meta.IconComp && <meta.IconComp sx={{ fontSize: 18, color: meta.color }} />}
                           <Box>
                             <Typography sx={{ fontSize: 12, fontWeight: 800, color: meta.color, textTransform: 'uppercase', letterSpacing: 0.6, lineHeight: 1.2 }}>
                               {meta.label}
