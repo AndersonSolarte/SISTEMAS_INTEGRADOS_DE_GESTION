@@ -98,6 +98,7 @@ import {
 } from 'recharts';
 import { useSnackbar } from 'notistack';
 import { useLocation } from 'react-router-dom';
+import XLSXStyle from 'xlsx-js-style';
 import { useAuth } from '../context/AuthContext';
 import gestionInformacionService from '../services/gestionInformacionService';
 import SaberProDashboard from '../components/saberPro/SaberProDashboard';
@@ -294,7 +295,7 @@ const REPORT_SECTIONS = [
 const POBLACIONAL_DASHBOARD_CARDS = [
   { key: 'flujo', title: 'Inscritos / Admitidos / Primer Curso', description: 'Embudo poblacional histórico por periodo.', color: '#2563eb', type: 'analytics' },
   { key: 'matriculados', title: 'Matriculados', description: 'Serie histórica y análisis por filtros.', color: '#4338ca', type: 'analytics' },
-  { key: 'graduados', title: 'Graduados + Egresados Totales', description: 'Graduados con tarjetas complementarias de egresados.', color: '#0f766e', type: 'analytics' },
+  { key: 'graduados', title: 'Graduados + Egresados Totales', description: 'Graduados con tarjetas complementarias de egresados.', color: '#153e69', type: 'analytics' },
   { key: 'caracterizacion', title: 'Caracterización', description: 'Dashboard poblacional de caracterización y distribución.', color: '#d97706', type: 'analytics' },
   { key: 'resumen_estadistico', title: 'Cuadros Maestros', description: 'Tablas consolidadas de estudiantes por año y periodo académico.', color: '#0f766e', type: 'summary' },
   { key: 'desercion', title: 'Deserción', description: 'Tablero de deserción por periodo y cohorte (estructura base).', color: '#dc2626', type: 'placeholder' },
@@ -310,7 +311,7 @@ const CUADROS_MAESTROS_MODULES = [
     shortLabel: 'General',
     description: 'Portada ejecutiva de los cuadros maestros y mapa de módulos del libro base.',
     sheets: ['General'],
-    tone: '#0f766e'
+    tone: '#153e69'
   },
   {
     key: 'estudiantes',
@@ -403,12 +404,13 @@ const SABER_PRO_REPORT_SECTIONS = [
 
 const PERIOD_LABEL_TO_SORT = { IP: 1, I: 1, '1': 1, IIP: 2, II: 2, '2': 2 };
 const INSCRITOS_BAR_BLUE = '#2f6df6';
-const initialStatsFilters = { programas: [], anios: [], periodos: [] };
+const initialStatsFilters = { programas: [], facultades: [], anios: [], periodos: [] };
+const getRowFacultyValue = (row = {}) => row.facultad || row.dependencia || row.FACULTAD || '';
 const SUMMARY_ESTADISTICO_YEAR_WINDOW = 6;
 const getMaxClosedAcademicYear = () => new Date().getFullYear() - 1;
 const isValidPoblacionalAnalysisYear = (value) => {
   const year = Number(value);
-  return Number.isFinite(year) && year >= 1900 && year <= getMaxClosedAcademicYear();
+  return Number.isFinite(year) && year >= 1900 && year <= 2200;
 };
 const STATS_FILTER_SECTION_KEYS = REPORT_SECTIONS.map((section) => section.key);
 const buildInitialStatsFiltersBySection = () =>
@@ -434,6 +436,12 @@ const escapeXml = (value = '') =>
     .replaceAll("'", '&apos;');
 
 const parsePeriodo = (row) => {
+  // Check row.periodo first — most reliable direct field
+  const rawPeriodo = String(row?.periodo || '').trim().toUpperCase();
+  if (rawPeriodo && PERIOD_LABEL_TO_SORT[rawPeriodo] !== undefined) {
+    return { token: rawPeriodo, sort: PERIOD_LABEL_TO_SORT[rawPeriodo] };
+  }
+
   const sources = [row?.observaciones, row?.unidad, row?.dependencia, row?.indicador]
     .map((value) => String(value || '').toUpperCase());
 
@@ -509,6 +517,12 @@ const normalizeRawProgramKey = (value = '') =>
     .trim()
     .toUpperCase();
 
+const normalizeProgramMatchText = (value = '') =>
+  normalizeRawProgramKey(value)
+    .replace(/[^A-Z0-9]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+
 const PROGRAM_ALIAS_RULES = [
   { pattern: /^ABOGADO \(A\)$/, canonical: 'DERECHO', label: 'DERECHO' },
   { pattern: /^ARQUITECTO \(A\)$/, canonical: 'ARQUITECTURA', label: 'ARQUITECTURA' },
@@ -532,7 +546,50 @@ const PROGRAM_ALIAS_RULES = [
 ];
 
 const getCanonicalProgramMeta = (value = '') => {
-  let normalized = normalizeRawProgramKey(value)
+  const rawNormalized = normalizeRawProgramKey(value);
+  if (!rawNormalized) return { key: '', label: '' };
+  const matchText = normalizeProgramMatchText(value);
+
+  const looseProgramAliases = [
+    // Posgrado FIRST — must be before generic rules that match partial words like ARQUITECT or DERECHO
+    { test: (text) => /ESPECIALIZACION.*ARQUITECTURA.*URBANISMO|ESP.*ARQUITECTURA.*URBANISMO/.test(text), canonical: 'ESPECIALIZACION EN ARQUITECTURA Y URBANISMO BIOCLIMATICO' },
+    { test: (text) => /ESPECIALIZACION.*DERECHO EMPRESARIAL|ESP.*DERECHO EMPRESARIAL/.test(text), canonical: 'ESPECIALIZACION EN DERECHO EMPRESARIAL' },
+    { test: (text) => /ESPECIALIZACION.*GERENCIA DE PROYECTOS|ESP.*GERENCIA DE PROYECTOS/.test(text), canonical: 'ESPECIALIZACION EN GERENCIA DE PROYECTOS' },
+    { test: (text) => /ESPECIALIZACION.*INFANCIA.*CULTURA.*DESARROLLO|ESP.*INFANCIA.*CULTURA.*DESARROLLO/.test(text), canonical: 'ESPECIALIZACION EN INFANCIA, CULTURA Y DESARROLLO' },
+    { test: (text) => /ESPECIALIZACION.*PEDAGOGIA.*ENTRENAMIENTO|ESP.*PEDAGOGIA.*ENTRENAMIENTO/.test(text), canonical: 'ESPECIALIZACION EN PEDAGOGIA DEL ENTRENAMIENTO DEPORTIVO' },
+    { test: (text) => /ESPECIALIZACION.*GERENCIA.*SEGURIDAD|ESP.*GERENCIA.*SEGURIDAD|ESPECIALIZACION.*SEGURIDAD.*SALUD|ESP.*SEGURIDAD.*SALUD/.test(text), canonical: 'ESPECIALIZACION EN GERENCIA DE LA SEGURIDAD Y SALUD EN EL TRABAJO' },
+    { test: (text) => /ESPECIALIZACION.*BIG DATA|ESP.*BIG DATA/.test(text), canonical: 'ESPECIALIZACION EN BIG DATA' },
+    { test: (text) => /ESPECIALIZACION.*SEGURIDAD INFORMATICA|ESP.*SEGURIDAD INFORMATICA/.test(text), canonical: 'ESPECIALIZACION EN SEGURIDAD INFORMATICA' },
+    { test: (text) => /MAESTRIA.*GERENCIA DE PROYECTOS/.test(text), canonical: 'MAESTRIA EN GERENCIA DE PROYECTOS' },
+    // Generic professional programs
+    { test: (text) => /CONTADUR.*BLICA|CONTADOR.*PUBLICO/.test(text), canonical: 'CONTADURIA PUBLICA' },
+    { test: (text) => /DISE.*GRAFICO|DISENADOR.*GRAFICO/.test(text), canonical: 'DISENO GRAFICO' },
+    { test: (text) => /PSICOLOG/.test(text), canonical: 'PSICOLOGIA' },
+    { test: (text) => /ADMINISTR.*EMPRESAS|ADMINISTRADOR.*EMPRESAS/.test(text), canonical: 'ADMINISTRACION DE EMPRESAS' },
+    { test: (text) => /DERECHO|ABOGADO/.test(text), canonical: 'DERECHO' },
+    { test: (text) => /ARQUITECT/.test(text), canonical: 'ARQUITECTURA' },
+    { test: (text) => /LIC.*EDUCACION FISICA/.test(text), canonical: 'LICENCIATURA EN EDUCACION FISICA' },
+    { test: (text) => /LIC.*EDUCACION INFANTIL/.test(text), canonical: 'LICENCIATURA EN EDUCACION INFANTIL' },
+    { test: (text) => /LIC.*QUIMICA/.test(text), canonical: 'LICENCIATURA EN QUIMICA' },
+    { test: (text) => /INGENIER.*SISTEMAS/.test(text), canonical: 'INGENIERIA DE SISTEMAS' },
+    { test: (text) => /INGENIER.*ELECTRONIC/.test(text), canonical: 'INGENIERIA ELECTRONICA' },
+    { test: (text) => /TECNOLOG.*CONTABILIDAD.*FINANZAS/.test(text), canonical: 'TECNOLOGIA EN CONTABILIDAD Y FINANZAS' },
+    { test: (text) => /TECNOLOG.*GESTION FINANCIERA/.test(text), canonical: 'TECNOLOGIA EN GESTION FINANCIERA' }
+  ];
+
+  const looseMatch = looseProgramAliases.find((rule) => rule.test(matchText));
+  if (looseMatch) {
+    return { key: looseMatch.canonical, label: looseMatch.canonical };
+  }
+
+  // Check alias rules on the raw normalized form FIRST so patterns like /^PSICOLOGO \(A\)$/ match
+  const matchedRule = PROGRAM_ALIAS_RULES.find((rule) => rule.pattern.test(rawNormalized));
+  if (matchedRule) {
+    return { key: matchedRule.canonical, label: matchedRule.canonical };
+  }
+
+  // Apply inline normalization to handle abbreviations and title-style variants
+  const normalized = rawNormalized
     .replace(/\bLIC\.?\s+EN\b/g, 'LICENCIATURA EN')
     .replace(/\bESP\.?\s+EN\b/g, 'ESPECIALIZACION EN')
     .replace(/\bTECNOLOGO \(A\)\s+EN\b/g, 'TECNOLOGIA EN')
@@ -545,16 +602,14 @@ const getCanonicalProgramMeta = (value = '') => {
     .replace(/\bCONTADOR \(A\) PUBLICO \(A\)\b/g, 'CONTADURIA PUBLICA')
     .replace(/\bDISENADOR \(A\) GRAFICO \(A\)\b/g, 'DISENO GRAFICO')
     .replace(/\bTECNOLOGIA EN CONTADURIA Y FINANZAS\b/g, 'TECNOLOGIA EN CONTABILIDAD Y FINANZAS');
-  if (!normalized) return { key: '', label: '' };
-  const matchedRule = PROGRAM_ALIAS_RULES.find((rule) => rule.pattern.test(normalized));
-  if (matchedRule) {
-    return { key: matchedRule.canonical, label: matchedRule.label };
+
+  // After inline replacements, check rules again (covers "LIC. EN EDUCACION FISICA" → canonical)
+  const matchedRule2 = PROGRAM_ALIAS_RULES.find((rule) => rule.pattern.test(normalized));
+  if (matchedRule2) {
+    return { key: matchedRule2.canonical, label: matchedRule2.canonical };
   }
-  const prettyLabel = String(value || '')
-    .replace(/\s+/g, ' ')
-    .trim()
-    || normalized;
-  return { key: normalized, label: prettyLabel };
+
+  return { key: normalized, label: normalized };
 };
 
 const normalizeProgramKey = (value = '') => getCanonicalProgramMeta(value).key;
@@ -860,6 +915,44 @@ const isPostgradoProgram = (programa = '') => {
   );
 };
 
+const PROGRAMAS_PLAN_CONTINGENCIA = new Set([
+  'TECNOLOGIA EN GESTION FINANCIERA',
+  'TECNOLOGIA EN CONTABILIDAD Y FINANZAS'
+]);
+const esInactivoContingencia = (label) =>
+  PROGRAMAS_PLAN_CONTINGENCIA.has(normalizeProgramKey(String(label || '')));
+
+const CANONICAL_DISPLAY_LABELS = {
+  'PSICOLOGIA': 'PSICOLOGÍA',
+  'CONTADURIA PUBLICA': 'CONTADURÍA PÚBLICA',
+  'ADMINISTRACION DE EMPRESAS': 'ADMINISTRACIÓN DE EMPRESAS',
+  'INGENIERIA DE SISTEMAS': 'INGENIERÍA DE SISTEMAS',
+  'DISENO GRAFICO': 'DISEÑO GRÁFICO',
+  'INGENIERIA ELECTRONICA': 'INGENIERÍA ELECTRÓNICA',
+  'INGENIERIA INDUSTRIAL': 'INGENIERÍA INDUSTRIAL',
+  'INGENIERIA FINANCIERA': 'INGENIERÍA FINANCIERA',
+  'LICENCIATURA EN EDUCACION INFANTIL': 'LICENCIATURA EN EDUCACIÓN INFANTIL',
+  'LICENCIATURA EN EDUCACION PREESCOLAR': 'LICENCIATURA EN EDUCACIÓN PREESCOLAR',
+  'LICENCIATURA EN EDUCACION FISICA': 'LICENCIATURA EN EDUCACIÓN FÍSICA',
+  'LICENCIATURA EN QUIMICA': 'LICENCIATURA EN QUÍMICA',
+  'TECNOLOGIA EN CONTABILIDAD Y FINANZAS': 'TECNOLOGÍA EN CONTABILIDAD Y FINANZAS',
+  'TECNOLOGIA EN GESTION FINANCIERA': 'TECNOLOGÍA EN GESTIÓN FINANCIERA',
+  'TECNOLOGIA EN MARKETING DIGITAL': 'TECNOLOGÍA EN MARKETING DIGITAL',
+  'TECNOLOGIA EN ADMINISTRACION FINANCIERA': 'TECNOLOGÍA EN ADMINISTRACIÓN FINANCIERA',
+  'ESPECIALIZACION EN GERENCIA DE PROYECTOS': 'ESPECIALIZACIÓN EN GERENCIA DE PROYECTOS',
+  'ESPECIALIZACION EN INFANCIA, CULTURA Y DESARROLLO': 'ESPECIALIZACIÓN EN INFANCIA, CULTURA Y DESARROLLO',
+  'ESPECIALIZACION EN ARQUITECTURA Y URBANISMO BIOCLIMATICO': 'ESPECIALIZACIÓN EN ARQUITECTURA Y URBANISMO BIOCLIMÁTICO',
+  'ESPECIALIZACION EN DERECHO EMPRESARIAL': 'ESPECIALIZACIÓN EN DERECHO EMPRESARIAL',
+  'ESPECIALIZACION EN PEDAGOGIA DEL ENTRENAMIENTO DEPORTIVO': 'ESPECIALIZACIÓN EN PEDAGOGÍA DEL ENTRENAMIENTO DEPORTIVO',
+  'ESPECIALIZACION EN GERENCIA DE LA SEGURIDAD Y SALUD EN EL TRABAJO': 'ESPECIALIZACIÓN EN GERENCIA DE LA SEGURIDAD Y SALUD EN EL TRABAJO',
+  'ESPECIALIZACION EN BIG DATA': 'ESPECIALIZACIÓN EN BIG DATA',
+  'ESPECIALIZACION EN SEGURIDAD INFORMATICA': 'ESPECIALIZACIÓN EN SEGURIDAD INFORMÁTICA',
+  'MAESTRIA EN GERENCIA DE PROYECTOS': 'MAESTRÍA EN GERENCIA DE PROYECTOS',
+};
+const getDisplayProgramLabel = (label) => {
+  const key = normalizeProgramKey(String(label || ''));
+  return CANONICAL_DISPLAY_LABELS[key] || label;
+};
 const hasAccents = (value = '') => /[ÁÃ‰ÁÁ“ÁÅ¡áéíóúÁâ€˜ñÁÅ“Á¼]/.test(String(value || ''));
 
 const selectPreferredProgramLabel = (current = '', incoming = '') => {
@@ -1159,27 +1252,32 @@ const summarizeFilters = (statsFilters) => ({
   periodos: statsFilters.periodos.length || 'Todos'
 });
 
-const getAutoStatsFilters = ({ programasDisponibles = [], aniosDisponibles = [], periodosDisponibles = [] }) => {
+const getAutoStatsFilters = ({ programasDisponibles = [], facultadesDisponibles = [], aniosDisponibles = [], periodosDisponibles = [] }) => {
   return {
     programas: [...programasDisponibles],
+    facultades: [...facultadesDisponibles],
     anios: [...aniosDisponibles.map((x) => String(x))],
     periodos: [...periodosDisponibles.map((x) => x.label)]
   };
 };
 
-const applyStatsFiltersToRows = ({ rows = [], filters = initialStatsFilters, programasDisponibles = [], aniosDisponibles = [], periodosDisponibles = [] }) => {
+const applyStatsFiltersToRows = ({ rows = [], filters = initialStatsFilters, programasDisponibles = [], facultadesDisponibles = [], aniosDisponibles = [], periodosDisponibles = [] }) => {
   const allProgramasSelected = programasDisponibles.length > 0 && (filters?.programas || []).length === programasDisponibles.length;
+  const allFacultadesSelected = facultadesDisponibles.length > 0 && (filters?.facultades || []).length === facultadesDisponibles.length;
   const allAniosSelected = aniosDisponibles.length > 0 && (filters?.anios || []).length === aniosDisponibles.length;
   const allPeriodosSelected = periodosDisponibles.length > 0 && (filters?.periodos || []).length === periodosDisponibles.length;
   const programasSet = new Set((filters?.programas || []).map((item) => normalizeProgramKey(item)));
+  const facultadesSet = new Set((filters?.facultades || []).map((item) => normalizeRawProgramKey(item)));
   const aniosSet = new Set(filters?.anios || []);
   const periodosSet = new Set(filters?.periodos || []);
 
   return rows.filter((row) => {
     const { periodLabel } = getRowPeriodMeta(row);
     const programa = normalizeProgramKey(row.programa);
+    const facultad = normalizeRawProgramKey(getRowFacultyValue(row));
     const anio = String(Number(row.anio) || '');
     if (!allProgramasSelected && programasSet.size > 0 && !programasSet.has(programa)) return false;
+    if (!allFacultadesSelected && facultadesSet.size > 0 && !facultadesSet.has(facultad)) return false;
     if (!allAniosSelected && aniosSet.size > 0 && !aniosSet.has(anio)) return false;
     if (!allPeriodosSelected && periodosSet.size > 0 && !periodosSet.has(periodLabel)) return false;
     return true;
@@ -1586,6 +1684,11 @@ function GestionInformacion() {
   const [caracterizacionPanelLoading, setCaracterizacionPanelLoading] = useState(false);
   const [caracterizacionUi, setCaracterizacionUi] = useState({ estrato: '', grupoEtnico: '' });
   const [egresadosDetalleActivo, setEgresadosDetalleActivo] = useState('');
+  const [graduadosDashboardView, setGraduadosDashboardView] = useState('estadistica');
+  const [graduadosGeneralData, setGraduadosGeneralData] = useState(null);
+  const [graduadosGeneralLoading, setGraduadosGeneralLoading] = useState(false);
+  const [graduadosGeneralProgramsFilter, setGraduadosGeneralProgramsFilter] = useState([]);
+  const [graduadosGeneralAnioFilter, setGraduadosGeneralAnioFilter] = useState('todos');
   const [desercionUi, setDesercionUi] = useState({
     programa: '',
     tipo: 'Todos',
@@ -1600,7 +1703,7 @@ function GestionInformacion() {
     base: 'Todos',
     periodos: []
   });
-  const [empleabilidadUi, setEmpleabilidadUi] = useState({ programa: '' });
+  const [empleabilidadUi, setEmpleabilidadUi] = useState({ programa: '', anios: [] });
   const [resumenEstadisticoUi, setResumenEstadisticoUi] = useState({ programa: '', module: 'informacion_general' });
   const [matriculadosPanelData, setMatriculadosPanelData] = useState(null);
   const [matriculadosPanelLoading, setMatriculadosPanelLoading] = useState(false);
@@ -1619,6 +1722,8 @@ function GestionInformacion() {
   const [matriculadosIncidenciasEstado, setMatriculadosIncidenciasEstado] = useState('pendiente');
   const [geoFilters, setGeoFilters] = useState({ programas: [], anios: [], periodos: ['1', '2'] });
   const [geoAppliedFilters, setGeoAppliedFilters] = useState({ programas: [], anios: [], periodos: ['1', '2'] });
+  const [graduadosNivelFilter, setGraduadosNivelFilter] = useState('todos');
+  const [graduadosChartPeriodFilter, setGraduadosChartPeriodFilter] = useState('');
   const [nivelExpandedKey, setNivelExpandedKey] = useState(null);
   const [sexoExpandedKey, setSexoExpandedKey] = useState(null);
   const [geoTerritorialFilters, setGeoTerritorialFilters] = useState({ sexos: [], niveles: [] });
@@ -1637,10 +1742,22 @@ function GestionInformacion() {
   const matriculadosPanelReqRef = useRef(0);
   const matLoadedKeyRef = useRef(null);
   const matriculadosPanelDataRef = useRef(null);
+  const graduadosGeneralCacheRef = useRef(new Map());
   const geoFiltersRef = useRef({ sexos: [], niveles: [] });
   const [matFilters, setMatFilters] = useState({ anios: [], periodos: [], programas: [] });
   const [matHistoricoCache, setMatHistoricoCache] = useState(null);
+  const [matProgramaCache, setMatProgramaCache] = useState({});
+  const [matriculadosTab, setMatriculadosTab] = useState('general');
+  const [matComparativoSemType, setMatComparativoSemType] = useState('IP');
+  const [matAcordeonYears, setMatAcordeonYears] = useState(new Set());
+  const [matAcordeonPeriods, setMatAcordeonPeriods] = useState(new Set());
+  const [matNivelFilter, setMatNivelFilter] = useState('todos');
   const municipalSectionRef = useRef(null);
+  const flujoStackedChartRef = useRef(null);
+  const flujoRateChartRef = useRef(null);
+  const graduadosBarChartRef = useRef(null);
+  const graduadosLineChartRef = useRef(null);
+  const graduadosGeneralCompositionRef = useRef(null);
   const GI_FILTER_LABEL_SX = { mb: 0.6, color: '#475569', fontWeight: 700, fontSize: 12.5 };
   const GI_FILTER_SELECT_SX = {
     width: '100%',
@@ -1764,8 +1881,15 @@ function GestionInformacion() {
             ? Array.from(new Set(nextValue.map(getYearFromPeriodLabel))).filter((y) => allYearValues.includes(y))
             : [];
           return {
+          ...prev,
+          [currentSection]: { ...currentFilters, periodos: nextValue, anios: nextYears }
+        };
+      }
+
+        if (key === 'facultades') {
+          return {
             ...prev,
-            [currentSection]: { ...currentFilters, periodos: nextValue, anios: nextYears }
+            [currentSection]: { ...currentFilters, facultades: nextValue }
           };
         }
 
@@ -1793,6 +1917,13 @@ function GestionInformacion() {
         return {
           ...prev,
           [currentSection]: { ...currentFilters, periodos: clean, anios: nextYears }
+        };
+      }
+
+      if (key === 'facultades') {
+        return {
+          ...prev,
+          [currentSection]: { ...currentFilters, facultades: clean }
         };
       }
 
@@ -1945,25 +2076,27 @@ function GestionInformacion() {
     }
   }, [canManageBases, enqueueSnackbar, page, rowsPerPage]);
 
-  const fetchSeriesRows = useCallback(async () => {
+  const fetchSeriesRows = useCallback(async (options = {}) => {
+    const effectivePanel = options.panel || poblacionalPanel;
+    const effectiveSection = options.section || statSection;
     const requestId = Date.now() + Math.random();
     seriesRowsReqRef.current = requestId;
     setSeriesLoading(true);
     try {
       let requestedSubcategorias = ['Inscritos', 'Admitidos', 'Primer Curso'];
-      if (poblacionalPanel === 'analytics') {
-        const section = REPORT_SECTIONS.find((item) => item.key === statSection);
+      if (effectivePanel === 'analytics') {
+        const section = REPORT_SECTIONS.find((item) => item.key === effectiveSection);
         requestedSubcategorias = section?.subcategorias?.length ? [...section.subcategorias] : requestedSubcategorias;
-        if (statSection === 'graduados') {
+        if (effectiveSection === 'graduados') {
           requestedSubcategorias.push('Cantidad Total Egresados');
         }
-      } else if (poblacionalPanel === 'desercion') {
+      } else if (effectivePanel === 'desercion') {
         requestedSubcategorias = ['Desercion'];
-      } else if (poblacionalPanel === 'empleabilidad') {
+      } else if (effectivePanel === 'empleabilidad') {
         requestedSubcategorias = ['Empleabilidad'];
-      } else if (poblacionalPanel === 'contexto_externo') {
+      } else if (effectivePanel === 'contexto_externo') {
         requestedSubcategorias = ['Contexto Externo'];
-      } else if (poblacionalPanel === 'resumen_estadistico') {
+      } else if (effectivePanel === 'resumen_estadistico') {
         requestedSubcategorias = ['Inscritos', 'Admitidos', 'Primer Curso', 'Matriculados', 'Graduados', 'Desercion'];
       }
 
@@ -1986,6 +2119,41 @@ function GestionInformacion() {
       }
     }
   }, [enqueueSnackbar, poblacionalPanel, statSection]);
+
+  const fetchGraduadosGeneralDashboard = useCallback(async (options = {}) => {
+    const cacheKey = graduadosGeneralAnioFilter && graduadosGeneralAnioFilter !== 'todos'
+      ? `anio:${graduadosGeneralAnioFilter}`
+      : 'todos';
+    if (!options.force && graduadosGeneralCacheRef.current.has(cacheKey)) {
+      const cachedPayload = graduadosGeneralCacheRef.current.get(cacheKey);
+      setGraduadosGeneralData(cachedPayload);
+      const programOptions = (cachedPayload?.programas || []).map((row) => row.programa).filter(Boolean);
+      setGraduadosGeneralProgramsFilter(programOptions);
+      return;
+    }
+    setGraduadosGeneralLoading(true);
+    try {
+      const params = {
+        categoria: 'Poblacional',
+        aggregate: 'graduados_general_dashboard'
+      };
+      if (options.force) params._ts = Date.now();
+      if (graduadosGeneralAnioFilter && graduadosGeneralAnioFilter !== 'todos') {
+        params.anio = graduadosGeneralAnioFilter;
+      }
+      const response = await gestionInformacionService.getEstadisticas(params);
+      const payload = response?.data || null;
+      graduadosGeneralCacheRef.current.set(cacheKey, payload);
+      setGraduadosGeneralData(payload);
+      const programOptions = (payload?.programas || []).map((row) => row.programa).filter(Boolean);
+      setGraduadosGeneralProgramsFilter(programOptions);
+    } catch (error) {
+      enqueueSnackbar(error.response?.data?.message || 'Error al cargar General de Graduados', { variant: 'error' });
+      setGraduadosGeneralData(null);
+    } finally {
+      setGraduadosGeneralLoading(false);
+    }
+  }, [enqueueSnackbar, graduadosGeneralAnioFilter]);
 
   const fetchMatriculadosPanel = useCallback(async () => {
     if (menuView !== 'estadistica' || selectedCard !== 'poblacional' || poblacionalPanel !== 'analytics' || statSection !== 'matriculados') return;
@@ -2047,6 +2215,48 @@ function GestionInformacion() {
   const requestMatriculadosRefresh = useCallback(() => {
     setMatriculadosRefreshToken((prev) => prev + 1);
   }, []);
+
+  const fetchMatriculadosProgramaComparison = useCallback(async (periods) => {
+    if (!periods || periods.length === 0) return;
+    const newCache = {};
+    for (const period of periods) {
+      try {
+        const parts = String(period).split('-');
+        const anio = parts[0];
+        const sem = parts[1];
+        const response = await gestionInformacionService.getEstadisticas({
+          categoria: 'Poblacional',
+          aggregate: 'matriculados_geo_dashboard',
+          programas: [],
+          anios: [anio],
+          periodos: [sem],
+          sexos: [],
+          niveles: []
+        });
+        const payload = response?.data || null;
+        const progData = {};
+        Object.values(payload?.programasPorSexo || {}).forEach((progList) => {
+          (progList || []).forEach((p) => {
+            const label = String(p.programa || '').trim();
+            if (!label) return;
+            if (!progData[label]) progData[label] = 0;
+            progData[label] += normalizeNumber(p.total || 0);
+          });
+        });
+        newCache[period] = progData;
+      } catch (_) {}
+    }
+    setMatProgramaCache(newCache);
+  }, []);
+
+  const matProgCacheFetchedRef = useRef(false);
+  useEffect(() => {
+    if (!matHistoricoCache || matHistoricoCache.length === 0) return;
+    if (matProgCacheFetchedRef.current) return;
+    matProgCacheFetchedRef.current = true;
+    const periods = matHistoricoCache.map((h) => h.periodLabel).filter(Boolean);
+    fetchMatriculadosProgramaComparison(periods);
+  }, [matHistoricoCache]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const fetchMatriculadosIncidencias = useCallback(async () => {
     if (menuView !== 'estadistica' || selectedCard !== 'poblacional' || poblacionalPanel !== 'analytics' || statSection !== 'matriculados') return;
@@ -2154,6 +2364,11 @@ function GestionInformacion() {
       fetchSeriesRows();
     }
   }, [fetchSeriesRows, menuView, selectedCard]);
+
+  useEffect(() => {
+    if (menuView !== 'estadistica' || selectedCard !== 'poblacional' || poblacionalPanel !== 'analytics' || statSection !== 'graduados') return;
+    fetchGraduadosGeneralDashboard();
+  }, [fetchGraduadosGeneralDashboard, menuView, poblacionalPanel, selectedCard, statSection]);
 
   useEffect(() => {
     if (menuView !== 'estadistica' || selectedCard !== 'poblacional' || poblacionalPanel !== 'analytics' || statSection !== 'matriculados') return;
@@ -2282,6 +2497,14 @@ function GestionInformacion() {
         programLabelByKey.set(key, selectPreferredProgramLabel(existing, rawProgram));
       });
       const programas = Array.from(programLabelByKey.values()).sort((a, b) => a.localeCompare(b, 'es'));
+      const facultadLabelByKey = new Map();
+      sectionRows.forEach((row) => {
+        const rawFacultad = String(getRowFacultyValue(row)).replace(/\s+/g, ' ').trim();
+        const key = normalizeRawProgramKey(rawFacultad);
+        if (!key) return;
+        if (!facultadLabelByKey.has(key)) facultadLabelByKey.set(key, rawFacultad);
+      });
+      const facultades = Array.from(facultadLabelByKey.values()).sort((a, b) => a.localeCompare(b, 'es'));
       const anios = Array.from(new Set(sectionRows.map((row) => Number(row.anio)).filter((year) => Number.isFinite(year) && year > 0))).sort((a, b) => a - b);
       const periodMap = new Map();
       sectionRows.forEach((row) => {
@@ -2292,13 +2515,17 @@ function GestionInformacion() {
         .map(([label, order]) => ({ label, order }))
         .sort((a, b) => a.order - b.order);
 
-      acc[section.key] = { rows: sectionRows, programas, anios, periodos };
+      acc[section.key] = { rows: sectionRows, programas, facultades, anios, periodos };
       return acc;
     }, {});
   }, [seriesRows]);
 
-  const activeSectionCatalog = sectionCatalogs[statSection] || { rows: [], programas: [], anios: [], periodos: [] };
+  const activeSectionCatalog = sectionCatalogs[statSection] || { rows: [], programas: [], facultades: [], anios: [], periodos: [] };
   const programasDisponibles = activeSectionCatalog.programas;
+  const facultadesDisponibles = useMemo(
+    () => activeSectionCatalog.facultades || [],
+    [activeSectionCatalog.facultades]
+  );
   const aniosDisponibles = activeSectionCatalog.anios;
   const periodosDisponibles = activeSectionCatalog.periodos;
 
@@ -2309,17 +2536,20 @@ function GestionInformacion() {
       ...prev,
       [currentSection]: getAutoStatsFilters({
         programasDisponibles,
+        facultadesDisponibles,
         aniosDisponibles,
         periodosDisponibles
       })
     }));
-  }, [aniosDisponibles, periodosDisponibles, programasDisponibles, setSectionFilterMode, statSection]);
+  }, [aniosDisponibles, facultadesDisponibles, periodosDisponibles, programasDisponibles, setSectionFilterMode, statSection]);
 
   const normalizeStatsFiltersWithCatalog = useCallback((filters, catalog) => {
-    const safeCatalog = catalog || { programas: [], anios: [], periodos: [] };
+    const safeCatalog = catalog || { programas: [], facultades: [], anios: [], periodos: [] };
     const programKeys = new Set(safeCatalog.programas.map((item) => normalizeProgramKey(item)));
+    const facultadKeys = new Set((safeCatalog.facultades || []).map((item) => normalizeRawProgramKey(item)));
     return {
       programas: (filters?.programas || []).filter((item) => programKeys.has(normalizeProgramKey(item))),
+      facultades: (filters?.facultades || []).filter((item) => facultadKeys.has(normalizeRawProgramKey(item))),
       anios: (filters?.anios || []).filter((item) => safeCatalog.anios.map((x) => String(x)).includes(item)),
       periodos: (filters?.periodos || []).filter((item) => safeCatalog.periodos.some((x) => x.label === item))
     };
@@ -2332,6 +2562,7 @@ function GestionInformacion() {
     const nextSignature = JSON.stringify({
       section: sectionKey,
       programas: activeCatalog.programas,
+      facultades: activeCatalog.facultades || [],
       anios: activeCatalog.anios,
       periodos: activeCatalog.periodos.map((x) => x.label)
     });
@@ -2347,6 +2578,7 @@ function GestionInformacion() {
           ...prev,
           [sectionKey]: getAutoStatsFilters({
             programasDisponibles: activeCatalog.programas,
+            facultadesDisponibles: activeCatalog.facultades || [],
             aniosDisponibles: activeCatalog.anios,
             periodosDisponibles: activeCatalog.periodos
           })
@@ -2364,10 +2596,11 @@ function GestionInformacion() {
       rows: activeSectionCatalog.rows,
       filters: activeStatsFilters,
       programasDisponibles,
+      facultadesDisponibles,
       aniosDisponibles,
       periodosDisponibles
     });
-  }, [activeSectionCatalog.rows, activeStatsFilters, programasDisponibles, aniosDisponibles, periodosDisponibles]);
+  }, [activeSectionCatalog.rows, activeStatsFilters, programasDisponibles, facultadesDisponibles, aniosDisponibles, periodosDisponibles]);
 
   const sectionSeriesMap = useMemo(() => {
     return REPORT_SECTIONS.reduce((acc, section) => {
@@ -2377,6 +2610,7 @@ function GestionInformacion() {
         rows: catalog.rows || [],
         filters: sectionFilters,
         programasDisponibles: catalog.programas,
+        facultadesDisponibles: catalog.facultades || [],
         aniosDisponibles: catalog.anios,
         periodosDisponibles: catalog.periodos
       });
@@ -2397,10 +2631,11 @@ function GestionInformacion() {
       rows: activeSectionCatalog.rows.filter((row) => row.subcategoria === 'Cantidad Total Egresados'),
       filters: { ...activeStatsFilters, periodos: [] },
       programasDisponibles,
+      facultadesDisponibles,
       aniosDisponibles,
       periodosDisponibles: []
     }),
-    [activeSectionCatalog.rows, activeStatsFilters, programasDisponibles, aniosDisponibles]
+    [activeSectionCatalog.rows, activeStatsFilters, programasDisponibles, facultadesDisponibles, aniosDisponibles]
   );
   const cantidadTotalEgresadosDashboard = useMemo(
     () => buildCantidadTotalEgresadosDashboard(cantidadTotalEgresadosRows),
@@ -3358,12 +3593,13 @@ function GestionInformacion() {
 
   const flujoDashboardSeries = useMemo(() => sectionSeriesMap.flujo || [], [sectionSeriesMap]);
   const flujoDashboardRows = useMemo(() => {
-    const catalog = sectionCatalogs.flujo || { rows: [], programas: [], anios: [], periodos: [] };
+    const catalog = sectionCatalogs.flujo || { rows: [], programas: [], facultades: [], anios: [], periodos: [] };
     const filters = statsFiltersBySection.flujo || initialStatsFilters;
     return applyStatsFiltersToRows({
       rows: catalog.rows || [],
       filters,
       programasDisponibles: catalog.programas || [],
+      facultadesDisponibles: catalog.facultades || [],
       aniosDisponibles: catalog.anios || [],
       periodosDisponibles: catalog.periodos || []
     });
@@ -3439,7 +3675,7 @@ function GestionInformacion() {
   useEffect(() => {
     const programas = Array.from(new Set(empleabilidadRows.map((r) => String(r.programa || '').trim()).filter(Boolean))).sort((a, b) => a.localeCompare(b, 'es'));
     if (empleabilidadUi.programa && !programas.includes(empleabilidadUi.programa)) {
-      setEmpleabilidadUi({ programa: '' });
+      setEmpleabilidadUi({ programa: '', anios: [] });
     }
   }, [empleabilidadRows, empleabilidadUi.programa]);
 
@@ -3512,17 +3748,41 @@ function GestionInformacion() {
       setImportFile(null);
       await fetchData();
       if (baseSeleccionada === 'poblacional') {
-        await fetchSeriesRows();
         const nextSection = POBLACIONAL_SUBBASE_TO_SECTION[subcategoria];
         if (nextSection) {
+          const isAnalyticsSection = REPORT_SECTIONS.some((s) => s.key === nextSection);
+          setSectionFilterMode(nextSection, 'auto');
+          autoFilterCatalogSignatureRef.current = {
+            ...autoFilterCatalogSignatureRef.current,
+            [nextSection]: ''
+          };
           setSelectedCard('poblacional');
           setMenuView('estadistica');
-          if (REPORT_SECTIONS.some((s) => s.key === nextSection)) {
+          if (isAnalyticsSection) {
+            if (nextSection === 'matriculados') {
+              matLoadedKeyRef.current = null;
+              matProgCacheFetchedRef.current = false;
+              setMatriculadosPanelData(null);
+              setMatHistoricoCache(null);
+              setMatProgramaCache({});
+              setMatFilters({ anios: [], periodos: [], programas: [] });
+              setGeoTerritorialFilters({ sexos: [], niveles: [] });
+              setGeoTerritorialAppliedFilters({ sexos: [], niveles: [] });
+              requestMatriculadosRefresh();
+            }
             setPoblacionalPanel('analytics');
             setStatSection(nextSection);
+            await fetchSeriesRows({ panel: 'analytics', section: nextSection });
+            if (nextSection === 'graduados') {
+              graduadosGeneralCacheRef.current.clear();
+              await fetchGraduadosGeneralDashboard({ force: true });
+            }
           } else {
             setPoblacionalPanel(nextSection);
+            await fetchSeriesRows({ panel: nextSection, section: statSection });
           }
+        } else {
+          await fetchSeriesRows();
         }
       }
     } catch (error) {
@@ -4065,7 +4325,7 @@ function GestionInformacion() {
       } else {
         const v = sectionKey === 'matriculados' ? normalizeNumber(row.matriculados) : normalizeNumber(row.graduados);
         const h = Math.max(1, (v / maxVal) * chartHeight);
-        ctx.fillStyle = sectionKey === 'matriculados' ? '#4338ca' : '#0f766e';
+        ctx.fillStyle = sectionKey === 'matriculados' ? '#4338ca' : '#1e5a96';
         ctx.fillRect(x, axisBottom - h, barW, h);
       }
       if (sectionKey !== 'flujo') {
@@ -4197,6 +4457,103 @@ function GestionInformacion() {
     }
   };
 
+  const downloadStyledExcel = ({ filename = 'datos.xlsx', sheetName = 'Datos', title = 'Exportacion de datos', columns = [], rows = [], totalRow = null }) => {
+    if (!Array.isArray(rows) || rows.length === 0) {
+      enqueueSnackbar('No hay datos para exportar', { variant: 'warning' });
+      return;
+    }
+    const safeColumns = columns.length ? columns : Object.keys(rows[0] || {}).map((key) => ({ key, label: key }));
+    const aoa = [
+      [title],
+      [`Generado: ${new Date().toLocaleString('es-CO')}`],
+      [],
+      safeColumns.map((column) => column.label)
+    ];
+    rows.forEach((row) => {
+      aoa.push(safeColumns.map((column) => row[column.key] ?? ''));
+    });
+    if (totalRow) {
+      aoa.push(safeColumns.map((column) => totalRow[column.key] ?? ''));
+    }
+
+    const worksheet = XLSXStyle.utils.aoa_to_sheet(aoa);
+    const lastColumnIndex = Math.max(0, safeColumns.length - 1);
+    const lastColumnLetter = XLSXStyle.utils.encode_col(lastColumnIndex);
+    worksheet['!merges'] = [
+      { s: { r: 0, c: 0 }, e: { r: 0, c: lastColumnIndex } },
+      { s: { r: 1, c: 0 }, e: { r: 1, c: lastColumnIndex } }
+    ];
+    worksheet['!autofilter'] = { ref: `A4:${lastColumnLetter}${aoa.length}` };
+    worksheet['!freeze'] = { xSplit: 0, ySplit: 4 };
+    worksheet['!cols'] = safeColumns.map((column) => ({
+      wch: Math.max(14, Math.min(52, Number(column.width || String(column.label || '').length + 8)))
+    }));
+
+    const border = {
+      top: { style: 'thin', color: { rgb: 'D7E4FB' } },
+      bottom: { style: 'thin', color: { rgb: 'D7E4FB' } },
+      left: { style: 'thin', color: { rgb: 'D7E4FB' } },
+      right: { style: 'thin', color: { rgb: 'D7E4FB' } }
+    };
+    const titleStyle = {
+      font: { bold: true, color: { rgb: 'FFFFFF' }, sz: 16 },
+      fill: { fgColor: { rgb: '153E69' } },
+      alignment: { horizontal: 'center', vertical: 'center' }
+    };
+    const subtitleStyle = {
+      font: { bold: true, color: { rgb: '153E69' }, sz: 11 },
+      fill: { fgColor: { rgb: 'EAF3FF' } },
+      alignment: { horizontal: 'left', vertical: 'center' }
+    };
+    const headerStyle = {
+      font: { bold: true, color: { rgb: 'FFFFFF' }, sz: 11 },
+      fill: { fgColor: { rgb: '1E5A96' } },
+      alignment: { horizontal: 'center', vertical: 'center' },
+      border
+    };
+    const bodyStyle = {
+      font: { color: { rgb: '0F172A' }, sz: 10 },
+      alignment: { vertical: 'center', wrapText: true },
+      border
+    };
+    const altFill = { fgColor: { rgb: 'F1F5F9' } };
+    const totalStyle = {
+      font: { bold: true, color: { rgb: '153E69' }, sz: 11 },
+      fill: { fgColor: { rgb: 'DBEAFE' } },
+      alignment: { vertical: 'center' },
+      border
+    };
+
+    const range = XLSXStyle.utils.decode_range(worksheet['!ref']);
+    for (let r = range.s.r; r <= range.e.r; r += 1) {
+      for (let c = range.s.c; c <= range.e.c; c += 1) {
+        const address = XLSXStyle.utils.encode_cell({ r, c });
+        if (!worksheet[address]) continue;
+        if (r === 0) worksheet[address].s = titleStyle;
+        else if (r === 1) worksheet[address].s = subtitleStyle;
+        else if (r === 3) worksheet[address].s = headerStyle;
+        else if (totalRow && r === range.e.r) worksheet[address].s = totalStyle;
+        else if (r > 3) {
+          worksheet[address].s = {
+            ...bodyStyle,
+            fill: (r % 2 === 0) ? altFill : { fgColor: { rgb: 'FFFFFF' } },
+            alignment: {
+              ...bodyStyle.alignment,
+              horizontal: safeColumns[c]?.align === 'right' ? 'right' : 'left'
+            }
+          };
+          if (safeColumns[c]?.type === 'number') worksheet[address].z = '#,##0';
+          if (safeColumns[c]?.type === 'percent') worksheet[address].z = '0.0%';
+        }
+      }
+    }
+
+    const workbook = XLSXStyle.utils.book_new();
+    XLSXStyle.utils.book_append_sheet(workbook, worksheet, String(sheetName || 'Datos').slice(0, 31));
+    XLSXStyle.writeFile(workbook, filename.endsWith('.xlsx') ? filename : `${filename}.xlsx`);
+    enqueueSnackbar('Datos exportados en Excel', { variant: 'success' });
+  };
+
   const handleExpandPoblacionalChart = async () => {
     try {
       const node = poblacionalChartRef.current;
@@ -4242,48 +4599,36 @@ function GestionInformacion() {
         enqueueSnackbar('No hay datos para descargar la tabla', { variant: 'warning' });
         return;
       }
-      const rowsHtml = flujoProgramMetrics.map((item) => (
-        `<tr>
-          <td>${escapeHtml(item.programa)}</td>
-          <td style="mso-number-format:'\\#\\,\\#\\#0'; text-align:right;">${normalizeNumber(item.inscritos)}</td>
-          <td style="mso-number-format:'\\#\\,\\#\\#0'; text-align:right;">${normalizeNumber(item.admitidos)}</td>
-          <td style="mso-number-format:'\\#\\,\\#\\#0'; text-align:right;">${normalizeNumber(item.primerCurso)}</td>
-          <td style="mso-number-format:'0\\.00'; text-align:right;">${item.tasaSelectividad === null ? '' : (item.tasaSelectividad * 100).toFixed(2)}</td>
-          <td style="mso-number-format:'0\\.00'; text-align:right;">${item.tasaAbsorcion === null ? '' : (item.tasaAbsorcion * 100).toFixed(2)}</td>
-        </tr>`
-      )).join('');
-      const html = `
-        <html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:x="urn:schemas-microsoft-com:office:excel" xmlns="http://www.w3.org/TR/REC-html40">
-          <head>
-            <meta charset="UTF-8" />
-          </head>
-          <body>
-            <table border="1">
-              <thead>
-                <tr>
-                  <th>PROGRAMA</th>
-                  <th>INSCRITOS</th>
-                  <th>ADMITIDOS</th>
-                  <th>PRIMER_CURSO</th>
-                  <th>TASA_SELECTIVIDAD_PCT</th>
-                  <th>TASA_ABSORCION_PCT</th>
-                </tr>
-              </thead>
-              <tbody>${rowsHtml}</tbody>
-            </table>
-          </body>
-        </html>
-      `;
-      const blob = new Blob([`\uFEFF${html}`], { type: 'application/vnd.ms-excel;charset=utf-8;' });
-      const url = URL.createObjectURL(blob);
-      const link = document.createElement('a');
-      link.href = url;
-      link.download = `tabla_tasas_ingreso_${new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-')}.xls`;
-      document.body.appendChild(link);
-      link.click();
-      link.remove();
-      URL.revokeObjectURL(url);
-      enqueueSnackbar('Tabla descargada en Excel', { variant: 'success' });
+      const rows = flujoProgramMetrics.map((item) => ({
+        programa: String(item.programa || '').toLocaleUpperCase('es-CO'),
+        inscritos: normalizeNumber(item.inscritos),
+        admitidos: normalizeNumber(item.admitidos),
+        primerCurso: normalizeNumber(item.primerCurso),
+        selectividad: item.tasaSelectividad === null ? '' : Number((item.tasaSelectividad * 100).toFixed(1)),
+        absorcion: item.tasaAbsorcion === null ? '' : Number((item.tasaAbsorcion * 100).toFixed(1))
+      }));
+      downloadStyledExcel({
+        filename: `tabla_ingreso_${new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-')}.xlsx`,
+        sheetName: 'Ingreso',
+        title: 'Inscritos, Admitidos y Primer Curso - Datos por programa',
+        columns: [
+          { key: 'programa', label: 'PROGRAMA', width: 46 },
+          { key: 'inscritos', label: 'INSCRITOS', type: 'number', align: 'right', width: 16 },
+          { key: 'admitidos', label: 'ADMITIDOS', type: 'number', align: 'right', width: 16 },
+          { key: 'primerCurso', label: 'PRIMER CURSO', type: 'number', align: 'right', width: 18 },
+          { key: 'selectividad', label: 'SELECTIVIDAD %', align: 'right', width: 18 },
+          { key: 'absorcion', label: 'ABSORCION %', align: 'right', width: 18 }
+        ],
+        rows,
+        totalRow: {
+          programa: 'TOTAL GENERAL',
+          inscritos: rows.reduce((acc, row) => acc + normalizeNumber(row.inscritos), 0),
+          admitidos: rows.reduce((acc, row) => acc + normalizeNumber(row.admitidos), 0),
+          primerCurso: rows.reduce((acc, row) => acc + normalizeNumber(row.primerCurso), 0),
+          selectividad: '',
+          absorcion: ''
+        }
+      });
     } catch (_) {
       enqueueSnackbar('No fue posible descargar la tabla', { variant: 'error' });
     }
@@ -6277,17 +6622,17 @@ const renderCategoryBars = (items = [], options = {}) => {
     ).map(([label, total]) => ({ label, total })).sort((a, b) => b.total - a.total).slice(0, 8);
 
     return (
-      <Paper elevation={0} sx={{ mt: 2, p: { xs: 1.4, md: 1.8 }, borderRadius: 2.5, border: '1px solid #d1fae5', bgcolor: '#f0fdf4' }}>
+      <Paper elevation={0} sx={{ mt: 2, p: { xs: 1.4, md: 1.8 }, borderRadius: 2.5, border: '1px solid #bfdbfe', bgcolor: '#eff6ff' }}>
         <Stack spacing={1.4}>
           <Stack direction={{ xs: 'column', md: 'row' }} spacing={1} justifyContent="space-between" alignItems={{ xs: 'flex-start', md: 'center' }}>
             <Box>
-              <Typography sx={{ fontWeight: 800, color: '#065f46' }}>Tarjetas de Egresados (Subbase: Cantidad Total Egresados)</Typography>
-              <Typography variant="body2" sx={{ color: '#166534' }}>
+              <Typography sx={{ fontWeight: 800, color: '#153e69' }}>Tarjetas de Egresados (Subbase: Cantidad Total Egresados)</Typography>
+              <Typography variant="body2" sx={{ color: '#1e5a96' }}>
                 Complementa la pestaña de Graduados con el total de egresados por detalle/programa. La gráfica de barras superior se mantiene con la subbase de Graduados.
               </Typography>
             </Box>
             <Stack direction="row" spacing={1} flexWrap="wrap">
-              <Chip size="small" label={`Total egresados: ${formatNumber(data.total)}`} sx={{ bgcolor: '#dcfce7', color: '#166534', fontWeight: 700 }} />
+              <Chip size="small" label={`Total egresados: ${formatNumber(data.total)}`} sx={{ bgcolor: '#dbeafe', color: '#153e69', fontWeight: 700 }} />
               <Chip size="small" label={`Registros: ${formatNumber(data.totalRegistros)}`} variant="outlined" />
             </Stack>
           </Stack>
@@ -6303,19 +6648,19 @@ const renderCategoryBars = (items = [], options = {}) => {
                     sx={{
                       cursor: 'pointer',
                       borderRadius: 2.4,
-                      border: active ? '2px solid #10b981' : '1px solid #bbf7d0',
-                      bgcolor: active ? '#ecfdf5' : '#ffffff',
+                      border: active ? '2px solid #1e5a96' : '1px solid #bfdbfe',
+                      bgcolor: active ? '#eff6ff' : '#ffffff',
                       boxShadow: active ? '0 8px 20px rgba(16,185,129,.12)' : 'none'
                     }}
                   >
                     <CardContent sx={{ p: 1.6 }}>
                       <Typography sx={{ fontWeight: 800, color: '#064e3b', fontSize: 14.5 }}>{item.label}</Typography>
-                      <Typography sx={{ mt: 0.5, fontSize: 24, fontWeight: 900, color: '#065f46' }}>{formatNumber(item.total)}</Typography>
-                      <Typography variant="caption" sx={{ color: '#166534', fontWeight: 700 }}>{pct}% del total</Typography>
+                      <Typography sx={{ mt: 0.5, fontSize: 24, fontWeight: 900, color: '#153e69' }}>{formatNumber(item.total)}</Typography>
+                      <Typography variant="caption" sx={{ color: '#1e5a96', fontWeight: 700 }}>{pct}% del total</Typography>
                       <LinearProgress
                         variant="determinate"
                         value={Math.min(100, pct)}
-                        sx={{ mt: 1, height: 8, borderRadius: 10, bgcolor: '#dcfce7', '& .MuiLinearProgress-bar': { bgcolor: '#10b981' } }}
+                        sx={{ mt: 1, height: 8, borderRadius: 10, bgcolor: '#dbeafe', '& .MuiLinearProgress-bar': { bgcolor: '#1e5a96' } }}
                       />
                     </CardContent>
                   </Card>
@@ -6327,7 +6672,7 @@ const renderCategoryBars = (items = [], options = {}) => {
           <Grid container spacing={1.4}>
             <Grid item xs={12} md={6}>
               <Paper elevation={0} sx={{ p: 1.4, borderRadius: 2, border: '1px solid #bbf7d0', bgcolor: '#fff' }}>
-                <Typography sx={{ fontWeight: 700, color: '#065f46', mb: 1 }}>
+                <Typography sx={{ fontWeight: 700, color: '#153e69', mb: 1 }}>
                   {detalleActivo ? `Top programas - ${detalleActivo}` : 'Top programas'}
                 </Typography>
                 {programasDetalle.length === 0 ? (
@@ -6340,12 +6685,12 @@ const renderCategoryBars = (items = [], options = {}) => {
                         <Box key={item.label}>
                           <Stack direction="row" justifyContent="space-between" spacing={1}>
                             <Typography variant="body2" sx={{ color: '#0f172a', fontWeight: 600 }}>{item.label}</Typography>
-                            <Typography variant="body2" sx={{ color: '#065f46', fontWeight: 800 }}>{formatNumber(item.total)}</Typography>
+                            <Typography variant="body2" sx={{ color: '#153e69', fontWeight: 800 }}>{formatNumber(item.total)}</Typography>
                           </Stack>
                           <LinearProgress
                             variant="determinate"
                             value={Math.min(100, pct)}
-                            sx={{ mt: 0.5, height: 6, borderRadius: 10, bgcolor: '#ecfdf5', '& .MuiLinearProgress-bar': { bgcolor: '#22c55e' } }}
+                            sx={{ mt: 0.5, height: 6, borderRadius: 10, bgcolor: '#dbeafe', '& .MuiLinearProgress-bar': { bgcolor: '#2f6df6' } }}
                           />
                         </Box>
                       );
@@ -6355,8 +6700,8 @@ const renderCategoryBars = (items = [], options = {}) => {
               </Paper>
             </Grid>
             <Grid item xs={12} md={6}>
-              <Paper elevation={0} sx={{ p: 1.4, borderRadius: 2, border: '1px solid #bbf7d0', bgcolor: '#fff', height: '100%' }}>
-                <Typography sx={{ fontWeight: 700, color: '#065f46', mb: 1 }}>Tendencia anual (Cantidad Total Egresados)</Typography>
+              <Paper elevation={0} sx={{ p: 1.4, borderRadius: 2, border: '1px solid #bfdbfe', bgcolor: '#fff', height: '100%' }}>
+                <Typography sx={{ fontWeight: 700, color: '#153e69', mb: 1 }}>Tendencia anual (Cantidad Total Egresados)</Typography>
                 <Box sx={{ height: 260 }}>
                   <ResponsiveContainer width="100%" height="100%">
                     <BarChart data={data.porAnio}>
@@ -6364,7 +6709,7 @@ const renderCategoryBars = (items = [], options = {}) => {
                       <XAxis dataKey="label" />
                       <YAxis />
                       <RechartsTooltip formatter={(value) => [formatNumber(value), 'Egresados']} />
-                      <Bar dataKey="total" radius={[8, 8, 0, 0]} fill="#10b981">
+                      <Bar dataKey="total" radius={[8, 8, 0, 0]} fill="#1e5a96">
                         <LabelList dataKey="total" position="top" formatter={(value) => formatNumber(value)} />
                       </Bar>
                     </BarChart>
@@ -6379,11 +6724,69 @@ const renderCategoryBars = (items = [], options = {}) => {
   };
 
   const renderGraduadosDashboard = () => {
-    const GRAD_COLOR = '#0f766e';
-    const GRAD_DARK = '#065f46';
+    const GRAD_COLOR = '#1e5a96';
+    const GRAD_DARK = '#153e69';
+    const GRAD_LIGHT = '#dbeafe';
     const periodFilterOptions = periodosDisponibles.map((item) => item.label);
     const allYears = aniosDisponibles.map((x) => String(x));
     const allSelected = (value = [], options = []) => options.length > 0 && value.length === options.length;
+    const buildProgramOptionsFromRows = (rows = []) => {
+      const labelByKey = new Map();
+      rows.forEach((row) => {
+        const rawProgram = String(row.programa || '').replace(/\s+/g, ' ').trim();
+        const key = normalizeProgramKey(rawProgram);
+        if (!key) return;
+        const existing = labelByKey.get(key);
+        labelByKey.set(key, selectPreferredProgramLabel(existing, rawProgram));
+      });
+      return Array.from(labelByKey.values()).sort((a, b) => a.localeCompare(b, 'es'));
+    };
+    const buildFacultyOptionsFromRows = (rows = []) => {
+      const labelByKey = new Map();
+      rows.forEach((row) => {
+        const rawFacultad = String(getRowFacultyValue(row)).replace(/\s+/g, ' ').trim();
+        const key = normalizeRawProgramKey(rawFacultad);
+        if (!key) return;
+        if (!labelByKey.has(key)) labelByKey.set(key, rawFacultad);
+      });
+      return Array.from(labelByKey.values()).sort((a, b) => a.localeCompare(b, 'es'));
+    };
+    const getGraduadosFacetRows = (excludeKey = '') => {
+      const programaBaseOptions = programasDisponibles;
+      const facultadBaseOptions = facultadesDisponibles;
+      const allProgramasSelected = programaBaseOptions.length > 0 && (activeStatsFilters.programas || []).length === programaBaseOptions.length;
+      const allFacultadesSelected = facultadBaseOptions.length > 0 && (activeStatsFilters.facultades || []).length === facultadBaseOptions.length;
+      const allAniosSelected = allYears.length > 0 && (activeStatsFilters.anios || []).length === allYears.length;
+      const allPeriodosSelected = periodFilterOptions.length > 0 && (activeStatsFilters.periodos || []).length === periodFilterOptions.length;
+      const programasSet = new Set((activeStatsFilters.programas || []).map((item) => normalizeProgramKey(item)));
+      const facultadesSet = new Set((activeStatsFilters.facultades || []).map((item) => normalizeRawProgramKey(item)));
+      const aniosSet = new Set(activeStatsFilters.anios || []);
+      const periodosSet = new Set(activeStatsFilters.periodos || []);
+      return (activeSectionCatalog.rows || [])
+        .filter((row) => row.subcategoria === 'Graduados')
+        .filter((row) => {
+          const { periodLabel } = getRowPeriodMeta(row);
+          const anio = String(Number(row.anio) || '');
+          if (excludeKey !== 'programas' && !allProgramasSelected && programasSet.size > 0 && !programasSet.has(normalizeProgramKey(row.programa))) return false;
+          if (excludeKey !== 'facultades' && !allFacultadesSelected && facultadesSet.size > 0 && !facultadesSet.has(normalizeRawProgramKey(getRowFacultyValue(row)))) return false;
+          if (excludeKey !== 'anios' && !allAniosSelected && aniosSet.size > 0 && !aniosSet.has(anio)) return false;
+          if (excludeKey !== 'periodos' && !allPeriodosSelected && periodosSet.size > 0 && !periodosSet.has(periodLabel)) return false;
+          return true;
+        });
+    };
+    const dynamicProgramaOptions = statSection === 'graduados'
+      ? buildProgramOptionsFromRows(getGraduadosFacetRows('programas'))
+      : programasDisponibles;
+    const dynamicFacultadOptions = statSection === 'graduados'
+      ? buildFacultyOptionsFromRows(getGraduadosFacetRows('facultades'))
+      : facultadesDisponibles;
+    const getVisibleSelectedValues = (selected = [], options = [], normalizeFn = (value) => value) => {
+      if (!Array.isArray(selected) || selected.length === 0) return [];
+      const optionKeys = new Set(options.map((item) => normalizeFn(item)));
+      return selected.filter((item) => optionKeys.has(normalizeFn(item)));
+    };
+    const visibleProgramValues = getVisibleSelectedValues(activeStatsFilters.programas, dynamicProgramaOptions, normalizeProgramKey);
+    const visibleFacultadValues = getVisibleSelectedValues(activeStatsFilters.facultades, dynamicFacultadOptions, normalizeRawProgramKey);
     const renderFilterValue = (value, allLabel, partialLabel, optionsLength) => {
       const count = Array.isArray(value) ? value.length : 0;
       if (!count || (optionsLength > 0 && count === optionsLength)) return allLabel;
@@ -6399,7 +6802,43 @@ const renderCategoryBars = (items = [], options = {}) => {
         '&.Mui-focused fieldset': { borderColor: GRAD_COLOR, borderWidth: 1.5 }
       }
     };
-    const chartData = activeSeries.map((row) => ({
+    const isPostgradoProgram = (programa = '') => {
+      const text = String(programa || '')
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .toUpperCase();
+      return /(ESPECIALIZACION|MAESTRIA|MAESTRIA|DOCTORADO|POSGRADO)/.test(text);
+    };
+    const getNivelFormacion = (programa = '') => isPostgradoProgram(programa) ? 'Posgrado' : 'Pregrado';
+    const graduadosRows = filteredSeriesRows
+      .filter((row) => row.subcategoria === 'Graduados')
+      .filter((row) => {
+        if (graduadosNivelFilter === 'todos') return true;
+        return getNivelFormacion(row.programa).toLowerCase() === graduadosNivelFilter;
+      });
+    const toggleGraduadosChartPeriod = (periodLabel = '') => {
+      if (!periodLabel) return;
+      setGraduadosChartPeriodFilter((prev) => (prev === periodLabel ? '' : periodLabel));
+    };
+    const isGraduadosPeriodSelected = (periodLabel = '') => Boolean(graduadosChartPeriodFilter && graduadosChartPeriodFilter === periodLabel);
+    const isGraduadosPeriodDimmed = (periodLabel = '') => Boolean(graduadosChartPeriodFilter && graduadosChartPeriodFilter !== periodLabel);
+    const aggregateByPeriod = (rows = []) => {
+      const bucket = new Map();
+      rows.forEach((row) => {
+        const { anio, periodOrder, periodLabel } = getRowPeriodMeta(row);
+        if (!bucket.has(periodLabel)) {
+          bucket.set(periodLabel, {
+            periodLabel,
+            periodOrder,
+            anio,
+            graduados: 0
+          });
+        }
+        bucket.get(periodLabel).graduados += normalizeNumber(row.valor);
+      });
+      return Array.from(bucket.values()).sort((a, b) => a.periodOrder - b.periodOrder);
+    };
+    const chartData = aggregateByPeriod(graduadosRows).map((row) => ({
       ...row,
       graduados: normalizeNumber(row.graduados),
       periodDisplay: formatAcademicPeriodLabel(row.periodLabel),
@@ -6414,60 +6853,520 @@ const renderCategoryBars = (items = [], options = {}) => {
         ...row,
         compareAgainst: previousSame?.periodDisplay || '',
         diffSamePeriod: diff,
-        deltaSamePeriod: delta,
-        comparativeLabel: delta === null
-          ? 'Base'
-          : `${diff >= 0 ? 'Subio' : 'Bajo'} ${Math.abs(delta).toFixed(1)}%`
+        deltaSamePeriod: delta
       };
       lastBySemester.set(row.semester, next);
       return next;
     });
-    const totalGraduados = chartData.reduce((acc, row) => acc + normalizeNumber(row.graduados), 0);
-    const latest = trendData[trendData.length - 1] || null;
-    const samePeriodDelta = latest?.deltaSamePeriod ?? null;
-    const peak = trendData.reduce((best, row) => row.graduados > normalizeNumber(best?.graduados) ? row : best, trendData[0] || null);
-    const graduadosRows = filteredSeriesRows.filter((row) => row.subcategoria === 'Graduados');
-    const programRows = Array.from(
-      graduadosRows.reduce((map, row) => {
-        const key = String(row.programa || 'Sin informacion').trim() || 'Sin informacion';
-        map.set(key, (map.get(key) || 0) + normalizeNumber(row.valor));
-        return map;
-      }, new Map()).entries()
-    ).map(([programa, total]) => ({ programa, total })).sort((a, b) => b.total - a.total);
-    const tableRows = graduadosRows
-      .map((row) => {
+    const segmentedGraduadosRows = graduadosChartPeriodFilter
+      ? graduadosRows.filter((row) => getRowPeriodMeta(row).periodLabel === graduadosChartPeriodFilter)
+      : graduadosRows;
+    const tableRows = Array.from(
+      segmentedGraduadosRows.reduce((map, row) => {
         const { periodLabel, periodOrder } = getRowPeriodMeta(row);
-        return {
+        const rawPrograma = String(row.programa || '').replace(/\s+/g, ' ').trim();
+        const programaKey = normalizeProgramKey(rawPrograma) || 'SIN_PROGRAMA';
+        const programaLabel = programaKey === 'SIN_PROGRAMA' ? 'Sin informacion' : programaKey;
+        const key = `${periodLabel}||${programaKey}`;
+        const current = map.get(key) || {
           periodLabel,
-          periodDisplay: formatAcademicPeriodLabel(periodLabel),
           periodOrder,
           anio: Number(row.anio) || 0,
           periodo: splitPeriodLabel(periodLabel).part,
-          programa: row.programa || 'Sin informacion',
-          facultad: row.dependencia || 'Sin facultad',
-          graduados: normalizeNumber(row.valor)
+          programa: programaLabel,
+          nivel: getNivelFormacion(programaLabel),
+          graduados: 0
         };
-      })
-      .sort((a, b) => a.periodOrder - b.periodOrder || b.graduados - a.graduados || String(a.programa).localeCompare(String(b.programa), 'es'));
-    const maxProgram = Math.max(...programRows.map((row) => row.total), 1);
-    const formatPct = (value) => value === null || value === undefined ? '-' : `${value >= 0 ? '+' : ''}${value.toFixed(1)}%`;
-    const lineValueLabel = ({ x, y, payload }) => {
-      if (!payload) return null;
-      const delta = payload.deltaSamePeriod;
-      const deltaColor = delta === null ? '#64748b' : delta >= 0 ? '#15803d' : '#dc2626';
+        current.graduados += normalizeNumber(row.valor);
+        map.set(key, current);
+        return map;
+      }, new Map()).values()
+    ).sort((a, b) =>
+      b.graduados - a.graduados
+      || a.periodOrder - b.periodOrder
+      || String(a.programa).localeCompare(String(b.programa), 'es')
+    );
+    const totalGeneralGraduados = tableRows.reduce((acc, row) => acc + normalizeNumber(row.graduados), 0);
+    const exportGraduadosTable = () => {
+      downloadStyledExcel({
+        filename: `tabla_graduados_${new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-')}.xlsx`,
+        sheetName: 'Graduados',
+        title: 'Graduados - Datos por periodo y programa',
+        columns: [
+          { key: 'anio', label: 'AÑO', type: 'number', align: 'right', width: 12 },
+          { key: 'periodo', label: 'PERIODO', width: 12 },
+          { key: 'nivel', label: 'NIVEL', width: 16 },
+          { key: 'programa', label: 'PROGRAMA', width: 48 },
+          { key: 'graduados', label: 'GRADUADOS', type: 'number', align: 'right', width: 16 }
+        ],
+        rows: tableRows.map((row) => ({
+          anio: row.anio,
+          periodo: row.periodo,
+          nivel: row.nivel,
+          programa: String(row.programa || '').toLocaleUpperCase('es-CO'),
+          graduados: normalizeNumber(row.graduados)
+        })),
+        totalRow: {
+          anio: '',
+          periodo: '',
+          nivel: '',
+          programa: 'TOTAL GENERAL',
+          graduados: totalGeneralGraduados
+        }
+      });
+    };
+    const selectedYears = (activeStatsFilters.anios || []).filter((year) => allYears.includes(String(year)));
+    const hasSingleYear = selectedYears.length === 1 && !(allYears.length > 0 && selectedYears.length === allYears.length);
+    const singleYear = hasSingleYear ? selectedYears[0] : '';
+    const singleYearTotals = hasSingleYear
+      ? ['I', 'II'].map((semester) => ({
+        semester,
+        label: `${singleYear} ${semester === 'I' ? 'IP' : 'IIP'}`,
+        total: trendData
+          .filter((row) => String(row.anio) === String(singleYear) && row.semester === semester)
+          .reduce((acc, row) => acc + normalizeNumber(row.graduados), 0)
+      }))
+      : [];
+    const renderGraduadosLineLabel = ({ x, y, value, index }) => {
+      if (value === null || value === undefined || !Number.isFinite(Number(value))) return null;
+      const dy = index % 2 === 0 ? -13 : 20;
       return (
-        <text x={x} y={y - 18} textAnchor="middle" style={{ fontFamily: 'Inter, sans-serif' }}>
-          <tspan x={x} dy="0" fontSize="11" fontWeight="900" fill={GRAD_DARK}>{formatNumber(payload.graduados)}</tspan>
-          <tspan x={x} dy="13" fontSize="9.5" fontWeight="800" fill={deltaColor}>{payload.comparativeLabel}</tspan>
+        <text
+          x={x}
+          y={y + dy}
+          textAnchor="middle"
+          style={{
+            fontSize: 11,
+            fontWeight: 900,
+            fill: GRAD_DARK,
+            stroke: '#ffffff',
+            strokeWidth: 3,
+            paintOrder: 'stroke',
+            strokeLinejoin: 'round'
+          }}
+        >
+          {formatNumber(value)}
         </text>
       );
     };
-    const kpiCards = [
-      { label: 'Graduados acumulados', value: formatNumber(totalGraduados), helper: `${formatNumber(trendData.length)} periodos visibles`, tone: GRAD_COLOR },
-      { label: 'Ultimo periodo', value: latest ? formatNumber(latest.graduados) : '-', helper: latest?.periodDisplay || 'Sin datos', tone: '#2563eb' },
-      { label: 'Variacion par', value: formatPct(samePeriodDelta), helper: latest?.compareAgainst ? `${latest.compareAgainst} -> ${latest.periodDisplay}` : 'Sin periodo par previo', tone: samePeriodDelta !== null && samePeriodDelta < 0 ? '#dc2626' : '#15803d' },
-      { label: 'Pico visible', value: peak ? formatNumber(peak.graduados) : '-', helper: peak?.periodDisplay || 'Sin datos', tone: '#d97706' }
-    ];
+    const renderGraduadosTrendDot = (props = {}) => {
+      const { cx, cy, payload } = props;
+      if (!Number.isFinite(cx) || !Number.isFinite(cy)) return null;
+      const selected = isGraduadosPeriodSelected(payload?.periodLabel);
+      const dimmed = isGraduadosPeriodDimmed(payload?.periodLabel);
+      return (
+        <circle
+          cx={cx}
+          cy={cy}
+          r={selected ? 6 : 4}
+          fill={selected ? '#38bdf8' : GRAD_COLOR}
+          stroke={selected ? '#153e69' : '#ffffff'}
+          strokeWidth={selected ? 2.5 : 1.2}
+          opacity={dimmed ? 0.32 : 1}
+          style={{ cursor: 'pointer', filter: selected ? 'drop-shadow(0 3px 6px rgba(21,62,105,0.35))' : 'none' }}
+          onClick={() => toggleGraduadosChartPeriod(payload?.periodLabel)}
+        />
+      );
+    };
+    const renderGraduadosPeriodAxis = (rows = []) => {
+      if (!rows.length) return null;
+      const groups = [];
+      rows.forEach((row, index) => {
+        const year = String(row.anio || '').trim() || String(row.periodDisplay || '').split('-')[0] || '-';
+        const last = groups[groups.length - 1];
+        if (last && last.year === year) {
+          last.count += 1;
+        } else {
+          groups.push({ year, start: index, count: 1 });
+        }
+      });
+      return (
+        <Box sx={{ mt: 0.35, pl: '54px', pr: '18px' }}>
+          <Box
+            sx={{
+              display: 'grid',
+              gridTemplateColumns: `repeat(${rows.length}, minmax(42px, 1fr))`,
+              columnGap: 0,
+              alignItems: 'center'
+            }}
+          >
+            {rows.map((row, index) => (
+              <Box key={`grad-sem-${row.periodLabel || index}`} sx={{ display: 'grid', placeItems: 'center' }}>
+                <Box sx={{ width: 24, height: 20, borderRadius: 999, bgcolor: '#e2e8f0', display: 'grid', placeItems: 'center' }}>
+                  <Typography sx={{ color: '#64748b', fontSize: 11, fontWeight: 900, lineHeight: 1 }}>
+                    {row.semester || 'I'}
+                  </Typography>
+                </Box>
+              </Box>
+            ))}
+          </Box>
+          <Box
+            sx={{
+              display: 'grid',
+              gridTemplateColumns: `repeat(${rows.length}, minmax(42px, 1fr))`,
+              columnGap: 0,
+              mt: 0.45
+            }}
+          >
+            {groups.map((group) => (
+              <Box
+                key={`grad-year-${group.year}-${group.start}`}
+                sx={{
+                  gridColumn: `${group.start + 1} / ${group.start + group.count + 1}`,
+                  minHeight: 28,
+                  display: 'grid',
+                  placeItems: 'center',
+                  border: '1px solid #94a3b8',
+                  bgcolor: '#f8fafc'
+                }}
+              >
+                <Typography sx={{ color: '#0f172a', fontWeight: 900, fontSize: 12 }}>
+                  {group.year}
+                </Typography>
+              </Box>
+            ))}
+          </Box>
+        </Box>
+      );
+    };
+    const renderGraduadosGeneralDashboard = () => {
+      if (graduadosGeneralLoading && !graduadosGeneralData) {
+        return <Typography sx={{ py: 5, textAlign: 'center', color: '#334155' }}>Cargando general de graduados...</Typography>;
+      }
+      if (!graduadosGeneralData) {
+        return <Typography sx={{ py: 5, textAlign: 'center', color: '#334155' }}>No hay datos para General de Graduados.</Typography>;
+      }
+
+      const generalProgramOptions = (graduadosGeneralData.programas || []).map((row) => row.programa).filter(Boolean);
+      const selectedProgramKeys = new Set((graduadosGeneralProgramsFilter || []).map((item) => normalizeProgramKey(item)));
+      const allProgramsSelected = generalProgramOptions.length > 0 && (
+        (graduadosGeneralProgramsFilter || []).length === 0
+        || (graduadosGeneralProgramsFilter || []).length === generalProgramOptions.length
+      );
+      const rows = (graduadosGeneralData.programas || [])
+        .filter((row) => allProgramsSelected || selectedProgramKeys.size === 0 || selectedProgramKeys.has(normalizeProgramKey(row.programa)))
+        .map((row) => ({
+          ...row,
+          historico: normalizeNumber(row.historico || 0),
+          dinamico: normalizeNumber(row.dinamico || 0),
+          total: normalizeNumber(row.total || 0)
+        }));
+      const historicoTotal = rows.reduce((acc, row) => acc + row.historico, 0);
+      const dinamicoTotal = rows.reduce((acc, row) => acc + row.dinamico, 0);
+      const totalGeneral = historicoTotal + dinamicoTotal;
+      const historicoPct = totalGeneral > 0 ? (historicoTotal / totalGeneral) * 100 : 0;
+      const dynamicPct = totalGeneral > 0 ? (dinamicoTotal / totalGeneral) * 100 : 0;
+      const formatPercent = (value) => `${Number(value || 0).toFixed(1).replace('.', ',')}%`;
+      const latestGraduados = graduadosGeneralData.dinamico?.latest || {};
+      const latestPeriodText = latestGraduados.period ? ` ${latestGraduados.period}` : '';
+      const latestDateText = latestGraduados.dateLabel ? ` ${latestGraduados.dateLabel}` : '';
+      const dinamicoDetail = latestGraduados.year
+        ? `Universidad CESMAG 2020 - ${latestGraduados.year}${latestPeriodText}${latestDateText}`
+        : 'Universidad CESMAG desde 2020';
+      const flowItems = [
+        {
+          key: 'historico',
+          title: '1984 hasta 2019',
+          detail: 'Institucion universitaria CESMAG',
+          value: historicoTotal,
+          percent: historicoPct,
+          color: '#153e69',
+          accent: '#1e5a96',
+          logo: '/brand/logo-institucion-cesmag.png',
+          icon: <AccountBalanceIcon sx={{ color: '#153e69' }} />,
+          caption: `${formatPercent(historicoPct)} del total`
+        },
+        {
+          key: 'dinamico',
+          title: 'Graduados Universidad CESMAG',
+          detail: dinamicoDetail,
+          value: dinamicoTotal,
+          percent: dynamicPct,
+          color: '#1e5a96',
+          accent: '#2f6df6',
+          logo: '/brand/logo-unicesmag.png',
+          icon: <SchoolGradIcon sx={{ color: '#1e5a96' }} />,
+          caption: `${formatPercent(dynamicPct)} del total`
+        },
+        {
+          key: 'total',
+          title: 'General de graduados',
+          detail: 'Historico + Universidad CESMAG',
+          value: totalGeneral,
+          percent: totalGeneral > 0 ? 100 : 0,
+          color: '#0f3a64',
+          accent: '#38bdf8',
+          logo: '/brand/logo-unicesmag.png',
+          icon: <GroupsIcon sx={{ color: '#0f3a64' }} />,
+          caption: '100% de graduados'
+        }
+      ];
+      const exportGraduadosGeneralTable = () => {
+        downloadStyledExcel({
+          filename: `general_graduados_${new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-')}.xlsx`,
+          sheetName: 'General',
+          title: 'General de Graduados UNICESMAG',
+          columns: [
+            { key: 'programa', label: 'PROGRAMA', width: 48 },
+            { key: 'historico', label: '1984-2019', type: 'number', align: 'right', width: 16 },
+            { key: 'dinamico', label: '2020+', type: 'number', align: 'right', width: 16 },
+            { key: 'total', label: 'TOTAL', type: 'number', align: 'right', width: 16 }
+          ],
+          rows: rows.map((row) => ({
+            programa: String(row.programa || '').toLocaleUpperCase('es-CO'),
+            historico: normalizeNumber(row.historico),
+            dinamico: normalizeNumber(row.dinamico),
+            total: normalizeNumber(row.total)
+          })),
+          totalRow: {
+            programa: 'TOTAL GENERAL',
+            historico: historicoTotal,
+            dinamico: dinamicoTotal,
+            total: totalGeneral
+          }
+        });
+      };
+
+      return (
+        <Stack spacing={1.4}>
+          {graduadosGeneralLoading && (
+            <Alert severity="info" sx={{ borderRadius: 2 }}>Actualizando General de Graduados...</Alert>
+          )}
+
+          <Box
+            sx={{
+              display: 'grid',
+              gridTemplateColumns: { xs: '1fr', md: 'repeat(3, minmax(0, 1fr))' },
+              gap: 1.4,
+              width: '100%'
+            }}
+          >
+            {flowItems.map((item) => (
+              <Box key={item.key}>
+                <Card
+                  elevation={0}
+                  sx={{
+                    position: 'relative',
+                    overflow: 'hidden',
+                    height: '100%',
+                    minHeight: 205,
+                    borderRadius: 2.7,
+                    border: `1px solid ${item.accent}`,
+                    bgcolor: item.key === 'historico' ? '#f8fbff' : item.key === 'dinamico' ? '#eff6ff' : '#f0f9ff',
+                    boxShadow: '0 18px 38px rgba(21,62,105,0.08)',
+                    transition: 'transform .22s ease, box-shadow .22s ease, border-color .22s ease',
+                    '&:hover': {
+                      transform: 'translateY(-4px)',
+                      boxShadow: '0 24px 50px rgba(21,62,105,0.15)',
+                      borderColor: item.accent
+                    },
+                    '&:before': {
+                      content: '""',
+                      position: 'absolute',
+                      inset: 0,
+                      background: `linear-gradient(135deg, ${item.color}24 0%, rgba(255,255,255,.55) 44%, ${item.accent}26 100%)`,
+                      pointerEvents: 'none'
+                    },
+                    '&:after': {
+                      content: '""',
+                      position: 'absolute',
+                      top: 0,
+                      left: 0,
+                      right: 0,
+                      height: 6,
+                      bgcolor: item.accent
+                    }
+                  }}
+                >
+                  <CardContent sx={{ p: 1.8, position: 'relative', zIndex: 1, height: '100%', display: 'flex', flexDirection: 'column' }}>
+                    <Stack direction="row" spacing={1.1} alignItems="center" justifyContent="space-between">
+                      <Stack direction="row" spacing={1} alignItems="center" sx={{ minWidth: 0 }}>
+                        <Box sx={{ width: 46, height: 46, borderRadius: 2, bgcolor: `${item.color}16`, display: 'grid', placeItems: 'center', flexShrink: 0 }}>
+                          {item.icon}
+                        </Box>
+                        <Box sx={{ minWidth: 0 }}>
+                          <Typography sx={{ color: item.color, fontSize: 11.5, fontWeight: 950, textTransform: 'uppercase' }}>{item.title}</Typography>
+                          <Typography sx={{ color: '#64748b', fontSize: 11.5, fontWeight: 800 }}>{item.caption}</Typography>
+                        </Box>
+                      </Stack>
+                      <Box sx={{ width: 88, height: 88, display: 'grid', placeItems: 'center', flexShrink: 0 }}>
+                        <Box component="img" src={item.logo} alt={item.title} sx={{ width: 80, height: 80, objectFit: 'contain', filter: 'drop-shadow(0 10px 18px rgba(21,62,105,0.20))' }} />
+                      </Box>
+                    </Stack>
+                    <Typography sx={{ color: '#0f172a', fontWeight: 950, fontSize: { xs: 34, md: 38 }, lineHeight: 1.05, mt: 1.3 }}>{formatNumber(item.value)}</Typography>
+                    <Stack direction="row" spacing={0.7} alignItems="center" sx={{ mt: 0.9 }}>
+                      <ArrowForwardRoundedIcon sx={{ color: item.accent, fontSize: 19 }} />
+                      <Typography sx={{ color: '#475569', fontSize: 12, fontWeight: 800, lineHeight: 1.35 }}>
+                        {item.detail}
+                      </Typography>
+                    </Stack>
+                    <Box sx={{ mt: 'auto', pt: 1.3 }}>
+                      <Box sx={{ height: 8, borderRadius: 99, bgcolor: '#e2e8f0', overflow: 'hidden' }}>
+                        <Box sx={{ height: 1, width: `${Math.min(100, item.percent || 0)}%`, bgcolor: item.accent, borderRadius: 99, transition: 'width .45s ease' }} />
+                      </Box>
+                    </Box>
+                  </CardContent>
+                </Card>
+              </Box>
+            ))}
+          </Box>
+
+          <Box
+            sx={{
+              display: 'grid',
+              gridTemplateColumns: { xs: '1fr', xl: 'minmax(360px, 0.85fr) minmax(0, 2.15fr)' },
+              gap: 1.4,
+              width: '100%'
+            }}
+          >
+            <Box>
+              <Paper elevation={0} sx={{ p: 1.5, borderRadius: 2.5, border: '1px solid #bfdbfe', bgcolor: '#f8fbff', height: '100%' }}>
+                <Stack direction="row" spacing={1} justifyContent="space-between" alignItems="center">
+                  <Typography sx={{ fontWeight: 900, color: '#0f172a', fontSize: 15 }}>Composicion general</Typography>
+                  <Button data-copy-exclude="true" size="small" variant="outlined" startIcon={<ContentCopyIcon />} onClick={() => handleCopyChartNode(graduadosGeneralCompositionRef.current, 'Composicion general copiada')} sx={GI_OUTLINE_ACTION_BTN_SX}>
+                    Copiar grafico
+                  </Button>
+                </Stack>
+                <Box ref={graduadosGeneralCompositionRef} sx={{ height: 300, mt: 1 }}>
+                  <ResponsiveContainer width="100%" height="100%">
+                    <BarChart data={flowItems.filter((item) => item.key !== 'total')} margin={{ top: 24, right: 12, left: 0, bottom: 20 }}>
+                      <CartesianGrid strokeDasharray="4 4" stroke="#e2e8f0" />
+                      <XAxis dataKey="title" tick={{ fontSize: 11, fill: '#334155', fontWeight: 800 }} interval={0} />
+                      <YAxis tickFormatter={(v) => v >= 1000 ? `${Math.round(v / 1000)}k` : v} tick={{ fontSize: 11, fill: '#64748b' }} />
+                      <RechartsTooltip formatter={(value) => [formatNumber(value), 'Graduados']} />
+                      <Bar dataKey="value" radius={[8, 8, 0, 0]} isAnimationActive={false}>
+                        {flowItems.filter((item) => item.key !== 'total').map((item) => <Cell key={item.key} fill={item.color} />)}
+                        <LabelList dataKey="value" position="top" formatter={(value) => formatNumber(value)} style={{ fontSize: 12, fontWeight: 900, fill: '#0f172a' }} />
+                      </Bar>
+                    </BarChart>
+                  </ResponsiveContainer>
+                </Box>
+              </Paper>
+            </Box>
+            <Box>
+              <Paper elevation={0} sx={{ p: 1.5, borderRadius: 2.5, border: '1px solid #bfdbfe', bgcolor: '#ffffff', height: '100%' }}>
+                <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1} justifyContent="space-between" alignItems={{ xs: 'stretch', sm: 'center' }}>
+                  <Typography sx={{ fontWeight: 900, color: '#0f172a', fontSize: 15 }}>Programas con mayor total</Typography>
+                  <Button data-copy-exclude="true" size="small" variant="outlined" startIcon={<DownloadIconSmall />} onClick={exportGraduadosGeneralTable} sx={GI_OUTLINE_ACTION_BTN_SX}>
+                    Exportar datos
+                  </Button>
+                </Stack>
+                <TableContainer sx={{ maxHeight: 300, mt: 1 }}>
+                  <Table size="small" stickyHeader>
+                    <TableHead>
+                      <TableRow sx={{ '& th': { bgcolor: '#153e69', color: '#ffffff', fontWeight: 950, fontSize: 12, textTransform: 'uppercase' } }}>
+                        <TableCell>Programa</TableCell>
+                        <TableCell align="right">1984-2019</TableCell>
+                        <TableCell align="right">2020+</TableCell>
+                        <TableCell align="right">Total</TableCell>
+                      </TableRow>
+                    </TableHead>
+                    <TableBody>
+                      {rows.slice(0, 30).map((row) => (
+                        <TableRow key={row.programa} hover sx={{ '&:nth-of-type(even) td': { bgcolor: '#f8fafc' } }}>
+                          <TableCell sx={{ fontWeight: 800, color: '#0f172a' }}>{row.programa}</TableCell>
+                          <TableCell align="right">{formatNumber(row.historico)}</TableCell>
+                          <TableCell align="right">{formatNumber(row.dinamico)}</TableCell>
+                          <TableCell align="right" sx={{ fontWeight: 950, color: GRAD_DARK }}>{formatNumber(row.total)}</TableCell>
+                        </TableRow>
+                      ))}
+                      <TableRow sx={{ '& td': { bgcolor: '#e0f2fe', borderTop: '2px solid #153e69', fontWeight: 950 } }}>
+                        <TableCell>Total general</TableCell>
+                        <TableCell align="right">{formatNumber(historicoTotal)}</TableCell>
+                        <TableCell align="right">{formatNumber(dinamicoTotal)}</TableCell>
+                        <TableCell align="right">{formatNumber(totalGeneral)}</TableCell>
+                      </TableRow>
+                    </TableBody>
+                  </Table>
+                </TableContainer>
+              </Paper>
+            </Box>
+          </Box>
+        </Stack>
+      );
+    };
+
+    const renderGraduadosGeneralFilters = () => {
+      if (!graduadosGeneralData) return null;
+      const generalProgramOptions = (graduadosGeneralData.programas || []).map((row) => row.programa).filter(Boolean);
+      const selectedGeneralProgramValues = (graduadosGeneralProgramsFilter || []).filter((item) => generalProgramOptions.includes(item));
+      const allProgramsSelected = generalProgramOptions.length > 0 && (
+        selectedGeneralProgramValues.length === 0
+        || selectedGeneralProgramValues.length === generalProgramOptions.length
+      );
+      const handleGeneralProgramChange = (value) => {
+        const list = typeof value === 'string' ? value.split(',') : value;
+        if (list.includes('__ALL__')) {
+          setGraduadosGeneralProgramsFilter((prev) => {
+            const allSelected = generalProgramOptions.length > 0 && prev.length === generalProgramOptions.length;
+            return allSelected ? [] : [...generalProgramOptions];
+          });
+          return;
+        }
+        setGraduadosGeneralProgramsFilter(list.filter((item) => item !== '__ALL__'));
+      };
+
+      return (
+        <Paper
+          elevation={0}
+          sx={{
+            p: { xs: 1.4, md: 1.8 },
+            borderRadius: 3,
+            border: '1px solid #bfdbfe',
+            bgcolor: '#f8fbff',
+            background: 'linear-gradient(135deg,#ffffff 0%,#eff6ff 48%,#e0f2fe 100%)'
+          }}
+        >
+          <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1} alignItems={{ xs: 'stretch', sm: 'center' }} flexWrap="wrap">
+            <FormControl size="small" sx={{ minWidth: 110, '& .MuiOutlinedInput-root': { borderRadius: 2, bgcolor: '#ffffff' } }}>
+              <InputLabel>Año</InputLabel>
+              <Select
+                label="Año"
+                value={graduadosGeneralAnioFilter}
+                onChange={(e) => setGraduadosGeneralAnioFilter(e.target.value)}
+              >
+                <MenuItem value="todos">Todos</MenuItem>
+                {(graduadosGeneralData?.aniosDisponibles || []).map((anio) => (
+                  <MenuItem key={anio} value={String(anio)}>{anio}</MenuItem>
+                ))}
+              </Select>
+            </FormControl>
+            <FormControl size="small" sx={{ minWidth: { xs: '100%', sm: 280 }, flex: 1, '& .MuiOutlinedInput-root': { borderRadius: 2, bgcolor: '#ffffff' } }}>
+              <InputLabel>Programas del general</InputLabel>
+              <Select
+                multiple
+                label="Programas del general"
+                value={selectedGeneralProgramValues}
+                renderValue={(value) => renderFilterValue(value, 'Todos los programas', 'programas', generalProgramOptions.length)}
+                onChange={(event) => handleGeneralProgramChange(event.target.value)}
+              >
+                <MenuItem value="__ALL__">
+                  <Checkbox checked={allProgramsSelected} />
+                  <ListItemText primary="Todos los programas" />
+                </MenuItem>
+                {generalProgramOptions.map((programa) => (
+                  <MenuItem key={programa} value={programa}>
+                    <Checkbox checked={selectedGeneralProgramValues.includes(programa)} />
+                    <ListItemText primary={programa} />
+                  </MenuItem>
+                ))}
+              </Select>
+            </FormControl>
+            <Button
+              variant="outlined"
+              startIcon={<DeleteSweepIcon />}
+              onClick={() => {
+                setGraduadosGeneralAnioFilter('todos');
+                setGraduadosGeneralProgramsFilter([]);
+              }}
+              sx={{ ...GI_OUTLINE_ACTION_BTN_SX, height: 40, px: 2, whiteSpace: 'nowrap' }}
+            >
+              Borrar segmentos
+            </Button>
+          </Stack>
+        </Paper>
+      );
+    };
 
     return (
       <Stack spacing={1.6}>
@@ -6476,12 +7375,13 @@ const renderCategoryBars = (items = [], options = {}) => {
             <Button variant="outlined" startIcon={<ArrowBackRoundedIcon />} onClick={() => setPoblacionalPanel('hub')}>
               Volver a dashboards Poblacional
             </Button>
-            <Chip label="Graduados + Cantidad Total Egresados" sx={{ bgcolor: '#ecfdf5', color: GRAD_DARK, fontWeight: 900 }} />
+            <Chip label="Dashboard de Graduados" sx={{ bgcolor: GRAD_LIGHT, color: GRAD_DARK, fontWeight: 900 }} />
           </Stack>
         </Paper>
 
         <Paper elevation={0} sx={{ p: { xs: 1.6, md: 2 }, borderRadius: 3, border: '1px solid #cfe0f9', bgcolor: '#ffffff' }}>
           <Stack spacing={1.4}>
+            {graduadosDashboardView === 'estadistica' && (
             <Stack direction={{ xs: 'column', lg: 'row' }} spacing={1.2} alignItems={{ xs: 'stretch', lg: 'center' }}>
               <FormControl size="small" sx={filterSelectSx}>
                 <InputLabel>Año</InputLabel>
@@ -6525,167 +7425,343 @@ const renderCategoryBars = (items = [], options = {}) => {
                   ))}
                 </Select>
               </FormControl>
+              <FormControl size="small" sx={{ ...filterSelectSx, minWidth: { xs: '100%', lg: 250 } }}>
+                <InputLabel>Facultad</InputLabel>
+                <Select
+                  multiple
+                  label="Facultad"
+                  value={visibleFacultadValues}
+                  renderValue={(value) => renderFilterValue(value, 'Todas las facultades', 'facultades', dynamicFacultadOptions.length)}
+                  onChange={(event) => handleMultiFilterChange('facultades', event.target.value, dynamicFacultadOptions)}
+                >
+                  <MenuItem value="__ALL__">
+                    <Checkbox checked={allSelected(visibleFacultadValues, dynamicFacultadOptions)} />
+                    <ListItemText primary="Todas las facultades" />
+                  </MenuItem>
+                  {dynamicFacultadOptions.map((facultad) => (
+                    <MenuItem key={facultad} value={facultad}>
+                      <Checkbox checked={visibleFacultadValues.includes(facultad)} />
+                      <ListItemText primary={facultad} />
+                    </MenuItem>
+                  ))}
+                </Select>
+              </FormControl>
               <FormControl size="small" sx={{ ...filterSelectSx, flex: 1, minWidth: { xs: '100%', lg: 320 } }}>
                 <InputLabel>Programa</InputLabel>
                 <Select
                   multiple
                   label="Programa"
-                  value={activeStatsFilters.programas}
-                  renderValue={(value) => renderFilterValue(value, 'Todos los programas', 'programas', programasDisponibles.length)}
-                  onChange={(event) => handleMultiFilterChange('programas', event.target.value, programasDisponibles)}
+                  value={visibleProgramValues}
+                  renderValue={(value) => renderFilterValue(value, 'Todos los programas', 'programas', dynamicProgramaOptions.length)}
+                  onChange={(event) => handleMultiFilterChange('programas', event.target.value, dynamicProgramaOptions)}
                 >
                   <MenuItem value="__ALL__">
-                    <Checkbox checked={allSelected(activeStatsFilters.programas, programasDisponibles)} />
+                    <Checkbox checked={allSelected(visibleProgramValues, dynamicProgramaOptions)} />
                     <ListItemText primary="Todos los programas" />
                   </MenuItem>
-                  {programasDisponibles.map((programa) => (
+                  {dynamicProgramaOptions.map((programa) => (
                     <MenuItem key={programa} value={programa}>
-                      <Checkbox checked={activeStatsFilters.programas.includes(programa)} />
+                      <Checkbox checked={visibleProgramValues.includes(programa)} />
                       <ListItemText primary={programa} />
                     </MenuItem>
                   ))}
                 </Select>
               </FormControl>
-              <Button variant="outlined" onClick={resetActiveStatsFilters} sx={{ ...GI_OUTLINE_ACTION_BTN_SX, height: 40, px: 2 }}>
-                Restablecer
+              <Button
+                variant="outlined"
+                startIcon={<DeleteSweepIcon />}
+                onClick={() => {
+                  resetActiveStatsFilters();
+                  setGraduadosChartPeriodFilter('');
+                  setGraduadosNivelFilter('todos');
+                }}
+                sx={{ ...GI_OUTLINE_ACTION_BTN_SX, height: 40, px: 2 }}
+              >
+                Borrar segmentos
               </Button>
             </Stack>
-
-            {isSeriesInitialLoad ? (
+            )}
+            {graduadosDashboardView === 'general' && renderGraduadosGeneralFilters()}
+            <ToggleButtonGroup
+              exclusive
+              size="small"
+              value={graduadosDashboardView}
+              onChange={(_, next) => {
+                if (next) setGraduadosDashboardView(next);
+              }}
+              sx={{
+                width: '100%',
+                p: 0.5,
+                borderRadius: 3,
+                bgcolor: '#eff6ff',
+                border: '1px solid #bfdbfe',
+                alignSelf: 'stretch',
+                boxShadow: 'inset 0 1px 0 rgba(255,255,255,.9), 0 10px 24px rgba(21,62,105,.08)',
+                '& .MuiToggleButton-root': {
+                  flex: 1,
+                  px: 2.4,
+                  py: 0.95,
+                  border: 0,
+                  borderRadius: '16px !important',
+                  fontWeight: 950,
+                  color: '#153e69',
+                  textTransform: 'none',
+                  transition: 'all .18s ease',
+                  '&:hover': {
+                    bgcolor: 'rgba(47,109,246,0.10)'
+                  }
+                },
+                '& .Mui-selected': {
+                  bgcolor: '#153e69 !important',
+                  color: '#ffffff !important',
+                  boxShadow: '0 10px 20px rgba(21,62,105,0.22)'
+                }
+              }}
+            >
+              <ToggleButton value="estadistica">
+                <Stack direction="row" spacing={0.8} alignItems="center" justifyContent="center">
+                  <BarChartIcon sx={{ fontSize: 17 }} />
+                  <span>Estadistica de graduados</span>
+                </Stack>
+              </ToggleButton>
+              <ToggleButton value="general">
+                <Stack direction="row" spacing={0.8} alignItems="center" justifyContent="center">
+                  <GroupsIcon sx={{ fontSize: 17 }} />
+                  <span>General de graduados</span>
+                </Stack>
+              </ToggleButton>
+            </ToggleButtonGroup>
+            {graduadosDashboardView === 'general' ? (
+              renderGraduadosGeneralDashboard()
+            ) : isSeriesInitialLoad ? (
               <Typography sx={{ py: 4, textAlign: 'center', color: '#334155' }}>Cargando dashboard...</Typography>
             ) : trendData.length === 0 ? (
               <Typography sx={{ py: 4, textAlign: 'center', color: '#334155' }}>No hay datos para los filtros seleccionados.</Typography>
             ) : (
               <>
-                <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', md: 'repeat(4, minmax(0, 1fr))' }, gap: 1 }}>
-                  {kpiCards.map((item) => (
-                    <Paper key={item.label} elevation={0} sx={{ p: 1.4, borderRadius: 2.4, border: '1px solid #dbe6f5', bgcolor: '#fff', borderLeft: `5px solid ${item.tone}` }}>
-                      <Typography sx={{ color: '#64748b', fontSize: 11.5, fontWeight: 900, textTransform: 'uppercase' }}>{item.label}</Typography>
-                      <Typography sx={{ color: '#0f172a', fontWeight: 950, fontSize: 27, lineHeight: 1.05, mt: 0.4 }}>{item.value}</Typography>
-                      <Typography sx={{ color: '#475569', fontSize: 12, mt: 0.4, fontWeight: 700 }}>{item.helper}</Typography>
-                    </Paper>
-                  ))}
-                </Box>
+                <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1} alignItems={{ xs: 'stretch', sm: 'center' }} justifyContent="space-between">
+                  {graduadosChartPeriodFilter ? (
+                    <Chip
+                      size="small"
+                      label={`Periodo seleccionado: ${formatAcademicPeriodLabel(graduadosChartPeriodFilter)}`}
+                      onDelete={() => setGraduadosChartPeriodFilter('')}
+                      sx={{ bgcolor: '#dbeafe', color: GRAD_DARK, fontWeight: 900, border: '1px solid #bfdbfe', alignSelf: { xs: 'flex-start', sm: 'center' } }}
+                    />
+                  ) : (
+                    <Typography sx={{ color: '#64748b', fontSize: 11.5, fontWeight: 700 }}>
+                      Haz clic en una barra o punto para filtrar la tabla sin ocultar la serie historica.
+                    </Typography>
+                  )}
+                  {graduadosChartPeriodFilter && (
+                    <Typography sx={{ color: '#94a3b8', fontSize: 11.5, fontWeight: 700 }}>
+                      Clic nuevamente sobre el periodo para quitar el filtro.
+                    </Typography>
+                  )}
+                </Stack>
+                {hasSingleYear && (
+                  <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', md: 'repeat(3, minmax(0, 1fr))' }, gap: 1.1 }}>
+                    {[
+                      { label: `Primer semestre ${singleYear}`, value: singleYearTotals[0]?.total || 0, helper: singleYearTotals[0]?.label || `${singleYear} IP`, color: GRAD_COLOR },
+                      { label: `Segundo semestre ${singleYear}`, value: singleYearTotals[1]?.total || 0, helper: singleYearTotals[1]?.label || `${singleYear} IIP`, color: '#2f6df6' },
+                      { label: 'Total general', value: totalGeneralGraduados, helper: `Año ${singleYear}`, color: '#0f3a64' }
+                    ].map((item) => (
+                      <Paper
+                        key={item.label}
+                        elevation={0}
+                        sx={{
+                          p: 1.55,
+                          borderRadius: 2.6,
+                          border: '1px solid #dbe6f5',
+                          bgcolor: '#ffffff',
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: 1.2,
+                          boxShadow: '0 12px 28px rgba(15,23,42,0.05)'
+                        }}
+                      >
+                        <Box sx={{ width: 44, height: 44, borderRadius: 2, bgcolor: `${item.color}16`, display: 'grid', placeItems: 'center', flexShrink: 0 }}>
+                          <SchoolGradIcon sx={{ color: item.color, fontSize: 24 }} />
+                        </Box>
+                        <Box sx={{ minWidth: 0 }}>
+                          <Typography sx={{ color: '#64748b', fontSize: 11.5, fontWeight: 900, textTransform: 'uppercase' }}>{item.label}</Typography>
+                          <Typography sx={{ color: '#0f172a', fontWeight: 950, fontSize: 28, lineHeight: 1.05, mt: 0.35 }}>{formatNumber(item.value)}</Typography>
+                          <Typography sx={{ color: item.color, fontSize: 12, fontWeight: 800, mt: 0.35 }}>{item.helper}</Typography>
+                        </Box>
+                      </Paper>
+                    ))}
+                  </Box>
+                )}
 
-                <Grid container spacing={1.4}>
-                  <Grid item xs={12} lg={6}>
+                <Box
+                  sx={{
+                    display: 'grid',
+                    gridTemplateColumns: '1fr',
+                    gap: 1.4,
+                    width: '100%'
+                  }}
+                >
                     <Paper elevation={0} sx={{ p: 1.4, borderRadius: 2.5, border: '1px solid #dbe6f5', height: '100%' }}>
-                      <Typography sx={{ fontWeight: 900, color: '#0f172a', fontSize: 15 }}>Graduados por periodo</Typography>
-                      <Box sx={{ height: 335, mt: 1 }}>
+                      <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1} justifyContent="space-between" alignItems={{ xs: 'stretch', sm: 'center' }}>
+                        <Typography sx={{ fontWeight: 900, color: '#0f172a', fontSize: 15 }}>Graduados por periodo</Typography>
+                        <Button data-copy-exclude="true" size="small" variant="outlined" startIcon={<ContentCopyIcon />} onClick={() => handleCopyChartNode(graduadosBarChartRef.current, 'Grafico de graduados copiado')} sx={GI_OUTLINE_ACTION_BTN_SX}>
+                          Copiar grafico
+                        </Button>
+                      </Stack>
+                      <Box ref={graduadosBarChartRef} sx={{ mt: 1, width: '100%' }}>
+                      <Box sx={{ height: { xs: 380, md: 470 }, width: '100%' }}>
                         <ResponsiveContainer width="100%" height="100%">
-                          <BarChart data={trendData} margin={{ top: 24, right: 16, bottom: 44, left: 4 }} barCategoryGap="18%">
+                          <BarChart data={trendData} margin={{ top: 26, right: 18, bottom: 4, left: 4 }} barCategoryGap="18%">
+                            <defs>
+                              <linearGradient id="gradBarBlue" x1="0" y1="0" x2="0" y2="1">
+                                <stop offset="0%" stopColor="#2f6df6" stopOpacity={1} />
+                                <stop offset="100%" stopColor="#1e5a96" stopOpacity={0.94} />
+                              </linearGradient>
+                              <linearGradient id="gradBarSelected" x1="0" y1="0" x2="0" y2="1">
+                                <stop offset="0%" stopColor="#60a5fa" stopOpacity={1} />
+                                <stop offset="100%" stopColor="#153e69" stopOpacity={1} />
+                              </linearGradient>
+                            </defs>
                             <CartesianGrid strokeDasharray="4 4" stroke="#e2e8f0" />
-                            <XAxis dataKey="periodDisplay" tick={{ fontSize: 10.5, fill: '#334155', fontWeight: 700 }} angle={-25} textAnchor="end" height={52} interval={0} />
+                            <XAxis dataKey="periodDisplay" tick={false} axisLine={{ stroke: '#cbd5e1' }} height={10} />
                             <YAxis tickFormatter={(v) => v >= 1000 ? `${(v / 1000).toFixed(1)}k` : v} tick={{ fontSize: 11, fill: '#64748b' }} axisLine={false} tickLine={false} />
                             <RechartsTooltip formatter={(value) => [formatNumber(value), 'Graduados']} />
-                            <Bar dataKey="graduados" fill={GRAD_COLOR} radius={[6, 6, 0, 0]} maxBarSize={48} isAnimationActive={false}>
+                            <Bar dataKey="graduados" radius={[6, 6, 0, 0]} maxBarSize={48} cursor="pointer" onClick={(_, index) => toggleGraduadosChartPeriod(trendData[index]?.periodLabel)} isAnimationActive={false}>
+                              {trendData.map((entry) => {
+                                const selected = isGraduadosPeriodSelected(entry.periodLabel);
+                                const dimmed = isGraduadosPeriodDimmed(entry.periodLabel);
+                                return (
+                                  <Cell
+                                    key={`grad-bar-${entry.periodLabel}`}
+                                    fill={selected ? 'url(#gradBarSelected)' : 'url(#gradBarBlue)'}
+                                    opacity={dimmed ? 0.28 : 1}
+                                    stroke={selected ? '#153e69' : 'none'}
+                                    strokeWidth={selected ? 2 : 0}
+                                  />
+                                );
+                              })}
                               <LabelList dataKey="graduados" position="top" formatter={(value) => formatNumber(value)} style={{ fontSize: 11, fill: GRAD_DARK, fontWeight: 900 }} />
                             </Bar>
                           </BarChart>
                         </ResponsiveContainer>
                       </Box>
+                      {renderGraduadosPeriodAxis(trendData)}
+                      </Box>
                     </Paper>
-                  </Grid>
-                  <Grid item xs={12} lg={6}>
                     <Paper elevation={0} sx={{ p: 1.4, borderRadius: 2.5, border: '1px solid #dbe6f5', height: '100%' }}>
-                      <Typography sx={{ fontWeight: 900, color: '#0f172a', fontSize: 15 }}>Tendencia y variacion entre periodos pares</Typography>
-                      <Box sx={{ height: 335, mt: 1 }}>
+                      <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1} justifyContent="space-between" alignItems={{ xs: 'stretch', sm: 'center' }}>
+                        <Typography sx={{ fontWeight: 900, color: '#0f172a', fontSize: 15 }}>Tendencia de graduados</Typography>
+                        <Button data-copy-exclude="true" size="small" variant="outlined" startIcon={<ContentCopyIcon />} onClick={() => handleCopyChartNode(graduadosLineChartRef.current, 'Tendencia de graduados copiada')} sx={GI_OUTLINE_ACTION_BTN_SX}>
+                          Copiar grafico
+                        </Button>
+                      </Stack>
+                      <Box ref={graduadosLineChartRef} sx={{ mt: 1, width: '100%' }}>
+                      <Box sx={{ height: { xs: 380, md: 470 }, width: '100%' }}>
                         <ResponsiveContainer width="100%" height="100%">
-                          <LineChart data={trendData} margin={{ top: 48, right: 22, bottom: 44, left: 4 }}>
+                          <LineChart data={trendData} margin={{ top: 26, right: 22, bottom: 4, left: 4 }}>
                             <CartesianGrid strokeDasharray="4 4" stroke="#e2e8f0" />
-                            <XAxis dataKey="periodDisplay" tick={{ fontSize: 10.5, fill: '#334155', fontWeight: 700 }} angle={-25} textAnchor="end" height={52} interval={0} />
+                            <XAxis dataKey="periodDisplay" tick={false} axisLine={{ stroke: '#cbd5e1' }} height={10} />
                             <YAxis tickFormatter={(v) => v >= 1000 ? `${(v / 1000).toFixed(1)}k` : v} tick={{ fontSize: 11, fill: '#64748b' }} axisLine={false} tickLine={false} />
-                            <RechartsTooltip
-                              formatter={(value, name, item) => {
-                                const row = item?.payload || {};
-                                return [formatNumber(value), row.compareAgainst ? `${name} (${row.compareAgainst}: ${formatNumber(row.graduados - row.diffSamePeriod)})` : name];
-                              }}
-                              labelFormatter={(label) => `Periodo ${label}`}
-                            />
-                            <Line type="linear" dataKey="graduados" name="Graduados" stroke={GRAD_COLOR} strokeWidth={3} dot={{ r: 4, fill: GRAD_COLOR, strokeWidth: 0 }} activeDot={{ r: 6 }} isAnimationActive={false}>
-                              <LabelList content={lineValueLabel} />
+                            <RechartsTooltip formatter={(value) => [formatNumber(value), 'Graduados']} labelFormatter={(label) => `Periodo ${label}`} />
+                            <Line type="linear" dataKey="graduados" name="Graduados" stroke={GRAD_COLOR} strokeWidth={3} dot={renderGraduadosTrendDot} activeDot={renderGraduadosTrendDot} isAnimationActive={false}>
+                              <LabelList dataKey="graduados" content={renderGraduadosLineLabel} />
                             </Line>
                           </LineChart>
                         </ResponsiveContainer>
                       </Box>
+                      {renderGraduadosPeriodAxis(trendData)}
+                      </Box>
                     </Paper>
-                  </Grid>
-                </Grid>
-
-                <Grid container spacing={1.4}>
-                  <Grid item xs={12} md={5}>
-                    <Paper elevation={0} sx={{ p: 1.4, borderRadius: 2.5, border: '1px solid #dbe6f5', height: '100%' }}>
-                      <Typography sx={{ fontWeight: 900, color: '#0f172a', fontSize: 15 }}>Top programas</Typography>
-                      <Stack spacing={0.9} sx={{ mt: 1 }}>
-                        {programRows.slice(0, 8).map((item) => {
-                          const pct = maxProgram > 0 ? (item.total / maxProgram) * 100 : 0;
-                          return (
-                            <Box key={item.programa}>
-                              <Stack direction="row" spacing={1} justifyContent="space-between">
-                                <Typography sx={{ fontSize: 12.5, color: '#0f172a', fontWeight: 800, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{item.programa}</Typography>
-                                <Typography sx={{ fontSize: 12.5, color: GRAD_DARK, fontWeight: 900 }}>{formatNumber(item.total)}</Typography>
-                              </Stack>
-                              <LinearProgress variant="determinate" value={Math.min(100, pct)} sx={{ mt: 0.45, height: 7, borderRadius: 99, bgcolor: '#dbeafe', '& .MuiLinearProgress-bar': { bgcolor: GRAD_COLOR, borderRadius: 99 } }} />
-                            </Box>
-                          );
-                        })}
-                      </Stack>
-                    </Paper>
-                  </Grid>
-                  <Grid item xs={12} md={7}>
-                    <Paper elevation={0} sx={{ p: 1.4, borderRadius: 2.5, border: '1px solid #dbe6f5', height: '100%' }}>
-                      <Typography sx={{ fontWeight: 900, color: '#0f172a', fontSize: 15 }}>Lectura comparativa</Typography>
-                      <TableContainer sx={{ maxHeight: 330, mt: 1 }}>
-                        <Table size="small" stickyHeader>
-                          <TableHead>
-                            <TableRow>
-                              <TableCell sx={{ fontWeight: 900, bgcolor: '#f8fafc' }}>Periodo</TableCell>
-                              <TableCell align="right" sx={{ fontWeight: 900, bgcolor: '#f8fafc' }}>Graduados</TableCell>
-                              <TableCell sx={{ fontWeight: 900, bgcolor: '#f8fafc' }}>Comparado con</TableCell>
-                              <TableCell align="right" sx={{ fontWeight: 900, bgcolor: '#f8fafc' }}>Variacion</TableCell>
-                            </TableRow>
-                          </TableHead>
-                          <TableBody>
-                            {trendData.map((row) => (
-                              <TableRow key={row.periodLabel} hover>
-                                <TableCell sx={{ fontWeight: 800 }}>{row.periodDisplay}</TableCell>
-                                <TableCell align="right" sx={{ fontWeight: 900, color: GRAD_DARK }}>{formatNumber(row.graduados)}</TableCell>
-                                <TableCell>{row.compareAgainst || 'Sin par anterior'}</TableCell>
-                                <TableCell align="right" sx={{ fontWeight: 900, color: row.deltaSamePeriod === null ? '#64748b' : row.deltaSamePeriod >= 0 ? '#15803d' : '#dc2626' }}>
-                                  {row.deltaSamePeriod === null ? '-' : `${row.diffSamePeriod >= 0 ? '+' : ''}${formatNumber(row.diffSamePeriod)} (${formatPct(row.deltaSamePeriod)})`}
-                                </TableCell>
-                              </TableRow>
-                            ))}
-                          </TableBody>
-                        </Table>
-                      </TableContainer>
-                    </Paper>
-                  </Grid>
-                </Grid>
+                </Box>
 
                 <Paper elevation={0} sx={{ p: 1.4, borderRadius: 2.5, border: '1px solid #dbe6f5' }}>
-                  <Typography sx={{ fontWeight: 900, color: '#0f172a', fontSize: 15 }}>Detalle por programa y periodo</Typography>
-                  <TableContainer sx={{ maxHeight: 390, mt: 1 }}>
+                  <Stack direction={{ xs: 'column', md: 'row' }} spacing={1} alignItems={{ xs: 'stretch', md: 'center' }} justifyContent="space-between">
+                    <Box>
+                      <Typography sx={{ fontWeight: 900, color: '#0f172a', fontSize: 15 }}>Tabla de graduados</Typography>
+                      <Typography sx={{ color: '#64748b', fontSize: 12.5, fontWeight: 700, mt: 0.25 }}>
+                        Ordenada de mayor a menor por graduados.
+                      </Typography>
+                    </Box>
+                    <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1} alignItems={{ xs: 'stretch', sm: 'center' }}>
+                      <Button size="small" variant="outlined" startIcon={<DownloadIconSmall />} onClick={exportGraduadosTable} sx={GI_OUTLINE_ACTION_BTN_SX}>
+                        Exportar datos
+                      </Button>
+                      <ToggleButtonGroup
+                        exclusive
+                        size="small"
+                        value={graduadosNivelFilter}
+                        onChange={(_, next) => {
+                          if (next) setGraduadosNivelFilter(next);
+                        }}
+                        sx={{
+                          p: 0.35,
+                          borderRadius: 2.4,
+                          bgcolor: '#f8fafc',
+                          border: '1px solid #dbe6f5',
+                          alignSelf: { xs: 'stretch', md: 'center' },
+                          '& .MuiToggleButton-root': {
+                            flex: { xs: 1, md: 'initial' },
+                            px: 2,
+                            py: 0.75,
+                            border: 0,
+                            borderRadius: '14px !important',
+                            fontWeight: 900,
+                            color: '#475569',
+                            textTransform: 'none'
+                          },
+                          '& .Mui-selected': {
+                            bgcolor: `${GRAD_LIGHT} !important`,
+                            color: `${GRAD_DARK} !important`,
+                            boxShadow: '0 8px 18px rgba(21,62,105,0.14)'
+                          }
+                        }}
+                      >
+                        <ToggleButton value="todos">Todos</ToggleButton>
+                        <ToggleButton value="pregrado">Pregrado</ToggleButton>
+                        <ToggleButton value="posgrado">Posgrado</ToggleButton>
+                      </ToggleButtonGroup>
+                    </Stack>
+                  </Stack>
+                  <TableContainer sx={{ maxHeight: 430, mt: 1 }}>
                     <Table size="small" stickyHeader>
                       <TableHead>
-                        <TableRow>
-                          <TableCell sx={{ fontWeight: 900, bgcolor: '#f8fafc' }}>Año</TableCell>
-                          <TableCell sx={{ fontWeight: 900, bgcolor: '#f8fafc' }}>Periodo</TableCell>
-                          <TableCell sx={{ fontWeight: 900, bgcolor: '#f8fafc' }}>Programa</TableCell>
-                          <TableCell sx={{ fontWeight: 900, bgcolor: '#f8fafc' }}>Facultad</TableCell>
-                          <TableCell align="right" sx={{ fontWeight: 900, bgcolor: '#f8fafc' }}>Graduados</TableCell>
+                        <TableRow sx={{ '& th': { bgcolor: '#153e69', color: '#ffffff', fontWeight: 950, fontSize: 12.5, textTransform: 'uppercase', py: 0.8 } }}>
+                          <TableCell>Año</TableCell>
+                          <TableCell>Periodo</TableCell>
+                          <TableCell>Nivel</TableCell>
+                          <TableCell>Programa</TableCell>
+                          <TableCell align="right">Graduados</TableCell>
                         </TableRow>
                       </TableHead>
                       <TableBody>
                         {tableRows.map((row) => (
-                          <TableRow key={`${row.periodLabel}-${row.programa}-${row.facultad}`} hover>
-                            <TableCell>{row.anio}</TableCell>
+                          <TableRow
+                            key={`${row.periodLabel}-${row.programa}`}
+                            hover
+                            sx={{ '&:nth-of-type(even) td': { bgcolor: '#f1f5f9' } }}
+                          >
+                            <TableCell sx={{ fontWeight: 700 }}>{row.anio}</TableCell>
                             <TableCell sx={{ fontWeight: 800 }}>{row.periodo}</TableCell>
-                            <TableCell sx={{ fontWeight: 700 }}>{row.programa}</TableCell>
-                            <TableCell>{row.facultad}</TableCell>
+                            <TableCell>
+                              <Chip
+                                size="small"
+                                label={row.nivel}
+                                sx={{
+                                  height: 22,
+                                  fontWeight: 900,
+                                  fontSize: 11,
+                                  bgcolor: row.nivel === 'Posgrado' ? '#e0f2fe' : GRAD_LIGHT,
+                                  color: row.nivel === 'Posgrado' ? '#0f3a64' : GRAD_DARK
+                                }}
+                              />
+                            </TableCell>
+                            <TableCell sx={{ fontWeight: 700 }}>{String(row.programa || '').toLocaleUpperCase('es-CO')}</TableCell>
                             <TableCell align="right" sx={{ fontWeight: 900, color: GRAD_DARK }}>{formatNumber(row.graduados)}</TableCell>
                           </TableRow>
                         ))}
+                        <TableRow sx={{ '& td': { bgcolor: '#eaf3ff', fontWeight: 950, borderTop: '2px solid #153e69' } }}>
+                          <TableCell colSpan={4}>Total general</TableCell>
+                          <TableCell align="right" sx={{ color: GRAD_DARK }}>{formatNumber(totalGeneralGraduados)}</TableCell>
+                        </TableRow>
                       </TableBody>
                     </Table>
                   </TableContainer>
@@ -6695,7 +7771,6 @@ const renderCategoryBars = (items = [], options = {}) => {
           </Stack>
         </Paper>
 
-        {renderCantidadTotalEgresadosCards()}
       </Stack>
     );
   };
@@ -7888,94 +8963,252 @@ const renderCategoryBars = (items = [], options = {}) => {
     const parsed = empleabilidadRows.map((row) => ({
       ...row,
       metric: normalizeMetricKey(row.indicador),
-      valorNum: normalizeNumber(row.valor),
-      ies: parseObservacionesToMap(row.observaciones).ies || ''
+      valorNum: normalizeNumber(row.valor)
     }));
 
     const programas = Array.from(new Set(parsed.map((r) => String(r.programa || '').trim()).filter(Boolean))).sort((a, b) => a.localeCompare(b, 'es'));
-    const filtered = parsed.filter((r) => !empleabilidadUi.programa || r.programa === empleabilidadUi.programa);
+    const hayPrograma = Boolean(empleabilidadUi.programa);
 
-    const byYearMap = new Map();
-    filtered.forEach((r) => {
+    const byYearMapAll = new Map();
+    parsed.filter((r) => !hayPrograma || r.programa === empleabilidadUi.programa).forEach((r) => {
       const anio = Number(r.anio) || 0;
       if (!anio) return;
-      if (!byYearMap.has(anio)) byYearMap.set(anio, { anio, programa: 0, nacional: 0 });
-      const target = byYearMap.get(anio);
-      if (r.metric === 'programa') target.programa += r.valorNum;
-      if (r.metric === 'nacional') target.nacional += r.valorNum;
+      if (!byYearMapAll.has(anio)) byYearMapAll.set(anio, { anio, programa: 0 });
+      if (r.metric === 'programa') byYearMapAll.get(anio).programa += r.valorNum;
     });
-    const byYear = Array.from(byYearMap.values()).sort((a, b) => a.anio - b.anio);
-    const latest = byYear[byYear.length - 1] || null;
+    const todosLosAnios = Array.from(byYearMapAll.keys()).sort((a, b) => a - b);
+    const aniosDisponibles = hayPrograma ? todosLosAnios : [];
 
-    const latestRows = parsed.filter((r) => Number(r.anio) === Number(latest?.anio || 0));
-    const rankingMap = new Map();
-    latestRows.forEach((r) => {
-      const key = String(r.programa || 'Sin programa').trim() || 'Sin programa';
-      if (!rankingMap.has(key)) rankingMap.set(key, { label: key, programa: 0, nacional: 0 });
-      const item = rankingMap.get(key);
-      if (r.metric === 'programa') item.programa = r.valorNum;
-      if (r.metric === 'nacional') item.nacional = r.valorNum;
-    });
-    const ranking = Array.from(rankingMap.values())
-      .map((r) => ({ ...r, brecha: r.programa - r.nacional }))
-      .sort((a, b) => b.brecha - a.brecha)
-      .slice(0, 10);
+    const aniosSeleccionados = empleabilidadUi.anios || [];
+    const lineData = (hayPrograma
+      ? (aniosSeleccionados.length > 0
+          ? aniosDisponibles.filter((a) => aniosSeleccionados.includes(a))
+          : aniosDisponibles)
+      : []
+    ).map((a) => byYearMapAll.get(a)).filter(Boolean);
 
-    const lineData = byYear.map((r) => ({ ...r, brecha: r.programa - r.nacional }));
+    const programaValues = lineData.map((r) => r.programa).filter((v) => v > 0);
+    const maxEmpVal = programaValues.length ? Math.max(...programaValues) : null;
+    const minEmpVal = programaValues.length ? Math.min(...programaValues) : null;
+    const avgEmpVal = programaValues.length ? programaValues.reduce((a, b) => a + b, 0) / programaValues.length : null;
+    const maxEmpAnio = maxEmpVal !== null ? (lineData.find((r) => r.programa === maxEmpVal)?.anio ?? '') : '';
+    const minEmpAnio = minEmpVal !== null ? (lineData.find((r) => r.programa === minEmpVal)?.anio ?? '') : '';
 
     const dataAvailable = Boolean(empleabilidadRows.length);
-    const headerStats = [
-      { label: 'Registros analizados', value: filtered.length || parsed.length, tone: '#0891b2' },
-      { label: 'Programas detectados', value: programas.length, tone: '#2563eb' },
-      { label: 'Años disponibles', value: byYear.length, tone: '#0f766e' }
+    const chartTitle = empleabilidadUi.programa ? `UNICESMAG (Pasto) — ${empleabilidadUi.programa}` : '';
+    const hayFiltroActivo = hayPrograma;
+    const hayFiltroAnio = aniosSeleccionados.length > 0;
+
+    // Ranking data — todos los programas, sin slice
+    const rankingData = (() => {
+      const sumMap = new Map();
+      const cntMap = new Map();
+      const srcRows = hayFiltroAnio
+        ? parsed.filter((r) => aniosSeleccionados.includes(Number(r.anio)))
+        : parsed;
+      srcRows.forEach((r) => {
+        const key = String(r.programa || '').trim();
+        if (!key || r.metric !== 'programa' || r.valorNum <= 0) return;
+        if (!sumMap.has(key)) { sumMap.set(key, 0); cntMap.set(key, 0); }
+        sumMap.set(key, sumMap.get(key) + r.valorNum);
+        cntMap.set(key, cntMap.get(key) + 1);
+      });
+      return Array.from(sumMap.entries())
+        .map(([key, sum]) => ({ label: key, programa: parseFloat((sum / cntMap.get(key)).toFixed(2)) }))
+        .filter((r) => r.programa > 0)
+        .sort((a, b) => b.programa - a.programa);
+    })();
+
+    const rankingHeight = Math.max(260, rankingData.length * 38 + 20);
+
+    const handleRankingClick = (chartData) => {
+      if (!chartData || !chartData.activePayload) return;
+      const prog = chartData.activePayload[0]?.payload?.label;
+      if (!prog) return;
+      setEmpleabilidadUi((prev) => ({
+        ...prev,
+        programa: prev.programa === prog ? '' : prog,
+        anios: []
+      }));
+    };
+
+    const copyChart = (id) => {
+      const el = document.getElementById(id);
+      if (!el) return;
+      const svg = el.querySelector('svg');
+      if (!svg) return;
+      const w = svg.viewBox?.baseVal?.width || Number(svg.getAttribute('width')) || el.offsetWidth || 800;
+      const h = svg.viewBox?.baseVal?.height || Number(svg.getAttribute('height')) || el.scrollHeight || el.offsetHeight || 400;
+      const svgStr = new XMLSerializer().serializeToString(svg);
+      const blob = new Blob([svgStr], { type: 'image/svg+xml;charset=utf-8' });
+      const url = URL.createObjectURL(blob);
+      const img = new window.Image();
+      img.onload = () => {
+        const canvas = document.createElement('canvas');
+        const scale = 2;
+        canvas.width = w * scale;
+        canvas.height = h * scale;
+        const ctx = canvas.getContext('2d');
+        ctx.scale(scale, scale);
+        ctx.fillStyle = '#ffffff';
+        ctx.fillRect(0, 0, w, h);
+        ctx.drawImage(img, 0, 0, w, h);
+        URL.revokeObjectURL(url);
+        canvas.toBlob(async (pngBlob) => {
+          try {
+            await navigator.clipboard.write([new ClipboardItem({ 'image/png': pngBlob })]);
+            enqueueSnackbar('Gráfico copiado al portapapeles', { variant: 'success' });
+          } catch {
+            enqueueSnackbar('Usa clic derecho → Guardar imagen', { variant: 'info' });
+          }
+        }, 'image/png');
+      };
+      img.src = url;
+    };
+
+    const EMP_KPIS = [
+      {
+        label: 'PORCENTAJE MÁXIMO EMPLEABILIDAD',
+        value: hayFiltroActivo && maxEmpVal !== null ? `${maxEmpVal.toFixed(2)} %` : '—',
+        sub: hayFiltroActivo && maxEmpAnio ? `Año ${maxEmpAnio}` : 'Selecciona un programa',
+        gradient: 'linear-gradient(135deg, #0f2d6b 0%, #1d4ed8 100%)',
+        shadow: 'rgba(29,78,216,0.28)',
+        icon: <TrendingUpIcon sx={{ fontSize: 56 }} />
+      },
+      {
+        label: 'PORCENTAJE MÍNIMO EMPLEABILIDAD',
+        value: hayFiltroActivo && minEmpVal !== null ? `${minEmpVal.toFixed(2)} %` : '—',
+        sub: hayFiltroActivo && minEmpAnio ? `Año ${minEmpAnio}` : 'Selecciona un programa',
+        gradient: 'linear-gradient(135deg, #1e3a8a 0%, #2563eb 100%)',
+        shadow: 'rgba(37,99,235,0.28)',
+        icon: <TrendingDownIcon sx={{ fontSize: 56 }} />
+      },
+      {
+        label: 'PROMEDIO DE EMPLEABILIDAD',
+        value: hayFiltroActivo && avgEmpVal !== null ? `${avgEmpVal.toFixed(2)} %` : '—',
+        sub: hayFiltroActivo ? `${lineData.length} año${lineData.length !== 1 ? 's' : ''} analizado${lineData.length !== 1 ? 's' : ''}` : 'Selecciona un programa',
+        gradient: 'linear-gradient(135deg, #1d4ed8 0%, #60a5fa 100%)',
+        shadow: 'rgba(96,165,250,0.28)',
+        icon: <AutoGraphIcon sx={{ fontSize: 56 }} />
+      }
     ];
 
     return (
-      <Stack spacing={2.2}>
-        <Paper
-          elevation={0}
-          sx={{
-            p: { xs: 1.6, md: 2 },
-            border: '1px solid #cdeafe',
-            borderRadius: 3,
-            background: 'linear-gradient(135deg, #effbff 0%, #f2fbff 48%, #f7fdff 100%)',
-            position: 'relative',
-            overflow: 'hidden'
-          }}
-        >
-          <Box sx={{ position: 'absolute', left: -40, bottom: -60, width: 190, height: 190, borderRadius: '50%', bgcolor: 'rgba(8,145,178,0.08)' }} />
-          <Stack direction={{ xs: 'column', lg: 'row' }} spacing={1.4} justifyContent="space-between" alignItems={{ xs: 'flex-start', lg: 'center' }}>
-            <Stack spacing={1}>
-              <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap" useFlexGap>
-                <Button variant="outlined" startIcon={<ArrowBackRoundedIcon />} onClick={() => setPoblacionalPanel('hub')}>
-                  Volver a dashboards Poblacional
-                </Button>
-                <Chip label="Empleabilidad" sx={{ bgcolor: '#e0f2fe', color: '#0369a1', fontWeight: 800 }} />
-                <Chip label={dataAvailable ? 'Dashboard activo' : 'Esperando datos'} sx={{ bgcolor: dataAvailable ? '#dcfce7' : '#fff7ed', color: dataAvailable ? '#166534' : '#c2410c', fontWeight: 700 }} />
-              </Stack>
+      <Stack spacing={2.5}>
+        {/* HEADER */}
+        <Paper elevation={0} sx={{
+          p: { xs: 2, md: 2.8 }, borderRadius: 3,
+          background: 'linear-gradient(130deg, #1d4ed8 0%, #2563eb 55%, #60a5fa 100%)',
+          position: 'relative', overflow: 'hidden',
+          boxShadow: '0 8px 28px rgba(29,78,216,0.22)'
+        }}>
+          <Box sx={{ position: 'absolute', right: -60, top: -60, width: 240, height: 240, borderRadius: '50%', bgcolor: 'rgba(255,255,255,0.08)', pointerEvents: 'none' }} />
+          <Box sx={{ position: 'absolute', right: 60, bottom: -80, width: 160, height: 160, borderRadius: '50%', bgcolor: 'rgba(255,255,255,0.05)', pointerEvents: 'none' }} />
+          <Stack spacing={1.8}>
+            <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap" useFlexGap>
+              <Button variant="outlined" size="small" startIcon={<ArrowBackRoundedIcon />}
+                onClick={() => setPoblacionalPanel('hub')}
+                sx={{ color: '#fff', borderColor: 'rgba(255,255,255,0.5)', fontWeight: 700, borderRadius: 2,
+                  '&:hover': { borderColor: '#fff', bgcolor: 'rgba(255,255,255,0.15)' } }}>
+                Volver
+              </Button>
+              <Chip label="Empleabilidad" sx={{ bgcolor: 'rgba(255,255,255,0.22)', color: '#fff', fontWeight: 800, fontSize: 13, border: '1px solid rgba(255,255,255,0.35)' }} />
+              <Chip label={dataAvailable ? 'Dashboard activo' : 'Esperando datos'} sx={{
+                bgcolor: dataAvailable ? 'rgba(134,239,172,0.25)' : 'rgba(253,224,71,0.25)',
+                color: dataAvailable ? '#d1fae5' : '#fef9c3', fontWeight: 700,
+                border: `1px solid ${dataAvailable ? 'rgba(134,239,172,0.4)' : 'rgba(253,224,71,0.4)'}` }} />
+              {hayPrograma && (
+                <Chip
+                  label={`Programa: ${empleabilidadUi.programa}`}
+                  onDelete={() => setEmpleabilidadUi((prev) => ({ ...prev, programa: '', anios: [] }))}
+                  sx={{ bgcolor: 'rgba(255,255,255,0.9)', color: '#1d4ed8', fontWeight: 800, maxWidth: 300,
+                    '& .MuiChip-deleteIcon': { color: '#1d4ed8' } }} />
+              )}
+            </Stack>
+            <Stack direction={{ xs: 'column', lg: 'row' }} spacing={2} justifyContent="space-between" alignItems={{ xs: 'flex-start', lg: 'center' }}>
               <Box>
-                <Typography sx={{ fontWeight: 900, fontSize: { xs: 22, md: 28 }, color: '#0f172a', lineHeight: 1.15 }}>
-                  Analitica de Empleabilidad
+                <Typography sx={{ fontWeight: 900, fontSize: { xs: 24, md: 32 }, color: '#fff', lineHeight: 1.1, letterSpacing: '-0.5px' }}>
+                  Analítica de Empleabilidad
                 </Typography>
-                <Typography sx={{ color: '#5b6578', mt: 0.35 }}>
-                  Seguimiento de empleabilidad del programa frente al referente nacional con foco en brechas y tendencia.
+                <Typography sx={{ color: 'rgba(255,255,255,0.75)', mt: 0.5, fontSize: 14, fontWeight: 500 }}>
+                  Haz clic en una barra del ranking para seleccionar el programa · Ajusta años con el filtro
                 </Typography>
               </Box>
+              <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1.5} sx={{ minWidth: { xs: '100%', lg: 580 } }}>
+                <FormControl size="small" fullWidth sx={{
+                  '& .MuiOutlinedInput-root': { color: '#fff', borderRadius: 2, bgcolor: 'rgba(255,255,255,0.15)',
+                    '& fieldset': { borderColor: 'rgba(255,255,255,0.4)' },
+                    '&:hover fieldset': { borderColor: 'rgba(255,255,255,0.7)' },
+                    '&.Mui-focused fieldset': { borderColor: '#fff' } },
+                  '& .MuiInputLabel-root': { color: 'rgba(255,255,255,0.8)' },
+                  '& .MuiInputLabel-root.Mui-focused': { color: '#fff' },
+                  '& .MuiSelect-icon': { color: 'rgba(255,255,255,0.8)' }
+                }}>
+                  <InputLabel id="emp-prog-lbl">Programa académico</InputLabel>
+                  <Select labelId="emp-prog-lbl" label="Programa académico"
+                    value={empleabilidadUi.programa}
+                    onChange={(e) => setEmpleabilidadUi((prev) => ({ ...prev, programa: e.target.value, anios: [] }))}
+                    renderValue={(v) => v || 'Todos los programas'}
+                    MenuProps={{ PaperProps: { sx: { maxHeight: 340, borderRadius: 2, mt: 0.5 } } }}>
+                    <MenuItem value="">Todos los programas</MenuItem>
+                    {programas.map((p) => <MenuItem key={p} value={p} sx={{ fontSize: 13 }}>{p}</MenuItem>)}
+                  </Select>
+                </FormControl>
+                <Autocomplete
+                  multiple disableCloseOnSelect
+                  options={aniosDisponibles}
+                  value={aniosSeleccionados}
+                  disabled={!hayPrograma}
+                  onChange={(_, newVal) => setEmpleabilidadUi((prev) => ({ ...prev, anios: newVal }))}
+                  limitTags={2} size="small" fullWidth
+                  noOptionsText="Sin años disponibles"
+                  getLimitTagsText={(more) => `+${more} más`}
+                  renderOption={(props, option, { selected }) => (
+                    <li {...props} style={{ padding: '4px 12px' }}>
+                      <Checkbox size="small" checked={selected}
+                        sx={{ mr: 1, p: 0.3, color: '#2563eb', '&.Mui-checked': { color: '#1d4ed8' } }} />
+                      <ListItemText primary={option} primaryTypographyProps={{ fontSize: 13, fontWeight: 600 }} />
+                    </li>
+                  )}
+                  renderInput={(params) => (
+                    <TextField {...params} label="Años específicos" placeholder={aniosSeleccionados.length === 0 ? 'Todos los años' : ''}
+                      sx={{
+                        '& .MuiOutlinedInput-root': { color: '#fff', bgcolor: hayPrograma ? 'rgba(255,255,255,0.15)' : 'rgba(255,255,255,0.06)', borderRadius: 2,
+                          '& fieldset': { borderColor: 'rgba(255,255,255,0.4)' },
+                          '&:hover fieldset': { borderColor: hayPrograma ? 'rgba(255,255,255,0.7)' : 'rgba(255,255,255,0.4)' },
+                          '&.Mui-focused fieldset': { borderColor: '#fff' },
+                          '& input': { color: '#fff' },
+                          '& input::placeholder': { color: 'rgba(255,255,255,0.55)', opacity: 1 } },
+                        '& .MuiInputLabel-root': { color: 'rgba(255,255,255,0.75)' },
+                        '& .MuiInputLabel-root.Mui-focused': { color: '#fff' },
+                        '& .MuiSvgIcon-root': { color: 'rgba(255,255,255,0.7)' },
+                        '& .MuiAutocomplete-clearIndicator': { color: 'rgba(255,255,255,0.7)' },
+                        '& .MuiAutocomplete-popupIndicator': { color: 'rgba(255,255,255,0.7)' }
+                      }} />
+                  )}
+                  renderTags={(value, getTagProps) =>
+                    value.length <= 2
+                      ? value.map((opt, idx) => (
+                          <Chip {...getTagProps({ index: idx })} key={opt} label={opt} size="small"
+                            sx={{ bgcolor: 'rgba(255,255,255,0.25)', color: '#fff', border: '1px solid rgba(255,255,255,0.4)', height: 22, fontSize: 12, fontWeight: 700,
+                              '& .MuiChip-deleteIcon': { color: 'rgba(255,255,255,0.7)', '&:hover': { color: '#fff' } } }} />
+                        ))
+                      : [<Chip key="cnt" label={`${value.length} años`} size="small"
+                            sx={{ bgcolor: 'rgba(255,255,255,0.25)', color: '#fff', border: '1px solid rgba(255,255,255,0.4)', height: 22, fontSize: 12, fontWeight: 700 }} />]
+                  }
+                  PaperComponent={({ children, ...rest }) => (
+                    <Paper {...rest} elevation={8} sx={{ borderRadius: 2, mt: 0.5, border: '1px solid #e2e8f0', overflow: 'hidden' }}>
+                      <Box sx={{ px: 1.5, pt: 1, pb: 0.5, borderBottom: '1px solid #f1f5f9' }}>
+                        <Typography sx={{ fontSize: 11, fontWeight: 700, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: 0.8 }}>
+                          {`${aniosSeleccionados.length} de ${aniosDisponibles.length} seleccionados`}
+                        </Typography>
+                      </Box>
+                      {children}
+                    </Paper>
+                  )}
+                />
+              </Stack>
             </Stack>
-            <FormControl size="small" sx={{ minWidth: { xs: '100%', sm: 360 }, width: { xs: '100%', lg: 'auto' } }}>
-              <InputLabel id="empleabilidad-programa-label">Programa</InputLabel>
-              <Select
-                labelId="empleabilidad-programa-label"
-                label="Programa"
-                displayEmpty
-                value={empleabilidadUi.programa}
-                onChange={(e) => setEmpleabilidadUi({ programa: e.target.value })}
-                renderValue={(v) => v || 'Todos los programas'}
-              >
-                <MenuItem value="">Todos los programas</MenuItem>
-                {programas.map((p) => <MenuItem key={p} value={p}>{p}</MenuItem>)}
-              </Select>
-            </FormControl>
           </Stack>
         </Paper>
 
@@ -7987,106 +9220,152 @@ const renderCategoryBars = (items = [], options = {}) => {
           })
         ) : (
           <>
-            <Grid container spacing={1.4}>
-              {[
-                { label: 'Empleabilidad programa', value: latest?.programa, color: '#0891b2', sub: 'Ultimo año disponible' },
-                { label: 'Referencia nacional', value: latest?.nacional, color: '#f59e0b', sub: 'Ultimo año disponible' },
-                { label: 'Brecha vs nacional', value: latest ? (latest.programa - latest.nacional) : null, color: '#0f766e', sub: 'Puntos porcentuales', pp: true },
-                { label: 'Año de corte', value: latest?.anio ?? '-', color: '#2563eb', plain: true }
-              ].map((kpi) => (
-                <Grid item xs={12} sm={6} lg={3} key={kpi.label}>
-                  <Paper elevation={0} sx={{ p: 1.6, borderRadius: 2.6, border: '1px solid #e5edf7', bgcolor: '#fff', height: '100%', boxShadow: '0 8px 22px rgba(15,23,42,0.04)' }}>
-                    <Typography variant="caption" sx={{ color: '#64748b', fontWeight: 800 }}>{kpi.label}</Typography>
-                    <Typography sx={{ mt: 0.6, fontWeight: 900, fontSize: 26, color: '#0f172a', lineHeight: 1.05 }}>
-                      {kpi.plain ? kpi.value : (kpi.value === null || kpi.value === undefined ? '-' : (kpi.pp ? `${Number(kpi.value).toFixed(2)} pp` : `${Number(kpi.value).toFixed(2)}%`))}
-                    </Typography>
-                    {!kpi.plain && (
-                      <Typography variant="body2" sx={{ mt: 0.35, color: '#64748b' }}>
-                        {kpi.sub}
-                      </Typography>
-                    )}
-                    <Box sx={{ mt: 0.8, height: 4, borderRadius: 99, bgcolor: `${kpi.color}22` }}>
-                      <Box sx={{ width: '100%', height: '100%', borderRadius: 99, bgcolor: kpi.color }} />
-                    </Box>
-                  </Paper>
-                </Grid>
-              ))}
-            </Grid>
-
-            <Grid container spacing={1.6}>
-              <Grid item xs={12} xl={8}>
-                <Paper elevation={0} sx={{ p: 1.6, borderRadius: 2.8, border: '1px solid #e2e8f0', bgcolor: '#fff', height: '100%' }}>
-                  <Stack direction={{ xs: 'column', md: 'row' }} justifyContent="space-between" spacing={0.8} sx={{ mb: 1.2 }}>
-                    <Box>
-                      <Typography sx={{ fontWeight: 900, color: '#0f172a' }}>Evolucion de empleabilidad</Typography>
-                      <Typography variant="body2" sx={{ color: '#64748b' }}>
-                        Comparativo del programa frente al promedio nacional y seguimiento de brecha.
-                      </Typography>
-                    </Box>
-                    <Stack direction="row" spacing={0.8} flexWrap="wrap" useFlexGap>
-                      <Chip size="small" label="Programa" sx={{ bgcolor: '#cffafe', color: '#155e75', fontWeight: 700 }} />
-                      <Chip size="small" label="Nacional" sx={{ bgcolor: '#fef3c7', color: '#92400e', fontWeight: 700 }} />
-                      <Chip size="small" label="Brecha" sx={{ bgcolor: '#dcfce7', color: '#166534', fontWeight: 700 }} />
-                    </Stack>
+            {/* KPI CARDS */}
+            <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', md: 'repeat(3, 1fr)' }, gap: 2 }}>
+              {EMP_KPIS.map((kpi, i) => (
+                <Paper key={i} elevation={0} sx={{
+                  p: { xs: 2.5, md: 3 }, borderRadius: 3, background: kpi.gradient,
+                  color: '#fff', position: 'relative', overflow: 'hidden',
+                  boxShadow: `0 10px 30px ${kpi.shadow}`,
+                  transition: 'transform 0.25s cubic-bezier(.4,0,.2,1), box-shadow 0.25s cubic-bezier(.4,0,.2,1)',
+                  '&:hover': { transform: 'translateY(-5px)', boxShadow: `0 20px 44px ${kpi.shadow}` }
+                }}>
+                  <Box sx={{ position: 'absolute', right: -18, top: '50%', transform: 'translateY(-50%)', opacity: 0.13 }}>{kpi.icon}</Box>
+                  <Box sx={{ position: 'absolute', bottom: -28, left: -28, width: 110, height: 110, borderRadius: '50%', bgcolor: 'rgba(255,255,255,0.07)', pointerEvents: 'none' }} />
+                  <Typography sx={{ fontSize: 11, fontWeight: 800, letterSpacing: 1.1, opacity: 0.8, mb: 1.5, textTransform: 'uppercase', lineHeight: 1.45 }}>{kpi.label}</Typography>
+                  <Typography sx={{ fontWeight: 900, fontSize: { xs: 36, md: 48 }, lineHeight: 1, mb: 1, letterSpacing: '-2px' }}>{kpi.value}</Typography>
+                  <Stack direction="row" spacing={0.5} alignItems="center">
+                    <Box sx={{ width: 7, height: 7, borderRadius: '50%', bgcolor: 'rgba(255,255,255,0.55)' }} />
+                    <Typography sx={{ fontSize: 13, opacity: 0.75, fontWeight: 500 }}>{kpi.sub}</Typography>
                   </Stack>
-                  <Box sx={{ height: 360 }}>
+                </Paper>
+              ))}
+            </Box>
+
+            {/* GRAFICA DE LINEAS */}
+            {hayFiltroActivo && (
+              <Paper elevation={0} sx={{ p: { xs: 1.5, md: 2 }, borderRadius: 3, border: '1px solid #e8edf5', bgcolor: '#fff', boxShadow: '0 4px 24px rgba(15,23,42,0.07)', position: 'relative' }}>
+                <Stack direction="row" justifyContent="space-between" alignItems="center" sx={{ mb: 1.5, px: 0.5 }}>
+                  <Box>
+                    <Stack direction="row" spacing={1} alignItems="center" sx={{ mb: 0.3 }}>
+                      <Box sx={{ width: 4, height: 20, borderRadius: 2, bgcolor: '#1d4ed8' }} />
+                      <Typography sx={{ fontWeight: 900, fontSize: 16, color: '#0f172a' }}>Evolución de Empleabilidad</Typography>
+                    </Stack>
+                    <Typography variant="body2" sx={{ color: '#64748b', ml: '20px', fontWeight: 500, fontSize: 12 }}>
+                      📌 {chartTitle}{hayFiltroAnio && ` · Años: ${aniosSeleccionados.join(', ')}`}
+                    </Typography>
+                  </Box>
+                  <Tooltip title="Copiar gráfico">
+                    <IconButton size="small" onClick={() => copyChart('emp-line-chart')}
+                      sx={{ bgcolor: '#f8fafc', border: '1px solid #e2e8f0', '&:hover': { bgcolor: '#eff6ff', borderColor: '#bfdbfe' } }}>
+                      <ContentCopyIcon sx={{ fontSize: 16, color: '#64748b' }} />
+                    </IconButton>
+                  </Tooltip>
+                </Stack>
+                {lineData.length === 0 ? (
+                  <Box sx={{ height: 220, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 1, bgcolor: '#f8fafc', borderRadius: 2, border: '1px dashed #cbd5e1' }}>
+                    <AutoGraphIcon sx={{ fontSize: 36, color: '#94a3b8' }} />
+                    <Typography sx={{ fontWeight: 700, color: '#475569', fontSize: 14 }}>Sin datos para los años seleccionados</Typography>
+                  </Box>
+                ) : (
+                  <Box id="emp-line-chart" sx={{ height: lineData.length === 1 ? 220 : 380 }}>
                     <ResponsiveContainer width="100%" height="100%">
-                      <LineChart data={lineData}>
-                        <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
-                        <XAxis dataKey="anio" />
-                        <YAxis />
-                        <RechartsTooltip formatter={(v) => [`${Number(v).toFixed(2)}%`, '']} />
-                        <Line type="monotone" dataKey="programa" name="Programa" stroke="#0891b2" strokeWidth={3} dot={false} />
-                        <Line type="monotone" dataKey="nacional" name="Nacional" stroke="#f59e0b" strokeWidth={2.5} dot={false} />
-                        <Line type="monotone" dataKey="brecha" name="Brecha" stroke="#0f766e" strokeWidth={2} strokeDasharray="6 4" dot={false} />
+                      <LineChart data={lineData} margin={{ top: 22, right: 30, left: 10, bottom: 28 }}>
+                        <CartesianGrid strokeDasharray="6 3" stroke="#c8d6e5" strokeWidth={1} />
+                        <XAxis dataKey="anio" tick={{ fontSize: 12, fontWeight: 700, fill: '#475569' }}
+                          axisLine={{ stroke: '#e2e8f0', strokeWidth: 1.5 }} tickLine={false}
+                          label={{ value: 'Año', position: 'insideBottom', offset: -16, fill: '#64748b', fontWeight: 700, fontSize: 12 }} />
+                        <YAxis tick={{ fontSize: 11, fill: '#475569' }} axisLine={false} tickLine={false}
+                          tickFormatter={(v) => `${v}%`}
+                          label={{ value: 'PORCENTAJE DE EMPLEABILIDAD', angle: -90, position: 'insideLeft', offset: -6, fill: '#64748b', fontWeight: 700, fontSize: 10 }} />
+                        <RechartsTooltip
+                          contentStyle={{ borderRadius: 10, border: '1px solid #e2e8f0', boxShadow: '0 8px 24px rgba(0,0,0,0.12)', fontSize: 13, fontWeight: 600 }}
+                          formatter={(v) => [`${Number(v).toFixed(2)}%`, 'Empleabilidad']}
+                          labelFormatter={(l) => `Año ${l}`}
+                          cursor={{ stroke: '#1d4ed8', strokeWidth: 1.5, strokeDasharray: '4 2' }} />
+                        <Line type="linear" dataKey="programa" name="Empleabilidad" stroke="#1d4ed8" strokeWidth={2.8}
+                          dot={{ r: 5, fill: '#1d4ed8', stroke: '#fff', strokeWidth: 2.5 }}
+                          activeDot={{ r: 9, fill: '#1d4ed8', stroke: '#fff', strokeWidth: 3 }}>
+                          <LabelList dataKey="programa" position="top" offset={8}
+                            formatter={(v) => `${Number(v).toFixed(1)}`}
+                            style={{ fontSize: 11, fontWeight: 800, fill: '#1d4ed8' }} />
+                        </Line>
                       </LineChart>
                     </ResponsiveContainer>
                   </Box>
-                </Paper>
-              </Grid>
-              <Grid item xs={12} xl={4}>
-                <Stack spacing={1.6} sx={{ height: '100%' }}>
-                <Paper elevation={0} sx={{ p: 1.5, borderRadius: 2.6, border: '1px solid #e2e8f0', bgcolor: '#fff' }}>
-                  <Typography sx={{ fontWeight: 900, color: '#0f172a', mb: 0.2 }}>Ranking de brecha vs nacional</Typography>
-                  <Typography variant="body2" sx={{ color: '#64748b', mb: 1 }}>Programas con mayor diferencia positiva en el ultimo año.</Typography>
-                  <Box sx={{ height: 360 }}>
-                    <ResponsiveContainer width="100%" height="100%">
-                      <BarChart data={ranking.slice(0, 8)} layout="vertical" margin={{ left: 10, right: 12, top: 6, bottom: 6 }}>
-                        <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" horizontal={false} />
-                        <XAxis type="number" />
-                        <YAxis type="category" dataKey="label" width={120} tick={{ fontSize: 11 }} />
-                        <RechartsTooltip formatter={(v) => [`${Number(v).toFixed(2)} pp`, 'Brecha']} />
-                        <Bar dataKey="brecha" radius={[0, 8, 8, 0]} fill="#06b6d4" />
-                      </BarChart>
-                    </ResponsiveContainer>
-                  </Box>
-                </Paper>
-                <Grid container spacing={1.2}>
-                  {headerStats.map((item) => (
-                    <Grid item xs={12} sm={4} xl={12} key={item.label}>
-                      <Paper elevation={0} sx={{ p: 1.35, borderRadius: 2.4, border: '1px solid #e2e8f0', bgcolor: '#fff' }}>
-                        <Typography variant="caption" sx={{ color: '#64748b', fontWeight: 800 }}>
-                          {item.label}
-                        </Typography>
-                        <Typography sx={{ mt: 0.4, fontWeight: 900, fontSize: 22, color: '#0f172a' }}>
-                          {item.value}
-                        </Typography>
-                        <Box sx={{ mt: 0.75, height: 4, borderRadius: 999, bgcolor: `${item.tone}1f` }}>
-                          <Box sx={{ width: '100%', height: '100%', borderRadius: 999, bgcolor: item.tone }} />
-                        </Box>
-                      </Paper>
-                    </Grid>
-                  ))}
-                </Grid>
-                </Stack>
-              </Grid>
-            </Grid>
+                )}
+              </Paper>
+            )}
+
+            {/* RANKING — todos los programas, clicable como segmentador */}
+            <Paper elevation={0} sx={{ p: { xs: 1.5, md: 2 }, borderRadius: 3, border: '1px solid #e8edf5', bgcolor: '#fff', boxShadow: '0 4px 24px rgba(15,23,42,0.07)' }}>
+              <Stack direction="row" justifyContent="space-between" alignItems="center" sx={{ mb: 0.5, px: 0.5 }}>
+                <Box>
+                  <Stack direction="row" spacing={1} alignItems="center" sx={{ mb: 0.3 }}>
+                    <Box sx={{ width: 4, height: 20, borderRadius: 2, bgcolor: '#0284c7' }} />
+                    <Typography sx={{ fontWeight: 900, fontSize: 16, color: '#0f172a' }}>Ranking de Empleabilidad</Typography>
+                    <Chip size="small" label="Clic para seleccionar programa"
+                      sx={{ bgcolor: '#eff6ff', color: '#2563eb', fontWeight: 700, fontSize: 11, border: '1px solid #bfdbfe', height: 22 }} />
+                  </Stack>
+                  <Typography variant="body2" sx={{ color: '#64748b', ml: '20px', fontWeight: 500, fontSize: 12 }}>
+                    {hayFiltroAnio
+                      ? `Promedio año${aniosSeleccionados.length > 1 ? 's' : ''} ${aniosSeleccionados.join(', ')} · ${rankingData.length} programas`
+                      : `Promedio histórico de todos los años · ${rankingData.length} programas`}
+                  </Typography>
+                </Box>
+                <Tooltip title="Copiar gráfico">
+                  <IconButton size="small" onClick={() => copyChart('emp-ranking-chart')}
+                    sx={{ bgcolor: '#f8fafc', border: '1px solid #e2e8f0', '&:hover': { bgcolor: '#eff6ff', borderColor: '#bfdbfe' } }}>
+                    <ContentCopyIcon sx={{ fontSize: 16, color: '#64748b' }} />
+                  </IconButton>
+                </Tooltip>
+              </Stack>
+              <Box sx={{ overflowY: 'auto', maxHeight: 560, mt: 1, '&::-webkit-scrollbar': { width: 6 }, '&::-webkit-scrollbar-track': { bgcolor: '#f1f5f9', borderRadius: 3 }, '&::-webkit-scrollbar-thumb': { bgcolor: '#94a3b8', borderRadius: 3, '&:hover': { bgcolor: '#64748b' } } }}>
+                <Box id="emp-ranking-chart" style={{ height: rankingHeight, width: '100%' }}>
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart data={rankingData} layout="vertical"
+                    margin={{ left: 0, right: 48, top: 2, bottom: 2 }}
+                    barSize={20}
+                    onClick={handleRankingClick}
+                    style={{ cursor: 'pointer' }}>
+                    <CartesianGrid strokeDasharray="6 3" stroke="#c8d6e5" strokeWidth={1} horizontal={false} />
+                    <XAxis type="number" tick={{ fontSize: 11, fill: '#475569' }} axisLine={false} tickLine={false}
+                      tickFormatter={(v) => `${v}%`} />
+                    <YAxis type="category" dataKey="label" width={155}
+                      tick={{ fontSize: 11, fill: '#334155', fontWeight: 600 }} axisLine={false} tickLine={false} />
+                    <RechartsTooltip
+                      contentStyle={{ borderRadius: 10, border: '1px solid #e2e8f0', boxShadow: '0 8px 24px rgba(0,0,0,0.12)', fontSize: 13 }}
+                      formatter={(v, _, props) => {
+                        const isSelected = props?.payload?.label === empleabilidadUi.programa;
+                        return [`${Number(v).toFixed(2)}%`, isSelected ? '✓ Programa seleccionado' : 'Clic para seleccionar'];
+                      }}
+                      labelFormatter={(l) => l} />
+                    <Bar dataKey="programa" radius={[0, 7, 7, 0]}>
+                      {rankingData.map((entry, idx) => {
+                        const isSelected = entry.label === empleabilidadUi.programa;
+                        const haySeleccion = Boolean(empleabilidadUi.programa);
+                        return (
+                          <Cell key={idx}
+                            fill={isSelected ? '#1d4ed8' : `hsl(${215 - idx * 6}, 72%, ${44 + idx * 1.8}%)`}
+                            opacity={haySeleccion && !isSelected ? 0.4 : 1}
+                            stroke={isSelected ? '#0f2d6b' : 'none'}
+                            strokeWidth={isSelected ? 1.5 : 0} />
+                        );
+                      })}
+                      <LabelList dataKey="programa" position="right"
+                        formatter={(v) => `${Number(v).toFixed(1)}%`}
+                        style={{ fontSize: 11, fontWeight: 700, fill: '#475569' }} />
+                    </Bar>
+                  </BarChart>
+                </ResponsiveContainer>
+                </Box>
+              </Box>
+            </Paper>
           </>
         )}
       </Stack>
     );
   };
-
   const renderResumenEstadisticoPanel = () => {
     const { rows, averageRow, visibleYears } = resumenEstadisticoEstudiantesRows;
     const totalInscritos = rows.reduce((acc, row) => acc + row.inscritos, 0);
@@ -8927,7 +10206,19 @@ const renderCategoryBars = (items = [], options = {}) => {
     // Usamos programasDisponibles del geo dashboard (viene de filteredRows del backend) para
     // que los niveles de formación sean dinámicos: aparecen/desaparecen con los filtros y
     // reflejan datos nuevos (ej. Maestría 2026) sin depender de la tabla de estadísticas.
-    const uniqueProgramLabels = (matriculadosPanelData?.programasDisponibles || []).filter(Boolean);
+    // Deduplica por clave canónica, prefiriendo la variante CON tilde como label de display
+    const _hasAccents = (s) => /[áéíóúÁÉÍÓÚñÑüÜ]/.test(String(s));
+    const uniqueProgramLabels = (() => {
+      const seen = new Map();
+      (matriculadosPanelData?.programasDisponibles || []).filter(Boolean).forEach((label) => {
+        const key = normalizeProgramKey(label);
+        if (!key) return;
+        if (!seen.has(key) || (!_hasAccents(seen.get(key)) && _hasAccents(label))) {
+          seen.set(key, label);
+        }
+      });
+      return Array.from(seen.values());
+    })();
     const historicoCompareExtremes = historicoByYear.reduce((acc, row) => {
       const values = [normalizeNumber(row.semestre1 || 0), normalizeNumber(row.semestre2 || 0)];
       const min = Math.min(...values);
@@ -8943,16 +10234,32 @@ const renderCategoryBars = (items = [], options = {}) => {
     const historicoDomainMin = Math.max(0, historicoCompareMin - historicoPadding);
     const historicoDomainMax = historicoCompareMax + historicoPadding;
 
-    /* ── Histórico semestral: usamos matriculadosPanelData?.semestres que viene del
-       backend ya filtrado, para que incluya datos nuevos (2026+) automáticamente ── */
-    const semCompareData = (matriculadosPanelData?.semestres || [])
-      .map((s) => ({
-        anio: String(s.anio),
-        s1: normalizeNumber(s.semestre1 || 0),
-        s2: normalizeNumber(s.semestre2 || 0),
-        total: normalizeNumber(s.semestre1 || 0) + normalizeNumber(s.semestre2 || 0)
-      }))
-      .sort((a, b) => Number(a.anio) - Number(b.anio));
+    /* ── Histórico semestral: usa matHistoricoCache (no filtrado por período) cuando está
+       disponible, para mostrar SIEMPRE todos los años sin importar el filtro activo ── */
+    const semCompareData = (() => {
+      if (matHistoricoCache && matHistoricoCache.length > 0) {
+        const byYear = {};
+        matHistoricoCache.forEach((item) => {
+          const parts = String(item.periodLabel || '').split('-');
+          const anio = parts[0];
+          const sem = parts[1];
+          if (!anio || !sem) return;
+          if (!byYear[anio]) byYear[anio] = { anio, s1: null, s2: null, total: 0 };
+          if (sem === '1') byYear[anio].s1 = normalizeNumber(item.total || 0);
+          if (sem === '2') byYear[anio].s2 = normalizeNumber(item.total || 0);
+          byYear[anio].total = (byYear[anio].s1 || 0) + (byYear[anio].s2 || 0);
+        });
+        return Object.values(byYear).sort((a, b) => Number(a.anio) - Number(b.anio));
+      }
+      return (matriculadosPanelData?.semestres || [])
+        .map((s) => ({
+          anio: String(s.anio),
+          s1: s.semestre1 ? normalizeNumber(s.semestre1) : null,
+          s2: s.semestre2 ? normalizeNumber(s.semestre2) : null,
+          total: normalizeNumber(s.semestre1 || 0) + normalizeNumber(s.semestre2 || 0)
+        }))
+        .sort((a, b) => Number(a.anio) - Number(b.anio));
+    })();
 
     /* ── Formation levels ── */
     const NIVEL_META = {
@@ -9031,34 +10338,6 @@ const renderCategoryBars = (items = [], options = {}) => {
             </Stack>
           </Box>
         )}
-
-        {/* ── TOTAL KPI ── */}
-        <Box sx={{ px: { xs: 2, sm: 2.5 }, py: { xs: 1.6, sm: 2 }, bgcolor: '#f0f7ff', borderBottom: '1px solid #bfdbfe', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 2 }}>
-          <Stack direction="row" spacing={1.8} alignItems="center">
-            <Box sx={{ bgcolor: '#1d4ed8', borderRadius: 2, p: { xs: 0.9, sm: 1.1 }, display: 'flex', flexShrink: 0 }}>
-              <GroupsIcon sx={{ fontSize: { xs: 22, sm: 26 }, color: '#fff' }} />
-            </Box>
-            <Box>
-              <Typography sx={{ color: '#1d4ed8', fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: 1.4, mb: 0.15 }}>
-                {selectedMatriculadosMunicipality ? 'Municipio seleccionado' : selectedMatriculadosDepartment ? 'Departamento seleccionado' : 'Total de matriculados'}
-              </Typography>
-              <Stack direction="row" alignItems="baseline" spacing={0.8}>
-                <Typography sx={{ color: '#0f172a', fontWeight: 900, fontSize: { xs: 28, sm: 36 }, lineHeight: 1, letterSpacing: -1 }}>
-                  {formatNumber(visibleTotal)}
-                </Typography>
-                <Typography sx={{ color: '#475569', fontSize: 13, fontWeight: 500 }}>
-                  {selectedMatriculadosMunicipality ? 'matriculados' : selectedMatriculadosDepartment ? 'matriculados' : 'estudiantes'}
-                </Typography>
-              </Stack>
-            </Box>
-          </Stack>
-          <Tooltip title="Actualizar datos">
-            <IconButton size="small" onClick={requestMatriculadosRefresh} disabled={matriculadosPanelLoading}
-              sx={{ color: '#1d4ed8', border: '1px solid #bfdbfe', bgcolor: '#fff', '&:hover': { bgcolor: '#dbeafe' }, '&:disabled': { opacity: 0.4 } }}>
-              <RefreshIcon fontSize="small" />
-            </IconButton>
-          </Tooltip>
-        </Box>
 
         {/* ── GEO MAP + DEPT TABLE ── */}
         <Paper elevation={0} sx={{ borderRadius: 0, borderTop: '1px solid #dbeafe', borderBottom: '1px solid #dbeafe', overflow: 'hidden', mt: 0 }}>
@@ -9874,41 +11153,44 @@ const renderCategoryBars = (items = [], options = {}) => {
 
               <Box sx={{ p: { xs: 1.5, sm: 2 } }}>
                 {/* ── Compact cards ── */}
-                <Grid container spacing={1.2} sx={{ mb: nivelesRows.length > 0 ? 2 : 0 }}>
+                <Box sx={{
+                  display: 'grid',
+                  gridTemplateColumns: `repeat(${nivelesRows.length || 1}, 1fr)`,
+                  gap: 1.2,
+                  mb: nivelesRows.length > 0 ? 2 : 0
+                }}>
                   {nivelesRows.map((nivel) => {
                     const pct = ((nivel.total / nivelTotal) * 100).toFixed(1);
                     return (
-                      <Grid item xs={6} sm={Math.max(2, Math.floor(12 / nivelesRows.length))} key={nivel.nivel}>
+                      <Box key={nivel.nivel} sx={{
+                        p: { xs: 1.2, sm: 1.5 },
+                        borderRadius: 2,
+                        bgcolor: nivel.bg,
+                        border: `1.5px solid ${nivel.color}30`,
+                        textAlign: 'center',
+                        position: 'relative',
+                        overflow: 'hidden'
+                      }}>
                         <Box sx={{
-                          p: { xs: 1.2, sm: 1.5 },
-                          borderRadius: 2,
-                          bgcolor: nivel.bg,
-                          border: `1.5px solid ${nivel.color}30`,
-                          textAlign: 'center',
-                          position: 'relative',
-                          overflow: 'hidden'
-                        }}>
-                          <Box sx={{
-                            position: 'absolute', top: 0, left: 0, right: 0, height: 3,
-                            bgcolor: nivel.color, borderRadius: '2px 2px 0 0'
-                          }} />
-                          <Typography sx={{ fontSize: 9.5, fontWeight: 800, color: nivel.color, textTransform: 'uppercase', letterSpacing: 0.6, mb: 0.3, mt: 0.3 }}>
-                            {nivel.label}
-                          </Typography>
-                          <Typography sx={{ fontSize: { xs: 22, sm: 26 }, fontWeight: 900, color: nivel.color, lineHeight: 1.1 }}>
-                            {nivel.total}
-                          </Typography>
-                          <Typography sx={{ fontSize: 10, color: '#64748b', mt: 0.2 }}>
-                            {pct}% · {nivel.total} programa{nivel.total !== 1 ? 's' : ''}
-                          </Typography>
-                          <Box sx={{ height: 3.5, bgcolor: `${nivel.color}20`, borderRadius: 99, mt: 0.7 }}>
-                            <Box sx={{ width: `${Math.min(100, Number(pct))}%`, height: '100%', bgcolor: nivel.color, borderRadius: 99, transition: 'width 0.6s ease' }} />
-                          </Box>
+                          position: 'absolute', top: 0, left: 0, right: 0, height: 3,
+                          bgcolor: nivel.color, borderRadius: '2px 2px 0 0'
+                        }} />
+                        <Typography sx={{ fontSize: 9.5, fontWeight: 800, color: nivel.color, textTransform: 'uppercase', letterSpacing: 0.6, mb: 0.3, mt: 0.3 }}>
+                          {nivel.label}
+                        </Typography>
+                        <Typography sx={{ fontSize: { xs: 22, sm: 26 }, fontWeight: 900, color: nivel.color, lineHeight: 1.1 }}>
+                          {nivel.total}
+                        </Typography>
+                        <Typography sx={{ fontSize: 10, color: '#64748b', mt: 0.2 }}>
+                          {pct}% · {nivel.total} programa{nivel.total !== 1 ? 's' : ''}
+                        </Typography>
+                        <Box sx={{ height: 3.5, bgcolor: `${nivel.color}20`, borderRadius: 99, mt: 0.7 }}>
+                          <Box sx={{ width: `${Math.min(100, Number(pct))}%`, height: '100%', bgcolor: nivel.color, borderRadius: 99, transition: 'width 0.6s ease' }} />
                         </Box>
-                      </Grid>
+                      </Box>
                     );
                   })}
-                </Grid>
+                </Box>
 
                 {/* ── Expandable table ── */}
                 {nivelesRows.length > 0 && (
@@ -10016,7 +11298,7 @@ const renderCategoryBars = (items = [], options = {}) => {
                                               letterSpacing: 0.15, wordBreak: 'break-word',
                                               overflowWrap: 'break-word'
                                             }}>
-                                              {prog}
+                                              {getDisplayProgramLabel(prog)}
                                             </Typography>
                                           </Box>
                                         ))}
@@ -10065,7 +11347,7 @@ const renderCategoryBars = (items = [], options = {}) => {
               {matriculadosCountries.length > 0 && (
                 <Box sx={{ px: 2, py: 0.8, bgcolor: '#fffbeb', borderBottom: '1px solid #fef3c7', display: 'flex', alignItems: 'center', gap: 1 }}>
                   <Typography sx={{ fontSize: 9.5, fontWeight: 800, color: '#92400e', textTransform: 'uppercase', letterSpacing: '0.06em', minWidth: 16 }}>#</Typography>
-                  <Typography sx={{ fontSize: 9.5, fontWeight: 800, color: '#92400e', textTransform: 'uppercase', letterSpacing: '0.06em', minWidth: 24 }}>ðŸ³</Typography>
+                  <PublicIcon sx={{ fontSize: 14, color: '#92400e', flexShrink: 0 }} />
                   <Typography sx={{ fontSize: 9.5, fontWeight: 800, color: '#92400e', textTransform: 'uppercase', letterSpacing: '0.06em', flex: 1 }}>País</Typography>
                   <Typography sx={{ fontSize: 9.5, fontWeight: 800, color: '#92400e', textTransform: 'uppercase', letterSpacing: '0.06em', minWidth: 60 }}>Proporción</Typography>
                   <Typography sx={{ fontSize: 9.5, fontWeight: 800, color: '#92400e', textTransform: 'uppercase', letterSpacing: '0.06em', minWidth: 24, textAlign: 'right' }}>N</Typography>
@@ -10154,7 +11436,7 @@ const renderCategoryBars = (items = [], options = {}) => {
                                   >
                                     <Box sx={{ width: 6, height: 6, borderRadius: '50%', bgcolor: '#f59e0b', flexShrink: 0 }} />
                                     <Typography sx={{ fontSize: 11.5, fontWeight: 600, color: '#78350f', flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                                      {normalizeUiUpper(String(prog.programa || ''))}
+                                      {normalizeUiUpper(getDisplayProgramLabel(prog.programa))}
                                     </Typography>
                                     {hasSexo && (
                                       <Stack direction="row" spacing={0.5} sx={{ flexShrink: 0 }}>
@@ -10309,13 +11591,20 @@ const renderCategoryBars = (items = [], options = {}) => {
                       <XAxis dataKey="anio" tick={{ fontSize: 11, fill: '#475569', fontWeight: 700 }} axisLine={{ stroke: '#94a3b8' }} tickLine={false} />
                       <YAxis tick={{ fontSize: 10, fill: '#64748b' }} axisLine={false} tickLine={false} tickFormatter={(v) => fmtCompact(v)} width={48} />
                       <RechartsTooltip
-                        formatter={(v, n) => [formatNumber(v), n === 'total' ? 'Total Matriculados' : n === 's1' ? 'Semestre I' : 'Semestre II']}
+                        formatter={(v, n) => v == null ? null : [formatNumber(v), n === 'total' ? 'Total Matriculados' : n === 's1' ? 'Semestre I' : 'Semestre II']}
                         contentStyle={{ borderRadius: 8, border: '1px solid #dbeafe', fontSize: 11, boxShadow: '0 4px 16px -4px rgba(0,0,0,0.15)' }}
                         labelStyle={{ fontWeight: 800, color: '#0f172a' }}
                       />
-                      {!matChartHidden.total && <Area type="monotone" dataKey="total" name="total" stroke="#1d4ed8" strokeWidth={2.5} fill="url(#gradTotal)" dot={{ r: 4, fill: '#1d4ed8', strokeWidth: 0 }} activeDot={{ r: 6 }} />}
-                      {!matChartHidden.s1 && <Area type="monotone" dataKey="s1" name="s1" stroke="#0891b2" strokeWidth={2} fill="url(#gradHS1)" dot={{ r: 3.5, fill: '#0891b2', strokeWidth: 0 }} activeDot={{ r: 5 }} />}
-                      {!matChartHidden.s2 && <Area type="monotone" dataKey="s2" name="s2" stroke="#059669" strokeWidth={2} fill="url(#gradHS2)" dot={{ r: 3.5, fill: '#059669', strokeWidth: 0 }} activeDot={{ r: 5 }} />}
+                      {(() => {
+                        const incompleteYears = semCompareData.filter((d) => d.s2 == null && d.s1 != null).map((d) => d.anio);
+                        return incompleteYears.map((yr) => (
+                          <ReferenceLine key={yr} x={yr} stroke="#f59e0b" strokeWidth={1.5} strokeDasharray="4 3"
+                            label={{ value: 'en curso', position: 'top', fontSize: 9, fill: '#d97706', fontWeight: 700 }} />
+                        ));
+                      })()}
+                      {!matChartHidden.total && <Area type="monotone" dataKey="total" name="total" stroke="#1d4ed8" strokeWidth={2.5} fill="url(#gradTotal)" connectNulls={false} dot={{ r: 4, fill: '#1d4ed8', strokeWidth: 0 }} activeDot={{ r: 6 }} />}
+                      {!matChartHidden.s1 && <Area type="monotone" dataKey="s1" name="s1" stroke="#0891b2" strokeWidth={2} fill="url(#gradHS1)" connectNulls={false} dot={{ r: 3.5, fill: '#0891b2', strokeWidth: 0 }} activeDot={{ r: 5 }} />}
+                      {!matChartHidden.s2 && <Area type="monotone" dataKey="s2" name="s2" stroke="#059669" strokeWidth={2} fill="url(#gradHS2)" connectNulls={false} dot={{ r: 3.5, fill: '#059669', strokeWidth: 0 }} activeDot={{ r: 5 }} />}
                     </AreaChart>
                   </ResponsiveContainer>
                 </Box>
@@ -10340,6 +11629,7 @@ const renderCategoryBars = (items = [], options = {}) => {
           // Acumular totales por programa desde programasPorSexo del geo-dashboard.
           // Esta fuente viene de filteredRows del backend â†’ responde a los filtros de
           // año, período, programa y nivel, e incluye datos nuevos (2026, maestría, etc.)
+          const _accentsPref = (s) => /[áéíóúÁÉÍÓÚñÑüÜ]/.test(String(s));
           const progMap = {};
           Object.values(matriculadosPanelData?.programasPorSexo || {}).forEach((progList) => {
             (progList || []).forEach((p) => {
@@ -10347,7 +11637,11 @@ const renderCategoryBars = (items = [], options = {}) => {
               if (!label) return;
               const key = normalizeProgramKey(label);
               if (!key) return;
-              if (!progMap[key]) progMap[key] = { label, total: 0 };
+              if (!progMap[key]) {
+                progMap[key] = { label, total: 0 };
+              } else if (!_accentsPref(progMap[key].label) && _accentsPref(label)) {
+                progMap[key].label = label; // prefer accented variant as display label
+              }
               progMap[key].total += normalizeNumber(p.total || 0);
             });
           });
@@ -10390,7 +11684,7 @@ const renderCategoryBars = (items = [], options = {}) => {
                   width: 32, height: 32, borderRadius: 1.5, bgcolor: 'rgba(255,255,255,0.15)',
                   display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0
                 }}>
-                  <Typography sx={{ fontSize: 16, lineHeight: 1 }}>ðŸ“Š</Typography>
+                  <BarChartIcon sx={{ fontSize: 18, color: '#fff' }} />
                 </Box>
                 <Box sx={{ flex: 1, minWidth: 0 }}>
                   <Typography sx={{ color: '#fff', fontWeight: 800, fontSize: 14, lineHeight: 1.2 }}>
@@ -10479,18 +11773,33 @@ const renderCategoryBars = (items = [], options = {}) => {
                                         {idx + 1}
                                       </Typography>
                                     </Box>
-                                    <Typography sx={{
-                                      fontSize: { xs: 9.5, sm: 11 },
-                                      fontWeight: isFirst ? 800 : 600,
-                                      color: '#0f172a',
-                                      overflow: 'hidden',
-                                      textOverflow: 'ellipsis',
-                                      whiteSpace: 'nowrap',
-                                      textTransform: 'uppercase',
-                                      letterSpacing: 0.1
-                                    }}>
-                                      {prog.programa}
-                                    </Typography>
+                                    <Box sx={{ minWidth: 0 }}>
+                                      <Box sx={{ display: 'flex', alignItems: 'baseline', gap: 0.5, flexWrap: 'wrap' }}>
+                                        <Typography sx={{
+                                          fontSize: { xs: 9.5, sm: 11 },
+                                          fontWeight: isFirst ? 800 : 600,
+                                          color: esInactivoContingencia(prog.programa) ? '#64748b' : '#0f172a',
+                                          overflow: 'hidden',
+                                          textOverflow: 'ellipsis',
+                                          whiteSpace: 'nowrap',
+                                          textTransform: 'uppercase',
+                                          letterSpacing: 0.1,
+                                          textDecoration: esInactivoContingencia(prog.programa) ? 'line-through' : 'none'
+                                        }}>
+                                          {getDisplayProgramLabel(prog.programa)}
+                                        </Typography>
+                                        {esInactivoContingencia(prog.programa) && (
+                                          <Typography component="span" sx={{ fontSize: 9, fontWeight: 700, color: '#dc2626', flexShrink: 0, whiteSpace: 'nowrap' }}>
+                                            Inactivo
+                                          </Typography>
+                                        )}
+                                      </Box>
+                                      {esInactivoContingencia(prog.programa) && (
+                                        <Typography sx={{ fontSize: 9, color: '#f59e0b', fontWeight: 600, lineHeight: 1.2 }}>
+                                          Plan de contingencia · desde 2021
+                                        </Typography>
+                                      )}
+                                    </Box>
                                   </Box>
                                   <Typography sx={{ fontSize: 12, fontWeight: 900, color: meta.color, flexShrink: 0 }}>
                                     {formatNumber(prog.total)}
@@ -10524,6 +11833,172 @@ const renderCategoryBars = (items = [], options = {}) => {
                     </Box>
                   );
                 })}
+              </Box>
+            </Paper>
+          );
+        })()}
+
+        {/* ── PLACEHOLDER: comparative tables moved to "Comparativo" tab ── */}
+        {false && semCompareData.length >= 2 && (() => {
+          const rows = semCompareData.map((item, idx) => {
+            const prev = idx > 0 ? semCompareData[idx - 1] : null;
+            const deltaS1 = prev && prev.s1 > 0 ? ((item.s1 - prev.s1) / prev.s1 * 100) : null;
+            const deltaS2 = prev && prev.s2 > 0 ? ((item.s2 - prev.s2) / prev.s2 * 100) : null;
+            const deltaTotal = prev && prev.total > 0 ? ((item.total - prev.total) / prev.total * 100) : null;
+            return { ...item, deltaS1, deltaS2, deltaTotal };
+          });
+          const DeltaChip = ({ value }) => value === null
+            ? <Typography sx={{ fontSize: 11.5, color: '#94a3b8' }}>—</Typography>
+            : <Chip label={`${value >= 0 ? '+' : ''}${value.toFixed(1)}%`} size="small"
+                sx={{ height: 20, fontSize: 11, fontWeight: 700, bgcolor: value >= 0 ? '#dcfce7' : '#fee2e2', color: value >= 0 ? '#15803d' : '#dc2626', '& .MuiChip-label': { px: 1 } }} />;
+          return (
+            <Paper elevation={0} sx={{ borderRadius: 0, borderTop: '1px solid #dbeafe', overflow: 'hidden' }}>
+              <Box sx={{ px: 2.5, py: 1.4, background: 'linear-gradient(135deg,#0f2f57 0%,#1d4f8c 100%)', display: 'flex', alignItems: 'center', gap: 1.5 }}>
+                <Box sx={{ width: 32, height: 32, borderRadius: 1.5, bgcolor: 'rgba(255,255,255,0.15)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                  <TrendingUpIcon sx={{ fontSize: 18, color: '#fff' }} />
+                </Box>
+                <Box>
+                  <Typography sx={{ color: '#fff', fontWeight: 800, fontSize: 13.5 }}>Comparativa Anual — Tendencia por Período</Typography>
+                  <Typography sx={{ color: 'rgba(255,255,255,0.70)', fontSize: 11 }}>IP e IIP por año · variación respecto al período equivalente anterior</Typography>
+                </Box>
+              </Box>
+              <Box sx={{ px: { xs: 1.5, sm: 2.5 }, py: { xs: 1.5, sm: 2 }, overflowX: 'auto' }}>
+                <Table size="small" sx={{ minWidth: 540 }}>
+                  <TableHead>
+                    <TableRow>
+                      <TableCell sx={{ fontWeight: 800, fontSize: 12, color: '#1e3a8a', textTransform: 'uppercase', letterSpacing: 0.5, bgcolor: '#f0f7ff', borderBottom: '2px solid #bfdbfe', width: 70 }}>Año</TableCell>
+                      <TableCell align="right" sx={{ fontWeight: 800, fontSize: 12, color: '#1e3a8a', textTransform: 'uppercase', letterSpacing: 0.5, bgcolor: '#f0f7ff', borderBottom: '2px solid #bfdbfe' }}>IP (Sem I)</TableCell>
+                      <TableCell align="center" sx={{ fontWeight: 700, fontSize: 11, color: '#64748b', bgcolor: '#f0f7ff', borderBottom: '2px solid #bfdbfe', width: 80 }}>Var. IP</TableCell>
+                      <TableCell align="right" sx={{ fontWeight: 800, fontSize: 12, color: '#1e3a8a', textTransform: 'uppercase', letterSpacing: 0.5, bgcolor: '#f0f7ff', borderBottom: '2px solid #bfdbfe' }}>IIP (Sem II)</TableCell>
+                      <TableCell align="center" sx={{ fontWeight: 700, fontSize: 11, color: '#64748b', bgcolor: '#f0f7ff', borderBottom: '2px solid #bfdbfe', width: 80 }}>Var. IIP</TableCell>
+                      <TableCell align="right" sx={{ fontWeight: 800, fontSize: 12, color: '#1e3a8a', textTransform: 'uppercase', letterSpacing: 0.5, bgcolor: '#f0f7ff', borderBottom: '2px solid #bfdbfe' }}>Total Anual</TableCell>
+                      <TableCell align="center" sx={{ fontWeight: 700, fontSize: 11, color: '#64748b', bgcolor: '#f0f7ff', borderBottom: '2px solid #bfdbfe', width: 80 }}>Var. Total</TableCell>
+                    </TableRow>
+                  </TableHead>
+                  <TableBody>
+                    {rows.slice().reverse().map((row, idx) => (
+                      <TableRow key={row.anio} sx={{ bgcolor: idx === 0 ? '#f8faff' : '#fff', '&:hover': { bgcolor: '#f0f7ff' } }}>
+                        <TableCell sx={{ fontWeight: 900, fontSize: 14, color: '#0c4a6e', borderBottom: '1px solid #e2e8f0' }}>{row.anio}</TableCell>
+                        <TableCell align="right" sx={{ fontWeight: 600, fontSize: 13.5, color: '#0f172a', borderBottom: '1px solid #e2e8f0' }}>{row.s1 > 0 ? formatNumber(row.s1) : '—'}</TableCell>
+                        <TableCell align="center" sx={{ borderBottom: '1px solid #e2e8f0' }}><DeltaChip value={row.deltaS1} /></TableCell>
+                        <TableCell align="right" sx={{ fontWeight: 600, fontSize: 13.5, color: '#0f172a', borderBottom: '1px solid #e2e8f0' }}>{row.s2 > 0 ? formatNumber(row.s2) : '—'}</TableCell>
+                        <TableCell align="center" sx={{ borderBottom: '1px solid #e2e8f0' }}><DeltaChip value={row.deltaS2} /></TableCell>
+                        <TableCell align="right" sx={{ fontWeight: 700, fontSize: 13.5, color: '#1d4ed8', borderBottom: '1px solid #e2e8f0' }}>{row.total > 0 ? formatNumber(row.total) : '—'}</TableCell>
+                        <TableCell align="center" sx={{ borderBottom: '1px solid #e2e8f0' }}><DeltaChip value={row.deltaTotal} /></TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </Box>
+            </Paper>
+          );
+        })()}
+
+        {false && (() => {
+          const cacheKeys = Object.keys(matProgramaCache);
+          const ip_keys = cacheKeys.filter((k) => k.endsWith('-1')).sort((a, b) => Number(b.split('-')[0]) - Number(a.split('-')[0]));
+          const iip_keys = cacheKeys.filter((k) => k.endsWith('-2')).sort((a, b) => Number(b.split('-')[0]) - Number(a.split('-')[0]));
+          const ip_recent = ip_keys.slice(0, 2);
+          const iip_recent = iip_keys.slice(0, 2);
+          const hasComparableIP = ip_recent.length >= 2;
+          const hasComparableIIP = iip_recent.length >= 2;
+          const isLoading = matHistoricoCache && matHistoricoCache.length > 0 && cacheKeys.length === 0;
+
+          if (!matHistoricoCache) return null;
+          if (isLoading) {
+            return (
+              <Paper elevation={0} sx={{ borderRadius: 0, borderTop: '1px solid #dbeafe', overflow: 'hidden' }}>
+                <Box sx={{ px: 2.5, py: 1.4, background: 'linear-gradient(135deg,#0f2f57 0%,#1d4f8c 100%)', display: 'flex', alignItems: 'center', gap: 1.5 }}>
+                  <Box sx={{ width: 32, height: 32, borderRadius: 1.5, bgcolor: 'rgba(255,255,255,0.15)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                    <AutoGraphIcon sx={{ fontSize: 18, color: '#fff' }} />
+                  </Box>
+                  <Typography sx={{ color: '#fff', fontWeight: 800, fontSize: 13.5 }}>Comparativa por Programa</Typography>
+                </Box>
+                <Box sx={{ py: 4, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 1.5 }}>
+                  <CircularProgress size={22} sx={{ color: '#3b82f6' }} />
+                  <Typography sx={{ color: '#64748b', fontSize: 13 }}>Cargando datos por período...</Typography>
+                </Box>
+              </Paper>
+            );
+          }
+          if (!hasComparableIP && !hasComparableIIP) return null;
+
+          const allProgs = new Set();
+          [...ip_recent, ...iip_recent].forEach((k) => {
+            Object.keys(matProgramaCache[k] || {}).forEach((p) => allProgs.add(p));
+          });
+          const sortedProgs = Array.from(allProgs).sort((a, b) => {
+            const totA = (ip_recent[0] ? (matProgramaCache[ip_recent[0]]?.[a] || 0) : 0) + (iip_recent[0] ? (matProgramaCache[iip_recent[0]]?.[b] || 0) : 0);
+            const totB = (ip_recent[0] ? (matProgramaCache[ip_recent[0]]?.[b] || 0) : 0) + (iip_recent[0] ? (matProgramaCache[iip_recent[0]]?.[b] || 0) : 0);
+            return totB - totA || a.localeCompare(b, 'es');
+          });
+          const fmtLabel = (k) => {
+            const [yr, s] = k.split('-');
+            return s === '1' ? `IP ${yr}` : `IIP ${yr}`;
+          };
+          const DeltaChip = ({ value }) => value === null
+            ? <Typography sx={{ fontSize: 11, color: '#94a3b8' }}>—</Typography>
+            : <Chip label={`${value >= 0 ? '+' : ''}${value.toFixed(1)}%`} size="small"
+                sx={{ height: 18, fontSize: 10.5, fontWeight: 700, bgcolor: value >= 0 ? '#dcfce7' : '#fee2e2', color: value >= 0 ? '#15803d' : '#dc2626', '& .MuiChip-label': { px: 0.8 } }} />;
+
+          return (
+            <Paper elevation={0} sx={{ borderRadius: 0, borderTop: '1px solid #dbeafe', overflow: 'hidden' }}>
+              <Box sx={{ px: 2.5, py: 1.4, background: 'linear-gradient(135deg,#0f2f57 0%,#1d4f8c 100%)', display: 'flex', alignItems: 'center', gap: 1.5 }}>
+                <Box sx={{ width: 32, height: 32, borderRadius: 1.5, bgcolor: 'rgba(255,255,255,0.15)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                  <AutoGraphIcon sx={{ fontSize: 18, color: '#fff' }} />
+                </Box>
+                <Box>
+                  <Typography sx={{ color: '#fff', fontWeight: 800, fontSize: 13.5 }}>Comparativa por Programa — Períodos Afines</Typography>
+                  <Typography sx={{ color: 'rgba(255,255,255,0.70)', fontSize: 11 }}>
+                    {[hasComparableIP && `${fmtLabel(ip_recent[0])} vs ${fmtLabel(ip_recent[1])}`, hasComparableIIP && `${fmtLabel(iip_recent[0])} vs ${fmtLabel(iip_recent[1])}`].filter(Boolean).join(' · ')}
+                  </Typography>
+                </Box>
+              </Box>
+              <Box sx={{ px: { xs: 1.5, sm: 2.5 }, py: { xs: 1.5, sm: 2 }, overflowX: 'auto' }}>
+                <Table size="small" sx={{ minWidth: hasComparableIP && hasComparableIIP ? 740 : 480 }}>
+                  <TableHead>
+                    <TableRow>
+                      <TableCell sx={{ fontWeight: 800, fontSize: 12, color: '#1e3a8a', textTransform: 'uppercase', letterSpacing: 0.3, bgcolor: '#f0f7ff', borderBottom: '2px solid #bfdbfe', minWidth: 180 }}>Programa</TableCell>
+                      {hasComparableIP && <>
+                        <TableCell align="right" sx={{ fontWeight: 800, fontSize: 11.5, color: '#1d4ed8', bgcolor: '#eff6ff', borderBottom: '2px solid #bfdbfe', borderLeft: '1px solid #dbeafe' }}>{fmtLabel(ip_recent[0])}</TableCell>
+                        <TableCell align="right" sx={{ fontWeight: 700, fontSize: 11, color: '#64748b', bgcolor: '#eff6ff', borderBottom: '2px solid #bfdbfe' }}>{fmtLabel(ip_recent[1])}</TableCell>
+                        <TableCell align="center" sx={{ fontWeight: 700, fontSize: 11, color: '#64748b', bgcolor: '#eff6ff', borderBottom: '2px solid #bfdbfe', width: 72 }}>Var.</TableCell>
+                      </>}
+                      {hasComparableIIP && <>
+                        <TableCell align="right" sx={{ fontWeight: 800, fontSize: 11.5, color: '#0f766e', bgcolor: '#f0fdf9', borderBottom: '2px solid #bfdbfe', borderLeft: '1px solid #dbeafe' }}>{fmtLabel(iip_recent[0])}</TableCell>
+                        <TableCell align="right" sx={{ fontWeight: 700, fontSize: 11, color: '#64748b', bgcolor: '#f0fdf9', borderBottom: '2px solid #bfdbfe' }}>{fmtLabel(iip_recent[1])}</TableCell>
+                        <TableCell align="center" sx={{ fontWeight: 700, fontSize: 11, color: '#64748b', bgcolor: '#f0fdf9', borderBottom: '2px solid #bfdbfe', width: 72 }}>Var.</TableCell>
+                      </>}
+                    </TableRow>
+                  </TableHead>
+                  <TableBody>
+                    {sortedProgs.map((prog, idx) => {
+                      const ip0 = ip_recent[0] ? (matProgramaCache[ip_recent[0]]?.[prog] || 0) : null;
+                      const ip1 = ip_recent[1] ? (matProgramaCache[ip_recent[1]]?.[prog] || 0) : null;
+                      const iip0 = iip_recent[0] ? (matProgramaCache[iip_recent[0]]?.[prog] || 0) : null;
+                      const iip1 = iip_recent[1] ? (matProgramaCache[iip_recent[1]]?.[prog] || 0) : null;
+                      const deltaIP = (ip0 !== null && ip1 !== null && ip1 > 0) ? ((ip0 - ip1) / ip1 * 100) : null;
+                      const deltaIIP = (iip0 !== null && iip1 !== null && iip1 > 0) ? ((iip0 - iip1) / iip1 * 100) : null;
+                      const hasAny = (ip0 || 0) + (ip1 || 0) + (iip0 || 0) + (iip1 || 0) > 0;
+                      if (!hasAny) return null;
+                      return (
+                        <TableRow key={prog} sx={{ bgcolor: idx % 2 === 0 ? '#fafbff' : '#fff', '&:hover': { bgcolor: '#f0f7ff' } }}>
+                          <TableCell sx={{ fontSize: 12, fontWeight: 600, color: '#1e293b', borderBottom: '1px solid #f1f5f9', maxWidth: 240, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={prog}>{prog}</TableCell>
+                          {hasComparableIP && <>
+                            <TableCell align="right" sx={{ fontWeight: 700, fontSize: 13, color: ip0 > 0 ? '#1d4ed8' : '#94a3b8', bgcolor: '#f8faff', borderBottom: '1px solid #f1f5f9', borderLeft: '1px solid #e2e8f0' }}>{ip0 > 0 ? formatNumber(ip0) : '—'}</TableCell>
+                            <TableCell align="right" sx={{ fontWeight: 500, fontSize: 12.5, color: '#475569', bgcolor: '#f8faff', borderBottom: '1px solid #f1f5f9' }}>{ip1 > 0 ? formatNumber(ip1) : '—'}</TableCell>
+                            <TableCell align="center" sx={{ bgcolor: '#f8faff', borderBottom: '1px solid #f1f5f9' }}><DeltaChip value={deltaIP} /></TableCell>
+                          </>}
+                          {hasComparableIIP && <>
+                            <TableCell align="right" sx={{ fontWeight: 700, fontSize: 13, color: iip0 > 0 ? '#0f766e' : '#94a3b8', bgcolor: '#f0fdf9', borderBottom: '1px solid #f1f5f9', borderLeft: '1px solid #e2e8f0' }}>{iip0 > 0 ? formatNumber(iip0) : '—'}</TableCell>
+                            <TableCell align="right" sx={{ fontWeight: 500, fontSize: 12.5, color: '#475569', bgcolor: '#f0fdf9', borderBottom: '1px solid #f1f5f9' }}>{iip1 > 0 ? formatNumber(iip1) : '—'}</TableCell>
+                            <TableCell align="center" sx={{ bgcolor: '#f0fdf9', borderBottom: '1px solid #f1f5f9' }}><DeltaChip value={deltaIIP} /></TableCell>
+                          </>}
+                        </TableRow>
+                      );
+                    })}
+                  </TableBody>
+                </Table>
               </Box>
             </Paper>
           );
@@ -10614,11 +12089,28 @@ const renderCategoryBars = (items = [], options = {}) => {
                     Estadística institucional · {periodosDisp > 0 ? `${periodosDisp} períodos disponibles` : 'Cargando...'}
                   </Typography>
                 </Box>
+                {totalRegistros > 0 && (
+                  <Stack direction="row" spacing={1} alignItems="center">
+                    <Box sx={{ textAlign: 'right' }}>
+                      <Typography sx={{ color: '#0c4a6e', fontWeight: 900, fontSize: { xs: 22, md: 30 }, lineHeight: 1, letterSpacing: '-0.5px' }}>
+                        {formatNumber(totalRegistros)}
+                      </Typography>
+                      <Typography sx={{ color: '#0369a1', fontSize: 11, fontWeight: 600, textTransform: 'uppercase', letterSpacing: 0.6 }}>
+                        estudiantes
+                      </Typography>
+                    </Box>
+                    <Tooltip title="Actualizar datos">
+                      <IconButton size="small" onClick={requestMatriculadosRefresh} disabled={matriculadosPanelLoading}
+                        sx={{ color: '#0369a1', border: '1px solid #bae6fd', bgcolor: 'rgba(255,255,255,0.6)', '&:hover': { bgcolor: '#e0f2fe' }, '&:disabled': { opacity: 0.4 } }}>
+                        <RefreshIcon fontSize="small" />
+                      </IconButton>
+                    </Tooltip>
+                  </Stack>
+                )}
               </Stack>
             </Box>
           </Paper>
 
-          {/* Filter panel */}
           {/* Filter panel */}
           <Paper elevation={0} sx={{ p: { xs: 1.4, sm: 1.8 }, border: '1px solid #e2e8f0', borderRadius: 2.5, bgcolor: '#f8fafc' }}>
             <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1.6} alignItems="flex-end" flexWrap="wrap">
@@ -10717,48 +12209,316 @@ const renderCategoryBars = (items = [], options = {}) => {
             </Stack>
           </Paper>
 
-          {/* Integrated content card: chart + dashboard panel */}
-          <Paper elevation={0} sx={{ p: 0, border: '1px solid #dbe6f5', borderRadius: 3, overflow: 'hidden', bgcolor: '#fff' }}>
-            {matriculadosPanelData === null && matriculadosPanelLoading ? (
-              /* Initial load — no data yet, show full spinner */
-              <Box sx={{ py: 8, textAlign: 'center' }}>
-                <CircularProgress size={38} sx={{ color: '#3b82f6' }} />
-                <Typography sx={{ mt: 1.5, color: '#475569', fontWeight: 600, fontSize: 14 }}>Cargando datos...</Typography>
-              </Box>
-            ) : (
-              <>
-                {/* Historical chart — always visible, always full series from cache */}
-                {(matHistoricoCache || matriculadosPanelData?.historico || []).length > 0 && (
-                  <Box sx={{ borderBottom: '1px solid #e2e8f0' }}>
-                    <Box sx={{ px: 2.2, py: 1.2, borderBottom: '1px solid #f1f5f9', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                      <Typography sx={{ fontWeight: 800, color: '#0f172a', fontSize: 14 }}>Matriculados por período</Typography>
-                      {matriculadosPanelLoading && (
-                        <Stack direction="row" spacing={0.8} alignItems="center">
-                          <CircularProgress size={14} sx={{ color: '#3b82f6' }} />
-                          <Typography sx={{ fontSize: 11, color: '#64748b' }}>Actualizando...</Typography>
-                        </Stack>
-                      )}
+          {/* ── Segment switcher ── */}
+          <Box
+            sx={{
+              display: 'grid',
+              gridTemplateColumns: { xs: '1fr', md: '1fr 1fr' },
+              bgcolor: '#eaf4ff',
+              borderRadius: 3,
+              p: 0.55,
+              gap: 0.65,
+              border: '1px solid #bfdbfe',
+              boxShadow: 'inset 0 1px 0 rgba(255,255,255,.9), 0 12px 26px rgba(37,99,235,.08)'
+            }}
+          >
+            {[
+              { key: 'general', label: 'Estadística General', helper: 'Resumen institucional', color: '#2563eb', bg: '#eff6ff', icon: <BarChartIcon sx={{ fontSize: 18 }} /> },
+              { key: 'comparativo', label: 'Comparativo y Estado', helper: 'Evolución por año y programa', color: '#0f766e', bg: '#ecfdf5', icon: <AutoGraphIcon sx={{ fontSize: 18 }} /> }
+            ].map((tab) => (
+              <Button
+                key={tab.key}
+                onClick={() => setMatriculadosTab(tab.key)}
+                sx={{
+                  minHeight: 54,
+                  justifyContent: 'center',
+                  gap: 1,
+                  py: 0.9,
+                  px: 1.6,
+                  borderRadius: 2.4,
+                  textTransform: 'none',
+                  fontWeight: 900,
+                  transition: 'all 0.18s ease',
+                  ...(matriculadosTab === tab.key
+                    ? {
+                        bgcolor: '#ffffff',
+                        color: tab.color,
+                        boxShadow: `0 10px 24px ${tab.color}22`,
+                        border: `1px solid ${tab.color}33`,
+                        '&:hover': { bgcolor: '#ffffff', transform: 'translateY(-1px)' }
+                      }
+                    : {
+                        bgcolor: 'transparent',
+                        color: '#64748b',
+                        border: '1px solid transparent',
+                        '&:hover': { bgcolor: tab.bg, color: tab.color }
+                      })
+                }}
+              >
+                <Box sx={{ width: 32, height: 32, borderRadius: 1.7, display: 'grid', placeItems: 'center', bgcolor: matriculadosTab === tab.key ? `${tab.color}14` : 'rgba(255,255,255,.65)', color: tab.color, flexShrink: 0 }}>
+                  {tab.icon}
+                </Box>
+                <Box sx={{ textAlign: 'left', minWidth: 0 }}>
+                  <Typography sx={{ fontSize: { xs: 12.5, sm: 13.5 }, fontWeight: 950, lineHeight: 1.1 }}>{tab.label}</Typography>
+                  <Typography sx={{ fontSize: 10.8, fontWeight: 700, color: matriculadosTab === tab.key ? tab.color : '#94a3b8', mt: 0.2 }}>{tab.helper}</Typography>
+                </Box>
+              </Button>
+            ))}
+          </Box>
+
+          {/* ── TAB: Estadística General ── */}
+          {matriculadosTab === 'general' && (
+            <Paper elevation={0} sx={{ p: 0, border: '1px solid #dbe6f5', borderRadius: 3, overflow: 'hidden', bgcolor: '#fff' }}>
+              {matriculadosPanelData === null && matriculadosPanelLoading ? (
+                <Box sx={{ py: 8, textAlign: 'center' }}>
+                  <CircularProgress size={38} sx={{ color: '#3b82f6' }} />
+                  <Typography sx={{ mt: 1.5, color: '#475569', fontWeight: 600, fontSize: 14 }}>Cargando datos...</Typography>
+                </Box>
+              ) : (
+                <>
+                  {(matHistoricoCache || matriculadosPanelData?.historico || []).length > 0 && (
+                    <Box sx={{ borderBottom: '1px solid #e2e8f0' }}>
+                      <Box sx={{ px: 2.2, py: 1.2, borderBottom: '1px solid #f1f5f9', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                        <Typography sx={{ fontWeight: 800, color: '#0f172a', fontSize: 14 }}>Matriculados por período</Typography>
+                        {matriculadosPanelLoading && (
+                          <Stack direction="row" spacing={0.8} alignItems="center">
+                            <CircularProgress size={14} sx={{ color: '#3b82f6' }} />
+                            <Typography sx={{ fontSize: 11, color: '#64748b' }}>Actualizando...</Typography>
+                          </Stack>
+                        )}
+                      </Box>
+                      <Box sx={{ px: { xs: 1.2, md: 1.8 }, pt: 0.5, pb: 1.2 }}>
+                        {renderMatriculadosRechartsChart(
+                          (matHistoricoCache || matriculadosPanelData?.historico || []).map((h) => ({ periodLabel: h.periodLabel, matriculados: h.total }))
+                        )}
+                      </Box>
                     </Box>
-                    <Box sx={{ px: { xs: 1.2, md: 1.8 }, pt: 0.5, pb: 1.2 }}>
-                      {renderMatriculadosRechartsChart(
-                        (matHistoricoCache || matriculadosPanelData?.historico || []).map((h) => ({ periodLabel: h.periodLabel, matriculados: h.total }))
-                      )}
+                  )}
+                  {matriculadosPanelLoading && matriculadosPanelData !== null ? (
+                    <Box sx={{ py: 5, textAlign: 'center' }}>
+                      <CircularProgress size={28} sx={{ color: '#3b82f6' }} />
+                      <Typography sx={{ mt: 1, color: '#64748b', fontWeight: 600, fontSize: 13 }}>Actualizando panel...</Typography>
+                    </Box>
+                  ) : (
+                    renderMatriculadosDashboardPanel()
+                  )}
+                </>
+              )}
+            </Paper>
+          )}
+
+          {/* ── TAB: Comparativo y Estado ── */}
+          {matriculadosTab === 'comparativo' && (() => {
+            const semData = (matriculadosPanelData?.semestres || [])
+              .map((s) => ({ anio: String(s.anio), s1: normalizeNumber(s.semestre1 || 0), s2: normalizeNumber(s.semestre2 || 0), total: normalizeNumber(s.semestre1 || 0) + normalizeNumber(s.semestre2 || 0) }))
+              .sort((a, b) => Number(a.anio) - Number(b.anio));
+            const annualRows = semData.map((item, idx) => {
+              const prevItem = idx > 0 ? semData[idx - 1] : null;
+              return { ...item, dS1: prevItem && prevItem.s1 > 0 ? (item.s1 - prevItem.s1) / prevItem.s1 * 100 : null, dS2: prevItem && prevItem.s2 > 0 ? (item.s2 - prevItem.s2) / prevItem.s2 * 100 : null, dTotal: prevItem && prevItem.total > 0 ? (item.total - prevItem.total) / prevItem.total * 100 : null };
+            }).reverse();
+            const cacheKeys = Object.keys(matProgramaCache);
+            // ── accordion handlers ──
+            const toggleYear = (yr) => setMatAcordeonYears((prev) => { const n = new Set(prev); n.has(yr) ? n.delete(yr) : n.add(yr); return n; });
+            const togglePeriod = (pk) => setMatAcordeonPeriods((prev) => { const n = new Set(prev); n.has(pk) ? n.delete(pk) : n.add(pk); return n; });
+            const stripAccents = (s) => String(s).normalize('NFD').replace(/[̀-ͯ]/g, '').toUpperCase();
+            const isPosgrado = (prog) => /(ESPECIALIZACION|MAESTRIA|DOCTORADO|POSGRADO)/.test(stripAccents(prog));
+            const getPrograms = (pKey) => {
+              const raw = matProgramaCache[pKey] || {};
+              const map = {};
+              Object.entries(raw).forEach(([prog, count]) => { const k = normalizeProgramKey(prog) || prog; if (!map[k]) map[k] = 0; map[k] += count; });
+              return map;
+            };
+            const DeltaBadge = ({ value, size }) => {
+              if (value === null || value === undefined) return <Typography sx={{ fontSize: 11, color: '#94a3b8' }}>—</Typography>;
+              const up = value >= 0;
+              return (
+                <Stack direction="row" alignItems="center" spacing={0.3} justifyContent="center">
+                  <Box sx={{ color: up ? '#15803d' : '#dc2626', display: 'flex' }}>
+                    {up ? <TrendingUpIcon sx={{ fontSize: size === 'sm' ? 13 : 15 }} /> : <TrendingDownIcon sx={{ fontSize: size === 'sm' ? 13 : 15 }} />}
+                  </Box>
+                  <Typography sx={{ fontSize: size === 'sm' ? 11 : 12.5, fontWeight: 700, color: up ? '#15803d' : '#dc2626' }}>
+                    {up ? '+' : ''}{value.toFixed(1)}%
+                  </Typography>
+                </Stack>
+              );
+            };
+            const isProgLoading = matHistoricoCache && matHistoricoCache.length > 0 && cacheKeys.length === 0;
+            const hdrCell = { fontWeight: 700, fontSize: 10.5, color: '#64748b', textTransform: 'uppercase', letterSpacing: 0.4, borderBottom: '2px solid #dbe6f5', py: 1, whiteSpace: 'nowrap' };
+            return (
+              <Paper elevation={0} sx={{ p: 0, border: '1px solid #dbe6f5', borderRadius: 3, overflow: 'hidden', bgcolor: '#fff' }}>
+                <Box sx={{ px: 2.2, py: 1.3, borderBottom: '1px solid #f1f5f9', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 1.5, bgcolor: '#f8fafc', flexWrap: 'wrap' }}>
+                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.2 }}>
+                    <TrendingUpIcon sx={{ fontSize: 18, color: '#1d4ed8' }} />
+                    <Box>
+                      <Typography sx={{ fontWeight: 800, color: '#0f172a', fontSize: 14 }}>Matriculados por Año, Período y Programa</Typography>
+                      <Typography sx={{ color: '#64748b', fontSize: 11.5 }}>Despliega un año → períodos · despliega un período → programas</Typography>
                     </Box>
                   </Box>
-                )}
-
-                {/* Dashboard panel — shows mini-spinner overlay while re-fetching */}
-                {matriculadosPanelLoading && matriculadosPanelData !== null ? (
-                  <Box sx={{ py: 5, textAlign: 'center', borderTop: (matriculadosPanelData?.historico || []).length === 0 ? '1px solid #f1f5f9' : 'none' }}>
-                    <CircularProgress size={28} sx={{ color: '#3b82f6' }} />
-                    <Typography sx={{ mt: 1, color: '#64748b', fontWeight: 600, fontSize: 13 }}>Actualizando panel...</Typography>
+                  <Box sx={{ display: 'flex', bgcolor: '#e2e8f0', borderRadius: 2, p: 0.4, gap: 0.4 }}>
+                    {[
+                      { key: 'todos', label: 'Todos' },
+                      { key: 'pregrado', label: 'Pregrado' },
+                      { key: 'posgrado', label: 'Posgrado' },
+                    ].map((opt) => (
+                      <Button key={opt.key} size="small" onClick={() => setMatNivelFilter(opt.key)}
+                        sx={{ minWidth: 62, py: 0.5, borderRadius: 1.6, textTransform: 'none', fontWeight: 700, fontSize: 12, transition: 'all 0.15s',
+                          ...(matNivelFilter === opt.key
+                            ? { bgcolor: '#fff', color: '#1d4ed8', boxShadow: '0 1px 4px rgba(30,64,175,0.15)', '&:hover': { bgcolor: '#fff' } }
+                            : { bgcolor: 'transparent', color: '#64748b', '&:hover': { bgcolor: '#d1d5db' } }) }}>
+                        {opt.label}
+                      </Button>
+                    ))}
+                  </Box>
+                </Box>
+                {isProgLoading ? (
+                  <Box sx={{ py: 4, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 1.5 }}>
+                    <CircularProgress size={20} sx={{ color: '#3b82f6' }} />
+                    <Typography sx={{ color: '#64748b', fontSize: 13 }}>Cargando datos por período...</Typography>
                   </Box>
                 ) : (
-                  renderMatriculadosDashboardPanel()
+                  <Box sx={{ overflowX: 'auto' }}>
+                    <Table size="small" sx={{ minWidth: 580 }}>
+                      <TableHead>
+                        <TableRow sx={{ bgcolor: '#f1f5f9' }}>
+                          <TableCell sx={{ ...hdrCell }}>Año / Período / Programa</TableCell>
+                          <TableCell align="right" sx={{ ...hdrCell }}>IP</TableCell>
+                          <TableCell align="center" sx={{ ...hdrCell }}>Var. IP</TableCell>
+                          <TableCell align="right" sx={{ ...hdrCell }}>IIP</TableCell>
+                          <TableCell align="center" sx={{ ...hdrCell }}>Var. IIP</TableCell>
+                          <TableCell align="right" sx={{ ...hdrCell }}>Total</TableCell>
+                          <TableCell align="center" sx={{ ...hdrCell }}>Var. Total</TableCell>
+                        </TableRow>
+                      </TableHead>
+                      <TableBody>
+                        {annualRows.map((row) => {
+                          const yr = row.anio;
+                          const isYrOpen = matAcordeonYears.has(yr);
+                          const isPartial = row.s2 === 0;
+                          const periods = [
+                            { key: `${yr}-1`, label: `IP ${yr}`, color: '#1d4ed8', bg: '#eff6ff', val: row.s1, delta: row.dS1 },
+                            ...(row.s2 > 0 ? [{ key: `${yr}-2`, label: `IIP ${yr}`, color: '#0f766e', bg: '#f0fdf9', val: row.s2, delta: row.dS2 }] : []),
+                          ];
+                          return (
+                            <React.Fragment key={yr}>
+                              {/* ── Year row ── */}
+                              <TableRow onClick={() => toggleYear(yr)}
+                                sx={{ cursor: 'pointer', bgcolor: isYrOpen ? '#f0f7ff' : 'transparent', '&:hover': { bgcolor: '#f0f7ff' }, borderBottom: '1px solid #e2e8f0' }}>
+                                <TableCell sx={{ py: 1.1, borderBottom: 'inherit' }}>
+                                  <Stack direction="row" spacing={0.8} alignItems="center">
+                                    <ExpandMoreIcon sx={{ fontSize: 16, color: '#64748b', transition: 'transform 0.2s', transform: isYrOpen ? 'rotate(0deg)' : 'rotate(-90deg)' }} />
+                                    <Typography sx={{ fontWeight: 900, fontSize: 15, color: '#0c4a6e' }}>{yr}</Typography>
+                                    {isPartial && <Chip label="parcial" size="small" sx={{ height: 16, fontSize: 10, fontWeight: 600, bgcolor: '#fef9c3', color: '#92400e', '& .MuiChip-label': { px: 0.7 } }} />}
+                                  </Stack>
+                                </TableCell>
+                                <TableCell align="right" sx={{ fontWeight: 700, fontSize: 13, color: '#1d4ed8', py: 1.1, borderBottom: 'inherit' }}>{row.s1 > 0 ? formatNumber(row.s1) : '—'}</TableCell>
+                                <TableCell align="center" sx={{ py: 1.1, borderBottom: 'inherit' }}><DeltaBadge value={row.dS1} size="sm" /></TableCell>
+                                <TableCell align="right" sx={{ fontWeight: 700, fontSize: 13, color: '#0f766e', py: 1.1, borderBottom: 'inherit' }}>{row.s2 > 0 ? formatNumber(row.s2) : '—'}</TableCell>
+                                <TableCell align="center" sx={{ py: 1.1, borderBottom: 'inherit' }}><DeltaBadge value={isPartial ? null : row.dS2} size="sm" /></TableCell>
+                                <TableCell align="right" sx={{ fontWeight: 800, fontSize: 13, color: '#0f172a', py: 1.1, borderBottom: 'inherit' }}>{row.total > 0 ? formatNumber(row.total) : '—'}</TableCell>
+                                <TableCell align="center" sx={{ py: 1.1, borderBottom: 'inherit' }}><DeltaBadge value={isPartial ? null : row.dTotal} size="sm" /></TableCell>
+                              </TableRow>
+                              {/* ── Period rows ── */}
+                              {isYrOpen && periods.map(({ key: pKey, label, color, bg, val, delta }) => {
+                                const isPOpen = matAcordeonPeriods.has(pKey);
+                                const progMap = getPrograms(pKey);
+                                const prevYr = String(Number(yr) - 1);
+                                const prevPKey = pKey.endsWith('-1') ? `${prevYr}-1` : `${prevYr}-2`;
+                                const prevProgMap = getPrograms(prevPKey);
+                                const allProgRows = Object.entries(progMap)
+                                  .map(([prog, v]) => ({ prog, v, dProg: (prevProgMap[prog] || 0) > 0 ? (v - prevProgMap[prog]) / prevProgMap[prog] * 100 : null, posgrado: isPosgrado(prog) }))
+                                  .filter((r) => r.v > 0)
+                                  .sort((a, b) => b.v - a.v);
+                                const progRows = matNivelFilter === 'pregrado'
+                                  ? allProgRows.filter((r) => !r.posgrado)
+                                  : matNivelFilter === 'posgrado'
+                                    ? allProgRows.filter((r) => r.posgrado)
+                                    : allProgRows;
+                                const hasPrograms = allProgRows.length > 0;
+                                return (
+                                  <React.Fragment key={pKey}>
+                                    <TableRow onClick={() => hasPrograms && togglePeriod(pKey)}
+                                      sx={{ cursor: hasPrograms ? 'pointer' : 'default', bgcolor: isPOpen ? bg : '#fafbff', '&:hover': hasPrograms ? { bgcolor: bg } : {}, borderBottom: '1px solid #eef2f8' }}>
+                                      <TableCell sx={{ py: 0.9, pl: 4.5, borderBottom: 'inherit' }}>
+                                        <Stack direction="row" spacing={0.8} alignItems="center">
+                                          {hasPrograms
+                                            ? <ExpandMoreIcon sx={{ fontSize: 14, color: '#94a3b8', transition: 'transform 0.2s', transform: isPOpen ? 'rotate(0deg)' : 'rotate(-90deg)' }} />
+                                            : <Box sx={{ width: 14 }} />}
+                                          <Typography sx={{ fontWeight: 700, fontSize: 13, color }}>{label}</Typography>
+                                          {hasPrograms && (
+                                            <Chip label={`${progRows.length}${matNivelFilter !== 'todos' ? `/${allProgRows.length}` : ''} prog.`} size="small" sx={{ height: 16, fontSize: 10, fontWeight: 600, bgcolor: '#e2e8f0', color: '#475569', '& .MuiChip-label': { px: 0.7 } }} />
+                                          )}
+                                          {!hasPrograms && cacheKeys.length === 0 && (
+                                            <Typography sx={{ fontSize: 10, color: '#94a3b8', fontStyle: 'italic' }}>cargando...</Typography>
+                                          )}
+                                        </Stack>
+                                      </TableCell>
+                                      <TableCell align="right" sx={{ fontWeight: 700, fontSize: 13, color, py: 0.9, borderBottom: 'inherit' }}>{formatNumber(val)}</TableCell>
+                                      <TableCell align="center" sx={{ py: 0.9, borderBottom: 'inherit' }}><DeltaBadge value={delta} size="sm" /></TableCell>
+                                      <TableCell colSpan={4} sx={{ borderBottom: 'inherit' }} />
+                                    </TableRow>
+                                    {/* ── Program rows ── */}
+                                    {isPOpen && progRows.map(({ prog, v, dProg }) => (
+                                      <TableRow key={`${pKey}-${prog}`} sx={{ bgcolor: '#fafbff', '&:hover': { bgcolor: bg }, borderBottom: '1px solid #f1f5f9' }}>
+                                        <TableCell sx={{ py: 0.65, pl: 8, borderBottom: 'inherit' }}>
+                                          <Box sx={{ display: 'flex', alignItems: 'baseline', gap: 0.6, flexWrap: 'wrap' }}>
+                                            <Typography sx={{
+                                              fontSize: 11.5, fontWeight: 600,
+                                              color: esInactivoContingencia(prog) ? '#94a3b8' : '#334155',
+                                              textDecoration: esInactivoContingencia(prog) ? 'line-through' : 'none'
+                                            }}>{prog}</Typography>
+                                            {esInactivoContingencia(prog) && (
+                                              <Typography component="span" sx={{ fontSize: 9, fontWeight: 700, color: '#dc2626', whiteSpace: 'nowrap' }}>Inactivo</Typography>
+                                            )}
+                                            {esInactivoContingencia(prog) && (
+                                              <Typography component="span" sx={{ fontSize: 9, fontWeight: 600, color: '#f59e0b', whiteSpace: 'nowrap' }}>· Plan de contingencia</Typography>
+                                            )}
+                                          </Box>
+                                        </TableCell>
+                                        <TableCell align="right" sx={{ fontWeight: 700, fontSize: 12, color, py: 0.65, borderBottom: 'inherit' }}>{formatNumber(v)}</TableCell>
+                                        <TableCell align="center" sx={{ py: 0.65, borderBottom: 'inherit' }}><DeltaBadge value={dProg} size="sm" /></TableCell>
+                                        <TableCell colSpan={4} sx={{ borderBottom: 'inherit' }} />
+                                      </TableRow>
+                                    ))}
+                                  </React.Fragment>
+                                );
+                              })}
+                            </React.Fragment>
+                          );
+                        })}
+                        {/* ── Fila Promedio Anual ── */}
+                        {(() => {
+                          const completeRows = annualRows.filter((r) => r.s1 > 0 && r.s2 > 0);
+                          const allS1Rows = annualRows.filter((r) => r.s1 > 0);
+                          if (allS1Rows.length === 0) return null;
+                          const avgS1 = Math.round(allS1Rows.reduce((a, r) => a + r.s1, 0) / allS1Rows.length);
+                          const avgS2 = completeRows.length > 0 ? Math.round(completeRows.reduce((a, r) => a + r.s2, 0) / completeRows.length) : null;
+                          const avgTotal = completeRows.length > 0 ? Math.round(completeRows.reduce((a, r) => a + r.total, 0) / completeRows.length) : null;
+                          return (
+                            <TableRow sx={{ bgcolor: '#eff6ff', borderTop: '2px solid #bfdbfe' }}>
+                              <TableCell sx={{ py: 1.1, borderBottom: 0 }}>
+                                <Stack direction="row" spacing={0.8} alignItems="center">
+                                  <Box sx={{ width: 16 }} />
+                                  <Typography sx={{ fontWeight: 800, fontSize: 13, color: '#1d4ed8' }}>Promedio por año</Typography>
+                                  <Chip label={`${completeRows.length} años completos`} size="small" sx={{ height: 16, fontSize: 10, fontWeight: 600, bgcolor: '#dbeafe', color: '#1d4ed8', '& .MuiChip-label': { px: 0.7 } }} />
+                                </Stack>
+                              </TableCell>
+                              <TableCell align="right" sx={{ fontWeight: 800, fontSize: 13, color: '#1d4ed8', py: 1.1, borderBottom: 0 }}>{formatNumber(avgS1)}</TableCell>
+                              <TableCell sx={{ borderBottom: 0 }} />
+                              <TableCell align="right" sx={{ fontWeight: 800, fontSize: 13, color: '#0f766e', py: 1.1, borderBottom: 0 }}>{avgS2 ? formatNumber(avgS2) : '—'}</TableCell>
+                              <TableCell sx={{ borderBottom: 0 }} />
+                              <TableCell align="right" sx={{ fontWeight: 800, fontSize: 13, color: '#0f172a', py: 1.1, borderBottom: 0 }}>{avgTotal ? formatNumber(avgTotal) : '—'}</TableCell>
+                              <TableCell sx={{ borderBottom: 0 }} />
+                            </TableRow>
+                          );
+                        })()}
+                      </TableBody>
+                    </Table>
+                  </Box>
                 )}
-              </>
-            )}
-          </Paper>
+              </Paper>
+            );
+          })()}
+
 
         </Stack>
       </Box>
@@ -11242,7 +13002,7 @@ const renderCategoryBars = (items = [], options = {}) => {
                 ))}
               </Box>
 
-              <Paper ref={poblacionalChartRef} elevation={0} sx={{ p: { xs: 1.4, md: 1.8 }, borderRadius: 3, border: '1px solid #dbe6f5', bgcolor: '#fff', width: '100%' }}>
+              <Paper elevation={0} sx={{ p: { xs: 1.4, md: 1.8 }, borderRadius: 3, border: '1px solid #dbe6f5', bgcolor: '#fff', width: '100%' }}>
                     <Stack direction={{ xs: 'column', sm: 'row' }} justifyContent="space-between" spacing={1} alignItems={{ xs: 'flex-start', sm: 'center' }} sx={{ mb: 1 }}>
                       <Box>
                         <Typography sx={{ fontWeight: 900, color: '#0f172a', fontSize: 17 }}>Flujo apilado por periodo</Typography>
@@ -11250,7 +13010,7 @@ const renderCategoryBars = (items = [], options = {}) => {
                       </Box>
                       <Stack direction="row" spacing={0.8} data-copy-exclude="true">
                         <Button size="small" variant="outlined" startIcon={<DownloadIconSmall />} onClick={handleDownloadPoblacionalChart} sx={GI_OUTLINE_ACTION_BTN_SX}>Descargar</Button>
-                        <Button size="small" variant="outlined" startIcon={<ContentCopyIcon />} onClick={handleCopyPoblacionalChart} sx={GI_OUTLINE_ACTION_BTN_SX}>Copiar</Button>
+                        <Button size="small" variant="outlined" startIcon={<ContentCopyIcon />} onClick={handleCopyPoblacionalChart} sx={GI_OUTLINE_ACTION_BTN_SX}>Copiar grafico</Button>
                       </Stack>
                     </Stack>
                     <Stack direction="row" spacing={1.4} alignItems="center" justifyContent="center" useFlexGap flexWrap="wrap" sx={{ mb: 1 }}>
@@ -11261,7 +13021,14 @@ const renderCategoryBars = (items = [], options = {}) => {
                         </Stack>
                       ))}
                     </Stack>
-                    <Box data-chart-scroll="true" sx={{ overflowX: 'auto', pb: 0.5 }}>
+                    <Box
+                      ref={(node) => {
+                        poblacionalChartRef.current = node;
+                        flujoStackedChartRef.current = node;
+                      }}
+                      data-chart-scroll="true"
+                      sx={{ overflowX: 'auto', pb: 0.5 }}
+                    >
                       <Box sx={{ width: '100%', minWidth: Math.max(980, flujoDashboardChartData.length * 58), mx: 'auto' }}>
                     <Box sx={{ height: { xs: 390, md: 470 } }}>
                       <ResponsiveContainer width="100%" height="100%">
@@ -11392,9 +13159,6 @@ const renderCategoryBars = (items = [], options = {}) => {
                 {variableCharts.map((chart) => (
                   <Paper
                     key={chart.key}
-                    ref={(node) => {
-                      if (node) flujoVariableChartRefs.current[chart.key] = node;
-                    }}
                     elevation={0}
                     sx={{ p: 1.6, borderRadius: 3, border: '1px solid #dbe6f5', bgcolor: '#fff', minWidth: 0 }}
                   >
@@ -11408,10 +13172,16 @@ const renderCategoryBars = (items = [], options = {}) => {
                           onClick={() => handleCopyChartNode(flujoVariableChartRefs.current[chart.key], `${chart.title} copiado al portapapeles`)}
                           sx={GI_OUTLINE_ACTION_BTN_SX}
                         >
-                          Copiar
+                          Copiar grafico
                         </Button>
                       </Stack>
-                      <Box data-chart-scroll="true" sx={{ overflowX: 'auto', pb: 0.5 }}>
+                      <Box
+                        ref={(node) => {
+                          if (node) flujoVariableChartRefs.current[chart.key] = node;
+                        }}
+                        data-chart-scroll="true"
+                        sx={{ overflowX: 'auto', pb: 0.5 }}
+                      >
                         <Box sx={{ width: '100%', minWidth: Math.max(960, flujoDashboardChartData.length * 58), mx: 'auto' }}>
                       <Box sx={{ height: { xs: 330, md: 400 } }}>
                         <ResponsiveContainer width="100%" height="100%">
@@ -11434,9 +13204,16 @@ const renderCategoryBars = (items = [], options = {}) => {
               </Stack>
 
               <Paper elevation={0} sx={{ p: 1.5, borderRadius: 3, border: '1px solid #dbe6f5', bgcolor: '#fff' }}>
-                <Typography sx={{ fontWeight: 900, color: '#0f172a', fontSize: 15 }}>Tendencia de tasas</Typography>
-                <Typography sx={{ color: '#64748b', fontSize: 12.5, mb: 1 }}>Selectividad y absorcion por periodo.</Typography>
-                <Box sx={{ overflowX: 'auto', pb: 0.5 }}>
+                <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1} justifyContent="space-between" alignItems={{ xs: 'stretch', sm: 'center' }}>
+                  <Box>
+                    <Typography sx={{ fontWeight: 900, color: '#0f172a', fontSize: 15 }}>Tendencia de tasas</Typography>
+                    <Typography sx={{ color: '#64748b', fontSize: 12.5 }}>Selectividad y absorcion por periodo.</Typography>
+                  </Box>
+                  <Button data-copy-exclude="true" size="small" variant="outlined" startIcon={<ContentCopyIcon />} onClick={() => handleCopyChartNode(flujoRateChartRef.current, 'Tendencia de tasas copiada')} sx={GI_OUTLINE_ACTION_BTN_SX}>
+                    Copiar grafico
+                  </Button>
+                </Stack>
+                <Box ref={flujoRateChartRef} sx={{ overflowX: 'auto', pb: 0.5, mt: 1 }}>
                   <Box sx={{ width: '100%', minWidth: Math.max(960, rateTrendData.length * 58), mx: 'auto' }}>
                 <Box sx={{ height: { xs: 300, md: 340 } }}>
                   <ResponsiveContainer width="100%" height="100%">
@@ -11467,27 +13244,32 @@ const renderCategoryBars = (items = [], options = {}) => {
                       <Typography sx={{ fontWeight: 900, color: '#0f172a', fontSize: 15 }}>Programas con mayor movimiento</Typography>
                       <Typography sx={{ color: '#64748b', fontSize: 12 }}>Filtra la tabla por nivel academico.</Typography>
                     </Box>
-                    <ToggleButtonGroup
-                      exclusive
-                      size="small"
-                      value={flujoTableLevelFilter}
-                      onChange={(_, nextValue) => setFlujoTableLevelFilter(nextValue || 'todos')}
-                      sx={{
-                        ...GI_SEGMENTED_SX,
-                        width: { xs: '100%', md: 'auto' },
-                        '& .MuiToggleButton-root': {
-                          minWidth: { xs: '33.33%', md: 118 },
-                          px: 1.5,
-                          py: 0.75,
-                          fontSize: 12,
-                          fontWeight: 900
-                        }
-                      }}
-                    >
-                      <ToggleButton value="todos">General</ToggleButton>
-                      <ToggleButton value="pregrado">Pregrado</ToggleButton>
-                      <ToggleButton value="postgrado">Posgrado</ToggleButton>
-                    </ToggleButtonGroup>
+                    <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1} alignItems={{ xs: 'stretch', sm: 'center' }}>
+                      <Button size="small" variant="outlined" startIcon={<DownloadIconSmall />} onClick={handleDownloadFlujoRatesTable} sx={GI_OUTLINE_ACTION_BTN_SX}>
+                        Exportar datos
+                      </Button>
+                      <ToggleButtonGroup
+                        exclusive
+                        size="small"
+                        value={flujoTableLevelFilter}
+                        onChange={(_, nextValue) => setFlujoTableLevelFilter(nextValue || 'todos')}
+                        sx={{
+                          ...GI_SEGMENTED_SX,
+                          width: { xs: '100%', md: 'auto' },
+                          '& .MuiToggleButton-root': {
+                            minWidth: { xs: '33.33%', md: 118 },
+                            px: 1.5,
+                            py: 0.75,
+                            fontSize: 12,
+                            fontWeight: 900
+                          }
+                        }}
+                      >
+                        <ToggleButton value="todos">General</ToggleButton>
+                        <ToggleButton value="pregrado">Pregrado</ToggleButton>
+                        <ToggleButton value="postgrado">Posgrado</ToggleButton>
+                      </ToggleButtonGroup>
+                    </Stack>
                   </Stack>
                 </Box>
                 <TableContainer sx={{ maxHeight: 420 }}>
@@ -11583,7 +13365,7 @@ const renderCategoryBars = (items = [], options = {}) => {
   return (
     <Fade in={true}>
       <Box>
-        {!isDirectDocumentalView && !(selectedCard === 'poblacional' && poblacionalPanel === 'analytics') && (
+        {!isDirectDocumentalView && !(selectedCard === 'poblacional' && poblacionalPanel === 'analytics') && !(selectedCard === 'poblacional' && poblacionalPanel === 'empleabilidad') && (
           <Paper elevation={0} sx={{ p: 3, mb: 3, borderRadius: 3, border: '1px solid #dbe2f1', background: 'linear-gradient(135deg,#0f172a,#1d4ed8)' }}>
             <Stack direction="row" spacing={1.5} alignItems="center">
               <InsightsIcon sx={{ color: 'white' }} />
@@ -11677,7 +13459,7 @@ const renderCategoryBars = (items = [], options = {}) => {
               </Stack>
               {baseSeleccionada === 'poblacional' && subBaseSeleccionada === 'Matriculados' && (
                 <Alert severity="info" sx={{ mt: 2.2, borderRadius: 2 }}>
-                  La subbase <strong>Matriculados</strong> solo acepta la nueva plantilla institucional de 36 columnas. Puedes cargar Excel o CSV; si falta una columna o el orden no coincide, el archivo sera rechazado.
+                  La subbase <strong>Matriculados</strong> solo acepta la plantilla institucional de 20 columnas (AÑO, NOMBRE IES, TIPO DOCUMENTO, NUMERO DOCUMENTO, CODIGO ESTUDIANTE, SEXO BIOLOGICO, PRIMER NOMBRE, SEGUNDO NOMBRE, PRIMER APELLIDO, SEGUNDO APELLIDO, PROGRAMA, FECHA NACIMIENTO, EDAD, PAIS, DEPARTAMENTO NACIMIENTO, MUNICIPIO NACIMIENTO, ES_REINTEGRO_ESTD_ANTES_DE1998, ESTRATO, PERIODO, FACULTAD). Puedes cargar Excel o CSV; si falta una columna o el orden no coincide, el archivo sera rechazado.
                 </Alert>
               )}
               {baseSeleccionada === 'saber_pro' && subBaseSeleccionada === 'Resultados individuales' && (

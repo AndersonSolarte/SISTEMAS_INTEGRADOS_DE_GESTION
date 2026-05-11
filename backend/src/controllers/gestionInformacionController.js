@@ -628,47 +628,31 @@ const POBLACIONAL_TEMPLATE_HEADERS = {
   Admitidos: ['AÃƒÆ’Ã¢â‚¬ËœO', 'NOMBRE IES', 'PROGRAMA', 'TIPO DOCUMENTO', 'NÃƒÆ’Ã…Â¡MERO DOCUMENTO', 'GENERO BIOLÃƒÆ’Ã¢â‚¬Å“GICO', 'CONTEO', 'PERIODO', 'FACULTAD'],
   'Primer Curso': ['AÃƒÆ’Ã¢â‚¬ËœO', 'NOMBRE IES', 'TIPO DOCUMENTO', 'NUMERO DOCUMENTO', 'PRIMER NOMBRE', 'SEGUNDO NOMBRE', 'PRIMER APELLIDO', 'SEGUNDO APELLIDO', 'PROGRAMA', 'GRUPO ÃƒÆ’Ã¢â‚¬Â°TNICO', 'PUEBLO INDIGENA', 'COMUNIDAD NEGRA', 'CAPACIDAD EXCEPCIONAL', 'GENERO BIOLÃƒÆ’Ã¢â‚¬Å“GICO', 'CONTEO', 'PERIODO', 'FACULTAD'],
   Matriculados: [
-    'CÓDIGO IES',
-    'NOMBRE IES',
     'AÑO',
-    'SEMESTRE',
-    'PARTICIPANTE',
+    'NOMBRE IES',
     'TIPO DOCUMENTO',
     'NUMERO DOCUMENTO',
-    'OTROS DOCUMENTOS',
     'CODIGO ESTUDIANTE',
     'SEXO BIOLOGICO',
     'PRIMER NOMBRE',
     'SEGUNDO NOMBRE',
     'PRIMER APELLIDO',
     'SEGUNDO APELLIDO',
-    'PROGRAMA CONSECUTIVO',
     'PROGRAMA',
-    'COD DANE',
-    'DEPARTAMENTO',
-    'MUNICIPIO',
     'FECHA NACIMIENTO',
-    'ID PAIS',
+    'EDAD',
     'PAIS',
-    'COD DANE NACIMIENTO',
     'DEPARTAMENTO NACIMIENTO',
     'MUNICIPIO NACIMIENTO',
-    'ID ZONA RESIDENCIA',
-    'ZONA RESIDENCIA',
-    'NUMERO MATERIAS INSCRITAS',
-    'NUMERO MATERIAS APROBADAS',
     'ES_REINTEGRO_ESTD_ANTES_DE1998',
-    'AÑO_PRIMER_CURSO',
-    'SEMESTRE_PRIMER_CURSO',
-    'VALOR_DERECHOS_MATRÍCULA',
     'ESTRATO',
-    'FUENTE',
-    'FECHA_ULTIMO_CARGUE'
+    'PERIODO',
+    'FACULTAD'
   ],
-  Graduados: ['AÃƒÆ’Ã¢â‚¬ËœO', 'NOMBRE IES', 'TIPO DOCUMENTO', 'NUMERO DOCUMENTO', 'PRIMER NOMBRE', 'SEGUNDO NOMBRE', 'PRIMER APELLIDO', 'SEGUNDO APELLIDO', 'PROGRAMA', 'DEPARTAMENTO', 'MUNICIPIO', 'No ACTA GRADO', 'FECHA GRADO', 'FOLIO', 'VERIFICADO', 'GENERO BIOLOGICO', 'PERIODO', 'FACULTAD']
+  Graduados: ['AÑO', 'NOMBRE IES', 'TIPO DOCUMENTO', 'NUMERO DOCUMENTO', 'PRIMER NOMBRE', 'SEGUNDO NOMBRE', 'PRIMER APELLIDO', 'SEGUNDO APELLIDO', 'PROGRAMA', 'DEPARTAMENTO', 'MUNICIPIO', 'No ACTA GRADO', 'FECHA GRADO', 'FOLIO', 'VERIFICADO', 'GENERO BIOLOGICO', 'PERIODO', 'FACULTAD']
   ,
   Caracterizacion: ['AÃƒÆ’Ã¢â‚¬ËœO', 'PERIODO', 'No IDENTIFICACION', 'TIPO DOCUMENTACION', 'PROGRAMA', 'CODIGO', 'SEMESTRE', 'APELLIDOS NOMBRES', 'GENERO', 'VICTIMA DE CONFLICTO ARMADO', 'CORREO ELECTRONICO', 'PERSONAS A CARGO', 'ESTADO CIVIL', 'GRUPO ETNICO', 'EPS', 'MUNICIPIO_RESIDENCIA', 'DEPARTAMENTO_RESIDENCIA', 'PAIS_RESIDENCIA', 'DISCAPACIDAD', 'NUCLEO_FAMILIAR', 'ESTRATO', 'ingresos_familiares', 'INGRESOS_FAMILIARES', 'institucion', 'titulo_obtenido', 'Tipo_CRÃƒÆ’Ã¢â‚¬Â°DITO', 'Edad', 'Zona procedencia'],
-  'Cantidad Total Egresados': ['AÃƒÆ’Ã¢â‚¬ËœOS', 'PROGRAMA', 'CANTIDAD', 'DETALLE'],
+  'Cantidad Total Egresados': ['AÑOS', 'PROGRAMA', 'CANTIDAD', 'DETALLE'],
   'Desercion por periodo': ['PERIODO', 'DESERCION', 'DESERCIÃƒÆ’Ã¢â‚¬Å“N_NACIONAL', 'DESERCIÃƒÆ’Ã¢â‚¬Å“N_DEPARTAMETAL', 'DESERCIÃƒÆ’Ã¢â‚¬Å“N_INSTITUCIONAL', 'DESERCIÃƒÆ’Ã¢â‚¬Å“N_DEL_PROGRAMA', 'PROGRAMA'],
   'Desercion por cohorte': ['PERIODOS', 'DESERCION', 'CORTE_INFORMACION', 'DESERCIÃƒÆ’Ã¢â‚¬Å“N_NACIONAL', 'DESERCIÃƒÆ’Ã¢â‚¬Å“N_DEPARTAMETAL', 'DESERCIÃƒÆ’Ã¢â‚¬Å“N_INSTITUCIONAL', 'DESERCIÃƒÆ’Ã¢â‚¬Å“N_DEL_PROGRAMA', 'PROGRAMAS'],
   'Desercion anual': ['PERIODOS', 'DESERCION', 'DESERCION_NACIONAL', 'DESERCION_DEPARTAMETAL', 'DESERCION_INSTITUCIONAL', 'DESERCION_DEL_PROGRAMA', 'PROGRAMAS'],
@@ -989,7 +973,7 @@ const POBLACIONAL_SUBCATEGORY_CONFIG = {
     model: PoblacionalInscrito,
     headers: POBLACIONAL_TEMPLATE_HEADERS.Inscritos,
     map: {
-      anio: ['AÃƒÆ’Ã¢â‚¬ËœO', 'ANO', 'ANIO', 'aÃƒÆ’Ã‚Â±o', 'anio'],
+      anio: ['AÑO', 'AÃƒÆ’Ã¢â‚¬ËœO', 'ANO', 'ANIO', 'aÃƒÆ’Ã‚Â±o', 'anio'],
       ies: ['IES', 'NOMBRE IES'],
       documento: ['DOCUMENTO'],
       id_tipo_documento: ['ID TIPO DOCUMENTO'],
@@ -1049,51 +1033,28 @@ const POBLACIONAL_SUBCATEGORY_CONFIG = {
     model: PoblacionalMatriculado,
     headers: POBLACIONAL_TEMPLATE_HEADERS.Matriculados,
     strictHeaders: true,
-    uniqueKeys: ['codigo_estudiante', 'anio', 'semestre', 'programa_consecutivo'],
+    uniqueKeys: [],
     map: {
-      codigo_ies: ['CÓDIGO IES', 'CODIGO IES'],
-      nombre_ies: ['NOMBRE IES'],
       anio: ['AÑO', 'ANO'],
-      semestre: ['SEMESTRE'],
-      participante: ['PARTICIPANTE'],
+      nombre_ies: ['NOMBRE IES'],
       tipo_documento: ['TIPO DOCUMENTO'],
       numero_documento: ['NUMERO DOCUMENTO'],
-      otros_documentos: ['OTROS DOCUMENTOS'],
       codigo_estudiante: ['CODIGO ESTUDIANTE'],
       sexo_biologico: ['SEXO BIOLOGICO'],
       primer_nombre: ['PRIMER NOMBRE'],
       segundo_nombre: ['SEGUNDO NOMBRE'],
       primer_apellido: ['PRIMER APELLIDO'],
       segundo_apellido: ['SEGUNDO APELLIDO'],
-      programa_consecutivo: ['PROGRAMA CONSECUTIVO'],
       programa: ['PROGRAMA'],
-      codigo_dane: ['COD DANE'],
-      departamento: ['DEPARTAMENTO'],
-      municipio: ['MUNICIPIO'],
       fecha_nacimiento: ['FECHA NACIMIENTO'],
-      id_pais: ['ID PAIS'],
+      edad: ['EDAD'],
       pais: ['PAIS'],
-      codigo_dane_nacimiento: ['COD DANE NACIMIENTO'],
       departamento_nacimiento: ['DEPARTAMENTO NACIMIENTO'],
       municipio_nacimiento: ['MUNICIPIO NACIMIENTO'],
-      id_zona_residencia: ['ID ZONA RESIDENCIA'],
-      zona_residencia: ['ZONA RESIDENCIA'],
-      numero_materias_inscritas: ['NUMERO MATERIAS INSCRITAS'],
-      numero_materias_aprobadas: ['NUMERO MATERIAS APROBADAS'],
       es_reintegro_estd_antes_de1998: ['ES_REINTEGRO_ESTD_ANTES_DE1998'],
-      anio_primer_curso: ['AÑO_PRIMER_CURSO', 'ANO_PRIMER_CURSO'],
-      semestre_primer_curso: ['SEMESTRE_PRIMER_CURSO'],
-      valor_derechos_matricula: ['VALOR_DERECHOS_MATRÍCULA', 'VALOR_DERECHOS_MATRICULA'],
       estrato: ['ESTRATO'],
-      fuente: ['FUENTE'],
-      fecha_ultimo_cargue: ['FECHA_ULTIMO_CARGUE'],
-      codigo_departamento: ['COD DPTO', 'CODIGO DEPARTAMENTO'],
-      codigo_departamento_nacimiento: [
-        'COD DPTO NACIMIENTO',
-        'CODIGO DEPARTAMENTO NACIMIENTO',
-        'COD DEPARTAMENTO NACIMIENTO',
-        'CODIGO DANE DEPARTAMENTO NACIMIENTO'
-      ]
+      semestre: ['PERIODO', 'SEMESTRE'],
+      facultad: ['FACULTAD']
     }
   },
   GRADUADOS: {
@@ -1101,7 +1062,7 @@ const POBLACIONAL_SUBCATEGORY_CONFIG = {
     model: PoblacionalGraduado,
     headers: POBLACIONAL_TEMPLATE_HEADERS.Graduados,
     map: {
-      anio: ['AÃƒÆ’Ã¢â‚¬ËœO', 'ANO', 'ANIO', 'aÃƒÆ’Ã‚Â±o', 'anio'],
+      anio: ['AÑO', 'AÃƒÆ’Ã¢â‚¬ËœO', 'ANO', 'ANIO', 'aÃƒÆ’Ã‚Â±o', 'anio'],
       nombre_ies: ['NOMBRE IES', 'IES'],
       tipo_documento: ['TIPO DOCUMENTO'],
       numero_documento: ['NUMERO DOCUMENTO', 'NÃƒÆ’Ã…Â¡MERO DOCUMENTO'],
@@ -1161,7 +1122,7 @@ const POBLACIONAL_SUBCATEGORY_CONFIG = {
     model: PoblacionalCantidadTotalEgresado,
     headers: POBLACIONAL_TEMPLATE_HEADERS['Cantidad Total Egresados'],
     map: {
-      anio: ['AÃƒÆ’Ã¢â‚¬ËœOS', 'AÃƒÆ’Ã¢â‚¬ËœOS ', 'ANOS', 'AÃƒÆ’Ã¢â‚¬ËœO', 'ANO', 'ANIO'],
+      anio: ['AÑOS', 'AÑO', 'AÃƒÆ’Ã¢â‚¬ËœOS', 'AÃƒÆ’Ã¢â‚¬ËœOS ', 'ANOS', 'AÃƒÆ’Ã¢â‚¬ËœO', 'ANO', 'ANIO'],
       programa: ['PROGRAMA'],
       cantidad: ['CANTIDAD', 'CANTIDAD '],
       detalle: ['DETALLE']
@@ -1414,7 +1375,7 @@ const buildPeriodLabel = (anio, periodo) => {
   const parsedYear = Number(anio || 0);
   const normalizedPeriodo = String(periodo || '').trim();
   if (!parsedYear) return normalizedPeriodo || null;
-  const slot = /\b(2|II|IIP)\b/i.test(normalizedPeriodo) ? '2' : '1';
+  const slot = /\b(2|3|II|IIP)\b/i.test(normalizedPeriodo) ? '2' : '1'; // SNIES: 3=segundo período
   return `${parsedYear}-${slot}`;
 };
 
@@ -1751,21 +1712,31 @@ const toPesosNumber = (value) => {
 
 const parseAnio = (value) => {
   if (value === null || value === undefined) return null;
+  const parseExcelSerialYear = (serial) => {
+    if (!Number.isFinite(serial) || serial <= 20000 || serial >= 90000) return null;
+    const parsedDate = XLSX.SSF.parse_date_code(serial);
+    const year = Number(parsedDate?.y);
+    return Number.isFinite(year) && year >= 1900 && year <= 2200 ? year : null;
+  };
   if (typeof value === 'number') {
     if (Number.isFinite(value) && value >= 1900 && value <= 2200) return Math.trunc(value);
-    if (Number.isFinite(value) && value > 20000 && value < 90000) {
-      const parsedDate = XLSX.SSF.parse_date_code(value);
-      if (parsedDate?.y) return Number(parsedDate.y);
-    }
+    return parseExcelSerialYear(value);
   }
   if (value instanceof Date && !Number.isNaN(value.getTime())) return value.getFullYear();
 
   const text = String(value).trim();
   if (!text) return null;
-  const asNumber = Number(text);
-  if (Number.isFinite(asNumber) && asNumber >= 1900 && asNumber <= 2200) return Math.trunc(asNumber);
   const match = text.match(/\b(19|20)\d{2}\b/);
   if (match) return Number(match[0]);
+  const shortDateMatch = text.match(/\b\d{1,2}[/-]\d{1,2}[/-](\d{2})\b/);
+  if (shortDateMatch) {
+    const yy = Number(shortDateMatch[1]);
+    return yy >= 50 ? 1900 + yy : 2000 + yy;
+  }
+  const asNumber = Number(text.replace(',', '.'));
+  if (Number.isFinite(asNumber) && asNumber >= 1900 && asNumber <= 2200) return Math.trunc(asNumber);
+  const serialYear = parseExcelSerialYear(asNumber);
+  if (serialYear) return serialYear;
   return null;
 };
 
@@ -1862,6 +1833,21 @@ const POBLACIONAL_SERIES_UNIQUE_COUNT_CONFIG = {
     sourcePeriodColumn: 'periodo',
     programColumn: 'programa',
     dependencyColumn: 'facultad'
+  },
+  Matriculados: {
+    table: 'poblacional_matriculados',
+    docColumn: 'codigo_estudiante',
+    sourcePeriodColumn: 'semestre',
+    programColumn: 'programa',
+    dependencyColumn: 'departamento',
+    minValidYear: 2000
+  },
+  Graduados: {
+    table: 'poblacional_graduados',
+    docColumn: 'numero_documento',
+    sourcePeriodColumn: 'periodo',
+    programColumn: 'programa',
+    dependencyColumn: 'facultad'
   }
 };
 
@@ -1899,11 +1885,15 @@ const buildPoblacionalSeriesUniqueCountRows = async ({
 
   const replacements = {};
   const commonFilters = [];
-  commonFilters.push('anio <= :maxClosedYear');
-  replacements.maxClosedYear = Number(maxClosedYear) || new Date().getFullYear() - 1;
+  const maxYear = Number(maxClosedYear);
+  if (Number.isFinite(maxYear) && maxYear > 0) {
+    commonFilters.push('anio <= :maxClosedYear');
+    replacements.maxClosedYear = maxYear;
+  }
 
   if (Number.isFinite(recentYearsNum) && recentYearsNum > 0) {
-    replacements.minYear = replacements.maxClosedYear - Math.trunc(recentYearsNum) + 1;
+    const referenceYear = Number.isFinite(maxYear) && maxYear > 0 ? maxYear : new Date().getFullYear();
+    replacements.minYear = referenceYear - Math.trunc(recentYearsNum) + 1;
     commonFilters.push('anio >= :minYear');
   }
 
@@ -1915,12 +1905,10 @@ const buildPoblacionalSeriesUniqueCountRows = async ({
 
   if (queryFilters.programa) {
     replacements.filterPrograma = `%${String(queryFilters.programa).trim()}%`;
-    commonFilters.push('programa ILIKE :filterPrograma');
   }
 
   if (queryFilters.dependencia) {
     replacements.filterDependencia = `%${String(queryFilters.dependencia).trim()}%`;
-    commonFilters.push('facultad ILIKE :filterDependencia');
   }
 
   if (queryFilters.search) {
@@ -1929,6 +1917,15 @@ const buildPoblacionalSeriesUniqueCountRows = async ({
 
   const sql = selectedConfigs.map(({ subcategoria, config }) => {
     const itemFilters = [...commonFilters];
+    if (Number.isFinite(Number(config.minValidYear))) {
+      itemFilters.push(`anio >= ${Number(config.minValidYear)}`);
+    }
+    if (queryFilters.programa) {
+      itemFilters.push(`${config.programColumn} ILIKE :filterPrograma`);
+    }
+    if (queryFilters.dependencia) {
+      itemFilters.push(`${config.dependencyColumn} ILIKE :filterDependencia`);
+    }
     if (queryFilters.search) {
       itemFilters.push(`(
         ${config.programColumn} ILIKE :filterSearch
@@ -2414,7 +2411,7 @@ const parseQueryListParam = (query = {}, key = '') => {
 const normalizeSemesterToken = (value = '') => {
   const text = String(value || '').toUpperCase();
   if (!text) return '';
-  if (/\b(2|II|IIP)\b/.test(text)) return '2';
+  if (/\b(2|3|II|IIP)\b/.test(text)) return '2'; // SNIES: 3 = segundo período
   if (/\b(1|I|IP)\b/.test(text)) return '1';
   return '';
 };
@@ -3108,6 +3105,7 @@ const importGeorreferenciaFromCsv = async ({ filePath, fileName = '', userId = n
   });
 };
 const MATRICULADOS_GEO_CACHE_TTL_MS = 45 * 1000;
+const MATRICULADOS_MIN_DASHBOARD_YEAR = 2000;
 const matriculadosGeoDashboardCache = new Map();
 const classifyMatriculadosProgramLevel = (programa = '') => {
   // Normalizar: quitar tildes para comparación robusta con datos con/sin acento
@@ -3139,6 +3137,11 @@ const buildMatriculadosGeoDashboard = async ({ programas = [], anios = [], perio
   );
   const normalizedSexos = Array.from(new Set((sexos || []).map((item) => normalizeGenero(item)).filter(Boolean)));
   const normalizedNiveles = Array.from(new Set((niveles || []).map((item) => String(item || '').trim().toUpperCase()).filter(Boolean)));
+  const selectedPrograms = new Set((programas || []).map((item) => normalizeGeoJoinKey(item)));
+  const selectedYears = new Set((anios || []).map((item) => String(Number(item))));
+  const selectedPeriods = new Set(normalizedPeriodos);
+  const selectedSexos = new Set(normalizedSexos);
+  const selectedNiveles = new Set(normalizedNiveles);
   const cacheKey = buildMatriculadosGeoCacheKey({ programas, anios, periodos: normalizedPeriodos, sexos: normalizedSexos, niveles: normalizedNiveles });
   const now = Date.now();
   const cached = matriculadosGeoDashboardCache.get(cacheKey);
@@ -3146,10 +3149,19 @@ const buildMatriculadosGeoDashboard = async ({ programas = [], anios = [], perio
     return cached.payload;
   }
 
-  const dbWhere = {};
+  const dbWhere = {
+    anio: { [Op.gte]: MATRICULADOS_MIN_DASHBOARD_YEAR }
+  };
+  const dbProgramFilters = (programas || [])
+    .map((item) => String(item || '').trim())
+    .filter(Boolean)
+    .map((programa) => ({ programa: { [Op.iLike]: programa } }));
+  if (dbProgramFilters.length > 0) {
+    dbWhere[Op.or] = dbProgramFilters;
+  }
 
   if (anios && anios.length > 0) {
-    const numericAnios = anios.map(Number).filter(Number.isFinite);
+    const numericAnios = anios.map(Number).filter((year) => Number.isFinite(year) && year >= MATRICULADOS_MIN_DASHBOARD_YEAR);
     if (numericAnios.length > 0) dbWhere.anio = { [Op.in]: numericAnios };
   }
 
@@ -3244,16 +3256,11 @@ const buildMatriculadosGeoDashboard = async ({ programas = [], anios = [], perio
     const code = String(row.codigo_departamento || '').trim();
     if (code) geoCoordsByDeptCode.set(code, { lat: Number(row.latitud), lon: Number(row.longitud) });
   }
-  const selectedPrograms = new Set((programas || []).map((item) => normalizeGeoJoinKey(item)));
-  const selectedYears = new Set((anios || []).map((item) => String(Number(item))));
-  const selectedPeriods = new Set(normalizedPeriodos);
-  const selectedSexos = new Set(normalizedSexos);
-  const selectedNiveles = new Set(normalizedNiveles);
 
   const filteredRows = allRows.filter((row) => {
     const programOk = !selectedPrograms.size || selectedPrograms.has(normalizeGeoJoinKey(row.programa));
     const yearOk = !selectedYears.size || selectedYears.has(String(Number(row.anio || 0)));
-    const periodToken = /\b(2|II|IIP)\b/i.test(String(row.semestre || '')) ? '2' : '1';
+    const periodToken = /\b(2|3|II|IIP)\b/i.test(String(row.semestre || '')) ? '2' : '1';
     const periodOk = !selectedPeriods.size || selectedPeriods.has(periodToken);
     const sexoOk = !selectedSexos.size || selectedSexos.has(normalizeGenero(row.sexo_biologico));
     const nivelOk = !selectedNiveles.size || selectedNiveles.has(classifyMatriculadosProgramLevel(row.programa));
@@ -3626,7 +3633,7 @@ const buildMatriculadosGeoDashboard = async ({ programas = [], anios = [], perio
       filteredRows.forEach((row) => {
         const yr = String(Number(row.anio || 0));
         if (!yr || yr === '0') return;
-        const isS2 = /\b(2|II|IIP)\b/i.test(String(row.semestre || ''));
+        const isS2 = /\b(2|3|II|IIP)\b/i.test(String(row.semestre || ''));
         if (isS2) { s2Map.set(yr, (s2Map.get(yr) || 0) + 1); }
         else { s1Map.set(yr, (s1Map.get(yr) || 0) + 1); }
       });
@@ -3786,6 +3793,180 @@ const buildPlanAccionDashboardPayload = (rows = []) => {
   };
 };
 
+const GRADUADOS_HISTORICO_DETAIL = '\uD83D\uDCCC 1984 HASTA 2019 INSTITUCION UNIVERSITARIA CENTRO DE ESTUDIOS SUPERIORES MARIA GORETTI CESMAG';
+
+const parseGraduadoDateValue = (value) => {
+  if (value === null || value === undefined || value === '') return null;
+  if (value instanceof Date && !Number.isNaN(value.getTime())) return value;
+  const text = String(value).trim();
+  if (!text) return null;
+  const serial = Number(text.replace(',', '.'));
+  if (Number.isFinite(serial) && serial > 20000 && serial < 90000) {
+    const parsed = XLSX.SSF.parse_date_code(serial);
+    if (parsed?.y && parsed?.m && parsed?.d) return new Date(Date.UTC(parsed.y, parsed.m - 1, parsed.d));
+  }
+  const iso = text.match(/\b((19|20)\d{2})[-/](\d{1,2})[-/](\d{1,2})\b/);
+  if (iso) return new Date(Date.UTC(Number(iso[1]), Number(iso[3]) - 1, Number(iso[4])));
+  const slash = text.match(/\b(\d{1,2})[-/](\d{1,2})[-/]((19|20)\d{2})\b/);
+  if (slash) return new Date(Date.UTC(Number(slash[3]), Number(slash[2]) - 1, Number(slash[1])));
+  return null;
+};
+
+const getGraduadoPeriodToken = (row = {}, parsedDate = null) => {
+  const raw = String(row.periodo || '').toUpperCase();
+  if (/\b(II|IIP|2)\b/.test(raw)) return 'IIP';
+  if (/\b(I|IP|1)\b/.test(raw)) return 'IP';
+  if (parsedDate instanceof Date && !Number.isNaN(parsedDate.getTime())) {
+    return parsedDate.getUTCMonth() + 1 <= 6 ? 'IP' : 'IIP';
+  }
+  return 'IP';
+};
+
+const formatGraduadoShortDate = (date) => {
+  if (!(date instanceof Date) || Number.isNaN(date.getTime())) return '';
+  const months = ['ENE', 'FEB', 'MAR', 'ABR', 'MAY', 'JUN', 'JUL', 'AGO', 'SEP', 'OCT', 'NOV', 'DIC'];
+  return `${date.getUTCDate()} ${months[date.getUTCMonth()] || ''}`.trim();
+};
+
+const buildGraduadosGeneralDashboardPayload = async (anioFilter = null) => {
+  const anioNum = anioFilter && anioFilter !== 'todos' ? Number(anioFilter) : null;
+  const hasYearFilter = anioNum && !Number.isNaN(anioNum);
+
+  const [aniosHistRaw, aniosDinRaw, historicoRawRows, graduadosRawRows] = await Promise.all([
+    PoblacionalCantidadTotalEgresado.findAll({
+      attributes: ['anio'],
+      where: { anio: { [Op.not]: null } },
+      group: ['anio'],
+      order: [['anio', 'ASC']],
+      raw: true
+    }),
+    PoblacionalGraduado.findAll({
+      attributes: ['anio'],
+      where: { anio: { [Op.not]: null, [Op.gte]: 2020 } },
+      group: ['anio'],
+      order: [['anio', 'ASC']],
+      raw: true
+    }),
+    hasYearFilter && anioNum >= 2020
+      ? Promise.resolve([])
+      : PoblacionalCantidadTotalEgresado.findAll({
+          attributes: ['id', 'anio', 'programa', 'cantidad', 'detalle'],
+          where: hasYearFilter ? { anio: anioNum } : {},
+          order: [['programa', 'ASC'], ['id', 'ASC']],
+          raw: true
+        }),
+    hasYearFilter && anioNum <= 2019
+      ? Promise.resolve([])
+      : PoblacionalGraduado.findAll({
+          attributes: ['id', 'anio', 'periodo', 'programa', 'numero_documento', 'fecha_grado'],
+          where: hasYearFilter ? { anio: anioNum } : { anio: { [Op.gte]: 2020 } },
+          order: [['anio', 'ASC'], ['periodo', 'ASC'], ['programa', 'ASC'], ['id', 'ASC']],
+          raw: true
+        })
+  ]);
+
+  const aniosDisponibles = [
+    ...aniosHistRaw.map((r) => Number(r.anio)),
+    ...aniosDinRaw.map((r) => Number(r.anio))
+  ].filter((v, i, a) => !Number.isNaN(v) && a.indexOf(v) === i).sort((a, b) => a - b);
+
+  const historicoRows = historicoRawRows
+    .filter((row) => {
+      const anio = Number(row.anio || 0);
+      const text = normalizeProgramAggregateKey(`${row.anio || ''} ${row.detalle || ''}`);
+      return anio <= 2019 || /1984.*2019/.test(text);
+    })
+    .map((row) => ({
+      programa: normalizeText(row.programa) || 'Sin informacion',
+      cantidad: Number(row.cantidad || 0),
+      detalle: GRADUADOS_HISTORICO_DETAIL
+    }))
+    .filter((row) => row.cantidad > 0);
+
+  const dynamicBuckets = new Map();
+  let latest = null;
+
+  graduadosRawRows.forEach((row) => {
+    const programa = normalizeText(row.programa) || 'Sin informacion';
+    const programKey = normalizeProgramAggregateKey(programa) || 'SIN_PROGRAMA';
+    const current = dynamicBuckets.get(programKey) || { programa, docs: new Set() };
+    current.programa = selectPreferredAggregateLabel(current.programa, programa);
+    const doc = normalizeText(row.numero_documento);
+    current.docs.add(doc ? `${programKey}||${doc}` : `${programKey}||__row__${row.id}`);
+    dynamicBuckets.set(programKey, current);
+
+    const parsedDate = parseGraduadoDateValue(row.fecha_grado);
+    const period = getGraduadoPeriodToken(row, parsedDate);
+    const year = parsedDate ? parsedDate.getUTCFullYear() : Number(row.anio || 0);
+    const score = parsedDate instanceof Date && !Number.isNaN(parsedDate.getTime())
+      ? parsedDate.getTime()
+      : (year * 10 + (period === 'IIP' ? 2 : 1));
+    if (!latest || score >= latest.score) {
+      latest = {
+        score,
+        year,
+        period,
+        dateLabel: parsedDate ? formatGraduadoShortDate(parsedDate) : ''
+      };
+    }
+  });
+
+  const dinamicoRows = Array.from(dynamicBuckets.values())
+    .map((row) => ({
+      programa: row.programa || 'Sin informacion',
+      cantidad: row.docs.size
+    }))
+    .filter((row) => row.cantidad > 0)
+    .sort((a, b) => b.cantidad - a.cantidad || String(a.programa).localeCompare(String(b.programa), 'es'));
+
+  const historicoTotal = historicoRows.reduce((acc, row) => acc + Number(row.cantidad || 0), 0);
+  const dinamicoTotal = dinamicoRows.reduce((acc, row) => acc + Number(row.cantidad || 0), 0);
+  const latestLabel = latest?.year
+    ? `${latest.year} ${latest.period || ''}${latest.dateLabel ? ` ${latest.dateLabel}` : ''}`.trim()
+    : 'ULTIMO REPORTE';
+  const dinamicoDetalle = `\uD83D\uDCCC GRADUADOS UNIVERSIDAD CESMAG 2020 - ${latestLabel}`;
+
+  const programaMap = new Map();
+  historicoRows.forEach((row) => {
+    const key = normalizeProgramAggregateKey(row.programa) || 'SIN_PROGRAMA';
+    const current = programaMap.get(key) || { programa: row.programa, historico: 0, dinamico: 0 };
+    current.programa = selectPreferredAggregateLabel(current.programa, row.programa);
+    current.historico += Number(row.cantidad || 0);
+    programaMap.set(key, current);
+  });
+  dinamicoRows.forEach((row) => {
+    const key = normalizeProgramAggregateKey(row.programa) || 'SIN_PROGRAMA';
+    const current = programaMap.get(key) || { programa: row.programa, historico: 0, dinamico: 0 };
+    current.programa = selectPreferredAggregateLabel(current.programa, row.programa);
+    current.dinamico += Number(row.cantidad || 0);
+    programaMap.set(key, current);
+  });
+
+  const programas = Array.from(programaMap.values())
+    .map((row) => ({ ...row, total: row.historico + row.dinamico }))
+    .filter((row) => row.total > 0)
+    .sort((a, b) => b.total - a.total || String(a.programa).localeCompare(String(b.programa), 'es'));
+
+  return {
+    historico: {
+      label: '1984 hasta 2019',
+      detalle: GRADUADOS_HISTORICO_DETAIL,
+      total: historicoTotal,
+      programas: historicoRows
+    },
+    dinamico: {
+      label: 'Graduados Universidad CESMAG',
+      detalle: dinamicoDetalle,
+      total: dinamicoTotal,
+      latest: latest ? { year: latest.year, period: latest.period, dateLabel: latest.dateLabel } : null,
+      programas: dinamicoRows
+    },
+    totalGeneral: historicoTotal + dinamicoTotal,
+    programas,
+    aniosDisponibles
+  };
+};
+
 const getEstadisticas = async (req, res) => {
   try {
     const {
@@ -3796,6 +3977,7 @@ const getEstadisticas = async (req, res) => {
       subcategoria = '',
       subcategorias = '',
       recent_years = '',
+      exclude_current_year = '',
       anio = '',
       programa = '',
       dependencia = '',
@@ -3829,7 +4011,10 @@ const getEstadisticas = async (req, res) => {
       await ensurePlanAccionTable();
       const rows = await PlanAccion.findAll({
         where: {
-          estado_workflow: 'Aprobado',
+          [Op.or]: [
+            { estado_workflow: 'Aprobado' },
+            { estado_workflow: null }
+          ],
           deleted_at: null
         },
         order: [['anio', 'DESC'], ['objetivo_estrategico', 'ASC'], ['lineamiento_estrategico', 'ASC'], ['actividad', 'ASC'], ['id', 'ASC']],
@@ -3839,6 +4024,11 @@ const getEstadisticas = async (req, res) => {
         success: true,
         data: buildPlanAccionDashboardPayload(rows)
       });
+    }
+
+    if (aggregate === 'graduados_general_dashboard' && (!where.categoria || where.categoria === 'Poblacional')) {
+      const payload = await buildGraduadosGeneralDashboardPayload(req.query.anio || null);
+      return res.json({ success: true, data: payload });
     }
 
     if (aggregate === 'autoevaluacion_dashboard') {
@@ -3884,11 +4074,18 @@ const getEstadisticas = async (req, res) => {
 
     if (aggregate === 'poblacional_series' && where.categoria === 'Poblacional') {
       const currentYear = new Date().getFullYear();
-      const maxClosedYear = currentYear - 1;
+      const shouldExcludeCurrentYear = ['1', 'true', 'si', 'sí', 'yes'].includes(
+        String(exclude_current_year || '').trim().toLowerCase()
+      );
+      const maxClosedYear = shouldExcludeCurrentYear ? currentYear - 1 : null;
       const recentYearsNum = Number(recent_years);
-      where[Op.and] = [...(where[Op.and] || []), { anio: { [Op.lte]: maxClosedYear } }];
+      if (shouldExcludeCurrentYear) {
+        where[Op.and] = [...(where[Op.and] || []), { anio: { [Op.lte]: maxClosedYear } }];
+      }
       if (Number.isFinite(recentYearsNum) && recentYearsNum > 0) {
-        const minYear = currentYear - Math.trunc(recentYearsNum) + 1;
+        const referenceYear = maxClosedYear || currentYear;
+        const minYear = referenceYear - Math.trunc(recentYearsNum) + 1;
+        where[Op.and] = [...(where[Op.and] || [])];
         where[Op.and].push({ anio: { [Op.gte]: minYear } });
       }
 
@@ -3896,6 +4093,8 @@ const getEstadisticas = async (req, res) => {
         && parsedSubcategorias.every((sub) => RECORD_COUNT_SUBCATEGORIES.has(sub));
       const useUniqueDetailAggregate = parsedSubcategorias.length > 0
         && parsedSubcategorias.every((sub) => Object.prototype.hasOwnProperty.call(POBLACIONAL_SERIES_UNIQUE_COUNT_CONFIG, sub));
+      const uniqueDetailSubcategorias = parsedSubcategorias.filter((sub) => Object.prototype.hasOwnProperty.call(POBLACIONAL_SERIES_UNIQUE_COUNT_CONFIG, sub));
+      const genericSubcategorias = parsedSubcategorias.filter((sub) => !Object.prototype.hasOwnProperty.call(POBLACIONAL_SERIES_UNIQUE_COUNT_CONFIG, sub));
 
       if (useUniqueDetailAggregate) {
         const rows = await buildPoblacionalSeriesUniqueCountRows({
@@ -3904,6 +4103,71 @@ const getEstadisticas = async (req, res) => {
           recentYearsNum,
           maxClosedYear
         });
+
+        return res.json({
+          success: true,
+          data: {
+            estadisticas: rows,
+            pagination: {
+              total: rows.length,
+              page: 1,
+              limit: rows.length,
+              totalPages: 1
+            }
+          }
+        });
+      }
+
+      if (uniqueDetailSubcategorias.length > 0 && genericSubcategorias.length > 0) {
+        const uniqueRows = await buildPoblacionalSeriesUniqueCountRows({
+          parsedSubcategorias: uniqueDetailSubcategorias,
+          queryFilters: { anio, programa, dependencia, search },
+          recentYearsNum,
+          maxClosedYear
+        });
+
+        const fetchGenericRows = async (subcategories, aggregateMetric) => {
+          if (!subcategories.length) return [];
+          const scopedWhere = {
+            ...where,
+            subcategoria: { [Op.in]: subcategories }
+          };
+          const rows = await Estadistica.findAll({
+            where: scopedWhere,
+            attributes: [
+              'categoria',
+              'subcategoria',
+              'anio',
+              'programa',
+              'dependencia',
+              'indicador',
+              'unidad',
+              'fuente',
+              'observaciones',
+              [aggregateMetric, 'valor']
+            ],
+            group: ['categoria', 'subcategoria', 'anio', 'programa', 'dependencia', 'indicador', 'unidad', 'fuente', 'observaciones'],
+            order: [['anio', 'ASC'], ['subcategoria', 'ASC'], ['programa', 'ASC'], ['observaciones', 'ASC']],
+            raw: true
+          });
+          return rows.map((row) => ({
+            ...row,
+            valor: Number(row.valor || 0)
+          }));
+        };
+
+        const recordCountSubcategorias = genericSubcategorias.filter((sub) => RECORD_COUNT_SUBCATEGORIES.has(sub));
+        const valueSumSubcategorias = genericSubcategorias.filter((sub) => !RECORD_COUNT_SUBCATEGORIES.has(sub));
+        const [recordRows, valueRows] = await Promise.all([
+          fetchGenericRows(recordCountSubcategorias, fn('COUNT', literal('*'))),
+          fetchGenericRows(valueSumSubcategorias, fn('COALESCE', fn('SUM', col('valor')), 0))
+        ]);
+        const rows = [...uniqueRows, ...recordRows, ...valueRows].sort((a, b) =>
+          (Number(a.anio) - Number(b.anio))
+          || String(a.subcategoria || '').localeCompare(String(b.subcategoria || ''), 'es')
+          || String(a.programa || '').localeCompare(String(b.programa || ''), 'es')
+          || String(a.observaciones || '').localeCompare(String(b.observaciones || ''), 'es')
+        );
 
         return res.json({
           success: true,
@@ -5337,7 +5601,7 @@ const importFromExcel = async (req, res) => {
               const anio = parseAnio(normalizedRowByKey.ANO);
               const semestreRaw = normalizeText(normalizedRowByKey.SEMESTRE);
               const semestreToken = String(semestreRaw || '').toUpperCase();
-              const semestreSlot = /\b(2|II|IIP)\b/.test(semestreToken) ? 2 : 1;
+              const semestreSlot = /\b(2|3|II|IIP)\b/.test(semestreToken) ? 2 : 1;
               const periodoLabel = anio ? `${anio}-${semestreSlot}` : semestreRaw;
 
               const programaStd = standardizeTextWithDictionary({
@@ -5921,7 +6185,7 @@ const importFromExcel = async (req, res) => {
               const anio = parseAnio(normalizedRowByKey.ANO);
               const semestreRaw = normalizeText(normalizedRowByKey.SEMESTRE);
               const semestreToken = String(semestreRaw || '').toUpperCase();
-              const semestreSlot = /\b(2|II|IIP)\b/.test(semestreToken) ? 2 : 1;
+              const semestreSlot = /\b(2|3|II|IIP)\b/.test(semestreToken) ? 2 : 1;
               const periodoLabel = anio ? `${anio}-${semestreSlot}` : semestreRaw;
 
               const programaStd = standardizeTextWithDictionary({
@@ -6750,6 +7014,49 @@ const importFromExcel = async (req, res) => {
     // ── DIVIPOLA: configuración previa al bucle para MATRICULADOS ───────────
     const isMatriculadosImport = categoria === 'Poblacional' && poblacionalConfig?.label === 'Matriculados';
     const matriculadosIncidencias = [];
+    const matriculadosDetailBatch = [];
+    const matriculadosIncidenceDraftBatch = [];
+    const matriculadosStatsBatch = [];
+    const matriculadosResolveCache = new Map();
+    const MATRICULADOS_IMPORT_BATCH_SIZE = 3000;
+    const resolveMatriculadosUbicacionCached = async (params = {}) => {
+      const cacheKey = JSON.stringify({
+        pais: normalizeText(params.pais),
+        departamento: normalizeText(params.departamento),
+        municipio: normalizeText(params.municipio),
+        codigoDaneMuni: params.codigoDaneMuni || null,
+        codigoDaneDepto: params.codigoDaneDepto || null
+      });
+      if (matriculadosResolveCache.has(cacheKey)) return matriculadosResolveCache.get(cacheKey);
+      const resolved = await divipolaMatchService.resolveUbicacion(params);
+      matriculadosResolveCache.set(cacheKey, resolved);
+      return resolved;
+    };
+    const flushMatriculadosImportBatches = async () => {
+      if (!isMatriculadosImport) return;
+      if (matriculadosDetailBatch.length > 0) {
+        const createdRows = await poblacionalConfig.model.bulkCreate(matriculadosDetailBatch, {
+          validate: false,
+          hooks: false,
+          returning: true
+        });
+        matriculadosIncidenceDraftBatch.forEach((draft, index) => {
+          if (!draft) return;
+          const createdId = createdRows?.[index]?.id || createdRows?.[index]?.get?.('id') || null;
+          if (!createdId) return;
+          matriculadosIncidencias.push({ ...draft, matriculado_id: createdId });
+        });
+        matriculadosDetailBatch.length = 0;
+        matriculadosIncidenceDraftBatch.length = 0;
+      }
+      if (matriculadosStatsBatch.length > 0) {
+        await Estadistica.bulkCreate(matriculadosStatsBatch, {
+          validate: false,
+          hooks: false
+        });
+        matriculadosStatsBatch.length = 0;
+      }
+    };
     if (isMatriculadosImport) {
       // Limpiar incidencias anteriores (el clearDatasetStorage ya borró los registros)
       await MatriculadosUbicacionIncidencia.destroy({ where: {} });
@@ -6785,7 +7092,7 @@ const importFromExcel = async (req, res) => {
           matriculadoDeptoFuente = String(payload.departamento || '').trim() || null;
           matriculadoMuniFuente = String(payload.municipio || '').trim() || null;
 
-          const resolvedActual = await divipolaMatchService.resolveUbicacion({
+          const resolvedActual = await resolveMatriculadosUbicacionCached({
             pais: 'COLOMBIA',
             departamento: payload.departamento,
             municipio: payload.municipio,
@@ -6807,7 +7114,7 @@ const importFromExcel = async (req, res) => {
           payload.match_score_ubicacion = resolvedActual.score;
           payload.match_actualizado_en = new Date();
 
-          const resolvedNacimiento = await divipolaMatchService.resolveUbicacion({
+          const resolvedNacimiento = await resolveMatriculadosUbicacionCached({
             pais: payload.pais,
             departamento: payload.departamento_nacimiento,
             municipio: payload.municipio_nacimiento,
@@ -6873,7 +7180,13 @@ const importFromExcel = async (req, res) => {
           continue;
         }
 
-        const anio = parseAnio(payload.anio || payload.semestre || row.SEMESTRE || row['AÑO']);
+        // Normaliza PERIODO "IP"/"IIP"/"1"/"2"/"3" → "1" o "2"
+        // SNIES usa código 1=primer período, 3=segundo período (salta el 2)
+        if (payload.semestre) {
+          const rawSem = String(payload.semestre);
+          payload.semestre = /\b(2|3|II|IIP)\b/i.test(rawSem) ? '2' : '1';
+        }
+        const anio = parseAnio(payload.anio || row['AÑO']);
         const periodo = normalizeText(payload.semestre);
         const programa = normalizeText(payload.programa);
         const conteo = toNumber(payload.conteo ?? payload.cantidad);
@@ -6887,6 +7200,7 @@ const importFromExcel = async (req, res) => {
         const detailPayload = {
           ...payload,
           anio,
+          edad: toNumber(payload.edad),
           cantidad: toNumber(payload.cantidad),
           conteo,
           numero_materias_inscritas: toNumber(payload.numero_materias_inscritas),
@@ -6896,6 +7210,56 @@ const importFromExcel = async (req, res) => {
           creado_por: req.user?.id || null,
           actualizado_por: req.user?.id || null
         };
+        if (poblacionalConfig.label === 'Cantidad Total Egresados' && anio <= 2019) {
+          detailPayload.detalle = GRADUADOS_HISTORICO_DETAIL;
+          payload.detalle = GRADUADOS_HISTORICO_DETAIL;
+        }
+
+        if (isMatriculadosImport) {
+          let incidenceDraft = null;
+          const conf = detailPayload.match_confianza_ubicacion;
+          if (conf === 'sin_match' || conf === 'baja') {
+            incidenceDraft = {
+              anio: detailPayload.anio,
+              periodo: buildPeriodLabel(detailPayload.anio, detailPayload.semestre),
+              departamento_fuente: matriculadoDeptoFuente,
+              municipio_fuente: matriculadoMuniFuente,
+              codigo_departamento_sugerido: detailPayload.codigo_departamento || null,
+              codigo_municipio_sugerido: detailPayload.codigo_dane || null,
+              confianza: conf,
+              metodo: detailPayload.match_metodo_ubicacion || 'sin_match',
+              score: detailPayload.match_score_ubicacion || null,
+              estado: 'pendiente',
+              observacion: conf === 'sin_match'
+                ? 'Sin match automático con catálogo DIVIPOLA'
+                : 'Match parcial: requiere revisión manual'
+            };
+          }
+          matriculadosDetailBatch.push(detailPayload);
+          matriculadosIncidenceDraftBatch.push(incidenceDraft);
+          matriculadosStatsBatch.push({
+            categoria: 'Poblacional',
+            subcategoria: poblacionalConfig.label,
+            anio,
+            programa,
+            dependencia: normalizeText(payload.departamento),
+            indicador: normalizeText(payload.detalle) || poblacionalConfig.label,
+            valor,
+            unidad: 'personas',
+            fuente: normalizeText(payload.nombre_ies || payload.ies) || 'Carga Excel poblacional',
+            observaciones: [
+              periodo ? `periodo: ${periodo}` : '',
+              normalizeText(payload.detalle) ? `detalle: ${normalizeText(payload.detalle)}` : ''
+            ].filter(Boolean).join(' | ') || null,
+            creado_por: req.user?.id || null,
+            actualizado_por: req.user?.id || null
+          });
+          result.importados += 1;
+          if (matriculadosDetailBatch.length >= MATRICULADOS_IMPORT_BATCH_SIZE) {
+            await flushMatriculadosImportBatches();
+          }
+          continue;
+        }
 
         const createdRecord = await poblacionalConfig.model.create(detailPayload);
 
@@ -7043,6 +7407,7 @@ const importFromExcel = async (req, res) => {
         }
         await PlanAccion.create({
           ...payload,
+          estado_workflow: 'Aprobado',
           creado_por: req.user?.id || null,
           actualizado_por: req.user?.id || null
         });
@@ -7124,6 +7489,7 @@ const importFromExcel = async (req, res) => {
 
     // ── MATRICULADOS: bulk-insert incidencias + limpieza de caché ──────────
     if (isMatriculadosImport) {
+      await flushMatriculadosImportBatches();
       if (matriculadosIncidencias.length > 0) {
         const BATCH = 500;
         for (let b = 0; b < matriculadosIncidencias.length; b += BATCH) {

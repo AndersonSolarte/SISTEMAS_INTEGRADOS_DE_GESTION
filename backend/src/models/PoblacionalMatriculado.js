@@ -41,6 +41,8 @@ const PoblacionalMatriculado = sequelize.define('poblacional_matriculados', {
   estrato: { type: DataTypes.STRING(20), allowNull: true },
   fuente: { type: DataTypes.STRING(120), allowNull: true },
   fecha_ultimo_cargue: { type: DataTypes.STRING(40), allowNull: true },
+  edad: { type: DataTypes.INTEGER, allowNull: true },
+  facultad: { type: DataTypes.STRING(220), allowNull: true },
   match_confianza_ubicacion: { type: DataTypes.STRING(20), allowNull: true },
   match_metodo_ubicacion: { type: DataTypes.STRING(40), allowNull: true },
   match_score_ubicacion: { type: DataTypes.DECIMAL(6, 3), allowNull: true },
