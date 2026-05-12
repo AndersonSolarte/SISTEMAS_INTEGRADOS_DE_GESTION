@@ -70,7 +70,8 @@ import {
   AccountBalance as AccountBalanceIcon,
   BarChart as BarChartIcon,
   MonitorHeart as MonitorHeartIcon,
-  ExpandMore as ExpandMoreIcon
+  ExpandMore as ExpandMoreIcon,
+  OpenInNew as OpenInNewIcon
 } from '@mui/icons-material';
 import ZoomInIcon from '@mui/icons-material/ZoomIn';
 import CloseIcon from '@mui/icons-material/Close';
@@ -122,7 +123,8 @@ const BASES = [
   { key: 'saber_pro', label: 'Saber Pro', description: 'Resultados históricos de pruebas y desempeño académico.' },
   { key: 'gestion_procesos', label: 'Gestión por Procesos', description: 'Monitoreo estadístico documental para operación por procesos.' },
   { key: 'plan_accion', label: 'Plan de Acción', description: 'Seguimiento anual del Plan de Acción institucional: metas, avances IP/IIP y ejecución total.' },
-  { key: 'autoevaluacion', label: 'Autoevaluación', description: 'Estructura base de factores, características, aspectos, indicadores y evidencias.' }
+  { key: 'autoevaluacion', label: 'Autoevaluación', description: 'Estructura base de factores, características, aspectos, indicadores y evidencias.' },
+  { key: 'registros_calificados_acreditacion', label: 'Registros Calificados y Acreditación', description: 'Histórico de registros calificados, resoluciones, planes de estudio y evidencias de Drive.' }
 ];
 
 const SUBBASES_POBLACIONAL = ['Inscritos', 'Admitidos', 'Primer Curso', 'Matriculados', 'Graduados', 'Cantidad Total Egresados', 'Caracterizacion', 'Desercion', 'Empleabilidad', 'Contexto Externo'];
@@ -139,6 +141,7 @@ const CONTEXTO_EXTERNO_LISTAS = [
 const SUBBASES_SABER_PRO = ['Resultados individuales', 'Resultados agregados', 'Resultados Saber 11'];
 const SUBBASES_RECURSO_HUMANO = ['Docentes', 'Administrativos', 'Outsourcing', 'Ondas'];
 const SUBBASES_AUTOEVALUACION = ['Autoevaluación', 'Participantes', 'informacion_programas'];
+const SUBBASES_REGISTROS_CALIFICADOS = ['Historico_RC'];
 const SUBBASE_ORDER = SUBBASES_POBLACIONAL.reduce((acc, item, index) => ({ ...acc, [item]: index + 1 }), {});
 
 const BASE_LABEL = BASES.reduce((acc, item) => ({ ...acc, [item.key]: item.label }), {});
@@ -207,7 +210,7 @@ const getVisibleBaseKeysForUser = (user) => {
   }
 
   if (user?.role === ROLES.AUTOEVALUACION) {
-    return ['autoevaluacion'];
+    return ['autoevaluacion', 'registros_calificados_acreditacion'];
   }
 
   if ([ROLES.PLANEACION_EFECTIVIDAD, ROLES.GESTION_INFORMACION].includes(user?.role)) {
@@ -1705,6 +1708,16 @@ function GestionInformacion() {
   });
   const [empleabilidadUi, setEmpleabilidadUi] = useState({ programa: '', anios: [] });
   const [resumenEstadisticoUi, setResumenEstadisticoUi] = useState({ programa: '', module: 'informacion_general' });
+  const [registrosCalificadosData, setRegistrosCalificadosData] = useState(null);
+  const [registrosCalificadosLoading, setRegistrosCalificadosLoading] = useState(false);
+  const [registrosCalificadosUi, setRegistrosCalificadosUi] = useState({ programa: '', estado: 'activos' });
+  const [registrosCalificadosEvidence, setRegistrosCalificadosEvidence] = useState({
+    open: false,
+    loading: false,
+    row: null,
+    expected: [],
+    files: []
+  });
   const [matriculadosPanelData, setMatriculadosPanelData] = useState(null);
   const [matriculadosPanelLoading, setMatriculadosPanelLoading] = useState(false);
   const [matriculadosRefreshToken, setMatriculadosRefreshToken] = useState(0);
@@ -2038,12 +2051,17 @@ function GestionInformacion() {
     georreferencia: SUBBASES_GEOREFERENCIA,
     saber_pro: SUBBASES_SABER_PRO,
     recurso_humano: SUBBASES_RECURSO_HUMANO,
-    autoevaluacion: SUBBASES_AUTOEVALUACION
+    autoevaluacion: SUBBASES_AUTOEVALUACION,
+    registros_calificados_acreditacion: SUBBASES_REGISTROS_CALIFICADOS
   };
   const availableSubbases = subbasesByBase[baseSeleccionada] || [];
   const aplicaSubbase = availableSubbases.length > 0;
   const subcategoria = aplicaSubbase ? subBaseSeleccionada : '';
-  const backendCategoria = baseSeleccionada === 'georreferencia' ? 'Georreferencia' : baseSeleccionada;
+  const backendCategoria = baseSeleccionada === 'georreferencia'
+    ? 'Georreferencia'
+    : baseSeleccionada === 'registros_calificados_acreditacion'
+      ? 'Registros Calificados y Acreditacion'
+      : baseSeleccionada;
   const requiresSubSubBase = baseSeleccionada === 'poblacional' && subcategoria === 'Contexto Externo';
   const isSelectionValid = Boolean(baseSeleccionada)
     && (!aplicaSubbase || Boolean(subBaseSeleccionada))
@@ -2075,6 +2093,39 @@ function GestionInformacion() {
       setLoading(false);
     }
   }, [canManageBases, enqueueSnackbar, page, rowsPerPage]);
+
+  const fetchRegistrosCalificadosDashboard = useCallback(async () => {
+    setRegistrosCalificadosLoading(true);
+    try {
+      const response = await gestionInformacionService.getRegistrosCalificadosDashboard({
+        programa: registrosCalificadosUi.programa || '',
+        estado: registrosCalificadosUi.estado || 'activos',
+        _ts: Date.now()
+      });
+      setRegistrosCalificadosData(response.data || null);
+    } catch (error) {
+      enqueueSnackbar(error.response?.data?.message || 'Error al cargar Registros Calificados y Acreditacion', { variant: 'error' });
+    } finally {
+      setRegistrosCalificadosLoading(false);
+    }
+  }, [enqueueSnackbar, registrosCalificadosUi]);
+
+  const openRegistrosCalificadosEvidence = async (row) => {
+    setRegistrosCalificadosEvidence({ open: true, loading: true, row, expected: [], files: [] });
+    try {
+      const response = await gestionInformacionService.getRegistrosCalificadosEvidencias(row.id);
+      setRegistrosCalificadosEvidence({
+        open: true,
+        loading: false,
+        row,
+        expected: response?.data?.expected || [],
+        files: response?.data?.files || []
+      });
+    } catch (error) {
+      enqueueSnackbar(error.response?.data?.message || 'No se pudieron consultar las evidencias de Drive', { variant: 'error' });
+      setRegistrosCalificadosEvidence((prev) => ({ ...prev, loading: false }));
+    }
+  };
 
   const fetchSeriesRows = useCallback(async (options = {}) => {
     const effectivePanel = options.panel || poblacionalPanel;
@@ -2364,6 +2415,12 @@ function GestionInformacion() {
       fetchSeriesRows();
     }
   }, [fetchSeriesRows, menuView, selectedCard]);
+
+  useEffect(() => {
+    if (menuView === 'estadistica' && selectedCard === 'registros_calificados_acreditacion') {
+      fetchRegistrosCalificadosDashboard();
+    }
+  }, [fetchRegistrosCalificadosDashboard, menuView, selectedCard]);
 
   useEffect(() => {
     if (menuView !== 'estadistica' || selectedCard !== 'poblacional' || poblacionalPanel !== 'analytics' || statSection !== 'graduados') return;
@@ -3785,6 +3842,11 @@ function GestionInformacion() {
           await fetchSeriesRows();
         }
       }
+      if (baseSeleccionada === 'registros_calificados_acreditacion') {
+        setSelectedCard('registros_calificados_acreditacion');
+        setMenuView('estadistica');
+        await fetchRegistrosCalificadosDashboard();
+      }
     } catch (error) {
       const backendMessage = error?.response?.data?.message;
       const status = error?.response?.status;
@@ -4039,7 +4101,7 @@ function GestionInformacion() {
   };
 
   const enterCard = (key) => {
-    if (!['poblacional', 'saber_pro', 'recurso_humano', 'gestion_procesos', 'activity_monitor', 'security_application'].includes(key)) {
+    if (!['poblacional', 'saber_pro', 'recurso_humano', 'gestion_procesos', 'registros_calificados_acreditacion', 'activity_monitor', 'security_application'].includes(key)) {
       enqueueSnackbar('Modulo en construccion. La estructura ya quedo lista para activarlo.', { variant: 'info' });
       return;
     }
@@ -6271,7 +6333,7 @@ const renderCategoryBars = (items = [], options = {}) => {
           </Typography>
         </Paper>
       )}
-      {visibleBases.map((base) => (
+      {visibleBases.filter((base) => base.key !== 'registros_calificados_acreditacion').map((base) => (
         <Paper
           key={base.key}
           elevation={0}
@@ -13317,6 +13379,118 @@ const renderCategoryBars = (items = [], options = {}) => {
     );
   };
 
+  const renderRegistrosCalificadosModule = () => {
+    const data = registrosCalificadosData || {};
+    const resumenRc = data.resumen || {};
+    const registros = data.registros || [];
+    const programas = data.programasDisponibles || [];
+    const formatRcDate = (value) => {
+      if (!value) return '-';
+      const [year, month, day] = String(value).slice(0, 10).split('-');
+      if (year && month && day) return `${day}/${month}/${year}`;
+      return String(value);
+    };
+
+    return (
+      <Stack spacing={2}>
+        <Paper elevation={0} sx={{ p: 1.4, border: '1px solid #dbe6f5', borderRadius: 2.5, bgcolor: '#f8fbff' }}>
+          <Button variant="outlined" startIcon={<ArrowBackRoundedIcon />} onClick={() => setSelectedCard(null)}>
+            Volver a tarjetas
+          </Button>
+        </Paper>
+
+        <Paper elevation={0} sx={{ p: { xs: 1.6, md: 2.2 }, borderRadius: 3, border: '1px solid #dbe6f5', bgcolor: '#fff' }}>
+          <Stack direction={{ xs: 'column', md: 'row' }} spacing={1.4} alignItems={{ xs: 'stretch', md: 'center' }} justifyContent="space-between">
+            <Box>
+              <Typography sx={{ fontWeight: 900, color: '#0f172a', fontSize: 22 }}>Registros Calificados y Acreditación</Typography>
+              <Typography sx={{ color: '#64748b', fontSize: 13 }}>Histórico RC con visualización controlada de resolución y plan de estudios en Drive.</Typography>
+            </Box>
+            <ToggleButtonGroup
+              exclusive
+              size="small"
+              value={registrosCalificadosUi.estado}
+              onChange={(_, next) => setRegistrosCalificadosUi((prev) => ({ ...prev, estado: next || 'activos' }))}
+              sx={{ ...GI_SEGMENTED_SX, width: { xs: '100%', md: 420 } }}
+            >
+              <ToggleButton value="activos">Activos</ToggleButton>
+              <ToggleButton value="inactivos">Inactivos</ToggleButton>
+              <ToggleButton value="todos">Todos</ToggleButton>
+            </ToggleButtonGroup>
+          </Stack>
+
+          <Grid container spacing={1.4} sx={{ mt: 1.5 }}>
+            {[
+              ['Registros visibles', resumenRc.total || 0],
+              ['Programas', resumenRc.programas || 0],
+              ['Activos', resumenRc.activos || 0],
+              ['Inactivos', resumenRc.inactivos || 0]
+            ].map(([label, value]) => (
+              <Grid item xs={6} md={3} key={label}>
+                <Paper elevation={0} sx={{ p: 1.4, borderRadius: 2, border: '1px solid #e2e8f0', bgcolor: '#f8fafc' }}>
+                  <Typography variant="caption" sx={{ color: '#64748b', fontWeight: 800, textTransform: 'uppercase' }}>{label}</Typography>
+                  <Typography sx={{ color: '#1d4ed8', fontWeight: 900, fontSize: 26, lineHeight: 1.1 }}>{formatNumber(value)}</Typography>
+                </Paper>
+              </Grid>
+            ))}
+          </Grid>
+
+          <Box sx={{ mt: 1.8 }}>
+            <Autocomplete
+              options={programas}
+              value={registrosCalificadosUi.programa || null}
+              onChange={(_, value) => setRegistrosCalificadosUi((prev) => ({ ...prev, programa: value || '' }))}
+              renderInput={(params) => <TextField {...params} label="Filtro de programa" placeholder="Todos los programas" size="small" />}
+            />
+          </Box>
+        </Paper>
+
+        <Paper elevation={0} sx={{ borderRadius: 3, border: '1px solid #dbe6f5', overflow: 'hidden', bgcolor: '#fff' }}>
+          <Box sx={{ px: 1.8, py: 1.3, bgcolor: '#1e3a8a' }}>
+            <Typography sx={{ color: '#fff', fontWeight: 900, fontSize: 14, textTransform: 'uppercase', letterSpacing: 0.4 }}>
+              Historico_RC
+            </Typography>
+          </Box>
+          <TableContainer sx={{ maxHeight: 560 }}>
+            <Table size="small" stickyHeader>
+              <TableHead>
+                <TableRow>
+                  {['Programa', 'Nivel', 'Tipo aprobación', 'Resolución MEN', 'Fecha Resolución', 'Resolución RC', 'Plan de Estudios', 'Estado', 'Drive'].map((label) => (
+                    <TableCell key={label} sx={{ fontWeight: 900, color: '#334155', bgcolor: '#f8fafc', fontSize: 12 }}>{label}</TableCell>
+                  ))}
+                </TableRow>
+              </TableHead>
+              <TableBody>
+                {registrosCalificadosLoading ? (
+                  <TableRow><TableCell colSpan={9} align="center" sx={{ py: 6 }}><CircularProgress size={30} /></TableCell></TableRow>
+                ) : registros.length === 0 ? (
+                  <TableRow><TableCell colSpan={9} align="center" sx={{ py: 6 }}>No hay registros para el filtro seleccionado.</TableCell></TableRow>
+                ) : registros.map((row) => (
+                  <TableRow key={row.id} hover>
+                    <TableCell sx={{ fontWeight: 800, minWidth: 220 }}>{row.programaAcademico}</TableCell>
+                    <TableCell>{row.nivel || '-'}</TableCell>
+                    <TableCell sx={{ minWidth: 190 }}>{row.tipoAprobacion || '-'}</TableCell>
+                    <TableCell>{row.resolucionMen || '-'}</TableCell>
+                    <TableCell sx={{ whiteSpace: 'nowrap' }}>{formatRcDate(row.fechaResolucion)}</TableCell>
+                    <TableCell sx={{ minWidth: 260 }}>{row.resolucionRc || '-'}</TableCell>
+                    <TableCell sx={{ minWidth: 260 }}>{row.planEstudios || '-'}</TableCell>
+                    <TableCell>
+                      <Chip size="small" label={row.estado} sx={{ fontWeight: 800, bgcolor: row.estado === 'Activo' ? '#dcfce7' : '#f1f5f9', color: row.estado === 'Activo' ? '#166534' : '#475569' }} />
+                    </TableCell>
+                    <TableCell>
+                      <Button size="small" variant="outlined" startIcon={<FolderIcon />} onClick={() => openRegistrosCalificadosEvidence(row)} disabled={!row.enlace} sx={{ whiteSpace: 'nowrap', fontWeight: 800 }}>
+                        Ver archivos
+                      </Button>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </TableContainer>
+        </Paper>
+      </Stack>
+    );
+  };
+
   const renderStatsModule = () => {
     if (poblacionalPanel === 'hub') return renderPoblacionalHub();
     if (poblacionalPanel === 'desercion') return renderDesercionDashboardPanel();
@@ -13397,7 +13571,8 @@ const renderCategoryBars = (items = [], options = {}) => {
                         setBaseSeleccionada(nextBase);
                         if (nextBase === 'georreferencia') setSubBaseSeleccionada(GEOREFERENCIA_CANONICAL_SUBBASE);
                         else if (nextBase === 'autoevaluacion') setSubBaseSeleccionada('Autoevaluación');
-                        else if (!['poblacional', 'georreferencia', 'saber_pro', 'recurso_humano', 'autoevaluacion'].includes(nextBase)) setSubBaseSeleccionada('');
+                        else if (nextBase === 'registros_calificados_acreditacion') setSubBaseSeleccionada('Historico_RC');
+                        else if (!['poblacional', 'georreferencia', 'saber_pro', 'recurso_humano', 'autoevaluacion', 'registros_calificados_acreditacion'].includes(nextBase)) setSubBaseSeleccionada('');
                         setSubSubBaseSeleccionada('');
                         setPage(0);
                       }}
@@ -13480,6 +13655,11 @@ const renderCategoryBars = (items = [], options = {}) => {
               {baseSeleccionada === 'autoevaluacion' && subBaseSeleccionada === 'Participantes' && (
                 <Alert severity="info" sx={{ mt: 2.2, borderRadius: 2 }}>
                   La subbase <strong>Participantes</strong> registra el programa, alcance, enlaces de acta/cronograma y el equipo de trabajo asociado al proceso de autoevaluación.
+                </Alert>
+              )}
+              {baseSeleccionada === 'registros_calificados_acreditacion' && (
+                <Alert severity="info" sx={{ mt: 2.2, borderRadius: 2 }}>
+                  La subbase <strong>Historico_RC</strong> acepta Excel o CSV con Programa académico, Nivel, Tipo aprobación, Resolución MEN, Fecha Resolución, Resolucion RC, Plan de Estudios y Enlace.
                 </Alert>
               )}
             </Paper>
@@ -13712,6 +13892,7 @@ const renderCategoryBars = (items = [], options = {}) => {
                 {selectedCard === 'poblacional' && renderStatsModule()}
                 {selectedCard === 'saber_pro' && renderSaberProStatsModule()}
                 {selectedCard === 'recurso_humano' && renderRecursoHumanoStatsModule()}
+                {selectedCard === 'registros_calificados_acreditacion' && renderRegistrosCalificadosModule()}
                 {selectedCard === 'gestion_procesos' && renderGestionProcesosModule()}
                 {selectedCard === 'activity_monitor' && (
                   <Box>
@@ -13739,6 +13920,60 @@ const renderCategoryBars = (items = [], options = {}) => {
             )}
           </>
         )}
+
+        <Dialog
+          open={registrosCalificadosEvidence.open}
+          onClose={() => setRegistrosCalificadosEvidence((prev) => ({ ...prev, open: false }))}
+          fullWidth
+          maxWidth="md"
+        >
+          <DialogTitle sx={{ fontWeight: 900 }}>
+            Evidencias coincidentes
+          </DialogTitle>
+          <DialogContent dividers>
+            <Typography sx={{ color: '#475569', fontSize: 13, mb: 1.5 }}>
+              {registrosCalificadosEvidence.row?.programaAcademico || ''} - solo se muestran archivos cuyo nombre coincide con Resolucion RC o Plan de Estudios.
+            </Typography>
+            {registrosCalificadosEvidence.loading ? (
+              <Box sx={{ py: 5, textAlign: 'center' }}><CircularProgress /></Box>
+            ) : (
+              <Stack spacing={1.2}>
+                {(registrosCalificadosEvidence.expected || []).map((name) => {
+                  const file = (registrosCalificadosEvidence.files || []).find((item) => {
+                    const cleanA = String(item.name || '').replace(/\.[A-Za-z0-9]{2,8}$/g, '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toUpperCase().replace(/[^A-Z0-9]+/g, ' ').trim();
+                    const cleanB = String(name || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toUpperCase().replace(/[^A-Z0-9]+/g, ' ').trim();
+                    return cleanA === cleanB;
+                  });
+                  return (
+                    <Paper key={name} elevation={0} sx={{ p: 1.3, borderRadius: 2, border: '1px solid #e2e8f0', bgcolor: file ? '#f8fbff' : '#fff7ed' }}>
+                      <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1} alignItems={{ xs: 'stretch', sm: 'center' }} justifyContent="space-between">
+                        <Box sx={{ minWidth: 0 }}>
+                          <Typography sx={{ fontWeight: 900, color: '#0f172a', fontSize: 13.5 }}>{name}</Typography>
+                          <Typography sx={{ color: file ? '#166534' : '#92400e', fontWeight: 700, fontSize: 12 }}>
+                            {file ? `Encontrado: ${file.name}` : 'No encontrado en la carpeta de Drive'}
+                          </Typography>
+                        </Box>
+                        <Button
+                          size="small"
+                          variant="contained"
+                          endIcon={<OpenInNewIcon />}
+                          disabled={!file?.webViewLink}
+                          onClick={() => window.open(file.webViewLink, '_blank', 'noopener,noreferrer')}
+                          sx={{ fontWeight: 800, whiteSpace: 'nowrap' }}
+                        >
+                          Abrir
+                        </Button>
+                      </Stack>
+                    </Paper>
+                  );
+                })}
+              </Stack>
+            )}
+          </DialogContent>
+          <DialogActions>
+            <Button onClick={() => setRegistrosCalificadosEvidence((prev) => ({ ...prev, open: false }))}>Cerrar</Button>
+          </DialogActions>
+        </Dialog>
 
         <Dialog
           open={clearDialogOpen}

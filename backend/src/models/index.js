@@ -40,6 +40,7 @@ const PlanAccion = require('./PlanAccion');
 const Autoevaluacion = require('./Autoevaluacion');
 const AutoevaluacionParticipante = require('./AutoevaluacionParticipante');
 const AutoevaluacionPrograma = require('./AutoevaluacionPrograma');
+const RegistroCalificadoHistorico = require('./RegistroCalificadoHistorico');
 const InstrumentForm = require('./InstrumentForm');
 const InstrumentSection = require('./InstrumentSection');
 const InstrumentQuestion = require('./InstrumentQuestion');
@@ -201,6 +202,10 @@ User.hasMany(AutoevaluacionPrograma, { foreignKey: 'creado_por', as: 'autoevalua
 AutoevaluacionPrograma.belongsTo(User, { foreignKey: 'creado_por', as: 'creador' });
 User.hasMany(AutoevaluacionPrograma, { foreignKey: 'actualizado_por', as: 'autoevaluacionProgramasActualizados' });
 AutoevaluacionPrograma.belongsTo(User, { foreignKey: 'actualizado_por', as: 'actualizador' });
+User.hasMany(RegistroCalificadoHistorico, { foreignKey: 'creado_por', as: 'registrosCalificadosHistoricoCreados' });
+RegistroCalificadoHistorico.belongsTo(User, { foreignKey: 'creado_por', as: 'creador' });
+User.hasMany(RegistroCalificadoHistorico, { foreignKey: 'actualizado_por', as: 'registrosCalificadosHistoricoActualizados' });
+RegistroCalificadoHistorico.belongsTo(User, { foreignKey: 'actualizado_por', as: 'actualizador' });
 
 User.hasMany(InstrumentForm, { foreignKey: 'created_by', as: 'instrumentForms' });
 InstrumentForm.belongsTo(User, { foreignKey: 'created_by', as: 'creator' });
@@ -281,6 +286,7 @@ module.exports = {
   Autoevaluacion,
   AutoevaluacionParticipante,
   AutoevaluacionPrograma,
+  RegistroCalificadoHistorico,
   InstrumentForm,
   InstrumentSection,
   InstrumentQuestion,

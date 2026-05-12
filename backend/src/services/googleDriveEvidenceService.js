@@ -4,6 +4,7 @@ const path = require('path');
 
 const CACHE_TTL_MS = Number(process.env.GOOGLE_DRIVE_EVIDENCE_CACHE_TTL_MS || 5 * 60 * 1000);
 const evidenceCache = new Map();
+const recursiveEvidenceCache = new Map();
 
 const extractFolderId = (folderUrl = '') => {
   const raw = String(folderUrl || '').trim();
@@ -138,7 +139,46 @@ const listEvidenceFiles = async (folderUrl) => {
   return files;
 };
 
+const listEvidenceFilesRecursive = async (folderUrl, options = {}) => {
+  const maxDepth = Math.max(0, Math.min(5, Number(options.maxDepth ?? 3)));
+  const folderId = extractFolderId(folderUrl);
+  const cacheKey = `${folderId || folderUrl}::${maxDepth}`;
+  const cached = recursiveEvidenceCache.get(cacheKey);
+  if (cached && Date.now() - cached.createdAt < CACHE_TTL_MS) {
+    return cached.files;
+  }
+
+  const rootFiles = await listEvidenceFiles(folderUrl);
+  if (maxDepth <= 0) {
+    recursiveEvidenceCache.set(cacheKey, { createdAt: Date.now(), files: rootFiles });
+    return rootFiles;
+  }
+
+  const collected = [...rootFiles];
+  let currentLevel = rootFiles
+    .filter((file) => file.isFolder && file.folderUrl)
+    .map((file) => file.folderUrl);
+  const visited = new Set();
+  let depth = 1;
+
+  while (currentLevel.length && depth <= maxDepth) {
+    const folders = currentLevel.filter((folder) => folder && !visited.has(folder));
+    folders.forEach((folder) => visited.add(folder));
+    const batches = await Promise.all(folders.map((folder) => listEvidenceFiles(folder).catch(() => [])));
+    const children = batches.flat();
+    collected.push(...children);
+    currentLevel = children
+      .filter((file) => file.isFolder && file.folderUrl)
+      .map((file) => file.folderUrl);
+    depth += 1;
+  }
+
+  recursiveEvidenceCache.set(cacheKey, { createdAt: Date.now(), files: collected });
+  return collected;
+};
+
 module.exports = {
   extractFolderId,
-  listEvidenceFiles
+  listEvidenceFiles,
+  listEvidenceFilesRecursive
 };

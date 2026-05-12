@@ -11,6 +11,7 @@ import {
 } from '@mui/icons-material';
 import PlaneacionEfectividad from './PlaneacionEfectividad';
 import Autoevaluacion from './Autoevaluacion';
+import RegistrosCalificadosAcreditacion from './RegistrosCalificadosAcreditacion';
 import { useAuth } from '../context/AuthContext';
 import { ROLES } from '../constants/roles';
 
@@ -27,7 +28,7 @@ function PlaneacionEstrategica() {
     return new Set(['planeacion-efectividad', 'autoevaluacion', 'registros-calificados', 'gestion-procesos-informacion']);
   }, [user?.role]);
   const currentView = view && allowedViews.has(view) ? view : '';
-  const isConstructionView = ['registros-calificados'].includes(currentView);
+  const isConstructionView = false;
   const isGestionProcesosInfoView = currentView === 'gestion-procesos-informacion';
   const isGestionProcesosModulesView = isGestionProcesosInfoView && gpPanel === 'gestion_procesos';
 
@@ -100,7 +101,7 @@ function PlaneacionEstrategica() {
       path: '/dashboard/planeacion-estrategica?view=registros-calificados',
       icon: <VerifiedIcon sx={{ fontSize: 44 }} />,
       active: true,
-      construction: true
+      construction: false
     },
     {
       title: 'Gestión por Procesos y la Información',
@@ -194,6 +195,12 @@ function PlaneacionEstrategica() {
             <Alert severity="info">
               Este módulo está en construcción. Ya quedó habilitado en menú y con acceso para ir organizándolo por fases.
             </Alert>
+          </Box>
+        )}
+
+        {currentView === 'registros-calificados' && (
+          <Box sx={{ mt: 3 }}>
+            <RegistrosCalificadosAcreditacion />
           </Box>
         )}
 

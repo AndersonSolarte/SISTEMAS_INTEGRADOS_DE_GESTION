@@ -19,6 +19,13 @@ const gestionInformacionService = {
       params: { aggregate: 'autoevaluacion_dashboard', categoria: 'Autoevaluación', ...params },
       timeout: 120000
     }).then((r) => r.data),
+  getRegistrosCalificadosDashboard: (params = {}) =>
+    api.get('/planeacion/gestion-informacion', {
+      params: { aggregate: 'registros_calificados_dashboard', categoria: 'Registros Calificados y Acreditacion', ...params },
+      timeout: 120000
+    }).then((r) => r.data),
+  getRegistrosCalificadosEvidencias: (id) =>
+    api.get(`/planeacion/gestion-informacion/registros-calificados/${id}/evidencias`, { timeout: 60000 }).then((r) => r.data),
   updateAutoevaluacionAspecto: (id, payload) =>
     api.put(`/planeacion/gestion-informacion/autoevaluacion/aspectos/${id}`, payload).then((r) => r.data),
   createAutoevaluacionParticipante: (payload) =>

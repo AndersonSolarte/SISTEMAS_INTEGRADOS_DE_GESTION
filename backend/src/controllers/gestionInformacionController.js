@@ -33,7 +33,8 @@ const {
   PlanAccion,
   Autoevaluacion,
   AutoevaluacionParticipante,
-  AutoevaluacionPrograma
+  AutoevaluacionPrograma,
+  RegistroCalificadoHistorico
 } = require('../models');
 const XLSX = require('xlsx');
 const fs = require('fs');
@@ -43,6 +44,7 @@ const divipolaMatchService = require('../services/divipolaMatchService');
 const { generatePlanAccionBuffer } = require('../services/planAccionExportService');
 const { generateActaBuffer } = require('../services/actaExportService');
 const { suggestIndicators } = require('../services/geminiIndicatorService');
+const { listEvidenceFilesRecursive } = require('../services/googleDriveEvidenceService');
 
 const validateAdminConfirmation = async (req, res) => {
   const { identifier, password } = req.body || {};
@@ -185,6 +187,14 @@ const clearDatasetStorage = async ({
     }
   }
 
+  if (categoria === 'Registros Calificados y Acreditación') {
+    await ensureRegistrosCalificadosTable();
+    const subKey = normalizeCategoryToken(subcategoria);
+    if (!subcategoria || subKey === 'historico_rc') {
+      await RegistroCalificadoHistorico.destroy({ where: {} });
+    }
+  }
+
   return { deleted, deletedLogs };
 };
 
@@ -200,7 +210,11 @@ const DATASET_CATEGORIES = {
   recurso_humano: 'Recurso Humano',
   saber_pro: 'Saber Pro',
   plan_accion: 'Plan de Acción',
-  autoevaluacion: 'Autoevaluación'
+  autoevaluacion: 'Autoevaluación',
+  registros_calificados_acreditacion: 'Registros Calificados y Acreditación',
+  registros_calificados_y_acreditacion: 'Registros Calificados y Acreditación',
+  registros_calificados: 'Registros Calificados y Acreditación',
+  acreditacion: 'Registros Calificados y Acreditación'
 };
 
 const AUTOEVALUACION_TEMPLATE_HEADERS = [
@@ -321,6 +335,43 @@ const AUTOEVALUACION_PROGRAMA_ROW_ALIASES = {
   duracion_formacion: ['DURACIÓN DE FORMACIÓN', 'DURACION DE FORMACION', 'Duración de Formación'],
   numero_creditos: ['NÚMERO DE CRÉDITOS', 'NUMERO DE CREDITOS', 'Número de Créditos'],
   estudiantes_primer_curso: ['NÚMERO DE ESTUDIANTES A ADMITIR A PRIMER CURSO', 'NUMERO DE ESTUDIANTES A ADMITIR A PRIMER CURSO', 'Número de estudiantes a admitir a primer curso']
+};
+
+const REGISTROS_CALIFICADOS_SUBBASE = 'Historico_RC';
+const REGISTROS_CALIFICADOS_DRIVE_FOLDER_URL = process.env.REGISTROS_CALIFICADOS_DRIVE_FOLDER_URL
+  || 'https://drive.google.com/drive/folders/12h5VJ5WW_egGAvKovaMBARMZjmZnZD_z?usp=drive_link';
+
+const REGISTROS_CALIFICADOS_TEMPLATE_HEADERS = [
+  'Programa académico',
+  'Nivel',
+  'Tipo aprobación',
+  'Resolución MEN',
+  'Fecha Resolución',
+  'Resolucion RC',
+  'Plan de Estudios',
+  'Enlace'
+];
+
+const REGISTROS_CALIFICADOS_ESTRUCTURA_ROWS = [
+  ['Programa académico', 'Nombre oficial del programa académico.'],
+  ['Nivel', 'Nivel de formación: Pregrado, Especialización, Maestría, etc.'],
+  ['Tipo aprobación', 'Otorgamiento, renovación u otro tipo de acto asociado al registro calificado o acreditación.'],
+  ['Resolución MEN', 'Número de resolución del Ministerio de Educación Nacional.'],
+  ['Fecha Resolución', 'Fecha de expedición de la resolución en formato dd/mm/aaaa.'],
+  ['Resolucion RC', 'Nombre exacto del archivo de resolución que debe existir en la carpeta de Drive.'],
+  ['Plan de Estudios', 'Nombre exacto del archivo de plan de estudios que debe existir en la carpeta de Drive.'],
+  ['Enlace', 'URL de la carpeta de Google Drive donde se buscarán únicamente los archivos coincidentes.']
+];
+
+const REGISTROS_CALIFICADOS_ROW_ALIASES = {
+  programa_academico: ['Programa académico', 'Programa academico', 'Programa', 'PROGRAMA'],
+  nivel: ['Nivel', 'NIVEL'],
+  tipo_aprobacion: ['Tipo aprobación', 'Tipo aprobacion', 'Tipo de aprobación', 'Tipo de aprobacion'],
+  resolucion_men: ['Resolución MEN', 'Resolucion MEN', 'Res', 'Resolución', 'Resolucion'],
+  fecha_resolucion: ['Fecha Resolución', 'Fecha Resolucion', 'Fecha'],
+  resolucion_rc: ['Resolucion RC', 'Resolución RC'],
+  plan_estudios: ['Plan de Estudios', 'Plan Estudios', 'Plan de estudio'],
+  enlace: ['Enlace', 'Link', 'URL', 'Carpeta Drive']
 };
 
 const PLAN_ACCION_TEMPLATE_HEADERS = [
@@ -456,6 +507,22 @@ const pickAutoevaluacionProgramaCell = (row = {}, field) => {
   return null;
 };
 
+const pickRegistroCalificadoCell = (row = {}, field) => {
+  const aliases = REGISTROS_CALIFICADOS_ROW_ALIASES[field] || [];
+  const keys = Object.keys(row);
+  const normalizedRow = keys.reduce((acc, key) => {
+    acc[normalizeHeaderKey(key)] = row[key];
+    return acc;
+  }, {});
+  for (const alias of aliases) {
+    const key = normalizeHeaderKey(alias);
+    if (normalizedRow[key] !== undefined && normalizedRow[key] !== null && String(normalizedRow[key]).trim() !== '') {
+      return normalizedRow[key];
+    }
+  }
+  return null;
+};
+
 const mapAutoevaluacionRow = (row) => ({
   acuerdo_men: normalizeText(pickAutoevaluacionCell(row, 'acuerdo_men')),
   programa: normalizeText(pickAutoevaluacionCell(row, 'programa')),
@@ -505,6 +572,46 @@ const mapAutoevaluacionProgramaRow = (row) => ({
   duracion_formacion: normalizeText(pickAutoevaluacionProgramaCell(row, 'duracion_formacion')),
   numero_creditos: normalizeText(pickAutoevaluacionProgramaCell(row, 'numero_creditos')),
   estudiantes_primer_curso: normalizeText(pickAutoevaluacionProgramaCell(row, 'estudiantes_primer_curso')),
+  raw_data: row
+});
+
+const parseRegistroCalificadoDate = (value) => {
+  const numericText = String(value ?? '').trim().replace(',', '.');
+  const numeric = Number(numericText);
+  if (Number.isFinite(numeric) && numeric > 20000 && numeric < 90000) {
+    const parsed = XLSX.SSF.parse_date_code(numeric);
+    if (parsed?.y && parsed?.m && parsed?.d) {
+      return `${String(parsed.y).padStart(4, '0')}-${String(parsed.m).padStart(2, '0')}-${String(parsed.d).padStart(2, '0')}`;
+    }
+  }
+  const parsed = parseExcelDateString(value);
+  const text = String(parsed || '').trim();
+  const dmy = text.match(/^(\d{1,2})[/-](\d{1,2})[/-](\d{4})$/);
+  if (dmy) {
+    const [, d, m, y] = dmy;
+    return `${y}-${String(m).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+  }
+  return parsed;
+};
+
+const normalizeRegistroCalificadoDateForView = (value) => {
+  const text = String(value || '').trim();
+  const year = Number((text.match(/^(\d{4,5})-/) || [])[1]);
+  if (year > 3000 && year < 90000) {
+    return parseRegistroCalificadoDate(String(year));
+  }
+  return text || null;
+};
+
+const mapRegistroCalificadoRow = (row) => ({
+  programa_academico: normalizeText(pickRegistroCalificadoCell(row, 'programa_academico')),
+  nivel: normalizeText(pickRegistroCalificadoCell(row, 'nivel')),
+  tipo_aprobacion: normalizeText(pickRegistroCalificadoCell(row, 'tipo_aprobacion')),
+  resolucion_men: normalizeText(pickRegistroCalificadoCell(row, 'resolucion_men')),
+  fecha_resolucion: parseRegistroCalificadoDate(pickRegistroCalificadoCell(row, 'fecha_resolucion')),
+  resolucion_rc: normalizeText(pickRegistroCalificadoCell(row, 'resolucion_rc')),
+  plan_estudios: normalizeText(pickRegistroCalificadoCell(row, 'plan_estudios')),
+  enlace: normalizeText(pickRegistroCalificadoCell(row, 'enlace')),
   raw_data: row
 });
 
@@ -869,9 +976,9 @@ const SABER11_FIELD_MAP = {
 };
 
 const RECURSO_HUMANO_TEMPLATE_HEADERS = {
-  Docentes: ['AÃƒÆ’Ã¢â‚¬ËœO', 'IdentificaciÃƒÆ’Ã‚Â³n', 'DOCENTE', 'GENERO BIÃƒÆ’Ã¢â‚¬Å“LOGICO', 'DEPARTAMENTO/DEPENDENCIA', 'PROGRAMA', 'TIPOVINCULACIÃƒÆ’Ã¢â‚¬Å“N', 'CONTRATO', 'HORAS INDIRECTAS', '% HORAS INDIRECTAS', 'Horas Administrativas', '% Horas Administrativas', 'Horas InvestigaciÃƒÆ’Ã‚Â³n', '% Horas InvestigaciÃƒÆ’Ã‚Â³n', 'Horas ProyecciÃƒÆ’Ã‚Â³n Institucional', '% Horas ProyecciÃƒÆ’Ã‚Â³n Institucional', 'Horas Academicas', '% Horas Academicas', 'Horas Aseguramiento de la Calidad', '% Horas Aseguramiento de la Calidad', 'Total Horas', 'PORCENTAJE TOTAL', 'FECHA_NACIMIENTO', 'EDAD', 'PAIS', 'MUNICIPIO_NACIMIENTO', 'NIVEL MAXIMO ESTUDIO', 'TITULO RECIBIDO', 'FECHA GRADO', 'PAIS INSTITUCION ESTUDIO', 'TITULO CONVALIDADO', 'NOMBRE INSTITUCION ESTUDIO', 'METODOLOGIA PROGRAMA', 'FECHA INGRESO', 'TOTAL TIEMPO', 'Total docentes', 'ESCALAFÃƒÆ’Ã¢â‚¬Å“N', 'CARGO', 'PERIODO'],
-  Administrativos: ['PERIODO', 'NÃƒâ€šÃ‚Âº CÃƒÆ’Ã‚Â©dula', 'Activo /Retirado', 'Nombre Empleado', 'Cargo Especifico', 'Dependencia', 'GRADO', 'Vicerectoria', 'Tipo de cotizante', 'Clase de Contrato', 'FECHA INICIO', 'FECHA DE TERMINACION', 'Sueldo aÃƒÆ’Ã‚Â±o 2023', 'Auxilio Transporte 2023', 'Dias Trabajados Septiembre 2023', 'Sueldo Mes Septiembre 2023', 'Dias Auxilio Transporte', 'Auxilio Transporte', 'CORTE INFORMACIÃƒÆ’Ã¢â‚¬Å“N', 'GENERO BIÃƒÆ’Ã¢â‚¬Å“LOGICO', 'AÃƒÆ’Ã¢â‚¬ËœO'],
-  Outsourcing: ['AÃƒÆ’Ã¢â‚¬ËœO', 'CARGO', 'GENERO BIÃƒÆ’Ã¢â‚¬Å“LOGICO', 'CANTIDAD'],
+  Docentes: ['AÑO', 'Identificación', 'DOCENTE', 'GENERO BIÓLOGICO', 'DEPARTAMENTO/DEPENDENCIA', 'PROGRAMA', 'TIPOVINCULACIÓN', 'CONTRATO', 'HORAS INDIRECTAS', '% HORAS INDIRECTAS', 'Horas Administrativas', '% Horas Administrativas', 'Horas Investigación', '% Horas Investigación', 'Horas Proyección Institucional', '% Horas Proyección Institucional', 'Horas Academicas', '% Horas Academicas', 'Horas Aseguramiento de la Calidad', '% Horas Aseguramiento de la Calidad', 'Total Horas', 'PORCENTAJE TOTAL', 'FECHA_NACIMIENTO', 'EDAD', 'PAIS', 'MUNICIPIO_NACIMIENTO', 'NIVEL MAXIMO ESTUDIO', 'TITULO RECIBIDO', 'FECHA GRADO', 'PAIS INSTITUCION ESTUDIO', 'TITULO CONVALIDADO', 'NOMBRE INSTITUCION ESTUDIO', 'METODOLOGIA PROGRAMA', 'FECHA INGRESO', 'TOTAL TIEMPO', 'Total docentes', 'ESCALAFÓN', 'CARGO', 'PERIODO'],
+  Administrativos: ['PERIODO', 'Nº Cédula', 'Activo /Retirado', 'Nombre Empleado', 'Cargo Especifico', 'Dependencia', 'GRADO', 'Vicerectoria', 'Tipo de cotizante', 'Clase de Contrato', 'FECHA INICIO', 'FECHA DE TERMINACION', 'Sueldo año 2023', 'Auxilio Transporte 2023', 'Dias Trabajados Septiembre 2023', 'Sueldo Mes Septiembre 2023', 'Dias Auxilio Transporte', 'Auxilio Transporte', 'CORTE INFORMACIÓN', 'GENERO BIÓLOGICO', 'AÑO'],
+  Outsourcing: ['AÑO', 'CARGO', 'GENERO BIÓLOGICO', 'CANTIDAD'],
   Ondas: ['PERIODO', 'NOMBRE', 'GENERO', 'FECHA DE CORTE']
 };
 
@@ -1212,10 +1319,14 @@ const resolveCategoria = (value = '') => {
 const isAutoevaluacionRole = (req) => String(req.user?.role || '').trim() === 'autoevaluacion';
 
 const enforceAutoevaluacionDatasetScope = (req, res, categoria) => {
-  if (!isAutoevaluacionRole(req) || categoria === 'Autoevaluación') return true;
+  if (
+    !isAutoevaluacionRole(req)
+    || categoria === 'Autoevaluación'
+    || categoria === 'Registros Calificados y Acreditación'
+  ) return true;
   res.status(403).json({
     success: false,
-    message: 'El usuario de Autoevaluación solo puede gestionar la base Autoevaluación'
+    message: 'El usuario de Autoevaluación solo puede gestionar Autoevaluación y Registros Calificados/Acreditación'
   });
   return false;
 };
@@ -2107,20 +2218,20 @@ const RECURSO_HUMANO_SUBCATEGORY_CONFIG = {
     sheetNames: ['DOCENTES'],
     headers: RECURSO_HUMANO_TEMPLATE_HEADERS.Docentes,
     map: {
-      anio: ['AÃƒÆ’Ã¢â‚¬ËœO', 'ANO', 'ANIO'],
-      identificacion: ['IdentificaciÃƒÆ’Ã‚Â³n', 'IDENTIFICACION'],
+      anio: ['AÑO', 'AÃƒÆ’Ã¢â‚¬ËœO', 'ANO', 'ANIO'],
+      identificacion: ['Identificación', 'IdentificaciÃƒÆ’Ã‚Â³n', 'IDENTIFICACION'],
       docente: ['DOCENTE'],
-      genero_biologico: ['GENERO BIÃƒÆ’Ã¢â‚¬Å“LOGICO', 'GENERO BIOLOGICO'],
+      genero_biologico: ['GENERO BIÓLOGICO', 'GENERO BIÃƒÆ’Ã¢â‚¬Å“LOGICO', 'GENERO BIOLOGICO'],
       departamento_dependencia: ['DEPARTAMENTO/DEPENDENCIA', 'DEPARTAMENTO DEPENDENCIA'],
       programa: ['PROGRAMA'],
-      tipo_vinculacion: ['TIPOVINCULACIÃƒÆ’Ã¢â‚¬Å“N', 'TIPOVINCULACION'],
+      tipo_vinculacion: ['TIPOVINCULACIÓN', 'TIPOVINCULACIÃƒÆ’Ã¢â‚¬Å“N', 'TIPOVINCULACION', 'TIPO VINCULACION'],
       contrato: ['CONTRATO'],
       total_horas: ['Total Horas'],
       fecha_nacimiento: ['FECHA_NACIMIENTO', 'FECHA NACIMIENTO'],
       edad: ['EDAD'],
       fecha_ingreso: ['FECHA INGRESO'],
       total_docentes: ['Total docentes', 'TOTAL DOCENTES'],
-      escalafon: ['ESCALAFÃƒÆ’Ã¢â‚¬Å“N', 'ESCALAFON'],
+      escalafon: ['ESCALAFÓN', 'ESCALAFÃƒÆ’Ã¢â‚¬Å“N', 'ESCALAFON'],
       cargo: ['CARGO'],
       periodo: ['PERIODO']
     }
@@ -2133,7 +2244,7 @@ const RECURSO_HUMANO_SUBCATEGORY_CONFIG = {
     headers: RECURSO_HUMANO_TEMPLATE_HEADERS.Administrativos,
     map: {
       periodo: ['PERIODO'],
-      numero_cedula: ['NÃƒâ€šÃ‚Âº CÃƒÆ’Ã‚Â©dula', 'No Cedula', 'NÃƒâ€šÃ‚Â° CÃƒÆ’Ã‚Â©dula', 'CEDULA'],
+      numero_cedula: ['Nº Cédula', 'NÃƒâ€šÃ‚Âº CÃƒÆ’Ã‚Â©dula', 'No Cedula', 'NÃƒâ€šÃ‚Â° CÃƒÆ’Ã‚Â©dula', 'CEDULA'],
       estado_laboral: ['Activo /Retirado', 'ACTIVO /RETIRADO'],
       nombre_empleado: ['Nombre Empleado'],
       cargo_especifico: ['Cargo Especifico'],
@@ -2143,10 +2254,10 @@ const RECURSO_HUMANO_SUBCATEGORY_CONFIG = {
       clase_contrato: ['Clase de Contrato'],
       fecha_inicio: ['FECHA INICIO'],
       fecha_terminacion: ['FECHA DE TERMINACION'],
-      sueldo_anual: ['Sueldo aÃƒÆ’Ã‚Â±o 2023', 'Sueldo ano 2023'],
+      sueldo_anual: ['Sueldo año 2023', 'Sueldo aÃƒÆ’Ã‚Â±o 2023', 'Sueldo ano 2023'],
       sueldo_mes: ['Sueldo Mes Septiembre 2023'],
-      genero_biologico: ['GENERO BIÃƒÆ’Ã¢â‚¬Å“LOGICO', 'GENERO BIOLOGICO'],
-      anio: ['AÃƒÆ’Ã¢â‚¬ËœO', 'ANO', 'ANIO']
+      genero_biologico: ['GENERO BIÓLOGICO', 'GENERO BIÃƒÆ’Ã¢â‚¬Å“LOGICO', 'GENERO BIOLOGICO'],
+      anio: ['AÑO', 'AÃƒÆ’Ã¢â‚¬ËœO', 'ANO', 'ANIO']
     }
   },
   OUTSOURCING: {
@@ -2156,9 +2267,9 @@ const RECURSO_HUMANO_SUBCATEGORY_CONFIG = {
     sheetNames: ['OUTSOURCING'],
     headers: RECURSO_HUMANO_TEMPLATE_HEADERS.Outsourcing,
     map: {
-      anio: ['AÃƒÆ’Ã¢â‚¬ËœO', 'ANO', 'ANIO'],
+      anio: ['AÑO', 'AÃƒÆ’Ã¢â‚¬ËœO', 'ANO', 'ANIO'],
       cargo: ['CARGO'],
-      genero_biologico: ['GENERO BIÃƒÆ’Ã¢â‚¬Å“LOGICO', 'GENERO BIOLOGICO'],
+      genero_biologico: ['GENERO BIÓLOGICO', 'GENERO BIÃƒÆ’Ã¢â‚¬Å“LOGICO', 'GENERO BIOLOGICO'],
       cantidad: ['CANTIDAD']
     }
   },
@@ -2524,6 +2635,50 @@ const parseExcelDateString = (value) => {
   return normalizeText(value);
 };
 
+const toDbText = (value, maxLength = null) => {
+  const text = normalizeText(value);
+  if (!text) return '';
+  if (!maxLength || text.length <= maxLength) return text;
+  return text.slice(0, maxLength);
+};
+
+const normalizeAcademicPeriodo = (value, fallbackAnio = null) => {
+  if (value === null || value === undefined || value === '') return '';
+
+  const fromDateParts = (year, month) => {
+    if (!Number.isFinite(year) || !Number.isFinite(month)) return '';
+    return month <= 6 ? 'IP' : 'IIP';
+  };
+
+  if (typeof value === 'number' && Number.isFinite(value) && value > 20000 && value < 90000) {
+    const parsed = XLSX.SSF.parse_date_code(value);
+    return fromDateParts(Number(parsed?.y), Number(parsed?.m));
+  }
+
+  if (value instanceof Date && !Number.isNaN(value.getTime())) {
+    return fromDateParts(value.getFullYear(), value.getMonth() + 1);
+  }
+
+  const text = normalizeText(value);
+  const upper = text.toUpperCase();
+  const numeric = Number(text.replace(',', '.'));
+  if (Number.isFinite(numeric) && numeric > 20000 && numeric < 90000) {
+    const parsed = XLSX.SSF.parse_date_code(numeric);
+    return fromDateParts(Number(parsed?.y), Number(parsed?.m));
+  }
+
+  if (/\b(IIP|II|2)\b/.test(upper)) return 'IIP';
+  if (/\b(IP|I|1)\b/.test(upper)) return 'IP';
+
+  const dateMatch = upper.match(/\b(\d{1,2})[/-](\d{1,2})[/-](\d{2,4})\b/);
+  if (dateMatch) {
+    return fromDateParts(Number(dateMatch[3].length === 2 ? `20${dateMatch[3]}` : dateMatch[3]), Number(dateMatch[2]));
+  }
+
+  if (fallbackAnio && /\b(19|20)\d{2}\b/.test(upper)) return '';
+  return toDbText(text, 40);
+};
+
 const normalizeGrupoEtnico = (value) => {
   const text = String(value || '').trim();
   if (!text) return 'SIN INFORMACION';
@@ -2720,6 +2875,7 @@ const resolveDefaultImportSheetName = (workbook, categoria) => {
 let georreferenciaSyncPromise = null;
 let planAccionSyncPromise = null;
 let autoevaluacionSyncPromise = null;
+let registrosCalificadosSyncPromise = null;
 
 const isMissingRelationError = (error) => {
   const errorCode = String(error?.original?.code || error?.parent?.code || '');
@@ -2762,6 +2918,16 @@ const ensureAutoevaluacionTable = async () => {
     });
   }
   return autoevaluacionSyncPromise;
+};
+
+const ensureRegistrosCalificadosTable = async () => {
+  if (!registrosCalificadosSyncPromise) {
+    registrosCalificadosSyncPromise = RegistroCalificadoHistorico.sync().catch((error) => {
+      registrosCalificadosSyncPromise = null;
+      throw error;
+    });
+  }
+  return registrosCalificadosSyncPromise;
 };
 
 const parseAutoevaluacionPrefix = (value = '', fallbackPrefix = '') => {
@@ -2967,6 +3133,129 @@ const buildAutoevaluacionDashboardPayload = ({ aspectosRows = [], participantesR
       estudiantesPrimerCurso: row.estudiantes_primer_curso
     }))
   };
+};
+
+const normalizeDriveComparableName = (value = '') =>
+  stripDiacritics(String(value || ''))
+    .replace(/\.[A-Za-z0-9]{2,8}$/g, '')
+    .toUpperCase()
+    .replace(/[^A-Z0-9]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+const isRegistroCalificadoActiveRow = (row = {}, latestDateByProgram = new Map()) => {
+  const key = normalizeHeader(row.programa_academico);
+  const dateValue = normalizeRegistroCalificadoDateForView(row.fecha_resolucion) || '';
+  return Boolean(key && dateValue && latestDateByProgram.get(key) === dateValue);
+};
+
+const buildRegistrosCalificadosDashboardPayload = ({ rows = [], programa = '', estado = 'activos' }) => {
+  const normalizedPrograma = normalizeHeader(programa);
+  const baseRows = normalizedPrograma
+    ? rows.filter((row) => normalizeHeader(row.programa_academico).includes(normalizedPrograma))
+    : rows;
+
+  const latestDateByProgram = new Map();
+  rows.forEach((row) => {
+    const key = normalizeHeader(row.programa_academico);
+    const dateValue = normalizeRegistroCalificadoDateForView(row.fecha_resolucion) || '';
+    if (!key || !dateValue) return;
+    if (!latestDateByProgram.has(key) || dateValue > latestDateByProgram.get(key)) {
+      latestDateByProgram.set(key, dateValue);
+    }
+  });
+
+  const estadoToken = normalizeCategoryToken(estado || 'activos');
+  const filteredRows = baseRows.filter((row) => {
+    const active = isRegistroCalificadoActiveRow(row, latestDateByProgram);
+    if (estadoToken === 'todos' || estadoToken === 'general') return true;
+    if (estadoToken === 'inactivos') return !active;
+    return active;
+  });
+
+  const programasDisponibles = Array.from(new Set(rows.map((row) => row.programa_academico).filter(Boolean)))
+    .sort((a, b) => String(a).localeCompare(String(b), 'es'));
+  const niveles = Array.from(new Set(filteredRows.map((row) => row.nivel).filter(Boolean)));
+  const tipos = Array.from(new Set(filteredRows.map((row) => row.tipo_aprobacion).filter(Boolean)));
+  const activeRows = rows.filter((row) => isRegistroCalificadoActiveRow(row, latestDateByProgram));
+
+  const sortedRows = [...filteredRows].sort((a, b) => {
+    const dateA = normalizeRegistroCalificadoDateForView(a.fecha_resolucion) || '';
+    const dateB = normalizeRegistroCalificadoDateForView(b.fecha_resolucion) || '';
+    if (dateA !== dateB) return dateB.localeCompare(dateA);
+    return String(a.programa_academico || '').localeCompare(String(b.programa_academico || ''), 'es');
+  });
+
+  return {
+    filtros: { programa: programa || null, estado: estadoToken || 'activos' },
+    programasDisponibles,
+    resumen: {
+      total: filteredRows.length,
+      totalHistorico: rows.length,
+      activos: activeRows.length,
+      inactivos: Math.max(0, rows.length - activeRows.length),
+      programas: programasDisponibles.length,
+      niveles: niveles.length,
+      tipos: tipos.length
+    },
+    registros: sortedRows.map((row) => ({
+      id: row.id,
+      programaAcademico: row.programa_academico,
+      nivel: row.nivel,
+      tipoAprobacion: row.tipo_aprobacion,
+      resolucionMen: row.resolucion_men,
+      fechaResolucion: normalizeRegistroCalificadoDateForView(row.fecha_resolucion),
+      resolucionRc: row.resolucion_rc,
+      planEstudios: row.plan_estudios,
+      enlace: row.enlace,
+      estado: isRegistroCalificadoActiveRow(row, latestDateByProgram) ? 'Activo' : 'Inactivo'
+    }))
+  };
+};
+
+const getRegistrosCalificadosEvidencias = async (req, res) => {
+  try {
+    await ensureRegistrosCalificadosTable();
+    const id = Number(req.params.id);
+    if (!Number.isFinite(id) || id <= 0) {
+      return res.status(400).json({ success: false, message: 'Id de registro invalido' });
+    }
+    const row = await RegistroCalificadoHistorico.findByPk(id, { raw: true });
+    if (!row) return res.status(404).json({ success: false, message: 'Registro no encontrado' });
+    const expected = [row.resolucion_rc, row.plan_estudios].filter(Boolean);
+    const expectedSet = new Set(expected.map((name) => normalizeDriveComparableName(name)).filter(Boolean));
+    const matchFiles = (files = []) => files.filter((file) => expectedSet.has(normalizeDriveComparableName(file.name)));
+
+    let matchedFiles = [];
+    const searchedFolders = [];
+    if (row.enlace) {
+      searchedFolders.push(row.enlace);
+      matchedFiles = matchFiles(await listEvidenceFilesRecursive(row.enlace, { maxDepth: 2 }));
+    }
+
+    if (!matchedFiles.length && REGISTROS_CALIFICADOS_DRIVE_FOLDER_URL) {
+      searchedFolders.push(REGISTROS_CALIFICADOS_DRIVE_FOLDER_URL);
+      matchedFiles = matchFiles(await listEvidenceFilesRecursive(REGISTROS_CALIFICADOS_DRIVE_FOLDER_URL, { maxDepth: 4 }));
+    }
+
+    const uniqueFiles = Array.from(new Map(matchedFiles.map((file) => [file.id || file.webViewLink || file.name, file])).values());
+
+    return res.json({
+      success: true,
+      data: {
+        expected,
+        files: uniqueFiles,
+        searchedFolders
+      }
+    });
+  } catch (error) {
+    const status = Number(error?.statusCode || error?.code || error?.response?.status || 500);
+    const googleMessage = error?.response?.data?.error?.message;
+    return res.status(status >= 400 && status < 600 ? status : 500).json({
+      success: false,
+      message: googleMessage || error.message || 'No se pudieron cargar las evidencias de Google Drive'
+    });
+  }
 };
 
 const importGeorreferenciaRows = async ({ rows = [], fileName = '', userId = null, sourceLabel = 'archivo' }) => {
@@ -4072,6 +4361,22 @@ const getEstadisticas = async (req, res) => {
       });
     }
 
+    if (aggregate === 'registros_calificados_dashboard') {
+      await ensureRegistrosCalificadosTable();
+      const registrosRows = await RegistroCalificadoHistorico.findAll({
+        order: [['programa_academico', 'ASC'], ['fecha_resolucion', 'DESC'], ['id', 'DESC']],
+        raw: true
+      });
+      return res.json({
+        success: true,
+        data: buildRegistrosCalificadosDashboardPayload({
+          rows: registrosRows,
+          programa,
+          estado: req.query.estado || 'activos'
+        })
+      });
+    }
+
     if (aggregate === 'poblacional_series' && where.categoria === 'Poblacional') {
       const currentYear = new Date().getFullYear();
       const shouldExcludeCurrentYear = ['1', 'true', 'si', 'sí', 'yes'].includes(
@@ -4344,7 +4649,7 @@ const getEstadisticas = async (req, res) => {
 
       const [docentesRows, administrativosRows, outsourcingRows, ondasRows] = await Promise.all([
         RecursoHumanoDocente.findAll({
-          attributes: ['anio', 'periodo', 'docente', 'genero_biologico', 'departamento_dependencia', 'programa', 'tipo_vinculacion', 'contrato', 'cargo', 'escalafon', 'total_horas', 'total_docentes', 'edad'],
+          attributes: ['anio', 'periodo', 'docente', 'genero_biologico', 'departamento_dependencia', 'programa', 'tipo_vinculacion', 'contrato', 'cargo', 'escalafon', 'total_horas', 'total_docentes', 'edad', 'raw_data'],
           raw: true
         }),
         RecursoHumanoAdministrativo.findAll({
@@ -4364,6 +4669,12 @@ const getEstadisticas = async (req, res) => {
       const docentes = docentesRows.map((row) => ({
         ...row,
         genero: normalizeGenero(row.genero_biologico),
+        nivel_maximo_estudio: normalizeText(
+          row.raw_data?.['NIVEL MAXIMO ESTUDIO'] ||
+          row.raw_data?.NIVEL_MAXIMO_ESTUDIO ||
+          row.raw_data?.nivel_maximo_estudio ||
+          ''
+        ),
         peso: Number(row.total_docentes || 0) > 0 ? Number(row.total_docentes) : 1
       }));
       const administrativos = administrativosRows.map((row) => ({
@@ -5047,6 +5358,24 @@ const downloadTemplate = async (req, res) => {
       return res.send(buffer);
     }
 
+    if (categoria === 'Registros Calificados y Acreditación') {
+      const workbook = XLSX.utils.book_new();
+      const estructuraSheet = XLSX.utils.aoa_to_sheet([['Nombre de campo', 'Contenido'], ...REGISTROS_CALIFICADOS_ESTRUCTURA_ROWS]);
+      estructuraSheet['!cols'] = [{ wch: 34 }, { wch: 86 }];
+      XLSX.utils.book_append_sheet(workbook, estructuraSheet, 'ESTRUCTURA');
+
+      const dataSheet = buildHeaderOnlyWorksheet(REGISTROS_CALIFICADOS_TEMPLATE_HEADERS);
+      dataSheet['!cols'] = REGISTROS_CALIFICADOS_TEMPLATE_HEADERS.map((header) => ({
+        wch: Math.max(16, Math.min(52, String(header).length + 10))
+      }));
+      XLSX.utils.book_append_sheet(workbook, dataSheet, REGISTROS_CALIFICADOS_SUBBASE);
+
+      const buffer = XLSX.write(workbook, { type: 'buffer', bookType: 'xlsx' });
+      res.setHeader('Content-Disposition', 'attachment; filename=plantilla_registros_calificados_historico_rc.xlsx');
+      res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+      return res.send(buffer);
+    }
+
     if (categoria === 'Poblacional' && !poblacionalConfig) {
       return res.status(400).json({
         success: false,
@@ -5175,6 +5504,8 @@ const importFromExcel = async (req, res) => {
     const allowsCsvStreaming = (
       categoria === 'Georreferencia'
       || categoria === 'Autoevaluación'
+      || categoria === 'Registros Calificados y Acreditación'
+      || categoria === 'Recurso Humano'
       || (categoria === 'Poblacional' && poblacionalConfig?.label === 'Matriculados')
       || (categoria === 'Poblacional'
         && poblacionalConfig?.customImport === 'contexto_externo'
@@ -5185,7 +5516,7 @@ const importFromExcel = async (req, res) => {
     if (isCsvUpload && !allowsCsvStreaming) {
       return res.status(400).json({
         success: false,
-        message: 'El formato CSV solo esta habilitado para Georreferencia, Autoevaluación, Matriculados y Contexto Externo (listas de series).'
+        message: 'El formato CSV solo esta habilitado para Georreferencia, Autoevaluación, Recurso Humano, Matriculados y Contexto Externo (listas de series).'
       });
     }
 
@@ -5256,17 +5587,23 @@ const importFromExcel = async (req, res) => {
       if (fixedSubcategoria && !recursoHumanoConfig) {
         return res.status(400).json({ success: false, message: 'Subcategoria de Recurso Humano no valida' });
       }
+      if (isCsvUpload && !recursoHumanoConfig) {
+        return res.status(400).json({ success: false, message: 'Para CSV de Recurso Humano debes seleccionar una subbase especifica.' });
+      }
 
       const configs = recursoHumanoConfig ? [recursoHumanoConfig] : Object.values(RECURSO_HUMANO_SUBCATEGORY_CONFIG);
       const result = { total: 0, importados: 0, importadosValor: 0, errores: [], hojasProcesadas: [] };
-      const workbookSheetsByKey = Object.fromEntries(
-        workbook.SheetNames.map((name) => [normalizeHeader(name), name])
-      );
+      const csvData = isCsvUpload ? await readCsvRows(req.file.path) : null;
+      const workbookSheetsByKey = isCsvUpload
+        ? {}
+        : Object.fromEntries(workbook.SheetNames.map((name) => [normalizeHeader(name), name]));
 
       for (const config of configs) {
-        const matchedSheetName = (config.sheetNames || [])
-          .map((name) => workbookSheetsByKey[normalizeHeader(name)])
-          .find(Boolean);
+        const matchedSheetName = isCsvUpload
+          ? (config.sheetNames?.[0] || config.label)
+          : (config.sheetNames || [])
+            .map((name) => workbookSheetsByKey[normalizeHeader(name)])
+            .find(Boolean);
 
         if (!matchedSheetName) {
           if (recursoHumanoConfig) {
@@ -5275,8 +5612,9 @@ const importFromExcel = async (req, res) => {
           continue;
         }
 
-        const worksheetRH = workbook.Sheets[matchedSheetName];
-        const { rows: rowsRH } = matrixToRows(worksheetRH, config.headers, true);
+        const rowsRH = isCsvUpload
+          ? (csvData?.rows || [])
+          : matrixToRows(workbook.Sheets[matchedSheetName], config.headers, true).rows;
         if (!rowsRH.length) continue;
         await clearDatasetStorage({
           categoria: 'Recurso Humano',
@@ -5290,25 +5628,31 @@ const importFromExcel = async (req, res) => {
           const fila = i + 2;
           try {
             const payload = mapPoblacionalRecord(row, { map: config.map });
-            const anio = parseAnio(payload.anio || payload.periodo || row.PERIODO || row['AÃƒÆ’Ã¢â‚¬ËœO']);
+            const anio = parseAnio(payload.anio || payload.periodo || row.PERIODO || row['AÑO'] || row['AÃƒÆ’Ã¢â‚¬ËœO']);
+            const periodo = normalizeAcademicPeriodo(payload.anio || payload.periodo, anio);
 
             if (config.key === 'DOCENTES') {
+              if (!anio || !periodo || !normalizeText(payload.docente) || !normalizeText(payload.genero_biologico)) {
+                sheetResult.errores.push({ fila, error: 'Fila omitida: registro docente incompleto o periodo inválido' });
+                result.errores.push({ hoja: matchedSheetName, fila, error: 'Fila omitida: registro docente incompleto o periodo inválido' });
+                continue;
+              }
               await config.model.create({
                 anio,
-                periodo: normalizeText(payload.periodo),
-                identificacion: normalizeText(payload.identificacion),
-                docente: normalizeText(payload.docente),
-                genero_biologico: normalizeGenero(payload.genero_biologico),
-                departamento_dependencia: normalizeText(payload.departamento_dependencia),
-                programa: normalizeText(payload.programa),
-                tipo_vinculacion: normalizeText(payload.tipo_vinculacion),
-                contrato: normalizeText(payload.contrato),
-                cargo: normalizeText(payload.cargo),
-                escalafon: normalizeText(payload.escalafon),
+                periodo: toDbText(periodo, 40),
+                identificacion: toDbText(payload.identificacion, 80),
+                docente: toDbText(payload.docente, 220),
+                genero_biologico: toDbText(normalizeGenero(payload.genero_biologico), 60),
+                departamento_dependencia: toDbText(payload.departamento_dependencia, 220),
+                programa: toDbText(payload.programa, 220),
+                tipo_vinculacion: toDbText(payload.tipo_vinculacion, 120),
+                contrato: toDbText(payload.contrato, 120),
+                cargo: toDbText(payload.cargo || 'DOCENTE', 180),
+                escalafon: toDbText(payload.escalafon, 120),
                 total_horas: toNumber(payload.total_horas),
                 total_docentes: toNumber(payload.total_docentes),
-                fecha_ingreso: parseExcelDateString(payload.fecha_ingreso),
-                fecha_nacimiento: parseExcelDateString(payload.fecha_nacimiento),
+                fecha_ingreso: toDbText(parseExcelDateString(payload.fecha_ingreso), 80),
+                fecha_nacimiento: toDbText(parseExcelDateString(payload.fecha_nacimiento), 80),
                 edad: toNumber(payload.edad) ? Math.trunc(Number(payload.edad)) : null,
                 raw_data: row,
                 creado_por: req.user?.id || null,
@@ -5317,18 +5661,18 @@ const importFromExcel = async (req, res) => {
             } else if (config.key === 'ADMINISTRATIVOS') {
               await config.model.create({
                 anio,
-                periodo: normalizeText(payload.periodo),
-                numero_cedula: normalizeText(payload.numero_cedula),
-                estado_laboral: normalizeText(payload.estado_laboral),
-                nombre_empleado: normalizeText(payload.nombre_empleado),
-                cargo_especifico: normalizeText(payload.cargo_especifico),
-                dependencia: normalizeText(payload.dependencia),
-                vicerectoria: normalizeText(payload.vicerectoria),
-                clase_contrato: normalizeText(payload.clase_contrato),
-                genero_biologico: normalizeGenero(payload.genero_biologico),
-                tipo_cotizante: normalizeText(payload.tipo_cotizante),
-                fecha_inicio: parseExcelDateString(payload.fecha_inicio),
-                fecha_terminacion: parseExcelDateString(payload.fecha_terminacion),
+                periodo: toDbText(periodo, 40),
+                numero_cedula: toDbText(payload.numero_cedula, 80),
+                estado_laboral: toDbText(payload.estado_laboral, 40),
+                nombre_empleado: toDbText(payload.nombre_empleado, 220),
+                cargo_especifico: toDbText(payload.cargo_especifico, 220),
+                dependencia: toDbText(payload.dependencia, 220),
+                vicerectoria: toDbText(payload.vicerectoria, 220),
+                clase_contrato: toDbText(payload.clase_contrato, 120),
+                genero_biologico: toDbText(normalizeGenero(payload.genero_biologico), 60),
+                tipo_cotizante: toDbText(payload.tipo_cotizante, 120),
+                fecha_inicio: toDbText(parseExcelDateString(payload.fecha_inicio), 80),
+                fecha_terminacion: toDbText(parseExcelDateString(payload.fecha_terminacion), 80),
                 sueldo_anual: toNumber(payload.sueldo_anual),
                 sueldo_mes: toNumber(payload.sueldo_mes),
                 raw_data: row,
@@ -5338,9 +5682,9 @@ const importFromExcel = async (req, res) => {
             } else if (config.key === 'OUTSOURCING') {
               await config.model.create({
                 anio,
-                periodo: normalizeText(payload.anio),
-                cargo: normalizeText(payload.cargo),
-                genero_biologico: normalizeGenero(payload.genero_biologico),
+                periodo: toDbText(normalizeAcademicPeriodo(payload.periodo || payload.anio, anio), 40),
+                cargo: toDbText(payload.cargo, 180),
+                genero_biologico: toDbText(normalizeGenero(payload.genero_biologico), 60),
                 cantidad: toNumber(payload.cantidad),
                 raw_data: row,
                 creado_por: req.user?.id || null,
@@ -5349,10 +5693,10 @@ const importFromExcel = async (req, res) => {
             } else if (config.key === 'ONDAS') {
               await config.model.create({
                 anio,
-                periodo: normalizeText(payload.periodo),
-                nombre: normalizeText(payload.nombre),
-                genero: normalizeGenero(payload.genero),
-                fecha_corte: parseExcelDateString(payload.fecha_corte),
+                periodo: toDbText(periodo, 40),
+                nombre: toDbText(payload.nombre, 220),
+                genero: toDbText(normalizeGenero(payload.genero), 60),
+                fecha_corte: toDbText(parseExcelDateString(payload.fecha_corte), 80),
                 raw_data: row,
                 creado_por: req.user?.id || null,
                 actualizado_por: req.user?.id || null
@@ -5380,7 +5724,7 @@ const importFromExcel = async (req, res) => {
               fuente: `Carga Excel Recurso Humano - ${config.label}`,
               observaciones: [
                 normalizeText(payload.genero_biologico || payload.genero) ? `genero: ${normalizeGenero(payload.genero_biologico || payload.genero)}` : '',
-                normalizeText(payload.periodo) ? `periodo: ${normalizeText(payload.periodo)}` : ''
+                periodo ? `periodo: ${periodo}` : ''
               ].filter(Boolean).join(' | ') || null,
               creado_por: req.user?.id || null,
               actualizado_por: req.user?.id || null
@@ -6922,6 +7266,9 @@ const importFromExcel = async (req, res) => {
             : AUTOEVALUACION_TEMPLATE_HEADERS;
         headerRowIndex = detectHeaderRowIndex(matrix, expectedAutoHeaders);
       }
+      if (categoria === 'Registros Calificados y Acreditación') {
+        headerRowIndex = detectHeaderRowIndex(matrix, REGISTROS_CALIFICADOS_TEMPLATE_HEADERS);
+      }
 
       if ((categoria === 'Poblacional' && poblacionalConfig?.strictHeaders) || (categoria === 'Saber Pro' && saberProConfig?.strictHeaders)) {
         const strictHeaders = categoria === 'Poblacional' ? poblacionalConfig.headers : saberProConfig.headers;
@@ -7006,6 +7353,9 @@ const importFromExcel = async (req, res) => {
     }
     if (categoria === 'Autoevaluación') {
       await clearDatasetStorage({ categoria: 'Autoevaluación', subcategoria: fixedSubcategoria });
+    }
+    if (categoria === 'Registros Calificados y Acreditación') {
+      await clearDatasetStorage({ categoria: 'Registros Calificados y Acreditación', subcategoria: fixedSubcategoria || REGISTROS_CALIFICADOS_SUBBASE });
     }
 
     // Deduplicación en-memoria para subcategorías con uniqueKeys definidos (ej. Matriculados: codigo_estudiante+periodo)
@@ -7455,6 +7805,22 @@ const importFromExcel = async (req, res) => {
           continue;
         }
         await Autoevaluacion.create({
+          ...payload,
+          creado_por: req.user?.id || null,
+          actualizado_por: req.user?.id || null
+        });
+        result.importados += 1;
+        continue;
+      }
+
+      if (categoria === 'Registros Calificados y Acreditación') {
+        await ensureRegistrosCalificadosTable();
+        const payload = mapRegistroCalificadoRow(row);
+        if (!payload.programa_academico) {
+          result.errores.push({ fila, error: 'Campo obligatorio: Programa académico' });
+          continue;
+        }
+        await RegistroCalificadoHistorico.create({
           ...payload,
           creado_por: req.user?.id || null,
           actualizado_por: req.user?.id || null
@@ -7959,6 +8325,23 @@ const downloadCargueBase = async (req, res) => {
         }));
         sheetName = 'AUTOEVALUACION';
       }
+    } else if (categoriaResolved === 'Registros Calificados y Acreditación') {
+      await ensureRegistrosCalificadosTable();
+      const rows = await RegistroCalificadoHistorico.findAll({
+        order: [['programa_academico', 'ASC'], ['fecha_resolucion', 'DESC'], ['id', 'ASC']],
+        raw: true
+      });
+      records = rows.map((row) => ({
+        'Programa académico': row.programa_academico,
+        'Nivel': row.nivel,
+        'Tipo aprobación': row.tipo_aprobacion,
+        'Resolución MEN': row.resolucion_men,
+        'Fecha Resolución': row.fecha_resolucion,
+        'Resolucion RC': row.resolucion_rc,
+        'Plan de Estudios': row.plan_estudios,
+        'Enlace': row.enlace
+      }));
+      sheetName = REGISTROS_CALIFICADOS_SUBBASE;
     } else if (categoriaResolved === 'Georreferencia') {
       const [deptRows, muniRows] = await Promise.all([
         GeorreferenciaDepartamento.findAll({ order: [['codigo_departamento', 'ASC']], raw: true }),
@@ -8240,6 +8623,7 @@ module.exports = {
   downloadContextoExternoNormalizado,
   downloadCargueErrores,
   downloadCargueBase,
+  getRegistrosCalificadosEvidencias,
   getDivipolaIncidencias,
   resolveDivipolaIncidencia,
   importFromExcel,

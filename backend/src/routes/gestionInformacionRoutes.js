@@ -19,6 +19,7 @@ const {
   downloadContextoExternoNormalizado,
   downloadCargueErrores,
   downloadCargueBase,
+  getRegistrosCalificadosEvidencias,
   getDivipolaIncidencias,
   resolveDivipolaIncidencia,
   importFromExcel,
@@ -46,6 +47,7 @@ const canViewEstadisticaInstitucionalByPermission = hasAnyRoleOrModulePermission
     ROLES.PLANEACION_ESTRATEGICA,
     ROLES.PLANEACION_EFECTIVIDAD,
     ROLES.AUTOEVALUACION,
+    ROLES.REGISTROS_CALIFICADOS,
     ROLES.GESTION_INFORMACION,
     ROLES.GESTION_PROCESOS
   ],
@@ -64,7 +66,9 @@ const canViewEstadisticaInstitucionalByPermission = hasAnyRoleOrModulePermission
     'gestion_procesos',
     'estadistica_documental',
     'plan_accion',
-    'autoevaluacion'
+    'autoevaluacion',
+    'registros_calificados_acreditacion',
+    'registros_calificados_y_acreditacion'
   ]
 });
 
@@ -72,7 +76,8 @@ const canManageBasesByPermission = hasAnyRoleOrModulePermission({
   roles: [
     ROLES.ADMINISTRADOR,
     ROLES.PLANEACION_ESTRATEGICA,
-    ROLES.AUTOEVALUACION
+    ROLES.AUTOEVALUACION,
+    ROLES.REGISTROS_CALIFICADOS
   ],
   moduleKeys: [
     'gestion_informacion',
@@ -80,7 +85,9 @@ const canManageBasesByPermission = hasAnyRoleOrModulePermission({
     'poblacional',
     'saber_pro',
     'plan_accion',
-    'autoevaluacion'
+    'autoevaluacion',
+    'registros_calificados_acreditacion',
+    'registros_calificados_y_acreditacion'
   ]
 });
 
@@ -88,10 +95,11 @@ router.get('/', auth, canViewEstadisticaInstitucionalByPermission, getEstadistic
 router.get('/matriculados-incidencias', auth, canViewEstadisticaInstitucionalByPermission, getMatriculadosIncidencias);
 router.get('/resumen', auth, canViewEstadisticaInstitucionalByPermission, getResumen);
 router.get('/cargues', auth, canManageBasesByPermission, getCargues);
-router.get('/template', auth, hasAnyRole(ROLES.ADMINISTRADOR, ROLES.PLANEACION_EFECTIVIDAD, ROLES.PLANEACION_ESTRATEGICA), downloadTemplate);
+router.get('/template', auth, canManageBasesByPermission, downloadTemplate);
 router.get('/contexto-externo/export', auth, canManageBasesByPermission, downloadContextoExternoNormalizado);
 router.get('/cargues/errors/export', auth, canManageBasesByPermission, downloadCargueErrores);
 router.get('/cargues/base/export', auth, canManageBasesByPermission, downloadCargueBase);
+router.get('/registros-calificados/:id/evidencias', auth, canViewEstadisticaInstitucionalByPermission, getRegistrosCalificadosEvidencias);
 router.get('/divipola/incidencias', auth, canViewEstadisticaInstitucionalByPermission, getDivipolaIncidencias);
 router.put('/divipola/incidencias/:id', auth, canViewEstadisticaInstitucionalByPermission, resolveDivipolaIncidencia);
 router.post('/plan-accion/export', auth, hasAnyRole(ROLES.ADMINISTRADOR, ROLES.PLANEACION_EFECTIVIDAD, ROLES.PLANEACION_ESTRATEGICA, ROLES.CONSULTA), exportPlanAccionInstitucional);

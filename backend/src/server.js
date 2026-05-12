@@ -199,6 +199,7 @@ testConnection()
       const Autoevaluacion = require('./models/Autoevaluacion');
       const AutoevaluacionParticipante = require('./models/AutoevaluacionParticipante');
       const AutoevaluacionPrograma = require('./models/AutoevaluacionPrograma');
+      const RegistroCalificadoHistorico = require('./models/RegistroCalificadoHistorico');
       const {
         InstrumentForm,
         InstrumentSection,
@@ -217,6 +218,7 @@ testConnection()
       await Autoevaluacion.sync();
       await AutoevaluacionParticipante.sync();
       await AutoevaluacionPrograma.sync();
+      await RegistroCalificadoHistorico.sync();
       await InstrumentForm.sync();
       await InstrumentSection.sync();
       await InstrumentQuestion.sync();
