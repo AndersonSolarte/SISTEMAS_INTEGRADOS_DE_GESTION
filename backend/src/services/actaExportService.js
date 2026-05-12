@@ -356,7 +356,7 @@ const buildActaDocument = (payload = {}) => {
   ];
 
   return new Document({
-    creator: 'Sistema de Gestión por Procesos - Universidad CESMAG',
+    creator: 'SIAC UNICESMAG - Sistema Interno de Aseguramiento de la Calidad',
     styles: {
       default: {
         document: {

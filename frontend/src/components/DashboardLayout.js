@@ -514,9 +514,12 @@ function DashboardLayout() {
               overflowWrap: 'anywhere'
             }}
           >
-            Sistema de Gestión por
+            SIAC
             <Box component="span" sx={{ display: 'block', fontWeight: 700 }}>
-              Procesos
+              UNICESMAG
+            </Box>
+            <Box component="span" sx={{ display: 'block', mt: 0.6, fontSize: 11.5, lineHeight: 1.25, fontWeight: 600, color: '#dbeafe' }}>
+              Sistema Interno de Aseguramiento de la Calidad
             </Box>
           </Typography>
         </Box>

@@ -69,7 +69,7 @@ const resolveMailFrom = () => {
   const configured = String(process.env.SMTP_FROM || '').trim();
   if (configured) return configured;
   const smtpUser = String(process.env.SMTP_USER || '').trim();
-  if (smtpUser) return `Sistema SIG UNICESMAG <${smtpUser}>`;
+  if (smtpUser) return `SIAC UNICESMAG <${smtpUser}>`;
   return 'noreply@unicesmag.edu.co';
 };
 
@@ -79,7 +79,7 @@ const renderInstitutionalTemplate = ({ title, introHtml, bodyHtml }) => `
   <div style="font-family: Arial, sans-serif; max-width: 640px; margin: 0 auto; color: #0f172a;">
     <div style="background: #0b3a6f; color: #fff; padding: 16px 20px; border-radius: 10px 10px 0 0;">
       <h2 style="margin: 0; font-size: 20px;">UNICESMAG</h2>
-      <p style="margin: 6px 0 0; font-size: 13px; opacity: .95;">Dirección de Planeación y Aseguramiento de la Calidad - Gestión por Procesos y la Información</p>
+      <p style="margin: 6px 0 0; font-size: 13px; opacity: .95;">Sistema Interno de Aseguramiento de la Calidad - SIAC UNICESMAG</p>
       <p style="margin: 8px 0 0; font-size: 13px; opacity: .9;">Notificación institucional automática</p>
     </div>
     <div style="border: 1px solid #dbeafe; border-top: 0; border-radius: 0 0 10px 10px; padding: 20px; background: #ffffff;">
@@ -106,11 +106,11 @@ const sendWelcomeEmail = async (user) => {
   const mailOptions = {
     from: resolveMailFrom(),
     to: safeRecipient,
-    subject: 'UNICESMAG | ACTIVACION DE USUARIO EN EL SISTEMA GESTION POR PROCESOS',
-    text: `Hola ${user.nombre}. Tu usuario fue activado en el Sistema Integrado de Gestion de UNICESMAG. Usuario: ${user.username || user.email}. Rol: ${resolveRoleLabel(user.role)}. Contraseña temporal: ${tempPassword}. Ingresa en ${loginUrl}`,
+    subject: 'UNICESMAG | ACTIVACION DE USUARIO EN SIAC',
+    text: `Hola ${user.nombre}. Tu usuario fue activado en SIAC UNICESMAG. Usuario: ${user.username || user.email}. Rol: ${resolveRoleLabel(user.role)}. Contraseña temporal: ${tempPassword}. Ingresa en ${loginUrl}`,
     html: renderInstitutionalTemplate({
       title: 'Activacion de acceso',
-      introHtml: `<p>Hola <strong>${safeNombre}</strong>,</p><p>La Direccion de Planeacion y Aseguramiento de la Calidad, desde el componente de Gestion por Procesos y la Informacion, autoriza tu ingreso al sistema institucional de consulta de informacion documentada.</p>`,
+      introHtml: `<p>Hola <strong>${safeNombre}</strong>,</p><p>La Direccion de Planeacion y Aseguramiento de la Calidad autoriza tu ingreso a SIAC UNICESMAG, sistema interno de aseguramiento de la calidad.</p>`,
       bodyHtml: `
         <div style="background: #f8fafc; border: 1px solid #e2e8f0; padding: 16px; border-radius: 8px; margin: 16px 0;">
           <p style="margin: 0 0 8px;"><strong>Usuario:</strong> ${safeUser}</p>
@@ -161,7 +161,7 @@ const sendWelcomeEmail = async (user) => {
       <p style="margin: 16px 0 0; color: #334155;">Si no puedes ingresar, comunicate con el equipo administrador.</p>
       <div style="margin: 18px 0 0; border: 1px solid #d6e4f5; border-radius: 12px; overflow: hidden; background: #ffffff; box-shadow: 0 8px 22px rgba(11, 58, 111, 0.06);">
         <div style="background: linear-gradient(135deg, #eff6ff 0%, #f8fbff 100%); border-bottom: 1px solid #d6e4f5; padding: 12px 18px;">
-          <p style="margin: 0; font-weight: 800; color: #0b3a6f; letter-spacing: 0.02em;">Equipo Gestión por Procesos</p>
+          <p style="margin: 0; font-weight: 800; color: #0b3a6f; letter-spacing: 0.02em;">Equipo SIAC UNICESMAG</p>
         </div>
         <div style="padding: 16px 18px; color: #334155;">
           <table role="presentation" style="width: 100%; border-collapse: collapse;">
@@ -203,7 +203,7 @@ const sendPasswordResetEmail = async (user, resetToken) => {
   const mailOptions = {
     from: resolveMailFrom(),
     to: safeRecipient,
-    subject: 'Recuperación de Contraseña - Sistema de Gestión',
+    subject: 'Recuperación de Contraseña - SIAC UNICESMAG',
     text: `Hola ${user.nombre}, usa este enlace para restablecer tu contraseña: ${resetUrl}. El enlace expira en 1 hora.`,
     html: renderInstitutionalTemplate({
       title: 'Recuperacion de contraseña',
@@ -240,7 +240,7 @@ const sendTemporaryPasswordEmail = async (user, tempPassword) => {
   const mailOptions = {
     from: resolveMailFrom(),
     to: safeRecipient,
-    subject: 'Nueva contraseña temporal - Sistema de Gestión',
+    subject: 'Nueva contraseña temporal - SIAC UNICESMAG',
     text: `Hola ${user.nombre}, tu usuario es ${user.username || user.email} y tu nueva contraseña temporal es ${tempPassword}. Inicia sesión en ${loginUrl} y cámbiala al entrar.`,
     html: renderInstitutionalTemplate({
       title: 'Restablecimiento por administrador',

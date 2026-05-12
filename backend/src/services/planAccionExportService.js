@@ -125,7 +125,7 @@ const COLUMN_WIDTHS = [
 
 const buildPlanAccionWorkbook = async ({ planData = {}, actividades = [], corresponsabilidades = [] } = {}) => {
   const workbook = new ExcelJS.Workbook();
-  workbook.creator = 'Sistema de Gestión por Procesos - Universidad CESMAG';
+  workbook.creator = 'SIAC UNICESMAG - Sistema Interno de Aseguramiento de la Calidad';
   workbook.created = new Date();
 
   const sheet = workbook.addWorksheet('PLAN DE ACCION', {

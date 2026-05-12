@@ -190,7 +190,7 @@ function Login() {
 
   const features = [
     { icon: <ShieldIcon sx={{ fontSize: 22 }} />, label: 'Acceso seguro institucional' },
-    { icon: <SchemaIcon sx={{ fontSize: 22 }} />, label: 'Gestión por procesos' },
+    { icon: <SchemaIcon sx={{ fontSize: 22 }} />, label: 'Gestión de la información' },
     { icon: <VerifiedUserIcon sx={{ fontSize: 22 }} />, label: 'Documentación oficial verificada' }
   ];
 
@@ -252,16 +252,26 @@ function Login() {
             maxWidth: 640,
             textShadow: '0 2px 20px rgba(0,0,0,0.4)'
           }}>
-            Sistema Institucional de{' '}
             <Box component="span" sx={{
               background: 'linear-gradient(90deg, #60a5fa 0%, #a78bfa 50%, #f472b6 100%)',
               WebkitBackgroundClip: 'text',
               WebkitTextFillColor: 'transparent',
               backgroundClip: 'text'
             }}>
-              Gestión
+              SIAC
             </Box>
-            {' '}por Procesos
+            {' '}UNICESMAG
+            <Box component="span" sx={{
+              display: 'block',
+              mt: 1.1,
+              fontSize: '0.56em',
+              lineHeight: 1.28,
+              fontWeight: 700,
+              color: 'rgba(226,232,240,0.95)',
+              letterSpacing: 0
+            }}>
+              Sistema Interno de Aseguramiento de la Calidad
+            </Box>
           </Typography>
           <Stack spacing={1.5} sx={{ mt: 4 }}>
             {features.map((item, idx) => (
@@ -586,7 +596,7 @@ function Login() {
               display: 'block',
               mb: 2
             }}>
-              © {new Date().getFullYear()} Sistema de Gestión por Procesos
+              © {new Date().getFullYear()} SIAC UNICESMAG
             </Typography>
             {/* Sello Vigilada MINEDUCACIÓN — tarjeta */}
             <Box sx={{ display: 'flex', justifyContent: 'center' }}>

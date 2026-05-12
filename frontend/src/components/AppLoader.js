@@ -143,7 +143,7 @@ function AppLoader({ fadeOut }) {
           mb: 0.5,
           textShadow: '0 2px 20px rgba(0,0,0,0.5)'
         }}>
-          Sistemas de Gestión
+          SIAC UNICESMAG
         </Typography>
 
         <Typography sx={{
@@ -155,7 +155,7 @@ function AppLoader({ fadeOut }) {
           textTransform: 'uppercase',
           mb: 3.5
         }}>
-          por Procesos
+          Sistema Interno de Aseguramiento de la Calidad
         </Typography>
 
         {/* Animated dots indicator */}
