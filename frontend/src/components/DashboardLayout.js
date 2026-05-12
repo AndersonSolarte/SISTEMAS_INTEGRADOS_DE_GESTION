@@ -511,57 +511,51 @@ function DashboardLayout() {
               lineHeight: 1,
               display: 'flex',
               flexDirection: 'column',
-              alignItems: 'center'
+              alignItems: 'center',
+              position: 'relative',
+              pt: 0.2
             }}
           >
-            <Box component="span" sx={{
-              px: 1.4,
-              py: 0.35,
-              borderRadius: 999,
-              border: '1px solid rgba(147,197,253,0.32)',
-              background: 'linear-gradient(135deg, rgba(37,99,235,0.35), rgba(14,165,233,0.14))',
-              boxShadow: '0 10px 26px rgba(15,23,42,0.28)',
-              fontSize: 18,
-              letterSpacing: 1.2,
-              lineHeight: 1,
-              textTransform: 'uppercase'
-            }}>
-              SIAC
-            </Box>
-            <Box component="span" sx={{
-              display: 'block',
-              mt: 0.7,
-              fontSize: 13,
-              fontWeight: 800,
-              letterSpacing: 1.6,
-              color: '#dbeafe',
-              textTransform: 'uppercase'
-            }}>
-              UNICESMAG
-            </Box>
             <Box sx={{
-              width: 46,
-              height: 2,
-              mt: 0.9,
-              mb: 0.9,
-              borderRadius: 999,
-              background: 'linear-gradient(90deg, #60a5fa, #bfdbfe, #60a5fa)'
-            }} />
-            <Box component="span" sx={{
-              display: 'block',
-              maxWidth: 214,
-              px: 1.2,
-              py: 0.8,
-              borderRadius: 2,
-              fontSize: 11.2,
-              lineHeight: 1.28,
-              fontWeight: 700,
-              color: '#f8fafc',
-              background: 'rgba(8,18,39,0.38)',
-              border: '1px solid rgba(148,163,184,0.18)',
-              boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.04)'
+              minWidth: 122,
+              px: 1.6,
+              py: 0.95,
+              borderRadius: 3,
+              border: '1px solid rgba(147,197,253,0.22)',
+              background: 'linear-gradient(180deg, rgba(15,32,64,0.86), rgba(8,18,39,0.34))',
+              boxShadow: '0 12px 30px rgba(2,8,23,0.24), inset 0 1px 0 rgba(255,255,255,0.07)',
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: 'center'
             }}>
-              Sistema Interno de Aseguramiento de la Calidad
+              <Box component="span" sx={{
+                fontSize: 19,
+                letterSpacing: 1.5,
+                lineHeight: 1,
+                textTransform: 'uppercase',
+                color: '#ffffff',
+                textShadow: '0 2px 14px rgba(96,165,250,0.35)'
+              }}>
+                SIAC
+              </Box>
+              <Box component="span" sx={{
+                display: 'block',
+                mt: 0.75,
+                fontSize: 12,
+                fontWeight: 800,
+                letterSpacing: 1.8,
+                color: '#bfdbfe',
+                textTransform: 'uppercase'
+              }}>
+                UNICESMAG
+              </Box>
+              <Box sx={{
+                width: 54,
+                height: 2,
+                mt: 0.9,
+                borderRadius: 999,
+                background: 'linear-gradient(90deg, rgba(96,165,250,0), #93c5fd, rgba(96,165,250,0))'
+              }} />
             </Box>
           </Typography>
         </Box>
