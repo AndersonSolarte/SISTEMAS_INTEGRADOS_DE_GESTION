@@ -504,21 +504,63 @@ function DashboardLayout() {
         </Box>
         <Box sx={{ textAlign: 'center', lineHeight: 1.25, width: '100%' }}>
           <Typography
-            variant="h6"
+            component="div"
             sx={{
               color: '#ffffff',
               fontWeight: 800,
-              fontSize: 16,
-              letterSpacing: 0.15,
-              lineHeight: 1.25,
-              overflowWrap: 'anywhere'
+              lineHeight: 1,
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: 'center'
             }}
           >
-            SIAC
-            <Box component="span" sx={{ display: 'block', fontWeight: 700 }}>
+            <Box component="span" sx={{
+              px: 1.4,
+              py: 0.35,
+              borderRadius: 999,
+              border: '1px solid rgba(147,197,253,0.32)',
+              background: 'linear-gradient(135deg, rgba(37,99,235,0.35), rgba(14,165,233,0.14))',
+              boxShadow: '0 10px 26px rgba(15,23,42,0.28)',
+              fontSize: 18,
+              letterSpacing: 1.2,
+              lineHeight: 1,
+              textTransform: 'uppercase'
+            }}>
+              SIAC
+            </Box>
+            <Box component="span" sx={{
+              display: 'block',
+              mt: 0.7,
+              fontSize: 13,
+              fontWeight: 800,
+              letterSpacing: 1.6,
+              color: '#dbeafe',
+              textTransform: 'uppercase'
+            }}>
               UNICESMAG
             </Box>
-            <Box component="span" sx={{ display: 'block', mt: 0.6, fontSize: 11.5, lineHeight: 1.25, fontWeight: 600, color: '#dbeafe' }}>
+            <Box sx={{
+              width: 46,
+              height: 2,
+              mt: 0.9,
+              mb: 0.9,
+              borderRadius: 999,
+              background: 'linear-gradient(90deg, #60a5fa, #bfdbfe, #60a5fa)'
+            }} />
+            <Box component="span" sx={{
+              display: 'block',
+              maxWidth: 214,
+              px: 1.2,
+              py: 0.8,
+              borderRadius: 2,
+              fontSize: 11.2,
+              lineHeight: 1.28,
+              fontWeight: 700,
+              color: '#f8fafc',
+              background: 'rgba(8,18,39,0.38)',
+              border: '1px solid rgba(148,163,184,0.18)',
+              boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.04)'
+            }}>
               Sistema Interno de Aseguramiento de la Calidad
             </Box>
           </Typography>
