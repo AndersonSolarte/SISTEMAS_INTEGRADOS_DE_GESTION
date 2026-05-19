@@ -63,6 +63,7 @@ import {
   TrendingDown as TrendingDownIcon,
   AutoGraph as AutoGraphIcon,
   Refresh as RefreshIcon,
+  FilterAltOff as FilterAltOffIcon,
   Engineering as EngineeringIcon,
   School as SchoolGradIcon,
   MenuBook as MenuBookIcon,
@@ -105,7 +106,7 @@ import gestionInformacionService from '../services/gestionInformacionService';
 import SaberProDashboard from '../components/saberPro/SaberProDashboard';
 import SaberProAgregadosDashboard from '../components/saberPro/SaberProAgregadosDashboard';
 import SaberProLandingPage from '../components/saberPro/SaberProLandingPage';
-import RecursoHumanoDashboard from '../components/recursoHumano/RecursoHumanoDashboard';
+import RecursoHumanoLandingPage from '../components/recursoHumano/RecursoHumanoLandingPage';
 import { ROLES } from '../constants/roles';
 import { EstadisticaDocumentalPanel } from './EstadisticaDocumentalImpact';
 import ActivityDashboard from './ActivityDashboard';
@@ -1990,7 +1991,10 @@ function GestionInformacion() {
   }, [location.search]);
 
   const canManageBases = useMemo(
-    () => [ROLES.ADMINISTRADOR, ROLES.AUTOEVALUACION].includes(user?.role) || explicitGiModules.includes('gestion_bases_datos'),
+    () => [ROLES.ADMINISTRADOR, ROLES.AUTOEVALUACION, ROLES.GESTION_PROCESOS].includes(user?.role)
+      || explicitGiModules.includes('gestion_bases_datos')
+      || explicitGiModules.includes('gestion_procesos')
+      || explicitGiModules.includes('estadistica_documental'),
     [user?.role, explicitGiModules]
   );
   const canManageBasesInView = canManageBases && !isPlaneacionGpInfoContext;
@@ -4898,7 +4902,7 @@ function GestionInformacion() {
   };
 
   const renderRecursoHumanoStatsModule = () => (
-    <RecursoHumanoDashboard />
+    <RecursoHumanoLandingPage onBack={() => setSelectedCard(null)} />
   );
 
   const renderStackedBars = (series) => {
@@ -7979,128 +7983,172 @@ const renderCategoryBars = (items = [], options = {}) => {
     </Stack>
   );
 
-  const renderPoblacionalPlaceholderPanel = ({ title, description, templateHint }) => (
+  const renderPoblacionalPlaceholderPanel = ({ title, description, templateHint, hideToolbar = false, filterEmptyState = false }) => (
     <Stack spacing={2}>
-      <Paper
-        elevation={0}
-        sx={{
-          p: { xs: 1.6, md: 2 },
-          border: '1px solid #d7e3f7',
-          borderRadius: 3,
-          background: 'linear-gradient(135deg, #f8fbff 0%, #eef4ff 55%, #f7fbff 100%)'
-        }}
-      >
-        <Stack
-          direction={{ xs: 'column', lg: 'row' }}
-          spacing={1.2}
-          justifyContent="space-between"
-          alignItems={{ xs: 'flex-start', lg: 'center' }}
+      {!hideToolbar && (
+        <Paper
+          elevation={0}
+          sx={{
+            p: { xs: 1.6, md: 2 },
+            border: '1px solid #d7e3f7',
+            borderRadius: 3,
+            background: 'linear-gradient(135deg, #f8fbff 0%, #eef4ff 55%, #f7fbff 100%)'
+          }}
         >
-          <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap" useFlexGap>
-            <Button variant="outlined" startIcon={<ArrowBackRoundedIcon />} onClick={() => setPoblacionalPanel('hub')}>
-              Volver a dashboards Poblacional
-            </Button>
-            <Chip label="Estructura base" color="warning" variant="outlined" />
-            <Chip label="Pendiente de datos" sx={{ bgcolor: '#fff7ed', color: '#c2410c', fontWeight: 700 }} />
-          </Stack>
-          <Typography variant="body2" sx={{ color: '#64748b', fontWeight: 600 }}>
-            Importa la plantilla para activar visualizaciones y KPIs
-          </Typography>
-        </Stack>
-      </Paper>
-
-      <Paper
-        elevation={0}
-        sx={{
-          p: { xs: 2, md: 2.4 },
-          borderRadius: 3,
-          border: '1px solid #e2e8f0',
-          background: 'linear-gradient(180deg, #ffffff 0%, #fbfdff 100%)',
-          overflow: 'hidden'
-        }}
-      >
-        <Grid container spacing={2}>
-          <Grid item xs={12} lg={7}>
-            <Stack spacing={1.1}>
-              <Typography sx={{ fontWeight: 900, fontSize: { xs: 22, md: 28 }, color: '#0f172a', lineHeight: 1.15 }}>
-                {title}
-              </Typography>
-              <Typography sx={{ color: '#475569', maxWidth: 680 }}>
-                {description}
-              </Typography>
-
-              <Grid container spacing={1.2} sx={{ mt: 0.2 }}>
-                {[
-                  { label: 'Estado del tablero', value: 'Esperando importacion', tone: '#f59e0b' },
-                  { label: 'Plantilla', value: 'Disponible', tone: '#2563eb' },
-                  { label: 'Visualizacion', value: 'Se activa con datos', tone: '#0f766e' }
-                ].map((item) => (
-                  <Grid item xs={12} sm={4} key={item.label}>
-                    <Paper
-                      elevation={0}
-                      sx={{
-                        p: 1.2,
-                        borderRadius: 2,
-                        border: '1px solid #e5edf6',
-                        bgcolor: '#fff'
-                      }}
-                    >
-                      <Typography variant="caption" sx={{ color: '#64748b', fontWeight: 700 }}>
-                        {item.label}
-                      </Typography>
-                      <Typography sx={{ mt: 0.35, color: '#0f172a', fontWeight: 800, fontSize: 14 }}>
-                        {item.value}
-                      </Typography>
-                      <Box sx={{ mt: 0.8, height: 4, borderRadius: 999, bgcolor: `${item.tone}20` }}>
-                        <Box sx={{ width: '100%', height: '100%', borderRadius: 999, bgcolor: item.tone }} />
-                      </Box>
-                    </Paper>
-                  </Grid>
-                ))}
-              </Grid>
+          <Stack
+            direction={{ xs: 'column', lg: 'row' }}
+            spacing={1.2}
+            justifyContent="space-between"
+            alignItems={{ xs: 'flex-start', lg: 'center' }}
+          >
+            <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap" useFlexGap>
+              <Button variant="outlined" startIcon={<ArrowBackRoundedIcon />} onClick={() => setPoblacionalPanel('hub')}>
+                Volver a dashboards Poblacional
+              </Button>
+              <Chip label="Estructura base" color="warning" variant="outlined" />
+              <Chip label="Pendiente de datos" sx={{ bgcolor: '#fff7ed', color: '#c2410c', fontWeight: 700 }} />
             </Stack>
-          </Grid>
+            <Typography variant="body2" sx={{ color: '#64748b', fontWeight: 600 }}>
+              Importa la plantilla para activar visualizaciones y KPIs
+            </Typography>
+          </Stack>
+        </Paper>
+      )}
 
-          <Grid item xs={12} lg={5}>
-            <Paper
-              elevation={0}
+      {filterEmptyState ? (
+        <Paper
+          elevation={0}
+          sx={{
+            p: { xs: 2.2, md: 3 },
+            borderRadius: 3,
+            border: '1px solid #dbe8fb',
+            bgcolor: '#f8fbff'
+          }}
+        >
+          <Stack direction={{ xs: 'column', md: 'row' }} spacing={1.6} alignItems={{ xs: 'flex-start', md: 'center' }}>
+            <Box
               sx={{
-                p: 1.6,
-                borderRadius: 2.4,
-                border: '1px dashed #a7b8d0',
-                bgcolor: '#f8fbff',
-                height: '100%'
+                width: 52,
+                height: 52,
+                borderRadius: 2.5,
+                bgcolor: '#eaf2ff',
+                color: '#1559c6',
+                display: 'grid',
+                placeItems: 'center',
+                border: '1px solid #cfe0f8'
               }}
             >
-              <Typography sx={{ fontWeight: 800, color: '#1e293b', mb: 0.8 }}>
-                Plantilla base lista para importar
+              <BarChartIcon />
+            </Box>
+            <Box sx={{ flex: 1, minWidth: 0 }}>
+              <Typography sx={{ fontWeight: 900, fontSize: { xs: 20, md: 24 }, color: '#0f172a', lineHeight: 1.15 }}>
+                {title}
               </Typography>
-              <Typography variant="body2" sx={{ color: '#5b6b80', mb: 1.1 }}>
-                {templateHint}
+              <Typography sx={{ color: '#52657c', mt: 0.6, maxWidth: 820 }}>
+                {description}
               </Typography>
-              <Divider sx={{ my: 1.1 }} />
-              <Stack spacing={0.9}>
-                {[
-                  'Ve a "Gestion de bases de datos" > Poblacional.',
-                  'Selecciona la subbase correspondiente y carga el archivo Excel.',
-                  'Vuelve a este dashboard para ver KPIs, tendencias y comparativos.'
-                ].map((step, idx) => (
-                  <Stack key={step} direction="row" spacing={1} alignItems="flex-start">
-                    <Chip
-                      size="small"
-                      label={idx + 1}
-                      sx={{ height: 22, minWidth: 22, fontWeight: 800, bgcolor: '#dbeafe', color: '#1d4ed8' }}
-                    />
-                    <Typography variant="body2" sx={{ color: '#475569', pt: 0.15 }}>
-                      {step}
-                    </Typography>
-                  </Stack>
-                ))}
+              <Chip
+                size="small"
+                label={templateHint}
+                sx={{ mt: 1.2, bgcolor: '#dbeafe', color: '#075cc7', fontWeight: 900 }}
+              />
+            </Box>
+          </Stack>
+        </Paper>
+      ) : (
+        <Paper
+          elevation={0}
+          sx={{
+            p: { xs: 2, md: 2.4 },
+            borderRadius: 3,
+            border: '1px solid #e2e8f0',
+            background: 'linear-gradient(180deg, #ffffff 0%, #fbfdff 100%)',
+            overflow: 'hidden'
+          }}
+        >
+          <Grid container spacing={2}>
+            <Grid item xs={12} lg={7}>
+              <Stack spacing={1.1}>
+                <Typography sx={{ fontWeight: 900, fontSize: { xs: 22, md: 28 }, color: '#0f172a', lineHeight: 1.15 }}>
+                  {title}
+                </Typography>
+                <Typography sx={{ color: '#475569', maxWidth: 680 }}>
+                  {description}
+                </Typography>
+
+                <Grid container spacing={1.2} sx={{ mt: 0.2 }}>
+                  {[
+                    { label: 'Estado del tablero', value: 'Esperando importacion', tone: '#f59e0b' },
+                    { label: 'Plantilla', value: 'Disponible', tone: '#2563eb' },
+                    { label: 'Visualizacion', value: 'Se activa con datos', tone: '#0f766e' }
+                  ].map((item) => (
+                    <Grid item xs={12} sm={4} key={item.label}>
+                      <Paper
+                        elevation={0}
+                        sx={{
+                          p: 1.2,
+                          borderRadius: 2,
+                          border: '1px solid #e5edf6',
+                          bgcolor: '#fff'
+                        }}
+                      >
+                        <Typography variant="caption" sx={{ color: '#64748b', fontWeight: 700 }}>
+                          {item.label}
+                        </Typography>
+                        <Typography sx={{ mt: 0.35, color: '#0f172a', fontWeight: 800, fontSize: 14 }}>
+                          {item.value}
+                        </Typography>
+                        <Box sx={{ mt: 0.8, height: 4, borderRadius: 999, bgcolor: `${item.tone}20` }}>
+                          <Box sx={{ width: '100%', height: '100%', borderRadius: 999, bgcolor: item.tone }} />
+                        </Box>
+                      </Paper>
+                    </Grid>
+                  ))}
+                </Grid>
               </Stack>
-            </Paper>
+            </Grid>
+
+            <Grid item xs={12} lg={5}>
+              <Paper
+                elevation={0}
+                sx={{
+                  p: 1.6,
+                  borderRadius: 2.4,
+                  border: '1px dashed #a7b8d0',
+                  bgcolor: '#f8fbff',
+                  height: '100%'
+                }}
+              >
+                <Typography sx={{ fontWeight: 800, color: '#1e293b', mb: 0.8 }}>
+                  Plantilla base lista para importar
+                </Typography>
+                <Typography variant="body2" sx={{ color: '#5b6b80', mb: 1.1 }}>
+                  {templateHint}
+                </Typography>
+                <Divider sx={{ my: 1.1 }} />
+                <Stack spacing={0.9}>
+                  {[
+                    'Ve a "Gestion de bases de datos" > Poblacional.',
+                    'Selecciona la subbase correspondiente y carga el archivo Excel.',
+                    'Vuelve a este dashboard para ver KPIs, tendencias y comparativos.'
+                  ].map((step, idx) => (
+                    <Stack key={step} direction="row" spacing={1} alignItems="flex-start">
+                      <Chip
+                        size="small"
+                        label={idx + 1}
+                        sx={{ height: 22, minWidth: 22, fontWeight: 800, bgcolor: '#dbeafe', color: '#1d4ed8' }}
+                      />
+                      <Typography variant="body2" sx={{ color: '#475569', pt: 0.15 }}>
+                        {step}
+                      </Typography>
+                    </Stack>
+                  ))}
+                </Stack>
+              </Paper>
+            </Grid>
           </Grid>
-        </Grid>
-      </Paper>
+        </Paper>
+      )}
     </Stack>
   );
 
@@ -8163,10 +8211,11 @@ const renderCategoryBars = (items = [], options = {}) => {
       });
     const periodOptions = Array.from(periodCatalogMap.values()).sort((a, b) => a.order - b.order);
     const selectedPeriods = (desercionUi.periodos || []).filter((item) => periodOptions.some((opt) => opt.label === item));
+    const hasSelectedPeriodFilter = selectedPeriods.length > 0;
 
     const filtered = filteredByMain.filter((r) => {
+      if (!hasSelectedPeriodFilter) return false;
       if (tipoActivo === 'COHORTE' && corteCohorteActivo !== 'TODOS' && r.corteNorm !== corteCohorteActivo) return false;
-      if (!selectedPeriods.length) return true;
       const normalizedLabel = getDesercionSeriesLabel(r);
       return selectedPeriods.includes(normalizedLabel);
     });
@@ -8196,24 +8245,42 @@ const renderCategoryBars = (items = [], options = {}) => {
     const visibleByPeriod = byPeriod;
 
     const latestPeriod = visibleByPeriod[visibleByPeriod.length - 1] || null;
-
-    const programRankingMap = new Map();
-    filtered
-      .filter((r) => r.metric === 'programa')
-      .forEach((r) => {
-        const key = String(r.programa || 'Sin programa').trim() || 'Sin programa';
-        if (!programRankingMap.has(key)) programRankingMap.set(key, { label: key, total: 0, registros: 0 });
-        const row = programRankingMap.get(key);
-        row.total += r.valorNum;
-        row.registros += 1;
-      });
-    const rankingProgramas = Array.from(programRankingMap.values())
-      .map((r) => ({ ...r, promedio: r.registros ? Number((r.total / r.registros).toFixed(4)) : 0 }))
-      .sort((a, b) => b.promedio - a.promedio)
-      .slice(0, 10);
+    const avgFromVisiblePeriods = (key) => {
+      const values = visibleByPeriod
+        .map((row) => Number(row?.[key]))
+        .filter((value) => Number.isFinite(value));
+      if (!values.length) return null;
+      return values.reduce((acc, value) => acc + value, 0) / values.length;
+    };
+    const averageKpis = [
+      {
+        label: 'Promedio programa',
+        value: avgFromVisiblePeriods('programa'),
+        color: '#0f2358',
+        bg: '#eff6ff',
+        Icon: SchoolIcon,
+        sub: 'Periodos filtrados'
+      },
+      {
+        label: 'Promedio institucional',
+        value: avgFromVisiblePeriods('institucional'),
+        color: '#2563eb',
+        bg: '#eff6ff',
+        Icon: AccountBalanceIcon,
+        sub: 'Referencia interna'
+      },
+      {
+        label: 'Promedio nacional',
+        value: avgFromVisiblePeriods('nacional'),
+        color: '#f59e0b',
+        bg: '#fffbeb',
+        Icon: PublicIcon,
+        sub: 'Referencia externa'
+      }
+    ];
 
     const comparisonLatest = latestPeriod ? [
-      { label: 'Programa', valor: latestPeriod.programa, color: '#dc2626' },
+      { label: 'Programa', valor: latestPeriod.programa, color: '#0f2358' },
       { label: 'Institucional', valor: latestPeriod.institucional, color: '#2563eb' },
       { label: 'Departamental', valor: latestPeriod.departamental, color: '#7c3aed' },
       { label: 'Nacional', valor: latestPeriod.nacional, color: '#f59e0b' }
@@ -8256,8 +8323,8 @@ const renderCategoryBars = (items = [], options = {}) => {
         rightKey: 'nacional',
         leftLabel: 'Programa',
         rightLabel: 'Nacional',
-        leftColor: '#dc2626',
-        rightColor: '#f59e0b'
+        leftColor: '#0f2358',
+        rightColor: '#3b82f6'
       },
       {
         key: 'departamental',
@@ -8267,8 +8334,8 @@ const renderCategoryBars = (items = [], options = {}) => {
         rightKey: 'departamental',
         leftLabel: 'Programa',
         rightLabel: 'Departamental',
-        leftColor: '#dc2626',
-        rightColor: '#7c3aed'
+        leftColor: '#0f2358',
+        rightColor: '#3b82f6'
       },
       {
         key: 'institucional',
@@ -8278,18 +8345,39 @@ const renderCategoryBars = (items = [], options = {}) => {
         rightKey: 'institucional',
         leftLabel: 'Programa',
         rightLabel: 'Institucional',
-        leftColor: '#dc2626',
-        rightColor: '#2563eb'
+        leftColor: '#0f2358',
+        rightColor: '#3b82f6'
       }
     ];
 
-    const dataAvailable = Boolean(desercionRows.length);
-    const qualityItems = [
-      { label: 'Registros analizados', value: filtered.length || parsed.length, caption: 'Filas utiles para visualizacion' },
-      { label: 'Programas detectados', value: programas.length, caption: 'Oferta identificada en la base' },
-      { label: isAnnualView ? 'Años / cortes' : 'Periodos / cortes', value: visibleByPeriod.length, caption: 'Serie disponible segun filtros' }
-    ];
-
+    const resetDesercionFilters = () => {
+      setDesercionUi({
+        programa: '',
+        tipo: 'Todos',
+        corteCohorte: 'Todos',
+        periodos: []
+      });
+    };
+    const desercionSelectSx = {
+      borderRadius: 2,
+      bgcolor: '#fff',
+      '& .MuiOutlinedInput-notchedOutline': { borderColor: '#c7d6ea' },
+      '&:hover .MuiOutlinedInput-notchedOutline': { borderColor: '#9bbcff' },
+      '&.Mui-focused .MuiOutlinedInput-notchedOutline': { borderColor: '#1d7cf2', borderWidth: 1.5 },
+      '& .MuiSelect-select': {
+        minHeight: 24,
+        py: 1.15,
+        color: '#415a78',
+        fontWeight: 600
+      }
+    };
+    const desercionInputLabelSx = {
+      bgcolor: '#fff',
+      px: 0.6,
+      color: '#5b7190',
+      fontWeight: 700,
+      '&.Mui-focused': { color: '#1559c6' }
+    };
     const periodYearCounts = visibleByPeriod.reduce((acc, row) => {
       const [yearRaw = ''] = String(row?.periodDisplay || '').split('-');
       const yearKey = String(yearRaw || '').trim();
@@ -8465,7 +8553,7 @@ const renderCategoryBars = (items = [], options = {}) => {
 
     const renderMainPeriodChart = (height = { xs: 300, md: 340 }, chartDomId = '') => {
       return (
-      <Box id={chartDomId || undefined} sx={{ height, maxWidth: 920, mx: 'auto', width: '100%' }}>
+      <Box id={chartDomId || undefined} sx={{ height, width: '100%' }}>
         <ResponsiveContainer width="100%" height="100%">
           <BarChart data={visibleByPeriod} margin={{ top: 20, right: 18, left: 8, bottom: 34 }} barGap={2} barCategoryGap="14%">
             <CartesianGrid strokeDasharray="3 3" stroke="#dbe7f5" />
@@ -8489,13 +8577,13 @@ const renderCategoryBars = (items = [], options = {}) => {
               formatter={(value, name) => [pct2(value), name]}
               labelFormatter={(label, payload) => payload?.[0]?.payload?.periodDisplay || label}
             />
-            <Bar dataKey="programa" name="Programa" fill="#2563eb" radius={[0, 0, 0, 0]} maxBarSize={50}>
+            <Bar dataKey="programa" name="Programa" fill="#0f2358" radius={[0, 0, 0, 0]} maxBarSize={42}>
               <LabelList
                 dataKey="programa"
-                position="insideTop"
+                position="top"
                 offset={6}
                 formatter={(v) => pct2(v)}
-                style={{ fontSize: 10, fontWeight: 900, fill: '#ffffff', textShadow: '0 1px 2px rgba(0,0,0,.35)' }}
+                style={{ fontSize: 10, fontWeight: 900, fill: '#0f2358' }}
               />
             </Bar>
           </BarChart>
@@ -8503,6 +8591,149 @@ const renderCategoryBars = (items = [], options = {}) => {
       </Box>
       );
     };
+
+    const renderAllReferencesChart = (height = { xs: 360, md: 460 }, chartDomId = '') => (
+      <Box id={chartDomId || undefined} sx={{ height, width: '100%' }}>
+        <ResponsiveContainer width="100%" height="100%">
+          <BarChart data={visibleByPeriod} margin={{ top: 22, right: 18, left: 8, bottom: 44 }} barGap={2} barCategoryGap="12%">
+            <CartesianGrid strokeDasharray="3 3" stroke="#dbe7f5" />
+            <XAxis
+              dataKey="periodDisplay"
+              padding={{ left: 12, right: 12 }}
+              tickMargin={10}
+              interval={0}
+              tick={periodTickRenderer}
+              height={isAnnualView ? 48 : 72}
+              minTickGap={6}
+            />
+            <YAxis
+              domain={[desercionAxisBounds.min, desercionAxisBounds.max]}
+              tickFormatter={(v) => `${(Number(v) * 100).toFixed(0)}%`}
+              width={56}
+              tickMargin={8}
+              tick={{ fontSize: 11, fill: '#475569' }}
+            />
+            <RechartsTooltip
+              formatter={(value, name) => [pct2(value), name]}
+              labelFormatter={(label, payload) => payload?.[0]?.payload?.periodDisplay || label}
+            />
+            <Bar dataKey="nacional" name="Deserción nacional" fill="#0f2358" radius={[0, 0, 0, 0]} maxBarSize={34}>
+              <LabelList
+                dataKey="nacional"
+                content={({ x, y, width, height, value }) => (
+                  Number.isFinite(Number(value)) && Number(value) > 0 && height > 22
+                    ? (
+                      <text
+                        x={Number(x) + Number(width) / 2}
+                        y={Number(y) + Number(height) / 2 + 5}
+                        textAnchor="middle"
+                        dominantBaseline="middle"
+                        transform={`rotate(-90 ${Number(x) + Number(width) / 2} ${Number(y) + Number(height) / 2 + 5})`}
+                        style={{
+                          fontFamily: 'Arial, Helvetica, sans-serif',
+                          fontSize: 11,
+                          fontWeight: 600,
+                          fill: '#fff'
+                        }}
+                      >
+                        {pct1(value)}
+                      </text>
+                    )
+                    : null
+                )}
+              />
+            </Bar>
+            <Bar dataKey="departamental" name="Deserción departamental" fill="#275294" radius={[0, 0, 0, 0]} maxBarSize={34}>
+              <LabelList
+                dataKey="departamental"
+                content={({ x, y, width, height, value }) => (
+                  Number.isFinite(Number(value)) && Number(value) > 0 && height > 22
+                    ? (
+                      <text
+                        x={Number(x) + Number(width) / 2}
+                        y={Number(y) + Number(height) / 2 + 5}
+                        textAnchor="middle"
+                        dominantBaseline="middle"
+                        transform={`rotate(-90 ${Number(x) + Number(width) / 2} ${Number(y) + Number(height) / 2 + 5})`}
+                        style={{
+                          fontFamily: 'Arial, Helvetica, sans-serif',
+                          fontSize: 11,
+                          fontWeight: 600,
+                          fill: '#fff'
+                        }}
+                      >
+                        {pct1(value)}
+                      </text>
+                    )
+                    : null
+                )}
+              />
+            </Bar>
+            <Bar dataKey="institucional" name="Deserción institucional" fill="#5f91da" radius={[0, 0, 0, 0]} maxBarSize={34}>
+              <LabelList
+                dataKey="institucional"
+                content={({ x, y, width, height, value }) => (
+                  Number.isFinite(Number(value)) && Number(value) > 0 && height > 22
+                    ? (
+                      <text
+                        x={Number(x) + Number(width) / 2}
+                        y={Number(y) + Number(height) / 2 + 5}
+                        textAnchor="middle"
+                        dominantBaseline="middle"
+                        transform={`rotate(-90 ${Number(x) + Number(width) / 2} ${Number(y) + Number(height) / 2 + 5})`}
+                        style={{
+                          fontFamily: 'Arial, Helvetica, sans-serif',
+                          fontSize: 11,
+                          fontWeight: 600,
+                          fill: '#fff'
+                        }}
+                      >
+                        {pct1(value)}
+                      </text>
+                    )
+                    : null
+                )}
+              />
+            </Bar>
+            <Bar dataKey="programa" name="Deserción del programa" fill="#a8c4ec" radius={[0, 0, 0, 0]} maxBarSize={34}>
+              <LabelList
+                dataKey="programa"
+                content={({ x, y, width, height, value }) => (
+                  Number.isFinite(Number(value)) && Number(value) > 0 && height > 22
+                    ? (
+                      <text
+                        x={Number(x) + Number(width) / 2}
+                        y={Number(y) + Number(height) / 2 + 5}
+                        textAnchor="middle"
+                        dominantBaseline="middle"
+                        transform={`rotate(-90 ${Number(x) + Number(width) / 2} ${Number(y) + Number(height) / 2 + 5})`}
+                        style={{
+                          fontFamily: 'Arial, Helvetica, sans-serif',
+                          fontSize: 11,
+                          fontWeight: 600,
+                          fill: '#fff'
+                        }}
+                      >
+                        {pct1(value)}
+                      </text>
+                    )
+                    : null
+                )}
+              />
+            </Bar>
+            <Legend
+              wrapperStyle={{ fontSize: 12, fontWeight: 700, paddingTop: 10 }}
+              payload={[
+                { value: 'Deserción nacional', type: 'square', color: '#0f2358' },
+                { value: 'Deserción departamental', type: 'square', color: '#275294' },
+                { value: 'Deserción institucional', type: 'square', color: '#5f91da' },
+                { value: 'Deserción del programa', type: 'square', color: '#a8c4ec' }
+              ]}
+            />
+          </BarChart>
+        </ResponsiveContainer>
+      </Box>
+    );
 
     const renderLatestComparisonChart = (height = { xs: 220, sm: 200 }, chartDomId = '') => (
       <Box id={chartDomId || undefined} sx={{ height, maxWidth: 560, mx: 'auto', width: '100%' }}>
@@ -8572,19 +8803,19 @@ const renderCategoryBars = (items = [], options = {}) => {
               <Bar dataKey={panel.leftKey} name={panel.leftLabel} fill={panel.leftColor} radius={[0, 0, 0, 0]} barSize={36}>
                 <LabelList
                   dataKey={panel.leftKey}
-                  position="insideTop"
+                  position="top"
                   offset={5}
                   formatter={(v) => pct1(v)}
-                  style={{ fontSize: 9, fontWeight: 900, fill: '#ffffff', textShadow: '0 1px 2px rgba(0,0,0,.35)' }}
+                  style={{ fontSize: 9, fontWeight: 900, fill: panel.leftColor }}
                 />
               </Bar>
               <Bar dataKey={panel.rightKey} name={panel.rightLabel} fill={panel.rightColor} radius={[0, 0, 0, 0]} barSize={36}>
                 <LabelList
                   dataKey={panel.rightKey}
-                  position="insideTop"
+                  position="top"
                   offset={5}
                   formatter={(v) => pct1(v)}
-                  style={{ fontSize: 9, fontWeight: 900, fill: '#ffffff', textShadow: '0 1px 2px rgba(0,0,0,.35)' }}
+                  style={{ fontSize: 9, fontWeight: 900, fill: panel.rightColor }}
                 />
               </Bar>
           </BarChart>
@@ -8603,6 +8834,11 @@ const renderCategoryBars = (items = [], options = {}) => {
         title: isAnnualView ? 'Comparativo ultimo año' : 'Comparativo ultimo corte',
         subtitle: isAnnualView ? 'Comparativo ampliado de referencias para el ultimo año visible.' : 'Comparativo ampliado de referencias para el ultimo periodo visible.',
         content: renderLatestComparisonChart({ xs: 360, md: 460 })
+      },
+      all_references: {
+        title: isAnnualView ? 'Desercion anual consolidada' : 'Desercion por periodo consolidada',
+        subtitle: 'Vista ampliada con programa y referentes nacional, departamental e institucional.',
+        content: renderAllReferencesChart({ xs: 440, md: 620 })
       },
       pair_nacional: {
         title: 'Programa vs Nacional',
@@ -8626,354 +8862,387 @@ const renderCategoryBars = (items = [], options = {}) => {
         <Paper
           elevation={0}
           sx={{
-            p: { xs: 1.6, md: 2 },
-            border: '1px solid #dbe6f5',
-            borderRadius: 3,
-            background: 'linear-gradient(135deg, #f8fbff 0%, #f3f7ff 46%, #eef4ff 100%)',
+            p: { xs: 2, md: 3 },
+            minHeight: { xs: 180, md: 142 },
+            border: '1px solid #bfd8ff',
+            borderRadius: 3.8,
+            background: 'linear-gradient(135deg, #1457b7 0%, #1f7fe4 58%, #55b2f4 100%)',
+            color: '#fff',
             position: 'relative',
             overflow: 'hidden'
           }}
         >
-          <Box sx={{ position: 'absolute', right: -32, top: -42, width: 170, height: 170, borderRadius: '50%', bgcolor: 'rgba(37,99,235,0.08)' }} />
-          <Stack direction={{ xs: 'column', lg: 'row' }} spacing={1.4} justifyContent="space-between" alignItems={{ xs: 'flex-start', lg: 'center' }}>
-            <Stack spacing={1}>
-              <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap" useFlexGap>
-                <Button variant="outlined" startIcon={<ArrowBackRoundedIcon />} onClick={() => setPoblacionalPanel('hub')}>
-                  Volver a dashboards Poblacional
-                </Button>
-                <Chip label="Desercion" sx={{ bgcolor: '#dbeafe', color: '#1d4ed8', fontWeight: 800 }} />
-                <Chip label={dataAvailable ? 'Dashboard activo' : 'Esperando datos'} sx={{ bgcolor: dataAvailable ? '#dcfce7' : '#fff7ed', color: dataAvailable ? '#166534' : '#c2410c', fontWeight: 700 }} />
-              </Stack>
+          <Box sx={{ position: 'absolute', left: 100, top: -28, width: 180, height: 180, borderRadius: '50%', bgcolor: 'rgba(255,255,255,0.07)' }} />
+          <Box sx={{ position: 'absolute', right: 252, top: 34, width: 90, height: 90, borderRadius: '50%', bgcolor: 'rgba(255,255,255,0.08)' }} />
+          <Box sx={{ position: 'absolute', right: -42, top: -58, width: 220, height: 220, borderRadius: '50%', bgcolor: 'rgba(255,255,255,0.12)' }} />
+
+          <Stack
+            direction={{ xs: 'column', md: 'row' }}
+            spacing={{ xs: 2, md: 2.4 }}
+            alignItems={{ xs: 'flex-start', md: 'center' }}
+            justifyContent="space-between"
+            sx={{ position: 'relative', zIndex: 1 }}
+          >
+            <Stack direction="row" spacing={2.2} alignItems="center">
+              <Box
+                sx={{
+                  width: { xs: 58, md: 70 },
+                  height: { xs: 58, md: 70 },
+                  borderRadius: 3,
+                  border: '1px solid rgba(255,255,255,0.32)',
+                  bgcolor: 'rgba(255,255,255,0.12)',
+                  display: 'grid',
+                  placeItems: 'center',
+                  boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.18)'
+                }}
+              >
+                <TrendingDownIcon sx={{ fontSize: { xs: 30, md: 38 }, color: '#fff' }} />
+              </Box>
               <Box>
-                <Typography sx={{ fontWeight: 900, fontSize: { xs: 22, md: 28 }, color: '#0f172a', lineHeight: 1.15 }}>
-                  Analitica de Desercion
+                <Typography sx={{ fontSize: 11, fontWeight: 900, letterSpacing: 1.1, textTransform: 'uppercase', color: 'rgba(255,255,255,0.82)' }}>
+                  Gestión de la Información
                 </Typography>
-                <Typography sx={{ color: '#5b6578', mt: 0.35 }}>
-                  {isAnnualView
-                    ? 'Comparativo anual del programa frente a referentes institucional, departamental y nacional.'
-                    : 'Comparativo del programa frente a referentes institucional, departamental y nacional por periodo/cohorte.'}
+                <Typography sx={{ mt: 0.35, fontWeight: 950, fontSize: { xs: 26, md: 31 }, lineHeight: 1, color: '#fff' }}>
+                  Analítica de Deserción
+                </Typography>
+                <Typography sx={{ mt: 0.75, fontSize: { xs: 14, md: 16 }, fontWeight: 900, letterSpacing: 1.2, color: 'rgba(255,255,255,0.9)' }}>
+                  UNICESMAG
                 </Typography>
               </Box>
             </Stack>
-            <Grid container spacing={1} sx={{ width: { xs: '100%', lg: 760 }, maxWidth: '100%' }}>
-              <Grid item xs={12} md={tipoActivo === 'COHORTE' ? 4 : 5}>
-                <FormControl fullWidth size="small">
-                  <InputLabel id="desercion-programa-label">Programa</InputLabel>
-                  <Select
-                    labelId="desercion-programa-label"
-                    displayEmpty
-                    label="Programa"
-                    value={desercionUi.programa}
-                    onChange={(e) => setDesercionUi((prev) => ({ ...prev, programa: e.target.value }))}
-                    renderValue={(v) => v || 'Todos los programas'}
-                  >
-                    <MenuItem value="">Todos los programas</MenuItem>
-                    {programas.map((p) => <MenuItem key={p} value={p}>{p}</MenuItem>)}
-                  </Select>
-                </FormControl>
-              </Grid>
-              <Grid item xs={12} md={3}>
-                <FormControl fullWidth size="small">
-                  <InputLabel id="desercion-tipo-label">Vista</InputLabel>
-                  <Select
-                    labelId="desercion-tipo-label"
-                    label="Vista"
-                    value={desercionUi.tipo}
-                    onChange={(e) => setDesercionUi((prev) => ({ ...prev, tipo: e.target.value }))}
-                  >
-                    {tipos.map((t) => <MenuItem key={t} value={t}>{t}</MenuItem>)}
-                  </Select>
-                </FormControl>
-              </Grid>
-              {tipoActivo === 'COHORTE' && (
-                <Grid item xs={12} md={3}>
-                  <FormControl fullWidth size="small">
-                    <InputLabel id="desercion-cohorte-corte-label">Cohorte</InputLabel>
-                    <Select
-                      labelId="desercion-cohorte-corte-label"
-                      label="Cohorte"
-                      value={desercionUi.corteCohorte}
-                      onChange={(e) => setDesercionUi((prev) => ({ ...prev, corteCohorte: e.target.value }))}
-                    >
-                      <MenuItem value="Todos">Todos</MenuItem>
-                      {cortesCohorte.map((c) => <MenuItem key={c} value={c}>{c}</MenuItem>)}
-                    </Select>
-                  </FormControl>
-                </Grid>
-              )}
-              <Grid item xs={12} md={tipoActivo === 'COHORTE' ? 12 : 4}>
-                <FormControl fullWidth size="small">
-                  <InputLabel id="desercion-periodos-label">Periodos a mostrar</InputLabel>
-                  <Select
-                    labelId="desercion-periodos-label"
-                    multiple
-                    value={selectedPeriods}
-                    label="Periodos a mostrar"
-                    onChange={(e) => {
-                      const value = typeof e.target.value === 'string' ? e.target.value.split(',') : e.target.value;
-                      if (value.includes('__ALL__')) {
-                        const allSelected = selectedPeriods.length === periodOptions.length && periodOptions.length > 0;
-                        setDesercionUi((prev) => ({ ...prev, periodos: allSelected ? [] : periodOptions.map((p) => p.label) }));
-                        return;
-                      }
-                      setDesercionUi((prev) => ({ ...prev, periodos: value.filter((v) => v !== '__ALL__') }));
-                    }}
-                    renderValue={(vals) => {
-                      const arr = Array.isArray(vals) ? vals : [];
-                      if (!arr.length) return 'Todos los periodos';
-                      if (arr.length <= 3) return arr.join(', ');
-                      return `${arr.length} periodos seleccionados`;
-                    }}
-                  >
-                    <MenuItem value="__ALL__" onClick={() => {
-                      const allSelected = selectedPeriods.length === periodOptions.length && periodOptions.length > 0;
-                      setDesercionUi((prev) => ({ ...prev, periodos: allSelected ? [] : periodOptions.map((p) => p.label) }));
-                    }}>
-                      <Checkbox checked={periodOptions.length > 0 && selectedPeriods.length === periodOptions.length} />
-                      <ListItemText primary="Todos los periodos" />
-                    </MenuItem>
-                    {periodOptions.map((p) => (
-                      <MenuItem key={p.label} value={p.label}>
-                        <Checkbox checked={selectedPeriods.includes(p.label)} />
-                        <ListItemText primary={p.label} />
-                      </MenuItem>
-                    ))}
-                  </Select>
-                </FormControl>
-              </Grid>
-            </Grid>
+
+            <Button
+              startIcon={<ArrowBackRoundedIcon />}
+              onClick={() => setPoblacionalPanel('hub')}
+              variant="outlined"
+              sx={{
+                alignSelf: { xs: 'stretch', md: 'center' },
+                minWidth: { xs: '100%', md: 250 },
+                height: 48,
+                px: 2.4,
+                borderRadius: 2.4,
+                color: '#fff',
+                borderColor: 'rgba(255,255,255,0.38)',
+                bgcolor: 'rgba(255,255,255,0.14)',
+                fontWeight: 900,
+                textTransform: 'none',
+                backdropFilter: 'blur(4px)',
+                '&:hover': {
+                  bgcolor: 'rgba(255,255,255,0.22)',
+                  borderColor: 'rgba(255,255,255,0.62)'
+                }
+              }}
+            >
+              Volver a dashboards Poblacional
+            </Button>
           </Stack>
         </Paper>
 
-        {!desercionRows.length ? (
+        <Paper
+          elevation={0}
+          sx={{
+            borderRadius: 3.2,
+            border: '1px solid #cfe0f8',
+            bgcolor: '#f8fbff',
+            overflow: 'hidden',
+            boxShadow: '0 12px 30px rgba(29,78,216,0.06)'
+          }}
+        >
+          <Stack
+            direction="row"
+            justifyContent="space-between"
+            alignItems="center"
+            sx={{
+              px: { xs: 1.8, md: 2.2 },
+              py: 1,
+              background: 'linear-gradient(180deg, #e8f1ff 0%, #f7fbff 100%)',
+              borderBottom: '1px solid #d9e7fb'
+            }}
+          >
+            <Stack direction="row" alignItems="center" spacing={1}>
+              <Box sx={{ width: 6, height: 6, borderRadius: '50%', bgcolor: '#1d7cf2' }} />
+              <Typography sx={{ fontSize: 12, fontWeight: 950, letterSpacing: 0.8, textTransform: 'uppercase', color: '#1559c6' }}>
+                Filtros de consulta
+              </Typography>
+            </Stack>
+            <Chip
+              size="small"
+              label={`${filtered.length} registros`}
+              sx={{ height: 23, bgcolor: '#dbeafe', color: '#075cc7', fontWeight: 900, fontSize: 11 }}
+            />
+          </Stack>
+
+          <Box sx={{ p: { xs: 1.6, md: 2 } }}>
+            <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1.2, alignItems: 'center' }}>
+              <FormControl size="small" sx={{ flex: '1.35 1 210px', minWidth: 0 }}>
+                <InputLabel id="desercion-tipo-label" shrink sx={desercionInputLabelSx}>Tipo de deserción</InputLabel>
+                <Select
+                  labelId="desercion-tipo-label"
+                  label="Tipo de deserción"
+                  notched
+                  value={desercionUi.tipo}
+                  onChange={(e) => setDesercionUi((prev) => ({ ...prev, tipo: e.target.value, corteCohorte: 'Todos', periodos: [] }))}
+                  sx={desercionSelectSx}
+                >
+                  {tipos.map((t) => <MenuItem key={t} value={t}>{t}</MenuItem>)}
+                </Select>
+              </FormControl>
+              <FormControl size="small" sx={{ flex: '3.2 1 320px', minWidth: 0 }}>
+                <InputLabel id="desercion-programa-label" shrink sx={desercionInputLabelSx}>Programa</InputLabel>
+                <Select
+                  labelId="desercion-programa-label"
+                  displayEmpty
+                  label="Programa"
+                  notched
+                  value={desercionUi.programa}
+                  onChange={(e) => setDesercionUi((prev) => ({ ...prev, programa: e.target.value, periodos: [] }))}
+                  renderValue={(v) => v || 'Todos los programas'}
+                  sx={desercionSelectSx}
+                >
+                  <MenuItem value="">Todos los programas</MenuItem>
+                  {programas.map((p) => <MenuItem key={p} value={p}>{p}</MenuItem>)}
+                </Select>
+              </FormControl>
+              {tipoActivo === 'COHORTE' && (
+                <FormControl size="small" sx={{ flex: '1.5 1 160px', minWidth: 0 }}>
+                  <InputLabel id="desercion-cohorte-corte-label" shrink sx={desercionInputLabelSx}>Cohorte</InputLabel>
+                  <Select
+                    labelId="desercion-cohorte-corte-label"
+                    label="Cohorte"
+                    notched
+                    value={desercionUi.corteCohorte}
+                    onChange={(e) => setDesercionUi((prev) => ({ ...prev, corteCohorte: e.target.value, periodos: [] }))}
+                    sx={desercionSelectSx}
+                  >
+                    <MenuItem value="Todos">Todos</MenuItem>
+                    {cortesCohorte.map((c) => <MenuItem key={c} value={c}>{c}</MenuItem>)}
+                  </Select>
+                </FormControl>
+              )}
+              <FormControl size="small" sx={{ flex: '2 1 200px', minWidth: 0 }}>
+                <InputLabel id="desercion-periodos-label" shrink sx={desercionInputLabelSx}>Periodo</InputLabel>
+                <Select
+                  labelId="desercion-periodos-label"
+                  multiple
+                  value={selectedPeriods}
+                  label="Periodo"
+                  notched
+                  onChange={(e) => {
+                    const value = typeof e.target.value === 'string' ? e.target.value.split(',') : e.target.value;
+                    if (value.includes('__ALL__')) {
+                      const allSelected = selectedPeriods.length === periodOptions.length && periodOptions.length > 0;
+                      setDesercionUi((prev) => ({ ...prev, periodos: allSelected ? [] : periodOptions.map((p) => p.label) }));
+                      return;
+                    }
+                    setDesercionUi((prev) => ({ ...prev, periodos: value.filter((v) => v !== '__ALL__') }));
+                  }}
+                  renderValue={(vals) => {
+                    const arr = Array.isArray(vals) ? vals : [];
+                    if (!arr.length) return 'Selecciona periodos';
+                    if (arr.length <= 3) return arr.join(', ');
+                    return `${arr.length} periodos seleccionados`;
+                  }}
+                  sx={desercionSelectSx}
+                >
+                  <MenuItem value="__ALL__" onClick={() => {
+                    const allSelected = selectedPeriods.length === periodOptions.length && periodOptions.length > 0;
+                    setDesercionUi((prev) => ({ ...prev, periodos: allSelected ? [] : periodOptions.map((p) => p.label) }));
+                  }}>
+                    <Checkbox checked={periodOptions.length > 0 && selectedPeriods.length === periodOptions.length} />
+                    <ListItemText primary="Todos los periodos" />
+                  </MenuItem>
+                  {periodOptions.map((p) => (
+                    <MenuItem key={p.label} value={p.label}>
+                      <Checkbox checked={selectedPeriods.includes(p.label)} />
+                      <ListItemText primary={p.label} />
+                    </MenuItem>
+                  ))}
+                </Select>
+              </FormControl>
+              <Tooltip title="Limpiar filtros">
+                <IconButton
+                  onClick={resetDesercionFilters}
+                  sx={{
+                    flex: '0 0 42px',
+                    width: 42,
+                    height: 42,
+                    border: '1px solid #c7d6ea',
+                    bgcolor: '#fff',
+                    color: '#9aa8b8',
+                    '&:hover': { bgcolor: '#eff6ff', color: '#1559c6', borderColor: '#9bbcff' }
+                  }}
+                >
+                  <FilterAltOffIcon fontSize="small" />
+                </IconButton>
+              </Tooltip>
+            </Box>
+
+            <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap" useFlexGap sx={{ mt: 1.5 }}>
+              <Chip size="small" label={`Filtrados: ${filtered.length}`} sx={{ bgcolor: '#dbeafe', color: '#075cc7', fontWeight: 900 }} />
+              <Chip size="small" label={`Total BD: ${parsed.length}`} sx={{ bgcolor: '#eaf2ff', color: '#075cc7', fontWeight: 900 }} />
+              <Button
+                size="small"
+                startIcon={<RefreshIcon />}
+                onClick={() => setDesercionUi((prev) => ({ ...prev }))}
+                sx={{ color: '#075cc7', fontWeight: 800, textTransform: 'none' }}
+              >
+                Actualizar
+              </Button>
+            </Stack>
+          </Box>
+        </Paper>
+
+        {!desercionRows.length || !periodOptions.length || !hasSelectedPeriodFilter || !visibleByPeriod.length ? (
           renderPoblacionalPlaceholderPanel({
-            title: 'Dashboard de Deserción',
-            description: 'Aún no hay datos importados en la subbase Deserción.',
-            templateHint: 'Importa el archivo con hojas DESERCION_POR_PERIODO y DESERCION_POR_COHORTE.'
+            title: 'Selecciona periodos para visualizar la información',
+            description: hasSelectedPeriodFilter
+              ? 'No hay periodos disponibles para construir el tablero con los filtros actuales.'
+              : 'El tablero se construye únicamente con los periodos que elijas en los filtros de consulta.',
+            templateHint: 'Sin periodo seleccionado',
+            hideToolbar: true,
+            filterEmptyState: true
           })
         ) : (
           <>
-            <Grid container spacing={1.4}>
-              {[
-                { label: 'Tasa programa', value: latestPeriod?.programa, color: '#dc2626', sub: isAnnualView ? 'Ultimo año visible' : 'Ultimo periodo visible' },
-                { label: 'Tasa institucional', value: latestPeriod?.institucional, color: '#2563eb', sub: 'Referencia interna' },
-                { label: 'Tasa nacional', value: latestPeriod?.nacional, color: '#f59e0b', sub: 'Referencia externa' },
-                { label: 'Brecha vs institucional', value: latestPeriod ? (latestPeriod.programa - latestPeriod.institucional) : null, color: '#7c3aed', sub: 'Diferencia en puntos porcentuales', pp: true }
-              ].map((kpi) => (
-                <Grid item xs={12} sm={6} lg={3} key={kpi.label}>
+            <Box
+              sx={{
+                width: '100%',
+                display: 'grid',
+                gridTemplateColumns: { xs: '1fr', md: 'repeat(3, minmax(0, 1fr))' },
+                gap: 1.5
+              }}
+            >
+              {averageKpis.map((kpi) => {
+                const Icon = kpi.Icon;
+                return (
                   <Paper
+                    key={kpi.label}
                     elevation={0}
                     sx={{
-                      p: 1.6,
-                      borderRadius: 2.6,
-                      border: '1px solid #e5edf7',
+                      p: 1.8,
+                      borderRadius: 3,
+                      border: '1px solid #dfe8f5',
                       bgcolor: '#fff',
                       height: '100%',
-                      boxShadow: '0 8px 22px rgba(15,23,42,0.04)'
+                      boxShadow: '0 10px 26px rgba(15,23,42,0.05)',
+                      transition: 'transform .18s ease, box-shadow .18s ease, border-color .18s ease',
+                      '&:hover': {
+                        transform: 'translateY(-3px)',
+                        boxShadow: `0 18px 34px ${kpi.color}22`,
+                        borderColor: `${kpi.color}55`
+                      }
                     }}
                   >
-                    <Stack direction="row" justifyContent="space-between" spacing={1}>
-                      <Typography variant="caption" sx={{ color: '#64748b', fontWeight: 800 }}>
-                        {kpi.label}
-                      </Typography>
-                      <Chip size="small" label={latestPeriod?.periodDisplay || '-'} sx={{ height: 22, bgcolor: '#eff6ff', color: '#1d4ed8', fontWeight: 700, maxWidth: 120 }} />
+                    <Stack direction="row" justifyContent="space-between" alignItems="flex-start" spacing={1.3}>
+                      <Box>
+                        <Typography variant="caption" sx={{ color: '#64748b', fontWeight: 900, letterSpacing: 0.2 }}>
+                          {kpi.label}
+                        </Typography>
+                        <Typography sx={{ mt: 0.8, fontWeight: 950, fontSize: { xs: 28, md: 31 }, color: '#0f172a', lineHeight: 1 }}>
+                          {kpi.value === null || kpi.value === undefined ? '-' : `${(Number(kpi.value) * 100).toFixed(2)}%`}
+                        </Typography>
+                        <Typography variant="body2" sx={{ mt: 0.55, color: '#64748b', fontWeight: 600 }}>
+                          {kpi.sub}
+                        </Typography>
+                      </Box>
+                      <Box
+                        sx={{
+                          width: 44,
+                          height: 44,
+                          borderRadius: 2.4,
+                          bgcolor: kpi.bg,
+                          color: kpi.color,
+                          display: 'grid',
+                          placeItems: 'center',
+                          border: `1px solid ${kpi.color}22`
+                        }}
+                      >
+                        <Icon fontSize="small" />
+                      </Box>
                     </Stack>
-                    <Typography sx={{ mt: 0.75, fontWeight: 900, fontSize: 26, color: '#0f172a', lineHeight: 1.05 }}>
-                      {kpi.value === null || kpi.value === undefined ? '-' : (kpi.pp ? `${(Number(kpi.value) * 100).toFixed(2)} pp` : `${(Number(kpi.value) * 100).toFixed(2)}%`)}
-                    </Typography>
-                    <Typography variant="body2" sx={{ mt: 0.35, color: '#64748b' }}>{kpi.sub}</Typography>
-                    <Box sx={{ mt: 0.8, height: 4, borderRadius: 99, bgcolor: `${kpi.color}22` }}>
+                    <Box sx={{ mt: 1.35, height: 4, borderRadius: 99, bgcolor: `${kpi.color}16` }}>
                       <Box sx={{ width: '100%', height: '100%', borderRadius: 99, bgcolor: kpi.color }} />
                     </Box>
                   </Paper>
-                </Grid>
-              ))}
-            </Grid>
+                );
+              })}
+            </Box>
 
-            <Grid container spacing={1.6} alignItems="stretch">
-              <Grid item xs={12} lg={8}>
-                <Paper elevation={0} sx={{ p: 1.6, borderRadius: 2.8, border: '1px solid #e2e8f0', bgcolor: '#fff', height: '100%' }}>
-                  <Stack direction={{ xs: 'column', md: 'row' }} justifyContent="space-between" spacing={0.8} sx={{ mb: 1.2 }}>
-                    <Box>
-                      <Typography sx={{ fontWeight: 900, color: '#0f172a' }}>{isAnnualView ? 'Desercion anual del programa' : 'Desercion por periodo del programa'}</Typography>
-                      <Typography variant="body2" sx={{ color: '#64748b' }}>
-                        {isAnnualView
-                          ? 'Serie anual del programa según el filtro seleccionado.'
-                          : 'Fechas entre enero y junio se normalizan a `AAAA-I`; fechas entre julio y diciembre se normalizan a `AAAA-II`.'}
-                      </Typography>
-                    </Box>
-                    <Stack direction="row" spacing={0.8} flexWrap="wrap" useFlexGap alignItems="center">
-                      {[{ label: 'Programa', color: '#dc2626' }].map((tag) => (
-                        <Chip
-                          key={tag.label}
-                          size="small"
-                          label={tag.label}
-                          sx={{ bgcolor: `${tag.color}16`, color: tag.color, fontWeight: 700, border: `1px solid ${tag.color}30` }}
-                        />
-                      ))}
-                      {chartHeaderActions('trend', 'serie de desercion', 'desercion-chart-trend', 'desercion_tendencia')}
-                    </Stack>
-                  </Stack>
-                  {renderMainPeriodChart({ xs: 330, md: 410 }, 'desercion-chart-trend')}
-                </Paper>
-              </Grid>
-              <Grid item xs={12} lg={4}>
-                <Stack spacing={1.6} sx={{ height: '100%' }}>
-                <Paper elevation={0} sx={{ p: 1.5, borderRadius: 2.6, border: '1px solid #e2e8f0', bgcolor: '#fff' }}>
-                  <Stack direction="row" justifyContent="space-between" alignItems="center" sx={{ mb: 0.2 }}>
-                    <Typography sx={{ fontWeight: 900, color: '#0f172a' }}>{isAnnualView ? 'Comparativo ultimo año' : 'Comparativo ultimo corte'}</Typography>
-                    {chartHeaderActions('latest_compare', isAnnualView ? 'comparativo del ultimo año' : 'comparativo del ultimo corte', 'desercion-chart-latest', 'desercion_comparativo_ultimo')}
-                  </Stack>
-                  <Typography variant="body2" sx={{ color: '#64748b', mb: 1 }}>
-                    {isAnnualView ? 'Snapshot de referencias para el año seleccionado.' : 'Snapshot de referencias para el corte seleccionado.'}
-                  </Typography>
-                  {renderLatestComparisonChart({ xs: 220, sm: 200 }, 'desercion-chart-latest')}
-                </Paper>
-                <Paper elevation={0} sx={{ p: 1.5, borderRadius: 2.6, border: '1px solid #e2e8f0', bgcolor: '#fff', flex: 1, minHeight: 250 }}>
-                  <Typography sx={{ fontWeight: 900, color: '#0f172a', mb: 0.2 }}>Programas con mayor desercion</Typography>
-                  <Typography variant="body2" sx={{ color: '#64748b', mb: 1 }}>Promedio historico de la tasa de desercion por programa.</Typography>
-                  <Stack spacing={0.9}>
-                    {rankingProgramas.slice(0, Math.min(Math.max(Number(desercionUi.rankingLimit) || 7, 3), 12)).map((item) => (
-                      <Box key={item.label}>
-                        <Stack direction="row" justifyContent="space-between" spacing={1}>
-                          <Typography variant="body2" sx={{ color: '#0f172a', fontWeight: 600 }}>{item.label}</Typography>
-                          <Typography variant="body2" sx={{ color: '#b91c1c', fontWeight: 800 }}>{(item.promedio * 100).toFixed(2)}%</Typography>
-                        </Stack>
-                        <LinearProgress variant="determinate" value={Math.min(100, item.promedio * 100)} sx={{ mt: 0.4, height: 6, borderRadius: 10, bgcolor: '#fee2e2', '& .MuiLinearProgress-bar': { bgcolor: '#ef4444' } }} />
-                      </Box>
-                    ))}
-                  </Stack>
-                </Paper>
-                </Stack>
-              </Grid>
-            </Grid>
-
-            <Paper elevation={0} sx={{ p: 1.6, borderRadius: 2.8, border: '1px solid #e2e8f0', bgcolor: '#fff' }}>
-              <Stack direction={{ xs: 'column', md: 'row' }} justifyContent="space-between" spacing={0.8} sx={{ mb: 1.4 }}>
+            <Paper elevation={0} sx={{ p: 1.8, borderRadius: 2.8, border: '1px solid #e2e8f0', bgcolor: '#fff', width: '100%' }}>
+              <Stack direction={{ xs: 'column', md: 'row' }} justifyContent="space-between" spacing={0.8} sx={{ mb: 1.2 }}>
                 <Box>
-                  <Typography sx={{ fontWeight: 900, color: '#0f172a' }}>
-                    Comparativos individuales por referente
-                  </Typography>
+                  <Typography sx={{ fontWeight: 900, color: '#0f172a' }}>{isAnnualView ? 'Desercion anual del programa' : 'Desercion por periodo del programa'}</Typography>
                   <Typography variant="body2" sx={{ color: '#64748b' }}>
-                    Se separa cada comparacion para facilitar lectura, seguimiento y analisis del comportamiento.
+                    {isAnnualView
+                      ? 'Serie anual del programa según el filtro seleccionado.'
+                      : 'Fechas entre enero y junio se normalizan a `AAAA-I`; fechas entre julio y diciembre se normalizan a `AAAA-II`.'}
                   </Typography>
                 </Box>
-                <Stack direction="row" spacing={0.8} flexWrap="wrap" useFlexGap>
-                  <Chip size="small" label="Orden sugerido: Programa vs Nacional" sx={{ bgcolor: '#fff7ed', color: '#c2410c', fontWeight: 700 }} />
-                  <Chip size="small" label="Luego Departamental" sx={{ bgcolor: '#f5f3ff', color: '#6d28d9', fontWeight: 700 }} />
-                  <Chip size="small" label="Finalmente Institucional" sx={{ bgcolor: '#eff6ff', color: '#1d4ed8', fontWeight: 700 }} />
+                <Stack direction="row" spacing={0.8} flexWrap="wrap" useFlexGap alignItems="center">
+                  <Chip size="small" label="Programa" sx={{ bgcolor: '#e8eef9', color: '#0f2358', fontWeight: 800, border: '1px solid #cbd7ee' }} />
+                  {chartHeaderActions('trend', 'serie de desercion', 'desercion-chart-trend', 'desercion_tendencia')}
                 </Stack>
               </Stack>
-
-              <Box
-                sx={{
-                  display: 'grid',
-                  gridTemplateColumns: '1fr',
-                  gap: 1.6
-                }}
-              >
-                {pairCharts.map((panel) => {
-                  const latestGap = latestPeriod
-                    ? ((Number(latestPeriod[panel.leftKey]) || 0) - (Number(latestPeriod[panel.rightKey]) || 0))
-                    : null;
-                  return (
-                    <Paper
-                      key={panel.key}
-                      elevation={0}
-                      sx={{
-                        p: 1.35,
-                        borderRadius: 2.5,
-                        border: '1px solid #e7edf6',
-                        bgcolor: '#fcfdff',
-                        minHeight: 460,
-                        height: '100%',
-                        boxShadow: 'inset 0 1px 0 rgba(255,255,255,.7)',
-                        display: 'flex',
-                        flexDirection: 'column'
-                      }}
-                    >
-                        <Stack direction="row" justifyContent="space-between" spacing={1} sx={{ mb: 0.8 }}>
-                          <Box sx={{ minWidth: 0 }}>
-                            <Typography sx={{ fontWeight: 900, color: '#0f172a', fontSize: 16 }}>
-                              {panel.title}
-                            </Typography>
-                            <Typography variant="body2" sx={{ color: '#64748b', fontSize: 12.8, lineHeight: 1.35 }}>
-                              {panel.subtitle}
-                            </Typography>
-                          </Box>
-                          <Chip
-                            size="small"
-                            label={latestGap === null ? '-' : `${(latestGap * 100).toFixed(2)} pp`}
-                            sx={{
-                              bgcolor: latestGap !== null && latestGap >= 0 ? '#dcfce7' : '#fee2e2',
-                              color: latestGap !== null && latestGap >= 0 ? '#166534' : '#b91c1c',
-                              fontWeight: 800
-                            }}
-                          />
-                          {chartHeaderActions(`pair_${panel.key}`, panel.title, `desercion-chart-pair-${panel.key}`, `desercion_${panel.key}`)}
-                        </Stack>
-
-                        <Stack direction="row" spacing={0.8} sx={{ mb: 1 }} flexWrap="wrap" useFlexGap>
-                          <Chip size="small" label={panel.leftLabel} sx={{ bgcolor: `${panel.leftColor}18`, color: panel.leftColor, fontWeight: 700 }} />
-                          <Chip size="small" label={panel.rightLabel} sx={{ bgcolor: `${panel.rightColor}18`, color: panel.rightColor, fontWeight: 700 }} />
-                        </Stack>
-
-                        {renderPairChart(panel, 360, `desercion-chart-pair-${panel.key}`)}
-
-                        <Grid container spacing={0.8} sx={{ mt: 'auto', pt: 0.7 }}>
-                          <Grid item xs={6}>
-                            <Paper elevation={0} sx={{ p: 0.9, borderRadius: 1.8, border: '1px solid #eef2f7', bgcolor: '#fff' }}>
-                              <Typography variant="caption" sx={{ color: '#64748b', fontWeight: 700 }}>
-                                {panel.leftLabel} (ultimo año)
-                              </Typography>
-                              <Typography sx={{ mt: 0.25, fontWeight: 900, color: panel.leftColor, fontSize: 18 }}>
-                                {latestPeriod ? `${((Number(latestPeriod[panel.leftKey]) || 0) * 100).toFixed(2)}%` : '-'}
-                              </Typography>
-                            </Paper>
-                          </Grid>
-                          <Grid item xs={6}>
-                            <Paper elevation={0} sx={{ p: 0.9, borderRadius: 1.8, border: '1px solid #eef2f7', bgcolor: '#fff' }}>
-                              <Typography variant="caption" sx={{ color: '#64748b', fontWeight: 700 }}>
-                                {panel.rightLabel} (ultimo año)
-                              </Typography>
-                              <Typography sx={{ mt: 0.25, fontWeight: 900, color: panel.rightColor, fontSize: 18 }}>
-                                {latestPeriod ? `${((Number(latestPeriod[panel.rightKey]) || 0) * 100).toFixed(2)}%` : '-'}
-                              </Typography>
-                            </Paper>
-                          </Grid>
-                        </Grid>
-                      </Paper>
-                  );
-                })}
-              </Box>
+              {renderMainPeriodChart({ xs: 280, md: 330 }, 'desercion-chart-trend')}
             </Paper>
 
-            <Grid container spacing={1.6}>
-              {qualityItems.map((item, idx) => (
-                <Grid item xs={12} md={4} key={item.label}>
-                  <Paper
-                    elevation={0}
-                    sx={{
-                      p: 1.5,
-                      borderRadius: 2.6,
-                      border: '1px solid #e2e8f0',
-                      bgcolor: idx === 0 ? '#fffaf9' : '#fff',
-                      height: '100%'
-                    }}
-                  >
-                    <Typography variant="caption" sx={{ color: '#64748b', fontWeight: 800 }}>
-                      {item.label}
-                    </Typography>
-                    <Typography sx={{ mt: 0.35, fontWeight: 900, color: '#0f172a', fontSize: 24 }}>
-                      {formatNumber(item.value)}
-                    </Typography>
-                    <Typography variant="body2" sx={{ color: '#64748b' }}>
-                      {item.caption}
-                    </Typography>
-                  </Paper>
-                </Grid>
+            <Paper elevation={0} sx={{ p: 1.8, borderRadius: 2.8, border: '1px solid #e2e8f0', bgcolor: '#fff', width: '100%' }}>
+              <Stack direction={{ xs: 'column', md: 'row' }} justifyContent="space-between" spacing={0.8} sx={{ mb: 1.2 }}>
+                <Box>
+                  <Typography sx={{ fontWeight: 900, color: '#0f172a' }}>
+                    {isAnnualView ? 'Desercion anual consolidada' : 'Desercion por periodo consolidada'}
+                  </Typography>
+                  <Typography variant="body2" sx={{ color: '#64748b' }}>
+                    Comparativo del programa frente a los referentes nacional, departamental e institucional.
+                  </Typography>
+                </Box>
+                <Stack direction="row" spacing={0.8} flexWrap="wrap" useFlexGap alignItems="center">
+                  <Chip size="small" label="Programa vs Nacional" sx={{ bgcolor: '#eff6ff', color: '#1d4ed8', fontWeight: 800 }} />
+                  <Chip size="small" label="Programa vs Departamental" sx={{ bgcolor: '#eef2ff', color: '#275294', fontWeight: 800 }} />
+                  <Chip size="small" label="Programa vs Institucional" sx={{ bgcolor: '#f8fafc', color: '#475569', fontWeight: 800 }} />
+                  {chartHeaderActions('all_references', 'desercion consolidada', 'desercion-chart-all-references', 'desercion_consolidada')}
+                </Stack>
+              </Stack>
+              {renderAllReferencesChart({ xs: 380, md: 520 }, 'desercion-chart-all-references')}
+            </Paper>
+
+            <Box
+              sx={{
+                width: '100%',
+                display: 'grid',
+                gridTemplateColumns: '1fr',
+                gap: 1.6,
+                alignItems: 'stretch'
+              }}
+            >
+              {pairCharts.map((panel) => (
+                <Paper
+                  key={panel.key}
+                  elevation={0}
+                  sx={{
+                    p: 1.5,
+                    borderRadius: 2.8,
+                    border: '1px solid #e2e8f0',
+                    bgcolor: '#fff',
+                    minWidth: 0,
+                    maxWidth: '100%'
+                  }}
+                >
+                  <Stack direction="row" justifyContent="space-between" alignItems="flex-start" spacing={1} sx={{ mb: 1 }}>
+                    <Box sx={{ minWidth: 0 }}>
+                      <Typography sx={{ fontWeight: 900, color: '#0f172a', fontSize: 15 }}>
+                        {panel.title}
+                      </Typography>
+                      <Typography variant="body2" sx={{ color: '#64748b', fontSize: 12.4, lineHeight: 1.35 }}>
+                        {panel.leftLabel} frente a {panel.rightLabel.toLowerCase()}.
+                      </Typography>
+                    </Box>
+                    {chartHeaderActions(`pair_${panel.key}`, panel.title, `desercion-chart-pair-${panel.key}`, `desercion_${panel.key}`)}
+                  </Stack>
+                  {renderPairChart(panel, { xs: 280, md: 330 }, `desercion-chart-pair-${panel.key}`)}
+                </Paper>
               ))}
-            </Grid>
+            </Box>
           </>
         )}
 
@@ -13539,7 +13808,7 @@ const renderCategoryBars = (items = [], options = {}) => {
   return (
     <Fade in={true}>
       <Box>
-        {!isDirectDocumentalView && !(selectedCard === 'poblacional' && poblacionalPanel === 'analytics') && !(selectedCard === 'poblacional' && poblacionalPanel === 'empleabilidad') && (
+        {!isDirectDocumentalView && !(selectedCard === 'poblacional' && poblacionalPanel !== 'hub') && selectedCard !== 'recurso_humano' && (
           <Paper elevation={0} sx={{ p: 3, mb: 3, borderRadius: 3, border: '1px solid #dbe2f1', background: 'linear-gradient(135deg,#0f172a,#1d4ed8)' }}>
             <Stack direction="row" spacing={1.5} alignItems="center">
               <InsightsIcon sx={{ color: 'white' }} />

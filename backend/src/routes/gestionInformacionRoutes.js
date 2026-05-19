@@ -77,11 +77,14 @@ const canManageBasesByPermission = hasAnyRoleOrModulePermission({
     ROLES.ADMINISTRADOR,
     ROLES.PLANEACION_ESTRATEGICA,
     ROLES.AUTOEVALUACION,
-    ROLES.REGISTROS_CALIFICADOS
+    ROLES.REGISTROS_CALIFICADOS,
+    ROLES.GESTION_PROCESOS
   ],
   moduleKeys: [
     'gestion_informacion',
     'gestion_bases_datos',
+    'gestion_procesos',
+    'estadistica_documental',
     'poblacional',
     'saber_pro',
     'plan_accion',

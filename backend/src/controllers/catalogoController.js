@@ -34,8 +34,31 @@ const addStateCondition = (conditions, replacements, query, user) => {
   );
 };
 
+const normalizeDocumentScope = (value = '') => {
+  const scope = String(value || '').trim().toLowerCase();
+  if (['politicas', 'politicas_institucionales', 'políticas', 'politicas-institucionales'].includes(scope)) return 'politicas';
+  if (['plantillas', 'plantillas_institucionales', 'plantillas-institucionales'].includes(scope)) return 'plantillas';
+  return 'documentos';
+};
+
+const addDocumentScopeCondition = (conditions, query = {}) => {
+  const scope = normalizeDocumentScope(query.document_scope);
+  const sheetExpr = "UPPER(COALESCE(d.datos_originales->>'hoja', ''))";
+
+  if (scope === 'politicas') {
+    conditions.push(`${sheetExpr} IN ('POLÍTICAS', 'POLITICAS')`);
+    return;
+  }
+  if (scope === 'plantillas') {
+    conditions.push(`${sheetExpr} = 'PLANTILLAS'`);
+    return;
+  }
+  conditions.push(`(${sheetExpr} = '' OR ${sheetExpr} = 'BD_SGD_UNICESMAG' OR ${sheetExpr} = 'DOCUMENTOS')`);
+};
+
 const addCommonFilters = (conditions, replacements, query, user, skipKey = '') => {
   addStateCondition(conditions, replacements, query, user);
+  addDocumentScopeCondition(conditions, query);
 
   const filters = [
     ['macro_proceso_id', 'TRIM(d.macroproceso)', 'macroValues'],

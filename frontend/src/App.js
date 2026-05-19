@@ -76,7 +76,7 @@ function App() {
                     path="aseguramiento-calidad"
                     element={(
                       <RoleRoute
-                        allowedRoles={[ROLES.ADMINISTRADOR]}
+                        allowedRoles={[ROLES.ADMINISTRADOR, ROLES.GESTION_PROCESOS]}
                         permissionKey="aseguramiento_calidad"
                       >
                         <AseguramientoCalidad />

@@ -20,6 +20,26 @@ const isInactiveScope = (query = {}, user = {}) =>
   && String(query.include_inactive || '').toLowerCase() === 'true'
   && canViewAllDocumentStates(user);
 
+const normalizeDocumentScope = (value = '') => {
+  const scope = String(value || '').trim().toLowerCase();
+  if (['politicas', 'politicas_institucionales', 'políticas', 'politicas-institucionales'].includes(scope)) return 'politicas';
+  if (['plantillas', 'plantillas_institucionales', 'plantillas-institucionales'].includes(scope)) return 'plantillas';
+  return 'documentos';
+};
+
+const documentScopeLiteral = (scope = 'documentos', alias = 'documentos') => {
+  const prefix = alias ? `"${alias}".` : '';
+  const sheetExpr = `UPPER(COALESCE(${prefix}"datos_originales"->>'hoja', ''))`;
+
+  if (scope === 'politicas') {
+    return literal(`(${sheetExpr} = 'POLÍTICAS' OR ${sheetExpr} = 'POLITICAS')`);
+  }
+  if (scope === 'plantillas') {
+    return literal(`${sheetExpr} = 'PLANTILLAS'`);
+  }
+  return literal(`(${sheetExpr} = '' OR ${sheetExpr} = 'BD_SGD_UNICESMAG' OR ${sheetExpr} = 'DOCUMENTOS')`);
+};
+
 const isLocalUploadLink = (value = '') => String(value || '').trim().startsWith(LOCAL_UPLOAD_PREFIX);
 
 const getSignedDocumentUrl = (req, documento) => {
@@ -172,6 +192,7 @@ const getDocumentos = async (req, res) => {
       titulo,
       include_inactive,
       estado_scope,
+      document_scope,
       sort,
       page = 1,
       limit = 10
@@ -232,6 +253,8 @@ const getDocumentos = async (req, res) => {
     }
 
     if (andConditions.length) where[Op.and] = andConditions;
+    const scopeCondition = documentScopeLiteral(normalizeDocumentScope(document_scope), 'documentos');
+    where[Op.and] = [...(where[Op.and] || []), scopeCondition];
 
     if (isInactiveScope({ include_inactive, estado_scope }, req.user)) {
       where[Op.or] = [
@@ -331,9 +354,11 @@ const getEstadisticaDocumental = async (req, res) => {
       subproceso,
       subproceso_id,
       tipo_documentacion_id,
-      periodo
+      periodo,
+      document_scope
     } = req.query;
     const normalizedPeriodo = normalizePeriodoFilter(periodo);
+    const scopeCondition = documentScopeLiteral(normalizeDocumentScope(document_scope), 'documentos');
     const include = [
       {
         model: SubProceso,
@@ -362,7 +387,7 @@ const getEstadisticaDocumental = async (req, res) => {
     ];
 
     const docs = await Documento.findAll({
-      where: { estado: PUBLIC_DOCUMENT_STATE },
+      where: { [Op.and]: [{ estado: PUBLIC_DOCUMENT_STATE }, scopeCondition] },
       include,
       attributes: [
         'id',

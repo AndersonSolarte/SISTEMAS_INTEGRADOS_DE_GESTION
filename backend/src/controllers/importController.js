@@ -6,6 +6,11 @@ const { sequelize } = require('../config/database');
 const fs = require('fs');
 const MAX_DOCUMENT_IMPORT_ROWS = Number(process.env.MAX_DOCUMENT_IMPORT_ROWS || 10000);
 const GOOGLE_SHEETS_PUBLIC_TIMEOUT_MS = Number(process.env.GOOGLE_SHEETS_PUBLIC_TIMEOUT_MS || 15000);
+const DOCUMENT_SYNC_SHEETS = [
+  { name: 'BD_SGD_UNICESMAG', aliases: ['BD_SGD_UNICESMAG', 'Documentos'] },
+  { name: 'POLÍTICAS', aliases: ['POLÍTICAS', 'POLITICAS'] },
+  { name: 'PLANTILLAS', aliases: ['PLANTILLAS'] }
+];
 
 const toText = (value, maxLength = null) => {
   if (value === null || value === undefined) return null;
@@ -439,6 +444,19 @@ const readGoogleSheetValues = async ({ sheetId, sheetName, sheetGid }) => {
   error.status = 500;
   error.detail = diagnostics.join(' | ');
   throw error;
+};
+
+const readFirstAvailableSheetValues = async ({ sheetId, aliases = [], sheetGid }) => {
+  let lastError = null;
+  for (const sheetName of aliases) {
+    try {
+      const sheetRead = await readGoogleSheetValues({ sheetId, sheetName, sheetGid });
+      return { ...sheetRead, sheetName };
+    } catch (error) {
+      lastError = error;
+    }
+  }
+  throw lastError || new Error(`No se encontro ninguna pestaña: ${aliases.join(', ')}`);
 };
 
 const importFromExcel = async (req, res) => {
@@ -896,7 +914,7 @@ const importFromSheet = async (req, res) => {
         categoria: 'Documentos',
         subcategoria: 'SGC',
         variable: 'Documentos SGC',
-        archivo_nombre: `GoogleSheet:${sheetName}`,
+        archivo_nombre: `GoogleSheet:${sheetsData.map((sheet) => sheet.logicalName).join(',')}`,
         total_plantilla: Number(results.total || 0),
         total_cargados: totalProcesados,
         total_omitidos: Number(results.errores?.length || 0),
@@ -939,44 +957,75 @@ const importFromSheetFixed = async (req, res) => {
 
     const rawSheetRef = req.body.sheetId || req.body.sheetUrl || process.env.GOOGLE_SHEETS_ID;
     const sheetId = extractSpreadsheetId(rawSheetRef);
-    const sheetName = req.body.sheetName || process.env.GOOGLE_SHEETS_TAB;
+    const requestedSheetName = req.body.sheetName || process.env.GOOGLE_SHEETS_TAB;
     const sheetGid = req.body.sheetGid
       || extractSheetGid(req.body.sheetUrl)
       || extractSheetGid(process.env.GOOGLE_SHEETS_URL)
       || process.env.GOOGLE_SHEETS_GID;
 
-    if (!sheetId || !sheetName) {
+    if (!sheetId) {
       return res.status(400).json({
         success: false,
-        message: 'Falta GOOGLE_SHEETS_ID/URL valido o GOOGLE_SHEETS_TAB en la configuracion'
+        message: 'Falta GOOGLE_SHEETS_ID/URL valido en la configuracion'
       });
     }
 
-    const sheetRead = await readGoogleSheetValues({ sheetId, sheetName, sheetGid });
-    const parsedSheet = parseSheetMatrix(sheetRead.values || []);
-    if (!parsedSheet.success) {
-      return res.status(parsedSheet.status).json({
+    const sheetConfigs = req.body.sheetName
+      ? [{ name: requestedSheetName, aliases: [requestedSheetName] }]
+      : DOCUMENT_SYNC_SHEETS;
+    const sheetsData = [];
+    const sheetErrors = [];
+
+    for (const config of sheetConfigs) {
+      try {
+        const sheetRead = await readFirstAvailableSheetValues({
+          sheetId,
+          aliases: config.aliases,
+          sheetGid: req.body.sheetName ? sheetGid : ''
+        });
+        const parsedSheet = parseSheetMatrix(sheetRead.values || []);
+        if (!parsedSheet.success) {
+          sheetErrors.push({ hoja: config.name, error: parsedSheet.message });
+          continue;
+        }
+        sheetsData.push({
+          logicalName: config.name,
+          sheetName: sheetRead.sheetName || config.name,
+          source: sheetRead.source,
+          rows: parsedSheet.data.map((row) => ({ ...row, hoja: config.name }))
+        });
+      } catch (error) {
+        sheetErrors.push({ hoja: config.name, error: error?.detail || error.message });
+      }
+    }
+
+    if (!sheetsData.length) {
+      return res.status(400).json({
         success: false,
-        message: parsedSheet.message
+        message: 'No se pudo leer ninguna pestaña documental desde Google Sheets',
+        data: { errores: sheetErrors }
       });
     }
-
-    const data = parsedSheet.data;
 
     const results = {
-      total: data.length,
+      total: sheetsData.reduce((sum, sheet) => sum + sheet.rows.length, 0),
       importados: 0,
       actualizados: 0,
       omitidos: 0,
-      errores: []
+      errores: [...sheetErrors],
+      hojasProcesadas: []
     };
 
     const existingDocumentBuckets = await buildExistingDocumentBuckets();
     const occurrenceIndexes = new Map();
+    let globalIndex = 0;
 
-    for (let i = 0; i < data.length; i++) {
-      const row = mapRowKeys(data[i]);
+    for (const sheet of sheetsData) {
+      const sheetResult = { hoja: sheet.logicalName, pestaña: sheet.sheetName, total: sheet.rows.length, importados: 0, actualizados: 0, omitidos: 0, errores: [] };
+    for (let i = 0; i < sheet.rows.length; i++) {
+      const row = mapRowKeys(sheet.rows[i]);
       const rowNumber = i + 2;
+      globalIndex += 1;
 
       try {
         const { tipoDocumentacion, codigo, titulo } = normalizeMappedFields(row);
@@ -984,6 +1033,7 @@ const importFromSheetFixed = async (req, res) => {
         // Saltar solo filas completamente vacías (sin codigo ni titulo)
         if (!codigo && !titulo) {
           results.omitidos++;
+          sheetResult.omitidos++;
           continue;
         }
 
@@ -1045,9 +1095,9 @@ const importFromSheetFixed = async (req, res) => {
           estado: normalizeEstado(row.estado),
           link_acceso: toText(row.link_acceso),
           observaciones: toText(row.observaciones),
-          orden_origen: i + 1,
+          orden_origen: globalIndex,
           fila_origen: rowNumber,
-          datos_originales: data[i]
+          datos_originales: { ...sheet.rows[i], hoja: sheet.logicalName }
         };
 
         const documentKey = getDocumentIdentityKey(documentoData.codigo, documentoData.version);
@@ -1058,8 +1108,10 @@ const importFromSheetFixed = async (req, res) => {
           if (documentNeedsUpdate(existente, documentoData)) {
             await existente.update(documentoData);
             results.actualizados++;
+            sheetResult.actualizados++;
           } else {
             results.omitidos++;
+            sheetResult.omitidos++;
           }
         } else {
           const nuevoDocumento = await Documento.create(documentoData);
@@ -1067,13 +1119,19 @@ const importFromSheetFixed = async (req, res) => {
           bucket.push(nuevoDocumento);
           existingDocumentBuckets.set(documentKey, bucket);
           results.importados++;
+          sheetResult.importados++;
         }
       } catch (error) {
-        results.errores.push({
+        const rowError = {
+          hoja: sheet.logicalName,
           fila: rowNumber,
           error: error.message
-        });
+        };
+        results.errores.push(rowError);
+        sheetResult.errores.push(rowError);
       }
+    }
+      results.hojasProcesadas.push(sheetResult);
     }
 
     const totalProcesados = Number(results.importados || 0) + Number(results.actualizados || 0);
@@ -1085,7 +1143,7 @@ const importFromSheetFixed = async (req, res) => {
         categoria: 'Documentos',
         subcategoria: 'SGC',
         variable: 'Documentos SGC',
-        archivo_nombre: `GoogleSheet:${sheetName}`,
+        archivo_nombre: `GoogleSheet:${sheetsData.map((sheet) => sheet.logicalName).join(',')}`,
         total_plantilla: Number(results.total || 0),
         total_cargados: totalProcesados,
         total_omitidos: Number((results.errores?.length || 0) + (results.omitidos || 0)),
@@ -1103,9 +1161,9 @@ const importFromSheetFixed = async (req, res) => {
       message: buildSyncMessage({ mode, results }),
       data: {
         ...results,
-        source: sheetRead.source,
+        source: Array.from(new Set(sheetsData.map((sheet) => sheet.source))).join(','),
         sheetId,
-        sheetName
+        sheetName: sheetsData.map((sheet) => sheet.logicalName).join(',')
       }
     });
   } catch (error) {

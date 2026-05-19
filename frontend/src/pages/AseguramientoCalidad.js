@@ -252,6 +252,39 @@ const emptyFilterOptions = {
   tipos: null
 };
 
+const DOCUMENT_SCOPE_TABS = [
+  {
+    key: 'documentos',
+    label: 'Consulta de documentos',
+    helper: 'Procedimientos, formatos, instructivos, manuales y demás documentos institucionales.',
+    Icon: DescriptionIcon
+  },
+  {
+    key: 'politicas',
+    label: 'Políticas institucionales',
+    helper: 'Listado exclusivo de políticas vigentes y su información de aprobación.',
+    Icon: PolicyIcon
+  },
+  {
+    key: 'plantillas',
+    label: 'Plantillas institucionales',
+    helper: 'Plantillas para la construcción de información documentada institucional.',
+    Icon: AssignmentIcon
+  }
+];
+
+const buildInitialDocumentFilters = (scope = 'documentos') => ({
+  macro_proceso_id: '',
+  proceso_id: '',
+  subproceso_id: '',
+  tipo_documentacion_id: '',
+  titulo: '',
+  estado: '',
+  include_inactive: '',
+  estado_scope: '',
+  document_scope: scope
+});
+
 const byNombre = (a, b) => String(a?.nombre || '').localeCompare(String(b?.nombre || ''), 'es', { sensitivity: 'base' });
 
 const buildCatalogosFromRelaciones = (relaciones = [], filters = {}) => {
@@ -472,11 +505,20 @@ function AseguramientoCalidad() {
         .replace(/^_+|_+$/g, ''),
     [user?.role]
   );
+  const hasDocumentalManagementPermission = useMemo(() => {
+    const permissions = [
+      ...(Array.isArray(user?.menuPermissions) ? user.menuPermissions : []),
+      ...(Array.isArray(user?.modulePermissions) ? user.modulePermissions : []),
+      ...(Array.isArray(user?.allowedModules) ? user.allowedModules : [])
+    ].map((item) => String(item || '').trim());
+    return permissions.some((key) => ['aseguramiento_calidad', 'gestion_procesos'].includes(key));
+  }, [user]);
   const canManageDocumental = useMemo(
-    () => ['administrador', 'gestion_por_procesos', 'gestion_procesos'].includes(normalizedRole) && !forceReadOnly,
-    [normalizedRole, forceReadOnly]
+    () => (['administrador', 'gestion_por_procesos', 'gestion_procesos'].includes(normalizedRole) || hasDocumentalManagementPermission) && !forceReadOnly,
+    [normalizedRole, hasDocumentalManagementPermission, forceReadOnly]
   );
-  const [filters, setFilters] = useState({ macro_proceso_id: '', proceso_id: '', subproceso_id: '', tipo_documentacion_id: '', titulo: '', estado: '', include_inactive: '', estado_scope: '' });
+  const [activeDocumentScope, setActiveDocumentScope] = useState('documentos');
+  const [filters, setFilters] = useState(buildInitialDocumentFilters('documentos'));
   const [selMacros, setSelMacros] = useState([]);
   const [selProcesos, setSelProcesos] = useState([]);
   const [selSubprocesos, setSelSubprocesos] = useState([]);
@@ -520,7 +562,10 @@ function AseguramientoCalidad() {
 
   const loadCatalogosDirecto = useCallback(async (opts = {}) => {
     const requestId = ++catalogRequestId.current;
-    const extra = opts.include_inactive ? { include_inactive: opts.include_inactive, estado_scope: opts.estado_scope || 'inactive' } : {};
+    const extra = {
+      document_scope: opts.document_scope || activeDocumentScope,
+      ...(opts.include_inactive ? { include_inactive: opts.include_inactive, estado_scope: opts.estado_scope || 'inactive' } : {})
+    };
     try {
       const response = await catalogoService.getFilterRelations(extra);
       if (requestId !== catalogRequestId.current) return;
@@ -534,11 +579,11 @@ function AseguramientoCalidad() {
       setFilterRelations(relaciones);
       syncCatalogosFromPayload(buildCatalogosFromRelaciones(relaciones));
     }
-  }, [syncCatalogosFromPayload]);
+  }, [activeDocumentScope, syncCatalogosFromPayload]);
 
   const loadCatalogos = useCallback(async (activeFilters = {}) => {
     const hasUserFilter = Object.entries(activeFilters).some(
-      ([key, value]) => !['include_inactive', 'estado_scope'].includes(key) && String(value || '').trim() !== ''
+      ([key, value]) => !['include_inactive', 'estado_scope', 'document_scope'].includes(key) && String(value || '').trim() !== ''
     );
     if (!hasUserFilter) {
       setFilterOptions(emptyFilterOptions);
@@ -563,12 +608,15 @@ function AseguramientoCalidad() {
   }, [filterRelations, loadCatalogosDirecto, selMacros, selProcesos, selSubprocesos, selTipos, syncCatalogosFromPayload]);
 
   useEffect(() => {
-    const extra = filters.include_inactive ? { include_inactive: filters.include_inactive, estado_scope: filters.estado_scope || 'inactive' } : {};
+    const extra = {
+      document_scope: activeDocumentScope,
+      ...(filters.include_inactive ? { include_inactive: filters.include_inactive, estado_scope: filters.estado_scope || 'inactive' } : {})
+    };
     setFilterOptions(emptyFilterOptions);
     loadCatalogosDirecto(extra).catch(() => {
       enqueueSnackbar('No fue posible cargar los filtros', { variant: 'warning' });
     });
-  }, [filters.include_inactive, filters.estado_scope, loadCatalogosDirecto, enqueueSnackbar]);
+  }, [activeDocumentScope, filters.include_inactive, filters.estado_scope, loadCatalogosDirecto, enqueueSnackbar]);
 
   useEffect(() => {
     const params = {};
@@ -577,12 +625,13 @@ function AseguramientoCalidad() {
     if (selSubprocesos.length) params.subproceso_id = selSubprocesos.join(',');
     if (selTipos.length) params.tipo_documentacion_id = selTipos.join(',');
     if (filters.titulo) params.titulo = filters.titulo;
+    params.document_scope = activeDocumentScope;
     if (filters.include_inactive) {
       params.include_inactive = filters.include_inactive;
       params.estado_scope = filters.estado_scope || 'inactive';
     }
 
-    const hasUserFilter = Object.keys(params).some((key) => !['include_inactive', 'estado_scope'].includes(key));
+    const hasUserFilter = Object.keys(params).some((key) => !['include_inactive', 'estado_scope', 'document_scope'].includes(key));
     if (!hasUserFilter) {
       setFilterOptions(emptyFilterOptions);
       if (filterRelations.length) syncCatalogosFromPayload(buildCatalogosFromRelaciones(filterRelations));
@@ -590,7 +639,7 @@ function AseguramientoCalidad() {
     }
 
     loadCatalogos(params).catch(() => setFilterOptions(emptyFilterOptions));
-  }, [filterRelations, loadCatalogos, selMacros, selProcesos, selSubprocesos, selTipos, filters.titulo, filters.include_inactive, filters.estado_scope, syncCatalogosFromPayload]);
+  }, [activeDocumentScope, filterRelations, loadCatalogos, selMacros, selProcesos, selSubprocesos, selTipos, filters.titulo, filters.include_inactive, filters.estado_scope, syncCatalogosFromPayload]);
 
   useEffect(() => {
     if (!user?.id) return;
@@ -609,7 +658,7 @@ function AseguramientoCalidad() {
     const params = new URLSearchParams(location.search);
     const quickTitulo = params.get('titulo');
     if (quickTitulo) {
-      const nextFilters = { macro_proceso_id: '', proceso_id: '', subproceso_id: '', tipo_documentacion_id: '', titulo: quickTitulo, estado: '', include_inactive: '', estado_scope: '' };
+      const nextFilters = { ...buildInitialDocumentFilters(activeDocumentScope), titulo: quickTitulo };
       setSelMacros([]); setSelProcesos([]); setSelSubprocesos([]); setSelTipos([]);
       setFilters(nextFilters);
       setHasSearched(true);
@@ -627,7 +676,7 @@ function AseguramientoCalidad() {
         .catch((error) => enqueueSnackbar(getApiErrorMessage(error, 'Error al buscar documentos'), { variant: 'error' }))
         .finally(() => setLoading(false));
     }
-  }, [location.search, enqueueSnackbar]);
+  }, [activeDocumentScope, location.search, enqueueSnackbar]);
 
 
   const handleSearch = async () => {
@@ -656,12 +705,27 @@ function AseguramientoCalidad() {
   };
 
   const handleClearFilters = () => {
-    setFilters({ macro_proceso_id: '', proceso_id: '', subproceso_id: '', tipo_documentacion_id: '', titulo: '', estado: '', include_inactive: '', estado_scope: '' });
+    setFilters(buildInitialDocumentFilters(activeDocumentScope));
     setSelMacros([]); setSelProcesos([]); setSelSubprocesos([]); setSelTipos([]);
     setDocumentos([]);
     setVisibleRelations([]);
     setTotalDocumentos(0);
     setHasSearched(false);
+    setManualSearchMode(false);
+    setPage(0);
+  };
+
+  const handleDocumentScopeChange = (scope) => {
+    if (scope === activeDocumentScope) return;
+    setActiveDocumentScope(scope);
+    const nextFilters = buildInitialDocumentFilters(scope);
+    setFilters(nextFilters);
+    setSelMacros([]); setSelProcesos([]); setSelSubprocesos([]); setSelTipos([]);
+    setFilterOptions(emptyFilterOptions);
+    setVisibleRelations([]);
+    setDocumentos([]);
+    setTotalDocumentos(0);
+    setHasSearched(true);
     setManualSearchMode(false);
     setPage(0);
   };
@@ -679,6 +743,7 @@ function AseguramientoCalidad() {
   useEffect(() => { setFilters(prev => ({ ...prev, proceso_id: selProcesos.join(',') })); }, [selProcesos]);
   useEffect(() => { setFilters(prev => ({ ...prev, subproceso_id: selSubprocesos.join(',') })); }, [selSubprocesos]);
   useEffect(() => { setFilters(prev => ({ ...prev, tipo_documentacion_id: selTipos.join(',') })); }, [selTipos]);
+  useEffect(() => { setFilters(prev => ({ ...prev, document_scope: activeDocumentScope })); }, [activeDocumentScope]);
 
   useEffect(() => {
     const hasUserFilter = Object.entries(filters).some(
@@ -928,7 +993,7 @@ function AseguramientoCalidad() {
   };
 
   const activeFiltersCount = Object.entries(filters)
-    .filter(([key, value]) => key !== 'estado_scope' && value !== '')
+    .filter(([key, value]) => !['estado_scope', 'document_scope'].includes(key) && value !== '')
     .length;
   const hasActiveFilters = activeFiltersCount > 0;
   const tiposDocumentacionDisplay = tiposDocumentacion.filter((td) => !isDocumentCode(td.nombre));
@@ -1026,24 +1091,6 @@ function AseguramientoCalidad() {
                 Accede al mapa de procesos y encuentra documentos institucionales de forma rápida y clara.
               </Typography>
             </Box>
-            <Button
-              variant="contained"
-              onClick={handleSearch}
-              startIcon={<SearchIcon />}
-              sx={{
-                bgcolor: 'white',
-                color: '#0f1f3a',
-                textTransform: 'none',
-                fontWeight: 700,
-                px: 3,
-                py: 1.2,
-                borderRadius: 2,
-                boxShadow: '0 8px 18px rgba(15, 23, 42, 0.25)',
-                '&:hover': { bgcolor: '#f8fafc' }
-              }}
-            >
-              Consulta de documentos
-            </Button>
           </Stack>
         </Paper>
 
@@ -1197,6 +1244,59 @@ function AseguramientoCalidad() {
               }}
             />
             <Box sx={{ position: 'relative', zIndex: 1 }}>
+            <Box sx={{ mb: 2.5 }}>
+              <Typography variant="caption" sx={{ color: '#64748b', fontWeight: 800, mb: 1, display: 'block', textTransform: 'uppercase', letterSpacing: 0.7 }}>
+                Tipo de consulta
+              </Typography>
+              <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', md: 'repeat(3, minmax(0, 1fr))' }, gap: 1.2 }}>
+                {DOCUMENT_SCOPE_TABS.map((tab) => {
+                  const selected = activeDocumentScope === tab.key;
+                  const Icon = tab.Icon;
+                  return (
+                    <Box
+                      key={tab.key}
+                      onClick={() => handleDocumentScopeChange(tab.key)}
+                      role="button"
+                      tabIndex={0}
+                      onKeyDown={(event) => {
+                        if (event.key === 'Enter' || event.key === ' ') handleDocumentScopeChange(tab.key);
+                      }}
+                      sx={{
+                        p: 1.35,
+                        minHeight: 84,
+                        borderRadius: 2.2,
+                        border: `1.5px solid ${selected ? '#2563eb' : '#dbe6f5'}`,
+                        bgcolor: selected ? '#eff6ff' : 'rgba(255,255,255,0.88)',
+                        cursor: 'pointer',
+                        boxShadow: selected ? '0 12px 28px rgba(37,99,235,0.18)' : '0 8px 20px rgba(15,23,42,0.04)',
+                        transition: 'border-color 180ms ease, box-shadow 180ms ease, transform 180ms ease, background 180ms ease',
+                        outline: 'none',
+                        '&:hover': {
+                          transform: 'translateY(-2px)',
+                          borderColor: selected ? '#1d4ed8' : '#93c5fd',
+                          boxShadow: selected ? '0 16px 34px rgba(37,99,235,0.22)' : '0 12px 26px rgba(37,99,235,0.12)'
+                        },
+                        '&:focus-visible': { boxShadow: '0 0 0 4px rgba(37,99,235,0.22)' }
+                      }}
+                    >
+                      <Stack direction="row" spacing={1.15} alignItems="flex-start">
+                        <Box sx={{ width: 38, height: 38, borderRadius: 1.8, display: 'grid', placeItems: 'center', bgcolor: selected ? '#2563eb' : '#f1f5f9', color: selected ? '#ffffff' : '#64748b', flex: '0 0 auto' }}>
+                          <Icon sx={{ fontSize: 21 }} />
+                        </Box>
+                        <Box sx={{ minWidth: 0 }}>
+                          <Typography sx={{ fontWeight: 900, fontSize: 14, color: selected ? '#1e3a8a' : '#0f172a', lineHeight: 1.2 }}>
+                            {tab.label}
+                          </Typography>
+                          <Typography sx={{ mt: 0.35, fontSize: 12.2, color: selected ? '#1d4ed8' : '#64748b', lineHeight: 1.35 }}>
+                            {tab.helper}
+                          </Typography>
+                        </Box>
+                      </Stack>
+                    </Box>
+                  );
+                })}
+              </Box>
+            </Box>
             <Box sx={{ display: 'flex', justifyContent: 'center', mb: 2 }}>
               <Box sx={{ width: '100%', maxWidth: 860 }}>
                 <Typography variant="caption" sx={{ color: '#64748b', fontWeight: 600, mb: 1, display: 'block', textAlign: 'center' }}>

@@ -34,7 +34,12 @@ const {
   Autoevaluacion,
   AutoevaluacionParticipante,
   AutoevaluacionPrograma,
-  RegistroCalificadoHistorico
+  RegistroCalificadoHistorico,
+  MacroProceso,
+  Proceso,
+  SubProceso,
+  TipoDocumentacion,
+  Documento
 } = require('../models');
 const XLSX = require('xlsx');
 const fs = require('fs');
@@ -195,6 +200,10 @@ const clearDatasetStorage = async ({
     }
   }
 
+  if (categoria === 'Gestión por Procesos') {
+    await Documento.destroy({ where: {} });
+  }
+
   return { deleted, deletedLogs };
 };
 
@@ -208,6 +217,8 @@ const DATASET_CATEGORIES = {
   investigacion: 'InvestigaciÃƒÆ’Ã‚Â³n',
   proyectos_convenios: 'Proyectos y Convenios',
   recurso_humano: 'Recurso Humano',
+  gestion_procesos: 'Gestión por Procesos',
+  gestion_por_procesos: 'Gestión por Procesos',
   saber_pro: 'Saber Pro',
   plan_accion: 'Plan de Acción',
   autoevaluacion: 'Autoevaluación',
@@ -216,6 +227,71 @@ const DATASET_CATEGORIES = {
   registros_calificados: 'Registros Calificados y Acreditación',
   acreditacion: 'Registros Calificados y Acreditación'
 };
+
+const GESTION_PROCESOS_CATEGORY = 'Gestión por Procesos';
+const GESTION_PROCESOS_TEMPLATE_SHEETS = [
+  {
+    sheetName: 'BD_SGD_UNICESMAG',
+    headers: [
+      'MACROPROCESO',
+      'PROCESO',
+      'SUBPROCESO',
+      'CODIGO',
+      'TITULO_DOCUMENTO',
+      'TIPO_DOCUMENTO',
+      'VERSIÓN',
+      'FECHA_CREACION',
+      'REVISA',
+      'APRUEBA',
+      'FECHA_APROBACION',
+      'AUTOR',
+      'ESTADO',
+      'LINK_ACCESO',
+      'OBSERVACIONES'
+    ]
+  },
+  {
+    sheetName: 'POLÍTICAS',
+    headers: [
+      'MACROPROCESO',
+      'PROCESO',
+      'SUBPROCESO',
+      'CODIGO',
+      'TITULO_DOCUMENTO',
+      'ACUERDO DE APROBACIÓN',
+      'TIPO_DOCUMENTO',
+      'VERSIÓN',
+      'FECHA_CREACION',
+      'REVISA',
+      'APRUEBA',
+      'FECHA_APROBACION',
+      'AUTOR',
+      'ESTADO',
+      'LINK_ACCESO',
+      'OBSERVACIONES'
+    ]
+  },
+  {
+    sheetName: 'PLANTILLAS',
+    headers: [
+      'MACROPROCESO',
+      'PROCESO',
+      'SUBPROCESO',
+      'CODIGO',
+      'TITULO_DOCUMENTO',
+      'TIPO_DOCUMENTO',
+      'VERSIÓN',
+      'FECHA_CREACION',
+      'REVISA',
+      'APRUEBA',
+      'FECHA_APROBACION',
+      'AUTOR',
+      'ESTADO',
+      'LINK_ACCESO',
+      'OBSERVACIONES'
+    ]
+  }
+];
 
 const AUTOEVALUACION_TEMPLATE_HEADERS = [
   'Acuerdo MEN',
@@ -2852,6 +2928,214 @@ const matrixToRows = (worksheet, expectedHeaders = [], loose = false) => {
   return { rows, headerRowIndex };
 };
 
+const normalizeGestionProcesosEstado = (value) => {
+  const estado = String(value || '')
+    .trim()
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '');
+  if (['activo', 'activos', 'activa', 'activas', 'vigente', 'vigentes'].includes(estado)) return 'vigente';
+  if (['revision', 'en revision', 'en_revision', 'pendiente aprobacion', 'pendiente de aprobacion'].includes(estado)) return 'en_revision';
+  return 'obsoleto';
+};
+
+const gestionProcesosDateToISO = (value) => {
+  if (value === null || value === undefined || value === '') return null;
+  if (typeof value === 'number') {
+    const parsed = XLSX.SSF.parse_date_code(value);
+    if (!parsed?.y || !parsed?.m || !parsed?.d) return null;
+    return `${String(parsed.y).padStart(4, '0')}-${String(parsed.m).padStart(2, '0')}-${String(parsed.d).padStart(2, '0')}`;
+  }
+  const text = normalizeText(value);
+  if (!text) return null;
+  if (/^\d{4}-\d{2}-\d{2}$/.test(text)) return text;
+  const slashMatch = text.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+  if (slashMatch) {
+    const [, d, m, y] = slashMatch;
+    return `${y}-${String(m).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+  }
+  const dashMatch = text.match(/^(\d{1,2})-(\d{1,2})-(\d{4})$/);
+  if (dashMatch) {
+    const [, d, m, y] = dashMatch;
+    return `${y}-${String(m).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+  }
+  const parsedDate = new Date(text);
+  return Number.isNaN(parsedDate.getTime()) ? null : parsedDate.toISOString().slice(0, 10);
+};
+
+const GESTION_PROCESOS_HEADER_ALIASES = {
+  macroproceso: 'macro_proceso',
+  macro_proceso: 'macro_proceso',
+  proceso: 'proceso',
+  subproceso: 'subproceso',
+  codigo: 'codigo',
+  titulo_documento: 'titulo',
+  titulo: 'titulo',
+  acuerdo_de_aprobacion: 'acuerdo_aprobacion',
+  tipo_documento: 'tipo_documentacion',
+  tipo_documentacion: 'tipo_documentacion',
+  version: 'version',
+  fecha_creacion: 'fecha_creacion',
+  revisa: 'revisa',
+  aprueba: 'aprueba',
+  fecha_aprobacion: 'fecha_aprobacion',
+  autor: 'autor',
+  estado: 'estado',
+  link_acceso: 'link_acceso',
+  observaciones: 'observaciones'
+};
+
+const mapGestionProcesosRow = (row = {}) => {
+  const mapped = {};
+  Object.entries(row).forEach(([key, value]) => {
+    const normalized = normalizeCategoryToken(key);
+    const target = GESTION_PROCESOS_HEADER_ALIASES[normalized] || normalized;
+    mapped[target] = value;
+  });
+  return mapped;
+};
+
+const getGestionProcesosDocumentKey = (codigo, version) =>
+  `${normalizeText(codigo) || ''}::${normalizeText(version) || ''}`;
+
+const buildGestionProcesosDocumentBuckets = async () => {
+  const buckets = new Map();
+  const documents = await Documento.findAll({ order: [['id', 'ASC']] });
+  documents.forEach((doc) => {
+    const key = getGestionProcesosDocumentKey(doc.codigo, doc.version);
+    if (key.startsWith('::')) return;
+    const bucket = buckets.get(key) || [];
+    bucket.push(doc);
+    buckets.set(key, bucket);
+  });
+  return buckets;
+};
+
+const importGestionProcesosFromWorkbook = async ({ workbook, fileName, userId }) => {
+  const workbookSheetsByKey = Object.fromEntries(
+    (workbook.SheetNames || []).map((name) => [normalizeCategoryToken(name), name])
+  );
+  const result = { total: 0, importados: 0, actualizados: 0, errores: [], hojasProcesadas: [] };
+  const existingDocumentBuckets = await buildGestionProcesosDocumentBuckets();
+  const occurrenceIndexes = new Map();
+
+  for (const template of GESTION_PROCESOS_TEMPLATE_SHEETS) {
+    const matchedSheetName = workbookSheetsByKey[normalizeCategoryToken(template.sheetName)];
+    if (!matchedSheetName) {
+      result.errores.push({ hoja: template.sheetName, fila: 1, error: `No se encontro la hoja ${template.sheetName}` });
+      continue;
+    }
+
+    const worksheet = workbook.Sheets[matchedSheetName];
+    const { rows, headerRowIndex } = matrixToRows(worksheet, template.headers, true);
+    result.total += rows.length;
+    const sheetResult = { hoja: matchedSheetName, total: rows.length, importados: 0, actualizados: 0, errores: [] };
+
+    for (let i = 0; i < rows.length; i += 1) {
+      const rawRow = rows[i];
+      const row = mapGestionProcesosRow(rawRow);
+      const fila = headerRowIndex + i + 2;
+
+      try {
+        const codigo = toDbText(row.codigo, 50);
+        const titulo = toDbText(row.titulo, 300);
+        if (!codigo && !titulo) {
+          sheetResult.errores.push({ fila, error: 'Faltan campos requeridos: CODIGO o TITULO_DOCUMENTO' });
+          continue;
+        }
+
+        const macroNombre = toDbText(row.macro_proceso, 255) || 'SIN DEFINIR';
+        const procesoNombre = toDbText(row.proceso, 255) || 'SIN DEFINIR';
+        const subprocesoNombre = toDbText(row.subproceso, 255) || 'SIN DEFINIR';
+        const tipoNombre = toDbText(row.tipo_documentacion, 200) || 'SIN TIPO';
+        const codigoFinal = codigo || `SIN-CODIGO-${fila}`;
+        const tituloFinal = titulo || codigoFinal;
+
+        const [macroProceso] = await MacroProceso.findOrCreate({
+          where: { nombre: macroNombre },
+          defaults: { nombre: macroNombre }
+        });
+        const [proceso] = await Proceso.findOrCreate({
+          where: { nombre: procesoNombre, macro_proceso_id: macroProceso.id },
+          defaults: { nombre: procesoNombre, macro_proceso_id: macroProceso.id }
+        });
+        const [subproceso] = await SubProceso.findOrCreate({
+          where: { nombre: subprocesoNombre, proceso_id: proceso.id },
+          defaults: { nombre: subprocesoNombre, proceso_id: proceso.id }
+        });
+        const [tipoDoc] = await TipoDocumentacion.findOrCreate({
+          where: { nombre: tipoNombre },
+          defaults: { nombre: tipoNombre }
+        });
+
+        const documentoData = {
+          subproceso_id: subproceso.id,
+          tipo_documentacion_id: tipoDoc.id,
+          macroproceso: macroNombre,
+          proceso_texto: procesoNombre,
+          subproceso_texto: subprocesoNombre,
+          tipo_documento: tipoNombre,
+          codigo: codigoFinal,
+          titulo: tituloFinal,
+          version: toDbText(row.version, 20),
+          fecha_creacion: gestionProcesosDateToISO(row.fecha_creacion),
+          revisa: toDbText(row.revisa, 200),
+          aprueba: toDbText(row.aprueba, 200),
+          fecha_aprobacion: gestionProcesosDateToISO(row.fecha_aprobacion),
+          autor: toDbText(row.autor, 200),
+          estado: normalizeGestionProcesosEstado(row.estado),
+          link_acceso: toDbText(row.link_acceso),
+          observaciones: toDbText(row.observaciones),
+          orden_origen: result.total - rows.length + i + 1,
+          fila_origen: fila,
+          datos_originales: { hoja: matchedSheetName, ...rawRow }
+        };
+
+        const documentKey = getGestionProcesosDocumentKey(documentoData.codigo, documentoData.version);
+        const occurrenceIndex = occurrenceIndexes.get(documentKey) || 0;
+        occurrenceIndexes.set(documentKey, occurrenceIndex + 1);
+        const existente = existingDocumentBuckets.get(documentKey)?.[occurrenceIndex] || null;
+
+        if (existente) {
+          await existente.update(documentoData);
+          result.actualizados += 1;
+          sheetResult.actualizados += 1;
+        } else {
+          const nuevoDocumento = await Documento.create(documentoData);
+          const bucket = existingDocumentBuckets.get(documentKey) || [];
+          bucket.push(nuevoDocumento);
+          existingDocumentBuckets.set(documentKey, bucket);
+          result.importados += 1;
+          sheetResult.importados += 1;
+        }
+      } catch (error) {
+        sheetResult.errores.push({ fila, error: error.message });
+      }
+    }
+
+    result.errores.push(...sheetResult.errores.map((error) => ({ hoja: matchedSheetName, ...error })));
+    result.hojasProcesadas.push(sheetResult);
+  }
+
+  const totalProcesados = Number(result.importados || 0) + Number(result.actualizados || 0);
+  const porcentaje = result.total > 0 ? Number(((totalProcesados / result.total) * 100).toFixed(2)) : 0;
+  await GestionInformacionCarga.create({
+    categoria: GESTION_PROCESOS_CATEGORY,
+    subcategoria: 'Base documental',
+    variable: 'Documentos SGC',
+    archivo_nombre: fileName || null,
+    total_plantilla: result.total,
+    total_cargados: totalProcesados,
+    total_omitidos: Number(result.errores.length || 0),
+    porcentaje_cargado: porcentaje,
+    estado: porcentaje === 100 ? 'exitoso' : (totalProcesados > 0 ? 'parcial' : 'fallido'),
+    detalle: result.errores.length ? JSON.stringify(result.errores.slice(0, 50)) : null,
+    creado_por: userId || null
+  });
+
+  return result;
+};
+
 const resolveDefaultImportSheetName = (workbook, categoria) => {
   const sheetNames = Array.isArray(workbook?.SheetNames) ? workbook.SheetNames : [];
   if (!sheetNames.length) return null;
@@ -4653,7 +4937,7 @@ const getEstadisticas = async (req, res) => {
           raw: true
         }),
         RecursoHumanoAdministrativo.findAll({
-          attributes: ['anio', 'periodo', 'estado_laboral', 'nombre_empleado', 'dependencia', 'vicerectoria', 'clase_contrato', 'genero_biologico', 'sueldo_anual', 'sueldo_mes'],
+          attributes: ['anio', 'periodo', 'estado_laboral', 'nombre_empleado', 'cargo_especifico', 'dependencia', 'vicerectoria', 'clase_contrato', 'genero_biologico', 'sueldo_anual', 'sueldo_mes', 'raw_data'],
           raw: true
         }),
         RecursoHumanoOutsourcing.findAll({
@@ -5376,6 +5660,21 @@ const downloadTemplate = async (req, res) => {
       return res.send(buffer);
     }
 
+    if (categoria === GESTION_PROCESOS_CATEGORY) {
+      const workbook = XLSX.utils.book_new();
+      GESTION_PROCESOS_TEMPLATE_SHEETS.forEach((sheet) => {
+        const worksheet = buildHeaderOnlyWorksheet(sheet.headers);
+        worksheet['!cols'] = sheet.headers.map((header) => ({
+          wch: Math.max(14, Math.min(42, String(header).length + 8))
+        }));
+        XLSX.utils.book_append_sheet(workbook, worksheet, sheet.sheetName);
+      });
+      const buffer = XLSX.write(workbook, { type: 'buffer', bookType: 'xlsx' });
+      res.setHeader('Content-Disposition', 'attachment; filename=plantilla_gestion_procesos.xlsx');
+      res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+      return res.send(buffer);
+    }
+
     if (categoria === 'Poblacional' && !poblacionalConfig) {
       return res.status(400).json({
         success: false,
@@ -5543,6 +5842,33 @@ const importFromExcel = async (req, res) => {
       return res.status(400).json({
         success: false,
         message: 'Resultados individuales solo acepta un libro Excel con dos hojas: SABER PRO y TYT.'
+      });
+    }
+
+    if (categoria === GESTION_PROCESOS_CATEGORY) {
+      if (isCsvUpload) {
+        return res.status(400).json({
+          success: false,
+          message: 'Gestión por Procesos requiere un libro Excel con las hojas BD_SGD_UNICESMAG, POLÍTICAS y PLANTILLAS.'
+        });
+      }
+      const result = await importGestionProcesosFromWorkbook({
+        workbook,
+        fileName: uploadFileName,
+        userId: req.user?.id || null
+      });
+      const totalProcesados = Number(result.importados || 0) + Number(result.actualizados || 0);
+      if (!result.total) {
+        return res.status(400).json({
+          success: false,
+          message: 'No se encontraron filas válidas en las hojas de Gestión por Procesos.',
+          data: result
+        });
+      }
+      return res.json({
+        success: true,
+        message: `Importación finalizada para Gestión por Procesos: ${result.importados} nuevos, ${result.actualizados} actualizados de ${result.total} registros`,
+        data: { ...result, totalProcesados }
       });
     }
 
