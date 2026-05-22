@@ -12,7 +12,8 @@ import {
   CircularProgress,
   Tooltip,
   Skeleton,
-  Divider
+  Divider,
+  Button
 } from '@mui/material';
 import TrendingUpRoundedIcon from '@mui/icons-material/TrendingUpRounded';
 import AutoGraphRoundedIcon from '@mui/icons-material/AutoGraphRounded';
@@ -24,6 +25,8 @@ import FilterListRoundedIcon from '@mui/icons-material/FilterListRounded';
 import TimelineRoundedIcon from '@mui/icons-material/TimelineRounded';
 import TableChartRoundedIcon from '@mui/icons-material/TableChartRounded';
 import CheckCircleRoundedIcon from '@mui/icons-material/CheckCircleRounded';
+import ContentCopyRoundedIcon from '@mui/icons-material/ContentCopyRounded';
+import ImageRoundedIcon from '@mui/icons-material/ImageRounded';
 import {
   ResponsiveContainer,
   LineChart,
@@ -37,24 +40,25 @@ import {
   LabelList
 } from 'recharts';
 import { useSnackbar } from 'notistack';
+import html2canvas from 'html2canvas';
 import saberProAnalyticsService from '../../services/saberProAnalyticsService';
 
 const GROUP_THEMES = {
   genericas: {
     label: 'Competencias Genéricas',
     desc: 'Núcleo común evaluado por el ICFES: razonamiento cuantitativo, lectura crítica, inglés, comunicación escrita y ciudadanas.',
-    primary: '#10b981',
-    primarySoft: '#d1fae5',
-    primaryDark: '#047857',
-    accent: '#2563eb',
+    primary: '#1d4ed8',
+    primarySoft: '#dbeafe',
+    primaryDark: '#172554',
+    accent: '#0f172a',
     icon: TrendingUpRoundedIcon
   },
   especificas: {
     label: 'Competencias Específicas',
     desc: 'Competencias propias del programa académico que complementan el núcleo común.',
-    primary: '#7c3aed',
-    primarySoft: '#ede9fe',
-    primaryDark: '#5b21b6',
+    primary: '#1e40af',
+    primarySoft: '#dbeafe',
+    primaryDark: '#172554',
     accent: '#2563eb',
     icon: AutoGraphRoundedIcon
   }
@@ -62,18 +66,12 @@ const GROUP_THEMES = {
 
 const REFERENCE_DARK = '#475569';
 const INSTITUCIONAL_COLOR = '#2563eb';
+const INSTITUCIONAL_TABLE_BLUE = '#1f5bd8';
+const INSTITUCIONAL_HEADER_BLUE = '#1e40af';
 
 const fmt = (v, digits = 1) => (v == null || !Number.isFinite(Number(v))
   ? '—'
   : Number(v).toLocaleString('es-CO', { minimumFractionDigits: digits, maximumFractionDigits: digits }));
-
-const heatColor = (value, min, max, primary) => {
-  if (value == null || !Number.isFinite(Number(value))) return 'transparent';
-  if (max === min) return `${primary}22`;
-  const t = Math.max(0, Math.min(1, (Number(value) - min) / (max - min)));
-  const alpha = Math.round(12 + t * 55);
-  return `${primary}${alpha.toString(16).padStart(2, '0')}`;
-};
 
 function FancyTooltip({ active, payload, label, theme }) {
   if (!active || !payload || !payload.length) return null;
@@ -118,6 +116,77 @@ const RenderLineLabel = (props) => {
     </text>
   );
 };
+
+async function copyTextToClipboard(text) {
+  if (navigator.clipboard?.writeText) {
+    await navigator.clipboard.writeText(text);
+    return;
+  }
+  const ta = document.createElement('textarea');
+  ta.value = text;
+  ta.style.position = 'fixed';
+  ta.style.left = '-9999px';
+  document.body.appendChild(ta);
+  ta.focus();
+  ta.select();
+  document.execCommand('copy');
+  document.body.removeChild(ta);
+}
+
+async function copyRichTableToClipboard(html, text) {
+  if (navigator.clipboard?.write && window.ClipboardItem) {
+    await navigator.clipboard.write([
+      new ClipboardItem({
+        'text/html': new Blob([html], { type: 'text/html' }),
+        'text/plain': new Blob([text], { type: 'text/plain' })
+      })
+    ]);
+    return;
+  }
+  await copyTextToClipboard(text);
+}
+
+const escapeHtml = (value) => String(value ?? '')
+  .replace(/&/g, '&amp;')
+  .replace(/</g, '&lt;')
+  .replace(/>/g, '&gt;')
+  .replace(/"/g, '&quot;');
+
+async function copyChartSvgAsImage(containerId) {
+  const container = document.getElementById(containerId);
+  if (!container) throw new Error('chart-not-found');
+
+  const canvas = await html2canvas(container, {
+    backgroundColor: '#ffffff',
+    scale: Math.min(window.devicePixelRatio || 1, 2),
+    useCORS: true,
+    ignoreElements: (element) => element?.dataset?.copyIgnore === 'true',
+    onclone: (doc) => {
+      const cloned = doc.getElementById(containerId);
+      if (!cloned) return;
+      cloned.style.fontFamily = 'Arial, Helvetica, sans-serif';
+      cloned.querySelectorAll('*').forEach((node) => {
+        node.style.fontFamily = 'Arial, Helvetica, sans-serif';
+      });
+    }
+  });
+
+  const pngBlob = await new Promise((resolve) => canvas.toBlob(resolve, 'image/png'));
+  if (!pngBlob) throw new Error('blob-failed');
+
+  if (navigator.clipboard?.write && window.ClipboardItem) {
+    await navigator.clipboard.write([new ClipboardItem({ 'image/png': pngBlob })]);
+    return;
+  }
+
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(pngBlob);
+  a.download = 'grafico_rendimiento_competencias.png';
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+}
 
 function RendimientoCompetenciasPanel({ grupo = 'genericas' }) {
   const theme = GROUP_THEMES[grupo] || GROUP_THEMES.genericas;
@@ -195,18 +264,6 @@ function RendimientoCompetenciasPanel({ grupo = 'genericas' }) {
     });
   }, [aniosVisibles, activeRow, promedioRow]);
 
-  const heatStats = useMemo(() => {
-    const vals = [];
-    for (const row of matrizOrdenada) {
-      for (const anio of aniosVisibles) {
-        const v = row.byYear?.[anio]?.programa;
-        if (Number.isFinite(Number(v))) vals.push(Number(v));
-      }
-    }
-    if (!vals.length) return { min: 0, max: 0 };
-    return { min: Math.min(...vals), max: Math.max(...vals) };
-  }, [matrizOrdenada, aniosVisibles]);
-
   const chartYDomain = useMemo(() => {
     const vals = chartData
       .flatMap((r) => [r.principal, r.grupoRef])
@@ -215,8 +272,8 @@ function RendimientoCompetenciasPanel({ grupo = 'genericas' }) {
     const min = Math.min(...vals);
     const max = Math.max(...vals);
     const span = Math.max(max - min, 4);
-    const pad = Math.max(span * 0.25, 3);
-    return [Math.max(0, Math.floor((min - pad) / 5) * 5), Math.min(300, Math.ceil((max + pad) / 5) * 5)];
+    const pad = Math.max(span * 0.08, 1.5);
+    return [Math.max(0, Math.floor((min - pad) / 2) * 2), Math.min(300, Math.ceil((max + pad) / 2) * 2)];
   }, [chartData]);
 
   const scopeLabel = programa ? programa : 'Institucional';
@@ -245,6 +302,82 @@ function RendimientoCompetenciasPanel({ grupo = 'genericas' }) {
     });
   };
 
+  const handleCopyTable = useCallback(async () => {
+    const headers = ['Competencia', ...aniosVisibles.map(String), 'Promedio'];
+    const formatCopyNumber = (value) => Number.isFinite(Number(value)) ? Number(value).toFixed(1).replace('.', ',') : '';
+    const rows = matrizOrdenada.map((row) => [
+      row.competencia,
+      ...aniosVisibles.map((anio) => formatCopyNumber(row.byYear?.[anio]?.programa)),
+      formatCopyNumber(row.promedio)
+    ]);
+    const promedioValues = Object.values(promedioRow.byYear || {})
+      .map((c) => c?.programa)
+      .filter((v) => Number.isFinite(Number(v)));
+    const promedioFinal = promedioValues.length
+      ? (promedioValues.reduce((acc, value) => acc + Number(value), 0) / promedioValues.length).toFixed(1).replace('.', ',')
+      : '';
+    rows.push([
+      'PROMEDIO',
+      ...aniosVisibles.map((anio) => formatCopyNumber(promedioRow.byYear?.[anio]?.programa)),
+      promedioFinal
+    ]);
+
+    const text = [
+      headers.join('\t'),
+      ...rows.map((row) => row.join('\t')),
+      '',
+      'Fuente: ICFES'
+    ].join('\n');
+    const html = `
+      <div style="font-family:Arial,Helvetica,sans-serif;color:#0f172a;">
+        <table style="border-collapse:collapse;width:100%;font-size:12px;mso-table-lspace:0pt;mso-table-rspace:0pt;">
+          <thead>
+            <tr style="background:#1f5bd8;color:#ffffff;">
+              ${headers.map((header, index) => `
+                <th style="border:1px solid #1f5bd8;padding:7px 9px;text-align:${index === 0 ? 'left' : 'center'};font-weight:800;white-space:nowrap;">
+                  ${escapeHtml(header)}
+                </th>
+              `).join('')}
+            </tr>
+          </thead>
+          <tbody>
+            ${rows.map((row, rowIndex) => {
+              const isPromedio = row[0] === 'PROMEDIO';
+              return `
+                <tr style="background:${isPromedio ? '#eef2f7' : '#ffffff'};">
+                  ${row.map((cell, index) => `
+                    <td style="border:1px solid #dbe3ef;padding:7px 9px;text-align:${index === 0 ? 'left' : 'center'};font-weight:${isPromedio || index === row.length - 1 ? '800' : '600'};color:${index === row.length - 1 ? '#1e3a8a' : '#0f172a'};white-space:${index === 0 ? 'nowrap' : 'normal'};">
+                      ${escapeHtml(cell)}
+                    </td>
+                  `).join('')}
+                </tr>
+              `;
+            }).join('')}
+          </tbody>
+        </table>
+        <div style="font-size:11px;color:#475569;margin-top:8px;">
+          Fuente: <strong>ICFES</strong>
+        </div>
+      </div>
+    `;
+
+    try {
+      await copyRichTableToClipboard(html, text);
+      enqueueSnackbar('Tabla copiada con formato limpio', { variant: 'success' });
+    } catch (_error) {
+      enqueueSnackbar('No se pudo copiar la tabla', { variant: 'warning' });
+    }
+  }, [aniosVisibles, enqueueSnackbar, matrizOrdenada, promedioRow]);
+
+  const handleCopyChart = useCallback(async () => {
+    try {
+      await copyChartSvgAsImage('rendimiento-competencias-chart');
+      enqueueSnackbar('Gráfico copiado como imagen limpia', { variant: 'success' });
+    } catch (_error) {
+      enqueueSnackbar('No se pudo copiar el gráfico', { variant: 'warning' });
+    }
+  }, [enqueueSnackbar]);
+
   const chartEmpty = !chartData.some((d) => Number.isFinite(Number(d.principal)) || Number.isFinite(Number(d.grupoRef)));
   const matrizEmpty = !matrizOrdenada.length;
 
@@ -269,9 +402,9 @@ function RendimientoCompetenciasPanel({ grupo = 'genericas' }) {
           <Stack direction="row" spacing={1.8} alignItems="center">
             <Box sx={{
               width: 52, height: 52, borderRadius: 2.2,
-              background: `linear-gradient(135deg, ${theme.primary} 0%, ${theme.primaryDark} 100%)`,
+              background: `linear-gradient(135deg, ${INSTITUCIONAL_HEADER_BLUE} 0%, ${INSTITUCIONAL_COLOR} 100%)`,
               display: 'grid', placeItems: 'center',
-              boxShadow: `0 10px 24px ${theme.primary}4d`
+              boxShadow: '0 10px 24px rgba(15,23,42,0.18)'
             }}>
               <HeaderIcon sx={{ color: '#fff', fontSize: 28 }} />
             </Box>
@@ -300,7 +433,7 @@ function RendimientoCompetenciasPanel({ grupo = 'genericas' }) {
             <Chip
               label={`${matrizOrdenada.length} competencias`}
               sx={{
-                bgcolor: theme.primary,
+                bgcolor: INSTITUCIONAL_TABLE_BLUE,
                 color: '#fff',
                 fontWeight: 800,
                 fontSize: 11.5,
@@ -380,7 +513,17 @@ function RendimientoCompetenciasPanel({ grupo = 'genericas' }) {
           </Stack>
 
           {/* Selector de años local */}
-          <Stack direction="row" spacing={0.6} alignItems="center" flexWrap="wrap" useFlexGap>
+          <Stack direction="row" spacing={0.8} alignItems="center" flexWrap="wrap" useFlexGap>
+            <Button
+              size="small"
+              variant="outlined"
+              startIcon={<ContentCopyRoundedIcon sx={{ fontSize: 15 }} />}
+              onClick={handleCopyTable}
+              disabled={matrizEmpty}
+              sx={{ textTransform: 'none', fontWeight: 800, borderRadius: 2, fontSize: 11, py: 0.35 }}
+            >
+              Copiar tabla
+            </Button>
             <Typography sx={{ fontSize: 11, fontWeight: 700, color: '#64748b', letterSpacing: '0.04em', mr: 0.5 }}>AÑOS</Typography>
             {aniosDisponibles.map((anio) => {
               const on = selectedYears.includes(anio);
@@ -395,13 +538,13 @@ function RendimientoCompetenciasPanel({ grupo = 'genericas' }) {
                     height: 26,
                     fontSize: 11.5,
                     fontWeight: 700,
-                    bgcolor: on ? theme.primary : '#f1f5f9',
-                    color: on ? '#fff' : '#475569',
-                    border: on ? `1px solid ${theme.primary}` : '1px solid #e2e8f0',
+                    bgcolor: on ? INSTITUCIONAL_TABLE_BLUE : '#f8fafc',
+                    color: on ? '#fff' : '#334155',
+                    border: on ? `1px solid ${INSTITUCIONAL_TABLE_BLUE}` : '1px solid #dbe3ef',
                     transition: 'all 0.15s',
                     '&:hover': {
-                      bgcolor: on ? theme.primaryDark : `${theme.primary}1a`,
-                      color: on ? '#fff' : theme.primaryDark
+                      bgcolor: on ? INSTITUCIONAL_HEADER_BLUE : '#eaf1fb',
+                      color: on ? '#fff' : '#1e3a8a'
                     }
                   }}
                 />
@@ -428,7 +571,7 @@ function RendimientoCompetenciasPanel({ grupo = 'genericas' }) {
               fontSize: 12.5
             }}>
               <Box component="thead">
-                <Box component="tr" sx={{ bgcolor: '#0f172a' }}>
+                <Box component="tr" sx={{ bgcolor: INSTITUCIONAL_TABLE_BLUE }}>
                   <Box component="th" sx={{ textAlign: 'left', px: 1.6, py: 1.1, color: '#fff', fontWeight: 800, fontSize: 11.5, letterSpacing: '0.06em', textTransform: 'uppercase', minWidth: 260 }}>
                     Competencia
                   </Box>
@@ -453,20 +596,20 @@ function RendimientoCompetenciasPanel({ grupo = 'genericas' }) {
                       sx={{
                         cursor: 'pointer',
                         transition: 'background-color 0.12s',
-                        bgcolor: selected ? `${theme.primary}12` : '#fff',
-                        '&:hover': { bgcolor: selected ? `${theme.primary}1a` : '#f8fafc' }
+                        bgcolor: selected ? '#eef4ff' : '#fff',
+                        '&:hover': { bgcolor: selected ? '#e0ebff' : '#f8fafc' }
                       }}
                     >
                       <Box component="td" sx={{
                         px: 1.6, py: 1,
                         fontWeight: 700,
-                        color: selected ? theme.primaryDark : '#0f172a',
+                        color: selected ? '#172554' : '#0f172a',
                         fontSize: 12.8,
                         borderBottom: '1px solid #f1f5f9',
-                        borderLeft: selected ? `3px solid ${theme.primary}` : '3px solid transparent'
+                        borderLeft: selected ? '3px solid #1d4ed8' : '3px solid transparent'
                       }}>
                         <Stack direction="row" spacing={0.8} alignItems="center">
-                          {selected && <CheckCircleRoundedIcon sx={{ fontSize: 15, color: theme.primary }} />}
+                          {selected && <CheckCircleRoundedIcon sx={{ fontSize: 15, color: '#1d4ed8' }} />}
                           <span>{row.competencia}</span>
                         </Stack>
                       </Box>
@@ -474,7 +617,6 @@ function RendimientoCompetenciasPanel({ grupo = 'genericas' }) {
                         const cell = row.byYear?.[anio] || {};
                         const v = cell.programa;
                         const g = cell.grupo;
-                        const bg = heatColor(v, heatStats.min, heatStats.max, theme.primary);
                         return (
                           <Tooltip
                             key={anio}
@@ -494,7 +636,7 @@ function RendimientoCompetenciasPanel({ grupo = 'genericas' }) {
                               fontWeight: 700,
                               color: '#0f172a',
                               borderBottom: '1px solid #f1f5f9',
-                              bgcolor: bg
+                              bgcolor: '#fff'
                             }}>
                               {fmt(v, 1)}
                             </Box>
@@ -505,7 +647,7 @@ function RendimientoCompetenciasPanel({ grupo = 'genericas' }) {
                         px: 1.2, py: 1,
                         textAlign: 'center',
                         fontWeight: 900,
-                        color: theme.primaryDark,
+                        color: '#1e3a8a',
                         borderBottom: '1px solid #f1f5f9',
                         borderLeft: '1px solid #e2e8f0',
                         bgcolor: '#f8fafc'
@@ -524,7 +666,7 @@ function RendimientoCompetenciasPanel({ grupo = 'genericas' }) {
                     fontSize: 12,
                     letterSpacing: '0.05em',
                     textTransform: 'uppercase',
-                    borderTop: '2px solid #0f172a'
+                    borderTop: `2px solid ${INSTITUCIONAL_TABLE_BLUE}`
                   }}>
                     Promedio
                   </Box>
@@ -534,7 +676,7 @@ function RendimientoCompetenciasPanel({ grupo = 'genericas' }) {
                       textAlign: 'center',
                       fontWeight: 900,
                       color: '#0f172a',
-                      borderTop: '2px solid #0f172a'
+                      borderTop: `2px solid ${INSTITUCIONAL_TABLE_BLUE}`
                     }}>
                       {fmt(promedioRow.byYear?.[anio]?.programa, 1)}
                     </Box>
@@ -543,10 +685,10 @@ function RendimientoCompetenciasPanel({ grupo = 'genericas' }) {
                     px: 1.2, py: 1.1,
                     textAlign: 'center',
                     fontWeight: 900,
-                    color: theme.primaryDark,
-                    borderTop: '2px solid #0f172a',
+                    color: '#1e3a8a',
+                    borderTop: `2px solid ${INSTITUCIONAL_TABLE_BLUE}`,
                     borderLeft: '1px solid #cbd5e1',
-                    bgcolor: theme.primarySoft
+                    bgcolor: '#fff'
                   }}>
                     {fmt(Object.values(promedioRow.byYear || {}).map((c) => c?.programa).filter((v) => Number.isFinite(Number(v))).reduce((acc, v, _, arr) => acc + Number(v) / arr.length, 0) || null, 1)}
                   </Box>
@@ -584,8 +726,19 @@ function RendimientoCompetenciasPanel({ grupo = 'genericas' }) {
             </Box>
           </Stack>
 
-          {brecha && (
-            <Stack direction="row" spacing={0.8} alignItems="center">
+          <Stack direction="row" spacing={0.8} alignItems="center" flexWrap="wrap" useFlexGap>
+            <Button
+              size="small"
+              variant="outlined"
+              startIcon={<ImageRoundedIcon sx={{ fontSize: 15 }} />}
+              onClick={handleCopyChart}
+              disabled={chartEmpty}
+              sx={{ textTransform: 'none', fontWeight: 800, borderRadius: 2, fontSize: 11, py: 0.35 }}
+            >
+              Copiar gráfico
+            </Button>
+            {brecha && (
+              <>
               <CompareArrowsRoundedIcon sx={{ fontSize: 16, color: '#64748b' }} />
               <Chip
                 label={`Brecha promedio: ${brecha.promedio >= 0 ? '+' : ''}${fmt(brecha.promedio, 1)}`}
@@ -593,9 +746,9 @@ function RendimientoCompetenciasPanel({ grupo = 'genericas' }) {
                 sx={{
                   fontSize: 11,
                   fontWeight: 800,
-                  bgcolor: brecha.promedio >= 0 ? '#dcfce7' : '#fee2e2',
-                  color: brecha.promedio >= 0 ? '#166534' : '#991b1b',
-                  border: brecha.promedio >= 0 ? '1px solid #86efac' : '1px solid #fecaca'
+                  bgcolor: brecha.promedio >= 0 ? '#dbeafe' : '#fee2e2',
+                  color: brecha.promedio >= 0 ? '#1e3a8a' : '#991b1b',
+                  border: brecha.promedio >= 0 ? '1px solid #93c5fd' : '1px solid #fecaca'
                 }}
               />
               <Chip
@@ -609,8 +762,9 @@ function RendimientoCompetenciasPanel({ grupo = 'genericas' }) {
                   border: '1px solid #e2e8f0'
                 }}
               />
-            </Stack>
-          )}
+              </>
+            )}
+          </Stack>
         </Stack>
 
         {loading ? (
@@ -625,18 +779,51 @@ function RendimientoCompetenciasPanel({ grupo = 'genericas' }) {
           <Box sx={{
             bgcolor: '#ffffff',
             borderRadius: 2,
-            border: '1px solid #f1f5f9',
-            p: { xs: 1, md: 1.4 }
+            border: '1px solid #dbe3ef',
+            p: { xs: 1, md: 1.4 },
+            position: 'relative'
           }}>
-            <ResponsiveContainer width="100%" height={360}>
+            <Button
+              data-copy-ignore="true"
+              size="small"
+              variant="contained"
+              startIcon={<ImageRoundedIcon sx={{ fontSize: 15 }} />}
+              onClick={handleCopyChart}
+              disabled={chartEmpty}
+              sx={{
+                position: 'absolute',
+                top: 10,
+                right: 12,
+                zIndex: 3,
+                textTransform: 'none',
+                fontWeight: 900,
+                borderRadius: 2,
+                fontSize: 11,
+                py: 0.45,
+                bgcolor: '#1f5bd8',
+                boxShadow: '0 8px 18px rgba(31,91,216,0.22)',
+                '&:hover': { bgcolor: '#1e40af' },
+                '&.Mui-disabled': { bgcolor: '#e2e8f0', color: '#94a3b8', boxShadow: 'none' }
+              }}
+            >
+              Copiar gráfico
+            </Button>
+            <Box id="rendimiento-competencias-chart" sx={{ bgcolor: '#fff', fontFamily: 'Arial, Helvetica, sans-serif' }}>
+              <ResponsiveContainer width="100%" height={360}>
               <LineChart data={chartData} margin={{ top: 28, right: 34, left: 6, bottom: 8 }}>
                 <defs>
                   <linearGradient id={`gradPrincipal-${grupo}`} x1="0" y1="0" x2="1" y2="0">
-                    <stop offset="0%" stopColor={INSTITUCIONAL_COLOR} stopOpacity={0.85} />
-                    <stop offset="100%" stopColor={theme.primary} stopOpacity={1} />
+                    <stop offset="0%" stopColor={INSTITUCIONAL_COLOR} stopOpacity={1} />
+                    <stop offset="100%" stopColor="#1e40af" stopOpacity={1} />
                   </linearGradient>
                 </defs>
-                <CartesianGrid stroke="#e2e8f0" strokeDasharray="3 4" vertical={false} />
+                <CartesianGrid
+                  stroke="#cbd5e1"
+                  strokeDasharray="4 4"
+                  strokeOpacity={0.75}
+                  horizontal
+                  vertical
+                />
                 <XAxis
                   dataKey="anio"
                   tick={{ fill: '#475569', fontSize: 12, fontWeight: 700 }}
@@ -652,7 +839,7 @@ function RendimientoCompetenciasPanel({ grupo = 'genericas' }) {
                   width={46}
                   label={{ value: 'Puntaje (0 - 300)', angle: -90, position: 'insideLeft', fill: '#64748b', fontSize: 10, fontWeight: 700 }}
                 />
-                <RechartsTooltip content={<FancyTooltip theme={theme} />} cursor={{ stroke: theme.primary, strokeOpacity: 0.18, strokeWidth: 28 }} />
+                <RechartsTooltip content={<FancyTooltip theme={theme} />} cursor={{ stroke: '#94a3b8', strokeOpacity: 0.22, strokeWidth: 2 }} />
                 <Legend
                   verticalAlign="bottom"
                   height={32}
@@ -660,26 +847,26 @@ function RendimientoCompetenciasPanel({ grupo = 'genericas' }) {
                   wrapperStyle={{ fontSize: 12, fontWeight: 700, color: '#334155' }}
                 />
                 <Line
-                  type="monotone"
+                  type="linear"
                   dataKey="grupoRef"
                   name="Grupo de Referencia"
                   stroke={REFERENCE_DARK}
-                  strokeWidth={2.4}
-                  strokeDasharray="5 5"
-                  dot={{ r: 4, fill: '#fff', stroke: REFERENCE_DARK, strokeWidth: 2 }}
-                  activeDot={{ r: 6, fill: REFERENCE_DARK }}
+                  strokeWidth={3}
+                  strokeDasharray="7 4"
+                  dot={{ r: 5, fill: '#fff', stroke: REFERENCE_DARK, strokeWidth: 2.5 }}
+                  activeDot={{ r: 7, fill: REFERENCE_DARK, stroke: '#fff', strokeWidth: 2.4 }}
                   connectNulls
                 >
                   <LabelList dataKey="grupoRef" content={RenderLineLabel} />
                 </Line>
                 <Line
-                  type="monotone"
+                  type="linear"
                   dataKey="principal"
                   name={principalName}
                   stroke={`url(#gradPrincipal-${grupo})`}
-                  strokeWidth={3.2}
-                  dot={{ r: 5, fill: '#fff', stroke: theme.primary, strokeWidth: 2.6 }}
-                  activeDot={{ r: 7.5, fill: theme.primary }}
+                  strokeWidth={4}
+                  dot={{ r: 6, fill: '#fff', stroke: '#1d4ed8', strokeWidth: 3 }}
+                  activeDot={{ r: 8, fill: '#1d4ed8', stroke: '#fff', strokeWidth: 2.6 }}
                   connectNulls
                 >
                   <LabelList dataKey="principal" content={RenderLineLabel} />
@@ -687,14 +874,15 @@ function RendimientoCompetenciasPanel({ grupo = 'genericas' }) {
                 {activeRow && Number.isFinite(Number(activeRow.promedio)) && (
                   <ReferenceLine
                     y={Number(activeRow.promedio)}
-                    stroke={theme.primary}
+                    stroke="#1d4ed8"
                     strokeDasharray="2 6"
                     strokeOpacity={0.45}
-                    label={{ value: `Prom. ${fmt(activeRow.promedio, 1)}`, position: 'right', fill: theme.primaryDark, fontSize: 10, fontWeight: 700 }}
+                    label={{ value: `Prom. ${fmt(activeRow.promedio, 1)}`, position: 'right', fill: '#1e3a8a', fontSize: 10, fontWeight: 700 }}
                   />
                 )}
               </LineChart>
-            </ResponsiveContainer>
+              </ResponsiveContainer>
+            </Box>
           </Box>
         )}
 

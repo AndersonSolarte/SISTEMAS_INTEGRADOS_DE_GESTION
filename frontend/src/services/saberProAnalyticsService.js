@@ -27,6 +27,8 @@ const saberProAnalyticsService = {
     api.post('/planeacion/gestion-informacion/saber-pro/resultados/nbc/detalle', { filters }).then((r) => r.data),
   getResultadosProgramas: (filters = {}) =>
     api.post('/planeacion/gestion-informacion/saber-pro/resultados/programas', { filters }).then((r) => r.data),
+  getResultadosBaseExport: ({ filters = {}, scope = '' } = {}) =>
+    api.post('/planeacion/gestion-informacion/saber-pro/resultados/export-base', { filters, scope }, { timeout: 60000 }).then((r) => r.data),
   getResultadosProgramaDetalle: (filters = {}) =>
     api.post('/planeacion/gestion-informacion/saber-pro/resultados/programas/detalle', { filters }).then((r) => r.data),
   getResultadosInstitucional: (filters = {}) =>

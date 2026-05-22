@@ -19,7 +19,9 @@ import {
 } from '@mui/material';
 import SearchIcon from '@mui/icons-material/Search';
 import FilterAltOffIcon from '@mui/icons-material/FilterAltOff';
+import DownloadRoundedIcon from '@mui/icons-material/DownloadRounded';
 import { Bar, BarChart, CartesianGrid, Cell, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
+import * as XLSX from 'xlsx';
 import saberProAnalyticsService from '../../services/saberProAnalyticsService';
 import BadgeEstado from './valueAdded/BadgeEstado';
 import CardKPI from './valueAdded/CardKPI';
@@ -1058,6 +1060,7 @@ function ValorAgregadoDashboardBI({ initialSection = 'va_individual', allowedDas
   const vaSearchTimer = useRef(null);
   const [vaOnlyPositive, setVaOnlyPositive] = useState(false);
   const [exportingPositivos, setExportingPositivos] = useState(false);
+  const [exportingBase, setExportingBase] = useState(false);
   const [vaTrendYears, setVaTrendYears] = useState([]);
   const [vaCompYears, setVaCompYears] = useState([]);
   const [vaDualYears, setVaDualYears] = useState([]);
@@ -1123,6 +1126,7 @@ function ValorAgregadoDashboardBI({ initialSection = 'va_individual', allowedDas
       setExportingPositivos(false);
     }
   }, [filters]);
+
   const nbcFilters = useMemo(() => ({
     programas: [],
     anios: filters.anios || [],
@@ -1141,9 +1145,100 @@ function ValorAgregadoDashboardBI({ initialSection = 'va_individual', allowedDas
     periodos: [],
     gruposReferencia: []
   }), [filters.anios]);
+  const exportScope = section === 'va_nbc'
+    ? 'nbc'
+    : section === 'va_programas'
+      ? 'programas'
+      : section === 'va_institucional'
+        ? 'institucional'
+        : '';
+  const exportFilters = section === 'va_nbc'
+    ? nbcFilters
+    : section === 'va_programas'
+      ? programFilters
+      : section === 'va_institucional'
+        ? institutionalFilters
+        : filters;
   const hasNbcFilters = !!((filters.anios && filters.anios.length) || (filters.gruposReferencia && filters.gruposReferencia.length));
   const hasProgramFilters = !!((filters.anios && filters.anios.length) || (filters.programas && filters.programas.length));
   const hasInstitutionalFilters = !!(filters.anios && filters.anios.length);
+  const canExportBase = (section === 'va_nbc' && hasNbcFilters)
+    || (section === 'va_programas' && hasProgramFilters)
+    || (section === 'va_institucional' && hasInstitutionalFilters);
+
+  const handleExportResultadosBase = useCallback(async () => {
+    if (!exportScope) return;
+    setExportingBase(true);
+    try {
+      const r = await saberProAnalyticsService.getResultadosBaseExport({ filters: exportFilters, scope: exportScope });
+      const rows = r?.data?.rows || [];
+      const summary = r?.data?.summary || [];
+      if (!rows.length) {
+        alert('No hay datos para exportar con los filtros actuales.');
+        return;
+      }
+
+      const label = exportScope === 'nbc' ? 'NBC' : exportScope === 'programas' ? 'Programas' : 'Institucional';
+      const normalizeSheet = (items) => items.map((row) => ({
+        'Tipo prueba': row.tipo_prueba,
+        'Tipo documento': row.tipo_documento,
+        Documento: row.documento,
+        Nombre: row.nombre,
+        'Numero registro': row.numero_registro,
+        'Tipo evaluado': row.tipo_evaluado,
+        'SNIES programa': row.snies_programa_academico,
+        Programa: row.programa,
+        Ciudad: row.ciudad,
+        'Grupo referencia / NBC': row.grupo_referencia,
+        Anio: row.anio,
+        Periodo: row.periodo,
+        'Periodo ICFES': row.periodo_icfes,
+        'Lugar presentacion': row.lugar_presentacion,
+        Modalidad: row.modalidad,
+        Competencias: row.competencias,
+        Modulo: row.modulo,
+        'Puntaje global': row.puntaje_global,
+        'Percentil nacional global': row.percentil_nacional_global,
+        'Percentil grupo referencia': row.percentil_grupo_referencia,
+        'Puntaje modulo': row.puntaje_modulo,
+        'Nivel desempeno': row.nivel_desempeno,
+        'Percentil nacional modulo': row.percentil_nacional_modulo,
+        'Percentil grupo referencia modulo': row.percentil_grupo_referencia_modulo,
+        Novedades: row.novedades
+      }));
+
+      const wb = XLSX.utils.book_new();
+      const wsBase = XLSX.utils.json_to_sheet(normalizeSheet(rows));
+      const wsSummary = XLSX.utils.json_to_sheet(summary.map((row) => ({
+        Grupo: row.grupo,
+        Estudiantes: row.estudiantes,
+        'Registros modulo': row.registros_modulo,
+        'Promedio global': row.promedio_global,
+        'Percentil nacional': row.percentil_nacional,
+        'Anio minimo': row.anio_min,
+        'Anio maximo': row.anio_max
+      })));
+
+      wsBase['!cols'] = [
+        { wch: 14 }, { wch: 16 }, { wch: 16 }, { wch: 34 }, { wch: 20 },
+        { wch: 14 }, { wch: 16 }, { wch: 34 }, { wch: 18 }, { wch: 24 },
+        { wch: 10 }, { wch: 10 }, { wch: 14 }, { wch: 22 }, { wch: 18 },
+        { wch: 18 }, { wch: 28 }, { wch: 14 }, { wch: 22 }, { wch: 22 },
+        { wch: 14 }, { wch: 16 }, { wch: 24 }, { wch: 28 }, { wch: 24 }
+      ];
+      wsSummary['!cols'] = [{ wch: 34 }, { wch: 14 }, { wch: 18 }, { wch: 18 }, { wch: 18 }, { wch: 14 }, { wch: 14 }];
+
+      XLSX.utils.book_append_sheet(wb, wsBase, 'Base datos');
+      XLSX.utils.book_append_sheet(wb, wsSummary, 'Resumen');
+      XLSX.writeFile(wb, `base_resultados_${label.toLowerCase()}_${new Date().toISOString().slice(0, 10)}.xlsx`);
+    } catch (e) {
+      console.error('Error exportando base de resultados:', e);
+      alert('No se pudo exportar la base de datos.');
+    } finally {
+      setExportingBase(false);
+    }
+  }, [exportFilters, exportScope]);
+
   const catalogFilters = section === 'va_nbc'
     ? nbcFilters
     : section === 'va_programas'
@@ -1569,6 +1664,27 @@ function ValorAgregadoDashboardBI({ initialSection = 'va_individual', allowedDas
                 </Typography>
               </Box>
               <Stack direction="row" spacing={1.2} alignItems="center">
+                {['va_nbc', 'va_programas', 'va_institucional'].includes(section) ? (
+                  <Button
+                    size="small"
+                    variant="contained"
+                    startIcon={exportingBase ? <CircularProgress size={14} sx={{ color: '#fff' }} /> : <DownloadRoundedIcon sx={{ fontSize: 18 }} />}
+                    onClick={handleExportResultadosBase}
+                    disabled={!canExportBase || exportingBase}
+                    sx={{
+                      textTransform: 'none',
+                      fontWeight: 800,
+                      borderRadius: 99,
+                      bgcolor: '#6d28d9',
+                      px: 1.5,
+                      boxShadow: '0 8px 18px rgba(109,40,217,0.22)',
+                      '&:hover': { bgcolor: '#5b21b6' },
+                      '&.Mui-disabled': { bgcolor: '#e5e7eb', color: '#94a3b8', boxShadow: 'none' }
+                    }}
+                  >
+                    {exportingBase ? 'Exportando' : 'Exportar Excel'}
+                  </Button>
+                ) : null}
                 <Button
                   size="small"
                   variant="outlined"

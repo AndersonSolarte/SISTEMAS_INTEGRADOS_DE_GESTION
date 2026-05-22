@@ -18,6 +18,7 @@ const {
   getResultadosNbc,
   getResultadosNbcDetalle,
   getResultadosProgramas,
+  getResultadosBaseExport,
   getResultadosProgramaDetalle,
   getResultadosInstitucional,
   getResultadosComparativaS11Spr,
@@ -78,6 +79,7 @@ router.post('/value-added/nbc', auth, canViewEstadisticaInstitucional, getValueA
 router.post('/resultados/nbc', auth, canViewEstadisticaInstitucional, getResultadosNbc);
 router.post('/resultados/nbc/detalle', auth, canViewEstadisticaInstitucional, getResultadosNbcDetalle);
 router.post('/resultados/programas', auth, canViewEstadisticaInstitucional, getResultadosProgramas);
+router.post('/resultados/export-base', auth, canViewEstadisticaInstitucional, getResultadosBaseExport);
 router.post('/resultados/programas/detalle', auth, canViewEstadisticaInstitucional, getResultadosProgramaDetalle);
 router.post('/resultados/institucional', auth, canViewEstadisticaInstitucional, getResultadosInstitucional);
 router.post('/resultados/comparativa-s11-spr', auth, canViewEstadisticaInstitucional, getResultadosComparativaS11Spr);

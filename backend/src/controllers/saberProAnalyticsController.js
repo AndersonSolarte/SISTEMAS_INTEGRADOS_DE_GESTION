@@ -1644,6 +1644,112 @@ const getResultadosProgramas = async (req, res) => {
   }
 };
 
+const getResultadosBaseExport = async (req, res) => {
+  try {
+    const filters = req.body?.filters || {};
+    const scope = String(req.body?.scope || '').trim().toLowerCase();
+    const { whereSql, params } = buildDirectWhereSql(filters);
+
+    const [rows, summaryRows] = await Promise.all([
+      sequelize.query(
+        `SELECT
+          tipo_prueba,
+          tipo_documento,
+          documento,
+          nombre,
+          numero_registro,
+          tipo_evaluado,
+          snies_programa_academico,
+          programa,
+          ciudad,
+          grupo_referencia,
+          anio,
+          periodo,
+          periodo_icfes,
+          lugar_presentacion,
+          modalidad,
+          competencias,
+          modulo,
+          puntaje_global,
+          percentil_nacional_global,
+          percentil_grupo_referencia,
+          puntaje_modulo,
+          nivel_desempeno,
+          percentil_nacional_modulo,
+          percentil_grupo_referencia_modulo,
+          novedades
+        FROM saber_pro_resultados_individuales
+        ${whereSql}
+        ORDER BY anio DESC NULLS LAST, periodo DESC NULLS LAST, programa ASC NULLS LAST, nombre ASC NULLS LAST, documento ASC NULLS LAST, modulo ASC NULLS LAST`,
+        { replacements: params, type: QueryTypes.SELECT }
+      ),
+      sequelize.query(
+        `SELECT
+          ${scope === 'programas' ? 'programa' : scope === 'nbc' ? 'grupo_referencia' : "'Institucional'"} AS grupo,
+          COUNT(DISTINCT documento) AS estudiantes,
+          COUNT(*) AS registros_modulo,
+          ROUND(AVG(puntaje_global)::numeric, 2) AS promedio_global,
+          ROUND(AVG(percentil_nacional_global)::numeric, 2) AS percentil_nacional,
+          MIN(anio) AS anio_min,
+          MAX(anio) AS anio_max
+        FROM saber_pro_resultados_individuales
+        ${whereSql}
+        ${scope === 'programas' ? 'GROUP BY programa' : scope === 'nbc' ? 'GROUP BY grupo_referencia' : ''}
+        ORDER BY promedio_global DESC NULLS LAST, estudiantes DESC`,
+        { replacements: params, type: QueryTypes.SELECT }
+      )
+    ]);
+
+    return res.json({
+      success: true,
+      data: {
+        scope,
+        total_registros: rows.length,
+        total_estudiantes: new Set(rows.map((row) => String(row.documento || '').trim()).filter(Boolean)).size,
+        summary: summaryRows.map((row) => ({
+          grupo: row.grupo,
+          estudiantes: Number(row.estudiantes || 0),
+          registros_modulo: Number(row.registros_modulo || 0),
+          promedio_global: row.promedio_global == null ? null : Number(row.promedio_global),
+          percentil_nacional: row.percentil_nacional == null ? null : Number(row.percentil_nacional),
+          anio_min: row.anio_min == null ? null : Number(row.anio_min),
+          anio_max: row.anio_max == null ? null : Number(row.anio_max)
+        })),
+        rows: rows.map((row) => ({
+          tipo_prueba: row.tipo_prueba,
+          tipo_documento: row.tipo_documento,
+          documento: row.documento,
+          nombre: row.nombre,
+          numero_registro: row.numero_registro,
+          tipo_evaluado: row.tipo_evaluado,
+          snies_programa_academico: row.snies_programa_academico,
+          programa: row.programa,
+          ciudad: row.ciudad,
+          grupo_referencia: row.grupo_referencia,
+          anio: row.anio == null ? null : Number(row.anio),
+          periodo: row.periodo,
+          periodo_icfes: row.periodo_icfes,
+          lugar_presentacion: row.lugar_presentacion,
+          modalidad: row.modalidad,
+          competencias: row.competencias,
+          modulo: row.modulo,
+          puntaje_global: row.puntaje_global == null ? null : Number(row.puntaje_global),
+          percentil_nacional_global: row.percentil_nacional_global == null ? null : Number(row.percentil_nacional_global),
+          percentil_grupo_referencia: row.percentil_grupo_referencia == null ? null : Number(row.percentil_grupo_referencia),
+          puntaje_modulo: row.puntaje_modulo == null ? null : Number(row.puntaje_modulo),
+          nivel_desempeno: row.nivel_desempeno,
+          percentil_nacional_modulo: row.percentil_nacional_modulo == null ? null : Number(row.percentil_nacional_modulo),
+          percentil_grupo_referencia_modulo: row.percentil_grupo_referencia_modulo == null ? null : Number(row.percentil_grupo_referencia_modulo),
+          novedades: row.novedades
+        }))
+      }
+    });
+  } catch (error) {
+    console.error('Error en exportar base de resultados:', error);
+    return res.status(500).json({ success: false, message: 'Error al exportar base de resultados' });
+  }
+};
+
 const getResultadosProgramaDetalle = async (req, res) => {
   try {
     const filters = req.body?.filters || {};
@@ -3252,6 +3358,7 @@ module.exports = {
   getResultadosNbc,
   getResultadosNbcDetalle,
   getResultadosProgramas,
+  getResultadosBaseExport,
   getResultadosProgramaDetalle,
   getResultadosInstitucional,
   getResultadosComparativaS11Spr,
