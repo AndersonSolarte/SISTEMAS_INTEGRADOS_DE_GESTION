@@ -46,7 +46,9 @@ const saberProAnalyticsService = {
   getResultadosDestacadosMejores: ({ filters = {}, options = {} } = {}) =>
     api.post('/planeacion/gestion-informacion/saber-pro/resultados/individuales/destacados', { filters, options }).then((r) => r.data),
   getAgregadosCompetencias: (filters = {}) =>
-    api.post('/planeacion/gestion-informacion/saber-pro/agregados/competencias', { filters }).then((r) => r.data)
+    api.post('/planeacion/gestion-informacion/saber-pro/agregados/competencias', { filters }).then((r) => r.data),
+  getComparativoProgramasGenericas: (filters = {}) =>
+    api.post('/planeacion/gestion-informacion/saber-pro/agregados/comparativo-programas', { filters }).then((r) => r.data)
 };
 
 export default saberProAnalyticsService;

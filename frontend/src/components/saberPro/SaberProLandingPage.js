@@ -34,6 +34,7 @@ import ValorAgregadoIndividual from './ValorAgregadoIndividual';
 import ResultadosIndividualesSaberPro from './ResultadosIndividualesSaberPro';
 import ResultadosIndividualesDestacados from './ResultadosIndividualesDestacados';
 import RendimientoCompetenciasContainer from './RendimientoCompetenciasContainer';
+import ComparativoResultadosProgramas from './ComparativoResultadosProgramas';
 
 /* ═══════════════════════════════════════════════════════════════════
    NAV CONFIG
@@ -53,7 +54,8 @@ const NAV_CONFIG = [
     color: '#0891b2', lightBg: '#ecfeff', icon: BarChartRoundedIcon,
     items: [
       { key: 'general',      label: 'Resultados Saber Pro Agregados', desc: 'Promedios institucionales por año y programa.',                             icon: BarChartRoundedIcon,  color: '#0891b2' },
-      { key: 'competencias', label: 'Rendimiento por Competencia',    desc: 'Competencias genéricas y específicas vs grupo de referencia.',              icon: TrendingUpRoundedIcon, color: '#10b981' }
+      { key: 'competencias', label: 'Rendimiento por Competencia',    desc: 'Competencias genéricas y específicas vs grupo de referencia.',              icon: TrendingUpRoundedIcon, color: '#10b981' },
+      { key: 'comparativo_programas', label: 'Comparativo Resultados de Programas', desc: 'Gráficas de barras por programa vs grupo de referencia por competencia y año.', icon: CompareArrowsRoundedIcon, color: '#0891b2' }
     ]
   },
   {
@@ -97,7 +99,8 @@ const SABER_PRO_PERMISSION_BY_GROUP = {
       'saber_pro_agregados_competencias_especificas'
     ],
     comparativo_general: 'saber_pro_agregados_comparativo_general',
-    comparativo_especificas: 'saber_pro_agregados_comparativo_especificas'
+    comparativo_especificas: 'saber_pro_agregados_comparativo_especificas',
+    comparativo_programas: 'saber_pro_agregados_competencias_genericas'
   },
   valor_agregado: {
     va_individual: 'saber_pro_valor_agregado_individual',
@@ -1108,6 +1111,7 @@ function SaberProLandingPage({ onBack, allowedDashboards = [] }) {
     }
     if (activeGroup === 'agregados') {
       if (activeSection === 'competencias') return <RendimientoCompetenciasContainer />;
+      if (activeSection === 'comparativo_programas') return <ComparativoResultadosProgramas />;
       return <SaberProAgregadosDashboard initialSection={activeSection} allowedSections={(activeVisibleGroupConfig?.items || []).map((item) => item.key)} />;
     }
     if (activeGroup === 'valor_agregado') {

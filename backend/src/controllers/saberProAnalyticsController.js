@@ -48,6 +48,20 @@ const normalizeText = (value) => {
   return text || null;
 };
 
+const normalizeTipoExamenValues = (values = []) => Array.from(new Set(
+  toArray(values)
+    .map((value) => {
+      const match = String(value || '').match(/[1-7]/);
+      return match ? Number(match[0]) : null;
+    })
+    .filter(Number.isFinite)
+));
+
+const tipoExamenNumeroSql = (alias = '') => {
+  const prefix = alias ? `${alias}.` : '';
+  return `NULLIF(REGEXP_REPLACE(COALESCE(${prefix}tipo_examen::text, ''), '[^0-9]', '', 'g'), '')::int`;
+};
+
 const buildWhere = (filters = {}) => {
   const where = {};
   const programas = toArray(filters.programas);
@@ -2178,7 +2192,7 @@ const getDocumentosEstudiantes = async (req, res) => {
   try {
     const filters = req.body?.filters || {};
     const search = normalizeText(filters.search || '');
-    const tiposExamen = toArray(filters.tipoExamen || filters.tiposExamen).map(normalizeText).filter(Boolean);
+    const tiposExamen = normalizeTipoExamenValues(filters.tipoExamen || filters.tiposExamen);
     const { whereSql, params } = buildDirectWhereSql(filters);
 
     // Build search clause (by documento, nombre or numero_registro)
@@ -2195,7 +2209,7 @@ const getDocumentosEstudiantes = async (req, res) => {
     // AND connector: append EXISTS after existing WHERE/AND clauses
     // Requires a Saber 11 record with at least one non-null score (not just an empty row)
     const tipoExamenClause = tiposExamen.length
-      ? ` AND UPPER(TRIM(COALESCE(s11.tipo_examen, ''))) IN (${tiposExamen.map(() => 'UPPER(TRIM(?))').join(', ')})`
+      ? ` AND ${tipoExamenNumeroSql('s11')} IN (${tiposExamen.map(() => '?').join(', ')})`
       : '';
 
     const existsClause = `${whereSql || searchClause ? ' AND' : 'WHERE'} EXISTS (
@@ -2248,7 +2262,7 @@ const getDocumentosEstudiantes = async (req, res) => {
       const vaWhere = whereSql ? whereSql.replace(/\bWHERE\b/i, 'WHERE spr.') : '';
       const vaParams = [...params];
       const tipoExamenLatestClause = tiposExamen.length
-        ? ` AND UPPER(TRIM(COALESCE(s11r.tipo_examen, ''))) IN (${tiposExamen.map(() => 'UPPER(TRIM(?))').join(', ')})`
+        ? ` AND ${tipoExamenNumeroSql('s11r')} IN (${tiposExamen.map(() => '?').join(', ')})`
         : '';
       if (tiposExamen.length) vaParams.push(...tiposExamen);
       if (search) vaParams.push(`%${search}%`, `%${search}%`, `%${search}%`);
@@ -2471,14 +2485,14 @@ const getComparativaEstudianteDetalle = async (req, res) => {
     const periodos = toArray(filters.periodos).map(normalizeText).filter(Boolean);
     const programas = toArray(filters.programas).map(normalizeText).filter(Boolean);
     const tiposPrueba = toArray(filters.tipoPrueba || filters.tiposPrueba).map(normalizeText).filter(Boolean);
-    const tiposExamen = toArray(filters.tipoExamen || filters.tiposExamen).map(normalizeText).filter(Boolean);
+    const tiposExamen = normalizeTipoExamenValues(filters.tipoExamen || filters.tiposExamen);
     if (anios.length) { sprClauses.push(`anio IN (${anios.map(() => '?').join(',')})`); sprParams.push(...anios); }
     if (periodos.length) { sprClauses.push(`periodo IN (${periodos.map(() => '?').join(',')})`); sprParams.push(...periodos); }
     if (programas.length) { sprClauses.push(`programa IN (${programas.map(() => '?').join(',')})`); sprParams.push(...programas); }
     if (tiposPrueba.length) { sprClauses.push(`tipo_prueba IN (${tiposPrueba.map(() => '?').join(',')})`); sprParams.push(...tiposPrueba); }
     const sprWhere = `WHERE ${sprClauses.join(' AND ')}`;
     const s11TipoClause = tiposExamen.length
-      ? ` AND UPPER(TRIM(COALESCE(tipo_examen, ''))) IN (${tiposExamen.map(() => 'UPPER(TRIM(?))').join(', ')})`
+      ? ` AND ${tipoExamenNumeroSql()} IN (${tiposExamen.map(() => '?').join(', ')})`
       : '';
     if (tiposExamen.length) sprParams.push(...tiposExamen);
 
@@ -3132,6 +3146,96 @@ const getAgregadosCompetencias = async (req, res) => {
   }
 };
 
+const getComparativoProgramasGenericas = async (req, res) => {
+  try {
+    const filters = req.body?.filters || {};
+    const anios = toArray(filters.anios).map((x) => Number(x)).filter(Number.isFinite);
+    const TIPO_PRUEBA = 'COMPETENCIAS GENERICAS';
+
+    const clauses = [
+      "TRIM(COALESCE(competencia, '')) <> ''",
+      'puntaje_programa IS NOT NULL',
+      "UPPER(TRIM(COALESCE(tipo_prueba, ''))) = ?"
+    ];
+    const params = [TIPO_PRUEBA];
+
+    if (anios.length) {
+      clauses.push(`anio IN (${anios.map(() => '?').join(', ')})`);
+      params.push(...anios);
+    }
+
+    const whereSql = `WHERE ${clauses.join(' AND ')}`;
+
+    const [dataRows, aniosRows] = await Promise.all([
+      sequelize.query(
+        `SELECT anio, programa, competencia,
+            ROUND(AVG(puntaje_programa)::numeric, 2)         AS puntaje_programa,
+            ROUND(AVG(puntaje_grupo_referencia)::numeric, 2) AS puntaje_grupo_referencia
+         FROM saber_pro_resultados_agregados
+         ${whereSql}
+         GROUP BY anio, programa, competencia
+         ORDER BY anio, competencia, puntaje_programa DESC`,
+        { replacements: params, type: QueryTypes.SELECT }
+      ),
+      sequelize.query(
+        `SELECT DISTINCT anio
+         FROM saber_pro_resultados_agregados
+         WHERE anio IS NOT NULL
+           AND UPPER(TRIM(COALESCE(tipo_prueba, ''))) = ?
+         ORDER BY anio`,
+        { replacements: [TIPO_PRUEBA], type: QueryTypes.SELECT }
+      )
+    ]);
+
+    const aniosCatalogo = aniosRows.map((r) => Number(r.anio)).filter(Number.isFinite);
+
+    const byCompetenciaAnio = {};
+    const grupoRefSums = {};
+
+    for (const row of dataRows) {
+      const comp = String(row.competencia || '').trim();
+      const anio = Number(row.anio);
+      const prog = String(row.programa || '').trim();
+      const puntaje = row.puntaje_programa != null ? Number(row.puntaje_programa) : null;
+      const grupoRef = row.puntaje_grupo_referencia != null ? Number(row.puntaje_grupo_referencia) : null;
+
+      if (!comp || !prog || puntaje == null) continue;
+
+      if (!byCompetenciaAnio[comp]) byCompetenciaAnio[comp] = {};
+      if (!byCompetenciaAnio[comp][anio]) byCompetenciaAnio[comp][anio] = { programas: [], grupoReferencia: null };
+
+      byCompetenciaAnio[comp][anio].programas.push({ programa: prog, puntaje });
+
+      if (grupoRef != null) {
+        if (!grupoRefSums[comp]) grupoRefSums[comp] = {};
+        if (!grupoRefSums[comp][anio]) grupoRefSums[comp][anio] = { sum: 0, count: 0 };
+        grupoRefSums[comp][anio].sum += grupoRef;
+        grupoRefSums[comp][anio].count += 1;
+      }
+    }
+
+    for (const comp of Object.keys(byCompetenciaAnio)) {
+      for (const anio of Object.keys(byCompetenciaAnio[comp])) {
+        const sums = grupoRefSums[comp]?.[anio];
+        if (sums && sums.count > 0) {
+          byCompetenciaAnio[comp][anio].grupoReferencia = Number((sums.sum / sums.count).toFixed(2));
+        }
+        byCompetenciaAnio[comp][anio].programas.sort((a, b) => b.puntaje - a.puntaje);
+      }
+    }
+
+    const competencias = Object.keys(byCompetenciaAnio).sort();
+
+    return res.json({
+      success: true,
+      data: { anios: aniosCatalogo, competencias, byCompetenciaAnio }
+    });
+  } catch (error) {
+    console.error('Error en comparativo programas genericas:', error);
+    return res.status(500).json({ success: false, message: 'Error al obtener comparativo de programas' });
+  }
+};
+
 module.exports = {
   getSaberProFiltros,
   getSaberProFiltrosCascade,
@@ -3156,5 +3260,6 @@ module.exports = {
   getComparativaEstudianteDetalle,
   getTablaModulosAnio,
   getResultadosDestacadosMejores,
-  getAgregadosCompetencias
+  getAgregadosCompetencias,
+  getComparativoProgramasGenericas
 };
