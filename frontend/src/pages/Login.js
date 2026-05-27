@@ -244,6 +244,56 @@ function Login() {
           flex: 1,
           pr: 8
         }}>
+          <Box
+            sx={{
+              mb: 4.2,
+              pl: 3,
+              position: 'relative',
+              maxWidth: 540,
+              '&::before': {
+                content: '""',
+                position: 'absolute',
+                left: 0,
+                top: 2,
+                bottom: 3,
+                width: 2,
+                borderRadius: 999,
+                background: 'linear-gradient(180deg, rgba(255,255,255,0.92), rgba(96,165,250,0.18))',
+                boxShadow: '0 0 22px rgba(147,197,253,0.28)'
+              }
+            }}
+          >
+            <Typography
+              component="p"
+              sx={{
+                m: 0,
+                fontFamily: '"Montserrat", "Segoe UI", sans-serif',
+                fontSize: { lg: 13.5, xl: 15 },
+                lineHeight: 1.35,
+                fontWeight: 800,
+                letterSpacing: 3.8,
+                textTransform: 'uppercase',
+                color: 'rgba(241,245,249,0.92)',
+                textShadow: '0 2px 16px rgba(0,0,0,0.32)'
+              }}
+            >
+              "Hombres nuevos para tiempos nuevos"
+            </Typography>
+            <Typography
+              component="p"
+              sx={{
+                mt: 0.7,
+                mb: 0,
+                fontFamily: '"Montserrat", "Segoe UI", sans-serif',
+                fontSize: 11.5,
+                fontWeight: 600,
+                letterSpacing: 0.3,
+                color: 'rgba(191,219,254,0.78)'
+              }}
+            >
+              Fray Guillermo de Castellana, OFMCap.
+            </Typography>
+          </Box>
           <Typography sx={{
             fontFamily: '"Montserrat", "Segoe UI", sans-serif',
             fontWeight: 800,
