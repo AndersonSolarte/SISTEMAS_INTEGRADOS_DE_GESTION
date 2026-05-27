@@ -181,7 +181,59 @@ const sendWelcomeEmail = async (user) => {
       </div>
     `
   });
-  
+  mailOptions.text = `Estimado(a) ${user.nombre}. Se informa que ha sido autorizado su acceso al Sistema Interno de Aseguramiento de la Calidad - SIAC UNICESMAG, donde podra consultar informacion institucional de acuerdo con los permisos asignados a su perfil. Correo institucional registrado: ${user.email}. Rol asignado: ${resolveRoleLabel(user.role)}. Para ingresar al sistema, debera iniciar sesion exclusivamente mediante la opcion Acceder con Google, utilizando el correo institucional. Ingreso: ${loginUrl}. Si requiere apoyo, comuniquese con el Equipo SIAC UNICESMAG al telefono (602) 7444344 ext. 1386 o al correo sgc@unicesmag.edu.co.`;
+  mailOptions.html = renderInstitutionalTemplate({
+    title: 'Activacion de usuario',
+    introHtml: `<p style="margin-bottom: 10px;">Cordial Saludo de Paz y Bien,</p><p>Estimado(a) <strong>${safeNombre}</strong>,</p><p>Se informa que ha sido autorizado su acceso al <strong>Sistema Interno de Aseguramiento de la Calidad - SIAC UNICESMAG</strong>, donde podra consultar informacion institucional de acuerdo con los permisos asignados a su perfil.</p>`,
+    bodyHtml: `
+      <div style="margin: 18px 0; border: 1px solid #d6e4f5; border-radius: 12px; overflow: hidden; background: #ffffff; box-shadow: 0 8px 22px rgba(11, 58, 111, 0.08);">
+        <div style="background: linear-gradient(135deg, #eff6ff 0%, #f8fbff 100%); border-bottom: 1px solid #d6e4f5; padding: 12px 18px;">
+          <p style="margin: 0; font-weight: 800; color: #0b3a6f; letter-spacing: 0.02em;">Datos de acceso</p>
+        </div>
+        <div style="padding: 16px 18px;">
+          <table role="presentation" style="width: 100%; border-collapse: collapse;">
+            <tr>
+              <td style="padding: 0 0 10px; font-weight: 700; color: #334155; width: 240px;">Correo institucional registrado</td>
+              <td style="padding: 0 0 10px; color: #0f172a;">
+                <a href="mailto:${safeRecipient}" style="color: #2563eb; text-decoration: none; font-weight: 600;">${safeRecipient}</a>
+              </td>
+            </tr>
+            <tr>
+              <td style="padding: 0; font-weight: 700; color: #334155;">Rol asignado</td>
+              <td style="padding: 0; color: #0f172a;">${safeRole}</td>
+            </tr>
+          </table>
+        </div>
+      </div>
+      <p>Para ingresar al sistema, debera iniciar sesion exclusivamente mediante la opcion <strong>Acceder con Google</strong>, utilizando el correo institucional.</p>
+      <div style="text-align: center; margin-top: 8px;">
+        <a href="${loginUrl}" style="display: inline-block; min-width: 250px; background: #0b3a6f; color: #ffffff; padding: 12px 26px; text-decoration: none; border-radius: 8px; font-weight: 700; text-align: center;">
+          Ingresar al sistema
+        </a>
+      </div>
+      <p style="margin: 16px 0 0; color: #334155;">Si requiere apoyo para el ingreso o uso del sistema, comuniquese con el Equipo SIAC UNICESMAG.</p>
+      <div style="margin: 18px 0 0; border: 1px solid #d6e4f5; border-radius: 12px; overflow: hidden; background: #ffffff; box-shadow: 0 8px 22px rgba(11, 58, 111, 0.06);">
+        <div style="background: linear-gradient(135deg, #eff6ff 0%, #f8fbff 100%); border-bottom: 1px solid #d6e4f5; padding: 12px 18px;">
+          <p style="margin: 0; font-weight: 800; color: #0b3a6f; letter-spacing: 0.02em;">Equipo SIAC UNICESMAG</p>
+        </div>
+        <div style="padding: 16px 18px; color: #334155;">
+          <table role="presentation" style="width: 100%; border-collapse: collapse;">
+            <tr>
+              <td style="padding: 0 0 10px; font-weight: 700; color: #334155; width: 120px;">Telefono</td>
+              <td style="padding: 0 0 10px; color: #0f172a;">(602) 7444344 ext. 1386</td>
+            </tr>
+            <tr>
+              <td style="padding: 0; font-weight: 700; color: #334155;">Correo</td>
+              <td style="padding: 0; color: #0f172a;">
+                <a href="mailto:sgc@unicesmag.edu.co" style="color: #2563eb; text-decoration: none; font-weight: 600;">sgc@unicesmag.edu.co</a>
+              </td>
+            </tr>
+          </table>
+        </div>
+      </div>
+    `
+  });
+
   try {
     const smtpConfigError = getSmtpConfigError();
     if (smtpConfigError) {
