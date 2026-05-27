@@ -242,78 +242,149 @@ function Login() {
           display: { xs: 'none', lg: 'flex' },
           flexDirection: 'column',
           flex: 1,
-          pr: 8
+          pr: 8,
+          position: 'relative',
         }}>
+          {/* Badge estilo medallón institucional */}
           <Box
             sx={{
-              mb: 4.2,
-              pl: 3,
-              position: 'relative',
-              maxWidth: 620,
-              minHeight: 96,
+              mb: 4.4,
+              maxWidth: 660,
               display: 'flex',
               alignItems: 'center',
-              gap: 2.4,
+              flexDirection: 'row-reverse',
+              gap: 3,
+              position: 'relative',
+              zIndex: 1,
+              pl: 3,
               '&::before': {
                 content: '""',
                 position: 'absolute',
                 left: 0,
-                top: 14,
-                bottom: 14,
+                top: 15,
+                bottom: 15,
                 width: 2,
                 borderRadius: 999,
-                background: 'linear-gradient(180deg, rgba(255,255,255,0.92), rgba(96,165,250,0.18))',
-                boxShadow: '0 0 22px rgba(147,197,253,0.28)'
-              }
+                background: 'linear-gradient(180deg, rgba(255,255,255,0.9), rgba(96,165,250,0.2))',
+                boxShadow: '0 0 18px rgba(147,197,253,0.24)'
+              },
             }}
           >
-            <Box sx={{ minWidth: 0, flex: 1 }}>
-              <Typography
-                component="p"
-                sx={{
-                  m: 0,
-                  fontFamily: '"Montserrat", "Segoe UI", sans-serif',
-                  fontSize: { lg: 12.6, xl: 14.2 },
-                  lineHeight: 1.35,
-                  fontWeight: 800,
-                  letterSpacing: { lg: 3.1, xl: 3.4 },
-                  textTransform: 'uppercase',
-                  whiteSpace: 'nowrap',
-                  color: 'rgba(241,245,249,0.92)',
-                  textShadow: '0 2px 16px rgba(0,0,0,0.32)'
-                }}
-              >
-                "Hombres nuevos para tiempos nuevos"
-              </Typography>
-              <Typography
-                component="p"
-                sx={{
-                  mt: 0.7,
-                  mb: 0,
-                  fontFamily: '"Montserrat", "Segoe UI", sans-serif',
-                  fontSize: 11.5,
-                  fontWeight: 600,
-                  letterSpacing: 0.3,
-                  color: 'rgba(191,219,254,0.78)'
-                }}
-              >
-                Fray Guillermo de Castellana, OFMCap.
+            {/* Anillo metálico plateado — estilo medallón */}
+            <Box sx={{
+              position: 'relative',
+              zIndex: 3,
+              flex: '0 0 auto',
+              flexShrink: 0,
+              borderRadius: '50%',
+              background: 'transparent',
+              p: 0,
+              boxShadow: 'none',
+              width: { lg: 84, xl: 94 },
+              height: { lg: 84, xl: 94 },
+              mr: 0,
+            }}>
+              {/* Aro interior oscuro para dar profundidad */}
+              <Box sx={{
+                width: '100%',
+                height: '100%',
+                borderRadius: '50%',
+                background: 'transparent',
+                p: 0,
+              }}>
+                <Box
+                  component="img"
+                  src="/brand/fray-guillermo-face.png"
+                  alt="Fray Guillermo de Castellana"
+                  sx={{
+                    width: '100%',
+                    height: '100%',
+                    objectFit: 'cover',
+                    objectPosition: 'center top',
+                    borderRadius: '50%',
+                    display: 'block',
+                    filter: 'drop-shadow(0 12px 18px rgba(15, 23, 42, 0.28))',
+                    opacity: 0.96
+                  }}
+                />
+              </Box>
+            </Box>
+
+            {/* Píldora azul marino con textura sutil — extremo derecho suavemente redondeado */}
+            <Box sx={{
+              flex: 1,
+              minWidth: 0,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'flex-start',
+              height: { lg: 82, xl: 94 },
+              borderRadius: 0,
+              background: 'transparent',
+              border: 0,
+              boxShadow: 'none',
+              pl: 3,
+              pr: 0,
+              overflow: 'visible',
+              '&::after': {
+                content: '""',
+                position: 'absolute',
+                top: 0, left: 0, right: 0,
+                height: 0,
+                borderRadius: 'inherit',
+                background: 'transparent',
+                pointerEvents: 'none'
+              }
+            }}>
+              <Box sx={{ minWidth: 0, flex: 1 }}>
+                <Typography
+                  component="p"
+                  sx={{
+                    m: 0,
+                    fontFamily: '"Montserrat", "Segoe UI", sans-serif',
+                    fontSize: { lg: 12.5, xl: 14 },
+                    lineHeight: 1.35,
+                    fontWeight: 800,
+                    letterSpacing: { lg: 2.6, xl: 3 },
+                    textTransform: 'uppercase',
+                    whiteSpace: 'nowrap',
+                    color: 'rgba(241,245,249,0.94)',
+                    textShadow: '0 2px 16px rgba(0,0,0,0.34)',
+                  }}
+                >
+                  "Hombres nuevos para tiempos nuevos"
+                </Typography>
+                <Typography
+                  component="p"
+                  sx={{
+                    mt: 0.5,
+                    mb: 0,
+                    fontFamily: '"Montserrat", "Segoe UI", sans-serif',
+                    fontSize: 10.8,
+                    fontWeight: 500,
+                    letterSpacing: 0.2,
+                    color: 'rgba(191,219,254,0.78)'
+                  }}
+                >
+                  Fray Guillermo de Castellana, OFMCap.
+                </Typography>
+              </Box>
+              {/* Marca CESMAG — esquina inferior derecha */}
+              <Typography sx={{
+                display: 'none',
+                fontFamily: '"Montserrat", "Segoe UI", sans-serif',
+                fontSize: 9,
+                fontWeight: 700,
+                letterSpacing: 2,
+                color: 'rgba(148,163,184,0.50)',
+                textTransform: 'uppercase',
+                alignSelf: 'flex-end',
+                pb: 0.8,
+                pl: 1,
+                flexShrink: 0
+              }}>
+                CESMAG
               </Typography>
             </Box>
-            <Box
-              component="img"
-              src="/brand/fray-guillermo-face.png"
-              alt="Fray Guillermo de Castellana"
-              sx={{
-                width: { lg: 82, xl: 92 },
-                height: { lg: 82, xl: 92 },
-                flex: '0 0 auto',
-                objectFit: 'contain',
-                borderRadius: '50%',
-                filter: 'drop-shadow(0 10px 14px rgba(15, 23, 42, 0.34))',
-                opacity: 0.98
-              }}
-            />
           </Box>
           <Typography sx={{
             fontFamily: '"Montserrat", "Segoe UI", sans-serif',
@@ -323,7 +394,9 @@ function Login() {
             color: '#ffffff',
             mb: 0,
             maxWidth: 640,
-            textShadow: '0 2px 20px rgba(0,0,0,0.4)'
+            textShadow: '0 2px 20px rgba(0,0,0,0.4)',
+            position: 'relative',
+            zIndex: 1
           }}>
             <Box component="span" sx={{
               background: 'linear-gradient(90deg, #60a5fa 0%, #a78bfa 50%, #f472b6 100%)',
@@ -346,7 +419,7 @@ function Login() {
               Sistema Interno de Aseguramiento de la Calidad
             </Box>
           </Typography>
-          <Stack spacing={1.5} sx={{ mt: 4 }}>
+          <Stack spacing={1.5} sx={{ mt: 4, position: 'relative', zIndex: 1 }}>
             {features.map((item, idx) => (
               <Stack
                 key={idx}
