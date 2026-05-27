@@ -309,7 +309,8 @@ function Login() {
                 height: { lg: 82, xl: 92 },
                 flex: '0 0 auto',
                 objectFit: 'contain',
-                boxShadow: '0 14px 24px rgba(15, 23, 42, 0.42), 0 0 0 8px rgba(37, 99, 235, 0.18)',
+                borderRadius: '50%',
+                filter: 'drop-shadow(0 14px 18px rgba(15, 23, 42, 0.46)) drop-shadow(0 0 18px rgba(96, 165, 250, 0.3))',
                 opacity: 0.98
               }}
             />
