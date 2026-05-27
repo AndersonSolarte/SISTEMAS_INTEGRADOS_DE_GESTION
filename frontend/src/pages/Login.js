@@ -249,7 +249,7 @@ function Login() {
               mb: 4.2,
               pl: 3,
               position: 'relative',
-              maxWidth: 540,
+              maxWidth: 620,
               minHeight: 96,
               display: 'flex',
               alignItems: 'center',
@@ -273,11 +273,12 @@ function Login() {
                 sx={{
                   m: 0,
                   fontFamily: '"Montserrat", "Segoe UI", sans-serif',
-                  fontSize: { lg: 13.5, xl: 15 },
+                  fontSize: { lg: 12.6, xl: 14.2 },
                   lineHeight: 1.35,
                   fontWeight: 800,
-                  letterSpacing: 3.8,
+                  letterSpacing: { lg: 3.1, xl: 3.4 },
                   textTransform: 'uppercase',
+                  whiteSpace: 'nowrap',
                   color: 'rgba(241,245,249,0.92)',
                   textShadow: '0 2px 16px rgba(0,0,0,0.32)'
                 }}
@@ -301,18 +302,14 @@ function Login() {
             </Box>
             <Box
               component="img"
-              src="/brand/padre-guillermo-original.jpg"
+              src="/brand/fray-guillermo-face.png"
               alt="Fray Guillermo de Castellana"
               sx={{
                 width: { lg: 82, xl: 92 },
                 height: { lg: 82, xl: 92 },
                 flex: '0 0 auto',
-                objectFit: 'cover',
-                objectPosition: 'center 18%',
-                borderRadius: '50%',
-                border: '2px solid rgba(147, 197, 253, 0.52)',
+                objectFit: 'contain',
                 boxShadow: '0 14px 24px rgba(15, 23, 42, 0.42), 0 0 0 8px rgba(37, 99, 235, 0.18)',
-                filter: 'saturate(0.92) contrast(1.04) sepia(0.08) hue-rotate(176deg)',
                 opacity: 0.98
               }}
             />
