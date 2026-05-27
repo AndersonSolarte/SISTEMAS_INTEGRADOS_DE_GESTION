@@ -123,12 +123,12 @@ const sendWelcomeEmail = async (user) => {
         <a href="${loginUrl}" style="display: inline-block; background: #0b3a6f; color: #ffffff; padding: 10px 18px; text-decoration: none; border-radius: 6px; margin-top: 8px;">
           Ingresar al sistema
         </a>
-        <p style="margin-top: 14px; color: #334155;">Si no puedes ingresar, comunicate con el equipo administrador de soporte.</p>
+        <p style="margin-top: 14px; color: #334155;">Si no puedes ingresar, comunicate con Soporte del sistema.</p>
       `
     })
   };
 
-  mailOptions.text = `Estimado(a) ${user.nombre}. Se informa que ha sido autorizado su acceso al sistema institucional de consulta de información documentada. Correo institucional registrado: ${user.email}. Rol asignado: ${resolveRoleLabel(user.role)}. Para ingresar al sistema, deberá iniciar sesión exclusivamente mediante la opción Acceder con Google, utilizando el correo institucional previamente registrado en la base de datos. El acceso otorgado le permitirá realizar la consulta de documentos dentro del sistema institucional de información documentada, conforme a los permisos asignados a su perfil. Ingreso: ${loginUrl}. Si requiere apoyo, comuníquese con el equipo administrador al teléfono (602) 7444344 ext. 1386 o al correo sgc@unicesmag.edu.co.`;
+  mailOptions.text = `Estimado(a) ${user.nombre}. Se informa que ha sido autorizado su acceso al sistema institucional de consulta de información documentada. Correo institucional registrado: ${user.email}. Rol asignado: ${resolveRoleLabel(user.role)}. Para ingresar al sistema, deberá iniciar sesión exclusivamente mediante la opción Acceder con Google, utilizando el correo institucional previamente registrado en la base de datos. El acceso otorgado le permitirá realizar la consulta de documentos dentro del sistema institucional de información documentada, conforme a los permisos asignados a su perfil. Ingreso: ${loginUrl}. Si requiere apoyo, comuníquese con Soporte del sistema al teléfono (602) 7444344 ext. 1386 o al correo sgc@unicesmag.edu.co.`;
   mailOptions.html = renderInstitutionalTemplate({
     title: 'Activación de usuario',
     introHtml: `<p style="margin-bottom: 10px;">Cordial Saludo de Paz y Bien,</p><p>Estimado(a) <strong>${safeNombre}</strong>,</p><p>Se informa que ha sido autorizado su acceso al sistema institucional de consulta de información documentada.</p>`,
@@ -159,10 +159,10 @@ const sendWelcomeEmail = async (user) => {
           Ingresar al sistema
         </a>
       </div>
-      <p style="margin: 16px 0 0; color: #334155;">Si no puedes ingresar, comunicate con el equipo administrador.</p>
+      <p style="margin: 16px 0 0; color: #334155;">Si no puedes ingresar, comunicate con Soporte del sistema.</p>
       <div style="margin: 18px 0 0; border: 1px solid #d6e4f5; border-radius: 12px; overflow: hidden; background: #ffffff; box-shadow: 0 8px 22px rgba(11, 58, 111, 0.06);">
         <div style="background: linear-gradient(135deg, #eff6ff 0%, #f8fbff 100%); border-bottom: 1px solid #d6e4f5; padding: 12px 18px;">
-          <p style="margin: 0; font-weight: 800; color: #0b3a6f; letter-spacing: 0.02em;">Equipo SIAC UNICESMAG</p>
+          <p style="margin: 0; font-weight: 800; color: #0b3a6f; letter-spacing: 0.02em;">Soporte del sistema</p>
         </div>
         <div style="padding: 16px 18px; color: #334155;">
           <table role="presentation" style="width: 100%; border-collapse: collapse;">
@@ -181,7 +181,7 @@ const sendWelcomeEmail = async (user) => {
       </div>
     `
   });
-  mailOptions.text = `Estimado(a) ${user.nombre}. Se informa que ha sido autorizado su acceso al Sistema Interno de Aseguramiento de la Calidad - SIAC UNICESMAG, donde podra consultar informacion institucional de acuerdo con los permisos asignados a su perfil. Correo institucional registrado: ${user.email}. Rol asignado: ${resolveRoleLabel(user.role)}. Para ingresar al sistema, debera iniciar sesion exclusivamente mediante la opcion Acceder con Google, utilizando el correo institucional. Ingreso: ${loginUrl}. Si requiere apoyo, comuniquese con el equipo de soporte de Gestion por Procesos al telefono (602) 7444344 ext. 1386 o al correo sgc@unicesmag.edu.co.`;
+  mailOptions.text = `Estimado(a) ${user.nombre}. Se informa que ha sido autorizado su acceso al Sistema Interno de Aseguramiento de la Calidad - SIAC UNICESMAG, donde podra consultar informacion institucional de acuerdo con los permisos asignados a su perfil. Correo institucional registrado: ${user.email}. Rol asignado: ${resolveRoleLabel(user.role)}. Para ingresar al sistema, debera iniciar sesion exclusivamente mediante la opcion Acceder con Google, utilizando el correo institucional. Ingreso: ${loginUrl}. Si requiere apoyo, comuniquese con Soporte del sistema al telefono (602) 7444344 ext. 1386 o al correo sgc@unicesmag.edu.co.`;
   mailOptions.html = renderInstitutionalTemplate({
     title: 'Activacion de usuario',
     introHtml: `<p style="margin-bottom: 10px;">Cordial Saludo de Paz y Bien,</p><p>Estimado(a) <strong>${safeNombre}</strong>,</p><p>Se informa que ha sido autorizado su acceso al <strong>Sistema Interno de Aseguramiento de la Calidad - SIAC UNICESMAG</strong>, donde podra consultar informacion institucional de acuerdo con los permisos asignados a su perfil.</p>`,
@@ -211,10 +211,10 @@ const sendWelcomeEmail = async (user) => {
           Ingresar al sistema
         </a>
       </div>
-      <p style="margin: 16px 0 0; color: #334155;">Si requiere apoyo para el ingreso o uso del sistema, comuniquese con el equipo de soporte de Gestion por Procesos.</p>
+      <p style="margin: 16px 0 0; color: #334155;">Si requiere apoyo para el ingreso o uso del sistema, comuniquese con Soporte del sistema.</p>
       <div style="margin: 18px 0 0; border: 1px solid #d6e4f5; border-radius: 12px; overflow: hidden; background: #ffffff; box-shadow: 0 8px 22px rgba(11, 58, 111, 0.06);">
         <div style="background: linear-gradient(135deg, #eff6ff 0%, #f8fbff 100%); border-bottom: 1px solid #d6e4f5; padding: 12px 18px;">
-          <p style="margin: 0; font-weight: 800; color: #0b3a6f; letter-spacing: 0.02em;">Soporte Gestion por Procesos</p>
+          <p style="margin: 0; font-weight: 800; color: #0b3a6f; letter-spacing: 0.02em;">Soporte del sistema</p>
         </div>
         <div style="padding: 16px 18px; color: #334155;">
           <table role="presentation" style="width: 100%; border-collapse: collapse;">
