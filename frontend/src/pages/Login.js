@@ -310,7 +310,7 @@ function Login() {
                 flex: '0 0 auto',
                 objectFit: 'contain',
                 borderRadius: '50%',
-                filter: 'drop-shadow(0 14px 18px rgba(15, 23, 42, 0.46)) drop-shadow(0 0 14px rgba(226, 232, 240, 0.18))',
+                filter: 'drop-shadow(0 10px 14px rgba(15, 23, 42, 0.34))',
                 opacity: 0.98
               }}
             />
