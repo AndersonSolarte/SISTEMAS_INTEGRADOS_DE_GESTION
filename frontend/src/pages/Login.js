@@ -301,15 +301,19 @@ function Login() {
             </Box>
             <Box
               component="img"
-              src="/brand/fray-guillermo-portrait.svg"
+              src="/brand/padre-guillermo-original.jpg"
               alt="Fray Guillermo de Castellana"
               sx={{
                 width: { lg: 82, xl: 92 },
                 height: { lg: 82, xl: 92 },
                 flex: '0 0 auto',
-                objectFit: 'contain',
-                filter: 'drop-shadow(0 14px 24px rgba(15, 23, 42, 0.42)) saturate(0.9)',
-                opacity: 0.96
+                objectFit: 'cover',
+                objectPosition: 'center 18%',
+                borderRadius: '50%',
+                border: '2px solid rgba(147, 197, 253, 0.52)',
+                boxShadow: '0 14px 24px rgba(15, 23, 42, 0.42), 0 0 0 8px rgba(37, 99, 235, 0.18)',
+                filter: 'saturate(0.92) contrast(1.04) sepia(0.08) hue-rotate(176deg)',
+                opacity: 0.98
               }}
             />
           </Box>
