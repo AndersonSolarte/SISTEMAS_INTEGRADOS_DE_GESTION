@@ -50,6 +50,11 @@ api.interceptors.response.use(
     if (error.response?.status === 401) {
       localStorage.removeItem('token');
       localStorage.removeItem('user');
+      localStorage.removeItem('session_login_at');
+      localStorage.removeItem('session_last_activity_at');
+      if (window.google?.accounts?.id?.disableAutoSelect) {
+        window.google.accounts.id.disableAutoSelect();
+      }
       window.location.href = '/login';
     }
 

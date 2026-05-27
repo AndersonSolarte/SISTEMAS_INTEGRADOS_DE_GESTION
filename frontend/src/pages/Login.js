@@ -159,7 +159,9 @@ function Login() {
         callback: handleGoogleCredential,
         ux_mode: 'popup',
         auto_select: false,
-        use_fedcm_for_button: false
+        button_auto_select: false,
+        use_fedcm_for_button: false,
+        hd: 'unicesmag.edu.co'
       });
 
       if (googleButtonRef.current) {

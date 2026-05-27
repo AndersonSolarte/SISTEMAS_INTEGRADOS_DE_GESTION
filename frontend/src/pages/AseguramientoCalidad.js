@@ -495,6 +495,7 @@ function AseguramientoCalidad() {
     () => searchParams.get('readonly') === '1' || searchParams.get('mode') === 'consulta',
     [searchParams]
   );
+  const isDocumentSearchRoute = location.pathname === '/dashboard/buscar-documentos';
   const normalizedRole = useMemo(
     () =>
       String(user?.role || '')
@@ -514,8 +515,11 @@ function AseguramientoCalidad() {
     return permissions.some((key) => ['aseguramiento_calidad', 'gestion_procesos'].includes(key));
   }, [user]);
   const canManageDocumental = useMemo(
-    () => (['administrador', 'gestion_por_procesos', 'gestion_procesos'].includes(normalizedRole) || hasDocumentalManagementPermission) && !forceReadOnly,
-    [normalizedRole, hasDocumentalManagementPermission, forceReadOnly]
+    () => (
+      ['administrador', 'gestion_por_procesos', 'gestion_procesos'].includes(normalizedRole)
+      || hasDocumentalManagementPermission
+    ) && !forceReadOnly && !(isDocumentSearchRoute && ['gestion_por_procesos', 'gestion_procesos'].includes(normalizedRole)),
+    [normalizedRole, hasDocumentalManagementPermission, forceReadOnly, isDocumentSearchRoute]
   );
   const [activeDocumentScope, setActiveDocumentScope] = useState('documentos');
   const [filters, setFilters] = useState(buildInitialDocumentFilters('documentos'));
@@ -1067,24 +1071,23 @@ function AseguramientoCalidad() {
           elevation={0}
           sx={{
             mb: 3,
-            p: { xs: 2.5, md: 3 },
-            borderRadius: 3.5,
+            p: { xs: 2, md: 2.5 },
+            borderRadius: 3,
             border: '1px solid #dbeafe',
             color: 'white',
             position: 'relative',
             overflow: 'hidden',
-            background: 'linear-gradient(120deg, #0f1f3a 0%, #1d4ed8 45%, #be185d 100%)',
-            boxShadow: '0 14px 34px rgba(15, 23, 42, 0.28)'
+            background: 'linear-gradient(120deg, #0f1f3a 0%, #1d4ed8 56%, #9f296b 100%)',
+            boxShadow: '0 12px 28px rgba(15, 23, 42, 0.22)'
           }}
         >
-          <Box sx={{ position: 'absolute', right: -60, top: -40, width: 220, height: 220, borderRadius: '50%', background: 'rgba(255,255,255,0.12)' }} />
-          <Box sx={{ position: 'absolute', right: 40, bottom: -80, width: 180, height: 180, borderRadius: '50%', background: 'rgba(255,255,255,0.08)' }} />
-          <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2.5} alignItems={{ sm: 'center' }} sx={{ position: 'relative', zIndex: 1 }}>
-            <Box sx={{ width: 62, height: 62, borderRadius: 2.5, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(255,255,255,0.18)', color: 'white', border: '1px solid rgba(255,255,255,0.35)' }}>
-              <SearchIcon sx={{ fontSize: 28 }} />
+          <Box sx={{ position: 'absolute', inset: 0, opacity: 0.16, background: 'linear-gradient(90deg, rgba(255,255,255,0.16), transparent 58%)' }} />
+          <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2} alignItems={{ sm: 'center' }} sx={{ position: 'relative', zIndex: 1 }}>
+            <Box sx={{ width: 56, height: 56, borderRadius: 2.2, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(255,255,255,0.16)', color: 'white', border: '1px solid rgba(255,255,255,0.35)' }}>
+              <SearchIcon sx={{ fontSize: 26 }} />
             </Box>
             <Box sx={{ flexGrow: 1 }}>
-              <Typography variant="h5" sx={{ fontWeight: 800, letterSpacing: -0.2 }}>
+              <Typography variant="h5" sx={{ fontWeight: 800, letterSpacing: 0, fontSize: { xs: 22, md: 26 } }}>
                 Inicio de Consulta Documental
               </Typography>
               <Typography variant="body2" sx={{ color: 'rgba(255,255,255,0.9)' }}>

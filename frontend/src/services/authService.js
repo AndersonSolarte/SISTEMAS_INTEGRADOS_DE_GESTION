@@ -41,6 +41,9 @@ const authService = {
     localStorage.removeItem('user');
     localStorage.removeItem(SESSION_LOGIN_AT_KEY);
     localStorage.removeItem(SESSION_LAST_ACTIVITY_KEY);
+    if (window.google?.accounts?.id?.disableAutoSelect) {
+      window.google.accounts.id.disableAutoSelect();
+    }
   },
   
   getCurrentUser: () => {

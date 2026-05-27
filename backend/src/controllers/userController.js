@@ -1368,7 +1368,9 @@ const bulkUploadUsers = async (req, res) => {
       }
     });
 
-    if (!sendBulkEmails && rowsToCreate.length > 0) {
+    const rowsToNotify = [...rowsToCreate, ...rowsToUpdate.map(({ row }) => row)];
+
+    if (!sendBulkEmails && rowsToNotify.length > 0) {
       results.advertencias.push({
         fila: '',
         email: '',
@@ -1376,15 +1378,17 @@ const bulkUploadUsers = async (req, res) => {
       });
     }
 
-    if (sendBulkEmails && rowsToCreate.length > 0) {
-      const createdUsers = await User.findAll({
-        where: { email: { [Op.in]: rowsToCreate.map((row) => row.email) } }
+    if (sendBulkEmails && rowsToNotify.length > 0) {
+      const usersToNotify = await User.findAll({
+        where: { email: { [Op.in]: rowsToNotify.map((row) => row.email) } }
       });
-      for (const user of createdUsers) {
+      const rowByEmail = new Map(rowsToNotify.map((row) => [row.email, row]));
+      for (const user of usersToNotify) {
         const emailResult = await sendWelcomeEmail(user);
         if (!emailResult.success) {
+          const sourceRow = rowByEmail.get(String(user.email || '').toLowerCase());
           results.advertencias.push({
-            fila: '',
+            fila: sourceRow?.fila || '',
             email: user.email,
             warning: `No se pudo enviar correo institucional: ${emailResult.error}`
           });
@@ -1602,7 +1606,7 @@ const updateUserModulePermissions = async (req, res) => {
 
     await ensureUserModulePermissionsReady();
 
-    const cleanMenu = Array.from(new Set((Array.isArray(menuPermissions) ? menuPermissions : [])
+    let cleanMenu = Array.from(new Set((Array.isArray(menuPermissions) ? menuPermissions : [])
       .map((x) => String(x || '').trim())
       .filter((x) => MENU_PERMISSION_KEYS.includes(x))));
 
@@ -1621,6 +1625,10 @@ const updateUserModulePermissions = async (req, res) => {
     const cleanSaberProDashboards = Array.from(new Set((Array.isArray(allowedSaberProDashboards) ? allowedSaberProDashboards : [])
       .map((x) => String(x || '').trim())
       .filter((x) => SABER_PRO_DASHBOARD_PERMISSION_KEYS.includes(x))));
+
+    if (user.role === ROLES.CONSULTA) {
+      cleanMenu = cleanMenu.filter((key) => key !== 'gestion_usuarios');
+    }
 
     if (cleanGestionProcesosDashboards.length > 0 && !cleanModules.includes('estadistica_institucional')) {
       cleanModules.push('estadistica_institucional');

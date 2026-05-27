@@ -13,6 +13,12 @@ const ESTADOS = {
   APROBADO: 'Aprobado'
 };
 
+const ESTADOS_VISIBLES_CONSULTA = [
+  ESTADOS.EN_REVISION_RESPONSABLE,
+  ESTADOS.REVISADO_POR_RESPONSABLE,
+  ESTADOS.APROBADO
+];
+
 // === Transiciones permitidas ===
 const TRANSICIONES = {
   enviar_a_estrategica: {
@@ -139,8 +145,8 @@ const listarMisPlanes = async (req, res) => {
         return res.json({ success: true, data: [] });
       }
       where.responsable_id = numericUserId;
-      // Consulta solo ve su plan vigente: aprobado o pendiente de su revisión.
-      where.estado_workflow = { [Op.in]: [ESTADOS.EN_REVISION_RESPONSABLE, ESTADOS.APROBADO] };
+      // Consulta ve su plan desde que se le asigna hasta que completa el flujo.
+      where.estado_workflow = { [Op.in]: ESTADOS_VISIBLES_CONSULTA };
     } else {
       return res.json({ success: true, data: [] });
     }
@@ -189,7 +195,7 @@ const listarPendientes = async (req, res) => {
         return res.json({ success: true, data: [] });
       }
       where.responsable_id = numericUserId;
-      where.estado_workflow = { [Op.in]: [ESTADOS.EN_REVISION_RESPONSABLE, ESTADOS.APROBADO] };
+      where.estado_workflow = { [Op.in]: ESTADOS_VISIBLES_CONSULTA };
     } else {
       return res.json({ success: true, data: [] });
     }
@@ -621,7 +627,7 @@ const obtenerBadgePendientes = async (req, res) => {
           where: {
             deleted_at: null,
             responsable_id: numericUserId,
-            estado_workflow: { [Op.in]: [ESTADOS.EN_REVISION_RESPONSABLE, ESTADOS.APROBADO] }
+            estado_workflow: { [Op.in]: ESTADOS_VISIBLES_CONSULTA }
           },
           attributes: ['plan_codigo'],
           group: ['plan_codigo'],

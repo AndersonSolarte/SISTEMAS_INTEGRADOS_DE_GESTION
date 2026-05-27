@@ -194,7 +194,7 @@ const getDefaultPermissionsByRole = (role) => {
     menuPermissions: ['dashboard', 'buscar_documentos'],
     allowedModules: [],
     allowedGestionProcesosDashboards: [],
-    allowedPoblacionalDashboards: ['poblacional_flujo', 'poblacional_matriculados', 'poblacional_graduados', 'poblacional_caracterizacion', 'poblacional_resumen_estadistico'],
+    allowedPoblacionalDashboards: [],
     allowedSaberProDashboards: []
   };
 };
@@ -236,6 +236,11 @@ const getUserModulePermissions = async (userId, role) => {
 
   // Si se asignan submódulos de Gestión de la Información, el acceso al menú principal
   // debe aparecer aunque no se haya marcado explícitamente.
+  if (role === ROLES.CONSULTA) {
+    const userManagementIndex = menuPermissions.indexOf('gestion_usuarios');
+    if (userManagementIndex >= 0) menuPermissions.splice(userManagementIndex, 1);
+  }
+
   if (allowedModules.length > 0 && !menuPermissions.includes('gestion_informacion')) {
     menuPermissions.push('gestion_informacion');
   }

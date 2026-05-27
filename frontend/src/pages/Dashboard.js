@@ -344,46 +344,28 @@ function Dashboard() {
               elevation={0}
               sx={{
                 mb: { xs: 3, md: 4, lg: 5 },
-                p: { xs: 2.5, sm: 3, md: 4, lg: 4.5 },
-                borderRadius: { xs: 3, md: 4 },
+                p: { xs: 2, sm: 2.4, md: 3 },
+                borderRadius: { xs: 2.5, md: 3 },
                 border: '1px solid #d7e3f5',
-                background: 'linear-gradient(135deg, #0f172a 0%, #1d4ed8 40%, #be123c 100%)',
+                background: 'linear-gradient(135deg, #0f1f3a 0%, #1d4ed8 54%, #9f296b 100%)',
                 color: 'white',
                 position: 'relative',
                 overflow: 'hidden'
               }}
             >
-              <Box sx={{ position: 'absolute', inset: 0, opacity: 0.25, background: 'radial-gradient(circle at 15% 10%, rgba(255,255,255,0.18), transparent 45%)' }} />
-              <Box sx={{ position: 'absolute', right: -80, bottom: -80, width: { xs: 200, lg: 280, xl: 320 }, height: { xs: 200, lg: 280, xl: 320 }, borderRadius: '50%', background: 'rgba(255,255,255,0.12)' }} />
-              <Stack direction={{ xs: 'column', md: 'row' }} spacing={{ xs: 2, md: 3 }} alignItems={{ md: 'center' }} sx={{ position: 'relative', zIndex: 1 }}>
-                <Box sx={{ width: { xs: 72, md: 96, xl: 112 }, height: { xs: 72, md: 96, xl: 112 }, borderRadius: 3, display: 'flex', alignItems: 'center', justifyContent: 'center', bgcolor: 'rgba(255,255,255,0.18)', border: '1px solid rgba(255,255,255,0.45)', boxShadow: '0 8px 26px rgba(15, 23, 42, 0.35)', flexShrink: 0 }}>
-                  <ProcessIcon sx={{ fontSize: { xs: 34, md: 42, xl: 50 }, color: 'white' }} />
+              <Box sx={{ position: 'absolute', inset: 0, opacity: 0.18, background: 'linear-gradient(90deg, rgba(255,255,255,0.14), transparent 55%)' }} />
+              <Stack direction={{ xs: 'column', md: 'row' }} spacing={{ xs: 1.8, md: 2.4 }} alignItems={{ md: 'center' }} sx={{ position: 'relative', zIndex: 1 }}>
+                <Box sx={{ width: { xs: 62, md: 78 }, height: { xs: 62, md: 78 }, borderRadius: 2.4, display: 'flex', alignItems: 'center', justifyContent: 'center', bgcolor: 'rgba(255,255,255,0.16)', border: '1px solid rgba(255,255,255,0.38)', boxShadow: '0 8px 22px rgba(15, 23, 42, 0.28)', flexShrink: 0 }}>
+                  <ProcessIcon sx={{ fontSize: { xs: 30, md: 38 }, color: 'white' }} />
                 </Box>
                 <Box sx={{ flexGrow: 1, minWidth: 0 }}>
-                  <Typography variant="h4" sx={{ fontWeight: 900, mb: 1, letterSpacing: 0.2, fontSize: { xs: 22, sm: 26, md: 32, lg: 34, xl: 36 } }}>
+                  <Typography variant="h4" sx={{ fontWeight: 900, mb: 0.7, letterSpacing: 0.2, fontSize: { xs: 22, sm: 25, md: 30, lg: 32 } }}>
                     Inicio de Consulta Documental
                   </Typography>
-                  <Typography variant="body1" sx={{ color: 'rgba(255,255,255,0.9)', fontSize: { xs: 13, sm: 14, md: 16, lg: 17 } }}>
+                  <Typography variant="body1" sx={{ color: 'rgba(255,255,255,0.9)', fontSize: { xs: 13, sm: 14, md: 15.5 } }}>
                     Accede al mapa de procesos y encuentra documentos institucionales de forma rápida y clara.
                   </Typography>
                 </Box>
-                <Button
-                  variant="contained"
-                  startIcon={<SearchIcon />}
-                  onClick={() => navigate('/dashboard/buscar-documentos')}
-                  sx={{
-                    textTransform: 'none',
-                    fontWeight: 800,
-                    borderRadius: 2.5,
-                    px: 3,
-                    bgcolor: '#fff',
-                    color: '#0b1e46',
-                    width: { xs: '100%', sm: 'auto' },
-                    '&:hover': { bgcolor: '#f1f5f9' }
-                  }}
-                >
-                  Consulta de documentos
-                </Button>
               </Stack>
             </Paper>
 

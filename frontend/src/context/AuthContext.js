@@ -3,11 +3,13 @@ import authService from '../services/authService';
 
 const AuthContext = createContext(null);
 const SESSION_IDLE_TIMEOUT_MS = Number(process.env.REACT_APP_SESSION_IDLE_TIMEOUT_MS || 10 * 60 * 1000);
+const SESSION_MAX_AGE_MS = Number(process.env.REACT_APP_SESSION_MAX_AGE_MS || 3 * 24 * 60 * 60 * 1000);
 
 export const AuthProvider = ({ children }) => {
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
   const [showSessionTimeoutModal, setShowSessionTimeoutModal] = useState(false);
+  const [sessionTimeoutReason, setSessionTimeoutReason] = useState('idle');
   const timeoutModalShownRef = useRef(false);
 
   const logout = useCallback(() => {
@@ -22,10 +24,14 @@ export const AuthProvider = ({ children }) => {
   }, [logout]);
 
   const cancelSessionTimeout = useCallback(() => {
+    if (sessionTimeoutReason !== 'idle') {
+      confirmRelogin();
+      return;
+    }
     timeoutModalShownRef.current = false;
     setShowSessionTimeoutModal(false);
     authService.touchSessionActivity();
-  }, []);
+  }, [confirmRelogin, sessionTimeoutReason]);
 
   const touchActivity = useCallback(() => {
     if (!authService.isAuthenticated()) return;
@@ -86,12 +92,23 @@ export const AuthProvider = ({ children }) => {
     const checkSession = () => {
       if (timeoutModalShownRef.current) return;
       const now = Date.now();
-      const { lastActivityAt } = authService.getSessionMeta();
+      const { loginAt, lastActivityAt } = authService.getSessionMeta();
+      const safeLoginAt = loginAt || now;
       const safeLastActivityAt = lastActivityAt || now;
 
       const idleExceeded = now - safeLastActivityAt > SESSION_IDLE_TIMEOUT_MS;
+      const maxAgeExceeded = now - safeLoginAt > SESSION_MAX_AGE_MS;
+      if (maxAgeExceeded) {
+        timeoutModalShownRef.current = true;
+        setSessionTimeoutReason('max_age');
+        logout();
+        setShowSessionTimeoutModal(true);
+        return;
+      }
+
       if (idleExceeded) {
         timeoutModalShownRef.current = true;
+        setSessionTimeoutReason('idle');
         setShowSessionTimeoutModal(true);
       }
     };
@@ -154,9 +171,10 @@ export const AuthProvider = ({ children }) => {
     isAdmin: () => user?.role === 'administrador',
     hasAnyRole,
     showSessionTimeoutModal,
+    sessionTimeoutReason,
     confirmRelogin,
     cancelSessionTimeout,
-  }), [user, loading, logout, showSessionTimeoutModal, confirmRelogin, cancelSessionTimeout]);
+  }), [user, loading, logout, showSessionTimeoutModal, sessionTimeoutReason, confirmRelogin, cancelSessionTimeout]);
 
   return (
     <AuthContext.Provider value={value}>

@@ -1,6 +1,6 @@
 ﻿import React, { useMemo, useState, useEffect, useCallback } from 'react';
 import { Outlet, useNavigate, useLocation } from 'react-router-dom';
-import { Box, Drawer, AppBar, Toolbar, List, Typography, IconButton, ListItemButton, ListItemIcon, ListItemText, Menu, MenuItem, Avatar, Chip, Divider, Tooltip, Collapse, Button, Badge } from '@mui/material';
+import { Box, Drawer, AppBar, Toolbar, List, Typography, IconButton, ListItemButton, ListItemIcon, ListItemText, Menu, MenuItem, Avatar, Chip, Divider, Tooltip, Collapse, Badge } from '@mui/material';
 import {
   Menu as MenuIcon, DashboardCustomize as DashboardIcon,
   Verified as CheckIcon, Logout as LogoutIcon, Settings as SettingsIcon,
@@ -8,7 +8,7 @@ import {
   Insights as InsightsIcon, Timeline as TimelineIcon, FactCheck as FactCheckIcon,
   ExpandLess as ExpandLessIcon, ExpandMore as ExpandMoreIcon,
   Storage as StorageIcon, QueryStats as QueryStatsIcon,
-  Hub as HubIcon, ArrowBack as ArrowBackIcon,
+  Hub as HubIcon,
   Favorite as FavoriteIcon,
   AssignmentTurnedIn as AssignmentTurnedInIcon
 } from '@mui/icons-material';
@@ -54,32 +54,6 @@ function DashboardLayout() {
     refrescarBadgePlanAccion();
   }, [refrescarBadgePlanAccion, location.pathname]);
 
-  const getContextTrail = () => {
-    const params = new URLSearchParams(location.search || '');
-    const source = params.get('source');
-    if (source === 'planeacion_gpinfo' && location.pathname === '/dashboard/gestion-informacion') {
-      return 'Planeación Estratégica / Gestión por Procesos y la Información / Gestión de la Información';
-    }
-    if (source === 'planeacion' && location.pathname === '/dashboard/buscar-documentos') {
-      return 'Planeación Estratégica / Gestión por Procesos y la Información / Consulta de documentos';
-    }
-
-    const pathLabels = {
-      '/dashboard': 'Inicio',
-      '/dashboard/planeacion-estrategica': 'Planeación Estratégica',
-      '/dashboard/planeacion-efectividad': 'Planeación y Efectividad',
-      '/dashboard/autoevaluacion': 'Autoevaluación',
-      '/dashboard/gestion-informacion': 'Gestión de la Información',
-      '/dashboard/aseguramiento-calidad': 'Administración del Sistema Documental',
-      '/dashboard/buscar-documentos': 'Consulta de documentos',
-      '/dashboard/gestion-usuarios': 'Administración del Sistema / Gestión de Usuarios',
-      '/dashboard/plan-accion-revision': 'Planeación Estratégica / Revisión Planes de Acción',
-      '/dashboard/plan-accion-mi-plan': 'Plan de Acción'
-    };
-
-    return pathLabels[location.pathname] || 'Módulo institucional';
-  };
-
   const normalizeMenuByBlocks = (items) => {
     if (!Array.isArray(items)) return [];
     const dashboardItems = items.filter((item) => !item.section && item.key === 'dashboard');
@@ -106,21 +80,6 @@ function DashboardLayout() {
     navigate('/login');
   };
 
-  const handleGoBack = () => {
-    const historyIdx = window?.history?.state?.idx;
-    if (typeof historyIdx === 'number' && historyIdx > 0) {
-      navigate(-1);
-      return;
-    }
-    if ((window?.history?.length || 0) > 1) {
-      navigate(-1);
-      return;
-    }
-    navigate('/dashboard');
-  };
-  const hideTopNavForPlaneacionInicio = user?.role === ROLES.PLANEACION_ESTRATEGICA
-    && location.pathname === '/dashboard/planeacion-estrategica'
-    && !new URLSearchParams(location.search || '').get('view');
   const isActive = (path) => {
     const target = String(path || '');
     const [pathname, query] = target.split('?');
@@ -304,7 +263,10 @@ function DashboardLayout() {
   }, [user?.menuPermissions]);
 
   if (explicitMenuPermissions.length > 0 && user?.role !== ROLES.ADMINISTRADOR) {
-    menuItems = menuCatalog.filter((item) => explicitMenuPermissions.includes(item.key));
+    const effectiveMenuPermissions = user?.role === ROLES.CONSULTA
+      ? explicitMenuPermissions.filter((key) => key !== 'gestion_usuarios')
+      : explicitMenuPermissions;
+    menuItems = menuCatalog.filter((item) => effectiveMenuPermissions.includes(item.key));
 
     if (user?.role === ROLES.ADMINISTRADOR) {
       const procesosKeys = ['aseguramiento_calidad', 'buscar_documentos'];
@@ -317,7 +279,7 @@ function DashboardLayout() {
       const adminSistemaChildren = [
         { key: 'gestion_usuarios', path: '/dashboard/gestion-usuarios', label: 'Gestión de Usuarios', icon: <PeopleIcon /> }
       ].filter((child) => explicitMenuPermissions.includes(child.key));
-      const planeacionChildren = planeacionSectionItems.filter((child) => explicitMenuPermissions.includes(child.key));
+      const planeacionChildren = planeacionSectionItems.filter((child) => effectiveMenuPermissions.includes(child.key));
       const giChildren = [
         { key: 'gestion_informacion', path: '/dashboard/gestion-informacion?tab=gestion_bases', label: 'Gestión de Bases de Datos', icon: <StorageIcon /> },
         { key: 'gestion_informacion', path: '/dashboard/gestion-informacion?tab=estadistica', label: 'Estadística Institucional', icon: <QueryStatsIcon /> }
@@ -381,7 +343,7 @@ function DashboardLayout() {
       const visibleChildren = gestionProcesosMenuItems
         .filter((item) => item.section)
         .flatMap((section) => section.items)
-        .filter((child) => explicitMenuPermissions.includes(child.key));
+        .filter((child) => effectiveMenuPermissions.includes(child.key));
 
       menuItems = [
         ...menuItems.filter((item) => !procesosKeys.includes(item.key)),
@@ -748,47 +710,6 @@ function DashboardLayout() {
           <IconButton color="primary" edge="start" onClick={() => setMobileOpen(!mobileOpen)} sx={{ mr: 2, display: { sm: 'none' } }}>
             <MenuIcon />
           </IconButton>
-          {!hideTopNavForPlaneacionInicio && (
-            <>
-              <Button
-                onClick={handleGoBack}
-                startIcon={<ArrowBackIcon />}
-                variant="outlined"
-                size="small"
-                sx={{
-                  borderRadius: 2,
-                  textTransform: 'none',
-                  fontWeight: 700,
-                  color: '#1e3a8a',
-                  borderColor: '#bfdbfe',
-                  bgcolor: '#f8fbff',
-                  '&:hover': { borderColor: '#93c5fd', bgcolor: '#eff6ff' }
-                }}
-              >
-                Volver
-              </Button>
-              <Typography
-                sx={{
-                  ml: 1.5,
-                  px: 1.2,
-                  py: 0.5,
-                  borderRadius: 1.5,
-                  border: '1px solid #dbeafe',
-                  bgcolor: '#f8fbff',
-                  color: '#1e3a8a',
-                  fontSize: 12,
-                  fontWeight: 700,
-                  whiteSpace: 'nowrap',
-                  overflow: 'hidden',
-                  textOverflow: 'ellipsis',
-                  maxWidth: { xs: 170, sm: 420, md: 560 }
-                }}
-                title={getContextTrail()}
-              >
-                {getContextTrail()}
-              </Typography>
-            </>
-          )}
           <Box sx={{ flexGrow: 1 }} />
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
             <Tooltip title="Configuración">

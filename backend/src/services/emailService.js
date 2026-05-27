@@ -17,11 +17,12 @@ const INSTITUTIONAL_EMAIL_REGEX = /^[a-zA-Z0-9._%+-]+@unicesmag\.edu\.co$/i;
 const roleLabels = {
   administrador: 'Administrador General',
   consulta: 'Consulta',
-  gestion_procesos: 'Gestion por Procesos',
+  gestion_por_procesos: 'Gestion por Procesos',
   planeacion_estrategica: 'Planeacion Estrategica',
   planeacion_efectividad: 'Planeacion y Efectividad',
   autoevaluacion: 'Autoevaluacion',
-  gestion_informacion: 'Gestion de la Informacion'
+  gestion_informacion: 'Gestion de la Informacion',
+  registros_calificados_acreditacion: 'Registros Calificados y Acreditacion'
 };
 
 const escapeHtml = (value) =>
