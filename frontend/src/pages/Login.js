@@ -248,25 +248,38 @@ function Login() {
           {/* Badge estilo medallón institucional */}
           <Box
             sx={{
-              mb: 4.4,
-              maxWidth: 660,
+              mb: 4.3,
+              maxWidth: 640,
+              minHeight: { lg: 90, xl: 98 },
               display: 'flex',
               alignItems: 'center',
-              flexDirection: 'row-reverse',
-              gap: 3,
+              flexDirection: 'row',
+              gap: 0,
               position: 'relative',
               zIndex: 1,
-              pl: 3,
+              pl: 0,
               '&::before': {
                 content: '""',
                 position: 'absolute',
-                left: 0,
-                top: 15,
-                bottom: 15,
-                width: 2,
-                borderRadius: 999,
-                background: 'linear-gradient(180deg, rgba(255,255,255,0.9), rgba(96,165,250,0.2))',
-                boxShadow: '0 0 18px rgba(147,197,253,0.24)'
+                left: { lg: 58, xl: 66 },
+                right: 0,
+                top: { lg: 17, xl: 19 },
+                bottom: { lg: 17, xl: 19 },
+                borderRadius: '0 18px 18px 0',
+                background: 'linear-gradient(90deg, rgba(30,64,122,0.78) 0%, rgba(18,48,93,0.48) 52%, rgba(15,23,42,0.1) 100%)',
+                border: '1px solid rgba(147,197,253,0.16)',
+                boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.08), 0 14px 28px rgba(2,8,23,0.18)',
+                pointerEvents: 'none'
+              },
+              '&::after': {
+                content: '""',
+                position: 'absolute',
+                left: { lg: 76, xl: 84 },
+                top: { lg: 18, xl: 20 },
+                bottom: { lg: 18, xl: 20 },
+                width: 1,
+                background: 'linear-gradient(180deg, transparent, rgba(191,219,254,0.46), transparent)',
+                pointerEvents: 'none'
               },
             }}
           >
@@ -280,17 +293,18 @@ function Login() {
               background: 'transparent',
               p: 0,
               boxShadow: 'none',
-              width: { lg: 84, xl: 94 },
-              height: { lg: 84, xl: 94 },
-              mr: 0,
+              width: { lg: 78, xl: 88 },
+              height: { lg: 78, xl: 88 },
+              mr: { lg: 2.2, xl: 2.6 },
+              filter: 'drop-shadow(0 0 12px rgba(244,114,182,0.48)) drop-shadow(0 10px 20px rgba(2,8,23,0.35))',
             }}>
               {/* Aro interior oscuro para dar profundidad */}
               <Box sx={{
                 width: '100%',
                 height: '100%',
                 borderRadius: '50%',
-                background: 'transparent',
-                p: 0,
+                background: 'linear-gradient(135deg, rgba(96,165,250,0.95), rgba(244,114,182,0.92))',
+                p: '2px',
               }}>
                 <Box
                   component="img"
@@ -303,8 +317,7 @@ function Login() {
                     objectPosition: 'center top',
                     borderRadius: '50%',
                     display: 'block',
-                    filter: 'drop-shadow(0 12px 18px rgba(15, 23, 42, 0.28))',
-                    opacity: 0.96
+                    opacity: 0.98
                   }}
                 />
               </Box>
@@ -322,9 +335,11 @@ function Login() {
               background: 'transparent',
               border: 0,
               boxShadow: 'none',
-              pl: 3,
-              pr: 0,
+              pl: 0,
+              pr: 2.4,
               overflow: 'visible',
+              position: 'relative',
+              zIndex: 2,
               '&::after': {
                 content: '""',
                 position: 'absolute',
@@ -341,10 +356,10 @@ function Login() {
                   sx={{
                     m: 0,
                     fontFamily: '"Montserrat", "Segoe UI", sans-serif',
-                    fontSize: { lg: 12.5, xl: 14 },
+                    fontSize: { lg: 12.2, xl: 13.6 },
                     lineHeight: 1.35,
-                    fontWeight: 800,
-                    letterSpacing: { lg: 2.6, xl: 3 },
+                    fontWeight: 700,
+                    letterSpacing: { lg: 0.7, xl: 0.9 },
                     textTransform: 'uppercase',
                     whiteSpace: 'nowrap',
                     color: 'rgba(241,245,249,0.94)',
@@ -362,7 +377,7 @@ function Login() {
                     fontSize: 10.8,
                     fontWeight: 500,
                     letterSpacing: 0.2,
-                    color: 'rgba(191,219,254,0.78)'
+                    color: 'rgba(191,219,254,0.84)'
                   }}
                 >
                   Fray Guillermo de Castellana, OFMCap.
