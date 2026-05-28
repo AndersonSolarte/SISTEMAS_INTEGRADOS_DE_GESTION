@@ -226,7 +226,7 @@ function DocFilterPanel({ label, options = [], value = [], onChange, disabled, p
 function InfographicStatCard({ index, title, value, subtitle, color = '#1d4ed8', Icon = AutoGraphIcon, onClick }) {
   const soft = `${color}14`;
   return (
-    <Paper elevation={0} onClick={onClick} sx={{ minHeight: 120, p: 1.6, borderRadius: '8px', border: `1px solid ${color}33`, bgcolor: '#ffffff', position: 'relative', overflow: 'hidden', boxShadow: '0 8px 20px rgba(15,23,42,0.07)', ...(onClick && { cursor: 'pointer', transition: 'all 0.18s', '&:hover': { transform: 'translateY(-2px)', boxShadow: `0 14px 32px ${color}30`, borderColor: `${color}66` } }), '&::before': { content: '""', position: 'absolute', left: 0, top: 0, width: '30%', height: '100%', bgcolor: soft }, '&::after': { content: '""', position: 'absolute', right: 0, top: 0, width: 5, height: '100%', bgcolor: color } }}>
+    <Paper elevation={0} onClick={onClick} sx={{ minHeight: 120, p: 1.6, borderRadius: '8px', border: `1px solid ${color}33`, bgcolor: '#ffffff', position: 'relative', overflow: 'hidden', boxShadow: '0 8px 20px rgba(15,23,42,0.07)', cursor: onClick ? 'pointer' : 'default', transition: 'all 0.22s cubic-bezier(0.4,0,0.2,1)', '&:hover': { transform: 'translateY(-3px) scale(1.012)', boxShadow: `0 18px 40px ${color}28, 0 0 0 1px ${color}44`, borderColor: `${color}77`, bgcolor: `${color}06` }, '&::before': { content: '""', position: 'absolute', left: 0, top: 0, width: '30%', height: '100%', bgcolor: soft }, '&::after': { content: '""', position: 'absolute', right: 0, top: 0, width: 5, height: '100%', bgcolor: color } }}>
       <Stack direction="row" spacing={1} alignItems="flex-start" justifyContent="space-between" sx={{ position: 'relative', zIndex: 1 }}>
         <Box sx={{ minWidth: 0 }}>
           <Box sx={{ width: 36, height: 22, borderRadius: '6px', bgcolor: color, color: '#ffffff', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: `0 4px 10px ${color}30` }}>
@@ -377,8 +377,7 @@ function DocumentTypeList({ title, rows = [], total }) {
                   <Typography sx={{ fontWeight: 950, fontSize: 14, color: '#fff', lineHeight: 1 }}>{String(index + 1).padStart(2, '0')}</Typography>
                 </Box>
                 <Box sx={{ px: 1.5, py: 0.8 }}>
-                  <Typography sx={{ fontSize: 8.5, fontWeight: 900, color: tone.fg, letterSpacing: 0.7, textTransform: 'uppercase', lineHeight: 1 }}>Tipo Documental</Typography>
-                  <Typography sx={{ fontWeight: 950, fontSize: 12.5, color: '#0f172a', lineHeight: 1.2, mt: 0.15 }}>{row.tipo_documento}</Typography>
+                  <Typography sx={{ fontWeight: 950, fontSize: 12.5, color: '#0f172a', lineHeight: 1.2 }}>{row.tipo_documento}</Typography>
                   <Typography sx={{ fontSize: 9.5, fontWeight: 600, color: '#94a3b8', mt: 0.15 }}>{formatNumber(cantidad)} documentos activos · {pct}% del total</Typography>
                 </Box>
                 <Box sx={{ pr: 1.3, display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 0.15 }}>
