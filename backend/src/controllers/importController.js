@@ -50,16 +50,18 @@ const excelDateToISO = (value) => {
 
   if (/^\d{4}-\d{2}-\d{2}$/.test(text)) return text;
 
-  const slashMatch = text.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+  const slashMatch = text.match(/^(\d{1,2})\/(\d{1,2})\/(\d{2}|\d{4})$/);
   if (slashMatch) {
     const [, d, m, y] = slashMatch;
-    return `${y}-${String(m).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+    const year = y.length === 2 ? `20${y}` : y;
+    return `${year}-${String(m).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
   }
 
-  const dashMatch = text.match(/^(\d{1,2})-(\d{1,2})-(\d{4})$/);
+  const dashMatch = text.match(/^(\d{1,2})-(\d{1,2})-(\d{2}|\d{4})$/);
   if (dashMatch) {
     const [, d, m, y] = dashMatch;
-    return `${y}-${String(m).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+    const year = y.length === 2 ? `20${y}` : y;
+    return `${year}-${String(m).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
   }
 
   const parsedDate = new Date(text);
@@ -127,8 +129,15 @@ const normalizeMappedFields = (row) => {
   return { tipoDocumentacion, codigo, titulo };
 };
 
-const getDocumentIdentityKey = (codigo, version) =>
-  `${toText(codigo, 50) || ''}::${toText(version, 20) || ''}`;
+const normalizeDocumentSheetScope = (value = '') => {
+  const token = normalizeHeader(value);
+  if (token.includes('politica')) return 'politicas';
+  if (token.includes('plantilla')) return 'plantillas';
+  return 'documentos';
+};
+
+const getDocumentIdentityKey = (codigo, version, sheetScope = '') =>
+  `${toText(codigo, 50) || ''}::${toText(version, 20) || ''}::${normalizeDocumentSheetScope(sheetScope)}`;
 
 const comparableValue = (value) => {
   if (value && typeof value === 'object') return JSON.stringify(value);
@@ -166,7 +175,7 @@ const buildExistingDocumentBuckets = async () => {
   const buckets = new Map();
   const documents = await Documento.findAll({ order: [['id', 'ASC']] });
   documents.forEach((doc) => {
-    const key = getDocumentIdentityKey(doc.codigo, doc.version);
+    const key = getDocumentIdentityKey(doc.codigo, doc.version, doc.datos_originales?.hoja);
     if (key.startsWith('::')) return;
     const bucket = buckets.get(key) || [];
     bucket.push(doc);
@@ -459,6 +468,54 @@ const readFirstAvailableSheetValues = async ({ sheetId, aliases = [], sheetGid }
   throw lastError || new Error(`No se encontro ninguna pestaña: ${aliases.join(', ')}`);
 };
 
+const normalizeSheetToken = (value = '') => normalizeHeader(value).replace(/_/g, '');
+
+const findWorkbookSheetByAliases = (workbook, aliases = []) => {
+  const sheetNames = workbook?.SheetNames || [];
+  const normalizedAliases = aliases.map(normalizeSheetToken);
+  return sheetNames.find((sheetName) => normalizedAliases.includes(normalizeSheetToken(sheetName))) || null;
+};
+
+const readDocumentSheetsFromWorkbook = (workbook) => {
+  const sheets = [];
+  const matchedNames = new Set();
+
+  DOCUMENT_SYNC_SHEETS.forEach((config) => {
+    const sheetName = findWorkbookSheetByAliases(workbook, config.aliases);
+    if (!sheetName || matchedNames.has(sheetName)) return;
+    const rows = XLSX.utils.sheet_to_json(workbook.Sheets[sheetName], {
+      defval: null,
+      raw: false,
+      dateNF: 'dd/mm/yyyy'
+    });
+    matchedNames.add(sheetName);
+    if (!rows.length) return;
+    sheets.push({
+      logicalName: config.name,
+      sheetName,
+      rows: rows.map((row) => ({ ...row, hoja: config.name }))
+    });
+  });
+
+  if (!sheets.length && workbook?.SheetNames?.length) {
+    const sheetName = workbook.SheetNames[0];
+    const rows = XLSX.utils.sheet_to_json(workbook.Sheets[sheetName], {
+      defval: null,
+      raw: false,
+      dateNF: 'dd/mm/yyyy'
+    });
+    if (rows.length) {
+      sheets.push({
+        logicalName: DOCUMENT_SYNC_SHEETS[0].name,
+        sheetName,
+        rows: rows.map((row) => ({ ...row, hoja: DOCUMENT_SYNC_SHEETS[0].name }))
+      });
+    }
+  }
+
+  return sheets;
+};
+
 const importFromExcel = async (req, res) => {
   try {
     if (!req.file) {
@@ -473,11 +530,10 @@ const importFromExcel = async (req, res) => {
     console.log('📁 Procesando archivo:', req.file.originalname);
 
     const workbook = XLSX.readFile(req.file.path);
-    const sheetName = workbook.SheetNames[0];
-    const worksheet = workbook.Sheets[sheetName];
-    const data = XLSX.utils.sheet_to_json(worksheet, { defval: null, raw: false, dateNF: 'dd/mm/yyyy' });
+    const sheetsData = readDocumentSheetsFromWorkbook(workbook);
+    const totalRows = sheetsData.reduce((sum, sheet) => sum + sheet.rows.length, 0);
 
-    if (data.length === 0) {
+    if (totalRows === 0) {
       fs.unlinkSync(req.file.path);
       return res.status(400).json({
         success: false,
@@ -485,7 +541,7 @@ const importFromExcel = async (req, res) => {
       });
     }
 
-    if (data.length > MAX_DOCUMENT_IMPORT_ROWS) {
+    if (totalRows > MAX_DOCUMENT_IMPORT_ROWS) {
       fs.unlinkSync(req.file.path);
       return res.status(400).json({
         success: false,
@@ -493,30 +549,38 @@ const importFromExcel = async (req, res) => {
       });
     }
 
-    console.log(`📊 Total de filas: ${data.length}`);
+    console.log(`Total de filas: ${totalRows}`);
 
     const results = {
-      total: data.length,
+      total: totalRows,
       importados: 0,
       actualizados: 0,
-      errores: []
+      errores: [],
+      hojasProcesadas: []
     };
     const existingDocumentBuckets = await buildExistingDocumentBuckets();
     const occurrenceIndexes = new Map();
+    let globalIndex = 0;
 
-    for (let i = 0; i < data.length; i++) {
-      const row = mapRowKeys(data[i]);
+    for (const sheet of sheetsData) {
+      const sheetResult = { hoja: sheet.logicalName, pestana: sheet.sheetName, total: sheet.rows.length, importados: 0, actualizados: 0, errores: [] };
+      for (let i = 0; i < sheet.rows.length; i++) {
+      const row = mapRowKeys(sheet.rows[i]);
       const rowNumber = i + 2; // +2 porque Excel empieza en 1 y la primera fila son headers
+      globalIndex += 1;
 
       try {
         const { tipoDocumentacion, codigo, titulo } = normalizeMappedFields(row);
 
         // Validar campos requeridos
         if (!codigo && !titulo) {
-          results.errores.push({
+          const rowError = {
+            hoja: sheet.logicalName,
             fila: rowNumber,
             error: 'Faltan campos requeridos (codigo o titulo)'
-          });
+          };
+          results.errores.push(rowError);
+          sheetResult.errores.push(rowError);
           continue;
         }
 
@@ -582,12 +646,12 @@ const importFromExcel = async (req, res) => {
           estado: normalizeEstado(row.estado),
           link_acceso: toText(row.link_acceso),
           observaciones: toText(row.observaciones),
-          orden_origen: i + 1,
+          orden_origen: globalIndex,
           fila_origen: rowNumber,
-          datos_originales: data[i]
+          datos_originales: { ...sheet.rows[i], hoja: sheet.logicalName }
         };
 
-        const documentKey = getDocumentIdentityKey(documentoData.codigo, documentoData.version);
+        const documentKey = getDocumentIdentityKey(documentoData.codigo, documentoData.version, sheet.logicalName);
         const occurrenceIndex = nextDocumentOccurrence(occurrenceIndexes, documentKey);
         const existente = existingDocumentBuckets.get(documentKey)?.[occurrenceIndex] || null;
 
@@ -595,6 +659,7 @@ const importFromExcel = async (req, res) => {
           // Actualizar
           await existente.update(documentoData);
           results.actualizados++;
+          sheetResult.actualizados++;
         } else {
           // Crear nuevo
           const nuevoDocumento = await Documento.create(documentoData);
@@ -602,17 +667,23 @@ const importFromExcel = async (req, res) => {
           bucket.push(nuevoDocumento);
           existingDocumentBuckets.set(documentKey, bucket);
           results.importados++;
+          sheetResult.importados++;
         }
 
         console.log(`✓ Fila ${rowNumber}: ${documentoData.codigo} - ${documentoData.titulo}`);
 
       } catch (error) {
         console.error(`✗ Error en fila ${rowNumber}:`, error.message);
-        results.errores.push({
+        const rowError = {
+          hoja: sheet.logicalName,
           fila: rowNumber,
           error: error.message
-        });
+        };
+        results.errores.push(rowError);
+        sheetResult.errores.push(rowError);
       }
+    }
+      results.hojasProcesadas.push(sheetResult);
     }
 
     fs.unlinkSync(req.file.path);
@@ -883,7 +954,7 @@ const importFromSheet = async (req, res) => {
           datos_originales: data[i]
         };
 
-        const documentKey = getDocumentIdentityKey(documentoData.codigo, documentoData.version);
+        const documentKey = getDocumentIdentityKey(documentoData.codigo, documentoData.version, row.hoja);
         const occurrenceIndex = nextDocumentOccurrence(occurrenceIndexes, documentKey);
         const existente = existingDocumentBuckets.get(documentKey)?.[occurrenceIndex] || null;
 
@@ -1100,7 +1171,7 @@ const importFromSheetFixed = async (req, res) => {
           datos_originales: { ...sheet.rows[i], hoja: sheet.logicalName }
         };
 
-        const documentKey = getDocumentIdentityKey(documentoData.codigo, documentoData.version);
+        const documentKey = getDocumentIdentityKey(documentoData.codigo, documentoData.version, sheet.logicalName);
         const occurrenceIndex = nextDocumentOccurrence(occurrenceIndexes, documentKey);
         const existente = existingDocumentBuckets.get(documentKey)?.[occurrenceIndex] || null;
 
@@ -1198,10 +1269,7 @@ const downloadTemplate = (req, res) => {
       'OBSERVACIONES'
     ];
 
-    const worksheet = XLSX.utils.json_to_sheet([], { header: headers });
-    
-    // Ajustar ancho de columnas
-    worksheet['!cols'] = [
+    const columnWidths = [
       { wch: 25 }, // MACROPROCESO
       { wch: 30 }, // PROCESO
       { wch: 30 }, // SUBPROCESO
@@ -1220,7 +1288,14 @@ const downloadTemplate = (req, res) => {
     ];
 
     const workbook = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(workbook, worksheet, 'Documentos');
+    const templateSheets = ['BD_SGD_UNICESMAG', 'POLITICAS', 'PLANTILLAS'];
+
+    templateSheets.forEach((sheetName) => {
+      const worksheet = XLSX.utils.json_to_sheet([], { header: headers });
+      worksheet['!cols'] = columnWidths;
+      worksheet['!autofilter'] = { ref: `A1:O1` };
+      XLSX.utils.book_append_sheet(workbook, worksheet, sheetName);
+    });
 
     const buffer = XLSX.write(workbook, { type: 'buffer', bookType: 'xlsx' });
 

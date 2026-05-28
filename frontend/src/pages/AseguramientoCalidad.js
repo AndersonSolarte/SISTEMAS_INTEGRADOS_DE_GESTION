@@ -556,6 +556,9 @@ function AseguramientoCalidad() {
   const [filterRelations, setFilterRelations] = useState([]);
   const [visibleRelations, setVisibleRelations] = useState([]);
   const catalogRequestId = useRef(0);
+  const documentRequestId = useRef(0);
+  const initialDocumentsLoaded = useRef(false);
+  const skipNextDocumentFilterEffect = useRef(false);
 
   const syncCatalogosFromPayload = useCallback((data = {}) => {
     setMacroProcesos(data.macroProcesos || []);
@@ -662,7 +665,10 @@ function AseguramientoCalidad() {
     const params = new URLSearchParams(location.search);
     const quickTitulo = params.get('titulo');
     if (quickTitulo) {
+      const requestId = ++documentRequestId.current;
       const nextFilters = { ...buildInitialDocumentFilters(activeDocumentScope), titulo: quickTitulo };
+      initialDocumentsLoaded.current = true;
+      skipNextDocumentFilterEffect.current = true;
       setSelMacros([]); setSelProcesos([]); setSelSubprocesos([]); setSelTipos([]);
       setFilters(nextFilters);
       setHasSearched(true);
@@ -670,6 +676,7 @@ function AseguramientoCalidad() {
       setLoading(true);
       documentoService.getDocumentos(nextFilters, 1, 10)
         .then((response) => {
+          if (requestId !== documentRequestId.current) return;
           if (response.success) {
             const nextDocs = response.data.documentos || [];
             setDocumentos(nextDocs);
@@ -677,19 +684,61 @@ function AseguramientoCalidad() {
             setTotalDocumentos(response.data.pagination.total);
           }
         })
-        .catch((error) => enqueueSnackbar(getApiErrorMessage(error, 'Error al buscar documentos'), { variant: 'error' }))
-        .finally(() => setLoading(false));
+        .catch((error) => {
+          if (requestId === documentRequestId.current) {
+            enqueueSnackbar(getApiErrorMessage(error, 'Error al buscar documentos'), { variant: 'error' });
+          }
+        })
+        .finally(() => {
+          if (requestId === documentRequestId.current) setLoading(false);
+        });
     }
   }, [activeDocumentScope, location.search, enqueueSnackbar]);
 
+  useEffect(() => {
+    if (initialDocumentsLoaded.current) return;
+    const params = new URLSearchParams(location.search);
+    if (params.get('titulo')) return;
+    initialDocumentsLoaded.current = true;
+    skipNextDocumentFilterEffect.current = true;
+
+    const requestId = ++documentRequestId.current;
+    const initialFilters = buildInitialDocumentFilters(activeDocumentScope);
+    setLoading(true);
+    setHasSearched(true);
+
+    documentoService.getDocumentos(initialFilters, 1, rowsPerPage)
+      .then((response) => {
+        if (requestId !== documentRequestId.current) return;
+        if (response.success) {
+          const nextDocs = response.data.documentos || [];
+          setDocumentos(nextDocs);
+          setVisibleRelations(buildRelacionesFromDocumentos(nextDocs));
+          setTotalDocumentos(response.data.pagination.total);
+          setHasSearched(true);
+        }
+      })
+      .catch((error) => {
+        if (requestId === documentRequestId.current) {
+          enqueueSnackbar(getApiErrorMessage(error, 'Error al cargar documentos'), { variant: 'error' });
+        }
+      })
+      .finally(() => {
+        if (requestId === documentRequestId.current) setLoading(false);
+      });
+  }, [activeDocumentScope, location.search, rowsPerPage, enqueueSnackbar]);
+
 
   const handleSearch = async () => {
+    const requestId = ++documentRequestId.current;
+    skipNextDocumentFilterEffect.current = true;
     setLoading(true);
     setPage(0);
     setHasSearched(true);
     setManualSearchMode(true);
     try {
       const response = await documentoService.getDocumentos(filters, 1, rowsPerPage);
+      if (requestId !== documentRequestId.current) return;
       if (response.success) {
         const nextDocs = response.data.documentos || [];
         setDocumentos(nextDocs);
@@ -702,13 +751,16 @@ function AseguramientoCalidad() {
         }
       }
     } catch (error) {
-      enqueueSnackbar(getApiErrorMessage(error, 'Error al buscar documentos'), { variant: 'error' });
+      if (requestId === documentRequestId.current) {
+        enqueueSnackbar(getApiErrorMessage(error, 'Error al buscar documentos'), { variant: 'error' });
+      }
     } finally {
-      setLoading(false);
+      if (requestId === documentRequestId.current) setLoading(false);
     }
   };
 
   const handleClearFilters = () => {
+    documentRequestId.current += 1;
     setFilters(buildInitialDocumentFilters(activeDocumentScope));
     setSelMacros([]); setSelProcesos([]); setSelSubprocesos([]); setSelTipos([]);
     setDocumentos([]);
@@ -719,10 +771,12 @@ function AseguramientoCalidad() {
     setPage(0);
   };
 
-  const handleDocumentScopeChange = (scope) => {
+  const handleDocumentScopeChange = async (scope) => {
     if (scope === activeDocumentScope) return;
+    const requestId = ++documentRequestId.current;
     setActiveDocumentScope(scope);
     const nextFilters = buildInitialDocumentFilters(scope);
+    skipNextDocumentFilterEffect.current = true;
     setFilters(nextFilters);
     setSelMacros([]); setSelProcesos([]); setSelSubprocesos([]); setSelTipos([]);
     setFilterOptions(emptyFilterOptions);
@@ -732,6 +786,25 @@ function AseguramientoCalidad() {
     setHasSearched(true);
     setManualSearchMode(false);
     setPage(0);
+    setLoading(true);
+
+    try {
+      const response = await documentoService.getDocumentos(nextFilters, 1, rowsPerPage);
+      if (requestId !== documentRequestId.current) return;
+      if (response.success) {
+        const nextDocs = response.data.documentos || [];
+        setDocumentos(nextDocs);
+        setVisibleRelations(buildRelacionesFromDocumentos(nextDocs));
+        setTotalDocumentos(response.data.pagination.total);
+        setHasSearched(true);
+      }
+    } catch (error) {
+      if (requestId === documentRequestId.current) {
+        enqueueSnackbar(getApiErrorMessage(error, 'Error al cambiar el tipo de consulta'), { variant: 'error' });
+      }
+    } finally {
+      if (requestId === documentRequestId.current) setLoading(false);
+    }
   };
 
   const handleMacroChange = (values) => {
@@ -750,28 +823,57 @@ function AseguramientoCalidad() {
   useEffect(() => { setFilters(prev => ({ ...prev, document_scope: activeDocumentScope })); }, [activeDocumentScope]);
 
   useEffect(() => {
+    if (skipNextDocumentFilterEffect.current) {
+      skipNextDocumentFilterEffect.current = false;
+      return;
+    }
+
     const hasUserFilter = Object.entries(filters).some(
-      ([key, value]) => !['estado_scope'].includes(key) && String(value || '').trim() !== ''
+      ([key, value]) => !['estado_scope', 'document_scope'].includes(key) && String(value || '').trim() !== ''
     );
 
     if (!hasUserFilter) {
-      if (!manualSearchMode) {
-        setDocumentos([]);
-        setVisibleRelations([]);
-        setTotalDocumentos(0);
-        setHasSearched(false);
+      if (!initialDocumentsLoaded.current || manualSearchMode) return;
+
+      const requestId = ++documentRequestId.current;
+      const debounceId = setTimeout(async () => {
+        setLoading(true);
         setPage(0);
-      }
-      return;
+        setHasSearched(true);
+        try {
+          const response = await documentoService.getDocumentos(filters, 1, rowsPerPage);
+          if (requestId !== documentRequestId.current) return;
+          if (response.success) {
+            const nextDocs = response.data.documentos || [];
+            setDocumentos(nextDocs);
+            setVisibleRelations(buildRelacionesFromDocumentos(nextDocs));
+            setTotalDocumentos(response.data.pagination.total);
+          }
+        } catch (error) {
+          if (requestId === documentRequestId.current) {
+            enqueueSnackbar(getApiErrorMessage(error, 'Error al cargar documentos'), { variant: 'error' });
+          }
+        } finally {
+          if (requestId === documentRequestId.current) setLoading(false);
+        }
+      }, 350);
+
+      return () => clearTimeout(debounceId);
+    }
+
+    if (!initialDocumentsLoaded.current) {
+      initialDocumentsLoaded.current = true;
     }
 
     setManualSearchMode(false);
     setHasSearched(true);
+    const requestId = ++documentRequestId.current;
     const debounceId = setTimeout(async () => {
       setLoading(true);
       setPage(0);
       try {
         const response = await documentoService.getDocumentos(filters, 1, rowsPerPage);
+        if (requestId !== documentRequestId.current) return;
         if (response.success) {
           const nextDocs = response.data.documentos || [];
           setDocumentos(nextDocs);
@@ -779,9 +881,11 @@ function AseguramientoCalidad() {
           setTotalDocumentos(response.data.pagination.total);
         }
       } catch (error) {
-        enqueueSnackbar(getApiErrorMessage(error, 'Error al aplicar filtros'), { variant: 'error' });
+        if (requestId === documentRequestId.current) {
+          enqueueSnackbar(getApiErrorMessage(error, 'Error al aplicar filtros'), { variant: 'error' });
+        }
       } finally {
-        setLoading(false);
+        if (requestId === documentRequestId.current) setLoading(false);
       }
     }, 350);
 
@@ -789,19 +893,49 @@ function AseguramientoCalidad() {
   }, [filters, manualSearchMode, rowsPerPage, enqueueSnackbar]);
 
   const handleChangePage = async (event, newPage) => {
+    const requestId = ++documentRequestId.current;
     setPage(newPage);
     setLoading(true);
     try {
       const response = await documentoService.getDocumentos(filters, newPage + 1, rowsPerPage);
+      if (requestId !== documentRequestId.current) return;
       if (response.success) {
         const nextDocs = response.data.documentos || [];
         setDocumentos(nextDocs);
         setVisibleRelations(buildRelacionesFromDocumentos(nextDocs));
       }
     } catch (error) {
-      enqueueSnackbar(getApiErrorMessage(error, 'Error al cargar documentos'), { variant: 'error' });
+      if (requestId === documentRequestId.current) {
+        enqueueSnackbar(getApiErrorMessage(error, 'Error al cargar documentos'), { variant: 'error' });
+      }
     } finally {
-      setLoading(false);
+      if (requestId === documentRequestId.current) setLoading(false);
+    }
+  };
+
+  const handleChangeRowsPerPage = async (event) => {
+    const nextRowsPerPage = parseInt(event.target.value, 10);
+    const requestId = ++documentRequestId.current;
+    skipNextDocumentFilterEffect.current = true;
+    setRowsPerPage(nextRowsPerPage);
+    setPage(0);
+    setLoading(true);
+    setHasSearched(true);
+    try {
+      const response = await documentoService.getDocumentos(filters, 1, nextRowsPerPage);
+      if (requestId !== documentRequestId.current) return;
+      if (response.success) {
+        const nextDocs = response.data.documentos || [];
+        setDocumentos(nextDocs);
+        setVisibleRelations(buildRelacionesFromDocumentos(nextDocs));
+        setTotalDocumentos(response.data.pagination.total);
+      }
+    } catch (error) {
+      if (requestId === documentRequestId.current) {
+        enqueueSnackbar(getApiErrorMessage(error, 'Error al cargar documentos'), { variant: 'error' });
+      }
+    } finally {
+      if (requestId === documentRequestId.current) setLoading(false);
     }
   };
 
@@ -1105,7 +1239,7 @@ function AseguramientoCalidad() {
               <Box>
                 <Typography variant="h6" sx={{ fontWeight: 600 }}>Cargar documentos a la base del servidor</Typography>
                 <Typography variant="body2" sx={{ color: '#64748b' }}>
-                  Excel y Google Sheets solo alimentan PostgreSQL. La consulta y los filtros trabajan siempre con la base alojada en el servidor.
+                  Excel y Google Sheets alimentan PostgreSQL con documentos, politicas y plantillas en un solo libro.
                 </Typography>
               </Box>
             </Stack>
@@ -1118,7 +1252,7 @@ function AseguramientoCalidad() {
               </Grid>
               <Grid item xs={12} md={3}>
                 <Button variant="contained" fullWidth disabled={!selectedFile || importing} onClick={handleImport} sx={{ borderRadius: 2, py: 1.5 }}>
-                  {importing ? 'Cargando al servidor...' : 'Cargar Excel al servidor'}
+                  {importing ? 'Cargando al servidor...' : 'Cargar libro completo'}
                 </Button>
               </Grid>
               <Grid item xs={12} md={3}>
@@ -1143,7 +1277,7 @@ function AseguramientoCalidad() {
                   Fuente externa autorizada
                 </Typography>
                 <Typography variant="body2" sx={{ color: '#64748b' }}>
-                  Usa Sheets para traer datos al servidor. Despues de cargar, la pantalla deja de depender de Sheets y consulta la informacion guardada en PostgreSQL.
+                  La plantilla incluye las hojas BD_SGD_UNICESMAG, POLITICAS y PLANTILLAS. Al cargarla se actualizan las tres consultas.
                 </Typography>
               </Grid>
               <Grid item xs={12} md={6}>
@@ -1587,10 +1721,7 @@ function AseguramientoCalidad() {
                   rowsPerPage={rowsPerPage} 
                   page={page} 
                   onPageChange={handleChangePage} 
-                  onRowsPerPageChange={(e) => { 
-                    setRowsPerPage(parseInt(e.target.value, 10)); 
-                    setPage(0); 
-                  }} 
+                  onRowsPerPageChange={handleChangeRowsPerPage} 
                   labelRowsPerPage="Mostrar:" 
                   sx={{ borderTop: '2px solid #e2e8f0', bgcolor: '#f8fafc' }} 
                 />

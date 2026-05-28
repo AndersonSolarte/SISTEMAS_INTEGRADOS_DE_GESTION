@@ -92,8 +92,8 @@ const getPeriodoFromDate = (value) => {
   const year = isoMatch ? Number(isoMatch[1]) : new Date(value).getFullYear();
   const month = isoMatch ? Number(isoMatch[2]) : new Date(value).getMonth() + 1;
   if (!year || !month || Number.isNaN(year) || Number.isNaN(month)) return null;
-  // Periodos academicos institucionales: enero-junio = I, julio-diciembre = II.
-  const semester = month <= 6 ? 'I' : 'II';
+  // Periodos academicos para estadistica documental: enero-junio = IP, julio-diciembre = IIP.
+  const semester = month <= 6 ? 'IP' : 'IIP';
   return `${year}-${semester}`;
 };
 
@@ -103,17 +103,75 @@ const formatPeriodoLabel = (periodo = '') => {
   return `${year} ${semester}`;
 };
 
+const formatPeriodoSelectionLabel = (value = '') => {
+  const labels = normalizeStatFilterValues(value).map(formatPeriodoLabel).filter(Boolean);
+  if (!labels.length) return 'Todos';
+  return labels.join(', ');
+};
+
 const normalizePeriodoFilter = (value = '') => {
-  const match = String(value || '').trim().toUpperCase().match(/^(\d{4})\s*[- ]?\s*(I|II)$/);
+  const match = String(value || '').trim().toUpperCase().match(/^(\d{4})\s*[- ]?\s*(IP|IIP|I|II)$/);
   if (!match) return '';
-  return `${match[1]}-${match[2]}`;
+  const semester = match[2] === 'I' ? 'IP' : match[2] === 'II' ? 'IIP' : match[2];
+  return `${match[1]}-${semester}`;
 };
 
 const normalizeStatFilterValue = (value = '') => String(value || '').trim().toLowerCase();
 
+const normalizeStatFilterValues = (value = '') => {
+  const rawValues = Array.isArray(value) ? value : String(value || '').split(',');
+  return rawValues
+    .map((item) => String(item || '').trim())
+    .filter(Boolean);
+};
+
+const normalizeStatLabel = (value = '', fallback = 'No clasificado') => {
+  const label = String(value || '')
+    .replace(/\s+/g, ' ')
+    .trim();
+  return label || fallback;
+};
+
+const buildStatDistribution = (rows, config = {}) => {
+  const {
+    idKey,
+    nameKey,
+    outputIdKey,
+    outputNameKey,
+    fallback = 'No clasificado'
+  } = config;
+  const map = new Map();
+
+  rows.forEach((row) => {
+    const rawId = row[idKey];
+    const id = rawId === undefined || rawId === null || rawId === '' ? null : rawId;
+    const label = normalizeStatLabel(row[nameKey], fallback);
+    const normalizedLabel = normalizeStatFilterValue(label);
+    const key = id ? `id:${id}` : `label:${normalizedLabel}`;
+    const current = map.get(key) || {
+      [outputIdKey]: id,
+      [outputNameKey]: label,
+      cantidad: 0
+    };
+    current.cantidad += 1;
+    map.set(key, current);
+  });
+
+  const total = rows.length || 0;
+  return Array.from(map.values())
+    .map((item) => ({
+      ...item,
+      porcentaje: total > 0 ? Number(((Number(item.cantidad || 0) / total) * 100).toFixed(1)) : 0
+    }))
+    .sort((a, b) =>
+      b.cantidad - a.cantidad
+      || String(a[outputNameKey]).localeCompare(String(b[outputNameKey]), 'es', { sensitivity: 'base' })
+    );
+};
+
 const matchesStatFilter = (row, key, value) => {
-  const needle = normalizeStatFilterValue(value);
-  if (!needle) return true;
+  const needles = normalizeStatFilterValues(value).map(normalizeStatFilterValue);
+  if (!needles.length) return true;
   const candidates = {
     macro: [row.macroId, row.macroNombre],
     proceso: [row.procesoId, row.procesoNombre],
@@ -121,17 +179,18 @@ const matchesStatFilter = (row, key, value) => {
     tipo: [row.tipoId, row.tipoNombre],
     periodo: [row.periodo]
   }[key] || [];
-  return candidates.some((candidate) => normalizeStatFilterValue(candidate) === needle);
+  return candidates.some((candidate) => needles.includes(normalizeStatFilterValue(candidate)));
 };
 
 const countStatOptions = (rows, { idKey, nameKey, valueKey = nameKey, labelKey = nameKey }) => {
   const map = new Map();
   rows.forEach((row) => {
-    const label = String(row[labelKey] || '').trim();
-    const value = String(row[valueKey] || label).trim();
+    const label = normalizeStatLabel(row[labelKey], '');
+    const rawValue = row[valueKey];
+    const value = String(rawValue === undefined || rawValue === null || rawValue === '' ? label : rawValue).trim();
     if (!label || !value) return;
     const id = row[idKey] || value;
-    const key = `${id}::${value}`;
+    const key = row[idKey] ? `id:${row[idKey]}` : `value:${normalizeStatFilterValue(value)}`;
     const current = map.get(key) || { id, value, label, cantidad: 0 };
     current.cantidad += 1;
     map.set(key, current);
@@ -357,7 +416,7 @@ const getEstadisticaDocumental = async (req, res) => {
       periodo,
       document_scope
     } = req.query;
-    const normalizedPeriodo = normalizePeriodoFilter(periodo);
+    const normalizedPeriodo = normalizeStatFilterValues(periodo).map(normalizePeriodoFilter).filter(Boolean).join(',');
     const scopeCondition = documentScopeLiteral(normalizeDocumentScope(document_scope), 'documentos');
     const include = [
       {
@@ -408,7 +467,7 @@ const getEstadisticaDocumental = async (req, res) => {
     });
 
     const baseRows = docs.map((doc) => {
-      const periodoValue = getPeriodoFromDate(doc.fecha_creacion || doc.created_at);
+      const periodoValue = getPeriodoFromDate(doc.fecha_creacion);
       const subprocesoModel = doc.subproceso || null;
       const procesoModel = subprocesoModel?.proceso || null;
       const macroModel = procesoModel?.macroProceso || null;
@@ -416,13 +475,13 @@ const getEstadisticaDocumental = async (req, res) => {
         id: doc.id,
         periodo: periodoValue,
         tipoId: doc.tipoDocumentacion?.id || doc.tipo_documentacion_id || null,
-        tipoNombre: String(doc.tipo_documento || doc.tipoDocumentacion?.nombre || 'SIN TIPO').trim(),
+        tipoNombre: normalizeStatLabel(doc.tipo_documento || doc.tipoDocumentacion?.nombre, 'No clasificado'),
         macroId: macroModel?.id || null,
-        macroNombre: String(doc.macroproceso || macroModel?.nombre || 'SIN MACROPROCESO').trim(),
+        macroNombre: normalizeStatLabel(macroModel?.nombre || doc.macroproceso, 'No clasificado'),
         procesoId: procesoModel?.id || null,
-        procesoNombre: String(doc.proceso_texto || procesoModel?.nombre || 'SIN PROCESO').trim(),
+        procesoNombre: normalizeStatLabel(procesoModel?.nombre || doc.proceso_texto, 'No clasificado'),
         subprocesoId: subprocesoModel?.id || doc.subproceso_id || null,
-        subprocesoNombre: String(doc.subproceso_texto || subprocesoModel?.nombre || 'SIN SUBPROCESO').trim()
+        subprocesoNombre: normalizeStatLabel(subprocesoModel?.nombre || doc.subproceso_texto, 'No clasificado')
       };
     });
 
@@ -471,46 +530,37 @@ const getEstadisticaDocumental = async (req, res) => {
         cantidad
       }));
 
-    const byTipoMap = rowsForDashboard.reduce((acc, row) => {
-      const key = `${row.tipoId || 'na'}::${row.tipoNombre}`;
-      if (!acc[key]) {
-        acc[key] = { tipo_documentacion_id: row.tipoId, tipo_documento: row.tipoNombre, cantidad: 0 };
-      }
-      acc[key].cantidad += 1;
-      return acc;
-    }, {});
+    const byTipo = buildStatDistribution(rowsForDashboard, {
+      idKey: 'tipoId',
+      nameKey: 'tipoNombre',
+      outputIdKey: 'tipo_documentacion_id',
+      outputNameKey: 'tipo_documento'
+    });
+    const byMacroProceso = buildStatDistribution(rowsForDashboard, {
+      idKey: 'macroId',
+      nameKey: 'macroNombre',
+      outputIdKey: 'macro_proceso_id',
+      outputNameKey: 'macro_proceso'
+    });
+    const byProceso = buildStatDistribution(rowsForDashboard, {
+      idKey: 'procesoId',
+      nameKey: 'procesoNombre',
+      outputIdKey: 'proceso_id',
+      outputNameKey: 'proceso'
+    });
+    const bySubproceso = buildStatDistribution(rowsForDashboard, {
+      idKey: 'subprocesoId',
+      nameKey: 'subprocesoNombre',
+      outputIdKey: 'subproceso_id',
+      outputNameKey: 'subproceso'
+    });
 
-    const byMacroMap = rowsForDashboard.reduce((acc, row) => {
-      const key = `${row.macroId || 'na'}::${row.macroNombre}`;
-      if (!acc[key]) {
-        acc[key] = { macro_proceso_id: row.macroId, macro_proceso: row.macroNombre, cantidad: 0 };
-      }
-      acc[key].cantidad += 1;
-      return acc;
-    }, {});
-
-    const byProcesoMap = rowsForDashboard.reduce((acc, row) => {
-      const key = `${row.procesoId || 'na'}::${row.procesoNombre}`;
-      if (!acc[key]) {
-        acc[key] = { proceso_id: row.procesoId, proceso: row.procesoNombre, cantidad: 0 };
-      }
-      acc[key].cantidad += 1;
-      return acc;
-    }, {});
-
-    const bySubprocesoMap = rowsForDashboard.reduce((acc, row) => {
-      const key = `${row.subprocesoId || 'na'}::${row.subprocesoNombre}`;
-      if (!acc[key]) {
-        acc[key] = { subproceso_id: row.subprocesoId, subproceso: row.subprocesoNombre, cantidad: 0 };
-      }
-      acc[key].cantidad += 1;
-      return acc;
-    }, {});
-
-    const byTipo = Object.values(byTipoMap).sort((a, b) => b.cantidad - a.cantidad);
-    const byMacroProceso = Object.values(byMacroMap).sort((a, b) => b.cantidad - a.cantidad);
-    const byProceso = Object.values(byProcesoMap).sort((a, b) => b.cantidad - a.cantidad);
-    const bySubproceso = Object.values(bySubprocesoMap).sort((a, b) => b.cantidad - a.cantidad);
+    const totalDocs = rowsForDashboard.length;
+    const topTipo = byTipo[0] || null;
+    const topMacro = byMacroProceso[0] || null;
+    const topProceso = byProceso[0] || null;
+    const topSubproceso = bySubproceso[0] || null;
+    const avg = (denominator) => totalDocs > 0 && denominator > 0 ? Number((totalDocs / denominator).toFixed(1)) : 0;
 
     return res.json({
       success: true,
@@ -543,16 +593,24 @@ const getEstadisticaDocumental = async (req, res) => {
           periodos: periodosCruzados
         },
         resumen: {
-          totalDocumentos: rowsForDashboard.length,
+          totalDocumentos: totalDocs,
           totalTipos: byTipo.length,
           totalMacroProcesos: byMacroProceso.length,
           totalProcesos: byProceso.length,
           totalSubprocesos: bySubproceso.length,
-          periodoSeleccionado: normalizedPeriodo ? formatPeriodoLabel(normalizedPeriodo) : 'Todos',
-          tipoMasFrecuente: byTipo[0] || null,
-          macroMasFrecuente: byMacroProceso[0] || null,
-          procesoMasFrecuente: byProceso[0] || null,
-          subprocesoMasFrecuente: bySubproceso[0] || null
+          periodoSeleccionado: formatPeriodoSelectionLabel(normalizedPeriodo),
+          tipoMasFrecuente: topTipo,
+          macroMasFrecuente: topMacro,
+          procesoMasFrecuente: topProceso,
+          subprocesoMasFrecuente: topSubproceso,
+          promedioPorTipo: avg(byTipo.length),
+          promedioPorMacroProceso: avg(byMacroProceso.length),
+          promedioPorProceso: avg(byProceso.length),
+          promedioPorSubproceso: avg(bySubproceso.length),
+          concentracionTipoPrincipal: topTipo?.porcentaje || 0,
+          concentracionMacroPrincipal: topMacro?.porcentaje || 0,
+          concentracionProcesoPrincipal: topProceso?.porcentaje || 0,
+          concentracionSubprocesoPrincipal: topSubproceso?.porcentaje || 0
         },
         distribucion: {
           porTipoDocumento: byTipo,

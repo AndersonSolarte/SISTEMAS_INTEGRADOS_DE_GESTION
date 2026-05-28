@@ -1,14 +1,25 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import ReactDOM from 'react-dom';
+import html2canvas from 'html2canvas';
 import {
   Alert,
   Box,
   Button,
   Chip,
   CircularProgress,
-  Collapse,
+  Dialog,
+  DialogContent,
+  DialogTitle,
   Fade,
+  IconButton,
   Paper,
   Stack,
+  Table,
+  TableBody,
+  TableCell,
+  TableContainer,
+  TableHead,
+  TableRow,
   Tooltip,
   Typography
 } from '@mui/material';
@@ -19,21 +30,25 @@ import {
   AssignmentTurnedIn as AssignmentTurnedInIcon,
   AutoGraph as AutoGraphIcon,
   Clear as ClearIcon,
+  Close as CloseIcon,
+  ContentCopy as ContentCopyIcon,
   Description as DescriptionIcon,
   DonutSmall as DonutSmallIcon,
-  ExpandMore as ExpandMoreIcon,
   FilterAlt as FilterAltIcon,
   FolderCopy as FolderCopyIcon,
+  Gavel as GavelIcon,
   InsertDriveFile as InsertDriveFileIcon,
-  Layers as LayersIcon,
   LibraryBooks as LibraryBooksIcon,
   MenuBook as MenuBookIcon,
+  OpenInNew as OpenInNewIcon,
   RuleFolder as RuleFolderIcon,
-  Search as SearchIcon
 } from '@mui/icons-material';
 import { useSnackbar } from 'notistack';
 import documentoService from '../services/documentoService';
 import catalogoService from '../services/catalogoService';
+
+const CHART_COLORS = ['#0f766e', '#0369a1', '#1d4ed8', '#be123c', '#a16207', '#7c3aed', '#0891b2', '#475569'];
+const MAPA_PROCESOS_VIGENTE = { macroprocesos: 3, procesos: 11, subprocesos: 42 };
 
 const CARD_TONES = [
   { soft: '#e0f2fe', fg: '#0369a1', border: '#bae6fd' },
@@ -59,6 +74,10 @@ const DOCUMENT_TYPE_ICONS = [
 const getDocumentTypeIcon = (name = '') =>
   (DOCUMENT_TYPE_ICONS.find((item) => item.pattern.test(String(name))) || { Icon: DescriptionIcon }).Icon;
 
+const formatNumber = (value) => new Intl.NumberFormat('es-CO').format(Number(value || 0));
+const normalizeFilterArray = (value) => (Array.isArray(value) ? value : String(value || '').split(',')).map((item) => String(item || '').trim()).filter(Boolean);
+const serializeFilterArray = (value) => normalizeFilterArray(value).join(',');
+
 const emptyData = {
   periodosDisponibles: [],
   resumen: {
@@ -71,7 +90,15 @@ const emptyData = {
     tipoMasFrecuente: null,
     macroMasFrecuente: null,
     procesoMasFrecuente: null,
-    subprocesoMasFrecuente: null
+    subprocesoMasFrecuente: null,
+    promedioPorTipo: 0,
+    promedioPorMacroProceso: 0,
+    promedioPorProceso: 0,
+    promedioPorSubproceso: 0,
+    concentracionTipoPrincipal: 0,
+    concentracionMacroPrincipal: 0,
+    concentracionProcesoPrincipal: 0,
+    concentracionSubprocesoPrincipal: 0
   },
   filtrosDisponibles: {
     macroProcesos: [],
@@ -88,345 +115,449 @@ const emptyData = {
   }
 };
 
-function CompactFilter({ label, options = [], value, onChange, disabled, placeholder = 'Buscar...' }) {
+function DocFilterPanel({ label, options = [], value = [], onChange, disabled, placeholder = 'Buscar...' }) {
   const [open, setOpen] = useState(false);
   const [search, setSearch] = useState('');
-  const ref = useRef(null);
+  const [visibleOptions, setVisibleOptions] = useState(options);
+  const [portalStyle, setPortalStyle] = useState({});
+  const triggerRef = useRef(null);
+  const dropdownRef = useRef(null);
+
+  const computePosition = useCallback(() => {
+    if (!triggerRef.current) return;
+    const rect = triggerRef.current.getBoundingClientRect();
+    setPortalStyle({ position: 'fixed', top: rect.bottom + 6, left: rect.left, width: rect.width, minWidth: 240, zIndex: 9999 });
+  }, []);
+
+  useEffect(() => { setVisibleOptions(options); }, [open, options]);
 
   useEffect(() => {
     if (!open) return undefined;
-    const handler = (event) => {
-      if (ref.current && !ref.current.contains(event.target)) {
-        setOpen(false);
-        setSearch('');
-      }
+    computePosition();
+    const onScroll = (e) => { if (dropdownRef.current?.contains(e.target)) return; computePosition(); };
+    const onResize = () => computePosition();
+    window.addEventListener('scroll', onScroll, true);
+    window.addEventListener('resize', onResize);
+    return () => { window.removeEventListener('scroll', onScroll, true); window.removeEventListener('resize', onResize); };
+  }, [open, computePosition]);
+
+  useEffect(() => {
+    if (!open) return undefined;
+    const h = (e) => {
+      if (triggerRef.current?.contains(e.target) || dropdownRef.current?.contains(e.target)) return;
+      setOpen(false); setSearch('');
     };
-    document.addEventListener('mousedown', handler);
-    return () => document.removeEventListener('mousedown', handler);
+    document.addEventListener('mousedown', h);
+    return () => document.removeEventListener('mousedown', h);
   }, [open]);
 
-  const selected = options.find((item) => String(item.value) === String(value));
-  const filteredOptions = options.filter((item) =>
-    String(item.label || '').toLowerCase().includes(search.toLowerCase())
-  );
+  const effectiveOptions = open ? visibleOptions : options;
+  const filtered = effectiveOptions.filter((o) => String(o.label || '').toLowerCase().includes(search.toLowerCase()));
+  const selectedIds = (Array.isArray(value) ? value : []).map((id) => String(id));
+  const allSelected = selectedIds.length === 0;
+  const isSel = (val) => selectedIds.includes(String(val));
+  const toggle = (val) => {
+    const key = String(val);
+    onChange(isSel(key) ? selectedIds.filter((v) => v !== key) : [...selectedIds, key]);
+  };
+  const toggleAll = () => onChange(allSelected ? effectiveOptions.map((o) => String(o.value)) : []);
+  const displayText = selectedIds.length === 0 ? 'TODOS' : `${selectedIds.length} SELECCIONADO${selectedIds.length > 1 ? 'S' : ''}`;
+  const C = '#2563eb';
+
+  const dropdownPortal = open ? ReactDOM.createPortal(
+    <div ref={dropdownRef} style={{ ...portalStyle, background: '#fff', borderRadius: 10, boxShadow: '0 12px 36px rgba(0,0,0,0.22)', border: '1px solid #e2e8f0', overflow: 'hidden' }}>
+      <div style={{ padding: '8px', borderBottom: '1px solid #f1f5f9' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6, background: '#f8fafc', borderRadius: 6, padding: '4px 8px', border: '1px solid #e2e8f0' }}>
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#94a3b8" strokeWidth="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+          <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder={placeholder} style={{ border: 'none', outline: 'none', background: 'transparent', fontSize: 12, flex: 1, color: '#334155', minWidth: 0 }} />
+        </div>
+      </div>
+      <div onClick={toggleAll} style={{ padding: '6px 12px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 8, borderBottom: '1px solid #f1f5f9', background: 'transparent' }}
+        onMouseEnter={(e) => { e.currentTarget.style.background = '#eff6ff'; }} onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; }}>
+        <div style={{ width: 14, height: 14, flexShrink: 0, borderRadius: 3, border: `2px solid ${allSelected ? C : '#d1d5db'}`, background: allSelected ? C : '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          {allSelected && <svg width="7" height="7" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="3"><polyline points="20 6 9 17 4 12"/></svg>}
+        </div>
+        <span style={{ fontSize: 11, fontWeight: 700, color: C }}>SELECCIONAR TODOS ({effectiveOptions.length})</span>
+      </div>
+      <div onWheel={(e) => e.stopPropagation()} style={{ maxHeight: 220, overflowY: 'auto', overscrollBehavior: 'contain', scrollbarWidth: 'thin' }}>
+        {filtered.length === 0
+          ? <div style={{ padding: '12px 16px', textAlign: 'center', fontSize: 12, color: '#94a3b8' }}>Sin resultados</div>
+          : filtered.map((opt) => (
+            <div key={opt.value} onClick={() => toggle(opt.value)}
+              style={{ padding: '5px 12px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 8, background: 'transparent' }}
+              onMouseEnter={(e) => { e.currentTarget.style.background = '#eff6ff'; }} onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; }}>
+              <div style={{ width: 14, height: 14, flexShrink: 0, borderRadius: 3, border: `2px solid ${isSel(opt.value) ? C : '#d1d5db'}`, background: isSel(opt.value) ? C : '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                {isSel(opt.value) && <svg width="7" height="7" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="3"><polyline points="20 6 9 17 4 12"/></svg>}
+              </div>
+              <span style={{ fontSize: 12, color: '#334155', textTransform: 'uppercase' }}>{opt.label}</span>
+            </div>
+          ))}
+      </div>
+      <div style={{ padding: '4px 12px', borderTop: '1px solid #f1f5f9', background: '#f8fafc' }}>
+        <span style={{ fontSize: 10, color: '#94a3b8' }}>{selectedIds.length > 0 ? `${selectedIds.length} de ${effectiveOptions.length} seleccionados` : `${effectiveOptions.length} opciones`}</span>
+      </div>
+    </div>,
+    document.body
+  ) : null;
 
   return (
-    <Box ref={ref} sx={{ position: 'relative', opacity: disabled ? 0.55 : 1, pointerEvents: disabled ? 'none' : 'auto' }}>
-      <Box
-        onClick={() => setOpen((prev) => !prev)}
-        sx={{
-          minHeight: 54,
-          px: 1.5,
-          py: 1,
-          borderRadius: 2,
-          bgcolor: selected ? '#e0f2fe' : '#ffffff',
-          border: `1.5px solid ${selected ? '#0891b2' : '#dbe6f5'}`,
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          gap: 1,
-          cursor: 'pointer',
-          transition: 'all 0.18s ease',
-          '&:hover': { borderColor: '#0891b2', bgcolor: selected ? '#bae6fd' : '#f8fafc' }
-        }}
-      >
-        <Box sx={{ minWidth: 0 }}>
-          <Typography sx={{ fontSize: 10, fontWeight: 900, color: '#0f766e', letterSpacing: 0.6, textTransform: 'uppercase' }}>
-            {label}
-          </Typography>
-          <Typography sx={{ mt: 0.2, fontSize: 13, fontWeight: 800, color: '#0f172a', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-            {selected?.label || 'Todos'}
-          </Typography>
+    <Box ref={triggerRef} sx={{ position: 'relative', opacity: disabled ? 0.5 : 1, pointerEvents: disabled ? 'none' : 'auto' }}>
+      <Box onClick={() => !disabled && setOpen((o) => !o)} sx={{ cursor: 'pointer', borderRadius: '8px', p: '8px 12px', minHeight: 48, bgcolor: selectedIds.length ? '#eff6ff' : '#fff', border: `1.5px solid ${selectedIds.length ? C : '#bfdbfe'}`, display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 1, transition: 'all 0.15s', userSelect: 'none', '&:hover': { borderColor: C } }}>
+        <Box sx={{ minWidth: 0, flex: 1 }}>
+          <Typography sx={{ fontSize: '9px', fontWeight: 700, color: C, letterSpacing: '0.8px', textTransform: 'uppercase', mb: 0.25 }}>{label}</Typography>
+          <Typography sx={{ fontSize: '12px', fontWeight: 600, color: '#1e3a5f', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{displayText}</Typography>
         </Box>
-        <Box sx={{ color: '#0891b2', fontWeight: 900, transform: open ? 'rotate(180deg)' : 'none', transition: 'transform 0.18s ease' }}>
-          v
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, flexShrink: 0 }}>
+          {selectedIds.length > 0 && (
+            <Box onClick={(e) => { e.stopPropagation(); onChange([]); }} sx={{ width: 16, height: 16, borderRadius: '50%', bgcolor: C, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}>
+              <svg width="7" height="7" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="3"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+            </Box>
+          )}
+          <Box sx={{ transition: 'transform 0.15s', transform: open ? 'rotate(180deg)' : 'none' }}>
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke={C} strokeWidth="2.5"><polyline points="6 9 12 15 18 9"/></svg>
+          </Box>
         </Box>
       </Box>
-
-      {open && (
-        <Box
-          sx={{
-            position: 'absolute',
-            top: 'calc(100% + 8px)',
-            left: 0,
-            zIndex: 1500,
-            width: '100%',
-            minWidth: 260,
-            bgcolor: '#fff',
-            borderRadius: 2,
-            border: '1px solid #dbe6f5',
-            boxShadow: '0 16px 38px rgba(15, 23, 42, 0.16)',
-            overflow: 'hidden'
-          }}
-        >
-          <Box sx={{ p: 1.2, borderBottom: '1px solid #eef2f7' }}>
-            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, px: 1, py: 0.8, borderRadius: 1.5, bgcolor: '#f8fafc', border: '1px solid #e2e8f0' }}>
-              <SearchIcon sx={{ fontSize: 16, color: '#94a3b8' }} />
-              <input
-                autoFocus
-                value={search}
-                onChange={(event) => setSearch(event.target.value)}
-                placeholder={placeholder}
-                style={{ border: 'none', outline: 'none', background: 'transparent', flex: 1, minWidth: 0, fontSize: 12, color: '#334155' }}
-              />
-            </Box>
-          </Box>
-          <Box sx={{ maxHeight: 260, overflowY: 'auto', p: 0.7 }}>
-            <Box
-              onClick={() => { onChange(''); setOpen(false); setSearch(''); }}
-              sx={{
-                px: 1.2,
-                py: 1,
-                borderRadius: 1.5,
-                fontSize: 13,
-                fontWeight: value ? 600 : 900,
-                color: value ? '#334155' : '#0f766e',
-                cursor: 'pointer',
-                '&:hover': { bgcolor: '#f0fdfa' }
-              }}
-            >
-              Todos
-            </Box>
-            {filteredOptions.map((item) => {
-              const active = String(item.value) === String(value);
-              return (
-                <Box
-                  key={item.value}
-                  onClick={() => { onChange(item.value); setOpen(false); setSearch(''); }}
-                  sx={{
-                    mt: 0.3,
-                    px: 1.2,
-                    py: 1,
-                    borderRadius: 1.5,
-                    fontSize: 13,
-                    fontWeight: active ? 900 : 600,
-                    color: active ? '#075985' : '#334155',
-                    bgcolor: active ? '#e0f2fe' : '#fff',
-                    cursor: 'pointer',
-                    '&:hover': { bgcolor: active ? '#bae6fd' : '#f8fafc' }
-                  }}
-                >
-                  {item.label}
-                </Box>
-              );
-            })}
-            {filteredOptions.length === 0 && (
-              <Typography sx={{ px: 1.2, py: 1.4, color: '#64748b', fontSize: 13 }}>
-                Sin resultados.
-              </Typography>
-            )}
-          </Box>
-        </Box>
-      )}
+      {dropdownPortal}
     </Box>
   );
 }
 
-function KpiCard({ label, value, helper, tone = '#2563eb', soft = '#eff6ff', accent = '#bfdbfe', Icon = AutoGraphIcon, details = [] }) {
-  const detailRows = Array.isArray(details) ? details.filter((item) => item?.label) : [];
+function InfographicStatCard({ index, title, value, subtitle, color = '#1d4ed8', Icon = AutoGraphIcon, onClick }) {
+  const soft = `${color}14`;
   return (
-    <Paper
-      elevation={0}
-      sx={{
-        p: 2.3,
-        height: '100%',
-        minHeight: 152,
-        borderRadius: '8px',
-        border: `1px solid ${accent}`,
-        background: `linear-gradient(135deg, #ffffff 0%, ${soft} 100%)`,
-        position: 'relative',
-        overflow: 'hidden',
-        boxShadow: '0 14px 30px rgba(15, 23, 42, 0.08)',
-        display: 'flex',
-        flexDirection: 'column',
-        justifyContent: 'space-between',
-        '&::before': {
-          content: '""',
-          position: 'absolute',
-          left: 0,
-          top: 0,
-          bottom: 0,
-          width: 6,
-          bgcolor: tone
-        }
-      }}
-    >
-      <Stack direction="row" justifyContent="space-between" alignItems="flex-start" spacing={1} sx={{ position: 'relative', zIndex: 1 }}>
-        <Box sx={{ minWidth: 0, pr: 1 }}>
-          <Typography sx={{ color: '#334155', fontSize: 11, fontWeight: 950, letterSpacing: 0.6, textTransform: 'uppercase', minHeight: 30 }}>
-            {label}
-          </Typography>
-          <Typography sx={{ color: '#0f172a', fontSize: { xs: 31, md: 37 }, lineHeight: 1, fontWeight: 950, mt: 0.8 }}>
-            {value}
-          </Typography>
+    <Paper elevation={0} onClick={onClick} sx={{ minHeight: 120, p: 1.6, borderRadius: '8px', border: `1px solid ${color}33`, bgcolor: '#ffffff', position: 'relative', overflow: 'hidden', boxShadow: '0 8px 20px rgba(15,23,42,0.07)', ...(onClick && { cursor: 'pointer', transition: 'all 0.18s', '&:hover': { transform: 'translateY(-2px)', boxShadow: `0 14px 32px ${color}30`, borderColor: `${color}66` } }), '&::before': { content: '""', position: 'absolute', left: 0, top: 0, width: '30%', height: '100%', bgcolor: soft }, '&::after': { content: '""', position: 'absolute', right: 0, top: 0, width: 5, height: '100%', bgcolor: color } }}>
+      <Stack direction="row" spacing={1} alignItems="flex-start" justifyContent="space-between" sx={{ position: 'relative', zIndex: 1 }}>
+        <Box sx={{ minWidth: 0 }}>
+          <Box sx={{ width: 36, height: 22, borderRadius: '6px', bgcolor: color, color: '#ffffff', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: `0 4px 10px ${color}30` }}>
+            <Typography sx={{ color: '#ffffff', fontWeight: 950, fontSize: 11 }}>{String(index).padStart(2, '0')}</Typography>
+          </Box>
+          <Typography sx={{ color: '#0f172a', fontWeight: 950, fontSize: 13, mt: 0.9, lineHeight: 1.18, display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>{title}</Typography>
+          {subtitle && <Typography sx={{ color: '#64748b', fontWeight: 750, fontSize: 11, mt: 0.4, lineHeight: 1.3, display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>{subtitle}</Typography>}
         </Box>
-        <Box sx={{ width: 46, height: 46, borderRadius: '8px', bgcolor: '#ffffff', color: tone, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, border: `1px solid ${accent}`, boxShadow: '0 8px 18px rgba(15,23,42,0.08)' }}>
-          <Icon sx={{ fontSize: 24 }} />
-        </Box>
-      </Stack>
-      {helper && (
-        <Typography sx={{ mt: 1.2, color: tone, fontWeight: 900, fontSize: 12, lineHeight: 1.35, position: 'relative', zIndex: 1 }}>
-          {helper}
-        </Typography>
-      )}
-      {detailRows.length > 0 && (
-        <Tooltip
-          arrow
-          placement="top"
-          title={(
-            <Box sx={{ p: 0.5, minWidth: 240, maxWidth: 360 }}>
-              <Typography sx={{ color: '#fff', fontWeight: 900, fontSize: 12, mb: 0.8 }}>
-                Detalle del indicador
-              </Typography>
-              <Stack spacing={0.7}>
-                {detailRows.slice(0, 12).map((item, index) => (
-                  <Stack key={`${item.label}-${index}`} direction="row" spacing={1} alignItems="center" justifyContent="space-between">
-                    <Typography sx={{ color: 'rgba(255,255,255,0.92)', fontSize: 11.5, fontWeight: 700, lineHeight: 1.2 }}>
-                      {index + 1}. {item.label}
-                    </Typography>
-                    {item.cantidad !== undefined && (
-                      <Typography sx={{ color: '#bfdbfe', fontSize: 11.5, fontWeight: 900, flexShrink: 0 }}>
-                        {item.cantidad}
-                      </Typography>
-                    )}
-                  </Stack>
-                ))}
-              </Stack>
-              {detailRows.length > 12 && (
-                <Typography sx={{ mt: 0.8, color: '#cbd5e1', fontSize: 11, fontWeight: 800 }}>
-                  + {detailRows.length - 12} adicionales
-                </Typography>
-              )}
-            </Box>
-          )}
-        >
-          <Chip
-            size="small"
-            label="Ver detalle"
-            sx={{
-              mt: 1.4,
-              alignSelf: 'flex-start',
-              position: 'relative',
-              zIndex: 1,
-              bgcolor: '#ffffff',
-              color: tone,
-              border: `1px solid ${accent}`,
-              fontWeight: 900,
-              height: 24
-            }}
-          />
-        </Tooltip>
-      )}
-    </Paper>
-  );
-}
-
-function DocumentTypeCard({ row, index, total }) {
-  const tone = CARD_TONES[index % CARD_TONES.length];
-  const cantidad = Number(row.cantidad || 0);
-  const pct = total > 0 ? Math.round((cantidad / total) * 100) : 0;
-  const Icon = getDocumentTypeIcon(row.tipo_documento);
-  const intensity = Math.max(8, pct);
-
-  return (
-    <Paper
-      elevation={0}
-      sx={{
-        p: 2.3,
-        minHeight: 152,
-        height: '100%',
-        borderRadius: '8px',
-        color: '#0f172a',
-        background: `linear-gradient(135deg, #ffffff 0%, ${tone.soft} 100%)`,
-        border: `1px solid ${tone.border}`,
-        boxShadow: '0 14px 30px rgba(15, 23, 42, 0.08)',
-        position: 'relative',
-        overflow: 'hidden',
-        display: 'flex',
-        flexDirection: 'column',
-        justifyContent: 'space-between',
-        '&::before': {
-          content: '""',
-          position: 'absolute',
-          left: 0,
-          top: 0,
-          bottom: 0,
-          width: 6,
-          bgcolor: tone.fg
-        }
-      }}
-    >
-      <Stack direction="row" justifyContent="space-between" alignItems="flex-start" spacing={1} sx={{ position: 'relative', zIndex: 1 }}>
-        <Box sx={{ minWidth: 0, pr: 1 }}>
-          <Typography sx={{ fontSize: 11, fontWeight: 950, color: '#334155', letterSpacing: 0.6, textTransform: 'uppercase', minHeight: 30, overflow: 'hidden', textOverflow: 'ellipsis' }}>
-            {row.tipo_documento}
-          </Typography>
-          <Typography sx={{ mt: 0.8, fontSize: { xs: 31, md: 37 }, lineHeight: 1, fontWeight: 950, color: '#0f172a' }}>
-            {cantidad}
-          </Typography>
-        </Box>
-        <Box sx={{ width: 46, height: 46, borderRadius: '8px', bgcolor: '#ffffff', color: tone.fg, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, border: `1px solid ${tone.border}`, boxShadow: '0 8px 18px rgba(15,23,42,0.08)' }}>
-          <Icon sx={{ fontSize: 24 }} />
+        <Box sx={{ width: 38, height: 38, borderRadius: '8px', bgcolor: soft, color, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, border: `1px solid ${color}22` }}>
+          <Icon sx={{ fontSize: 22 }} />
         </Box>
       </Stack>
       <Box sx={{ mt: 1.2, position: 'relative', zIndex: 1 }}>
-        <Stack direction="row" justifyContent="space-between" sx={{ mb: 0.6 }}>
-          <Typography sx={{ fontSize: 12, fontWeight: 900, color: tone.fg }}>Participacion</Typography>
-          <Typography sx={{ fontSize: 11, fontWeight: 900, color: tone.fg }}>{pct}%</Typography>
-        </Stack>
-        <Box sx={{ height: 8, borderRadius: 99, bgcolor: 'rgba(148,163,184,0.25)', overflow: 'hidden' }}>
-          <Box sx={{ width: `${intensity}%`, height: '100%', bgcolor: tone.fg, borderRadius: 99 }} />
-        </Box>
+        <Typography sx={{ color: '#0f172a', fontWeight: 950, fontSize: 28, lineHeight: 1 }}>{formatNumber(value)}</Typography>
       </Box>
     </Paper>
   );
 }
 
-function RankingList({ title, rows = [], nameKey }) {
+function CopyButton({ targetRef, label = 'Copiar gráfico' }) {
+  const { enqueueSnackbar } = useSnackbar();
+  const [copying, setCopying] = useState(false);
+
+  const handleCopy = useCallback(async () => {
+    if (!targetRef.current || copying) return;
+    setCopying(true);
+    try {
+      const canvas = await html2canvas(targetRef.current, {
+        useCORS: true,
+        backgroundColor: '#ffffff',
+        scale: 2,
+        onclone: (_doc, el) => {
+          el.querySelectorAll('[data-export-scroll]').forEach((node) => {
+            node.style.maxHeight = 'none';
+            node.style.overflow = 'visible';
+          });
+        }
+      });
+      canvas.toBlob(async (blob) => {
+        try {
+          await navigator.clipboard.write([new ClipboardItem({ 'image/png': blob })]);
+          enqueueSnackbar('Gráfico copiado al portapapeles', { variant: 'success' });
+        } catch {
+          const url = URL.createObjectURL(blob);
+          const a = document.createElement('a');
+          a.href = url;
+          a.download = `${label}.png`;
+          a.click();
+          URL.revokeObjectURL(url);
+          enqueueSnackbar('Imagen descargada', { variant: 'info' });
+        }
+        setCopying(false);
+      }, 'image/png');
+    } catch {
+      enqueueSnackbar('No se pudo copiar el gráfico', { variant: 'error' });
+      setCopying(false);
+    }
+  }, [targetRef, copying, enqueueSnackbar, label]);
+
+  return (
+    <Tooltip title={copying ? 'Copiando...' : label} placement="top">
+      <span>
+        <IconButton onClick={handleCopy} size="small" disabled={copying}
+          sx={{ color: '#94a3b8', '&:hover': { bgcolor: '#f1f5f9', color: '#475569' } }}>
+          {copying ? <CircularProgress size={14} /> : <ContentCopyIcon sx={{ fontSize: 15 }} />}
+        </IconButton>
+      </span>
+    </Tooltip>
+  );
+}
+
+function CapsuleRanking({ title, rows = [], nameKey, color = '#1d4ed8' }) {
+  const panelRef = useRef(null);
   const max = Math.max(...rows.map((row) => Number(row.cantidad || 0)), 1);
   return (
-    <Paper elevation={0} sx={{ p: 2.4, height: '100%', minHeight: 278, borderRadius: '8px', border: '1px solid #cfe0f4', bgcolor: '#ffffff', boxShadow: '0 14px 30px rgba(15, 23, 42, 0.06)' }}>
-      <Typography sx={{ color: '#0f172a', fontWeight: 950, fontSize: 18, mb: 1.7 }}>
-        {title}
-      </Typography>
-      <Stack spacing={1.3}>
-        {rows.slice(0, 6).map((row, index) => {
-          const pct = Math.round((Number(row.cantidad || 0) / max) * 100);
-          return (
-            <Box key={`${row[nameKey]}-${index}`}>
-              <Stack direction="row" justifyContent="space-between" alignItems="center" spacing={1}>
-                <Typography sx={{ color: '#1e293b', fontWeight: 800, fontSize: 13, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                  {index + 1}. {row[nameKey]}
-                </Typography>
-                <Chip size="small" label={row.cantidad} sx={{ bgcolor: CARD_TONES[index % CARD_TONES.length].soft, color: CARD_TONES[index % CARD_TONES.length].fg, fontWeight: 900, height: 24 }} />
-              </Stack>
-              <Box sx={{ mt: 0.7, height: 7, borderRadius: 99, bgcolor: '#e2e8f0', overflow: 'hidden' }}>
-                <Box sx={{ width: `${pct}%`, height: '100%', bgcolor: CARD_TONES[index % CARD_TONES.length].fg, borderRadius: 99 }} />
-              </Box>
-            </Box>
-          );
-        })}
-        {rows.length === 0 && <Alert severity="info">Sin datos para mostrar.</Alert>}
+    <Paper ref={panelRef} elevation={0} sx={{ p: 2.4, borderRadius: '8px', border: '1px solid #dbe6f5', bgcolor: '#ffffff', boxShadow: '0 16px 36px rgba(15,23,42,0.07)' }}>
+      <Stack direction="row" alignItems="center" justifyContent="space-between" sx={{ mb: 2 }}>
+        <Typography sx={{ color: '#0f172a', fontWeight: 950, fontSize: 20 }}>{title}</Typography>
+        <CopyButton targetRef={panelRef} label={`Copiar: ${title}`} />
       </Stack>
+      {rows.length === 0 ? <Alert severity="info">Sin datos para mostrar.</Alert> : (
+        <Box data-export-scroll sx={{ maxHeight: 420, overflowY: 'auto', pr: 0.5 }}>
+          <Stack spacing={1.45}>
+            {rows.map((row, index) => {
+              const rowColor = CHART_COLORS[index % CHART_COLORS.length] || color;
+              const pct = Math.max(10, Math.round((Number(row.cantidad || 0) / max) * 100));
+              return (
+                <Box key={`${row[nameKey]}-${index}`} sx={{ minHeight: 64, borderRadius: '32px', bgcolor: '#ffffff', border: '1px solid #e2e8f0', boxShadow: '0 10px 24px rgba(15,23,42,0.07)', display: 'grid', gridTemplateColumns: '58px minmax(0, 1fr) 78px', alignItems: 'center', overflow: 'hidden' }}>
+                  <Box sx={{ height: '100%', bgcolor: `${rowColor}18`, color: rowColor, display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 950, fontSize: 18 }}>{String(index + 1).padStart(2, '0')}</Box>
+                  <Box sx={{ px: 1.7, minWidth: 0 }}>
+                    <Typography sx={{ color: '#0f172a', fontWeight: 900, fontSize: 13.5, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{row[nameKey]}</Typography>
+                    <Box sx={{ mt: 0.8, height: 7, borderRadius: 99, bgcolor: '#e2e8f0', overflow: 'hidden' }}>
+                      <Box sx={{ width: `${pct}%`, height: '100%', bgcolor: rowColor, borderRadius: 99 }} />
+                    </Box>
+                  </Box>
+                  <Typography sx={{ color: rowColor, fontWeight: 950, fontSize: 15, textAlign: 'center' }}>{formatNumber(row.cantidad)}</Typography>
+                </Box>
+              );
+            })}
+          </Stack>
+        </Box>
+      )}
     </Paper>
+  );
+}
+
+function DocumentTypeList({ title, rows = [], total }) {
+  const panelRef = useRef(null);
+  const [selectedTipo, setSelectedTipo] = useState(null);
+  const [docsForTipo, setDocsForTipo] = useState([]);
+  const [docsLoading, setDocsLoading] = useState(false);
+
+  const handleTipoClick = useCallback((row) => {
+    setSelectedTipo(row);
+    setDocsForTipo([]);
+    setDocsLoading(true);
+    documentoService.getDocumentos({ tipo_documentacion_id: row.tipo_documento }, 1, 500)
+      .then((res) => setDocsForTipo(res?.data?.documentos || []))
+      .catch(() => {})
+      .finally(() => setDocsLoading(false));
+  }, []);
+
+  const selectedIndex = selectedTipo ? rows.findIndex((r) => r.tipo_documento === selectedTipo.tipo_documento) : -1;
+  const selTone = selectedIndex >= 0 ? CARD_TONES[selectedIndex % CARD_TONES.length] : CARD_TONES[0];
+  const SelIcon = selectedTipo ? getDocumentTypeIcon(selectedTipo.tipo_documento) : DescriptionIcon;
+
+  return (
+    <Paper ref={panelRef} elevation={0} sx={{ p: 1.8, borderRadius: '8px', border: '1px solid #dbe6f5', bgcolor: '#ffffff', boxShadow: '0 10px 28px rgba(15,23,42,0.07)' }}>
+      <Stack direction="row" alignItems="center" justifyContent="space-between" spacing={1} sx={{ mb: 1.2 }}>
+        <Typography sx={{ color: '#0f172a', fontWeight: 950, fontSize: 16 }}>{title}</Typography>
+        <Stack direction="row" alignItems="center" spacing={0.5}>
+          <Chip size="small" label={`${formatNumber(total)} docs`} sx={{ bgcolor: '#eff6ff', color: '#1d4ed8', border: '1px solid #bfdbfe', fontWeight: 900, fontSize: 11 }} />
+          <CopyButton targetRef={panelRef} label={`Copiar: ${title}`} />
+        </Stack>
+      </Stack>
+      {rows.length === 0 ? <Alert severity="info">Sin datos para mostrar.</Alert> : (
+        <Box data-export-scroll sx={{ maxHeight: 440, overflowY: 'auto', pr: 0.4 }}>
+        <Stack spacing={0.6}>
+          {rows.map((row, index) => {
+            const tone = CARD_TONES[index % CARD_TONES.length];
+            const cantidad = Number(row.cantidad || 0);
+            const pct = total > 0 ? Math.round((cantidad / total) * 1000) / 10 : 0;
+            const Icon = getDocumentTypeIcon(row.tipo_documento);
+            return (
+              <Box key={`${row.tipo_documento}-${index}`} onClick={() => handleTipoClick(row)}
+                sx={{ borderRadius: '8px', bgcolor: '#ffffff', border: `1px solid ${tone.border}`, overflow: 'hidden', display: 'grid', gridTemplateColumns: '50px minmax(0,1fr) 68px', alignItems: 'center', cursor: 'pointer', transition: 'all 0.14s', '&:hover': { borderColor: tone.fg, boxShadow: `0 3px 12px ${tone.fg}22`, transform: 'translateX(2px)' } }}>
+                <Box sx={{ height: '100%', minHeight: 54, bgcolor: tone.fg, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                  <Typography sx={{ fontWeight: 950, fontSize: 14, color: '#fff', lineHeight: 1 }}>{String(index + 1).padStart(2, '0')}</Typography>
+                </Box>
+                <Box sx={{ px: 1.5, py: 0.8 }}>
+                  <Typography sx={{ fontSize: 8.5, fontWeight: 900, color: tone.fg, letterSpacing: 0.7, textTransform: 'uppercase', lineHeight: 1 }}>Tipo Documental</Typography>
+                  <Typography sx={{ fontWeight: 950, fontSize: 12.5, color: '#0f172a', lineHeight: 1.2, mt: 0.15 }}>{row.tipo_documento}</Typography>
+                  <Typography sx={{ fontSize: 9.5, fontWeight: 600, color: '#94a3b8', mt: 0.15 }}>{formatNumber(cantidad)} documentos activos · {pct}% del total</Typography>
+                </Box>
+                <Box sx={{ pr: 1.3, display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 0.15 }}>
+                  <Box sx={{ width: 24, height: 24, borderRadius: '6px', bgcolor: tone.soft, color: tone.fg, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                    <Icon sx={{ fontSize: 14 }} />
+                  </Box>
+                  <Typography sx={{ fontWeight: 950, fontSize: 14, color: tone.fg, lineHeight: 1 }}>{formatNumber(cantidad)}</Typography>
+                  <Typography sx={{ fontWeight: 800, fontSize: 9, color: '#94a3b8', lineHeight: 1 }}>{pct}%</Typography>
+                </Box>
+              </Box>
+            );
+          })}
+          </Stack>
+        </Box>
+      )}
+
+      <Dialog open={!!selectedTipo} onClose={() => setSelectedTipo(null)} maxWidth="lg" fullWidth
+        slotProps={{ paper: { sx: { borderRadius: '12px', maxHeight: '85vh' } } }}>
+        <DialogTitle sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', py: 1.4, px: 2.4, borderBottom: '1px solid #f1f5f9' }}>
+          <Stack direction="row" alignItems="center" spacing={1.4}>
+            <Box sx={{ width: 36, height: 36, borderRadius: '8px', bgcolor: selTone.soft, color: selTone.fg, display: 'flex', alignItems: 'center', justifyContent: 'center', border: `1px solid ${selTone.border}` }}>
+              <SelIcon sx={{ fontSize: 19 }} />
+            </Box>
+            <Box>
+              <Typography sx={{ fontWeight: 950, fontSize: 16, color: '#0f172a', lineHeight: 1.2 }}>{selectedTipo?.tipo_documento}</Typography>
+              <Typography sx={{ fontSize: 11.5, color: '#64748b', fontWeight: 600 }}>
+                {docsLoading ? 'Cargando documentos...' : `${docsForTipo.length} documento${docsForTipo.length !== 1 ? 's' : ''}`}
+              </Typography>
+            </Box>
+          </Stack>
+          <IconButton onClick={() => setSelectedTipo(null)} size="small" sx={{ color: '#94a3b8', '&:hover': { bgcolor: '#f1f5f9' } }}>
+            <CloseIcon sx={{ fontSize: 19 }} />
+          </IconButton>
+        </DialogTitle>
+        <DialogContent sx={{ p: 0 }}>
+          {docsLoading ? (
+            <Box sx={{ display: 'flex', justifyContent: 'center', py: 5 }}><CircularProgress size={26} /></Box>
+          ) : docsForTipo.length === 0 ? (
+            <Box sx={{ p: 2.5 }}><Alert severity="info">No se encontraron documentos para este tipo.</Alert></Box>
+          ) : (
+            <TableContainer sx={{ maxHeight: 480, overflowY: 'auto' }}>
+              <Table stickyHeader size="small">
+                <TableHead>
+                  <TableRow>
+                    {['#', 'Código', 'Título', 'Macroproceso', 'Proceso', 'v.', 'Ver'].map((col) => (
+                      <TableCell key={col} sx={{ fontWeight: 900, fontSize: 11, color: '#475569', bgcolor: '#f8fafc', borderBottom: `2px solid ${selTone.border}`, whiteSpace: 'nowrap', py: 0.9 }}>{col}</TableCell>
+                    ))}
+                  </TableRow>
+                </TableHead>
+                <TableBody>
+                  {docsForTipo.map((doc, i) => (
+                    <TableRow key={doc.id} hover sx={{ '&:hover td': { bgcolor: '#f8fafc' } }}>
+                      <TableCell sx={{ fontSize: 11, color: '#94a3b8', fontWeight: 700, py: 0.7 }}>{i + 1}</TableCell>
+                      <TableCell sx={{ fontSize: 11, fontWeight: 800, color: '#1d4ed8', whiteSpace: 'nowrap', py: 0.7 }}>{doc.codigo || '—'}</TableCell>
+                      <TableCell sx={{ fontSize: 12, color: '#0f172a', fontWeight: 600, minWidth: 220, py: 0.7 }}>{doc.titulo}</TableCell>
+                      <TableCell sx={{ fontSize: 11, color: '#475569', whiteSpace: 'nowrap', py: 0.7 }}>{doc.macroproceso || '—'}</TableCell>
+                      <TableCell sx={{ fontSize: 11, color: '#475569', py: 0.7, maxWidth: 160, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{doc.proceso_texto || doc.proceso || '—'}</TableCell>
+                      <TableCell sx={{ fontSize: 11, color: '#475569', textAlign: 'center', py: 0.7, whiteSpace: 'nowrap' }}>{doc.version ? `v${doc.version}` : '—'}</TableCell>
+                      <TableCell sx={{ py: 0.7 }}>
+                        {doc.link_acceso ? (
+                          <Box component="a" href={doc.link_acceso} target="_blank" rel="noopener noreferrer"
+                            sx={{ display: 'flex', alignItems: 'center', gap: 0.4, color: selTone.fg, textDecoration: 'none', fontSize: 11, fontWeight: 700, whiteSpace: 'nowrap', '&:hover': { opacity: 0.75 } }}>
+                            <OpenInNewIcon sx={{ fontSize: 12 }} />Ver
+                          </Box>
+                        ) : '—'}
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </TableContainer>
+          )}
+        </DialogContent>
+      </Dialog>
+    </Paper>
+  );
+}
+
+function ImpactInfographic({ resumen, tipos, macros, procesos, subprocesos, total, filtersSlot = null, politicas = [], politicasLoading = false }) {
+  const [politicasOpen, setPoliticasOpen] = useState(false);
+  const cards = [
+    { title: 'Total general', value: resumen.totalDocumentos, subtitle: 'Información documentada activa', color: '#1d4ed8', Icon: DescriptionIcon },
+    { title: 'Macroprocesos', value: MAPA_PROCESOS_VIGENTE.macroprocesos, subtitle: 'Mapa de procesos vigente', color: '#0369a1', Icon: AccountTreeIcon },
+    { title: 'Procesos', value: MAPA_PROCESOS_VIGENTE.procesos, subtitle: 'Mapa de procesos vigente', color: '#be123c', Icon: AutoGraphIcon },
+    { title: 'Subprocesos', value: MAPA_PROCESOS_VIGENTE.subprocesos, subtitle: 'Mapa de procesos vigente', color: '#a16207', Icon: DonutSmallIcon },
+    { title: 'Políticas', value: politicasLoading ? '...' : politicas.length, subtitle: 'Ver políticas institucionales', color: '#15803d', Icon: GavelIcon, onClick: () => setPoliticasOpen(true) }
+  ];
+  return (
+    <Stack spacing={2.4}>
+      <Paper elevation={0} sx={{ p: { xs: 2.4, md: 3 }, borderRadius: '8px', color: '#ffffff', background: 'linear-gradient(135deg, #0f172a 0%, #1d4ed8 72%, #dc143c 100%)', boxShadow: '0 20px 46px rgba(15,23,42,0.18)', position: 'relative', overflow: 'hidden' }}>
+        <Stack direction="row" spacing={1.4} alignItems="center" sx={{ position: 'relative', zIndex: 1 }}>
+          <Box sx={{ width: 56, height: 56, borderRadius: '8px', bgcolor: 'rgba(255,255,255,0.16)', border: '1px solid rgba(255,255,255,0.28)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            <AnalyticsIcon sx={{ fontSize: 30 }} />
+          </Box>
+          <Box>
+            <Typography sx={{ color: 'rgba(255,255,255,0.76)', fontWeight: 950, fontSize: 12, textTransform: 'uppercase', letterSpacing: 0.8 }}>Estadistica documental</Typography>
+            <Typography sx={{ color: '#ffffff', fontWeight: 950, fontSize: { xs: 26, md: 36 }, lineHeight: 1.03 }}>Estadistica Documental</Typography>
+          </Box>
+        </Stack>
+      </Paper>
+      {filtersSlot}
+      <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', sm: 'repeat(2, minmax(0, 1fr))', lg: 'repeat(3, minmax(0, 1fr))', xl: 'repeat(5, minmax(0, 1fr))' }, gap: 1.5 }}>
+        {cards.map((card, index) => <InfographicStatCard key={card.title} index={index + 1} {...card} />)}
+      </Box>
+      <Dialog open={politicasOpen} onClose={() => setPoliticasOpen(false)} maxWidth="lg" fullWidth PaperProps={{ sx: { borderRadius: '12px', maxHeight: '85vh' } }}>
+        <DialogTitle sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', pb: 1, borderBottom: '1px solid #f1f5f9' }}>
+          <Stack direction="row" alignItems="center" spacing={1.4}>
+            <Box sx={{ width: 38, height: 38, borderRadius: '8px', bgcolor: '#f0fdf4', color: '#15803d', display: 'flex', alignItems: 'center', justifyContent: 'center', border: '1px solid #bbf7d0' }}>
+              <GavelIcon sx={{ fontSize: 20 }} />
+            </Box>
+            <Box>
+              <Typography sx={{ fontWeight: 950, fontSize: 18, color: '#0f172a', lineHeight: 1.2 }}>Políticas Institucionales</Typography>
+              <Typography sx={{ fontSize: 12, color: '#64748b', fontWeight: 600 }}>{politicasLoading ? 'Cargando...' : `${politicas.length} políticas registradas`}</Typography>
+            </Box>
+          </Stack>
+          <IconButton onClick={() => setPoliticasOpen(false)} size="small" sx={{ color: '#94a3b8', '&:hover': { bgcolor: '#f1f5f9', color: '#475569' } }}>
+            <CloseIcon sx={{ fontSize: 20 }} />
+          </IconButton>
+        </DialogTitle>
+        <DialogContent sx={{ pt: 2 }}>
+          {politicasLoading ? (
+            <Box sx={{ display: 'flex', justifyContent: 'center', py: 5 }}><CircularProgress size={28} sx={{ color: '#15803d' }} /></Box>
+          ) : politicas.length === 0 ? (
+            <Alert severity="info">No hay políticas institucionales registradas.</Alert>
+          ) : (
+            <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', md: 'repeat(2, 1fr)', xl: 'repeat(3, 1fr)' }, gap: 0.9, pb: 1 }}>
+              {politicas.map((doc, idx) => {
+                const tone = CARD_TONES[idx % CARD_TONES.length];
+                return (
+                  <Box key={doc.id} sx={{ borderRadius: '10px', bgcolor: '#ffffff', border: `1px solid ${tone.border}`, overflow: 'hidden', display: 'grid', gridTemplateColumns: '46px minmax(0, 1fr) 52px', alignItems: 'center', minHeight: 52 }}>
+                    <Box sx={{ height: '100%', minHeight: 52, bgcolor: tone.fg, color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 950, fontSize: 13 }}>
+                      {String(idx + 1).padStart(2, '0')}
+                    </Box>
+                    <Box sx={{ px: 1.3, py: 1, minWidth: 0 }}>
+                      <Typography sx={{ fontWeight: 800, fontSize: 12, color: '#0f172a', lineHeight: 1.25, display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>{doc.titulo}</Typography>
+                      <Typography sx={{ fontSize: 10.5, fontWeight: 600, color: '#94a3b8', mt: 0.2 }}>{doc.codigo || ''}{doc.version ? ` · v${doc.version}` : ''}</Typography>
+                    </Box>
+                    {doc.link_acceso ? (
+                      <Box component="a" href={doc.link_acceso} target="_blank" rel="noopener noreferrer"
+                        sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 0.2, color: tone.fg, fontWeight: 700, fontSize: 10, textDecoration: 'none', height: '100%', bgcolor: tone.soft, '&:hover': { bgcolor: tone.border } }}>
+                        <OpenInNewIcon sx={{ fontSize: 13 }} />
+                        Ver
+                      </Box>
+                    ) : <Box sx={{ bgcolor: tone.soft, height: '100%', minHeight: 52 }} />}
+                  </Box>
+                );
+              })}
+            </Box>
+          )}
+        </DialogContent>
+      </Dialog>
+      <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', xl: '1.05fr 0.95fr' }, gap: 2 }}>
+        <DocumentTypeList title="Tipos documentales destacados" rows={tipos} total={total} />
+        <CapsuleRanking title="Macroprocesos con mayor carga" rows={macros} nameKey="macro_proceso" color="#1d4ed8" />
+      </Box>
+      <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', xl: 'repeat(2, minmax(0, 1fr))' }, gap: 2 }}>
+        <CapsuleRanking title="Procesos principales" rows={procesos} nameKey="proceso" color="#be123c" />
+        <CapsuleRanking title="Subprocesos principales" rows={subprocesos} nameKey="subproceso" color="#a16207" />
+      </Box>
+    </Stack>
   );
 }
 
 export function EstadisticaDocumentalPanel({ embedded = false }) {
   const { enqueueSnackbar } = useSnackbar();
   const [filters, setFilters] = useState({
-    macro_proceso_id: '',
-    proceso: '',
-    subproceso: '',
-    tipo_documentacion_id: '',
-    periodo: ''
+    macro_proceso_id: [],
+    proceso: [],
+    subproceso: [],
+    tipo_documentacion_id: [],
+    periodo: []
   });
   const [macroProcesos, setMacroProcesos] = useState([]);
   const [tiposDocumentacion, setTiposDocumentacion] = useState([]);
   const [data, setData] = useState(emptyData);
   const [loading, setLoading] = useState(false);
   const [initialLoading, setInitialLoading] = useState(true);
-  const [generalOpen, setGeneralOpen] = useState(true);
+  const [politicas, setPoliticas] = useState([]);
+  const [politicasLoading, setPoliticasLoading] = useState(true);
 
   const loadCatalogs = useCallback(async () => {
     const [macroRes, tipoRes] = await Promise.all([
@@ -440,7 +571,13 @@ export function EstadisticaDocumentalPanel({ embedded = false }) {
   const loadDashboard = useCallback(async (currentFilters) => {
     setLoading(true);
     try {
-      const response = await documentoService.getEstadisticaDocumental(currentFilters);
+      const response = await documentoService.getEstadisticaDocumental({
+        macro_proceso_id: serializeFilterArray(currentFilters.macro_proceso_id),
+        proceso: serializeFilterArray(currentFilters.proceso),
+        subproceso: serializeFilterArray(currentFilters.subproceso),
+        tipo_documentacion_id: serializeFilterArray(currentFilters.tipo_documentacion_id),
+        periodo: serializeFilterArray(currentFilters.periodo)
+      });
       setData(response?.data || emptyData);
     } catch (error) {
       enqueueSnackbar(error?.response?.data?.message || 'No se pudo cargar la estadistica documental', { variant: 'error' });
@@ -451,314 +588,112 @@ export function EstadisticaDocumentalPanel({ embedded = false }) {
     }
   }, [enqueueSnackbar]);
 
+  const filtersRef = useRef(filters);
+  filtersRef.current = filters;
+
   useEffect(() => {
-    const initialFilters = { macro_proceso_id: '', proceso: '', subproceso: '', tipo_documentacion_id: '', periodo: '' };
-    Promise.all([loadCatalogs(), loadDashboard(initialFilters)]).catch(() => {
-      setInitialLoading(false);
-    });
+    const init = { macro_proceso_id: [], proceso: [], subproceso: [], tipo_documentacion_id: [], periodo: [] };
+    Promise.all([loadCatalogs(), loadDashboard(init)]).catch(() => setInitialLoading(false));
   }, [loadCatalogs, loadDashboard]);
 
   useEffect(() => {
     if (initialLoading) return undefined;
-    const debounceId = setTimeout(() => {
-      loadDashboard(filters);
-    }, 250);
-    return () => clearTimeout(debounceId);
+    const timer = setTimeout(() => loadDashboard(filtersRef.current), 500);
+    return () => clearTimeout(timer);
   }, [filters, initialLoading, loadDashboard]);
 
-  const handleSearch = () => loadDashboard(filters);
-  const handleClear = () => {
-    const clean = { macro_proceso_id: '', proceso: '', subproceso: '', tipo_documentacion_id: '', periodo: '' };
-    setFilters(clean);
-  };
-
-  const buildServerOptions = useCallback((rows = [], fallbackRows = []) => {
-    if (Array.isArray(rows) && rows.length) {
-      return rows.map((item) => ({
-        value: item.value ?? item.id ?? item.label,
-        label: item.cantidad ? `${item.label} (${item.cantidad})` : item.label
-      }));
-    }
-    return fallbackRows.map((item) => ({ value: item.nombre || item.id, label: item.nombre }));
+  useEffect(() => {
+    let cancelled = false;
+    documentoService.getDocumentos({ document_scope: 'politicas' }, 1, 200)
+      .then((res) => {
+        if (!cancelled) {
+          const raw = res?.data?.documentos || [];
+          const seen = new Set();
+          const unique = raw.filter((doc) => {
+            const key = String(doc.titulo || '').trim().toLowerCase();
+            if (seen.has(key)) return false;
+            seen.add(key);
+            return true;
+          });
+          setPoliticas(unique);
+        }
+      })
+      .catch(() => {})
+      .finally(() => { if (!cancelled) setPoliticasLoading(false); });
+    return () => { cancelled = true; };
   }, []);
 
-  const filtrosDisponibles = data?.filtrosDisponibles || emptyData.filtrosDisponibles;
-  const macroOptions = useMemo(
-    () => buildServerOptions(filtrosDisponibles.macroProcesos, macroProcesos),
-    [buildServerOptions, filtrosDisponibles.macroProcesos, macroProcesos]
-  );
-  const procesoOptions = useMemo(
-    () => buildServerOptions(filtrosDisponibles.procesos),
-    [buildServerOptions, filtrosDisponibles.procesos]
-  );
-  const subprocesoOptions = useMemo(
-    () => buildServerOptions(filtrosDisponibles.subprocesos),
-    [buildServerOptions, filtrosDisponibles.subprocesos]
-  );
-  const tipoOptions = useMemo(
-    () => buildServerOptions(filtrosDisponibles.tiposDocumentacion, tiposDocumentacion),
-    [buildServerOptions, filtrosDisponibles.tiposDocumentacion, tiposDocumentacion]
-  );
-  const periodoOptions = useMemo(
-    () => ((filtrosDisponibles.periodos?.length ? filtrosDisponibles.periodos : data?.periodosDisponibles) || [])
-      .map((item) => ({ value: item.value, label: `${item.label} (${item.cantidad})` })),
-    [data?.periodosDisponibles, filtrosDisponibles.periodos]
-  );
+  const handleClear = () => {
+    const clean = { macro_proceso_id: [], proceso: [], subproceso: [], tipo_documentacion_id: [], periodo: [] };
+    setFilters(clean);
+    loadDashboard(clean);
+  };
+
+  const macroOptions = useMemo(() => macroProcesos.map((m) => ({ value: m.id, label: m.nombre })), [macroProcesos]);
+  const tipoOptions = useMemo(() => tiposDocumentacion.map((t) => ({ value: t.id, label: t.nombre })), [tiposDocumentacion]);
+  const procesoOptions = useMemo(() => (data?.filtrosDisponibles?.procesos || []).map((p) => ({ value: p.label, label: p.label })), [data?.filtrosDisponibles?.procesos]);
+  const subprocesoOptions = useMemo(() => (data?.filtrosDisponibles?.subprocesos || []).map((s) => ({ value: s.label, label: s.label })), [data?.filtrosDisponibles?.subprocesos]);
+  const periodoOptions = useMemo(() => (data?.periodosDisponibles || []).map((p) => ({ value: p.value, label: `${p.label} (${p.cantidad})` })), [data?.periodosDisponibles]);
 
   const resumen = data?.resumen || emptyData.resumen;
-  const tipos = useMemo(() => data?.distribucion?.porTipoDocumento || [], [data?.distribucion?.porTipoDocumento]);
-  const macros = useMemo(() => data?.distribucion?.porMacroProceso || [], [data?.distribucion?.porMacroProceso]);
-  const procesos = useMemo(() => data?.distribucion?.porProceso || [], [data?.distribucion?.porProceso]);
-  const subprocesos = useMemo(() => data?.distribucion?.porSubproceso || [], [data?.distribucion?.porSubproceso]);
+  const tipos = data?.distribucion?.porTipoDocumento || [];
+  const macros = data?.distribucion?.porMacroProceso || [];
+  const procesos = data?.distribucion?.porProceso || [];
+  const subprocesos = data?.distribucion?.porSubproceso || [];
   const total = Number(resumen.totalDocumentos || 0);
-  const macroDetails = useMemo(
-    () => macros.map((item) => ({ label: item.macro_proceso, cantidad: item.cantidad })),
-    [macros]
-  );
-  const procesoDetails = useMemo(
-    () => procesos.map((item) => ({ label: item.proceso, cantidad: item.cantidad })),
-    [procesos]
-  );
-  const subprocesoDetails = useMemo(
-    () => subprocesos.map((item) => ({ label: item.subproceso, cantidad: item.cantidad })),
-    [subprocesos]
+
+  const filtersSlot = (
+    <Paper elevation={0} sx={{ p: { xs: 2, md: 2.4 }, borderRadius: '8px', border: '1px solid #dbe6f5', bgcolor: '#ffffff', boxShadow: '0 8px 24px rgba(15,23,42,0.06)' }}>
+      <Stack direction="row" alignItems="center" justifyContent="space-between" sx={{ mb: 1.8 }}>
+        <Stack direction="row" spacing={1} alignItems="center">
+          <FilterAltIcon sx={{ color: '#0369a1', fontSize: 20 }} />
+          <Typography sx={{ color: '#0f172a', fontWeight: 900, fontSize: 15 }}>Filtros</Typography>
+        </Stack>
+        <Button variant="outlined" size="small" startIcon={<ClearIcon sx={{ fontSize: 13 }} />} onClick={handleClear} disabled={loading}
+          sx={{ height: 30, px: 1.4, borderRadius: '7px', fontWeight: 800, textTransform: 'none', fontSize: 12, color: '#64748b', borderColor: '#e2e8f0', bgcolor: '#f8fafc', '&:hover': { borderColor: '#cbd5e1', bgcolor: '#f1f5f9' } }}>
+          Limpiar
+        </Button>
+      </Stack>
+      <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', md: 'repeat(3, 1fr)', xl: 'repeat(5, 1fr)' }, gap: 1.4 }}>
+        <DocFilterPanel label="Macroproceso" options={macroOptions} value={filters.macro_proceso_id} onChange={(v) => setFilters((p) => ({ ...p, macro_proceso_id: v }))} disabled={loading} placeholder="Buscar macroproceso..." />
+        <DocFilterPanel label="Proceso" options={procesoOptions} value={filters.proceso} onChange={(v) => setFilters((p) => ({ ...p, proceso: v }))} disabled={loading} placeholder="Buscar proceso..." />
+        <DocFilterPanel label="Subproceso" options={subprocesoOptions} value={filters.subproceso} onChange={(v) => setFilters((p) => ({ ...p, subproceso: v }))} disabled={loading} placeholder="Buscar subproceso..." />
+        <DocFilterPanel label="Tipo documento" options={tipoOptions} value={filters.tipo_documentacion_id} onChange={(v) => setFilters((p) => ({ ...p, tipo_documentacion_id: v }))} disabled={loading} placeholder="Buscar tipo..." />
+        <DocFilterPanel label="Periodo academico" options={periodoOptions} value={filters.periodo} onChange={(v) => setFilters((p) => ({ ...p, periodo: v }))} disabled={loading} placeholder="Buscar periodo..." />
+      </Box>
+    </Paper>
   );
 
-  const activeChips = [
-    filters.macro_proceso_id && {
-      key: 'macro',
-      label: macroOptions.find((item) => String(item.value) === String(filters.macro_proceso_id))?.label,
-      onDelete: () => setFilters((prev) => ({ ...prev, macro_proceso_id: '' }))
-    },
-    filters.proceso && {
-      key: 'proceso',
-      label: procesoOptions.find((item) => String(item.value) === String(filters.proceso))?.label,
-      onDelete: () => setFilters((prev) => ({ ...prev, proceso: '' }))
-    },
-    filters.subproceso && {
-      key: 'subproceso',
-      label: subprocesoOptions.find((item) => String(item.value) === String(filters.subproceso))?.label,
-      onDelete: () => setFilters((prev) => ({ ...prev, subproceso: '' }))
-    },
-    filters.tipo_documentacion_id && {
-      key: 'tipo',
-      label: tipoOptions.find((item) => String(item.value) === String(filters.tipo_documentacion_id))?.label,
-      onDelete: () => setFilters((prev) => ({ ...prev, tipo_documentacion_id: '' }))
-    },
-    filters.periodo && {
-      key: 'periodo',
-      label: periodoOptions.find((item) => String(item.value) === String(filters.periodo))?.label,
-      onDelete: () => setFilters((prev) => ({ ...prev, periodo: '' }))
-    }
-  ].filter(Boolean);
+  if (initialLoading && loading) {
+    return (
+      <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', py: 10, gap: 2 }}>
+        <CircularProgress size={40} />
+        <Typography sx={{ color: '#64748b' }}>Cargando estadísticas...</Typography>
+      </Box>
+    );
+  }
 
   const content = (
-    <Box sx={{ pb: 2 }}>
-      <Paper elevation={0} sx={{ p: { xs: 2, md: 2.5 }, mb: 3, borderRadius: 3, border: '1px solid #dbe6f5', bgcolor: '#fff' }}>
-        <Stack direction="row" spacing={1} alignItems="center" sx={{ mb: 2 }}>
-          <FilterAltIcon sx={{ color: '#0f766e' }} />
-          <Typography sx={{ color: '#0f172a', fontWeight: 950, fontSize: 18 }}>Filtros del dashboard</Typography>
-        </Stack>
-        <Box
-          sx={{
-            display: 'grid',
-            gridTemplateColumns: { xs: '1fr', md: 'repeat(2, minmax(0, 1fr))', xl: 'repeat(5, minmax(0, 1fr))' },
-            gap: 1.5,
-            width: '100%'
-          }}
-        >
-          <Box sx={{ minWidth: 0 }}>
-            <CompactFilter label="Macroproceso" options={macroOptions} value={filters.macro_proceso_id} onChange={(value) => setFilters((prev) => ({ ...prev, macro_proceso_id: value }))} disabled={loading} placeholder="Buscar macroproceso..." />
-          </Box>
-          <Box sx={{ minWidth: 0 }}>
-            <CompactFilter label="Proceso" options={procesoOptions} value={filters.proceso} onChange={(value) => setFilters((prev) => ({ ...prev, proceso: value }))} disabled={loading} placeholder="Buscar proceso..." />
-          </Box>
-          <Box sx={{ minWidth: 0 }}>
-            <CompactFilter label="Subproceso" options={subprocesoOptions} value={filters.subproceso} onChange={(value) => setFilters((prev) => ({ ...prev, subproceso: value }))} disabled={loading} placeholder="Buscar subproceso..." />
-          </Box>
-          <Box sx={{ minWidth: 0 }}>
-            <CompactFilter label="Tipo de documento" options={tipoOptions} value={filters.tipo_documentacion_id} onChange={(value) => setFilters((prev) => ({ ...prev, tipo_documentacion_id: value }))} disabled={loading} placeholder="Buscar tipo..." />
-          </Box>
-          <Box sx={{ minWidth: 0 }}>
-            <CompactFilter label="Periodo academico" options={periodoOptions} value={filters.periodo} onChange={(value) => setFilters((prev) => ({ ...prev, periodo: value }))} disabled={loading} placeholder="Buscar periodo..." />
-          </Box>
-        </Box>
-        <Stack direction={{ xs: 'column', md: 'row' }} spacing={1.2} alignItems={{ xs: 'stretch', md: 'center' }} sx={{ mt: 2, width: '100%' }}>
-          <Button variant="contained" startIcon={<SearchIcon />} onClick={handleSearch} disabled={loading} sx={{ minHeight: 46, flex: 1, borderRadius: 2, fontWeight: 900, textTransform: 'none', bgcolor: '#0f766e', '&:hover': { bgcolor: '#0d9488' } }}>
-            Aplicar filtros
-          </Button>
-          <Button variant="outlined" startIcon={<ClearIcon />} onClick={handleClear} disabled={loading} sx={{ minHeight: 46, flex: 1, borderRadius: 2, fontWeight: 900, textTransform: 'none', color: '#0f766e', borderColor: '#99f6e4', bgcolor: '#f0fdfa', '&:hover': { bgcolor: '#ccfbf1', borderColor: '#5eead4' } }}>
-            Limpiar filtros
-          </Button>
-        </Stack>
-        {activeChips.length > 0 && (
-          <Stack direction="row" spacing={0.8} flexWrap="wrap" useFlexGap sx={{ mt: 1.6 }}>
-            {activeChips.map((chip) => (
-              <Chip key={chip.key} size="small" label={chip.label} onDelete={chip.onDelete} sx={{ bgcolor: '#f0fdfa', color: '#0f766e', border: '1px solid #99f6e4', fontWeight: 800 }} />
-            ))}
-          </Stack>
-        )}
-      </Paper>
-
-      {loading && initialLoading ? (
-        <Paper elevation={0} sx={{ borderRadius: 3, border: '1px solid #e2e8f0', p: 6, textAlign: 'center' }}>
-          <CircularProgress />
-          <Typography sx={{ mt: 2, color: '#64748b' }}>Cargando dashboard...</Typography>
-        </Paper>
-      ) : (
-        <>
-          <Paper elevation={0} sx={{ mb: 3, borderRadius: 3, border: '1px solid #dbe6f5', bgcolor: '#ffffff', overflow: 'hidden' }}>
-            <Box
-              onClick={() => setGeneralOpen((prev) => !prev)}
-              sx={{
-                p: { xs: 2, md: 2.4 },
-                cursor: 'pointer',
-                background: 'linear-gradient(135deg, #f8fafc 0%, #eef6ff 55%, #f0fdfa 100%)',
-                borderBottom: generalOpen ? '1px solid #dbe6f5' : 'none'
-              }}
-            >
-              <Stack direction={{ xs: 'column', md: 'row' }} spacing={1.5} alignItems={{ xs: 'flex-start', md: 'center' }} justifyContent="space-between">
-                <Stack direction="row" spacing={1.3} alignItems="center">
-                  <Box sx={{ width: 44, height: 44, borderRadius: 2, bgcolor: '#0f766e', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                    <AnalyticsIcon sx={{ fontSize: 25 }} />
-                  </Box>
-                  <Box>
-                    <Typography sx={{ color: '#0f172a', fontWeight: 950, fontSize: { xs: 20, md: 24 }, lineHeight: 1.1 }}>
-                      Estadistica general documental
-                    </Typography>
-                    <Typography sx={{ color: '#64748b', fontWeight: 650, fontSize: 13, mt: 0.4 }}>
-                      Indicadores activos del sistema. Todo cambia con los filtros seleccionados.
-                    </Typography>
-                  </Box>
-                </Stack>
-                <Chip
-                  icon={<ExpandMoreIcon sx={{ transform: generalOpen ? 'rotate(180deg)' : 'none', transition: 'transform 0.2s' }} />}
-                  label={generalOpen ? 'Ocultar indicadores' : 'Ver indicadores'}
-                  sx={{ bgcolor: '#ffffff', color: '#0f766e', border: '1px solid #99f6e4', fontWeight: 900 }}
-                />
-              </Stack>
-            </Box>
-            <Collapse in={generalOpen} timeout="auto">
-              <Box sx={{ p: { xs: 2, md: 2.4 } }}>
-                <Box
-                  sx={{
-                    display: 'grid',
-                    gridTemplateColumns: { xs: '1fr', sm: 'repeat(2, minmax(0, 1fr))', xl: 'repeat(4, minmax(0, 1fr))' },
-                    gap: 2,
-                    alignItems: 'stretch'
-                  }}
-                >
-                    <KpiCard label="Informacion documentada activa" value={resumen.totalDocumentos} helper="Registros vigentes en el alcance actual" tone="#0f766e" soft="#ecfdf5" accent="#99f6e4" Icon={DescriptionIcon} />
-                    <KpiCard label="Macroprocesos" value={resumen.totalMacroProcesos} helper="Frentes institucionales con documentos" tone="#1d4ed8" soft="#eff6ff" accent="#bfdbfe" Icon={AccountTreeIcon} details={macroDetails} />
-                    <KpiCard label="Procesos" value={resumen.totalProcesos} helper="Procesos documentados activos" tone="#be123c" soft="#fff1f2" accent="#fecdd3" Icon={LayersIcon} details={procesoDetails} />
-                    <KpiCard label="Subprocesos" value={resumen.totalSubprocesos} helper="Subprocesos con informacion" tone="#a16207" soft="#fffbeb" accent="#fde68a" Icon={DonutSmallIcon} details={subprocesoDetails} />
-                </Box>
-              </Box>
-            </Collapse>
-          </Paper>
-
-
-          <Paper elevation={0} sx={{ p: { xs: 2, md: 2.5 }, mb: 3, borderRadius: 3, border: '1px solid #dbe6f5', bgcolor: '#fff' }}>
-            <Stack direction={{ xs: 'column', md: 'row' }} spacing={1.2} justifyContent="space-between" alignItems={{ xs: 'flex-start', md: 'center' }} sx={{ mb: 2 }}>
-              <Box>
-                <Typography sx={{ color: '#0f172a', fontWeight: 950, fontSize: { xs: 20, md: 24 } }}>Inventario por tipo documental</Typography>
-                <Typography sx={{ color: '#64748b', fontWeight: 600, fontSize: 13, mt: 0.4 }}>Cantidad existente de formatos, procedimientos, instructivos, manuales, planes, protocolos y demas documentos del sistema.</Typography>
-              </Box>
-              <Chip label={`${tipos.length} tipos visibles`} sx={{ bgcolor: '#f0fdfa', color: '#0f766e', border: '1px solid #99f6e4', fontWeight: 900 }} />
-            </Stack>
-            {tipos.length === 0 ? (
-              <Alert severity="info">No hay informacion para los filtros seleccionados.</Alert>
-            ) : (
-              <Box
-                sx={{
-                  display: 'grid',
-                  gridTemplateColumns: {
-                    xs: '1fr',
-                    sm: 'repeat(2, minmax(0, 1fr))',
-                    lg: 'repeat(4, minmax(0, 1fr))'
-                  },
-                  gap: 2,
-                  width: '100%'
-                }}
-              >
-                {tipos.map((row, index) => <DocumentTypeCard key={`${row.tipo_documento}-${index}`} row={row} index={index} total={total} />)}
-              </Box>
-            )}
-          </Paper>
-
-          <Paper elevation={0} sx={{ p: { xs: 2, md: 2.7 }, borderRadius: '8px', border: '1px solid #dbe6f5', bgcolor: '#ffffff', boxShadow: '0 16px 36px rgba(15, 23, 42, 0.05)' }}>
-            <Stack direction={{ xs: 'column', md: 'row' }} spacing={1.3} alignItems={{ xs: 'flex-start', md: 'center' }} justifyContent="space-between" sx={{ mb: 2.2 }}>
-              <Box>
-                <Typography sx={{ fontWeight: 950, color: '#0f172a', fontSize: { xs: 20, md: 24 } }}>Lectura institucional</Typography>
-                <Typography sx={{ mt: 0.4, color: '#64748b', fontWeight: 650, fontSize: 13 }}>
-                  Concentracion, lideres documentales y rankings principales del alcance filtrado.
-                </Typography>
-              </Box>
-              <Chip label={`${total} documentos activos`} sx={{ bgcolor: '#ecfdf5', color: '#0f766e', border: '1px solid #99f6e4', fontWeight: 900 }} />
-            </Stack>
-
-            <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', md: 'repeat(3, minmax(0, 1fr))' }, gap: 2, alignItems: 'stretch' }}>
-              <Paper elevation={0} sx={{ p: 2.4, height: '100%', minHeight: 278, borderRadius: '8px', border: '1px solid #bfdbfe', background: 'linear-gradient(135deg, #ffffff 0%, #eff6ff 100%)', boxShadow: '0 14px 30px rgba(15, 23, 42, 0.06)' }}>
-                <Stack direction="row" alignItems="center" justifyContent="space-between" spacing={1} sx={{ mb: 1.7 }}>
-                  <Typography sx={{ fontWeight: 950, color: '#0f172a', fontSize: 18 }}>Concentracion institucional</Typography>
-                  <Chip size="small" label={`${macros.length} macroprocesos`} sx={{ bgcolor: '#ffffff', color: '#1d4ed8', border: '1px solid #bfdbfe', fontWeight: 900 }} />
-                </Stack>
-                <Stack spacing={1.25}>
-                  {macros.slice(0, 6).map((row, index) => {
-                    const cantidad = Number(row.cantidad || 0);
-                    const pct = total > 0 ? Math.round((cantidad / total) * 100) : 0;
-                    const tone = CARD_TONES[index % CARD_TONES.length];
-                    return (
-                      <Box key={`${row.macro_proceso}-${index}`}>
-                        <Stack direction="row" spacing={1.2} alignItems="center" justifyContent="space-between">
-                          <Typography sx={{ color: '#0f172a', fontWeight: 900, fontSize: 12.5, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                            {index + 1}. {row.macro_proceso}
-                          </Typography>
-                          <Chip size="small" label={`${cantidad}`} sx={{ bgcolor: tone.soft, color: tone.fg, fontWeight: 900, height: 23 }} />
-                        </Stack>
-                        <Box sx={{ mt: 0.65, height: 7, borderRadius: 99, bgcolor: '#e2e8f0', overflow: 'hidden' }}>
-                          <Box sx={{ width: `${pct}%`, height: '100%', bgcolor: tone.fg, borderRadius: 99 }} />
-                        </Box>
-                      </Box>
-                    );
-                  })}
-                  {macros.length === 0 && <Alert severity="info">Sin informacion para los filtros seleccionados.</Alert>}
-                </Stack>
-              </Paper>
-
-              <RankingList title="Procesos con mayor documentacion" rows={procesos} nameKey="proceso" />
-              <RankingList title="Subprocesos con mayor documentacion" rows={subprocesos} nameKey="subproceso" />
-            </Box>
-          </Paper>
-
-        </>
-      )}
-    </Box>
+    <ImpactInfographic
+      resumen={resumen}
+      tipos={tipos}
+      macros={macros}
+      procesos={procesos}
+      subprocesos={subprocesos}
+      total={total}
+      filtersSlot={filtersSlot}
+      politicas={politicas}
+      politicasLoading={politicasLoading}
+    />
   );
 
-  if (embedded) return content;
+  if (embedded) return <Box sx={{ pb: 2 }}>{content}</Box>;
+
   return (
     <Fade in={true}>
-      <Box>
-        <Paper elevation={0} sx={{ mb: 3, p: { xs: 2.5, md: 3.5 }, borderRadius: 3, border: '1px solid #d7e3f5', background: 'linear-gradient(135deg, #0f172a 0%, #1d4ed8 48%, #be123c 100%)', color: 'white' }}>
-          <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2} alignItems={{ sm: 'center' }}>
-            <Box sx={{ width: 76, height: 76, borderRadius: 2, display: 'flex', alignItems: 'center', justifyContent: 'center', bgcolor: 'rgba(255,255,255,0.18)', border: '1px solid rgba(255,255,255,0.42)' }}>
-              <AnalyticsIcon sx={{ fontSize: 38 }} />
-            </Box>
-            <Box>
-              <Typography variant="h4" sx={{ fontWeight: 950, letterSpacing: 0.2, fontSize: { xs: 25, md: 34 } }}>Estadistica Documental</Typography>
-              <Typography sx={{ mt: 0.8, color: 'rgba(255,255,255,0.9)', fontSize: { xs: 14, md: 16 } }}>
-                Lectura institucional de volumen, concentracion documental y macroprocesos con mayor carga.
-              </Typography>
-            </Box>
-          </Stack>
-        </Paper>
-        {content}
-      </Box>
+      <Box sx={{ pb: 2 }}>{content}</Box>
     </Fade>
   );
 }
 
 export default EstadisticaDocumentalPanel;
-
-
