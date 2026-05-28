@@ -248,6 +248,7 @@ const getDocumentos = async (req, res) => {
       proceso_id,
       subproceso_id,
       tipo_documentacion_id,
+      periodo,
       titulo,
       include_inactive,
       estado_scope,
@@ -309,6 +310,17 @@ const getDocumentos = async (req, res) => {
     if (titulo) {
       const searchWhere = buildSearchWhere(titulo);
       if (searchWhere?.[Op.and]) andConditions.push(...searchWhere[Op.and]);
+    }
+
+    const periodoValues = parseTextList(periodo).map(normalizePeriodoFilter).filter(Boolean);
+    if (periodoValues.length) {
+      const periodoRanges = periodoValues.map((p) => {
+        const [year, sem] = p.split('-');
+        return sem === 'IP'
+          ? { fecha_creacion: { [Op.between]: [`${year}-01-01`, `${year}-06-30`] } }
+          : { fecha_creacion: { [Op.between]: [`${year}-07-01`, `${year}-12-31`] } };
+      });
+      andConditions.push(periodoRanges.length === 1 ? periodoRanges[0] : { [Op.or]: periodoRanges });
     }
 
     if (andConditions.length) where[Op.and] = andConditions;

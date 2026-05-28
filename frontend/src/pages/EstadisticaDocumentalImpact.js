@@ -587,45 +587,56 @@ export function EstadisticaDocumentalPanel({ embedded = false }) {
     }
   }, [enqueueSnackbar]);
 
+  const loadPoliticas = useCallback(async (currentFilters) => {
+    setPoliticasLoading(true);
+    let cancelled = false;
+    const params = {
+      document_scope: 'politicas',
+      periodo: serializeFilterArray(currentFilters?.periodo || [])
+    };
+    try {
+      const res = await documentoService.getDocumentos(params, 1, 200);
+      if (!cancelled) {
+        const raw = res?.data?.documentos || [];
+        const seen = new Set();
+        const unique = raw.filter((doc) => {
+          const key = String(doc.titulo || '').trim().toLowerCase();
+          if (seen.has(key)) return false;
+          seen.add(key);
+          return true;
+        });
+        setPoliticas(unique);
+      }
+    } catch {
+      // silent
+    } finally {
+      if (!cancelled) setPoliticasLoading(false);
+    }
+    return () => { cancelled = true; };
+  }, []);
+
   const filtersRef = useRef(filters);
   filtersRef.current = filters;
 
   useEffect(() => {
     const init = { macro_proceso_id: [], proceso: [], subproceso: [], tipo_documentacion_id: [], periodo: [] };
-    Promise.all([loadCatalogs(), loadDashboard(init)]).catch(() => setInitialLoading(false));
-  }, [loadCatalogs, loadDashboard]);
+    Promise.all([loadCatalogs(), loadDashboard(init), loadPoliticas(init)]).catch(() => setInitialLoading(false));
+  }, [loadCatalogs, loadDashboard, loadPoliticas]);
 
   useEffect(() => {
     if (initialLoading) return undefined;
-    const timer = setTimeout(() => loadDashboard(filtersRef.current), 500);
+    const timer = setTimeout(() => {
+      loadDashboard(filtersRef.current);
+      loadPoliticas(filtersRef.current);
+    }, 500);
     return () => clearTimeout(timer);
-  }, [filters, initialLoading, loadDashboard]);
-
-  useEffect(() => {
-    let cancelled = false;
-    documentoService.getDocumentos({ document_scope: 'politicas' }, 1, 200)
-      .then((res) => {
-        if (!cancelled) {
-          const raw = res?.data?.documentos || [];
-          const seen = new Set();
-          const unique = raw.filter((doc) => {
-            const key = String(doc.titulo || '').trim().toLowerCase();
-            if (seen.has(key)) return false;
-            seen.add(key);
-            return true;
-          });
-          setPoliticas(unique);
-        }
-      })
-      .catch(() => {})
-      .finally(() => { if (!cancelled) setPoliticasLoading(false); });
-    return () => { cancelled = true; };
-  }, []);
+  }, [filters, initialLoading, loadDashboard, loadPoliticas]);
 
   const handleClear = () => {
     const clean = { macro_proceso_id: [], proceso: [], subproceso: [], tipo_documentacion_id: [], periodo: [] };
     setFilters(clean);
     loadDashboard(clean);
+    loadPoliticas(clean);
   };
 
   const macroOptions = useMemo(() => macroProcesos.map((m) => ({ value: m.id, label: m.nombre })), [macroProcesos]);
