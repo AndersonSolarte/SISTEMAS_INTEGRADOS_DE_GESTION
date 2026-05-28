@@ -491,6 +491,7 @@ function Autoevaluacion() {
   const [loading, setLoading] = useState(true);
   const dashboardCacheRef = useRef(new Map());
   const characteristicChartCardRef = useRef(null);
+  const factorChartCardRef = useRef(null);
   const [programa, setPrograma] = useState('');
   const [componentScope, setComponentScope] = useState('general');
   const [view, setView] = useState('resumen');
@@ -508,6 +509,7 @@ function Autoevaluacion() {
   const [creatingParticipant, setCreatingParticipant] = useState(false);
   const [creatingProgramInfo, setCreatingProgramInfo] = useState(false);
   const [copyingCharacteristicChart, setCopyingCharacteristicChart] = useState(false);
+  const [copyingFactorChart, setCopyingFactorChart] = useState(false);
   const [isCharacteristicChartInverted, setIsCharacteristicChartInverted] = useState(false);
   const [editingCharacteristicChartText, setEditingCharacteristicChartText] = useState(false);
   const [characteristicChartLabelDrafts, setCharacteristicChartLabelDrafts] = useState({});
@@ -722,6 +724,94 @@ function Autoevaluacion() {
       enqueueSnackbar('No se pudo copiar el grafico como imagen', { variant: 'error' });
     } finally {
       setCopyingCharacteristicChart(false);
+    }
+  }, [enqueueSnackbar]);
+
+  const copyFactorChart = useCallback(async () => {
+    const node = factorChartCardRef.current;
+    if (!node) return;
+
+    if (!navigator.clipboard?.write || !window.ClipboardItem) {
+      enqueueSnackbar('El navegador no permite copiar imagenes al portapapeles en este contexto', { variant: 'warning' });
+      return;
+    }
+
+    setCopyingFactorChart(true);
+    try {
+      const rect = node.getBoundingClientRect();
+      const width = Math.ceil(rect.width);
+      const height = Math.ceil(rect.height);
+      const clone = node.cloneNode(true);
+
+      const inlineComputedStyles = (source, target) => {
+        if (!source || !target || !target.style) return;
+        const computed = window.getComputedStyle(source);
+        Array.from(computed).forEach((property) => {
+          target.style.setProperty(
+            property,
+            computed.getPropertyValue(property),
+            computed.getPropertyPriority(property)
+          );
+        });
+
+        Array.from(source.children).forEach((child, index) => {
+          inlineComputedStyles(child, target.children[index]);
+        });
+      };
+
+      inlineComputedStyles(node, clone);
+      clone.querySelectorAll('[data-copy-exclude="true"]').forEach((element) => element.remove());
+      clone.setAttribute('xmlns', 'http://www.w3.org/1999/xhtml');
+      clone.style.width = `${width}px`;
+      clone.style.height = `${height}px`;
+      clone.style.margin = '0';
+      clone.style.background = '#ffffff';
+
+      const serializedNode = new XMLSerializer().serializeToString(clone);
+      const svg = `
+        <svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}">
+          <foreignObject width="100%" height="100%">
+            ${serializedNode}
+          </foreignObject>
+        </svg>
+      `;
+      const image = new Image();
+      const scale = Math.max(2, Math.min(3, window.devicePixelRatio || 2));
+      const canvas = document.createElement('canvas');
+      canvas.width = Math.ceil(width * scale);
+      canvas.height = Math.ceil(height * scale);
+      const context = canvas.getContext('2d');
+      context.scale(scale, scale);
+      context.fillStyle = '#ffffff';
+      context.fillRect(0, 0, width, height);
+
+      await new Promise((resolve, reject) => {
+        image.onload = () => {
+          context.drawImage(image, 0, 0, width, height);
+          canvas.toBlob(async (blob) => {
+            if (!blob) {
+              reject(new Error('No fue posible generar la imagen'));
+              return;
+            }
+            try {
+              await navigator.clipboard.write([
+                new window.ClipboardItem({ 'image/png': blob })
+              ]);
+              resolve();
+            } catch (error) {
+              reject(error);
+            }
+          }, 'image/png');
+        };
+        image.onerror = () => reject(new Error('No fue posible preparar la imagen'));
+        image.src = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;
+      });
+
+      enqueueSnackbar('Grafico copiado al portapapeles', { variant: 'success' });
+    } catch (error) {
+      enqueueSnackbar('No se pudo copiar el grafico como imagen', { variant: 'error' });
+    } finally {
+      setCopyingFactorChart(false);
     }
   }, [enqueueSnackbar]);
 
@@ -1361,7 +1451,14 @@ function Autoevaluacion() {
   const characteristicChartHeight = isCharacteristicChartInverted
     ? invertedCharacteristicChartHeight
     : standingCharacteristicChartHeight;
-  const standingCharacteristicChartMinWidth = Math.max(920, factorChartData.length * 142);
+  const standingCharacteristicChartMinWidth = factorChartData.length <= 5
+    ? Math.max(320, factorChartData.length * 150)
+    : Math.max(920, factorChartData.length * 142);
+  const standingCharacteristicChartMaxWidth = factorChartData.length <= 5
+    ? factorChartData.length * 220
+    : undefined;
+  const characteristicBarCategoryGap = factorChartData.length <= 4 ? '20%' : 24;
+  const characteristicMaxBarSize = factorChartData.length <= 3 ? 110 : factorChartData.length <= 6 ? 86 : 76;
   const invertedCharacteristicChartMinWidth = 920;
   const compactComplianceLabel = (value = '') => {
     const label = String(value || '').trim().toUpperCase();
@@ -1786,16 +1883,42 @@ function Autoevaluacion() {
         }}
       >
         <Box sx={{ minWidth: 0, width: '100%' }}>
-          <Paper elevation={0} sx={{ p: 2.4, border: '1px solid #e2e8f0', borderRadius: 3, height: { xs: 460, lg: 520 }, width: '100%', boxSizing: 'border-box' }}>
-            <Stack direction="row" justifyContent="space-between" alignItems="center" sx={{ mb: 1.5 }}>
-              <Box>
-                <Typography sx={{ fontWeight: 950, color: '#0f172a' }}>Mapa de desempeño por factor</Typography>
-                <Typography variant="body2" sx={{ color: '#64748b' }}>El color representa el juicio de valor del libro de autoevaluación.</Typography>
+          <Paper ref={factorChartCardRef} elevation={0} sx={{ p: 2.4, border: '1px solid #e2e8f0', borderRadius: 3, height: { xs: 510, lg: 570 }, width: '100%', boxSizing: 'border-box', bgcolor: 'white' }}>
+            <Box sx={{ mb: 1.5, position: 'relative' }}>
+              <MuiTooltip title="Copiar gráfico" placement="top">
+                <span data-copy-exclude="true" style={{ position: 'absolute', right: 0, top: 0 }}>
+                  <IconButton
+                    size="small"
+                    onClick={copyFactorChart}
+                    disabled={copyingFactorChart}
+                    sx={{ color: '#94a3b8', '&:hover': { color: '#1f4e95' } }}
+                  >
+                    <ContentCopyIcon sx={{ fontSize: 16 }} />
+                  </IconButton>
+                </span>
+              </MuiTooltip>
+              <Box sx={{ textAlign: 'center', mb: 1 }}>
+                <Typography sx={{ fontWeight: 950, color: '#0f172a', fontSize: '1rem', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                  Valoración General
+                </Typography>
               </Box>
-            </Stack>
+              <Box sx={{ textAlign: 'center' }}>
+                <Box sx={{ display: 'inline-block', textAlign: 'center', bgcolor: '#eff6ff', border: '1.5px solid #bfdbfe', borderRadius: 3, px: 3, py: 1.2, boxShadow: '0 1px 8px 0 rgba(30,64,175,0.09)' }}>
+                  <Typography sx={{ fontSize: '0.56rem', color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.12em', fontWeight: 700, display: 'block', lineHeight: 1.5 }}>
+                    Nota general
+                  </Typography>
+                  <Typography sx={{ fontWeight: 950, color: '#1f4e95', fontSize: '1.9rem', lineHeight: 1.1 }}>
+                    {formatScore(resumen.promedioGeneral)}
+                  </Typography>
+                  <Typography sx={{ fontSize: '0.68rem', fontWeight: 800, color: scoreTone(resumen.cumplimientoGeneral), display: 'block', lineHeight: 1.5 }}>
+                    {resumen.cumplimientoGeneral?.label}
+                  </Typography>
+                </Box>
+              </Box>
+            </Box>
             <ResponsiveContainer width="100%" height={410}>
               <BarChart data={chartFactores} margin={{ top: 18, right: 28, left: 8, bottom: 38 }}>
-                <CartesianGrid strokeDasharray="3 3" vertical={false} />
+                <CartesianGrid strokeDasharray="4 3" vertical={false} stroke="#94a3b8" strokeWidth={1} />
                 <XAxis dataKey="factor" tick={{ fontSize: 12, fontWeight: 800 }} label={{ value: 'Factores', position: 'insideBottom', offset: -10 }} />
                 <YAxis domain={[0, 5]} tick={{ fontSize: 12 }} label={{ value: 'Calificación', angle: -90, position: 'insideLeft', offset: 0 }} />
                 <Tooltip formatter={(value) => [formatScore(value), 'Calificación']} />
@@ -2094,71 +2217,61 @@ function Autoevaluacion() {
             >
               <Box sx={{ width: '100%', minWidth: 0 }}>
                 <Paper ref={characteristicChartCardRef} elevation={0} sx={{ p: 2.2, border: '1px solid #dbeafe', borderRadius: 3, width: '100%', boxSizing: 'border-box', bgcolor: 'white' }}>
-                  <Stack direction={{ xs: 'column', md: 'row' }} spacing={1} justifyContent="space-between" alignItems={{ xs: 'flex-start', md: 'center' }} sx={{ mb: 1.2 }}>
-                    <Box>
-                      <Typography sx={{ fontWeight: 950, color: '#0f172a' }}>Calificación por característica</Typography>
-                      <Typography variant="caption" sx={{ color: '#64748b' }}>{shortFactorLabel(selectedFactorData?.factor)}. {selectedFactorData?.nombre}</Typography>
-                    </Box>
-                    <Stack direction="row" spacing={1} sx={{ flexWrap: 'wrap', rowGap: 1 }}>
-                      <Button
-                        data-copy-exclude="true"
-                        size="small"
-                        variant={editingCharacteristicChartText ? 'contained' : 'outlined'}
-                        startIcon={<EditIcon />}
-                        onClick={() => setEditingCharacteristicChartText((current) => !current)}
-                        sx={{
-                          textTransform: 'none',
-                          fontWeight: 900,
-                          borderRadius: 2,
-                          color: editingCharacteristicChartText ? 'white' : '#1d4ed8',
-                          borderColor: '#bfdbfe',
-                          bgcolor: editingCharacteristicChartText ? '#1f4e95' : '#eff6ff',
-                          '&:hover': { bgcolor: editingCharacteristicChartText ? '#1d4ed8' : '#dbeafe', borderColor: '#2563eb' }
-                        }}
-                      >
-                        Editar texto gráfico
-                      </Button>
-                      <Button
-                        data-copy-exclude="true"
-                        size="small"
-                        variant={isCharacteristicChartInverted ? 'contained' : 'outlined'}
-                        startIcon={<SwapHorizIcon />}
-                        onClick={() => setIsCharacteristicChartInverted((current) => !current)}
-                        sx={{
-                          textTransform: 'none',
-                          fontWeight: 900,
-                          borderRadius: 2,
-                          color: isCharacteristicChartInverted ? 'white' : '#1d4ed8',
-                          borderColor: '#bfdbfe',
-                          bgcolor: isCharacteristicChartInverted ? '#1f4e95' : '#eff6ff',
-                          '&:hover': { bgcolor: isCharacteristicChartInverted ? '#1d4ed8' : '#dbeafe', borderColor: '#2563eb' }
-                        }}
-                      >
-                        {isCharacteristicChartInverted ? 'Grafico vertical' : 'Invertir grafico'}
-                      </Button>
-                      <Button
-                        data-copy-exclude="true"
-                        size="small"
-                        variant="outlined"
-                        startIcon={<ContentCopyIcon />}
-                        onClick={copyCharacteristicChart}
-                        disabled={copyingCharacteristicChart}
-                        sx={{
-                          textTransform: 'none',
-                          fontWeight: 900,
-                          borderRadius: 2,
-                          color: '#1d4ed8',
-                          borderColor: '#bfdbfe',
-                          bgcolor: '#eff6ff',
-                          '&:hover': { bgcolor: '#dbeafe', borderColor: '#2563eb' }
-                        }}
-                      >
-                        {copyingCharacteristicChart ? 'Copiando...' : 'Copiar grafico'}
-                      </Button>
-                      <Chip size="small" label={`Promedio ${formatScore(selectedFactorData?.calificacion)}`} sx={{ bgcolor: '#dbeafe', color: '#1d4ed8', fontWeight: 900 }} />
-                      <Chip size="small" label={`${factorChartStats.critical.length} bajo meta`} sx={{ bgcolor: factorChartStats.critical.length ? '#ffedd5' : '#dcfce7', color: factorChartStats.critical.length ? '#c2410c' : '#15803d', fontWeight: 900 }} />
+                  <Box sx={{ mb: 1.4, position: 'relative' }}>
+                    <Stack data-copy-exclude="true" direction="row" spacing={0.5} alignItems="center" sx={{ position: 'absolute', right: 0, top: 0 }}>
+                      <MuiTooltip title="Editar texto gráfico" placement="top">
+                        <IconButton
+                          size="small"
+                          onClick={() => setEditingCharacteristicChartText((current) => !current)}
+                          sx={{ color: editingCharacteristicChartText ? '#1f4e95' : '#94a3b8', bgcolor: editingCharacteristicChartText ? '#dbeafe' : 'transparent', '&:hover': { color: '#1f4e95', bgcolor: '#eff6ff' }, borderRadius: 1.5 }}
+                        >
+                          <EditIcon sx={{ fontSize: 17 }} />
+                        </IconButton>
+                      </MuiTooltip>
+                      <MuiTooltip title={isCharacteristicChartInverted ? 'Gráfico vertical' : 'Invertir gráfico'} placement="top">
+                        <IconButton
+                          size="small"
+                          onClick={() => setIsCharacteristicChartInverted((current) => !current)}
+                          sx={{ color: isCharacteristicChartInverted ? '#1f4e95' : '#94a3b8', bgcolor: isCharacteristicChartInverted ? '#dbeafe' : 'transparent', '&:hover': { color: '#1f4e95', bgcolor: '#eff6ff' }, borderRadius: 1.5 }}
+                        >
+                          <SwapHorizIcon sx={{ fontSize: 17 }} />
+                        </IconButton>
+                      </MuiTooltip>
+                      <MuiTooltip title="Copiar gráfico" placement="top">
+                        <span>
+                          <IconButton
+                            size="small"
+                            onClick={copyCharacteristicChart}
+                            disabled={copyingCharacteristicChart}
+                            sx={{ color: '#94a3b8', '&:hover': { color: '#1f4e95', bgcolor: '#eff6ff' }, borderRadius: 1.5 }}
+                          >
+                            <ContentCopyIcon sx={{ fontSize: 17 }} />
+                          </IconButton>
+                        </span>
+                      </MuiTooltip>
                     </Stack>
-                  </Stack>
+                    <Box sx={{ textAlign: 'center', mb: 1 }}>
+                      <Typography sx={{ fontWeight: 950, color: '#0f172a', fontSize: '1rem', letterSpacing: '-0.01em' }}>
+                        Valoración por característica
+                      </Typography>
+                      <Typography variant="caption" sx={{ color: '#64748b', fontWeight: 600, display: 'block' }}>
+                        {shortFactorLabel(selectedFactorData?.factor)}. {selectedFactorData?.nombre}
+                      </Typography>
+                    </Box>
+                    <Box sx={{ textAlign: 'center' }}>
+                      <Box sx={{ display: 'inline-block', textAlign: 'center', bgcolor: '#eff6ff', border: '1.5px solid #bfdbfe', borderRadius: 3, px: 3, py: 1.2, boxShadow: '0 1px 8px 0 rgba(30,64,175,0.09)' }}>
+                        <Typography sx={{ fontSize: '0.56rem', color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.12em', fontWeight: 700, display: 'block', lineHeight: 1.5 }}>
+                          Promedio factor
+                        </Typography>
+                        <Typography sx={{ fontWeight: 950, color: '#1f4e95', fontSize: '1.9rem', lineHeight: 1.1 }}>
+                          {formatScore(selectedFactorData?.calificacion)}
+                        </Typography>
+                        <Typography sx={{ fontSize: '0.68rem', fontWeight: 800, color: cumplimientoChartColor(selectedFactorData?.cumplimiento?.label), display: 'block', lineHeight: 1.5 }}>
+                          {selectedFactorData?.cumplimiento?.label}
+                        </Typography>
+                      </Box>
+                    </Box>
+                  </Box>
                   {editingCharacteristicChartText && (
                     <Box
                       data-copy-exclude="true"
@@ -2202,11 +2315,15 @@ function Autoevaluacion() {
                     </Box>
                   )}
                   <Box sx={{ width: '100%', overflowX: 'auto', overflowY: 'hidden', pb: 0.5 }}>
-                    <Box sx={{ minWidth: isCharacteristicChartInverted ? invertedCharacteristicChartMinWidth : standingCharacteristicChartMinWidth }}>
+                    <Box sx={{
+                      minWidth: isCharacteristicChartInverted ? invertedCharacteristicChartMinWidth : standingCharacteristicChartMinWidth,
+                      maxWidth: !isCharacteristicChartInverted && standingCharacteristicChartMaxWidth ? standingCharacteristicChartMaxWidth : undefined,
+                      mx: !isCharacteristicChartInverted && standingCharacteristicChartMaxWidth ? 'auto' : 0
+                    }}>
                       <ResponsiveContainer width="100%" height={characteristicChartHeight}>
                         {isCharacteristicChartInverted ? (
                           <BarChart layout="vertical" data={factorChartData} margin={{ top: 18, right: 122, left: 8, bottom: 34 }} barCategoryGap={12}>
-                            <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="#dbeafe" />
+                            <CartesianGrid strokeDasharray="4 3" horizontal={false} stroke="#94a3b8" strokeWidth={1} />
                             <XAxis type="number" domain={[0, 5]} tick={{ fontSize: 12 }} label={{ value: 'Calificacion', position: 'insideBottom', offset: -6 }} />
                             <YAxis type="category" dataKey="chartLabel" width={320} interval={0} tick={renderInvertedCharacteristicTick} />
                             <Tooltip
@@ -2224,8 +2341,8 @@ function Autoevaluacion() {
                             </Bar>
                           </BarChart>
                         ) : (
-                          <BarChart data={factorChartData} margin={{ top: 54, right: 26, left: 8, bottom: 116 }} barCategoryGap={24}>
-                            <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#dbeafe" />
+                          <BarChart data={factorChartData} margin={{ top: 54, right: 26, left: 8, bottom: 116 }} barCategoryGap={characteristicBarCategoryGap}>
+                            <CartesianGrid strokeDasharray="4 3" vertical={false} stroke="#94a3b8" strokeWidth={1} />
                             <XAxis dataKey="chartLabel" interval={0} height={106} tick={renderStandingCharacteristicTick} label={{ value: 'Caracteristicas', position: 'insideBottom', offset: -8 }} />
                             <YAxis domain={[0, 5]} tick={{ fontSize: 12 }} label={{ value: 'Calificacion', angle: -90, position: 'insideLeft' }} />
                             <Tooltip
@@ -2235,7 +2352,7 @@ function Autoevaluacion() {
                               ]}
                               labelFormatter={(label) => label}
                             />
-                            <Bar dataKey="calificacion" radius={[6, 6, 0, 0]} maxBarSize={76}>
+                            <Bar dataKey="calificacion" radius={[6, 6, 0, 0]} maxBarSize={characteristicMaxBarSize}>
                               <LabelList content={renderStandingComplianceBarLabel} />
                               {factorChartData.map((item) => (
                             <Cell key={item.caracteristica} fill={cumplimientoChartColor(item.cumplimiento)} />
