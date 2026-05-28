@@ -463,7 +463,7 @@ function ImpactInfographic({ resumen, tipos, macros, procesos, subprocesos, tota
     { title: 'Macroprocesos', value: MAPA_PROCESOS_VIGENTE.macroprocesos, color: '#0369a1', Icon: AccountTreeIcon },
     { title: 'Procesos', value: MAPA_PROCESOS_VIGENTE.procesos, color: '#be123c', Icon: AutoGraphIcon },
     { title: 'Subprocesos', value: MAPA_PROCESOS_VIGENTE.subprocesos, color: '#a16207', Icon: DonutSmallIcon },
-    { title: 'Políticas', value: politicasLoading ? '...' : politicas.length, color: '#15803d', Icon: GavelIcon, onClick: () => setPoliticasOpen(true) }
+    { title: 'Políticas Institucionales', value: politicasLoading ? '...' : politicas.length, color: '#15803d', Icon: GavelIcon, onClick: () => setPoliticasOpen(true) }
   ];
   return (
     <Stack spacing={2.4}>
