@@ -459,11 +459,11 @@ function DocumentTypeList({ title, rows = [], total }) {
 function ImpactInfographic({ resumen, tipos, macros, procesos, subprocesos, total, filtersSlot = null, politicas = [], politicasLoading = false }) {
   const [politicasOpen, setPoliticasOpen] = useState(false);
   const cards = [
-    { title: 'Total general', value: resumen.totalDocumentos, subtitle: 'Información documentada activa', color: '#1d4ed8', Icon: DescriptionIcon },
-    { title: 'Macroprocesos', value: MAPA_PROCESOS_VIGENTE.macroprocesos, subtitle: 'Mapa de procesos vigente', color: '#0369a1', Icon: AccountTreeIcon },
-    { title: 'Procesos', value: MAPA_PROCESOS_VIGENTE.procesos, subtitle: 'Mapa de procesos vigente', color: '#be123c', Icon: AutoGraphIcon },
-    { title: 'Subprocesos', value: MAPA_PROCESOS_VIGENTE.subprocesos, subtitle: 'Mapa de procesos vigente', color: '#a16207', Icon: DonutSmallIcon },
-    { title: 'Políticas', value: politicasLoading ? '...' : politicas.length, subtitle: 'Ver políticas institucionales', color: '#15803d', Icon: GavelIcon, onClick: () => setPoliticasOpen(true) }
+    { title: 'Total general', value: resumen.totalDocumentos, subtitle: 'Información documentada', color: '#1d4ed8', Icon: DescriptionIcon },
+    { title: 'Macroprocesos', value: MAPA_PROCESOS_VIGENTE.macroprocesos, color: '#0369a1', Icon: AccountTreeIcon },
+    { title: 'Procesos', value: MAPA_PROCESOS_VIGENTE.procesos, color: '#be123c', Icon: AutoGraphIcon },
+    { title: 'Subprocesos', value: MAPA_PROCESOS_VIGENTE.subprocesos, color: '#a16207', Icon: DonutSmallIcon },
+    { title: 'Políticas', value: politicasLoading ? '...' : politicas.length, color: '#15803d', Icon: GavelIcon, onClick: () => setPoliticasOpen(true) }
   ];
   return (
     <Stack spacing={2.4}>
