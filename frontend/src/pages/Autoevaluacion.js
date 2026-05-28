@@ -1918,7 +1918,7 @@ function Autoevaluacion() {
             </Box>
             <ResponsiveContainer width="100%" height={410}>
               <BarChart data={chartFactores} margin={{ top: 18, right: 28, left: 8, bottom: 38 }}>
-                <CartesianGrid strokeDasharray="4 3" vertical={false} stroke="#94a3b8" strokeWidth={1} />
+                <CartesianGrid strokeDasharray="4 4" stroke="#cbd5e1" strokeWidth={1} />
                 <XAxis dataKey="factor" tick={{ fontSize: 12, fontWeight: 800 }} label={{ value: 'Factores', position: 'insideBottom', offset: -10 }} />
                 <YAxis domain={[0, 5]} tick={{ fontSize: 12 }} label={{ value: 'Calificación', angle: -90, position: 'insideLeft', offset: 0 }} />
                 <Tooltip formatter={(value) => [formatScore(value), 'Calificación']} />
@@ -2266,7 +2266,7 @@ function Autoevaluacion() {
                         <Typography sx={{ fontWeight: 950, color: '#1f4e95', fontSize: '1.9rem', lineHeight: 1.1 }}>
                           {formatScore(selectedFactorData?.calificacion)}
                         </Typography>
-                        <Typography sx={{ fontSize: '0.68rem', fontWeight: 800, color: cumplimientoChartColor(selectedFactorData?.cumplimiento?.label), display: 'block', lineHeight: 1.5 }}>
+                        <Typography sx={{ fontSize: '0.68rem', fontWeight: 800, color: cumplimientoColor(selectedFactorData?.cumplimiento?.label), display: 'block', lineHeight: 1.5 }}>
                           {selectedFactorData?.cumplimiento?.label}
                         </Typography>
                       </Box>
@@ -2323,7 +2323,7 @@ function Autoevaluacion() {
                       <ResponsiveContainer width="100%" height={characteristicChartHeight}>
                         {isCharacteristicChartInverted ? (
                           <BarChart layout="vertical" data={factorChartData} margin={{ top: 18, right: 122, left: 8, bottom: 34 }} barCategoryGap={12}>
-                            <CartesianGrid strokeDasharray="4 3" horizontal={false} stroke="#94a3b8" strokeWidth={1} />
+                            <CartesianGrid strokeDasharray="4 4" stroke="#cbd5e1" strokeWidth={1} />
                             <XAxis type="number" domain={[0, 5]} tick={{ fontSize: 12 }} label={{ value: 'Calificacion', position: 'insideBottom', offset: -6 }} />
                             <YAxis type="category" dataKey="chartLabel" width={320} interval={0} tick={renderInvertedCharacteristicTick} />
                             <Tooltip
@@ -2342,7 +2342,7 @@ function Autoevaluacion() {
                           </BarChart>
                         ) : (
                           <BarChart data={factorChartData} margin={{ top: 54, right: 26, left: 8, bottom: 116 }} barCategoryGap={characteristicBarCategoryGap}>
-                            <CartesianGrid strokeDasharray="4 3" vertical={false} stroke="#94a3b8" strokeWidth={1} />
+                            <CartesianGrid strokeDasharray="4 4" stroke="#cbd5e1" strokeWidth={1} />
                             <XAxis dataKey="chartLabel" interval={0} height={106} tick={renderStandingCharacteristicTick} label={{ value: 'Caracteristicas', position: 'insideBottom', offset: -8 }} />
                             <YAxis domain={[0, 5]} tick={{ fontSize: 12 }} label={{ value: 'Calificacion', angle: -90, position: 'insideLeft' }} />
                             <Tooltip
