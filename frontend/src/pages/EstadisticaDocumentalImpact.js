@@ -232,7 +232,7 @@ function InfographicStatCard({ index, title, value, subtitle, color = '#1d4ed8',
           <Box sx={{ width: 36, height: 22, borderRadius: '6px', bgcolor: color, color: '#ffffff', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: `0 4px 10px ${color}30` }}>
             <Typography sx={{ color: '#ffffff', fontWeight: 950, fontSize: 11 }}>{String(index).padStart(2, '0')}</Typography>
           </Box>
-          <Typography sx={{ color: '#0f172a', fontWeight: 950, fontSize: 13, mt: 0.9, lineHeight: 1.18, display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>{title}</Typography>
+          <Typography sx={{ color: '#0f172a', fontWeight: 950, fontSize: 13, mt: 0.9, lineHeight: 1.18, textTransform: 'uppercase', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>{title}</Typography>
           {subtitle && <Typography sx={{ color: '#64748b', fontWeight: 750, fontSize: 11, mt: 0.4, lineHeight: 1.3, display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>{subtitle}</Typography>}
         </Box>
         <Box sx={{ width: 38, height: 38, borderRadius: '8px', bgcolor: soft, color, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, border: `1px solid ${color}22` }}>
