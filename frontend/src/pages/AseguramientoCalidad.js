@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import ReactDOM from 'react-dom';
 import { Box, Paper, Typography, Grid, TextField, Button, Table, TableBody, TableCell, TableContainer, TableHead, TableRow, TablePagination, CircularProgress, Chip, IconButton, Tooltip, Fade, Slide, Stack, Dialog, DialogTitle, DialogContent, DialogActions, InputAdornment, Switch, Menu, MenuItem, ListItemIcon, ListItemText, Divider as MuiDivider } from '@mui/material';
-import { Search as SearchIcon, Clear as ClearIcon, VisibilityOutlined as VisibilityOutlinedIcon, FileDownloadOutlined as FileDownloadOutlinedIcon, Description as DescriptionIcon, Article as ArticleIcon, AssignmentTurnedIn as AssignmentIcon, ListAlt as ListIcon, Policy as PolicyIcon, AccountTree as AccountTreeIcon, Upload as UploadIcon, GetApp as DownloadTemplateIcon, DeleteSweep as DeleteSweepIcon, Favorite as FavoriteIcon, FavoriteBorder as FavoriteBorderIcon, MoreVert as MoreVertIcon } from '@mui/icons-material';
+import { Search as SearchIcon, Clear as ClearIcon, VisibilityOutlined as VisibilityOutlinedIcon, FileDownloadOutlined as FileDownloadOutlinedIcon, Description as DescriptionIcon, Article as ArticleIcon, AssignmentTurnedIn as AssignmentIcon, ListAlt as ListIcon, Policy as PolicyIcon, AccountTree as AccountTreeIcon, Upload as UploadIcon, GetApp as DownloadTemplateIcon, DeleteSweep as DeleteSweepIcon, Favorite as FavoriteIcon, FavoriteBorder as FavoriteBorderIcon, MoreVert as MoreVertIcon, HelpOutline as HelpOutlineIcon } from '@mui/icons-material';
 import { useSnackbar } from 'notistack';
 import { useLocation } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
@@ -1467,6 +1467,9 @@ function AseguramientoCalidad() {
               {DOCUMENT_SCOPE_TABS.map((tab) => {
                 const selected = activeDocumentScope === tab.key;
                 const Icon = tab.Icon;
+                const helpText = tab.key === 'documentos'
+                  ? 'Todos los documentos registrados en el sistema documental institucional.'
+                  : tab.helper;
                 return (
                   <Box key={tab.key} onClick={() => handleDocumentScopeChange(tab.key)} role="button" tabIndex={0}
                     onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') handleDocumentScopeChange(tab.key); }}
@@ -1482,8 +1485,37 @@ function AseguramientoCalidad() {
                       <Icon sx={{ fontSize: 17 }} />
                     </Box>
                     <Box sx={{ minWidth: 0 }}>
-                      <Typography sx={{ fontWeight: selected ? 800 : 600, fontSize: { xs: 12, sm: 13.5 }, color: selected ? '#1e3a8a' : '#64748b', transition: 'color 0.15s', lineHeight: 1.2 }}>{tab.label}</Typography>
-                      <Typography sx={{ fontSize: 11, color: selected ? '#3b82f6' : '#94a3b8', lineHeight: 1.2, display: { xs: 'none', md: 'block' } }}>{tab.helper}</Typography>
+                      <Stack direction="row" alignItems="center" spacing={0.7}>
+                        <Typography sx={{ fontWeight: selected ? 800 : 600, fontSize: { xs: 12, sm: 13.5 }, color: selected ? '#1e3a8a' : '#64748b', transition: 'color 0.15s', lineHeight: 1.2 }}>{tab.label}</Typography>
+                        <Tooltip
+                          arrow
+                          enterTouchDelay={0}
+                          placement="top"
+                          title={<Typography sx={{ fontSize: 12, lineHeight: 1.35, fontWeight: 600 }}>{helpText}</Typography>}
+                        >
+                          <IconButton
+                            size="small"
+                            onClick={(event) => event.stopPropagation()}
+                            onMouseDown={(event) => event.stopPropagation()}
+                            sx={{
+                              width: 20,
+                              height: 20,
+                              color: selected ? '#2563eb' : '#94a3b8',
+                              bgcolor: selected ? '#eff6ff' : '#f1f5f9',
+                              border: `1px solid ${selected ? '#bfdbfe' : '#e2e8f0'}`,
+                              animation: selected ? 'helpPulse 1.8s ease-in-out 2' : 'none',
+                              '@keyframes helpPulse': {
+                                '0%': { transform: 'scale(1)', boxShadow: '0 0 0 0 rgba(37,99,235,0.28)' },
+                                '55%': { transform: 'scale(1.08)', boxShadow: '0 0 0 6px rgba(37,99,235,0)' },
+                                '100%': { transform: 'scale(1)', boxShadow: '0 0 0 0 rgba(37,99,235,0)' }
+                              },
+                              '&:hover': { bgcolor: '#dbeafe', color: '#1d4ed8' }
+                            }}
+                          >
+                            <HelpOutlineIcon sx={{ fontSize: 14 }} />
+                          </IconButton>
+                        </Tooltip>
+                      </Stack>
                     </Box>
                   </Box>
                 );
