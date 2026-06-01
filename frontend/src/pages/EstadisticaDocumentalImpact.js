@@ -467,6 +467,7 @@ function DocumentTypeList({ title, rows = [], total, activeFilters = {}, macroPr
   );
 }
 
+// eslint-disable-next-line no-unused-vars
 function PolicyTablePanel({ politicas = [], loading = false }) {
   const panelRef = useRef(null);
   return (
@@ -531,7 +532,6 @@ function ImpactInfographic({ resumen, tipos, macros, procesos, subprocesos, tota
     { title: 'Subprocesos', value: MAPA_PROCESOS_VIGENTE.subprocesos, color: '#a16207', Icon: DonutSmallIcon },
     { title: 'Políticas Institucionales', value: politicasLoading ? '...' : politicas.length, color: '#15803d', Icon: GavelIcon, onClick: () => setPoliticasOpen(true) }
   ];
-  const visibleCards = cards.slice(0, 4);
   return (
     <Stack spacing={2.4}>
       <Paper elevation={0} sx={{ p: { xs: 2.4, md: 3 }, borderRadius: '8px', color: '#ffffff', background: 'linear-gradient(135deg, #0f172a 0%, #1d4ed8 72%, #dc143c 100%)', boxShadow: '0 20px 46px rgba(15,23,42,0.18)', position: 'relative', overflow: 'hidden' }}>
@@ -546,8 +546,8 @@ function ImpactInfographic({ resumen, tipos, macros, procesos, subprocesos, tota
         </Stack>
       </Paper>
       {filtersSlot}
-      <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', sm: 'repeat(2, minmax(0, 1fr))', xl: 'repeat(4, minmax(0, 1fr))' }, gap: 1.5 }}>
-        {visibleCards.map((card, index) => <InfographicStatCard key={card.title} index={index + 1} {...card} />)}
+      <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', sm: 'repeat(2, minmax(0, 1fr))', lg: 'repeat(3, minmax(0, 1fr))', xl: 'repeat(5, minmax(0, 1fr))' }, gap: 1.5 }}>
+        {cards.map((card, index) => <InfographicStatCard key={card.title} index={index + 1} {...card} />)}
       </Box>
       <Dialog open={politicasOpen} onClose={() => setPoliticasOpen(false)} maxWidth="lg" fullWidth PaperProps={{ sx: { borderRadius: '12px', maxHeight: '85vh' } }}>
         <DialogTitle sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', pb: 1, borderBottom: '1px solid #f1f5f9' }}>
@@ -598,10 +598,9 @@ function ImpactInfographic({ resumen, tipos, macros, procesos, subprocesos, tota
       </Dialog>
       <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', xl: '1.05fr 0.95fr' }, gap: 2 }}>
         <DocumentTypeList title="Tipos documentales destacados" rows={tipos} total={total} activeFilters={activeFilters} macroProcesos={macroProcesos} />
-        <PolicyTablePanel politicas={politicas} loading={politicasLoading} />
-      </Box>
-      <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', xl: 'repeat(3, minmax(0, 1fr))' }, gap: 2 }}>
         <CapsuleRanking title="Macroprocesos con mayor carga" rows={macros} nameKey="macro_proceso" color="#1d4ed8" />
+      </Box>
+      <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', xl: 'repeat(2, minmax(0, 1fr))' }, gap: 2 }}>
         <CapsuleRanking title="Procesos principales" rows={procesos} nameKey="proceso" color="#be123c" />
         <CapsuleRanking title="Subprocesos principales" rows={subprocesos} nameKey="subproceso" color="#a16207" />
       </Box>
