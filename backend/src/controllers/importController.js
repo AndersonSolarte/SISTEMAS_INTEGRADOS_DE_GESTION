@@ -26,7 +26,9 @@ const normalizeEstado = (value) => {
     .normalize('NFD')
     .replace(/[\u0300-\u036f]/g, '');
   if (['activo', 'activos', 'activa', 'activas', 'vigente', 'vigentes'].includes(estado)) return 'vigente';
-  if (['revision', 'en revision', 'en_revision', 'pendiente aprobacion', 'pendiente de aprobacion'].includes(estado)) return 'en_revision';
+  if (['revision', 'en revision', 'en_revision', 'pendiente aprobacion', 'pendiente de aprobacion',
+       'construccion', 'en construccion', 'en_construccion', 'en construccion', 'enconstruccion'].includes(estado)) return 'en_revision';
+  if (['inactivo', 'inactivos', 'inactiva', 'inactivas', 'obsoleto', 'obsoletos', 'obsoleta', 'obsoletas'].includes(estado)) return 'obsoleto';
   return 'obsoleto';
 };
 

@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import ReactDOM from 'react-dom';
-import { Box, Paper, Typography, Grid, TextField, Button, Table, TableBody, TableCell, TableContainer, TableHead, TableRow, TablePagination, CircularProgress, Chip, IconButton, Tooltip, Fade, Slide, Stack, Dialog, DialogTitle, DialogContent, DialogActions, InputAdornment, Switch } from '@mui/material';
-import { Search as SearchIcon, Clear as ClearIcon, VisibilityOutlined as VisibilityOutlinedIcon, FileDownloadOutlined as FileDownloadOutlinedIcon, Description as DescriptionIcon, Article as ArticleIcon, AssignmentTurnedIn as AssignmentIcon, ListAlt as ListIcon, Policy as PolicyIcon, AccountTree as AccountTreeIcon, Upload as UploadIcon, GetApp as DownloadTemplateIcon, DeleteSweep as DeleteSweepIcon, Favorite as FavoriteIcon, FavoriteBorder as FavoriteBorderIcon } from '@mui/icons-material';
+import { Box, Paper, Typography, Grid, TextField, Button, Table, TableBody, TableCell, TableContainer, TableHead, TableRow, TablePagination, CircularProgress, Chip, IconButton, Tooltip, Fade, Slide, Stack, Dialog, DialogTitle, DialogContent, DialogActions, InputAdornment, Switch, Menu, MenuItem, ListItemIcon, ListItemText, Divider as MuiDivider } from '@mui/material';
+import { Search as SearchIcon, Clear as ClearIcon, VisibilityOutlined as VisibilityOutlinedIcon, FileDownloadOutlined as FileDownloadOutlinedIcon, Description as DescriptionIcon, Article as ArticleIcon, AssignmentTurnedIn as AssignmentIcon, ListAlt as ListIcon, Policy as PolicyIcon, AccountTree as AccountTreeIcon, Upload as UploadIcon, GetApp as DownloadTemplateIcon, DeleteSweep as DeleteSweepIcon, Favorite as FavoriteIcon, FavoriteBorder as FavoriteBorderIcon, MoreVert as MoreVertIcon } from '@mui/icons-material';
 import { useSnackbar } from 'notistack';
 import { useLocation } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
@@ -538,6 +538,7 @@ function AseguramientoCalidad() {
   const [totalDocumentos, setTotalDocumentos] = useState(0);
   const [importing, setImporting] = useState(false);
   const [selectedFile, setSelectedFile] = useState(null);
+  const [adminMenuAnchor, setAdminMenuAnchor] = useState(null);
   const [openPreviewDialog, setOpenPreviewDialog] = useState(false);
   const [previewUrl, setPreviewUrl] = useState('');
   const [previewTitle, setPreviewTitle] = useState('');
@@ -729,7 +730,10 @@ function AseguramientoCalidad() {
   }, [activeDocumentScope, location.search, rowsPerPage, enqueueSnackbar]);
 
 
-  const handleSearch = async () => {
+  const handleSearch = async (overrideFilters = null) => {
+    const base = overrideFilters !== null ? overrideFilters : filters;
+    // document_scope siempre viene del tab activo para evitar búsquedas cruzadas
+    const activeFilters = { ...base, document_scope: activeDocumentScope };
     const requestId = ++documentRequestId.current;
     skipNextDocumentFilterEffect.current = true;
     setLoading(true);
@@ -737,7 +741,7 @@ function AseguramientoCalidad() {
     setHasSearched(true);
     setManualSearchMode(true);
     try {
-      const response = await documentoService.getDocumentos(filters, 1, rowsPerPage);
+      const response = await documentoService.getDocumentos(activeFilters, 1, rowsPerPage);
       if (requestId !== documentRequestId.current) return;
       if (response.success) {
         const nextDocs = response.data.documentos || [];
@@ -757,6 +761,33 @@ function AseguramientoCalidad() {
     } finally {
       if (requestId === documentRequestId.current) setLoading(false);
     }
+  };
+
+  const handleSegmentChange = (key) => {
+    const newFilters = {
+      ...filters,
+      include_inactive: key !== 'vigente' ? 'true' : '',
+      estado_scope: key,
+      document_scope: activeDocumentScope
+    };
+    setFilters(newFilters);
+    // Llamar directamente al servicio para evitar problemas de closure con handleSearch
+    const requestId = ++documentRequestId.current;
+    skipNextDocumentFilterEffect.current = true;
+    setLoading(true);
+    setPage(0);
+    setHasSearched(true);
+    setManualSearchMode(true);
+    documentoService.getDocumentos(newFilters, 1, rowsPerPage)
+      .then((response) => {
+        if (requestId !== documentRequestId.current) return;
+        if (response.success) {
+          setDocumentos(response.data.documentos || []);
+          setTotalDocumentos(response.data.pagination.total);
+        }
+      })
+      .catch(() => {})
+      .finally(() => { if (requestId === documentRequestId.current) setLoading(false); });
   };
 
   const handleClearFilters = () => {
@@ -981,8 +1012,12 @@ function AseguramientoCalidad() {
   };
 
   const getEstadoLabel = (estado) => {
-    if (String(estado || '').toLowerCase() === 'vigente') return 'ACTIVOS';
-    return String(estado || '').toUpperCase();
+    switch (String(estado || '').toLowerCase()) {
+      case 'vigente':     return 'VIGENTE';
+      case 'obsoleto':    return 'INACTIVO';
+      case 'en_revision': return 'EN CONSTRUCCIÓN';
+      default:            return String(estado || '').toUpperCase();
+    }
   };
 
   const getTipoIcon = (tipo) => {
@@ -1022,7 +1057,8 @@ function AseguramientoCalidad() {
 
     try {
       const response = await api.post('/import/excel', formData, {
-        headers: { 'Content-Type': 'multipart/form-data' }
+        headers: { 'Content-Type': 'multipart/form-data' },
+        timeout: 180000
       });
 
       if (response.data.success) {
@@ -1032,8 +1068,12 @@ function AseguramientoCalidad() {
         handleSearch();
       }
     } catch (error) {
+      const isTimeout = error?.code === 'ECONNABORTED' || error?.message?.includes('timeout');
       const backendMessage = error?.response?.data?.message;
-      enqueueSnackbar(backendMessage || 'Error al importar archivo', { variant: 'error' });
+      const userMessage = isTimeout
+        ? 'El archivo tardó demasiado en procesarse. Intenta de nuevo.'
+        : (backendMessage || 'Error al importar archivo. Verifica el formato del Excel.');
+      enqueueSnackbar(userMessage, { variant: 'error' });
     } finally {
       setImporting(false);
     }
@@ -1201,383 +1241,344 @@ function AseguramientoCalidad() {
   return (
     <Fade in={true} timeout={500}>
       <Box>
-        <Paper
-          elevation={0}
-          sx={{
-            mb: 3,
-            p: { xs: 2, md: 2.5 },
-            borderRadius: 3,
-            border: '1px solid #dbeafe',
-            color: 'white',
-            position: 'relative',
-            overflow: 'hidden',
-            background: 'linear-gradient(120deg, #0f1f3a 0%, #1d4ed8 56%, #9f296b 100%)',
-            boxShadow: '0 12px 28px rgba(15, 23, 42, 0.22)'
-          }}
-        >
-          <Box sx={{ position: 'absolute', inset: 0, opacity: 0.16, background: 'linear-gradient(90deg, rgba(255,255,255,0.16), transparent 58%)' }} />
-          <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2} alignItems={{ sm: 'center' }} sx={{ position: 'relative', zIndex: 1 }}>
-            <Box sx={{ width: 56, height: 56, borderRadius: 2.2, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(255,255,255,0.16)', color: 'white', border: '1px solid rgba(255,255,255,0.35)' }}>
-              <SearchIcon sx={{ fontSize: 26 }} />
-            </Box>
-            <Box sx={{ flexGrow: 1 }}>
-              <Typography variant="h5" sx={{ fontWeight: 800, letterSpacing: 0, fontSize: { xs: 22, md: 26 } }}>
-                Inicio de Consulta Documental
-              </Typography>
-              <Typography variant="body2" sx={{ color: 'rgba(255,255,255,0.9)' }}>
-                Accede al mapa de procesos y encuentra documentos institucionales de forma rápida y clara.
-              </Typography>
-            </Box>
-          </Stack>
-        </Paper>
-
         {/* IMPORTAR EXCEL (administrador y gestion por procesos) */}
         {canManageDocumental && (
-          <Paper elevation={0} sx={{ p: 3, mb: 3, border: '1px solid #e2e8f0', borderRadius: 3 }}>
-            <Stack direction="row" spacing={1} alignItems="center" sx={{ mb: 2 }}>
-              <UploadIcon sx={{ color: '#1d4ed8' }} />
-              <Box>
-                <Typography variant="h6" sx={{ fontWeight: 600 }}>Cargar documentos a la base del servidor</Typography>
-                <Typography variant="body2" sx={{ color: '#64748b' }}>
-                  Excel y Google Sheets alimentan PostgreSQL con documentos, politicas y plantillas en un solo libro.
-                </Typography>
+          <Paper elevation={0} sx={{ mb: 3, borderRadius: '14px', overflow: 'hidden', border: '1px solid #c7d7f5', boxShadow: '0 8px 32px rgba(29,78,216,0.10), 0 1.5px 6px rgba(15,23,42,0.06)' }}>
+
+            {/* Header principal azul — único encabezado de la página */}
+            <Box sx={{ px: 3, py: 2.4, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 2, background: 'linear-gradient(135deg, #1e3a8a 0%, #1d4ed8 60%, #2563eb 100%)' }}>
+              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.8, minWidth: 0 }}>
+                <Box sx={{ width: 46, height: 46, borderRadius: '12px', bgcolor: 'rgba(255,255,255,0.18)', border: '1px solid rgba(255,255,255,0.28)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                  <SearchIcon sx={{ color: '#fff', fontSize: 24 }} />
+                </Box>
+                <Box sx={{ minWidth: 0 }}>
+                  <Stack direction="row" spacing={1} alignItems="center">
+                    <Typography sx={{ fontWeight: 900, fontSize: 17, color: '#fff', lineHeight: 1.2 }}>Administración del Sistema Documental</Typography>
+                    <Box sx={{ px: 1, py: 0.25, borderRadius: '5px', bgcolor: 'rgba(255,255,255,0.18)', border: '1px solid rgba(255,255,255,0.3)', flexShrink: 0 }}>
+                      <Typography sx={{ fontSize: 9.5, fontWeight: 800, color: '#fff', letterSpacing: '0.6px' }}>SIAC</Typography>
+                    </Box>
+                  </Stack>
+                  <Typography sx={{ fontSize: 12, color: 'rgba(255,255,255,0.72)', mt: 0.3 }}>Gestión y consulta de información documentada institucional</Typography>
+                </Box>
               </Box>
-            </Stack>
-            <Grid container spacing={2} alignItems="center">
-              <Grid item xs={12} md={4}>
-                <Button variant="outlined" fullWidth component="label" startIcon={<UploadIcon />} sx={{ borderRadius: 2, py: 1.5 }}>
-                  {selectedFile ? selectedFile.name : 'Seleccionar plantilla Excel'}
-                  <input type="file" hidden accept=".xlsx,.xls" onChange={handleFileSelect} />
-                </Button>
-              </Grid>
-              <Grid item xs={12} md={3}>
-                <Button variant="contained" fullWidth disabled={!selectedFile || importing} onClick={handleImport} sx={{ borderRadius: 2, py: 1.5 }}>
-                  {importing ? 'Cargando al servidor...' : 'Cargar libro completo'}
-                </Button>
-              </Grid>
-              <Grid item xs={12} md={3}>
-                <Button variant="outlined" fullWidth startIcon={<DownloadTemplateIcon />} onClick={handleDownloadTemplate} sx={{ borderRadius: 2, py: 1.5 }}>
-                  Descargar Plantilla
-                </Button>
-              </Grid>
-              <Grid item xs={12} md={2}>
-                <Button
-                  variant="outlined"
-                  color="error"
-                  fullWidth
-                  startIcon={<DeleteSweepIcon />}
-                  onClick={handleOpenClearDialog}
-                  sx={{ borderRadius: 2, py: 1.5, textTransform: 'none', fontWeight: 700 }}
+              {/* Menú de tres puntos */}
+              <IconButton
+                onClick={(e) => setAdminMenuAnchor(e.currentTarget)}
+                sx={{ width: 42, height: 42, flexShrink: 0, bgcolor: 'rgba(255,255,255,0.15)', border: '1px solid rgba(255,255,255,0.3)', color: '#fff', transition: 'all 0.15s', '&:hover': { bgcolor: 'rgba(255,255,255,0.26)', borderColor: 'rgba(255,255,255,0.55)' } }}
+              >
+                <MoreVertIcon sx={{ fontSize: 20 }} />
+              </IconButton>
+              <Menu
+                anchorEl={adminMenuAnchor}
+                open={Boolean(adminMenuAnchor)}
+                onClose={() => setAdminMenuAnchor(null)}
+                anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
+                transformOrigin={{ vertical: 'top', horizontal: 'right' }}
+                slotProps={{ paper: { elevation: 0, sx: { mt: 1, borderRadius: '10px', border: '1px solid #e2e8f0', boxShadow: '0 8px 28px rgba(15,23,42,0.12)', minWidth: 220, overflow: 'visible', '&::before': { content: '""', display: 'block', position: 'absolute', top: -6, right: 14, width: 12, height: 12, bgcolor: '#fff', border: '1px solid #e2e8f0', borderBottom: 'none', borderRight: 'none', transform: 'rotate(45deg)', zIndex: 0 } } } }}
+              >
+                <Box sx={{ px: 2, pt: 1.4, pb: 0.8 }}>
+                  <Typography sx={{ fontSize: 10, fontWeight: 800, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.6px' }}>Administración</Typography>
+                </Box>
+                <MenuItem
+                  onClick={() => { setAdminMenuAnchor(null); handleOpenClearDialog(); }}
+                  sx={{ mx: 1, mb: 0.8, borderRadius: '8px', py: 1.1, px: 1.4, '&:hover': { bgcolor: '#fff5f5' } }}
                 >
-                  Limpiar base
-                </Button>
-              </Grid>
-              <Grid item xs={12}>
-                <Typography variant="caption" sx={{ display: 'block', color: '#475569', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.4px' }}>
-                  Fuente externa autorizada
-                </Typography>
-                <Typography variant="body2" sx={{ color: '#64748b' }}>
-                  La plantilla incluye las hojas BD_SGD_UNICESMAG, POLITICAS y PLANTILLAS. Al cargarla se actualizan las tres consultas.
-                </Typography>
-              </Grid>
-              <Grid item xs={12} md={6}>
-                <Button
-                  variant="contained"
-                  fullWidth
-                  disabled={syncingSheet}
-                  onClick={() => handleSyncFromSheets('incremental')}
-                  sx={{ borderRadius: 2, py: 1.4, textTransform: 'none', fontWeight: 700 }}
-                >
-                  {syncingSheet ? 'Cargando Sheets al servidor...' : 'Actualizar servidor desde Sheets'}
-                </Button>
-                <Typography variant="caption" sx={{ display: 'block', mt: 0.75, color: '#64748b' }}>
-                  Agrega nuevos documentos y actualiza los existentes sin borrar la base.
-                </Typography>
-              </Grid>
-              <Grid item xs={12} md={6}>
-                <Button
-                  variant="outlined"
-                  color="warning"
-                  fullWidth
-                  disabled={syncingSheet}
-                  onClick={() => handleSyncFromSheets('reemplazar')}
-                  sx={{ borderRadius: 2, py: 1.4, textTransform: 'none', fontWeight: 700 }}
-                >
-                  Sincronizar todo desde Sheets
-                </Button>
-                <Typography variant="caption" sx={{ display: 'block', mt: 0.75, color: '#64748b' }}>
-                  Revisa todas las filas de Sheets y conserva los registros existentes del servidor.
-                </Typography>
-              </Grid>
-            </Grid>
+                  <ListItemIcon sx={{ minWidth: 34 }}>
+                    <Box sx={{ width: 30, height: 30, borderRadius: '8px', bgcolor: '#fee2e2', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                      <DeleteSweepIcon sx={{ color: '#b91c1c', fontSize: 17 }} />
+                    </Box>
+                  </ListItemIcon>
+                  <ListItemText
+                    primary={<Typography sx={{ fontWeight: 700, fontSize: 13, color: '#b91c1c' }}>Limpiar base de datos</Typography>}
+                    secondary={<Typography sx={{ fontSize: 11, color: '#94a3b8', mt: 0.2 }}>Elimina todos los documentos</Typography>}
+                  />
+                </MenuItem>
+              </Menu>
+            </Box>
+
+            <Box sx={{ p: 3, display: 'flex', flexDirection: 'column', gap: 2.5, bgcolor: '#fff' }}>
+
+              {/* Sección 1 – Archivo Excel con flujo de 3 pasos */}
+              <Box>
+                <Stack direction="row" alignItems="center" spacing={1} sx={{ mb: 1.8 }}>
+                  <Box sx={{ width: 4, height: 18, borderRadius: 2, background: 'linear-gradient(180deg,#1d4ed8,#2563eb)' }} />
+                  <Typography sx={{ fontSize: 11, fontWeight: 900, color: '#1e3a8a', textTransform: 'uppercase', letterSpacing: '0.8px' }}>Carga por archivo Excel</Typography>
+                </Stack>
+
+                {/* Flujo 3 pasos */}
+                <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', md: '1fr auto 1fr auto 1fr' }, gap: 1, alignItems: 'center' }}>
+
+                  {/* Paso 1 – Descargar plantilla */}
+                  <Box sx={{ borderRadius: '10px', border: '1.5px solid #bfdbfe', bgcolor: '#f0f7ff', p: 1.6, display: 'flex', flexDirection: 'column', gap: 1 }}>
+                    <Stack direction="row" spacing={1} alignItems="center">
+                      <Box sx={{ width: 22, height: 22, borderRadius: '50%', bgcolor: '#1d4ed8', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                        <Typography sx={{ color: '#fff', fontWeight: 900, fontSize: 11, lineHeight: 1 }}>1</Typography>
+                      </Box>
+                      <Typography sx={{ fontWeight: 800, fontSize: 12, color: '#1e3a8a' }}>Descargar plantilla</Typography>
+                    </Stack>
+                    <Typography sx={{ fontSize: 11, color: '#64748b', lineHeight: 1.4 }}>Descarga el archivo Excel con el formato correcto.</Typography>
+                    <Button variant="outlined" startIcon={<DownloadTemplateIcon />} onClick={handleDownloadTemplate}
+                      sx={{ borderRadius: '8px', py: 0.9, textTransform: 'none', fontWeight: 700, fontSize: 12, borderColor: '#1d4ed8', color: '#1d4ed8', bgcolor: '#fff', '&:hover': { bgcolor: '#eff6ff' } }}>
+                      Descargar plantilla
+                    </Button>
+                  </Box>
+
+                  {/* Flecha 1→2 */}
+                  <Typography sx={{ color: '#94a3b8', fontWeight: 900, fontSize: 20, textAlign: 'center', display: { xs: 'none', md: 'block' } }}>→</Typography>
+
+                  {/* Paso 2 – Adjuntar archivo */}
+                  <Box sx={{ borderRadius: '10px', border: `1.5px solid ${selectedFile ? '#1d4ed8' : '#e2e8f0'}`, bgcolor: selectedFile ? '#eff6ff' : '#fafafa', p: 1.6, display: 'flex', flexDirection: 'column', gap: 1, transition: 'all 0.2s' }}>
+                    <Stack direction="row" spacing={1} alignItems="center">
+                      <Box sx={{ width: 22, height: 22, borderRadius: '50%', bgcolor: selectedFile ? '#1d4ed8' : '#94a3b8', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, transition: 'all 0.2s' }}>
+                        <Typography sx={{ color: '#fff', fontWeight: 900, fontSize: 11, lineHeight: 1 }}>2</Typography>
+                      </Box>
+                      <Typography sx={{ fontWeight: 800, fontSize: 12, color: selectedFile ? '#1e3a8a' : '#475569' }}>Adjuntar archivo</Typography>
+                    </Stack>
+                    {!selectedFile ? (
+                      <>
+                        <Typography sx={{ fontSize: 11, color: '#64748b', lineHeight: 1.4 }}>Selecciona el archivo Excel con los datos.</Typography>
+                        <Button component="label" variant="outlined" startIcon={<UploadIcon />}
+                          sx={{ borderRadius: '8px', py: 0.9, textTransform: 'none', fontWeight: 700, fontSize: 12, borderColor: '#cbd5e1', color: '#475569', bgcolor: '#fff', '&:hover': { borderColor: '#1d4ed8', color: '#1d4ed8', bgcolor: '#eff6ff' } }}>
+                          Seleccionar archivo
+                          <input type="file" hidden accept=".xlsx,.xls" onChange={handleFileSelect} />
+                        </Button>
+                      </>
+                    ) : (
+                      <>
+                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.8, bgcolor: '#fff', borderRadius: '7px', border: '1px solid #bfdbfe', px: 1.2, py: 0.5, minWidth: 0 }}>
+                          <UploadIcon sx={{ color: '#1d4ed8', fontSize: 14, flexShrink: 0 }} />
+                          <Typography sx={{ fontSize: 11.5, fontWeight: 600, color: '#1d4ed8', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1 }}>{selectedFile.name}</Typography>
+                          <Tooltip title="Quitar archivo" placement="top">
+                            <IconButton size="small" onClick={() => setSelectedFile(null)} sx={{ width: 20, height: 20, flexShrink: 0, color: '#94a3b8', '&:hover': { bgcolor: '#fee2e2', color: '#b91c1c' } }}>
+                              <ClearIcon sx={{ fontSize: 13 }} />
+                            </IconButton>
+                          </Tooltip>
+                        </Box>
+                        <Button component="label" variant="text"
+                          sx={{ borderRadius: '8px', py: 0.5, textTransform: 'none', fontWeight: 600, fontSize: 11, color: '#64748b', alignSelf: 'flex-start', '&:hover': { color: '#1d4ed8' } }}>
+                          Cambiar archivo
+                          <input type="file" hidden accept=".xlsx,.xls" onChange={handleFileSelect} />
+                        </Button>
+                      </>
+                    )}
+                  </Box>
+
+                  {/* Flecha 2→3 */}
+                  <Typography sx={{ color: '#94a3b8', fontWeight: 900, fontSize: 20, textAlign: 'center', display: { xs: 'none', md: 'block' } }}>→</Typography>
+
+                  {/* Paso 3 – Cargar al servidor */}
+                  <Box sx={{ borderRadius: '10px', border: `1.5px solid ${selectedFile ? '#bbf7d0' : '#e2e8f0'}`, bgcolor: selectedFile ? '#f0fdf4' : '#fafafa', p: 1.6, display: 'flex', flexDirection: 'column', gap: 1, transition: 'all 0.2s' }}>
+                    <Stack direction="row" spacing={1} alignItems="center">
+                      <Box sx={{ width: 22, height: 22, borderRadius: '50%', bgcolor: selectedFile ? '#15803d' : '#94a3b8', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, transition: 'all 0.2s' }}>
+                        <Typography sx={{ color: '#fff', fontWeight: 900, fontSize: 11, lineHeight: 1 }}>3</Typography>
+                      </Box>
+                      <Typography sx={{ fontWeight: 800, fontSize: 12, color: selectedFile ? '#14532d' : '#475569' }}>Cargar al servidor</Typography>
+                    </Stack>
+                    <Typography sx={{ fontSize: 11, color: '#64748b', lineHeight: 1.4 }}>Importa los datos a la base de PostgreSQL.</Typography>
+                    <Button variant="contained" disabled={!selectedFile || importing} onClick={handleImport}
+                      sx={{ borderRadius: '8px', py: 0.9, textTransform: 'none', fontWeight: 700, fontSize: 12, bgcolor: '#15803d', boxShadow: selectedFile ? '0 4px 14px #15803d30' : 'none', '&:hover': { bgcolor: '#166534', boxShadow: 'none' }, '&:disabled': { bgcolor: '#e2e8f0', boxShadow: 'none' } }}>
+                      {importing ? 'Cargando...' : 'Cargar libro completo'}
+                    </Button>
+                  </Box>
+
+                </Box>
+
+                <Box sx={{ mt: 1.4, px: 1.4, py: 0.9, bgcolor: '#f8fafc', borderRadius: '8px', border: '1px dashed #cbd5e1' }}>
+                  <Typography sx={{ fontSize: 11.5, color: '#64748b' }}>
+                    <Box component="span" sx={{ fontWeight: 700, color: '#334155' }}>Hojas requeridas: </Box>
+                    {['BD_SGD_UNICESMAG','POLITICAS','PLANTILLAS'].map((s) => (
+                      <Box key={s} component="span" sx={{ fontFamily: 'monospace', bgcolor: '#e2e8f0', color: '#1e40af', px: 0.6, py: 0.1, borderRadius: '4px', fontSize: 10.5, fontWeight: 700, mx: 0.3 }}>{s}</Box>
+                    ))}
+                  </Typography>
+                </Box>
+              </Box>
+
+              {/* Divider */}
+              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
+                <Box sx={{ flex: 1, height: '1px', bgcolor: '#f1f5f9' }} />
+                <Typography sx={{ fontSize: 10, fontWeight: 800, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.6px', whiteSpace: 'nowrap' }}>o sincroniza directo desde Sheets</Typography>
+                <Box sx={{ flex: 1, height: '1px', bgcolor: '#f1f5f9' }} />
+              </Box>
+
+              {/* Sección 2 – Google Sheets */}
+              <Box>
+                <Stack direction="row" alignItems="center" spacing={1} sx={{ mb: 1.6 }}>
+                  <Box sx={{ width: 4, height: 18, borderRadius: 2, background: 'linear-gradient(180deg,#0f766e,#14b8a6)' }} />
+                  <Typography sx={{ fontSize: 11, fontWeight: 900, color: '#0f5652', textTransform: 'uppercase', letterSpacing: '0.8px' }}>Sincronización con Google Sheets</Typography>
+                </Stack>
+                <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', md: '1fr 1fr' }, gap: 1.5 }}>
+
+                  {/* Actualizar incremental – RECOMENDADO */}
+                  <Box sx={{ borderRadius: '12px', border: '1.5px solid #bfdbfe', background: 'linear-gradient(135deg,#eff6ff 0%,#dbeafe 100%)', p: 2.2, display: 'flex', flexDirection: 'column', gap: 1.4, position: 'relative', overflow: 'hidden' }}>
+                    <Chip label="RECOMENDADO" size="small" sx={{ position: 'absolute', top: 12, right: 12, bgcolor: '#1d4ed8', color: '#fff', fontWeight: 800, fontSize: 9, height: 18, letterSpacing: '0.4px' }} />
+                    <Box>
+                      <Typography sx={{ fontWeight: 900, fontSize: 13.5, color: '#1e3a8a', pr: 10 }}>Actualizar servidor desde Sheets</Typography>
+                      <Typography sx={{ fontSize: 11.5, color: '#3b82f6', mt: 0.4, lineHeight: 1.5 }}>Agrega nuevos documentos y actualiza los existentes <strong>sin borrar la base</strong>.</Typography>
+                    </Box>
+                    <Button variant="contained" disabled={syncingSheet} onClick={() => handleSyncFromSheets('incremental')}
+                      sx={{ borderRadius: '8px', py: 1.15, textTransform: 'none', fontWeight: 700, fontSize: 13, background: 'linear-gradient(135deg,#1d4ed8,#2563eb)', boxShadow: '0 4px 14px #1d4ed840', '&:hover': { background: 'linear-gradient(135deg,#1e40af,#1d4ed8)', boxShadow: 'none' }, alignSelf: 'flex-start', minWidth: 190 }}>
+                      {syncingSheet ? 'Cargando Sheets...' : 'Actualizar desde Sheets'}
+                    </Button>
+                  </Box>
+
+                  {/* Sincronizar completo – USO EVENTUAL */}
+                  <Box sx={{ borderRadius: '12px', border: '1.5px solid #fde68a', background: 'linear-gradient(135deg,#fffbeb 0%,#fef3c7 100%)', p: 2.2, display: 'flex', flexDirection: 'column', gap: 1.4, position: 'relative', overflow: 'hidden' }}>
+                    <Chip label="USO EVENTUAL" size="small" sx={{ position: 'absolute', top: 12, right: 12, bgcolor: '#b45309', color: '#fff', fontWeight: 800, fontSize: 9, height: 18, letterSpacing: '0.4px' }} />
+                    <Box>
+                      <Typography sx={{ fontWeight: 900, fontSize: 13.5, color: '#78350f', pr: 12 }}>Sincronizar todo desde Sheets</Typography>
+                      <Typography sx={{ fontSize: 11.5, color: '#d97706', mt: 0.4, lineHeight: 1.5 }}>Recorre <strong>todas</strong> las filas. Úsalo solo si hay inconsistencias graves.</Typography>
+                    </Box>
+                    <Button variant="outlined" color="warning" disabled={syncingSheet} onClick={() => handleSyncFromSheets('reemplazar')}
+                      sx={{ borderRadius: '8px', py: 1.15, textTransform: 'none', fontWeight: 700, fontSize: 13, borderColor: '#f59e0b', color: '#b45309', bgcolor: '#fff', '&:hover': { bgcolor: '#fef3c7', borderColor: '#d97706' }, alignSelf: 'flex-start', minWidth: 190 }}>
+                      {syncingSheet ? 'Sincronizando...' : 'Sincronizar todo'}
+                    </Button>
+                  </Box>
+
+                </Box>
+              </Box>
+
+            </Box>
           </Paper>
         )}
 
-        <Slide direction="down" in={true} timeout={600}>
-          <Paper
-            elevation={0}
-            sx={{
-              p: { xs: 2, sm: 2.5 },
-              mb: 3,
-              border: '1px solid rgba(59,130,246,0.25)',
-              borderRadius: 3,
-              bgcolor: 'white',
-              position: 'relative',
-              overflow: 'visible',
-              boxShadow: '0 18px 40px rgba(59, 130, 246, 0.12)',
-              transition: 'transform 220ms ease, box-shadow 220ms ease',
-              '&:hover': {
-                transform: 'translateY(-2px)',
-                boxShadow: '0 22px 50px rgba(59, 130, 246, 0.16)'
-              },
-              ...(hasActiveFilters && {
-                border: '1px solid rgba(59,130,246,0.55)',
-                boxShadow: '0 22px 55px rgba(59, 130, 246, 0.28)'
-              }),
-              '&::after': {
-                content: '""',
-                position: 'absolute',
-                inset: 0,
-                pointerEvents: 'none',
-                opacity: 0.18,
-                backgroundImage: 'linear-gradient(135deg, rgba(59,130,246,0.12) 0%, transparent 40%)',
-                mixBlendMode: 'multiply'
-              }
-            }}
-          >
-            <Box
-              sx={{
-                position: 'absolute',
-                inset: 0,
-                pointerEvents: 'none',
-                background: `
-                  radial-gradient(circle at 15% 0%, rgba(59,130,246,0.18), transparent 45%),
-                  radial-gradient(circle at 90% 20%, rgba(219,39,119,0.12), transparent 45%)
-                `,
-                backgroundSize: '140% 140%',
-                animation: 'bgDrift 12s ease-in-out infinite',
-                '@keyframes bgDrift': {
-                  '0%': { backgroundPosition: '0% 0%' },
-                  '50%': { backgroundPosition: '100% 20%' },
-                  '100%': { backgroundPosition: '0% 0%' }
-                }
-              }}
-            />
-            <Box
-              sx={{
-                position: 'absolute',
-                top: 0,
-                left: 0,
-                right: 0,
-                height: 4,
-                background: 'linear-gradient(90deg, #2563eb, #7c3aed, #db2777, #2563eb)',
-                backgroundSize: '300% 100%',
-                animation: 'titleGlow 6s ease-in-out infinite',
-                '@keyframes titleGlow': {
-                  '0%': { backgroundPosition: '0% 50%' },
-                  '50%': { backgroundPosition: '100% 50%' },
-                  '100%': { backgroundPosition: '0% 50%' }
-                }
-              }}
-            />
-            <Box sx={{ position: 'relative', zIndex: 1 }}>
-            <Box sx={{ mb: 2.5 }}>
-              <Typography variant="caption" sx={{ color: '#64748b', fontWeight: 800, mb: 1, display: 'block', textTransform: 'uppercase', letterSpacing: 0.7 }}>
-                Tipo de consulta
-              </Typography>
-              <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', md: 'repeat(3, minmax(0, 1fr))' }, gap: 1.2 }}>
-                {DOCUMENT_SCOPE_TABS.map((tab) => {
-                  const selected = activeDocumentScope === tab.key;
-                  const Icon = tab.Icon;
-                  return (
-                    <Box
-                      key={tab.key}
-                      onClick={() => handleDocumentScopeChange(tab.key)}
-                      role="button"
-                      tabIndex={0}
-                      onKeyDown={(event) => {
-                        if (event.key === 'Enter' || event.key === ' ') handleDocumentScopeChange(tab.key);
-                      }}
-                      sx={{
-                        p: 1.35,
-                        minHeight: 84,
-                        borderRadius: 2.2,
-                        border: `1.5px solid ${selected ? '#2563eb' : '#dbe6f5'}`,
-                        bgcolor: selected ? '#eff6ff' : 'rgba(255,255,255,0.88)',
-                        cursor: 'pointer',
-                        boxShadow: selected ? '0 12px 28px rgba(37,99,235,0.18)' : '0 8px 20px rgba(15,23,42,0.04)',
-                        transition: 'border-color 180ms ease, box-shadow 180ms ease, transform 180ms ease, background 180ms ease',
-                        outline: 'none',
-                        '&:hover': {
-                          transform: 'translateY(-2px)',
-                          borderColor: selected ? '#1d4ed8' : '#93c5fd',
-                          boxShadow: selected ? '0 16px 34px rgba(37,99,235,0.22)' : '0 12px 26px rgba(37,99,235,0.12)'
-                        },
-                        '&:focus-visible': { boxShadow: '0 0 0 4px rgba(37,99,235,0.22)' }
-                      }}
-                    >
-                      <Stack direction="row" spacing={1.15} alignItems="flex-start">
-                        <Box sx={{ width: 38, height: 38, borderRadius: 1.8, display: 'grid', placeItems: 'center', bgcolor: selected ? '#2563eb' : '#f1f5f9', color: selected ? '#ffffff' : '#64748b', flex: '0 0 auto' }}>
-                          <Icon sx={{ fontSize: 21 }} />
-                        </Box>
-                        <Box sx={{ minWidth: 0 }}>
-                          <Typography sx={{ fontWeight: 900, fontSize: 14, color: selected ? '#1e3a8a' : '#0f172a', lineHeight: 1.2 }}>
-                            {tab.label}
-                          </Typography>
-                          <Typography sx={{ mt: 0.35, fontSize: 12.2, color: selected ? '#1d4ed8' : '#64748b', lineHeight: 1.35 }}>
-                            {tab.helper}
-                          </Typography>
-                        </Box>
-                      </Stack>
-                    </Box>
-                  );
-                })}
-              </Box>
+        {/* Header para usuarios Consulta */}
+        {!canManageDocumental && (
+          <Box sx={{ mb: 2.5, px: 3, py: 2.2, borderRadius: '14px', display: 'flex', alignItems: 'center', gap: 1.8, background: 'linear-gradient(135deg, #1e3a8a 0%, #1d4ed8 60%, #2563eb 100%)', boxShadow: '0 8px 24px rgba(29,78,216,0.18)' }}>
+            <Box sx={{ width: 46, height: 46, borderRadius: '12px', bgcolor: 'rgba(255,255,255,0.18)', border: '1px solid rgba(255,255,255,0.28)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+              <SearchIcon sx={{ color: '#fff', fontSize: 24 }} />
             </Box>
-            <Box sx={{ display: 'flex', justifyContent: 'center', mb: 2 }}>
-              <Box sx={{ width: '100%', maxWidth: 860 }}>
-                <Typography variant="caption" sx={{ color: '#64748b', fontWeight: 600, mb: 1, display: 'block', textAlign: 'center' }}>
-                  Buscar por título, código, palabras clave y consecutivos
-                </Typography>
-                <TextField
-                  fullWidth
-                  size="small"
-                  value={filters.titulo}
-                  onChange={(e) => setFilters({ ...filters, titulo: e.target.value })}
-                  placeholder="Ej: plan estratégico, SES-EN, 2024, FR-001, seguridad vial..."
-                  InputProps={{
-                    startAdornment: (
-                      <InputAdornment position="start">
-                        <SearchIcon sx={{ color: '#94a3b8' }} />
-                      </InputAdornment>
-                    )
-                  }}
-                  sx={{
-                    '& .MuiOutlinedInput-root': {
-                      borderRadius: 2.5,
-                      bgcolor: 'white',
-                      '& fieldset': { borderColor: '#bfdbfe' },
-                      '&:hover fieldset': { borderColor: '#60a5fa' },
-                      '&.Mui-focused fieldset': { borderColor: '#2563eb' },
-                      '&.Mui-focused': { boxShadow: '0 0 0 5px rgba(59,130,246,0.2)' }
-                    }
-                  }}
-                />
-              </Box>
+            <Box>
+              <Stack direction="row" spacing={1} alignItems="center">
+                <Typography sx={{ fontWeight: 900, fontSize: 17, color: '#fff', lineHeight: 1.2 }}>Consulta de Documentos</Typography>
+                <Box sx={{ px: 1.4, py: 0.3, borderRadius: '20px', bgcolor: 'rgba(255,255,255,0.15)', border: '1px solid rgba(255,255,255,0.35)', flexShrink: 0, backdropFilter: 'blur(4px)' }}>
+                  <Typography sx={{ fontSize: 9, fontWeight: 800, color: 'rgba(255,255,255,0.92)', letterSpacing: '1px', textTransform: 'uppercase' }}>SIAC</Typography>
+                </Box>
+              </Stack>
+              <Typography sx={{ fontSize: 12, color: 'rgba(255,255,255,0.72)', mt: 0.3 }}>Accede y encuentra documentos institucionales de forma rápida y clara</Typography>
             </Box>
+          </Box>
+        )}
 
-            <Box sx={{ overflowX: 'auto' }}>
-              <Box sx={{ display: 'grid', gap: 2, gridTemplateColumns: '1fr 1fr 1fr 1fr', minWidth: 820 }}>
-                <DocFilterPanel
-                  label="Macroproceso"
-                  options={macroOptions}
-                  value={selMacros}
-                  onChange={handleMacroChange}
-                  placeholder="Buscar macroproceso..."
-                />
-                <DocFilterPanel
-                  label="Proceso"
-                  options={procesoOptions}
-                  value={selProcesos}
-                  onChange={handleProcesoChange}
-                  placeholder="Buscar proceso..."
-                />
-                <DocFilterPanel
-                  label="Subproceso"
-                  options={subprocesoOptions}
-                  value={selSubprocesos}
-                  onChange={setSelSubprocesos}
-                  placeholder="Buscar subproceso..."
-                />
-                <DocFilterPanel
-                  label="Tipo documento"
-                  options={tipoOptions}
-                  value={selTipos}
-                  onChange={setSelTipos}
-                  placeholder="Buscar tipo..."
-                />
-              </Box>
-            </Box>
+        <Slide direction="down" in={true} timeout={400}>
+          <Paper elevation={0} sx={{ mb: 3, borderRadius: '14px', overflow: 'hidden', border: `1px solid ${hasActiveFilters ? '#93c5fd' : '#e2e8f0'}`, boxShadow: hasActiveFilters ? '0 4px 20px rgba(37,99,235,0.10)' : '0 2px 12px rgba(15,23,42,0.06)' }}>
 
-            {canManageDocumental && (
-              <Box sx={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', mt: 1.5, px: 0.5 }}>
-                <Box sx={{
-                  display: 'flex', alignItems: 'center', gap: 1.5, px: 2, py: 0.75,
-                  borderRadius: 2, border: `1.5px solid ${filters.include_inactive === 'true' ? '#f59e0b' : '#e2e8f0'}`,
-                  bgcolor: filters.include_inactive === 'true' ? '#fffbeb' : '#f8fafc',
-                  transition: 'all 0.2s'
-                }}>
-                  <Box sx={{ width: 8, height: 8, borderRadius: '50%', bgcolor: filters.include_inactive === 'true' ? '#f59e0b' : '#10b981', flexShrink: 0 }} />
-                  <Typography sx={{ fontSize: 11, fontWeight: 700, color: filters.include_inactive === 'true' ? '#92400e' : '#065f46', letterSpacing: '0.4px', textTransform: 'uppercase', userSelect: 'none' }}>
-                    {filters.include_inactive === 'true' ? 'Solo no activos' : 'Solo documentos activos'}
-                  </Typography>
-                  <Switch
-                    checked={filters.include_inactive === 'true'}
-                    onChange={(e) => setFilters(prev => ({
-                      ...prev,
-                      include_inactive: e.target.checked ? 'true' : '',
-                      estado_scope: e.target.checked ? 'inactive' : ''
-                    }))}
-                    size="small"
-                    sx={{
-                      '& .MuiSwitch-switchBase.Mui-checked': { color: '#f59e0b' },
-                      '& .MuiSwitch-switchBase.Mui-checked + .MuiSwitch-track': { bgcolor: '#f59e0b' }
+            {/* Tabs — ancho completo igual para cada tab */}
+            <Box sx={{ display: 'grid', gridTemplateColumns: `repeat(${DOCUMENT_SCOPE_TABS.length}, 1fr)`, borderBottom: '2px solid #e2e8f0', bgcolor: '#fafbff' }}>
+              {DOCUMENT_SCOPE_TABS.map((tab) => {
+                const selected = activeDocumentScope === tab.key;
+                const Icon = tab.Icon;
+                return (
+                  <Box key={tab.key} onClick={() => handleDocumentScopeChange(tab.key)} role="button" tabIndex={0}
+                    onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') handleDocumentScopeChange(tab.key); }}
+                    sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 1.2, px: 2, py: 1.6, cursor: 'pointer', outline: 'none', userSelect: 'none', transition: 'all 0.15s', position: 'relative',
+                      borderBottom: `3px solid ${selected ? '#2563eb' : 'transparent'}`,
+                      bgcolor: selected ? '#fff' : 'transparent',
+                      '&:hover': { bgcolor: '#f0f6ff' },
+                      '&:not(:last-child)': { borderRight: '1px solid #f1f5f9' },
+                      '&:focus-visible': { outline: '2px solid #2563eb', outlineOffset: '-2px' }
                     }}
-                  />
+                  >
+                    <Box sx={{ width: 32, height: 32, borderRadius: '9px', display: 'grid', placeItems: 'center', bgcolor: selected ? '#2563eb' : '#eef0f5', color: selected ? '#fff' : '#94a3b8', flexShrink: 0, transition: 'all 0.15s' }}>
+                      <Icon sx={{ fontSize: 17 }} />
+                    </Box>
+                    <Box sx={{ minWidth: 0 }}>
+                      <Typography sx={{ fontWeight: selected ? 800 : 600, fontSize: { xs: 12, sm: 13.5 }, color: selected ? '#1e3a8a' : '#64748b', transition: 'color 0.15s', lineHeight: 1.2 }}>{tab.label}</Typography>
+                      <Typography sx={{ fontSize: 11, color: selected ? '#3b82f6' : '#94a3b8', lineHeight: 1.2, display: { xs: 'none', md: 'block' } }}>{tab.helper}</Typography>
+                    </Box>
+                  </Box>
+                );
+              })}
+            </Box>
+
+            {/* Cuerpo: búsqueda + filtros */}
+            <Box sx={{ px: 2.2, py: 2, display: 'flex', flexDirection: 'column', gap: 1.6 }}>
+
+              {/* Buscador */}
+              <TextField fullWidth size="small" value={filters.titulo}
+                onChange={(e) => setFilters({ ...filters, titulo: e.target.value })}
+                placeholder="Buscar por título, código, palabras clave o consecutivos..."
+                InputProps={{ startAdornment: <InputAdornment position="start"><SearchIcon sx={{ color: '#93c5fd', fontSize: 19 }} /></InputAdornment> }}
+                sx={{
+                  '& .MuiOutlinedInput-root': {
+                    borderRadius: '10px', bgcolor: '#f0f6ff', fontSize: 13.5,
+                    boxShadow: '0 0 0 3px rgba(37,99,235,0.08)',
+                    animation: 'searchPulse 3s ease-in-out infinite',
+                    '@keyframes searchPulse': {
+                      '0%':   { boxShadow: '0 0 0 3px rgba(37,99,235,0.08)' },
+                      '50%':  { boxShadow: '0 0 0 5px rgba(37,99,235,0.18)' },
+                      '100%': { boxShadow: '0 0 0 3px rgba(37,99,235,0.08)' },
+                    },
+                    '& fieldset': { borderColor: '#93c5fd', borderWidth: 1.5 },
+                    '&:hover fieldset': { borderColor: '#3b82f6', borderWidth: 1.5 },
+                    '&.Mui-focused': {
+                      bgcolor: '#fff',
+                      animation: 'none',
+                      boxShadow: '0 0 0 4px rgba(37,99,235,0.20)',
+                    },
+                    '&.Mui-focused fieldset': { borderColor: '#2563eb', borderWidth: 2 },
+                  }
+                }}
+              />
+
+              {/* Filtros desplegables */}
+              <Box sx={{ overflowX: 'auto' }}>
+                <Box sx={{ display: 'grid', gap: 1.5, gridTemplateColumns: '1fr 1fr 1fr 1fr', minWidth: 780 }}>
+                  <DocFilterPanel label="Macroproceso" options={macroOptions} value={selMacros} onChange={handleMacroChange} placeholder="Buscar macroproceso..." />
+                  <DocFilterPanel label="Proceso" options={procesoOptions} value={selProcesos} onChange={handleProcesoChange} placeholder="Buscar proceso..." />
+                  <DocFilterPanel label="Subproceso" options={subprocesoOptions} value={selSubprocesos} onChange={setSelSubprocesos} placeholder="Buscar subproceso..." />
+                  <DocFilterPanel label="Tipo documento" options={tipoOptions} value={selTipos} onChange={setSelTipos} placeholder="Buscar tipo..." />
                 </Box>
               </Box>
-            )}
 
-            <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2} justifyContent="center" sx={{ mt: 2.5 }}>
-              <Button
-                variant="contained"
-                startIcon={<SearchIcon />}
-                onClick={handleSearch}
-                sx={{
-                  borderRadius: 2,
-                  textTransform: 'none',
-                  fontWeight: 700,
-                  py: 1.5,
-                  fontSize: 15,
-                  minWidth: { xs: '100%', sm: 260 },
-                  background: 'linear-gradient(135deg, #2563eb 0%, #7c3aed 60%, #db2777 100%)',
-                  boxShadow: '0 8px 22px rgba(59, 130, 246, 0.45)',
-                  '&:hover': { background: 'linear-gradient(135deg, #1d4ed8 0%, #6d28d9 60%, #be185d 100%)', boxShadow: '0 12px 26px rgba(59, 130, 246, 0.6)' },
-                  ...(isFiltering && {
-                    background: 'linear-gradient(135deg, #2563eb 0%, #7c3aed 60%, #db2777 100%)',
-                    animation: 'pulseGlow 1.4s ease-in-out infinite',
-                    '@keyframes pulseGlow': {
-                      '0%': { boxShadow: '0 0 0 rgba(59,130,246,0.0)' },
-                      '50%': { boxShadow: '0 0 34px rgba(59,130,246,0.45)' },
-                      '100%': { boxShadow: '0 0 0 rgba(59,130,246,0.0)' }
-                    }
-                  })
-                }}
-              >
-                Buscar
-              </Button>
-              <Button
-                variant="outlined"
-                startIcon={<ClearIcon />}
-                onClick={handleClearFilters}
-                sx={{
-                  minWidth: { xs: '100%', sm: 200 },
-                  borderRadius: 2,
-                  textTransform: 'none',
-                  fontWeight: 700,
-                  py: 1.5,
-                  px: 2.5,
-                  borderColor: '#bfdbfe',
-                  color: '#1e3a8a',
-                  bgcolor: '#eff6ff',
-                  borderWidth: 2,
-                  whiteSpace: 'nowrap',
-                  '&:hover': { borderColor: '#60a5fa', bgcolor: '#dbeafe', borderWidth: 2 }
-                }}
-              >
-                Limpiar filtros
-              </Button>
-            </Stack>
+              {/* Fila inferior: segmentadores (solo gestión/admin) + acciones */}
+              {(() => {
+                const currentScope = filters.estado_scope || 'vigente';
+                const segments = [
+                  { key: 'vigente',     label: 'Vigente',         activeBg: '#f0fdf4', activeBorder: '#4ade80', activeText: '#166534', activeDot: '#10b981' },
+                  { key: 'en_revision', label: 'En construcción', activeBg: '#fffbeb', activeBorder: '#fbbf24', activeText: '#92400e', activeDot: '#f59e0b' },
+                  { key: 'obsoleto',    label: 'Inactivos',       activeBg: '#f8fafc', activeBorder: '#94a3b8', activeText: '#475569', activeDot: '#94a3b8' },
+                ];
+                return (
+                  <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: canManageDocumental ? 'space-between' : 'flex-end', flexWrap: 'wrap', gap: 1.2, pt: 0.5, borderTop: '1px solid #f1f5f9' }}>
+                    {/* Segmentadores — solo roles con gestión documental */}
+                    {canManageDocumental && (
+                    <Box sx={{ display: 'flex', borderRadius: '10px', bgcolor: '#f1f5f9', border: '1px solid #d1d5db', overflow: 'hidden' }}>
+                      {segments.map((seg, idx) => {
+                        const active = currentScope === seg.key;
+                        return (
+                          <Box key={seg.key} onClick={() => handleSegmentChange(seg.key)}
+                            sx={{
+                              display: 'flex', alignItems: 'center', gap: 0.7,
+                              px: 1.6, py: 0.7,
+                              cursor: 'pointer', userSelect: 'none', transition: 'all 0.18s',
+                              bgcolor: active ? seg.activeBg : 'transparent',
+                              borderTop: `2.5px solid ${active ? seg.activeDot : 'transparent'}`,
+                              borderLeft: idx > 0 ? `1.5px solid ${active ? seg.activeDot + '55' : '#d1d5db'}` : 'none',
+                              '&:hover': { bgcolor: active ? seg.activeBg : '#e9eef5' }
+                            }}>
+                            <Box sx={{ width: 7, height: 7, borderRadius: '50%', bgcolor: active ? seg.activeDot : '#d1d5db', flexShrink: 0, transition: 'all 0.18s', boxShadow: active ? `0 0 0 2.5px ${seg.activeDot}30` : 'none' }} />
+                            <Typography sx={{ fontSize: 11.5, fontWeight: active ? 800 : 500, color: active ? seg.activeText : '#6b7280', whiteSpace: 'nowrap', transition: 'all 0.18s' }}>{seg.label}</Typography>
+                          </Box>
+                        );
+                      })}
+                    </Box>
+                    )}
+
+                    {/* Botones acción */}
+                    <Stack direction="row" spacing={1}>
+                      <Button variant="contained" startIcon={<SearchIcon />} onClick={handleSearch}
+                        sx={{ borderRadius: '9px', textTransform: 'none', fontWeight: 700, py: 1, px: 2.5, fontSize: 14, background: 'linear-gradient(135deg,#2563eb,#1d4ed8)', boxShadow: '0 4px 14px rgba(37,99,235,0.35)', '&:hover': { background: 'linear-gradient(135deg,#1d4ed8,#1e40af)', boxShadow: '0 6px 18px rgba(37,99,235,0.45)' } }}>
+                        Buscar
+                      </Button>
+                      <Button variant="outlined" startIcon={<ClearIcon sx={{ fontSize: 14 }} />} onClick={handleClearFilters}
+                        sx={{ borderRadius: '20px', textTransform: 'none', fontWeight: 600, py: 0.7, px: 1.8, fontSize: 12, borderColor: '#dde3ed', color: '#94a3b8', bgcolor: '#f8fafc', whiteSpace: 'nowrap', minWidth: 0, letterSpacing: '0.2px', '&:hover': { borderColor: '#93c5fd', color: '#1d4ed8', bgcolor: '#eff6ff' } }}>
+                        Limpiar
+                      </Button>
+                    </Stack>
+                  </Box>
+                );
+              })()}
+
             </Box>
           </Paper>
         </Slide>
@@ -1601,15 +1602,21 @@ function AseguramientoCalidad() {
                 <TableContainer>
                   <Table>
                     <TableHead>
-                      <TableRow sx={{ bgcolor: '#f8fafc' }}>
-                        <TableCell sx={{ fontWeight: 700, color: '#1e293b', fontSize: 13, borderBottom: '2px solid #e2e8f0', textTransform: 'uppercase', letterSpacing: 0.5 }}>Código</TableCell>
-                        <TableCell sx={{ fontWeight: 700, color: '#1e293b', fontSize: 13, borderBottom: '2px solid #e2e8f0', textTransform: 'uppercase', letterSpacing: 0.5 }}>Tipo</TableCell>
-                        <TableCell sx={{ fontWeight: 700, color: '#1e293b', fontSize: 13, borderBottom: '2px solid #e2e8f0', textTransform: 'uppercase', letterSpacing: 0.5 }}>Nombre Documento</TableCell>
-                        <TableCell sx={{ fontWeight: 700, color: '#1e293b', fontSize: 13, borderBottom: '2px solid #e2e8f0', textTransform: 'uppercase', letterSpacing: 0.5 }}>Autor</TableCell>
-                        <TableCell sx={{ fontWeight: 700, color: '#1e293b', fontSize: 13, borderBottom: '2px solid #e2e8f0', textTransform: 'uppercase', letterSpacing: 0.5 }}>Fecha Creacion</TableCell>
-                        <TableCell sx={{ fontWeight: 700, color: '#1e293b', fontSize: 13, borderBottom: '2px solid #e2e8f0', textTransform: 'uppercase', letterSpacing: 0.5 }}>Versión</TableCell>
-                        <TableCell sx={{ fontWeight: 700, color: '#1e293b', fontSize: 13, borderBottom: '2px solid #e2e8f0', textTransform: 'uppercase', letterSpacing: 0.5 }}>Estado</TableCell>
-                        <TableCell align="center" sx={{ fontWeight: 700, color: '#1e293b', fontSize: 13, borderBottom: '2px solid #e2e8f0', textTransform: 'uppercase', letterSpacing: 0.5 }}>Acciones</TableCell>
+                      <TableRow sx={{ background: 'linear-gradient(135deg, #1e3a8a 0%, #1d4ed8 100%)' }}>
+                        {[
+                          { label: 'Código',           align: 'left'   },
+                          { label: 'Tipo',             align: 'left'   },
+                          { label: 'Nombre Documento', align: 'left'   },
+                          { label: 'Autor',            align: 'left'   },
+                          { label: 'Fecha Creación',   align: 'left'   },
+                          { label: 'Versión',          align: 'center' },
+                          ...(canManageDocumental ? [{ label: 'Estado', align: 'center' }] : []),
+                          { label: 'Acciones',         align: 'center' },
+                        ].map(({ label, align }) => (
+                          <TableCell key={label} align={align} sx={{ fontWeight: 800, color: '#fff', fontSize: 12, borderBottom: 'none', textTransform: 'uppercase', letterSpacing: '0.6px', py: 1.5, whiteSpace: 'nowrap' }}>
+                            {label}
+                          </TableCell>
+                        ))}
                       </TableRow>
                     </TableHead>
                     <TableBody>
@@ -1636,9 +1643,11 @@ function AseguramientoCalidad() {
                               <TableCell>
                                 <Chip label={`v${doc.version || '1.0'}`} size="small" sx={{ bgcolor: '#f1f5f9', color: '#475569', fontWeight: 700, fontFamily: 'monospace', borderRadius: 1.5 }} />
                               </TableCell>
+                              {canManageDocumental && (
                               <TableCell>
                                 <Chip label={getEstadoLabel(doc.estado)} color={getEstadoColor(doc.estado)} size="small" sx={{ fontWeight: 700, textTransform: 'uppercase', fontSize: 11, borderRadius: 1.5 }} />
                               </TableCell>
+                              )}
                               <TableCell align="center">
                                 <Stack direction="row" spacing={1} justifyContent="center">
 

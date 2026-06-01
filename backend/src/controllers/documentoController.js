@@ -327,7 +327,12 @@ const getDocumentos = async (req, res) => {
     const scopeCondition = documentScopeLiteral(normalizeDocumentScope(document_scope), 'documentos');
     where[Op.and] = [...(where[Op.and] || []), scopeCondition];
 
-    if (isInactiveScope({ include_inactive, estado_scope }, req.user)) {
+    const estadoScopeStr = String(estado_scope || '').toLowerCase().trim();
+    if (estadoScopeStr === 'en_revision') {
+      where.estado = 'en_revision';
+    } else if (estadoScopeStr === 'obsoleto') {
+      where.estado = 'obsoleto';
+    } else if (isInactiveScope({ include_inactive, estado_scope }, req.user)) {
       where[Op.or] = [
         { estado: { [Op.ne]: PUBLIC_DOCUMENT_STATE } },
         { estado: null }

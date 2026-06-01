@@ -302,23 +302,23 @@ function CapsuleRanking({ title, rows = [], nameKey, color = '#1d4ed8' }) {
   const panelRef = useRef(null);
   const max = Math.max(...rows.map((row) => Number(row.cantidad || 0)), 1);
   return (
-    <Paper ref={panelRef} elevation={0} sx={{ p: 2.4, borderRadius: '8px', border: '1px solid #dbe6f5', bgcolor: '#ffffff', boxShadow: '0 16px 36px rgba(15,23,42,0.07)' }}>
-      <Stack direction="row" alignItems="center" justifyContent="space-between" sx={{ mb: 2 }}>
-        <Typography sx={{ color: '#0f172a', fontWeight: 950, fontSize: 20 }}>{title}</Typography>
+    <Paper ref={panelRef} elevation={0} sx={{ p: 1.8, borderRadius: '8px', border: '1px solid #dbe6f5', bgcolor: '#ffffff', boxShadow: '0 12px 28px rgba(15,23,42,0.06)' }}>
+      <Stack direction="row" alignItems="center" justifyContent="space-between" sx={{ mb: 1.4 }}>
+        <Typography sx={{ color: '#0f172a', fontWeight: 950, fontSize: 17 }}>{title}</Typography>
         <CopyButton targetRef={panelRef} label={`Copiar: ${title}`} />
       </Stack>
       {rows.length === 0 ? <Alert severity="info">Sin datos para mostrar.</Alert> : (
-        <Box data-export-scroll sx={{ maxHeight: 420, overflowY: 'auto', pr: 0.5 }}>
-          <Stack spacing={1.45}>
+        <Box data-export-scroll sx={{ maxHeight: 290, overflowY: 'auto', pr: 0.5 }}>
+          <Stack spacing={1}>
             {rows.map((row, index) => {
               const rowColor = CHART_COLORS[index % CHART_COLORS.length] || color;
               const pct = Math.max(10, Math.round((Number(row.cantidad || 0) / max) * 100));
               return (
-                <Box key={`${row[nameKey]}-${index}`} sx={{ minHeight: 64, borderRadius: '32px', bgcolor: '#ffffff', border: '1px solid #e2e8f0', boxShadow: '0 10px 24px rgba(15,23,42,0.07)', display: 'grid', gridTemplateColumns: '58px minmax(0, 1fr) 78px', alignItems: 'center', overflow: 'hidden' }}>
+                <Box key={`${row[nameKey]}-${index}`} sx={{ minHeight: 56, borderRadius: '28px', bgcolor: '#ffffff', border: '1px solid #e2e8f0', boxShadow: '0 8px 18px rgba(15,23,42,0.06)', display: 'grid', gridTemplateColumns: '52px minmax(0, 1fr) 68px', alignItems: 'center', overflow: 'hidden' }}>
                   <Box sx={{ height: '100%', bgcolor: `${rowColor}18`, color: rowColor, display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 950, fontSize: 18 }}>{String(index + 1).padStart(2, '0')}</Box>
                   <Box sx={{ px: 1.7, minWidth: 0 }}>
-                    <Typography sx={{ color: '#0f172a', fontWeight: 900, fontSize: 13.5, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{row[nameKey]}</Typography>
-                    <Box sx={{ mt: 0.8, height: 7, borderRadius: 99, bgcolor: '#e2e8f0', overflow: 'hidden' }}>
+                    <Typography sx={{ color: '#0f172a', fontWeight: 900, fontSize: 12.5, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{row[nameKey]}</Typography>
+                    <Box sx={{ mt: 0.65, height: 6, borderRadius: 99, bgcolor: '#e2e8f0', overflow: 'hidden' }}>
                       <Box sx={{ width: `${pct}%`, height: '100%', bgcolor: rowColor, borderRadius: 99 }} />
                     </Box>
                   </Box>
@@ -333,7 +333,7 @@ function CapsuleRanking({ title, rows = [], nameKey, color = '#1d4ed8' }) {
   );
 }
 
-function DocumentTypeList({ title, rows = [], total }) {
+function DocumentTypeList({ title, rows = [], total, activeFilters = {}, macroProcesos = [] }) {
   const panelRef = useRef(null);
   const [selectedTipo, setSelectedTipo] = useState(null);
   const [docsForTipo, setDocsForTipo] = useState([]);
@@ -343,11 +343,22 @@ function DocumentTypeList({ title, rows = [], total }) {
     setSelectedTipo(row);
     setDocsForTipo([]);
     setDocsLoading(true);
-    documentoService.getDocumentos({ tipo_documentacion_id: row.tipo_documento }, 1, 500)
+    const macroIds = Array.isArray(activeFilters.macro_proceso_id) ? activeFilters.macro_proceso_id.map(String) : [];
+    const macroNames = macroIds.length > 0
+      ? macroProcesos.filter((m) => macroIds.includes(String(m.id))).map((m) => m.nombre)
+      : [];
+    const params = {
+      tipo_documentacion_id: row.tipo_documento,
+      ...(macroNames.length > 0 && { macro_proceso_id: macroNames.join(',') }),
+      ...(activeFilters.proceso?.length > 0 && { proceso_id: activeFilters.proceso.join(',') }),
+      ...(activeFilters.subproceso?.length > 0 && { subproceso_id: activeFilters.subproceso.join(',') }),
+      ...(activeFilters.periodo?.length > 0 && { periodo: activeFilters.periodo.join(',') }),
+    };
+    documentoService.getDocumentos(params, 1, 500)
       .then((res) => setDocsForTipo(res?.data?.documentos || []))
       .catch(() => {})
       .finally(() => setDocsLoading(false));
-  }, []);
+  }, [activeFilters, macroProcesos]);
 
   const selectedIndex = selectedTipo ? rows.findIndex((r) => r.tipo_documento === selectedTipo.tipo_documento) : -1;
   const selTone = selectedIndex >= 0 ? CARD_TONES[selectedIndex % CARD_TONES.length] : CARD_TONES[0];
@@ -456,7 +467,62 @@ function DocumentTypeList({ title, rows = [], total }) {
   );
 }
 
-function ImpactInfographic({ resumen, tipos, macros, procesos, subprocesos, total, filtersSlot = null, politicas = [], politicasLoading = false }) {
+function PolicyTablePanel({ politicas = [], loading = false }) {
+  const panelRef = useRef(null);
+  return (
+    <Paper ref={panelRef} elevation={0} sx={{ p: 1.8, borderRadius: '8px', border: '1px solid #dbe6f5', bgcolor: '#ffffff', boxShadow: '0 10px 28px rgba(15,23,42,0.07)' }}>
+      <Stack direction="row" alignItems="center" justifyContent="space-between" spacing={1} sx={{ mb: 1.2 }}>
+        <Box>
+          <Typography sx={{ color: '#0f172a', fontWeight: 950, fontSize: 16 }}>Politicas institucionales</Typography>
+          <Typography sx={{ color: '#64748b', fontWeight: 700, fontSize: 11.5, mt: 0.2 }}>
+            {loading ? 'Cargando listado...' : `${formatNumber(politicas.length)} politicas registradas`}
+          </Typography>
+        </Box>
+        <Stack direction="row" alignItems="center" spacing={0.5}>
+          <Chip size="small" label={loading ? '...' : `${formatNumber(politicas.length)} politicas`} sx={{ bgcolor: '#f0fdf4', color: '#15803d', border: '1px solid #bbf7d0', fontWeight: 900, fontSize: 11 }} />
+          <CopyButton targetRef={panelRef} label="Copiar: Politicas institucionales" />
+        </Stack>
+      </Stack>
+      {loading ? (
+        <Box sx={{ display: 'flex', justifyContent: 'center', py: 5 }}><CircularProgress size={26} sx={{ color: '#15803d' }} /></Box>
+      ) : politicas.length === 0 ? (
+        <Alert severity="info">No hay politicas institucionales registradas.</Alert>
+      ) : (
+        <TableContainer data-export-scroll sx={{ maxHeight: 440, overflowY: 'auto', border: '1px solid #e2e8f0', borderRadius: '8px' }}>
+          <Table stickyHeader size="small">
+            <TableHead>
+              <TableRow>
+                {['#', 'Codigo', 'Politica', 'v.', 'Ver'].map((col) => (
+                  <TableCell key={col} sx={{ bgcolor: '#f8fafc', color: '#475569', fontWeight: 950, fontSize: 11, borderBottom: '2px solid #bbf7d0', py: 0.9, whiteSpace: 'nowrap' }}>{col}</TableCell>
+                ))}
+              </TableRow>
+            </TableHead>
+            <TableBody>
+              {politicas.map((doc, index) => (
+                <TableRow key={doc.id || `${doc.titulo}-${index}`} hover sx={{ '&:hover td': { bgcolor: '#f8fafc' } }}>
+                  <TableCell sx={{ width: 42, fontSize: 11, color: '#15803d', fontWeight: 950, py: 0.75 }}>{String(index + 1).padStart(2, '0')}</TableCell>
+                  <TableCell sx={{ fontSize: 11, color: '#1d4ed8', fontWeight: 850, py: 0.75, whiteSpace: 'nowrap' }}>{doc.codigo || '-'}</TableCell>
+                  <TableCell sx={{ minWidth: 220, fontSize: 12, color: '#0f172a', fontWeight: 700, py: 0.75, lineHeight: 1.25 }}>{doc.titulo}</TableCell>
+                  <TableCell sx={{ width: 44, fontSize: 11, color: '#64748b', fontWeight: 750, py: 0.75, textAlign: 'center', whiteSpace: 'nowrap' }}>{doc.version ? `v${doc.version}` : '-'}</TableCell>
+                  <TableCell sx={{ width: 56, py: 0.75 }}>
+                    {doc.link_acceso ? (
+                      <Box component="a" href={doc.link_acceso} target="_blank" rel="noopener noreferrer"
+                        sx={{ display: 'inline-flex', alignItems: 'center', gap: 0.35, color: '#15803d', textDecoration: 'none', fontSize: 11, fontWeight: 850, '&:hover': { opacity: 0.78 } }}>
+                        <OpenInNewIcon sx={{ fontSize: 12 }} />Ver
+                      </Box>
+                    ) : '-'}
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </TableContainer>
+      )}
+    </Paper>
+  );
+}
+
+function ImpactInfographic({ resumen, tipos, macros, procesos, subprocesos, total, filtersSlot = null, politicas = [], politicasLoading = false, activeFilters = {}, macroProcesos = [] }) {
   const [politicasOpen, setPoliticasOpen] = useState(false);
   const cards = [
     { title: 'Información documentada', value: resumen.totalDocumentos, color: '#1d4ed8', Icon: DescriptionIcon },
@@ -465,6 +531,7 @@ function ImpactInfographic({ resumen, tipos, macros, procesos, subprocesos, tota
     { title: 'Subprocesos', value: MAPA_PROCESOS_VIGENTE.subprocesos, color: '#a16207', Icon: DonutSmallIcon },
     { title: 'Políticas Institucionales', value: politicasLoading ? '...' : politicas.length, color: '#15803d', Icon: GavelIcon, onClick: () => setPoliticasOpen(true) }
   ];
+  const visibleCards = cards.slice(0, 4);
   return (
     <Stack spacing={2.4}>
       <Paper elevation={0} sx={{ p: { xs: 2.4, md: 3 }, borderRadius: '8px', color: '#ffffff', background: 'linear-gradient(135deg, #0f172a 0%, #1d4ed8 72%, #dc143c 100%)', boxShadow: '0 20px 46px rgba(15,23,42,0.18)', position: 'relative', overflow: 'hidden' }}>
@@ -479,8 +546,8 @@ function ImpactInfographic({ resumen, tipos, macros, procesos, subprocesos, tota
         </Stack>
       </Paper>
       {filtersSlot}
-      <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', sm: 'repeat(2, minmax(0, 1fr))', lg: 'repeat(3, minmax(0, 1fr))', xl: 'repeat(5, minmax(0, 1fr))' }, gap: 1.5 }}>
-        {cards.map((card, index) => <InfographicStatCard key={card.title} index={index + 1} {...card} />)}
+      <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', sm: 'repeat(2, minmax(0, 1fr))', xl: 'repeat(4, minmax(0, 1fr))' }, gap: 1.5 }}>
+        {visibleCards.map((card, index) => <InfographicStatCard key={card.title} index={index + 1} {...card} />)}
       </Box>
       <Dialog open={politicasOpen} onClose={() => setPoliticasOpen(false)} maxWidth="lg" fullWidth PaperProps={{ sx: { borderRadius: '12px', maxHeight: '85vh' } }}>
         <DialogTitle sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', pb: 1, borderBottom: '1px solid #f1f5f9' }}>
@@ -530,10 +597,11 @@ function ImpactInfographic({ resumen, tipos, macros, procesos, subprocesos, tota
         </DialogContent>
       </Dialog>
       <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', xl: '1.05fr 0.95fr' }, gap: 2 }}>
-        <DocumentTypeList title="Tipos documentales destacados" rows={tipos} total={total} />
-        <CapsuleRanking title="Macroprocesos con mayor carga" rows={macros} nameKey="macro_proceso" color="#1d4ed8" />
+        <DocumentTypeList title="Tipos documentales destacados" rows={tipos} total={total} activeFilters={activeFilters} macroProcesos={macroProcesos} />
+        <PolicyTablePanel politicas={politicas} loading={politicasLoading} />
       </Box>
-      <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', xl: 'repeat(2, minmax(0, 1fr))' }, gap: 2 }}>
+      <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', xl: 'repeat(3, minmax(0, 1fr))' }, gap: 2 }}>
+        <CapsuleRanking title="Macroprocesos con mayor carga" rows={macros} nameKey="macro_proceso" color="#1d4ed8" />
         <CapsuleRanking title="Procesos principales" rows={procesos} nameKey="proceso" color="#be123c" />
         <CapsuleRanking title="Subprocesos principales" rows={subprocesos} nameKey="subproceso" color="#a16207" />
       </Box>
@@ -694,6 +762,8 @@ export function EstadisticaDocumentalPanel({ embedded = false }) {
       filtersSlot={filtersSlot}
       politicas={politicas}
       politicasLoading={politicasLoading}
+      activeFilters={filters}
+      macroProcesos={macroProcesos}
     />
   );
 
