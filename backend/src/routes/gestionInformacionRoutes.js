@@ -26,7 +26,11 @@ const {
   clearByCategoria,
   exportPlanAccionInstitucional,
   exportActaInstitucional,
-  sugerirIndicadorPlanAccion
+  sugerirIndicadorPlanAccion,
+  getInfraestructuras,
+  createInfraestructura,
+  updateInfraestructura,
+  deleteInfraestructura
 } = require('../controllers/gestionInformacionController');
 const { ROLES } = require('../constants/roles');
 const { createExcelUpload } = require('../middlewares/excelUpload');
@@ -68,7 +72,9 @@ const canViewEstadisticaInstitucionalByPermission = hasAnyRoleOrModulePermission
     'plan_accion',
     'autoevaluacion',
     'registros_calificados_acreditacion',
-    'registros_calificados_y_acreditacion'
+    'registros_calificados_y_acreditacion',
+    'infraestructura_fisica.ver',
+    'infraestructura_fisica.gestionar'
   ]
 });
 
@@ -90,8 +96,19 @@ const canManageBasesByPermission = hasAnyRoleOrModulePermission({
     'plan_accion',
     'autoevaluacion',
     'registros_calificados_acreditacion',
-    'registros_calificados_y_acreditacion'
+    'registros_calificados_y_acreditacion',
+    'infraestructura_fisica.gestionar'
   ]
+});
+
+const canViewInfraestructura = hasAnyRoleOrModulePermission({
+  roles: [ROLES.ADMINISTRADOR, ROLES.PLANEACION_ESTRATEGICA],
+  moduleKeys: ['infraestructura_fisica.ver', 'infraestructura_fisica.gestionar']
+});
+
+const canManageInfraestructura = hasAnyRoleOrModulePermission({
+  roles: [ROLES.ADMINISTRADOR, ROLES.PLANEACION_ESTRATEGICA],
+  moduleKeys: ['infraestructura_fisica.gestionar']
 });
 
 router.get('/', auth, canViewEstadisticaInstitucionalByPermission, getEstadisticas);
@@ -119,5 +136,11 @@ router.delete('/clear', auth, canManageBasesByPermission, clearByCategoria);
 router.post('/', auth, canManageBasesByPermission, createEstadistica);
 router.put('/:id', auth, canManageBasesByPermission, updateEstadistica);
 router.delete('/:id', auth, canManageBasesByPermission, deleteEstadistica);
+
+// Rutas para Infraestructura Física
+router.get('/infraestructura', auth, canViewInfraestructura, getInfraestructuras);
+router.post('/infraestructura', auth, canManageInfraestructura, createInfraestructura);
+router.put('/infraestructura/:id', auth, canManageInfraestructura, updateInfraestructura);
+router.delete('/infraestructura/:id', auth, canManageInfraestructura, deleteInfraestructura);
 
 module.exports = router;

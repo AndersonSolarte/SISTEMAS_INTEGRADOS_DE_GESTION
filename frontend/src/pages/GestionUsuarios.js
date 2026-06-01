@@ -33,6 +33,8 @@ function GestionUsuarios() {
     { key: 'estadistica_institucional', label: 'Estadística Institucional' },
     { key: 'autoevaluacion', label: 'Autoevaluación' },
     { key: 'autoevaluacion.instrumentos.access', label: 'Autoevaluación - Gestión de Instrumentos' },
+    { key: 'infraestructura_fisica.gestionar', label: 'Infraestructura Física - CRUD y Administración de Bases de Datos' },
+    { key: 'infraestructura_fisica.ver', label: 'Infraestructura Física - Visualizar Estadísticas, Gráficos y KPIs' },
     { key: 'seguridad_aplicativa.ver', label: 'Seguridad Aplicativa - Ver modulo' },
     { key: 'seguridad_aplicativa.escanear', label: 'Seguridad Aplicativa - Ejecutar escaneo' },
     { key: 'seguridad_aplicativa.ver_hallazgos', label: 'Seguridad Aplicativa - Ver hallazgos' },

@@ -17,6 +17,8 @@ const GESTION_INFO_MODULE_KEYS = new Set([
   'gestion_bases_datos',
   'estadistica_institucional',
   'autoevaluacion.instrumentos.access',
+  'infraestructura_fisica.gestionar',
+  'infraestructura_fisica.ver',
   'seguridad_aplicativa.ver',
   'seguridad_aplicativa.escanear',
   'seguridad_aplicativa.ver_hallazgos',
@@ -89,7 +91,7 @@ const getDefaultPermissionsByRole = (role) => {
         'gestion_usuarios',
         'buscar_documentos'
       ],
-      allowedModules: ['gestion_bases_datos', 'estadistica_institucional'],
+      allowedModules: ['gestion_bases_datos', 'estadistica_institucional', 'infraestructura_fisica.gestionar', 'infraestructura_fisica.ver'],
       allowedGestionProcesosDashboards: Array.from(GESTION_PROCESOS_DASHBOARD_KEYS),
       allowedPoblacionalDashboards: Array.from(POBLACIONAL_DASHBOARD_KEYS),
       allowedSaberProDashboards: Array.from(SABER_PRO_DASHBOARD_KEYS)
@@ -163,7 +165,7 @@ const getDefaultPermissionsByRole = (role) => {
   if ([ROLES.GESTION_INFORMACION].includes(role)) {
     return {
       menuPermissions: ['dashboard', 'gestion_informacion', 'buscar_documentos'],
-      allowedModules: ['estadistica_institucional'],
+      allowedModules: ['estadistica_institucional', 'infraestructura_fisica.ver'],
       allowedGestionProcesosDashboards: [],
       allowedPoblacionalDashboards: ['poblacional_flujo', 'poblacional_matriculados', 'poblacional_graduados', 'poblacional_caracterizacion', 'poblacional_resumen_estadistico'],
       allowedSaberProDashboards: [

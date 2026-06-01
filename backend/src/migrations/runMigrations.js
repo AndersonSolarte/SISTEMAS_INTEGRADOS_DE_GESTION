@@ -280,6 +280,7 @@ const runMigrations = async () => {
     await models.PoblacionalGraduado.sync();
     await models.PoblacionalCaracterizacion.sync();
     await models.PoblacionalCantidadTotalEgresado.sync();
+    await models.PoblacionalInfraestructuraFisica.sync();
     await models.PoblacionalDesercionPeriodo.sync();
     await models.PoblacionalDesercionCohorte.sync();
     await models.PoblacionalDesercionAnual.sync();

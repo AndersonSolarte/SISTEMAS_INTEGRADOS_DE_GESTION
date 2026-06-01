@@ -1,4 +1,4 @@
-﻿const { Op, fn, col, literal, QueryTypes } = require('sequelize');
+const { Op, fn, col, literal, QueryTypes } = require('sequelize');
 const crypto = require('crypto');
 const {
   User,
@@ -17,6 +17,7 @@ const {
   PoblacionalDesercionAnual,
   PoblacionalContextoExterno,
   PoblacionalEmpleabilidad,
+  PoblacionalInfraestructuraFisica,
   RefDepartamento,
   RefMunicipio,
   RefDivipolaCarga,
@@ -174,6 +175,10 @@ const clearDatasetStorage = async ({
     await PlanAccion.destroy({ where: {} });
   }
 
+  if (categoria === 'Infraestructura Física') {
+    await PoblacionalInfraestructuraFisica.destroy({ where: {} });
+  }
+
   if (categoria === 'Autoevaluación') {
     await ensureAutoevaluacionTable();
     const subKey = normalizeCategoryToken(subcategoria);
@@ -225,7 +230,8 @@ const DATASET_CATEGORIES = {
   registros_calificados_acreditacion: 'Registros Calificados y Acreditación',
   registros_calificados_y_acreditacion: 'Registros Calificados y Acreditación',
   registros_calificados: 'Registros Calificados y Acreditación',
-  acreditacion: 'Registros Calificados y Acreditación'
+  acreditacion: 'Registros Calificados y Acreditación',
+  infraestructura_fisica: 'Infraestructura Física'
 };
 
 const GESTION_PROCESOS_CATEGORY = 'Gestión por Procesos';
@@ -449,6 +455,24 @@ const REGISTROS_CALIFICADOS_ROW_ALIASES = {
   plan_estudios: ['Plan de Estudios', 'Plan Estudios', 'Plan de estudio'],
   enlace: ['Enlace', 'Link', 'URL', 'Carpeta Drive']
 };
+
+const INFRAESTRUCTURA_FISICA_TEMPLATE_HEADERS = [
+  'CAMPUS',
+  'COMPONENTE',
+  'TIPO DE ÁREA',
+  'TENENCIA',
+  'UBICACIÓN',
+  'Nomenclatura',
+  'PISO No.',
+  'TIPO DE ESPACIO',
+  'ASIGNACIÓN',
+  'DESCRIPCION',
+  'Función Específica',
+  'CAPACIDAD FÍSICA',
+  'ÁREA (Metros2)',
+  'Fecha Actualización',
+  'Acceso Autónomo'
+];
 
 const PLAN_ACCION_TEMPLATE_HEADERS = [
   'AÑO',
@@ -5100,7 +5124,7 @@ const getResumen = async (req, res) => {
     if (isAutoevaluacionRole(req)) where.categoria = 'Autoevaluación';
     if (anio) where.anio = Number(anio);
 
-    const [totalRegistros, totalCategorias, aniosActivos, totalValor] = await Promise.all([
+    const [totalRegistros, totalCategorias, aniosActivos, totalValor, infraCount, rcCount] = await Promise.all([
       Estadistica.count({ where }),
       Estadistica.count({ where, distinct: true, col: 'categoria' }),
       Estadistica.count({ where, distinct: true, col: 'anio' }),
@@ -5108,7 +5132,9 @@ const getResumen = async (req, res) => {
         where,
         attributes: [[fn('COALESCE', fn('SUM', col('valor')), 0), 'sumValor']],
         raw: true
-      })
+      }),
+      PoblacionalInfraestructuraFisica.count().catch(() => 0),
+      RegistroCalificadoHistorico.count().catch(() => 0)
     ]);
 
     const topCategorias = await Estadistica.findAll({
@@ -5124,25 +5150,43 @@ const getResumen = async (req, res) => {
       raw: true
     });
 
+    const finalTopCategorias = topCategorias.map((item) => ({
+      categoria: item.categoria,
+      total: Number(item.total || 0),
+      valorTotal: Number(item.valorTotal || 0)
+    }));
+
+    if (!where.categoria || where.categoria === 'Infraestructura Física') {
+      finalTopCategorias.push({
+        categoria: 'Infraestructura Física',
+        total: infraCount,
+        valorTotal: 0
+      });
+    }
+
+    if (!where.categoria || where.categoria === 'Registros Calificados y Acreditación') {
+      finalTopCategorias.push({
+        categoria: 'Registros Calificados y Acreditación',
+        total: rcCount,
+        valorTotal: 0
+      });
+    }
+
     return res.json({
       success: true,
       data: {
         totales: {
-          registros: totalRegistros,
-          categorias: totalCategorias,
+          registros: totalRegistros + (where.categoria ? 0 : (infraCount + rcCount)),
+          categorias: totalCategorias + (where.categoria ? 0 : 2),
           anios: aniosActivos,
           valorAcumulado: Number(totalValor?.sumValor || 0)
         },
-        topCategorias: topCategorias.map((item) => ({
-          categoria: item.categoria,
-          total: Number(item.total || 0),
-          valorTotal: Number(item.valorTotal || 0)
-        }))
+        topCategorias: finalTopCategorias
       }
     });
   } catch (error) {
-    console.error('Error al obtener resumen estadÃƒÆ’Ã‚Â­stico:', error);
-    return res.status(500).json({ success: false, message: 'Error al obtener resumen estadÃƒÆ’Ã‚Â­stico' });
+    console.error('Error al obtener resumen estadístico:', error);
+    return res.status(500).json({ success: false, message: 'Error al obtener resumen estadístico' });
   }
 };
 
@@ -5550,6 +5594,17 @@ const downloadTemplate = async (req, res) => {
     }
     if (!enforceAutoevaluacionDatasetScope(req, res, categoria)) return null;
 
+    if (categoria === 'Infraestructura Física') {
+      const worksheet = buildHeaderOnlyWorksheet(INFRAESTRUCTURA_FISICA_TEMPLATE_HEADERS);
+      worksheet['!cols'] = INFRAESTRUCTURA_FISICA_TEMPLATE_HEADERS.map((header) => ({ wch: Math.max(16, String(header).length + 4) }));
+      const workbook = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(workbook, worksheet, 'INFRAESTRUCTURA');
+      const buffer = XLSX.write(workbook, { type: 'buffer', bookType: 'xlsx' });
+      res.setHeader('Content-Disposition', 'attachment; filename=plantilla_infraestructura_fisica.xlsx');
+      res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+      return res.send(buffer);
+    }
+
     if (categoria === 'Georreferencia') {
       const worksheet = buildHeaderOnlyWorksheet(DIVIPOLA_TEMPLATE_HEADERS);
       worksheet['!cols'] = DIVIPOLA_TEMPLATE_HEADERS.map((header) => ({ wch: Math.max(16, String(header).length + 6) }));
@@ -5869,6 +5924,131 @@ const importFromExcel = async (req, res) => {
         success: true,
         message: `Importación finalizada para Gestión por Procesos: ${result.importados} nuevos, ${result.actualizados} actualizados de ${result.total} registros`,
         data: { ...result, totalProcesados }
+      });
+    }
+
+    if (categoria === 'Infraestructura Física') {
+      const sheetName = workbook.SheetNames.find(name => {
+        const norm = normalizeHeader(name);
+        return norm === normalizeHeader('Tabla_ Infra_ Física') || norm.includes('infraestructura') || norm.includes('fisica') || norm.includes('infra');
+      });
+      const matchedSheetName = sheetName || workbook.SheetNames[0];
+      if (!matchedSheetName) {
+        return res.status(400).json({ success: false, message: 'El archivo Excel no contiene hojas válidas' });
+      }
+
+      const allRows = XLSX.utils.sheet_to_json(workbook.Sheets[matchedSheetName], { header: 1 });
+      let headerRowIndex = -1;
+      for (let i = 0; i < allRows.length; i++) {
+        const row = allRows[i];
+        if (row && row.some(cell => String(cell || '').trim().toUpperCase() === 'COMPONENTE') &&
+                  row.some(cell => String(cell || '').trim().toUpperCase() === 'TIPO DE ÁREA')) {
+          headerRowIndex = i;
+          break;
+        }
+      }
+
+      const headers = headerRowIndex >= 0 
+        ? allRows[headerRowIndex].map(h => String(h || '').trim())
+        : INFRAESTRUCTURA_FISICA_TEMPLATE_HEADERS;
+      const dataRows = headerRowIndex >= 0 ? allRows.slice(headerRowIndex + 1) : allRows;
+
+      await clearDatasetStorage({ categoria: 'Infraestructura Física' });
+
+      let importados = 0;
+      let totalFilas = 0;
+      const errores = [];
+
+      for (let i = 0; i < dataRows.length; i++) {
+        const row = dataRows[i];
+        const fila = (headerRowIndex >= 0 ? headerRowIndex : 0) + i + 2;
+
+        if (!row || !row.some(cell => cell !== null && cell !== undefined && String(cell).trim() !== '')) {
+          continue;
+        }
+
+        totalFilas++;
+
+        const record = {};
+        headers.forEach((header, colIdx) => {
+          if (!header) return;
+          record[header] = colIdx < row.length ? row[colIdx] : null;
+        });
+
+        if (!record['COMPONENTE'] && !record['TIPO DE ESPACIO']) {
+          errores.push({ fila, error: 'Fila omitida: Componente o Tipo de Espacio vacío' });
+          continue;
+        }
+
+        // Determinar Campus
+        let parsedCampus = 'Campus Centro';
+        const rawCampus = String(record['CAMPUS'] || record['Campus'] || record['SEDE'] || record['Sede'] || '').trim();
+        const rawUbicacion = String(record['UBICACIÓN'] || record['UBICACION'] || '').trim();
+
+        if (rawCampus) {
+          const normCampus = rawCampus.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toUpperCase();
+          if (normCampus.includes('SANTIAGO')) {
+            parsedCampus = 'Campus Santiago';
+          } else if (normCampus.includes('DAMIAN') || normCampus.includes('MUSD')) {
+            parsedCampus = 'Campus San Damián';
+          } else {
+            parsedCampus = 'Campus Centro';
+          }
+        } else if (rawUbicacion) {
+          const normUbi = rawUbicacion.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toUpperCase();
+          if (normUbi.includes('SANTIAGO')) {
+            parsedCampus = 'Campus Santiago';
+          } else if (normUbi.includes('DAMIAN') || normUbi.includes('MUSD')) {
+            parsedCampus = 'Campus San Damián';
+          }
+        }
+
+        try {
+          await PoblacionalInfraestructuraFisica.create({
+            campus: parsedCampus,
+            componente: toDbText(record['COMPONENTE'], 200),
+            tipo_area: toDbText(record['TIPO DE ÁREA'], 120),
+            tenencia: toDbText(record['TENENCIA'], 120),
+            ubicacion: toDbText(record['UBICACIÓN'] || record['UBICACION'], 255),
+            nomenclatura: toDbText(record['Nomenclatura'] || record['NOMENCLATURA'], 120),
+            piso_no: record['PISO No.'] !== null && record['PISO No.'] !== undefined ? Math.trunc(toNumber(record['PISO No.'])) : null,
+            tipo_espacio: toDbText(record['TIPO DE ESPACIO'], 200),
+            asignacion: toDbText(record['ASIGNACIÓN'] || record['ASIGNACION'], 255),
+            descripcion: toDbText(record['DESCRIPCION'] || record['DESCRIPCIÓN']),
+            funcion_especifica: toDbText(record['Función Específica'] || record['Funcion Especifica'] || record['FUNCION ESPECIFICA'], 255),
+            capacidad_fisica: record['CAPACIDAD FÍSICA'] !== null && record['CAPACIDAD FÍSICA'] !== undefined ? Math.trunc(toNumber(record['CAPACIDAD FÍSICA'])) : 0,
+            area_metros2: record['ÁREA (Metros2)'] !== null && record['ÁREA (Metros2)'] !== undefined ? toNumber(record['ÁREA (Metros2)']) : 0,
+            fecha_actualizacion: toDbText(record['Fecha Actualización'] || record['Fecha de Actualizacion'] || record['FECHA ACTUALIZACION'], 120),
+            acceso_autonomo: toDbText(record['Acceso Autónomo'] || record['Acceso Autonomo'] || record['ACCESO AUTONOMO'], 20),
+            creado_por: req.user?.id || null,
+            actualizado_por: req.user?.id || null
+          });
+          importados++;
+        } catch (err) {
+          console.error(`Error al importar fila ${fila} de Infraestructura Física:`, err);
+          errores.push({ fila, error: err.message || 'Error al guardar fila' });
+        }
+      }
+
+      const porcentaje = totalFilas > 0 ? Number(((importados / totalFilas) * 100).toFixed(2)) : 0;
+      await GestionInformacionCarga.create({
+        categoria: 'Infraestructura Física',
+        subcategoria: 'Infraestructura Física',
+        variable: 'Infraestructura Física',
+        archivo_nombre: uploadFileName,
+        total_plantilla: totalFilas,
+        total_cargados: importados,
+        total_omitidos: totalFilas - importados,
+        porcentaje_cargado: porcentaje,
+        estado: porcentaje === 100 ? 'exitoso' : 'parcial',
+        detalle: errores.length ? JSON.stringify(errores.slice(0, 50)) : null,
+        creado_por: req.user?.id || null
+      });
+
+      return res.json({
+        success: true,
+        message: `Importación finalizada para Infraestructura Física: ${importados}/${totalFilas} registros`,
+        data: { total: totalFilas, importados, errores }
       });
     }
 
@@ -8931,6 +9111,140 @@ const sugerirIndicadorPlanAccion = async (req, res) => {
   }
 };
 
+const getInfraestructuras = async (req, res) => {
+  try {
+    const { page = 1, limit = 50, campus, ubicacion, tipo_espacio, acceso_autonomo, search } = req.query;
+    const where = {};
+    
+    if (campus) where.campus = campus;
+    if (ubicacion) where.ubicacion = ubicacion;
+    if (tipo_espacio) where.tipo_espacio = tipo_espacio;
+    if (acceso_autonomo) where.acceso_autonomo = acceso_autonomo;
+    
+    if (search) {
+      where[Op.or] = [
+        { nomenclatura: { [Op.iLike]: `%${search}%` } },
+        { asignacion: { [Op.iLike]: `%${search}%` } },
+        { descripcion: { [Op.iLike]: `%${search}%` } },
+        { tipo_espacio: { [Op.iLike]: `%${search}%` } },
+        { ubicacion: { [Op.iLike]: `%${search}%` } }
+      ];
+    }
+    
+    const currentPage = Math.max(Number(page) || 1, 1);
+    const currentLimit = Math.min(Math.max(Number(limit) || 50, 1), 5000);
+    const offset = (currentPage - 1) * currentLimit;
+    
+    const { count, rows } = await PoblacionalInfraestructuraFisica.findAndCountAll({
+      where,
+      order: [['campus', 'ASC'], ['ubicacion', 'ASC'], ['nomenclatura', 'ASC'], ['id', 'ASC']],
+      limit: currentLimit,
+      offset,
+      raw: true
+    });
+    
+    return res.json({
+      success: true,
+      data: {
+        registros: rows,
+        pagination: {
+          total: count,
+          page: currentPage,
+          limit: currentLimit,
+          totalPages: Math.ceil(count / currentLimit)
+        }
+      }
+    });
+  } catch (error) {
+    console.error('Error al listar infraestructuras:', error);
+    return res.status(500).json({ success: false, message: 'Error al listar infraestructuras físicas' });
+  }
+};
+
+const createInfraestructura = async (req, res) => {
+  try {
+    const payload = {
+      campus: normalizeText(req.body.campus),
+      componente: normalizeText(req.body.componente),
+      tipo_area: normalizeText(req.body.tipo_area),
+      tenencia: normalizeText(req.body.tenencia),
+      ubicacion: normalizeText(req.body.ubicacion),
+      nomenclatura: normalizeText(req.body.nomenclatura),
+      piso_no: req.body.piso_no !== null && req.body.piso_no !== undefined ? Math.trunc(Number(req.body.piso_no)) : null,
+      tipo_espacio: normalizeText(req.body.tipo_espacio),
+      asignacion: normalizeText(req.body.asignacion),
+      descripcion: normalizeText(req.body.descripcion),
+      funcion_especifica: normalizeText(req.body.funcion_especifica),
+      capacidad_fisica: req.body.capacidad_fisica !== null && req.body.capacidad_fisica !== undefined ? Math.trunc(Number(req.body.capacidad_fisica)) : 0,
+      area_metros2: req.body.area_metros2 !== null && req.body.area_metros2 !== undefined ? Number(req.body.area_metros2) : 0,
+      fecha_actualizacion: normalizeText(req.body.fecha_actualizacion),
+      acceso_autonomo: normalizeText(req.body.acceso_autonomo),
+      creado_por: req.user?.id || null,
+      actualizado_por: req.user?.id || null
+    };
+    
+    if (!payload.campus || !payload.componente || !payload.tipo_espacio) {
+      return res.status(400).json({ success: false, message: 'Campos obligatorios: campus, componente, tipo_espacio' });
+    }
+    
+    const registro = await PoblacionalInfraestructuraFisica.create(payload);
+    return res.status(201).json({ success: true, message: 'Espacio físico creado exitosamente', data: registro });
+  } catch (error) {
+    console.error('Error al crear infraestructura:', error);
+    return res.status(500).json({ success: false, message: 'Error al crear espacio físico' });
+  }
+};
+
+const updateInfraestructura = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const registro = await PoblacionalInfraestructuraFisica.findByPk(id);
+    if (!registro) {
+      return res.status(404).json({ success: false, message: 'Registro no encontrado' });
+    }
+    
+    const payload = {
+      campus: normalizeText(req.body.campus) || registro.campus,
+      componente: normalizeText(req.body.componente) || registro.componente,
+      tipo_area: normalizeText(req.body.tipo_area) || registro.tipo_area,
+      tenencia: normalizeText(req.body.tenencia) || registro.tenencia,
+      ubicacion: normalizeText(req.body.ubicacion) || registro.ubicacion,
+      nomenclatura: normalizeText(req.body.nomenclatura) || registro.nomenclatura,
+      piso_no: req.body.piso_no !== null && req.body.piso_no !== undefined ? Math.trunc(Number(req.body.piso_no)) : registro.piso_no,
+      tipo_espacio: normalizeText(req.body.tipo_espacio) || registro.tipo_espacio,
+      asignacion: normalizeText(req.body.asignacion) || registro.asignacion,
+      descripcion: normalizeText(req.body.descripcion) || registro.descripcion,
+      funcion_especifica: normalizeText(req.body.funcion_especifica) || registro.funcion_especifica,
+      capacidad_fisica: req.body.capacidad_fisica !== null && req.body.capacidad_fisica !== undefined ? Math.trunc(Number(req.body.capacidad_fisica)) : registro.capacidad_fisica,
+      area_metros2: req.body.area_metros2 !== null && req.body.area_metros2 !== undefined ? Number(req.body.area_metros2) : registro.area_metros2,
+      fecha_actualizacion: normalizeText(req.body.fecha_actualizacion) || registro.fecha_actualizacion,
+      acceso_autonomo: normalizeText(req.body.acceso_autonomo) || registro.acceso_autonomo,
+      actualizado_por: req.user?.id || null
+    };
+    
+    await registro.update(payload);
+    return res.json({ success: true, message: 'Espacio físico actualizado exitosamente', data: registro });
+  } catch (error) {
+    console.error('Error al actualizar infraestructura:', error);
+    return res.status(500).json({ success: false, message: 'Error al actualizar espacio físico' });
+  }
+};
+
+const deleteInfraestructura = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const registro = await PoblacionalInfraestructuraFisica.findByPk(id);
+    if (!registro) {
+      return res.status(404).json({ success: false, message: 'Registro no encontrado' });
+    }
+    await registro.destroy();
+    return res.json({ success: true, message: 'Espacio físico eliminado exitosamente' });
+  } catch (error) {
+    console.error('Error al eliminar infraestructura:', error);
+    return res.status(500).json({ success: false, message: 'Error al eliminar espacio físico' });
+  }
+};
+
 module.exports = {
   getEstadisticas,
   getMatriculadosIncidencias,
@@ -8957,7 +9271,11 @@ module.exports = {
   exportPlanAccionInstitucional,
   exportActaInstitucional,
   sugerirIndicadorPlanAccion,
-  DATASET_CATEGORIES
+  DATASET_CATEGORIES,
+  getInfraestructuras,
+  createInfraestructura,
+  updateInfraestructura,
+  deleteInfraestructura
 };
 
 

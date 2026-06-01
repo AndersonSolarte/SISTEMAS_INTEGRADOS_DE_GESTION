@@ -95,7 +95,15 @@ const gestionInformacionService = {
     api.get('/evidencias', { params: { folderUrl }, timeout: 60000 }).then((r) => r.data),
   createEstadistica: (payload) => api.post('/planeacion/gestion-informacion', payload).then((r) => r.data),
   updateEstadistica: (id, payload) => api.put(`/planeacion/gestion-informacion/${id}`, payload).then((r) => r.data),
-  deleteEstadistica: (id) => api.delete(`/planeacion/gestion-informacion/${id}`).then((r) => r.data)
+  deleteEstadistica: (id) => api.delete(`/planeacion/gestion-informacion/${id}`).then((r) => r.data),
+  getInfraestructuras: (params = {}) =>
+    api.get('/planeacion/gestion-informacion/infraestructura', { params, timeout: 60000 }).then((r) => r.data),
+  createInfraestructura: (payload) =>
+    api.post('/planeacion/gestion-informacion/infraestructura', payload).then((r) => r.data),
+  updateInfraestructura: (id, payload) =>
+    api.put(`/planeacion/gestion-informacion/infraestructura/${id}`, payload).then((r) => r.data),
+  deleteInfraestructura: (id) =>
+    api.delete(`/planeacion/gestion-informacion/infraestructura/${id}`).then((r) => r.data)
 };
 
 export default gestionInformacionService;

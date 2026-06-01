@@ -26,6 +26,8 @@ const GESTION_INFO_MODULE_KEYS = [
   'estadistica_institucional',
   'autoevaluacion',
   'autoevaluacion.instrumentos.access',
+  'infraestructura_fisica.gestionar',
+  'infraestructura_fisica.ver',
   'seguridad_aplicativa.ver',
   'seguridad_aplicativa.escanear',
   'seguridad_aplicativa.ver_hallazgos',

@@ -24,6 +24,7 @@ const Saber11Resultado = require('./Saber11Resultado');
 const SaberProResultadoIndividual = require('./SaberProResultadoIndividual');
 const SaberProResultadoAgregado = require('./SaberProResultadoAgregado');
 const GestionInformacionCarga = require('./GestionInformacionCarga');
+const PoblacionalInfraestructuraFisica = require('./PoblacionalInfraestructuraFisica');
 const GeorreferenciaDepartamento = require('./GeorreferenciaDepartamento');
 const GeorreferenciaMunicipio = require('./GeorreferenciaMunicipio');
 const RecursoHumanoDocente = require('./RecursoHumanoDocente');
@@ -70,7 +71,6 @@ User.hasMany(DocumentoFavorito, { foreignKey: 'user_id', as: 'favoritos' });
 DocumentoFavorito.belongsTo(User, { foreignKey: 'user_id', as: 'user' });
 Documento.hasMany(DocumentoFavorito, { foreignKey: 'documento_id', as: 'favoritos' });
 DocumentoFavorito.belongsTo(Documento, { foreignKey: 'documento_id', as: 'documento' });
-
 
 // NUEVAS RELACIONES - Auditoría de documentos
 User.hasMany(Documento, { foreignKey: 'creado_por', as: 'documentosCreados' });
@@ -243,6 +243,12 @@ SecurityFindingComment.belongsTo(SecurityFinding, { foreignKey: 'finding_id', as
 User.hasMany(SecurityFindingComment, { foreignKey: 'user_id', as: 'securityFindingComments' });
 SecurityFindingComment.belongsTo(User, { foreignKey: 'user_id', as: 'user' });
 
+// Relaciones para el nuevo modelo de Infraestructura Física
+User.hasMany(PoblacionalInfraestructuraFisica, { foreignKey: 'creado_por', as: 'infraestructurasCreadas' });
+PoblacionalInfraestructuraFisica.belongsTo(User, { foreignKey: 'creado_por', as: 'creador' });
+User.hasMany(PoblacionalInfraestructuraFisica, { foreignKey: 'actualizado_por', as: 'infraestructurasActualizadas' });
+PoblacionalInfraestructuraFisica.belongsTo(User, { foreignKey: 'actualizado_por', as: 'actualizador' });
+
 module.exports = {
   User,
   UserModulePermission,
@@ -270,6 +276,7 @@ module.exports = {
   SaberProResultadoIndividual,
   SaberProResultadoAgregado,
   GestionInformacionCarga,
+  PoblacionalInfraestructuraFisica,
   GeorreferenciaDepartamento,
   GeorreferenciaMunicipio,
   RecursoHumanoDocente,

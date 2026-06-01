@@ -1,4 +1,4 @@
-﻿import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Box,
   Paper,
@@ -78,6 +78,12 @@ import ZoomInIcon from '@mui/icons-material/ZoomIn';
 import CloseIcon from '@mui/icons-material/Close';
 import DownloadIconSmall from '@mui/icons-material/Download';
 import ContentCopyIcon from '@mui/icons-material/ContentCopy';
+import FileDownloadIcon from '@mui/icons-material/FileDownload';
+import SearchIcon from '@mui/icons-material/Search';
+import AddIcon from '@mui/icons-material/Add';
+import EditIcon from '@mui/icons-material/Edit';
+import DeleteIcon from '@mui/icons-material/Delete';
+import InputAdornment from '@mui/material/InputAdornment';
 import {
   ResponsiveContainer,
   LineChart,
@@ -125,7 +131,8 @@ const BASES = [
   { key: 'gestion_procesos', label: 'Gestión por Procesos', description: 'Monitoreo estadístico documental para operación por procesos.' },
   { key: 'plan_accion', label: 'Plan de Acción', description: 'Seguimiento anual del Plan de Acción institucional: metas, avances IP/IIP y ejecución total.' },
   { key: 'autoevaluacion', label: 'Autoevaluación', description: 'Estructura base de factores, características, aspectos, indicadores y evidencias.' },
-  { key: 'registros_calificados_acreditacion', label: 'Registros Calificados y Acreditación', description: 'Histórico de registros calificados, resoluciones, planes de estudio y evidencias de Drive.' }
+  { key: 'registros_calificados_acreditacion', label: 'Registros Calificados y Acreditación', description: 'Histórico de registros calificados, resoluciones, planes de estudio y evidencias de Drive.' },
+  { key: 'infraestructura_fisica', label: 'Infraestructura Física', description: 'Inventario físico unificado de áreas, aforos, tenencias y accesos de los campus.' }
 ];
 
 const SUBBASES_POBLACIONAL = ['Inscritos', 'Admitidos', 'Primer Curso', 'Matriculados', 'Graduados', 'Cantidad Total Egresados', 'Caracterizacion', 'Desercion', 'Empleabilidad', 'Contexto Externo'];
@@ -178,6 +185,10 @@ const normalizeModulePermissionList = (raw) => {
 };
 
 const getVisibleBaseKeysForUser = (user) => {
+  if ([ROLES.ADMINISTRADOR, ROLES.PLANEACION_ESTRATEGICA].includes(user?.role)) {
+    return BASES.map((b) => b.key);
+  }
+
   const explicitPermissions = [
     user?.modulePermissions,
     user?.modules,
@@ -190,11 +201,10 @@ const getVisibleBaseKeysForUser = (user) => {
 
   const validKeys = new Set(BASES.map((b) => b.key));
   const explicitValid = Array.from(new Set(explicitPermissions.filter((key) => validKeys.has(key))));
-  if (explicitValid.length > 0) return explicitValid;
-
-  if ([ROLES.ADMINISTRADOR, ROLES.PLANEACION_ESTRATEGICA].includes(user?.role)) {
-    return BASES.map((b) => b.key);
+  if (explicitPermissions.includes('infraestructura_fisica.ver') || explicitPermissions.includes('infraestructura_fisica.gestionar')) {
+    explicitValid.push('infraestructura_fisica');
   }
+  if (explicitValid.length > 0) return Array.from(new Set(explicitValid));
 
   const specializedBaseKeys = [];
   const explicitPoblacional = normalizeModulePermissionList(user?.allowedPoblacionalDashboards);
@@ -1647,6 +1657,31 @@ const parsePeriodoLabelToSort = (value = '') => {
   return year * 10 + slot;
 };
 
+const INFRAESTRUCTURA_CATEGORIES = [
+  { key: 'aulas', label: 'Aulas de clase', matches: ['aula', 'aulas', 'clase', 'salon', 'salón'] },
+  { key: 'laboratorios', label: 'Laboratorios', matches: ['laboratorio', 'laboratorios', 'lab', 'labs'] },
+  { key: 'tutores', label: 'Salas de tutores', matches: ['tutor', 'tutores', 'sala de tutores', 'salas de tutores'] },
+  { key: 'auditorios', label: 'Auditorios', matches: ['auditorio', 'auditorios'] },
+  { key: 'bibliotecas', label: 'Bibliotecas', matches: ['biblioteca', 'bibliotecas', 'biblio'] },
+  { key: 'computo', label: 'Cómputo', matches: ['computo', 'cómputo', 'sistemas', 'sala de computo', 'salas de computo', 'sala de cómputo', 'salas de cómputo'] },
+  { key: 'oficinas', label: 'Oficinas', matches: ['oficina', 'oficinas', 'despacho', 'despachos'] },
+  { key: 'deportes', label: 'Espacios deportivos', matches: ['deporte', 'deportes', 'deportivo', 'deportivos', 'gimnasio', 'cancha', 'canchas'] },
+  { key: 'cafeterias', label: 'Cafeterías', matches: ['cafeteria', 'cafetería', 'cafeterias', 'cafeterías', 'comedor'] },
+  { key: 'recreacion', label: 'Zonas recreación', matches: ['recreacion', 'recreación', 'zona verde', 'zonas verdes', 'pasillo', 'pasillos', 'patio'] },
+  { key: 'sanitarios', label: 'Servicios sanitarios', matches: ['baño', 'baños', 'bano', 'banos', 'sanitario', 'sanitarios', 'servicios sanitarios'] },
+];
+
+const getInfraestructuraRowCategory = (tipoEspacio) => {
+  if (!tipoEspacio) return 'Otros';
+  const val = String(tipoEspacio).toLowerCase().trim();
+  for (const cat of INFRAESTRUCTURA_CATEGORIES) {
+    if (cat.matches.some(m => val.includes(m) || m.includes(val))) {
+      return cat.label;
+    }
+  }
+  return 'Otros';
+};
+
 function GestionInformacion() {
   const { enqueueSnackbar } = useSnackbar();
   const { user } = useAuth();
@@ -1675,6 +1710,48 @@ function GestionInformacion() {
   const [poblacionalPanel, setPoblacionalPanel] = useState('hub');
   const [statSection, setStatSection] = useState('flujo');
   const [saberProStatSection, setSaberProStatSection] = useState('hub');
+  const [infraestructuraFisicaTab, setInfraestructuraFisicaTab] = useState('estadistica');
+  const [infraestructuraFisicaCampusFilter, setInfraestructuraFisicaCampusFilter] = useState('Todos');
+  const [infraestructuraFisicaBloqueFilter, setInfraestructuraFisicaBloqueFilter] = useState('Todos');
+  const [infraestructuraFisicaPisoFilter, setInfraestructuraFisicaPisoFilter] = useState('Todos');
+  const [infraestructuraFisicaTenenciaFilter, setInfraestructuraFisicaTenenciaFilter] = useState('Todos');
+  const [infraestructuraFisicaTipoAreaFilter, setInfraestructuraFisicaTipoAreaFilter] = useState('Todos');
+  const [infraestructuraFisicaSearch, setInfraestructuraFisicaSearch] = useState('');
+  const [infraestructuraFisicaPage, setInfraestructuraFisicaPage] = useState(0);
+  
+  // Estados para el modal flotante de drill-down de la matriz de infraestructura
+  const [infraestructuraFisicaDetailOpen, setInfraestructuraFisicaDetailOpen] = useState(false);
+  const [infraestructuraFisicaDetailCategory, setInfraestructuraFisicaDetailCategory] = useState('');
+  const [infraestructuraFisicaDetailTenencia, setInfraestructuraFisicaDetailTenencia] = useState('Todos');
+  const [infraestructuraFisicaDetailSearch, setInfraestructuraFisicaDetailSearch] = useState('');
+  const [infraestructuraFisicaDetailPage, setInfraestructuraFisicaDetailPage] = useState(0);
+  const [infraestructuraFisicaDetailRowsPerPage, setInfraestructuraFisicaDetailRowsPerPage] = useState(10);
+  const [infraestructuraFisicaRowsPerPage, setInfraestructuraFisicaRowsPerPage] = useState(25);
+  const [infraestructuraFisicaData, setInfraestructuraFisicaData] = useState([]);
+  const [infraestructuraFisicaAllData, setInfraestructuraFisicaAllData] = useState([]);
+  const [infraestructuraFisicaTotal, setInfraestructuraFisicaTotal] = useState(0);
+  const [infraestructuraFisicaLoading, setInfraestructuraFisicaLoading] = useState(false);
+  const [infraestructuraFisicaDialogOpen, setInfraestructuraFisicaDialogOpen] = useState(false);
+  const [infraestructuraFisicaForm, setInfraestructuraFisicaForm] = useState({
+    campus: 'Campus Centro',
+    componente: '',
+    tipo_area: 'CONSTRUIDA',
+    tenencia: 'Propio',
+    ubicacion: '',
+    nomenclatura: '',
+    piso_no: 1,
+    tipo_espacio: '',
+    asignacion: '',
+    descripcion: '',
+    funcion_especifica: '',
+    capacidad_fisica: 0,
+    area_metros2: 0.0,
+    fecha_actualizacion: new Date().getFullYear().toString(),
+    acceso_autonomo: 'No'
+  });
+  const [infraestructuraFisicaSubmitting, setInfraestructuraFisicaSubmitting] = useState(false);
+  const [infraestructuraFisicaUploading, setInfraestructuraFisicaUploading] = useState(false);
+  const [infraestructuraFisicaEditingId, setInfraestructuraFisicaEditingId] = useState(null);
   const [statsFiltersBySection, setStatsFiltersBySection] = useState(() => buildInitialStatsFiltersBySection());
   const [flujoTableLevelFilter, setFlujoTableLevelFilter] = useState('todos');
   const [flujoTableYearsFilter, setFlujoTableYearsFilter] = useState([]);
@@ -1994,10 +2071,21 @@ function GestionInformacion() {
     () => [ROLES.ADMINISTRADOR, ROLES.AUTOEVALUACION, ROLES.GESTION_PROCESOS].includes(user?.role)
       || explicitGiModules.includes('gestion_bases_datos')
       || explicitGiModules.includes('gestion_procesos')
-      || explicitGiModules.includes('estadistica_documental'),
+      || explicitGiModules.includes('estadistica_documental')
+      || explicitGiModules.includes('infraestructura_fisica.gestionar'),
     [user?.role, explicitGiModules]
   );
   const canManageBasesInView = canManageBases && !isPlaneacionGpInfoContext;
+  const canManageInfraestructura = useMemo(() => {
+    return [ROLES.ADMINISTRADOR, ROLES.PLANEACION_ESTRATEGICA].includes(user?.role)
+      || explicitGiModules.includes('infraestructura_fisica.gestionar');
+  }, [user?.role, explicitGiModules]);
+
+  const canViewInfraestructuraStats = useMemo(() => {
+    return [ROLES.ADMINISTRADOR, ROLES.PLANEACION_ESTRATEGICA].includes(user?.role)
+      || explicitGiModules.includes('infraestructura_fisica.ver')
+      || explicitGiModules.includes('infraestructura_fisica.gestionar');
+  }, [user?.role, explicitGiModules]);
   const visibleBaseKeys = useMemo(() => {
     const keys = getVisibleBaseKeysForUser(user);
     if (user?.role === ROLES.PLANEACION_ESTRATEGICA && isPlaneacionGpInfoContext) {
@@ -2113,6 +2201,51 @@ function GestionInformacion() {
       setRegistrosCalificadosLoading(false);
     }
   }, [enqueueSnackbar, registrosCalificadosUi]);
+
+  const fetchInfraestructuraFisica = useCallback(async () => {
+    setInfraestructuraFisicaLoading(true);
+    try {
+      const campusFilterVal = infraestructuraFisicaCampusFilter === 'Todos' ? '' : infraestructuraFisicaCampusFilter;
+      const response = await gestionInformacionService.getInfraestructuras({
+        page: infraestructuraFisicaPage + 1,
+        limit: infraestructuraFisicaRowsPerPage,
+        campus: campusFilterVal,
+        search: infraestructuraFisicaSearch
+      });
+      setInfraestructuraFisicaData(response.data.registros || []);
+      setInfraestructuraFisicaTotal(response.data.pagination.total || 0);
+    } catch (error) {
+      console.error('Error al cargar infraestructura física:', error);
+      enqueueSnackbar('No se pudo cargar la información de infraestructura física', { variant: 'error' });
+    } finally {
+      setInfraestructuraFisicaLoading(false);
+    }
+  }, [infraestructuraFisicaPage, infraestructuraFisicaRowsPerPage, infraestructuraFisicaCampusFilter, infraestructuraFisicaSearch, enqueueSnackbar]);
+
+  const fetchInfraestructuraFisicaAll = useCallback(async () => {
+    try {
+      const response = await gestionInformacionService.getInfraestructuras({
+        page: 1,
+        limit: 10000,
+        campus: ''
+      });
+      setInfraestructuraFisicaAllData(response.data.registros || []);
+    } catch (error) {
+      console.error('Error al cargar agregados de infraestructura:', error);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (selectedCard === 'infraestructura_fisica') {
+      fetchInfraestructuraFisica();
+    }
+  }, [selectedCard, fetchInfraestructuraFisica]);
+
+  useEffect(() => {
+    if (selectedCard === 'infraestructura_fisica' && infraestructuraFisicaTab === 'estadistica') {
+      fetchInfraestructuraFisicaAll();
+    }
+  }, [selectedCard, infraestructuraFisicaTab, fetchInfraestructuraFisicaAll]);
 
   const openRegistrosCalificadosEvidence = async (row) => {
     setRegistrosCalificadosEvidence({ open: true, loading: true, row, expected: [], files: [] });
@@ -4105,7 +4238,7 @@ function GestionInformacion() {
   };
 
   const enterCard = (key) => {
-    if (!['poblacional', 'saber_pro', 'recurso_humano', 'gestion_procesos', 'registros_calificados_acreditacion', 'activity_monitor', 'security_application'].includes(key)) {
+    if (!['poblacional', 'saber_pro', 'recurso_humano', 'gestion_procesos', 'registros_calificados_acreditacion', 'infraestructura_fisica', 'activity_monitor', 'security_application'].includes(key)) {
       enqueueSnackbar('Modulo en construccion. La estructura ya quedo lista para activarlo.', { variant: 'info' });
       return;
     }
@@ -4123,6 +4256,21 @@ function GestionInformacion() {
     }
     if (key === 'gestion_procesos') {
       setGestionProcesosPanel('hub');
+    }
+    if (key === 'infraestructura_fisica') {
+      // Si tiene permiso para ver estadísticas, por defecto va a esa pestaña. Si no, va directo a CRUD
+      if (canViewInfraestructuraStats) {
+        setInfraestructuraFisicaTab('estadistica');
+      } else {
+        setInfraestructuraFisicaTab('crud');
+      }
+      setInfraestructuraFisicaCampusFilter('Todos');
+      setInfraestructuraFisicaBloqueFilter('Todos');
+      setInfraestructuraFisicaPisoFilter('Todos');
+      setInfraestructuraFisicaTenenciaFilter('Todos');
+      setInfraestructuraFisicaTipoAreaFilter('Todos');
+      setInfraestructuraFisicaSearch('');
+      setInfraestructuraFisicaPage(0);
     }
     setSelectedCard(key);
   };
@@ -6419,7 +6567,11 @@ const renderCategoryBars = (items = [], options = {}) => {
               Ingresar al módulo
             </Button>
             <Typography variant="caption" sx={{ display: 'block', mt: 0.9, color: '#64748b' }}>
-              {base.key === 'poblacional' ? `${countMap.Poblacional || 0} registros disponibles` : 'Interfaz preparada para activacion'}
+              {base.key === 'poblacional'
+                ? `${countMap.Poblacional || 0} registros disponibles`
+                : base.key === 'infraestructura_fisica'
+                ? `${countMap['Infraestructura Fisica'] || 0} registros disponibles`
+                : 'Interfaz preparada para activacion'}
             </Typography>
           </Box>
         </Paper>
@@ -13735,7 +13887,7 @@ const renderCategoryBars = (items = [], options = {}) => {
                   <TableRow><TableCell colSpan={9} align="center" sx={{ py: 6 }}>No hay registros para el filtro seleccionado.</TableCell></TableRow>
                 ) : registros.map((row) => (
                   <TableRow key={row.id} hover>
-                    <TableCell sx={{ fontWeight: 800, minWidth: 220 }}>{row.programaAcademico}</TableCell>
+<TableCell sx={{ fontWeight: 800, minWidth: 220 }}>{row.programaAcademico}</TableCell>
                     <TableCell>{row.nivel || '-'}</TableCell>
                     <TableCell sx={{ minWidth: 190 }}>{row.tipoAprobacion || '-'}</TableCell>
                     <TableCell>{row.resolucionMen || '-'}</TableCell>
@@ -13756,6 +13908,1908 @@ const renderCategoryBars = (items = [], options = {}) => {
             </Table>
           </TableContainer>
         </Paper>
+      </Stack>
+    );
+  };
+
+  // --- INICIO DE LA LÓGICA DE FILTRADO BIDIRECCIONAL (INFRAESTRUCTURA FÍSICA) ---
+  const matchesInfraestructuraFilter = (row, filterVal, rowField) => {
+    if (!filterVal || filterVal === 'Todos') return true;
+    if (rowField === 'piso_no') {
+      return Number(row[rowField]) === Number(filterVal);
+    }
+    return String(row[rowField] || '').toLowerCase() === String(filterVal).toLowerCase();
+  };
+
+  // 1. Campus disponibles
+  const availableCampusOptions = useMemo(() => {
+    const matching = infraestructuraFisicaAllData.filter((row) => 
+      matchesInfraestructuraFilter(row, infraestructuraFisicaBloqueFilter, 'componente') &&
+      matchesInfraestructuraFilter(row, infraestructuraFisicaPisoFilter, 'piso_no') &&
+      matchesInfraestructuraFilter(row, infraestructuraFisicaTenenciaFilter, 'tenencia') &&
+      matchesInfraestructuraFilter(row, infraestructuraFisicaTipoAreaFilter, 'tipo_area')
+    );
+    return Array.from(new Set(matching.map((r) => r.campus).filter(Boolean))).sort();
+  }, [infraestructuraFisicaAllData, infraestructuraFisicaBloqueFilter, infraestructuraFisicaPisoFilter, infraestructuraFisicaTenenciaFilter, infraestructuraFisicaTipoAreaFilter]);
+
+  // 2. Bloques disponibles
+  const availableBloqueOptions = useMemo(() => {
+    const matching = infraestructuraFisicaAllData.filter((row) => 
+      matchesInfraestructuraFilter(row, infraestructuraFisicaCampusFilter, 'campus') &&
+      matchesInfraestructuraFilter(row, infraestructuraFisicaPisoFilter, 'piso_no') &&
+      matchesInfraestructuraFilter(row, infraestructuraFisicaTenenciaFilter, 'tenencia') &&
+      matchesInfraestructuraFilter(row, infraestructuraFisicaTipoAreaFilter, 'tipo_area')
+    );
+    return Array.from(new Set(matching.map((r) => r.componente).filter(Boolean))).sort();
+  }, [infraestructuraFisicaAllData, infraestructuraFisicaCampusFilter, infraestructuraFisicaPisoFilter, infraestructuraFisicaTenenciaFilter, infraestructuraFisicaTipoAreaFilter]);
+
+  // 3. Pisos disponibles
+  const availablePisoOptions = useMemo(() => {
+    const matching = infraestructuraFisicaAllData.filter((row) => 
+      matchesInfraestructuraFilter(row, infraestructuraFisicaCampusFilter, 'campus') &&
+      matchesInfraestructuraFilter(row, infraestructuraFisicaBloqueFilter, 'componente') &&
+      matchesInfraestructuraFilter(row, infraestructuraFisicaTenenciaFilter, 'tenencia') &&
+      matchesInfraestructuraFilter(row, infraestructuraFisicaTipoAreaFilter, 'tipo_area')
+    );
+    return Array.from(new Set(matching.map((r) => r.piso_no).filter((p) => p !== null && p !== undefined))).map(Number).sort((a, b) => a - b);
+  }, [infraestructuraFisicaAllData, infraestructuraFisicaCampusFilter, infraestructuraFisicaBloqueFilter, infraestructuraFisicaTenenciaFilter, infraestructuraFisicaTipoAreaFilter]);
+
+  // 4. Tenencias disponibles
+  const availableTenenciaOptions = useMemo(() => {
+    const matching = infraestructuraFisicaAllData.filter((row) => 
+      matchesInfraestructuraFilter(row, infraestructuraFisicaCampusFilter, 'campus') &&
+      matchesInfraestructuraFilter(row, infraestructuraFisicaBloqueFilter, 'componente') &&
+      matchesInfraestructuraFilter(row, infraestructuraFisicaPisoFilter, 'piso_no') &&
+      matchesInfraestructuraFilter(row, infraestructuraFisicaTipoAreaFilter, 'tipo_area')
+    );
+    return Array.from(new Set(matching.map((r) => r.tenencia).filter(Boolean))).sort();
+  }, [infraestructuraFisicaAllData, infraestructuraFisicaCampusFilter, infraestructuraFisicaBloqueFilter, infraestructuraFisicaPisoFilter, infraestructuraFisicaTipoAreaFilter]);
+
+  // 5. Tipos de Área disponibles
+  const availableTipoAreaOptions = useMemo(() => {
+    const matching = infraestructuraFisicaAllData.filter((row) => 
+      matchesInfraestructuraFilter(row, infraestructuraFisicaCampusFilter, 'campus') &&
+      matchesInfraestructuraFilter(row, infraestructuraFisicaBloqueFilter, 'componente') &&
+      matchesInfraestructuraFilter(row, infraestructuraFisicaPisoFilter, 'piso_no') &&
+      matchesInfraestructuraFilter(row, infraestructuraFisicaTenenciaFilter, 'tenencia')
+    );
+    return Array.from(new Set(matching.map((r) => r.tipo_area).filter(Boolean))).sort();
+  }, [infraestructuraFisicaAllData, infraestructuraFisicaCampusFilter, infraestructuraFisicaBloqueFilter, infraestructuraFisicaPisoFilter, infraestructuraFisicaTenenciaFilter]);
+
+  // Efectos de re-sincronización dinámica de filtros (Bidireccionalidad Reactiva)
+  useEffect(() => {
+    if (infraestructuraFisicaCampusFilter !== 'Todos' && !availableCampusOptions.includes(infraestructuraFisicaCampusFilter)) {
+      setInfraestructuraFisicaCampusFilter('Todos');
+    }
+  }, [availableCampusOptions, infraestructuraFisicaCampusFilter]);
+
+  useEffect(() => {
+    if (infraestructuraFisicaBloqueFilter !== 'Todos' && !availableBloqueOptions.includes(infraestructuraFisicaBloqueFilter)) {
+      setInfraestructuraFisicaBloqueFilter('Todos');
+    }
+  }, [availableBloqueOptions, infraestructuraFisicaBloqueFilter]);
+
+  useEffect(() => {
+    if (infraestructuraFisicaPisoFilter !== 'Todos' && !availablePisoOptions.includes(Number(infraestructuraFisicaPisoFilter))) {
+      setInfraestructuraFisicaPisoFilter('Todos');
+    }
+  }, [availablePisoOptions, infraestructuraFisicaPisoFilter]);
+
+  useEffect(() => {
+    if (infraestructuraFisicaTenenciaFilter !== 'Todos' && !availableTenenciaOptions.includes(infraestructuraFisicaTenenciaFilter)) {
+      setInfraestructuraFisicaTenenciaFilter('Todos');
+    }
+  }, [availableTenenciaOptions, infraestructuraFisicaTenenciaFilter]);
+
+  useEffect(() => {
+    if (infraestructuraFisicaTipoAreaFilter !== 'Todos' && !availableTipoAreaOptions.includes(infraestructuraFisicaTipoAreaFilter)) {
+      setInfraestructuraFisicaTipoAreaFilter('Todos');
+    }
+  }, [availableTipoAreaOptions, infraestructuraFisicaTipoAreaFilter]);
+
+  // Dataset final filtrado en base a los 5 filtros cruzados
+  const infraestructuraFisicaFilteredData = useMemo(() => {
+    return infraestructuraFisicaAllData.filter((row) => 
+      matchesInfraestructuraFilter(row, infraestructuraFisicaCampusFilter, 'campus') &&
+      matchesInfraestructuraFilter(row, infraestructuraFisicaBloqueFilter, 'componente') &&
+      matchesInfraestructuraFilter(row, infraestructuraFisicaPisoFilter, 'piso_no') &&
+      matchesInfraestructuraFilter(row, infraestructuraFisicaTenenciaFilter, 'tenencia') &&
+      matchesInfraestructuraFilter(row, infraestructuraFisicaTipoAreaFilter, 'tipo_area')
+    );
+  }, [infraestructuraFisicaAllData, infraestructuraFisicaCampusFilter, infraestructuraFisicaBloqueFilter, infraestructuraFisicaPisoFilter, infraestructuraFisicaTenenciaFilter, infraestructuraFisicaTipoAreaFilter]);
+
+  // Lógica para obtener los registros detallados correspondientes a la celda/fila seleccionada de la matriz
+  const infraestructuraFisicaDetailRecords = useMemo(() => {
+    if (!infraestructuraFisicaDetailOpen) return [];
+    return infraestructuraFisicaFilteredData.filter((row) => {
+      // 1. Filtrar por categoría
+      const cat = getInfraestructuraRowCategory(row.tipo_espacio);
+      if (cat !== infraestructuraFisicaDetailCategory) return false;
+      
+      // 2. Filtrar por tenencia si aplica
+      if (infraestructuraFisicaDetailTenencia !== 'Todos') {
+        let ten = 'Otros';
+        const rowTen = String(row.tenencia || '').toLowerCase().trim();
+        if (['propio', 'propiedad', 'propia'].includes(rowTen)) ten = 'Propio';
+        else if (['arriendo', 'arrendado', 'arrendada'].includes(rowTen)) ten = 'Arriendo';
+        else if (['comodato'].includes(rowTen)) ten = 'Comodato';
+        
+        if (ten !== infraestructuraFisicaDetailTenencia) return false;
+      }
+      
+      // 3. Filtrar por búsqueda en la barra de detalle
+      if (infraestructuraFisicaDetailSearch) {
+        const s = String(infraestructuraFisicaDetailSearch).toLowerCase().trim();
+        return (
+          String(row.nomenclatura || '').toLowerCase().includes(s) ||
+          String(row.asignacion || '').toLowerCase().includes(s) ||
+          String(row.descripcion || '').toLowerCase().includes(s) ||
+          String(row.componente || '').toLowerCase().includes(s) ||
+          String(row.ubicacion || '').toLowerCase().includes(s) ||
+          String(row.funcion_especifica || '').toLowerCase().includes(s)
+        );
+      }
+      return true;
+    });
+  }, [infraestructuraFisicaDetailOpen, infraestructuraFisicaFilteredData, infraestructuraFisicaDetailCategory, infraestructuraFisicaDetailTenencia, infraestructuraFisicaDetailSearch]);
+
+  const infraestructuraFisicaDetailPageData = useMemo(() => {
+    const start = infraestructuraFisicaDetailPage * infraestructuraFisicaDetailRowsPerPage;
+    const end = start + infraestructuraFisicaDetailRowsPerPage;
+    return infraestructuraFisicaDetailRecords.slice(start, end);
+  }, [infraestructuraFisicaDetailRecords, infraestructuraFisicaDetailPage, infraestructuraFisicaDetailRowsPerPage]);
+  // --- FIN DE LA LÓGICA DE FILTRADO BIDIRECCIONAL ---
+
+  const renderInfraestructuraFisicaModule = () => {
+    // Calculador inteligente de densidad estudiantil
+    const studentCount = (() => {
+      const matriculadosRows = seriesRows.filter((r) => r.subcategoria === 'Matriculados');
+      if (matriculadosRows.length === 0) return 4022;
+      const periodTotals = {};
+      matriculadosRows.forEach((r) => {
+        const key = `${r.anio}-${r.periodo || 1}`;
+        periodTotals[key] = (periodTotals[key] || 0) + (Number(r.valor) || 0);
+      });
+      const periods = Object.keys(periodTotals).sort();
+      if (periods.length === 0) return 4022;
+      const latestPeriod = periods[periods.length - 1];
+      return periodTotals[latestPeriod] || 4022;
+    })();
+
+    // Cálculos para Dashboard (usando el array completo unificado)
+    const stats = (() => {
+      let areaConstruida = 0;
+      let capacidadTotal = 0;
+      let espaciosTotales = infraestructuraFisicaFilteredData.length;
+      
+      const bloqueAreas = {};
+      const tipoEspacios = {};
+      let accesoSi = 0;
+      let accesoNo = 0;
+
+      infraestructuraFisicaFilteredData.forEach((row) => {
+        const area = Number(row.area_metros2) || 0;
+        const cap = Number(row.capacidad_fisica) || 0;
+
+        if (row.tipo_area === 'CONSTRUIDA') {
+          areaConstruida += area;
+        }
+        capacidadTotal += cap;
+
+        // Agrupación Bloques
+        const blq = row.componente || 'Sin Bloque';
+        bloqueAreas[blq] = (bloqueAreas[blq] || 0) + area;
+
+        // Agrupación Tipos de Espacio
+        const tEsp = row.tipo_espacio || 'Otros';
+        if (!tipoEspacios[tEsp]) {
+          tipoEspacios[tEsp] = { area: 0, capacidad: 0, cantidad: 0 };
+        }
+        tipoEspacios[tEsp].area += area;
+        tipoEspacios[tEsp].capacidad += cap;
+        tipoEspacios[tEsp].cantidad += 1;
+
+        // Acceso autónomo
+        if (['Sí', 'Si'].includes(row.acceso_autonomo)) accesoSi++;
+        else accesoNo++;
+      });
+
+      // Formatear bloques para Recharts
+      const bloquesData = Object.keys(bloqueAreas).map((key) => ({
+        name: key,
+        area: parseFloat(bloqueAreas[key].toFixed(1))
+      })).sort((a, b) => b.area - a.area).slice(0, 10);
+
+      // Formatear tipos de espacio para Recharts
+      const tiposData = Object.keys(tipoEspacios).map((key) => ({
+        name: key,
+        capacidad: tipoEspacios[key].capacidad,
+        area: parseFloat(tipoEspacios[key].area.toFixed(1)),
+        cantidad: tipoEspacios[key].cantidad
+      })).sort((a, b) => b.area - a.area).slice(0, 8);
+
+      const accesoData = [
+        { name: 'Acceso Autónomo', value: accesoSi },
+        { name: 'Acceso Común', value: accesoNo }
+      ];
+
+      // Compilación de resumen tabulado agrupado por Ubicación, Bloque y Piso
+      const listResumen = {};
+      infraestructuraFisicaFilteredData.forEach((row) => {
+        const key = `${row.ubicacion || 'Sin Sede'} - ${row.componente || 'Sin Bloque'} - Piso ${row.piso_no || 1}`;
+        if (!listResumen[key]) {
+          listResumen[key] = {
+            ubicacion: row.ubicacion || 'Sin Sede',
+            bloque: row.componente || 'Sin Bloque',
+            piso: row.piso_no || 1,
+            cantidad: 0,
+            capacidad: 0,
+            area: 0
+          };
+        }
+        listResumen[key].cantidad++;
+        listResumen[key].capacidad += Number(row.capacidad_fisica) || 0;
+        listResumen[key].area += Number(row.area_metros2) || 0;
+      });
+      const tableResumen = Object.values(listResumen).sort((a, b) => {
+        if (a.ubicacion !== b.ubicacion) return a.ubicacion.localeCompare(b.ubicacion);
+        if (a.bloque !== b.bloque) return a.bloque.localeCompare(b.bloque);
+        return a.piso - b.piso;
+      });
+
+      const densidad = studentCount > 0 ? parseFloat((areaConstruida / studentCount).toFixed(2)) : 0;
+
+      // --- COMPILADOR DE LA MATRIZ DE INSTALACIONES FÍSICAS (MOCKUP EXCEL) ---
+      const getRowCategory = getInfraestructuraRowCategory;
+      const catLabels = [...INFRAESTRUCTURA_CATEGORIES.map(c => c.label), 'Otros'];
+      const tenenciaKeys = ['Propio', 'Arriendo', 'Comodato', 'Otros'];
+      
+      const matrixData = {};
+      catLabels.forEach(cat => {
+        matrixData[cat] = {
+          Propio: { cantidad: 0, area: 0 },
+          Arriendo: { cantidad: 0, area: 0 },
+          Comodato: { cantidad: 0, area: 0 },
+          Otros: { cantidad: 0, area: 0 },
+          Total: { cantidad: 0, area: 0 }
+        };
+      });
+      
+      const matrixTotals = {
+        Propio: { cantidad: 0, area: 0 },
+        Arriendo: { cantidad: 0, area: 0 },
+        Comodato: { cantidad: 0, area: 0 },
+        Otros: { cantidad: 0, area: 0 },
+        Total: { cantidad: 0, area: 0 }
+      };
+
+      const capacityAulas = { Propio: 0, Arriendo: 0, Comodato: 0, Otros: 0, Total: 0 };
+      const capacityLabs = { Propio: 0, Arriendo: 0, Comodato: 0, Otros: 0, Total: 0 };
+
+      infraestructuraFisicaFilteredData.forEach(row => {
+        const cat = getRowCategory(row.tipo_espacio);
+        const area = Number(row.area_metros2) || 0;
+        const cap = Number(row.capacidad_fisica) || 0;
+        
+        let ten = 'Otros';
+        const rowTen = String(row.tenencia || '').toLowerCase().trim();
+        if (['propio', 'propiedad', 'propia'].includes(rowTen)) ten = 'Propio';
+        else if (['arriendo', 'arrendado', 'arrendada'].includes(rowTen)) ten = 'Arriendo';
+        else if (['comodato'].includes(rowTen)) ten = 'Comodato';
+
+        matrixData[cat][ten].cantidad += 1;
+        matrixData[cat][ten].area += area;
+        
+        matrixData[cat].Total.cantidad += 1;
+        matrixData[cat].Total.area += area;
+
+        matrixTotals[ten].cantidad += 1;
+        matrixTotals[ten].area += area;
+        
+        matrixTotals.Total.cantidad += 1;
+        matrixTotals.Total.area += area;
+
+        if (cat === 'Aulas de clase') {
+          capacityAulas[ten] += cap;
+          capacityAulas.Total += cap;
+        } else if (cat === 'Laboratorios') {
+          capacityLabs[ten] += cap;
+          capacityLabs.Total += cap;
+        }
+      });
+
+      return {
+        areaConstruida: parseFloat(areaConstruida.toFixed(1)),
+        capacidadTotal,
+        espaciosTotales,
+        densidad,
+        bloquesData,
+        tiposData,
+        accesoData,
+        tableResumen,
+        matrix: {
+          rows: matrixData,
+          totals: matrixTotals,
+          capacityAulas,
+          capacityLabs,
+          catLabels,
+          tenenciaKeys
+        }
+      };
+    })();
+
+    // Manejadores CRUD
+    const handleOpenCreateDialog = () => {
+      setInfraestructuraFisicaForm({
+        campus: '',
+        componente: '',
+        tipo_area: '',
+        tenencia: '',
+        ubicacion: '',
+        nomenclatura: '',
+        piso_no: '',
+        tipo_espacio: '',
+        asignacion: '',
+        descripcion: '',
+        funcion_especifica: '',
+        capacidad_fisica: '',
+        area_metros2: '',
+        fecha_actualizacion: new Date().getFullYear().toString(),
+        acceso_autonomo: ''
+      });
+      setInfraestructuraFisicaEditingId(null);
+      setInfraestructuraFisicaDialogOpen(true);
+    };
+
+    const handleOpenEditDialog = (row) => {
+      setInfraestructuraFisicaForm({
+        campus: row.campus || '',
+        componente: row.componente || '',
+        tipo_area: row.tipo_area || '',
+        tenencia: row.tenencia || '',
+        ubicacion: row.ubicacion || '',
+        nomenclatura: row.nomenclatura || '',
+        piso_no: row.piso_no !== null && row.piso_no !== undefined ? Number(row.piso_no) : '',
+        tipo_espacio: row.tipo_espacio || '',
+        asignacion: row.asignacion || '',
+        descripcion: row.descripcion || '',
+        funcion_especifica: row.funcion_especifica || '',
+        capacidad_fisica: row.capacidad_fisica !== null && row.capacidad_fisica !== undefined ? Number(row.capacidad_fisica) : '',
+        area_metros2: row.area_metros2 !== null && row.area_metros2 !== undefined ? Number(row.area_metros2) : '',
+        fecha_actualizacion: row.fecha_actualizacion || '',
+        acceso_autonomo: ['Sí', 'Si'].includes(row.acceso_autonomo) ? 'Sí' : 'No'
+      });
+      setInfraestructuraFisicaEditingId(row.id);
+      setInfraestructuraFisicaDialogOpen(true);
+    };
+
+    const handleFormSubmit = async (e) => {
+      e.preventDefault();
+      
+      // Validaciones preventivas para evitar valores negativos
+      if (infraestructuraFisicaForm.capacidad_fisica !== '' && Number(infraestructuraFisicaForm.capacidad_fisica) < 0) {
+        enqueueSnackbar('La capacidad física no puede ser un número negativo.', { variant: 'warning' });
+        return;
+      }
+      if (infraestructuraFisicaForm.area_metros2 !== '' && Number(infraestructuraFisicaForm.area_metros2) < 0) {
+        enqueueSnackbar('El área construida no puede ser un número negativo.', { variant: 'warning' });
+        return;
+      }
+      if (infraestructuraFisicaForm.piso_no !== '' && Number(infraestructuraFisicaForm.piso_no) < 0) {
+        enqueueSnackbar('El número de piso no puede ser un número negativo.', { variant: 'warning' });
+        return;
+      }
+
+      setInfraestructuraFisicaSubmitting(true);
+      try {
+        const payload = {
+          ...infraestructuraFisicaForm,
+          piso_no: infraestructuraFisicaForm.piso_no === '' ? null : Number(infraestructuraFisicaForm.piso_no),
+          capacidad_fisica: infraestructuraFisicaForm.capacidad_fisica === '' ? 0 : Number(infraestructuraFisicaForm.capacidad_fisica),
+          area_metros2: infraestructuraFisicaForm.area_metros2 === '' ? 0.0 : Number(infraestructuraFisicaForm.area_metros2)
+        };
+
+        if (infraestructuraFisicaEditingId) {
+          await gestionInformacionService.updateInfraestructura(infraestructuraFisicaEditingId, payload);
+          enqueueSnackbar('Espacio de infraestructura física actualizado con éxito', { variant: 'success' });
+        } else {
+          await gestionInformacionService.createInfraestructura(payload);
+          enqueueSnackbar('Nuevo espacio de infraestructura física creado con éxito', { variant: 'success' });
+        }
+        setInfraestructuraFisicaDialogOpen(false);
+        fetchInfraestructuraFisica();
+        fetchInfraestructuraFisicaAll();
+      } catch (error) {
+        console.error('Error al guardar infraestructura física:', error);
+        enqueueSnackbar(error.response?.data?.message || 'Error al guardar la información de infraestructura física', { variant: 'error' });
+      } finally {
+        setInfraestructuraFisicaSubmitting(false);
+      }
+    };
+
+    const handleDeleteRow = async (id) => {
+      if (window.confirm('¿Está seguro de que desea eliminar este espacio físico de manera permanente de la base de datos central?')) {
+        try {
+          await gestionInformacionService.deleteInfraestructura(id);
+          enqueueSnackbar('Registro de infraestructura física eliminado con éxito', { variant: 'success' });
+          fetchInfraestructuraFisica();
+          fetchInfraestructuraFisicaAll();
+        } catch (error) {
+          console.error('Error al eliminar registro:', error);
+          enqueueSnackbar('No se pudo eliminar el registro seleccionado.', { variant: 'error' });
+        }
+      }
+    };
+
+    const handleDownloadTemplateFile = async () => {
+      try {
+        const res = await gestionInformacionService.downloadTemplate('infraestructura_fisica');
+        const blob = new Blob([res.data], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+        const link = document.createElement('a');
+        link.href = window.URL.createObjectURL(blob);
+        link.download = 'Plantilla_Vacia_Infraestructura_Fisica.xlsx';
+        link.click();
+      } catch (error) {
+        console.error('Error al descargar plantilla:', error);
+        enqueueSnackbar('No se pudo descargar la plantilla de infraestructura', { variant: 'error' });
+      }
+    };
+
+    const handleExcelUploadFile = async (e) => {
+      const file = e.target.files[0];
+      if (!file) return;
+
+      if (!window.confirm('¿Está seguro de que desea realizar la carga masiva desde este archivo Excel? Esto limpiará y reemplazará la información actual en la base de datos para esta sección.')) {
+        e.target.value = null;
+        return;
+      }
+
+      setInfraestructuraFisicaUploading(true);
+      try {
+        const response = await gestionInformacionService.importExcel('infraestructura_fisica', file);
+        enqueueSnackbar(response.message || 'Carga masiva completada con éxito', { variant: 'success' });
+        fetchInfraestructuraFisica();
+        fetchInfraestructuraFisicaAll();
+      } catch (error) {
+        console.error('Error al realizar carga masiva:', error);
+        enqueueSnackbar(error.response?.data?.message || 'Error al procesar el archivo Excel. Verifique que cumpla con las columnas correspondientes.', { variant: 'error' });
+      } finally {
+        setInfraestructuraFisicaUploading(false);
+        e.target.value = null;
+      }
+    };
+
+    return (
+      <Stack spacing={2.5}>
+        <Paper elevation={0} sx={{ p: 1.4, border: '1px solid #dbe6f5', borderRadius: 2.5, bgcolor: '#f8fbff' }}>
+          <Stack direction="row" spacing={1.5} alignItems="center">
+            <Button variant="outlined" startIcon={<ArrowBackRoundedIcon />} onClick={() => setSelectedCard(null)} sx={{ fontWeight: 800 }}>
+              Volver a tarjetas
+            </Button>
+            {canManageInfraestructura && (
+              <>
+                <Button variant="outlined" color="primary" startIcon={<FileDownloadIcon />} onClick={handleDownloadTemplateFile} sx={{ fontWeight: 800 }}>
+                  Descargar Plantilla Vacía
+                </Button>
+
+                <Button
+                  variant="contained"
+                  color="success"
+                  component="label"
+                  disabled={infraestructuraFisicaUploading}
+                  startIcon={infraestructuraFisicaUploading ? <CircularProgress size={16} color="inherit" /> : <UploadFileIcon />}
+                  sx={{
+                    fontWeight: 800,
+                    textTransform: 'none',
+                    background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)',
+                    boxShadow: '0 4px 14px rgba(16,185,129,0.2)',
+                    '&:hover': {
+                      background: 'linear-gradient(135deg, #059669 0%, #047857 100%)'
+                    }
+                  }}
+                >
+                  {infraestructuraFisicaUploading ? 'Cargando Excel...' : 'Cargar Archivo Excel'}
+                  <input
+                    type="file"
+                    hidden
+                    accept=".xlsx, .xls"
+                    onChange={handleExcelUploadFile}
+                  />
+                </Button>
+              </>
+            )}
+          </Stack>
+        </Paper>
+
+        <Paper elevation={0} sx={{ p: { xs: 1.6, md: 2.2 }, borderRadius: 3, border: '1px solid #dbe6f5', bgcolor: '#fff' }}>
+          <Stack direction={{ xs: 'column', md: 'row' }} spacing={1.4} alignItems={{ xs: 'stretch', md: 'center' }} justifyContent="space-between">
+            <Box>
+              <Typography sx={{ fontWeight: 900, color: '#0f172a', fontSize: 22 }}>Infraestructura Física</Typography>
+              <Typography sx={{ color: '#64748b', fontSize: 13 }}>Inventario consolidado de campus, aforos, tenencias y accesos de la Universidad CESMAG.</Typography>
+            </Box>
+            {canViewInfraestructuraStats && canManageInfraestructura && (
+              <ToggleButtonGroup
+                exclusive
+                size="small"
+                value={infraestructuraFisicaTab}
+                onChange={(_, next) => { if (next) setInfraestructuraFisicaTab(next); }}
+                sx={{ ...GI_SEGMENTED_SX, width: { xs: '100%', md: 380 } }}
+              >
+                <ToggleButton value="estadistica">Dashboard Estadístico</ToggleButton>
+                <ToggleButton value="crud">Gestión de Datos (CRUD)</ToggleButton>
+              </ToggleButtonGroup>
+            )}
+          </Stack>
+        </Paper>
+
+        {/* ── SECCIÓN 1: DASHBOARD ESTADÍSTICO ── */}
+        {infraestructuraFisicaTab === 'estadistica' && (
+          <Stack spacing={2.5}>
+            {/* Panel de Filtros Inteligentes Bidireccionales (Estilo Business Intelligence) */}
+            <Paper 
+              elevation={0} 
+              sx={{ 
+                p: 2.5, 
+                borderRadius: 3.5, 
+                border: '1px solid #bfdbfe', 
+                bgcolor: '#f8fbff',
+                boxShadow: '0 4px 20px rgba(37,99,235,0.03)'
+              }}
+            >
+              <Stack direction={{ xs: 'column', sm: 'row' }} justifyContent="space-between" alignItems={{ xs: 'stretch', sm: 'center' }} sx={{ mb: 2.2 }} spacing={2}>
+                <Stack direction="row" spacing={1.2} alignItems="center">
+                  <Box sx={{ width: 8, height: 24, bgcolor: '#2563eb', borderRadius: 99 }} />
+                  <Typography sx={{ fontWeight: 900, color: '#1e3a8a', fontSize: 16 }}>
+                    Centro de Filtros Inteligentes Cruzados (Bidireccionales)
+                  </Typography>
+                </Stack>
+                <Button
+                  variant="outlined"
+                  size="small"
+                  onClick={() => {
+                    setInfraestructuraFisicaCampusFilter('Todos');
+                    setInfraestructuraFisicaBloqueFilter('Todos');
+                    setInfraestructuraFisicaPisoFilter('Todos');
+                    setInfraestructuraFisicaTenenciaFilter('Todos');
+                    setInfraestructuraFisicaTipoAreaFilter('Todos');
+                  }}
+                  sx={{ 
+                    borderRadius: 99, 
+                    px: 2.5, 
+                    fontWeight: 700, 
+                    textTransform: 'none',
+                    color: '#2563eb',
+                    borderColor: '#bfdbfe',
+                    '&:hover': {
+                      bgcolor: '#eff6ff',
+                      borderColor: '#2563eb'
+                    }
+                  }}
+                >
+                  Restablecer Filtros
+                </Button>
+              </Stack>
+              
+              <Box 
+                sx={{ 
+                  display: 'grid', 
+                  gridTemplateColumns: { xs: '100%', sm: 'repeat(2, 1fr)', md: 'repeat(5, 1fr)' }, 
+                  gap: 2 
+                }}
+              >
+                <FormControl size="small" fullWidth>
+                  <InputLabel>Campus</InputLabel>
+                  <Select
+                    value={infraestructuraFisicaCampusFilter}
+                    label="Campus"
+                    onChange={(e) => setInfraestructuraFisicaCampusFilter(e.target.value)}
+                    sx={{ borderRadius: 2, bgcolor: '#fff' }}
+                  >
+                    <MenuItem value="Todos">Todos los Campus</MenuItem>
+                    {availableCampusOptions.map((c) => (
+                      <MenuItem key={c} value={c}>{c}</MenuItem>
+                    ))}
+                  </Select>
+                </FormControl>
+
+                <FormControl size="small" fullWidth>
+                  <InputLabel>Bloque (Componente)</InputLabel>
+                  <Select
+                    value={infraestructuraFisicaBloqueFilter}
+                    label="Bloque (Componente)"
+                    onChange={(e) => setInfraestructuraFisicaBloqueFilter(e.target.value)}
+                    sx={{ borderRadius: 2, bgcolor: '#fff' }}
+                  >
+                    <MenuItem value="Todos">Todos los Bloques</MenuItem>
+                    {availableBloqueOptions.map((b) => (
+                      <MenuItem key={b} value={b}>{b}</MenuItem>
+                    ))}
+                  </Select>
+                </FormControl>
+
+                <FormControl size="small" fullWidth>
+                  <InputLabel>Piso</InputLabel>
+                  <Select
+                    value={infraestructuraFisicaPisoFilter}
+                    label="Piso"
+                    onChange={(e) => setInfraestructuraFisicaPisoFilter(e.target.value)}
+                    sx={{ borderRadius: 2, bgcolor: '#fff' }}
+                  >
+                    <MenuItem value="Todos">Todos los Pisos</MenuItem>
+                    {availablePisoOptions.map((p) => (
+                      <MenuItem key={p} value={p}>Piso {p}</MenuItem>
+                    ))}
+                  </Select>
+                </FormControl>
+
+                <FormControl size="small" fullWidth>
+                  <InputLabel>Tenencia</InputLabel>
+                  <Select
+                    value={infraestructuraFisicaTenenciaFilter}
+                    label="Tenencia"
+                    onChange={(e) => setInfraestructuraFisicaTenenciaFilter(e.target.value)}
+                    sx={{ borderRadius: 2, bgcolor: '#fff' }}
+                  >
+                    <MenuItem value="Todos">Todas las Tenencias</MenuItem>
+                    {availableTenenciaOptions.map((t) => (
+                      <MenuItem key={t} value={t}>{t}</MenuItem>
+                    ))}
+                  </Select>
+                </FormControl>
+
+                <FormControl size="small" fullWidth>
+                  <InputLabel>Tipo de Área</InputLabel>
+                  <Select
+                    value={infraestructuraFisicaTipoAreaFilter}
+                    label="Tipo de Área"
+                    onChange={(e) => setInfraestructuraFisicaTipoAreaFilter(e.target.value)}
+                    sx={{ borderRadius: 2, bgcolor: '#fff' }}
+                  >
+                    <MenuItem value="Todos">Todos los Tipos</MenuItem>
+                    {availableTipoAreaOptions.map((ta) => (
+                      <MenuItem key={ta} value={ta}>{ta}</MenuItem>
+                    ))}
+                  </Select>
+                </FormControl>
+              </Box>
+            </Paper>
+
+            {/* KPI Cards */}
+            <Grid container spacing={2.2}>
+              <Grid item xs={12} sm={6} md={3}>
+                <Paper elevation={0} sx={{ p: 2.2, border: '1px solid #dbe6f5', borderRadius: 3, background: 'linear-gradient(135deg, #eff6ff 0%, #ffffff 100%)', boxShadow: '0 8px 24px rgba(15,23,42,0.02)' }}>
+                  <Typography variant="caption" sx={{ fontWeight: 800, color: '#475569', textTransform: 'uppercase', letterSpacing: 0.5 }}>Área Construida Total</Typography>
+                  <Typography sx={{ fontWeight: 900, color: '#1d4ed8', fontSize: { xs: 26, md: 32 }, mt: 0.5 }}>{stats.areaConstruida.toLocaleString()} <span style={{ fontSize: 16 }}>m²</span></Typography>
+                  <Typography variant="caption" sx={{ color: '#64748b', display: 'block', mt: 0.4 }}>Área neta física edificada</Typography>
+                </Paper>
+              </Grid>
+              <Grid item xs={12} sm={6} md={3}>
+                <Paper elevation={0} sx={{ p: 2.2, border: '1px solid #dbe6f5', borderRadius: 3, background: 'linear-gradient(135deg, #f0fdf4 0%, #ffffff 100%)', boxShadow: '0 8px 24px rgba(15,23,42,0.02)' }}>
+                  <Typography variant="caption" sx={{ fontWeight: 800, color: '#475569', textTransform: 'uppercase', letterSpacing: 0.5 }}>Capacidad Total</Typography>
+                  <Typography sx={{ fontWeight: 900, color: '#166534', fontSize: { xs: 26, md: 32 }, mt: 0.5 }}>{stats.capacidadTotal.toLocaleString()}</Typography>
+                  <Typography variant="caption" sx={{ color: '#64748b', display: 'block', mt: 0.4 }}>Cupo simultáneo de estudiantes</Typography>
+                </Paper>
+              </Grid>
+              <Grid item xs={12} sm={6} md={3}>
+                <Paper elevation={0} sx={{ p: 2.2, border: '1px solid #dbe6f5', borderRadius: 3, background: 'linear-gradient(135deg, #faf5ff 0%, #ffffff 100%)', boxShadow: '0 8px 24px rgba(15,23,42,0.02)' }}>
+                  <Typography variant="caption" sx={{ fontWeight: 800, color: '#475569', textTransform: 'uppercase', letterSpacing: 0.5 }}>Espacios Totales</Typography>
+                  <Typography sx={{ fontWeight: 900, color: '#6b21a8', fontSize: { xs: 26, md: 32 }, mt: 0.5 }}>{stats.espaciosTotales.toLocaleString()}</Typography>
+                  <Typography variant="caption" sx={{ color: '#64748b', display: 'block', mt: 0.4 }}>Locales e inmuebles individuales</Typography>
+                </Paper>
+              </Grid>
+              <Grid item xs={12} sm={6} md={3}>
+                <Paper elevation={0} sx={{ p: 2.2, border: '1px solid #dbe6f5', borderRadius: 3, background: 'linear-gradient(135deg, #fffbeb 0%, #ffffff 100%)', boxShadow: '0 8px 24px rgba(15,23,42,0.02)' }}>
+                  <Typography variant="caption" sx={{ fontWeight: 800, color: '#475569', textTransform: 'uppercase', letterSpacing: 0.5 }}>Densidad Estudiantil</Typography>
+                  <Typography sx={{ fontWeight: 900, color: '#b45309', fontSize: { xs: 26, md: 32 }, mt: 0.5 }}>{stats.densidad} <span style={{ fontSize: 16 }}>m²/Est.</span></Typography>
+                  <Typography variant="caption" sx={{ color: '#8c5007', display: 'block', mt: 0.4, fontWeight: 700 }}>
+                    Relación cruzada con {studentCount.toLocaleString()} matriculados
+                  </Typography>
+                </Paper>
+              </Grid>
+            </Grid>
+
+            {/* Gráficos */}
+            <Grid container spacing={2.5}>
+              <Grid item xs={12} md={6}>
+                <Paper elevation={0} sx={{ p: 2.5, border: '1px solid #dbe6f5', borderRadius: 3, bgcolor: '#fff' }}>
+                  <Typography sx={{ fontWeight: 800, color: '#0f172a', mb: 2 }}>Distribución de Áreas construidas por Bloque (Componente)</Typography>
+                  <Box sx={{ height: 300, width: '100%' }}>
+                    {stats.bloquesData.length === 0 ? (
+                      <Stack height="100%" alignItems="center" justifyContent="center" color="#94a3b8">No hay información física cargada.</Stack>
+                    ) : (
+                      <ResponsiveContainer width="100%" height="100%">
+                        <BarChart data={stats.bloquesData} margin={{ top: 10, right: 10, left: -20, bottom: 5 }}>
+                          <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
+                          <XAxis dataKey="name" tick={{ fill: '#64748b', fontSize: 11 }} />
+                          <YAxis tick={{ fill: '#64748b', fontSize: 11 }} />
+                          <Tooltip formatter={(value) => [`${value} m²`, 'Área']} contentStyle={{ borderRadius: 8, borderColor: '#e2e8f0' }} />
+                          <Bar dataKey="area" fill="#3b82f6" radius={[4, 4, 0, 0]} barSize={26} />
+                        </BarChart>
+                      </ResponsiveContainer>
+                    )}
+                  </Box>
+                </Paper>
+              </Grid>
+
+              <Grid item xs={12} md={6}>
+                <Paper elevation={0} sx={{ p: 2.5, border: '1px solid #dbe6f5', borderRadius: 3, bgcolor: '#fff' }}>
+                  <Typography sx={{ fontWeight: 800, color: '#0f172a', mb: 2 }}>Área y Capacidad por Tipo de Espacio</Typography>
+                  <Box sx={{ height: 300, width: '100%' }}>
+                    {stats.tiposData.length === 0 ? (
+                      <Stack height="100%" alignItems="center" justifyContent="center" color="#94a3b8">No hay información física cargada.</Stack>
+                    ) : (
+                      <ResponsiveContainer width="100%" height="100%">
+                        <BarChart data={stats.tiposData} margin={{ top: 10, right: 10, left: -20, bottom: 5 }}>
+                          <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
+                          <XAxis dataKey="name" tick={{ fill: '#64748b', fontSize: 11 }} />
+                          <YAxis tick={{ fill: '#64748b', fontSize: 11 }} />
+                          <Tooltip formatter={(value, name) => [value, name === 'area' ? 'Área (m²)' : 'Capacidad (cupos)']} contentStyle={{ borderRadius: 8, borderColor: '#e2e8f0' }} />
+                          <Legend wrapperStyle={{ fontSize: 12, pt: 10 }} />
+                          <Bar dataKey="area" fill="#10b981" radius={[4, 4, 0, 0]} name="Área construida (m²)" barSize={16} />
+                          <Bar dataKey="capacidad" fill="#f59e0b" radius={[4, 4, 0, 0]} name="Capacidad Física (Aforo)" barSize={16} />
+                        </BarChart>
+                      </ResponsiveContainer>
+                    )}
+                  </Box>
+                </Paper>
+              </Grid>
+
+              <Grid item xs={12} sm={6} md={4}>
+                <Paper elevation={0} sx={{ p: 2.5, border: '1px solid #dbe6f5', borderRadius: 3, bgcolor: '#fff' }}>
+                  <Typography sx={{ fontWeight: 800, color: '#0f172a', mb: 2 }}>Acceso Autónomo vs Común</Typography>
+                  <Box sx={{ height: 260, width: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+                    {stats.accesoData[0].value === 0 && stats.accesoData[1].value === 0 ? (
+                      <Stack height="100%" alignItems="center" justifyContent="center" color="#94a3b8">No hay datos.</Stack>
+                    ) : (
+                      <>
+                        <ResponsiveContainer width="100%" height="80%">
+                          <PieChart>
+                            <Pie
+                              data={stats.accesoData}
+                              cx="50%"
+                              cy="50%"
+                              innerRadius={60}
+                              outerRadius={80}
+                              paddingAngle={5}
+                              dataKey="value"
+                            >
+                              <Cell fill="#6366f1" />
+                              <Cell fill="#cbd5e1" />
+                            </Pie>
+                            <Tooltip />
+                          </PieChart>
+                        </ResponsiveContainer>
+                        <Stack direction="row" spacing={3} sx={{ mt: 1 }}>
+                          <Stack direction="row" spacing={1} alignItems="center">
+                            <Box sx={{ width: 12, height: 12, borderRadius: '50%', bgcolor: '#6366f1' }} />
+                            <Typography sx={{ fontSize: 12, color: '#475569' }}>Autónomo ({stats.accesoData[0].value})</Typography>
+                          </Stack>
+                          <Stack direction="row" spacing={1} alignItems="center">
+                            <Box sx={{ width: 12, height: 12, borderRadius: '50%', bgcolor: '#cbd5e1' }} />
+                            <Typography sx={{ fontSize: 12, color: '#475569' }}>Común ({stats.accesoData[1].value})</Typography>
+                          </Stack>
+                        </Stack>
+                      </>
+                    )}
+                  </Box>
+                </Paper>
+              </Grid>
+
+              <Grid item xs={12} sm={12} md={8}>
+                <Paper elevation={0} sx={{ p: 2.5, border: '1px solid #dbe6f5', borderRadius: 3, bgcolor: '#fff' }}>
+                  <Typography sx={{ fontWeight: 800, color: '#0f172a', mb: 2 }}>Inventario Consolidado por Bloque y Piso</Typography>
+                  <TableContainer sx={{ maxHeight: 250, border: '1px solid #f1f5f9', borderRadius: 2 }}>
+                    <Table stickyHeader size="small">
+                      <TableHead>
+                        <TableRow>
+                          <TableCell sx={{ fontWeight: 800, bgcolor: '#f8fafc' }}>Campus</TableCell>
+                          <TableCell sx={{ fontWeight: 800, bgcolor: '#f8fafc' }}>Bloque (Componente)</TableCell>
+                          <TableCell sx={{ fontWeight: 800, bgcolor: '#f8fafc' }}>Piso</TableCell>
+                          <TableCell sx={{ fontWeight: 800, bgcolor: '#f8fafc', textAlign: 'center' }}>Espacios</TableCell>
+                          <TableCell sx={{ fontWeight: 800, bgcolor: '#f8fafc', textAlign: 'right' }}>Capacidad</TableCell>
+                          <TableCell sx={{ fontWeight: 800, bgcolor: '#f8fafc', textAlign: 'right' }}>Área (m²)</TableCell>
+                        </TableRow>
+                      </TableHead>
+                      <TableBody>
+                        {stats.tableResumen.length === 0 ? (
+                          <TableRow>
+                            <TableCell colSpan={6} sx={{ py: 3, textAlign: 'center', color: '#94a3b8' }}>
+                              Carga información para compilar esta matriz
+                            </TableCell>
+                          </TableRow>
+                        ) : (
+                          stats.tableResumen.map((row, idx) => (
+                            <TableRow key={idx} hover>
+                              <TableCell>{row.ubicacion}</TableCell>
+                              <TableCell sx={{ fontWeight: 700 }}>{row.bloque}</TableCell>
+                              <TableCell>Piso {row.piso}</TableCell>
+                              <TableCell sx={{ textAlign: 'center' }}>{row.cantidad}</TableCell>
+                              <TableCell sx={{ textAlign: 'right' }}>{row.capacidad.toLocaleString()}</TableCell>
+                              <TableCell sx={{ textAlign: 'right' }}>{row.area.toLocaleString(undefined, { minimumFractionDigits: 1, maximumFractionDigits: 1 })} m²</TableCell>
+                            </TableRow>
+                          ))
+                        )}
+                      </TableBody>
+                    </Table>
+                  </TableContainer>
+                </Paper>
+              </Grid>
+
+              {/* MOCKUP EXCEL: TABLA GENERAL DE INSTALACIONES FÍSICAS */}
+              <Grid item xs={12}>
+                <Paper 
+                  elevation={0} 
+                  sx={{ 
+                    p: 3.5, 
+                    border: '1px solid #bfdbfe', 
+                    borderRadius: 3.5, 
+                    bgcolor: '#fff',
+                    boxShadow: '0 8px 30px rgba(37,99,235,0.02)',
+                    overflow: 'hidden'
+                  }}
+                >
+                  <Stack direction="row" spacing={1.5} alignItems="center" sx={{ mb: 3, borderBottom: '2px solid #2563eb', pb: 1.5 }}>
+                    <Box sx={{ p: 1, bgcolor: '#1e3a8a', color: 'white', borderRadius: 2, display: 'flex', alignItems: 'center' }}>
+                      <HomeWorkIcon sx={{ fontSize: 24 }} />
+                    </Box>
+                    <Box>
+                      <Typography sx={{ fontWeight: 900, color: '#0f172a', fontSize: 18 }}>
+                        Cuadro Consolidado General: Instalaciones Físicas CESMAG {new Date().getFullYear()}
+                      </Typography>
+                      <Typography variant="caption" sx={{ color: '#64748b', fontWeight: 600 }}>
+                        Distribución consolidada y balanceada de espacios, superficies ($m^2$) y aforos por tipo de uso y tenencia
+                      </Typography>
+                    </Box>
+                  </Stack>
+
+                  <TableContainer sx={{ border: '1px solid #bfdbfe', borderRadius: 3, overflow: 'hidden' }}>
+                    <Table size="small" sx={{ borderCollapse: 'collapse' }}>
+                      <TableHead>
+                        {/* Fila 1 de cabecera: Títulos principales */}
+                        <TableRow sx={{ bgcolor: '#1e3a8a' }}>
+                          <TableCell rowSpan={2} sx={{ fontWeight: 900, bgcolor: '#1e3a8a', color: '#fff', borderRight: '1px solid #3b82f6', textAlign: 'left', minWidth: 200, py: 1.8 }}>
+                            USO DE ESPACIOS
+                          </TableCell>
+                          <TableCell colSpan={2} sx={{ fontWeight: 900, bgcolor: '#1e3a8a', color: '#fff', borderRight: '1px solid #3b82f6', textAlign: 'center', py: 1 }}>
+                            Propiedad
+                          </TableCell>
+                          <TableCell colSpan={2} sx={{ fontWeight: 900, bgcolor: '#1e3a8a', color: '#fff', borderRight: '1px solid #3b82f6', textAlign: 'center', py: 1 }}>
+                            Arriendo
+                          </TableCell>
+                          <TableCell colSpan={2} sx={{ fontWeight: 900, bgcolor: '#1e3a8a', color: '#fff', borderRight: '1px solid #3b82f6', textAlign: 'center', py: 1 }}>
+                            Comodato
+                          </TableCell>
+                          <TableCell colSpan={2} sx={{ fontWeight: 900, bgcolor: '#1e3a8a', color: '#fff', borderRight: '1px solid #3b82f6', textAlign: 'center', py: 1 }}>
+                            Otros
+                          </TableCell>
+                          <TableCell colSpan={2} sx={{ fontWeight: 900, bgcolor: '#1e3a8a', color: '#fff', textAlign: 'center', py: 1 }}>
+                            Total
+                          </TableCell>
+                        </TableRow>
+                        
+                        {/* Fila 2 de cabecera: Sub-métricas */}
+                        <TableRow sx={{ bgcolor: '#2563eb' }}>
+                          <TableCell sx={{ fontWeight: 800, bgcolor: '#2563eb', color: '#fff', borderRight: '1px solid #60a5fa', textAlign: 'center', fontSize: 11, py: 1 }}>CANTIDAD</TableCell>
+                          <TableCell sx={{ fontWeight: 800, bgcolor: '#2563eb', color: '#fff', borderRight: '1px solid #3b82f6', textAlign: 'right', fontSize: 11, py: 1 }}>METROS²</TableCell>
+                          
+                          <TableCell sx={{ fontWeight: 800, bgcolor: '#2563eb', color: '#fff', borderRight: '1px solid #60a5fa', textAlign: 'center', fontSize: 11, py: 1 }}>CANTIDAD</TableCell>
+                          <TableCell sx={{ fontWeight: 800, bgcolor: '#2563eb', color: '#fff', borderRight: '1px solid #3b82f6', textAlign: 'right', fontSize: 11, py: 1 }}>METROS²</TableCell>
+                          
+                          <TableCell sx={{ fontWeight: 800, bgcolor: '#2563eb', color: '#fff', borderRight: '1px solid #60a5fa', textAlign: 'center', fontSize: 11, py: 1 }}>CANTIDAD</TableCell>
+                          <TableCell sx={{ fontWeight: 800, bgcolor: '#2563eb', color: '#fff', borderRight: '1px solid #3b82f6', textAlign: 'right', fontSize: 11, py: 1 }}>METROS²</TableCell>
+                          
+                          <TableCell sx={{ fontWeight: 800, bgcolor: '#2563eb', color: '#fff', borderRight: '1px solid #60a5fa', textAlign: 'center', fontSize: 11, py: 1 }}>CANTIDAD</TableCell>
+                          <TableCell sx={{ fontWeight: 800, bgcolor: '#2563eb', color: '#fff', borderRight: '1px solid #3b82f6', textAlign: 'right', fontSize: 11, py: 1 }}>METROS²</TableCell>
+                          
+                          <TableCell sx={{ fontWeight: 800, bgcolor: '#2563eb', color: '#fff', borderRight: '1px solid #60a5fa', textAlign: 'center', fontSize: 11, py: 1 }}>CANTIDAD</TableCell>
+                          <TableCell sx={{ fontWeight: 800, bgcolor: '#2563eb', color: '#fff', textAlign: 'right', fontSize: 11, py: 1 }}>METROS²</TableCell>
+                        </TableRow>
+                      </TableHead>
+                      
+                      <TableBody>
+                        {stats.matrix.catLabels.map((cat) => {
+                          const rowData = stats.matrix.rows[cat];
+                          return (
+                            <TableRow key={cat} hover sx={{ '&:nth-of-type(even)': { bgcolor: '#f8fafc' } }}>
+                              <TableCell 
+                                sx={{ 
+                                  fontWeight: 700, 
+                                  color: '#2563eb', 
+                                  borderRight: '1px solid #e2e8f0', 
+                                  py: 1,
+                                  cursor: 'pointer',
+                                  textDecoration: 'underline',
+                                  transition: 'all 0.2s',
+                                  '&:hover': { color: '#1d4ed8', bgcolor: '#eff6ff' }
+                                }}
+                                title={`Haga clic para ver todos los espacios de ${cat}`}
+                                onClick={() => {
+                                  setInfraestructuraFisicaDetailCategory(cat);
+                                  setInfraestructuraFisicaDetailTenencia('Todos');
+                                  setInfraestructuraFisicaDetailSearch('');
+                                  setInfraestructuraFisicaDetailPage(0);
+                                  setInfraestructuraFisicaDetailOpen(true);
+                                }}
+                              >
+                                {cat}
+                              </TableCell>
+                              {/* Propio */}
+                              <TableCell 
+                                sx={{ 
+                                  textAlign: 'center', 
+                                  borderRight: '1px solid #e2e8f0',
+                                  cursor: rowData.Propio.cantidad > 0 ? 'pointer' : 'default',
+                                  transition: 'background-color 0.2s',
+                                  '&:hover': rowData.Propio.cantidad > 0 ? { bgcolor: '#dbeafe', color: '#1e40af', fontWeight: 'bold' } : {}
+                                }}
+                                title={rowData.Propio.cantidad > 0 ? `Ver los ${rowData.Propio.cantidad} espacios propios de ${cat}` : ''}
+                                onClick={() => {
+                                  if (rowData.Propio.cantidad > 0) {
+                                    setInfraestructuraFisicaDetailCategory(cat);
+                                    setInfraestructuraFisicaDetailTenencia('Propio');
+                                    setInfraestructuraFisicaDetailSearch('');
+                                    setInfraestructuraFisicaDetailPage(0);
+                                    setInfraestructuraFisicaDetailOpen(true);
+                                  }
+                                }}
+                              >
+                                {rowData.Propio.cantidad || '-'}
+                              </TableCell>
+                              <TableCell sx={{ textAlign: 'right', borderRight: '1px solid #e2e8f0', fontWeight: 600 }}>{rowData.Propio.area ? rowData.Propio.area.toLocaleString(undefined, { minimumFractionDigits: 1, maximumFractionDigits: 1 }) : '-'}</TableCell>
+                              
+                              {/* Arriendo */}
+                              <TableCell 
+                                sx={{ 
+                                  textAlign: 'center', 
+                                  borderRight: '1px solid #e2e8f0',
+                                  cursor: rowData.Arriendo.cantidad > 0 ? 'pointer' : 'default',
+                                  transition: 'background-color 0.2s',
+                                  '&:hover': rowData.Arriendo.cantidad > 0 ? { bgcolor: '#dbeafe', color: '#1e40af', fontWeight: 'bold' } : {}
+                                }}
+                                title={rowData.Arriendo.cantidad > 0 ? `Ver los ${rowData.Arriendo.cantidad} espacios en arriendo de ${cat}` : ''}
+                                onClick={() => {
+                                  if (rowData.Arriendo.cantidad > 0) {
+                                    setInfraestructuraFisicaDetailCategory(cat);
+                                    setInfraestructuraFisicaDetailTenencia('Arriendo');
+                                    setInfraestructuraFisicaDetailSearch('');
+                                    setInfraestructuraFisicaDetailPage(0);
+                                    setInfraestructuraFisicaDetailOpen(true);
+                                  }
+                                }}
+                              >
+                                {rowData.Arriendo.cantidad || '-'}
+                              </TableCell>
+                              <TableCell sx={{ textAlign: 'right', borderRight: '1px solid #e2e8f0', fontWeight: 600 }}>{rowData.Arriendo.area ? rowData.Arriendo.area.toLocaleString(undefined, { minimumFractionDigits: 1, maximumFractionDigits: 1 }) : '-'}</TableCell>
+                              
+                              {/* Comodato */}
+                              <TableCell 
+                                sx={{ 
+                                  textAlign: 'center', 
+                                  borderRight: '1px solid #e2e8f0',
+                                  cursor: rowData.Comodato.cantidad > 0 ? 'pointer' : 'default',
+                                  transition: 'background-color 0.2s',
+                                  '&:hover': rowData.Comodato.cantidad > 0 ? { bgcolor: '#dbeafe', color: '#1e40af', fontWeight: 'bold' } : {}
+                                }}
+                                title={rowData.Comodato.cantidad > 0 ? `Ver los ${rowData.Comodato.cantidad} espacios en comodato de ${cat}` : ''}
+                                onClick={() => {
+                                  if (rowData.Comodato.cantidad > 0) {
+                                    setInfraestructuraFisicaDetailCategory(cat);
+                                    setInfraestructuraFisicaDetailTenencia('Comodato');
+                                    setInfraestructuraFisicaDetailSearch('');
+                                    setInfraestructuraFisicaDetailPage(0);
+                                    setInfraestructuraFisicaDetailOpen(true);
+                                  }
+                                }}
+                              >
+                                {rowData.Comodato.cantidad || '-'}
+                              </TableCell>
+                              <TableCell sx={{ textAlign: 'right', borderRight: '1px solid #e2e8f0', fontWeight: 600 }}>{rowData.Comodato.area ? rowData.Comodato.area.toLocaleString(undefined, { minimumFractionDigits: 1, maximumFractionDigits: 1 }) : '-'}</TableCell>
+                              
+                              {/* Otros */}
+                              <TableCell 
+                                sx={{ 
+                                  textAlign: 'center', 
+                                  borderRight: '1px solid #e2e8f0',
+                                  cursor: rowData.Otros.cantidad > 0 ? 'pointer' : 'default',
+                                  transition: 'background-color 0.2s',
+                                  '&:hover': rowData.Otros.cantidad > 0 ? { bgcolor: '#dbeafe', color: '#1e40af', fontWeight: 'bold' } : {}
+                                }}
+                                title={rowData.Otros.cantidad > 0 ? `Ver los ${rowData.Otros.cantidad} otros espacios de ${cat}` : ''}
+                                onClick={() => {
+                                  if (rowData.Otros.cantidad > 0) {
+                                    setInfraestructuraFisicaDetailCategory(cat);
+                                    setInfraestructuraFisicaDetailTenencia('Otros');
+                                    setInfraestructuraFisicaDetailSearch('');
+                                    setInfraestructuraFisicaDetailPage(0);
+                                    setInfraestructuraFisicaDetailOpen(true);
+                                  }
+                                }}
+                              >
+                                {rowData.Otros.cantidad || '-'}
+                              </TableCell>
+                              <TableCell sx={{ textAlign: 'right', borderRight: '1px solid #e2e8f0', fontWeight: 600 }}>{rowData.Otros.area ? rowData.Otros.area.toLocaleString(undefined, { minimumFractionDigits: 1, maximumFractionDigits: 1 }) : '-'}</TableCell>
+                              
+                              {/* Total */}
+                              <TableCell 
+                                sx={{ 
+                                  textAlign: 'center', 
+                                  borderRight: '1px solid #e2e8f0', 
+                                  fontWeight: 700, 
+                                  bgcolor: '#f0fdf4', 
+                                  color: '#166534',
+                                  cursor: rowData.Total.cantidad > 0 ? 'pointer' : 'default',
+                                  transition: 'background-color 0.2s',
+                                  '&:hover': rowData.Total.cantidad > 0 ? { bgcolor: '#dcfce7', color: '#15803d', fontWeight: 'bold' } : {}
+                                }}
+                                title={rowData.Total.cantidad > 0 ? `Ver todos los ${rowData.Total.cantidad} espacios de ${cat}` : ''}
+                                onClick={() => {
+                                  if (rowData.Total.cantidad > 0) {
+                                    setInfraestructuraFisicaDetailCategory(cat);
+                                    setInfraestructuraFisicaDetailTenencia('Todos');
+                                    setInfraestructuraFisicaDetailSearch('');
+                                    setInfraestructuraFisicaDetailPage(0);
+                                    setInfraestructuraFisicaDetailOpen(true);
+                                  }
+                                }}
+                              >
+                                {rowData.Total.cantidad || '-'}
+                              </TableCell>
+                              <TableCell sx={{ textAlign: 'right', fontWeight: 800, bgcolor: '#f0fdf4', color: '#15803d' }}>{rowData.Total.area ? rowData.Total.area.toLocaleString(undefined, { minimumFractionDigits: 1, maximumFractionDigits: 1 }) : '-'}</TableCell>
+                            </TableRow>
+                          );
+                        })}
+                        
+                        {/* Fila de Totales de la Matriz */}
+                        <TableRow sx={{ bgcolor: '#eff6ff', borderTop: '2px solid #3b82f6', borderBottom: '2px solid #3b82f6' }}>
+                          <TableCell sx={{ fontWeight: 900, color: '#1e3b8a', borderRight: '1px solid #bfdbfe', py: 1.2 }}>TOTALES GENERALES</TableCell>
+                          {/* Propio */}
+                          <TableCell sx={{ textAlign: 'center', fontWeight: 900, color: '#1e3b8a', borderRight: '1px solid #bfdbfe' }}>{stats.matrix.totals.Propio.cantidad}</TableCell>
+                          <TableCell sx={{ textAlign: 'right', fontWeight: 900, color: '#1e3b8a', borderRight: '1px solid #bfdbfe' }}>{stats.matrix.totals.Propio.area.toLocaleString(undefined, { minimumFractionDigits: 1, maximumFractionDigits: 1 })}</TableCell>
+                          {/* Arriendo */}
+                          <TableCell sx={{ textAlign: 'center', fontWeight: 900, color: '#1e3b8a', borderRight: '1px solid #bfdbfe' }}>{stats.matrix.totals.Arriendo.cantidad}</TableCell>
+                          <TableCell sx={{ textAlign: 'right', fontWeight: 900, color: '#1e3b8a', borderRight: '1px solid #bfdbfe' }}>{stats.matrix.totals.Arriendo.area.toLocaleString(undefined, { minimumFractionDigits: 1, maximumFractionDigits: 1 })}</TableCell>
+                          {/* Comodato */}
+                          <TableCell sx={{ textAlign: 'center', fontWeight: 900, color: '#1e3b8a', borderRight: '1px solid #bfdbfe' }}>{stats.matrix.totals.Comodato.cantidad}</TableCell>
+                          <TableCell sx={{ textAlign: 'right', fontWeight: 900, color: '#1e3b8a', borderRight: '1px solid #bfdbfe' }}>{stats.matrix.totals.Comodato.area.toLocaleString(undefined, { minimumFractionDigits: 1, maximumFractionDigits: 1 })}</TableCell>
+                          {/* Otros */}
+                          <TableCell sx={{ textAlign: 'center', fontWeight: 900, color: '#1e3b8a', borderRight: '1px solid #bfdbfe' }}>{stats.matrix.totals.Otros.cantidad}</TableCell>
+                          <TableCell sx={{ textAlign: 'right', fontWeight: 900, color: '#1e3b8a', borderRight: '1px solid #bfdbfe' }}>{stats.matrix.totals.Otros.area.toLocaleString(undefined, { minimumFractionDigits: 1, maximumFractionDigits: 1 })}</TableCell>
+                          {/* Grand Total */}
+                          <TableCell sx={{ textAlign: 'center', fontWeight: 950, bgcolor: '#dbeafe', color: '#1e40af', borderRight: '1px solid #bfdbfe' }}>{stats.matrix.totals.Total.cantidad}</TableCell>
+                          <TableCell sx={{ textAlign: 'right', fontWeight: 950, bgcolor: '#dbeafe', color: '#1e40af' }}>{stats.matrix.totals.Total.area.toLocaleString(undefined, { minimumFractionDigits: 1, maximumFractionDigits: 1 })}</TableCell>
+                        </TableRow>
+
+                        {/* Suma de puestos de las aulas de clase */}
+                        <TableRow sx={{ '&:hover': { bgcolor: 'inherit' } }}>
+                          <TableCell sx={{ fontWeight: 700, color: '#475569', borderRight: '1px solid #e2e8f0', py: 1.5, pl: 2 }}>
+                            Suma de puestos de las aulas de clase
+                          </TableCell>
+                          <TableCell colSpan={2} sx={{ textAlign: 'center', fontWeight: 700, borderRight: '1px solid #e2e8f0', bgcolor: '#fbfbfb' }}>{stats.matrix.capacityAulas.Propio || '-'}</TableCell>
+                          <TableCell colSpan={2} sx={{ textAlign: 'center', fontWeight: 700, borderRight: '1px solid #e2e8f0', bgcolor: '#fbfbfb' }}>{stats.matrix.capacityAulas.Arriendo || '-'}</TableCell>
+                          <TableCell colSpan={2} sx={{ textAlign: 'center', fontWeight: 700, borderRight: '1px solid #e2e8f0', bgcolor: '#fbfbfb' }}>{stats.matrix.capacityAulas.Comodato || '-'}</TableCell>
+                          <TableCell colSpan={2} sx={{ textAlign: 'center', fontWeight: 700, borderRight: '1px solid #e2e8f0', bgcolor: '#fbfbfb' }}>{stats.matrix.capacityAulas.Otros || '-'}</TableCell>
+                          <TableCell colSpan={2} sx={{ textAlign: 'center', fontWeight: 900, bgcolor: '#f8fafc', color: '#0f172a' }}>{stats.matrix.capacityAulas.Total || '-'}</TableCell>
+                        </TableRow>
+
+                        {/* Suma de puestos en los laboratorios */}
+                        <TableRow sx={{ '&:hover': { bgcolor: 'inherit' } }}>
+                          <TableCell sx={{ fontWeight: 700, color: '#475569', borderRight: '1px solid #e2e8f0', py: 1.5, pl: 2 }}>
+                            Suma de puestos en los laboratorios
+                          </TableCell>
+                          <TableCell colSpan={2} sx={{ textAlign: 'center', fontWeight: 700, borderRight: '1px solid #e2e8f0', bgcolor: '#fbfbfb' }}>{stats.matrix.capacityLabs.Propio || '-'}</TableCell>
+                          <TableCell colSpan={2} sx={{ textAlign: 'center', fontWeight: 700, borderRight: '1px solid #e2e8f0', bgcolor: '#fbfbfb' }}>{stats.matrix.capacityLabs.Arriendo || '-'}</TableCell>
+                          <TableCell colSpan={2} sx={{ textAlign: 'center', fontWeight: 700, borderRight: '1px solid #e2e8f0', bgcolor: '#fbfbfb' }}>{stats.matrix.capacityLabs.Comodato || '-'}</TableCell>
+                          <TableCell colSpan={2} sx={{ textAlign: 'center', fontWeight: 700, borderRight: '1px solid #e2e8f0', bgcolor: '#fbfbfb' }}>{stats.matrix.capacityLabs.Otros || '-'}</TableCell>
+                          <TableCell colSpan={2} sx={{ textAlign: 'center', fontWeight: 900, bgcolor: '#f8fafc', color: '#0f172a' }}>{stats.matrix.capacityLabs.Total || '-'}</TableCell>
+                        </TableRow>
+
+                        {/* Totales de aforos */}
+                        <TableRow sx={{ bgcolor: '#f8fafc', borderTop: '2px solid #cbd5e1', borderBottom: '2px solid #475569' }}>
+                          <TableCell sx={{ fontWeight: 900, color: '#1e293b', borderRight: '1px solid #cbd5e1', py: 1.8 }}>TOTALES AFOROS</TableCell>
+                          <TableCell colSpan={2} sx={{ textAlign: 'center', fontWeight: 900, color: '#1e3a8a', borderRight: '1px solid #cbd5e1', bgcolor: '#eff6ff' }}>{(stats.matrix.capacityAulas.Propio + stats.matrix.capacityLabs.Propio) || '-'}</TableCell>
+                          <TableCell colSpan={2} sx={{ textAlign: 'center', fontWeight: 900, color: '#1e3a8a', borderRight: '1px solid #cbd5e1', bgcolor: '#eff6ff' }}>{(stats.matrix.capacityAulas.Arriendo + stats.matrix.capacityLabs.Arriendo) || '-'}</TableCell>
+                          <TableCell colSpan={2} sx={{ textAlign: 'center', fontWeight: 900, color: '#1e3a8a', borderRight: '1px solid #cbd5e1', bgcolor: '#eff6ff' }}>{(stats.matrix.capacityAulas.Comodato + stats.matrix.capacityLabs.Comodato) || '-'}</TableCell>
+                          <TableCell colSpan={2} sx={{ textAlign: 'center', fontWeight: 900, color: '#1e3a8a', borderRight: '1px solid #cbd5e1', bgcolor: '#eff6ff' }}>{(stats.matrix.capacityAulas.Otros + stats.matrix.capacityLabs.Otros) || '-'}</TableCell>
+                          <TableCell colSpan={2} sx={{ textAlign: 'center', fontWeight: 950, bgcolor: '#dbeafe', color: '#1e40af' }}>{(stats.matrix.capacityAulas.Total + stats.matrix.capacityLabs.Total) || '-'}</TableCell>
+                        </TableRow>
+                      </TableBody>
+                    </Table>
+                  </TableContainer>
+                </Paper>
+              </Grid>
+            </Grid>
+
+            {/* ── DIÁLOGO FLOTANTE DE DETALLE DE LA MATRIZ (DRILL-DOWN BI) ── */}
+            <Dialog 
+              open={infraestructuraFisicaDetailOpen} 
+              onClose={() => setInfraestructuraFisicaDetailOpen(false)} 
+              maxWidth="lg" 
+              fullWidth
+            >
+              <DialogTitle 
+                sx={{ 
+                  fontWeight: 900, 
+                  color: '#0f172a', 
+                  bgcolor: '#f8fafc', 
+                  borderBottom: '2px solid #2563eb', 
+                  px: 3, 
+                  py: 2.2,
+                  position: 'relative'
+                }}
+              >
+                <Stack direction="row" spacing={1.5} alignItems="center">
+                  <Box sx={{ p: 0.8, bgcolor: '#1e3a8a', color: 'white', borderRadius: 1.5, display: 'flex', alignItems: 'center' }}>
+                    <HomeWorkIcon sx={{ fontSize: 20 }} />
+                  </Box>
+                  <Box>
+                    <Typography sx={{ fontWeight: 900, color: '#1e3a8a', fontSize: 16, display: 'flex', alignItems: 'center' }}>
+                      Detalle de Espacios Físicos: {infraestructuraFisicaDetailCategory}
+                    </Typography>
+                    <Typography variant="caption" sx={{ color: '#64748b', fontWeight: 700 }}>
+                      Visualizando registros con tenencia: <span style={{ color: '#2563eb' }}>{infraestructuraFisicaDetailTenencia === 'Todos' ? 'Todas las Tenencias' : infraestructuraFisicaDetailTenencia}</span>
+                      {infraestructuraFisicaCampusFilter !== 'Todos' && ` | Campus: ${infraestructuraFisicaCampusFilter}`}
+                      {infraestructuraFisicaBloqueFilter !== 'Todos' && ` | Bloque: ${infraestructuraFisicaBloqueFilter}`}
+                      {infraestructuraFisicaPisoFilter !== 'Todos' && ` | Piso: ${infraestructuraFisicaPisoFilter}`}
+                      {infraestructuraFisicaTipoAreaFilter !== 'Todos' && ` | Tipo de Área: ${infraestructuraFisicaTipoAreaFilter}`}
+                    </Typography>
+                  </Box>
+                </Stack>
+                <IconButton
+                  onClick={() => setInfraestructuraFisicaDetailOpen(false)}
+                  sx={{ position: 'absolute', right: 16, top: 16, color: '#64748b', '&:hover': { color: '#0f172a' } }}
+                >
+                  <CloseIcon />
+                </IconButton>
+              </DialogTitle>
+              <DialogContent sx={{ p: 3, bgcolor: '#ffffff' }}>
+                <Stack spacing={2}>
+                  <TextField
+                    size="small"
+                    placeholder="Filtrar por nomenclatura, asignación, bloque, ubicación, función..."
+                    value={infraestructuraFisicaDetailSearch}
+                    onChange={(e) => {
+                      setInfraestructuraFisicaDetailSearch(e.target.value);
+                      setInfraestructuraFisicaDetailPage(0);
+                    }}
+                    fullWidth
+                    InputProps={{
+                      startAdornment: (
+                        <InputAdornment position="start">
+                          <SearchIcon sx={{ color: '#94a3b8' }} />
+                        </InputAdornment>
+                      ),
+                      endAdornment: infraestructuraFisicaDetailSearch && (
+                        <InputAdornment position="end">
+                          <IconButton size="small" onClick={() => setInfraestructuraFisicaDetailSearch('')}>
+                            <CloseIcon fontSize="small" />
+                          </IconButton>
+                        </InputAdornment>
+                      )
+                    }}
+                  />
+
+                  <TableContainer sx={{ border: '1px solid #e2e8f0', borderRadius: 2.5, maxHeight: 400 }}>
+                    <Table stickyHeader size="small">
+                      <TableHead>
+                        <TableRow>
+                          <TableCell sx={{ fontWeight: 800, bgcolor: '#f8fafc' }}>Nomenclatura</TableCell>
+                          <TableCell sx={{ fontWeight: 800, bgcolor: '#f8fafc' }}>Campus</TableCell>
+                          <TableCell sx={{ fontWeight: 800, bgcolor: '#f8fafc' }}>Bloque / Ubicación</TableCell>
+                          <TableCell sx={{ fontWeight: 800, bgcolor: '#f8fafc' }}>Piso</TableCell>
+                          <TableCell sx={{ fontWeight: 800, bgcolor: '#f8fafc' }}>Asignación de Uso</TableCell>
+                          <TableCell sx={{ fontWeight: 800, bgcolor: '#f8fafc', textAlign: 'center' }}>Aforo</TableCell>
+                          <TableCell sx={{ fontWeight: 800, bgcolor: '#f8fafc', textAlign: 'right' }}>Área (m²)</TableCell>
+                          <TableCell sx={{ fontWeight: 800, bgcolor: '#f8fafc', textAlign: 'center' }}>Acceso Autónomo</TableCell>
+                          {canManageInfraestructura && (
+                            <TableCell sx={{ fontWeight: 800, bgcolor: '#f8fafc', textAlign: 'center' }}>Acciones</TableCell>
+                          )}
+                        </TableRow>
+                      </TableHead>
+                      <TableBody>
+                        {infraestructuraFisicaDetailPageData.length === 0 ? (
+                          <TableRow>
+                            <TableCell colSpan={canManageInfraestructura ? 9 : 8} align="center" sx={{ py: 6, color: '#94a3b8' }}>
+                              No se encontraron registros que coincidan con la búsqueda.
+                            </TableCell>
+                          </TableRow>
+                        ) : (
+                          infraestructuraFisicaDetailPageData.map((row) => (
+                            <TableRow key={row.id} hover>
+                              <TableCell sx={{ fontWeight: 800, color: '#1e3a8a', fontFamily: 'monospace' }}>
+                                {row.nomenclatura || 'N/A'}
+                              </TableCell>
+                              <TableCell>
+                                <Chip 
+                                  size="small" 
+                                  label={row.campus} 
+                                  sx={{ 
+                                    fontWeight: 800, 
+                                    fontSize: 10,
+                                    bgcolor: row.campus === 'Campus Centro' ? '#eff6ff' : row.campus === 'Campus Santiago' ? '#f0fdf4' : '#fff7ed',
+                                    color: row.campus === 'Campus Centro' ? '#2563eb' : row.campus === 'Campus Santiago' ? '#16a34a' : '#ea580c'
+                                  }} 
+                                />
+                              </TableCell>
+                              <TableCell>
+                                <Typography sx={{ fontSize: 13, fontWeight: 700 }}>{row.componente}</Typography>
+                                <Typography sx={{ fontSize: 11, color: '#64748b' }}>{row.ubicacion || 'Sin ubicación específica'}</Typography>
+                              </TableCell>
+                              <TableCell>Piso {row.piso_no ?? 1}</TableCell>
+                              <TableCell>
+                                <Typography sx={{ fontSize: 13, fontWeight: 600 }}>{row.asignacion || 'Sin asignación'}</Typography>
+                                <Typography sx={{ fontSize: 11, color: '#64748b', fontStyle: 'italic' }}>{row.funcion_especifica}</Typography>
+                              </TableCell>
+                              <TableCell sx={{ textAlign: 'center', fontWeight: 700 }}>{row.capacidad_fisica || 0}</TableCell>
+                              <TableCell sx={{ textAlign: 'right', fontWeight: 700 }}>
+                                {Number(row.area_metros2 || 0).toLocaleString(undefined, { minimumFractionDigits: 1, maximumFractionDigits: 2 })} m²
+                              </TableCell>
+                              <TableCell sx={{ textAlign: 'center' }}>
+                                <Chip 
+                                  size="small" 
+                                  label={['Sí', 'Si'].includes(row.acceso_autonomo) ? 'Sí' : 'No'} 
+                                  sx={{ 
+                                    fontWeight: 800, 
+                                    bgcolor: ['Sí', 'Si'].includes(row.acceso_autonomo) ? '#e0e7ff' : '#f1f5f9',
+                                    color: ['Sí', 'Si'].includes(row.acceso_autonomo) ? '#4f46e5' : '#475569'
+                                  }} 
+                                />
+                              </TableCell>
+                              {canManageInfraestructura && (
+                                <TableCell sx={{ textAlign: 'center' }}>
+                                  <IconButton 
+                                    size="small" 
+                                    color="primary" 
+                                    onClick={() => handleOpenEditDialog(row)}
+                                    title="Editar espacio físico"
+                                    sx={{ bgcolor: '#f0f7ff', '&:hover': { bgcolor: '#dbeafe' } }}
+                                  >
+                                    <EditIcon fontSize="small" />
+                                  </IconButton>
+                                </TableCell>
+                              )}
+                            </TableRow>
+                          ))
+                        )}
+                      </TableBody>
+                    </Table>
+                  </TableContainer>
+
+                  <TablePagination
+                    component="div"
+                    count={infraestructuraFisicaDetailRecords.length}
+                    page={infraestructuraFisicaDetailPage}
+                    onPageChange={(_e, newPage) => setInfraestructuraFisicaDetailPage(newPage)}
+                    rowsPerPage={infraestructuraFisicaDetailRowsPerPage}
+                    onRowsPerPageChange={(e) => {
+                      setInfraestructuraFisicaDetailRowsPerPage(parseInt(e.target.value, 10));
+                      setInfraestructuraFisicaDetailPage(0);
+                    }}
+                    rowsPerPageOptions={[5, 10, 25, 50]}
+                    labelRowsPerPage="Mostrar:"
+                    sx={{ borderTop: '1px solid #e2e8f0', bgcolor: '#f8fafc', borderRadius: 2 }}
+                  />
+                </Stack>
+              </DialogContent>
+              <DialogActions sx={{ p: 2.5, borderTop: '1px solid #e2e8f0', bgcolor: '#f8fafc' }}>
+                <Button 
+                  variant="outlined" 
+                  onClick={() => setInfraestructuraFisicaDetailOpen(false)}
+                  sx={{ borderRadius: 99, px: 3, fontWeight: 800, textTransform: 'none' }}
+                >
+                  Cerrar
+                </Button>
+              </DialogActions>
+            </Dialog>
+          </Stack>
+        )}
+
+        {/* ── SECCIÓN 2: GESTIÓN DE DATOS (CRUD) ── */}
+        {infraestructuraFisicaTab === 'crud' && (
+          <Stack spacing={2.5}>
+            {/* Buscador y Controles */}
+            <Paper elevation={0} sx={{ p: 2.5, border: '1px solid #dbe6f5', borderRadius: 3, bgcolor: '#fff' }}>
+              <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2} alignItems="center" justifyContent="space-between">
+                <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2} sx={{ width: '100%', maxGridColumn: '1fr' }} alignItems="center">
+                  <TextField
+                    size="small"
+                    placeholder="Buscar por nomenclatura, asignación, bloque..."
+                    value={infraestructuraFisicaSearch}
+                    onChange={(e) => {
+                      setInfraestructuraFisicaSearch(e.target.value);
+                      setInfraestructuraFisicaPage(0);
+                    }}
+                    InputProps={{
+                      startAdornment: (
+                        <InputAdornment position="start">
+                          <SearchIcon sx={{ color: '#94a3b8' }} />
+                        </InputAdornment>
+                      )
+                    }}
+                    sx={{ minWidth: 280, borderRadius: 2 }}
+                  />
+                  
+                  <FormControl size="small" sx={{ minWidth: 180 }}>
+                    <Select
+                      value={infraestructuraFisicaCampusFilter}
+                      onChange={(e) => {
+                        setInfraestructuraFisicaCampusFilter(e.target.value);
+                        setInfraestructuraFisicaPage(0);
+                      }}
+                      sx={{ borderRadius: 2 }}
+                    >
+                      <MenuItem value="Todos">Todos los Campus</MenuItem>
+                      <MenuItem value="Campus Centro">Campus Centro</MenuItem>
+                      <MenuItem value="Campus Santiago">Campus Santiago</MenuItem>
+                      <MenuItem value="Campus San Damián">Campus San Damián</MenuItem>
+                    </Select>
+                  </FormControl>
+                </Stack>
+
+                <Button
+                  variant="contained"
+                  color="primary"
+                  startIcon={<AddIcon />}
+                  onClick={handleOpenCreateDialog}
+                  sx={{ borderRadius: 99, px: 3, py: 1.1, textTransform: 'none', fontWeight: 800, whiteSpace: 'nowrap' }}
+                >
+                  Nuevo Espacio
+                </Button>
+              </Stack>
+            </Paper>
+
+            {/* Tabla Principal */}
+            <Paper elevation={0} sx={{ border: '1px solid #dbe6f5', borderRadius: 3, overflow: 'hidden' }}>
+              {infraestructuraFisicaLoading ? (
+                <Stack direction="row" spacing={2} sx={{ p: 4 }} alignItems="center" justifyContent="center">
+                  <CircularProgress size={30} />
+                  <Typography sx={{ color: '#475569', fontWeight: 700 }}>Cargando inventario físico...</Typography>
+                </Stack>
+              ) : (
+                <>
+                  <TableContainer>
+                    <Table size="small">
+                      <TableHead>
+                        <TableRow>
+                          <TableCell sx={{ fontWeight: 800, bgcolor: '#f8fafc' }}>Campus</TableCell>
+                          <TableCell sx={{ fontWeight: 800, bgcolor: '#f8fafc' }}>Bloque</TableCell>
+                          <TableCell sx={{ fontWeight: 800, bgcolor: '#f8fafc' }}>Nomenclatura</TableCell>
+                          <TableCell sx={{ fontWeight: 800, bgcolor: '#f8fafc' }}>Piso</TableCell>
+                          <TableCell sx={{ fontWeight: 800, bgcolor: '#f8fafc' }}>Tipo Espacio</TableCell>
+                          <TableCell sx={{ fontWeight: 800, bgcolor: '#f8fafc' }}>Asignación</TableCell>
+                          <TableCell sx={{ fontWeight: 800, bgcolor: '#f8fafc', textAlign: 'right' }}>Capacidad</TableCell>
+                          <TableCell sx={{ fontWeight: 800, bgcolor: '#f8fafc', textAlign: 'right' }}>Área (m²)</TableCell>
+                          <TableCell sx={{ fontWeight: 800, bgcolor: '#f8fafc' }}>Autónomo</TableCell>
+                          <TableCell sx={{ fontWeight: 800, bgcolor: '#f8fafc', textAlign: 'center' }}>Acciones</TableCell>
+                        </TableRow>
+                      </TableHead>
+                      <TableBody>
+                        {infraestructuraFisicaData.length === 0 ? (
+                          <TableRow>
+                            <TableCell colSpan={10} sx={{ py: 4, textAlign: 'center', color: '#94a3b8' }}>
+                              No se encontraron registros de infraestructura física.
+                            </TableCell>
+                          </TableRow>
+                        ) : (
+                          infraestructuraFisicaData.map((row) => (
+                            <TableRow key={row.id} hover>
+                              <TableCell>{row.campus}</TableCell>
+                              <TableCell sx={{ fontWeight: 700 }}>{row.componente}</TableCell>
+                              <TableCell sx={{ fontWeight: 700, color: '#1d4ed8' }}>{row.nomenclatura || '-'}</TableCell>
+                              <TableCell>Piso {row.piso_no}</TableCell>
+                              <TableCell>{row.tipo_espacio}</TableCell>
+                              <TableCell sx={{ maxWidth: 160, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                {row.asignacion || '-'}
+                              </TableCell>
+                              <TableCell sx={{ textAlign: 'right' }}>{row.capacidad_fisica}</TableCell>
+                              <TableCell sx={{ textAlign: 'right' }}>{row.area_metros2} m²</TableCell>
+                              <TableCell>
+                                <Chip
+                                  size="small"
+                                  label={['Sí', 'Si'].includes(row.acceso_autonomo) ? 'Sí' : 'No'}
+                                  color={['Sí', 'Si'].includes(row.acceso_autonomo) ? 'primary' : 'default'}
+                                  sx={{ fontWeight: 800 }}
+                                />
+                              </TableCell>
+                              <TableCell>
+                                <Stack direction="row" spacing={0.5} justifyContent="center">
+                                  <IconButton size="small" color="primary" onClick={() => handleOpenEditDialog(row)}>
+                                    <EditIcon size="small" />
+                                  </IconButton>
+                                  <IconButton size="small" color="error" onClick={() => handleDeleteRow(row.id)}>
+                                    <DeleteIcon size="small" />
+                                  </IconButton>
+                                </Stack>
+                              </TableCell>
+                            </TableRow>
+                          ))
+                        )}
+                      </TableBody>
+                    </Table>
+                  </TableContainer>
+
+                  <TablePagination
+                    component="div"
+                    count={infraestructuraFisicaTotal}
+                    page={infraestructuraFisicaPage}
+                    rowsPerPage={infraestructuraFisicaRowsPerPage}
+                    onPageChange={(_, newPage) => setInfraestructuraFisicaPage(newPage)}
+                    onRowsPerPageChange={(e) => {
+                      setInfraestructuraFisicaRowsPerPage(parseInt(e.target.value, 10));
+                      setInfraestructuraFisicaPage(0);
+                    }}
+                    labelRowsPerPage="Filas por página"
+                    labelDisplayedRows={({ from, to, count }) => `${from}-${to} de ${count}`}
+                  />
+                </>
+              )}
+            </Paper>
+          </Stack>
+        )}
+
+        <Dialog open={infraestructuraFisicaDialogOpen} onClose={() => setInfraestructuraFisicaDialogOpen(false)} maxWidth="md" fullWidth>
+          <form onSubmit={handleFormSubmit}>
+            <DialogTitle sx={{ fontWeight: 900, color: '#0f172a', bgcolor: '#f8fafc', borderBottom: '1px solid #e2e8f0', px: 3, py: 2 }}>
+              <Stack direction="row" spacing={1.5} alignItems="center" justifyContent="space-between">
+                <Box>
+                  <Typography variant="h6" sx={{ fontWeight: 900, color: '#1e293b' }}>
+                    {infraestructuraFisicaEditingId ? 'Editar Espacio de Infraestructura Física' : 'Agregar Nuevo Espacio de Infraestructura'}
+                  </Typography>
+                  <Typography variant="caption" sx={{ color: '#64748b', fontWeight: 600 }}>
+                    Inventario físico unificado y centralizado
+                  </Typography>
+                </Box>
+                {infraestructuraFisicaEditingId ? (
+                  <Chip
+                    label="Modo: Actualizar Espacio"
+                    color="warning"
+                    variant="filled"
+                    sx={{ fontWeight: 800, py: 1.8, px: 1.5, fontSize: 12, borderRadius: 2 }}
+                  />
+                ) : (
+                  <Chip
+                    label="Modo: Guardar Nuevo"
+                    color="success"
+                    variant="filled"
+                    sx={{ fontWeight: 800, py: 1.8, px: 1.5, fontSize: 12, borderRadius: 2 }}
+                  />
+                )}
+              </Stack>
+            </DialogTitle>
+            
+            <DialogContent sx={{ p: 4, bgcolor: '#ffffff' }}>
+              {/* Buscador inteligente de Nomenclatura - ANCHO COMPLETO E INTUITIVO */}
+              <Paper 
+                elevation={0} 
+                sx={{ 
+                  mb: 4, 
+                  p: 3, 
+                  border: '2px dashed #2563eb', 
+                  borderRadius: 3.5, 
+                  bgcolor: '#f0f7ff',
+                  boxShadow: '0 4px 20px rgba(37,99,235,0.06)'
+                }}
+              >
+                <Stack direction="row" spacing={1.5} alignItems="center" sx={{ mb: 2 }}>
+                  <Box sx={{ p: 1, bgcolor: '#2563eb', color: 'white', borderRadius: 2.5, display: 'flex', alignItems: 'center' }}>
+                    <SearchIcon sx={{ fontSize: 24 }} />
+                  </Box>
+                  <Box>
+                    <Typography sx={{ fontWeight: 900, color: '#1e3a8a', fontSize: 16 }}>
+                      Carga Rápida / Buscador Inteligente
+                    </Typography>
+                    <Typography variant="caption" sx={{ color: '#1d4ed8', fontWeight: 600, fontSize: 12 }}>
+                      Si vas a editar un espacio existente, búscalo por su Nomenclatura, Bloque o Campus para autocompletar la ficha.
+                    </Typography>
+                  </Box>
+                </Stack>
+                
+                <Autocomplete
+                  options={infraestructuraFisicaAllData}
+                  getOptionLabel={(option) => `${option.nomenclatura || 'Sin Código'} - ${option.componente || 'Sin Bloque'} (${option.campus})`}
+                  value={infraestructuraFisicaAllData.find((r) => r.id === infraestructuraFisicaEditingId) || null}
+                  filterOptions={(options, { inputValue }) => {
+                    const query = inputValue.toLowerCase().trim();
+                    if (!query) return options;
+                    return options.filter((option) => {
+                      return Object.keys(option).some((key) => {
+                        const val = option[key];
+                        if (val === null || val === undefined) return false;
+                        return String(val).toLowerCase().includes(query);
+                      });
+                    });
+                  }}
+                  onChange={(_, found) => {
+                    if (found) {
+                      setInfraestructuraFisicaForm({
+                        campus: found.campus || '',
+                        componente: found.componente || '',
+                        tipo_area: found.tipo_area || '',
+                        tenencia: found.tenencia || '',
+                        ubicacion: found.ubicacion || '',
+                        nomenclatura: found.nomenclatura || '',
+                        piso_no: found.piso_no !== null && found.piso_no !== undefined ? Number(found.piso_no) : '',
+                        tipo_espacio: found.tipo_espacio || '',
+                        asignacion: found.asignacion || '',
+                        descripcion: found.descripcion || '',
+                        funcion_especifica: found.funcion_especifica || '',
+                        capacidad_fisica: found.capacidad_fisica !== null && found.capacidad_fisica !== undefined ? Number(found.capacidad_fisica) : '',
+                        area_metros2: found.area_metros2 !== null && found.area_metros2 !== undefined ? Number(found.area_metros2) : '',
+                        fecha_actualizacion: found.fecha_actualizacion || new Date().getFullYear().toString(),
+                        acceso_autonomo: ['Sí', 'Si'].includes(found.acceso_autonomo) ? 'Sí' : 'No'
+                      });
+                      setInfraestructuraFisicaEditingId(found.id);
+                      enqueueSnackbar(`Espacio '${found.nomenclatura}' cargado con éxito para editar`, { variant: 'info' });
+                    } else {
+                      handleOpenCreateDialog();
+                    }
+                  }}
+                  renderOption={(props, option) => (
+                    <Box component="li" {...props} sx={{ py: 1.5, px: 2, borderBottom: '1px solid #f1f5f9' }}>
+                      <Stack spacing={0.5} sx={{ width: '100%' }}>
+                        <Stack direction="row" justifyContent="space-between" alignItems="center">
+                          <Typography variant="subtitle2" sx={{ fontWeight: 700, color: '#1e293b' }}>
+                            Código/Nomenclatura: {option.nomenclatura || 'Sin Código'}
+                          </Typography>
+                          <Chip 
+                            label={option.campus} 
+                            size="small" 
+                            sx={{ 
+                              bgcolor: option.campus === 'Campus Centro' ? '#eff6ff' : option.campus === 'Campus Santiago' ? '#ecfdf5' : '#fff7ed',
+                              color: option.campus === 'Campus Centro' ? '#2563eb' : option.campus === 'Campus Santiago' ? '#059669' : '#d97706',
+                              fontWeight: 700,
+                              border: '1px solid currentColor',
+                              fontSize: 10
+                            }} 
+                          />
+                        </Stack>
+                        <Typography variant="body2" sx={{ color: '#475569', fontWeight: 500 }}>
+                          Bloque: {option.componente || 'Sin Bloque'} • Ubicación: {option.ubicacion || 'Sin Ubicación'}
+                        </Typography>
+                        <Typography variant="caption" sx={{ color: '#64748b', display: 'flex', gap: 1.5, flexWrap: 'wrap' }}>
+                          <span><strong>Espacio:</strong> {option.tipo_espacio || '-'}</span>
+                          <span><strong>Asignación:</strong> {option.asignacion || '-'}</span>
+                          <span><strong>Área:</strong> {option.area_metros2 ? `${option.area_metros2} m²` : '-'}</span>
+                          <span><strong>Aforo:</strong> {option.capacidad_fisica ? `${option.capacidad_fisica} pers.` : '-'}</span>
+                        </Typography>
+                      </Stack>
+                    </Box>
+                  )}
+                  renderInput={(params) => (
+                    <TextField
+                      {...params}
+                      label="Buscar espacio para editar..."
+                      placeholder="Escribe la nomenclatura, código, bloque, campus, tenencia o cualquier detalle..."
+                      size="medium"
+                      fullWidth
+                      sx={{
+                        '& .MuiOutlinedInput-root': {
+                          borderRadius: 3,
+                          bgcolor: '#ffffff',
+                          boxShadow: '0 4px 12px rgba(37,99,235,0.06)',
+                          border: '1px solid #bfdbfe',
+                          '&:hover': {
+                            borderColor: '#2563eb'
+                          }
+                        }
+                      }}
+                    />
+                  )}
+                />
+              </Paper>
+
+              <Stack spacing={4}>
+                {/* SECCIÓN 1: UBICACIÓN Y CAMPUS */}
+                <Box>
+                  <Typography sx={{ fontWeight: 800, color: '#1e293b', display: 'flex', alignItems: 'center', gap: 1.2, mb: 2, fontSize: 15, borderBottom: '2px solid #3b82f6', pb: 1 }}>
+                    <PlaceIcon sx={{ color: '#3b82f6' }} />
+                    1. UBICACIÓN Y CAMPUS
+                  </Typography>
+                  <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '100%', sm: 'repeat(3, 1fr)' }, gap: 3 }}>
+                    <Box>
+                      <FormControl fullWidth size="medium" required>
+                        <InputLabel>Campus</InputLabel>
+                        <Select
+                          value={infraestructuraFisicaForm.campus}
+                          label="Campus"
+                          onChange={(e) => setInfraestructuraFisicaForm({ ...infraestructuraFisicaForm, campus: e.target.value })}
+                          sx={{ borderRadius: '10px' }}
+                        >
+                          <MenuItem value=""><em>Seleccione un Campus</em></MenuItem>
+                          <MenuItem value="Campus Centro">Campus Centro</MenuItem>
+                          <MenuItem value="Campus Santiago">Campus Santiago</MenuItem>
+                          <MenuItem value="Campus San Damián">Campus San Damián</MenuItem>
+                        </Select>
+                      </FormControl>
+                    </Box>
+                    
+                    <Box>
+                      <Autocomplete
+                        freeSolo
+                        options={Array.from(new Set(infraestructuraFisicaAllData.map((r) => r.componente).filter(Boolean)))}
+                        value={infraestructuraFisicaForm.componente}
+                        onChange={(_, newValue) => setInfraestructuraFisicaForm((prev) => ({ ...prev, componente: newValue || '' }))}
+                        onInputChange={(_, newInputValue) => setInfraestructuraFisicaForm((prev) => ({ ...prev, componente: newInputValue }))}
+                        renderInput={(params) => (
+                          <TextField
+                            {...params}
+                            required
+                            size="medium"
+                            label="Bloque (Componente)"
+                            placeholder="Ej: Áreas_administración"
+                            sx={{ '& .MuiOutlinedInput-root': { borderRadius: '10px' } }}
+                          />
+                        )}
+                      />
+                    </Box>
+
+                    <Box>
+                      <TextField
+                        required
+                        fullWidth
+                        type="number"
+                        size="medium"
+                        label="Piso No"
+                        InputProps={{ inputProps: { min: 0 } }}
+                        value={infraestructuraFisicaForm.piso_no}
+                        onChange={(e) => setInfraestructuraFisicaForm({ ...infraestructuraFisicaForm, piso_no: e.target.value === '' ? '' : Number(e.target.value) })}
+                        sx={{ '& .MuiOutlinedInput-root': { borderRadius: '10px' } }}
+                      />
+                    </Box>
+
+                    <Box sx={{ gridColumn: { xs: 'span 1', sm: 'span 3' } }}>
+                      <TextField
+                        required
+                        fullWidth
+                        size="medium"
+                        label="Ubicación Específica"
+                        placeholder="Ej: Bloque Administrativo - Primer Piso"
+                        value={infraestructuraFisicaForm.ubicacion}
+                        onChange={(e) => setInfraestructuraFisicaForm({ ...infraestructuraFisicaForm, ubicacion: e.target.value })}
+                        sx={{ '& .MuiOutlinedInput-root': { borderRadius: '10px' } }}
+                      />
+                    </Box>
+                  </Box>
+                </Box>
+
+                {/* SECCIÓN 2: IDENTIFICACIÓN Y TIPO DE ESPACIO */}
+                <Box>
+                  <Typography sx={{ fontWeight: 800, color: '#1e293b', display: 'flex', alignItems: 'center', gap: 1.2, mb: 2, fontSize: 15, borderBottom: '2px solid #10b981', pb: 1 }}>
+                    <HomeWorkIcon sx={{ color: '#10b981' }} />
+                    2. IDENTIFICACIÓN Y TIPO DE ESPACIO
+                  </Typography>
+                  <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '100%', sm: 'repeat(3, 1fr)' }, gap: 3 }}>
+                    <Box>
+                      <TextField
+                        required
+                        fullWidth
+                        size="medium"
+                        label="Nomenclatura (Código)"
+                        placeholder="Ej: 202"
+                        value={infraestructuraFisicaForm.nomenclatura}
+                        onChange={(e) => setInfraestructuraFisicaForm({ ...infraestructuraFisicaForm, nomenclatura: e.target.value })}
+                        sx={{ '& .MuiOutlinedInput-root': { borderRadius: '10px' } }}
+                      />
+                    </Box>
+
+                    <Box>
+                      <Autocomplete
+                        freeSolo
+                        options={Array.from(new Set([
+                          ...infraestructuraFisicaAllData.map((r) => r.tipo_espacio).filter(Boolean),
+                          'Aulas', 'Oficinas', 'Laboratorios', 'Auditorios', 'Salas de Cómputo', 'Bibliotecas', 'Zonas Verdes', 'Pasillos', 'Baños', 'Cafeterías', 'Parqueaderos'
+                        ]))}
+                        value={infraestructuraFisicaForm.tipo_espacio}
+                        onChange={(_, newValue) => setInfraestructuraFisicaForm((prev) => ({ ...prev, tipo_espacio: newValue || '' }))}
+                        onInputChange={(_, newInputValue) => setInfraestructuraFisicaForm((prev) => ({ ...prev, tipo_espacio: newInputValue }))}
+                        renderInput={(params) => (
+                          <TextField
+                            {...params}
+                            required
+                            size="medium"
+                            label="Tipo de Espacio"
+                            placeholder="Ej: Oficinas"
+                            sx={{ '& .MuiOutlinedInput-root': { borderRadius: '10px' } }}
+                          />
+                        )}
+                      />
+                    </Box>
+
+                    <Box>
+                      <Autocomplete
+                        freeSolo
+                        options={Array.from(new Set([
+                          ...infraestructuraFisicaAllData.map((r) => r.asignacion).filter(Boolean),
+                          'Secretaría General', 'Rectoría', 'Decanatura', 'Docentes', 'Estudiantes', 'Administración', 'Servicios Generales'
+                        ]))}
+                        value={infraestructuraFisicaForm.asignacion}
+                        onChange={(_, newValue) => setInfraestructuraFisicaForm((prev) => ({ ...prev, asignacion: newValue || '' }))}
+                        onInputChange={(_, newInputValue) => setInfraestructuraFisicaForm((prev) => ({ ...prev, asignacion: newInputValue }))}
+                        renderInput={(params) => (
+                          <TextField
+                            {...params}
+                            required
+                            size="medium"
+                            label="Asignación de Uso"
+                            placeholder="Ej: Secretaría General"
+                            sx={{ '& .MuiOutlinedInput-root': { borderRadius: '10px' } }}
+                          />
+                        )}
+                      />
+                    </Box>
+
+                    <Box sx={{ gridColumn: { xs: 'span 1', sm: 'span 3' } }}>
+                      <TextField
+                        fullWidth
+                        size="medium"
+                        label="Función Específica"
+                        placeholder="Describa la función específica de este espacio, Ej: Apoyo académico y atención al público..."
+                        value={infraestructuraFisicaForm.funcion_especifica}
+                        onChange={(e) => setInfraestructuraFisicaForm({ ...infraestructuraFisicaForm, funcion_especifica: e.target.value })}
+                        sx={{ '& .MuiOutlinedInput-root': { borderRadius: '10px' } }}
+                      />
+                    </Box>
+                  </Box>
+                </Box>
+
+                {/* SECCIÓN 3: CARACTERÍSTICAS FÍSICAS Y ACCESO */}
+                <Box>
+                  <Typography sx={{ fontWeight: 800, color: '#1e293b', display: 'flex', alignItems: 'center', gap: 1.2, mb: 2, fontSize: 15, borderBottom: '2px solid #f59e0b', pb: 1 }}>
+                    <InsightsIcon sx={{ color: '#f59e0b' }} />
+                    3. CARACTERÍSTICAS FÍSICAS Y ACCESO
+                  </Typography>
+                  <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '100%', sm: 'repeat(3, 1fr)' }, gap: 3 }}>
+                    <Box>
+                      <FormControl fullWidth size="medium" required>
+                        <InputLabel>Tipo de Área</InputLabel>
+                        <Select
+                          value={infraestructuraFisicaForm.tipo_area}
+                          label="Tipo de Área"
+                          onChange={(e) => setInfraestructuraFisicaForm({ ...infraestructuraFisicaForm, tipo_area: e.target.value })}
+                          sx={{ borderRadius: '10px' }}
+                        >
+                          <MenuItem value=""><em>Seleccione un Tipo</em></MenuItem>
+                          <MenuItem value="CONSTRUIDA">CONSTRUIDA</MenuItem>
+                          <MenuItem value="LIBRE">LIBRE</MenuItem>
+                        </Select>
+                      </FormControl>
+                    </Box>
+
+                    <Box>
+                      <FormControl fullWidth size="medium" required>
+                        <InputLabel>Tenencia</InputLabel>
+                        <Select
+                          value={infraestructuraFisicaForm.tenencia}
+                          label="Tenencia"
+                          onChange={(e) => setInfraestructuraFisicaForm({ ...infraestructuraFisicaForm, tenencia: e.target.value })}
+                          sx={{ borderRadius: '10px' }}
+                        >
+                          <MenuItem value=""><em>Seleccione Tenencia</em></MenuItem>
+                          <MenuItem value="Propio">Propio</MenuItem>
+                          <MenuItem value="Arriendo">Arriendo</MenuItem>
+                        </Select>
+                      </FormControl>
+                    </Box>
+
+                    <Box>
+                      <FormControl fullWidth size="medium" required>
+                        <InputLabel>Acceso Autónomo</InputLabel>
+                        <Select
+                          value={infraestructuraFisicaForm.acceso_autonomo}
+                          label="Acceso Autónomo"
+                          onChange={(e) => setInfraestructuraFisicaForm({ ...infraestructuraFisicaForm, acceso_autonomo: e.target.value })}
+                          sx={{ borderRadius: '10px' }}
+                        >
+                          <MenuItem value=""><em>¿Tiene Acceso Autónomo?</em></MenuItem>
+                          <MenuItem value="Sí">Sí</MenuItem>
+                          <MenuItem value="No">No</MenuItem>
+                        </Select>
+                      </FormControl>
+                    </Box>
+
+                    <Box>
+                      <TextField
+                        required
+                        fullWidth
+                        type="number"
+                        size="medium"
+                        label="Capacidad Física (Personas)"
+                        InputProps={{ inputProps: { min: 0 } }}
+                        value={infraestructuraFisicaForm.capacidad_fisica}
+                        onChange={(e) => setInfraestructuraFisicaForm({ ...infraestructuraFisicaForm, capacidad_fisica: e.target.value === '' ? '' : Number(e.target.value) })}
+                        sx={{ '& .MuiOutlinedInput-root': { borderRadius: '10px' } }}
+                      />
+                    </Box>
+
+                    <Box>
+                      <TextField
+                        required
+                        fullWidth
+                        type="number"
+                        size="medium"
+                        label="Área Construida (m²)"
+                        inputProps={{ step: "any", min: 0 }}
+                        value={infraestructuraFisicaForm.area_metros2}
+                        onChange={(e) => setInfraestructuraFisicaForm({ ...infraestructuraFisicaForm, area_metros2: e.target.value === '' ? '' : Number(e.target.value) })}
+                        sx={{ '& .MuiOutlinedInput-root': { borderRadius: '10px' } }}
+                      />
+                    </Box>
+
+                    <Box>
+                      <TextField
+                        fullWidth
+                        size="medium"
+                        label="Fecha Actualización (Año)"
+                        placeholder="Ej: 2026"
+                        value={infraestructuraFisicaForm.fecha_actualizacion}
+                        onChange={(e) => setInfraestructuraFisicaForm({ ...infraestructuraFisicaForm, fecha_actualizacion: e.target.value })}
+                        sx={{ '& .MuiOutlinedInput-root': { borderRadius: '10px' } }}
+                      />
+                    </Box>
+
+                    <Box sx={{ gridColumn: { xs: 'span 1', sm: 'span 3' } }}>
+                      <TextField
+                        fullWidth
+                        multiline
+                        rows={2}
+                        size="medium"
+                        label="Descripción General"
+                        placeholder="Ingrese comentarios u observaciones adicionales sobre el espacio..."
+                        value={infraestructuraFisicaForm.descripcion}
+                        onChange={(e) => setInfraestructuraFisicaForm({ ...infraestructuraFisicaForm, descripcion: e.target.value })}
+                        sx={{ '& .MuiOutlinedInput-root': { borderRadius: '10px' } }}
+                      />
+                    </Box>
+                  </Box>
+                </Box>
+              </Stack>
+            </DialogContent>
+
+            <DialogActions sx={{ p: 3, borderTop: '1px solid #e2e8f0', bgcolor: '#f8fafc', gap: 2 }}>
+              <Button 
+                onClick={() => setInfraestructuraFisicaDialogOpen(false)} 
+                disabled={infraestructuraFisicaSubmitting}
+                variant="outlined"
+                sx={{ 
+                  borderRadius: 99, 
+                  width: 150, 
+                  py: 1.2, 
+                  color: '#475569', 
+                  borderColor: '#cbd5e1',
+                  fontWeight: 700, 
+                  textTransform: 'none',
+                  '&:hover': {
+                    borderColor: '#94a3b8',
+                    bgcolor: '#f1f5f9'
+                  }
+                }}
+              >
+                Cancelar
+              </Button>
+              <Button
+                type="submit"
+                variant="contained"
+                color={infraestructuraFisicaEditingId ? 'warning' : 'primary'}
+                disabled={infraestructuraFisicaSubmitting}
+                sx={{ 
+                  borderRadius: 99, 
+                  width: 150, 
+                  py: 1.2, 
+                  fontWeight: 800,
+                  textTransform: 'none',
+                  boxShadow: infraestructuraFisicaEditingId 
+                    ? '0 4px 12px rgba(245,158,11,0.25)'
+                    : '0 4px 12px rgba(37,99,235,0.25)' 
+                }}
+              >
+                {infraestructuraFisicaSubmitting
+                  ? 'Guardando...'
+                  : infraestructuraFisicaEditingId
+                  ? 'Actualizar'
+                  : 'Guardar'}
+              </Button>
+            </DialogActions>
+          </form>
+        </Dialog>
       </Stack>
     );
   };
@@ -13929,6 +15983,11 @@ const renderCategoryBars = (items = [], options = {}) => {
               {baseSeleccionada === 'registros_calificados_acreditacion' && (
                 <Alert severity="info" sx={{ mt: 2.2, borderRadius: 2 }}>
                   La subbase <strong>Historico_RC</strong> acepta Excel o CSV con Programa académico, Nivel, Tipo aprobación, Resolución MEN, Fecha Resolución, Resolucion RC, Plan de Estudios y Enlace.
+                </Alert>
+              )}
+              {baseSeleccionada === 'infraestructura_fisica' && (
+                <Alert severity="info" sx={{ mt: 2.2, borderRadius: 2 }}>
+                  La base de <strong>Infraestructura Física</strong> acepta un archivo Excel con columnas obligatorias como <strong>CAMPUS</strong>, <strong>COMPONENTE</strong>, <strong>TIPO DE ÁREA</strong>, <strong>TENENCIA</strong>, <strong>UBICACIÓN</strong>, <strong>NOMENCLATURA</strong>, <strong>PISO</strong>, <strong>TIPO DE ESPACIO</strong>, <strong>ASIGNACIÓN</strong>, <strong>CAPACIDAD</strong> y <strong>ÁREA (m²)</strong>. Se realiza limpieza y reemplazo automático de registros al cargar.
                 </Alert>
               )}
             </Paper>
@@ -14162,6 +16221,7 @@ const renderCategoryBars = (items = [], options = {}) => {
                 {selectedCard === 'saber_pro' && renderSaberProStatsModule()}
                 {selectedCard === 'recurso_humano' && renderRecursoHumanoStatsModule()}
                 {selectedCard === 'registros_calificados_acreditacion' && renderRegistrosCalificadosModule()}
+                {selectedCard === 'infraestructura_fisica' && renderInfraestructuraFisicaModule()}
                 {selectedCard === 'gestion_procesos' && renderGestionProcesosModule()}
                 {selectedCard === 'activity_monitor' && (
                   <Box>
