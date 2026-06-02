@@ -31,7 +31,8 @@ import {
   ToggleButton,
   ToggleButtonGroup,
   Collapse,
-  Autocomplete
+  Autocomplete,
+  Popover
 } from '@mui/material';
 import Dialog from '@mui/material/Dialog';
 import DialogTitle from '@mui/material/DialogTitle';
@@ -76,6 +77,9 @@ import {
 } from '@mui/icons-material';
 import ZoomInIcon from '@mui/icons-material/ZoomIn';
 import CloseIcon from '@mui/icons-material/Close';
+import LightbulbIcon from '@mui/icons-material/Lightbulb';
+import ArchitectureIcon from '@mui/icons-material/Architecture';
+import MeetingRoomIcon from '@mui/icons-material/MeetingRoom';
 import DownloadIconSmall from '@mui/icons-material/Download';
 import ContentCopyIcon from '@mui/icons-material/ContentCopy';
 import FileDownloadIcon from '@mui/icons-material/FileDownload';
@@ -1710,13 +1714,15 @@ function GestionInformacion() {
   const [poblacionalPanel, setPoblacionalPanel] = useState('hub');
   const [statSection, setStatSection] = useState('flujo');
   const [saberProStatSection, setSaberProStatSection] = useState('hub');
-  const [infraestructuraFisicaTab, setInfraestructuraFisicaTab] = useState('estadistica');
-  const [infraestructuraFisicaCampusFilter, setInfraestructuraFisicaCampusFilter] = useState('Todos');
-  const [infraestructuraFisicaBloqueFilter, setInfraestructuraFisicaBloqueFilter] = useState('Todos');
-  const [infraestructuraFisicaPisoFilter, setInfraestructuraFisicaPisoFilter] = useState('Todos');
-  const [infraestructuraFisicaTenenciaFilter, setInfraestructuraFisicaTenenciaFilter] = useState('Todos');
-  const [infraestructuraFisicaTipoAreaFilter, setInfraestructuraFisicaTipoAreaFilter] = useState('Todos');
+  const [infraestructuraFisicaTab, setInfraestructuraFisicaTab] = useState('hub');
+  const [infraestructuraFisicaCampusFilter, setInfraestructuraFisicaCampusFilter] = useState([]);
+  const [infraestructuraFisicaBloqueFilter, setInfraestructuraFisicaBloqueFilter] = useState([]);
+  const [infraestructuraFisicaPisoFilter, setInfraestructuraFisicaPisoFilter] = useState([]);
+  const [infraestructuraFisicaTenenciaFilter, setInfraestructuraFisicaTenenciaFilter] = useState([]);
+  const [infraestructuraFisicaTipoAreaFilter, setInfraestructuraFisicaTipoAreaFilter] = useState([]);
+  const [infraestructuraFisicaCrudCampusFilter, setInfraestructuraFisicaCrudCampusFilter] = useState('Todos');
   const [infraestructuraFisicaSearch, setInfraestructuraFisicaSearch] = useState('');
+  const [infraestructuraFisicaHelpAnchor, setInfraestructuraFisicaHelpAnchor] = useState(null);
   const [infraestructuraFisicaPage, setInfraestructuraFisicaPage] = useState(0);
   
   // Estados para el modal flotante de drill-down de la matriz de infraestructura
@@ -2205,7 +2211,7 @@ function GestionInformacion() {
   const fetchInfraestructuraFisica = useCallback(async () => {
     setInfraestructuraFisicaLoading(true);
     try {
-      const campusFilterVal = infraestructuraFisicaCampusFilter === 'Todos' ? '' : infraestructuraFisicaCampusFilter;
+      const campusFilterVal = infraestructuraFisicaCrudCampusFilter === 'Todos' ? '' : infraestructuraFisicaCrudCampusFilter;
       const response = await gestionInformacionService.getInfraestructuras({
         page: infraestructuraFisicaPage + 1,
         limit: infraestructuraFisicaRowsPerPage,
@@ -2220,7 +2226,7 @@ function GestionInformacion() {
     } finally {
       setInfraestructuraFisicaLoading(false);
     }
-  }, [infraestructuraFisicaPage, infraestructuraFisicaRowsPerPage, infraestructuraFisicaCampusFilter, infraestructuraFisicaSearch, enqueueSnackbar]);
+  }, [infraestructuraFisicaPage, infraestructuraFisicaRowsPerPage, infraestructuraFisicaCrudCampusFilter, infraestructuraFisicaSearch, enqueueSnackbar]);
 
   const fetchInfraestructuraFisicaAll = useCallback(async () => {
     try {
@@ -2242,10 +2248,10 @@ function GestionInformacion() {
   }, [selectedCard, fetchInfraestructuraFisica]);
 
   useEffect(() => {
-    if (selectedCard === 'infraestructura_fisica' && infraestructuraFisicaTab === 'estadistica') {
+    if (selectedCard === 'infraestructura_fisica') {
       fetchInfraestructuraFisicaAll();
     }
-  }, [selectedCard, infraestructuraFisicaTab, fetchInfraestructuraFisicaAll]);
+  }, [selectedCard, fetchInfraestructuraFisicaAll]);
 
   const openRegistrosCalificadosEvidence = async (row) => {
     setRegistrosCalificadosEvidence({ open: true, loading: true, row, expected: [], files: [] });
@@ -4258,17 +4264,13 @@ function GestionInformacion() {
       setGestionProcesosPanel('hub');
     }
     if (key === 'infraestructura_fisica') {
-      // Si tiene permiso para ver estadísticas, por defecto va a esa pestaña. Si no, va directo a CRUD
-      if (canViewInfraestructuraStats) {
-        setInfraestructuraFisicaTab('estadistica');
-      } else {
-        setInfraestructuraFisicaTab('crud');
-      }
-      setInfraestructuraFisicaCampusFilter('Todos');
-      setInfraestructuraFisicaBloqueFilter('Todos');
-      setInfraestructuraFisicaPisoFilter('Todos');
-      setInfraestructuraFisicaTenenciaFilter('Todos');
-      setInfraestructuraFisicaTipoAreaFilter('Todos');
+      setInfraestructuraFisicaTab('hub');
+      setInfraestructuraFisicaCampusFilter([]);
+      setInfraestructuraFisicaBloqueFilter([]);
+      setInfraestructuraFisicaPisoFilter([]);
+      setInfraestructuraFisicaTenenciaFilter([]);
+      setInfraestructuraFisicaTipoAreaFilter([]);
+      setInfraestructuraFisicaCrudCampusFilter('Todos');
       setInfraestructuraFisicaSearch('');
       setInfraestructuraFisicaPage(0);
     }
@@ -13913,12 +13915,15 @@ const renderCategoryBars = (items = [], options = {}) => {
   };
 
   // --- INICIO DE LA LÓGICA DE FILTRADO BIDIRECCIONAL (INFRAESTRUCTURA FÍSICA) ---
-  const matchesInfraestructuraFilter = (row, filterVal, rowField) => {
-    if (!filterVal || filterVal === 'Todos') return true;
+  const matchesInfraestructuraFilter = (row, filterArray, rowField) => {
+    if (!filterArray || filterArray.length === 0) return true;
+    const rowVal = row[rowField];
+    if (rowVal === null || rowVal === undefined) return false;
+    
     if (rowField === 'piso_no') {
-      return Number(row[rowField]) === Number(filterVal);
+      return filterArray.some((val) => Number(val) === Number(rowVal));
     }
-    return String(row[rowField] || '').toLowerCase() === String(filterVal).toLowerCase();
+    return filterArray.some((val) => String(val).toLowerCase() === String(rowVal).toLowerCase());
   };
 
   // 1. Campus disponibles
@@ -13978,34 +13983,34 @@ const renderCategoryBars = (items = [], options = {}) => {
 
   // Efectos de re-sincronización dinámica de filtros (Bidireccionalidad Reactiva)
   useEffect(() => {
-    if (infraestructuraFisicaCampusFilter !== 'Todos' && !availableCampusOptions.includes(infraestructuraFisicaCampusFilter)) {
-      setInfraestructuraFisicaCampusFilter('Todos');
-    }
-  }, [availableCampusOptions, infraestructuraFisicaCampusFilter]);
+    setInfraestructuraFisicaCampusFilter((prev) => 
+      prev.filter((val) => availableCampusOptions.includes(val))
+    );
+  }, [availableCampusOptions]);
 
   useEffect(() => {
-    if (infraestructuraFisicaBloqueFilter !== 'Todos' && !availableBloqueOptions.includes(infraestructuraFisicaBloqueFilter)) {
-      setInfraestructuraFisicaBloqueFilter('Todos');
-    }
-  }, [availableBloqueOptions, infraestructuraFisicaBloqueFilter]);
+    setInfraestructuraFisicaBloqueFilter((prev) => 
+      prev.filter((val) => availableBloqueOptions.includes(val))
+    );
+  }, [availableBloqueOptions]);
 
   useEffect(() => {
-    if (infraestructuraFisicaPisoFilter !== 'Todos' && !availablePisoOptions.includes(Number(infraestructuraFisicaPisoFilter))) {
-      setInfraestructuraFisicaPisoFilter('Todos');
-    }
-  }, [availablePisoOptions, infraestructuraFisicaPisoFilter]);
+    setInfraestructuraFisicaPisoFilter((prev) => 
+      prev.filter((val) => availablePisoOptions.includes(Number(val)))
+    );
+  }, [availablePisoOptions]);
 
   useEffect(() => {
-    if (infraestructuraFisicaTenenciaFilter !== 'Todos' && !availableTenenciaOptions.includes(infraestructuraFisicaTenenciaFilter)) {
-      setInfraestructuraFisicaTenenciaFilter('Todos');
-    }
-  }, [availableTenenciaOptions, infraestructuraFisicaTenenciaFilter]);
+    setInfraestructuraFisicaTenenciaFilter((prev) => 
+      prev.filter((val) => availableTenenciaOptions.includes(val))
+    );
+  }, [availableTenenciaOptions]);
 
   useEffect(() => {
-    if (infraestructuraFisicaTipoAreaFilter !== 'Todos' && !availableTipoAreaOptions.includes(infraestructuraFisicaTipoAreaFilter)) {
-      setInfraestructuraFisicaTipoAreaFilter('Todos');
-    }
-  }, [availableTipoAreaOptions, infraestructuraFisicaTipoAreaFilter]);
+    setInfraestructuraFisicaTipoAreaFilter((prev) => 
+      prev.filter((val) => availableTipoAreaOptions.includes(val))
+    );
+  }, [availableTipoAreaOptions]);
 
   // Dataset final filtrado en base a los 5 filtros cruzados
   const infraestructuraFisicaFilteredData = useMemo(() => {
@@ -14061,6 +14066,163 @@ const renderCategoryBars = (items = [], options = {}) => {
   // --- FIN DE LA LÓGICA DE FILTRADO BIDIRECCIONAL ---
 
   const renderInfraestructuraFisicaModule = () => {
+    const renderInfraestructuraFisicaHub = () => {
+      const visibleInfraestructuraCards = [];
+      if (canManageInfraestructura) {
+        visibleInfraestructuraCards.push({
+          key: 'crud',
+          title: 'Gestión de Inventario Físico',
+          description: 'Gestión directa del inventario físico (CRUD). Permite realizar adición, edición, eliminación y cargue/descargue masivo de espacios y aforos.',
+          color: '#10b981',
+          icon: <HomeWorkIcon sx={{ fontSize: 28 }} />
+        });
+      }
+      if (canViewInfraestructuraStats) {
+        visibleInfraestructuraCards.push({
+          key: 'estadistica',
+          title: 'Información Estadística',
+          description: 'Visualización de indicadores clave, gráficos de áreas construidas por bloques y tipo de espacio, aforos de estudiantes y densidad por campus.',
+          color: '#3b82f6',
+          icon: <BarChartIcon sx={{ fontSize: 28 }} />
+        });
+      }
+
+      return (
+        <Stack spacing={2.2}>
+          <Paper elevation={0} sx={{ p: 2.5, border: '1px solid #dbe6f5', borderRadius: 3, background: 'linear-gradient(120deg, #f8fbff 0%, #eef6ff 100%)' }}>
+            <Stack direction={{ xs: 'column', md: 'row' }} spacing={1.4} justifyContent="space-between" alignItems={{ xs: 'flex-start', md: 'center' }}>
+              <Stack direction="row" spacing={1} alignItems="center">
+                <Button variant="outlined" startIcon={<ArrowBackRoundedIcon />} onClick={() => setSelectedCard(null)}>
+                  Volver a tarjetas
+                </Button>
+                <Chip label="Infraestructura Física" color="primary" variant="outlined" />
+              </Stack>
+              <Typography variant="caption" sx={{ color: '#64748b' }}>
+                Selecciona un módulo interno. Los permisos controlan qué tarjetas ve cada usuario.
+              </Typography>
+            </Stack>
+          </Paper>
+
+          <Paper
+            elevation={0}
+            sx={{
+              p: { xs: 1.2, md: 1.8 },
+              borderRadius: 3,
+              border: '1px solid #e2e8f0',
+              bgcolor: '#f8fbff'
+            }}
+          >
+            <Box
+              sx={{
+                display: 'grid',
+                gap: { xs: 1.2, md: 1.6, xl: 1.8 },
+                gridTemplateColumns: {
+                  xs: '1fr',
+                  md: visibleInfraestructuraCards.length === 1 ? '1fr' : 'repeat(2, minmax(0, 1fr))'
+                },
+                alignItems: 'stretch'
+              }}
+            >
+              {visibleInfraestructuraCards.map((card) => (
+                <Paper
+                  key={`infra-hub-${card.key}`}
+                  elevation={0}
+                  sx={{
+                    p: { xs: 1.4, md: 1.55, xl: 1.7 },
+                    borderRadius: 3.2,
+                    border: '1px solid #d7e4fb',
+                    background: 'linear-gradient(165deg, #ffffff 0%, #f7fbff 100%)',
+                    minHeight: { xs: 204, md: 214, xl: 220 },
+                    display: 'flex',
+                    flexDirection: 'column',
+                    justifyContent: 'space-between',
+                    boxShadow: '0 6px 20px rgba(15, 23, 42, 0.04)',
+                    transition: 'transform .18s ease, box-shadow .18s ease, border-color .18s ease',
+                    '&:hover': {
+                      transform: 'translateY(-2px)',
+                      boxShadow: `0 12px 28px rgba(37, 99, 235, 0.10)`,
+                      borderColor: card.color
+                    }
+                  }}
+                >
+                  <Box sx={{ minHeight: { xs: 114, md: 120 }, display: 'flex', flexDirection: 'column' }}>
+                    <Box sx={{ width: 48, height: 48, borderRadius: 2, bgcolor: `${card.color}16`, color: card.color, display: 'grid', placeItems: 'center', mb: 0.9, border: `1px solid ${card.color}22` }}>
+                      {card.icon}
+                    </Box>
+                    <Typography sx={{ fontWeight: 900, color: '#0f172a', fontSize: { xs: 17, md: 17.5, xl: 18 }, lineHeight: 1.08, letterSpacing: '-0.02em' }}>
+                      {card.title}
+                    </Typography>
+                    <Typography
+                      sx={{
+                        mt: 0.55,
+                        color: '#475569',
+                        fontSize: { xs: 13.5, xl: 14 },
+                        lineHeight: 1.28,
+                        display: '-webkit-box',
+                        WebkitLineClamp: 3,
+                        WebkitBoxOrient: 'vertical',
+                        overflow: 'hidden'
+                      }}
+                    >
+                      {card.description}
+                    </Typography>
+                    {infraestructuraFisicaAllData.length > 0 && (
+                      <Typography variant="caption" sx={{ mt: 0.8, color: '#64748b', fontWeight: 600 }}>
+                        {card.key === 'estadistica'
+                          ? `Explora y analiza los ${infraestructuraFisicaAllData.length} espacios registrados`
+                          : `Administra la base de datos de ${infraestructuraFisicaAllData.length} espacios`
+                        }
+                      </Typography>
+                    )}
+                    <Box sx={{ mt: 0.8 }}>
+                      <Chip
+                        size="small"
+                        label={card.key === 'estadistica' ? 'Disponible' : 'Administrable'}
+                        sx={{
+                          height: 24,
+                          fontWeight: 700,
+                          bgcolor: `${card.color}12`,
+                          color: card.color,
+                          border: `1px solid ${card.color}26`
+                        }}
+                      />
+                    </Box>
+                  </Box>
+                  <Button
+                    sx={{
+                      mt: 1.1,
+                      minHeight: 40,
+                      borderRadius: 999,
+                      textTransform: 'none',
+                      fontWeight: 800,
+                      fontSize: 14,
+                      letterSpacing: '-0.01em',
+                      background: `linear-gradient(135deg, ${card.color}, ${card.color}dd)`,
+                      boxShadow: `0 8px 18px ${card.color}33`,
+                      color: '#fff',
+                      '&:hover': {
+                        background: card.color
+                      }
+                    }}
+                    variant="contained"
+                    onClick={() => {
+                      setInfraestructuraFisicaTab(card.key);
+                    }}
+                  >
+                    {card.key === 'estadistica' ? 'Abrir dashboard' : 'Abrir taller'}
+                  </Button>
+                </Paper>
+              ))}
+            </Box>
+          </Paper>
+        </Stack>
+      );
+    };
+
+    if (infraestructuraFisicaTab === 'hub') {
+      return renderInfraestructuraFisicaHub();
+    }
+
     // Calculador inteligente de densidad estudiantil
     const studentCount = (() => {
       const matriculadosRows = seriesRows.filter((r) => r.subcategoria === 'Matriculados');
@@ -14383,62 +14545,42 @@ const renderCategoryBars = (items = [], options = {}) => {
       <Stack spacing={2.5}>
         <Paper elevation={0} sx={{ p: 1.4, border: '1px solid #dbe6f5', borderRadius: 2.5, bgcolor: '#f8fbff' }}>
           <Stack direction="row" spacing={1.5} alignItems="center">
-            <Button variant="outlined" startIcon={<ArrowBackRoundedIcon />} onClick={() => setSelectedCard(null)} sx={{ fontWeight: 800 }}>
-              Volver a tarjetas
+            <Button variant="outlined" startIcon={<ArrowBackRoundedIcon />} onClick={() => setInfraestructuraFisicaTab('hub')} sx={{ fontWeight: 800 }}>
+              Volver a Infraestructura
             </Button>
-            {canManageInfraestructura && (
-              <>
-                <Button variant="outlined" color="primary" startIcon={<FileDownloadIcon />} onClick={handleDownloadTemplateFile} sx={{ fontWeight: 800 }}>
-                  Descargar Plantilla Vacía
-                </Button>
-
-                <Button
-                  variant="contained"
-                  color="success"
-                  component="label"
-                  disabled={infraestructuraFisicaUploading}
-                  startIcon={infraestructuraFisicaUploading ? <CircularProgress size={16} color="inherit" /> : <UploadFileIcon />}
-                  sx={{
-                    fontWeight: 800,
-                    textTransform: 'none',
-                    background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)',
-                    boxShadow: '0 4px 14px rgba(16,185,129,0.2)',
-                    '&:hover': {
-                      background: 'linear-gradient(135deg, #059669 0%, #047857 100%)'
-                    }
-                  }}
-                >
-                  {infraestructuraFisicaUploading ? 'Cargando Excel...' : 'Cargar Archivo Excel'}
-                  <input
-                    type="file"
-                    hidden
-                    accept=".xlsx, .xls"
-                    onChange={handleExcelUploadFile}
-                  />
-                </Button>
-              </>
-            )}
           </Stack>
         </Paper>
 
-        <Paper elevation={0} sx={{ p: { xs: 1.6, md: 2.2 }, borderRadius: 3, border: '1px solid #dbe6f5', bgcolor: '#fff' }}>
-          <Stack direction={{ xs: 'column', md: 'row' }} spacing={1.4} alignItems={{ xs: 'stretch', md: 'center' }} justifyContent="space-between">
-            <Box>
-              <Typography sx={{ fontWeight: 900, color: '#0f172a', fontSize: 22 }}>Infraestructura Física</Typography>
-              <Typography sx={{ color: '#64748b', fontSize: 13 }}>Inventario consolidado de campus, aforos, tenencias y accesos de la Universidad CESMAG.</Typography>
+        <Paper 
+          elevation={0} 
+          sx={{ 
+            p: { xs: 2, md: 2.5 }, 
+            borderRadius: 3.5, 
+            background: infraestructuraFisicaTab === 'estadistica' 
+              ? 'linear-gradient(135deg, #1e3a8a 0%, #3b82f6 100%)' 
+              : 'linear-gradient(135deg, #064e3b 0%, #10b981 100%)',
+            boxShadow: '0 6px 20px rgba(15, 23, 42, 0.08)',
+            border: 'none',
+            color: '#fff'
+          }}
+        >
+          <Stack direction="row" spacing={2} alignItems="center">
+            <Box sx={{ p: 1.2, borderRadius: 2, bgcolor: 'rgba(255, 255, 255, 0.15)', display: 'grid', placeItems: 'center' }}>
+              {infraestructuraFisicaTab === 'estadistica' 
+                ? <BarChartIcon sx={{ fontSize: 28, color: '#fff' }} /> 
+                : <HomeWorkIcon sx={{ fontSize: 28, color: '#fff' }} />
+              }
             </Box>
-            {canViewInfraestructuraStats && canManageInfraestructura && (
-              <ToggleButtonGroup
-                exclusive
-                size="small"
-                value={infraestructuraFisicaTab}
-                onChange={(_, next) => { if (next) setInfraestructuraFisicaTab(next); }}
-                sx={{ ...GI_SEGMENTED_SX, width: { xs: '100%', md: 380 } }}
-              >
-                <ToggleButton value="estadistica">Dashboard Estadístico</ToggleButton>
-                <ToggleButton value="crud">Gestión de Datos (CRUD)</ToggleButton>
-              </ToggleButtonGroup>
-            )}
+            <Box>
+              <Typography sx={{ fontWeight: 900, color: '#ffffff', fontSize: { xs: 20, md: 22 }, letterSpacing: '-0.02em', lineHeight: 1.1 }}>
+                {infraestructuraFisicaTab === 'estadistica' ? 'Información Estadística de Infraestructura' : 'Gestión de Inventario Físico'}
+              </Typography>
+              <Typography sx={{ color: 'rgba(255, 255, 255, 0.85)', fontSize: 13.5, mt: 0.5, fontWeight: 500, lineHeight: 1.25 }}>
+                {infraestructuraFisicaTab === 'estadistica' 
+                  ? 'Visualización de indicadores clave, gráficos de áreas, aforos de estudiantes y densidad por campus.'
+                  : 'Gestión directa del inventario de espacios físicos (CRUD). Creación, edición, eliminación y búsqueda de registros.'}
+              </Typography>
+            </Box>
           </Stack>
         </Paper>
 
@@ -14467,11 +14609,11 @@ const renderCategoryBars = (items = [], options = {}) => {
                   variant="outlined"
                   size="small"
                   onClick={() => {
-                    setInfraestructuraFisicaCampusFilter('Todos');
-                    setInfraestructuraFisicaBloqueFilter('Todos');
-                    setInfraestructuraFisicaPisoFilter('Todos');
-                    setInfraestructuraFisicaTenenciaFilter('Todos');
-                    setInfraestructuraFisicaTipoAreaFilter('Todos');
+                    setInfraestructuraFisicaCampusFilter([]);
+                    setInfraestructuraFisicaBloqueFilter([]);
+                    setInfraestructuraFisicaPisoFilter([]);
+                    setInfraestructuraFisicaTenenciaFilter([]);
+                    setInfraestructuraFisicaTipoAreaFilter([]);
                   }}
                   sx={{ 
                     borderRadius: 99, 
@@ -14493,209 +14635,412 @@ const renderCategoryBars = (items = [], options = {}) => {
               <Box 
                 sx={{ 
                   display: 'grid', 
-                  gridTemplateColumns: { xs: '100%', sm: 'repeat(2, 1fr)', md: 'repeat(5, 1fr)' }, 
+                  gridTemplateColumns: { xs: '100%', sm: 'repeat(2, 1fr)', lg: 'repeat(5, 1fr)' }, 
                   gap: 2 
                 }}
               >
-                <FormControl size="small" fullWidth>
-                  <InputLabel>Campus</InputLabel>
-                  <Select
-                    value={infraestructuraFisicaCampusFilter}
-                    label="Campus"
-                    onChange={(e) => setInfraestructuraFisicaCampusFilter(e.target.value)}
-                    sx={{ borderRadius: 2, bgcolor: '#fff' }}
-                  >
-                    <MenuItem value="Todos">Todos los Campus</MenuItem>
-                    {availableCampusOptions.map((c) => (
-                      <MenuItem key={c} value={c}>{c}</MenuItem>
-                    ))}
-                  </Select>
-                </FormControl>
+                {/* 1. Campus */}
+                <Autocomplete
+                  multiple
+                  disableCloseOnSelect
+                  size="small"
+                  options={availableCampusOptions}
+                  value={infraestructuraFisicaCampusFilter}
+                  onChange={(_, newValue) => setInfraestructuraFisicaCampusFilter(newValue)}
+                  renderOption={(props, option, { selected }) => (
+                    <Box component="li" {...props} sx={{ py: 0.5, fontSize: 13 }}>
+                      <Checkbox
+                        size="small"
+                        checked={selected}
+                        sx={{ mr: 1, color: '#2563eb', '&.Mui-checked': { color: '#2563eb' } }}
+                      />
+                      <ListItemText primary={option} sx={{ '& .MuiTypography-root': { fontSize: 12.5, fontWeight: 500 } }} />
+                    </Box>
+                  )}
+                  renderInput={(params) => (
+                    <TextField 
+                      {...params} 
+                      label="Campus" 
+                      placeholder="Seleccionar..." 
+                      sx={{
+                        '& .MuiInputLabel-root': { fontSize: 13, fontWeight: 600, color: '#475569' },
+                        '& .MuiOutlinedInput-root': {
+                          borderRadius: 2.5,
+                          bgcolor: '#ffffff',
+                          fontSize: 12.5,
+                          '& fieldset': { borderColor: '#cbd5e1' },
+                          '&:hover fieldset': { borderColor: '#94a3b8' },
+                          '&.Mui-focused fieldset': { borderColor: '#2563eb' }
+                        }
+                      }}
+                    />
+                  )}
+                />
 
-                <FormControl size="small" fullWidth>
-                  <InputLabel>Bloque (Componente)</InputLabel>
-                  <Select
-                    value={infraestructuraFisicaBloqueFilter}
-                    label="Bloque (Componente)"
-                    onChange={(e) => setInfraestructuraFisicaBloqueFilter(e.target.value)}
-                    sx={{ borderRadius: 2, bgcolor: '#fff' }}
-                  >
-                    <MenuItem value="Todos">Todos los Bloques</MenuItem>
-                    {availableBloqueOptions.map((b) => (
-                      <MenuItem key={b} value={b}>{b}</MenuItem>
-                    ))}
-                  </Select>
-                </FormControl>
+                {/* 2. Bloque */}
+                <Autocomplete
+                  multiple
+                  disableCloseOnSelect
+                  size="small"
+                  options={availableBloqueOptions}
+                  value={infraestructuraFisicaBloqueFilter}
+                  onChange={(_, newValue) => setInfraestructuraFisicaBloqueFilter(newValue)}
+                  renderOption={(props, option, { selected }) => (
+                    <Box component="li" {...props} sx={{ py: 0.5, fontSize: 13 }}>
+                      <Checkbox
+                        size="small"
+                        checked={selected}
+                        sx={{ mr: 1, color: '#2563eb', '&.Mui-checked': { color: '#2563eb' } }}
+                      />
+                      <ListItemText primary={option} sx={{ '& .MuiTypography-root': { fontSize: 12.5, fontWeight: 500 } }} />
+                    </Box>
+                  )}
+                  renderInput={(params) => (
+                    <TextField 
+                      {...params} 
+                      label="Bloque (Componente)" 
+                      placeholder="Seleccionar..." 
+                      sx={{
+                        '& .MuiInputLabel-root': { fontSize: 13, fontWeight: 600, color: '#475569' },
+                        '& .MuiOutlinedInput-root': {
+                          borderRadius: 2.5,
+                          bgcolor: '#ffffff',
+                          fontSize: 12.5,
+                          '& fieldset': { borderColor: '#cbd5e1' },
+                          '&:hover fieldset': { borderColor: '#94a3b8' },
+                          '&.Mui-focused fieldset': { borderColor: '#2563eb' }
+                        }
+                      }}
+                    />
+                  )}
+                />
 
-                <FormControl size="small" fullWidth>
-                  <InputLabel>Piso</InputLabel>
-                  <Select
-                    value={infraestructuraFisicaPisoFilter}
-                    label="Piso"
-                    onChange={(e) => setInfraestructuraFisicaPisoFilter(e.target.value)}
-                    sx={{ borderRadius: 2, bgcolor: '#fff' }}
-                  >
-                    <MenuItem value="Todos">Todos los Pisos</MenuItem>
-                    {availablePisoOptions.map((p) => (
-                      <MenuItem key={p} value={p}>Piso {p}</MenuItem>
-                    ))}
-                  </Select>
-                </FormControl>
+                {/* 3. Piso */}
+                <Autocomplete
+                  multiple
+                  disableCloseOnSelect
+                  size="small"
+                  options={availablePisoOptions}
+                  getOptionLabel={(option) => `Piso ${option}`}
+                  value={infraestructuraFisicaPisoFilter}
+                  onChange={(_, newValue) => setInfraestructuraFisicaPisoFilter(newValue)}
+                  renderOption={(props, option, { selected }) => (
+                    <Box component="li" {...props} sx={{ py: 0.5, fontSize: 13 }}>
+                      <Checkbox
+                        size="small"
+                        checked={selected}
+                        sx={{ mr: 1, color: '#2563eb', '&.Mui-checked': { color: '#2563eb' } }}
+                      />
+                      <ListItemText primary={`Piso ${option}`} sx={{ '& .MuiTypography-root': { fontSize: 12.5, fontWeight: 500 } }} />
+                    </Box>
+                  )}
+                  renderInput={(params) => (
+                    <TextField 
+                      {...params} 
+                      label="Piso" 
+                      placeholder="Seleccionar..." 
+                      sx={{
+                        '& .MuiInputLabel-root': { fontSize: 13, fontWeight: 600, color: '#475569' },
+                        '& .MuiOutlinedInput-root': {
+                          borderRadius: 2.5,
+                          bgcolor: '#ffffff',
+                          fontSize: 12.5,
+                          '& fieldset': { borderColor: '#cbd5e1' },
+                          '&:hover fieldset': { borderColor: '#94a3b8' },
+                          '&.Mui-focused fieldset': { borderColor: '#2563eb' }
+                        }
+                      }}
+                    />
+                  )}
+                />
 
-                <FormControl size="small" fullWidth>
-                  <InputLabel>Tenencia</InputLabel>
-                  <Select
-                    value={infraestructuraFisicaTenenciaFilter}
-                    label="Tenencia"
-                    onChange={(e) => setInfraestructuraFisicaTenenciaFilter(e.target.value)}
-                    sx={{ borderRadius: 2, bgcolor: '#fff' }}
-                  >
-                    <MenuItem value="Todos">Todas las Tenencias</MenuItem>
-                    {availableTenenciaOptions.map((t) => (
-                      <MenuItem key={t} value={t}>{t}</MenuItem>
-                    ))}
-                  </Select>
-                </FormControl>
+                {/* 4. Tenencia */}
+                <Autocomplete
+                  multiple
+                  disableCloseOnSelect
+                  size="small"
+                  options={availableTenenciaOptions}
+                  value={infraestructuraFisicaTenenciaFilter}
+                  onChange={(_, newValue) => setInfraestructuraFisicaTenenciaFilter(newValue)}
+                  renderOption={(props, option, { selected }) => (
+                    <Box component="li" {...props} sx={{ py: 0.5, fontSize: 13 }}>
+                      <Checkbox
+                        size="small"
+                        checked={selected}
+                        sx={{ mr: 1, color: '#2563eb', '&.Mui-checked': { color: '#2563eb' } }}
+                      />
+                      <ListItemText primary={option} sx={{ '& .MuiTypography-root': { fontSize: 12.5, fontWeight: 500 } }} />
+                    </Box>
+                  )}
+                  renderInput={(params) => (
+                    <TextField 
+                      {...params} 
+                      label="Tenencia" 
+                      placeholder="Seleccionar..." 
+                      sx={{
+                        '& .MuiInputLabel-root': { fontSize: 13, fontWeight: 600, color: '#475569' },
+                        '& .MuiOutlinedInput-root': {
+                          borderRadius: 2.5,
+                          bgcolor: '#ffffff',
+                          fontSize: 12.5,
+                          '& fieldset': { borderColor: '#cbd5e1' },
+                          '&:hover fieldset': { borderColor: '#94a3b8' },
+                          '&.Mui-focused fieldset': { borderColor: '#2563eb' }
+                        }
+                      }}
+                    />
+                  )}
+                />
 
-                <FormControl size="small" fullWidth>
-                  <InputLabel>Tipo de Área</InputLabel>
-                  <Select
-                    value={infraestructuraFisicaTipoAreaFilter}
-                    label="Tipo de Área"
-                    onChange={(e) => setInfraestructuraFisicaTipoAreaFilter(e.target.value)}
-                    sx={{ borderRadius: 2, bgcolor: '#fff' }}
-                  >
-                    <MenuItem value="Todos">Todos los Tipos</MenuItem>
-                    {availableTipoAreaOptions.map((ta) => (
-                      <MenuItem key={ta} value={ta}>{ta}</MenuItem>
-                    ))}
-                  </Select>
-                </FormControl>
+                {/* 5. Tipo de Área */}
+                <Autocomplete
+                  multiple
+                  disableCloseOnSelect
+                  size="small"
+                  options={availableTipoAreaOptions}
+                  value={infraestructuraFisicaTipoAreaFilter}
+                  onChange={(_, newValue) => setInfraestructuraFisicaTipoAreaFilter(newValue)}
+                  renderOption={(props, option, { selected }) => (
+                    <Box component="li" {...props} sx={{ py: 0.5, fontSize: 13 }}>
+                      <Checkbox
+                        size="small"
+                        checked={selected}
+                        sx={{ mr: 1, color: '#2563eb', '&.Mui-checked': { color: '#2563eb' } }}
+                      />
+                      <ListItemText primary={option} sx={{ '& .MuiTypography-root': { fontSize: 12.5, fontWeight: 500 } }} />
+                    </Box>
+                  )}
+                  renderInput={(params) => (
+                    <TextField 
+                      {...params} 
+                      label="Tipo de Área" 
+                      placeholder="Seleccionar..." 
+                      sx={{
+                        '& .MuiInputLabel-root': { fontSize: 13, fontWeight: 600, color: '#475569' },
+                        '& .MuiOutlinedInput-root': {
+                          borderRadius: 2.5,
+                          bgcolor: '#ffffff',
+                          fontSize: 12.5,
+                          '& fieldset': { borderColor: '#cbd5e1' },
+                          '&:hover fieldset': { borderColor: '#94a3b8' },
+                          '&.Mui-focused fieldset': { borderColor: '#2563eb' }
+                        }
+                      }}
+                    />
+                  )}
+                />
               </Box>
             </Paper>
 
-            {/* KPI Cards */}
-            <Grid container spacing={2.2}>
-              <Grid item xs={12} sm={6} md={3}>
-                <Paper elevation={0} sx={{ p: 2.2, border: '1px solid #dbe6f5', borderRadius: 3, background: 'linear-gradient(135deg, #eff6ff 0%, #ffffff 100%)', boxShadow: '0 8px 24px rgba(15,23,42,0.02)' }}>
-                  <Typography variant="caption" sx={{ fontWeight: 800, color: '#475569', textTransform: 'uppercase', letterSpacing: 0.5 }}>Área Construida Total</Typography>
-                  <Typography sx={{ fontWeight: 900, color: '#1d4ed8', fontSize: { xs: 26, md: 32 }, mt: 0.5 }}>{stats.areaConstruida.toLocaleString()} <span style={{ fontSize: 16 }}>m²</span></Typography>
-                  <Typography variant="caption" sx={{ color: '#64748b', display: 'block', mt: 0.4 }}>Área neta física edificada</Typography>
-                </Paper>
-              </Grid>
-              <Grid item xs={12} sm={6} md={3}>
-                <Paper elevation={0} sx={{ p: 2.2, border: '1px solid #dbe6f5', borderRadius: 3, background: 'linear-gradient(135deg, #f0fdf4 0%, #ffffff 100%)', boxShadow: '0 8px 24px rgba(15,23,42,0.02)' }}>
-                  <Typography variant="caption" sx={{ fontWeight: 800, color: '#475569', textTransform: 'uppercase', letterSpacing: 0.5 }}>Capacidad Total</Typography>
-                  <Typography sx={{ fontWeight: 900, color: '#166534', fontSize: { xs: 26, md: 32 }, mt: 0.5 }}>{stats.capacidadTotal.toLocaleString()}</Typography>
-                  <Typography variant="caption" sx={{ color: '#64748b', display: 'block', mt: 0.4 }}>Cupo simultáneo de estudiantes</Typography>
-                </Paper>
-              </Grid>
-              <Grid item xs={12} sm={6} md={3}>
-                <Paper elevation={0} sx={{ p: 2.2, border: '1px solid #dbe6f5', borderRadius: 3, background: 'linear-gradient(135deg, #faf5ff 0%, #ffffff 100%)', boxShadow: '0 8px 24px rgba(15,23,42,0.02)' }}>
-                  <Typography variant="caption" sx={{ fontWeight: 800, color: '#475569', textTransform: 'uppercase', letterSpacing: 0.5 }}>Espacios Totales</Typography>
-                  <Typography sx={{ fontWeight: 900, color: '#6b21a8', fontSize: { xs: 26, md: 32 }, mt: 0.5 }}>{stats.espaciosTotales.toLocaleString()}</Typography>
-                  <Typography variant="caption" sx={{ color: '#64748b', display: 'block', mt: 0.4 }}>Locales e inmuebles individuales</Typography>
-                </Paper>
-              </Grid>
-              <Grid item xs={12} sm={6} md={3}>
-                <Paper elevation={0} sx={{ p: 2.2, border: '1px solid #dbe6f5', borderRadius: 3, background: 'linear-gradient(135deg, #fffbeb 0%, #ffffff 100%)', boxShadow: '0 8px 24px rgba(15,23,42,0.02)' }}>
-                  <Typography variant="caption" sx={{ fontWeight: 800, color: '#475569', textTransform: 'uppercase', letterSpacing: 0.5 }}>Densidad Estudiantil</Typography>
-                  <Typography sx={{ fontWeight: 900, color: '#b45309', fontSize: { xs: 26, md: 32 }, mt: 0.5 }}>{stats.densidad} <span style={{ fontSize: 16 }}>m²/Est.</span></Typography>
-                  <Typography variant="caption" sx={{ color: '#8c5007', display: 'block', mt: 0.4, fontWeight: 700 }}>
-                    Relación cruzada con {studentCount.toLocaleString()} matriculados
-                  </Typography>
-                </Paper>
-              </Grid>
-            </Grid>
+            {/* KPI Cards Rediseñados Premium - Grid CSS con Ancho 100% */}
+            <Box 
+              sx={{ 
+                display: 'grid', 
+                gridTemplateColumns: { xs: '100%', sm: 'repeat(2, 1fr)', md: 'repeat(4, 1fr)' }, 
+                gap: 2.5,
+                width: '100%',
+                mt: 1.5,
+                mb: 1.5
+              }}
+            >
+              
+              {/* Card 1: Área Construida */}
+              <Paper 
+                elevation={0} 
+                sx={{ 
+                  p: 2.5, 
+                  border: '1px solid #e2e8f0',
+                  borderLeft: '5px solid #3b82f6', 
+                  borderRadius: 3.5, 
+                  background: 'linear-gradient(135deg, #f8fafc 0%, #ffffff 100%)', 
+                  boxShadow: '0 4px 15px rgba(15,23,42,0.015)',
+                  position: 'relative',
+                  overflow: 'hidden',
+                  transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
+                  '&:hover': { 
+                    transform: 'translateY(-4px)', 
+                    boxShadow: '0 12px 30px rgba(37,99,235,0.06)',
+                    borderColor: '#bfdbfe'
+                  }
+                }}
+              >
+                <Stack direction="row" justifyContent="space-between" alignItems="flex-start">
+                  <Stack spacing={0.4}>
+                    <Typography variant="caption" sx={{ fontWeight: 850, color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.06em', fontSize: '0.72rem' }}>
+                      Área Construida Total
+                    </Typography>
+                    <Typography sx={{ fontWeight: 900, color: '#1e3b8a', fontSize: { xs: 24, md: 28 }, lineHeight: 1.1 }}>
+                      {stats.areaConstruida.toLocaleString()} <span style={{ fontSize: 14, fontWeight: 700, color: '#64748b' }}>m²</span>
+                    </Typography>
+                  </Stack>
+                  <Box 
+                    sx={{ 
+                      p: 1, 
+                      borderRadius: 2.5, 
+                      bgcolor: 'rgba(59, 130, 246, 0.08)', 
+                      color: '#3b82f6',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center'
+                    }}
+                  >
+                    <ArchitectureIcon sx={{ fontSize: 22 }} />
+                  </Box>
+                </Stack>
+                <Typography variant="caption" sx={{ color: '#94a3b8', display: 'block', mt: 1.8, fontWeight: 500 }}>
+                  Área neta física edificada
+                </Typography>
+              </Paper>
 
-            {/* Gráficos */}
+              {/* Card 2: Capacidad Total */}
+              <Paper 
+                elevation={0} 
+                sx={{ 
+                  p: 2.5, 
+                  border: '1px solid #e2e8f0',
+                  borderLeft: '5px solid #10b981', 
+                  borderRadius: 3.5, 
+                  background: 'linear-gradient(135deg, #f8fafc 0%, #ffffff 100%)', 
+                  boxShadow: '0 4px 15px rgba(15,23,42,0.015)',
+                  position: 'relative',
+                  overflow: 'hidden',
+                  transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
+                  '&:hover': { 
+                    transform: 'translateY(-4px)', 
+                    boxShadow: '0 12px 30px rgba(16,185,129,0.06)',
+                    borderColor: '#a7f3d0'
+                  }
+                }}
+              >
+                <Stack direction="row" justifyContent="space-between" alignItems="flex-start">
+                  <Stack spacing={0.4}>
+                    <Typography variant="caption" sx={{ fontWeight: 850, color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.06em', fontSize: '0.72rem' }}>
+                      Capacidad Total
+                    </Typography>
+                    <Typography sx={{ fontWeight: 900, color: '#065f46', fontSize: { xs: 24, md: 28 }, lineHeight: 1.1 }}>
+                      {stats.capacidadTotal.toLocaleString()} <span style={{ fontSize: 14, fontWeight: 700, color: '#64748b' }}>pax</span>
+                    </Typography>
+                  </Stack>
+                  <Box 
+                    sx={{ 
+                      p: 1, 
+                      borderRadius: 2.5, 
+                      bgcolor: 'rgba(16, 185, 129, 0.08)', 
+                      color: '#10b981',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center'
+                    }}
+                  >
+                    <GroupsIcon sx={{ fontSize: 22 }} />
+                  </Box>
+                </Stack>
+                <Typography variant="caption" sx={{ color: '#94a3b8', display: 'block', mt: 1.8, fontWeight: 500 }}>
+                  Cupo simultáneo de estudiantes
+                </Typography>
+              </Paper>
+
+              {/* Card 3: Espacios Totales */}
+              <Paper 
+                elevation={0} 
+                sx={{ 
+                  p: 2.5, 
+                  border: '1px solid #e2e8f0',
+                  borderLeft: '5px solid #8b5cf6', 
+                  borderRadius: 3.5, 
+                  background: 'linear-gradient(135deg, #f8fafc 0%, #ffffff 100%)', 
+                  boxShadow: '0 4px 15px rgba(15,23,42,0.015)',
+                  position: 'relative',
+                  overflow: 'hidden',
+                  transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
+                  '&:hover': { 
+                    transform: 'translateY(-4px)', 
+                    boxShadow: '0 12px 30px rgba(139,92,246,0.06)',
+                    borderColor: '#c084fc'
+                  }
+                }}
+              >
+                <Stack direction="row" justifyContent="space-between" alignItems="flex-start">
+                  <Stack spacing={0.4}>
+                    <Typography variant="caption" sx={{ fontWeight: 850, color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.06em', fontSize: '0.72rem' }}>
+                      Espacios Totales
+                    </Typography>
+                    <Typography sx={{ fontWeight: 900, color: '#5b21b6', fontSize: { xs: 24, md: 28 }, lineHeight: 1.1 }}>
+                      {stats.espaciosTotales.toLocaleString()} <span style={{ fontSize: 14, fontWeight: 700, color: '#64748b' }}>amb.</span>
+                    </Typography>
+                  </Stack>
+                  <Box 
+                    sx={{ 
+                      p: 1, 
+                      borderRadius: 2.5, 
+                      bgcolor: 'rgba(139, 92, 246, 0.08)', 
+                      color: '#8b5cf6',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center'
+                    }}
+                  >
+                    <MeetingRoomIcon sx={{ fontSize: 22 }} />
+                  </Box>
+                </Stack>
+                <Typography variant="caption" sx={{ color: '#94a3b8', display: 'block', mt: 1.8, fontWeight: 500 }}>
+                  Locales e inmuebles individuales
+                </Typography>
+              </Paper>
+
+              {/* Card 4: Densidad Estudiantil */}
+              <Paper 
+                elevation={0} 
+                sx={{ 
+                  p: 2.5, 
+                  border: '1px solid #e2e8f0',
+                  borderLeft: '5px solid #f59e0b', 
+                  borderRadius: 3.5, 
+                  background: 'linear-gradient(135deg, #f8fafc 0%, #ffffff 100%)', 
+                  boxShadow: '0 4px 15px rgba(15,23,42,0.015)',
+                  position: 'relative',
+                  overflow: 'hidden',
+                  transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
+                  '&:hover': { 
+                    transform: 'translateY(-4px)', 
+                    boxShadow: '0 12px 30px rgba(245,158,11,0.06)',
+                    borderColor: '#fde047'
+                  }
+                }}
+              >
+                <Stack direction="row" justifyContent="space-between" alignItems="flex-start">
+                  <Stack spacing={0.4}>
+                    <Typography variant="caption" sx={{ fontWeight: 850, color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.06em', fontSize: '0.72rem' }}>
+                      Densidad Estudiantil
+                    </Typography>
+                    <Typography sx={{ fontWeight: 900, color: '#92400e', fontSize: { xs: 22, md: 26 }, lineHeight: 1.1 }}>
+                      {stats.densidad} <span style={{ fontSize: 13, fontWeight: 700, color: '#64748b' }}>m²/Est.</span>
+                    </Typography>
+                  </Stack>
+                  <Box 
+                    sx={{ 
+                      p: 1, 
+                      borderRadius: 2.5, 
+                      bgcolor: 'rgba(245, 158, 11, 0.08)', 
+                      color: '#f59e0b',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center'
+                    }}
+                  >
+                    <SchoolIcon sx={{ fontSize: 22 }} />
+                  </Box>
+                </Stack>
+                <Typography variant="caption" sx={{ color: '#b45309', display: 'block', mt: 1.8, fontWeight: 700, fontSize: '0.72rem' }}>
+                  Relación con {studentCount.toLocaleString()} estudiantes
+                </Typography>
+              </Paper>
+
+            </Box>
+
+            {/* Tablas de Datos Estadísticos (Alineadas y Proporcionales en Toda la Pantalla) */}
             <Grid container spacing={2.5}>
-              <Grid item xs={12} md={6}>
-                <Paper elevation={0} sx={{ p: 2.5, border: '1px solid #dbe6f5', borderRadius: 3, bgcolor: '#fff' }}>
-                  <Typography sx={{ fontWeight: 800, color: '#0f172a', mb: 2 }}>Distribución de Áreas construidas por Bloque (Componente)</Typography>
-                  <Box sx={{ height: 300, width: '100%' }}>
-                    {stats.bloquesData.length === 0 ? (
-                      <Stack height="100%" alignItems="center" justifyContent="center" color="#94a3b8">No hay información física cargada.</Stack>
-                    ) : (
-                      <ResponsiveContainer width="100%" height="100%">
-                        <BarChart data={stats.bloquesData} margin={{ top: 10, right: 10, left: -20, bottom: 5 }}>
-                          <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
-                          <XAxis dataKey="name" tick={{ fill: '#64748b', fontSize: 11 }} />
-                          <YAxis tick={{ fill: '#64748b', fontSize: 11 }} />
-                          <Tooltip formatter={(value) => [`${value} m²`, 'Área']} contentStyle={{ borderRadius: 8, borderColor: '#e2e8f0' }} />
-                          <Bar dataKey="area" fill="#3b82f6" radius={[4, 4, 0, 0]} barSize={26} />
-                        </BarChart>
-                      </ResponsiveContainer>
-                    )}
-                  </Box>
-                </Paper>
-              </Grid>
-
-              <Grid item xs={12} md={6}>
-                <Paper elevation={0} sx={{ p: 2.5, border: '1px solid #dbe6f5', borderRadius: 3, bgcolor: '#fff' }}>
-                  <Typography sx={{ fontWeight: 800, color: '#0f172a', mb: 2 }}>Área y Capacidad por Tipo de Espacio</Typography>
-                  <Box sx={{ height: 300, width: '100%' }}>
-                    {stats.tiposData.length === 0 ? (
-                      <Stack height="100%" alignItems="center" justifyContent="center" color="#94a3b8">No hay información física cargada.</Stack>
-                    ) : (
-                      <ResponsiveContainer width="100%" height="100%">
-                        <BarChart data={stats.tiposData} margin={{ top: 10, right: 10, left: -20, bottom: 5 }}>
-                          <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
-                          <XAxis dataKey="name" tick={{ fill: '#64748b', fontSize: 11 }} />
-                          <YAxis tick={{ fill: '#64748b', fontSize: 11 }} />
-                          <Tooltip formatter={(value, name) => [value, name === 'area' ? 'Área (m²)' : 'Capacidad (cupos)']} contentStyle={{ borderRadius: 8, borderColor: '#e2e8f0' }} />
-                          <Legend wrapperStyle={{ fontSize: 12, pt: 10 }} />
-                          <Bar dataKey="area" fill="#10b981" radius={[4, 4, 0, 0]} name="Área construida (m²)" barSize={16} />
-                          <Bar dataKey="capacidad" fill="#f59e0b" radius={[4, 4, 0, 0]} name="Capacidad Física (Aforo)" barSize={16} />
-                        </BarChart>
-                      </ResponsiveContainer>
-                    )}
-                  </Box>
-                </Paper>
-              </Grid>
-
-              <Grid item xs={12} sm={6} md={4}>
-                <Paper elevation={0} sx={{ p: 2.5, border: '1px solid #dbe6f5', borderRadius: 3, bgcolor: '#fff' }}>
-                  <Typography sx={{ fontWeight: 800, color: '#0f172a', mb: 2 }}>Acceso Autónomo vs Común</Typography>
-                  <Box sx={{ height: 260, width: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
-                    {stats.accesoData[0].value === 0 && stats.accesoData[1].value === 0 ? (
-                      <Stack height="100%" alignItems="center" justifyContent="center" color="#94a3b8">No hay datos.</Stack>
-                    ) : (
-                      <>
-                        <ResponsiveContainer width="100%" height="80%">
-                          <PieChart>
-                            <Pie
-                              data={stats.accesoData}
-                              cx="50%"
-                              cy="50%"
-                              innerRadius={60}
-                              outerRadius={80}
-                              paddingAngle={5}
-                              dataKey="value"
-                            >
-                              <Cell fill="#6366f1" />
-                              <Cell fill="#cbd5e1" />
-                            </Pie>
-                            <Tooltip />
-                          </PieChart>
-                        </ResponsiveContainer>
-                        <Stack direction="row" spacing={3} sx={{ mt: 1 }}>
-                          <Stack direction="row" spacing={1} alignItems="center">
-                            <Box sx={{ width: 12, height: 12, borderRadius: '50%', bgcolor: '#6366f1' }} />
-                            <Typography sx={{ fontSize: 12, color: '#475569' }}>Autónomo ({stats.accesoData[0].value})</Typography>
-                          </Stack>
-                          <Stack direction="row" spacing={1} alignItems="center">
-                            <Box sx={{ width: 12, height: 12, borderRadius: '50%', bgcolor: '#cbd5e1' }} />
-                            <Typography sx={{ fontSize: 12, color: '#475569' }}>Común ({stats.accesoData[1].value})</Typography>
-                          </Stack>
-                        </Stack>
-                      </>
-                    )}
-                  </Box>
-                </Paper>
-              </Grid>
-
-              <Grid item xs={12} sm={12} md={8}>
+              <Grid item xs={12}>
                 <Paper elevation={0} sx={{ p: 2.5, border: '1px solid #dbe6f5', borderRadius: 3, bgcolor: '#fff' }}>
                   <Typography sx={{ fontWeight: 800, color: '#0f172a', mb: 2 }}>Inventario Consolidado por Bloque y Piso</Typography>
                   <TableContainer sx={{ maxHeight: 250, border: '1px solid #f1f5f9', borderRadius: 2 }}>
@@ -15047,10 +15392,10 @@ const renderCategoryBars = (items = [], options = {}) => {
                     </Typography>
                     <Typography variant="caption" sx={{ color: '#64748b', fontWeight: 700 }}>
                       Visualizando registros con tenencia: <span style={{ color: '#2563eb' }}>{infraestructuraFisicaDetailTenencia === 'Todos' ? 'Todas las Tenencias' : infraestructuraFisicaDetailTenencia}</span>
-                      {infraestructuraFisicaCampusFilter !== 'Todos' && ` | Campus: ${infraestructuraFisicaCampusFilter}`}
-                      {infraestructuraFisicaBloqueFilter !== 'Todos' && ` | Bloque: ${infraestructuraFisicaBloqueFilter}`}
-                      {infraestructuraFisicaPisoFilter !== 'Todos' && ` | Piso: ${infraestructuraFisicaPisoFilter}`}
-                      {infraestructuraFisicaTipoAreaFilter !== 'Todos' && ` | Tipo de Área: ${infraestructuraFisicaTipoAreaFilter}`}
+                      {infraestructuraFisicaCampusFilter.length > 0 && ` | Campus: ${infraestructuraFisicaCampusFilter.join(', ')}`}
+                      {infraestructuraFisicaBloqueFilter.length > 0 && ` | Bloque: ${infraestructuraFisicaBloqueFilter.join(', ')}`}
+                      {infraestructuraFisicaPisoFilter.length > 0 && ` | Piso: ${infraestructuraFisicaPisoFilter.join(', ')}`}
+                      {infraestructuraFisicaTipoAreaFilter.length > 0 && ` | Tipo de Área: ${infraestructuraFisicaTipoAreaFilter.join(', ')}`}
                     </Typography>
                   </Box>
                 </Stack>
@@ -15206,13 +15551,93 @@ const renderCategoryBars = (items = [], options = {}) => {
         {/* ── SECCIÓN 2: GESTIÓN DE DATOS (CRUD) ── */}
         {infraestructuraFisicaTab === 'crud' && (
           <Stack spacing={2.5}>
-            {/* Buscador y Controles */}
-            <Paper elevation={0} sx={{ p: 2.5, border: '1px solid #dbe6f5', borderRadius: 3, bgcolor: '#fff' }}>
-              <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2} alignItems="center" justifyContent="space-between">
-                <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2} sx={{ width: '100%', maxGridColumn: '1fr' }} alignItems="center">
-                  <TextField
+            {/* Guía de Carga Masiva Minimalista (2 Pasos) */}
+            <Paper elevation={0} sx={{ p: 1.8, border: '1px solid #dbe6f5', borderRadius: 2.5, bgcolor: '#f8fafc' }}>
+              <Stack direction={{ xs: 'column', lg: 'row' }} spacing={2.5} alignItems="center" justifyContent="space-between">
+                
+                {/* Paso 1 */}
+                <Stack direction="row" spacing={1.5} alignItems="center" sx={{ width: '100%' }}>
+                  <Box sx={{ width: 26, height: 26, borderRadius: '50%', bgcolor: '#3b82f6', color: '#fff', display: 'grid', placeItems: 'center', fontWeight: 900, fontSize: 12, flexShrink: 0 }}>1</Box>
+                  <Box sx={{ flexGrow: 1 }}>
+                    <Typography sx={{ fontWeight: 800, color: '#1e3a8a', fontSize: 13 }}>Plantilla Base</Typography>
+                    <Typography variant="caption" sx={{ color: '#64748b', display: 'block', lineHeight: 1.2, fontSize: 11 }}>Estructura vacía de Excel normalizada</Typography>
+                  </Box>
+                  <Button
+                    variant="outlined"
                     size="small"
-                    placeholder="Buscar por nomenclatura, asignación, bloque..."
+                    color="primary"
+                    startIcon={<FileDownloadIcon sx={{ fontSize: '15px !important' }} />}
+                    onClick={handleDownloadTemplateFile}
+                    sx={{ fontWeight: 800, textTransform: 'none', borderRadius: 1.5, py: 0.4, fontSize: 11.5, px: 1.2, whiteSpace: 'nowrap' }}
+                  >
+                    Descargar
+                  </Button>
+                </Stack>
+
+                <Divider orientation="vertical" flexItem sx={{ display: { xs: 'none', lg: 'block' }, borderColor: '#e2e8f0' }} />
+
+                {/* Paso 2 */}
+                <Stack direction="row" spacing={1.5} alignItems="center" sx={{ width: '100%' }}>
+                  <Box sx={{ width: 26, height: 26, borderRadius: '50%', bgcolor: '#10b981', color: '#fff', display: 'grid', placeItems: 'center', fontWeight: 900, fontSize: 12, flexShrink: 0 }}>2</Box>
+                  <Box sx={{ flexGrow: 1 }}>
+                    <Typography sx={{ fontWeight: 800, color: '#065f46', fontSize: 13 }}>Cargar y Reemplazar</Typography>
+                    <Typography variant="caption" sx={{ color: '#64748b', display: 'block', lineHeight: 1.2, fontSize: 11 }}>
+                      Sube el Excel (campo <strong>CAMPUS</strong> es mandatorio: Centro, Santiago o San Damián).
+                    </Typography>
+                  </Box>
+                  <Button
+                    variant="contained"
+                    color="success"
+                    size="small"
+                    component="label"
+                    disabled={infraestructuraFisicaUploading}
+                    startIcon={infraestructuraFisicaUploading ? <CircularProgress size={12} color="inherit" /> : <UploadFileIcon sx={{ fontSize: '15px !important' }} />}
+                    sx={{
+                      fontWeight: 800,
+                      textTransform: 'none',
+                      borderRadius: 1.5,
+                      py: 0.4,
+                      fontSize: 11.5,
+                      px: 1.2,
+                      whiteSpace: 'nowrap',
+                      background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)',
+                      boxShadow: '0 2px 8px rgba(16,185,129,0.15)',
+                      '&:hover': {
+                        background: 'linear-gradient(135deg, #059669 0%, #047857 100%)'
+                      }
+                    }}
+                  >
+                    {infraestructuraFisicaUploading ? 'Subiendo...' : 'Subir Excel'}
+                    <input
+                      type="file"
+                      hidden
+                      accept=".xlsx, .xls"
+                      onChange={handleExcelUploadFile}
+                    />
+                  </Button>
+                </Stack>
+
+              </Stack>
+            </Paper>
+            {/* Buscador y Controles */}
+            {/* Buscador y Controles Rediseñados */}
+            <Paper 
+              elevation={0} 
+              sx={{ 
+                p: 2.2, 
+                border: '1px solid #cbd5e1', 
+                borderRadius: 4, 
+                bgcolor: '#ffffff',
+                boxShadow: '0 4px 15px rgba(15, 23, 42, 0.03)'
+              }}
+            >
+              <Stack direction={{ xs: 'column', md: 'row' }} spacing={2} alignItems="center" width="100%">
+                
+                {/* Input de Búsqueda Inteligente */}
+                <Box sx={{ flex: 1, display: 'flex', alignItems: 'center', width: '100%' }}>
+                  <TextField
+                    fullWidth
+                    placeholder="Buscador Inteligente: escribe campus, bloque, nomenclatura, asignación, tipo de espacio..."
                     value={infraestructuraFisicaSearch}
                     onChange={(e) => {
                       setInfraestructuraFisicaSearch(e.target.value);
@@ -15221,41 +15646,187 @@ const renderCategoryBars = (items = [], options = {}) => {
                     InputProps={{
                       startAdornment: (
                         <InputAdornment position="start">
-                          <SearchIcon sx={{ color: '#94a3b8' }} />
+                          <SearchIcon sx={{ color: '#0f172a', mr: 1, fontSize: 22 }} />
+                        </InputAdornment>
+                      ),
+                      endAdornment: (
+                        <InputAdornment position="end">
+                          <Stack direction="row" spacing={0.5} alignItems="center">
+                            {infraestructuraFisicaSearch && (
+                              <IconButton 
+                                size="small" 
+                                onClick={() => {
+                                  setInfraestructuraFisicaSearch('');
+                                  setInfraestructuraFisicaPage(0);
+                                }}
+                                sx={{ color: '#64748b' }}
+                              >
+                                <CloseIcon sx={{ fontSize: 18 }} />
+                              </IconButton>
+                            )}
+                            <Tooltip title="Consejos de búsqueda inteligente" arrow>
+                              <IconButton
+                                size="small"
+                                onClick={(e) => setInfraestructuraFisicaHelpAnchor(e.currentTarget)}
+                                sx={{ 
+                                  color: '#ca8a04',
+                                  bgcolor: 'rgba(234, 179, 8, 0.08)',
+                                  '&:hover': { bgcolor: 'rgba(234, 179, 8, 0.15)' }
+                                }}
+                              >
+                                <LightbulbIcon sx={{ fontSize: 18 }} />
+                              </IconButton>
+                            </Tooltip>
+                          </Stack>
                         </InputAdornment>
                       )
                     }}
-                    sx={{ minWidth: 280, borderRadius: 2 }}
+                    sx={{
+                      '& .MuiOutlinedInput-root': {
+                        borderRadius: 3.5,
+                        bgcolor: '#f8fafc',
+                        minHeight: 46,
+                        pr: 1.5,
+                        animation: 'pulse-border 2.5s infinite ease-in-out',
+                        '@keyframes pulse-border': {
+                          '0%': {
+                            boxShadow: '0 0 0 0px rgba(16, 185, 129, 0.15)',
+                            borderColor: '#cbd5e1'
+                          },
+                          '50%': {
+                            boxShadow: '0 0 0 4px rgba(16, 185, 129, 0.25)',
+                            borderColor: '#10b981'
+                          },
+                          '100%': {
+                            boxShadow: '0 0 0 0px rgba(16, 185, 129, 0.15)',
+                            borderColor: '#cbd5e1'
+                          }
+                        },
+                        '& fieldset': { borderColor: '#cbd5e1' },
+                        '&:hover fieldset': { borderColor: '#94a3b8', animation: 'none' },
+                        '&.Mui-focused': {
+                          animation: 'none',
+                          boxShadow: '0 0 0 4px rgba(16, 185, 129, 0.15)',
+                          '& fieldset': { borderColor: '#10b981', borderWidth: 2 }
+                        }
+                      },
+                      '& .MuiInputBase-input': {
+                        fontSize: 14,
+                        color: '#0f172a',
+                        fontWeight: 500,
+                        '&::placeholder': { color: '#64748b', opacity: 1 }
+                      }
+                    }}
                   />
-                  
-                  <FormControl size="small" sx={{ minWidth: 180 }}>
-                    <Select
-                      value={infraestructuraFisicaCampusFilter}
-                      onChange={(e) => {
-                        setInfraestructuraFisicaCampusFilter(e.target.value);
-                        setInfraestructuraFisicaPage(0);
-                      }}
-                      sx={{ borderRadius: 2 }}
-                    >
-                      <MenuItem value="Todos">Todos los Campus</MenuItem>
-                      <MenuItem value="Campus Centro">Campus Centro</MenuItem>
-                      <MenuItem value="Campus Santiago">Campus Santiago</MenuItem>
-                      <MenuItem value="Campus San Damián">Campus San Damián</MenuItem>
-                    </Select>
-                  </FormControl>
-                </Stack>
+                </Box>
+                
+                {/* Selector de Campus */}
+                <FormControl 
+                  sx={{ 
+                    minWidth: { xs: '100%', sm: 200, md: 240 },
+                    '& .MuiOutlinedInput-root': {
+                      borderRadius: 3.5,
+                      minHeight: 46,
+                      bgcolor: '#f8fafc',
+                      '& fieldset': { borderColor: '#e2e8f0' },
+                      '&:hover fieldset': { borderColor: '#cbd5e1' },
+                      '&.Mui-focused fieldset': { borderColor: '#10b981', borderWidth: 2 }
+                    }
+                  }}
+                >
+                  <Select
+                    value={infraestructuraFisicaCrudCampusFilter}
+                    onChange={(e) => {
+                      setInfraestructuraFisicaCrudCampusFilter(e.target.value);
+                      setInfraestructuraFisicaPage(0);
+                    }}
+                    sx={{ fontSize: 13.5, fontWeight: 700, color: '#475569' }}
+                  >
+                    <MenuItem value="Todos" sx={{ fontWeight: 600 }}>Todos los Campus</MenuItem>
+                    <MenuItem value="Campus Centro">Campus Centro</MenuItem>
+                    <MenuItem value="Campus Santiago">Campus Santiago</MenuItem>
+                    <MenuItem value="Campus San Damián">Campus San Damián</MenuItem>
+                  </Select>
+                </FormControl>
 
+                {/* Botón Nuevo Espacio */}
                 <Button
                   variant="contained"
-                  color="primary"
-                  startIcon={<AddIcon />}
                   onClick={handleOpenCreateDialog}
-                  sx={{ borderRadius: 99, px: 3, py: 1.1, textTransform: 'none', fontWeight: 800, whiteSpace: 'nowrap' }}
+                  startIcon={<AddIcon sx={{ fontSize: '18px !important' }} />}
+                  sx={{
+                    borderRadius: 3.5,
+                    minHeight: 46,
+                    px: 3,
+                    fontWeight: 800,
+                    textTransform: 'none',
+                    fontSize: 13.5,
+                    letterSpacing: '-0.01em',
+                    whiteSpace: 'nowrap',
+                    width: { xs: '100%', md: 'auto' },
+                    background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)',
+                    boxShadow: '0 4px 14px rgba(16,185,129,0.25)',
+                    '&:hover': {
+                      background: 'linear-gradient(135deg, #059669 0%, #047857 100%)'
+                    }
+                  }}
                 >
                   Nuevo Espacio
                 </Button>
+
               </Stack>
             </Paper>
+
+            {/* Popover de Consejos de Búsqueda */}
+            <Popover
+              open={Boolean(infraestructuraFisicaHelpAnchor)}
+              anchorEl={infraestructuraFisicaHelpAnchor}
+              onClose={() => setInfraestructuraFisicaHelpAnchor(null)}
+              anchorOrigin={{
+                vertical: 'bottom',
+                horizontal: 'right',
+              }}
+              transformOrigin={{
+                vertical: 'top',
+                horizontal: 'right',
+              }}
+              PaperProps={{
+                elevation: 3,
+                sx: { 
+                  p: 2.5, 
+                  maxWidth: 320, 
+                  borderRadius: 3.5, 
+                  border: '1px solid #bfdbfe',
+                  bgcolor: '#ffffff',
+                  boxShadow: '0 10px 25px rgba(37,99,235,0.08)'
+                }
+              }}
+            >
+              <Stack spacing={1.5}>
+                <Stack direction="row" spacing={1.2} alignItems="center">
+                  <Box sx={{ p: 0.6, borderRadius: 1.5, bgcolor: '#fef9c3', display: 'flex', alignItems: 'center' }}>
+                    <LightbulbIcon sx={{ fontSize: 20, color: '#ca8a04' }} />
+                  </Box>
+                  <Typography sx={{ fontWeight: 800, color: '#1e293b', fontSize: 14 }}>
+                    Búsqueda General Inteligente
+                  </Typography>
+                </Stack>
+                <Typography sx={{ color: '#475569', fontSize: 13, lineHeight: 1.4 }}>
+                  Esta barra de búsqueda realiza un barrido cruzado automático. Puedes escribir términos que coincidan con:
+                </Typography>
+                <Box component="ul" sx={{ pl: 2, m: 0, color: '#475569', fontSize: 12.5, display: 'flex', flexDirection: 'column', gap: 0.6 }}>
+                  <li><strong>Campus:</strong> Centro, Santiago, San Damián.</li>
+                  <li><strong>Bloque:</strong> Ej. Bloque A, Áreas de administración.</li>
+                  <li><strong>Nomenclatura:</strong> Códigos de espacios físicos.</li>
+                  <li><strong>Asignación:</strong> Áreas académicas o dependencias administrativas.</li>
+                  <li><strong>Tipo de espacio:</strong> Aulas, oficinas, laboratorios, baños, etc.</li>
+                </Box>
+                <Divider sx={{ my: 0.5 }} />
+                <Typography variant="caption" sx={{ color: '#64748b', fontWeight: 600 }}>
+                  💡 Tip: Puedes combinar esta búsqueda ingresando palabras clave separadas por espacios.
+                </Typography>
+              </Stack>
+            </Popover>
 
             {/* Tabla Principal */}
             <Paper elevation={0} sx={{ border: '1px solid #dbe6f5', borderRadius: 3, overflow: 'hidden' }}>
@@ -15269,17 +15840,17 @@ const renderCategoryBars = (items = [], options = {}) => {
                   <TableContainer>
                     <Table size="small">
                       <TableHead>
-                        <TableRow>
-                          <TableCell sx={{ fontWeight: 800, bgcolor: '#f8fafc' }}>Campus</TableCell>
-                          <TableCell sx={{ fontWeight: 800, bgcolor: '#f8fafc' }}>Bloque</TableCell>
-                          <TableCell sx={{ fontWeight: 800, bgcolor: '#f8fafc' }}>Nomenclatura</TableCell>
-                          <TableCell sx={{ fontWeight: 800, bgcolor: '#f8fafc' }}>Piso</TableCell>
-                          <TableCell sx={{ fontWeight: 800, bgcolor: '#f8fafc' }}>Tipo Espacio</TableCell>
-                          <TableCell sx={{ fontWeight: 800, bgcolor: '#f8fafc' }}>Asignación</TableCell>
-                          <TableCell sx={{ fontWeight: 800, bgcolor: '#f8fafc', textAlign: 'right' }}>Capacidad</TableCell>
-                          <TableCell sx={{ fontWeight: 800, bgcolor: '#f8fafc', textAlign: 'right' }}>Área (m²)</TableCell>
-                          <TableCell sx={{ fontWeight: 800, bgcolor: '#f8fafc' }}>Autónomo</TableCell>
-                          <TableCell sx={{ fontWeight: 800, bgcolor: '#f8fafc', textAlign: 'center' }}>Acciones</TableCell>
+                        <TableRow sx={{ bgcolor: '#ecfdf5' }}>
+                          <TableCell sx={{ fontWeight: 900, color: '#065f46', fontSize: '0.75rem', textTransform: 'uppercase', letterSpacing: '0.05em', borderBottom: '2px solid #a7f3d0', py: 1.5 }}>Campus</TableCell>
+                          <TableCell sx={{ fontWeight: 900, color: '#065f46', fontSize: '0.75rem', textTransform: 'uppercase', letterSpacing: '0.05em', borderBottom: '2px solid #a7f3d0', py: 1.5 }}>Bloque</TableCell>
+                          <TableCell sx={{ fontWeight: 900, color: '#065f46', fontSize: '0.75rem', textTransform: 'uppercase', letterSpacing: '0.05em', borderBottom: '2px solid #a7f3d0', py: 1.5 }}>Nomenclatura</TableCell>
+                          <TableCell sx={{ fontWeight: 900, color: '#065f46', fontSize: '0.75rem', textTransform: 'uppercase', letterSpacing: '0.05em', borderBottom: '2px solid #a7f3d0', py: 1.5 }}>Piso</TableCell>
+                          <TableCell sx={{ fontWeight: 900, color: '#065f46', fontSize: '0.75rem', textTransform: 'uppercase', letterSpacing: '0.05em', borderBottom: '2px solid #a7f3d0', py: 1.5 }}>Tipo Espacio</TableCell>
+                          <TableCell sx={{ fontWeight: 900, color: '#065f46', fontSize: '0.75rem', textTransform: 'uppercase', letterSpacing: '0.05em', borderBottom: '2px solid #a7f3d0', py: 1.5 }}>Asignación</TableCell>
+                          <TableCell sx={{ fontWeight: 900, color: '#065f46', fontSize: '0.75rem', textTransform: 'uppercase', letterSpacing: '0.05em', borderBottom: '2px solid #a7f3d0', py: 1.5, textAlign: 'right' }}>Capacidad</TableCell>
+                          <TableCell sx={{ fontWeight: 900, color: '#065f46', fontSize: '0.75rem', textTransform: 'uppercase', letterSpacing: '0.05em', borderBottom: '2px solid #a7f3d0', py: 1.5, textAlign: 'right' }}>Área (m²)</TableCell>
+                          <TableCell sx={{ fontWeight: 900, color: '#065f46', fontSize: '0.75rem', textTransform: 'uppercase', letterSpacing: '0.05em', borderBottom: '2px solid #a7f3d0', py: 1.5 }}>Autónomo</TableCell>
+                          <TableCell sx={{ fontWeight: 900, color: '#065f46', fontSize: '0.75rem', textTransform: 'uppercase', letterSpacing: '0.05em', borderBottom: '2px solid #a7f3d0', py: 1.5, textAlign: 'center' }}>Acciones</TableCell>
                         </TableRow>
                       </TableHead>
                       <TableBody>
@@ -15293,15 +15864,15 @@ const renderCategoryBars = (items = [], options = {}) => {
                           infraestructuraFisicaData.map((row) => (
                             <TableRow key={row.id} hover>
                               <TableCell>{row.campus}</TableCell>
-                              <TableCell sx={{ fontWeight: 700 }}>{row.componente}</TableCell>
+                              <TableCell sx={{ fontWeight: 700, wordBreak: 'break-word', whiteSpace: 'normal', color: '#334155' }}>{row.componente}</TableCell>
                               <TableCell sx={{ fontWeight: 700, color: '#1d4ed8' }}>{row.nomenclatura || '-'}</TableCell>
                               <TableCell>Piso {row.piso_no}</TableCell>
-                              <TableCell>{row.tipo_espacio}</TableCell>
-                              <TableCell sx={{ maxWidth: 160, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                              <TableCell sx={{ wordBreak: 'break-word', whiteSpace: 'normal', color: '#334155' }}>{row.tipo_espacio}</TableCell>
+                              <TableCell sx={{ minWidth: 160, maxWidth: 220, wordBreak: 'break-word', whiteSpace: 'normal', color: '#475569' }}>
                                 {row.asignacion || '-'}
                               </TableCell>
-                              <TableCell sx={{ textAlign: 'right' }}>{row.capacidad_fisica}</TableCell>
-                              <TableCell sx={{ textAlign: 'right' }}>{row.area_metros2} m²</TableCell>
+                              <TableCell sx={{ textAlign: 'right', fontWeight: 600 }}>{row.capacidad_fisica}</TableCell>
+                              <TableCell sx={{ textAlign: 'right', fontWeight: 600 }}>{row.area_metros2} m²</TableCell>
                               <TableCell>
                                 <Chip
                                   size="small"
@@ -15378,123 +15949,113 @@ const renderCategoryBars = (items = [], options = {}) => {
             
             <DialogContent sx={{ p: 4, bgcolor: '#ffffff' }}>
               {/* Buscador inteligente de Nomenclatura - ANCHO COMPLETO E INTUITIVO */}
+              {/* Buscador inteligente de Nomenclatura - MINIMALISTA Y OPTIMIZADO */}
               <Paper 
                 elevation={0} 
                 sx={{ 
-                  mb: 4, 
-                  p: 3, 
-                  border: '2px dashed #2563eb', 
-                  borderRadius: 3.5, 
-                  bgcolor: '#f0f7ff',
-                  boxShadow: '0 4px 20px rgba(37,99,235,0.06)'
+                  mb: 3, 
+                  p: 1.8, 
+                  border: '1px solid #bfdbfe', 
+                  borderRadius: 3, 
+                  bgcolor: '#eff6ff',
                 }}
               >
-                <Stack direction="row" spacing={1.5} alignItems="center" sx={{ mb: 2 }}>
-                  <Box sx={{ p: 1, bgcolor: '#2563eb', color: 'white', borderRadius: 2.5, display: 'flex', alignItems: 'center' }}>
-                    <SearchIcon sx={{ fontSize: 24 }} />
-                  </Box>
-                  <Box>
-                    <Typography sx={{ fontWeight: 900, color: '#1e3a8a', fontSize: 16 }}>
-                      Carga Rápida / Buscador Inteligente
-                    </Typography>
-                    <Typography variant="caption" sx={{ color: '#1d4ed8', fontWeight: 600, fontSize: 12 }}>
-                      Si vas a editar un espacio existente, búscalo por su Nomenclatura, Bloque o Campus para autocompletar la ficha.
-                    </Typography>
-                  </Box>
-                </Stack>
-                
-                <Autocomplete
-                  options={infraestructuraFisicaAllData}
-                  getOptionLabel={(option) => `${option.nomenclatura || 'Sin Código'} - ${option.componente || 'Sin Bloque'} (${option.campus})`}
-                  value={infraestructuraFisicaAllData.find((r) => r.id === infraestructuraFisicaEditingId) || null}
-                  filterOptions={(options, { inputValue }) => {
-                    const query = inputValue.toLowerCase().trim();
-                    if (!query) return options;
-                    return options.filter((option) => {
-                      return Object.keys(option).some((key) => {
-                        const val = option[key];
-                        if (val === null || val === undefined) return false;
-                        return String(val).toLowerCase().includes(query);
-                      });
-                    });
-                  }}
-                  onChange={(_, found) => {
-                    if (found) {
-                      setInfraestructuraFisicaForm({
-                        campus: found.campus || '',
-                        componente: found.componente || '',
-                        tipo_area: found.tipo_area || '',
-                        tenencia: found.tenencia || '',
-                        ubicacion: found.ubicacion || '',
-                        nomenclatura: found.nomenclatura || '',
-                        piso_no: found.piso_no !== null && found.piso_no !== undefined ? Number(found.piso_no) : '',
-                        tipo_espacio: found.tipo_espacio || '',
-                        asignacion: found.asignacion || '',
-                        descripcion: found.descripcion || '',
-                        funcion_especifica: found.funcion_especifica || '',
-                        capacidad_fisica: found.capacidad_fisica !== null && found.capacidad_fisica !== undefined ? Number(found.capacidad_fisica) : '',
-                        area_metros2: found.area_metros2 !== null && found.area_metros2 !== undefined ? Number(found.area_metros2) : '',
-                        fecha_actualizacion: found.fecha_actualizacion || new Date().getFullYear().toString(),
-                        acceso_autonomo: ['Sí', 'Si'].includes(found.acceso_autonomo) ? 'Sí' : 'No'
-                      });
-                      setInfraestructuraFisicaEditingId(found.id);
-                      enqueueSnackbar(`Espacio '${found.nomenclatura}' cargado con éxito para editar`, { variant: 'info' });
-                    } else {
-                      handleOpenCreateDialog();
-                    }
-                  }}
-                  renderOption={(props, option) => (
-                    <Box component="li" {...props} sx={{ py: 1.5, px: 2, borderBottom: '1px solid #f1f5f9' }}>
-                      <Stack spacing={0.5} sx={{ width: '100%' }}>
-                        <Stack direction="row" justifyContent="space-between" alignItems="center">
-                          <Typography variant="subtitle2" sx={{ fontWeight: 700, color: '#1e293b' }}>
-                            Código/Nomenclatura: {option.nomenclatura || 'Sin Código'}
-                          </Typography>
-                          <Chip 
-                            label={option.campus} 
-                            size="small" 
-                            sx={{ 
-                              bgcolor: option.campus === 'Campus Centro' ? '#eff6ff' : option.campus === 'Campus Santiago' ? '#ecfdf5' : '#fff7ed',
-                              color: option.campus === 'Campus Centro' ? '#2563eb' : option.campus === 'Campus Santiago' ? '#059669' : '#d97706',
-                              fontWeight: 700,
-                              border: '1px solid currentColor',
-                              fontSize: 10
-                            }} 
-                          />
-                        </Stack>
-                        <Typography variant="body2" sx={{ color: '#475569', fontWeight: 500 }}>
-                          Bloque: {option.componente || 'Sin Bloque'} • Ubicación: {option.ubicacion || 'Sin Ubicación'}
-                        </Typography>
-                        <Typography variant="caption" sx={{ color: '#64748b', display: 'flex', gap: 1.5, flexWrap: 'wrap' }}>
-                          <span><strong>Espacio:</strong> {option.tipo_espacio || '-'}</span>
-                          <span><strong>Asignación:</strong> {option.asignacion || '-'}</span>
-                          <span><strong>Área:</strong> {option.area_metros2 ? `${option.area_metros2} m²` : '-'}</span>
-                          <span><strong>Aforo:</strong> {option.capacidad_fisica ? `${option.capacidad_fisica} pers.` : '-'}</span>
-                        </Typography>
-                      </Stack>
+                <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2} alignItems="center" justifyContent="space-between">
+                  <Stack direction="row" spacing={1.2} alignItems="center">
+                    <SearchIcon sx={{ color: '#2563eb', fontSize: 20 }} />
+                    <Box>
+                      <Typography sx={{ fontWeight: 800, color: '#1e3a8a', fontSize: 13.5 }}>
+                        Cargar Espacio Existente (Edición Rápida)
+                      </Typography>
+                      <Typography variant="caption" sx={{ color: '#3b82f6', display: 'block', fontSize: 11, fontWeight: 500 }}>
+                        Busca un espacio para autocompletar la ficha y editarlo.
+                      </Typography>
                     </Box>
-                  )}
-                  renderInput={(params) => (
-                    <TextField
-                      {...params}
-                      label="Buscar espacio para editar..."
-                      placeholder="Escribe la nomenclatura, código, bloque, campus, tenencia o cualquier detalle..."
-                      size="medium"
-                      fullWidth
-                      sx={{
-                        '& .MuiOutlinedInput-root': {
-                          borderRadius: 3,
-                          bgcolor: '#ffffff',
-                          boxShadow: '0 4px 12px rgba(37,99,235,0.06)',
-                          border: '1px solid #bfdbfe',
-                          '&:hover': {
-                            borderColor: '#2563eb'
+                  </Stack>
+                  <Box sx={{ minWidth: { xs: '100%', sm: 300, md: 420 } }}>
+                    <Autocomplete
+                      size="small"
+                      options={infraestructuraFisicaAllData}
+                      getOptionLabel={(option) => `${option.nomenclatura || 'Sin Código'} - ${option.componente || 'Sin Bloque'} (${option.campus})`}
+                      value={infraestructuraFisicaAllData.find((r) => r.id === infraestructuraFisicaEditingId) || null}
+                      filterOptions={(options, { inputValue }) => {
+                        const query = inputValue.toLowerCase().trim();
+                        if (!query) return options.slice(0, 10);
+                        const filtered = [];
+                        for (let i = 0; i < options.length; i++) {
+                          const option = options[i];
+                          if (
+                            String(option.nomenclatura || '').toLowerCase().includes(query) ||
+                            String(option.componente || '').toLowerCase().includes(query) ||
+                            String(option.tipo_espacio || '').toLowerCase().includes(query) ||
+                            String(option.asignacion || '').toLowerCase().includes(query) ||
+                            String(option.ubicacion || '').toLowerCase().includes(query) ||
+                            String(option.campus || '').toLowerCase().includes(query)
+                          ) {
+                            filtered.push(option);
+                            if (filtered.length >= 8) break;
                           }
                         }
+                        return filtered;
                       }}
+                      onChange={(_, found) => {
+                        if (found) {
+                          setInfraestructuraFisicaForm({
+                            campus: found.campus || '',
+                            componente: found.componente || '',
+                            tipo_area: found.tipo_area || '',
+                            tenencia: found.tenencia || '',
+                            ubicacion: found.ubicacion || '',
+                            nomenclatura: found.nomenclatura || '',
+                            piso_no: found.piso_no !== null && found.piso_no !== undefined ? Number(found.piso_no) : '',
+                            tipo_espacio: found.tipo_espacio || '',
+                            asignacion: found.asignacion || '',
+                            descripcion: found.descripcion || '',
+                            funcion_especifica: found.funcion_especifica || '',
+                            capacidad_fisica: found.capacidad_fisica !== null && found.capacidad_fisica !== undefined ? Number(found.capacidad_fisica) : '',
+                            area_metros2: found.area_metros2 !== null && found.area_metros2 !== undefined ? Number(found.area_metros2) : '',
+                            fecha_actualizacion: found.fecha_actualizacion || new Date().getFullYear().toString(),
+                            acceso_autonomo: ['Sí', 'Si'].includes(found.acceso_autonomo) ? 'Sí' : 'No'
+                          });
+                          setInfraestructuraFisicaEditingId(found.id);
+                          enqueueSnackbar(`Espacio '${found.nomenclatura}' cargado con éxito para editar`, { variant: 'info' });
+                        } else {
+                          handleOpenCreateDialog();
+                        }
+                      }}
+                      renderInput={(params) => (
+                        <TextField
+                          {...params}
+                          placeholder="Buscar espacio por nomenclatura, bloque..."
+                          sx={{
+                            '& .MuiOutlinedInput-root': {
+                              borderRadius: 2.5,
+                              bgcolor: '#ffffff',
+                              fontSize: 12.5
+                            }
+                          }}
+                        />
+                      )}
+                      renderOption={(props, option) => (
+                        <Box component="li" {...props} sx={{ py: 0.8, px: 1.5, borderBottom: '1px solid #f1f5f9' }}>
+                          <Stack spacing={0.2} sx={{ width: '100%' }}>
+                            <Stack direction="row" justifyContent="space-between" alignItems="center">
+                              <Typography variant="body2" sx={{ fontWeight: 700, color: '#1e293b', fontSize: 12.5 }}>
+                                {option.nomenclatura || 'Sin Código'} — {option.componente || 'Sin Bloque'}
+                              </Typography>
+                              <Typography variant="caption" sx={{ color: '#64748b', fontWeight: 600, fontSize: 10.5 }}>
+                                {option.campus}
+                              </Typography>
+                            </Stack>
+                            <Typography variant="caption" sx={{ color: '#64748b', display: 'block', textOverflow: 'ellipsis', overflow: 'hidden', whiteSpace: 'nowrap', fontSize: 11 }}>
+                              {option.tipo_espacio || 'Sin tipo'} • {option.asignacion || 'Sin asignación'}
+                            </Typography>
+                          </Stack>
+                        </Box>
+                      )}
                     />
-                  )}
-                />
+                  </Box>
+                </Stack>
               </Paper>
 
               <Stack spacing={4}>
@@ -15862,7 +16423,7 @@ const renderCategoryBars = (items = [], options = {}) => {
   return (
     <Fade in={true}>
       <Box>
-        {!isGestionProcesosStatsRoute && !isDirectDocumentalView && !(selectedCard === 'poblacional' && poblacionalPanel !== 'hub') && selectedCard !== 'recurso_humano' && (
+        {!isGestionProcesosStatsRoute && !isDirectDocumentalView && !(selectedCard === 'poblacional' && poblacionalPanel !== 'hub') && !(selectedCard === 'infraestructura_fisica' && infraestructuraFisicaTab !== 'hub') && selectedCard !== 'recurso_humano' && (
           <Paper elevation={0} sx={{ p: 3, mb: 3, borderRadius: 3, border: '1px solid #dbe2f1', background: 'linear-gradient(135deg,#0f172a,#1d4ed8)' }}>
             <Stack direction="row" spacing={1.5} alignItems="center">
               <InsightsIcon sx={{ color: 'white' }} />

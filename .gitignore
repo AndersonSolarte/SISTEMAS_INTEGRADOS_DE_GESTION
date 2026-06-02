@@ -1,55 +1,66 @@
-# Dependencias Node
+# Node.js
 node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+frontend/build/
+frontend/build_verify*/
+backend/dist/
 
-# Archivos de entorno
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+venv/
+env/
+ENV/
 .env
 .env.local
 .env.development.local
 .env.test.local
 .env.production.local
-config/backend_.env
-config/frontend_.env
-/backend/.env
-/frontend/.env
 
-# Build
-dist/
-build/
-frontend/build_verify*/
-tmp_docx_inspect/
+# IDEs y Editores
+.vscode/
+.idea/
+*.swp
+*.swo
 
-# Logs
-logs
-*.log
-
-# Python
-__pycache__/
-*.pyc
-.venv/
-/.npm-cache/
-
-# Archivos del sistema
+# Sistema Operativo
 .DS_Store
 Thumbs.db
-# Backups locales (no versionar)
-/backups/
-/db/
-/sgc_db_*.sql
-/sgc_db_*.zip
+
+# Credenciales y llaves
+backend/.env
+frontend/.env
+config/backend_.env
+config/frontend_.env
+backend/keys/google-service-account.json
+*.sql
+
+# Logs y temporales
+logs/
+*.log
+tmp_docx_inspect/
+backend/tmp_docx_v2/
+backend/uploads/
+.docker-tmp/
+
+# Backups y dumps locales
+backups/
+db/
+sgc_db_*/
+sgc_db_*.sql
+sgc_db_*.zip
 *.dump
 *.tar
 *.zip
 
-/sgc_db_*/
-
-# Cargas temporales de importacion
-/backend/uploads/
-/backend/keys/*.json
-/.docker-tmp/
-
 # Certificados y archivos sensibles del servidor
-/Cert_planeacion.pem
-/Cert_planeacion.key
-/fullchain.pem
-/.env.save
-/docker-compose.yml.bak_ssl_fix
+Cert_planeacion.pem
+Cert_planeacion.key
+fullchain.pem
+.env.save
+docker-compose.yml.bak_ssl_fix
