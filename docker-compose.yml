@@ -68,6 +68,11 @@ services:
       SMTP_USER: ${SMTP_USER:-}
       SMTP_PASS: ${SMTP_PASS:-}
       SMTP_FROM: ${SMTP_FROM:-}
+      BACKEND_PUBLIC_URL: ${BACKEND_PUBLIC_URL:-}
+      ENABLE_REPORTE_SALIDA_FORM: ${ENABLE_REPORTE_SALIDA_FORM:-false}
+      REPORTE_SALIDA_GESTION_HUMANA_EMAIL: ${REPORTE_SALIDA_GESTION_HUMANA_EMAIL:-adsolarte@unicesmag.edu.co}
+      REPORTE_SALIDA_SST_EMAIL: ${REPORTE_SALIDA_SST_EMAIL:-gp.planeacion@unicesmag.edu.co}
+      REPORTE_SALIDA_TEMPLATE_PATH: ${REPORTE_SALIDA_TEMPLATE_PATH:-}
       SABER_PRO_PYTHON_URL: http://python-service:8000
       SABER_PRO_PYTHON_TIMEOUT_MS: ${SABER_PRO_PYTHON_TIMEOUT_MS:-15000}
       AI_PROVIDER: ${AI_PROVIDER:-auto}
@@ -108,6 +113,7 @@ services:
         REACT_APP_NAME: ${REACT_APP_NAME:-Sistema de Gestion de Calidad}
         REACT_APP_VERSION: ${REACT_APP_VERSION:-1.0.0}
         REACT_APP_GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
+        REACT_APP_ENABLE_REPORTE_SALIDA_FORM: ${REACT_APP_ENABLE_REPORTE_SALIDA_FORM:-false}
     container_name: sgc-frontend
     restart: unless-stopped
     depends_on:
