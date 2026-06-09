@@ -98,18 +98,35 @@ function FancyTooltip({ active, payload, label, theme }) {
   );
 }
 
-const RenderLineLabel = (props) => {
-  const { x, y, value, index } = props || {};
+const RenderLineLabelAbove = (props) => {
+  const { x, y, value } = props || {};
   if (x == null || y == null || value == null || !Number.isFinite(Number(value))) return null;
-  const dy = index % 2 === 0 ? -12 : -22;
   return (
     <text
       x={x}
-      y={y + dy}
+      y={y - 12}
       textAnchor="middle"
       fontSize="11.5"
       fontWeight="800"
-      fill="#0f172a"
+      fill="#475569"
+      style={{ pointerEvents: 'none' }}
+    >
+      {fmt(value, 1)}
+    </text>
+  );
+};
+
+const RenderLineLabelBelow = (props) => {
+  const { x, y, value } = props || {};
+  if (x == null || y == null || value == null || !Number.isFinite(Number(value))) return null;
+  return (
+    <text
+      x={x}
+      y={y + 20}
+      textAnchor="middle"
+      fontSize="11.5"
+      fontWeight="800"
+      fill="#1d4ed8"
       style={{ pointerEvents: 'none' }}
     >
       {fmt(value, 1)}
@@ -658,41 +675,43 @@ function RendimientoCompetenciasPanel({ grupo = 'genericas' }) {
                   );
                 })}
                 {/* Fila PROMEDIO general */}
-                <Box component="tr" sx={{ bgcolor: '#f1f5f9' }}>
-                  <Box component="td" sx={{
-                    px: 1.6, py: 1.1,
-                    fontWeight: 900,
-                    color: '#0f172a',
-                    fontSize: 12,
-                    letterSpacing: '0.05em',
-                    textTransform: 'uppercase',
-                    borderTop: `2px solid ${INSTITUCIONAL_TABLE_BLUE}`
-                  }}>
-                    Promedio
-                  </Box>
-                  {aniosVisibles.map((anio) => (
-                    <Box component="td" key={anio} sx={{
+                {grupo !== 'especificas' && (
+                  <Box component="tr" sx={{ bgcolor: '#f1f5f9' }}>
+                    <Box component="td" sx={{
+                      px: 1.6, py: 1.1,
+                      fontWeight: 900,
+                      color: '#0f172a',
+                      fontSize: 12,
+                      letterSpacing: '0.05em',
+                      textTransform: 'uppercase',
+                      borderTop: `2px solid ${INSTITUCIONAL_TABLE_BLUE}`
+                    }}>
+                      Promedio
+                    </Box>
+                    {aniosVisibles.map((anio) => (
+                      <Box component="td" key={anio} sx={{
+                        px: 1.2, py: 1.1,
+                        textAlign: 'center',
+                        fontWeight: 900,
+                        color: '#0f172a',
+                        borderTop: `2px solid ${INSTITUCIONAL_TABLE_BLUE}`
+                      }}>
+                        {fmt(promedioRow.byYear?.[anio]?.programa, 1)}
+                      </Box>
+                    ))}
+                    <Box component="td" sx={{
                       px: 1.2, py: 1.1,
                       textAlign: 'center',
                       fontWeight: 900,
-                      color: '#0f172a',
-                      borderTop: `2px solid ${INSTITUCIONAL_TABLE_BLUE}`
+                      color: '#1e3a8a',
+                      borderTop: `2px solid ${INSTITUCIONAL_TABLE_BLUE}`,
+                      borderLeft: '1px solid #cbd5e1',
+                      bgcolor: '#fff'
                     }}>
-                      {fmt(promedioRow.byYear?.[anio]?.programa, 1)}
+                      {fmt(Object.values(promedioRow.byYear || {}).map((c) => c?.programa).filter((v) => Number.isFinite(Number(v))).reduce((acc, v, _, arr) => acc + Number(v) / arr.length, 0) || null, 1)}
                     </Box>
-                  ))}
-                  <Box component="td" sx={{
-                    px: 1.2, py: 1.1,
-                    textAlign: 'center',
-                    fontWeight: 900,
-                    color: '#1e3a8a',
-                    borderTop: `2px solid ${INSTITUCIONAL_TABLE_BLUE}`,
-                    borderLeft: '1px solid #cbd5e1',
-                    bgcolor: '#fff'
-                  }}>
-                    {fmt(Object.values(promedioRow.byYear || {}).map((c) => c?.programa).filter((v) => Number.isFinite(Number(v))).reduce((acc, v, _, arr) => acc + Number(v) / arr.length, 0) || null, 1)}
                   </Box>
-                </Box>
+                )}
               </Box>
             </Box>
           </Box>
@@ -700,13 +719,17 @@ function RendimientoCompetenciasPanel({ grupo = 'genericas' }) {
       </Paper>
 
       {/* ═══════════ GRÁFICO DE LÍNEAS ═══════════ */}
-      <Paper elevation={0} sx={{
-        p: { xs: 1.5, md: 2.2 },
-        borderRadius: 2.5,
-        border: '1px solid #e2e8f0',
-        bgcolor: '#ffffff',
-        mb: 2
-      }}>
+      <Paper
+        id="rendimiento-competencias-chart"
+        elevation={0}
+        sx={{
+          p: { xs: 1.5, md: 2.2 },
+          borderRadius: 2.5,
+          border: '1px solid #e2e8f0',
+          bgcolor: '#ffffff',
+          mb: 2
+        }}
+      >
         <Stack direction={{ xs: 'column', md: 'row' }} alignItems={{ xs: 'flex-start', md: 'center' }} justifyContent="space-between" spacing={1.5} sx={{ mb: 1.5 }}>
           <Stack direction="row" spacing={1} alignItems="center">
             <Box sx={{
@@ -720,14 +743,15 @@ function RendimientoCompetenciasPanel({ grupo = 'genericas' }) {
               <Typography sx={{ fontWeight: 800, fontSize: 14.5, color: '#0f172a', letterSpacing: '-0.01em' }}>
                 {chartTitle}
               </Typography>
-              <Typography sx={{ fontSize: 11.5, color: '#64748b', fontWeight: 500 }}>
+              <Typography data-copy-ignore="true" sx={{ fontSize: 11.5, color: '#64748b', fontWeight: 500 }}>
                 {activeRow ? 'Competencia seleccionada en la tabla' : `Comportamiento general · ${scopeLabel}`}
               </Typography>
             </Box>
           </Stack>
 
-          <Stack direction="row" spacing={0.8} alignItems="center" flexWrap="wrap" useFlexGap>
+          <Stack data-copy-ignore="true" direction="row" spacing={0.8} alignItems="center" flexWrap="wrap" useFlexGap>
             <Button
+              data-copy-ignore="true"
               size="small"
               variant="outlined"
               startIcon={<ImageRoundedIcon sx={{ fontSize: 15 }} />}
@@ -780,43 +804,11 @@ function RendimientoCompetenciasPanel({ grupo = 'genericas' }) {
             bgcolor: '#ffffff',
             borderRadius: 2,
             border: '1px solid #dbe3ef',
-            p: { xs: 1, md: 1.4 },
-            position: 'relative'
+            p: { xs: 1, md: 1.4 }
           }}>
-            <Button
-              data-copy-ignore="true"
-              size="small"
-              variant="contained"
-              startIcon={<ImageRoundedIcon sx={{ fontSize: 15 }} />}
-              onClick={handleCopyChart}
-              disabled={chartEmpty}
-              sx={{
-                position: 'absolute',
-                top: 10,
-                right: 12,
-                zIndex: 3,
-                textTransform: 'none',
-                fontWeight: 900,
-                borderRadius: 2,
-                fontSize: 11,
-                py: 0.45,
-                bgcolor: '#1f5bd8',
-                boxShadow: '0 8px 18px rgba(31,91,216,0.22)',
-                '&:hover': { bgcolor: '#1e40af' },
-                '&.Mui-disabled': { bgcolor: '#e2e8f0', color: '#94a3b8', boxShadow: 'none' }
-              }}
-            >
-              Copiar gráfico
-            </Button>
-            <Box id="rendimiento-competencias-chart" sx={{ bgcolor: '#fff', fontFamily: 'Arial, Helvetica, sans-serif' }}>
+            <Box sx={{ bgcolor: '#fff', fontFamily: 'Arial, Helvetica, sans-serif' }}>
               <ResponsiveContainer width="100%" height={360}>
               <LineChart data={chartData} margin={{ top: 28, right: 34, left: 6, bottom: 8 }}>
-                <defs>
-                  <linearGradient id={`gradPrincipal-${grupo}`} x1="0" y1="0" x2="1" y2="0">
-                    <stop offset="0%" stopColor={INSTITUCIONAL_COLOR} stopOpacity={1} />
-                    <stop offset="100%" stopColor="#1e40af" stopOpacity={1} />
-                  </linearGradient>
-                </defs>
                 <CartesianGrid
                   stroke="#cbd5e1"
                   strokeDasharray="4 4"
@@ -857,29 +849,20 @@ function RendimientoCompetenciasPanel({ grupo = 'genericas' }) {
                   activeDot={{ r: 7, fill: REFERENCE_DARK, stroke: '#fff', strokeWidth: 2.4 }}
                   connectNulls
                 >
-                  <LabelList dataKey="grupoRef" content={RenderLineLabel} />
+                  <LabelList dataKey="grupoRef" content={RenderLineLabelAbove} />
                 </Line>
                 <Line
                   type="linear"
                   dataKey="principal"
                   name={principalName}
-                  stroke={`url(#gradPrincipal-${grupo})`}
+                  stroke="#1d4ed8"
                   strokeWidth={4}
                   dot={{ r: 6, fill: '#fff', stroke: '#1d4ed8', strokeWidth: 3 }}
                   activeDot={{ r: 8, fill: '#1d4ed8', stroke: '#fff', strokeWidth: 2.6 }}
                   connectNulls
                 >
-                  <LabelList dataKey="principal" content={RenderLineLabel} />
+                  <LabelList dataKey="principal" content={RenderLineLabelBelow} />
                 </Line>
-                {activeRow && Number.isFinite(Number(activeRow.promedio)) && (
-                  <ReferenceLine
-                    y={Number(activeRow.promedio)}
-                    stroke="#1d4ed8"
-                    strokeDasharray="2 6"
-                    strokeOpacity={0.45}
-                    label={{ value: `Prom. ${fmt(activeRow.promedio, 1)}`, position: 'right', fill: '#1e3a8a', fontSize: 10, fontWeight: 700 }}
-                  />
-                )}
               </LineChart>
               </ResponsiveContainer>
             </Box>
@@ -887,7 +870,7 @@ function RendimientoCompetenciasPanel({ grupo = 'genericas' }) {
         )}
 
         {/* Nota explicativa */}
-        <Stack direction="row" spacing={1} alignItems="flex-start" sx={{ mt: 1.5, p: 1.2, borderRadius: 1.8, bgcolor: '#f8fafc', border: '1px dashed #cbd5e1' }}>
+        <Stack data-copy-ignore="true" direction="row" spacing={1} alignItems="flex-start" sx={{ mt: 1.5, p: 1.2, borderRadius: 1.8, bgcolor: '#f8fafc', border: '1px dashed #cbd5e1' }}>
           <InfoRoundedIcon sx={{ color: '#64748b', fontSize: 16, mt: 0.1 }} />
           <Typography sx={{ fontSize: 11.5, color: '#475569', lineHeight: 1.5, fontWeight: 500 }}>
             La línea <b style={{ color: theme.primary }}>{principalName}</b> representa el puntaje promedio {programa ? 'del programa seleccionado' : 'institucional'}.

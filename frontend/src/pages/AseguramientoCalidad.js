@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import ReactDOM from 'react-dom';
 import { Box, Paper, Typography, Grid, TextField, Button, Table, TableBody, TableCell, TableContainer, TableHead, TableRow, TablePagination, CircularProgress, Chip, IconButton, Tooltip, Fade, Slide, Stack, Dialog, DialogTitle, DialogContent, DialogActions, InputAdornment, Switch, Menu, MenuItem, ListItemIcon, ListItemText, Divider as MuiDivider } from '@mui/material';
-import { Search as SearchIcon, Clear as ClearIcon, VisibilityOutlined as VisibilityOutlinedIcon, FileDownloadOutlined as FileDownloadOutlinedIcon, Description as DescriptionIcon, Article as ArticleIcon, AssignmentTurnedIn as AssignmentIcon, ListAlt as ListIcon, Policy as PolicyIcon, AccountTree as AccountTreeIcon, Upload as UploadIcon, GetApp as DownloadTemplateIcon, DeleteSweep as DeleteSweepIcon, Favorite as FavoriteIcon, FavoriteBorder as FavoriteBorderIcon, MoreVert as MoreVertIcon, HelpOutline as HelpOutlineIcon } from '@mui/icons-material';
+import { Search as SearchIcon, Clear as ClearIcon, VisibilityOutlined as VisibilityOutlinedIcon, FileDownloadOutlined as FileDownloadOutlinedIcon, Description as DescriptionIcon, Article as ArticleIcon, AssignmentTurnedIn as AssignmentIcon, ListAlt as ListIcon, Policy as PolicyIcon, AccountTree as AccountTreeIcon, Upload as UploadIcon, GetApp as DownloadTemplateIcon, DeleteSweep as DeleteSweepIcon, Favorite as FavoriteIcon, FavoriteBorder as FavoriteBorderIcon, MoreVert as MoreVertIcon, HelpOutline as HelpOutlineIcon, PostAdd as PostAddIcon } from '@mui/icons-material';
 import { useSnackbar } from 'notistack';
 import { useLocation } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
@@ -9,6 +9,9 @@ import documentoService from '../services/documentoService';
 import catalogoService from '../services/catalogoService';
 import favoritoService from '../services/favoritoService';
 import api from '../services/api';
+import ReporteSalidaFormDialog from '../components/reporteSalida/ReporteSalidaFormDialog';
+import { isReporteSalidaDocument } from '../config/reporteSalida';
+import reporteSalidaService from '../services/reporteSalidaService';
 
 const getApiErrorMessage = (error, fallback) => (
   error?.response?.data?.error
@@ -547,6 +550,8 @@ function AseguramientoCalidad() {
   const [hasSearched, setHasSearched] = useState(false);
   const [manualSearchMode, setManualSearchMode] = useState(false);
   const [favoriteIds, setFavoriteIds] = useState(new Set());
+  const [reporteSalidaDoc, setReporteSalidaDoc] = useState(null);
+  const [reporteSalidaFeature, setReporteSalidaFeature] = useState({ enabled: false, canToggle: false, loading: false });
   const [loadingFavorites, setLoadingFavorites] = useState(false);
   const [syncingSheet, setSyncingSheet] = useState(false);
   const [openClearDialog, setOpenClearDialog] = useState(false);
@@ -661,6 +666,24 @@ function AseguramientoCalidad() {
       .catch(() => {})
       .finally(() => setLoadingFavorites(false));
   }, [user?.id]);
+
+  const loadReporteSalidaFeature = useCallback(async () => {
+    try {
+      const response = await reporteSalidaService.getConfig();
+      setReporteSalidaFeature({
+        enabled: Boolean(response?.data?.enabled),
+        canToggle: Boolean(response?.data?.canToggle),
+        loading: false
+      });
+    } catch (_) {
+      setReporteSalidaFeature((prev) => ({ ...prev, loading: false }));
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!user?.id) return;
+    loadReporteSalidaFeature();
+  }, [loadReporteSalidaFeature, user?.id]);
 
   useEffect(() => {
     const params = new URLSearchParams(location.search);
@@ -999,6 +1022,26 @@ function AseguramientoCalidad() {
       const backendDetail = error?.response?.data?.detail;
       const message = backendDetail ? `${backendMessage || 'No se pudo actualizar favoritos'}: ${backendDetail}` : (backendMessage || 'No se pudo actualizar favoritos');
       enqueueSnackbar(message, { variant: 'error' });
+    }
+  };
+
+  const openReporteSalidaForm = (doc) => {
+    setReporteSalidaDoc(doc);
+  };
+
+  const toggleReporteSalidaFeature = async (nextEnabled) => {
+    setReporteSalidaFeature((prev) => ({ ...prev, loading: true }));
+    try {
+      const response = await reporteSalidaService.updateConfig(nextEnabled);
+      setReporteSalidaFeature({
+        enabled: Boolean(response?.data?.enabled),
+        canToggle: Boolean(response?.data?.canToggle),
+        loading: false
+      });
+      enqueueSnackbar(response?.message || (nextEnabled ? 'Formulario activado' : 'Formulario desactivado'), { variant: 'success' });
+    } catch (error) {
+      setReporteSalidaFeature((prev) => ({ ...prev, loading: false }));
+      enqueueSnackbar(getApiErrorMessage(error, 'No se pudo actualizar la bandera del formulario'), { variant: 'error' });
     }
   };
 
@@ -1700,6 +1743,39 @@ function AseguramientoCalidad() {
                                       </IconButton>
                                     </span>
                                   </Tooltip>
+                                  {isReporteSalidaDocument(doc) && reporteSalidaFeature.canToggle && (
+                                    <Tooltip title={reporteSalidaFeature.enabled ? 'Desactivar formulario de reporte de salida' : 'Activar formulario de reporte de salida'} arrow>
+                                      <span>
+                                        <Switch
+                                          size="small"
+                                          checked={reporteSalidaFeature.enabled}
+                                          disabled={reporteSalidaFeature.loading}
+                                          onChange={(event) => toggleReporteSalidaFeature(event.target.checked)}
+                                          sx={{
+                                            '& .MuiSwitch-switchBase.Mui-checked': { color: '#0f766e' },
+                                            '& .MuiSwitch-switchBase.Mui-checked + .MuiSwitch-track': { bgcolor: '#0f766e' }
+                                          }}
+                                        />
+                                      </span>
+                                    </Tooltip>
+                                  )}
+                                  {reporteSalidaFeature.enabled && isReporteSalidaDocument(doc) && (
+                                    <Tooltip title="Diligenciar reporte de salida" arrow>
+                                      <span>
+                                        <IconButton
+                                          size="small"
+                                          sx={{
+                                            color: '#0f766e',
+                                            bgcolor: '#ccfbf1',
+                                            '&:hover': { bgcolor: '#99f6e4' }
+                                          }}
+                                          onClick={() => openReporteSalidaForm(doc)}
+                                        >
+                                          <PostAddIcon fontSize="small" />
+                                        </IconButton>
+                                      </span>
+                                    </Tooltip>
+                                  )}
                                   <Tooltip title="Ver documento" arrow>
                                     <span>
                                       <IconButton
@@ -1810,6 +1886,13 @@ function AseguramientoCalidad() {
             </Button>
           </DialogActions>
         </Dialog>
+        <ReporteSalidaFormDialog
+          open={Boolean(reporteSalidaDoc)}
+          documento={reporteSalidaDoc}
+          user={user}
+          onClose={() => setReporteSalidaDoc(null)}
+          onSubmitted={(response) => enqueueSnackbar(response?.message || 'Solicitud radicada correctamente', { variant: 'success' })}
+        />
         <Dialog open={openPreviewDialog} onClose={closeDocumentPreview} maxWidth="lg" fullWidth>
           <DialogTitle sx={{ fontWeight: 700, pr: 2 }}>
             <Stack direction="row" spacing={2} alignItems="center" justifyContent="space-between">

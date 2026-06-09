@@ -1,7 +1,10 @@
 const express = require('express');
 const router = express.Router();
 const { auth, hasAnyRole, hasAnyRoleOrModulePermission } = require('../middlewares/auth');
+const fs = require('fs');
+const path = require('path');
 const {
+  uploadAuditorioFoto,
   getEstadisticas,
   getMatriculadosIncidencias,
   getResumen,
@@ -30,11 +33,48 @@ const {
   getInfraestructuras,
   createInfraestructura,
   updateInfraestructura,
-  deleteInfraestructura
+  deleteInfraestructura,
+  uploadInfraestructuraTemplate,
+  getEdificacionesReferencia,
+  createEdificacionReferencia,
+  updateEdificacionReferencia,
+  deleteEdificacionReferencia
 } = require('../controllers/gestionInformacionController');
 const { ROLES } = require('../constants/roles');
 const { createExcelUpload } = require('../middlewares/excelUpload');
 const upload = createExcelUpload('uploads/temp/');
+
+const multer = require('multer');
+const docxUpload = multer({ dest: 'uploads/temp/' });
+
+const auditorioFotoStorage = multer.diskStorage({
+  destination: function (req, file, cb) {
+    const dir = 'uploads/auditorios/';
+    if (!fs.existsSync(dir)) {
+      fs.mkdirSync(dir, { recursive: true });
+    }
+    cb(null, dir);
+  },
+  filename: function (req, file, cb) {
+    const ext = path.extname(file.originalname);
+    const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
+    cb(null, 'auditorio-' + uniqueSuffix + ext);
+  }
+});
+
+const auditorioFotoUpload = multer({
+  storage: auditorioFotoStorage,
+  fileFilter: (req, file, cb) => {
+    const filetypes = /jpeg|jpg|png|gif|webp/;
+    const mimetype = filetypes.test(file.mimetype);
+    const extname = filetypes.test(path.extname(file.originalname).toLowerCase());
+    if (mimetype && extname) {
+      return cb(null, true);
+    }
+    cb(new Error('Solo se permiten imágenes (jpeg, jpg, png, gif, webp)'));
+  },
+  limits: { fileSize: 5 * 1024 * 1024 } // 5MB limit
+});
 
 const canViewEstadisticaInstitucional = hasAnyRole(
   ROLES.ADMINISTRADOR,
@@ -142,5 +182,13 @@ router.get('/infraestructura', auth, canViewInfraestructura, getInfraestructuras
 router.post('/infraestructura', auth, canManageInfraestructura, createInfraestructura);
 router.put('/infraestructura/:id', auth, canManageInfraestructura, updateInfraestructura);
 router.delete('/infraestructura/:id', auth, canManageInfraestructura, deleteInfraestructura);
+router.post('/infraestructura/upload-template', auth, canViewInfraestructura, docxUpload.single('file'), uploadInfraestructuraTemplate);
+router.post('/infraestructura/auditorios/foto', auth, canManageInfraestructura, auditorioFotoUpload.single('foto'), uploadAuditorioFoto);
+
+// Rutas para Edificaciones de Referencia
+router.get('/infraestructura/edificaciones-referencia', auth, canViewInfraestructura, getEdificacionesReferencia);
+router.post('/infraestructura/edificaciones-referencia', auth, canManageInfraestructura, createEdificacionReferencia);
+router.put('/infraestructura/edificaciones-referencia/:id', auth, canManageInfraestructura, updateEdificacionReferencia);
+router.delete('/infraestructura/edificaciones-referencia/:id', auth, canManageInfraestructura, deleteEdificacionReferencia);
 
 module.exports = router;

@@ -91,6 +91,16 @@ const gestionInformacionService = {
     api.post('/planeacion/gestion-informacion/plan-accion/acta/export', payload, { responseType: 'blob', timeout: 120000 }),
   sugerirIndicadorPlanAccion: (actividad) =>
     api.post('/planeacion/gestion-informacion/plan-accion/sugerir-indicador', { actividad }, { timeout: 180000 }).then((r) => r.data),
+  getMovilidadDashboard: (params = {}) =>
+    api.get('/planeacion/gestion-informacion', {
+      params: { aggregate: 'movilidad_dashboard', ...params },
+      timeout: 60000
+    }).then((r) => r.data),
+  getConveniosDashboard: (params = {}) =>
+    api.get('/planeacion/gestion-informacion', {
+      params: { aggregate: 'convenios_dashboard', ...params },
+      timeout: 60000
+    }).then((r) => r.data),
   getEvidenciasDrive: (folderUrl) =>
     api.get('/evidencias', { params: { folderUrl }, timeout: 60000 }).then((r) => r.data),
   createEstadistica: (payload) => api.post('/planeacion/gestion-informacion', payload).then((r) => r.data),
@@ -103,7 +113,31 @@ const gestionInformacionService = {
   updateInfraestructura: (id, payload) =>
     api.put(`/planeacion/gestion-informacion/infraestructura/${id}`, payload).then((r) => r.data),
   deleteInfraestructura: (id) =>
-    api.delete(`/planeacion/gestion-informacion/infraestructura/${id}`).then((r) => r.data)
+    api.delete(`/planeacion/gestion-informacion/infraestructura/${id}`).then((r) => r.data),
+  uploadInfraestructuraTemplate: (file) => {
+    const formData = new FormData();
+    formData.append('file', file);
+    return api.post('/planeacion/gestion-informacion/infraestructura/upload-template', formData, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+      timeout: 120000
+    }).then((r) => r.data);
+  },
+  getEdificacionesReferencia: () =>
+    api.get('/planeacion/gestion-informacion/infraestructura/edificaciones-referencia', { timeout: 60000 }).then((r) => r.data),
+  createEdificacionReferencia: (payload) =>
+    api.post('/planeacion/gestion-informacion/infraestructura/edificaciones-referencia', payload).then((r) => r.data),
+  updateEdificacionReferencia: (id, payload) =>
+    api.put(`/planeacion/gestion-informacion/infraestructura/edificaciones-referencia/${id}`, payload).then((r) => r.data),
+  deleteEdificacionReferencia: (id) =>
+    api.delete(`/planeacion/gestion-informacion/infraestructura/edificaciones-referencia/${id}`).then((r) => r.data),
+  uploadAuditorioFoto: (groupKey, file) => {
+    const formData = new FormData();
+    formData.append('groupKey', groupKey);
+    formData.append('foto', file);
+    return api.post('/planeacion/gestion-informacion/infraestructura/auditorios/foto', formData, {
+      headers: { 'Content-Type': 'multipart/form-data' }
+    }).then((r) => r.data);
+  }
 };
 
 export default gestionInformacionService;

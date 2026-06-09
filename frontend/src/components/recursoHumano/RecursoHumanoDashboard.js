@@ -838,48 +838,61 @@ const CargoCard = ({ title, total, genderData, icon }) => {
       sx={{
         width: '100%',
         maxWidth: 'none',
-        minHeight: 360,
+        minHeight: 292,
         position: 'relative',
-        border: `1px solid ${BORDER_BLUE}`,
-        borderRadius: 1,
-        overflow: 'visible',
+        border: '1px solid #dbe5f6',
+        borderRadius: 1.5,
+        overflow: 'hidden',
         background: '#ffffff',
-        boxShadow: '0 10px 22px rgba(31,115,232,.18)'
+        boxShadow: '0 8px 20px rgba(15,23,42,.05)'
       }}
     >
       <Box
         sx={{
-          bgcolor: BLUE,
-          px: 2.2,
-          py: 1.15,
+          px: 2,
+          py: 1,
           display: 'flex',
           alignItems: 'center',
-          justifyContent: 'center',
-          borderRadius: '4px 4px 0 0'
+          justifyContent: 'space-between',
+          borderBottom: '1px solid #dbeafe',
+          background: '#f8fbff'
         }}
       >
         <Stack
           direction="row"
-          spacing={0.9}
+          spacing={1}
           alignItems="center"
-          justifyContent="center"
-          sx={{
-            border: '1px solid rgba(255,255,255,.9)',
-            borderRadius: 999,
-            minHeight: 28,
-            px: 2.1,
-            minWidth: 230,
-            color: '#ffffff',
-            background: 'rgba(255,255,255,.08)'
-          }}
         >
-          <Box sx={{ display: 'grid', placeItems: 'center', opacity: 0.95 }}>{icon}</Box>
-          <Typography sx={{ fontSize: 14, fontWeight: 950, textTransform: 'uppercase', lineHeight: 1 }}>
+          <Box
+            sx={{
+              width: 34,
+              height: 34,
+              borderRadius: 1,
+              display: 'grid',
+              placeItems: 'center',
+              color: '#ffffff',
+              background: BLUE
+            }}
+          >
+            {icon}
+          </Box>
+          <Typography sx={{ fontSize: 13.5, fontWeight: 950, color: '#0f172a', textTransform: 'uppercase', lineHeight: 1 }}>
             {title}
           </Typography>
         </Stack>
+        <Chip
+          size="small"
+          label={numberFmt.format(total)}
+          sx={{
+            bgcolor: '#eaf2ff',
+            color: BLUE,
+            border: '1px solid #bfdbfe',
+            fontWeight: 900,
+            height: 24
+          }}
+        />
       </Box>
-      <Box sx={{ px: 2.2, pt: 1.4, pb: 1.8, position: 'relative' }}>
+      <Box sx={{ px: 2.2, pt: 0.8, pb: 1.4, position: 'relative' }}>
         <GenderDonut data={genderData} total={total} />
         <GenderValueLegend data={genderData.filter((item) => Number(item.value || 0) > 0)} total={total} />
         <CopyChartBtn chartRef={cardRef} />
@@ -902,7 +915,8 @@ function RecursoHumanoDashboard({ onBack }) {
     try {
       const response = await gestionInformacionService.getEstadisticas({
         categoria: 'Recurso Humano',
-        aggregate: 'recurso_humano_dashboard'
+        aggregate: 'recurso_humano_dashboard',
+        scope: 'profesores'
       });
       setData(response?.data || null);
     } catch (error) {
@@ -955,8 +969,8 @@ function RecursoHumanoDashboard({ onBack }) {
       }
 
       const group = groups.get(groupKey);
-      const amount = rowWeight(row);
       const gender = normalizeGender(row.genero || row.genero_biologico);
+      const amount = rowWeight(row);
       group.total += amount;
       group.genders.set(gender, (group.genders.get(gender) || 0) + amount);
     });
@@ -1102,6 +1116,9 @@ function RecursoHumanoDashboard({ onBack }) {
       </Select>
     </FormControl>
   );
+
+  const adminCargoCard = dashboardMetrics.cards.find((item) => item.key === 'ADMINISTRATIVOS');
+  const professorCargoCard = dashboardMetrics.cards.find((item) => item.key === 'PROFESORES');
 
   if (loading) {
     return (
@@ -1364,92 +1381,216 @@ function RecursoHumanoDashboard({ onBack }) {
             </Typography>
           </Paper>
         ) : (
-          <Box
+          <Paper
+            elevation={0}
             sx={{
-              display: 'grid',
-              gridTemplateColumns: { xs: '1fr', lg: 'minmax(320px, 1fr) minmax(260px, .72fr) minmax(320px, 1fr)' },
-              gap: { xs: 2, lg: 3.2 },
-              alignItems: 'stretch',
-              minHeight: { xs: 480, lg: 'calc(100vh - 440px)' },
-              pt: { xs: 1, lg: 1 },
-              px: { xs: 0, lg: 2.5 }
+              position: 'relative',
+              overflow: 'hidden',
+              border: '1px solid #dbe5f6',
+              borderRadius: 1.8,
+              background: '#ffffff',
+              boxShadow: '0 10px 28px rgba(15,23,42,.05)',
+              p: { xs: 1.6, md: 2 }
             }}
           >
-            <Box>
-              {dashboardMetrics.cards.find((item) => item.key === 'ADMINISTRATIVOS') ? (
+            <Box
+              sx={{
+                position: 'absolute',
+                top: -80,
+                right: -90,
+                width: 260,
+                height: 260,
+                borderRadius: '50%',
+                background: 'rgba(31,115,232,.06)',
+                pointerEvents: 'none',
+                display: 'none'
+              }}
+            />
+            <Box
+              sx={{
+                position: 'absolute',
+                bottom: -120,
+                left: -110,
+                width: 300,
+                height: 300,
+                borderRadius: '50%',
+                background: 'rgba(184,202,233,.14)',
+                pointerEvents: 'none',
+                display: 'none'
+              }}
+            />
+
+            <Stack
+              direction={{ xs: 'column', md: 'row' }}
+              spacing={1.2}
+              alignItems={{ xs: 'flex-start', md: 'center' }}
+              justifyContent="space-between"
+              sx={{
+                position: 'relative',
+                zIndex: 1,
+                mb: 1.5,
+                pb: 1.2,
+                borderBottom: '1px solid #e5edf8'
+              }}
+            >
+              <Box>
+                <Typography sx={{ fontSize: 12, fontWeight: 950, color: TEXT_BLUE, textTransform: 'uppercase', letterSpacing: '0.1em' }}>
+                  Composición del cuerpo docente
+                </Typography>
+                <Typography sx={{ mt: 0.3, color: '#475569', fontSize: 13.5, fontWeight: 700 }}>
+                  Distribución por cargo y género biológico para el periodo seleccionado.
+                </Typography>
+              </Box>
+
+              <Stack
+                direction="row"
+                spacing={1.5}
+                alignItems="center"
+                sx={{
+                  px: 2,
+                  py: 1.2,
+                  borderRadius: 2.2,
+                  border: '1px solid #bfdbfe',
+                  background: 'linear-gradient(135deg, #eff6ff 0%, #ffffff 100%)',
+                  boxShadow: '0 12px 28px rgba(31,115,232,.10)',
+                  display: 'none'
+                }}
+              >
+                <Box
+                  sx={{
+                    width: 42,
+                    height: 42,
+                    borderRadius: 1.7,
+                    display: 'grid',
+                    placeItems: 'center',
+                    color: '#ffffff',
+                    background: `linear-gradient(135deg, ${BLUE}, #1d4ed8)`,
+                    boxShadow: '0 10px 22px rgba(31,115,232,.18)'
+                  }}
+                >
+                  <GroupsIcon sx={{ fontSize: 24 }} />
+                </Box>
+                <Box>
+                  <Typography sx={{ fontSize: 10.5, fontWeight: 950, color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.08em', lineHeight: 1 }}>
+                    Total consolidado
+                  </Typography>
+                  <Typography sx={{ color: BLUE, fontSize: { xs: 34, md: 42 }, fontWeight: 900, lineHeight: 1.05 }}>
+                    {numberFmt.format(dashboardMetrics.total)}
+                  </Typography>
+                </Box>
+              </Stack>
+            </Stack>
+
+            <Box
+              sx={{
+                display: 'grid',
+                gridTemplateColumns: { xs: '1fr', md: 'repeat(3, minmax(0, 1fr))' },
+                gap: 1.2,
+                mb: 1.8
+              }}
+            >
+              {[
+                { label: 'Total consolidado', value: dashboardMetrics.total, icon: <GroupsIcon sx={{ fontSize: 20 }} />, tone: BLUE },
+                { label: 'Administrativos', value: adminCargoCard?.total || 0, icon: <WorkIcon sx={{ fontSize: 18 }} />, tone: '#0f766e' },
+                { label: 'Profesores', value: professorCargoCard?.total || 0, icon: <SchoolIcon sx={{ fontSize: 18 }} />, tone: BLUE }
+              ].map((item) => (
+                <Box
+                  key={item.label}
+                  sx={{
+                    border: '1px solid #dbe5f6',
+                    borderRadius: 1.4,
+                    px: 1.4,
+                    py: 1.2,
+                    bgcolor: '#fbfdff',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    minHeight: 74
+                  }}
+                >
+                  <Stack direction="row" spacing={1.1} alignItems="center">
+                    <Box
+                      sx={{
+                        width: 36,
+                        height: 36,
+                        borderRadius: 1,
+                        display: 'grid',
+                        placeItems: 'center',
+                        color: '#ffffff',
+                        bgcolor: item.tone,
+                        flexShrink: 0
+                      }}
+                    >
+                      {item.icon}
+                    </Box>
+                    <Box>
+                      <Typography sx={{ fontSize: 10.5, color: '#64748b', fontWeight: 900, textTransform: 'uppercase', letterSpacing: '0.06em' }}>
+                        {item.label}
+                      </Typography>
+                      <Typography sx={{ fontSize: 28, color: '#0f172a', fontWeight: 950, lineHeight: 1.1 }}>
+                        {numberFmt.format(item.value)}
+                      </Typography>
+                    </Box>
+                  </Stack>
+                  {item.label !== 'Total consolidado' ? (
+                    <Typography sx={{ color: '#64748b', fontSize: 12, fontWeight: 850 }}>
+                      {getPercent(item.value, dashboardMetrics.total).toFixed(1).replace('.', ',')}%
+                    </Typography>
+                  ) : null}
+                </Box>
+              ))}
+            </Box>
+
+            <Box
+              sx={{
+                position: 'relative',
+                zIndex: 1,
+                display: 'grid',
+                gridTemplateColumns: { xs: '1fr', lg: 'minmax(300px, .92fr) minmax(300px, 1.08fr)' },
+                gap: { xs: 1.6, lg: 1.8 },
+                alignItems: 'stretch'
+              }}
+            >
+              {adminCargoCard ? (
                 <Stack alignItems="stretch" sx={{ height: '100%' }}>
                   <CargoCard
                     title="Administrativos"
-                    total={dashboardMetrics.cards.find((item) => item.key === 'ADMINISTRATIVOS').total}
-                    genderData={dashboardMetrics.cards.find((item) => item.key === 'ADMINISTRATIVOS').genders}
+                    total={adminCargoCard.total}
+                    genderData={adminCargoCard.genders}
                     icon={<WorkIcon fontSize="small" />}
                   />
                 </Stack>
               ) : null}
-            </Box>
 
-            <Box>
-              <Paper
-                elevation={0}
-                sx={{
-                  height: '100%',
-                  minHeight: 360,
-                  border: `1px solid ${BORDER_BLUE}`,
-                  borderRadius: 1,
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  background: 'radial-gradient(circle, #ffffff 0%, #ffffff 48%, #f3f7ff 100%)',
-                  boxShadow: '0 0 34px rgba(31,115,232,.18)'
-                }}
-              >
-                <Stack alignItems="center" spacing={0.5}>
-                  <Box
-                    sx={{
-                      width: 54,
-                      height: 54,
-                      borderRadius: '50%',
-                      display: 'grid',
-                      placeItems: 'center',
-                      color: '#ffffff',
-                      background: `linear-gradient(135deg, ${BLUE}, #1557c7)`,
-                      boxShadow: '0 10px 22px rgba(31,115,232,.2)'
-                    }}
-                  >
-                    <GroupsIcon sx={{ fontSize: 28 }} />
-                  </Box>
-                  <Typography sx={{ color: '#64748b', fontSize: 12, fontWeight: 900, textTransform: 'uppercase', mt: 1 }}>
-                    Total consolidado
-                  </Typography>
-                  <Typography sx={{ color: BLUE, fontSize: { xs: 62, md: 82 }, fontWeight: 500, lineHeight: 1 }}>
-                    {numberFmt.format(dashboardMetrics.total)}
-                  </Typography>
-
-                  {dashboardMetrics.withoutCargo > 0 ? (
-                    <Chip
-                      size="small"
-                      sx={{ mt: 1.1, borderColor: '#f59e0b', color: '#92400e', bgcolor: '#fffbeb', fontWeight: 900 }}
-                      variant="outlined"
-                      label={`Sin cargo: ${numberFmt.format(dashboardMetrics.withoutCargo)}`}
-                    />
-                  ) : null}
-                </Stack>
-              </Paper>
-            </Box>
-
-            <Box>
-              {dashboardMetrics.cards.find((item) => item.key === 'PROFESORES') ? (
+              {professorCargoCard ? (
                 <Stack alignItems="stretch" sx={{ height: '100%' }}>
                   <CargoCard
                     title="Profesores"
-                    total={dashboardMetrics.cards.find((item) => item.key === 'PROFESORES').total}
-                    genderData={dashboardMetrics.cards.find((item) => item.key === 'PROFESORES').genders}
+                    total={professorCargoCard.total}
+                    genderData={professorCargoCard.genders}
                     icon={<SchoolIcon fontSize="small" />}
                   />
                 </Stack>
               ) : null}
             </Box>
-          </Box>
+
+            {dashboardMetrics.withoutCargo > 0 ? (
+              <Chip
+                size="small"
+                sx={{
+                  position: 'relative',
+                  zIndex: 1,
+                  mt: 1.5,
+                  borderColor: '#f59e0b',
+                  color: '#92400e',
+                  bgcolor: '#fffbeb',
+                  fontWeight: 900
+                }}
+                variant="outlined"
+                label={`Sin cargo: ${numberFmt.format(dashboardMetrics.withoutCargo)}`}
+              />
+            ) : null}
+          </Paper>
         )}
 
         {filteredRows.length > 0 ? (

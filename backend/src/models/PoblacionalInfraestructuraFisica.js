@@ -18,6 +18,7 @@ const PoblacionalInfraestructuraFisica = sequelize.define('poblacional_infraestr
   area_metros2: { type: DataTypes.DECIMAL(12, 4), allowNull: true, defaultValue: 0.0 },
   fecha_actualizacion: { type: DataTypes.STRING(120), allowNull: true },
   acceso_autonomo: { type: DataTypes.STRING(20), allowNull: true },
+  foto_url: { type: DataTypes.STRING(255), allowNull: true },
   creado_por: { type: DataTypes.INTEGER, allowNull: true },
   actualizado_por: { type: DataTypes.INTEGER, allowNull: true }
 });

@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useState } from 'react';
 import {
   Box,
   Button,
@@ -10,85 +10,74 @@ import {
 } from '@mui/material';
 import ArrowBackRoundedIcon from '@mui/icons-material/ArrowBackRounded';
 import ArrowForwardRoundedIcon from '@mui/icons-material/ArrowForwardRounded';
-import BusinessIcon from '@mui/icons-material/Business';
-import SchoolIcon from '@mui/icons-material/School';
-import AssignmentTurnedInIcon from '@mui/icons-material/AssignmentTurnedIn';
-import RecursoHumanoDashboard from './RecursoHumanoDashboard';
-import AdminDirectivosDashboard from './AdminDirectivosDashboard';
-import ReporteSalidaSeguimiento from '../reporteSalida/ReporteSalidaSeguimiento';
-import reporteSalidaService from '../../services/reporteSalidaService';
+import UploadFileIcon from '@mui/icons-material/UploadFile';
+import FlightIcon from '@mui/icons-material/Flight';
+import HandshakeIcon from '@mui/icons-material/Handshake';
+import InternacionalizacionGestionPanel from './InternacionalizacionGestionPanel';
+import InternacionalizacionMovilidadDashboard from './InternacionalizacionMovilidadDashboard';
+import InternacionalizacionConveniosDashboard from './InternacionalizacionConveniosDashboard';
 
 const SUB_CARDS = [
   {
-    key: 'profesores',
-    label: 'Profesores',
-    description: 'Distribución histórica del cuerpo docente por dedicación, nivel de formación, escalafón y género biológico.',
-    icon: SchoolIcon,
-    color: '#1f73e8',
-    gradient: 'linear-gradient(145deg, #2563eb, #1d4ed8 55%, #1e40af)',
-    shadow: 'rgba(37,99,235,0.22)',
-    backBorder: '#dbe6f5',
-    backBg: '#f8fbff',
-    backColor: undefined
+    key: 'gestion',
+    label: 'Gestión Estadística',
+    description: 'Carga y administra la información de internacionalización: descarga la plantilla, complétala y sube los datos de movilidad y convenios paso a paso.',
+    icon: UploadFileIcon,
+    color: '#0891b2',
+    gradient: 'linear-gradient(145deg,#0891b2,#0e7490 55%,#164e63)',
+    shadow: 'rgba(8,145,178,0.22)',
+    chip: 'Gestión de datos',
+    btnLabel: 'Ir a cargue de datos'
   },
   {
-    key: 'administrativos',
-    label: 'Administrativos y Directivos',
-    description: 'Personal administrativo y directivo por dependencia, vicerrectoría, tipo de contrato y estado laboral.',
-    icon: BusinessIcon,
+    key: 'movilidad',
+    label: 'Estadística de Movilidad',
+    description: 'Dashboard interactivo con indicadores, gráficas y filtros estratégicos sobre movilidad nacional e internacional por período, país, tipo de persona y actividad.',
+    icon: FlightIcon,
+    color: '#1d4ed8',
+    gradient: 'linear-gradient(145deg,#1d4ed8,#1e40af 55%,#1e3a8a)',
+    shadow: 'rgba(29,78,216,0.22)',
+    chip: 'Dashboard',
+    btnLabel: 'Abrir dashboard'
+  },
+  {
+    key: 'convenios',
+    label: 'Convenios',
+    description: 'Consulta el catálogo de convenios de internacionalización con búsqueda inteligente, filtros por tipo y año, y acceso directo a los documentos adjuntos.',
+    icon: HandshakeIcon,
     color: '#7c3aed',
-    gradient: 'linear-gradient(145deg, #7c3aed, #6d28d9 55%, #5b21b6)',
+    gradient: 'linear-gradient(145deg,#7c3aed,#6d28d9 55%,#5b21b6)',
     shadow: 'rgba(124,58,237,0.22)',
-    backBorder: '#ede9fe',
-    backBg: '#faf5ff',
-    backColor: '#7c3aed'
+    chip: 'Consulta',
+    btnLabel: 'Abrir módulo'
   }
 ];
 
-function RecursoHumanoLandingPage({ onBack }) {
+function InternacionalizacionLandingPage({ onBack }) {
   const [subView, setSubView] = useState(null);
-  const [reporteSalidaEnabled, setReporteSalidaEnabled] = useState(false);
 
-  useEffect(() => {
-    let active = true;
-    reporteSalidaService.getConfig()
-      .then((response) => {
-        if (active) setReporteSalidaEnabled(Boolean(response?.data?.enabled));
-      })
-      .catch(() => {
-        if (active) setReporteSalidaEnabled(false);
-      });
-    return () => { active = false; };
-  }, []);
-
-  const visibleCards = reporteSalidaEnabled
-    ? [
-      ...SUB_CARDS,
-      {
-        key: 'seguimiento_reportes',
-        label: 'Seguimiento a reportes',
-        description: 'Control de radicaciones, aprobaciones, tiempos y reposicion gestionados por Gestion Humana.',
-        icon: AssignmentTurnedInIcon,
-        color: '#0f766e',
-        gradient: 'linear-gradient(145deg, #0f766e, #0d9488 55%, #14b8a6)',
-        shadow: 'rgba(20,184,166,0.22)',
-        backBorder: '#ccfbf1',
-        backBg: '#f0fdfa',
-        backColor: '#0f766e'
-      }
-    ]
-    : SUB_CARDS;
-
-  if (subView === 'profesores') {
-    return <RecursoHumanoDashboard onBack={() => setSubView(null)} />;
+  if (subView === 'gestion') {
+    return <InternacionalizacionGestionPanel onBack={() => setSubView(null)} />;
   }
 
-  if (subView === 'administrativos') {
-    return <AdminDirectivosDashboard onBack={() => setSubView(null)} />;
+  if (subView === 'movilidad') {
+    return (
+      <InternacionalizacionMovilidadDashboard
+        onBack={() => setSubView(null)}
+        onNavigateConvenios={() => setSubView('convenios')}
+        activeView="movilidad"
+      />
+    );
   }
 
-  if (subView === 'seguimiento_reportes') {
-    return <ReporteSalidaSeguimiento onBack={() => setSubView(null)} />;
+  if (subView === 'convenios') {
+    return (
+      <InternacionalizacionConveniosDashboard
+        onBack={() => setSubView(null)}
+        onNavigateMovilidad={() => setSubView('movilidad')}
+        activeView="convenios"
+      />
+    );
   }
 
   return (
@@ -98,11 +87,7 @@ function RecursoHumanoLandingPage({ onBack }) {
           elevation={0}
           sx={{ p: 1.4, mb: 2.5, border: '1px solid #dbe6f5', borderRadius: 2.5, bgcolor: '#f8fbff' }}
         >
-          <Button
-            variant="outlined"
-            startIcon={<ArrowBackRoundedIcon />}
-            onClick={onBack}
-          >
+          <Button variant="outlined" startIcon={<ArrowBackRoundedIcon />} onClick={onBack}>
             Volver a Estadística Institucional
           </Button>
         </Paper>
@@ -111,11 +96,11 @@ function RecursoHumanoLandingPage({ onBack }) {
           sx={{
             display: 'grid',
             gap: 2.4,
-            gridTemplateColumns: { xs: '1fr', md: 'repeat(2, minmax(0, 1fr))' },
+            gridTemplateColumns: { xs: '1fr', md: 'repeat(3, minmax(0, 1fr))' },
             alignItems: 'stretch'
           }}
         >
-          {visibleCards.map((card) => {
+          {SUB_CARDS.map((card) => {
             const Icon = card.icon;
             return (
               <Paper
@@ -125,16 +110,16 @@ function RecursoHumanoLandingPage({ onBack }) {
                   borderRadius: 4,
                   p: { xs: 2.2, md: 2.8 },
                   border: '1px solid #dbe6f5',
-                  minHeight: { xs: 230, md: 270 },
+                  minHeight: { xs: 230, md: 280 },
                   display: 'flex',
                   flexDirection: 'column',
                   justifyContent: 'space-between',
-                  background: 'linear-gradient(180deg, #f8fbff 0%, #ffffff 100%)',
+                  background: 'linear-gradient(180deg,#f8fbff 0%,#ffffff 100%)',
                   boxShadow: '0 10px 28px rgba(15,23,42,0.04)',
                   transition: 'transform .18s ease, box-shadow .18s ease, border-color .18s ease',
                   '&:hover': {
                     transform: 'translateY(-2px)',
-                    boxShadow: '0 14px 34px rgba(37,99,235,0.08)',
+                    boxShadow: `0 14px 34px ${card.shadow}`,
                     borderColor: '#bfd4fb'
                   }
                 }}
@@ -156,7 +141,7 @@ function RecursoHumanoLandingPage({ onBack }) {
                     </Box>
                     <Chip
                       size="small"
-                      label="Disponible"
+                      label={card.chip}
                       sx={{
                         bgcolor: '#f0fdf4',
                         color: '#15803d',
@@ -167,10 +152,10 @@ function RecursoHumanoLandingPage({ onBack }) {
                     />
                   </Stack>
 
-                  <Box sx={{ minHeight: 80 }}>
+                  <Box sx={{ minHeight: 90 }}>
                     <Typography
                       sx={{
-                        fontSize: { xs: 22, md: 26 },
+                        fontSize: { xs: 20, md: 23 },
                         fontWeight: 900,
                         color: '#0f172a',
                         lineHeight: 1.08,
@@ -184,7 +169,7 @@ function RecursoHumanoLandingPage({ onBack }) {
                         mt: 0.8,
                         color: '#475569',
                         lineHeight: 1.35,
-                        fontSize: { xs: 14, md: 15 }
+                        fontSize: { xs: 13, md: 14 }
                       }}
                     >
                       {card.description}
@@ -207,13 +192,10 @@ function RecursoHumanoLandingPage({ onBack }) {
                       letterSpacing: '-0.01em',
                       background: card.gradient,
                       boxShadow: `0 10px 22px ${card.shadow}`,
-                      '&:hover': {
-                        background: card.gradient,
-                        filter: 'brightness(1.08)'
-                      }
+                      '&:hover': { background: card.gradient, filter: 'brightness(1.08)' }
                     }}
                   >
-                    Abrir dashboard
+                    {card.btnLabel}
                   </Button>
                 </Box>
               </Paper>
@@ -225,4 +207,4 @@ function RecursoHumanoLandingPage({ onBack }) {
   );
 }
 
-export default RecursoHumanoLandingPage;
+export default InternacionalizacionLandingPage;

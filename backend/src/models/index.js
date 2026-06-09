@@ -31,6 +31,8 @@ const RecursoHumanoDocente = require('./RecursoHumanoDocente');
 const RecursoHumanoAdministrativo = require('./RecursoHumanoAdministrativo');
 const RecursoHumanoOutsourcing = require('./RecursoHumanoOutsourcing');
 const RecursoHumanoOnda = require('./RecursoHumanoOnda');
+const InternacionalizacionMovilidad = require('./InternacionalizacionMovilidad');
+const InternacionalizacionConvenio = require('./InternacionalizacionConvenio');
 const RefDepartamento = require('./RefDepartamento');
 const RefMunicipio = require('./RefMunicipio');
 const RefDivipolaCarga = require('./RefDivipolaCarga');
@@ -55,6 +57,8 @@ const SecurityScan = require('./SecurityScan');
 const SecurityFinding = require('./SecurityFinding');
 const SecurityRemediationProposal = require('./SecurityRemediationProposal');
 const SecurityFindingComment = require('./SecurityFindingComment');
+const ReporteSalidaSolicitud = require('./ReporteSalidaSolicitud');
+const SystemSetting = require('./SystemSetting');
 
 // Relaciones existentes
 MacroProceso.hasMany(Proceso, { foreignKey: 'macro_proceso_id', as: 'procesos' });
@@ -71,6 +75,13 @@ User.hasMany(DocumentoFavorito, { foreignKey: 'user_id', as: 'favoritos' });
 DocumentoFavorito.belongsTo(User, { foreignKey: 'user_id', as: 'user' });
 Documento.hasMany(DocumentoFavorito, { foreignKey: 'documento_id', as: 'favoritos' });
 DocumentoFavorito.belongsTo(Documento, { foreignKey: 'documento_id', as: 'documento' });
+
+User.hasMany(ReporteSalidaSolicitud, { foreignKey: 'user_id', as: 'reporteSalidaSolicitudes' });
+ReporteSalidaSolicitud.belongsTo(User, { foreignKey: 'user_id', as: 'solicitanteUser' });
+User.hasMany(ReporteSalidaSolicitud, { foreignKey: 'jefe_inmediato_user_id', as: 'reporteSalidaAprobacionesJefe' });
+ReporteSalidaSolicitud.belongsTo(User, { foreignKey: 'jefe_inmediato_user_id', as: 'jefeInmediatoUser' });
+Documento.hasMany(ReporteSalidaSolicitud, { foreignKey: 'documento_id', as: 'reporteSalidaSolicitudes' });
+ReporteSalidaSolicitud.belongsTo(Documento, { foreignKey: 'documento_id', as: 'documento' });
 
 // NUEVAS RELACIONES - Auditoría de documentos
 User.hasMany(Documento, { foreignKey: 'creado_por', as: 'documentosCreados' });
@@ -206,6 +217,14 @@ User.hasMany(RegistroCalificadoHistorico, { foreignKey: 'creado_por', as: 'regis
 RegistroCalificadoHistorico.belongsTo(User, { foreignKey: 'creado_por', as: 'creador' });
 User.hasMany(RegistroCalificadoHistorico, { foreignKey: 'actualizado_por', as: 'registrosCalificadosHistoricoActualizados' });
 RegistroCalificadoHistorico.belongsTo(User, { foreignKey: 'actualizado_por', as: 'actualizador' });
+User.hasMany(InternacionalizacionMovilidad, { foreignKey: 'creado_por', as: 'internacionalizacionMovilidadCreadas' });
+InternacionalizacionMovilidad.belongsTo(User, { foreignKey: 'creado_por', as: 'creador' });
+User.hasMany(InternacionalizacionMovilidad, { foreignKey: 'actualizado_por', as: 'internacionalizacionMovilidadActualizadas' });
+InternacionalizacionMovilidad.belongsTo(User, { foreignKey: 'actualizado_por', as: 'actualizador' });
+User.hasMany(InternacionalizacionConvenio, { foreignKey: 'creado_por', as: 'internacionalizacionConveniosCreados' });
+InternacionalizacionConvenio.belongsTo(User, { foreignKey: 'creado_por', as: 'creador' });
+User.hasMany(InternacionalizacionConvenio, { foreignKey: 'actualizado_por', as: 'internacionalizacionConveniosActualizados' });
+InternacionalizacionConvenio.belongsTo(User, { foreignKey: 'actualizado_por', as: 'actualizador' });
 
 User.hasMany(InstrumentForm, { foreignKey: 'created_by', as: 'instrumentForms' });
 InstrumentForm.belongsTo(User, { foreignKey: 'created_by', as: 'creator' });
@@ -249,7 +268,10 @@ PoblacionalInfraestructuraFisica.belongsTo(User, { foreignKey: 'creado_por', as:
 User.hasMany(PoblacionalInfraestructuraFisica, { foreignKey: 'actualizado_por', as: 'infraestructurasActualizadas' });
 PoblacionalInfraestructuraFisica.belongsTo(User, { foreignKey: 'actualizado_por', as: 'actualizador' });
 
+const PoblacionalEdificacionReferencia = require('./PoblacionalEdificacionReferencia');
+
 module.exports = {
+  PoblacionalEdificacionReferencia,
   User,
   UserModulePermission,
   DiccionarioCorreccionTexto,
@@ -283,6 +305,8 @@ module.exports = {
   RecursoHumanoAdministrativo,
   RecursoHumanoOutsourcing,
   RecursoHumanoOnda,
+  InternacionalizacionMovilidad,
+  InternacionalizacionConvenio,
   RefDepartamento,
   RefMunicipio,
   RefDivipolaCarga,
@@ -306,5 +330,7 @@ module.exports = {
   SecurityScan,
   SecurityFinding,
   SecurityRemediationProposal,
-  SecurityFindingComment
+  SecurityFindingComment,
+  ReporteSalidaSolicitud,
+  SystemSetting
 };

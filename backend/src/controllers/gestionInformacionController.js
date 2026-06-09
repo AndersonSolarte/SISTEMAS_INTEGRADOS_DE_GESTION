@@ -18,6 +18,7 @@ const {
   PoblacionalContextoExterno,
   PoblacionalEmpleabilidad,
   PoblacionalInfraestructuraFisica,
+  PoblacionalEdificacionReferencia,
   RefDepartamento,
   RefMunicipio,
   RefDivipolaCarga,
@@ -31,6 +32,8 @@ const {
   RecursoHumanoAdministrativo,
   RecursoHumanoOutsourcing,
   RecursoHumanoOnda,
+  InternacionalizacionMovilidad,
+  InternacionalizacionConvenio,
   PlanAccion,
   Autoevaluacion,
   AutoevaluacionParticipante,
@@ -44,6 +47,7 @@ const {
 } = require('../models');
 const XLSX = require('xlsx');
 const fs = require('fs');
+const mammoth = require('mammoth');
 const path = require('path');
 const readline = require('readline');
 const divipolaMatchService = require('../services/divipolaMatchService');
@@ -101,7 +105,8 @@ const clearDatasetStorage = async ({
   subcategoria,
   poblacionalConfig = null,
   saberProConfig = null,
-  recursoHumanoConfig = null
+  recursoHumanoConfig = null,
+  internacionalizacionConfig = null
 }) => {
   const where = { categoria };
   if (subcategoria) where.subcategoria = subcategoria;
@@ -163,6 +168,26 @@ const clearDatasetStorage = async ({
     }
   }
 
+  if (categoria === DATASET_CATEGORIES.internacionalizacion) {
+    if (internacionalizacionConfig?.model) {
+      await internacionalizacionConfig.model.destroy({ where: {} });
+    } else if (Array.isArray(internacionalizacionConfig?.configs)) {
+      const legacySubcategorias = internacionalizacionConfig.configs.map((config) => config.label).filter(Boolean);
+      if (legacySubcategorias.length) {
+        await Promise.all([
+          Estadistica.destroy({ where: { categoria, subcategoria: { [Op.in]: legacySubcategorias } } }),
+          GestionInformacionCarga.destroy({ where: { categoria, subcategoria: { [Op.in]: legacySubcategorias } } })
+        ]);
+      }
+      await Promise.all(internacionalizacionConfig.configs.map((config) => config.model.destroy({ where: {} })));
+    } else if (!subcategoria) {
+      await Promise.all([
+        InternacionalizacionMovilidad.destroy({ where: {} }),
+        InternacionalizacionConvenio.destroy({ where: {} })
+      ]);
+    }
+  }
+
   if (categoria === 'Georreferencia') {
     await Promise.all([
       GeorreferenciaDepartamento.destroy({ where: {} }),
@@ -218,7 +243,7 @@ const DATASET_CATEGORIES = {
   georeferencia: 'Georreferencia',
   biblioteca: 'Biblioteca',
   medios_educativos: 'Medios Educativos',
-  internacionalizacion: 'InternacionalizaciÃƒÆ’Ã‚Â³n',
+  internacionalizacion: 'Internacionalización',
   investigacion: 'InvestigaciÃƒÆ’Ã‚Â³n',
   proyectos_convenios: 'Proyectos y Convenios',
   recurso_humano: 'Recurso Humano',
@@ -2393,6 +2418,139 @@ const resolveRecursoHumanoConfig = (subcategoria = '') => {
   return RECURSO_HUMANO_SUBCATEGORY_CONFIG[key] || null;
 };
 
+const INTERNACIONALIZACION_TEMPLATE_HEADERS = {
+  Movilidad: [
+    'PERIODO',
+    'PROGRAMA O DEPENDENCIA',
+    'TIPO PERSONA',
+    'ALCANCE MOVILIDAD',
+    'DIRECCION MOVILIDAD',
+    'ACTIVIDAD MOVILIDAD',
+    'DESCRIPCION',
+    'TIPO DOCUMENTO',
+    'NUMERO DOCUMENTO',
+    'PRIMER NOMBRE',
+    'SEGUNDO NOMBRE',
+    'PRIMER APELLIDO',
+    'SEGUNDO APELLIDO',
+    'PAIS EXTRANJERO',
+    'ESTADO PROVINCIA O DEPARTAMENTO',
+    'CIUDAD O MUNICIPIO',
+    'INSTITUCION EXTRANJERA',
+    'TIPO MOVILIDAD',
+    'NUMERO DIAS MOVILIDAD',
+    'MOVILIDAD POR CONVENIO',
+    'CODIGO CONVENIO',
+    'FUENTE FINANCIACION NACIONAL',
+    'VALOR FINANCIACION NACIONAL',
+    'FUENTE FINANCIACION INTERNACIONAL',
+    'PAIS FINANCIADOR',
+    'VALOR FINANCIACION INTERNACIONAL',
+    'FINANCIACION UNICESMAG',
+    'VALOR FINANCIACION UNICESMAG',
+    'FECHA SALIDA',
+    'FECHA RETORNO',
+    'MODALIDAD',
+    'RESULTADO MOVILIDAD'
+  ],
+  'Convenios Internacionalizacion': [
+    'ANIO',
+    'CONVENIO ENTIDAD',
+    'TIPO CONVENIO',
+    'PROGRAMA GESTOR',
+    'OBJETO CONVENIO',
+    'FECHA INICIO',
+    'FECHA TERMINACION',
+    'LINK ANEXO'
+  ]
+};
+
+const INTERNACIONALIZACION_ESTRUCTURA_ROWS = [
+  ['ALCANCE MOVILIDAD', 'Reemplaza "NACIONAL O INTERNACIONAL". Use valores como Nacional o Internacional.'],
+  ['DIRECCION MOVILIDAD', 'Reemplaza "TIPO MOVILIDAD ENTRANTE O SALIENTE". Use Entrante o Saliente.'],
+  ['PAIS EXTRANJERO', 'Reemplaza el encabezado largo de pais extranjero para movilidad internacional.'],
+  ['INSTITUCION EXTRANJERA', 'Reemplaza el encabezado largo de institucion extranjera para movilidad internacional.'],
+  ['NUMERO DIAS MOVILIDAD', 'Reemplaza "NUM DIAS MOVILIDAD" para mantener una lectura consistente.'],
+  ['VALOR FINANCIACION UNICESMAG', 'Aclara el valor asociado a FINANCIACION UNICESMAG y evita duplicar "VALOR FINANCIACION".'],
+  ['ANIO', 'Reemplaza "AÑO" para evitar problemas de codificacion en cargues CSV/Excel.']
+];
+
+const INTERNACIONALIZACION_SUBBASE_LABEL = 'Internacionalización';
+
+const INTERNACIONALIZACION_SUBCATEGORY_CONFIG = {
+  MOVILIDAD: {
+    key: 'MOVILIDAD',
+    label: 'Movilidad',
+    model: InternacionalizacionMovilidad,
+    sheetNames: ['MOVILIDAD'],
+    headers: INTERNACIONALIZACION_TEMPLATE_HEADERS.Movilidad,
+    map: {
+      periodo: ['PERIODO'],
+      programa_dependencia: ['PROGRAMA O DEPENDENCIA', 'PROGRAMA Y/O DEPENDENCIA', 'PROGRAMA DEPENDENCIA'],
+      tipo_persona: ['TIPO PERSONA', 'TIPO DE PERSONA'],
+      alcance_movilidad: ['ALCANCE MOVILIDAD', 'NACIONAL O INTERNACIONAL'],
+      direccion_movilidad: ['DIRECCION MOVILIDAD', 'TIPO MOVILIDAD ENTRANTE O SALIENTE'],
+      actividad_movilidad: ['ACTIVIDAD MOVILIDAD', 'ACTIVIDAD DE MOVILIDAD'],
+      descripcion: ['DESCRIPCION', 'DESCRIPCIÓN'],
+      tipo_documento: ['TIPO DOCUMENTO'],
+      numero_documento: ['NUMERO DOCUMENTO', 'Nº DOCUMENTO', 'N DOCUMENTO', 'NO DOCUMENTO'],
+      primer_nombre: ['PRIMER NOMBRE'],
+      segundo_nombre: ['SEGUNDO NOMBRE'],
+      primer_apellido: ['PRIMER APELLIDO'],
+      segundo_apellido: ['SEGUNDO APELLIDO'],
+      pais_extranjero: ['PAIS EXTRANJERO', 'PAIS EXTRANJERO SI ES MOVILIDAD INTERNACIONAL INGRESE EL PAIS', 'PAIS EXTRANJERO (Si es Movilidad Internacional Ingrese el Pais)'],
+      estado_provincia_departamento: ['ESTADO PROVINCIA O DEPARTAMENTO', 'ESTADO PROVICIA O DEPARTAMENTO', 'ESTADO, PROVICIA O DEPARTAMENTO'],
+      ciudad_municipio: ['CIUDAD O MUNICIPIO'],
+      institucion_extranjera: ['INSTITUCION EXTRANJERA', 'INSTITUCIÓN EXTRANJERA', 'INSTITUCION EXTRANJERA SI ES MOVILIDAD INTERNACIONAL INGRESE EL INSTITUCION', 'INSTITUCIÓN EXTRANJERA  (Si es Movilidad Internacional Ingrese el Institución)'],
+      tipo_movilidad: ['TIPO MOVILIDAD'],
+      num_dias_movilidad: ['NUMERO DIAS MOVILIDAD', 'NUM DIAS MOVILIDAD'],
+      movilidad_por_convenio: ['MOVILIDAD POR CONVENIO'],
+      codigo_convenio: ['CODIGO CONVENIO', 'CÓDIGO CONVENIO'],
+      fuente_financiacion_nacional: ['FUENTE FINANCIACION NACIONAL', 'FUENTE FINANCIACIÓN NACIONAL'],
+      valor_financiacion_nacional: ['VALOR FINANCIACION NACIONAL', 'VALOR FINANCIACIÓN NACIONAL'],
+      fuente_financiacion_internacional: ['FUENTE FINANCIACION INTERNACIONAL', 'FUENTE FINANCIACIÓN INTERNACIONAL'],
+      pais_financiador: ['PAIS FINANCIADOR', 'PAÍS FINANCIADOR'],
+      valor_financiacion_internacional: ['VALOR FINANCIACION INTERNACIONAL', 'VALOR FINANCIACIÓN INTERNACIONAL'],
+      financiacion_unicesmag: ['FINANCIACION UNICESMAG', 'FINANCIACIÓN UNICESMAG'],
+      valor_financiacion_unicesmag: ['VALOR FINANCIACION UNICESMAG', 'VALOR FINANCIACION', 'VALOR FINANCIACIÓN'],
+      fecha_salida: ['FECHA SALIDA'],
+      fecha_retorno: ['FECHA RETORNO'],
+      modalidad: ['MODALIDAD'],
+      resultado_movilidad: ['RESULTADO MOVILIDAD', 'RESULTADO DE MOVILIDAD']
+    }
+  },
+  CONVENIOS_INTERNACIONALIZACION: {
+    key: 'CONVENIOS_INTERNACIONALIZACION',
+    label: 'Convenios Internacionalizacion',
+    model: InternacionalizacionConvenio,
+    sheetNames: ['CONVENIOS', 'CONVENIOS INTERNACIONALIZACION', 'CONVENIOS INTERNACIONALIZACIÓN'],
+    headers: INTERNACIONALIZACION_TEMPLATE_HEADERS['Convenios Internacionalizacion'],
+    map: {
+      anio: ['ANIO', 'AÑO', 'ANO'],
+      convenio_entidad: ['CONVENIO ENTIDAD'],
+      tipo_convenio: ['TIPO CONVENIO', 'TIPO DE CONVENIO'],
+      programa_gestor: ['PROGRAMA GESTOR'],
+      objeto_convenio: ['OBJETO CONVENIO', 'OBJETO DEL CONVENIO'],
+      fecha_inicio: ['FECHA INICIO'],
+      fecha_terminacion: ['FECHA TERMINACION', 'FECHA TERMINACIÓN'],
+      link_anexo: ['LINK ANEXO']
+    }
+  }
+};
+
+const resolveInternacionalizacionConfig = (subcategoria = '') => {
+  const key = normalizeHeader(subcategoria);
+  if (!key) return null;
+  if (key === normalizeHeader(INTERNACIONALIZACION_SUBBASE_LABEL) || key === 'INTERNACIONALIZACION_COMPLETA') {
+    return {
+      key: 'INTERNACIONALIZACION',
+      label: INTERNACIONALIZACION_SUBBASE_LABEL,
+      configs: Object.values(INTERNACIONALIZACION_SUBCATEGORY_CONFIG)
+    };
+  }
+  return INTERNACIONALIZACION_SUBCATEGORY_CONFIG[key] || null;
+};
+
 const CONTEXTO_EXTERNO_CARGA_MAP = {
   PROGRAMAS_CONTEXTO_EXTERNO: { baseIndicador: 'Oferta', onlyType: 'oferta' },
   INSCRITOS_CONTEXTO_EXTERNO: { baseIndicador: 'Inscritos', onlyType: 'serie' },
@@ -2733,6 +2891,15 @@ const parseExcelDateString = (value) => {
     return value.toISOString().slice(0, 10);
   }
   return normalizeText(value);
+};
+
+const parseDateOnlyOrNull = (value) => {
+  const parsed = parseExcelDateString(value);
+  if (!parsed) return null;
+  if (/^\d{4}-\d{2}-\d{2}$/.test(parsed)) return parsed;
+  const date = new Date(parsed);
+  if (Number.isNaN(date.getTime())) return null;
+  return date.toISOString().slice(0, 10);
 };
 
 const toDbText = (value, maxLength = null) => {
@@ -4480,18 +4647,20 @@ const buildGraduadosGeneralDashboardPayload = async (anioFilter = null) => {
     }))
     .filter((row) => row.cantidad > 0);
 
-  const dynamicBuckets = new Map();
+  // Rows from cantidad_total_egresados for 2020+ (available when no year filter or year <= 2019)
+  const egresadoDinamicoRows = historicoRawRows
+    .filter((row) => Number(row.anio || 0) >= 2020)
+    .map((row) => ({
+      programa: normalizeText(row.programa) || 'Sin informacion',
+      cantidad: Number(row.cantidad || 0),
+      detalle: row.detalle
+    }))
+    .filter((row) => row.cantidad > 0)
+    .sort((a, b) => b.cantidad - a.cantidad || String(a.programa).localeCompare(String(b.programa), 'es'));
+
+  // Detect latest period from poblacional_graduados (for label only)
   let latest = null;
-
   graduadosRawRows.forEach((row) => {
-    const programa = normalizeText(row.programa) || 'Sin informacion';
-    const programKey = normalizeProgramAggregateKey(programa) || 'SIN_PROGRAMA';
-    const current = dynamicBuckets.get(programKey) || { programa, docs: new Set() };
-    current.programa = selectPreferredAggregateLabel(current.programa, programa);
-    const doc = normalizeText(row.numero_documento);
-    current.docs.add(doc ? `${programKey}||${doc}` : `${programKey}||__row__${row.id}`);
-    dynamicBuckets.set(programKey, current);
-
     const parsedDate = parseGraduadoDateValue(row.fecha_grado);
     const period = getGraduadoPeriodToken(row, parsedDate);
     const year = parsedDate ? parsedDate.getUTCFullYear() : Number(row.anio || 0);
@@ -4508,20 +4677,38 @@ const buildGraduadosGeneralDashboardPayload = async (anioFilter = null) => {
     }
   });
 
-  const dinamicoRows = Array.from(dynamicBuckets.values())
-    .map((row) => ({
-      programa: row.programa || 'Sin informacion',
-      cantidad: row.docs.size
-    }))
-    .filter((row) => row.cantidad > 0)
-    .sort((a, b) => b.cantidad - a.cantidad || String(a.programa).localeCompare(String(b.programa), 'es'));
+  // When no year filter (or year <= 2019), use cantidad_total_egresados for 2020+ totals
+  // (authoritative pre-aggregated source). For specific year >= 2020, fall back to
+  // poblacional_graduados unique-doc count so the per-year breakdown still works.
+  let dinamicoRows;
+  let dinamicoDetalle;
+  if (egresadoDinamicoRows.length > 0) {
+    dinamicoRows = egresadoDinamicoRows;
+    const srcDetalle = egresadoDinamicoRows[0]?.detalle || '';
+    dinamicoDetalle = srcDetalle ? `\uD83D\uDCCC ${srcDetalle}` : `\uD83D\uDCCC GRADUADOS UNIVERSIDAD CESMAG 2020+`;
+  } else {
+    const dynamicBuckets = new Map();
+    graduadosRawRows.forEach((row) => {
+      const programa = normalizeText(row.programa) || 'Sin informacion';
+      const programKey = normalizeProgramAggregateKey(programa) || 'SIN_PROGRAMA';
+      const current = dynamicBuckets.get(programKey) || { programa, docs: new Set() };
+      current.programa = selectPreferredAggregateLabel(current.programa, programa);
+      const doc = normalizeText(row.numero_documento);
+      current.docs.add(doc ? `${programKey}||${doc}` : `${programKey}||__row__${row.id}`);
+      dynamicBuckets.set(programKey, current);
+    });
+    dinamicoRows = Array.from(dynamicBuckets.values())
+      .map((row) => ({ programa: row.programa || 'Sin informacion', cantidad: row.docs.size }))
+      .filter((row) => row.cantidad > 0)
+      .sort((a, b) => b.cantidad - a.cantidad || String(a.programa).localeCompare(String(b.programa), 'es'));
+    const latestLabel = latest?.year
+      ? `${latest.year} ${latest.period || ''}${latest.dateLabel ? ` ${latest.dateLabel}` : ''}`.trim()
+      : 'ULTIMO REPORTE';
+    dinamicoDetalle = `\uD83D\uDCCC GRADUADOS UNIVERSIDAD CESMAG 2020 - ${latestLabel}`;
+  }
 
   const historicoTotal = historicoRows.reduce((acc, row) => acc + Number(row.cantidad || 0), 0);
   const dinamicoTotal = dinamicoRows.reduce((acc, row) => acc + Number(row.cantidad || 0), 0);
-  const latestLabel = latest?.year
-    ? `${latest.year} ${latest.period || ''}${latest.dateLabel ? ` ${latest.dateLabel}` : ''}`.trim()
-    : 'ULTIMO REPORTE';
-  const dinamicoDetalle = `\uD83D\uDCCC GRADUADOS UNIVERSIDAD CESMAG 2020 - ${latestLabel}`;
 
   const programaMap = new Map();
   historicoRows.forEach((row) => {
@@ -4682,6 +4869,110 @@ const getEstadisticas = async (req, res) => {
           programa,
           estado: req.query.estado || 'activos'
         })
+      });
+    }
+
+    if (aggregate === 'movilidad_dashboard') {
+      const {
+        periodo: periodoFilter = '',
+        alcance = '',
+        direccion = '',
+        tipo_persona: tipoPersonaFilter = '',
+        pais = '',
+        programa: programaFilter = ''
+      } = req.query;
+
+      const mov_where = {};
+      if (periodoFilter) mov_where.periodo = { [Op.iLike]: `%${periodoFilter}%` };
+      if (alcance) mov_where.alcance_movilidad = { [Op.iLike]: `%${alcance}%` };
+      if (direccion) mov_where.direccion_movilidad = { [Op.iLike]: `%${direccion}%` };
+      if (tipoPersonaFilter) mov_where.tipo_persona = { [Op.iLike]: `%${tipoPersonaFilter}%` };
+      if (pais) mov_where.pais_extranjero = { [Op.iLike]: `%${pais}%` };
+      if (programaFilter) mov_where.programa_dependencia = { [Op.iLike]: `%${programaFilter}%` };
+
+      const rows = await InternacionalizacionMovilidad.findAll({ where: mov_where, raw: true, order: [['periodo', 'ASC'], ['id', 'ASC']] });
+
+      const count = (rows, key) => rows.reduce((acc, r) => {
+        const k = r[key] || 'Sin dato';
+        acc[k] = (acc[k] || 0) + 1;
+        return acc;
+      }, {});
+
+      const toArr = (obj) => Object.entries(obj).map(([name, value]) => ({ name, value })).sort((a, b) => b.value - a.value);
+
+      const byPeriodo = toArr(count(rows, 'periodo'));
+      const byAlcance = toArr(count(rows, 'alcance_movilidad'));
+      const byDireccion = toArr(count(rows, 'direccion_movilidad'));
+      const byTipoPersona = toArr(count(rows, 'tipo_persona'));
+      const byPais = toArr(count(rows, 'pais_extranjero')).slice(0, 20);
+      const byActividad = toArr(count(rows, 'actividad_movilidad'));
+      const byTipoMovilidad = toArr(count(rows, 'tipo_movilidad'));
+      const byPrograma = toArr(count(rows, 'programa_dependencia')).slice(0, 20);
+      const byModalidad = toArr(count(rows, 'modalidad'));
+
+      const catalogos = {
+        periodos: [...new Set(rows.map((r) => r.periodo).filter(Boolean))].sort(),
+        alcances: [...new Set(rows.map((r) => r.alcance_movilidad).filter(Boolean))].sort(),
+        direcciones: [...new Set(rows.map((r) => r.direccion_movilidad).filter(Boolean))].sort(),
+        tiposPersona: [...new Set(rows.map((r) => r.tipo_persona).filter(Boolean))].sort(),
+        paises: [...new Set(rows.map((r) => r.pais_extranjero).filter(Boolean))].sort(),
+        programas: [...new Set(rows.map((r) => r.programa_dependencia).filter(Boolean))].sort()
+      };
+
+      return res.json({
+        success: true,
+        data: {
+          total: rows.length,
+          byPeriodo,
+          byAlcance,
+          byDireccion,
+          byTipoPersona,
+          byPais,
+          byActividad,
+          byTipoMovilidad,
+          byPrograma,
+          byModalidad,
+          catalogos
+        }
+      });
+    }
+
+    if (aggregate === 'convenios_dashboard') {
+      const {
+        search: searchConv = '',
+        tipo_convenio: tipoConvenioFilter = '',
+        anio: anioConvFilter = '',
+        programa: programaConvFilter = ''
+      } = req.query;
+
+      const conv_where = {};
+      if (tipoConvenioFilter) conv_where.tipo_convenio = { [Op.iLike]: `%${tipoConvenioFilter}%` };
+      if (anioConvFilter) conv_where.anio = Number(anioConvFilter);
+      if (programaConvFilter) conv_where.programa_gestor = { [Op.iLike]: `%${programaConvFilter}%` };
+      if (searchConv) {
+        conv_where[Op.or] = [
+          { convenio_entidad: { [Op.iLike]: `%${searchConv}%` } },
+          { tipo_convenio: { [Op.iLike]: `%${searchConv}%` } },
+          { programa_gestor: { [Op.iLike]: `%${searchConv}%` } },
+          { objeto_convenio: { [Op.iLike]: `%${searchConv}%` } }
+        ];
+      }
+
+      const rows = await InternacionalizacionConvenio.findAll({
+        where: conv_where,
+        raw: true,
+        order: [['anio', 'DESC'], ['convenio_entidad', 'ASC'], ['id', 'ASC']]
+      });
+
+      const catalogos = {
+        anios: [...new Set(rows.map((r) => r.anio).filter(Boolean))].sort((a, b) => b - a).map(String),
+        tiposConvenio: [...new Set(rows.map((r) => r.tipo_convenio).filter(Boolean))].sort(),
+        programas: [...new Set(rows.map((r) => r.programa_gestor).filter(Boolean))].sort()
+      };
+
+      return res.json({
+        success: true,
+        data: { total: rows.length, rows, catalogos }
       });
     }
 
@@ -4920,6 +5211,9 @@ const getEstadisticas = async (req, res) => {
     }
 
     if (aggregate === 'recurso_humano_dashboard' && (!where.categoria || where.categoria === 'Recurso Humano')) {
+      const scope = normalizeText(req.query.scope).toLowerCase();
+      const includeDocentes = !scope || ['docentes', 'profesores'].includes(scope);
+      const includeAdministrativos = !scope || ['administrativos', 'directivos', 'admin'].includes(scope);
       const asList = (rows, key, valueKey = null, fallback = 'Sin informaciÃƒÆ’Ã‚Â³n') => {
         const map = new Map();
         rows.forEach((row) => {
@@ -4956,33 +5250,36 @@ const getEstadisticas = async (req, res) => {
         Array.from(new Set(rows.map((row) => String(row[key] || '').trim()).filter(Boolean))).sort((a, b) => a.localeCompare(b, 'es'));
 
       const [docentesRows, administrativosRows, outsourcingRows, ondasRows] = await Promise.all([
-        RecursoHumanoDocente.findAll({
-          attributes: ['anio', 'periodo', 'docente', 'genero_biologico', 'departamento_dependencia', 'programa', 'tipo_vinculacion', 'contrato', 'cargo', 'escalafon', 'total_horas', 'total_docentes', 'edad', 'raw_data'],
+        includeDocentes ? RecursoHumanoDocente.findAll({
+          attributes: [
+            'anio', 'periodo', 'docente', 'genero_biologico', 'departamento_dependencia', 'programa',
+            'tipo_vinculacion', 'contrato', 'cargo', 'escalafon', 'total_horas', 'total_docentes', 'edad',
+            [literal(`COALESCE("raw_data"->>'NIVEL MAXIMO ESTUDIO', "raw_data"->>'NIVEL_MAXIMO_ESTUDIO', "raw_data"->>'nivel_maximo_estudio')`), 'nivel_maximo_estudio']
+          ],
           raw: true
-        }),
-        RecursoHumanoAdministrativo.findAll({
-          attributes: ['anio', 'periodo', 'estado_laboral', 'nombre_empleado', 'cargo_especifico', 'dependencia', 'vicerectoria', 'clase_contrato', 'genero_biologico', 'sueldo_anual', 'sueldo_mes', 'raw_data'],
+        }) : Promise.resolve([]),
+        includeAdministrativos ? RecursoHumanoAdministrativo.findAll({
+          attributes: [
+            'anio', 'periodo', 'estado_laboral', 'nombre_empleado', 'cargo_especifico', 'dependencia',
+            'vicerectoria', 'clase_contrato', 'genero_biologico', 'sueldo_anual', 'sueldo_mes',
+            [literal(`COALESCE("raw_data"->>'GRADO', "raw_data"->>'grado')`), 'grado']
+          ],
           raw: true
-        }),
-        RecursoHumanoOutsourcing.findAll({
+        }) : Promise.resolve([]),
+        includeAdministrativos ? RecursoHumanoOutsourcing.findAll({
           attributes: ['anio', 'periodo', 'cargo', 'genero_biologico', 'cantidad'],
           raw: true
-        }),
-        RecursoHumanoOnda.findAll({
+        }) : Promise.resolve([]),
+        includeAdministrativos ? RecursoHumanoOnda.findAll({
           attributes: ['anio', 'periodo', 'nombre', 'genero'],
           raw: true
-        })
+        }) : Promise.resolve([])
       ]);
 
       const docentes = docentesRows.map((row) => ({
         ...row,
         genero: normalizeGenero(row.genero_biologico),
-        nivel_maximo_estudio: normalizeText(
-          row.raw_data?.['NIVEL MAXIMO ESTUDIO'] ||
-          row.raw_data?.NIVEL_MAXIMO_ESTUDIO ||
-          row.raw_data?.nivel_maximo_estudio ||
-          ''
-        ),
+        nivel_maximo_estudio: normalizeText(row.nivel_maximo_estudio),
         peso: Number(row.total_docentes || 0) > 0 ? Number(row.total_docentes) : 1
       }));
       const administrativos = administrativosRows.map((row) => ({
@@ -5586,6 +5883,7 @@ const downloadTemplate = async (req, res) => {
     const poblacionalConfig = categoria === 'Poblacional' ? resolvePoblacionalConfig(req.query.subcategoria) : null;
     const saberProConfig = categoria === 'Saber Pro' ? resolveSaberProConfig(req.query.subcategoria) : null;
     const recursoHumanoConfig = categoria === 'Recurso Humano' ? resolveRecursoHumanoConfig(req.query.subcategoria) : null;
+    const internacionalizacionConfig = categoria === DATASET_CATEGORIES.internacionalizacion ? resolveInternacionalizacionConfig(req.query.subcategoria) : null;
     const contextoTemplateHeaders = (categoria === 'Poblacional' && poblacionalConfig?.customImport === 'contexto_externo')
       ? resolveContextoExternoTemplateHeaders(fixedSubSubcategoria)
       : null;
@@ -5783,6 +6081,39 @@ const downloadTemplate = async (req, res) => {
       return res.send(buffer);
     }
 
+    if (categoria === DATASET_CATEGORIES.internacionalizacion) {
+      if (subcategoriaRaw && !internacionalizacionConfig) {
+        return res.status(400).json({ success: false, message: 'Subbase de Internacionalizacion no valida' });
+      }
+
+      const workbook = XLSX.utils.book_new();
+      const estructuraSheet = XLSX.utils.aoa_to_sheet([
+        ['Campo plantilla', 'Comentario / equivalente original'],
+        ...INTERNACIONALIZACION_ESTRUCTURA_ROWS
+      ]);
+      estructuraSheet['!cols'] = [{ wch: 34 }, { wch: 90 }];
+      XLSX.utils.book_append_sheet(workbook, estructuraSheet, 'ESTRUCTURA');
+
+      const configs = Array.isArray(internacionalizacionConfig?.configs)
+        ? internacionalizacionConfig.configs
+        : internacionalizacionConfig
+          ? [internacionalizacionConfig]
+          : Object.values(INTERNACIONALIZACION_SUBCATEGORY_CONFIG);
+      configs.forEach((config) => {
+        const headers = config.headers || [];
+        const worksheet = buildHeaderOnlyWorksheet(headers);
+        worksheet['!cols'] = headers.map((header) => ({ wch: Math.max(16, Math.min(42, String(header).length + 8)) }));
+        const sheetName = (config.sheetNames?.[0] || config.label || 'DATA').slice(0, 31);
+        XLSX.utils.book_append_sheet(workbook, worksheet, sheetName);
+      });
+
+      const buffer = XLSX.write(workbook, { type: 'buffer', bookType: 'xlsx' });
+      const suffix = internacionalizacionConfig ? `_${normalizeHeader(internacionalizacionConfig.label).toLowerCase()}` : '_completa';
+      res.setHeader('Content-Disposition', `attachment; filename=plantilla_internacionalizacion${suffix}.xlsx`);
+      res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+      return res.send(buffer);
+    }
+
     if (categoria === 'Poblacional' && Array.isArray(poblacionalConfig?.sheetTemplates) && poblacionalConfig.sheetTemplates.length > 0) {
       const workbook = XLSX.utils.book_new();
       poblacionalConfig.sheetTemplates.forEach((sheet) => {
@@ -5840,6 +6171,7 @@ const importFromExcel = async (req, res) => {
     const poblacionalConfig = categoria === 'Poblacional' ? resolvePoblacionalConfig(fixedSubcategoria) : null;
     const saberProConfig = categoria === 'Saber Pro' ? resolveSaberProConfig(fixedSubcategoria) : null;
     const recursoHumanoConfig = categoria === 'Recurso Humano' ? resolveRecursoHumanoConfig(fixedSubcategoria) : null;
+    const internacionalizacionConfig = categoria === DATASET_CATEGORIES.internacionalizacion ? resolveInternacionalizacionConfig(fixedSubcategoria) : null;
     const contextoCargaConfig = (categoria === 'Poblacional' && (poblacionalConfig?.customImport === 'contexto_externo'))
       ? resolveContextoExternoCargaConfig(fixedSubSubcategoria)
       : null;
@@ -5860,6 +6192,7 @@ const importFromExcel = async (req, res) => {
       || categoria === 'Autoevaluación'
       || categoria === 'Registros Calificados y Acreditación'
       || categoria === 'Recurso Humano'
+      || categoria === DATASET_CATEGORIES.internacionalizacion
       || (categoria === 'Poblacional' && poblacionalConfig?.label === 'Matriculados')
       || (categoria === 'Poblacional'
         && poblacionalConfig?.customImport === 'contexto_externo'
@@ -5870,7 +6203,7 @@ const importFromExcel = async (req, res) => {
     if (isCsvUpload && !allowsCsvStreaming) {
       return res.status(400).json({
         success: false,
-        message: 'El formato CSV solo esta habilitado para Georreferencia, Autoevaluación, Recurso Humano, Matriculados y Contexto Externo (listas de series).'
+        message: 'El formato CSV solo esta habilitado para Georreferencia, Autoevaluacion, Recurso Humano, Internacionalizacion, Matriculados y Contexto Externo (listas de series).'
       });
     }
 
@@ -6270,6 +6603,205 @@ const importFromExcel = async (req, res) => {
       return res.json({
         success: true,
         message: `Importacion finalizada para Recurso Humano: ${result.importados}/${result.total} registros`,
+        data: result
+      });
+    }
+
+    if (categoria === DATASET_CATEGORIES.internacionalizacion) {
+      if (fixedSubcategoria && !internacionalizacionConfig) {
+        return res.status(400).json({ success: false, message: 'Subbase de Internacionalizacion no valida' });
+      }
+      if (isCsvUpload) {
+        return res.status(400).json({ success: false, message: 'Internacionalizacion debe cargarse en Excel XLSX para conservar las hojas MOVILIDAD y CONVENIOS.' });
+      }
+
+      const configs = Array.isArray(internacionalizacionConfig?.configs)
+        ? internacionalizacionConfig.configs
+        : internacionalizacionConfig
+          ? [internacionalizacionConfig]
+          : Object.values(INTERNACIONALIZACION_SUBCATEGORY_CONFIG);
+      const result = { total: 0, importados: 0, errores: [], hojasProcesadas: [] };
+      const csvData = isCsvUpload ? await readCsvRows(req.file.path) : null;
+      const workbookSheetsByKey = isCsvUpload
+        ? {}
+        : Object.fromEntries(workbook.SheetNames.map((name) => [normalizeHeader(name), name]));
+
+      await clearDatasetStorage({
+        categoria: DATASET_CATEGORIES.internacionalizacion,
+        subcategoria: INTERNACIONALIZACION_SUBBASE_LABEL,
+        internacionalizacionConfig: { configs }
+      });
+
+      for (const config of configs) {
+        const matchedSheetName = isCsvUpload
+          ? (config.sheetNames?.[0] || config.label)
+          : (config.sheetNames || [])
+            .map((name) => workbookSheetsByKey[normalizeHeader(name)])
+            .find(Boolean);
+
+        if (!matchedSheetName) {
+          if (internacionalizacionConfig) {
+            return res.status(400).json({ success: false, message: `No se encontro la hoja ${config.sheetNames?.[0] || config.label} en el archivo Excel` });
+          }
+          continue;
+        }
+
+        const rowsInternacionalizacion = isCsvUpload
+          ? (csvData?.rows || [])
+          : matrixToRows(workbook.Sheets[matchedSheetName], config.headers, true).rows;
+        if (!rowsInternacionalizacion.length) continue;
+
+        const sheetResult = { total: rowsInternacionalizacion.length, importados: 0, errores: [] };
+        for (let i = 0; i < rowsInternacionalizacion.length; i += 1) {
+          const row = rowsInternacionalizacion[i];
+          const fila = Number(row.__rowNumber || i + 2);
+          try {
+            const payload = mapPoblacionalRecord(row, { map: config.map });
+
+            if (config.key === 'MOVILIDAD') {
+              const periodo = normalizeText(payload.periodo);
+              const nombreCompleto = [
+                payload.primer_nombre,
+                payload.segundo_nombre,
+                payload.primer_apellido,
+                payload.segundo_apellido
+              ].map(normalizeText).filter(Boolean).join(' ');
+
+              if (!periodo && !normalizeText(payload.numero_documento) && !nombreCompleto) {
+                sheetResult.errores.push({ fila, error: 'Fila omitida: movilidad sin periodo, documento ni nombre' });
+                result.errores.push({ hoja: matchedSheetName, fila, error: 'Fila omitida: movilidad sin periodo, documento ni nombre' });
+                continue;
+              }
+
+              await config.model.create({
+                periodo: toDbText(periodo, 40),
+                programa_dependencia: toDbText(payload.programa_dependencia, 300),
+                tipo_persona: toDbText(payload.tipo_persona, 120),
+                alcance_movilidad: toDbText(payload.alcance_movilidad, 80),
+                direccion_movilidad: toDbText(payload.direccion_movilidad, 80),
+                actividad_movilidad: toDbText(payload.actividad_movilidad, 300),
+                descripcion: toDbText(payload.descripcion),
+                tipo_documento: toDbText(payload.tipo_documento, 80),
+                numero_documento: toDbText(payload.numero_documento, 80),
+                primer_nombre: toDbText(payload.primer_nombre, 160),
+                segundo_nombre: toDbText(payload.segundo_nombre, 160),
+                primer_apellido: toDbText(payload.primer_apellido, 160),
+                segundo_apellido: toDbText(payload.segundo_apellido, 160),
+                pais_extranjero: toDbText(payload.pais_extranjero, 180),
+                estado_provincia_departamento: toDbText(payload.estado_provincia_departamento, 180),
+                ciudad_municipio: toDbText(payload.ciudad_municipio, 180),
+                institucion_extranjera: toDbText(payload.institucion_extranjera, 300),
+                tipo_movilidad: toDbText(payload.tipo_movilidad, 160),
+                num_dias_movilidad: toNumber(payload.num_dias_movilidad),
+                movilidad_por_convenio: toDbText(payload.movilidad_por_convenio, 80),
+                codigo_convenio: toDbText(payload.codigo_convenio, 120),
+                fuente_financiacion_nacional: toDbText(payload.fuente_financiacion_nacional, 220),
+                valor_financiacion_nacional: toPesosNumber(payload.valor_financiacion_nacional),
+                fuente_financiacion_internacional: toDbText(payload.fuente_financiacion_internacional, 220),
+                pais_financiador: toDbText(payload.pais_financiador, 180),
+                valor_financiacion_internacional: toPesosNumber(payload.valor_financiacion_internacional),
+                financiacion_unicesmag: toDbText(payload.financiacion_unicesmag, 80),
+                valor_financiacion_unicesmag: toPesosNumber(payload.valor_financiacion_unicesmag),
+                fecha_salida: parseDateOnlyOrNull(payload.fecha_salida),
+                fecha_retorno: parseDateOnlyOrNull(payload.fecha_retorno),
+                modalidad: toDbText(payload.modalidad, 120),
+                resultado_movilidad: toDbText(payload.resultado_movilidad),
+                raw_data: row,
+                creado_por: req.user?.id || null,
+                actualizado_por: req.user?.id || null
+              });
+
+              await Estadistica.create({
+                categoria: DATASET_CATEGORIES.internacionalizacion,
+                subcategoria: INTERNACIONALIZACION_SUBBASE_LABEL,
+                anio: parseAnio(periodo || payload.fecha_salida) || 0,
+                programa: normalizeText(payload.programa_dependencia),
+                dependencia: normalizeText(payload.tipo_persona),
+                indicador: config.label,
+                valor: 1,
+                unidad: 'registros',
+                fuente: `Carga Excel Internacionalizacion - ${config.label}`,
+                observaciones: [
+                  normalizeText(payload.alcance_movilidad) ? `alcance: ${normalizeText(payload.alcance_movilidad)}` : '',
+                  normalizeText(payload.direccion_movilidad) ? `direccion: ${normalizeText(payload.direccion_movilidad)}` : '',
+                  normalizeText(payload.modalidad) ? `modalidad: ${normalizeText(payload.modalidad)}` : '',
+                  periodo ? `periodo: ${periodo}` : ''
+                ].filter(Boolean).join(' | ') || null,
+                creado_por: req.user?.id || null,
+                actualizado_por: req.user?.id || null
+              });
+            } else if (config.key === 'CONVENIOS_INTERNACIONALIZACION') {
+              const anio = parseAnio(payload.anio || payload.fecha_inicio || payload.fecha_terminacion);
+              if (!anio && !normalizeText(payload.convenio_entidad)) {
+                sheetResult.errores.push({ fila, error: 'Fila omitida: convenio sin anio ni entidad' });
+                result.errores.push({ hoja: matchedSheetName, fila, error: 'Fila omitida: convenio sin anio ni entidad' });
+                continue;
+              }
+
+              await config.model.create({
+                anio,
+                convenio_entidad: toDbText(payload.convenio_entidad, 400),
+                tipo_convenio: toDbText(payload.tipo_convenio, 180),
+                programa_gestor: toDbText(payload.programa_gestor, 300),
+                objeto_convenio: toDbText(payload.objeto_convenio),
+                fecha_inicio: parseDateOnlyOrNull(payload.fecha_inicio),
+                fecha_terminacion: parseDateOnlyOrNull(payload.fecha_terminacion),
+                link_anexo: toDbText(payload.link_anexo),
+                raw_data: row,
+                creado_por: req.user?.id || null,
+                actualizado_por: req.user?.id || null
+              });
+
+              await Estadistica.create({
+                categoria: DATASET_CATEGORIES.internacionalizacion,
+                subcategoria: INTERNACIONALIZACION_SUBBASE_LABEL,
+                anio: anio || 0,
+                programa: normalizeText(payload.programa_gestor),
+                dependencia: normalizeText(payload.tipo_convenio),
+                indicador: config.label,
+                valor: 1,
+                unidad: 'convenios',
+                fuente: `Carga Excel Internacionalizacion - ${config.label}`,
+                observaciones: normalizeText(payload.convenio_entidad) || null,
+                creado_por: req.user?.id || null,
+                actualizado_por: req.user?.id || null
+              });
+            }
+
+            sheetResult.importados += 1;
+            result.importados += 1;
+          } catch (sheetErr) {
+            sheetResult.errores.push({ fila, error: sheetErr.message });
+            result.errores.push({ hoja: matchedSheetName, fila, error: sheetErr.message });
+          }
+        }
+
+        result.total += sheetResult.total;
+        result.hojasProcesadas.push({ hoja: matchedSheetName, subcategoria: INTERNACIONALIZACION_SUBBASE_LABEL, variable: config.label, ...sheetResult });
+
+        const porcentaje = sheetResult.total > 0 ? Number(((sheetResult.importados / sheetResult.total) * 100).toFixed(2)) : 0;
+        await GestionInformacionCarga.create({
+          categoria: DATASET_CATEGORIES.internacionalizacion,
+          subcategoria: INTERNACIONALIZACION_SUBBASE_LABEL,
+          variable: config.label,
+          archivo_nombre: uploadFileName,
+          total_plantilla: sheetResult.total,
+          total_cargados: sheetResult.importados,
+          total_omitidos: sheetResult.total - sheetResult.importados,
+          porcentaje_cargado: porcentaje,
+          estado: porcentaje === 100 ? 'exitoso' : (sheetResult.importados > 0 ? 'parcial' : 'fallido'),
+          detalle: sheetResult.errores.length ? JSON.stringify(sheetResult.errores.slice(0, 20)) : null,
+          creado_por: req.user?.id || null
+        });
+      }
+
+      if (!result.total) {
+        return res.status(400).json({ success: false, message: 'No se encontraron hojas validas de Internacionalizacion en el archivo' });
+      }
+
+      return res.json({
+        success: true,
+        message: `Importacion finalizada para Internacionalizacion: ${result.importados}/${result.total} registros`,
         data: result
       });
     }
@@ -8434,6 +8966,7 @@ const clearByCategoria = async (req, res) => {
     const poblacionalConfig = categoria === 'Poblacional' && subcategoria ? resolvePoblacionalConfig(subcategoria) : null;
     const saberProConfig = categoria === 'Saber Pro' && subcategoria ? resolveSaberProConfig(subcategoria) : null;
     const recursoHumanoConfig = categoria === 'Recurso Humano' && subcategoria ? resolveRecursoHumanoConfig(subcategoria) : null;
+    const internacionalizacionConfig = categoria === DATASET_CATEGORIES.internacionalizacion && subcategoria ? resolveInternacionalizacionConfig(subcategoria) : null;
     if (!categoria) {
       return res.status(400).json({ success: false, message: 'Debes seleccionar la base de datos destino' });
     }
@@ -8444,7 +8977,8 @@ const clearByCategoria = async (req, res) => {
       subcategoria,
       poblacionalConfig,
       saberProConfig,
-      recursoHumanoConfig
+      recursoHumanoConfig,
+      internacionalizacionConfig
     });
     return res.json({
       success: true,
@@ -8757,6 +9291,13 @@ const downloadCargueBase = async (req, res) => {
         const rows = await rhConfig.model.findAll({ order: [['id', 'ASC']], raw: true });
         records = rows.map((row) => normalizeExcelRecordKeys(row));
         sheetName = normalizeHeader(subcategoriaResolved || 'RECURSO_HUMANO').slice(0, 31);
+      }
+    } else if (categoriaResolved === DATASET_CATEGORIES.internacionalizacion) {
+      const intConfig = resolveInternacionalizacionConfig(variableEffective) || resolveInternacionalizacionConfig(subcategoriaResolved);
+      if (intConfig?.model) {
+        const rows = await intConfig.model.findAll({ order: [['id', 'ASC']], raw: true });
+        records = rows.map((row) => normalizeExcelRecordKeys(row));
+        sheetName = normalizeHeader(variableEffective || subcategoriaResolved || 'INTERNACIONALIZACION').slice(0, 31);
       }
     } else if (categoriaResolved === 'Plan de Acción') {
       await ensurePlanAccionTable();
@@ -9245,7 +9786,194 @@ const deleteInfraestructura = async (req, res) => {
   }
 };
 
+const uploadInfraestructuraTemplate = async (req, res) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({ success: false, message: 'No se ha subido ningún archivo' });
+    }
+
+    const result = await mammoth.convertToHtml({ path: req.file.path });
+    const html = result.value;
+    const messages = result.messages;
+
+    try {
+      fs.unlinkSync(req.file.path);
+    } catch (err) {
+      console.error('Error al eliminar archivo temporal de plantilla:', err);
+    }
+
+    return res.json({
+      success: true,
+      data: {
+        html,
+        messages
+      }
+    });
+  } catch (error) {
+    console.error('Error al procesar plantilla docx:', error);
+    if (req.file?.path) {
+      try {
+        fs.unlinkSync(req.file.path);
+      } catch (_) {}
+    }
+    return res.status(500).json({ success: false, message: 'Error al procesar el archivo Word. Asegúrese de que sea un archivo .docx válido.' });
+  }
+};
+
+const getEdificacionesReferencia = async (req, res) => {
+  try {
+    const edificaciones = await PoblacionalEdificacionReferencia.findAll({
+      order: [['ubicacion', 'ASC'], ['espacio', 'ASC'], ['id', 'ASC']]
+    });
+    return res.json({
+      success: true,
+      data: edificaciones
+    });
+  } catch (error) {
+    console.error('Error al listar edificaciones de referencia:', error);
+    return res.status(500).json({ success: false, message: 'Error al listar edificaciones de referencia' });
+  }
+};
+
+const createEdificacionReferencia = async (req, res) => {
+  try {
+    const { espacio, ubicacion, direccion, calidad } = req.body;
+    if (!espacio) {
+      return res.status(400).json({ success: false, message: 'El nombre de la edificación/bloque (espacio) es obligatorio' });
+    }
+
+    const existing = await PoblacionalEdificacionReferencia.findOne({
+      where: { espacio: { [Op.iLike]: espacio.trim() } }
+    });
+    if (existing) {
+      return res.status(400).json({ success: false, message: 'Ya existe una edificación o bloque con este nombre' });
+    }
+
+    const nuevo = await PoblacionalEdificacionReferencia.create({
+      espacio: espacio.trim(),
+      ubicacion: ubicacion ? ubicacion.trim() : null,
+      direccion: direccion ? direccion.trim() : null,
+      calidad: calidad ? calidad.trim() : null
+    });
+
+    return res.status(201).json({
+      success: true,
+      message: 'Edificación de referencia creada exitosamente',
+      data: nuevo
+    });
+  } catch (error) {
+    console.error('Error al crear edificación de referencia:', error);
+    return res.status(500).json({ success: false, message: 'Error al crear edificación de referencia' });
+  }
+};
+
+const updateEdificacionReferencia = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { espacio, ubicacion, direccion, calidad } = req.body;
+
+    const registro = await PoblacionalEdificacionReferencia.findByPk(id);
+    if (!registro) {
+      return res.status(404).json({ success: false, message: 'Edificación de referencia no encontrada' });
+    }
+
+    if (espacio && espacio.trim() !== registro.espacio) {
+      const existing = await PoblacionalEdificacionReferencia.findOne({
+        where: {
+          espacio: { [Op.iLike]: espacio.trim() },
+          id: { [Op.ne]: id }
+        }
+      });
+      if (existing) {
+        return res.status(400).json({ success: false, message: 'Ya existe otra edificación o bloque con este nombre' });
+      }
+      registro.espacio = espacio.trim();
+    }
+
+    if (ubicacion !== undefined) registro.ubicacion = ubicacion ? ubicacion.trim() : null;
+    if (direccion !== undefined) registro.direccion = direccion ? direccion.trim() : null;
+    if (calidad !== undefined) registro.calidad = calidad ? calidad.trim() : null;
+
+    await registro.save();
+
+    return res.json({
+      success: true,
+      message: 'Edificación de referencia actualizada exitosamente',
+      data: registro
+    });
+  } catch (error) {
+    console.error('Error al actualizar edificación de referencia:', error);
+    return res.status(500).json({ success: false, message: 'Error al actualizar edificación de referencia' });
+  }
+};
+
+const deleteEdificacionReferencia = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const registro = await PoblacionalEdificacionReferencia.findByPk(id);
+    if (!registro) {
+      return res.status(404).json({ success: false, message: 'Edificación de referencia no encontrada' });
+    }
+
+    await registro.destroy();
+
+    return res.json({
+      success: true,
+      message: 'Edificación de referencia eliminada exitosamente'
+    });
+  } catch (error) {
+    console.error('Error al eliminar edificación de referencia:', error);
+    return res.status(500).json({ success: false, message: 'Error al eliminar edificación de referencia' });
+  }
+};
+
+const uploadAuditorioFoto = async (req, res) => {
+  try {
+    const { groupKey } = req.body;
+    if (!groupKey) {
+      return res.status(400).json({ success: false, message: 'Falta la clave del grupo del auditorio.' });
+    }
+    if (!req.file) {
+      return res.status(400).json({ success: false, message: 'No se ha subido ningún archivo de imagen.' });
+    }
+
+    const relativePath = `/uploads/auditorios/${req.file.filename}`;
+
+    // Determine query condition based on groupKey
+    let condition = {};
+    if (groupKey === 'aemg') {
+      condition = { asignacion: 'AEMG', tipo_espacio: 'Auditorios' };
+    } else if (groupKey === 'san_francisco') {
+      condition = { descripcion: { [Op.iLike]: '%SAN FRANCISCO%' }, tipo_espacio: 'Auditorios' };
+    } else if (groupKey === 'santa_clara') {
+      condition = { descripcion: { [Op.iLike]: '%Santa Clara%' }, tipo_espacio: 'Auditorios' };
+    } else if (groupKey === 'vaf') {
+      condition = { asignacion: 'Vicerrectoría Administrativa Financiera', tipo_espacio: 'Auditorios' };
+    } else {
+      return res.status(400).json({ success: false, message: 'Clave de grupo de auditorio inválida.' });
+    }
+
+    const [updatedCount] = await PoblacionalInfraestructuraFisica.update(
+      { foto_url: relativePath },
+      { where: condition }
+    );
+
+    return res.json({
+      success: true,
+      message: 'Imagen del auditorio actualizada exitosamente.',
+      data: {
+        foto_url: relativePath,
+        updatedCount
+      }
+    });
+  } catch (error) {
+    console.error('Error al subir foto del auditorio:', error);
+    return res.status(500).json({ success: false, message: 'Error interno al subir la foto del auditorio.' });
+  }
+};
+
 module.exports = {
+  uploadAuditorioFoto,
   getEstadisticas,
   getMatriculadosIncidencias,
   getResumen,
@@ -9275,7 +10003,12 @@ module.exports = {
   getInfraestructuras,
   createInfraestructura,
   updateInfraestructura,
-  deleteInfraestructura
+  deleteInfraestructura,
+  uploadInfraestructuraTemplate,
+  getEdificacionesReferencia,
+  createEdificacionReferencia,
+  updateEdificacionReferencia,
+  deleteEdificacionReferencia
 };
 
 

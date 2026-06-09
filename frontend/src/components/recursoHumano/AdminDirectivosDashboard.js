@@ -90,8 +90,13 @@ const sortPeriods = (arr) => {
   return [...arr].sort((a, b) => {
     const [ya, pa] = String(a).split(/\s+/);
     const [yb, pb] = String(b).split(/\s+/);
-    return Number(yb || 0) - Number(ya || 0) || (ord[pa] || 9) - (ord[pb] || 9);
+    return Number(yb || 0) - Number(ya || 0) || (ord[pb] || 9) - (ord[pa] || 9);
   });
+};
+
+const getPeriodYear = (periodLabel) => {
+  const match = String(periodLabel || '').match(/\b(19|20)\d{2}\b/);
+  return match ? match[0] : '';
 };
 
 const uniq = (rows, fn) =>
@@ -679,13 +684,15 @@ function AdminDirectivosDashboard({ onBack }) {
   const [loading, setLoading]  = useState(true);
   const [allData, setAllData]  = useState(null);
   const [filters, setFilters]  = useState(emptyF);
+  const [initialPeriodApplied, setInitialPeriodApplied] = useState(false);
 
   const fetchData = useCallback(async () => {
     setLoading(true);
     try {
       const res = await gestionInformacionService.getEstadisticas({
         categoria: 'Recurso Humano',
-        aggregate: 'recurso_humano_dashboard'
+        aggregate: 'recurso_humano_dashboard',
+        scope: 'administrativos'
       });
       setAllData(res?.data || null);
     } catch (err) {
@@ -710,6 +717,19 @@ function AdminDirectivosDashboard({ onBack }) {
       vicerectorias: uniq(adminRows, (r) => r.vicerectoria)
     };
   }, [adminRows, filters.anio]);
+
+  useEffect(() => {
+    if (initialPeriodApplied || !adminRows.length) return;
+    const activePeriod = filterOpts.periodos[0] || '';
+    const activeYear = getPeriodYear(activePeriod) || filterOpts.anios[filterOpts.anios.length - 1] || '';
+    if (!activeYear && !activePeriod) return;
+    setFilters((prev) => ({
+      ...prev,
+      anio: activeYear,
+      periodo: activePeriod
+    }));
+    setInitialPeriodApplied(true);
+  }, [adminRows.length, filterOpts.anios, filterOpts.periodos, initialPeriodApplied]);
 
   const filtAdmin = useMemo(() => adminRows.filter((r) => {
     if (filters.anio         && getYear(r)        !== filters.anio)         return false;
@@ -750,7 +770,7 @@ function AdminDirectivosDashboard({ onBack }) {
   }), [filtOndas]);
 
   const getGrado = (row) =>
-    nt(row?.raw_data?.GRADO || row?.raw_data?.grado || row?.cargo_especifico) || 'Sin información';
+    nt(row?.grado || row?.cargo_especifico) || 'Sin información';
 
   const gradoM = useMemo(() => {
     const byGrado = groupBy(filtAdmin, getGrado);

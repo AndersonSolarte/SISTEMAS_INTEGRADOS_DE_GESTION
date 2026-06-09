@@ -32,10 +32,10 @@ const LABELS = {
 
 const COLORS = {
   'RAZONAMIENTO CUANTITATIVO': '#2563eb',
-  'LECTURA CRITICA': '#0891b2',
-  'COMUNICACION ESCRITA': '#7c3aed',
-  'INGLES': '#059669',
-  'COMPETENCIAS CIUDADANAS': '#dc2626'
+  'LECTURA CRITICA': '#7d2346',
+  'COMUNICACION ESCRITA': '#014B43',
+  'INGLES': '#053484',
+  'COMPETENCIAS CIUDADANAS': '#B3081F'
 };
 
 const norm = (s) =>
@@ -66,11 +66,11 @@ async function captureToCanvas(chartId, lines, grupoRef) {
   ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, cW, cH);
 
   lines.forEach((line, i) => {
-    ctx.fillStyle = i === 0 ? '#0f172a' : '#64748b';
+    ctx.fillStyle = i === 0 ? '#000000' : '#64748b';
     ctx.font = i === 0
-      ? 'bold 13px -apple-system,BlinkMacSystemFont,"Segoe UI",Arial,sans-serif'
-      : '600 11px -apple-system,BlinkMacSystemFont,"Segoe UI",Arial,sans-serif';
-    ctx.fillText(line, PAD, PAD + 13 + i * 17);
+      ? 'bold 15px "Arial Narrow", Arial, sans-serif'
+      : '600 12px "Arial Narrow", Arial, sans-serif';
+    ctx.fillText(line, PAD, PAD + 14 + i * 18);
   });
 
   if (grupoRef != null) {
@@ -79,7 +79,7 @@ async function captureToCanvas(chartId, lines, grupoRef) {
     ctx.beginPath(); ctx.moveTo(PAD, fy); ctx.lineTo(PAD + 22, fy); ctx.stroke();
     ctx.setLineDash([]);
     ctx.fillStyle = '#b45309';
-    ctx.font = '600 10px Arial,sans-serif';
+    ctx.font = '600 10px "Arial Narrow", Arial, sans-serif';
     ctx.fillText('Grupo de referencia', PAD + 26, fy + 4);
   }
 
@@ -120,7 +120,7 @@ async function pushToClipboard(canvas) {
 async function captureSection(infos) {
   const canvases = [];
   for (const info of infos) {
-    try { canvases.push(await captureToCanvas(info.id, [info.label, String(info.year)], info.grupoRef)); }
+    try { canvases.push(await captureToCanvas(info.id, [`${info.label} ${info.year}`], info.grupoRef)); }
     catch (e) { console.warn('skip', info.id, e); }
   }
   if (!canvases.length) throw new Error('nothing captured');
@@ -178,8 +178,8 @@ const RefLineLabel = ({ viewBox, value }) => {
       textAnchor="middle"
       fill="#d97706"
       fontWeight="900"
-      fontSize="13"
-      fontFamily="-apple-system,BlinkMacSystemFont,Segoe UI,Arial,sans-serif"
+      fontSize="14.5"
+      fontFamily='"Arial Narrow", Arial, sans-serif'
     >
       {value}
     </text>
@@ -191,23 +191,30 @@ const BarValueLabel = ({ x, y, width, height, value }) => {
   if (typeof value !== 'number' || !width) return null;
   const label = String(Math.round(value));
   const h2 = (height ?? 0) / 2;
-  if (width >= 36) {
+  if (width >= 40) {
     return (
-      <text x={x + width - 5} y={y + h2} dy="0.35em"
-        fill="rgba(255,255,255,0.95)" fontSize={10} fontWeight="800" textAnchor="end"
-        fontFamily="-apple-system,BlinkMacSystemFont,Segoe UI,Arial,sans-serif">
+      <text x={x + width - 6} y={y + h2} dy="0.35em"
+        fill="rgba(255,255,255,0.98)" fontSize={13} fontWeight="900" textAnchor="end"
+        fontFamily='"Arial Narrow", Arial, sans-serif'>
         {label}
       </text>
     );
   }
   return (
-    <text x={x + width + 5} y={y + h2} dy="0.35em"
-      fill="#1e293b" fontSize={10} fontWeight="800" textAnchor="start"
-      fontFamily="-apple-system,BlinkMacSystemFont,Segoe UI,Arial,sans-serif">
+    <text x={x + width + 6} y={y + h2} dy="0.35em"
+      fill="#000000" fontSize={13} fontWeight="900" textAnchor="start"
+      fontFamily='"Arial Narrow", Arial, sans-serif'>
       {label}
     </text>
   );
 };
+
+/* ── Cuadrícula Personalizada ── */
+const CustomCartesianGrid = ({ horizontalPoints, ...props }) => {
+  const filteredPoints = horizontalPoints ? horizontalPoints.filter((_, idx) => idx % 2 === 0) : [];
+  return <CartesianGrid {...props} horizontalPoints={filteredPoints} />;
+};
+CustomCartesianGrid.displayName = 'CartesianGrid';
 
 /* ── Gráfica individual ── */
 function ChartAnio({ anio, programas, grupoReferencia, color, competenciaLabel, chartId, onCopy }) {
@@ -222,17 +229,14 @@ function ChartAnio({ anio, programas, grupoReferencia, color, competenciaLabel, 
   const pad = Math.max(sp * 0.07, 3);
   const domain = [Math.max(0, Math.floor(mn - pad)), Math.ceil(mx + pad)];
   const chartH = Math.max(220, data.length * (BAR + 10) + 50);
-  const yW = Math.min(195, Math.max(110, Math.max(...data.map((d) => d.programa.length)) * 6.4));
+  const yW = Math.min(240, Math.max(120, Math.max(...data.map((d) => d.programa.length)) * 7.6));
 
   return (
     <Paper id={chartId} elevation={0} sx={{ p: 2, borderRadius: 2.5, border: '1px solid #e2e8f0', bgcolor: '#fff', overflow: 'hidden' }}>
-      <Stack direction="row" justifyContent="space-between" alignItems="flex-start" sx={{ mb: 0.5 }}>
-        <Box>
-          <Typography sx={{ fontWeight: 900, fontSize: 13.5, color: '#0f172a', letterSpacing: '-0.01em', lineHeight: 1.2 }}>
-            {competenciaLabel}
-          </Typography>
-          <Typography sx={{ fontSize: 12, color: '#64748b', fontWeight: 700, mt: 0.2 }}>{anio}</Typography>
-        </Box>
+      <Stack direction="row" justifyContent="space-between" alignItems="center" sx={{ mb: 1.5 }}>
+        <Typography sx={{ fontWeight: 900, fontSize: 15.5, color: '#000000', letterSpacing: '-0.01em', fontFamily: '"Arial Narrow", Arial, sans-serif' }}>
+          {competenciaLabel} {anio}
+        </Typography>
         <MuiTooltip title="Copiar gráfica" placement="top">
           <IconButton size="small" onClick={onCopy} sx={{ color: '#94a3b8', '&:hover': { color, bgcolor: `${color}10` } }}>
             <ContentCopyRoundedIcon sx={{ fontSize: 16 }} />
@@ -241,14 +245,14 @@ function ChartAnio({ anio, programas, grupoReferencia, color, competenciaLabel, 
       </Stack>
 
       <ResponsiveContainer width="100%" height={chartH}>
-        <BarChart data={data} layout="vertical" margin={{ top: 26, right: 58, left: 4, bottom: 2 }}>
-          <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" horizontal={false} />
-          <XAxis type="number" domain={domain} tick={{ fontSize: 10, fill: '#94a3b8' }} axisLine={false} tickLine={false} tickCount={5} />
-          <YAxis dataKey="programa" type="category" tick={{ fontSize: 10.5, fill: '#475569', fontWeight: 600 }} axisLine={false} tickLine={false} width={yW} />
+        <BarChart data={data} layout="vertical" margin={{ top: 26, right: 58, left: 4, bottom: 2 }} style={{ fontFamily: '"Arial Narrow", Arial, sans-serif' }}>
+          <CustomCartesianGrid stroke="#cbd5e1" strokeDasharray="4 4" strokeOpacity={0.75} />
+          <XAxis type="number" domain={domain} tick={{ fontSize: 12, fill: '#64748b', fontWeight: 700, fontFamily: '"Arial Narrow", Arial, sans-serif' }} axisLine={false} tickLine={false} tickCount={6} />
+          <YAxis dataKey="programa" type="category" tick={{ fontSize: 12.5, fill: '#1e293b', fontWeight: 700, fontFamily: '"Arial Narrow", Arial, sans-serif' }} axisLine={false} tickLine={false} width={yW} />
           <Tooltip content={<CustomTooltip />} cursor={{ fill: '#f8fafc' }} />
           <Bar dataKey="puntaje" name="Programa" radius={[0, 3, 3, 0]} barSize={BAR} isAnimationActive={false}>
             {data.map((entry, idx) => (
-              <Cell key={idx} fill={grupoReferencia == null || entry.puntaje >= grupoReferencia ? color : `${color}65`} />
+              <Cell key={idx} fill={grupoReferencia == null || entry.puntaje >= grupoReferencia ? color : `${color}e6`} />
             ))}
             <LabelList dataKey="puntaje" content={BarValueLabel} />
           </Bar>
@@ -317,7 +321,7 @@ function ComparativoResultadosProgramas() {
 
   const handleCopyChart = useCallback((chartId, label, year, grupoRef) => {
     doWithCopying(async () => {
-      const canvas = await captureToCanvas(chartId, [label, String(year)], grupoRef);
+      const canvas = await captureToCanvas(chartId, [`${label} ${year}`], grupoRef);
       return pushToClipboard(canvas);
     });
   }, [doWithCopying]);

@@ -294,6 +294,8 @@ const runMigrations = async () => {
     await models.RecursoHumanoAdministrativo.sync();
     await models.RecursoHumanoOutsourcing.sync();
     await models.RecursoHumanoOnda.sync();
+    await models.InternacionalizacionMovilidad.sync();
+    await models.InternacionalizacionConvenio.sync();
     await models.RefDepartamento.sync();
     await models.RefMunicipio.sync();
     await models.RefDivipolaCarga.sync();

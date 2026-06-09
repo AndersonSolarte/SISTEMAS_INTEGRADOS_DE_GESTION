@@ -120,7 +120,7 @@ const uploadsStaticOptions = {
   maxAge: '5m',
   setHeaders(res) {
     res.setHeader('X-Content-Type-Options', 'nosniff');
-    res.setHeader('Cross-Origin-Resource-Policy', 'same-origin');
+    res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
   }
 };
 

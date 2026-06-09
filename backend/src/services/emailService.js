@@ -324,8 +324,42 @@ const sendTemporaryPasswordEmail = async (user, tempPassword) => {
   }
 };
 
+const sendInstitutionalEmail = async ({ to, subject, text, html, attachments = [], replyTo = '' }) => {
+  const recipients = Array.isArray(to) ? to : [to];
+  const safeRecipients = recipients.map(normalizeRecipient);
+
+  const smtpConfigError = getSmtpConfigError();
+  if (smtpConfigError) {
+    return { success: false, error: smtpConfigError };
+  }
+
+  const mailOptions = {
+    from: resolveMailFrom(),
+    to: safeRecipients.join(', '),
+    subject,
+    text,
+    html,
+    attachments
+  };
+
+  if (replyTo) {
+    mailOptions.replyTo = normalizeRecipient(replyTo);
+  }
+
+  try {
+    await transporter.sendMail(mailOptions);
+    return { success: true };
+  } catch (error) {
+    console.error('Error enviando correo institucional:', error);
+    return { success: false, error: error.message };
+  }
+};
+
 module.exports = {
   sendWelcomeEmail,
   sendPasswordResetEmail,
-  sendTemporaryPasswordEmail
+  sendTemporaryPasswordEmail,
+  sendInstitutionalEmail,
+  renderInstitutionalTemplate,
+  escapeHtml
 };

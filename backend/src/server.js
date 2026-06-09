@@ -23,7 +23,7 @@ app.disable('x-powered-by');
 app.set('trust proxy', 1);
 
 app.use(helmet({
-  crossOriginResourcePolicy: { policy: 'same-origin' },
+  crossOriginResourcePolicy: { policy: 'cross-origin' },
   referrerPolicy: { policy: 'no-referrer' }
 }));
 app.use(cors(corsOptions));
@@ -51,6 +51,7 @@ app.use('/api/planeacion/plan-accion-workflow', require('./routes/planAccionWork
 app.use('/api/autoevaluacion/instrumentos', require('./routes/instrumentosRoutes'));
 app.use('/api/public/instrumentos', require('./routes/publicInstrumentosRoutes'));
 app.use('/api/security', require('./routes/securityRoutes'));
+app.use('/api/reporte-salida', require('./routes/reporteSalidaRoutes'));
 app.use('/api/planeacion/gestion-informacion/saber-pro', require('./routes/saberProAnalyticsRoutes'));
 app.use('/api/planeacion/gestion-informacion/saber-pro/consulta', require('./routes/consultaValidacionRoutes'));
 app.use('/api/admin/activity', require('./routes/activityRoutes'));
@@ -232,6 +233,10 @@ testConnection()
       await SecurityFinding.sync();
       await SecurityRemediationProposal.sync();
       await SecurityFindingComment.sync();
+      const ReporteSalidaSolicitud = require('./models/ReporteSalidaSolicitud');
+      const SystemSetting = require('./models/SystemSetting');
+      await ReporteSalidaSolicitud.sync();
+      await SystemSetting.sync();
       console.log('[gestion-informacion] Tablas autoevaluacion listas.');
     } catch (e) {
       console.warn('[gestion-informacion] No se pudo sincronizar autoevaluacion:', e?.message);

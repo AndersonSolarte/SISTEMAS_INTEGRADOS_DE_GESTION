@@ -78,28 +78,32 @@ function RendimientoCompetenciasContainer() {
         <Tabs
           value={grupo}
           onChange={(_, v) => setGrupo(v)}
-          variant="scrollable"
-          scrollButtons="auto"
+          variant="fullWidth"
           sx={{
-            minHeight: 44,
+            bgcolor: '#f1f5f9',
+            p: 0.5,
+            borderRadius: 2.2,
+            minHeight: 46,
+            mb: 1.2,
             '& .MuiTabs-indicator': {
-              height: 3,
-              borderRadius: '3px 3px 0 0',
-              background: `linear-gradient(90deg, ${activeTab.color} 0%, ${activeTab.colorDark} 100%)`
+              display: 'none'
             },
             '& .MuiTab-root': {
-              minHeight: 44,
+              minHeight: 38,
               textTransform: 'none',
-              fontWeight: 700,
-              fontSize: 13,
+              fontWeight: 800,
+              fontSize: 13.5,
               color: '#64748b',
-              letterSpacing: '-0.01em',
-              px: 2,
-              gap: 0.8,
-              transition: 'color 0.15s, background-color 0.15s',
-              '&:hover': { bgcolor: '#f8fafc', color: '#0f172a' }
-            },
-            '& .Mui-selected': { color: `${activeTab.colorDark} !important` }
+              borderRadius: 1.8,
+              gap: 1,
+              transition: 'all 0.2s ease-in-out',
+              '&:hover': { color: '#0f172a', bgcolor: 'rgba(255,255,255,0.4)' },
+              '&.Mui-selected': {
+                bgcolor: '#ffffff',
+                color: `${activeTab.colorDark} !important`,
+                boxShadow: '0 4px 12px rgba(15,23,42,0.06)'
+              }
+            }
           }}
         >
           {TABS.map((t) => {
@@ -114,14 +118,15 @@ function RendimientoCompetenciasContainer() {
                     sx={{
                       width: 24,
                       height: 24,
-                      borderRadius: 1.4,
+                      borderRadius: 1.2,
                       display: 'grid',
                       placeItems: 'center',
-                      bgcolor: selected ? t.soft : '#f1f5f9',
-                      transition: 'background-color 0.15s'
+                      bgcolor: selected ? t.soft : '#ffffff',
+                      boxShadow: selected ? 'none' : '0 1px 3px rgba(0,0,0,0.05)',
+                      transition: 'all 0.15s'
                     }}
                   >
-                    <Icon sx={{ fontSize: 15, color: selected ? t.colorDark : '#64748b' }} />
+                    <Icon sx={{ fontSize: 14.5, color: selected ? t.colorDark : '#64748b' }} />
                   </Box>
                 }
                 iconPosition="start"
