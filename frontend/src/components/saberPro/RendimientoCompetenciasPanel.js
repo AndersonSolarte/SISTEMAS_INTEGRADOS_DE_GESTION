@@ -36,7 +36,6 @@ import {
   CartesianGrid,
   Tooltip as RechartsTooltip,
   Legend,
-  ReferenceLine,
   LabelList
 } from 'recharts';
 import { useSnackbar } from 'notistack';
@@ -134,40 +133,7 @@ const RenderLineLabelBelow = (props) => {
   );
 };
 
-async function copyTextToClipboard(text) {
-  if (navigator.clipboard?.writeText) {
-    await navigator.clipboard.writeText(text);
-    return;
-  }
-  const ta = document.createElement('textarea');
-  ta.value = text;
-  ta.style.position = 'fixed';
-  ta.style.left = '-9999px';
-  document.body.appendChild(ta);
-  ta.focus();
-  ta.select();
-  document.execCommand('copy');
-  document.body.removeChild(ta);
-}
 
-async function copyRichTableToClipboard(html, text) {
-  if (navigator.clipboard?.write && window.ClipboardItem) {
-    await navigator.clipboard.write([
-      new ClipboardItem({
-        'text/html': new Blob([html], { type: 'text/html' }),
-        'text/plain': new Blob([text], { type: 'text/plain' })
-      })
-    ]);
-    return;
-  }
-  await copyTextToClipboard(text);
-}
-
-const escapeHtml = (value) => String(value ?? '')
-  .replace(/&/g, '&amp;')
-  .replace(/</g, '&lt;')
-  .replace(/>/g, '&gt;')
-  .replace(/"/g, '&quot;');
 
 async function copyChartSvgAsImage(containerId) {
   const container = document.getElementById(containerId);
@@ -203,6 +169,43 @@ async function copyChartSvgAsImage(containerId) {
   a.click();
   document.body.removeChild(a);
   setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+}
+
+async function copyTableAsImage(tableId) {
+  const container = document.getElementById(tableId);
+  if (!container) throw new Error('table-not-found');
+
+  const canvas = await html2canvas(container, {
+    backgroundColor: '#ffffff',
+    scale: Math.min(window.devicePixelRatio || 1, 2),
+    useCORS: true,
+    onclone: (doc) => {
+      const cloned = doc.getElementById(tableId);
+      if (!cloned) return;
+      cloned.style.fontFamily = 'Arial, Helvetica, sans-serif';
+      cloned.style.backgroundColor = '#ffffff';
+      cloned.querySelectorAll('*').forEach((node) => {
+        node.style.fontFamily = 'Arial, Helvetica, sans-serif';
+      });
+    }
+  });
+
+  const pngBlob = await new Promise((resolve) => canvas.toBlob(resolve, 'image/png'));
+  if (!pngBlob) throw new Error('blob-failed');
+
+  if (navigator.clipboard?.write && window.ClipboardItem) {
+    await navigator.clipboard.write([new ClipboardItem({ 'image/png': pngBlob })]);
+    return 'clipboard';
+  }
+
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(pngBlob);
+  a.download = 'tabla_matriz_competencias.png';
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+  return 'download';
 }
 
 function RendimientoCompetenciasPanel({ grupo = 'genericas' }) {
@@ -320,71 +323,13 @@ function RendimientoCompetenciasPanel({ grupo = 'genericas' }) {
   };
 
   const handleCopyTable = useCallback(async () => {
-    const headers = ['Competencia', ...aniosVisibles.map(String), 'Promedio'];
-    const formatCopyNumber = (value) => Number.isFinite(Number(value)) ? Number(value).toFixed(1).replace('.', ',') : '';
-    const rows = matrizOrdenada.map((row) => [
-      row.competencia,
-      ...aniosVisibles.map((anio) => formatCopyNumber(row.byYear?.[anio]?.programa)),
-      formatCopyNumber(row.promedio)
-    ]);
-    const promedioValues = Object.values(promedioRow.byYear || {})
-      .map((c) => c?.programa)
-      .filter((v) => Number.isFinite(Number(v)));
-    const promedioFinal = promedioValues.length
-      ? (promedioValues.reduce((acc, value) => acc + Number(value), 0) / promedioValues.length).toFixed(1).replace('.', ',')
-      : '';
-    rows.push([
-      'PROMEDIO',
-      ...aniosVisibles.map((anio) => formatCopyNumber(promedioRow.byYear?.[anio]?.programa)),
-      promedioFinal
-    ]);
-
-    const text = [
-      headers.join('\t'),
-      ...rows.map((row) => row.join('\t')),
-      '',
-      'Fuente: ICFES'
-    ].join('\n');
-    const html = `
-      <div style="font-family:Arial,Helvetica,sans-serif;color:#0f172a;">
-        <table style="border-collapse:collapse;width:100%;font-size:12px;mso-table-lspace:0pt;mso-table-rspace:0pt;">
-          <thead>
-            <tr style="background:#1f5bd8;color:#ffffff;">
-              ${headers.map((header, index) => `
-                <th style="border:1px solid #1f5bd8;padding:7px 9px;text-align:${index === 0 ? 'left' : 'center'};font-weight:800;white-space:nowrap;">
-                  ${escapeHtml(header)}
-                </th>
-              `).join('')}
-            </tr>
-          </thead>
-          <tbody>
-            ${rows.map((row, rowIndex) => {
-              const isPromedio = row[0] === 'PROMEDIO';
-              return `
-                <tr style="background:${isPromedio ? '#eef2f7' : '#ffffff'};">
-                  ${row.map((cell, index) => `
-                    <td style="border:1px solid #dbe3ef;padding:7px 9px;text-align:${index === 0 ? 'left' : 'center'};font-weight:${isPromedio || index === row.length - 1 ? '800' : '600'};color:${index === row.length - 1 ? '#1e3a8a' : '#0f172a'};white-space:${index === 0 ? 'nowrap' : 'normal'};">
-                      ${escapeHtml(cell)}
-                    </td>
-                  `).join('')}
-                </tr>
-              `;
-            }).join('')}
-          </tbody>
-        </table>
-        <div style="font-size:11px;color:#475569;margin-top:8px;">
-          Fuente: <strong>ICFES</strong>
-        </div>
-      </div>
-    `;
-
     try {
-      await copyRichTableToClipboard(html, text);
-      enqueueSnackbar('Tabla copiada con formato limpio', { variant: 'success' });
+      const result = await copyTableAsImage('saberpro-matriz-table');
+      enqueueSnackbar(result === 'clipboard' ? 'Tabla copiada al portapapeles como imagen' : 'Tabla descargada como imagen', { variant: 'success' });
     } catch (_error) {
       enqueueSnackbar('No se pudo copiar la tabla', { variant: 'warning' });
     }
-  }, [aniosVisibles, enqueueSnackbar, matrizOrdenada, promedioRow]);
+  }, [enqueueSnackbar]);
 
   const handleCopyChart = useCallback(async () => {
     try {
@@ -582,7 +527,7 @@ function RendimientoCompetenciasPanel({ grupo = 'genericas' }) {
           </Box>
         ) : (
           <Box sx={{ overflowX: 'auto', borderRadius: 2, border: '1px solid #e2e8f0' }}>
-            <Box component="table" sx={{
+            <Box id="saberpro-matriz-table" component="table" sx={{
               width: '100%',
               borderCollapse: 'collapse',
               fontSize: 12.5
