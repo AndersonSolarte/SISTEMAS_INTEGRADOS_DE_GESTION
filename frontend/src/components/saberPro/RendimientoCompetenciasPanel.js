@@ -344,7 +344,7 @@ function RendimientoCompetenciasPanel({ grupo = 'genericas' }) {
       return aniosVisibles.some((anio) => {
         const cell = row.byYear?.[anio];
         if (!cell) return false;
-        const v = cell.programa ?? cell.institucion ?? null;
+        const v = cell.programa;
         return v != null && Number.isFinite(Number(v));
       });
     });
@@ -362,7 +362,7 @@ function RendimientoCompetenciasPanel({ grupo = 'genericas' }) {
       let principal = null;
       let grupoRef = null;
       if (activeRow) {
-        principal = activeRow.byYear?.[anio]?.programa ?? activeRow.byYear?.[anio]?.institucion ?? null;
+        principal = activeRow.byYear?.[anio]?.programa ?? null;
         grupoRef = activeRow.byYear?.[anio]?.grupo ?? null;
       } else {
         principal = promedioRow.byYear?.[anio]?.programa ?? null;
