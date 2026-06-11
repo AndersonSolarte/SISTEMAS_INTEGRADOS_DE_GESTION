@@ -230,6 +230,8 @@ async function copyTableAsImage(tableId) {
       if (!cloned) return;
       cloned.style.fontFamily = 'Arial, Helvetica, sans-serif';
       cloned.style.backgroundColor = '#ffffff';
+      cloned.style.width = 'max-content';
+      cloned.style.overflow = 'hidden';
       cloned.querySelectorAll('*').forEach((node) => {
         node.style.fontFamily = 'Arial, Helvetica, sans-serif';
       });
@@ -580,8 +582,8 @@ function RendimientoCompetenciasPanel({ grupo = 'genericas' }) {
             </Typography>
           </Box>
         ) : (
-          <Box sx={{ overflowX: 'auto', borderRadius: 2, border: '1px solid #e2e8f0' }}>
-            <Box id="saberpro-matriz-table" component="table" sx={{
+          <Box id="saberpro-matriz-table" sx={{ overflowX: 'auto', borderRadius: 2, border: '1px solid #cbd5e1', bgcolor: '#ffffff' }}>
+            <Box component="table" sx={{
               width: '100%',
               borderCollapse: 'collapse',
               fontSize: 12.5
