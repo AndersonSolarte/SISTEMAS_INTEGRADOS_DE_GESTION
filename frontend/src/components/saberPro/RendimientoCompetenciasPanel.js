@@ -98,12 +98,35 @@ function FancyTooltip({ active, payload, label, theme }) {
 }
 
 const RenderLineLabelAbove = (props) => {
-  const { x, y, value } = props || {};
+  const { x, y, value, index, chartData } = props || {};
   if (x == null || y == null || value == null || !Number.isFinite(Number(value))) return null;
+
+  // Default offset is above (-12)
+  let offset = -12;
+
+  if (index != null && Array.isArray(chartData) && chartData[index]) {
+    const item = chartData[index];
+    const valPrincipal = Number(item.principal);
+    const valGrupoRef = Number(item.grupoRef);
+
+    if (Number.isFinite(valPrincipal) && Number.isFinite(valGrupoRef)) {
+      const diff = valPrincipal - valGrupoRef;
+      if (Math.abs(diff) < 3.5) {
+        // If close, higher goes above (-12), lower goes below (+20)
+        // If equal (diff === 0), grupoRef goes below (+20)
+        if (diff > 0) {
+          offset = 20; // lower goes below
+        } else {
+          offset = -12; // higher or equal goes above
+        }
+      }
+    }
+  }
+
   return (
     <text
       x={x}
-      y={y - 12}
+      y={y + offset}
       textAnchor="middle"
       fontSize="11.5"
       fontWeight="800"
@@ -116,12 +139,35 @@ const RenderLineLabelAbove = (props) => {
 };
 
 const RenderLineLabelBelow = (props) => {
-  const { x, y, value } = props || {};
+  const { x, y, value, index, chartData } = props || {};
   if (x == null || y == null || value == null || !Number.isFinite(Number(value))) return null;
+
+  // Default offset is below (+20)
+  let offset = 20;
+
+  if (index != null && Array.isArray(chartData) && chartData[index]) {
+    const item = chartData[index];
+    const valPrincipal = Number(item.principal);
+    const valGrupoRef = Number(item.grupoRef);
+
+    if (Number.isFinite(valPrincipal) && Number.isFinite(valGrupoRef)) {
+      const diff = valPrincipal - valGrupoRef;
+      if (Math.abs(diff) < 3.5) {
+        // If close, higher goes above (-12), lower goes below (+20)
+        // If equal (diff === 0), principal goes above (-12)
+        if (diff >= 0) {
+          offset = -12; // higher or equal goes above
+        } else {
+          offset = 20; // lower goes below
+        }
+      }
+    }
+  }
+
   return (
     <text
       x={x}
-      y={y + 20}
+      y={y + offset}
       textAnchor="middle"
       fontSize="11.5"
       fontWeight="800"
@@ -342,6 +388,14 @@ function RendimientoCompetenciasPanel({ grupo = 'genericas' }) {
 
   const chartEmpty = !chartData.some((d) => Number.isFinite(Number(d.principal)) || Number.isFinite(Number(d.grupoRef)));
   const matrizEmpty = !matrizOrdenada.length;
+
+  const RenderAbove = useMemo(() => {
+    return (props) => <RenderLineLabelAbove {...props} chartData={chartData} />;
+  }, [chartData]);
+
+  const RenderBelow = useMemo(() => {
+    return (props) => <RenderLineLabelBelow {...props} chartData={chartData} />;
+  }, [chartData]);
 
   return (
     <Box sx={{ p: { xs: 1.5, md: 2.5 }, bgcolor: '#f8fafc', minHeight: 'calc(100vh - 120px)' }}>
@@ -794,7 +848,7 @@ function RendimientoCompetenciasPanel({ grupo = 'genericas' }) {
                   activeDot={{ r: 7, fill: REFERENCE_DARK, stroke: '#fff', strokeWidth: 2.4 }}
                   connectNulls
                 >
-                  <LabelList dataKey="grupoRef" content={RenderLineLabelAbove} />
+                  <LabelList dataKey="grupoRef" content={RenderAbove} />
                 </Line>
                 <Line
                   type="linear"
@@ -806,7 +860,7 @@ function RendimientoCompetenciasPanel({ grupo = 'genericas' }) {
                   activeDot={{ r: 8, fill: '#1d4ed8', stroke: '#fff', strokeWidth: 2.6 }}
                   connectNulls
                 >
-                  <LabelList dataKey="principal" content={RenderLineLabelBelow} />
+                  <LabelList dataKey="principal" content={RenderBelow} />
                 </Line>
               </LineChart>
               </ResponsiveContainer>
