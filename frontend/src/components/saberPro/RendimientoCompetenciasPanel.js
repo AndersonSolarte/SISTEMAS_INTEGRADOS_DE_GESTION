@@ -1,4 +1,5 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState, useRef } from 'react';
+import ReactDOM from 'react-dom';
 import {
   Box,
   Paper,
@@ -27,6 +28,8 @@ import TableChartRoundedIcon from '@mui/icons-material/TableChartRounded';
 import CheckCircleRoundedIcon from '@mui/icons-material/CheckCircleRounded';
 import ContentCopyRoundedIcon from '@mui/icons-material/ContentCopyRounded';
 import ImageRoundedIcon from '@mui/icons-material/ImageRounded';
+import SearchRoundedIcon from '@mui/icons-material/SearchRounded';
+import ClearRoundedIcon from '@mui/icons-material/ClearRounded';
 import {
   ResponsiveContainer,
   LineChart,
@@ -285,23 +288,227 @@ async function copyTableAsImage(tableId) {
   return 'download';
 }
 
+function ProgramFilterPanel({ label, options, value, onChange, placeholder, themeColor }) {
+  const [open, setOpen] = useState(false);
+  const [search, setSearch] = useState('');
+  const [visibleOptions, setVisibleOptions] = useState(options);
+  const [portalStyle, setPortalStyle] = useState({});
+  const triggerRef = useRef(null);
+  const dropdownRef = useRef(null);
+
+  const computePosition = useCallback(() => {
+    if (!triggerRef.current) return;
+    const rect = triggerRef.current.getBoundingClientRect();
+    setPortalStyle({
+      position: 'fixed',
+      top: rect.bottom + 6,
+      left: rect.left,
+      width: rect.width,
+      minWidth: 280,
+      zIndex: 9999,
+    });
+  }, []);
+
+  useEffect(() => {
+    setVisibleOptions(options);
+  }, [open, options]);
+
+  useEffect(() => {
+    if (!open) return;
+    computePosition();
+    const onScroll = (event) => {
+      if (dropdownRef.current?.contains(event.target)) return;
+      computePosition();
+    };
+    const onResize = () => computePosition();
+    window.addEventListener('scroll', onScroll, true);
+    window.addEventListener('resize', onResize);
+    return () => {
+      window.removeEventListener('scroll', onScroll, true);
+      window.removeEventListener('resize', onResize);
+    };
+  }, [open, computePosition]);
+
+  useEffect(() => {
+    if (!open) return;
+    const h = (e) => {
+      if (triggerRef.current?.contains(e.target) || dropdownRef.current?.contains(e.target)) return;
+      setOpen(false);
+      setSearch('');
+    };
+    document.addEventListener('mousedown', h);
+    return () => document.removeEventListener('mousedown', h);
+  }, [open]);
+
+  const effectiveOptions = open ? visibleOptions : options;
+  const filtered = effectiveOptions.filter((o) =>
+    o.nombre.toLowerCase().includes(search.toLowerCase())
+  );
+  const selectedIds = value.map((id) => String(id));
+  const allSelected = selectedIds.length === 0;
+  const isSel = (id) => selectedIds.includes(String(id));
+
+  const toggle = (id) => {
+    const key = String(id);
+    onChange(isSel(key) ? selectedIds.filter((vId) => vId !== key) : [...selectedIds, key]);
+  };
+
+  const toggleAll = () => {
+    onChange(allSelected ? effectiveOptions.map((o) => String(o.id)) : []);
+  };
+
+  const displayText = selectedIds.length === 0 
+    ? 'TODOS (INSTITUCIONAL)' 
+    : `${selectedIds.length} SELECCIONADO${selectedIds.length > 1 ? 'S' : ''}`;
+
+  const C = themeColor || '#1d4ed8';
+
+  const dropdownPortal = open ? ReactDOM.createPortal(
+    <div
+      ref={dropdownRef}
+      style={{
+        ...portalStyle,
+        background: '#fff',
+        borderRadius: 10,
+        boxShadow: '0 12px 36px rgba(0,0,0,0.18)',
+        border: '1px solid #cbd5e1',
+        overflow: 'hidden',
+        fontFamily: 'Arial, Helvetica, sans-serif'
+      }}
+    >
+      <div style={{ padding: '8px', borderBottom: '1px solid #f1f5f9' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6, background: '#f8fafc', borderRadius: 6, padding: '6px 10px', border: '1px solid #e2e8f0' }}>
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#94a3b8" strokeWidth="2.5"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+          <input
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder={placeholder || 'Buscar...'}
+            style={{ border: 'none', outline: 'none', background: 'transparent', fontSize: 12.5, flex: 1, color: '#334155', minWidth: 0 }}
+          />
+        </div>
+      </div>
+      <div
+        onClick={toggleAll}
+        style={{ padding: '8px 12px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 8, borderBottom: '1px solid #f1f5f9', background: 'transparent', transition: 'background-color 0.15s' }}
+        onMouseEnter={e => e.currentTarget.style.background='#f1f5f9'}
+        onMouseLeave={e => e.currentTarget.style.background='transparent'}
+      >
+        <div style={{ width: 15, height: 15, flexShrink: 0, borderRadius: 4, border: `2px solid ${allSelected ? C : '#94a3b8'}`, background: allSelected ? C : '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          {allSelected && <svg width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="3.5"><polyline points="20 6 9 17 4 12"/></svg>}
+        </div>
+        <span style={{ fontSize: 11.5, fontWeight: 800, color: C, letterSpacing: '0.02em' }}>SELECCIONAR TODOS ({effectiveOptions.length})</span>
+      </div>
+      <div
+        onWheel={(event) => event.stopPropagation()}
+        style={{ maxHeight: 200, overflowY: 'auto', overscrollBehavior: 'contain', scrollbarWidth: 'thin' }}
+      >
+        {filtered.length === 0 ? (
+          <div style={{ padding: '16px', textAlign: 'center', fontSize: 12.5, color: '#94a3b8' }}>Sin resultados</div>
+        ) : (
+          filtered.map((opt) => (
+            <div
+              key={opt.id}
+              onClick={() => toggle(opt.id)}
+              style={{ padding: '7px 12px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 8, background: 'transparent', transition: 'background-color 0.1s' }}
+              onMouseEnter={e => e.currentTarget.style.background='#f8fafc'}
+              onMouseLeave={e => e.currentTarget.style.background='transparent'}
+            >
+              <div style={{ width: 15, height: 15, flexShrink: 0, borderRadius: 4, border: `2px solid ${isSel(opt.id) ? C : '#cbd5e1'}`, background: isSel(opt.id) ? C : '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                {isSel(opt.id) && <svg width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="3.5"><polyline points="20 6 9 17 4 12"/></svg>}
+              </div>
+              <span style={{ fontSize: 12.5, color: '#334155', fontWeight: isSel(opt.id) ? 700 : 500 }}>{opt.nombre}</span>
+            </div>
+          ))
+        )}
+      </div>
+      <div style={{ padding: '6px 12px', borderTop: '1px solid #e2e8f0', background: '#f8fafc', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        <span style={{ fontSize: 10.5, color: '#64748b', fontWeight: 600 }}>
+          {selectedIds.length > 0 ? `${selectedIds.length} de ${effectiveOptions.length} seleccionados` : `${effectiveOptions.length} opciones`}
+        </span>
+      </div>
+    </div>,
+    document.body
+  ) : null;
+
+  return (
+    <Box ref={triggerRef} sx={{ position: 'relative', width: '100%' }}>
+      <Box
+        onClick={() => setOpen((o) => !o)}
+        sx={{
+          cursor: 'pointer',
+          borderRadius: '10px',
+          p: '8px 14px',
+          minHeight: 46,
+          bgcolor: selectedIds.length ? '#eff6ff' : '#f8fafc',
+          border: `1.5px solid ${selectedIds.length ? C : '#cbd5e1'}`,
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          gap: 1.5,
+          transition: 'all 0.15s',
+          userSelect: 'none',
+          '&:hover': { borderColor: C, bgcolor: selectedIds.length ? '#eff6ff' : '#f1f5f9' }
+        }}
+      >
+        <Box sx={{ minWidth: 0, flex: 1 }}>
+          <Typography sx={{ fontSize: '9px', fontWeight: 800, color: C, letterSpacing: '0.8px', textTransform: 'uppercase', mb: 0.25 }}>
+            {label}
+          </Typography>
+          <Typography sx={{ fontSize: '12.5px', fontWeight: 700, color: '#1e293b', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+            {displayText}
+          </Typography>
+        </Box>
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.8, flexShrink: 0 }}>
+          {selectedIds.length > 0 && (
+            <Box
+              onClick={(e) => {
+                e.stopPropagation();
+                onChange([]);
+              }}
+              sx={{
+                width: 17,
+                height: 17,
+                borderRadius: '50%',
+                bgcolor: C,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                cursor: 'pointer',
+                transition: 'opacity 0.15s',
+                '&:hover': { opacity: 0.85 }
+              }}
+            >
+              <svg width="7" height="7" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="4"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+            </Box>
+          )}
+          <Box sx={{ transition: 'transform 0.15s', transform: open ? 'rotate(180deg)' : 'none', display: 'flex', alignItems: 'center' }}>
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke={C} strokeWidth="3"><polyline points="6 9 12 15 18 9"/></svg>
+          </Box>
+        </Box>
+      </Box>
+      {dropdownPortal}
+    </Box>
+  );
+}
+
 function RendimientoCompetenciasPanel({ grupo = 'genericas' }) {
   const theme = GROUP_THEMES[grupo] || GROUP_THEMES.genericas;
   const HeaderIcon = theme.icon;
   const { enqueueSnackbar } = useSnackbar();
 
-  const [programa, setPrograma] = useState('');
+  const [selectedProgramas, setSelectedProgramas] = useState([]);
+  const [appliedProgramas, setAppliedProgramas] = useState([]);
   const [selectedYears, setSelectedYears] = useState([]);
   const [selectedCompetencia, setSelectedCompetencia] = useState('');
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(false);
 
-  const loadData = useCallback(async (silent = false) => {
+  const loadData = useCallback(async (silent = false, programsToUse = appliedProgramas) => {
     if (!silent) setLoading(true);
     try {
       const response = await saberProAnalyticsService.getAgregadosCompetencias({
         grupo,
-        programas: programa ? [programa] : [],
+        programas: programsToUse,
         anios: []
       });
       const payload = response?.data || {};
@@ -318,15 +525,28 @@ function RendimientoCompetenciasPanel({ grupo = 'genericas' }) {
     } finally {
       if (!silent) setLoading(false);
     }
-  }, [enqueueSnackbar, grupo, programa]);
+  }, [enqueueSnackbar, grupo, appliedProgramas]);
 
   useEffect(() => { loadData(); }, [loadData]);
 
   useEffect(() => {
     setSelectedCompetencia('');
-  }, [grupo, programa]);
+  }, [grupo, appliedProgramas]);
 
   const programasCatalogo = data?.programas || [];
+  const programOptions = useMemo(() => programasCatalogo.map(p => ({ id: p, nombre: p })), [programasCatalogo]);
+
+  const handleApplyFilters = () => {
+    setAppliedProgramas(selectedProgramas);
+    loadData(false, selectedProgramas);
+  };
+
+  const handleClearFilters = () => {
+    setSelectedProgramas([]);
+    setAppliedProgramas([]);
+    setSelectedCompetencia('');
+    loadData(false, []);
+  };
   const aniosDisponibles = useMemo(() => (Array.isArray(data?.aniosPresentes) ? data.aniosPresentes : []), [data]);
   const matriz = useMemo(() => (Array.isArray(data?.matriz) ? data.matriz : []), [data]);
   const promedioRow = useMemo(() => (data?.promedio || { byYear: {} }), [data]);
@@ -389,10 +609,15 @@ function RendimientoCompetenciasPanel({ grupo = 'genericas' }) {
     return [Math.max(0, Math.floor((min - pad) / 2) * 2), Math.min(300, Math.ceil((max + pad) / 2) * 2)];
   }, [chartData]);
 
-  const scopeLabel = programa ? programa : 'Institucional';
-  const scopeIcon = programa ? <SchoolRoundedIcon sx={{ fontSize: 14 }} /> : <GroupsRoundedIcon sx={{ fontSize: 14 }} />;
+  const hasAppliedPrograms = appliedProgramas.length > 0;
+  const scopeLabel = hasAppliedPrograms
+    ? (appliedProgramas.length === 1 ? appliedProgramas[0] : `${appliedProgramas.length} programas`)
+    : 'Institucional';
+  const scopeIcon = hasAppliedPrograms ? <SchoolRoundedIcon sx={{ fontSize: 14 }} /> : <GroupsRoundedIcon sx={{ fontSize: 14 }} />;
 
-  const principalName = programa ? `Programa: ${programa}` : 'Institucional';
+  const principalName = hasAppliedPrograms
+    ? (appliedProgramas.length === 1 ? `Programa: ${appliedProgramas[0]}` : `Programas (${appliedProgramas.length})`)
+    : 'Institucional';
   const chartTitle = activeRow ? activeRow.competencia : 'COMPORTAMIENTO GENERAL (PROMEDIO)';
 
   const brecha = useMemo(() => {
@@ -510,41 +735,86 @@ function RendimientoCompetenciasPanel({ grupo = 'genericas' }) {
 
       {/* ═══════════ FILTROS PRIMARIOS (Tipo prueba + Programa) ═══════════ */}
       <Paper elevation={0} sx={{
-        p: 1.8,
-        borderRadius: 2.5,
-        mb: 2,
-        border: '1px solid #e2e8f0',
-        bgcolor: '#ffffff'
+        p: 2,
+        borderRadius: 3,
+        mb: 2.5,
+        border: '1px solid #cbd5e1',
+        bgcolor: '#ffffff',
+        boxShadow: '0 4px 18px rgba(15,23,42,0.04)'
       }}>
-        <Stack direction={{ xs: 'column', md: 'row' }} spacing={2} alignItems={{ xs: 'stretch', md: 'center' }}>
-          <Stack direction="row" alignItems="center" spacing={1}>
-            <FilterListRoundedIcon sx={{ color: theme.primary, fontSize: 18 }} />
-            <Typography sx={{ fontWeight: 800, fontSize: 13, color: '#0f172a', letterSpacing: '-0.01em' }}>
-              Filtros
-            </Typography>
+        <Stack direction={{ xs: 'column', md: 'row' }} spacing={2} alignItems={{ xs: 'stretch', md: 'center' }} justifyContent="space-between">
+          <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2} alignItems={{ xs: 'stretch', sm: 'center' }} sx={{ flex: 1, maxWidth: 800 }}>
+            <Stack direction="row" alignItems="center" spacing={1} sx={{ mr: 1, flexShrink: 0 }}>
+              <FilterListRoundedIcon sx={{ color: theme.primary, fontSize: 20 }} />
+              <Typography sx={{ fontWeight: 800, fontSize: 13.5, color: '#0f172a', letterSpacing: '-0.01em', textTransform: 'uppercase' }}>
+                Filtros
+              </Typography>
+            </Stack>
+
+            <Box sx={{ flex: 1, minWidth: 280 }}>
+              <ProgramFilterPanel
+                label="Programa académico"
+                options={programOptions}
+                value={selectedProgramas}
+                onChange={setSelectedProgramas}
+                placeholder="Buscar programa académico..."
+                themeColor={theme.primary}
+              />
+            </Box>
           </Stack>
 
-          <FormControl size="small" sx={{ minWidth: 280, flex: 1, maxWidth: 520 }}>
-            <InputLabel>Programa académico</InputLabel>
-            <Select
-              label="Programa académico"
-              value={programa}
-              onChange={(e) => setPrograma(e.target.value)}
-              sx={{ fontSize: 13, fontWeight: 600, bgcolor: '#f8fafc' }}
+          <Stack direction="row" spacing={1.5} alignItems="center" justifyContent={{ xs: 'space-between', md: 'flex-end' }}>
+            <Button
+              variant="contained"
+              startIcon={<SearchRoundedIcon />}
+              onClick={handleApplyFilters}
+              sx={{
+                borderRadius: '8px',
+                textTransform: 'none',
+                fontWeight: 700,
+                py: 1,
+                px: 2.5,
+                fontSize: 13,
+                bgcolor: theme.primary,
+                boxShadow: `0 4px 14px ${theme.primary}33`,
+                '&:hover': {
+                  bgcolor: theme.primaryDark || theme.primary,
+                  boxShadow: 'none'
+                }
+              }}
             >
-              <MenuItem value=""><em>Todos (Institucional)</em></MenuItem>
-              {programasCatalogo.map((p) => (
-                <MenuItem key={p} value={p} sx={{ fontSize: 13 }}>{p}</MenuItem>
-              ))}
-            </Select>
-          </FormControl>
-
-          <Tooltip title="Haga clic en una fila de la tabla para ver su línea de tendencia. Sin selección se muestra el promedio del alcance actual." arrow>
-            <Stack direction="row" alignItems="center" spacing={0.6} sx={{ cursor: 'help' }}>
-              <InfoRoundedIcon sx={{ color: '#94a3b8', fontSize: 18 }} />
-              <Typography sx={{ fontSize: 11.5, color: '#64748b', fontWeight: 600 }}>Ayuda</Typography>
-            </Stack>
-          </Tooltip>
+              Buscar
+            </Button>
+            <Button
+              variant="outlined"
+              startIcon={<ClearRoundedIcon sx={{ fontSize: 15 }} />}
+              onClick={handleClearFilters}
+              sx={{
+                borderRadius: '8px',
+                textTransform: 'none',
+                fontWeight: 600,
+                py: 0.9,
+                px: 2,
+                fontSize: 12.5,
+                borderColor: '#cbd5e1',
+                color: '#64748b',
+                bgcolor: '#f8fafc',
+                '&:hover': {
+                  borderColor: '#94a3b8',
+                  color: '#1e293b',
+                  bgcolor: '#f1f5f9'
+                }
+              }}
+            >
+              Limpiar
+            </Button>
+            <Tooltip title="Selecciona uno o más programas y haz clic en Buscar para filtrar. Si limpias los filtros, se mostrará el promedio institucional global." arrow>
+              <Stack direction="row" alignItems="center" spacing={0.5} sx={{ cursor: 'help', ml: 1, flexShrink: 0 }}>
+                <InfoRoundedIcon sx={{ color: '#94a3b8', fontSize: 19 }} />
+                <Typography sx={{ fontSize: 11.5, color: '#64748b', fontWeight: 700 }}>Ayuda</Typography>
+              </Stack>
+            </Tooltip>
+          </Stack>
         </Stack>
       </Paper>
 
@@ -575,44 +845,53 @@ function RendimientoCompetenciasPanel({ grupo = 'genericas' }) {
             </Box>
           </Stack>
 
-          {/* Selector de años local */}
-          <Stack direction="row" spacing={0.8} alignItems="center" flexWrap="wrap" useFlexGap>
+          {/* Selector de años local (Segmented Control) */}
+          <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1.5} alignItems={{ xs: 'stretch', sm: 'center' }} flexWrap="wrap" useFlexGap sx={{ mt: { xs: 1, md: 0 } }}>
             <Button
               size="small"
               variant="outlined"
               startIcon={<ContentCopyRoundedIcon sx={{ fontSize: 15 }} />}
               onClick={handleCopyTable}
               disabled={matrizEmpty}
-              sx={{ textTransform: 'none', fontWeight: 800, borderRadius: 2, fontSize: 11, py: 0.35 }}
+              sx={{ textTransform: 'none', fontWeight: 800, borderRadius: 2, fontSize: 11, py: 0.35, height: 32 }}
             >
               Copiar tabla
             </Button>
-            <Typography sx={{ fontSize: 11, fontWeight: 700, color: '#64748b', letterSpacing: '0.04em', mr: 0.5 }}>AÑOS</Typography>
-            {aniosDisponibles.map((anio) => {
-              const on = selectedYears.includes(anio);
-              return (
-                <Chip
-                  key={anio}
-                  label={anio}
-                  size="small"
-                  clickable
-                  onClick={() => toggleYear(anio)}
-                  sx={{
-                    height: 26,
-                    fontSize: 11.5,
-                    fontWeight: 700,
-                    bgcolor: on ? INSTITUCIONAL_TABLE_BLUE : '#f8fafc',
-                    color: on ? '#fff' : '#334155',
-                    border: on ? `1px solid ${INSTITUCIONAL_TABLE_BLUE}` : '1px solid #dbe3ef',
-                    transition: 'all 0.15s',
-                    '&:hover': {
-                      bgcolor: on ? INSTITUCIONAL_HEADER_BLUE : '#eaf1fb',
-                      color: on ? '#fff' : '#1e3a8a'
-                    }
-                  }}
-                />
-              );
-            })}
+            
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, flexWrap: 'wrap' }}>
+              <Typography sx={{ fontSize: 11, fontWeight: 800, color: '#64748b', letterSpacing: '0.04em' }}>AÑOS:</Typography>
+              <Box sx={{ display: 'flex', bgcolor: '#f1f5f9', p: 0.4, borderRadius: '8px', border: '1px solid #cbd5e1', flexWrap: 'wrap', gap: 0.25 }}>
+                {aniosDisponibles.map((anio) => {
+                  const active = selectedYears.includes(anio);
+                  return (
+                    <Box
+                      key={anio}
+                      onClick={() => toggleYear(anio)}
+                      role="button"
+                      sx={{
+                        px: 1.4,
+                        py: 0.45,
+                        borderRadius: '6px',
+                        cursor: 'pointer',
+                        userSelect: 'none',
+                        fontSize: 11.5,
+                        fontWeight: 700,
+                        transition: 'all 0.15s',
+                        bgcolor: active ? theme.primary : 'transparent',
+                        color: active ? '#fff' : '#64748b',
+                        boxShadow: active ? `0 2px 8px ${theme.primary}26` : 'none',
+                        '&:hover': {
+                          bgcolor: active ? theme.primary : '#e2e8f0',
+                          color: active ? '#fff' : '#0f172a'
+                        }
+                      }}
+                    >
+                      {anio}
+                    </Box>
+                  );
+                })}
+              </Box>
+            </Box>
           </Stack>
         </Stack>
 
@@ -919,7 +1198,7 @@ function RendimientoCompetenciasPanel({ grupo = 'genericas' }) {
         <Stack data-copy-ignore="true" direction="row" spacing={1} alignItems="flex-start" sx={{ mt: 1.5, p: 1.2, borderRadius: 1.8, bgcolor: '#f8fafc', border: '1px dashed #cbd5e1' }}>
           <InfoRoundedIcon sx={{ color: '#64748b', fontSize: 16, mt: 0.1 }} />
           <Typography sx={{ fontSize: 11.5, color: '#475569', lineHeight: 1.5, fontWeight: 500 }}>
-            La línea <b style={{ color: theme.primary }}>{principalName}</b> representa el puntaje promedio {programa ? 'del programa seleccionado' : 'institucional'}.
+            La línea <b style={{ color: theme.primary }}>{principalName}</b> representa el puntaje promedio {hasAppliedPrograms ? 'del alcance seleccionado' : 'institucional'}.
             La línea <b style={{ color: REFERENCE_DARK }}>Grupo de Referencia</b> corresponde al puntaje promedio nacional del grupo comparable reportado por el ICFES.
             Valores positivos en la brecha indican desempeño por encima del grupo de referencia.
           </Typography>
