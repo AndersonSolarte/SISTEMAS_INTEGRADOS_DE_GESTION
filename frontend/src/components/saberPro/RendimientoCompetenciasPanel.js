@@ -331,15 +331,26 @@ function RendimientoCompetenciasPanel({ grupo = 'genericas' }) {
   const matriz = useMemo(() => (Array.isArray(data?.matriz) ? data.matriz : []), [data]);
   const promedioRow = useMemo(() => (data?.promedio || { byYear: {} }), [data]);
 
-  const matrizOrdenada = useMemo(() => {
-    if (!matriz.length) return [];
-    return [...matriz].sort((a, b) => (b.promedio || 0) - (a.promedio || 0));
-  }, [matriz]);
-
   const aniosVisibles = useMemo(
     () => (selectedYears.length ? [...selectedYears].sort((a, b) => a - b) : aniosDisponibles),
     [selectedYears, aniosDisponibles]
   );
+
+  const matrizOrdenada = useMemo(() => {
+    if (!matriz.length) return [];
+    
+    // Filter out rows that have absolutely no data for any of the currently visible years
+    const filtered = matriz.filter((row) => {
+      return aniosVisibles.some((anio) => {
+        const cell = row.byYear?.[anio];
+        if (!cell) return false;
+        const v = cell.programa ?? cell.institucion ?? null;
+        return v != null && Number.isFinite(Number(v));
+      });
+    });
+
+    return [...filtered].sort((a, b) => (b.promedio || 0) - (a.promedio || 0));
+  }, [matriz, aniosVisibles]);
 
   const activeRow = useMemo(() => {
     if (!selectedCompetencia) return null;
