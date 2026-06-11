@@ -96,13 +96,9 @@ function RendimientoCompetenciasContainer() {
               color: '#64748b',
               borderRadius: 1.8,
               gap: 1,
+              border: '2px solid transparent',
               transition: 'all 0.2s ease-in-out',
-              '&:hover': { color: '#0f172a', bgcolor: 'rgba(255,255,255,0.4)' },
-              '&.Mui-selected': {
-                bgcolor: '#ffffff',
-                color: `${activeTab.colorDark} !important`,
-                boxShadow: '0 4px 12px rgba(15,23,42,0.06)'
-              }
+              '&:hover': { color: '#0f172a', bgcolor: 'rgba(255,255,255,0.4)' }
             }
           }}
         >
@@ -131,6 +127,14 @@ function RendimientoCompetenciasContainer() {
                 }
                 iconPosition="start"
                 label={t.label}
+                sx={{
+                  '&.Mui-selected': {
+                    bgcolor: '#ffffff',
+                    color: `${t.colorDark} !important`,
+                    borderColor: `${t.color} !important`,
+                    boxShadow: `0 4px 14px ${t.color}26`
+                  }
+                }}
               />
             );
           })}
