@@ -232,6 +232,35 @@ async function copyTableAsImage(tableId) {
       cloned.style.backgroundColor = '#ffffff';
       cloned.style.width = 'max-content';
       cloned.style.overflow = 'hidden';
+
+      // Force cell-specific rounded corners inside html2canvas to workaround container clipping bugs
+      const table = cloned.querySelector('table');
+      if (table) {
+        table.style.borderCollapse = 'separate';
+        table.style.borderSpacing = '0';
+        
+        // Top row (thead th)
+        const theadRow = table.querySelector('thead tr');
+        if (theadRow) {
+          const cells = theadRow.querySelectorAll('th, td');
+          if (cells.length > 0) {
+            cells[0].style.borderTopLeftRadius = '8px';
+            cells[cells.length - 1].style.borderTopRightRadius = '8px';
+          }
+        }
+        
+        // Bottom row (tbody tr:last-child)
+        const tbodyRows = table.querySelectorAll('tbody tr');
+        if (tbodyRows.length > 0) {
+          const lastRow = tbodyRows[tbodyRows.length - 1];
+          const cells = lastRow.querySelectorAll('td, th');
+          if (cells.length > 0) {
+            cells[0].style.borderBottomLeftRadius = '8px';
+            cells[cells.length - 1].style.borderBottomRightRadius = '8px';
+          }
+        }
+      }
+
       cloned.querySelectorAll('*').forEach((node) => {
         node.style.fontFamily = 'Arial, Helvetica, sans-serif';
       });
