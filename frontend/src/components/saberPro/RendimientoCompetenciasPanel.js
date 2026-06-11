@@ -347,7 +347,7 @@ function RendimientoCompetenciasPanel({ grupo = 'genericas' }) {
   }, [selectedCompetencia, matrizOrdenada]);
 
   const chartData = useMemo(() => {
-    return aniosVisibles.map((anio) => {
+    const raw = aniosVisibles.map((anio) => {
       let principal = null;
       let grupoRef = null;
       if (activeRow) {
@@ -359,6 +359,11 @@ function RendimientoCompetenciasPanel({ grupo = 'genericas' }) {
       }
       return { anio, principal, grupoRef };
     });
+    // Filter out years that have no data at all for both lines
+    return raw.filter((d) => 
+      (d.principal != null && Number.isFinite(Number(d.principal))) || 
+      (d.grupoRef != null && Number.isFinite(Number(d.grupoRef)))
+    );
   }, [aniosVisibles, activeRow, promedioRow]);
 
   const chartYDomain = useMemo(() => {
