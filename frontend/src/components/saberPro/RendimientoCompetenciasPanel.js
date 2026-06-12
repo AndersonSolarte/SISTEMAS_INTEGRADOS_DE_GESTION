@@ -20,6 +20,7 @@ import TableChartRoundedIcon from '@mui/icons-material/TableChartRounded';
 import CheckCircleRoundedIcon from '@mui/icons-material/CheckCircleRounded';
 import ContentCopyRoundedIcon from '@mui/icons-material/ContentCopyRounded';
 import ImageRoundedIcon from '@mui/icons-material/ImageRounded';
+import AnalyticsRoundedIcon from '@mui/icons-material/AnalyticsRounded';
 import {
   ResponsiveContainer,
   LineChart,
@@ -691,21 +692,19 @@ function RendimientoCompetenciasPanel({ grupo = 'genericas' }) {
       : null;
   }, [aniosVisibles, promedioRow, grupo]);
 
-  const rankingMinLimit = useMemo(() => {
-    const vals = rankingCompetencias.map((c) => c.promedio);
-    if (promedioGeneralAcumulado != null) vals.push(promedioGeneralAcumulado);
-    if (!vals.length) return 0;
-    const minVal = Math.min(...vals);
-    return Math.max(0, Math.floor((minVal - 15) / 10) * 10);
-  }, [rankingCompetencias, promedioGeneralAcumulado]);
+  const rankingMaxVal = useMemo(() => {
+    if (!rankingCompetencias.length) return 0;
+    return rankingCompetencias[0].promedio;
+  }, [rankingCompetencias]);
 
-  const rankingMaxLimit = useMemo(() => {
-    const vals = rankingCompetencias.map((c) => c.promedio);
-    if (promedioGeneralAcumulado != null) vals.push(promedioGeneralAcumulado);
-    if (!vals.length) return 300;
-    const maxVal = Math.max(...vals);
-    return Math.min(300, Math.ceil((maxVal + 15) / 10) * 10);
-  }, [rankingCompetencias, promedioGeneralAcumulado]);
+  const rankingMinVal = useMemo(() => {
+    if (!rankingCompetencias.length) return 0;
+    return rankingCompetencias[rankingCompetencias.length - 1].promedio;
+  }, [rankingCompetencias]);
+
+  const rankingDiff = useMemo(() => {
+    return rankingMaxVal - rankingMinVal;
+  }, [rankingMaxVal, rankingMinVal]);
 
   const rankingEmpty = rankingCompetencias.length === 0;
 
@@ -1245,49 +1244,18 @@ function RendimientoCompetenciasPanel({ grupo = 'genericas' }) {
           ) : (
             <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.8, py: 1 }}>
               {rankingCompetencias.map((item, index) => {
-                const range = rankingMaxLimit - rankingMinLimit;
-                // Map to [15%, 90%] to keep bars spacious and neat
-                const widthPercent = range > 0
-                  ? ((item.promedio - rankingMinLimit) / range) * 75 + 15
-                  : 15;
+                const widthPercent = rankingDiff > 0
+                  ? 25 + ((item.promedio - rankingMinVal) / rankingDiff) * 70
+                  : 95;
                 const barWidth = animateRanking ? widthPercent : 0;
 
-                const getBadgeStyles = (idx) => {
-                  if (idx === 0) {
-                    return {
-                      background: 'linear-gradient(135deg, #f59e0b, #d97706)',
-                      color: '#ffffff',
-                      boxShadow: '0 2px 8px rgba(217, 119, 6, 0.25)',
-                      border: 'none',
-                      transform: 'scale(1.1)'
-                    };
-                  }
-                  if (idx === 1) {
-                    return {
-                      background: 'linear-gradient(135deg, #94a3b8, #475569)',
-                      color: '#ffffff',
-                      boxShadow: '0 2px 8px rgba(71, 85, 105, 0.25)',
-                      border: 'none',
-                      transform: 'scale(1.05)'
-                    };
-                  }
-                  if (idx === 2) {
-                    return {
-                      background: 'linear-gradient(135deg, #b45309, #78350f)',
-                      color: '#ffffff',
-                      boxShadow: '0 2px 8px rgba(120, 53, 15, 0.25)',
-                      border: 'none',
-                      transform: 'scale(1.02)'
-                    };
-                  }
-                  return {
-                    background: '#f8fafc',
-                    color: '#64748b',
-                    border: '1px solid #cbd5e1',
-                    boxShadow: 'none'
-                  };
+                const badgeStyle = {
+                  background: '#eff6ff',
+                  color: theme.primary,
+                  border: `1.5px solid ${theme.primary}26`,
+                  boxShadow: '0 1px 3px rgba(29, 78, 216, 0.04)',
+                  transition: 'all 0.25s cubic-bezier(0.4, 0, 0.2, 1)'
                 };
-                const badgeStyle = getBadgeStyles(index);
 
                 return (
                   <Box
@@ -1311,10 +1279,7 @@ function RendimientoCompetenciasPanel({ grupo = 'genericas' }) {
                         top: 0,
                         bottom: 0,
                         width: 4,
-                        background: index === 0 ? 'linear-gradient(to bottom, #fbbf24, #f59e0b)' :
-                                    index === 1 ? 'linear-gradient(to bottom, #94a3b8, #64748b)' :
-                                    index === 2 ? 'linear-gradient(to bottom, #b45309, #78350f)' :
-                                    `linear-gradient(to bottom, ${theme.primary}aa, ${theme.primary})`,
+                        background: `linear-gradient(to bottom, ${theme.primary}aa, ${theme.primary})`,
                         borderRadius: '0 4px 4px 0',
                         opacity: 0,
                         transition: 'opacity 0.25s'
@@ -1330,12 +1295,23 @@ function RendimientoCompetenciasPanel({ grupo = 'genericas' }) {
                         '.ranking-bar-fill': {
                           boxShadow: `0 0 12px ${theme.primary}55`,
                           filter: 'brightness(1.05)'
+                        },
+                        '.ranking-badge': {
+                          transform: 'scale(1.08)',
+                          borderColor: theme.primary,
+                          background: theme.primarySoft
+                        },
+                        '.ranking-score-pill': {
+                          transform: 'scale(1.04)',
+                          borderColor: theme.primary,
+                          boxShadow: `0 4px 12px ${theme.primary}22`
                         }
                       }
                     }}
                   >
                     {/* Medalla del Ranking */}
                     <Box
+                      className="ranking-badge"
                       sx={{
                         display: 'flex',
                         alignItems: 'center',
@@ -1346,7 +1322,6 @@ function RendimientoCompetenciasPanel({ grupo = 'genericas' }) {
                         fontWeight: 800,
                         fontSize: '12.5px',
                         flexShrink: 0,
-                        transition: 'all 0.2s',
                         ...badgeStyle
                       }}
                     >
@@ -1356,7 +1331,7 @@ function RendimientoCompetenciasPanel({ grupo = 'genericas' }) {
                     {/* Nombre de la Competencia */}
                     <Box
                       sx={{
-                        width: { xs: 150, sm: 220 },
+                        width: { xs: 190, sm: 270 },
                         px: 1.8,
                         py: 0.8,
                         borderRadius: '10px',
@@ -1376,12 +1351,23 @@ function RendimientoCompetenciasPanel({ grupo = 'genericas' }) {
                     </Box>
 
                     {/* Barra de Progreso y Valor */}
-                    <Box sx={{ flexGrow: 1, display: 'flex', alignItems: 'center', gap: 2 }}>
+                    <Box
+                      sx={{
+                        flexGrow: 1,
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: 2,
+                        position: 'relative',
+                        // Fine vertical grid lines in the background at 25%, 50%, 75%
+                        background: 'linear-gradient(to right, transparent, transparent 25%, #cbd5e122 25%, #cbd5e122 26%, transparent 26%, transparent 50%, #cbd5e122 50%, #cbd5e122 51%, transparent 51%, transparent 75%, #cbd5e122 75%, #cbd5e122 76%, transparent 76%)',
+                        py: 0.6
+                      }}
+                    >
                       <Box
                         sx={{
                           flexGrow: 1,
                           height: 10,
-                          bgcolor: '#f1f5f9',
+                          bgcolor: 'rgba(241, 245, 249, 0.6)',
                           borderRadius: '8px',
                           overflow: 'hidden',
                           position: 'relative',
@@ -1413,25 +1399,21 @@ function RendimientoCompetenciasPanel({ grupo = 'genericas' }) {
                       </Box>
                       {/* Píldora de Puntaje */}
                       <Box
+                        className="ranking-score-pill"
                         sx={{
                           px: 1.6,
                           py: 0.6,
                           borderRadius: '8px',
-                          bgcolor: '#f8fafc',
-                          border: '1.5px solid #cbd5e1',
+                          background: `linear-gradient(135deg, #eff6ff 30%, ${theme.primarySoft} 100%)`,
+                          border: `1.5px solid #bfdbfe`,
                           fontSize: '12.5px',
-                          fontWeight: 800,
-                          color: '#1e293b',
+                          fontWeight: 900,
+                          color: theme.primaryDark,
                           minWidth: 60,
                           textAlign: 'center',
                           flexShrink: 0,
-                          boxShadow: '0 2px 4px rgba(15,23,42,0.02)',
-                          transition: 'all 0.2s',
-                          '&:hover': {
-                            borderColor: theme.primary,
-                            color: theme.primary,
-                            bgcolor: '#ffffff'
-                          }
+                          boxShadow: '0 2px 6px rgba(29, 78, 216, 0.04)',
+                          transition: 'all 0.25s cubic-bezier(0.4, 0, 0.2, 1)'
                         }}
                       >
                         {fmt(item.promedio, 1)}
@@ -1450,14 +1432,14 @@ function RendimientoCompetenciasPanel({ grupo = 'genericas' }) {
                     gap: 2,
                     p: 1.8,
                     borderRadius: '16px',
-                    bgcolor: '#f8fafc',
-                    border: '2px dashed #cbd5e1',
-                    boxShadow: '0 4px 6px -1px rgba(0,0,0,0.01)',
+                    bgcolor: '#f0fdf4',
+                    border: '2px dashed #bbf7d0',
+                    boxShadow: '0 4px 6px -1px rgba(16,185,129,0.02)',
                     transition: 'all 0.3s ease',
                     position: 'relative',
                     '&:hover': {
-                      bgcolor: '#f1f5f9',
-                      borderColor: '#94a3b8',
+                      bgcolor: '#dcfce7',
+                      borderColor: '#86efac',
                       transform: 'translateY(-2px)'
                     }
                   }}
@@ -1477,46 +1459,55 @@ function RendimientoCompetenciasPanel({ grupo = 'genericas' }) {
                       width: 28,
                       height: 28,
                       borderRadius: '50%',
-                      background: 'linear-gradient(135deg, #475569, #1e293b)',
+                      background: 'linear-gradient(135deg, #10b981, #047857)',
                       color: '#ffffff',
-                      fontWeight: 800,
-                      fontSize: 12,
                       flexShrink: 0,
-                      boxShadow: '0 2px 6px rgba(30, 41, 59, 0.2)'
+                      boxShadow: '0 2px 6px rgba(16, 185, 129, 0.2)'
                     }}
                   >
-                    ★
+                    <AnalyticsRoundedIcon sx={{ fontSize: 16, color: '#ffffff' }} />
                   </Box>
 
                   {/* Etiqueta Promedio General */}
                   <Box
                     sx={{
-                      width: { xs: 150, sm: 220 },
+                      width: { xs: 190, sm: 270 },
                       px: 1.8,
                       py: 0.8,
                       borderRadius: '10px',
-                      bgcolor: '#475569',
+                      bgcolor: '#10b981',
                       color: '#ffffff',
                       fontWeight: 800,
                       fontSize: '12.5px',
                       whiteSpace: 'nowrap',
                       overflow: 'hidden',
                       textOverflow: 'ellipsis',
-                      borderLeft: '4px solid #1e293b',
+                      borderLeft: '4px solid #047857',
                       flexShrink: 0,
-                      boxShadow: '0 2px 4px rgba(30, 41, 59, 0.08)'
+                      boxShadow: '0 2px 4px rgba(16, 185, 129, 0.08)'
                     }}
                   >
                     PROMEDIO GENERAL
                   </Box>
 
                   {/* Barra de Progreso y Valor */}
-                  <Box sx={{ flexGrow: 1, display: 'flex', alignItems: 'center', gap: 2 }}>
+                  <Box
+                    sx={{
+                      flexGrow: 1,
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 2,
+                      position: 'relative',
+                      // Fine vertical grid lines in the background at 25%, 50%, 75%
+                      background: 'linear-gradient(to right, transparent, transparent 25%, #cbd5e122 25%, #cbd5e122 26%, transparent 26%, transparent 50%, #cbd5e122 50%, #cbd5e122 51%, transparent 51%, transparent 75%, #cbd5e122 75%, #cbd5e122 76%, transparent 76%)',
+                      py: 0.6
+                    }}
+                  >
                     <Box
                       sx={{
                         flexGrow: 1,
                         height: 10,
-                        bgcolor: '#e2e8f0',
+                        bgcolor: 'rgba(226, 232, 240, 0.6)',
                         borderRadius: '8px',
                         overflow: 'hidden',
                         position: 'relative',
@@ -1526,8 +1517,8 @@ function RendimientoCompetenciasPanel({ grupo = 'genericas' }) {
                       <Box
                         sx={{
                           height: '100%',
-                          width: `${animateRanking ? (rankingMaxLimit - rankingMinLimit > 0 ? ((promedioGeneralAcumulado - rankingMinLimit) / (rankingMaxLimit - rankingMinLimit)) * 75 + 15 : 15) : 0}%`,
-                          background: 'linear-gradient(90deg, #64748b, #334155)',
+                          width: `${animateRanking ? (rankingDiff > 0 ? 25 + ((promedioGeneralAcumulado - rankingMinVal) / rankingDiff) * 70 : 95) : 0}%`,
+                          background: 'linear-gradient(90deg, #10b981, #059669)',
                           borderRadius: '8px',
                           transition: 'width 1.2s cubic-bezier(0.34, 1.56, 0.64, 1)'
                         }}
@@ -1539,15 +1530,15 @@ function RendimientoCompetenciasPanel({ grupo = 'genericas' }) {
                         px: 1.6,
                         py: 0.6,
                         borderRadius: '8px',
-                        bgcolor: '#475569',
-                        border: '1.5px solid #334155',
+                        bgcolor: '#10b981',
+                        border: '1.5px solid #059669',
                         fontSize: '12.5px',
                         fontWeight: 800,
                         color: '#ffffff',
                         minWidth: 60,
                         textAlign: 'center',
                         flexShrink: 0,
-                        boxShadow: '0 2px 6px rgba(71, 85, 105, 0.15)'
+                        boxShadow: '0 2px 6px rgba(16, 185, 129, 0.15)'
                       }}
                     >
                       {fmt(promedioGeneralAcumulado, 1)}
