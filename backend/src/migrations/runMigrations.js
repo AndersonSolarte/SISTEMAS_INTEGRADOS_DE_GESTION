@@ -491,6 +491,15 @@ const runMigrations = async () => {
     await qi.addIndex('saber_pro_resultados_agregados', ['anio', 'programa', 'competencia'], { name: 'idx_saber_pro_agregados_anio_programa_competencia' }).catch(() => {});
     await qi.addIndex('saber_pro_resultados_agregados', ['tipo_prueba'], { name: 'idx_saber_pro_agregados_tipo_prueba' }).catch(() => {});
 
+    // Indices de optimización integral para tablas grandes
+    await qi.addIndex('poblacional_contexto_externo', ['tipo_registro', 'base_indicador', 'anio'], { name: 'idx_contexto_externo_tipo_base_anio' }).catch(() => {});
+    await qi.addIndex('poblacional_caracterizacion', ['anio', 'programa'], { name: 'idx_poblacional_caracterizacion_anio_programa' }).catch(() => {});
+    await qi.addIndex('poblacional_inscritos', ['anio', 'programa'], { name: 'idx_poblacional_inscritos_anio_programa' }).catch(() => {});
+    await qi.addIndex('poblacional_admitidos', ['anio', 'programa'], { name: 'idx_poblacional_admitidos_anio_programa' }).catch(() => {});
+    await qi.addIndex('poblacional_primer_curso', ['anio', 'programa'], { name: 'idx_poblacional_primer_curso_anio_programa' }).catch(() => {});
+    await qi.addIndex('poblacional_graduados', ['anio', 'programa'], { name: 'idx_poblacional_graduados_anio_programa' }).catch(() => {});
+    await qi.addIndex('matriculados_ubicacion_incidencias', ['anio', 'periodo', 'estado'], { name: 'idx_matriculados_incidencias_anio_periodo_estado' }).catch(() => {});
+
     await repairMatriculadosFromEstadisticas();
     await repairGeorreferenciaFromDivipola();
 
