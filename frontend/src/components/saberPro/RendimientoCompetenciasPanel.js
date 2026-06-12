@@ -30,7 +30,9 @@ import {
   CartesianGrid,
   Tooltip as RechartsTooltip,
   Legend,
-  LabelList
+  LabelList,
+  BarChart,
+  Bar
 } from 'recharts';
 import { useSnackbar } from 'notistack';
 import html2canvas from 'html2canvas';
@@ -489,6 +491,7 @@ function RendimientoCompetenciasPanel({ grupo = 'genericas' }) {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(false);
   const [showGrupoReferencia, setShowGrupoReferencia] = useState(true);
+  const [chartType, setChartType] = useState('line');
   const [animateRanking, setAnimateRanking] = useState(false);
 
 
@@ -1008,7 +1011,10 @@ function RendimientoCompetenciasPanel({ grupo = 'genericas' }) {
                 Solo {hasAppliedPrograms ? 'Programa' : 'Institucional'}
               </Box>
               <Box
-                onClick={() => setShowGrupoReferencia(true)}
+                onClick={() => {
+                  setShowGrupoReferencia(true);
+                  setChartType('line');
+                }}
                 sx={{
                   px: 1.4,
                   py: 0.4,
@@ -1026,6 +1032,56 @@ function RendimientoCompetenciasPanel({ grupo = 'genericas' }) {
                 Comparativo Nacional
               </Box>
             </Box>
+
+            {!showGrupoReferencia && (
+              <Box
+                sx={{
+                  display: 'inline-flex',
+                  bgcolor: '#f1f5f9',
+                  borderRadius: '8px',
+                  p: '3px',
+                  border: '1px solid #cbd5e1',
+                  mr: 0.5
+                }}
+              >
+                <Box
+                  onClick={() => setChartType('line')}
+                  sx={{
+                    px: 1.4,
+                    py: 0.4,
+                    borderRadius: '6px',
+                    fontSize: 10.5,
+                    fontWeight: 700,
+                    cursor: 'pointer',
+                    userSelect: 'none',
+                    transition: 'all 0.2s',
+                    bgcolor: chartType === 'line' ? '#ffffff' : 'transparent',
+                    color: chartType === 'line' ? theme.primary : '#475569',
+                    boxShadow: chartType === 'line' ? '0 1px 3px rgba(0,0,0,0.1)' : 'none'
+                  }}
+                >
+                  Líneas
+                </Box>
+                <Box
+                  onClick={() => setChartType('bar')}
+                  sx={{
+                    px: 1.4,
+                    py: 0.4,
+                    borderRadius: '6px',
+                    fontSize: 10.5,
+                    fontWeight: 700,
+                    cursor: 'pointer',
+                    userSelect: 'none',
+                    transition: 'all 0.2s',
+                    bgcolor: chartType === 'bar' ? '#ffffff' : 'transparent',
+                    color: chartType === 'bar' ? theme.primary : '#475569',
+                    boxShadow: chartType === 'bar' ? '0 1px 3px rgba(0,0,0,0.1)' : 'none'
+                  }}
+                >
+                  Barras
+                </Box>
+              </Box>
+            )}
 
             <Button
               data-copy-ignore="true"
@@ -1100,64 +1156,119 @@ function RendimientoCompetenciasPanel({ grupo = 'genericas' }) {
           }}>
             <Box sx={{ bgcolor: '#fff', fontFamily: 'Arial, Helvetica, sans-serif' }}>
               <ResponsiveContainer width="100%" height={360}>
-              <LineChart data={chartData} margin={{ top: 28, right: 34, left: 6, bottom: 8 }}>
-                <CartesianGrid
-                  stroke="#cbd5e1"
-                  strokeDasharray="4 4"
-                  strokeOpacity={0.75}
-                  horizontal
-                  vertical
-                />
-                <XAxis
-                  dataKey="anio"
-                  tick={{ fill: '#475569', fontSize: 12, fontWeight: 700 }}
-                  axisLine={{ stroke: '#cbd5e1' }}
-                  tickLine={false}
-                  padding={{ left: 20, right: 20 }}
-                />
-                <YAxis
-                  domain={chartYDomain}
-                  tick={{ fill: '#64748b', fontSize: 11, fontWeight: 600 }}
-                  axisLine={{ stroke: '#cbd5e1' }}
-                  tickLine={false}
-                  width={46}
-                  label={{ value: 'Puntaje (0 - 300)', angle: -90, position: 'insideLeft', fill: '#64748b', fontSize: 10, fontWeight: 700 }}
-                />
-                <RechartsTooltip content={<FancyTooltip theme={theme} />} cursor={{ stroke: '#94a3b8', strokeOpacity: 0.22, strokeWidth: 2 }} />
-                <Legend
-                  verticalAlign="bottom"
-                  height={32}
-                  iconType="circle"
-                  wrapperStyle={{ fontSize: 12, fontWeight: 700, color: '#334155' }}
-                />
-                {showGrupoReferencia && (
-                  <Line
-                    type="linear"
-                    dataKey="grupoRef"
-                    name="Grupo de Referencia"
-                    stroke={REFERENCE_DARK}
-                    strokeWidth={3}
-                    strokeDasharray="7 4"
-                    dot={{ r: 5, fill: '#fff', stroke: REFERENCE_DARK, strokeWidth: 2.5 }}
-                    activeDot={{ r: 7, fill: REFERENCE_DARK, stroke: '#fff', strokeWidth: 2.4 }}
-                    connectNulls
-                  >
-                    <LabelList dataKey="grupoRef" content={RenderAbove} />
-                  </Line>
+                {chartType === 'bar' && !showGrupoReferencia ? (
+                  <BarChart data={chartData} margin={{ top: 28, right: 34, left: 6, bottom: 8 }}>
+                    <defs>
+                      <linearGradient id="barChartGradient" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="0%" stopColor={theme.primary} stopOpacity={1} />
+                        <stop offset="100%" stopColor={`${theme.primary}cc`} stopOpacity={0.8} />
+                      </linearGradient>
+                    </defs>
+                    <CartesianGrid
+                      stroke="#cbd5e1"
+                      strokeDasharray="4 4"
+                      strokeOpacity={0.75}
+                      horizontal
+                      vertical
+                    />
+                    <XAxis
+                      dataKey="anio"
+                      tick={{ fill: '#475569', fontSize: 12, fontWeight: 700 }}
+                      axisLine={{ stroke: '#cbd5e1' }}
+                      tickLine={false}
+                    />
+                    <YAxis
+                      domain={chartYDomain}
+                      tick={{ fill: '#64748b', fontSize: 11, fontWeight: 600 }}
+                      axisLine={{ stroke: '#cbd5e1' }}
+                      tickLine={false}
+                      width={46}
+                      label={{ value: 'Puntaje (0 - 300)', angle: -90, position: 'insideLeft', fill: '#64748b', fontSize: 10, fontWeight: 700 }}
+                    />
+                    <RechartsTooltip content={<FancyTooltip theme={theme} />} cursor={{ fill: '#cbd5e1', opacity: 0.15 }} />
+                    <Legend
+                      verticalAlign="bottom"
+                      height={32}
+                      iconType="circle"
+                      wrapperStyle={{ fontSize: 12, fontWeight: 700, color: '#334155' }}
+                    />
+                    <Bar
+                      dataKey="principal"
+                      name={principalName}
+                      fill="url(#barChartGradient)"
+                      radius={[8, 8, 0, 0]}
+                      maxBarSize={60}
+                    >
+                      <LabelList
+                        dataKey="principal"
+                        position="top"
+                        fill={theme.primary}
+                        fontSize="11.5"
+                        fontWeight="800"
+                        formatter={(v) => fmt(v, 1)}
+                      />
+                    </Bar>
+                  </BarChart>
+                ) : (
+                  <LineChart data={chartData} margin={{ top: 28, right: 34, left: 6, bottom: 8 }}>
+                    <CartesianGrid
+                      stroke="#cbd5e1"
+                      strokeDasharray="4 4"
+                      strokeOpacity={0.75}
+                      horizontal
+                      vertical
+                    />
+                    <XAxis
+                      dataKey="anio"
+                      tick={{ fill: '#475569', fontSize: 12, fontWeight: 700 }}
+                      axisLine={{ stroke: '#cbd5e1' }}
+                      tickLine={false}
+                      padding={{ left: 20, right: 20 }}
+                    />
+                    <YAxis
+                      domain={chartYDomain}
+                      tick={{ fill: '#64748b', fontSize: 11, fontWeight: 600 }}
+                      axisLine={{ stroke: '#cbd5e1' }}
+                      tickLine={false}
+                      width={46}
+                      label={{ value: 'Puntaje (0 - 300)', angle: -90, position: 'insideLeft', fill: '#64748b', fontSize: 10, fontWeight: 700 }}
+                    />
+                    <RechartsTooltip content={<FancyTooltip theme={theme} />} cursor={{ stroke: '#94a3b8', strokeOpacity: 0.22, strokeWidth: 2 }} />
+                    <Legend
+                      verticalAlign="bottom"
+                      height={32}
+                      iconType="circle"
+                      wrapperStyle={{ fontSize: 12, fontWeight: 700, color: '#334155' }}
+                    />
+                    {showGrupoReferencia && (
+                      <Line
+                        type="linear"
+                        dataKey="grupoRef"
+                        name="Grupo de Referencia"
+                        stroke={REFERENCE_DARK}
+                        strokeWidth={3}
+                        strokeDasharray="7 4"
+                        dot={{ r: 5, fill: '#fff', stroke: REFERENCE_DARK, strokeWidth: 2.5 }}
+                        activeDot={{ r: 7, fill: REFERENCE_DARK, stroke: '#fff', strokeWidth: 2.4 }}
+                        connectNulls
+                      >
+                        <LabelList dataKey="grupoRef" content={RenderAbove} />
+                      </Line>
+                    )}
+                    <Line
+                      type="linear"
+                      dataKey="principal"
+                      name={principalName}
+                      stroke={theme.primary}
+                      strokeWidth={4}
+                      dot={{ r: 6, fill: '#fff', stroke: theme.primary, strokeWidth: 3 }}
+                      activeDot={{ r: 8, fill: theme.primary, stroke: '#fff', strokeWidth: 2.6 }}
+                      connectNulls
+                    >
+                      <LabelList dataKey="principal" content={RenderBelow} />
+                    </Line>
+                  </LineChart>
                 )}
-                <Line
-                  type="linear"
-                  dataKey="principal"
-                  name={principalName}
-                  stroke={theme.primary}
-                  strokeWidth={4}
-                  dot={{ r: 6, fill: '#fff', stroke: theme.primary, strokeWidth: 3 }}
-                  activeDot={{ r: 8, fill: theme.primary, stroke: '#fff', strokeWidth: 2.6 }}
-                  connectNulls
-                >
-                  <LabelList dataKey="principal" content={RenderBelow} />
-                </Line>
-              </LineChart>
               </ResponsiveContainer>
             </Box>
           </Box>
