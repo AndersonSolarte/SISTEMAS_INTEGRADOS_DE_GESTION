@@ -1178,7 +1178,7 @@ function RendimientoCompetenciasPanel({ grupo = 'genericas' }) {
                       tickLine={false}
                     />
                     <YAxis
-                      domain={chartYDomain}
+                      domain={[0, chartYDomain[1]]}
                       tick={{ fill: '#64748b', fontSize: 11, fontWeight: 600 }}
                       axisLine={{ stroke: '#cbd5e1' }}
                       tickLine={false}
@@ -1197,7 +1197,7 @@ function RendimientoCompetenciasPanel({ grupo = 'genericas' }) {
                       name={principalName}
                       fill="url(#barChartGradient)"
                       radius={[8, 8, 0, 0]}
-                      maxBarSize={60}
+                      maxBarSize={70}
                     >
                       <LabelList
                         dataKey="principal"
