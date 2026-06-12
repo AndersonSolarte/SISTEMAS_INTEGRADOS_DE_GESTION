@@ -487,6 +487,7 @@ function RendimientoCompetenciasPanel({ grupo = 'genericas' }) {
   const [selectedCompetencia, setSelectedCompetencia] = useState('');
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(false);
+  const [showGrupoReferencia, setShowGrupoReferencia] = useState(true);
 
   const loadData = useCallback(async (silent = false, programsToUse = appliedProgramas) => {
     if (!silent) setLoading(true);
@@ -909,6 +910,54 @@ function RendimientoCompetenciasPanel({ grupo = 'genericas' }) {
           </Stack>
 
           <Stack data-copy-ignore="true" direction="row" spacing={1} alignItems="center" flexWrap="wrap" useFlexGap>
+            <Box
+              sx={{
+                display: 'inline-flex',
+                bgcolor: '#f1f5f9',
+                borderRadius: '8px',
+                p: '3px',
+                border: '1px solid #cbd5e1',
+                mr: 0.5
+              }}
+            >
+              <Box
+                onClick={() => setShowGrupoReferencia(false)}
+                sx={{
+                  px: 1.4,
+                  py: 0.4,
+                  borderRadius: '6px',
+                  fontSize: 10.5,
+                  fontWeight: 700,
+                  cursor: 'pointer',
+                  userSelect: 'none',
+                  transition: 'all 0.2s',
+                  bgcolor: !showGrupoReferencia ? '#ffffff' : 'transparent',
+                  color: !showGrupoReferencia ? theme.primary : '#475569',
+                  boxShadow: !showGrupoReferencia ? '0 1px 3px rgba(0,0,0,0.1)' : 'none'
+                }}
+              >
+                Solo {hasAppliedPrograms ? 'Programa' : 'Institucional'}
+              </Box>
+              <Box
+                onClick={() => setShowGrupoReferencia(true)}
+                sx={{
+                  px: 1.4,
+                  py: 0.4,
+                  borderRadius: '6px',
+                  fontSize: 10.5,
+                  fontWeight: 700,
+                  cursor: 'pointer',
+                  userSelect: 'none',
+                  transition: 'all 0.2s',
+                  bgcolor: showGrupoReferencia ? '#ffffff' : 'transparent',
+                  color: showGrupoReferencia ? theme.primary : '#475569',
+                  boxShadow: showGrupoReferencia ? '0 1px 3px rgba(0,0,0,0.1)' : 'none'
+                }}
+              >
+                Comparativo Nacional
+              </Box>
+            </Box>
+
             <Button
               data-copy-ignore="true"
               size="small"
@@ -934,7 +983,7 @@ function RendimientoCompetenciasPanel({ grupo = 'genericas' }) {
             >
               Copiar gráfico
             </Button>
-            {brecha && (
+            {brecha && showGrupoReferencia && (
               <>
                 <Chip
                   label={`Brecha promedio: ${brecha.promedio >= 0 ? '+' : ''}${fmt(brecha.promedio, 1)}`}
@@ -1012,19 +1061,21 @@ function RendimientoCompetenciasPanel({ grupo = 'genericas' }) {
                   iconType="circle"
                   wrapperStyle={{ fontSize: 12, fontWeight: 700, color: '#334155' }}
                 />
-                <Line
-                  type="linear"
-                  dataKey="grupoRef"
-                  name="Grupo de Referencia"
-                  stroke={REFERENCE_DARK}
-                  strokeWidth={3}
-                  strokeDasharray="7 4"
-                  dot={{ r: 5, fill: '#fff', stroke: REFERENCE_DARK, strokeWidth: 2.5 }}
-                  activeDot={{ r: 7, fill: REFERENCE_DARK, stroke: '#fff', strokeWidth: 2.4 }}
-                  connectNulls
-                >
-                  <LabelList dataKey="grupoRef" content={RenderAbove} />
-                </Line>
+                {showGrupoReferencia && (
+                  <Line
+                    type="linear"
+                    dataKey="grupoRef"
+                    name="Grupo de Referencia"
+                    stroke={REFERENCE_DARK}
+                    strokeWidth={3}
+                    strokeDasharray="7 4"
+                    dot={{ r: 5, fill: '#fff', stroke: REFERENCE_DARK, strokeWidth: 2.5 }}
+                    activeDot={{ r: 7, fill: REFERENCE_DARK, stroke: '#fff', strokeWidth: 2.4 }}
+                    connectNulls
+                  >
+                    <LabelList dataKey="grupoRef" content={RenderAbove} />
+                  </Line>
+                )}
                 <Line
                   type="linear"
                   dataKey="principal"
@@ -1048,8 +1099,12 @@ function RendimientoCompetenciasPanel({ grupo = 'genericas' }) {
           <InfoRoundedIcon sx={{ color: '#64748b', fontSize: 16, mt: 0.1 }} />
           <Typography sx={{ fontSize: 11.5, color: '#475569', lineHeight: 1.5, fontWeight: 500 }}>
             La línea <b style={{ color: theme.primary }}>{principalName}</b> representa el puntaje promedio {hasAppliedPrograms ? 'del alcance seleccionado' : 'institucional'}.
-            La línea <b style={{ color: REFERENCE_DARK }}>Grupo de Referencia</b> corresponde al puntaje promedio nacional del grupo comparable reportado por el ICFES.
-            Valores positivos en la brecha indican desempeño por encima del grupo de referencia.
+            {showGrupoReferencia && (
+              <>
+                {' '}La línea <b style={{ color: REFERENCE_DARK }}>Grupo de Referencia</b> corresponde al puntaje promedio nacional del grupo comparable reportado por el ICFES.
+                Valores positivos en la brecha indican desempeño por encima del grupo de referencia.
+              </>
+            )}
           </Typography>
         </Stack>
       </Paper>
