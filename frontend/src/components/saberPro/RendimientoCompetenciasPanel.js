@@ -639,7 +639,61 @@ function RendimientoCompetenciasPanel({ grupo = 'genericas' }) {
     }
   }, [enqueueSnackbar]);
 
+  const handleCopyPromedioChart = useCallback(async () => {
+    try {
+      await copyChartSvgAsImage('promedio-competencias-chart');
+      enqueueSnackbar('Gráfico de clasificación copiado como imagen limpia', { variant: 'success' });
+    } catch (_error) {
+      enqueueSnackbar('No se pudo copiar el gráfico', { variant: 'warning' });
+    }
+  }, [enqueueSnackbar]);
+
   const chartEmpty = !chartData.some((d) => Number.isFinite(Number(d.principal)) || Number.isFinite(Number(d.grupoRef)));
+
+  const rankingCompetencias = useMemo(() => {
+    if (grupo === 'especificas' || !matrizOrdenada.length) return [];
+    
+    const calculated = matrizOrdenada.map((row) => {
+      const vals = aniosVisibles
+        .map((anio) => row.byYear?.[anio]?.programa)
+        .filter((v) => v != null && Number.isFinite(Number(v)));
+      
+      const promedio = vals.length
+        ? vals.reduce((acc, v) => acc + v, 0) / vals.length
+        : 0;
+      
+      return {
+        competencia: row.competencia,
+        promedio
+      };
+    });
+
+    return calculated
+      .filter((c) => c.promedio > 0)
+      .sort((a, b) => b.promedio - a.promedio);
+  }, [matrizOrdenada, aniosVisibles, grupo]);
+
+  const promedioGeneralAcumulado = useMemo(() => {
+    if (grupo === 'especificas') return null;
+    const vals = aniosVisibles
+      .map((anio) => promedioRow.byYear?.[anio]?.programa)
+      .filter((v) => v != null && Number.isFinite(Number(v)));
+    
+    return vals.length
+      ? vals.reduce((acc, v) => acc + v, 0) / vals.length
+      : null;
+  }, [aniosVisibles, promedioRow, grupo]);
+
+  const rankingMaxValor = useMemo(() => {
+    const vals = rankingCompetencias.map((c) => c.promedio);
+    if (promedioGeneralAcumulado != null) vals.push(promedioGeneralAcumulado);
+    if (!vals.length) return 150;
+    const maxVal = Math.max(...vals);
+    return Math.max(160, maxVal * 1.15);
+  }, [rankingCompetencias, promedioGeneralAcumulado]);
+
+  const rankingEmpty = rankingCompetencias.length === 0;
+
   const matrizEmpty = !matrizOrdenada.length;
 
   const RenderAbove = useMemo(() => {
@@ -1109,6 +1163,294 @@ function RendimientoCompetenciasPanel({ grupo = 'genericas' }) {
           </Typography>
         </Stack>
       </Paper>
+
+      {/* ═══════════ GRÁFICO DE CLASIFICACIÓN (RANKING) HORIZONTAL (Solo para genéricas) ═══════════ */}
+      {grupo !== 'especificas' && (
+        <Paper
+          id="promedio-competencias-chart"
+          elevation={0}
+          sx={{
+            p: { xs: 1.5, md: 2.2 },
+            borderRadius: 2.5,
+            border: '1px solid #e2e8f0',
+            bgcolor: '#ffffff',
+            mb: 2
+          }}
+        >
+          <Stack direction={{ xs: 'column', sm: 'row' }} alignItems={{ xs: 'flex-start', sm: 'center' }} justifyContent="space-between" spacing={1.5} sx={{ mb: 2 }}>
+            <Stack direction="row" spacing={1} alignItems="center">
+              <TrendingUpRoundedIcon sx={{ color: theme.primary, fontSize: 18 }} />
+              <Box sx={{ display: 'flex', alignItems: 'baseline', gap: 1, flexWrap: 'wrap' }}>
+                <Typography sx={{ fontWeight: 700, fontSize: 14.5, color: '#0f172a', letterSpacing: '-0.01em' }}>
+                  CLASIFICACIÓN GENERAL DE COMPETENCIAS
+                </Typography>
+                <Typography data-copy-ignore="true" sx={{ fontSize: 11, color: '#64748b', fontWeight: 500 }}>
+                  (Promedio acumulado de todos los años seleccionados · {scopeLabel})
+                </Typography>
+              </Box>
+            </Stack>
+
+            <Button
+              data-copy-ignore="true"
+              size="small"
+              variant="outlined"
+              startIcon={<ImageRoundedIcon sx={{ fontSize: 14 }} />}
+              onClick={handleCopyPromedioChart}
+              disabled={rankingEmpty}
+              sx={{
+                textTransform: 'none',
+                fontWeight: 700,
+                borderRadius: '8px',
+                fontSize: 11,
+                borderColor: '#cbd5e1',
+                color: '#475569',
+                height: 28,
+                px: 1.2,
+                '&:hover': {
+                  borderColor: '#94a3b8',
+                  bgcolor: '#f8fafc',
+                  color: '#1f2937'
+                }
+              }}
+            >
+              Copiar gráfico
+            </Button>
+          </Stack>
+
+          {loading ? (
+            <Stack spacing={1.8} sx={{ py: 1 }}>
+              {[0, 1, 2, 3, 4, 5].map((i) => <Skeleton key={i} variant="rectangular" height={42} sx={{ borderRadius: 1.5 }} />)}
+            </Stack>
+          ) : rankingEmpty ? (
+            <Box sx={{ py: 4, textAlign: 'center' }}>
+              <Typography sx={{ color: '#94a3b8', fontWeight: 600, fontSize: 13 }}>
+                Sin datos para graficar el promedio acumulado.
+              </Typography>
+            </Box>
+          ) : (
+            <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.8, py: 1 }}>
+              {rankingCompetencias.map((item, index) => {
+                const widthPercent = (item.promedio / rankingMaxValor) * 100;
+                return (
+                  <Box
+                    key={item.competencia}
+                    sx={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 1.5,
+                      p: 1.2,
+                      borderRadius: '12px',
+                      bgcolor: '#ffffff',
+                      border: '1px solid #e2e8f0',
+                      boxShadow: '0 2px 6px rgba(15,23,42,0.03)',
+                      transition: 'all 0.2s',
+                      '&:hover': {
+                        transform: 'translateX(4px)',
+                        boxShadow: '0 4px 12px rgba(15,23,42,0.06)',
+                        bgcolor: '#f8fafc'
+                      }
+                    }}
+                  >
+                    {/* Medalla del Ranking */}
+                    <Box
+                      sx={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        width: 28,
+                        height: 28,
+                        borderRadius: '50%',
+                        bgcolor: '#eff6ff',
+                        color: theme.primary,
+                        fontWeight: 800,
+                        fontSize: 12.5,
+                        border: `1px solid #bfdbfe`,
+                        flexShrink: 0
+                      }}
+                    >
+                      {index + 1}
+                    </Box>
+
+                    {/* Nombre de la Competencia */}
+                    <Box
+                      sx={{
+                        width: { xs: 150, sm: 220 },
+                        px: 1.8,
+                        py: 0.8,
+                        borderRadius: '8px',
+                        bgcolor: '#eff6ff',
+                        color: '#1e3a8a',
+                        fontWeight: 700,
+                        fontSize: 12.5,
+                        whiteSpace: 'nowrap',
+                        overflow: 'hidden',
+                        textOverflow: 'ellipsis',
+                        borderLeft: `4px solid ${theme.primary}`,
+                        flexShrink: 0
+                      }}
+                    >
+                      {item.competencia}
+                    </Box>
+
+                    {/* Barra de Progreso y Valor */}
+                    <Box sx={{ flexGrow: 1, display: 'flex', alignItems: 'center', gap: 1.5 }}>
+                      <Box
+                        sx={{
+                          flexGrow: 1,
+                          height: 20,
+                          bgcolor: '#f1f5f9',
+                          borderRadius: '10px',
+                          overflow: 'hidden',
+                          position: 'relative'
+                        }}
+                      >
+                        <Box
+                          sx={{
+                            height: '100%',
+                            width: `${widthPercent}%`,
+                            bgcolor: theme.primary,
+                            borderRadius: '10px',
+                            backgroundImage: `linear-gradient(90deg, ${theme.primary}ee, ${theme.primary})`,
+                            transition: 'width 0.8s cubic-bezier(0.4, 0, 0.2, 1)'
+                          }}
+                        />
+                      </Box>
+                      {/* Píldora de Puntaje */}
+                      <Box
+                        sx={{
+                          px: 1.4,
+                          py: 0.45,
+                          borderRadius: '6px',
+                          bgcolor: '#f1f5f9',
+                          border: '1px solid #cbd5e1',
+                          fontSize: 12,
+                          fontWeight: 800,
+                          color: '#1e293b',
+                          minWidth: 54,
+                          textAlign: 'center',
+                          flexShrink: 0
+                        }}
+                      >
+                        {fmt(item.promedio, 1)}
+                      </Box>
+                    </Box>
+                  </Box>
+                );
+              })}
+
+              {/* Fila de Promedio General */}
+              {promedioGeneralAcumulado != null && (
+                <Box
+                  sx={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 1.5,
+                    p: 1.2,
+                    borderRadius: '12px',
+                    bgcolor: '#f8fafc',
+                    border: '2px dashed #cbd5e1',
+                    transition: 'all 0.2s',
+                    '&:hover': {
+                      bgcolor: '#f1f5f9'
+                    }
+                  }}
+                >
+                  {/* Icono de Promedio */}
+                  <Box
+                    sx={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      width: 28,
+                      height: 28,
+                      borderRadius: '50%',
+                      bgcolor: '#475569',
+                      color: '#ffffff',
+                      fontWeight: 800,
+                      fontSize: 12.5,
+                      border: '1px solid #475569',
+                      flexShrink: 0
+                    }}
+                  >
+                    ★
+                  </Box>
+
+                  {/* Etiqueta Promedio General */}
+                  <Box
+                    sx={{
+                      width: { xs: 150, sm: 220 },
+                      px: 1.8,
+                      py: 0.8,
+                      borderRadius: '8px',
+                      bgcolor: '#475569',
+                      color: '#ffffff',
+                      fontWeight: 700,
+                      fontSize: 12.5,
+                      whiteSpace: 'nowrap',
+                      overflow: 'hidden',
+                      textOverflow: 'ellipsis',
+                      borderLeft: '4px solid #1e293b',
+                      flexShrink: 0
+                    }}
+                  >
+                    PROMEDIO GENERAL
+                  </Box>
+
+                  {/* Barra de Progreso y Valor */}
+                  <Box sx={{ flexGrow: 1, display: 'flex', alignItems: 'center', gap: 1.5 }}>
+                    <Box
+                      sx={{
+                        flexGrow: 1,
+                        height: 20,
+                        bgcolor: '#e2e8f0',
+                        borderRadius: '10px',
+                        overflow: 'hidden',
+                        position: 'relative'
+                      }}
+                    >
+                      <Box
+                        sx={{
+                          height: '100%',
+                          width: `${(promedioGeneralAcumulado / rankingMaxValor) * 100}%`,
+                          bgcolor: '#475569',
+                          borderRadius: '10px',
+                          transition: 'width 0.8s cubic-bezier(0.4, 0, 0.2, 1)'
+                        }}
+                      />
+                    </Box>
+                    {/* Píldora de Puntaje */}
+                    <Box
+                      sx={{
+                        px: 1.4,
+                        py: 0.45,
+                        borderRadius: '6px',
+                        bgcolor: '#475569',
+                        border: '1px solid #475569',
+                        fontSize: 12,
+                        fontWeight: 800,
+                        color: '#ffffff',
+                        minWidth: 54,
+                        textAlign: 'center',
+                        flexShrink: 0
+                      }}
+                    >
+                      {fmt(promedioGeneralAcumulado, 1)}
+                    </Box>
+                  </Box>
+                </Box>
+              )}
+            </Box>
+          )}
+
+          {/* Nota explicativa */}
+          <Stack data-copy-ignore="true" direction="row" spacing={1} alignItems="flex-start" sx={{ mt: 1.5, p: 1.2, borderRadius: 1.8, bgcolor: '#f8fafc', border: '1px dashed #cbd5e1' }}>
+            <InfoRoundedIcon sx={{ color: '#64748b', fontSize: 16, mt: 0.1 }} />
+            <Typography sx={{ fontSize: 11.5, color: '#475569', lineHeight: 1.5, fontWeight: 500 }}>
+              Este gráfico clasifica las competencias de <b>mayor a menor puntaje promedio</b> acumulado de todos los años seleccionados (<b>{aniosVisibles.join(', ')}</b>). La última fila destaca el promedio general de todas las competencias. Ayuda a identificar instantáneamente fortalezas y debilidades.
+            </Typography>
+          </Stack>
+        </Paper>
+      )}
 
       {loading && (
         <Box sx={{ position: 'fixed', top: 120, right: 24, zIndex: 1400 }}>
