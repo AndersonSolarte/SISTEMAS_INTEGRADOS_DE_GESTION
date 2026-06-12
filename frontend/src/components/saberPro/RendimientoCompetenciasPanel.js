@@ -6,10 +6,6 @@ import {
   Stack,
   Typography,
   Chip,
-  FormControl,
-  Select,
-  MenuItem,
-  InputLabel,
   CircularProgress,
   Tooltip,
   Skeleton,
@@ -18,18 +14,12 @@ import {
 } from '@mui/material';
 import TrendingUpRoundedIcon from '@mui/icons-material/TrendingUpRounded';
 import AutoGraphRoundedIcon from '@mui/icons-material/AutoGraphRounded';
-import CompareArrowsRoundedIcon from '@mui/icons-material/CompareArrowsRounded';
 import InfoRoundedIcon from '@mui/icons-material/InfoRounded';
-import SchoolRoundedIcon from '@mui/icons-material/SchoolRounded';
-import GroupsRoundedIcon from '@mui/icons-material/GroupsRounded';
-import FilterListRoundedIcon from '@mui/icons-material/FilterListRounded';
 import TimelineRoundedIcon from '@mui/icons-material/TimelineRounded';
 import TableChartRoundedIcon from '@mui/icons-material/TableChartRounded';
 import CheckCircleRoundedIcon from '@mui/icons-material/CheckCircleRounded';
 import ContentCopyRoundedIcon from '@mui/icons-material/ContentCopyRounded';
 import ImageRoundedIcon from '@mui/icons-material/ImageRounded';
-import SearchRoundedIcon from '@mui/icons-material/SearchRounded';
-import ClearRoundedIcon from '@mui/icons-material/ClearRounded';
 import {
   ResponsiveContainer,
   LineChart,
@@ -67,9 +57,6 @@ const GROUP_THEMES = {
 };
 
 const REFERENCE_DARK = '#475569';
-const INSTITUCIONAL_COLOR = '#2563eb';
-const INSTITUCIONAL_TABLE_BLUE = '#1f5bd8';
-const INSTITUCIONAL_HEADER_BLUE = '#1e40af';
 
 const fmt = (v, digits = 1) => (v == null || !Number.isFinite(Number(v))
   ? '—'
@@ -142,7 +129,7 @@ const RenderLineLabelAbove = (props) => {
 };
 
 const RenderLineLabelBelow = (props) => {
-  const { x, y, value, index, chartData } = props || {};
+  const { x, y, value, index, chartData, themeColor } = props || {};
   if (x == null || y == null || value == null || !Number.isFinite(Number(value))) return null;
 
   // Default offset is below (+20)
@@ -174,7 +161,7 @@ const RenderLineLabelBelow = (props) => {
       textAnchor="middle"
       fontSize="11.5"
       fontWeight="800"
-      fill="#1d4ed8"
+      fill={themeColor || "#1d4ed8"}
       style={{ pointerEvents: 'none' }}
     >
       {fmt(value, 1)}
@@ -493,10 +480,8 @@ function ProgramFilterPanel({ label, options, value, onChange, placeholder, them
 
 function RendimientoCompetenciasPanel({ grupo = 'genericas' }) {
   const theme = GROUP_THEMES[grupo] || GROUP_THEMES.genericas;
-  const HeaderIcon = theme.icon;
   const { enqueueSnackbar } = useSnackbar();
 
-  const [selectedProgramas, setSelectedProgramas] = useState([]);
   const [appliedProgramas, setAppliedProgramas] = useState([]);
   const [selectedYears, setSelectedYears] = useState([]);
   const [selectedCompetencia, setSelectedCompetencia] = useState('');
@@ -533,19 +518,14 @@ function RendimientoCompetenciasPanel({ grupo = 'genericas' }) {
     setSelectedCompetencia('');
   }, [grupo, appliedProgramas]);
 
-  const programasCatalogo = data?.programas || [];
-  const programOptions = useMemo(() => programasCatalogo.map(p => ({ id: p, nombre: p })), [programasCatalogo]);
+  const programOptions = useMemo(() => {
+    const catalog = data?.programas || [];
+    return catalog.map(p => ({ id: p, nombre: p }));
+  }, [data?.programas]);
 
-  const handleApplyFilters = () => {
-    setAppliedProgramas(selectedProgramas);
-    loadData(false, selectedProgramas);
-  };
-
-  const handleClearFilters = () => {
-    setSelectedProgramas([]);
-    setAppliedProgramas([]);
-    setSelectedCompetencia('');
-    loadData(false, []);
+  const handleProgramasChange = (newPrograms) => {
+    setAppliedProgramas(newPrograms);
+    loadData(false, newPrograms);
   };
   const aniosDisponibles = useMemo(() => (Array.isArray(data?.aniosPresentes) ? data.aniosPresentes : []), [data]);
   const matriz = useMemo(() => (Array.isArray(data?.matriz) ? data.matriz : []), [data]);
@@ -611,9 +591,8 @@ function RendimientoCompetenciasPanel({ grupo = 'genericas' }) {
 
   const hasAppliedPrograms = appliedProgramas.length > 0;
   const scopeLabel = hasAppliedPrograms
-    ? (appliedProgramas.length === 1 ? appliedProgramas[0] : `${appliedProgramas.length} programas`)
+    ? (appliedProgramas.length === 1 ? appliedProgramas[0] : `${appliedProgramas.length} Programas`)
     : 'Institucional';
-  const scopeIcon = hasAppliedPrograms ? <SchoolRoundedIcon sx={{ fontSize: 14 }} /> : <GroupsRoundedIcon sx={{ fontSize: 14 }} />;
 
   const principalName = hasAppliedPrograms
     ? (appliedProgramas.length === 1 ? `Programa: ${appliedProgramas[0]}` : `Programas (${appliedProgramas.length})`)
@@ -666,74 +645,12 @@ function RendimientoCompetenciasPanel({ grupo = 'genericas' }) {
   }, [chartData]);
 
   const RenderBelow = useMemo(() => {
-    return (props) => <RenderLineLabelBelow {...props} chartData={chartData} />;
-  }, [chartData]);
+    return (props) => <RenderLineLabelBelow {...props} chartData={chartData} themeColor={theme.primary} />;
+  }, [chartData, theme.primary]);
 
   return (
     <Box sx={{ p: { xs: 1.5, md: 2.5 }, bgcolor: '#f8fafc', minHeight: 'calc(100vh - 120px)' }}>
-      {/* ═══════════ HEADER ═══════════ */}
-      <Paper elevation={0} sx={{
-        p: { xs: 2, md: 2.8 },
-        borderRadius: 3,
-        mb: 2,
-        background: `linear-gradient(135deg, ${theme.primary}12 0%, ${theme.accent}0a 50%, transparent 100%)`,
-        border: `1px solid ${theme.primary}26`,
-        position: 'relative',
-        overflow: 'hidden'
-      }}>
-        <Box sx={{
-          position: 'absolute', top: -30, right: -30, width: 170, height: 170,
-          borderRadius: '50%',
-          background: `radial-gradient(circle, ${theme.primary}1a 0%, transparent 70%)`
-        }} />
-        <Stack direction={{ xs: 'column', sm: 'row' }} alignItems={{ xs: 'flex-start', sm: 'center' }} justifyContent="space-between" spacing={2}>
-          <Stack direction="row" spacing={1.8} alignItems="center">
-            <Box sx={{
-              width: 52, height: 52, borderRadius: 2.2,
-              background: `linear-gradient(135deg, ${INSTITUCIONAL_HEADER_BLUE} 0%, ${INSTITUCIONAL_COLOR} 100%)`,
-              display: 'grid', placeItems: 'center',
-              boxShadow: '0 10px 24px rgba(15,23,42,0.18)'
-            }}>
-              <HeaderIcon sx={{ color: '#fff', fontSize: 28 }} />
-            </Box>
-            <Box>
-              <Typography sx={{ fontWeight: 900, fontSize: 20, color: '#0f172a', letterSpacing: '-0.02em', lineHeight: 1.1 }}>
-                {theme.label}
-              </Typography>
-              <Typography sx={{ fontSize: 12.5, color: '#475569', fontWeight: 500, mt: 0.3, maxWidth: 620 }}>
-                {theme.desc}
-              </Typography>
-            </Box>
-          </Stack>
-          <Stack direction="row" spacing={1} alignItems="center">
-            <Chip
-              icon={scopeIcon}
-              label={scopeLabel}
-              sx={{
-                bgcolor: '#ffffff',
-                border: `1.5px solid ${theme.primary}40`,
-                color: theme.primaryDark,
-                fontWeight: 700,
-                fontSize: 12,
-                height: 30
-              }}
-            />
-            <Chip
-              label={`${matrizOrdenada.length} competencias`}
-              sx={{
-                bgcolor: INSTITUCIONAL_TABLE_BLUE,
-                color: '#fff',
-                fontWeight: 800,
-                fontSize: 11.5,
-                height: 30,
-                letterSpacing: '0.04em'
-              }}
-            />
-          </Stack>
-        </Stack>
-      </Paper>
-
-      {/* ═══════════ FILTROS PRIMARIOS (Tipo prueba + Programa) ═══════════ */}
+      {/* ═══════════ FILTROS DE BÚSQUEDA ═══════════ */}
       <Paper elevation={0} sx={{
         p: 2,
         borderRadius: 3,
@@ -742,80 +659,14 @@ function RendimientoCompetenciasPanel({ grupo = 'genericas' }) {
         bgcolor: '#ffffff',
         boxShadow: '0 4px 18px rgba(15,23,42,0.04)'
       }}>
-        <Stack direction={{ xs: 'column', md: 'row' }} spacing={2} alignItems={{ xs: 'stretch', md: 'center' }} justifyContent="space-between">
-          <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2} alignItems={{ xs: 'stretch', sm: 'center' }} sx={{ flex: 1, maxWidth: 800 }}>
-            <Stack direction="row" alignItems="center" spacing={1} sx={{ mr: 1, flexShrink: 0 }}>
-              <FilterListRoundedIcon sx={{ color: theme.primary, fontSize: 20 }} />
-              <Typography sx={{ fontWeight: 800, fontSize: 13.5, color: '#0f172a', letterSpacing: '-0.01em', textTransform: 'uppercase' }}>
-                Filtros
-              </Typography>
-            </Stack>
-
-            <Box sx={{ flex: 1, minWidth: 280 }}>
-              <ProgramFilterPanel
-                label="Programa académico"
-                options={programOptions}
-                value={selectedProgramas}
-                onChange={setSelectedProgramas}
-                placeholder="Buscar programa académico..."
-                themeColor={theme.primary}
-              />
-            </Box>
-          </Stack>
-
-          <Stack direction="row" spacing={1.5} alignItems="center" justifyContent={{ xs: 'space-between', md: 'flex-end' }}>
-            <Button
-              variant="contained"
-              startIcon={<SearchRoundedIcon />}
-              onClick={handleApplyFilters}
-              sx={{
-                borderRadius: '8px',
-                textTransform: 'none',
-                fontWeight: 700,
-                py: 1,
-                px: 2.5,
-                fontSize: 13,
-                bgcolor: theme.primary,
-                boxShadow: `0 4px 14px ${theme.primary}33`,
-                '&:hover': {
-                  bgcolor: theme.primaryDark || theme.primary,
-                  boxShadow: 'none'
-                }
-              }}
-            >
-              Buscar
-            </Button>
-            <Button
-              variant="outlined"
-              startIcon={<ClearRoundedIcon sx={{ fontSize: 15 }} />}
-              onClick={handleClearFilters}
-              sx={{
-                borderRadius: '8px',
-                textTransform: 'none',
-                fontWeight: 600,
-                py: 0.9,
-                px: 2,
-                fontSize: 12.5,
-                borderColor: '#cbd5e1',
-                color: '#64748b',
-                bgcolor: '#f8fafc',
-                '&:hover': {
-                  borderColor: '#94a3b8',
-                  color: '#1e293b',
-                  bgcolor: '#f1f5f9'
-                }
-              }}
-            >
-              Limpiar
-            </Button>
-            <Tooltip title="Selecciona uno o más programas y haz clic en Buscar para filtrar. Si limpias los filtros, se mostrará el promedio institucional global." arrow>
-              <Stack direction="row" alignItems="center" spacing={0.5} sx={{ cursor: 'help', ml: 1, flexShrink: 0 }}>
-                <InfoRoundedIcon sx={{ color: '#94a3b8', fontSize: 19 }} />
-                <Typography sx={{ fontSize: 11.5, color: '#64748b', fontWeight: 700 }}>Ayuda</Typography>
-              </Stack>
-            </Tooltip>
-          </Stack>
-        </Stack>
+        <ProgramFilterPanel
+          label="Programa académico"
+          options={programOptions}
+          value={appliedProgramas}
+          onChange={handleProgramasChange}
+          placeholder="Buscar programa académico..."
+          themeColor={theme.primary}
+        />
       </Paper>
 
       {/* ═══════════ TABLA DE COMPETENCIAS ═══════════ */}
@@ -828,36 +679,14 @@ function RendimientoCompetenciasPanel({ grupo = 'genericas' }) {
       }}>
         <Stack direction={{ xs: 'column', md: 'row' }} alignItems={{ xs: 'flex-start', md: 'center' }} justifyContent="space-between" spacing={1.5} sx={{ mb: 1.6 }}>
           <Stack direction="row" spacing={1} alignItems="center">
-            <Box sx={{
-              width: 32, height: 32, borderRadius: 1.8,
-              bgcolor: theme.primarySoft,
-              display: 'grid', placeItems: 'center'
-            }}>
-              <TableChartRoundedIcon sx={{ color: theme.primaryDark, fontSize: 18 }} />
-            </Box>
-            <Box>
-              <Typography sx={{ fontWeight: 800, fontSize: 14.5, color: '#0f172a', letterSpacing: '-0.01em' }}>
-                Matriz Competencia × Año
-              </Typography>
-              <Typography sx={{ fontSize: 11.5, color: '#64748b', fontWeight: 500 }}>
-                Clic en una fila para graficar. Clic nuevamente para deseleccionar.
-              </Typography>
-            </Box>
+            <TableChartRoundedIcon sx={{ color: theme.primary, fontSize: 18 }} />
+            <Typography sx={{ fontWeight: 700, fontSize: 14.5, color: '#0f172a', letterSpacing: '-0.01em' }}>
+              Matriz Competencia × {scopeLabel}
+            </Typography>
           </Stack>
 
-          {/* Selector de años local (Segmented Control) */}
+          {/* Selector de años local (Segmented Control) y Copiar Tabla */}
           <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1.5} alignItems={{ xs: 'stretch', sm: 'center' }} flexWrap="wrap" useFlexGap sx={{ mt: { xs: 1, md: 0 } }}>
-            <Button
-              size="small"
-              variant="outlined"
-              startIcon={<ContentCopyRoundedIcon sx={{ fontSize: 15 }} />}
-              onClick={handleCopyTable}
-              disabled={matrizEmpty}
-              sx={{ textTransform: 'none', fontWeight: 800, borderRadius: 2, fontSize: 11, py: 0.35, height: 32 }}
-            >
-              Copiar tabla
-            </Button>
-            
             <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, flexWrap: 'wrap' }}>
               <Typography sx={{ fontSize: 11, fontWeight: 800, color: '#64748b', letterSpacing: '0.04em' }}>AÑOS:</Typography>
               <Box sx={{ display: 'flex', bgcolor: '#f1f5f9', p: 0.4, borderRadius: '8px', border: '1px solid #cbd5e1', flexWrap: 'wrap', gap: 0.25 }}>
@@ -892,6 +721,17 @@ function RendimientoCompetenciasPanel({ grupo = 'genericas' }) {
                 })}
               </Box>
             </Box>
+
+            <Button
+              size="small"
+              variant="outlined"
+              startIcon={<ContentCopyRoundedIcon sx={{ fontSize: 15 }} />}
+              onClick={handleCopyTable}
+              disabled={matrizEmpty}
+              sx={{ textTransform: 'none', fontWeight: 800, borderRadius: 2, fontSize: 11, py: 0.35, height: 32 }}
+            >
+              Copiar tabla
+            </Button>
           </Stack>
         </Stack>
 
@@ -913,7 +753,7 @@ function RendimientoCompetenciasPanel({ grupo = 'genericas' }) {
               fontSize: 12.5
             }}>
               <Box component="thead">
-                <Box component="tr" sx={{ bgcolor: INSTITUCIONAL_TABLE_BLUE }}>
+                <Box component="tr" sx={{ bgcolor: theme.primary }}>
                   <Box component="th" sx={{ textAlign: 'left', px: 1.6, py: 1.1, color: '#fff', fontWeight: 800, fontSize: 11.5, letterSpacing: '0.06em', textTransform: 'uppercase', minWidth: 260 }}>
                     Competencia
                   </Box>
@@ -948,10 +788,10 @@ function RendimientoCompetenciasPanel({ grupo = 'genericas' }) {
                         color: selected ? '#172554' : '#0f172a',
                         fontSize: 12.8,
                         borderBottom: '1px solid #f1f5f9',
-                        borderLeft: selected ? '3px solid #1d4ed8' : '3px solid transparent'
+                        borderLeft: selected ? `3px solid ${theme.primary}` : '3px solid transparent'
                       }}>
                         <Stack direction="row" spacing={0.8} alignItems="center">
-                          {selected && <CheckCircleRoundedIcon sx={{ fontSize: 15, color: '#1d4ed8' }} />}
+                          {selected && <CheckCircleRoundedIcon sx={{ fontSize: 15, color: theme.primary }} />}
                           <span>{row.competencia}</span>
                         </Stack>
                       </Box>
@@ -1009,7 +849,7 @@ function RendimientoCompetenciasPanel({ grupo = 'genericas' }) {
                       fontSize: 12,
                       letterSpacing: '0.05em',
                       textTransform: 'uppercase',
-                      borderTop: `2px solid ${INSTITUCIONAL_TABLE_BLUE}`
+                      borderTop: `2px solid ${theme.primary}`
                     }}>
                       Promedio
                     </Box>
@@ -1019,7 +859,7 @@ function RendimientoCompetenciasPanel({ grupo = 'genericas' }) {
                         textAlign: 'center',
                         fontWeight: 900,
                         color: '#0f172a',
-                        borderTop: `2px solid ${INSTITUCIONAL_TABLE_BLUE}`
+                        borderTop: `2px solid ${theme.primary}`
                       }}>
                         {fmt(promedioRow.byYear?.[anio]?.programa, 1)}
                       </Box>
@@ -1029,7 +869,7 @@ function RendimientoCompetenciasPanel({ grupo = 'genericas' }) {
                       textAlign: 'center',
                       fontWeight: 900,
                       color: '#1e3a8a',
-                      borderTop: `2px solid ${INSTITUCIONAL_TABLE_BLUE}`,
+                      borderTop: `2px solid ${theme.primary}`,
                       borderLeft: '1px solid #cbd5e1',
                       bgcolor: '#fff'
                     }}>
@@ -1055,62 +895,71 @@ function RendimientoCompetenciasPanel({ grupo = 'genericas' }) {
           mb: 2
         }}
       >
-        <Stack direction={{ xs: 'column', md: 'row' }} alignItems={{ xs: 'flex-start', md: 'center' }} justifyContent="space-between" spacing={1.5} sx={{ mb: 1.5 }}>
+        <Stack direction={{ xs: 'column', sm: 'row' }} alignItems={{ xs: 'flex-start', sm: 'center' }} justifyContent="space-between" spacing={1.5} sx={{ mb: 1.5 }}>
           <Stack direction="row" spacing={1} alignItems="center">
-            <Box sx={{
-              width: 32, height: 32, borderRadius: 1.8,
-              bgcolor: '#eff6ff',
-              display: 'grid', placeItems: 'center'
-            }}>
-              <TimelineRoundedIcon sx={{ color: INSTITUCIONAL_COLOR, fontSize: 18 }} />
-            </Box>
-            <Box>
-              <Typography sx={{ fontWeight: 800, fontSize: 14.5, color: '#0f172a', letterSpacing: '-0.01em' }}>
+            <TimelineRoundedIcon sx={{ color: theme.primary, fontSize: 18 }} />
+            <Box sx={{ display: 'flex', alignItems: 'baseline', gap: 1, flexWrap: 'wrap' }}>
+              <Typography sx={{ fontWeight: 700, fontSize: 14.5, color: '#0f172a', letterSpacing: '-0.01em' }}>
                 {chartTitle}
               </Typography>
-              <Typography data-copy-ignore="true" sx={{ fontSize: 11.5, color: '#64748b', fontWeight: 500 }}>
-                {activeRow ? 'Competencia seleccionada en la tabla' : `Comportamiento general · ${scopeLabel}`}
+              <Typography data-copy-ignore="true" sx={{ fontSize: 11, color: '#64748b', fontWeight: 500 }}>
+                ({activeRow ? 'Selección individual' : `Promedio · ${scopeLabel}`})
               </Typography>
             </Box>
           </Stack>
 
-          <Stack data-copy-ignore="true" direction="row" spacing={0.8} alignItems="center" flexWrap="wrap" useFlexGap>
+          <Stack data-copy-ignore="true" direction="row" spacing={1} alignItems="center" flexWrap="wrap" useFlexGap>
             <Button
               data-copy-ignore="true"
               size="small"
               variant="outlined"
-              startIcon={<ImageRoundedIcon sx={{ fontSize: 15 }} />}
+              startIcon={<ImageRoundedIcon sx={{ fontSize: 14 }} />}
               onClick={handleCopyChart}
               disabled={chartEmpty}
-              sx={{ textTransform: 'none', fontWeight: 800, borderRadius: 2, fontSize: 11, py: 0.35 }}
+              sx={{
+                textTransform: 'none',
+                fontWeight: 700,
+                borderRadius: '8px',
+                fontSize: 11,
+                borderColor: '#cbd5e1',
+                color: '#475569',
+                height: 28,
+                px: 1.2,
+                '&:hover': {
+                  borderColor: '#94a3b8',
+                  bgcolor: '#f8fafc',
+                  color: '#1f2937'
+                }
+              }}
             >
               Copiar gráfico
             </Button>
             {brecha && (
               <>
-              <CompareArrowsRoundedIcon sx={{ fontSize: 16, color: '#64748b' }} />
-              <Chip
-                label={`Brecha promedio: ${brecha.promedio >= 0 ? '+' : ''}${fmt(brecha.promedio, 1)}`}
-                size="small"
-                sx={{
-                  fontSize: 11,
-                  fontWeight: 800,
-                  bgcolor: brecha.promedio >= 0 ? '#dbeafe' : '#fee2e2',
-                  color: brecha.promedio >= 0 ? '#1e3a8a' : '#991b1b',
-                  border: brecha.promedio >= 0 ? '1px solid #93c5fd' : '1px solid #fecaca'
-                }}
-              />
-              <Chip
-                label={`Último año: ${brecha.ultimo >= 0 ? '+' : ''}${fmt(brecha.ultimo, 1)}`}
-                size="small"
-                sx={{
-                  fontSize: 11,
-                  fontWeight: 800,
-                  bgcolor: '#f1f5f9',
-                  color: '#334155',
-                  border: '1px solid #e2e8f0'
-                }}
-              />
+                <Chip
+                  label={`Brecha promedio: ${brecha.promedio >= 0 ? '+' : ''}${fmt(brecha.promedio, 1)}`}
+                  size="small"
+                  sx={{
+                    fontSize: 10.5,
+                    fontWeight: 700,
+                    height: 24,
+                    bgcolor: brecha.promedio >= 0 ? '#eff6ff' : '#fef2f2',
+                    color: brecha.promedio >= 0 ? '#1e40af' : '#991b1b',
+                    border: brecha.promedio >= 0 ? '1px solid #bfdbfe' : '1px solid #fecaca'
+                  }}
+                />
+                <Chip
+                  label={`Último año: ${brecha.ultimo >= 0 ? '+' : ''}${fmt(brecha.ultimo, 1)}`}
+                  size="small"
+                  sx={{
+                    fontSize: 10.5,
+                    fontWeight: 700,
+                    height: 24,
+                    bgcolor: '#f8fafc',
+                    color: '#475569',
+                    border: '1px solid #e2e8f0'
+                  }}
+                />
               </>
             )}
           </Stack>
@@ -1128,7 +977,7 @@ function RendimientoCompetenciasPanel({ grupo = 'genericas' }) {
           <Box sx={{
             bgcolor: '#ffffff',
             borderRadius: 2,
-            border: '1px solid #dbe3ef',
+            border: '1px solid #cbd5e1',
             p: { xs: 1, md: 1.4 }
           }}>
             <Box sx={{ bgcolor: '#fff', fontFamily: 'Arial, Helvetica, sans-serif' }}>
@@ -1180,10 +1029,10 @@ function RendimientoCompetenciasPanel({ grupo = 'genericas' }) {
                   type="linear"
                   dataKey="principal"
                   name={principalName}
-                  stroke="#1d4ed8"
+                  stroke={theme.primary}
                   strokeWidth={4}
-                  dot={{ r: 6, fill: '#fff', stroke: '#1d4ed8', strokeWidth: 3 }}
-                  activeDot={{ r: 8, fill: '#1d4ed8', stroke: '#fff', strokeWidth: 2.6 }}
+                  dot={{ r: 6, fill: '#fff', stroke: theme.primary, strokeWidth: 3 }}
+                  activeDot={{ r: 8, fill: theme.primary, stroke: '#fff', strokeWidth: 2.6 }}
                   connectNulls
                 >
                   <LabelList dataKey="principal" content={RenderBelow} />

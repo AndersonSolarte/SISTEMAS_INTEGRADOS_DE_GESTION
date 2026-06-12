@@ -483,6 +483,14 @@ const runMigrations = async () => {
     await qi.addIndex('poblacional_matriculados', ['codigo_dane_nacimiento'], { name: 'idx_poblacional_matriculados_codigo_municipio_nacimiento' }).catch(() => {});
     await qi.addIndex('poblacional_matriculados', ['codigo_departamento_nacimiento'], { name: 'idx_poblacional_matriculados_codigo_departamento_nacimiento' }).catch(() => {});
 
+    // Indices de optimizacion de rendimiento
+    await qi.addIndex('estadisticas', ['categoria', 'subcategoria', 'anio'], { name: 'idx_estadisticas_categoria_subcategoria_anio' }).catch(() => {});
+    await qi.addIndex('estadisticas', ['programa'], { name: 'idx_estadisticas_programa' }).catch(() => {});
+    await qi.addIndex('saber_pro_resultados_individuales', ['anio', 'tipo_prueba'], { name: 'idx_saber_pro_individuales_anio_tipo_prueba' }).catch(() => {});
+    await qi.addIndex('poblacional_matriculados', ['anio', 'programa'], { name: 'idx_poblacional_matriculados_anio_programa' }).catch(() => {});
+    await qi.addIndex('saber_pro_resultados_agregados', ['anio', 'programa', 'competencia'], { name: 'idx_saber_pro_agregados_anio_programa_competencia' }).catch(() => {});
+    await qi.addIndex('saber_pro_resultados_agregados', ['tipo_prueba'], { name: 'idx_saber_pro_agregados_tipo_prueba' }).catch(() => {});
+
     await repairMatriculadosFromEstadisticas();
     await repairGeorreferenciaFromDivipola();
 
