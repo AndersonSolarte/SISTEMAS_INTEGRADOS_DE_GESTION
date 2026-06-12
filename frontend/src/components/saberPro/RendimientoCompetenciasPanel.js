@@ -1245,7 +1245,7 @@ function RendimientoCompetenciasPanel({ grupo = 'genericas' }) {
             <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.8, py: 1 }}>
               {rankingCompetencias.map((item, index) => {
                 const widthPercent = rankingDiff > 0
-                  ? 25 + ((item.promedio - rankingMinVal) / rankingDiff) * 70
+                  ? 70 + ((item.promedio - rankingMinVal) / rankingDiff) * 25
                   : 95;
                 const barWidth = animateRanking ? widthPercent : 0;
 
@@ -1366,9 +1366,9 @@ function RendimientoCompetenciasPanel({ grupo = 'genericas' }) {
                       <Box
                         sx={{
                           flexGrow: 1,
-                          height: 10,
+                          height: 20,
                           bgcolor: 'rgba(241, 245, 249, 0.6)',
-                          borderRadius: '8px',
+                          borderRadius: '10px',
                           overflow: 'hidden',
                           position: 'relative',
                           boxShadow: 'inset 0 1px 2px rgba(15,23,42,0.06)'
@@ -1379,7 +1379,7 @@ function RendimientoCompetenciasPanel({ grupo = 'genericas' }) {
                           sx={{
                             height: '100%',
                             width: `${barWidth}%`,
-                            borderRadius: '8px',
+                            borderRadius: '10px',
                             background: `linear-gradient(90deg, ${theme.primary}cc, ${theme.primary})`,
                             transition: 'width 1.2s cubic-bezier(0.34, 1.56, 0.64, 1)',
                             position: 'relative',
@@ -1506,9 +1506,9 @@ function RendimientoCompetenciasPanel({ grupo = 'genericas' }) {
                     <Box
                       sx={{
                         flexGrow: 1,
-                        height: 10,
+                        height: 20,
                         bgcolor: 'rgba(226, 232, 240, 0.6)',
-                        borderRadius: '8px',
+                        borderRadius: '10px',
                         overflow: 'hidden',
                         position: 'relative',
                         boxShadow: 'inset 0 1px 2px rgba(0,0,0,0.06)'
@@ -1517,9 +1517,9 @@ function RendimientoCompetenciasPanel({ grupo = 'genericas' }) {
                       <Box
                         sx={{
                           height: '100%',
-                          width: `${animateRanking ? (rankingDiff > 0 ? 25 + ((promedioGeneralAcumulado - rankingMinVal) / rankingDiff) * 70 : 95) : 0}%`,
+                          width: `${animateRanking ? 100 : 0}%`,
                           background: 'linear-gradient(90deg, #10b981, #059669)',
-                          borderRadius: '8px',
+                          borderRadius: '10px',
                           transition: 'width 1.2s cubic-bezier(0.34, 1.56, 0.64, 1)'
                         }}
                       />
