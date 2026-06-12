@@ -684,12 +684,20 @@ function RendimientoCompetenciasPanel({ grupo = 'genericas' }) {
       : null;
   }, [aniosVisibles, promedioRow, grupo]);
 
-  const rankingMaxValor = useMemo(() => {
+  const rankingMinLimit = useMemo(() => {
     const vals = rankingCompetencias.map((c) => c.promedio);
     if (promedioGeneralAcumulado != null) vals.push(promedioGeneralAcumulado);
-    if (!vals.length) return 150;
+    if (!vals.length) return 0;
+    const minVal = Math.min(...vals);
+    return Math.max(0, Math.floor((minVal - 15) / 10) * 10);
+  }, [rankingCompetencias, promedioGeneralAcumulado]);
+
+  const rankingMaxLimit = useMemo(() => {
+    const vals = rankingCompetencias.map((c) => c.promedio);
+    if (promedioGeneralAcumulado != null) vals.push(promedioGeneralAcumulado);
+    if (!vals.length) return 300;
     const maxVal = Math.max(...vals);
-    return Math.max(160, maxVal * 1.15);
+    return Math.min(300, Math.ceil((maxVal + 15) / 10) * 10);
   }, [rankingCompetencias, promedioGeneralAcumulado]);
 
   const rankingEmpty = rankingCompetencias.length === 0;
@@ -1230,7 +1238,10 @@ function RendimientoCompetenciasPanel({ grupo = 'genericas' }) {
           ) : (
             <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.8, py: 1 }}>
               {rankingCompetencias.map((item, index) => {
-                const widthPercent = (item.promedio / rankingMaxValor) * 100;
+                const range = rankingMaxLimit - rankingMinLimit;
+                const widthPercent = range > 0
+                  ? ((item.promedio - rankingMinLimit) / range) * 85 + 15
+                  : 15;
                 return (
                   <Box
                     key={item.competencia}
@@ -1411,7 +1422,7 @@ function RendimientoCompetenciasPanel({ grupo = 'genericas' }) {
                       <Box
                         sx={{
                           height: '100%',
-                          width: `${(promedioGeneralAcumulado / rankingMaxValor) * 100}%`,
+                          width: `${rankingMaxLimit - rankingMinLimit > 0 ? ((promedioGeneralAcumulado - rankingMinLimit) / (rankingMaxLimit - rankingMinLimit)) * 85 + 15 : 15}%`,
                           bgcolor: '#475569',
                           borderRadius: '10px',
                           transition: 'width 0.8s cubic-bezier(0.4, 0, 0.2, 1)'
