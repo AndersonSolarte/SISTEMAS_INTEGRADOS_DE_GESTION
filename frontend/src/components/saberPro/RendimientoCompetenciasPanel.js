@@ -585,9 +585,10 @@ function RendimientoCompetenciasPanel({ grupo = 'genericas' }) {
     if (!vals.length) return [0, 300];
     const min = Math.min(...vals);
     const max = Math.max(...vals);
-    const span = Math.max(max - min, 4);
-    const pad = Math.max(span * 0.08, 1.5);
-    return [Math.max(0, Math.floor((min - pad) / 2) * 2), Math.min(300, Math.ceil((max + pad) / 2) * 2)];
+    // Margen holgado de 15 puntos para centrar verticalmente los datos
+    const minLimit = Math.max(0, Math.floor((min - 15) / 10) * 10);
+    const maxLimit = Math.min(300, Math.ceil((max + 15) / 10) * 10);
+    return [minLimit, maxLimit];
   }, [chartData]);
 
   const hasAppliedPrograms = appliedProgramas.length > 0;
