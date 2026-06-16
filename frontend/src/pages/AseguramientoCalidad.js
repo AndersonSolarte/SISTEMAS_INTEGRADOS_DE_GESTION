@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import ReactDOM from 'react-dom';
-import { Box, Paper, Typography, Grid, TextField, Button, Table, TableBody, TableCell, TableContainer, TableHead, TableRow, TablePagination, Chip, IconButton, Tooltip, Fade, Slide, Stack, Dialog, DialogTitle, DialogContent, DialogActions, InputAdornment, Switch, Menu, MenuItem, ListItemIcon, ListItemText, Divider as MuiDivider, Skeleton } from '@mui/material';
+import { Box, Paper, Typography, Grid, TextField, Button, Table, TableBody, TableCell, TableContainer, TableHead, TableRow, TablePagination, Chip, IconButton, Tooltip, Fade, Slide, Stack, Dialog, DialogTitle, DialogContent, DialogActions, InputAdornment, Switch, Menu, MenuItem, ListItemIcon, ListItemText, Divider as MuiDivider, LinearProgress } from '@mui/material';
 import { Search as SearchIcon, Clear as ClearIcon, VisibilityOutlined as VisibilityOutlinedIcon, FileDownloadOutlined as FileDownloadOutlinedIcon, Description as DescriptionIcon, Article as ArticleIcon, AssignmentTurnedIn as AssignmentIcon, ListAlt as ListIcon, Policy as PolicyIcon, AccountTree as AccountTreeIcon, Upload as UploadIcon, GetApp as DownloadTemplateIcon, DeleteSweep as DeleteSweepIcon, Favorite as FavoriteIcon, FavoriteBorder as FavoriteBorderIcon, MoreVert as MoreVertIcon, HelpOutline as HelpOutlineIcon, PostAdd as PostAddIcon } from '@mui/icons-material';
 import { useSnackbar } from 'notistack';
 import { useLocation } from 'react-router-dom';
@@ -1658,9 +1658,38 @@ function AseguramientoCalidad() {
           </Paper>
         </Slide>
 
-        <Slide direction="up" in={true} timeout={700}>
-          <Paper elevation={0} sx={{ border: '1px solid #e2e8f0', borderRadius: 3, overflow: 'hidden' }}>
-            {displayDocumentos.length === 0 && !loading ? (
+        <Paper elevation={0} sx={{ border: '1px solid #e2e8f0', borderRadius: 3, overflow: 'hidden', position: 'relative' }}>
+            {loading && displayDocumentos.length > 0 && (
+              <LinearProgress
+                sx={{
+                  position: 'absolute',
+                  top: 0,
+                  left: 0,
+                  right: 0,
+                  height: 3,
+                  zIndex: 2,
+                  bgcolor: '#dbeafe',
+                  '& .MuiLinearProgress-bar': { bgcolor: '#2563eb' }
+                }}
+              />
+            )}
+            {loading && displayDocumentos.length === 0 ? (
+              <Box sx={{ p: { xs: 4, md: 5 }, textAlign: 'center', minHeight: 150, display: 'grid', placeItems: 'center' }}>
+                <Box sx={{ width: 'min(420px, 100%)' }}>
+                  <LinearProgress
+                    sx={{
+                      height: 6,
+                      borderRadius: 999,
+                      bgcolor: '#dbeafe',
+                      '& .MuiLinearProgress-bar': { borderRadius: 999, bgcolor: '#2563eb' }
+                    }}
+                  />
+                  <Typography variant="body2" sx={{ color: '#64748b', mt: 2, fontWeight: 700 }}>
+                    Cargando documentos...
+                  </Typography>
+                </Box>
+              </Box>
+            ) : displayDocumentos.length === 0 ? (
               <Box sx={{ p: 10, textAlign: 'center' }}>
                 <Box sx={{ width: 100, height: 100, borderRadius: '50%', bgcolor: '#f1f5f9', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto', mb: 3 }}>
                   <SearchIcon sx={{ fontSize: 50, color: '#94a3b8' }} />
@@ -1705,29 +1734,7 @@ function AseguramientoCalidad() {
                       </TableRow>
                     </TableHead>
                     <TableBody>
-                      {loading ? (
-                        Array.from({ length: Math.min(rowsPerPage, 5) }).map((_, index) => (
-                          <TableRow key={`document-loading-${index}`}>
-                            <TableCell sx={{ py: 1.7 }}><Skeleton variant="text" width="72%" height={24} /></TableCell>
-                            <TableCell sx={{ py: 1.7 }}><Skeleton variant="rounded" width={105} height={24} /></TableCell>
-                            <TableCell sx={{ py: 1.7 }}><Skeleton variant="text" width="88%" height={24} /></TableCell>
-                            <TableCell sx={{ py: 1.7 }}><Skeleton variant="text" width="70%" height={24} /></TableCell>
-                            <TableCell sx={{ py: 1.7 }}><Skeleton variant="text" width={92} height={24} /></TableCell>
-                            <TableCell align="center" sx={{ py: 1.7 }}><Skeleton variant="rounded" width={54} height={24} sx={{ mx: 'auto' }} /></TableCell>
-                            {canManageDocumental && (
-                              <TableCell align="center" sx={{ py: 1.7 }}><Skeleton variant="rounded" width={82} height={24} sx={{ mx: 'auto' }} /></TableCell>
-                            )}
-                            <TableCell align="center" sx={{ py: 1.7 }}>
-                              <Stack direction="row" spacing={1} justifyContent="center">
-                                <Skeleton variant="circular" width={32} height={32} />
-                                <Skeleton variant="circular" width={32} height={32} />
-                                <Skeleton variant="circular" width={32} height={32} />
-                              </Stack>
-                            </TableCell>
-                          </TableRow>
-                        ))
-                      ) : (
-                        displayDocumentos.map((doc) => {
+                      {displayDocumentos.map((doc) => {
                           const isFavorite = favoriteIds.has(String(doc.id));
                           const normalized = normalizeDocFields(doc);
                           return (
@@ -1849,8 +1856,7 @@ function AseguramientoCalidad() {
                               </TableCell>
                             </TableRow>
                           );
-                        })
-                      )}
+                        })}
                     </TableBody>
                   </Table>
                 </TableContainer>
@@ -1868,8 +1874,7 @@ function AseguramientoCalidad() {
                 />
               </>
             )}
-          </Paper>
-        </Slide>
+        </Paper>
         <Dialog open={openClearDialog} onClose={handleCloseClearDialog} maxWidth="sm" fullWidth>
           <DialogTitle sx={{ fontWeight: 800 }}>
             Confirmar limpieza de base de datos
