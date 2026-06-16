@@ -428,10 +428,24 @@ function Dashboard() {
                 </Paper>
               </Grid>
 
-              <Grid item xs={12}>
-                <Stack spacing={2.5}>
+              <Grid item xs={12} sx={{ width: '100%', flexBasis: '100%', maxWidth: '100%', minWidth: 0 }}>
+                <Stack spacing={2.5} sx={{ width: '100%', minWidth: 0, alignItems: 'stretch' }}>
 
-                  <Paper ref={favoritosRef} elevation={0} sx={{ p: { xs: 2, sm: 2.5, lg: 3 }, borderRadius: 3, border: '1px solid #e2e8f0', scrollMarginTop: 72 }}>
+                  <Paper
+                    ref={favoritosRef}
+                    elevation={0}
+                    sx={{
+                      width: '100%',
+                      maxWidth: 'none',
+                      minWidth: 0,
+                      alignSelf: 'stretch',
+                      boxSizing: 'border-box',
+                      p: { xs: 1.5, sm: 2, md: 2.5, lg: 3 },
+                      borderRadius: 3,
+                      border: '1px solid #e2e8f0',
+                      scrollMarginTop: 72
+                    }}
+                  >
                     <Stack direction="row" spacing={1} alignItems="center" sx={{ mb: 2 }}>
                       <FavoriteIcon sx={{ color: '#ef4444' }} />
                       <Typography variant="h6" sx={{ fontWeight: 800, color: '#1e293b', fontSize: { xs: 16, md: 18, lg: 20 } }}>
@@ -457,56 +471,89 @@ function Dashboard() {
                       }}
                     />
                     {loadingFavorites ? (
-                      <Box sx={{ py: 4, textAlign: 'center' }}>
+                      <Box sx={{ width: '100%', py: 4, textAlign: 'center' }}>
                         <CircularProgress size={32} />
                         <Typography variant="body2" sx={{ mt: 1, color: '#64748b' }}>
                           Cargando favoritos...
                         </Typography>
                       </Box>
                     ) : favorites.length === 0 ? (
-                      <Alert severity="info">Aún no has marcado documentos como favoritos.</Alert>
+                      <Box sx={{ width: '100%' }}>
+                        <Alert severity="info" sx={{ width: '100%', boxSizing: 'border-box' }}>
+                          Aún no has marcado documentos como favoritos.
+                        </Alert>
+                      </Box>
                     ) : filteredFavorites.length === 0 ? (
-                      <Alert severity="warning">No hay coincidencias con la búsqueda.</Alert>
+                      <Box sx={{ width: '100%' }}>
+                        <Alert severity="warning" sx={{ width: '100%', boxSizing: 'border-box' }}>
+                          No hay coincidencias con la búsqueda.
+                        </Alert>
+                      </Box>
                     ) : (
-                      <TableContainer>
-                        <Table size="small">
+                      <TableContainer
+                        sx={{
+                          width: '100%',
+                          maxWidth: '100%',
+                          overflowX: 'auto',
+                          border: '1px solid #e2e8f0',
+                          borderRadius: 2,
+                          scrollbarWidth: 'thin',
+                          '&::-webkit-scrollbar': { height: 8 },
+                          '&::-webkit-scrollbar-track': { bgcolor: '#f8fafc' },
+                          '&::-webkit-scrollbar-thumb': { bgcolor: '#cbd5e1', borderRadius: 8 }
+                        }}
+                      >
+                        <Table
+                          size="small"
+                          sx={{
+                            width: '100%',
+                            minWidth: { xs: 900, lg: 1080 },
+                            tableLayout: 'fixed'
+                          }}
+                        >
                           <TableHead>
                             <TableRow sx={{ bgcolor: '#f8fafc' }}>
-                              <TableCell sx={{ fontWeight: 700, color: '#1e293b', fontSize: 13, borderBottom: '2px solid #e2e8f0', textTransform: 'uppercase', letterSpacing: 0.5 }}>Código</TableCell>
-                              <TableCell sx={{ fontWeight: 700, color: '#1e293b', fontSize: 13, borderBottom: '2px solid #e2e8f0', textTransform: 'uppercase', letterSpacing: 0.5 }}>Tipo</TableCell>
+                              <TableCell sx={{ width: 145, fontWeight: 700, color: '#1e293b', fontSize: 13, borderBottom: '2px solid #e2e8f0', textTransform: 'uppercase', letterSpacing: 0.5 }}>Código</TableCell>
+                              <TableCell sx={{ width: 145, fontWeight: 700, color: '#1e293b', fontSize: 13, borderBottom: '2px solid #e2e8f0', textTransform: 'uppercase', letterSpacing: 0.5 }}>Tipo</TableCell>
                               <TableCell sx={{ fontWeight: 700, color: '#1e293b', fontSize: 13, borderBottom: '2px solid #e2e8f0', textTransform: 'uppercase', letterSpacing: 0.5 }}>Nombre Documento</TableCell>
-                              <TableCell sx={{ fontWeight: 700, color: '#1e293b', fontSize: 13, borderBottom: '2px solid #e2e8f0', textTransform: 'uppercase', letterSpacing: 0.5 }}>Autor</TableCell>
-                              <TableCell sx={{ fontWeight: 700, color: '#1e293b', fontSize: 13, borderBottom: '2px solid #e2e8f0', textTransform: 'uppercase', letterSpacing: 0.5 }}>Fecha Creación</TableCell>
-                              <TableCell sx={{ fontWeight: 700, color: '#1e293b', fontSize: 13, borderBottom: '2px solid #e2e8f0', textTransform: 'uppercase', letterSpacing: 0.5 }}>Estado</TableCell>
-                              <TableCell align="center" sx={{ fontWeight: 700, color: '#1e293b', fontSize: 13, borderBottom: '2px solid #e2e8f0', textTransform: 'uppercase', letterSpacing: 0.5 }}>Acciones</TableCell>
+                              <TableCell sx={{ width: 210, fontWeight: 700, color: '#1e293b', fontSize: 13, borderBottom: '2px solid #e2e8f0', textTransform: 'uppercase', letterSpacing: 0.5 }}>Autor</TableCell>
+                              <TableCell sx={{ width: 145, fontWeight: 700, color: '#1e293b', fontSize: 13, borderBottom: '2px solid #e2e8f0', textTransform: 'uppercase', letterSpacing: 0.5 }}>Fecha Creación</TableCell>
+                              <TableCell sx={{ width: 135, fontWeight: 700, color: '#1e293b', fontSize: 13, borderBottom: '2px solid #e2e8f0', textTransform: 'uppercase', letterSpacing: 0.5 }}>Estado</TableCell>
+                              <TableCell align="center" sx={{ width: 185, fontWeight: 700, color: '#1e293b', fontSize: 13, borderBottom: '2px solid #e2e8f0', textTransform: 'uppercase', letterSpacing: 0.5 }}>Acciones</TableCell>
                             </TableRow>
                           </TableHead>
                           <TableBody>
                             {favoritePageData.map((doc) => (
                               <TableRow key={doc.id} hover sx={{ '&:hover': { bgcolor: '#f8fafc' }, transition: 'all 0.2s', cursor: 'pointer' }}>
-                                <TableCell sx={{ fontWeight: 700, color: '#2563eb', fontSize: 14, fontFamily: 'monospace' }}>{doc.codigo}</TableCell>
+                                <TableCell sx={{ fontWeight: 700, color: '#2563eb', fontSize: 14, fontFamily: 'monospace', whiteSpace: 'nowrap' }}>{doc.codigo}</TableCell>
                                 <TableCell>
                                   <Chip
                                     label={doc?.tipoDocumentacion?.nombre || 'N/A'}
                                     size="small"
                                     sx={{
+                                      maxWidth: '100%',
                                       fontWeight: 700,
                                       fontSize: 12,
                                       borderRadius: 2,
                                       px: 1,
                                       bgcolor: getTipoColor(doc?.tipoDocumentacion?.nombre).bg,
-                                      color: getTipoColor(doc?.tipoDocumentacion?.nombre).color
+                                      color: getTipoColor(doc?.tipoDocumentacion?.nombre).color,
+                                      '& .MuiChip-label': {
+                                        display: 'block',
+                                        overflow: 'hidden',
+                                        textOverflow: 'ellipsis'
+                                      }
                                     }}
                                   />
                                 </TableCell>
-                                <TableCell sx={{ color: '#1e293b', fontWeight: 600, fontSize: 14 }}>{doc.titulo}</TableCell>
-                                <TableCell sx={{ color: '#475569', fontSize: 13 }}>{doc.autor || '-'}</TableCell>
+                                <TableCell sx={{ color: '#1e293b', fontWeight: 600, fontSize: 14, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{doc.titulo}</TableCell>
+                                <TableCell sx={{ color: '#475569', fontSize: 13, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{doc.autor || '-'}</TableCell>
                                 <TableCell sx={{ color: '#475569', fontSize: 13, whiteSpace: 'nowrap' }}>{formatDate(doc.fecha_creacion)}</TableCell>
                                 <TableCell>
-                                  <Chip label={doc.estado || 'vigente'} color={getEstadoColor(doc.estado)} size="small" sx={{ fontWeight: 700, textTransform: 'uppercase', fontSize: 11, borderRadius: 1.5 }} />
+                                  <Chip label={doc.estado || 'vigente'} color={getEstadoColor(doc.estado)} size="small" sx={{ maxWidth: '100%', fontWeight: 700, textTransform: 'uppercase', fontSize: 11, borderRadius: 1.5 }} />
                                 </TableCell>
                                 <TableCell align="center">
-                                  <Stack direction="row" spacing={1} justifyContent="center">
+                                  <Stack direction="row" spacing={0.75} justifyContent="center" sx={{ width: '100%', minWidth: 0 }}>
                                     <Tooltip title="Ver documento" arrow>
                                       <span>
                                         <IconButton
@@ -582,7 +629,16 @@ function Dashboard() {
                           }}
                           rowsPerPageOptions={[5, 10, 25]}
                           labelRowsPerPage="Mostrar:"
-                          sx={{ borderTop: '1px solid #e2e8f0', bgcolor: '#f8fafc' }}
+                          sx={{
+                            borderTop: '1px solid #e2e8f0',
+                            bgcolor: '#f8fafc',
+                            minWidth: { xs: 900, lg: 1080 },
+                            '& .MuiTablePagination-toolbar': {
+                              px: { xs: 1.5, sm: 2 },
+                              flexWrap: 'wrap',
+                              rowGap: 1
+                            }
+                          }}
                         />
                       </TableContainer>
                     )}
