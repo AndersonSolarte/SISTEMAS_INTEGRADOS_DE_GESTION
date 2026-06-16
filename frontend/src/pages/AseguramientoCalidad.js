@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import ReactDOM from 'react-dom';
-import { Box, Paper, Typography, Grid, TextField, Button, Table, TableBody, TableCell, TableContainer, TableHead, TableRow, TablePagination, CircularProgress, Chip, IconButton, Tooltip, Fade, Slide, Stack, Dialog, DialogTitle, DialogContent, DialogActions, InputAdornment, Switch, Menu, MenuItem, ListItemIcon, ListItemText, Divider as MuiDivider } from '@mui/material';
+import { Box, Paper, Typography, Grid, TextField, Button, Table, TableBody, TableCell, TableContainer, TableHead, TableRow, TablePagination, Chip, IconButton, Tooltip, Fade, Slide, Stack, Dialog, DialogTitle, DialogContent, DialogActions, InputAdornment, Switch, Menu, MenuItem, ListItemIcon, ListItemText, Divider as MuiDivider, Skeleton } from '@mui/material';
 import { Search as SearchIcon, Clear as ClearIcon, VisibilityOutlined as VisibilityOutlinedIcon, FileDownloadOutlined as FileDownloadOutlinedIcon, Description as DescriptionIcon, Article as ArticleIcon, AssignmentTurnedIn as AssignmentIcon, ListAlt as ListIcon, Policy as PolicyIcon, AccountTree as AccountTreeIcon, Upload as UploadIcon, GetApp as DownloadTemplateIcon, DeleteSweep as DeleteSweepIcon, Favorite as FavoriteIcon, FavoriteBorder as FavoriteBorderIcon, MoreVert as MoreVertIcon, HelpOutline as HelpOutlineIcon, PostAdd as PostAddIcon } from '@mui/icons-material';
 import { useSnackbar } from 'notistack';
 import { useLocation } from 'react-router-dom';
@@ -1674,8 +1674,18 @@ function AseguramientoCalidad() {
               </Box>
             ) : (
               <>
-                <TableContainer>
-                  <Table>
+                <TableContainer
+                  sx={{
+                    width: '100%',
+                    maxWidth: '100%',
+                    overflowX: 'auto',
+                    scrollbarWidth: 'thin',
+                    '&::-webkit-scrollbar': { height: 8 },
+                    '&::-webkit-scrollbar-track': { bgcolor: '#f8fafc' },
+                    '&::-webkit-scrollbar-thumb': { bgcolor: '#cbd5e1', borderRadius: 8 }
+                  }}
+                >
+                  <Table sx={{ width: '100%', minWidth: { xs: 980, lg: 1120 }, tableLayout: 'fixed' }}>
                     <TableHead>
                       <TableRow sx={{ background: 'linear-gradient(135deg, #1e3a8a 0%, #1d4ed8 100%)' }}>
                         {[
@@ -1696,12 +1706,26 @@ function AseguramientoCalidad() {
                     </TableHead>
                     <TableBody>
                       {loading ? (
-                        <TableRow>
-                          <TableCell colSpan={8} align="center" sx={{ py: 10 }}>
-                            <CircularProgress size={50} thickness={4} />
-                            <Typography variant="body1" sx={{ color: '#64748b', mt: 3, fontWeight: 600 }}>Cargando documentos...</Typography>
-                          </TableCell>
-                        </TableRow>
+                        Array.from({ length: Math.min(rowsPerPage, 5) }).map((_, index) => (
+                          <TableRow key={`document-loading-${index}`}>
+                            <TableCell sx={{ py: 1.7 }}><Skeleton variant="text" width="72%" height={24} /></TableCell>
+                            <TableCell sx={{ py: 1.7 }}><Skeleton variant="rounded" width={105} height={24} /></TableCell>
+                            <TableCell sx={{ py: 1.7 }}><Skeleton variant="text" width="88%" height={24} /></TableCell>
+                            <TableCell sx={{ py: 1.7 }}><Skeleton variant="text" width="70%" height={24} /></TableCell>
+                            <TableCell sx={{ py: 1.7 }}><Skeleton variant="text" width={92} height={24} /></TableCell>
+                            <TableCell align="center" sx={{ py: 1.7 }}><Skeleton variant="rounded" width={54} height={24} sx={{ mx: 'auto' }} /></TableCell>
+                            {canManageDocumental && (
+                              <TableCell align="center" sx={{ py: 1.7 }}><Skeleton variant="rounded" width={82} height={24} sx={{ mx: 'auto' }} /></TableCell>
+                            )}
+                            <TableCell align="center" sx={{ py: 1.7 }}>
+                              <Stack direction="row" spacing={1} justifyContent="center">
+                                <Skeleton variant="circular" width={32} height={32} />
+                                <Skeleton variant="circular" width={32} height={32} />
+                                <Skeleton variant="circular" width={32} height={32} />
+                              </Stack>
+                            </TableCell>
+                          </TableRow>
+                        ))
                       ) : (
                         displayDocumentos.map((doc) => {
                           const isFavorite = favoriteIds.has(String(doc.id));
