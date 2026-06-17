@@ -16,9 +16,23 @@ const MENU_KEYS = new Set([
 const GESTION_INFO_MODULE_KEYS = new Set([
   'gestion_bases_datos',
   'estadistica_institucional',
+  'poblacional',
+  'georreferencia',
+  'biblioteca',
+  'medios_educativos',
+  'internacionalizacion',
+  'investigacion',
+  'proyectos_convenios',
+  'recurso_humano',
+  'saber_pro',
+  'gestion_procesos',
+  'plan_accion',
+  'autoevaluacion',
+  'registros_calificados_acreditacion',
   'autoevaluacion.instrumentos.access',
   'infraestructura_fisica.gestionar',
   'infraestructura_fisica.ver',
+  'infraestructura_fisica',
   'seguridad_aplicativa.ver',
   'seguridad_aplicativa.escanear',
   'seguridad_aplicativa.ver_hallazgos',
@@ -52,6 +66,7 @@ const POBLACIONAL_DASHBOARD_KEYS = new Set([
   'poblacional_resumen_estadistico',
   'poblacional_desercion',
   'poblacional_empleabilidad',
+  'poblacional_contexto_externo',
   'poblacional_saber_pro'
 ]);
 
@@ -91,7 +106,7 @@ const getDefaultPermissionsByRole = (role) => {
         'gestion_usuarios',
         'buscar_documentos'
       ],
-      allowedModules: ['gestion_bases_datos', 'estadistica_institucional', 'infraestructura_fisica.gestionar', 'infraestructura_fisica.ver'],
+      allowedModules: Array.from(GESTION_INFO_MODULE_KEYS),
       allowedGestionProcesosDashboards: Array.from(GESTION_PROCESOS_DASHBOARD_KEYS),
       allowedPoblacionalDashboards: Array.from(POBLACIONAL_DASHBOARD_KEYS),
       allowedSaberProDashboards: Array.from(SABER_PRO_DASHBOARD_KEYS)
@@ -167,7 +182,7 @@ const getDefaultPermissionsByRole = (role) => {
       menuPermissions: ['dashboard', 'gestion_informacion', 'buscar_documentos'],
       allowedModules: ['estadistica_institucional', 'infraestructura_fisica.ver'],
       allowedGestionProcesosDashboards: [],
-      allowedPoblacionalDashboards: ['poblacional_flujo', 'poblacional_matriculados', 'poblacional_graduados', 'poblacional_caracterizacion', 'poblacional_resumen_estadistico'],
+      allowedPoblacionalDashboards: ['poblacional_flujo', 'poblacional_matriculados', 'poblacional_graduados', 'poblacional_caracterizacion', 'poblacional_resumen_estadistico', 'poblacional_contexto_externo'],
       allowedSaberProDashboards: [
         'saber_pro_consulta_individual',
         'saber_pro_validacion_masiva',
@@ -250,16 +265,19 @@ const getUserModulePermissions = async (userId, role) => {
   if (allowedGestionProcesosDashboards.length > 0) {
     if (!menuPermissions.includes('gestion_informacion')) menuPermissions.push('gestion_informacion');
     if (!allowedModules.includes('estadistica_institucional')) allowedModules.push('estadistica_institucional');
+    if (!allowedModules.includes('gestion_procesos')) allowedModules.push('gestion_procesos');
   }
 
   if (allowedPoblacionalDashboards.length > 0 || hasLegacyStatsPermission) {
     if (!menuPermissions.includes('gestion_informacion')) menuPermissions.push('gestion_informacion');
     if (!allowedModules.includes('estadistica_institucional')) allowedModules.push('estadistica_institucional');
+    if (!allowedModules.includes('poblacional')) allowedModules.push('poblacional');
   }
 
   if (allowedSaberProDashboards.length > 0) {
     if (!menuPermissions.includes('gestion_informacion')) menuPermissions.push('gestion_informacion');
     if (!allowedModules.includes('estadistica_institucional')) allowedModules.push('estadistica_institucional');
+    if (!allowedModules.includes('saber_pro')) allowedModules.push('saber_pro');
   }
 
   const restrictedMenusByRole = {

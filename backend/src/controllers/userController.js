@@ -24,7 +24,20 @@ const MENU_PERMISSION_KEYS = [
 const GESTION_INFO_MODULE_KEYS = [
   'gestion_bases_datos',
   'estadistica_institucional',
+  'poblacional',
+  'georreferencia',
+  'biblioteca',
+  'medios_educativos',
+  'internacionalizacion',
+  'investigacion',
+  'proyectos_convenios',
+  'recurso_humano',
+  'saber_pro',
+  'gestion_procesos',
+  'plan_accion',
   'autoevaluacion',
+  'registros_calificados_acreditacion',
+  'infraestructura_fisica',
   'autoevaluacion.instrumentos.access',
   'infraestructura_fisica.gestionar',
   'infraestructura_fisica.ver',
@@ -47,6 +60,7 @@ const POBLACIONAL_DASHBOARD_PERMISSION_KEYS = [
   'poblacional_resumen_estadistico',
   'poblacional_desercion',
   'poblacional_empleabilidad',
+  'poblacional_contexto_externo',
   'poblacional_saber_pro'
 ];
 const SABER_PRO_DASHBOARD_PERMISSION_KEYS = [
@@ -1635,11 +1649,20 @@ const updateUserModulePermissions = async (req, res) => {
     if (cleanGestionProcesosDashboards.length > 0 && !cleanModules.includes('estadistica_institucional')) {
       cleanModules.push('estadistica_institucional');
     }
+    if (cleanGestionProcesosDashboards.length > 0 && !cleanModules.includes('gestion_procesos')) {
+      cleanModules.push('gestion_procesos');
+    }
     if (cleanPoblacionalDashboards.length > 0 && !cleanModules.includes('estadistica_institucional')) {
       cleanModules.push('estadistica_institucional');
     }
+    if (cleanPoblacionalDashboards.length > 0 && !cleanModules.includes('poblacional')) {
+      cleanModules.push('poblacional');
+    }
     if (cleanSaberProDashboards.length > 0 && !cleanModules.includes('estadistica_institucional')) {
       cleanModules.push('estadistica_institucional');
+    }
+    if (cleanSaberProDashboards.length > 0 && !cleanModules.includes('saber_pro')) {
+      cleanModules.push('saber_pro');
     }
     if ((cleanModules.length > 0 || cleanGestionProcesosDashboards.length > 0 || cleanPoblacionalDashboards.length > 0 || cleanSaberProDashboards.length > 0) && !cleanMenu.includes('gestion_informacion')) {
       cleanMenu.push('gestion_informacion');

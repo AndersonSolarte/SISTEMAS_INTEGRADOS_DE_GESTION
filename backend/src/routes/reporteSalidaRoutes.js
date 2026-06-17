@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const {
   aprobarDesdeCorreo,
+  getCatalogoLaboral,
   getFeatureConfig,
   listarDependencias,
   listarSolicitudes,
@@ -15,6 +16,7 @@ const { ROLES } = require('../constants/roles');
 router.get('/aprobar/:token', aprobarDesdeCorreo);
 router.get('/config', auth, getFeatureConfig);
 router.patch('/config', auth, updateFeatureConfig);
+router.get('/catalogo-laboral', auth, getCatalogoLaboral);
 router.get('/jefes', auth, searchJefes);
 router.get('/dependencias', auth, listarDependencias);
 router.post('/solicitudes', auth, radicarSolicitud);

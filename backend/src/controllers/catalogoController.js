@@ -80,7 +80,19 @@ const addCommonFilters = (conditions, replacements, query, user, skipKey = '') =
     .filter(Boolean)
     .forEach((term, index) => {
       const key = `term${index}`;
-      conditions.push(`(d.titulo ILIKE :${key} OR d.codigo ILIKE :${key})`);
+      conditions.push(`(
+        d.titulo ILIKE :${key}
+        OR d.codigo ILIKE :${key}
+        OR d.autor ILIKE :${key}
+        OR d.revisa ILIKE :${key}
+        OR d.aprueba ILIKE :${key}
+        OR d.macroproceso ILIKE :${key}
+        OR d.proceso ILIKE :${key}
+        OR d.subproceso ILIKE :${key}
+        OR d.tipo_documento ILIKE :${key}
+        OR d.observaciones ILIKE :${key}
+        OR CAST(d.datos_originales AS TEXT) ILIKE :${key}
+      )`);
       replacements[key] = `%${term}%`;
     });
 };

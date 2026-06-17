@@ -254,6 +254,14 @@ const ensureDocumentSheetsView = async () => {
   `);
 };
 
+const ensureReporteSalidaAdminBossSupport = async (qi) => {
+  await models.ReporteSalidaSolicitud.sync();
+  await qi.changeColumn('reporte_salida_solicitudes', 'jefe_inmediato_user_id', {
+    type: DataTypes.INTEGER,
+    allowNull: true
+  });
+};
+
 const runMigrations = async () => {
   try {
     console.log('[migrate] Ejecutando migraciones...');
@@ -321,6 +329,7 @@ const runMigrations = async () => {
     await models.SecurityFinding.sync();
     await models.SecurityRemediationProposal.sync();
     await models.SecurityFindingComment.sync();
+    await ensureReporteSalidaAdminBossSupport(qi);
     await sequelize.query("CREATE INDEX IF NOT EXISTS instrument_forms_created_by_status_idx ON instrument_forms (created_by, status)");
     await sequelize.query("CREATE INDEX IF NOT EXISTS instrument_responses_form_submitted_idx ON instrument_responses (form_id, submitted_at)");
     await sequelize.query("CREATE INDEX IF NOT EXISTS security_findings_scan_severity_idx ON security_findings (scan_id, severity)");

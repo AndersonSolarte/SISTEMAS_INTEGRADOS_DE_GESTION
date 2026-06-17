@@ -236,6 +236,10 @@ testConnection()
       const ReporteSalidaSolicitud = require('./models/ReporteSalidaSolicitud');
       const SystemSetting = require('./models/SystemSetting');
       await ReporteSalidaSolicitud.sync();
+      await sequelize.getQueryInterface().changeColumn('reporte_salida_solicitudes', 'jefe_inmediato_user_id', {
+        type: require('sequelize').DataTypes.INTEGER,
+        allowNull: true
+      });
       await SystemSetting.sync();
       console.log('[gestion-informacion] Tablas autoevaluacion listas.');
     } catch (e) {

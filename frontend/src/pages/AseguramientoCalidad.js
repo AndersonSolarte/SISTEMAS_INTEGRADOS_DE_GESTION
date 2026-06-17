@@ -758,7 +758,6 @@ function AseguramientoCalidad() {
     // document_scope siempre viene del tab activo para evitar búsquedas cruzadas
     const activeFilters = { ...base, document_scope: activeDocumentScope };
     const requestId = ++documentRequestId.current;
-    skipNextDocumentFilterEffect.current = true;
     setLoading(true);
     setPage(0);
     setHasSearched(true);
@@ -954,9 +953,25 @@ function AseguramientoCalidad() {
       const response = await documentoService.getDocumentos(filters, newPage + 1, rowsPerPage);
       if (requestId !== documentRequestId.current) return;
       if (response.success) {
+        const total = Number(response.data.pagination.total || 0);
+        const totalPages = Math.max(1, Math.ceil(total / rowsPerPage));
+        if (newPage >= totalPages && total > 0) {
+          const lastPage = totalPages - 1;
+          const lastPageResponse = await documentoService.getDocumentos(filters, lastPage + 1, rowsPerPage);
+          if (requestId !== documentRequestId.current) return;
+          if (lastPageResponse.success) {
+            const nextDocs = lastPageResponse.data.documentos || [];
+            setPage(lastPage);
+            setDocumentos(nextDocs);
+            setVisibleRelations(buildRelacionesFromDocumentos(nextDocs));
+            setTotalDocumentos(lastPageResponse.data.pagination.total);
+          }
+          return;
+        }
         const nextDocs = response.data.documentos || [];
         setDocumentos(nextDocs);
         setVisibleRelations(buildRelacionesFromDocumentos(nextDocs));
+        setTotalDocumentos(total);
       }
     } catch (error) {
       if (requestId === documentRequestId.current) {
