@@ -6,7 +6,7 @@ const ReporteSalidaSolicitud = sequelize.define('reporte_salida_solicitudes', {
   consecutivo: { type: DataTypes.STRING(40), allowNull: false, unique: true },
   user_id: { type: DataTypes.INTEGER, allowNull: false },
   documento_id: { type: DataTypes.INTEGER, allowNull: false },
-  jefe_inmediato_user_id: { type: DataTypes.INTEGER, allowNull: false },
+  jefe_inmediato_user_id: { type: DataTypes.INTEGER, allowNull: true },
   estado: {
     type: DataTypes.ENUM(
       'pendiente_aprobacion_jefe',

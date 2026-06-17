@@ -21,6 +21,11 @@ const reporteSalidaService = {
     return response.data;
   },
 
+  getCatalogoLaboral: async () => {
+    const response = await api.get('/reporte-salida/catalogo-laboral');
+    return response.data;
+  },
+
   radicarSolicitud: async (payload) => {
     const response = await api.post('/reporte-salida/solicitudes', payload);
     return response.data;

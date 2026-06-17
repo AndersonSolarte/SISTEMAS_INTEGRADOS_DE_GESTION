@@ -40,6 +40,32 @@ const formatMinutes = (minutes) => {
   return `${h}h ${String(m).padStart(2, '0')}m`;
 };
 
+const normalizeOption = (value) => String(value || '')
+  .normalize('NFD')
+  .replace(/[\u0300-\u036f]/g, '')
+  .replace(/\s+/g, ' ')
+  .trim()
+  .toLowerCase();
+
+const uniqueSorted = (values) => {
+  const seen = new Set();
+  return values
+    .map((value) => String(value || '').trim())
+    .filter(Boolean)
+    .filter((value) => {
+      const key = normalizeOption(value);
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    })
+    .sort((a, b) => a.localeCompare(b, 'es'));
+};
+
+const hasExactOption = (value, options) => {
+  const key = normalizeOption(value);
+  return Boolean(key) && options.some((option) => normalizeOption(option) === key);
+};
+
 const sectionSx = {
   p: { xs: 1.4, md: 1.8 },
   border: '1px solid #dbe6f5',
@@ -104,6 +130,9 @@ function ReporteSalidaFormDialog({ open, documento, user, onClose, onSubmitted }
   const [jefe, setJefe] = useState(null);
   const [jefes, setJefes] = useState([]);
   const [dependencias, setDependencias] = useState([]);
+  const [cargos, setCargos] = useState([]);
+  const [laboralRows, setLaboralRows] = useState([]);
+  const [catalogYear, setCatalogYear] = useState('');
   const [jefeSearch, setJefeSearch] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [loadingJefes, setLoadingJefes] = useState(false);
@@ -126,25 +155,34 @@ function ReporteSalidaFormDialog({ open, documento, user, onClose, onSubmitted }
 
   useEffect(() => {
     if (!open) return;
-    reporteSalidaService.getDependencias()
-      .then((response) => setDependencias(response?.data || []))
-      .catch(() => setDependencias([]));
+    reporteSalidaService.getCatalogoLaboral()
+      .then((response) => {
+        const data = response?.data || {};
+        setDependencias(data.dependencias || []);
+        setCargos(data.cargos || []);
+        setLaboralRows(data.relaciones || []);
+        setCatalogYear(data.periodoLabel || data.anio || '');
+        setJefes(data.jefes || []);
+        if (data.currentEmployee) {
+          setForm((prev) => ({
+            ...prev,
+            laboral: {
+              dependencia: data.currentEmployee.dependencia || prev.laboral.dependencia,
+              cargo: data.currentEmployee.cargo || prev.laboral.cargo
+            }
+          }));
+        }
+      })
+      .catch(() => {
+        setDependencias([]);
+        setCargos([]);
+        setLaboralRows([]);
+        setCatalogYear('');
+      });
   }, [open]);
 
   useEffect(() => {
-    if (!open) return undefined;
-    const timer = setTimeout(async () => {
-      setLoadingJefes(true);
-      try {
-        const response = await reporteSalidaService.searchJefes(jefeSearch);
-        setJefes(response?.data || []);
-      } catch (_) {
-        setJefes([]);
-      } finally {
-        setLoadingJefes(false);
-      }
-    }, 300);
-    return () => clearTimeout(timer);
+    setLoadingJefes(false);
   }, [jefeSearch, open]);
 
   const salidaMinutes = useMemo(
@@ -160,6 +198,76 @@ function ReporteSalidaFormDialog({ open, documento, user, onClose, onSubmitted }
   const isPersonal = form.salida.tipo === 'diligencia_personal';
   const diff = isPersonal ? Number(reposicionMinutes || 0) - Number(salidaMinutes || 0) : 0;
 
+  const selectedDependenciaIsCatalog = hasExactOption(form.laboral.dependencia, dependencias);
+  const selectedCargoIsCatalog = hasExactOption(form.laboral.cargo, cargos);
+  const selectedJefeDependencia = jefe?.dependencia || '';
+
+  const filteredLaboralRows = useMemo(() => {
+    return laboralRows.filter((row) => {
+      const rowDep = normalizeOption(row.dependencia);
+      const rowCargo = normalizeOption(row.cargo);
+      if (selectedDependenciaIsCatalog && rowDep !== normalizeOption(form.laboral.dependencia)) return false;
+      if (selectedCargoIsCatalog && rowCargo !== normalizeOption(form.laboral.cargo)) return false;
+      if (selectedJefeDependencia && rowDep !== normalizeOption(selectedJefeDependencia)) return false;
+      return true;
+    });
+  }, [form.laboral.cargo, form.laboral.dependencia, laboralRows, selectedCargoIsCatalog, selectedDependenciaIsCatalog, selectedJefeDependencia]);
+
+  const dependenciaOptions = useMemo(() => {
+    if (!laboralRows.length) return dependencias;
+    const sourceRows = selectedCargoIsCatalog || selectedJefeDependencia
+      ? filteredLaboralRows
+      : laboralRows;
+    return uniqueSorted((sourceRows.length ? sourceRows : laboralRows).map((row) => row.dependencia));
+  }, [dependencias, filteredLaboralRows, laboralRows, selectedCargoIsCatalog, selectedJefeDependencia]);
+
+  const cargoOptions = useMemo(() => {
+    if (!laboralRows.length) return cargos;
+    const sourceRows = selectedDependenciaIsCatalog || selectedJefeDependencia
+      ? filteredLaboralRows
+      : laboralRows;
+    return uniqueSorted((sourceRows.length ? sourceRows : laboralRows).map((row) => row.cargo));
+  }, [cargos, filteredLaboralRows, laboralRows, selectedDependenciaIsCatalog, selectedJefeDependencia]);
+
+  const jefeOptions = useMemo(() => {
+    const depKey = normalizeOption(form.laboral.dependencia);
+    const term = normalizeOption(jefeSearch);
+    const matchesSearch = (item) => {
+      if (!term) return true;
+      return [item.nombre, item.email, item.username, item.cargo, item.dependencia]
+        .some((value) => normalizeOption(value).includes(term));
+    };
+
+    const bySearch = jefes.filter(matchesSearch);
+    if (!selectedDependenciaIsCatalog) return bySearch;
+
+    const sameDependency = bySearch.filter((item) => normalizeOption(item.dependencia) === depKey);
+    if (sameDependency.length) {
+      return sameDependency.map((item) => ({ ...item, matchGroup: 'Jefes de la dependencia' }));
+    }
+
+    return bySearch.map((item) => ({ ...item, matchGroup: 'Jefes institucionales disponibles' }));
+  }, [form.laboral.dependencia, jefeSearch, jefes, selectedDependenciaIsCatalog]);
+
+  useEffect(() => {
+    if (!jefe || !selectedDependenciaIsCatalog) return;
+    const depKey = normalizeOption(form.laboral.dependencia);
+    const hasSameDependencyBoss = jefes.some((item) => normalizeOption(item.dependencia) === depKey);
+    if (hasSameDependencyBoss && normalizeOption(jefe.dependencia) !== depKey) {
+      setJefe(null);
+    }
+  }, [form.laboral.dependencia, jefe, jefes, selectedDependenciaIsCatalog]);
+
+  const jefeHasDirectDependencyMatch = useMemo(() => {
+    if (!selectedDependenciaIsCatalog) return true;
+    const depKey = normalizeOption(form.laboral.dependencia);
+    return jefes.some((item) => normalizeOption(item.dependencia) === depKey);
+  }, [form.laboral.dependencia, jefes, selectedDependenciaIsCatalog]);
+
+  const jefeHelperText = selectedDependenciaIsCatalog && !jefeHasDirectDependencyMatch
+    ? 'No hay jefe directivo registrado en esta dependencia; se muestran jefes institucionales disponibles.'
+    : '';
+
   const update = (section, key, value) => {
     setForm((prev) => ({
       ...prev,
@@ -173,7 +281,17 @@ function ReporteSalidaFormDialog({ open, documento, user, onClose, onSubmitted }
     try {
       const response = await reporteSalidaService.radicarSolicitud({
         documentoId: documento?.id,
-        jefeInmediatoUserId: jefe?.id,
+        jefeInmediatoUserId: jefe?.userId || null,
+        jefeInmediato: jefe ? {
+          id: jefe.id,
+          userId: jefe.userId || null,
+          nombre: jefe.nombre || '',
+          email: jefe.email || '',
+          username: jefe.username || '',
+          cargo: jefe.cargo || '',
+          dependencia: jefe.dependencia || '',
+          source: jefe.source || 'recurso_humano_administrativos'
+        } : null,
         ...form
       });
       onSubmitted?.(response);
@@ -185,7 +303,7 @@ function ReporteSalidaFormDialog({ open, documento, user, onClose, onSubmitted }
     }
   };
 
-  const disableSubmit = submitting || !jefe || !form.laboral.dependencia || !form.laboral.cargo
+  const disableSubmit = submitting || !jefe || !jefe.email || !form.laboral.dependencia || !form.laboral.cargo
     || !form.salida.fecha || !form.salida.horaInicio || !form.salida.horaFin
     || !salidaMinutes
     || (isPersonal && (!form.reposicion.fecha || !form.reposicion.horaInicio || !form.reposicion.horaFin || !reposicionMinutes));
@@ -232,12 +350,15 @@ function ReporteSalidaFormDialog({ open, documento, user, onClose, onSubmitted }
           </Box>
 
           <Box sx={sectionSx}>
-            <SectionTitle title="Información laboral" subtitle="Seleccione la dependencia institucional y registre el cargo." />
+            <SectionTitle
+              title="Información laboral"
+              subtitle={catalogYear ? `Datos sugeridos desde Recurso Humano administrativo ${catalogYear}.` : 'Seleccione la dependencia institucional y registre el cargo.'}
+            />
             <Box sx={responsiveFieldGrid('minmax(360px, 1.45fr) minmax(240px, 0.9fr)')}>
               <Autocomplete
                 freeSolo
                 fullWidth
-                options={dependencias}
+                options={dependenciaOptions}
                 value={form.laboral.dependencia || ''}
                 onChange={(_, value) => update('laboral', 'dependencia', value || '')}
                 onInputChange={(_, value) => update('laboral', 'dependencia', value || '')}
@@ -253,17 +374,45 @@ function ReporteSalidaFormDialog({ open, documento, user, onClose, onSubmitted }
                 }}
                 renderInput={(params) => <TextField {...params} sx={inputSx} fullWidth size="small" required label="Dependencia" placeholder="Buscar dependencia" />}
               />
-              <TextField sx={inputSx} fullWidth size="small" required label="Cargo" value={form.laboral.cargo} onChange={(e) => update('laboral', 'cargo', e.target.value)} />
+              <Autocomplete
+                freeSolo
+                fullWidth
+                options={cargoOptions}
+                value={form.laboral.cargo || ''}
+                onChange={(_, value) => update('laboral', 'cargo', value || '')}
+                onInputChange={(_, value) => update('laboral', 'cargo', value || '')}
+                ListboxProps={{ sx: autocompleteListSx }}
+                componentsProps={{
+                  popper: {
+                    sx: {
+                      ...autocompletePopperSx,
+                      width: { xs: 'calc(100vw - 48px) !important', md: '620px !important' },
+                      maxWidth: 'calc(100vw - 48px)'
+                    }
+                  }
+                }}
+                renderInput={(params) => <TextField {...params} sx={inputSx} fullWidth size="small" required label="Cargo" placeholder="Buscar cargo" />}
+              />
             </Box>
             <Box sx={{ mt: 1.5 }}>
               <Autocomplete
                 fullWidth
-                options={jefes}
+                options={jefeOptions}
                 value={jefe}
                 loading={loadingJefes}
+                groupBy={(option) => option.matchGroup || ''}
                 onInputChange={(_, value) => setJefeSearch(value)}
-                onChange={(_, value) => setJefe(value)}
-                getOptionLabel={(option) => option ? `${option.nombre} - ${option.email}${option.username ? ` - ${option.username}` : ''}` : ''}
+                onChange={(_, value) => {
+                  setJefe(value);
+                  if (value?.dependencia && !form.laboral.dependencia) {
+                    update('laboral', 'dependencia', value.dependencia);
+                  }
+                }}
+                getOptionLabel={(option) => {
+                  if (!option) return '';
+                  const main = [option.cargo, option.nombre].filter(Boolean).join(' - ');
+                  return option.email ? `${main} (${option.email})` : main;
+                }}
                 isOptionEqualToValue={(option, value) => option.id === value.id}
                 ListboxProps={{ sx: autocompleteListSx }}
                 componentsProps={{
@@ -275,7 +424,18 @@ function ReporteSalidaFormDialog({ open, documento, user, onClose, onSubmitted }
                     }
                   }
                 }}
-                renderInput={(params) => <TextField {...params} sx={inputSx} label="Jefe inmediato" required size="small" placeholder="Buscar por nombre, correo o documento" />}
+                renderInput={(params) => (
+                  <TextField
+                    {...params}
+                    sx={inputSx}
+                    label="Jefe inmediato"
+                    required
+                    size="small"
+                    placeholder="Buscar por nombre, correo o documento"
+                    helperText={jefe && !jefe.email ? 'El jefe seleccionado no tiene correo registrado en Recurso Humano.' : jefeHelperText}
+                    error={Boolean(jefe && !jefe.email)}
+                  />
+                )}
               />
             </Box>
           </Box>

@@ -29,20 +29,38 @@ function GestionUsuarios() {
     { key: 'gestion_usuarios', label: 'Gestión de Usuarios' }
   ];
   const GI_MODULE_OPTIONS = [
-    { key: 'gestion_bases_datos', label: 'Gestión de Bases de Datos' },
-    { key: 'estadistica_institucional', label: 'Estadística Institucional' },
-    { key: 'autoevaluacion', label: 'Autoevaluación' },
-    { key: 'autoevaluacion.instrumentos.access', label: 'Autoevaluación - Gestión de Instrumentos' },
-    { key: 'infraestructura_fisica.gestionar', label: 'Infraestructura Física - CRUD y Administración de Bases de Datos' },
-    { key: 'infraestructura_fisica.ver', label: 'Infraestructura Física - Visualizar Estadísticas, Gráficos y KPIs' },
-    { key: 'seguridad_aplicativa.ver', label: 'Seguridad Aplicativa - Ver modulo' },
-    { key: 'seguridad_aplicativa.escanear', label: 'Seguridad Aplicativa - Ejecutar escaneo' },
-    { key: 'seguridad_aplicativa.ver_hallazgos', label: 'Seguridad Aplicativa - Ver hallazgos' },
-    { key: 'seguridad_aplicativa.gestionar_hallazgos', label: 'Seguridad Aplicativa - Gestionar hallazgos' },
-    { key: 'seguridad_aplicativa.analizar_remediacion', label: 'Seguridad Aplicativa - Analizar remediacion' },
-    { key: 'seguridad_aplicativa.exportar', label: 'Seguridad Aplicativa - Exportar' },
-    { key: 'seguridad_aplicativa.configurar', label: 'Seguridad Aplicativa - Configurar' }
+    { key: 'gestion_bases_datos', label: 'Gestion de Bases de Datos', group: 'Acceso general' },
+    { key: 'estadistica_institucional', label: 'Estadistica Institucional', group: 'Acceso general' },
+    { key: 'poblacional', label: 'Poblacional', group: 'Tableros estadisticos' },
+    { key: 'georreferencia', label: 'Georreferencia', group: 'Tableros estadisticos' },
+    { key: 'biblioteca', label: 'Biblioteca', group: 'Tableros estadisticos' },
+    { key: 'medios_educativos', label: 'Medios Educativos', group: 'Tableros estadisticos' },
+    { key: 'internacionalizacion', label: 'Internacionalizacion', group: 'Tableros estadisticos' },
+    { key: 'investigacion', label: 'Investigacion', group: 'Tableros estadisticos' },
+    { key: 'proyectos_convenios', label: 'Proyectos y Convenios', group: 'Tableros estadisticos' },
+    { key: 'recurso_humano', label: 'Recurso Humano / Gestion Humana', group: 'Tableros estadisticos' },
+    { key: 'saber_pro', label: 'Saber Pro', group: 'Tableros estadisticos' },
+    { key: 'gestion_procesos', label: 'Gestion por Procesos', group: 'Tableros estadisticos' },
+    { key: 'plan_accion', label: 'Plan de Accion', group: 'Tableros estadisticos' },
+    { key: 'autoevaluacion', label: 'Autoevaluacion', group: 'Tableros estadisticos' },
+    { key: 'registros_calificados_acreditacion', label: 'Registros Calificados y Acreditacion', group: 'Tableros estadisticos' },
+    { key: 'infraestructura_fisica', label: 'Infraestructura Fisica', group: 'Tableros estadisticos' },
+    { key: 'autoevaluacion.instrumentos.access', label: 'Autoevaluacion - Gestion de Instrumentos', group: 'Permisos especializados' },
+    { key: 'infraestructura_fisica.gestionar', label: 'Infraestructura Fisica - CRUD y Administracion de Bases de Datos', group: 'Permisos especializados' },
+    { key: 'infraestructura_fisica.ver', label: 'Infraestructura Fisica - Visualizar Estadisticas, Graficos y KPIs', group: 'Permisos especializados' },
+    { key: 'seguridad_aplicativa.ver', label: 'Seguridad Aplicativa - Ver modulo', group: 'Seguridad Aplicativa' },
+    { key: 'seguridad_aplicativa.escanear', label: 'Seguridad Aplicativa - Ejecutar escaneo', group: 'Seguridad Aplicativa' },
+    { key: 'seguridad_aplicativa.ver_hallazgos', label: 'Seguridad Aplicativa - Ver hallazgos', group: 'Seguridad Aplicativa' },
+    { key: 'seguridad_aplicativa.gestionar_hallazgos', label: 'Seguridad Aplicativa - Gestionar hallazgos', group: 'Seguridad Aplicativa' },
+    { key: 'seguridad_aplicativa.analizar_remediacion', label: 'Seguridad Aplicativa - Analizar remediacion', group: 'Seguridad Aplicativa' },
+    { key: 'seguridad_aplicativa.exportar', label: 'Seguridad Aplicativa - Exportar', group: 'Seguridad Aplicativa' },
+    { key: 'seguridad_aplicativa.configurar', label: 'Seguridad Aplicativa - Configurar', group: 'Seguridad Aplicativa' }
   ];
+  const GI_MODULE_GROUPS = ['Acceso general', 'Tableros estadisticos', 'Permisos especializados', 'Seguridad Aplicativa']
+    .map((title) => ({
+      title,
+      options: GI_MODULE_OPTIONS.filter((item) => item.group === title)
+    }));
   const GESTION_PROCESOS_DASHBOARD_OPTIONS = [
     { key: 'estadistica_documental', label: 'Estadística Documental' }
   ];
@@ -53,6 +71,7 @@ function GestionUsuarios() {
     { key: 'poblacional_caracterizacion', label: 'Caracterización' },
     { key: 'poblacional_desercion', label: 'Deserción' },
     { key: 'poblacional_empleabilidad', label: 'Empleabilidad' },
+    { key: 'poblacional_contexto_externo', label: 'Contexto Externo' },
     { key: 'poblacional_saber_pro', label: 'Saber Pro (interno)' }
   ];
 
@@ -508,6 +527,7 @@ function GestionUsuarios() {
         const nextModules = Array.isArray(prev.allowedModules) ? [...prev.allowedModules] : [];
         if (!nextMenu.includes('gestion_informacion')) nextMenu.push('gestion_informacion');
         if (!nextModules.includes('estadistica_institucional')) nextModules.push('estadistica_institucional');
+        if (!nextModules.includes('gestion_procesos')) nextModules.push('gestion_procesos');
         return { ...prev, allowedGestionProcesosDashboards: next, allowedModules: nextModules, menuPermissions: nextMenu };
       }
 
@@ -516,6 +536,7 @@ function GestionUsuarios() {
         const nextModules = Array.isArray(prev.allowedModules) ? [...prev.allowedModules] : [];
         if (!nextMenu.includes('gestion_informacion')) nextMenu.push('gestion_informacion');
         if (!nextModules.includes('estadistica_institucional')) nextModules.push('estadistica_institucional');
+        if (!nextModules.includes('poblacional')) nextModules.push('poblacional');
         return { ...prev, allowedPoblacionalDashboards: next, allowedModules: nextModules, menuPermissions: nextMenu };
       }
 
@@ -524,6 +545,7 @@ function GestionUsuarios() {
         const nextModules = Array.isArray(prev.allowedModules) ? [...prev.allowedModules] : [];
         if (!nextMenu.includes('gestion_informacion')) nextMenu.push('gestion_informacion');
         if (!nextModules.includes('estadistica_institucional')) nextModules.push('estadistica_institucional');
+        if (!nextModules.includes('saber_pro')) nextModules.push('saber_pro');
         return { ...prev, allowedSaberProDashboards: next, allowedModules: nextModules, menuPermissions: nextMenu };
       }
 
@@ -1145,24 +1167,65 @@ function GestionUsuarios() {
                 <Divider />
 
                 <Paper variant="outlined" sx={{ p: 2, borderRadius: 2 }}>
-                  <Typography sx={{ fontWeight: 800, mb: 1, color: '#0f172a' }}>Módulos de Gestión de la Información</Typography>
+                  <Typography sx={{ fontWeight: 800, mb: 0.6, color: '#0f172a' }}>Modulos de Gestion de la Informacion</Typography>
+                  <Typography variant="body2" sx={{ color: '#64748b', mb: 1.5 }}>
+                    Selecciona el acceso general y los tableros estadisticos que el usuario podra ver.
+                  </Typography>
+                  <Stack spacing={1.4}>
+                    {GI_MODULE_GROUPS.map((group) => (
+                      <Paper key={group.title} variant="outlined" sx={{ p: 1.4, borderRadius: 2, bgcolor: '#f8fbff' }}>
+                        <Typography sx={{ fontWeight: 800, color: '#1e3a8a', mb: 0.8 }}>{group.title}</Typography>
+                        <FormGroup>
+                          <Grid container spacing={0.5}>
+                            {group.options.map((item) => (
+                              <Grid item xs={12} sm={6} md={4} key={`gi-${item.key}`}>
+                                <FormControlLabel
+                                  control={
+                                    <Checkbox
+                                      checked={modulePermissionsForm.allowedModules.includes(item.key)}
+                                      onChange={() => handleTogglePermission('allowedModules', item.key)}
+                                      disabled={
+                                        item.key === 'gestion_procesos' &&
+                                        Array.isArray(modulePermissionsForm.allowedGestionProcesosDashboards) &&
+                                        modulePermissionsForm.allowedGestionProcesosDashboards.length > 0
+                                      }
+                                      size="small"
+                                    />
+                                  }
+                                  label={item.label}
+                                />
+                              </Grid>
+                            ))}
+                          </Grid>
+                        </FormGroup>
+                      </Paper>
+                    ))}
+                  </Stack>
+                </Paper>
+
+                <Divider />
+
+                <Paper
+                  variant="outlined"
+                  sx={{ p: 2, borderRadius: 2, opacity: modulePermissionsForm.allowedModules.includes('estadistica_institucional') ? 1 : 0.55 }}
+                >
+                  <Typography sx={{ fontWeight: 800, mb: 0.6, color: '#0f172a' }}>Tableros internos de Poblacional</Typography>
+                  <Typography variant="body2" sx={{ color: '#64748b', mb: 1.4 }}>
+                    Activa los tableros poblacionales puntuales cuando el usuario no requiere toda la estadistica institucional.
+                  </Typography>
                   <FormGroup>
                     <Grid container spacing={0.5}>
-                      {GI_MODULE_OPTIONS.map((item) => (
-                        <Grid item xs={12} sm={6} md={4} key={`gi-${item.key}`}>
+                      {POBLACIONAL_DASHBOARD_OPTIONS.map((item) => (
+                        <Grid item xs={12} sm={6} md={4} key={`pobdash-${item.key}`}>
                           <FormControlLabel
-                            control={
+                            control={(
                               <Checkbox
-                                checked={modulePermissionsForm.allowedModules.includes(item.key)}
-                                onChange={() => handleTogglePermission('allowedModules', item.key)}
-                                disabled={
-                                  item.key === 'gestion_procesos' &&
-                                  Array.isArray(modulePermissionsForm.allowedGestionProcesosDashboards) &&
-                                  modulePermissionsForm.allowedGestionProcesosDashboards.length > 0
-                                }
+                                checked={modulePermissionsForm.allowedPoblacionalDashboards.includes(item.key)}
+                                onChange={() => handleTogglePermission('allowedPoblacionalDashboards', item.key)}
+                                disabled={!modulePermissionsForm.allowedModules.includes('estadistica_institucional')}
                                 size="small"
                               />
-                            }
+                            )}
                             label={item.label}
                           />
                         </Grid>
@@ -1172,7 +1235,6 @@ function GestionUsuarios() {
                 </Paper>
 
                 <Divider />
-
                 <Paper
                   variant="outlined"
                   sx={{ p: 2, borderRadius: 2, opacity: modulePermissionsForm.allowedModules.includes('estadistica_institucional') ? 1 : 0.55 }}

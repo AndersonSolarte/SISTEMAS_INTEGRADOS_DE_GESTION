@@ -1,6 +1,6 @@
 const crypto = require('crypto');
 const { Op } = require('sequelize');
-const { Documento, PlanAccion, ReporteSalidaSolicitud, User } = require('../models');
+const { Documento, PlanAccion, ReporteSalidaSolicitud, RecursoHumanoAdministrativo, User } = require('../models');
 const { encryptPayload, decryptPayload } = require('../utils/secureUrlToken');
 const {
   getReporteSalidaRecipients,
@@ -43,6 +43,221 @@ const looksLikeInstitutionalDependencia = (value) => {
 
 const isDependenciaOption = (value) => hasDependenciaCode(value) || looksLikeInstitutionalDependencia(value);
 
+const normalizeForMatch = (value) => String(value || '')
+  .normalize('NFD')
+  .replace(/[\u0300-\u036f]/g, '')
+  .replace(/\s+/g, ' ')
+  .trim()
+  .toLowerCase();
+
+const normalizeDocument = (value) => String(value || '').replace(/\D/g, '');
+
+const tokenizeName = (value) => normalizeForMatch(value)
+  .split(/\s+/)
+  .map((token) => token.trim())
+  .filter((token) => token.length >= 3);
+
+const namesLookRelated = (left, right) => {
+  const leftText = normalizeForMatch(left);
+  const rightText = normalizeForMatch(right);
+  if (!leftText || !rightText) return false;
+  if (leftText === rightText || leftText.includes(rightText) || rightText.includes(leftText)) return true;
+
+  const leftTokenList = tokenizeName(leftText);
+  const rightTokens = tokenizeName(rightText);
+  if (!leftTokenList.length || !rightTokens.length) return false;
+
+  const leftTokens = new Set(leftTokenList);
+  const matches = rightTokens.filter((token) => leftTokens.has(token)).length;
+  return matches >= Math.min(2, rightTokens.length);
+};
+
+const JEFE_CARGO_KEYWORDS = [
+  'asesor',
+  'asesora',
+  'auditor',
+  'auditora interna',
+  'decana',
+  'decano',
+  'director',
+  'directora',
+  'gerente',
+  'jefe',
+  'vicerrector',
+  'rector'
+];
+
+const isJefeCargo = (value) => {
+  const cargo = normalizeForMatch(value);
+  if (!cargo) return false;
+  return JEFE_CARGO_KEYWORDS.some((keyword) => cargo.includes(keyword));
+};
+
+const getLatestAdministrativoYear = async () => {
+  const latest = await RecursoHumanoAdministrativo.findOne({
+    where: { anio: { [Op.ne]: null } },
+    attributes: ['anio'],
+    order: [['anio', 'DESC']],
+    raw: true
+  });
+  return latest?.anio || null;
+};
+
+const getPeriodRank = (value) => {
+  const raw = String(value || '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toUpperCase();
+
+  if (!raw) return 0;
+  if (raw.includes('IIP') || /\bII\b/.test(raw) || /\bSEGUNDO\b/.test(raw) || /\b2\b/.test(raw)) return 2;
+  if (raw.includes('IP') || /\bI\b/.test(raw) || /\bPRIMER\b/.test(raw) || /\b1\b/.test(raw)) return 1;
+  return 0;
+};
+
+const getPeriodLabel = (rank) => {
+  if (rank === 2) return 'IIP';
+  if (rank === 1) return 'IP';
+  return '';
+};
+
+const getLatestAdministrativos = async () => {
+  const latestYear = await getLatestAdministrativoYear();
+  if (!latestYear) return { latestYear: null, latestPeriod: '', rows: [] };
+
+  const yearRows = await RecursoHumanoAdministrativo.findAll({
+    where: { anio: latestYear },
+    attributes: ['anio', 'periodo', 'numero_cedula', 'nombre_empleado', 'cargo_especifico', 'dependencia', 'estado_laboral', 'raw_data'],
+    order: [
+      ['periodo', 'DESC'],
+      ['dependencia', 'ASC'],
+      ['nombre_empleado', 'ASC']
+    ],
+    raw: true
+  });
+
+  const latestPeriodRank = Math.max(0, ...yearRows.map((row) => getPeriodRank(row.periodo)));
+  const rows = latestPeriodRank > 0
+    ? yearRows.filter((row) => getPeriodRank(row.periodo) === latestPeriodRank)
+    : yearRows;
+
+  return { latestYear, latestPeriod: getPeriodLabel(latestPeriodRank), rows };
+};
+
+const uniqueSortedValues = (values) => {
+  const seen = new Set();
+  return values
+    .map((value) => sanitizeText(value, 400))
+    .filter(Boolean)
+    .filter((value) => {
+      const key = normalizeForMatch(value);
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    })
+    .sort((a, b) => a.localeCompare(b, 'es'));
+};
+
+const serializeLaboralRow = (row) => ({
+  dependencia: cleanDependenciaLabel(row.dependencia),
+  cargo: sanitizeText(row.cargo_especifico, 220),
+  nombre: sanitizeText(row.nombre_empleado, 220),
+  documento: sanitizeText(row.numero_cedula, 80),
+  anio: row.anio,
+  periodo: sanitizeText(row.periodo, 40)
+});
+
+const findCurrentAdministrativeRow = (rows, user) => {
+  const userDoc = normalizeDocument(user?.username);
+  const userName = normalizeForMatch(user?.nombre);
+  if (userDoc) {
+    const byDoc = rows.find((row) => normalizeDocument(row.numero_cedula) === userDoc);
+    if (byDoc) return byDoc;
+  }
+  if (userName) {
+    return rows.find((row) => normalizeForMatch(row.nombre_empleado) === userName) || null;
+  }
+  return null;
+};
+
+const getRawDataValue = (rawData, keys = []) => {
+  if (!rawData || typeof rawData !== 'object') return '';
+  const normalizedKeys = keys.map((key) => normalizeForMatch(key));
+  const entry = Object.entries(rawData).find(([key]) => {
+    const normalizedKey = normalizeForMatch(key);
+    return normalizedKeys.some((expected) =>
+      normalizedKey === expected ||
+      normalizedKey.includes(expected) ||
+      expected.includes(normalizedKey)
+    );
+  });
+  return entry ? sanitizeText(entry[1], 220) : '';
+};
+
+const getAdministrativeEmail = (row) => {
+  const direct = getRawDataValue(row.raw_data, [
+    'correo',
+    'correo electronico',
+    'correo electrónico',
+    'correo institucional',
+    'email',
+    'email institucional',
+    'e-mail',
+    'mail'
+  ]);
+  if (direct && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(direct)) return direct;
+  return '';
+};
+
+const mapAdministrativeBosses = async (rows, search = '') => {
+  const bossRows = rows.filter((row) => isJefeCargo(row.cargo_especifico));
+  if (!bossRows.length) return [];
+
+  const users = await User.findAll({
+    where: { estado: 'activo' },
+    attributes: ['id', 'nombre', 'email', 'username', 'role'],
+    order: [['nombre', 'ASC']],
+    raw: true
+  });
+
+  const term = normalizeForMatch(search);
+  const seen = new Set();
+  return bossRows
+    .map((row, index) => {
+      const doc = normalizeDocument(row.numero_cedula);
+      const user = users.find((candidate) =>
+        (doc && normalizeDocument(candidate.username) === doc) ||
+        namesLookRelated(candidate.nombre, row.nombre_empleado)
+      );
+      const rawEmail = getAdministrativeEmail(row);
+      return {
+        id: user?.id ? `user:${user.id}` : `rh:${doc || normalizeForMatch(row.nombre_empleado) || index}`,
+        userId: user?.id || null,
+        nombre: sanitizeText(row.nombre_empleado, 220),
+        email: rawEmail || user?.email || '',
+        username: sanitizeText(row.numero_cedula, 80),
+        cargo: sanitizeText(row.cargo_especifico, 220),
+        dependencia: cleanDependenciaLabel(row.dependencia),
+        anio: row.anio,
+        periodo: sanitizeText(row.periodo, 40),
+        source: 'recurso_humano_administrativos'
+      };
+    })
+    .filter(Boolean)
+    .filter((boss) => {
+      const key = normalizeDocument(boss.username) || `${normalizeForMatch(boss.nombre)}|${normalizeForMatch(boss.cargo)}|${normalizeForMatch(boss.dependencia)}`;
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    })
+    .filter((boss) => {
+      if (!term) return true;
+      return [boss.nombre, boss.email, boss.username, boss.cargo, boss.dependencia]
+        .some((value) => normalizeForMatch(value).includes(term));
+    })
+    .slice(0, 80);
+};
+
 const parseDateTime = (date, time) => {
   if (!date || !time) return null;
   const normalizedTime = String(time).trim();
@@ -64,6 +279,17 @@ const buildSnapshot = (user) => ({
   email: user.email,
   username: user.username,
   role: user.role
+});
+
+const buildAdministrativeBossSnapshot = (boss = {}) => ({
+  id: boss.userId || null,
+  nombre: sanitizeText(boss.nombre, 220),
+  email: sanitizeText(boss.email, 220),
+  username: sanitizeText(boss.username, 80),
+  role: 'recurso_humano_administrativos',
+  cargo: sanitizeText(boss.cargo, 220),
+  dependencia: cleanDependenciaLabel(boss.dependencia),
+  source: 'recurso_humano_administrativos'
 });
 
 const appendTrace = (solicitud, event, actor = null, detail = {}) => ([
@@ -314,7 +540,9 @@ const validateRadicacionPayload = (payload, user) => {
   }
 
   if (!payload?.documentoId) return 'Documento del formato requerido.';
-  if (!payload?.jefeInmediatoUserId) return 'Debe seleccionar jefe inmediato.';
+  if (!payload?.jefeInmediatoUserId && !payload?.jefeInmediato?.email) {
+    return 'Debe seleccionar un jefe inmediato con correo registrado en Recurso Humano.';
+  }
   if (!salida.tipo) return 'Debe seleccionar el tipo de salida.';
   if (!salida.fecha || !salida.horaInicio || !salida.horaFin) return 'Debe indicar fecha, hora inicio y hora fin de salida.';
 
@@ -435,21 +663,10 @@ const searchJefes = async (req, res) => {
   if (!(await getReporteSalidaFeatureState())) return featureDisabled(res);
   try {
     const search = sanitizeText(req.query.search, 80);
-    const where = { estado: 'activo' };
-    if (search) {
-      where[Op.or] = [
-        { nombre: { [Op.iLike]: `%${search}%` } },
-        { email: { [Op.iLike]: `%${search}%` } },
-        { username: { [Op.iLike]: `%${search}%` } }
-      ];
-    }
-    const users = await User.findAll({
-      where,
-      attributes: ['id', 'nombre', 'email', 'username', 'role'],
-      order: [['nombre', 'ASC']],
-      limit: 20
-    });
-    res.json({ success: true, data: users });
+    const { rows } = await getLatestAdministrativos();
+    const bosses = (await mapAdministrativeBosses(rows, search))
+      .filter((boss) => !boss.userId || Number(boss.userId) !== Number(req.user?.id));
+    res.json({ success: true, data: bosses });
   } catch (error) {
     res.status(500).json({ success: false, message: 'No se pudo buscar jefes inmediatos' });
   }
@@ -458,7 +675,13 @@ const searchJefes = async (req, res) => {
 const listarDependencias = async (req, res) => {
   if (!(await getReporteSalidaFeatureState())) return featureDisabled(res);
   try {
-    const rows = await PlanAccion.findAll({
+    const { rows: rhRows } = await getLatestAdministrativos();
+    const rhDependencias = uniqueSortedValues(rhRows.map((row) => cleanDependenciaLabel(row.dependencia)));
+    if (rhDependencias.length) {
+      return res.json({ success: true, data: rhDependencias });
+    }
+
+    const planRows = await PlanAccion.findAll({
       where: {
         dependencia: { [Op.ne]: null },
         deleted_at: null
@@ -470,7 +693,7 @@ const listarDependencias = async (req, res) => {
     });
 
     const seen = new Set();
-    const dependencias = rows
+    const dependencias = planRows
       .map((row) => row.dependencia)
       .filter(isDependenciaOption)
       .map((dependencia) => cleanDependenciaLabel(dependencia))
@@ -489,6 +712,40 @@ const listarDependencias = async (req, res) => {
   }
 };
 
+const getCatalogoLaboral = async (req, res) => {
+  if (!(await getReporteSalidaFeatureState())) return featureDisabled(res);
+  try {
+    const { latestYear, latestPeriod, rows } = await getLatestAdministrativos();
+    const current = findCurrentAdministrativeRow(rows, req.user);
+    const jefes = (await mapAdministrativeBosses(rows, req.query.search || ''))
+      .filter((boss) => !boss.userId || Number(boss.userId) !== Number(req.user?.id));
+
+    res.json({
+      success: true,
+      data: {
+        anio: latestYear,
+        dependencias: uniqueSortedValues(rows.map((row) => cleanDependenciaLabel(row.dependencia))),
+        cargos: uniqueSortedValues(rows.map((row) => row.cargo_especifico)),
+        relaciones: rows.map(serializeLaboralRow).filter((row) => row.dependencia || row.cargo),
+        currentEmployee: current ? {
+          nombre: sanitizeText(current.nombre_empleado, 220),
+          documento: sanitizeText(current.numero_cedula, 80),
+          dependencia: cleanDependenciaLabel(current.dependencia),
+          cargo: sanitizeText(current.cargo_especifico, 220),
+          anio: current.anio,
+          periodo: sanitizeText(current.periodo, 40)
+        } : null,
+        periodo: latestPeriod,
+        periodoLabel: [latestYear, latestPeriod].filter(Boolean).join(' '),
+        jefes
+      }
+    });
+  } catch (error) {
+    console.error('Error consultando catalogo laboral reporte salida:', error);
+    res.status(500).json({ success: false, message: 'No se pudo consultar el catalogo laboral' });
+  }
+};
+
 const radicarSolicitud = async (req, res) => {
   if (!(await getReporteSalidaFeatureState())) return featureDisabled(res);
   try {
@@ -500,9 +757,22 @@ const radicarSolicitud = async (req, res) => {
       return res.status(400).json({ success: false, message: 'El formulario solo esta disponible para THM-DP-FR-002 REPORTE DE SALIDA.' });
     }
 
-    const jefe = await User.findOne({ where: { id: req.body.jefeInmediatoUserId, estado: 'activo' } });
-    if (!jefe) return res.status(400).json({ success: false, message: 'El jefe inmediato seleccionado no existe o no esta activo.' });
-    if (Number(jefe.id) === Number(req.user.id)) {
+    const jefePayload = req.body.jefeInmediato || {};
+    const jefe = req.body.jefeInmediatoUserId
+      ? await User.findOne({ where: { id: req.body.jefeInmediatoUserId, estado: 'activo' } })
+      : null;
+    const shouldUseAdministrativeBoss = !jefe || jefePayload?.source === 'recurso_humano_administrativos' || jefePayload?.cargo;
+    const jefeSnapshot = shouldUseAdministrativeBoss
+      ? buildAdministrativeBossSnapshot({
+        ...jefePayload,
+        userId: jefe?.id || jefePayload.userId,
+        email: jefePayload.email || jefe?.email || ''
+      })
+      : buildSnapshot(jefe);
+    if (!jefe && !jefeSnapshot.email) {
+      return res.status(400).json({ success: false, message: 'El jefe inmediato seleccionado desde Recurso Humano no tiene correo registrado.' });
+    }
+    if (jefe && Number(jefe.id) === Number(req.user.id)) {
       return res.status(400).json({ success: false, message: 'El jefe inmediato debe ser un usuario diferente al solicitante.' });
     }
 
@@ -520,9 +790,9 @@ const radicarSolicitud = async (req, res) => {
       consecutivo,
       user_id: req.user.id,
       documento_id: documento.id,
-      jefe_inmediato_user_id: jefe.id,
+      jefe_inmediato_user_id: jefe?.id || null,
       solicitante_snapshot: buildSnapshot(req.user),
-      jefe_snapshot: buildSnapshot(jefe),
+      jefe_snapshot: jefeSnapshot,
       datos_formulario: {
         personal: {
           nombre: sanitizeText(req.body.personal?.nombre || req.user.nombre),
@@ -787,6 +1057,7 @@ const updateFeatureConfig = async (req, res) => {
 
 module.exports = {
   aprobarDesdeCorreo,
+  getCatalogoLaboral,
   getFeatureConfig,
   listarDependencias,
   listarSolicitudes,

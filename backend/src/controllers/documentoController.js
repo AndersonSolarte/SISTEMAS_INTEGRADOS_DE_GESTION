@@ -205,7 +205,16 @@ const buildSearchWhere = (search = '') => {
     [Op.and]: terms.map((term) => ({
       [Op.or]: [
         { titulo: { [Op.iLike]: `%${term}%` } },
-        { codigo: { [Op.iLike]: `%${term}%` } }
+        { codigo: { [Op.iLike]: `%${term}%` } },
+        { autor: { [Op.iLike]: `%${term}%` } },
+        { revisa: { [Op.iLike]: `%${term}%` } },
+        { aprueba: { [Op.iLike]: `%${term}%` } },
+        { macroproceso: { [Op.iLike]: `%${term}%` } },
+        { proceso_texto: { [Op.iLike]: `%${term}%` } },
+        { subproceso_texto: { [Op.iLike]: `%${term}%` } },
+        { tipo_documento: { [Op.iLike]: `%${term}%` } },
+        { observaciones: { [Op.iLike]: `%${term}%` } },
+        sequelizeWhere(literal(`CAST("documentos"."datos_originales" AS TEXT)`), { [Op.iLike]: `%${term}%` })
       ]
     }))
   };
