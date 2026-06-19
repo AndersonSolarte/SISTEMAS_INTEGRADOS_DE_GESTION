@@ -335,6 +335,10 @@ const runMigrations = async () => {
     await sequelize.query("CREATE INDEX IF NOT EXISTS security_findings_scan_severity_idx ON security_findings (scan_id, severity)");
     await sequelize.query("CREATE INDEX IF NOT EXISTS security_findings_status_component_idx ON security_findings (status, affected_component)");
 
+    await ensureColumn(qi, 'users', 'dependencia', { type: DataTypes.STRING(220), allowNull: true });
+    await ensureColumn(qi, 'users', 'cargo', { type: DataTypes.STRING(220), allowNull: true });
+    await ensureColumn(qi, 'users', 'jefe_inmediato', { type: DataTypes.STRING(220), allowNull: true });
+
     // Workflow plan_accion: agregar columnas no destructivas + backfill de filas legadas como 'Aprobado'.
     await ensureColumn(qi, 'plan_accion', 'dependencia', { type: DataTypes.STRING(400), allowNull: true });
     await ensureColumn(qi, 'plan_accion', 'plan_codigo', { type: DataTypes.STRING(80), allowNull: true });

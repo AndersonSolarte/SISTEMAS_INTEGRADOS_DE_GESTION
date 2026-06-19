@@ -213,6 +213,13 @@ const USER_HEADER_ALIASES = {
   correo_institucional: 'email',
   correo: 'email',
   email: 'email',
+  dependencia: 'dependencia',
+  dependencia_area: 'dependencia',
+  area: 'dependencia',
+  cargo: 'cargo',
+  cargo_actual: 'cargo',
+  jefe_inmediato: 'jefe_inmediato',
+  jefe: 'jefe_inmediato',
   rol: 'role',
   role: 'role'
 };
@@ -254,10 +261,18 @@ const normalizePagination = ({ page = 1, limit = 10 } = {}) => {
   };
 };
 
-const sanitizeUserPayload = ({ nombre, email, username, role, estado } = {}) => ({
+const sanitizeOptionalText = (value, max = 220) => {
+  const clean = String(value || '').trim().replace(/\s+/g, ' ');
+  return clean ? clean.slice(0, max) : null;
+};
+
+const sanitizeUserPayload = ({ nombre, email, username, role, estado, dependencia, cargo, jefe_inmediato } = {}) => ({
   nombre: String(nombre || '').trim().replace(/\s+/g, ' '),
   email: String(email || '').trim().toLowerCase(),
   username: normalizarDocumento(username),
+  dependencia: sanitizeOptionalText(dependencia),
+  cargo: sanitizeOptionalText(cargo),
+  jefe_inmediato: sanitizeOptionalText(jefe_inmediato),
   role,
   estado
 });
@@ -513,7 +528,7 @@ const performPhysicalUserDelete = async (userId) => {
 // CREAR USUARIO INDIVIDUAL
 const createUser = async (req, res) => {
   try {
-    const { nombre, email, username, role } = sanitizeUserPayload(req.body);
+    const { nombre, email, username, role, dependencia, cargo, jefe_inmediato } = sanitizeUserPayload(req.body);
     const numeroDocumento = username;
     const cleanEmail = email;
     
@@ -578,6 +593,9 @@ const createUser = async (req, res) => {
       nombre,
       email: cleanEmail,
       username: usernameFinal,
+      dependencia,
+      cargo,
+      jefe_inmediato,
       password: internalPassword,
       role: targetRole,
       estado: 'activo',
@@ -636,7 +654,10 @@ const getUsers = async (req, res) => {
       where[Op.or] = [
         { nombre: { [Op.iLike]: `%${search}%` } },
         { email: { [Op.iLike]: `%${search}%` } },
-        { username: { [Op.iLike]: `%${search}%` } }
+        { username: { [Op.iLike]: `%${search}%` } },
+        { dependencia: { [Op.iLike]: `%${search}%` } },
+        { cargo: { [Op.iLike]: `%${search}%` } },
+        { jefe_inmediato: { [Op.iLike]: `%${search}%` } }
       ];
     }
     
@@ -713,7 +734,7 @@ const getUsers = async (req, res) => {
 const updateUser = async (req, res) => {
   try {
     const { id } = req.params;
-    const { nombre, email, username, role, estado } = sanitizeUserPayload(req.body);
+    const { nombre, email, username, role, estado, dependencia, cargo, jefe_inmediato } = sanitizeUserPayload(req.body);
     
     const user = await User.findByPk(id);
     
@@ -774,10 +795,15 @@ const updateUser = async (req, res) => {
       });
     }
 
+    const hasPayloadField = (field) => Object.prototype.hasOwnProperty.call(req.body || {}, field);
+
     await user.update({
       nombre: nombre || user.nombre,
       email: email || user.email,
       username: username || user.username,
+      dependencia: hasPayloadField('dependencia') ? dependencia : user.dependencia,
+      cargo: hasPayloadField('cargo') ? cargo : user.cargo,
+      jefe_inmediato: hasPayloadField('jefe_inmediato') ? jefe_inmediato : user.jefe_inmediato,
       role: targetRole,
       estado: estado || user.estado
     });
@@ -964,6 +990,9 @@ const downloadUsersTemplate = async (req, res) => {
       'NUMERO_DOCUMENTO',
       'NOMBRE_COMPLETO',
       'CORREO_INSTITUCIONAL',
+      'DEPENDENCIA',
+      'CARGO',
+      'JEFE INMEDIATO',
       'ROL'
     ];
 
@@ -971,6 +1000,9 @@ const downloadUsersTemplate = async (req, res) => {
     worksheet['!cols'] = [
       { wch: 20 },
       { wch: 35 },
+      { wch: 35 },
+      { wch: 35 },
+      { wch: 30 },
       { wch: 35 },
       { wch: 25 }
     ];
@@ -980,7 +1012,7 @@ const downloadUsersTemplate = async (req, res) => {
       {
         type: 'list',
         allowBlank: false,
-        sqref: `D2:D${maxRows}`,
+        sqref: `G2:G${maxRows}`,
         formula1: listFormula
       }
     ];
@@ -1080,6 +1112,9 @@ const bulkUploadUsersLegacy = async (req, res) => {
         const nombre = rowNormalized.nombre;
         const email = rowNormalized.email;
         const username = rowNormalized.username;
+        const dependencia = sanitizeOptionalText(rowNormalized.dependencia);
+        const cargo = sanitizeOptionalText(rowNormalized.cargo);
+        const jefe_inmediato = sanitizeOptionalText(rowNormalized.jefe_inmediato);
         const roleInput = rowNormalized.role;
         const role = normalizeRoleInput(roleInput);
         const cleanEmail = String(email || '').trim().toLowerCase();
@@ -1138,6 +1173,9 @@ const bulkUploadUsersLegacy = async (req, res) => {
           nombre,
           email: cleanEmail,
           username: usernameFinal,
+          dependencia,
+          cargo,
+          jefe_inmediato,
           password: internalPassword,
           role: targetRole,
           estado: 'activo',
@@ -1238,11 +1276,14 @@ const bulkUploadUsers = async (req, res) => {
         nombre: String(mapped.nombre || '').trim().replace(/\s+/g, ' '),
         email: cleanEmail,
         username,
+        dependencia: sanitizeOptionalText(mapped.dependencia),
+        cargo: sanitizeOptionalText(mapped.cargo),
+        jefe_inmediato: sanitizeOptionalText(mapped.jefe_inmediato),
         roleInput,
         role,
         targetRole: role || ROLES.CONSULTA
       };
-    }).filter((row) => row.nombre || row.email || row.username || row.roleInput);
+    }).filter((row) => row.nombre || row.email || row.username || row.dependencia || row.cargo || row.jefe_inmediato || row.roleInput);
 
     results.total = normalizedRows.length;
 
@@ -1252,6 +1293,9 @@ const bulkUploadUsers = async (req, res) => {
         documento: row?.username || '',
         nombre: row?.nombre || '',
         email: row?.email || '',
+        dependencia: row?.dependencia || '',
+        cargo: row?.cargo || '',
+        jefe_inmediato: row?.jefe_inmediato || '',
         rol: row?.roleInput || row?.targetRole || '',
         error
       });
@@ -1354,6 +1398,9 @@ const bulkUploadUsers = async (req, res) => {
           nombre: row.nombre,
           email: row.email,
           username: row.username,
+          dependencia: row.dependencia,
+          cargo: row.cargo,
+          jefe_inmediato: row.jefe_inmediato,
           role: row.targetRole,
           estado: 'activo',
           must_change_password: false
@@ -1371,6 +1418,9 @@ const bulkUploadUsers = async (req, res) => {
           nombre: row.nombre,
           email: row.email,
           username: row.username,
+          dependencia: row.dependencia,
+          cargo: row.cargo,
+          jefe_inmediato: row.jefe_inmediato,
           password: hashedImportPassword,
           role: row.targetRole,
           estado: 'activo',

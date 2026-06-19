@@ -278,7 +278,10 @@ const buildSnapshot = (user) => ({
   nombre: user.nombre,
   email: user.email,
   username: user.username,
-  role: user.role
+  role: user.role,
+  dependencia: cleanDependenciaLabel(user.dependencia),
+  cargo: sanitizeText(user.cargo, 220),
+  jefe_inmediato: sanitizeText(user.jefe_inmediato, 220)
 });
 
 const buildAdministrativeBossSnapshot = (boss = {}) => ({

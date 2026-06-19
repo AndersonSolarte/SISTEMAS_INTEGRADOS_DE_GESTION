@@ -154,6 +154,9 @@ function GestionUsuarios() {
     nombre: '',
     email: '',
     username: '',
+    dependencia: '',
+    cargo: '',
+    jefe_inmediato: '',
     role: ROLES.CONSULTA
   });
   const [formErrors, setFormErrors] = useState({
@@ -225,6 +228,9 @@ function GestionUsuarios() {
         nombre: user.nombre,
         email: user.email,
         username: user.username,
+        dependencia: user.dependencia || '',
+        cargo: user.cargo || '',
+        jefe_inmediato: user.jefe_inmediato || '',
         role: user.role
       });
     } else {
@@ -232,6 +238,9 @@ function GestionUsuarios() {
         nombre: '',
         email: '',
         username: '',
+        dependencia: '',
+        cargo: '',
+        jefe_inmediato: '',
         role: defaultAssignableRole
       });
     }
@@ -241,7 +250,7 @@ function GestionUsuarios() {
   const handleCloseDialog = () => {
     setOpenDialog(false);
     setSelectedUser(null);
-    setFormData({ nombre: '', email: '', username: '', role: defaultAssignableRole });
+    setFormData({ nombre: '', email: '', username: '', dependencia: '', cargo: '', jefe_inmediato: '', role: defaultAssignableRole });
     setFormErrors({ nombre: '', email: '', username: '' });
   };
 
@@ -281,7 +290,10 @@ function GestionUsuarios() {
         ...formData,
         nombre: String(formData.nombre || '').trim(),
         email: String(formData.email || '').trim().toLowerCase(),
-        username: String(formData.username || '').trim()
+        username: String(formData.username || '').trim(),
+        dependencia: String(formData.dependencia || '').trim(),
+        cargo: String(formData.cargo || '').trim(),
+        jefe_inmediato: String(formData.jefe_inmediato || '').trim()
       };
 
       if (dialogMode === 'create') {
@@ -697,7 +709,7 @@ function GestionUsuarios() {
                 Gestión de Usuarios
               </Typography>
               <Typography variant="body1" sx={{ color: 'rgba(255,255,255,0.9)', fontSize: { xs: 13, sm: 14, md: 16 } }}>
-                Administra usuarios del sistema institucional (documento, correo y rol)
+                Administra usuarios del sistema institucional (documento, correo, dependencia, cargo, jefe inmediato y rol)
               </Typography>
             </Box>
           </Stack>
@@ -720,12 +732,12 @@ function GestionUsuarios() {
             variant="subtitle1"
             sx={{ textAlign: 'center', fontWeight: 800, color: '#1e3a8a', mb: 1.5 }}
           >
-            Buscar usuarios por nombre, correo o documento
+            Buscar usuarios por nombre, correo, documento, dependencia, cargo o jefe inmediato
           </Typography>
 
           <TextField
             fullWidth
-            placeholder="Ej: juan camilo, 1085327166, adsol@unicesmag.edu.co"
+            placeholder="Ej: juan camilo, 1085327166, planeacion, adsol@unicesmag.edu.co"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             InputProps={{
@@ -898,7 +910,7 @@ function GestionUsuarios() {
         {/* Tabla de usuarios */}
         <Paper elevation={0} sx={{ border: '1px solid #cbd5e1', borderRadius: 3, overflow: 'hidden', boxShadow: '0 8px 22px rgba(15,23,42,0.06)' }}>
           <TableContainer sx={{ bgcolor: '#ffffff' }}>
-            <Table size="small" sx={{ tableLayout: 'auto', minWidth: 920 }}>
+            <Table size="small" sx={{ tableLayout: 'auto', minWidth: 1280 }}>
               <TableHead>
                 <TableRow
                   sx={{
@@ -916,6 +928,9 @@ function GestionUsuarios() {
                   <TableCell sx={{ py: 1.6 }}>Nombre</TableCell>
                   <TableCell sx={{ py: 1.6 }}>Email</TableCell>
                   <TableCell sx={{ py: 1.6 }}>Documento</TableCell>
+                  <TableCell sx={{ py: 1.6 }}>Dependencia</TableCell>
+                  <TableCell sx={{ py: 1.6 }}>Cargo</TableCell>
+                  <TableCell sx={{ py: 1.6 }}>Jefe inmediato</TableCell>
                   <TableCell sx={{ py: 1.6 }}>Rol</TableCell>
                   <TableCell sx={{ py: 1.6 }}>Estado</TableCell>
                   <TableCell align="center" sx={{ py: 1.6 }}>Acciones</TableCell>
@@ -924,13 +939,13 @@ function GestionUsuarios() {
               <TableBody>
                 {loading ? (
                   <TableRow>
-                    <TableCell colSpan={6} align="center" sx={{ py: 8 }}>
+                    <TableCell colSpan={9} align="center" sx={{ py: 8 }}>
                       <CircularProgress />
                     </TableCell>
                   </TableRow>
                 ) : users.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={6} align="center" sx={{ py: 8 }}>
+                    <TableCell colSpan={9} align="center" sx={{ py: 8 }}>
                       <Typography color="text.secondary">No hay usuarios registrados</Typography>
                     </TableCell>
                   </TableRow>
@@ -952,6 +967,9 @@ function GestionUsuarios() {
                       <TableCell>
                         <Chip label={user.username} size="small" variant="outlined" sx={{ borderColor: '#94a3b8', color: '#0f172a', bgcolor: '#f8fafc' }} />
                       </TableCell>
+                      <TableCell sx={{ py: 1.5, maxWidth: 220, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', color: '#334155' }}>{user.dependencia || '-'}</TableCell>
+                      <TableCell sx={{ py: 1.5, maxWidth: 220, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', color: '#334155' }}>{user.cargo || '-'}</TableCell>
+                      <TableCell sx={{ py: 1.5, maxWidth: 220, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', color: '#334155' }}>{user.jefe_inmediato || '-'}</TableCell>
                       <TableCell>
                         <Chip
                           label={ROLE_LABELS[user.role] || user.role}
@@ -1090,6 +1108,33 @@ function GestionUsuarios() {
                 error={Boolean(formErrors.email)}
                 helperText={formErrors.email || 'Debe terminar en @unicesmag.edu.co'}
                 placeholder="usuario@unicesmag.edu.co"
+              />
+              <TextField
+                fullWidth
+                label="Dependencia"
+                value={formData.dependencia}
+                onChange={(e) => setFormData({ ...formData, dependencia: e.target.value })}
+                sx={{ mb: 2 }}
+                helperText="Ej: Oficina de Planeacion"
+                inputProps={{ maxLength: 220 }}
+              />
+              <TextField
+                fullWidth
+                label="Cargo"
+                value={formData.cargo}
+                onChange={(e) => setFormData({ ...formData, cargo: e.target.value })}
+                sx={{ mb: 2 }}
+                helperText="Ej: Profesional Universitario"
+                inputProps={{ maxLength: 220 }}
+              />
+              <TextField
+                fullWidth
+                label="Jefe inmediato"
+                value={formData.jefe_inmediato}
+                onChange={(e) => setFormData({ ...formData, jefe_inmediato: e.target.value })}
+                sx={{ mb: 2 }}
+                helperText="Nombre del jefe inmediato"
+                inputProps={{ maxLength: 220 }}
               />
               <FormControl fullWidth sx={{ mb: 2 }}>
                 <InputLabel>Rol</InputLabel>

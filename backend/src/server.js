@@ -181,6 +181,24 @@ const startServer = (port, attempt = 0) => {
 testConnection()
   .then(async () => {
     validateGoogleRuntimeConfig();
+    try {
+      const User = require('./models/User');
+      const { DataTypes } = require('sequelize');
+      await User.sync();
+      const qi = sequelize.getQueryInterface();
+      const usersTable = await qi.describeTable('users');
+      const addUserColumn = async (column) => {
+        if (!usersTable[column]) {
+          await qi.addColumn('users', column, { type: DataTypes.STRING(220), allowNull: true });
+        }
+      };
+      await addUserColumn('dependencia');
+      await addUserColumn('cargo');
+      await addUserColumn('jefe_inmediato');
+      console.log('[users] Columnas de perfil laboral listas.');
+    } catch (e) {
+      console.warn('[users] No se pudo sincronizar columnas de perfil laboral:', e?.message);
+    }
     /* Garantizar que la tabla de actividad exista sin afectar otras tablas */
     try {
       const UserActivityLog = require('./models/UserActivityLog');
