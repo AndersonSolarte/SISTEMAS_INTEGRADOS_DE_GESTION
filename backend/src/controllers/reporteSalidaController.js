@@ -258,6 +258,96 @@ const mapAdministrativeBosses = async (rows, search = '') => {
     .slice(0, 80);
 };
 
+const serializeUserLaboralRow = (user) => ({
+  dependencia: cleanDependenciaLabel(user.dependencia),
+  cargo: sanitizeText(user.cargo, 220),
+  jefe_inmediato: sanitizeText(user.jefe_inmediato, 220),
+  nombre: sanitizeText(user.nombre, 220),
+  documento: sanitizeText(user.username, 80),
+  email: sanitizeText(user.email, 220),
+  userId: user.id,
+  source: 'users'
+});
+
+const getUserProfileLaboralRows = async () => {
+  const users = await User.findAll({
+    where: { estado: 'activo' },
+    attributes: ['id', 'nombre', 'email', 'username', 'role', 'dependencia', 'cargo', 'jefe_inmediato'],
+    order: [['dependencia', 'ASC'], ['cargo', 'ASC'], ['nombre', 'ASC']],
+    raw: true
+  });
+  return users.filter((user) => user.dependencia || user.cargo || user.jefe_inmediato);
+};
+
+const findCurrentUserProfileRow = (rows, user) => {
+  const userId = Number(user?.id || 0);
+  const userDoc = normalizeDocument(user?.username);
+  const userEmail = normalizeForMatch(user?.email);
+  return rows.find((row) =>
+    (userId && Number(row.id) === userId) ||
+    (userDoc && normalizeDocument(row.username) === userDoc) ||
+    (userEmail && normalizeForMatch(row.email) === userEmail)
+  ) || null;
+};
+
+const mapUserProfileBosses = (rows, search = '') => {
+  const term = normalizeForMatch(search);
+  const seen = new Set();
+  const bosses = [];
+
+  const pushBoss = (boss) => {
+    const key = normalizeForMatch(boss.nombre) || normalizeDocument(boss.username) || String(boss.id || '');
+    if (!key || seen.has(key)) return;
+    seen.add(key);
+    bosses.push(boss);
+  };
+
+  rows.forEach((row, index) => {
+    const jefeNombre = sanitizeText(row.jefe_inmediato, 220);
+    if (!jefeNombre) return;
+    const matchedUser = rows.find((candidate) =>
+      normalizeForMatch(candidate.nombre) === normalizeForMatch(jefeNombre) ||
+      namesLookRelated(candidate.nombre, jefeNombre)
+    );
+    pushBoss({
+      id: matchedUser?.id ? `user:${matchedUser.id}` : `profile-jefe:${normalizeForMatch(jefeNombre) || index}`,
+      userId: matchedUser?.id || null,
+      nombre: matchedUser?.nombre || jefeNombre,
+      email: matchedUser?.email || '',
+      username: matchedUser?.username || '',
+      cargo: matchedUser?.cargo || '',
+      dependencia: matchedUser?.dependencia || '',
+      jefe_inmediato: jefeNombre,
+      source: 'users'
+    });
+  });
+
+  rows
+    .filter((row) => isJefeCargo(row.cargo))
+    .forEach((row) => {
+      pushBoss({
+        id: `user:${row.id}`,
+        userId: row.id,
+        nombre: row.nombre,
+        email: row.email || '',
+        username: row.username || '',
+        cargo: row.cargo || '',
+        dependencia: row.dependencia || '',
+        jefe_inmediato: row.nombre || '',
+        source: 'users'
+      });
+    });
+
+  return bosses
+    .filter((boss) => {
+      if (!term) return true;
+      return [boss.nombre, boss.email, boss.username, boss.cargo, boss.dependencia]
+        .some((value) => normalizeForMatch(value).includes(term));
+    })
+    .sort((a, b) => String(a.nombre || '').localeCompare(String(b.nombre || ''), 'es'))
+    .slice(0, 120);
+};
+
 const parseDateTime = (date, time) => {
   if (!date || !time) return null;
   const normalizedTime = String(time).trim();
@@ -289,10 +379,11 @@ const buildAdministrativeBossSnapshot = (boss = {}) => ({
   nombre: sanitizeText(boss.nombre, 220),
   email: sanitizeText(boss.email, 220),
   username: sanitizeText(boss.username, 80),
-  role: 'recurso_humano_administrativos',
+  role: sanitizeText(boss.source, 80) || 'recurso_humano_administrativos',
   cargo: sanitizeText(boss.cargo, 220),
   dependencia: cleanDependenciaLabel(boss.dependencia),
-  source: 'recurso_humano_administrativos'
+  jefe_inmediato: sanitizeText(boss.jefe_inmediato || boss.nombre, 220),
+  source: sanitizeText(boss.source, 80) || 'recurso_humano_administrativos'
 });
 
 const appendTrace = (solicitud, event, actor = null, detail = {}) => ([
@@ -666,6 +757,13 @@ const searchJefes = async (req, res) => {
   if (!(await getReporteSalidaFeatureState())) return featureDisabled(res);
   try {
     const search = sanitizeText(req.query.search, 80);
+    const userRows = await getUserProfileLaboralRows();
+    if (userRows.length) {
+      const bosses = mapUserProfileBosses(userRows, search)
+        .filter((boss) => !boss.userId || Number(boss.userId) !== Number(req.user?.id));
+      return res.json({ success: true, data: bosses });
+    }
+
     const { rows } = await getLatestAdministrativos();
     const bosses = (await mapAdministrativeBosses(rows, search))
       .filter((boss) => !boss.userId || Number(boss.userId) !== Number(req.user?.id));
@@ -678,6 +776,12 @@ const searchJefes = async (req, res) => {
 const listarDependencias = async (req, res) => {
   if (!(await getReporteSalidaFeatureState())) return featureDisabled(res);
   try {
+    const userRows = await getUserProfileLaboralRows();
+    const userDependencias = uniqueSortedValues(userRows.map((row) => cleanDependenciaLabel(row.dependencia)));
+    if (userDependencias.length) {
+      return res.json({ success: true, data: userDependencias });
+    }
+
     const { rows: rhRows } = await getLatestAdministrativos();
     const rhDependencias = uniqueSortedValues(rhRows.map((row) => cleanDependenciaLabel(row.dependencia)));
     if (rhDependencias.length) {
@@ -718,6 +822,37 @@ const listarDependencias = async (req, res) => {
 const getCatalogoLaboral = async (req, res) => {
   if (!(await getReporteSalidaFeatureState())) return featureDisabled(res);
   try {
+    const userRows = await getUserProfileLaboralRows();
+    if (userRows.length) {
+      const current = findCurrentUserProfileRow(userRows, req.user);
+      const relaciones = userRows.map(serializeUserLaboralRow).filter((row) => row.dependencia || row.cargo || row.jefe_inmediato);
+      const jefes = mapUserProfileBosses(userRows, req.query.search || '')
+        .filter((boss) => !boss.userId || Number(boss.userId) !== Number(req.user?.id));
+
+      return res.json({
+        success: true,
+        data: {
+          anio: null,
+          source: 'users',
+          dependencias: uniqueSortedValues(relaciones.map((row) => row.dependencia)),
+          cargos: uniqueSortedValues(relaciones.map((row) => row.cargo)),
+          jefes,
+          relaciones,
+          currentEmployee: current ? {
+            nombre: sanitizeText(current.nombre, 220),
+            documento: sanitizeText(current.username, 80),
+            correo: sanitizeText(current.email, 220),
+            dependencia: cleanDependenciaLabel(current.dependencia),
+            cargo: sanitizeText(current.cargo, 220),
+            jefe_inmediato: sanitizeText(current.jefe_inmediato, 220),
+            source: 'users'
+          } : null,
+          periodo: '',
+          periodoLabel: 'Base de usuarios'
+        }
+      });
+    }
+
     const { latestYear, latestPeriod, rows } = await getLatestAdministrativos();
     const current = findCurrentAdministrativeRow(rows, req.user);
     const jefes = (await mapAdministrativeBosses(rows, req.query.search || ''))
@@ -727,6 +862,7 @@ const getCatalogoLaboral = async (req, res) => {
       success: true,
       data: {
         anio: latestYear,
+        source: 'recurso_humano_administrativos',
         dependencias: uniqueSortedValues(rows.map((row) => cleanDependenciaLabel(row.dependencia))),
         cargos: uniqueSortedValues(rows.map((row) => row.cargo_especifico)),
         relaciones: rows.map(serializeLaboralRow).filter((row) => row.dependencia || row.cargo),
@@ -735,6 +871,7 @@ const getCatalogoLaboral = async (req, res) => {
           documento: sanitizeText(current.numero_cedula, 80),
           dependencia: cleanDependenciaLabel(current.dependencia),
           cargo: sanitizeText(current.cargo_especifico, 220),
+          jefe_inmediato: '',
           anio: current.anio,
           periodo: sanitizeText(current.periodo, 40)
         } : null,

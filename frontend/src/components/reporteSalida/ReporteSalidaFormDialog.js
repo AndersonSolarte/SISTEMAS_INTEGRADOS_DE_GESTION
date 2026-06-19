@@ -162,8 +162,12 @@ function ReporteSalidaFormDialog({ open, documento, user, onClose, onSubmitted }
         setCargos(data.cargos || []);
         setLaboralRows(data.relaciones || []);
         setCatalogYear(data.periodoLabel || data.anio || '');
-        setJefes(data.jefes || []);
+        const nextJefes = data.jefes || [];
+        setJefes(nextJefes);
         if (data.currentEmployee) {
+          const currentBoss = nextJefes.find((item) =>
+            normalizeOption(item.jefe_inmediato || item.nombre) === normalizeOption(data.currentEmployee.jefe_inmediato)
+          ) || null;
           setForm((prev) => ({
             ...prev,
             laboral: {
@@ -171,6 +175,7 @@ function ReporteSalidaFormDialog({ open, documento, user, onClose, onSubmitted }
               cargo: data.currentEmployee.cargo || prev.laboral.cargo
             }
           }));
+          if (currentBoss) setJefe(currentBoss);
         }
       })
       .catch(() => {
@@ -200,72 +205,82 @@ function ReporteSalidaFormDialog({ open, documento, user, onClose, onSubmitted }
 
   const selectedDependenciaIsCatalog = hasExactOption(form.laboral.dependencia, dependencias);
   const selectedCargoIsCatalog = hasExactOption(form.laboral.cargo, cargos);
-  const selectedJefeDependencia = jefe?.dependencia || '';
+  const selectedJefeName = jefe?.jefe_inmediato || jefe?.nombre || '';
+  const selectedJefeIsCatalog = Boolean(normalizeOption(selectedJefeName));
 
   const filteredLaboralRows = useMemo(() => {
     return laboralRows.filter((row) => {
       const rowDep = normalizeOption(row.dependencia);
       const rowCargo = normalizeOption(row.cargo);
+      const rowJefe = normalizeOption(row.jefe_inmediato);
       if (selectedDependenciaIsCatalog && rowDep !== normalizeOption(form.laboral.dependencia)) return false;
       if (selectedCargoIsCatalog && rowCargo !== normalizeOption(form.laboral.cargo)) return false;
-      if (selectedJefeDependencia && rowDep !== normalizeOption(selectedJefeDependencia)) return false;
+      if (selectedJefeIsCatalog && rowJefe !== normalizeOption(selectedJefeName)) return false;
       return true;
     });
-  }, [form.laboral.cargo, form.laboral.dependencia, laboralRows, selectedCargoIsCatalog, selectedDependenciaIsCatalog, selectedJefeDependencia]);
+  }, [form.laboral.cargo, form.laboral.dependencia, laboralRows, selectedCargoIsCatalog, selectedDependenciaIsCatalog, selectedJefeIsCatalog, selectedJefeName]);
 
   const dependenciaOptions = useMemo(() => {
     if (!laboralRows.length) return dependencias;
-    const sourceRows = selectedCargoIsCatalog || selectedJefeDependencia
-      ? filteredLaboralRows
-      : laboralRows;
-    return uniqueSorted((sourceRows.length ? sourceRows : laboralRows).map((row) => row.dependencia));
-  }, [dependencias, filteredLaboralRows, laboralRows, selectedCargoIsCatalog, selectedJefeDependencia]);
+    if (selectedCargoIsCatalog || selectedJefeIsCatalog) {
+      return uniqueSorted(filteredLaboralRows.map((row) => row.dependencia));
+    }
+    return uniqueSorted(laboralRows.map((row) => row.dependencia));
+  }, [dependencias, filteredLaboralRows, laboralRows, selectedCargoIsCatalog, selectedJefeIsCatalog]);
 
   const cargoOptions = useMemo(() => {
     if (!laboralRows.length) return cargos;
-    const sourceRows = selectedDependenciaIsCatalog || selectedJefeDependencia
-      ? filteredLaboralRows
-      : laboralRows;
-    return uniqueSorted((sourceRows.length ? sourceRows : laboralRows).map((row) => row.cargo));
-  }, [cargos, filteredLaboralRows, laboralRows, selectedDependenciaIsCatalog, selectedJefeDependencia]);
+    if (selectedDependenciaIsCatalog || selectedJefeIsCatalog) {
+      return uniqueSorted(filteredLaboralRows.map((row) => row.cargo));
+    }
+    return uniqueSorted(laboralRows.map((row) => row.cargo));
+  }, [cargos, filteredLaboralRows, laboralRows, selectedDependenciaIsCatalog, selectedJefeIsCatalog]);
 
   const jefeOptions = useMemo(() => {
-    const depKey = normalizeOption(form.laboral.dependencia);
     const term = normalizeOption(jefeSearch);
+    const hasRelationFilter = selectedDependenciaIsCatalog || selectedCargoIsCatalog;
+    const relatedRows = hasRelationFilter
+      ? filteredLaboralRows
+      : laboralRows;
+    const allowedBosses = new Set(
+      relatedRows
+        .map((row) => normalizeOption(row.jefe_inmediato))
+        .filter(Boolean)
+    );
     const matchesSearch = (item) => {
       if (!term) return true;
-      return [item.nombre, item.email, item.username, item.cargo, item.dependencia]
+      return [item.nombre, item.jefe_inmediato, item.email, item.username, item.cargo, item.dependencia]
         .some((value) => normalizeOption(value).includes(term));
     };
 
-    const bySearch = jefes.filter(matchesSearch);
-    if (!selectedDependenciaIsCatalog) return bySearch;
-
-    const sameDependency = bySearch.filter((item) => normalizeOption(item.dependencia) === depKey);
-    if (sameDependency.length) {
-      return sameDependency.map((item) => ({ ...item, matchGroup: 'Jefes de la dependencia' }));
-    }
-
-    return bySearch.map((item) => ({ ...item, matchGroup: 'Jefes institucionales disponibles' }));
-  }, [form.laboral.dependencia, jefeSearch, jefes, selectedDependenciaIsCatalog]);
+    return jefes
+      .filter((item) => {
+        if (!hasRelationFilter) return true;
+        if (!allowedBosses.size) return false;
+        return allowedBosses.has(normalizeOption(item.jefe_inmediato || item.nombre));
+      })
+      .filter(matchesSearch)
+      .map((item) => ({
+        ...item,
+        matchGroup: hasRelationFilter ? 'Jefes relacionados' : 'Jefes disponibles'
+      }));
+  }, [filteredLaboralRows, jefeSearch, jefes, laboralRows, selectedCargoIsCatalog, selectedDependenciaIsCatalog]);
 
   useEffect(() => {
-    if (!jefe || !selectedDependenciaIsCatalog) return;
-    const depKey = normalizeOption(form.laboral.dependencia);
-    const hasSameDependencyBoss = jefes.some((item) => normalizeOption(item.dependencia) === depKey);
-    if (hasSameDependencyBoss && normalizeOption(jefe.dependencia) !== depKey) {
+    if (!jefe || (!selectedDependenciaIsCatalog && !selectedCargoIsCatalog)) return;
+    const validBosses = new Set(filteredLaboralRows.map((row) => normalizeOption(row.jefe_inmediato)).filter(Boolean));
+    if (!validBosses.size || !validBosses.has(normalizeOption(jefe.jefe_inmediato || jefe.nombre))) {
       setJefe(null);
     }
-  }, [form.laboral.dependencia, jefe, jefes, selectedDependenciaIsCatalog]);
+  }, [filteredLaboralRows, jefe, selectedCargoIsCatalog, selectedDependenciaIsCatalog]);
 
   const jefeHasDirectDependencyMatch = useMemo(() => {
-    if (!selectedDependenciaIsCatalog) return true;
-    const depKey = normalizeOption(form.laboral.dependencia);
-    return jefes.some((item) => normalizeOption(item.dependencia) === depKey);
-  }, [form.laboral.dependencia, jefes, selectedDependenciaIsCatalog]);
+    if (!selectedDependenciaIsCatalog && !selectedCargoIsCatalog) return true;
+    return jefeOptions.length > 0;
+  }, [jefeOptions.length, selectedCargoIsCatalog, selectedDependenciaIsCatalog]);
 
-  const jefeHelperText = selectedDependenciaIsCatalog && !jefeHasDirectDependencyMatch
-    ? 'No hay jefe directivo registrado en esta dependencia; se muestran jefes institucionales disponibles.'
+  const jefeHelperText = (selectedDependenciaIsCatalog || selectedCargoIsCatalog) && !jefeHasDirectDependencyMatch
+    ? 'No hay jefe inmediato relacionado con los filtros seleccionados.'
     : '';
 
   const update = (section, key, value) => {
@@ -290,6 +305,7 @@ function ReporteSalidaFormDialog({ open, documento, user, onClose, onSubmitted }
           username: jefe.username || '',
           cargo: jefe.cargo || '',
           dependencia: jefe.dependencia || '',
+          jefe_inmediato: jefe.jefe_inmediato || jefe.nombre || '',
           source: jefe.source || 'recurso_humano_administrativos'
         } : null,
         ...form
@@ -402,16 +418,12 @@ function ReporteSalidaFormDialog({ open, documento, user, onClose, onSubmitted }
                 loading={loadingJefes}
                 groupBy={(option) => option.matchGroup || ''}
                 onInputChange={(_, value) => setJefeSearch(value)}
-                onChange={(_, value) => {
-                  setJefe(value);
-                  if (value?.dependencia && !form.laboral.dependencia) {
-                    update('laboral', 'dependencia', value.dependencia);
-                  }
-                }}
+                onChange={(_, value) => setJefe(value)}
                 getOptionLabel={(option) => {
                   if (!option) return '';
                   const main = [option.cargo, option.nombre].filter(Boolean).join(' - ');
-                  return option.email ? `${main} (${option.email})` : main;
+                  const label = main || option.jefe_inmediato || '';
+                  return option.email ? `${label} (${option.email})` : label;
                 }}
                 isOptionEqualToValue={(option, value) => option.id === value.id}
                 ListboxProps={{ sx: autocompleteListSx }}
