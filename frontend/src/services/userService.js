@@ -3,7 +3,7 @@ import api from './api';
 const userService = {
   // Listar usuarios
   getUsers: async (params = {}) => {
-    const response = await api.get('/users', { params });
+    const response = await api.get('/users', { params: { ...params, _ts: Date.now() } });
     return response.data;
   },
 

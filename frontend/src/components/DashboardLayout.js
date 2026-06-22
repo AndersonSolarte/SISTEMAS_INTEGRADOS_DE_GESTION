@@ -80,6 +80,11 @@ function DashboardLayout() {
     navigate('/login');
   };
 
+  const navigateFromMenu = (path) => {
+    navigate(path, { state: { menuClickToken: Date.now() } });
+    setMobileOpen(false);
+  };
+
   const isActive = (path) => {
     const target = String(path || '');
     const [pathname, query] = target.split('?');
@@ -598,7 +603,7 @@ function DashboardLayout() {
                       return (
                         <ListItemButton
                           key={child.path}
-                          onClick={() => { navigate(child.path); setMobileOpen(false); }}
+                          onClick={() => navigateFromMenu(child.path)}
                           disabled={Boolean(child.disabled)}
                           sx={{
                             mb: 1,
@@ -640,7 +645,7 @@ function DashboardLayout() {
           return (
             <ListItemButton
               key={item.path}
-              onClick={() => { navigate(item.path); setMobileOpen(false); }}
+              onClick={() => navigateFromMenu(item.path)}
               disabled={Boolean(item.disabled)}
               sx={{
                 mb: 1,

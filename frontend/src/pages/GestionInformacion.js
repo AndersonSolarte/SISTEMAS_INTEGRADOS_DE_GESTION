@@ -2389,10 +2389,12 @@ function GestionInformacion() {
       setBaseSeleccionada(base);
       setSubBaseSeleccionada(subbase || '');
       setSubSubBaseSeleccionada('');
+      setSelectedCard(null);
       setMenuView(canManageBasesInView ? 'gestion_bases' : 'estadistica');
       return;
     }
     if (tab === 'gestion_bases') {
+      setSelectedCard(null);
       setMenuView(canManageBasesInView ? 'gestion_bases' : 'estadistica');
       return;
     }
@@ -2407,7 +2409,7 @@ function GestionInformacion() {
       return;
     }
     if (!canManageBasesInView) setMenuView('estadistica');
-  }, [canManageBasesInView, location.search]);
+  }, [canManageBasesInView, location.search, location.state?.menuClickToken]);
 
   useEffect(() => {
     if (user?.role !== ROLES.GESTION_PROCESOS) return;

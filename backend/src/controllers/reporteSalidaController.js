@@ -667,8 +667,8 @@ const serializeSolicitud = (solicitud) => {
 };
 
 const buildReporteSalidaAttachments = async (solicitud) => {
-  const pdf = await ensureReporteSalidaPdf(solicitud);
   const docx = await ensureReporteSalidaDocx(solicitud);
+  const pdf = await ensureReporteSalidaPdf(solicitud, docx);
   return [pdf, docx];
 };
 

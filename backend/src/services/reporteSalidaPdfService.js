@@ -1,6 +1,11 @@
 const fs = require('fs');
 const path = require('path');
+const { execFile } = require('child_process');
+const { promisify } = require('util');
 const JSZip = require('jszip');
+const { getReporteSalidaTemplatePath } = require('../config/reporteSalidaConfig');
+
+const execFileAsync = promisify(execFile);
 
 const escapePdfText = (value) =>
   String(value ?? '')
@@ -24,6 +29,12 @@ const stripAccents = (value) =>
 
 const formatDate = (value) => {
   if (!value) return '';
+  if (value instanceof Date && !Number.isNaN(value.getTime())) {
+    const day = String(value.getDate()).padStart(2, '0');
+    const month = String(value.getMonth() + 1).padStart(2, '0');
+    const year = value.getFullYear();
+    return `${day}/${month}/${year}`;
+  }
   const text = String(value).slice(0, 10);
   const [year, month, day] = text.split('-');
   return year && month && day ? `${day}/${month}/${year}` : text;
@@ -138,7 +149,8 @@ const fillReporteSalidaRows = (xml, values) => {
 };
 
 const buildFilledDocxBuffer = async (solicitud) => {
-  const templatePath = path.resolve(__dirname, '../../templates/reporte-salida/FR-002 REPORTE DE SALIDA v3.docx');
+  const templatePath = getReporteSalidaTemplatePath()
+    || path.resolve(__dirname, '../../templates/reporte-salida/FR-002 REPORTE DE SALIDA v3.docx');
   const template = await fs.promises.readFile(templatePath);
   const zip = await JSZip.loadAsync(template);
   const file = zip.file('word/document.xml');
@@ -149,6 +161,61 @@ const buildFilledDocxBuffer = async (solicitud) => {
 
   zip.file('word/document.xml', xml);
   return zip.generateAsync({ type: 'nodebuffer' });
+};
+
+const findGeneratedPdfPath = async (outDir, docxPath) => {
+  const expected = path.join(outDir, `${path.basename(docxPath, path.extname(docxPath))}.pdf`);
+  try {
+    await fs.promises.access(expected, fs.constants.R_OK);
+    return expected;
+  } catch (_) {
+    const files = await fs.promises.readdir(outDir);
+    const pdf = files
+      .filter((file) => file.toLowerCase().endsWith('.pdf'))
+      .map((file) => path.join(outDir, file))
+      .sort()
+      .pop();
+    return pdf || '';
+  }
+};
+
+const convertDocxToPdf = async (docxPath, targetPdfPath) => {
+  const outDir = path.dirname(targetPdfPath);
+  const profileDir = path.join(outDir, '.libreoffice-profile');
+  await fs.promises.mkdir(profileDir, { recursive: true });
+
+  const configured = String(process.env.LIBREOFFICE_BIN || '').trim();
+  const candidates = configured ? [configured] : ['libreoffice', 'soffice'];
+  let lastError = null;
+
+  for (const binary of candidates) {
+    try {
+      await execFileAsync(binary, [
+        `-env:UserInstallation=file:///${profileDir.replace(/\\/g, '/')}`,
+        '--headless',
+        '--nologo',
+        '--nofirststartwizard',
+        '--convert-to',
+        'pdf',
+        '--outdir',
+        outDir,
+        docxPath
+      ], { timeout: 120000 });
+
+      const generatedPdf = await findGeneratedPdfPath(outDir, docxPath);
+      if (!generatedPdf) throw new Error('LibreOffice no genero el archivo PDF esperado.');
+      if (path.resolve(generatedPdf) !== path.resolve(targetPdfPath)) {
+        await fs.promises.copyFile(generatedPdf, targetPdfPath);
+      }
+      return true;
+    } catch (error) {
+      lastError = error;
+      if (error.code !== 'ENOENT') break;
+    }
+  }
+
+  console.warn('No fue posible convertir el DOCX FR-002 a PDF con LibreOffice:', lastError?.message || lastError);
+  return false;
 };
 
 const buildLines = (solicitud) => {
@@ -349,13 +416,17 @@ const buildPdfBuffer = (solicitud) => {
   return Buffer.from(pdf, 'utf8');
 };
 
-const ensureReporteSalidaPdf = async (solicitud) => {
+const ensureReporteSalidaPdf = async (solicitud, docxAttachment = null) => {
   const outDir = path.resolve(__dirname, '../../uploads/reporte-salida');
   await fs.promises.mkdir(outDir, { recursive: true });
   const filename = `${String(solicitud.consecutivo || solicitud.id).replace(/[^a-zA-Z0-9_-]/g, '_')}-FR-002-digital.pdf`;
   const filePath = path.join(outDir, filename);
-  const buffer = buildPdfBuffer(solicitud);
-  await fs.promises.writeFile(filePath, buffer);
+  const docx = docxAttachment || await ensureReporteSalidaDocx(solicitud);
+  const converted = await convertDocxToPdf(docx.path, filePath);
+  if (!converted) {
+    const buffer = buildPdfBuffer(solicitud);
+    await fs.promises.writeFile(filePath, buffer);
+  }
   return {
     filename,
     path: filePath,

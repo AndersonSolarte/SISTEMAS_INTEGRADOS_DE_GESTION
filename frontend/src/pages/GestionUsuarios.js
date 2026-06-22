@@ -9,7 +9,7 @@ import {
   Add as AddIcon, Edit as EditIcon, Delete as DeleteIcon, Upload as UploadIcon,
   Download as DownloadIcon, Search as SearchIcon, Clear as ClearIcon,
   Block as BlockIcon, CheckCircle as CheckCircleIcon,
-  GroupOutlined as GroupIcon, Security as SecurityIcon
+  GroupOutlined as GroupIcon, Security as SecurityIcon, ArrowForward as ArrowForwardIcon
 } from '@mui/icons-material';
 import { useSnackbar } from 'notistack';
 import userService from '../services/userService';
@@ -199,13 +199,16 @@ function GestionUsuarios() {
   const defaultAssignableRole = allowedRolesForManager[0] || ROLES.CONSULTA;
   const canManageModulePermissions = currentUser?.role === ROLES.ADMINISTRADOR;
 
-  const loadUsers = useCallback(async () => {
+  const loadUsers = useCallback(async (overrides = {}) => {
+    const nextPage = Object.prototype.hasOwnProperty.call(overrides, 'page') ? overrides.page : page;
+    const nextLimit = Object.prototype.hasOwnProperty.call(overrides, 'rowsPerPage') ? overrides.rowsPerPage : rowsPerPage;
+    const nextSearch = Object.prototype.hasOwnProperty.call(overrides, 'search') ? overrides.search : search;
     setLoading(true);
     try {
       const response = await userService.getUsers({
-        page: page + 1,
-        limit: rowsPerPage,
-        search
+        page: nextPage + 1,
+        limit: nextLimit,
+        search: nextSearch
       });
       setUsers(response.data.users);
       setTotal(response.data.pagination.total);
@@ -404,6 +407,12 @@ function GestionUsuarios() {
     window.URL.revokeObjectURL(url);
   };
 
+  const resetTableAfterBulkImport = async () => {
+    setSearch('');
+    setPage(0);
+    await loadUsers({ page: 0, search: '' });
+  };
+
   const handleClearTools = () => {
     setSearch('');
     setUploadFile(null);
@@ -412,7 +421,7 @@ function GestionUsuarios() {
     setBulkWarningFile(null);
     setUploadInputKey((prev) => prev + 1);
     setPage(0);
-    loadUsers();
+    loadUsers({ page: 0, search: '' });
   };
 
   // eslint-disable-next-line no-unused-vars
@@ -452,7 +461,7 @@ function GestionUsuarios() {
 
       enqueueSnackbar(response.message, { variant: 'success' });
       setUploadFile(null);
-      loadUsers();
+      await resetTableAfterBulkImport();
     } catch (error) {
       enqueueSnackbar(error.response?.data?.message || 'Error en carga masiva', { variant: 'error' });
     } finally {
@@ -487,7 +496,7 @@ function GestionUsuarios() {
       });
       setUploadFile(null);
       setUploadInputKey((prev) => prev + 1);
-      loadUsers();
+      await resetTableAfterBulkImport();
     } catch (error) {
       const response = error.response?.data;
       if (response?.archivoErrores) {
@@ -728,6 +737,180 @@ function GestionUsuarios() {
             bgcolor: '#f8fbff'
           }}
         >
+          <Stack spacing={2.5}>
+            <Box>
+              <Stack direction={{ xs: 'column', md: 'row' }} spacing={1.5} alignItems={{ md: 'center' }}>
+                <Box sx={{ flexGrow: 1 }}>
+                  <Typography variant="subtitle2" sx={{ fontWeight: 900, color: '#1e3a8a', mb: 1 }}>
+                    Buscar usuarios
+                  </Typography>
+                  <TextField
+                    fullWidth
+                    placeholder="Nombre, correo, documento, dependencia, cargo o jefe inmediato"
+                    value={search}
+                    onChange={(e) => setSearch(e.target.value)}
+                    InputProps={{
+                      startAdornment: <SearchIcon sx={{ mr: 1, color: '#64748b' }} />
+                    }}
+                    sx={{
+                      '& .MuiOutlinedInput-root': {
+                        borderRadius: 2,
+                        bgcolor: 'white',
+                        '& fieldset': { borderColor: '#93c5fd' },
+                        '&:hover fieldset': { borderColor: '#60a5fa' },
+                        '&.Mui-focused fieldset': { borderColor: '#3b82f6' }
+                      }
+                    }}
+                  />
+                </Box>
+                <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1.2} sx={{ width: { xs: '100%', md: 'auto' }, pt: { md: 3.6 } }}>
+                  <Button
+                    variant="contained"
+                    startIcon={<AddIcon />}
+                    onClick={() => handleOpenDialog('create')}
+                    sx={{
+                      minWidth: { xs: '100%', sm: 180 },
+                      borderRadius: 2,
+                      py: 1.25,
+                      textTransform: 'none',
+                      fontWeight: 800,
+                      background: 'linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%)',
+                      boxShadow: '0 8px 20px rgba(37,99,235,0.25)'
+                    }}
+                  >
+                    Crear usuario
+                  </Button>
+                  <Button
+                    variant="outlined"
+                    startIcon={<ClearIcon />}
+                    onClick={handleClearTools}
+                    sx={{
+                      minWidth: { xs: '100%', sm: 150 },
+                      borderRadius: 2,
+                      py: 1.25,
+                      textTransform: 'none',
+                      fontWeight: 800,
+                      color: '#1d4ed8',
+                      borderColor: '#93c5fd',
+                      bgcolor: '#fff'
+                    }}
+                  >
+                    Limpiar
+                  </Button>
+                </Stack>
+              </Stack>
+            </Box>
+
+            <Divider sx={{ borderColor: '#dbeafe' }} />
+
+            <Box>
+              <Typography
+                variant="overline"
+                sx={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  pl: 1.2,
+                  mb: 1.5,
+                  borderLeft: '4px solid #2563eb',
+                  color: '#1e3a8a',
+                  fontWeight: 900,
+                  letterSpacing: 1
+                }}
+              >
+                Carga por archivo Excel
+              </Typography>
+
+              <Box
+                sx={{
+                  display: 'grid',
+                  gridTemplateColumns: { xs: '1fr', md: '1fr 28px 1fr 28px 1fr' },
+                  gap: { xs: 1.4, md: 1.2 },
+                  alignItems: 'stretch'
+                }}
+              >
+                <Box sx={{ p: 1.8, borderRadius: 2, border: '1px solid #bfdbfe', bgcolor: '#eff6ff' }}>
+                  <Stack direction="row" spacing={1} alignItems="center" sx={{ mb: 1 }}>
+                    <Chip label="1" size="small" sx={{ bgcolor: '#2563eb', color: '#fff', fontWeight: 900 }} />
+                    <Typography sx={{ fontWeight: 900, color: '#0f172a', fontSize: 14 }}>Descargar plantilla</Typography>
+                  </Stack>
+                  <Typography sx={{ color: '#475569', fontSize: 12.5, mb: 1.2 }}>
+                    Usa el formato oficial con los campos de usuario.
+                  </Typography>
+                  <Button fullWidth variant="outlined" startIcon={<DownloadIcon />} onClick={handleDownloadTemplate} sx={{ borderRadius: 1.5, textTransform: 'none', fontWeight: 800, bgcolor: '#fff' }}>
+                    Descargar plantilla
+                  </Button>
+                </Box>
+
+                <Box sx={{ display: { xs: 'none', md: 'grid' }, placeItems: 'center', color: '#94a3b8' }}>
+                  <ArrowForwardIcon fontSize="small" />
+                </Box>
+
+                <Box sx={{ p: 1.8, borderRadius: 2, border: uploadFile ? '1px solid #86efac' : '1px solid #d7e3f5', bgcolor: uploadFile ? '#f0fdf4' : '#ffffff' }}>
+                  <Stack direction="row" spacing={1} alignItems="center" sx={{ mb: 1 }}>
+                    <Chip label="2" size="small" sx={{ bgcolor: uploadFile ? '#10b981' : '#94a3b8', color: '#fff', fontWeight: 900 }} />
+                    <Typography sx={{ fontWeight: 900, color: '#0f172a', fontSize: 14 }}>Adjuntar archivo</Typography>
+                  </Stack>
+                  <Typography sx={{ color: '#475569', fontSize: 12.5, mb: 1.2, minHeight: 19 }}>
+                    {uploadFile ? uploadFile.name : 'Selecciona el Excel diligenciado.'}
+                  </Typography>
+                  <Button fullWidth variant="outlined" component="label" startIcon={<UploadIcon />} sx={{ borderRadius: 1.5, textTransform: 'none', fontWeight: 800, bgcolor: '#fff' }}>
+                    Seleccionar archivo
+                    <input
+                      key={uploadInputKey}
+                      type="file"
+                      hidden
+                      accept=".xlsx,.xls"
+                      onChange={(e) => {
+                        setUploadFile(e.target.files[0] || null);
+                        setBulkImportResult(null);
+                        setBulkErrorFile(null);
+                        setBulkWarningFile(null);
+                      }}
+                    />
+                  </Button>
+                </Box>
+
+                <Box sx={{ display: { xs: 'none', md: 'grid' }, placeItems: 'center', color: '#94a3b8' }}>
+                  <ArrowForwardIcon fontSize="small" />
+                </Box>
+
+                <Box sx={{ p: 1.8, borderRadius: 2, border: uploadFile ? '1px solid #bfdbfe' : '1px solid #d7e3f5', bgcolor: uploadFile ? '#ffffff' : '#f8fafc' }}>
+                  <Stack direction="row" spacing={1} alignItems="center" sx={{ mb: 1 }}>
+                    <Chip label="3" size="small" sx={{ bgcolor: uploadFile ? '#2563eb' : '#94a3b8', color: '#fff', fontWeight: 900 }} />
+                    <Typography sx={{ fontWeight: 900, color: '#0f172a', fontSize: 14 }}>Cargar al sistema</Typography>
+                  </Stack>
+                  <Typography sx={{ color: '#475569', fontSize: 12.5, mb: 1.2 }}>
+                    Sincroniza nuevos y actualiza existentes.
+                  </Typography>
+                  <Button
+                    fullWidth
+                    variant="contained"
+                    disabled={!uploadFile || uploading}
+                    onClick={handleBulkUploadProfessional}
+                    sx={{
+                      borderRadius: 1.5,
+                      textTransform: 'none',
+                      fontWeight: 900,
+                      bgcolor: '#2563eb',
+                      '&:hover': { bgcolor: '#1d4ed8' },
+                      '&.Mui-disabled': { bgcolor: '#e2e8f0', color: '#94a3b8' }
+                    }}
+                  >
+                    {uploading ? <CircularProgress size={20} sx={{ color: '#1d4ed8' }} /> : 'Importar usuarios'}
+                  </Button>
+                </Box>
+              </Box>
+
+              <Box sx={{ mt: 1.4, px: 1.4, py: 1, borderRadius: 1.5, border: '1px dashed #bfdbfe', bgcolor: '#ffffff', display: 'flex', gap: 0.8, alignItems: 'center', flexWrap: 'wrap' }}>
+                <Typography sx={{ fontSize: 12, fontWeight: 900, color: '#0f172a' }}>Columnas requeridas:</Typography>
+                {['NUMERO_DOCUMENTO', 'NOMBRE_COMPLETO', 'CORREO_INSTITUCIONAL', 'DEPENDENCIA', 'CARGO', 'JEFE INMEDIATO', 'ROL'].map((label) => (
+                  <Chip key={label} label={label} size="small" sx={{ height: 22, fontSize: 10.5, fontWeight: 800, bgcolor: '#e0e7ff', color: '#1e40af' }} />
+                ))}
+              </Box>
+            </Box>
+          </Stack>
+
+          <Box sx={{ display: 'none' }}>
           <Typography
             variant="subtitle1"
             sx={{ textAlign: 'center', fontWeight: 800, color: '#1e3a8a', mb: 1.5 }}
@@ -869,6 +1052,7 @@ function GestionUsuarios() {
               Limpiar búsqueda
             </Button>
           </Stack>
+          </Box>
 
           {bulkImportResult && (
             <Alert

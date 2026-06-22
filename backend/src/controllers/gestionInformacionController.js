@@ -499,6 +499,29 @@ const INFRAESTRUCTURA_FISICA_TEMPLATE_HEADERS = [
   'Acceso Autónomo'
 ];
 
+const pickInfraestructuraCell = (row = {}, aliases = []) => {
+  const normalizedRow = Object.fromEntries(
+    Object.entries(row || {}).map(([key, value]) => [normalizeHeader(key), value])
+  );
+  for (const alias of aliases) {
+    const value = normalizedRow[normalizeHeader(alias)];
+    if (value !== undefined && value !== null && String(value).trim() !== '') return value;
+  }
+  return null;
+};
+
+const toNullableInteger = (value) => {
+  if (value === null || value === undefined || String(value).trim() === '') return null;
+  const parsed = toNumber(value);
+  return Number.isFinite(parsed) ? Math.trunc(parsed) : null;
+};
+
+const toSafeNumber = (value, fallback = 0) => {
+  if (value === null || value === undefined || String(value).trim() === '') return fallback;
+  const parsed = toNumber(value);
+  return Number.isFinite(parsed) ? parsed : fallback;
+};
+
 const PLAN_ACCION_TEMPLATE_HEADERS = [
   'AÑO',
   'PED',
@@ -6274,6 +6297,12 @@ const importFromExcel = async (req, res) => {
       let headerRowIndex = -1;
       for (let i = 0; i < allRows.length; i++) {
         const row = allRows[i];
+        const normalizedRow = (row || []).map((cell) => normalizeHeader(cell));
+        if (row && normalizedRow.includes('COMPONENTE') &&
+                  normalizedRow.some((cell) => cell === 'TIPO DE AREA' || cell === 'TIPO AREA')) {
+          headerRowIndex = i;
+          break;
+        }
         if (row && row.some(cell => String(cell || '').trim().toUpperCase() === 'COMPONENTE') &&
                   row.some(cell => String(cell || '').trim().toUpperCase() === 'TIPO DE ÁREA')) {
           headerRowIndex = i;
@@ -6308,15 +6337,30 @@ const importFromExcel = async (req, res) => {
           record[header] = colIdx < row.length ? row[colIdx] : null;
         });
 
-        if (!record['COMPONENTE'] && !record['TIPO DE ESPACIO']) {
+        const componente = pickInfraestructuraCell(record, ['COMPONENTE', 'BLOQUE', 'EDIFICIO', 'ESPACIO']);
+        const tipoEspacio = pickInfraestructuraCell(record, ['TIPO DE ESPACIO', 'TIPO ESPACIO', 'ESPACIO FISICO', 'ESPACIO FÍSICO']);
+        const tipoArea = pickInfraestructuraCell(record, ['TIPO DE ÁREA', 'TIPO DE AREA', 'TIPO ÁREA', 'TIPO AREA']);
+        const tenencia = pickInfraestructuraCell(record, ['TENENCIA']);
+        const ubicacion = pickInfraestructuraCell(record, ['UBICACIÓN', 'UBICACION', 'LOCALIZACION', 'LOCALIZACIÓN']);
+        const nomenclatura = pickInfraestructuraCell(record, ['Nomenclatura', 'NOMENCLATURA', 'CODIGO ESPACIO', 'CÓDIGO ESPACIO']);
+        const pisoNo = pickInfraestructuraCell(record, ['PISO No.', 'PISO NO.', 'PISO No', 'PISO NO', 'PISO', 'NIVEL']);
+        const asignacion = pickInfraestructuraCell(record, ['ASIGNACIÓN', 'ASIGNACION', 'USO', 'DEPENDENCIA']);
+        const descripcion = pickInfraestructuraCell(record, ['DESCRIPCION', 'DESCRIPCIÓN', 'DESCRIPCION GENERAL']);
+        const funcionEspecifica = pickInfraestructuraCell(record, ['Función Específica', 'Funcion Especifica', 'FUNCIÓN ESPECÍFICA', 'FUNCION ESPECIFICA']);
+        const capacidadFisica = pickInfraestructuraCell(record, ['CAPACIDAD FÍSICA', 'CAPACIDAD FISICA', 'CAPACIDAD', 'AFORO']);
+        const areaMetros2 = pickInfraestructuraCell(record, ['ÁREA (Metros2)', 'AREA (Metros2)', 'ÁREA (M2)', 'AREA (M2)', 'ÁREA M2', 'AREA M2', 'ÁREA', 'AREA']);
+        const fechaActualizacion = pickInfraestructuraCell(record, ['Fecha Actualización', 'Fecha Actualizacion', 'FECHA ACTUALIZACIÓN', 'FECHA ACTUALIZACION', 'FECHA']);
+        const accesoAutonomo = pickInfraestructuraCell(record, ['Acceso Autónomo', 'Acceso Autonomo', 'ACCESO AUTÓNOMO', 'ACCESO AUTONOMO']);
+
+        if (!componente && !tipoEspacio) {
           errores.push({ fila, error: 'Fila omitida: Componente o Tipo de Espacio vacío' });
           continue;
         }
 
         // Determinar Campus
         let parsedCampus = 'Campus Centro';
-        const rawCampus = String(record['CAMPUS'] || record['Campus'] || record['SEDE'] || record['Sede'] || '').trim();
-        const rawUbicacion = String(record['UBICACIÓN'] || record['UBICACION'] || '').trim();
+        const rawCampus = String(pickInfraestructuraCell(record, ['CAMPUS', 'Campus', 'SEDE', 'Sede']) || '').trim();
+        const rawUbicacion = String(ubicacion || '').trim();
 
         if (rawCampus) {
           const normCampus = rawCampus.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toUpperCase();
@@ -6339,20 +6383,20 @@ const importFromExcel = async (req, res) => {
         try {
           await PoblacionalInfraestructuraFisica.create({
             campus: parsedCampus,
-            componente: toDbText(record['COMPONENTE'], 200),
-            tipo_area: toDbText(record['TIPO DE ÁREA'], 120),
-            tenencia: toDbText(record['TENENCIA'], 120),
-            ubicacion: toDbText(record['UBICACIÓN'] || record['UBICACION'], 255),
-            nomenclatura: toDbText(record['Nomenclatura'] || record['NOMENCLATURA'], 120),
-            piso_no: record['PISO No.'] !== null && record['PISO No.'] !== undefined ? Math.trunc(toNumber(record['PISO No.'])) : null,
-            tipo_espacio: toDbText(record['TIPO DE ESPACIO'], 200),
-            asignacion: toDbText(record['ASIGNACIÓN'] || record['ASIGNACION'], 255),
-            descripcion: toDbText(record['DESCRIPCION'] || record['DESCRIPCIÓN']),
-            funcion_especifica: toDbText(record['Función Específica'] || record['Funcion Especifica'] || record['FUNCION ESPECIFICA'], 255),
-            capacidad_fisica: record['CAPACIDAD FÍSICA'] !== null && record['CAPACIDAD FÍSICA'] !== undefined ? Math.trunc(toNumber(record['CAPACIDAD FÍSICA'])) : 0,
-            area_metros2: record['ÁREA (Metros2)'] !== null && record['ÁREA (Metros2)'] !== undefined ? toNumber(record['ÁREA (Metros2)']) : 0,
-            fecha_actualizacion: toDbText(record['Fecha Actualización'] || record['Fecha de Actualizacion'] || record['FECHA ACTUALIZACION'], 120),
-            acceso_autonomo: toDbText(record['Acceso Autónomo'] || record['Acceso Autonomo'] || record['ACCESO AUTONOMO'], 20),
+            componente: toDbText(componente, 200),
+            tipo_area: toDbText(tipoArea, 120),
+            tenencia: toDbText(tenencia, 120),
+            ubicacion: toDbText(ubicacion, 255),
+            nomenclatura: toDbText(nomenclatura, 120),
+            piso_no: toNullableInteger(pisoNo),
+            tipo_espacio: toDbText(tipoEspacio, 200),
+            asignacion: toDbText(asignacion, 255),
+            descripcion: toDbText(descripcion),
+            funcion_especifica: toDbText(funcionEspecifica, 255),
+            capacidad_fisica: toNullableInteger(capacidadFisica) || 0,
+            area_metros2: toSafeNumber(areaMetros2, 0),
+            fecha_actualizacion: toDbText(fechaActualizacion, 120),
+            acceso_autonomo: toDbText(accesoAutonomo, 20),
             creado_por: req.user?.id || null,
             actualizado_por: req.user?.id || null
           });
