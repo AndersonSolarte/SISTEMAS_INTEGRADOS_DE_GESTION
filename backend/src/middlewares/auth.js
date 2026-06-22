@@ -6,9 +6,11 @@ const trackActivity = require('./trackActivity');
 
 const enforceTokenVersion = String(process.env.ENFORCE_TOKEN_VERSION || 'true').toLowerCase() !== 'false';
 const getUserSessionVersion = (user) => {
-  const updatedAt = user?.updated_at || user?.updatedAt;
-  const timestamp = updatedAt ? new Date(updatedAt).getTime() : 0;
-  return Number.isFinite(timestamp) ? timestamp : 0;
+  const id = String(user?.id || '').trim();
+  const email = String(user?.email || '').trim().toLowerCase();
+  const role = String(user?.role || '').trim().toLowerCase();
+  const estado = String(user?.estado || '').trim().toLowerCase();
+  return [id, email, role, estado].join(':');
 };
 
 const auth = async (req, res, next) => {
@@ -23,7 +25,7 @@ const auth = async (req, res, next) => {
       return res.status(401).json({ success: false, message: 'Token invalido' });
     }
 
-    if (enforceTokenVersion && Number(decoded.sv || 0) !== getUserSessionVersion(user)) {
+    if (enforceTokenVersion && String(decoded.sv || '') !== getUserSessionVersion(user)) {
       return res.status(401).json({ success: false, message: 'Sesion expirada. Inicia sesion nuevamente.' });
     }
 

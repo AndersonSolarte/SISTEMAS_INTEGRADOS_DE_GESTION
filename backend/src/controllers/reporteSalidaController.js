@@ -307,7 +307,9 @@ const mapUserProfileBosses = (rows, search = '') => {
     if (!jefeNombre) return;
     const matchedUser = rows.find((candidate) =>
       normalizeForMatch(candidate.nombre) === normalizeForMatch(jefeNombre) ||
-      namesLookRelated(candidate.nombre, jefeNombre)
+      normalizeForMatch(candidate.cargo) === normalizeForMatch(jefeNombre) ||
+      namesLookRelated(candidate.nombre, jefeNombre) ||
+      namesLookRelated(candidate.cargo, jefeNombre)
     );
     pushBoss({
       id: matchedUser?.id ? `user:${matchedUser.id}` : `profile-jefe:${normalizeForMatch(jefeNombre) || index}`,
