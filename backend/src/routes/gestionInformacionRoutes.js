@@ -45,7 +45,27 @@ const { createExcelUpload } = require('../middlewares/excelUpload');
 const upload = createExcelUpload('uploads/temp/');
 
 const multer = require('multer');
-const docxUpload = multer({ dest: 'uploads/temp/' });
+const docxUpload = multer({
+  dest: process.env.EXCEL_UPLOAD_TMP_DIR || 'uploads/temp/',
+  limits: {
+    fileSize: Number(process.env.DOCX_UPLOAD_MAX_MB || 25) * 1024 * 1024,
+    files: 1
+  },
+  fileFilter: (req, file, cb) => {
+    const mime = String(file?.mimetype || '').toLowerCase();
+    const ext = path.extname(String(file?.originalname || '')).toLowerCase();
+    if (
+      ext === '.docx' &&
+      (
+        mime === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' ||
+        mime === 'application/octet-stream'
+      )
+    ) {
+      return cb(null, true);
+    }
+    return cb(new Error('Archivo no permitido. Solo se admiten plantillas Word .docx.'));
+  }
+});
 
 const auditorioFotoStorage = multer.diskStorage({
   destination: function (req, file, cb) {

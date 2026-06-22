@@ -9,7 +9,10 @@ RUN npm ci --omit=dev
 
 COPY . .
 
-RUN mkdir -p /app/uploads /app/keys
+RUN mkdir -p /app/uploads /app/keys \
+  && chown -R node:node /app
+
+USER node
 
 EXPOSE 5000
 

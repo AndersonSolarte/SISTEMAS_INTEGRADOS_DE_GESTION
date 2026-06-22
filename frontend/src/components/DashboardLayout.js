@@ -81,8 +81,9 @@ function DashboardLayout() {
   };
 
   const navigateFromMenu = (path) => {
-    navigate(path, { state: { menuClickToken: Date.now() } });
+    if (!path) return;
     setMobileOpen(false);
+    window.location.assign(path);
   };
 
   const isActive = (path) => {

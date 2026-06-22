@@ -4,6 +4,8 @@ services:
     container_name: sgc-db
     profiles: ["docker-db"]
     restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
     environment:
       POSTGRES_DB: ${DB_NAME}
       POSTGRES_USER: ${DB_USER}
@@ -12,6 +14,8 @@ services:
       - "127.0.0.1:${DB_PORT_HOST:-5433}:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
+    tmpfs:
+      - /tmp:size=64m,noexec,nosuid,nodev
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${DB_USER} -d ${DB_NAME}"]
       interval: 10s
@@ -24,7 +28,15 @@ services:
       dockerfile: Dockerfile
     container_name: sgc-python-service
     restart: unless-stopped
+    init: true
+    read_only: true
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    pids_limit: 256
     environment:
+      TMPDIR: /tmp
       FRONTEND_URL: ${PUBLIC_APP_URL}
       DB_HOST: ${HOST_DB_HOST:-host.docker.internal}
       DB_PORT: ${HOST_DB_PORT:-5432}
@@ -33,6 +45,8 @@ services:
       DB_PASSWORD: ${DB_PASSWORD}
     extra_hosts:
       - "host.docker.internal:host-gateway"
+    tmpfs:
+      - /tmp:size=128m,noexec,nosuid,nodev
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=5)"]
       interval: 10s
@@ -46,16 +60,37 @@ services:
       dockerfile: Dockerfile
     container_name: sgc-backend
     restart: unless-stopped
+    init: true
+    read_only: true
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    pids_limit: 512
     environment:
       PORT: 5000
       NODE_ENV: production
+      HOME: /tmp
+      TMPDIR: /tmp
       DB_HOST: ${HOST_DB_HOST:-host.docker.internal}
       DB_PORT: ${HOST_DB_PORT:-5432}
       DB_NAME: ${DB_NAME}
       DB_USER: ${DB_USER}
       DB_PASSWORD: ${DB_PASSWORD}
       JWT_SECRET: ${JWT_SECRET}
-      JWT_EXPIRE: ${JWT_EXPIRE:-7d}
+      JWT_EXPIRE: ${JWT_EXPIRE:-8h}
+      ENFORCE_TOKEN_VERSION: ${ENFORCE_TOKEN_VERSION:-true}
+      RATE_LIMIT_WINDOW_MS: ${RATE_LIMIT_WINDOW_MS:-300000}
+      RATE_LIMIT_MAX: ${RATE_LIMIT_MAX:-900}
+      AUTH_RATE_LIMIT_WINDOW_MS: ${AUTH_RATE_LIMIT_WINDOW_MS:-300000}
+      AUTH_RATE_LIMIT_MAX: ${AUTH_RATE_LIMIT_MAX:-40}
+      PUBLIC_RATE_LIMIT_WINDOW_MS: ${PUBLIC_RATE_LIMIT_WINDOW_MS:-300000}
+      PUBLIC_RATE_LIMIT_MAX: ${PUBLIC_RATE_LIMIT_MAX:-80}
+      EXCEL_UPLOAD_MAX_MB: ${EXCEL_UPLOAD_MAX_MB:-50}
+      DOCX_UPLOAD_MAX_MB: ${DOCX_UPLOAD_MAX_MB:-25}
+      JSON_BODY_LIMIT: ${JSON_BODY_LIMIT:-1mb}
+      URLENCODED_BODY_LIMIT: ${URLENCODED_BODY_LIMIT:-256kb}
+      REQUEST_MAX_FIELD_LENGTH: ${REQUEST_MAX_FIELD_LENGTH:-8000}
       FRONTEND_URL: ${PUBLIC_APP_URL}
       GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
       INSTITUTIONAL_EMAIL_DOMAIN: ${INSTITUTIONAL_EMAIL_DOMAIN:-unicesmag.edu.co}
@@ -97,6 +132,8 @@ services:
     volumes:
       - backend_uploads:/app/uploads
       - ./backend/keys:/app/keys:ro
+    tmpfs:
+      - /tmp:size=512m,nosuid,nodev
     healthcheck:
       test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:5000/api/health').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"]
       interval: 10s
@@ -116,6 +153,15 @@ services:
         REACT_APP_ENABLE_REPORTE_SALIDA_FORM: ${REACT_APP_ENABLE_REPORTE_SALIDA_FORM:-false}
     container_name: sgc-frontend
     restart: unless-stopped
+    init: true
+    read_only: true
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    cap_add:
+      - NET_BIND_SERVICE
+    pids_limit: 256
     depends_on:
       backend:
         condition: service_healthy
@@ -125,6 +171,10 @@ services:
     volumes:
       - ./fullchain.pem:/etc/nginx/certs/fullchain.pem:ro
       - ./Cert_planeacion.key:/etc/nginx/certs/Cert_planeacion.key:ro
+    tmpfs:
+      - /var/cache/nginx:size=64m,nosuid,nodev
+      - /var/run:size=16m,nosuid,nodev
+      - /tmp:size=64m,noexec,nosuid,nodev
 
 volumes:
   postgres_data:

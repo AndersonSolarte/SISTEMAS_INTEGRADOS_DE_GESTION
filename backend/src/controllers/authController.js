@@ -17,7 +17,17 @@ const isInstitutionalEmail = (email = '') => {
 const googleClientId = process.env.GOOGLE_CLIENT_ID;
 const googleClient = googleClientId ? new OAuth2Client(googleClientId) : null;
 
-const verifyGoogleCredentialAndBuildSession = async (credential = '') => {
+const getUserSessionVersion = (user) => {
+  const updatedAt = user?.updated_at || user?.updatedAt;
+  const timestamp = updatedAt ? new Date(updatedAt).getTime() : 0;
+  return Number.isFinite(timestamp) ? timestamp : 0;
+};
+
+const getRequestIp = (req) => String(req?.headers?.['x-forwarded-for'] || req?.ip || '')
+  .split(',')[0]
+  .trim() || null;
+
+const verifyGoogleCredentialAndBuildSession = async (credential = '', req = null) => {
   if (!googleClient || !googleClientId) {
     return { error: { status: 500, message: 'Google login no esta configurado en el servidor.' } };
   }
@@ -63,8 +73,13 @@ const verifyGoogleCredentialAndBuildSession = async (credential = '') => {
     return { error: { status: 403, message: 'Tu usuario esta inactivo. Contacta al administrador.' } };
   }
 
-  const token = jwt.sign({ id: user.id, email: user.email, role: user.role }, jwtSecret, signOptions);
   await user.update({ last_login: new Date() });
+  const token = jwt.sign({
+    id: user.id,
+    email: user.email,
+    role: user.role,
+    sv: getUserSessionVersion(user)
+  }, jwtSecret, signOptions);
   const userPayload = await buildUserPayloadWithPermissions(user);
 
   /* fire-and-forget login event */
@@ -79,8 +94,8 @@ const verifyGoogleCredentialAndBuildSession = async (credential = '') => {
         action:     'Inicio de sesión',
         method:     'POST',
         endpoint:   '/api/auth/google',
-        ip_address: null,
-        user_agent: null,
+        ip_address: getRequestIp(req),
+        user_agent: req?.headers?.['user-agent'] || null,
       });
     } catch (_) { /* silent */ }
   });
@@ -98,7 +113,7 @@ const verifyGoogleCredentialAndBuildSession = async (credential = '') => {
 const googleLogin = async (req, res) => {
   try {
     const { credential } = req.body;
-    const result = await verifyGoogleCredentialAndBuildSession(credential);
+    const result = await verifyGoogleCredentialAndBuildSession(credential, req);
     if (result?.error) {
       console.warn('[auth/google] Acceso rechazado:', result.error.message);
       return res.status(result.error.status).json({ success: false, message: result.error.message });
@@ -135,7 +150,7 @@ const googleLogin = async (req, res) => {
 const googleRedirectLogin = async (req, res) => {
   try {
     const credential = String(req.body?.credential || '').trim();
-    const result = await verifyGoogleCredentialAndBuildSession(credential);
+    const result = await verifyGoogleCredentialAndBuildSession(credential, req);
     if (result?.error) {
       return res.redirect(`${frontendUrl}/login#google_error=${encodeURIComponent(result.error.message)}`);
     }

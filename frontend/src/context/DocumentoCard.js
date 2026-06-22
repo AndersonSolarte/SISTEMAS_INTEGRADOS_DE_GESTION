@@ -17,7 +17,7 @@ const buildFileUrl = (link = '') => {
     if (!link) return '';
     if (/^https?:\/\//i.test(link)) return link;
 
-    const apiUrl = process.env.REACT_APP_API_URL || 'http://localhost:5000/api';
+    const apiUrl = process.env.REACT_APP_API_URL || '/api';
     const base = apiUrl.replace(/\/api\/?$/, '');
     return `${base}${link.startsWith('/') ? '' : '/'}${link}`;
 };

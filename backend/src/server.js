@@ -10,15 +10,18 @@ const fs = require('fs');
 const { testConnection } = require('./config/database');
 const {
   corsOptions,
+  apiLimiter,
   authLimiter,
   methodGuard,
   payloadShapeGuard,
+  publicLimiter,
+  sqlInjectionGuard,
+  sensitivePathGuard,
   noStore,
   uploadsStaticOptions
 } = require('./middlewares/security');
 
 const app = express();
-
 app.disable('x-powered-by');
 app.set('trust proxy', 1);
 
@@ -37,7 +40,8 @@ if (String(process.env.PUBLIC_UPLOADS_ENABLED || '').toLowerCase() === 'true') {
   app.use('/uploads', express.static(path.join(__dirname, '../uploads'), uploadsStaticOptions));
 }
 app.use('/api/auth', authLimiter);
-app.use('/api', methodGuard, noStore, payloadShapeGuard);
+app.use('/api/public', publicLimiter);
+app.use('/api', apiLimiter, methodGuard, sensitivePathGuard, noStore, payloadShapeGuard, sqlInjectionGuard);
 
 app.use('/api/auth', require('./routes/authRoutes'));
 app.use('/api/documentos', require('./routes/documentoRoutes'));
@@ -91,7 +95,7 @@ app.use((err, req, res, next) => {
 
   if (err instanceof multer.MulterError) {
     if (err.code === 'LIMIT_FILE_SIZE') {
-      const maxMb = Number(process.env.EXCEL_UPLOAD_MAX_MB || 1024);
+      const maxMb = Number(process.env.EXCEL_UPLOAD_MAX_MB || 50);
       return res.status(413).json({
         success: false,
         status: 413,

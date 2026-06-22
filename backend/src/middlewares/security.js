@@ -39,11 +39,23 @@ const corsOptions = {
 
 const apiLimiter = rateLimit({
   windowMs: Number(process.env.RATE_LIMIT_WINDOW_MS || 5 * 60 * 1000),
-  limit: Number(process.env.RATE_LIMIT_MAX || 3000),
+  limit: Number(process.env.RATE_LIMIT_MAX || 900),
   standardHeaders: true,
   legacyHeaders: false,
   skip: (req) => req.method === 'OPTIONS',
-  skipSuccessfulRequests: true,
+  skipSuccessfulRequests: false,
+  message: {
+    success: false,
+    message: 'Demasiadas solicitudes. Intenta nuevamente mas tarde.'
+  }
+});
+
+const publicLimiter = rateLimit({
+  windowMs: Number(process.env.PUBLIC_RATE_LIMIT_WINDOW_MS || 5 * 60 * 1000),
+  limit: Number(process.env.PUBLIC_RATE_LIMIT_MAX || 80),
+  standardHeaders: true,
+  legacyHeaders: false,
+  skip: (req) => req.method === 'OPTIONS',
   message: {
     success: false,
     message: 'Demasiadas solicitudes. Intenta nuevamente mas tarde.'
@@ -52,7 +64,7 @@ const apiLimiter = rateLimit({
 
 const authLimiter = rateLimit({
   windowMs: Number(process.env.AUTH_RATE_LIMIT_WINDOW_MS || 5 * 60 * 1000),
-  limit: Number(process.env.AUTH_RATE_LIMIT_MAX || 120),
+  limit: Number(process.env.AUTH_RATE_LIMIT_MAX || 40),
   standardHeaders: true,
   legacyHeaders: false,
   skip: (req) => req.method === 'GET' || req.method === 'OPTIONS',
@@ -108,9 +120,119 @@ const payloadShapeGuard = (req, res, next) => {
   return next();
 };
 
+const sqlInjectionGuard = (req, res, next) => {
+  const suspiciousPatterns = [
+    /(?:^|[\s'"])or\s+1\s*=\s*1(?:[\s'"]|$)/i,
+    /(?:^|[\s'"])and\s+1\s*=\s*1(?:[\s'"]|$)/i,
+    /\bunion\s+(?:all\s+)?select\b/i,
+    /\b(?:drop|truncate|alter)\s+(?:table|database|schema|user|role)\b/i,
+    /\b(?:insert|update|delete)\s+(?:into|from)?\s+[a-z0-9_".]+\s*(?:set|where|values)?/i,
+    /\bexec(?:ute)?\s*\(/i,
+    /\binformation_schema\b/i,
+    /\bpg_catalog\b/i,
+    /(?:--|#|\/\*)\s*(?:$|\w)/,
+    /;\s*(?:select|insert|update|delete|drop|alter|truncate|create)\b/i,
+    /\b(?:sleep|pg_sleep|benchmark)\s*\(/i
+  ];
+
+  const containers = [
+    { source: 'query', value: req.query },
+    { source: 'params', value: req.params },
+    { source: 'body', value: req.body }
+  ];
+  const maxFieldLength = Number(process.env.REQUEST_MAX_FIELD_LENGTH || 8000);
+  const stack = containers.map((item) => ({ ...item, path: item.source, depth: 0 }));
+
+  while (stack.length) {
+    const { source, value, path: currentPath, depth } = stack.pop();
+    if (value === null || value === undefined) continue;
+
+    if (typeof value === 'string') {
+      const decoded = (() => {
+        try {
+          return decodeURIComponent(value.replace(/\+/g, '%20'));
+        } catch (_) {
+          return value;
+        }
+      })();
+      const compact = decoded.replace(/\s+/g, ' ').trim();
+
+      if (compact.length > maxFieldLength) {
+        return res.status(413).json({
+          success: false,
+          message: 'Campo de solicitud demasiado grande'
+        });
+      }
+
+      if (suspiciousPatterns.some((pattern) => pattern.test(compact))) {
+        console.warn('[security] Solicitud bloqueada por patron SQL sospechoso:', {
+          source,
+          path: currentPath,
+          ip: req.ip,
+          method: req.method,
+          url: req.originalUrl
+        });
+        return res.status(400).json({
+          success: false,
+          message: 'La solicitud contiene parametros no permitidos'
+        });
+      }
+      continue;
+    }
+
+    if (Array.isArray(value)) {
+      value.forEach((item, index) => stack.push({
+        source,
+        value: item,
+        path: `${currentPath}[${index}]`,
+        depth: depth + 1
+      }));
+      continue;
+    }
+
+    if (typeof value === 'object' && depth < 12) {
+      Object.entries(value).forEach(([key, item]) => stack.push({
+        source,
+        value: item,
+        path: `${currentPath}.${key}`,
+        depth: depth + 1
+      }));
+    }
+  }
+
+  return next();
+};
+
 const noStore = (_req, res, next) => {
   res.setHeader('Cache-Control', 'no-store');
   next();
+};
+
+const sensitivePathGuard = (req, res, next) => {
+  let decodedPath = String(req.path || '').toLowerCase();
+  try {
+    decodedPath = decodeURIComponent(decodedPath);
+  } catch (_) {
+    return res.status(400).json({
+      success: false,
+      status: 400,
+      code: 'BAD_REQUEST',
+      message: 'Solicitud invalida'
+    });
+  }
+  if (
+    decodedPath.includes('..') ||
+    /(^|\/)\.(?!well-known\/)/.test(decodedPath) ||
+    /\.(env|ini|log|bak|backup|old|orig|sql|sqlite|db|dump|pem|key|crt|p12|pfx|config|yml|yaml|zip|tar|gz|map)$/i.test(decodedPath)
+  ) {
+    return res.status(404).json({
+      success: false,
+      status: 404,
+      code: 'RESOURCE_NOT_FOUND',
+      message: 'Recurso no encontrado'
+    });
+  }
+  return next();
 };
 
 const uploadsStaticOptions = {
@@ -127,9 +249,12 @@ const uploadsStaticOptions = {
 module.exports = {
   corsOptions,
   apiLimiter,
+  publicLimiter,
   authLimiter,
   methodGuard,
   payloadShapeGuard,
+  sqlInjectionGuard,
+  sensitivePathGuard,
   noStore,
   uploadsStaticOptions
 };

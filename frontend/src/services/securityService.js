@@ -9,7 +9,7 @@ const securityService = {
   updateStatus: (id, payload) => api.patch(`/security/findings/${id}/status`, payload).then((response) => response.data),
   assignFinding: (id, payload) => api.patch(`/security/findings/${id}/assign`, payload).then((response) => response.data),
   analyzeRemediation: (id) => api.post(`/security/findings/${id}/remediation/analyze`).then((response) => response.data),
-  exportUrl: () => `${process.env.REACT_APP_API_URL || 'http://localhost:5000/api'}/security/reports/export`
+  exportUrl: () => `${process.env.REACT_APP_API_URL || '/api'}/security/reports/export`
 };
 
 export default securityService;

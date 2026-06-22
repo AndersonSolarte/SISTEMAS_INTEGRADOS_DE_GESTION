@@ -33,7 +33,7 @@ const hasAnswerValue = (value) => {
   return true;
 };
 
-const makePublicCode = () => crypto.randomBytes(5).toString('hex');
+const makePublicCode = () => crypto.randomBytes(16).toString('hex');
 const makeRespondentCode = () => `R-${Date.now().toString(36)}-${crypto.randomBytes(3).toString('hex')}`;
 
 const getBasePublicUrl = (req, code) => {

@@ -1,0 +1,15 @@
+node_modules/
+.codex
+.agents
+.claude
+.cursor
+.windsurf
+.antigravity
+npm-debug.log*
+*.log
+.env
+.env.*
+build/
+build_*/
+build_verify*/
+coverage/

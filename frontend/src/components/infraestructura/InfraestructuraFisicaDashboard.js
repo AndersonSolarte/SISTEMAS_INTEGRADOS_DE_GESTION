@@ -807,7 +807,7 @@ ${card.subspaces.map(s => ` - ${s.descripcion} (Capacidad: ${s.capacidad} pax, Ã
 
   const getFotoUrl = (relativePath) => {
     if (!relativePath) return null;
-    const baseUrl = (process.env.REACT_APP_API_URL || 'http://localhost:5000/api').replace(/\/api$/, '');
+    const baseUrl = (process.env.REACT_APP_API_URL || '/api').replace(/\/api$/, '');
     return `${baseUrl}${relativePath}`;
   };
   // --- FIN DE LA LÃ“GICA DE AUDITORIOS INSTITUCIONALES ---

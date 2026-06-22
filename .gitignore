@@ -44,6 +44,7 @@ backend/keys/google-service-account.json
 # Logs y temporales
 logs/
 *.log
+tmp/
 tmp_docx_inspect/
 backend/tmp_docx_v2/
 backend/uploads/

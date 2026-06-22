@@ -759,7 +759,27 @@ const updateUser = async (req, res) => {
         message: 'No tienes permisos para asignar ese rol'
       });
     }
-    
+
+    if (
+      user.role === ROLES.ADMINISTRADOR &&
+      (targetRole !== ROLES.ADMINISTRADOR || estado === 'inactivo')
+    ) {
+      const adminsActivos = await User.count({
+        where: {
+          role: ROLES.ADMINISTRADOR,
+          estado: 'activo',
+          id: { [Op.ne]: id }
+        }
+      });
+
+      if (adminsActivos === 0) {
+        return res.status(400).json({
+          success: false,
+          message: 'No puedes dejar el sistema sin un administrador activo'
+        });
+      }
+    }
+
     // Validar dominio si se cambia email
     if (email && email !== user.email && !validarDominio(email)) {
       return res.status(400).json({
@@ -1261,6 +1281,7 @@ const bulkUploadUsers = async (req, res) => {
       importados: 0,
       actualizados: 0,
       correosEnviados: 0,
+      correosOmitidos: 0,
       errores: [],
       advertencias: []
     };
@@ -1354,7 +1375,7 @@ const bulkUploadUsers = async (req, res) => {
             { username: { [Op.in]: validRows.map((row) => row.username) } }
           ]
         },
-        attributes: ['id', 'email', 'username', 'role']
+        attributes: ['id', 'email', 'username', 'role', 'estado']
       })
       : [];
 
@@ -1389,7 +1410,35 @@ const bulkUploadUsers = async (req, res) => {
       }
     }
 
-    const sendBulkEmails = String(process.env.BULK_USER_SEND_EMAILS || 'true').toLowerCase() !== 'false';
+    const adminIdsToDemote = rowsToUpdate
+      .filter(({ row, existing }) =>
+        existing.role === ROLES.ADMINISTRADOR &&
+        existing.estado === 'activo' &&
+        row.targetRole !== ROLES.ADMINISTRADOR
+      )
+      .map(({ existing }) => existing.id);
+
+    if (adminIdsToDemote.length > 0) {
+      const adminsRestantes = await User.count({
+        where: {
+          role: ROLES.ADMINISTRADOR,
+          estado: 'activo',
+          id: { [Op.notIn]: adminIdsToDemote }
+        }
+      });
+
+      if (adminsRestantes === 0) {
+        return res.status(400).json({
+          success: false,
+          message: 'La carga masiva no puede dejar el sistema sin un administrador activo'
+        });
+      }
+    }
+
+    const sendEmailsParam = String(req.body?.sendEmails ?? '').trim().toLowerCase();
+    const sendBulkEmails = sendEmailsParam
+      ? ['true', '1', 'si', 'sí', 'yes'].includes(sendEmailsParam)
+      : String(process.env.BULK_USER_SEND_EMAILS || 'true').toLowerCase() !== 'false';
     const hashedImportPassword = await bcrypt.hash(generarPasswordInterna(), 10);
 
     await User.sequelize.transaction(async (transaction) => {
@@ -1437,11 +1486,7 @@ const bulkUploadUsers = async (req, res) => {
     const rowsToNotify = [...rowsToCreate, ...rowsToUpdate.map(({ row }) => row)];
 
     if (!sendBulkEmails && rowsToNotify.length > 0) {
-      results.advertencias.push({
-        fila: '',
-        email: '',
-        warning: 'El envio de correos individuales esta desactivado por configuracion del servidor. Los usuarios pueden ingresar con Google institucional.'
-      });
+      results.correosOmitidos = rowsToNotify.length;
     }
 
     if (sendBulkEmails && rowsToNotify.length > 0) {
@@ -1469,7 +1514,9 @@ const bulkUploadUsers = async (req, res) => {
     const processed = results.importados + results.actualizados;
     const message = results.errores.length
       ? `Carga finalizada: ${processed}/${results.total} sincronizados, ${results.errores.length} con error`
-      : `Carga finalizada: ${processed} usuarios sincronizados, ${results.correosEnviados} correos enviados`;
+      : sendBulkEmails
+        ? `Carga finalizada: ${processed} usuarios sincronizados, ${results.correosEnviados} correos enviados`
+        : `Carga finalizada: ${processed} usuarios sincronizados. Correos no enviados por opcion seleccionada`;
 
     res.json({
       success: true,

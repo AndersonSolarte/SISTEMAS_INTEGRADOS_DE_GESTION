@@ -3,7 +3,7 @@ const path = require('path');
 const os = require('os');
 const multer = require('multer');
 
-const DEFAULT_MAX_FILE_SIZE_MB = Number(process.env.EXCEL_UPLOAD_MAX_MB || 1024);
+const DEFAULT_MAX_FILE_SIZE_MB = Number(process.env.EXCEL_UPLOAD_MAX_MB || 50);
 const MAX_FILE_SIZE_BYTES = Number.isFinite(DEFAULT_MAX_FILE_SIZE_MB) && DEFAULT_MAX_FILE_SIZE_MB > 0
   ? Math.trunc(DEFAULT_MAX_FILE_SIZE_MB * 1024 * 1024)
   : 1024 * 1024 * 1024;

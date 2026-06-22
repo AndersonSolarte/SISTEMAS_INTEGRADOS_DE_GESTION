@@ -11,9 +11,10 @@ const {
   updateFeatureConfig
 } = require('../controllers/reporteSalidaController');
 const { auth, hasAnyRoleOrModulePermission } = require('../middlewares/auth');
+const { publicLimiter } = require('../middlewares/security');
 const { ROLES } = require('../constants/roles');
 
-router.get('/aprobar/:token', aprobarDesdeCorreo);
+router.get('/aprobar/:token', publicLimiter, aprobarDesdeCorreo);
 router.get('/config', auth, getFeatureConfig);
 router.patch('/config', auth, updateFeatureConfig);
 router.get('/catalogo-laboral', auth, getCatalogoLaboral);

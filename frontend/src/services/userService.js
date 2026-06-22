@@ -49,9 +49,10 @@ const userService = {
   },
 
   // Carga masiva
-  bulkUpload: async (file) => {
+  bulkUpload: async (file, options = {}) => {
     const formData = new FormData();
     formData.append('file', file);
+    formData.append('sendEmails', options.sendEmails ? 'true' : 'false');
     const response = await api.post('/users/bulk-upload', formData, {
       headers: { 'Content-Type': 'multipart/form-data' },
       timeout: 300000

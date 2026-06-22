@@ -135,6 +135,7 @@ function GestionUsuarios() {
   const [bulkImportResult, setBulkImportResult] = useState(null);
   const [bulkErrorFile, setBulkErrorFile] = useState(null);
   const [bulkWarningFile, setBulkWarningFile] = useState(null);
+  const [sendBulkEmails, setSendBulkEmails] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [deletingUserIds, setDeletingUserIds] = useState(() => new Set());
   const [openPermissionsDialog, setOpenPermissionsDialog] = useState(false);
@@ -433,12 +434,12 @@ function GestionUsuarios() {
 
     setUploading(true);
     try {
-      const response = await userService.bulkUpload(uploadFile);
+      const response = await userService.bulkUpload(uploadFile, { sendEmails: sendBulkEmails });
 
       if (response?.data?.advertencias?.length) {
         const example = response.data.advertencias[0];
         enqueueSnackbar(
-          `Se importaron usuarios con advertencias. Ejemplo: ${example.email} sin correo, contraseña temporal disponible.`,
+          `Se importaron usuarios con advertencias. Ejemplo: ${example.email || 'usuario'} - ${example.warning || 'revisar advertencia'}.`,
           { variant: 'warning' }
         );
       }
@@ -480,7 +481,7 @@ function GestionUsuarios() {
     setBulkErrorFile(null);
     setBulkWarningFile(null);
     try {
-      const response = await userService.bulkUpload(uploadFile);
+      const response = await userService.bulkUpload(uploadFile, { sendEmails: sendBulkEmails });
       const result = response?.data || {};
 
       setBulkImportResult(result);
@@ -882,6 +883,21 @@ function GestionUsuarios() {
                   <Typography sx={{ color: '#475569', fontSize: 12.5, mb: 1.2 }}>
                     Sincroniza nuevos y actualiza existentes.
                   </Typography>
+                  <FormControlLabel
+                    control={
+                      <Checkbox
+                        size="small"
+                        checked={sendBulkEmails}
+                        onChange={(event) => setSendBulkEmails(event.target.checked)}
+                      />
+                    }
+                    label="Enviar correos de bienvenida"
+                    sx={{
+                      mb: 1,
+                      mx: 0,
+                      '& .MuiFormControlLabel-label': { fontSize: 12.5, fontWeight: 700, color: '#334155' }
+                    }}
+                  />
                   <Button
                     fullWidth
                     variant="contained"
@@ -1086,6 +1102,7 @@ function GestionUsuarios() {
               {' | '}Nuevos: {bulkImportResult.importados || 0}
               {' | '}Actualizados: {bulkImportResult.actualizados || 0}
               {' | '}Correos: {bulkImportResult.correosEnviados || 0}
+              {bulkImportResult.correosOmitidos ? ` | Correos omitidos: ${bulkImportResult.correosOmitidos}` : ''}
               {' | '}Errores: {bulkImportResult.errores?.length || 0}
             </Alert>
           )}

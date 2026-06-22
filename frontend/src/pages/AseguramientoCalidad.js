@@ -168,7 +168,7 @@ const toAbsoluteDocumentUrl = (url) => {
   const value = String(url).trim();
   if (/^https?:\/\//i.test(value)) return value;
   if (value.startsWith('/uploads/')) {
-    const apiBase = process.env.REACT_APP_API_URL || 'http://localhost:5000/api';
+    const apiBase = process.env.REACT_APP_API_URL || '/api';
     const backendBase = apiBase.replace(/\/api\/?$/, '');
     return `${backendBase}${value}`;
   }
