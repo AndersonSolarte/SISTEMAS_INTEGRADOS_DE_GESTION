@@ -1005,7 +1005,7 @@ function Autoevaluacion() {
 
   const complianceRanges = {
     'SE CUMPLE PLENAMENTE': '4,5 a 5,0',
-    'SE CUMPLE EN ALTO GRADO': '4,0 a 4,5',
+    'SE CUMPLE EN ALTO GRADO': '4,0 a 4,4',
     'SE CUMPLE ACEPTABLEMENTE': '3,0 a 3,9',
     'SE CUMPLE INSATISFACTORIAMENTE': '2,0 a 2,9',
     'NO SE CUMPLE': '1,0 a 1,9'
