@@ -789,7 +789,7 @@ const renderApprovalPage = ({
       </div>` : ''}
       ${safeNextStep ? `<div class="note">${safeNextStep}</div>` : ''}
       <div class="actions">
-        <button class="ghost" type="button" onclick="window.close()">Cerrar ventana</button>
+        <button class="ghost" type="button" onclick="window.close(); setTimeout(function(){ window.location.href='${safeActionUrl}'; }, 180);">Cerrar ventana</button>
         <a class="primary" href="${safeActionUrl}">${safeActionLabel}</a>
       </div>
     </section>
@@ -909,11 +909,6 @@ const sendFinalEmails = async (solicitud, attachments) => {
     introHtml: `<p>Cordial saludo, <strong>${escapeHtml(solicitud.solicitante_snapshot?.nombre)}</strong>.</p>`,
     bodyHtml: '<p>Gestion Humana aprobo su reporte de salida. Se adjunta el PDF digital FR-002 diligenciado y aprobado. Tambien se incluye el Word oficial diligenciado como soporte editable.</p>'
   });
-  const sstHtml = renderInstitutionalTemplate({
-    title: 'Reporte de salida para conocimiento SST',
-    introHtml: '<p>Se informa la salida aprobada de un colaborador.</p>',
-    bodyHtml: `<p><strong>Colaborador:</strong> ${escapeHtml(solicitud.solicitante_snapshot?.nombre)}</p><p>Se adjunta PDF digital FR-002 informativo y Word oficial diligenciado como respaldo.</p>`
-  });
 
   const userResult = await sendInstitutionalEmail({
     to: solicitud.solicitante_snapshot.email,
@@ -924,9 +919,9 @@ const sendFinalEmails = async (solicitud, attachments) => {
   });
   const sstResult = await sendInstitutionalEmail({
     to: recipients.sst,
-    subject: `REPORTE DE SALIDA ${solicitud.consecutivo} | Informacion SST`,
-    text: `Reporte de salida aprobado para conocimiento SST. Solicitud ${solicitud.consecutivo}. Se adjunta PDF digital FR-002 y Word diligenciado.`,
-    html: sstHtml,
+    subject,
+    text: `Su reporte de salida ${solicitud.consecutivo} fue aprobado por Gestion Humana. Se adjunta PDF digital FR-002 y Word diligenciado.`,
+    html: userHtml,
     attachments
   });
   return { userResult, sstResult };

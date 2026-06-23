@@ -35,7 +35,7 @@ const setReporteSalidaFeatureState = async (enabled, userId = null) => {
 
 const getReporteSalidaRecipients = () => ({
   gestionHumana: String(process.env.REPORTE_SALIDA_GESTION_HUMANA_EMAIL || 'adsolarte@unicesmag.edu.co').trim().toLowerCase(),
-  sst: String(process.env.REPORTE_SALIDA_SST_EMAIL || 'gp.planeacion@unicesmag.edu.co').trim().toLowerCase()
+  sst: String(process.env.REPORTE_SALIDA_SST_EMAIL || 'acvaldes@unicesmag.edu.co').trim().toLowerCase()
 });
 
 const getReporteSalidaTemplatePath = () => {
