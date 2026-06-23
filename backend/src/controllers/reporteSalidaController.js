@@ -273,13 +273,12 @@ const serializeUserLaboralRow = (user) => ({
 });
 
 const getUserProfileLaboralRows = async () => {
-  const users = await User.findAll({
+  return User.findAll({
     where: { estado: 'activo' },
     attributes: ['id', 'nombre', 'email', 'username', 'role', 'dependencia', 'cargo', 'jefe_inmediato'],
     order: [['dependencia', 'ASC'], ['cargo', 'ASC'], ['nombre', 'ASC']],
     raw: true
   });
-  return users.filter((user) => user.dependencia || user.cargo || user.jefe_inmediato);
 };
 
 const findCurrentUserProfileRow = (rows, user) => {
@@ -952,7 +951,7 @@ const listarDependencias = async (req, res) => {
   try {
     const userRows = await getUserProfileLaboralRows();
     const userDependencias = uniqueSortedValues(userRows.map((row) => cleanDependenciaLabel(row.dependencia)));
-    if (userDependencias.length) {
+    if (userRows.length) {
       return res.json({ success: true, data: userDependencias });
     }
 
