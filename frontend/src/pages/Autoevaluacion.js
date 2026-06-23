@@ -1758,9 +1758,28 @@ function Autoevaluacion() {
     coberturaEvidencias: scopedAspectos.length ? Number(((scopedEvidenciasCount / scopedAspectos.length) * 100).toFixed(2)) : 0
   };
 
+  const uniqueIndicatorsMap = {};
+  scopedAspectos.forEach((item) => {
+    const rawIndName = String(item.indicador || '').trim();
+    if (!rawIndName) return;
+    const normalizedKey = rawIndName.toLowerCase().replace(/\s+/g, ' ');
+    if (!uniqueIndicatorsMap[normalizedKey]) {
+      uniqueIndicatorsMap[normalizedKey] = {
+        name: rawIndName,
+        scores: []
+      };
+    }
+    const val = Number(item.calificacion);
+    uniqueIndicatorsMap[normalizedKey].scores.push(val);
+  });
+
   const scopedCumplimiento = Object.values(
-    scopedAspectos.reduce((acc, item) => {
-      const name = getScoreLabel(item.calificacion);
+    Object.values(uniqueIndicatorsMap).reduce((acc, ind) => {
+      const validScores = ind.scores.filter((v) => Number.isFinite(v));
+      const avgScore = validScores.length
+        ? validScores.reduce((a, b) => a + b, 0) / validScores.length
+        : NaN;
+      const name = getScoreLabel(avgScore);
       acc[name] = acc[name] || { name, total: 0 };
       acc[name].total += 1;
       return acc;
@@ -2398,7 +2417,7 @@ function Autoevaluacion() {
               </MuiTooltip>
               <Box sx={{ textAlign: 'center', mb: 1 }}>
                 <Typography sx={{ fontWeight: 950, color: '#0f172a', fontSize: '1rem', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
-                  Grado de cumplimiento por aspectos
+                  Grado de cumplimiento por indicadores
                 </Typography>
               </Box>
             </Box>
