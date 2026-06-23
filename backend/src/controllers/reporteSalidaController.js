@@ -1,6 +1,6 @@
 const crypto = require('crypto');
 const { Op } = require('sequelize');
-const { Documento, PlanAccion, ReporteSalidaSolicitud, RecursoHumanoAdministrativo, User } = require('../models');
+const { Documento, PlanAccion, ReporteSalidaSolicitud, RecursoHumanoAdministrativo, User, UserModulePermission } = require('../models');
 const { encryptPayload, decryptPayload } = require('../utils/secureUrlToken');
 const {
   getReporteSalidaRecipients,
@@ -11,6 +11,7 @@ const {
 } = require('../config/reporteSalidaConfig');
 const { ensureReporteSalidaDocx, ensureReporteSalidaPdf, formatMinutes } = require('../services/reporteSalidaPdfService');
 const { sendInstitutionalEmail, renderInstitutionalTemplate, escapeHtml } = require('../services/emailService');
+const { ROLES } = require('../constants/roles');
 
 const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:3000';
 const publicBackendUrl = process.env.BACKEND_PUBLIC_URL || process.env.API_PUBLIC_URL || frontendUrl;
@@ -19,6 +20,8 @@ const featureDisabled = (res) =>
   res.status(403).json({ success: false, message: 'El formulario de reporte de salida aun no esta habilitado.' });
 
 const isAdminUser = (user) => String(user?.role || '') === 'administrador';
+const SEGUIMIENTO_REPORTE_ROLES = [ROLES.ADMINISTRADOR, ROLES.GESTION_INFORMACION, ROLES.PLANEACION_ESTRATEGICA];
+const REPOSICION_PENDIENTE_ESTADOS = ['pendiente', 'programada', 'incumplida'];
 
 const hashToken = (token) => crypto.createHash('sha256').update(String(token || '')).digest('hex');
 
@@ -350,18 +353,130 @@ const mapUserProfileBosses = (rows, search = '') => {
     .slice(0, 120);
 };
 
-const parseDateTime = (date, time) => {
-  if (!date || !time) return null;
-  const normalizedTime = String(time).trim();
-  const iso = `${String(date).slice(0, 10)}T${normalizedTime.length === 5 ? `${normalizedTime}:00` : normalizedTime}`;
-  const parsed = new Date(iso);
+const WORK_BLOCKS = [
+  { start: '07:00', end: '12:00' },
+  { start: '14:00', end: '18:00' }
+];
+
+const parseDateOnly = (date) => {
+  if (!date) return null;
+  const parsed = new Date(`${String(date).slice(0, 10)}T00:00:00`);
   return Number.isNaN(parsed.getTime()) ? null : parsed;
 };
 
-const diffMinutes = (date, start, end) => {
-  const from = parseDateTime(date, start);
-  const to = parseDateTime(date, end);
-  if (!from || !to || to <= from) return null;
+const timeToMinutes = (time) => {
+  const [hours, minutes] = String(time || '').split(':').map(Number);
+  if (!Number.isFinite(hours) || !Number.isFinite(minutes)) return null;
+  return hours * 60 + minutes;
+};
+
+const toIsoDate = (date) => date.toISOString().slice(0, 10);
+
+const isBusinessDay = (date) => {
+  const day = date.getDay();
+  return day >= 1 && day <= 5 && !isColombiaHoliday(date);
+};
+
+const addDays = (date, days) => {
+  const next = new Date(date);
+  next.setDate(next.getDate() + days);
+  return next;
+};
+
+const nextMonday = (date) => {
+  const next = new Date(date);
+  const diff = (8 - next.getDay()) % 7;
+  next.setDate(next.getDate() + diff);
+  return next;
+};
+
+const getEasterDate = (year) => {
+  const a = year % 19;
+  const b = Math.floor(year / 100);
+  const c = year % 100;
+  const d = Math.floor(b / 4);
+  const e = b % 4;
+  const f = Math.floor((b + 8) / 25);
+  const g = Math.floor((b - f + 1) / 3);
+  const h = (19 * a + b - d - g + 15) % 30;
+  const i = Math.floor(c / 4);
+  const k = c % 4;
+  const l = (32 + 2 * e + 2 * i - h - k) % 7;
+  const m = Math.floor((a + 11 * h + 22 * l) / 451);
+  const month = Math.floor((h + l - 7 * m + 114) / 31) - 1;
+  const day = ((h + l - 7 * m + 114) % 31) + 1;
+  return new Date(year, month, day);
+};
+
+const getColombiaHolidaySet = (year) => {
+  const dates = new Set();
+  const addFixed = (month, day) => dates.add(toIsoDate(new Date(year, month - 1, day)));
+  const addMoved = (month, day) => dates.add(toIsoDate(nextMonday(new Date(year, month - 1, day))));
+  addFixed(1, 1);
+  addFixed(5, 1);
+  addFixed(7, 20);
+  addFixed(8, 7);
+  addFixed(12, 8);
+  addFixed(12, 25);
+  addMoved(1, 6);
+  addMoved(3, 19);
+  addMoved(6, 29);
+  addMoved(8, 15);
+  addMoved(10, 12);
+  addMoved(11, 1);
+  addMoved(11, 11);
+  const easter = getEasterDate(year);
+  [-3, -2, 43, 64, 71].forEach((offset) => dates.add(toIsoDate(addDays(easter, offset))));
+  return dates;
+};
+
+const holidayCache = new Map();
+
+const isColombiaHoliday = (date) => {
+  const year = date.getFullYear();
+  if (!holidayCache.has(year)) holidayCache.set(year, getColombiaHolidaySet(year));
+  return holidayCache.get(year).has(toIsoDate(date));
+};
+
+const diffBusinessMinutes = (startDate, endDate, startTime, endTime) => {
+  const fromDate = parseDateOnly(startDate);
+  const toDate = parseDateOnly(endDate || startDate);
+  const fromMinutes = timeToMinutes(startTime);
+  const toMinutesValue = timeToMinutes(endTime);
+  if (!fromDate || !toDate || fromMinutes == null || toMinutesValue == null || toDate < fromDate) return null;
+
+  if (toIsoDate(fromDate) === toIsoDate(toDate) && toMinutesValue <= fromMinutes) return null;
+
+  let total = 0;
+  const cursor = new Date(fromDate);
+  while (cursor <= toDate) {
+    if (isBusinessDay(cursor)) {
+      const current = toIsoDate(cursor);
+      const rangeStart = current === toIsoDate(fromDate) ? fromMinutes : 0;
+      const rangeEnd = current === toIsoDate(toDate) ? toMinutesValue : 24 * 60;
+      WORK_BLOCKS.forEach((block) => {
+        const blockStart = timeToMinutes(block.start);
+        const blockEnd = timeToMinutes(block.end);
+        total += Math.max(0, Math.min(rangeEnd, blockEnd) - Math.max(rangeStart, blockStart));
+      });
+    }
+    cursor.setDate(cursor.getDate() + 1);
+  }
+
+  return total > 0 ? total : null;
+};
+
+const diffElapsedMinutes = (startDate, endDate, startTime, endTime) => {
+  const fromDate = parseDateOnly(startDate);
+  const toDate = parseDateOnly(endDate || startDate);
+  const fromMinutes = timeToMinutes(startTime);
+  const toMinutesValue = timeToMinutes(endTime);
+  if (!fromDate || !toDate || fromMinutes == null || toMinutesValue == null || toDate < fromDate) return null;
+  const from = new Date(fromDate);
+  from.setMinutes(fromMinutes);
+  const to = new Date(toDate);
+  to.setMinutes(toMinutesValue);
+  if (to <= from) return null;
   return Math.round((to.getTime() - from.getTime()) / 60000);
 };
 
@@ -397,6 +512,65 @@ const appendTrace = (solicitud, event, actor = null, detail = {}) => ([
     at: new Date().toISOString()
   }
 ]);
+
+const canManageSeguimientoReportes = async (user) => {
+  if (!user) return false;
+  if (SEGUIMIENTO_REPORTE_ROLES.includes(String(user.role || ''))) return true;
+  if (!UserModulePermission) return false;
+  const count = await UserModulePermission.count({
+    where: {
+      user_id: user.id,
+      can_view: true,
+      module_key: 'seguimiento_reportes_rrhh'
+    }
+  });
+  return count > 0;
+};
+
+const pendingReposicionWhere = () => ({
+  estado: 'finalizada',
+  reposicion_aplica: true,
+  reposicion_estado: { [Op.in]: REPOSICION_PENDIENTE_ESTADOS }
+});
+
+const bossScopeWhere = (user) => {
+  const conditions = [{ jefe_inmediato_user_id: user.id }];
+  const email = sanitizeText(user.email, 180);
+  if (email) conditions.push({ jefe_snapshot: { [Op.contains]: { email } } });
+  return { [Op.or]: conditions };
+};
+
+const ownPendingReposicionWhere = (user) => ({
+  ...pendingReposicionWhere(),
+  user_id: user.id
+});
+
+const bossPendingReposicionWhere = (user) => ({
+  ...pendingReposicionWhere(),
+  ...bossScopeWhere(user)
+});
+
+const resolveSeguimientoAccess = async (user) => {
+  const canManageAll = await canManageSeguimientoReportes(user);
+  const [ownPending, bossPending] = await Promise.all([
+    ReporteSalidaSolicitud.count({ where: ownPendingReposicionWhere(user) }),
+    ReporteSalidaSolicitud.count({ where: bossPendingReposicionWhere(user) })
+  ]);
+
+  let mode = 'sin_pendientes';
+  if (canManageAll) mode = 'gestion_humana';
+  else if (bossPending > 0) mode = ownPending > 0 ? 'jefe_y_colaborador' : 'jefe';
+  else if (ownPending > 0) mode = 'colaborador';
+
+  return {
+    canView: canManageAll || ownPending > 0 || bossPending > 0,
+    canManageAll,
+    canValidateReposicion: canManageAll,
+    canManageTeamReposicion: bossPending > 0,
+    mode,
+    counts: { ownPending, bossPending }
+  };
+};
 
 const renderApprovalPage = ({
   res,
@@ -640,17 +814,20 @@ const validateRadicacionPayload = (payload, user) => {
     return 'Debe seleccionar un jefe inmediato con correo registrado en Recurso Humano.';
   }
   if (!salida.tipo) return 'Debe seleccionar el tipo de salida.';
-  if (!salida.fecha || !salida.horaInicio || !salida.horaFin) return 'Debe indicar fecha, hora inicio y hora fin de salida.';
+  if (!salida.fecha || !salida.fechaRegreso || !salida.horaInicio || !salida.horaFin) return 'Debe indicar fecha de salida, hora de salida, fecha de regreso y hora de regreso.';
 
-  const requestedMinutes = diffMinutes(salida.fecha, salida.horaInicio, salida.horaFin);
-  if (!requestedMinutes) return 'La hora fin de salida debe ser mayor que la hora inicio.';
+  const requestedMinutes = diffBusinessMinutes(salida.fecha, salida.fechaRegreso, salida.horaInicio, salida.horaFin);
+  if (!requestedMinutes) return 'El rango de salida no contiene tiempo laboral valido segun la jornada lunes a viernes, sin festivos de Colombia, de 7:00 a 12:00 y de 14:00 a 18:00.';
 
   if (salida.tipo === 'diligencia_personal') {
-    if (!reposicion.fecha || !reposicion.horaInicio || !reposicion.horaFin) {
-      return 'Para diligencia personal debe indicar fecha y horario de reposicion.';
+    const hasReposicionPlan = Boolean(reposicion.fecha || reposicion.fechaFin || reposicion.horaInicio || reposicion.horaFin);
+    if (hasReposicionPlan && (!reposicion.fecha || !reposicion.fechaFin || !reposicion.horaInicio || !reposicion.horaFin)) {
+      return 'Complete todos los campos del plan inicial de reposicion o dejelos vacios para gestionarlo luego en seguimiento.';
     }
-    const replacementMinutes = diffMinutes(reposicion.fecha, reposicion.horaInicio, reposicion.horaFin);
-    if (!replacementMinutes) return 'La hora fin de reposicion debe ser mayor que la hora inicio.';
+    if (hasReposicionPlan) {
+      const replacementMinutes = diffElapsedMinutes(reposicion.fecha, reposicion.fechaFin, reposicion.horaInicio, reposicion.horaFin);
+      if (!replacementMinutes) return 'El rango del plan inicial de reposicion no es valido. Revise fecha y hora de inicio y fin.';
+    }
   }
 
   if (!laboral.dependencia || !laboral.cargo) return 'Dependencia y cargo son obligatorios.';
@@ -920,9 +1097,10 @@ const radicarSolicitud = async (req, res) => {
 
     const salida = req.body.salida || {};
     const reposicion = req.body.reposicion || {};
-    const requestedMinutes = diffMinutes(salida.fecha, salida.horaInicio, salida.horaFin);
-    const replacementMinutes = salida.tipo === 'diligencia_personal'
-      ? diffMinutes(reposicion.fecha, reposicion.horaInicio, reposicion.horaFin)
+    const requestedMinutes = diffBusinessMinutes(salida.fecha, salida.fechaRegreso, salida.horaInicio, salida.horaFin);
+    const hasReposicionPlan = Boolean(reposicion.fecha || reposicion.fechaFin || reposicion.horaInicio || reposicion.horaFin);
+    const replacementMinutes = salida.tipo === 'diligencia_personal' && hasReposicionPlan
+      ? diffElapsedMinutes(reposicion.fecha, reposicion.fechaFin, reposicion.horaInicio, reposicion.horaFin)
       : null;
 
     const now = new Date();
@@ -948,21 +1126,33 @@ const radicarSolicitud = async (req, res) => {
         salida: {
           tipo: sanitizeText(salida.tipo, 60),
           fecha: sanitizeText(salida.fecha, 20),
+          fechaRegreso: sanitizeText(salida.fechaRegreso || salida.fecha, 20),
           horaInicio: sanitizeText(salida.horaInicio, 10),
           horaFin: sanitizeText(salida.horaFin, 10),
           motivo: sanitizeText(salida.motivo, 600)
         },
         reposicion: {
           fecha: sanitizeText(reposicion.fecha, 20),
+          fechaFin: sanitizeText(reposicion.fechaFin || reposicion.fecha, 20),
           horaInicio: sanitizeText(reposicion.horaInicio, 10),
           horaFin: sanitizeText(reposicion.horaFin, 10),
           observacion: sanitizeText(reposicion.observacion, 600)
+        },
+        parametrizacion_tiempo: {
+          fecha_calculo: now.toISOString(),
+          criterio_salida: 'horas adeudadas segun jornada laboral institucional',
+          criterio_reposicion: 'horas acumuladas por seguimiento, sin restriccion de dia',
+          jornada_salida: {
+            dias_laborales: 'lunes a viernes',
+            excluye: ['sabados', 'domingos', 'festivos_colombia'],
+            bloques: WORK_BLOCKS
+          }
         }
       },
       tiempo_solicitado_minutos: requestedMinutes,
       reposicion_aplica: salida.tipo === 'diligencia_personal',
       reposicion_minutos: replacementMinutes,
-      reposicion_estado: salida.tipo === 'diligencia_personal' ? 'programada' : 'no_aplica',
+      reposicion_estado: salida.tipo === 'diligencia_personal' ? (replacementMinutes ? 'programada' : 'pendiente') : 'no_aplica',
       aprobacion_jefe_token_hash: hashToken(token),
       trazabilidad: [{ event: 'radicada', actor: buildSnapshot(req.user), at: now.toISOString() }]
     });
@@ -1045,12 +1235,30 @@ const aprobarDesdeCorreo = async (req, res) => {
         });
       }
       const ghToken = encryptPayload({ purpose: 'reporte_salida_approve', stage: 'gestion_humana', consecutivo: solicitud.consecutivo }, 60 * 60 * 24 * 15);
-      await solicitud.update({
+      const [updatedCount] = await ReporteSalidaSolicitud.update({
         estado: 'pendiente_aprobacion_gestion_humana',
         jefe_aprobado_at: new Date(),
+        aprobacion_jefe_token_hash: null,
         aprobacion_gh_token_hash: hashToken(ghToken),
         trazabilidad: appendTrace(solicitud, 'aprobada_jefe', null)
+      }, {
+        where: {
+          id: solicitud.id,
+          estado: 'pendiente_aprobacion_jefe',
+          aprobacion_jefe_token_hash: tokenHash
+        }
       });
+      if (!updatedCount) {
+        await solicitud.reload();
+        return renderApprovalPage({
+          res,
+          tone: 'info',
+          title: 'Solicitud ya procesada',
+          message: 'Esta aprobacion ya fue registrada previamente.',
+          solicitud,
+          nextStep: 'El boton de aprobacion ya fue utilizado y quedo inhabilitado para nuevos registros.'
+        });
+      }
       await solicitud.reload();
       const attachments = await buildReporteSalidaAttachments(solicitud);
       const emailResult = await sendGestionHumanaApprovalEmail(solicitud, ghToken, attachments);
@@ -1090,12 +1298,30 @@ const aprobarDesdeCorreo = async (req, res) => {
           nextStep: 'Por seguridad, la aprobacion no fue registrada.'
         });
       }
-      await solicitud.update({
+      const [updatedCount] = await ReporteSalidaSolicitud.update({
         estado: 'finalizada',
         gestion_humana_aprobado_at: new Date(),
         finalizado_at: new Date(),
+        aprobacion_gh_token_hash: null,
         trazabilidad: appendTrace(solicitud, 'aprobada_gestion_humana', null)
+      }, {
+        where: {
+          id: solicitud.id,
+          estado: 'pendiente_aprobacion_gestion_humana',
+          aprobacion_gh_token_hash: tokenHash
+        }
       });
+      if (!updatedCount) {
+        await solicitud.reload();
+        return renderApprovalPage({
+          res,
+          tone: 'info',
+          title: 'Solicitud ya procesada',
+          message: 'Esta aprobacion ya fue registrada previamente.',
+          solicitud,
+          nextStep: 'El boton de aprobacion ya fue utilizado y quedo inhabilitado para nuevos registros.'
+        });
+      }
       await solicitud.reload();
       const attachments = await buildReporteSalidaAttachments(solicitud);
       const results = await sendFinalEmails(solicitud, attachments);
@@ -1172,6 +1398,104 @@ const listarSolicitudes = async (req, res) => {
   }
 };
 
+const getSeguimientoPersonal = async (req, res) => {
+  if (!(await getReporteSalidaFeatureState())) return featureDisabled(res);
+  try {
+    const page = Math.max(1, Number(req.query.page || 1));
+    const limit = Math.min(100, Math.max(1, Number(req.query.limit || 50)));
+    const estado = sanitizeText(req.query.estado, 80);
+    const access = await resolveSeguimientoAccess(req.user);
+
+    if (!access.canView) {
+      return res.json({
+        success: true,
+        data: {
+          access,
+          solicitudes: [],
+          pagination: { total: 0, page, limit, totalPages: 0 }
+        }
+      });
+    }
+
+    let where = {};
+    if (access.canManageAll) {
+      if (estado) where.estado = estado;
+    } else {
+      const scopedConditions = [];
+      if (access.counts.bossPending > 0) scopedConditions.push(bossPendingReposicionWhere(req.user));
+      if (access.counts.ownPending > 0) scopedConditions.push(ownPendingReposicionWhere(req.user));
+      where = scopedConditions.length === 1 ? scopedConditions[0] : { [Op.or]: scopedConditions };
+      if (estado) where = { [Op.and]: [where, { estado }] };
+    }
+
+    const { count, rows } = await ReporteSalidaSolicitud.findAndCountAll({
+      where,
+      order: [['created_at', 'DESC']],
+      limit,
+      offset: (page - 1) * limit
+    });
+
+    res.json({
+      success: true,
+      data: {
+        access,
+        solicitudes: rows.map(serializeSolicitud),
+        pagination: { total: count, page, limit, totalPages: Math.ceil(count / limit) }
+      }
+    });
+  } catch (error) {
+    res.status(500).json({ success: false, message: 'No se pudo consultar el seguimiento de reposiciones' });
+  }
+};
+
+const actualizarReposicion = async (req, res) => {
+  if (!(await getReporteSalidaFeatureState())) return featureDisabled(res);
+  try {
+    const solicitud = await ReporteSalidaSolicitud.findByPk(req.params.id);
+    if (!solicitud) {
+      return res.status(404).json({ success: false, message: 'Solicitud no encontrada.' });
+    }
+    if (!solicitud.reposicion_aplica) {
+      return res.status(400).json({ success: false, message: 'Esta solicitud no requiere reposicion de tiempo.' });
+    }
+    if (solicitud.estado !== 'finalizada') {
+      return res.status(400).json({ success: false, message: 'La reposicion solo puede validarse cuando el reporte esta finalizado por Gestion Humana.' });
+    }
+
+    const nextEstado = sanitizeText(req.body?.estado, 40);
+    if (!['programada', 'cumplida', 'incumplida'].includes(nextEstado)) {
+      return res.status(400).json({ success: false, message: 'Estado de reposicion no valido.' });
+    }
+
+    const observacion = sanitizeText(req.body?.observacion, 600);
+    const now = new Date();
+    const previousData = solicitud.datos_formulario || {};
+    await solicitud.update({
+      reposicion_estado: nextEstado,
+      observacion_gestion_humana: observacion || solicitud.observacion_gestion_humana,
+      datos_formulario: {
+        ...previousData,
+        reposicion_validacion: {
+          estado: nextEstado,
+          observacion,
+          validado_por: buildSnapshot(req.user),
+          validado_at: now.toISOString()
+        }
+      },
+      trazabilidad: appendTrace(solicitud, `reposicion_${nextEstado}`, req.user, { observacion })
+    });
+
+    await solicitud.reload();
+    res.json({
+      success: true,
+      message: nextEstado === 'cumplida' ? 'Reposicion de tiempo validada.' : 'Seguimiento de reposicion actualizado.',
+      data: serializeSolicitud(solicitud)
+    });
+  } catch (error) {
+    res.status(500).json({ success: false, message: 'No se pudo actualizar la reposicion de tiempo' });
+  }
+};
+
 const getFeatureConfig = async (req, res) => {
   try {
     const enabled = await getReporteSalidaFeatureState();
@@ -1199,8 +1523,10 @@ const updateFeatureConfig = async (req, res) => {
 
 module.exports = {
   aprobarDesdeCorreo,
+  actualizarReposicion,
   getCatalogoLaboral,
   getFeatureConfig,
+  getSeguimientoPersonal,
   listarDependencias,
   listarSolicitudes,
   radicarSolicitud,

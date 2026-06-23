@@ -5,7 +5,7 @@ import { CircularProgress, Box } from '@mui/material';
 
 function PrivateRoute({ children }) {
   const { user, loading } = useAuth();
-  useLocation();
+  const location = useLocation();
 
   if (loading) {
     return (
@@ -16,7 +16,8 @@ function PrivateRoute({ children }) {
   }
 
   if (!user) {
-    return <Navigate to="/login" replace />;
+    const redirect = `${location.pathname}${location.search || ''}`;
+    return <Navigate to={`/login?redirect=${encodeURIComponent(redirect)}`} replace />;
   }
 
   return children;

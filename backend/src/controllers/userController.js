@@ -1280,6 +1280,7 @@ const bulkUploadUsers = async (req, res) => {
       total: data.length,
       importados: 0,
       actualizados: 0,
+      eliminados: 0,
       correosEnviados: 0,
       correosOmitidos: 0,
       errores: [],
@@ -1435,13 +1436,61 @@ const bulkUploadUsers = async (req, res) => {
       }
     }
 
+    const operationType = String(req.body?.operationType || 'sync').trim().toLowerCase();
+    if (!['sync', 'replace'].includes(operationType)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Tipo de operacion de carga no valido'
+      });
+    }
+    if (operationType === 'replace' && validRows.length === 0) {
+      return res.status(400).json({
+        success: false,
+        message: 'El reemplazo total requiere al menos un usuario valido en el archivo'
+      });
+    }
     const sendEmailsParam = String(req.body?.sendEmails ?? '').trim().toLowerCase();
     const sendBulkEmails = sendEmailsParam
       ? ['true', '1', 'si', 'sí', 'yes'].includes(sendEmailsParam)
       : String(process.env.BULK_USER_SEND_EMAILS || 'true').toLowerCase() !== 'false';
     const hashedImportPassword = await bcrypt.hash(generarPasswordInterna(), 10);
 
+    // Find users to delete (only for 'replace' operation)
+    let usersToDelete = [];
+    if (operationType === 'replace') {
+      const allUsers = await User.findAll({
+        attributes: ['id', 'email', 'username', 'role', 'estado']
+      });
+
+      const excelEmails = new Set(validRows.map((row) => row.email));
+      const excelUsernames = new Set(validRows.map((row) => row.username));
+
+      usersToDelete = allUsers.filter((dbUser) => {
+        const cleanEmail = String(dbUser.email || '').toLowerCase().trim();
+        const cleanUsername = String(dbUser.username || '').trim();
+
+        const notInExcel = !excelEmails.has(cleanEmail) && !excelUsernames.has(cleanUsername);
+        const notCurrentUser = Number(dbUser.id) !== Number(req.user.id);
+        const manageable = canManageRole(req.user, dbUser.role);
+
+        return notInExcel && notCurrentUser && manageable;
+      });
+    }
+
+    if (operationType === 'replace' && usersToDelete.length > 0) {
+      await ensureUserReferenceIndexes();
+    }
+
     await User.sequelize.transaction(async (transaction) => {
+      if (operationType === 'replace' && usersToDelete.length > 0) {
+        for (const dbUser of usersToDelete) {
+          await cleanupDirectUserDependencies(dbUser.id, transaction);
+          await detachUserForeignKeyReferences(dbUser.id, transaction);
+          await User.destroy({ where: { id: dbUser.id }, transaction });
+          results.eliminados++;
+        }
+      }
+
       for (const { row, existing } of rowsToUpdate) {
         await User.update({
           nombre: row.nombre,
@@ -1483,7 +1532,8 @@ const bulkUploadUsers = async (req, res) => {
       }
     });
 
-    const rowsToNotify = [...rowsToCreate, ...rowsToUpdate.map(({ row }) => row)];
+    // Only notify newly created users
+    const rowsToNotify = rowsToCreate;
 
     if (!sendBulkEmails && rowsToNotify.length > 0) {
       results.correosOmitidos = rowsToNotify.length;
@@ -1512,11 +1562,22 @@ const bulkUploadUsers = async (req, res) => {
     const archivoErrores = buildWorkbookBase64(results.errores, 'Errores');
     const archivoAdvertencias = buildWorkbookBase64(results.advertencias, 'Advertencias');
     const processed = results.importados + results.actualizados;
-    const message = results.errores.length
-      ? `Carga finalizada: ${processed}/${results.total} sincronizados, ${results.errores.length} con error`
-      : sendBulkEmails
-        ? `Carga finalizada: ${processed} usuarios sincronizados, ${results.correosEnviados} correos enviados`
-        : `Carga finalizada: ${processed} usuarios sincronizados. Correos no enviados por opcion seleccionada`;
+
+    let message = '';
+    if (results.errores.length) {
+      message = `Carga finalizada: ${processed}/${results.total} sincronizados, ${results.errores.length} con error`;
+      if (operationType === 'replace') {
+        message += `, ${results.eliminados} eliminados`;
+      }
+    } else {
+      if (operationType === 'replace') {
+        message = `Carga finalizada con reemplazo total: ${processed} usuarios sincronizados, ${results.eliminados} eliminados y ${results.correosEnviados} correos enviados`;
+      } else {
+        message = sendBulkEmails
+          ? `Carga finalizada: ${processed} usuarios sincronizados, ${results.correosEnviados} correos enviados`
+          : `Carga finalizada: ${processed} usuarios sincronizados. Correos no enviados por opcion seleccionada`;
+      }
+    }
 
     res.json({
       success: true,

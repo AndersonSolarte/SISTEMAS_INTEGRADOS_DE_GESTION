@@ -565,6 +565,7 @@ function AseguramientoCalidad() {
   const documentRequestId = useRef(0);
   const initialDocumentsLoaded = useRef(false);
   const skipNextDocumentFilterEffect = useRef(false);
+  const autoOpenReporteSalidaDone = useRef(false);
 
   const syncCatalogosFromPayload = useCallback((data = {}) => {
     setMacroProcesos(data.macroProcesos || []);
@@ -684,6 +685,16 @@ function AseguramientoCalidad() {
     if (!user?.id) return;
     loadReporteSalidaFeature();
   }, [loadReporteSalidaFeature, user?.id]);
+
+  useEffect(() => {
+    const params = new URLSearchParams(location.search || '');
+    const shouldOpenReporteSalida = params.get('abrir') === 'reporte-salida' || params.get('formato') === 'reporte-salida';
+    if (!shouldOpenReporteSalida || autoOpenReporteSalidaDone.current || !reporteSalidaFeature.enabled) return;
+    const doc = documentos.find((item) => isReporteSalidaDocument(item));
+    if (!doc) return;
+    autoOpenReporteSalidaDone.current = true;
+    setReporteSalidaDoc(doc);
+  }, [documentos, location.search, reporteSalidaFeature.enabled]);
 
   useEffect(() => {
     const params = new URLSearchParams(location.search);
@@ -1729,7 +1740,17 @@ function AseguramientoCalidad() {
                     '&::-webkit-scrollbar-thumb': { bgcolor: '#cbd5e1', borderRadius: 8 }
                   }}
                 >
-                  <Table sx={{ width: '100%', minWidth: { xs: 980, lg: 1120 }, tableLayout: 'fixed' }}>
+                  <Table sx={{ width: '100%', minWidth: { xs: 1120, lg: 1240 }, tableLayout: 'fixed' }}>
+                    <colgroup>
+                      <col style={{ width: '150px' }} />
+                      <col style={{ width: '150px' }} />
+                      <col style={{ width: '30%' }} />
+                      <col style={{ width: '190px' }} />
+                      <col style={{ width: '140px' }} />
+                      <col style={{ width: '90px' }} />
+                      {canManageDocumental && <col style={{ width: '120px' }} />}
+                      <col style={{ width: '230px' }} />
+                    </colgroup>
                     <TableHead>
                       <TableRow sx={{ background: 'linear-gradient(135deg, #1e3a8a 0%, #1d4ed8 100%)' }}>
                         {[
@@ -1742,7 +1763,7 @@ function AseguramientoCalidad() {
                           ...(canManageDocumental ? [{ label: 'Estado', align: 'center' }] : []),
                           { label: 'Acciones',         align: 'center' },
                         ].map(({ label, align }) => (
-                          <TableCell key={label} align={align} sx={{ fontWeight: 800, color: '#fff', fontSize: 12, borderBottom: 'none', textTransform: 'uppercase', letterSpacing: '0.6px', py: 1.5, whiteSpace: 'nowrap' }}>
+                          <TableCell key={label} align={align} sx={{ fontWeight: 800, color: '#fff', fontSize: 11.5, borderBottom: 'none', textTransform: 'uppercase', letterSpacing: '0.3px', py: 1.5, px: 1.4, whiteSpace: 'normal', lineHeight: 1.2 }}>
                             {label}
                           </TableCell>
                         ))}
@@ -1754,23 +1775,23 @@ function AseguramientoCalidad() {
                           const normalized = normalizeDocFields(doc);
                           return (
                             <TableRow key={doc.id} hover sx={{ '&:hover': { bgcolor: '#f8fafc' }, transition: 'all 0.2s', cursor: 'pointer' }}>
-                              <TableCell sx={{ fontWeight: 700, color: '#3b82f6', fontSize: 14, fontFamily: 'monospace' }}>{normalized.codigo}</TableCell>
-                              <TableCell>
+                              <TableCell sx={{ fontWeight: 700, color: '#3b82f6', fontSize: 13, fontFamily: 'monospace', px: 1.4, overflowWrap: 'anywhere' }}>{normalized.codigo}</TableCell>
+                              <TableCell sx={{ px: 1.4 }}>
                                 <Chip icon={getTipoIcon(normalized.tipo)} label={normalized.tipo || 'N/A'} size="small" sx={{ bgcolor: getTipoColor(normalized.tipo).bg, color: getTipoColor(normalized.tipo).color, fontWeight: 700, fontSize: 12, borderRadius: 2, px: 1 }} />
                               </TableCell>
-                              <TableCell sx={{ color: '#1e293b', fontWeight: 600, fontSize: 14 }}>{normalized.titulo}</TableCell>
-                              <TableCell sx={{ color: '#475569', fontSize: 13 }}>{doc.autor || '-'}</TableCell>
-                              <TableCell sx={{ color: '#475569', fontSize: 13, whiteSpace: 'nowrap' }}>{formatDate(getDocumentoFechaCreacion(doc))}</TableCell>
-                              <TableCell>
+                              <TableCell sx={{ color: '#1e293b', fontWeight: 700, fontSize: 13.5, px: 1.4, lineHeight: 1.45, overflowWrap: 'anywhere', wordBreak: 'break-word' }}>{normalized.titulo}</TableCell>
+                              <TableCell sx={{ color: '#475569', fontSize: 13, px: 1.4, lineHeight: 1.45, overflowWrap: 'anywhere' }}>{doc.autor || '-'}</TableCell>
+                              <TableCell sx={{ color: '#475569', fontSize: 13, whiteSpace: 'nowrap', px: 1.4 }}>{formatDate(getDocumentoFechaCreacion(doc))}</TableCell>
+                              <TableCell align="center" sx={{ px: 1.2 }}>
                                 <Chip label={`v${doc.version || '1.0'}`} size="small" sx={{ bgcolor: '#f1f5f9', color: '#475569', fontWeight: 700, fontFamily: 'monospace', borderRadius: 1.5 }} />
                               </TableCell>
                               {canManageDocumental && (
-                              <TableCell>
+                              <TableCell align="center" sx={{ px: 1.2 }}>
                                 <Chip label={getEstadoLabel(doc.estado)} color={getEstadoColor(doc.estado)} size="small" sx={{ fontWeight: 700, textTransform: 'uppercase', fontSize: 11, borderRadius: 1.5 }} />
                               </TableCell>
                               )}
-                              <TableCell align="center">
-                                <Stack direction="row" spacing={1} justifyContent="center">
+                              <TableCell align="center" sx={{ px: 1.2 }}>
+                                <Stack direction="row" spacing={0.7} justifyContent="center" flexWrap="nowrap">
 
                                   <Tooltip title={isFavorite ? 'Quitar de favoritos' : 'Agregar a favoritos'} arrow>
                                     <span>

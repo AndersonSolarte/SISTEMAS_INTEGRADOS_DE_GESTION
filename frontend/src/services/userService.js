@@ -21,13 +21,13 @@ const userService = {
 
   // Eliminar usuario
   deleteUser: async (id) => {
-    const response = await api.delete(`/users/${id}`, { timeout: 150000 });
+    const response = await api.delete(`/users/${id}`, { timeout: 150000, skipAuthRedirect: true });
     return response.data;
   },
 
   // Cambiar estado (activo/inactivo)
   updateStatus: async (id, estado) => {
-    const response = await api.patch(`/users/${id}/status`, { estado });
+    const response = await api.patch(`/users/${id}/status`, { estado }, { skipAuthRedirect: true });
     return response.data;
   },
 
@@ -53,9 +53,13 @@ const userService = {
     const formData = new FormData();
     formData.append('file', file);
     formData.append('sendEmails', options.sendEmails ? 'true' : 'false');
+    if (options.operationType) {
+      formData.append('operationType', options.operationType);
+    }
     const response = await api.post('/users/bulk-upload', formData, {
       headers: { 'Content-Type': 'multipart/form-data' },
-      timeout: 300000
+      timeout: 300000,
+      skipAuthRedirect: true
     });
     return response.data;
   },

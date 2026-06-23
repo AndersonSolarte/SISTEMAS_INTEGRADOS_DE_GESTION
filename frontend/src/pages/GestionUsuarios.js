@@ -1,15 +1,17 @@
-import React, { useState, useEffect, useMemo, useCallback } from 'react';import {
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import {
   Box, Paper, Typography, Button, Table, TableBody, TableCell, TableContainer,
   TableHead, TableRow, TablePagination, IconButton, Tooltip, Dialog, DialogTitle,
   DialogContent, DialogActions, TextField, Select, MenuItem, FormControl, InputLabel,
-  Chip, Grid, Alert, CircularProgress, Fade, FormGroup, FormControlLabel, Checkbox, Divider
-  , Stack
+  Chip, Grid, Alert, CircularProgress, Fade, FormGroup, FormControlLabel, Checkbox, Divider,
+  Stack, Radio, RadioGroup
 } from '@mui/material';
 import {
   Add as AddIcon, Edit as EditIcon, Delete as DeleteIcon, Upload as UploadIcon,
   Download as DownloadIcon, Search as SearchIcon, Clear as ClearIcon,
   Block as BlockIcon, CheckCircle as CheckCircleIcon,
-  GroupOutlined as GroupIcon, Security as SecurityIcon, ArrowForward as ArrowForwardIcon
+  GroupOutlined as GroupIcon, Security as SecurityIcon, ArrowForward as ArrowForwardIcon,
+  Warning as WarningIcon
 } from '@mui/icons-material';
 import { useSnackbar } from 'notistack';
 import userService from '../services/userService';
@@ -136,8 +138,12 @@ function GestionUsuarios() {
   const [bulkErrorFile, setBulkErrorFile] = useState(null);
   const [bulkWarningFile, setBulkWarningFile] = useState(null);
   const [sendBulkEmails, setSendBulkEmails] = useState(false);
+  const [operationType, setOperationType] = useState('sync'); // sync | replace
+  const [confirmReplaceOpen, setConfirmReplaceOpen] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [deletingUserIds, setDeletingUserIds] = useState(() => new Set());
+  const [confirmUserAction, setConfirmUserAction] = useState({ open: false, type: '', user: null });
+  const [confirmUserSubmitting, setConfirmUserSubmitting] = useState(false);
   const [openPermissionsDialog, setOpenPermissionsDialog] = useState(false);
   const [permissionsUser, setPermissionsUser] = useState(null);
   const [permissionsLoading, setPermissionsLoading] = useState(false);
@@ -199,6 +205,19 @@ function GestionUsuarios() {
 
   const defaultAssignableRole = allowedRolesForManager[0] || ROLES.CONSULTA;
   const canManageModulePermissions = currentUser?.role === ROLES.ADMINISTRADOR;
+  const isCurrentUserRow = useCallback((row = {}) => {
+    const currentId = Number(currentUser?.id || 0);
+    const rowId = Number(row?.id || 0);
+    const currentEmail = String(currentUser?.email || '').trim().toLowerCase();
+    const rowEmail = String(row?.email || '').trim().toLowerCase();
+    const currentDoc = String(currentUser?.username || '').trim();
+    const rowDoc = String(row?.username || '').trim();
+    return Boolean(
+      (currentId && rowId && currentId === rowId) ||
+      (currentEmail && rowEmail && currentEmail === rowEmail) ||
+      (currentDoc && rowDoc && currentDoc === rowDoc)
+    );
+  }, [currentUser?.email, currentUser?.id, currentUser?.username]);
 
   const loadUsers = useCallback(async (overrides = {}) => {
     const nextPage = Object.prototype.hasOwnProperty.call(overrides, 'page') ? overrides.page : page;
@@ -314,54 +333,64 @@ function GestionUsuarios() {
     }
   };
 
-  const handleDelete = async (user) => {
+  const handleDelete = (user) => {
+    if (isCurrentUserRow(user)) {
+      enqueueSnackbar('No puedes eliminar tu propio usuario activo.', { variant: 'warning' });
+      return;
+    }
     if (deletingUserIds.has(user.id)) return;
-    if (window.confirm(`¿Eliminar permanentemente al usuario ${user.nombre}? Esta acción no se puede deshacer.`)) {
-      setDeletingUserIds((prev) => new Set(prev).add(user.id));
-      setUsers((prev) => prev.filter((item) => item.id !== user.id));
-      setTotal((prev) => Math.max(prev - 1, 0));
-      if (users.length === 1 && page > 0) {
-        setPage((prev) => Math.max(prev - 1, 0));
+    setConfirmUserAction({ open: true, type: 'delete', user });
+  };
+
+  const executeDelete = async (user) => {
+    setDeletingUserIds((prev) => new Set(prev).add(user.id));
+    setUsers((prev) => prev.filter((item) => item.id !== user.id));
+    setTotal((prev) => Math.max(prev - 1, 0));
+    if (users.length === 1 && page > 0) {
+      setPage((prev) => Math.max(prev - 1, 0));
+    }
+    try {
+      const response = await userService.deleteUser(user.id);
+      const deletedPhysically = response?.data?.deletedPhysically !== false;
+
+      enqueueSnackbar(
+        response.message || (deletedPhysically ? 'Usuario eliminado' : 'Usuario retirado'),
+        { variant: 'success' }
+      );
+    } catch (error) {
+      if (Number(error.response?.status) === 404) {
+        enqueueSnackbar('Usuario ya retirado', { variant: 'info' });
+        return;
       }
-      try {
-        const response = await userService.deleteUser(user.id);
-        const deletedPhysically = response?.data?.deletedPhysically !== false;
 
-        enqueueSnackbar(
-          response.message || (deletedPhysically ? 'Usuario eliminado' : 'Usuario retirado'),
-          { variant: 'success' }
-        );
-      } catch (error) {
-        if (Number(error.response?.status) === 404) {
-          enqueueSnackbar('Usuario ya retirado', { variant: 'info' });
-          return;
-        }
+      await loadUsers();
 
-        await loadUsers();
-
-        if (error.code === 'ECONNABORTED') {
-          enqueueSnackbar('Tabla sincronizada', { variant: 'warning' });
-          return;
-        }
-
-        enqueueSnackbar(error.response?.data?.message || 'Error al eliminar usuario', { variant: 'error' });
-      } finally {
-        setDeletingUserIds((prev) => {
-          const next = new Set(prev);
-          next.delete(user.id);
-          return next;
-        });
+      if (error.code === 'ECONNABORTED') {
+        enqueueSnackbar('Tabla sincronizada', { variant: 'warning' });
+        return;
       }
+
+      enqueueSnackbar(error.response?.data?.message || 'Error al eliminar usuario', { variant: 'error' });
+    } finally {
+      setDeletingUserIds((prev) => {
+        const next = new Set(prev);
+        next.delete(user.id);
+        return next;
+      });
     }
   };
 
-  const handleToggleStatus = async (user) => {
-    const nextEstado = user.estado === 'activo' ? 'inactivo' : 'activo';
-    const actionText = nextEstado === 'activo' ? 'reactivar' : 'inactivar';
-
-    if (!window.confirm(`¿${actionText.charAt(0).toUpperCase() + actionText.slice(1)} al usuario ${user.nombre}?`)) {
+  const handleToggleStatus = (user) => {
+    if (isCurrentUserRow(user) && user.estado === 'activo') {
+      enqueueSnackbar('No puedes inactivar tu propio usuario activo.', { variant: 'warning' });
       return;
     }
+    setConfirmUserAction({ open: true, type: user.estado === 'activo' ? 'deactivate' : 'reactivate', user });
+  };
+
+  const executeToggleStatus = async (user) => {
+    const nextEstado = user.estado === 'activo' ? 'inactivo' : 'activo';
+    const actionText = nextEstado === 'activo' ? 'reactivar' : 'inactivar';
 
     try {
       const response = await userService.updateStatus(user.id, nextEstado);
@@ -377,6 +406,26 @@ function GestionUsuarios() {
     }
   };
 
+  const handleCloseConfirmUserAction = () => {
+    if (confirmUserSubmitting) return;
+    setConfirmUserAction({ open: false, type: '', user: null });
+  };
+
+  const handleConfirmUserAction = async () => {
+    const { type, user } = confirmUserAction;
+    if (!type || !user) return;
+    setConfirmUserSubmitting(true);
+    try {
+      if (type === 'delete') {
+        await executeDelete(user);
+      } else {
+        await executeToggleStatus(user);
+      }
+      setConfirmUserAction({ open: false, type: '', user: null });
+    } finally {
+      setConfirmUserSubmitting(false);
+    }
+  };
   const handleDownloadTemplate = async () => {
     try {
       const blob = await userService.downloadTemplate();
@@ -425,63 +474,16 @@ function GestionUsuarios() {
     loadUsers({ page: 0, search: '' });
   };
 
-  // eslint-disable-next-line no-unused-vars
-  const handleBulkUpload = async () => {
-    if (!uploadFile) {
-      enqueueSnackbar('Seleccione un archivo Excel', { variant: 'warning' });
-      return;
-    }
-
-    setUploading(true);
-    try {
-      const response = await userService.bulkUpload(uploadFile, { sendEmails: sendBulkEmails });
-
-      if (response?.data?.advertencias?.length) {
-        const example = response.data.advertencias[0];
-        enqueueSnackbar(
-          `Se importaron usuarios con advertencias. Ejemplo: ${example.email || 'usuario'} - ${example.warning || 'revisar advertencia'}.`,
-          { variant: 'warning' }
-        );
-      }
-      
-      if (response.data.archivoErrores) {
-        const binary = atob(response.data.archivoErrores);
-        const bytes = new Uint8Array(binary.length);
-        for (let i = 0; i < binary.length; i += 1) {
-          bytes[i] = binary.charCodeAt(i);
-        }
-        const blob = new Blob([bytes], {
-          type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
-        });
-        const url = window.URL.createObjectURL(blob);
-        const link = document.createElement('a');
-        link.href = url;
-        link.download = 'errores_carga_usuarios.xlsx';
-        link.click();
-      }
-
-      enqueueSnackbar(response.message, { variant: 'success' });
-      setUploadFile(null);
-      await resetTableAfterBulkImport();
-    } catch (error) {
-      enqueueSnackbar(error.response?.data?.message || 'Error en carga masiva', { variant: 'error' });
-    } finally {
-      setUploading(false);
-    }
-  };
-
-  const handleBulkUploadProfessional = async () => {
-    if (!uploadFile) {
-      enqueueSnackbar('Seleccione un archivo Excel', { variant: 'warning' });
-      return;
-    }
-
+  const executeBulkUpload = async () => {
     setUploading(true);
     setBulkImportResult(null);
     setBulkErrorFile(null);
     setBulkWarningFile(null);
     try {
-      const response = await userService.bulkUpload(uploadFile, { sendEmails: sendBulkEmails });
+      const response = await userService.bulkUpload(uploadFile, {
+        sendEmails: sendBulkEmails,
+        operationType: operationType
+      });
       const result = response?.data || {};
 
       setBulkImportResult(result);
@@ -510,6 +512,19 @@ function GestionUsuarios() {
       enqueueSnackbar(response?.message || 'Error en carga masiva', { variant: 'error' });
     } finally {
       setUploading(false);
+    }
+  };
+
+  const handleBulkUploadProfessional = async () => {
+    if (!uploadFile) {
+      enqueueSnackbar('Seleccione un archivo Excel', { variant: 'warning' });
+      return;
+    }
+
+    if (operationType === 'replace') {
+      setConfirmReplaceOpen(true);
+    } else {
+      await executeBulkUpload();
     }
   };
 
@@ -678,6 +693,44 @@ function GestionUsuarios() {
       return String(a?.nombre || '').localeCompare(String(b?.nombre || ''), 'es', { sensitivity: 'base' });
     });
   }, [users]);
+
+  const confirmUser = confirmUserAction.user || {};
+  const confirmUserConfig = useMemo(() => {
+    if (confirmUserAction.type === 'delete') {
+      return {
+        title: 'Eliminar usuario',
+        eyebrow: 'Accion permanente',
+        message: 'El registro se retirara definitivamente del sistema. Verifica que no sea requerido para trazabilidad o aprobaciones.',
+        actionLabel: 'Eliminar usuario',
+        tone: '#dc2626',
+        softTone: '#fef2f2',
+        borderTone: '#fecaca',
+        icon: <DeleteIcon fontSize="small" />
+      };
+    }
+    if (confirmUserAction.type === 'deactivate') {
+      return {
+        title: 'Inactivar usuario',
+        eyebrow: 'Control de acceso',
+        message: 'El usuario no podra iniciar sesion mientras permanezca inactivo, pero su historial se conserva.',
+        actionLabel: 'Inactivar',
+        tone: '#d97706',
+        softTone: '#fffbeb',
+        borderTone: '#fde68a',
+        icon: <BlockIcon fontSize="small" />
+      };
+    }
+    return {
+      title: 'Reactivar usuario',
+      eyebrow: 'Control de acceso',
+      message: 'El usuario recuperara el acceso segun su rol, estado y permisos actuales.',
+      actionLabel: 'Reactivar',
+      tone: '#059669',
+      softTone: '#ecfdf5',
+      borderTone: '#a7f3d0',
+      icon: <CheckCircleIcon fontSize="small" />
+    };
+  }, [confirmUserAction.type]);
 
   return (
     <Fade in={true}>
@@ -880,9 +933,52 @@ function GestionUsuarios() {
                     <Chip label="3" size="small" sx={{ bgcolor: uploadFile ? '#2563eb' : '#94a3b8', color: '#fff', fontWeight: 900 }} />
                     <Typography sx={{ fontWeight: 900, color: '#0f172a', fontSize: 14 }}>Cargar al sistema</Typography>
                   </Stack>
-                  <Typography sx={{ color: '#475569', fontSize: 12.5, mb: 1.2 }}>
-                    Sincroniza nuevos y actualiza existentes.
+                  <Typography sx={{ color: '#475569', fontSize: 12.5, mb: 1, fontWeight: 700 }}>
+                    Tipo de operación:
                   </Typography>
+                  <FormControl component="fieldset" sx={{ mb: 1.5, display: 'block' }}>
+                    <RadioGroup
+                      value={operationType}
+                      onChange={(e) => setOperationType(e.target.value)}
+                      sx={{
+                        gap: 0.8,
+                        '& .MuiFormControlLabel-root': {
+                          margin: 0,
+                          padding: '5px 10px',
+                          borderRadius: 2,
+                          border: '1px solid #e2e8f0',
+                          width: '100%',
+                          transition: 'all 0.2s',
+                          bgcolor: '#fff',
+                          mb: 0.6,
+                          '&:hover': {
+                            backgroundColor: '#f8fafc',
+                            borderColor: '#cbd5e1'
+                          },
+                          '&.Mui-checked': {
+                            borderColor: '#2563eb',
+                            backgroundColor: '#f0f6ff'
+                          }
+                        },
+                        '& .MuiFormControlLabel-label': {
+                          fontSize: 11.5,
+                          fontWeight: 700,
+                          color: '#334155'
+                        }
+                      }}
+                    >
+                      <FormControlLabel
+                        value="sync"
+                        control={<Radio size="small" sx={{ p: 0.5 }} />}
+                        label="Sincronizar y actualizar registros"
+                      />
+                      <FormControlLabel
+                        value="replace"
+                        control={<Radio size="small" sx={{ p: 0.5 }} />}
+                        label="Reemplazo total de información"
+                      />
+                    </RadioGroup>
+                  </FormControl>
                   <FormControlLabel
                     control={
                       <Checkbox
@@ -891,11 +987,16 @@ function GestionUsuarios() {
                         onChange={(event) => setSendBulkEmails(event.target.checked)}
                       />
                     }
-                    label="Enviar correos de bienvenida"
+                    label="Enviar correos de bienvenida (Solo nuevos)"
                     sx={{
-                      mb: 1,
+                      mb: 1.5,
                       mx: 0,
-                      '& .MuiFormControlLabel-label': { fontSize: 12.5, fontWeight: 700, color: '#334155' }
+                      display: 'flex',
+                      '& .MuiFormControlLabel-label': {
+                        fontSize: 12.5,
+                        color: '#475569',
+                        fontWeight: 600
+                      }
                     }}
                   />
                   <Button
@@ -906,10 +1007,12 @@ function GestionUsuarios() {
                     sx={{
                       borderRadius: 1.5,
                       textTransform: 'none',
-                      fontWeight: 900,
+                      fontWeight: 800,
+                      py: 1,
                       bgcolor: '#2563eb',
+                      boxShadow: '0 4px 12px rgba(37,99,235,0.2)',
                       '&:hover': { bgcolor: '#1d4ed8' },
-                      '&.Mui-disabled': { bgcolor: '#e2e8f0', color: '#94a3b8' }
+                      '&.Mui-disabled': { bgcolor: '#bfdbfe', color: '#1e3a8a' }
                     }}
                   >
                     {uploading ? <CircularProgress size={20} sx={{ color: '#1d4ed8' }} /> : 'Importar usuarios'}
@@ -1101,6 +1204,7 @@ function GestionUsuarios() {
               Sincronizados: {(bulkImportResult.importados || 0) + (bulkImportResult.actualizados || 0)}
               {' | '}Nuevos: {bulkImportResult.importados || 0}
               {' | '}Actualizados: {bulkImportResult.actualizados || 0}
+              {bulkImportResult.eliminados > 0 ? ` | Eliminados: ${bulkImportResult.eliminados}` : ''}
               {' | '}Correos: {bulkImportResult.correosEnviados || 0}
               {bulkImportResult.correosOmitidos ? ` | Correos omitidos: ${bulkImportResult.correosOmitidos}` : ''}
               {' | '}Errores: {bulkImportResult.errores?.length || 0}
@@ -1153,6 +1257,7 @@ function GestionUsuarios() {
                 ) : (
                   visibleUsers.map((user, index) => {
                     const isDeleting = deletingUserIds.has(user.id);
+                    const isSelf = isCurrentUserRow(user);
                     return (
                     <TableRow
                       key={user.id}
@@ -1211,21 +1316,21 @@ function GestionUsuarios() {
                               </IconButton>
                             </Tooltip>
                           )}
-                          <Tooltip title={user.estado === 'activo' ? 'Inactivar' : 'Reactivar'}>
+                          <Tooltip title={isSelf && user.estado === 'activo' ? 'No puedes inactivar tu propio usuario' : (user.estado === 'activo' ? 'Inactivar' : 'Reactivar')}>
                             <IconButton
                               size="small"
                               onClick={() => handleToggleStatus(user)}
-                              disabled={isDeleting}
+                              disabled={isDeleting || (isSelf && user.estado === 'activo')}
                               sx={{ color: user.estado === 'activo' ? '#f59e0b' : '#10b981', bgcolor: '#fef3c7', '&:hover': { bgcolor: '#fde68a' } }}
                             >
                               {user.estado === 'activo' ? <BlockIcon fontSize="small" /> : <CheckCircleIcon fontSize="small" />}
                             </IconButton>
                           </Tooltip>
-                          <Tooltip title="Eliminar Permanente">
+                          <Tooltip title={isSelf ? 'No puedes eliminar tu propio usuario' : 'Eliminar Permanente'}>
                             <IconButton
                               size="small"
                               onClick={() => handleDelete(user)}
-                              disabled={isDeleting}
+                              disabled={isDeleting || isSelf}
                               sx={{ color: '#ef4444', bgcolor: '#fee2e2', '&:hover': { bgcolor: '#fecaca' } }}
                             >
                               {isDeleting ? <CircularProgress size={16} color="inherit" /> : <DeleteIcon fontSize="small" />}
@@ -1255,6 +1360,184 @@ function GestionUsuarios() {
             sx={{ borderTop: '1px solid #e2e8f0', bgcolor: '#f8fafc' }}
           />
         </Paper>
+
+        <Dialog
+          open={confirmUserAction.open}
+          onClose={handleCloseConfirmUserAction}
+          maxWidth="xs"
+          fullWidth
+          PaperProps={{
+            sx: {
+              borderRadius: 3,
+              overflow: 'hidden',
+              boxShadow: '0 28px 80px rgba(15, 23, 42, 0.28)'
+            }
+          }}
+        >
+          <Box
+            sx={{
+              px: 3,
+              py: 2.4,
+              display: 'flex',
+              alignItems: 'center',
+              gap: 1.7,
+              bgcolor: confirmUserConfig.softTone,
+              borderBottom: `1px solid ${confirmUserConfig.borderTone}`
+            }}
+          >
+            <Box
+              sx={{
+                width: 44,
+                height: 44,
+                borderRadius: 2,
+                display: 'grid',
+                placeItems: 'center',
+                color: '#fff',
+                bgcolor: confirmUserConfig.tone,
+                boxShadow: `0 10px 24px ${confirmUserConfig.tone}44`
+              }}
+            >
+              {confirmUserConfig.icon}
+            </Box>
+            <Box sx={{ minWidth: 0 }}>
+              <Typography sx={{ fontWeight: 900, color: '#0f172a', fontSize: 19, lineHeight: 1.15 }}>
+                {confirmUserConfig.title}
+              </Typography>
+              <Typography sx={{ color: '#64748b', fontSize: 13, mt: 0.4 }}>
+                {confirmUserConfig.eyebrow}
+              </Typography>
+            </Box>
+          </Box>
+          <DialogContent sx={{ p: 3 }}>
+            <Typography sx={{ color: '#334155', fontSize: 14.5, lineHeight: 1.65, mb: 2 }}>
+              {confirmUserConfig.message}
+            </Typography>
+            <Box
+              sx={{
+                p: 1.6,
+                borderRadius: 2,
+                border: '1px solid #dbe7f6',
+                bgcolor: '#f8fbff',
+                display: 'grid',
+                gap: 0.7
+              }}
+            >
+              <Typography sx={{ fontWeight: 900, color: '#0f172a', fontSize: 15 }}>
+                {confirmUser.nombre || 'Usuario seleccionado'}
+              </Typography>
+              <Typography sx={{ color: '#475569', fontSize: 13 }}>
+                {confirmUser.email || 'Sin correo registrado'}
+              </Typography>
+              <Stack direction="row" spacing={1} sx={{ flexWrap: 'wrap', rowGap: 0.8, pt: 0.4 }}>
+                <Chip size="small" label={confirmUser.username || 'Sin documento'} variant="outlined" />
+                <Chip size="small" label={ROLE_LABELS[confirmUser.role] || confirmUser.role || 'Sin rol'} />
+                <Chip size="small" label={confirmUser.estado || 'Sin estado'} color={getEstadoColor(confirmUser.estado)} />
+              </Stack>
+            </Box>
+          </DialogContent>
+          <DialogActions sx={{ px: 3, pb: 2.5, pt: 0, gap: 1 }}>
+            <Button onClick={handleCloseConfirmUserAction} disabled={confirmUserSubmitting} sx={{ fontWeight: 800 }}>
+              Cancelar
+            </Button>
+            <Button
+              variant="contained"
+              onClick={handleConfirmUserAction}
+              disabled={confirmUserSubmitting}
+              startIcon={confirmUserSubmitting ? <CircularProgress size={16} color="inherit" /> : confirmUserConfig.icon}
+              sx={{
+                fontWeight: 900,
+                bgcolor: confirmUserConfig.tone,
+                boxShadow: `0 12px 24px ${confirmUserConfig.tone}33`,
+                '&:hover': { bgcolor: confirmUserConfig.tone, filter: 'brightness(0.92)' }
+              }}
+            >
+              {confirmUserSubmitting ? 'Procesando...' : confirmUserConfig.actionLabel}
+            </Button>
+          </DialogActions>
+        </Dialog>
+
+        {/* Dialog Confirmar Reemplazo Total */}
+        <Dialog
+          open={confirmReplaceOpen}
+          onClose={() => setConfirmReplaceOpen(false)}
+          maxWidth="xs"
+          fullWidth
+          PaperProps={{
+            sx: {
+              borderRadius: 3,
+              overflow: 'hidden',
+              boxShadow: '0 28px 80px rgba(15, 23, 42, 0.28)'
+            }
+          }}
+        >
+          <Box
+            sx={{
+              px: 3,
+              py: 2.4,
+              display: 'flex',
+              alignItems: 'center',
+              gap: 1.7,
+              bgcolor: '#fef2f2',
+              borderBottom: '1px solid #fecaca'
+            }}
+          >
+            <Box
+              sx={{
+                width: 44,
+                height: 44,
+                borderRadius: 2,
+                display: 'grid',
+                placeItems: 'center',
+                color: '#fff',
+                bgcolor: '#dc2626',
+                boxShadow: '0 10px 24px rgba(220, 38, 38, 0.27)'
+              }}
+            >
+              <WarningIcon fontSize="small" />
+            </Box>
+            <Box sx={{ minWidth: 0 }}>
+              <Typography sx={{ fontWeight: 900, color: '#0f172a', fontSize: 19, lineHeight: 1.15 }}>
+                Confirmar Reemplazo Total
+              </Typography>
+              <Typography sx={{ color: '#64748b', fontSize: 13, mt: 0.4 }}>
+                Carga Masiva de Usuarios
+              </Typography>
+            </Box>
+          </Box>
+          <DialogContent sx={{ p: 3 }}>
+            <Typography sx={{ color: '#334155', fontSize: 14.5, lineHeight: 1.65, mb: 2 }}>
+              ¿Está seguro de que desea realizar un reemplazo total de la información?
+            </Typography>
+            <Alert severity="error" icon={<WarningIcon />} sx={{ borderRadius: 2 }}>
+              <Typography variant="body2" sx={{ fontWeight: 700, mb: 0.5 }}>
+                ¡Advertencia de Impacto Alto!
+              </Typography>
+              Esta acción eliminará de forma permanente a los usuarios que <strong>no estén incluidos</strong> en el archivo Excel y que su rol actual permita gestionar. Su propio usuario no se elimina.
+            </Alert>
+          </DialogContent>
+          <DialogActions sx={{ px: 3, pb: 2.5, pt: 0, gap: 1 }}>
+            <Button onClick={() => setConfirmReplaceOpen(false)} disabled={uploading} sx={{ fontWeight: 800 }}>
+              Cancelar
+            </Button>
+            <Button
+              variant="contained"
+              onClick={async () => {
+                setConfirmReplaceOpen(false);
+                await executeBulkUpload();
+              }}
+              disabled={uploading}
+              startIcon={<WarningIcon />}
+              sx={{
+                fontWeight: 900,
+                bgcolor: '#dc2626',
+                boxShadow: '0 12px 24px rgba(220, 38, 38, 0.2)',
+                '&:hover': { bgcolor: '#b91c1c' }
+              }}
+            >
+              Confirmar Reemplazo
+            </Button>
+          </DialogActions>
+        </Dialog>
 
         {/* Dialog Crear/Editar */}
         <Dialog open={openDialog} onClose={handleCloseDialog} maxWidth="sm" fullWidth>

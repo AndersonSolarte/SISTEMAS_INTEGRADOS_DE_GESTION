@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useLocation, useNavigate } from "react-router-dom";
 import { Container, Paper, Button, Typography, Box, Alert, CircularProgress, Divider, Dialog, DialogTitle, DialogContent, DialogActions, Stack } from "@mui/material";
 import { AccountBalance as AccountBalanceIcon, Autorenew as AutorenewIcon, RocketLaunch as RocketLaunchIcon, Schema as SchemaIcon } from "@mui/icons-material";
 import { useAuth } from "../context/AuthContext";
@@ -24,6 +24,7 @@ const INNOVATION_TEXT_SX = { fontFamily: '"Montserrat","Segoe UI",sans-serif', f
 
 function Login() {
   const navigate = useNavigate();
+  const location = useLocation();
   const { user, loading: authLoading, loginWithGoogle, hydrateFromToken } = useAuth();
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
@@ -34,6 +35,11 @@ function Login() {
   const googleButtonRef = useRef(null);
   const clientId = process.env.REACT_APP_GOOGLE_CLIENT_ID;
   const currentOrigin = window.location.origin;
+  const redirectPath = (() => {
+    const params = new URLSearchParams(location.search || "");
+    const value = params.get("redirect") || "/dashboard";
+    return value.startsWith("/dashboard") ? value : "/dashboard";
+  })();
 
   const navigateWithLoader = useCallback((path) => {
     setTransitioning(true);
@@ -43,8 +49,8 @@ function Login() {
   }, [navigate]);
 
   useEffect(() => {
-    if (!authLoading && user?.id && !transitioning) navigateWithLoader("/dashboard");
-  }, [authLoading, user?.id, transitioning, navigateWithLoader]);
+    if (!authLoading && user?.id && !transitioning) navigateWithLoader(redirectPath);
+  }, [authLoading, user?.id, transitioning, navigateWithLoader, redirectPath]);
 
   const getContactCopy = (message = "") => {
     const text = String(message || "").toLowerCase();
@@ -62,9 +68,9 @@ function Login() {
     setLoading(true);
     const result = await loginWithGoogle(response?.credential);
     setLoading(false);
-    if (result.success) { navigateWithLoader("/dashboard"); }
+    if (result.success) { navigateWithLoader(redirectPath); }
     else { setError(result.message || "No fue posible iniciar sesión con Google"); const message = String(result.message || "").toLowerCase(); setShowContactDialog(!(message.includes("demasiad") || message.includes("muchos intentos") || message.includes("429"))); }
-  }, [currentOrigin, loginWithGoogle, navigateWithLoader]);
+  }, [currentOrigin, loginWithGoogle, navigateWithLoader, redirectPath]);
 
   useEffect(() => {
     const hash = String(window.location.hash || "");
@@ -75,8 +81,8 @@ function Login() {
     const cleanUrl = `${window.location.pathname}${window.location.search}`;
     window.history.replaceState({}, document.title, cleanUrl);
     if (googleError) { setError(googleError); setShowContactDialog(true); return; }
-    if (token) { setLoading(true); authService.setToken(token); hydrateFromToken().then((result) => { setLoading(false); if (result?.success) { navigateWithLoader("/dashboard"); } else { setError(result?.message || "No fue posible iniciar sesión con Google"); setShowContactDialog(true); } }); }
-  }, [hydrateFromToken, navigateWithLoader]);
+    if (token) { setLoading(true); authService.setToken(token); hydrateFromToken().then((result) => { setLoading(false); if (result?.success) { navigateWithLoader(redirectPath); } else { setError(result?.message || "No fue posible iniciar sesión con Google"); setShowContactDialog(true); } }); }
+  }, [hydrateFromToken, navigateWithLoader, redirectPath]);
 
   useEffect(() => {
     // eslint-disable-next-line no-console

@@ -34,6 +34,16 @@ const reporteSalidaService = {
   listarSolicitudes: async (params = {}) => {
     const response = await api.get('/reporte-salida/solicitudes', { params });
     return response.data;
+  },
+
+  getSeguimiento: async (params = {}) => {
+    const response = await api.get('/reporte-salida/seguimiento', { params });
+    return response.data;
+  },
+
+  actualizarReposicion: async (id, payload) => {
+    const response = await api.patch(`/reporte-salida/solicitudes/${id}/reposicion`, payload);
+    return response.data;
   }
 };
 

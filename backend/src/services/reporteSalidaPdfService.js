@@ -76,10 +76,11 @@ const buildDocxData = (solicitud) => {
     dependencia: laboral.dependencia || '',
     fechaSalida: formatDate(salida.fecha),
     horaSalida: salida.horaInicio || '',
-    fechaRegreso: formatDate(salida.fecha),
+    fechaRegreso: formatDate(salida.fechaRegreso || salida.fechaFin || salida.fecha),
     horaRegreso: salida.horaFin || '',
     tipo: salida.tipo || '',
     reposicionFecha: formatDate(reposicion.fecha),
+    reposicionFechaFin: formatDate(reposicion.fechaFin || reposicion.fecha),
     reposicionInicio: reposicion.horaInicio || '',
     reposicionFin: reposicion.horaFin || '',
     jefeNombre: jefe.nombre || '',
@@ -133,7 +134,7 @@ const fillReporteSalidaRows = (xml, values) => {
   set(15, 0, values.tipo === 'cita_eps' ? 'X' : '');
   set(15, 2, values.tipo === 'cita_particular' ? 'X' : '');
   set(16, 0, values.tipo === 'diligencia_personal' ? 'X' : '');
-  set(17, 0, ` Fecha:  ${values.reposicionFecha}`);
+  set(17, 0, ` Fecha:  ${values.reposicionFecha}${values.reposicionFechaFin && values.reposicionFechaFin !== values.reposicionFecha ? ` a ${values.reposicionFechaFin}` : ''}`);
   set(17, 1, ` Hora inicio: ${values.reposicionInicio}`);
   set(17, 2, ` Hora fin: ${values.reposicionFin}`);
   set(21, 1, ` Nombres y apellidos: ${values.jefeNombre}`);
@@ -242,6 +243,7 @@ const buildLines = (solicitud) => {
     'DATOS DE SALIDA',
     `Tipo de salida: ${salida.tipo || ''}`,
     `Fecha salida: ${formatDate(salida.fecha)}`,
+    `Fecha regreso: ${formatDate(salida.fechaRegreso || salida.fechaFin || salida.fecha)}`,
     `Hora inicio: ${salida.horaInicio || ''}`,
     `Hora fin: ${salida.horaFin || ''}`,
     `Tiempo solicitado: ${formatMinutes(solicitud.tiempo_solicitado_minutos)}`,
@@ -249,7 +251,8 @@ const buildLines = (solicitud) => {
     '',
     'REPOSICION DE TIEMPO',
     `Aplica reposicion: ${solicitud.reposicion_aplica ? 'SI' : 'NO'}`,
-    `Fecha reposicion: ${formatDate(reposicion.fecha)}`,
+    `Fecha inicio reposicion: ${formatDate(reposicion.fecha)}`,
+    `Fecha fin reposicion: ${formatDate(reposicion.fechaFin || reposicion.fecha)}`,
     `Hora inicio reposicion: ${reposicion.horaInicio || ''}`,
     `Hora fin reposicion: ${reposicion.horaFin || ''}`,
     `Tiempo reposicion: ${formatMinutes(solicitud.reposicion_minutos)}`,
@@ -331,7 +334,7 @@ const buildPdfBuffer = (solicitud) => {
   line(298, 586, 298, 646);
   text(`Fecha de salida: ${formatDate(salida.fecha)}`, 52, 633, 8.5, true);
   text(`Hora de salida: ${salida.horaInicio || ''}`, 308, 633, 8.5, true);
-  text(`Fecha de regreso: ${formatDate(salida.fecha)}`, 52, 613, 8.5, true);
+  text(`Fecha de regreso: ${formatDate(salida.fechaRegreso || salida.fechaFin || salida.fecha)}`, 52, 613, 8.5, true);
   text(`Hora de regreso: ${salida.horaFin || ''}`, 308, 613, 8.5, true);
   text(`Tiempo solicitado: ${formatMinutes(solicitud.tiempo_solicitado_minutos)}`, 52, 593, 8.5, true);
   text(`Motivo: ${salida.motivo || getTipoSalidaLabel(tipo)}`, 308, 593, 8.5, false, 43);
@@ -360,7 +363,7 @@ const buildPdfBuffer = (solicitud) => {
   line(42, 398, 553, 398);
   line(212, 374, 212, 398);
   line(382, 374, 382, 398);
-  text(`Fecha: ${formatDate(reposicion.fecha)}`, 52, 383, 8.5, true);
+  text(`Fecha: ${formatDate(reposicion.fecha)}${(reposicion.fechaFin && reposicion.fechaFin !== reposicion.fecha) ? ` a ${formatDate(reposicion.fechaFin)}` : ''}`, 52, 383, 8.5, true);
   text(`Hora inicio: ${reposicion.horaInicio || ''}`, 222, 383, 8.5, true);
   text(`Hora fin: ${reposicion.horaFin || ''}`, 392, 383, 8.5, true);
 

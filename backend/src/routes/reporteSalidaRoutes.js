@@ -2,8 +2,10 @@ const express = require('express');
 const router = express.Router();
 const {
   aprobarDesdeCorreo,
+  actualizarReposicion,
   getCatalogoLaboral,
   getFeatureConfig,
+  getSeguimientoPersonal,
   listarDependencias,
   listarSolicitudes,
   radicarSolicitud,
@@ -21,6 +23,7 @@ router.get('/catalogo-laboral', auth, getCatalogoLaboral);
 router.get('/jefes', auth, searchJefes);
 router.get('/dependencias', auth, listarDependencias);
 router.post('/solicitudes', auth, radicarSolicitud);
+router.get('/seguimiento', auth, getSeguimientoPersonal);
 router.get(
   '/solicitudes',
   auth,
@@ -29,6 +32,15 @@ router.get(
     moduleKeys: ['seguimiento_reportes_rrhh']
   }),
   listarSolicitudes
+);
+router.patch(
+  '/solicitudes/:id/reposicion',
+  auth,
+  hasAnyRoleOrModulePermission({
+    roles: [ROLES.ADMINISTRADOR, ROLES.GESTION_INFORMACION, ROLES.PLANEACION_ESTRATEGICA],
+    moduleKeys: ['seguimiento_reportes_rrhh']
+  }),
+  actualizarReposicion
 );
 
 module.exports = router;

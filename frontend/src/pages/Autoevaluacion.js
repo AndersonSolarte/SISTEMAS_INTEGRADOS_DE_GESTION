@@ -68,8 +68,6 @@ import {
   CartesianGrid,
   Cell,
   LabelList,
-  Pie,
-  PieChart,
   ResponsiveContainer,
   Tooltip,
   XAxis,
@@ -292,8 +290,8 @@ const getScoreLabel = (value) => {
   if (!Number.isFinite(score)) return 'SIN CALIFICAR';
   if (score >= 4.5) return 'SE CUMPLE PLENAMENTE';//verde oscuro
   if (score >= 4.0) return 'SE CUMPLE EN ALTO GRADO';//verde claro
-  if (score >= 3.5) return 'SE CUMPLE ACEPTABLEMENTE';//amarillo
-  if (score >= 2.6) return 'SE CUMPLE INSATISFACTORIAMENTE';//naranja
+  if (score >= 3.0) return 'SE CUMPLE ACEPTABLEMENTE';//amarillo
+  if (score >= 2.0) return 'SE CUMPLE INSATISFACTORIAMENTE';//naranja
   return 'NO SE CUMPLE';//rojo
 };
 
@@ -492,6 +490,7 @@ function Autoevaluacion() {
   const dashboardCacheRef = useRef(new Map());
   const characteristicChartCardRef = useRef(null);
   const factorChartCardRef = useRef(null);
+  const complianceChartCardRef = useRef(null);
   const [programa, setPrograma] = useState('');
   const [componentScope, setComponentScope] = useState('general');
   const [view, setView] = useState('resumen');
@@ -510,6 +509,7 @@ function Autoevaluacion() {
   const [creatingProgramInfo, setCreatingProgramInfo] = useState(false);
   const [copyingCharacteristicChart, setCopyingCharacteristicChart] = useState(false);
   const [copyingFactorChart, setCopyingFactorChart] = useState(false);
+  const [copyingComplianceChart, setCopyingComplianceChart] = useState(false);
   const [isCharacteristicChartInverted, setIsCharacteristicChartInverted] = useState(false);
   const [editingCharacteristicChartText, setEditingCharacteristicChartText] = useState(false);
   const [characteristicChartLabelDrafts, setCharacteristicChartLabelDrafts] = useState({});
@@ -651,8 +651,99 @@ function Autoevaluacion() {
     setCopyingCharacteristicChart(true);
     try {
       const rect = node.getBoundingClientRect();
-      const width = Math.ceil(rect.width);
-      const height = Math.ceil(rect.height);
+      const originalWidth = Math.ceil(rect.width);
+      const originalHeight = Math.ceil(rect.height);
+
+      // Medir el cuadro de contenido visual
+      const htmlElementsToMeasure = [];
+      node.querySelectorAll('.MuiTypography-root').forEach((el) => {
+        if (!el.closest('[data-copy-exclude="true"]')) {
+          htmlElementsToMeasure.push(el);
+        }
+      });
+
+      let minTop = Infinity;
+      let maxBottom = -Infinity;
+      let minLeft = Infinity;
+      let maxRight = -Infinity;
+
+      const getHTMLVisualRect = (el) => {
+        try {
+          const range = document.createRange();
+          range.selectNodeContents(el);
+          const rangeRect = range.getBoundingClientRect();
+          if (rangeRect.width > 0 && rangeRect.height > 0) {
+            return rangeRect;
+          }
+        } catch (e) {
+          // fallback
+        }
+        return el.getBoundingClientRect();
+      };
+
+      // 1. Medir elementos HTML (título, subtítulo, promedio, etc.)
+      htmlElementsToMeasure.forEach((el) => {
+        const elRect = getHTMLVisualRect(el);
+        if (elRect.width === 0 && elRect.height === 0) return;
+        if (elRect.top < minTop) minTop = elRect.top;
+        if (elRect.bottom > maxBottom) maxBottom = elRect.bottom;
+        if (elRect.left < minLeft) minLeft = elRect.left;
+        if (elRect.right > maxRight) maxRight = elRect.right;
+      });
+
+      // 2. Medir el SVG del gráfico de manera robusta y a prueba de fallos
+      const svg = node.querySelector('.recharts-responsive-container svg') || node.querySelector('svg.recharts-surface');
+      if (svg) {
+        const svgRect = (svg.parentElement || svg).getBoundingClientRect();
+        let svgMinTop = Infinity;
+        let svgMaxBottom = -Infinity;
+        let svgMinLeft = Infinity;
+        let svgMaxRight = -Infinity;
+
+        // Medir elementos visuales del SVG (ticks, textos, barras, rejillas, foreignObjects)
+        svg.querySelectorAll('rect, path, line, text, circle, polygon, foreignObject').forEach((el) => {
+          const elRect = el.getBoundingClientRect();
+          if (elRect.width === 0 && elRect.height === 0) return;
+
+          // Asegurar que las coordenadas no sean basura / relativas no normalizadas
+          if (elRect.left >= svgRect.left - 100 && elRect.right <= svgRect.right + 100) {
+            if (elRect.left < svgMinLeft) svgMinLeft = elRect.left;
+            if (elRect.right > svgMaxRight) svgMaxRight = elRect.right;
+          }
+          if (elRect.top >= svgRect.top - 100 && elRect.bottom <= svgRect.bottom + 100) {
+            if (elRect.top < svgMinTop) svgMinTop = elRect.top;
+            if (elRect.bottom > svgMaxBottom) svgMaxBottom = elRect.bottom;
+          }
+        });
+
+        // Autocorrección / Caída hacia el contenedor SVG completo si los hijos no arrojaron coordenadas válidas
+        const finalSvgLeft = (svgMinLeft !== Infinity) ? svgMinLeft : svgRect.left;
+        const finalSvgRight = (svgMaxRight !== -Infinity) ? svgMaxRight : svgRect.right;
+        const finalSvgTop = (svgMinTop !== Infinity) ? svgMinTop : svgRect.top;
+        const finalSvgBottom = (svgMaxBottom !== -Infinity) ? svgMaxBottom : svgRect.bottom;
+
+        // Unificar con el cuadro de límites global
+        if (finalSvgLeft < minLeft) minLeft = finalSvgLeft;
+        if (finalSvgRight > maxRight) maxRight = finalSvgRight;
+        if (finalSvgTop < minTop) minTop = finalSvgTop;
+        if (finalSvgBottom > maxBottom) maxBottom = finalSvgBottom;
+      }
+
+      if (minTop === Infinity) {
+        minTop = rect.top;
+        maxBottom = rect.bottom;
+        minLeft = rect.left;
+        maxRight = rect.right;
+      }
+
+      const contentWidth = maxRight - minLeft;
+      const contentHeight = maxBottom - minTop;
+      const padding = 8;
+      const copyWidth = Math.ceil(contentWidth + padding * 2);
+      const copyHeight = Math.ceil(contentHeight + padding * 2);
+      const topOffset = Math.max(0, Math.ceil(minTop - rect.top));
+      const leftOffset = Math.max(0, Math.ceil(minLeft - rect.left));
+      
       const clone = node.cloneNode(true);
 
       const inlineComputedStyles = (source, target) => {
@@ -674,14 +765,14 @@ function Autoevaluacion() {
       inlineComputedStyles(node, clone);
       clone.querySelectorAll('[data-copy-exclude="true"]').forEach((element) => element.remove());
       clone.setAttribute('xmlns', 'http://www.w3.org/1999/xhtml');
-      clone.style.width = `${width}px`;
-      clone.style.height = `${height}px`;
+      clone.style.width = `${originalWidth}px`;
+      clone.style.height = `${originalHeight}px`;
       clone.style.margin = '0';
       clone.style.background = '#ffffff';
 
       const serializedNode = new XMLSerializer().serializeToString(clone);
-      const svg = `
-        <svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}">
+      const svgStr = `
+        <svg xmlns="http://www.w3.org/2000/svg" width="${originalWidth}" height="${originalHeight}">
           <foreignObject width="100%" height="100%">
             ${serializedNode}
           </foreignObject>
@@ -690,16 +781,19 @@ function Autoevaluacion() {
       const image = new Image();
       const scale = Math.max(2, Math.min(3, window.devicePixelRatio || 2));
       const canvas = document.createElement('canvas');
-      canvas.width = Math.ceil(width * scale);
-      canvas.height = Math.ceil(height * scale);
+      canvas.width = Math.ceil(copyWidth * scale);
+      canvas.height = Math.ceil(copyHeight * scale);
       const context = canvas.getContext('2d');
       context.scale(scale, scale);
       context.fillStyle = '#ffffff';
-      context.fillRect(0, 0, width, height);
+      context.fillRect(0, 0, copyWidth, copyHeight);
+      
+      // Desplazar el lienzo para recortar el espacio en blanco
+      context.translate(-leftOffset + padding, -topOffset + padding);
 
       await new Promise((resolve, reject) => {
         image.onload = () => {
-          context.drawImage(image, 0, 0, width, height);
+          context.drawImage(image, 0, 0, originalWidth, originalHeight);
           canvas.toBlob(async (blob) => {
             if (!blob) {
               reject(new Error('No fue posible generar la imagen'));
@@ -716,7 +810,7 @@ function Autoevaluacion() {
           }, 'image/png');
         };
         image.onerror = () => reject(new Error('No fue posible preparar la imagen'));
-        image.src = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;
+        image.src = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svgStr)}`;
       });
 
       enqueueSnackbar('Grafico copiado al portapapeles', { variant: 'success' });
@@ -739,8 +833,99 @@ function Autoevaluacion() {
     setCopyingFactorChart(true);
     try {
       const rect = node.getBoundingClientRect();
-      const width = Math.ceil(rect.width);
-      const height = Math.ceil(rect.height);
+      const originalWidth = Math.ceil(rect.width);
+      const originalHeight = Math.ceil(rect.height);
+
+      // Medir el cuadro de contenido visual
+      const htmlElementsToMeasure = [];
+      node.querySelectorAll('.MuiTypography-root').forEach((el) => {
+        if (!el.closest('[data-copy-exclude="true"]')) {
+          htmlElementsToMeasure.push(el);
+        }
+      });
+
+      let minTop = Infinity;
+      let maxBottom = -Infinity;
+      let minLeft = Infinity;
+      let maxRight = -Infinity;
+
+      const getHTMLVisualRect = (el) => {
+        try {
+          const range = document.createRange();
+          range.selectNodeContents(el);
+          const rangeRect = range.getBoundingClientRect();
+          if (rangeRect.width > 0 && rangeRect.height > 0) {
+            return rangeRect;
+          }
+        } catch (e) {
+          // fallback
+        }
+        return el.getBoundingClientRect();
+      };
+
+      // 1. Medir elementos HTML (título, subtítulo, promedio, etc.)
+      htmlElementsToMeasure.forEach((el) => {
+        const elRect = getHTMLVisualRect(el);
+        if (elRect.width === 0 && elRect.height === 0) return;
+        if (elRect.top < minTop) minTop = elRect.top;
+        if (elRect.bottom > maxBottom) maxBottom = elRect.bottom;
+        if (elRect.left < minLeft) minLeft = elRect.left;
+        if (elRect.right > maxRight) maxRight = elRect.right;
+      });
+
+      // 2. Medir el SVG del gráfico de manera robusta y a prueba de fallos
+      const svg = node.querySelector('.recharts-responsive-container svg') || node.querySelector('svg.recharts-surface');
+      if (svg) {
+        const svgRect = (svg.parentElement || svg).getBoundingClientRect();
+        let svgMinTop = Infinity;
+        let svgMaxBottom = -Infinity;
+        let svgMinLeft = Infinity;
+        let svgMaxRight = -Infinity;
+
+        // Medir elementos visuales del SVG (ticks, textos, barras, rejillas, foreignObjects)
+        svg.querySelectorAll('rect, path, line, text, circle, polygon, foreignObject').forEach((el) => {
+          const elRect = el.getBoundingClientRect();
+          if (elRect.width === 0 && elRect.height === 0) return;
+
+          // Asegurar que las coordenadas no sean basura / relativas no normalizadas
+          if (elRect.left >= svgRect.left - 100 && elRect.right <= svgRect.right + 100) {
+            if (elRect.left < svgMinLeft) svgMinLeft = elRect.left;
+            if (elRect.right > svgMaxRight) svgMaxRight = elRect.right;
+          }
+          if (elRect.top >= svgRect.top - 100 && elRect.bottom <= svgRect.bottom + 100) {
+            if (elRect.top < svgMinTop) svgMinTop = elRect.top;
+            if (elRect.bottom > svgMaxBottom) svgMaxBottom = elRect.bottom;
+          }
+        });
+
+        // Autocorrección / Caída hacia el contenedor SVG completo si los hijos no arrojaron coordenadas válidas
+        const finalSvgLeft = (svgMinLeft !== Infinity) ? svgMinLeft : svgRect.left;
+        const finalSvgRight = (svgMaxRight !== -Infinity) ? svgMaxRight : svgRect.right;
+        const finalSvgTop = (svgMinTop !== Infinity) ? svgMinTop : svgRect.top;
+        const finalSvgBottom = (svgMaxBottom !== -Infinity) ? svgMaxBottom : svgRect.bottom;
+
+        // Unificar con el cuadro de límites global
+        if (finalSvgLeft < minLeft) minLeft = finalSvgLeft;
+        if (finalSvgRight > maxRight) maxRight = finalSvgRight;
+        if (finalSvgTop < minTop) minTop = finalSvgTop;
+        if (finalSvgBottom > maxBottom) maxBottom = finalSvgBottom;
+      }
+
+      if (minTop === Infinity) {
+        minTop = rect.top;
+        maxBottom = rect.bottom;
+        minLeft = rect.left;
+        maxRight = rect.right;
+      }
+
+      const contentWidth = maxRight - minLeft;
+      const contentHeight = maxBottom - minTop;
+      const padding = 8;
+      const copyWidth = Math.ceil(contentWidth + padding * 2);
+      const copyHeight = Math.ceil(contentHeight + padding * 2);
+      const topOffset = Math.max(0, Math.ceil(minTop - rect.top));
+      const leftOffset = Math.max(0, Math.ceil(minLeft - rect.left));
+      
       const clone = node.cloneNode(true);
 
       const inlineComputedStyles = (source, target) => {
@@ -762,14 +947,14 @@ function Autoevaluacion() {
       inlineComputedStyles(node, clone);
       clone.querySelectorAll('[data-copy-exclude="true"]').forEach((element) => element.remove());
       clone.setAttribute('xmlns', 'http://www.w3.org/1999/xhtml');
-      clone.style.width = `${width}px`;
-      clone.style.height = `${height}px`;
+      clone.style.width = `${originalWidth}px`;
+      clone.style.height = `${originalHeight}px`;
       clone.style.margin = '0';
       clone.style.background = '#ffffff';
 
       const serializedNode = new XMLSerializer().serializeToString(clone);
-      const svg = `
-        <svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}">
+      const svgStr = `
+        <svg xmlns="http://www.w3.org/2000/svg" width="${originalWidth}" height="${originalHeight}">
           <foreignObject width="100%" height="100%">
             ${serializedNode}
           </foreignObject>
@@ -778,16 +963,19 @@ function Autoevaluacion() {
       const image = new Image();
       const scale = Math.max(2, Math.min(3, window.devicePixelRatio || 2));
       const canvas = document.createElement('canvas');
-      canvas.width = Math.ceil(width * scale);
-      canvas.height = Math.ceil(height * scale);
+      canvas.width = Math.ceil(copyWidth * scale);
+      canvas.height = Math.ceil(copyHeight * scale);
       const context = canvas.getContext('2d');
       context.scale(scale, scale);
       context.fillStyle = '#ffffff';
-      context.fillRect(0, 0, width, height);
+      context.fillRect(0, 0, copyWidth, copyHeight);
+      
+      // Desplazar el lienzo para recortar el espacio en blanco
+      context.translate(-leftOffset + padding, -topOffset + padding);
 
       await new Promise((resolve, reject) => {
         image.onload = () => {
-          context.drawImage(image, 0, 0, width, height);
+          context.drawImage(image, 0, 0, originalWidth, originalHeight);
           canvas.toBlob(async (blob) => {
             if (!blob) {
               reject(new Error('No fue posible generar la imagen'));
@@ -804,7 +992,7 @@ function Autoevaluacion() {
           }, 'image/png');
         };
         image.onerror = () => reject(new Error('No fue posible preparar la imagen'));
-        image.src = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;
+        image.src = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svgStr)}`;
       });
 
       enqueueSnackbar('Grafico copiado al portapapeles', { variant: 'success' });
@@ -812,6 +1000,227 @@ function Autoevaluacion() {
       enqueueSnackbar('No se pudo copiar el grafico como imagen', { variant: 'error' });
     } finally {
       setCopyingFactorChart(false);
+    }
+  }, [enqueueSnackbar]);
+
+  const complianceRanges = {
+    'SE CUMPLE PLENAMENTE': '4,5 a 5,0',
+    'SE CUMPLE EN ALTO GRADO': '4,0 a 4,5',
+    'SE CUMPLE ACEPTABLEMENTE': '3,0 a 3,9',
+    'SE CUMPLE INSATISFACTORIAMENTE': '2,0 a 2,9',
+    'NO SE CUMPLE': '1,0 a 1,9'
+  };
+
+  const renderCustomComplianceTick = ({ x, y, payload }) => {
+    const name = payload?.value || '';
+    const range = complianceRanges[name] || '';
+    return (
+      <g transform={`translate(${x - 220},${y - 14})`}>
+        <foreignObject width={210} height={40}>
+          <Box
+            xmlns="http://www.w3.org/1999/xhtml"
+            sx={{
+              width: 210,
+              height: 40,
+              display: 'flex',
+              flexDirection: 'column',
+              justifyContent: 'center',
+              alignItems: 'flex-end',
+              color: '#0f172a',
+              fontSize: 10,
+              fontWeight: 800,
+              lineHeight: 1.2,
+              textAlign: 'right',
+              pr: 1.5
+            }}
+          >
+            <Box sx={{ fontWeight: 900, textTransform: 'uppercase', fontSize: '0.68rem', color: '#1e293b' }}>{name}</Box>
+            <Box sx={{ fontSize: '0.62rem', color: '#64748b', fontWeight: 700 }}>{range}</Box>
+          </Box>
+        </foreignObject>
+      </g>
+    );
+  };
+
+  const copyComplianceChart = useCallback(async () => {
+    const node = complianceChartCardRef.current;
+    if (!node) return;
+
+    if (!navigator.clipboard?.write || !window.ClipboardItem) {
+      enqueueSnackbar('El navegador no permite copiar imagenes al portapapeles en este contexto', { variant: 'warning' });
+      return;
+    }
+
+    setCopyingComplianceChart(true);
+    try {
+      const rect = node.getBoundingClientRect();
+      const originalWidth = Math.ceil(rect.width);
+      const originalHeight = Math.ceil(rect.height);
+
+      // Medir el cuadro de contenido visual
+      const htmlElementsToMeasure = [];
+      node.querySelectorAll('.MuiTypography-root').forEach((el) => {
+        if (!el.closest('[data-copy-exclude="true"]')) {
+          htmlElementsToMeasure.push(el);
+        }
+      });
+
+      let minTop = Infinity;
+      let maxBottom = -Infinity;
+      let minLeft = Infinity;
+      let maxRight = -Infinity;
+
+      const getHTMLVisualRect = (el) => {
+        try {
+          const range = document.createRange();
+          range.selectNodeContents(el);
+          const rangeRect = range.getBoundingClientRect();
+          if (rangeRect.width > 0 && rangeRect.height > 0) {
+            return rangeRect;
+          }
+        } catch (e) {
+          // fallback
+        }
+        return el.getBoundingClientRect();
+      };
+
+      // 1. Medir elementos HTML (título, subtítulo, promedio, etc.)
+      htmlElementsToMeasure.forEach((el) => {
+        const elRect = getHTMLVisualRect(el);
+        if (elRect.width === 0 && elRect.height === 0) return;
+        if (elRect.top < minTop) minTop = elRect.top;
+        if (elRect.bottom > maxBottom) maxBottom = elRect.bottom;
+        if (elRect.left < minLeft) minLeft = elRect.left;
+        if (elRect.right > maxRight) maxRight = elRect.right;
+      });
+
+      // 2. Medir el SVG del gráfico de manera robusta y a prueba de fallos
+      const svg = node.querySelector('.recharts-responsive-container svg') || node.querySelector('svg.recharts-surface');
+      if (svg) {
+        const svgRect = (svg.parentElement || svg).getBoundingClientRect();
+        let svgMinTop = Infinity;
+        let svgMaxBottom = -Infinity;
+        let svgMinLeft = Infinity;
+        let svgMaxRight = -Infinity;
+
+        // Medir elementos visuales del SVG (ticks, textos, barras, rejillas, foreignObjects)
+        svg.querySelectorAll('rect, path, line, text, circle, polygon, foreignObject').forEach((el) => {
+          const elRect = el.getBoundingClientRect();
+          if (elRect.width === 0 && elRect.height === 0) return;
+
+          // Asegurar que las coordenadas no sean basura / relativas no normalizadas
+          if (elRect.left >= svgRect.left - 100 && elRect.right <= svgRect.right + 100) {
+            if (elRect.left < svgMinLeft) svgMinLeft = elRect.left;
+            if (elRect.right > svgMaxRight) svgMaxRight = elRect.right;
+          }
+          if (elRect.top >= svgRect.top - 100 && elRect.bottom <= svgRect.bottom + 100) {
+            if (elRect.top < svgMinTop) svgMinTop = elRect.top;
+            if (elRect.bottom > svgMaxBottom) svgMaxBottom = elRect.bottom;
+          }
+        });
+
+        // Autocorrección / Caída hacia el contenedor SVG completo si los hijos no arrojaron coordenadas válidas
+        const finalSvgLeft = (svgMinLeft !== Infinity) ? svgMinLeft : svgRect.left;
+        const finalSvgRight = (svgMaxRight !== -Infinity) ? svgMaxRight : svgRect.right;
+        const finalSvgTop = (svgMinTop !== Infinity) ? svgMinTop : svgRect.top;
+        const finalSvgBottom = (svgMaxBottom !== -Infinity) ? svgMaxBottom : svgRect.bottom;
+
+        // Unificar con el cuadro de límites global
+        if (finalSvgLeft < minLeft) minLeft = finalSvgLeft;
+        if (finalSvgRight > maxRight) maxRight = finalSvgRight;
+        if (finalSvgTop < minTop) minTop = finalSvgTop;
+        if (finalSvgBottom > maxBottom) maxBottom = finalSvgBottom;
+      }
+
+      if (minTop === Infinity) {
+        minTop = rect.top;
+        maxBottom = rect.bottom;
+        minLeft = rect.left;
+        maxRight = rect.right;
+      }
+
+      const contentWidth = maxRight - minLeft;
+      const contentHeight = maxBottom - minTop;
+      const padding = 8;
+      const copyWidth = Math.ceil(contentWidth + padding * 2);
+      const copyHeight = Math.ceil(contentHeight + padding * 2);
+      const topOffset = Math.max(0, Math.ceil(minTop - rect.top));
+      const leftOffset = Math.max(0, Math.ceil(minLeft - rect.left));
+      
+      const clone = node.cloneNode(true);
+
+      const inlineComputedStyles = (source, target) => {
+        if (!source || !target || !target.style) return;
+        const computed = window.getComputedStyle(source);
+        Array.from(computed).forEach((property) => {
+          target.style.setProperty(
+            property,
+            computed.getPropertyValue(property),
+            computed.getPropertyPriority(property)
+          );
+        });
+
+        Array.from(source.children).forEach((child, index) => {
+          inlineComputedStyles(child, target.children[index]);
+        });
+      };
+
+      inlineComputedStyles(node, clone);
+      clone.querySelectorAll('[data-copy-exclude="true"]').forEach((element) => element.remove());
+      clone.setAttribute('xmlns', 'http://www.w3.org/1999/xhtml');
+      clone.style.width = `${originalWidth}px`;
+      clone.style.height = `${originalHeight}px`;
+      clone.style.margin = '0';
+      clone.style.background = '#ffffff';
+
+      const serializedNode = new XMLSerializer().serializeToString(clone);
+      const svgStr = `
+        <svg xmlns="http://www.w3.org/2000/svg" width="${originalWidth}" height="${originalHeight}">
+          <foreignObject width="100%" height="100%">
+            ${serializedNode}
+          </foreignObject>
+        </svg>
+      `;
+      const image = new Image();
+      const scale = Math.max(2, Math.min(3, window.devicePixelRatio || 2));
+      const canvas = document.createElement('canvas');
+      canvas.width = Math.ceil(copyWidth * scale);
+      canvas.height = Math.ceil(copyHeight * scale);
+      const context = canvas.getContext('2d');
+      context.scale(scale, scale);
+      context.fillStyle = '#ffffff';
+      context.fillRect(0, 0, copyWidth, copyHeight);
+      
+      // Desplazar el lienzo para recortar el espacio en blanco
+      context.translate(-leftOffset + padding, -topOffset + padding);
+
+      await new Promise((resolve, reject) => {
+        image.onload = () => {
+          context.drawImage(image, 0, 0, originalWidth, originalHeight);
+          canvas.toBlob(async (blob) => {
+            if (!blob) {
+              reject(new Error('No fue posible generar la imagen'));
+              return;
+            }
+            try {
+              await navigator.clipboard.write([
+                new window.ClipboardItem({ 'image/png': blob })
+              ]);
+              resolve();
+            } catch (error) {
+              reject(error);
+            }
+          }, 'image/png');
+        };
+        image.onerror = () => reject(new Error('No fue posible preparar la imagen'));
+        image.src = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svgStr)}`;
+      });
+
+      enqueueSnackbar('Grafico copiado al portapapeles', { variant: 'success' });
+    } catch (error) {
+      enqueueSnackbar('No se pudo copiar el grafico como imagen', { variant: 'error' });
+    } finally {
+      setCopyingComplianceChart(false);
     }
   }, [enqueueSnackbar]);
 
@@ -1425,6 +1834,10 @@ function Autoevaluacion() {
       cumplimiento: label,
       color: cumplimientoColor(label)
     };
+  }).sort((a, b) => {
+    const aNum = Number(String(a.caracteristica || '').match(/C\s*([0-9]+)/i)?.[1] || 0);
+    const bNum = Number(String(b.caracteristica || '').match(/C\s*([0-9]+)/i)?.[1] || 0);
+    return aNum - bNum;
   });
 
   const chartFactores = scopedFactores.map((item) => ({
@@ -1433,6 +1846,41 @@ function Autoevaluacion() {
     calificacion: Number(item.calificacion || 0),
     cumplimiento: item.cumplimiento?.label || 'SIN CALIFICAR'
   }));
+
+  const complianceOrder = [
+    'SE CUMPLE PLENAMENTE',
+    'SE CUMPLE EN ALTO GRADO',
+    'SE CUMPLE ACEPTABLEMENTE',
+    'SE CUMPLE INSATISFACTORIAMENTE',
+    'NO SE CUMPLE'
+  ];
+
+  let chartCumplimientoData = complianceOrder
+    .map((name) => {
+      const item = cumplimiento.find((el) => el.name === name) || { name, total: 0 };
+      return {
+        name: item.name,
+        total: item.total
+      };
+    })
+    .filter((d) => d.total > 0);
+
+  if (chartCumplimientoData.length === 0) {
+    chartCumplimientoData = complianceOrder.map((name) => ({ name, total: 0 }));
+  }
+
+  const maxComplianceTotal = Math.max(...chartCumplimientoData.map((d) => d.total), 1);
+
+  const centeredChartData = chartCumplimientoData.map((item) => {
+    const paddingVal = (maxComplianceTotal - item.total) / 2;
+    return {
+      name: item.name,
+      padding: paddingVal,
+      total: item.total,
+      color: cumplimientoColor(item.name)
+    };
+  });
+
   const factorChartStats = {
     critical: (factorCaracteristicas || []).filter((item) => Number(item.calificacion || 0) < 3.5),
     best: (factorCaracteristicas || []).length ? [...factorCaracteristicas].sort((a, b) => Number(b.calificacion || 0) - Number(a.calificacion || 0))[0] : null,
@@ -1899,18 +2347,18 @@ function Autoevaluacion() {
               </MuiTooltip>
               <Box sx={{ textAlign: 'center', mb: 1 }}>
                 <Typography sx={{ fontWeight: 950, color: '#0f172a', fontSize: '1rem', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
-                  Valoración General
+                  Resultado General de la Autoevaluación
                 </Typography>
               </Box>
               <Box sx={{ textAlign: 'center' }}>
-                <Box sx={{ display: 'inline-block', textAlign: 'center', bgcolor: '#eff6ff', border: '1.5px solid #bfdbfe', borderRadius: 3, px: 3, py: 1.2, boxShadow: '0 1px 8px 0 rgba(30,64,175,0.09)' }}>
-                  <Typography sx={{ fontSize: '0.56rem', color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.12em', fontWeight: 700, display: 'block', lineHeight: 1.5 }}>
+                <Box sx={{ display: 'inline-block', textAlign: 'center', px: 3, py: 0.5 }}>
+                  <Typography sx={{ fontSize: '0.75rem', color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.12em', fontWeight: 700, display: 'block', lineHeight: 1.5 }}>
                     Nota general
                   </Typography>
                   <Typography sx={{ fontWeight: 950, color: '#1f4e95', fontSize: '1.9rem', lineHeight: 1.1 }}>
                     {formatScore(resumen.promedioGeneral)}
                   </Typography>
-                  <Typography sx={{ fontSize: '0.68rem', fontWeight: 800, color: scoreTone(resumen.cumplimientoGeneral), display: 'block', lineHeight: 1.5 }}>
+                  <Typography sx={{ fontSize: '0.75rem', fontWeight: 800, color: scoreTone(resumen.cumplimientoGeneral), display: 'block', lineHeight: 1.5 }}>
                     {resumen.cumplimientoGeneral?.label}
                   </Typography>
                 </Box>
@@ -1934,33 +2382,52 @@ function Autoevaluacion() {
         </Box>
 
         <Box sx={{ minWidth: 0, width: '100%' }}>
-          <Paper elevation={0} sx={{ p: 2.4, border: '1px solid #e2e8f0', borderRadius: 3, height: { xs: 'auto', lg: 520 }, width: '100%', boxSizing: 'border-box' }}>
-            <Typography sx={{ fontWeight: 950, color: '#0f172a', mb: 1 }}>Balance de cumplimiento</Typography>
-            <ResponsiveContainer width="100%" height={330}>
-              <PieChart>
-                <Pie
-                  data={cumplimiento}
-                  dataKey="total"
-                  nameKey="name"
-                  innerRadius={56}
-                  outerRadius={92}
-                  paddingAngle={2}
-                  labelLine={false}
-                  label={({ percent, total }) => total ? `${total} (${(percent * 100).toFixed(0)}%)` : ''}
-                >
-                  {cumplimiento.map((entry) => <Cell key={entry.name} fill={cumplimientoChartColor(entry.name)} />)}
-                </Pie>
-                <Tooltip formatter={(value) => [value, 'Aspectos']} />
-              </PieChart>
+          <Paper ref={complianceChartCardRef} elevation={0} sx={{ p: 2.4, border: '1px solid #e2e8f0', borderRadius: 3, height: { xs: 510, lg: 570 }, width: '100%', boxSizing: 'border-box', bgcolor: 'white' }}>
+            <Box sx={{ mb: 2, position: 'relative' }}>
+              <MuiTooltip title="Copiar gráfico" placement="top">
+                <span data-copy-exclude="true" style={{ position: 'absolute', right: 0, top: 0 }}>
+                  <IconButton
+                    size="small"
+                    onClick={copyComplianceChart}
+                    disabled={copyingComplianceChart}
+                    sx={{ color: '#94a3b8', '&:hover': { color: '#1f4e95' } }}
+                  >
+                    <ContentCopyIcon sx={{ fontSize: 16 }} />
+                  </IconButton>
+                </span>
+              </MuiTooltip>
+              <Box sx={{ textAlign: 'center', mb: 1 }}>
+                <Typography sx={{ fontWeight: 950, color: '#0f172a', fontSize: '1rem', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                  Grado de cumplimiento por aspectos
+                </Typography>
+              </Box>
+            </Box>
+            <ResponsiveContainer width="100%" height={410}>
+              <BarChart layout="vertical" data={centeredChartData} margin={{ top: 12, right: 38, left: 10, bottom: 22 }}>
+                <XAxis type="number" hide />
+                <YAxis
+                  type="category"
+                  dataKey="name"
+                  width={220}
+                  tickLine={false}
+                  axisLine={{ stroke: '#cbd5e1', strokeWidth: 1 }}
+                  tick={renderCustomComplianceTick}
+                />
+                <Bar dataKey="padding" stackId="a" fill="transparent" />
+                <Bar dataKey="total" stackId="a">
+                  {centeredChartData.map((entry, index) => (
+                    <Cell key={`cell-${index}`} fill={entry.color} />
+                  ))}
+                  <LabelList
+                    dataKey="total"
+                    position="center"
+                    fill="#ffffff"
+                    style={{ fontWeight: 950, fontSize: 12 }}
+                    formatter={(value) => value > 0 ? value : ''}
+                  />
+                </Bar>
+              </BarChart>
             </ResponsiveContainer>
-            <Stack spacing={0.7}>
-              {cumplimiento.map((item) => (
-                <Stack key={item.name} direction="row" justifyContent="space-between" alignItems="center">
-                  <Typography variant="caption" sx={{ color: '#475569', fontWeight: 800 }}>{item.name}</Typography>
-                  <Chip size="small" label={item.total} sx={{ fontWeight: 900 }} />
-                </Stack>
-              ))}
-            </Stack>
           </Paper>
         </Box>
       </Box>
@@ -2025,8 +2492,8 @@ function Autoevaluacion() {
               gridTemplateColumns: {
                 xs: 'repeat(3, minmax(0, 1fr))',
                 sm: 'repeat(4, minmax(0, 1fr))',
-                md: 'repeat(7, minmax(0, 1fr))',
-                xl: 'repeat(13, minmax(0, 1fr))'
+                md: 'repeat(6, minmax(0, 1fr))',
+                lg: 'repeat(12, minmax(0, 1fr))'
               },
               gap: 0.9,
               width: '100%'
@@ -2251,22 +2718,19 @@ function Autoevaluacion() {
                       </MuiTooltip>
                     </Stack>
                     <Box sx={{ textAlign: 'center', mb: 1 }}>
-                      <Typography sx={{ fontWeight: 950, color: '#0f172a', fontSize: '1rem', letterSpacing: '-0.01em' }}>
-                        Valoración por característica
-                      </Typography>
-                      <Typography variant="caption" sx={{ color: '#64748b', fontWeight: 600, display: 'block' }}>
+                      <Typography sx={{ color: '#1e293b', fontWeight: 800, fontSize: '1.15rem', display: 'block', mt: 0.5, letterSpacing: '-0.02em' }}>
                         {shortFactorLabel(selectedFactorData?.factor)}. {selectedFactorData?.nombre}
                       </Typography>
                     </Box>
                     <Box sx={{ textAlign: 'center' }}>
-                      <Box sx={{ display: 'inline-block', textAlign: 'center', bgcolor: '#eff6ff', border: '1.5px solid #bfdbfe', borderRadius: 3, px: 3, py: 1.2, boxShadow: '0 1px 8px 0 rgba(30,64,175,0.09)' }}>
-                        <Typography sx={{ fontSize: '0.56rem', color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.12em', fontWeight: 700, display: 'block', lineHeight: 1.5 }}>
+                      <Box sx={{ display: 'inline-block', textAlign: 'center', px: 3, py: 0.5 }}>
+                        <Typography sx={{ fontSize: '0.75rem', color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.12em', fontWeight: 700, display: 'block', lineHeight: 1.5 }}>
                           Promedio factor
                         </Typography>
                         <Typography sx={{ fontWeight: 950, color: '#1f4e95', fontSize: '1.9rem', lineHeight: 1.1 }}>
                           {formatScore(selectedFactorData?.calificacion)}
                         </Typography>
-                        <Typography sx={{ fontSize: '0.68rem', fontWeight: 800, color: cumplimientoColor(selectedFactorData?.cumplimiento?.label), display: 'block', lineHeight: 1.5 }}>
+                        <Typography sx={{ fontSize: '0.75rem', fontWeight: 800, color: cumplimientoColor(selectedFactorData?.cumplimiento?.label), display: 'block', lineHeight: 1.5 }}>
                           {selectedFactorData?.cumplimiento?.label}
                         </Typography>
                       </Box>
