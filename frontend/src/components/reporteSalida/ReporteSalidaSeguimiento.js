@@ -17,6 +17,7 @@ import {
   TableHead,
   TableRow,
   TextField,
+  Tooltip,
   Typography
 } from '@mui/material';
 import ArrowBackRoundedIcon from '@mui/icons-material/ArrowBackRounded';
@@ -326,7 +327,25 @@ function ReporteSalidaSeguimiento({ initialAccess = null, onBack }) {
                             <Typography sx={{ color: '#64748b', fontSize: 12 }}>{row.jefe?.email}</Typography>
                           </TableCell>
                           <TableCell>{formatDateTime(row.created_at)}</TableCell>
-                          <TableCell><Chip size="small" label={STATUS_LABELS[row.estado] || row.estado} sx={{ bgcolor: statusSx.bg, color: statusSx.color, fontWeight: 900 }} /></TableCell>
+                          <TableCell>
+                            <Stack spacing={0.5} alignItems="flex-start">
+                              <Chip size="small" label={STATUS_LABELS[row.estado] || row.estado} sx={{ bgcolor: statusSx.bg, color: statusSx.color, fontWeight: 900 }} />
+                              {(() => {
+                                const rejectionTrace = Array.isArray(row.trazabilidad)
+                                  ? row.trazabilidad.find(t => ['rechazada_jefe', 'rechazada_gestion_humana'].includes(t.event))
+                                  : null;
+                                const justificacion = rejectionTrace?.detail?.justificacion;
+                                if (!justificacion) return null;
+                                return (
+                                  <Tooltip title={justificacion} arrow>
+                                    <Typography sx={{ color: '#ef4444', fontSize: 11, cursor: 'help', textDecoration: 'underline dotted', maxWidth: 140, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                      Motivo: {justificacion}
+                                    </Typography>
+                                  </Tooltip>
+                                );
+                              })()}
+                            </Stack>
+                          </TableCell>
                           <TableCell>{formatElapsed(jefeMinutes)}</TableCell>
                           <TableCell>{formatElapsed(ghMinutes)}</TableCell>
                           <TableCell>

@@ -2,6 +2,8 @@ const express = require('express');
 const router = express.Router();
 const {
   aprobarDesdeCorreo,
+  mostrarFormularioRechazo,
+  procesarRechazo,
   actualizarReposicion,
   getCatalogoLaboral,
   getFeatureConfig,
@@ -17,6 +19,8 @@ const { publicLimiter } = require('../middlewares/security');
 const { ROLES } = require('../constants/roles');
 
 router.get('/aprobar/:token', publicLimiter, aprobarDesdeCorreo);
+router.get('/rechazar/:token', publicLimiter, mostrarFormularioRechazo);
+router.post('/rechazar/:token', publicLimiter, procesarRechazo);
 router.get('/config', auth, getFeatureConfig);
 router.patch('/config', auth, updateFeatureConfig);
 router.get('/catalogo-laboral', auth, getCatalogoLaboral);

@@ -843,7 +843,6 @@ const serializeSolicitud = (solicitud) => {
     jefe: row.jefe_snapshot
   };
 };
-
 const buildReporteSalidaAttachments = async (solicitud) => {
   const docx = await ensureReporteSalidaDocx(solicitud);
   const pdf = await ensureReporteSalidaPdf(solicitud, docx);
@@ -854,6 +853,7 @@ const sendJefeApprovalEmail = async (solicitud, token, attachments) => {
   const jefe = solicitud.jefe_snapshot || {};
   const solicitante = solicitud.solicitante_snapshot || {};
   const approveUrl = `${publicBackendUrl.replace(/\/$/, '')}/api/reporte-salida/aprobar/${encodeURIComponent(token)}`;
+  const rejectUrl = `${publicBackendUrl.replace(/\/$/, '')}/api/reporte-salida/rechazar/${encodeURIComponent(token)}`;
   const subject = `REPORTE DE SALIDA ${solicitud.consecutivo} | Aprobacion jefe inmediato`;
   const html = renderInstitutionalTemplate({
     title: 'Solicitud de aprobacion de reporte de salida',
@@ -861,16 +861,17 @@ const sendJefeApprovalEmail = async (solicitud, token, attachments) => {
     bodyHtml: `
       <p><strong>Solicitud:</strong> ${escapeHtml(solicitud.consecutivo)}</p>
       <p><strong>Tiempo solicitado:</strong> ${escapeHtml(formatMinutes(solicitud.tiempo_solicitado_minutos))}</p>
-      <div style="text-align:center;margin:20px 0;">
+      <div style="text-align:center;margin:20px 0;display:flex;justify-content:center;gap:12px;">
         <a href="${approveUrl}" style="display:inline-block;background:#0b3a6f;color:#fff;padding:12px 24px;border-radius:8px;text-decoration:none;font-weight:700;">Aprobar salida</a>
+        <a href="${rejectUrl}" style="display:inline-block;background:#b91c1c;color:#fff;padding:12px 24px;border-radius:8px;text-decoration:none;font-weight:700;">No aprobar</a>
       </div>
-      <p>Si no aprueba la salida, no realice ninguna accion desde este correo.</p>
+      <p>Si decide no aprobar la solicitud, haga clic en el botón "No aprobar" para ingresar el motivo de su decisión.</p>
     `
   });
   return sendInstitutionalEmail({
     to: jefe.email,
     subject,
-    text: `Solicitud ${solicitud.consecutivo}. Para aprobar ingrese a ${approveUrl}. Si no aprueba, no realice ninguna accion.`,
+    text: `Solicitud ${solicitud.consecutivo}. Para aprobar ingrese a ${approveUrl}. Para rechazar ingrese a ${rejectUrl}.`,
     html,
     attachments
   });
@@ -879,6 +880,7 @@ const sendJefeApprovalEmail = async (solicitud, token, attachments) => {
 const sendGestionHumanaApprovalEmail = async (solicitud, token, attachments) => {
   const recipients = getReporteSalidaRecipients();
   const approveUrl = `${publicBackendUrl.replace(/\/$/, '')}/api/reporte-salida/aprobar/${encodeURIComponent(token)}`;
+  const rejectUrl = `${publicBackendUrl.replace(/\/$/, '')}/api/reporte-salida/rechazar/${encodeURIComponent(token)}`;
   const subject = `REPORTE DE SALIDA ${solicitud.consecutivo} | Aprobacion Gestion Humana`;
   const html = renderInstitutionalTemplate({
     title: 'Aprobacion pendiente de Gestion Humana',
@@ -886,291 +888,331 @@ const sendGestionHumanaApprovalEmail = async (solicitud, token, attachments) => 
     bodyHtml: `
       <p><strong>Colaborador:</strong> ${escapeHtml(solicitud.solicitante_snapshot?.nombre)}</p>
       <p><strong>Tiempo solicitado:</strong> ${escapeHtml(formatMinutes(solicitud.tiempo_solicitado_minutos))}</p>
-      <div style="text-align:center;margin:20px 0;">
+      <div style="text-align:center;margin:20px 0;display:flex;justify-content:center;gap:12px;">
         <a href="${approveUrl}" style="display:inline-block;background:#0b3a6f;color:#fff;padding:12px 24px;border-radius:8px;text-decoration:none;font-weight:700;">Aprobar Gestion Humana</a>
+        <a href="${rejectUrl}" style="display:inline-block;background:#b91c1c;color:#fff;padding:12px 24px;border-radius:8px;text-decoration:none;font-weight:700;">No aprobar</a>
       </div>
+      <p>Si decide no aprobar la solicitud, haga clic en el botón "No aprobar" para ingresar el motivo de su decisión.</p>
     `
   });
   return sendInstitutionalEmail({
     to: recipients.gestionHumana,
     subject,
-    text: `Solicitud ${solicitud.consecutivo}. Para aprobar Gestion Humana ingrese a ${approveUrl}.`,
+    text: `Solicitud ${solicitud.consecutivo}. Para aprobar Gestion Humana ingrese a ${approveUrl}. Para rechazar ingrese a ${rejectUrl}.`,
     html,
     attachments
   });
 };
 
-const sendFinalEmails = async (solicitud, attachments) => {
-  const recipients = getReporteSalidaRecipients();
-  const subject = `REPORTE DE SALIDA ${solicitud.consecutivo} | Solicitud aprobada`;
+const renderRejectionFormPage = ({ res, solicitud, token, stage }) => {
+  const consecutivo = solicitud?.consecutivo || '';
+  const solicitante = solicitud?.solicitante_snapshot?.nombre || '';
+  const safeConsecutivo = escapeHtml(consecutivo);
+  const safeSolicitante = escapeHtml(solicitante);
+  const safeActionUrl = escapeHtml(`${publicBackendUrl.replace(/\/$/, '')}/api/reporte-salida/rechazar/${encodeURIComponent(token)}`);
+  const stageLabel = stage === 'jefe' ? 'Jefe Inmediato' : 'Gestion Humana';
+
+  return res.type('html').send(`<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Rechazar Solicitud | SIAC UNICESMAG</title>
+  <style>
+    :root {
+      color-scheme: light;
+      font-family: Inter, "Segoe UI", Arial, sans-serif;
+      --ink: #0f172a;
+      --muted: #64748b;
+      --line: #dbe6f5;
+      --brand: #e11d48;
+      --navy: #0b1730;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      background:
+        radial-gradient(circle at 20% 0%, rgba(225, 29, 72, 0.1), transparent 32%),
+        linear-gradient(135deg, #fcf8f8 0%, #fff1f2 48%, #fcf8f8 100%);
+      color: var(--ink);
+      display: grid;
+      place-items: center;
+      padding: 28px;
+    }
+    .shell {
+      width: min(760px, 100%);
+      background: #fff;
+      border: 1px solid var(--line);
+      border-radius: 18px;
+      box-shadow: 0 24px 70px rgba(15, 23, 42, 0.16);
+      overflow: hidden;
+    }
+    .top {
+      padding: 22px 26px;
+      background: linear-gradient(90deg, #0b1730, #b91c1c);
+      color: #fff;
+      display: flex;
+      align-items: center;
+      gap: 14px;
+    }
+    .brandmark {
+      width: 46px;
+      height: 46px;
+      border-radius: 14px;
+      background: rgba(255, 255, 255, 0.13);
+      border: 1px solid rgba(255, 255, 255, 0.24);
+      display: grid;
+      place-items: center;
+      font-weight: 900;
+      letter-spacing: .08em;
+    }
+    .brand-title { font-weight: 900; font-size: 18px; line-height: 1.15; }
+    .brand-subtitle { margin-top: 3px; color: #fecdd3; font-size: 13px; }
+    .content { padding: 30px; }
+    .status {
+      display: flex;
+      gap: 18px;
+      align-items: flex-start;
+    }
+    .icon {
+      flex: 0 0 auto;
+      width: 58px;
+      height: 58px;
+      border-radius: 18px;
+      background: #fff1f2;
+      border: 1px solid #fecdd3;
+      color: #e11d48;
+      display: grid;
+      place-items: center;
+      font-size: 28px;
+      font-weight: 950;
+    }
+    h1 {
+      margin: 0;
+      font-size: clamp(24px, 4vw, 34px);
+      line-height: 1.08;
+      letter-spacing: 0;
+    }
+    .message {
+      margin: 10px 0 0;
+      color: #334155;
+      font-size: 16px;
+      line-height: 1.6;
+    }
+    .details {
+      margin-top: 22px;
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      overflow: hidden;
+      background: #fff8f8;
+    }
+    .detail {
+      padding: 16px;
+      border-right: 1px solid var(--line);
+      min-width: 0;
+    }
+    .detail:last-child { border-right: 0; }
+    .label {
+      color: var(--muted);
+      font-size: 11px;
+      text-transform: uppercase;
+      font-weight: 900;
+      letter-spacing: .06em;
+    }
+    .value {
+      margin-top: 7px;
+      font-weight: 850;
+      color: #0f172a;
+      overflow-wrap: anywhere;
+    }
+    .form-group {
+      margin-top: 26px;
+    }
+    label.field-label {
+      display: block;
+      font-weight: 900;
+      color: #334155;
+      font-size: 14px;
+      margin-bottom: 8px;
+      text-transform: uppercase;
+      letter-spacing: .03em;
+    }
+    textarea {
+      width: 100%;
+      height: 120px;
+      padding: 14px;
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      font-family: inherit;
+      font-size: 15px;
+      color: var(--ink);
+      background: #fcfcfc;
+      resize: vertical;
+      transition: border-color 0.2s, box-shadow 0.2s;
+    }
+    textarea:focus {
+      outline: 0;
+      border-color: #e11d48;
+      box-shadow: 0 0 0 3px rgba(225, 29, 72, 0.15);
+      background: #fff;
+    }
+    .actions {
+      margin-top: 26px;
+      display: flex;
+      gap: 12px;
+      flex-wrap: wrap;
+      justify-content: flex-end;
+    }
+    button {
+      border: 0;
+      border-radius: 12px;
+      padding: 12px 24px;
+      font-weight: 850;
+      font-size: 14px;
+      cursor: pointer;
+      font-family: inherit;
+      transition: transform 0.1s, opacity 0.2s;
+    }
+    button:active {
+      transform: scale(0.98);
+    }
+    .ghost {
+      background: #f1f5f9;
+      color: #475569;
+    }
+    .primary {
+      background: var(--brand);
+      color: #fff;
+      box-shadow: 0 10px 22px rgba(225, 29, 72, .24);
+    }
+    @media (max-width: 640px) {
+      body { padding: 14px; }
+      .top, .content { padding: 20px; }
+      .status { flex-direction: column; }
+      .details { grid-template-columns: 1fr; }
+      .detail { border-right: 0; border-bottom: 1px solid var(--line); }
+      .detail:last-child { border-bottom: 0; }
+      .actions { justify-content: stretch; }
+      button { width: 100%; text-align: center; }
+    }
+  </style>
+</head>
+<body>
+  <main class="shell">
+    <section class="top">
+      <div class="brandmark">SIAC</div>
+      <div>
+        <div class="brand-title">UNICESMAG</div>
+        <div class="brand-subtitle">Reporte de salida | ${stageLabel}</div>
+      </div>
+    </section>
+    <section class="content">
+      <div class="status">
+        <div class="icon">&#10007;</div>
+        <div>
+          <h1>No aprobar solicitud</h1>
+          <p class="message">Por favor ingrese la justificacion del rechazo. Este motivo sera enviado al colaborador.</p>
+        </div>
+      </div>
+      <div class="details">
+        <div class="detail"><div class="label">Solicitud</div><div class="value">${safeConsecutivo}</div></div>
+        <div class="detail"><div class="label">Colaborador</div><div class="value">${safeSolicitante || 'No disponible'}</div></div>
+        <div class="detail"><div class="label">Tiempo</div><div class="value">${escapeHtml(formatMinutes(solicitud.tiempo_solicitado_minutos))}</div></div>
+      </div>
+      <form method="POST" action="${safeActionUrl}">
+        <div class="form-group">
+          <label class="field-label" for="justificacion">Justificacion del rechazo *</label>
+          <textarea id="justificacion" name="justificacion" required placeholder="Escriba aqui los motivos detallados del rechazo..."></textarea>
+        </div>
+        <div class="actions">
+          <button class="ghost" type="button" onclick="window.close();">Cancelar</button>
+          <button type="submit" class="primary">Confirmar rechazo</button>
+        </div>
+      </form>
+    </section>
+  </main>
+</body>
+</html>`);
+};
+
+const sendCollaboratorRejectionEmail = async ({ solicitud, rejectedBy, justificacion }) => {
+  const solicitante = solicitud.solicitante_snapshot || {};
+  const subject = `REPORTE DE SALIDA ${solicitud.consecutivo} | Solicitud no aprobada`;
+  const html = renderInstitutionalTemplate({
+    title: 'Reporte de salida no aprobado',
+    introHtml: `<p>Cordial saludo, <strong>${escapeHtml(solicitante.nombre)}</strong>.</p><p>Le informamos que su solicitud de reporte de salida fue rechazada por <strong>${escapeHtml(rejectedBy)}</strong>.</p>`,
+    bodyHtml: `
+      <p><strong>Solicitud:</strong> ${escapeHtml(solicitud.consecutivo)}</p>
+      <p><strong>Motivo / Justificacion del rechazo:</strong></p>
+      <div style="margin:15px 0;padding:12px 16px;background:#fef2f2;border-left:4px solid #e11d48;color:#1e293b;font-style:italic;border-radius:4px;">
+        ${escapeHtml(justificacion)}
+      </div>
+      <p>Consulte mas informacion en el modulo de Seguimiento a reportes del sistema SIAC.</p>
+    `
+  });
+  return sendInstitutionalEmail({
+    to: solicitante.email,
+    subject,
+    text: `Su solicitud ${solicitud.consecutivo} fue rechazada por ${rejectedBy}. Motivo: ${justificacion}`,
+    html
+  });
+};
+
+const sendGHRejectionEmails = async ({ solicitud, justificacion }) => {
+  const solicitante = solicitud.solicitante_snapshot || {};
+  const jefe = solicitud.jefe_snapshot || {};
+  
+  const userSubject = `REPORTE DE SALIDA ${solicitud.consecutivo} | Solicitud no aprobada por Gestion Humana`;
   const userHtml = renderInstitutionalTemplate({
-    title: 'Reporte de salida aprobado',
-    introHtml: `<p>Cordial saludo, <strong>${escapeHtml(solicitud.solicitante_snapshot?.nombre)}</strong>.</p>`,
-    bodyHtml: '<p>Gestion Humana aprobo su reporte de salida. Se adjunta el PDF digital FR-002 diligenciado y aprobado. Tambien se incluye el Word oficial diligenciado como soporte editable.</p>'
+    title: 'Reporte de salida no aprobado por Gestion Humana',
+    introHtml: `<p>Cordial saludo, <strong>${escapeHtml(solicitante.nombre)}</strong>.</p><p>Le informamos que su solicitud de reporte de salida fue rechazada por <strong>Gestion Humana</strong>.</p>`,
+    bodyHtml: `
+      <p><strong>Solicitud:</strong> ${escapeHtml(solicitud.consecutivo)}</p>
+      <p><strong>Motivo / Justificacion del rechazo:</strong></p>
+      <div style="margin:15px 0;padding:12px 16px;background:#fef2f2;border-left:4px solid #e11d48;color:#1e293b;font-style:italic;border-radius:4px;">
+        ${escapeHtml(justificacion)}
+      </div>
+      <p>Consulte mas informacion en el modulo de Seguimiento a reportes del sistema SIAC.</p>
+    `
+  });
+
+  const bossSubject = `REPORTE DE SALIDA ${solicitud.consecutivo} | Solicitud no aprobada por Gestion Humana`;
+  const bossHtml = renderInstitutionalTemplate({
+    title: 'Notificacion de rechazo de reporte de salida',
+    introHtml: `<p>Cordial saludo, <strong>${escapeHtml(jefe.nombre)}</strong>.</p><p>Le informamos que la solicitud de reporte de salida de su colaborador <strong>${escapeHtml(solicitante.nombre)}</strong> fue rechazada por <strong>Gestion Humana</strong>.</p>`,
+    bodyHtml: `
+      <p><strong>Solicitud:</strong> ${escapeHtml(solicitud.consecutivo)}</p>
+      <p><strong>Motivo / Justificacion del rechazo:</strong></p>
+      <div style="margin:15px 0;padding:12px 16px;background:#fef2f2;border-left:4px solid #e11d48;color:#1e293b;font-style:italic;border-radius:4px;">
+        ${escapeHtml(justificacion)}
+      </div>
+    `
   });
 
   const userResult = await sendInstitutionalEmail({
-    to: solicitud.solicitante_snapshot.email,
-    subject,
-    text: `Su reporte de salida ${solicitud.consecutivo} fue aprobado por Gestion Humana. Se adjunta PDF digital FR-002 y Word diligenciado.`,
-    html: userHtml,
-    attachments
+    to: solicitante.email,
+    subject: userSubject,
+    text: `Su solicitud ${solicitud.consecutivo} fue rechazada por Gestion Humana. Motivo: ${justificacion}`,
+    html: userHtml
   });
-  const sstResult = await sendInstitutionalEmail({
-    to: recipients.sst,
-    subject,
-    text: `Su reporte de salida ${solicitud.consecutivo} fue aprobado por Gestion Humana. Se adjunta PDF digital FR-002 y Word diligenciado.`,
-    html: userHtml,
-    attachments
-  });
-  return { userResult, sstResult };
-};
 
-const searchJefes = async (req, res) => {
-  if (!(await getReporteSalidaFeatureState())) return featureDisabled(res);
-  try {
-    const search = sanitizeText(req.query.search, 80);
-    const userRows = await getUserProfileLaboralRows();
-    if (userRows.length) {
-      const bosses = mapUserProfileBosses(userRows, search)
-        .filter((boss) => !boss.userId || Number(boss.userId) !== Number(req.user?.id));
-      return res.json({ success: true, data: bosses });
-    }
-
-    const { rows } = await getLatestAdministrativos();
-    const bosses = (await mapAdministrativeBosses(rows, search))
-      .filter((boss) => !boss.userId || Number(boss.userId) !== Number(req.user?.id));
-    res.json({ success: true, data: bosses });
-  } catch (error) {
-    res.status(500).json({ success: false, message: 'No se pudo buscar jefes inmediatos' });
+  let bossResult = { success: false };
+  if (jefe.email) {
+    bossResult = await sendInstitutionalEmail({
+      to: jefe.email,
+      subject: bossSubject,
+      text: `La solicitud ${solicitud.consecutivo} del colaborador ${solicitante.nombre} fue rechazada por Gestion Humana. Motivo: ${justificacion}`,
+      html: bossHtml
+    });
   }
+
+  return { userResult, bossResult };
 };
 
-const listarDependencias = async (req, res) => {
-  if (!(await getReporteSalidaFeatureState())) return featureDisabled(res);
-  try {
-    const userRows = await getUserProfileLaboralRows();
-    const userDependencias = uniqueSortedValues(userRows.map((row) => cleanDependenciaLabel(row.dependencia)));
-    if (userRows.length) {
-      return res.json({ success: true, data: userDependencias });
-    }
-
-    const { rows: rhRows } = await getLatestAdministrativos();
-    const rhDependencias = uniqueSortedValues(rhRows.map((row) => cleanDependenciaLabel(row.dependencia)));
-    if (rhDependencias.length) {
-      return res.json({ success: true, data: rhDependencias });
-    }
-
-    const planRows = await PlanAccion.findAll({
-      where: {
-        dependencia: { [Op.ne]: null },
-        deleted_at: null
-      },
-      attributes: ['dependencia'],
-      group: ['dependencia'],
-      order: [['dependencia', 'ASC']],
-      raw: true
-    });
-
-    const seen = new Set();
-    const dependencias = planRows
-      .map((row) => row.dependencia)
-      .filter(isDependenciaOption)
-      .map((dependencia) => cleanDependenciaLabel(dependencia))
-      .filter(Boolean)
-      .filter((dep) => {
-        const key = dep.toLowerCase();
-        if (seen.has(key)) return false;
-        seen.add(key);
-        return true;
-      })
-      .sort((a, b) => a.localeCompare(b, 'es'));
-
-    res.json({ success: true, data: dependencias });
-  } catch (error) {
-    res.status(500).json({ success: false, message: 'No se pudo consultar el listado de dependencias' });
-  }
-};
-
-const getCatalogoLaboral = async (req, res) => {
-  if (!(await getReporteSalidaFeatureState())) return featureDisabled(res);
-  try {
-    const userRows = await getUserProfileLaboralRows();
-    if (userRows.length) {
-      const current = findCurrentUserProfileRow(userRows, req.user);
-      const relaciones = userRows.map(serializeUserLaboralRow).filter((row) => row.dependencia || row.cargo || row.jefe_inmediato);
-      const jefes = mapUserProfileBosses(userRows, req.query.search || '')
-        .filter((boss) => !boss.userId || Number(boss.userId) !== Number(req.user?.id));
-
-      return res.json({
-        success: true,
-        data: {
-          anio: null,
-          source: 'users',
-          dependencias: uniqueSortedValues(relaciones.map((row) => row.dependencia)),
-          cargos: uniqueSortedValues(relaciones.map((row) => row.cargo)),
-          jefes,
-          relaciones,
-          currentEmployee: current ? {
-            nombre: sanitizeText(current.nombre, 220),
-            documento: sanitizeText(current.username, 80),
-            correo: sanitizeText(current.email, 220),
-            dependencia: cleanDependenciaLabel(current.dependencia),
-            cargo: sanitizeText(current.cargo, 220),
-            jefe_inmediato: sanitizeText(current.jefe_inmediato, 220),
-            source: 'users'
-          } : null,
-          periodo: '',
-          periodoLabel: 'Base de usuarios'
-        }
-      });
-    }
-
-    const { latestYear, latestPeriod, rows } = await getLatestAdministrativos();
-    const current = findCurrentAdministrativeRow(rows, req.user);
-    const jefes = (await mapAdministrativeBosses(rows, req.query.search || ''))
-      .filter((boss) => !boss.userId || Number(boss.userId) !== Number(req.user?.id));
-
-    res.json({
-      success: true,
-      data: {
-        anio: latestYear,
-        source: 'recurso_humano_administrativos',
-        dependencias: uniqueSortedValues(rows.map((row) => cleanDependenciaLabel(row.dependencia))),
-        cargos: uniqueSortedValues(rows.map((row) => row.cargo_especifico)),
-        relaciones: rows.map(serializeLaboralRow).filter((row) => row.dependencia || row.cargo),
-        currentEmployee: current ? {
-          nombre: sanitizeText(current.nombre_empleado, 220),
-          documento: sanitizeText(current.numero_cedula, 80),
-          dependencia: cleanDependenciaLabel(current.dependencia),
-          cargo: sanitizeText(current.cargo_especifico, 220),
-          jefe_inmediato: '',
-          anio: current.anio,
-          periodo: sanitizeText(current.periodo, 40)
-        } : null,
-        periodo: latestPeriod,
-        periodoLabel: [latestYear, latestPeriod].filter(Boolean).join(' '),
-        jefes
-      }
-    });
-  } catch (error) {
-    console.error('Error consultando catalogo laboral reporte salida:', error);
-    res.status(500).json({ success: false, message: 'No se pudo consultar el catalogo laboral' });
-  }
-};
-
-const radicarSolicitud = async (req, res) => {
-  if (!(await getReporteSalidaFeatureState())) return featureDisabled(res);
-  try {
-    const errorMessage = validateRadicacionPayload(req.body, req.user);
-    if (errorMessage) return res.status(400).json({ success: false, message: errorMessage });
-
-    const documento = await Documento.findByPk(req.body.documentoId);
-    if (!documento || !isReporteSalidaDocumento(documento)) {
-      return res.status(400).json({ success: false, message: 'El formulario solo esta disponible para THM-DP-FR-002 REPORTE DE SALIDA.' });
-    }
-
-    const jefePayload = req.body.jefeInmediato || {};
-    const jefe = req.body.jefeInmediatoUserId
-      ? await User.findOne({ where: { id: req.body.jefeInmediatoUserId, estado: 'activo' } })
-      : null;
-    const shouldUseAdministrativeBoss = !jefe || jefePayload?.source === 'recurso_humano_administrativos' || jefePayload?.cargo;
-    const jefeSnapshot = shouldUseAdministrativeBoss
-      ? buildAdministrativeBossSnapshot({
-        ...jefePayload,
-        userId: jefe?.id || jefePayload.userId,
-        email: jefePayload.email || jefe?.email || ''
-      })
-      : buildSnapshot(jefe);
-    if (!jefe && !jefeSnapshot.email) {
-      return res.status(400).json({ success: false, message: 'El jefe inmediato seleccionado desde Recurso Humano no tiene correo registrado.' });
-    }
-    if (jefe && Number(jefe.id) === Number(req.user.id)) {
-      return res.status(400).json({ success: false, message: 'El jefe inmediato debe ser un usuario diferente al solicitante.' });
-    }
-
-    const salida = req.body.salida || {};
-    const reposicion = req.body.reposicion || {};
-    const requestedMinutes = diffBusinessMinutes(salida.fecha, salida.fechaRegreso, salida.horaInicio, salida.horaFin);
-    const hasReposicionPlan = Boolean(reposicion.fecha || reposicion.fechaFin || reposicion.horaInicio || reposicion.horaFin);
-    const replacementMinutes = salida.tipo === 'diligencia_personal' && hasReposicionPlan
-      ? diffElapsedMinutes(reposicion.fecha, reposicion.fechaFin, reposicion.horaInicio, reposicion.horaFin)
-      : null;
-
-    const now = new Date();
-    const consecutivo = `RS-${now.getFullYear()}-${String(Date.now()).slice(-8)}`;
-    const token = encryptPayload({ purpose: 'reporte_salida_approve', stage: 'jefe', consecutivo }, 60 * 60 * 24 * 15);
-    const solicitud = await ReporteSalidaSolicitud.create({
-      consecutivo,
-      user_id: req.user.id,
-      documento_id: documento.id,
-      jefe_inmediato_user_id: jefe?.id || null,
-      solicitante_snapshot: buildSnapshot(req.user),
-      jefe_snapshot: jefeSnapshot,
-      datos_formulario: {
-        personal: {
-          nombre: sanitizeText(req.body.personal?.nombre || req.user.nombre),
-          documento: sanitizeText(req.body.personal?.documento || req.user.username),
-          correo: sanitizeText(req.user.email)
-        },
-        laboral: {
-          dependencia: cleanDependenciaLabel(req.body.laboral?.dependencia),
-          cargo: sanitizeText(req.body.laboral?.cargo)
-        },
-        salida: {
-          tipo: sanitizeText(salida.tipo, 60),
-          fecha: sanitizeText(salida.fecha, 20),
-          fechaRegreso: sanitizeText(salida.fechaRegreso || salida.fecha, 20),
-          horaInicio: sanitizeText(salida.horaInicio, 10),
-          horaFin: sanitizeText(salida.horaFin, 10),
-          motivo: sanitizeText(salida.motivo, 600)
-        },
-        reposicion: {
-          fecha: sanitizeText(reposicion.fecha, 20),
-          fechaFin: sanitizeText(reposicion.fechaFin || reposicion.fecha, 20),
-          horaInicio: sanitizeText(reposicion.horaInicio, 10),
-          horaFin: sanitizeText(reposicion.horaFin, 10),
-          observacion: sanitizeText(reposicion.observacion, 600)
-        },
-        parametrizacion_tiempo: {
-          fecha_calculo: now.toISOString(),
-          criterio_salida: 'horas adeudadas segun jornada laboral institucional',
-          criterio_reposicion: 'horas acumuladas por seguimiento, sin restriccion de dia',
-          jornada_salida: {
-            dias_laborales: 'lunes a viernes',
-            excluye: ['sabados', 'domingos', 'festivos_colombia'],
-            bloques: WORK_BLOCKS
-          }
-        }
-      },
-      tiempo_solicitado_minutos: requestedMinutes,
-      reposicion_aplica: salida.tipo === 'diligencia_personal',
-      reposicion_minutos: replacementMinutes,
-      reposicion_estado: salida.tipo === 'diligencia_personal' ? (replacementMinutes ? 'programada' : 'pendiente') : 'no_aplica',
-      aprobacion_jefe_token_hash: hashToken(token),
-      trazabilidad: [{ event: 'radicada', actor: buildSnapshot(req.user), at: now.toISOString() }]
-    });
-
-    const attachments = await buildReporteSalidaAttachments(solicitud);
-    await solicitud.update({ pdf_generado_at: new Date() });
-    const emailResult = await sendJefeApprovalEmail(solicitud, token, attachments);
-    await solicitud.update({
-      correo_jefe_enviado_at: emailResult.success ? new Date() : null,
-      trazabilidad: appendTrace(solicitud, emailResult.success ? 'correo_jefe_enviado' : 'correo_jefe_error', req.user, { error: emailResult.error || '' })
-    });
-
-    res.status(201).json({
-      success: true,
-      message: 'Solicitud radicada. Se envio correo al jefe inmediato para aprobacion.',
-      data: serializeSolicitud(solicitud)
-    });
-  } catch (error) {
-    console.error('Error radicando reporte de salida:', error);
-    res.status(500).json({ success: false, message: 'No se pudo radicar la solicitud' });
-  }
-};
-
-const aprobarDesdeCorreo = async (req, res) => {
+const mostrarFormularioRechazo = async (req, res) => {
   if (!(await getReporteSalidaFeatureState())) {
     return renderApprovalPage({
       res,
@@ -1189,7 +1231,7 @@ const aprobarDesdeCorreo = async (req, res) => {
         status: 403,
         tone: 'error',
         title: 'Enlace no autorizado',
-        message: 'El enlace de aprobacion no corresponde a una solicitud valida.',
+        message: 'El enlace de rechazo no corresponde a una solicitud valida.',
         nextStep: 'Verifique que esta usando el boton original recibido en el correo institucional.'
       });
     }
@@ -1201,7 +1243,7 @@ const aprobarDesdeCorreo = async (req, res) => {
         tone: 'warning',
         title: 'Solicitud no encontrada',
         message: 'No se encontro una solicitud asociada a este enlace.',
-        nextStep: 'Puede que la solicitud haya sido eliminada o que el enlace no corresponda al sistema actual.'
+        nextStep: 'Puede que la solicitud haya sido eliminada.'
       });
     }
 
@@ -1212,9 +1254,9 @@ const aprobarDesdeCorreo = async (req, res) => {
           res,
           tone: 'info',
           title: 'Solicitud ya procesada',
-          message: 'Esta aprobacion ya fue registrada previamente.',
+          message: 'Esta solicitud ya no se encuentra pendiente de aprobacion del jefe.',
           solicitud,
-          nextStep: 'No es necesario realizar ninguna accion adicional desde este enlace.'
+          nextStep: 'No es necesario realizar ninguna accion adicional.'
         });
       }
       if (solicitud.aprobacion_jefe_token_hash !== tokenHash) {
@@ -1223,62 +1265,20 @@ const aprobarDesdeCorreo = async (req, res) => {
           status: 403,
           tone: 'error',
           title: 'Enlace no autorizado',
-          message: 'El enlace no coincide con el token de aprobacion esperado para esta solicitud.',
+          message: 'El enlace no coincide con el token esperado para esta solicitud.',
           solicitud,
-          nextStep: 'Por seguridad, la aprobacion no fue registrada.'
+          nextStep: 'Por seguridad, el rechazo no fue registrado.'
         });
       }
-      const ghToken = encryptPayload({ purpose: 'reporte_salida_approve', stage: 'gestion_humana', consecutivo: solicitud.consecutivo }, 60 * 60 * 24 * 15);
-      const [updatedCount] = await ReporteSalidaSolicitud.update({
-        estado: 'pendiente_aprobacion_gestion_humana',
-        jefe_aprobado_at: new Date(),
-        aprobacion_jefe_token_hash: null,
-        aprobacion_gh_token_hash: hashToken(ghToken),
-        trazabilidad: appendTrace(solicitud, 'aprobada_jefe', null)
-      }, {
-        where: {
-          id: solicitud.id,
-          estado: 'pendiente_aprobacion_jefe',
-          aprobacion_jefe_token_hash: tokenHash
-        }
-      });
-      if (!updatedCount) {
-        await solicitud.reload();
-        return renderApprovalPage({
-          res,
-          tone: 'info',
-          title: 'Solicitud ya procesada',
-          message: 'Esta aprobacion ya fue registrada previamente.',
-          solicitud,
-          nextStep: 'El boton de aprobacion ya fue utilizado y quedo inhabilitado para nuevos registros.'
-        });
-      }
-      await solicitud.reload();
-      const attachments = await buildReporteSalidaAttachments(solicitud);
-      const emailResult = await sendGestionHumanaApprovalEmail(solicitud, ghToken, attachments);
-      await solicitud.update({
-        correo_gh_enviado_at: emailResult.success ? new Date() : null,
-        trazabilidad: appendTrace(solicitud, emailResult.success ? 'correo_gestion_humana_enviado' : 'correo_gestion_humana_error', null, { error: emailResult.error || '' })
-      });
-      return renderApprovalPage({
-        res,
-        tone: 'success',
-        title: 'Aprobacion registrada',
-        message: 'La solicitud fue enviada a Gestion Humana para revision y aprobacion.',
-        solicitud,
-        nextStep: 'Gestion Humana recibira el correo con el PDF diligenciado para continuar el flujo.'
-      });
-    }
-
-    if (payload.stage === 'gestion_humana') {
+    } else if (payload.stage === 'gestion_humana') {
       if (solicitud.estado !== 'pendiente_aprobacion_gestion_humana') {
         return renderApprovalPage({
           res,
           tone: 'info',
           title: 'Solicitud ya procesada',
-          message: 'Esta aprobacion ya fue registrada previamente.',
+          message: 'Esta solicitud ya no se encuentra pendiente de aprobacion de Gestion Humana.',
           solicitud,
-          nextStep: 'No es necesario realizar ninguna accion adicional desde este enlace.'
+          nextStep: 'No es necesario realizar ninguna accion adicional.'
         });
       }
       if (solicitud.aprobacion_gh_token_hash !== tokenHash) {
@@ -1287,17 +1287,177 @@ const aprobarDesdeCorreo = async (req, res) => {
           status: 403,
           tone: 'error',
           title: 'Enlace no autorizado',
-          message: 'El enlace no coincide con el token de aprobacion esperado para Gestion Humana.',
+          message: 'El enlace no coincide con el token esperado para Gestion Humana.',
           solicitud,
-          nextStep: 'Por seguridad, la aprobacion no fue registrada.'
+          nextStep: 'Por seguridad, el rechazo no fue registrado.'
         });
       }
+    } else {
+      return renderApprovalPage({
+        res,
+        status: 400,
+        tone: 'warning',
+        title: 'Etapa no valida',
+        message: 'El enlace no indica una etapa reconocida del flujo.',
+        solicitud,
+        nextStep: 'Use el boton original enviado desde el correo institucional.'
+      });
+    }
+
+    return renderRejectionFormPage({
+      res,
+      solicitud,
+      token: req.params.token,
+      stage: payload.stage
+    });
+  } catch (error) {
+    console.error('Error mostrando formulario de rechazo:', error);
+    return renderApprovalPage({
+      res,
+      status: 500,
+      tone: 'error',
+      title: 'Error de servidor',
+      message: 'Ocurrio un error al cargar el formulario de rechazo.',
+      nextStep: 'Intente nuevamente mas tarde.'
+    });
+  }
+};
+
+const procesarRechazo = async (req, res) => {
+  if (!(await getReporteSalidaFeatureState())) {
+    return renderApprovalPage({
+      res,
+      status: 403,
+      tone: 'warning',
+      title: 'Formulario no habilitado',
+      message: 'El flujo de reporte de salida aun no esta activo.',
+      nextStep: 'La solicitud no fue procesada.'
+    });
+  }
+  try {
+    const payload = decryptPayload(req.params.token);
+    if (payload?.purpose !== 'reporte_salida_approve' || !payload?.consecutivo || !payload?.stage) {
+      return renderApprovalPage({
+        res,
+        status: 403,
+        tone: 'error',
+        title: 'Enlace no autorizado',
+        message: 'El enlace de rechazo no corresponde a una solicitud valida.',
+        nextStep: 'Verifique que esta usando el boton original recibido en el correo institucional.'
+      });
+    }
+    const solicitud = await ReporteSalidaSolicitud.findOne({ where: { consecutivo: payload.consecutivo } });
+    if (!solicitud) {
+      return renderApprovalPage({
+        res,
+        status: 404,
+        tone: 'warning',
+        title: 'Solicitud no encontrada',
+        message: 'No se encontro una solicitud asociada a este enlace.',
+        nextStep: 'Puede que la solicitud haya sido eliminada.'
+      });
+    }
+
+    const tokenHash = hashToken(req.params.token);
+    const justificacion = sanitizeText(req.body.justificacion, 800) || 'Sin justificacion especificada.';
+
+    if (payload.stage === 'jefe') {
+      if (solicitud.estado !== 'pendiente_aprobacion_jefe') {
+        return renderApprovalPage({
+          res,
+          tone: 'info',
+          title: 'Solicitud ya procesada',
+          message: 'Esta solicitud ya no se encuentra pendiente de aprobacion del jefe.',
+          solicitud,
+          nextStep: 'No es necesario realizar ninguna accion adicional.'
+        });
+      }
+      if (solicitud.aprobacion_jefe_token_hash !== tokenHash) {
+        return renderApprovalPage({
+          res,
+          status: 403,
+          tone: 'error',
+          title: 'Enlace no autorizado',
+          message: 'El enlace no coincide con el token esperado para esta solicitud.',
+          solicitud,
+          nextStep: 'Por seguridad, el rechazo no fue registrado.'
+        });
+      }
+
       const [updatedCount] = await ReporteSalidaSolicitud.update({
-        estado: 'finalizada',
-        gestion_humana_aprobado_at: new Date(),
-        finalizado_at: new Date(),
+        estado: 'no_aprobada',
+        aprobacion_jefe_token_hash: null,
+        trazabilidad: appendTrace(solicitud, 'rechazada_jefe', null, {
+          actorName: solicitud.jefe_snapshot?.nombre,
+          actorEmail: solicitud.jefe_snapshot?.email,
+          justificacion
+        })
+      }, {
+        where: {
+          id: solicitud.id,
+          estado: 'pendiente_aprobacion_jefe',
+          aprobacion_jefe_token_hash: tokenHash
+        }
+      });
+
+      if (!updatedCount) {
+        await solicitud.reload();
+        return renderApprovalPage({
+          res,
+          tone: 'info',
+          title: 'Solicitud ya procesada',
+          message: 'Esta solicitud ya fue procesada previamente.',
+          solicitud,
+          nextStep: 'El boton de aprobacion/rechazo ya fue utilizado.'
+        });
+      }
+
+      await solicitud.reload();
+      await sendCollaboratorRejectionEmail({
+        solicitud,
+        rejectedBy: 'su jefe inmediato',
+        justificacion
+      });
+
+      return renderApprovalPage({
+        res,
+        tone: 'success',
+        title: 'Rechazo registrado',
+        message: 'La solicitud ha sido rechazada y se ha notificado al colaborador.',
+        solicitud,
+        nextStep: 'El colaborador recibira un correo institucional explicando el motivo del rechazo.'
+      });
+
+    } else if (payload.stage === 'gestion_humana') {
+      if (solicitud.estado !== 'pendiente_aprobacion_gestion_humana') {
+        return renderApprovalPage({
+          res,
+          tone: 'info',
+          title: 'Solicitud ya procesada',
+          message: 'Esta solicitud ya no se encuentra pendiente de aprobacion de Gestion Humana.',
+          solicitud,
+          nextStep: 'No es necesario realizar ninguna accion adicional.'
+        });
+      }
+      if (solicitud.aprobacion_gh_token_hash !== tokenHash) {
+        return renderApprovalPage({
+          res,
+          status: 403,
+          tone: 'error',
+          title: 'Enlace no autorizado',
+          message: 'El enlace no coincide con el token esperado para Gestion Humana.',
+          solicitud,
+          nextStep: 'Por seguridad, el rechazo no fue registrado.'
+        });
+      }
+
+      const [updatedCount] = await ReporteSalidaSolicitud.update({
+        estado: 'no_aprobada',
         aprobacion_gh_token_hash: null,
-        trazabilidad: appendTrace(solicitud, 'aprobada_gestion_humana', null)
+        trazabilidad: appendTrace(solicitud, 'rechazada_gestion_humana', null, {
+          actorName: 'Gestion Humana',
+          justificacion
+        })
       }, {
         where: {
           id: solicitud.id,
@@ -1305,56 +1465,44 @@ const aprobarDesdeCorreo = async (req, res) => {
           aprobacion_gh_token_hash: tokenHash
         }
       });
+
       if (!updatedCount) {
         await solicitud.reload();
         return renderApprovalPage({
           res,
           tone: 'info',
           title: 'Solicitud ya procesada',
-          message: 'Esta aprobacion ya fue registrada previamente.',
+          message: 'Esta solicitud ya fue procesada previamente.',
           solicitud,
-          nextStep: 'El boton de aprobacion ya fue utilizado y quedo inhabilitado para nuevos registros.'
+          nextStep: 'El boton de aprobacion/rechazo ya fue utilizado.'
         });
       }
+
       await solicitud.reload();
-      const attachments = await buildReporteSalidaAttachments(solicitud);
-      const results = await sendFinalEmails(solicitud, attachments);
-      await solicitud.update({
-        correo_usuario_enviado_at: results.userResult.success ? new Date() : null,
-        correo_sst_enviado_at: results.sstResult.success ? new Date() : null,
-        enviado_sst_at: results.sstResult.success ? new Date() : null,
-        trazabilidad: appendTrace(solicitud, 'notificacion_final_enviada', null, {
-          usuario: results.userResult.success,
-          sst: results.sstResult.success
-        })
+      await sendGHRejectionEmails({
+        solicitud,
+        justificacion
       });
+
       return renderApprovalPage({
         res,
         tone: 'success',
-        title: 'Aprobacion registrada',
-        message: 'Se notifico al usuario y se envio el PDF a Seguridad y Salud en el Trabajo.',
+        title: 'Rechazo registrado',
+        message: 'La solicitud ha sido rechazada por Gestion Humana.',
         solicitud,
-        nextStep: 'El flujo quedo finalizado y la trazabilidad permanece registrada en Seguimiento a reportes.'
+        nextStep: 'Se ha notificado al colaborador y a su jefe inmediato con el motivo correspondiente.'
       });
     }
 
-    return renderApprovalPage({
-      res,
-      status: 400,
-      tone: 'warning',
-      title: 'Etapa no valida',
-      message: 'El enlace no indica una etapa reconocida del flujo de aprobacion.',
-      solicitud,
-      nextStep: 'Use el boton original enviado desde el correo institucional.'
-    });
   } catch (error) {
+    console.error('Error procesando rechazo de reporte de salida:', error);
     return renderApprovalPage({
       res,
-      status: 403,
+      status: 500,
       tone: 'error',
-      title: 'Enlace vencido o invalido',
-      message: 'No fue posible validar el enlace de aprobacion.',
-      nextStep: 'Solicite un nuevo enlace si requiere procesar esta aprobacion.'
+      title: 'Error de servidor',
+      message: 'Ocurrio un error al registrar el rechazo de la solicitud.',
+      nextStep: 'Intente nuevamente mas tarde.'
     });
   }
 };
@@ -1517,6 +1665,8 @@ const updateFeatureConfig = async (req, res) => {
 
 module.exports = {
   aprobarDesdeCorreo,
+  mostrarFormularioRechazo,
+  procesarRechazo,
   actualizarReposicion,
   getCatalogoLaboral,
   getFeatureConfig,
