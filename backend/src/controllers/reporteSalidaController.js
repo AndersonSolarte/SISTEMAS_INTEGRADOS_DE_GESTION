@@ -843,6 +843,7 @@ const serializeSolicitud = (solicitud) => {
     jefe: row.jefe_snapshot
   };
 };
+
 const buildReporteSalidaAttachments = async (solicitud) => {
   const docx = await ensureReporteSalidaDocx(solicitud);
   const pdf = await ensureReporteSalidaPdf(solicitud, docx);
@@ -902,6 +903,621 @@ const sendGestionHumanaApprovalEmail = async (solicitud, token, attachments) => 
     html,
     attachments
   });
+};
+
+const sendFinalEmails = async (solicitud, attachments) => {
+  const recipients = getReporteSalidaRecipients();
+  const subject = `REPORTE DE SALIDA ${solicitud.consecutivo} | Solicitud aprobada`;
+  const userHtml = renderInstitutionalTemplate({
+    title: 'Reporte de salida aprobado',
+    introHtml: `<p>Cordial saludo, <strong>${escapeHtml(solicitud.solicitante_snapshot?.nombre)}</strong>.</p>`,
+    bodyHtml: '<p>Gestion Humana aprobo su reporte de salida. Se adjunta el PDF digital FR-002 diligenciado y aprobado. Tambien se incluye el Word oficial diligenciado como soporte editable.</p>'
+  });
+
+  const userResult = await sendInstitutionalEmail({
+    to: solicitud.solicitante_snapshot.email,
+    subject,
+    text: `Su reporte de salida ${solicitud.consecutivo} fue aprobado por Gestion Humana. Se adjunta PDF digital FR-002 y Word diligenciado.`,
+    html: userHtml,
+    attachments
+  });
+  const sstResult = await sendInstitutionalEmail({
+    to: recipients.sst,
+    subject,
+    text: `Su reporte de salida ${solicitud.consecutivo} fue aprobado por Gestion Humana. Se adjunta PDF digital FR-002 y Word diligenciado.`,
+    html: userHtml,
+    attachments
+  });
+  return { userResult, sstResult };
+};
+
+const searchJefes = async (req, res) => {
+  if (!(await getReporteSalidaFeatureState())) return featureDisabled(res);
+  try {
+    const search = sanitizeText(req.query.search, 80);
+    const userRows = await getUserProfileLaboralRows();
+    if (userRows.length) {
+      const bosses = mapUserProfileBosses(userRows, search)
+        .filter((boss) => !boss.userId || Number(boss.userId) !== Number(req.user?.id));
+      return res.json({ success: true, data: bosses });
+    }
+
+    const { rows } = await getLatestAdministrativos();
+    const bosses = (await mapAdministrativeBosses(rows, search))
+      .filter((boss) => !boss.userId || Number(boss.userId) !== Number(req.user?.id));
+    res.json({ success: true, data: bosses });
+  } catch (error) {
+    res.status(500).json({ success: false, message: 'No se pudo buscar jefes inmediatos' });
+  }
+};
+
+const listarDependencias = async (req, res) => {
+  if (!(await getReporteSalidaFeatureState())) return featureDisabled(res);
+  try {
+    const userRows = await getUserProfileLaboralRows();
+    const userDependencias = uniqueSortedValues(userRows.map((row) => cleanDependenciaLabel(row.dependencia)));
+    if (userRows.length) {
+      return res.json({ success: true, data: userDependencias });
+    }
+
+    const { rows: rhRows } = await getLatestAdministrativos();
+    const rhDependencias = uniqueSortedValues(rhRows.map((row) => cleanDependenciaLabel(row.dependencia)));
+    if (rhDependencias.length) {
+      return res.json({ success: true, data: rhDependencias });
+    }
+
+    const planRows = await PlanAccion.findAll({
+      where: {
+        dependencia: { [Op.ne]: null },
+        deleted_at: null
+      },
+      attributes: ['dependencia'],
+      group: ['dependencia'],
+      order: [['dependencia', 'ASC']],
+      raw: true
+    });
+
+    const seen = new Set();
+    const dependencias = planRows
+      .map((row) => row.dependencia)
+      .filter(isDependenciaOption)
+      .map((dependencia) => cleanDependenciaLabel(dependencia))
+      .filter(Boolean)
+      .filter((dep) => {
+        const key = dep.toLowerCase();
+        if (seen.has(key)) return false;
+        seen.add(key);
+        return true;
+      })
+      .sort((a, b) => a.localeCompare(b, 'es'));
+
+    res.json({ success: true, data: dependencias });
+  } catch (error) {
+    res.status(500).json({ success: false, message: 'No se pudo consultar el listado de dependencias' });
+  }
+};
+
+const getCatalogoLaboral = async (req, res) => {
+  if (!(await getReporteSalidaFeatureState())) return featureDisabled(res);
+  try {
+    const userRows = await getUserProfileLaboralRows();
+    if (userRows.length) {
+      const current = findCurrentUserProfileRow(userRows, req.user);
+      const relaciones = userRows.map(serializeUserLaboralRow).filter((row) => row.dependencia || row.cargo || row.jefe_inmediato);
+      const jefes = mapUserProfileBosses(userRows, req.query.search || '')
+        .filter((boss) => !boss.userId || Number(boss.userId) !== Number(req.user?.id));
+
+      return res.json({
+        success: true,
+        data: {
+          anio: null,
+          source: 'users',
+          dependencias: uniqueSortedValues(relaciones.map((row) => row.dependencia)),
+          cargos: uniqueSortedValues(relaciones.map((row) => row.cargo)),
+          jefes,
+          relaciones,
+          currentEmployee: current ? {
+            nombre: sanitizeText(current.nombre, 220),
+            documento: sanitizeText(current.username, 80),
+            correo: sanitizeText(current.email, 220),
+            dependencia: cleanDependenciaLabel(current.dependencia),
+            cargo: sanitizeText(current.cargo, 220),
+            jefe_inmediato: sanitizeText(current.jefe_inmediato, 220),
+            source: 'users'
+          } : null,
+          periodo: '',
+          periodoLabel: 'Base de usuarios'
+        }
+      });
+    }
+
+    const { latestYear, latestPeriod, rows } = await getLatestAdministrativos();
+    const current = findCurrentAdministrativeRow(rows, req.user);
+    const jefes = (await mapAdministrativeBosses(rows, req.query.search || ''))
+      .filter((boss) => !boss.userId || Number(boss.userId) !== Number(req.user?.id));
+
+    res.json({
+      success: true,
+      data: {
+        anio: latestYear,
+        source: 'recurso_humano_administrativos',
+        dependencias: uniqueSortedValues(rows.map((row) => cleanDependenciaLabel(row.dependencia))),
+        cargos: uniqueSortedValues(rows.map((row) => row.cargo_especifico)),
+        relaciones: rows.map(serializeLaboralRow).filter((row) => row.dependencia || row.cargo),
+        currentEmployee: current ? {
+          nombre: sanitizeText(current.nombre_empleado, 220),
+          documento: sanitizeText(current.numero_cedula, 80),
+          dependencia: cleanDependenciaLabel(current.dependencia),
+          cargo: sanitizeText(current.cargo_especifico, 220),
+          jefe_inmediato: '',
+          anio: current.anio,
+          periodo: sanitizeText(current.periodo, 40)
+        } : null,
+        periodo: latestPeriod,
+        periodoLabel: [latestYear, latestPeriod].filter(Boolean).join(' '),
+        jefes
+      }
+    });
+  } catch (error) {
+    console.error('Error consultando catalogo laboral reporte salida:', error);
+    res.status(500).json({ success: false, message: 'No se pudo consultar el catalogo laboral' });
+  }
+};
+
+const radicarSolicitud = async (req, res) => {
+  if (!(await getReporteSalidaFeatureState())) return featureDisabled(res);
+  try {
+    const errorMessage = validateRadicacionPayload(req.body, req.user);
+    if (errorMessage) return res.status(400).json({ success: false, message: errorMessage });
+
+    const documento = await Documento.findByPk(req.body.documentoId);
+    if (!documento || !isReporteSalidaDocumento(documento)) {
+      return res.status(400).json({ success: false, message: 'El formulario solo esta disponible para THM-DP-FR-002 REPORTE DE SALIDA.' });
+    }
+
+    const jefePayload = req.body.jefeInmediato || {};
+    const jefe = req.body.jefeInmediatoUserId
+      ? await User.findOne({ where: { id: req.body.jefeInmediatoUserId, estado: 'activo' } })
+      : null;
+    const shouldUseAdministrativeBoss = !jefe || jefePayload?.source === 'recurso_humano_administrativos' || jefePayload?.cargo;
+    const jefeSnapshot = shouldUseAdministrativeBoss
+      ? buildAdministrativeBossSnapshot({
+        ...jefePayload,
+        userId: jefe?.id || jefePayload.userId,
+        email: jefePayload.email || jefe?.email || ''
+      })
+      : buildSnapshot(jefe);
+    if (!jefe && !jefeSnapshot.email) {
+      return res.status(400).json({ success: false, message: 'El jefe inmediato seleccionado desde Recurso Humano no tiene correo registrado.' });
+    }
+    if (jefe && Number(jefe.id) === Number(req.user.id)) {
+      return res.status(400).json({ success: false, message: 'El jefe inmediato debe ser un usuario diferente al solicitante.' });
+    }
+
+    const salida = req.body.salida || {};
+    const reposicion = req.body.reposicion || {};
+    const requestedMinutes = diffBusinessMinutes(salida.fecha, salida.fechaRegreso, salida.horaInicio, salida.horaFin);
+    const hasReposicionPlan = Boolean(reposicion.fecha || reposicion.fechaFin || reposicion.horaInicio || reposicion.horaFin);
+    const replacementMinutes = salida.tipo === 'diligencia_personal' && hasReposicionPlan
+      ? diffElapsedMinutes(reposicion.fecha, reposicion.fechaFin, reposicion.horaInicio, reposicion.horaFin)
+      : null;
+
+    const now = new Date();
+    const consecutivo = `RS-${now.getFullYear()}-${String(Date.now()).slice(-8)}`;
+    const token = encryptPayload({ purpose: 'reporte_salida_approve', stage: 'jefe', consecutivo }, 60 * 60 * 24 * 15);
+    const solicitud = await ReporteSalidaSolicitud.create({
+      consecutivo,
+      user_id: req.user.id,
+      documento_id: documento.id,
+      jefe_inmediato_user_id: jefe?.id || null,
+      solicitante_snapshot: buildSnapshot(req.user),
+      jefe_snapshot: jefeSnapshot,
+      datos_formulario: {
+        personal: {
+          nombre: sanitizeText(req.body.personal?.nombre || req.user.nombre),
+          documento: sanitizeText(req.body.personal?.documento || req.user.username),
+          correo: sanitizeText(req.user.email)
+        },
+        laboral: {
+          dependencia: cleanDependenciaLabel(req.body.laboral?.dependencia),
+          cargo: sanitizeText(req.body.laboral?.cargo)
+        },
+        salida: {
+          tipo: sanitizeText(salida.tipo, 60),
+          fecha: sanitizeText(salida.fecha, 20),
+          fechaRegreso: sanitizeText(salida.fechaRegreso || salida.fecha, 20),
+          horaInicio: sanitizeText(salida.horaInicio, 10),
+          horaFin: sanitizeText(salida.horaFin, 10),
+          motivo: sanitizeText(salida.motivo, 600)
+        },
+        reposicion: {
+          fecha: sanitizeText(reposicion.fecha, 20),
+          fechaFin: sanitizeText(reposicion.fechaFin || reposicion.fecha, 20),
+          horaInicio: sanitizeText(reposicion.horaInicio, 10),
+          horaFin: sanitizeText(reposicion.horaFin, 10),
+          observacion: sanitizeText(reposicion.observacion, 600)
+        },
+        parametrizacion_tiempo: {
+          fecha_calculo: now.toISOString(),
+          criterio_salida: 'horas adeudadas segun jornada laboral institucional',
+          criterio_reposicion: 'horas acumuladas por seguimiento, sin restriccion de dia',
+          jornada_salida: {
+            dias_laborales: 'lunes a viernes',
+            excluye: ['sabados', 'domingos', 'festivos_colombia'],
+            bloques: WORK_BLOCKS
+          }
+        }
+      },
+      tiempo_solicitado_minutos: requestedMinutes,
+      reposicion_aplica: salida.tipo === 'diligencia_personal',
+      reposicion_minutos: replacementMinutes,
+      reposicion_estado: salida.tipo === 'diligencia_personal' ? (replacementMinutes ? 'programada' : 'pendiente') : 'no_aplica',
+      aprobacion_jefe_token_hash: hashToken(token),
+      trazabilidad: [{ event: 'radicada', actor: buildSnapshot(req.user), at: now.toISOString() }]
+    });
+
+    const attachments = await buildReporteSalidaAttachments(solicitud);
+    await solicitud.update({ pdf_generado_at: new Date() });
+    const emailResult = await sendJefeApprovalEmail(solicitud, token, attachments);
+    await solicitud.update({
+      correo_jefe_enviado_at: emailResult.success ? new Date() : null,
+      trazabilidad: appendTrace(solicitud, emailResult.success ? 'correo_jefe_enviado' : 'correo_jefe_error', req.user, { error: emailResult.error || '' })
+    });
+
+    res.status(201).json({
+      success: true,
+      message: 'Solicitud radicada. Se envio correo al jefe inmediato para aprobacion.',
+      data: serializeSolicitud(solicitud)
+    });
+  } catch (error) {
+    console.error('Error radicando reporte de salida:', error);
+    res.status(500).json({ success: false, message: 'No se pudo radicar la solicitud' });
+  }
+};
+
+const aprobarDesdeCorreo = async (req, res) => {
+  if (!(await getReporteSalidaFeatureState())) {
+    return renderApprovalPage({
+      res,
+      status: 403,
+      tone: 'warning',
+      title: 'Formulario no habilitado',
+      message: 'El flujo de reporte de salida aun no esta activo.',
+      nextStep: 'La solicitud no fue procesada. Cuando el administrador habilite nuevamente el formulario, podra usar el enlace correspondiente.'
+    });
+  }
+  try {
+    const payload = decryptPayload(req.params.token);
+    if (payload?.purpose !== 'reporte_salida_approve' || !payload?.consecutivo || !payload?.stage) {
+      return renderApprovalPage({
+        res,
+        status: 403,
+        tone: 'error',
+        title: 'Enlace no autorizado',
+        message: 'El enlace de aprobacion no corresponde a una solicitud valida.',
+        nextStep: 'Verifique que esta usando el boton original recibido en el correo institucional.'
+      });
+    }
+    const solicitud = await ReporteSalidaSolicitud.findOne({ where: { consecutivo: payload.consecutivo } });
+    if (!solicitud) {
+      return renderApprovalPage({
+        res,
+        status: 404,
+        tone: 'warning',
+        title: 'Solicitud no encontrada',
+        message: 'No se encontro una solicitud asociada a este enlace.',
+        nextStep: 'Puede que la solicitud haya sido eliminada o que el enlace no corresponda al sistema actual.'
+      });
+    }
+
+    const tokenHash = hashToken(req.params.token);
+    if (payload.stage === 'jefe') {
+      if (solicitud.estado !== 'pendiente_aprobacion_jefe') {
+        return renderApprovalPage({
+          res,
+          tone: 'info',
+          title: 'Solicitud ya procesada',
+          message: 'Esta aprobacion ya fue registrada previamente.',
+          solicitud,
+          nextStep: 'No es necesario realizar ninguna accion adicional desde este enlace.'
+        });
+      }
+      if (solicitud.aprobacion_jefe_token_hash !== tokenHash) {
+        return renderApprovalPage({
+          res,
+          status: 403,
+          tone: 'error',
+          title: 'Enlace no autorizado',
+          message: 'El enlace no coincide con el token de aprobacion esperado para esta solicitud.',
+          solicitud,
+          nextStep: 'Por seguridad, la aprobacion no fue registrada.'
+        });
+      }
+      const ghToken = encryptPayload({ purpose: 'reporte_salida_approve', stage: 'gestion_humana', consecutivo: solicitud.consecutivo }, 60 * 60 * 24 * 15);
+      const [updatedCount] = await ReporteSalidaSolicitud.update({
+        estado: 'pendiente_aprobacion_gestion_humana',
+        jefe_aprobado_at: new Date(),
+        aprobacion_jefe_token_hash: null,
+        aprobacion_gh_token_hash: hashToken(ghToken),
+        trazabilidad: appendTrace(solicitud, 'aprobada_jefe', null)
+      }, {
+        where: {
+          id: solicitud.id,
+          estado: 'pendiente_aprobacion_jefe',
+          aprobacion_jefe_token_hash: tokenHash
+        }
+      });
+      if (!updatedCount) {
+        await solicitud.reload();
+        return renderApprovalPage({
+          res,
+          tone: 'info',
+          title: 'Solicitud ya procesada',
+          message: 'Esta aprobacion ya fue registrada previamente.',
+          solicitud,
+          nextStep: 'El boton de aprobacion ya fue utilizado y quedo inhabilitado para nuevos registros.'
+        });
+      }
+      await solicitud.reload();
+      const attachments = await buildReporteSalidaAttachments(solicitud);
+      const emailResult = await sendGestionHumanaApprovalEmail(solicitud, ghToken, attachments);
+      await solicitud.update({
+        correo_gh_enviado_at: emailResult.success ? new Date() : null,
+        trazabilidad: appendTrace(solicitud, emailResult.success ? 'correo_gestion_humana_enviado' : 'correo_gestion_humana_error', null, { error: emailResult.error || '' })
+      });
+      return renderApprovalPage({
+        res,
+        tone: 'success',
+        title: 'Aprobacion registrada',
+        message: 'La solicitud fue enviada a Gestion Humana para revision y aprobacion.',
+        solicitud,
+        nextStep: 'Gestion Humana recibira el correo con el PDF diligenciado para continuar el flujo.'
+      });
+    }
+
+    if (payload.stage === 'gestion_humana') {
+      if (solicitud.estado !== 'pendiente_aprobacion_gestion_humana') {
+        return renderApprovalPage({
+          res,
+          tone: 'info',
+          title: 'Solicitud ya procesada',
+          message: 'Esta aprobacion ya fue registrada previamente.',
+          solicitud,
+          nextStep: 'No es necesario realizar ninguna accion adicional desde este enlace.'
+        });
+      }
+      if (solicitud.aprobacion_gh_token_hash !== tokenHash) {
+        return renderApprovalPage({
+          res,
+          status: 403,
+          tone: 'error',
+          title: 'Enlace no autorizado',
+          message: 'El enlace no coincide con el token de aprobacion esperado para Gestion Humana.',
+          solicitud,
+          nextStep: 'Por seguridad, la aprobacion no fue registrada.'
+        });
+      }
+      const [updatedCount] = await ReporteSalidaSolicitud.update({
+        estado: 'finalizada',
+        gestion_humana_aprobado_at: new Date(),
+        finalizado_at: new Date(),
+        aprobacion_gh_token_hash: null,
+        trazabilidad: appendTrace(solicitud, 'aprobada_gestion_humana', null)
+      }, {
+        where: {
+          id: solicitud.id,
+          estado: 'pendiente_aprobacion_gestion_humana',
+          aprobacion_gh_token_hash: tokenHash
+        }
+      });
+      if (!updatedCount) {
+        await solicitud.reload();
+        return renderApprovalPage({
+          res,
+          tone: 'info',
+          title: 'Solicitud ya procesada',
+          message: 'Esta aprobacion ya fue registrada previamente.',
+          solicitud,
+          nextStep: 'El boton de aprobacion ya fue utilizado y quedo inhabilitado para nuevos registros.'
+        });
+      }
+      await solicitud.reload();
+      const attachments = await buildReporteSalidaAttachments(solicitud);
+      const results = await sendFinalEmails(solicitud, attachments);
+      await solicitud.update({
+        correo_usuario_enviado_at: results.userResult.success ? new Date() : null,
+        correo_sst_enviado_at: results.sstResult.success ? new Date() : null,
+        enviado_sst_at: results.sstResult.success ? new Date() : null,
+        trazabilidad: appendTrace(solicitud, 'notificacion_final_enviada', null, {
+          usuario: results.userResult.success,
+          sst: results.sstResult.success
+        })
+      });
+      return renderApprovalPage({
+        res,
+        tone: 'success',
+        title: 'Aprobacion registrada',
+        message: 'Se notifico al usuario y se envio el PDF a Seguridad y Salud en el Trabajo.',
+        solicitud,
+        nextStep: 'El flujo quedo finalizado y la trazabilidad permanece registrada en Seguimiento a reportes.'
+      });
+    }
+
+    return renderApprovalPage({
+      res,
+      status: 400,
+      tone: 'warning',
+      title: 'Etapa no valida',
+      message: 'El enlace no indica una etapa reconocida del flujo de aprobacion.',
+      solicitud,
+      nextStep: 'Use el boton original enviado desde el correo institucional.'
+    });
+  } catch (error) {
+    return renderApprovalPage({
+      res,
+      status: 403,
+      tone: 'error',
+      title: 'Enlace vencido o invalido',
+      message: 'No fue posible validar el enlace de aprobacion.',
+      nextStep: 'Solicite un nuevo enlace si requiere procesar esta aprobacion.'
+    });
+  }
+};
+
+const listarSolicitudes = async (req, res) => {
+  if (!(await getReporteSalidaFeatureState())) return featureDisabled(res);
+  try {
+    const page = Math.max(1, Number(req.query.page || 1));
+    const limit = Math.min(100, Math.max(1, Number(req.query.limit || 20)));
+    const estado = sanitizeText(req.query.estado, 80);
+    const search = sanitizeText(req.query.search, 100);
+    const where = {};
+    if (estado) where.estado = estado;
+    if (search) {
+      where[Op.or] = [
+        { consecutivo: { [Op.iLike]: `%${search}%` } },
+        { solicitante_snapshot: { [Op.contains]: { nombre: search } } }
+      ];
+    }
+    const { count, rows } = await ReporteSalidaSolicitud.findAndCountAll({
+      where,
+      order: [['created_at', 'DESC']],
+      limit,
+      offset: (page - 1) * limit
+    });
+    res.json({
+      success: true,
+      data: {
+        solicitudes: rows.map(serializeSolicitud),
+        pagination: { total: count, page, limit, totalPages: Math.ceil(count / limit) }
+      }
+    });
+  } catch (error) {
+    res.status(500).json({ success: false, message: 'No se pudo listar solicitudes' });
+  }
+};
+
+const getSeguimientoPersonal = async (req, res) => {
+  if (!(await getReporteSalidaFeatureState())) return featureDisabled(res);
+  try {
+    const page = Math.max(1, Number(req.query.page || 1));
+    const limit = Math.min(100, Math.max(1, Number(req.query.limit || 50)));
+    const estado = sanitizeText(req.query.estado, 80);
+    const access = await resolveSeguimientoAccess(req.user);
+
+    if (!access.canView) {
+      return res.json({
+        success: true,
+        data: {
+          access,
+          solicitudes: [],
+          pagination: { total: 0, page, limit, totalPages: 0 }
+        }
+      });
+    }
+
+    let where = {};
+    if (access.canManageAll) {
+      if (estado) where.estado = estado;
+    } else {
+      const scopedConditions = [];
+      if (access.counts.bossPending > 0) scopedConditions.push(bossPendingReposicionWhere(req.user));
+      if (access.counts.ownPending > 0) scopedConditions.push(ownPendingReposicionWhere(req.user));
+      where = scopedConditions.length === 1 ? scopedConditions[0] : { [Op.or]: scopedConditions };
+      if (estado) where = { [Op.and]: [where, { estado }] };
+    }
+
+    const { count, rows } = await ReporteSalidaSolicitud.findAndCountAll({
+      where,
+      order: [['created_at', 'DESC']],
+      limit,
+      offset: (page - 1) * limit
+    });
+
+    res.json({
+      success: true,
+      data: {
+        access,
+        solicitudes: rows.map(serializeSolicitud),
+        pagination: { total: count, page, limit, totalPages: Math.ceil(count / limit) }
+      }
+    });
+  } catch (error) {
+    res.status(500).json({ success: false, message: 'No se pudo consultar el seguimiento de reposiciones' });
+  }
+};
+
+const actualizarReposicion = async (req, res) => {
+  if (!(await getReporteSalidaFeatureState())) return featureDisabled(res);
+  try {
+    const solicitud = await ReporteSalidaSolicitud.findByPk(req.params.id);
+    if (!solicitud) {
+      return res.status(404).json({ success: false, message: 'Solicitud no encontrada.' });
+    }
+    if (!solicitud.reposicion_aplica) {
+      return res.status(400).json({ success: false, message: 'Esta solicitud no requiere reposicion de tiempo.' });
+    }
+    if (solicitud.estado !== 'finalizada') {
+      return res.status(400).json({ success: false, message: 'La reposicion solo puede validarse cuando el reporte esta finalizado por Gestion Humana.' });
+    }
+
+    const nextEstado = sanitizeText(req.body?.estado, 40);
+    if (!['programada', 'cumplida', 'incumplida'].includes(nextEstado)) {
+      return res.status(400).json({ success: false, message: 'Estado de reposicion no valido.' });
+    }
+
+    const observacion = sanitizeText(req.body?.observacion, 600);
+    const now = new Date();
+    const previousData = solicitud.datos_formulario || {};
+    await solicitud.update({
+      reposicion_estado: nextEstado,
+      observacion_gestion_humana: observacion || solicitud.observacion_gestion_humana,
+      datos_formulario: {
+        ...previousData,
+        reposicion_validacion: {
+          estado: nextEstado,
+          observacion,
+          validado_por: buildSnapshot(req.user),
+          validado_at: now.toISOString()
+        }
+      },
+      trazabilidad: appendTrace(solicitud, `reposicion_${nextEstado}`, req.user, { observacion })
+    });
+
+    await solicitud.reload();
+    res.json({
+      success: true,
+      message: nextEstado === 'cumplida' ? 'Reposicion de tiempo validada.' : 'Seguimiento de reposicion actualizado.',
+      data: serializeSolicitud(solicitud)
+    });
+  } catch (error) {
+    res.status(500).json({ success: false, message: 'No se pudo actualizar la reposicion de tiempo' });
+  }
+};
+
+const getFeatureConfig = async (req, res) => {
+  try {
+    const enabled = await getReporteSalidaFeatureState();
+    res.json({ success: true, data: { enabled, canToggle: isAdminUser(req.user) } });
+  } catch (error) {
+    res.status(500).json({ success: false, message: 'No se pudo consultar la configuracion del reporte de salida' });
+  }
+};
+
+const updateFeatureConfig = async (req, res) => {
+  try {
+    if (!isAdminUser(req.user)) {
+      return res.status(403).json({ success: false, message: 'Solo el administrador puede activar o desactivar este formulario.' });
+    }
+    const enabled = await setReporteSalidaFeatureState(Boolean(req.body?.enabled), req.user.id);
+    res.json({
+      success: true,
+      message: enabled ? 'Formulario de reporte de salida activado.' : 'Formulario de reporte de salida desactivado.',
+      data: { enabled, canToggle: true }
+    });
+  } catch (error) {
+    res.status(500).json({ success: false, message: 'No se pudo actualizar la configuracion del reporte de salida' });
+  }
 };
 
 const renderRejectionFormPage = ({ res, solicitud, token, stage }) => {
@@ -1504,162 +2120,6 @@ const procesarRechazo = async (req, res) => {
       message: 'Ocurrio un error al registrar el rechazo de la solicitud.',
       nextStep: 'Intente nuevamente mas tarde.'
     });
-  }
-};
-
-const listarSolicitudes = async (req, res) => {
-  if (!(await getReporteSalidaFeatureState())) return featureDisabled(res);
-  try {
-    const page = Math.max(1, Number(req.query.page || 1));
-    const limit = Math.min(100, Math.max(1, Number(req.query.limit || 20)));
-    const estado = sanitizeText(req.query.estado, 80);
-    const search = sanitizeText(req.query.search, 100);
-    const where = {};
-    if (estado) where.estado = estado;
-    if (search) {
-      where[Op.or] = [
-        { consecutivo: { [Op.iLike]: `%${search}%` } },
-        { solicitante_snapshot: { [Op.contains]: { nombre: search } } }
-      ];
-    }
-    const { count, rows } = await ReporteSalidaSolicitud.findAndCountAll({
-      where,
-      order: [['created_at', 'DESC']],
-      limit,
-      offset: (page - 1) * limit
-    });
-    res.json({
-      success: true,
-      data: {
-        solicitudes: rows.map(serializeSolicitud),
-        pagination: { total: count, page, limit, totalPages: Math.ceil(count / limit) }
-      }
-    });
-  } catch (error) {
-    res.status(500).json({ success: false, message: 'No se pudo listar solicitudes' });
-  }
-};
-
-const getSeguimientoPersonal = async (req, res) => {
-  if (!(await getReporteSalidaFeatureState())) return featureDisabled(res);
-  try {
-    const page = Math.max(1, Number(req.query.page || 1));
-    const limit = Math.min(100, Math.max(1, Number(req.query.limit || 50)));
-    const estado = sanitizeText(req.query.estado, 80);
-    const access = await resolveSeguimientoAccess(req.user);
-
-    if (!access.canView) {
-      return res.json({
-        success: true,
-        data: {
-          access,
-          solicitudes: [],
-          pagination: { total: 0, page, limit, totalPages: 0 }
-        }
-      });
-    }
-
-    let where = {};
-    if (access.canManageAll) {
-      if (estado) where.estado = estado;
-    } else {
-      const scopedConditions = [];
-      if (access.counts.bossPending > 0) scopedConditions.push(bossPendingReposicionWhere(req.user));
-      if (access.counts.ownPending > 0) scopedConditions.push(ownPendingReposicionWhere(req.user));
-      where = scopedConditions.length === 1 ? scopedConditions[0] : { [Op.or]: scopedConditions };
-      if (estado) where = { [Op.and]: [where, { estado }] };
-    }
-
-    const { count, rows } = await ReporteSalidaSolicitud.findAndCountAll({
-      where,
-      order: [['created_at', 'DESC']],
-      limit,
-      offset: (page - 1) * limit
-    });
-
-    res.json({
-      success: true,
-      data: {
-        access,
-        solicitudes: rows.map(serializeSolicitud),
-        pagination: { total: count, page, limit, totalPages: Math.ceil(count / limit) }
-      }
-    });
-  } catch (error) {
-    res.status(500).json({ success: false, message: 'No se pudo consultar el seguimiento de reposiciones' });
-  }
-};
-
-const actualizarReposicion = async (req, res) => {
-  if (!(await getReporteSalidaFeatureState())) return featureDisabled(res);
-  try {
-    const solicitud = await ReporteSalidaSolicitud.findByPk(req.params.id);
-    if (!solicitud) {
-      return res.status(404).json({ success: false, message: 'Solicitud no encontrada.' });
-    }
-    if (!solicitud.reposicion_aplica) {
-      return res.status(400).json({ success: false, message: 'Esta solicitud no requiere reposicion de tiempo.' });
-    }
-    if (solicitud.estado !== 'finalizada') {
-      return res.status(400).json({ success: false, message: 'La reposicion solo puede validarse cuando el reporte esta finalizado por Gestion Humana.' });
-    }
-
-    const nextEstado = sanitizeText(req.body?.estado, 40);
-    if (!['programada', 'cumplida', 'incumplida'].includes(nextEstado)) {
-      return res.status(400).json({ success: false, message: 'Estado de reposicion no valido.' });
-    }
-
-    const observacion = sanitizeText(req.body?.observacion, 600);
-    const now = new Date();
-    const previousData = solicitud.datos_formulario || {};
-    await solicitud.update({
-      reposicion_estado: nextEstado,
-      observacion_gestion_humana: observacion || solicitud.observacion_gestion_humana,
-      datos_formulario: {
-        ...previousData,
-        reposicion_validacion: {
-          estado: nextEstado,
-          observacion,
-          validado_por: buildSnapshot(req.user),
-          validado_at: now.toISOString()
-        }
-      },
-      trazabilidad: appendTrace(solicitud, `reposicion_${nextEstado}`, req.user, { observacion })
-    });
-
-    await solicitud.reload();
-    res.json({
-      success: true,
-      message: nextEstado === 'cumplida' ? 'Reposicion de tiempo validada.' : 'Seguimiento de reposicion actualizado.',
-      data: serializeSolicitud(solicitud)
-    });
-  } catch (error) {
-    res.status(500).json({ success: false, message: 'No se pudo actualizar la reposicion de tiempo' });
-  }
-};
-
-const getFeatureConfig = async (req, res) => {
-  try {
-    const enabled = await getReporteSalidaFeatureState();
-    res.json({ success: true, data: { enabled, canToggle: isAdminUser(req.user) } });
-  } catch (error) {
-    res.status(500).json({ success: false, message: 'No se pudo consultar la configuracion del reporte de salida' });
-  }
-};
-
-const updateFeatureConfig = async (req, res) => {
-  try {
-    if (!isAdminUser(req.user)) {
-      return res.status(403).json({ success: false, message: 'Solo el administrador puede activar o desactivar este formulario.' });
-    }
-    const enabled = await setReporteSalidaFeatureState(Boolean(req.body?.enabled), req.user.id);
-    res.json({
-      success: true,
-      message: enabled ? 'Formulario de reporte de salida activado.' : 'Formulario de reporte de salida desactivado.',
-      data: { enabled, canToggle: true }
-    });
-  } catch (error) {
-    res.status(500).json({ success: false, message: 'No se pudo actualizar la configuracion del reporte de salida' });
   }
 };
 
