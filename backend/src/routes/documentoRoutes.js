@@ -1,11 +1,17 @@
 const express = require('express');
 const router = express.Router();
-const { getDocumentos, getEstadisticaDocumental, getDocumentoArchivoSeguro } = require('../controllers/documentoController');
+const {
+  getDocumentos,
+  getEstadisticaDocumental,
+  getDocumentoArchivoSeguro,
+  descargarDocumentoDirecto
+} = require('../controllers/documentoController');
 const { auth, hasAnyRoleOrModulePermission } = require('../middlewares/auth');
 const { publicLimiter } = require('../middlewares/security');
 const { ROLES } = require('../constants/roles');
 
 router.get('/archivo/:token', publicLimiter, getDocumentoArchivoSeguro);
+router.get('/descargar/:id', auth, descargarDocumentoDirecto);
 router.get('/', auth, getDocumentos);
 router.get(
   '/estadistica-documental',

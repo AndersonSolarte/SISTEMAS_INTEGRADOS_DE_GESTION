@@ -12,6 +12,8 @@ import api from '../services/api';
 import ReporteSalidaFormDialog from '../components/reporteSalida/ReporteSalidaFormDialog';
 import { isReporteSalidaDocument } from '../config/reporteSalida';
 import reporteSalidaService from '../services/reporteSalidaService';
+import { FaFileWord, FaFileExcel, FaFilePowerpoint, FaFilePdf } from 'react-icons/fa';
+import { BsFileEarmarkText } from 'react-icons/bs';
 
 const getApiErrorMessage = (error, fallback) => (
   error?.response?.data?.error
@@ -137,9 +139,10 @@ const getPreviewUrl = (url) => {
   return buildEmbeddedDrivePreviewUrl(meta);
 };
 
-const buildEmbeddedDrivePreviewUrl = (meta) => (
-  `https://docs.google.com/gview?embedded=true&url=${encodeURIComponent(buildDriveDownloadUrl(meta))}`
-);
+const buildEmbeddedDrivePreviewUrl = (meta) => {
+  const rkQuery = meta.resourceKey ? `?resourcekey=${encodeURIComponent(meta.resourceKey)}` : '';
+  return `https://drive.google.com/file/d/${meta.fileId}/preview${rkQuery}`;
+};
 
 const getDownloadUrl = (url) => {
   const meta = extractGoogleDriveMeta(url);
@@ -168,11 +171,9 @@ const getDownloadUrl = (url) => {
 
 const buildDriveDownloadUrl = ({ fileId, resourceKey }) => {
   const params = new URLSearchParams();
-  params.set('export', 'download');
-  params.set('id', fileId);
-  params.set('confirm', 't');
+  params.set('usp', 'sharing');
   if (resourceKey) params.set('resourcekey', resourceKey);
-  return `https://drive.google.com/uc?${params.toString()}`;
+  return `https://drive.google.com/file/d/${fileId}/view?${params.toString()}`;
 };
 
 const appendQueryParam = (url, key, value) => {
@@ -218,6 +219,7 @@ const getExtensionFromUrl = (url) => {
   if (meta?.kind === 'google-doc') return 'docx';
   if (meta?.kind === 'google-sheet') return 'xlsx';
   if (meta?.kind === 'google-slide') return 'pptx';
+  if (meta?.kind === 'drive-file') return 'pdf';
 
   try {
     const parsed = new URL(url, window.location.origin);
@@ -582,6 +584,9 @@ function AseguramientoCalidad() {
   const [selectedFile, setSelectedFile] = useState(null);
   const [adminMenuAnchor, setAdminMenuAnchor] = useState(null);
   const [openPreviewDialog, setOpenPreviewDialog] = useState(false);
+  const [previewKind, setPreviewKind] = useState('default');
+  const [previewDoc, setPreviewDoc] = useState(null);
+  const [previewNormalized, setPreviewNormalized] = useState(null);
   const [previewUrl, setPreviewUrl] = useState('');
   const [previewTitle, setPreviewTitle] = useState('');
   const [previewDownloadUrl, setPreviewDownloadUrl] = useState('');
@@ -1150,6 +1155,24 @@ function AseguramientoCalidad() {
     return { bg: '#f1f5f9', color: '#475569' };
   };
 
+  const getFormatoIcon = (doc) => {
+    const extension = getDocumentExtension(doc);
+    if (['doc', 'docx'].includes(extension)) return <FaFileWord size={18} />;
+    if (extension === 'pdf') return <FaFilePdf size={18} />;
+    if (['xls', 'xlsx', 'csv'].includes(extension)) return <FaFileExcel size={18} />;
+    if (['ppt', 'pptx'].includes(extension)) return <FaFilePowerpoint size={18} />;
+    return <BsFileEarmarkText size={18} />;
+  };
+
+  const getFormatoColor = (doc) => {
+    const extension = getDocumentExtension(doc);
+    if (['doc', 'docx'].includes(extension)) return '#2563eb';
+    if (extension === 'pdf') return '#dc2626';
+    if (['xls', 'xlsx', 'csv'].includes(extension)) return '#059669';
+    if (['ppt', 'pptx'].includes(extension)) return '#ea580c';
+    return '#475569';
+  };
+
   const handleFileSelect = (event) => {
     setSelectedFile(event.target.files[0]);
   };
@@ -1251,6 +1274,11 @@ function AseguramientoCalidad() {
     }
   };
 
+  const getPreviewKind = (doc) => {
+    const meta = extractGoogleDriveMeta(doc?.link_acceso);
+    return meta?.kind || 'default';
+  };
+
   const openDocumentPreview = (doc, normalized) => {
     if (!doc?.link_acceso) return;
     const resolved = toAbsoluteDocumentUrl(doc.link_acceso);
@@ -1258,6 +1286,9 @@ function AseguramientoCalidad() {
     setPreviewTitle(`${normalized?.codigo || ''} ${normalized?.titulo || ''}`.trim());
     setPreviewDownloadUrl(getDownloadUrl(resolved));
     setPreviewDownloadName(buildDownloadFileName(doc, normalized));
+    setPreviewKind(getPreviewKind(doc));
+    setPreviewDoc(doc);
+    setPreviewNormalized(normalized);
     setOpenPreviewDialog(true);
   };
 
@@ -1267,6 +1298,9 @@ function AseguramientoCalidad() {
     setPreviewTitle('');
     setPreviewDownloadUrl('');
     setPreviewDownloadName('');
+    setPreviewKind('default');
+    setPreviewDoc(null);
+    setPreviewNormalized(null);
   };
 
   const triggerDownload = (url, filename) => {
@@ -1274,9 +1308,29 @@ function AseguramientoCalidad() {
     const link = document.createElement('a');
     link.href = url;
     if (filename) link.download = filename;
+    if (/^https?:\/\//i.test(url) && !url.startsWith(window.location.origin)) {
+      link.target = '_blank';
+      link.rel = 'noopener noreferrer';
+    }
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
+  };
+
+  const handleDownload = (doc, normalized) => {
+    if (!doc) return;
+    try {
+      const token = localStorage.getItem('token') || '';
+      const baseURL = process.env.REACT_APP_API_URL || '/api';
+      const absoluteBaseURL = baseURL.startsWith('http')
+        ? baseURL
+        : `${window.location.origin}${baseURL}`;
+      const downloadUrl = `${absoluteBaseURL}/documentos/descargar/${doc.id}?token=${encodeURIComponent(token)}`;
+      window.location.href = downloadUrl;
+    } catch (error) {
+      console.error('Error al iniciar la descarga:', error);
+      enqueueSnackbar('Error al descargar el archivo original', { variant: 'error' });
+    }
   };
 
   const activeFiltersCount = Object.entries(filters)
@@ -1859,7 +1913,20 @@ function AseguramientoCalidad() {
                             <TableRow key={doc.id} hover sx={{ '&:hover': { bgcolor: '#f8fafc' }, transition: 'all 0.2s', cursor: 'pointer' }}>
                               <TableCell sx={{ fontWeight: 700, color: '#3b82f6', fontSize: 13, fontFamily: 'monospace', px: 1.4, overflowWrap: 'anywhere' }}>{normalized.codigo}</TableCell>
                               <TableCell sx={{ px: 1.4 }}>
-                                <Chip icon={getTipoIcon(normalized.tipo)} label={normalized.tipo || 'N/A'} size="small" sx={{ bgcolor: getTipoColor(normalized.tipo).bg, color: getTipoColor(normalized.tipo).color, fontWeight: 700, fontSize: 12, borderRadius: 2, px: 1 }} />
+                                <Chip
+                                  icon={getFormatoIcon(doc)}
+                                  label={normalized.tipo || 'N/A'}
+                                  size="small"
+                                  sx={{
+                                    bgcolor: getTipoColor(normalized.tipo).bg,
+                                    color: getTipoColor(normalized.tipo).color,
+                                    fontWeight: 700,
+                                    fontSize: 12,
+                                    borderRadius: 2,
+                                    px: 1,
+                                    '& .MuiChip-icon': { color: `${getFormatoColor(doc)} !important` }
+                                  }}
+                                />
                               </TableCell>
                               <TableCell sx={{ color: '#1e293b', fontWeight: 700, fontSize: 13.5, px: 1.4, lineHeight: 1.45, overflowWrap: 'anywhere', wordBreak: 'break-word' }}>{normalized.titulo}</TableCell>
                               <TableCell sx={{ color: '#475569', fontSize: 13, px: 1.4, lineHeight: 1.45, overflowWrap: 'anywhere' }}>{doc.autor || '-'}</TableCell>
@@ -1958,13 +2025,7 @@ function AseguramientoCalidad() {
                                           '&:disabled': { opacity: 0.3 }
                                         }}
                                         disabled={!doc.link_acceso}
-                                        onClick={() => {
-                                          if (doc.link_acceso) {
-                                            const absoluteUrl = toAbsoluteDocumentUrl(doc.link_acceso);
-                                            const downloadUrl = getDownloadUrl(absoluteUrl);
-                                            triggerDownload(downloadUrl, buildDownloadFileName(doc, normalized));
-                                          }
-                                        }}
+                                        onClick={() => handleDownload(doc, normalized)}
                                       >
                                         <FileDownloadOutlinedIcon fontSize="small" />
                                       </IconButton>
@@ -2051,8 +2112,8 @@ function AseguramientoCalidad() {
                 color="success"
                 size="small"
                 startIcon={<FileDownloadOutlinedIcon />}
-                onClick={() => triggerDownload(previewDownloadUrl, previewDownloadName)}
-                disabled={!previewDownloadUrl}
+                onClick={() => handleDownload(previewDoc, previewNormalized)}
+                disabled={!previewDoc}
                 sx={{ borderRadius: 2, textTransform: 'none', fontWeight: 700, px: 2 }}
               >
                 Descargar
@@ -2061,12 +2122,26 @@ function AseguramientoCalidad() {
           </DialogTitle>
           <DialogContent dividers sx={{ p: 0, height: { xs: '70vh', md: '80vh' } }}>
             {previewUrl ? (
-              <Box sx={{ width: '100%', height: '100%', bgcolor: '#f8fafc' }}>
+              <Box sx={{ 
+                width: '100%', 
+                height: '100%', 
+                bgcolor: '#ffffff', 
+                position: 'relative', 
+                overflow: 'hidden'
+              }}>
                 <Box
                   component="iframe"
                   title={previewTitle || 'Previsualizacion de documento'}
                   src={previewUrl}
-                  sx={{ width: '100%', height: '100%', border: 0, bgcolor: 'white' }}
+                  sx={{
+                    position: 'absolute',
+                    top: previewKind === 'drive-file' ? -56 : 0,
+                    left: previewKind === 'google-sheet' ? 0 : -50,
+                    width: previewKind === 'google-sheet' ? 'calc(100% + 80px)' : 'calc(100% + 100px)',
+                    height: previewKind === 'drive-file' ? 'calc(100% + 56px)' : '100%',
+                    border: 0,
+                    bgcolor: 'white'
+                  }}
                 />
               </Box>
             ) : (

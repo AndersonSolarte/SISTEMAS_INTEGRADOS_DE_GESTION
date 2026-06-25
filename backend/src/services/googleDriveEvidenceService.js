@@ -180,5 +180,6 @@ const listEvidenceFilesRecursive = async (folderUrl, options = {}) => {
 module.exports = {
   extractFolderId,
   listEvidenceFiles,
-  listEvidenceFilesRecursive
+  listEvidenceFilesRecursive,
+  buildDriveClient
 };

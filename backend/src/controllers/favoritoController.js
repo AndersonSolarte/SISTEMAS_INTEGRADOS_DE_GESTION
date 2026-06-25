@@ -1,4 +1,5 @@
 const { DocumentoFavorito, Documento, TipoDocumentacion } = require('../models');
+const { serializeDocumento } = require('./documentoController');
 
 const listFavorites = async (req, res) => {
   try {
@@ -20,9 +21,15 @@ const listFavorites = async (req, res) => {
       order: [['created_at', 'DESC']]
     });
 
+    const serializedFavoritos = favoritos.map((favorito) => {
+      const data = typeof favorito.toJSON === 'function' ? favorito.toJSON() : { ...favorito };
+      data.documento = serializeDocumento(req, data.documento);
+      return data;
+    });
+
     return res.json({
       success: true,
-      data: { favoritos }
+      data: { favoritos: serializedFavoritos }
     });
   } catch (error) {
     console.error('Error al listar favoritos:', error);

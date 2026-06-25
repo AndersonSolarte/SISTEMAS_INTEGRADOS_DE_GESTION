@@ -48,9 +48,10 @@ const getDrivePreviewUrl = (file = {}) => {
 };
 
 const getDriveDownloadUrl = (file = {}) => {
+  if (file.webViewLink) return file.webViewLink;
+  if (file.id) return `https://drive.google.com/file/d/${file.id}/view?usp=sharing`;
   if (file.webContentLink) return file.webContentLink;
-  if (!file.id) return file.webViewLink || '';
-  return `https://drive.google.com/uc?export=download&id=${file.id}`;
+  return '';
 };
 
 function RegistrosCalificadosAcreditacion() {

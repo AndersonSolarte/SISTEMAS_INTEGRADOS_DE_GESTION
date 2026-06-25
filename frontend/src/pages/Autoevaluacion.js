@@ -3539,7 +3539,7 @@ function Autoevaluacion() {
                                 </MuiTooltip>
                                 {!file.isFolder && (
                                   <MuiTooltip title="Descargar">
-                                    <IconButton size="small" component="a" href={file.webContentLink || file.webViewLink} target="_blank" rel="noopener noreferrer" sx={{ color: '#0f766e' }}>
+                                    <IconButton size="small" component="a" href={file.webViewLink || file.webContentLink} target="_blank" rel="noopener noreferrer" sx={{ color: '#0f766e' }}>
                                       <CloudDownloadIcon fontSize="small" />
                                     </IconButton>
                                   </MuiTooltip>

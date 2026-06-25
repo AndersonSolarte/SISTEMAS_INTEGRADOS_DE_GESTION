@@ -1,4 +1,4 @@
-﻿import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import {
   Alert,
@@ -42,6 +42,9 @@ import {
   VisibilityOutlined as VisibilityOutlinedIcon,
   FileDownloadOutlined as FileDownloadOutlinedIcon
 } from '@mui/icons-material';
+import { useSnackbar } from 'notistack';
+import { FaFileWord, FaFileExcel, FaFilePowerpoint, FaFilePdf } from 'react-icons/fa';
+import { BsFileEarmarkText } from 'react-icons/bs';
 import { useAuth } from '../context/AuthContext';
 import favoritoService from '../services/favoritoService';
 import { ROLES, ROLE_LABELS } from '../constants/roles';
@@ -50,6 +53,7 @@ function Dashboard() {
   const navigate = useNavigate();
   const location = useLocation();
   const { user } = useAuth();
+  const { enqueueSnackbar } = useSnackbar();
   const favoritosRef = useRef(null);
 
   const [favorites, setFavorites] = useState([]);
@@ -62,6 +66,8 @@ function Dashboard() {
   const [previewTitle, setPreviewTitle] = useState('');
   const [previewDownloadUrl, setPreviewDownloadUrl] = useState('');
   const [previewDownloadName, setPreviewDownloadName] = useState('');
+  const [previewKind, setPreviewKind] = useState('default');
+  const [previewDoc, setPreviewDoc] = useState(null);
 
   const fetchFavorites = () => {
     setLoadingFavorites(true);
@@ -204,11 +210,41 @@ function Dashboard() {
 
   const buildDriveDownloadUrl = ({ fileId, resourceKey }) => {
     const params = new URLSearchParams();
-    params.set('export', 'download');
-    params.set('id', fileId);
-    params.set('confirm', 't');
+    params.set('usp', 'sharing');
     if (resourceKey) params.set('resourcekey', resourceKey);
-    return `https://drive.google.com/uc?${params.toString()}`;
+    return `https://drive.google.com/file/d/${fileId}/view?${params.toString()}`;
+  };
+
+  const triggerDownload = (url, filename, isAppDownload = false) => {
+    if (!isAppDownload) {
+      const link = document.createElement('a');
+      link.href = url;
+      if (filename) link.download = filename;
+      if (/^https?:\/\//i.test(url) && !url.startsWith(window.location.origin)) {
+        link.target = '_blank';
+        link.rel = 'noopener noreferrer';
+      }
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      return;
+    }
+  };
+
+  const handleDownload = (doc) => {
+    if (!doc) return;
+    try {
+      const token = localStorage.getItem('token') || '';
+      const baseURL = process.env.REACT_APP_API_URL || '/api';
+      const absoluteBaseURL = baseURL.startsWith('http')
+        ? baseURL
+        : `${window.location.origin}${baseURL}`;
+      const downloadUrl = `${absoluteBaseURL}/documentos/descargar/${doc.id}?token=${encodeURIComponent(token)}`;
+      window.location.href = downloadUrl;
+    } catch (error) {
+      console.error('Error al iniciar la descarga:', error);
+      enqueueSnackbar('Error al descargar el archivo original', { variant: 'error' });
+    }
   };
 
   const appendQueryParam = (url, key, value) => {
@@ -252,9 +288,10 @@ function Dashboard() {
     return buildEmbeddedDrivePreviewUrl(meta);
   };
 
-  const buildEmbeddedDrivePreviewUrl = (meta) => (
-    `https://docs.google.com/gview?embedded=true&url=${encodeURIComponent(buildDriveDownloadUrl(meta))}`
-  );
+  const buildEmbeddedDrivePreviewUrl = (meta) => {
+    const rkQuery = meta.resourceKey ? `?resourcekey=${encodeURIComponent(meta.resourceKey)}` : '';
+    return `https://drive.google.com/file/d/${meta.fileId}/preview${rkQuery}`;
+  };
 
   const toAbsoluteDocumentUrl = (url) => {
     if (!url) return '';
@@ -287,6 +324,7 @@ function Dashboard() {
     if (meta?.kind === 'google-doc') return 'docx';
     if (meta?.kind === 'google-sheet') return 'xlsx';
     if (meta?.kind === 'google-slide') return 'pptx';
+    if (meta?.kind === 'drive-file') return 'pdf';
 
     try {
       const parsed = new URL(url, window.location.origin);
@@ -304,6 +342,24 @@ function Dashboard() {
     String(doc?.archivo_extension || getExtensionFromUrl(doc?.link_acceso) || '').toLowerCase()
   );
 
+  const getFormatoIcon = (doc) => {
+    const extension = getDocumentExtension(doc);
+    if (['doc', 'docx'].includes(extension)) return <FaFileWord size={18} />;
+    if (extension === 'pdf') return <FaFilePdf size={18} />;
+    if (['xls', 'xlsx', 'csv'].includes(extension)) return <FaFileExcel size={18} />;
+    if (['ppt', 'pptx'].includes(extension)) return <FaFilePowerpoint size={18} />;
+    return <BsFileEarmarkText size={18} />;
+  };
+
+  const getFormatoColor = (doc) => {
+    const extension = getDocumentExtension(doc);
+    if (['doc', 'docx'].includes(extension)) return '#2563eb';
+    if (extension === 'pdf') return '#dc2626';
+    if (['xls', 'xlsx', 'csv'].includes(extension)) return '#059669';
+    if (['ppt', 'pptx'].includes(extension)) return '#ea580c';
+    return '#475569';
+  };
+
   const buildDocumentPreviewUrl = (doc) => {
     const resolved = toAbsoluteDocumentUrl(doc?.link_acceso);
     const extension = getDocumentExtension(doc);
@@ -319,6 +375,11 @@ function Dashboard() {
     return ext ? `${base}.${ext}` : base;
   };
 
+  const getPreviewKind = (doc) => {
+    const meta = extractGoogleDriveMeta(doc?.link_acceso);
+    return meta?.kind || 'default';
+  };
+
   const openDocumentPreview = (doc) => {
     if (!doc?.link_acceso) return;
     const resolved = toAbsoluteDocumentUrl(doc.link_acceso);
@@ -326,6 +387,8 @@ function Dashboard() {
     setPreviewTitle(`${doc?.codigo || ''} ${doc?.titulo || ''}`.trim());
     setPreviewDownloadUrl(getDownloadUrl(resolved));
     setPreviewDownloadName(buildDownloadFileName(doc));
+    setPreviewKind(getPreviewKind(doc));
+    setPreviewDoc(doc);
     setOpenPreviewDialog(true);
   };
 
@@ -335,6 +398,8 @@ function Dashboard() {
     setPreviewTitle('');
     setPreviewDownloadUrl('');
     setPreviewDownloadName('');
+    setPreviewKind('default');
+    setPreviewDoc(null);
   };
 
   const formatDate = (value) => {
@@ -566,6 +631,7 @@ function Dashboard() {
                                 <TableCell sx={{ fontWeight: 700, color: '#2563eb', fontSize: 14, fontFamily: 'monospace', whiteSpace: 'nowrap' }}>{doc.codigo}</TableCell>
                                 <TableCell>
                                   <Chip
+                                    icon={getFormatoIcon(doc)}
                                     label={doc?.tipoDocumentacion?.nombre || 'N/A'}
                                     size="small"
                                     sx={{
@@ -576,6 +642,7 @@ function Dashboard() {
                                       px: 1,
                                       bgcolor: getTipoColor(doc?.tipoDocumentacion?.nombre).bg,
                                       color: getTipoColor(doc?.tipoDocumentacion?.nombre).color,
+                                      '& .MuiChip-icon': { color: `${getFormatoColor(doc)} !important` },
                                       '& .MuiChip-label': {
                                         display: 'block',
                                         overflow: 'hidden',
@@ -614,18 +681,7 @@ function Dashboard() {
                                           size="small"
                                           sx={{ color: '#059669', bgcolor: '#d1fae5', '&:hover': { bgcolor: '#a7f3d0' }, '&:disabled': { opacity: 0.3 } }}
                                           disabled={!doc.link_acceso}
-                                          onClick={() => {
-                                            if (doc.link_acceso) {
-                                              const absoluteUrl = toAbsoluteDocumentUrl(doc.link_acceso);
-                                              const downloadUrl = getDownloadUrl(absoluteUrl);
-                                              const link = document.createElement('a');
-                                              link.href = downloadUrl;
-                                              link.download = buildDownloadFileName(doc);
-                                              document.body.appendChild(link);
-                                              link.click();
-                                              document.body.removeChild(link);
-                                            }
-                                          }}
+                                          onClick={() => handleDownload(doc)}
                                         >
                                           <FileDownloadOutlinedIcon fontSize="small" />
                                         </IconButton>
@@ -718,16 +774,8 @@ function Dashboard() {
                 color="success"
                 size="small"
                 startIcon={<FileDownloadOutlinedIcon />}
-                onClick={() => {
-                  if (!previewDownloadUrl) return;
-                  const link = document.createElement('a');
-                  link.href = previewDownloadUrl;
-                  if (previewDownloadName) link.download = previewDownloadName;
-                  document.body.appendChild(link);
-                  link.click();
-                  document.body.removeChild(link);
-                }}
-                disabled={!previewDownloadUrl}
+                onClick={() => handleDownload(previewDoc)}
+                disabled={!previewDoc}
                 sx={{ borderRadius: 2, textTransform: 'none', fontWeight: 700, px: 2 }}
               >
                 Descargar
@@ -736,12 +784,26 @@ function Dashboard() {
           </DialogTitle>
           <DialogContent dividers sx={{ p: 0, height: { xs: '70vh', md: '80vh' } }}>
             {previewUrl ? (
-              <Box sx={{ width: '100%', height: '100%', bgcolor: '#f8fafc' }}>
+              <Box sx={{ 
+                width: '100%', 
+                height: '100%', 
+                bgcolor: '#ffffff', 
+                position: 'relative', 
+                overflow: 'hidden'
+              }}>
                 <Box
                   component="iframe"
                   title={previewTitle || 'Previsualizacion de documento'}
                   src={previewUrl}
-                  sx={{ width: '100%', height: '100%', border: 0, bgcolor: 'white' }}
+                  sx={{
+                    position: 'absolute',
+                    top: previewKind === 'drive-file' ? -56 : 0,
+                    left: previewKind === 'google-sheet' ? 0 : -50,
+                    width: previewKind === 'google-sheet' ? 'calc(100% + 80px)' : 'calc(100% + 100px)',
+                    height: previewKind === 'drive-file' ? 'calc(100% + 56px)' : '100%',
+                    border: 0,
+                    bgcolor: 'white'
+                  }}
                 />
               </Box>
             ) : (

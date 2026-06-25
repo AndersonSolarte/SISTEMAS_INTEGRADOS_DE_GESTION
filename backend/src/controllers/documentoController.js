@@ -10,6 +10,7 @@ const {
 } = require('../models');
 const { ROLES } = require('../constants/roles');
 const { encryptPayload, decryptPayload } = require('../utils/secureUrlToken');
+const { buildDriveClient } = require('../services/googleDriveEvidenceService');
 
 const LOCAL_UPLOAD_PREFIX = '/uploads/';
 const PUBLIC_DOCUMENT_STATE = 'vigente';
@@ -49,7 +50,10 @@ const documentScopeLiteral = (scope = 'documentos', alias = 'documentos') => {
   return literal(`(${sheetExpr} = '' OR ${sheetExpr} = 'BD_SGD_UNICESMAG' OR ${sheetExpr} = 'DOCUMENTOS')`);
 };
 
-const isLocalUploadLink = (value = '') => String(value || '').trim().startsWith(LOCAL_UPLOAD_PREFIX);
+const isLocalUploadLink = (value = '') => {
+  const val = String(value || '').trim();
+  return val.startsWith(LOCAL_UPLOAD_PREFIX) || val.includes('/uploads/');
+};
 
 const getSignedDocumentUrl = (req, documento) => {
   const link = String(documento?.link_acceso || '').trim();
@@ -678,4 +682,199 @@ const getEstadisticaDocumental = async (req, res) => {
   }
 };
 
-module.exports = { getDocumentos, getEstadisticaDocumental, getDocumentoArchivoSeguro, serializeDocumento };
+const extractGoogleDriveMeta = (rawUrl) => {
+  if (!rawUrl) return null;
+  const url = String(rawUrl).trim();
+  const patterns = [
+    /\/file\/d\/([^/?#]+)/,
+    /\/document\/d\/([^/?#]+)/,
+    /\/spreadsheets\/d\/([^/?#]+)/,
+    /\/presentation\/d\/([^/?#]+)/,
+    /[?&]id=([^&#]+)/,
+    /\/d\/([^/?#]+)(?:\/|$)/,
+  ];
+  
+  let fileId = null;
+  for (const pattern of patterns) {
+    const match = url.match(pattern);
+    if (match && match[1]) {
+      fileId = match[1];
+      break;
+    }
+  }
+
+  if (!fileId) return null;
+
+  let kind = 'drive-file';
+  if (url.includes('docs.google.com')) {
+    if (url.includes('/document/')) kind = 'google-doc';
+    else if (url.includes('/spreadsheets/')) kind = 'google-sheet';
+    else if (url.includes('/presentation/')) kind = 'google-slide';
+  }
+  
+  return { fileId, kind };
+};
+
+
+
+const descargarDocumentoDirecto = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const documento = await Documento.findOne({
+      where: { id, eliminado: false }
+    });
+
+    if (!documento) {
+      return res.status(404).json({ success: false, message: 'Documento no encontrado' });
+    }
+
+    const { link_acceso } = documento;
+    if (!link_acceso) {
+      return res.status(404).json({ success: false, message: 'El documento no tiene un enlace de acceso' });
+    }
+
+    // 1. Si es subida local
+    const isLocal = isLocalUploadLink(link_acceso);
+    if (isLocal) {
+      const uploadsRoot = path.resolve(__dirname, '../../uploads');
+      const relativePath = String(link_acceso).replace(/^\/uploads\/?/, '');
+      const filePath = path.resolve(uploadsRoot, relativePath);
+
+      if (!filePath.startsWith(`${uploadsRoot}${path.sep}`) || !fs.existsSync(filePath)) {
+        return res.status(404).json({ success: false, message: 'Archivo local no encontrado' });
+      }
+
+      const extension = path.extname(filePath).replace('.', '').toLowerCase();
+      const mimeType = MIME_TYPES_BY_EXTENSION[extension] || 'application/octet-stream';
+      const baseFilename = `${documento.codigo || 'documento'}_${documento.titulo || 'archivo'}`
+        .replace(/[<>:"/\\|?*\x00-\x1F]/g, '_')
+        .replace(/\s+/g, ' ')
+        .trim();
+      const filename = extension ? `${baseFilename}.${extension}` : baseFilename;
+
+      res.setHeader('X-Content-Type-Options', 'nosniff');
+      res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
+      return res.download(filePath, filename);
+    }
+
+    // 2. Si es de Google Drive
+    const meta = extractGoogleDriveMeta(link_acceso);
+    if (!meta) {
+      // Si no es un enlace de Drive ni local, redirige al enlace
+      return res.redirect(link_acceso);
+    }
+
+    const { fileId, kind } = meta;
+    const drive = buildDriveClient();
+
+    // Helper para generar el enlace de descarga directa en Google Drive
+    const getDirectDriveUrl = (fId, fKind) => {
+      if (fKind === 'google-doc') {
+        return `https://docs.google.com/document/d/${fId}/export?format=docx`;
+      } else if (fKind === 'google-sheet') {
+        return `https://docs.google.com/spreadsheets/d/${fId}/export?format=xlsx`;
+      } else if (fKind === 'google-slide') {
+        return `https://docs.google.com/presentation/d/${fId}/export?format=pdf`;
+      } else {
+        return `https://drive.google.com/uc?id=${fId}&export=download`;
+      }
+    };
+
+    // Obtener metadatos del archivo para saber el nombre y tipo original
+    let driveFile = null;
+    try {
+      const fileMetadata = await drive.files.get({
+        fileId: fileId,
+        fields: 'name, mimeType, fileExtension'
+      });
+      driveFile = fileMetadata.data;
+    } catch (e) {
+      console.warn('Error al obtener metadatos de Google Drive (redirigiendo al enlace directo):', e.message);
+      return res.redirect(getDirectDriveUrl(fileId, kind));
+    }
+
+    const cleanTitle = `${documento.codigo || 'documento'}_${documento.titulo || 'archivo'}`
+      .replace(/[<>:"/\\|?*\x00-\x1F]/g, '_')
+      .replace(/\s+/g, ' ')
+      .trim();
+
+    let streamResponse;
+    let filename = cleanTitle;
+    let contentType = 'application/octet-stream';
+
+    try {
+      if (kind === 'google-doc') {
+        filename = `${cleanTitle}.docx`;
+        contentType = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+        streamResponse = await drive.files.export(
+          {
+            fileId: fileId,
+            mimeType: contentType
+          },
+          { responseType: 'stream' }
+        );
+      } else if (kind === 'google-sheet') {
+        filename = `${cleanTitle}.xlsx`;
+        contentType = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
+        streamResponse = await drive.files.export(
+          {
+            fileId: fileId,
+            mimeType: contentType
+          },
+          { responseType: 'stream' }
+        );
+      } else if (kind === 'google-slide') {
+        filename = `${cleanTitle}.pdf`;
+        contentType = 'application/pdf';
+        streamResponse = await drive.files.export(
+          {
+            fileId: fileId,
+            mimeType: contentType
+          },
+          { responseType: 'stream' }
+        );
+      } else {
+        // Para archivos normales subidos a Drive (PDF, Word, Excel etc.)
+        const extension = driveFile?.fileExtension || driveFile?.name?.split('.').pop() || 'pdf';
+        filename = `${cleanTitle}.${extension}`;
+        contentType = driveFile?.mimeType || MIME_TYPES_BY_EXTENSION[extension] || 'application/octet-stream';
+        
+        streamResponse = await drive.files.get(
+          {
+            fileId: fileId,
+            alt: 'media'
+          },
+          { responseType: 'stream' }
+        );
+      }
+    } catch (streamErr) {
+      console.warn('Error al iniciar stream de Google Drive (redirigiendo al enlace directo):', streamErr.message);
+      return res.redirect(getDirectDriveUrl(fileId, kind));
+    }
+
+    res.setHeader('Content-Type', contentType);
+    res.setHeader('Content-Disposition', `attachment; filename="${encodeURIComponent(filename)}"`);
+    res.setHeader('X-Content-Type-Options', 'nosniff');
+
+    streamResponse.data
+      .on('error', (err) => {
+        console.error('Error en el streaming desde Google Drive:', err);
+        if (!res.headersSent) {
+          res.status(500).send('Error durante la descarga del archivo');
+        }
+      })
+      .pipe(res);
+
+  } catch (error) {
+    console.error('Error al descargar documento:', error);
+    return res.status(500).json({ success: false, message: 'Error interno al procesar la descarga' });
+  }
+};
+
+module.exports = {
+  getDocumentos,
+  getEstadisticaDocumental,
+  getDocumentoArchivoSeguro,
+  descargarDocumentoDirecto,
+  serializeDocumento
+};
