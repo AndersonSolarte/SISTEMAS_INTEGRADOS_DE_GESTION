@@ -121,7 +121,7 @@ const getPreviewUrl = (url) => {
   const { fileId, resourceKey, gid, kind, isOfficeFile } = meta;
   const rkQuery = resourceKey ? `?resourcekey=${encodeURIComponent(resourceKey)}` : '';
 
-  if (isOfficeFile) return `https://drive.google.com/file/d/${fileId}/preview${rkQuery}`;
+  if (isOfficeFile || kind === 'drive-file') return buildEmbeddedDrivePreviewUrl(meta);
   if (kind === 'google-doc') return `https://docs.google.com/document/d/${fileId}/preview${rkQuery}${rkQuery ? '&' : '?'}rm=minimal`;
   if (kind === 'google-sheet') {
     const params = new URLSearchParams();
@@ -134,8 +134,12 @@ const getPreviewUrl = (url) => {
   }
   if (kind === 'google-slide') return `https://docs.google.com/presentation/d/${fileId}/preview${rkQuery}`;
 
-  return `https://drive.google.com/file/d/${fileId}/preview${rkQuery}`;
+  return buildEmbeddedDrivePreviewUrl(meta);
 };
+
+const buildEmbeddedDrivePreviewUrl = (meta) => (
+  `https://docs.google.com/gview?embedded=true&url=${encodeURIComponent(buildDriveDownloadUrl(meta))}`
+);
 
 const getDownloadUrl = (url) => {
   const meta = extractGoogleDriveMeta(url);

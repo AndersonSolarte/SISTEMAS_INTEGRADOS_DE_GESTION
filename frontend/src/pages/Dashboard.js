@@ -249,8 +249,12 @@ function Dashboard() {
     }
     if (kind === 'google-slide') return `https://docs.google.com/presentation/d/${fileId}/preview${rkQuery}`;
 
-    return `https://drive.google.com/file/d/${fileId}/preview${rkQuery}`;
+    return buildEmbeddedDrivePreviewUrl(meta);
   };
+
+  const buildEmbeddedDrivePreviewUrl = (meta) => (
+    `https://docs.google.com/gview?embedded=true&url=${encodeURIComponent(buildDriveDownloadUrl(meta))}`
+  );
 
   const toAbsoluteDocumentUrl = (url) => {
     if (!url) return '';
