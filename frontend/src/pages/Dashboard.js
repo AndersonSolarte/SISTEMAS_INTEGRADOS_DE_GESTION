@@ -199,14 +199,16 @@ function Dashboard() {
       return `https://docs.google.com/presentation/d/${fileId}/export/pdf${extra}`;
     }
 
-    return buildDriveViewUrl(meta);
+    return buildDriveDownloadUrl(meta);
   };
 
-  const buildDriveViewUrl = ({ fileId, resourceKey }) => {
+  const buildDriveDownloadUrl = ({ fileId, resourceKey }) => {
     const params = new URLSearchParams();
-    params.set('usp', 'sharing');
+    params.set('export', 'download');
+    params.set('id', fileId);
+    params.set('confirm', 't');
     if (resourceKey) params.set('resourcekey', resourceKey);
-    return `https://drive.google.com/file/d/${fileId}/view?${params.toString()}`;
+    return `https://drive.google.com/uc?${params.toString()}`;
   };
 
   const appendQueryParam = (url, key, value) => {
@@ -615,10 +617,6 @@ function Dashboard() {
                                               const link = document.createElement('a');
                                               link.href = downloadUrl;
                                               link.download = buildDownloadFileName(doc);
-                                              if (/^https?:\/\//i.test(downloadUrl) && !downloadUrl.startsWith(window.location.origin)) {
-                                                link.target = '_blank';
-                                                link.rel = 'noopener noreferrer';
-                                              }
                                               document.body.appendChild(link);
                                               link.click();
                                               document.body.removeChild(link);

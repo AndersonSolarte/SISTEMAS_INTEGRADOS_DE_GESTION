@@ -143,7 +143,7 @@ const getDownloadUrl = (url) => {
 
   const { fileId, resourceKey, kind, isOfficeFile } = meta;
 
-  if (isOfficeFile) return buildDriveViewUrl(meta);
+  if (isOfficeFile) return buildDriveDownloadUrl(meta);
   if (kind === 'google-doc') {
     const extra = resourceKey ? `&resourcekey=${encodeURIComponent(resourceKey)}` : '';
     return `https://docs.google.com/document/d/${fileId}/export?format=docx${extra}`;
@@ -159,14 +159,16 @@ const getDownloadUrl = (url) => {
     return `https://docs.google.com/presentation/d/${fileId}/export/pdf${extra}`;
   }
 
-  return buildDriveViewUrl(meta);
+  return buildDriveDownloadUrl(meta);
 };
 
-const buildDriveViewUrl = ({ fileId, resourceKey }) => {
+const buildDriveDownloadUrl = ({ fileId, resourceKey }) => {
   const params = new URLSearchParams();
-  params.set('usp', 'sharing');
+  params.set('export', 'download');
+  params.set('id', fileId);
+  params.set('confirm', 't');
   if (resourceKey) params.set('resourcekey', resourceKey);
-  return `https://drive.google.com/file/d/${fileId}/view?${params.toString()}`;
+  return `https://drive.google.com/uc?${params.toString()}`;
 };
 
 const appendQueryParam = (url, key, value) => {
@@ -1268,10 +1270,6 @@ function AseguramientoCalidad() {
     const link = document.createElement('a');
     link.href = url;
     if (filename) link.download = filename;
-    if (/^https?:\/\//i.test(url) && !url.startsWith(window.location.origin)) {
-      link.target = '_blank';
-      link.rel = 'noopener noreferrer';
-    }
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
