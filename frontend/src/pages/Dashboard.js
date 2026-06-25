@@ -183,7 +183,6 @@ function Dashboard() {
     if (!meta) return appendQueryParam(url, 'download', '1');
 
     const { fileId, resourceKey, kind } = meta;
-    const driveExtra = resourceKey ? `&resourcekey=${encodeURIComponent(resourceKey)}` : '';
 
     if (kind === 'google-doc') {
       const extra = resourceKey ? `&resourcekey=${encodeURIComponent(resourceKey)}` : '';
@@ -200,7 +199,14 @@ function Dashboard() {
       return `https://docs.google.com/presentation/d/${fileId}/export/pdf${extra}`;
     }
 
-    return `https://drive.google.com/uc?export=download&id=${fileId}${driveExtra}`;
+    return buildDriveViewUrl(meta);
+  };
+
+  const buildDriveViewUrl = ({ fileId, resourceKey }) => {
+    const params = new URLSearchParams();
+    params.set('usp', 'sharing');
+    if (resourceKey) params.set('resourcekey', resourceKey);
+    return `https://drive.google.com/file/d/${fileId}/view?${params.toString()}`;
   };
 
   const appendQueryParam = (url, key, value) => {
@@ -609,6 +615,10 @@ function Dashboard() {
                                               const link = document.createElement('a');
                                               link.href = downloadUrl;
                                               link.download = buildDownloadFileName(doc);
+                                              if (/^https?:\/\//i.test(downloadUrl) && !downloadUrl.startsWith(window.location.origin)) {
+                                                link.target = '_blank';
+                                                link.rel = 'noopener noreferrer';
+                                              }
                                               document.body.appendChild(link);
                                               link.click();
                                               document.body.removeChild(link);
