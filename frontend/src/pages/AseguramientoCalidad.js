@@ -139,7 +139,7 @@ const getPreviewUrl = (url) => {
 
 const getDownloadUrl = (url) => {
   const meta = extractGoogleDriveMeta(url);
-  if (!meta) return url;
+  if (!meta) return appendQueryParam(url, 'download', '1');
 
   const { fileId, resourceKey, kind, isOfficeFile } = meta;
   const driveExtra = resourceKey ? `&resourcekey=${encodeURIComponent(resourceKey)}` : '';
@@ -163,6 +163,18 @@ const getDownloadUrl = (url) => {
   return `https://drive.google.com/uc?export=download&id=${fileId}${driveExtra}`;
 };
 
+const appendQueryParam = (url, key, value) => {
+  if (!url) return '';
+  try {
+    const parsed = new URL(url, window.location.origin);
+    parsed.searchParams.set(key, value);
+    return parsed.href.replace(window.location.origin, '');
+  } catch {
+    const separator = String(url).includes('?') ? '&' : '?';
+    return `${url}${separator}${encodeURIComponent(key)}=${encodeURIComponent(value)}`;
+  }
+};
+
 const toAbsoluteDocumentUrl = (url) => {
   if (!url) return '';
   const value = String(url).trim();
@@ -172,6 +184,7 @@ const toAbsoluteDocumentUrl = (url) => {
     const backendBase = apiBase.replace(/\/api\/?$/, '');
     return `${backendBase}${value}`;
   }
+  if (value.startsWith('/api/')) return `${window.location.origin}${value}`;
   return value;
 };
 
@@ -206,9 +219,22 @@ const getExtensionFromUrl = (url) => {
   }
 };
 
+const getDocumentExtension = (doc) => (
+  String(doc?.archivo_extension || getExtensionFromUrl(doc?.link_acceso) || '').toLowerCase()
+);
+
+const buildDocumentPreviewUrl = (doc) => {
+  const resolved = toAbsoluteDocumentUrl(doc?.link_acceso);
+  const extension = getDocumentExtension(doc);
+  if (doc?.url_segura && ['doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx'].includes(extension)) {
+    return `https://view.officeapps.live.com/op/embed.aspx?src=${encodeURIComponent(resolved)}`;
+  }
+  return getPreviewUrl(resolved);
+};
+
 const buildDownloadFileName = (doc, normalized) => {
   const base = sanitizeFileName(`${normalized?.codigo || 'documento'}_${normalized?.titulo || 'archivo'}`);
-  const ext = getExtensionFromUrl(doc?.link_acceso);
+  const ext = getDocumentExtension(doc);
   return ext ? `${base}.${ext}` : base;
 };
 
@@ -283,6 +309,7 @@ const buildInitialDocumentFilters = (scope = 'documentos') => ({
   tipo_documentacion_id: '',
   titulo: '',
   estado: '',
+  formatos_digitales: false,
   include_inactive: '',
   estado_scope: '',
   document_scope: scope
@@ -639,6 +666,7 @@ function AseguramientoCalidad() {
     if (selSubprocesos.length) params.subproceso_id = selSubprocesos.join(',');
     if (selTipos.length) params.tipo_documentacion_id = selTipos.join(',');
     if (filters.titulo) params.titulo = filters.titulo;
+    if (filters.formatos_digitales) params.formatos_digitales = true;
     params.document_scope = activeDocumentScope;
     if (filters.include_inactive) {
       params.include_inactive = filters.include_inactive;
@@ -1214,7 +1242,7 @@ function AseguramientoCalidad() {
   const openDocumentPreview = (doc, normalized) => {
     if (!doc?.link_acceso) return;
     const resolved = toAbsoluteDocumentUrl(doc.link_acceso);
-    setPreviewUrl(getPreviewUrl(resolved));
+    setPreviewUrl(buildDocumentPreviewUrl(doc));
     setPreviewTitle(`${normalized?.codigo || ''} ${normalized?.titulo || ''}`.trim());
     setPreviewDownloadUrl(getDownloadUrl(resolved));
     setPreviewDownloadName(buildDownloadFileName(doc, normalized));
@@ -1287,7 +1315,10 @@ function AseguramientoCalidad() {
 
   const tipoOptions = tipoSource.filter((td) => !isDocumentCode(td.nombre));
   const isFiltering = loading;
-  const displayDocumentos = documentos;
+  const displayDocumentos = useMemo(() => {
+    if (!filters.formatos_digitales) return documentos;
+    return documentos.filter(doc => isReporteSalidaDocument(doc));
+  }, [documentos, filters.formatos_digitales]);
 
   useEffect(() => {
     const keepValidSelections = (selected, options) => {
@@ -1640,11 +1671,49 @@ function AseguramientoCalidad() {
                   { key: 'obsoleto',    label: 'Inactivos',       activeBg: '#f8fafc', activeBorder: '#94a3b8', activeText: '#475569', activeDot: '#94a3b8' },
                 ];
                 return (
-                  <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: canManageDocumental ? 'space-between' : 'flex-end', flexWrap: 'wrap', gap: 1.2, pt: 0.5, borderTop: '1px solid #f1f5f9' }}>
-                    {/* Segmentadores — solo roles con gestión documental */}
-                    {canManageDocumental && (
-                    <Box sx={{ display: 'flex', borderRadius: '10px', bgcolor: '#f1f5f9', border: '1px solid #d1d5db', overflow: 'hidden' }}>
-                      {segments.map((seg, idx) => {
+                  <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 1.2, pt: 0.5, borderTop: '1px solid #f1f5f9' }}>
+                    <Box sx={{ display: 'flex', gap: 1.2, flexWrap: 'wrap' }}>
+                      {/* Segmentador Formatos Digitales (Para todos) */}
+                      <Box sx={{ display: 'flex', borderRadius: '10px', bgcolor: '#f1f5f9', border: '1px solid #d1d5db', overflow: 'hidden' }}>
+                        <Box
+                          onClick={() => {
+                            const val = !filters.formatos_digitales;
+                            const newFilters = { ...filters, formatos_digitales: val };
+                            setFilters(newFilters);
+                            const requestId = ++documentRequestId.current;
+                            skipNextDocumentFilterEffect.current = true;
+                            setLoading(true);
+                            setPage(0);
+                            setHasSearched(true);
+                            setManualSearchMode(true);
+                            documentoService.getDocumentos(newFilters, 1, rowsPerPage)
+                              .then((response) => {
+                                if (requestId !== documentRequestId.current) return;
+                                if (response.success) {
+                                  setDocumentos(response.data.documentos || []);
+                                  setTotalDocumentos(response.data.pagination.total);
+                                }
+                              })
+                              .catch(() => {})
+                              .finally(() => { if (requestId === documentRequestId.current) setLoading(false); });
+                          }}
+                          sx={{
+                            display: 'flex', alignItems: 'center', gap: 0.7,
+                            px: 1.6, py: 0.7,
+                            cursor: 'pointer', userSelect: 'none', transition: 'all 0.18s',
+                            bgcolor: filters.formatos_digitales ? '#dbeafe' : 'transparent',
+                            borderTop: `2.5px solid ${filters.formatos_digitales ? '#3b82f6' : 'transparent'}`,
+                            '&:hover': { bgcolor: filters.formatos_digitales ? '#dbeafe' : '#e9eef5' }
+                          }}>
+                          <Box sx={{ width: 7, height: 7, borderRadius: '50%', bgcolor: filters.formatos_digitales ? '#3b82f6' : '#d1d5db', flexShrink: 0, transition: 'all 0.18s', boxShadow: filters.formatos_digitales ? `0 0 0 2.5px #3b82f630` : 'none' }} />
+                          <Typography sx={{ fontSize: 11.5, fontWeight: filters.formatos_digitales ? 800 : 500, color: filters.formatos_digitales ? '#1d4ed8' : '#6b7280', whiteSpace: 'nowrap', transition: 'all 0.18s' }}>Formatos digitales</Typography>
+                        </Box>
+                      </Box>
+
+                      {/* Segmentadores — solo roles con gestión documental */}
+                      {canManageDocumental && (
+                        <Box sx={{ display: 'flex', borderRadius: '10px', bgcolor: '#f1f5f9', border: '1px solid #d1d5db', overflow: 'hidden' }}>
+                          {segments.map((seg, idx) => {
                         const active = currentScope === seg.key;
                         return (
                           <Box key={seg.key} onClick={() => handleSegmentChange(seg.key)}
@@ -1664,6 +1733,7 @@ function AseguramientoCalidad() {
                       })}
                     </Box>
                     )}
+                    </Box>
 
                     {/* Botones acción */}
                     <Stack direction="row" spacing={1}>

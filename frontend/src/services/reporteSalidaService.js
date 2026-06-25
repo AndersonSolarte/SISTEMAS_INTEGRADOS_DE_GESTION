@@ -41,6 +41,11 @@ const reporteSalidaService = {
     return response.data;
   },
 
+  getSeguimientoBadge: async () => {
+    const response = await api.get('/reporte-salida/seguimiento/badge');
+    return response.data;
+  },
+
   actualizarReposicion: async (id, payload) => {
     const response = await api.patch(`/reporte-salida/solicitudes/${id}/reposicion`, payload);
     return response.data;

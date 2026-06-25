@@ -180,7 +180,7 @@ function Dashboard() {
 
   const getDownloadUrl = (url) => {
     const meta = extractGoogleDriveMeta(url);
-    if (!meta) return url;
+    if (!meta) return appendQueryParam(url, 'download', '1');
 
     const { fileId, resourceKey, kind } = meta;
     const driveExtra = resourceKey ? `&resourcekey=${encodeURIComponent(resourceKey)}` : '';
@@ -201,6 +201,18 @@ function Dashboard() {
     }
 
     return `https://drive.google.com/uc?export=download&id=${fileId}${driveExtra}`;
+  };
+
+  const appendQueryParam = (url, key, value) => {
+    if (!url) return '';
+    try {
+      const parsed = new URL(url, window.location.origin);
+      parsed.searchParams.set(key, value);
+      return parsed.href.replace(window.location.origin, '');
+    } catch {
+      const separator = String(url).includes('?') ? '&' : '?';
+      return `${url}${separator}${encodeURIComponent(key)}=${encodeURIComponent(value)}`;
+    }
   };
 
   const getPreviewUrl = (url) => {
@@ -241,6 +253,7 @@ function Dashboard() {
       const backendBase = apiBase.replace(/\/api\/?$/, '');
       return `${backendBase}${value}`;
     }
+    if (value.startsWith('/api/')) return `${window.location.origin}${value}`;
     return value;
   };
 
@@ -275,16 +288,29 @@ function Dashboard() {
     }
   };
 
+  const getDocumentExtension = (doc) => (
+    String(doc?.archivo_extension || getExtensionFromUrl(doc?.link_acceso) || '').toLowerCase()
+  );
+
+  const buildDocumentPreviewUrl = (doc) => {
+    const resolved = toAbsoluteDocumentUrl(doc?.link_acceso);
+    const extension = getDocumentExtension(doc);
+    if (doc?.url_segura && ['doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx'].includes(extension)) {
+      return `https://view.officeapps.live.com/op/embed.aspx?src=${encodeURIComponent(resolved)}`;
+    }
+    return getPreviewUrl(resolved);
+  };
+
   const buildDownloadFileName = (doc) => {
     const base = sanitizeFileName(`${doc?.codigo || 'documento'}_${doc?.titulo || 'archivo'}`);
-    const ext = getExtensionFromUrl(doc?.link_acceso);
+    const ext = getDocumentExtension(doc);
     return ext ? `${base}.${ext}` : base;
   };
 
   const openDocumentPreview = (doc) => {
     if (!doc?.link_acceso) return;
     const resolved = toAbsoluteDocumentUrl(doc.link_acceso);
-    setPreviewUrl(getPreviewUrl(resolved));
+    setPreviewUrl(buildDocumentPreviewUrl(doc));
     setPreviewTitle(`${doc?.codigo || ''} ${doc?.titulo || ''}`.trim());
     setPreviewDownloadUrl(getDownloadUrl(resolved));
     setPreviewDownloadName(buildDownloadFileName(doc));

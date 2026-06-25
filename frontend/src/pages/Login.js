@@ -36,12 +36,23 @@ function Login() {
   const clientId = process.env.REACT_APP_GOOGLE_CLIENT_ID;
   const currentOrigin = window.location.origin;
   const redirectPath = (() => {
-    const params = new URLSearchParams(location.search || "");
-    const value = params.get("redirect") || "/dashboard";
-    return value.startsWith("/dashboard") ? value : "/dashboard";
+    let value = "/dashboard";
+    if (typeof window !== "undefined") {
+      const stored = sessionStorage.getItem("postLoginRedirect");
+      const params = new URLSearchParams(location.search || "");
+      const fromUrl = params.get("redirect");
+      if (fromUrl && fromUrl.startsWith("/dashboard")) {
+        value = fromUrl;
+        sessionStorage.setItem("postLoginRedirect", fromUrl);
+      } else if (stored && stored.startsWith("/dashboard")) {
+        value = stored;
+      }
+    }
+    return value;
   })();
 
   const navigateWithLoader = useCallback((path) => {
+    sessionStorage.removeItem("postLoginRedirect");
     setTransitioning(true);
     setTransitionFadeOut(false);
     setTimeout(() => setTransitionFadeOut(true), AUTH_LOADER_MS - AUTH_FADE_MS);

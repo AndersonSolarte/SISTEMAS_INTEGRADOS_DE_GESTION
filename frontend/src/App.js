@@ -21,6 +21,7 @@ import Autoevaluacion from './pages/Autoevaluacion';
 import GestionInformacion from './pages/GestionInformacion';
 import PlanAccionRevision from './pages/PlanAccionRevision';
 import PlanAccionConsulta from './pages/PlanAccionConsulta';
+import TiempoReponer from './pages/TiempoReponer';
 import SessionTimeoutModal from './components/SessionTimeoutModal';
 import InstrumentoPublicView from './modules/planeacionEstrategica/autoevaluacion/instrumentos/InstrumentoPublicView';
 import { ROLES } from './constants/roles';
@@ -72,6 +73,7 @@ function App() {
                 {/* Rutas protegidas */}
                 <Route path="/dashboard" element={<PrivateRoute><DashboardLayout /></PrivateRoute>}>
                   <Route index element={<Dashboard />} />
+                  <Route path="tiempo-reponer" element={<TiempoReponer />} />
                   <Route
                     path="aseguramiento-calidad"
                     element={(

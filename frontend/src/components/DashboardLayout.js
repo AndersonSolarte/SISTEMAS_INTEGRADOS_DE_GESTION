@@ -1,4 +1,4 @@
-﻿import React, { useMemo, useState, useEffect, useCallback } from 'react';
+import React, { useMemo, useState, useEffect, useCallback } from 'react';
 import { Outlet, useNavigate, useLocation } from 'react-router-dom';
 import { Box, Drawer, AppBar, Toolbar, List, Typography, IconButton, ListItemButton, ListItemIcon, ListItemText, Menu, MenuItem, Avatar, Chip, Divider, Tooltip, Collapse, Badge } from '@mui/material';
 import {
@@ -16,6 +16,7 @@ import { useAuth } from '../context/AuthContext';
 import { ROLE_LABELS, ROLES } from '../constants/roles';
 import VigiladaMineducacion from './VigiladaMineducacion';
 import planAccionWorkflowService from '../services/planAccionWorkflowService';
+import reporteSalidaService from '../services/reporteSalidaService';
 
 const drawerWidth = 280;
 const FIXED_SECTION_ORDER = [
@@ -36,6 +37,7 @@ function DashboardLayout() {
   const [openGestionProcesos, setOpenGestionProcesos] = useState(false);
   const [openAdministracionSistema, setOpenAdministracionSistema] = useState(false);
   const [planAccionPendientes, setPlanAccionPendientes] = useState(0);
+  const [reposicionBadge, setReposicionBadge] = useState(null);
 
   const refrescarBadgePlanAccion = useCallback(async () => {
     if (!user?.role) return;
@@ -50,9 +52,20 @@ function DashboardLayout() {
     }
   }, [user?.role]);
 
+  const refrescarBadgeReposicion = useCallback(async () => {
+    if (!user) return;
+    try {
+      const resp = await reporteSalidaService.getSeguimientoBadge();
+      setReposicionBadge(resp?.data?.access || null);
+    } catch (err) {
+      setReposicionBadge(null);
+    }
+  }, [user]);
+
   useEffect(() => {
     refrescarBadgePlanAccion();
-  }, [refrescarBadgePlanAccion, location.pathname]);
+    refrescarBadgeReposicion();
+  }, [refrescarBadgePlanAccion, refrescarBadgeReposicion, location.pathname]);
 
   const normalizeMenuByBlocks = (items) => {
     if (!Array.isArray(items)) return [];
@@ -182,7 +195,7 @@ function DashboardLayout() {
   const consultaMenuItems = [
     { key: 'dashboard', path: '/dashboard', label: 'Inicio', icon: <DashboardIcon /> },
     { key: 'buscar_documentos', path: '/dashboard/buscar-documentos', label: 'Consulta de documentos', icon: <ExploreIcon /> },
-    { key: 'favoritos', path: '/dashboard?section=favoritos', label: 'Documentos Favoritos', icon: <FavoriteIcon /> }
+    { key: 'favoritos', path: '/dashboard/favoritos', label: 'Documentos Favoritos', icon: <FavoriteIcon /> }
   ];
 
   const planeacionMenuItems = [
@@ -428,6 +441,31 @@ function DashboardLayout() {
   );
   if (tieneBuscarDocs && !yaTieneFavorito) {
     menuItems = [...menuItems, { key: 'favoritos', path: '/dashboard?section=favoritos', label: 'Documentos Favoritos', icon: <FavoriteIcon /> }];
+  }
+
+  const mostrarReposicion = reposicionBadge?.canView;
+  const totalReposiciones = (reposicionBadge?.counts?.ownPending || 0) + (reposicionBadge?.counts?.bossPending || 0);
+
+  if (mostrarReposicion && totalReposiciones > 0) {
+    const reposicionItem = { 
+      key: 'tiempo_reponer', 
+      path: '/dashboard/tiempo-reponer', 
+      label: 'Tiempo por reponer', 
+      icon: <AssignmentTurnedInIcon />,
+      badge: totalReposiciones > 0 ? totalReposiciones : undefined
+    };
+    
+    // Insert before Favoritos if it exists
+    const favoritosIdx = menuItems.findIndex(it => it.key === 'favoritos');
+    if (favoritosIdx >= 0) {
+      menuItems = [
+        ...menuItems.slice(0, favoritosIdx),
+        reposicionItem,
+        ...menuItems.slice(favoritosIdx)
+      ];
+    } else {
+      menuItems = [...menuItems, reposicionItem];
+    }
   }
 
   const drawer = (

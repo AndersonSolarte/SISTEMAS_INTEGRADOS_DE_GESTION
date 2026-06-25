@@ -12,20 +12,71 @@ import {
   MenuItem,
   Stack,
   TextField,
-  Typography
+  Typography,
+  Tooltip,
+  useMediaQuery,
+  useTheme
 } from '@mui/material';
 import AssignmentTurnedInIcon from '@mui/icons-material/AssignmentTurnedIn';
 import ContentCopyIcon from '@mui/icons-material/ContentCopy';
 import DownloadIcon from '@mui/icons-material/Download';
 import QrCode2Icon from '@mui/icons-material/QrCode2';
+import BusinessCenterIcon from '@mui/icons-material/BusinessCenter';
+import LocalHospitalIcon from '@mui/icons-material/LocalHospital';
+import PeopleIcon from '@mui/icons-material/People';
+import DirectionsWalkIcon from '@mui/icons-material/DirectionsWalk';
+import PersonIcon from '@mui/icons-material/Person';
+import DeleteIcon from '@mui/icons-material/Delete';
+import AddIcon from '@mui/icons-material/Add';
+import SearchIcon from '@mui/icons-material/Search';
+import InfoIcon from '@mui/icons-material/Info';
 import reporteSalidaService from '../../services/reporteSalidaService';
 
 const INITIAL_FORM = {
   personal: { nombre: '', documento: '', correo: '' },
   laboral: { dependencia: '', cargo: '' },
-  salida: { tipo: 'cita_eps', fecha: '', fechaRegreso: '', horaInicio: '', horaFin: '', motivo: '' },
+  salida: { tipo: 'cita_eps', alcance: '', especialidadMedica: '', terapiasList: [], fecha: '', fechaRegreso: '', horaInicio: '', horaFin: '', motivo: '', campusSalida: '', campusDestino: '' },
   reposicion: { fecha: '', fechaFin: '', horaInicio: '', horaFin: '', observacion: '' }
 };
+
+const CARGO_SUBTYPES = [
+  { value: 'ponencia', label: 'Ponencia' },
+  { value: 'visita_ies', label: 'Visita a otras IES' },
+  { value: 'capacitacion', label: 'Capacitación' },
+  { value: 'proyecto_investigacion', label: 'Proyecto de investigación' },
+  { value: 'asistente_congreso', label: 'Asistente a congreso' },
+  { value: 'practica_academica', label: 'Práctica académica' },
+  { value: 'torneo_deportivo', label: 'Participante en torneo deportivo' },
+  { value: 'salida_campus', label: 'Salida entre campus' },
+  { value: 'otra', label: 'Otra, ¿Cuál?:' }
+];
+
+const SALUD_SUBTYPES = [
+  { value: 'cita_eps', label: 'Cita médica por EPS' },
+  { value: 'cita_particular', label: 'Cita médica particular' },
+  { value: 'cita_medica_laboral', label: 'Cita médica laboral' },
+  { value: 'urgencia_medica', label: 'Urgencias' },
+  { value: 'terapias', label: 'Terapias' }
+];
+
+const PERSONALES_SUBTYPES = [
+  { value: 'diligencia_personal', label: 'Diligencia personal' }
+];
+
+const ESPECIALIDADES_MEDICAS = [
+  'Medicina general',
+  'Medicina especializada',
+  'Odontológica',
+  'Optometría',
+  'Laboratorios'
+];
+
+const ALCANCE_OPTIONS = [
+  'Institucional',
+  'Regional',
+  'Nacional',
+  'Internacional'
+];
 
 const WORK_BLOCKS = [
   { start: '07:00', end: '12:00' },
@@ -171,6 +222,22 @@ const getRangeIssue = ({ startDate, endDate, startTime, endTime, minutes, label 
   if (startIssue) return startIssue;
   const endIssue = getBusinessDateIssue(endDate, `La fecha final de ${label}`);
   if (endIssue) return endIssue;
+  
+  if (startDate && startTime) {
+    const today = new Date();
+    const todayStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+    if (startDate === todayStr) {
+      const currentMinutes = today.getHours() * 60 + today.getMinutes();
+      const [h, m] = String(startTime || '').split(':').map(Number);
+      if (Number.isFinite(h) && Number.isFinite(m)) {
+        const startMins = h * 60 + m;
+        if (startMins < currentMinutes) {
+          return `La hora de inicio de ${label} no puede ser anterior a la hora actual.`;
+        }
+      }
+    }
+  }
+
   if (startDate && endDate && startTime && endTime && !minutes) {
     return `El rango de ${label} no suma tiempo laboral. Revise fechas, horas y jornada institucional.`;
   }
@@ -270,8 +337,31 @@ const SectionTitle = ({ title, subtitle }) => (
   </Box>
 );
 
+const isPastTimeError = (dateStr, timeStr) => {
+  if (!dateStr || !timeStr) return false;
+  const today = new Date();
+  const todayStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+  if (dateStr === todayStr) {
+    const currentMinutes = today.getHours() * 60 + today.getMinutes();
+    const [h, m] = String(timeStr).split(':').map(Number);
+    if (Number.isFinite(h) && Number.isFinite(m)) {
+      return (h * 60 + m) < currentMinutes;
+    }
+  }
+  return false;
+};
+
 function ReporteSalidaFormDialog({ open, documento, user, onClose, onSubmitted }) {
+  const theme = useTheme();
+  const fullScreen = useMediaQuery(theme.breakpoints.down('md'));
+  const todayDate = new Date();
+  const todayString = `${todayDate.getFullYear()}-${String(todayDate.getMonth() + 1).padStart(2, '0')}-${String(todayDate.getDate()).padStart(2, '0')}`;
+  const [showSaludWarning, setShowSaludWarning] = useState(false);
+  const [showPersonalesWarning, setShowPersonalesWarning] = useState(false);
+  const [showPropiasCargoWarning, setShowPropiasCargoWarning] = useState(false);
   const [form, setForm] = useState(INITIAL_FORM);
+  const [isSalidaMultiple, setIsSalidaMultiple] = useState(false);
+  const [participantes, setParticipantes] = useState([]);
   const [jefe, setJefe] = useState(null);
   const [jefes, setJefes] = useState([]);
   const [dependencias, setDependencias] = useState([]);
@@ -284,6 +374,77 @@ function ReporteSalidaFormDialog({ open, documento, user, onClose, onSubmitted }
   const [errorMessage, setErrorMessage] = useState('');
   const [qrOpen, setQrOpen] = useState(false);
   const [qrCopied, setQrCopied] = useState(false);
+
+  const handleAddParticipant = (colaborador) => {
+    if (!colaborador) return;
+    if (participantes.some((p) => String(p.documento).trim() === String(colaborador.documento).trim())) {
+      return;
+    }
+    setParticipantes((prev) => [
+      ...prev,
+      {
+        nombre: colaborador.nombre,
+        documento: colaborador.documento,
+        correo: colaborador.email || '',
+        dependencia: colaborador.dependencia,
+        cargo: colaborador.cargo
+      }
+    ]);
+  };
+
+  const handleUpdateParticipantEmail = (index, value) => {
+    setParticipantes((prev) => {
+      const next = [...prev];
+      next[index] = { ...next[index], correo: value };
+      return next;
+    });
+  };
+
+  const handleRemoveParticipant = (index) => {
+    setParticipantes((prev) => prev.filter((_, i) => i !== index));
+  };
+
+  const { category, subtype, otraDescripcion } = useMemo(() => {
+    const tipo = form.salida.tipo || '';
+    if (SALUD_SUBTYPES.some((s) => s.value === tipo)) {
+      return { category: 'salud', subtype: tipo, otraDescripcion: '' };
+    }
+    if (PERSONALES_SUBTYPES.some((s) => s.value === tipo)) {
+      return { category: 'personales', subtype: tipo, otraDescripcion: '' };
+    }
+    if (CARGO_SUBTYPES.some((s) => s.value === tipo)) {
+      return { category: 'propias_cargo', subtype: tipo, otraDescripcion: '' };
+    }
+    if (tipo.startsWith('otra:')) {
+      return { category: 'propias_cargo', subtype: 'otra', otraDescripcion: tipo.substring(5) };
+    }
+    return { category: 'salud', subtype: 'cita_eps', otraDescripcion: '' };
+  }, [form.salida.tipo]);
+
+  const handleCategoryChange = (newCategory) => {
+    if (newCategory === 'propias_cargo') {
+      update('salida', 'tipo', 'ponencia');
+      setShowPropiasCargoWarning(true);
+    } else if (newCategory === 'salud') {
+      update('salida', 'tipo', 'cita_eps');
+      setShowSaludWarning(true);
+    } else if (newCategory === 'personales') {
+      update('salida', 'tipo', 'diligencia_personal');
+      setShowPersonalesWarning(true);
+    }
+  };
+
+  const handleSubtypeChange = (newSubtype) => {
+    if (newSubtype === 'otra') {
+      update('salida', 'tipo', 'otra:');
+    } else {
+      update('salida', 'tipo', newSubtype);
+    }
+  };
+
+  const handleOtraDescripcionChange = (newDesc) => {
+    update('salida', 'tipo', `otra:${newDesc}`);
+  };
 
   const directFormUrl = useMemo(() => {
     if (typeof window === 'undefined') return '';
@@ -308,12 +469,60 @@ function ReporteSalidaFormDialog({ open, documento, user, onClose, onSubmitted }
         nombre: user?.nombre || '',
         documento: user?.username || '',
         correo: user?.email || ''
+      },
+      laboral: {
+        dependencia: user?.dependencia || '',
+        cargo: user?.cargo || ''
       }
     });
-    setJefe(null);
+
+    if (user?.jefe_inmediato) {
+      setJefe({
+        id: `profile-jefe:${normalizeOption(user.jefe_inmediato)}`,
+        userId: null,
+        nombre: user.jefe_inmediato,
+        email: '',
+        username: '',
+        cargo: '',
+        dependencia: '',
+        jefe_inmediato: user.jefe_inmediato,
+        source: 'users'
+      });
+    } else {
+      setJefe(null);
+    }
+    
     setJefeSearch('');
     setErrorMessage('');
+    setIsSalidaMultiple(false);
+    setParticipantes([]);
   }, [open, user]);
+
+  useEffect(() => {
+    if (!open) return;
+    if (isSalidaMultiple) {
+      setParticipantes([
+        {
+          nombre: user?.nombre || '',
+          documento: user?.username || '',
+          correo: user?.email || '',
+          dependencia: form.laboral.dependencia || '',
+          cargo: form.laboral.cargo || ''
+        }
+      ]);
+      if (PERSONALES_SUBTYPES.some(s => s.value === form.salida.tipo)) {
+        setForm(prev => ({
+          ...prev,
+          salida: {
+            ...prev.salida,
+            tipo: 'ponencia'
+          }
+        }));
+      }
+    } else {
+      setParticipantes([]);
+    }
+  }, [isSalidaMultiple, open, user, form.laboral.dependencia, form.laboral.cargo, form.salida.tipo]);
 
   useEffect(() => {
     if (!open) return;
@@ -352,26 +561,47 @@ function ReporteSalidaFormDialog({ open, documento, user, onClose, onSubmitted }
     setLoadingJefes(false);
   }, [jefeSearch, open]);
 
-  const salidaMinutes = useMemo(
-    () => countBusinessMinutes(form.salida.fecha, form.salida.fechaRegreso, form.salida.horaInicio, form.salida.horaFin),
-    [form.salida.fecha, form.salida.fechaRegreso, form.salida.horaInicio, form.salida.horaFin]
-  );
+  const salidaMinutes = useMemo(() => {
+    if (subtype === 'terapias') {
+      const list = form.salida.terapiasList || [];
+      return list.reduce((total, t) => {
+        const tMins = countBusinessMinutes(t.fecha, t.fecha, t.horaInicio, t.horaFin) || 0;
+        return total + tMins;
+      }, 0);
+    }
+    return countBusinessMinutes(form.salida.fecha, form.salida.fechaRegreso, form.salida.horaInicio, form.salida.horaFin);
+  }, [form.salida.fecha, form.salida.fechaRegreso, form.salida.horaInicio, form.salida.horaFin, form.salida.terapiasList, subtype]);
 
   const reposicionMinutes = useMemo(
     () => countElapsedMinutes(form.reposicion.fecha, form.reposicion.fechaFin, form.reposicion.horaInicio, form.reposicion.horaFin),
     [form.reposicion.fecha, form.reposicion.fechaFin, form.reposicion.horaInicio, form.reposicion.horaFin]
   );
-  const salidaRangeIssue = useMemo(
-    () => getRangeIssue({
+
+  const salidaRangeIssue = useMemo(() => {
+    if (subtype === 'terapias') {
+      const list = form.salida.terapiasList || [];
+      for (let i = 0; i < list.length; i++) {
+        const issue = getRangeIssue({
+          startDate: list[i].fecha,
+          endDate: list[i].fecha,
+          startTime: list[i].horaInicio,
+          endTime: list[i].horaFin,
+          minutes: countBusinessMinutes(list[i].fecha, list[i].fecha, list[i].horaInicio, list[i].horaFin),
+          label: `terapia #${i + 1}`
+        });
+        if (issue) return issue;
+      }
+      return '';
+    }
+    return getRangeIssue({
       startDate: form.salida.fecha,
       endDate: form.salida.fechaRegreso,
       startTime: form.salida.horaInicio,
       endTime: form.salida.horaFin,
       minutes: salidaMinutes,
       label: 'salida'
-    }),
-    [form.salida.fecha, form.salida.fechaRegreso, form.salida.horaFin, form.salida.horaInicio, salidaMinutes]
-  );
+    });
+  }, [form.salida.fecha, form.salida.fechaRegreso, form.salida.horaFin, form.salida.horaInicio, salidaMinutes, form.salida.terapiasList, subtype]);
   const reposicionHasAnyValue = Boolean(form.reposicion.fecha || form.reposicion.fechaFin || form.reposicion.horaInicio || form.reposicion.horaFin);
   const reposicionPlanComplete = Boolean(form.reposicion.fecha && form.reposicion.fechaFin && form.reposicion.horaInicio && form.reposicion.horaFin);
   const reposicionRangeIssue = useMemo(() => {
@@ -386,16 +616,60 @@ function ReporteSalidaFormDialog({ open, documento, user, onClose, onSubmitted }
   const isPersonal = form.salida.tipo === 'diligencia_personal';
   const validationIssues = useMemo(() => {
     const issues = [];
-    if (!form.laboral.dependencia) issues.push('Seleccione la dependencia del colaborador.');
-    if (!form.laboral.cargo) issues.push('Seleccione el cargo del colaborador.');
-    if (!jefe) issues.push('Seleccione el jefe inmediato que aprobara la solicitud.');
-    else if (!jefe.email) issues.push('El jefe inmediato seleccionado no tiene correo registrado.');
-    if (!form.salida.fecha || !form.salida.horaInicio || !form.salida.fechaRegreso || !form.salida.horaFin) {
-      issues.push('Complete fecha de salida, hora de salida, fecha de regreso y hora de regreso.');
-    } else if (salidaRangeIssue) {
-      issues.push(salidaRangeIssue);
-    } else if (!salidaMinutes) {
-      issues.push('El tiempo solicitado debe sumar al menos un periodo dentro de la jornada laboral.');
+    if (isSalidaMultiple) {
+      if (participantes.length === 0) {
+        issues.push('Debe agregar al menos un participante a la salida grupal.');
+      }
+      participantes.forEach((p, idx) => {
+        if (!p.correo || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(p.correo)) {
+          issues.push(`El participante #${idx + 1} (${p.nombre || 'Sin nombre'}) no tiene un correo electronico valido.`);
+        }
+      });
+    } else {
+      if (!form.laboral.dependencia) issues.push('Seleccione la dependencia del colaborador.');
+      if (!form.laboral.cargo) issues.push('Seleccione el cargo del colaborador.');
+      if (!jefe) issues.push('Seleccione el jefe inmediato que aprobara la solicitud.');
+      else if (!jefe.email) issues.push('El jefe inmediato seleccionado no tiene correo registrado.');
+    }
+
+    if (!subtype) {
+      issues.push('Seleccione el motivo de la salida.');
+    } else if (subtype === 'otra' && !otraDescripcion.trim()) {
+      issues.push('Especifique el motivo de la salida para la opcion "Otra, ¿Cual?".');
+    } else if (subtype === 'salida_campus') {
+      if (!form.salida.campusSalida || !form.salida.campusDestino) {
+        issues.push('Debe seleccionar el campus de salida y el campus de destino.');
+      } else if (form.salida.campusSalida === form.salida.campusDestino) {
+        issues.push('El campus de salida y el campus de destino no pueden ser iguales.');
+      }
+    } else if (['cita_eps', 'cita_particular'].includes(subtype) && !form.salida.especialidadMedica) {
+      issues.push('Seleccione la especialidad medica para la cita.');
+    }
+
+    if (subtype === 'terapias') {
+      const list = form.salida.terapiasList || [];
+      if (list.length === 0) {
+        issues.push('Debe indicar la cantidad de terapias y completarlas.');
+      } else {
+        list.forEach((t, i) => {
+          if (!t.fecha || !t.horaInicio || !t.horaFin) {
+            issues.push(`Complete fecha, hora inicio y hora fin para la terapia #${i + 1}.`);
+          }
+        });
+      }
+      if (salidaRangeIssue) {
+        issues.push(salidaRangeIssue);
+      } else if (!salidaMinutes) {
+        issues.push('El tiempo total de terapias debe ser mayor a cero.');
+      }
+    } else {
+      if (!form.salida.fecha || !form.salida.horaInicio || !form.salida.fechaRegreso || !form.salida.horaFin) {
+        issues.push('Complete fecha de salida, hora de salida, fecha de regreso y hora de regreso.');
+      } else if (salidaRangeIssue) {
+        issues.push(salidaRangeIssue);
+      } else if (!salidaMinutes) {
+        issues.push('El tiempo solicitado debe sumar al menos un periodo dentro de la jornada laboral.');
+      }
     }
     if (isPersonal && reposicionHasAnyValue) {
       if (reposicionRangeIssue) {
@@ -406,12 +680,18 @@ function ReporteSalidaFormDialog({ open, documento, user, onClose, onSubmitted }
     }
     return issues;
   }, [
+    isSalidaMultiple,
+    participantes,
     form.laboral.cargo,
     form.laboral.dependencia,
     form.salida.fecha,
     form.salida.fechaRegreso,
     form.salida.horaFin,
     form.salida.horaInicio,
+    form.salida.campusSalida,
+    form.salida.campusDestino,
+    subtype,
+    otraDescripcion,
     isPersonal,
     jefe,
     reposicionMinutes,
@@ -423,82 +703,81 @@ function ReporteSalidaFormDialog({ open, documento, user, onClose, onSubmitted }
 
   const selectedDependenciaIsCatalog = hasExactOption(form.laboral.dependencia, dependencias);
   const selectedCargoIsCatalog = hasExactOption(form.laboral.cargo, cargos);
-  const selectedJefeName = jefe?.jefe_inmediato || jefe?.nombre || '';
-  const selectedJefeIsCatalog = Boolean(normalizeOption(selectedJefeName));
-
-  const filteredLaboralRows = useMemo(() => {
-    return laboralRows.filter((row) => {
-      const rowDep = normalizeOption(row.dependencia);
-      const rowCargo = normalizeOption(row.cargo);
-      const rowJefe = normalizeOption(row.jefe_inmediato);
-      if (selectedDependenciaIsCatalog && rowDep !== normalizeOption(form.laboral.dependencia)) return false;
-      if (selectedCargoIsCatalog && rowCargo !== normalizeOption(form.laboral.cargo)) return false;
-      if (selectedJefeIsCatalog && rowJefe !== normalizeOption(selectedJefeName)) return false;
-      return true;
-    });
-  }, [form.laboral.cargo, form.laboral.dependencia, laboralRows, selectedCargoIsCatalog, selectedDependenciaIsCatalog, selectedJefeIsCatalog, selectedJefeName]);
 
   const dependenciaOptions = useMemo(() => {
     if (!laboralRows.length) return dependencias;
-    if (selectedCargoIsCatalog || selectedJefeIsCatalog) {
-      return uniqueSorted(filteredLaboralRows.map((row) => row.dependencia));
+    if (selectedCargoIsCatalog) {
+      const filteredRows = laboralRows.filter(
+        (row) => normalizeOption(row.cargo) === normalizeOption(form.laboral.cargo)
+      );
+      return uniqueSorted(filteredRows.map((row) => row.dependencia));
     }
     return uniqueSorted(laboralRows.map((row) => row.dependencia));
-  }, [dependencias, filteredLaboralRows, laboralRows, selectedCargoIsCatalog, selectedJefeIsCatalog]);
+  }, [dependencias, form.laboral.cargo, laboralRows, selectedCargoIsCatalog]);
 
   const cargoOptions = useMemo(() => {
     if (!laboralRows.length) return cargos;
-    if (selectedDependenciaIsCatalog || selectedJefeIsCatalog) {
-      return uniqueSorted(filteredLaboralRows.map((row) => row.cargo));
+    if (selectedDependenciaIsCatalog) {
+      const filteredRows = laboralRows.filter(
+        (row) => normalizeOption(row.dependencia) === normalizeOption(form.laboral.dependencia)
+      );
+      return uniqueSorted(filteredRows.map((row) => row.cargo));
     }
     return uniqueSorted(laboralRows.map((row) => row.cargo));
-  }, [cargos, filteredLaboralRows, laboralRows, selectedDependenciaIsCatalog, selectedJefeIsCatalog]);
-
-  const jefeOptions = useMemo(() => {
-    const term = normalizeOption(jefeSearch);
-    const hasRelationFilter = selectedDependenciaIsCatalog || selectedCargoIsCatalog;
-    const relatedRows = hasRelationFilter
-      ? filteredLaboralRows
-      : laboralRows;
-    const allowedBosses = new Set(
-      relatedRows
-        .map((row) => normalizeOption(row.jefe_inmediato))
-        .filter(Boolean)
-    );
-    const matchesSearch = (item) => {
-      if (!term) return true;
-      return [item.nombre, item.jefe_inmediato, item.email, item.username, item.cargo, item.dependencia]
-        .some((value) => normalizeOption(value).includes(term));
-    };
-
-    return jefes
-      .filter((item) => {
-        if (!hasRelationFilter) return true;
-        if (!allowedBosses.size) return false;
-        return allowedBosses.has(normalizeOption(item.jefe_inmediato || item.nombre));
-      })
-      .filter(matchesSearch)
-      .map((item) => ({
-        ...item,
-        matchGroup: hasRelationFilter ? 'Jefes relacionados' : 'Jefes disponibles'
-      }));
-  }, [filteredLaboralRows, jefeSearch, jefes, laboralRows, selectedCargoIsCatalog, selectedDependenciaIsCatalog]);
+  }, [cargos, form.laboral.dependencia, laboralRows, selectedDependenciaIsCatalog]);
 
   useEffect(() => {
-    if (!jefe || (!selectedDependenciaIsCatalog && !selectedCargoIsCatalog)) return;
-    const validBosses = new Set(filteredLaboralRows.map((row) => normalizeOption(row.jefe_inmediato)).filter(Boolean));
-    if (!validBosses.size || !validBosses.has(normalizeOption(jefe.jefe_inmediato || jefe.nombre))) {
-      setJefe(null);
+    if (!laboralRows.length) return;
+    const depNormalized = normalizeOption(form.laboral.dependencia);
+    const cargoNormalized = normalizeOption(form.laboral.cargo);
+
+    const matchedRow = laboralRows.find(
+      (row) => normalizeOption(row.dependencia) === depNormalized && normalizeOption(row.cargo) === cargoNormalized
+    );
+
+    if (matchedRow && matchedRow.jefe_inmediato) {
+      const jefeName = matchedRow.jefe_inmediato;
+      const matchedBoss = jefes.find(
+        (item) => normalizeOption(item.jefe_inmediato || item.nombre) === normalizeOption(jefeName)
+      );
+      if (matchedBoss) {
+        setJefe(matchedBoss);
+      } else {
+        setJefe({
+          id: `profile-jefe:${normalizeOption(jefeName)}`,
+          userId: null,
+          nombre: jefeName,
+          email: '',
+          username: '',
+          cargo: '',
+          dependencia: '',
+          jefe_inmediato: jefeName,
+          source: 'users'
+        });
+      }
     }
-  }, [filteredLaboralRows, jefe, selectedCargoIsCatalog, selectedDependenciaIsCatalog]);
+  }, [form.laboral.dependencia, form.laboral.cargo, laboralRows, jefes]);
 
-  const jefeHasDirectDependencyMatch = useMemo(() => {
-    if (!selectedDependenciaIsCatalog && !selectedCargoIsCatalog) return true;
-    return jefeOptions.length > 0;
-  }, [jefeOptions.length, selectedCargoIsCatalog, selectedDependenciaIsCatalog]);
+  useEffect(() => {
+    if (jefe && !jefe.email && jefes.length > 0) {
+      const matchedBoss = jefes.find(
+        (item) => normalizeOption(item.jefe_inmediato || item.nombre) === normalizeOption(jefe.nombre)
+      );
+      if (matchedBoss) {
+        setJefe(matchedBoss);
+      }
+    }
+  }, [jefe, jefes]);
 
-  const jefeHelperText = (selectedDependenciaIsCatalog || selectedCargoIsCatalog) && !jefeHasDirectDependencyMatch
-    ? 'No hay jefe inmediato relacionado con los filtros seleccionados.'
+  const displayJefeValue = useMemo(() => {
+    if (!jefe) return '';
+    const main = [jefe.cargo, jefe.nombre].filter(Boolean).join(' - ');
+    const label = main || jefe.jefe_inmediato || '';
+    return jefe.email ? `${label} (${jefe.email})` : label;
+  }, [jefe]);
+
+  const jefeHelperText = !jefe && (form.laboral.dependencia || form.laboral.cargo)
+    ? 'No hay jefe inmediato relacionado con la dependencia y cargo seleccionados.'
     : '';
 
   const update = (section, key, value) => {
@@ -530,8 +809,10 @@ function ReporteSalidaFormDialog({ open, documento, user, onClose, onSubmitted }
     try {
       const response = await reporteSalidaService.radicarSolicitud({
         documentoId: documento?.id,
-        jefeInmediatoUserId: jefe?.userId || null,
-        jefeInmediato: jefe ? {
+        isSalidaMultiple,
+        participantes: isSalidaMultiple ? participantes : [],
+        jefeInmediatoUserId: isSalidaMultiple ? null : (jefe?.userId || null),
+        jefeInmediato: isSalidaMultiple ? null : (jefe ? {
           id: jefe.id,
           userId: jefe.userId || null,
           nombre: jefe.nombre || '',
@@ -541,7 +822,7 @@ function ReporteSalidaFormDialog({ open, documento, user, onClose, onSubmitted }
           dependencia: jefe.dependencia || '',
           jefe_inmediato: jefe.jefe_inmediato || jefe.nombre || '',
           source: jefe.source || 'recurso_humano_administrativos'
-        } : null,
+        } : null),
         ...form
       });
       onSubmitted?.(response);
@@ -557,250 +838,813 @@ function ReporteSalidaFormDialog({ open, documento, user, onClose, onSubmitted }
 
   return (
     <>
-    <Dialog
-      open={open}
-      onClose={submitting ? undefined : onClose}
-      maxWidth="lg"
-      fullWidth
-      PaperProps={{
-        sx: {
-          borderRadius: 3,
-          overflow: 'hidden',
-          width: 'min(1180px, calc(100vw - 32px))'
-        }
-      }}
-    >
-      <DialogTitle sx={{ px: { xs: 2, md: 3 }, py: 2, bgcolor: '#f8fbff', borderBottom: '1px solid #dbe6f5' }}>
-        <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1.2} alignItems={{ xs: 'stretch', sm: 'center' }} justifyContent="space-between">
-          <Stack direction="row" spacing={1.2} alignItems="center">
-            <Box sx={{ width: 38, height: 38, borderRadius: 2, bgcolor: '#2563eb', display: 'grid', placeItems: 'center' }}>
-              <AssignmentTurnedInIcon sx={{ color: '#fff', fontSize: 22 }} />
-            </Box>
-            <Box>
-              <Typography sx={{ fontWeight: 900 }}>Diligenciar reporte de salida</Typography>
-              <Typography sx={{ color: '#64748b', fontSize: 12 }}>{documento?.codigo} - {documento?.titulo}</Typography>
-            </Box>
+      <Dialog
+        open={open}
+        onClose={submitting ? undefined : onClose}
+        maxWidth="lg"
+        fullWidth
+        fullScreen={fullScreen}
+        PaperProps={{
+          sx: {
+            borderRadius: fullScreen ? 0 : 3,
+            overflow: 'hidden',
+            width: fullScreen ? '100%' : 'min(1180px, calc(100vw - 32px))'
+          }
+        }}
+      >
+        <DialogTitle sx={{ px: { xs: 2, md: 3 }, py: 2, bgcolor: '#f8fbff', borderBottom: '1px solid #dbe6f5' }}>
+          <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1.2} alignItems={{ xs: 'stretch', sm: 'center' }} justifyContent="space-between">
+            <Stack direction="row" spacing={1.2} alignItems="center">
+              <Box sx={{ width: 38, height: 38, borderRadius: 2, bgcolor: '#2563eb', display: 'grid', placeItems: 'center' }}>
+                <AssignmentTurnedInIcon sx={{ color: '#fff', fontSize: 22 }} />
+              </Box>
+              <Box>
+                <Typography sx={{ fontWeight: 900 }}>Diligenciar reporte de salida</Typography>
+                <Typography sx={{ color: '#64748b', fontSize: 12 }}>{documento?.codigo} - {documento?.titulo}</Typography>
+              </Box>
+            </Stack>
+            <Stack direction="row" spacing={1.5} alignItems="center" sx={{ ml: { sm: 'auto' }, alignSelf: { xs: 'stretch', sm: 'center' } }}>
+              <Button
+                variant="outlined"
+                size="small"
+                startIcon={<QrCode2Icon />}
+                onClick={() => setQrOpen(true)}
+                sx={{ borderRadius: 2, textTransform: 'none', fontWeight: 900, height: 38, alignSelf: { xs: 'flex-start', sm: 'center' } }}
+              >
+                Generar QR
+              </Button>
+            </Stack>
           </Stack>
-          <Button
-            variant="outlined"
-            size="small"
-            startIcon={<QrCode2Icon />}
-            onClick={() => setQrOpen(true)}
-            sx={{ borderRadius: 2, textTransform: 'none', fontWeight: 900, alignSelf: { xs: 'flex-start', sm: 'center' } }}
-          >
-            Generar QR
-          </Button>
-        </Stack>
-      </DialogTitle>
-      <DialogContent dividers sx={{ bgcolor: '#f6f8fb', p: { xs: 2, md: 3 } }}>
-        <Stack spacing={2}>
-          <Alert severity="info">
-            La solicitud se radica para el usuario autenticado. El sistema no permite enviar reportes a nombre de otros usuarios.
-          </Alert>
-          {errorMessage && <Alert severity="error">{errorMessage}</Alert>}
+        </DialogTitle>
+        <DialogContent dividers sx={{ bgcolor: '#f6f8fb', p: { xs: 2, md: 3 } }}>
+          <Stack spacing={2}>
+            {errorMessage && <Alert severity="error">{errorMessage}</Alert>}
 
-          <Box sx={sectionSx}>
-            <SectionTitle title="Datos del colaborador" subtitle="Estos datos se toman del usuario autenticado." />
-            <Box sx={responsiveFieldGrid('minmax(220px, 1fr) minmax(180px, 0.75fr) minmax(260px, 1.2fr)')}>
-              <TextField sx={inputSx} fullWidth size="small" label="Nombre" value={form.personal.nombre} disabled />
-              <TextField sx={inputSx} fullWidth size="small" label="Documento" value={form.personal.documento} disabled />
-              <TextField sx={inputSx} fullWidth size="small" label="Correo" value={form.personal.correo} disabled />
-            </Box>
-          </Box>
-
-          <Box sx={sectionSx}>
-            <SectionTitle
-              title="Información laboral"
-              subtitle={catalogYear ? `Datos sugeridos desde Recurso Humano administrativo ${catalogYear}.` : 'Seleccione la dependencia institucional y registre el cargo.'}
-            />
-            <Box sx={responsiveFieldGrid('minmax(360px, 1.45fr) minmax(240px, 0.9fr)')}>
-              <Autocomplete
-                freeSolo
-                fullWidth
-                options={dependenciaOptions}
-                value={form.laboral.dependencia || ''}
-                onChange={(_, value) => update('laboral', 'dependencia', value || '')}
-                onInputChange={(_, value) => update('laboral', 'dependencia', value || '')}
-                ListboxProps={{ sx: autocompleteListSx }}
-                componentsProps={{
-                  popper: {
-                    sx: {
-                      ...autocompletePopperSx,
-                      width: { xs: 'calc(100vw - 48px) !important', md: '720px !important' },
-                      maxWidth: 'calc(100vw - 48px)'
-                    }
+            {/* New Toggle Group / Individual */}
+            <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', md: '1fr 1fr' }, gap: 1.5, mb: 2 }}>
+              <Box
+                onClick={() => setIsSalidaMultiple(false)}
+                sx={{
+                  py: 0.8,
+                  px: 3,
+                  width: '100%',
+                  borderRadius: 3,
+                  border: '2px solid',
+                  borderColor: !isSalidaMultiple ? '#2563eb' : '#e2e8f0',
+                  bgcolor: !isSalidaMultiple ? '#eff6ff' : '#ffffff',
+                  boxShadow: !isSalidaMultiple ? '0 8px 20px rgba(37, 99, 235, 0.15)' : '0 2px 5px rgba(0,0,0,0.02)',
+                  cursor: 'pointer',
+                  transition: 'all 0.2s cubic-bezier(0.4, 0, 0.2, 1)',
+                  display: 'flex',
+                  flexDirection: 'row',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  minHeight: 44,
+                  gap: 1.5,
+                  '&:hover': {
+                    borderColor: '#2563eb',
+                    transform: 'translateY(-2px)',
+                    boxShadow: '0 10px 25px rgba(37, 99, 235, 0.12)'
                   }
                 }}
-                renderInput={(params) => <TextField {...params} sx={inputSx} fullWidth size="small" required label="Dependencia" placeholder="Buscar dependencia" />}
-              />
-              <Autocomplete
-                freeSolo
-                fullWidth
-                options={cargoOptions}
-                value={form.laboral.cargo || ''}
-                onChange={(_, value) => update('laboral', 'cargo', value || '')}
-                onInputChange={(_, value) => update('laboral', 'cargo', value || '')}
-                ListboxProps={{ sx: autocompleteListSx }}
-                componentsProps={{
-                  popper: {
-                    sx: {
-                      ...autocompletePopperSx,
-                      width: { xs: 'calc(100vw - 48px) !important', md: '620px !important' },
-                      maxWidth: 'calc(100vw - 48px)'
-                    }
+              >
+                <PersonIcon sx={{ fontSize: 24, color: !isSalidaMultiple ? '#2563eb' : '#94a3b8', transition: 'color 0.2s' }} />
+                <Typography sx={{ fontWeight: 800, fontSize: 13, color: !isSalidaMultiple ? '#1e3a8a' : '#475569', textAlign: 'center' }}>
+                  Salida Individual
+                </Typography>
+              </Box>
+              <Box
+                onClick={() => setIsSalidaMultiple(true)}
+                sx={{
+                  py: 0.8,
+                  px: 3,
+                  width: '100%',
+                  borderRadius: 3,
+                  border: '2px solid',
+                  borderColor: isSalidaMultiple ? '#2563eb' : '#e2e8f0',
+                  bgcolor: isSalidaMultiple ? '#eff6ff' : '#ffffff',
+                  boxShadow: isSalidaMultiple ? '0 8px 20px rgba(37, 99, 235, 0.15)' : '0 2px 5px rgba(0,0,0,0.02)',
+                  cursor: 'pointer',
+                  transition: 'all 0.2s cubic-bezier(0.4, 0, 0.2, 1)',
+                  display: 'flex',
+                  flexDirection: 'row',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  minHeight: 44,
+                  gap: 1.5,
+                  '&:hover': {
+                    borderColor: '#2563eb',
+                    transform: 'translateY(-2px)',
+                    boxShadow: '0 10px 25px rgba(37, 99, 235, 0.12)'
                   }
                 }}
-                renderInput={(params) => <TextField {...params} sx={inputSx} fullWidth size="small" required label="Cargo" placeholder="Buscar cargo" />}
-              />
-            </Box>
-            <Box sx={{ mt: 1.5 }}>
-              <Autocomplete
-                fullWidth
-                options={jefeOptions}
-                value={jefe}
-                loading={loadingJefes}
-                groupBy={(option) => option.matchGroup || ''}
-                onInputChange={(_, value) => setJefeSearch(value)}
-                onChange={(_, value) => setJefe(value)}
-                getOptionLabel={(option) => {
-                  if (!option) return '';
-                  const main = [option.cargo, option.nombre].filter(Boolean).join(' - ');
-                  const label = main || option.jefe_inmediato || '';
-                  return option.email ? `${label} (${option.email})` : label;
-                }}
-                isOptionEqualToValue={(option, value) => option.id === value.id}
-                ListboxProps={{ sx: autocompleteListSx }}
-                componentsProps={{
-                  popper: {
-                    sx: {
-                      ...autocompletePopperSx,
-                      width: { xs: 'calc(100vw - 48px) !important', md: '860px !important' },
-                      maxWidth: 'calc(100vw - 48px)'
-                    }
-                  }
-                }}
-                renderInput={(params) => (
-                  <TextField
-                    {...params}
-                    sx={inputSx}
-                    label="Jefe inmediato"
-                    required
-                    size="small"
-                    placeholder="Buscar por nombre, correo o documento"
-                    helperText={jefe && !jefe.email ? 'El jefe seleccionado no tiene correo registrado en Recurso Humano.' : jefeHelperText}
-                    error={Boolean(jefe && !jefe.email)}
-                  />
-                )}
-              />
-            </Box>
-          </Box>
-
-          <Box sx={sectionSx}>
-            <SectionTitle title="Datos de la salida" subtitle="Indique el tipo de salida y el tiempo solicitado." />
-            <Alert severity="info" sx={{ mb: 1.4 }}>
-              El sistema calcula cuantas horas queda debiendo el colaborador segun la jornada laboral vigente: lunes a viernes, excluyendo festivos de Colombia, 7:00 a.m. a 12:00 m. y 2:00 p.m. a 6:00 p.m.
-            </Alert>
-            <Box sx={responsiveFieldGrid('minmax(220px, 1.15fr) minmax(160px, 0.8fr) minmax(140px, 0.7fr) minmax(160px, 0.8fr) minmax(140px, 0.7fr) minmax(135px, 0.6fr)')}>
-              <TextField sx={inputSx} select fullWidth size="small" label="Tipo de salida" value={form.salida.tipo} onChange={(e) => update('salida', 'tipo', e.target.value)}>
-                <MenuItem value="cita_eps">Cita médica por EPS</MenuItem>
-                <MenuItem value="cita_particular">Cita médica particular</MenuItem>
-                <MenuItem value="diligencia_personal">Diligencia personal</MenuItem>
-              </TextField>
-              <TextField sx={inputSx} fullWidth size="small" required type="date" label="Fecha salida" InputLabelProps={{ shrink: true }} value={form.salida.fecha} onChange={(e) => update('salida', 'fecha', e.target.value)} />
-              <TextField sx={inputSx} fullWidth size="small" required type="time" label="Hora salida" InputLabelProps={{ shrink: true }} value={form.salida.horaInicio} onChange={(e) => update('salida', 'horaInicio', e.target.value)} />
-              <TextField sx={inputSx} fullWidth size="small" required type="date" label="Fecha regreso" InputLabelProps={{ shrink: true }} value={form.salida.fechaRegreso} onChange={(e) => update('salida', 'fechaRegreso', e.target.value)} />
-              <TextField sx={inputSx} fullWidth size="small" required type="time" label="Hora regreso" InputLabelProps={{ shrink: true }} value={form.salida.horaFin} onChange={(e) => update('salida', 'horaFin', e.target.value)} />
-              <Box sx={{ minHeight: 44, px: 1.5, borderRadius: 2, bgcolor: salidaMinutes ? '#ecfdf5' : '#fff7ed', border: `1px solid ${salidaMinutes ? '#bbf7d0' : '#fed7aa'}`, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                <Typography sx={{ color: salidaMinutes ? '#166534' : '#c2410c', fontSize: 12, fontWeight: 900 }}>
-                  {formatMinutes(salidaMinutes)}
+              >
+                <PeopleIcon sx={{ fontSize: 24, color: isSalidaMultiple ? '#2563eb' : '#94a3b8', transition: 'color 0.2s' }} />
+                <Typography sx={{ fontWeight: 800, fontSize: 13, color: isSalidaMultiple ? '#1e3a8a' : '#475569', textAlign: 'center' }}>
+                  Salida Grupal
                 </Typography>
               </Box>
             </Box>
-            <Box sx={{ mt: 1.5 }}>
-              <TextField sx={inputSx} fullWidth size="small" multiline minRows={2} label="Motivo / observación" value={form.salida.motivo} onChange={(e) => update('salida', 'motivo', e.target.value)} />
-            </Box>
-          </Box>
 
-          <Alert severity={salidaMinutes ? 'success' : 'warning'}>Tiempo solicitado: {formatMinutes(salidaMinutes)}</Alert>
-          {salidaRangeIssue && <Alert severity="warning">{salidaRangeIssue}</Alert>}
-
-          {isPersonal && (
-            <Box sx={{ ...sectionSx, borderColor: '#bfdbfe', bgcolor: '#f8fbff' }}>
-              <SectionTitle title="Plan inicial de reposición" subtitle="Opcional. La recuperacion real de horas se gestionara luego por seguimiento y validacion de Talento Humano." />
-              <Grid container spacing={1.5}>
-                <Grid item xs={12} md={3}><TextField sx={inputSx} fullWidth size="small" required type="date" label="Fecha reposicion" InputLabelProps={{ shrink: true }} value={form.reposicion.fecha} onChange={(e) => update('reposicion', 'fecha', e.target.value)} /></Grid>
-                <Grid item xs={6} md={3}><TextField sx={inputSx} fullWidth size="small" required type="time" label="Hora reposicion" InputLabelProps={{ shrink: true }} value={form.reposicion.horaInicio} onChange={(e) => update('reposicion', 'horaInicio', e.target.value)} /></Grid>
-                <Grid item xs={12} md={3}><TextField sx={inputSx} fullWidth size="small" required type="date" label="Fecha fin reposicion" InputLabelProps={{ shrink: true }} value={form.reposicion.fechaFin} onChange={(e) => update('reposicion', 'fechaFin', e.target.value)} /></Grid>
-                <Grid item xs={6} md={3}><TextField sx={inputSx} fullWidth size="small" required type="time" label="Hora fin reposicion" InputLabelProps={{ shrink: true }} value={form.reposicion.horaFin} onChange={(e) => update('reposicion', 'horaFin', e.target.value)} /></Grid>
-                <Grid item xs={12}><TextField sx={inputSx} fullWidth size="small" label="Observación reposición" value={form.reposicion.observacion} onChange={(e) => update('reposicion', 'observacion', e.target.value)} /></Grid>
-              </Grid>
-              {reposicionRangeIssue && <Alert sx={{ mt: 1.4 }} severity="warning">{reposicionRangeIssue}</Alert>}
-              <Alert sx={{ mt: 1.4 }} severity={reposicionMinutes ? 'info' : 'warning'}>
-                Horas propuestas en este plan inicial: {formatMinutes(reposicionMinutes)}. Horas pendientes de la solicitud: {formatMinutes(salidaMinutes)}.
-              </Alert>
+            <Box sx={sectionSx}>
+              <SectionTitle title={isSalidaMultiple ? "Datos del líder de la actividad" : "Datos del colaborador"} />
+              <Box sx={responsiveFieldGrid('minmax(220px, 1fr) minmax(180px, 0.75fr) minmax(260px, 1.2fr)')}>
+                <TextField sx={inputSx} fullWidth size="small" label="Nombre" value={form.personal.nombre} disabled />
+                <TextField sx={inputSx} fullWidth size="small" label="Documento" value={form.personal.documento} disabled />
+                <TextField sx={inputSx} fullWidth size="small" label="Correo" value={form.personal.correo} disabled />
+              </Box>
             </Box>
+
+            <Box sx={sectionSx}>
+              <SectionTitle title={isSalidaMultiple ? "Información laboral del líder de la actividad" : "Información laboral"} />
+              <Box sx={responsiveFieldGrid('minmax(360px, 1.45fr) minmax(240px, 0.9fr)')}>
+                <Autocomplete
+                  freeSolo
+                  fullWidth
+                  openOnFocus
+                  options={dependenciaOptions}
+                  value={form.laboral.dependencia || ''}
+                  onChange={(_, value) => update('laboral', 'dependencia', value || '')}
+                  onInputChange={(_, value) => update('laboral', 'dependencia', value || '')}
+                  ListboxProps={{ sx: autocompleteListSx }}
+                  componentsProps={{
+                    popper: {
+                      sx: {
+                        ...autocompletePopperSx,
+                        width: { xs: 'calc(100vw - 48px) !important', md: '720px !important' },
+                        maxWidth: 'calc(100vw - 48px)'
+                      }
+                    }
+                  }}
+                  renderInput={(params) => <TextField {...params} sx={inputSx} fullWidth size="small" required label="Dependencia" placeholder="Buscar dependencia" />}
+                />
+                <Autocomplete
+                  freeSolo
+                  fullWidth
+                  openOnFocus
+                  options={cargoOptions}
+                  value={form.laboral.cargo || ''}
+                  onChange={(_, value) => update('laboral', 'cargo', value || '')}
+                  onInputChange={(_, value) => update('laboral', 'cargo', value || '')}
+                  ListboxProps={{ sx: autocompleteListSx }}
+                  componentsProps={{
+                    popper: {
+                      sx: {
+                        ...autocompletePopperSx,
+                        width: { xs: 'calc(100vw - 48px) !important', md: '620px !important' },
+                        maxWidth: 'calc(100vw - 48px)'
+                      }
+                    }
+                  }}
+                  renderInput={(params) => <TextField {...params} sx={inputSx} fullWidth size="small" required label="Cargo" placeholder="Buscar cargo" />}
+                />
+              </Box>
+              {!isSalidaMultiple && (
+                <Box sx={{ mt: 1.5 }}>
+                  <TextField
+                    sx={inputSx}
+                    fullWidth
+                    InputProps={{ readOnly: true }}
+                    size="small"
+                    label="Jefe inmediato"
+                    value={displayJefeValue}
+                    helperText={jefe && !jefe.email ? 'El jefe inmediato asignado no tiene correo registrado en el sistema. Solicite su registro a un administrador.' : jefeHelperText}
+                    error={Boolean(jefe && !jefe.email) || Boolean(!jefe && (form.laboral.dependencia || form.laboral.cargo))}
+                  />
+                </Box>
+              )}
+            </Box>
+            {isSalidaMultiple && (
+              <Box sx={sectionSx}>
+                <Stack direction="row" spacing={1.2} alignItems="center" sx={{ mb: 1.5 }}>
+                  <PeopleIcon sx={{ color: '#2563eb', fontSize: 24 }} />
+                  <Typography sx={{ fontWeight: 950, color: '#0f172a', fontSize: 15.5 }}>
+                    Participantes de la salida grupal
+                  </Typography>
+                </Stack>
+                <Alert severity="info" sx={{ mb: 2 }}>
+                  Usted es el <strong>líder de la actividad</strong>. Agregue a los demás colaboradores que participarán con usted en la salida grupal. Se registrará la salida para todos y pasará directo a aprobación de Gestión Humana.
+                </Alert>
+
+                <Autocomplete
+                  openOnFocus
+                  options={laboralRows}
+                  getOptionLabel={(option) => {
+                    if (typeof option === 'string') return option;
+                    return `${option.nombre} - ${option.cargo || ''}`;
+                  }}
+                  filterOptions={(options, state) => {
+                    const query = normalizeOption(state.inputValue);
+                    return options.filter(opt => {
+                      const nameMatch = normalizeOption(opt.nombre).includes(query);
+                      const docMatch = normalizeOption(opt.documento).includes(query);
+                      const emailMatch = normalizeOption(opt.email).includes(query);
+                      const cargoMatch = normalizeOption(opt.cargo).includes(query);
+                      const depMatch = normalizeOption(opt.dependencia).includes(query);
+                      return nameMatch || docMatch || emailMatch || cargoMatch || depMatch;
+                    });
+                  }}
+                  onChange={(_, value) => {
+                    if (value) {
+                      handleAddParticipant(value);
+                    }
+                  }}
+                  ListboxProps={{ sx: autocompleteListSx }}
+                  componentsProps={{
+                    popper: {
+                      sx: {
+                        ...autocompletePopperSx,
+                        width: { xs: 'calc(100vw - 48px) !important', md: '720px !important' },
+                        maxWidth: 'calc(100vw - 48px)'
+                      }
+                    }
+                  }}
+                  renderInput={(params) => (
+                    <TextField
+                      {...params}
+                      sx={{
+                        ...inputSx,
+                        '& .MuiOutlinedInput-root': {
+                          bgcolor: '#eff6ff',
+                          transition: 'all 0.2s',
+                          animation: 'pulseGlow 2s infinite',
+                          '@keyframes pulseGlow': {
+                            '0%': { boxShadow: '0 0 0 0 rgba(59, 130, 246, 0.4)' },
+                            '70%': { boxShadow: '0 0 0 10px rgba(59, 130, 246, 0)' },
+                            '100%': { boxShadow: '0 0 0 0 rgba(59, 130, 246, 0)' }
+                          },
+                          '& fieldset': { border: '2px solid #3b82f6' },
+                          '&:hover fieldset': { border: '2px solid #2563eb' },
+                          '&.Mui-focused fieldset': { border: '2px solid #1d4ed8' },
+                          '&:hover': { bgcolor: '#dbeafe' },
+                          '&.Mui-focused': { bgcolor: '#fff', animation: 'none', boxShadow: '0 0 0 4px rgba(29, 78, 216, 0.2)' }
+                        }
+                      }}
+                      InputProps={{
+                        ...params.InputProps,
+                        startAdornment: (
+                          <>
+                            <SearchIcon sx={{ color: '#64748b', ml: 1, mr: -0.5 }} />
+                            {params.InputProps.startAdornment}
+                          </>
+                        )
+                      }}
+                      fullWidth
+                      size="medium"
+                      label="Buscar colaborador para agregar..."
+                      placeholder="Escriba nombre, cargo, dependencia, cedula o correo"
+                    />
+                  )}
+                />
+
+                {participantes.length > 0 ? (
+                  <Box sx={{ mt: 2, border: '1px solid #e2e8f0', borderRadius: 2.5, overflow: 'hidden' }}>
+                    <Box sx={{ display: 'grid', gridTemplateColumns: '2.5fr 2.5fr 3fr 40px', bgcolor: '#f8fafc', borderBottom: '1px solid #e2e8f0', p: 1, fontWeight: 800, fontSize: 12.5, color: '#475569' }}>
+                      <Box sx={{ pl: 1 }}>Colaborador</Box>
+                      <Box>Cargo / Dependencia</Box>
+                      <Box>Correo institucional (editable)</Box>
+                      <Box></Box>
+                    </Box>
+                    <Stack divider={<Box sx={{ borderBottom: '1px solid #f1f5f9' }} />}>
+                      {participantes.map((p, idx) => (
+                        <Box key={p.documento} sx={{ display: 'grid', gridTemplateColumns: '2.5fr 2.5fr 3fr 40px', alignItems: 'center', p: 1, minHeight: 54 }}>
+                          <Box sx={{ pl: 1 }}>
+                            <Typography sx={{ fontWeight: 800, fontSize: 13, color: '#1e293b' }}>
+                              {p.nombre}
+                            </Typography>
+                          </Box>
+                          <Box>
+                            <Typography sx={{ fontWeight: 600, fontSize: 12, color: '#334155' }}>
+                              {p.cargo}
+                            </Typography>
+                            <Typography sx={{ fontSize: 11, color: '#64748b' }}>
+                              {p.dependencia}
+                            </Typography>
+                          </Box>
+                          <Box sx={{ pr: 1 }}>
+                            <TextField
+                              size="small"
+                              fullWidth
+                              value={p.correo}
+                              placeholder="Ingrese correo institucional"
+                              onChange={(e) => handleUpdateParticipantEmail(idx, e.target.value)}
+                              error={!p.correo || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(p.correo)}
+                              sx={{
+                                '& .MuiOutlinedInput-root': {
+                                  borderRadius: 1.5,
+                                  height: 36,
+                                  fontSize: 12.5
+                                }
+                              }}
+                            />
+                          </Box>
+                          <Box sx={{ display: 'flex', justifyContent: 'center' }}>
+                            <Button
+                              onClick={() => handleRemoveParticipant(idx)}
+                              sx={{ minWidth: 0, p: 0.5, color: '#ef4444', '&:hover': { bgcolor: '#fef2f2' } }}
+                            >
+                              <DeleteIcon sx={{ fontSize: 18 }} />
+                            </Button>
+                          </Box>
+                        </Box>
+                      ))}
+                    </Stack>
+                  </Box>
+                ) : (
+                  <Box sx={{ mt: 2, py: 4, border: '1px dashed #cbd5e1', borderRadius: 2.5, textAlign: 'center', bgcolor: '#f8fafc' }}>
+                    <Typography sx={{ fontSize: 13.5, color: '#64748b', fontWeight: 600 }}>
+                      No se han agregado participantes. Use el buscador superior para añadir colaboradores.
+                    </Typography>
+                  </Box>
+                )}
+              </Box>
+            )}
+
+            <Box sx={sectionSx}>
+              <SectionTitle title="Datos de la salida" />
+
+              {/* Category Selector Tabs */}
+              <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', md: isSalidaMultiple ? '1fr 1fr' : '1fr 1fr 1fr' }, gap: 1.5, mb: 1.8 }}>
+                <Box
+                  onClick={() => handleCategoryChange('propias_cargo')}
+                  sx={{
+                    py: 0.5,
+                    px: 1.5,
+                    width: '100%',
+                    borderRadius: 3,
+                    border: '2px solid',
+                    borderColor: category === 'propias_cargo' ? '#2563eb' : '#e2e8f0',
+                    bgcolor: category === 'propias_cargo' ? '#eff6ff' : '#ffffff',
+                    boxShadow: category === 'propias_cargo' ? '0 0 12px rgba(37, 99, 235, 0.5)' : '0 2px 5px rgba(0,0,0,0.02)',
+                    cursor: 'pointer',
+                    transition: 'all 0.2s cubic-bezier(0.4, 0, 0.2, 1)',
+                    display: 'flex',
+                    flexDirection: 'row',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    minHeight: 40,
+                    gap: 1.5,
+                    '&:hover': {
+                      borderColor: '#2563eb',
+                      transform: 'translateY(-2px)',
+                      boxShadow: '0 8px 20px rgba(37, 99, 235, 0.3)'
+                    }
+                  }}
+                >
+                  <BusinessCenterIcon sx={{ fontSize: 24, color: category === 'propias_cargo' ? '#2563eb' : '#94a3b8', transition: 'color 0.2s' }} />
+                  <Typography sx={{ fontWeight: 800, fontSize: 12.5, color: category === 'propias_cargo' ? '#1e3a8a' : '#475569', textAlign: 'left', lineHeight: 1.2 }}>
+                    Actividades propias del cargo (Misionales)
+                  </Typography>
+                </Box>
+                <Box
+                  onClick={() => handleCategoryChange('salud')}
+                  sx={{
+                    py: 1,
+                    px: 1.5,
+                    width: '100%',
+                    borderRadius: 3,
+                    border: '2px solid',
+                    borderColor: category === 'salud' ? '#2563eb' : '#e2e8f0',
+                    bgcolor: category === 'salud' ? '#eff6ff' : '#ffffff',
+                    boxShadow: category === 'salud' ? '0 0 12px rgba(37, 99, 235, 0.5)' : '0 2px 5px rgba(0,0,0,0.02)',
+                    cursor: 'pointer',
+                    transition: 'all 0.2s cubic-bezier(0.4, 0, 0.2, 1)',
+                    display: 'flex',
+                    flexDirection: 'row',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    minHeight: 40,
+                    gap: 1.5,
+                    '&:hover': {
+                      borderColor: '#2563eb',
+                      transform: 'translateY(-2px)',
+                      boxShadow: '0 8px 20px rgba(37, 99, 235, 0.3)'
+                    }
+                  }}
+                >
+                  <LocalHospitalIcon sx={{ fontSize: 24, color: category === 'salud' ? '#2563eb' : '#94a3b8', transition: 'color 0.2s' }} />
+                  <Typography sx={{ fontWeight: 800, fontSize: 12.5, color: category === 'salud' ? '#1e3a8a' : '#475569', textAlign: 'left', lineHeight: 1.2 }}>
+                    Salud y Bienestar
+                  </Typography>
+                </Box>
+                {!isSalidaMultiple && (
+                  <Box
+                    onClick={() => handleCategoryChange('personales')}
+                    sx={{
+                      py: 0.5,
+                      px: 1.5,
+                      width: '100%',
+                      borderRadius: 3,
+                      border: '2px solid',
+                      borderColor: category === 'personales' ? '#2563eb' : '#e2e8f0',
+                      bgcolor: category === 'personales' ? '#eff6ff' : '#ffffff',
+                      boxShadow: category === 'personales' ? '0 0 12px rgba(37, 99, 235, 0.5)' : '0 2px 5px rgba(0,0,0,0.02)',
+                      cursor: 'pointer',
+                      transition: 'all 0.2s cubic-bezier(0.4, 0, 0.2, 1)',
+                      display: 'flex',
+                      flexDirection: 'row',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      minHeight: 40,
+                      gap: 1.5,
+                      '&:hover': {
+                        borderColor: '#2563eb',
+                        transform: 'translateY(-2px)',
+                        boxShadow: '0 8px 20px rgba(37, 99, 235, 0.3)'
+                      }
+                    }}
+                  >
+                    <DirectionsWalkIcon sx={{ fontSize: 24, color: category === 'personales' ? '#2563eb' : '#94a3b8', transition: 'color 0.2s' }} />
+                    <Typography sx={{ fontWeight: 800, fontSize: 12.5, color: category === 'personales' ? '#1e3a8a' : '#475569', textAlign: 'left', lineHeight: 1.2 }}>
+                      Actividades personales
+                    </Typography>
+                  </Box>
+                )}
+              </Box>
+
+              {/* Subtype Dropdown & Conditional Custom Description */}
+              <Box sx={{
+                display: 'grid',
+                gridTemplateColumns: {
+                  xs: '1fr',
+                  md: subtype === 'salida_campus' ? (category === 'propias_cargo' ? '1fr 1fr 1fr 1fr' : '1fr 1fr 1fr') :
+                    subtype === 'otra' ? (category === 'propias_cargo' ? '1fr 1fr 2fr' : '1fr 2fr') :
+                      ['cita_eps', 'cita_particular'].includes(subtype) ? '1fr 1fr' :
+                        category === 'propias_cargo' ? '1fr 1fr' : '1fr'
+                },
+                gap: 1.5,
+                mb: 1.8
+              }}>
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                  <TextField
+                    sx={{
+                      ...inputSx,
+                      '& .MuiSelect-select': { whiteSpace: 'normal !important' }
+                    }}
+                    select
+                    fullWidth
+                    size="medium"
+                    label="Opción / Motivo de la salida"
+                    value={subtype}
+                    onChange={(e) => handleSubtypeChange(e.target.value)}
+                  >
+                    {(category === 'propias_cargo'
+                      ? CARGO_SUBTYPES
+                      : category === 'salud'
+                        ? (isSalidaMultiple ? SALUD_SUBTYPES.filter(opt => opt.value === 'urgencia_medica') : SALUD_SUBTYPES)
+                        : PERSONALES_SUBTYPES
+                    ).map((opt) => (
+                      <MenuItem key={opt.value} value={opt.value} sx={{ whiteSpace: 'normal' }}>
+                        {opt.label}
+                      </MenuItem>
+                    ))}
+                  </TextField>
+                  {category === 'salud' && (
+                    <Tooltip
+                      title="El permiso por motivo de salud se otorga exclusivamente para la atención médica del colaborador (consultas, procedimientos, terapias, exámenes). El acompañamiento a citas médicas de familiares (hijos, padres, cónyuge) debe registrarse en la categoría de 'Actividades personales'"
+                      arrow
+                      placement="top"
+                    >
+                      <InfoIcon sx={{ color: '#0284c7', cursor: 'help' }} />
+                    </Tooltip>
+                  )}
+                </Box>
+
+                {category === 'propias_cargo' && subtype !== 'salida_campus' && (
+                  <TextField
+                    sx={inputSx}
+                    select
+                    fullWidth
+                    required
+                    size="medium"
+                    label="Alcance de la actividad"
+                    value={form.salida.alcance || ''}
+                    onChange={(e) => update('salida', 'alcance', e.target.value)}
+                  >
+                    {ALCANCE_OPTIONS.map((opt) => (
+                      <MenuItem key={opt} value={opt}>{opt}</MenuItem>
+                    ))}
+                  </TextField>
+                )}
+
+                {['cita_eps', 'cita_particular'].includes(subtype) && (
+                  <TextField
+                    sx={inputSx}
+                    select
+                    fullWidth
+                    required
+                    size="medium"
+                    label="Especialidad médica"
+                    value={form.salida.especialidadMedica || ''}
+                    onChange={(e) => update('salida', 'especialidadMedica', e.target.value)}
+                  >
+                    {ESPECIALIDADES_MEDICAS.map((opt) => (
+                      <MenuItem key={opt} value={opt}>{opt}</MenuItem>
+                    ))}
+                  </TextField>
+                )}
+
+                {subtype === 'otra' && (
+                  <TextField
+                    sx={inputSx}
+                    fullWidth
+                    required
+                    size="medium"
+                    label="Especifique el motivo (¿Cuál?)"
+                    placeholder="Ej: Visita técnica a laboratorios"
+                    value={otraDescripcion}
+                    onChange={(e) => handleOtraDescripcionChange(e.target.value)}
+                  />
+                )}
+
+                {subtype === 'salida_campus' && (() => {
+                  const hasCampusError = form.salida.campusSalida && form.salida.campusDestino && form.salida.campusSalida === form.salida.campusDestino;
+                  return (
+                    <>
+                      <TextField
+                        sx={inputSx}
+                        select
+                        fullWidth
+                        required
+                        size="medium"
+                        label="Campus salida"
+                        error={hasCampusError}
+                        value={form.salida.campusSalida || ''}
+                        onChange={(e) => update('salida', 'campusSalida', e.target.value)}
+                      >
+                        {['Campus Centro', 'Campus Santiago', 'Campus San Damián'].map((opt) => (
+                          <MenuItem key={opt} value={opt}>{opt}</MenuItem>
+                        ))}
+                      </TextField>
+                      <TextField
+                        sx={inputSx}
+                        select
+                        fullWidth
+                        required
+                        size="medium"
+                        label="Campus destino"
+                        error={hasCampusError}
+                        helperText={hasCampusError ? 'Los campus de salida y destino no pueden ser iguales' : ''}
+                        value={form.salida.campusDestino || ''}
+                        onChange={(e) => update('salida', 'campusDestino', e.target.value)}
+                      >
+                        {['Campus Centro', 'Campus Santiago', 'Campus San Damián'].map((opt) => (
+                          <MenuItem key={opt} value={opt}>{opt}</MenuItem>
+                        ))}
+                      </TextField>
+                    </>
+                  );
+                })()}
+
+                {subtype === 'terapias' && (
+                  <TextField
+                    sx={inputSx}
+                    fullWidth
+                    required
+                    type="number"
+                    size="medium"
+                    label="¿Cuántas terapias le van a realizar?"
+                    InputProps={{ inputProps: { min: 1, max: 20 } }}
+                    onKeyDown={(e) => { if (['e', 'E', '+', '-', '.'].includes(e.key)) e.preventDefault(); }}
+                    value={form.salida.terapiasList?.length || ''}
+                    onChange={(e) => {
+                      const count = parseInt(e.target.value) || 0;
+                      if (count < 0 || count > 30) return;
+                      const newList = [...(form.salida.terapiasList || [])];
+                      if (count > newList.length) {
+                        for (let i = newList.length; i < count; i++) {
+                          newList.push({ fecha: '', horaInicio: '', horaFin: '' });
+                        }
+                      } else {
+                        newList.splice(count);
+                      }
+                      update('salida', 'terapiasList', newList);
+                    }}
+                  />
+                )}
+              </Box>
+
+              {subtype === 'terapias' && form.salida.terapiasList?.length > 0 && (
+                <Box sx={{ mb: 2, display: 'flex', flexDirection: 'column', gap: 1 }}>
+                  {form.salida.terapiasList.map((terapia, idx) => {
+                    const tMins = countBusinessMinutes(terapia.fecha, terapia.fecha, terapia.horaInicio, terapia.horaFin) || 0;
+                    return (
+                      <Box key={idx} sx={{ p: 1.5, borderRadius: 2, border: '1px solid #e2e8f0', bgcolor: '#f8fafc' }}>
+                        <Typography sx={{ fontSize: 13, fontWeight: 700, color: '#334155', mb: 1 }}>
+                          Terapia {idx + 1}
+                        </Typography>
+                        <Box sx={responsiveFieldGrid('minmax(160px, 1fr) minmax(140px, 1fr) minmax(140px, 1fr) minmax(100px, 0.5fr)')}>
+                          <TextField sx={inputSx} fullWidth size="small" required type="date" label="Fecha" InputLabelProps={{ shrink: true }} inputProps={{ min: todayString }} value={terapia.fecha} onChange={(e) => { const n = [...form.salida.terapiasList]; n[idx].fecha = e.target.value; update('salida', 'terapiasList', n); }} />
+                          <TextField sx={inputSx} fullWidth size="small" required type="time" label="Hora inicio" InputLabelProps={{ shrink: true }} error={isPastTimeError(terapia.fecha, terapia.horaInicio)} value={terapia.horaInicio} onChange={(e) => { const n = [...form.salida.terapiasList]; n[idx].horaInicio = e.target.value; update('salida', 'terapiasList', n); }} />
+                          <TextField sx={inputSx} fullWidth size="small" required type="time" label="Hora fin" InputLabelProps={{ shrink: true }} error={isPastTimeError(terapia.fecha, terapia.horaFin)} value={terapia.horaFin} onChange={(e) => { const n = [...form.salida.terapiasList]; n[idx].horaFin = e.target.value; update('salida', 'terapiasList', n); }} />
+                          <Box sx={{ minHeight: 40, px: 1.5, borderRadius: 1.5, bgcolor: tMins ? '#ecfdf5' : '#fff7ed', border: `1px solid ${tMins ? '#bbf7d0' : '#fed7aa'}`, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                            <Typography sx={{ color: tMins ? '#166534' : '#c2410c', fontSize: 12, fontWeight: 800 }}>
+                              {formatMinutes(tMins)}
+                            </Typography>
+                          </Box>
+                        </Box>
+                      </Box>
+                    );
+                  })}
+
+                  <Box sx={{ display: 'flex', justifyContent: 'flex-end', mt: 0.5, pr: 0.5 }}>
+                    <Box sx={{ minHeight: 40, px: 2, borderRadius: 1.5, bgcolor: salidaMinutes ? '#ecfdf5' : '#fff7ed', border: `1px solid ${salidaMinutes ? '#bbf7d0' : '#fed7aa'}`, display: 'flex', alignItems: 'center', gap: 2, boxShadow: '0 2px 8px rgba(0,0,0,0.05)' }}>
+                      <Typography sx={{ fontSize: 13, fontWeight: 800, color: '#334155' }}>
+                        TOTAL GENERAL:
+                      </Typography>
+                      <Typography sx={{ color: salidaMinutes ? '#166534' : '#c2410c', fontSize: 14, fontWeight: 900 }}>
+                        {formatMinutes(salidaMinutes)}
+                      </Typography>
+                    </Box>
+                  </Box>
+                </Box>
+              )}
+
+              {subtype !== 'terapias' && (
+                <Box sx={responsiveFieldGrid('minmax(160px, 1fr) minmax(140px, 0.8fr) minmax(160px, 1fr) minmax(140px, 0.8fr) minmax(135px, 0.7fr)')}>
+                  <TextField sx={inputSx} fullWidth size="small" required type="date" label="Fecha salida" InputLabelProps={{ shrink: true }} inputProps={{ min: todayString }} value={form.salida.fecha} onChange={(e) => update('salida', 'fecha', e.target.value)} />
+                  <TextField sx={inputSx} fullWidth size="small" required type="time" label="Hora salida" InputLabelProps={{ shrink: true }} error={isPastTimeError(form.salida.fecha, form.salida.horaInicio)} value={form.salida.horaInicio} onChange={(e) => update('salida', 'horaInicio', e.target.value)} />
+                  <TextField sx={inputSx} fullWidth size="small" required type="date" label="Fecha regreso" InputLabelProps={{ shrink: true }} inputProps={{ min: todayString }} value={form.salida.fechaRegreso} onChange={(e) => update('salida', 'fechaRegreso', e.target.value)} />
+                  <TextField sx={inputSx} fullWidth size="small" required type="time" label="Hora regreso" InputLabelProps={{ shrink: true }} error={isPastTimeError(form.salida.fechaRegreso, form.salida.horaFin)} value={form.salida.horaFin} onChange={(e) => update('salida', 'horaFin', e.target.value)} />
+                  <Box sx={{ minHeight: 44, px: 1.5, borderRadius: 2, bgcolor: salidaMinutes ? '#ecfdf5' : '#fff7ed', border: `1px solid ${salidaMinutes ? '#bbf7d0' : '#fed7aa'}`, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                    <Typography sx={{ color: salidaMinutes ? '#166534' : '#c2410c', fontSize: 12, fontWeight: 900 }}>
+                      {formatMinutes(salidaMinutes)}
+                    </Typography>
+                  </Box>
+                </Box>
+              )}
+              <Box sx={{ mt: 1.5, display: 'flex', alignItems: 'center', gap: 1 }}>
+                <TextField
+                  sx={inputSx}
+                  fullWidth
+                  size="small"
+                  multiline
+                  minRows={2}
+                  label={form.salida.tipo === 'terapias' ? 'Diagnóstico de las terapias' : 'Motivo / observación'}
+                  value={form.salida.motivo}
+                  onChange={(e) => update('salida', 'motivo', e.target.value)}
+                />
+                {form.salida.tipo === 'terapias' && (
+                  <Tooltip
+                    title="Registre el diagnóstico o condición de salud que origina el tratamiento terapéutico, de acuerdo con la información consignada por el profesional tratante o en la orden médica correspondiente."
+                    arrow
+                    placement="top"
+                  >
+                    <InfoIcon sx={{ color: '#0284c7', cursor: 'help' }} />
+                  </Tooltip>
+                )}
+              </Box>
+            </Box>
+
+            <Alert severity={salidaMinutes ? 'success' : 'warning'}>Tiempo solicitado: {formatMinutes(salidaMinutes)}</Alert>
+            {salidaRangeIssue && <Alert severity="warning">{salidaRangeIssue}</Alert>}
+
+            {isPersonal && (
+              <Box sx={{ ...sectionSx, borderColor: '#bfdbfe', bgcolor: '#f8fbff' }}>
+                <SectionTitle title="Plan inicial de reposición" />
+                <Grid container spacing={1.5}>
+                  <Grid item xs={12} md={3}><TextField sx={inputSx} fullWidth size="small" required type="date" label="Fecha reposicion" InputLabelProps={{ shrink: true }} inputProps={{ min: todayString }} value={form.reposicion.fecha} onChange={(e) => update('reposicion', 'fecha', e.target.value)} /></Grid>
+                  <Grid item xs={6} md={3}><TextField sx={inputSx} fullWidth size="small" required type="time" label="Hora reposicion" InputLabelProps={{ shrink: true }} error={isPastTimeError(form.reposicion.fecha, form.reposicion.horaInicio)} value={form.reposicion.horaInicio} onChange={(e) => update('reposicion', 'horaInicio', e.target.value)} /></Grid>
+                  <Grid item xs={12} md={3}><TextField sx={inputSx} fullWidth size="small" required type="date" label="Fecha fin reposicion" InputLabelProps={{ shrink: true }} inputProps={{ min: todayString }} value={form.reposicion.fechaFin} onChange={(e) => update('reposicion', 'fechaFin', e.target.value)} /></Grid>
+                  <Grid item xs={6} md={3}><TextField sx={inputSx} fullWidth size="small" required type="time" label="Hora fin reposicion" InputLabelProps={{ shrink: true }} error={isPastTimeError(form.reposicion.fechaFin, form.reposicion.horaFin)} value={form.reposicion.horaFin} onChange={(e) => update('reposicion', 'horaFin', e.target.value)} /></Grid>
+                  <Grid item xs={12}><TextField sx={inputSx} fullWidth size="small" label="Observación reposición" value={form.reposicion.observacion} onChange={(e) => update('reposicion', 'observacion', e.target.value)} /></Grid>
+                </Grid>
+                {reposicionRangeIssue && <Alert sx={{ mt: 1.4 }} severity="warning">{reposicionRangeIssue}</Alert>}
+                <Box sx={{ mt: 1.4, p: 1, borderRadius: 1.5, border: '1px solid #cbd5e1', bgcolor: '#f8fafc', display: 'flex', justifyContent: 'center' }}>
+                  <Typography sx={{ fontSize: 12.5, fontWeight: 700, color: '#475569' }}>
+                    Horas propuestas: {formatMinutes(reposicionMinutes)} | Horas pendientes: {formatMinutes(salidaMinutes)}
+                  </Typography>
+                </Box>
+              </Box>
+            )}
+
+            <Alert severity="info" icon={false} sx={{ mt: 1, '& .MuiAlert-message': { width: '100%' } }}>
+              <Typography sx={{ fontSize: 13, color: '#0f172a', textAlign: 'center' }}>
+                Al registrar esta solicitud, autoriza el tratamiento de sus datos de acuerdo a la <a href="https://www.unicesmag.edu.co/documentos/DATOS-UNICESMAG.pdf" target="_blank" rel="noopener noreferrer" style={{ color: '#0284c7', fontWeight: 600, textDecoration: 'none' }}>Política de Tratamiento de Datos de UNICESMAG</a>.
+              </Typography>
+            </Alert>
+          </Stack>
+        </DialogContent>
+        <DialogActions sx={{ px: 3, py: 2, bgcolor: '#ffffff', borderTop: '1px solid #e2e8f0', gap: 1, flexWrap: 'wrap' }}>
+          {validationIssues.length > 0 && (
+            <Alert severity="warning" sx={{ mr: 'auto', textAlign: 'left', alignItems: 'flex-start', maxWidth: { xs: '100%', md: 620 } }}>
+              <Typography sx={{ fontWeight: 900, fontSize: 13, mb: 0.4 }}>No se puede registrar todavía</Typography>
+              <Box component="ul" sx={{ m: 0, pl: 2 }}>
+                {validationIssues.slice(0, 3).map((issue) => (
+                  <Box component="li" key={issue} sx={{ fontSize: 12.5 }}>{issue}</Box>
+                ))}
+              </Box>
+            </Alert>
           )}
-        </Stack>
-      </DialogContent>
-      <DialogActions sx={{ px: 3, py: 2, bgcolor: '#ffffff', borderTop: '1px solid #e2e8f0', gap: 1, flexWrap: 'wrap' }}>
-        {validationIssues.length > 0 && (
-          <Alert severity="warning" sx={{ mr: 'auto', textAlign: 'left', alignItems: 'flex-start', maxWidth: { xs: '100%', md: 620 } }}>
-            <Typography sx={{ fontWeight: 900, fontSize: 13, mb: 0.4 }}>No se puede registrar todavía</Typography>
-            <Box component="ul" sx={{ m: 0, pl: 2 }}>
-              {validationIssues.slice(0, 3).map((issue) => (
-                <Box component="li" key={issue} sx={{ fontSize: 12.5 }}>{issue}</Box>
-              ))}
-            </Box>
+          <Button onClick={onClose} disabled={submitting}>Cancelar</Button>
+          <Button variant="contained" onClick={submit} disabled={disableSubmit}>
+            {submitting ? 'Radicando...' : 'Registrar solicitud'}
+          </Button>
+        </DialogActions>
+      </Dialog>
+      <Dialog open={qrOpen} onClose={() => setQrOpen(false)} maxWidth="xs" fullWidth>
+        <DialogTitle sx={{ fontWeight: 950, pb: 1 }}>Codigo QR del reporte de salida</DialogTitle>
+        <DialogContent>
+          <Alert severity="info" sx={{ mb: 2 }}>
+            El QR abre directamente este formato. Si la persona no ha iniciado sesion, primero ingresara con Google institucional y luego volvera al formulario.
           </Alert>
-        )}
-        <Button onClick={onClose} disabled={submitting}>Cancelar</Button>
-        <Button variant="contained" onClick={submit} disabled={disableSubmit}>
-          {submitting ? 'Radicando...' : 'Registrar solicitud'}
-        </Button>
-      </DialogActions>
-    </Dialog>
-    <Dialog open={qrOpen} onClose={() => setQrOpen(false)} maxWidth="xs" fullWidth>
-      <DialogTitle sx={{ fontWeight: 950, pb: 1 }}>Codigo QR del reporte de salida</DialogTitle>
-      <DialogContent>
-        <Alert severity="info" sx={{ mb: 2 }}>
-          El QR abre directamente este formato. Si la persona no ha iniciado sesion, primero ingresara con Google institucional y luego volvera al formulario.
-        </Alert>
-        <Box sx={{ display: 'grid', placeItems: 'center', p: 2, border: '1px solid #dbe6f5', borderRadius: 2.5, bgcolor: '#f8fbff' }}>
-          {qrImageUrl && (
-            <Box
-              component="img"
-              src={qrImageUrl}
-              alt="Codigo QR para reporte de salida"
-              sx={{ width: 260, height: 260, bgcolor: '#fff', borderRadius: 1.5 }}
-            />
-          )}
-        </Box>
-        <TextField
-          fullWidth
-          size="small"
-          label="Enlace directo"
-          value={directFormUrl}
-          InputProps={{ readOnly: true }}
-          sx={{ mt: 2 }}
-        />
-      </DialogContent>
-      <DialogActions sx={{ px: 3, py: 2 }}>
-        <Button startIcon={<ContentCopyIcon />} onClick={copyDirectFormUrl}>
-          {qrCopied ? 'Copiado' : 'Copiar enlace'}
-        </Button>
-        <Button
-          component="a"
-          href={qrImageUrl}
-          target="_blank"
-          rel="noreferrer"
-          startIcon={<DownloadIcon />}
-          variant="contained"
-          sx={{ borderRadius: 2, textTransform: 'none', fontWeight: 900 }}
-        >
-          Exportar QR
-        </Button>
-      </DialogActions>
-    </Dialog>
+          <Box sx={{ display: 'grid', placeItems: 'center', p: 2, border: '1px solid #dbe6f5', borderRadius: 2.5, bgcolor: '#f8fbff' }}>
+            {qrImageUrl && (
+              <Box
+                component="img"
+                src={qrImageUrl}
+                alt="Codigo QR para reporte de salida"
+                sx={{ width: 260, height: 260, bgcolor: '#fff', borderRadius: 1.5 }}
+              />
+            )}
+          </Box>
+          <TextField
+            fullWidth
+            size="small"
+            label="Enlace directo"
+            value={directFormUrl}
+            InputProps={{ readOnly: true }}
+            sx={{ mt: 2 }}
+          />
+        </DialogContent>
+        <DialogActions sx={{ px: 3, py: 2 }}>
+          <Button startIcon={<ContentCopyIcon />} onClick={copyDirectFormUrl}>
+            {qrCopied ? 'Copiado' : 'Copiar enlace'}
+          </Button>
+          <Button
+            component="a"
+            href={qrImageUrl}
+            target="_blank"
+            rel="noreferrer"
+            startIcon={<DownloadIcon />}
+            variant="contained"
+            sx={{ borderRadius: 2, textTransform: 'none', fontWeight: 900 }}
+          >
+            Exportar QR
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      <Dialog open={showSaludWarning} onClose={() => setShowSaludWarning(false)} maxWidth="sm" fullWidth PaperProps={{ sx: { borderRadius: 3, p: 1 } }}>
+        <DialogTitle sx={{ fontWeight: 900, color: '#1e3a8a', pb: 1, display: 'flex', alignItems: 'center', gap: 1.5 }}>
+          <LocalHospitalIcon sx={{ color: '#2563eb' }} />
+          Importante: Condiciones de permisos por salud
+        </DialogTitle>
+        <DialogContent>
+          <Typography sx={{ color: '#334155', lineHeight: 1.6, fontSize: 14.5, mt: 1 }}>
+            La información registrada en la categoría de <strong>Salud y Bienestar</strong> debe ser fidedigna.
+            En cualquier momento, las áreas encargadas podrán realizar seguimiento y usted deberá aportar
+            los documentos médicos que soporten esta solicitud.
+            <br /><br />
+            En caso de no poder verificar esta actuación, las áreas encargadas procederán de acuerdo a lo
+            estipulado en el Reglamento Interno de Trabajo.
+          </Typography>
+        </DialogContent>
+        <DialogActions sx={{ p: 2, pt: 0, justifyContent: 'center' }}>
+          <Button onClick={() => setShowSaludWarning(false)} variant="contained" sx={{ borderRadius: 2, textTransform: 'none', fontWeight: 800, px: 4, py: 1 }}>
+            Entendido, continuar
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      <Dialog open={showPersonalesWarning} onClose={() => setShowPersonalesWarning(false)} maxWidth="sm" fullWidth PaperProps={{ sx: { borderRadius: 3, p: 1 } }}>
+        <DialogTitle sx={{ fontWeight: 900, color: '#1e3a8a', pb: 1, display: 'flex', alignItems: 'center', gap: 1.5 }}>
+          <DirectionsWalkIcon sx={{ color: '#2563eb' }} />
+          Importante: Reposición de tiempo
+        </DialogTitle>
+        <DialogContent>
+          <Typography sx={{ color: '#334155', lineHeight: 1.6, fontSize: 14.5, mt: 1 }}>
+            Tenga en cuenta que los permisos otorgados bajo la categoría de <strong>Actividades personales</strong> requieren reposición de tiempo obligatorio.
+            <br /><br />
+            Usted deberá registrar un plan inicial de reposición en la parte inferior de este formulario, el cual será evaluado por su jefe inmediato para su respectiva aprobación y seguimiento.
+          </Typography>
+        </DialogContent>
+        <DialogActions sx={{ p: 2, pt: 0, justifyContent: 'center' }}>
+          <Button onClick={() => setShowPersonalesWarning(false)} variant="contained" sx={{ borderRadius: 2, textTransform: 'none', fontWeight: 800, px: 4, py: 1 }}>
+            Entendido, continuar
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      <Dialog open={showPropiasCargoWarning} onClose={() => setShowPropiasCargoWarning(false)} maxWidth="sm" fullWidth PaperProps={{ sx: { borderRadius: 3, p: 1 } }}>
+        <DialogTitle sx={{ fontWeight: 900, color: '#1e3a8a', pb: 1, display: 'flex', alignItems: 'center', gap: 1.5 }}>
+          <BusinessCenterIcon sx={{ color: '#2563eb' }} />
+          Importante: Actividades propias del cargo
+        </DialogTitle>
+        <DialogContent>
+          <Typography sx={{ color: '#334155', lineHeight: 1.6, fontSize: 14.5, mt: 1 }}>
+            Tenga en cuenta que esta categoría es exclusivamente para salidas relacionadas con funciones 
+            inherentes a su rol, así como para el cumplimiento de labores <strong>académico-administrativas</strong>.
+            <br /><br />
+            Esta solicitud debe contar con la validación y autorización previa de su jefe inmediato.
+          </Typography>
+        </DialogContent>
+        <DialogActions sx={{ p: 2, pt: 0, justifyContent: 'center' }}>
+          <Button onClick={() => setShowPropiasCargoWarning(false)} variant="contained" sx={{ borderRadius: 2, textTransform: 'none', fontWeight: 800, px: 4, py: 1 }}>
+            Entendido, continuar
+          </Button>
+        </DialogActions>
+      </Dialog>
     </>
   );
 }

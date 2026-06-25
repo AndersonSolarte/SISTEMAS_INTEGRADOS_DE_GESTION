@@ -13,12 +13,14 @@ const getAllowedOrigins = () => {
   const configured = [
     process.env.FRONTEND_URL,
     process.env.PUBLIC_APP_URL,
+    process.env.BACKEND_PUBLIC_URL,
+    process.env.API_PUBLIC_URL,
     ...splitCsv(process.env.CORS_ORIGINS)
   ].map(normalizeOrigin);
 
   const developmentOrigins = process.env.NODE_ENV === 'production'
     ? []
-    : ['http://localhost:3000', 'http://127.0.0.1:3000'];
+    : ['http://localhost:3000', 'http://127.0.0.1:3000', 'http://localhost:5000', 'http://127.0.0.1:5000'];
 
   return unique([...configured, ...developmentOrigins]);
 };
@@ -27,8 +29,16 @@ const allowedOrigins = getAllowedOrigins();
 
 const corsOptions = {
   origin(origin, callback) {
-    if (!origin) return callback(null, true);
-    if (allowedOrigins.includes(normalizeOrigin(origin))) return callback(null, true);
+    if (!origin || origin === 'null') return callback(null, true);
+    const normalized = normalizeOrigin(origin);
+    if (allowedOrigins.includes(normalized)) return callback(null, true);
+    
+    // Permitir siempre origenes locales (localhost / 127.0.0.1) en cualquier puerto
+    if (/^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(normalized)) {
+      return callback(null, true);
+    }
+    
+    console.warn(`[CORS] Origen rechazado: ${origin}. Origenes permitidos:`, allowedOrigins);
     return callback(new Error('Origen no permitido por CORS'));
   },
   methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],

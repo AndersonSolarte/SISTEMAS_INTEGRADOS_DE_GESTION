@@ -13,6 +13,15 @@ const { encryptPayload, decryptPayload } = require('../utils/secureUrlToken');
 
 const LOCAL_UPLOAD_PREFIX = '/uploads/';
 const PUBLIC_DOCUMENT_STATE = 'vigente';
+const MIME_TYPES_BY_EXTENSION = {
+  pdf: 'application/pdf',
+  doc: 'application/msword',
+  docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  xls: 'application/vnd.ms-excel',
+  xlsx: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  ppt: 'application/vnd.ms-powerpoint',
+  pptx: 'application/vnd.openxmlformats-officedocument.presentationml.presentation'
+};
 const canViewAllDocumentStates = (user = {}) =>
   [ROLES.ADMINISTRADOR, ROLES.GESTION_PROCESOS].includes(user.role);
 const isInactiveScope = (query = {}, user = {}) =>
@@ -59,6 +68,9 @@ const serializeDocumento = (req, documento) => {
   if (!documento) return documento;
   const data = typeof documento.toJSON === 'function' ? documento.toJSON() : { ...documento };
   if (isLocalUploadLink(data.link_acceso)) {
+    const extension = path.extname(String(data.link_acceso)).replace('.', '').toLowerCase();
+    data.archivo_extension = extension || null;
+    data.archivo_mime = MIME_TYPES_BY_EXTENSION[extension] || 'application/octet-stream';
     data.link_acceso = getSignedDocumentUrl(req, data);
     data.url_segura = true;
   }
@@ -262,6 +274,7 @@ const getDocumentos = async (req, res) => {
       include_inactive,
       estado_scope,
       document_scope,
+      formatos_digitales,
       sort,
       page = 1,
       limit = 10
@@ -319,6 +332,12 @@ const getDocumentos = async (req, res) => {
     if (titulo) {
       const searchWhere = buildSearchWhere(titulo);
       if (searchWhere?.[Op.and]) andConditions.push(...searchWhere[Op.and]);
+    }
+
+    if (String(formatos_digitales) === 'true') {
+      // Arreglo de códigos de formatos digitales habilitados (comenzando por Reporte de Salida)
+      const digitalCodes = ['THM-DP-FR-002'];
+      andConditions.push({ codigo: { [Op.in]: digitalCodes } });
     }
 
     const periodoValues = parseTextList(periodo).map(normalizePeriodoFilter).filter(Boolean);
@@ -407,12 +426,16 @@ const getDocumentoArchivoSeguro = async (req, res) => {
       return res.status(404).json({ success: false, message: 'Archivo no encontrado' });
     }
 
-    const filename = `${documento.codigo || 'documento'}_${documento.titulo || 'archivo'}.pdf`
+    const extension = path.extname(filePath).replace('.', '').toLowerCase();
+    const mimeType = MIME_TYPES_BY_EXTENSION[extension] || 'application/octet-stream';
+    const baseFilename = `${documento.codigo || 'documento'}_${documento.titulo || 'archivo'}`
       .replace(/[<>:"/\\|?*\x00-\x1F]/g, '_')
       .replace(/\s+/g, ' ')
       .trim();
+    const filename = extension ? `${baseFilename}.${extension}` : baseFilename;
 
     res.setHeader('X-Content-Type-Options', 'nosniff');
+    res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
     res.setHeader('Cache-Control', 'private, max-age=300');
 
     if (String(req.query.download || '').toLowerCase() === '1') {
@@ -421,7 +444,7 @@ const getDocumentoArchivoSeguro = async (req, res) => {
 
     return res.sendFile(filePath, {
       headers: {
-        'Content-Type': 'application/pdf',
+        'Content-Type': mimeType,
         'Content-Disposition': `inline; filename="${filename}"`
       }
     });

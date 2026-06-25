@@ -40,6 +40,17 @@ const formatDate = (value) => {
   return year && month && day ? `${day}/${month}/${year}` : text;
 };
 
+const formatTimeAmPm = (timeString) => {
+  if (!timeString) return '';
+  const [h, m] = timeString.split(':');
+  if (!h || !m) return timeString;
+  let hour = parseInt(h, 10);
+  const ampm = hour >= 12 ? 'PM' : 'AM';
+  hour = hour % 12;
+  hour = hour ? hour : 12; 
+  return `${String(hour).padStart(2, '0')}:${m} ${ampm}`;
+};
+
 const formatMinutes = (minutes) => {
   const total = Number(minutes || 0);
   if (!Number.isFinite(total) || total <= 0) return '0h 00m';
@@ -75,14 +86,14 @@ const buildDocxData = (solicitud) => {
     cargo: laboral.cargo || '',
     dependencia: laboral.dependencia || '',
     fechaSalida: formatDate(salida.fecha),
-    horaSalida: salida.horaInicio || '',
+    horaSalida: formatTimeAmPm(salida.horaInicio),
     fechaRegreso: formatDate(salida.fechaRegreso || salida.fechaFin || salida.fecha),
-    horaRegreso: salida.horaFin || '',
+    horaRegreso: formatTimeAmPm(salida.horaFin),
     tipo: salida.tipo || '',
     reposicionFecha: formatDate(reposicion.fecha),
     reposicionFechaFin: formatDate(reposicion.fechaFin || reposicion.fecha),
-    reposicionInicio: reposicion.horaInicio || '',
-    reposicionFin: reposicion.horaFin || '',
+    reposicionInicio: formatTimeAmPm(reposicion.horaInicio),
+    reposicionFin: formatTimeAmPm(reposicion.horaFin),
     jefeNombre: jefe.nombre || '',
     jefeCargo: jefe.cargo || '',
     jefeDocumento: jefe.username || '',
@@ -244,17 +255,16 @@ const buildLines = (solicitud) => {
     `Tipo de salida: ${salida.tipo || ''}`,
     `Fecha salida: ${formatDate(salida.fecha)}`,
     `Fecha regreso: ${formatDate(salida.fechaRegreso || salida.fechaFin || salida.fecha)}`,
-    `Hora inicio: ${salida.horaInicio || ''}`,
-    `Hora fin: ${salida.horaFin || ''}`,
+    `Hora inicio: ${formatTimeAmPm(salida.horaInicio)}`,
+    `Hora fin: ${formatTimeAmPm(salida.horaFin)}`,
     `Tiempo solicitado: ${formatMinutes(solicitud.tiempo_solicitado_minutos)}`,
     `Motivo / observacion: ${salida.motivo || ''}`,
     '',
-    'REPOSICION DE TIEMPO',
-    `Aplica reposicion: ${solicitud.reposicion_aplica ? 'SI' : 'NO'}`,
-    `Fecha inicio reposicion: ${formatDate(reposicion.fecha)}`,
+    'DATOS DE REPOSICION',
+    `Fecha reposicion: ${formatDate(reposicion.fecha)}`,
     `Fecha fin reposicion: ${formatDate(reposicion.fechaFin || reposicion.fecha)}`,
-    `Hora inicio reposicion: ${reposicion.horaInicio || ''}`,
-    `Hora fin reposicion: ${reposicion.horaFin || ''}`,
+    `Hora inicio reposicion: ${formatTimeAmPm(reposicion.horaInicio)}`,
+    `Hora fin reposicion: ${formatTimeAmPm(reposicion.horaFin)}`,
     `Tiempo reposicion: ${formatMinutes(solicitud.reposicion_minutos)}`,
     `Estado reposicion: ${solicitud.reposicion_estado || 'no_aplica'}`,
     '',
@@ -267,156 +277,458 @@ const buildLines = (solicitud) => {
   ];
 };
 
-const buildPdfBuffer = (solicitud) => {
-  const chunks = [];
-  const data = solicitud?.datos_formulario || {};
-  const solicitante = solicitud?.solicitante_snapshot || {};
-  const jefe = solicitud?.jefe_snapshot || {};
-  const salida = data.salida || {};
-  const reposicion = data.reposicion || {};
-  const laboral = data.laboral || {};
-  const personal = data.personal || {};
-  const nombre = solicitante.nombre || personal.nombre || '';
-  const documento = solicitante.username || personal.documento || '';
-  const correo = solicitante.email || personal.correo || '';
-  const tipo = salida.tipo || '';
+const PdfPrinter = require('pdfmake');
 
-  const text = (value, x, y, size = 9, bold = false, max = 95) => {
-    chunks.push('BT');
-    chunks.push(`/${bold ? 'F2' : 'F1'} ${size} Tf`);
-    chunks.push(`1 0 0 1 ${x} ${y} Tm`);
-    chunks.push(`(${escapePdfText(stripAccents(value)).slice(0, max)}) Tj`);
-    chunks.push('ET');
-  };
-  const line = (x1, y1, x2, y2) => chunks.push(`0.5 w ${x1} ${y1} m ${x2} ${y2} l S`);
-  const rect = (x, y, w, h) => chunks.push(`0.5 w ${x} ${y} ${w} ${h} re S`);
-  const fillRect = (x, y, w, h, gray = 0.9) => chunks.push(`${gray} ${gray} ${gray} rg ${x} ${y} ${w} ${h} re f 0 0 0 rg 0 0 0 RG`);
-  const checkbox = (x, y, checked, label) => {
-    rect(x, y - 2, 9, 9);
-    if (checked) {
-      line(x + 2, y + 2, x + 4, y - 1);
-      line(x + 4, y - 1, x + 8, y + 6);
+const buildPdfBuffer = async (solicitud) => {
+  let ghDirectorNombre = '';
+  let ghDirectorCargo = 'Jefe de Gestión Humana';
+  if (solicitud.gestion_humana_aprobado_at) {
+    try {
+      const { User } = require('../models');
+      const ghUser = await User.findOne({ where: { dependencia: 'Gestión Humana', cargo: 'Jefe Gestión Humana' } });
+      if (ghUser) {
+        ghDirectorNombre = ghUser.nombre;
+        ghDirectorCargo = ghUser.cargo;
+      }
+    } catch (err) {
+      console.error('Error fetching GH user for PDF:', err);
     }
-    text(label, x + 15, y, 8.5);
-  };
+  }
 
-  fillRect(42, 795, 511, 22, 0.86);
-  rect(42, 70, 511, 747);
-  text('UNIVERSIDAD CESMAG', 54, 802, 13, true);
-  text('FR-002 REPORTE DE SALIDA v3', 226, 802, 10, true);
-  text(`Solicitud: ${solicitud.consecutivo || solicitud.id}`, 405, 802, 8.5, true);
-  text(`Fecha de reporte: ${formatDate(new Date().toISOString())}`, 54, 779, 9, true);
+  return new Promise((resolve, reject) => {
+    try {
+      const fonts = {
+        Roboto: {
+          normal: 'Helvetica',
+          bold: 'Helvetica-Bold',
+          italics: 'Helvetica-Oblique',
+          bolditalics: 'Helvetica-BoldOblique'
+        }
+      };
+      const printer = new PdfPrinter(fonts);
 
-  fillRect(42, 748, 511, 18, 0.92);
-  rect(42, 748, 511, 18);
-  text('Informacion del trabajador', 205, 754, 10, true);
-  rect(42, 682, 511, 66);
-  line(42, 726, 553, 726);
-  line(42, 704, 553, 704);
-  line(298, 682, 298, 748);
-  text('Nombres y apellidos:', 52, 733, 8.5, true);
-  text(nombre, 155, 733, 8.5, false, 42);
-  text('Documento:', 308, 733, 8.5, true);
-  text(documento, 370, 733, 8.5, false, 24);
-  text('Cargo:', 52, 711, 8.5, true);
-  text(laboral.cargo || '', 92, 711, 8.5, false, 45);
-  text('Dependencia:', 308, 711, 8.5, true);
-  text(laboral.dependencia || '', 382, 711, 8.5, false, 37);
-  text('Correo:', 52, 689, 8.5, true);
-  text(correo, 95, 689, 8.5, false, 50);
+      const data = solicitud?.datos_formulario || {};
+      const solicitante = solicitud?.solicitante_snapshot || {};
+      const jefe = solicitud?.jefe_snapshot || {};
+      const salida = data.salida || {};
+      const reposicion = data.reposicion || {};
+      const laboral = data.laboral || {};
+      const personal = data.personal || {};
 
-  fillRect(42, 646, 511, 18, 0.92);
-  rect(42, 646, 511, 18);
-  text('Datos de salida', 236, 652, 10, true);
-  rect(42, 586, 511, 60);
-  line(42, 626, 553, 626);
-  line(42, 606, 553, 606);
-  line(298, 586, 298, 646);
-  text(`Fecha de salida: ${formatDate(salida.fecha)}`, 52, 633, 8.5, true);
-  text(`Hora de salida: ${salida.horaInicio || ''}`, 308, 633, 8.5, true);
-  text(`Fecha de regreso: ${formatDate(salida.fechaRegreso || salida.fechaFin || salida.fecha)}`, 52, 613, 8.5, true);
-  text(`Hora de regreso: ${salida.horaFin || ''}`, 308, 613, 8.5, true);
-  text(`Tiempo solicitado: ${formatMinutes(solicitud.tiempo_solicitado_minutos)}`, 52, 593, 8.5, true);
-  text(`Motivo: ${salida.motivo || getTipoSalidaLabel(tipo)}`, 308, 593, 8.5, false, 43);
+      const isSalidaMultiple = Boolean(data.isSalidaMultiple);
+      const participantes = data.participantes || [];
 
-  fillRect(42, 546, 511, 18, 0.86);
-  rect(42, 546, 511, 18);
-  text('Salida por actividades propias del cargo', 178, 552, 10, true);
-  rect(42, 490, 511, 56);
-  checkbox(58, 527, false, 'Ponencia');
-  checkbox(180, 527, false, 'Visita a otras IES');
-  checkbox(325, 527, false, 'Capacitacion');
-  checkbox(58, 507, false, 'Proyecto de investigacion');
-  checkbox(180, 507, false, 'Asistente a congreso');
-  checkbox(325, 507, false, 'Practica academica');
-  checkbox(58, 489, false, 'Participante en torneo deportivo');
-  text('Otra, cual?:', 325, 489, 8.5, true);
+      let motivoStr = salida.motivo || getTipoSalidaLabel(salida.tipo);
+      if (salida.tipo === 'salida_campus' && salida.campusSalida && salida.campusDestino) {
+        motivoStr = `Salida entre campus (${salida.campusSalida} a ${salida.campusDestino})${salida.motivo ? ` - ${salida.motivo}` : ''}`;
+      } else if (salida.tipo === 'terapias' && salida.terapiasList?.length) {
+        motivoStr = `Terapias (${salida.terapiasList.length}). ${salida.motivo || ''}`;
+      } else if (['cita_eps', 'cita_particular'].includes(salida.tipo) && salida.especialidadMedica) {
+        motivoStr = `${getTipoSalidaLabel(salida.tipo)} (${salida.especialidadMedica})${salida.motivo ? ` - ${salida.motivo}` : ''}`;
+      }
 
-  fillRect(42, 450, 511, 18, 0.86);
-  rect(42, 450, 511, 18);
-  text('Salida por actividades diferentes a las laborales', 166, 456, 10, true);
-  rect(42, 374, 511, 76);
-  checkbox(58, 429, tipo === 'cita_eps', 'Cita medica por EPS');
-  checkbox(230, 429, tipo === 'cita_particular', 'Cita medica particular');
-  checkbox(410, 429, tipo === 'diligencia_personal', 'Diligencia personal');
-  text('Nota: Para diligencias personales indicar fecha y hora de reposicion', 58, 405, 8.5, true, 80);
-  line(42, 398, 553, 398);
-  line(212, 374, 212, 398);
-  line(382, 374, 382, 398);
-  text(`Fecha: ${formatDate(reposicion.fecha)}${(reposicion.fechaFin && reposicion.fechaFin !== reposicion.fecha) ? ` a ${formatDate(reposicion.fechaFin)}` : ''}`, 52, 383, 8.5, true);
-  text(`Hora inicio: ${reposicion.horaInicio || ''}`, 222, 383, 8.5, true);
-  text(`Hora fin: ${reposicion.horaFin || ''}`, 392, 383, 8.5, true);
+      const docDefinition = {
+        defaultStyle: { font: 'Roboto', fontSize: 10, color: '#333333' },
+        content: [
+          {
+            table: {
+              widths: ['22%', '50%', '28%'],
+              body: [
+                [
+                  {
+                    image: path.join(__dirname, '../assets/logo_formatos.jpg'),
+                    width: 100,
+                    alignment: 'center',
+                    margin: [0, 5, 0, 5]
+                  },
+                  {
+                    text: '\nREPORTE DE SALIDA DURANTE LA\nJORNADA LABORAL',
+                    alignment: 'center',
+                    fontSize: 12,
+                    bold: true,
+                    margin: [0, 10, 0, 0]
+                  },
+                  {
+                    table: {
+                      widths: ['*'],
+                      body: [
+                        [ { text: 'CÓDIGO: THM-DP-FR-002', bold: true, fontSize: 9 } ],
+                        [ { text: 'VERSIÓN: 3', bold: true, fontSize: 9 } ],
+                        [ { text: 'FECHA: 15/FEB/2023', bold: true, fontSize: 9 } ]
+                      ]
+                    },
+                    layout: {
+                      hLineWidth: (i, node) => (i === 0 || i === node.table.body.length) ? 0 : 1,
+                      vLineWidth: () => 0,
+                      paddingLeft: () => 4,
+                      paddingRight: () => 4,
+                      paddingTop: () => 2,
+                      paddingBottom: () => 2
+                    },
+                    margin: [-4, -2, -4, -2]
+                  }
+                ]
+              ]
+            },
+            layout: 'borders',
+            margin: [0, 0, 0, 15]
+          },
+          {
+            table: {
+              widths: ['*'],
+              body: [
+                [ { text: '1. Información del Trabajador', bold: true, fillColor: '#e0e0e0', margin: [5, 5, 5, 5] } ]
+              ]
+            },
+            margin: [0, 0, 0, 5]
+          },
+          {
+            table: {
+              widths: ['25%', '25%', '25%', '25%'],
+              body: [
+                [
+                  { text: 'Nombres y apellidos:', bold: true },
+                  { text: solicitante.nombre || personal.nombre || '' },
+                  { text: 'Documento:', bold: true },
+                  { text: solicitante.username || personal.documento || '' }
+                ],
+                [
+                  { text: 'Cargo:', bold: true },
+                  { text: laboral.cargo || '' },
+                  { text: 'Dependencia:', bold: true },
+                  { text: laboral.dependencia || '' }
+                ],
+                [
+                  { text: 'Correo:', bold: true },
+                  { text: solicitante.email || personal.correo || '', colSpan: 3 },
+                  {}, {}
+                ]
+              ]
+            },
+            layout: 'lightHorizontalLines',
+            margin: [0, 0, 0, 15]
+          },
+          {
+            table: {
+              widths: ['*'],
+              body: [
+                [ { text: '2. Datos de Salida', bold: true, fillColor: '#e0e0e0', margin: [5, 5, 5, 5] } ]
+              ]
+            },
+            margin: [0, 0, 0, 5]
+          },
+          {
+            table: {
+              widths: ['25%', '25%', '25%', '25%'],
+              body: [
+                ...(salida.tipo !== 'terapias' ? [
+                  [
+                    { text: 'Fecha de salida:', bold: true },
+                    { text: formatDate(salida.fecha) },
+                    { text: 'Hora de salida:', bold: true },
+                    { text: formatTimeAmPm(salida.horaInicio) }
+                  ],
+                  [
+                    { text: 'Fecha de regreso:', bold: true },
+                    { text: formatDate(salida.fechaRegreso || salida.fechaFin || salida.fecha) },
+                    { text: 'Hora de regreso:', bold: true },
+                    { text: formatTimeAmPm(salida.horaFin) }
+                  ]
+                ] : []),
+                [
+                  { text: 'Tiempo solicitado:', bold: true },
+                  { text: formatMinutes(solicitud.tiempo_solicitado_minutos) },
+                  { text: 'Categoría:', bold: true },
+                  { text: getTipoSalidaLabel(salida.tipo) }
+                ],
+                [
+                  { text: 'Detalle/Motivo:', bold: true },
+                  { text: motivoStr, colSpan: 3 },
+                  {}, {}
+                ]
+              ]
+            },
+            layout: 'lightHorizontalLines',
+            margin: [0, 0, 0, 15]
+          }
+        ]
+      };
 
-  fillRect(42, 334, 511, 18, 0.92);
-  rect(42, 334, 511, 18);
-  text('Control de aprobaciones', 213, 340, 10, true);
-  rect(42, 230, 511, 104);
-  line(42, 282, 553, 282);
-  line(298, 230, 298, 334);
-  text('Firma del trabajador solicitante', 82, 315, 9, true);
-  text(nombre, 82, 298, 8.5);
-  line(82, 292, 258, 292);
-  text('Autorizacion del jefe inmediato', 334, 315, 9, true);
-  text(jefe.nombre || '', 334, 298, 8.5, false, 34);
-  line(334, 292, 510, 292);
-  text(`Firma: ${solicitud.jefe_aprobado_at ? 'Aprobado por correo' : 'Pendiente'}`, 334, 266, 8.5);
-  text(`Cargo: ${jefe.cargo || ''}`, 334, 250, 8.5, false, 35);
-  text(`Cedula: ${jefe.username || ''}`, 334, 234, 8.5);
+      if (salida.tipo === 'terapias' && salida.terapiasList?.length) {
+         const tBody = [
+           [
+             { text: 'Nº', bold: true, fillColor: '#f8f8f8' },
+             { text: 'Fecha', bold: true, fillColor: '#f8f8f8' },
+             { text: 'Hora inicio', bold: true, fillColor: '#f8f8f8' },
+             { text: 'Hora fin', bold: true, fillColor: '#f8f8f8' }
+           ]
+         ];
+         salida.terapiasList.forEach((t, i) => {
+           tBody.push([
+             (i + 1).toString(),
+             formatDate(t.fecha),
+             formatTimeAmPm(t.horaInicio),
+             formatTimeAmPm(t.horaFin)
+           ]);
+         });
+         
+         tBody.push([
+           { text: 'Tiempo total autorizado:', colSpan: 3, alignment: 'right', bold: true, fillColor: '#f8f8f8' },
+           {},
+           {},
+           { text: formatMinutes(solicitud.tiempo_solicitado_minutos), bold: true, fillColor: '#f8f8f8', alignment: 'center' }
+         ]);
 
-  fillRect(42, 190, 511, 18, 0.92);
-  rect(42, 190, 511, 18);
-  text('RECIBIDO - Gestion Humana', 218, 196, 10, true);
-  rect(42, 122, 511, 68);
-  text(`Estado Gestion Humana: ${solicitud.gestion_humana_aprobado_at ? 'Aprobado' : 'Pendiente'}`, 58, 166, 8.5, true);
-  text(`Fecha: ${solicitud.gestion_humana_aprobado_at ? formatDate(solicitud.gestion_humana_aprobado_at) : ''}`, 360, 166, 8.5, true);
-  text('Firma:', 58, 138, 8.5, true);
-  line(96, 138, 286, 138);
-  text('Documento generado automaticamente desde SIAC UNICESMAG con la informacion diligenciada en el formulario digital.', 58, 92, 7.5, false, 110);
+         docDefinition.content.push({
+           table: {
+             widths: ['*'],
+             body: [
+               [ { text: `3. Cronograma de Terapias (${salida.terapiasList.length})`, bold: true, fillColor: '#e0e0e0', margin: [5, 5, 5, 5] } ]
+             ]
+           },
+           margin: [0, 0, 0, 5]
+         });
 
-  const stream = chunks.join('\n');
-  const objects = [
-    '1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj',
-    '2 0 obj\n<< /Type /Pages /Kids [3 0 R] /Count 1 >>\nendobj',
-    '3 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 4 0 R /F2 5 0 R >> >> /Contents 6 0 R >>\nendobj',
-    '4 0 obj\n<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>\nendobj',
-    '5 0 obj\n<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold >>\nendobj',
-    `6 0 obj\n<< /Length ${Buffer.byteLength(stream, 'utf8')} >>\nstream\n${stream}\nendstream\nendobj`
-  ];
+         docDefinition.content.push({
+           table: {
+             headerRows: 1,
+             widths: ['10%', '30%', '30%', '30%'],
+             body: tBody
+           },
+           layout: 'lightHorizontalLines',
+           margin: [0, 0, 0, 15]
+         });
+      }
 
-  let pdf = '%PDF-1.4\n';
-  const offsets = [0];
-  objects.forEach((obj) => {
-    offsets.push(Buffer.byteLength(pdf, 'utf8'));
-    pdf += `${obj}\n`;
+      if (isSalidaMultiple && participantes.length > 0) {
+        docDefinition.content.push({
+          table: {
+            widths: ['*'],
+            body: [
+              [ { text: `3. Participantes de Salida Grupal (${participantes.length})`, bold: true, fillColor: '#e0e0e0', margin: [5, 5, 5, 5] } ]
+            ]
+          },
+          margin: [0, 0, 0, 5]
+        });
+
+        const pBody = [
+          [
+            { text: 'Documento', bold: true, fillColor: '#f8f8f8' },
+            { text: 'Nombre', bold: true, fillColor: '#f8f8f8' },
+            { text: 'Cargo / Dependencia', bold: true, fillColor: '#f8f8f8' }
+          ]
+        ];
+        participantes.forEach(p => {
+          pBody.push([
+            p.documento || p.username || '',
+            p.nombre || p.nombres || '',
+            `${p.cargo || ''} / ${p.dependencia || ''}`
+          ]);
+        });
+
+        docDefinition.content.push({
+          table: {
+            headerRows: 1,
+            widths: ['20%', '40%', '40%'],
+            body: pBody
+          },
+          layout: 'lightHorizontalLines',
+          margin: [0, 0, 0, 15]
+        });
+      }
+
+      if (reposicion.fecha) {
+        docDefinition.content.push({
+          table: {
+            widths: ['*'],
+            body: [
+              [ { text: '4. Plan de Reposición', bold: true, fillColor: '#e0e0e0', margin: [5, 5, 5, 5] } ]
+            ]
+          },
+          margin: [0, 0, 0, 5]
+        });
+        docDefinition.content.push({
+          table: {
+            widths: ['25%', '25%', '25%', '25%'],
+            body: [
+              [
+                { text: 'Fecha Inicio:', bold: true },
+                { text: formatDate(reposicion.fecha) },
+                { text: 'Fecha Fin:', bold: true },
+                { text: formatDate(reposicion.fechaFin || reposicion.fecha) }
+              ],
+              [
+                { text: 'Hora Inicio:', bold: true },
+                { text: formatTimeAmPm(reposicion.horaInicio) },
+                { text: 'Hora Fin:', bold: true },
+                { text: formatTimeAmPm(reposicion.horaFin) }
+              ]
+            ]
+          },
+          layout: 'lightHorizontalLines',
+          margin: [0, 0, 0, 15]
+        });
+      }
+
+      docDefinition.content.push({
+        table: {
+          widths: ['50%', '50%'],
+          body: [
+            [
+              { text: 'Firma del trabajador Solicitante', bold: true, alignment: 'center', fillColor: '#e0e0e0' },
+              { text: 'Autorización del Jefe inmediato', bold: true, alignment: 'center', fillColor: '#e0e0e0' }
+            ],
+            [
+              {
+                text: `\n\n\n\nFirma: ${solicitante.nombre || personal.nombre || ''} (Original Firmado)`,
+                margin: [5, 5, 5, 5]
+              },
+              {
+                table: {
+                  widths: ['*'],
+                  body: [
+                    [ { text: `\nFirma: ${solicitud.jefe_aprobado_at ? `${jefe.nombre || ''} (Original Firmado)` : 'Pendiente'}\n`, border: [false, false, false, true] } ],
+                    [ { text: `Nombres y apellidos: ${jefe.nombre || ''}`, border: [false, false, false, true] } ],
+                    [ { text: `Cargo: ${jefe.cargo || ''}`, border: [false, false, false, false] } ]
+                  ]
+                },
+                layout: 'borders',
+                margin: [0, 0, 0, 0]
+              }
+            ],
+            [
+              { text: 'RECIBIDO (Gestión Humana)', bold: true, alignment: 'center', colSpan: 2, fillColor: '#e0e0e0' },
+              {}
+            ],
+            [
+              {
+                table: {
+                  widths: ['50%', '50%'],
+                  body: [
+                    [ 
+                      { text: `\nFirma: ${solicitud.gestion_humana_aprobado_at ? 'Gestión Humana (Original Firmado)' : 'Pendiente'}\n`, border: [false, false, false, false] },
+                      { text: `\nFecha: ${solicitud.gestion_humana_aprobado_at ? formatDate(solicitud.gestion_humana_aprobado_at) : ''}\n`, border: [false, false, false, false] }
+                    ],
+                    [ { text: `Nombres y apellidos: ${ghDirectorNombre}`, colSpan: 2, border: [false, false, false, false] }, {} ],
+                    [ { text: `Cargo: ${ghDirectorCargo}\n`, colSpan: 2, border: [false, false, false, false] }, {} ]
+                  ]
+                },
+                layout: 'borders',
+                margin: [0, 0, 0, 0],
+                colSpan: 2
+              },
+              {}
+            ]
+          ]
+        },
+        layout: 'borders',
+        margin: [0, 0, 0, 15]
+      });
+
+      let trazabilidad = solicitud?.trazabilidad || [];
+      if (typeof trazabilidad === 'string') {
+        try { trazabilidad = JSON.parse(trazabilidad); } catch (e) { trazabilidad = []; }
+      }
+      if (!Array.isArray(trazabilidad)) trazabilidad = [];
+
+      if (trazabilidad.length > 0) {
+        const traceEventLabels = {
+          'radicada': 'Radicación inicial',
+          'radicada_grupal': 'Radicación de salida grupal',
+          'correo_jefe_enviado': 'Notificación a Jefe Inmediato',
+          'correo_jefe_error': 'Error al notificar a Jefe Inmediato',
+          'aprobada_jefe': 'Aprobación de Jefe Inmediato',
+          'rechazada_jefe': 'Rechazada por Jefe Inmediato',
+          'correo_gestion_humana_enviado': 'Notificación a Gestión Humana',
+          'correo_gestion_humana_error': 'Error al notificar a Gestión Humana',
+          'aprobada_gestion_humana': 'Aprobación de Gestión Humana',
+          'rechazada_gestion_humana': 'Rechazada por Gestión Humana',
+          'notificacion_final_enviada': 'Notificación final enviada',
+          'reposicion_cumplida': 'Reposición marcada como cumplida',
+          'reposicion_incumplida': 'Reposición marcada como incumplida',
+          'reposicion_pendiente': 'Reposición marcada como pendiente'
+        };
+
+        const traceBody = [
+          [
+            { text: 'Fecha / Hora', bold: true, fillColor: '#f4f4f5' },
+            { text: 'Evento', bold: true, fillColor: '#f4f4f5' },
+            { text: 'Actor', bold: true, fillColor: '#f4f4f5' },
+            { text: 'Detalle', bold: true, fillColor: '#f4f4f5' }
+          ]
+        ];
+
+        trazabilidad.forEach(t => {
+          const dateStr = t.at ? new Date(t.at).toLocaleString('es-CO') : '';
+          const eventStr = traceEventLabels[t.event] || t.event;
+          
+          let actorStr = t.actor?.nombre || t.actor?.username || '';
+          if (!actorStr) {
+            if (t.event.includes('_jefe')) {
+              actorStr = solicitud?.jefe_snapshot?.nombre || 'Jefe Inmediato';
+            } else if (t.event.includes('_gestion_humana')) {
+              actorStr = 'Gestión Humana';
+            } else if (t.event.includes('correo_') || t.event.includes('notificacion_')) {
+              actorStr = 'Sistema Automático';
+            } else {
+              actorStr = 'Sistema Automático';
+            }
+          }
+          
+          let detailStr = '';
+          if (t.motivo) detailStr = t.motivo;
+          if (t.observacion) detailStr = t.observacion;
+          if (t.error) detailStr = `Error: ${t.error}`;
+          if (t.justificacion) detailStr = `Justificación: ${t.justificacion}`;
+
+          if (!detailStr) {
+            if (t.event.includes('radicada')) detailStr = 'Se registró la solicitud en el sistema.';
+            else if (t.event.includes('correo_')) detailStr = 'Correo electrónico enviado exitosamente.';
+            else if (t.event.includes('notificacion_final')) detailStr = 'Correos finales de cierre enviados al trabajador Solicitante y a Seguridad y Salud en el Trabajo (SST).';
+            else if (t.event.includes('aprobada_')) detailStr = 'Aprobado sin observaciones adicionales.';
+            else if (t.event.includes('rechazada_')) detailStr = 'Rechazado sin justificación adicional.';
+            else detailStr = 'Procesado exitosamente.';
+          }
+
+          traceBody.push([
+            { text: dateStr, fontSize: 8 },
+            { text: eventStr, fontSize: 8 },
+            { text: actorStr, fontSize: 8 },
+            { text: detailStr, fontSize: 8 }
+          ]);
+        });
+
+        docDefinition.content.push({
+          table: {
+            widths: ['20%', '30%', '25%', '25%'],
+            body: traceBody
+          },
+          layout: 'lightHorizontalLines',
+          margin: [0, 10, 0, 15]
+        });
+      }
+
+      docDefinition.content.push({
+        text: [
+          'Documento generado automáticamente desde SIAC UNICESMAG con la información diligenciada en el formulario digital.\n',
+          'Toda la información personal suministrada en este reporte será tratada de forma estrictamente confidencial, en cumplimiento y de acuerdo con la Política de Tratamiento de Datos Personales de UNICESMAG, garantizando su uso exclusivo para los fines administrativos e institucionales correspondientes.'
+        ],
+        fontSize: 8,
+        color: '#71717a',
+        alignment: 'center',
+        margin: [20, 10, 20, 0]
+      });
+
+      const pdfDoc = printer.createPdfKitDocument(docDefinition);
+      const docChunks = [];
+      pdfDoc.on('data', chunk => docChunks.push(chunk));
+      pdfDoc.on('end', () => resolve(Buffer.concat(docChunks)));
+      pdfDoc.on('error', err => reject(err));
+      pdfDoc.end();
+    } catch (error) {
+      reject(error);
+    }
   });
-  const xrefOffset = Buffer.byteLength(pdf, 'utf8');
-  pdf += `xref\n0 ${objects.length + 1}\n`;
-  pdf += '0000000000 65535 f \n';
-  offsets.slice(1).forEach((offset) => {
-    pdf += `${String(offset).padStart(10, '0')} 00000 n \n`;
-  });
-  pdf += `trailer\n<< /Size ${objects.length + 1} /Root 1 0 R >>\nstartxref\n${xrefOffset}\n%%EOF`;
-  return Buffer.from(pdf, 'utf8');
 };
 
 const ensureReporteSalidaPdf = async (solicitud, docxAttachment = null) => {
@@ -424,10 +736,17 @@ const ensureReporteSalidaPdf = async (solicitud, docxAttachment = null) => {
   await fs.promises.mkdir(outDir, { recursive: true });
   const filename = `${String(solicitud.consecutivo || solicitud.id).replace(/[^a-zA-Z0-9_-]/g, '_')}-FR-002-digital.pdf`;
   const filePath = path.join(outDir, filename);
-  const docx = docxAttachment || await ensureReporteSalidaDocx(solicitud);
-  const converted = await convertDocxToPdf(docx.path, filePath);
+  const isTerapias = solicitud?.datos_formulario?.salida?.tipo === 'terapias';
+  const isGrupal = solicitud?.datos_formulario?.salida?.tipo === 'salida_grupal';
+
+  let converted = false;
+  if (!isTerapias && !isGrupal) {
+    const docx = docxAttachment || await ensureReporteSalidaDocx(solicitud);
+    converted = await convertDocxToPdf(docx.path, filePath);
+  }
+
   if (!converted) {
-    const buffer = buildPdfBuffer(solicitud);
+    const buffer = await buildPdfBuffer(solicitud);
     await fs.promises.writeFile(filePath, buffer);
   }
   return {
