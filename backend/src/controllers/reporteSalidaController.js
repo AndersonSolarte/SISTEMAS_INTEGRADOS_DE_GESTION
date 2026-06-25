@@ -1384,7 +1384,7 @@ const radicarSolicitud = async (req, res) => {
     });
   } catch (error) {
     console.error('Error radicando reporte de salida:', error);
-    res.status(500).json({ success: false, message: 'No se pudo radicar la solicitud' });
+    res.status(500).json({ success: false, message: 'Error interno: ' + error.message });
   }
 };
 
