@@ -23,18 +23,18 @@ const formatElapsed = (minutes) => {
 const renderTable = (title, icon, data, isTime = false, color = '#1d4ed8', bg = '#eff6ff') => (
   <Paper elevation={0} sx={{ border: '1px solid #e2e8f0', borderRadius: 3, overflow: 'hidden', height: '100%' }}>
     <Box sx={{ p: 2, bgcolor: '#f8fafc', borderBottom: '1px solid #e2e8f0' }}>
-      <Stack direction="row" alignItems="center" spacing={1}>
+      <Stack direction="row" alignItems="center" spacing={1.5}>
         {icon}
-        <Typography sx={{ fontWeight: 900, color: '#0f172a', fontSize: 14 }}>{title}</Typography>
+        <Typography sx={{ fontWeight: 900, color: '#0f172a', fontSize: 16 }}>{title}</Typography>
       </Stack>
     </Box>
-    <TableContainer sx={{ maxHeight: 300 }}>
-      <Table size="small" stickyHeader>
+    <TableContainer sx={{ maxHeight: 450 }}>
+      <Table stickyHeader>
         <TableHead>
           <TableRow>
-            <TableCell sx={{ fontSize: 11 }}>#</TableCell>
-            <TableCell sx={{ fontSize: 11 }}>Colaborador</TableCell>
-            <TableCell align="right" sx={{ fontSize: 11 }}>{isTime ? 'Tiempo Acumulado' : 'Solicitudes'}</TableCell>
+            <TableCell sx={{ fontSize: 13, fontWeight: 800 }}>#</TableCell>
+            <TableCell sx={{ fontSize: 13, fontWeight: 800 }}>Colaborador</TableCell>
+            <TableCell align="right" sx={{ fontSize: 13, fontWeight: 800 }}>{isTime ? 'Tiempo Acumulado' : 'Solicitudes'}</TableCell>
           </TableRow>
         </TableHead>
         <TableBody>
@@ -43,10 +43,10 @@ const renderTable = (title, icon, data, isTime = false, color = '#1d4ed8', bg = 
           )}
           {data.map((item, idx) => (
             <TableRow key={idx} hover>
-              <TableCell sx={{ fontWeight: 800, color: '#64748b' }}>{idx + 1}</TableCell>
-              <TableCell sx={{ fontSize: 12 }}>{item.name}</TableCell>
+              <TableCell sx={{ fontWeight: 800, color: '#64748b', fontSize: 14 }}>{idx + 1}</TableCell>
+              <TableCell sx={{ fontSize: 14, fontWeight: 600 }}>{item.name}</TableCell>
               <TableCell align="right">
-                <Chip size="small" label={isTime ? formatElapsed(item.value) : item.value} sx={{ bgcolor: bg, color, fontWeight: 900 }} />
+                <Chip size="small" label={isTime ? formatElapsed(item.value) : item.value} sx={{ bgcolor: bg, color, fontWeight: 900, fontSize: 13, px: 1, py: 2 }} />
               </TableCell>
             </TableRow>
           ))}
@@ -141,53 +141,50 @@ export default function ReporteSalidaEstadisticas({ rows = [] }) {
         </TextField>
       </Stack>
 
-      <Grid container spacing={2}>
-        <Grid item xs={12}>
-          <Paper elevation={0} sx={{ border: '1px solid #e2e8f0', borderRadius: 3, overflow: 'hidden', p: 3, mb: 1, bgcolor: '#fff' }}>
-            <Stack direction="row" alignItems="center" spacing={1} sx={{ mb: 3 }}>
-              <TimelineIcon sx={{ color: '#0ea5e9' }} />
-              <Typography sx={{ fontWeight: 900, color: '#0f172a', fontSize: 16 }}>Flujo Diario de Ausentismo</Typography>
-            </Stack>
-            <Box sx={{ width: '100%', height: 300 }}>
-              {indicators.dailyChart.length > 0 ? (
-                <ResponsiveContainer>
-                  <AreaChart data={indicators.dailyChart} margin={{ top: 10, right: 30, left: 0, bottom: 0 }}>
-                    <defs>
-                      <linearGradient id="colorSolicitudes" x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="5%" stopColor="#0ea5e9" stopOpacity={0.3}/>
-                        <stop offset="95%" stopColor="#0ea5e9" stopOpacity={0}/>
-                      </linearGradient>
-                    </defs>
-                    <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
-                    <XAxis dataKey="date" tick={{ fontSize: 12, fill: '#64748b' }} tickLine={false} axisLine={false} />
-                    <YAxis tick={{ fontSize: 12, fill: '#64748b' }} tickLine={false} axisLine={false} />
-                    <RechartsTooltip 
-                      contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }}
-                      labelStyle={{ fontWeight: 700, color: '#334155', marginBottom: '4px' }}
-                    />
-                    <Area type="monotone" dataKey="solicitudes" name="Solicitudes" stroke="#0ea5e9" strokeWidth={3} fillOpacity={1} fill="url(#colorSolicitudes)" />
-                  </AreaChart>
-                </ResponsiveContainer>
-              ) : (
-                <Stack alignItems="center" justifyContent="center" height="100%">
-                  <Typography sx={{ color: '#94a3b8' }}>No hay datos suficientes para graficar.</Typography>
-                </Stack>
-              )}
-            </Box>
-          </Paper>
-        </Grid>
-        <Grid item xs={12} md={6} lg={6} xl={6}>
-          {renderTable('Índice de Severidad (Total Horas)', <AccessTimeIcon sx={{ color: '#b45309' }} />, indicators.topTime, true, '#b45309', '#fef3c7')}
-        </Grid>
-        <Grid item xs={12} md={6} lg={6} xl={6}>
-          {renderTable('Índice de Frecuencia (Total Permisos)', <BarChartIcon sx={{ color: '#1d4ed8' }} />, indicators.topCount, false, '#1d4ed8', '#eff6ff')}
-        </Grid>
+      <Box sx={{ mb: 3 }}>
+        <Paper elevation={0} sx={{ border: '1px solid #e2e8f0', borderRadius: 3, overflow: 'hidden', p: 3, bgcolor: '#fff' }}>
+          <Stack direction="row" alignItems="center" spacing={1} sx={{ mb: 3 }}>
+            <TimelineIcon sx={{ color: '#0ea5e9', fontSize: 28 }} />
+            <Typography sx={{ fontWeight: 900, color: '#0f172a', fontSize: 18 }}>Flujo Diario de Ausentismo</Typography>
+          </Stack>
+          <Box sx={{ width: '100%', height: 350 }}>
+            {indicators.dailyChart.length > 0 ? (
+              <ResponsiveContainer>
+                <AreaChart data={indicators.dailyChart} margin={{ top: 10, right: 30, left: 0, bottom: 0 }}>
+                  <defs>
+                    <linearGradient id="colorSolicitudes" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="5%" stopColor="#0ea5e9" stopOpacity={0.3}/>
+                      <stop offset="95%" stopColor="#0ea5e9" stopOpacity={0}/>
+                    </linearGradient>
+                  </defs>
+                  <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
+                  <XAxis dataKey="date" tick={{ fontSize: 12, fill: '#64748b' }} tickLine={false} axisLine={false} />
+                  <YAxis tick={{ fontSize: 12, fill: '#64748b' }} tickLine={false} axisLine={false} />
+                  <RechartsTooltip 
+                    contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }}
+                    labelStyle={{ fontWeight: 700, color: '#334155', marginBottom: '4px' }}
+                  />
+                  <Area type="monotone" dataKey="solicitudes" name="Solicitudes" stroke="#0ea5e9" strokeWidth={3} fillOpacity={1} fill="url(#colorSolicitudes)" />
+                </AreaChart>
+              </ResponsiveContainer>
+            ) : (
+              <Stack alignItems="center" justifyContent="center" height="100%">
+                <Typography sx={{ color: '#94a3b8' }}>No hay datos suficientes para graficar.</Typography>
+              </Stack>
+            )}
+          </Box>
+        </Paper>
+      </Box>
+
+      <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', lg: '1fr 1fr' }, gap: 3 }}>
+        {renderTable('Índice de Severidad (Total Horas)', <AccessTimeIcon sx={{ color: '#b45309' }} />, indicators.topTime, true, '#b45309', '#fef3c7')}
+        {renderTable('Índice de Frecuencia (Total Permisos)', <BarChartIcon sx={{ color: '#1d4ed8' }} />, indicators.topCount, false, '#1d4ed8', '#eff6ff')}
         {indicators.dynamicTables.map(tbl => (
-          <Grid item xs={12} md={6} lg={6} xl={6} key={tbl.id}>
+          <React.Fragment key={tbl.id}>
             {renderTable(tbl.label, tbl.icon, tbl.data, false, tbl.color, tbl.bg)}
-          </Grid>
+          </React.Fragment>
         ))}
-      </Grid>
+      </Box>
     </Box>
   );
 }
