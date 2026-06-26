@@ -1322,6 +1322,7 @@ const radicarSolicitud = async (req, res) => {
       solicitante_snapshot: buildSnapshot(req.user),
       jefe_snapshot: jefeSnapshot,
       datos_formulario: {
+        tx_id: crypto.randomUUID(),
         personal: {
           nombre: sanitizeText(req.body.personal?.nombre || req.user.nombre),
           documento: sanitizeText(req.body.personal?.documento || req.user.username),
@@ -3145,7 +3146,30 @@ const getReposicionesEquipo = async (req, res) => {
 
 const verificarReportePublico = async (req, res) => {
   try {
-    const solicitud = await ReporteSalidaSolicitud.findByPk(req.params.id);
+    const searchId = req.params.id;
+    let solicitud = null;
+
+    if (searchId.length === 36 && searchId.includes('-')) {
+      solicitud = await ReporteSalidaSolicitud.findOne({
+        where: {
+          datos_formulario: {
+            [Op.contains]: { tx_id: searchId }
+          }
+        }
+      });
+    }
+
+    if (!solicitud) {
+      solicitud = await ReporteSalidaSolicitud.findOne({
+        where: {
+          [Op.or]: [
+            { id: isNaN(searchId) ? 0 : Number(searchId) },
+            { consecutivo: searchId }
+          ]
+        }
+      });
+    }
+
     if (!solicitud) {
       return res.status(404).json({ success: false, message: 'El reporte no existe o fue eliminado.' });
     }

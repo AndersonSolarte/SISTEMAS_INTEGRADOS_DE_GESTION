@@ -586,7 +586,8 @@ const buildPdfBuffer = async (solicitud) => {
         });
       }
 
-      const txId = String(solicitud.id || solicitud.consecutivo || '').substring(0, 18);
+      const ghDirectorCargo = solicitud.jefe_snapshot?.director_gh_cargo || 'Jefe de Gestión Humana';
+      const txId = solicitud.datos_formulario?.tx_id || String(solicitud.consecutivo || solicitud.id);
       const reqDate = formatDateTime(solicitud.createdAt || new Date());
       const jefeDate = solicitud.jefe_aprobado_at ? formatDateTime(solicitud.jefe_aprobado_at) : 'Pendiente';
       const ghDate = solicitud.gestion_humana_aprobado_at ? formatDateTime(solicitud.gestion_humana_aprobado_at) : 'Pendiente';
