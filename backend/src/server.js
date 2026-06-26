@@ -7,7 +7,7 @@ const morgan = require('morgan');
 const compression = require('compression');
 const multer = require('multer');
 const fs = require('fs');
-const { testConnection } = require('./config/database');
+const { sequelize, testConnection } = require('./config/database');
 const {
   corsOptions,
   apiLimiter,
