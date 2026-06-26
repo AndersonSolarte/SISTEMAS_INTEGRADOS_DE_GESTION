@@ -736,19 +736,10 @@ const ensureReporteSalidaPdf = async (solicitud, docxAttachment = null) => {
   await fs.promises.mkdir(outDir, { recursive: true });
   const filename = `${String(solicitud.consecutivo || solicitud.id).replace(/[^a-zA-Z0-9_-]/g, '_')}-FR-002-digital.pdf`;
   const filePath = path.join(outDir, filename);
-  const isTerapias = solicitud?.datos_formulario?.salida?.tipo === 'terapias';
-  const isGrupal = solicitud?.datos_formulario?.salida?.tipo === 'salida_grupal';
 
-  let converted = false;
-  if (!isTerapias && !isGrupal) {
-    const docx = docxAttachment || await ensureReporteSalidaDocx(solicitud);
-    converted = await convertDocxToPdf(docx.path, filePath);
-  }
-
-  if (!converted) {
-    const buffer = await buildPdfBuffer(solicitud);
-    await fs.promises.writeFile(filePath, buffer);
-  }
+  const buffer = await buildPdfBuffer(solicitud);
+  await fs.promises.writeFile(filePath, buffer);
+  
   return {
     filename,
     path: filePath,
