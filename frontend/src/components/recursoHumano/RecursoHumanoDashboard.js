@@ -1181,7 +1181,7 @@ function RecursoHumanoDashboard({ onBack }) {
                   '&:hover': { background: 'rgba(255,255,255,.22)' }
                 }}
               >
-                ← Recurso Humano
+                ← Gestión del Talento Humano
               </Box>
             )}
             <Stack
