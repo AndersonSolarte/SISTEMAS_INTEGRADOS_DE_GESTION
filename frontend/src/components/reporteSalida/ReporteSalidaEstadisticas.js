@@ -61,6 +61,7 @@ const renderTable = (title, icon, data, isTime = false, color = '#1d4ed8', bg = 
 
 export default function ReporteSalidaEstadisticas({ rows = [] }) {
   const [estadoFiltro, setEstadoFiltro] = useState('');
+  const [segmentoFiltro, setSegmentoFiltro] = useState('');
   const [chartTimeFilter, setChartTimeFilter] = useState('all');
 
   const filteredRows = useMemo(() => {
@@ -68,8 +69,17 @@ export default function ReporteSalidaEstadisticas({ rows = [] }) {
     if (estadoFiltro) {
       result = result.filter(r => r.estado === estadoFiltro);
     }
+    if (segmentoFiltro) {
+      result = result.filter(r => {
+        const tipo = r.datos_formulario?.salida?.tipo;
+        if (segmentoFiltro === 'salud') return ['cita_eps', 'cita_particular', 'terapias'].includes(tipo);
+        if (segmentoFiltro === 'personales') return ['diligencia_personal', 'calamidad'].includes(tipo);
+        if (segmentoFiltro === 'institucionales') return ['reunion_institucional', 'evento_institucional', 'ponencia'].includes(tipo);
+        return tipo === segmentoFiltro;
+      });
+    }
     return result;
-  }, [rows, estadoFiltro]);
+  }, [rows, estadoFiltro, segmentoFiltro]);
 
   const indicators = useMemo(() => {
     const countsMap = {};
@@ -146,7 +156,14 @@ export default function ReporteSalidaEstadisticas({ rows = [] }) {
 
   return (
     <Box sx={{ p: { xs: 1, md: 2 } }}>
-      <Stack direction="row" spacing={1} sx={{ mb: 2 }}>
+      <Stack direction={{ xs: 'column', md: 'row' }} spacing={2} sx={{ mb: 2 }}>
+        <TextField select size="small" label="Segmento (Motivo)" value={segmentoFiltro} onChange={(e) => setSegmentoFiltro(e.target.value)} sx={{ minWidth: 300, bgcolor: '#fff' }}>
+          <MenuItem value="">Todos los Segmentos</MenuItem>
+          <MenuItem value="salud">Salud y Bienestar (EPS, Terapias)</MenuItem>
+          <MenuItem value="personales">Personales y Calamidad</MenuItem>
+          <MenuItem value="institucionales">Institucionales y Académicos</MenuItem>
+        </TextField>
+
         <TextField select size="small" label="Filtrar por Estado de Solicitud" value={estadoFiltro} onChange={(e) => setEstadoFiltro(e.target.value)} sx={{ minWidth: 300, bgcolor: '#fff' }}>
           <MenuItem value="">Mostrar Todos los Estados</MenuItem>
           <MenuItem value="finalizada">Solo Aprobadas / Finalizadas</MenuItem>
