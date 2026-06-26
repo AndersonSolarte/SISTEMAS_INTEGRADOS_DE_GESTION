@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import * as XLSX from 'xlsx';
 import {
   Alert,
   Box,
@@ -262,44 +263,56 @@ function ReporteSalidaSeguimiento({ initialAccess = null, onBack }) {
     return result;
   }, [rows, viewTab, accessMode, user?.id, tipoFiltro, searchTerm]);
 
-  const exportToCSV = () => {
+  const exportToExcel = () => {
     const headers = [
       'Consecutivo', 'Fecha Radicacion', 'Colaborador', 'Documento', 'Dependencia', 'Cargo', 
-      'Jefe Inmediato', 'Tipo Permiso', 'Motivo', 'Estado', 
+      'Jefe Inmediato', 'Tipo Permiso', 'Motivo / Detalles', 'Estado', 
       'Requiere Reposicion', 'Estado Reposicion', 'Tiempo Solicitado (Min)'
     ];
 
-    const escapeCsv = (str) => `"${String(str || '').replace(/"/g, '""')}"`;
-
-    const csvData = filteredRows.map(row => {
+    const data = filteredRows.map(row => {
       const f = row.datos_formulario || {};
       const tipo = f.salida?.tipo || 'N/A';
       return [
         row.consecutivo,
         new Date(row.created_at).toLocaleString('es-CO'),
-        row.solicitante?.nombre,
-        f.laboral?.cedula,
-        f.laboral?.dependencia,
-        f.laboral?.cargo,
-        row.jefe?.nombre,
+        row.solicitante?.nombre || 'N/A',
+        f.laboral?.cedula || 'N/A',
+        f.laboral?.dependencia || 'N/A',
+        f.laboral?.cargo || 'N/A',
+        row.jefe?.nombre || 'N/A',
         tipo,
         f.salida?.motivo || f.salida?.otraDescripcion || '',
         STATUS_LABELS[row.estado] || row.estado,
         row.reposicion_aplica ? 'SI' : 'NO',
         row.reposicion_aplica ? row.reposicion_estado : 'N/A',
         row.tiempo_solicitado_minutos || 0
-      ].map(escapeCsv).join(';');
+      ];
     });
 
-    const csvContent = [headers.join(';'), ...csvData].join('\n');
-    const blob = new Blob(['\uFEFF' + csvContent], { type: 'text/csv;charset=utf-8;' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.setAttribute('download', `Seguimiento_Reportes_${new Date().getTime()}.csv`);
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
+    const worksheet = XLSX.utils.aoa_to_sheet([headers, ...data]);
+    
+    // Apply styling to headers
+    const range = XLSX.utils.decode_range(worksheet['!ref']);
+    for (let C = range.s.c; C <= range.e.c; ++C) {
+      const address = XLSX.utils.encode_cell({ r: 0, c: C });
+      if (!worksheet[address]) continue;
+      worksheet[address].s = {
+        font: { bold: true, color: { rgb: "FFFFFF" } },
+        fill: { fgColor: { rgb: "1D4ED8" } },
+        alignment: { horizontal: "center", vertical: "center" }
+      };
+    }
+
+    // Adjust column widths
+    const colWidths = headers.map(h => ({ wch: Math.max(h.length, 15) }));
+    colWidths[2] = { wch: 30 }; // Colaborador
+    colWidths[8] = { wch: 40 }; // Motivo
+    worksheet['!cols'] = colWidths;
+
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, worksheet, "Reportes");
+    XLSX.writeFile(workbook, `Seguimiento_Reportes_${new Date().getTime()}.xlsx`);
   };
 
   const updateReposicion = async (row, nextEstado) => {
@@ -469,7 +482,7 @@ function ReporteSalidaSeguimiento({ initialAccess = null, onBack }) {
                     <MenuItem value="">Todos</MenuItem>
                     {Object.entries(STATUS_LABELS).map(([key, label]) => <MenuItem key={key} value={key}>{label}</MenuItem>)}
                   </TextField>
-                  <Button variant="contained" color="success" startIcon={<DownloadIcon />} onClick={exportToCSV} sx={{ fontWeight: 800, textTransform: 'none' }}>
+                  <Button variant="contained" color="success" startIcon={<DownloadIcon />} onClick={exportToExcel} sx={{ fontWeight: 800, textTransform: 'none' }}>
                     Exportar Excel
                   </Button>
                 </Stack>
@@ -497,7 +510,7 @@ function ReporteSalidaSeguimiento({ initialAccess = null, onBack }) {
 
         {activeModule === 'estadisticas' && canManageAll ? (
           <Box sx={{ mt: 2 }}>
-            <ReporteSalidaEstadisticas rows={rows} />
+            <ReporteSalidaEstadisticas rows={filteredRows} />
           </Box>
         ) : activeModule !== 'reporte_salida' ? (
           <Paper elevation={0} sx={{ p: 3, border: '1px dashed #bfdbfe', borderRadius: 3, bgcolor: '#f8fbff' }}>
