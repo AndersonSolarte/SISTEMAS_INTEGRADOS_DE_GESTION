@@ -40,6 +40,22 @@ const formatDate = (value) => {
   return year && month && day ? `${day}/${month}/${year}` : text;
 };
 
+const formatDateTime = (value) => {
+  if (!value) return '';
+  const dateObj = new Date(value);
+  if (Number.isNaN(dateObj.getTime())) return value;
+  const day = String(dateObj.getDate()).padStart(2, '0');
+  const month = String(dateObj.getMonth() + 1).padStart(2, '0');
+  const year = dateObj.getFullYear();
+  let hours = dateObj.getHours();
+  const ampm = hours >= 12 ? 'p. m.' : 'a. m.';
+  hours = hours % 12;
+  hours = hours ? hours : 12;
+  const mins = String(dateObj.getMinutes()).padStart(2, '0');
+  const secs = String(dateObj.getSeconds()).padStart(2, '0');
+  return `${day}/${month}/${year} ${hours}:${mins}:${secs} ${ampm}`;
+};
+
 const formatTimeAmPm = (timeString) => {
   if (!timeString) return '';
   const [h, m] = timeString.split(':');
@@ -570,6 +586,11 @@ const buildPdfBuffer = async (solicitud) => {
         });
       }
 
+      const txId = String(solicitud.id || solicitud.consecutivo || '').substring(0, 18);
+      const reqDate = formatDateTime(solicitud.createdAt || new Date());
+      const jefeDate = solicitud.jefe_aprobado_at ? formatDateTime(solicitud.jefe_aprobado_at) : 'Pendiente';
+      const ghDate = solicitud.gestion_humana_aprobado_at ? formatDateTime(solicitud.gestion_humana_aprobado_at) : 'Pendiente';
+
       docDefinition.content.push({
         table: {
           widths: ['50%', '50%'],
@@ -580,20 +601,24 @@ const buildPdfBuffer = async (solicitud) => {
             ],
             [
               {
-                text: `\n\n\n\nFirma: ${solicitante.nombre || personal.nombre || ''} (Original Firmado)`,
+                text: [
+                  { text: 'Firmado electrónicamente por:\n', bold: true, fontSize: 9 },
+                  { text: `${solicitante.nombre || personal.nombre || ''}\n`, fontSize: 10 },
+                  { text: `Documento: ${solicitante.username || personal.documento || ''}\n`, fontSize: 8 },
+                  { text: `Fecha y hora: ${reqDate}\n`, fontSize: 8 },
+                  { text: `ID Transacción: ${txId}\n`, fontSize: 7, color: 'gray' }
+                ],
                 margin: [5, 5, 5, 5]
               },
               {
-                table: {
-                  widths: ['*'],
-                  body: [
-                    [ { text: `\nFirma: ${solicitud.jefe_aprobado_at ? `${jefe.nombre || ''} (Original Firmado)` : 'Pendiente'}\n`, border: [false, false, false, true] } ],
-                    [ { text: `Nombres y apellidos: ${jefe.nombre || ''}`, border: [false, false, false, true] } ],
-                    [ { text: `Cargo: ${jefe.cargo || ''}`, border: [false, false, false, false] } ]
-                  ]
-                },
-                layout: 'borders',
-                margin: [0, 0, 0, 0]
+                text: [
+                  { text: solicitud.jefe_aprobado_at ? 'Firmado electrónicamente por:\n' : '\n', bold: true, fontSize: 9 },
+                  { text: `${solicitud.jefe_aprobado_at ? (jefe.nombre || '') : 'Pendiente'}\n`, fontSize: 10 },
+                  { text: `Cargo: ${jefe.cargo || ''}\n`, fontSize: 8 },
+                  { text: `Fecha y hora: ${jefeDate}\n`, fontSize: 8 },
+                  { text: solicitud.jefe_aprobado_at ? `ID Transacción: ${txId}\n` : '\n', fontSize: 7, color: 'gray' }
+                ],
+                margin: [5, 5, 5, 5]
               }
             ],
             [
@@ -602,19 +627,14 @@ const buildPdfBuffer = async (solicitud) => {
             ],
             [
               {
-                table: {
-                  widths: ['50%', '50%'],
-                  body: [
-                    [ 
-                      { text: `\nFirma: ${solicitud.gestion_humana_aprobado_at ? 'Gestión Humana (Original Firmado)' : 'Pendiente'}\n`, border: [false, false, false, false] },
-                      { text: `\nFecha: ${solicitud.gestion_humana_aprobado_at ? formatDate(solicitud.gestion_humana_aprobado_at) : ''}\n`, border: [false, false, false, false] }
-                    ],
-                    [ { text: `Nombres y apellidos: ${ghDirectorNombre}`, colSpan: 2, border: [false, false, false, false] }, {} ],
-                    [ { text: `Cargo: ${ghDirectorCargo}\n`, colSpan: 2, border: [false, false, false, false] }, {} ]
-                  ]
-                },
-                layout: 'borders',
-                margin: [0, 0, 0, 0],
+                text: [
+                  { text: solicitud.gestion_humana_aprobado_at ? 'Firmado electrónicamente por:\n' : '\n', bold: true, fontSize: 9 },
+                  { text: `${ghDirectorNombre}\n`, fontSize: 10 },
+                  { text: `Cargo: ${ghDirectorCargo}\n`, fontSize: 8 },
+                  { text: `Fecha y hora: ${ghDate}\n`, fontSize: 8 },
+                  { text: solicitud.gestion_humana_aprobado_at ? `ID Transacción: ${txId}\n` : '\n', fontSize: 7, color: 'gray' }
+                ],
+                margin: [5, 5, 5, 5],
                 colSpan: 2
               },
               {}
@@ -719,7 +739,38 @@ const buildPdfBuffer = async (solicitud) => {
         margin: [20, 10, 20, 0]
       });
 
-      const pdfDoc = printer.createPdfKitDocument(docDefinition);
+      const verifyUrl = `https://planeaciongp.unicesmag.edu.co/verificar/${txId}`;
+      docDefinition.content.push({
+        columns: [
+          {
+            qr: verifyUrl,
+            fit: 70,
+            margin: [0, 0, 10, 0]
+          },
+          {
+            text: [
+              { text: 'Verificación de Autenticidad e Integridad\n', bold: true, fontSize: 9 },
+              { text: 'Este documento ha sido firmado electrónicamente. Para verificar su validez legal y confirmar que no ha sido alterado, escanee el código QR o ingrese a:\n', fontSize: 8 },
+              { text: verifyUrl, fontSize: 8, color: 'blue', link: verifyUrl }
+            ],
+            margin: [0, 10, 0, 0]
+          }
+        ],
+        margin: [20, 20, 20, 10]
+      });
+
+      const pdfOptions = {
+        userPassword: '', 
+        ownerPassword: process.env.PDF_OWNER_PASSWORD || 'UNICESMAG-SECURE-2026',
+        permissions: {
+          modifying: false,
+          copying: false,
+          annotating: false,
+          fillingForms: false
+        }
+      };
+
+      const pdfDoc = printer.createPdfKitDocument(docDefinition, pdfOptions);
       const docChunks = [];
       pdfDoc.on('data', chunk => docChunks.push(chunk));
       pdfDoc.on('end', () => resolve(Buffer.concat(docChunks)));
