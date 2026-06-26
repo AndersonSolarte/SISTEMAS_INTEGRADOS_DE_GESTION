@@ -795,8 +795,7 @@ const renderApprovalPage = ({
       </div>` : ''}
       ${safeNextStep ? `<div class="note">${safeNextStep}</div>` : ''}
       <div class="actions">
-        <button class="ghost" type="button" onclick="window.location.href='${safeActionUrl}';">Volver al sistema</button>
-        <a class="primary" href="${safeActionUrl}">${safeActionLabel}</a>
+        <button class="primary" type="button" onclick="window.close();">Cerrar ventana</button>
       </div>
     </section>
   </main>
