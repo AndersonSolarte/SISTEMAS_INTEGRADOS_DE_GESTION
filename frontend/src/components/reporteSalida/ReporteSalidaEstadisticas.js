@@ -1,5 +1,5 @@
 import React, { useState, useMemo } from 'react';
-import { Box, Paper, Stack, Typography, Grid, MenuItem, TextField, Table, TableBody, TableCell, TableContainer, TableHead, TableRow, Chip } from '@mui/material';
+import { Box, Paper, Stack, Typography, Grid, MenuItem, TextField, Table, TableBody, TableCell, TableContainer, TableHead, TableRow, Chip, ToggleButton, ToggleButtonGroup } from '@mui/material';
 import AccessTimeIcon from '@mui/icons-material/AccessTime';
 import BarChartIcon from '@mui/icons-material/BarChart';
 import LocalHospitalIcon from '@mui/icons-material/LocalHospital';
@@ -7,7 +7,10 @@ import HealingIcon from '@mui/icons-material/Healing';
 import MedicalServicesIcon from '@mui/icons-material/MedicalServices';
 import AssignmentIcon from '@mui/icons-material/Assignment';
 import TimelineIcon from '@mui/icons-material/Timeline';
-import { ResponsiveContainer, AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip } from 'recharts';
+import CalendarMonthIcon from '@mui/icons-material/CalendarMonth';
+import DateRangeIcon from '@mui/icons-material/DateRange';
+import HistoryIcon from '@mui/icons-material/History';
+import { ResponsiveContainer, AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, LabelList } from 'recharts';
 
 const formatElapsed = (minutes) => {
   const total = Number(minutes);
@@ -58,6 +61,7 @@ const renderTable = (title, icon, data, isTime = false, color = '#1d4ed8', bg = 
 
 export default function ReporteSalidaEstadisticas({ rows = [] }) {
   const [estadoFiltro, setEstadoFiltro] = useState('');
+  const [chartTimeFilter, setChartTimeFilter] = useState('all');
 
   const filteredRows = useMemo(() => {
     let result = rows;
@@ -131,6 +135,15 @@ export default function ReporteSalidaEstadisticas({ rows = [] }) {
     };
   }, [filteredRows]);
 
+  const filteredDailyChart = useMemo(() => {
+    if (chartTimeFilter === 'all' || indicators.dailyChart.length === 0) return indicators.dailyChart;
+    const latestDate = new Date(indicators.dailyChart[indicators.dailyChart.length - 1].date);
+    const msPerDay = 1000 * 60 * 60 * 24;
+    const days = chartTimeFilter === 'weekly' ? 7 : 30;
+    const cutoff = new Date(latestDate.getTime() - (days * msPerDay));
+    return indicators.dailyChart.filter(d => new Date(d.date) >= cutoff);
+  }, [indicators.dailyChart, chartTimeFilter]);
+
   return (
     <Box sx={{ p: { xs: 1, md: 2 } }}>
       <Stack direction="row" spacing={1} sx={{ mb: 2 }}>
@@ -143,28 +156,64 @@ export default function ReporteSalidaEstadisticas({ rows = [] }) {
 
       <Box sx={{ mb: 3 }}>
         <Paper elevation={0} sx={{ border: '1px solid #e2e8f0', borderRadius: 3, overflow: 'hidden', p: 3, bgcolor: '#fff' }}>
-          <Stack direction="row" alignItems="center" spacing={1} sx={{ mb: 3 }}>
-            <TimelineIcon sx={{ color: '#0ea5e9', fontSize: 28 }} />
-            <Typography sx={{ fontWeight: 900, color: '#0f172a', fontSize: 18 }}>Flujo Diario de Ausentismo</Typography>
+          <Stack direction={{ xs: 'column', md: 'row' }} alignItems={{ xs: 'flex-start', md: 'center' }} justifyContent="space-between" spacing={2} sx={{ mb: 3 }}>
+            <Stack direction="row" alignItems="center" spacing={1}>
+              <TimelineIcon sx={{ color: '#0ea5e9', fontSize: 28 }} />
+              <Typography sx={{ fontWeight: 900, color: '#0f172a', fontSize: 18 }}>Flujo Diario de Ausentismo</Typography>
+            </Stack>
+            <ToggleButtonGroup
+              size="small"
+              value={chartTimeFilter}
+              exclusive
+              onChange={(e, val) => val && setChartTimeFilter(val)}
+              sx={{
+                bgcolor: '#f8fafc',
+                '& .MuiToggleButton-root': {
+                  textTransform: 'none',
+                  fontWeight: 700,
+                  color: '#64748b',
+                  border: '1px solid #e2e8f0',
+                  px: 2,
+                  '&.Mui-selected': { bgcolor: '#e0f2fe', color: '#0284c7', borderColor: '#bae6fd' }
+                }
+              }}
+            >
+              <ToggleButton value="weekly"><DateRangeIcon sx={{ mr: 0.5, fontSize: 18 }} /> Últimos 7 Días</ToggleButton>
+              <ToggleButton value="monthly"><CalendarMonthIcon sx={{ mr: 0.5, fontSize: 18 }} /> Últimos 30 Días</ToggleButton>
+              <ToggleButton value="all"><HistoryIcon sx={{ mr: 0.5, fontSize: 18 }} /> Histórico</ToggleButton>
+            </ToggleButtonGroup>
           </Stack>
           <Box sx={{ width: '100%', height: 350 }}>
-            {indicators.dailyChart.length > 0 ? (
+            {filteredDailyChart.length > 0 ? (
               <ResponsiveContainer>
-                <AreaChart data={indicators.dailyChart} margin={{ top: 10, right: 30, left: 0, bottom: 0 }}>
+                <AreaChart data={filteredDailyChart} margin={{ top: 20, right: 30, left: 0, bottom: 0 }}>
                   <defs>
                     <linearGradient id="colorSolicitudes" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="5%" stopColor="#0ea5e9" stopOpacity={0.3}/>
+                      <stop offset="5%" stopColor="#0ea5e9" stopOpacity={0.4}/>
                       <stop offset="95%" stopColor="#0ea5e9" stopOpacity={0}/>
                     </linearGradient>
                   </defs>
                   <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
-                  <XAxis dataKey="date" tick={{ fontSize: 12, fill: '#64748b' }} tickLine={false} axisLine={false} />
-                  <YAxis tick={{ fontSize: 12, fill: '#64748b' }} tickLine={false} axisLine={false} />
+                  <XAxis dataKey="date" tick={{ fontSize: 12, fill: '#64748b', fontWeight: 600 }} tickLine={false} axisLine={false} />
+                  <YAxis tick={{ fontSize: 12, fill: '#64748b', fontWeight: 600 }} tickLine={false} axisLine={false} />
                   <RechartsTooltip 
-                    contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }}
-                    labelStyle={{ fontWeight: 700, color: '#334155', marginBottom: '4px' }}
+                    contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 12px rgba(0,0,0,0.1)' }}
+                    labelStyle={{ fontWeight: 800, color: '#334155', marginBottom: '4px' }}
+                    itemStyle={{ fontWeight: 700 }}
                   />
-                  <Area type="monotone" dataKey="solicitudes" name="Solicitudes" stroke="#0ea5e9" strokeWidth={3} fillOpacity={1} fill="url(#colorSolicitudes)" />
+                  <Area 
+                    type="monotone" 
+                    dataKey="solicitudes" 
+                    name="Solicitudes" 
+                    stroke="#0ea5e9" 
+                    strokeWidth={3.5} 
+                    fillOpacity={1} 
+                    fill="url(#colorSolicitudes)"
+                    activeDot={{ r: 7, stroke: '#fff', strokeWidth: 2, fill: '#0284c7' }}
+                    dot={{ r: 4, stroke: '#fff', strokeWidth: 2, fill: '#0ea5e9' }}
+                  >
+                    <LabelList dataKey="solicitudes" position="top" offset={10} style={{ fontSize: 12, fontWeight: 800, fill: '#0284c7' }} />
+                  </Area>
                 </AreaChart>
               </ResponsiveContainer>
             ) : (
