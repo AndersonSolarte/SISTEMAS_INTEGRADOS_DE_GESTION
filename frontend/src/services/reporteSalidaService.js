@@ -27,7 +27,7 @@ const reporteSalidaService = {
   },
 
   radicarSolicitud: async (payload) => {
-    const response = await api.post('/reporte-salida/solicitudes', payload);
+    const response = await api.post('/reporte-salida/solicitudes', payload, { timeout: 60000 });
     return response.data;
   },
 
