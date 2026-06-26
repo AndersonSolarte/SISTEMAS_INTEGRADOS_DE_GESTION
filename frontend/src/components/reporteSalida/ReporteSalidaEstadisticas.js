@@ -1,5 +1,6 @@
 import React, { useState, useMemo } from 'react';
-import { Box, Paper, Stack, Typography, Grid, MenuItem, TextField, Table, TableBody, TableCell, TableContainer, TableHead, TableRow, Chip, ToggleButton, ToggleButtonGroup } from '@mui/material';
+import * as XLSX from 'xlsx';
+import { Box, Paper, Stack, Typography, Grid, MenuItem, TextField, Table, TableBody, TableCell, TableContainer, TableHead, TableRow, Chip, ToggleButton, ToggleButtonGroup, IconButton } from '@mui/material';
 import AccessTimeIcon from '@mui/icons-material/AccessTime';
 import BarChartIcon from '@mui/icons-material/BarChart';
 import LocalHospitalIcon from '@mui/icons-material/LocalHospital';
@@ -10,6 +11,7 @@ import TimelineIcon from '@mui/icons-material/Timeline';
 import CalendarMonthIcon from '@mui/icons-material/CalendarMonth';
 import DateRangeIcon from '@mui/icons-material/DateRange';
 import HistoryIcon from '@mui/icons-material/History';
+import DownloadIcon from '@mui/icons-material/Download';
 import { ResponsiveContainer, AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, LabelList } from 'recharts';
 
 const formatElapsed = (minutes) => {
@@ -23,13 +25,83 @@ const formatElapsed = (minutes) => {
   return `${mins}m`;
 };
 
-const renderTable = (title, icon, data, isTime = false, color = '#1d4ed8', bg = '#eff6ff') => (
+const exportToExcel = (title, dataRows) => {
+  const STATUS_LABELS = {
+    borrador: 'Borrador',
+    pendiente_jefe: 'Pendiente Jefe',
+    no_aprobada: 'Rechazada',
+    pendiente_aprobacion_gestion_humana: 'Pendiente GH',
+    finalizada: 'Aprobada'
+  };
+
+  const headers = [
+    'Consecutivo', 'Fecha Radicacion', 'Colaborador', 'Documento', 'Dependencia', 'Cargo', 
+    'Jefe Inmediato', 'Segmento', 'Tipo Permiso', 'Motivo / Detalles', 'Estado', 
+    'Requiere Reposicion', 'Estado Reposicion', 'Tiempo Solicitado (Min)'
+  ];
+
+  const data = dataRows.map(row => {
+    const f = row.datos_formulario || {};
+    const tipo = f.salida?.tipo || 'N/A';
+    let segmentoText = 'N/A';
+    if (['cita_eps', 'cita_particular', 'terapias'].includes(tipo)) segmentoText = 'Salud y Bienestar';
+    else if (['diligencia_personal', 'calamidad'].includes(tipo)) segmentoText = 'Actividades personales';
+    else if (['reunion_institucional', 'evento_institucional', 'ponencia'].includes(tipo)) segmentoText = 'Actividades propias del cargo (Misionales)';
+
+    return [
+      row.consecutivo,
+      new Date(row.created_at).toLocaleString('es-CO'),
+      row.solicitante?.nombre || 'N/A',
+      f.laboral?.cedula || 'N/A',
+      f.laboral?.dependencia || 'N/A',
+      f.laboral?.cargo || 'N/A',
+      row.jefe?.nombre || 'N/A',
+      segmentoText,
+      tipo,
+      f.salida?.motivo || f.salida?.otraDescripcion || '',
+      STATUS_LABELS[row.estado] || row.estado,
+      row.reposicion_aplica ? 'SI' : 'NO',
+      row.reposicion_aplica ? row.reposicion_estado : 'N/A',
+      row.tiempo_solicitado_minutos || 0
+    ];
+  });
+
+  const worksheet = XLSX.utils.aoa_to_sheet([headers, ...data]);
+  const range = XLSX.utils.decode_range(worksheet['!ref'] || 'A1');
+  if (worksheet['!ref']) {
+    for (let C = range.s.c; C <= range.e.c; ++C) {
+      const address = XLSX.utils.encode_cell({ r: 0, c: C });
+      if (!worksheet[address]) continue;
+      worksheet[address].s = {
+        fill: { fgColor: { rgb: "0F172A" } },
+        font: { color: { rgb: "FFFFFF" }, bold: true },
+        alignment: { horizontal: "center" }
+      };
+    }
+  }
+  worksheet['!cols'] = [
+    { wch: 18 }, { wch: 20 }, { wch: 35 }, { wch: 15 }, { wch: 25 }, { wch: 25 }, 
+    { wch: 35 }, { wch: 25 }, { wch: 25 }, { wch: 50 }, { wch: 15 }, 
+    { wch: 18 }, { wch: 18 }, { wch: 15 }
+  ];
+  
+  const workbook = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(workbook, worksheet, 'Datos');
+  XLSX.writeFile(workbook, `${title.replace(/[^a-z0-9]/gi, '_')}.xlsx`);
+};
+
+const renderTable = (title, icon, data, isTime = false, color = '#1d4ed8', bg = '#eff6ff', rawData = null) => (
   <Paper elevation={0} sx={{ border: '1px solid #e2e8f0', borderRadius: 3, overflow: 'hidden', height: '100%' }}>
-    <Box sx={{ p: 2, bgcolor: '#f8fafc', borderBottom: '1px solid #e2e8f0' }}>
+    <Box sx={{ p: 2, bgcolor: '#f8fafc', borderBottom: '1px solid #e2e8f0', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
       <Stack direction="row" alignItems="center" spacing={1.5}>
         {icon}
         <Typography sx={{ fontWeight: 900, color: '#0f172a', fontSize: 16 }}>{title}</Typography>
       </Stack>
+      {rawData && (
+        <IconButton size="small" onClick={() => exportToExcel(title, rawData)} sx={{ color: color, bgcolor: bg, '&:hover': { bgcolor: color, color: '#fff' } }}>
+          <DownloadIcon fontSize="small" />
+        </IconButton>
+      )}
     </Box>
     <TableContainer sx={{ maxHeight: 450 }}>
       <Table stickyHeader>
@@ -243,11 +315,11 @@ export default function ReporteSalidaEstadisticas({ rows = [] }) {
       </Box>
 
       <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', lg: '1fr 1fr' }, gap: 3 }}>
-        {renderTable('Índice de Severidad (Total Horas)', <AccessTimeIcon sx={{ color: '#b45309' }} />, indicators.topTime, true, '#b45309', '#fef3c7')}
-        {renderTable('Índice de Frecuencia (Total Permisos)', <BarChartIcon sx={{ color: '#1d4ed8' }} />, indicators.topCount, false, '#1d4ed8', '#eff6ff')}
+        {renderTable('Índice de Severidad (Total Horas)', <AccessTimeIcon sx={{ color: '#b45309' }} />, indicators.topTime, true, '#b45309', '#fef3c7', filteredRows)}
+        {renderTable('Índice de Frecuencia (Total Permisos)', <BarChartIcon sx={{ color: '#1d4ed8' }} />, indicators.topCount, false, '#1d4ed8', '#eff6ff', filteredRows)}
         {indicators.dynamicTables.map(tbl => (
           <React.Fragment key={tbl.id}>
-            {renderTable(tbl.label, tbl.icon, tbl.data, false, tbl.color, tbl.bg)}
+            {renderTable(tbl.label, tbl.icon, tbl.data, false, tbl.color, tbl.bg, filteredRows.filter(r => r.datos_formulario?.salida?.tipo === tbl.id))}
           </React.Fragment>
         ))}
       </Box>
