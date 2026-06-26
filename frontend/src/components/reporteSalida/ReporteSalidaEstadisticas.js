@@ -6,6 +6,8 @@ import LocalHospitalIcon from '@mui/icons-material/LocalHospital';
 import HealingIcon from '@mui/icons-material/Healing';
 import MedicalServicesIcon from '@mui/icons-material/MedicalServices';
 import AssignmentIcon from '@mui/icons-material/Assignment';
+import TimelineIcon from '@mui/icons-material/Timeline';
+import { ResponsiveContainer, AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip } from 'recharts';
 
 const formatElapsed = (minutes) => {
   const total = Number(minutes);
@@ -111,10 +113,21 @@ export default function ReporteSalidaEstadisticas({ rows = [] }) {
       };
     });
 
+    const dailyMap = {};
+    filteredRows.forEach(row => {
+      const fecha = row.datos_formulario?.salida?.fecha || row.createdAt?.split('T')[0];
+      if (fecha) {
+        if (!dailyMap[fecha]) dailyMap[fecha] = { date: fecha, solicitudes: 0 };
+        dailyMap[fecha].solicitudes += 1;
+      }
+    });
+    const dailyChart = Object.values(dailyMap).sort((a, b) => new Date(a.date) - new Date(b.date));
+
     return {
       topCount: sortMap(countsMap),
       topTime: sortMap(timeMap),
-      dynamicTables: dynamicTables.sort((a, b) => b.data.length - a.data.length)
+      dynamicTables: dynamicTables.sort((a, b) => b.data.length - a.data.length),
+      dailyChart
     };
   }, [filteredRows]);
 
@@ -129,6 +142,40 @@ export default function ReporteSalidaEstadisticas({ rows = [] }) {
       </Stack>
 
       <Grid container spacing={2}>
+        <Grid item xs={12}>
+          <Paper elevation={0} sx={{ border: '1px solid #e2e8f0', borderRadius: 3, overflow: 'hidden', p: 3, mb: 1, bgcolor: '#fff' }}>
+            <Stack direction="row" alignItems="center" spacing={1} sx={{ mb: 3 }}>
+              <TimelineIcon sx={{ color: '#0ea5e9' }} />
+              <Typography sx={{ fontWeight: 900, color: '#0f172a', fontSize: 16 }}>Flujo Diario de Ausentismo</Typography>
+            </Stack>
+            <Box sx={{ width: '100%', height: 300 }}>
+              {indicators.dailyChart.length > 0 ? (
+                <ResponsiveContainer>
+                  <AreaChart data={indicators.dailyChart} margin={{ top: 10, right: 30, left: 0, bottom: 0 }}>
+                    <defs>
+                      <linearGradient id="colorSolicitudes" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="5%" stopColor="#0ea5e9" stopOpacity={0.3}/>
+                        <stop offset="95%" stopColor="#0ea5e9" stopOpacity={0}/>
+                      </linearGradient>
+                    </defs>
+                    <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
+                    <XAxis dataKey="date" tick={{ fontSize: 12, fill: '#64748b' }} tickLine={false} axisLine={false} />
+                    <YAxis tick={{ fontSize: 12, fill: '#64748b' }} tickLine={false} axisLine={false} />
+                    <RechartsTooltip 
+                      contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }}
+                      labelStyle={{ fontWeight: 700, color: '#334155', marginBottom: '4px' }}
+                    />
+                    <Area type="monotone" dataKey="solicitudes" name="Solicitudes" stroke="#0ea5e9" strokeWidth={3} fillOpacity={1} fill="url(#colorSolicitudes)" />
+                  </AreaChart>
+                </ResponsiveContainer>
+              ) : (
+                <Stack alignItems="center" justifyContent="center" height="100%">
+                  <Typography sx={{ color: '#94a3b8' }}>No hay datos suficientes para graficar.</Typography>
+                </Stack>
+              )}
+            </Box>
+          </Paper>
+        </Grid>
         <Grid item xs={12} md={6} lg={6} xl={6}>
           {renderTable('Índice de Severidad (Total Horas)', <AccessTimeIcon sx={{ color: '#b45309' }} />, indicators.topTime, true, '#b45309', '#fef3c7')}
         </Grid>
