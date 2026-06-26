@@ -1369,18 +1369,25 @@ const radicarSolicitud = async (req, res) => {
       trazabilidad: [{ event: 'radicada', actor: buildSnapshot(req.user), at: now.toISOString() }]
     });
 
-    const attachments = await buildReporteSalidaAttachments(solicitud);
-    await solicitud.update({ pdf_generado_at: new Date() });
-    const emailResult = await sendJefeApprovalEmail(solicitud, token, attachments);
-    await solicitud.update({
-      correo_jefe_enviado_at: emailResult.success ? new Date() : null,
-      trazabilidad: appendTrace(solicitud, emailResult.success ? 'correo_jefe_enviado' : 'correo_jefe_error', req.user, { error: emailResult.error || '' })
-    });
-
     res.status(201).json({
       success: true,
-      message: 'Solicitud radicada. Se envio correo al jefe inmediato para aprobacion.',
+      message: 'Solicitud radicada. Se procesara el envio de correo al jefe inmediato.',
       data: serializeSolicitud(solicitud)
+    });
+
+    // Procesar PDF y correo en segundo plano (fire-and-forget)
+    Promise.resolve().then(async () => {
+      try {
+        const attachments = await buildReporteSalidaAttachments(solicitud);
+        await solicitud.update({ pdf_generado_at: new Date() });
+        const emailResult = await sendJefeApprovalEmail(solicitud, token, attachments);
+        await solicitud.update({
+          correo_jefe_enviado_at: emailResult.success ? new Date() : null,
+          trazabilidad: appendTrace(solicitud, emailResult.success ? 'correo_jefe_enviado' : 'correo_jefe_error', req.user, { error: emailResult.error || '' })
+        });
+      } catch (bgError) {
+        console.error('Error en segundo plano (Reporte Salida PDF/Email):', bgError);
+      }
     });
   } catch (error) {
     console.error('Error radicando reporte de salida:', error);
