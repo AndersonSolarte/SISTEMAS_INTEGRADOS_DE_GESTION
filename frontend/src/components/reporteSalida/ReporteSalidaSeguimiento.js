@@ -266,13 +266,19 @@ function ReporteSalidaSeguimiento({ initialAccess = null, onBack }) {
   const exportToExcel = () => {
     const headers = [
       'Consecutivo', 'Fecha Radicacion', 'Colaborador', 'Documento', 'Dependencia', 'Cargo', 
-      'Jefe Inmediato', 'Tipo Permiso', 'Motivo / Detalles', 'Estado', 
+      'Jefe Inmediato', 'Segmento', 'Tipo Permiso', 'Motivo / Detalles', 'Estado', 
       'Requiere Reposicion', 'Estado Reposicion', 'Tiempo Solicitado (Min)'
     ];
 
     const data = filteredRows.map(row => {
       const f = row.datos_formulario || {};
       const tipo = f.salida?.tipo || 'N/A';
+      
+      let segmentoText = 'N/A';
+      if (['cita_eps', 'cita_particular', 'terapias'].includes(tipo)) segmentoText = 'Salud y Bienestar';
+      else if (['diligencia_personal', 'calamidad'].includes(tipo)) segmentoText = 'Actividades personales';
+      else if (['reunion_institucional', 'evento_institucional', 'ponencia'].includes(tipo)) segmentoText = 'Actividades propias del cargo (Misionales)';
+
       return [
         row.consecutivo,
         new Date(row.created_at).toLocaleString('es-CO'),
@@ -281,6 +287,7 @@ function ReporteSalidaSeguimiento({ initialAccess = null, onBack }) {
         f.laboral?.dependencia || 'N/A',
         f.laboral?.cargo || 'N/A',
         row.jefe?.nombre || 'N/A',
+        segmentoText,
         tipo,
         f.salida?.motivo || f.salida?.otraDescripcion || '',
         STATUS_LABELS[row.estado] || row.estado,
@@ -472,11 +479,11 @@ function ReporteSalidaSeguimiento({ initialAccess = null, onBack }) {
               </Box>
               {showEstadoFilter && (
                 <Stack direction={{ xs: 'column', md: 'row' }} spacing={1}>
-                  <TextField select size="small" label="Tipo" value={tipoFiltro} onChange={(e) => setTipoFiltro(e.target.value)} sx={{ minWidth: 150 }}>
-                    <MenuItem value="">Todos los Tipos</MenuItem>
-                    <MenuItem value="salud">Salud (EPS, Part, Terapias)</MenuItem>
-                    <MenuItem value="personales">Personales / Calamidad</MenuItem>
-                    <MenuItem value="institucionales">Institucional</MenuItem>
+                  <TextField select size="small" label="Filtrar por Segmento" value={tipoFiltro} onChange={(e) => setTipoFiltro(e.target.value)} sx={{ minWidth: 200 }}>
+                    <MenuItem value="">Todos los Segmentos</MenuItem>
+                    <MenuItem value="institucionales">Actividades propias del cargo (Misionales)</MenuItem>
+                    <MenuItem value="salud">Salud y Bienestar</MenuItem>
+                    <MenuItem value="personales">Actividades personales</MenuItem>
                   </TextField>
                   <TextField select size="small" label="Estado" value={estado} onChange={(e) => setEstado(e.target.value)} sx={{ minWidth: 150 }}>
                     <MenuItem value="">Todos</MenuItem>

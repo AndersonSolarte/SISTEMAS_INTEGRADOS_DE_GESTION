@@ -157,11 +157,11 @@ export default function ReporteSalidaEstadisticas({ rows = [] }) {
   return (
     <Box sx={{ p: { xs: 1, md: 2 } }}>
       <Stack direction={{ xs: 'column', md: 'row' }} spacing={2} sx={{ mb: 2 }}>
-        <TextField select size="small" label="Segmento (Motivo)" value={segmentoFiltro} onChange={(e) => setSegmentoFiltro(e.target.value)} sx={{ minWidth: 300, bgcolor: '#fff' }}>
+        <TextField select size="small" label="Segmento (Motivo)" value={segmentoFiltro} onChange={(e) => setSegmentoFiltro(e.target.value)} sx={{ minWidth: 320, bgcolor: '#fff' }}>
           <MenuItem value="">Todos los Segmentos</MenuItem>
-          <MenuItem value="salud">Salud y Bienestar (EPS, Terapias)</MenuItem>
-          <MenuItem value="personales">Personales y Calamidad</MenuItem>
-          <MenuItem value="institucionales">Institucionales y Académicos</MenuItem>
+          <MenuItem value="institucionales">Actividades propias del cargo (Misionales)</MenuItem>
+          <MenuItem value="salud">Salud y Bienestar</MenuItem>
+          <MenuItem value="personales">Actividades personales</MenuItem>
         </TextField>
 
         <TextField select size="small" label="Filtrar por Estado de Solicitud" value={estadoFiltro} onChange={(e) => setEstadoFiltro(e.target.value)} sx={{ minWidth: 300, bgcolor: '#fff' }}>
