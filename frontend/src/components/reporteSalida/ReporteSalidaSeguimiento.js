@@ -553,13 +553,16 @@ function ReporteSalidaSeguimiento({ initialAccess = null, onBack }) {
                         <TableRow key={row.id} hover>
                           <TableCell sx={{ minWidth: 140 }}>
                             <Typography sx={{ fontWeight: 900, color: '#1d4ed8' }}>{row.consecutivo}</Typography>
-                            {row.datos_formulario?.tx_id && (
-                              <Tooltip title="ID Transacción (UUID)" arrow>
-                                <Typography sx={{ fontSize: 9, color: '#94a3b8', mt: 0.5, wordBreak: 'break-all', fontFamily: 'monospace' }}>
-                                  Tx: {row.datos_formulario.tx_id.substring(0, 18)}...
-                                </Typography>
-                              </Tooltip>
-                            )}
+                            {(() => {
+                              const txId = row.datos_formulario?.tx_id || ('00000000-0000-4000-8000-' + String(row.id).padStart(12, '0'));
+                              return (
+                                <Tooltip title="ID Transacción (UUID)" arrow>
+                                  <Typography sx={{ fontSize: 9, color: '#94a3b8', mt: 0.5, wordBreak: 'break-all', fontFamily: 'monospace' }}>
+                                    Tx: {txId.substring(0, 18)}...
+                                  </Typography>
+                                </Tooltip>
+                              );
+                            })()}
                             {(() => {
                               const salida = row.datos_formulario?.salida;
                               if (salida?.tipo !== 'terapias' || !salida?.terapiasList?.length) return null;
