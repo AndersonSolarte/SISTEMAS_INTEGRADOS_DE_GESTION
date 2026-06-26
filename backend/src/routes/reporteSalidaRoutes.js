@@ -20,7 +20,8 @@ const {
   getReposicionesPropias,
   getReposicionesEquipo,
   eliminarSolicitud,
-  editarSolicitudAdmin
+  editarSolicitudAdmin,
+  verificarReportePublico
 } = require('../controllers/reporteSalidaController');
 const { auth, hasAnyRoleOrModulePermission } = require('../middlewares/auth');
 const { publicLimiter } = require('../middlewares/security');
@@ -32,6 +33,7 @@ router.post('/rechazar/:token', publicLimiter, procesarRechazo);
 router.get('/aprobar-grupo/:token', publicLimiter, aprobarGrupoDesdeCorreo);
 router.get('/rechazar-grupo/:token', publicLimiter, mostrarFormularioRechazoGrupo);
 router.post('/rechazar-grupo/:token', publicLimiter, procesarRechazoGrupo);
+router.get('/public/verificar/:id', verificarReportePublico);
 router.get('/config', auth, getFeatureConfig);
 router.patch('/config', auth, updateFeatureConfig);
 router.get('/catalogo-laboral', auth, getCatalogoLaboral);

@@ -22,6 +22,7 @@ import GestionInformacion from './pages/GestionInformacion';
 import PlanAccionRevision from './pages/PlanAccionRevision';
 import PlanAccionConsulta from './pages/PlanAccionConsulta';
 import TiempoReponer from './pages/TiempoReponer';
+import VerificacionReporte from './pages/VerificacionReporte';
 import SessionTimeoutModal from './components/SessionTimeoutModal';
 import InstrumentoPublicView from './modules/planeacionEstrategica/autoevaluacion/instrumentos/InstrumentoPublicView';
 import { ROLES } from './constants/roles';
@@ -69,6 +70,7 @@ function App() {
                 <Route path="/f/:code" element={<InstrumentoPublicView />} />
                 <Route path="/instrumentos/responder/:code" element={<InstrumentoPublicView />} />
                 <Route path="/instrumentos/preview/:id" element={<PrivateRoute><InstrumentoPublicView previewMode /></PrivateRoute>} />
+                <Route path="/verificar/:id" element={<VerificacionReporte />} />
 
                 {/* Rutas protegidas */}
                 <Route path="/dashboard" element={<PrivateRoute><DashboardLayout /></PrivateRoute>}>

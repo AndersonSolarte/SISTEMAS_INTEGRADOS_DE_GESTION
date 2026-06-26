@@ -30,6 +30,7 @@ import DeleteIcon from '@mui/icons-material/Delete';
 import AddIcon from '@mui/icons-material/Add';
 import SearchIcon from '@mui/icons-material/Search';
 import InfoIcon from '@mui/icons-material/Info';
+import CheckCircleOutlineIcon from '@mui/icons-material/CheckCircleOutline';
 import reporteSalidaService from '../../services/reporteSalidaService';
 
 const INITIAL_FORM = {
@@ -374,6 +375,8 @@ function ReporteSalidaFormDialog({ open, documento, user, onClose, onSubmitted }
   const [errorMessage, setErrorMessage] = useState('');
   const [qrOpen, setQrOpen] = useState(false);
   const [qrCopied, setQrCopied] = useState(false);
+  const [showSuccessModal, setShowSuccessModal] = useState(false);
+  const [successResponse, setSuccessResponse] = useState(null);
 
   const handleAddParticipant = (colaborador) => {
     if (!colaborador) return;
@@ -825,13 +828,19 @@ function ReporteSalidaFormDialog({ open, documento, user, onClose, onSubmitted }
         } : null),
         ...form
       });
-      onSubmitted?.(response);
-      onClose?.();
+      setSuccessResponse(response);
+      setShowSuccessModal(true);
     } catch (error) {
       setErrorMessage(error?.response?.data?.message || error?.message || 'No se pudo radicar la solicitud.');
     } finally {
       setSubmitting(false);
     }
+  };
+
+  const handleSuccessClose = () => {
+    setShowSuccessModal(false);
+    onSubmitted?.(successResponse);
+    onClose?.();
   };
 
   const disableSubmit = submitting || validationIssues.length > 0;
@@ -1648,6 +1657,21 @@ function ReporteSalidaFormDialog({ open, documento, user, onClose, onSubmitted }
             Entendido, continuar
           </Button>
         </DialogActions>
+      </Dialog>
+
+      <Dialog open={showSuccessModal} onClose={handleSuccessClose} maxWidth="sm" fullWidth PaperProps={{ sx: { borderRadius: 4, p: 3, textAlign: 'center' } }}>
+        <DialogContent sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+          <CheckCircleOutlineIcon color="success" sx={{ fontSize: 100, mb: 2 }} />
+          <Typography variant="h5" fontWeight="800" color="success.main" gutterBottom>
+            ¡Solicitud Radicada con Éxito!
+          </Typography>
+          <Typography sx={{ color: '#475569', fontSize: 16, mb: 3 }}>
+            El reporte ha sido guardado correctamente y se enviará una notificación a su jefe inmediato para aprobación.
+          </Typography>
+          <Button onClick={handleSuccessClose} variant="contained" color="success" fullWidth sx={{ borderRadius: 2, fontWeight: 700, py: 1.5, fontSize: 16 }}>
+            Cerrar y continuar
+          </Button>
+        </DialogContent>
       </Dialog>
     </>
   );

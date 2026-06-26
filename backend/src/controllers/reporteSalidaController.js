@@ -3143,6 +3143,41 @@ const getReposicionesEquipo = async (req, res) => {
   }
 };
 
+const verificarReportePublico = async (req, res) => {
+  try {
+    const solicitud = await ReporteSalidaSolicitud.findByPk(req.params.id);
+    if (!solicitud) {
+      return res.status(404).json({ success: false, message: 'El reporte no existe o fue eliminado.' });
+    }
+
+    let solicitante = solicitud.solicitante;
+    if (typeof solicitante === 'string') {
+      try { solicitante = JSON.parse(solicitante); } catch (e) { solicitante = {}; }
+    }
+    const nombre = solicitante?.nombre || 'Desconocido';
+    const documento = solicitante?.documento || solicitante?.username || 'Desconocido';
+
+    return res.json({
+      success: true,
+      data: {
+        id: solicitud.id,
+        consecutivo: solicitud.consecutivo,
+        createdAt: solicitud.createdAt,
+        estado: solicitud.estado,
+        solicitante: {
+          nombre,
+          documento
+        },
+        jefe_aprobado_at: solicitud.jefe_aprobado_at,
+        gestion_humana_aprobado_at: solicitud.gestion_humana_aprobado_at
+      }
+    });
+  } catch (error) {
+    console.error('Error en verificarReportePublico:', error);
+    return res.status(500).json({ success: false, message: 'Error interno del servidor.' });
+  }
+};
+
 module.exports = {
   aprobarDesdeCorreo,
   mostrarFormularioRechazo,
@@ -3163,5 +3198,6 @@ module.exports = {
   getReposicionesPropias,
   getReposicionesEquipo,
   eliminarSolicitud,
-  editarSolicitudAdmin
+  editarSolicitudAdmin,
+  verificarReportePublico
 };

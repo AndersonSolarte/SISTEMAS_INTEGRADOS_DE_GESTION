@@ -629,7 +629,7 @@ const buildPdfBuffer = async (solicitud) => {
               {
                 text: [
                   { text: solicitud.gestion_humana_aprobado_at ? 'Firmado electrónicamente por:\n' : '\n', bold: true, fontSize: 9 },
-                  { text: `${ghDirectorNombre}\n`, fontSize: 10 },
+                  { text: `${solicitud.gestion_humana_aprobado_at ? ghDirectorNombre : 'Pendiente'}\n`, fontSize: 10 },
                   { text: `Cargo: ${ghDirectorCargo}\n`, fontSize: 8 },
                   { text: `Fecha y hora: ${ghDate}\n`, fontSize: 8 },
                   { text: solicitud.gestion_humana_aprobado_at ? `ID Transacción: ${txId}\n` : '\n', fontSize: 7, color: 'gray' }
