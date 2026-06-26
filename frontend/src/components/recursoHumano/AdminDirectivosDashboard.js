@@ -865,15 +865,15 @@ function AdminDirectivosDashboard({ onBack }) {
           <Box sx={{ px: { xs: 2.5, md: 4.5 }, py: { xs: 2.2, md: 2.8 }, position: 'relative', zIndex: 1 }}>
             {onBack && (
               <Box component="button" onClick={onBack} sx={{
-              <Button variant="outlined" startIcon={<ArrowBackRoundedIcon />} onClick={onBack} sx={{
                 mb: 1.8, display: 'inline-flex', alignItems: 'center', gap: 0.7,
                 px: 1.4, py: 0.55, borderRadius: 999,
                 border: '1px solid rgba(255,255,255,.32)', background: 'rgba(255,255,255,.12)',
                 color: 'rgba(255,255,255,.88)', fontSize: 12, fontWeight: 800, letterSpacing: '0.01em',
+                cursor: 'pointer', transition: 'background .15s, border-color .15s',
                 '&:hover': { background: 'rgba(255,255,255,.22)', borderColor: 'rgba(255,255,255,.5)' }
               }}>
                 ← Gestión del Talento Humano
-              </Button>
+              </Box>
             )}
             <Stack direction={{ xs: 'column', sm: 'row' }} spacing={{ xs: 2, sm: 3 }}
               alignItems={{ xs: 'flex-start', sm: 'center' }} justifyContent="space-between">
