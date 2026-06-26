@@ -878,8 +878,6 @@ function ReporteSalidaFormDialog({ open, documento, user, onClose, onSubmitted }
         </DialogTitle>
         <DialogContent dividers sx={{ bgcolor: '#f6f8fb', p: { xs: 2, md: 3 } }}>
           <Stack spacing={2}>
-            {errorMessage && <Alert severity="error">{errorMessage}</Alert>}
-
             {/* New Toggle Group / Individual */}
             <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', md: '1fr 1fr' }, gap: 1.5, mb: 2 }}>
               <Box
@@ -1526,6 +1524,12 @@ function ReporteSalidaFormDialog({ open, documento, user, onClose, onSubmitted }
           </Stack>
         </DialogContent>
         <DialogActions sx={{ px: 3, py: 2, bgcolor: '#ffffff', borderTop: '1px solid #e2e8f0', gap: 1, flexWrap: 'wrap' }}>
+          {errorMessage && (
+            <Alert severity="error" sx={{ width: '100%', mb: 1 }}>
+              <Typography sx={{ fontWeight: 900, fontSize: 13.5 }}>Error interno</Typography>
+              {errorMessage}
+            </Alert>
+          )}
           {validationIssues.length > 0 && (
             <Alert severity="warning" sx={{ mr: 'auto', textAlign: 'left', alignItems: 'flex-start', maxWidth: { xs: '100%', md: 620 } }}>
               <Typography sx={{ fontWeight: 900, fontSize: 13, mb: 0.4 }}>No se puede registrar todavía</Typography>
