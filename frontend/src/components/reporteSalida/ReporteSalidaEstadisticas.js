@@ -202,7 +202,7 @@ export default function ReporteSalidaEstadisticas({ rows = [] }) {
                     itemStyle={{ fontWeight: 700 }}
                   />
                   <Area 
-                    type="monotone" 
+                    type="linear" 
                     dataKey="solicitudes" 
                     name="Solicitudes" 
                     stroke="#0ea5e9" 
