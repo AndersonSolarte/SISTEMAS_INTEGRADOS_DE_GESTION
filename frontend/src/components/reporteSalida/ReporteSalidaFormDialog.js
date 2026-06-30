@@ -704,7 +704,9 @@ function ReporteSalidaFormDialog({ open, documento, user, onClose, onSubmitted }
     reposicionRangeIssue,
     reposicionHasAnyValue,
     salidaMinutes,
-    salidaRangeIssue
+    salidaRangeIssue,
+    adjuntoFile,
+    form.salida.motivo
   ]);
 
   const selectedDependenciaIsCatalog = hasExactOption(form.laboral.dependencia, dependencias);
