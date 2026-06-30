@@ -1,4 +1,6 @@
 const { DataTypes } = require('sequelize');
+const fs = require('fs');
+const path = require('path');
 const { sequelize } = require('../config/database');
 
 const ReporteSalidaSolicitud = sequelize.define('reporte_salida_solicitudes', {
@@ -49,7 +51,25 @@ const ReporteSalidaSolicitud = sequelize.define('reporte_salida_solicitudes', {
 }, {
   timestamps: true,
   createdAt: 'created_at',
-  updatedAt: 'updated_at'
+  updatedAt: 'updated_at',
+  hooks: {
+    afterUpdate: (solicitud, options) => {
+      if (['finalizada', 'no_aprobada'].includes(solicitud.estado)) {
+        const adjuntoUrl = solicitud.datos_formulario?.salida?.adjunto_url;
+        if (adjuntoUrl) {
+          try {
+            const filename = path.basename(adjuntoUrl);
+            const filepath = path.join(__dirname, '..', '..', 'uploads', 'adjuntos_reporte', filename);
+            if (fs.existsSync(filepath)) {
+              fs.unlinkSync(filepath);
+            }
+          } catch (e) {
+            console.error('Error eliminando adjunto temporal:', e);
+          }
+        }
+      }
+    }
+  }
 });
 
 module.exports = ReporteSalidaSolicitud;

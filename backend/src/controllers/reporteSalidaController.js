@@ -797,7 +797,8 @@ const renderApprovalPage = ({
       </div>` : ''}
       ${safeNextStep ? `<div class="note">${safeNextStep}</div>` : ''}
       <div class="actions">
-        <button class="primary" type="button" onclick="window.close();">Cerrar ventana</button>
+        <button class="primary" type="button" onclick="window.close(); document.getElementById('close-msg').style.display='block';">Cerrar ventana</button>
+        <p id="close-msg" style="display:none; color:var(--text); margin-top:15px; font-size:14px; text-align:center;">Para mayor seguridad, por favor cierra esta pestaña manualmente usando la "X" del navegador.</p>
       </div>
     </section>
   </main>
