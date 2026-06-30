@@ -1285,7 +1285,7 @@ function ReporteSalidaFormDialog({ open, documento, user, onClose, onSubmitted }
                   >
                     <DirectionsWalkIcon sx={{ fontSize: 24, color: category === 'personales' ? '#2563eb' : '#94a3b8', transition: 'color 0.2s' }} />
                     <Typography sx={{ fontWeight: 800, fontSize: 12.5, color: category === 'personales' ? '#1e3a8a' : '#475569', textAlign: 'left', lineHeight: 1.2 }}>
-                      Actividades personales
+                      Trámites, Permisos y Licencias
                     </Typography>
                   </Box>
                 )}
@@ -1330,7 +1330,7 @@ function ReporteSalidaFormDialog({ open, documento, user, onClose, onSubmitted }
                   </TextField>
                   {category === 'salud' && (
                     <Tooltip
-                      title="El permiso por motivo de salud se otorga exclusivamente para la atención médica del colaborador (consultas, procedimientos, terapias, exámenes). El acompañamiento a citas médicas de familiares (hijos, padres, cónyuge) debe registrarse en la categoría de 'Actividades personales'"
+                      title="El permiso por motivo de salud se otorga exclusivamente para la atención médica del colaborador (consultas, procedimientos, terapias, exámenes). El acompañamiento a citas médicas de familiares (hijos, padres, cónyuge) debe registrarse en la categoría de 'Trámites, Permisos y Licencias'"
                       arrow
                       placement="top"
                     >
@@ -1711,7 +1711,7 @@ function ReporteSalidaFormDialog({ open, documento, user, onClose, onSubmitted }
         </DialogTitle>
         <DialogContent>
           <Typography sx={{ color: '#334155', lineHeight: 1.6, fontSize: 14.5, mt: 1 }}>
-            Tenga en cuenta que los permisos otorgados bajo la categoría de <strong>Actividades personales</strong> requieren reposición de tiempo obligatorio.
+            Tenga en cuenta que los permisos otorgados bajo el motivo de <strong>Diligencia personal</strong> requieren plan de reposición de tiempo obligatorio.
             <br /><br />
             Usted deberá registrar un plan inicial de reposición en la parte inferior de este formulario, el cual será evaluado por su jefe inmediato para su respectiva aprobación y seguimiento.
           </Typography>
