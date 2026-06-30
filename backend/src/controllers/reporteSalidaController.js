@@ -446,31 +446,7 @@ const isColombiaHoliday = (date) => {
 };
 
 const diffBusinessMinutes = (startDate, endDate, startTime, endTime) => {
-  const fromDate = parseDateOnly(startDate);
-  const toDate = parseDateOnly(endDate || startDate);
-  const fromMinutes = timeToMinutes(startTime);
-  const toMinutesValue = timeToMinutes(endTime);
-  if (!fromDate || !toDate || fromMinutes == null || toMinutesValue == null || toDate < fromDate) return null;
-
-  if (toIsoDate(fromDate) === toIsoDate(toDate) && toMinutesValue <= fromMinutes) return null;
-
-  let total = 0;
-  const cursor = new Date(fromDate);
-  while (cursor <= toDate) {
-    if (isBusinessDay(cursor)) {
-      const current = toIsoDate(cursor);
-      const rangeStart = current === toIsoDate(fromDate) ? fromMinutes : 0;
-      const rangeEnd = current === toIsoDate(toDate) ? toMinutesValue : 24 * 60;
-      WORK_BLOCKS.forEach((block) => {
-        const blockStart = timeToMinutes(block.start);
-        const blockEnd = timeToMinutes(block.end);
-        total += Math.max(0, Math.min(rangeEnd, blockEnd) - Math.max(rangeStart, blockStart));
-      });
-    }
-    cursor.setDate(cursor.getDate() + 1);
-  }
-
-  return total > 0 ? total : null;
+  return diffElapsedMinutes(startDate, endDate, startTime, endTime);
 };
 
 const diffElapsedMinutes = (startDate, endDate, startTime, endTime) => {
@@ -841,7 +817,7 @@ const validateRadicacionPayload = (payload, user) => {
   } else {
     requestedMinutes = diffBusinessMinutes(salida.fecha, salida.fechaRegreso, salida.horaInicio, salida.horaFin);
   }
-  if (!requestedMinutes) return 'El rango de salida no contiene tiempo laboral valido segun la jornada lunes a viernes, sin festivos de Colombia, de 7:00 a 12:00 y de 14:00 a 18:00.';
+  if (!requestedMinutes) return 'El rango de salida no es valido. Revise que la fecha y hora final sean posteriores a la inicial.';
 
   if (salida.tipo === 'diligencia_personal') {
     const hasReposicionPlan = Boolean(reposicion.fecha || reposicion.fechaFin || reposicion.horaInicio || reposicion.horaFin);
@@ -1204,7 +1180,7 @@ const radicarSolicitud = async (req, res) => {
         requestedMinutes = diffBusinessMinutes(salida.fecha, salida.fechaRegreso, salida.horaInicio, salida.horaFin);
       }
       if (!requestedMinutes) {
-        return res.status(400).json({ success: false, message: 'El rango de salida no contiene tiempo laboral valido.' });
+        return res.status(400).json({ success: false, message: 'El rango de salida no es valido. Revise que la fecha y hora final sean posteriores a la inicial.' });
       }
 
       const now = new Date();

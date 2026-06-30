@@ -177,33 +177,7 @@ const isColombiaHoliday = (date) => {
 };
 
 const countBusinessMinutes = (startDate, endDate, startTime, endTime) => {
-  const fromDate = parseDateOnly(startDate);
-  const toDate = parseDateOnly(endDate || startDate);
-  const fromMinutes = timeToMinutes(startTime);
-  const toMinutesValue = timeToMinutes(endTime);
-  if (!fromDate || !toDate || fromMinutes == null || toMinutesValue == null || toDate < fromDate) return null;
-
-  const sameDay = toIsoDate(fromDate) === toIsoDate(toDate);
-  if (sameDay && toMinutesValue <= fromMinutes) return null;
-
-  let total = 0;
-  const cursor = new Date(fromDate);
-  while (cursor <= toDate) {
-    if (isBusinessDay(cursor)) {
-      const current = toIsoDate(cursor);
-      const rangeStart = current === toIsoDate(fromDate) ? fromMinutes : 0;
-      const rangeEnd = current === toIsoDate(toDate) ? toMinutesValue : 24 * 60;
-      for (const block of WORK_BLOCKS) {
-        const blockStart = timeToMinutes(block.start);
-        const blockEnd = timeToMinutes(block.end);
-        const overlap = Math.max(0, Math.min(rangeEnd, blockEnd) - Math.max(rangeStart, blockStart));
-        total += overlap;
-      }
-    }
-    cursor.setDate(cursor.getDate() + 1);
-  }
-
-  return total > 0 ? total : null;
+  return countElapsedMinutes(startDate, endDate, startTime, endTime);
 };
 
 const countElapsedMinutes = (startDate, endDate, startTime, endTime) => {
@@ -231,15 +205,13 @@ const getBusinessDateIssue = (date, label) => {
 };
 
 const getRangeIssue = ({ startDate, endDate, startTime, endTime, minutes, label }) => {
-  const startIssue = getBusinessDateIssue(startDate, `La fecha inicial de ${label}`);
-  if (startIssue) return startIssue;
-  const endIssue = getBusinessDateIssue(endDate, `La fecha final de ${label}`);
-  if (endIssue) return endIssue;
-  
-  if (startDate && startTime) {
+  if (startDate) {
     const today = new Date();
     const todayStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
-    if (startDate === todayStr) {
+    if (startDate < todayStr) {
+      return `La fecha inicial de ${label} no puede ser anterior a la fecha actual.`;
+    }
+    if (startDate === todayStr && startTime) {
       const currentMinutes = today.getHours() * 60 + today.getMinutes();
       const [h, m] = String(startTime || '').split(':').map(Number);
       if (Number.isFinite(h) && Number.isFinite(m)) {
@@ -252,7 +224,7 @@ const getRangeIssue = ({ startDate, endDate, startTime, endTime, minutes, label 
   }
 
   if (startDate && endDate && startTime && endTime && !minutes) {
-    return `El rango de ${label} no suma tiempo laboral. Revise fechas, horas y jornada institucional.`;
+    return `La fecha u hora de fin de ${label} debe ser posterior a la de inicio.`;
   }
   return '';
 };
@@ -626,9 +598,15 @@ function ReporteSalidaFormDialog({ open, documento, user, onClose, onSubmitted }
     if (!reposicionPlanComplete) {
       return 'Complete todos los campos del plan inicial de reposicion o dejelos vacios para gestionarlo luego en seguimiento.';
     }
-    if (!reposicionMinutes) return 'El rango del plan inicial de reposicion no es valido. Revise fecha y hora de inicio y fin.';
-    return '';
-  }, [reposicionHasAnyValue, reposicionMinutes, reposicionPlanComplete]);
+    return getRangeIssue({
+      startDate: form.reposicion.fecha,
+      endDate: form.reposicion.fechaFin,
+      startTime: form.reposicion.horaInicio,
+      endTime: form.reposicion.horaFin,
+      minutes: reposicionMinutes,
+      label: 'plan de reposicion'
+    });
+  }, [reposicionHasAnyValue, reposicionMinutes, reposicionPlanComplete, form.reposicion.fecha, form.reposicion.fechaFin, form.reposicion.horaInicio, form.reposicion.horaFin]);
 
   const isPersonal = form.salida.tipo === 'diligencia_personal';
   const validationIssues = useMemo(() => {
