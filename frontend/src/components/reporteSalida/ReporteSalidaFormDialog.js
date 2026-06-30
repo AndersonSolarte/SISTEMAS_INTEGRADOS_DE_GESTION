@@ -834,7 +834,7 @@ function ReporteSalidaFormDialog({ open, documento, user, onClose, onSubmitted }
     setSubmitting(true);
     setErrorMessage('');
     try {
-      const response = await reporteSalidaService.radicarSolicitud({
+      const payload = {
         documentoId: documento?.id,
         isSalidaMultiple,
         participantes: isSalidaMultiple ? participantes : [],
@@ -850,7 +850,7 @@ function ReporteSalidaFormDialog({ open, documento, user, onClose, onSubmitted }
           jefe_inmediato: jefe.jefe_inmediato || jefe.nombre || '',
           source: jefe.source || 'recurso_humano_administrativos'
         } : null),
-        ...form
+        ...form,
       };
       
       payload.salida = {
