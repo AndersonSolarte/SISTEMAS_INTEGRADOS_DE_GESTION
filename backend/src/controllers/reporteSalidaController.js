@@ -2692,6 +2692,7 @@ const sendGestionHumanaGroupApprovalEmail = async (solicitudes, token) => {
     cita_particular: 'Cita medica particular',
     urgencia_medica: 'Urgencia Medica',
     diligencia_personal: 'Diligencia personal',
+    compensatorio: 'Compensatorio',
     ponencia: 'Ponencia',
     visita_ies: 'Visita a otras IES',
     capacitacion: 'Capacitacion',

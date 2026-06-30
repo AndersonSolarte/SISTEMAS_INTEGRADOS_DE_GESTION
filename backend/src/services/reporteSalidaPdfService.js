@@ -79,6 +79,7 @@ const getTipoSalidaLabel = (tipo) => ({
   cita_eps: 'Cita medica por EPS',
   cita_particular: 'Cita medica particular',
   diligencia_personal: 'Diligencia personal',
+  compensatorio: 'Compensatorio',
   voto_jurado: 'Permiso: Jurado de votación',
   voto_sufragante: 'Permiso: Sufragante',
   calamidad_domestica: 'Permiso: Calamidad doméstica',

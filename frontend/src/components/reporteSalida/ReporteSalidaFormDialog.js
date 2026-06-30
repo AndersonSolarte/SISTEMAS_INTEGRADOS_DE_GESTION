@@ -15,7 +15,8 @@ import {
   Typography,
   Tooltip,
   useMediaQuery,
-  useTheme
+  useTheme,
+  ListSubheader
 } from '@mui/material';
 import AssignmentTurnedInIcon from '@mui/icons-material/AssignmentTurnedIn';
 import ContentCopyIcon from '@mui/icons-material/ContentCopy';
@@ -62,19 +63,20 @@ const SALUD_SUBTYPES = [
 ];
 
 const PERSONALES_SUBTYPES = [
-  { value: 'diligencia_personal', label: 'Diligencia personal' },
-  { value: 'voto_jurado', label: 'Permiso: Jurado de votación (Requiere certificado)' },
-  { value: 'voto_sufragante', label: 'Permiso: Sufragante (Requiere certificado)' },
-  { value: 'calamidad_domestica', label: 'Permiso: Calamidad doméstica' },
-  { value: 'entierro_companero', label: 'Permiso: Entierro de compañeros de trabajo' },
-  { value: 'comision_sindical', label: 'Permiso: Comisiones sindicales' },
-  { value: 'matrimonio', label: 'Permiso: Matrimonio' },
-  { value: 'lactancia', label: 'Permiso: Periodo de lactancia' },
-  { value: 'luto_conyuge', label: 'Licencia de luto: Cónyuge' },
-  { value: 'luto_companero', label: 'Licencia de luto: Compañero(a) permanente' },
-  { value: 'luto_familiar', label: 'Licencia de luto: Familiar (Padres, hijos, abuelos, nietos, hermanos, suegros)' },
-  { value: 'actos_funebres', label: 'Licencia: Actos fúnebres' },
-  { value: 'cuidado_ninez', label: 'Licencia para el cuidado de la niñez' }
+  { group: 'Trámites y Compensatorios', value: 'diligencia_personal', label: 'Diligencia personal' },
+  { group: 'Trámites y Compensatorios', value: 'compensatorio', label: 'Compensatorio' },
+  { group: 'Permisos Electorales', value: 'voto_jurado', label: 'Jurado de votación (Requiere certificado)' },
+  { group: 'Permisos Electorales', value: 'voto_sufragante', label: 'Sufragante (Requiere certificado)' },
+  { group: 'Permisos y Novedades', value: 'calamidad_domestica', label: 'Calamidad doméstica' },
+  { group: 'Permisos y Novedades', value: 'entierro_companero', label: 'Entierro de compañeros de trabajo' },
+  { group: 'Permisos y Novedades', value: 'comision_sindical', label: 'Comisiones sindicales' },
+  { group: 'Permisos y Novedades', value: 'matrimonio', label: 'Matrimonio' },
+  { group: 'Permisos y Novedades', value: 'lactancia', label: 'Periodo de lactancia' },
+  { group: 'Licencias', value: 'luto_conyuge', label: 'Licencia de luto: Cónyuge' },
+  { group: 'Licencias', value: 'luto_companero', label: 'Licencia de luto: Compañero(a) permanente' },
+  { group: 'Licencias', value: 'luto_familiar', label: 'Licencia de luto: Familiar (Padres, hijos...)' },
+  { group: 'Licencias', value: 'actos_funebres', label: 'Licencia: Actos fúnebres' },
+  { group: 'Licencias', value: 'cuidado_ninez', label: 'Licencia para el cuidado de la niñez' }
 ];
 
 const ESPECIALIDADES_MEDICAS = [
@@ -1322,11 +1324,24 @@ function ReporteSalidaFormDialog({ open, documento, user, onClose, onSubmitted }
                       : category === 'salud'
                         ? (isSalidaMultiple ? SALUD_SUBTYPES.filter(opt => opt.value === 'urgencia_medica') : SALUD_SUBTYPES)
                         : PERSONALES_SUBTYPES
-                    ).map((opt) => (
-                      <MenuItem key={opt.value} value={opt.value} sx={{ whiteSpace: 'normal' }}>
-                        {opt.label}
-                      </MenuItem>
-                    ))}
+                    ).reduce((acc, opt, index, arr) => {
+                      if (opt.group) {
+                        const prevGroup = index > 0 ? arr[index - 1].group : null;
+                        if (opt.group !== prevGroup) {
+                          acc.push(
+                            <ListSubheader key={`group-${opt.group}`} sx={{ fontWeight: 800, bgcolor: '#f8fafc', color: '#334155', lineHeight: '36px' }}>
+                              {opt.group}
+                            </ListSubheader>
+                          );
+                        }
+                      }
+                      acc.push(
+                        <MenuItem key={opt.value} value={opt.value} sx={{ whiteSpace: 'normal', pl: opt.group ? 3 : 2 }}>
+                          {opt.label}
+                        </MenuItem>
+                      );
+                      return acc;
+                    }, [])}
                   </TextField>
                   {category === 'salud' && (
                     <Tooltip
