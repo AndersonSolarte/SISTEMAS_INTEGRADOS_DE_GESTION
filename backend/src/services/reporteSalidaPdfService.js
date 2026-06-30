@@ -78,7 +78,20 @@ const formatMinutes = (minutes) => {
 const getTipoSalidaLabel = (tipo) => ({
   cita_eps: 'Cita medica por EPS',
   cita_particular: 'Cita medica particular',
-  diligencia_personal: 'Diligencia personal'
+  diligencia_personal: 'Diligencia personal',
+  voto_jurado: 'Permiso: Jurado de votación',
+  voto_sufragante: 'Permiso: Sufragante',
+  calamidad_domestica: 'Permiso: Calamidad doméstica',
+  entierro_companero: 'Permiso: Entierro compañeros',
+  comision_sindical: 'Permiso: Comisiones sindicales',
+  matrimonio: 'Permiso: Matrimonio',
+  lactancia: 'Permiso: Lactancia',
+  luto_conyuge: 'Licencia luto: Cónyuge',
+  luto_companero: 'Licencia luto: Compañero(a)',
+  luto_familiar: 'Licencia luto: Familiar',
+  actos_funebres: 'Licencia: Actos fúnebres',
+  cuidado_ninez: 'Licencia: Cuidado niñez',
+  calidad_servicio: 'Mejora en la calidad del servicio'
 }[tipo] || tipo || '');
 
 const replaceOnce = (xml, search, replacement) => {
@@ -160,7 +173,8 @@ const fillReporteSalidaRows = (xml, values) => {
   set(6, 1, `  Hora de regreso: ${values.horaRegreso}`);
   set(15, 0, values.tipo === 'cita_eps' ? 'X' : '');
   set(15, 2, values.tipo === 'cita_particular' ? 'X' : '');
-  set(16, 0, values.tipo === 'diligencia_personal' ? 'X' : '');
+  const isPersonalPermission = ['diligencia_personal', 'voto_jurado', 'voto_sufragante', 'calamidad_domestica', 'entierro_companero', 'comision_sindical', 'matrimonio', 'lactancia', 'luto_conyuge', 'luto_companero', 'luto_familiar', 'actos_funebres', 'cuidado_ninez'].includes(values.tipo);
+  set(16, 0, isPersonalPermission ? 'X' : '');
   set(17, 0, ` Fecha:  ${values.reposicionFecha}${values.reposicionFechaFin && values.reposicionFechaFin !== values.reposicionFecha ? ` a ${values.reposicionFechaFin}` : ''}`);
   set(17, 1, ` Hora inicio: ${values.reposicionInicio}`);
   set(17, 2, ` Hora fin: ${values.reposicionFin}`);

@@ -2722,7 +2722,19 @@ const sendGestionHumanaGroupApprovalEmail = async (solicitudes, token) => {
     proyecto_investigacion: 'Proyecto de investigacion',
     asistente_congreso: 'Asistente a congreso',
     practica_academica: 'Practica academica',
-    torneo_deportivo: 'Participante en torneo deportivo'
+    torneo_deportivo: 'Participante en torneo deportivo',
+    voto_jurado: 'Permiso: Jurado de votacion',
+    voto_sufragante: 'Permiso: Sufragante',
+    calamidad_domestica: 'Permiso: Calamidad domestica',
+    entierro_companero: 'Permiso: Entierro companeros',
+    comision_sindical: 'Permiso: Comisiones sindicales',
+    matrimonio: 'Permiso: Matrimonio',
+    lactancia: 'Permiso: Lactancia',
+    luto_conyuge: 'Licencia luto: Conyuge',
+    luto_companero: 'Licencia luto: Companero(a)',
+    luto_familiar: 'Licencia luto: Familiar',
+    actos_funebres: 'Licencia: Actos funebres',
+    cuidado_ninez: 'Licencia: Cuidado ninez'
   };
   const getSubtypeLabel = (tipo) => {
     if (!tipo) return '';
