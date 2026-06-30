@@ -61,7 +61,19 @@ const SALUD_SUBTYPES = [
 ];
 
 const PERSONALES_SUBTYPES = [
-  { value: 'diligencia_personal', label: 'Diligencia personal' }
+  { value: 'diligencia_personal', label: 'Diligencia personal' },
+  { value: 'voto_jurado', label: 'Permiso: Jurado de votación (Requiere certificado)' },
+  { value: 'voto_sufragante', label: 'Permiso: Sufragante (Requiere certificado)' },
+  { value: 'calamidad_domestica', label: 'Permiso: Calamidad doméstica' },
+  { value: 'entierro_companero', label: 'Permiso: Entierro de compañeros de trabajo' },
+  { value: 'comision_sindical', label: 'Permiso: Comisiones sindicales' },
+  { value: 'matrimonio', label: 'Permiso: Matrimonio' },
+  { value: 'lactancia', label: 'Permiso: Periodo de lactancia' },
+  { value: 'luto_conyuge', label: 'Licencia de luto: Cónyuge' },
+  { value: 'luto_companero', label: 'Licencia de luto: Compañero(a) permanente' },
+  { value: 'luto_familiar', label: 'Licencia de luto: Familiar (Padres, hijos, abuelos, nietos, hermanos, suegros)' },
+  { value: 'actos_funebres', label: 'Licencia: Actos fúnebres' },
+  { value: 'cuidado_ninez', label: 'Licencia para el cuidado de la niñez' }
 ];
 
 const ESPECIALIDADES_MEDICAS = [
@@ -681,8 +693,9 @@ function ReporteSalidaFormDialog({ open, documento, user, onClose, onSubmitted }
       }
     }
     
-    if (['cita_eps', 'cita_particular', 'urgencia_medica', 'terapias'].includes(subtype) && !adjuntoFile) {
-      issues.push('Debe adjuntar el soporte médico obligatorio en la sección de datos adicionales.');
+    const REQUIRES_ADJUNTO = ['cita_eps', 'cita_particular', 'urgencia_medica', 'terapias', 'voto_jurado', 'voto_sufragante'];
+    if (REQUIRES_ADJUNTO.includes(subtype) && !adjuntoFile) {
+      issues.push('Debe subir el soporte médico o certificado obligatorio.');
     }
     
     if (isPersonal && reposicionHasAnyValue) {
@@ -1509,13 +1522,15 @@ function ReporteSalidaFormDialog({ open, documento, user, onClose, onSubmitted }
                 </Box>
               )}
 
-              {['cita_eps', 'cita_particular', 'urgencia_medica', 'terapias'].includes(subtype) && (
+              {['cita_eps', 'cita_particular', 'urgencia_medica', 'terapias', 'voto_jurado', 'voto_sufragante'].includes(subtype) && (
                 <Box sx={{ mt: 1, p: 2, borderRadius: 2, border: '1px dashed #94a3b8', bgcolor: '#f8fafc' }}>
                   <Typography sx={{ fontWeight: 800, fontSize: 13.5, color: '#0f172a', mb: 0.5 }}>
-                    Soporte médico obligatorio
+                    {['voto_jurado', 'voto_sufragante'].includes(subtype) ? 'Certificado obligatorio' : 'Soporte médico obligatorio'}
                   </Typography>
                   <Typography sx={{ fontSize: 12, color: '#64748b', mb: 1.5 }}>
-                    Adjunte la constancia, epicrisis, u orden médica correspondiente (PDF o Imagen).
+                    {['voto_jurado', 'voto_sufragante'].includes(subtype)
+                      ? 'Adjunte su certificado electoral (PDF o Imagen).'
+                      : 'Adjunte la constancia, epicrisis, u orden médica correspondiente (PDF o Imagen).'}
                   </Typography>
                   <Button
                     variant="outlined"
