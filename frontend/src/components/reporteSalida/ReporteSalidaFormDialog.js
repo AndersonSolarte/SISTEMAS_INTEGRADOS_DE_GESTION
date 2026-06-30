@@ -836,6 +836,11 @@ function ReporteSalidaFormDialog({ open, documento, user, onClose, onSubmitted }
         ...form
       };
       
+      payload.salida = {
+        ...payload.salida,
+        categoria: category
+      };
+      
       if (adjuntoFile) {
         const formData = new FormData();
         formData.append('adjunto', adjuntoFile);

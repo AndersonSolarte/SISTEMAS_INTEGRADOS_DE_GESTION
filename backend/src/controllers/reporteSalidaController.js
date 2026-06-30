@@ -952,6 +952,34 @@ const sendGestionHumanaApprovalEmail = async (solicitud, token, attachments) => 
   });
 };
 
+const sendSSTApprovalEmail = async (solicitud, token, attachments) => {
+  const recipients = getReporteSalidaRecipients();
+  const solicitante = solicitud.solicitante_snapshot || {};
+  const approveUrl = `${publicBackendUrl.replace(/\/$/, '')}/api/reporte-salida/aprobar/${encodeURIComponent(token)}`;
+  const rejectUrl = `${publicBackendUrl.replace(/\/$/, '')}/api/reporte-salida/rechazar/${encodeURIComponent(token)}`;
+  const subject = `REPORTE DE SALIDA ${solicitud.consecutivo} | Aprobacion SST`;
+  const html = renderInstitutionalTemplate({
+    title: 'Aprobacion pendiente de SST',
+    introHtml: `<p>La solicitud misional (Nacional/Internacional) <strong>${escapeHtml(solicitud.consecutivo)}</strong> fue aprobada por Gestion Humana y requiere su aprobacion final.</p>`,
+    bodyHtml: `
+      <p><strong>Colaborador:</strong> ${escapeHtml(solicitante.nombre)}</p>
+      <p><strong>Tiempo solicitado:</strong> ${escapeHtml(formatMinutes(solicitud.tiempo_solicitado_minutos))}</p>
+      <div style="text-align:center;margin:20px 0;">
+        <a href="${approveUrl}" style="display:inline-block;background:#0b3a6f;color:#fff;padding:12px 24px;border-radius:8px;text-decoration:none;font-weight:700;margin:5px 10px;">Aprobar SST</a>
+        <a href="${rejectUrl}" style="display:inline-block;background:#b91c1c;color:#fff;padding:12px 24px;border-radius:8px;text-decoration:none;font-weight:700;margin:5px 10px;">No aprobar</a>
+      </div>
+      <p>Si decide no aprobar la solicitud, haga clic en el botón "No aprobar" para ingresar el motivo de su decisión.</p>
+    `
+  });
+  return sendInstitutionalEmail({
+    to: recipients.sst,
+    subject,
+    text: `Solicitud ${solicitud.consecutivo} requiere su aprobacion. Para finalizar ingrese a ${approveUrl}. Para rechazar ingrese a ${rejectUrl}.`,
+    html,
+    attachments
+  });
+};
+
 const sendFinalEmails = async (solicitud, attachments) => {
   const recipients = getReporteSalidaRecipients();
   const subject = `REPORTE DE SALIDA ${solicitud.consecutivo} | Solicitud aprobada`;
@@ -1538,17 +1566,133 @@ const aprobarDesdeCorreo = async (req, res) => {
           nextStep: 'Por seguridad, la aprobacion no fue registrada.'
         });
       }
+      const isMisionalNacionalOInternacional = solicitud.datos_formulario?.salida?.categoria === 'propias_cargo' && ['Nacional', 'Internacional'].includes(solicitud.datos_formulario?.salida?.alcance);
+
+      if (isMisionalNacionalOInternacional) {
+        const sstToken = encryptPayload({ purpose: 'reporte_salida_approve', stage: 'sst', consecutivo: solicitud.consecutivo }, 60 * 60 * 24 * 15);
+        const [updatedCount] = await ReporteSalidaSolicitud.update({
+          estado: 'pendiente_aprobacion_sst',
+          gestion_humana_aprobado_at: new Date(),
+          aprobacion_gh_token_hash: null,
+          aprobacion_sst_token_hash: hashToken(sstToken),
+          trazabilidad: appendTrace(solicitud, 'aprobada_gestion_humana', null)
+        }, {
+          where: {
+            id: solicitud.id,
+            estado: 'pendiente_aprobacion_gestion_humana',
+            aprobacion_gh_token_hash: tokenHash
+          }
+        });
+        if (!updatedCount) {
+          await solicitud.reload();
+          return renderApprovalPage({
+            res,
+            tone: 'info',
+            title: 'Solicitud ya procesada',
+            message: 'Esta aprobacion ya fue registrada previamente.',
+            solicitud,
+            nextStep: 'El boton de aprobacion ya fue utilizado y quedo inhabilitado para nuevos registros.'
+          });
+        }
+        await solicitud.reload();
+        const attachments = await buildReporteSalidaAttachments(solicitud);
+        const emailResult = await sendSSTApprovalEmail(solicitud, sstToken, attachments);
+        await solicitud.update({
+          correo_sst_enviado_at: emailResult.success ? new Date() : null,
+          trazabilidad: appendTrace(solicitud, emailResult.success ? 'correo_sst_enviado' : 'correo_sst_error', null, { error: emailResult.error || '' })
+        });
+        return renderApprovalPage({
+          res,
+          tone: 'success',
+          title: 'Aprobacion registrada',
+          message: 'La solicitud fue enviada a Seguridad y Salud en el Trabajo para su aprobacion.',
+          solicitud,
+          nextStep: 'SST recibira el correo con el PDF diligenciado para continuar el flujo.'
+        });
+      } else {
+        const [updatedCount] = await ReporteSalidaSolicitud.update({
+          estado: 'finalizada',
+          gestion_humana_aprobado_at: new Date(),
+          finalizado_at: new Date(),
+          aprobacion_gh_token_hash: null,
+          trazabilidad: appendTrace(solicitud, 'aprobada_gestion_humana', null)
+        }, {
+          where: {
+            id: solicitud.id,
+            estado: 'pendiente_aprobacion_gestion_humana',
+            aprobacion_gh_token_hash: tokenHash
+          }
+        });
+        if (!updatedCount) {
+          await solicitud.reload();
+          return renderApprovalPage({
+            res,
+            tone: 'info',
+            title: 'Solicitud ya procesada',
+            message: 'Esta aprobacion ya fue registrada previamente.',
+            solicitud,
+            nextStep: 'El boton de aprobacion ya fue utilizado y quedo inhabilitado para nuevos registros.'
+          });
+        }
+        await solicitud.reload();
+        solicitud.trazabilidad = appendTrace(solicitud, 'notificacion_final_enviada', null, { usuario: true, sst: true });
+        const attachments = await buildReporteSalidaAttachments(solicitud);
+        const results = await sendFinalEmails(solicitud, attachments);
+        await solicitud.update({
+          correo_usuario_enviado_at: results.userResult.success ? new Date() : null,
+          correo_sst_enviado_at: results.sstResult.success ? new Date() : null,
+          enviado_sst_at: results.sstResult.success ? new Date() : null,
+          trazabilidad: appendTrace(solicitud, 'notificacion_final_enviada', null, {
+            usuario: results.userResult.success,
+            sst: results.sstResult.success
+          })
+        });
+        return renderApprovalPage({
+          res,
+          tone: 'success',
+          title: 'Aprobacion registrada',
+          message: 'Se notifico al usuario y se envio el PDF a Seguridad y Salud en el Trabajo.',
+          solicitud,
+          nextStep: 'El flujo quedo finalizado y la trazabilidad permanece registrada en Seguimiento a reportes.'
+        });
+      }
+    }
+
+    if (payload.stage === 'sst') {
+      if (solicitud.estado !== 'pendiente_aprobacion_sst') {
+        const isRechazada = solicitud.estado === 'no_aprobada';
+        return renderApprovalPage({
+          res,
+          tone: 'info',
+          title: isRechazada ? 'Solicitud rechazada' : 'Solicitud ya procesada',
+          message: isRechazada 
+            ? 'Esta solicitud fue rechazada anteriormente y no puede ser aprobada.' 
+            : 'Esta aprobacion ya fue registrada previamente.',
+          solicitud,
+          nextStep: 'No es necesario realizar ninguna accion adicional desde este enlace.'
+        });
+      }
+      if (solicitud.aprobacion_sst_token_hash !== tokenHash) {
+        return renderApprovalPage({
+          res,
+          status: 403,
+          tone: 'error',
+          title: 'Enlace no autorizado',
+          message: 'El enlace no coincide con el token de aprobacion esperado para SST.',
+          solicitud,
+          nextStep: 'Por seguridad, la aprobacion no fue registrada.'
+        });
+      }
       const [updatedCount] = await ReporteSalidaSolicitud.update({
         estado: 'finalizada',
-        gestion_humana_aprobado_at: new Date(),
         finalizado_at: new Date(),
-        aprobacion_gh_token_hash: null,
-        trazabilidad: appendTrace(solicitud, 'aprobada_gestion_humana', null)
+        aprobacion_sst_token_hash: null,
+        trazabilidad: appendTrace(solicitud, 'aprobada_sst', null)
       }, {
         where: {
           id: solicitud.id,
-          estado: 'pendiente_aprobacion_gestion_humana',
-          aprobacion_gh_token_hash: tokenHash
+          estado: 'pendiente_aprobacion_sst',
+          aprobacion_sst_token_hash: tokenHash
         }
       });
       if (!updatedCount) {
@@ -1579,9 +1723,9 @@ const aprobarDesdeCorreo = async (req, res) => {
         res,
         tone: 'success',
         title: 'Aprobacion registrada',
-        message: 'Se notifico al usuario y se envio el PDF a Seguridad y Salud en el Trabajo.',
+        message: 'Se notifico al usuario y se envio el PDF finalizado.',
         solicitud,
-        nextStep: 'El flujo quedo finalizado y la trazabilidad permanece registrada en Seguimiento a reportes.'
+        nextStep: 'El flujo quedo finalizado.'
       });
     }
 
@@ -2105,14 +2249,16 @@ const sendCollaboratorRejectionEmail = async ({ solicitud, rejectedBy, justifica
   });
 };
 
-const sendGHRejectionEmails = async ({ solicitud, justificacion }) => {
+const sendGHRejectionEmails = async ({ solicitud, justificacion, isSST = false }) => {
   const solicitante = solicitud.solicitante_snapshot || {};
   const jefe = solicitud.jefe_snapshot || {};
   
-  const userSubject = `REPORTE DE SALIDA ${solicitud.consecutivo} | Solicitud no aprobada por Gestion Humana`;
+  const actorName = isSST ? 'Seguridad y Salud en el Trabajo' : 'Gestion Humana';
+  
+  const userSubject = `REPORTE DE SALIDA ${solicitud.consecutivo} | Solicitud no aprobada por ${actorName}`;
   const userHtml = renderInstitutionalTemplate({
-    title: 'Reporte de salida no aprobado por Gestion Humana',
-    introHtml: `<p>Cordial saludo, <strong>${escapeHtml(solicitante.nombre)}</strong>.</p><p>Le informamos que su solicitud de reporte de salida fue rechazada por <strong>Gestion Humana</strong>.</p>`,
+    title: `Reporte de salida no aprobado por ${actorName}`,
+    introHtml: `<p>Cordial saludo, <strong>${escapeHtml(solicitante.nombre)}</strong>.</p><p>Le informamos que su solicitud de reporte de salida fue rechazada por <strong>${actorName}</strong>.</p>`,
     bodyHtml: `
       <p><strong>Solicitud:</strong> ${escapeHtml(solicitud.consecutivo)}</p>
       <p><strong>Motivo / Justificacion del rechazo:</strong></p>
@@ -2123,10 +2269,10 @@ const sendGHRejectionEmails = async ({ solicitud, justificacion }) => {
     `
   });
 
-  const bossSubject = `REPORTE DE SALIDA ${solicitud.consecutivo} | Solicitud no aprobada por Gestion Humana`;
+  const bossSubject = `REPORTE DE SALIDA ${solicitud.consecutivo} | Solicitud no aprobada por ${actorName}`;
   const bossHtml = renderInstitutionalTemplate({
     title: 'Notificacion de rechazo de reporte de salida',
-    introHtml: `<p>Cordial saludo, <strong>${escapeHtml(jefe.nombre)}</strong>.</p><p>Le informamos que la solicitud de reporte de salida de su colaborador <strong>${escapeHtml(solicitante.nombre)}</strong> fue rechazada por <strong>Gestion Humana</strong>.</p>`,
+    introHtml: `<p>Cordial saludo, <strong>${escapeHtml(jefe.nombre)}</strong>.</p><p>Le informamos que la solicitud de reporte de salida de su colaborador <strong>${escapeHtml(solicitante.nombre)}</strong> fue rechazada por <strong>${actorName}</strong>.</p>`,
     bodyHtml: `
       <p><strong>Solicitud:</strong> ${escapeHtml(solicitud.consecutivo)}</p>
       <p><strong>Motivo / Justificacion del rechazo:</strong></p>
@@ -2139,7 +2285,7 @@ const sendGHRejectionEmails = async ({ solicitud, justificacion }) => {
   const userResult = await sendInstitutionalEmail({
     to: solicitante.email,
     subject: userSubject,
-    text: `Su solicitud ${solicitud.consecutivo} fue rechazada por Gestion Humana. Motivo: ${justificacion}`,
+    text: `Su solicitud ${solicitud.consecutivo} fue rechazada por ${actorName}. Motivo: ${justificacion}`,
     html: userHtml
   });
 
@@ -2148,7 +2294,7 @@ const sendGHRejectionEmails = async ({ solicitud, justificacion }) => {
     bossResult = await sendInstitutionalEmail({
       to: jefe.email,
       subject: bossSubject,
-      text: `La solicitud ${solicitud.consecutivo} del colaborador ${solicitante.nombre} fue rechazada por Gestion Humana. Motivo: ${justificacion}`,
+      text: `La solicitud ${solicitud.consecutivo} del colaborador ${solicitante.nombre} fue rechazada por ${actorName}. Motivo: ${justificacion}`,
       html: bossHtml
     });
   }
@@ -2238,6 +2384,31 @@ const mostrarFormularioRechazo = async (req, res) => {
           tone: 'error',
           title: 'Enlace no autorizado',
           message: 'El enlace no coincide con el token esperado para Gestion Humana.',
+          solicitud,
+          nextStep: 'Por seguridad, el rechazo no fue registrado.'
+        });
+      }
+    } else if (payload.stage === 'sst') {
+      if (solicitud.estado !== 'pendiente_aprobacion_sst') {
+        const isAprobada = solicitud.estado === 'finalizada';
+        return renderApprovalPage({
+          res,
+          tone: 'info',
+          title: isAprobada ? 'Solicitud aprobada' : 'Solicitud ya procesada',
+          message: isAprobada 
+            ? 'Esta solicitud ya fue aprobada anteriormente y no puede ser rechazada.' 
+            : 'Esta solicitud ya no se encuentra pendiente de aprobacion de SST.',
+          solicitud,
+          nextStep: 'No es necesario realizar ninguna accion adicional.'
+        });
+      }
+      if (solicitud.aprobacion_sst_token_hash !== tokenHash) {
+        return renderApprovalPage({
+          res,
+          status: 403,
+          tone: 'error',
+          title: 'Enlace no autorizado',
+          message: 'El enlace no coincide con el token esperado para SST.',
           solicitud,
           nextStep: 'Por seguridad, el rechazo no fue registrado.'
         });
@@ -2445,6 +2616,74 @@ const procesarRechazo = async (req, res) => {
         tone: 'success',
         title: 'Rechazo registrado',
         message: 'La solicitud ha sido rechazada por Gestion Humana.',
+        solicitud,
+        nextStep: 'Se ha notificado al colaborador y a su jefe inmediato con el motivo correspondiente.'
+      });
+    } else if (payload.stage === 'sst') {
+      if (solicitud.estado !== 'pendiente_aprobacion_sst') {
+        const isAprobada = solicitud.estado === 'finalizada';
+        return renderApprovalPage({
+          res,
+          tone: 'info',
+          title: isAprobada ? 'Solicitud aprobada' : 'Solicitud ya procesada',
+          message: isAprobada 
+            ? 'Esta solicitud ya fue aprobada anteriormente y no puede ser rechazada.' 
+            : 'Esta solicitud ya no se encuentra pendiente de aprobacion de SST.',
+          solicitud,
+          nextStep: 'No es necesario realizar ninguna accion adicional.'
+        });
+      }
+      if (solicitud.aprobacion_sst_token_hash !== tokenHash) {
+        return renderApprovalPage({
+          res,
+          status: 403,
+          tone: 'error',
+          title: 'Enlace no autorizado',
+          message: 'El enlace no coincide con el token esperado para SST.',
+          solicitud,
+          nextStep: 'Por seguridad, el rechazo no fue registrado.'
+        });
+      }
+
+      const [updatedCount] = await ReporteSalidaSolicitud.update({
+        estado: 'no_aprobada',
+        aprobacion_sst_token_hash: null,
+        trazabilidad: appendTrace(solicitud, 'rechazada_sst', null, {
+          actorName: 'Seguridad y Salud en el Trabajo',
+          justificacion
+        })
+      }, {
+        where: {
+          id: solicitud.id,
+          estado: 'pendiente_aprobacion_sst',
+          aprobacion_sst_token_hash: tokenHash
+        }
+      });
+
+      if (!updatedCount) {
+        await solicitud.reload();
+        return renderApprovalPage({
+          res,
+          tone: 'info',
+          title: 'Solicitud ya procesada',
+          message: 'Esta solicitud ya fue procesada previamente.',
+          solicitud,
+          nextStep: 'El boton de aprobacion/rechazo ya fue utilizado.'
+        });
+      }
+
+      await solicitud.reload();
+      await sendGHRejectionEmails({
+        solicitud,
+        justificacion,
+        isSST: true
+      });
+
+      return renderApprovalPage({
+        res,
+        tone: 'success',
+        title: 'Rechazo registrado',
+        message: 'La solicitud ha sido rechazada por Seguridad y Salud en el Trabajo.',
         solicitud,
         nextStep: 'Se ha notificado al colaborador y a su jefe inmediato con el motivo correspondiente.'
       });

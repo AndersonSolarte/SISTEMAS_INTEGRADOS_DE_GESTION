@@ -13,6 +13,8 @@ const ReporteSalidaSolicitud = sequelize.define('reporte_salida_solicitudes', {
       'aprobada_jefe',
       'pendiente_aprobacion_gestion_humana',
       'aprobada_gestion_humana',
+      'pendiente_aprobacion_sst',
+      'aprobada_sst',
       'finalizada',
       'no_aprobada'
     ),
@@ -37,6 +39,7 @@ const ReporteSalidaSolicitud = sequelize.define('reporte_salida_solicitudes', {
   pdf_generado_at: { type: DataTypes.DATE, allowNull: true },
   aprobacion_jefe_token_hash: { type: DataTypes.STRING(128), allowNull: true },
   aprobacion_gh_token_hash: { type: DataTypes.STRING(128), allowNull: true },
+  aprobacion_sst_token_hash: { type: DataTypes.STRING(128), allowNull: true },
   correo_jefe_enviado_at: { type: DataTypes.DATE, allowNull: true },
   correo_gh_enviado_at: { type: DataTypes.DATE, allowNull: true },
   correo_usuario_enviado_at: { type: DataTypes.DATE, allowNull: true },
