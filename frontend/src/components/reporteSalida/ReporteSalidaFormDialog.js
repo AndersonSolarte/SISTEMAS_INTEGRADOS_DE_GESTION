@@ -651,6 +651,10 @@ function ReporteSalidaFormDialog({ open, documento, user, onClose, onSubmitted }
       issues.push('Seleccione la especialidad medica para la cita.');
     }
 
+    if (!form.salida.motivo || !form.salida.motivo.trim()) {
+      issues.push('El campo Motivo / observación es obligatorio.');
+    }
+
     if (subtype === 'terapias') {
       const list = form.salida.terapiasList || [];
       if (list.length === 0) {
@@ -1537,7 +1541,8 @@ function ReporteSalidaFormDialog({ open, documento, user, onClose, onSubmitted }
                   size="small"
                   multiline
                   minRows={2}
-                  label={form.salida.tipo === 'terapias' ? 'Diagnóstico de las terapias' : 'Motivo / observación'}
+                  label={form.salida.tipo === 'terapias' ? 'Diagnóstico de las terapias *' : 'Motivo / observación *'}
+                  placeholder="Por favor describa de manera clara y detallada el motivo de su solicitud..."
                   value={form.salida.motivo}
                   onChange={(e) => update('salida', 'motivo', e.target.value)}
                 />

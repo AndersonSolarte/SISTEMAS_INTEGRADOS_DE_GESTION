@@ -908,8 +908,8 @@ const sendJefeApprovalEmail = async (solicitud, token, attachments) => {
       <p><strong>Tiempo solicitado:</strong> ${escapeHtml(formatMinutes(solicitud.tiempo_solicitado_minutos))}</p>
       ${buildTerapiasHtml(solicitud)}
       <div style="text-align:center;margin:20px 0;">
-        <a href="${approveUrl}" style="display:inline-block;background:#0b3a6f;color:#fff;padding:12px 24px;border-radius:8px;text-decoration:none;font-weight:700;margin:5px 10px;">Aprobar salida</a>
-        <a href="${rejectUrl}" style="display:inline-block;background:#b91c1c;color:#fff;padding:12px 24px;border-radius:8px;text-decoration:none;font-weight:700;margin:5px 10px;">No aprobar</a>
+        <a href="${approveUrl}" style="display:inline-block;background:#0b3a6f;color:#fff;padding:12px 24px;border-radius:8px;text-decoration:none;font-weight:700;margin:5px 10px;">APROBAR SALIDA</a>
+        <a href="${rejectUrl}" style="display:inline-block;background:#b91c1c;color:#fff;padding:12px 24px;border-radius:8px;text-decoration:none;font-weight:700;margin:5px 10px;">NO APROBAR SALIDA</a>
       </div>
       <p>Si decide no aprobar la solicitud, haga clic en el botón "No aprobar" para ingresar el motivo de su decisión.</p>
     `
@@ -937,8 +937,8 @@ const sendGestionHumanaApprovalEmail = async (solicitud, token, attachments) => 
       <p><strong>Tiempo solicitado:</strong> ${escapeHtml(formatMinutes(solicitud.tiempo_solicitado_minutos))}</p>
       ${buildTerapiasHtml(solicitud)}
       <div style="text-align:center;margin:20px 0;">
-        <a href="${approveUrl}" style="display:inline-block;background:#0b3a6f;color:#fff;padding:12px 24px;border-radius:8px;text-decoration:none;font-weight:700;margin:5px 10px;">Aprobar Gestion Humana</a>
-        <a href="${rejectUrl}" style="display:inline-block;background:#b91c1c;color:#fff;padding:12px 24px;border-radius:8px;text-decoration:none;font-weight:700;margin:5px 10px;">No aprobar</a>
+        <a href="${approveUrl}" style="display:inline-block;background:#0b3a6f;color:#fff;padding:12px 24px;border-radius:8px;text-decoration:none;font-weight:700;margin:5px 10px;">APROBAR SALIDA</a>
+        <a href="${rejectUrl}" style="display:inline-block;background:#b91c1c;color:#fff;padding:12px 24px;border-radius:8px;text-decoration:none;font-weight:700;margin:5px 10px;">NO APROBAR SALIDA</a>
       </div>
       <p>Si decide no aprobar la solicitud, haga clic en el botón "No aprobar" para ingresar el motivo de su decisión.</p>
     `
@@ -965,8 +965,8 @@ const sendSSTApprovalEmail = async (solicitud, token, attachments) => {
       <p><strong>Colaborador:</strong> ${escapeHtml(solicitante.nombre)}</p>
       <p><strong>Tiempo solicitado:</strong> ${escapeHtml(formatMinutes(solicitud.tiempo_solicitado_minutos))}</p>
       <div style="text-align:center;margin:20px 0;">
-        <a href="${approveUrl}" style="display:inline-block;background:#0b3a6f;color:#fff;padding:12px 24px;border-radius:8px;text-decoration:none;font-weight:700;margin:5px 10px;">Aprobar SST</a>
-        <a href="${rejectUrl}" style="display:inline-block;background:#b91c1c;color:#fff;padding:12px 24px;border-radius:8px;text-decoration:none;font-weight:700;margin:5px 10px;">No aprobar</a>
+        <a href="${approveUrl}" style="display:inline-block;background:#0b3a6f;color:#fff;padding:12px 24px;border-radius:8px;text-decoration:none;font-weight:700;margin:5px 10px;">APROBAR SALIDA</a>
+        <a href="${rejectUrl}" style="display:inline-block;background:#b91c1c;color:#fff;padding:12px 24px;border-radius:8px;text-decoration:none;font-weight:700;margin:5px 10px;">NO APROBAR SALIDA</a>
       </div>
       <p>Si decide no aprobar la solicitud, haga clic en el botón "No aprobar" para ingresar el motivo de su decisión.</p>
     `
@@ -2770,8 +2770,8 @@ const sendGestionHumanaGroupApprovalEmail = async (solicitudes, token) => {
         </tbody>
       </table>
       <div style="text-align:center;margin:20px 0;">
-        <a href="${approveUrl}" style="display:inline-block;background:#0b3a6f;color:#fff;padding:12px 24px;border-radius:8px;text-decoration:none;font-weight:700;margin:5px 10px;">Aprobar Grupo</a>
-        <a href="${rejectUrl}" style="display:inline-block;background:#b91c1c;color:#fff;padding:12px 24px;border-radius:8px;text-decoration:none;font-weight:700;margin:5px 10px;">No aprobar Grupo</a>
+        <a href="${approveUrl}" style="display:inline-block;background:#0b3a6f;color:#fff;padding:12px 24px;border-radius:8px;text-decoration:none;font-weight:700;margin:5px 10px;">APROBAR SALIDA</a>
+        <a href="${rejectUrl}" style="display:inline-block;background:#b91c1c;color:#fff;padding:12px 24px;border-radius:8px;text-decoration:none;font-weight:700;margin:5px 10px;">NO APROBAR SALIDA</a>
       </div>
       <p>Al hacer clic en "Aprobar Grupo", se aprobaran de manera individual los reportes de todos los colaboradores listados y se les enviara a cada uno su respectivo archivo aprobado por correo.</p>
     `
