@@ -3173,7 +3173,7 @@ const verificarReportePublico = async (req, res) => {
       return res.status(404).json({ success: false, message: 'El reporte no existe o fue eliminado.' });
     }
 
-    let solicitante = solicitud.solicitante;
+    let solicitante = solicitud.solicitante_snapshot;
     if (typeof solicitante === 'string') {
       try { solicitante = JSON.parse(solicitante); } catch (e) { solicitante = {}; }
     }
@@ -3184,6 +3184,7 @@ const verificarReportePublico = async (req, res) => {
       success: true,
       data: {
         id: solicitud.id,
+        tx_id: solicitud.datos_formulario?.tx_id || '',
         consecutivo: solicitud.consecutivo,
         createdAt: solicitud.createdAt,
         estado: solicitud.estado,

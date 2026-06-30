@@ -75,7 +75,7 @@ const VerificacionReporte = () => {
               </Typography>
               
               <Alert severity="info" sx={{ textAlign: 'left', mb: 3 }}>
-                <strong>ID Transacción:</strong> {data.id}
+                <strong>ID Transacción:</strong> {data.tx_id || data.id}
               </Alert>
 
               <Stack spacing={2} divider={<Divider />} sx={{ textAlign: 'left', mb: 4 }}>
