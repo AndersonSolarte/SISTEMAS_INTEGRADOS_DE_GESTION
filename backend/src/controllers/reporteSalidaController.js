@@ -3190,7 +3190,9 @@ const verificarReportePublico = async (req, res) => {
         estado: solicitud.estado,
         solicitante: {
           nombre,
-          documento
+          documento,
+          cargo: solicitud.datos_formulario?.laboral?.cargo || 'No especificado',
+          dependencia: solicitud.datos_formulario?.laboral?.dependencia || 'No especificada'
         },
         jefe_aprobado_at: solicitud.jefe_aprobado_at,
         gestion_humana_aprobado_at: solicitud.gestion_humana_aprobado_at

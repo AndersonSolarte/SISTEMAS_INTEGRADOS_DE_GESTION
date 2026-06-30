@@ -82,7 +82,12 @@ const VerificacionReporte = () => {
                 <Box>
                   <Typography variant="caption" color="text.secondary" fontWeight="700">SOLICITANTE</Typography>
                   <Typography variant="body1">{data.solicitante.nombre}</Typography>
-                  <Typography variant="body2" color="text.secondary">Doc: {data.solicitante.documento}</Typography>
+                  <Typography variant="body2" color="text.secondary">
+                    Doc: {data.solicitante.documento} | Cargo: {data.solicitante.cargo}
+                  </Typography>
+                  <Typography variant="body2" color="text.secondary">
+                    Dependencia: {data.solicitante.dependencia}
+                  </Typography>
                 </Box>
                 <Box>
                   <Typography variant="caption" color="text.secondary" fontWeight="700">FECHA RADICACIÓN</Typography>

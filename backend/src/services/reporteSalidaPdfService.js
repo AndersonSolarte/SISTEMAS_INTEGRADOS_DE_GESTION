@@ -745,7 +745,7 @@ const buildPdfBuffer = async (solicitud) => {
         columns: [
           {
             qr: verifyUrl,
-            fit: 70,
+            fit: 120,
             margin: [0, 0, 10, 0]
           },
           {
