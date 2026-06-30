@@ -31,6 +31,15 @@ const reporteSalidaService = {
     return response.data;
   },
 
+  uploadAdjunto: async (formData) => {
+    const response = await api.post('/reporte-salida/upload-adjunto', formData, {
+      headers: {
+        'Content-Type': 'multipart/form-data'
+      }
+    });
+    return response.data;
+  },
+
   listarSolicitudes: async (params = {}) => {
     const response = await api.get('/reporte-salida/solicitudes', { params });
     return response.data;

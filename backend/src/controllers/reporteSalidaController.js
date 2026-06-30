@@ -1,4 +1,6 @@
 const crypto = require('crypto');
+const fs = require('fs');
+const path = require('path');
 const { Op } = require('sequelize');
 const { Documento, PlanAccion, ReporteSalidaSolicitud, RecursoHumanoAdministrativo, User, UserModulePermission } = require('../models');
 const { encryptPayload, decryptPayload } = require('../utils/secureUrlToken');
@@ -869,7 +871,20 @@ const serializeSolicitud = (solicitud) => {
 const buildReporteSalidaAttachments = async (solicitud) => {
   const docx = await ensureReporteSalidaDocx(solicitud);
   const pdf = await ensureReporteSalidaPdf(solicitud, docx);
-  return [pdf];
+  const attachments = [pdf];
+  
+  const adjuntoPath = solicitud.datos_formulario?.adjunto_path;
+  if (adjuntoPath) {
+    const fullPath = path.join(__dirname, '../../uploads/adjuntos_reporte', adjuntoPath);
+    if (fs.existsSync(fullPath)) {
+      attachments.push({
+        filename: `Soporte_Medico_${solicitud.consecutivo}${path.extname(adjuntoPath)}`,
+        path: fullPath
+      });
+    }
+  }
+  
+  return attachments;
 };
 
 const buildTerapiasHtml = (solicitud) => {

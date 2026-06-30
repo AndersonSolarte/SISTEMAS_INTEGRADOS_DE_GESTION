@@ -375,6 +375,7 @@ function ReporteSalidaFormDialog({ open, documento, user, onClose, onSubmitted }
   const [errorMessage, setErrorMessage] = useState('');
   const [qrOpen, setQrOpen] = useState(false);
   const [qrCopied, setQrCopied] = useState(false);
+  const [adjuntoFile, setAdjuntoFile] = useState(null);
   const [showSuccessModal, setShowSuccessModal] = useState(false);
   const [successResponse, setSuccessResponse] = useState(null);
 
@@ -499,6 +500,7 @@ function ReporteSalidaFormDialog({ open, documento, user, onClose, onSubmitted }
     setErrorMessage('');
     setIsSalidaMultiple(false);
     setParticipantes([]);
+    setAdjuntoFile(null);
   }, [open, user]);
 
   useEffect(() => {
@@ -674,6 +676,11 @@ function ReporteSalidaFormDialog({ open, documento, user, onClose, onSubmitted }
         issues.push('El tiempo solicitado debe sumar al menos un periodo dentro de la jornada laboral.');
       }
     }
+    
+    if (['cita_eps', 'cita_particular', 'urgencia_medica', 'terapias'].includes(subtype) && !adjuntoFile) {
+      issues.push('Debe adjuntar el soporte médico obligatorio en la sección de datos adicionales.');
+    }
+    
     if (isPersonal && reposicionHasAnyValue) {
       if (reposicionRangeIssue) {
         issues.push(reposicionRangeIssue);
@@ -827,7 +834,19 @@ function ReporteSalidaFormDialog({ open, documento, user, onClose, onSubmitted }
           source: jefe.source || 'recurso_humano_administrativos'
         } : null),
         ...form
-      });
+      };
+      
+      if (adjuntoFile) {
+        const formData = new FormData();
+        formData.append('adjunto', adjuntoFile);
+        const uploadRes = await reporteSalidaService.uploadAdjunto(formData);
+        if (uploadRes.success && uploadRes.filename) {
+          payload.datos_formulario = payload.datos_formulario || {};
+          payload.datos_formulario.adjunto_path = uploadRes.filename;
+        }
+      }
+      
+      const response = await reporteSalidaService.radicarSolicitud(payload);
       setSuccessResponse(response);
       setShowSuccessModal(true);
     } catch (error) {
@@ -1480,6 +1499,32 @@ function ReporteSalidaFormDialog({ open, documento, user, onClose, onSubmitted }
                   </Box>
                 </Box>
               )}
+
+              {['cita_eps', 'cita_particular', 'urgencia_medica', 'terapias'].includes(subtype) && (
+                <Box sx={{ mt: 1, p: 2, borderRadius: 2, border: '1px dashed #94a3b8', bgcolor: '#f8fafc' }}>
+                  <Typography sx={{ fontWeight: 800, fontSize: 13.5, color: '#0f172a', mb: 0.5 }}>
+                    Soporte médico obligatorio
+                  </Typography>
+                  <Typography sx={{ fontSize: 12, color: '#64748b', mb: 1.5 }}>
+                    Adjunte la constancia, epicrisis, u orden médica correspondiente (PDF o Imagen).
+                  </Typography>
+                  <Button
+                    variant="outlined"
+                    component="label"
+                    fullWidth
+                    sx={{ textTransform: 'none', justifyContent: 'flex-start', color: '#334155', borderColor: '#cbd5e1' }}
+                  >
+                    {adjuntoFile ? adjuntoFile.name : 'Seleccionar archivo...'}
+                    <input
+                      type="file"
+                      hidden
+                      accept=".pdf,.png,.jpg,.jpeg"
+                      onChange={(e) => setAdjuntoFile(e.target.files?.[0] || null)}
+                    />
+                  </Button>
+                </Box>
+              )}
+
               <Box sx={{ mt: 1.5, display: 'flex', alignItems: 'center', gap: 1 }}>
                 <TextField
                   sx={inputSx}
@@ -1516,12 +1561,13 @@ function ReporteSalidaFormDialog({ open, documento, user, onClose, onSubmitted }
                   <Grid item xs={6} md={3}><TextField sx={inputSx} fullWidth size="small" required type="time" label="Hora fin reposicion" InputLabelProps={{ shrink: true }} error={isPastTimeError(form.reposicion.fechaFin, form.reposicion.horaFin)} value={form.reposicion.horaFin} onChange={(e) => update('reposicion', 'horaFin', e.target.value)} /></Grid>
                   <Grid item xs={12}><TextField sx={inputSx} fullWidth size="small" label="Observación reposición" value={form.reposicion.observacion} onChange={(e) => update('reposicion', 'observacion', e.target.value)} /></Grid>
                 </Grid>
-                {reposicionRangeIssue && <Alert sx={{ mt: 1.4 }} severity="warning">{reposicionRangeIssue}</Alert>}
+              <Grid item xs={12}>{reposicionRangeIssue && <Alert sx={{ mt: 1.4 }} severity="warning">{reposicionRangeIssue}</Alert>}
                 <Box sx={{ mt: 1.4, p: 1, borderRadius: 1.5, border: '1px solid #cbd5e1', bgcolor: '#f8fafc', display: 'flex', justifyContent: 'center' }}>
                   <Typography sx={{ fontSize: 12.5, fontWeight: 700, color: '#475569' }}>
                     Horas propuestas: {formatMinutes(reposicionMinutes)} | Horas pendientes: {formatMinutes(salidaMinutes)}
                   </Typography>
                 </Box>
+              </Grid>
               </Box>
             )}
 
