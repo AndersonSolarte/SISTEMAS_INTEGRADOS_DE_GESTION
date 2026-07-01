@@ -1060,17 +1060,17 @@ export default function ConsultaValidacion({ initialSection, allowedSections = [
             const Ic = v.icon;
             const active = view === v.key;
             return (
-              <Stack key={v.key} direction="row" spacing={0.7} alignItems="center" onClick={() => setView(v.key)}
+              <Stack key={v.key} direction="row" spacing={1} alignItems="center" justifyContent="center" onClick={() => setView(v.key)}
                 sx={{
-                  px: 2.5, py: 1.2, cursor: 'pointer', userSelect: 'none',
+                  minWidth: 240, py: 1.8, cursor: 'pointer', userSelect: 'none',
                   color: active ? v.color : '#64748b',
-                  borderBottom: active ? `2.5px solid ${v.color}` : '2.5px solid transparent',
+                  borderBottom: active ? `3px solid ${v.color}` : '3px solid transparent',
                   transition: 'all 0.15s',
                   '&:hover': { color: '#1e293b', bgcolor: '#f8fafc' }
                 }}
               >
-                <Ic sx={{ fontSize: 16 }} />
-                <Typography sx={{ fontWeight: 700, fontSize: 12.5 }}>{v.label}</Typography>
+                <Ic sx={{ fontSize: 20 }} />
+                <Typography sx={{ fontWeight: 800, fontSize: 13.5 }}>{v.label}</Typography>
               </Stack>
             );
           })}
