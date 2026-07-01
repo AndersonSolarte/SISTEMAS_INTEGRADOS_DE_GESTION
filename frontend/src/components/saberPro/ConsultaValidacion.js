@@ -788,7 +788,7 @@ function CargaMasiva() {
             onClick={() => setError(null)} 
             variant="contained" 
             disableElevation
-            sx={{ bgcolor: '#1e293b', color: '#fff', '&:hover': { bgcolor: '#0f172a' }, borderRadius: 1.5, textTransform: 'none', fontWeight: 700, px: 3 }}
+            sx={{ bgcolor: '#2563eb', color: '#fff', '&:hover': { bgcolor: '#1d4ed8' }, borderRadius: 1.5, textTransform: 'none', fontWeight: 700, px: 3 }}
           >
             Entendido
           </Button>
