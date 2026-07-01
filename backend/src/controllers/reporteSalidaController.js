@@ -1761,7 +1761,6 @@ const listarSolicitudes = async (req, res) => {
 };
 
 const getSeguimientoPersonal = async (req, res) => {
-  if (!(await getReporteSalidaFeatureState())) return featureDisabled(res);
   try {
     const page = Math.max(1, Number(req.query.page || 1));
     const limit = Math.min(100, Math.max(1, Number(req.query.limit || 50)));
@@ -1811,7 +1810,6 @@ const getSeguimientoPersonal = async (req, res) => {
 };
 
 const getSeguimientoBadge = async (req, res) => {
-  if (!(await getReporteSalidaFeatureState())) return featureDisabled(res);
   try {
     const access = await resolveSeguimientoAccess(req.user);
     res.json({
