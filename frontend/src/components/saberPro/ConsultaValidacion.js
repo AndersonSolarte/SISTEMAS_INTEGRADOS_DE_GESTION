@@ -1084,7 +1084,7 @@ export default function ConsultaValidacion({ initialSection, allowedSections = [
             return (
               <Stack key={v.key} direction="row" spacing={1} alignItems="center" justifyContent="center" onClick={() => setView(v.key)}
                 sx={{
-                  minWidth: 240, py: 1.8, cursor: 'pointer', userSelect: 'none',
+                  flex: 1, py: 1.8, cursor: 'pointer', userSelect: 'none',
                   color: active ? v.color : '#64748b',
                   borderBottom: active ? `3px solid ${v.color}` : '3px solid transparent',
                   transition: 'all 0.15s',
