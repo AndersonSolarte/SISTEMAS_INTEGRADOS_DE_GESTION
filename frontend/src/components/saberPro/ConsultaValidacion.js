@@ -3,7 +3,7 @@ import {
   Box, Stack, Typography, Paper, Button, TextField, Chip,
   CircularProgress, Divider, Table, TableHead, TableBody,
   TableRow, TableCell, TableContainer, Alert, LinearProgress,
-  Tooltip, IconButton, Accordion, AccordionSummary, AccordionDetails
+  Tooltip, IconButton, Accordion, AccordionSummary, AccordionDetails, Snackbar
 } from '@mui/material';
 import ExpandMoreRoundedIcon    from '@mui/icons-material/ExpandMoreRounded';
 import SearchRoundedIcon        from '@mui/icons-material/SearchRounded';
@@ -762,7 +762,16 @@ function CargaMasiva() {
         {loading && <LinearProgress variant="determinate" value={progress} sx={{ mt: 1.5, borderRadius: 1 }} />}
       </Paper>
 
-      {error && <Alert severity="error" sx={{ mb: 2, borderRadius: 2 }}>{error}</Alert>}
+      <Snackbar 
+        open={!!error} 
+        autoHideDuration={6000} 
+        onClose={() => setError(null)}
+        anchorOrigin={{ vertical: 'top', horizontal: 'center' }}
+      >
+        <Alert onClose={() => setError(null)} severity="error" sx={{ width: '100%', borderRadius: 2, boxShadow: 3, fontWeight: 500 }}>
+          {error}
+        </Alert>
+      </Snackbar>
 
       {result && (
         <>
