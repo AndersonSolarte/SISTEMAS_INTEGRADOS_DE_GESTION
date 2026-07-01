@@ -771,14 +771,14 @@ function CargaMasiva() {
         PaperProps={{ sx: { borderRadius: 3, boxShadow: '0 8px 32px rgba(0,0,0,0.1)' } }}
       >
         <DialogTitle sx={{ display: 'flex', alignItems: 'center', gap: 1.5, pb: 1, pt: 3, px: 3 }}>
-          <ErrorRoundedIcon sx={{ color: '#dc2626', fontSize: 28 }} />
+          <ErrorRoundedIcon sx={{ color: '#ef4444', fontSize: 28 }} />
           <Typography sx={{ fontWeight: 800, color: '#1e293b', fontSize: 18 }}>
             Error al procesar el archivo
           </Typography>
         </DialogTitle>
         <DialogContent sx={{ px: 3, pb: 1 }}>
-          <Alert severity="error" icon={false} sx={{ borderRadius: 2, border: '1px solid #fecaca', bgcolor: '#fef2f2', '& .MuiAlert-message': { width: '100%' } }}>
-            <Typography sx={{ fontSize: 14.5, color: '#991b1b', fontWeight: 600 }}>
+          <Alert severity="error" icon={false} sx={{ borderRadius: 2, border: '1px solid #fca5a5', bgcolor: '#fef2f2', '& .MuiAlert-message': { width: '100%' } }}>
+            <Typography sx={{ fontSize: 14.5, color: '#dc2626', fontWeight: 600 }}>
               {error}
             </Typography>
           </Alert>
@@ -788,7 +788,7 @@ function CargaMasiva() {
             onClick={() => setError(null)} 
             variant="contained" 
             disableElevation
-            sx={{ bgcolor: '#2563eb', color: '#fff', '&:hover': { bgcolor: '#1d4ed8' }, borderRadius: 1.5, textTransform: 'none', fontWeight: 700, px: 3 }}
+            sx={{ bgcolor: '#3b82f6', color: '#fff', '&:hover': { bgcolor: '#2563eb' }, borderRadius: 1.5, textTransform: 'none', fontWeight: 700, px: 3 }}
           >
             Entendido
           </Button>
