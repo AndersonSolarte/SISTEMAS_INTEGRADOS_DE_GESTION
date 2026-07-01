@@ -246,6 +246,11 @@ const getUserModulePermissions = async (userId, role) => {
     menuPermissions.unshift('dashboard');
   }
 
+  // Los usuarios de consulta deben conservar acceso a búsqueda documental.
+  if (role === ROLES.CONSULTA && !menuPermissions.includes('buscar_documentos')) {
+    menuPermissions.push('buscar_documentos');
+  }
+
   // Si se asignan submódulos de Gestión de la Información, el acceso al menú principal
   // debe aparecer aunque no se haya marcado explícitamente.
   if (role === ROLES.CONSULTA) {
