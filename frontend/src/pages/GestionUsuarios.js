@@ -2141,7 +2141,7 @@ function GestionUsuarios() {
 
                 <Paper
                   variant="outlined"
-                  sx={{ p: 2, borderRadius: 2, opacity: modulePermissionsForm.allowedModules.includes('estadistica_institucional') ? 1 : 0.55 }}
+                  sx={{ p: 2, borderRadius: 2, opacity: (modulePermissionsForm.allowedModules.includes('estadistica_institucional') || modulePermissionsForm.allowedModules.includes('poblacional')) ? 1 : 0.55 }}
                 >
                   <Typography sx={{ fontWeight: 800, mb: 0.6, color: '#0f172a' }}>Tableros internos de Poblacional</Typography>
                   <Typography variant="body2" sx={{ color: '#64748b', mb: 1.4 }}>
@@ -2156,7 +2156,7 @@ function GestionUsuarios() {
                               <Checkbox
                                 checked={modulePermissionsForm.allowedPoblacionalDashboards.includes(item.key)}
                                 onChange={() => handleTogglePermission('allowedPoblacionalDashboards', item.key)}
-                                disabled={!modulePermissionsForm.allowedModules.includes('estadistica_institucional')}
+                                disabled={!(modulePermissionsForm.allowedModules.includes('estadistica_institucional') || modulePermissionsForm.allowedModules.includes('poblacional'))}
                                 size="small"
                               />
                             )}
@@ -2171,7 +2171,7 @@ function GestionUsuarios() {
                 <Divider />
                 <Paper
                   variant="outlined"
-                  sx={{ p: 2, borderRadius: 2, opacity: modulePermissionsForm.allowedModules.includes('estadistica_institucional') ? 1 : 0.55 }}
+                  sx={{ p: 2, borderRadius: 2, opacity: (modulePermissionsForm.allowedModules.includes('estadistica_institucional') || modulePermissionsForm.allowedModules.includes('gestion_procesos')) ? 1 : 0.55 }}
                 >
                   <Typography sx={{ fontWeight: 800, mb: 1, color: '#0f172a' }}>Módulos internos de Gestión por Procesos</Typography>
                   <FormGroup>
@@ -2183,7 +2183,7 @@ function GestionUsuarios() {
                               <Checkbox
                                 checked={modulePermissionsForm.allowedGestionProcesosDashboards.includes(item.key)}
                                 onChange={() => handleTogglePermission('allowedGestionProcesosDashboards', item.key)}
-                                disabled={!modulePermissionsForm.allowedModules.includes('estadistica_institucional')}
+                                disabled={!(modulePermissionsForm.allowedModules.includes('estadistica_institucional') || modulePermissionsForm.allowedModules.includes('gestion_procesos'))}
                                 size="small"
                               />
                             )}
@@ -2199,7 +2199,7 @@ function GestionUsuarios() {
 
                 <Paper
                   variant="outlined"
-                  sx={{ p: 2, borderRadius: 2, opacity: modulePermissionsForm.allowedModules.includes('estadistica_institucional') ? 1 : 0.55 }}
+                  sx={{ p: 2, borderRadius: 2, opacity: (modulePermissionsForm.allowedModules.includes('estadistica_institucional') || modulePermissionsForm.allowedModules.includes('saber_pro')) ? 1 : 0.55 }}
                 >
                   <Typography sx={{ fontWeight: 800, mb: 0.6, color: '#0f172a' }}>Permisos modulares de Saber Pro</Typography>
                   <Typography variant="body2" sx={{ color: '#64748b', mb: 1.6 }}>
@@ -2218,7 +2218,7 @@ function GestionUsuarios() {
                                     <Checkbox
                                       checked={modulePermissionsForm.allowedSaberProDashboards.includes(item.key)}
                                       onChange={() => handleTogglePermission('allowedSaberProDashboards', item.key)}
-                                      disabled={!modulePermissionsForm.allowedModules.includes('estadistica_institucional')}
+                                      disabled={!(modulePermissionsForm.allowedModules.includes('estadistica_institucional') || modulePermissionsForm.allowedModules.includes('saber_pro'))}
                                       size="small"
                                     />
                                   )}
