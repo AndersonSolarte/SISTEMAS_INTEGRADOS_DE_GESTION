@@ -94,6 +94,12 @@ const SABER_PRO_DASHBOARD_KEYS = new Set([
   'saber_pro_valor_agregado_institucional'
 ]);
 
+const RECURSO_HUMANO_DASHBOARD_KEYS = new Set([
+  'recurso_humano_profesores',
+  'recurso_humano_administrativos',
+  'recurso_humano_seguimiento'
+]);
+
 const getDefaultPermissionsByRole = (role) => {
   if ([ROLES.ADMINISTRADOR].includes(role)) {
     return {
@@ -111,7 +117,8 @@ const getDefaultPermissionsByRole = (role) => {
       allowedModules: Array.from(GESTION_INFO_MODULE_KEYS),
       allowedGestionProcesosDashboards: Array.from(GESTION_PROCESOS_DASHBOARD_KEYS),
       allowedPoblacionalDashboards: Array.from(POBLACIONAL_DASHBOARD_KEYS),
-      allowedSaberProDashboards: Array.from(SABER_PRO_DASHBOARD_KEYS)
+      allowedSaberProDashboards: Array.from(SABER_PRO_DASHBOARD_KEYS),
+      allowedRecursoHumanoDashboards: Array.from(RECURSO_HUMANO_DASHBOARD_KEYS)
     };
   }
 
@@ -127,7 +134,8 @@ const getDefaultPermissionsByRole = (role) => {
       allowedModules: ['estadistica_institucional'],
       allowedGestionProcesosDashboards: ['estadistica_documental'],
       allowedPoblacionalDashboards: [],
-      allowedSaberProDashboards: []
+      allowedSaberProDashboards: [],
+      allowedRecursoHumanoDashboards: []
     };
   }
 
@@ -145,7 +153,8 @@ const getDefaultPermissionsByRole = (role) => {
       allowedModules: [],
       allowedGestionProcesosDashboards: [],
       allowedPoblacionalDashboards: [],
-      allowedSaberProDashboards: []
+      allowedSaberProDashboards: [],
+      allowedRecursoHumanoDashboards: []
     };
   }
 
@@ -155,7 +164,8 @@ const getDefaultPermissionsByRole = (role) => {
       allowedModules: [],
       allowedGestionProcesosDashboards: [],
       allowedPoblacionalDashboards: [],
-      allowedSaberProDashboards: []
+      allowedSaberProDashboards: [],
+      allowedRecursoHumanoDashboards: []
     };
   }
 
@@ -165,7 +175,8 @@ const getDefaultPermissionsByRole = (role) => {
       allowedModules: [],
       allowedGestionProcesosDashboards: [],
       allowedPoblacionalDashboards: [],
-      allowedSaberProDashboards: []
+      allowedSaberProDashboards: [],
+      allowedRecursoHumanoDashboards: []
     };
   }
 
@@ -175,7 +186,8 @@ const getDefaultPermissionsByRole = (role) => {
       allowedModules: [],
       allowedGestionProcesosDashboards: [],
       allowedPoblacionalDashboards: [],
-      allowedSaberProDashboards: []
+      allowedSaberProDashboards: [],
+      allowedRecursoHumanoDashboards: []
     };
   }
 
@@ -203,8 +215,12 @@ const getDefaultPermissionsByRole = (role) => {
         'saber_pro_valor_agregado_resultado_general',
         'saber_pro_valor_agregado_estadistica_general',
         'saber_pro_valor_agregado_nbc',
-        'saber_pro_valor_agregado_programas',
         'saber_pro_valor_agregado_institucional'
+      ],
+      allowedRecursoHumanoDashboards: [
+        'recurso_humano_profesores',
+        'recurso_humano_administrativos',
+        'recurso_humano_seguimiento'
       ]
     };
   }
@@ -214,7 +230,8 @@ const getDefaultPermissionsByRole = (role) => {
     allowedModules: [],
     allowedGestionProcesosDashboards: [],
     allowedPoblacionalDashboards: [],
-    allowedSaberProDashboards: []
+    allowedSaberProDashboards: [],
+    allowedRecursoHumanoDashboards: []
   };
 };
 
@@ -241,6 +258,7 @@ const getUserModulePermissions = async (userId, role) => {
   const allowedGestionProcesosDashboards = Array.from(new Set(keys.filter((k) => GESTION_PROCESOS_DASHBOARD_KEYS.has(k))));
   const allowedPoblacionalDashboards = Array.from(new Set(keys.filter((k) => POBLACIONAL_DASHBOARD_KEYS.has(k))));
   const allowedSaberProDashboards = Array.from(new Set(keys.filter((k) => SABER_PRO_DASHBOARD_KEYS.has(k))));
+  const allowedRecursoHumanoDashboards = Array.from(new Set(keys.filter((k) => RECURSO_HUMANO_DASHBOARD_KEYS.has(k))));
   const hasLegacyStatsPermission = keys.some((k) => LEGACY_GI_STATS_KEYS.has(k));
 
   // "Inicio" debe estar disponible para la navegación base.
@@ -287,6 +305,12 @@ const getUserModulePermissions = async (userId, role) => {
     if (!allowedModules.includes('saber_pro')) allowedModules.push('saber_pro');
   }
 
+  if (allowedRecursoHumanoDashboards.length > 0) {
+    if (!menuPermissions.includes('gestion_informacion')) menuPermissions.push('gestion_informacion');
+    if (!allowedModules.includes('estadistica_institucional')) allowedModules.push('estadistica_institucional');
+    if (!allowedModules.includes('recurso_humano')) allowedModules.push('recurso_humano');
+  }
+
   const restrictedMenusByRole = {
     [ROLES.PLANEACION_EFECTIVIDAD]: ['dashboard', 'planeacion_efectividad', 'buscar_documentos'],
     [ROLES.AUTOEVALUACION]: ['dashboard', 'autoevaluacion', 'buscar_documentos'],
@@ -302,7 +326,8 @@ const getUserModulePermissions = async (userId, role) => {
       allowedModules: restrictedAllowedModules,
       allowedGestionProcesosDashboards: [],
       allowedPoblacionalDashboards: [],
-      allowedSaberProDashboards: []
+      allowedSaberProDashboards: [],
+      allowedRecursoHumanoDashboards: []
     };
   }
 
@@ -311,7 +336,8 @@ const getUserModulePermissions = async (userId, role) => {
     allowedModules,
     allowedGestionProcesosDashboards,
     allowedPoblacionalDashboards,
-    allowedSaberProDashboards
+    allowedSaberProDashboards,
+    allowedRecursoHumanoDashboards
   };
 };
 
@@ -328,7 +354,8 @@ const buildUserPayloadWithPermissions = async (user) => {
     allowedModules: perms.allowedModules,
     allowedGestionProcesosDashboards: perms.allowedGestionProcesosDashboards,
     allowedPoblacionalDashboards: perms.allowedPoblacionalDashboards,
-    allowedSaberProDashboards: perms.allowedSaberProDashboards
+    allowedSaberProDashboards: perms.allowedSaberProDashboards,
+    allowedRecursoHumanoDashboards: perms.allowedRecursoHumanoDashboards
   };
 };
 
@@ -338,6 +365,7 @@ module.exports = {
   GESTION_PROCESOS_DASHBOARD_KEYS,
   POBLACIONAL_DASHBOARD_KEYS,
   SABER_PRO_DASHBOARD_KEYS,
+  RECURSO_HUMANO_DASHBOARD_KEYS,
   getDefaultPermissionsByRole,
   getUserModulePermissions,
   buildUserPayloadWithPermissions

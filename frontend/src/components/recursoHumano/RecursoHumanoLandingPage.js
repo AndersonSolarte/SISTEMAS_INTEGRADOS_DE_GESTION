@@ -17,6 +17,7 @@ import RecursoHumanoDashboard from './RecursoHumanoDashboard';
 import AdminDirectivosDashboard from './AdminDirectivosDashboard';
 import ReporteSalidaSeguimiento from '../reporteSalida/ReporteSalidaSeguimiento';
 import reporteSalidaService from '../../services/reporteSalidaService';
+import { useAuth } from '../../context/AuthContext';
 
 const SUB_CARDS = [
   {
@@ -49,6 +50,9 @@ function RecursoHumanoLandingPage({ onBack }) {
   const [subView, setSubView] = useState(null);
   const [reporteSalidaEnabled, setReporteSalidaEnabled] = useState(false);
   const [seguimientoAccess, setSeguimientoAccess] = useState(null);
+  const { user, isAdmin } = useAuth();
+  
+  const hasAccess = (key) => isAdmin() || (user?.allowedRecursoHumanoDashboards && user.allowedRecursoHumanoDashboards.includes(key));
 
   useEffect(() => {
     let active = true;
@@ -77,23 +81,30 @@ function RecursoHumanoLandingPage({ onBack }) {
       ? 'Seguimiento de horas pendientes por reponer de tus colaboradores a cargo.'
       : 'Control de radicaciones, aprobaciones, tiempos y reposicion gestionados por Gestion Humana.';
 
-  const visibleCards = showSeguimientoCard
-    ? [
-      ...SUB_CARDS,
-      {
-        key: 'seguimiento_reportes',
-        label: 'Seguimiento a reportes',
-        description: seguimientoDescription,
-        icon: AssignmentTurnedInIcon,
-        color: '#0f766e',
-        gradient: 'linear-gradient(145deg, #0f766e, #0d9488 55%, #14b8a6)',
-        shadow: 'rgba(20,184,166,0.22)',
-        backBorder: '#ccfbf1',
-        backBg: '#f0fdfa',
-        backColor: '#0f766e'
-      }
-    ]
-    : SUB_CARDS;
+  let visibleCards = [];
+  
+  if (hasAccess('recurso_humano_profesores')) {
+    visibleCards.push(SUB_CARDS[0]); // Profesores
+  }
+  
+  if (hasAccess('recurso_humano_administrativos')) {
+    visibleCards.push(SUB_CARDS[1]); // Administrativos
+  }
+  
+  if (showSeguimientoCard && hasAccess('recurso_humano_seguimiento')) {
+    visibleCards.push({
+      key: 'seguimiento_reportes',
+      label: 'Seguimiento a reportes',
+      description: seguimientoDescription,
+      icon: AssignmentTurnedInIcon,
+      color: '#0f766e',
+      gradient: 'linear-gradient(145deg, #0f766e, #0d9488 55%, #14b8a6)',
+      shadow: 'rgba(20,184,166,0.22)',
+      backBorder: '#ccfbf1',
+      backBg: '#f0fdfa',
+      backColor: '#0f766e'
+    });
+  }
 
   if (subView === 'profesores') {
     return <RecursoHumanoDashboard onBack={() => setSubView(null)} />;
