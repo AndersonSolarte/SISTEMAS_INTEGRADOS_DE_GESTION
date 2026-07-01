@@ -10,7 +10,7 @@ export const ROLES = {
 };
 
 export const ROLE_LABELS = {
-  [ROLES.ADMINISTRADOR]: 'Administrador General',
+  [ROLES.ADMINISTRADOR]: 'Admin',
   [ROLES.CONSULTA]: 'Consulta',
   [ROLES.GESTION_PROCESOS]: 'Gestión por Procesos',
   [ROLES.PLANEACION_ESTRATEGICA]: 'Planeación Estratégica',

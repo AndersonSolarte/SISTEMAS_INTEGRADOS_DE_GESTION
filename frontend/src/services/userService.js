@@ -7,6 +7,11 @@ const userService = {
     return response.data;
   },
 
+  getSuggestions: async () => {
+    const response = await api.get('/users/suggestions', { params: { _ts: Date.now() } });
+    return response.data;
+  },
+
   // Crear usuario
   createUser: async (userData) => {
     const response = await api.post('/users', userData);

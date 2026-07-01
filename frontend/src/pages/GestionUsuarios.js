@@ -1,10 +1,10 @@
-import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import {
   Box, Paper, Typography, Button, Table, TableBody, TableCell, TableContainer,
   TableHead, TableRow, TablePagination, IconButton, Tooltip, Dialog, DialogTitle,
   DialogContent, DialogActions, TextField, Select, MenuItem, FormControl, InputLabel,
   Chip, Grid, Alert, CircularProgress, Fade, FormGroup, FormControlLabel, Checkbox, Divider,
-  Stack, Radio, RadioGroup
+  Stack, Radio, RadioGroup, Autocomplete
 } from '@mui/material';
 import {
   Add as AddIcon, Edit as EditIcon, Delete as DeleteIcon, Upload as UploadIcon,
@@ -127,6 +127,8 @@ function GestionUsuarios() {
   const [rowsPerPage, setRowsPerPage] = useState(10);
   const [total, setTotal] = useState(0);
   const [search, setSearch] = useState('');
+  const searchRef = useRef('');
+  const searchFetchIdRef = useRef(0);
 
   // Modales
   const [openDialog, setOpenDialog] = useState(false);
@@ -148,6 +150,9 @@ function GestionUsuarios() {
   const [permissionsUser, setPermissionsUser] = useState(null);
   const [permissionsLoading, setPermissionsLoading] = useState(false);
   const [permissionsSaving, setPermissionsSaving] = useState(false);
+  const [suggestionUsers, setSuggestionUsers] = useState([]);
+  const [fieldSuggestions, setFieldSuggestions] = useState({ dependencias: [], cargos: [], jefesInmediatos: [] });
+  const [loadingSuggestions, setLoadingSuggestions] = useState(false);
   const [modulePermissionsForm, setModulePermissionsForm] = useState({
     menuPermissions: [],
     allowedModules: [],
@@ -222,8 +227,11 @@ function GestionUsuarios() {
   const loadUsers = useCallback(async (overrides = {}) => {
     const nextPage = Object.prototype.hasOwnProperty.call(overrides, 'page') ? overrides.page : page;
     const nextLimit = Object.prototype.hasOwnProperty.call(overrides, 'rowsPerPage') ? overrides.rowsPerPage : rowsPerPage;
-    const nextSearch = Object.prototype.hasOwnProperty.call(overrides, 'search') ? overrides.search : search;
-    setLoading(true);
+    const nextSearch = Object.prototype.hasOwnProperty.call(overrides, 'search') ? overrides.search : searchRef.current;
+    const silent = overrides.silent === true;
+    if (!silent) {
+      setLoading(true);
+    }
     try {
       const response = await userService.getUsers({
         page: nextPage + 1,
@@ -233,15 +241,41 @@ function GestionUsuarios() {
       setUsers(response.data.users);
       setTotal(response.data.pagination.total);
     } catch (error) {
-      enqueueSnackbar('Error al cargar usuarios', { variant: 'error' });
+      if (!silent) {
+        enqueueSnackbar('Error al cargar usuarios', { variant: 'error' });
+      }
     } finally {
-      setLoading(false);
+      if (!silent) {
+        setLoading(false);
+      }
     }
-  }, [enqueueSnackbar, page, rowsPerPage, search]);
+  }, [enqueueSnackbar, page, rowsPerPage]);
 
   useEffect(() => {
     loadUsers();
   }, [loadUsers]);
+
+  useEffect(() => {
+    searchRef.current = search;
+  }, [search]);
+
+  useEffect(() => {
+    const requestId = searchFetchIdRef.current + 1;
+    searchFetchIdRef.current = requestId;
+    const nextSearch = search.trim();
+    const timer = setTimeout(() => {
+      userService.getUsers({ page: 1, limit: rowsPerPage, search: nextSearch })
+        .then((response) => {
+          if (searchFetchIdRef.current !== requestId) return;
+          setUsers(response.data.users);
+          setTotal(response.data.pagination.total);
+        })
+        .catch(() => {
+          // La busqueda en vivo es silenciosa para no interrumpir la escritura.
+        });
+    }, 450);
+    return () => clearTimeout(timer);
+  }, [rowsPerPage, search]);
 
   const handleOpenDialog = (mode, user = null) => {
     setDialogMode(mode);
@@ -683,16 +717,181 @@ function GestionUsuarios() {
     return estado === 'activo' ? 'success' : 'default';
   };
 
+  const getCompactRoleLabel = (role) => {
+    return ROLE_LABELS[role] || role;
+  };
+
+  const wrapCellSx = {
+    py: 0,
+    px: { xs: 0.45, sm: 0.6, md: 0.75 },
+    fontSize: { xs: 10.25, sm: 10.75, md: 11 },
+    lineHeight: 1.22,
+    color: '#24324a',
+    height: { xs: 40, sm: 42, md: 44 },
+    maxHeight: { xs: 40, sm: 42, md: 44 },
+    overflow: 'hidden',
+    '& .cellText': {
+      display: '-webkit-box',
+      WebkitLineClamp: 2,
+      WebkitBoxOrient: 'vertical',
+      overflow: 'hidden',
+      textOverflow: 'ellipsis',
+      whiteSpace: 'normal',
+      overflowWrap: 'anywhere',
+      wordBreak: 'normal',
+      maxHeight: 30
+    }
+  };
+
+  const compactChipSx = {
+    height: { xs: 18, sm: 19, md: 20 },
+    maxWidth: '100%',
+    fontSize: { xs: 8.75, sm: 9.25, md: 9.5 },
+    fontWeight: 700,
+    '& .MuiChip-label': {
+      px: 0.55,
+      whiteSpace: 'nowrap',
+      overflow: 'hidden',
+      textOverflow: 'ellipsis',
+      lineHeight: 1,
+      display: 'block'
+    }
+  };
+
+  const roleChipSx = {
+    ...compactChipSx,
+    width: { xs: 58, sm: 62, md: 66 },
+    justifyContent: 'center',
+    textTransform: 'uppercase'
+  };
+
+  const statusChipSx = {
+    ...compactChipSx,
+    width: { xs: 56, sm: 59, md: 62 },
+    justifyContent: 'center',
+    textTransform: 'uppercase'
+  };
+
+  const normalizeSearchText = useCallback((value) => String(value || '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/_/g, ' ')
+    .toLowerCase(), []);
+
+  const buildUniqueOptions = useCallback((rows, field) => {
+    const byNormalizedValue = new Map();
+    (Array.isArray(rows) ? rows : []).forEach((row) => {
+      const value = String(row?.[field] || '').trim();
+      if (!value || value === '-') return;
+      const key = normalizeSearchText(value).trim();
+      if (!key || byNormalizedValue.has(key)) return;
+      byNormalizedValue.set(key, value);
+    });
+    return Array.from(byNormalizedValue.values())
+      .sort((a, b) => a.localeCompare(b, 'es', { sensitivity: 'base' }));
+  }, [normalizeSearchText]);
+
+  const mergeUniqueOptions = useCallback((primaryOptions, rows, field) => {
+    const byNormalizedValue = new Map();
+    (Array.isArray(primaryOptions) ? primaryOptions : []).forEach((option) => {
+      const value = String(option || '').trim();
+      const key = normalizeSearchText(value).trim();
+      if (value && key && !byNormalizedValue.has(key)) {
+        byNormalizedValue.set(key, value);
+      }
+    });
+    buildUniqueOptions(rows, field).forEach((option) => {
+      const key = normalizeSearchText(option).trim();
+      if (key && !byNormalizedValue.has(key)) {
+        byNormalizedValue.set(key, option);
+      }
+    });
+    return Array.from(byNormalizedValue.values())
+      .sort((a, b) => a.localeCompare(b, 'es', { sensitivity: 'base' }));
+  }, [buildUniqueOptions, normalizeSearchText]);
+
+  const suggestionRows = useMemo(() => {
+    const byIdOrIdentity = new Map();
+    [...(Array.isArray(suggestionUsers) ? suggestionUsers : []), ...(Array.isArray(users) ? users : [])].forEach((user, index) => {
+      const key = user?.id ? `id-${user.id}` : `${user?.username || ''}-${user?.email || ''}-${index}`;
+      byIdOrIdentity.set(key, user);
+    });
+    return Array.from(byIdOrIdentity.values());
+  }, [suggestionUsers, users]);
+
+  const dependenciaOptions = useMemo(() => mergeUniqueOptions(fieldSuggestions.dependencias, suggestionRows, 'dependencia'), [fieldSuggestions.dependencias, mergeUniqueOptions, suggestionRows]);
+  const cargoOptions = useMemo(() => mergeUniqueOptions(fieldSuggestions.cargos, suggestionRows, 'cargo'), [fieldSuggestions.cargos, mergeUniqueOptions, suggestionRows]);
+  const jefeInmediatoOptions = useMemo(() => mergeUniqueOptions(fieldSuggestions.jefesInmediatos, suggestionRows, 'jefe_inmediato'), [fieldSuggestions.jefesInmediatos, mergeUniqueOptions, suggestionRows]);
+
+  useEffect(() => {
+    if (!openDialog) return undefined;
+    let ignore = false;
+    const loadSuggestionUsers = async () => {
+      setLoadingSuggestions(true);
+      try {
+        const response = await userService.getSuggestions();
+        if (!ignore) {
+          setFieldSuggestions({
+            dependencias: response?.data?.dependencias || [],
+            cargos: response?.data?.cargos || [],
+            jefesInmediatos: response?.data?.jefesInmediatos || []
+          });
+        }
+      } catch (error) {
+        if (!ignore) {
+          setSuggestionUsers(users);
+        }
+      } finally {
+        if (!ignore) {
+          setLoadingSuggestions(false);
+        }
+      }
+    };
+    loadSuggestionUsers();
+    return () => {
+      ignore = true;
+    };
+  }, [openDialog, users]);
+
+  const smartAutocompleteSx = {
+    mb: 2,
+    '& .MuiOutlinedInput-root': {
+      borderRadius: 2,
+      bgcolor: '#ffffff',
+      '& fieldset': { borderColor: '#c7d6ea' },
+      '&:hover fieldset': { borderColor: '#60a5fa' },
+      '&.Mui-focused fieldset': { borderColor: '#2563eb' }
+    }
+  };
+
   const visibleUsers = useMemo(() => {
     const list = Array.isArray(users) ? [...users] : [];
-    return list.sort((a, b) => {
-      const roleA = ROLE_LABELS[a?.role] || String(a?.role || '');
-      const roleB = ROLE_LABELS[b?.role] || String(b?.role || '');
+    const normalizedSearch = normalizeSearchText(search).trim();
+    const filteredList = normalizedSearch
+      ? list.filter((user) => {
+          const tableText = [
+            user?.nombre,
+            user?.email,
+            user?.username,
+            user?.dependencia,
+            user?.cargo,
+            user?.jefe_inmediato,
+            getCompactRoleLabel(user?.role),
+            user?.role,
+            user?.estado
+          ].filter(Boolean).map(normalizeSearchText).join(' ');
+          return tableText.includes(normalizedSearch);
+        })
+      : list;
+
+    return filteredList.sort((a, b) => {
+      const roleA = getCompactRoleLabel(a?.role) || String(a?.role || '');
+      const roleB = getCompactRoleLabel(b?.role) || String(b?.role || '');
       const roleCompare = roleA.localeCompare(roleB, 'es', { sensitivity: 'base' });
       if (roleCompare !== 0) return roleCompare;
       return String(a?.nombre || '').localeCompare(String(b?.nombre || ''), 'es', { sensitivity: 'base' });
     });
-  }, [users]);
+  }, [normalizeSearchText, search, users]);
 
   const confirmUser = confirmUserAction.user || {};
   const confirmUserConfig = useMemo(() => {
@@ -779,53 +978,29 @@ function GestionUsuarios() {
 
         </Paper>
 
-        {/* Panel principal: buscador + acciones */}
+        {/* Panel principal: carga individual y cargue masivo */}
         <Paper
           elevation={0}
           sx={{
-            p: { xs: 2, sm: 2.5, md: 3 },
-            mb: 3,
-            borderRadius: 3,
+            p: { xs: 1.5, sm: 2, md: 2.2 },
+            mb: 1.5,
+            borderRadius: 2.5,
             border: '1px solid #bfdbfe',
             borderTop: '4px solid #2563eb',
             bgcolor: '#f8fbff'
           }}
         >
-          <Stack spacing={2.5}>
+          <Stack spacing={1.6}>
             <Box>
-              <Stack direction={{ xs: 'column', md: 'row' }} spacing={1.5} alignItems={{ md: 'center' }}>
-                <Box sx={{ flexGrow: 1 }}>
-                  <Typography variant="subtitle2" sx={{ fontWeight: 900, color: '#1e3a8a', mb: 1 }}>
-                    Buscar usuarios
-                  </Typography>
-                  <TextField
-                    fullWidth
-                    placeholder="Nombre, correo, documento, dependencia, cargo o jefe inmediato"
-                    value={search}
-                    onChange={(e) => setSearch(e.target.value)}
-                    InputProps={{
-                      startAdornment: <SearchIcon sx={{ mr: 1, color: '#64748b' }} />
-                    }}
-                    sx={{
-                      '& .MuiOutlinedInput-root': {
-                        borderRadius: 2,
-                        bgcolor: 'white',
-                        '& fieldset': { borderColor: '#93c5fd' },
-                        '&:hover fieldset': { borderColor: '#60a5fa' },
-                        '&.Mui-focused fieldset': { borderColor: '#3b82f6' }
-                      }
-                    }}
-                  />
-                </Box>
-                <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1.2} sx={{ width: { xs: '100%', md: 'auto' }, pt: { md: 3.6 } }}>
+              <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1} justifyContent="flex-end" sx={{ width: '100%' }}>
                   <Button
                     variant="contained"
                     startIcon={<AddIcon />}
                     onClick={() => handleOpenDialog('create')}
                     sx={{
-                      minWidth: { xs: '100%', sm: 180 },
-                      borderRadius: 2,
-                      py: 1.25,
+                      minWidth: { xs: '100%', sm: 170 },
+                      borderRadius: 1.8,
+                      py: 0.95,
                       textTransform: 'none',
                       fontWeight: 800,
                       background: 'linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%)',
@@ -834,24 +1009,6 @@ function GestionUsuarios() {
                   >
                     Crear usuario
                   </Button>
-                  <Button
-                    variant="outlined"
-                    startIcon={<ClearIcon />}
-                    onClick={handleClearTools}
-                    sx={{
-                      minWidth: { xs: '100%', sm: 150 },
-                      borderRadius: 2,
-                      py: 1.25,
-                      textTransform: 'none',
-                      fontWeight: 800,
-                      color: '#1d4ed8',
-                      borderColor: '#93c5fd',
-                      bgcolor: '#fff'
-                    }}
-                  >
-                    Limpiar
-                  </Button>
-                </Stack>
               </Stack>
             </Box>
 
@@ -871,18 +1028,18 @@ function GestionUsuarios() {
                   letterSpacing: 1
                 }}
               >
-                Carga por archivo Excel
+                Cargue masivo por archivo Excel
               </Typography>
 
               <Box
                 sx={{
                   display: 'grid',
                   gridTemplateColumns: { xs: '1fr', md: '1fr 28px 1fr 28px 1fr' },
-                  gap: { xs: 1.4, md: 1.2 },
+                  gap: { xs: 1.2, md: 1 },
                   alignItems: 'stretch'
                 }}
               >
-                <Box sx={{ p: 1.8, borderRadius: 2, border: '1px solid #bfdbfe', bgcolor: '#eff6ff' }}>
+                <Box sx={{ p: 1.4, borderRadius: 2, border: '1px solid #bfdbfe', bgcolor: '#eff6ff' }}>
                   <Stack direction="row" spacing={1} alignItems="center" sx={{ mb: 1 }}>
                     <Chip label="1" size="small" sx={{ bgcolor: '#2563eb', color: '#fff', fontWeight: 900 }} />
                     <Typography sx={{ fontWeight: 900, color: '#0f172a', fontSize: 14 }}>Descargar plantilla</Typography>
@@ -899,7 +1056,7 @@ function GestionUsuarios() {
                   <ArrowForwardIcon fontSize="small" />
                 </Box>
 
-                <Box sx={{ p: 1.8, borderRadius: 2, border: uploadFile ? '1px solid #86efac' : '1px solid #d7e3f5', bgcolor: uploadFile ? '#f0fdf4' : '#ffffff' }}>
+                <Box sx={{ p: 1.4, borderRadius: 2, border: uploadFile ? '1px solid #86efac' : '1px solid #d7e3f5', bgcolor: uploadFile ? '#f0fdf4' : '#ffffff' }}>
                   <Stack direction="row" spacing={1} alignItems="center" sx={{ mb: 1 }}>
                     <Chip label="2" size="small" sx={{ bgcolor: uploadFile ? '#10b981' : '#94a3b8', color: '#fff', fontWeight: 900 }} />
                     <Typography sx={{ fontWeight: 900, color: '#0f172a', fontSize: 14 }}>Adjuntar archivo</Typography>
@@ -928,7 +1085,7 @@ function GestionUsuarios() {
                   <ArrowForwardIcon fontSize="small" />
                 </Box>
 
-                <Box sx={{ p: 1.8, borderRadius: 2, border: uploadFile ? '1px solid #bfdbfe' : '1px solid #d7e3f5', bgcolor: uploadFile ? '#ffffff' : '#f8fafc' }}>
+                <Box sx={{ p: 1.4, borderRadius: 2, border: uploadFile ? '1px solid #bfdbfe' : '1px solid #d7e3f5', bgcolor: uploadFile ? '#ffffff' : '#f8fafc' }}>
                   <Stack direction="row" spacing={1} alignItems="center" sx={{ mb: 1 }}>
                     <Chip label="3" size="small" sx={{ bgcolor: uploadFile ? '#2563eb' : '#94a3b8', color: '#fff', fontWeight: 900 }} />
                     <Typography sx={{ fontWeight: 900, color: '#0f172a', fontSize: 14 }}>Cargar al sistema</Typography>
@@ -1020,163 +1177,107 @@ function GestionUsuarios() {
                 </Box>
               </Box>
 
-              <Box sx={{ mt: 1.4, px: 1.4, py: 1, borderRadius: 1.5, border: '1px dashed #bfdbfe', bgcolor: '#ffffff', display: 'flex', gap: 0.8, alignItems: 'center', flexWrap: 'wrap' }}>
-                <Typography sx={{ fontSize: 12, fontWeight: 900, color: '#0f172a' }}>Columnas requeridas:</Typography>
-                {['NUMERO_DOCUMENTO', 'NOMBRE_COMPLETO', 'CORREO_INSTITUCIONAL', 'DEPENDENCIA', 'CARGO', 'JEFE INMEDIATO', 'ROL'].map((label) => (
-                  <Chip key={label} label={label} size="small" sx={{ height: 22, fontSize: 10.5, fontWeight: 800, bgcolor: '#e0e7ff', color: '#1e40af' }} />
-                ))}
+              <Box
+                sx={{
+                  mt: 1.2,
+                  p: { xs: 1.2, sm: 1.4 },
+                  borderRadius: 2,
+                  border: '1px solid #bfdbfe',
+                  borderLeft: '4px solid #2563eb',
+                  background: 'linear-gradient(135deg, #f8fbff 0%, #ffffff 100%)',
+                  boxShadow: '0 4px 14px rgba(37, 99, 235, 0.08)'
+                }}
+              >
+                <Stack direction="row" spacing={0.9} alignItems="center" sx={{ mb: 0.9 }}>
+                  <Box
+                    sx={{
+                      width: 28,
+                      height: 28,
+                      borderRadius: 1.4,
+                      display: 'grid',
+                      placeItems: 'center',
+                      color: '#ffffff',
+                      bgcolor: '#2563eb',
+                      boxShadow: '0 4px 10px rgba(37, 99, 235, 0.18)'
+                    }}
+                  >
+                    <SearchIcon sx={{ fontSize: 17 }} />
+                  </Box>
+                  <Box>
+                    <Typography variant="subtitle2" sx={{ fontWeight: 900, color: '#0f2f7a', lineHeight: 1.1 }}>
+                      Buscar usuarios
+                    </Typography>
+                    <Typography sx={{ color: '#52657f', fontSize: 11.5, fontWeight: 600, lineHeight: 1.25 }}>
+                      Filtra por nombre, documento, correo, dependencia, cargo, jefe, rol o estado
+                    </Typography>
+                  </Box>
+                </Stack>
+                <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1} alignItems="stretch">
+                  <TextField
+                    fullWidth
+                    size="small"
+                    placeholder="Escribe una palabra para filtrar la tabla de usuarios"
+                    value={search}
+                    onChange={(e) => setSearch(e.target.value)}
+                    InputProps={{
+                      startAdornment: <SearchIcon sx={{ mr: 1, color: '#2563eb' }} />
+                    }}
+                    sx={{
+                      '& .MuiOutlinedInput-root': {
+                        borderRadius: 1.7,
+                        bgcolor: 'white',
+                        boxShadow: 'inset 0 0 0 1px rgba(37, 99, 235, 0.03)',
+                        '& input': {
+                          fontWeight: 600,
+                          color: '#10213f'
+                        },
+                        '& input::placeholder': {
+                          color: '#64748b',
+                          opacity: 0.82,
+                          fontWeight: 500
+                        },
+                        '& fieldset': { borderColor: '#7fb3ff' },
+                        '&:hover fieldset': { borderColor: '#60a5fa' },
+                        '&.Mui-focused': {
+                          boxShadow: '0 0 0 2px rgba(37, 99, 235, 0.08)'
+                        },
+                        '&.Mui-focused fieldset': {
+                          borderColor: '#1d4ed8'
+                        }
+                      }
+                    }}
+                  />
+                  <Button
+                    variant="outlined"
+                    startIcon={<ClearIcon />}
+                    onClick={handleClearTools}
+                    sx={{
+                      minWidth: { xs: '100%', sm: 150 },
+                      borderRadius: 1.7,
+                      px: 2.2,
+                      textTransform: 'none',
+                      fontWeight: 900,
+                      color: '#1d4ed8',
+                      borderColor: '#93c5fd',
+                      bgcolor: '#ffffff',
+                      boxShadow: '0 3px 10px rgba(37, 99, 235, 0.08)',
+                      '&:hover': {
+                        borderColor: '#2563eb',
+                        bgcolor: '#eff6ff'
+                      }
+                    }}
+                  >
+                    Limpiar
+                  </Button>
+                </Stack>
               </Box>
             </Box>
           </Stack>
 
-          <Box sx={{ display: 'none' }}>
-          <Typography
-            variant="subtitle1"
-            sx={{ textAlign: 'center', fontWeight: 800, color: '#1e3a8a', mb: 1.5 }}
-          >
-            Buscar usuarios por nombre, correo, documento, dependencia, cargo o jefe inmediato
-          </Typography>
-
-          <TextField
-            fullWidth
-            placeholder="Ej: juan camilo, 1085327166, planeacion, adsol@unicesmag.edu.co"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            InputProps={{
-              startAdornment: <SearchIcon sx={{ mr: 1, color: '#64748b' }} />
-            }}
-            sx={{
-              mb: 2,
-              '& .MuiOutlinedInput-root': {
-                borderRadius: 2,
-                bgcolor: 'white',
-                '& fieldset': { borderColor: '#93c5fd' },
-                '&:hover fieldset': { borderColor: '#60a5fa' },
-                '&.Mui-focused fieldset': { borderColor: '#3b82f6' }
-              }
-            }}
-          />
-
-          <Stack
-            direction="row"
-            spacing={1.5}
-            useFlexGap
-            sx={{ flexWrap: 'wrap', justifyContent: { xs: 'stretch', md: 'center' } }}
-          >
-            <Button
-              variant="contained"
-              startIcon={<AddIcon />}
-              onClick={() => handleOpenDialog('create')}
-              sx={{
-                minWidth: { xs: '100%', sm: 200 },
-                borderRadius: 2,
-                py: 1.3,
-                textTransform: 'none',
-                fontWeight: 800,
-                background: 'linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%)',
-                boxShadow: '0 8px 20px rgba(37,99,235,0.28)',
-                '&:hover': {
-                  background: 'linear-gradient(135deg, #1d4ed8 0%, #1e40af 100%)',
-                  boxShadow: '0 10px 22px rgba(29,78,216,0.34)'
-                }
-              }}
-            >
-              Crear usuario
-            </Button>
-
-            <Button
-              variant="outlined"
-              component="label"
-              startIcon={<UploadIcon />}
-              sx={{
-                minWidth: { xs: '100%', sm: 220 },
-                borderRadius: 2,
-                py: 1.3,
-                textTransform: 'none',
-                fontWeight: 700,
-                color: '#1d4ed8',
-                borderColor: '#93c5fd',
-                bgcolor: '#eff6ff',
-                '&:hover': { borderColor: '#60a5fa', bgcolor: '#dbeafe' }
-              }}
-            >
-              {uploadFile ? uploadFile.name : 'Seleccionar Excel'}
-              <input
-                key={uploadInputKey}
-                type="file"
-                hidden
-                accept=".xlsx,.xls"
-                onChange={(e) => {
-                  setUploadFile(e.target.files[0] || null);
-                  setBulkImportResult(null);
-                  setBulkErrorFile(null);
-                  setBulkWarningFile(null);
-                }}
-              />
-            </Button>
-
-            <Button
-              variant="contained"
-              disabled={!uploadFile || uploading}
-              onClick={handleBulkUploadProfessional}
-              sx={{
-                minWidth: { xs: '100%', sm: 160 },
-                borderRadius: 2,
-                py: 1.3,
-                textTransform: 'none',
-                fontWeight: 800,
-                bgcolor: '#2563eb',
-                '&:hover': { bgcolor: '#1d4ed8' },
-                '&.Mui-disabled': { bgcolor: '#bfdbfe', color: '#1e3a8a' }
-              }}
-            >
-              {uploading ? <CircularProgress size={20} sx={{ color: '#1d4ed8' }} /> : 'Importar'}
-            </Button>
-
-            <Button
-              variant="outlined"
-              startIcon={<DownloadIcon />}
-              onClick={handleDownloadTemplate}
-              sx={{
-                minWidth: { xs: '100%', sm: 160 },
-                borderRadius: 2,
-                py: 1.3,
-                textTransform: 'none',
-                fontWeight: 700,
-                color: '#1d4ed8',
-                borderColor: '#93c5fd',
-                bgcolor: '#eff6ff',
-                '&:hover': { borderColor: '#60a5fa', bgcolor: '#dbeafe' }
-              }}
-            >
-              Plantilla
-            </Button>
-
-            <Button
-              variant="outlined"
-              startIcon={<ClearIcon />}
-              onClick={handleClearTools}
-              sx={{
-                minWidth: { xs: '100%', sm: 180 },
-                borderRadius: 2,
-                py: 1.3,
-                textTransform: 'none',
-                fontWeight: 700,
-                color: '#1d4ed8',
-                borderColor: '#93c5fd',
-                bgcolor: '#eff6ff',
-                '&:hover': { borderColor: '#60a5fa', bgcolor: '#dbeafe' }
-              }}
-            >
-              Limpiar búsqueda
-            </Button>
-          </Stack>
-          </Box>
-
           {bulkImportResult && (
             <Alert
               severity={bulkImportResult.errores?.length ? 'warning' : 'success'}
-              sx={{ mt: 2, borderRadius: 2, alignItems: 'center' }}
+              sx={{ mt: 1.25, borderRadius: 2, alignItems: 'center' }}
               action={
                 <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1}>
                   {bulkErrorFile && (
@@ -1213,9 +1314,23 @@ function GestionUsuarios() {
         </Paper>
 
         {/* Tabla de usuarios */}
-        <Paper elevation={0} sx={{ border: '1px solid #cbd5e1', borderRadius: 3, overflow: 'hidden', boxShadow: '0 8px 22px rgba(15,23,42,0.06)' }}>
-          <TableContainer sx={{ bgcolor: '#ffffff' }}>
-            <Table size="small" sx={{ tableLayout: 'auto', minWidth: 1280 }}>
+        <Paper elevation={0} sx={{ border: '1px solid #cbd5e1', borderRadius: 1.5, overflow: 'hidden', boxShadow: '0 6px 16px rgba(15,23,42,0.05)' }}>
+          <TableContainer sx={{ bgcolor: '#ffffff', borderRadius: 0 }}>
+            <Table
+              size="small"
+              sx={{
+                tableLayout: 'fixed',
+                width: '100%',
+                minWidth: { xs: 860, sm: 920, md: 980, lg: 1040 },
+                '& .MuiTableCell-root': {
+                  verticalAlign: 'top',
+                  borderRight: '1px solid #edf2f7'
+                },
+                '& .MuiTableCell-root:last-of-type': {
+                  borderRight: 0
+                }
+              }}
+            >
               <TableHead>
                 <TableRow
                   sx={{
@@ -1223,22 +1338,30 @@ function GestionUsuarios() {
                     '& .MuiTableCell-root': {
                       color: 'white',
                       fontWeight: 800,
-                      fontSize: 13,
+                      fontSize: 11,
                       borderBottom: '2px solid #1e3a8a',
                       textTransform: 'uppercase',
-                      letterSpacing: 0.4
+                      letterSpacing: 0.3,
+                      py: 0.85,
+                      px: { xs: 0.45, sm: 0.55, md: 0.65 },
+                      lineHeight: 1.15,
+                      borderRadius: 0,
+                      borderRight: '1px solid rgba(255,255,255,0.18)'
+                    },
+                    '& .MuiTableCell-root:last-of-type': {
+                      borderRight: 0
                     }
                   }}
                 >
-                  <TableCell sx={{ py: 1.6 }}>Nombre</TableCell>
-                  <TableCell sx={{ py: 1.6 }}>Email</TableCell>
-                  <TableCell sx={{ py: 1.6 }}>Documento</TableCell>
-                  <TableCell sx={{ py: 1.6 }}>Dependencia</TableCell>
-                  <TableCell sx={{ py: 1.6 }}>Cargo</TableCell>
-                  <TableCell sx={{ py: 1.6 }}>Jefe inmediato</TableCell>
-                  <TableCell sx={{ py: 1.6 }}>Rol</TableCell>
-                  <TableCell sx={{ py: 1.6 }}>Estado</TableCell>
-                  <TableCell align="center" sx={{ py: 1.6 }}>Acciones</TableCell>
+                  <TableCell sx={{ width: '13%' }}>Nombre</TableCell>
+                  <TableCell sx={{ width: '16%' }}>Email</TableCell>
+                  <TableCell align="center" sx={{ width: '8%' }}>Documento</TableCell>
+                  <TableCell sx={{ width: '11%' }}>Dependencia</TableCell>
+                  <TableCell sx={{ width: '13%' }}>Cargo</TableCell>
+                  <TableCell sx={{ width: '13%' }}>Jefe inmediato</TableCell>
+                  <TableCell align="center" sx={{ width: '7%' }}>Rol</TableCell>
+                  <TableCell align="center" sx={{ width: '7%' }}>Estado</TableCell>
+                  <TableCell align="center" sx={{ width: '12%' }}>Acciones</TableCell>
                 </TableRow>
               </TableHead>
               <TableBody>
@@ -1263,45 +1386,63 @@ function GestionUsuarios() {
                       key={user.id}
                       hover
                       sx={{
+                        height: { xs: 40, sm: 42, md: 44 },
                         bgcolor: index % 2 === 0 ? '#ffffff' : '#f8fafc',
                         '&:hover': { bgcolor: '#eef4ff' },
-                        '& .MuiTableCell-root': { borderBottom: '1px solid #e2e8f0' }
+                        '& .MuiTableCell-root': {
+                          borderBottom: '1px solid #e2e8f0',
+                          verticalAlign: 'middle',
+                          borderRight: '1px solid #eef2f7'
+                        },
+                        '& .MuiTableCell-root:last-of-type': {
+                          borderRight: 0
+                        }
                       }}
                     >
-                      <TableCell sx={{ fontWeight: 700, py: 1.5, maxWidth: 240, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', color: '#0f172a', textTransform: 'uppercase' }}>{user.nombre}</TableCell>
-                      <TableCell sx={{ py: 1.5, maxWidth: 300, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', color: '#1e293b' }}>{user.email}</TableCell>
-                      <TableCell>
-                        <Chip label={user.username} size="small" variant="outlined" sx={{ borderColor: '#94a3b8', color: '#0f172a', bgcolor: '#f8fafc' }} />
+                      <TableCell sx={{ ...wrapCellSx, fontWeight: 700, color: '#0f172a', textTransform: 'uppercase' }}>
+                        <span className="cellText">{user.nombre}</span>
                       </TableCell>
-                      <TableCell sx={{ py: 1.5, maxWidth: 220, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', color: '#334155' }}>{user.dependencia || '-'}</TableCell>
-                      <TableCell sx={{ py: 1.5, maxWidth: 220, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', color: '#334155' }}>{user.cargo || '-'}</TableCell>
-                      <TableCell sx={{ py: 1.5, maxWidth: 220, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', color: '#334155' }}>{user.jefe_inmediato || '-'}</TableCell>
-                      <TableCell>
+                      <TableCell sx={{ ...wrapCellSx, color: '#1e293b' }}>
+                        <span className="cellText">{user.email}</span>
+                      </TableCell>
+                      <TableCell align="center" sx={{ ...wrapCellSx }}>
+                        <span className="cellText" style={{ fontWeight: 700, color: '#0f172a' }}>{user.username}</span>
+                      </TableCell>
+                      <TableCell sx={wrapCellSx}>
+                        <span className="cellText">{user.dependencia || '-'}</span>
+                      </TableCell>
+                      <TableCell sx={wrapCellSx}>
+                        <span className="cellText">{user.cargo || '-'}</span>
+                      </TableCell>
+                      <TableCell sx={wrapCellSx}>
+                        <span className="cellText">{user.jefe_inmediato || '-'}</span>
+                      </TableCell>
+                      <TableCell align="center" sx={{ ...wrapCellSx }}>
                         <Chip
-                          label={ROLE_LABELS[user.role] || user.role}
+                          label={getCompactRoleLabel(user.role)}
                           color={getRoleColor(user.role)}
                           size="small"
-                          sx={{ fontWeight: 700, textTransform: 'uppercase', maxWidth: 240 }}
+                          sx={roleChipSx}
                         />
                       </TableCell>
-                      <TableCell>
+                      <TableCell align="center" sx={{ ...wrapCellSx }}>
                         <Chip
                           label={user.estado}
                           color={getEstadoColor(user.estado)}
                           size="small"
-                          sx={{ fontWeight: 700, textTransform: 'uppercase' }}
+                          sx={statusChipSx}
                         />
                       </TableCell>
-                      <TableCell align="center">
-                        <Stack direction="row" spacing={1} justifyContent="center">
+                      <TableCell align="center" sx={{ ...wrapCellSx }}>
+                        <Stack direction="row" spacing={0.35} justifyContent="center" sx={{ flexWrap: 'nowrap' }}>
                           <Tooltip title="Editar">
                             <IconButton
                               size="small"
                               onClick={() => handleOpenDialog('edit', user)}
                               disabled={isDeleting}
-                              sx={{ color: '#3b82f6', bgcolor: '#eff6ff', '&:hover': { bgcolor: '#dbeafe' } }}
+                              sx={{ width: 26, height: 26, color: '#3b82f6', bgcolor: '#eff6ff', '&:hover': { bgcolor: '#dbeafe' } }}
                             >
-                              <EditIcon fontSize="small" />
+                              <EditIcon sx={{ fontSize: 16 }} />
                             </IconButton>
                           </Tooltip>
                           {canManageModulePermissions && (
@@ -1310,9 +1451,9 @@ function GestionUsuarios() {
                                 size="small"
                                 onClick={() => handleOpenPermissionsDialog(user)}
                                 disabled={isDeleting}
-                                sx={{ color: '#0ea5e9', bgcolor: '#e0f2fe', '&:hover': { bgcolor: '#bae6fd' } }}
+                                sx={{ width: 26, height: 26, color: '#0ea5e9', bgcolor: '#e0f2fe', '&:hover': { bgcolor: '#bae6fd' } }}
                               >
-                                <SecurityIcon fontSize="small" />
+                                <SecurityIcon sx={{ fontSize: 16 }} />
                               </IconButton>
                             </Tooltip>
                           )}
@@ -1321,9 +1462,9 @@ function GestionUsuarios() {
                               size="small"
                               onClick={() => handleToggleStatus(user)}
                               disabled={isDeleting || (isSelf && user.estado === 'activo')}
-                              sx={{ color: user.estado === 'activo' ? '#f59e0b' : '#10b981', bgcolor: '#fef3c7', '&:hover': { bgcolor: '#fde68a' } }}
+                              sx={{ width: 26, height: 26, color: user.estado === 'activo' ? '#f59e0b' : '#10b981', bgcolor: '#fef3c7', '&:hover': { bgcolor: '#fde68a' } }}
                             >
-                              {user.estado === 'activo' ? <BlockIcon fontSize="small" /> : <CheckCircleIcon fontSize="small" />}
+                              {user.estado === 'activo' ? <BlockIcon sx={{ fontSize: 16 }} /> : <CheckCircleIcon sx={{ fontSize: 16 }} />}
                             </IconButton>
                           </Tooltip>
                           <Tooltip title={isSelf ? 'No puedes eliminar tu propio usuario' : 'Eliminar Permanente'}>
@@ -1331,9 +1472,9 @@ function GestionUsuarios() {
                               size="small"
                               onClick={() => handleDelete(user)}
                               disabled={isDeleting || isSelf}
-                              sx={{ color: '#ef4444', bgcolor: '#fee2e2', '&:hover': { bgcolor: '#fecaca' } }}
+                              sx={{ width: 26, height: 26, color: '#ef4444', bgcolor: '#fee2e2', '&:hover': { bgcolor: '#fecaca' } }}
                             >
-                              {isDeleting ? <CircularProgress size={16} color="inherit" /> : <DeleteIcon fontSize="small" />}
+                              {isDeleting ? <CircularProgress size={14} color="inherit" /> : <DeleteIcon sx={{ fontSize: 16 }} />}
                             </IconButton>
                           </Tooltip>
                         </Stack>
@@ -1430,7 +1571,7 @@ function GestionUsuarios() {
               </Typography>
               <Stack direction="row" spacing={1} sx={{ flexWrap: 'wrap', rowGap: 0.8, pt: 0.4 }}>
                 <Chip size="small" label={confirmUser.username || 'Sin documento'} variant="outlined" />
-                <Chip size="small" label={ROLE_LABELS[confirmUser.role] || confirmUser.role || 'Sin rol'} />
+                <Chip size="small" label={getCompactRoleLabel(confirmUser.role) || 'Sin rol'} />
                 <Chip size="small" label={confirmUser.estado || 'Sin estado'} color={getEstadoColor(confirmUser.estado)} />
               </Stack>
             </Box>
@@ -1593,32 +1734,71 @@ function GestionUsuarios() {
                 helperText={formErrors.email || 'Debe terminar en @unicesmag.edu.co'}
                 placeholder="usuario@unicesmag.edu.co"
               />
-              <TextField
-                fullWidth
-                label="Dependencia"
-                value={formData.dependencia}
-                onChange={(e) => setFormData({ ...formData, dependencia: e.target.value })}
-                sx={{ mb: 2 }}
-                helperText="Ej: Oficina de Planeacion"
-                inputProps={{ maxLength: 220 }}
+              <Autocomplete
+                freeSolo
+                autoHighlight
+                options={dependenciaOptions}
+                value={formData.dependencia || ''}
+                inputValue={formData.dependencia || ''}
+                loading={loadingSuggestions}
+                loadingText="Cargando dependencias..."
+                noOptionsText="Sin coincidencias, puedes escribir una nueva"
+                onChange={(event, newValue) => setFormData({ ...formData, dependencia: newValue || '' })}
+                onInputChange={(event, newInputValue) => setFormData({ ...formData, dependencia: newInputValue || '' })}
+                renderInput={(params) => (
+                  <TextField
+                    {...params}
+                    fullWidth
+                    label="Dependencia"
+                    helperText="Elige una existente o escribe una nueva"
+                    inputProps={{ ...params.inputProps, maxLength: 220 }}
+                  />
+                )}
+                sx={smartAutocompleteSx}
               />
-              <TextField
-                fullWidth
-                label="Cargo"
-                value={formData.cargo}
-                onChange={(e) => setFormData({ ...formData, cargo: e.target.value })}
-                sx={{ mb: 2 }}
-                helperText="Ej: Profesional Universitario"
-                inputProps={{ maxLength: 220 }}
+              <Autocomplete
+                freeSolo
+                autoHighlight
+                options={cargoOptions}
+                value={formData.cargo || ''}
+                inputValue={formData.cargo || ''}
+                loading={loadingSuggestions}
+                loadingText="Cargando cargos..."
+                noOptionsText="Sin coincidencias, puedes escribir uno nuevo"
+                onChange={(event, newValue) => setFormData({ ...formData, cargo: newValue || '' })}
+                onInputChange={(event, newInputValue) => setFormData({ ...formData, cargo: newInputValue || '' })}
+                renderInput={(params) => (
+                  <TextField
+                    {...params}
+                    fullWidth
+                    label="Cargo"
+                    helperText="Elige un cargo existente o escribe uno nuevo"
+                    inputProps={{ ...params.inputProps, maxLength: 220 }}
+                  />
+                )}
+                sx={smartAutocompleteSx}
               />
-              <TextField
-                fullWidth
-                label="Jefe inmediato"
-                value={formData.jefe_inmediato}
-                onChange={(e) => setFormData({ ...formData, jefe_inmediato: e.target.value })}
-                sx={{ mb: 2 }}
-                helperText="Nombre del jefe inmediato"
-                inputProps={{ maxLength: 220 }}
+              <Autocomplete
+                freeSolo
+                autoHighlight
+                options={jefeInmediatoOptions}
+                value={formData.jefe_inmediato || ''}
+                inputValue={formData.jefe_inmediato || ''}
+                loading={loadingSuggestions}
+                loadingText="Cargando jefes..."
+                noOptionsText="Sin coincidencias, puedes escribir un nuevo nombre"
+                onChange={(event, newValue) => setFormData({ ...formData, jefe_inmediato: newValue || '' })}
+                onInputChange={(event, newInputValue) => setFormData({ ...formData, jefe_inmediato: newInputValue || '' })}
+                renderInput={(params) => (
+                  <TextField
+                    {...params}
+                    fullWidth
+                    label="Jefe inmediato"
+                    helperText="Elige un jefe registrado o escribe el nombre"
+                    inputProps={{ ...params.inputProps, maxLength: 220 }}
+                  />
+                )}
+                sx={smartAutocompleteSx}
               />
               <FormControl fullWidth sx={{ mb: 2 }}>
                 <InputLabel>Rol</InputLabel>

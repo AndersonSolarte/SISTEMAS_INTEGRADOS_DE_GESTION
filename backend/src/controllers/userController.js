@@ -1,6 +1,6 @@
 const models = require('../models');
 const { User, UserModulePermission } = models;
-const { DataTypes, Op, literal } = require('sequelize');
+const { DataTypes, Op, literal, fn, col, where: sequelizeWhere } = require('sequelize');
 const crypto = require('crypto');
 const XLSX = require('xlsx');
 const fs = require('fs');
@@ -10,6 +10,26 @@ const { sendWelcomeEmail, sendPasswordResetEmail } = require('../services/emailS
 const MAX_BULK_USER_IMPORT_ROWS = Number(process.env.MAX_BULK_USER_IMPORT_ROWS || 2000);
 
 const VALID_ROLES = Object.values(ROLES);
+const ROLE_SEARCH_LABELS = {
+  [ROLES.ADMINISTRADOR]: ['administrador', 'administrador general'],
+  [ROLES.CONSULTA]: ['consulta'],
+  [ROLES.GESTION_PROCESOS]: ['gestion por procesos', 'gestion_por_procesos', 'procesos'],
+  [ROLES.PLANEACION_ESTRATEGICA]: ['planeacion estrategica', 'planeacion_estrategica'],
+  [ROLES.PLANEACION_EFECTIVIDAD]: ['planeacion y efectividad', 'planeacion_efectividad', 'efectividad'],
+  [ROLES.AUTOEVALUACION]: ['autoevaluacion'],
+  [ROLES.GESTION_INFORMACION]: ['gestion de la informacion', 'gestion_informacion', 'informacion'],
+  [ROLES.REGISTROS_CALIFICADOS]: ['registros calificados', 'acreditacion', 'registros_calificados_acreditacion']
+};
+const normalizeSearchText = (value = '') => String(value)
+  .normalize('NFD')
+  .replace(/[\u0300-\u036f]/g, '')
+  .replace(/_/g, ' ')
+  .toLowerCase()
+  .trim();
+const buildAccentInsensitiveCondition = (field, searchText) => sequelizeWhere(
+  fn('translate', fn('lower', col(field)), 'áéíóúüñ', 'aeiouun'),
+  { [Op.like]: `%${searchText}%` }
+);
 const MENU_PERMISSION_KEYS = [
   'dashboard',
   'planeacion_estrategica',
@@ -650,15 +670,28 @@ const getUsers = async (req, res) => {
     
     const where = {};
     
-    if (search) {
-      where[Op.or] = [
+    if (String(search).trim()) {
+      const searchText = normalizeSearchText(search);
+      const matchedRoles = Object.entries(ROLE_SEARCH_LABELS)
+        .filter(([role, labels]) => role.includes(searchText) || labels.some((label) => label.includes(searchText)))
+        .map(([role]) => role);
+      const searchConditions = [
         { nombre: { [Op.iLike]: `%${search}%` } },
+        buildAccentInsensitiveCondition('nombre', searchText),
         { email: { [Op.iLike]: `%${search}%` } },
         { username: { [Op.iLike]: `%${search}%` } },
         { dependencia: { [Op.iLike]: `%${search}%` } },
+        buildAccentInsensitiveCondition('dependencia', searchText),
         { cargo: { [Op.iLike]: `%${search}%` } },
-        { jefe_inmediato: { [Op.iLike]: `%${search}%` } }
+        buildAccentInsensitiveCondition('cargo', searchText),
+        { jefe_inmediato: { [Op.iLike]: `%${search}%` } },
+        buildAccentInsensitiveCondition('jefe_inmediato', searchText),
+        sequelizeWhere(literal('CAST("estado" AS TEXT)'), { [Op.iLike]: `%${search}%` })
       ];
+      if (matchedRoles.length) {
+        searchConditions.push({ role: { [Op.in]: matchedRoles } });
+      }
+      where[Op.or] = searchConditions;
     }
     
     if (role) {
@@ -1599,6 +1632,65 @@ const bulkUploadUsers = async (req, res) => {
   }
 };
 
+const getUserFieldSuggestions = async (req, res) => {
+  try {
+    const where = {};
+
+    if (isPlaneacionManager(req.user)) {
+      where.role = { [Op.in]: MANAGED_PLANEACION_ROLES };
+    }
+
+    if (isGestionProcesosManager(req.user)) {
+      where.role = { [Op.in]: MANAGED_GESTION_PROCESOS_ROLES };
+    }
+
+    const loadDistinctValues = async (field) => {
+      const rows = await User.findAll({
+        where: {
+          ...where,
+          [field]: { [Op.ne]: null }
+        },
+        attributes: [[fn('DISTINCT', col(field)), field]],
+        raw: true,
+        order: [[col(field), 'ASC']]
+      });
+
+      const byNormalizedValue = new Map();
+      rows.forEach((row) => {
+        const value = String(row?.[field] || '').trim();
+        if (!value || value === '-') return;
+        const key = normalizeSearchText(value);
+        if (!key || byNormalizedValue.has(key)) return;
+        byNormalizedValue.set(key, value);
+      });
+
+      return Array.from(byNormalizedValue.values())
+        .sort((a, b) => a.localeCompare(b, 'es', { sensitivity: 'base' }));
+    };
+
+    const [dependencias, cargos, jefesInmediatos] = await Promise.all([
+      loadDistinctValues('dependencia'),
+      loadDistinctValues('cargo'),
+      loadDistinctValues('jefe_inmediato')
+    ]);
+
+    return res.json({
+      success: true,
+      data: {
+        dependencias,
+        cargos,
+        jefesInmediatos
+      }
+    });
+  } catch (error) {
+    console.error('Error al cargar sugerencias de usuarios:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Error al cargar sugerencias de usuarios'
+    });
+  }
+};
+
 const requestPasswordReset = async (req, res) => {
   try {
     const { email } = req.body;
@@ -1864,6 +1956,7 @@ const updateUserModulePermissions = async (req, res) => {
 module.exports = {
   createUser,
   getUsers,
+  getUserFieldSuggestions,
   updateUser,
   updateUserStatus,
   deleteUser,

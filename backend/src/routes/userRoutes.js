@@ -3,6 +3,7 @@ const router = express.Router();
 const {
   createUser,
   getUsers,
+  getUserFieldSuggestions,
   updateUser,
   downloadUsersTemplate,
   updateUserStatus,
@@ -23,6 +24,7 @@ const canManageModulePermissions = hasAnyRole(ROLES.ADMINISTRADOR);
 // Rutas protegidas - admin general y planeación estratégica (con restricciones internas por rol objetivo)
 router.post('/', auth, canManageUsers, createUser);
 router.get('/', auth, canManageUsers, getUsers);
+router.get('/suggestions', auth, canManageUsers, getUserFieldSuggestions);
 router.put('/:id', auth, canManageUsers, updateUser);
 router.patch('/:id/status', auth, canManageUsers, updateUserStatus);
 router.delete('/:id', auth, canManageUsers, deleteUser);

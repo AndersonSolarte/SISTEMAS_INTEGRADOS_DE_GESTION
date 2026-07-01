@@ -1,8 +1,8 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
+import ReactDOM from 'react-dom';
 import {
   Box, Paper, Typography, Stack, Button, Chip,
-  CircularProgress, Alert, FormControl, InputLabel, Select,
-  MenuItem, IconButton, Tooltip, Fade, Divider, Grid
+  CircularProgress, Alert, IconButton, Tooltip, Fade, Divider
 } from '@mui/material';
 import ArrowBackRoundedIcon from '@mui/icons-material/ArrowBackRounded';
 import RefreshIcon        from '@mui/icons-material/Refresh';
@@ -59,18 +59,79 @@ const ISO_MAP = {
   MYANMAR:'MM',CAMBOYA:'KH',MONGOLIA:'MN',KAZAJSTAN:'KZ'
 };
 const getISO = (n = '') => {
-  const k = n.toUpperCase().normalize('NFD').replace(/[̀-ͯ]/g,'').replace(/[^A-Z0-9 ]/g,'').trim();
+  const k = n.toUpperCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/[^A-Z0-9 ]/g,'').trim();
   return ISO_MAP[k] || ISO_MAP[n.toUpperCase()] || null;
 };
 const isCountry = (n = '') => {
-  const t = n.trim();
+  const t = cleanCountryKey(n);
   if (!t || /^\d+$/.test(t)) return false;
-  return !['N/A','NA','SIN DATO','REGIONAL','OTRO','OTROS','NO APLICA'].includes(t.toUpperCase());
+  return !['N A','NA','SIN DATO','REGIONAL','OTRO','OTROS','NO APLICA'].includes(t);
 };
 const sortPer = (arr) =>
   [...arr].sort((a,b) => String(a.name||'').localeCompare(String(b.name||''),undefined,{numeric:true}));
 
 /* ── Flag ───────────────────────────────────────────────────────────────── */
+const cleanCountryKey = (n = '') =>
+  String(n || '').toUpperCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/[^A-Z0-9 ]/g,' ').replace(/\s+/g,' ').trim();
+const COUNTRY_NAMES = {
+  AR:'Argentina', BR:'Brasil', CL:'Chile', CO:'Colombia', EC:'Ecuador', MX:'M\u00e9xico',
+  PE:'Per\u00fa', SV:'El Salvador', US:'Estados Unidos', CA:'Canad\u00e1', ES:'Espa\u00f1a',
+  FR:'Francia', DE:'Alemania', IT:'Italia', GB:'Reino Unido', PT:'Portugal'
+};
+const canonicalCountryName = (name = '') => {
+  const iso = getISO(name);
+  if (iso && COUNTRY_NAMES[iso]) return COUNTRY_NAMES[iso];
+  return cleanCountryKey(name).toLowerCase().replace(/\b\w/g, (letter) => letter.toUpperCase());
+};
+const mergeCountryRows = (rows = []) => Object.values(rows.reduce((acc, row) => {
+  if (!isCountry(row.name)) return acc;
+  const iso = getISO(row.name);
+  const key = iso || cleanCountryKey(row.name);
+  if (!acc[key]) acc[key] = { name: canonicalCountryName(row.name), value: 0 };
+  acc[key].value += Number(row.value || 0);
+  return acc;
+}, {})).sort((a,b) => b.value - a.value);
+
+const cleanMobilityTypeKey = (value = '') => String(value || '')
+  .normalize('NFD')
+  .replace(/[\u0300-\u036f]/g, '')
+  .replace(/^\s*\d+\s*\.?\s*/g, '')
+  .replace(/\s+/g, ' ')
+  .trim()
+  .toUpperCase();
+const MOBILITY_TYPE_NAMES = {
+  'ASISTENCIA A EVENTOS': 'Asistencia a eventos',
+  'ASISTENCIA EVENTOS': 'Asistencia a eventos',
+  'CURSO CORTO': 'Curso corto',
+  'PASANTIA O PRACTICA': 'Pasant\u00eda o pr\u00e1ctica',
+  PASANTIA: 'Pasant\u00eda',
+  MISION: 'Misi\u00f3n',
+  'SECTOR EMPRESARIAL': 'Sector empresarial',
+  'EDUCACION CONTINUADA': 'Educaci\u00f3n continuada',
+  SEMINARIOS: 'Seminarios',
+  SIMPOSIOS: 'Simposios',
+  CONGRESOS: 'Congresos',
+  'GESTION DE CONVENIOS': 'Gesti\u00f3n de convenios',
+  'SEMESTRE ACADEMICO DE INTERCAMBIO': 'Semestre acad\u00e9mico de intercambio',
+  'PAR ACADEMICO': 'Par acad\u00e9mico',
+  PONENCIA: 'Ponencia',
+  'VISITA EMPRESARIAL': 'Visita empresarial',
+  ACADEMICA: 'Acad\u00e9mica',
+  ENTRANTE: 'Entrante',
+  SALIENTE: 'Saliente'
+};
+const normalizeMobilityType = (value = '') => {
+  const key = cleanMobilityTypeKey(value);
+  if (!key || ['N A', 'NA', 'N/A', 'SIN DATO'].includes(key)) return 'Sin dato';
+  return MOBILITY_TYPE_NAMES[key] || key.toLowerCase().replace(/\b\w/g, (letter) => letter.toUpperCase());
+};
+const mergeNamedRows = (rows = [], normalizer = (name) => name) => Object.values(rows.reduce((acc, row) => {
+  const name = normalizer(row.name);
+  if (!acc[name]) acc[name] = { name, value: 0 };
+  acc[name].value += Number(row.value || 0);
+  return acc;
+}, {})).sort((a,b) => b.value - a.value);
+
 function FlagSVG({ name, size = 20 }) {
   const iso  = getISO(name);
   const Flag = iso ? CountryFlags[iso] : null;
@@ -194,7 +255,7 @@ const PL = ({ cx, cy, midAngle, outerRadius, percent }) => {
         fontSize={11}
         fontWeight={900}
       >
-        {`${(percent * 100).toFixed(0)}%`}
+        {`${(percent * 100).toFixed(1)}%`}
       </text>
     </g>
   );
@@ -206,7 +267,7 @@ function PaisRow({ name, value, max, color, rank, total }) {
   const share = total>0?((value/total)*100).toFixed(1):'0.0';
   return (
     <Stack direction="row" alignItems="center" spacing={1.4} sx={{ py:.7 }}>
-      <Typography sx={{ fontSize:11, color:'#cbd5e1', fontWeight:700, width:20, textAlign:'right', flexShrink:0 }}>{rank}</Typography>
+      <Typography sx={{ fontSize:11, color:'#64748b', fontWeight:700, width:20, textAlign:'right', flexShrink:0 }}>{rank}</Typography>
       <FlagSVG name={name} size={18} />
       <Typography sx={{ fontSize:12.5, color:'#1e293b', fontWeight:600, flex:1, minWidth:0 }} noWrap>{name}</Typography>
       <Box sx={{ width:90, height:6, borderRadius:2, bgcolor:'#f1f5f9', flexShrink:0, overflow:'hidden' }}>
@@ -258,13 +319,193 @@ function Card({ children, delay, active, sx={} }) {
 /* ══════════════════════════════════════════════════════════════════════════
    DASHBOARD
    ══════════════════════════════════════════════════════════════════════════ */
+function ChecklistFilter({ label, options = [], value = [], onChange, placeholder, disabled }) {
+  const [open, setOpen] = useState(false);
+  const [search, setSearch] = useState('');
+  const [portalStyle, setPortalStyle] = useState({});
+  const triggerRef = useRef(null);
+  const dropdownRef = useRef(null);
+  const selected = Array.isArray(value) ? value.map(String) : [];
+  const normalizedOptions = options.map((item) => ({ value: String(item), label: String(item) }));
+  const allValues = normalizedOptions.map((item) => item.value);
+  const filtered = normalizedOptions.filter((item) => item.label.toLowerCase().includes(search.toLowerCase()));
+  const allSelected = selected.length === 0 || (normalizedOptions.length > 0 && selected.length === normalizedOptions.length);
+  const brand = '#2563eb';
+
+  const computePosition = useCallback(() => {
+    const rect = triggerRef.current?.getBoundingClientRect();
+    if (!rect) return;
+    setPortalStyle({
+      position: 'fixed',
+      top: rect.bottom + 6,
+      left: rect.left,
+      width: Math.max(rect.width, 296),
+      zIndex: 1600
+    });
+  }, []);
+
+  useEffect(() => {
+    if (!open) return undefined;
+    computePosition();
+    const onScroll = (event) => {
+      if (dropdownRef.current?.contains(event.target)) return;
+      computePosition();
+    };
+    const onResize = () => computePosition();
+    window.addEventListener('scroll', onScroll, true);
+    window.addEventListener('resize', onResize);
+    return () => {
+      window.removeEventListener('scroll', onScroll, true);
+      window.removeEventListener('resize', onResize);
+    };
+  }, [open, computePosition]);
+
+  useEffect(() => {
+    if (!open) return undefined;
+    const onDown = (event) => {
+      if (triggerRef.current?.contains(event.target) || dropdownRef.current?.contains(event.target)) return;
+      setOpen(false);
+      setSearch('');
+    };
+    document.addEventListener('mousedown', onDown);
+    return () => document.removeEventListener('mousedown', onDown);
+  }, [open]);
+
+  useEffect(() => {
+    if (normalizedOptions.length > 0 && selected.length === normalizedOptions.length) {
+      onChange([]);
+    }
+  }, [normalizedOptions.length, onChange, selected.length]);
+
+  const toggle = (option) => {
+    const next = selected.length === 0
+      ? allValues.filter((item) => item !== option)
+      : selected.includes(option)
+        ? selected.filter((item) => item !== option)
+        : [...selected, option];
+    onChange(next.length === 0 || next.length === allValues.length ? [] : next);
+  };
+  const toggleAll = () => onChange([]);
+  const displayText = allSelected ? 'TODOS' : selected.length === 1 ? selected[0] : `${selected.length} seleccionados`;
+  const checkedFor = (option) => allSelected || selected.includes(option);
+
+  const dropdown = open ? ReactDOM.createPortal(
+    <div ref={dropdownRef} style={{ ...portalStyle, background: '#fff', borderRadius: 10, boxShadow: '0 18px 42px rgba(15,23,42,.2)', border: '1px solid #e2e8f0', overflow: 'hidden' }}>
+      <div style={{ padding: 8, borderBottom: '1px solid #f1f5f9' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6, background: '#f8fafc', borderRadius: 6, padding: '5px 8px', border: '1px solid #e2e8f0' }}>
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#94a3b8" strokeWidth="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+          <input value={search} onChange={(event) => setSearch(event.target.value)} placeholder={placeholder} style={{ border: 'none', outline: 'none', background: 'transparent', fontSize: 12, flex: 1, color: '#334155', minWidth: 0 }} />
+        </div>
+      </div>
+      <div onClick={toggleAll} style={{ padding: '7px 12px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 8, borderBottom: '1px solid #f1f5f9' }}>
+        <div style={{ width: 14, height: 14, flexShrink: 0, borderRadius: 3, border: `2px solid ${allSelected ? brand : '#d1d5db'}`, background: allSelected ? brand : '#fff', display: 'grid', placeItems: 'center' }}>
+          {allSelected && <svg width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="3"><polyline points="20 6 9 17 4 12"/></svg>}
+        </div>
+        <span style={{ fontSize: 11, fontWeight: 800, color: brand }}>SELECCIONAR TODOS ({normalizedOptions.length})</span>
+      </div>
+      <div onWheel={(event) => event.stopPropagation()} style={{ maxHeight: 238, overflowY: 'auto', overscrollBehavior: 'contain', scrollbarWidth: 'thin' }}>
+        {filtered.length === 0 ? (
+          <div style={{ padding: '14px 16px', textAlign: 'center', fontSize: 12, color: '#94a3b8' }}>Sin resultados</div>
+        ) : filtered.map((option) => (
+          <div key={option.value} onClick={() => toggle(option.value)} style={{ padding: '6px 12px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 8 }}>
+            <div style={{ width: 14, height: 14, flexShrink: 0, borderRadius: 3, border: `2px solid ${checkedFor(option.value) ? brand : '#d1d5db'}`, background: checkedFor(option.value) ? brand : '#fff', display: 'grid', placeItems: 'center' }}>
+              {checkedFor(option.value) && <svg width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="3"><polyline points="20 6 9 17 4 12"/></svg>}
+            </div>
+            <span style={{ fontSize: 12, color: '#334155' }}>{option.label}</span>
+          </div>
+        ))}
+      </div>
+      <div style={{ padding: '5px 12px', borderTop: '1px solid #f1f5f9', background: '#f8fafc' }}>
+        <span style={{ fontSize: 10, color: '#94a3b8' }}>{allSelected ? `${normalizedOptions.length} opciones` : `${selected.length} de ${normalizedOptions.length} seleccionados`}</span>
+      </div>
+    </div>,
+    document.body
+  ) : null;
+
+  return (
+    <Box ref={triggerRef} sx={{ minWidth: 150, opacity: disabled ? 0.55 : 1, pointerEvents: disabled ? 'none' : 'auto' }}>
+      <Box onClick={() => !disabled && setOpen((current) => !current)} sx={{ cursor: 'pointer', borderRadius: 2, px: 1.5, py: 0.8, minHeight: 44, bgcolor: !allSelected ? '#eff6ff' : '#fff', border: `1.5px solid ${!allSelected ? brand : '#bfdbfe'}`, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 1, userSelect: 'none', '&:hover': { borderColor: brand } }}>
+        <Box sx={{ minWidth: 0 }}>
+          <Typography sx={{ fontSize: 9, fontWeight: 800, color: brand, letterSpacing: .7, textTransform: 'uppercase' }}>{label}</Typography>
+          <Typography sx={{ fontSize: 12, fontWeight: 700, color: '#1e3a5f', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: 132 }}>{displayText}</Typography>
+        </Box>
+        <Stack direction="row" alignItems="center" spacing={0.5} sx={{ flexShrink: 0 }}>
+          {!allSelected && (
+            <Box onClick={(event) => { event.stopPropagation(); onChange([]); }} sx={{ width: 16, height: 16, borderRadius: '50%', bgcolor: brand, display: 'grid', placeItems: 'center' }}>
+              <svg width="7" height="7" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="3"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+            </Box>
+          )}
+          <Box sx={{ transition: 'transform .15s', transform: open ? 'rotate(180deg)' : 'none' }}>
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke={brand} strokeWidth="2.5"><polyline points="6 9 12 15 18 9"/></svg>
+          </Box>
+        </Stack>
+      </Box>
+      {dropdown}
+    </Box>
+  );
+}
+
+function HeatCell({ value, max, period, group }) {
+  const intensity = max > 0 ? value / max : 0;
+  const bg = value > 0
+    ? `linear-gradient(135deg, rgba(29,78,216,${0.12 + (intensity * 0.72)}), rgba(8,145,178,${0.08 + (intensity * 0.36)}))`
+    : '#f8fafc';
+  const border = value > 0 ? `rgba(29,78,216,${0.12 + (intensity * 0.22)})` : '#e8eef8';
+  const color = '#0f172a';
+
+  return (
+    <Tooltip title={`${group} / ${period}: ${value.toLocaleString('es-CO')} movilidades`} arrow>
+      <Box
+        sx={{
+          minWidth: 74,
+          height: 58,
+          borderRadius: 1.6,
+          background: bg,
+          border: `1px solid ${border}`,
+          display: 'grid',
+          placeItems: 'center',
+          position: 'relative',
+          overflow: 'hidden',
+          boxShadow: value > 0 ? `inset 0 -12px 28px rgba(15,23,42,${0.03 + (intensity * 0.04)})` : 'none',
+          transition: 'transform .18s ease, box-shadow .18s ease',
+          '&::before': {
+            content: '""',
+            position: 'absolute',
+            left: 0,
+            top: 0,
+            bottom: 0,
+            width: 4,
+            bgcolor: value > 0 ? `rgba(29,78,216,${0.35 + (intensity * 0.5)})` : '#e2e8f0'
+          },
+          '&:hover': {
+            transform: 'translateY(-1px)',
+            boxShadow: '0 14px 28px rgba(15,23,42,.12)'
+          }
+        }}
+      >
+        <Typography
+          sx={{
+            fontSize: 13,
+            fontWeight: 900,
+            color,
+            lineHeight: 1
+          }}
+        >
+          {value ? value.toLocaleString('es-CO') : '-'}
+        </Typography>
+      </Box>
+    </Tooltip>
+  );
+}
+
 function InternacionalizacionMovilidadDashboard({ onBack, onNavigateConvenios }) {
   const { enqueueSnackbar } = useSnackbar();
   const [data,    setData]    = useState(null);
   const [trendData, setTrendData] = useState(null);
   const [loading, setLoading] = useState(false);
   const [ready,   setReady]   = useState(false);
-  const [filters, setFilters] = useState({ periodo:'', alcance:'', direccion:'', tipo_persona:'', pais:'' });
+  const emptyFilters = { periodo:[], alcance:[], direccion:[], tipo_persona:[], pais:[] };
+  const [filters, setFilters] = useState(emptyFilters);
 
   // Filtros locales para el gráfico de tendencia
   const [localDesdePeriodo, setLocalDesdePeriodo] = useState('');
@@ -273,12 +514,12 @@ function InternacionalizacionMovilidadDashboard({ onBack, onNavigateConvenios })
   const load = useCallback(async () => {
     setReady(false); setLoading(true);
     try {
-      const activeFilters = Object.fromEntries(Object.entries(filters).filter(([,v])=>v));
+      const activeFilters = Object.fromEntries(Object.entries(filters).filter(([,v])=>Array.isArray(v) ? v.length > 0 : Boolean(v)));
       
       const trendFilters = { ...activeFilters };
       delete trendFilters.periodo;
 
-      if (filters.periodo) {
+      if (filters.periodo.length > 0) {
         const [resData, resTrend] = await Promise.all([
           gestionInformacionService.getMovilidadDashboard(activeFilters),
           gestionInformacionService.getMovilidadDashboard(trendFilters)
@@ -302,25 +543,27 @@ function InternacionalizacionMovilidadDashboard({ onBack, onNavigateConvenios })
 
   const setF  = (k,v) => setFilters(p=>({...p,[k]:v}));
   const reset = () => {
-    setFilters({ periodo:'', alcance:'', direccion:'', tipo_persona:'', pais:'' });
+    setFilters(emptyFilters);
     setLocalDesdePeriodo('');
     setLocalHastaPeriodo('');
   };
-  const hasFil = Object.values(filters).some(Boolean);
+  const hasFil = Object.values(filters).some((value) => Array.isArray(value) ? value.length > 0 : Boolean(value));
   const cat    = trendData?.catalogos || data?.catalogos || {};
   const allPeriods = cat.periodos || [];
+  const countryFilterOptions = mergeCountryRows((cat.paises || []).map((name) => ({ name, value: 1 }))).map((row) => row.name);
   const desdeOptions = allPeriods.filter(p => !localHastaPeriodo || p <= localHastaPeriodo);
   const hastaOptions = allPeriods.filter(p => !localDesdePeriodo || p >= localDesdePeriodo);
 
   /* ── derivados ──────────────────────────────────────────────────────── */
   const salientes = (data?.byDireccion||[]).find(r=>/saliente/i.test(r.name))?.value || 0;
   const entrantes = (data?.byDireccion||[]).find(r=>/entrante/i.test(r.name))?.value || 0;
-  const paises    = (data?.byPais||[]).filter(r=>isCountry(r.name));
-  const topPaises = paises.slice(0,12);
-  const maxPais   = topPaises[0]?.value || 1;
+  const paises    = mergeCountryRows(data?.byPais || []);
+  const paisesDestino = paises;
+  const maxPais   = paisesDestino[0]?.value || 1;
 
   // Datos históricos para el gráfico de tendencia
-  const allPeriodData = sortPer(trendData?.byPeriodo || data?.byPeriodo || []);
+  const periodDataset = filters.periodo.length > 0 ? data : (trendData || data);
+  const allPeriodData = sortPer(periodDataset?.byPeriodo || []);
   let filteredPeriodData = allPeriodData;
   if (localDesdePeriodo) {
     filteredPeriodData = filteredPeriodData.filter(r => r.name >= localDesdePeriodo);
@@ -333,9 +576,27 @@ function InternacionalizacionMovilidadDashboard({ onBack, onNavigateConvenios })
   const direccion = data?.byDireccion   || [];
   const persona   = data?.byTipoPersona || [];
   const activ     = (data?.byActividad  || []).slice(0,10);
-  const tipoMov   = (data?.byTipoMovilidad||[]).slice(0,9);
+  const tipoMov   = mergeNamedRows(data?.byTipoMovilidad || [], normalizeMobilityType).filter(r=>r.name!=='Sin dato').slice(0,9);
   const modalidad = (data?.byModalidad  ||[]).filter(r=>r.name!=='Sin dato').slice(0,8);
   const programas = (data?.byPrograma   ||[]).slice(0,10);
+  const heatDataset = filters.periodo.length > 0 ? data : (trendData || data);
+  const heatSource = heatDataset?.heatmapPeriodoDireccion || {};
+  const heatPeriodBase = sortPer(heatDataset?.byPeriodo || []);
+  const heatPeriods = heatPeriodBase.map(r => r.name);
+  const heatRows = Object.entries(heatSource)
+    .map(([name, values]) => ({
+      name,
+      values: heatPeriods.map(period => Number(values?.[period] || 0))
+    }))
+    .filter(row => row.values.some(Boolean))
+    .sort((a,b) => b.values.reduce((s,v)=>s+v,0) - a.values.reduce((s,v)=>s+v,0));
+  const heatMax = Math.max(1, ...heatRows.flatMap(row => row.values));
+  const heatPeriodTotals = heatPeriods.map((period, index) => ({
+    period,
+    value: heatRows.reduce((sum, row) => sum + (row.values[index] || 0), 0)
+  }));
+  const heatPeriodMax = Math.max(1, ...heatPeriodTotals.map(r => r.value));
+  const heatTotal = heatRows.reduce((sum, row) => sum + row.values.reduce((rowSum, value) => rowSum + value, 0), 0);
 
   const KPIS = [
     { icon:AutoGraphIcon,    label:'Total movilidades',        value:data?.total,    sub:'registros históricos',       bg:`linear-gradient(135deg,${C.blue},#1e40af)`,    sh:'rgba(29,78,216,.28)'    },
@@ -377,15 +638,17 @@ function InternacionalizacionMovilidadDashboard({ onBack, onNavigateConvenios })
             { label:'Alcance',      key:'alcance',      opts: cat.alcances     || [] },
             { label:'Dirección',    key:'direccion',    opts: cat.direcciones  || [] },
             { label:'Tipo persona', key:'tipo_persona', opts: cat.tiposPersona || [] },
-            { label:'País',         key:'pais',         opts: (cat.paises||[]).filter(isCountry).slice(0,80) }
+            { label:'Pa\u00eds',    key:'pais',         opts: countryFilterOptions.slice(0,80) }
           ].map(({ label, key, opts }) => (
-            <FormControl key={key} size="small" sx={{ minWidth:135 }}>
-              <InputLabel sx={{ fontSize:12 }}>{label}</InputLabel>
-              <Select value={filters[key]} label={label} onChange={e=>setF(key,e.target.value)} sx={{ fontSize:12 }}>
-                <MenuItem value=""><em>Todos</em></MenuItem>
-                {opts.map(o=><MenuItem key={o} value={o} sx={{ fontSize:12 }}>{o}</MenuItem>)}
-              </Select>
-            </FormControl>
+            <ChecklistFilter
+              key={key}
+              label={label}
+              options={opts}
+              value={filters[key]}
+              onChange={(value) => setF(key, value)}
+              placeholder={`Buscar ${label.toLowerCase()}...`}
+              disabled={loading}
+            />
           ))}
         </Stack>
       </Paper>
@@ -411,6 +674,119 @@ function InternacionalizacionMovilidadDashboard({ onBack, onNavigateConvenios })
           </Box>
 
           {/* ══ CUADRÍCULA 2 × n ══════════════════════════════════════════ */}
+          {heatRows.length > 0 && (
+            <Box sx={{ mb: 2.6 }}>
+              <Card delay={160} active={ready} sx={{ p: { xs: 2, md: 3 } }}>
+                <Stack
+                  direction={{ xs: 'column', md: 'row' }}
+                  alignItems={{ xs: 'flex-start', md: 'center' }}
+                  justifyContent="space-between"
+                  spacing={1.5}
+                  sx={{ mb: 2 }}
+                >
+                  <ST
+                    t="Mapa de calor de movilidad"
+                    color={C.blue}
+                  />
+                  <Stack direction="row" alignItems="center" spacing={1.2} sx={{ flexShrink: 0 }}>
+                    <Typography sx={{ fontSize: 10.5, color: '#94a3b8', fontWeight: 700 }}>Menor</Typography>
+                    <Box sx={{
+                      width: 132,
+                      height: 10,
+                      borderRadius: 999,
+                      background: `linear-gradient(90deg, rgba(29,78,216,.12), rgba(29,78,216,.58), ${C.blue})`,
+                      border: '1px solid rgba(29,78,216,.12)'
+                    }} />
+                    <Typography sx={{ fontSize: 10.5, color: '#64748b', fontWeight: 800 }}>Mayor</Typography>
+                  </Stack>
+                </Stack>
+
+                <Box sx={{ overflowX: 'auto', pb: 0.5 }}>
+                  <Box
+                    sx={{
+                      display: 'grid',
+                      gridTemplateColumns: `minmax(130px, 170px) repeat(${heatPeriods.length}, minmax(74px, 1fr)) minmax(86px, 100px)`,
+                      gap: 0.9,
+                      minWidth: 270 + (heatPeriods.length * 82),
+                      alignItems: 'center'
+                    }}
+                  >
+                    <Typography sx={{ fontSize: 10.5, color: '#94a3b8', fontWeight: 900, textTransform: 'uppercase' }}>
+                      {'Direcci\u00f3n'}
+                    </Typography>
+                    {heatPeriodTotals.map(({ period, value }) => (
+                      <Box key={period} sx={{ textAlign: 'center' }}>
+                        <Typography sx={{ fontSize: 11, color: '#475569', fontWeight: 900 }}>
+                          {period}
+                        </Typography>
+                        <Box sx={{ height: 4, borderRadius: 2, bgcolor: '#e2e8f0', mt: 0.8, overflow: 'hidden' }}>
+                          <Box
+                            sx={{
+                              height: '100%',
+                              width: `${Math.max(8, (value / heatPeriodMax) * 100)}%`,
+                              bgcolor: C.blue,
+                              borderRadius: 2
+                            }}
+                          />
+                        </Box>
+                        <Typography sx={{ fontSize: 10, color: '#94a3b8', fontWeight: 800, mt: 0.5 }}>
+                          {value.toLocaleString('es-CO')}
+                        </Typography>
+                      </Box>
+                    ))}
+                    <Typography sx={{ fontSize: 10.5, color: '#94a3b8', fontWeight: 900, textAlign: 'right', textTransform: 'uppercase' }}>
+                      Total
+                    </Typography>
+
+                    {heatRows.map((row, rowIndex) => {
+                      const rowTotal = row.values.reduce((sum, value) => sum + value, 0);
+                      return (
+                        <React.Fragment key={row.name}>
+                          <Stack direction="row" alignItems="center" spacing={1} sx={{ minWidth: 0 }}>
+                            <Box
+                              sx={{
+                                width: 10,
+                                height: 10,
+                                borderRadius: '50%',
+                                bgcolor: rowIndex === 0 ? C.emerald : C.violet,
+                                flexShrink: 0
+                              }}
+                            />
+                            <Box sx={{ minWidth: 0 }}>
+                              <Typography sx={{ fontSize: 12.5, color: '#0f172a', fontWeight: 900 }} noWrap>
+                                {row.name}
+                              </Typography>
+                              <Typography sx={{ fontSize: 10.5, color: '#94a3b8', fontWeight: 700 }}>
+                                {heatTotal > 0 ? ((rowTotal / heatTotal) * 100).toFixed(1) : '0.0'}% del total
+                              </Typography>
+                            </Box>
+                          </Stack>
+                          {row.values.map((value, index) => (
+                            <HeatCell
+                              key={`${row.name}-${heatPeriods[index]}`}
+                              value={value}
+                              max={heatMax}
+                              period={heatPeriods[index]}
+                              group={row.name}
+                            />
+                          ))}
+                          <Box sx={{ textAlign: 'right' }}>
+                            <Typography sx={{ fontSize: 14, color: '#0f172a', fontWeight: 900 }}>
+                              {rowTotal.toLocaleString('es-CO')}
+                            </Typography>
+                            <Typography sx={{ fontSize: 10, color: '#94a3b8', fontWeight: 800 }}>
+                              registros
+                            </Typography>
+                          </Box>
+                        </React.Fragment>
+                      );
+                    })}
+                  </Box>
+                </Box>
+              </Card>
+            </Box>
+          )}
+
           <Box sx={{ display:'grid', gridTemplateColumns:{ xs:'1fr', md:'1fr 1fr' }, gap:2.6, alignItems:'start' }}>
 
             {/* ── 1. Tendencia histórica ───────────────────────────────── */}
@@ -423,34 +799,44 @@ function InternacionalizacionMovilidadDashboard({ onBack, onNavigateConvenios })
                   <Typography sx={{ fontSize: 11, fontWeight: 700, color: '#64748b', textTransform: 'uppercase', letterSpacing: 0.5 }}>
                     Rango:
                   </Typography>
-                  <FormControl size="small" sx={{ minWidth: 105 }}>
-                    <InputLabel sx={{ fontSize: 11.5 }}>Desde</InputLabel>
-                    <Select
-                      value={localDesdePeriodo}
-                      label="Desde"
-                      onChange={e => setLocalDesdePeriodo(e.target.value)}
-                      sx={{ fontSize: 11.5, height: 30 }}
-                    >
-                      <MenuItem value="" sx={{ fontSize: 11.5 }}><em>Inicio</em></MenuItem>
-                      {desdeOptions.map(p => (
-                        <MenuItem key={p} value={p} sx={{ fontSize: 11.5 }}>{p}</MenuItem>
-                      ))}
-                    </Select>
-                  </FormControl>
-                  <FormControl size="small" sx={{ minWidth: 105 }}>
-                    <InputLabel sx={{ fontSize: 11.5 }}>Hasta</InputLabel>
-                    <Select
-                      value={localHastaPeriodo}
-                      label="Hasta"
-                      onChange={e => setLocalHastaPeriodo(e.target.value)}
-                      sx={{ fontSize: 11.5, height: 30 }}
-                    >
-                      <MenuItem value="" sx={{ fontSize: 11.5 }}><em>Fin</em></MenuItem>
-                      {hastaOptions.map(p => (
-                        <MenuItem key={p} value={p} sx={{ fontSize: 11.5 }}>{p}</MenuItem>
-                      ))}
-                    </Select>
-                  </FormControl>
+                  <Box
+                    component="select"
+                    value={localDesdePeriodo}
+                    onChange={(event) => setLocalDesdePeriodo(event.target.value)}
+                    sx={{
+                      minWidth: 105,
+                      height: 32,
+                      border: '1px solid #cbd5e1',
+                      borderRadius: 1.5,
+                      bgcolor: '#fff',
+                      color: '#334155',
+                      fontSize: 11.5,
+                      px: 1.2,
+                      outline: 'none'
+                    }}
+                  >
+                    <option value="">Inicio</option>
+                    {desdeOptions.map((p) => <option key={p} value={p}>{p}</option>)}
+                  </Box>
+                  <Box
+                    component="select"
+                    value={localHastaPeriodo}
+                    onChange={(event) => setLocalHastaPeriodo(event.target.value)}
+                    sx={{
+                      minWidth: 105,
+                      height: 32,
+                      border: '1px solid #cbd5e1',
+                      borderRadius: 1.5,
+                      bgcolor: '#fff',
+                      color: '#334155',
+                      fontSize: 11.5,
+                      px: 1.2,
+                      outline: 'none'
+                    }}
+                  >
+                    <option value="">Fin</option>
+                    {hastaOptions.map((p) => <option key={p} value={p}>{p}</option>)}
+                  </Box>
                   {(localDesdePeriodo || localHastaPeriodo) && (
                     <Tooltip title="Limpiar rango de períodos">
                       <IconButton
@@ -467,7 +853,7 @@ function InternacionalizacionMovilidadDashboard({ onBack, onNavigateConvenios })
               )}
 
               <ResponsiveContainer width="100%" height={280}>
-                <AreaChart data={areaData} margin={{ top:16, right:20, left:0, bottom:48 }}>
+                <AreaChart data={areaData} margin={{ top:16, right:20, left:0, bottom:20 }}>
                   <defs>
                     <linearGradient id="gB" x1="0" y1="0" x2="0" y2="1">
                       <stop offset="5%"  stopColor={C.blue} stopOpacity={.22}/>
@@ -475,7 +861,16 @@ function InternacionalizacionMovilidadDashboard({ onBack, onNavigateConvenios })
                     </linearGradient>
                   </defs>
                   <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" vertical={false}/>
-                  <XAxis dataKey="name" tick={{ fontSize:10, fill:'#64748b' }} angle={-35} textAnchor="end" interval={0} padding={{ left: 20, right: 20 }}/>
+                  <XAxis
+                    dataKey="name"
+                    tick={{ fontSize:11, fill:'#64748b', fontWeight:700 }}
+                    tickLine={false}
+                    axisLine={{ stroke:'#e2e8f0' }}
+                    tickMargin={12}
+                    interval={0}
+                    minTickGap={8}
+                    padding={{ left: 20, right: 20 }}
+                  />
                   <YAxis tick={{ fontSize:10.5, fill:'#94a3b8' }} axisLine={false} tickLine={false}
                     tickFormatter={v=>v>=1000?`${(v/1000).toFixed(0)}k`:v}/>
                   <RT content={<Tip/>}/>
@@ -573,7 +968,7 @@ function InternacionalizacionMovilidadDashboard({ onBack, onNavigateConvenios })
                       <PieChart>
                         <Pie data={persona} dataKey="value" nameKey="name"
                           cx="50%" cy="50%" innerRadius={42} outerRadius={64}
-                          paddingAngle={4} label={PL} labelLine={false}
+                          paddingAngle={4} label={false} labelLine={false}
                           isAnimationActive animationDuration={900}>
                           {persona.map((_,i)=>(
                             <Cell key={i} fill={[C.amber,C.rose,C.indigo,C.cyan,C.teal][i%5]} stroke="none"/>
@@ -605,14 +1000,14 @@ function InternacionalizacionMovilidadDashboard({ onBack, onNavigateConvenios })
               </Card>
             )}
 
-            {/* ── 5. Top países — span 2 columnas ─────────────────────── */}
-            {topPaises.length>0 && (
+            {/* -- 5. Pa�ses destino � span 2 columnas ----------------------- */}
+            {paisesDestino.length>0 && (
               <Box sx={{ gridColumn:'1 / -1' }}>
                 <Card delay={520} active={ready}>
-                  <ST t={`Top ${topPaises.length} países destino`}
+                  <ST t={`Pa\u00edses destino (${paisesDestino.length})`}
                     s="Distribución porcentual del total de movilidades" color={C.emerald}/>
                   <Box sx={{ display:'grid', gridTemplateColumns:{ xs:'1fr', md:'1fr 1fr' }, columnGap:5 }}>
-                    {topPaises.map((r,i)=>(
+                    {paisesDestino.map((r,i)=>(
                       <Box key={r.name}>
                         <PaisRow name={r.name} value={r.value}
                           max={maxPais} color={PAL[i%PAL.length]} rank={i+1} total={data.total}/>
@@ -729,3 +1124,5 @@ function InternacionalizacionMovilidadDashboard({ onBack, onNavigateConvenios })
 }
 
 export default InternacionalizacionMovilidadDashboard;
+
+

@@ -1820,7 +1820,7 @@ function AseguramientoCalidad() {
           </Paper>
         </Slide>
 
-        <Paper elevation={0} sx={{ border: '1px solid #e2e8f0', borderRadius: 3, overflow: 'hidden', position: 'relative' }}>
+        <Paper elevation={0} sx={{ border: '1px solid #dbe3ee', borderRadius: 0, overflow: 'hidden', position: 'relative', boxShadow: '0 4px 14px rgba(15,23,42,0.04)' }}>
             {loading && displayDocumentos.length > 0 && (
               <LinearProgress
                 sx={{
@@ -1876,16 +1876,28 @@ function AseguramientoCalidad() {
                     '&::-webkit-scrollbar-thumb': { bgcolor: '#cbd5e1', borderRadius: 8 }
                   }}
                 >
-                  <Table sx={{ width: '100%', minWidth: { xs: 1120, lg: 1240 }, tableLayout: 'fixed' }}>
+                  <Table
+                    sx={{
+                      width: '100%',
+                      minWidth: { xs: 820, sm: 900, lg: 1020 },
+                      tableLayout: 'fixed',
+                      '& .MuiTableCell-root': {
+                        borderRight: '1px solid #eef2f7'
+                      },
+                      '& .MuiTableCell-root:last-of-type': {
+                        borderRight: 0
+                      }
+                    }}
+                  >
                     <colgroup>
+                      <col style={{ width: '104px' }} />
+                      <col style={{ width: '106px' }} />
+                      <col style={{ width: '24%' }} />
                       <col style={{ width: '150px' }} />
-                      <col style={{ width: '150px' }} />
-                      <col style={{ width: '30%' }} />
-                      <col style={{ width: '190px' }} />
-                      <col style={{ width: '140px' }} />
-                      <col style={{ width: '90px' }} />
-                      {canManageDocumental && <col style={{ width: '120px' }} />}
-                      <col style={{ width: '230px' }} />
+                      <col style={{ width: '96px' }} />
+                      <col style={{ width: '58px' }} />
+                      {canManageDocumental && <col style={{ width: '78px' }} />}
+                      <col style={{ width: '108px' }} />
                     </colgroup>
                     <TableHead>
                       <TableRow sx={{ background: 'linear-gradient(135deg, #1e3a8a 0%, #1d4ed8 100%)' }}>
@@ -1899,7 +1911,7 @@ function AseguramientoCalidad() {
                           ...(canManageDocumental ? [{ label: 'Estado', align: 'center' }] : []),
                           { label: 'Acciones',         align: 'center' },
                         ].map(({ label, align }) => (
-                          <TableCell key={label} align={align} sx={{ fontWeight: 800, color: '#fff', fontSize: 11.5, borderBottom: 'none', textTransform: 'uppercase', letterSpacing: '0.3px', py: 1.5, px: 1.4, whiteSpace: 'normal', lineHeight: 1.2 }}>
+                          <TableCell key={label} align={align} sx={{ fontWeight: 800, color: '#fff', fontSize: { xs: 9.5, sm: 10, md: 10.5 }, borderBottom: 'none', borderRight: '1px solid rgba(255,255,255,0.18)', textTransform: 'uppercase', letterSpacing: 0, py: { xs: 0.65, md: 0.85 }, px: { xs: 0.35, sm: 0.5, md: 0.65 }, whiteSpace: 'normal', lineHeight: 1.12, borderRadius: 0 }}>
                             {label}
                           </TableCell>
                         ))}
@@ -1910,9 +1922,9 @@ function AseguramientoCalidad() {
                           const isFavorite = favoriteIds.has(String(doc.id));
                           const normalized = normalizeDocFields(doc);
                           return (
-                            <TableRow key={doc.id} hover sx={{ '&:hover': { bgcolor: '#f8fafc' }, transition: 'all 0.2s', cursor: 'pointer' }}>
-                              <TableCell sx={{ fontWeight: 700, color: '#3b82f6', fontSize: 13, fontFamily: 'monospace', px: 1.4, overflowWrap: 'anywhere' }}>{normalized.codigo}</TableCell>
-                              <TableCell sx={{ px: 1.4 }}>
+                            <TableRow key={doc.id} hover sx={{ height: { xs: 46, sm: 50, md: 54 }, '&:hover': { bgcolor: '#f8fafc' }, transition: 'all 0.2s', cursor: 'pointer', '& .MuiTableCell-root': { borderBottom: '1px solid #e6edf5', borderRight: '1px solid #eef2f7', verticalAlign: 'middle' }, '& .MuiTableCell-root:last-of-type': { borderRight: 0 } }}>
+                              <TableCell sx={{ fontWeight: 700, color: '#2563eb', fontSize: { xs: 10.25, sm: 11, md: 11.5 }, fontFamily: 'monospace', px: { xs: 0.35, sm: 0.5, md: 0.65 }, py: 0.45, overflowWrap: 'anywhere', lineHeight: 1.15 }}>{normalized.codigo}</TableCell>
+                              <TableCell sx={{ px: { xs: 0.35, sm: 0.5, md: 0.65 }, py: 0.45 }}>
                                 <Chip
                                   icon={getFormatoIcon(doc)}
                                   label={normalized.tipo || 'N/A'}
@@ -1921,26 +1933,32 @@ function AseguramientoCalidad() {
                                     bgcolor: getTipoColor(normalized.tipo).bg,
                                     color: getTipoColor(normalized.tipo).color,
                                     fontWeight: 700,
-                                    fontSize: 12,
-                                    borderRadius: 2,
-                                    px: 1,
-                                    '& .MuiChip-icon': { color: `${getFormatoColor(doc)} !important` }
+                                    fontSize: { xs: 9, sm: 9.75, md: 10.5 },
+                                    height: { xs: 19, sm: 20, md: 22 },
+                                    borderRadius: 1,
+                                    px: 0.3,
+                                    '& .MuiChip-label': { px: 0.6, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' },
+                                    '& .MuiChip-icon': { color: `${getFormatoColor(doc)} !important`, fontSize: { xs: 15, sm: 16, md: 18 }, ml: 0.2 }
                                   }}
                                 />
                               </TableCell>
-                              <TableCell sx={{ color: '#1e293b', fontWeight: 700, fontSize: 13.5, px: 1.4, lineHeight: 1.45, overflowWrap: 'anywhere', wordBreak: 'break-word' }}>{normalized.titulo}</TableCell>
-                              <TableCell sx={{ color: '#475569', fontSize: 13, px: 1.4, lineHeight: 1.45, overflowWrap: 'anywhere' }}>{doc.autor || '-'}</TableCell>
-                              <TableCell sx={{ color: '#475569', fontSize: 13, whiteSpace: 'nowrap', px: 1.4 }}>{formatDate(getDocumentoFechaCreacion(doc))}</TableCell>
-                              <TableCell align="center" sx={{ px: 1.2 }}>
-                                <Chip label={`v${doc.version || '1.0'}`} size="small" sx={{ bgcolor: '#f1f5f9', color: '#475569', fontWeight: 700, fontFamily: 'monospace', borderRadius: 1.5 }} />
+                              <TableCell sx={{ color: '#111827', fontWeight: 700, fontSize: { xs: 10.75, sm: 11.25, md: 12 }, px: { xs: 0.35, sm: 0.5, md: 0.65 }, py: 0.45, lineHeight: 1.2, overflowWrap: 'anywhere', wordBreak: 'break-word' }}>
+                                <Box component="span" sx={{ display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>{normalized.titulo}</Box>
+                              </TableCell>
+                              <TableCell sx={{ color: '#475569', fontSize: { xs: 10.5, sm: 11.25, md: 12 }, px: { xs: 0.35, sm: 0.5, md: 0.65 }, py: 0.45, lineHeight: 1.2, overflowWrap: 'anywhere' }}>
+                                <Box component="span" sx={{ display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>{doc.autor || '-'}</Box>
+                              </TableCell>
+                              <TableCell sx={{ color: '#475569', fontSize: { xs: 10.5, sm: 11.25, md: 12 }, whiteSpace: 'nowrap', px: { xs: 0.35, sm: 0.5, md: 0.65 }, py: 0.45 }}>{formatDate(getDocumentoFechaCreacion(doc))}</TableCell>
+                              <TableCell align="center" sx={{ px: 0.35, py: 0.45 }}>
+                                <Chip label={`v${doc.version || '1.0'}`} size="small" sx={{ height: { xs: 18, md: 20 }, bgcolor: '#f1f5f9', color: '#475569', fontWeight: 700, fontSize: { xs: 9, md: 10 }, fontFamily: 'monospace', borderRadius: 1 }} />
                               </TableCell>
                               {canManageDocumental && (
-                              <TableCell align="center" sx={{ px: 1.2 }}>
-                                <Chip label={getEstadoLabel(doc.estado)} color={getEstadoColor(doc.estado)} size="small" sx={{ fontWeight: 700, textTransform: 'uppercase', fontSize: 11, borderRadius: 1.5 }} />
+                              <TableCell align="center" sx={{ px: 0.35, py: 0.45 }}>
+                                <Chip label={getEstadoLabel(doc.estado)} color={getEstadoColor(doc.estado)} size="small" sx={{ height: { xs: 18, md: 21 }, color: '#fff', fontWeight: 700, textTransform: 'uppercase', fontSize: { xs: 8.5, sm: 9.25, md: 10 }, borderRadius: 1, '& .MuiChip-label': { px: { xs: 0.45, md: 0.8 } } }} />
                               </TableCell>
                               )}
-                              <TableCell align="center" sx={{ px: 1.2 }}>
-                                <Stack direction="row" spacing={0.7} justifyContent="center" flexWrap="nowrap">
+                              <TableCell align="center" sx={{ px: 0.35, py: 0.45 }}>
+                                <Stack direction="row" spacing={{ xs: 0.25, sm: 0.35, md: 0.45 }} justifyContent="center" flexWrap="nowrap">
 
                                   <Tooltip title={isFavorite ? 'Quitar de favoritos' : 'Agregar a favoritos'} arrow>
                                     <span>
@@ -1949,13 +1967,15 @@ function AseguramientoCalidad() {
                                         onClick={() => toggleFavorite(doc.id)}
                                         disabled={loadingFavorites}
                                         sx={{
+                                          width: { xs: 24, sm: 26, md: 28 },
+                                          height: { xs: 24, sm: 26, md: 28 },
                                           color: isFavorite ? '#ef4444' : '#94a3b8',
                                           bgcolor: isFavorite ? '#fee2e2' : '#f1f5f9',
                                           '&:hover': { bgcolor: isFavorite ? '#fecaca' : '#e2e8f0' },
                                           '&:disabled': { opacity: 0.5 }
                                         }}
                                       >
-                                        {isFavorite ? <FavoriteIcon fontSize="small" /> : <FavoriteBorderIcon fontSize="small" />}
+                                        {isFavorite ? <FavoriteIcon sx={{ fontSize: { xs: 15, md: 17 } }} /> : <FavoriteBorderIcon sx={{ fontSize: { xs: 15, md: 17 } }} />}
                                       </IconButton>
                                     </span>
                                   </Tooltip>
@@ -1981,13 +2001,15 @@ function AseguramientoCalidad() {
                                         <IconButton
                                           size="small"
                                           sx={{
+                                            width: { xs: 24, sm: 26, md: 28 },
+                                            height: { xs: 24, sm: 26, md: 28 },
                                             color: '#0f766e',
                                             bgcolor: '#ccfbf1',
                                             '&:hover': { bgcolor: '#99f6e4' }
                                           }}
                                           onClick={() => openReporteSalidaForm(doc)}
                                         >
-                                          <PostAddIcon fontSize="small" />
+                                          <PostAddIcon sx={{ fontSize: { xs: 15, md: 17 } }} />
                                         </IconButton>
                                       </span>
                                     </Tooltip>
@@ -1997,6 +2019,8 @@ function AseguramientoCalidad() {
                                       <IconButton
                                         size="small"
                                         sx={{
+                                          width: { xs: 24, sm: 26, md: 28 },
+                                          height: { xs: 24, sm: 26, md: 28 },
                                           color: '#2563eb',
                                           bgcolor: '#eff6ff',
                                           '&:hover': { bgcolor: '#dbeafe' },
@@ -2009,7 +2033,7 @@ function AseguramientoCalidad() {
                                           }
                                         }}
                                       >
-                                        <VisibilityOutlinedIcon fontSize="small" />
+                                        <VisibilityOutlinedIcon sx={{ fontSize: { xs: 15, md: 17 } }} />
                                       </IconButton>
                                     </span>
                                   </Tooltip>
@@ -2019,6 +2043,8 @@ function AseguramientoCalidad() {
                                       <IconButton
                                         size="small"
                                         sx={{
+                                          width: { xs: 24, sm: 26, md: 28 },
+                                          height: { xs: 24, sm: 26, md: 28 },
                                           color: '#059669',
                                           bgcolor: '#d1fae5',
                                           '&:hover': { bgcolor: '#a7f3d0' },
@@ -2027,7 +2053,7 @@ function AseguramientoCalidad() {
                                         disabled={!doc.link_acceso}
                                         onClick={() => handleDownload(doc, normalized)}
                                       >
-                                        <FileDownloadOutlinedIcon fontSize="small" />
+                                        <FileDownloadOutlinedIcon sx={{ fontSize: { xs: 15, md: 17 } }} />
                                       </IconButton>
                                     </span>
                                   </Tooltip>
