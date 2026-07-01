@@ -70,7 +70,7 @@ function RecursoHumanoLandingPage({ onBack }) {
     return () => { active = false; };
   }, []);
 
-  const showSeguimientoCard = reporteSalidaEnabled && Boolean(seguimientoAccess?.canView);
+  const showSeguimientoCard = Boolean(seguimientoAccess?.canView);
   const seguimientoDescription = seguimientoAccess?.mode === 'colaborador'
     ? 'Consulta tus horas pendientes por reponer y el estado de validacion de Talento Humano.'
     : seguimientoAccess?.mode === 'jefe' || seguimientoAccess?.mode === 'jefe_y_colaborador'
