@@ -13875,7 +13875,7 @@ const renderCategoryBars = (items = [], options = {}) => {
   return (
     <Fade in={true}>
       <Box>
-        {!isGestionProcesosStatsRoute && !isDirectDocumentalView && !(selectedCard === 'poblacional' && poblacionalPanel !== 'hub') && selectedCard !== 'infraestructura_fisica' && selectedCard !== 'recurso_humano' && selectedCard !== 'internacionalizacion' && (
+        {!isGestionProcesosStatsRoute && !isDirectDocumentalView && !(selectedCard === 'poblacional' && poblacionalPanel !== 'hub') && selectedCard !== 'infraestructura_fisica' && selectedCard !== 'recurso_humano' && selectedCard !== 'internacionalizacion' && selectedCard !== 'activity_monitor' && (
           <Paper elevation={0} sx={{ p: 3, mb: 3, borderRadius: 3, border: '1px solid #dbe2f1', background: 'linear-gradient(135deg,#0f172a,#1d4ed8)' }}>
             <Stack direction="row" spacing={1.5} alignItems="center">
               <InsightsIcon sx={{ color: 'white' }} />

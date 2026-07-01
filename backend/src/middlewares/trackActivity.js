@@ -18,20 +18,29 @@ const detectModule = (url = '', method = '') => {
   return 'General';
 };
 
-const detectAction = (method = '', url = '') => {
+const detectAction = (method = '', url = '', statusCode = 200) => {
   const u = url.toLowerCase();
+  
+  if (statusCode >= 400) {
+    if (statusCode >= 500) return 'Error del Sistema';
+    if (statusCode === 401 || statusCode === 403) return 'Acceso Denegado';
+    return 'Error de Cliente';
+  }
+
+  if (u.includes('/descargar') || u.includes('/download') || u.includes('export')) return 'Descarga';
   if (u.includes('/masiva') || u.includes('/import')) return 'Carga de archivo';
   if (u.includes('/consulta') || u.includes('/buscar')) return 'Consulta';
-  if (method === 'GET')    return 'Visualización';
+  
+  if (method === 'GET')    return 'Visita / Visualización';
   if (method === 'POST')   return 'Creación';
   if (method === 'PUT' || method === 'PATCH') return 'Actualización';
   if (method === 'DELETE') return 'Eliminación';
-  return 'Acceso';
+  return 'Interacción';
 };
 
 /**
- * Fire-and-forget activity logger middleware.
- * Attach AFTER auth middleware on routes you want to track.
+ * Activity logger middleware.
+ * Waits for response to finish to capture status code.
  */
 const trackActivity = (req, res, next) => {
   // Only track authenticated users; skip activity-stats calls to avoid noise
@@ -39,7 +48,7 @@ const trackActivity = (req, res, next) => {
     return next();
   }
 
-  setImmediate(async () => {
+  res.on('finish', async () => {
     try {
       await UserActivityLog.create({
         user_id:    req.user.id,
@@ -47,7 +56,7 @@ const trackActivity = (req, res, next) => {
         user_email: req.user.email  || null,
         user_role:  req.user.role   || null,
         module:     detectModule(req.originalUrl, req.method),
-        action:     detectAction(req.method, req.originalUrl),
+        action:     detectAction(req.method, req.originalUrl, res.statusCode),
         method:     req.method,
         endpoint:   req.originalUrl?.slice(0, 600),
         ip_address: (req.headers['x-forwarded-for'] || req.ip || '').toString().slice(0, 60),
