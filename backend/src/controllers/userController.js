@@ -1445,11 +1445,12 @@ const bulkUploadUsers = async (req, res) => {
     }
 
     const adminIdsToDemote = rowsToUpdate
-      .filter(({ row, existing }) =>
-        existing.role === ROLES.ADMINISTRADOR &&
-        existing.estado === 'activo' &&
-        row.targetRole !== ROLES.ADMINISTRADOR
-      )
+      .filter(({ row, existing }) => {
+        const finalRole = row.role || existing.role;
+        return existing.role === ROLES.ADMINISTRADOR &&
+          existing.estado === 'activo' &&
+          finalRole !== ROLES.ADMINISTRADOR;
+      })
       .map(({ existing }) => existing.id);
 
     if (adminIdsToDemote.length > 0) {
@@ -1525,14 +1526,15 @@ const bulkUploadUsers = async (req, res) => {
       }
 
       for (const { row, existing } of rowsToUpdate) {
+        const finalRole = row.role || existing.role;
         await User.update({
-          nombre: row.nombre,
+          nombre: row.nombre || existing.nombre,
           email: row.email,
           username: row.username,
-          dependencia: row.dependencia,
-          cargo: row.cargo,
-          jefe_inmediato: row.jefe_inmediato,
-          role: row.targetRole,
+          dependencia: row.dependencia || existing.dependencia,
+          cargo: row.cargo || existing.cargo,
+          jefe_inmediato: row.jefe_inmediato || existing.jefe_inmediato,
+          role: finalRole,
           estado: 'activo',
           must_change_password: false
         }, {
