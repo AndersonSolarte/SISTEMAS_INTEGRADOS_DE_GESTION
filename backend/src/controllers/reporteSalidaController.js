@@ -504,7 +504,7 @@ const canManageSeguimientoReportes = async (user) => {
     where: {
       user_id: user.id,
       can_view: true,
-      module_key: 'seguimiento_reportes_rrhh'
+      module_key: { [Op.in]: ['seguimiento_reportes_rrhh', 'recurso_humano'] }
     }
   });
   return count > 0;
