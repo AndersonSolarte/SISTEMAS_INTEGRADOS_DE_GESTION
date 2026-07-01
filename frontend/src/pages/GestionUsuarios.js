@@ -192,6 +192,7 @@ function GestionUsuarios() {
     { key: 'investigacion', label: 'Investigacion', group: 'Tableros estadisticos' },
     { key: 'proyectos_convenios', label: 'Proyectos y Convenios', group: 'Tableros estadisticos' },
     { key: 'recurso_humano', label: 'Recurso Humano / Gestion Humana', group: 'Tableros estadisticos' },
+    { key: 'seguimiento_reportes_rrhh', label: 'Seguimiento a reportes (RRHH)', group: 'Tableros estadisticos' },
     { key: 'saber_pro', label: 'Saber Pro', group: 'Tableros estadisticos' },
     { key: 'gestion_procesos', label: 'Gestion por Procesos', group: 'Tableros estadisticos' },
     { key: 'plan_accion', label: 'Plan de Accion', group: 'Tableros estadisticos' },
