@@ -24,7 +24,6 @@ const GESTION_INFO_MODULE_KEYS = new Set([
   'investigacion',
   'proyectos_convenios',
   'recurso_humano',
-  'seguimiento_reportes_rrhh',
   'saber_pro',
   'gestion_procesos',
   'plan_accion',
@@ -55,7 +54,6 @@ const LEGACY_GI_STATS_KEYS = new Set([
   'investigacion',
   'proyectos_convenios',
   'recurso_humano',
-  'seguimiento_reportes_rrhh',
   'saber_pro',
   'gestion_procesos'
 ]);

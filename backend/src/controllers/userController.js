@@ -104,12 +104,20 @@ const SABER_PRO_DASHBOARD_PERMISSION_KEYS = [
   'saber_pro_valor_agregado_programas',
   'saber_pro_valor_agregado_institucional'
 ];
+
+const RECURSO_HUMANO_DASHBOARD_PERMISSION_KEYS = [
+  'recurso_humano_profesores',
+  'recurso_humano_administrativos',
+  'recurso_humano_seguimiento'
+];
+
 const ALL_MODULE_PERMISSION_KEYS = [
   ...MENU_PERMISSION_KEYS,
   ...GESTION_INFO_MODULE_KEYS,
   ...GESTION_PROCESOS_DASHBOARD_PERMISSION_KEYS,
   ...POBLACIONAL_DASHBOARD_PERMISSION_KEYS,
-  ...SABER_PRO_DASHBOARD_PERMISSION_KEYS
+  ...SABER_PRO_DASHBOARD_PERMISSION_KEYS,
+  ...RECURSO_HUMANO_DASHBOARD_PERMISSION_KEYS
 ];
 const MANAGED_PLANEACION_ROLES = [
   ROLES.PLANEACION_ESTRATEGICA,
@@ -1841,7 +1849,8 @@ const getUserModulePermissions = async (req, res) => {
           gestionInformacion: GESTION_INFO_MODULE_KEYS,
           gestionProcesosDashboards: GESTION_PROCESOS_DASHBOARD_PERMISSION_KEYS,
           poblacionalDashboards: POBLACIONAL_DASHBOARD_PERMISSION_KEYS,
-          saberProDashboards: SABER_PRO_DASHBOARD_PERMISSION_KEYS
+          saberProDashboards: SABER_PRO_DASHBOARD_PERMISSION_KEYS,
+          recursoHumanoDashboards: RECURSO_HUMANO_DASHBOARD_PERMISSION_KEYS
         },
         permissions: map
       }
@@ -1860,7 +1869,8 @@ const updateUserModulePermissions = async (req, res) => {
       allowedModules = [],
       allowedGestionProcesosDashboards = [],
       allowedPoblacionalDashboards = [],
-      allowedSaberProDashboards = []
+      allowedSaberProDashboards = [],
+      allowedRecursoHumanoDashboards = []
     } = req.body || {};
 
     const user = await User.findByPk(id, { attributes: ['id', 'nombre', 'email', 'role'] });
@@ -1894,6 +1904,10 @@ const updateUserModulePermissions = async (req, res) => {
       .map((x) => String(x || '').trim())
       .filter((x) => SABER_PRO_DASHBOARD_PERMISSION_KEYS.includes(x))));
 
+    const cleanRecursoHumanoDashboards = Array.from(new Set((Array.isArray(allowedRecursoHumanoDashboards) ? allowedRecursoHumanoDashboards : [])
+      .map((x) => String(x || '').trim())
+      .filter((x) => RECURSO_HUMANO_DASHBOARD_PERMISSION_KEYS.includes(x))));
+
     if (user.role === ROLES.CONSULTA) {
       cleanMenu = cleanMenu.filter((key) => key !== 'gestion_usuarios');
     }
@@ -1916,11 +1930,17 @@ const updateUserModulePermissions = async (req, res) => {
     if (cleanSaberProDashboards.length > 0 && !cleanModules.includes('saber_pro')) {
       cleanModules.push('saber_pro');
     }
-    if ((cleanModules.length > 0 || cleanGestionProcesosDashboards.length > 0 || cleanPoblacionalDashboards.length > 0 || cleanSaberProDashboards.length > 0) && !cleanMenu.includes('gestion_informacion')) {
+    if (cleanRecursoHumanoDashboards.length > 0 && !cleanModules.includes('estadistica_institucional')) {
+      cleanModules.push('estadistica_institucional');
+    }
+    if (cleanRecursoHumanoDashboards.length > 0 && !cleanModules.includes('recurso_humano')) {
+      cleanModules.push('recurso_humano');
+    }
+    if ((cleanModules.length > 0 || cleanGestionProcesosDashboards.length > 0 || cleanPoblacionalDashboards.length > 0 || cleanSaberProDashboards.length > 0 || cleanRecursoHumanoDashboards.length > 0) && !cleanMenu.includes('gestion_informacion')) {
       cleanMenu.push('gestion_informacion');
     }
 
-    const allSelected = [...cleanMenu, ...cleanModules, ...cleanGestionProcesosDashboards, ...cleanPoblacionalDashboards, ...cleanSaberProDashboards];
+    const allSelected = [...cleanMenu, ...cleanModules, ...cleanGestionProcesosDashboards, ...cleanPoblacionalDashboards, ...cleanSaberProDashboards, ...cleanRecursoHumanoDashboards];
 
     await User.sequelize.transaction(async (t) => {
       await UserModulePermission.destroy({ where: { user_id: id }, transaction: t });
