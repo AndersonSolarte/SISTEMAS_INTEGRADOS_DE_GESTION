@@ -3,7 +3,8 @@ import {
   Box, Stack, Typography, Paper, Button, TextField, Chip,
   CircularProgress, Divider, Table, TableHead, TableBody,
   TableRow, TableCell, TableContainer, Alert, LinearProgress,
-  Tooltip, IconButton, Accordion, AccordionSummary, AccordionDetails, Snackbar
+  Tooltip, IconButton, Accordion, AccordionSummary, AccordionDetails, Snackbar,
+  Dialog, DialogTitle, DialogContent, DialogActions
 } from '@mui/material';
 import ExpandMoreRoundedIcon    from '@mui/icons-material/ExpandMoreRounded';
 import SearchRoundedIcon        from '@mui/icons-material/SearchRounded';
@@ -762,16 +763,37 @@ function CargaMasiva() {
         {loading && <LinearProgress variant="determinate" value={progress} sx={{ mt: 1.5, borderRadius: 1 }} />}
       </Paper>
 
-      <Snackbar 
+      <Dialog 
         open={!!error} 
-        autoHideDuration={6000} 
         onClose={() => setError(null)}
-        anchorOrigin={{ vertical: 'top', horizontal: 'center' }}
+        maxWidth="sm"
+        fullWidth
+        PaperProps={{ sx: { borderRadius: 3, boxShadow: '0 8px 32px rgba(0,0,0,0.1)' } }}
       >
-        <Alert onClose={() => setError(null)} severity="error" sx={{ width: '100%', borderRadius: 2, boxShadow: 3, fontWeight: 500 }}>
-          {error}
-        </Alert>
-      </Snackbar>
+        <DialogTitle sx={{ display: 'flex', alignItems: 'center', gap: 1.5, pb: 1, pt: 3, px: 3 }}>
+          <ErrorRoundedIcon sx={{ color: '#dc2626', fontSize: 28 }} />
+          <Typography sx={{ fontWeight: 800, color: '#1e293b', fontSize: 18 }}>
+            Error al procesar el archivo
+          </Typography>
+        </DialogTitle>
+        <DialogContent sx={{ px: 3, pb: 1 }}>
+          <Alert severity="error" icon={false} sx={{ borderRadius: 2, border: '1px solid #fecaca', bgcolor: '#fef2f2', '& .MuiAlert-message': { width: '100%' } }}>
+            <Typography sx={{ fontSize: 14.5, color: '#991b1b', fontWeight: 600 }}>
+              {error}
+            </Typography>
+          </Alert>
+        </DialogContent>
+        <DialogActions sx={{ px: 3, pb: 3, pt: 1 }}>
+          <Button 
+            onClick={() => setError(null)} 
+            variant="contained" 
+            disableElevation
+            sx={{ bgcolor: '#1e293b', color: '#fff', '&:hover': { bgcolor: '#0f172a' }, borderRadius: 1.5, textTransform: 'none', fontWeight: 700, px: 3 }}
+          >
+            Entendido
+          </Button>
+        </DialogActions>
+      </Dialog>
 
       {result && (
         <>
