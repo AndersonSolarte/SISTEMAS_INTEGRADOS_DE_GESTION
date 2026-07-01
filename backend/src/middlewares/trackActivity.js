@@ -9,11 +9,14 @@ const detectModule = (url = '', method = '') => {
   if (u.includes('/saber-pro'))                     return 'Saber Pro Analytics';
   if (u.includes('/matriculados'))                  return 'Matriculados';
   if (u.includes('/gestion-informacion'))           return 'Gestión de Información';
-  if (u.includes('/documentos'))                    return 'Documentos';
+  if (u.includes('/documentos') || u.includes('/favoritos')) return 'Documentos';
   if (u.includes('/users'))                         return 'Administración Usuarios';
   if (u.includes('/import'))                        return 'Importación de Datos';
   if (u.includes('/catalogo') || u.includes('/macroprocesos')) return 'Catálogo de Procesos';
   if (u.includes('/activity'))                      return 'Monitor de Actividad';
+  if (u.includes('/security') || u.includes('/logs')) return 'Seguridad y Auditoría';
+  if (u.includes('/instrumentos') || u.includes('/public/instrumentos')) return 'Autoevaluación';
+  if (u.includes('/evidencia') || u.includes('/plan-accion') || u.includes('/reporte-salida')) return 'Planeación Estratégica';
   if (u.includes('/auth/profile'))                  return 'Sistema';
   return 'General';
 };

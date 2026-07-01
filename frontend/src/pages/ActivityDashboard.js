@@ -4,11 +4,11 @@ import {
   Select, MenuItem, Table, TableBody, TableCell, TableHead,
   TableRow, TableContainer, Avatar, Tooltip,
   FormControl, InputLabel, Alert, Button, Switch, FormControlLabel,
-  Paper, Grid, IconButton, Fade, Zoom
+  Paper, Grid, IconButton, Fade, Zoom, ToggleButton, ToggleButtonGroup
 } from '@mui/material';
 import {
   AreaChart, Area, PieChart, Pie, Cell, ResponsiveContainer, 
-  Tooltip as RechartsTooltip, Legend, CartesianGrid, XAxis, YAxis
+  BarChart, Bar, LabelList, Tooltip as RechartsTooltip, Legend, CartesianGrid, XAxis, YAxis
 } from 'recharts';
 
 import AnalyticsOutlinedIcon from '@mui/icons-material/AnalyticsOutlined';
@@ -18,22 +18,27 @@ import FileDownloadRoundedIcon from '@mui/icons-material/FileDownloadRounded';
 import WarningRoundedIcon from '@mui/icons-material/WarningRounded';
 import RefreshIcon from '@mui/icons-material/Refresh';
 import TrendingUpIcon from '@mui/icons-material/TrendingUp';
+import VisibilityIcon from '@mui/icons-material/Visibility';
+import DownloadIcon from '@mui/icons-material/Download';
 
 import api from '../services/api';
 
 /* ── Constants ── */
 const ROLE_LABELS = {
-  administrador:          'Administrador',
-  planeacion_estrategica: 'Planeación Est.',
-  planeacion_efectividad: 'Planeación y Efectividad',
-  autoevaluacion:         'Autoevaluación',
-  gestion_informacion:    'Gestión Información',
-  gestion_procesos:       'Gestión Procesos',
+  'ADMINISTRADOR': 'Administrador',
+  'CONSULTA': 'Consulta',
+  'GESTION_PROCESOS': 'Gestión por Procesos',
+  'PLANEACION_ESTRATEGICA': 'Planeación Estratégica',
+  'PLANEACION_EFECTIVIDAD': 'Planeación y Efectividad',
+  'AUTOEVALUACION': 'Autoevaluación',
+  'GESTION_INFORMACION': 'Gestión de la Información',
+  'REGISTROS_CALIFICADOS': 'Registros Calificados y Acreditación'
 };
 
 const MODULE_COLORS = ['#3b82f6', '#8b5cf6', '#ec4899', '#10b981', '#f59e0b', '#06b6d4'];
 
 const ACTION_COLORS = {
+  'Inicio de sesión': '#3b82f6',
   'Consulta': '#3b82f6',
   'Creación': '#10b981',
   'Actualización': '#f59e0b',
@@ -45,6 +50,35 @@ const ACTION_COLORS = {
   'Error del Sistema': '#ef4444',
   'Error de Cliente': '#f43f5e',
   'Acceso Denegado': '#be123c',
+  'Acceso Denegado': '#be123c',
+};
+
+/* ── Custom XAxis Tick ── */
+const MultilineTick = (props) => {
+  const { x, y, payload } = props;
+  const label = ROLE_LABELS[payload.value] || payload.value || '';
+  const words = label.split(' ');
+  const lines = [];
+  let currentLine = '';
+  words.forEach(word => {
+    if ((currentLine + word).length > 12) {
+      if (currentLine) lines.push(currentLine.trim());
+      currentLine = word + ' ';
+    } else {
+      currentLine += word + ' ';
+    }
+  });
+  if (currentLine) lines.push(currentLine.trim());
+
+  return (
+    <g transform={`translate(${x},${y})`}>
+      <text x={0} y={0} dy={16} textAnchor="middle" fill="#94a3b8" fontSize={10} fontWeight={600}>
+        {lines.map((line, index) => (
+          <tspan x={0} dy={index === 0 ? 0 : 12} key={index}>{line}</tspan>
+        ))}
+      </text>
+    </g>
+  );
 };
 
 const fmtTime = (d) => {
@@ -137,6 +171,18 @@ export default function ActivityDashboard({ embedded = false }) {
           total: Number(x.total),
           dateFormatted: new Date(x.date).toLocaleDateString('es-ES', { day:'2-digit', month:'short' })
         }));
+        if (parsed.loginsByDay) parsed.loginsByDay = parsed.loginsByDay.map(x => ({
+          ...x,
+          total: Number(x.total),
+          dateFormatted: new Date(x.date).toLocaleDateString('es-ES', { day:'2-digit', month:'short' })
+        }));
+        if (parsed.topConsultingUsers) {
+          const totalConsultas = parsed.topConsultingUsers.reduce((sum, item) => sum + Number(item.total), 0);
+          parsed.topConsultingUsers = parsed.topConsultingUsers.map(x => ({
+            ...x,
+            porcentaje: totalConsultas > 0 ? parseFloat(((Number(x.total) / totalConsultas) * 100).toFixed(1)) : 0
+          }));
+        }
         setData(parsed);
       } else {
         setError(res.message || 'Error al cargar datos.');
@@ -257,14 +303,25 @@ export default function ActivityDashboard({ embedded = false }) {
               <GlassCard delay={600} sx={{ p: 3, width: '100%', display: 'flex', flexDirection: 'column' }}>
                 <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
                   <Box>
-                    <Typography sx={{ fontWeight: 900, fontSize: 18, color: '#0f172a' }}>Evolución de Actividad</Typography>
-                    <Typography sx={{ fontSize: 13, color: '#64748b' }}>Volumen de interacciones a lo largo del período seleccionado</Typography>
+                    <Typography sx={{ fontWeight: 900, fontSize: 18, color: '#0f172a' }}>Ingresos al Sistema por Día</Typography>
+                    <Typography sx={{ fontSize: 13, color: '#64748b' }}>Volumen de inicios de sesión a lo largo del período seleccionado</Typography>
                   </Box>
+                  <ToggleButtonGroup
+                    value={days}
+                    exclusive
+                    onChange={(e, val) => { if (val) setDays(val); }}
+                    size="small"
+                    sx={{ bgcolor: 'rgba(255,255,255,0.5)', borderRadius: 2 }}
+                  >
+                    <ToggleButton value={7} sx={{ fontWeight: 700, textTransform: 'none', px: 2 }}>Semana</ToggleButton>
+                    <ToggleButton value={15} sx={{ fontWeight: 700, textTransform: 'none', px: 2 }}>Quincena</ToggleButton>
+                    <ToggleButton value={30} sx={{ fontWeight: 700, textTransform: 'none', px: 2 }}>Mes</ToggleButton>
+                  </ToggleButtonGroup>
                 </Box>
                 <ResponsiveContainer width="100%" height={320}>
-                  <AreaChart data={data.byDay} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
+                  <AreaChart data={data.loginsByDay} margin={{ top: 20, right: 10, left: -20, bottom: 0 }}>
                     <defs>
-                      <linearGradient id="colorTotal" x1="0" y1="0" x2="0" y2="1">
+                      <linearGradient id="colorLogins" x1="0" y1="0" x2="0" y2="1">
                         <stop offset="5%" stopColor="#3b82f6" stopOpacity={0.4}/>
                         <stop offset="95%" stopColor="#3b82f6" stopOpacity={0}/>
                       </linearGradient>
@@ -276,7 +333,9 @@ export default function ActivityDashboard({ embedded = false }) {
                       contentStyle={{ borderRadius: 12, border: 'none', boxShadow: '0 10px 25px rgba(0,0,0,0.1)', fontWeight: 700 }}
                       itemStyle={{ color: '#3b82f6', fontWeight: 900 }}
                     />
-                    <Area type="monotone" dataKey="total" name="Interacciones" stroke="#3b82f6" strokeWidth={4} fillOpacity={1} fill="url(#colorTotal)" />
+                    <Area type="monotone" dataKey="total" name="Ingresos" stroke="#3b82f6" strokeWidth={4} fillOpacity={1} fill="url(#colorLogins)">
+                      <LabelList dataKey="total" position="top" fill="#3b82f6" fontSize={12} fontWeight={700} />
+                    </Area>
                   </AreaChart>
                 </ResponsiveContainer>
               </GlassCard>
@@ -284,26 +343,24 @@ export default function ActivityDashboard({ embedded = false }) {
             <Box sx={{ display: 'flex' }}>
               <GlassCard delay={700} sx={{ p: 3, width: '100%', display: 'flex', flexDirection: 'column' }}>
                 <Box sx={{ mb: 2 }}>
-                  <Typography sx={{ fontWeight: 900, fontSize: 18, color: '#0f172a' }}>Distribución de Tareas</Typography>
-                  <Typography sx={{ fontSize: 13, color: '#64748b' }}>¿Qué acciones realizan más los usuarios?</Typography>
+                  <Typography sx={{ fontWeight: 900, fontSize: 18, color: '#0f172a' }}>Uso Colectivo por Roles</Typography>
+                  <Typography sx={{ fontSize: 13, color: '#64748b' }}>Conteo de ingresos al sistema agrupado por perfil</Typography>
                 </Box>
                 <Box sx={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                   <ResponsiveContainer width="100%" height={320}>
-                    <PieChart>
-                      <Pie
-                        data={data.byAction} dataKey="total" nameKey="action"
-                        cx="50%" cy="45%" innerRadius={70} outerRadius={100} paddingAngle={5} stroke="none"
-                      >
-                        {data.byAction?.map((entry, index) => (
-                          <Cell key={`cell-${index}`} fill={ACTION_COLORS[entry.action] || MODULE_COLORS[index % MODULE_COLORS.length]} />
-                        ))}
-                      </Pie>
+                    <BarChart data={data.loginsByRole} margin={{ top: 20, right: 20, left: -20, bottom: 30 }}>
+                      <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="rgba(0,0,0,0.05)" />
+                      <XAxis dataKey="user_role" axisLine={false} tickLine={false} interval={0} tick={<MultilineTick />} />
+                      <YAxis tick={{ fontSize: 12, fill: '#94a3b8', fontWeight: 600 }} axisLine={false} tickLine={false} />
                       <RechartsTooltip 
                         contentStyle={{ borderRadius: 12, border: 'none', boxShadow: '0 10px 25px rgba(0,0,0,0.1)', fontWeight: 700 }}
-                        itemStyle={{ color: '#0f172a', fontWeight: 900 }}
+                        itemStyle={{ color: '#10b981', fontWeight: 900 }}
+                        labelFormatter={(lbl) => ROLE_LABELS[lbl] || lbl}
                       />
-                      <Legend verticalAlign="bottom" height={36} iconType="circle" wrapperStyle={{ fontSize: 13, fontWeight: 700 }} />
-                    </PieChart>
+                      <Bar dataKey="total" name="Total Interacciones" fill="#10b981" radius={[4, 4, 0, 0]}>
+                        <LabelList dataKey="total" position="top" fill="#10b981" fontSize={12} fontWeight={700} />
+                      </Bar>
+                    </BarChart>
                   </ResponsiveContainer>
                 </Box>
               </GlassCard>
@@ -312,19 +369,19 @@ export default function ActivityDashboard({ embedded = false }) {
 
           {/* ── Premium Data Tables ── */}
           <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', lg: 'repeat(2, 1fr)' }, gap: 3 }}>
-            {/* Ranking de Usuarios */}
-            <Box sx={{ display: 'flex' }}>
-              <GlassCard delay={800} sx={{ width: '100%', display: 'flex', flexDirection: 'column' }}>
+            {/* Ranking de Usuarios (Conexiones) */}
+            <Box sx={{ display: 'flex', minWidth: 0 }}>
+              <GlassCard delay={800} sx={{ width: '100%', height: 420, display: 'flex', flexDirection: 'column' }}>
                 <Box sx={{ p: 3, borderBottom: '1px solid rgba(0,0,0,0.05)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                   <Box>
-                    <Typography sx={{ fontWeight: 900, fontSize: 18, color: '#0f172a' }}>Directorio de Usuarios</Typography>
-                    <Typography sx={{ fontSize: 13, color: '#64748b' }}>Nombre, Correo y Rol de acceso</Typography>
+                    <Typography sx={{ fontWeight: 900, fontSize: 18, color: '#0f172a' }}>Conexiones por Usuario</Typography>
+                    <Typography sx={{ fontSize: 13, color: '#64748b' }}>Estadística de accesos al sistema</Typography>
                   </Box>
                   <Button size="small" variant="contained" onClick={() => exportCSV(data.topLogins, `usuarios_${days}d`, ['Nombre','Correo','Rol','Accesos','Último Acceso'], u => [u.user_name, u.user_email, ROLE_LABELS[u.user_role]||u.user_role, u.total_logins, fmtTime(u.ultimo_acceso)])} sx={{ borderRadius: 2, textTransform: 'none', fontWeight: 700, bgcolor: '#0f172a', '&:hover': { bgcolor: '#1e293b' } }}>
                     Exportar CSV
                   </Button>
                 </Box>
-                <TableContainer sx={{ flexGrow: 1, minHeight: 250, maxHeight: 400 }}>
+                <TableContainer sx={{ flexGrow: 1, overflow: 'auto' }}>
                   <Table stickyHeader>
                     <TableHead>
                       <TableRow>
@@ -364,8 +421,8 @@ export default function ActivityDashboard({ embedded = false }) {
             </Box>
 
             {/* Documentos */}
-            <Box sx={{ display: 'flex' }}>
-              <GlassCard delay={900} sx={{ width: '100%', display: 'flex', flexDirection: 'column' }}>
+            <Box sx={{ display: 'flex', minWidth: 0 }}>
+              <GlassCard delay={900} sx={{ width: '100%', height: 420, display: 'flex', flexDirection: 'column' }}>
                 <Box sx={{ p: 3, borderBottom: '1px solid rgba(0,0,0,0.05)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                   <Box>
                     <Typography sx={{ fontWeight: 900, fontSize: 18, color: '#0f172a' }}>Archivos Más Demandados</Typography>
@@ -375,7 +432,7 @@ export default function ActivityDashboard({ embedded = false }) {
                     Exportar CSV
                   </Button>
                 </Box>
-                <TableContainer sx={{ flexGrow: 1, minHeight: 250, maxHeight: 400 }}>
+                <TableContainer sx={{ flexGrow: 1, overflow: 'auto' }}>
                   <Table stickyHeader>
                     <TableHead>
                       <TableRow>
@@ -410,8 +467,8 @@ export default function ActivityDashboard({ embedded = false }) {
             </Box>
           
             {/* Módulos Más Utilizados */}
-            <Box sx={{ display: 'flex' }}>
-              <GlassCard delay={950} sx={{ width: '100%', display: 'flex', flexDirection: 'column' }}>
+            <Box sx={{ display: 'flex', minWidth: 0 }}>
+              <GlassCard delay={950} sx={{ width: '100%', height: 420, display: 'flex', flexDirection: 'column' }}>
                 <Box sx={{ p: 3, borderBottom: '1px solid rgba(0,0,0,0.05)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                   <Box>
                     <Typography sx={{ fontWeight: 900, fontSize: 18, color: '#0f172a' }}>Módulos Más Utilizados</Typography>
@@ -421,7 +478,7 @@ export default function ActivityDashboard({ embedded = false }) {
                     Exportar CSV
                   </Button>
                 </Box>
-                <TableContainer sx={{ flexGrow: 1, minHeight: 250, maxHeight: 400 }}>
+                <TableContainer sx={{ flexGrow: 1, overflow: 'auto' }}>
                   <Table stickyHeader>
                     <TableHead>
                       <TableRow>
@@ -455,37 +512,164 @@ export default function ActivityDashboard({ embedded = false }) {
               </GlassCard>
             </Box>
 
-            {/* Términos de Búsqueda */}
-            <Box sx={{ display: 'flex' }}>
-              <GlassCard delay={1000} sx={{ width: '100%', display: 'flex', flexDirection: 'column' }}>
+
+
+            {/* Dependencias con mayor uso */}
+            <Box sx={{ display: 'flex', minWidth: 0 }}>
+              <GlassCard delay={1000} sx={{ width: '100%', height: 420, display: 'flex', flexDirection: 'column' }}>
                 <Box sx={{ p: 3, borderBottom: '1px solid rgba(0,0,0,0.05)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                   <Box>
-                    <Typography sx={{ fontWeight: 900, fontSize: 18, color: '#0f172a' }}>Términos de Búsqueda Frecuentes</Typography>
-                    <Typography sx={{ fontSize: 13, color: '#64748b' }}>¿Qué buscan los usuarios?</Typography>
+                    <Typography sx={{ fontWeight: 900, fontSize: 18, color: '#0f172a' }}>Dependencias con más ingresos</Typography>
+                    <Typography sx={{ fontSize: 13, color: '#64748b' }}>Conteo de inicios de sesión clasificados por dependencia</Typography>
                   </Box>
-                  <Button size="small" variant="contained" onClick={() => exportCSV(data.topBusquedas, `busquedas_${days}d`, ['Término','Búsquedas'], b => [b.term, b.total])} sx={{ borderRadius: 2, textTransform: 'none', fontWeight: 700, bgcolor: '#0f172a', '&:hover': { bgcolor: '#1e293b' } }}>
+                  <Button size="small" variant="contained" onClick={() => exportCSV(data.byDependencia, `dependencias_${days}d`, ['Dependencia','Ingresos'], d => [d.dependencia, d.total])} sx={{ borderRadius: 2, textTransform: 'none', fontWeight: 700, bgcolor: '#0f172a', '&:hover': { bgcolor: '#1e293b' } }}>
                     Exportar CSV
                   </Button>
                 </Box>
-                <TableContainer sx={{ flexGrow: 1, minHeight: 250, maxHeight: 400 }}>
+                <TableContainer sx={{ flexGrow: 1, overflow: 'auto' }}>
                   <Table stickyHeader>
                     <TableHead>
                       <TableRow>
-                        <HeadCell>Término Buscado</HeadCell>
-                        <HeadCell>Total de Consultas</HeadCell>
+                        <HeadCell>Dependencia</HeadCell>
+                        <HeadCell>Total Ingresos</HeadCell>
                       </TableRow>
                     </TableHead>
                     <TableBody>
-                      {(!data.topBusquedas || data.topBusquedas.length === 0) && (
-                        <TableRow><TableCell colSpan={2} align="center" sx={{ py: 5 }}><Typography sx={{ fontWeight: 700, color: '#94a3b8' }}>Sin búsquedas registradas.</Typography></TableCell></TableRow>
+                      {(!data.byDependencia || data.byDependencia.length === 0) && (
+                        <TableRow><TableCell colSpan={2} align="center" sx={{ py: 5 }}><Typography sx={{ fontWeight: 700, color: '#94a3b8' }}>Sin datos de dependencias.</Typography></TableCell></TableRow>
                       )}
-                      {data.topBusquedas?.map((b, i) => (
-                        <TableRow key={i} sx={{ '&:hover': { bgcolor: 'rgba(139,92,246,0.05)' }, transition: 'all 0.2s' }}>
+                      {data.byDependencia?.map((d, i) => (
+                        <TableRow key={i} sx={{ '&:hover': { bgcolor: 'rgba(59,130,246,0.05)' }, transition: 'all 0.2s' }}>
                           <TableCell>
-                            <Chip size="small" label={`"${b.term}"`} sx={{ fontSize: 12, fontWeight: 800, bgcolor: '#f3e8ff', color: '#7c3aed', borderRadius: 1.5 }} />
+                            <Typography sx={{ fontSize: 14, fontWeight: 800, color: '#1e293b' }}>{d.dependencia || 'Sin dependencia'}</Typography>
                           </TableCell>
                           <TableCell>
-                            <Typography sx={{ fontSize: 16, fontWeight: 900, color: '#8b5cf6' }}>{Number(b.total).toLocaleString()}</Typography>
+                            <Typography sx={{ fontSize: 16, fontWeight: 900, color: '#3b82f6' }}>{Number(d.total).toLocaleString()}</Typography>
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </TableContainer>
+              </GlassCard>
+            </Box>
+
+            {/* Usuarios con más consultas */}
+            <Box sx={{ display: 'flex', minWidth: 0 }}>
+              <GlassCard delay={1020} sx={{ width: '100%', height: 420, display: 'flex', flexDirection: 'column' }}>
+                <Box sx={{ p: 3, borderBottom: '1px solid rgba(0,0,0,0.05)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <Box>
+                    <Typography sx={{ fontWeight: 900, fontSize: 18, color: '#0f172a' }}>Usuarios más Consultores</Typography>
+                    <Typography sx={{ fontSize: 13, color: '#64748b' }}>Usuarios con mayor número de 'Consultas'</Typography>
+                  </Box>
+                  <Button size="small" variant="contained" onClick={() => exportCSV(data.topConsultingUsers, `consultores_${days}d`, ['Usuario','Consultas'], u => [u.user_name, u.total])} sx={{ borderRadius: 2, textTransform: 'none', fontWeight: 700, bgcolor: '#0f172a', '&:hover': { bgcolor: '#1e293b' } }}>
+                    Exportar CSV
+                  </Button>
+                </Box>
+                <TableContainer sx={{ flexGrow: 1, overflow: 'auto' }}>
+                  <Table stickyHeader>
+                    <TableHead>
+                      <TableRow>
+                        <HeadCell>Usuario</HeadCell>
+                        <HeadCell>Total Consultas</HeadCell>
+                      </TableRow>
+                    </TableHead>
+                    <TableBody>
+                      {(!data.topConsultingUsers || data.topConsultingUsers.length === 0) && (
+                        <TableRow><TableCell colSpan={2} align="center" sx={{ py: 5 }}><Typography sx={{ fontWeight: 700, color: '#94a3b8' }}>Nadie ha realizado consultas.</Typography></TableCell></TableRow>
+                      )}
+                      {data.topConsultingUsers?.map((u, i) => (
+                        <TableRow key={i} sx={{ '&:hover': { bgcolor: 'rgba(59,130,246,0.05)' }, transition: 'all 0.2s' }}>
+                          <TableCell>
+                            <Typography sx={{ fontSize: 14, fontWeight: 800, color: '#1e293b' }}>{u.user_name || 'Desconocido'}</Typography>
+                          </TableCell>
+                          <TableCell>
+                            <Typography sx={{ fontSize: 16, fontWeight: 900, color: '#10b981' }}>{Number(u.total).toLocaleString()}</Typography>
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </TableContainer>
+              </GlassCard>
+            </Box>
+
+            {/* Errores más frecuentes */}
+            <Box sx={{ display: 'flex', minWidth: 0 }}>
+              <GlassCard delay={1030} sx={{ width: '100%', height: 420, display: 'flex', flexDirection: 'column' }}>
+                <Box sx={{ p: 3, borderBottom: '1px solid rgba(0,0,0,0.05)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <Box>
+                    <Typography sx={{ fontWeight: 900, fontSize: 18, color: '#9a3412' }}>Errores más frecuentes del sistema</Typography>
+                    <Typography sx={{ fontSize: 13, color: '#c2410c' }}>Listado de fallos y errores recurrentes</Typography>
+                  </Box>
+                  <Button size="small" variant="contained" onClick={() => exportCSV(data.topErrors, `errores_${days}d`, ['Error','Endpoint','Eventos'], e => [e.action, e.endpoint, e.total])} sx={{ borderRadius: 2, textTransform: 'none', fontWeight: 700, bgcolor: '#9a3412', '&:hover': { bgcolor: '#7c2d12' } }}>
+                    Exportar CSV
+                  </Button>
+                </Box>
+                <TableContainer sx={{ flexGrow: 1, overflow: 'auto' }}>
+                  <Table stickyHeader>
+                    <TableHead>
+                      <TableRow>
+                        <HeadCell>Descripción del Error</HeadCell>
+                        <HeadCell>Endpoint Afectado</HeadCell>
+                        <HeadCell>Total de Veces</HeadCell>
+                      </TableRow>
+                    </TableHead>
+                    <TableBody>
+                      {(!data.topErrors || data.topErrors.length === 0) && (
+                        <TableRow><TableCell colSpan={3} align="center" sx={{ py: 5 }}><Typography sx={{ fontWeight: 700, color: '#10b981' }}>¡Sin errores registrados en este período!</Typography></TableCell></TableRow>
+                      )}
+                      {data.topErrors?.map((e, i) => (
+                        <TableRow key={i} sx={{ '&:hover': { bgcolor: 'rgba(249,115,22,0.05)' }, transition: 'all 0.2s' }}>
+                          <TableCell>
+                            <Typography sx={{ fontSize: 14, fontWeight: 800, color: '#7c2d12' }}>{e.action || 'Desconocido'}</Typography>
+                          </TableCell>
+                          <TableCell sx={{ fontSize: 13, color: '#ea580c' }}>{e.endpoint || '—'}</TableCell>
+                          <TableCell>
+                            <Typography sx={{ fontSize: 16, fontWeight: 900, color: '#ea580c' }}>{Number(e.total).toLocaleString()}</Typography>
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </TableContainer>
+              </GlassCard>
+            </Box>
+
+            {/* Vulnerabilidades (Acceso Denegado) */}
+            <Box sx={{ display: 'flex', minWidth: 0 }}>
+              <GlassCard delay={1040} sx={{ width: '100%', height: 420, display: 'flex', flexDirection: 'column' }}>
+                <Box sx={{ p: 3, borderBottom: '1px solid rgba(0,0,0,0.05)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <Box>
+                    <Typography sx={{ fontWeight: 900, fontSize: 18, color: '#991b1b' }}>Vulneraciones al sistema</Typography>
+                    <Typography sx={{ fontSize: 13, color: '#b91c1c' }}>Intentos de Acceso Denegado bloqueados</Typography>
+                  </Box>
+                  <Button size="small" variant="contained" onClick={() => exportCSV(data.topVulnerabilidades, `vulneraciones_${days}d`, ['Usuario','Email','Dirección IP','Intentos Bloqueados'], v => [v.user_name, v.user_email, v.ip_address, v.total])} sx={{ borderRadius: 2, textTransform: 'none', fontWeight: 700, bgcolor: '#dc2626', '&:hover': { bgcolor: '#991b1b' } }}>
+                    Exportar CSV
+                  </Button>
+                </Box>
+                <TableContainer sx={{ flexGrow: 1, overflow: 'auto' }}>
+                  <Table stickyHeader>
+                    <TableHead>
+                      <TableRow>
+                        <HeadCell>Usuario Involucrado</HeadCell>
+                        <HeadCell>Dirección IP</HeadCell>
+                        <HeadCell>Intentos Bloqueados</HeadCell>
+                      </TableRow>
+                    </TableHead>
+                    <TableBody>
+                      {(!data.topVulnerabilidades || data.topVulnerabilidades.length === 0) && (
+                        <TableRow><TableCell colSpan={3} align="center" sx={{ py: 5 }}><Typography sx={{ fontWeight: 700, color: '#10b981' }}>¡No se detectaron accesos denegados!</Typography></TableCell></TableRow>
+                      )}
+                      {data.topVulnerabilidades?.map((v, i) => (
+                        <TableRow key={i} sx={{ '&:hover': { bgcolor: 'rgba(239,68,68,0.05)' }, transition: 'all 0.2s' }}>
+                          <TableCell>
+                            <Typography sx={{ fontSize: 14, fontWeight: 800, color: '#7f1d1d' }}>{v.user_name || 'Desconocido'}</Typography>
+                            <Typography sx={{ fontSize: 11, color: '#b91c1c' }}>{v.user_email || 'Sin correo'}</Typography>
+                          </TableCell>
+                          <TableCell sx={{ fontSize: 13, color: '#dc2626', fontWeight: 600 }}>{v.ip_address || '—'}</TableCell>
+                          <TableCell>
+                            <Typography sx={{ fontSize: 16, fontWeight: 900, color: '#dc2626' }}>{Number(v.total).toLocaleString()}</Typography>
                           </TableCell>
                         </TableRow>
                       ))}
@@ -496,18 +680,18 @@ export default function ActivityDashboard({ embedded = false }) {
             </Box>
 
             {/* Bitácora en Vivo */}
-            <Box>
-              <GlassCard delay={1050} sx={{ display: 'flex', flexDirection: 'column' }}>
+            <Box sx={{ display: 'flex', minWidth: 0 }}>
+              <GlassCard delay={1050} sx={{ width: '100%', height: 420, display: 'flex', flexDirection: 'column' }}>
                 <Box sx={{ p: 3, borderBottom: '1px solid rgba(0,0,0,0.05)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                   <Box>
                     <Typography sx={{ fontWeight: 900, fontSize: 18, color: '#0f172a' }}>Bitácora Analítica (Log de Auditoría)</Typography>
                     <Typography sx={{ fontSize: 13, color: '#64748b' }}>Registro detallado de los últimos 50 eventos</Typography>
                   </Box>
                   <Button size="small" variant="contained" onClick={() => exportCSV(data.recent, `bitacora_${days}d`, ['Usuario','Módulo','Acción','Endpoint','Fecha'], r => [r.user_name||r.user_email, r.module, r.action, r.endpoint, fmtTime(r.created_at)])} sx={{ borderRadius: 2, textTransform: 'none', fontWeight: 700, bgcolor: '#0f172a', '&:hover': { bgcolor: '#1e293b' } }}>
-                    Exportar Auditoría Completa
+                    Exportar CSV
                   </Button>
                 </Box>
-                <TableContainer sx={{ maxHeight: 400 }}>
+                <TableContainer sx={{ flexGrow: 1, overflow: 'auto' }}>
                   <Table stickyHeader>
                     <TableHead>
                       <TableRow>
@@ -544,18 +728,18 @@ export default function ActivityDashboard({ embedded = false }) {
             </Box>
 
             {/* Documentos Inactivos */}
-            <Box>
-              <GlassCard delay={1100} sx={{ border: '2px solid rgba(239, 68, 68, 0.2)', background: 'linear-gradient(to right, rgba(255, 255, 255, 0.9), rgba(254, 242, 242, 0.9))' }}>
+            <Box sx={{ display: 'flex', gridColumn: { lg: '1 / -1' }, minWidth: 0 }}>
+              <GlassCard delay={1100} sx={{ width: '100%', height: 420, display: 'flex', flexDirection: 'column', border: '2px solid rgba(239, 68, 68, 0.2)', background: 'linear-gradient(to right, rgba(255, 255, 255, 0.9), rgba(254, 242, 242, 0.9))' }}>
                 <Box sx={{ p: 3, borderBottom: '1px solid rgba(239,68,68,0.1)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                   <Box>
                     <Typography sx={{ fontWeight: 900, fontSize: 18, color: '#991b1b' }}>Auditoría: Documentos Sin Actividad</Typography>
                     <Typography sx={{ fontSize: 13, color: '#b91c1c' }}>Archivos vigentes sin descargas en el período</Typography>
                   </Box>
-                  <Button size="small" variant="contained" onClick={() => exportCSV(data.documentosInactivos, `documentos_inactivos_${days}d`, ['Código','Título','Tipo','Autor','Fecha Creación'], d => [d.codigo, d.titulo, d.tipo_documento, d.autor, d.fecha_creacion])} sx={{ borderRadius: 2, textTransform: 'none', fontWeight: 700, bgcolor: '#dc2626', '&:hover': { bgcolor: '#991b1b' } }}>
-                    Descargar Reporte Crítico
+                  <Button size="small" variant="contained" onClick={() => exportCSV(data.documentosInactivos, `documentos_inactivos_${days}d`, ['Código','Título','Tipo','Autor','Fecha Creación'], d => [d.codigo, d.titulo, d.tipo_documento, d.autor, d.fecha_creacion])} sx={{ borderRadius: 2, textTransform: 'none', fontWeight: 700, bgcolor: '#dc2626', '&:hover': { bgcolor: '#991b1b' }, whiteSpace: 'nowrap' }}>
+                    Exportar CSV
                   </Button>
                 </Box>
-                <TableContainer sx={{ maxHeight: 350 }}>
+                <TableContainer sx={{ flexGrow: 1, overflow: 'auto' }}>
                   <Table stickyHeader>
                     <TableHead>
                       <TableRow>
@@ -563,13 +747,14 @@ export default function ActivityDashboard({ embedded = false }) {
                         <HeadCell>Tipo</HeadCell>
                         <HeadCell>Autor</HeadCell>
                         <HeadCell>Fecha Creación</HeadCell>
+                        <HeadCell align="center">Acciones</HeadCell>
                       </TableRow>
                     </TableHead>
                     <TableBody>
                       {(!data.documentosInactivos || data.documentosInactivos.length === 0) && (
-                        <TableRow><TableCell colSpan={4} align="center" sx={{ py: 4 }}><Typography sx={{ fontWeight: 800, color: '#059669' }}>¡Excelente! Todos los documentos tienen actividad.</Typography></TableCell></TableRow>
+                        <TableRow><TableCell colSpan={5} align="center" sx={{ py: 4 }}><Typography sx={{ fontWeight: 800, color: '#059669' }}>¡Excelente! Todos los documentos tienen actividad.</Typography></TableCell></TableRow>
                       )}
-                      {data.documentosInactivos?.slice(0, 100).map((d, i) => (
+                      {data.documentosInactivos?.map((d, i) => (
                         <TableRow key={i} sx={{ '&:hover': { bgcolor: 'rgba(239,68,68,0.05)' } }}>
                           <TableCell sx={{ maxWidth: 300 }}>
                             <Typography noWrap sx={{ fontSize: 13, fontWeight: 800, color: '#7f1d1d' }}>{d.titulo || 'Sin Título'}</Typography>
@@ -580,6 +765,22 @@ export default function ActivityDashboard({ embedded = false }) {
                           </TableCell>
                           <TableCell sx={{ fontSize: 12, color: '#7f1d1d', fontWeight: 700 }}>{d.autor || '—'}</TableCell>
                           <TableCell sx={{ fontSize: 12, color: '#991b1b', fontWeight: 600 }}>{d.fecha_creacion || '—'}</TableCell>
+                          <TableCell align="center">
+                            <Stack direction="row" spacing={1} justifyContent="center">
+                              <Tooltip title="Previsualizar Documento">
+                                <span>
+                                  <IconButton size="small" disabled={!d.link_acceso} onClick={() => window.open(d.link_acceso, '_blank')} sx={{ color: '#0f172a', bgcolor: 'rgba(0,0,0,0.05)', '&:hover': { bgcolor: 'rgba(0,0,0,0.1)' } }}>
+                                    <VisibilityIcon fontSize="small" />
+                                  </IconButton>
+                                </span>
+                              </Tooltip>
+                              <Tooltip title="Descargar Documento">
+                                <IconButton size="small" onClick={() => window.open(`${api.defaults.baseURL || 'http://localhost:4000/api'}/documentos/descargar/${d.id}?token=${encodeURIComponent(localStorage.getItem('token') || '')}`, '_self')} sx={{ color: '#0f172a', bgcolor: 'rgba(0,0,0,0.05)', '&:hover': { bgcolor: 'rgba(0,0,0,0.1)' } }}>
+                                  <DownloadIcon fontSize="small" />
+                                </IconButton>
+                              </Tooltip>
+                            </Stack>
+                          </TableCell>
                         </TableRow>
                       ))}
                     </TableBody>

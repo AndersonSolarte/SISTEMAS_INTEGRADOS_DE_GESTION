@@ -2,6 +2,7 @@ const { Op, fn, col, literal } = require('sequelize');
 const { sequelize } = require('../config/database');
 const UserActivityLog = require('../models/UserActivityLog');
 const Documento = require('../models/Documento');
+const User = require('../models/User');
 
 /* ── helpers ── */
 const daysAgo = (n) => {
@@ -25,6 +26,8 @@ const getStats = async (req, res) => {
     if (moduleFilter) baseWhere.module = moduleFilter;
     if (roleFilter) baseWhere.user_role = roleFilter;
 
+    const allUsers = await User.findAll({ attributes: ['id', 'username', 'nombre', 'email', 'dependencia'], raw: true });
+
     const [
       totalEvents,
       todayEvents,
@@ -42,7 +45,12 @@ const getStats = async (req, res) => {
       rawDownloads,
       rawSearches,
       topLogins,
-      failedAttempts
+      failedAttempts,
+      loginsByDay,
+      rawUserActions,
+      loginsByRole,
+      topErrors,
+      topVulnerabilidades
     ] = await Promise.all([
       /* total events in range */
       UserActivityLog.count({ where: baseWhere }),
@@ -187,6 +195,59 @@ const getStats = async (req, res) => {
         order: [['created_at', 'DESC']],
         limit: 20,
         raw: true
+      }),
+
+      /* Logins per day */
+      UserActivityLog.findAll({
+        attributes: [
+          [literal(`DATE_TRUNC('day', "created_at")`), 'date'],
+          [fn('COUNT', col('id')), 'total']
+        ],
+        where: { ...baseWhere, action: 'Inicio de sesión' },
+        group: [literal(`DATE_TRUNC('day', "created_at")`)],
+        order: [[literal(`DATE_TRUNC('day', "created_at")`), 'ASC']],
+        raw: true
+      }),
+
+      /* Raw user actions for pivot chart */
+      UserActivityLog.findAll({
+        attributes: [
+          'user_name',
+          'action',
+          [fn('COUNT', col('id')), 'total']
+        ],
+        where: { ...baseWhere, user_name: { [Op.ne]: null } },
+        group: ['user_name', 'action'],
+        raw: true
+      }),
+
+      /* logins by role */
+      UserActivityLog.findAll({
+        attributes: ['user_role', [fn('COUNT', col('id')), 'total']],
+        where: { ...baseWhere, action: 'Inicio de sesión' },
+        group: ['user_role'],
+        order: [[fn('COUNT', col('id')), 'DESC']],
+        raw: true
+      }),
+
+      /* top errores */
+      UserActivityLog.findAll({
+        attributes: ['action', 'endpoint', [fn('COUNT', col('id')), 'total']],
+        where: { ...baseWhere, action: { [Op.like]: 'Error%' } },
+        group: ['action', 'endpoint'],
+        order: [[fn('COUNT', col('id')), 'DESC']],
+        limit: 10,
+        raw: true
+      }),
+
+      /* top vulnerabilidades (Acceso Denegado) */
+      UserActivityLog.findAll({
+        attributes: ['user_name', 'user_email', 'ip_address', [fn('COUNT', col('id')), 'total']],
+        where: { ...baseWhere, action: 'Acceso Denegado' },
+        group: ['user_name', 'user_email', 'ip_address'],
+        order: [[fn('COUNT', col('id')), 'DESC']],
+        limit: 10,
+        raw: true
       })
     ]);
 
@@ -214,13 +275,25 @@ const getStats = async (req, res) => {
       })).sort((a, b) => b.total - a.total);
     }
 
-    // Identificar Documentos Inactivos (0 descargas en el periodo)
+    // Identificar Documentos Inactivos (0 descargas en el periodo y más de un mes de antigüedad)
     const allActiveDocs = await Documento.findAll({
       where: { estado: 'vigente' },
-      attributes: ['id', 'titulo', 'codigo', 'tipo_documento', 'autor', 'fecha_creacion'],
+      attributes: ['id', 'titulo', 'codigo', 'tipo_documento', 'autor', 'fecha_creacion', 'link_acceso'],
       raw: true
     });
-    const documentosInactivos = allActiveDocs.filter(d => !dlMap[d.id] || dlMap[d.id] === 0);
+    
+    const oneMonthAgo = new Date();
+    oneMonthAgo.setMonth(oneMonthAgo.getMonth() - 1);
+
+    const documentosInactivos = allActiveDocs.filter(d => {
+      // Filtrar aquellos que tienen menos de un mes de creados
+      const docDate = new Date(d.fecha_creacion);
+      if (docDate > oneMonthAgo) return false;
+
+      const isInactive = !dlMap[d.id] || dlMap[d.id] === 0;
+      const isNotPolicy = d.tipo_documento && !d.tipo_documento.toUpperCase().includes('POLÍTICA') && !d.tipo_documento.toUpperCase().includes('POLITICA');
+      return isInactive && isNotPolicy;
+    });
 
     // Parse top search terms
     const searchMap = {};
@@ -240,13 +313,54 @@ const getStats = async (req, res) => {
       .sort((a, b) => b.total - a.total)
       .slice(0, 10);
 
+    // Pivot user actions & build dependencies and consulting users
+    const userMap = {};
+    const depMap = {};
+    const userToDep = {};
+    
+    allUsers.forEach(u => {
+      userToDep[u.id] = u.dependencia || 'Sin dependencia';
+      if (u.email) userToDep[u.email] = u.dependencia || 'Sin dependencia';
+      if (u.username) userToDep[u.username] = u.dependencia || 'Sin dependencia';
+      if (u.nombre) userToDep[u.nombre] = u.dependencia || 'Sin dependencia';
+    });
+
+    rawUserActions.forEach(row => {
+      const u = row.user_name || 'Desconocido';
+      if (!userMap[u]) userMap[u] = { user_name: u, totalActivity: 0 };
+      userMap[u][row.action] = Number(row.total);
+      userMap[u].totalActivity += Number(row.total);
+      
+      const dep = userToDep[row.user_id] || userToDep[row.user_name] || 'Sin dependencia';
+      // Solo contar "Inicio de sesión" para el gráfico/tabla de dependencias
+      if (row.action === 'Inicio de sesión') {
+        depMap[dep] = (depMap[dep] || 0) + Number(row.total);
+      }
+    });
+    
+    const userActionsPivot = Object.values(userMap)
+      .sort((a, b) => b.totalActivity - a.totalActivity)
+      .slice(0, 10);
+      
+    const byDependencia = Object.entries(depMap)
+      .map(([dependencia, total]) => ({ dependencia, total }))
+      .sort((a, b) => b.total - a.total);
+      
+    const topConsultingUsers = Object.values(userMap)
+      .filter(u => u['Consulta'] > 0)
+      .map(u => ({ user_name: u.user_name, total: u['Consulta'] }))
+      .sort((a, b) => b.total - a.total)
+      .slice(0, 10);
+
     return res.json({
       success: true,
       days,
       stats: { 
         totalEvents, todayEvents, activeUsers7d, loginEvents, errorEvents, downloadEvents, 
         byModule, byRole, byDay, byHour, topUsers, recent, byAction,
-        topDescargas, topBusquedas, topLogins, documentosInactivos, failedAttempts
+        topDescargas, topBusquedas, topLogins, documentosInactivos, failedAttempts,
+        loginsByDay, userActionsPivot, byDependencia, topConsultingUsers, loginsByRole,
+        topErrors, topVulnerabilidades
       }
     });
   } catch (err) {

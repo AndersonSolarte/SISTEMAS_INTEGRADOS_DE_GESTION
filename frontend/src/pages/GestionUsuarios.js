@@ -4,19 +4,170 @@ import {
   TableHead, TableRow, TablePagination, IconButton, Tooltip, Dialog, DialogTitle,
   DialogContent, DialogActions, TextField, Select, MenuItem, FormControl, InputLabel,
   Chip, Grid, Alert, CircularProgress, Fade, FormGroup, FormControlLabel, Checkbox, Divider,
-  Stack, Radio, RadioGroup, Autocomplete
+  Stack, Radio, RadioGroup, Autocomplete, Menu, InputAdornment
 } from '@mui/material';
 import {
   Add as AddIcon, Edit as EditIcon, Delete as DeleteIcon, Upload as UploadIcon,
   Download as DownloadIcon, Search as SearchIcon, Clear as ClearIcon,
   Block as BlockIcon, CheckCircle as CheckCircleIcon,
   GroupOutlined as GroupIcon, Security as SecurityIcon, ArrowForward as ArrowForwardIcon,
-  Warning as WarningIcon
+  Warning as WarningIcon, FilterList as FilterListIcon
 } from '@mui/icons-material';
 import { useSnackbar } from 'notistack';
+import * as XLSX from 'xlsx';
 import userService from '../services/userService';
 import { ROLES, ROLE_LABELS } from '../constants/roles';
 import { useAuth } from '../context/AuthContext';
+
+
+const DependenciaFilterPanel = ({ label, options, value, onChange, placeholder }) => {
+  const [anchorEl, setAnchorEl] = React.useState(null);
+  const [search, setSearch] = React.useState('');
+  const open = Boolean(anchorEl);
+
+  const handleClick = (event) => setAnchorEl(event.currentTarget);
+  const handleClose = () => {
+    setAnchorEl(null);
+    setSearch('');
+  };
+
+  const handleToggle = (option) => {
+    const isSelected = value.includes(option);
+    if (isSelected) {
+      onChange(value.filter((item) => item !== option));
+    } else {
+      onChange([...value, option]);
+    }
+  };
+
+  const filteredOptions = options.filter(opt => 
+    opt.toLowerCase().includes(search.toLowerCase())
+  );
+
+  return (
+    <>
+      <Button
+        variant={value.length > 0 ? "contained" : "outlined"}
+        onClick={handleClick}
+        endIcon={<FilterListIcon />}
+        sx={{ 
+          borderRadius: 1.5,
+          textTransform: 'none',
+          fontWeight: 500,
+          fontSize: 13,
+          color: value.length > 0 ? '#fff' : '#475569',
+          borderColor: value.length > 0 ? 'transparent' : '#cbd5e1',
+          bgcolor: value.length > 0 ? '#2563eb' : 'transparent',
+          '&:hover': {
+            bgcolor: value.length > 0 ? '#1d4ed8' : '#f8fafc',
+            borderColor: value.length > 0 ? 'transparent' : '#94a3b8'
+          },
+          minWidth: 350,
+          justifyContent: 'space-between',
+          px: 2,
+          py: 0.8
+        }}
+      >
+        {value.length === 0 ? label : `${label} (${value.length})`}
+      </Button>
+      <Menu
+        anchorEl={anchorEl}
+        open={open}
+        onClose={handleClose}
+        PaperProps={{
+          elevation: 0,
+          sx: {
+            mt: 1,
+            width: 320,
+            borderRadius: 2,
+            border: '1px solid #e2e8f0',
+            boxShadow: '0 10px 25px -5px rgba(0, 0, 0, 0.1), 0 8px 10px -6px rgba(0, 0, 0, 0.1)',
+            maxHeight: 400
+          }
+        }}
+        transformOrigin={{ horizontal: 'left', vertical: 'top' }}
+        anchorOrigin={{ horizontal: 'left', vertical: 'bottom' }}
+      >
+        <Box sx={{ p: 1.5, borderBottom: '1px solid #e2e8f0' }}>
+          <TextField
+            size="small"
+            fullWidth
+            placeholder={placeholder}
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            InputProps={{
+              startAdornment: (
+                <InputAdornment position="start">
+                  <SearchIcon fontSize="small" sx={{ color: '#94a3b8' }} />
+                </InputAdornment>
+              ),
+            }}
+            sx={{
+              '& .MuiOutlinedInput-root': {
+                borderRadius: 1.5,
+                bgcolor: '#f8fafc',
+                '& fieldset': { borderColor: 'transparent' },
+                '&:hover fieldset': { borderColor: '#cbd5e1' },
+                '&.Mui-focused fieldset': { borderColor: '#2563eb' }
+              }
+            }}
+          />
+        </Box>
+        <Box sx={{ p: 1, maxHeight: 260, overflowY: 'auto' }}>
+          {filteredOptions.length > 0 ? (
+            filteredOptions.map((option) => (
+              <MenuItem 
+                key={option} 
+                onClick={() => handleToggle(option)}
+                sx={{ 
+                  borderRadius: 1,
+                  mb: 0.5,
+                  '&:hover': { bgcolor: '#f1f5f9' }
+                }}
+              >
+                <Checkbox 
+                  checked={value.includes(option)}
+                  size="small"
+                  sx={{ 
+                    color: '#cbd5e1',
+                    '&.Mui-checked': { color: '#2563eb' },
+                    p: 0.5,
+                    mr: 1
+                  }}
+                />
+                <Typography variant="body2" sx={{ color: '#334155', fontWeight: 500, fontSize: 12.5 }}>
+                  {option}
+                </Typography>
+              </MenuItem>
+            ))
+          ) : (
+            <Box sx={{ p: 2, textAlign: 'center' }}>
+              <Typography variant="body2" color="text.secondary">
+                No se encontraron opciones
+              </Typography>
+            </Box>
+          )}
+        </Box>
+        {value.length > 0 && (
+          <Box sx={{ p: 1, borderTop: '1px solid #e2e8f0' }}>
+            <Button
+              fullWidth
+              size="small"
+              onClick={() => onChange([])}
+              sx={{ 
+                color: '#64748b', 
+                textTransform: 'none',
+                '&:hover': { bgcolor: '#f1f5f9', color: '#0f172a' }
+              }}
+            >
+              Limpiar filtros
+            </Button>
+          </Box>
+        )}
+      </Menu>
+    </>
+  );
+};
 
 function GestionUsuarios() {
   const MENU_PERMISSION_OPTIONS = [
@@ -126,7 +277,8 @@ function GestionUsuarios() {
   const [page, setPage] = useState(0);
   const [rowsPerPage, setRowsPerPage] = useState(10);
   const [total, setTotal] = useState(0);
-  const [search, setSearch] = useState('');
+    const [search, setSearch] = useState('');
+  const [filterDependencia, setFilterDependencia] = useState([]);
   const searchRef = useRef('');
   const searchFetchIdRef = useRef(0);
 
@@ -508,6 +660,55 @@ function GestionUsuarios() {
     loadUsers({ page: 0, search: '' });
   };
 
+  const handleExportUsuarios = () => {
+    const dataToExport = filterDependencia.length === 0 ? users : visibleUsers;
+    const excelData = dataToExport.map(u => ({
+      NUMERO_DOCUMENTO: u.username || '',
+      NOMBRE_COMPLETO: u.nombre || '',
+      CORREO_INSTITUCIONAL: u.email || '',
+      DEPENDENCIA: u.dependencia || '',
+      CARGO: u.cargo || '',
+      'JEFE INMEDIATO': u.jefe_inmediato || '',
+      ROL: ROLE_LABELS[u.role] || u.role || '',
+      ESTADO: u.estado || ''
+    }));
+
+    const ws = XLSX.utils.json_to_sheet(excelData);
+
+    // Apply styles to headers
+    const range = XLSX.utils.decode_range(ws['!ref']);
+    for (let C = range.s.c; C <= range.e.c; ++C) {
+      const cellAddress = XLSX.utils.encode_cell({ r: 0, c: C });
+      if (!ws[cellAddress]) continue;
+      ws[cellAddress].s = {
+        fill: { fgColor: { rgb: "1e40af" } },
+        font: { color: { rgb: "FFFFFF" }, bold: true },
+        alignment: { horizontal: "center", vertical: "center" }
+      };
+    }
+
+    const colWidths = [
+      { wch: 20 },
+      { wch: 40 },
+      { wch: 35 },
+      { wch: 35 },
+      { wch: 35 },
+      { wch: 35 },
+      { wch: 15 },
+      { wch: 15 }
+    ];
+    ws['!cols'] = colWidths;
+
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Usuarios');
+    
+    const fileName = filterDependencia.length === 0 
+      ? 'Base_Usuarios_Completa.xlsx' 
+      : 'Usuarios_Filtrados.xlsx';
+      
+    XLSX.writeFile(wb, fileName);
+  };
+
   const executeBulkUpload = async () => {
     setUploading(true);
     setBulkImportResult(null);
@@ -722,24 +923,17 @@ function GestionUsuarios() {
   };
 
   const wrapCellSx = {
-    py: 0,
+    py: 1,
     px: { xs: 0.45, sm: 0.6, md: 0.75 },
     fontSize: { xs: 10.25, sm: 10.75, md: 11 },
     lineHeight: 1.22,
     color: '#24324a',
-    height: { xs: 40, sm: 42, md: 44 },
-    maxHeight: { xs: 40, sm: 42, md: 44 },
-    overflow: 'hidden',
+    textTransform: 'uppercase',
     '& .cellText': {
-      display: '-webkit-box',
-      WebkitLineClamp: 2,
-      WebkitBoxOrient: 'vertical',
-      overflow: 'hidden',
-      textOverflow: 'ellipsis',
       whiteSpace: 'normal',
-      overflowWrap: 'anywhere',
+      overflowWrap: 'break-word',
       wordBreak: 'normal',
-      maxHeight: 30
+      display: 'block'
     }
   };
 
@@ -1304,7 +1498,7 @@ function GestionUsuarios() {
             >
               Sincronizados: {(bulkImportResult.importados || 0) + (bulkImportResult.actualizados || 0)}
               {' | '}Nuevos: {bulkImportResult.importados || 0}
-              {' | '}Actualizados: {bulkImportResult.actualizados || 0}
+{' | '}Actualizados: {bulkImportResult.actualizados || 0}
               {bulkImportResult.eliminados > 0 ? ` | Eliminados: ${bulkImportResult.eliminados}` : ''}
               {' | '}Correos: {bulkImportResult.correosEnviados || 0}
               {bulkImportResult.correosOmitidos ? ` | Correos omitidos: ${bulkImportResult.correosOmitidos}` : ''}
@@ -1314,6 +1508,37 @@ function GestionUsuarios() {
         </Paper>
 
         {/* Tabla de usuarios */}
+        <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2} alignItems="center" justifyContent="space-between" sx={{ mb: 2 }}>
+          <DependenciaFilterPanel
+            label="Filtrar por Dependencia"
+            options={dependenciaOptions.filter(d => d !== 'Todas')}
+            value={filterDependencia}
+            onChange={setFilterDependencia}
+            placeholder="Buscar dependencia..."
+          />
+
+          <Button
+            size="medium"
+            variant="contained"
+            startIcon={<DownloadIcon />}
+            onClick={handleExportUsuarios}
+            sx={{
+              borderRadius: 1.5,
+              textTransform: 'none',
+              fontWeight: 800,
+              fontSize: 13,
+              px: 3,
+              py: 0.8,
+              bgcolor: '#059669',
+              boxShadow: '0 4px 12px rgba(5, 150, 105, 0.2)',
+              '&:hover': { bgcolor: '#047857' },
+              minWidth: { xs: '100%', sm: 'auto' }
+            }}
+          >
+            Exportar a Excel
+          </Button>
+        </Stack>
+
         <Paper elevation={0} sx={{ border: '1px solid #cbd5e1', borderRadius: 1.5, overflow: 'hidden', boxShadow: '0 6px 16px rgba(15,23,42,0.05)' }}>
           <TableContainer sx={{ bgcolor: '#ffffff', borderRadius: 0 }}>
             <Table
@@ -1386,7 +1611,6 @@ function GestionUsuarios() {
                       key={user.id}
                       hover
                       sx={{
-                        height: { xs: 40, sm: 42, md: 44 },
                         bgcolor: index % 2 === 0 ? '#ffffff' : '#f8fafc',
                         '&:hover': { bgcolor: '#eef4ff' },
                         '& .MuiTableCell-root': {
@@ -1402,7 +1626,7 @@ function GestionUsuarios() {
                       <TableCell sx={{ ...wrapCellSx, fontWeight: 700, color: '#0f172a', textTransform: 'uppercase' }}>
                         <span className="cellText">{user.nombre}</span>
                       </TableCell>
-                      <TableCell sx={{ ...wrapCellSx, color: '#1e293b' }}>
+                      <TableCell sx={{ ...wrapCellSx, color: '#1e293b', textTransform: 'none' }}>
                         <span className="cellText">{user.email}</span>
                       </TableCell>
                       <TableCell align="center" sx={{ ...wrapCellSx }}>
