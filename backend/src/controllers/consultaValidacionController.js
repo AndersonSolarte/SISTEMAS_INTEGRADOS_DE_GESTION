@@ -97,14 +97,18 @@ const consultaMasiva = async (req, res) => {
     const DOCUMENT_KEYS = ['documento', 'Documento', 'DOCUMENTO', 'cedula', 'Cedula', 'CEDULA',
       'num_documento', 'numero_documento', 'doc', 'id'];
     const firstRow = rows[0];
-    const docKey = DOCUMENT_KEYS.find((k) => k in firstRow) || Object.keys(firstRow)[0];
+    const docKey = DOCUMENT_KEYS.find((k) => k in firstRow);
+
+    if (!docKey) {
+      return res.status(400).json({ success: false, message: 'La plantilla no es válida. Debe contener obligatoriamente una columna llamada "Documento".' });
+    }
 
     /* Extraer documentos únicos */
     const rawDocs = rows.map((r) => String(r[docKey] || '').trim()).filter(Boolean);
     const uniqueDocs = [...new Set(rawDocs)];
 
     if (!uniqueDocs.length) {
-      return res.status(400).json({ success: false, message: `No se encontró columna de documento. Se detectó: ${Object.keys(firstRow).join(', ')}` });
+      return res.status(400).json({ success: false, message: 'El archivo no contiene números de documento válidos en la columna correspondiente.' });
     }
 
     /* Buscar en BD — traer TODOS los registros por documento */
