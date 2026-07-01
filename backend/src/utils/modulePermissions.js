@@ -246,11 +246,6 @@ const getUserModulePermissions = async (userId, role) => {
     menuPermissions.unshift('dashboard');
   }
 
-  // Los usuarios de consulta deben conservar acceso a búsqueda documental.
-  if (role === ROLES.CONSULTA && !menuPermissions.includes('buscar_documentos')) {
-    menuPermissions.push('buscar_documentos');
-  }
-
   // Si se asignan submódulos de Gestión de la Información, el acceso al menú principal
   // debe aparecer aunque no se haya marcado explícitamente.
   if (role === ROLES.CONSULTA) {
@@ -268,10 +263,15 @@ const getUserModulePermissions = async (userId, role) => {
     if (!allowedModules.includes('gestion_procesos')) allowedModules.push('gestion_procesos');
   }
 
-  if (allowedPoblacionalDashboards.length > 0 || hasLegacyStatsPermission) {
+  if (allowedPoblacionalDashboards.length > 0) {
     if (!menuPermissions.includes('gestion_informacion')) menuPermissions.push('gestion_informacion');
     if (!allowedModules.includes('estadistica_institucional')) allowedModules.push('estadistica_institucional');
     if (!allowedModules.includes('poblacional')) allowedModules.push('poblacional');
+  }
+
+  if (hasLegacyStatsPermission) {
+    if (!menuPermissions.includes('gestion_informacion')) menuPermissions.push('gestion_informacion');
+    if (!allowedModules.includes('estadistica_institucional')) allowedModules.push('estadistica_institucional');
   }
 
   if (allowedSaberProDashboards.length > 0) {
