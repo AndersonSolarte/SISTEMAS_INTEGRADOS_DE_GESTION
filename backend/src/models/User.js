@@ -31,7 +31,8 @@ const User = sequelize.define('users', {
   must_change_password: { type: DataTypes.BOOLEAN, allowNull: false, defaultValue: false },
   reset_token: { type: DataTypes.STRING(255), allowNull: true },
   reset_token_expiry: { type: DataTypes.DATE, allowNull: true },
-  last_login: { type: DataTypes.DATE, allowNull: true }
+  last_login: { type: DataTypes.DATE, allowNull: true },
+  welcome_email_sent: { type: DataTypes.BOOLEAN, allowNull: false, defaultValue: false }
 }, {
   timestamps: true,
   createdAt: 'created_at',

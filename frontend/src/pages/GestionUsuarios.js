@@ -662,6 +662,35 @@ function GestionUsuarios() {
     }
   };
 
+  const handleDownloadPendingNotifications = async () => {
+    try {
+      const data = await userService.downloadPendingNotifications();
+      const url = window.URL.createObjectURL(new Blob([data]));
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = 'usuarios_sin_notificar_sgc.xlsx';
+      link.click();
+      enqueueSnackbar('Listado de pendientes descargado con éxito', { variant: 'success' });
+    } catch (err) {
+      console.error('Error al descargar listado de pendientes:', err);
+      enqueueSnackbar('Error al descargar listado de pendientes', { variant: 'error' });
+    }
+  };
+
+  const handleSendPendingNotifications = async () => {
+    try {
+      const res = await userService.sendPendingNotifications();
+      if (res.success) {
+        enqueueSnackbar(res.message, { variant: 'success' });
+      } else {
+        enqueueSnackbar(res.message || 'Error al iniciar el envío', { variant: 'warning' });
+      }
+    } catch (err) {
+      console.error('Error al enviar correos pendientes:', err);
+      enqueueSnackbar('Error al iniciar el envío de notificaciones', { variant: 'error' });
+    }
+  };
+
   const downloadBase64Excel = (base64, filename) => {
     if (!base64) return;
     const binary = atob(base64);
@@ -1705,7 +1734,7 @@ function GestionUsuarios() {
         </Paper>
 
         {/* Tabla de usuarios */}
-        <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2} alignItems="center" justifyContent="space-between" sx={{ mb: 2 }}>
+        <Stack direction={{ xs: 'column', md: 'row' }} spacing={2} alignItems="center" justifyContent="space-between" sx={{ mb: 2 }}>
           <DependenciaFilterPanel
             label="Filtrar por Dependencia"
             options={dependenciaOptions.filter(d => d !== 'Todas')}
@@ -1714,26 +1743,70 @@ function GestionUsuarios() {
             placeholder="Buscar dependencia..."
           />
 
-          <Button
-            size="medium"
-            variant="contained"
-            startIcon={<DownloadIcon />}
-            onClick={handleExportUsuarios}
-            sx={{
-              borderRadius: 1.5,
-              textTransform: 'none',
-              fontWeight: 800,
-              fontSize: 13,
-              px: 3,
-              py: 0.8,
-              bgcolor: '#059669',
-              boxShadow: '0 4px 12px rgba(5, 150, 105, 0.2)',
-              '&:hover': { bgcolor: '#047857' },
-              minWidth: { xs: '100%', sm: 'auto' }
-            }}
-          >
-            Exportar a Excel
-          </Button>
+          <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1.5} alignItems="center" sx={{ width: { xs: '100%', md: 'auto' } }}>
+            <Button
+              size="medium"
+              variant="contained"
+              startIcon={<DownloadIcon />}
+              onClick={handleDownloadPendingNotifications}
+              sx={{
+                borderRadius: 1.5,
+                textTransform: 'none',
+                fontWeight: 800,
+                fontSize: 13,
+                px: 2,
+                py: 0.8,
+                bgcolor: '#d97706',
+                boxShadow: '0 4px 12px rgba(217, 119, 6, 0.2)',
+                '&:hover': { bgcolor: '#b45309' },
+                minWidth: { xs: '100%', sm: 'auto' }
+              }}
+            >
+              Descargar sin notificar
+            </Button>
+
+            <Button
+              size="medium"
+              variant="contained"
+              startIcon={<WarningIcon />}
+              onClick={handleSendPendingNotifications}
+              sx={{
+                borderRadius: 1.5,
+                textTransform: 'none',
+                fontWeight: 800,
+                fontSize: 13,
+                px: 2,
+                py: 0.8,
+                bgcolor: '#2563eb',
+                boxShadow: '0 4px 12px rgba(37, 99, 235, 0.2)',
+                '&:hover': { bgcolor: '#1d4ed8' },
+                minWidth: { xs: '100%', sm: 'auto' }
+              }}
+            >
+              Enviar a pendientes
+            </Button>
+
+            <Button
+              size="medium"
+              variant="contained"
+              startIcon={<DownloadIcon />}
+              onClick={handleExportUsuarios}
+              sx={{
+                borderRadius: 1.5,
+                textTransform: 'none',
+                fontWeight: 800,
+                fontSize: 13,
+                px: 2,
+                py: 0.8,
+                bgcolor: '#059669',
+                boxShadow: '0 4px 12px rgba(5, 150, 105, 0.2)',
+                '&:hover': { bgcolor: '#047857' },
+                minWidth: { xs: '100%', sm: 'auto' }
+              }}
+            >
+              Exportar a Excel
+            </Button>
+          </Stack>
         </Stack>
 
         <Paper elevation={0} sx={{ border: '1px solid #cbd5e1', borderRadius: 1.5, overflow: 'hidden', boxShadow: '0 6px 16px rgba(15,23,42,0.05)' }}>

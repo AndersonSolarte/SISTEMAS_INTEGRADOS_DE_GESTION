@@ -12,15 +12,15 @@ async function run() {
   try {
     await testConnection();
     
-    // Buscar usuarios activos que nunca han iniciado sesión (last_login es null)
+    // Buscar usuarios activos con welcome_email_sent = false
     const users = await User.findAll({
       where: {
         estado: 'activo',
-        last_login: null
+        welcome_email_sent: false
       }
     });
 
-    console.log(`Encontrados ${users.length} usuarios activos que nunca han iniciado sesión.`);
+    console.log(`Encontrados ${users.length} usuarios activos con correos de bienvenida pendientes por enviar.`);
     if (users.length === 0) {
       console.log('No hay usuarios pendientes por notificar.');
       process.exit(0);
@@ -35,6 +35,7 @@ async function run() {
       
       const emailResult = await sendWelcomeEmail(user);
       if (emailResult.success) {
+        await user.update({ welcome_email_sent: true });
         sentCount++;
       } else {
         failCount++;

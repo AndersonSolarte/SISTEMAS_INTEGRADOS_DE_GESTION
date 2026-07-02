@@ -206,15 +206,36 @@ testConnection()
       }
       const qi = sequelize.getQueryInterface();
       const usersTable = await qi.describeTable('users');
-      const addUserColumn = async (column) => {
+      const addUserColumn = async (column, type = DataTypes.STRING(220), defaultValue = null) => {
         if (!usersTable[column]) {
-          await qi.addColumn('users', column, { type: DataTypes.STRING(220), allowNull: true });
+          const opts = { type, allowNull: true };
+          if (defaultValue !== null) {
+            opts.allowNull = false;
+            opts.defaultValue = defaultValue;
+          }
+          await qi.addColumn('users', column, opts);
         }
       };
       await addUserColumn('dependencia');
       await addUserColumn('cargo');
       await addUserColumn('jefe_inmediato');
-      console.log('[users] Columnas de perfil laboral listas.');
+      await addUserColumn('welcome_email_sent', DataTypes.BOOLEAN, false);
+      
+      // Marcar de forma retroactiva a los usuarios ya registrados y activos que ya ingresaron o son de sistema
+      try {
+        await sequelize.query(`
+          UPDATE "users" 
+          SET "welcome_email_sent" = true 
+          WHERE "last_login" IS NOT NULL 
+             OR "email" = 'sgc@unicesmag.edu.co' 
+             OR "username" = '2744' 
+             OR "email" = 'admin@sgc.com'
+        `);
+        console.log('[users] Estado retroactivo de correos enviados listo.');
+      } catch (err) {
+        console.warn('[users] No se pudo actualizar de forma retroactiva welcome_email_sent:', err.message);
+      }
+      console.log('[users] Columnas de perfil laboral y notificaciones listas.');
     } catch (e) {
       console.warn('[users] No se pudo sincronizar columnas de perfil laboral:', e?.message);
     }

@@ -666,6 +666,9 @@ const createUser = async (req, res) => {
     });
 
     const emailResult = await sendWelcomeEmail(user);
+    if (emailResult.success) {
+      await user.update({ welcome_email_sent: true });
+    }
     const message = emailResult.success
       ? 'Usuario creado exitosamente. Se notificó por correo institucional.'
       : buildProvisioningWarning(emailResult);
@@ -1644,7 +1647,9 @@ const bulkUploadUsers = async (req, res) => {
           console.log(`[bulk-email] Iniciando envío de correos en segundo plano para ${usersToNotify.length} usuarios...`);
           for (const user of usersToNotify) {
             const emailResult = await sendWelcomeEmail(user);
-            if (!emailResult.success) {
+            if (emailResult.success) {
+              await user.update({ welcome_email_sent: true });
+            } else {
               console.warn(`[bulk-email] No se pudo enviar correo de bienvenida a ${user.email}: ${emailResult.error}`);
             }
             await new Promise(resolve => setTimeout(resolve, 300));
@@ -2078,4 +2083,110 @@ module.exports = {
   downloadUsersTemplate,
   getUserModulePermissions,
   updateUserModulePermissions
+};
+
+const exportPendingNotificationUsers = async (req, res) => {
+  try {
+    const users = await User.findAll({
+      where: {
+        estado: 'activo',
+        welcome_email_sent: false
+      },
+      order: [['nombre', 'ASC']]
+    });
+
+    const rows = users.map((u) => ({
+      NUMERO_DOCUMENTO: u.username || '',
+      NOMBRE_COMPLETO: u.nombre || '',
+      CORREO_INSTITUCIONAL: u.email || '',
+      DEPENDENCIA: u.dependencia || '',
+      CARGO: u.cargo || '',
+      JEFE_INMEDIATO: u.jefe_inmediato || '',
+      ROL: ROLE_LABELS[u.role] || u.role || '',
+      ESTADO: u.estado || ''
+    }));
+
+    const worksheet = XLSX.utils.json_to_sheet(rows);
+    worksheet['!cols'] = [
+      { wch: 20 },
+      { wch: 40 },
+      { wch: 35 },
+      { wch: 35 },
+      { wch: 35 },
+      { wch: 35 },
+      { wch: 15 },
+      { wch: 15 }
+    ];
+
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, worksheet, 'PendientesNotificacion');
+    const buffer = XLSX.write(workbook, { type: 'buffer', bookType: 'xlsx' });
+
+    res.setHeader('Content-Disposition', 'attachment; filename=usuarios_sin_notificar_sgc.xlsx');
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    res.send(buffer);
+  } catch (error) {
+    console.error('Error al exportar usuarios sin notificar:', error);
+    res.status(500).json({ success: false, message: 'Error al exportar usuarios sin notificar' });
+  }
+};
+
+const sendPendingNotifications = async (req, res) => {
+  try {
+    const users = await User.findAll({
+      where: {
+        estado: 'activo',
+        welcome_email_sent: false
+      }
+    });
+
+    if (users.length === 0) {
+      return res.json({
+        success: true,
+        message: 'No hay usuarios pendientes de notificación por correo'
+      });
+    }
+
+    // Ejecutar en segundo plano de forma asíncrona para evitar timeout en HTTP
+    setImmediate(async () => {
+      try {
+        console.log(`[manual-bulk-email] Iniciando notificación manual de ${users.length} usuarios...`);
+        for (const user of users) {
+          const emailResult = await sendWelcomeEmail(user);
+          if (emailResult.success) {
+            await user.update({ welcome_email_sent: true });
+          } else {
+            console.warn(`[manual-bulk-email] No se pudo enviar correo a ${user.email}: ${emailResult.error}`);
+          }
+          await new Promise(resolve => setTimeout(resolve, 300));
+        }
+        console.log('[manual-bulk-email] Notificación manual completada.');
+      } catch (err) {
+        console.error('[manual-bulk-email] Error en envío manual de correos:', err);
+      }
+    });
+
+    return res.json({
+      success: true,
+      message: `Se inició el envío de notificaciones por correo electrónico para ${users.length} usuarios en segundo plano.`
+    });
+  } catch (error) {
+    console.error('Error al enviar notificaciones pendientes:', error);
+    res.status(500).json({ success: false, message: 'Error al enviar notificaciones pendientes' });
+  }
+};
+
+module.exports = {
+  createUser,
+  getUsers,
+  getUserFieldSuggestions,
+  updateUser,
+  updateUserStatus,
+  deleteUser,
+  bulkUploadUsers,
+  downloadUsersTemplate,
+  getUserModulePermissions,
+  updateUserModulePermissions,
+  exportPendingNotificationUsers,
+  sendPendingNotifications
 };

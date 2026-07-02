@@ -69,6 +69,18 @@ const userService = {
     return response.data;
   },
 
+  // Exportar usuarios pendientes de notificación
+  downloadPendingNotifications: async () => {
+    const response = await api.get('/users/pending-notifications/export', { responseType: 'blob' });
+    return response.data;
+  },
+
+  // Enviar correos pendientes
+  sendPendingNotifications: async () => {
+    const response = await api.post('/users/pending-notifications/send');
+    return response.data;
+  },
+
   // No se usa recuperación de contraseña en este flujo
 };
 
