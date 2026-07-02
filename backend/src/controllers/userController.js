@@ -58,9 +58,11 @@ const GESTION_INFO_MODULE_KEYS = [
   'autoevaluacion',
   'registros_calificados_acreditacion',
   'infraestructura_fisica',
+  'monitor_actividad',
+  'seguridad_aplicativa',
   'autoevaluacion.instrumentos.access',
-  'infraestructura_fisica.gestionar',
-  'infraestructura_fisica.ver',
+  'monitor_actividad',
+  'seguridad_aplicativa',
   'seguridad_aplicativa.ver',
   'seguridad_aplicativa.escanear',
   'seguridad_aplicativa.ver_hallazgos',
@@ -69,8 +71,26 @@ const GESTION_INFO_MODULE_KEYS = [
   'seguridad_aplicativa.exportar',
   'seguridad_aplicativa.configurar'
 ];
+const INTERNACIONALIZACION_DASHBOARD_PERMISSION_KEYS = [
+  'internacionalizacion_gestion',
+  'internacionalizacion_estadistica',
+  'internacionalizacion_convenios'
+];
+const PLAN_ACCION_DASHBOARD_PERMISSION_KEYS = [
+  'plan_accion_estadistica',
+  'plan_accion_gestion'
+];
+const INFRAESTRUCTURA_FISICA_DASHBOARD_PERMISSION_KEYS = [
+  'infraestructura_fisica_crud',
+  'infraestructura_fisica_estadistica',
+  'infraestructura_fisica_informes'
+];
 const GESTION_PROCESOS_DASHBOARD_PERMISSION_KEYS = [
-  'estadistica_documental'
+  'estadistica_documental',
+  'aseguramiento_calidad',
+  'buscar_documentos',
+  'favoritos',
+  'gestion_usuarios_consulta'
 ];
 const POBLACIONAL_DASHBOARD_PERMISSION_KEYS = [
   'poblacional_flujo',
@@ -117,7 +137,10 @@ const ALL_MODULE_PERMISSION_KEYS = [
   ...GESTION_PROCESOS_DASHBOARD_PERMISSION_KEYS,
   ...POBLACIONAL_DASHBOARD_PERMISSION_KEYS,
   ...SABER_PRO_DASHBOARD_PERMISSION_KEYS,
-  ...RECURSO_HUMANO_DASHBOARD_PERMISSION_KEYS
+  ...RECURSO_HUMANO_DASHBOARD_PERMISSION_KEYS,
+  ...INFRAESTRUCTURA_FISICA_DASHBOARD_PERMISSION_KEYS,
+  ...PLAN_ACCION_DASHBOARD_PERMISSION_KEYS,
+  ...INTERNACIONALIZACION_DASHBOARD_PERMISSION_KEYS
 ];
 const MANAGED_PLANEACION_ROLES = [
   ROLES.PLANEACION_ESTRATEGICA,
@@ -144,7 +167,7 @@ const isGestionProcesosManager = (user) => user?.role === ROLES.GESTION_PROCESOS
 const canManageRole = (operator, targetRole) =>
   isSuperAdmin(operator) ||
   (isPlaneacionManager(operator) && MANAGED_PLANEACION_ROLES.includes(targetRole)) ||
-  (isGestionProcesosManager(operator) && MANAGED_GESTION_PROCESOS_ROLES.includes(targetRole));
+  ((isGestionProcesosManager(operator) || operator?.role === ROLES.CONSULTA) && MANAGED_GESTION_PROCESOS_ROLES.includes(targetRole));
 const getManageableRoles = (operator) => {
   if (isSuperAdmin(operator)) return VALID_ROLES;
   if (isPlaneacionManager(operator)) return MANAGED_PLANEACION_ROLES;
@@ -1514,8 +1537,11 @@ const bulkUploadUsers = async (req, res) => {
         const notInExcel = !excelEmails.has(cleanEmail) && !excelUsernames.has(cleanUsername);
         const notCurrentUser = Number(dbUser.id) !== Number(req.user.id);
         const manageable = canManageRole(req.user, dbUser.role);
+        
+        // Evitar la eliminación del administrador principal (ADMINISTRADOR SIAC)
+        const isMasterAdmin = cleanEmail === 'sgc@unicesmag.edu.co' || cleanUsername === '2744';
 
-        return notInExcel && notCurrentUser && manageable;
+        return notInExcel && notCurrentUser && manageable && !isMasterAdmin;
       });
     }
 
@@ -1870,7 +1896,10 @@ const updateUserModulePermissions = async (req, res) => {
       allowedGestionProcesosDashboards = [],
       allowedPoblacionalDashboards = [],
       allowedSaberProDashboards = [],
-      allowedRecursoHumanoDashboards = []
+      allowedRecursoHumanoDashboards = [],
+      allowedInfraestructuraFisicaDashboards = [],
+      allowedPlanAccionDashboards = [],
+      allowedInternacionalizacionDashboards = []
     } = req.body || {};
 
     const user = await User.findByPk(id, { attributes: ['id', 'nombre', 'email', 'role'] });
@@ -1908,6 +1937,18 @@ const updateUserModulePermissions = async (req, res) => {
       .map((x) => String(x || '').trim())
       .filter((x) => RECURSO_HUMANO_DASHBOARD_PERMISSION_KEYS.includes(x))));
 
+    const cleanInfraestructuraFisicaDashboards = Array.from(new Set((Array.isArray(allowedInfraestructuraFisicaDashboards) ? allowedInfraestructuraFisicaDashboards : [])
+      .map((x) => String(x || '').trim())
+      .filter((x) => INFRAESTRUCTURA_FISICA_DASHBOARD_PERMISSION_KEYS.includes(x))));
+
+    const cleanPlanAccionDashboards = Array.from(new Set((Array.isArray(allowedPlanAccionDashboards) ? allowedPlanAccionDashboards : [])
+      .map((x) => String(x || '').trim())
+      .filter((x) => PLAN_ACCION_DASHBOARD_PERMISSION_KEYS.includes(x))));
+
+    const cleanInternacionalizacionDashboards = Array.from(new Set((Array.isArray(allowedInternacionalizacionDashboards) ? allowedInternacionalizacionDashboards : [])
+      .map((x) => String(x || '').trim())
+      .filter((x) => INTERNACIONALIZACION_DASHBOARD_PERMISSION_KEYS.includes(x))));
+
     if (user.role === ROLES.CONSULTA) {
       cleanMenu = cleanMenu.filter((key) => key !== 'gestion_usuarios');
     }
@@ -1936,11 +1977,29 @@ const updateUserModulePermissions = async (req, res) => {
     if (cleanRecursoHumanoDashboards.length > 0 && !cleanModules.includes('recurso_humano')) {
       cleanModules.push('recurso_humano');
     }
+    if (cleanInfraestructuraFisicaDashboards.length > 0 && !cleanModules.includes('estadistica_institucional')) {
+      cleanModules.push('estadistica_institucional');
+    }
+    if (cleanInfraestructuraFisicaDashboards.length > 0 && !cleanModules.includes('infraestructura_fisica')) {
+      cleanModules.push('infraestructura_fisica');
+    }
+    if (cleanPlanAccionDashboards.length > 0 && !cleanModules.includes('estadistica_institucional')) {
+      cleanModules.push('estadistica_institucional');
+    }
+    if (cleanPlanAccionDashboards.length > 0 && !cleanModules.includes('plan_accion')) {
+      cleanModules.push('plan_accion');
+    }
+    if (cleanInternacionalizacionDashboards.length > 0 && !cleanModules.includes('estadistica_institucional')) {
+      cleanModules.push('estadistica_institucional');
+    }
+    if (cleanInternacionalizacionDashboards.length > 0 && !cleanModules.includes('internacionalizacion')) {
+      cleanModules.push('internacionalizacion');
+    }
     if ((cleanModules.length > 0 || cleanGestionProcesosDashboards.length > 0 || cleanPoblacionalDashboards.length > 0 || cleanSaberProDashboards.length > 0 || cleanRecursoHumanoDashboards.length > 0) && !cleanMenu.includes('gestion_informacion')) {
       cleanMenu.push('gestion_informacion');
     }
 
-    const allSelected = [...cleanMenu, ...cleanModules, ...cleanGestionProcesosDashboards, ...cleanPoblacionalDashboards, ...cleanSaberProDashboards, ...cleanRecursoHumanoDashboards];
+    const allSelected = [...cleanMenu, ...cleanModules, ...cleanGestionProcesosDashboards, ...cleanPoblacionalDashboards, ...cleanSaberProDashboards, ...cleanRecursoHumanoDashboards, ...cleanInfraestructuraFisicaDashboards, ...cleanPlanAccionDashboards, ...cleanInternacionalizacionDashboards];
 
     await User.sequelize.transaction(async (t) => {
       await UserModulePermission.destroy({ where: { user_id: id }, transaction: t });
@@ -1966,7 +2025,10 @@ const updateUserModulePermissions = async (req, res) => {
         allowedModules: cleanModules,
         allowedGestionProcesosDashboards: cleanGestionProcesosDashboards,
         allowedPoblacionalDashboards: cleanPoblacionalDashboards,
-        allowedSaberProDashboards: cleanSaberProDashboards
+        allowedSaberProDashboards: cleanSaberProDashboards,
+        allowedInfraestructuraFisicaDashboards: cleanInfraestructuraFisicaDashboards,
+        allowedPlanAccionDashboards: cleanPlanAccionDashboards,
+        allowedInternacionalizacionDashboards: cleanInternacionalizacionDashboards
       }
     });
   } catch (error) {

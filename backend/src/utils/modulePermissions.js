@@ -39,7 +39,9 @@ const GESTION_INFO_MODULE_KEYS = new Set([
   'seguridad_aplicativa.gestionar_hallazgos',
   'seguridad_aplicativa.analizar_remediacion',
   'seguridad_aplicativa.exportar',
-  'seguridad_aplicativa.configurar'
+  'seguridad_aplicativa.configurar',
+  'monitor_actividad',
+  'seguridad_aplicativa'
 ]);
 
 const GESTION_PROCESOS_DASHBOARD_KEYS = new Set([
@@ -92,6 +94,24 @@ const SABER_PRO_DASHBOARD_KEYS = new Set([
   'saber_pro_valor_agregado_institucional'
 ]);
 
+
+const INFRAESTRUCTURA_FISICA_DASHBOARD_KEYS = new Set([
+  'infraestructura_fisica_crud',
+  'infraestructura_fisica_estadistica',
+  'infraestructura_fisica_informes'
+]);
+
+const PLAN_ACCION_DASHBOARD_KEYS = new Set([
+  'plan_accion_estadistica',
+  'plan_accion_gestion'
+]);
+
+const INTERNACIONALIZACION_DASHBOARD_KEYS = new Set([
+  'internacionalizacion_gestion',
+  'internacionalizacion_estadistica',
+  'internacionalizacion_convenios'
+]);
+
 const RECURSO_HUMANO_DASHBOARD_KEYS = new Set([
   'recurso_humano_profesores',
   'recurso_humano_administrativos',
@@ -116,7 +136,10 @@ const getDefaultPermissionsByRole = (role) => {
       allowedGestionProcesosDashboards: Array.from(GESTION_PROCESOS_DASHBOARD_KEYS),
       allowedPoblacionalDashboards: Array.from(POBLACIONAL_DASHBOARD_KEYS),
       allowedSaberProDashboards: Array.from(SABER_PRO_DASHBOARD_KEYS),
-      allowedRecursoHumanoDashboards: Array.from(RECURSO_HUMANO_DASHBOARD_KEYS)
+      allowedRecursoHumanoDashboards: Array.from(RECURSO_HUMANO_DASHBOARD_KEYS),
+      allowedInfraestructuraFisicaDashboards: Array.from(INFRAESTRUCTURA_FISICA_DASHBOARD_KEYS),
+      allowedPlanAccionDashboards: Array.from(PLAN_ACCION_DASHBOARD_KEYS),
+      allowedInternacionalizacionDashboards: Array.from(INTERNACIONALIZACION_DASHBOARD_KEYS)
     };
   }
 
@@ -133,7 +156,10 @@ const getDefaultPermissionsByRole = (role) => {
       allowedGestionProcesosDashboards: ['estadistica_documental'],
       allowedPoblacionalDashboards: [],
       allowedSaberProDashboards: [],
-      allowedRecursoHumanoDashboards: []
+      allowedRecursoHumanoDashboards: [],
+      allowedInfraestructuraFisicaDashboards: [],
+      allowedPlanAccionDashboards: [],
+      allowedInternacionalizacionDashboards: []
     };
   }
 
@@ -152,7 +178,10 @@ const getDefaultPermissionsByRole = (role) => {
       allowedGestionProcesosDashboards: [],
       allowedPoblacionalDashboards: [],
       allowedSaberProDashboards: [],
-      allowedRecursoHumanoDashboards: []
+      allowedRecursoHumanoDashboards: [],
+      allowedInfraestructuraFisicaDashboards: [],
+      allowedPlanAccionDashboards: [],
+      allowedInternacionalizacionDashboards: []
     };
   }
 
@@ -163,7 +192,10 @@ const getDefaultPermissionsByRole = (role) => {
       allowedGestionProcesosDashboards: [],
       allowedPoblacionalDashboards: [],
       allowedSaberProDashboards: [],
-      allowedRecursoHumanoDashboards: []
+      allowedRecursoHumanoDashboards: [],
+      allowedInfraestructuraFisicaDashboards: [],
+      allowedPlanAccionDashboards: [],
+      allowedInternacionalizacionDashboards: []
     };
   }
 
@@ -174,7 +206,10 @@ const getDefaultPermissionsByRole = (role) => {
       allowedGestionProcesosDashboards: [],
       allowedPoblacionalDashboards: [],
       allowedSaberProDashboards: [],
-      allowedRecursoHumanoDashboards: []
+      allowedRecursoHumanoDashboards: [],
+      allowedInfraestructuraFisicaDashboards: [],
+      allowedPlanAccionDashboards: [],
+      allowedInternacionalizacionDashboards: []
     };
   }
 
@@ -185,7 +220,10 @@ const getDefaultPermissionsByRole = (role) => {
       allowedGestionProcesosDashboards: [],
       allowedPoblacionalDashboards: [],
       allowedSaberProDashboards: [],
-      allowedRecursoHumanoDashboards: []
+      allowedRecursoHumanoDashboards: [],
+      allowedInfraestructuraFisicaDashboards: [],
+      allowedPlanAccionDashboards: [],
+      allowedInternacionalizacionDashboards: []
     };
   }
 
@@ -229,7 +267,10 @@ const getDefaultPermissionsByRole = (role) => {
     allowedGestionProcesosDashboards: [],
     allowedPoblacionalDashboards: [],
     allowedSaberProDashboards: [],
-    allowedRecursoHumanoDashboards: []
+    allowedRecursoHumanoDashboards: [],
+      allowedInfraestructuraFisicaDashboards: [],
+      allowedPlanAccionDashboards: [],
+      allowedInternacionalizacionDashboards: []
   };
 };
 
@@ -257,6 +298,9 @@ const getUserModulePermissions = async (userId, role) => {
   const allowedPoblacionalDashboards = Array.from(new Set(keys.filter((k) => POBLACIONAL_DASHBOARD_KEYS.has(k))));
   const allowedSaberProDashboards = Array.from(new Set(keys.filter((k) => SABER_PRO_DASHBOARD_KEYS.has(k))));
   const allowedRecursoHumanoDashboards = Array.from(new Set(keys.filter((k) => RECURSO_HUMANO_DASHBOARD_KEYS.has(k))));
+  const allowedInfraestructuraFisicaDashboards = Array.from(new Set(keys.filter((k) => INFRAESTRUCTURA_FISICA_DASHBOARD_KEYS.has(k))));
+  const allowedPlanAccionDashboards = Array.from(new Set(keys.filter((k) => PLAN_ACCION_DASHBOARD_KEYS.has(k))));
+  const allowedInternacionalizacionDashboards = Array.from(new Set(keys.filter((k) => INTERNACIONALIZACION_DASHBOARD_KEYS.has(k))));
   const hasLegacyStatsPermission = keys.some((k) => LEGACY_GI_STATS_KEYS.has(k));
 
   // "Inicio" debe estar disponible para la navegación base.
@@ -325,7 +369,10 @@ const getUserModulePermissions = async (userId, role) => {
       allowedGestionProcesosDashboards: [],
       allowedPoblacionalDashboards: [],
       allowedSaberProDashboards: [],
-      allowedRecursoHumanoDashboards: []
+      allowedRecursoHumanoDashboards: [],
+      allowedInfraestructuraFisicaDashboards: [],
+      allowedPlanAccionDashboards: [],
+      allowedInternacionalizacionDashboards: []
     };
   }
 
@@ -335,7 +382,10 @@ const getUserModulePermissions = async (userId, role) => {
     allowedGestionProcesosDashboards,
     allowedPoblacionalDashboards,
     allowedSaberProDashboards,
-    allowedRecursoHumanoDashboards
+    allowedRecursoHumanoDashboards,
+    allowedInfraestructuraFisicaDashboards,
+    allowedPlanAccionDashboards,
+    allowedInternacionalizacionDashboards
   };
 };
 
@@ -353,7 +403,10 @@ const buildUserPayloadWithPermissions = async (user) => {
     allowedGestionProcesosDashboards: perms.allowedGestionProcesosDashboards,
     allowedPoblacionalDashboards: perms.allowedPoblacionalDashboards,
     allowedSaberProDashboards: perms.allowedSaberProDashboards,
-    allowedRecursoHumanoDashboards: perms.allowedRecursoHumanoDashboards
+    allowedRecursoHumanoDashboards: perms.allowedRecursoHumanoDashboards,
+    allowedInfraestructuraFisicaDashboards: perms.allowedInfraestructuraFisicaDashboards || [],
+    allowedPlanAccionDashboards: perms.allowedPlanAccionDashboards || [],
+    allowedInternacionalizacionDashboards: perms.allowedInternacionalizacionDashboards || []
   };
 };
 

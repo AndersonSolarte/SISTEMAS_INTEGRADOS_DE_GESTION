@@ -12,13 +12,16 @@ const {
   getUserModulePermissions,
   updateUserModulePermissions
 } = require('../controllers/userController');
-const { auth, hasAnyRole } = require('../middlewares/auth');
+const { auth, hasAnyRole, hasAnyRoleOrModulePermission } = require('../middlewares/auth');
 const { ROLES } = require('../constants/roles');
 const { createExcelUpload } = require('../middlewares/excelUpload');
 
 const upload = createExcelUpload('uploads/temp/');
 
-const canManageUsers = hasAnyRole(ROLES.ADMINISTRADOR, ROLES.PLANEACION_ESTRATEGICA, ROLES.GESTION_PROCESOS);
+const canManageUsers = hasAnyRoleOrModulePermission({
+  roles: [ROLES.ADMINISTRADOR, ROLES.PLANEACION_ESTRATEGICA, ROLES.GESTION_PROCESOS],
+  moduleKeys: ['gestion_usuarios', 'gestion_usuarios_consulta']
+});
 const canManageModulePermissions = hasAnyRole(ROLES.ADMINISTRADOR);
 
 // Rutas protegidas - admin general y planeación estratégica (con restricciones internas por rol objetivo)

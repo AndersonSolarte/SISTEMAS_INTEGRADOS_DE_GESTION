@@ -133,6 +133,7 @@ export default function InfraestructuraFisicaDashboard({
   seriesRows = [],
   canManage = false,
   canViewStats = false,
+  canViewReports = false,
   canView = false,
   onBack
 }) {
@@ -1694,90 +1695,7 @@ ${card.subspaces.map(s => ` - ${s.descripcion} (Capacidad: ${s.capacidad} pax, �
               bgcolor: '#f8fbff'
             }}
           >
-            <Box
-              sx={{
-                display: 'grid',
-                gridTemplateColumns: { xs: '1fr', sm: 'repeat(2, 1fr)', lg: 'repeat(4, 1fr)' },
-                gap: 1.5,
-                mb: 2.5
-              }}
-            >
-              {[
-                {
-                  label: 'Registros activos',
-                  value: formatHubNumber(hubSummary.registros),
-                  helper: 'Espacios inventariados',
-                  icon: <MeetingRoomIcon sx={{ fontSize: 22 }} />,
-                  color: '#2563eb',
-                  bg: '#eff6ff'
-                },
-                {
-                  label: 'Campus cubiertos',
-                  value: formatHubNumber(hubSummary.campus),
-                  helper: `${formatHubNumber(hubSummary.bloques)} bloques o componentes`,
-                  icon: <PlaceIcon sx={{ fontSize: 22 }} />,
-                  color: '#059669',
-                  bg: '#ecfdf5'
-                },
-                {
-                  label: 'Área registrada',
-                  value: `${formatHubNumber(hubSummary.areaTotal, { maximumFractionDigits: 1 })} m²`,
-                  helper: 'Área física consolidada',
-                  icon: <ArchitectureIcon sx={{ fontSize: 22 }} />,
-                  color: '#7c3aed',
-                  bg: '#f5f3ff'
-                },
-                {
-                  label: 'Capacidad física',
-                  value: formatHubNumber(hubSummary.capacidadTotal),
-                  helper: 'Aforo total reportado',
-                  icon: <GroupsIcon sx={{ fontSize: 22 }} />,
-                  color: '#dc2626',
-                  bg: '#fef2f2'
-                }
-              ].map((item) => (
-                <Paper
-                  key={item.label}
-                  elevation={0}
-                  sx={{
-                    p: 2,
-                    borderRadius: 2.5,
-                    border: '1px solid #dbe6f5',
-                    bgcolor: '#ffffff',
-                    display: 'flex',
-                    gap: 1.4,
-                    alignItems: 'center',
-                    minHeight: 94
-                  }}
-                >
-                  <Box
-                    sx={{
-                      width: 44,
-                      height: 44,
-                      borderRadius: 2,
-                      bgcolor: item.bg,
-                      color: item.color,
-                      display: 'grid',
-                      placeItems: 'center',
-                      flex: '0 0 auto'
-                    }}
-                  >
-                    {item.icon}
-                  </Box>
-                  <Box sx={{ minWidth: 0 }}>
-                    <Typography sx={{ color: '#64748b', fontSize: 12, fontWeight: 800, textTransform: 'uppercase' }}>
-                      {item.label}
-                    </Typography>
-                    <Typography sx={{ color: '#0f172a', fontSize: { xs: 19, md: 21 }, fontWeight: 900, lineHeight: 1.1 }}>
-                      {item.value}
-                    </Typography>
-                    <Typography sx={{ color: '#64748b', fontSize: 12.5, mt: 0.4 }}>
-                      {item.helper}
-                    </Typography>
-                  </Box>
-                </Paper>
-              ))}
-            </Box>
+
 
             <Box
               sx={{
@@ -1896,7 +1814,7 @@ ${card.subspaces.map(s => ` - ${s.descripcion} (Capacidad: ${s.capacidad} pax, �
               )}
 
               {/* Card 3: Generación de Informes */}
-              {canViewInfraestructuraStats && (
+              {canViewReports && (
                 <Paper
                   elevation={0}
                   sx={{
@@ -1947,12 +1865,102 @@ ${card.subspaces.map(s => ` - ${s.descripcion} (Capacidad: ${s.capacidad} pax, �
                 </Paper>
               )}
             </Box>
+            {(!canManageInfraestructura && !canViewInfraestructuraStats && !canViewReports) && (
+              <Box sx={{ mt: 3 }}>
+                <Alert severity="warning" sx={{ borderRadius: 2 }}>
+                  Usted no tiene asignado ningún submódulo para la visualización o administración de la Infraestructura Física. Por favor, contacte con el administrador si considera que esto es un error.
+                </Alert>
+              </Box>
+            )}
           </Paper>
         )}
 
         {/* ── SECCIÓN 1: DASHBOARD ESTADÍSTICO ── */}
         {infraestructuraFisicaTab === 'estadistica' && (
           <Stack spacing={2.5}>
+            <Box
+              sx={{
+                display: 'grid',
+                gridTemplateColumns: { xs: '1fr', sm: 'repeat(2, 1fr)', lg: 'repeat(4, 1fr)' },
+                gap: 1.5
+              }}
+            >
+              {[
+                {
+                  label: 'Registros activos',
+                  value: formatHubNumber(hubSummary.registros),
+                  helper: 'Espacios inventariados',
+                  icon: <MeetingRoomIcon sx={{ fontSize: 22 }} />,
+                  color: '#2563eb',
+                  bg: '#eff6ff'
+                },
+                {
+                  label: 'Campus cubiertos',
+                  value: formatHubNumber(hubSummary.campus),
+                  helper: `${formatHubNumber(hubSummary.bloques)} bloques o componentes`,
+                  icon: <PlaceIcon sx={{ fontSize: 22 }} />,
+                  color: '#059669',
+                  bg: '#ecfdf5'
+                },
+                {
+                  label: 'Área registrada',
+                  value: `${formatHubNumber(hubSummary.areaTotal, { maximumFractionDigits: 1 })} m²`,
+                  helper: 'Área física consolidada',
+                  icon: <ArchitectureIcon sx={{ fontSize: 22 }} />,
+                  color: '#7c3aed',
+                  bg: '#f5f3ff'
+                },
+                {
+                  label: 'Capacidad física',
+                  value: formatHubNumber(hubSummary.capacidadTotal),
+                  helper: 'Aforo total reportado',
+                  icon: <GroupsIcon sx={{ fontSize: 22 }} />,
+                  color: '#dc2626',
+                  bg: '#fef2f2'
+                }
+              ].map((item) => (
+                <Paper
+                  key={item.label}
+                  elevation={0}
+                  sx={{
+                    p: 2,
+                    borderRadius: 2.5,
+                    border: '1px solid #bfdbfe',
+                    bgcolor: '#ffffff',
+                    display: 'flex',
+                    gap: 1.4,
+                    alignItems: 'center',
+                    minHeight: 94
+                  }}
+                >
+                  <Box
+                    sx={{
+                      width: 44,
+                      height: 44,
+                      borderRadius: 2,
+                      bgcolor: item.bg,
+                      color: item.color,
+                      display: 'grid',
+                      placeItems: 'center',
+                      flex: '0 0 auto'
+                    }}
+                  >
+                    {item.icon}
+                  </Box>
+                  <Box sx={{ minWidth: 0 }}>
+                    <Typography sx={{ color: '#64748b', fontSize: 12, fontWeight: 800, textTransform: 'uppercase' }}>
+                      {item.label}
+                    </Typography>
+                    <Typography sx={{ color: '#0f172a', fontSize: { xs: 19, md: 21 }, fontWeight: 900, lineHeight: 1.1 }}>
+                      {item.value}
+                    </Typography>
+                    <Typography sx={{ color: '#64748b', fontSize: 12.5, mt: 0.4 }}>
+                      {item.helper}
+                    </Typography>
+                  </Box>
+                </Paper>
+              ))}
+            </Box>
 
             {/* Panel de Filtros Inteligentes Bidireccionales (Estilo Business Intelligence) */}
             <Paper 

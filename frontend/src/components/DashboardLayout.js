@@ -281,9 +281,14 @@ function DashboardLayout() {
     return user.menuPermissions.map((k) => String(k || '').trim()).filter(Boolean);
   }, [user?.menuPermissions]);
 
+  const explicitProcesosDashboards = useMemo(() => {
+    if (!Array.isArray(user?.allowedGestionProcesosDashboards)) return [];
+    return user.allowedGestionProcesosDashboards.map((k) => String(k || '').trim()).filter(Boolean);
+  }, [user?.allowedGestionProcesosDashboards]);
+
   if (explicitMenuPermissions.length > 0 && user?.role !== ROLES.ADMINISTRADOR) {
     const effectiveMenuPermissions = user?.role === ROLES.CONSULTA
-      ? explicitMenuPermissions.filter((key) => key !== 'gestion_usuarios')
+      ? [...new Set([...explicitMenuPermissions.filter((key) => key !== 'gestion_usuarios'), ...explicitProcesosDashboards.map(k => k === 'gestion_usuarios_consulta' ? 'gestion_usuarios' : k)])]
       : explicitMenuPermissions;
     menuItems = menuCatalog.filter((item) => effectiveMenuPermissions.includes(item.key));
 
@@ -357,8 +362,8 @@ function DashboardLayout() {
       ];
     }
 
-    if (user?.role === ROLES.GESTION_PROCESOS) {
-      const procesosKeys = ['gestion_informacion', 'aseguramiento_calidad', 'buscar_documentos', 'gestion_usuarios'];
+    if (user?.role === ROLES.GESTION_PROCESOS || (user?.role === ROLES.CONSULTA && explicitProcesosDashboards.length > 0)) {
+      const procesosKeys = ['gestion_informacion', 'aseguramiento_calidad', 'buscar_documentos', 'gestion_usuarios', 'favoritos'];
       const visibleChildren = gestionProcesosMenuItems
         .filter((item) => item.section)
         .flatMap((section) => section.items)

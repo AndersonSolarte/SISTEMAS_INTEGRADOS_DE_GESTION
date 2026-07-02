@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { ROLES } from '../../constants/roles';
 import {
   Box,
   Button,
@@ -13,6 +14,7 @@ import ArrowForwardRoundedIcon from '@mui/icons-material/ArrowForwardRounded';
 import UploadFileIcon from '@mui/icons-material/UploadFile';
 import FlightIcon from '@mui/icons-material/Flight';
 import HandshakeIcon from '@mui/icons-material/Handshake';
+import PublicIcon from '@mui/icons-material/Public';
 import InternacionalizacionGestionPanel from './InternacionalizacionGestionPanel';
 import InternacionalizacionMovilidadDashboard from './InternacionalizacionMovilidadDashboard';
 import InternacionalizacionConveniosDashboard from './InternacionalizacionConveniosDashboard';
@@ -53,8 +55,24 @@ const SUB_CARDS = [
   }
 ];
 
-function InternacionalizacionLandingPage({ onBack }) {
+
+function InternacionalizacionLandingPage({ user, onBack }) {
   const [subView, setSubView] = useState(null);
+
+  const isAdminOrPlaneacion = [ROLES.ADMINISTRADOR, ROLES.PLANEACION_ESTRATEGICA].includes(user?.role);
+  const userPermissions = user?.permissions || [];
+  
+  const canViewGestion = isAdminOrPlaneacion || (user?.allowedInternacionalizacionDashboards || []).includes('internacionalizacion_gestion');
+  const canViewEstadistica = isAdminOrPlaneacion || (user?.allowedInternacionalizacionDashboards || []).includes('internacionalizacion_estadistica');
+  const canViewConvenios = isAdminOrPlaneacion || (user?.allowedInternacionalizacionDashboards || []).includes('internacionalizacion_convenios');
+
+  const VISIBLE_CARDS = SUB_CARDS.filter(card => {
+    if (card.key === 'gestion') return canViewGestion;
+    if (card.key === 'movilidad') return canViewEstadistica;
+    if (card.key === 'convenios') return canViewConvenios;
+    return false;
+  });
+
 
   if (subView === 'gestion') {
     return <InternacionalizacionGestionPanel onBack={() => setSubView(null)} />;
@@ -82,25 +100,77 @@ function InternacionalizacionLandingPage({ onBack }) {
 
   return (
     <Fade in timeout={300}>
-      <Box>
-        <Paper
-          elevation={0}
-          sx={{ p: 1.4, mb: 2.5, border: '1px solid #dbe6f5', borderRadius: 2.5, bgcolor: '#f8fbff' }}
-        >
-          <Button variant="outlined" startIcon={<ArrowBackRoundedIcon />} onClick={onBack}>
-            Volver a Estadística Institucional
-          </Button>
+      <Stack spacing={2.5}>
+        <Paper elevation={0} sx={{ p: 1.4, border: '1px solid #dbe6f5', borderRadius: 2.5, bgcolor: '#f8fbff' }}>
+          <Stack direction="row" spacing={1.5} alignItems="center">
+            <Button
+              variant="outlined"
+              startIcon={<ArrowBackRoundedIcon />}
+              onClick={onBack}
+              sx={{ fontWeight: 800 }}
+            >
+              Volver a Estadística Institucional
+            </Button>
+          </Stack>
         </Paper>
 
-        <Box
-          sx={{
-            display: 'grid',
-            gap: 2.4,
-            gridTemplateColumns: { xs: '1fr', md: 'repeat(3, minmax(0, 1fr))' },
-            alignItems: 'stretch'
+        <Paper 
+          elevation={0} 
+          sx={{ 
+            p: { xs: 2, md: 2.5 }, 
+            borderRadius: 3.5, 
+            background: 'linear-gradient(135deg, #1e3a8a 0%, #3b82f6 100%)',
+            boxShadow: '0 6px 20px rgba(15, 23, 42, 0.08)',
+            border: 'none',
+            color: '#fff'
           }}
         >
-          {SUB_CARDS.map((card) => {
+          <Stack direction="row" spacing={2} alignItems="center">
+            <Box sx={{ p: 1.2, borderRadius: 2, bgcolor: 'rgba(255, 255, 255, 0.15)', display: 'grid', placeItems: 'center' }}>
+              <PublicIcon sx={{ fontSize: 28, color: '#fff' }} />
+            </Box>
+            <Box>
+              <Typography sx={{ fontWeight: 900, color: '#ffffff', fontSize: { xs: 20, md: 22 }, letterSpacing: '-0.02em', lineHeight: 1.1 }}>
+                Panel de Internacionalización
+              </Typography>
+              <Typography sx={{ color: 'rgba(255, 255, 255, 0.85)', fontSize: 13.5, mt: 0.5, fontWeight: 500, lineHeight: 1.25 }}>
+                Consolidado de movilidad, convenios y gestión estadística institucional.
+              </Typography>
+            </Box>
+          </Stack>
+        </Paper>
+
+        <Paper
+          elevation={0}
+          sx={{
+            p: { xs: 1.8, md: 2.5 },
+            borderRadius: 4,
+            border: '1px solid #dbe6f5',
+            bgcolor: '#f8fbff'
+          }}
+        >
+          <Box
+            sx={{
+              display: 'grid',
+              gap: 2.5,
+              gridTemplateColumns: {
+                xs: '1fr',
+                md: 'repeat(auto-fit, minmax(280px, 1fr))'
+              },
+              alignItems: 'stretch',
+              width: '100%'
+            }}
+          >
+          {VISIBLE_CARDS.length === 0 && (
+            <Paper elevation={0} sx={{ p: 3, gridColumn: '1 / -1', borderRadius: 2.5, border: '1px solid #f8ecc8', bgcolor: '#fffcf2' }}>
+              <Stack direction='row' spacing={1.5} alignItems='center'>
+                <Typography sx={{ color: '#b45309', fontWeight: 700, fontSize: 14 }}>
+                  Usted no tiene asignado ningún submódulo para la visualización de la Internacionalización. Por favor, contacte con el administrador si considera que esto es un error.
+                </Typography>
+              </Stack>
+            </Paper>
+          )}
+          {VISIBLE_CARDS.map((card) => {
             const Icon = card.icon;
             return (
               <Paper
@@ -201,8 +271,9 @@ function InternacionalizacionLandingPage({ onBack }) {
               </Paper>
             );
           })}
-        </Box>
-      </Box>
+          </Box>
+        </Paper>
+      </Stack>
     </Fade>
   );
 }

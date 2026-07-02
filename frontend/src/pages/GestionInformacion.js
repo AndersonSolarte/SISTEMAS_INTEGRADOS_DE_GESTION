@@ -33,7 +33,9 @@ import {
   ToggleButtonGroup,
   Collapse,
   Autocomplete,
-  Popover
+  Popover,
+  Tabs,
+  Tab
 } from '@mui/material';
 import Dialog from '@mui/material/Dialog';
 import DialogTitle from '@mui/material/DialogTitle';
@@ -123,6 +125,7 @@ import { ROLES } from '../constants/roles';
 import { EstadisticaDocumentalPanel } from './EstadisticaDocumentalImpact';
 import ActivityDashboard from './ActivityDashboard';
 import SecurityApplicationDashboard from './SecurityApplicationDashboard';
+import PlaneacionEfectividad from './PlaneacionEfectividad';
 
 const BASES = [
   { key: 'poblacional', label: 'Poblacional', description: 'Históricos de inscritos, admitidos, matriculados y graduados.' },
@@ -210,7 +213,12 @@ const getVisibleBaseKeysForUser = (user) => {
   if (explicitPermissions.includes('infraestructura_fisica.ver') || explicitPermissions.includes('infraestructura_fisica.gestionar')) {
     explicitValid.push('infraestructura_fisica');
   }
-  if (explicitValid.length > 0) return Array.from(new Set(explicitValid));
+  
+  // Si el usuario tiene permisos explícitos asignados, devolvemos estrictamente esos
+  // (evitando caer en los roles por defecto), incluso si la lista resultante está vacía.
+  if (explicitPermissions.length > 0) {
+    return Array.from(new Set(explicitValid));
+  }
 
   const specializedBaseKeys = [];
   const explicitPoblacional = normalizeModulePermissionList(user?.allowedPoblacionalDashboards);
@@ -221,10 +229,6 @@ const getVisibleBaseKeysForUser = (user) => {
   if (explicitGestionProcesos.length > 0) specializedBaseKeys.push('gestion_procesos');
   if (explicitSaberPro.length > 0) specializedBaseKeys.push('saber_pro');
   if (specializedBaseKeys.length > 0) return Array.from(new Set(specializedBaseKeys));
-
-  if (explicitPermissions.includes('estadistica_institucional')) {
-    return BASES.map((b) => b.key);
-  }
 
   if (user?.role === ROLES.AUTOEVALUACION) {
     return ['autoevaluacion', 'registros_calificados_acreditacion'];
@@ -246,6 +250,7 @@ const getVisibleBaseKeysForUser = (user) => {
 };
 
 const SECURITY_PERMISSION_KEYS = [
+  'seguridad_aplicativa',
   'seguridad_aplicativa.ver',
   'seguridad_aplicativa.escanear',
   'seguridad_aplicativa.ver_hallazgos',
@@ -1688,6 +1693,7 @@ function GestionInformacion() {
 
   const [selectedCard, setSelectedCard] = useState(null);
   const [gestionProcesosPanel, setGestionProcesosPanel] = useState('hub');
+  const [planAccionTab, setPlanAccionTab] = useState('estadistica');
   const [poblacionalPanel, setPoblacionalPanel] = useState('hub');
   const [statSection, setStatSection] = useState('flujo');
   const [saberProStatSection, setSaberProStatSection] = useState('hub');
@@ -2422,23 +2428,27 @@ function GestionInformacion() {
     if (menuView !== 'estadistica') return;
     if (isGestionProcesosStatsRoute) return;
     if (!Array.isArray(visibleBaseKeys) || visibleBaseKeys.length === 0) {
-      if (selectedCard) setSelectedCard(null);
+      if (selectedCard && !['activity_monitor', 'security_application'].includes(selectedCard)) {
+        setSelectedCard(null);
+      }
       return;
     }
   }, [isGestionProcesosStatsRoute, menuView, visibleBaseKeys, selectedCard, resetPoblacionalStatsFilters]);
 
   useEffect(() => {
     if (isGestionProcesosStatsRoute) return;
-    /* activity_monitor y security_application no pertenecen a visibleBaseKeys pero son tarjetas válidas */
-    if (selectedCard === 'activity_monitor' || (selectedCard === 'security_application' && canAccessSecurityApplication)) return;
-    if (selectedCard && !visibleBaseKeys.includes(selectedCard)) {
-      setSelectedCard(null);
+    
+    if (selectedCard && !['activity_monitor', 'security_application'].includes(selectedCard)) {
+      if (!visibleBaseKeys.includes(selectedCard)) {
+        setSelectedCard(null);
+      }
     }
+    
     if (baseSeleccionada && !visibleBaseKeys.includes(baseSeleccionada)) {
       setBaseSeleccionada('');
       setSubBaseSeleccionada('');
     }
-  }, [isGestionProcesosStatsRoute, selectedCard, baseSeleccionada, visibleBaseKeys, canAccessSecurityApplication]);
+  }, [isGestionProcesosStatsRoute, selectedCard, baseSeleccionada, visibleBaseKeys]);
 
   useEffect(() => {
     fetchData();
@@ -4135,7 +4145,7 @@ function GestionInformacion() {
   };
 
   const enterCard = (key) => {
-    if (!['poblacional', 'saber_pro', 'recurso_humano', 'internacionalizacion', 'gestion_procesos', 'registros_calificados_acreditacion', 'infraestructura_fisica', 'activity_monitor', 'security_application'].includes(key)) {
+    if (!['poblacional', 'saber_pro', 'recurso_humano', 'internacionalizacion', 'gestion_procesos', 'registros_calificados_acreditacion', 'infraestructura_fisica', 'plan_accion', 'activity_monitor', 'security_application'].includes(key)) {
       enqueueSnackbar('Modulo en construccion. La estructura ya quedo lista para activarlo.', { variant: 'info' });
       return;
     }
@@ -6348,7 +6358,7 @@ const renderCategoryBars = (items = [], options = {}) => {
         alignItems: 'stretch'
       }}
     >
-      {visibleBases.length === 0 && (
+      {visibleBases.length === 0 && !canAccessSecurityApplication && !([ROLES.ADMINISTRADOR, ROLES.PLANEACION_ESTRATEGICA].includes(user?.role) || normalizeModulePermissionList(user?.allowedModules).concat(normalizeModulePermissionList(user?.modulePermissions)).concat(normalizeModulePermissionList(user?.permissions?.modules)).includes('monitor_actividad')) && (
         <Paper
           elevation={0}
           sx={{
@@ -6461,8 +6471,8 @@ const renderCategoryBars = (items = [], options = {}) => {
         </Paper>
       ))}
 
-      {/* ── Tarjeta Monitor de Actividad — solo administrador ── */}
-      {user?.role === ROLES.ADMINISTRADOR && (
+      {/* ── Tarjeta Monitor de Actividad ── */}
+      {([ROLES.ADMINISTRADOR, ROLES.PLANEACION_ESTRATEGICA].includes(user?.role) || normalizeModulePermissionList(user?.allowedModules).concat(normalizeModulePermissionList(user?.modulePermissions)).concat(normalizeModulePermissionList(user?.permissions?.modules)).includes('monitor_actividad')) && (
         <Paper
           elevation={0}
           sx={{
@@ -13875,7 +13885,7 @@ const renderCategoryBars = (items = [], options = {}) => {
   return (
     <Fade in={true}>
       <Box>
-        {!isGestionProcesosStatsRoute && !isDirectDocumentalView && !(selectedCard === 'poblacional' && poblacionalPanel !== 'hub') && selectedCard !== 'infraestructura_fisica' && selectedCard !== 'recurso_humano' && selectedCard !== 'internacionalizacion' && selectedCard !== 'activity_monitor' && (
+        {!isGestionProcesosStatsRoute && !isDirectDocumentalView && !(selectedCard === 'poblacional' && poblacionalPanel !== 'hub') && selectedCard !== 'infraestructura_fisica' && selectedCard !== 'recurso_humano' && selectedCard !== 'internacionalizacion' && selectedCard !== 'activity_monitor' && selectedCard !== 'plan_accion' && (
           <Paper elevation={0} sx={{ p: 3, mb: 3, borderRadius: 3, border: '1px solid #dbe2f1', background: 'linear-gradient(135deg,#0f172a,#1d4ed8)' }}>
             <Stack direction="row" spacing={1.5} alignItems="center">
               <InsightsIcon sx={{ color: 'white' }} />
@@ -14246,6 +14256,7 @@ const renderCategoryBars = (items = [], options = {}) => {
                 {selectedCard === 'recurso_humano' && renderRecursoHumanoStatsModule()}
                 {selectedCard === 'internacionalizacion' && (
                   <InternacionalizacionLandingPage
+                    user={user}
                     onBack={() => setSelectedCard(null)}
                   />
                 )}
@@ -14256,15 +14267,19 @@ const renderCategoryBars = (items = [], options = {}) => {
                   seriesRows={seriesRows}
                   canManage={
                     [ROLES.ADMINISTRADOR, ROLES.PLANEACION_ESTRATEGICA].includes(user?.role) ||
-                    (user?.permissions || []).some(p => p.module_key === 'infraestructura_fisica' && p.can_manage)
+                    (user?.allowedInfraestructuraFisicaDashboards || []).includes('infraestructura_fisica_crud')
                   }
                   canViewStats={
                     [ROLES.ADMINISTRADOR, ROLES.PLANEACION_ESTRATEGICA].includes(user?.role) ||
-                    (user?.permissions || []).some(p => p.module_key === 'infraestructura_fisica')
+                    (user?.allowedInfraestructuraFisicaDashboards || []).includes('infraestructura_fisica_estadistica')
+                  }
+                  canViewReports={
+                    [ROLES.ADMINISTRADOR, ROLES.PLANEACION_ESTRATEGICA].includes(user?.role) ||
+                    (user?.allowedInfraestructuraFisicaDashboards || []).includes('infraestructura_fisica_informes')
                   }
                   canView={
                     [ROLES.ADMINISTRADOR, ROLES.PLANEACION_ESTRATEGICA].includes(user?.role) ||
-                    (user?.permissions || []).some(p => p.module_key === 'infraestructura_fisica')
+                    (user?.allowedInfraestructuraFisicaDashboards || []).some(k => k.startsWith('infraestructura_fisica'))
                   }
                   onBack={() => setSelectedCard(null)}
                 />
@@ -14290,6 +14305,17 @@ const renderCategoryBars = (items = [], options = {}) => {
                       <Chip label="Gestión de Seguridad Aplicativa" color="primary" variant="outlined" />
                     </Stack>
                     <SecurityApplicationDashboard embedded />
+                  </Box>
+                )}
+                {selectedCard === 'plan_accion' && (
+                  <Box>
+                    <Stack direction="row" spacing={1} sx={{ mb: 2.5 }} alignItems="center">
+                      <Button variant="outlined" startIcon={<ArrowBackRoundedIcon />} onClick={() => setSelectedCard(null)}>
+                        Volver a tarjetas
+                      </Button>
+                      <Chip label="Plan de Acción" color="primary" variant="outlined" />
+                    </Stack>
+                    <PlaneacionEfectividad />
                   </Box>
                 )}
               </>

@@ -163,7 +163,7 @@ const canManageBasesByPermission = hasAnyRoleOrModulePermission({
 
 const canViewInfraestructura = hasAnyRoleOrModulePermission({
   roles: [ROLES.ADMINISTRADOR, ROLES.PLANEACION_ESTRATEGICA],
-  moduleKeys: ['infraestructura_fisica.ver', 'infraestructura_fisica.gestionar']
+  moduleKeys: ['infraestructura_fisica', 'infraestructura_fisica.ver', 'infraestructura_fisica.gestionar']
 });
 
 const canManageInfraestructura = hasAnyRoleOrModulePermission({

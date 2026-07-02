@@ -73,6 +73,7 @@ import { useSnackbar } from 'notistack';
 import gestionInformacionService from '../services/gestionInformacionService';
 import planAccionWorkflowService, { ESTADOS_WORKFLOW, ESTADO_LABEL, ESTADO_COLOR } from '../services/planAccionWorkflowService';
 import { useAuth } from '../context/AuthContext';
+import { ROLES } from '../constants/roles';
 
 const PED_YEAR_WEIGHT = 14.28;
 
@@ -4410,12 +4411,29 @@ function GestionPlanesWorkspaceV2({ sourceRows = [], onWorkflowChanged }) {
 
 function PlaneacionEfectividad() {
   const { enqueueSnackbar } = useSnackbar();
+  const { user } = useAuth();
+
+  const isAdmin = user && [ROLES.ADMINISTRADOR, ROLES.PLANEACION_ESTRATEGICA].includes(user.role);
+  const dashboards = (user && user.allowedPlanAccionDashboards) || [];
+  const canEstadistica = isAdmin || dashboards.includes('plan_accion_estadistica');
+  const canGestion = isAdmin || dashboards.includes('plan_accion_gestion');
+
   const createDefaultFilters = () => ({
     mode: 'estadistica',
     anio: '',
     responsable: ''
   });
-  const [section, setSection] = useState('estadistica');
+  const [section, setSection] = useState(null);
+
+  useEffect(() => {
+    if (section === null) {
+      if (canEstadistica && !canGestion) {
+        setSection('estadistica');
+      } else if (!canEstadistica && canGestion) {
+        setSection('gestion');
+      }
+    }
+  }, [canEstadistica, canGestion, section]);
   const [tab, setTab] = useState('estadistica');
   const [loading, setLoading] = useState(true);
   const [dashboard, setDashboard] = useState({ rows: [], filters: { anios: [], peds: [], responsables: [], tiposIndicador: [], estados: [] }, meta: {} });
@@ -4513,131 +4531,301 @@ function PlaneacionEfectividad() {
   return (
     <Fade in={true}>
       <Box>
-        <Stack spacing={2.4}>
+        <Stack spacing={3.2}>
           <HeroBanner />
 
-          <Paper elevation={0} sx={{ p: 1.2, borderRadius: 4, border: '1px solid #dbeafe', background: 'linear-gradient(180deg,#ffffff 0%,#f8fbff 100%)' }}>
-            <Box sx={{ display: 'grid', gap: 1.2, gridTemplateColumns: { xs: '1fr', md: '1fr 1fr' } }}>
-              <Button
-                onClick={() => setSection('estadistica')}
-                startIcon={<DashboardIcon />}
-                sx={{
-                  py: 1.8,
-                  px: 2,
-                  borderRadius: 3,
-                  textTransform: 'none',
-                  justifyContent: 'flex-start',
-                  fontWeight: 900,
-                  color: section === 'estadistica' ? 'white' : '#1e3a8a',
-                  background: section === 'estadistica' ? 'linear-gradient(135deg,#1d4ed8 0%,#2563eb 100%)' : '#eff6ff',
-                  border: section === 'estadistica' ? '1px solid transparent' : '1px solid #dbeafe',
-                  boxShadow: section === 'estadistica' ? '0 12px 24px rgba(37,99,235,.22)' : 'none'
-                }}
-              >
-                Estadística Planes de Acción
-              </Button>
-              <Button
-                onClick={() => setSection('gestion')}
-                startIcon={<AssignmentTurnedInIcon />}
-                sx={{
-                  py: 1.8,
-                  px: 2,
-                  borderRadius: 3,
-                  textTransform: 'none',
-                  justifyContent: 'flex-start',
-                  fontWeight: 900,
-                  color: section === 'gestion' ? 'white' : '#9a3412',
-                  background: section === 'gestion' ? 'linear-gradient(135deg,#ea580c 0%,#f97316 100%)' : '#fff7ed',
-                  border: section === 'gestion' ? '1px solid transparent' : '1px solid #fed7aa',
-                  boxShadow: section === 'gestion' ? '0 12px 24px rgba(249,115,22,.22)' : 'none'
-                }}
-              >
-                Gestión de Planes de Acción
-              </Button>
-            </Box>
-          </Paper>
-
-          {section === 'gestion' ? (
-            <GestionPlanesWorkspaceV2 sourceRows={dashboard.rows || []} onWorkflowChanged={cargarDashboardPlanAccion} />
-          ) : (
-            <>
-          <Paper
-            elevation={0}
-            sx={{
-              p: 0.8,
-              borderRadius: 3.5,
-              border: '1px solid #dbeafe',
-              background: 'linear-gradient(180deg,#ffffff 0%,#f8fbff 100%)',
-              boxShadow: '0 10px 24px rgba(15,23,42,.04)'
-            }}
-          >
-            <Tabs
-              value={tab}
-              onChange={(_, next) => setTab(next)}
-              variant="fullWidth"
-              sx={{
-                minHeight: 60,
-                '& .MuiTabs-indicator': {
-                  height: 0
-                },
-                '& .MuiTabs-flexContainer': { gap: { xs: 0.5, md: 1 } },
-                '& .MuiTab-root': {
-                  textTransform: 'none',
-                  fontWeight: 800,
-                  minHeight: 54,
-                  minWidth: 0,
-                  py: 1.4,
-                  px: { xs: 1, md: 2 },
-                  borderRadius: 2.5,
-                  color: '#64748b',
-                  transition: 'all .2s ease'
-                },
-                '& .MuiTab-root.Mui-selected': {
-                  color: '#1d4ed8',
-                  background: 'linear-gradient(135deg,#eff6ff 0%,#dbeafe 100%)',
-                  boxShadow: 'inset 0 0 0 1px rgba(59,130,246,.22), 0 8px 18px rgba(37,99,235,.08)'
-                },
-                '& .MuiTab-root:hover': {
-                  backgroundColor: '#f8fafc'
-                },
-                '& .MuiTab-iconWrapper': {
-                  mr: 1
-                }
-              }}
-            >
-              <Tab value="estadistica" icon={<DashboardIcon fontSize="small" />} iconPosition="start" label="Estadística Planes de Acción" />
-              <Tab value="planes" icon={<AssignmentTurnedInIcon fontSize="small" />} iconPosition="start" label="Planes de Acción" />
-              <Tab value="seguimiento" icon={<ShowChartIcon fontSize="small" />} iconPosition="start" label="Seguimiento Planes de Acción" />
-            </Tabs>
-          </Paper>
-
-          {tab !== 'seguimiento' && (
-            <FilterBar filters={activeFilters} options={dashboard.filters || {}} onChange={handleFilterChange} onReset={handleResetFilters} />
-          )}
-
-          {loading ? (
-            <Paper elevation={0} sx={{ py: 10, borderRadius: 3, border: '1px solid #e2e8f0' }}>
-              <Stack spacing={1.5} alignItems="center">
-                <CircularProgress />
-                <Typography sx={{ color: '#64748b' }}>Cargando módulo Planeación y Efectividad...</Typography>
-              </Stack>
-            </Paper>
-          ) : !dashboard.rows?.length ? (
-            <Alert severity="info" sx={{ borderRadius: 3 }}>
-              Aún no hay datos del <strong>Plan de Acción</strong>. Carga la base desde Gestión de la Información y este módulo se poblará automáticamente.
-            </Alert>
-          ) : (
-            <>
-              {tab === 'estadistica' && <EstadisticaTab rows={deferredRows} metrics={metrics} />}
-              {tab === 'planes' && <PlanesAccionTab rows={deferredRows} />}
-              {tab === 'seguimiento' && (
-                <SeguimientoTabV2
-                  rows={deferredRows}
-                  filtersNode={<FilterBar filters={activeFilters} options={dashboard.filters || {}} onChange={handleFilterChange} onReset={handleResetFilters} />}
-                />
+          {section === null ? (
+            <Box>
+              {!canEstadistica && !canGestion ? (
+                <Alert severity="warning" sx={{ borderRadius: 3.5, border: '1px solid #fed7aa', bgcolor: '#fff7ed', color: '#9a3412', fontWeight: 600 }}>
+                  No tienes permisos asignados para ingresar a los submódulos de Plan de Acción. Por favor, solicita acceso al administrador.
+                </Alert>
+              ) : (
+                <Box>
+                  <Typography variant="h5" sx={{ fontWeight: 900, color: '#0f172a', mb: 3.5, textAlign: 'center', letterSpacing: -0.5 }}>
+                    Seleccione un submódulo para ingresar
+                  </Typography>
+                  
+                  <Box
+                    sx={{
+                      display: 'grid',
+                      gap: 3,
+                      gridTemplateColumns: { xs: '1fr', md: '1fr 1fr' },
+                      maxWidth: 1000,
+                      margin: '0 auto',
+                      px: 1
+                    }}
+                  >
+                    {canEstadistica && (
+                      <Paper
+                        elevation={0}
+                        onClick={() => setSection('estadistica')}
+                        sx={{
+                          p: 4.5,
+                          borderRadius: 5,
+                          border: '1px solid #e2e8f0',
+                          background: 'linear-gradient(135deg, #ffffff 0%, #f8fafc 100%)',
+                          boxShadow: '0 10px 25px rgba(15,23,42,0.03)',
+                          cursor: 'pointer',
+                          transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
+                          display: 'flex',
+                          flexDirection: 'column',
+                          alignItems: 'center',
+                          textAlign: 'center',
+                          position: 'relative',
+                          overflow: 'hidden',
+                          '&:hover': {
+                            transform: 'translateY(-6px)',
+                            boxShadow: '0 25px 50px rgba(37,99,235,0.12)',
+                            borderColor: '#3b82f6',
+                            '& .icon-container': {
+                              background: 'linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%)',
+                              color: '#ffffff',
+                              transform: 'scale(1.1) rotate(5deg)'
+                            },
+                            '& .action-btn': {
+                              background: 'linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%)',
+                              boxShadow: '0 8px 22px rgba(37,99,235,0.25)'
+                            }
+                          }
+                        }}
+                      >
+                        <Box
+                          className="icon-container"
+                          sx={{
+                            width: 84,
+                            height: 84,
+                            borderRadius: 4.5,
+                            background: '#eff6ff',
+                            color: '#2563eb',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            mb: 3.5,
+                            transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
+                            boxShadow: '0 8px 16px rgba(37,99,235,0.05)'
+                          }}
+                        >
+                          <DashboardIcon sx={{ fontSize: 44 }} />
+                        </Box>
+                        <Typography variant="h6" sx={{ fontWeight: 900, color: '#1e3a8a', mb: 1.8, fontSize: 20 }}>
+                          Estadística Planes de Acción
+                        </Typography>
+                        <Typography sx={{ color: '#64748b', fontSize: 14.5, mb: 4, flexGrow: 1, lineHeight: 1.6, px: 2 }}>
+                          Resumen ejecutivo de la estructura, avance físico y financiero, y la ejecución general del Plan Estratégico de Desarrollo (PED).
+                        </Typography>
+                        <Button
+                          variant="contained"
+                          className="action-btn"
+                          sx={{
+                            textTransform: 'none',
+                            borderRadius: 3,
+                            px: 3.5,
+                            py: 1.2,
+                            fontWeight: 800,
+                            background: '#2563eb',
+                            boxShadow: '0 4px 12px rgba(37,99,235,0.15)',
+                            transition: 'all 0.2s ease'
+                          }}
+                        >
+                          Ingresar a Estadísticas
+                        </Button>
+                      </Paper>
+                    )}
+                    
+                    {canGestion && (
+                      <Paper
+                        elevation={0}
+                        onClick={() => setSection('gestion')}
+                        sx={{
+                          p: 4.5,
+                          borderRadius: 5,
+                          border: '1px solid #e2e8f0',
+                          background: 'linear-gradient(135deg, #ffffff 0%, #f8fafc 100%)',
+                          boxShadow: '0 10px 25px rgba(15,23,42,0.03)',
+                          cursor: 'pointer',
+                          transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
+                          display: 'flex',
+                          flexDirection: 'column',
+                          alignItems: 'center',
+                          textAlign: 'center',
+                          position: 'relative',
+                          overflow: 'hidden',
+                          '&:hover': {
+                            transform: 'translateY(-6px)',
+                            boxShadow: '0 25px 50px rgba(249,115,22,0.12)',
+                            borderColor: '#f97316',
+                            '& .icon-container': {
+                              background: 'linear-gradient(135deg, #ea580c 0%, #c2410c 100%)',
+                              color: '#ffffff',
+                              transform: 'scale(1.1) rotate(-5deg)'
+                            },
+                            '& .action-btn': {
+                              background: 'linear-gradient(135deg, #ea580c 0%, #c2410c 100%)',
+                              boxShadow: '0 8px 22px rgba(249,115,22,0.25)'
+                            }
+                          }
+                        }}
+                      >
+                        <Box
+                          className="icon-container"
+                          sx={{
+                            width: 84,
+                            height: 84,
+                            borderRadius: 4.5,
+                            background: '#fff7ed',
+                            color: '#ea580c',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            mb: 3.5,
+                            transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
+                            boxShadow: '0 8px 16px rgba(249,115,22,0.05)'
+                          }}
+                        >
+                          <AssignmentTurnedInIcon sx={{ fontSize: 44 }} />
+                        </Box>
+                        <Typography variant="h6" sx={{ fontWeight: 900, color: '#7c2d12', mb: 1.8, fontSize: 20 }}>
+                          Gestión de Planes de Acción
+                        </Typography>
+                        <Typography sx={{ color: '#64748b', fontSize: 14.5, mb: 4, flexGrow: 1, lineHeight: 1.6, px: 2 }}>
+                          Workspace de administración, creación y seguimiento del flujo de aprobación y concertación de los planes de acción.
+                        </Typography>
+                        <Button
+                          variant="contained"
+                          className="action-btn"
+                          sx={{
+                            textTransform: 'none',
+                            borderRadius: 3,
+                            px: 3.5,
+                            py: 1.2,
+                            fontWeight: 800,
+                            background: '#ea580c',
+                            boxShadow: '0 4px 12px rgba(249,115,22,0.15)',
+                            transition: 'all 0.2s ease'
+                          }}
+                        >
+                          Ingresar a Gestión
+                        </Button>
+                      </Paper>
+                    )}
+                  </Box>
+                </Box>
               )}
-            </>
-          )}
+            </Box>
+          ) : (
+            <>
+              {canEstadistica && canGestion && (
+                <Box sx={{ display: 'flex', justifyContent: 'flex-start' }}>
+                  <Button
+                    variant="outlined"
+                    startIcon={<ArrowBackIcon />}
+                    onClick={() => setSection(null)}
+                    sx={{
+                      textTransform: 'none',
+                      fontWeight: 800,
+                      borderColor: '#cbd5e1',
+                      color: '#475569',
+                      borderRadius: 3,
+                      px: 2.5,
+                      py: 1,
+                      background: '#ffffff',
+                      boxShadow: '0 2px 8px rgba(15,23,42,0.04)',
+                      '&:hover': {
+                        background: '#f8fafc',
+                        borderColor: '#94a3b8',
+                        color: '#0f172a'
+                      }
+                    }}
+                  >
+                    Cambiar de Submódulo (Volver)
+                  </Button>
+                </Box>
+              )}
+
+              {section === 'gestion' ? (
+                <GestionPlanesWorkspaceV2 sourceRows={dashboard.rows || []} onWorkflowChanged={cargarDashboardPlanAccion} />
+              ) : (
+                <>
+                  <Paper
+                    elevation={0}
+                    sx={{
+                      p: 0.8,
+                      borderRadius: 3.5,
+                      border: '1px solid #dbeafe',
+                      background: 'linear-gradient(180deg,#ffffff 0%,#f8fbff 100%)',
+                      boxShadow: '0 10px 24px rgba(15,23,42,.04)'
+                    }}
+                  >
+                    <Tabs
+                      value={tab}
+                      onChange={(_, next) => setTab(next)}
+                      variant="fullWidth"
+                      sx={{
+                        minHeight: 60,
+                        '& .MuiTabs-indicator': {
+                          height: 0
+                        },
+                        '& .MuiTabs-flexContainer': { gap: { xs: 0.5, md: 1 } },
+                        '& .MuiTab-root': {
+                          textTransform: 'none',
+                          fontWeight: 800,
+                          minHeight: 54,
+                          minWidth: 0,
+                          py: 1.4,
+                          px: { xs: 1, md: 2 },
+                          borderRadius: 2.5,
+                          color: '#64748b',
+                          transition: 'all .2s ease'
+                        },
+                        '& .MuiTab-root.Mui-selected': {
+                          color: '#1d4ed8',
+                          background: 'linear-gradient(135deg,#eff6ff 0%,#dbeafe 100%)',
+                          boxShadow: 'inset 0 0 0 1px rgba(59,130,246,.22), 0 8px 18px rgba(37,99,235,.08)'
+                        },
+                        '& .MuiTab-root:hover': {
+                          backgroundColor: '#f8fafc'
+                        },
+                        '& .MuiTab-iconWrapper': {
+                          mr: 1
+                        }
+                      }}
+                    >
+                      <Tab value="estadistica" icon={<DashboardIcon fontSize="small" />} iconPosition="start" label="Estadística Planes de Acción" />
+                      <Tab value="planes" icon={<AssignmentTurnedInIcon fontSize="small" />} iconPosition="start" label="Planes de Acción" />
+                      <Tab value="seguimiento" icon={<ShowChartIcon fontSize="small" />} iconPosition="start" label="Seguimiento Planes de Acción" />
+                    </Tabs>
+                  </Paper>
+
+                  {tab !== 'seguimiento' && (
+                    <FilterBar filters={activeFilters} options={dashboard.filters || {}} onChange={handleFilterChange} onReset={handleResetFilters} />
+                  )}
+
+                  {loading ? (
+                    <Paper elevation={0} sx={{ py: 10, borderRadius: 3, border: '1px solid #e2e8f0' }}>
+                      <Stack spacing={1.5} alignItems="center">
+                        <CircularProgress />
+                        <Typography sx={{ color: '#64748b' }}>Cargando módulo Planeación y Efectividad...</Typography>
+                      </Stack>
+                    </Paper>
+                  ) : !dashboard.rows?.length ? (
+                    <Alert severity="info" sx={{ borderRadius: 3 }}>
+                      Aún no hay datos del <strong>Plan de Acción</strong>. Carga la base desde Gestión de la Información y este módulo se poblará automáticamente.
+                    </Alert>
+                  ) : (
+                    <>
+                      {tab === 'estadistica' && <EstadisticaTab rows={deferredRows} metrics={metrics} />}
+                      {tab === 'planes' && <PlanesAccionTab rows={deferredRows} />}
+                      {tab === 'seguimiento' && (
+                        <SeguimientoTabV2
+                          rows={deferredRows}
+                          filtersNode={<FilterBar filters={activeFilters} options={dashboard.filters || {}} onChange={handleFilterChange} onReset={handleResetFilters} />}
+                        />
+                      )}
+                    </>
+                  )}
+                </>
+              )}
             </>
           )}
         </Stack>
