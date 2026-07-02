@@ -30,6 +30,15 @@ function Login() {
   const [loading, setLoading] = useState(false);
   const [googleReady, setGoogleReady] = useState(false);
   const [isPruebaMode, setIsPruebaMode] = useState(false);
+  const [showPruebaSelector, setShowPruebaSelector] = useState(false);
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get("prueba") === "true" || params.get("dev") === "true") {
+      setShowPruebaSelector(true);
+    }
+  }, []);
+
   const [showContactDialog, setShowContactDialog] = useState(false);
   const [transitioning, setTransitioning] = useState(false);
   const [transitionFadeOut, setTransitionFadeOut] = useState(false);
@@ -196,7 +205,7 @@ function Login() {
             {error && (<Alert severity="error" sx={{ mb: 3, borderRadius: 2.5, border: "1px solid rgba(239,68,68,0.2)", "& .MuiAlert-icon": { color: "#ef4444" }, animation: "shakeIn 0.5s ease-out", "@keyframes shakeIn": { "0%": { transform: "translateX(-8px)", opacity: 0 }, "25%": { transform: "translateX(6px)" }, "50%": { transform: "translateX(-4px)" }, "75%": { transform: "translateX(2px)" }, "100%": { transform: "translateX(0)", opacity: 1 } } }}>{error}</Alert>)}
             <Box sx={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 2 }}>
               <Box ref={googleButtonRef} sx={{ minHeight: 48, width: "100%", maxWidth: 420, display: "flex", justifyContent: "center", alignItems: "center", p: 1, borderRadius: 3, transition: "opacity 0.25s ease", opacity: loading ? 0 : 1, pointerEvents: loading ? "none" : "auto", "&:hover": { background: "rgba(59,130,246,0.04)", borderRadius: 3 }, "& iframe": { maxWidth: "100% !important" } }} />
-              {!loading && googleReady && (
+              {!loading && googleReady && showPruebaSelector && (
                 <FormControlLabel
                   control={
                     <Checkbox
