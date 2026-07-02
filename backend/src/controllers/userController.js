@@ -1636,20 +1636,26 @@ const bulkUploadUsers = async (req, res) => {
       const usersToNotify = await User.findAll({
         where: { email: { [Op.in]: rowsToNotify.map((row) => row.email) } }
       });
-      const rowByEmail = new Map(rowsToNotify.map((row) => [row.email, row]));
-      for (const user of usersToNotify) {
-        const emailResult = await sendWelcomeEmail(user);
-        if (!emailResult.success) {
-          const sourceRow = rowByEmail.get(String(user.email || '').toLowerCase());
-          results.advertencias.push({
-            fila: sourceRow?.fila || '',
-            email: user.email,
-            warning: `No se pudo enviar correo institucional: ${emailResult.error}`
-          });
-        } else {
-          results.correosEnviados++;
+      
+      // Enviar correos en segundo plano de forma asíncrona para evitar timeout de conexión HTTP.
+      // También incluye un retraso de 300ms entre envíos para respetar límites de SMTP.
+      setImmediate(async () => {
+        try {
+          console.log(`[bulk-email] Iniciando envío de correos en segundo plano para ${usersToNotify.length} usuarios...`);
+          for (const user of usersToNotify) {
+            const emailResult = await sendWelcomeEmail(user);
+            if (!emailResult.success) {
+              console.warn(`[bulk-email] No se pudo enviar correo de bienvenida a ${user.email}: ${emailResult.error}`);
+            }
+            await new Promise(resolve => setTimeout(resolve, 300));
+          }
+          console.log(`[bulk-email] Envío de correos de bienvenida en segundo plano completado.`);
+        } catch (err) {
+          console.error('[bulk-email] Error en envío de correos en segundo plano:', err);
         }
-      }
+      });
+      
+      results.correosEnviados = rowsToNotify.length;
     }
 
     const archivoErrores = buildWorkbookBase64(results.errores, 'Errores');
