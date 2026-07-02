@@ -2188,5 +2188,49 @@ module.exports = {
   getUserModulePermissions,
   updateUserModulePermissions,
   exportPendingNotificationUsers,
-  sendPendingNotifications
+  sendPendingNotifications,
+  clearAllUsers
+};
+
+const clearAllUsers = async (req, res) => {
+  try {
+    const allUsers = await User.findAll({
+      attributes: ['id', 'email', 'username', 'role']
+    });
+
+    const usersToDelete = allUsers.filter((u) => {
+      const cleanEmail = String(u.email || '').toLowerCase().trim();
+      const cleanUsername = String(u.username || '').trim();
+
+      const isCurrentUser = Number(u.id) === Number(req.user.id);
+      const isMasterAdmin = cleanEmail === 'sgc@unicesmag.edu.co' || cleanUsername === '2744' || cleanEmail === 'admin@sgc.com';
+
+      return !isCurrentUser && !isMasterAdmin;
+    });
+
+    if (usersToDelete.length === 0) {
+      return res.json({
+        success: true,
+        message: 'No hay usuarios adicionales para eliminar en el sistema.'
+      });
+    }
+
+    await ensureUserReferenceIndexes();
+
+    await User.sequelize.transaction(async (transaction) => {
+      for (const u of usersToDelete) {
+        await cleanupDirectUserDependencies(u.id, transaction);
+        await detachUserForeignKeyReferences(u.id, transaction);
+        await User.destroy({ where: { id: u.id }, transaction });
+      }
+    });
+
+    return res.json({
+      success: true,
+      message: `Se eliminaron ${usersToDelete.length} usuarios del sistema correctamente. Solo se conservó tu cuenta y el administrador principal.`
+    });
+  } catch (error) {
+    console.error('Error al limpiar usuarios:', error);
+    res.status(500).json({ success: false, message: 'Error al eliminar todos los usuarios del sistema' });
+  }
 };

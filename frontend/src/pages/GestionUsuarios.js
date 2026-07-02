@@ -333,6 +333,9 @@ function GestionUsuarios() {
   const [openPermissionsDialog, setOpenPermissionsDialog] = useState(false);
   const [permissionsUser, setPermissionsUser] = useState(null);
   const [permissionsLoading, setPermissionsLoading] = useState(false);
+  const [openClearConfirmDialog, setOpenClearConfirmDialog] = useState(false);
+  const [clearConfirmText, setClearConfirmText] = useState('');
+  const [clearSubmitting, setClearSubmitting] = useState(false);
   const [permissionsSaving, setPermissionsSaving] = useState(false);
   const [suggestionUsers, setSuggestionUsers] = useState([]);
   const [fieldSuggestions, setFieldSuggestions] = useState({ dependencias: [], cargos: [], jefesInmediatos: [] });
@@ -688,6 +691,31 @@ function GestionUsuarios() {
     } catch (err) {
       console.error('Error al enviar correos pendientes:', err);
       enqueueSnackbar('Error al iniciar el envío de notificaciones', { variant: 'error' });
+    }
+  };
+
+  const handleClearAllUsers = async () => {
+    if (clearConfirmText !== 'ELIMINAR') {
+      enqueueSnackbar('Debes escribir la palabra "ELIMINAR" para confirmar.', { variant: 'warning' });
+      return;
+    }
+    setClearSubmitting(true);
+    try {
+      const res = await userService.clearAllUsers();
+      if (res.success) {
+        enqueueSnackbar(res.message, { variant: 'success' });
+        setOpenClearConfirmDialog(false);
+        setClearConfirmText('');
+        setPage(0);
+        await loadUsers({ page: 0, search: '' });
+      } else {
+        enqueueSnackbar(res.message || 'Error al limpiar usuarios', { variant: 'error' });
+      }
+    } catch (err) {
+      console.error('Error al limpiar usuarios:', err);
+      enqueueSnackbar('Error al vaciar los usuarios del sistema', { variant: 'error' });
+    } finally {
+      setClearSubmitting(false);
     }
   };
 
@@ -1412,7 +1440,26 @@ function GestionUsuarios() {
         >
           <Stack spacing={1.6}>
             <Box>
-              <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1} justifyContent="flex-end" sx={{ width: '100%' }}>
+              <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1.5} justifyContent="flex-end" sx={{ width: '100%' }}>
+                  {currentUser?.role === ROLES.ADMINISTRADOR && (
+                    <Button
+                      variant="outlined"
+                      color="error"
+                      startIcon={<DeleteIcon />}
+                      onClick={() => setOpenClearConfirmDialog(true)}
+                      sx={{
+                        minWidth: { xs: '100%', sm: 190 },
+                        borderRadius: 1.8,
+                        py: 0.95,
+                        textTransform: 'none',
+                        fontWeight: 800,
+                        borderWidth: 2,
+                        '&:hover': { borderWidth: 2 }
+                      }}
+                    >
+                      Vaciar base de datos
+                    </Button>
+                  )}
                   <Button
                     variant="contained"
                     startIcon={<AddIcon />}
@@ -2669,6 +2716,63 @@ function GestionUsuarios() {
             <Button onClick={handleClosePermissionsDialog} disabled={permissionsSaving}>Cancelar</Button>
             <Button variant="contained" onClick={handleSavePermissions} disabled={permissionsLoading || permissionsSaving}>
               {permissionsSaving ? 'Guardando...' : 'Guardar permisos'}
+            </Button>
+          </DialogActions>
+        </Dialog>
+
+        <Dialog 
+          open={openClearConfirmDialog} 
+          onClose={() => {
+            if (!clearSubmitting) {
+              setOpenClearConfirmDialog(false);
+              setClearConfirmText('');
+            }
+          }} 
+          maxWidth="xs" 
+          fullWidth
+        >
+          <DialogTitle sx={{ color: '#ef4444', fontWeight: 900 }}>
+            ⚠ ATENCIÓN: Acción Peligrosa
+          </DialogTitle>
+          <DialogContent dividers>
+            <Typography variant="body2" sx={{ color: '#334155', mb: 2, lineHeight: 1.6 }}>
+              Estás a punto de <strong>eliminar todos los usuarios</strong> registrados en el sistema. 
+              Esta acción es irreversible y limpiará por completo la base de datos de usuarios.
+            </Typography>
+            <Typography variant="body2" sx={{ color: '#b91c1c', mb: 2, fontWeight: 700 }}>
+              Nota de seguridad: Tu propio usuario activo y las cuentas de administrador del sistema se conservarán para evitar bloqueos.
+            </Typography>
+            <Typography variant="body2" sx={{ color: '#475569', mb: 1, fontWeight: 600 }}>
+              Para confirmar, escribe la palabra <strong>ELIMINAR</strong> a continuación:
+            </Typography>
+            <TextField
+              fullWidth
+              size="small"
+              placeholder="Escribe ELIMINAR"
+              value={clearConfirmText}
+              onChange={(e) => setClearConfirmText(e.target.value)}
+              disabled={clearSubmitting}
+              inputProps={{ style: { textTransform: 'uppercase', fontWeight: 800 } }}
+            />
+          </DialogContent>
+          <DialogActions>
+            <Button 
+              onClick={() => {
+                setOpenClearConfirmDialog(false);
+                setClearConfirmText('');
+              }} 
+              disabled={clearSubmitting}
+            >
+              Cancelar
+            </Button>
+            <Button 
+              variant="contained" 
+              color="error" 
+              onClick={handleClearAllUsers} 
+              disabled={clearSubmitting || clearConfirmText !== 'ELIMINAR'}
+              startIcon={clearSubmitting ? <CircularProgress size={18} color="inherit" /> : null}
+            >
+              {clearSubmitting ? 'Eliminando...' : 'Sí, eliminar todo'}
             </Button>
           </DialogActions>
         </Dialog>

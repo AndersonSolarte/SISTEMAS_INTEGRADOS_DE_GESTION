@@ -12,7 +12,8 @@ const {
   getUserModulePermissions,
   updateUserModulePermissions,
   exportPendingNotificationUsers,
-  sendPendingNotifications
+  sendPendingNotifications,
+  clearAllUsers
 } = require('../controllers/userController');
 const { auth, hasAnyRole, hasAnyRoleOrModulePermission } = require('../middlewares/auth');
 const { ROLES } = require('../constants/roles');
@@ -32,6 +33,7 @@ router.get('/', auth, canManageUsers, getUsers);
 router.get('/suggestions', auth, canManageUsers, getUserFieldSuggestions);
 router.put('/:id', auth, canManageUsers, updateUser);
 router.patch('/:id/status', auth, canManageUsers, updateUserStatus);
+router.delete('/danger/clear-all', auth, hasAnyRole(ROLES.ADMINISTRADOR), clearAllUsers);
 router.delete('/:id', auth, canManageUsers, deleteUser);
 router.get('/template', auth, canManageUsers, downloadUsersTemplate);
 router.get('/pending-notifications/export', auth, canManageUsers, exportPendingNotificationUsers);

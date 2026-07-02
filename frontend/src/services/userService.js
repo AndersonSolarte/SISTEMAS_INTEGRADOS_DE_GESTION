@@ -81,6 +81,12 @@ const userService = {
     return response.data;
   },
 
+  // Limpiar todos los usuarios de la base de datos (excepto administrador principal y usuario activo)
+  clearAllUsers: async () => {
+    const response = await api.delete('/users/danger/clear-all');
+    return response.data;
+  },
+
   // No se usa recuperación de contraseña en este flujo
 };
 
