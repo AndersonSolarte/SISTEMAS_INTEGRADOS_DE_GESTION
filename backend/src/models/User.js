@@ -6,7 +6,7 @@ const { ROLES } = require('../constants/roles');
 const User = sequelize.define('users', {
   id: { type: DataTypes.INTEGER, primaryKey: true, autoIncrement: true },
   nombre: { type: DataTypes.STRING(100), allowNull: false },
-  email: { type: DataTypes.STRING(100), allowNull: false, unique: true, validate: { isEmail: true } },
+  email: { type: DataTypes.STRING(100), allowNull: false, unique: false, validate: { isEmail: true } },
   username: { type: DataTypes.STRING(100), allowNull: true, unique: true },
   dependencia: { type: DataTypes.STRING(220), allowNull: true },
   cargo: { type: DataTypes.STRING(220), allowNull: true },
@@ -21,7 +21,8 @@ const User = sequelize.define('users', {
       ROLES.PLANEACION_EFECTIVIDAD,
       ROLES.AUTOEVALUACION,
       ROLES.GESTION_INFORMACION,
-      ROLES.REGISTROS_CALIFICADOS
+      ROLES.REGISTROS_CALIFICADOS,
+      ROLES.PRUEBA
     ),
     allowNull: false,
     defaultValue: ROLES.CONSULTA

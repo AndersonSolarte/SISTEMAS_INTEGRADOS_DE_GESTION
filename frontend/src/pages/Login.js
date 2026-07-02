@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
-import { Container, Paper, Button, Typography, Box, Alert, CircularProgress, Divider, Dialog, DialogTitle, DialogContent, DialogActions, Stack } from "@mui/material";
+import { Container, Paper, Button, Typography, Box, Alert, CircularProgress, Divider, Dialog, DialogTitle, DialogContent, DialogActions, Stack, Checkbox, FormControlLabel } from "@mui/material";
 import { AccountBalance as AccountBalanceIcon, Autorenew as AutorenewIcon, RocketLaunch as RocketLaunchIcon, Schema as SchemaIcon } from "@mui/icons-material";
 import { useAuth } from "../context/AuthContext";
 import authService from "../services/authService";
@@ -29,6 +29,7 @@ function Login() {
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const [googleReady, setGoogleReady] = useState(false);
+  const [isPruebaMode, setIsPruebaMode] = useState(false);
   const [showContactDialog, setShowContactDialog] = useState(false);
   const [transitioning, setTransitioning] = useState(false);
   const [transitionFadeOut, setTransitionFadeOut] = useState(false);
@@ -77,11 +78,11 @@ function Login() {
     setError(""); setShowContactDialog(false);
     if (!response?.credential) { setError(`Google no devolvió credencial. Revisa OAuth (origin_mismatch) para este origen: ${currentOrigin}`); setShowContactDialog(true); return; }
     setLoading(true);
-    const result = await loginWithGoogle(response?.credential);
+    const result = await loginWithGoogle(response?.credential, isPruebaMode);
     setLoading(false);
     if (result.success) { navigateWithLoader(redirectPath); }
     else { setError(result.message || "No fue posible iniciar sesión con Google"); const message = String(result.message || "").toLowerCase(); setShowContactDialog(!(message.includes("demasiad") || message.includes("muchos intentos") || message.includes("429"))); }
-  }, [currentOrigin, loginWithGoogle, navigateWithLoader, redirectPath]);
+  }, [currentOrigin, loginWithGoogle, navigateWithLoader, redirectPath, isPruebaMode]);
 
   useEffect(() => {
     const hash = String(window.location.hash || "");
@@ -194,7 +195,25 @@ function Login() {
             </Divider>
             {error && (<Alert severity="error" sx={{ mb: 3, borderRadius: 2.5, border: "1px solid rgba(239,68,68,0.2)", "& .MuiAlert-icon": { color: "#ef4444" }, animation: "shakeIn 0.5s ease-out", "@keyframes shakeIn": { "0%": { transform: "translateX(-8px)", opacity: 0 }, "25%": { transform: "translateX(6px)" }, "50%": { transform: "translateX(-4px)" }, "75%": { transform: "translateX(2px)" }, "100%": { transform: "translateX(0)", opacity: 1 } } }}>{error}</Alert>)}
             <Box sx={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 2 }}>
-              <Box ref={googleButtonRef} sx={{ minHeight: 48, width: "100%", maxWidth: 420, display: "flex", justifyContent: "center", alignItems: "center", p: 1, borderRadius: 3, transition: "opacity 0.25s ease", opacity: loading ? 0 : 1, pointerEvents: loading ? "none" : "auto", "&:hover": { background: "rgba(59,130,246,0.04)" }, "& iframe": { maxWidth: "100% !important" } }} />
+              <Box ref={googleButtonRef} sx={{ minHeight: 48, width: "100%", maxWidth: 420, display: "flex", justifyContent: "center", alignItems: "center", p: 1, borderRadius: 3, transition: "opacity 0.25s ease", opacity: loading ? 0 : 1, pointerEvents: loading ? "none" : "auto", "&:hover": { background: "rgba(59,130,246,0.04)", borderRadius: 3 }, "& iframe": { maxWidth: "100% !important" } }} />
+              {!loading && googleReady && (
+                <FormControlLabel
+                  control={
+                    <Checkbox
+                      checked={isPruebaMode}
+                      onChange={(e) => setIsPruebaMode(e.target.checked)}
+                      color="primary"
+                      size="small"
+                    />
+                  }
+                  label={
+                    <Typography sx={{ fontSize: 13, fontWeight: 700, color: '#475569', fontFamily: '"Montserrat","Segoe UI",sans-serif' }}>
+                      Iniciar sesión en perfil de pruebas (Desarrollo)
+                    </Typography>
+                  }
+                  sx={{ mt: -0.5, mb: 1 }}
+                />
+              )}
               {loading && (<Button fullWidth variant="contained" size="large" disabled startIcon={<CircularProgress size={18} color="inherit" sx={{ flexShrink: 0 }} />} sx={{ py: 1.65, borderRadius: 3, textTransform: "none", fontSize: 15, fontWeight: 700, letterSpacing: 0.2, position: "relative", overflow: "hidden", animation: "btnAuthPulse 1.6s ease-in-out infinite", "@keyframes btnAuthPulse": { "0%,100%": { boxShadow: "0 8px 30px rgba(29,78,216,0.3)" }, "50%": { boxShadow: "0 10px 40px rgba(79,70,229,0.55)" } }, "&.Mui-disabled": { background: "linear-gradient(135deg,#1e40af 0%,#4338ca 50%,#6d28d9 100%)", color: "#fff", opacity: 1 }, "&::after": { content: '""', position: "absolute", top: 0, left: "-60%", width: "60%", height: "100%", background: "linear-gradient(90deg,transparent,rgba(255,255,255,0.18),transparent)", animation: "btnShimmer 1.4s ease-in-out infinite", "@keyframes btnShimmer": { "0%": { left: "-60%" }, "100%": { left: "130%" } } } }}>Iniciando sesión…</Button>)}
               {!googleReady && !loading && (<Button fullWidth variant="contained" size="large" disabled startIcon={<CircularProgress size={18} color="inherit" />} sx={{ py: 1.65, borderRadius: 3, textTransform: "none", fontSize: 15, fontWeight: 700, letterSpacing: 0.2, "&.Mui-disabled": { background: "linear-gradient(135deg,#1d4ed8 0%,#4f46e5 50%,#7c3aed 100%)", color: "#fff", opacity: 0.8 } }}>Preparando acceso seguro…</Button>)}
             </Box>

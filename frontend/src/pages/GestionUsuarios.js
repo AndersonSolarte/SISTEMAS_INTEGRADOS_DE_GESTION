@@ -375,7 +375,8 @@ function GestionUsuarios() {
         ROLES.REGISTROS_CALIFICADOS,
         ROLES.GESTION_INFORMACION,
         ROLES.GESTION_PROCESOS,
-        ROLES.CONSULTA
+        ROLES.CONSULTA,
+        ROLES.PRUEBA
       ];
     }
 

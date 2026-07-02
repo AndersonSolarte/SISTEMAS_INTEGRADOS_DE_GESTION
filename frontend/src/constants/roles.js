@@ -6,7 +6,8 @@ export const ROLES = {
   PLANEACION_EFECTIVIDAD: 'planeacion_efectividad',
   AUTOEVALUACION: 'autoevaluacion',
   GESTION_INFORMACION: 'gestion_informacion',
-  REGISTROS_CALIFICADOS: 'registros_calificados_acreditacion'
+  REGISTROS_CALIFICADOS: 'registros_calificados_acreditacion',
+  PRUEBA: 'prueba'
 };
 
 export const ROLE_LABELS = {
@@ -17,5 +18,6 @@ export const ROLE_LABELS = {
   [ROLES.PLANEACION_EFECTIVIDAD]: 'Planeación y Efectividad',
   [ROLES.AUTOEVALUACION]: 'Autoevaluación',
   [ROLES.GESTION_INFORMACION]: 'Gestión de la Información',
-  [ROLES.REGISTROS_CALIFICADOS]: 'Registros Calificados y Acreditación'
+  [ROLES.REGISTROS_CALIFICADOS]: 'Registros Calificados y Acreditación',
+  [ROLES.PRUEBA]: 'Prueba'
 };

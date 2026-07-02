@@ -61,7 +61,22 @@ const verifyGoogleCredentialAndBuildSession = async (credential = '', req = null
     return { error: { status: 403, message: 'Dominio institucional no autorizado.' } };
   }
 
-  const user = await User.findOne({ where: { email } });
+  const usePruebaProfile = req?.body?.usePruebaProfile === true || req?.body?.usePruebaProfile === 'true';
+  const { ROLES } = require('../constants/roles');
+  const { Op } = require('sequelize');
+
+  let user;
+  if (usePruebaProfile) {
+    user = await User.findOne({ where: { email, role: ROLES.PRUEBA } });
+  }
+  if (!user) {
+    user = await User.findOne({
+      where: {
+        email,
+        role: { [Op.ne]: ROLES.PRUEBA }
+      }
+    }) || await User.findOne({ where: { email } });
+  }
   if (!user) {
     return {
       error: {

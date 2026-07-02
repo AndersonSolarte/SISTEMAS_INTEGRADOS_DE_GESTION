@@ -18,7 +18,8 @@ const ROLE_SEARCH_LABELS = {
   [ROLES.PLANEACION_EFECTIVIDAD]: ['planeacion y efectividad', 'planeacion_efectividad', 'efectividad'],
   [ROLES.AUTOEVALUACION]: ['autoevaluacion'],
   [ROLES.GESTION_INFORMACION]: ['gestion de la informacion', 'gestion_informacion', 'informacion'],
-  [ROLES.REGISTROS_CALIFICADOS]: ['registros calificados', 'acreditacion', 'registros_calificados_acreditacion']
+  [ROLES.REGISTROS_CALIFICADOS]: ['registros calificados', 'acreditacion', 'registros_calificados_acreditacion'],
+  [ROLES.PRUEBA]: ['prueba']
 };
 const normalizeSearchText = (value = '') => String(value)
   .normalize('NFD')
@@ -158,7 +159,8 @@ const ROLE_LABELS = {
   [ROLES.PLANEACION_EFECTIVIDAD]: 'Planeacion y Efectividad',
   [ROLES.AUTOEVALUACION]: 'Autoevaluacion',
   [ROLES.GESTION_INFORMACION]: 'Gestion de la Informacion',
-  [ROLES.REGISTROS_CALIFICADOS]: 'Registros Calificados y Acreditacion'
+  [ROLES.REGISTROS_CALIFICADOS]: 'Registros Calificados y Acreditacion',
+  [ROLES.PRUEBA]: 'Prueba'
 };
 
 const isSuperAdmin = (user) => user?.role === ROLES.ADMINISTRADOR;
@@ -623,17 +625,27 @@ const createUser = async (req, res) => {
     const usernameFinal = await generarUsernameUnico(numeroDocumento, cleanEmail);
     
     // Verificar duplicados
-    const existente = await User.findOne({
-      where: {
-        [Op.or]: [{ email: cleanEmail }, { username: usernameFinal }]
-      }
-    });
-    
-    if (existente) {
+    const usernameExistente = await User.findOne({ where: { username: usernameFinal } });
+    if (usernameExistente) {
       return res.status(400).json({
         success: false,
-        message: existente.email === email ? 'El correo ya está registrado' : 'El usuario ya existe'
+        message: 'El usuario ya existe'
       });
+    }
+
+    if (targetRole !== ROLES.PRUEBA) {
+      const emailExistente = await User.findOne({
+        where: {
+          email: cleanEmail,
+          role: { [Op.ne]: ROLES.PRUEBA }
+        }
+      });
+      if (emailExistente) {
+        return res.status(400).json({
+          success: false,
+          message: 'El correo ya está registrado'
+        });
+      }
     }
     
     // Generar contraseña temporal
@@ -853,21 +865,33 @@ const updateUser = async (req, res) => {
     }
     
     // Verificar duplicados
-    if ((email && email !== user.email) || (username && username !== user.username)) {
-      const existente = await User.findOne({
+    if (username && username !== user.username) {
+      const usernameExistente = await User.findOne({
         where: {
           id: { [Op.ne]: id },
-          [Op.or]: [
-            ...(email ? [{ email }] : []),
-            ...(username ? [{ username }] : [])
-          ]
+          username
         }
       });
-      
-      if (existente) {
+      if (usernameExistente) {
         return res.status(400).json({
           success: false,
-          message: 'El correo o usuario ya está en uso'
+          message: 'El usuario ya existe'
+        });
+      }
+    }
+
+    if (email && email !== user.email && targetRole !== ROLES.PRUEBA) {
+      const emailExistente = await User.findOne({
+        where: {
+          id: { [Op.ne]: id },
+          email,
+          role: { [Op.ne]: ROLES.PRUEBA }
+        }
+      });
+      if (emailExistente) {
+        return res.status(400).json({
+          success: false,
+          message: 'El correo ya está en uso'
         });
       }
     }

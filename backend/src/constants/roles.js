@@ -6,7 +6,8 @@ const ROLES = {
   PLANEACION_EFECTIVIDAD: 'planeacion_efectividad',
   AUTOEVALUACION: 'autoevaluacion',
   GESTION_INFORMACION: 'gestion_informacion',
-  REGISTROS_CALIFICADOS: 'registros_calificados_acreditacion'
+  REGISTROS_CALIFICADOS: 'registros_calificados_acreditacion',
+  PRUEBA: 'prueba'
 };
 
 const ROLES_PLANEACION = [

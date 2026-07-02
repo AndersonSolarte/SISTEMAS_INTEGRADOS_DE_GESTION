@@ -189,6 +189,21 @@ testConnection()
       const User = require('./models/User');
       const { DataTypes } = require('sequelize');
       await User.sync();
+      try {
+        await sequelize.query(`ALTER TYPE "enum_users_role" ADD VALUE IF NOT EXISTS 'prueba'`);
+        console.log('[database] Rol "prueba" garantizado.');
+      } catch (err) {
+        console.warn('[database] Nota sobre rol "prueba":', err.message);
+      }
+      try {
+        await sequelize.query('ALTER TABLE "users" DROP CONSTRAINT IF EXISTS "users_email_key"');
+        await sequelize.query('DROP INDEX IF EXISTS "users_email_key"');
+        await sequelize.query('ALTER TABLE "users" DROP CONSTRAINT IF EXISTS "users_email_unique"');
+        await sequelize.query('DROP INDEX IF EXISTS "users_email_unique"');
+        console.log('[database] Restricción de email único de usuarios eliminada.');
+      } catch (err) {
+        console.warn('[database] Error al remover restricciones de email único:', err.message);
+      }
       const qi = sequelize.getQueryInterface();
       const usersTable = await qi.describeTable('users');
       const addUserColumn = async (column) => {
