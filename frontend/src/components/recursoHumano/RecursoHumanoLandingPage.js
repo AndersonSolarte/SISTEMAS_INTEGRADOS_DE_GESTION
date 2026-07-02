@@ -130,7 +130,7 @@ function RecursoHumanoLandingPage({ onBack }) {
             startIcon={<ArrowBackRoundedIcon />}
             onClick={onBack}
           >
-            Volver a Estadística Institucional
+            Volver a Gestión de la Información
           </Button>
         </Paper>
 

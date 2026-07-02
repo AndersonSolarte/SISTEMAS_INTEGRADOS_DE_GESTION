@@ -2269,7 +2269,7 @@ function GestionUsuarios() {
                   variant="outlined"
                   sx={{ p: 2, borderRadius: 2, opacity: (modulePermissionsForm.allowedModules.includes('estadistica_institucional') || modulePermissionsForm.allowedModules.includes('recurso_humano')) ? 1 : 0.55 }}
                 >
-                  <Typography sx={{ fontWeight: 800, mb: 0.6, color: '#0f172a' }}>Permisos modulares de Gestión Humana</Typography>
+                  <Typography sx={{ fontWeight: 800, mb: 0.6, color: '#0f172a' }}>Permisos modulares de Gestión del Talento Humano</Typography>
                   <Typography variant="body2" sx={{ color: '#64748b', mb: 1.6 }}>
                     Activa los sub-módulos para permitir el acceso a Profesores, Administrativos o Seguimiento.
                   </Typography>
