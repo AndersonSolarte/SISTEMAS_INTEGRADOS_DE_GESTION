@@ -212,7 +212,7 @@ function GestionUsuarios() {
   const GI_MODULE_GROUPS = ['Acceso general', 'Tableros estadisticos', 'Permisos especializados', 'Seguridad Aplicativa']
     .map((title) => ({
       title,
-      options: GI_MODULE_OPTIONS.filter((item) => item.group === title)
+      options: GI_MODULE_OPTIONS.filter((item) => item.group === title && item.key !== 'recurso_humano' && item.key !== 'saber_pro')
     }));
   const GESTION_PROCESOS_DASHBOARD_OPTIONS = [
     { key: 'estadistica_documental', label: 'Estadística Documental' }
