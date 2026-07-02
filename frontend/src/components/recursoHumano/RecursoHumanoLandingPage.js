@@ -91,7 +91,7 @@ function RecursoHumanoLandingPage({ onBack }) {
     visibleCards.push(SUB_CARDS[1]); // Administrativos
   }
   
-  if (showSeguimientoCard && hasAccess('recurso_humano_seguimiento')) {
+  if (hasAccess('recurso_humano_seguimiento')) {
     visibleCards.push({
       key: 'seguimiento_reportes',
       label: 'Seguimiento a reportes',
