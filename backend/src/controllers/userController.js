@@ -2176,22 +2176,6 @@ const sendPendingNotifications = async (req, res) => {
   }
 };
 
-module.exports = {
-  createUser,
-  getUsers,
-  getUserFieldSuggestions,
-  updateUser,
-  updateUserStatus,
-  deleteUser,
-  bulkUploadUsers,
-  downloadUsersTemplate,
-  getUserModulePermissions,
-  updateUserModulePermissions,
-  exportPendingNotificationUsers,
-  sendPendingNotifications,
-  clearAllUsers
-};
-
 const clearAllUsers = async (req, res) => {
   try {
     const allUsers = await User.findAll({
@@ -2233,4 +2217,20 @@ const clearAllUsers = async (req, res) => {
     console.error('Error al limpiar usuarios:', error);
     res.status(500).json({ success: false, message: 'Error al eliminar todos los usuarios del sistema' });
   }
+};
+
+module.exports = {
+  createUser,
+  getUsers,
+  getUserFieldSuggestions,
+  updateUser,
+  updateUserStatus,
+  deleteUser,
+  bulkUploadUsers,
+  downloadUsersTemplate,
+  getUserModulePermissions,
+  updateUserModulePermissions,
+  exportPendingNotificationUsers,
+  sendPendingNotifications,
+  clearAllUsers
 };
