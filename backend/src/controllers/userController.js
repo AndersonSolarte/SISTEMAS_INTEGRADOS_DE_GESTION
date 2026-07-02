@@ -1652,7 +1652,7 @@ const bulkUploadUsers = async (req, res) => {
             } else {
               console.warn(`[bulk-email] No se pudo enviar correo de bienvenida a ${user.email}: ${emailResult.error}`);
             }
-            await new Promise(resolve => setTimeout(resolve, 300));
+            await new Promise(resolve => setTimeout(resolve, 2000));
           }
           console.log(`[bulk-email] Envío de correos de bienvenida en segundo plano completado.`);
         } catch (err) {
@@ -2158,7 +2158,7 @@ const sendPendingNotifications = async (req, res) => {
           } else {
             console.warn(`[manual-bulk-email] No se pudo enviar correo a ${user.email}: ${emailResult.error}`);
           }
-          await new Promise(resolve => setTimeout(resolve, 300));
+          await new Promise(resolve => setTimeout(resolve, 2000));
         }
         console.log('[manual-bulk-email] Notificación manual completada.');
       } catch (err) {

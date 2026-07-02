@@ -42,8 +42,8 @@ async function run() {
         console.error(`❌ Error al enviar a ${user.email}: ${emailResult.error}`);
       }
       
-      // Espera de 300ms para evitar saturar el servidor SMTP
-      await new Promise(resolve => setTimeout(resolve, 300));
+      // Espera de 2000ms para evitar saturar el servidor SMTP de Gmail
+      await new Promise(resolve => setTimeout(resolve, 2000));
     }
 
     console.log(`\n🎉 Proceso completado. Correos enviados: ${sentCount}, Errores: ${failCount}`);
