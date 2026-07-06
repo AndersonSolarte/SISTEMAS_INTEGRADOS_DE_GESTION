@@ -1739,8 +1739,7 @@ function AseguramientoCalidad() {
                 return (
                   <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 1.2, pt: 0.5, borderTop: '1px solid #f1f5f9' }}>
                     <Box sx={{ display: 'flex', gap: 1.2, flexWrap: 'wrap' }}>
-                      {/* Segmentador Formatos Digitalizados (Oculto temporalmente para rol consulta) */}
-                      {user?.role !== 'consulta' && (
+                      {/* Segmentador Formatos Digitalizados */}
                         <Box sx={{ display: 'flex', borderRadius: '10px', bgcolor: '#f1f5f9', border: '1px solid #d1d5db', overflow: 'hidden' }}>
                           <Box
                             onClick={() => {
@@ -1774,9 +1773,8 @@ function AseguramientoCalidad() {
                             }}>
                             <Box sx={{ width: 7, height: 7, borderRadius: '50%', bgcolor: filters.formatos_digitales ? '#3b82f6' : '#d1d5db', flexShrink: 0, transition: 'all 0.18s', boxShadow: filters.formatos_digitales ? `0 0 0 2.5px #3b82f630` : 'none' }} />
                             <Typography sx={{ fontSize: 11.5, fontWeight: filters.formatos_digitales ? 800 : 500, color: filters.formatos_digitales ? '#1d4ed8' : '#6b7280', whiteSpace: 'nowrap', transition: 'all 0.18s' }}>Formatos digitalizados</Typography>
-                          </Box>
                         </Box>
-                      )}
+                      </Box>
 
                       {/* Segmentadores — solo roles con gestión documental */}
                       {canManageDocumental && (
