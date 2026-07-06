@@ -1995,7 +1995,7 @@ function AseguramientoCalidad() {
                                       </span>
                                     </Tooltip>
                                   )}
-                                  {reporteSalidaFeature.enabled && isReporteSalidaDocument(doc) && user?.role !== 'consulta' && (
+                                  {reporteSalidaFeature.enabled && isReporteSalidaDocument(doc) && (
                                     <Tooltip title="Diligenciar reporte de salida" arrow>
                                       <span>
                                         <IconButton
