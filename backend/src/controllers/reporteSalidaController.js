@@ -900,6 +900,28 @@ const sendJefeApprovalEmail = async (solicitud, token, attachments) => {
   });
 };
 
+const sendColaboradorRadicacionEmail = async (solicitud, attachments) => {
+  const solicitante = solicitud.solicitante_snapshot || {};
+  const subject = `REPORTE DE SALIDA ${solicitud.consecutivo} | Comprobante de radicacion`;
+  const html = renderInstitutionalTemplate({
+    title: 'Comprobante de radicacion de reporte de salida',
+    introHtml: `<p>Cordial saludo, <strong>${escapeHtml(solicitante.nombre)}</strong>.</p><p>Su solicitud de reporte de salida ha sido radicada correctamente y se encuentra en proceso de revision/aprobacion.</p>`,
+    bodyHtml: `
+      <p><strong>Solicitud:</strong> ${escapeHtml(solicitud.consecutivo)}</p>
+      <p><strong>Tiempo solicitado:</strong> ${escapeHtml(formatMinutes(solicitud.tiempo_solicitado_minutos))}</p>
+      ${buildTerapiasHtml(solicitud)}
+      <p>Se adjunta el PDF generado de su solicitud para su respectivo control y archivo.</p>
+    `
+  });
+  return sendInstitutionalEmail({
+    to: solicitante.email,
+    subject,
+    text: `Su solicitud ${solicitud.consecutivo} ha sido radicada y esta en proceso de revision.`,
+    html,
+    attachments
+  });
+};
+
 const sendGestionHumanaApprovalEmail = async (solicitud, token, attachments) => {
   const recipients = getReporteSalidaRecipients();
   const solicitante = solicitud.solicitante_snapshot || {};
@@ -1395,11 +1417,20 @@ const radicarSolicitud = async (req, res) => {
       data: serializeSolicitud(solicitud)
     });
 
-    // Procesar PDF y correo en segundo plano (fire-and-forget)
+    // Procesar PDF y correos en segundo plano (fire-and-forget)
     Promise.resolve().then(async () => {
       try {
         const attachments = await buildReporteSalidaAttachments(solicitud);
         await solicitud.update({ pdf_generado_at: new Date() });
+        
+        // Enviar correo de comprobante al colaborador
+        try {
+          await sendColaboradorRadicacionEmail(solicitud, attachments);
+        } catch (colabEmailErr) {
+          console.error('Error enviando correo de radicacion al colaborador:', colabEmailErr);
+        }
+
+        // Enviar correo de aprobacion al jefe
         const emailResult = await sendJefeApprovalEmail(solicitud, token, attachments);
         await solicitud.update({
           correo_jefe_enviado_at: emailResult.success ? new Date() : null,
