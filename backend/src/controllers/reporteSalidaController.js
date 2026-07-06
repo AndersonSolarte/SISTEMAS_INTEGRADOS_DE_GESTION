@@ -3419,27 +3419,67 @@ const getReposicionesEquipo = async (req, res) => {
 const verificarReportePublico = async (req, res) => {
   try {
     const searchId = req.params.id;
+    console.log('[verificarReportePublico] Iniciando verificacion para ID:', searchId);
     let solicitud = null;
 
-    if (searchId.length === 36 && searchId.includes('-')) {
-      solicitud = await ReporteSalidaSolicitud.findOne({
-        where: ReporteSalidaSolicitud.sequelize.literal(`datos_formulario->>'tx_id' = :searchId`),
-        replacements: { searchId }
-      });
-    }
+    if (searchId && searchId.length === 36 && searchId.includes('-')) {
+      // Intento 1: Usando ruta JSON estandar de Sequelize (punto y dot notation)
+      try {
+        solicitud = await ReporteSalidaSolicitud.findOne({
+          where: {
+            'datos_formulario.tx_id': searchId
+          }
+        });
+      } catch (err1) {
+        console.error('[verificarReportePublico] Error en Intento 1 (dot notation):', err1.message);
+      }
 
-    if (!solicitud) {
-      solicitud = await ReporteSalidaSolicitud.findOne({
-        where: {
-          [Op.or]: [
-            { id: isNaN(searchId) ? 0 : Number(searchId) },
-            { consecutivo: searchId }
-          ]
+      // Intento 2: Usando literal sql de postgres
+      if (!solicitud) {
+        try {
+          solicitud = await ReporteSalidaSolicitud.findOne({
+            where: ReporteSalidaSolicitud.sequelize.literal(`datos_formulario->>'tx_id' = :searchId`),
+            replacements: { searchId }
+          });
+        } catch (err2) {
+          console.error('[verificarReportePublico] Error en Intento 2 (literal):', err2.message);
         }
-      });
+      }
+
+      // Intento 3: Usando contains operador jsonb
+      if (!solicitud) {
+        try {
+          solicitud = await ReporteSalidaSolicitud.findOne({
+            where: {
+              datos_formulario: {
+                [Op.contains]: { tx_id: searchId }
+              }
+            }
+          });
+        } catch (err3) {
+          console.error('[verificarReportePublico] Error en Intento 3 (contains):', err3.message);
+        }
+      }
+    }
+
+    // Intento 4: Por ID o consecutivo
+    if (!solicitud) {
+      try {
+        solicitud = await ReporteSalidaSolicitud.findOne({
+          where: {
+            [Op.or]: [
+              { id: isNaN(searchId) ? 0 : Number(searchId) },
+              { consecutivo: searchId }
+            ]
+          }
+        });
+      } catch (err4) {
+        console.error('[verificarReportePublico] Error en Intento 4 (id/consecutivo):', err4.message);
+      }
     }
 
     if (!solicitud) {
+      console.warn('[verificarReportePublico] No se encontro ninguna solicitud para:', searchId);
       return res.status(404).json({ success: false, message: 'El reporte no existe o fue eliminado.' });
     }
 
@@ -3450,27 +3490,34 @@ const verificarReportePublico = async (req, res) => {
     const nombre = solicitante?.nombre || 'Desconocido';
     const documento = solicitante?.documento || solicitante?.username || 'Desconocido';
 
-    return res.json({
+    let datosForm = solicitud.datos_formulario || {};
+    if (typeof datosForm === 'string') {
+      try { datosForm = JSON.parse(datosForm); } catch (e) { datosForm = {}; }
+    }
+
+    const resData = {
       success: true,
       data: {
         id: solicitud.id,
-        tx_id: solicitud.datos_formulario?.tx_id || '',
+        tx_id: datosForm?.tx_id || '',
         consecutivo: solicitud.consecutivo,
-        createdAt: solicitud.createdAt,
+        createdAt: solicitud.createdAt || solicitud.created_at,
         estado: solicitud.estado,
         solicitante: {
           nombre,
           documento,
-          cargo: solicitud.datos_formulario?.laboral?.cargo || 'No especificado',
-          dependencia: solicitud.datos_formulario?.laboral?.dependencia || 'No especificada'
+          cargo: datosForm?.laboral?.cargo || 'No especificado',
+          dependencia: datosForm?.laboral?.dependencia || 'No especificada'
         },
         jefe_aprobado_at: solicitud.jefe_aprobado_at,
         gestion_humana_aprobado_at: solicitud.gestion_humana_aprobado_at
       }
-    });
+    };
+    console.log('[verificarReportePublico] Verificacion exitosa para:', searchId);
+    return res.json(resData);
   } catch (error) {
-    console.error('Error en verificarReportePublico:', error);
-    return res.status(500).json({ success: false, message: 'Error interno del servidor.' });
+    console.error('Error grave en verificarReportePublico:', error);
+    return res.status(500).json({ success: false, message: 'Error interno del servidor: ' + error.message });
   }
 };
 
