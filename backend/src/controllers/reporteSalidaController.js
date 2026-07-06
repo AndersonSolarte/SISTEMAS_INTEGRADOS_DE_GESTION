@@ -3423,11 +3423,8 @@ const verificarReportePublico = async (req, res) => {
 
     if (searchId.length === 36 && searchId.includes('-')) {
       solicitud = await ReporteSalidaSolicitud.findOne({
-        where: {
-          datos_formulario: {
-            [Op.contains]: { tx_id: searchId }
-          }
-        }
+        where: ReporteSalidaSolicitud.sequelize.literal(`datos_formulario->>'tx_id' = :searchId`),
+        replacements: { searchId }
       });
     }
 
