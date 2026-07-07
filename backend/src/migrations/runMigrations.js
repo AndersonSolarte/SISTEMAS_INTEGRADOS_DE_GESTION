@@ -260,6 +260,24 @@ const ensureReporteSalidaAdminBossSupport = async (qi) => {
     type: DataTypes.INTEGER,
     allowNull: true
   });
+
+  // Agregar valores de SST al enum de estado de solicitudes
+  try {
+    await sequelize.query(`ALTER TYPE "enum_reporte_salida_solicitudes_estado" ADD VALUE IF NOT EXISTS 'pendiente_aprobacion_sst'`);
+  } catch (e) {
+    console.log('[migrate] (ignorable) error al agregar sst_pendiente a enum:', e.message);
+  }
+  try {
+    await sequelize.query(`ALTER TYPE "enum_reporte_salida_solicitudes_estado" ADD VALUE IF NOT EXISTS 'aprobada_sst'`);
+  } catch (e) {
+    console.log('[migrate] (ignorable) error al agregar sst_aprobada a enum:', e.message);
+  }
+
+  // Asegurar columnas de SST y Gestión Humana
+  await ensureColumn(qi, 'reporte_salida_solicitudes', 'enviado_sst_at', { type: DataTypes.DATE, allowNull: true });
+  await ensureColumn(qi, 'reporte_salida_solicitudes', 'aprobacion_sst_token_hash', { type: DataTypes.STRING(128), allowNull: true });
+  await ensureColumn(qi, 'reporte_salida_solicitudes', 'correo_sst_enviado_at', { type: DataTypes.DATE, allowNull: true });
+  await ensureColumn(qi, 'reporte_salida_solicitudes', 'observacion_gestion_humana', { type: DataTypes.TEXT, allowNull: true });
 };
 
 const runMigrations = async () => {
