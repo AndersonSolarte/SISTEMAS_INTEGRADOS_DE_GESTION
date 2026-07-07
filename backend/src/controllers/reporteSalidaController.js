@@ -766,20 +766,24 @@ const renderApprovalPage = ({
   </style>
   <script>
     function closeWindow() {
-      // 1. Intentar cerrar directamente
-      window.close();
+      // 1. Mostrar de inmediato el mensaje de ayuda/confirmacion
+      var msg = document.getElementById('close-msg');
+      if (msg) msg.style.display = 'block';
       
-      // 2. Intentar truco de auto-apertura para forzar cierre
-      setTimeout(function() {
-        window.open('', '_self', '');
+      // 2. Intentar cerrar la pestaña directamente
+      try {
         window.close();
-      }, 100);
+      } catch (e) {
+        console.log('Error window.close:', e);
+      }
       
-      // 3. Si sigue abierta, mostrar el mensaje de ayuda
-      setTimeout(function() {
-        var msg = document.getElementById('close-msg');
-        if (msg) msg.style.display = 'block';
-      }, 250);
+      // 3. Intentar truco alternativo para forzar el cierre
+      try {
+        var win = window.open('', '_self', '');
+        if (win) win.close();
+      } catch (e) {
+        console.log('Error window.open.close:', e);
+      }
     }
   </script>
 </head>
