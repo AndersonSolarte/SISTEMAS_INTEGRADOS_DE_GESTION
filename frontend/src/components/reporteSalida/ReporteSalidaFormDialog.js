@@ -674,7 +674,7 @@ function ReporteSalidaFormDialog({ open, documento, user, onClose, onSubmitted }
       }
     }
     
-    const REQUIRES_ADJUNTO = ['cita_eps', 'cita_particular', 'urgencia_medica', 'terapias', 'voto_jurado', 'voto_sufragante'];
+    const REQUIRES_ADJUNTO = ['cita_eps', 'cita_particular', 'terapias', 'voto_jurado', 'voto_sufragante'];
     if (REQUIRES_ADJUNTO.includes(subtype) && !adjuntoFile) {
       issues.push('Debe subir el soporte médico o certificado obligatorio.');
     }
@@ -1518,6 +1518,12 @@ function ReporteSalidaFormDialog({ open, documento, user, onClose, onSubmitted }
                 </Box>
               )}
 
+              {subtype === 'urgencia_medica' && (
+                <Alert severity="info" sx={{ mt: 2, borderRadius: 2 }}>
+                  Para urgencias médicas no es obligatorio adjuntar el soporte al radicar. Recuerde que posteriormente las oficinas encargadas de realizar el seguimiento solicitarán el soporte correspondiente para justificar la salida.
+                </Alert>
+              )}
+
               {['cita_eps', 'cita_particular', 'urgencia_medica', 'terapias', 'voto_jurado', 'voto_sufragante'].includes(subtype) && (
                 <Box
                   component="label"
@@ -1562,12 +1568,16 @@ function ReporteSalidaFormDialog({ open, documento, user, onClose, onSubmitted }
                     <>
                       <UploadFileIcon sx={{ fontSize: 48, color: '#3b82f6', mb: 1 }} />
                       <Typography sx={{ fontWeight: 700, color: '#1e3a8a', textAlign: 'center', mb: 0.5 }}>
-                        {['voto_jurado', 'voto_sufragante'].includes(subtype) ? 'Subir certificado obligatorio' : 'Subir soporte médico obligatorio'}
+                        {['voto_jurado', 'voto_sufragante'].includes(subtype)
+                          ? 'Subir certificado obligatorio'
+                          : (subtype === 'urgencia_medica' ? 'Subir soporte médico (Opcional)' : 'Subir soporte médico obligatorio')}
                       </Typography>
                       <Typography sx={{ fontSize: 13, color: '#475569', textAlign: 'center' }}>
                         {['voto_jurado', 'voto_sufragante'].includes(subtype)
                           ? 'Haga clic para adjuntar su certificado electoral (PDF o Imagen)'
-                          : 'Haga clic para adjuntar constancia, epicrisis u orden médica (PDF o Imagen)'}
+                          : (subtype === 'urgencia_medica'
+                              ? 'Haga clic para adjuntar soporte o constancia si ya la tiene (PDF o Imagen)'
+                              : 'Haga clic para adjuntar constancia, epicrisis u orden médica (PDF o Imagen)')}
                       </Typography>
                       <Button component="span" variant="contained" size="small" sx={{ mt: 2, textTransform: 'none', bgcolor: '#2563eb', boxShadow: 'none', fontWeight: 600 }}>
                         Seleccionar archivo

@@ -225,50 +225,78 @@ function SecurityApplicationDashboard({ embedded = false }) {
             <Grid item xs={12} sm={6} md={2}><MetricCard label="Escaneos" value={scans.length} icon={<RadarIcon />} color="#0f766e" /></Grid>
           </Grid>
 
-          <Grid container spacing={1.5}>
-            <Grid item xs={12} md={4}>
-              <Paper elevation={0} sx={{ p: 1.5, borderRadius: 2.5, border: '1px solid #e2e8f0', height: 300 }}>
-                <Typography sx={{ fontWeight: 950, mb: 1 }}>Hallazgos por criticidad</Typography>
-                <ResponsiveContainer width="100%" height={230}>
-                  <BarChart data={bySeverity}>
-                    <CartesianGrid strokeDasharray="3 3" />
-                    <XAxis dataKey="name" />
-                    <YAxis allowDecimals={false} />
-                    <RechartsTooltip />
-                    <Bar dataKey="total" radius={[6, 6, 0, 0]}>
-                      {bySeverity.map((entry) => <Cell key={entry.name} fill={severityColors[entry.name]} />)}
-                    </Bar>
-                  </BarChart>
-                </ResponsiveContainer>
+          <Grid container spacing={2.5}>
+            <Grid item xs={12} md={6}>
+              <Paper elevation={0} sx={{ p: 2, borderRadius: 3, border: '1px solid #e2e8f0', height: 350, display: 'flex', flexDirection: 'column' }}>
+                <Typography sx={{ fontWeight: 950, mb: 1.5, fontSize: '1rem' }}>Hallazgos por criticidad</Typography>
+                <Box sx={{ flexGrow: 1, minHeight: 0 }}>
+                  <ResponsiveContainer width="100%" height="100%">
+                    <BarChart data={bySeverity}>
+                      <CartesianGrid strokeDasharray="3 3" />
+                      <XAxis dataKey="name" />
+                      <YAxis allowDecimals={false} />
+                      <RechartsTooltip />
+                      <Bar dataKey="total" radius={[6, 6, 0, 0]}>
+                        {bySeverity.map((entry) => <Cell key={entry.name} fill={severityColors[entry.name]} />)}
+                      </Bar>
+                    </BarChart>
+                  </ResponsiveContainer>
+                </Box>
               </Paper>
             </Grid>
-            <Grid item xs={12} md={4}>
-              <Paper elevation={0} sx={{ p: 1.5, borderRadius: 2.5, border: '1px solid #e2e8f0', height: 300 }}>
-                <Typography sx={{ fontWeight: 950, mb: 1 }}>Estado de hallazgos</Typography>
-                <ResponsiveContainer width="100%" height={230}>
-                  <PieChart>
-                    <Pie data={byStatus.filter((item) => item.total > 0)} dataKey="total" nameKey="name" outerRadius={82} label>
-                      {byStatus.map((entry) => <Cell key={entry.name} fill={statusColors[entry.name]} />)}
-                    </Pie>
-                    <RechartsTooltip />
-                  </PieChart>
-                </ResponsiveContainer>
+            <Grid item xs={12} md={6}>
+              <Paper elevation={0} sx={{ p: 2, borderRadius: 3, border: '1px solid #e2e8f0', height: 350, display: 'flex', flexDirection: 'column' }}>
+                <Typography sx={{ fontWeight: 950, mb: 1.5, fontSize: '1rem' }}>Estado de hallazgos</Typography>
+                <Box sx={{ flexGrow: 1, minHeight: 0, display: 'flex', justifyContent: 'center', alignItems: 'center' }}>
+                  <ResponsiveContainer width="100%" height="100%">
+                    <PieChart>
+                      <Pie data={byStatus.filter((item) => item.total > 0)} dataKey="total" nameKey="name" outerRadius={90} label>
+                        {byStatus.map((entry) => <Cell key={entry.name} fill={statusColors[entry.name]} />)}
+                      </Pie>
+                      <RechartsTooltip />
+                    </PieChart>
+                  </ResponsiveContainer>
+                </Box>
               </Paper>
             </Grid>
-            <Grid item xs={12} md={4}>
-              <Paper elevation={0} sx={{ p: 1.5, borderRadius: 2.5, border: '1px solid #e2e8f0', height: 300 }}>
-                <Typography sx={{ fontWeight: 950, mb: 1 }}>Evolución histórica</Typography>
-                <ResponsiveContainer width="100%" height={230}>
-                  <LineChart data={history}>
-                    <CartesianGrid strokeDasharray="3 3" />
-                    <XAxis dataKey="date" />
-                    <YAxis allowDecimals={false} />
-                    <RechartsTooltip />
-                    <Line type="monotone" dataKey="total" stroke="#1d4ed8" strokeWidth={2} />
-                    <Line type="monotone" dataKey="critical" stroke="#dc2626" strokeWidth={2} />
-                    <Line type="monotone" dataKey="high" stroke="#ea580c" strokeWidth={2} />
-                  </LineChart>
-                </ResponsiveContainer>
+            <Grid item xs={12} md={6}>
+              <Paper elevation={0} sx={{ p: 2, borderRadius: 3, border: '1px solid #e2e8f0', height: 350, display: 'flex', flexDirection: 'column' }}>
+                <Typography sx={{ fontWeight: 950, mb: 1.5, fontSize: '1rem' }}>Evolución histórica</Typography>
+                <Box sx={{ flexGrow: 1, minHeight: 0 }}>
+                  <ResponsiveContainer width="100%" height="100%">
+                    <LineChart data={history}>
+                      <CartesianGrid strokeDasharray="3 3" />
+                      <XAxis dataKey="date" />
+                      <YAxis allowDecimals={false} />
+                      <RechartsTooltip />
+                      <Line type="monotone" dataKey="total" stroke="#1d4ed8" strokeWidth={2} />
+                      <Line type="monotone" dataKey="critical" stroke="#dc2626" strokeWidth={2} />
+                      <Line type="monotone" dataKey="high" stroke="#ea580c" strokeWidth={2} />
+                    </LineChart>
+                  </ResponsiveContainer>
+                </Box>
+              </Paper>
+            </Grid>
+            <Grid item xs={12} md={6}>
+              <Paper elevation={0} sx={{ p: 2, borderRadius: 3, border: '1px solid #e2e8f0', height: 350, display: 'flex', flexDirection: 'column' }}>
+                <Typography sx={{ fontWeight: 950, mb: 1.5, fontSize: '1rem' }}>Hallazgos por componente</Typography>
+                <Box sx={{ flexGrow: 1, minHeight: 0 }}>
+                  <ResponsiveContainer width="100%" height="100%">
+                    {byComponent.length > 0 ? (
+                      <BarChart data={byComponent}>
+                        <CartesianGrid strokeDasharray="3 3" />
+                        <XAxis dataKey="name" />
+                        <YAxis allowDecimals={false} />
+                        <RechartsTooltip />
+                        <Bar dataKey="total" fill="#0f766e" radius={[6, 6, 0, 0]} />
+                      </BarChart>
+                    ) : (
+                      <Box sx={{ height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#64748b' }}>
+                        Sin datos de componentes para mostrar
+                      </Box>
+                    )}
+                  </ResponsiveContainer>
+                </Box>
               </Paper>
             </Grid>
           </Grid>
@@ -332,20 +360,7 @@ function SecurityApplicationDashboard({ embedded = false }) {
             </TableContainer>
           </Paper>
 
-          {byComponent.length > 0 && (
-            <Paper elevation={0} sx={{ p: 1.5, borderRadius: 2.5, border: '1px solid #e2e8f0' }}>
-              <Typography sx={{ fontWeight: 950, mb: 1 }}>Hallazgos por componente</Typography>
-              <ResponsiveContainer width="100%" height={260}>
-                <BarChart data={byComponent}>
-                  <CartesianGrid strokeDasharray="3 3" />
-                  <XAxis dataKey="name" />
-                  <YAxis allowDecimals={false} />
-                  <RechartsTooltip />
-                  <Bar dataKey="total" fill="#0f766e" radius={[6, 6, 0, 0]} />
-                </BarChart>
-              </ResponsiveContainer>
-            </Paper>
-          )}
+
         </Stack>
       )}
 

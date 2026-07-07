@@ -327,7 +327,7 @@ const sendTemporaryPasswordEmail = async (user, tempPassword) => {
   }
 };
 
-const sendInstitutionalEmail = async ({ to, subject, text, html, attachments = [], replyTo = '' }) => {
+const sendInstitutionalEmail = async ({ to, subject, text, html, attachments = [], replyTo = '', headers = {} }) => {
   const recipients = Array.isArray(to) ? to : [to];
   const safeRecipients = recipients.map(normalizeRecipient);
 
@@ -342,16 +342,24 @@ const sendInstitutionalEmail = async ({ to, subject, text, html, attachments = [
     subject,
     text,
     html,
-    attachments
+    attachments,
+    headers
   };
+
+  if (headers['In-Reply-To']) {
+    mailOptions.inReplyTo = headers['In-Reply-To'];
+  }
+  if (headers['References']) {
+    mailOptions.references = headers['References'];
+  }
 
   if (replyTo) {
     mailOptions.replyTo = normalizeRecipient(replyTo);
   }
 
   try {
-    await transporter.sendMail(mailOptions);
-    return { success: true };
+    const info = await transporter.sendMail(mailOptions);
+    return { success: true, messageId: info?.messageId };
   } catch (error) {
     console.error('Error enviando correo institucional:', error);
     return { success: false, error: error.message };

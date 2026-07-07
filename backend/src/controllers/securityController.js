@@ -165,7 +165,10 @@ const runScan = async (req, res) => {
   } catch (error) {
     await scan.update({ status: 'failed', finished_at: new Date() });
     console.error('[security.runScan]', error);
-    return res.status(500).json({ success: false, message: 'Error ejecutando escaneo de seguridad' });
+    return res.status(500).json({ 
+      success: false, 
+      message: `Error ejecutando escaneo de seguridad: ${error.message}` 
+    });
   }
 };
 

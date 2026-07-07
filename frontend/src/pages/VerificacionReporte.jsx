@@ -75,31 +75,60 @@ const VerificacionReporte = () => {
               </Typography>
               
               <Alert severity="info" sx={{ textAlign: 'left', mb: 3 }}>
-                <strong>ID Transacción:</strong> {data.consecutivo || data.tx_id || data.id}
+                <Box><strong>Consecutivo:</strong> {data.consecutivo}</Box>
+                {data.tx_id && <Box sx={{ mt: 0.5 }}><strong>ID Transacción:</strong> {data.tx_id}</Box>}
               </Alert>
 
               <Stack spacing={2} divider={<Divider />} sx={{ textAlign: 'left', mb: 4 }}>
                 <Box>
-                  <Typography variant="caption" color="text.secondary" fontWeight="700">SOLICITANTE</Typography>
-                  <Typography variant="body1">{data.solicitante.nombre}</Typography>
-                  <Typography variant="body2" color="text.secondary">
-                    Doc: {data.solicitante.documento} | Cargo: {data.solicitante.cargo}
+                  <Typography variant="caption" color="primary.main" fontWeight="800" sx={{ letterSpacing: 1.2, mb: 1, display: 'block' }}>
+                    SOLICITANTE
                   </Typography>
-                  <Typography variant="body2" color="text.secondary">
-                    Dependencia: {data.solicitante.dependencia}
+                  <Typography variant="subtitle1" fontWeight="700" color="text.primary" sx={{ mb: 1.5 }}>
+                    {data.solicitante.nombre}
+                  </Typography>
+                  <Stack spacing={0.75}>
+                    <Box sx={{ display: 'flex', alignItems: 'flex-start' }}>
+                      <Typography variant="body2" color="text.secondary" sx={{ fontWeight: 600, minWidth: 95, shrink: 0 }}>
+                        Cargo:
+                      </Typography>
+                      <Typography variant="body2" color="text.primary">
+                        {data.solicitante.cargo}
+                      </Typography>
+                    </Box>
+                    <Box sx={{ display: 'flex', alignItems: 'flex-start' }}>
+                      <Typography variant="body2" color="text.secondary" sx={{ fontWeight: 600, minWidth: 95, shrink: 0 }}>
+                        Dependencia:
+                      </Typography>
+                      <Typography variant="body2" color="text.primary">
+                        {data.solicitante.dependencia}
+                      </Typography>
+                    </Box>
+                  </Stack>
+                </Box>
+                <Box>
+                  <Typography variant="caption" color="text.secondary" fontWeight="800" sx={{ letterSpacing: 1.2, mb: 0.5, display: 'block' }}>
+                    FECHA RADICACIÓN
+                  </Typography>
+                  <Typography variant="body2" color="text.primary" fontWeight="500">
+                    {formatDateTime(data.createdAt)}
                   </Typography>
                 </Box>
                 <Box>
-                  <Typography variant="caption" color="text.secondary" fontWeight="700">FECHA RADICACIÓN</Typography>
-                  <Typography variant="body1">{formatDateTime(data.createdAt)}</Typography>
+                  <Typography variant="caption" color="text.secondary" fontWeight="800" sx={{ letterSpacing: 1.2, mb: 0.5, display: 'block' }}>
+                    APROBACIÓN JEFE
+                  </Typography>
+                  <Typography variant="body2" color="text.primary" fontWeight="500">
+                    {formatDateTime(data.jefe_aprobado_at)}
+                  </Typography>
                 </Box>
                 <Box>
-                  <Typography variant="caption" color="text.secondary" fontWeight="700">APROBACIÓN JEFE</Typography>
-                  <Typography variant="body1">{formatDateTime(data.jefe_aprobado_at)}</Typography>
-                </Box>
-                <Box>
-                  <Typography variant="caption" color="text.secondary" fontWeight="700">RECIBIDO GESTIÓN HUMANA</Typography>
-                  <Typography variant="body1">{formatDateTime(data.gestion_humana_aprobado_at)}</Typography>
+                  <Typography variant="caption" color="text.secondary" fontWeight="800" sx={{ letterSpacing: 1.2, mb: 0.5, display: 'block' }}>
+                    RECIBIDO GESTIÓN HUMANA
+                  </Typography>
+                  <Typography variant="body2" color="text.primary" fontWeight="500">
+                    {formatDateTime(data.gestion_humana_aprobado_at)}
+                  </Typography>
                 </Box>
               </Stack>
             </>

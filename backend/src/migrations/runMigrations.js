@@ -335,6 +335,9 @@ const runMigrations = async () => {
     await sequelize.query("CREATE INDEX IF NOT EXISTS instrument_responses_form_submitted_idx ON instrument_responses (form_id, submitted_at)");
     await sequelize.query("CREATE INDEX IF NOT EXISTS security_findings_scan_severity_idx ON security_findings (scan_id, severity)");
     await sequelize.query("CREATE INDEX IF NOT EXISTS security_findings_status_component_idx ON security_findings (status, affected_component)");
+    await sequelize.query("CREATE INDEX IF NOT EXISTS user_activity_logs_created_at_idx ON user_activity_logs (created_at)");
+    await sequelize.query("CREATE INDEX IF NOT EXISTS user_activity_logs_user_id_idx ON user_activity_logs (user_id)");
+    await sequelize.query("CREATE INDEX IF NOT EXISTS user_activity_logs_action_idx ON user_activity_logs (action)");
 
     await ensureColumn(qi, 'users', 'dependencia', { type: DataTypes.STRING(220), allowNull: true });
     await ensureColumn(qi, 'users', 'cargo', { type: DataTypes.STRING(220), allowNull: true });

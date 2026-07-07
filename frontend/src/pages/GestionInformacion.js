@@ -2040,7 +2040,7 @@ function GestionInformacion() {
     return keys;
   }, [isPlaneacionGpInfoContext, user]);
   const visiblePoblacionalDashboardKeys = useMemo(() => getVisiblePoblacionalDashboardKeysForUser(user), [user]);
-  const visibleBases = useMemo(() => BASES.filter((base) => visibleBaseKeys.includes(base.key)), [visibleBaseKeys]);
+  const visibleBases = useMemo(() => BASES.filter((base) => base.key !== 'georreferencia' && visibleBaseKeys.includes(base.key)), [visibleBaseKeys]);
   const canAccessSecurityApplication = useMemo(() => canViewSecurityApplication(user), [user]);
   const visiblePoblacionalDashboardCards = useMemo(
     () => POBLACIONAL_DASHBOARD_CARDS.filter((card) => visiblePoblacionalDashboardKeys.includes(`poblacional_${card.key}`)),

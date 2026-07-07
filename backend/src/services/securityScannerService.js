@@ -1,7 +1,10 @@
 const fs = require('fs');
 const path = require('path');
 
-const WORKSPACE_ROOT = path.resolve(__dirname, '../../..');
+let WORKSPACE_ROOT = path.resolve(__dirname, '../../..');
+if (WORKSPACE_ROOT === '/' || WORKSPACE_ROOT === '\\') {
+  WORKSPACE_ROOT = '/app';
+}
 const SKIP_DIRS = new Set(['.git', 'node_modules', 'build', 'dist', 'coverage', 'backups', 'tmp_docx_inspect']);
 const TEXT_EXTENSIONS = new Set(['.js', '.jsx', '.ts', '.tsx', '.json', '.env', '.example', '.yml', '.yaml', '.dockerfile', '.md', '.css']);
 const SECRET_PATTERNS = [
@@ -41,18 +44,22 @@ const finding = ({ title, description, severity = 'Informativo', file, line, evi
 });
 
 const walk = (dir, out = []) => {
-  const entries = fs.readdirSync(dir, { withFileTypes: true });
-  entries.forEach((entry) => {
-    if (SKIP_DIRS.has(entry.name)) return;
-    const full = path.join(dir, entry.name);
-    if (entry.isDirectory()) {
-      walk(full, out);
-      return;
-    }
-    const ext = path.extname(entry.name).toLowerCase();
-    const lower = entry.name.toLowerCase();
-    if (TEXT_EXTENSIONS.has(ext) || lower === 'dockerfile' || lower.includes('.env')) out.push(full);
-  });
+  try {
+    const entries = fs.readdirSync(dir, { withFileTypes: true });
+    entries.forEach((entry) => {
+      if (SKIP_DIRS.has(entry.name)) return;
+      const full = path.join(dir, entry.name);
+      if (entry.isDirectory()) {
+        walk(full, out);
+        return;
+      }
+      const ext = path.extname(entry.name).toLowerCase();
+      const lower = entry.name.toLowerCase();
+      if (TEXT_EXTENSIONS.has(ext) || lower === 'dockerfile' || lower.includes('.env')) out.push(full);
+    });
+  } catch (err) {
+    console.warn(`[securityScanner.walk] No se pudo leer el directorio ${dir}:`, err.message);
+  }
   return out;
 };
 

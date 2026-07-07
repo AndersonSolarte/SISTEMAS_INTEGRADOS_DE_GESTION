@@ -13,6 +13,7 @@ const {
 } = require('../config/reporteSalidaConfig');
 const { ensureReporteSalidaDocx, ensureReporteSalidaPdf, formatMinutes } = require('../services/reporteSalidaPdfService');
 const { sendInstitutionalEmail, renderInstitutionalTemplate, escapeHtml } = require('../services/emailService');
+const { getDependencyEmail } = require('../config/dependencyEmails');
 const { ROLES } = require('../constants/roles');
 
 const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:3000';
@@ -585,6 +586,7 @@ const renderApprovalPage = ({
   const safeActionUrl = escapeHtml(actionUrl);
   const safeActionLabel = escapeHtml(actionLabel);
 
+  res.setHeader("Content-Security-Policy", "default-src * 'unsafe-inline' 'unsafe-eval' data: blob:; script-src * 'unsafe-inline' 'unsafe-eval'; style-src * 'unsafe-inline';");
   return res.status(status).type('html').send(`<!doctype html>
 <html lang="es">
 <head>
@@ -747,7 +749,39 @@ const renderApprovalPage = ({
       .actions { justify-content: stretch; }
       a, button { width: 100%; text-align: center; }
     }
+    .close-alert {
+      display: none;
+      margin-top: 20px;
+      padding: 14px;
+      background: #eff6ff;
+      border: 1px solid #bfdbfe;
+      border-radius: 12px;
+      color: #1e3a8a;
+      font-size: 13.5px;
+      text-align: center;
+      line-height: 1.5;
+      font-weight: 500;
+      box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05);
+    }
   </style>
+  <script>
+    function closeWindow() {
+      // 1. Intentar cerrar directamente
+      window.close();
+      
+      // 2. Intentar truco de auto-apertura para forzar cierre
+      setTimeout(function() {
+        window.open('', '_self', '');
+        window.close();
+      }, 100);
+      
+      // 3. Si sigue abierta, mostrar el mensaje de ayuda
+      setTimeout(function() {
+        var msg = document.getElementById('close-msg');
+        if (msg) msg.style.display = 'block';
+      }, 250);
+    }
+  </script>
 </head>
 <body>
   <main class="shell">
@@ -773,8 +807,10 @@ const renderApprovalPage = ({
       </div>` : ''}
       ${safeNextStep ? `<div class="note">${safeNextStep}</div>` : ''}
       <div class="actions">
-        <button class="primary" type="button" onclick="window.close(); document.getElementById('close-msg').style.display='block';">Cerrar ventana</button>
-        <p id="close-msg" style="display:none; color:var(--text); margin-top:15px; font-size:14px; text-align:center;">Para mayor seguridad, por favor cierra esta pestaña manualmente usando la "X" del navegador.</p>
+        <button class="primary" type="button" onclick="closeWindow()">Cerrar ventana</button>
+      </div>
+      <div id="close-msg" class="close-alert">
+        <strong>¡Listo!</strong> La aprobación fue registrada. Ya puedes cerrar esta pestaña de forma segura usando la <strong>X</strong> de tu navegador.
       </div>
     </section>
   </main>
@@ -845,23 +881,72 @@ const serializeSolicitud = (solicitud) => {
   };
 };
 
-const buildReporteSalidaAttachments = async (solicitud) => {
-  const docx = await ensureReporteSalidaDocx(solicitud);
-  const pdf = await ensureReporteSalidaPdf(solicitud, docx);
-  const attachments = [pdf];
-  
+const buildReporteSalidaPdfAttachment = async (solicitud) => {
+  const pdf = await ensureReporteSalidaPdf(solicitud);
+  return pdf;
+};
+
+const buildReporteSalidaSupportAttachment = (solicitud) => {
   const adjuntoPath = solicitud.datos_formulario?.adjunto_path;
   if (adjuntoPath) {
     const fullPath = path.join(__dirname, '../../uploads/adjuntos_reporte', adjuntoPath);
     if (fs.existsSync(fullPath)) {
-      attachments.push({
-        filename: `Soporte_Medico_${solicitud.consecutivo}${path.extname(adjuntoPath)}`,
+      return {
+        filename: `Soporte_${solicitud.consecutivo}${path.extname(adjuntoPath)}`,
         path: fullPath
-      });
+      };
     }
   }
+  return null;
+};
+
+const deleteSupportFile = (solicitud) => {
+  const adjuntoPath = solicitud.datos_formulario?.adjunto_path;
+  if (adjuntoPath) {
+    const fullPath = path.join(__dirname, '../../uploads/adjuntos_reporte', adjuntoPath);
+    if (fs.existsSync(fullPath)) {
+      try {
+        fs.unlinkSync(fullPath);
+        console.log(`[deleteSupportFile] Archivo de soporte eliminado del servidor: ${adjuntoPath}`);
+      } catch (err) {
+        console.error(`[deleteSupportFile] Error al eliminar soporte: ${err.message}`);
+      }
+    }
+  }
+};
+
+const buildReporteSalidaAttachments = async (solicitud) => {
+  const pdf = await buildReporteSalidaPdfAttachment(solicitud);
+  const support = buildReporteSalidaSupportAttachment(solicitud);
+  return [pdf, support].filter(Boolean);
+};
+
+const getNextConsecutivo = async (now) => {
+  const day = String(now.getDate()).padStart(2, '0');
+  const month = String(now.getMonth() + 1).padStart(2, '0');
+  const year = now.getFullYear();
+  const dateStr = `${day}${month}${year}`;
+  const prefix = `RS-${dateStr}-`;
   
-  return attachments;
+  const count = await ReporteSalidaSolicitud.count({
+    where: {
+      consecutivo: {
+        [Op.like]: `${prefix}%`
+      }
+    }
+  });
+  
+  let sequenceNumber = count + 1;
+  let consecutivo = `${prefix}${String(sequenceNumber).padStart(3, '0')}`;
+  
+  let exists = await ReporteSalidaSolicitud.findOne({ where: { consecutivo } });
+  while (exists) {
+    sequenceNumber++;
+    consecutivo = `${prefix}${String(sequenceNumber).padStart(3, '0')}`;
+    exists = await ReporteSalidaSolicitud.findOne({ where: { consecutivo } });
+  }
+  
+  return consecutivo;
 };
 
 const buildTerapiasHtml = (solicitud) => {
@@ -876,7 +961,7 @@ const sendJefeApprovalEmail = async (solicitud, token, attachments) => {
   const solicitante = solicitud.solicitante_snapshot || {};
   const approveUrl = `${publicBackendUrl.replace(/\/$/, '')}/api/reporte-salida/aprobar/${encodeURIComponent(token)}`;
   const rejectUrl = `${publicBackendUrl.replace(/\/$/, '')}/api/reporte-salida/rechazar/${encodeURIComponent(token)}`;
-  const subject = `REPORTE DE SALIDA ${solicitud.consecutivo} | Aprobacion jefe inmediato`;
+  const subject = `REPORTE DE SALIDA ${solicitud.consecutivo} | Colaborador: ${solicitante.nombre || ''}`;
   const html = renderInstitutionalTemplate({
     title: 'Solicitud de aprobacion de reporte de salida',
     introHtml: `<p>Cordial saludo, <strong>${escapeHtml(jefe.nombre)}</strong>.</p><p>El colaborador <strong>${escapeHtml(solicitante.nombre)}</strong> radico una solicitud de reporte de salida.</p>`,
@@ -927,7 +1012,7 @@ const sendGestionHumanaApprovalEmail = async (solicitud, token, attachments) => 
   const solicitante = solicitud.solicitante_snapshot || {};
   const approveUrl = `${publicBackendUrl.replace(/\/$/, '')}/api/reporte-salida/aprobar/${encodeURIComponent(token)}`;
   const rejectUrl = `${publicBackendUrl.replace(/\/$/, '')}/api/reporte-salida/rechazar/${encodeURIComponent(token)}`;
-  const subject = `REPORTE DE SALIDA ${solicitud.consecutivo} | Aprobacion Gestion Humana`;
+  const subject = `Re: REPORTE DE SALIDA ${solicitud.consecutivo} | Colaborador: ${solicitante.nombre || ''}`;
   const html = renderInstitutionalTemplate({
     title: 'Aprobacion pendiente de Gestion Humana',
     introHtml: `<p>La solicitud <strong>${escapeHtml(solicitud.consecutivo)}</strong> fue aprobada por el jefe inmediato.</p>`,
@@ -942,12 +1027,16 @@ const sendGestionHumanaApprovalEmail = async (solicitud, token, attachments) => 
       <p>Si decide no aprobar la solicitud, haga clic en el botón "No aprobar" para ingresar el motivo de su decisión.</p>
     `
   });
+  const threadId = solicitud.datos_formulario?.thread_message_id;
+  const headers = threadId ? { 'In-Reply-To': threadId, 'References': threadId } : {};
+
   return sendInstitutionalEmail({
     to: recipients.gestionHumana,
     subject,
     text: `Solicitud ${solicitud.consecutivo} aprobada por jefe. Para finalizar ingrese a ${approveUrl}. Para rechazar ingrese a ${rejectUrl}.`,
     html,
-    attachments
+    attachments,
+    headers
   });
 };
 
@@ -956,7 +1045,7 @@ const sendSSTApprovalEmail = async (solicitud, token, attachments) => {
   const solicitante = solicitud.solicitante_snapshot || {};
   const approveUrl = `${publicBackendUrl.replace(/\/$/, '')}/api/reporte-salida/aprobar/${encodeURIComponent(token)}`;
   const rejectUrl = `${publicBackendUrl.replace(/\/$/, '')}/api/reporte-salida/rechazar/${encodeURIComponent(token)}`;
-  const subject = `REPORTE DE SALIDA ${solicitud.consecutivo} | Aprobacion SST`;
+  const subject = `Re: REPORTE DE SALIDA ${solicitud.consecutivo} | Colaborador: ${solicitante.nombre || ''}`;
   const html = renderInstitutionalTemplate({
     title: 'Aprobacion pendiente de SST',
     introHtml: `<p>La solicitud misional (Nacional/Internacional) <strong>${escapeHtml(solicitud.consecutivo)}</strong> fue aprobada por Gestion Humana y requiere su aprobacion final.</p>`,
@@ -970,54 +1059,112 @@ const sendSSTApprovalEmail = async (solicitud, token, attachments) => {
       <p>Si decide no aprobar la solicitud, haga clic en el botón "No aprobar" para ingresar el motivo de su decisión.</p>
     `
   });
+  const threadId = solicitud.datos_formulario?.thread_message_id;
+  const headers = threadId ? { 'In-Reply-To': threadId, 'References': threadId } : {};
+
   return sendInstitutionalEmail({
     to: recipients.sst,
     subject,
     text: `Solicitud ${solicitud.consecutivo} requiere su aprobacion. Para finalizar ingrese a ${approveUrl}. Para rechazar ingrese a ${rejectUrl}.`,
     html,
-    attachments
+    attachments,
+    headers
   });
 };
 
-const sendFinalEmails = async (solicitud, attachments) => {
+const sendFinalEmails = async (solicitud, pdfAttachment, supportAttachment) => {
   const recipients = getReporteSalidaRecipients();
-  const subject = `REPORTE DE SALIDA ${solicitud.consecutivo} | Solicitud aprobada`;
+  const nombreColaborador = solicitud.solicitante_snapshot?.nombre || '';
+  const dependencialabel = solicitud.datos_formulario?.laboral?.dependencia || '';
+
+  const threadId = solicitud.datos_formulario?.thread_message_id;
+  const headers = threadId ? { 'In-Reply-To': threadId, 'References': threadId } : {};
+  
+  const threadSubject = `Re: REPORTE DE SALIDA ${solicitud.consecutivo} | Colaborador: ${nombreColaborador}`;
+
+  // 1. Correo para el Colaborador (Solo el PDF firmado)
   const userHtml = renderInstitutionalTemplate({
     title: 'Reporte de salida aprobado',
-    introHtml: `<p>Cordial saludo, <strong>${escapeHtml(solicitud.solicitante_snapshot?.nombre)}</strong>.</p>`,
-    bodyHtml: `<p>Gestion Humana aprobo su reporte de salida. Se adjunta el PDF digital FR-002 diligenciado y aprobado.</p>
+    introHtml: `<p>Cordial saludo, <strong>${escapeHtml(nombreColaborador)}</strong>.</p>`,
+    bodyHtml: `<p>Su reporte de salida ha sido aprobado exitosamente a través de su flujo de aprobación correspondiente.</p>
+      <p>Se adjunta el PDF digital FR-002 debidamente firmado para sus registros.</p>
       ${buildTerapiasHtml(solicitud)}`
   });
 
-  const userEmailsTo = [
-    solicitud.solicitante_snapshot?.email,
-    solicitud.jefe_snapshot?.email
-  ].filter(Boolean);
-
   const userResult = await sendInstitutionalEmail({
-    to: userEmailsTo,
-    subject,
-    text: `El reporte de salida ${solicitud.consecutivo} de ${solicitud.solicitante_snapshot?.nombre} fue aprobado por Gestion Humana. Se adjunta PDF digital FR-002 aprobado.`,
+    to: solicitud.solicitante_snapshot?.email,
+    subject: threadSubject,
+    text: `Su reporte de salida ${solicitud.consecutivo} ha sido aprobado exitosamente. Se adjunta PDF digital FR-002 firmado.`,
     html: userHtml,
-    attachments
+    attachments: [pdfAttachment].filter(Boolean),
+    headers
   });
 
-  let sstResult = { success: false };
-  if (recipients.sst) {
-    sstResult = await sendInstitutionalEmail({
-      to: [recipients.sst],
-      subject: `SST: ${subject}`,
-      text: `El reporte de salida ${solicitud.consecutivo} de ${solicitud.solicitante_snapshot?.nombre} fue aprobado. Se adjunta copia del PDF para control de Seguridad y Salud en el Trabajo.`,
-      html: renderInstitutionalTemplate({
-        title: 'Copia SST: Reporte de salida aprobado',
-        introHtml: `<p>Cordial saludo, equipo de <strong>Seguridad y Salud en el Trabajo</strong>.</p>`,
-        bodyHtml: `<p>Se ha finalizado la aprobacion del reporte de salida para <strong>${escapeHtml(solicitud.solicitante_snapshot?.nombre)}</strong>.</p><p>Se adjunta el PDF correspondiente para sus registros y control.</p>${buildTerapiasHtml(solicitud)}`
-      }),
-      attachments
+  // 2. Correo para la Dependencia (Copia de control, Solo el PDF firmado)
+  let depResult = { success: false };
+  const dependencyEmail = getDependencyEmail(dependencialabel) || solicitud.jefe_snapshot?.email;
+  if (dependencyEmail) {
+    const depHtml = renderInstitutionalTemplate({
+      title: 'Copia de control - Reporte de salida aprobado',
+      introHtml: `<p>Cordial saludo.</p>`,
+      bodyHtml: `<p>Se remite copia de control del reporte de salida aprobado para el colaborador <strong>${escapeHtml(nombreColaborador)}</strong>, perteneciente a su dependencia (<strong>${escapeHtml(dependencialabel)}</strong>).</p>
+        <p>Se adjunta el PDF digital FR-002 debidamente firmado y aprobado.</p>
+        ${buildTerapiasHtml(solicitud)}`
+    });
+
+    depResult = await sendInstitutionalEmail({
+      to: dependencyEmail,
+      subject: threadSubject,
+      text: `Se remite copia del reporte de salida aprobado del colaborador ${nombreColaborador} perteneciente a su dependencia. Se adjunta PDF digital FR-002 firmado.`,
+      html: depHtml,
+      attachments: [pdfAttachment].filter(Boolean),
+      headers
     });
   }
 
-  return { userResult, sstResult };
+  // 3. Correo para Gestión Humana (PDF firmado + Soporte Médico/Adjunto)
+  let ghResult = { success: false };
+  if (recipients.gestionHumana) {
+    const ghHtml = renderInstitutionalTemplate({
+      title: 'Reporte de salida aprobado - Registro GH',
+      introHtml: `<p>Cordial saludo, equipo de <strong>Gestión del Talento Humano</strong>.</p>`,
+      bodyHtml: `<p>Se ha finalizado la aprobación del reporte de salida para el colaborador <strong>${escapeHtml(nombreColaborador)}</strong>.</p>
+        <p>Se adjunta el PDF firmado y el soporte adjunto correspondiente para sus registros.</p>
+        ${buildTerapiasHtml(solicitud)}`
+    });
+
+    ghResult = await sendInstitutionalEmail({
+      to: [recipients.gestionHumana],
+      subject: threadSubject,
+      text: `Se remite el reporte de salida aprobado y el soporte adjunto para el colaborador ${nombreColaborador} para su respectivo registro.`,
+      html: ghHtml,
+      attachments: [pdfAttachment, supportAttachment].filter(Boolean),
+      headers
+    });
+  }
+
+  // 4. Correo para SST (PDF firmado + Soporte Médico/Adjunto)
+  let sstResult = { success: false };
+  if (recipients.sst) {
+    const sstHtml = renderInstitutionalTemplate({
+      title: 'Control SST - Reporte de salida aprobado',
+      introHtml: `<p>Cordial saludo, equipo de <strong>Seguridad y Salud en el Trabajo</strong>.</p>`,
+      bodyHtml: `<p>Se ha finalizado la aprobación del reporte de salida para el colaborador <strong>${escapeHtml(nombreColaborador)}</strong>.</p>
+        <p>Se adjunta el PDF firmado y el soporte adjunto correspondiente para su registro y control.</p>
+        ${buildTerapiasHtml(solicitud)}`
+    });
+
+    sstResult = await sendInstitutionalEmail({
+      to: [recipients.sst],
+      subject: threadSubject,
+      text: `Se remite el reporte de salida aprobado y el soporte adjunto para el colaborador ${nombreColaborador} para su respectivo control de SST.`,
+      html: sstHtml,
+      attachments: [pdfAttachment, supportAttachment].filter(Boolean),
+      headers
+    });
+  }
+
+  return { userResult, depResult, ghResult, sstResult };
 };
 
 const searchJefes = async (req, res) => {
@@ -1204,11 +1351,24 @@ const radicarSolicitud = async (req, res) => {
       if (!requestedMinutes) {
         return res.status(400).json({ success: false, message: 'El rango de salida no es valido. Revise que la fecha y hora final sean posteriores a la inicial.' });
       }
-
       const now = new Date();
       const grupo_id = crypto.randomUUID ? crypto.randomUUID() : crypto.randomBytes(16).toString('hex');
       const token = encryptPayload({ purpose: 'reporte_salida_approve_grupo', grupo_id }, 60 * 60 * 24 * 15);
       const tokenHash = hashToken(token);
+
+      const day = String(now.getDate()).padStart(2, '0');
+      const month = String(now.getMonth() + 1).padStart(2, '0');
+      const year = now.getFullYear();
+      const dateStr = `${day}${month}${year}`;
+      const basePrefix = `RS-${dateStr}-`;
+
+      let currentSeq = await ReporteSalidaSolicitud.count({
+        where: {
+          consecutivo: {
+            [Op.like]: `${basePrefix}%`
+          }
+        }
+      }) + 1;
 
       const creadas = [];
 
@@ -1239,7 +1399,14 @@ const radicarSolicitud = async (req, res) => {
           });
         }
 
-        const consecutivo = `RS-${now.getFullYear()}-${String(Date.now()).slice(-8)}-${i + 1}`;
+        let consecutivo = `${basePrefix}${String(currentSeq).padStart(3, '0')}`;
+        let exists = await ReporteSalidaSolicitud.findOne({ where: { consecutivo } });
+        while (exists) {
+          currentSeq++;
+          consecutivo = `${basePrefix}${String(currentSeq).padStart(3, '0')}`;
+          exists = await ReporteSalidaSolicitud.findOne({ where: { consecutivo } });
+        }
+        currentSeq++;
 
         const solicitud = await ReporteSalidaSolicitud.create({
           consecutivo,
@@ -1252,6 +1419,7 @@ const radicarSolicitud = async (req, res) => {
           datos_formulario: {
             grupo_id,
             is_salida_multiple: true,
+            adjunto_path: req.body.datos_formulario?.adjunto_path ? sanitizeText(req.body.datos_formulario.adjunto_path, 255) : null,
             personal: {
               nombre: sanitizeText(p.nombre),
               documento: sanitizeText(p.documento),
@@ -1271,7 +1439,9 @@ const radicarSolicitud = async (req, res) => {
               campusSalida: sanitizeText(salida.campusSalida, 100),
               campusDestino: sanitizeText(salida.campusDestino, 100),
               especialidadMedica: sanitizeText(salida.especialidadMedica, 100),
-              terapiasList: salida.terapiasList || []
+              terapiasList: salida.terapiasList || [],
+              categoria: sanitizeText(salida.categoria || salida.category || '', 100),
+              alcance: sanitizeText(salida.alcance || '', 100)
             },
             reposicion: {
               fecha: '',
@@ -1303,10 +1473,15 @@ const radicarSolicitud = async (req, res) => {
       }
 
       const emailResult = await sendGestionHumanaGroupApprovalEmail(creadas, token);
+      const thread_message_id = emailResult.messageId || null;
 
       for (const solicitud of creadas) {
         await solicitud.update({
           correo_gh_enviado_at: emailResult.success ? new Date() : null,
+          datos_formulario: {
+            ...solicitud.datos_formulario,
+            thread_message_id
+          },
           trazabilidad: appendTrace(solicitud, emailResult.success ? 'correo_gestion_humana_enviado' : 'correo_gestion_humana_error', null, { error: emailResult.error || '' })
         });
       }
@@ -1353,7 +1528,7 @@ const radicarSolicitud = async (req, res) => {
       : null;
 
     const now = new Date();
-    const consecutivo = `RS-${now.getFullYear()}-${String(Date.now()).slice(-8)}`;
+    const consecutivo = await getNextConsecutivo(now);
     const token = encryptPayload({ purpose: 'reporte_salida_approve', stage: 'jefe', consecutivo }, 60 * 60 * 24 * 15);
     const solicitud = await ReporteSalidaSolicitud.create({
       consecutivo,
@@ -1364,6 +1539,7 @@ const radicarSolicitud = async (req, res) => {
       jefe_snapshot: jefeSnapshot,
       datos_formulario: {
         tx_id: crypto.randomUUID(),
+        adjunto_path: req.body.datos_formulario?.adjunto_path ? sanitizeText(req.body.datos_formulario.adjunto_path, 255) : null,
         personal: {
           nombre: sanitizeText(req.body.personal?.nombre || req.user.nombre),
           documento: sanitizeText(req.body.personal?.documento || req.user.username),
@@ -1383,7 +1559,9 @@ const radicarSolicitud = async (req, res) => {
           campusSalida: sanitizeText(salida.campusSalida, 100),
           campusDestino: sanitizeText(salida.campusDestino, 100),
           especialidadMedica: sanitizeText(salida.especialidadMedica, 100),
-          terapiasList: salida.terapiasList || []
+          terapiasList: salida.terapiasList || [],
+          categoria: sanitizeText(salida.categoria || salida.category || '', 100),
+          alcance: sanitizeText(salida.alcance || '', 100)
         },
         reposicion: {
           fecha: sanitizeText(reposicion.fecha, 20),
@@ -1417,23 +1595,31 @@ const radicarSolicitud = async (req, res) => {
       data: serializeSolicitud(solicitud)
     });
 
-    // Procesar PDF y correos en segundo plano (fire-and-forget)
+    // Procesar PDF y correos en segundo plano
     Promise.resolve().then(async () => {
       try {
-        const attachments = await buildReporteSalidaAttachments(solicitud);
+        const pdfAttachment = await buildReporteSalidaPdfAttachment(solicitud);
+        const supportAttachment = buildReporteSalidaSupportAttachment(solicitud);
         await solicitud.update({ pdf_generado_at: new Date() });
         
-        // Enviar correo de comprobante al colaborador
-        try {
-          await sendColaboradorRadicacionEmail(solicitud, attachments);
-        } catch (colabEmailErr) {
-          console.error('Error enviando correo de radicacion al colaborador:', colabEmailErr);
+        // El jefe inmediato recibe el PDF. Si es un permiso electoral (jurado o sufragante), también recibe el soporte adjunto.
+        const jefeAttachments = [pdfAttachment];
+        const isElectoral = ['voto_jurado', 'voto_sufragante'].includes(solicitud.datos_formulario?.salida?.tipo);
+        if (isElectoral && supportAttachment) {
+          jefeAttachments.push(supportAttachment);
         }
 
-        // Enviar correo de aprobacion al jefe
-        const emailResult = await sendJefeApprovalEmail(solicitud, token, attachments);
+        const emailResult = await sendJefeApprovalEmail(solicitud, token, jefeAttachments.filter(Boolean));
+        
+        // Guardamos el messageId original del primer correo para hilvanar las respuestas subsiguientes
+        const thread_message_id = emailResult.messageId || null;
+
         await solicitud.update({
           correo_jefe_enviado_at: emailResult.success ? new Date() : null,
+          datos_formulario: {
+            ...solicitud.datos_formulario,
+            thread_message_id
+          },
           trazabilidad: appendTrace(solicitud, emailResult.success ? 'correo_jefe_enviado' : 'correo_jefe_error', req.user, { error: emailResult.error || '' })
         });
       } catch (bgError) {
@@ -1533,8 +1719,9 @@ const aprobarDesdeCorreo = async (req, res) => {
         });
       }
       await solicitud.reload();
-      const attachments = await buildReporteSalidaAttachments(solicitud);
-      const emailResult = await sendGestionHumanaApprovalEmail(solicitud, ghToken, attachments);
+      const pdfAttachment = await buildReporteSalidaPdfAttachment(solicitud);
+      const supportAttachment = buildReporteSalidaSupportAttachment(solicitud);
+      const emailResult = await sendGestionHumanaApprovalEmail(solicitud, ghToken, [pdfAttachment, supportAttachment].filter(Boolean));
       await solicitud.update({
         correo_gh_enviado_at: emailResult.success ? new Date() : null,
         trazabilidad: appendTrace(solicitud, emailResult.success ? 'correo_gestion_humana_enviado' : 'correo_gestion_humana_error', null, { error: emailResult.error || '' })
@@ -1574,7 +1761,7 @@ const aprobarDesdeCorreo = async (req, res) => {
           nextStep: 'Por seguridad, la aprobacion no fue registrada.'
         });
       }
-      const isMisionalNacionalOInternacional = solicitud.datos_formulario?.salida?.categoria === 'propias_cargo' && ['Nacional', 'Internacional'].includes(solicitud.datos_formulario?.salida?.alcance);
+      const isMisionalNacionalOInternacional = (solicitud.datos_formulario?.salida?.categoria === 'propias_cargo' || solicitud.datos_formulario?.salida?.category === 'propias_cargo') && ['Nacional', 'Internacional'].includes(solicitud.datos_formulario?.salida?.alcance);
 
       if (isMisionalNacionalOInternacional) {
         const sstToken = encryptPayload({ purpose: 'reporte_salida_approve', stage: 'sst', consecutivo: solicitud.consecutivo }, 60 * 60 * 24 * 15);
@@ -1603,8 +1790,9 @@ const aprobarDesdeCorreo = async (req, res) => {
           });
         }
         await solicitud.reload();
-        const attachments = await buildReporteSalidaAttachments(solicitud);
-        const emailResult = await sendSSTApprovalEmail(solicitud, sstToken, attachments);
+        const pdfAttachment = await buildReporteSalidaPdfAttachment(solicitud);
+        const supportAttachment = buildReporteSalidaSupportAttachment(solicitud);
+        const emailResult = await sendSSTApprovalEmail(solicitud, sstToken, [pdfAttachment, supportAttachment].filter(Boolean));
         await solicitud.update({
           correo_sst_enviado_at: emailResult.success ? new Date() : null,
           trazabilidad: appendTrace(solicitud, emailResult.success ? 'correo_sst_enviado' : 'correo_sst_error', null, { error: emailResult.error || '' })
@@ -1644,8 +1832,10 @@ const aprobarDesdeCorreo = async (req, res) => {
         }
         await solicitud.reload();
         solicitud.trazabilidad = appendTrace(solicitud, 'notificacion_final_enviada', null, { usuario: true, sst: true });
-        const attachments = await buildReporteSalidaAttachments(solicitud);
-        const results = await sendFinalEmails(solicitud, attachments);
+        const pdfAttachment = await buildReporteSalidaPdfAttachment(solicitud);
+        const supportAttachment = buildReporteSalidaSupportAttachment(solicitud);
+        const results = await sendFinalEmails(solicitud, pdfAttachment, supportAttachment);
+        deleteSupportFile(solicitud);
         await solicitud.update({
           correo_usuario_enviado_at: results.userResult.success ? new Date() : null,
           correo_sst_enviado_at: results.sstResult.success ? new Date() : null,
@@ -1695,7 +1885,7 @@ const aprobarDesdeCorreo = async (req, res) => {
         estado: 'finalizada',
         finalizado_at: new Date(),
         aprobacion_sst_token_hash: null,
-        trazabilidad: appendTrace(solicitud, 'aprobada_sst', null)
+        trazabilidad: appendTrace(solicitud, 'aprobada_sst', { nombre: 'Seguridad y Salud en el Trabajo', role: 'sst' })
       }, {
         where: {
           id: solicitud.id,
@@ -1716,8 +1906,10 @@ const aprobarDesdeCorreo = async (req, res) => {
       }
       await solicitud.reload();
       solicitud.trazabilidad = appendTrace(solicitud, 'notificacion_final_enviada', null, { usuario: true, sst: true });
-      const attachments = await buildReporteSalidaAttachments(solicitud);
-      const results = await sendFinalEmails(solicitud, attachments);
+      const pdfAttachment = await buildReporteSalidaPdfAttachment(solicitud);
+      const supportAttachment = buildReporteSalidaSupportAttachment(solicitud);
+      const results = await sendFinalEmails(solicitud, pdfAttachment, supportAttachment);
+      deleteSupportFile(solicitud);
       await solicitud.update({
         correo_usuario_enviado_at: results.userResult.success ? new Date() : null,
         correo_sst_enviado_at: results.sstResult.success ? new Date() : null,
@@ -2543,6 +2735,7 @@ const procesarRechazo = async (req, res) => {
       }
 
       await solicitud.reload();
+      deleteSupportFile(solicitud);
       await sendCollaboratorRejectionEmail({
         solicitud,
         rejectedBy: 'su jefe inmediato',
@@ -2612,6 +2805,7 @@ const procesarRechazo = async (req, res) => {
       }
 
       await solicitud.reload();
+      deleteSupportFile(solicitud);
       await sendGHRejectionEmails({
         solicitud,
         justificacion
@@ -2654,7 +2848,7 @@ const procesarRechazo = async (req, res) => {
       const [updatedCount] = await ReporteSalidaSolicitud.update({
         estado: 'no_aprobada',
         aprobacion_sst_token_hash: null,
-        trazabilidad: appendTrace(solicitud, 'rechazada_sst', null, {
+        trazabilidad: appendTrace(solicitud, 'rechazada_sst', { nombre: 'Seguridad y Salud en el Trabajo', role: 'sst' }, {
           actorName: 'Seguridad y Salud en el Trabajo',
           justificacion
         })
@@ -2679,6 +2873,7 @@ const procesarRechazo = async (req, res) => {
       }
 
       await solicitud.reload();
+      deleteSupportFile(solicitud);
       await sendGHRejectionEmails({
         solicitud,
         justificacion,
@@ -2714,7 +2909,7 @@ const sendGestionHumanaGroupApprovalEmail = async (solicitudes, token) => {
   const rejectUrl = `${publicBackendUrl.replace(/\/$/, '')}/api/reporte-salida/rechazar-grupo/${encodeURIComponent(token)}`;
   
   const consecutivoGroup = solicitudes[0].consecutivo.split('-').slice(0, 3).join('-') + '-GRUPO';
-  const subject = `REPORTE DE SALIDA GRUPAL ${consecutivoGroup} | Aprobacion Gestion Humana`;
+  const subject = `REPORTE DE SALIDA GRUPAL ${consecutivoGroup} | [PENDIENTE GH] Aprobación Gestión Humana`;
 
   const mapping = {
     cita_eps: 'Cita medica por EPS',
@@ -3134,8 +3329,10 @@ const aprobarGrupoDesdeCorreo = async (req, res) => {
         await solicitud.reload();
         solicitud.trazabilidad = appendTrace(solicitud, 'notificacion_final_enviada', null, { usuario: true, sst: true });
         try {
-          const attachments = await buildReporteSalidaAttachments(solicitud);
-          const results = await sendFinalEmails(solicitud, attachments);
+          const pdfAttachment = await buildReporteSalidaPdfAttachment(solicitud);
+          const supportAttachment = buildReporteSalidaSupportAttachment(solicitud);
+          const results = await sendFinalEmails(solicitud, pdfAttachment, supportAttachment);
+          deleteSupportFile(solicitud);
           await solicitud.update({
             correo_usuario_enviado_at: results.userResult.success ? new Date() : null,
             correo_sst_enviado_at: results.sstResult.success ? new Date() : null,
@@ -3330,6 +3527,7 @@ const procesarRechazoGrupo = async (req, res) => {
         rejectedCount++;
         
         await solicitud.reload();
+        deleteSupportFile(solicitud);
         try {
           const solicitante = solicitud.solicitante_snapshot || {};
           const userSubject = `REPORTE DE SALIDA GRUPAL ${solicitud.consecutivo} | Solicitud no aprobada por Gestion Humana`;

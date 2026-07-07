@@ -32,7 +32,6 @@ const getStats = async (req, res) => {
       totalEvents,
       todayEvents,
       activeUsers7d,
-      loginEvents,
       byModule,
       byRole,
       byDay,
@@ -40,10 +39,9 @@ const getStats = async (req, res) => {
       topUsers,
       recent,
       byAction,
-      errorEvents,
-      downloadEvents,
-      rawDownloads,
-      rawSearches,
+      topDocIdsQuery,
+      activeDocIdsQuery,
+      topSearchTermsQuery,
       topLogins,
       failedAttempts,
       loginsByDay,
@@ -63,11 +61,6 @@ const getStats = async (req, res) => {
         distinct: true,
         col: 'user_id',
         where: { ...baseWhere, created_at: { [Op.gte]: daysAgo(7) }, user_id: { [Op.ne]: null } }
-      }),
-
-      /* login events in range */
-      UserActivityLog.count({
-        where: { ...baseWhere, action: 'Inicio de sesión' }
       }),
 
       /* events by module */
@@ -143,27 +136,50 @@ const getStats = async (req, res) => {
         raw: true
       }),
 
-      /* error events */
-      UserActivityLog.count({
-        where: { ...baseWhere, action: { [Op.like]: 'Error%' } }
-      }),
-
-      /* download events */
-      UserActivityLog.count({
-        where: { ...baseWhere, action: 'Descarga' }
-      }),
-
-      /* Raw downloads to extract Top Documents */
+      /* Top downloads aggregated in DB */
       UserActivityLog.findAll({
-        where: { ...baseWhere, action: 'Descarga', endpoint: { [Op.like]: '%/descargar/%' } },
-        attributes: ['endpoint'],
+        attributes: [
+          [literal(`SUBSTRING(endpoint FROM '/descargar/([0-9]+)')`), 'doc_id'],
+          [fn('COUNT', col('id')), 'total']
+        ],
+        where: {
+          ...baseWhere,
+          action: 'Descarga',
+          endpoint: { [Op.like]: '%/descargar/%' }
+        },
+        group: [literal(`SUBSTRING(endpoint FROM '/descargar/([0-9]+)')`)],
+        order: [[fn('COUNT', col('id')), 'DESC']],
+        limit: 10,
         raw: true
       }),
 
-      /* Raw searches to extract Top Terms */
+      /* Active downloads check to determine documents inactive status */
       UserActivityLog.findAll({
-        where: { ...baseWhere, endpoint: { [Op.like]: '%search=%' } },
-        attributes: ['endpoint'],
+        attributes: [
+          [literal(`SUBSTRING(endpoint FROM '/descargar/([0-9]+)')`), 'doc_id']
+        ],
+        where: {
+          ...baseWhere,
+          action: 'Descarga',
+          endpoint: { [Op.like]: '%/descargar/%' }
+        },
+        group: [literal(`SUBSTRING(endpoint FROM '/descargar/([0-9]+)')`)],
+        raw: true
+      }),
+
+      /* Top search terms aggregated in DB */
+      UserActivityLog.findAll({
+        attributes: [
+          [literal(`LOWER(SUBSTRING(endpoint FROM 'search=([^&]+)'))`), 'term'],
+          [fn('COUNT', col('id')), 'total']
+        ],
+        where: {
+          ...baseWhere,
+          endpoint: { [Op.like]: '%search=%' }
+        },
+        group: [literal(`LOWER(SUBSTRING(endpoint FROM 'search=([^&]+)'))`)],
+        order: [[fn('COUNT', col('id')), 'DESC']],
+        limit: 10,
         raw: true
       }),
 
@@ -212,12 +228,13 @@ const getStats = async (req, res) => {
       /* Raw user actions for pivot chart */
       UserActivityLog.findAll({
         attributes: [
+          'user_id',
           'user_name',
           'action',
           [fn('COUNT', col('id')), 'total']
         ],
         where: { ...baseWhere, user_name: { [Op.ne]: null } },
-        group: ['user_name', 'action'],
+        group: ['user_id', 'user_name', 'action'],
         raw: true
       }),
 
@@ -251,17 +268,26 @@ const getStats = async (req, res) => {
       })
     ]);
 
-    // Parse top downloads
+    // Calculate aggregated metrics from byAction query in-memory
+    const loginRow = byAction.find(r => r.action === 'Inicio de sesión');
+    const loginEvents = loginRow ? Number(loginRow.total) : 0;
+
+    const downloadRow = byAction.find(r => r.action === 'Descarga');
+    const downloadEvents = downloadRow ? Number(downloadRow.total) : 0;
+
+    const errorEvents = byAction
+      .filter(r => r.action && r.action.startsWith('Error'))
+      .reduce((sum, r) => sum + Number(r.total), 0);
+
+    // Map top downloads
     const dlMap = {};
-    rawDownloads.forEach(r => {
-      const match = r.endpoint.match(/\/descargar\/(\d+)/);
-      if (match) {
-        const id = match[1];
-        dlMap[id] = (dlMap[id] || 0) + 1;
+    topDocIdsQuery.forEach(r => {
+      if (r.doc_id) {
+        dlMap[r.doc_id] = Number(r.total || 0);
       }
     });
 
-    const topDocIds = Object.keys(dlMap).sort((a, b) => dlMap[b] - dlMap[a]).slice(0, 10);
+    const topDocIds = Object.keys(dlMap);
     let topDescargas = [];
     if (topDocIds.length > 0) {
       const docs = await Documento.findAll({
@@ -274,6 +300,9 @@ const getStats = async (req, res) => {
         total: dlMap[d.id]
       })).sort((a, b) => b.total - a.total);
     }
+
+    // Set of active document IDs in the period to find documents with 0 activity
+    const activeDocIds = new Set(activeDocIdsQuery.map(r => r.doc_id).filter(Boolean));
 
     // Identificar Documentos Inactivos (0 descargas en el periodo y más de un mes de antigüedad)
     const allActiveDocs = await Documento.findAll({
@@ -290,27 +319,21 @@ const getStats = async (req, res) => {
       const docDate = new Date(d.fecha_creacion);
       if (docDate > oneMonthAgo) return false;
 
-      const isInactive = !dlMap[d.id] || dlMap[d.id] === 0;
+      const isInactive = !activeDocIds.has(String(d.id));
       const isNotPolicy = d.tipo_documento && !d.tipo_documento.toUpperCase().includes('POLÍTICA') && !d.tipo_documento.toUpperCase().includes('POLITICA');
       return isInactive && isNotPolicy;
     });
 
-    // Parse top search terms
-    const searchMap = {};
-    rawSearches.forEach(r => {
-      try {
-        const urlObj = new URL(r.endpoint, 'http://localhost');
-        const q = urlObj.searchParams.get('search');
-        if (q && q.trim().length > 2) {
-          const term = q.trim().toLowerCase();
-          searchMap[term] = (searchMap[term] || 0) + 1;
-        }
-      } catch (e) {}
-    });
-
-    const topBusquedas = Object.entries(searchMap)
-      .map(([term, total]) => ({ term, total }))
-      .sort((a, b) => b.total - a.total)
+    // Map top search terms
+    const topBusquedas = topSearchTermsQuery
+      .map(r => {
+        let term = r.term || '';
+        try {
+          term = decodeURIComponent(term);
+        } catch (e) {}
+        return { term, total: Number(r.total || 0) };
+      })
+      .filter(item => item.term.trim().length > 2)
       .slice(0, 10);
 
     // Pivot user actions & build dependencies and consulting users
@@ -365,7 +388,10 @@ const getStats = async (req, res) => {
     });
   } catch (err) {
     console.error('[activityController.getStats]', err);
-    return res.status(500).json({ success: false, message: 'Error al obtener estadísticas de actividad.' });
+    return res.status(500).json({ 
+      success: false, 
+      message: `Error al obtener estadísticas de actividad: ${err.message}` 
+    });
   }
 };
 
