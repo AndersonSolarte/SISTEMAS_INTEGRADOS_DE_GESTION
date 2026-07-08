@@ -16,7 +16,8 @@ import {
   Tooltip,
   useMediaQuery,
   useTheme,
-  ListSubheader
+  ListSubheader,
+  IconButton
 } from '@mui/material';
 import AssignmentTurnedInIcon from '@mui/icons-material/AssignmentTurnedIn';
 import ContentCopyIcon from '@mui/icons-material/ContentCopy';
@@ -33,6 +34,7 @@ import SearchIcon from '@mui/icons-material/Search';
 import InfoIcon from '@mui/icons-material/Info';
 import CheckCircleOutlineIcon from '@mui/icons-material/CheckCircleOutline';
 import UploadFileIcon from '@mui/icons-material/UploadFile';
+import CloseIcon from '@mui/icons-material/Close';
 import reporteSalidaService from '../../services/reporteSalidaService';
 
 const INITIAL_FORM = {
@@ -1000,7 +1002,11 @@ function ReporteSalidaFormDialog({ open, documento, user, onClose, onSubmitted }
     <>
       <Dialog
         open={open}
-        onClose={submitting ? undefined : onClose}
+        onClose={submitting ? undefined : (event, reason) => {
+          if (reason !== 'backdropClick' && reason !== 'escapeKeyDown') {
+            onClose?.();
+          }
+        }}
         maxWidth="lg"
         fullWidth
         fullScreen={fullScreen}
@@ -1033,6 +1039,17 @@ function ReporteSalidaFormDialog({ open, documento, user, onClose, onSubmitted }
               >
                 Generar QR
               </Button>
+              <IconButton
+                onClick={onClose}
+                disabled={submitting}
+                sx={{
+                  color: '#64748b',
+                  '&:hover': { color: '#ef4444', bgcolor: '#fef2f2' },
+                  transition: 'all 0.15s ease'
+                }}
+              >
+                <CloseIcon />
+              </IconButton>
             </Stack>
           </Stack>
         </DialogTitle>
