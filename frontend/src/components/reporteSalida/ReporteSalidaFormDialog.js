@@ -63,6 +63,8 @@ const SALUD_SUBTYPES = [
 ];
 
 const PERSONALES_SUBTYPES = [
+  { group: 'Trámites y Compensatorios', value: 'diligencia_personal', label: 'Diligencia personal' },
+  { group: 'Trámites y Compensatorios', value: 'compensatorio', label: 'Compensatorio' },
   { group: 'Permisos Electorales', value: 'jurado_votacion', label: 'Jurado de votación' },
   { group: 'Permisos Electorales', value: 'sufragante', label: 'Sufragante' },
   { group: 'Permisos y Novedades', value: 'cargos_oficiales_transitorios', label: 'Desempeño de cargos oficiales transitorios' },
@@ -440,7 +442,7 @@ function ReporteSalidaFormDialog({ open, documento, user, onClose, onSubmitted }
       update('salida', 'tipo', 'cita_eps');
       setShowSaludWarning(true);
     } else if (newCategory === 'personales') {
-      update('salida', 'tipo', 'jurado_votacion');
+      update('salida', 'tipo', 'diligencia_personal');
       setShowPersonalesWarning(true);
     }
   };

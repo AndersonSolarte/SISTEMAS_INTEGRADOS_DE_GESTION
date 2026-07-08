@@ -92,7 +92,14 @@ const getTipoSalidaLabel = (tipo) => ({
   luto_familiar: 'Licencia luto: Familiar',
   actos_funebres: 'Licencia: Actos fúnebres',
   cuidado_ninez: 'Licencia: Cuidado niñez',
-  calidad_servicio: 'Mejora en la calidad del servicio'
+  calidad_servicio: 'Mejora en la calidad del servicio',
+  jurado_votacion: 'Permiso: Jurado de votación',
+  sufragante: 'Permiso: Sufragante',
+  cargos_oficiales_transitorios: 'Permiso: Desempeño de cargos oficiales transitorios',
+  comisiones_sindicales: 'Permiso: Comisiones sindicales',
+  obligaciones_escolares: 'Permiso: Obligaciones escolares',
+  citaciones_judiciales: 'Permiso: Citaciones judiciales, administrativas y de policía',
+  cuidado_hijo_ley_2174: 'Permiso: Cuidado de hijo(a) - Ley 2174 de 2021'
 }[tipo] || tipo || '');
 
 const replaceOnce = (xml, search, replacement) => {
@@ -174,7 +181,11 @@ const fillReporteSalidaRows = (xml, values) => {
   set(6, 1, `  Hora de regreso: ${values.horaRegreso}`);
   set(15, 0, values.tipo === 'cita_eps' ? 'X' : '');
   set(15, 2, values.tipo === 'cita_particular' ? 'X' : '');
-  const isPersonalPermission = ['diligencia_personal', 'voto_jurado', 'voto_sufragante', 'calamidad_domestica', 'entierro_companero', 'comision_sindical', 'matrimonio', 'lactancia', 'luto_conyuge', 'luto_companero', 'luto_familiar', 'actos_funebres', 'cuidado_ninez'].includes(values.tipo);
+  const isPersonalPermission = [
+    'diligencia_personal', 'compensatorio',
+    'voto_jurado', 'voto_sufragante', 'comision_sindical', 'matrimonio', 'lactancia', 'luto_conyuge', 'luto_companero', 'luto_familiar', 'actos_funebres', 'cuidado_ninez',
+    'jurado_votacion', 'sufragante', 'cargos_oficiales_transitorios', 'calamidad_domestica', 'entierro_companero', 'comisiones_sindicales', 'obligaciones_escolares', 'citaciones_judiciales', 'cuidado_hijo_ley_2174'
+  ].includes(values.tipo);
   set(16, 0, isPersonalPermission ? 'X' : '');
   set(17, 0, ` Fecha:  ${values.reposicionFecha}${values.reposicionFechaFin && values.reposicionFechaFin !== values.reposicionFecha ? ` a ${values.reposicionFechaFin}` : ''}`);
   set(17, 1, ` Hora inicio: ${values.reposicionInicio}`);

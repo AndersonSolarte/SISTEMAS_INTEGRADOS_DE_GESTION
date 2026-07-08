@@ -2961,7 +2961,14 @@ const sendGestionHumanaGroupApprovalEmail = async (solicitudes, token) => {
     luto_companero: 'Licencia luto: Companero(a)',
     luto_familiar: 'Licencia luto: Familiar',
     actos_funebres: 'Licencia: Actos funebres',
-    cuidado_ninez: 'Licencia: Cuidado ninez'
+    cuidado_ninez: 'Licencia: Cuidado ninez',
+    jurado_votacion: 'Permiso: Jurado de votacion',
+    sufragante: 'Permiso: Sufragante',
+    cargos_oficiales_transitorios: 'Permiso: Desempeño de cargos oficiales transitorios',
+    comisiones_sindicales: 'Permiso: Comisiones sindicales',
+    obligaciones_escolares: 'Permiso: Obligaciones escolares',
+    citaciones_judiciales: 'Permiso: Citaciones judiciales, administrativas y de policia',
+    cuidado_hijo_ley_2174: 'Permiso: Cuidado de hijo(a) - Ley 2174 de 2021'
   };
   const getSubtypeLabel = (tipo) => {
     if (!tipo) return '';
