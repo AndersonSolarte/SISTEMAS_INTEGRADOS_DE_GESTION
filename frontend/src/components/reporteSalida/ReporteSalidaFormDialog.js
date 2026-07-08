@@ -1741,9 +1741,9 @@ function ReporteSalidaFormDialog({ open, documento, user, onClose, onSubmitted }
                       size="small"
                       label="Tiempo a reponer (horas)"
                       InputLabelProps={{ shrink: true }}
-                      inputProps={{ min: 0, step: 0.1 }}
+                      inputProps={{ min: 0, step: 1 }}
                       value={form.salida.tiempoReponerHoras || ''}
-                      onChange={(e) => update('salida', 'tiempoReponerHoras', e.target.value)}
+                      onChange={(e) => update('salida', 'tiempoReponerHoras', e.target.value.replace(/[^0-9]/g, ''))}
                     />
                     <Box sx={{ minHeight: 40, px: 2, borderRadius: 1.5, bgcolor: salidaMinutes ? '#ecfdf5' : '#fff7ed', border: `1px solid ${salidaMinutes ? '#bbf7d0' : '#fed7aa'}`, display: 'flex', alignItems: 'center', gap: 2, boxShadow: '0 2px 8px rgba(0,0,0,0.05)' }}>
                       <Typography sx={{ fontSize: 13, fontWeight: 800, color: '#334155' }}>
@@ -1763,7 +1763,7 @@ function ReporteSalidaFormDialog({ open, documento, user, onClose, onSubmitted }
                   <TextField sx={inputSx} fullWidth size="small" required type="text" label="Hora salida" placeholder="13:45" inputProps={{ maxLength: 5 }} InputLabelProps={{ shrink: true }} error={isPastTimeError(form.salida.fecha, form.salida.horaInicio)} value={form.salida.horaInicio} onChange={(e) => update('salida', 'horaInicio', handleTimeChange(e.target.value))} onBlur={(e) => update('salida', 'horaInicio', formatTimeOnBlur(e.target.value))} />
                   <TextField sx={inputSx} fullWidth size="small" required type="date" label="Fecha regreso" InputLabelProps={{ shrink: true }} inputProps={{ min: todayString }} value={form.salida.fechaRegreso} onChange={(e) => update('salida', 'fechaRegreso', e.target.value)} />
                   <TextField sx={inputSx} fullWidth size="small" required type="text" label="Hora regreso" placeholder="18:30" inputProps={{ maxLength: 5 }} InputLabelProps={{ shrink: true }} error={isPastTimeError(form.salida.fechaRegreso, form.salida.horaFin)} value={form.salida.horaFin} onChange={(e) => update('salida', 'horaFin', handleTimeChange(e.target.value))} onBlur={(e) => update('salida', 'horaFin', formatTimeOnBlur(e.target.value))} />
-                  <TextField sx={inputSx} fullWidth size="small" required type="number" label="Tiempo a reponer (horas)" InputLabelProps={{ shrink: true }} inputProps={{ min: 0, step: 0.1 }} value={form.salida.tiempoReponerHoras || ''} onChange={(e) => update('salida', 'tiempoReponerHoras', e.target.value)} />
+                  <TextField sx={inputSx} fullWidth size="small" required type="number" label="Tiempo a reponer (horas)" InputLabelProps={{ shrink: true }} inputProps={{ min: 0, step: 1 }} value={form.salida.tiempoReponerHoras || ''} onChange={(e) => update('salida', 'tiempoReponerHoras', e.target.value.replace(/[^0-9]/g, ''))} />
                 </Box>
               )}
 
