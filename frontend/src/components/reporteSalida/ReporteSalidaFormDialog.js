@@ -1518,6 +1518,7 @@ function ReporteSalidaFormDialog({ open, documento, user, onClose, onSubmitted }
 
                 {category === 'propias_cargo' && subtype !== 'salida_campus' && form.salida.alcance === 'Internacional' && (
                   <Autocomplete
+                    sx={{ ...inputSx, gridColumn: { xs: '1', md: 'span 2' } }}
                     options={PAISES_OPTIONS}
                     value={form.salida.pais || null}
                     onChange={(event, newValue) => {
@@ -1539,7 +1540,7 @@ function ReporteSalidaFormDialog({ open, documento, user, onClose, onSubmitted }
                 {category === 'propias_cargo' && subtype !== 'salida_campus' && form.salida.alcance === 'Nacional' && (
                   <>
                     <Autocomplete
-                      options={Object.keys(DEPARTAMENTOS_MUNICIPIOS)}
+                      options={Object.keys(DEPARTAMENTOS_MUNICIPIOS).filter(depto => depto !== 'Nariño')}
                       value={form.salida.departamento || null}
                       onChange={(event, newValue) => {
                         update('salida', 'departamento', newValue || '');
@@ -1560,7 +1561,7 @@ function ReporteSalidaFormDialog({ open, documento, user, onClose, onSubmitted }
                       options={
                         form.salida.departamento
                           ? TODAS_MUNICIPIOS_COMPLETOS.filter(item => item.departamento === form.salida.departamento)
-                          : TODAS_MUNICIPIOS_COMPLETOS
+                          : TODAS_MUNICIPIOS_COMPLETOS.filter(item => item.departamento !== 'Nariño')
                       }
                       getOptionLabel={(option) => typeof option === 'string' ? option : option.label}
                       value={
@@ -1592,6 +1593,7 @@ function ReporteSalidaFormDialog({ open, documento, user, onClose, onSubmitted }
 
                 {category === 'propias_cargo' && subtype !== 'salida_campus' && form.salida.alcance === 'Regional' && (
                   <Autocomplete
+                    sx={{ ...inputSx, gridColumn: { xs: '1', md: 'span 2' } }}
                     options={DEPARTAMENTOS_MUNICIPIOS['Nariño']}
                     value={form.salida.municipio || null}
                     onChange={(event, newValue) => {
