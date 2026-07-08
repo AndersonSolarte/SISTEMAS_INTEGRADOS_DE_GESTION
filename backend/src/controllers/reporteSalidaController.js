@@ -44,7 +44,7 @@ const looksLikeInstitutionalDependencia = (value) => {
   if (/\b(acta|actas|revision|revisión|micro|curriculo|currículo|actividad|actividades|indicador|indicadores|meta|metas|proyecto|programacion|programación)\b/i.test(text)) {
     return false;
   }
-  return /\b(departamento|vicerrectoria|vicerrectoría|direccion|dirección|oficina|facultad|programa|centro|unidad|rectoria|rectoría|biblioteca|bienestar|juridica|jurídica|finanzas|admisiones|registro|planeacion|planeación|aseguramiento|talento|gestion humana|gestión humana)\b/i.test(text);
+  return /\b(departamento|vicerrectoria|vicerrectoría|direccion|dirección|oficina|facultad|programa|centro|unidad|rectoria|rectoría|biblioteca|bienestar|juridica|jurídica|finanzas|admisiones|registro|planeacion|planeación|aseguramiento|talento|gestion humana|gestión humana|gestion del talento humano|gestión del talento humano|talento humano)\b/i.test(text);
 };
 
 const isDependenciaOption = (value) => hasDependenciaCode(value) || looksLikeInstitutionalDependencia(value);
@@ -793,7 +793,7 @@ const renderApprovalPage = ({
       <div class="brandmark">SIAC</div>
       <div>
         <div class="brand-title">UNICESMAG</div>
-        <div class="brand-subtitle">Reporte de salida | Gestion Humana</div>
+        <div class="brand-subtitle">Reporte de salida | Gestión del Talento Humano</div>
       </div>
     </section>
     <section class="content">
@@ -859,14 +859,16 @@ const validateRadicacionPayload = (payload, user) => {
   }
   if (!requestedMinutes) return 'El rango de salida no es valido. Revise que la fecha y hora final sean posteriores a la inicial.';
 
-  if (salida.tipo === 'diligencia_personal') {
+  const bodyReposicionMinutos = parseInt(payload?.reposicion_minutos, 10);
+  const reposicionMinutosVal = isNaN(bodyReposicionMinutos) ? 0 : bodyReposicionMinutos;
+  if (reposicionMinutosVal > 0) {
     const hasReposicionPlan = Boolean(reposicion.fecha || reposicion.fechaFin || reposicion.horaInicio || reposicion.horaFin);
     if (hasReposicionPlan && (!reposicion.fecha || !reposicion.fechaFin || !reposicion.horaInicio || !reposicion.horaFin)) {
-      return 'Complete todos los campos del plan inicial de reposicion o dejelos vacios para gestionarlo luego en seguimiento.';
+      return 'Complete todos los campos del plan inicial de reposición o déjelos vacíos para gestionarlo luego en seguimiento.';
     }
     if (hasReposicionPlan) {
       const replacementMinutes = diffElapsedMinutes(reposicion.fecha, reposicion.fechaFin, reposicion.horaInicio, reposicion.horaFin);
-      if (!replacementMinutes) return 'El rango del plan inicial de reposicion no es valido. Revise fecha y hora de inicio y fin.';
+      if (!replacementMinutes) return 'El rango del plan inicial de reposición no es válido. Revise fecha y hora de inicio y fin.';
     }
   }
 
@@ -1018,7 +1020,7 @@ const sendGestionHumanaApprovalEmail = async (solicitud, token, attachments) => 
   const rejectUrl = `${publicBackendUrl.replace(/\/$/, '')}/api/reporte-salida/rechazar/${encodeURIComponent(token)}`;
   const subject = `Re: REPORTE DE SALIDA ${solicitud.consecutivo} | Colaborador: ${solicitante.nombre || ''}`;
   const html = renderInstitutionalTemplate({
-    title: 'Aprobacion pendiente de Gestion Humana',
+    title: 'Aprobacion pendiente de Gestión del Talento Humano',
     introHtml: `<p>La solicitud <strong>${escapeHtml(solicitud.consecutivo)}</strong> fue aprobada por el jefe inmediato.</p>`,
     bodyHtml: `
       <p><strong>Colaborador:</strong> ${escapeHtml(solicitante.nombre)}</p>
@@ -1052,7 +1054,7 @@ const sendSSTApprovalEmail = async (solicitud, token, attachments) => {
   const subject = `Re: REPORTE DE SALIDA ${solicitud.consecutivo} | Colaborador: ${solicitante.nombre || ''}`;
   const html = renderInstitutionalTemplate({
     title: 'Aprobacion pendiente de SST',
-    introHtml: `<p>La solicitud misional (Nacional/Internacional) <strong>${escapeHtml(solicitud.consecutivo)}</strong> fue aprobada por Gestion Humana y requiere su aprobacion final.</p>`,
+    introHtml: `<p>La solicitud misional (Nacional/Internacional) <strong>${escapeHtml(solicitud.consecutivo)}</strong> fue aprobada por Gestión del Talento Humano y requiere su aprobacion final.</p>`,
     bodyHtml: `
       <p><strong>Colaborador:</strong> ${escapeHtml(solicitante.nombre)}</p>
       <p><strong>Tiempo solicitado:</strong> ${escapeHtml(formatMinutes(solicitud.tiempo_solicitado_minutos))}</p>
@@ -1126,7 +1128,7 @@ const sendFinalEmails = async (solicitud, pdfAttachment, supportAttachment) => {
     });
   }
 
-  // 3. Correo para Gestión Humana (PDF firmado + Soporte Médico/Adjunto)
+  // 3. Correo para Gestión del Talento Humano (PDF firmado + Soporte Médico/Adjunto)
   let ghResult = { success: false };
   if (recipients.gestionHumana) {
     const ghHtml = renderInstitutionalTemplate({
@@ -1492,7 +1494,7 @@ const radicarSolicitud = async (req, res) => {
 
       return res.status(201).json({
         success: true,
-        message: 'Salida grupal radicada exitosamente. Se envio un correo a Gestion Humana para aprobacion.',
+        message: 'Salida grupal radicada exitosamente. Se envio un correo a Gestión del Talento Humano para aprobacion.',
         data: creadas.map(serializeSolicitud)
       });
     }
@@ -1526,10 +1528,11 @@ const radicarSolicitud = async (req, res) => {
     } else {
       requestedMinutes = diffBusinessMinutes(salida.fecha, salida.fechaRegreso, salida.horaInicio, salida.horaFin);
     }
+    const bodyReposicionMinutos = parseInt(req.body.reposicion_minutos, 10);
+    const finalReposicionMinutos = isNaN(bodyReposicionMinutos) ? 0 : bodyReposicionMinutos;
+    const reposicionAplica = finalReposicionMinutos > 0;
     const hasReposicionPlan = Boolean(reposicion.fecha || reposicion.fechaFin || reposicion.horaInicio || reposicion.horaFin);
-    const replacementMinutes = salida.tipo === 'diligencia_personal' && hasReposicionPlan
-      ? diffElapsedMinutes(reposicion.fecha, reposicion.fechaFin, reposicion.horaInicio, reposicion.horaFin)
-      : null;
+    const reposicionEstado = reposicionAplica ? (hasReposicionPlan ? 'programada' : 'pendiente') : 'no_aplica';
 
     const now = new Date();
     const consecutivo = await getNextConsecutivo(now);
@@ -1586,9 +1589,9 @@ const radicarSolicitud = async (req, res) => {
         }
       },
       tiempo_solicitado_minutos: requestedMinutes,
-      reposicion_aplica: salida.tipo === 'diligencia_personal',
-      reposicion_minutos: replacementMinutes,
-      reposicion_estado: salida.tipo === 'diligencia_personal' ? (replacementMinutes ? 'programada' : 'pendiente') : 'no_aplica',
+      reposicion_aplica: reposicionAplica,
+      reposicion_minutos: finalReposicionMinutos,
+      reposicion_estado: reposicionEstado,
       aprobacion_jefe_token_hash: hashToken(token),
       trazabilidad: [{ event: 'radicada', actor: buildSnapshot(req.user), at: now.toISOString() }]
     });
@@ -1606,10 +1609,15 @@ const radicarSolicitud = async (req, res) => {
         const supportAttachment = buildReporteSalidaSupportAttachment(solicitud);
         await solicitud.update({ pdf_generado_at: new Date() });
         
-        // El jefe inmediato recibe el PDF. Si es un permiso electoral (jurado o sufragante), también recibe el soporte adjunto.
+        // El jefe inmediato recibe el PDF. Si es un permiso que el jefe puede ver (electoral, cargos oficiales transitorios, sindicato, escolar), también recibe el soporte adjunto.
         const jefeAttachments = [pdfAttachment];
-        const isElectoral = ['voto_jurado', 'voto_sufragante'].includes(solicitud.datos_formulario?.salida?.tipo);
-        if (isElectoral && supportAttachment) {
+        const subtypesBossCanSeeSupport = [
+          'voto_jurado', 'voto_sufragante',
+          'jurado_votacion', 'sufragante', 'cargos_oficiales_transitorios',
+          'comisiones_sindicales', 'comision_sindical', 'obligaciones_escolares'
+        ];
+        const isSupportVisibleToBoss = subtypesBossCanSeeSupport.includes(solicitud.datos_formulario?.salida?.tipo);
+        if (isSupportVisibleToBoss && supportAttachment) {
           jefeAttachments.push(supportAttachment);
         }
 
@@ -1734,9 +1742,9 @@ const aprobarDesdeCorreo = async (req, res) => {
         res,
         tone: 'success',
         title: 'Aprobacion registrada',
-        message: 'La solicitud fue enviada a Gestion Humana para revision y aprobacion.',
+        message: 'La solicitud fue enviada a Gestión del Talento Humano para revision y aprobacion.',
         solicitud,
-        nextStep: 'Gestion Humana recibira el correo con el PDF diligenciado para continuar el flujo.'
+        nextStep: 'Gestión del Talento Humano recibira el correo con el PDF diligenciado para continuar el flujo.'
       });
     }
 
@@ -1760,7 +1768,7 @@ const aprobarDesdeCorreo = async (req, res) => {
           status: 403,
           tone: 'error',
           title: 'Enlace no autorizado',
-          message: 'El enlace no coincide con el token de aprobacion esperado para Gestion Humana.',
+          message: 'El enlace no coincide con el token de aprobacion esperado para Gestión del Talento Humano.',
           solicitud,
           nextStep: 'Por seguridad, la aprobacion no fue registrada.'
         });
@@ -2068,7 +2076,7 @@ const actualizarReposicion = async (req, res) => {
       return res.status(400).json({ success: false, message: 'Esta solicitud no requiere reposicion de tiempo.' });
     }
     if (solicitud.estado !== 'finalizada') {
-      return res.status(400).json({ success: false, message: 'La reposicion solo puede validarse cuando el reporte esta finalizado por Gestion Humana.' });
+      return res.status(400).json({ success: false, message: 'La reposicion solo puede validarse cuando el reporte esta finalizado por Gestión del Talento Humano.' });
     }
 
     let nextEstado = sanitizeText(req.body?.estado, 40);
@@ -2077,8 +2085,22 @@ const actualizarReposicion = async (req, res) => {
 
     const previousData = solicitud.datos_formulario || {};
     const minutosYaPagados = previousData.reposicion_minutos_pagados || 0;
-    const nuevoTotalPagados = minutosYaPagados + minutosAbonados;
     const tiempoTotal = solicitud.reposicion_minutos || solicitud.tiempo_solicitado_minutos || 0;
+
+    if (minutosYaPagados >= tiempoTotal && tiempoTotal > 0) {
+      return res.status(400).json({ success: false, message: 'La reposición para esta solicitud ya ha sido completada en su totalidad.' });
+    }
+
+    const minutosPendientes = tiempoTotal - minutosYaPagados;
+    if (minutosAbonados > minutosPendientes) {
+      const horasPendientes = (minutosPendientes / 60).toFixed(2);
+      return res.status(400).json({
+        success: false,
+        message: `La cantidad de horas ingresada (${horasAbonadas}h) excede el saldo de tiempo pendiente de reponer (${horasPendientes}h).`
+      });
+    }
+
+    const nuevoTotalPagados = minutosYaPagados + minutosAbonados;
 
     if (nuevoTotalPagados >= tiempoTotal && tiempoTotal > 0) {
       nextEstado = 'cumplida';
@@ -2200,7 +2222,7 @@ const renderRejectionFormPage = ({ res, solicitud, token, stage }) => {
   const safeConsecutivo = escapeHtml(consecutivo);
   const safeSolicitante = escapeHtml(solicitante);
   const safeActionUrl = escapeHtml(`${publicBackendUrl.replace(/\/$/, '')}/api/reporte-salida/rechazar/${encodeURIComponent(token)}`);
-  const stageLabel = stage === 'jefe' ? 'Jefe Inmediato' : 'Gestion Humana';
+  const stageLabel = stage === 'jefe' ? 'Jefe Inmediato' : 'Gestión del Talento Humano';
 
   return res.type('html').send(`<!doctype html>
 <html lang="es">
@@ -2455,7 +2477,7 @@ const sendGHRejectionEmails = async ({ solicitud, justificacion, isSST = false }
   const solicitante = solicitud.solicitante_snapshot || {};
   const jefe = solicitud.jefe_snapshot || {};
   
-  const actorName = isSST ? 'Seguridad y Salud en el Trabajo' : 'Gestion Humana';
+  const actorName = isSST ? 'Seguridad y Salud en el Trabajo' : 'Gestión del Talento Humano';
   
   const userSubject = `REPORTE DE SALIDA ${solicitud.consecutivo} | Solicitud no aprobada por ${actorName}`;
   const userHtml = renderInstitutionalTemplate({
@@ -2574,7 +2596,7 @@ const mostrarFormularioRechazo = async (req, res) => {
           title: isAprobada ? 'Solicitud aprobada' : 'Solicitud ya procesada',
           message: isAprobada 
             ? 'Esta solicitud ya fue aprobada anteriormente y no puede ser rechazada.' 
-            : 'Esta solicitud ya no se encuentra pendiente de aprobacion de Gestion Humana.',
+            : 'Esta solicitud ya no se encuentra pendiente de aprobacion de Gestión del Talento Humano.',
           solicitud,
           nextStep: 'No es necesario realizar ninguna accion adicional.'
         });
@@ -2585,7 +2607,7 @@ const mostrarFormularioRechazo = async (req, res) => {
           status: 403,
           tone: 'error',
           title: 'Enlace no autorizado',
-          message: 'El enlace no coincide con el token esperado para Gestion Humana.',
+          message: 'El enlace no coincide con el token esperado para Gestión del Talento Humano.',
           solicitud,
           nextStep: 'Por seguridad, el rechazo no fue registrado.'
         });
@@ -2764,7 +2786,7 @@ const procesarRechazo = async (req, res) => {
           title: isAprobada ? 'Solicitud aprobada' : 'Solicitud ya procesada',
           message: isAprobada 
             ? 'Esta solicitud ya fue aprobada anteriormente y no puede ser rechazada.' 
-            : 'Esta solicitud ya no se encuentra pendiente de aprobacion de Gestion Humana.',
+            : 'Esta solicitud ya no se encuentra pendiente de aprobacion de Gestión del Talento Humano.',
           solicitud,
           nextStep: 'No es necesario realizar ninguna accion adicional.'
         });
@@ -2775,7 +2797,7 @@ const procesarRechazo = async (req, res) => {
           status: 403,
           tone: 'error',
           title: 'Enlace no autorizado',
-          message: 'El enlace no coincide con el token esperado para Gestion Humana.',
+          message: 'El enlace no coincide con el token esperado para Gestión del Talento Humano.',
           solicitud,
           nextStep: 'Por seguridad, el rechazo no fue registrado.'
         });
@@ -2785,7 +2807,7 @@ const procesarRechazo = async (req, res) => {
         estado: 'no_aprobada',
         aprobacion_gh_token_hash: null,
         trazabilidad: appendTrace(solicitud, 'rechazada_gestion_humana', null, {
-          actorName: 'Gestion Humana',
+          actorName: 'Gestión del Talento Humano',
           justificacion
         })
       }, {
@@ -2819,7 +2841,7 @@ const procesarRechazo = async (req, res) => {
         res,
         tone: 'success',
         title: 'Rechazo registrado',
-        message: 'La solicitud ha sido rechazada por Gestion Humana.',
+        message: 'La solicitud ha sido rechazada por Gestión del Talento Humano.',
         solicitud,
         nextStep: 'Se ha notificado al colaborador y a su jefe inmediato con el motivo correspondiente.'
       });
@@ -2913,7 +2935,7 @@ const sendGestionHumanaGroupApprovalEmail = async (solicitudes, token) => {
   const rejectUrl = `${publicBackendUrl.replace(/\/$/, '')}/api/reporte-salida/rechazar-grupo/${encodeURIComponent(token)}`;
   
   const consecutivoGroup = solicitudes[0].consecutivo.split('-').slice(0, 3).join('-') + '-GRUPO';
-  const subject = `REPORTE DE SALIDA GRUPAL ${consecutivoGroup} | [PENDIENTE GH] Aprobación Gestión Humana`;
+  const subject = `REPORTE DE SALIDA GRUPAL ${consecutivoGroup} | [PENDIENTE GH] Aprobación Gestión del Talento Humano`;
 
   const mapping = {
     cita_eps: 'Cita medica por EPS',
@@ -3214,7 +3236,7 @@ const renderRejectionFormPageGrupo = ({ res, solicitudes, token }) => {
       <div class="brandmark">SIAC</div>
       <div>
         <div class="brand-title">UNICESMAG</div>
-        <div class="brand-subtitle">Reporte de salida | Gestion Humana</div>
+        <div class="brand-subtitle">Reporte de salida | Gestión del Talento Humano</div>
       </div>
     </section>
     <section class="content">
@@ -3427,7 +3449,7 @@ const mostrarFormularioRechazoGrupo = async (req, res) => {
         res,
         tone: 'info',
         title: 'Grupo ya procesado',
-        message: 'Este grupo ya no se encuentra pendiente de aprobacion de Gestion Humana.',
+        message: 'Este grupo ya no se encuentra pendiente de aprobacion de Gestión del Talento Humano.',
         nextStep: 'No es necesario realizar ninguna accion adicional.'
       });
     }
@@ -3517,7 +3539,7 @@ const procesarRechazoGrupo = async (req, res) => {
           estado: 'no_aprobada',
           aprobacion_gh_token_hash: null,
           trazabilidad: appendTrace(solicitud, 'rechazada_gestion_humana', null, {
-            actorName: 'Gestion Humana',
+            actorName: 'Gestión del Talento Humano',
             justificacion
           })
         }, {
@@ -3534,10 +3556,10 @@ const procesarRechazoGrupo = async (req, res) => {
         deleteSupportFile(solicitud);
         try {
           const solicitante = solicitud.solicitante_snapshot || {};
-          const userSubject = `REPORTE DE SALIDA GRUPAL ${solicitud.consecutivo} | Solicitud no aprobada por Gestion Humana`;
+          const userSubject = `REPORTE DE SALIDA GRUPAL ${solicitud.consecutivo} | Solicitud no aprobada por Gestión del Talento Humano`;
           const userHtml = renderInstitutionalTemplate({
-            title: 'Reporte de salida grupal no aprobado por Gestion Humana',
-            introHtml: `<p>Cordial saludo, <strong>${escapeHtml(solicitante.nombre)}</strong>.</p><p>Le informamos que la solicitud de reporte de salida grupal en la que participaba fue rechazada por <strong>Gestion Humana</strong>.</p>`,
+            title: 'Reporte de salida grupal no aprobado por Gestión del Talento Humano',
+            introHtml: `<p>Cordial saludo, <strong>${escapeHtml(solicitante.nombre)}</strong>.</p><p>Le informamos que la solicitud de reporte de salida grupal en la que participaba fue rechazada por <strong>Gestión del Talento Humano</strong>.</p>`,
             bodyHtml: `
               <p><strong>Solicitud:</strong> ${escapeHtml(solicitud.consecutivo)}</p>
               <p><strong>Motivo / Justificacion del rechazo:</strong></p>
@@ -3551,7 +3573,7 @@ const procesarRechazoGrupo = async (req, res) => {
           await sendInstitutionalEmail({
             to: solicitante.email,
             subject: userSubject,
-            text: `Su solicitud de salida grupal ${solicitud.consecutivo} fue rechazada por Gestion Humana. Motivo: ${justificacion}`,
+            text: `Su solicitud de salida grupal ${solicitud.consecutivo} fue rechazada por Gestión del Talento Humano. Motivo: ${justificacion}`,
             html: userHtml
           });
         } catch (err) {
@@ -3564,7 +3586,7 @@ const procesarRechazoGrupo = async (req, res) => {
       res,
       tone: 'success',
       title: 'Rechazo de Grupo registrado',
-      message: `Se registro el rechazo para ${rejectedCount} solicitudes del grupo por Gestion Humana.`,
+      message: `Se registro el rechazo para ${rejectedCount} solicitudes del grupo por Gestión del Talento Humano.`,
       nextStep: 'Se ha notificado a cada uno de los colaboradores por correo institucional con el motivo correspondiente.'
     });
 

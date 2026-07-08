@@ -49,7 +49,7 @@ const ACCESS_COPY = {
   gestion_humana: {
     title: 'Reporte de salida',
     subtitle: 'Seguimiento de aprobaciones, notificaciones y reposicion de tiempo.',
-    notice: 'Vista completa para Gestion Humana. Puedes validar reposiciones cuando el reporte este finalizado.'
+    notice: 'Vista completa para Gestión del Talento Humano. Puedes validar reposiciones cuando el reporte este finalizado.'
   },
   jefe: {
     title: 'Reposiciones de mi equipo',
@@ -76,8 +76,8 @@ const ACCESS_COPY = {
 const STATUS_LABELS = {
   pendiente_aprobacion_jefe: 'Pendiente jefe',
   aprobada_jefe: 'Aprobada jefe',
-  pendiente_aprobacion_gestion_humana: 'Pendiente Gestion Humana',
-  aprobada_gestion_humana: 'Aprobada Gestion Humana',
+  pendiente_aprobacion_gestion_humana: 'Pendiente Gestión del Talento Humano',
+  aprobada_gestion_humana: 'Aprobada Gestión del Talento Humano',
   finalizada: 'Aprobada',
   no_aprobada: 'No aprobada'
 };
@@ -693,7 +693,7 @@ function ReporteSalidaSeguimiento({ initialAccess = null, onBack }) {
                                         {row.reposicion_estado === 'cumplida' ? 'Validado' : 'Por validar'}
                                       </Typography>
                                       <Typography sx={{ fontSize: 11, color: '#94a3b8' }}>
-                                        {row.estado === 'finalizada' ? 'Gestion Humana' : 'Esperar cierre'}
+                                        {row.estado === 'finalizada' ? 'Talento Humano' : 'Esperar cierre'}
                                       </Typography>
                                     </Box>
                                     {row.reposicion_estado !== 'incumplida' && (
@@ -759,8 +759,8 @@ function ReporteSalidaSeguimiento({ initialAccess = null, onBack }) {
                   >
                     <MenuItem value="pendiente_aprobacion_jefe">Pendiente jefe</MenuItem>
                     <MenuItem value="aprobada_jefe">Aprobada jefe</MenuItem>
-                    <MenuItem value="pendiente_aprobacion_gestion_humana">Pendiente Gestion Humana</MenuItem>
-                    <MenuItem value="aprobada_gestion_humana">Aprobada Gestion Humana</MenuItem>
+                    <MenuItem value="pendiente_aprobacion_gestion_humana">Pendiente Gestión del Talento Humano</MenuItem>
+                    <MenuItem value="aprobada_gestion_humana">Aprobada Gestión del Talento Humano</MenuItem>
                     <MenuItem value="finalizada">Finalizada (Aprobada)</MenuItem>
                     <MenuItem value="no_aprobada">No aprobada / Rechazada</MenuItem>
                   </TextField>
@@ -802,6 +802,29 @@ function ReporteSalidaSeguimiento({ initialAccess = null, onBack }) {
                   <Typography variant="body2" sx={{ mt: 0.5, fontWeight: 'bold', color: '#b45309' }}>Saldo pendiente: {getHorasPendientes(repTarget)}</Typography>
                 </Box>
 
+                {(() => {
+                  const totalMinutos = repTarget?.reposicion_minutos || repTarget?.tiempo_solicitado_minutos || 0;
+                  const minutosPagados = repTarget?.reposicion_minutos_pagados || repTarget?.datos_formulario?.reposicion_minutos_pagados || 0;
+                  const minutosPendientes = totalMinutos - minutosPagados;
+                  const yaRepuesto = minutosPendientes <= 0;
+                  const excede = Number(repHorasAbonadas) > (minutosPendientes / 60);
+
+                  return (
+                    <>
+                      {yaRepuesto && (
+                        <Alert severity="success" sx={{ mb: 2, borderRadius: 2 }}>
+                          El colaborador ya repuso la totalidad del tiempo pendiente para esta salida.
+                        </Alert>
+                      )}
+                      {!yaRepuesto && excede && (
+                        <Alert severity="error" sx={{ mb: 2, borderRadius: 2 }}>
+                          La cantidad ingresada ({repHorasAbonadas} hrs) supera el saldo pendiente de {(minutosPendientes / 60).toFixed(2)} horas.
+                        </Alert>
+                      )}
+                    </>
+                  );
+                })()}
+
                 <TextField
                   label="Horas a abonar (Repuestas hoy)"
                   type="number"
@@ -810,6 +833,11 @@ function ReporteSalidaSeguimiento({ initialAccess = null, onBack }) {
                   fullWidth
                   margin="normal"
                   size="small"
+                  disabled={(() => {
+                    const totalMinutos = repTarget?.reposicion_minutos || repTarget?.tiempo_solicitado_minutos || 0;
+                    const minutosPagados = repTarget?.reposicion_minutos_pagados || repTarget?.datos_formulario?.reposicion_minutos_pagados || 0;
+                    return (totalMinutos - minutosPagados) <= 0;
+                  })()}
                   inputProps={{ min: 0, step: 0.5 }}
                   helperText="Ingrese las horas repuestas, ej: 1.5. El saldo se descontará automáticamente."
                 />
@@ -822,6 +850,11 @@ function ReporteSalidaSeguimiento({ initialAccess = null, onBack }) {
                   fullWidth
                   margin="normal"
                   size="small"
+                  disabled={(() => {
+                    const totalMinutos = repTarget?.reposicion_minutos || repTarget?.tiempo_solicitado_minutos || 0;
+                    const minutosPagados = repTarget?.reposicion_minutos_pagados || repTarget?.datos_formulario?.reposicion_minutos_pagados || 0;
+                    return (totalMinutos - minutosPagados) <= 0;
+                  })()}
                 >
                   <MenuItem value="pendiente">Pendiente</MenuItem>
                   <MenuItem value="programada">Programada</MenuItem>
@@ -831,7 +864,23 @@ function ReporteSalidaSeguimiento({ initialAccess = null, onBack }) {
               </DialogContent>
               <DialogActions>
                 <Button onClick={() => setRepDialogOpen(false)} color="inherit">Cancelar</Button>
-                <Button onClick={submitRep} color="primary" variant="contained" disableElevation>Actualizar Saldo</Button>
+                <Button
+                  onClick={submitRep}
+                  color="primary"
+                  variant="contained"
+                  disableElevation
+                  disabled={(() => {
+                    const totalMinutos = repTarget?.reposicion_minutos || repTarget?.tiempo_solicitado_minutos || 0;
+                    const minutosPagados = repTarget?.reposicion_minutos_pagados || repTarget?.datos_formulario?.reposicion_minutos_pagados || 0;
+                    const minutosPendientes = totalMinutos - minutosPagados;
+                    if (minutosPendientes <= 0) return true;
+                    if (!repHorasAbonadas || Number(repHorasAbonadas) <= 0) return true;
+                    if (Number(repHorasAbonadas) > (minutosPendientes / 60)) return true;
+                    return false;
+                  })()}
+                >
+                  Actualizar Saldo
+                </Button>
               </DialogActions>
             </Dialog>
           </>

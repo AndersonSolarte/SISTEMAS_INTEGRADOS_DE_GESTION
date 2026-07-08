@@ -182,7 +182,7 @@ const fillReporteSalidaRows = (xml, values) => {
   set(21, 1, ` Nombres y apellidos: ${values.jefeNombre}`);
   set(22, 1, ` Cargo: ${values.jefeCargo}`);
   set(23, 1, ` Cedula: ${values.jefeDocumento}`);
-  set(25, 1, `RECIBIDO (Gestion Humana)\n\nFirma: ______________________________       Fecha:  ${values.ghFecha || '_________________________'}`);
+  set(25, 1, `RECIBIDO (Gestión del Talento Humano)\n\nFirma: ______________________________       Fecha:  ${values.ghFecha || '_________________________'}`);
 
   let updatedXml = xml;
   originalRows.forEach((row, index) => {
@@ -302,7 +302,7 @@ const buildLines = (solicitud) => {
     'APROBACIONES',
     `Jefe inmediato: ${jefe.nombre || ''} - ${jefe.email || ''}`,
     `Aprobacion jefe: ${solicitud.jefe_aprobado_at ? formatDate(solicitud.jefe_aprobado_at) : 'Pendiente'}`,
-    `Aprobacion Gestion Humana: ${solicitud.gestion_humana_aprobado_at ? formatDate(solicitud.gestion_humana_aprobado_at) : 'Pendiente'}`,
+    `Aprobacion Gestión del Talento Humano: ${solicitud.gestion_humana_aprobado_at ? formatDate(solicitud.gestion_humana_aprobado_at) : 'Pendiente'}`,
     '',
     'Este PDF fue generado automaticamente desde SIAC UNICESMAG con la informacion diligenciada en el formulario digital.'
   ];
@@ -312,11 +312,17 @@ const PdfPrinter = require('pdfmake');
 
 const buildPdfBuffer = async (solicitud) => {
   let ghDirectorNombre = '';
-  let ghDirectorCargo = 'Jefe de Gestión Humana';
+  let ghDirectorCargo = 'Jefe de Gestión del Talento Humano';
   if (solicitud.gestion_humana_aprobado_at) {
     try {
       const { User } = require('../models');
-      const ghUser = await User.findOne({ where: { dependencia: 'Gestión Humana', cargo: 'Jefe Gestión Humana' } });
+      const { Op } = require('sequelize');
+      const ghUser = await User.findOne({
+        where: {
+          dependencia: { [Op.in]: ['Gestión del Talento Humano', 'Gestión del Talento Humano'] },
+          cargo: { [Op.in]: ['Jefe Gestión del Talento Humano', 'Jefe de Gestión del Talento Humano', 'Jefe de Gestión del Talento Humano', 'Jefe Gestión del Talento Humano'] }
+        }
+      });
       if (ghUser) {
         ghDirectorNombre = ghUser.nombre;
         ghDirectorCargo = ghUser.cargo;
@@ -602,7 +608,7 @@ const buildPdfBuffer = async (solicitud) => {
         });
       }
 
-      const ghDirectorCargo = solicitud.jefe_snapshot?.director_gh_cargo || 'Jefe de Gestión Humana';
+      const ghDirectorCargo = solicitud.jefe_snapshot?.director_gh_cargo || 'Jefe de Gestión del Talento Humano';
       const txId = solicitud.datos_formulario?.tx_id || String(solicitud.consecutivo || solicitud.id);
       const reqDate = formatDateTime(solicitud.createdAt || new Date());
       const jefeDate = solicitud.jefe_aprobado_at ? formatDateTime(solicitud.jefe_aprobado_at) : 'Pendiente';
@@ -650,7 +656,7 @@ const buildPdfBuffer = async (solicitud) => {
 
       if (requiresSst) {
         signatureTableBody.push([
-          { text: 'RECIBIDO (Gestión Humana)', bold: true, alignment: 'center', fillColor: '#e0e0e0' },
+          { text: 'RECIBIDO (Gestión del Talento Humano)', bold: true, alignment: 'center', fillColor: '#e0e0e0' },
           { text: 'APROBADO (Seguridad y Salud en el Trabajo)', bold: true, alignment: 'center', fillColor: '#e0e0e0' }
         ]);
         signatureTableBody.push([
@@ -677,7 +683,7 @@ const buildPdfBuffer = async (solicitud) => {
         ]);
       } else {
         signatureTableBody.push([
-          { text: 'RECIBIDO (Gestión Humana)', bold: true, alignment: 'center', colSpan: 2, fillColor: '#e0e0e0' },
+          { text: 'RECIBIDO (Gestión del Talento Humano)', bold: true, alignment: 'center', colSpan: 2, fillColor: '#e0e0e0' },
           {}
         ]);
         signatureTableBody.push([
@@ -720,10 +726,10 @@ const buildPdfBuffer = async (solicitud) => {
           'correo_jefe_error': 'Error al notificar a Jefe Inmediato',
           'aprobada_jefe': 'Aprobación de Jefe Inmediato',
           'rechazada_jefe': 'Rechazada por Jefe Inmediato',
-          'correo_gestion_humana_enviado': 'Notificación a Gestión Humana',
-          'correo_gestion_humana_error': 'Error al notificar a Gestión Humana',
-          'aprobada_gestion_humana': 'Aprobación de Gestión Humana',
-          'rechazada_gestion_humana': 'Rechazada por Gestión Humana',
+          'correo_gestion_humana_enviado': 'Notificación a Gestión del Talento Humano',
+          'correo_gestion_humana_error': 'Error al notificar a Gestión del Talento Humano',
+          'aprobada_gestion_humana': 'Aprobación de Gestión del Talento Humano',
+          'rechazada_gestion_humana': 'Rechazada por Gestión del Talento Humano',
           'correo_sst_enviado': 'Notificación a SST',
           'correo_sst_error': 'Error al notificar a SST',
           'aprobada_sst': 'Aprobación de SST',
@@ -752,7 +758,7 @@ const buildPdfBuffer = async (solicitud) => {
             if (t.event.includes('_jefe')) {
               actorStr = solicitud?.jefe_snapshot?.nombre || 'Jefe Inmediato';
             } else if (t.event.includes('_gestion_humana')) {
-              actorStr = 'Gestión Humana';
+              actorStr = 'Gestión del Talento Humano';
             } else if (t.event.includes('_sst')) {
               actorStr = 'Seguridad y Salud en el Trabajo';
             } else if (t.event.includes('correo_') || t.event.includes('notificacion_')) {
@@ -771,7 +777,7 @@ const buildPdfBuffer = async (solicitud) => {
           if (!detailStr) {
             if (t.event.includes('radicada')) detailStr = 'Se registró la solicitud en el sistema.';
             else if (t.event.includes('correo_')) detailStr = 'Correo electrónico enviado exitosamente.';
-            else if (t.event.includes('notificacion_final')) detailStr = 'Correos finales de cierre enviados al colaborador, dependencia, Gestión Humana y Seguridad y Salud en el Trabajo (SST).';
+            else if (t.event.includes('notificacion_final')) detailStr = 'Correos finales de cierre enviados al colaborador, dependencia, Gestión del Talento Humano y Seguridad y Salud en el Trabajo (SST).';
             else if (t.event.includes('aprobada_')) detailStr = 'Aprobado sin observaciones adicionales.';
             else if (t.event.includes('rechazada_')) detailStr = 'Rechazado sin justificación adicional.';
             else detailStr = 'Procesado exitosamente.';

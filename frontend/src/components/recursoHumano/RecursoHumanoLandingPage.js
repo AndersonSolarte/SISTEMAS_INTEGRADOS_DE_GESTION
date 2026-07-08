@@ -79,7 +79,7 @@ function RecursoHumanoLandingPage({ onBack }) {
     ? 'Consulta tus horas pendientes por reponer y el estado de validacion de Talento Humano.'
     : seguimientoAccess?.mode === 'jefe' || seguimientoAccess?.mode === 'jefe_y_colaborador'
       ? 'Seguimiento de horas pendientes por reponer de tus colaboradores a cargo.'
-      : 'Control de radicaciones, aprobaciones, tiempos y reposicion gestionados por Gestion Humana.';
+      : 'Control de radicaciones, aprobaciones, tiempos y reposicion gestionados por Gestión del Talento Humano.';
 
   let visibleCards = [];
   

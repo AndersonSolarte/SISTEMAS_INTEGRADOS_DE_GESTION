@@ -124,7 +124,7 @@ const VerificacionReporte = () => {
                 </Box>
                 <Box>
                   <Typography variant="caption" color="text.secondary" fontWeight="800" sx={{ letterSpacing: 1.2, mb: 0.5, display: 'block' }}>
-                    RECIBIDO GESTIÓN HUMANA
+                    RECIBIDO GESTIÓN DEL TALENTO HUMANO
                   </Typography>
                   <Typography variant="body2" color="text.primary" fontWeight="500">
                     {formatDateTime(data.gestion_humana_aprobado_at)}
