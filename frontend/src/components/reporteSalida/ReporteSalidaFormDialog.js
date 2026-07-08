@@ -38,7 +38,7 @@ import reporteSalidaService from '../../services/reporteSalidaService';
 const INITIAL_FORM = {
   personal: { nombre: '', documento: '', correo: '' },
   laboral: { dependencia: '', cargo: '' },
-  salida: { tipo: 'cita_eps', alcance: '', pais: '', especialidadMedica: '', terapiasList: [], fecha: '', fechaRegreso: '', horaInicio: '', horaFin: '', motivo: '', campusSalida: '', campusDestino: '', tiempoReponerHoras: '' },
+  salida: { tipo: 'cita_eps', alcance: '', pais: '', departamento: '', municipio: '', especialidadMedica: '', terapiasList: [], fecha: '', fechaRegreso: '', horaInicio: '', horaFin: '', motivo: '', campusSalida: '', campusDestino: '', tiempoReponerHoras: '' },
   reposicion: { fecha: '', fechaFin: '', horaInicio: '', horaFin: '', observacion: '' }
 };
 
@@ -117,6 +117,49 @@ const PAISES_OPTIONS = [
   'Tuvalu', 'Ucrania', 'Uganda', 'Uruguay', 'Uzbekistán', 'Vanuatu', 'Venezuela', 'Vietnam', 'Yemen', 'Yibuti',
   'Zambia', 'Zimbabue'
 ];
+
+const DEPARTAMENTOS_MUNICIPIOS = {
+  'Amazonas': ['Leticia', 'El Encanto', 'La Chorrera', 'La Pedrera', 'La Victoria', 'Miriití-Paraná', 'Puerto Alegría', 'Puerto Arica', 'Puerto Nariño', 'Puerto Santander', 'Tarapacá'],
+  'Antioquia': ['Medellín', 'Bello', 'Itagüí', 'Envigado', 'Rionegro', 'Apartadó', 'Turbo', 'Caucasia', 'Chigorodó', 'Sabaneta', 'Caldas', 'Copacabana', 'La Estrella', 'Girardota', 'Marinilla', 'Guarne', 'El Carmen de Viboral', 'La Ceja', 'Santa Fe de Antioquia', 'Yarumal'],
+  'Arauca': ['Arauca', 'Arauquita', 'Cravo Norte', 'Fortul', 'Puerto Rondón', 'Saravena', 'Tame'],
+  'Atlántico': ['Barranquilla', 'Soledad', 'Malambo', 'Sabanalarga', 'Baranoa', 'Puerto Colombia', 'Galapa', 'Santo Tomás', 'Sabanagrande', 'Luruaco', 'Repelón', 'Usiacurí', 'Tubará'],
+  'Bolívar': ['Cartagena de Indias', 'Magangué', 'Turbaco', 'Arjona', 'El Carmen de Bolívar', 'María La Baja', 'Mompox', 'San Jacinto', 'Turbaná', 'Villanueva'],
+  'Boyacá': ['Tunja', 'Duitama', 'Sogamoso', 'Chiquinquirá', 'Paipa', 'Villa de Leyva', 'Moniquirá', 'Puerto Boyacá', 'Guateque', 'Garagoa', 'Samacá'],
+  'Caldas': ['Manizales', 'La Dorada', 'Riosucio', 'Chinchiná', 'Villamaría', 'Anserma', 'Neira', 'Aguadas', 'Pensilvania', 'Supía', 'Salamina'],
+  'Caquetá': ['Florencia', 'Belén de los Andaquíes', 'Cartagena del Chairá', 'Currillo', 'El Doncello', 'El Paujil', 'Morelia', 'Puerto Rico', 'San José del Fraguas', 'San Vicente del Caguán', 'Solano', 'Solita', 'Valparaíso'],
+  'Casanare': ['Yopal', 'Aguazul', 'Tauramena', 'Villanueva', 'Paz de Ariporo', 'Monterrey', 'Manoa', 'Hato Corozal', 'Orocué'],
+  'Cauca': ['Popayán', 'Santander de Quilichao', 'Puerto Tejada', 'Patía', 'Bolívar', 'Miranda', 'Corinto', 'Caloto', 'Cajibío', 'Silvia', 'Piendamó'],
+  'Cesar': ['Valledupar', 'Aguachica', 'Agustín Codazzi', 'Bosconia', 'La Paz', 'Curumaní', 'El Copey', 'San Alberto', 'Chiriguaná'],
+  'Chocó': ['Quibdó', 'Istmina', 'Condoto', 'Acandí', 'Bahía Solano', 'Nuquí', 'Riosucio', 'Tadó', 'El Carmen de Atrato', 'Bajo Baudó'],
+  'Córdoba': ['Montería', 'Cereté', 'Sahagún', 'Lorica', 'Montelíbano', 'Planeta Rica', 'Ciénaga de Oro', 'Tierralta', 'Chinú', 'San Andrés de Sotavento'],
+  'Cundinamarca': ['Bogotá', 'Soacha', 'Facatativá', 'Chía', 'Zipaquirá', 'Fusagasugá', 'Girardot', 'Mosquera', 'Madrid', 'Funza', 'Cajicá', 'Sopó', 'Tocancipá', 'Villeta', 'La Mesa', 'Ubaté'],
+  'Guainía': ['Inírida', 'Barrancominas', 'Mapiripana', 'San Felipe', 'Puerto Colombia', 'Pana Pana'],
+  'Guaviare': ['San José del Guaviare', 'Calamar', 'El Retorno', 'Miraflores'],
+  'Huila': ['Neiva', 'Pitalito', 'Garzón', 'La Plata', 'Campoalegre', 'San Agustín', 'Gigante', 'Acevedo', 'Rivera'],
+  'La Guajira': ['Riohacha', 'Maicao', 'Uribia', 'San Juan del Cesar', 'Fonseca', 'Barrancas', 'Manaure', 'Villanueva', 'Dibulla'],
+  'Magdalena': ['Santa Marta', 'Ciénaga', 'Fundación', 'El Banco', 'Plato', 'Aracataca', 'Pivijay', 'San Sebastián de Buenavista'],
+  'Meta': ['Villavicencio', 'Acacías', 'Granada', 'Puerto López', 'Puerto Gaitán', 'San Martín', 'Cumaral', 'Restrepo'],
+  'Nariño': [
+    'Pasto', 'Ipiales', 'Tumaco', 'Túquerres', 'Samaniego', 'El Charco', 'Buesaco', 'La Unión', 'Barbacoas', 'Cumbal',
+    'Guachucal', 'La Cruz', 'Puerres', 'Contadero', 'Córdoba', 'Cuaspud Carlosama', 'Aldana', 'Funes', 'Iles',
+    'Imúes', 'Gualmatán', 'Ospina', 'Sapuyes', 'Yacuanquer', 'Consacá', 'Sandoná', 'Linares', 'Ancuyá', 'La Florida',
+    'Chachagüí', 'Tangua', 'Ricaurte', 'Mallama', 'Providencia', 'Guaitarilla', 'El Tambo', 'El Peñol', 'Los Andes Sotomayor',
+    'Cumbitara', 'Policarpa', 'El Rosario', 'Leiva', 'Taminango', 'San Lorenzo', 'Arboleda', 'San Bernardo', 'Berruecos',
+    'Albán', 'Belén', 'Colón Génova', 'San Pedro de Cartago', 'San Pablo', 'Francisco Pizarro', 'Mosquera', 'Olaya Herrera',
+    'La Tola', 'El Tablón de Gómez', 'Magüí Payán', 'Roberto Payán', 'Santa Bárbara', 'Santacruz Guachavés'
+  ],
+  'Norte de Santander': ['Cúcuta', 'Ocaña', 'Pamplona', 'Villa del Rosario', 'Los Patios', 'Tibú', 'Chínacota', 'El Zulia'],
+  'Putumayo': ['Mocoa', 'Orito', 'Puerto Asís', 'Puerto Leguízamo', 'Sibundoy', 'Valle del Guamuez', 'Villagarzón', 'San Francisco'],
+  'Quindío': ['Armenia', 'Calarcá', 'Tebaidá', 'Montenegro', 'Quimbaya', 'Circasia', 'Filandia', 'Salento'],
+  'Risaralda': ['Pereira', 'Dosquebradas', 'Santa Rosa de Cabal', 'La Virginia', 'Belén de Umbría', 'Quinchía', 'Santuario'],
+  'San Andrés y Providencia': ['San Andrés', 'Providencia', 'Santa Catalina'],
+  'Santander': ['Bucaramanga', 'Floridablanca', 'Girón', 'Piedecuesta', 'Barrancabermeja', 'San Gil', 'Socorro', 'Barbosa', 'Málaga', 'Sabana de Torres'],
+  'Sucre': ['Sincelejo', 'Corozal', 'San Marcos', 'Tolú', 'Sampués', 'San Onofre', 'Morroa'],
+  'Tolima': ['Ibagué', 'Espinal', 'Melgar', 'Mariquita', 'Honda', 'Líbano', 'Chaparral', 'Guamo', 'Flandes'],
+  'Valle del Cauca': ['Cali', 'Buenaventura', 'Palmira', 'Tuluá', 'Cartago', 'Buga', 'Jamundí', 'Yumbo', 'Florida', 'Pradera', 'Zarzal', 'Sevilla', 'Caicedonia'],
+  'Vaupés': ['Mitú', 'Carurú', 'Taraira', 'Papacora', 'Yavaraté'],
+  'Vichada': ['Puerto Carreño', 'La Primavera', 'Santa Rosalía', 'Cumaribo']
+};
 
 const WORK_BLOCKS = [
   { start: '07:00', end: '12:00' },
@@ -698,6 +741,15 @@ function ReporteSalidaFormDialog({ open, documento, user, onClose, onSubmitted }
         issues.push('Seleccione el alcance de la actividad.');
       } else if (form.salida.alcance === 'Internacional' && !form.salida.pais) {
         issues.push('Debe seleccionar el país de destino para salidas internacionales.');
+      } else if (form.salida.alcance === 'Nacional') {
+        if (!form.salida.departamento) {
+          issues.push('Debe seleccionar el departamento para salidas nacionales.');
+        }
+        if (!form.salida.municipio) {
+          issues.push('Debe seleccionar el municipio para salidas nacionales.');
+        }
+      } else if (form.salida.alcance === 'Regional' && !form.salida.municipio) {
+        issues.push('Debe seleccionar el municipio para salidas regionales.');
       }
     }
 
@@ -1440,6 +1492,15 @@ function ReporteSalidaFormDialog({ open, documento, user, onClose, onSubmitted }
                       if (val !== 'Internacional') {
                         update('salida', 'pais', '');
                       }
+                      if (val !== 'Nacional') {
+                        update('salida', 'departamento', '');
+                      }
+                      if (val !== 'Nacional' && val !== 'Regional') {
+                        update('salida', 'municipio', '');
+                      }
+                      if (val === 'Regional') {
+                        update('salida', 'departamento', 'Nariño');
+                      }
                     }}
                   >
                     {ALCANCE_OPTIONS.map((opt) => (
@@ -1460,6 +1521,68 @@ function ReporteSalidaFormDialog({ open, documento, user, onClose, onSubmitted }
                         {...params}
                         sx={inputSx}
                         label="País de destino *"
+                        required
+                        fullWidth
+                        size="medium"
+                      />
+                    )}
+                  />
+                )}
+
+                {category === 'propias_cargo' && subtype !== 'salida_campus' && form.salida.alcance === 'Nacional' && (
+                  <>
+                    <Autocomplete
+                      options={Object.keys(DEPARTAMENTOS_MUNICIPIOS)}
+                      value={form.salida.departamento || null}
+                      onChange={(event, newValue) => {
+                        update('salida', 'departamento', newValue || '');
+                        update('salida', 'municipio', '');
+                      }}
+                      renderInput={(params) => (
+                        <TextField
+                          {...params}
+                          sx={inputSx}
+                          label="Departamento *"
+                          required
+                          fullWidth
+                          size="medium"
+                        />
+                      )}
+                    />
+                    <Autocomplete
+                      options={form.salida.departamento ? DEPARTAMENTOS_MUNICIPIOS[form.salida.departamento] : []}
+                      disabled={!form.salida.departamento}
+                      value={form.salida.municipio || null}
+                      onChange={(event, newValue) => {
+                        update('salida', 'municipio', newValue || '');
+                      }}
+                      renderInput={(params) => (
+                        <TextField
+                          {...params}
+                          sx={inputSx}
+                          label="Municipio *"
+                          required
+                          fullWidth
+                          size="medium"
+                        />
+                      )}
+                    />
+                  </>
+                )}
+
+                {category === 'propias_cargo' && subtype !== 'salida_campus' && form.salida.alcance === 'Regional' && (
+                  <Autocomplete
+                    options={DEPARTAMENTOS_MUNICIPIOS['Nariño']}
+                    value={form.salida.municipio || null}
+                    onChange={(event, newValue) => {
+                      update('salida', 'municipio', newValue || '');
+                      update('salida', 'departamento', 'Nariño');
+                    }}
+                    renderInput={(params) => (
+                      <TextField
+                        {...params}
+                        sx={inputSx}
+                        label="Municipio de Nariño *"
                         required
                         fullWidth
                         size="medium"

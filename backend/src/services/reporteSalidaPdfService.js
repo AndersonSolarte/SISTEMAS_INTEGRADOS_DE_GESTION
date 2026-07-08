@@ -366,6 +366,14 @@ const buildPdfBuffer = async (solicitud) => {
       const isSalidaMultiple = Boolean(data.isSalidaMultiple);
       const participantes = data.participantes || [];
       const alcance = salida.alcance || '';
+      let ubicacionStr = alcance;
+      if (alcance === 'Internacional' && salida.pais) {
+        ubicacionStr = `${alcance} (${salida.pais})`;
+      } else if (alcance === 'Nacional' && salida.departamento && salida.municipio) {
+        ubicacionStr = `${alcance} (${salida.municipio}, ${salida.departamento})`;
+      } else if (alcance === 'Regional' && salida.municipio) {
+        ubicacionStr = `${alcance} (${salida.municipio}, Nariño)`;
+      }
 
       let motivoStr = salida.motivo || getTipoSalidaLabel(salida.tipo);
       if (salida.tipo === 'salida_campus' && salida.campusSalida && salida.campusDestino) {
@@ -487,7 +495,7 @@ const buildPdfBuffer = async (solicitud) => {
                 ] : []),
                 [
                   { text: 'Alcance:', bold: true },
-                  { text: salida.pais ? `${alcance} (${salida.pais})` : alcance },
+                  { text: ubicacionStr },
                   { text: 'Categoría:', bold: true },
                   { text: getTipoSalidaLabel(salida.tipo) }
                 ],
@@ -628,7 +636,6 @@ const buildPdfBuffer = async (solicitud) => {
       const ghDate = solicitud.gestion_humana_aprobado_at ? formatDateTime(solicitud.gestion_humana_aprobado_at) : 'Pendiente';
 
       const isPropiasCargo = ['ponencia', 'visita_ies', 'capacitacion', 'proyecto_investigacion', 'asistente_congreso', 'practica_academica', 'torneo_deportivo', 'salida_campus', 'otra'].includes(salida.tipo) || String(salida.tipo).startsWith('otra:');
-      const alcance = salida.alcance || '';
       const requiresSst = isPropiasCargo && ['Nacional', 'Internacional'].includes(alcance);
 
       const sstEvent = Array.isArray(solicitud.trazabilidad)

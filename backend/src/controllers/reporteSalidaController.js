@@ -872,6 +872,21 @@ const validateRadicacionPayload = (payload, user) => {
     }
   }
 
+  const categoria = sanitizeText(salida.categoria || salida.category || '', 100);
+  if (categoria === 'propias_cargo' && salida.tipo !== 'salida_campus') {
+    if (!salida.alcance) return 'Debe seleccionar el alcance de la actividad.';
+    if (salida.alcance === 'Internacional' && !salida.pais) {
+      return 'Debe seleccionar el país de destino para salidas internacionales.';
+    }
+    if (salida.alcance === 'Nacional') {
+      if (!salida.departamento) return 'Debe seleccionar el departamento para salidas nacionales.';
+      if (!salida.municipio) return 'Debe seleccionar el municipio para salidas nacionales.';
+    }
+    if (salida.alcance === 'Regional' && !salida.municipio) {
+      return 'Debe seleccionar el municipio para salidas regionales.';
+    }
+  }
+
   if (!laboral.dependencia || !laboral.cargo) return 'Dependencia y cargo son obligatorios.';
   return null;
 };
@@ -1052,9 +1067,10 @@ const sendSSTApprovalEmail = async (solicitud, token, attachments) => {
   const approveUrl = `${publicBackendUrl.replace(/\/$/, '')}/api/reporte-salida/aprobar/${encodeURIComponent(token)}`;
   const rejectUrl = `${publicBackendUrl.replace(/\/$/, '')}/api/reporte-salida/rechazar/${encodeURIComponent(token)}`;
   const subject = `Re: REPORTE DE SALIDA ${solicitud.consecutivo} | Colaborador(a): ${solicitante.nombre || ''}`;
+  const alcance = solicitud.datos_formulario?.salida?.alcance || 'Nacional/Internacional';
   const html = renderInstitutionalTemplate({
     title: 'Aprobacion pendiente de SST',
-    introHtml: `<p>La solicitud misional (Nacional/Internacional) <strong>${escapeHtml(solicitud.consecutivo)}</strong> fue aprobada por Gestión del Talento Humano y requiere su aprobacion final.</p>`,
+    introHtml: `<p>La solicitud misional (${escapeHtml(alcance)}) <strong>${escapeHtml(solicitud.consecutivo)}</strong> fue aprobada por Gestión del Talento Humano y requiere su aprobacion final.</p>`,
     bodyHtml: `
       <p><strong>Colaborador(a):</strong> ${escapeHtml(solicitante.nombre)}</p>
       <p><strong>Tiempo solicitado:</strong> ${escapeHtml(formatMinutes(solicitud.tiempo_solicitado_minutos))}</p>
@@ -1748,7 +1764,10 @@ const radicarSolicitud = async (req, res) => {
               especialidadMedica: sanitizeText(salida.especialidadMedica, 100),
               terapiasList: salida.terapiasList || [],
               categoria: sanitizeText(salida.categoria || salida.category || '', 100),
-              alcance: sanitizeText(salida.alcance || '', 100)
+              alcance: sanitizeText(salida.alcance || '', 100),
+              pais: sanitizeText(salida.pais || '', 100),
+              departamento: sanitizeText(salida.departamento || '', 100),
+              municipio: sanitizeText(salida.municipio || '', 100)
             },
             reposicion: {
               fecha: '',
@@ -1875,7 +1894,10 @@ const radicarSolicitud = async (req, res) => {
           especialidadMedica: sanitizeText(salida.especialidadMedica, 100),
           terapiasList: salida.terapiasList || [],
           categoria: sanitizeText(salida.categoria || salida.category || '', 100),
-          alcance: sanitizeText(salida.alcance || '', 100)
+          alcance: sanitizeText(salida.alcance || '', 100),
+          pais: sanitizeText(salida.pais || '', 100),
+          departamento: sanitizeText(salida.departamento || '', 100),
+          municipio: sanitizeText(salida.municipio || '', 100)
         },
         reposicion: {
           fecha: sanitizeText(reposicion.fecha, 20),
