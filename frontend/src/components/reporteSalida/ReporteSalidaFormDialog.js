@@ -1474,6 +1474,168 @@ function ReporteSalidaFormDialog({ open, documento, user, onClose, onSubmitted }
               </Box>
 
               {/* Subtype Dropdown & Conditional Custom Description */}
+              {category === 'propias_cargo' && subtype !== 'salida_campus' ? (
+                <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.5, mb: 1.8 }}>
+                  {/* ROW 1: Opción, Alcance, Geo sub-field */}
+                  <Box sx={{
+                    display: 'grid',
+                    gridTemplateColumns: { xs: '1fr', md: '1.2fr 1fr 1.8fr' },
+                    gap: 1.5
+                  }}>
+                    {/* Opción / Motivo */}
+                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                      <TextField
+                        sx={{ ...inputSx, '& .MuiSelect-select': { whiteSpace: 'normal !important' } }}
+                        select
+                        fullWidth
+                        size="medium"
+                        label="Opción / Motivo de la salida"
+                        value={subtype}
+                        onChange={(e) => handleSubtypeChange(e.target.value)}
+                      >
+                        {CARGO_SUBTYPES.reduce((acc, opt, index, arr) => {
+                          if (opt.group) {
+                            const prevGroup = index > 0 ? arr[index - 1].group : null;
+                            if (opt.group !== prevGroup) {
+                              acc.push(
+                                <ListSubheader key={`group-${opt.group}`} sx={{ fontWeight: 800, bgcolor: '#f8fafc', color: '#334155', lineHeight: '36px' }}>
+                                  {opt.group}
+                                </ListSubheader>
+                              );
+                            }
+                          }
+                          acc.push(
+                            <MenuItem key={opt.value} value={opt.value} sx={{ whiteSpace: 'normal', pl: opt.group ? 3 : 2 }}>
+                              {opt.label}
+                            </MenuItem>
+                          );
+                          return acc;
+                        }, [])}
+                      </TextField>
+                    </Box>
+
+                    {/* Alcance de la actividad */}
+                    <TextField
+                      sx={inputSx}
+                      select
+                      fullWidth
+                      required
+                      size="medium"
+                      label="Alcance de la actividad"
+                      value={form.salida.alcance || ''}
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        update('salida', 'alcance', val);
+                        if (val !== 'Internacional') update('salida', 'pais', '');
+                        if (val !== 'Nacional') update('salida', 'departamento', '');
+                        if (val !== 'Nacional' && val !== 'Regional') update('salida', 'municipio', '');
+                        if (val === 'Regional') update('salida', 'departamento', 'Nariño');
+                      }}
+                    >
+                      {ALCANCE_OPTIONS.map((opt) => (
+                        <MenuItem key={opt} value={opt}>{opt}</MenuItem>
+                      ))}
+                    </TextField>
+
+                    {/* Geo sub-field (col 3): changes based on alcance */}
+                    {form.salida.alcance === 'Internacional' && (
+                      <Autocomplete
+                        sx={inputSx}
+                        options={PAISES_OPTIONS}
+                        value={form.salida.pais || null}
+                        onChange={(event, newValue) => update('salida', 'pais', newValue || '')}
+                        renderInput={(params) => (
+                          <TextField {...params} sx={inputSx} label="País de destino *" required fullWidth size="medium" />
+                        )}
+                      />
+                    )}
+
+                    {form.salida.alcance === 'Nacional' && (
+                      <Box sx={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 1.5 }}>
+                        <Autocomplete
+                          options={Object.keys(DEPARTAMENTOS_MUNICIPIOS).filter(d => d !== 'Nariño')}
+                          value={form.salida.departamento || null}
+                          onChange={(event, newValue) => {
+                            update('salida', 'departamento', newValue || '');
+                            update('salida', 'municipio', '');
+                          }}
+                          renderInput={(params) => (
+                            <TextField {...params} sx={inputSx} label="Departamento *" required fullWidth size="medium" />
+                          )}
+                        />
+                        <Autocomplete
+                          options={
+                            form.salida.departamento
+                              ? TODAS_MUNICIPIOS_COMPLETOS.filter(item => item.departamento === form.salida.departamento)
+                              : TODAS_MUNICIPIOS_COMPLETOS.filter(item => item.departamento !== 'Nariño')
+                          }
+                          getOptionLabel={(option) => typeof option === 'string' ? option : (form.salida.departamento ? option.municipio : option.label)}
+                          value={
+                            form.salida.municipio
+                              ? (TODAS_MUNICIPIOS_COMPLETOS.find(item => item.municipio === form.salida.municipio && item.departamento === (form.salida.departamento || item.departamento)) || null)
+                              : null
+                          }
+                          onChange={(event, newValue) => {
+                            if (newValue) {
+                              update('salida', 'departamento', newValue.departamento);
+                              update('salida', 'municipio', newValue.municipio);
+                            } else {
+                              update('salida', 'municipio', '');
+                            }
+                          }}
+                          renderInput={(params) => (
+                            <TextField {...params} sx={inputSx} label="Municipio *" required fullWidth size="medium" />
+                          )}
+                        />
+                      </Box>
+                    )}
+
+                    {form.salida.alcance === 'Regional' && (
+                      <Autocomplete
+                        sx={inputSx}
+                        options={DEPARTAMENTOS_MUNICIPIOS['Nariño']}
+                        value={form.salida.municipio || null}
+                        onChange={(event, newValue) => {
+                          update('salida', 'municipio', newValue || '');
+                          update('salida', 'departamento', 'Nariño');
+                        }}
+                        renderInput={(params) => (
+                          <TextField {...params} sx={inputSx} label="Municipio de Nariño *" required fullWidth size="medium" />
+                        )}
+                      />
+                    )}
+
+                    {/* Placeholder when no alcance selected to maintain grid height */}
+                    {!form.salida.alcance && <Box />}
+                  </Box>
+
+                  {/* ROW 2: Entidad de destino — full width */}
+                  <TextField
+                    sx={inputSx}
+                    fullWidth
+                    required
+                    size="medium"
+                    label="Entidad de destino *"
+                    placeholder="Escriba el nombre de la entidad o institución de destino"
+                    value={form.salida.entidadDestino || ''}
+                    onChange={(e) => update('salida', 'entidadDestino', e.target.value)}
+                  />
+
+                  {/* Especifique motivo si es 'otra' */}
+                  {subtype === 'otra' && (
+                    <TextField
+                      sx={inputSx}
+                      fullWidth
+                      required
+                      size="medium"
+                      label="Especifique el motivo (¿Cuál?)"
+                      placeholder="Ej: Visita técnica a laboratorios"
+                      value={otraDescripcion}
+                      onChange={(e) => handleOtraDescripcionChange(e.target.value)}
+                    />
+                  )}
+                </Box>
+              ) : (
               <Box sx={{
                 display: 'grid',
                 gridTemplateColumns: {
@@ -1534,148 +1696,6 @@ function ReporteSalidaFormDialog({ open, documento, user, onClose, onSubmitted }
                   )}
                 </Box>
 
-                {category === 'propias_cargo' && subtype !== 'salida_campus' && (
-                  <TextField
-                    sx={inputSx}
-                    select
-                    fullWidth
-                    required
-                    size="medium"
-                    label="Alcance de la actividad"
-                    value={form.salida.alcance || ''}
-                    onChange={(e) => {
-                      const val = e.target.value;
-                      update('salida', 'alcance', val);
-                      if (val !== 'Internacional') {
-                        update('salida', 'pais', '');
-                      }
-                      if (val !== 'Nacional') {
-                        update('salida', 'departamento', '');
-                      }
-                      if (val !== 'Nacional' && val !== 'Regional') {
-                        update('salida', 'municipio', '');
-                      }
-                      if (val === 'Regional') {
-                        update('salida', 'departamento', 'Nariño');
-                      }
-                    }}
-                  >
-                    {ALCANCE_OPTIONS.map((opt) => (
-                      <MenuItem key={opt} value={opt}>{opt}</MenuItem>
-                    ))}
-                  </TextField>
-                )}
-
-                {category === 'propias_cargo' && subtype !== 'salida_campus' && (
-                  <TextField
-                    sx={inputSx}
-                    fullWidth
-                    required
-                    size="medium"
-                    label="Entidad de destino"
-                    placeholder="Escriba la entidad o institución de destino"
-                    value={form.salida.entidadDestino || ''}
-                    onChange={(e) => update('salida', 'entidadDestino', e.target.value)}
-                  />
-                )}
-
-                {category === 'propias_cargo' && subtype !== 'salida_campus' && form.salida.alcance === 'Internacional' && (
-                  <Autocomplete
-                    sx={{ ...inputSx, gridColumn: { xs: '1', md: 'span 2' } }}
-                    options={PAISES_OPTIONS}
-                    value={form.salida.pais || null}
-                    onChange={(event, newValue) => {
-                      update('salida', 'pais', newValue || '');
-                    }}
-                    renderInput={(params) => (
-                      <TextField
-                        {...params}
-                        sx={inputSx}
-                        label="País de destino *"
-                        required
-                        fullWidth
-                        size="medium"
-                      />
-                    )}
-                  />
-                )}
-
-                {category === 'propias_cargo' && subtype !== 'salida_campus' && form.salida.alcance === 'Nacional' && (
-                  <>
-                    <Autocomplete
-                      options={Object.keys(DEPARTAMENTOS_MUNICIPIOS).filter(depto => depto !== 'Nariño')}
-                      value={form.salida.departamento || null}
-                      onChange={(event, newValue) => {
-                        update('salida', 'departamento', newValue || '');
-                        update('salida', 'municipio', '');
-                      }}
-                      renderInput={(params) => (
-                        <TextField
-                          {...params}
-                          sx={inputSx}
-                          label="Departamento *"
-                          required
-                          fullWidth
-                          size="medium"
-                        />
-                      )}
-                    />
-                    <Autocomplete
-                      options={
-                        form.salida.departamento
-                          ? TODAS_MUNICIPIOS_COMPLETOS.filter(item => item.departamento === form.salida.departamento)
-                          : TODAS_MUNICIPIOS_COMPLETOS.filter(item => item.departamento !== 'Nariño')
-                      }
-                      getOptionLabel={(option) => typeof option === 'string' ? option : (form.salida.departamento ? option.municipio : option.label)}
-                      value={
-                        form.salida.municipio
-                          ? (TODAS_MUNICIPIOS_COMPLETOS.find(item => item.municipio === form.salida.municipio && item.departamento === (form.salida.departamento || item.departamento)) || null)
-                          : null
-                      }
-                      onChange={(event, newValue) => {
-                        if (newValue) {
-                          update('salida', 'departamento', newValue.departamento);
-                          update('salida', 'municipio', newValue.municipio);
-                        } else {
-                          update('salida', 'municipio', '');
-                        }
-                      }}
-                      renderInput={(params) => (
-                        <TextField
-                          {...params}
-                          sx={inputSx}
-                          label="Municipio *"
-                          required
-                          fullWidth
-                          size="medium"
-                        />
-                      )}
-                    />
-                  </>
-                )}
-
-                {category === 'propias_cargo' && subtype !== 'salida_campus' && form.salida.alcance === 'Regional' && (
-                  <Autocomplete
-                    sx={{ ...inputSx, gridColumn: { xs: '1', md: 'span 2' } }}
-                    options={DEPARTAMENTOS_MUNICIPIOS['Nariño']}
-                    value={form.salida.municipio || null}
-                    onChange={(event, newValue) => {
-                      update('salida', 'municipio', newValue || '');
-                      update('salida', 'departamento', 'Nariño');
-                    }}
-                    renderInput={(params) => (
-                      <TextField
-                        {...params}
-                        sx={inputSx}
-                        label="Municipio de Nariño *"
-                        required
-                        fullWidth
-                        size="medium"
-                      />
-                    )}
-                  />
-                )}
-
                 {['cita_eps', 'cita_particular'].includes(subtype) && (
                   <TextField
                     sx={inputSx}
@@ -1705,6 +1725,8 @@ function ReporteSalidaFormDialog({ open, documento, user, onClose, onSubmitted }
                     onChange={(e) => handleOtraDescripcionChange(e.target.value)}
                   />
                 )}
+
+
 
                 {subtype === 'salida_campus' && (() => {
                   const hasCampusError = form.salida.campusSalida && form.salida.campusDestino && form.salida.campusSalida === form.salida.campusDestino;
@@ -1772,6 +1794,7 @@ function ReporteSalidaFormDialog({ open, documento, user, onClose, onSubmitted }
                   />
                 )}
               </Box>
+              )}
 
               {subtype === 'terapias' && form.salida.terapiasList?.length > 0 && (
                 <Box sx={{ mb: 2, display: 'flex', flexDirection: 'column', gap: 1 }}>
