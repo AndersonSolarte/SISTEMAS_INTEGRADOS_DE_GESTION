@@ -98,7 +98,7 @@ const PAISES_OPTIONS = [
   'Armenia', 'Australia', 'Austria', 'Azerbaiyán', 'Bahamas', 'Bangladés', 'Barbados', 'Baréin', 'Bélgica',
   'Belice', 'Benín', 'Bielorrusia', 'Birmania', 'Bolivia', 'Bosnia y Herzegovina', 'Botsuana', 'Brasil',
   'Brunéi', 'Bulgaria', 'Burkina Faso', 'Burundi', 'Bután', 'Cabo Verde', 'Camboya', 'Camerún', 'Canadá',
-  'Catar', 'Chad', 'Chile', 'China', 'Chipre', 'Ciudad del Vaticano', 'Colombia', 'Comoras', 'Corea del Norte',
+  'Catar', 'Chad', 'Chile', 'China', 'Chipre', 'Ciudad del Vaticano', 'Comoras', 'Corea del Norte',
   'Corea del Sur', 'Costa de Marfil', 'Costa Rica', 'Croacia', 'Cuba', 'Dinamarca', 'Dominica', 'Ecuador',
   'Egipto', 'El Salvador', 'Emiratos Árabes Unidos', 'Eritrea', 'Eslovaquia', 'Eslovenia', 'España',
   'Estados Unidos', 'Estonia', 'Etiopía', 'Filipinas', 'Finlandia', 'Fiyi', 'Francia', 'Gabón', 'Gambia',
@@ -1053,7 +1053,28 @@ function ReporteSalidaFormDialog({ open, documento, user, onClose, onSubmitted }
             </Stack>
           </Stack>
         </DialogTitle>
-        <DialogContent dividers sx={{ bgcolor: '#f6f8fb', p: { xs: 2, md: 3 } }}>
+        <DialogContent
+          dividers
+          sx={{
+            bgcolor: '#f6f8fb',
+            p: { xs: 2, md: 3 },
+            '&::-webkit-scrollbar': {
+              width: '10px',
+              height: '10px'
+            },
+            '&::-webkit-scrollbar-track': {
+              bgcolor: '#f1f5f9'
+            },
+            '&::-webkit-scrollbar-thumb': {
+              bgcolor: '#cbd5e1',
+              borderRadius: '99px',
+              border: '2px solid #f6f8fb',
+              '&:hover': {
+                bgcolor: '#94a3b8'
+              }
+            }
+          }}
+        >
           <Stack spacing={2}>
             {/* New Toggle Group / Individual */}
             <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', md: '1fr 1fr' }, gap: 1.5, mb: 2 }}>
