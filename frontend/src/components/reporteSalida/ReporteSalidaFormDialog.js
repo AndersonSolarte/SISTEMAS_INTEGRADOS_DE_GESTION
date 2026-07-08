@@ -120,6 +120,16 @@ const PAISES_OPTIONS = [
   'Zambia', 'Zimbabue'
 ];
 
+const TIME_OPTIONS = (() => {
+  const options = [];
+  for (let h = 6; h <= 21; h++) {
+    const hStr = h.toString().padStart(2, '0');
+    options.push(`${hStr}:00`);
+    options.push(`${hStr}:30`);
+  }
+  return options;
+})();
+
 const DEPARTAMENTOS_MUNICIPIOS = {
   'Amazonas': ['Leticia', 'El Encanto', 'La Chorrera', 'La Pedrera', 'La Victoria', 'Miriití-Paraná', 'Puerto Alegría', 'Puerto Arica', 'Puerto Nariño', 'Puerto Santander', 'Tarapacá'],
   'Antioquia': ['Medellín', 'Bello', 'Itagüí', 'Envigado', 'Rionegro', 'Apartadó', 'Turbo', 'Caucasia', 'Chigorodó', 'Sabaneta', 'Caldas', 'Copacabana', 'La Estrella', 'Girardota', 'Marinilla', 'Guarne', 'El Carmen de Viboral', 'La Ceja', 'Santa Fe de Antioquia', 'Yarumal'],
@@ -762,8 +772,10 @@ function ReporteSalidaFormDialog({ open, documento, user, onClose, onSubmitted }
       }
     }
 
-    if (!form.salida.motivo || !form.salida.motivo.trim()) {
-      issues.push('El campo Motivo / observación es obligatorio.');
+    if (subtype !== 'diligencia_personal') {
+      if (!form.salida.motivo || !form.salida.motivo.trim()) {
+        issues.push('El campo Motivo / observación es obligatorio.');
+      }
     }
 
     if (subtype === 'terapias') {
@@ -1756,8 +1768,70 @@ function ReporteSalidaFormDialog({ open, documento, user, onClose, onSubmitted }
                         </Typography>
                         <Box sx={responsiveFieldGrid(category === 'personales' ? 'minmax(160px, 1fr) minmax(140px, 1fr) minmax(140px, 1fr) minmax(100px, 0.5fr)' : 'minmax(160px, 1fr) minmax(140px, 1fr) minmax(140px, 1fr)')}>
                           <TextField sx={inputSx} fullWidth size="small" required type="date" label="Fecha" InputLabelProps={{ shrink: true }} inputProps={{ min: todayString }} value={terapia.fecha} onChange={(e) => { const n = [...form.salida.terapiasList]; n[idx].fecha = e.target.value; update('salida', 'terapiasList', n); }} />
-                          <TextField sx={inputSx} fullWidth size="small" required type="time" label="Hora inicio" InputLabelProps={{ shrink: true }} error={isPastTimeError(terapia.fecha, terapia.horaInicio)} value={terapia.horaInicio} onChange={(e) => { const n = [...form.salida.terapiasList]; n[idx].horaInicio = e.target.value; update('salida', 'terapiasList', n); }} />
-                          <TextField sx={inputSx} fullWidth size="small" required type="time" label="Hora fin" InputLabelProps={{ shrink: true }} error={isPastTimeError(terapia.fecha, terapia.horaFin)} value={terapia.horaFin} onChange={(e) => { const n = [...form.salida.terapiasList]; n[idx].horaFin = e.target.value; update('salida', 'terapiasList', n); }} />
+                          <Autocomplete
+                            freeSolo
+                            disableClearable
+                            options={TIME_OPTIONS}
+                            value={terapia.horaInicio || ''}
+                            onChange={(e, newValue) => {
+                              const n = [...form.salida.terapiasList];
+                              n[idx].horaInicio = newValue;
+                              update('salida', 'terapiasList', n);
+                            }}
+                            onInputChange={(e, newValue) => {
+                              const n = [...form.salida.terapiasList];
+                              n[idx].horaInicio = handleTimeChange(newValue);
+                              update('salida', 'terapiasList', n);
+                            }}
+                            renderInput={(params) => (
+                              <TextField
+                                {...params}
+                                sx={inputSx}
+                                required
+                                label="Hora inicio"
+                                placeholder="ej. 08:00"
+                                InputLabelProps={{ shrink: true }}
+                                error={isPastTimeError(terapia.fecha, terapia.horaInicio)}
+                                onBlur={(e) => {
+                                  const n = [...form.salida.terapiasList];
+                                  n[idx].horaInicio = formatTimeOnBlur(e.target.value);
+                                  update('salida', 'terapiasList', n);
+                                }}
+                              />
+                            )}
+                          />
+                          <Autocomplete
+                            freeSolo
+                            disableClearable
+                            options={TIME_OPTIONS}
+                            value={terapia.horaFin || ''}
+                            onChange={(e, newValue) => {
+                              const n = [...form.salida.terapiasList];
+                              n[idx].horaFin = newValue;
+                              update('salida', 'terapiasList', n);
+                            }}
+                            onInputChange={(e, newValue) => {
+                              const n = [...form.salida.terapiasList];
+                              n[idx].horaFin = handleTimeChange(newValue);
+                              update('salida', 'terapiasList', n);
+                            }}
+                            renderInput={(params) => (
+                              <TextField
+                                {...params}
+                                sx={inputSx}
+                                required
+                                label="Hora fin"
+                                placeholder="ej. 10:00"
+                                InputLabelProps={{ shrink: true }}
+                                error={isPastTimeError(terapia.fecha, terapia.horaFin)}
+                                onBlur={(e) => {
+                                  const n = [...form.salida.terapiasList];
+                                  n[idx].horaFin = formatTimeOnBlur(e.target.value);
+                                  update('salida', 'terapiasList', n);
+                                }}
+                              />
+                            )}
+                          />
                           {category === 'personales' && (
                             <Box sx={{ minHeight: 40, px: 1.5, borderRadius: 1.5, bgcolor: tMins ? '#ecfdf5' : '#fff7ed', border: `1px solid ${tMins ? '#bbf7d0' : '#fed7aa'}`, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                               <Typography sx={{ color: tMins ? '#166534' : '#c2410c', fontSize: 12, fontWeight: 800 }}>
@@ -1799,9 +1873,47 @@ function ReporteSalidaFormDialog({ open, documento, user, onClose, onSubmitted }
               {subtype !== 'terapias' && (
                 <Box sx={responsiveFieldGrid(category === 'personales' ? 'minmax(160px, 1fr) minmax(140px, 0.8fr) minmax(160px, 1fr) minmax(140px, 0.8fr) minmax(165px, 0.9fr)' : 'minmax(160px, 1fr) minmax(140px, 0.8fr) minmax(160px, 1fr) minmax(140px, 0.8fr)')}>
                   <TextField sx={inputSx} fullWidth size="small" required type="date" label="Fecha salida" InputLabelProps={{ shrink: true }} inputProps={{ min: todayString }} value={form.salida.fecha} onChange={(e) => update('salida', 'fecha', e.target.value)} />
-                  <TextField sx={inputSx} fullWidth size="small" required type="time" label="Hora salida" InputLabelProps={{ shrink: true }} error={isPastTimeError(form.salida.fecha, form.salida.horaInicio)} value={form.salida.horaInicio} onChange={(e) => update('salida', 'horaInicio', e.target.value)} />
+                  <Autocomplete
+                    freeSolo
+                    disableClearable
+                    options={TIME_OPTIONS}
+                    value={form.salida.horaInicio || ''}
+                    onChange={(e, newValue) => update('salida', 'horaInicio', newValue)}
+                    onInputChange={(e, newValue) => update('salida', 'horaInicio', handleTimeChange(newValue))}
+                    renderInput={(params) => (
+                      <TextField
+                        {...params}
+                        sx={inputSx}
+                        required
+                        label="Hora salida"
+                        placeholder="ej. 13:45"
+                        InputLabelProps={{ shrink: true }}
+                        error={isPastTimeError(form.salida.fecha, form.salida.horaInicio)}
+                        onBlur={(e) => update('salida', 'horaInicio', formatTimeOnBlur(e.target.value))}
+                      />
+                    )}
+                  />
                   <TextField sx={inputSx} fullWidth size="small" required type="date" label="Fecha regreso" InputLabelProps={{ shrink: true }} inputProps={{ min: todayString }} value={form.salida.fechaRegreso} onChange={(e) => update('salida', 'fechaRegreso', e.target.value)} />
-                  <TextField sx={inputSx} fullWidth size="small" required type="time" label="Hora regreso" InputLabelProps={{ shrink: true }} error={isPastTimeError(form.salida.fechaRegreso, form.salida.horaFin)} value={form.salida.horaFin} onChange={(e) => update('salida', 'horaFin', e.target.value)} />
+                  <Autocomplete
+                    freeSolo
+                    disableClearable
+                    options={TIME_OPTIONS}
+                    value={form.salida.horaFin || ''}
+                    onChange={(e, newValue) => update('salida', 'horaFin', newValue)}
+                    onInputChange={(e, newValue) => update('salida', 'horaFin', handleTimeChange(newValue))}
+                    renderInput={(params) => (
+                      <TextField
+                        {...params}
+                        sx={inputSx}
+                        required
+                        label="Hora regreso"
+                        placeholder="ej. 18:30"
+                        InputLabelProps={{ shrink: true }}
+                        error={isPastTimeError(form.salida.fechaRegreso, form.salida.horaFin)}
+                        onBlur={(e) => update('salida', 'horaFin', formatTimeOnBlur(e.target.value))}
+                      />
+                    )}
+                  />
                   {category === 'personales' && (
                     <TextField sx={inputSx} fullWidth size="small" required type="number" label="Tiempo a reponer (horas)" InputLabelProps={{ shrink: true }} inputProps={{ min: 0, step: 1 }} value={form.salida.tiempoReponerHoras || ''} onChange={(e) => update('salida', 'tiempoReponerHoras', e.target.value.replace(/[^0-9]/g, ''))} />
                   )}
@@ -1884,7 +1996,11 @@ function ReporteSalidaFormDialog({ open, documento, user, onClose, onSubmitted }
                   size="small"
                   multiline
                   minRows={2}
-                  label={form.salida.tipo === 'terapias' ? 'Diagnóstico de las terapias *' : 'Motivo / observación *'}
+                  label={
+                    subtype === 'terapias'
+                      ? 'Diagnóstico de las terapias *'
+                      : (subtype === 'diligencia_personal' ? 'Motivo / observación' : 'Motivo / observación *')
+                  }
                   placeholder="Por favor describa de manera clara y detallada el motivo de su solicitud..."
                   value={form.salida.motivo}
                   onChange={(e) => update('salida', 'motivo', e.target.value)}
