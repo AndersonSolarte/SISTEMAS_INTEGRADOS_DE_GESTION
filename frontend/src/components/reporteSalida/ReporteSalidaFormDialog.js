@@ -40,7 +40,7 @@ import reporteSalidaService from '../../services/reporteSalidaService';
 const INITIAL_FORM = {
   personal: { nombre: '', documento: '', correo: '' },
   laboral: { dependencia: '', cargo: '' },
-  salida: { tipo: 'cita_eps', alcance: '', pais: '', departamento: '', municipio: '', especialidadMedica: '', terapiasList: [], fecha: '', fechaRegreso: '', horaInicio: '', horaFin: '', motivo: '', campusSalida: '', campusDestino: '', tiempoReponerHoras: '' },
+  salida: { tipo: 'cita_eps', alcance: '', pais: '', departamento: '', municipio: '', especialidadMedica: '', terapiasList: [], fecha: '', fechaRegreso: '', horaInicio: '', horaFin: '', motivo: '', campusSalida: '', campusDestino: '', tiempoReponerHoras: '', entidadDestino: '' },
   reposicion: { fecha: '', fechaFin: '', horaInicio: '', horaFin: '', observacion: '' }
 };
 
@@ -87,7 +87,6 @@ const ESPECIALIDADES_MEDICAS = [
 ];
 
 const ALCANCE_OPTIONS = [
-  'Institucional',
   'Regional',
   'Nacional',
   'Internacional'
@@ -756,6 +755,9 @@ function ReporteSalidaFormDialog({ open, documento, user, onClose, onSubmitted }
     }
 
     if (category === 'propias_cargo' && subtype !== 'salida_campus') {
+      if (!form.salida.entidadDestino || !form.salida.entidadDestino.trim()) {
+        issues.push('Debe especificar la entidad de destino.');
+      }
       if (!form.salida.alcance) {
         issues.push('Seleccione el alcance de la actividad.');
       } else if (form.salida.alcance === 'Internacional' && !form.salida.pais) {
@@ -848,7 +850,8 @@ function ReporteSalidaFormDialog({ open, documento, user, onClose, onSubmitted }
     salidaRangeIssue,
     adjuntoFile,
     form.salida.motivo,
-    form.salida.tiempoReponerHoras
+    form.salida.tiempoReponerHoras,
+    form.salida.entidadDestino
   ]);
 
   const selectedDependenciaIsCatalog = hasExactOption(form.laboral.dependencia, dependencias);
@@ -1475,10 +1478,10 @@ function ReporteSalidaFormDialog({ open, documento, user, onClose, onSubmitted }
                 display: 'grid',
                 gridTemplateColumns: {
                   xs: '1fr',
-                  md: subtype === 'salida_campus' ? (category === 'propias_cargo' ? '1fr 1fr 1fr 1fr' : '1fr 1fr 1fr') :
-                    subtype === 'otra' ? (category === 'propias_cargo' ? '1fr 1fr 2fr' : '1fr 2fr') :
+                  md: subtype === 'salida_campus' ? '1fr 1fr 1fr 1fr' :
+                    subtype === 'otra' ? (category === 'propias_cargo' ? '1.2fr 1.5fr 1fr 1.5fr' : '1fr 2fr') :
                       ['cita_eps', 'cita_particular'].includes(subtype) ? '1fr 1fr' :
-                        category === 'propias_cargo' ? '1fr 1fr' : '1fr'
+                        category === 'propias_cargo' ? '1.2fr 1fr 1.8fr' : '1fr'
                 },
                 gap: 1.5,
                 mb: 1.8
@@ -1561,6 +1564,19 @@ function ReporteSalidaFormDialog({ open, documento, user, onClose, onSubmitted }
                       <MenuItem key={opt} value={opt}>{opt}</MenuItem>
                     ))}
                   </TextField>
+                )}
+
+                {category === 'propias_cargo' && subtype !== 'salida_campus' && (
+                  <TextField
+                    sx={inputSx}
+                    fullWidth
+                    required
+                    size="medium"
+                    label="Entidad de destino"
+                    placeholder="Escriba la entidad o institución de destino"
+                    value={form.salida.entidadDestino || ''}
+                    onChange={(e) => update('salida', 'entidadDestino', e.target.value)}
+                  />
                 )}
 
                 {category === 'propias_cargo' && subtype !== 'salida_campus' && form.salida.alcance === 'Internacional' && (
