@@ -161,6 +161,13 @@ const DEPARTAMENTOS_MUNICIPIOS = {
   'Vichada': ['Puerto Carreño', 'La Primavera', 'Santa Rosalía', 'Cumaribo']
 };
 
+const TODAS_MUNICIPIOS_COMPLETOS = Object.entries(DEPARTAMENTOS_MUNICIPIOS).reduce((acc, [depto, munis]) => {
+  munis.forEach(muni => {
+    acc.push({ municipio: muni, departamento: depto, label: `${muni} (${depto})` });
+  });
+  return acc;
+}, []);
+
 const WORK_BLOCKS = [
   { start: '07:00', end: '12:00' },
   { start: '14:00', end: '18:00' }
@@ -1550,11 +1557,24 @@ function ReporteSalidaFormDialog({ open, documento, user, onClose, onSubmitted }
                       )}
                     />
                     <Autocomplete
-                      options={form.salida.departamento ? DEPARTAMENTOS_MUNICIPIOS[form.salida.departamento] : []}
-                      disabled={!form.salida.departamento}
-                      value={form.salida.municipio || null}
+                      options={
+                        form.salida.departamento
+                          ? TODAS_MUNICIPIOS_COMPLETOS.filter(item => item.departamento === form.salida.departamento)
+                          : TODAS_MUNICIPIOS_COMPLETOS
+                      }
+                      getOptionLabel={(option) => typeof option === 'string' ? option : option.label}
+                      value={
+                        form.salida.municipio
+                          ? (TODAS_MUNICIPIOS_COMPLETOS.find(item => item.municipio === form.salida.municipio && item.departamento === (form.salida.departamento || item.departamento)) || null)
+                          : null
+                      }
                       onChange={(event, newValue) => {
-                        update('salida', 'municipio', newValue || '');
+                        if (newValue) {
+                          update('salida', 'departamento', newValue.departamento);
+                          update('salida', 'municipio', newValue.municipio);
+                        } else {
+                          update('salida', 'municipio', '');
+                        }
                       }}
                       renderInput={(params) => (
                         <TextField
