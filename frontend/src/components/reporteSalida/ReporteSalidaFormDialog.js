@@ -1902,7 +1902,9 @@ function ReporteSalidaFormDialog({ open, documento, user, onClose, onSubmitted }
             </Box>
 
             {category === 'personales' && (
-              <Alert severity={salidaMinutes ? 'success' : 'warning'}>Tiempo solicitado: {formatMinutes(salidaMinutes)}</Alert>
+              <Alert severity={form.salida.tiempoReponerHoras ? 'success' : 'warning'}>
+                Tiempo solicitado: {parseInt(form.salida.tiempoReponerHoras || 0, 10)}h 00m
+              </Alert>
             )}
             {salidaRangeIssue && <Alert severity="warning">{salidaRangeIssue}</Alert>}
 
