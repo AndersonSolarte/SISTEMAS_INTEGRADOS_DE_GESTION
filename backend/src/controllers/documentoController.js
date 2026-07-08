@@ -774,7 +774,7 @@ const descargarDocumentoDirecto = async (req, res) => {
       } else if (fKind === 'google-sheet') {
         return `https://docs.google.com/spreadsheets/d/${fId}/export?format=xlsx`;
       } else if (fKind === 'google-slide') {
-        return `https://docs.google.com/presentation/d/${fId}/export?format=pdf`;
+        return `https://docs.google.com/presentation/d/${fId}/export?format=pptx`;
       } else {
         return `https://drive.google.com/uc?id=${fId}&export=download`;
       }
@@ -824,8 +824,8 @@ const descargarDocumentoDirecto = async (req, res) => {
           { responseType: 'stream' }
         );
       } else if (kind === 'google-slide') {
-        filename = `${cleanTitle}.pdf`;
-        contentType = 'application/pdf';
+        filename = `${cleanTitle}.pptx`;
+        contentType = 'application/vnd.openxmlformats-officedocument.presentationml.presentation';
         streamResponse = await drive.files.export(
           {
             fileId: fileId,

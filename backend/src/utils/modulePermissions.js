@@ -194,7 +194,7 @@ const getDefaultPermissionsByRole = (role) => {
       allowedSaberProDashboards: [],
       allowedRecursoHumanoDashboards: [],
       allowedInfraestructuraFisicaDashboards: [],
-      allowedPlanAccionDashboards: [],
+      allowedPlanAccionDashboards: ['plan_accion_estadistica', 'plan_accion_gestion'],
       allowedInternacionalizacionDashboards: []
     };
   }
@@ -363,6 +363,9 @@ const getUserModulePermissions = async (userId, role) => {
     const restrictedAllowedModules = role === ROLES.AUTOEVALUACION
       ? allowedModules.filter((key) => key === 'autoevaluacion.instrumentos.access')
       : [];
+    const restrictedAllowedPlanAccion = role === ROLES.PLANEACION_EFECTIVIDAD
+      ? ['plan_accion_estadistica', 'plan_accion_gestion']
+      : [];
     return {
       menuPermissions: restrictedMenu,
       allowedModules: restrictedAllowedModules,
@@ -371,7 +374,7 @@ const getUserModulePermissions = async (userId, role) => {
       allowedSaberProDashboards: [],
       allowedRecursoHumanoDashboards: [],
       allowedInfraestructuraFisicaDashboards: [],
-      allowedPlanAccionDashboards: [],
+      allowedPlanAccionDashboards: restrictedAllowedPlanAccion,
       allowedInternacionalizacionDashboards: []
     };
   }

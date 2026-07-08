@@ -614,12 +614,12 @@ function MetricCard({ label, value, icon, color, gradient, shadow, suffix = '' }
   );
 }
 
-function HeroBanner() {
+function HeroBanner({ compact, onBack }) {
   return (
     <Paper
       elevation={0}
       sx={{
-        p: { xs: 2.6, md: 3.2 },
+        p: compact ? { xs: 1.8, md: 2.2 } : { xs: 2.6, md: 3.2 },
         borderRadius: 4,
         background: 'linear-gradient(90deg,#1d4ed8 0%,#4f7df0 52%,#f05261 100%)',
         color: 'white',
@@ -654,44 +654,81 @@ function HeroBanner() {
 
       <Stack
         direction={{ xs: 'column', lg: 'row' }}
-        spacing={2.4}
+        spacing={compact ? 1.6 : 2.4}
         justifyContent="space-between"
         alignItems={{ xs: 'flex-start', lg: 'center' }}
         sx={{ position: 'relative', zIndex: 1 }}
       >
         <Box sx={{ maxWidth: 840 }}>
-          <Box
-            sx={{
-              display: 'inline-flex',
-              alignItems: 'center',
-              gap: 0.9,
-              px: 1.2,
-              py: 0.65,
-              borderRadius: 999,
-              mb: 1.5,
-              bgcolor: 'rgba(15,23,42,.18)',
-              border: '1px solid rgba(255,255,255,.18)'
-            }}
-          >
-            <ShowChartIcon sx={{ fontSize: 16 }} />
-            <Typography sx={{ fontSize: 12, fontWeight: 800, letterSpacing: 0.6, textTransform: 'uppercase' }}>
-              {'Planeaci\u00f3n y Efectividad'}
-            </Typography>
-          </Box>
+          {compact && onBack ? (
+            <Button
+              size="small"
+              variant="outlined"
+              startIcon={<ArrowBackIcon sx={{ fontSize: 14 }} />}
+              onClick={onBack}
+              sx={{
+                color: 'white',
+                borderColor: 'rgba(255,255,255,.3)',
+                background: 'rgba(255,255,255,.08)',
+                textTransform: 'none',
+                fontWeight: 700,
+                fontSize: 11.5,
+                borderRadius: 2,
+                mb: 1.2,
+                px: 1.5,
+                py: 0.4,
+                backdropFilter: 'blur(4px)',
+                '&:hover': {
+                  background: 'rgba(255,255,255,.2)',
+                  borderColor: 'rgba(255,255,255,.5)'
+                }
+              }}
+            >
+              Volver a Submódulos
+            </Button>
+          ) : (
+            <Box
+              sx={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: compact ? 0.6 : 0.9,
+                px: compact ? 0.9 : 1.2,
+                py: compact ? 0.4 : 0.65,
+                borderRadius: 999,
+                mb: compact ? 0.8 : 1.5,
+                bgcolor: 'rgba(15,23,42,.18)',
+                border: '1px solid rgba(255,255,255,.18)'
+              }}
+            >
+              <ShowChartIcon sx={{ fontSize: compact ? 12 : 16 }} />
+              <Typography sx={{ fontSize: compact ? 10 : 12, fontWeight: 800, letterSpacing: 0.6, textTransform: 'uppercase' }}>
+                {'Planeaci\u00f3n y Efectividad'}
+              </Typography>
+            </Box>
+          )}
 
-          <Typography sx={{ fontSize: { xs: 28, md: 44 }, lineHeight: 1.02, fontWeight: 900, letterSpacing: -0.8 }}>
+          <Typography sx={{ fontSize: compact ? { xs: 18, md: 24 } : { xs: 24, md: 36 }, lineHeight: 1.02, fontWeight: 800, letterSpacing: -0.5 }}>
             {'PLAN ESTRAT\u00c9GICO DE DESARROLLO'}
           </Typography>
-          <Typography sx={{ color: 'rgba(255,255,255,.92)', mt: 1, fontSize: { xs: 14, md: 17 }, maxWidth: 760 }}>
-            {'Seguimiento, control y resultados del m\u00f3dulo Planeaci\u00f3n y Efectividad en una vista ejecutiva m\u00e1s clara y ordenada.'}
+          <Typography sx={{ color: 'rgba(255,255,255,.92)', mt: compact ? 0.5 : 1, fontSize: compact ? { xs: 12, md: 13.5 } : { xs: 14, md: 16 }, maxWidth: 760 }}>
+            {'Monitoreo estrat\u00e9gico, control y resultados basados en evidencia, bajo un marco metodol\u00f3gico de mejora continua.'}
           </Typography>
         </Box>
 
-        <Paper elevation={0} sx={{ px: 2.8, py: 1.5, borderRadius: 999, bgcolor: 'rgba(255,255,255,.97)', minWidth: { xs: '100%', sm: 220 } }}>
-          <Typography sx={{ fontSize: 11, color: '#64748b', fontWeight: 900, letterSpacing: 1.4, textTransform: 'uppercase' }}>
+        <Paper
+          elevation={0}
+          sx={{
+            px: compact ? 2 : 2.8,
+            py: compact ? 1 : 1.5,
+            borderRadius: 999,
+            bgcolor: 'rgba(255,255,255,.97)',
+            minWidth: compact ? { xs: '100%', sm: 160 } : { xs: '100%', sm: 220 }
+          }}
+        >
+          <Typography sx={{ fontSize: compact ? 9 : 11, color: '#64748b', fontWeight: 900, letterSpacing: 1.4, textTransform: 'uppercase' }}>
             La meta es
           </Typography>
-          <Typography sx={{ fontSize: 24, color: '#ef4444', fontWeight: 900, letterSpacing: 1 }}>
+          <Typography sx={{ fontSize: compact ? 18 : 24, color: '#ef4444', fontWeight: 900, letterSpacing: 1 }}>
             INNOVAR
           </Typography>
         </Paper>
@@ -4532,7 +4569,7 @@ function PlaneacionEfectividad() {
     <Fade in={true}>
       <Box>
         <Stack spacing={3.2}>
-          <HeroBanner />
+          <HeroBanner compact={section !== null} onBack={canEstadistica && canGestion ? () => setSection(null) : null} />
 
           {section === null ? (
             <Box>
@@ -4715,33 +4752,7 @@ function PlaneacionEfectividad() {
             </Box>
           ) : (
             <>
-              {canEstadistica && canGestion && (
-                <Box sx={{ display: 'flex', justifyContent: 'flex-start' }}>
-                  <Button
-                    variant="outlined"
-                    startIcon={<ArrowBackIcon />}
-                    onClick={() => setSection(null)}
-                    sx={{
-                      textTransform: 'none',
-                      fontWeight: 800,
-                      borderColor: '#cbd5e1',
-                      color: '#475569',
-                      borderRadius: 3,
-                      px: 2.5,
-                      py: 1,
-                      background: '#ffffff',
-                      boxShadow: '0 2px 8px rgba(15,23,42,0.04)',
-                      '&:hover': {
-                        background: '#f8fafc',
-                        borderColor: '#94a3b8',
-                        color: '#0f172a'
-                      }
-                    }}
-                  >
-                    Cambiar de Submódulo (Volver)
-                  </Button>
-                </Box>
-              )}
+
 
               {section === 'gestion' ? (
                 <GestionPlanesWorkspaceV2 sourceRows={dashboard.rows || []} onWorkflowChanged={cargarDashboardPlanAccion} />

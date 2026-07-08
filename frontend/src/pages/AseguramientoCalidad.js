@@ -162,8 +162,8 @@ const getDownloadUrl = (url) => {
   }
 
   if (kind === 'google-slide') {
-    const extra = resourceKey ? `?resourcekey=${encodeURIComponent(resourceKey)}` : '';
-    return `https://docs.google.com/presentation/d/${fileId}/export/pdf${extra}`;
+    const extra = resourceKey ? `&resourcekey=${encodeURIComponent(resourceKey)}` : '';
+    return `https://docs.google.com/presentation/d/${fileId}/export?format=pptx${extra}`;
   }
 
   return buildDriveDownloadUrl(meta);
