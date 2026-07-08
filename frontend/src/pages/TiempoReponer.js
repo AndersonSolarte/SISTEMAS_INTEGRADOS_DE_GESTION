@@ -144,7 +144,7 @@ export default function TiempoReponer() {
         <TableHead sx={{ bgcolor: '#f1f5f9' }}>
           <TableRow>
             <TableCell><strong>Consecutivo</strong></TableCell>
-            {isEquipo && <TableCell><strong>Colaborador</strong></TableCell>}
+            {isEquipo && <TableCell><strong>Colaborador(a)</strong></TableCell>}
             <TableCell><strong>Fecha de Salida</strong></TableCell>
             <TableCell><strong>Horas Pendientes</strong></TableCell>
             <TableCell><strong>Estado</strong></TableCell>
@@ -239,7 +239,7 @@ export default function TiempoReponer() {
         <DialogContent dividers>
           <Box sx={{ mb: 2 }}>
             <Typography variant="subtitle2">Consecutivo: {selectedRep?.consecutivo}</Typography>
-            <Typography variant="body2">Colaborador: {selectedRep?.datos_formulario?.personal?.nombre || selectedRep?.solicitante_snapshot?.nombre}</Typography>
+            <Typography variant="body2">Colaborador(a): {selectedRep?.datos_formulario?.personal?.nombre || selectedRep?.solicitante_snapshot?.nombre}</Typography>
             <Typography variant="body2" sx={{ mt: 1, fontWeight: 'bold' }}>Saldo pendiente: {getHorasPendientes(selectedRep)}</Typography>
           </Box>
 

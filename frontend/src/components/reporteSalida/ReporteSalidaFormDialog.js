@@ -646,8 +646,8 @@ function ReporteSalidaFormDialog({ open, documento, user, onClose, onSubmitted }
         }
       });
     } else {
-      if (!form.laboral.dependencia) issues.push('Seleccione la dependencia del colaborador.');
-      if (!form.laboral.cargo) issues.push('Seleccione el cargo del colaborador.');
+      if (!form.laboral.dependencia) issues.push('Seleccione la dependencia del/de la colaborador(a).');
+      if (!form.laboral.cargo) issues.push('Seleccione el cargo del/de la colaborador(a).');
       if (!jefe) issues.push('Seleccione el jefe inmediato que aprobara la solicitud.');
       else if (!jefe.email) issues.push('El jefe inmediato seleccionado no tiene correo registrado.');
     }
@@ -1014,7 +1014,7 @@ function ReporteSalidaFormDialog({ open, documento, user, onClose, onSubmitted }
             </Box>
 
             <Box sx={sectionSx}>
-              <SectionTitle title={isSalidaMultiple ? "Datos del líder de la actividad" : "Datos del colaborador"} />
+              <SectionTitle title={isSalidaMultiple ? "Datos del líder de la actividad" : "Datos del/de la colaborador(a)"} />
               <Box sx={responsiveFieldGrid('minmax(220px, 1fr) minmax(180px, 0.75fr) minmax(260px, 1.2fr)')}>
                 <TextField sx={inputSx} fullWidth size="small" label="Nombre" value={form.personal.nombre} disabled />
                 <TextField sx={inputSx} fullWidth size="small" label="Documento" value={form.personal.documento} disabled />
@@ -1090,7 +1090,7 @@ function ReporteSalidaFormDialog({ open, documento, user, onClose, onSubmitted }
                   </Typography>
                 </Stack>
                 <Alert severity="info" sx={{ mb: 2 }}>
-                  Usted es el <strong>líder de la actividad</strong>. Agregue a los demás colaboradores que participarán con usted en la salida grupal. Se registrará la salida para todos y pasará directo a aprobación de Gestión del Talento Humano.
+                  Usted es el/la <strong>líder de la actividad</strong>. Agregue a los(as) demás colaboradores(as) que participarán con usted en la salida grupal. Se registrará la salida para todos(as) y pasará directo a aprobación de Gestión del Talento Humano.
                 </Alert>
 
                 <Autocomplete
@@ -1158,7 +1158,7 @@ function ReporteSalidaFormDialog({ open, documento, user, onClose, onSubmitted }
                       }}
                       fullWidth
                       size="medium"
-                      label="Buscar colaborador para agregar..."
+                      label="Buscar colaborador(a) para agregar..."
                       placeholder="Escriba nombre, cargo, dependencia, cedula o correo"
                     />
                   )}
@@ -1167,7 +1167,7 @@ function ReporteSalidaFormDialog({ open, documento, user, onClose, onSubmitted }
                 {participantes.length > 0 ? (
                   <Box sx={{ mt: 2, border: '1px solid #e2e8f0', borderRadius: 2.5, overflow: 'hidden' }}>
                     <Box sx={{ display: 'grid', gridTemplateColumns: '2.5fr 2.5fr 3fr 40px', bgcolor: '#f8fafc', borderBottom: '1px solid #e2e8f0', p: 1, fontWeight: 800, fontSize: 12.5, color: '#475569' }}>
-                      <Box sx={{ pl: 1 }}>Colaborador</Box>
+                      <Box sx={{ pl: 1 }}>Colaborador(a)</Box>
                       <Box>Cargo / Dependencia</Box>
                       <Box>Correo institucional (editable)</Box>
                       <Box></Box>
@@ -1220,7 +1220,7 @@ function ReporteSalidaFormDialog({ open, documento, user, onClose, onSubmitted }
                 ) : (
                   <Box sx={{ mt: 2, py: 4, border: '1px dashed #cbd5e1', borderRadius: 2.5, textAlign: 'center', bgcolor: '#f8fafc' }}>
                     <Typography sx={{ fontSize: 13.5, color: '#64748b', fontWeight: 600 }}>
-                      No se han agregado participantes. Use el buscador superior para añadir colaboradores.
+                      No se han agregado participantes. Use el buscador superior para añadir colaboradores(as).
                     </Typography>
                   </Box>
                 )}
@@ -1381,7 +1381,7 @@ function ReporteSalidaFormDialog({ open, documento, user, onClose, onSubmitted }
                   </TextField>
                   {category === 'salud' && (
                     <Tooltip
-                      title="El permiso por motivo de salud se otorga exclusivamente para la atención médica del colaborador (consultas, procedimientos, terapias, exámenes). El acompañamiento a citas médicas de familiares (hijos, padres, cónyuge) debe registrarse en la categoría de 'Trámites, Permisos y Licencias'"
+                      title="El permiso por motivo de salud se otorga exclusivamente para la atención médica del/de la colaborador(a) (consultas, procedimientos, terapias, exámenes). El acompañamiento a citas médicas de familiares (hijos, padres, cónyuge) debe registrarse en la categoría de 'Trámites, Permisos y Licencias'"
                       arrow
                       placement="top"
                     >

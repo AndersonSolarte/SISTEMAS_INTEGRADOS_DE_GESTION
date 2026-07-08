@@ -35,7 +35,7 @@ const exportToExcel = (title, dataRows) => {
   };
 
   const headers = [
-    'Consecutivo', 'Fecha Radicacion', 'Colaborador', 'Documento', 'Dependencia', 'Cargo', 
+    'Consecutivo', 'Fecha Radicación', 'Colaborador(a)', 'Documento', 'Dependencia', 'Cargo', 
     'Jefe Inmediato', 'Segmento', 'Tipo Permiso', 'Motivo / Detalles', 'Estado', 
     'Requiere Reposicion', 'Estado Reposicion', 'Tiempo Solicitado (Min)'
   ];
@@ -108,7 +108,7 @@ const renderTable = (title, icon, data, isTime = false, color = '#1d4ed8', bg = 
         <TableHead>
           <TableRow>
             <TableCell sx={{ fontSize: 13, fontWeight: 800 }}>#</TableCell>
-            <TableCell sx={{ fontSize: 13, fontWeight: 800 }}>Colaborador</TableCell>
+            <TableCell sx={{ fontSize: 13, fontWeight: 800 }}>Colaborador(a)</TableCell>
             <TableCell align="right" sx={{ fontSize: 13, fontWeight: 800 }}>{isTime ? 'Tiempo Acumulado' : 'Solicitudes'}</TableCell>
           </TableRow>
         </TableHead>

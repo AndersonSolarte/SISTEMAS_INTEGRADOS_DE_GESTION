@@ -53,12 +53,12 @@ const ACCESS_COPY = {
   },
   jefe: {
     title: 'Reposiciones de mi equipo',
-    subtitle: 'Colaboradores a cargo con horas pendientes por reponer.',
-    notice: 'Puedes consultar el saldo pendiente de tus colaboradores. La validacion final la realiza Talento Humano.'
+    subtitle: 'Colaboradores(as) a cargo con horas pendientes por reponer.',
+    notice: 'Puedes consultar el saldo pendiente de tus colaboradores(as). La validación final la realiza Talento Humano.'
   },
   jefe_y_colaborador: {
     title: 'Reposiciones pendientes',
-    subtitle: 'Tus pendientes y los pendientes de colaboradores a cargo.',
+    subtitle: 'Tus pendientes y los pendientes de colaboradores(as) a cargo.',
     notice: 'Consulta los saldos pendientes. Talento Humano descuenta horas unicamente cuando valida la reposicion.'
   },
   colaborador: {
@@ -265,7 +265,7 @@ function ReporteSalidaSeguimiento({ initialAccess = null, onBack }) {
 
   const exportToExcel = () => {
     const headers = [
-      'Consecutivo', 'Fecha Radicacion', 'Colaborador', 'Documento', 'Dependencia', 'Cargo', 
+      'Consecutivo', 'Fecha Radicación', 'Colaborador(a)', 'Documento', 'Dependencia', 'Cargo', 
       'Jefe Inmediato', 'Segmento', 'Tipo Permiso', 'Motivo / Detalles', 'Estado', 
       'Requiere Reposicion', 'Estado Reposicion', 'Tiempo Solicitado (Min)'
     ];
@@ -557,7 +557,7 @@ function ReporteSalidaSeguimiento({ initialAccess = null, onBack }) {
                 <Table size="small">
                   <TableHead>
                     <TableRow>
-                      {['Solicitud', 'Colaborador', 'Jefe inmediato', 'Motivo / Detalles', 'Estado', 'Tiempo Ausencia', 'Reposicion', canManageAll ? 'Acciones Adm' : (canValidateReposicion ? 'Validacion GH' : 'Seguimiento')].map((label) => (
+                      {['Solicitud', 'Colaborador(a)', 'Jefe inmediato', 'Motivo / Detalles', 'Estado', 'Tiempo Ausencia', 'Reposicion', canManageAll ? 'Acciones Adm' : (canValidateReposicion ? 'Validacion GH' : 'Seguimiento')].map((label) => (
                         <TableCell key={label} sx={{ bgcolor: '#f8fafc', fontWeight: 950, color: '#334155' }}>{label}</TableCell>
                       ))}
                     </TableRow>
@@ -813,7 +813,7 @@ function ReporteSalidaSeguimiento({ initialAccess = null, onBack }) {
                     <>
                       {yaRepuesto && (
                         <Alert severity="success" sx={{ mb: 2, borderRadius: 2 }}>
-                          El colaborador ya repuso la totalidad del tiempo pendiente para esta salida.
+                          El/la colaborador(a) ya repuso la totalidad del tiempo pendiente para esta salida.
                         </Alert>
                       )}
                       {!yaRepuesto && excede && (
