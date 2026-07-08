@@ -774,7 +774,7 @@ function ReporteSalidaFormDialog({ open, documento, user, onClose, onSubmitted }
       }
     }
 
-    if (subtype !== 'diligencia_personal') {
+    if (subtype !== 'diligencia_personal' && subtype !== 'otra') {
       if (!form.salida.motivo || !form.salida.motivo.trim()) {
         issues.push('El campo Motivo / observación es obligatorio.');
       }
@@ -2028,6 +2028,7 @@ function ReporteSalidaFormDialog({ open, documento, user, onClose, onSubmitted }
                 </Box>
               )}
 
+              {subtype !== 'otra' && (
               <Box sx={{ mt: 1.5, display: 'flex', alignItems: 'center', gap: 1 }}>
                 <TextField
                   sx={inputSx}
@@ -2054,6 +2055,7 @@ function ReporteSalidaFormDialog({ open, documento, user, onClose, onSubmitted }
                   </Tooltip>
                 )}
               </Box>
+              )}
             </Box>
 
             {category === 'personales' && (
