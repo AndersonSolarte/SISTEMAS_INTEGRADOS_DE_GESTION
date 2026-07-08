@@ -365,6 +365,7 @@ const buildPdfBuffer = async (solicitud) => {
 
       const isSalidaMultiple = Boolean(data.isSalidaMultiple);
       const participantes = data.participantes || [];
+      const alcance = salida.alcance || '';
 
       let motivoStr = salida.motivo || getTipoSalidaLabel(salida.tipo);
       if (salida.tipo === 'salida_campus' && salida.campusSalida && salida.campusDestino) {
@@ -485,15 +486,16 @@ const buildPdfBuffer = async (solicitud) => {
                   ]
                 ] : []),
                 [
-                  { text: 'Tiempo solicitado:', bold: true },
-                  { text: formatMinutes(solicitud.tiempo_solicitado_minutos) },
+                  { text: 'Alcance:', bold: true },
+                  { text: salida.pais ? `${alcance} (${salida.pais})` : alcance },
                   { text: 'Categoría:', bold: true },
                   { text: getTipoSalidaLabel(salida.tipo) }
                 ],
                 [
+                  { text: 'Tiempo solicitado:', bold: true },
+                  { text: formatMinutes(solicitud.tiempo_solicitado_minutos) },
                   { text: 'Detalle/Motivo:', bold: true },
-                  { text: motivoStr, colSpan: 3 },
-                  {}, {}
+                  { text: motivoStr }
                 ]
               ]
             },

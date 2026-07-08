@@ -1306,6 +1306,298 @@ const getCatalogoLaboral = async (req, res) => {
   }
 };
 
+const resolveJefeForParticipant = async (p, userRows, rhRows) => {
+  const doc = normalizeDocument(p.documento);
+  const email = normalizeForMatch(p.correo);
+  
+  // 1. Try to find in userRows
+  let partRow = userRows.find(row => 
+    (doc && normalizeDocument(row.username) === doc) || 
+    (email && normalizeForMatch(row.email) === email)
+  );
+
+  // 2. If not found, try to find in rhRows
+  if (!partRow && rhRows) {
+    partRow = rhRows.find(row => 
+      (doc && normalizeDocument(row.numero_cedula) === doc)
+    );
+  }
+
+  const jefeNombre = partRow?.jefe_inmediato || '';
+  if (!jefeNombre) {
+    return {};
+  }
+
+  // 3. Find this boss in userRows
+  const bossUser = userRows.find(candidate =>
+    normalizeForMatch(candidate.nombre) === normalizeForMatch(jefeNombre) ||
+    normalizeForMatch(candidate.cargo) === normalizeForMatch(jefeNombre) ||
+    namesLookRelated(candidate.nombre, jefeNombre) ||
+    namesLookRelated(candidate.cargo, jefeNombre)
+  );
+
+  if (bossUser) {
+    return buildSnapshot(bossUser);
+  }
+
+  // 4. Try to find this boss in rhRows
+  if (rhRows) {
+    const bossRh = rhRows.find(candidate =>
+      normalizeForMatch(candidate.nombre_empleado) === normalizeForMatch(jefeNombre) ||
+      normalizeForMatch(candidate.cargo_especifico) === normalizeForMatch(jefeNombre) ||
+      namesLookRelated(candidate.nombre_empleado, jefeNombre) ||
+      namesLookRelated(candidate.cargo_especifico, jefeNombre)
+    );
+
+    if (bossRh) {
+      return buildAdministrativeBossSnapshot({
+        userId: null,
+        nombre: bossRh.nombre_empleado,
+        email: getAdministrativeEmail(bossRh) || '',
+        username: bossRh.numero_cedula || '',
+        cargo: bossRh.cargo_especifico,
+        dependencia: bossRh.dependencia,
+        jefe_inmediato: bossRh.nombre_empleado,
+        source: 'recurso_humano_administrativos'
+      });
+    }
+  }
+
+  // Fallback
+  return {
+    nombre: jefeNombre,
+    email: '',
+    cargo: '',
+    dependencia: ''
+  };
+};
+
+const sendJefeGroupRadicacionNotificationEmail = async (solicitud, jefeSnapshot, allParticipants) => {
+  if (!jefeSnapshot || !jefeSnapshot.email) return { success: false, error: 'No email' };
+  
+  const solicitante = solicitud.solicitante_snapshot || {};
+  const salida = solicitud.datos_formulario?.salida || {};
+
+  const subject = `REPORTE DE SALIDA GRUPAL - NOTIFICACIÓN INFORMATIVA | Colaborador(a): ${solicitante.nombre || ''}`;
+  
+  const mapping = {
+    cita_eps: 'Cita medica por EPS',
+    cita_particular: 'Cita medica particular',
+    urgencia_medica: 'Urgencia Medica',
+    diligencia_personal: 'Diligencia personal',
+    compensatorio: 'Compensatorio',
+    ponencia: 'Ponencia',
+    visita_ies: 'Visita a otras IES',
+    capacitacion: 'Capacitacion',
+    proyecto_investigacion: 'Proyecto de investigacion',
+    asistente_congreso: 'Asistente a congreso',
+    practica_academica: 'Practica academica',
+    torneo_deportivo: 'Participante en torneo deportivo',
+    voto_jurado: 'Permiso: Jurado de votacion',
+    voto_sufragante: 'Permiso: Sufragante',
+    calamidad_domestica: 'Permiso: Calamidad domestica',
+    entierro_companero: 'Permiso: Entierro companeros',
+    comision_sindical: 'Permiso: Comisiones sindicales',
+    matrimonio: 'Permiso: Matrimonio',
+    lactancia: 'Permiso: Lactancia',
+    luto_conyuge: 'Licencia luto: Conyuge',
+    luto_companero: 'Licencia luto: Companero(a)',
+    luto_familiar: 'Licencia luto: Familiar',
+    actos_funebres: 'Licencia: Actos funebres',
+    cuidado_ninez: 'Licencia: Cuidado ninez',
+    jurado_votacion: 'Permiso: Jurado de votacion',
+    sufragante: 'Permiso: Sufragante',
+    cargos_oficiales_transitorios: 'Permiso: Desempeño de cargos oficiales transitorios',
+    comisiones_sindicales: 'Permiso: Comisiones sindicales',
+    obligaciones_escolares: 'Permiso: Obligaciones escolares',
+    citaciones_judiciales: 'Permiso: Citaciones judiciales, administrativas y de policia',
+    cuidado_hijo_ley_2174: 'Permiso: Cuidado de hijo(a) - Ley 2174 de 2021'
+  };
+
+  const getSubtypeLabel = (tipo) => {
+    if (!tipo) return '';
+    if (mapping[tipo]) return mapping[tipo];
+    if (tipo.startsWith('otra:')) return `Otra: ${tipo.substring(5)}`;
+    return tipo;
+  };
+
+  const participantsListHtml = allParticipants.map((p, idx) => `
+    <tr>
+      <td style="padding:8px;border:1px solid #ddd;text-align:center;">${idx + 1}</td>
+      <td style="padding:8px;border:1px solid #ddd;"><strong>${escapeHtml(p.nombre)}</strong> ${idx === 0 ? '<span style="color:#0f52ba;font-size:11px;font-weight:bold;">(Líder)</span>' : ''}</td>
+      <td style="padding:8px;border:1px solid #ddd;">${escapeHtml(p.cargo)}</td>
+      <td style="padding:8px;border:1px solid #ddd;">${escapeHtml(p.dependencia)}</td>
+    </tr>
+  `).join('');
+
+  const html = renderInstitutionalTemplate({
+    title: 'Notificación Informativa - Reporte de Salida Grupal',
+    introHtml: `<p>Cordial saludo, <strong>${escapeHtml(jefeSnapshot.nombre)}</strong>.</p>
+      <p>Le informamos que su colaborador(a) a cargo, <strong>${escapeHtml(solicitante.nombre)}</strong>, participará en una actividad grupal que requiere un reporte de salida.</p>`,
+    bodyHtml: `
+      <p><strong>Solicitud:</strong> ${escapeHtml(solicitud.consecutivo)}</p>
+      <p><strong>Tipo de salida / Motivo:</strong> ${escapeHtml(getSubtypeLabel(salida.tipo))}${salida.motivo ? ` - ${escapeHtml(salida.motivo)}` : ''}</p>
+      <p><strong>Fecha y hora salida:</strong> ${escapeHtml(salida.fecha)} ${escapeHtml(salida.horaInicio)}</p>
+      <p><strong>Fecha y hora regreso:</strong> ${escapeHtml(salida.fechaRegreso)} ${escapeHtml(salida.horaFin)}</p>
+      
+      <p><strong>Participantes de la actividad:</strong></p>
+      <table style="width:100%;border-collapse:collapse;margin:15px 0;font-size:13px;text-align:left;">
+        <thead>
+          <tr style="background-color:#f1f5f9;">
+            <th style="padding:8px;border:1px solid #ddd;text-align:center;width:40px;">#</th>
+            <th style="padding:8px;border:1px solid #ddd;">Colaborador(a)</th>
+            <th style="padding:8px;border:1px solid #ddd;">Cargo</th>
+            <th style="padding:8px;border:1px solid #ddd;">Dependencia</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${participantsListHtml}
+        </tbody>
+      </table>
+
+      <p style="font-weight:bold;color:#1e3a8a;">Nota importante:</p>
+      <p>Dado que esta es una <strong>solicitud de salida grupal</strong>, la aprobación correspondiente será gestionada directamente por el equipo de <strong>Gestión del Talento Humano</strong> (y por <strong>Seguridad y Salud en el Trabajo</strong> en caso de ser una salida nacional/internacional). Por lo tanto, <strong>no se requiere ninguna acción de aprobación por su parte</strong>.</p>
+    `
+  });
+
+  return sendInstitutionalEmail({
+    to: jefeSnapshot.email,
+    subject,
+    text: `Su colaborador(a) ${solicitante.nombre} participará en una salida grupal. Aprobación a cargo de Gestión del Talento Humano y/o SST.`,
+    html
+  });
+};
+
+const sendIndividualColaboradorFinalEmail = async (solicitud, pdfAttachment) => {
+  const nombreColaborador = solicitud.solicitante_snapshot?.nombre || '';
+  const threadId = solicitud.datos_formulario?.thread_message_id;
+  const headers = threadId ? { 'In-Reply-To': threadId, 'References': threadId } : {};
+  const threadSubject = `Re: REPORTE DE SALIDA ${solicitud.consecutivo} | Colaborador(a): ${nombreColaborador}`;
+
+  const userHtml = renderInstitutionalTemplate({
+    title: 'Reporte de salida aprobado',
+    introHtml: `<p>Cordial saludo, <strong>${escapeHtml(nombreColaborador)}</strong>.</p>`,
+    bodyHtml: `<p>Su reporte de salida individual ha sido aprobado exitosamente.</p>
+      <p>Se adjunta el PDF digital FR-002 debidamente firmado para sus registros.</p>
+      ${buildTerapiasHtml(solicitud)}`
+  });
+
+  return sendInstitutionalEmail({
+    to: solicitud.solicitante_snapshot?.email,
+    subject: threadSubject,
+    text: `Su reporte de salida ${solicitud.consecutivo} ha sido aprobado exitosamente. Se adjunta PDF digital FR-002 firmado.`,
+    html: userHtml,
+    attachments: [pdfAttachment].filter(Boolean),
+    headers
+  });
+};
+
+const sendGroupFinalConsolidatedEmail = async (solicitudes, pdfAttachments) => {
+  const recipients = getReporteSalidaRecipients();
+  const leaderSol = solicitudes.find(s => s.datos_formulario?.is_leader === true) || solicitudes[0];
+  const leaderEmail = leaderSol?.solicitante_snapshot?.email;
+  const leaderNombre = leaderSol?.solicitante_snapshot?.nombre || '';
+  const consecutivoGroup = leaderSol.consecutivo.split('-').slice(0, 3).join('-') + '-GRUPO';
+  const salida = leaderSol.datos_formulario?.salida || {};
+
+  const to = [recipients.sst, leaderEmail].filter(Boolean);
+  if (!to.length) return { success: false, error: 'No recipients' };
+
+  const threadSubject = `REPORTE DE SALIDA GRUPAL APROBADO ${consecutivoGroup} | [APROBADO]`;
+
+  const mapping = {
+    cita_eps: 'Cita medica por EPS',
+    cita_particular: 'Cita medica particular',
+    urgencia_medica: 'Urgencia Medica',
+    diligencia_personal: 'Diligencia personal',
+    compensatorio: 'Compensatorio',
+    ponencia: 'Ponencia',
+    visita_ies: 'Visita a otras IES',
+    capacitacion: 'Capacitacion',
+    proyecto_investigacion: 'Proyecto de investigacion',
+    asistente_congreso: 'Asistente a congreso',
+    practica_academica: 'Practica academica',
+    torneo_deportivo: 'Participante en torneo deportivo',
+    voto_jurado: 'Permiso: Jurado de votacion',
+    voto_sufragante: 'Permiso: Sufragante',
+    calamidad_domestica: 'Permiso: Calamidad domestica',
+    entierro_companero: 'Permiso: Entierro companeros',
+    comision_sindical: 'Permiso: Comisiones sindicales',
+    matrimonio: 'Permiso: Matrimonio',
+    lactancia: 'Permiso: Lactancia',
+    luto_conyuge: 'Licencia luto: Conyuge',
+    luto_companero: 'Licencia luto: Companero(a)',
+    luto_familiar: 'Licencia luto: Familiar',
+    actos_funebres: 'Licencia: Actos funebres',
+    cuidado_ninez: 'Licencia: Cuidado ninez',
+    jurado_votacion: 'Permiso: Jurado de votacion',
+    sufragante: 'Permiso: Sufragante',
+    cargos_oficiales_transitorios: 'Permiso: Desempeño de cargos oficiales transitorios',
+    comisiones_sindicales: 'Permiso: Comisiones sindicales',
+    obligaciones_escolares: 'Permiso: Obligaciones escolares',
+    citaciones_judiciales: 'Permiso: Citaciones judiciales, administrativas y de policia',
+    cuidado_hijo_ley_2174: 'Permiso: Cuidado de hijo(a) - Ley 2174 de 2021'
+  };
+
+  const getSubtypeLabel = (tipo) => {
+    if (!tipo) return '';
+    if (mapping[tipo]) return mapping[tipo];
+    if (tipo.startsWith('otra:')) return `Otra: ${tipo.substring(5)}`;
+    return tipo;
+  };
+
+  const participantsListHtml = solicitudes.map((sol, idx) => {
+    const p = sol.solicitante_snapshot || {};
+    return `
+      <tr>
+        <td style="padding:8px;border:1px solid #ddd;text-align:center;">${idx + 1}</td>
+        <td style="padding:8px;border:1px solid #ddd;"><strong>${escapeHtml(p.nombre)}</strong> ${sol.datos_formulario?.is_leader ? '<span style="color:#0f52ba;font-size:11px;font-weight:bold;">(Líder)</span>' : ''}</td>
+        <td style="padding:8px;border:1px solid #ddd;">${escapeHtml(p.cargo)}</td>
+        <td style="padding:8px;border:1px solid #ddd;">${escapeHtml(p.dependencia)}</td>
+        <td style="padding:8px;border:1px solid #ddd;font-family:monospace;font-weight:bold;color:#0b3a6f;">${escapeHtml(sol.consecutivo)}</td>
+      </tr>
+    `;
+  }).join('');
+
+  const html = renderInstitutionalTemplate({
+    title: 'Notificación de Aprobación - Reporte de Salida Grupal',
+    introHtml: `<p>Cordial saludo.</p>
+      <p>Se ha finalizado el proceso de revisión y aprobación de la salida grupal liderada por <strong>${escapeHtml(leaderNombre)}</strong>.</p>`,
+    bodyHtml: `
+      <p><strong>Grupo ID / Consecutivo General:</strong> ${escapeHtml(consecutivoGroup)}</p>
+      <p><strong>Tipo de salida / Motivo:</strong> ${escapeHtml(getSubtypeLabel(salida.tipo))}${salida.motivo ? ` - ${escapeHtml(salida.motivo)}` : ''}</p>
+      <p><strong>Fecha y hora salida:</strong> ${escapeHtml(salida.fecha)} ${escapeHtml(salida.horaInicio)}</p>
+      <p><strong>Fecha y hora regreso:</strong> ${escapeHtml(salida.fechaRegreso)} ${escapeHtml(salida.horaFin)}</p>
+      
+      <p><strong>Relación de colaboradores(as) aprobados(as):</strong></p>
+      <table style="width:100%;border-collapse:collapse;margin:15px 0;font-size:13px;text-align:left;">
+        <thead>
+          <tr style="background-color:#f1f5f9;">
+            <th style="padding:8px;border:1px solid #ddd;text-align:center;width:40px;">#</th>
+            <th style="padding:8px;border:1px solid #ddd;">Colaborador(a)</th>
+            <th style="padding:8px;border:1px solid #ddd;">Cargo</th>
+            <th style="padding:8px;border:1px solid #ddd;">Dependencia</th>
+            <th style="padding:8px;border:1px solid #ddd;">Consecutivo Solicitud</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${participantsListHtml}
+        </tbody>
+      </table>
+
+      <p>Se adjuntan en este correo todos los reportes de salida individuales (PDF digital FR-002) debidamente firmados y aprobados para su registro general de SST y control del líder de la actividad.</p>
+    `
+  });
+
+  return sendInstitutionalEmail({
+    to,
+    subject: threadSubject,
+    text: `El reporte de salida grupal ${consecutivoGroup} ha sido aprobado. Se adjuntan los PDFs individuales de todos los participantes.`,
+    html,
+    attachments: pdfAttachments.filter(Boolean)
+  });
+};
+
 const radicarSolicitud = async (req, res) => {
   if (!(await getReporteSalidaFeatureState())) return featureDisabled(res);
   try {
@@ -1376,6 +1668,9 @@ const radicarSolicitud = async (req, res) => {
         }
       }) + 1;
 
+      const userRows = await getUserProfileLaboralRows();
+      const { rows: rhRows } = await getLatestAdministrativos();
+
       const creadas = [];
 
       for (let i = 0; i < participantes.length; i++) {
@@ -1414,17 +1709,23 @@ const radicarSolicitud = async (req, res) => {
         }
         currentSeq++;
 
+        const jefeSnapshot = await resolveJefeForParticipant(p, userRows, rhRows);
+        const jefe_inmediato_user_id = jefeSnapshot?.id && String(jefeSnapshot.id).startsWith('user:') 
+          ? Number(jefeSnapshot.id.substring(5)) 
+          : null;
+
         const solicitud = await ReporteSalidaSolicitud.create({
           consecutivo,
           user_id: participantUser.id,
           documento_id: documento.id,
-          jefe_inmediato_user_id: null,
+          jefe_inmediato_user_id,
           solicitante_snapshot: buildSnapshot(participantUser),
-          jefe_snapshot: {},
+          jefe_snapshot: jefeSnapshot,
           estado: 'pendiente_aprobacion_gestion_humana',
           datos_formulario: {
             grupo_id,
             is_salida_multiple: true,
+            is_leader: i === 0,
             adjunto_path: req.body.datos_formulario?.adjunto_path ? sanitizeText(req.body.datos_formulario.adjunto_path, 255) : null,
             personal: {
               nombre: sanitizeText(p.nombre),
@@ -1474,6 +1775,12 @@ const radicarSolicitud = async (req, res) => {
           aprobacion_gh_token_hash: tokenHash,
           trazabilidad: [{ event: 'radicada_grupal', actor: buildSnapshot(req.user), at: now.toISOString() }]
         });
+
+        if (jefeSnapshot?.email) {
+          sendJefeGroupRadicacionNotificationEmail(solicitud, jefeSnapshot, participantes).catch(err => {
+            console.error(`Error enviando correo informativo al jefe de la solicitud grupal ${solicitud.consecutivo}:`, err);
+          });
+        }
 
         creadas.push(solicitud);
       }
@@ -3341,6 +3648,8 @@ const aprobarGrupoDesdeCorreo = async (req, res) => {
     }
 
     let approvedCount = 0;
+    const pdfAttachments = [];
+
     for (const solicitud of pendientes) {
       if (solicitud.aprobacion_gh_token_hash === tokenHash) {
         await ReporteSalidaSolicitud.update({
@@ -3360,24 +3669,36 @@ const aprobarGrupoDesdeCorreo = async (req, res) => {
         approvedCount++;
 
         await solicitud.reload();
-        solicitud.trazabilidad = appendTrace(solicitud, 'notificacion_final_enviada', null, { usuario: true, sst: true });
         try {
           const pdfAttachment = await buildReporteSalidaPdfAttachment(solicitud);
-          const supportAttachment = buildReporteSalidaSupportAttachment(solicitud);
-          const results = await sendFinalEmails(solicitud, pdfAttachment, supportAttachment);
+          const userEmailResult = await sendIndividualColaboradorFinalEmail(solicitud, pdfAttachment);
+          
+          if (pdfAttachment) {
+            pdfAttachments.push(pdfAttachment);
+          }
+          
           deleteSupportFile(solicitud);
+          
           await solicitud.update({
-            correo_usuario_enviado_at: results.userResult.success ? new Date() : null,
-            correo_sst_enviado_at: results.sstResult.success ? new Date() : null,
-            enviado_sst_at: results.sstResult.success ? new Date() : null,
+            correo_usuario_enviado_at: userEmailResult.success ? new Date() : null,
+            correo_sst_enviado_at: new Date(),
+            enviado_sst_at: new Date(),
             trazabilidad: appendTrace(solicitud, 'notificacion_final_enviada', null, {
-              usuario: results.userResult.success,
-              sst: results.sstResult.success
+              usuario: userEmailResult.success,
+              sst: true
             })
           });
         } catch (err) {
-          console.error(`Error enviando notificaciones finales para solicitud ${solicitud.consecutivo}:`, err);
+          console.error(`Error procesando notificacion final de grupo para solicitud ${solicitud.consecutivo}:`, err);
         }
+      }
+    }
+
+    if (approvedCount > 0) {
+      try {
+        await sendGroupFinalConsolidatedEmail(solicitudes, pdfAttachments);
+      } catch (err) {
+        console.error('Error enviando correo consolidado final de grupo:', err);
       }
     }
 

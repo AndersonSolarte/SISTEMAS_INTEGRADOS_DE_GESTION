@@ -38,7 +38,7 @@ import reporteSalidaService from '../../services/reporteSalidaService';
 const INITIAL_FORM = {
   personal: { nombre: '', documento: '', correo: '' },
   laboral: { dependencia: '', cargo: '' },
-  salida: { tipo: 'cita_eps', alcance: '', especialidadMedica: '', terapiasList: [], fecha: '', fechaRegreso: '', horaInicio: '', horaFin: '', motivo: '', campusSalida: '', campusDestino: '', tiempoReponerHoras: '' },
+  salida: { tipo: 'cita_eps', alcance: '', pais: '', especialidadMedica: '', terapiasList: [], fecha: '', fechaRegreso: '', horaInicio: '', horaFin: '', motivo: '', campusSalida: '', campusDestino: '', tiempoReponerHoras: '' },
   reposicion: { fecha: '', fechaFin: '', horaInicio: '', horaFin: '', observacion: '' }
 };
 
@@ -89,6 +89,33 @@ const ALCANCE_OPTIONS = [
   'Regional',
   'Nacional',
   'Internacional'
+];
+
+const PAISES_OPTIONS = [
+  'Afganistán', 'Alemania', 'Andorra', 'Angola', 'Antigua y Barbuda', 'Arabia Saudita', 'Argelia', 'Argentina',
+  'Armenia', 'Australia', 'Austria', 'Azerbaiyán', 'Bahamas', 'Bangladés', 'Barbados', 'Baréin', 'Bélgica',
+  'Belice', 'Benín', 'Bielorrusia', 'Birmania', 'Bolivia', 'Bosnia y Herzegovina', 'Botsuana', 'Brasil',
+  'Brunéi', 'Bulgaria', 'Burkina Faso', 'Burundi', 'Bután', 'Cabo Verde', 'Camboya', 'Camerún', 'Canadá',
+  'Catar', 'Chad', 'Chile', 'China', 'Chipre', 'Ciudad del Vaticano', 'Colombia', 'Comoras', 'Corea del Norte',
+  'Corea del Sur', 'Costa de Marfil', 'Costa Rica', 'Croacia', 'Cuba', 'Dinamarca', 'Dominica', 'Ecuador',
+  'Egipto', 'El Salvador', 'Emiratos Árabes Unidos', 'Eritrea', 'Eslovaquia', 'Eslovenia', 'España',
+  'Estados Unidos', 'Estonia', 'Etiopía', 'Filipinas', 'Finlandia', 'Fiyi', 'Francia', 'Gabón', 'Gambia',
+  'Georgia', 'Ghana', 'Granada', 'Grecia', 'Guatemala', 'Guyana', 'Guinea', 'Guinea Ecuatorial', 'Guinea-Bisáu',
+  'Haití', 'Honduras', 'Hungría', 'India', 'Indonesia', 'Irak', 'Irán', 'Irlanda', 'Islandia', 'Islas Marshall',
+  'Islas Salomón', 'Israel', 'Italia', 'Jamaica', 'Japón', 'Jordania', 'Kazajistán', 'Kenia', 'Kirguistán',
+  'Kiribati', 'Kuwait', 'Laos', 'Lesoto', 'Letonia', 'Líbano', 'Liberia', 'Libia', 'Liechtenstein', 'Lituania',
+  'Luxemburgo', 'Macedonia del Norte', 'Madagascar', 'Malasia', 'Malaui', 'Maldivas', 'Malí', 'Malta',
+  'Marruecos', 'Mauricio', 'Mauritania', 'México', 'Micronesia', 'Moldavia', 'Mónaco', 'Mongolia', 'Montenegro',
+  'Mozambique', 'Namibia', 'Nauru', 'Nepal', 'Nicaragua', 'Níger', 'Nigeria', 'Noruega', 'Nueva Zelanda', 'Omán',
+  'Países Bajos', 'Pakistán', 'Palaos', 'Palestina', 'Panamá', 'Papúa Nueva Guinea', 'Paraguay', 'Perú', 'Polonia',
+  'Portugal', 'Reino Unido', 'República Centroafricana', 'República Checa', 'República del Congo',
+  'República Democrática del Congo', 'República Dominicana', 'Ruanda', 'Rumanía', 'Rusia', 'Samoa',
+  'San Cristóbal y Nieves', 'San Marino', 'San Vicente y las Granadinas', 'Santa Lucía', 'Santo Tomé y Príncipe',
+  'Senegal', 'Serbia', 'Seychelles', 'Sierra Leona', 'Singapur', 'Siria', 'Somalia', 'Sri Lanka', 'Suazilandia',
+  'Sudáfrica', 'Sudán', 'Sudán del Sur', 'Suecia', 'Suiza', 'Surinam', 'Tailandia', 'Taiwán', 'Tanzania',
+  'Tayikistán', 'Timor Oriental', 'Togo', 'Tonga', 'Trinidad y Tobago', 'Túnez', 'Turkmenistán', 'Turquía',
+  'Tuvalu', 'Ucrania', 'Uganda', 'Uruguay', 'Uzbekistán', 'Vanuatu', 'Venezuela', 'Vietnam', 'Yemen', 'Yibuti',
+  'Zambia', 'Zimbabue'
 ];
 
 const WORK_BLOCKS = [
@@ -664,6 +691,14 @@ function ReporteSalidaFormDialog({ open, documento, user, onClose, onSubmitted }
       }
     } else if (['cita_eps', 'cita_particular'].includes(subtype) && !form.salida.especialidadMedica) {
       issues.push('Seleccione la especialidad medica para la cita.');
+    }
+
+    if (category === 'propias_cargo' && subtype !== 'salida_campus') {
+      if (!form.salida.alcance) {
+        issues.push('Seleccione el alcance de la actividad.');
+      } else if (form.salida.alcance === 'Internacional' && !form.salida.pais) {
+        issues.push('Debe seleccionar el país de destino para salidas internacionales.');
+      }
     }
 
     if (!form.salida.motivo || !form.salida.motivo.trim()) {
@@ -1399,12 +1434,38 @@ function ReporteSalidaFormDialog({ open, documento, user, onClose, onSubmitted }
                     size="medium"
                     label="Alcance de la actividad"
                     value={form.salida.alcance || ''}
-                    onChange={(e) => update('salida', 'alcance', e.target.value)}
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      update('salida', 'alcance', val);
+                      if (val !== 'Internacional') {
+                        update('salida', 'pais', '');
+                      }
+                    }}
                   >
                     {ALCANCE_OPTIONS.map((opt) => (
                       <MenuItem key={opt} value={opt}>{opt}</MenuItem>
                     ))}
                   </TextField>
+                )}
+
+                {category === 'propias_cargo' && subtype !== 'salida_campus' && form.salida.alcance === 'Internacional' && (
+                  <Autocomplete
+                    options={PAISES_OPTIONS}
+                    value={form.salida.pais || null}
+                    onChange={(event, newValue) => {
+                      update('salida', 'pais', newValue || '');
+                    }}
+                    renderInput={(params) => (
+                      <TextField
+                        {...params}
+                        sx={inputSx}
+                        label="País de destino *"
+                        required
+                        fullWidth
+                        size="medium"
+                      />
+                    )}
+                  />
                 )}
 
                 {['cita_eps', 'cita_particular'].includes(subtype) && (
