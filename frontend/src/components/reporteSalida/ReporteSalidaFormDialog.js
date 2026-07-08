@@ -785,7 +785,7 @@ function ReporteSalidaFormDialog({ open, documento, user, onClose, onSubmitted }
         issues.push('Complete fecha de salida, hora de salida, fecha de regreso y hora de regreso.');
       } else if (salidaRangeIssue) {
         issues.push(salidaRangeIssue);
-      } else if (!salidaMinutes) {
+      } else if (category === 'personales' && !salidaMinutes) {
         issues.push('El tiempo solicitado debe sumar al menos un periodo dentro de la jornada laboral.');
       }
     }
@@ -801,21 +801,18 @@ function ReporteSalidaFormDialog({ open, documento, user, onClose, onSubmitted }
       issues.push('Debe subir el soporte, certificado o documento obligatorio.');
     }
     
-    if (form.salida.tiempoReponerHoras === undefined || form.salida.tiempoReponerHoras === '' || isNaN(Number(form.salida.tiempoReponerHoras))) {
-      issues.push('Debe indicar de forma manual el tiempo a reponer en horas (digite 0 si no requiere reposición).');
-    } else if (Number(form.salida.tiempoReponerHoras) < 0) {
-      issues.push('El tiempo a reponer no puede ser un valor negativo.');
-    }
-    
-    if (isPersonal && reposicionHasAnyValue) {
-      if (reposicionRangeIssue) {
-        issues.push(reposicionRangeIssue);
-      } else if (!reposicionMinutes) {
-        issues.push('El plan inicial de reposicion debe sumar tiempo valido.');
+    if (category === 'personales') {
+      if (form.salida.tiempoReponerHoras === undefined || form.salida.tiempoReponerHoras === '' || isNaN(Number(form.salida.tiempoReponerHoras))) {
+        issues.push('Debe indicar de forma manual el tiempo a reponer en horas (digite 0 si no requiere reposición).');
+      } else if (Number(form.salida.tiempoReponerHoras) < 0) {
+        issues.push('El tiempo a reponer no puede ser un valor negativo.');
       }
     }
+    
+
     return issues;
   }, [
+    category,
     isSalidaMultiple,
     participantes,
     form.laboral.cargo,
@@ -1563,7 +1560,7 @@ function ReporteSalidaFormDialog({ open, documento, user, onClose, onSubmitted }
                           ? TODAS_MUNICIPIOS_COMPLETOS.filter(item => item.departamento === form.salida.departamento)
                           : TODAS_MUNICIPIOS_COMPLETOS.filter(item => item.departamento !== 'Nariño')
                       }
-                      getOptionLabel={(option) => typeof option === 'string' ? option : option.label}
+                      getOptionLabel={(option) => typeof option === 'string' ? option : (form.salida.departamento ? option.municipio : option.label)}
                       value={
                         form.salida.municipio
                           ? (TODAS_MUNICIPIOS_COMPLETOS.find(item => item.municipio === form.salida.municipio && item.departamento === (form.salida.departamento || item.departamento)) || null)
@@ -1719,51 +1716,57 @@ function ReporteSalidaFormDialog({ open, documento, user, onClose, onSubmitted }
                         <Typography sx={{ fontSize: 13, fontWeight: 700, color: '#334155', mb: 1 }}>
                           Terapia {idx + 1}
                         </Typography>
-                        <Box sx={responsiveFieldGrid('minmax(160px, 1fr) minmax(140px, 1fr) minmax(140px, 1fr) minmax(100px, 0.5fr)')}>
+                        <Box sx={responsiveFieldGrid(category === 'personales' ? 'minmax(160px, 1fr) minmax(140px, 1fr) minmax(140px, 1fr) minmax(100px, 0.5fr)' : 'minmax(160px, 1fr) minmax(140px, 1fr) minmax(140px, 1fr)')}>
                           <TextField sx={inputSx} fullWidth size="small" required type="date" label="Fecha" InputLabelProps={{ shrink: true }} inputProps={{ min: todayString }} value={terapia.fecha} onChange={(e) => { const n = [...form.salida.terapiasList]; n[idx].fecha = e.target.value; update('salida', 'terapiasList', n); }} />
-                          <TextField sx={inputSx} fullWidth size="small" required type="text" label="Hora inicio" placeholder="08:00" inputProps={{ maxLength: 5 }} InputLabelProps={{ shrink: true }} error={isPastTimeError(terapia.fecha, terapia.horaInicio)} value={terapia.horaInicio} onChange={(e) => { const n = [...form.salida.terapiasList]; n[idx].horaInicio = handleTimeChange(e.target.value); update('salida', 'terapiasList', n); }} onBlur={(e) => { const n = [...form.salida.terapiasList]; n[idx].horaInicio = formatTimeOnBlur(e.target.value); update('salida', 'terapiasList', n); }} />
-                          <TextField sx={inputSx} fullWidth size="small" required type="text" label="Hora fin" placeholder="10:00" inputProps={{ maxLength: 5 }} InputLabelProps={{ shrink: true }} error={isPastTimeError(terapia.fecha, terapia.horaFin)} value={terapia.horaFin} onChange={(e) => { const n = [...form.salida.terapiasList]; n[idx].horaFin = handleTimeChange(e.target.value); update('salida', 'terapiasList', n); }} onBlur={(e) => { const n = [...form.salida.terapiasList]; n[idx].horaFin = formatTimeOnBlur(e.target.value); update('salida', 'terapiasList', n); }} />
-                          <Box sx={{ minHeight: 40, px: 1.5, borderRadius: 1.5, bgcolor: tMins ? '#ecfdf5' : '#fff7ed', border: `1px solid ${tMins ? '#bbf7d0' : '#fed7aa'}`, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                            <Typography sx={{ color: tMins ? '#166534' : '#c2410c', fontSize: 12, fontWeight: 800 }}>
-                              {formatMinutes(tMins)}
-                            </Typography>
-                          </Box>
+                          <TextField sx={inputSx} fullWidth size="small" required type="time" label="Hora inicio" InputLabelProps={{ shrink: true }} error={isPastTimeError(terapia.fecha, terapia.horaInicio)} value={terapia.horaInicio} onChange={(e) => { const n = [...form.salida.terapiasList]; n[idx].horaInicio = e.target.value; update('salida', 'terapiasList', n); }} />
+                          <TextField sx={inputSx} fullWidth size="small" required type="time" label="Hora fin" InputLabelProps={{ shrink: true }} error={isPastTimeError(terapia.fecha, terapia.horaFin)} value={terapia.horaFin} onChange={(e) => { const n = [...form.salida.terapiasList]; n[idx].horaFin = e.target.value; update('salida', 'terapiasList', n); }} />
+                          {category === 'personales' && (
+                            <Box sx={{ minHeight: 40, px: 1.5, borderRadius: 1.5, bgcolor: tMins ? '#ecfdf5' : '#fff7ed', border: `1px solid ${tMins ? '#bbf7d0' : '#fed7aa'}`, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                              <Typography sx={{ color: tMins ? '#166534' : '#c2410c', fontSize: 12, fontWeight: 800 }}>
+                                {formatMinutes(tMins)}
+                              </Typography>
+                            </Box>
+                          )}
                         </Box>
                       </Box>
                     );
                   })}
 
-                  <Box sx={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: 2, mt: 1.5, pr: 0.5 }}>
-                    <TextField
-                      sx={{ ...inputSx, width: 220 }}
-                      required
-                      type="number"
-                      size="small"
-                      label="Tiempo a reponer (horas)"
-                      InputLabelProps={{ shrink: true }}
-                      inputProps={{ min: 0, step: 1 }}
-                      value={form.salida.tiempoReponerHoras || ''}
-                      onChange={(e) => update('salida', 'tiempoReponerHoras', e.target.value.replace(/[^0-9]/g, ''))}
-                    />
-                    <Box sx={{ minHeight: 40, px: 2, borderRadius: 1.5, bgcolor: salidaMinutes ? '#ecfdf5' : '#fff7ed', border: `1px solid ${salidaMinutes ? '#bbf7d0' : '#fed7aa'}`, display: 'flex', alignItems: 'center', gap: 2, boxShadow: '0 2px 8px rgba(0,0,0,0.05)' }}>
-                      <Typography sx={{ fontSize: 13, fontWeight: 800, color: '#334155' }}>
-                        TOTAL GENERAL:
-                      </Typography>
-                      <Typography sx={{ color: salidaMinutes ? '#166534' : '#c2410c', fontSize: 14, fontWeight: 900 }}>
-                        {formatMinutes(salidaMinutes)}
-                      </Typography>
+                  {category === 'personales' && (
+                    <Box sx={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: 2, mt: 1.5, pr: 0.5 }}>
+                      <TextField
+                        sx={{ ...inputSx, width: 220 }}
+                        required
+                        type="number"
+                        size="small"
+                        label="Tiempo a reponer (horas)"
+                        InputLabelProps={{ shrink: true }}
+                        inputProps={{ min: 0, step: 1 }}
+                        value={form.salida.tiempoReponerHoras || ''}
+                        onChange={(e) => update('salida', 'tiempoReponerHoras', e.target.value.replace(/[^0-9]/g, ''))}
+                      />
+                      <Box sx={{ minHeight: 40, px: 2, borderRadius: 1.5, bgcolor: salidaMinutes ? '#ecfdf5' : '#fff7ed', border: `1px solid ${salidaMinutes ? '#bbf7d0' : '#fed7aa'}`, display: 'flex', alignItems: 'center', gap: 2, boxShadow: '0 2px 8px rgba(0,0,0,0.05)' }}>
+                        <Typography sx={{ fontSize: 13, fontWeight: 800, color: '#334155' }}>
+                          TOTAL GENERAL:
+                        </Typography>
+                        <Typography sx={{ color: salidaMinutes ? '#166534' : '#c2410c', fontSize: 14, fontWeight: 900 }}>
+                          {formatMinutes(salidaMinutes)}
+                        </Typography>
+                      </Box>
                     </Box>
-                  </Box>
+                  )}
                 </Box>
               )}
 
               {subtype !== 'terapias' && (
-                <Box sx={responsiveFieldGrid('minmax(160px, 1fr) minmax(140px, 0.8fr) minmax(160px, 1fr) minmax(140px, 0.8fr) minmax(165px, 0.9fr)')}>
+                <Box sx={responsiveFieldGrid(category === 'personales' ? 'minmax(160px, 1fr) minmax(140px, 0.8fr) minmax(160px, 1fr) minmax(140px, 0.8fr) minmax(165px, 0.9fr)' : 'minmax(160px, 1fr) minmax(140px, 0.8fr) minmax(160px, 1fr) minmax(140px, 0.8fr)')}>
                   <TextField sx={inputSx} fullWidth size="small" required type="date" label="Fecha salida" InputLabelProps={{ shrink: true }} inputProps={{ min: todayString }} value={form.salida.fecha} onChange={(e) => update('salida', 'fecha', e.target.value)} />
-                  <TextField sx={inputSx} fullWidth size="small" required type="text" label="Hora salida" placeholder="13:45" inputProps={{ maxLength: 5 }} InputLabelProps={{ shrink: true }} error={isPastTimeError(form.salida.fecha, form.salida.horaInicio)} value={form.salida.horaInicio} onChange={(e) => update('salida', 'horaInicio', handleTimeChange(e.target.value))} onBlur={(e) => update('salida', 'horaInicio', formatTimeOnBlur(e.target.value))} />
+                  <TextField sx={inputSx} fullWidth size="small" required type="time" label="Hora salida" InputLabelProps={{ shrink: true }} error={isPastTimeError(form.salida.fecha, form.salida.horaInicio)} value={form.salida.horaInicio} onChange={(e) => update('salida', 'horaInicio', e.target.value)} />
                   <TextField sx={inputSx} fullWidth size="small" required type="date" label="Fecha regreso" InputLabelProps={{ shrink: true }} inputProps={{ min: todayString }} value={form.salida.fechaRegreso} onChange={(e) => update('salida', 'fechaRegreso', e.target.value)} />
-                  <TextField sx={inputSx} fullWidth size="small" required type="text" label="Hora regreso" placeholder="18:30" inputProps={{ maxLength: 5 }} InputLabelProps={{ shrink: true }} error={isPastTimeError(form.salida.fechaRegreso, form.salida.horaFin)} value={form.salida.horaFin} onChange={(e) => update('salida', 'horaFin', handleTimeChange(e.target.value))} onBlur={(e) => update('salida', 'horaFin', formatTimeOnBlur(e.target.value))} />
-                  <TextField sx={inputSx} fullWidth size="small" required type="number" label="Tiempo a reponer (horas)" InputLabelProps={{ shrink: true }} inputProps={{ min: 0, step: 1 }} value={form.salida.tiempoReponerHoras || ''} onChange={(e) => update('salida', 'tiempoReponerHoras', e.target.value.replace(/[^0-9]/g, ''))} />
+                  <TextField sx={inputSx} fullWidth size="small" required type="time" label="Hora regreso" InputLabelProps={{ shrink: true }} error={isPastTimeError(form.salida.fechaRegreso, form.salida.horaFin)} value={form.salida.horaFin} onChange={(e) => update('salida', 'horaFin', e.target.value)} />
+                  {category === 'personales' && (
+                    <TextField sx={inputSx} fullWidth size="small" required type="number" label="Tiempo a reponer (horas)" InputLabelProps={{ shrink: true }} inputProps={{ min: 0, step: 1 }} value={form.salida.tiempoReponerHoras || ''} onChange={(e) => update('salida', 'tiempoReponerHoras', e.target.value.replace(/[^0-9]/g, ''))} />
+                  )}
                 </Box>
               )}
 
@@ -1860,28 +1863,12 @@ function ReporteSalidaFormDialog({ open, documento, user, onClose, onSubmitted }
               </Box>
             </Box>
 
-            <Alert severity={salidaMinutes ? 'success' : 'warning'}>Tiempo solicitado: {formatMinutes(salidaMinutes)}</Alert>
+            {category === 'personales' && (
+              <Alert severity={salidaMinutes ? 'success' : 'warning'}>Tiempo solicitado: {formatMinutes(salidaMinutes)}</Alert>
+            )}
             {salidaRangeIssue && <Alert severity="warning">{salidaRangeIssue}</Alert>}
 
-            {isPersonal && (
-              <Box sx={{ ...sectionSx, borderColor: '#bfdbfe', bgcolor: '#f8fbff' }}>
-                <SectionTitle title="Plan inicial de reposición" />
-                <Grid container spacing={1.5}>
-                  <Grid item xs={12} md={3}><TextField sx={inputSx} fullWidth size="small" required type="date" label="Fecha reposicion" InputLabelProps={{ shrink: true }} inputProps={{ min: todayString }} value={form.reposicion.fecha} onChange={(e) => update('reposicion', 'fecha', e.target.value)} /></Grid>
-                  <Grid item xs={6} md={3}><TextField sx={inputSx} fullWidth size="small" required type="text" label="Hora reposicion" placeholder="08:00" inputProps={{ maxLength: 5 }} InputLabelProps={{ shrink: true }} error={isPastTimeError(form.reposicion.fecha, form.reposicion.horaInicio)} value={form.reposicion.horaInicio} onChange={(e) => update('reposicion', 'horaInicio', handleTimeChange(e.target.value))} onBlur={(e) => update('reposicion', 'horaInicio', formatTimeOnBlur(e.target.value))} /></Grid>
-                  <Grid item xs={12} md={3}><TextField sx={inputSx} fullWidth size="small" required type="date" label="Fecha fin reposicion" InputLabelProps={{ shrink: true }} inputProps={{ min: todayString }} value={form.reposicion.fechaFin} onChange={(e) => update('reposicion', 'fechaFin', e.target.value)} /></Grid>
-                  <Grid item xs={6} md={3}><TextField sx={inputSx} fullWidth size="small" required type="text" label="Hora fin reposicion" placeholder="12:00" inputProps={{ maxLength: 5 }} InputLabelProps={{ shrink: true }} error={isPastTimeError(form.reposicion.fechaFin, form.reposicion.horaFin)} value={form.reposicion.horaFin} onChange={(e) => update('reposicion', 'horaFin', handleTimeChange(e.target.value))} onBlur={(e) => update('reposicion', 'horaFin', formatTimeOnBlur(e.target.value))} /></Grid>
-                  <Grid item xs={12}><TextField sx={inputSx} fullWidth size="small" label="Observación reposición" value={form.reposicion.observacion} onChange={(e) => update('reposicion', 'observacion', e.target.value)} /></Grid>
-                </Grid>
-              <Grid item xs={12}>{reposicionRangeIssue && <Alert sx={{ mt: 1.4 }} severity="warning">{reposicionRangeIssue}</Alert>}
-                <Box sx={{ mt: 1.4, p: 1, borderRadius: 1.5, border: '1px solid #cbd5e1', bgcolor: '#f8fafc', display: 'flex', justifyContent: 'center' }}>
-                  <Typography sx={{ fontSize: 12.5, fontWeight: 700, color: '#475569' }}>
-                    Horas propuestas: {formatMinutes(reposicionMinutes)} | Horas pendientes: {formatMinutes(salidaMinutes)}
-                  </Typography>
-                </Box>
-              </Grid>
-              </Box>
-            )}
+
 
             <Alert severity="info" icon={false} sx={{ mt: 1, '& .MuiAlert-message': { width: '100%' } }}>
               <Typography sx={{ fontSize: 13, color: '#0f172a', textAlign: 'center' }}>
