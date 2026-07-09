@@ -638,8 +638,8 @@ const buildPdfBuffer = async (solicitud) => {
       const jefeDate = solicitud.jefe_aprobado_at ? formatDateTime(solicitud.jefe_aprobado_at) : 'Pendiente';
       const ghDate = solicitud.gestion_humana_aprobado_at ? formatDateTime(solicitud.gestion_humana_aprobado_at) : 'Pendiente';
 
-      const isPropiasCargo = ['ponencia', 'visita_ies', 'capacitacion', 'proyecto_investigacion', 'asistente_congreso', 'practica_academica', 'torneo_deportivo', 'salida_campus', 'otra'].includes(salida.tipo) || String(salida.tipo).startsWith('otra:');
-      const requiresSst = isPropiasCargo && ['Nacional', 'Internacional'].includes(alcance);
+      const isPropiasCargoSubtype = ['ponencia', 'visita_ies', 'capacitacion', 'proyecto_investigacion', 'asistente_congreso', 'practica_academica', 'torneo_deportivo', 'salida_campus', 'otra'].includes(salida.tipo) || String(salida.tipo).startsWith('otra:');
+      const requiresSst = isPropiasCargoSubtype && ['Nacional', 'Internacional'].includes(alcance);
 
       const sstEvent = Array.isArray(solicitud.trazabilidad)
         ? solicitud.trazabilidad.find(t => t.event === 'aprobada_sst')
