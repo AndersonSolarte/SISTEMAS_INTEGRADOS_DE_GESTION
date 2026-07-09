@@ -88,7 +88,7 @@ const renderInstitutionalTemplate = ({ title, introHtml, bodyHtml, senderHtml })
   <div style="font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; max-width: 640px; margin: 0 auto; color: #0f172a; border: 1px solid #dbeafe; border-radius: 12px; overflow: hidden; box-shadow: 0 4px 12px rgba(11, 58, 111, 0.05); background-color: #ffffff;">
     <!-- Encabezado Institucional -->
     <div style="background-color: #ffffff; border-bottom: 1px solid #f1f5f9; text-align: center;">
-      <img src="cid:encabezadocorreos" alt="Universidad CESMAG" style="display: block; width: 100%; max-width: 640px; height: auto; margin: 0 auto; border: 0;" />
+      <img src="cid:encabezadocorreos" alt="Universidad CESMAG" width="640" style="display: block; width: 640px; max-width: 100%; height: auto; margin: 0 auto; border: 0;" />
     </div>
     
     <!-- Barra Azul -->
@@ -140,7 +140,8 @@ const prepareMailOptions = (options) => {
       finalOptions.attachments.push({
         filename: 'Encabezado_correos.png',
         path: headerImagePath,
-        cid: 'encabezadocorreos'
+        cid: 'encabezadocorreos',
+        disposition: 'inline'
       });
     }
   }
