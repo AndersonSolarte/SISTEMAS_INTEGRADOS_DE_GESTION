@@ -847,6 +847,8 @@ const validateRadicacionPayload = (payload, user) => {
       const t = salida.terapiasList[i];
       if (!t.fecha || !t.horaInicio || !t.horaFin) return `Complete fecha, hora inicio y hora fin para la terapia #${i + 1}.`;
     }
+  } else if (salida.tipo === 'urgencia_medica') {
+    if (!salida.fecha || !salida.horaInicio) return 'Debe indicar fecha y hora de salida a urgencias.';
   } else {
     if (!salida.fecha || !salida.fechaRegreso || !salida.horaInicio || !salida.horaFin) return 'Debe indicar fecha de salida, hora de salida, fecha de regreso y hora de regreso.';
   }
@@ -854,10 +856,12 @@ const validateRadicacionPayload = (payload, user) => {
   let requestedMinutes = 0;
   if (salida.tipo === 'terapias') {
     requestedMinutes = (salida.terapiasList || []).reduce((acc, t) => acc + (diffBusinessMinutes(t.fecha, t.fecha, t.horaInicio, t.horaFin) || 0), 0);
+  } else if (salida.tipo === 'urgencia_medica') {
+    requestedMinutes = 0;
   } else {
     requestedMinutes = diffBusinessMinutes(salida.fecha, salida.fechaRegreso, salida.horaInicio, salida.horaFin);
   }
-  if (!requestedMinutes) return 'El rango de salida no es valido. Revise que la fecha y hora final sean posteriores a la inicial.';
+  if (salida.tipo !== 'urgencia_medica' && !requestedMinutes) return 'El rango de salida no es valido. Revise que la fecha y hora final sean posteriores a la inicial.';
 
   const bodyReposicionMinutos = parseInt(payload?.reposicion_minutos, 10);
   const reposicionMinutosVal = isNaN(bodyReposicionMinutos) ? 0 : bodyReposicionMinutos;

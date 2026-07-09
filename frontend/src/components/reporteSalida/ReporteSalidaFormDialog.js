@@ -671,6 +671,9 @@ function ReporteSalidaFormDialog({ open, documento, user, onClose, onSubmitted }
         return total + tMins;
       }, 0);
     }
+    if (subtype === 'urgencia_medica') {
+      return 0;
+    }
     return countBusinessMinutes(form.salida.fecha, form.salida.fechaRegreso, form.salida.horaInicio, form.salida.horaFin);
   }, [form.salida.fecha, form.salida.fechaRegreso, form.salida.horaInicio, form.salida.horaFin, form.salida.terapiasList, subtype]);
 
@@ -680,6 +683,9 @@ function ReporteSalidaFormDialog({ open, documento, user, onClose, onSubmitted }
   );
 
   const salidaRangeIssue = useMemo(() => {
+    if (subtype === 'urgencia_medica') {
+      return '';
+    }
     if (subtype === 'terapias') {
       const list = form.salida.terapiasList || [];
       for (let i = 0; i < list.length; i++) {
@@ -795,6 +801,10 @@ function ReporteSalidaFormDialog({ open, documento, user, onClose, onSubmitted }
         issues.push(salidaRangeIssue);
       } else if (!salidaMinutes) {
         issues.push('El tiempo total de terapias debe ser mayor a cero.');
+      }
+    } else if (subtype === 'urgencia_medica') {
+      if (!form.salida.fecha || !form.salida.horaInicio) {
+        issues.push('Complete la fecha y hora de salida a urgencias.');
       }
     } else {
       if (!form.salida.fecha || !form.salida.horaInicio || !form.salida.fechaRegreso || !form.salida.horaFin) {
@@ -1910,8 +1920,14 @@ function ReporteSalidaFormDialog({ open, documento, user, onClose, onSubmitted }
               )}
 
               {subtype !== 'terapias' && (
-                <Box sx={responsiveFieldGrid(category === 'personales' ? 'minmax(160px, 1fr) minmax(140px, 0.8fr) minmax(160px, 1fr) minmax(140px, 0.8fr) minmax(165px, 0.9fr)' : 'minmax(160px, 1fr) minmax(140px, 0.8fr) minmax(160px, 1fr) minmax(140px, 0.8fr)')}>
-                  <TextField sx={inputSx} fullWidth size="small" required type="date" label="Fecha salida" InputLabelProps={{ shrink: true }} inputProps={{ min: todayString }} value={form.salida.fecha} onChange={(e) => update('salida', 'fecha', e.target.value)} />
+                <Box sx={responsiveFieldGrid(
+                  subtype === 'urgencia_medica'
+                    ? 'minmax(160px, 1fr) minmax(140px, 1fr)'
+                    : (category === 'personales'
+                        ? 'minmax(160px, 1fr) minmax(140px, 0.8fr) minmax(160px, 1fr) minmax(140px, 0.8fr) minmax(165px, 0.9fr)'
+                        : 'minmax(160px, 1fr) minmax(140px, 0.8fr) minmax(160px, 1fr) minmax(140px, 0.8fr)')
+                )}>
+                  <TextField sx={inputSx} fullWidth size="small" required type="date" label={subtype === 'urgencia_medica' ? "Fecha de salida a urgencias" : "Fecha salida"} InputLabelProps={{ shrink: true }} inputProps={{ min: todayString }} value={form.salida.fecha} onChange={(e) => update('salida', 'fecha', e.target.value)} />
                   <Autocomplete
                     freeSolo
                     disableClearable
@@ -1924,7 +1940,7 @@ function ReporteSalidaFormDialog({ open, documento, user, onClose, onSubmitted }
                         {...params}
                         sx={inputSx}
                         required
-                        label="Hora salida"
+                        label={subtype === 'urgencia_medica' ? "Hora de salida a urgencias" : "Hora salida"}
                         placeholder="ej. 13:45"
                         InputLabelProps={{ shrink: true }}
                         error={isPastTimeError(form.salida.fecha, form.salida.horaInicio)}
@@ -1932,28 +1948,32 @@ function ReporteSalidaFormDialog({ open, documento, user, onClose, onSubmitted }
                       />
                     )}
                   />
-                  <TextField sx={inputSx} fullWidth size="small" required type="date" label="Fecha regreso" InputLabelProps={{ shrink: true }} inputProps={{ min: todayString }} value={form.salida.fechaRegreso} onChange={(e) => update('salida', 'fechaRegreso', e.target.value)} />
-                  <Autocomplete
-                    freeSolo
-                    disableClearable
-                    options={TIME_OPTIONS}
-                    value={form.salida.horaFin || ''}
-                    onChange={(e, newValue) => update('salida', 'horaFin', newValue)}
-                    onInputChange={(e, newValue) => update('salida', 'horaFin', handleTimeChange(newValue))}
-                    renderInput={(params) => (
-                      <TextField
-                        {...params}
-                        sx={inputSx}
-                        required
-                        label="Hora regreso"
-                        placeholder="ej. 18:30"
-                        InputLabelProps={{ shrink: true }}
-                        error={isPastTimeError(form.salida.fechaRegreso, form.salida.horaFin)}
-                        onBlur={(e) => update('salida', 'horaFin', formatTimeOnBlur(e.target.value))}
+                  {subtype !== 'urgencia_medica' && (
+                    <>
+                      <TextField sx={inputSx} fullWidth size="small" required type="date" label="Fecha regreso" InputLabelProps={{ shrink: true }} inputProps={{ min: todayString }} value={form.salida.fechaRegreso} onChange={(e) => update('salida', 'fechaRegreso', e.target.value)} />
+                      <Autocomplete
+                        freeSolo
+                        disableClearable
+                        options={TIME_OPTIONS}
+                        value={form.salida.horaFin || ''}
+                        onChange={(e, newValue) => update('salida', 'horaFin', newValue)}
+                        onInputChange={(e, newValue) => update('salida', 'horaFin', handleTimeChange(newValue))}
+                        renderInput={(params) => (
+                          <TextField
+                            {...params}
+                            sx={inputSx}
+                            required
+                            label="Hora regreso"
+                            placeholder="ej. 18:30"
+                            InputLabelProps={{ shrink: true }}
+                            error={isPastTimeError(form.salida.fechaRegreso, form.salida.horaFin)}
+                            onBlur={(e) => update('salida', 'horaFin', formatTimeOnBlur(e.target.value))}
+                          />
+                        )}
                       />
-                    )}
-                  />
-                  {category === 'personales' && (
+                    </>
+                  )}
+                  {category === 'personales' && subtype !== 'urgencia_medica' && (
                     <TextField sx={inputSx} fullWidth size="small" required type="number" label="Tiempo a reponer (horas)" InputLabelProps={{ shrink: true }} inputProps={{ min: 0, step: 1 }} value={form.salida.tiempoReponerHoras || ''} onChange={(e) => update('salida', 'tiempoReponerHoras', e.target.value.replace(/[^0-9]/g, ''))} />
                   )}
                 </Box>

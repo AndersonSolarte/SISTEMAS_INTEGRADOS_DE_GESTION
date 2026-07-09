@@ -491,9 +491,9 @@ const buildPdfBuffer = async (solicitud) => {
                   ],
                   [
                     { text: 'Fecha de regreso:', bold: true },
-                    { text: formatDate(salida.fechaRegreso || salida.fechaFin || salida.fecha) },
+                    { text: salida.tipo === 'urgencia_medica' ? 'No aplica (Urgencia)' : formatDate(salida.fechaRegreso || salida.fechaFin || salida.fecha) },
                     { text: 'Hora de regreso:', bold: true },
-                    { text: formatTimeAmPm(salida.horaFin) }
+                    { text: salida.tipo === 'urgencia_medica' ? 'No aplica (Urgencia)' : formatTimeAmPm(salida.horaFin) }
                   ]
                 ] : []),
                 [
