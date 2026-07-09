@@ -365,14 +365,17 @@ const buildPdfBuffer = async (solicitud) => {
 
       const isSalidaMultiple = Boolean(data.isSalidaMultiple);
       const participantes = data.participantes || [];
-      const alcance = salida.alcance || '';
+      const isPropiasCargo = salida.categoria === 'propias_cargo' && salida.tipo !== 'salida_campus';
+      const alcance = isPropiasCargo ? (salida.alcance || 'Local') : 'Local';
       let ubicacionStr = alcance;
-      if (alcance === 'Internacional' && salida.pais) {
-        ubicacionStr = `${alcance} (${salida.pais})`;
-      } else if (alcance === 'Nacional' && salida.departamento && salida.municipio) {
-        ubicacionStr = `${alcance} (${salida.municipio}, ${salida.departamento})`;
-      } else if (alcance === 'Regional' && salida.municipio) {
-        ubicacionStr = `${alcance} (${salida.municipio}, Nariño)`;
+      if (isPropiasCargo) {
+        if (alcance === 'Internacional' && salida.pais) {
+          ubicacionStr = `${alcance} (${salida.pais})`;
+        } else if (alcance === 'Nacional' && salida.departamento && salida.municipio) {
+          ubicacionStr = `${alcance} (${salida.municipio}, ${salida.departamento})`;
+        } else if (alcance === 'Regional' && salida.municipio) {
+          ubicacionStr = `${alcance} (${salida.municipio}, Nariño)`;
+        }
       }
 
       let motivoStr = salida.motivo || getTipoSalidaLabel(salida.tipo);

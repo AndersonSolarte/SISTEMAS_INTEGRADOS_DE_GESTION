@@ -1818,10 +1818,10 @@ const radicarSolicitud = async (req, res) => {
               especialidadMedica: sanitizeText(salida.especialidadMedica, 100),
               terapiasList: salida.terapiasList || [],
               categoria: sanitizeText(salida.categoria || salida.category || '', 100),
-              alcance: sanitizeText(salida.alcance || '', 100),
-              pais: sanitizeText(salida.pais || '', 100),
-              departamento: sanitizeText(salida.departamento || '', 100),
-              municipio: sanitizeText(salida.municipio || '', 100)
+              alcance: (salida.categoria === 'propias_cargo' && salida.tipo !== 'salida_campus') ? sanitizeText(salida.alcance || 'Local', 100) : 'Local',
+              pais: (salida.categoria === 'propias_cargo' && salida.alcance === 'Internacional') ? sanitizeText(salida.pais || '', 100) : '',
+              departamento: (salida.categoria === 'propias_cargo' && salida.alcance === 'Nacional') ? sanitizeText(salida.departamento || '', 100) : '',
+              municipio: (salida.categoria === 'propias_cargo' && ['Nacional', 'Regional'].includes(salida.alcance)) ? sanitizeText(salida.municipio || '', 100) : ''
             },
             reposicion: {
               fecha: '',
@@ -1948,10 +1948,10 @@ const radicarSolicitud = async (req, res) => {
           especialidadMedica: sanitizeText(salida.especialidadMedica, 100),
           terapiasList: salida.terapiasList || [],
           categoria: sanitizeText(salida.categoria || salida.category || '', 100),
-          alcance: sanitizeText(salida.alcance || '', 100),
-          pais: sanitizeText(salida.pais || '', 100),
-          departamento: sanitizeText(salida.departamento || '', 100),
-          municipio: sanitizeText(salida.municipio || '', 100)
+          alcance: (salida.categoria === 'propias_cargo' && salida.tipo !== 'salida_campus') ? sanitizeText(salida.alcance || 'Local', 100) : 'Local',
+          pais: (salida.categoria === 'propias_cargo' && salida.alcance === 'Internacional') ? sanitizeText(salida.pais || '', 100) : '',
+          departamento: (salida.categoria === 'propias_cargo' && salida.alcance === 'Nacional') ? sanitizeText(salida.departamento || '', 100) : '',
+          municipio: (salida.categoria === 'propias_cargo' && ['Nacional', 'Regional'].includes(salida.alcance)) ? sanitizeText(salida.municipio || '', 100) : ''
         },
         reposicion: {
           fecha: sanitizeText(reposicion.fecha, 20),
