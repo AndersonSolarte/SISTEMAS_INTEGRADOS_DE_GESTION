@@ -87,16 +87,9 @@ const renderInstitutionalTemplate = ({ title, introHtml, bodyHtml, senderHtml })
   return `
   <div style="font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; max-width: 640px; margin: 0 auto; color: #0f172a; border: 1px solid #dbeafe; border-radius: 12px; overflow: hidden; box-shadow: 0 4px 12px rgba(11, 58, 111, 0.05); background-color: #ffffff;">
     <!-- Encabezado Institucional -->
-    <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="background-color: #ffffff; padding: 20px 20px 15px 20px; border-bottom: 1px solid #f1f5f9;">
-      <tr>
-        <td align="left" valign="middle" style="width: 180px;">
-          <img src="${frontendUrl}/Logo%20Universidad%20CESMAG.png" alt="UNICESMAG" height="42" style="display: block; border: 0; height: 42px; max-height: 42px;" />
-        </td>
-        <td align="right" valign="middle" style="font-family: 'Arial', sans-serif; font-size: 10px; font-weight: bold; color: #475569; letter-spacing: 1.5px; text-transform: uppercase;">
-          HOMBRES NUEVOS PARA TIEMPOS NUEVOS
-        </td>
-      </tr>
-    </table>
+    <div style="background-color: #ffffff; border-bottom: 1px solid #f1f5f9; text-align: center;">
+      <img src="cid:encabezadocorreos" alt="Universidad CESMAG" style="display: block; width: 100%; max-width: 640px; height: auto; margin: 0 auto; border: 0;" />
+    </div>
     
     <!-- Barra Azul -->
     <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="background-color: #0b3a6f; color: #ffffff;">
@@ -131,6 +124,27 @@ const renderInstitutionalTemplate = ({ title, introHtml, bodyHtml, senderHtml })
     </div>
   </div>
 `;
+};
+
+const prepareMailOptions = (options) => {
+  const path = require('path');
+  const fs = require('fs');
+  const headerImagePath = path.join(__dirname, '..', 'assets', 'Encabezado_correos.png');
+  
+  const finalOptions = { ...options };
+  if (!finalOptions.attachments) finalOptions.attachments = [];
+  
+  if (finalOptions.html && finalOptions.html.includes('cid:encabezadocorreos') && fs.existsSync(headerImagePath)) {
+    const hasCid = finalOptions.attachments.some(att => att.cid === 'encabezadocorreos');
+    if (!hasCid) {
+      finalOptions.attachments.push({
+        filename: 'Encabezado_correos.png',
+        path: headerImagePath,
+        cid: 'encabezadocorreos'
+      });
+    }
+  }
+  return finalOptions;
 };
 
 const sendWelcomeEmail = async (user) => {
@@ -276,7 +290,7 @@ const sendWelcomeEmail = async (user) => {
     if (smtpConfigError) {
       return { success: false, error: smtpConfigError };
     }
-    await transporter.sendMail(mailOptions);
+    await transporter.sendMail(prepareMailOptions(mailOptions));
     console.log('✅ Email enviado a:', safeRecipient);
     return { success: true };
   } catch (error) {
@@ -312,7 +326,7 @@ const sendPasswordResetEmail = async (user, resetToken) => {
     if (smtpConfigError) {
       return { success: false, error: smtpConfigError };
     }
-    await transporter.sendMail(mailOptions);
+    await transporter.sendMail(prepareMailOptions(mailOptions));
     console.log('✅ Email de recuperación enviado a:', safeRecipient);
     return { success: true };
   } catch (error) {
@@ -352,7 +366,7 @@ const sendTemporaryPasswordEmail = async (user, tempPassword) => {
     if (smtpConfigError) {
       return { success: false, error: smtpConfigError };
     }
-    await transporter.sendMail(mailOptions);
+    await transporter.sendMail(prepareMailOptions(mailOptions));
     console.log('✅ Email de contraseña temporal enviado a:', safeRecipient);
     return { success: true };
   } catch (error) {
@@ -392,7 +406,7 @@ const sendInstitutionalEmail = async ({ to, subject, text, html, attachments = [
   }
 
   try {
-    const info = await transporter.sendMail(mailOptions);
+    const info = await transporter.sendMail(prepareMailOptions(mailOptions));
     return { success: true, messageId: info?.messageId };
   } catch (error) {
     console.error('Error enviando correo institucional:', error);
