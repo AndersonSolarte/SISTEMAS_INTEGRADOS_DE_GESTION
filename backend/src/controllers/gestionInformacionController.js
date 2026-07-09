@@ -5048,6 +5048,93 @@ const getEstadisticas = async (req, res) => {
         acc[row][col] = (acc[row][col] || 0) + 1;
         return acc;
       }, {});
+      const classifyPerson = (value = '') => {
+        const key = normalizeFilterKey(value);
+        if (key.includes('ESTUD')) return 'estudiantes';
+        if (key.includes('DOCEN') || key.includes('PROFES')) return 'docentes';
+        if (key.includes('ADMIN')) return 'administrativos';
+        return 'otros';
+      };
+      const classifyDirection = (value = '') => {
+        const key = normalizeFilterKey(value);
+        if (key.includes('ENTR')) return 'entrantes';
+        if (key.includes('SAL')) return 'salientes';
+        return 'sin_direccion';
+      };
+      const sniesPersonDirection = rows.reduce((acc, row) => {
+        const person = classifyPerson(row.tipo_persona);
+        const direction = classifyDirection(row.direccion_movilidad);
+        if (!acc[person]) acc[person] = { entrantes: 0, salientes: 0, sin_direccion: 0, total: 0 };
+        acc[person][direction] = (acc[person][direction] || 0) + 1;
+        acc[person].total += 1;
+        return acc;
+      }, {
+        estudiantes: { entrantes: 0, salientes: 0, sin_direccion: 0, total: 0 },
+        docentes: { entrantes: 0, salientes: 0, sin_direccion: 0, total: 0 },
+        administrativos: { entrantes: 0, salientes: 0, sin_direccion: 0, total: 0 },
+        otros: { entrantes: 0, salientes: 0, sin_direccion: 0, total: 0 }
+      });
+      const initPopulationProfile = () => ({
+        total: 0,
+        entrantes: { total: 0, entidades: {}, convenios: {}, actividades: {}, tiposMovilidad: {}, paises: {}, departamentos: {}, municipios: {} },
+        salientes: { total: 0, entidades: {}, convenios: {}, actividades: {}, tiposMovilidad: {}, paises: {}, departamentos: {}, municipios: {} },
+        sin_direccion: { total: 0, entidades: {}, convenios: {}, actividades: {}, tiposMovilidad: {}, paises: {}, departamentos: {}, municipios: {} }
+      });
+      const addCount = (target, key, fallback = 'Sin dato') => {
+        const value = String(key || '').trim() || fallback;
+        if (['Sin dato', 'N/A', 'NA', 'N A'].includes(value)) return;
+        target[value] = (target[value] || 0) + 1;
+      };
+      const topFromObject = (obj = {}, limit = 6) => Object.entries(obj)
+        .map(([name, value]) => ({ name, value }))
+        .sort((a, b) => b.value - a.value || String(a.name).localeCompare(String(b.name), 'es'))
+        .slice(0, limit);
+      const populationProfilesRaw = {
+        estudiantes: initPopulationProfile(),
+        docentes: initPopulationProfile(),
+        administrativos: initPopulationProfile()
+      };
+      rows.forEach((row) => {
+        const person = classifyPerson(row.tipo_persona);
+        if (!populationProfilesRaw[person]) return;
+        const direction = classifyDirection(row.direccion_movilidad);
+        const bucket = populationProfilesRaw[person][direction] || populationProfilesRaw[person].sin_direccion;
+        populationProfilesRaw[person].total += 1;
+        bucket.total += 1;
+        addCount(bucket.entidades, row.institucion_extranjera);
+        addCount(bucket.convenios, row.codigo_convenio || row.movilidad_por_convenio);
+        addCount(bucket.actividades, row.actividad_movilidad);
+        addCount(bucket.tiposMovilidad, normalizeMobilityType(row.tipo_movilidad));
+        addCount(bucket.paises, normalizeCountryName(row.pais_extranjero));
+        addCount(bucket.departamentos, row.estado_provincia_departamento);
+        addCount(bucket.municipios, row.ciudad_municipio);
+      });
+      const populationProfiles = Object.fromEntries(Object.entries(populationProfilesRaw).map(([key, value]) => [
+        key,
+        {
+          total: value.total,
+          entrantes: {
+            total: value.entrantes.total,
+            entidades: topFromObject(value.entrantes.entidades),
+            convenios: topFromObject(value.entrantes.convenios),
+            actividades: topFromObject(value.entrantes.actividades),
+            tiposMovilidad: topFromObject(value.entrantes.tiposMovilidad),
+            paises: topFromObject(value.entrantes.paises),
+            departamentos: topFromObject(value.entrantes.departamentos),
+            municipios: topFromObject(value.entrantes.municipios)
+          },
+          salientes: {
+            total: value.salientes.total,
+            entidades: topFromObject(value.salientes.entidades),
+            convenios: topFromObject(value.salientes.convenios),
+            actividades: topFromObject(value.salientes.actividades),
+            tiposMovilidad: topFromObject(value.salientes.tiposMovilidad),
+            paises: topFromObject(value.salientes.paises),
+            departamentos: topFromObject(value.salientes.departamentos),
+            municipios: topFromObject(value.salientes.municipios)
+          }
+        }
+      ]));
 
       const byPeriodo = toArr(count(rows, 'periodo'));
       const byAlcance = toArr(count(rows, 'alcance_movilidad'));
@@ -5059,6 +5146,7 @@ const getEstadisticas = async (req, res) => {
       const byPrograma = toArr(count(rows, 'programa_dependencia')).slice(0, 20);
       const byModalidad = toArr(count(rows, 'modalidad'));
       const heatmapPeriodoDireccion = crossCount(rows, 'direccion_movilidad', 'periodo');
+      const institucionesMovilidad = [...new Set(rows.map((r) => String(r.institucion_extranjera || '').trim()).filter(Boolean))].sort();
 
       const catalogos = {
         periodos: [...new Set(rows.map((r) => r.periodo).filter(Boolean))].sort(),
@@ -5083,6 +5171,9 @@ const getEstadisticas = async (req, res) => {
           byPrograma,
           byModalidad,
           heatmapPeriodoDireccion,
+          sniesPersonDirection,
+          populationProfiles,
+          institucionesMovilidad,
           catalogos
         }
       });
