@@ -1108,7 +1108,7 @@ const sendSSTApprovalEmail = async (solicitud, token, attachments) => {
         <strong>Flujo de firmas:</strong><br/>
         • Solicitado por: ${escapeHtml(solicitante.nombre)}<br/>
         • Aprobado por Jefe: ${escapeHtml(solicitud.jefe_snapshot?.nombre || 'Jefe Inmediato')}<br/>
-        • Aprobado por GH: Gestión del Talento Humano
+        • Aprobado por: Gestión del Talento Humano
       </p>
     `
   });
@@ -1204,7 +1204,7 @@ const sendFinalEmails = async (solicitud, pdfAttachment, supportAttachment) => {
   let ghResult = { success: false };
   if (recipients.gestionHumana) {
     const ghHtml = renderInstitutionalTemplate({
-      title: 'Reporte de salida aprobado - Registro GH',
+      title: 'Reporte de salida aprobado - Registro Gestión del Talento Humano',
       introHtml: `<p style="margin: 0 0 12px 0;">Saludo de paz y bien,</p><p style="margin: 0 0 4px 0;">Estimados(as) integrantes,</p><p style="margin: 0 0 16px 0;"><strong>Equipo de Gestión del Talento Humano</strong></p><p>Reciba un cordial saludo. Se remite la solicitud de reporte de salida debidamente finalizada y aprobada del/de la colaborador(a) <strong>${escapeHtml(nombreColaborador)}</strong> para su respectivo registro e incorporación en la carpeta de la hoja de vida.</p>`,
       bodyHtml: `<p>Se adjunta el PDF firmado y el soporte adjunto correspondiente para sus registros.</p>
         ${buildTerapiasHtml(solicitud)}`,
@@ -3330,7 +3330,7 @@ const sendGestionHumanaGroupApprovalEmail = async (solicitudes, token) => {
   const rejectUrl = `${publicBackendUrl.replace(/\/$/, '')}/api/reporte-salida/rechazar-grupo/${encodeURIComponent(token)}`;
   
   const consecutivoGroup = solicitudes[0].consecutivo.split('-').slice(0, 3).join('-') + '-GRUPO';
-  const subject = `REPORTE DE SALIDA GRUPAL ${consecutivoGroup} | [PENDIENTE GH] Aprobación Gestión del Talento Humano`;
+  const subject = `REPORTE DE SALIDA GRUPAL ${consecutivoGroup} | Aprobación Gestión del Talento Humano`;
 
   const mapping = {
     cita_eps: 'Cita medica por EPS',
