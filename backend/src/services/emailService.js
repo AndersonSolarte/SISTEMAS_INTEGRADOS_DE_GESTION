@@ -79,7 +79,12 @@ const resolveMailFrom = () => {
 
 const resolveRoleLabel = (role) => roleLabels[String(role || '').trim()] || String(role || 'Sin rol');
 
-const renderInstitutionalTemplate = ({ title, introHtml, bodyHtml }) => `
+const renderInstitutionalTemplate = ({ title, introHtml, bodyHtml, senderHtml }) => {
+  const finalSenderHtml = senderHtml || `
+    <p style="margin: 0; font-weight: bold; color: #0b3a6f;">SIAC UNICESMAG</p>
+    <p style="margin: 2px 0 0 0; font-size: 11.5px; color: #64748b;">Hombres nuevos para tiempos nuevos</p>
+  `;
+  return `
   <div style="font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; max-width: 640px; margin: 0 auto; color: #0f172a; border: 1px solid #dbeafe; border-radius: 12px; overflow: hidden; box-shadow: 0 4px 12px rgba(11, 58, 111, 0.05); background-color: #ffffff;">
     <!-- Encabezado Institucional -->
     <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="background-color: #ffffff; padding: 20px 20px 15px 20px; border-bottom: 1px solid #f1f5f9;">
@@ -113,9 +118,8 @@ const renderInstitutionalTemplate = ({ title, introHtml, bodyHtml }) => `
       
       <!-- Cierre Fraternal -->
       <div style="margin-top: 30px; border-top: 1px solid #f1f5f9; padding-top: 20px; color: #475569; font-size: 13.5px;">
-        <p style="margin: 0 0 4px 0; font-style: italic; color: #475569;">Fraternalmente,</p>
-        <p style="margin: 0; font-weight: bold; color: #0b3a6f;">SIAC UNICESMAG</p>
-        <p style="margin: 2px 0 0 0; font-size: 11.5px; color: #64748b;">Hombres nuevos para tiempos nuevos</p>
+        <p style="margin: 0 0 6px 0; font-style: italic; color: #475569;">Fraternalmente,</p>
+        ${finalSenderHtml}
       </div>
       
       <!-- Nota de no responder -->
@@ -127,6 +131,7 @@ const renderInstitutionalTemplate = ({ title, introHtml, bodyHtml }) => `
     </div>
   </div>
 `;
+};
 
 const sendWelcomeEmail = async (user) => {
   const safeRecipient = normalizeRecipient(user.email);

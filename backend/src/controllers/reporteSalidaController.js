@@ -995,6 +995,14 @@ const sendJefeApprovalEmail = async (solicitud, token, attachments) => {
         <a href="${rejectUrl}" style="display:inline-block;background:#b91c1c;color:#fff;padding:12px 24px;border-radius:8px;text-decoration:none;font-weight:700;margin:5px 10px;">NO APROBAR SALIDA</a>
       </div>
       <p>Si decide no aprobar la solicitud, haga clic en el botón "No aprobar" para ingresar el motivo de su decisión.</p>
+    `,
+    senderHtml: `
+      <p style="margin: 0; font-weight: bold; color: #0b3a6f;">${escapeHtml(solicitante.nombre)}</p>
+      <p style="margin: 2px 0 0 0; font-size: 12px; color: #64748b;">Colaborador(a) solicitante</p>
+      <p style="margin: 8px 0 0 0; font-size: 11px; color: #94a3b8; border-top: 1px dashed #e2e8f0; padding-top: 6px;">
+        <strong>Flujo de firmas:</strong><br/>
+        • Solicitado por: ${escapeHtml(solicitante.nombre)} (Pendiente de Aprobación del Jefe)
+      </p>
     `
   });
   return sendInstitutionalEmail({
@@ -1017,6 +1025,10 @@ const sendColaboradorRadicacionEmail = async (solicitud, attachments) => {
       <p><strong>Tiempo solicitado:</strong> ${escapeHtml(formatMinutes(solicitud.tiempo_solicitado_minutos))}</p>
       ${buildTerapiasHtml(solicitud)}
       <p>Se adjunta el PDF generado de su solicitud para su respectivo control y archivo.</p>
+    `,
+    senderHtml: `
+      <p style="margin: 0; font-weight: bold; color: #0b3a6f;">Dirección de Planeación y Aseguramiento de la Calidad</p>
+      <p style="margin: 2px 0 0 0; font-size: 12px; color: #64748b;">SIAC UNICESMAG</p>
     `
   });
   return sendInstitutionalEmail({
@@ -1046,6 +1058,15 @@ const sendGestionHumanaApprovalEmail = async (solicitud, token, attachments) => 
         <a href="${rejectUrl}" style="display:inline-block;background:#b91c1c;color:#fff;padding:12px 24px;border-radius:8px;text-decoration:none;font-weight:700;margin:5px 10px;">NO APROBAR SALIDA</a>
       </div>
       <p>Si decide no aprobar la solicitud, haga clic en el botón "No aprobar" para ingresar el motivo de su decisión.</p>
+    `,
+    senderHtml: `
+      <p style="margin: 0; font-weight: bold; color: #0b3a6f;">${escapeHtml(solicitud.jefe_snapshot?.nombre || 'Jefe Inmediato')}</p>
+      <p style="margin: 2px 0 0 0; font-size: 12px; color: #64748b;">Jefe Inmediato</p>
+      <p style="margin: 8px 0 0 0; font-size: 11px; color: #94a3b8; border-top: 1px dashed #e2e8f0; padding-top: 6px;">
+        <strong>Flujo de firmas:</strong><br/>
+        • Solicitado por: ${escapeHtml(solicitante.nombre)}<br/>
+        • Aprobado por Jefe: ${escapeHtml(solicitud.jefe_snapshot?.nombre || 'Jefe Inmediato')}
+      </p>
     `
   });
   const threadId = solicitud.datos_formulario?.thread_message_id;
@@ -1079,6 +1100,16 @@ const sendSSTApprovalEmail = async (solicitud, token, attachments) => {
         <a href="${rejectUrl}" style="display:inline-block;background:#b91c1c;color:#fff;padding:12px 24px;border-radius:8px;text-decoration:none;font-weight:700;margin:5px 10px;">NO APROBAR SALIDA</a>
       </div>
       <p>Si decide no aprobar la solicitud, haga clic en el botón "No aprobar" para ingresar el motivo de su decisión.</p>
+    `,
+    senderHtml: `
+      <p style="margin: 0; font-weight: bold; color: #0b3a6f;">Equipo de Gestión del Talento Humano</p>
+      <p style="margin: 2px 0 0 0; font-size: 12px; color: #64748b;">Universidad CESMAG</p>
+      <p style="margin: 8px 0 0 0; font-size: 11px; color: #94a3b8; border-top: 1px dashed #e2e8f0; padding-top: 6px;">
+        <strong>Flujo de firmas:</strong><br/>
+        • Solicitado por: ${escapeHtml(solicitante.nombre)}<br/>
+        • Aprobado por Jefe: ${escapeHtml(solicitud.jefe_snapshot?.nombre || 'Jefe Inmediato')}<br/>
+        • Aprobado por GH: Gestión del Talento Humano
+      </p>
     `
   });
   const threadId = solicitud.datos_formulario?.thread_message_id;
@@ -1104,12 +1135,26 @@ const sendFinalEmails = async (solicitud, pdfAttachment, supportAttachment) => {
   
   const threadSubject = `Re: REPORTE DE SALIDA ${solicitud.consecutivo} | Colaborador(a): ${nombreColaborador}`;
 
+  const flowSST = solicitud.datos_formulario?.salida?.alcance === 'Internacional' || solicitud.datos_formulario?.salida?.alcance === 'Nacional';
+  const finalApprovalSenderHtml = `
+    <p style="margin: 0; font-weight: bold; color: #0b3a6f;">Dirección de Planeación y Aseguramiento de la Calidad</p>
+    <p style="margin: 2px 0 0 0; font-size: 12px; color: #64748b;">SIAC UNICESMAG</p>
+    <div style="margin: 12px 0 0 0; font-size: 11.5px; color: #15803d; border-top: 1px dashed #e2e8f0; padding-top: 8px; line-height: 1.45;">
+      <span style="font-weight: 800; color: #166534; text-transform: uppercase; letter-spacing: 0.5px; font-size: 10px; display: block; margin-bottom: 4px;">✓ Flujo de Firmas Completado:</span>
+      • Solicitado por: ${escapeHtml(nombreColaborador)}<br/>
+      • Aprobado por Jefe: ${escapeHtml(solicitud.jefe_snapshot?.nombre || 'Jefe Inmediato')}<br/>
+      • Aprobado por: Gestión del Talento Humano<br/>
+      ${flowSST ? '• Aprobado por: Seguridad y Salud en el Trabajo (SST)<br/>' : ''}
+    </div>
+  `;
+
   // 1. Correo para el/la Colaborador(a) (Solo el PDF firmado)
   const userHtml = renderInstitutionalTemplate({
     title: 'Reporte de salida aprobado',
     introHtml: `<p style="margin: 0 0 12px 0;">Saludo de paz y bien,</p><p style="margin: 0 0 4px 0;">Estimado(a) colaborador(a),</p><p style="margin: 0 0 16px 0;"><strong>${escapeHtml(nombreColaborador)}</strong></p><p>Reciba un cordial saludo. En atención a su trámite de reporte de salida con consecutivo <strong>${escapeHtml(solicitud.consecutivo)}</strong>, nos complace informarle que la solicitud ha sido aprobada de manera exitosa y finalizada en el sistema.</p>`,
     bodyHtml: `<p>Se adjunta el PDF digital FR-002 debidamente firmado para sus registros.</p>
-      ${buildTerapiasHtml(solicitud)}`
+      ${buildTerapiasHtml(solicitud)}`,
+    senderHtml: finalApprovalSenderHtml
   });
 
   const userResult = await sendInstitutionalEmail({
@@ -1129,7 +1174,8 @@ const sendFinalEmails = async (solicitud, pdfAttachment, supportAttachment) => {
       title: 'Copia de control - Reporte de salida aprobado',
       introHtml: `<p style="margin: 0 0 12px 0;">Saludo de paz y bien,</p><p style="margin: 0 0 4px 0;">Estimado(a) líder de dependencia,</p><p>Reciba un cordial saludo. Para su respectiva información y control interno, nos permitimos remitirle copia de la solicitud de reporte de salida aprobada para el/la colaborador(a) <strong>${escapeHtml(nombreColaborador)}</strong>, adscrito(a) a su dependencia (<strong>${escapeHtml(dependencialabel)}</strong>).</p>`,
       bodyHtml: `<p>Se adjunta el PDF digital FR-002 debidamente firmado y aprobado.</p>
-        ${buildTerapiasHtml(solicitud)}`
+        ${buildTerapiasHtml(solicitud)}`,
+      senderHtml: finalApprovalSenderHtml
     });
 
     depResult = await sendInstitutionalEmail({
@@ -1149,7 +1195,8 @@ const sendFinalEmails = async (solicitud, pdfAttachment, supportAttachment) => {
       title: 'Reporte de salida aprobado - Registro GH',
       introHtml: `<p style="margin: 0 0 12px 0;">Saludo de paz y bien,</p><p style="margin: 0 0 4px 0;">Estimados(as) integrantes,</p><p style="margin: 0 0 16px 0;"><strong>Equipo de Gestión del Talento Humano</strong></p><p>Reciba un cordial saludo. Se remite la solicitud de reporte de salida debidamente finalizada y aprobada del/de la colaborador(a) <strong>${escapeHtml(nombreColaborador)}</strong> para su respectivo registro e incorporación en la carpeta de la hoja de vida.</p>`,
       bodyHtml: `<p>Se adjunta el PDF firmado y el soporte adjunto correspondiente para sus registros.</p>
-        ${buildTerapiasHtml(solicitud)}`
+        ${buildTerapiasHtml(solicitud)}`,
+      senderHtml: finalApprovalSenderHtml
     });
 
     ghResult = await sendInstitutionalEmail({
@@ -1169,7 +1216,8 @@ const sendFinalEmails = async (solicitud, pdfAttachment, supportAttachment) => {
       title: 'Control SST - Reporte de salida aprobado',
       introHtml: `<p style="margin: 0 0 12px 0;">Saludo de paz y bien,</p><p style="margin: 0 0 4px 0;">Estimados(as) integrantes,</p><p style="margin: 0 0 16px 0;"><strong>Equipo de Seguridad y Salud en el Trabajo (SST)</strong></p><p>Reciba un cordial saludo. Se remite la solicitud de reporte de salida aprobada del/de la colaborador(a) <strong>${escapeHtml(nombreColaborador)}</strong> para su correspondiente registro y control preventivo.</p>`,
       bodyHtml: `<p>Se adjunta el PDF firmado y el soporte adjunto correspondiente para su registro y control.</p>
-        ${buildTerapiasHtml(solicitud)}`
+        ${buildTerapiasHtml(solicitud)}`,
+      senderHtml: finalApprovalSenderHtml
     });
 
     sstResult = await sendInstitutionalEmail({
@@ -2788,6 +2836,10 @@ const sendCollaboratorRejectionEmail = async ({ solicitud, rejectedBy, justifica
         ${escapeHtml(justificacion)}
       </div>
       <p>Consulte mas informacion en el modulo de Seguimiento a reportes del sistema SIAC.</p>
+    `,
+    senderHtml: `
+      <p style="margin: 0; font-weight: bold; color: #b91c1c;">${escapeHtml(rejectedBy)}</p>
+      <p style="margin: 2px 0 0 0; font-size: 12px; color: #64748b;">Jefe Inmediato</p>
     `
   });
   return sendInstitutionalEmail({
@@ -2815,6 +2867,10 @@ const sendGHRejectionEmails = async ({ solicitud, justificacion, isSST = false }
         ${escapeHtml(justificacion)}
       </div>
       <p>Consulte mas informacion en el modulo de Seguimiento a reportes del sistema SIAC.</p>
+    `,
+    senderHtml: `
+      <p style="margin: 0; font-weight: bold; color: #b91c1c;">Equipo de ${escapeHtml(actorName)}</p>
+      <p style="margin: 2px 0 0 0; font-size: 12px; color: #64748b;">Universidad CESMAG</p>
     `
   });
 
@@ -2828,6 +2884,10 @@ const sendGHRejectionEmails = async ({ solicitud, justificacion, isSST = false }
       <div style="margin:15px 0;padding:12px 16px;background:#fef2f2;border-left:4px solid #e11d48;color:#1e293b;font-style:italic;border-radius:4px;">
         ${escapeHtml(justificacion)}
       </div>
+    `,
+    senderHtml: `
+      <p style="margin: 0; font-weight: bold; color: #b91c1c;">Equipo de ${escapeHtml(actorName)}</p>
+      <p style="margin: 2px 0 0 0; font-size: 12px; color: #64748b;">Universidad CESMAG</p>
     `
   });
 
