@@ -80,19 +80,48 @@ const resolveMailFrom = () => {
 const resolveRoleLabel = (role) => roleLabels[String(role || '').trim()] || String(role || 'Sin rol');
 
 const renderInstitutionalTemplate = ({ title, introHtml, bodyHtml }) => `
-  <div style="font-family: Arial, sans-serif; max-width: 640px; margin: 0 auto; color: #0f172a;">
-    <div style="background: #0b3a6f; color: #fff; padding: 16px 20px; border-radius: 10px 10px 0 0;">
-      <h2 style="margin: 0; font-size: 20px;">UNICESMAG</h2>
-      <p style="margin: 6px 0 0; font-size: 13px; opacity: .95;">Sistema Interno de Aseguramiento de la Calidad - SIAC UNICESMAG</p>
-      <p style="margin: 8px 0 0; font-size: 13px; opacity: .9;">Notificación institucional automática</p>
-    </div>
-    <div style="border: 1px solid #dbeafe; border-top: 0; border-radius: 0 0 10px 10px; padding: 20px; background: #ffffff;">
-      <h3 style="margin-top: 0; color: #0b3a6f;">${title}</h3>
-      ${introHtml}
-      ${bodyHtml}
-      <div style="margin-top: 26px; text-align: center; border: 1px solid #0b3a6f; color: #0b3a6f; padding: 14px 18px; border-radius: 8px;">
-        <p style="color: #0b3a6f; font-size: 12px; margin: 0;">
-        Este es un correo institucional automático. Por favor, no responder.
+  <div style="font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; max-width: 640px; margin: 0 auto; color: #0f172a; border: 1px solid #dbeafe; border-radius: 12px; overflow: hidden; box-shadow: 0 4px 12px rgba(11, 58, 111, 0.05); background-color: #ffffff;">
+    <!-- Encabezado Institucional -->
+    <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="background-color: #ffffff; padding: 20px 20px 15px 20px; border-bottom: 1px solid #f1f5f9;">
+      <tr>
+        <td align="left" valign="middle" style="width: 180px;">
+          <img src="${frontendUrl}/Logo%20Universidad%20CESMAG.png" alt="UNICESMAG" height="42" style="display: block; border: 0; height: 42px; max-height: 42px;" />
+        </td>
+        <td align="right" valign="middle" style="font-family: 'Arial', sans-serif; font-size: 10px; font-weight: bold; color: #475569; letter-spacing: 1.5px; text-transform: uppercase;">
+          HOMBRES NUEVOS PARA TIEMPOS NUEVOS
+        </td>
+      </tr>
+    </table>
+    
+    <!-- Barra Azul -->
+    <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="background-color: #0b3a6f; color: #ffffff;">
+      <tr>
+        <td style="padding: 12px 20px;">
+          <div style="font-size: 14px; font-weight: bold; margin: 0; letter-spacing: 0.5px;">SIAC UNICESMAG</div>
+          <div style="font-size: 11px; opacity: 0.95; margin-top: 2px;">Sistema Interno de Aseguramiento de la Calidad</div>
+        </td>
+      </tr>
+    </table>
+    
+    <!-- Cuerpo del Mensaje -->
+    <div style="padding: 24px 20px; background-color: #ffffff;">
+      <h3 style="margin-top: 0; color: #0b3a6f; font-size: 17px; border-bottom: 2px solid #eff6ff; padding-bottom: 8px; margin-bottom: 16px;">${title}</h3>
+      <div style="font-size: 14.5px; line-height: 1.5; color: #334155;">
+        ${introHtml}
+        ${bodyHtml}
+      </div>
+      
+      <!-- Cierre Fraternal -->
+      <div style="margin-top: 30px; border-top: 1px solid #f1f5f9; padding-top: 20px; color: #475569; font-size: 13.5px;">
+        <p style="margin: 0 0 4px 0; font-style: italic; color: #475569;">Fraternalmente,</p>
+        <p style="margin: 0; font-weight: bold; color: #0b3a6f;">SIAC UNICESMAG</p>
+        <p style="margin: 2px 0 0 0; font-size: 11.5px; color: #64748b;">Hombres nuevos para tiempos nuevos</p>
+      </div>
+      
+      <!-- Nota de no responder -->
+      <div style="margin-top: 24px; text-align: center; background-color: #f8fafc; border: 1px dashed #cbd5e1; padding: 12px; border-radius: 8px;">
+        <p style="color: #64748b; font-size: 11px; margin: 0;">
+          Este es un correo institucional automático. Por favor, no responder a esta dirección.
         </p>
       </div>
     </div>

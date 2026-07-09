@@ -985,7 +985,7 @@ const sendJefeApprovalEmail = async (solicitud, token, attachments) => {
   const subject = `REPORTE DE SALIDA ${solicitud.consecutivo} | Colaborador(a): ${solicitante.nombre || ''}`;
   const html = renderInstitutionalTemplate({
     title: 'Solicitud de aprobacion de reporte de salida',
-    introHtml: `<p>Cordial saludo, <strong>${escapeHtml(jefe.nombre)}</strong>.</p><p>El/la colaborador(a) <strong>${escapeHtml(solicitante.nombre)}</strong> radicó una solicitud de reporte de salida.</p>`,
+    introHtml: `<p style="margin: 0 0 12px 0;">Saludo de paz y bien,</p><p style="margin: 0 0 4px 0;">Estimado(a) jefe inmediato,</p><p style="margin: 0 0 16px 0;"><strong>${escapeHtml(jefe.nombre)}</strong></p><p>Reciba un cordial saludo. En atención a los procesos institucionales del Sistema de Gestión de Calidad, se le informa que el/la colaborador(a) <strong>${escapeHtml(solicitante.nombre)}</strong> ha radicado una solicitud de reporte de salida, la cual requiere su respectiva revisión y aprobación.</p>`,
     bodyHtml: `
       <p><strong>Solicitud:</strong> ${escapeHtml(solicitud.consecutivo)}</p>
       <p><strong>Tiempo solicitado:</strong> ${escapeHtml(formatMinutes(solicitud.tiempo_solicitado_minutos))}</p>
@@ -1011,7 +1011,7 @@ const sendColaboradorRadicacionEmail = async (solicitud, attachments) => {
   const subject = `REPORTE DE SALIDA ${solicitud.consecutivo} | Comprobante de radicacion`;
   const html = renderInstitutionalTemplate({
     title: 'Comprobante de radicacion de reporte de salida',
-    introHtml: `<p>Cordial saludo, <strong>${escapeHtml(solicitante.nombre)}</strong>.</p><p>Su solicitud de reporte de salida ha sido radicada correctamente y se encuentra en proceso de revision/aprobacion.</p>`,
+    introHtml: `<p style="margin: 0 0 12px 0;">Saludo de paz y bien,</p><p style="margin: 0 0 4px 0;">Estimado(a) colaborador(a),</p><p style="margin: 0 0 16px 0;"><strong>${escapeHtml(solicitante.nombre)}</strong></p><p>Reciba un cordial saludo. En atención a su solicitud de reporte de salida, nos permitimos informarle que esta ha sido radicada correctamente y se encuentra actualmente en proceso de revisión y aprobación por parte de su jefe inmediato.</p>`,
     bodyHtml: `
       <p><strong>Solicitud:</strong> ${escapeHtml(solicitud.consecutivo)}</p>
       <p><strong>Tiempo solicitado:</strong> ${escapeHtml(formatMinutes(solicitud.tiempo_solicitado_minutos))}</p>
@@ -1036,7 +1036,7 @@ const sendGestionHumanaApprovalEmail = async (solicitud, token, attachments) => 
   const subject = `Re: REPORTE DE SALIDA ${solicitud.consecutivo} | Colaborador(a): ${solicitante.nombre || ''}`;
   const html = renderInstitutionalTemplate({
     title: 'Aprobacion pendiente de Gestión del Talento Humano',
-    introHtml: `<p>La solicitud <strong>${escapeHtml(solicitud.consecutivo)}</strong> fue aprobada por el jefe inmediato.</p>`,
+    introHtml: `<p style="margin: 0 0 12px 0;">Saludo de paz y bien,</p><p style="margin: 0 0 4px 0;">Estimados(as) integrantes,</p><p style="margin: 0 0 16px 0;"><strong>Equipo de Gestión del Talento Humano</strong></p><p>Reciba un cordial saludo. En atención al trámite del reporte de salida <strong>${escapeHtml(solicitud.consecutivo)}</strong>, se informa que este ha sido debidamente aprobado por el jefe inmediato del/de la colaborador(a), y se encuentra listo para su revisión y aval correspondiente.</p>`,
     bodyHtml: `
       <p><strong>Colaborador(a):</strong> ${escapeHtml(solicitante.nombre)}</p>
       <p><strong>Tiempo solicitado:</strong> ${escapeHtml(formatMinutes(solicitud.tiempo_solicitado_minutos))}</p>
@@ -1070,7 +1070,7 @@ const sendSSTApprovalEmail = async (solicitud, token, attachments) => {
   const alcance = solicitud.datos_formulario?.salida?.alcance || 'Nacional/Internacional';
   const html = renderInstitutionalTemplate({
     title: 'Aprobacion pendiente de SST',
-    introHtml: `<p>La solicitud misional (${escapeHtml(alcance)}) <strong>${escapeHtml(solicitud.consecutivo)}</strong> fue aprobada por Gestión del Talento Humano y requiere su aprobacion final.</p>`,
+    introHtml: `<p style="margin: 0 0 12px 0;">Saludo de paz y bien,</p><p style="margin: 0 0 4px 0;">Estimados(as) integrantes,</p><p style="margin: 0 0 16px 0;"><strong>Equipo de Seguridad y Salud en el Trabajo (SST)</strong></p><p>Reciba un cordial saludo. En atención al trámite del reporte de salida de alcance misional (${escapeHtml(alcance)}) con consecutivo <strong>${escapeHtml(solicitud.consecutivo)}</strong>, se informa que la solicitud cuenta con la aprobación de Gestión del Talento Humano y requiere su validación y aprobación final de seguridad.</p>`,
     bodyHtml: `
       <p><strong>Colaborador(a):</strong> ${escapeHtml(solicitante.nombre)}</p>
       <p><strong>Tiempo solicitado:</strong> ${escapeHtml(formatMinutes(solicitud.tiempo_solicitado_minutos))}</p>
@@ -1107,9 +1107,8 @@ const sendFinalEmails = async (solicitud, pdfAttachment, supportAttachment) => {
   // 1. Correo para el/la Colaborador(a) (Solo el PDF firmado)
   const userHtml = renderInstitutionalTemplate({
     title: 'Reporte de salida aprobado',
-    introHtml: `<p>Cordial saludo, <strong>${escapeHtml(nombreColaborador)}</strong>.</p>`,
-    bodyHtml: `<p>Su reporte de salida ha sido aprobado exitosamente a través de su flujo de aprobación correspondiente.</p>
-      <p>Se adjunta el PDF digital FR-002 debidamente firmado para sus registros.</p>
+    introHtml: `<p style="margin: 0 0 12px 0;">Saludo de paz y bien,</p><p style="margin: 0 0 4px 0;">Estimado(a) colaborador(a),</p><p style="margin: 0 0 16px 0;"><strong>${escapeHtml(nombreColaborador)}</strong></p><p>Reciba un cordial saludo. En atención a su trámite de reporte de salida con consecutivo <strong>${escapeHtml(solicitud.consecutivo)}</strong>, nos complace informarle que la solicitud ha sido aprobada de manera exitosa y finalizada en el sistema.</p>`,
+    bodyHtml: `<p>Se adjunta el PDF digital FR-002 debidamente firmado para sus registros.</p>
       ${buildTerapiasHtml(solicitud)}`
   });
 
@@ -1128,9 +1127,8 @@ const sendFinalEmails = async (solicitud, pdfAttachment, supportAttachment) => {
   if (dependencyEmail) {
     const depHtml = renderInstitutionalTemplate({
       title: 'Copia de control - Reporte de salida aprobado',
-      introHtml: `<p>Cordial saludo.</p>`,
-      bodyHtml: `<p>Se remite copia de control del reporte de salida aprobado para el/la colaborador(a) <strong>${escapeHtml(nombreColaborador)}</strong>, perteneciente a su dependencia (<strong>${escapeHtml(dependencialabel)}</strong>).</p>
-        <p>Se adjunta el PDF digital FR-002 debidamente firmado y aprobado.</p>
+      introHtml: `<p style="margin: 0 0 12px 0;">Saludo de paz y bien,</p><p style="margin: 0 0 4px 0;">Estimado(a) líder de dependencia,</p><p>Reciba un cordial saludo. Para su respectiva información y control interno, nos permitimos remitirle copia de la solicitud de reporte de salida aprobada para el/la colaborador(a) <strong>${escapeHtml(nombreColaborador)}</strong>, adscrito(a) a su dependencia (<strong>${escapeHtml(dependencialabel)}</strong>).</p>`,
+      bodyHtml: `<p>Se adjunta el PDF digital FR-002 debidamente firmado y aprobado.</p>
         ${buildTerapiasHtml(solicitud)}`
     });
 
@@ -1149,9 +1147,8 @@ const sendFinalEmails = async (solicitud, pdfAttachment, supportAttachment) => {
   if (recipients.gestionHumana) {
     const ghHtml = renderInstitutionalTemplate({
       title: 'Reporte de salida aprobado - Registro GH',
-      introHtml: `<p>Cordial saludo, equipo de <strong>Gestión del Talento Humano</strong>.</p>`,
-      bodyHtml: `<p>Se ha finalizado la aprobación del reporte de salida para el/la colaborador(a) <strong>${escapeHtml(nombreColaborador)}</strong>.</p>
-        <p>Se adjunta el PDF firmado y el soporte adjunto correspondiente para sus registros.</p>
+      introHtml: `<p style="margin: 0 0 12px 0;">Saludo de paz y bien,</p><p style="margin: 0 0 4px 0;">Estimados(as) integrantes,</p><p style="margin: 0 0 16px 0;"><strong>Equipo de Gestión del Talento Humano</strong></p><p>Reciba un cordial saludo. Se remite la solicitud de reporte de salida debidamente finalizada y aprobada del/de la colaborador(a) <strong>${escapeHtml(nombreColaborador)}</strong> para su respectivo registro e incorporación en la carpeta de la hoja de vida.</p>`,
+      bodyHtml: `<p>Se adjunta el PDF firmado y el soporte adjunto correspondiente para sus registros.</p>
         ${buildTerapiasHtml(solicitud)}`
     });
 
@@ -1170,9 +1167,8 @@ const sendFinalEmails = async (solicitud, pdfAttachment, supportAttachment) => {
   if (recipients.sst) {
     const sstHtml = renderInstitutionalTemplate({
       title: 'Control SST - Reporte de salida aprobado',
-      introHtml: `<p>Cordial saludo, equipo de <strong>Seguridad y Salud en el Trabajo</strong>.</p>`,
-      bodyHtml: `<p>Se ha finalizado la aprobación del reporte de salida para el/la colaborador(a) <strong>${escapeHtml(nombreColaborador)}</strong>.</p>
-        <p>Se adjunta el PDF firmado y el soporte adjunto correspondiente para su registro y control.</p>
+      introHtml: `<p style="margin: 0 0 12px 0;">Saludo de paz y bien,</p><p style="margin: 0 0 4px 0;">Estimados(as) integrantes,</p><p style="margin: 0 0 16px 0;"><strong>Equipo de Seguridad y Salud en el Trabajo (SST)</strong></p><p>Reciba un cordial saludo. Se remite la solicitud de reporte de salida aprobada del/de la colaborador(a) <strong>${escapeHtml(nombreColaborador)}</strong> para su correspondiente registro y control preventivo.</p>`,
+      bodyHtml: `<p>Se adjunta el PDF firmado y el soporte adjunto correspondiente para su registro y control.</p>
         ${buildTerapiasHtml(solicitud)}`
     });
 
@@ -2784,7 +2780,7 @@ const sendCollaboratorRejectionEmail = async ({ solicitud, rejectedBy, justifica
   const subject = `REPORTE DE SALIDA ${solicitud.consecutivo} | Solicitud no aprobada`;
   const html = renderInstitutionalTemplate({
     title: 'Reporte de salida no aprobado',
-    introHtml: `<p>Cordial saludo, <strong>${escapeHtml(solicitante.nombre)}</strong>.</p><p>Le informamos que su solicitud de reporte de salida fue rechazada por <strong>${escapeHtml(rejectedBy)}</strong>.</p>`,
+    introHtml: `<p style="margin: 0 0 12px 0;">Saludo de paz y bien,</p><p style="margin: 0 0 4px 0;">Estimado(a) colaborador(a),</p><p style="margin: 0 0 16px 0;"><strong>${escapeHtml(solicitante.nombre)}</strong></p><p>Reciba un cordial saludo. En atención a su solicitud de reporte de salida con consecutivo <strong>${escapeHtml(solicitud.consecutivo)}</strong>, lamentamos informarle que la solicitud ha sido marcada como no aprobada por su jefe inmediato, <strong>${escapeHtml(rejectedBy)}</strong>.</p>`,
     bodyHtml: `
       <p><strong>Solicitud:</strong> ${escapeHtml(solicitud.consecutivo)}</p>
       <p><strong>Motivo / Justificacion del rechazo:</strong></p>
@@ -2811,7 +2807,7 @@ const sendGHRejectionEmails = async ({ solicitud, justificacion, isSST = false }
   const userSubject = `REPORTE DE SALIDA ${solicitud.consecutivo} | Solicitud no aprobada por ${actorName}`;
   const userHtml = renderInstitutionalTemplate({
     title: `Reporte de salida no aprobado por ${actorName}`,
-    introHtml: `<p>Cordial saludo, <strong>${escapeHtml(solicitante.nombre)}</strong>.</p><p>Le informamos que su solicitud de reporte de salida fue rechazada por <strong>${actorName}</strong>.</p>`,
+    introHtml: `<p style="margin: 0 0 12px 0;">Saludo de paz y bien,</p><p style="margin: 0 0 4px 0;">Estimado(a) colaborador(a),</p><p style="margin: 0 0 16px 0;"><strong>${escapeHtml(solicitante.nombre)}</strong></p><p>Reciba un cordial saludo. En atención a su trámite de reporte de salida con consecutivo <strong>${escapeHtml(solicitud.consecutivo)}</strong>, lamentamos informarle que la solicitud ha sido marcada como no aprobada por parte del <strong>${escapeHtml(actorName)}</strong>.</p>`,
     bodyHtml: `
       <p><strong>Solicitud:</strong> ${escapeHtml(solicitud.consecutivo)}</p>
       <p><strong>Motivo / Justificacion del rechazo:</strong></p>
@@ -2825,7 +2821,7 @@ const sendGHRejectionEmails = async ({ solicitud, justificacion, isSST = false }
   const bossSubject = `REPORTE DE SALIDA ${solicitud.consecutivo} | Solicitud no aprobada por ${actorName}`;
   const bossHtml = renderInstitutionalTemplate({
     title: 'Notificacion de rechazo de reporte de salida',
-    introHtml: `<p>Cordial saludo, <strong>${escapeHtml(jefe.nombre)}</strong>.</p><p>Le informamos que la solicitud de reporte de salida de su colaborador(a) <strong>${escapeHtml(solicitante.nombre)}</strong> fue rechazada por <strong>${actorName}</strong>.</p>`,
+    introHtml: `<p style="margin: 0 0 12px 0;">Saludo de paz y bien,</p><p style="margin: 0 0 4px 0;">Estimado(a) jefe inmediato,</p><p style="margin: 0 0 16px 0;"><strong>${escapeHtml(jefe.nombre)}</strong></p><p>Reciba un cordial saludo. En atención al seguimiento de personal a su cargo, le informamos que la solicitud de reporte de salida del/de la colaborador(a) <strong>${escapeHtml(solicitante.nombre)}</strong> con consecutivo <strong>${escapeHtml(solicitud.consecutivo)}</strong> ha sido devuelta como no aprobada por parte del <strong>${escapeHtml(actorName)}</strong>.</p>`,
     bodyHtml: `
       <p><strong>Solicitud:</strong> ${escapeHtml(solicitud.consecutivo)}</p>
       <p><strong>Motivo / Justificacion del rechazo:</strong></p>
@@ -3322,7 +3318,7 @@ const sendGestionHumanaGroupApprovalEmail = async (solicitudes, token) => {
 
   const html = renderInstitutionalTemplate({
     title: 'Aprobacion de Salida Grupal',
-    introHtml: `<p>Se ha registrado un reporte de salida grupal con <strong>${solicitudes.length}</strong> participantes.</p>`,
+    introHtml: `<p style="margin: 0 0 12px 0;">Saludo de paz y bien,</p><p style="margin: 0 0 4px 0;">Estimados(as) integrantes de Gestión del Talento Humano,</p><p>Reciba un cordial saludo. Se ha radicado en el sistema un reporte de salida de modalidad grupal con un total de <strong>${solicitudes.length}</strong> colaboradores(as) participantes, la cual requiere su respectiva validación y aprobación.</p>`,
     bodyHtml: `
       <p><strong>Detalles de la salida:</strong></p>
       <ul>
@@ -3909,7 +3905,7 @@ const procesarRechazoGrupo = async (req, res) => {
           const userSubject = `REPORTE DE SALIDA GRUPAL ${solicitud.consecutivo} | Solicitud no aprobada por Gestión del Talento Humano`;
           const userHtml = renderInstitutionalTemplate({
             title: 'Reporte de salida grupal no aprobado por Gestión del Talento Humano',
-            introHtml: `<p>Cordial saludo, <strong>${escapeHtml(solicitante.nombre)}</strong>.</p><p>Le informamos que la solicitud de reporte de salida grupal en la que participaba fue rechazada por <strong>Gestión del Talento Humano</strong>.</p>`,
+            introHtml: `<p style="margin: 0 0 12px 0;">Saludo de paz y bien,</p><p style="margin: 0 0 4px 0;">Estimado(a) colaborador(a),</p><p style="margin: 0 0 16px 0;"><strong>${escapeHtml(solicitante.nombre)}</strong></p><p>Reciba un cordial saludo. En atención a la solicitud de reporte de salida de modalidad grupal en la que participaba con consecutivo <strong>${escapeHtml(solicitud.consecutivo)}</strong>, lamentamos informarle que la solicitud ha sido marcada como no aprobada por parte de <strong>Gestión del Talento Humano</strong>.</p>`,
             bodyHtml: `
               <p><strong>Solicitud:</strong> ${escapeHtml(solicitud.consecutivo)}</p>
               <p><strong>Motivo / Justificacion del rechazo:</strong></p>
