@@ -1133,11 +1133,24 @@ const sendFinalEmails = async (solicitud, pdfAttachment, supportAttachment) => {
   const threadId = solicitud.datos_formulario?.thread_message_id;
   const headers = threadId ? { 'In-Reply-To': threadId, 'References': threadId } : {};
   
-  const threadSubject = `Re: REPORTE DE SALIDA ${solicitud.consecutivo} | Colaborador(a): ${nombreColaborador}`;
-
-  const flowSST = solicitud.datos_formulario?.salida?.alcance === 'Internacional' || solicitud.datos_formulario?.salida?.alcance === 'Nacional';
-  const finalApprovalSenderHtml = `
+  const threadSubject = `Re: REPORTE DE SALIDA ${so  const flowSST = solicitud.datos_formulario?.salida?.alcance === 'Internacional' || solicitud.datos_formulario?.salida?.alcance === 'Nacional';
+  
+  // Firma para el Colaborador y Líder de Dependencia (Firma Talento Humano)
+  const finalApprovalGHHtml = `
     <p style="margin: 0; font-weight: bold; color: #0b3a6f;">Oficina de Gestión del Talento Humano</p>
+    <p style="margin: 2px 0 0 0; font-size: 12px; color: #64748b;">SIAC UNICESMAG</p>
+    <div style="margin: 12px 0 0 0; font-size: 11.5px; color: #15803d; border-top: 1px dashed #e2e8f0; padding-top: 8px; line-height: 1.45;">
+      <span style="font-weight: 800; color: #166534; text-transform: uppercase; letter-spacing: 0.5px; font-size: 10px; display: block; margin-bottom: 4px;">✓ Flujo de Firmas Completado:</span>
+      • Solicitado por: ${escapeHtml(nombreColaborador)}<br/>
+      • Aprobado por Jefe: ${escapeHtml(solicitud.jefe_snapshot?.nombre || 'Jefe Inmediato')}<br/>
+      • Aprobado por: Gestión del Talento Humano<br/>
+      ${flowSST ? '• Aprobado por: Seguridad y Salud en el Trabajo (SST)<br/>' : ''}
+    </div>
+  `;
+
+  // Firma para las copias de control enviadas a Gestión Humana y SST (Firma Planeación/SIAC)
+  const finalApprovalSIACStyle = `
+    <p style="margin: 0; font-weight: bold; color: #0b3a6f;">Dirección de Planeación y Aseguramiento de la Calidad</p>
     <p style="margin: 2px 0 0 0; font-size: 12px; color: #64748b;">SIAC UNICESMAG</p>
     <div style="margin: 12px 0 0 0; font-size: 11.5px; color: #15803d; border-top: 1px dashed #e2e8f0; padding-top: 8px; line-height: 1.45;">
       <span style="font-weight: 800; color: #166534; text-transform: uppercase; letter-spacing: 0.5px; font-size: 10px; display: block; margin-bottom: 4px;">✓ Flujo de Firmas Completado:</span>
@@ -1154,7 +1167,7 @@ const sendFinalEmails = async (solicitud, pdfAttachment, supportAttachment) => {
     introHtml: `<p style="margin: 0 0 12px 0;">Saludo de paz y bien,</p><p style="margin: 0 0 4px 0; color: #475569;">Estimado(a) Sr(a).</p><p style="margin: 0 0 16px 0; font-size: 16px; font-weight: bold; color: #0b3a6f;">${escapeHtml(nombreColaborador)}</p><p>Reciba un cordial saludo. En atención a su trámite de reporte de salida con consecutivo <strong>${escapeHtml(solicitud.consecutivo)}</strong>, nos complace informarle que la solicitud ha sido aprobada de manera exitosa y finalizada en el sistema.</p>`,
     bodyHtml: `<p>Se adjunta el PDF digital FR-002 debidamente firmado para sus registros.</p>
       ${buildTerapiasHtml(solicitud)}`,
-    senderHtml: finalApprovalSenderHtml
+    senderHtml: finalApprovalGHHtml
   });
 
   const userResult = await sendInstitutionalEmail({
@@ -1175,7 +1188,7 @@ const sendFinalEmails = async (solicitud, pdfAttachment, supportAttachment) => {
       introHtml: `<p style="margin: 0 0 12px 0;">Saludo de paz y bien,</p><p style="margin: 0 0 4px 0; color: #475569;">Estimado(a) Sr(a). Líder de Dependencia,</p><p style="margin: 0 0 16px 0; font-size: 16px; font-weight: bold; color: #0b3a6f;">${escapeHtml(solicitud.jefe_snapshot?.nombre || 'Líder de Dependencia')}</p><p>Reciba un cordial saludo. Para su respectiva información y control interno, nos permitimos remitirle copia de la solicitud de reporte de salida aprobada para el/la colaborador(a) <strong>${escapeHtml(nombreColaborador)}</strong>, adscrito(a) a su dependencia (<strong>${escapeHtml(dependencialabel)}</strong>).</p>`,
       bodyHtml: `<p>Se adjunta el PDF digital FR-002 debidamente firmado y aprobado.</p>
         ${buildTerapiasHtml(solicitud)}`,
-      senderHtml: finalApprovalSenderHtml
+      senderHtml: finalApprovalGHHtml
     });
 
     depResult = await sendInstitutionalEmail({
@@ -1196,7 +1209,7 @@ const sendFinalEmails = async (solicitud, pdfAttachment, supportAttachment) => {
       introHtml: `<p style="margin: 0 0 12px 0;">Saludo de paz y bien,</p><p style="margin: 0 0 4px 0;">Estimados(as) integrantes,</p><p style="margin: 0 0 16px 0;"><strong>Equipo de Gestión del Talento Humano</strong></p><p>Reciba un cordial saludo. Se remite la solicitud de reporte de salida debidamente finalizada y aprobada del/de la colaborador(a) <strong>${escapeHtml(nombreColaborador)}</strong> para su respectivo registro e incorporación en la carpeta de la hoja de vida.</p>`,
       bodyHtml: `<p>Se adjunta el PDF firmado y el soporte adjunto correspondiente para sus registros.</p>
         ${buildTerapiasHtml(solicitud)}`,
-      senderHtml: finalApprovalSenderHtml
+      senderHtml: finalApprovalSIACStyle
     });
 
     ghResult = await sendInstitutionalEmail({
@@ -1217,7 +1230,7 @@ const sendFinalEmails = async (solicitud, pdfAttachment, supportAttachment) => {
       introHtml: `<p style="margin: 0 0 12px 0;">Saludo de paz y bien,</p><p style="margin: 0 0 4px 0;">Estimados(as) integrantes,</p><p style="margin: 0 0 16px 0;"><strong>Equipo de Seguridad y Salud en el Trabajo (SST)</strong></p><p>Reciba un cordial saludo. Se remite la solicitud de reporte de salida aprobada del/de la colaborador(a) <strong>${escapeHtml(nombreColaborador)}</strong> para su correspondiente registro y control preventivo.</p>`,
       bodyHtml: `<p>Se adjunta el PDF firmado y el soporte adjunto correspondiente para su registro y control.</p>
         ${buildTerapiasHtml(solicitud)}`,
-      senderHtml: finalApprovalSenderHtml
+      senderHtml: finalApprovalSIACStyle
     });
 
     sstResult = await sendInstitutionalEmail({
