@@ -1806,7 +1806,7 @@ function ReporteSalidaFormDialog({ open, documento, user, onClose, onSubmitted }
                           Terapia {idx + 1}
                         </Typography>
                         <Box sx={responsiveFieldGrid(category === 'personales' ? 'minmax(160px, 1fr) minmax(140px, 1fr) minmax(140px, 1fr) minmax(100px, 0.5fr)' : 'minmax(160px, 1fr) minmax(140px, 1fr) minmax(140px, 1fr)')}>
-                          <TextField sx={inputSx} fullWidth size="small" required type="date" label="Fecha" InputLabelProps={{ shrink: true }} inputProps={{ min: todayString }} value={terapia.fecha} onChange={(e) => { const n = [...form.salida.terapiasList]; n[idx].fecha = e.target.value; update('salida', 'terapiasList', n); }} />
+                          <TextField sx={inputSx} fullWidth size="small" required type="date" label="Fecha de la terapia" InputLabelProps={{ shrink: true }} inputProps={{ min: todayString }} value={terapia.fecha} onChange={(e) => { const n = [...form.salida.terapiasList]; n[idx].fecha = e.target.value; update('salida', 'terapiasList', n); }} />
                           <Autocomplete
                             freeSolo
                             disableClearable
@@ -1827,7 +1827,7 @@ function ReporteSalidaFormDialog({ open, documento, user, onClose, onSubmitted }
                                 {...params}
                                 sx={inputSx}
                                 required
-                                label="Hora inicio"
+                                label="Hora de salida a la terapia"
                                 placeholder="ej. 08:00"
                                 InputLabelProps={{ shrink: true }}
                                 error={isPastTimeError(terapia.fecha, terapia.horaInicio)}
@@ -1859,7 +1859,7 @@ function ReporteSalidaFormDialog({ open, documento, user, onClose, onSubmitted }
                                 {...params}
                                 sx={inputSx}
                                 required
-                                label="Hora fin"
+                                label="Hora de reintegro a labores"
                                 placeholder="ej. 10:00"
                                 InputLabelProps={{ shrink: true }}
                                 error={isPastTimeError(terapia.fecha, terapia.horaFin)}
