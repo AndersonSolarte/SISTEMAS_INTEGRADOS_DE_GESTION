@@ -75,7 +75,8 @@ const PERSONALES_SUBTYPES = [
   { group: 'Permisos y Novedades', value: 'comisiones_sindicales', label: 'Comisiones sindicales' },
   { group: 'Permisos y Novedades', value: 'obligaciones_escolares', label: 'Obligaciones escolares' },
   { group: 'Permisos y Novedades', value: 'citaciones_judiciales', label: 'Citaciones judiciales, administrativas y de policía' },
-  { group: 'Permisos y Novedades', value: 'cuidado_hijo_ley_2174', label: 'Cuidado de hijo(a) - Términos de la Ley 2174 de 2021' }
+  { group: 'Permisos y Novedades', value: 'cuidado_hijo_ley_2174', label: 'Cuidado de hijo(a) - Términos de la Ley 2174 de 2021' },
+  { group: 'Permisos y Novedades', value: 'otra', label: 'Otra, ¿Cuál?:' }
 ];
 
 const ESPECIALIDADES_MEDICAS = [
@@ -128,6 +129,14 @@ const TIME_OPTIONS = (() => {
   }
   return options;
 })();
+
+const REQUIRES_ADJUNTO = [
+  'cita_eps', 'cita_particular', 'terapias',
+  'voto_jurado', 'voto_sufragante',
+  'jurado_votacion', 'sufragante', 'cargos_oficiales_transitorios',
+  'comisiones_sindicales', 'obligaciones_escolares',
+  'citaciones_judiciales', 'cuidado_hijo_ley_2174'
+];
 
 const DEPARTAMENTOS_MUNICIPIOS = {
   'Amazonas': ['Leticia', 'El Encanto', 'La Chorrera', 'La Pedrera', 'La Victoria', 'Miriití-Paraná', 'Puerto Alegría', 'Puerto Arica', 'Puerto Nariño', 'Puerto Santander', 'Tarapacá'],
@@ -457,6 +466,7 @@ function ReporteSalidaFormDialog({ open, documento, user, onClose, onSubmitted }
   const [showSaludWarning, setShowSaludWarning] = useState(false);
   const [showPersonalesWarning, setShowPersonalesWarning] = useState(false);
   const [showPropiasCargoWarning, setShowPropiasCargoWarning] = useState(false);
+  const [activeCategory, setActiveCategory] = useState('salud');
   const [form, setForm] = useState(INITIAL_FORM);
   const [isSalidaMultiple, setIsSalidaMultiple] = useState(false);
   const [participantes, setParticipantes] = useState([]);
@@ -507,22 +517,14 @@ function ReporteSalidaFormDialog({ open, documento, user, onClose, onSubmitted }
 
   const { category, subtype, otraDescripcion } = useMemo(() => {
     const tipo = form.salida.tipo || '';
-    if (SALUD_SUBTYPES.some((s) => s.value === tipo)) {
-      return { category: 'salud', subtype: tipo, otraDescripcion: '' };
-    }
-    if (PERSONALES_SUBTYPES.some((s) => s.value === tipo)) {
-      return { category: 'personales', subtype: tipo, otraDescripcion: '' };
-    }
-    if (CARGO_SUBTYPES.some((s) => s.value === tipo)) {
-      return { category: 'propias_cargo', subtype: tipo, otraDescripcion: '' };
-    }
     if (tipo.startsWith('otra:')) {
-      return { category: 'propias_cargo', subtype: 'otra', otraDescripcion: tipo.substring(5) };
+      return { category: activeCategory, subtype: 'otra', otraDescripcion: tipo.substring(5) };
     }
-    return { category: 'salud', subtype: 'cita_eps', otraDescripcion: '' };
-  }, [form.salida.tipo]);
+    return { category: activeCategory, subtype: tipo, otraDescripcion: '' };
+  }, [form.salida.tipo, activeCategory]);
 
   const handleCategoryChange = (newCategory) => {
+    setActiveCategory(newCategory);
     if (newCategory === 'propias_cargo') {
       update('salida', 'tipo', 'ponencia');
       setShowPropiasCargoWarning(true);
@@ -564,6 +566,7 @@ function ReporteSalidaFormDialog({ open, documento, user, onClose, onSubmitted }
 
   useEffect(() => {
     if (!open) return;
+    setActiveCategory('salud');
     setForm({
       ...INITIAL_FORM,
       personal: {
@@ -816,13 +819,6 @@ function ReporteSalidaFormDialog({ open, documento, user, onClose, onSubmitted }
       }
     }
     
-    const REQUIRES_ADJUNTO = [
-      'cita_eps', 'cita_particular', 'terapias',
-      'voto_jurado', 'voto_sufragante',
-      'jurado_votacion', 'sufragante', 'cargos_oficiales_transitorios',
-      'comisiones_sindicales', 'obligaciones_escolares',
-      'citaciones_judiciales', 'cuidado_hijo_ley_2174'
-    ];
     if (REQUIRES_ADJUNTO.includes(subtype) && !adjuntoFile) {
       issues.push('Debe subir el soporte, certificado o documento obligatorio.');
     }
@@ -1650,7 +1646,7 @@ function ReporteSalidaFormDialog({ open, documento, user, onClose, onSubmitted }
                 display: 'grid',
                 gridTemplateColumns: {
                   xs: '1fr',
-                  md: subtype === 'salida_campus' ? '1fr 1fr 1fr 1fr' :
+                  md: subtype === 'salida_campus' ? '1.2fr 1fr 1fr' :
                     subtype === 'otra' ? (category === 'propias_cargo' ? '1.2fr 1.5fr 1fr 1.5fr' : '1fr 2fr') :
                       ['cita_eps', 'cita_particular'].includes(subtype) ? '1fr 1fr' :
                         category === 'propias_cargo' ? '1.2fr 1fr 1.8fr' : '1fr'
@@ -1985,7 +1981,7 @@ function ReporteSalidaFormDialog({ open, documento, user, onClose, onSubmitted }
                 </Alert>
               )}
 
-              {['cita_eps', 'cita_particular', 'urgencia_medica', 'terapias', 'voto_jurado', 'voto_sufragante'].includes(subtype) && (
+              {(REQUIRES_ADJUNTO.includes(subtype) || ['urgencia_medica', 'otra'].includes(subtype)) && (
                 <Box
                   component="label"
                   sx={{
@@ -2029,16 +2025,16 @@ function ReporteSalidaFormDialog({ open, documento, user, onClose, onSubmitted }
                     <>
                       <UploadFileIcon sx={{ fontSize: 48, color: '#3b82f6', mb: 1 }} />
                       <Typography sx={{ fontWeight: 700, color: '#1e3a8a', textAlign: 'center', mb: 0.5 }}>
-                        {['voto_jurado', 'voto_sufragante'].includes(subtype)
+                        {['voto_jurado', 'voto_sufragante', 'jurado_votacion', 'sufragante'].includes(subtype)
                           ? 'Subir certificado obligatorio'
-                          : (subtype === 'urgencia_medica' ? 'Subir soporte médico (Opcional)' : 'Subir soporte médico obligatorio')}
+                          : (['urgencia_medica', 'otra'].includes(subtype) ? 'Subir soporte / constancia (Opcional)' : 'Subir soporte obligatorio')}
                       </Typography>
                       <Typography sx={{ fontSize: 13, color: '#475569', textAlign: 'center' }}>
-                        {['voto_jurado', 'voto_sufragante'].includes(subtype)
+                        {['voto_jurado', 'voto_sufragante', 'jurado_votacion', 'sufragante'].includes(subtype)
                           ? 'Haga clic para adjuntar su certificado electoral (PDF o Imagen)'
-                          : (subtype === 'urgencia_medica'
+                          : (['urgencia_medica', 'otra'].includes(subtype)
                               ? 'Haga clic para adjuntar soporte o constancia si ya la tiene (PDF o Imagen)'
-                              : 'Haga clic para adjuntar constancia, epicrisis u orden médica (PDF o Imagen)')}
+                              : 'Haga clic para adjuntar constancia, soporte o documento justificado (PDF o Imagen)')}
                       </Typography>
                       <Button component="span" variant="contained" size="small" sx={{ mt: 2, textTransform: 'none', bgcolor: '#2563eb', boxShadow: 'none', fontWeight: 600 }}>
                         Seleccionar archivo

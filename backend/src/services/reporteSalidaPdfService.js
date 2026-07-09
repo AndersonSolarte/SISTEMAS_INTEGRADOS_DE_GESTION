@@ -75,32 +75,38 @@ const formatMinutes = (minutes) => {
   return `${h}h ${String(m).padStart(2, '0')}m`;
 };
 
-const getTipoSalidaLabel = (tipo) => ({
-  cita_eps: 'Cita medica por EPS',
-  cita_particular: 'Cita medica particular',
-  diligencia_personal: 'Diligencia personal',
-  compensatorio: 'Compensatorio',
-  voto_jurado: 'Permiso: Jurado de votación',
-  voto_sufragante: 'Permiso: Sufragante',
-  calamidad_domestica: 'Permiso: Calamidad doméstica',
-  entierro_companero: 'Permiso: Entierro compañeros',
-  comision_sindical: 'Permiso: Comisiones sindicales',
-  matrimonio: 'Permiso: Matrimonio',
-  lactancia: 'Permiso: Lactancia',
-  luto_conyuge: 'Licencia luto: Cónyuge',
-  luto_companero: 'Licencia luto: Compañero(a)',
-  luto_familiar: 'Licencia luto: Familiar',
-  actos_funebres: 'Licencia: Actos fúnebres',
-  cuidado_ninez: 'Licencia: Cuidado niñez',
-  calidad_servicio: 'Mejora en la calidad del servicio',
-  jurado_votacion: 'Permiso: Jurado de votación',
-  sufragante: 'Permiso: Sufragante',
-  cargos_oficiales_transitorios: 'Permiso: Desempeño de cargos oficiales transitorios',
-  comisiones_sindicales: 'Permiso: Comisiones sindicales',
-  obligaciones_escolares: 'Permiso: Obligaciones escolares',
-  citaciones_judiciales: 'Permiso: Citaciones judiciales, administrativas y de policía',
-  cuidado_hijo_ley_2174: 'Permiso: Cuidado de hijo(a) - Ley 2174 de 2021'
-}[tipo] || tipo || '');
+const getTipoSalidaLabel = (tipo) => {
+  const mapping = {
+    cita_eps: 'Cita médica por EPS',
+    cita_particular: 'Cita médica particular',
+    diligencia_personal: 'Diligencia personal',
+    compensatorio: 'Compensatorio',
+    voto_jurado: 'Permiso: Jurado de votación',
+    voto_sufragante: 'Permiso: Sufragante',
+    calamidad_domestica: 'Permiso: Calamidad doméstica',
+    entierro_companero: 'Permiso: Entierro compañeros',
+    comision_sindical: 'Permiso: Comisiones sindicales',
+    matrimonio: 'Permiso: Matrimonio',
+    lactancia: 'Permiso: Lactancia',
+    luto_conyuge: 'Licencia luto: Cónyuge',
+    luto_companero: 'Licencia luto: Compañero(a)',
+    luto_familiar: 'Licencia luto: Familiar',
+    actos_funebres: 'Licencia: Actos fúnebres',
+    cuidado_ninez: 'Licencia: Cuidado niñez',
+    calidad_servicio: 'Mejora en la calidad del servicio',
+    jurado_votacion: 'Permiso: Jurado de votación',
+    sufragante: 'Permiso: Sufragante',
+    cargos_oficiales_transitorios: 'Permiso: Desempeño de cargos oficiales transitorios',
+    comisiones_sindicales: 'Permiso: Comisiones sindicales',
+    obligaciones_escolares: 'Permiso: Obligaciones escolares',
+    citaciones_judiciales: 'Permiso: Citaciones judiciales, administrativas y de policía',
+    cuidado_hijo_ley_2174: 'Permiso: Cuidado de hijo(a) - Ley 2174 de 2021'
+  };
+  if (!tipo) return '';
+  if (mapping[tipo]) return mapping[tipo];
+  if (tipo.startsWith('otra:')) return `Otra: ${tipo.substring(5)}`;
+  return tipo;
+};
 
 const replaceOnce = (xml, search, replacement) => {
   const index = xml.indexOf(search);
@@ -127,6 +133,7 @@ const buildDocxData = (solicitud) => {
     fechaRegreso: formatDate(salida.fechaRegreso || salida.fechaFin || salida.fecha),
     horaRegreso: formatTimeAmPm(salida.horaFin),
     tipo: salida.tipo || '',
+    categoria: salida.categoria || '',
     reposicionFecha: formatDate(reposicion.fecha),
     reposicionFechaFin: formatDate(reposicion.fechaFin || reposicion.fecha),
     reposicionInicio: formatTimeAmPm(reposicion.horaInicio),
@@ -185,7 +192,7 @@ const fillReporteSalidaRows = (xml, values) => {
     'diligencia_personal', 'compensatorio',
     'voto_jurado', 'voto_sufragante', 'comision_sindical', 'matrimonio', 'lactancia', 'luto_conyuge', 'luto_companero', 'luto_familiar', 'actos_funebres', 'cuidado_ninez',
     'jurado_votacion', 'sufragante', 'cargos_oficiales_transitorios', 'calamidad_domestica', 'entierro_companero', 'comisiones_sindicales', 'obligaciones_escolares', 'citaciones_judiciales', 'cuidado_hijo_ley_2174'
-  ].includes(values.tipo);
+  ].includes(values.tipo) || values.categoria === 'personales' || (String(values.tipo).startsWith('otra:') && values.categoria === 'personales');
   set(16, 0, isPersonalPermission ? 'X' : '');
   set(17, 0, ` Fecha:  ${values.reposicionFecha}${values.reposicionFechaFin && values.reposicionFechaFin !== values.reposicionFecha ? ` a ${values.reposicionFechaFin}` : ''}`);
   set(17, 1, ` Hora inicio: ${values.reposicionInicio}`);

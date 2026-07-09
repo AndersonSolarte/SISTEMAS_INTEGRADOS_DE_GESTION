@@ -2491,30 +2491,51 @@ const actualizarReposicion = async (req, res) => {
 
     if (nuevoTotalPagados >= tiempoTotal && tiempoTotal > 0) {
       nextEstado = 'cumplida';
+    } else {
+      nextEstado = 'pendiente';
     }
 
-    if (!['pendiente', 'programada', 'cumplida', 'incumplida'].includes(nextEstado)) {
+    if (!['pendiente', 'cumplida'].includes(nextEstado)) {
       return res.status(400).json({ success: false, message: 'Estado de reposicion no valido.' });
     }
 
-    const observacion = sanitizeText(req.body?.observacion, 600);
+    const observacionNueva = sanitizeText(req.body?.observacion, 600);
     const now = new Date();
+    
+    let observacionAcumulada = solicitud.observacion_gestion_humana || '';
+    const formattedTime = now.toLocaleString('es-CO', {
+      timeZone: 'America/Bogota',
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: false
+    });
+    
+    const actorName = req.user.nombre || 'Gestión del Talento Humano';
+    const msgComentario = observacionNueva ? ` - "${observacionNueva}"` : '';
+    const entradaLog = `[${formattedTime}] ${actorName}: Abonó ${horasAbonadas} hrs${msgComentario}`;
+    
+    observacionAcumulada = observacionAcumulada 
+      ? `${observacionAcumulada}\n${entradaLog}`
+      : entradaLog;
     
     await solicitud.update({
       reposicion_estado: nextEstado,
-      observacion_gestion_humana: observacion || solicitud.observacion_gestion_humana,
+      observacion_gestion_humana: observacionAcumulada,
       datos_formulario: {
         ...previousData,
         reposicion_minutos_pagados: nuevoTotalPagados,
         reposicion_validacion: {
           estado: nextEstado,
-          observacion,
+          observacion: observacionNueva,
           horas_abonadas_esta_sesion: horasAbonadas,
           validado_por: buildSnapshot(req.user),
           validado_at: now.toISOString()
         }
       },
-      trazabilidad: appendTrace(solicitud, `reposicion_${nextEstado}`, req.user, { observacion, horas_abonadas: horasAbonadas })
+      trazabilidad: appendTrace(solicitud, `reposicion_${nextEstado}`, req.user, { observacion: observacionNueva, horas_abonadas: horasAbonadas })
     });
 
     await solicitud.reload();
@@ -2550,15 +2571,97 @@ const editarSolicitudAdmin = async (req, res) => {
       return res.status(404).json({ success: false, message: 'Solicitud no encontrada.' });
     }
 
-    const { estado, reposicion_aplica, tiempo_solicitado_minutos } = req.body;
+    const { estado, reposicion_aplica, tiempo_solicitado_minutos, reposicion_minutos_pagados, observacion } = req.body;
 
     const updateData = {};
-    if (estado) updateData.estado = sanitizeText(estado, 50);
-    if (reposicion_aplica !== undefined) updateData.reposicion_aplica = Boolean(reposicion_aplica);
+    const logDetails = [];
+
+    if (estado && estado !== solicitud.estado) {
+      updateData.estado = sanitizeText(estado, 50);
+      logDetails.push(`Estado a "${estado.replace(/_/g, ' ')}"`);
+    }
+
+    if (reposicion_aplica !== undefined && Boolean(reposicion_aplica) !== solicitud.reposicion_aplica) {
+      updateData.reposicion_aplica = Boolean(reposicion_aplica);
+      logDetails.push(`Aplica reposición: ${updateData.reposicion_aplica ? 'SÍ' : 'NO'}`);
+    }
+
     if (tiempo_solicitado_minutos !== undefined) {
-      updateData.tiempo_solicitado_minutos = parseInt(tiempo_solicitado_minutos, 10);
-      // Actualizar también reposicion_minutos si aplica
-      updateData.reposicion_minutos = updateData.tiempo_solicitado_minutos;
+      const nuevoMinutos = parseInt(tiempo_solicitado_minutos, 10);
+      const antiguoMinutos = solicitud.tiempo_solicitado_minutos || 0;
+      if (nuevoMinutos !== antiguoMinutos) {
+        updateData.tiempo_solicitado_minutos = nuevoMinutos;
+        updateData.reposicion_minutos = nuevoMinutos;
+        logDetails.push(`Horas adeudadas de ${(antiguoMinutos / 60).toFixed(0)}h a ${(nuevoMinutos / 60).toFixed(0)}h`);
+      }
+    }
+
+    const previousData = solicitud.datos_formulario || {};
+    const antiguoPagados = previousData.reposicion_minutos_pagados || 0;
+    let nuevoPagados = antiguoPagados;
+
+    if (reposicion_minutos_pagados !== undefined) {
+      nuevoPagados = parseInt(reposicion_minutos_pagados, 10);
+      if (nuevoPagados !== antiguoPagados) {
+        logDetails.push(`Horas abonadas corregidas de ${(antiguoPagados / 60).toFixed(0)}h a ${(nuevoPagados / 60).toFixed(0)}h`);
+        updateData.datos_formulario = {
+          ...previousData,
+          reposicion_minutos_pagados: nuevoPagados
+        };
+      }
+    }
+
+    const finalAplica = updateData.reposicion_aplica !== undefined 
+      ? updateData.reposicion_aplica 
+      : solicitud.reposicion_aplica;
+
+    const finalMinutos = updateData.reposicion_minutos !== undefined 
+      ? updateData.reposicion_minutos 
+      : (solicitud.reposicion_minutos || solicitud.tiempo_solicitado_minutos || 0);
+
+    let nextReposicionEstado = solicitud.reposicion_estado;
+
+    if (!finalAplica) {
+      nextReposicionEstado = 'no_aplica';
+    } else {
+      if (nuevoPagados >= finalMinutos && finalMinutos > 0) {
+        nextReposicionEstado = 'cumplida';
+      } else {
+        nextReposicionEstado = 'pendiente';
+      }
+    }
+
+    if (nextReposicionEstado !== solicitud.reposicion_estado) {
+      updateData.reposicion_estado = nextReposicionEstado;
+      logDetails.push(`Reposición a "${nextReposicionEstado}"`);
+    }
+
+    const commentValidador = sanitizeText(observacion, 600);
+    const now = new Date();
+    const formattedTime = now.toLocaleString('es-CO', {
+      timeZone: 'America/Bogota',
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: false
+    });
+    const actorName = req.user.nombre || 'Administrador del Sistema';
+
+    let logEntry = '';
+    if (logDetails.length > 0) {
+      const msgComment = commentValidador ? ` - "${commentValidador}"` : '';
+      logEntry = `[${formattedTime}] ${actorName}: Edición Administrativa (${logDetails.join(', ')})${msgComment}`;
+    } else if (commentValidador) {
+      logEntry = `[${formattedTime}] ${actorName}: Comentario - "${commentValidador}"`;
+    }
+
+    if (logEntry) {
+      let observacionAcumulada = solicitud.observacion_gestion_humana || '';
+      updateData.observacion_gestion_humana = observacionAcumulada 
+        ? `${observacionAcumulada}\n${logEntry}`
+        : logEntry;
     }
 
     updateData.trazabilidad = appendTrace(solicitud, 'edicion_administrativa', req.user, { 

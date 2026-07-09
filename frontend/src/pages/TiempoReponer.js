@@ -13,6 +13,7 @@ import {
   TableRow,
   Chip,
   Button,
+  Stack,
   Dialog,
   DialogTitle,
   DialogContent,
@@ -22,7 +23,7 @@ import {
 } from '@mui/material';
 import { useSnackbar } from 'notistack';
 import api from '../services/api';
-import { useAuth } from '../context/AuthContext';
+
 
 function TabPanel(props) {
   const { children, value, index, ...other } = props;
@@ -53,19 +54,7 @@ const formatDate = (dateString) => {
   });
 };
 
-const estadoColors = {
-  pendiente: 'warning',
-  programada: 'info',
-  cumplida: 'success',
-  incumplida: 'error'
-};
 
-const estadoLabels = {
-  pendiente: 'Pendiente',
-  programada: 'Programada',
-  cumplida: 'Cumplida',
-  incumplida: 'Incumplida'
-};
 
 const getHorasPendientes = (row) => {
   if (!row) return '0 hrs';
@@ -73,6 +62,23 @@ const getHorasPendientes = (row) => {
   const minutosPagados = row.datos_formulario?.reposicion_minutos_pagados || 0;
   const pendientes = totalMinutos - minutosPagados;
   return pendientes > 0 ? (pendientes / 60).toFixed(1) + ' hrs' : '0 hrs';
+};
+
+const getJefeObservacion = (row) => {
+  if (!row || !Array.isArray(row.trazabilidad)) return null;
+  const trace = row.trazabilidad.find(t => 
+    (t.event === 'no_aprobada' || t.event === 'aprobada_jefe') && 
+    (t.detail?.justificacion || t.detail?.observacion)
+  );
+  return trace?.detail?.justificacion || trace?.detail?.observacion || null;
+};
+
+const formatElapsed = (minutes) => {
+  if (!minutes) return '0h';
+  const hrs = Math.floor(minutes / 60);
+  const mins = Math.round(minutes % 60);
+  if (hrs > 0) return `${hrs}h ${mins}m`;
+  return `${mins}m`;
 };
 
 export default function TiempoReponer() {
@@ -111,9 +117,22 @@ export default function TiempoReponer() {
     Promise.all([fetchMisReposiciones(), fetchEquipoReposiciones()]).finally(() => setLoading(false));
   }, []);
 
+  useEffect(() => {
+    if (!selectedRep) return;
+    const totalMinutos = selectedRep.reposicion_minutos || selectedRep.tiempo_solicitado_minutos || 0;
+    const minutosPagados = selectedRep.datos_formulario?.reposicion_minutos_pagados || 0;
+    const minutosPendientes = totalMinutos - minutosPagados;
+    const minutosAbonar = Math.round((parseFloat(updateHorasAbonadas) || 0) * 60);
+    if (minutosPendientes - minutosAbonar <= 0) {
+      setUpdateEstado('cumplida');
+    } else {
+      setUpdateEstado('pendiente');
+    }
+  }, [updateHorasAbonadas, selectedRep]);
+
   const handleUpdateClick = (rep) => {
     setSelectedRep(rep);
-    setUpdateEstado(rep.reposicion_estado !== 'no_aplica' ? rep.reposicion_estado : 'pendiente');
+    setUpdateEstado(rep.reposicion_estado === 'cumplida' ? 'cumplida' : 'pendiente');
     setUpdateObservacion('');
     setUpdateHorasAbonadas('');
     setOpenDialog(true);
@@ -146,8 +165,8 @@ export default function TiempoReponer() {
             <TableCell><strong>Consecutivo</strong></TableCell>
             {isEquipo && <TableCell><strong>Colaborador(a)</strong></TableCell>}
             <TableCell><strong>Fecha de Salida</strong></TableCell>
-            <TableCell><strong>Horas Pendientes</strong></TableCell>
-            <TableCell><strong>Estado</strong></TableCell>
+            <TableCell><strong>Reposición</strong></TableCell>
+            <TableCell><strong>Observaciones</strong></TableCell>
             {isEquipo && <TableCell><strong>Acción</strong></TableCell>}
           </TableRow>
         </TableHead>
@@ -164,13 +183,58 @@ export default function TiempoReponer() {
                 <TableCell>{row.consecutivo}</TableCell>
                 {isEquipo && <TableCell>{row.datos_formulario?.personal?.nombre || row.solicitante_snapshot?.nombre}</TableCell>}
                 <TableCell>{formatDate(row.datos_formulario?.salida?.fecha)}</TableCell>
-                <TableCell>{getHorasPendientes(row)}</TableCell>
-                <TableCell>
-                  <Chip
-                    size="small"
-                    label={estadoLabels[row.reposicion_estado] || row.reposicion_estado}
-                    color={estadoColors[row.reposicion_estado] || 'default'}
-                  />
+                <TableCell sx={{ minWidth: 155 }}>
+                  <Stack spacing={0.6}>
+                    <Chip
+                      size="small"
+                      label={row.reposicion_estado === 'cumplida' ? 'Cumplida' : 'Pendiente'}
+                      sx={{
+                        bgcolor: row.reposicion_estado === 'cumplida' ? '#d1fae5' : '#fef3c7',
+                        color: row.reposicion_estado === 'cumplida' ? '#065f46' : '#92400e',
+                        fontWeight: 800,
+                        width: 'fit-content'
+                      }}
+                    />
+                    <Box sx={{ fontSize: 11, lineHeight: 1.4, color: '#334155' }}>
+                      <div><strong>Total:</strong> {formatElapsed(row.reposicion_minutos || row.tiempo_solicitado_minutos || 0)}</div>
+                      <div><strong>Abonado:</strong> {formatElapsed(row.reposicion_minutos_pagados || row.datos_formulario?.reposicion_minutos_pagados || 0)}</div>
+                      <div><strong>Pendiente:</strong> {(() => {
+                        const total = row.reposicion_minutos || row.tiempo_solicitado_minutos || 0;
+                        const pagado = row.reposicion_minutos_pagados || row.datos_formulario?.reposicion_minutos_pagados || 0;
+                        return formatElapsed(Math.max(0, total - pagado));
+                      })()}</div>
+                    </Box>
+                  </Stack>
+                </TableCell>
+                <TableCell sx={{ minWidth: 200, maxWidth: 300 }}>
+                  {(() => {
+                    const jefeObs = getJefeObservacion(row);
+                    const ghObs = row.observacion_gestion_humana || '';
+                    return (
+                      <Stack spacing={0.8}>
+                        {jefeObs && (
+                          <Box>
+                            <Typography sx={{ fontSize: 10.5, fontWeight: 700, color: '#475569', display: 'inline-block', mr: 0.5 }}>Jefe:</Typography>
+                            <Typography sx={{ fontSize: 10.5, color: '#64748b', fontStyle: 'italic', display: 'inline' }}>"{jefeObs}"</Typography>
+                          </Box>
+                        )}
+                        {ghObs ? (
+                          <Box>
+                            <Typography sx={{ fontSize: 10.5, fontWeight: 700, color: '#0f766e', mb: 0.3 }}>Talento Humano:</Typography>
+                            <Box sx={{ fontSize: 10.5, color: '#334155', maxHeight: 80, overflowY: 'auto', bgcolor: '#f8fafc', p: 0.5, borderRadius: 1, border: '1px solid #e2e8f0' }}>
+                              {ghObs.split('\n').map((line, idx) => (
+                                <Typography key={idx} sx={{ fontSize: 10, lineHeight: 1.3, borderBottom: idx < ghObs.split('\n').length - 1 ? '1px dashed #e2e8f0' : 'none', pb: 0.3, mb: 0.3 }}>
+                                  {line}
+                                </Typography>
+                              ))}
+                            </Box>
+                          </Box>
+                        ) : (
+                          !jefeObs && <Typography sx={{ fontSize: 10.5, color: '#94a3b8', fontStyle: 'italic' }}>Sin observaciones</Typography>
+                        )}
+                      </Stack>
+                    );
+                  })()}
                 </TableCell>
                 {isEquipo && (
                   <TableCell>
@@ -247,12 +311,12 @@ export default function TiempoReponer() {
             label="Horas a abonar (Repuestas hoy)"
             type="number"
             value={updateHorasAbonadas}
-            onChange={(e) => setUpdateHorasAbonadas(e.target.value)}
+            onChange={(e) => setUpdateHorasAbonadas(e.target.value.replace(/[^0-9]/g, ''))}
             fullWidth
             margin="normal"
             size="small"
-            inputProps={{ min: 0, step: 0.5 }}
-            helperText="Ingrese las horas repuestas, ej: 1.5. El saldo se descontará automáticamente."
+            inputProps={{ min: 0, step: 1 }}
+            helperText="Ingrese las horas repuestas como número entero (ej: 2). El saldo se descontará automáticamente."
           />
 
           <TextField
@@ -265,9 +329,7 @@ export default function TiempoReponer() {
             size="small"
           >
             <MenuItem value="pendiente">Pendiente</MenuItem>
-            <MenuItem value="programada">Programada</MenuItem>
             <MenuItem value="cumplida">Cumplida</MenuItem>
-            <MenuItem value="incumplida">Incumplida</MenuItem>
           </TextField>
 
           <TextField
@@ -280,6 +342,35 @@ export default function TiempoReponer() {
             multiline
             rows={3}
           />
+
+          {(() => {
+            const jefeObs = getJefeObservacion(selectedRep);
+            const ghObs = selectedRep?.observacion_gestion_humana;
+            if (!jefeObs && !ghObs) return null;
+            return (
+              <Box sx={{ mt: 2, p: 1.5, bgcolor: '#f8fafc', borderRadius: 2, border: '1px solid #e2e8f0' }}>
+                <Typography variant="subtitle2" sx={{ fontWeight: 'bold', mb: 1, fontSize: 12, color: '#475569' }}>
+                  Historial de observaciones registradas:
+                </Typography>
+                {jefeObs && (
+                  <Box sx={{ mb: 1.5 }}>
+                    <Typography sx={{ fontSize: 11, fontWeight: 'bold', color: '#64748b' }}>Jefe Inmediato:</Typography>
+                    <Typography sx={{ fontSize: 11.5, color: '#475569', fontStyle: 'italic' }}>"{jefeObs}"</Typography>
+                  </Box>
+                )}
+                {ghObs && (
+                  <Box>
+                    <Typography sx={{ fontSize: 11, fontWeight: 'bold', color: '#0f766e', mb: 0.5 }}>Talento Humano:</Typography>
+                    {ghObs.split('\n').map((line, idx) => (
+                      <Typography key={idx} sx={{ fontSize: 11, color: '#334155', lineHeight: 1.4, mb: 0.8, borderBottom: idx < ghObs.split('\n').length - 1 ? '1px dashed #e2e8f0' : 'none', pb: 0.5 }}>
+                        {line}
+                      </Typography>
+                    ))}
+                  </Box>
+                )}
+              </Box>
+            );
+          })()}
         </DialogContent>
         <DialogActions>
           <Button onClick={() => setOpenDialog(false)}>Cancelar</Button>
