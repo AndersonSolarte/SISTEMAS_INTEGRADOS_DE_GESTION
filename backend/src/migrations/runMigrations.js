@@ -273,11 +273,41 @@ const ensureReporteSalidaAdminBossSupport = async (qi) => {
     console.log('[migrate] (ignorable) error al agregar sst_aprobada a enum:', e.message);
   }
 
-  // Asegurar columnas de SST y Gestión Humana
+  // Asegurar columnas de SST, Gestión Humana y Reposiciones
   await ensureColumn(qi, 'reporte_salida_solicitudes', 'enviado_sst_at', { type: DataTypes.DATE, allowNull: true });
   await ensureColumn(qi, 'reporte_salida_solicitudes', 'aprobacion_sst_token_hash', { type: DataTypes.STRING(128), allowNull: true });
   await ensureColumn(qi, 'reporte_salida_solicitudes', 'correo_sst_enviado_at', { type: DataTypes.DATE, allowNull: true });
   await ensureColumn(qi, 'reporte_salida_solicitudes', 'observacion_gestion_humana', { type: DataTypes.TEXT, allowNull: true });
+
+  // Columnas para la funcionalidad de tiempo a reponer
+  await ensureColumn(qi, 'reporte_salida_solicitudes', 'tiempo_solicitado_minutos', { type: DataTypes.INTEGER, allowNull: true });
+  await ensureColumn(qi, 'reporte_salida_solicitudes', 'reposicion_aplica', { type: DataTypes.BOOLEAN, allowNull: false, defaultValue: false });
+  await ensureColumn(qi, 'reporte_salida_solicitudes', 'reposicion_minutos', { type: DataTypes.INTEGER, allowNull: true });
+  await ensureColumn(qi, 'reporte_salida_solicitudes', 'reposicion_minutos_pagados', { type: DataTypes.INTEGER, allowNull: false, defaultValue: 0 });
+
+  // Crear tipo enum para reposicion_estado si no existe
+  try {
+    await sequelize.query(`CREATE TYPE "enum_reporte_salida_solicitudes_reposicion_estado" AS ENUM('no_aplica', 'pendiente', 'programada', 'cumplida', 'incumplida')`);
+  } catch (e) {
+    // Ya existe o no se requiere crear
+  }
+
+  await ensureColumn(qi, 'reporte_salida_solicitudes', 'reposicion_estado', {
+    type: DataTypes.ENUM('no_aplica', 'pendiente', 'programada', 'cumplida', 'incumplida'),
+    allowNull: false,
+    defaultValue: 'no_aplica'
+  });
+
+  await ensureColumn(qi, 'reporte_salida_solicitudes', 'jefe_aprobado_at', { type: DataTypes.DATE, allowNull: true });
+  await ensureColumn(qi, 'reporte_salida_solicitudes', 'gestion_humana_aprobado_at', { type: DataTypes.DATE, allowNull: true });
+  await ensureColumn(qi, 'reporte_salida_solicitudes', 'finalizado_at', { type: DataTypes.DATE, allowNull: true });
+  await ensureColumn(qi, 'reporte_salida_solicitudes', 'pdf_generado_at', { type: DataTypes.DATE, allowNull: true });
+  await ensureColumn(qi, 'reporte_salida_solicitudes', 'aprobacion_jefe_token_hash', { type: DataTypes.STRING(128), allowNull: true });
+  await ensureColumn(qi, 'reporte_salida_solicitudes', 'aprobacion_gh_token_hash', { type: DataTypes.STRING(128), allowNull: true });
+  await ensureColumn(qi, 'reporte_salida_solicitudes', 'correo_jefe_enviado_at', { type: DataTypes.DATE, allowNull: true });
+  await ensureColumn(qi, 'reporte_salida_solicitudes', 'correo_gh_enviado_at', { type: DataTypes.DATE, allowNull: true });
+  await ensureColumn(qi, 'reporte_salida_solicitudes', 'correo_usuario_enviado_at', { type: DataTypes.DATE, allowNull: true });
+  await ensureColumn(qi, 'reporte_salida_solicitudes', 'trazabilidad', { type: DataTypes.JSONB, allowNull: false, defaultValue: [] });
 };
 
 const runMigrations = async () => {
