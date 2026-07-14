@@ -2565,10 +2565,29 @@ const eliminarSolicitud = async (req, res) => {
     if (!solicitud) {
       return res.status(404).json({ success: false, message: 'Solicitud no encontrada.' });
     }
+
+    const grupoId = solicitud.datos_formulario?.grupo_id;
+    if (grupoId) {
+      const solicitudesGrupo = await ReporteSalidaSolicitud.findAll({
+        where: sequelize.literal(`datos_formulario->>'grupo_id' = :grupoId`),
+        replacements: { grupoId }
+      });
+      for (const s of solicitudesGrupo) {
+        await s.destroy();
+      }
+      return res.json({ success: true, message: `Salida grupal eliminada correctamente (${solicitudesGrupo.length} registros).` });
+    }
+
     await solicitud.destroy();
     res.json({ success: true, message: 'Solicitud eliminada correctamente.' });
   } catch (error) {
-    res.status(500).json({ success: false, message: 'No se pudo eliminar la solicitud.' });
+    console.error('Error al eliminar solicitud:', error);
+    res.status(500).json({
+      success: false,
+      message: 'No se pudo eliminar la solicitud.',
+      error: error.message,
+      detail: error.original?.detail || null
+    });
   }
 };
 

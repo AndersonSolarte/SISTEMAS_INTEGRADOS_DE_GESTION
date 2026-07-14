@@ -198,6 +198,8 @@ function ReporteSalidaSeguimiento({ initialAccess = null, onBack }) {
   // Estados para modales de administración GH
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
   const [deleteTargetId, setDeleteTargetId] = useState(null);
+  const [groupModalOpen, setGroupModalOpen] = useState(false);
+  const [groupParticipants, setGroupParticipants] = useState([]);
   const [editDialogOpen, setEditDialogOpen] = useState(false);
   const [editTarget, setEditTarget] = useState(null);
   const [editData, setEditData] = useState({ estado: '', reposicion_aplica: false, tiempo_solicitado_minutos: '' });
@@ -298,10 +300,56 @@ function ReporteSalidaSeguimiento({ initialAccess = null, onBack }) {
     setPage(0);
   }, [cardFilter, tipoFiltro, estado, searchTerm]);
 
+  const groupedRows = useMemo(() => {
+    const groups = {};
+    const result = [];
+
+    filteredRows.forEach((row) => {
+      const isMultiple = row.datos_formulario?.is_salida_multiple === true;
+      const grupoId = row.datos_formulario?.grupo_id;
+
+      if (isMultiple && grupoId) {
+        if (!groups[grupoId]) {
+          groups[grupoId] = {
+            leaderRow: row,
+            participants: []
+          };
+        }
+        groups[grupoId].participants.push({
+          id: row.id,
+          consecutivo: row.consecutivo,
+          nombre: row.datos_formulario?.personal?.nombre || row.solicitante_snapshot?.nombre || row.solicitante?.nombre || '',
+          documento: row.datos_formulario?.personal?.documento || row.solicitante_snapshot?.username || row.solicitante?.username || '',
+          correo: row.datos_formulario?.personal?.correo || row.solicitante_snapshot?.email || '',
+          dependencia: row.datos_formulario?.laboral?.dependencia || '',
+          cargo: row.datos_formulario?.laboral?.cargo || ''
+        });
+        
+        if (row.datos_formulario?.is_leader === true) {
+          groups[grupoId].leaderRow = row;
+        }
+      } else {
+        result.push(row);
+      }
+    });
+
+    Object.keys(groups).forEach((grupoId) => {
+      const g = groups[grupoId];
+      const rowClone = {
+        ...g.leaderRow,
+        groupParticipants: g.participants,
+        isGroupRow: true
+      };
+      result.push(rowClone);
+    });
+
+    return result.sort((a, b) => b.id - a.id);
+  }, [filteredRows]);
+
   const paginatedRows = useMemo(() => {
     const start = page * rowsPerPage;
-    return filteredRows.slice(start, start + rowsPerPage);
-  }, [filteredRows, page, rowsPerPage]);
+    return groupedRows.slice(start, start + rowsPerPage);
+  }, [groupedRows, page, rowsPerPage]);
 
   const exportToExcel = () => {
     const headers = [
@@ -310,7 +358,7 @@ function ReporteSalidaSeguimiento({ initialAccess = null, onBack }) {
       'Requiere Reposicion', 'Estado Reposicion', 'Tiempo Solicitado (Min)'
     ];
 
-    const data = filteredRows.map(row => {
+    const data = groupedRows.map(row => {
       const f = row.datos_formulario || {};
       const tipo = f.salida?.tipo || 'N/A';
       
@@ -328,8 +376,8 @@ function ReporteSalidaSeguimiento({ initialAccess = null, onBack }) {
       return [
         row.consecutivo,
         new Date(row.created_at).toLocaleString('es-CO'),
-        row.solicitante?.nombre || 'N/A',
-        f.laboral?.cedula || 'N/A',
+        row.isGroupRow ? `${row.solicitante?.nombre} (Grupo de ${row.groupParticipants.length} part.)` : (row.solicitante?.nombre || 'N/A'),
+        f.personal?.documento || row.solicitante?.username || 'N/A',
         f.laboral?.dependencia || 'N/A',
         f.laboral?.cargo || 'N/A',
         row.jefe?.nombre || 'N/A',
@@ -434,14 +482,22 @@ function ReporteSalidaSeguimiento({ initialAccess = null, onBack }) {
 
   const submitDelete = async () => {
     try {
+      const targetRow = rows.find(r => r.id === deleteTargetId);
       const res = await api.delete(`/reporte-salida/solicitudes/${deleteTargetId}`);
       if (res.data.success) {
-        enqueueSnackbar('Solicitud eliminada', { variant: 'success' });
+        enqueueSnackbar(res.data.message || 'Solicitud eliminada', { variant: 'success' });
         setDeleteConfirmOpen(false);
-        setRows((prev) => prev.filter((item) => item.id !== deleteTargetId));
+        const targetGrupoId = targetRow?.datos_formulario?.grupo_id;
+        if (targetGrupoId) {
+          setRows((prev) => prev.filter((item) => item.datos_formulario?.grupo_id !== targetGrupoId));
+        } else {
+          setRows((prev) => prev.filter((item) => item.id !== deleteTargetId));
+        }
       }
     } catch (error) {
-      enqueueSnackbar('Error al eliminar', { variant: 'error' });
+      const errorMsg = error.response?.data?.error || error.response?.data?.message || 'Error al eliminar';
+      const detailMsg = error.response?.data?.detail ? ` - Detalle: ${error.response.data.detail}` : '';
+      enqueueSnackbar(`${errorMsg}${detailMsg}`, { variant: 'error' });
     }
   };
 
@@ -735,7 +791,7 @@ function ReporteSalidaSeguimiento({ initialAccess = null, onBack }) {
                   <TableBody>
                     {loading ? (
                       <TableRow><TableCell colSpan={9} align="center" sx={{ py: 6 }}><CircularProgress /></TableCell></TableRow>
-                    ) : filteredRows.length === 0 ? (
+                    ) : groupedRows.length === 0 ? (
                       <TableRow><TableCell colSpan={9} sx={{ py: 3 }}><Alert severity="info">No hay solicitudes para el filtro seleccionado.</Alert></TableCell></TableRow>
                     ) : paginatedRows.map((row) => {
                       const statusSx = STATUS_COLORS[row.estado] || { bg: '#f1f5f9', color: '#475569' };
@@ -779,8 +835,39 @@ function ReporteSalidaSeguimiento({ initialAccess = null, onBack }) {
                             })()}
                           </TableCell>
                           <TableCell>
-                            <Typography sx={{ fontWeight: 800, fontSize: 13 }}>{row.solicitante?.nombre}</Typography>
-                            <Typography sx={{ color: '#64748b', fontSize: 12 }}>{row.solicitante?.username}</Typography>
+                            {row.isGroupRow ? (
+                              <Stack spacing={0.5}>
+                                <Typography sx={{ fontWeight: 800, fontSize: 13, color: '#0f766e' }}>
+                                  {row.solicitante?.nombre}
+                                </Typography>
+                                <Typography sx={{ color: '#64748b', fontSize: 12 }}>
+                                  {row.solicitante?.username} (Líder)
+                                </Typography>
+                                <Chip
+                                  label={`Salida Grupal (${row.groupParticipants.length} part.)`}
+                                  size="small"
+                                  onClick={() => {
+                                    setGroupParticipants(row.groupParticipants);
+                                    setGroupModalOpen(true);
+                                  }}
+                                  sx={{
+                                    bgcolor: '#f3e8ff',
+                                    color: '#6b21a8',
+                                    fontWeight: 900,
+                                    fontSize: 10,
+                                    cursor: 'pointer',
+                                    width: 'fit-content',
+                                    border: '1px solid #e9d5ff',
+                                    '&:hover': { bgcolor: '#e9d5ff' }
+                                  }}
+                                />
+                              </Stack>
+                            ) : (
+                              <>
+                                <Typography sx={{ fontWeight: 800, fontSize: 13 }}>{row.solicitante?.nombre}</Typography>
+                                <Typography sx={{ color: '#64748b', fontSize: 12 }}>{row.solicitante?.username}</Typography>
+                              </>
+                            )}
                           </TableCell>
                           <TableCell>
                             <Typography sx={{ fontWeight: 700, fontSize: 13 }}>{row.jefe?.nombre}</Typography>
@@ -946,7 +1033,7 @@ function ReporteSalidaSeguimiento({ initialAccess = null, onBack }) {
               <TablePagination
                 rowsPerPageOptions={[5, 10, 25]}
                 component="div"
-                count={filteredRows.length}
+                count={groupedRows.length}
                 rowsPerPage={rowsPerPage}
                 page={page}
                 onPageChange={(e, newPage) => setPage(newPage)}
@@ -967,12 +1054,69 @@ function ReporteSalidaSeguimiento({ initialAccess = null, onBack }) {
             <Dialog open={deleteConfirmOpen} onClose={() => setDeleteConfirmOpen(false)}>
               <DialogTitle>Confirmar Eliminación</DialogTitle>
               <DialogContent>
-                <Typography>¿Está seguro de que desea eliminar este reporte de salida permanentemente?</Typography>
-                <Typography color="error" variant="caption">Esta acción no se puede deshacer.</Typography>
+                {(() => {
+                  const targetRow = rows.find(r => r.id === deleteTargetId);
+                  if (targetRow?.datos_formulario?.is_salida_multiple) {
+                    return (
+                      <>
+                        <Typography sx={{ mb: 1 }}>
+                          ¿Está seguro de que desea eliminar esta <strong>salida grupal</strong> permanentemente?
+                        </Typography>
+                        <Typography color="error" variant="caption" sx={{ display: 'block', fontWeight: 'bold' }}>
+                          Esta acción eliminará las solicitudes de todos los participantes y no se puede deshacer.
+                        </Typography>
+                      </>
+                    );
+                  }
+                  return (
+                    <>
+                      <Typography>¿Está seguro de que desea eliminar este reporte de salida permanentemente?</Typography>
+                      <Typography color="error" variant="caption">Esta acción no se puede deshacer.</Typography>
+                    </>
+                  );
+                })()}
               </DialogContent>
               <DialogActions>
                 <Button onClick={() => setDeleteConfirmOpen(false)} color="inherit">Cancelar</Button>
                 <Button onClick={submitDelete} color="error" variant="contained" disableElevation>Eliminar</Button>
+              </DialogActions>
+            </Dialog>
+
+            {/* Modal de Participantes de Salida Grupal */}
+            <Dialog open={groupModalOpen} onClose={() => setGroupModalOpen(false)} maxWidth="md" fullWidth>
+              <DialogTitle sx={{ fontWeight: 900, bgcolor: '#f8fafc', borderBottom: '1px solid #e2e8f0' }}>
+                Participantes de la Salida Grupal
+              </DialogTitle>
+              <DialogContent>
+                <TableContainer sx={{ mt: 2 }}>
+                  <Table size="small">
+                    <TableHead sx={{ bgcolor: '#f1f5f9' }}>
+                      <TableRow>
+                        <TableCell><strong>Cédula</strong></TableCell>
+                        <TableCell><strong>Nombre Completo</strong></TableCell>
+                        <TableCell><strong>Correo</strong></TableCell>
+                        <TableCell><strong>Dependencia</strong></TableCell>
+                        <TableCell><strong>Cargo</strong></TableCell>
+                      </TableRow>
+                    </TableHead>
+                    <TableBody>
+                      {groupParticipants.map((p, idx) => (
+                        <TableRow key={p.id || idx}>
+                          <TableCell>{p.documento}</TableCell>
+                          <TableCell>{p.nombre}</TableCell>
+                          <TableCell>{p.correo}</TableCell>
+                          <TableCell>{p.dependencia}</TableCell>
+                          <TableCell>{p.cargo}</TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </TableContainer>
+              </DialogContent>
+              <DialogActions sx={{ bgcolor: '#f8fafc', borderTop: '1px solid #e2e8f0' }}>
+                <Button onClick={() => setGroupModalOpen(false)} variant="contained" disableElevation color="primary">
+                  Cerrar
+                </Button>
               </DialogActions>
             </Dialog>
 
