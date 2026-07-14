@@ -2468,6 +2468,9 @@ const actualizarReposicion = async (req, res) => {
 
     let nextEstado = sanitizeText(req.body?.estado, 40);
     const horasAbonadas = parseFloat(req.body?.horasAbonadas) || 0;
+    if (horasAbonadas <= 0) {
+      return res.status(400).json({ success: false, message: 'La cantidad de horas a abonar debe ser mayor que cero.' });
+    }
     const minutosAbonados = Math.round(horasAbonadas * 60);
 
     const previousData = solicitud.datos_formulario || {};
@@ -2490,6 +2493,12 @@ const actualizarReposicion = async (req, res) => {
     const nuevoTotalPagados = minutosYaPagados + minutosAbonados;
 
     if (nuevoTotalPagados >= tiempoTotal && tiempoTotal > 0) {
+      if (req.body?.estado === 'pendiente') {
+        return res.status(400).json({
+          success: false,
+          message: 'No se puede guardar la reposición en estado "Pendiente" si se ha completado la totalidad de las horas.'
+        });
+      }
       nextEstado = 'cumplida';
     } else {
       nextEstado = 'pendiente';

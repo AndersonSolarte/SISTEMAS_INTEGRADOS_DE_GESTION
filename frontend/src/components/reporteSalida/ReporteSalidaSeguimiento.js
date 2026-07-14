@@ -467,6 +467,25 @@ function ReporteSalidaSeguimiento({ initialAccess = null, onBack }) {
   };
 
   const submitRep = async () => {
+    if (!repTarget) return;
+    if (!repHorasAbonadas || Number(repHorasAbonadas) <= 0) {
+      enqueueSnackbar('La cantidad de horas a abonar debe ser mayor que cero.', { variant: 'error' });
+      return;
+    }
+    const totalMinutos = repTarget.reposicion_minutos || repTarget.tiempo_solicitado_minutos || 0;
+    const minutosPagados = repTarget.reposicion_minutos_pagados || repTarget.datos_formulario?.reposicion_minutos_pagados || 0;
+    const minutosPendientes = totalMinutos - minutosPagados;
+    const minutosAbonar = Math.round(Number(repHorasAbonadas) * 60);
+
+    if (minutosAbonar > minutosPendientes) {
+      enqueueSnackbar('La cantidad de horas a abonar no puede exceder el tiempo pendiente.', { variant: 'error' });
+      return;
+    }
+    if (minutosPendientes - minutosAbonar <= 0 && repEstado === 'pendiente') {
+      enqueueSnackbar('No se puede guardar como "Pendiente" si se ha repuesto la totalidad de las horas.', { variant: 'error' });
+      return;
+    }
+
     try {
       const res = await api.patch(`/reporte-salida/solicitudes/${repTarget.id}/reposicion`, {
         estado: repEstado,
@@ -1152,6 +1171,7 @@ function ReporteSalidaSeguimiento({ initialAccess = null, onBack }) {
                     if (minutosPendientes <= 0) return true;
                     if (!repHorasAbonadas || Number(repHorasAbonadas) <= 0) return true;
                     if (Number(repHorasAbonadas) > (minutosPendientes / 60)) return true;
+                    if (minutosPendientes - (Number(repHorasAbonadas) * 60) <= 0 && repEstado === 'pendiente') return true;
                     return false;
                   })()}
                 >

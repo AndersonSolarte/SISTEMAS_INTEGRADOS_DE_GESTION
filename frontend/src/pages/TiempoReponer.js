@@ -140,6 +140,23 @@ export default function TiempoReponer() {
 
   const handleSaveUpdate = async () => {
     if (!selectedRep) return;
+    if (!updateHorasAbonadas || Number(updateHorasAbonadas) <= 0) {
+      enqueueSnackbar('La cantidad de horas a abonar debe ser mayor que cero.', { variant: 'error' });
+      return;
+    }
+    const totalMinutos = selectedRep.reposicion_minutos || selectedRep.tiempo_solicitado_minutos || 0;
+    const minutosPagados = selectedRep.reposicion_minutos_pagados || selectedRep.datos_formulario?.reposicion_minutos_pagados || 0;
+    const minutosPendientes = totalMinutos - minutosPagados;
+    if (Number(updateHorasAbonadas) > (minutosPendientes / 60)) {
+      enqueueSnackbar('La cantidad de horas a abonar no puede exceder el tiempo pendiente.', { variant: 'error' });
+      return;
+    }
+    const minutosAbonar = Math.round(Number(updateHorasAbonadas) * 60);
+    if (minutosPendientes - minutosAbonar <= 0 && updateEstado === 'pendiente') {
+      enqueueSnackbar('No se puede guardar como "Pendiente" si se ha repuesto la totalidad de las horas.', { variant: 'error' });
+      return;
+    }
+
     try {
       const res = await api.patch(`/reporte-salida/solicitudes/${selectedRep.id}/reposicion`, {
         estado: updateEstado,
@@ -374,7 +391,23 @@ export default function TiempoReponer() {
         </DialogContent>
         <DialogActions>
           <Button onClick={() => setOpenDialog(false)}>Cancelar</Button>
-          <Button variant="contained" onClick={handleSaveUpdate}>Guardar</Button>
+          <Button
+            variant="contained"
+            onClick={handleSaveUpdate}
+            disabled={(() => {
+              if (!selectedRep) return true;
+              const totalMinutos = selectedRep.reposicion_minutos || selectedRep.tiempo_solicitado_minutos || 0;
+              const minutosPagados = selectedRep.reposicion_minutos_pagados || selectedRep.datos_formulario?.reposicion_minutos_pagados || 0;
+              const minutosPendientes = totalMinutos - minutosPagados;
+              if (minutosPendientes <= 0) return true;
+              if (!updateHorasAbonadas || Number(updateHorasAbonadas) <= 0) return true;
+              if (Number(updateHorasAbonadas) > (minutosPendientes / 60)) return true;
+              if (minutosPendientes - (Number(updateHorasAbonadas) * 60) <= 0 && updateEstado === 'pendiente') return true;
+              return false;
+            })()}
+          >
+            Guardar
+          </Button>
         </DialogActions>
       </Dialog>
     </Box>

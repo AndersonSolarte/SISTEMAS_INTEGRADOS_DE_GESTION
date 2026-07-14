@@ -306,6 +306,13 @@ const buildWorkbookBase64 = (rows = [], sheetName = 'Errores') => {
 
 const normalizePagination = ({ page = 1, limit = 10 } = {}) => {
   const cleanPage = Math.max(Number.parseInt(page, 10) || 1, 1);
+  if (limit === '-1' || limit === -1 || limit === 'all') {
+    return {
+      page: 1,
+      limit: undefined,
+      offset: undefined
+    };
+  }
   const cleanLimit = Math.min(Math.max(Number.parseInt(limit, 10) || 10, 1), 100);
   return {
     page: cleanPage,

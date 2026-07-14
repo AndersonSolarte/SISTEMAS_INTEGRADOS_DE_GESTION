@@ -754,53 +754,80 @@ function GestionUsuarios() {
     loadUsers({ page: 0, search: '' });
   };
 
-  const handleExportUsuarios = () => {
-    const dataToExport = filterDependencia.length === 0 ? users : visibleUsers;
-    const excelData = dataToExport.map(u => ({
-      NUMERO_DOCUMENTO: u.username || '',
-      NOMBRE_COMPLETO: u.nombre || '',
-      CORREO_INSTITUCIONAL: u.email || '',
-      DEPENDENCIA: u.dependencia || '',
-      CARGO: u.cargo || '',
-      'JEFE INMEDIATO': u.jefe_inmediato || '',
-      ROL: ROLE_LABELS[u.role] || u.role || '',
-      ESTADO: u.estado || ''
-    }));
-
-    const ws = XLSX.utils.json_to_sheet(excelData);
-
-    // Apply styles to headers
-    const range = XLSX.utils.decode_range(ws['!ref']);
-    for (let C = range.s.c; C <= range.e.c; ++C) {
-      const cellAddress = XLSX.utils.encode_cell({ r: 0, c: C });
-      if (!ws[cellAddress]) continue;
-      ws[cellAddress].s = {
-        fill: { fgColor: { rgb: "1e40af" } },
-        font: { color: { rgb: "FFFFFF" }, bold: true },
-        alignment: { horizontal: "center", vertical: "center" }
-      };
-    }
-
-    const colWidths = [
-      { wch: 20 },
-      { wch: 40 },
-      { wch: 35 },
-      { wch: 35 },
-      { wch: 35 },
-      { wch: 35 },
-      { wch: 15 },
-      { wch: 15 }
-    ];
-    ws['!cols'] = colWidths;
-
-    const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, 'Usuarios');
-    
-    const fileName = filterDependencia.length === 0 
-      ? 'Base_Usuarios_Completa.xlsx' 
-      : 'Usuarios_Filtrados.xlsx';
+  const handleExportUsuarios = async () => {
+    try {
+      setLoading(true);
+      // Obtener todos los usuarios sin paginación (usando limit: -1)
+      const response = await userService.getUsers({
+        page: 1,
+        limit: -1,
+        search: search.trim()
+      });
       
-    XLSX.writeFile(wb, fileName);
+      let dataToExport = response?.data?.users || [];
+
+      // Si hay un filtro por dependencia, lo aplicamos sobre la lista total
+      if (filterDependencia.length > 0) {
+        dataToExport = dataToExport.filter(u => filterDependencia.includes(u.dependencia));
+      }
+
+      if (dataToExport.length === 0) {
+        enqueueSnackbar('No hay datos para exportar con los filtros seleccionados', { variant: 'info' });
+        return;
+      }
+
+      const excelData = dataToExport.map(u => ({
+        NUMERO_DOCUMENTO: u.username || '',
+        NOMBRE_COMPLETO: u.nombre || '',
+        CORREO_INSTITUCIONAL: u.email || '',
+        DEPENDENCIA: u.dependencia || '',
+        CARGO: u.cargo || '',
+        'JEFE INMEDIATO': u.jefe_inmediato || '',
+        ROL: ROLE_LABELS[u.role] || u.role || '',
+        ESTADO: u.estado || ''
+      }));
+
+      const ws = XLSX.utils.json_to_sheet(excelData);
+
+      // Apply styles to headers
+      const range = XLSX.utils.decode_range(ws['!ref']);
+      for (let C = range.s.c; C <= range.e.c; ++C) {
+        const cellAddress = XLSX.utils.encode_cell({ r: 0, c: C });
+        if (!ws[cellAddress]) continue;
+        ws[cellAddress].s = {
+          fill: { fgColor: { rgb: "1e40af" } },
+          font: { color: { rgb: "FFFFFF" }, bold: true },
+          alignment: { horizontal: "center", vertical: "center" }
+        };
+      }
+
+      const colWidths = [
+        { wch: 20 },
+        { wch: 40 },
+        { wch: 35 },
+        { wch: 35 },
+        { wch: 35 },
+        { wch: 35 },
+        { wch: 15 },
+        { wch: 15 }
+      ];
+      ws['!cols'] = colWidths;
+
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, 'Usuarios');
+      
+      const fileName = filterDependencia.length === 0 
+        ? 'Base_Usuarios_Completa.xlsx' 
+        : 'Usuarios_Filtrados.xlsx';
+        
+      XLSX.writeFile(wb, fileName);
+      enqueueSnackbar('Base de usuarios exportada exitosamente', { variant: 'success' });
+    } catch (error) {
+      console.error('Error al exportar usuarios:', error);
+      enqueueSnackbar('Error al exportar la lista de usuarios', { variant: 'error' });
+    } finally {
+      setLoading(false);
+    }
   };
 
   const executeBulkUpload = async () => {
