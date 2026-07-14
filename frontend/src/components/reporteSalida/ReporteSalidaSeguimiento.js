@@ -76,21 +76,21 @@ const ACCESS_COPY = {
 };
 
 const STATUS_LABELS = {
-  pendiente_aprobacion_jefe: 'Pendiente jefe',
-  aprobada_jefe: 'Aprobada jefe',
-  pendiente_aprobacion_gestion_humana: 'Pendiente Gestión del Talento Humano',
-  aprobada_gestion_humana: 'Aprobada Gestión del Talento Humano',
+  pendiente_aprobacion_jefe: 'Pendiente Jefe',
+  pendiente_aprobacion_gestion_humana: 'Pendiente Talento Humano',
+  pendiente_aprobacion_sst: 'Pendiente SST',
   finalizada: 'Aprobada',
-  no_aprobada: 'No aprobada'
+  no_aprobada: 'No Aprobada'
 };
 
 const STATUS_COLORS = {
   pendiente_aprobacion_jefe: { bg: '#fef3c7', color: '#92400e' },
-  aprobada_jefe: { bg: '#dbeafe', color: '#1d4ed8' },
   pendiente_aprobacion_gestion_humana: { bg: '#ede9fe', color: '#6d28d9' },
-  aprobada_gestion_humana: { bg: '#dcfce7', color: '#166534' },
+  pendiente_aprobacion_sst: { bg: '#e0f2fe', color: '#0369a1' },
   finalizada: { bg: '#dcfce7', color: '#166534' },
-  no_aprobada: { bg: '#fee2e2', color: '#991b1b' }
+  no_aprobada: { bg: '#fee2e2', color: '#991b1b' },
+  aprobada_jefe: { bg: '#dbeafe', color: '#1d4ed8' },
+  aprobada_gestion_humana: { bg: '#dcfce7', color: '#166534' }
 };
 
 const formatDateTime = (value) => {
