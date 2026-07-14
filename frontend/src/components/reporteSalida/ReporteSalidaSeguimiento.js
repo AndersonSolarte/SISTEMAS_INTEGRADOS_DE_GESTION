@@ -320,6 +320,12 @@ function ReporteSalidaSeguimiento({ initialAccess = null, onBack }) {
   const [rowsPerPage, setRowsPerPage] = useState(5);
   const [timeRange, setTimeRange] = useState('todos');
 
+  const accessMode = access?.mode || 'sin_pendientes';
+  const copy = ACCESS_COPY[accessMode] || ACCESS_COPY.sin_pendientes;
+  const canValidateReposicion = Boolean(access?.canValidateReposicion);
+  const canManageAll = Boolean(access?.canManageAll);
+  const showEstadoFilter = Boolean(access?.canManageAll);
+
   // Estados para modales de administración GH
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
   const [deleteTargetId, setDeleteTargetId] = useState(null);
@@ -354,12 +360,6 @@ function ReporteSalidaSeguimiento({ initialAccess = null, onBack }) {
   useEffect(() => {
     if (activeModule === 'reporte_salida' || activeModule === 'estadisticas') load();
   }, [activeModule, load]);
-
-  const accessMode = access?.mode || 'sin_pendientes';
-  const copy = ACCESS_COPY[accessMode] || ACCESS_COPY.sin_pendientes;
-  const canValidateReposicion = Boolean(access?.canValidateReposicion);
-  const canManageAll = Boolean(access?.canManageAll);
-  const showEstadoFilter = Boolean(access?.canManageAll);
 
   const filteredRowsBase = useMemo(() => {
     let result = rows;

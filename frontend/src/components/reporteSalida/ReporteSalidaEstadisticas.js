@@ -315,8 +315,8 @@ export default function ReporteSalidaEstadisticas({ rows = [] }) {
       </Box>
 
       <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', lg: '1fr 1fr' }, gap: 3 }}>
-        {renderTable('Índice de Severidad (Total Horas)', <AccessTimeIcon sx={{ color: '#b45309' }} />, indicators.topTime, true, '#b45309', '#fef3c7', filteredRows)}
-        {renderTable('Índice de Frecuencia (Total Permisos)', <BarChartIcon sx={{ color: '#1d4ed8' }} />, indicators.topCount, false, '#1d4ed8', '#eff6ff', filteredRows)}
+        {renderTable('Tiempo Total Fuera (Horas Acumuladas)', <AccessTimeIcon sx={{ color: '#b45309' }} />, indicators.topTime, true, '#b45309', '#fef3c7', filteredRows)}
+        {renderTable('Total de Permisos Solicitados (Cantidad)', <BarChartIcon sx={{ color: '#1d4ed8' }} />, indicators.topCount, false, '#1d4ed8', '#eff6ff', filteredRows)}
         {indicators.dynamicTables.map(tbl => (
           <React.Fragment key={tbl.id}>
             {renderTable(tbl.label, tbl.icon, tbl.data, false, tbl.color, tbl.bg, filteredRows.filter(r => r.datos_formulario?.salida?.tipo === tbl.id))}
