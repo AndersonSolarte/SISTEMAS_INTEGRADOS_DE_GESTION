@@ -35,6 +35,24 @@ const exportToExcel = (title, summaryData, isTime, rawData) => {
     finalizada: 'Aprobada'
   };
 
+  const TYPE_LABELS = {
+    cita_eps: 'Cita Médica EPS',
+    cita_particular: 'Cita Especialista / Particular',
+    terapias: 'Terapias',
+    urgencia_medica: 'Urgencia Médica',
+    diligencia_personal: 'Diligencia Personal',
+    calamidad: 'Calamidad Doméstica',
+    jurado_votacion: 'Jurado de Votación',
+    sufragante: 'Sufragante',
+    voto_jurado: 'Jurado de Votación (Voto)',
+    voto_sufragante: 'Sufragante (Voto)',
+    reunion_institucional: 'Reunión Institucional',
+    evento_institucional: 'Evento Institucional',
+    ponencia: 'Ponencia / Exposición',
+    visita_ies: 'Visita IES / Par Académico',
+    salida_campus: 'Salida de Campus'
+  };
+
   // -------------------------------------------------------------
   // HOJA 1: RESUMEN DE LA CARD (Muestra la tabla del Top 10)
   // -------------------------------------------------------------
@@ -50,23 +68,64 @@ const exportToExcel = (title, summaryData, isTime, rawData) => {
   // -------------------------------------------------------------
   // HOJA 2: DETALLE Y TRAZABILIDAD (Muestra las filas crudas asociadas)
   // -------------------------------------------------------------
+  const hasReposicion = (rawData || []).some(row => row.reposicion_aplica);
+
   const headersDetail = [
-    'Consecutivo', 'Fecha Creación', 'Fecha Aprobación Jefe', 'Fecha Aprobación GH', 'Fecha Radicación (Finalización)', 
-    'Colaborador(a)', 'Documento', 'Dependencia', 'Cargo', 'Jefe Inmediato', 
-    'Segmento', 'Tipo Permiso', 'Motivo / Detalles', 'Estado Solicitud', 
-    'Requiere Reposición', 'Estado Reposición', 
-    'Tiempo Solicitado (Min)', 'Tiempo Solicitado (Hrs)', 
-    'Tiempo Repuesto / Abonado (Hrs)', 'Saldo Pendiente (Hrs)', 
-    'Observación Jefe', 'Historial Observaciones GH / Abonos', 
-    'Trazabilidad Histórica Completa'
+    'Consecutivo', 
+    'Colaborador(a)', 
+    'Documento', 
+    'Dependencia', 
+    'Cargo', 
+    'Jefe Inmediato', 
+    'Segmento', 
+    'Tipo Permiso',
+    'Motivo / Detalles', 
+    'Estado Solicitud',
+    'Fecha Salida',
+    'Fecha Regreso',
+    'Hora Salida',
+    'Hora Regreso',
+    'Campus Salida',
+    'Campus Destino',
+    'Alcance',
+    'País',
+    'Departamento',
+    'Municipio',
+    'Entidad Destino',
+    'Especialidad Médica',
+    'Detalle Terapias (Citas)'
   ];
+
+  if (hasReposicion) {
+    headersDetail.push(
+      'Requiere Reposición', 
+      'Estado Reposición', 
+      'Tiempo Solicitado (Min)', 
+      'Tiempo Solicitado (Hrs)', 
+      'Tiempo Repuesto / Abonado (Hrs)', 
+      'Saldo Pendiente (Hrs)'
+    );
+  }
+
+  headersDetail.push(
+    'Fecha Creación', 
+    'Fecha Aprobación Jefe', 
+    'Fecha Aprobación GH', 
+    'Fecha Radicación (Finalización)', 
+    'Observación Jefe', 
+    'Historial Observaciones GH / Abonos', 
+    'Trazabilidad Histórica Completa'
+  );
 
   const dataDetail = (rawData || []).map(row => {
     const f = row.datos_formulario || {};
-    const tipo = f.salida?.tipo || 'N/A';
+    const s = f.salida || {};
+    const p = f.personal || {};
+    const l = f.laboral || {};
+    const tipo = s.tipo || 'N/A';
     
     let segmentoText = 'N/A';
-    const rowCat = f.salida?.categoria;
+    const rowCat = s.categoria;
     if (rowCat === 'salud') segmentoText = 'Salud y Bienestar';
     else if (rowCat === 'personales') segmentoText = 'Trámites, Permisos y Licencias';
     else if (rowCat === 'propias_cargo') segmentoText = 'Actividades propias del cargo (Misionales)';
@@ -76,13 +135,60 @@ const exportToExcel = (title, summaryData, isTime, rawData) => {
       else if (['reunion_institucional', 'evento_institucional', 'ponencia', 'visita_ies', 'salida_campus'].includes(tipo)) segmentoText = 'Actividades propias del cargo (Misionales)';
     }
 
-    const totalMinutos = row.reposicion_minutos || row.tiempo_solicitado_minutos || 0;
-    const minutosPagados = row.reposicion_minutos_pagados || row.datos_formulario?.reposicion_minutos_pagados || 0;
-    const pendientes = totalMinutos - minutosPagados;
+    const typeLabel = TYPE_LABELS[tipo] || tipo.replace(/_/g, ' ').toUpperCase();
 
-    const hrsSolicitadas = (totalMinutos / 60).toFixed(1);
-    const hrsPagadas = (minutosPagados / 60).toFixed(1);
-    const hrsPendientes = (pendientes / 60).toFixed(1);
+    // Detalle de Terapias
+    let terapiasStr = 'N/A';
+    if (tipo === 'terapias' && Array.isArray(s.terapiasList)) {
+      terapiasStr = s.terapiasList.map((t, idx) => {
+        return `[Terapia ${idx + 1}] Fecha: ${t.fecha || 'N/A'}, Hora: ${t.horaInicio || 'N/A'} - ${t.horaFin || 'N/A'}`;
+      }).join('\n');
+    }
+
+    const rowData = [
+      row.consecutivo,
+      row.solicitante?.nombre || 'N/A',
+      p.documento || row.solicitante?.username || 'N/A',
+      l.dependencia || 'N/A',
+      l.cargo || 'N/A',
+      row.jefe?.nombre || 'N/A',
+      segmentoText,
+      typeLabel,
+      s.motivo || s.otraDescripcion || '',
+      STATUS_LABELS[row.estado] || row.estado,
+      s.fecha || 'N/A',
+      s.fechaRegreso || s.fecha || 'N/A',
+      s.horaInicio || 'N/A',
+      s.horaFin || 'N/A',
+      s.campusSalida || 'N/A',
+      s.campusDestino || 'N/A',
+      s.alcance || 'N/A',
+      s.pais || 'N/A',
+      s.departamento || 'N/A',
+      s.municipio || 'N/A',
+      s.entidadDestino || 'N/A',
+      s.especialidadMedica || 'N/A',
+      terapiasStr
+    ];
+
+    if (hasReposicion) {
+      const totalMinutos = row.reposicion_minutos || row.tiempo_solicitado_minutos || 0;
+      const minutosPagados = row.reposicion_minutos_pagados || row.datos_formulario?.reposicion_minutos_pagados || 0;
+      const pendientes = totalMinutos - minutosPagados;
+
+      const hrsSolicitadas = (totalMinutos / 60).toFixed(1);
+      const hrsPagadas = (minutosPagados / 60).toFixed(1);
+      const hrsPendientes = (pendientes / 60).toFixed(1);
+
+      rowData.push(
+        row.reposicion_aplica ? 'SI' : 'NO',
+        row.reposicion_aplica ? (row.reposicion_estado === 'cumplida' ? 'Cumplida' : 'Pendiente') : 'N/A',
+        row.tiempo_solicitado_minutos || 0,
+        hrsSolicitadas,
+        hrsPagadas,
+        hrsPendientes
+      );
+    }
 
     let trazabilidadStr = '';
     if (Array.isArray(row.trazabilidad)) {
@@ -93,36 +199,22 @@ const exportToExcel = (title, summaryData, isTime, rawData) => {
       }).join('\n');
     }
 
-    return [
-      row.consecutivo,
+    rowData.push(
       row.created_at ? new Date(row.created_at).toLocaleString('es-CO') : 'N/A',
       row.jefe_aprobado_at ? new Date(row.jefe_aprobado_at).toLocaleString('es-CO') : 'Pendiente',
       row.gestion_humana_aprobado_at ? new Date(row.gestion_humana_aprobado_at).toLocaleString('es-CO') : 'Pendiente',
       row.finalizado_at ? new Date(row.finalizado_at).toLocaleString('es-CO') : 'Pendiente',
-      row.solicitante?.nombre || 'N/A',
-      f.personal?.documento || row.solicitante?.username || 'N/A',
-      f.laboral?.dependencia || 'N/A',
-      f.laboral?.cargo || 'N/A',
-      row.jefe?.nombre || 'N/A',
-      segmentoText,
-      tipo,
-      f.salida?.motivo || f.salida?.otraDescripcion || '',
-      STATUS_LABELS[row.estado] || row.estado,
-      row.reposicion_aplica ? 'SI' : 'NO',
-      row.reposicion_aplica ? (row.reposicion_estado === 'cumplida' ? 'Cumplida' : 'Pendiente') : 'N/A',
-      row.tiempo_solicitado_minutos || 0,
-      hrsSolicitadas,
-      hrsPagadas,
-      hrsPendientes,
       row.trazabilidad?.find(t => (t.event === 'no_aprobada' || t.event === 'aprobada_jefe'))?.detail?.observacion || '',
       row.observacion_gestion_humana || '',
       trazabilidadStr
-    ];
+    );
+
+    return rowData;
   });
 
   const worksheetDetail = XLSX.utils.aoa_to_sheet([headersDetail, ...dataDetail]);
 
-  // Aplicar estilos
+  // Aplicar estilos y anchos de columna dinámicamente
   const applyHeaderStyles = (ws, headers) => {
     const range = XLSX.utils.decode_range(ws['!ref'] || 'A1');
     for (let C = range.s.c; C <= range.e.c; ++C) {
@@ -134,19 +226,26 @@ const exportToExcel = (title, summaryData, isTime, rawData) => {
         alignment: { horizontal: "center", vertical: "center" }
       };
     }
-    ws['!cols'] = headers.map(h => ({ wch: Math.max(h.length, 15) }));
+    
+    const cols = [];
+    for (let C = range.s.c; C <= range.e.c; ++C) {
+      let maxLen = headers[C]?.length || 10;
+      for (let R = range.s.r; R <= range.e.r; ++R) {
+        const address = XLSX.utils.encode_cell({ r: R, c: C });
+        const cell = ws[address];
+        if (cell && cell.v) {
+          const lines = String(cell.v).split('\n');
+          const maxLine = Math.max(...lines.map(l => l.length));
+          if (maxLine > maxLen) maxLen = maxLine;
+        }
+      }
+      cols.push({ wch: Math.min(Math.max(maxLen + 3, 12), 45) });
+    }
+    ws['!cols'] = cols;
   };
 
   applyHeaderStyles(worksheetSummary, headersSummary);
   applyHeaderStyles(worksheetDetail, headersDetail);
-
-  // Column widths
-  worksheetSummary['!cols'][1] = { wch: 30 }; // Colaborador
-
-  worksheetDetail['!cols'][5] = { wch: 30 }; // Colaborador
-  worksheetDetail['!cols'][12] = { wch: 45 }; // Motivo
-  worksheetDetail['!cols'][21] = { wch: 50 }; // Historial GH
-  worksheetDetail['!cols'][22] = { wch: 60 }; // Trazabilidad
 
   const workbook = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(workbook, worksheetSummary, "Resumen");
