@@ -220,7 +220,10 @@ export default function TiempoReponer() {
   const fetchMisReposiciones = async () => {
     try {
       const res = await api.get('/reporte-salida/reposiciones/mis-reposiciones');
-      if (res.data.success) setMisReposiciones(res.data.data);
+      if (res.data.success) {
+        const pending = res.data.data.filter(r => r.reposicion_estado !== 'cumplida');
+        setMisReposiciones(pending);
+      }
     } catch (error) {
       console.error(error);
     }
@@ -229,7 +232,10 @@ export default function TiempoReponer() {
   const fetchEquipoReposiciones = async () => {
     try {
       const res = await api.get('/reporte-salida/reposiciones/equipo');
-      if (res.data.success) setEquipoReposiciones(res.data.data);
+      if (res.data.success) {
+        const pending = res.data.data.filter(r => r.reposicion_estado !== 'cumplida');
+        setEquipoReposiciones(pending);
+      }
     } catch (error) {
       console.error(error);
     }
@@ -458,6 +464,14 @@ export default function TiempoReponer() {
               return (
                 <Alert severity="success" sx={{ mb: 2, borderRadius: 2 }}>
                   El/la colaborador(a) ya repuso la totalidad del tiempo pendiente para esta salida.
+                </Alert>
+              );
+            }
+
+            if (!updateHorasAbonadas) {
+              return (
+                <Alert severity="warning" sx={{ mb: 2, borderRadius: 2 }}>
+                  Ingrese las horas repuestas por el colaborador (no puede ser vacío ni 0).
                 </Alert>
               );
             }

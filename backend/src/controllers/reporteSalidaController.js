@@ -2591,6 +2591,30 @@ const eliminarSolicitud = async (req, res) => {
   }
 };
 
+const limpiarMocks = async (req, res) => {
+  if (!(await getReporteSalidaFeatureState())) return featureDisabled(res);
+  try {
+    const deletedCount = await ReporteSalidaSolicitud.destroy({
+      where: {
+        consecutivo: {
+          [Op.like]: 'RS-MOCK-%'
+        }
+      }
+    });
+    res.json({
+      success: true,
+      message: `Se eliminaron ${deletedCount} registros de prueba de manera exitosa.`
+    });
+  } catch (error) {
+    console.error('Error al limpiar mocks:', error);
+    res.status(500).json({
+      success: false,
+      message: 'No se pudo limpiar los datos de prueba.',
+      error: error.message
+    });
+  }
+};
+
 const editarSolicitudAdmin = async (req, res) => {
   if (!(await getReporteSalidaFeatureState())) return featureDisabled(res);
   try {
@@ -4316,6 +4340,7 @@ module.exports = {
   getReposicionesPropias,
   getReposicionesEquipo,
   eliminarSolicitud,
+  limpiarMocks,
   editarSolicitudAdmin,
   verificarReportePublico
 };

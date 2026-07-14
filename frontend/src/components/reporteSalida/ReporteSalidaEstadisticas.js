@@ -25,34 +25,82 @@ const formatElapsed = (minutes) => {
   return `${mins}m`;
 };
 
-const exportToExcel = (title, dataRows) => {
+const exportToExcel = (title, summaryData, isTime, rawData) => {
   const STATUS_LABELS = {
     borrador: 'Borrador',
-    pendiente_jefe: 'Pendiente Jefe',
+    pendiente_aprobacion_jefe: 'Pendiente Jefe',
     no_aprobada: 'Rechazada',
     pendiente_aprobacion_gestion_humana: 'Pendiente GH',
+    pendiente_aprobacion_sst: 'Pendiente SST',
     finalizada: 'Aprobada'
   };
 
-  const headers = [
-    'Consecutivo', 'Fecha Radicación', 'Colaborador(a)', 'Documento', 'Dependencia', 'Cargo', 
-    'Jefe Inmediato', 'Segmento', 'Tipo Permiso', 'Motivo / Detalles', 'Estado', 
-    'Requiere Reposicion', 'Estado Reposicion', 'Tiempo Solicitado (Min)'
+  // -------------------------------------------------------------
+  // HOJA 1: RESUMEN DE LA CARD (Muestra la tabla del Top 10)
+  // -------------------------------------------------------------
+  const headersSummary = ['Puesto', 'Colaborador(a)', isTime ? 'Tiempo Acumulado (Hrs)' : 'Solicitudes (Cantidad)'];
+  const dataSummary = summaryData.map((item, idx) => [
+    idx + 1,
+    item.name,
+    isTime ? (Number(item.value) / 60).toFixed(1) : item.value
+  ]);
+
+  const worksheetSummary = XLSX.utils.aoa_to_sheet([headersSummary, ...dataSummary]);
+
+  // -------------------------------------------------------------
+  // HOJA 2: DETALLE Y TRAZABILIDAD (Muestra las filas crudas asociadas)
+  // -------------------------------------------------------------
+  const headersDetail = [
+    'Consecutivo', 'Fecha Creación', 'Fecha Aprobación Jefe', 'Fecha Aprobación GH', 'Fecha Radicación (Finalización)', 
+    'Colaborador(a)', 'Documento', 'Dependencia', 'Cargo', 'Jefe Inmediato', 
+    'Segmento', 'Tipo Permiso', 'Motivo / Detalles', 'Estado Solicitud', 
+    'Requiere Reposición', 'Estado Reposición', 
+    'Tiempo Solicitado (Min)', 'Tiempo Solicitado (Hrs)', 
+    'Tiempo Repuesto / Abonado (Hrs)', 'Saldo Pendiente (Hrs)', 
+    'Observación Jefe', 'Historial Observaciones GH / Abonos', 
+    'Trazabilidad Histórica Completa'
   ];
 
-  const data = dataRows.map(row => {
+  const dataDetail = (rawData || []).map(row => {
     const f = row.datos_formulario || {};
     const tipo = f.salida?.tipo || 'N/A';
+    
     let segmentoText = 'N/A';
-    if (['cita_eps', 'cita_particular', 'terapias'].includes(tipo)) segmentoText = 'Salud y Bienestar';
-    else if (['diligencia_personal', 'calamidad'].includes(tipo)) segmentoText = 'Actividades personales';
-    else if (['reunion_institucional', 'evento_institucional', 'ponencia'].includes(tipo)) segmentoText = 'Actividades propias del cargo (Misionales)';
+    const rowCat = f.salida?.categoria;
+    if (rowCat === 'salud') segmentoText = 'Salud y Bienestar';
+    else if (rowCat === 'personales') segmentoText = 'Trámites, Permisos y Licencias';
+    else if (rowCat === 'propias_cargo') segmentoText = 'Actividades propias del cargo (Misionales)';
+    else {
+      if (['cita_eps', 'cita_particular', 'terapias', 'urgencia_medica'].includes(tipo)) segmentoText = 'Salud y Bienestar';
+      else if (['diligencia_personal', 'calamidad', 'jurado_votacion', 'sufragante'].includes(tipo)) segmentoText = 'Trámites, Permisos y Licencias';
+      else if (['reunion_institucional', 'evento_institucional', 'ponencia', 'visita_ies', 'salida_campus'].includes(tipo)) segmentoText = 'Actividades propias del cargo (Misionales)';
+    }
+
+    const totalMinutos = row.reposicion_minutos || row.tiempo_solicitado_minutos || 0;
+    const minutosPagados = row.reposicion_minutos_pagados || row.datos_formulario?.reposicion_minutos_pagados || 0;
+    const pendientes = totalMinutos - minutosPagados;
+
+    const hrsSolicitadas = (totalMinutos / 60).toFixed(1);
+    const hrsPagadas = (minutosPagados / 60).toFixed(1);
+    const hrsPendientes = (pendientes / 60).toFixed(1);
+
+    let trazabilidadStr = '';
+    if (Array.isArray(row.trazabilidad)) {
+      trazabilidadStr = row.trazabilidad.map(t => {
+        const dateStr = t.timestamp ? new Date(t.timestamp).toLocaleString('es-CO') : '';
+        const userStr = t.actor || t.userId || 'Sistema';
+        return `[${dateStr}] ${userStr}: ${t.event}`;
+      }).join('\n');
+    }
 
     return [
       row.consecutivo,
-      new Date(row.created_at).toLocaleString('es-CO'),
+      row.created_at ? new Date(row.created_at).toLocaleString('es-CO') : 'N/A',
+      row.jefe_aprobado_at ? new Date(row.jefe_aprobado_at).toLocaleString('es-CO') : 'Pendiente',
+      row.gestion_humana_aprobado_at ? new Date(row.gestion_humana_aprobado_at).toLocaleString('es-CO') : 'Pendiente',
+      row.finalizado_at ? new Date(row.finalizado_at).toLocaleString('es-CO') : 'Pendiente',
       row.solicitante?.nombre || 'N/A',
-      f.laboral?.cedula || 'N/A',
+      f.personal?.documento || row.solicitante?.username || 'N/A',
       f.laboral?.dependencia || 'N/A',
       f.laboral?.cargo || 'N/A',
       row.jefe?.nombre || 'N/A',
@@ -61,32 +109,48 @@ const exportToExcel = (title, dataRows) => {
       f.salida?.motivo || f.salida?.otraDescripcion || '',
       STATUS_LABELS[row.estado] || row.estado,
       row.reposicion_aplica ? 'SI' : 'NO',
-      row.reposicion_aplica ? row.reposicion_estado : 'N/A',
-      row.tiempo_solicitado_minutos || 0
+      row.reposicion_aplica ? (row.reposicion_estado === 'cumplida' ? 'Cumplida' : 'Pendiente') : 'N/A',
+      row.tiempo_solicitado_minutos || 0,
+      hrsSolicitadas,
+      hrsPagadas,
+      hrsPendientes,
+      row.trazabilidad?.find(t => (t.event === 'no_aprobada' || t.event === 'aprobada_jefe'))?.detail?.observacion || '',
+      row.observacion_gestion_humana || '',
+      trazabilidadStr
     ];
   });
 
-  const worksheet = XLSX.utils.aoa_to_sheet([headers, ...data]);
-  const range = XLSX.utils.decode_range(worksheet['!ref'] || 'A1');
-  if (worksheet['!ref']) {
+  const worksheetDetail = XLSX.utils.aoa_to_sheet([headersDetail, ...dataDetail]);
+
+  // Aplicar estilos
+  const applyHeaderStyles = (ws, headers) => {
+    const range = XLSX.utils.decode_range(ws['!ref'] || 'A1');
     for (let C = range.s.c; C <= range.e.c; ++C) {
       const address = XLSX.utils.encode_cell({ r: 0, c: C });
-      if (!worksheet[address]) continue;
-      worksheet[address].s = {
+      if (!ws[address]) continue;
+      ws[address].s = {
+        font: { bold: true, color: { rgb: "FFFFFF" } },
         fill: { fgColor: { rgb: "0F172A" } },
-        font: { color: { rgb: "FFFFFF" }, bold: true },
-        alignment: { horizontal: "center" }
+        alignment: { horizontal: "center", vertical: "center" }
       };
     }
-  }
-  worksheet['!cols'] = [
-    { wch: 18 }, { wch: 20 }, { wch: 35 }, { wch: 15 }, { wch: 25 }, { wch: 25 }, 
-    { wch: 35 }, { wch: 25 }, { wch: 25 }, { wch: 50 }, { wch: 15 }, 
-    { wch: 18 }, { wch: 18 }, { wch: 15 }
-  ];
-  
+    ws['!cols'] = headers.map(h => ({ wch: Math.max(h.length, 15) }));
+  };
+
+  applyHeaderStyles(worksheetSummary, headersSummary);
+  applyHeaderStyles(worksheetDetail, headersDetail);
+
+  // Column widths
+  worksheetSummary['!cols'][1] = { wch: 30 }; // Colaborador
+
+  worksheetDetail['!cols'][5] = { wch: 30 }; // Colaborador
+  worksheetDetail['!cols'][12] = { wch: 45 }; // Motivo
+  worksheetDetail['!cols'][21] = { wch: 50 }; // Historial GH
+  worksheetDetail['!cols'][22] = { wch: 60 }; // Trazabilidad
+
   const workbook = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(workbook, worksheet, 'Datos');
+  XLSX.utils.book_append_sheet(workbook, worksheetSummary, "Resumen");
+  XLSX.utils.book_append_sheet(workbook, worksheetDetail, "Detalle y Trazabilidad");
   XLSX.writeFile(workbook, `${title.replace(/[^a-z0-9]/gi, '_')}.xlsx`);
 };
 
@@ -98,7 +162,7 @@ const renderTable = (title, icon, data, isTime = false, color = '#1d4ed8', bg = 
         <Typography sx={{ fontWeight: 900, color: '#0f172a', fontSize: 16 }}>{title}</Typography>
       </Stack>
       {rawData && (
-        <IconButton size="small" onClick={() => exportToExcel(title, rawData)} sx={{ color: color, bgcolor: bg, '&:hover': { bgcolor: color, color: '#fff' } }}>
+        <IconButton size="small" onClick={() => exportToExcel(title, data, isTime, rawData)} sx={{ color: color, bgcolor: bg, '&:hover': { bgcolor: color, color: '#fff' } }}>
           <DownloadIcon fontSize="small" />
         </IconButton>
       )}

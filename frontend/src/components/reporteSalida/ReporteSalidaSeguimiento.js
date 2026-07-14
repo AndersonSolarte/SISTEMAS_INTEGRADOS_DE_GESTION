@@ -44,6 +44,7 @@ import DownloadIcon from '@mui/icons-material/Download';
 import RefreshIcon from '@mui/icons-material/Refresh';
 import BarChartIcon from '@mui/icons-material/BarChart';
 import CheckCircleIcon from '@mui/icons-material/CheckCircle';
+import ContentCopyIcon from '@mui/icons-material/ContentCopy';
 import reporteSalidaService from '../../services/reporteSalidaService';
 import ReporteSalidaEstadisticas from './ReporteSalidaEstadisticas';
 
@@ -506,13 +507,16 @@ function ReporteSalidaSeguimiento({ initialAccess = null, onBack }) {
   }, [groupedRows, page, rowsPerPage]);
 
   const exportToExcel = () => {
-    const headers = [
-      'Consecutivo', 'Fecha Radicación', 'Colaborador(a)', 'Documento', 'Dependencia', 'Cargo', 
+    // -------------------------------------------------------------
+    // HOJA 1: RESUMEN DE LA TABLA (Muestra lo filtrado en la UI)
+    // -------------------------------------------------------------
+    const headersSummary = [
+      'Consecutivo', 'Fecha Creación', 'Fecha Radicación', 'Colaborador(a)', 'Documento', 'Dependencia', 'Cargo', 
       'Jefe Inmediato', 'Segmento', 'Tipo Permiso', 'Motivo / Detalles', 'Estado', 
       'Requiere Reposicion', 'Estado Reposicion', 'Tiempo Solicitado (Min)'
     ];
 
-    const data = groupedRows.map(row => {
+    const dataSummary = groupedRows.map(row => {
       const f = row.datos_formulario || {};
       const tipo = f.salida?.tipo || 'N/A';
       
@@ -529,7 +533,8 @@ function ReporteSalidaSeguimiento({ initialAccess = null, onBack }) {
 
       return [
         row.consecutivo,
-        new Date(row.created_at).toLocaleString('es-CO'),
+        row.created_at ? new Date(row.created_at).toLocaleString('es-CO') : 'N/A',
+        row.finalizado_at ? new Date(row.finalizado_at).toLocaleString('es-CO') : 'Pendiente',
         row.isGroupRow ? `${row.solicitante?.nombre} (Grupo de ${row.groupParticipants.length} part.)` : (row.solicitante?.nombre || 'N/A'),
         f.personal?.documento || row.solicitante?.username || 'N/A',
         f.laboral?.dependencia || 'N/A',
@@ -540,33 +545,128 @@ function ReporteSalidaSeguimiento({ initialAccess = null, onBack }) {
         f.salida?.motivo || f.salida?.otraDescripcion || '',
         STATUS_LABELS[row.estado] || row.estado,
         row.reposicion_aplica ? 'SI' : 'NO',
-        row.reposicion_aplica ? row.reposicion_estado : 'N/A',
+        row.reposicion_aplica ? (row.reposicion_estado === 'cumplida' ? 'Cumplida' : 'Pendiente') : 'N/A',
         row.tiempo_solicitado_minutos || 0
       ];
     });
 
-    const worksheet = XLSX.utils.aoa_to_sheet([headers, ...data]);
-    
-    // Apply styling to headers
-    const range = XLSX.utils.decode_range(worksheet['!ref']);
-    for (let C = range.s.c; C <= range.e.c; ++C) {
-      const address = XLSX.utils.encode_cell({ r: 0, c: C });
-      if (!worksheet[address]) continue;
-      worksheet[address].s = {
-        font: { bold: true, color: { rgb: "FFFFFF" } },
-        fill: { fgColor: { rgb: "1D4ED8" } },
-        alignment: { horizontal: "center", vertical: "center" }
-      };
-    }
+    const worksheetSummary = XLSX.utils.aoa_to_sheet([headersSummary, ...dataSummary]);
 
-    // Adjust column widths
-    const colWidths = headers.map(h => ({ wch: Math.max(h.length, 15) }));
-    colWidths[2] = { wch: 30 }; // Colaborador
-    colWidths[8] = { wch: 40 }; // Motivo
-    worksheet['!cols'] = colWidths;
+    // -------------------------------------------------------------
+    // HOJA 2: DETALLE COMPLETO Y TRAZABILIDAD (Data desagrupada)
+    // -------------------------------------------------------------
+    const headersDetail = [
+      'Consecutivo', 'Fecha Creación', 'Fecha Aprobación Jefe', 'Fecha Aprobación GH', 'Fecha Radicación (Finalización)', 
+      'Colaborador(a)', 'Documento', 'Dependencia', 'Cargo', 'Jefe Inmediato', 
+      'Segmento', 'Tipo Permiso', 'Motivo / Detalles', 'Estado Solicitud', 
+      'Requiere Reposición', 'Estado Reposición', 
+      'Tiempo Solicitado (Min)', 'Tiempo Solicitado (Hrs)', 
+      'Tiempo Repuesto / Abonado (Hrs)', 'Saldo Pendiente (Hrs)', 
+      'Observación Jefe', 'Historial Observaciones GH / Abonos', 
+      'Trazabilidad Histórica Completa', 'Es Salida Grupal', 'Participantes de Salida Grupal'
+    ];
+
+    const dataDetail = filteredRows.map(row => {
+      const f = row.datos_formulario || {};
+      const tipo = f.salida?.tipo || 'N/A';
+      
+      let segmentoText = 'N/A';
+      const rowCat = f.salida?.categoria;
+      if (rowCat === 'salud') segmentoText = 'Salud y Bienestar';
+      else if (rowCat === 'personales') segmentoText = 'Trámites, Permisos y Licencias';
+      else if (rowCat === 'propias_cargo') segmentoText = 'Actividades propias del cargo (Misionales)';
+      else {
+        if (['cita_eps', 'cita_particular', 'terapias', 'urgencia_medica'].includes(tipo)) segmentoText = 'Salud y Bienestar';
+        else if (['diligencia_personal', 'calamidad', 'jurado_votacion', 'sufragante'].includes(tipo)) segmentoText = 'Trámites, Permisos y Licencias';
+        else if (['reunion_institucional', 'evento_institucional', 'ponencia', 'visita_ies', 'salida_campus'].includes(tipo)) segmentoText = 'Actividades propias del cargo (Misionales)';
+      }
+
+      const totalMinutos = row.reposicion_minutos || row.tiempo_solicitado_minutos || 0;
+      const minutosPagados = row.reposicion_minutos_pagados || row.datos_formulario?.reposicion_minutos_pagados || 0;
+      const pendientes = totalMinutos - minutosPagados;
+
+      const hrsSolicitadas = (totalMinutos / 60).toFixed(1);
+      const hrsPagadas = (minutosPagados / 60).toFixed(1);
+      const hrsPendientes = (pendientes / 60).toFixed(1);
+
+      let trazabilidadStr = '';
+      if (Array.isArray(row.trazabilidad)) {
+        trazabilidadStr = row.trazabilidad.map(t => {
+          const dateStr = t.timestamp ? new Date(t.timestamp).toLocaleString('es-CO') : '';
+          const userStr = t.actor || t.userId || 'Sistema';
+          return `[${dateStr}] ${userStr}: ${t.event}`;
+        }).join('\n');
+      }
+
+      const esGrupal = Boolean(f.grupo?.participantes && f.grupo.participantes.length > 0);
+      let participantesStr = '';
+      if (esGrupal) {
+        participantesStr = f.grupo.participantes.map(p => `${p.nombre || ''} (${p.documento || p.cedula || ''})`).join(', ');
+      }
+
+      return [
+        row.consecutivo,
+        row.created_at ? new Date(row.created_at).toLocaleString('es-CO') : 'N/A',
+        row.jefe_aprobado_at ? new Date(row.jefe_aprobado_at).toLocaleString('es-CO') : 'Pendiente',
+        row.gestion_humana_aprobado_at ? new Date(row.gestion_humana_aprobado_at).toLocaleString('es-CO') : 'Pendiente',
+        row.finalizado_at ? new Date(row.finalizado_at).toLocaleString('es-CO') : 'Pendiente',
+        row.solicitante?.nombre || 'N/A',
+        f.personal?.documento || row.solicitante?.username || 'N/A',
+        f.laboral?.dependencia || 'N/A',
+        f.laboral?.cargo || 'N/A',
+        row.jefe?.nombre || 'N/A',
+        segmentoText,
+        tipo,
+        f.salida?.motivo || f.salida?.otraDescripcion || '',
+        STATUS_LABELS[row.estado] || row.estado,
+        row.reposicion_aplica ? 'SI' : 'NO',
+        row.reposicion_aplica ? (row.reposicion_estado === 'cumplida' ? 'Cumplida' : 'Pendiente') : 'N/A',
+        row.tiempo_solicitado_minutos || 0,
+        hrsSolicitadas,
+        hrsPagadas,
+        hrsPendientes,
+        getJefeObservacion(row) || '',
+        row.observacion_gestion_humana || '',
+        trazabilidadStr,
+        esGrupal ? 'SI' : 'NO',
+        participantesStr
+      ];
+    });
+
+    const worksheetDetail = XLSX.utils.aoa_to_sheet([headersDetail, ...dataDetail]);
+
+    // Aplicar estilos a cabeceras
+    const applyHeaderStyles = (ws, headers) => {
+      const range = XLSX.utils.decode_range(ws['!ref'] || 'A1');
+      for (let C = range.s.c; C <= range.e.c; ++C) {
+        const address = XLSX.utils.encode_cell({ r: 0, c: C });
+        if (!ws[address]) continue;
+        ws[address].s = {
+          font: { bold: true, color: { rgb: "FFFFFF" } },
+          fill: { fgColor: { rgb: "1D4ED8" } },
+          alignment: { horizontal: "center", vertical: "center" }
+        };
+      }
+      ws['!cols'] = headers.map(h => ({ wch: Math.max(h.length, 15) }));
+    };
+
+    applyHeaderStyles(worksheetSummary, headersSummary);
+    applyHeaderStyles(worksheetDetail, headersDetail);
+
+    // Ajustar anchos
+    worksheetSummary['!cols'][3] = { wch: 30 }; // Colaborador
+    worksheetSummary['!cols'][10] = { wch: 45 }; // Motivo
+
+    worksheetDetail['!cols'][5] = { wch: 30 }; // Colaborador
+    worksheetDetail['!cols'][12] = { wch: 45 }; // Motivo
+    worksheetDetail['!cols'][20] = { wch: 45 }; // Obs Jefe
+    worksheetDetail['!cols'][21] = { wch: 50 }; // Historial GH
+    worksheetDetail['!cols'][22] = { wch: 60 }; // Trazabilidad
+    worksheetDetail['!cols'][24] = { wch: 60 }; // Participantes
 
     const workbook = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(workbook, worksheet, "Reportes");
+    XLSX.utils.book_append_sheet(workbook, worksheetSummary, "Resumen de Tabla");
+    XLSX.utils.book_append_sheet(workbook, worksheetDetail, "Detalle y Trazabilidad");
     XLSX.writeFile(workbook, `Seguimiento_Reportes_${new Date().getTime()}.xlsx`);
   };
 
@@ -652,6 +752,24 @@ function ReporteSalidaSeguimiento({ initialAccess = null, onBack }) {
       const errorMsg = error.response?.data?.error || error.response?.data?.message || 'Error al eliminar';
       const detailMsg = error.response?.data?.detail ? ` - Detalle: ${error.response.data.detail}` : '';
       enqueueSnackbar(`${errorMsg}${detailMsg}`, { variant: 'error' });
+    }
+  };
+
+  const handleLimpiarMocks = async () => {
+    if (!window.confirm('¿Está seguro de que desea eliminar permanentemente todos los reportes de prueba (Mocks)? Esta acción no se puede deshacer.')) {
+      return;
+    }
+    setLoading(true);
+    try {
+      const res = await api.delete('/reporte-salida/limpiar-mocks');
+      if (res.data.success) {
+        enqueueSnackbar(res.data.message || 'Datos de prueba eliminados.', { variant: 'success' });
+        load();
+      }
+    } catch (error) {
+      enqueueSnackbar(error.response?.data?.message || 'Error al eliminar datos de prueba.', { variant: 'error' });
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -982,7 +1100,7 @@ function ReporteSalidaSeguimiento({ initialAccess = null, onBack }) {
                   <TableHead>
                     <TableRow>
                       {['Solicitud', 'F. Radicación', 'Colaborador(a)', 'Jefe inmediato', 'Motivo / Detalles', 'Estado', 'Reposición', 'Observaciones', canManageAll ? 'Acciones Adm' : (canValidateReposicion ? 'Validación GH' : 'Seguimiento')].map((label) => (
-                        <TableCell key={label} sx={{ bgcolor: '#f8fafc', fontWeight: 950, color: '#334155' }}>{label}</TableCell>
+                        <TableCell key={label} sx={{ bgcolor: '#f8fafc', fontWeight: 950, color: '#334155', fontSize: 11, py: 1, px: 0.8 }}>{label}</TableCell>
                       ))}
                     </TableRow>
                   </TableHead>
@@ -995,16 +1113,30 @@ function ReporteSalidaSeguimiento({ initialAccess = null, onBack }) {
                       const statusSx = STATUS_COLORS[row.estado] || { bg: '#f1f5f9', color: '#475569' };
                       return (
                         <TableRow key={row.id} hover>
-                          <TableCell sx={{ minWidth: 140 }}>
-                            <Typography sx={{ fontWeight: 900, color: '#1d4ed8' }}>{row.consecutivo}</Typography>
+                          <TableCell sx={{ py: 0.8, px: 0.8, minWidth: 120 }}>
+                            <Typography sx={{ fontWeight: 900, color: '#1d4ed8', fontSize: 11.5 }}>{row.consecutivo}</Typography>
                             {(() => {
                               const txId = row.datos_formulario?.tx_id || ('00000000-0000-4000-8000-' + String(row.id).padStart(12, '0'));
                               return (
-                                <Tooltip title="ID Transacción (UUID)" arrow>
-                                  <Typography sx={{ fontSize: 9, color: '#94a3b8', mt: 0.5, wordBreak: 'break-all', fontFamily: 'monospace' }}>
-                                    Tx: {txId.substring(0, 18)}...
-                                  </Typography>
-                                </Tooltip>
+                                <Stack direction="row" alignItems="center" spacing={0.5} sx={{ mt: 0.5 }}>
+                                  <Tooltip title={`ID Transacción: ${txId}`} arrow>
+                                    <Typography sx={{ fontSize: 8.5, color: '#94a3b8', wordBreak: 'break-all', fontFamily: 'monospace' }}>
+                                      Tx: {txId.substring(0, 12)}...
+                                    </Typography>
+                                  </Tooltip>
+                                  <Tooltip title="Copiar ID de Transacción" arrow>
+                                    <IconButton
+                                      size="small"
+                                      onClick={() => {
+                                        navigator.clipboard.writeText(txId);
+                                        enqueueSnackbar('ID de transacción copiado', { variant: 'info', autoHideDuration: 1500 });
+                                      }}
+                                      sx={{ p: 0.2, color: '#94a3b8', '&:hover': { color: '#1d4ed8' } }}
+                                    >
+                                      <ContentCopyIcon sx={{ fontSize: 10 }} />
+                                    </IconButton>
+                                  </Tooltip>
+                                </Stack>
                               );
                             })()}
                             {(() => {
@@ -1024,7 +1156,7 @@ function ReporteSalidaSeguimiento({ initialAccess = null, onBack }) {
                                     const color = isPast ? '#166534' : isToday ? '#854d0e' : '#475569';
                                     return (
                                       <Tooltip key={idx} title={`Terapia #${idx + 1}: ${t.fecha} ${t.horaInicio}-${t.horaFin}`} arrow>
-                                        <Chip size="small" label={`#${idx + 1}`} sx={{ bgcolor: bg, color, fontSize: 10, fontWeight: 700, height: 20, '& .MuiChip-label': { px: 1 } }} />
+                                        <Chip size="small" label={`#${idx + 1}`} sx={{ bgcolor: bg, color, fontSize: 9, fontWeight: 700, height: 18, '& .MuiChip-label': { px: 0.8 } }} />
                                       </Tooltip>
                                     );
                                   })}
@@ -1032,28 +1164,28 @@ function ReporteSalidaSeguimiento({ initialAccess = null, onBack }) {
                               );
                             })()}
                           </TableCell>
-                          <TableCell>
+                          <TableCell sx={{ py: 0.8, px: 0.8 }}>
                             {row.finalizado_at ? (
-                              <Typography sx={{ fontSize: 12.5, fontWeight: 700, color: '#0f766e' }}>
+                              <Typography sx={{ fontSize: 11, fontWeight: 700, color: '#0f766e' }}>
                                 {new Date(row.finalizado_at).toLocaleDateString('es-CO')}
                               </Typography>
                             ) : (
-                              <Typography sx={{ fontSize: 12, color: '#94a3b8', fontStyle: 'italic' }}>
+                              <Typography sx={{ fontSize: 10.5, color: '#94a3b8', fontStyle: 'italic' }}>
                                 Pendiente
                               </Typography>
                             )}
                           </TableCell>
-                          <TableCell>
+                          <TableCell sx={{ py: 0.8, px: 0.8 }}>
                             {row.isGroupRow ? (
                               <Stack spacing={0.5}>
-                                <Typography sx={{ fontWeight: 800, fontSize: 13, color: '#0f766e' }}>
+                                <Typography sx={{ fontWeight: 800, fontSize: 11.5, color: '#0f766e' }}>
                                   {row.solicitante?.nombre}
                                 </Typography>
-                                <Typography sx={{ color: '#64748b', fontSize: 12 }}>
+                                <Typography sx={{ color: '#64748b', fontSize: 10.5 }}>
                                   {row.solicitante?.username} (Líder)
                                 </Typography>
                                 <Chip
-                                  label={`Salida Grupal (${row.groupParticipants.length} part.)`}
+                                  label={`Grupo (${row.groupParticipants.length} part.)`}
                                   size="small"
                                   onClick={() => {
                                     setGroupParticipants(row.groupParticipants);
@@ -1063,7 +1195,8 @@ function ReporteSalidaSeguimiento({ initialAccess = null, onBack }) {
                                     bgcolor: '#f3e8ff',
                                     color: '#6b21a8',
                                     fontWeight: 900,
-                                    fontSize: 10,
+                                    fontSize: 9,
+                                    height: 18,
                                     cursor: 'pointer',
                                     width: 'fit-content',
                                     border: '1px solid #e9d5ff',
@@ -1073,27 +1206,27 @@ function ReporteSalidaSeguimiento({ initialAccess = null, onBack }) {
                               </Stack>
                             ) : (
                               <>
-                                <Typography sx={{ fontWeight: 800, fontSize: 13 }}>{row.solicitante?.nombre}</Typography>
-                                <Typography sx={{ color: '#64748b', fontSize: 12 }}>{row.solicitante?.username}</Typography>
+                                <Typography sx={{ fontWeight: 800, fontSize: 11.5 }}>{row.solicitante?.nombre}</Typography>
+                                <Typography sx={{ color: '#64748b', fontSize: 10.5 }}>{row.solicitante?.username}</Typography>
                               </>
                             )}
                           </TableCell>
-                          <TableCell>
-                            <Typography sx={{ fontWeight: 700, fontSize: 13 }}>{row.jefe?.nombre}</Typography>
-                            <Typography sx={{ color: '#64748b', fontSize: 12 }}>{row.jefe?.email}</Typography>
+                          <TableCell sx={{ py: 0.8, px: 0.8 }}>
+                            <Typography sx={{ fontWeight: 700, fontSize: 11.5 }}>{row.jefe?.nombre}</Typography>
+                            <Typography sx={{ color: '#64748b', fontSize: 10.5 }}>{row.jefe?.email}</Typography>
                           </TableCell>
-                          <TableCell sx={{ maxWidth: 220 }}>
-                            <Typography sx={{ fontWeight: 800, fontSize: 12, color: '#334155', textTransform: 'capitalize' }}>
+                          <TableCell sx={{ py: 0.8, px: 0.8, maxWidth: 200 }}>
+                            <Typography sx={{ fontWeight: 800, fontSize: 11, color: '#334155', textTransform: 'capitalize' }}>
                               {(row.datos_formulario?.salida?.tipo || '').replace(/_/g, ' ')}
                             </Typography>
-                            <Typography sx={{ color: '#64748b', fontSize: 11, display: '-webkit-box', WebkitLineClamp: 3, WebkitBoxOrient: 'vertical', overflow: 'hidden' }} title={row.datos_formulario?.salida?.motivo || row.datos_formulario?.salida?.otraDescripcion || 'Sin descripción'}>
+                            <Typography sx={{ color: '#64748b', fontSize: 10, display: '-webkit-box', WebkitLineClamp: 3, WebkitBoxOrient: 'vertical', overflow: 'hidden' }} title={row.datos_formulario?.salida?.motivo || row.datos_formulario?.salida?.otraDescripcion || 'Sin descripción'}>
                               {row.datos_formulario?.salida?.motivo || row.datos_formulario?.salida?.otraDescripcion || 'Sin descripción'}
                             </Typography>
                           </TableCell>
-                          <TableCell>
+                          <TableCell sx={{ py: 0.8, px: 0.8 }}>
                             <Stack spacing={0.5} alignItems="flex-start">
                               <Tooltip title={getTrazabilidadTooltip(row)} arrow placement="left" sx={{ cursor: 'pointer' }}>
-                                <Chip size="small" label={STATUS_LABELS[row.estado] || row.estado} sx={{ bgcolor: statusSx.bg, color: statusSx.color, fontWeight: 900 }} />
+                                <Chip size="small" label={STATUS_LABELS[row.estado] || row.estado} sx={{ bgcolor: statusSx.bg, color: statusSx.color, fontWeight: 900, fontSize: 9, height: 18 }} />
                               </Tooltip>
                               {(() => {
                                 const rejectionTrace = Array.isArray(row.trazabilidad)
@@ -1103,7 +1236,7 @@ function ReporteSalidaSeguimiento({ initialAccess = null, onBack }) {
                                 if (!justificacion) return null;
                                 return (
                                   <Tooltip title={justificacion} arrow>
-                                    <Typography sx={{ color: '#ef4444', fontSize: 11, cursor: 'help', textDecoration: 'underline dotted', maxWidth: 140, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                    <Typography sx={{ color: '#ef4444', fontSize: 10, cursor: 'help', textDecoration: 'underline dotted', maxWidth: 140, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                                       Motivo: {justificacion}
                                     </Typography>
                                   </Tooltip>
@@ -1111,7 +1244,7 @@ function ReporteSalidaSeguimiento({ initialAccess = null, onBack }) {
                               })()}
                             </Stack>
                           </TableCell>
-                          <TableCell sx={{ minWidth: 155 }}>
+                          <TableCell sx={{ py: 0.8, px: 0.8, minWidth: 130 }}>
                             {row.reposicion_aplica ? (
                               <Stack spacing={0.6}>
                                 <Chip
@@ -1120,10 +1253,12 @@ function ReporteSalidaSeguimiento({ initialAccess = null, onBack }) {
                                   sx={{
                                     ...getReposicionChipColors(row.reposicion_estado),
                                     fontWeight: 800,
+                                    fontSize: 9,
+                                    height: 18,
                                     width: 'fit-content'
                                   }}
                                 />
-                                <Box sx={{ fontSize: 11, lineHeight: 1.4, color: '#334155' }}>
+                                <Box sx={{ fontSize: 10, lineHeight: 1.4, color: '#334155' }}>
                                   <div><strong>Total:</strong> {formatElapsed(row.reposicion_minutos || row.tiempo_solicitado_minutos || 0)}</div>
                                   <div><strong>Abonado:</strong> {formatElapsed(row.reposicion_minutos_pagados || row.datos_formulario?.reposicion_minutos_pagados || 0)}</div>
                                   <div><strong>Pendiente:</strong> {(() => {
@@ -1134,10 +1269,10 @@ function ReporteSalidaSeguimiento({ initialAccess = null, onBack }) {
                                 </Box>
                               </Stack>
                             ) : (
-                              <Typography sx={{ fontSize: 11, color: '#64748b' }}>No aplica</Typography>
+                              <Typography sx={{ fontSize: 10, color: '#64748b' }}>No aplica</Typography>
                             )}
                           </TableCell>
-                          <TableCell sx={{ minWidth: 200, maxWidth: 300 }}>
+                          <TableCell sx={{ py: 0.8, px: 0.8, minWidth: 180, maxWidth: 260 }}>
                             {(() => {
                               const jefeObs = getJefeObservacion(row);
                               const ghObs = row.observacion_gestion_humana || '';
@@ -1145,29 +1280,29 @@ function ReporteSalidaSeguimiento({ initialAccess = null, onBack }) {
                                 <Stack spacing={0.8}>
                                   {jefeObs && (
                                     <Box>
-                                      <Typography sx={{ fontSize: 10.5, fontWeight: 700, color: '#475569', display: 'inline-block', mr: 0.5 }}>Jefe:</Typography>
-                                      <Typography sx={{ fontSize: 10.5, color: '#64748b', fontStyle: 'italic', display: 'inline' }}>"{jefeObs}"</Typography>
+                                      <Typography sx={{ fontSize: 9.5, fontWeight: 700, color: '#475569', display: 'inline-block', mr: 0.5 }}>Jefe:</Typography>
+                                      <Typography sx={{ fontSize: 9.5, color: '#64748b', fontStyle: 'italic', display: 'inline' }}>"{jefeObs}"</Typography>
                                     </Box>
                                   )}
                                   {ghObs ? (
                                     <Box>
-                                      <Typography sx={{ fontSize: 10.5, fontWeight: 700, color: '#0f766e', mb: 0.3 }}>Talento Humano:</Typography>
-                                      <Box sx={{ fontSize: 10.5, color: '#334155', maxHeight: 80, overflowY: 'auto', bgcolor: '#f8fafc', p: 0.5, borderRadius: 1, border: '1px solid #e2e8f0' }}>
+                                      <Typography sx={{ fontSize: 9.5, fontWeight: 700, color: '#0f766e', mb: 0.3 }}>Talento Humano:</Typography>
+                                      <Box sx={{ fontSize: 9.5, color: '#334155', maxHeight: 60, overflowY: 'auto', bgcolor: '#f8fafc', p: 0.3, borderRadius: 1, border: '1px solid #e2e8f0' }}>
                                         {ghObs.split('\n').map((line, idx) => (
-                                          <Typography key={idx} sx={{ fontSize: 10, lineHeight: 1.3, borderBottom: idx < ghObs.split('\n').length - 1 ? '1px dashed #e2e8f0' : 'none', pb: 0.3, mb: 0.3 }}>
+                                          <Typography key={idx} sx={{ fontSize: 9, lineHeight: 1.3, borderBottom: idx < ghObs.split('\n').length - 1 ? '1px dashed #e2e8f0' : 'none', pb: 0.3, mb: 0.3 }}>
                                             {line}
                                           </Typography>
                                         ))}
                                       </Box>
                                     </Box>
                                   ) : (
-                                    !jefeObs && <Typography sx={{ fontSize: 10.5, color: '#94a3b8', fontStyle: 'italic' }}>Sin observaciones</Typography>
+                                    !jefeObs && <Typography sx={{ fontSize: 9.5, color: '#94a3b8', fontStyle: 'italic' }}>Sin observaciones</Typography>
                                   )}
                                 </Stack>
                               );
                             })()}
                           </TableCell>
-                          <TableCell>
+                          <TableCell sx={{ py: 0.8, px: 0.8 }}>
                             {canManageAll ? (
                               <Stack direction="row" spacing={0.5}>
                                 {row.reposicion_aplica && (
@@ -1418,6 +1553,14 @@ function ReporteSalidaSeguimiento({ initialAccess = null, onBack }) {
                     return (
                       <Alert severity="success" sx={{ mb: 2, borderRadius: 2 }}>
                         El/la colaborador(a) ya repuso la totalidad del tiempo pendiente para esta salida.
+                      </Alert>
+                    );
+                  }
+
+                  if (!repHorasAbonadas) {
+                    return (
+                      <Alert severity="warning" sx={{ mb: 2, borderRadius: 2 }}>
+                        Ingrese las horas repuestas por el colaborador (no puede ser vacío ni 0).
                       </Alert>
                     );
                   }

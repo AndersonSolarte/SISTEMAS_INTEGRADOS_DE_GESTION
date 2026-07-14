@@ -43,6 +43,7 @@ const {
   getReposicionesPropias,
   getReposicionesEquipo,
   eliminarSolicitud,
+  limpiarMocks,
   editarSolicitudAdmin,
   verificarReportePublico
 } = require('../controllers/reporteSalidaController');
@@ -89,6 +90,16 @@ router.delete(
     moduleKeys: ['seguimiento_reportes_rrhh']
   }),
   eliminarSolicitud
+);
+
+router.delete(
+  '/limpiar-mocks',
+  auth,
+  hasAnyRoleOrModulePermission({
+    roles: [ROLES.ADMINISTRADOR, ROLES.GESTION_INFORMACION, ROLES.PLANEACION_ESTRATEGICA],
+    moduleKeys: ['seguimiento_reportes_rrhh']
+  }),
+  limpiarMocks
 );
 
 router.put(
