@@ -19,7 +19,8 @@ import {
   DialogContent,
   DialogActions,
   TextField,
-  MenuItem
+  MenuItem,
+  Alert
 } from '@mui/material';
 import { useSnackbar } from 'notistack';
 import api from '../services/api';
@@ -54,7 +55,129 @@ const formatDate = (dateString) => {
   });
 };
 
+const parseLogLine = (line) => {
+  let timestamp = '';
+  let rest = line;
+  if (line.startsWith('[')) {
+    const endBracket = line.indexOf(']');
+    if (endBracket !== -1) {
+      timestamp = line.substring(1, endBracket);
+      rest = line.substring(endBracket + 1).trim();
+    }
+  }
+  
+  const colonIndex = rest.indexOf(':');
+  let actor = '';
+  let actionAndComment = rest;
+  if (colonIndex !== -1) {
+    actor = rest.substring(0, colonIndex).trim();
+    actionAndComment = rest.substring(colonIndex + 1).trim();
+  }
+  
+  let action = actionAndComment;
+  let comment = '';
+  const commentIndex = actionAndComment.indexOf(' - "');
+  if (commentIndex !== -1) {
+    action = actionAndComment.substring(0, commentIndex).trim();
+    const rawComment = actionAndComment.substring(commentIndex + 4).trim();
+    comment = rawComment.endsWith('"') ? rawComment.substring(0, rawComment.length - 1) : rawComment;
+  }
+  
+  return { timestamp, actor, action, comment };
+};
 
+const renderObservationHistory = (jefeObs, ghObs, row) => {
+  if (!jefeObs && !ghObs) return null;
+
+  const items = [];
+
+  if (jefeObs) {
+    items.push({
+      type: 'jefe',
+      roleLabel: 'Jefe Inmediato',
+      actor: row?.jefe?.nombre || 'Jefe Inmediato',
+      timestamp: row?.jefe_aprobado_at ? new Date(row.jefe_aprobado_at).toLocaleString('es-CO') : '',
+      action: row?.estado === 'no_aprobada' ? 'Rechazó la solicitud' : 'Aprobó la solicitud',
+      comment: jefeObs,
+      bgColor: '#eff6ff',
+      borderColor: '#bfdbfe',
+      badgeColor: '#1d4ed8',
+      badgeBg: '#dbeafe'
+    });
+  }
+
+  if (ghObs) {
+    ghObs.split('\n').forEach((line) => {
+      if (!line.trim()) return;
+      const parsed = parseLogLine(line);
+      items.push({
+        type: 'gh',
+        roleLabel: 'Talento Humano',
+        actor: parsed.actor || 'Gestión Humana',
+        timestamp: parsed.timestamp || '',
+        action: parsed.action,
+        comment: parsed.comment,
+        bgColor: '#f0fdf4',
+        borderColor: '#bbf7d0',
+        badgeColor: '#15803d',
+        badgeBg: '#dcfce7'
+      });
+    });
+  }
+
+  return (
+    <Box sx={{ mt: 2, display: 'flex', flexDirection: 'column', gap: 1.5 }}>
+      <Typography variant="subtitle2" sx={{ fontWeight: 900, fontSize: 13, color: '#334155', borderBottom: '2px solid #e2e8f0', pb: 0.5 }}>
+        Historial de Observaciones y Acciones
+      </Typography>
+      <Stack spacing={1.5}>
+        {items.map((item, idx) => (
+          <Box
+            key={idx}
+            sx={{
+              p: 1.5,
+              bgcolor: item.bgColor,
+              border: `1px solid ${item.borderColor}`,
+              borderRadius: 2.5,
+              boxShadow: '0 1px 2px 0 rgba(0, 0, 0, 0.02)'
+            }}
+          >
+            <Stack direction="row" justifyContent="space-between" alignItems="center" sx={{ mb: 1 }}>
+              <Chip
+                label={item.roleLabel}
+                size="small"
+                sx={{
+                  bgcolor: item.badgeBg,
+                  color: item.badgeColor,
+                  fontWeight: 900,
+                  fontSize: 10,
+                  height: 20
+                }}
+              />
+              {item.timestamp && (
+                <Typography variant="caption" sx={{ color: '#64748b', fontWeight: 600 }}>
+                  {item.timestamp}
+                </Typography>
+              )}
+            </Stack>
+            
+            <Typography variant="body2" sx={{ fontWeight: 800, color: '#1e293b', mb: item.comment ? 0.5 : 0 }}>
+              {item.actor} &raquo; <span style={{ color: '#475569', fontWeight: 600 }}>{item.action}</span>
+            </Typography>
+
+            {item.comment && (
+              <Box sx={{ mt: 1, p: 1, bgcolor: 'rgba(255, 255, 255, 0.7)', borderRadius: 1.5, borderLeft: `3px solid ${item.badgeColor}` }}>
+                <Typography variant="body2" sx={{ fontStyle: 'italic', color: '#334155', fontSize: 11.5 }}>
+                  "{item.comment}"
+                </Typography>
+              </Box>
+            )}
+          </Box>
+        ))}
+      </Stack>
+    </Box>
+  );
+};
 
 const getHorasPendientes = (row) => {
   if (!row) return '0 hrs';
@@ -324,6 +447,46 @@ export default function TiempoReponer() {
             <Typography variant="body2" sx={{ mt: 1, fontWeight: 'bold' }}>Saldo pendiente: {getHorasPendientes(selectedRep)}</Typography>
           </Box>
 
+          {(() => {
+            if (!selectedRep) return null;
+            const totalMinutos = selectedRep.reposicion_minutos || selectedRep.tiempo_solicitado_minutos || 0;
+            const minutosPagados = selectedRep.reposicion_minutos_pagados || selectedRep.datos_formulario?.reposicion_minutos_pagados || 0;
+            const minutosPendientes = totalMinutos - minutosPagados;
+            const horasPendientes = minutosPendientes / 60;
+
+            if (horasPendientes <= 0) {
+              return (
+                <Alert severity="success" sx={{ mb: 2, borderRadius: 2 }}>
+                  El/la colaborador(a) ya repuso la totalidad del tiempo pendiente para esta salida.
+                </Alert>
+              );
+            }
+
+            if (updateHorasAbonadas) {
+              const val = Number(updateHorasAbonadas);
+              if (val <= 0) {
+                return <Alert severity="error" sx={{ mb: 2, borderRadius: 2 }}>No se permiten valores negativos ni ceros.</Alert>;
+              }
+              if (val > horasPendientes) {
+                return (
+                  <Alert severity="error" sx={{ mb: 2, borderRadius: 2 }}>
+                    La cantidad ingresada ({val} hrs) supera el saldo pendiente de {horasPendientes.toFixed(1)} horas.
+                  </Alert>
+                );
+              }
+              const restante = horasPendientes - val;
+              if (restante === 0) {
+                return <Alert severity="success" sx={{ mb: 2, borderRadius: 2 }}>Correcto. La deuda quedará totalmente saldada.</Alert>;
+              }
+              return (
+                <Alert severity="info" sx={{ mb: 2, borderRadius: 2 }}>
+                  Correcto. Quedará un saldo pendiente de {restante.toFixed(1)} horas.
+                </Alert>
+              );
+            }
+            return null;
+          })()}
+
           <TextField
             label="Horas a abonar (Repuestas hoy)"
             type="number"
@@ -360,34 +523,7 @@ export default function TiempoReponer() {
             rows={3}
           />
 
-          {(() => {
-            const jefeObs = getJefeObservacion(selectedRep);
-            const ghObs = selectedRep?.observacion_gestion_humana;
-            if (!jefeObs && !ghObs) return null;
-            return (
-              <Box sx={{ mt: 2, p: 1.5, bgcolor: '#f8fafc', borderRadius: 2, border: '1px solid #e2e8f0' }}>
-                <Typography variant="subtitle2" sx={{ fontWeight: 'bold', mb: 1, fontSize: 12, color: '#475569' }}>
-                  Historial de observaciones registradas:
-                </Typography>
-                {jefeObs && (
-                  <Box sx={{ mb: 1.5 }}>
-                    <Typography sx={{ fontSize: 11, fontWeight: 'bold', color: '#64748b' }}>Jefe Inmediato:</Typography>
-                    <Typography sx={{ fontSize: 11.5, color: '#475569', fontStyle: 'italic' }}>"{jefeObs}"</Typography>
-                  </Box>
-                )}
-                {ghObs && (
-                  <Box>
-                    <Typography sx={{ fontSize: 11, fontWeight: 'bold', color: '#0f766e', mb: 0.5 }}>Talento Humano:</Typography>
-                    {ghObs.split('\n').map((line, idx) => (
-                      <Typography key={idx} sx={{ fontSize: 11, color: '#334155', lineHeight: 1.4, mb: 0.8, borderBottom: idx < ghObs.split('\n').length - 1 ? '1px dashed #e2e8f0' : 'none', pb: 0.5 }}>
-                        {line}
-                      </Typography>
-                    ))}
-                  </Box>
-                )}
-              </Box>
-            );
-          })()}
+          {renderObservationHistory(getJefeObservacion(selectedRep), selectedRep?.observacion_gestion_humana, selectedRep)}
         </DialogContent>
         <DialogActions>
           <Button onClick={() => setOpenDialog(false)}>Cancelar</Button>
