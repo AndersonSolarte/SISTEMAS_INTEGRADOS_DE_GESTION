@@ -194,6 +194,7 @@ function ReporteSalidaSeguimiento({ initialAccess = null, onBack }) {
   const [cardFilter, setCardFilter] = useState('todas');
   const [page, setPage] = useState(0);
   const [rowsPerPage, setRowsPerPage] = useState(5);
+  const [timeRange, setTimeRange] = useState('todos');
 
   // Estados para modales de administración GH
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
@@ -284,6 +285,30 @@ function ReporteSalidaSeguimiento({ initialAccess = null, onBack }) {
     if (estado) {
       result = result.filter(r => r.estado === estado);
     }
+    if (timeRange && timeRange !== 'todos') {
+      const now = new Date();
+      if (timeRange === 'diario') {
+        const startOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+        result = result.filter(r => {
+          const date = new Date(r.created_at);
+          return date >= startOfDay;
+        });
+      } else if (timeRange === 'semanal') {
+        const startOfWeek = new Date();
+        startOfWeek.setDate(now.getDate() - 7);
+        result = result.filter(r => {
+          const date = new Date(r.created_at);
+          return date >= startOfWeek;
+        });
+      } else if (timeRange === 'mensual') {
+        const startOfMonth = new Date();
+        startOfMonth.setDate(now.getDate() - 30);
+        result = result.filter(r => {
+          const date = new Date(r.created_at);
+          return date >= startOfMonth;
+        });
+      }
+    }
     if (searchTerm) {
       const lower = searchTerm.toLowerCase();
       result = result.filter(r => {
@@ -294,11 +319,11 @@ function ReporteSalidaSeguimiento({ initialAccess = null, onBack }) {
       });
     }
     return result;
-  }, [rows, viewTab, accessMode, user?.id, tipoFiltro, searchTerm, cardFilter, estado]);
+  }, [rows, viewTab, accessMode, user?.id, tipoFiltro, searchTerm, cardFilter, estado, timeRange]);
 
   useEffect(() => {
     setPage(0);
-  }, [cardFilter, tipoFiltro, estado, searchTerm]);
+  }, [cardFilter, tipoFiltro, estado, searchTerm, timeRange]);
 
   const groupedRows = useMemo(() => {
     const groups = {};
@@ -558,6 +583,43 @@ function ReporteSalidaSeguimiento({ initialAccess = null, onBack }) {
       enqueueSnackbar(error.response?.data?.message || 'Error al actualizar', { variant: 'error' });
     }
   };
+  const getTrazabilidadTooltip = (row) => {
+    const lines = [];
+    lines.push(`• Creada: ${row.created_at ? new Date(row.created_at).toLocaleString('es-CO') : 'N/A'}`);
+    
+    if (row.jefe_aprobado_at) {
+      lines.push(`• Aprobado Jefe: ${new Date(row.jefe_aprobado_at).toLocaleString('es-CO')}`);
+    } else if (row.estado === 'pendiente_aprobacion_jefe') {
+      lines.push('• Aprobado Jefe: Pendiente');
+    }
+    
+    if (row.gestion_humana_aprobado_at) {
+      lines.push(`• Aprobado GH: ${new Date(row.gestion_humana_aprobado_at).toLocaleString('es-CO')}`);
+    } else if (['pendiente_aprobacion_jefe', 'aprobada_jefe', 'pendiente_aprobacion_gestion_humana'].includes(row.estado)) {
+      lines.push('• Aprobado GH: Pendiente');
+    }
+    
+    if (row.enviado_sst_at) {
+      lines.push(`• Enviado SST: ${new Date(row.enviado_sst_at).toLocaleString('es-CO')}`);
+    }
+    
+    if (row.finalizado_at) {
+      lines.push(`• Finalizada: ${new Date(row.finalizado_at).toLocaleString('es-CO')}`);
+    }
+    
+    return (
+      <Box sx={{ p: 0.5 }}>
+        <Typography variant="caption" sx={{ fontWeight: 'bold', display: 'block', mb: 0.5, borderBottom: '1px solid rgba(255,255,255,0.2)', pb: 0.2 }}>
+          Línea de Tiempo / Trazabilidad
+        </Typography>
+        {lines.map((line, idx) => (
+          <Typography key={idx} variant="caption" sx={{ display: 'block', fontSize: 11, lineHeight: 1.4 }}>
+            {line}
+          </Typography>
+        ))}
+      </Box>
+    );
+  };
 
   return (
     <Fade in timeout={250}>
@@ -662,6 +724,12 @@ function ReporteSalidaSeguimiento({ initialAccess = null, onBack }) {
                 <TextField select size="small" label="Estado" value={estado} onChange={(e) => setEstado(e.target.value)} sx={{ minWidth: 150, bgcolor: '#fff', borderRadius: 1.5 }}>
                   <MenuItem value="">Todos los Estados</MenuItem>
                   {Object.entries(STATUS_LABELS).map(([key, label]) => <MenuItem key={key} value={key}>{label}</MenuItem>)}
+                </TextField>
+                <TextField select size="small" label="Período" value={timeRange} onChange={(e) => setTimeRange(e.target.value)} sx={{ minWidth: 140, bgcolor: '#fff', borderRadius: 1.5 }}>
+                  <MenuItem value="todos">Todos</MenuItem>
+                  <MenuItem value="diario">Hoy</MenuItem>
+                  <MenuItem value="semanal">Esta Semana</MenuItem>
+                  <MenuItem value="mensual">Este Mes</MenuItem>
                 </TextField>
                 <Button variant="contained" color="success" startIcon={<DownloadIcon />} onClick={exportToExcel} sx={{ fontWeight: 800, textTransform: 'none', height: 40, px: 2, borderRadius: 1.5 }}>
                   Exportar Excel
@@ -783,16 +851,16 @@ function ReporteSalidaSeguimiento({ initialAccess = null, onBack }) {
                 <Table size="small">
                   <TableHead>
                     <TableRow>
-                      {['Solicitud', 'Colaborador(a)', 'Jefe inmediato', 'Motivo / Detalles', 'Estado', 'Reposición', 'Observaciones', canManageAll ? 'Acciones Adm' : (canValidateReposicion ? 'Validación GH' : 'Seguimiento')].map((label) => (
+                      {['Solicitud', 'F. Radicación', 'Colaborador(a)', 'Jefe inmediato', 'Motivo / Detalles', 'Estado', 'Reposición', 'Observaciones', canManageAll ? 'Acciones Adm' : (canValidateReposicion ? 'Validación GH' : 'Seguimiento')].map((label) => (
                         <TableCell key={label} sx={{ bgcolor: '#f8fafc', fontWeight: 950, color: '#334155' }}>{label}</TableCell>
                       ))}
                     </TableRow>
                   </TableHead>
                   <TableBody>
                     {loading ? (
-                      <TableRow><TableCell colSpan={9} align="center" sx={{ py: 6 }}><CircularProgress /></TableCell></TableRow>
+                      <TableRow><TableCell colSpan={10} align="center" sx={{ py: 6 }}><CircularProgress /></TableCell></TableRow>
                     ) : groupedRows.length === 0 ? (
-                      <TableRow><TableCell colSpan={9} sx={{ py: 3 }}><Alert severity="info">No hay solicitudes para el filtro seleccionado.</Alert></TableCell></TableRow>
+                      <TableRow><TableCell colSpan={10} sx={{ py: 3 }}><Alert severity="info">No hay solicitudes para el filtro seleccionado.</Alert></TableCell></TableRow>
                     ) : paginatedRows.map((row) => {
                       const statusSx = STATUS_COLORS[row.estado] || { bg: '#f1f5f9', color: '#475569' };
                       return (
@@ -833,6 +901,17 @@ function ReporteSalidaSeguimiento({ initialAccess = null, onBack }) {
                                 </Stack>
                               );
                             })()}
+                          </TableCell>
+                          <TableCell>
+                            {row.finalizado_at ? (
+                              <Typography sx={{ fontSize: 12.5, fontWeight: 700, color: '#0f766e' }}>
+                                {new Date(row.finalizado_at).toLocaleDateString('es-CO')}
+                              </Typography>
+                            ) : (
+                              <Typography sx={{ fontSize: 12, color: '#94a3b8', fontStyle: 'italic' }}>
+                                Pendiente
+                              </Typography>
+                            )}
                           </TableCell>
                           <TableCell>
                             {row.isGroupRow ? (
@@ -883,7 +962,9 @@ function ReporteSalidaSeguimiento({ initialAccess = null, onBack }) {
                           </TableCell>
                           <TableCell>
                             <Stack spacing={0.5} alignItems="flex-start">
-                              <Chip size="small" label={STATUS_LABELS[row.estado] || row.estado} sx={{ bgcolor: statusSx.bg, color: statusSx.color, fontWeight: 900 }} />
+                              <Tooltip title={getTrazabilidadTooltip(row)} arrow placement="left" sx={{ cursor: 'pointer' }}>
+                                <Chip size="small" label={STATUS_LABELS[row.estado] || row.estado} sx={{ bgcolor: statusSx.bg, color: statusSx.color, fontWeight: 900 }} />
+                              </Tooltip>
                               {(() => {
                                 const rejectionTrace = Array.isArray(row.trazabilidad)
                                   ? row.trazabilidad.find(t => ['rechazada_jefe', 'rechazada_gestion_humana'].includes(t.event))
