@@ -178,6 +178,130 @@ const REPORT_MODULES = [
   }
 ];
 
+const parseLogLine = (line) => {
+  let timestamp = '';
+  let rest = line;
+  if (line.startsWith('[')) {
+    const endBracket = line.indexOf(']');
+    if (endBracket !== -1) {
+      timestamp = line.substring(1, endBracket);
+      rest = line.substring(endBracket + 1).trim();
+    }
+  }
+  
+  const colonIndex = rest.indexOf(':');
+  let actor = '';
+  let actionAndComment = rest;
+  if (colonIndex !== -1) {
+    actor = rest.substring(0, colonIndex).trim();
+    actionAndComment = rest.substring(colonIndex + 1).trim();
+  }
+  
+  let action = actionAndComment;
+  let comment = '';
+  const commentIndex = actionAndComment.indexOf(' - "');
+  if (commentIndex !== -1) {
+    action = actionAndComment.substring(0, commentIndex).trim();
+    const rawComment = actionAndComment.substring(commentIndex + 4).trim();
+    comment = rawComment.endsWith('"') ? rawComment.substring(0, rawComment.length - 1) : rawComment;
+  }
+  
+  return { timestamp, actor, action, comment };
+};
+
+const renderObservationHistory = (jefeObs, ghObs, row) => {
+  if (!jefeObs && !ghObs) return null;
+
+  const items = [];
+
+  if (jefeObs) {
+    items.push({
+      type: 'jefe',
+      roleLabel: 'Jefe Inmediato',
+      actor: row?.jefe?.nombre || 'Jefe Inmediato',
+      timestamp: row?.jefe_aprobado_at ? new Date(row.jefe_aprobado_at).toLocaleString('es-CO') : '',
+      action: row?.estado === 'no_aprobada' ? 'Rechazó la solicitud' : 'Aprobó la solicitud',
+      comment: jefeObs,
+      bgColor: '#eff6ff',
+      borderColor: '#bfdbfe',
+      badgeColor: '#1d4ed8',
+      badgeBg: '#dbeafe'
+    });
+  }
+
+  if (ghObs) {
+    ghObs.split('\n').forEach((line) => {
+      if (!line.trim()) return;
+      const parsed = parseLogLine(line);
+      items.push({
+        type: 'gh',
+        roleLabel: 'Talento Humano',
+        actor: parsed.actor || 'Gestión Humana',
+        timestamp: parsed.timestamp || '',
+        action: parsed.action,
+        comment: parsed.comment,
+        bgColor: '#f0fdf4',
+        borderColor: '#bbf7d0',
+        badgeColor: '#15803d',
+        badgeBg: '#dcfce7'
+      });
+    });
+  }
+
+  return (
+    <Box sx={{ mt: 2, display: 'flex', flexDirection: 'column', gap: 1.5 }}>
+      <Typography variant="subtitle2" sx={{ fontWeight: 900, fontSize: 13, color: '#334155', borderBottom: '2px solid #e2e8f0', pb: 0.5 }}>
+        Historial de Observaciones y Acciones
+      </Typography>
+      <Stack spacing={1.5}>
+        {items.map((item, idx) => (
+          <Box
+            key={idx}
+            sx={{
+              p: 1.5,
+              bgcolor: item.bgColor,
+              border: `1px solid ${item.borderColor}`,
+              borderRadius: 2.5,
+              boxShadow: '0 1px 2px 0 rgba(0, 0, 0, 0.02)'
+            }}
+          >
+            <Stack direction="row" justifyContent="space-between" alignItems="center" sx={{ mb: 1 }}>
+              <Chip
+                label={item.roleLabel}
+                size="small"
+                sx={{
+                  bgcolor: item.badgeBg,
+                  color: item.badgeColor,
+                  fontWeight: 900,
+                  fontSize: 10,
+                  height: 20
+                }}
+              />
+              {item.timestamp && (
+                <Typography variant="caption" sx={{ color: '#64748b', fontWeight: 600 }}>
+                  {item.timestamp}
+                </Typography>
+              )}
+            </Stack>
+            
+            <Typography variant="body2" sx={{ fontWeight: 800, color: '#1e293b', mb: item.comment ? 0.5 : 0 }}>
+              {item.actor} &raquo; <span style={{ color: '#475569', fontWeight: 600 }}>{item.action}</span>
+            </Typography>
+
+            {item.comment && (
+              <Box sx={{ mt: 1, p: 1, bgcolor: 'rgba(255, 255, 255, 0.7)', borderRadius: 1.5, borderLeft: `3px solid ${item.badgeColor}` }}>
+                <Typography variant="body2" sx={{ fontStyle: 'italic', color: '#334155', fontSize: 11.5 }}>
+                  "{item.comment}"
+                </Typography>
+              </Box>
+            )}
+          </Box>
+        ))}
+      </Stack>
+    </Box>
+  );
+};
+
 function ReporteSalidaSeguimiento({ initialAccess = null, onBack }) {
   const { user } = useAuth();
   const { enqueueSnackbar } = useSnackbar();
@@ -231,35 +355,17 @@ function ReporteSalidaSeguimiento({ initialAccess = null, onBack }) {
     if (activeModule === 'reporte_salida' || activeModule === 'estadisticas') load();
   }, [activeModule, load]);
 
-  const summary = useMemo(() => {
-    const total = rows.length;
-    const pendientes = rows.filter((r) => ['pendiente_aprobacion_jefe', 'pendiente_aprobacion_gestion_humana'].includes(r.estado)).length;
-    const personales = rows.filter((r) => r.reposicion_aplica && r.reposicion_estado !== 'cumplida').length;
-    const reposicionesValidadas = rows.filter((r) => r.reposicion_aplica && r.reposicion_estado === 'cumplida').length;
-    const finalizadas = rows.filter((r) => r.estado === 'finalizada').length;
-    return { total, pendientes, personales, reposicionesValidadas, finalizadas };
-  }, [rows]);
-
   const accessMode = access?.mode || 'sin_pendientes';
   const copy = ACCESS_COPY[accessMode] || ACCESS_COPY.sin_pendientes;
   const canValidateReposicion = Boolean(access?.canValidateReposicion);
   const canManageAll = Boolean(access?.canManageAll);
   const showEstadoFilter = Boolean(access?.canManageAll);
 
-  const filteredRows = useMemo(() => {
+  const filteredRowsBase = useMemo(() => {
     let result = rows;
     if (accessMode === 'jefe_y_colaborador') {
       if (viewTab === 'mis_reposiciones') result = rows.filter((r) => r.solicitante?.userId === user?.id);
       else if (viewTab === 'equipo') result = rows.filter((r) => r.solicitante?.userId !== user?.id);
-    }
-    if (cardFilter === 'pendientes') {
-      result = result.filter((r) => ['pendiente_aprobacion_jefe', 'pendiente_aprobacion_gestion_humana'].includes(r.estado));
-    } else if (cardFilter === 'personales') {
-      result = result.filter((r) => r.reposicion_aplica && r.reposicion_estado !== 'cumplida');
-    } else if (cardFilter === 'reposicionesValidadas') {
-      result = result.filter((r) => r.reposicion_aplica && r.reposicion_estado === 'cumplida');
-    } else if (cardFilter === 'finalizadas') {
-      result = result.filter((r) => r.estado === 'finalizada');
     }
 
     if (tipoFiltro) {
@@ -319,7 +425,30 @@ function ReporteSalidaSeguimiento({ initialAccess = null, onBack }) {
       });
     }
     return result;
-  }, [rows, viewTab, accessMode, user?.id, tipoFiltro, searchTerm, cardFilter, estado, timeRange]);
+  }, [rows, viewTab, accessMode, user?.id, tipoFiltro, searchTerm, estado, timeRange]);
+
+  const summary = useMemo(() => {
+    const total = filteredRowsBase.length;
+    const pendientes = filteredRowsBase.filter((r) => ['pendiente_aprobacion_jefe', 'pendiente_aprobacion_gestion_humana'].includes(r.estado)).length;
+    const personales = filteredRowsBase.filter((r) => r.reposicion_aplica && r.reposicion_estado !== 'cumplida').length;
+    const reposicionesValidadas = filteredRowsBase.filter((r) => r.reposicion_aplica && r.reposicion_estado === 'cumplida').length;
+    const finalizadas = filteredRowsBase.filter((r) => r.estado === 'finalizada').length;
+    return { total, pendientes, personales, reposicionesValidadas, finalizadas };
+  }, [filteredRowsBase]);
+
+  const filteredRows = useMemo(() => {
+    let result = filteredRowsBase;
+    if (cardFilter === 'pendientes') {
+      result = result.filter((r) => ['pendiente_aprobacion_jefe', 'pendiente_aprobacion_gestion_humana'].includes(r.estado));
+    } else if (cardFilter === 'personales') {
+      result = result.filter((r) => r.reposicion_aplica && r.reposicion_estado !== 'cumplida');
+    } else if (cardFilter === 'reposicionesValidadas') {
+      result = result.filter((r) => r.reposicion_aplica && r.reposicion_estado === 'cumplida');
+    } else if (cardFilter === 'finalizadas') {
+      result = result.filter((r) => r.estado === 'finalizada');
+    }
+    return result;
+  }, [filteredRowsBase, cardFilter]);
 
   useEffect(() => {
     setPage(0);
@@ -582,130 +711,6 @@ function ReporteSalidaSeguimiento({ initialAccess = null, onBack }) {
     } catch (error) {
       enqueueSnackbar(error.response?.data?.message || 'Error al actualizar', { variant: 'error' });
     }
-  };
-
-  const parseLogLine = (line) => {
-    let timestamp = '';
-    let rest = line;
-    if (line.startsWith('[')) {
-      const endBracket = line.indexOf(']');
-      if (endBracket !== -1) {
-        timestamp = line.substring(1, endBracket);
-        rest = line.substring(endBracket + 1).trim();
-      }
-    }
-    
-    const colonIndex = rest.indexOf(':');
-    let actor = '';
-    let actionAndComment = rest;
-    if (colonIndex !== -1) {
-      actor = rest.substring(0, colonIndex).trim();
-      actionAndComment = rest.substring(colonIndex + 1).trim();
-    }
-    
-    let action = actionAndComment;
-    let comment = '';
-    const commentIndex = actionAndComment.indexOf(' - "');
-    if (commentIndex !== -1) {
-      action = actionAndComment.substring(0, commentIndex).trim();
-      const rawComment = actionAndComment.substring(commentIndex + 4).trim();
-      comment = rawComment.endsWith('"') ? rawComment.substring(0, rawComment.length - 1) : rawComment;
-    }
-    
-    return { timestamp, actor, action, comment };
-  };
-
-  const renderObservationHistory = (jefeObs, ghObs, row) => {
-    if (!jefeObs && !ghObs) return null;
-
-    const items = [];
-
-    if (jefeObs) {
-      items.push({
-        type: 'jefe',
-        roleLabel: 'Jefe Inmediato',
-        actor: row?.jefe?.nombre || 'Jefe Inmediato',
-        timestamp: row?.jefe_aprobado_at ? new Date(row.jefe_aprobado_at).toLocaleString('es-CO') : '',
-        action: row?.estado === 'no_aprobada' ? 'Rechazó la solicitud' : 'Aprobó la solicitud',
-        comment: jefeObs,
-        bgColor: '#eff6ff',
-        borderColor: '#bfdbfe',
-        badgeColor: '#1d4ed8',
-        badgeBg: '#dbeafe'
-      });
-    }
-
-    if (ghObs) {
-      ghObs.split('\n').forEach((line) => {
-        if (!line.trim()) return;
-        const parsed = parseLogLine(line);
-        items.push({
-          type: 'gh',
-          roleLabel: 'Talento Humano',
-          actor: parsed.actor || 'Gestión Humana',
-          timestamp: parsed.timestamp || '',
-          action: parsed.action,
-          comment: parsed.comment,
-          bgColor: '#f0fdf4',
-          borderColor: '#bbf7d0',
-          badgeColor: '#15803d',
-          badgeBg: '#dcfce7'
-        });
-      });
-    }
-
-    return (
-      <Box sx={{ mt: 2, display: 'flex', flexDirection: 'column', gap: 1.5 }}>
-        <Typography variant="subtitle2" sx={{ fontWeight: 900, fontSize: 13, color: '#334155', borderBottom: '2px solid #e2e8f0', pb: 0.5 }}>
-          Historial de Observaciones y Acciones
-        </Typography>
-        <Stack spacing={1.5}>
-          {items.map((item, idx) => (
-            <Box
-              key={idx}
-              sx={{
-                p: 1.5,
-                bgcolor: item.bgColor,
-                border: `1px solid ${item.borderColor}`,
-                borderRadius: 2.5,
-                boxShadow: '0 1px 2px 0 rgba(0, 0, 0, 0.02)'
-              }}
-            >
-              <Stack direction="row" justifyContent="space-between" alignItems="center" sx={{ mb: 1 }}>
-                <Chip
-                  label={item.roleLabel}
-                  size="small"
-                  sx={{
-                    bgcolor: item.badgeBg,
-                    color: item.badgeColor,
-                    fontWeight: 900,
-                    fontSize: 10,
-                    height: 20
-                  }}
-                />
-                {item.timestamp && (
-                  <Typography variant="caption" sx={{ color: '#64748b', fontWeight: 600 }}>
-                    {item.timestamp}
-                  </Typography>
-                )}
-              </Stack>
-              
-              <Typography variant="body2" sx={{ fontWeight: 800, color: '#1e293b', mb: item.comment ? 0.5 : 0 }}>
-                {item.actor} &raquo; <span style={{ color: '#475569', fontWeight: 600 }}>{item.action}</span>
-              </Typography>
-
-              {item.comment && (
-                <Box sx={{ mt: 1, p: 1, bgcolor: 'rgba(255, 255, 255, 0.7)', borderRadius: 1.5, borderLeft: `3px solid ${item.badgeColor}` }}>
-                  <Typography variant="body2" sx={{ fontStyle: 'italic', color: '#334155', fontSize: 11.5 }}>
-                    "{item.comment}"
-                  </Typography>
-                </Box>
-              )}
-            </Box>
-          ))}
-        </Stack>
-      </Box>
-    );
   };
 
   const getTrazabilidadTooltip = (row) => {
