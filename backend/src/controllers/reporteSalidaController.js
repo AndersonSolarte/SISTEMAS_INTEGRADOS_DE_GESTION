@@ -2032,13 +2032,20 @@ const radicarSolicitud = async (req, res) => {
           municipio: (salida.categoria === 'propias_cargo' && ['Nacional', 'Regional'].includes(salida.alcance)) ? sanitizeText(salida.municipio || '', 100) : '',
           duracionTipo: sanitizeText(salida.duracionTipo || 'menos_media_jornada', 50),
           duracionDias: isNaN(parseInt(salida.duracionDias, 10)) ? 0 : parseInt(salida.duracionDias, 10),
+          codigoDependencia: sanitizeText(salida.codigoDependencia || '', 50),
+          destinatarioTratamiento: sanitizeText(salida.destinatarioTratamiento || '', 100),
           destinatarioNombre: sanitizeText(salida.destinatarioNombre || '', 255),
           destinatarioCargo: sanitizeText(salida.destinatarioCargo || '', 255),
-          destinatarioDependencia: sanitizeText(salida.destinatarioDependencia || '', 255),
+          destinatarioEmpresa: sanitizeText(salida.destinatarioEmpresa || '', 255),
           destinatarioDireccionEmail: sanitizeText(salida.destinatarioDireccionEmail || '', 255),
+          destinatarioTelefono: sanitizeText(salida.destinatarioTelefono || '', 100),
+          destinatarioUbicacion: sanitizeText(salida.destinatarioUbicacion || '', 255),
+          destinatarioPais: sanitizeText(salida.destinatarioPais || '', 100),
           oficioAsunto: sanitizeText(salida.oficioAsunto || '', 500),
           oficioCuerpo: sanitizeText(salida.oficioCuerpo || '', 5000),
-          oficioDespedida: sanitizeText(salida.oficioDespedida || '', 100)
+          oficioDespedida: sanitizeText(salida.oficioDespedida || '', 100),
+          oficioAnexos: sanitizeText(salida.oficioAnexos || '', 1000),
+          oficioProyecto: sanitizeText(salida.oficioProyecto || '', 255)
         },
         reposicion: {
           fecha: sanitizeText(reposicion.fecha, 20),

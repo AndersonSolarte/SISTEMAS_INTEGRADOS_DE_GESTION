@@ -438,14 +438,18 @@ const buildOficioPdfDefinition = (solicitud, ghDirectorNombre, ghDirectorCargo) 
   }
 
   // Destinatario details
+  const destTratamiento = salida.destinatarioTratamiento || '';
   const destNombre = (salida.destinatarioNombre || '').toUpperCase();
   const destCargo = salida.destinatarioCargo || '';
-  const destDependencia = salida.destinatarioDependencia || '';
+  const destEmpresa = salida.destinatarioEmpresa || '';
   const destDireccionEmail = salida.destinatarioDireccionEmail || '';
+  const destTelefono = salida.destinatarioTelefono || '';
+  const destUbicacion = salida.destinatarioUbicacion || '';
+  const destPais = salida.destinatarioPais || '';
 
   return {
     pageSize: 'LETTER',
-    pageMargins: [45, 95, 45, 90],
+    pageMargins: [45, 95, 45, 115], // increased bottom margin slightly to give space for pagination and footer image
     defaultStyle: { font: 'Roboto', fontSize: 11, color: '#000000', lineHeight: 1.25 },
     
     header: (currentPage, pageCount) => {
@@ -459,23 +463,32 @@ const buildOficioPdfDefinition = (solicitud, ghDirectorNombre, ghDirectorCargo) 
     
     footer: (currentPage, pageCount) => {
       return {
-        image: path.join(__dirname, '../assets/pie_de_pag.png'),
-        width: 522,
-        alignment: 'center',
+        stack: [
+          { text: `Página ${currentPage} de ${pageCount}`, alignment: 'right', fontSize: 8.5, margin: [0, 0, 45, 5] },
+          {
+            image: path.join(__dirname, '../assets/pie_de_pag.png'),
+            width: 522,
+            alignment: 'center'
+          }
+        ],
         margin: [0, 0, 0, 15]
       };
     },
 
     content: [
-      { text: `Oficio No. RS-${solicitud.consecutivo || solicitud.id}`, bold: true, margin: [0, 0, 0, 15] },
-      { text: dateFormatted, margin: [0, 0, 0, 20] },
+      { text: `${salida.codigoDependencia || ''} - RS-${solicitud.consecutivo || solicitud.id}`, bold: true, margin: [0, 0, 0, 15] },
+      { text: dateFormatted, margin: [0, 0, 0, 15] },
       
       {
         text: [
+          { text: destTratamiento ? `${destTratamiento}\n` : '' },
           { text: `${destNombre}\n`, bold: true },
-          { text: `${destCargo}\n` },
-          { text: `${destDependencia}\n` },
-          { text: `${destDireccionEmail}\n` }
+          { text: destCargo ? `${destCargo}\n` : '' },
+          { text: destEmpresa ? `${destEmpresa}\n` : '' },
+          { text: destDireccionEmail ? `${destDireccionEmail}\n` : '' },
+          { text: destTelefono ? `${destTelefono}\n` : '' },
+          { text: destUbicacion ? `${destUbicacion}\n` : '' },
+          { text: destPais ? `${destPais}\n` : '' }
         ],
         margin: [0, 0, 0, 15]
       },
@@ -486,15 +499,18 @@ const buildOficioPdfDefinition = (solicitud, ghDirectorNombre, ghDirectorCargo) 
       
       { text: salida.oficioCuerpo || '', alignment: 'justify', margin: [0, 0, 0, 20] },
       
-      { text: salida.oficioDespedida || 'Cordialmente,', margin: [0, 0, 0, 30] },
+      { text: salida.oficioDespedida || 'Cordialmente,', margin: [0, 0, 0, 25] },
       
       {
         text: [
           { text: `${(solicitante.nombre || personal.nombre || '').toUpperCase()}\n`, bold: true },
-          { text: `${solicitante.cargo || laboral.cargo || ''}\n\n` }
+          { text: `${solicitante.cargo || laboral.cargo || ''}\n` }
         ],
-        margin: [0, 0, 0, 30]
+        margin: [0, 0, 0, 15]
       },
+      
+      { text: `Anexos: ${salida.oficioAnexos || 'Ninguno'}`, fontSize: 9.5, margin: [0, 0, 0, 2] },
+      { text: `Proyectó: ${salida.oficioProyecto || ''}`, fontSize: 9.5, margin: [0, 0, 0, 20] },
       
       // Signatures container
       {

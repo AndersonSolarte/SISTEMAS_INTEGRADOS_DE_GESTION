@@ -60,13 +60,20 @@ const INITIAL_FORM = {
     entidadDestino: '',
     duracionTipo: 'menos_media_jornada',
     duracionDias: 0,
+    codigoDependencia: '',
+    destinatarioTratamiento: 'Señor',
     destinatarioNombre: '',
     destinatarioCargo: '',
-    destinatarioDependencia: '',
+    destinatarioEmpresa: '',
     destinatarioDireccionEmail: '',
+    destinatarioTelefono: '',
+    destinatarioUbicacion: 'San Juan de Pasto',
+    destinatarioPais: '',
     oficioAsunto: '',
     oficioCuerpo: '',
-    oficioDespedida: 'Cordialmente,'
+    oficioDespedida: 'Cordialmente,',
+    oficioAnexos: '',
+    oficioProyecto: ''
   },
   reposicion: { fecha: '', fechaFin: '', horaInicio: '', horaFin: '', observacion: '' }
 };
@@ -652,6 +659,10 @@ function ReporteSalidaFormDialog({ open, documento, user, onClose, onSubmitted }
       laboral: {
         dependencia: user?.dependencia || '',
         cargo: user?.cargo || ''
+      },
+      salida: {
+        ...INITIAL_FORM.salida,
+        oficioProyecto: user?.nombre || ''
       }
     });
 
@@ -907,17 +918,29 @@ function ReporteSalidaFormDialog({ open, documento, user, onClose, onSubmitted }
     }
     
     if (form.salida.duracionTipo !== 'menos_media_jornada') {
+      if (!form.salida.codigoDependencia || !form.salida.codigoDependencia.trim()) {
+        issues.push('Debe indicar el código de dependencia del oficio.');
+      }
+      if (!form.salida.destinatarioTratamiento || !form.salida.destinatarioTratamiento.trim()) {
+        issues.push('Debe indicar el tratamiento del destinatario.');
+      }
       if (!form.salida.destinatarioNombre || !form.salida.destinatarioNombre.trim()) {
         issues.push('Debe indicar el nombre del destinatario del oficio.');
       }
       if (!form.salida.destinatarioCargo || !form.salida.destinatarioCargo.trim()) {
         issues.push('Debe indicar el cargo del destinatario del oficio.');
       }
-      if (!form.salida.destinatarioDependencia || !form.salida.destinatarioDependencia.trim()) {
-        issues.push('Debe indicar la dependencia del destinatario del oficio.');
+      if (!form.salida.destinatarioEmpresa || !form.salida.destinatarioEmpresa.trim()) {
+        issues.push('Debe indicar la empresa o institución del destinatario.');
       }
       if (!form.salida.destinatarioDireccionEmail || !form.salida.destinatarioDireccionEmail.trim()) {
-        issues.push('Debe indicar la dirección o e-mail del destinatario del oficio.');
+        issues.push('Debe indicar la dirección o e-mail del destinatario.');
+      }
+      if (!form.salida.destinatarioTelefono || !form.salida.destinatarioTelefono.trim()) {
+        issues.push('Debe indicar el teléfono del destinatario.');
+      }
+      if (!form.salida.destinatarioUbicacion || !form.salida.destinatarioUbicacion.trim()) {
+        issues.push('Debe indicar la ubicación (ciudad, departamento) del destinatario.');
       }
       if (!form.salida.oficioAsunto || !form.salida.oficioAsunto.trim()) {
         issues.push('Debe indicar el asunto del oficio.');
@@ -954,12 +977,19 @@ function ReporteSalidaFormDialog({ open, documento, user, onClose, onSubmitted }
     form.salida.tiempoReponerHoras,
     form.salida.entidadDestino,
     form.salida.duracionTipo,
+    form.salida.codigoDependencia,
+    form.salida.destinatarioTratamiento,
     form.salida.destinatarioNombre,
     form.salida.destinatarioCargo,
-    form.salida.destinatarioDependencia,
+    form.salida.destinatarioEmpresa,
     form.salida.destinatarioDireccionEmail,
+    form.salida.destinatarioTelefono,
+    form.salida.destinatarioUbicacion,
+    form.salida.destinatarioPais,
     form.salida.oficioAsunto,
-    form.salida.oficioCuerpo
+    form.salida.oficioCuerpo,
+    form.salida.oficioAnexos,
+    form.salida.oficioProyecto
   ]);
 
   const selectedDependenciaIsCatalog = hasExactOption(form.laboral.dependencia, dependencias);
@@ -1663,22 +1693,45 @@ function ReporteSalidaFormDialog({ open, documento, user, onClose, onSubmitted }
 
               {form.salida.duracionTipo !== 'menos_media_jornada' && (
                 <Box sx={{ mb: 1.8, p: 2, borderRadius: 2.5, border: '1px solid #e2e8f0', bgcolor: '#f8fafc' }}>
-                  <Typography sx={{ fontSize: 13, fontWeight: 900, color: '#1e293b', mb: 1.5, borderBottom: '2px solid #cbd5e1', pb: 0.5 }}>
-                    INFORMACIÓN DEL DESTINATARIO Y CARTA (OFICIO)
+                  <Typography sx={{ fontSize: 13, fontWeight: 950, color: '#1e293b', mb: 2, borderBottom: '2px solid #cbd5e1', pb: 0.5 }}>
+                    INFORMACIÓN DEL OFICIO Y DESTINATARIO
                   </Typography>
                   <Grid container spacing={1.5}>
-                    <Grid item xs={12} sm={6}>
+                    <Grid item xs={12} sm={4}>
                       <TextField
                         sx={inputSx}
                         fullWidth
                         required
                         size="small"
-                        label="Nombre del destinatario (Ej. JUAN PÉREZ) *"
+                        label="Código de dependencia (Ej. THM, COM-GD) *"
+                        value={form.salida.codigoDependencia || ''}
+                        onChange={(e) => update('salida', 'codigoDependencia', e.target.value)}
+                      />
+                    </Grid>
+                    <Grid item xs={12} sm={4}>
+                      <TextField
+                        sx={inputSx}
+                        fullWidth
+                        required
+                        size="small"
+                        label="Tratamiento (Ej. Señor, Magíster, Esp.) *"
+                        value={form.salida.destinatarioTratamiento || ''}
+                        onChange={(e) => update('salida', 'destinatarioTratamiento', e.target.value)}
+                      />
+                    </Grid>
+                    <Grid item xs={12} sm={4}>
+                      <TextField
+                        sx={inputSx}
+                        fullWidth
+                        required
+                        size="small"
+                        label="Nombre del destinatario *"
                         inputProps={{ style: { textTransform: 'uppercase' } }}
-                        value={form.salida.destinatarioNombre}
+                        value={form.salida.destinatarioNombre || ''}
                         onChange={(e) => update('salida', 'destinatarioNombre', e.target.value.toUpperCase())}
                       />
                     </Grid>
+                    
                     <Grid item xs={12} sm={6}>
                       <TextField
                         sx={inputSx}
@@ -1686,7 +1739,7 @@ function ReporteSalidaFormDialog({ open, documento, user, onClose, onSubmitted }
                         required
                         size="small"
                         label="Cargo del destinatario *"
-                        value={form.salida.destinatarioCargo}
+                        value={form.salida.destinatarioCargo || ''}
                         onChange={(e) => update('salida', 'destinatarioCargo', e.target.value)}
                       />
                     </Grid>
@@ -1696,22 +1749,67 @@ function ReporteSalidaFormDialog({ open, documento, user, onClose, onSubmitted }
                         fullWidth
                         required
                         size="small"
-                        label="Dependencia del destinatario *"
-                        value={form.salida.destinatarioDependencia}
-                        onChange={(e) => update('salida', 'destinatarioDependencia', e.target.value)}
+                        label="Empresa / Institución *"
+                        value={form.salida.destinatarioEmpresa || ''}
+                        onChange={(e) => update('salida', 'destinatarioEmpresa', e.target.value)}
                       />
                     </Grid>
-                    <Grid item xs={12} sm={6}>
+
+                    <Grid item xs={12} sm={4}>
                       <TextField
                         sx={inputSx}
                         fullWidth
                         required
                         size="small"
                         label="Dirección o E-mail del destinatario *"
-                        value={form.salida.destinatarioDireccionEmail}
+                        value={form.salida.destinatarioDireccionEmail || ''}
                         onChange={(e) => update('salida', 'destinatarioDireccionEmail', e.target.value)}
                       />
                     </Grid>
+                    <Grid item xs={12} sm={4}>
+                      <TextField
+                        sx={inputSx}
+                        fullWidth
+                        required
+                        size="small"
+                        label="Teléfono del destinatario *"
+                        value={form.salida.destinatarioTelefono || ''}
+                        onChange={(e) => update('salida', 'destinatarioTelefono', e.target.value)}
+                      />
+                    </Grid>
+                    <Grid item xs={12} sm={4}>
+                      <TextField
+                        sx={inputSx}
+                        fullWidth
+                        required
+                        size="small"
+                        label="Ciudad, Depto, provincia *"
+                        value={form.salida.destinatarioUbicacion || ''}
+                        onChange={(e) => update('salida', 'destinatarioUbicacion', e.target.value)}
+                      />
+                    </Grid>
+
+                    <Grid item xs={12} sm={6}>
+                      <TextField
+                        sx={inputSx}
+                        fullWidth
+                        size="small"
+                        label="País (Opcional, para envíos internacionales)"
+                        value={form.salida.destinatarioPais || ''}
+                        onChange={(e) => update('salida', 'destinatarioPais', e.target.value)}
+                      />
+                    </Grid>
+                    <Grid item xs={12} sm={6}>
+                      <TextField
+                        sx={inputSx}
+                        fullWidth
+                        size="small"
+                        label="Anexos (Ej. Copia acta, soportes. Opcional)"
+                        value={form.salida.oficioAnexos || ''}
+                        onChange={(e) => update('salida', 'oficioAnexos', e.target.value)}
+                      />
+                    </Grid>
+
                     <Grid item xs={12}>
                       <TextField
                         sx={inputSx}
@@ -1719,10 +1817,11 @@ function ReporteSalidaFormDialog({ open, documento, user, onClose, onSubmitted }
                         required
                         size="small"
                         label="Asunto de la carta (síntesis del tema) *"
-                        value={form.salida.oficioAsunto}
+                        value={form.salida.oficioAsunto || ''}
                         onChange={(e) => update('salida', 'oficioAsunto', e.target.value)}
                       />
                     </Grid>
+
                     <Grid item xs={12} sm={4}>
                       <TextField
                         select
@@ -1730,7 +1829,7 @@ function ReporteSalidaFormDialog({ open, documento, user, onClose, onSubmitted }
                         fullWidth
                         size="small"
                         label="Despedida formal"
-                        value={form.salida.oficioDespedida}
+                        value={form.salida.oficioDespedida || ''}
                         onChange={(e) => update('salida', 'oficioDespedida', e.target.value)}
                       >
                         <MenuItem value="Cordialmente,">Cordialmente,</MenuItem>
@@ -1739,6 +1838,17 @@ function ReporteSalidaFormDialog({ open, documento, user, onClose, onSubmitted }
                         <MenuItem value="Respetuoso y atento,">Respetuoso y atento,</MenuItem>
                       </TextField>
                     </Grid>
+                    <Grid item xs={12} sm={8}>
+                      <TextField
+                        sx={inputSx}
+                        fullWidth
+                        size="small"
+                        label="Proyectó (Nombre de quien redacta)"
+                        value={form.salida.oficioProyecto || ''}
+                        onChange={(e) => update('salida', 'oficioProyecto', e.target.value)}
+                      />
+                    </Grid>
+
                     <Grid item xs={12}>
                       <TextField
                         sx={inputSx}
@@ -1749,7 +1859,7 @@ function ReporteSalidaFormDialog({ open, documento, user, onClose, onSubmitted }
                         size="small"
                         label="Cuerpo del oficio / Descripción detallada *"
                         helperText="Se pre-completa automáticamente, pero puede editarlo libremente."
-                        value={form.salida.oficioCuerpo}
+                        value={form.salida.oficioCuerpo || ''}
                         onChange={(e) => update('salida', 'oficioCuerpo', e.target.value)}
                       />
                     </Grid>
