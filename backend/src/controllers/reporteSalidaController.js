@@ -1985,9 +1985,10 @@ const radicarSolicitud = async (req, res) => {
     } else {
       requestedMinutes = diffBusinessMinutes(salida.fecha, salida.fechaRegreso, salida.horaInicio, salida.horaFin);
     }
+    const isOficio = salida.duracionTipo && salida.duracionTipo !== 'menos_media_jornada';
     const bodyReposicionMinutos = parseInt(req.body.reposicion_minutos, 10);
-    const finalReposicionMinutos = isNaN(bodyReposicionMinutos) ? 0 : bodyReposicionMinutos;
-    const reposicionAplica = finalReposicionMinutos > 0;
+    const finalReposicionMinutos = isOficio ? 0 : (isNaN(bodyReposicionMinutos) ? 0 : bodyReposicionMinutos);
+    const reposicionAplica = !isOficio && finalReposicionMinutos > 0;
     const hasReposicionPlan = Boolean(reposicion.fecha || reposicion.fechaFin || reposicion.horaInicio || reposicion.horaFin);
     const reposicionEstado = reposicionAplica ? (hasReposicionPlan ? 'programada' : 'pendiente') : 'no_aplica';
 
@@ -2028,7 +2029,16 @@ const radicarSolicitud = async (req, res) => {
           alcance: (salida.categoria === 'propias_cargo' && salida.tipo !== 'salida_campus') ? sanitizeText(salida.alcance || 'Local', 100) : 'Local',
           pais: (salida.categoria === 'propias_cargo' && salida.alcance === 'Internacional') ? sanitizeText(salida.pais || '', 100) : '',
           departamento: (salida.categoria === 'propias_cargo' && salida.alcance === 'Nacional') ? sanitizeText(salida.departamento || '', 100) : '',
-          municipio: (salida.categoria === 'propias_cargo' && ['Nacional', 'Regional'].includes(salida.alcance)) ? sanitizeText(salida.municipio || '', 100) : ''
+          municipio: (salida.categoria === 'propias_cargo' && ['Nacional', 'Regional'].includes(salida.alcance)) ? sanitizeText(salida.municipio || '', 100) : '',
+          duracionTipo: sanitizeText(salida.duracionTipo || 'menos_media_jornada', 50),
+          duracionDias: isNaN(parseInt(salida.duracionDias, 10)) ? 0 : parseInt(salida.duracionDias, 10),
+          destinatarioNombre: sanitizeText(salida.destinatarioNombre || '', 255),
+          destinatarioCargo: sanitizeText(salida.destinatarioCargo || '', 255),
+          destinatarioDependencia: sanitizeText(salida.destinatarioDependencia || '', 255),
+          destinatarioDireccionEmail: sanitizeText(salida.destinatarioDireccionEmail || '', 255),
+          oficioAsunto: sanitizeText(salida.oficioAsunto || '', 500),
+          oficioCuerpo: sanitizeText(salida.oficioCuerpo || '', 5000),
+          oficioDespedida: sanitizeText(salida.oficioDespedida || '', 100)
         },
         reposicion: {
           fecha: sanitizeText(reposicion.fecha, 20),

@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState, useRef } from 'react';
 import {
   Alert,
   Autocomplete,
@@ -17,7 +17,8 @@ import {
   useMediaQuery,
   useTheme,
   ListSubheader,
-  IconButton
+  IconButton,
+  Radio
 } from '@mui/material';
 import AssignmentTurnedInIcon from '@mui/icons-material/AssignmentTurnedIn';
 import ContentCopyIcon from '@mui/icons-material/ContentCopy';
@@ -40,8 +41,42 @@ import reporteSalidaService from '../../services/reporteSalidaService';
 const INITIAL_FORM = {
   personal: { nombre: '', documento: '', correo: '' },
   laboral: { dependencia: '', cargo: '' },
-  salida: { tipo: 'cita_eps', alcance: '', pais: '', departamento: '', municipio: '', especialidadMedica: '', terapiasList: [], fecha: '', fechaRegreso: '', horaInicio: '', horaFin: '', motivo: '', campusSalida: '', campusDestino: '', tiempoReponerHoras: '', entidadDestino: '' },
+  salida: { 
+    tipo: 'cita_eps', 
+    alcance: '', 
+    pais: '', 
+    departamento: '', 
+    municipio: '', 
+    especialidadMedica: '', 
+    terapiasList: [], 
+    fecha: '', 
+    fechaRegreso: '', 
+    horaInicio: '', 
+    horaFin: '', 
+    motivo: '', 
+    campusSalida: '', 
+    campusDestino: '', 
+    tiempoReponerHoras: '', 
+    entidadDestino: '',
+    duracionTipo: 'menos_media_jornada',
+    duracionDias: 0,
+    destinatarioNombre: '',
+    destinatarioCargo: '',
+    destinatarioDependencia: '',
+    destinatarioDireccionEmail: '',
+    oficioAsunto: '',
+    oficioCuerpo: '',
+    oficioDespedida: 'Cordialmente,'
+  },
   reposicion: { fecha: '', fechaFin: '', horaInicio: '', horaFin: '', observacion: '' }
+};
+
+const generateOficioTemplate = (solicitanteNombre, tipoLabel, duracionDias, fechaInicio, fechaRegreso, motivo) => {
+  const dStr = duracionDias === 1 ? 'un (1) día' : `${duracionDias} días`;
+  const fIni = fechaInicio ? fechaInicio : '[Fecha Inicio]';
+  const fReg = fechaRegreso ? fechaRegreso : '[Fecha Regreso]';
+  const mot = motivo ? motivo.trim() : '[Describa detalladamente el motivo de la salida]';
+  return `Por medio del presente oficio, de manera atenta me dirijo a usted con el fin de solicitar formalmente la debida autorización para ausentarme de mis labores institucionales por un término de ${dStr}, a partir del ${fIni} hasta el ${fReg}. Esta solicitud obedece al siguiente motivo/actividad: ${mot}.`;
 };
 
 const CARGO_SUBTYPES = [
@@ -523,6 +558,44 @@ function ReporteSalidaFormDialog({ open, documento, user, onClose, onSubmitted }
     return { category: activeCategory, subtype: tipo, otraDescripcion: '' };
   }, [form.salida.tipo, activeCategory]);
 
+  const lastGeneratedTemplateRef = useRef('');
+
+  useEffect(() => {
+    if (form.salida.duracionTipo === 'menos_media_jornada') return;
+    
+    // Get subtype label
+    const allOpts = [...CARGO_SUBTYPES, ...SALUD_SUBTYPES, ...PERSONALES_SUBTYPES];
+    const found = allOpts.find(o => o.value === subtype);
+    const tipoLabel = found ? found.label : (subtype === 'otra' ? otraDescripcion : subtype);
+    
+    const solicitanteNombre = form.personal.nombre || user?.nombre || '';
+    const temp = generateOficioTemplate(
+      solicitanteNombre,
+      tipoLabel,
+      form.salida.duracionDias || 1,
+      form.salida.fecha,
+      form.salida.fechaRegreso,
+      form.salida.motivo
+    );
+    
+    // If cuerpo is empty or equals the last generated template, update it!
+    const currentCuerpo = form.salida.oficioCuerpo || '';
+    if (!currentCuerpo.trim() || currentCuerpo === lastGeneratedTemplateRef.current) {
+      update('salida', 'oficioCuerpo', temp);
+      lastGeneratedTemplateRef.current = temp;
+    }
+  }, [
+    form.salida.duracionTipo,
+    form.salida.duracionDias,
+    form.salida.fecha,
+    form.salida.fechaRegreso,
+    form.salida.motivo,
+    subtype,
+    otraDescripcion,
+    form.personal.nombre,
+    user?.nombre
+  ]);
+
   const handleCategoryChange = (newCategory) => {
     setActiveCategory(newCategory);
     update('salida', 'tiempoReponerHoras', '');
@@ -825,7 +898,7 @@ function ReporteSalidaFormDialog({ open, documento, user, onClose, onSubmitted }
       issues.push('Debe subir el soporte, certificado o documento obligatorio.');
     }
     
-    if (category === 'personales' && subtype === 'diligencia_personal') {
+    if (category === 'personales' && subtype === 'diligencia_personal' && form.salida.duracionTipo === 'menos_media_jornada') {
       if (form.salida.tiempoReponerHoras === undefined || form.salida.tiempoReponerHoras === '' || isNaN(Number(form.salida.tiempoReponerHoras))) {
         issues.push('Debe indicar de forma manual el tiempo a reponer en horas (digite 0 si no requiere reposición).');
       } else if (Number(form.salida.tiempoReponerHoras) < 0) {
@@ -833,6 +906,26 @@ function ReporteSalidaFormDialog({ open, documento, user, onClose, onSubmitted }
       }
     }
     
+    if (form.salida.duracionTipo !== 'menos_media_jornada') {
+      if (!form.salida.destinatarioNombre || !form.salida.destinatarioNombre.trim()) {
+        issues.push('Debe indicar el nombre del destinatario del oficio.');
+      }
+      if (!form.salida.destinatarioCargo || !form.salida.destinatarioCargo.trim()) {
+        issues.push('Debe indicar el cargo del destinatario del oficio.');
+      }
+      if (!form.salida.destinatarioDependencia || !form.salida.destinatarioDependencia.trim()) {
+        issues.push('Debe indicar la dependencia del destinatario del oficio.');
+      }
+      if (!form.salida.destinatarioDireccionEmail || !form.salida.destinatarioDireccionEmail.trim()) {
+        issues.push('Debe indicar la dirección o e-mail del destinatario del oficio.');
+      }
+      if (!form.salida.oficioAsunto || !form.salida.oficioAsunto.trim()) {
+        issues.push('Debe indicar el asunto del oficio.');
+      }
+      if (!form.salida.oficioCuerpo || !form.salida.oficioCuerpo.trim()) {
+        issues.push('Debe indicar el cuerpo o contenido del oficio.');
+      }
+    }
 
     return issues;
   }, [
@@ -859,7 +952,14 @@ function ReporteSalidaFormDialog({ open, documento, user, onClose, onSubmitted }
     adjuntoFile,
     form.salida.motivo,
     form.salida.tiempoReponerHoras,
-    form.salida.entidadDestino
+    form.salida.entidadDestino,
+    form.salida.duracionTipo,
+    form.salida.destinatarioNombre,
+    form.salida.destinatarioCargo,
+    form.salida.destinatarioDependencia,
+    form.salida.destinatarioDireccionEmail,
+    form.salida.oficioAsunto,
+    form.salida.oficioCuerpo
   ]);
 
   const selectedDependenciaIsCatalog = hasExactOption(form.laboral.dependencia, dependencias);
@@ -1480,6 +1580,182 @@ function ReporteSalidaFormDialog({ open, documento, user, onClose, onSubmitted }
                   </Box>
                 )}
               </Box>
+
+              {/* Selector de Duración */}
+              <Box sx={{ mb: 1.8 }}>
+                <Typography sx={{ fontSize: 13, fontWeight: 800, color: '#334155', mb: 1 }}>
+                  Duración estimada de la salida:
+                </Typography>
+                <Grid container spacing={1.5}>
+                  {[
+                    { value: 'menos_media_jornada', label: 'Equivale a menos de media jornada' },
+                    { value: '1_2_dias', label: 'Entre 1 y 2 días' },
+                    { value: '3_mas_dias', label: '3 o más días' }
+                  ].map((opt) => {
+                    const selected = form.salida.duracionTipo === opt.value;
+                    return (
+                      <Grid item xs={12} sm={4} key={opt.value}>
+                        <Box
+                          onClick={() => {
+                            update('salida', 'duracionTipo', opt.value);
+                            update('salida', 'duracionDias', opt.value === 'menos_media_jornada' ? 0 : (opt.value === '1_2_dias' ? 1 : 3));
+                          }}
+                          sx={{
+                            p: 1.2,
+                            borderRadius: 2.2,
+                            border: '2px solid',
+                            borderColor: selected ? '#2563eb' : '#cbd5e1',
+                            bgcolor: selected ? '#eff6ff' : '#ffffff',
+                            cursor: 'pointer',
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: 1.5,
+                            transition: 'all 0.2s',
+                            '&:hover': { borderColor: '#2563eb', bgcolor: selected ? '#eff6ff' : '#f8fafc' }
+                          }}
+                        >
+                          <Radio checked={selected} size="small" sx={{ p: 0 }} color="primary" />
+                          <Typography sx={{ fontSize: 13, fontWeight: 700, color: selected ? '#1d4ed8' : '#475569' }}>
+                            {opt.label}
+                          </Typography>
+                        </Box>
+                      </Grid>
+                    );
+                  })}
+                </Grid>
+              </Box>
+
+              {form.salida.duracionTipo !== 'menos_media_jornada' && (
+                <Box sx={{ mb: 1.8, p: 2, borderRadius: 2.5, border: '1px solid #bfdbfe', bgcolor: '#f0f9ff' }}>
+                  <Typography sx={{ fontSize: 13, fontWeight: 800, color: '#0369a1', mb: 1.2 }}>
+                    Especificación de días del permiso:
+                  </Typography>
+                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, flexWrap: 'wrap' }}>
+                    {form.salida.duracionTipo === '1_2_dias' ? (
+                      <TextField
+                        select
+                        size="small"
+                        sx={{ ...inputSx, width: 180 }}
+                        label="Cantidad de días *"
+                        value={form.salida.duracionDias}
+                        onChange={(e) => update('salida', 'duracionDias', parseInt(e.target.value, 10))}
+                      >
+                        <MenuItem value={1}>1 día</MenuItem>
+                        <MenuItem value={2}>2 días</MenuItem>
+                      </TextField>
+                    ) : (
+                      <TextField
+                        size="small"
+                        type="number"
+                        sx={{ ...inputSx, width: 180 }}
+                        label="Cantidad de días *"
+                        inputProps={{ min: 3, step: 1 }}
+                        value={form.salida.duracionDias}
+                        onChange={(e) => {
+                          const val = parseInt(e.target.value.replace(/[^0-9]/g, ''), 10) || 3;
+                          update('salida', 'duracionDias', Math.max(3, val));
+                        }}
+                      />
+                    )}
+                  </Box>
+                </Box>
+              )}
+
+              {form.salida.duracionTipo !== 'menos_media_jornada' && (
+                <Box sx={{ mb: 1.8, p: 2, borderRadius: 2.5, border: '1px solid #e2e8f0', bgcolor: '#f8fafc' }}>
+                  <Typography sx={{ fontSize: 13, fontWeight: 900, color: '#1e293b', mb: 1.5, borderBottom: '2px solid #cbd5e1', pb: 0.5 }}>
+                    INFORMACIÓN DEL DESTINATARIO Y CARTA (OFICIO)
+                  </Typography>
+                  <Grid container spacing={1.5}>
+                    <Grid item xs={12} sm={6}>
+                      <TextField
+                        sx={inputSx}
+                        fullWidth
+                        required
+                        size="small"
+                        label="Nombre del destinatario (Ej. JUAN PÉREZ) *"
+                        inputProps={{ style: { textTransform: 'uppercase' } }}
+                        value={form.salida.destinatarioNombre}
+                        onChange={(e) => update('salida', 'destinatarioNombre', e.target.value.toUpperCase())}
+                      />
+                    </Grid>
+                    <Grid item xs={12} sm={6}>
+                      <TextField
+                        sx={inputSx}
+                        fullWidth
+                        required
+                        size="small"
+                        label="Cargo del destinatario *"
+                        value={form.salida.destinatarioCargo}
+                        onChange={(e) => update('salida', 'destinatarioCargo', e.target.value)}
+                      />
+                    </Grid>
+                    <Grid item xs={12} sm={6}>
+                      <TextField
+                        sx={inputSx}
+                        fullWidth
+                        required
+                        size="small"
+                        label="Dependencia del destinatario *"
+                        value={form.salida.destinatarioDependencia}
+                        onChange={(e) => update('salida', 'destinatarioDependencia', e.target.value)}
+                      />
+                    </Grid>
+                    <Grid item xs={12} sm={6}>
+                      <TextField
+                        sx={inputSx}
+                        fullWidth
+                        required
+                        size="small"
+                        label="Dirección o E-mail del destinatario *"
+                        value={form.salida.destinatarioDireccionEmail}
+                        onChange={(e) => update('salida', 'destinatarioDireccionEmail', e.target.value)}
+                      />
+                    </Grid>
+                    <Grid item xs={12}>
+                      <TextField
+                        sx={inputSx}
+                        fullWidth
+                        required
+                        size="small"
+                        label="Asunto de la carta (síntesis del tema) *"
+                        value={form.salida.oficioAsunto}
+                        onChange={(e) => update('salida', 'oficioAsunto', e.target.value)}
+                      />
+                    </Grid>
+                    <Grid item xs={12} sm={4}>
+                      <TextField
+                        select
+                        sx={inputSx}
+                        fullWidth
+                        size="small"
+                        label="Despedida formal"
+                        value={form.salida.oficioDespedida}
+                        onChange={(e) => update('salida', 'oficioDespedida', e.target.value)}
+                      >
+                        <MenuItem value="Cordialmente,">Cordialmente,</MenuItem>
+                        <MenuItem value="Atentamente,">Atentamente,</MenuItem>
+                        <MenuItem value="Sinceramente,">Sinceramente,</MenuItem>
+                        <MenuItem value="Respetuoso y atento,">Respetuoso y atento,</MenuItem>
+                      </TextField>
+                    </Grid>
+                    <Grid item xs={12}>
+                      <TextField
+                        sx={inputSx}
+                        fullWidth
+                        required
+                        multiline
+                        rows={4}
+                        size="small"
+                        label="Cuerpo del oficio / Descripción detallada *"
+                        helperText="Se pre-completa automáticamente, pero puede editarlo libremente."
+                        value={form.salida.oficioCuerpo}
+                        onChange={(e) => update('salida', 'oficioCuerpo', e.target.value)}
+                      />
+                    </Grid>
+                  </Grid>
+                </Box>
+              )}
 
               {/* Subtype Dropdown & Conditional Custom Description */}
               {category === 'propias_cargo' && subtype !== 'salida_campus' ? (

@@ -328,6 +328,188 @@ const buildLines = (solicitud) => {
 
 const PdfPrinter = require('pdfmake');
 
+const buildOficioPdfDefinition = (solicitud, ghDirectorNombre, ghDirectorCargo) => {
+  const data = solicitud?.datos_formulario || {};
+  const solicitante = solicitud?.solicitante_snapshot || {};
+  const jefe = solicitud?.jefe_snapshot || {};
+  const salida = data.salida || {};
+  const personal = data.personal || {};
+  const laboral = data.laboral || {};
+
+  // Formatter for date: e.g. "San Juan de Pasto, 15 de julio de 2026"
+  const createdDate = new Date(solicitud.createdAt || new Date());
+  const meses = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre'];
+  const dateFormatted = `San Juan de Pasto, ${createdDate.getDate()} de ${meses[createdDate.getMonth()]} de ${createdDate.getFullYear()}`;
+
+  // Signature variables
+  const txId = data.tx_id || String(solicitud.consecutivo || solicitud.id);
+  const reqDate = formatDateTime(solicitud.createdAt || new Date());
+  const jefeDate = solicitud.jefe_aprobado_at ? formatDateTime(solicitud.jefe_aprobado_at) : 'Pendiente';
+  const ghDate = solicitud.gestion_humana_aprobado_at ? formatDateTime(solicitud.gestion_humana_aprobado_at) : 'Pendiente';
+
+  const isPropiasCargoSubtype = ['ponencia', 'visita_ies', 'capacitacion', 'proyecto_investigacion', 'asistente_congreso', 'practica_academica', 'torneo_deportivo', 'salida_campus', 'otra'].includes(salida.tipo) || String(salida.tipo).startsWith('otra:');
+  const isPropiasCargo = salida.categoria === 'propias_cargo' && salida.tipo !== 'salida_campus';
+  const alcance = isPropiasCargo ? (salida.alcance || 'Local') : 'Local';
+  const requiresSst = isPropiasCargoSubtype && ['Nacional', 'Internacional'].includes(alcance);
+
+  const sstEvent = Array.isArray(solicitud.trazabilidad)
+    ? solicitud.trazabilidad.find(t => t.event === 'aprobada_sst')
+    : null;
+  const sstApprovedAt = sstEvent ? new Date(sstEvent.at) : null;
+  const sstDate = sstApprovedAt ? formatDateTime(sstApprovedAt) : 'Pendiente';
+  const sstActorName = sstEvent?.actor?.nombre || 'Seguridad y Salud en el Trabajo';
+
+  const signatureTableBody = [
+    [
+      { text: 'Firma del trabajador Solicitante', bold: true, alignment: 'center', fillColor: '#e0e0e0', fontSize: 9 },
+      { text: 'Autorización del Jefe inmediato', bold: true, alignment: 'center', fillColor: '#e0e0e0', fontSize: 9 }
+    ],
+    [
+      {
+        text: [
+          { text: 'Firmado electrónicamente por:\n', bold: true, fontSize: 8 },
+          { text: `${solicitante.nombre || personal.nombre || ''}\n`, fontSize: 9 },
+          { text: `Documento: ${solicitante.username || personal.documento || ''}\n`, fontSize: 7.5 },
+          { text: `Fecha y hora: ${reqDate}\n`, fontSize: 7.5 },
+          { text: `ID Transacción: ${txId}\n`, fontSize: 7, color: 'gray' }
+        ],
+        margin: [5, 5, 5, 5]
+      },
+      {
+        text: [
+          { text: solicitud.jefe_aprobado_at ? 'Firmado electrónicamente por:\n' : '\n', bold: true, fontSize: 8 },
+          { text: `${solicitud.jefe_aprobado_at ? (jefe.nombre || '') : 'Pendiente'}\n`, fontSize: 9 },
+          { text: `Cargo: ${jefe.cargo || ''}\n`, fontSize: 7.5 },
+          { text: `Fecha y hora: ${jefeDate}\n`, fontSize: 7.5 },
+          { text: solicitud.jefe_aprobado_at ? `ID Transacción: ${txId}\n` : '\n', fontSize: 7, color: 'gray' }
+        ],
+        margin: [5, 5, 5, 5]
+      }
+    ]
+  ];
+
+  if (requiresSst) {
+    signatureTableBody.push([
+      { text: 'RECIBIDO (Gestión del Talento Humano)', bold: true, alignment: 'center', fillColor: '#e0e0e0', fontSize: 9 },
+      { text: 'APROBADO (Seguridad y Salud en el Trabajo)', bold: true, alignment: 'center', fillColor: '#e0e0e0', fontSize: 9 }
+    ]);
+    signatureTableBody.push([
+      {
+        text: [
+          { text: solicitud.gestion_humana_aprobado_at ? 'Firmado electrónicamente por:\n' : '\n', bold: true, fontSize: 8 },
+          { text: `${solicitud.gestion_humana_aprobado_at ? ghDirectorNombre : 'Pendiente'}\n`, fontSize: 9 },
+          { text: `Cargo: ${ghDirectorCargo}\n`, fontSize: 7.5 },
+          { text: `Fecha y hora: ${ghDate}\n`, fontSize: 7.5 },
+          { text: solicitud.gestion_humana_aprobado_at ? `ID Transacción: ${txId}\n` : '\n', fontSize: 7, color: 'gray' }
+        ],
+        margin: [5, 5, 5, 5]
+      },
+      {
+        text: [
+          { text: sstApprovedAt ? 'Firmado electrónicamente por:\n' : '\n', bold: true, fontSize: 8 },
+          { text: `${sstApprovedAt ? sstActorName : 'Pendiente'}\n`, fontSize: 9 },
+          { text: `Cargo: Coordinador SST\n`, fontSize: 7.5 },
+          { text: `Fecha y hora: ${sstDate}\n`, fontSize: 7.5 },
+          { text: sstApprovedAt ? `ID Transacción: ${txId}\n` : '\n', fontSize: 7, color: 'gray' }
+        ],
+        margin: [5, 5, 5, 5]
+      }
+    ]);
+  } else {
+    signatureTableBody.push([
+      { text: 'RECIBIDO (Gestión del Talento Humano)', bold: true, alignment: 'center', colSpan: 2, fillColor: '#e0e0e0', fontSize: 9 },
+      {}
+    ]);
+    signatureTableBody.push([
+      {
+        text: [
+          { text: solicitud.gestion_humana_aprobado_at ? 'Firmado electrónicamente por:\n' : '\n', bold: true, fontSize: 8 },
+          { text: `${solicitud.gestion_humana_aprobado_at ? ghDirectorNombre : 'Pendiente'}\n`, fontSize: 9 },
+          { text: `Cargo: ${ghDirectorCargo}\n`, fontSize: 7.5 },
+          { text: `Fecha y hora: ${ghDate}\n`, fontSize: 7.5 },
+          { text: solicitud.gestion_humana_aprobado_at ? `ID Transacción: ${txId}\n` : '\n', fontSize: 7, color: 'gray' }
+        ],
+        margin: [5, 5, 5, 5],
+        alignment: 'center',
+        colSpan: 2
+      },
+      {}
+    ]);
+  }
+
+  // Destinatario details
+  const destNombre = (salida.destinatarioNombre || '').toUpperCase();
+  const destCargo = salida.destinatarioCargo || '';
+  const destDependencia = salida.destinatarioDependencia || '';
+  const destDireccionEmail = salida.destinatarioDireccionEmail || '';
+
+  return {
+    pageSize: 'LETTER',
+    pageMargins: [45, 95, 45, 90],
+    defaultStyle: { font: 'Roboto', fontSize: 11, color: '#000000', lineHeight: 1.25 },
+    
+    header: (currentPage, pageCount) => {
+      return {
+        image: path.join(__dirname, '../assets/Encabezado_correos.png'),
+        width: 522,
+        alignment: 'center',
+        margin: [0, 20, 0, 0]
+      };
+    },
+    
+    footer: (currentPage, pageCount) => {
+      return {
+        image: path.join(__dirname, '../assets/pie_de_pag.png'),
+        width: 522,
+        alignment: 'center',
+        margin: [0, 0, 0, 15]
+      };
+    },
+
+    content: [
+      { text: `Oficio No. RS-${solicitud.consecutivo || solicitud.id}`, bold: true, margin: [0, 0, 0, 15] },
+      { text: dateFormatted, margin: [0, 0, 0, 20] },
+      
+      {
+        text: [
+          { text: `${destNombre}\n`, bold: true },
+          { text: `${destCargo}\n` },
+          { text: `${destDependencia}\n` },
+          { text: `${destDireccionEmail}\n` }
+        ],
+        margin: [0, 0, 0, 15]
+      },
+      
+      { text: `Asunto: ${salida.oficioAsunto || ''}`, bold: true, margin: [0, 0, 0, 15] },
+      
+      { text: 'Paz y bien:', margin: [0, 0, 0, 12] },
+      
+      { text: salida.oficioCuerpo || '', alignment: 'justify', margin: [0, 0, 0, 20] },
+      
+      { text: salida.oficioDespedida || 'Cordialmente,', margin: [0, 0, 0, 30] },
+      
+      {
+        text: [
+          { text: `${(solicitante.nombre || personal.nombre || '').toUpperCase()}\n`, bold: true },
+          { text: `${solicitante.cargo || laboral.cargo || ''}\n\n` }
+        ],
+        margin: [0, 0, 0, 30]
+      },
+      
+      // Signatures container
+      {
+        unbreakable: true,
+        table: {
+          widths: ['50%', '50%'],
+          body: signatureTableBody
+        },
+        layout: 'borders',
+        margin: [0, 10, 0, 0]
+      }
+    ]
+  };
+};
+
 const buildPdfBuffer = async (solicitud) => {
   let ghDirectorNombre = '';
   let ghDirectorCargo = 'Jefe de Gestión del Talento Humano';
@@ -363,9 +545,21 @@ const buildPdfBuffer = async (solicitud) => {
       const printer = new PdfPrinter(fonts);
 
       const data = solicitud?.datos_formulario || {};
+      const salida = data.salida || {};
+
+      if (salida.duracionTipo && salida.duracionTipo !== 'menos_media_jornada') {
+        const docDefinition = buildOficioPdfDefinition(solicitud, ghDirectorNombre, ghDirectorCargo);
+        const pdfDoc = printer.createPdfKitDocument(docDefinition);
+        const docChunks = [];
+        pdfDoc.on('data', chunk => docChunks.push(chunk));
+        pdfDoc.on('end', () => resolve(Buffer.concat(docChunks)));
+        pdfDoc.on('error', err => reject(err));
+        pdfDoc.end();
+        return;
+      }
+
       const solicitante = solicitud?.solicitante_snapshot || {};
       const jefe = solicitud?.jefe_snapshot || {};
-      const salida = data.salida || {};
       const reposicion = data.reposicion || {};
       const laboral = data.laboral || {};
       const personal = data.personal || {};
