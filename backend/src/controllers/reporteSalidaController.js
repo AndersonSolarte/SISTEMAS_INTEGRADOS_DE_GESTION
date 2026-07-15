@@ -83,6 +83,96 @@ const namesLookRelated = (left, right) => {
   return matches >= Math.min(2, rightTokens.length);
 };
 
+const findBestUserMatch = (users, target) => {
+  if (!target) return null;
+  const targetNorm = normalizeForMatch(target);
+  if (!targetNorm) return null;
+
+  // 1. Exact match by name
+  let match = users.find((u) => normalizeForMatch(u.nombre) === targetNorm);
+  if (match) return match;
+
+  // 2. Exact match by cargo
+  match = users.find((u) => normalizeForMatch(u.cargo) === targetNorm);
+  if (match) return match;
+
+  // 3. Token-based ranking match
+  const targetTokens = tokenizeName(targetNorm);
+  if (!targetTokens.length) return null;
+
+  let bestMatch = null;
+  let bestScore = 0;
+
+  for (const user of users) {
+    const nameTokens = tokenizeName(user.nombre);
+    if (nameTokens.length) {
+      const commonNameTokens = nameTokens.filter(t => targetTokens.includes(t)).length;
+      const minRequired = Math.min(2, targetTokens.length);
+      if (commonNameTokens >= minRequired && commonNameTokens > bestScore) {
+        bestScore = commonNameTokens;
+        bestMatch = user;
+      }
+    }
+
+    const cargoTokens = tokenizeName(user.cargo);
+    if (cargoTokens.length) {
+      const commonCargoTokens = cargoTokens.filter(t => targetTokens.includes(t)).length;
+      const minRequired = Math.min(2, targetTokens.length);
+      if (commonCargoTokens >= minRequired && commonCargoTokens > bestScore) {
+        bestScore = commonCargoTokens;
+        bestMatch = user;
+      }
+    }
+  }
+
+  return bestMatch;
+};
+
+const findBestRhMatch = (rhRows, target) => {
+  if (!target) return null;
+  const targetNorm = normalizeForMatch(target);
+  if (!targetNorm) return null;
+
+  // 1. Exact match by name
+  let match = rhRows.find((r) => normalizeForMatch(r.nombre_empleado) === targetNorm);
+  if (match) return match;
+
+  // 2. Exact match by cargo
+  match = rhRows.find((r) => normalizeForMatch(r.cargo_especifico) === targetNorm);
+  if (match) return match;
+
+  // 3. Token-based ranking match
+  const targetTokens = tokenizeName(targetNorm);
+  if (!targetTokens.length) return null;
+
+  let bestMatch = null;
+  let bestScore = 0;
+
+  for (const row of rhRows) {
+    const nameTokens = tokenizeName(row.nombre_empleado);
+    if (nameTokens.length) {
+      const commonNameTokens = nameTokens.filter(t => targetTokens.includes(t)).length;
+      const minRequired = Math.min(2, targetTokens.length);
+      if (commonNameTokens >= minRequired && commonNameTokens > bestScore) {
+        bestScore = commonNameTokens;
+        bestMatch = row;
+      }
+    }
+
+    const cargoTokens = tokenizeName(row.cargo_especifico);
+    if (cargoTokens.length) {
+      const commonCargoTokens = cargoTokens.filter(t => targetTokens.includes(t)).length;
+      const minRequired = Math.min(2, targetTokens.length);
+      if (commonCargoTokens >= minRequired && commonCargoTokens > bestScore) {
+        bestScore = commonCargoTokens;
+        bestMatch = row;
+      }
+    }
+  }
+
+  return bestMatch;
+};
+
 
 const JEFE_CARGO_KEYWORDS = [
   'asesor',
@@ -237,10 +327,8 @@ const mapAdministrativeBosses = async (rows, search = '') => {
   return bossRows
     .map((row, index) => {
       const doc = normalizeDocument(row.numero_cedula);
-      const user = users.find((candidate) =>
-        (doc && normalizeDocument(candidate.username) === doc) ||
-        namesLookRelated(candidate.nombre, row.nombre_empleado)
-      );
+      const user = (doc && users.find((candidate) => normalizeDocument(candidate.username) === doc)) ||
+                   findBestUserMatch(users, row.nombre_empleado);
       const rawEmail = getAdministrativeEmail(row);
       return {
         id: user?.id ? `user:${user.id}` : `rh:${doc || normalizeForMatch(row.nombre_empleado) || index}`,
@@ -316,12 +404,7 @@ const mapUserProfileBosses = (rows, search = '') => {
   rows.forEach((row, index) => {
     const jefeNombre = sanitizeText(row.jefe_inmediato, 220);
     if (!jefeNombre) return;
-    const matchedUser = rows.find((candidate) =>
-      normalizeForMatch(candidate.nombre) === normalizeForMatch(jefeNombre) ||
-      normalizeForMatch(candidate.cargo) === normalizeForMatch(jefeNombre) ||
-      namesLookRelated(candidate.nombre, jefeNombre) ||
-      namesLookRelated(candidate.cargo, jefeNombre)
-    );
+    const matchedUser = findBestUserMatch(rows, jefeNombre);
     pushBoss({
       id: matchedUser?.id ? `user:${matchedUser.id}` : `profile-jefe:${normalizeForMatch(jefeNombre) || index}`,
       userId: matchedUser?.id || null,
@@ -1405,12 +1488,7 @@ const resolveJefeForParticipant = async (p, userRows, rhRows) => {
   }
 
   // 3. Find this boss in userRows
-  const bossUser = userRows.find(candidate =>
-    normalizeForMatch(candidate.nombre) === normalizeForMatch(jefeNombre) ||
-    normalizeForMatch(candidate.cargo) === normalizeForMatch(jefeNombre) ||
-    namesLookRelated(candidate.nombre, jefeNombre) ||
-    namesLookRelated(candidate.cargo, jefeNombre)
-  );
+  const bossUser = findBestUserMatch(userRows, jefeNombre);
 
   if (bossUser) {
     return buildSnapshot(bossUser);
@@ -1418,12 +1496,7 @@ const resolveJefeForParticipant = async (p, userRows, rhRows) => {
 
   // 4. Try to find this boss in rhRows
   if (rhRows) {
-    const bossRh = rhRows.find(candidate =>
-      normalizeForMatch(candidate.nombre_empleado) === normalizeForMatch(jefeNombre) ||
-      normalizeForMatch(candidate.cargo_especifico) === normalizeForMatch(jefeNombre) ||
-      namesLookRelated(candidate.nombre_empleado, jefeNombre) ||
-      namesLookRelated(candidate.cargo_especifico, jefeNombre)
-    );
+    const bossRh = findBestRhMatch(rhRows, jefeNombre);
 
     if (bossRh) {
       return buildAdministrativeBossSnapshot({
