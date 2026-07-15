@@ -366,16 +366,29 @@ const getUserModulePermissions = async (userId, role) => {
     const restrictedAllowedPlanAccion = role === ROLES.PLANEACION_EFECTIVIDAD
       ? ['plan_accion_estadistica', 'plan_accion_gestion']
       : [];
+
+    const finalMenuPermissions = [...restrictedMenu];
+    if (menuPermissions.includes('gestion_informacion')) {
+      finalMenuPermissions.push('gestion_informacion');
+    }
+
+    const finalAllowedModules = [...restrictedAllowedModules];
+    allowedModules.forEach((mod) => {
+      if (!finalAllowedModules.includes(mod)) {
+        finalAllowedModules.push(mod);
+      }
+    });
+
     return {
-      menuPermissions: restrictedMenu,
-      allowedModules: restrictedAllowedModules,
-      allowedGestionProcesosDashboards: [],
-      allowedPoblacionalDashboards: [],
-      allowedSaberProDashboards: [],
-      allowedRecursoHumanoDashboards: [],
-      allowedInfraestructuraFisicaDashboards: [],
-      allowedPlanAccionDashboards: restrictedAllowedPlanAccion,
-      allowedInternacionalizacionDashboards: []
+      menuPermissions: finalMenuPermissions,
+      allowedModules: finalAllowedModules,
+      allowedGestionProcesosDashboards: allowedGestionProcesosDashboards,
+      allowedPoblacionalDashboards: allowedPoblacionalDashboards,
+      allowedSaberProDashboards: allowedSaberProDashboards,
+      allowedRecursoHumanoDashboards: allowedRecursoHumanoDashboards,
+      allowedInfraestructuraFisicaDashboards: allowedInfraestructuraFisicaDashboards,
+      allowedPlanAccionDashboards: Array.from(new Set([...restrictedAllowedPlanAccion, ...allowedPlanAccionDashboards])),
+      allowedInternacionalizacionDashboards: allowedInternacionalizacionDashboards
     };
   }
 

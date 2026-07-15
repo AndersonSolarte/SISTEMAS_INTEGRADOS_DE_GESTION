@@ -18,7 +18,7 @@ function RoleRoute({ children, allowedRoles = [], permissionKey = null, deniedRo
   const menuPermissions = normalizePermissionList(user?.menuPermissions);
   const hasExplicitPermission = permissionKey ? menuPermissions.includes(permissionKey) : false;
   const isDenied = deniedRoles.includes(user.role);
-  const hasAccess = !isDenied && (allowedRoles.includes(user.role) || hasExplicitPermission);
+  const hasAccess = hasExplicitPermission || (!isDenied && allowedRoles.includes(user.role));
 
   if (!hasAccess) {
     return (

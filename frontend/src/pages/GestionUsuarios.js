@@ -212,7 +212,7 @@ function GestionUsuarios() {
   const GI_MODULE_GROUPS = ['Acceso general', 'Tableros estadisticos', 'Autoevaluacion', 'Seguridad Aplicativa']
     .map((title) => ({
       title,
-      options: GI_MODULE_OPTIONS.filter((item) => item.group === title && item.key !== 'saber_pro')
+      options: GI_MODULE_OPTIONS.filter((item) => item.group === title)
     }));
   const GESTION_PROCESOS_DASHBOARD_OPTIONS = [
     { key: 'estadistica_documental', label: 'Estadística Documental' },
