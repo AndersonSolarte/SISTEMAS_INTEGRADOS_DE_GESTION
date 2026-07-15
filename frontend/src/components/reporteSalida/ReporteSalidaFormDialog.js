@@ -525,6 +525,7 @@ function ReporteSalidaFormDialog({ open, documento, user, onClose, onSubmitted }
 
   const handleCategoryChange = (newCategory) => {
     setActiveCategory(newCategory);
+    update('salida', 'tiempoReponerHoras', '');
     if (newCategory === 'propias_cargo') {
       update('salida', 'tipo', 'ponencia');
       setShowPropiasCargoWarning(true);
@@ -538,6 +539,7 @@ function ReporteSalidaFormDialog({ open, documento, user, onClose, onSubmitted }
   };
 
   const handleSubtypeChange = (newSubtype) => {
+    update('salida', 'tiempoReponerHoras', '');
     if (newSubtype === 'otra') {
       update('salida', 'tipo', 'otra:');
     } else {
@@ -823,7 +825,7 @@ function ReporteSalidaFormDialog({ open, documento, user, onClose, onSubmitted }
       issues.push('Debe subir el soporte, certificado o documento obligatorio.');
     }
     
-    if (category === 'personales') {
+    if (category === 'personales' && subtype === 'diligencia_personal') {
       if (form.salida.tiempoReponerHoras === undefined || form.salida.tiempoReponerHoras === '' || isNaN(Number(form.salida.tiempoReponerHoras))) {
         issues.push('Debe indicar de forma manual el tiempo a reponer en horas (digite 0 si no requiere reposición).');
       } else if (Number(form.salida.tiempoReponerHoras) < 0) {
@@ -1919,7 +1921,7 @@ function ReporteSalidaFormDialog({ open, documento, user, onClose, onSubmitted }
                 <Box sx={responsiveFieldGrid(
                   subtype === 'urgencia_medica'
                     ? 'minmax(160px, 1fr) minmax(140px, 1fr)'
-                    : (category === 'personales'
+                    : (category === 'personales' && subtype === 'diligencia_personal'
                         ? 'minmax(160px, 1fr) minmax(140px, 0.8fr) minmax(160px, 1fr) minmax(140px, 0.8fr) minmax(165px, 0.9fr)'
                         : 'minmax(160px, 1fr) minmax(140px, 0.8fr) minmax(160px, 1fr) minmax(140px, 0.8fr)')
                 )}>
@@ -1969,7 +1971,7 @@ function ReporteSalidaFormDialog({ open, documento, user, onClose, onSubmitted }
                       />
                     </>
                   )}
-                  {category === 'personales' && subtype !== 'urgencia_medica' && (
+                  {category === 'personales' && subtype === 'diligencia_personal' && (
                     <TextField sx={inputSx} fullWidth size="small" required type="number" label="Tiempo a reponer (horas)" InputLabelProps={{ shrink: true }} inputProps={{ min: 0, step: 1 }} value={form.salida.tiempoReponerHoras || ''} onChange={(e) => update('salida', 'tiempoReponerHoras', e.target.value.replace(/[^0-9]/g, ''))} />
                   )}
                 </Box>
@@ -2074,7 +2076,7 @@ function ReporteSalidaFormDialog({ open, documento, user, onClose, onSubmitted }
               )}
             </Box>
 
-            {category === 'personales' && (
+            {category === 'personales' && subtype === 'diligencia_personal' && (
               <Alert severity={form.salida.tiempoReponerHoras ? 'success' : 'warning'}>
                 Tiempo solicitado: {parseInt(form.salida.tiempoReponerHoras || 0, 10)}h 00m
               </Alert>
