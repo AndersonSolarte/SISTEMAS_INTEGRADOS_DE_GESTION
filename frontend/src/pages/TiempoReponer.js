@@ -197,11 +197,11 @@ const getJefeObservacion = (row) => {
 };
 
 const formatElapsed = (minutes) => {
-  if (!minutes) return '0h';
-  const hrs = Math.floor(minutes / 60);
-  const mins = Math.round(minutes % 60);
-  if (hrs > 0) return `${hrs}h ${mins}m`;
-  return `${mins}m`;
+  const total = Number(minutes);
+  if (!Number.isFinite(total) || total <= 0) return '0h';
+  const hours = total / 60;
+  const formatted = Number(hours.toFixed(1));
+  return `${formatted}h`;
 };
 
 export default function TiempoReponer() {

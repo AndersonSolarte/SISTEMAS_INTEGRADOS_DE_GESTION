@@ -111,14 +111,10 @@ const minutesBetween = (start, end) => {
 
 const formatElapsed = (minutes) => {
   const total = Number(minutes);
-  if (!Number.isFinite(total)) return '-';
-  const days = Math.floor(total / 1440);
-  const hours = Math.floor((total % 1440) / 60);
-  const mins = total % 60;
-  if (days > 0) return `${days}d ${hours}h`;
-  if (days > 0) return `${days}d ${hours}h`;
-  if (hours > 0) return `${hours}h ${mins}m`;
-  return `${mins}m`;
+  if (!Number.isFinite(total) || total <= 0) return '0h';
+  const hours = total / 60;
+  const formatted = Number(hours.toFixed(1));
+  return `${formatted}h`;
 };
 
 const getHorasPendientes = (row) => {
