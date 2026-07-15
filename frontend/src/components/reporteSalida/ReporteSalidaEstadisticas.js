@@ -332,7 +332,10 @@ export default function ReporteSalidaEstadisticas({ rows = [] }) {
       init(countsMap); countsMap[uId].value += 1;
       if (row.reposicion_aplica) {
         init(timeMap);
-        timeMap[uId].value += mins;
+        const totalMins = row.reposicion_minutos || row.tiempo_solicitado_minutos || 0;
+        const paidMins = row.reposicion_minutos_pagados || row.datos_formulario?.reposicion_minutos_pagados || 0;
+        const pendingMins = Math.max(0, totalMins - paidMins);
+        timeMap[uId].value += pendingMins;
       }
 
       // Por tipo dinámico
