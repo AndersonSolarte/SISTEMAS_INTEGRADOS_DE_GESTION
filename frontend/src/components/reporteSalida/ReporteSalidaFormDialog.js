@@ -1611,262 +1611,6 @@ function ReporteSalidaFormDialog({ open, documento, user, onClose, onSubmitted }
                 )}
               </Box>
 
-              {/* Selector de Duración */}
-              <Box sx={{ mb: 1.8 }}>
-                <Typography sx={{ fontSize: 13, fontWeight: 800, color: '#334155', mb: 1 }}>
-                  Duración estimada de la salida:
-                </Typography>
-                <Grid container spacing={1.5}>
-                  {[
-                    { value: 'menos_media_jornada', label: 'Equivale a menos de media jornada' },
-                    { value: '1_2_dias', label: 'Entre 1 y 2 días' },
-                    { value: '3_mas_dias', label: '3 o más días' }
-                  ].map((opt) => {
-                    const selected = form.salida.duracionTipo === opt.value;
-                    return (
-                      <Grid item xs={12} sm={4} key={opt.value}>
-                        <Box
-                          onClick={() => {
-                            update('salida', 'duracionTipo', opt.value);
-                            update('salida', 'duracionDias', opt.value === 'menos_media_jornada' ? 0 : (opt.value === '1_2_dias' ? 1 : 3));
-                          }}
-                          sx={{
-                            p: 1.2,
-                            borderRadius: 2.2,
-                            border: '2px solid',
-                            borderColor: selected ? '#2563eb' : '#cbd5e1',
-                            bgcolor: selected ? '#eff6ff' : '#ffffff',
-                            cursor: 'pointer',
-                            display: 'flex',
-                            alignItems: 'center',
-                            gap: 1.5,
-                            transition: 'all 0.2s',
-                            '&:hover': { borderColor: '#2563eb', bgcolor: selected ? '#eff6ff' : '#f8fafc' }
-                          }}
-                        >
-                          <Radio checked={selected} size="small" sx={{ p: 0 }} color="primary" />
-                          <Typography sx={{ fontSize: 13, fontWeight: 700, color: selected ? '#1d4ed8' : '#475569' }}>
-                            {opt.label}
-                          </Typography>
-                        </Box>
-                      </Grid>
-                    );
-                  })}
-                </Grid>
-              </Box>
-
-              {form.salida.duracionTipo !== 'menos_media_jornada' && (
-                <Box sx={{ mb: 1.8, p: 2, borderRadius: 2.5, border: '1px solid #bfdbfe', bgcolor: '#f0f9ff' }}>
-                  <Typography sx={{ fontSize: 13, fontWeight: 800, color: '#0369a1', mb: 1.2 }}>
-                    Especificación de días del permiso:
-                  </Typography>
-                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, flexWrap: 'wrap' }}>
-                    {form.salida.duracionTipo === '1_2_dias' ? (
-                      <TextField
-                        select
-                        size="small"
-                        sx={{ ...inputSx, width: 180 }}
-                        label="Cantidad de días *"
-                        value={form.salida.duracionDias}
-                        onChange={(e) => update('salida', 'duracionDias', parseInt(e.target.value, 10))}
-                      >
-                        <MenuItem value={1}>1 día</MenuItem>
-                        <MenuItem value={2}>2 días</MenuItem>
-                      </TextField>
-                    ) : (
-                      <TextField
-                        size="small"
-                        type="number"
-                        sx={{ ...inputSx, width: 180 }}
-                        label="Cantidad de días *"
-                        inputProps={{ min: 3, step: 1 }}
-                        value={form.salida.duracionDias}
-                        onChange={(e) => {
-                          const val = parseInt(e.target.value.replace(/[^0-9]/g, ''), 10) || 3;
-                          update('salida', 'duracionDias', Math.max(3, val));
-                        }}
-                      />
-                    )}
-                  </Box>
-                </Box>
-              )}
-
-              {form.salida.duracionTipo !== 'menos_media_jornada' && (
-                <Box sx={{ mb: 1.8, p: 2, borderRadius: 2.5, border: '1px solid #e2e8f0', bgcolor: '#f8fafc' }}>
-                  <Typography sx={{ fontSize: 13, fontWeight: 950, color: '#1e293b', mb: 2, borderBottom: '2px solid #cbd5e1', pb: 0.5 }}>
-                    INFORMACIÓN DEL OFICIO Y DESTINATARIO
-                  </Typography>
-                  <Grid container spacing={1.5}>
-                    <Grid item xs={12} sm={4}>
-                      <TextField
-                        sx={inputSx}
-                        fullWidth
-                        required
-                        size="small"
-                        label="Código de dependencia (Ej. THM, COM-GD) *"
-                        value={form.salida.codigoDependencia || ''}
-                        onChange={(e) => update('salida', 'codigoDependencia', e.target.value)}
-                      />
-                    </Grid>
-                    <Grid item xs={12} sm={4}>
-                      <TextField
-                        sx={inputSx}
-                        fullWidth
-                        required
-                        size="small"
-                        label="Tratamiento (Ej. Señor, Magíster, Esp.) *"
-                        value={form.salida.destinatarioTratamiento || ''}
-                        onChange={(e) => update('salida', 'destinatarioTratamiento', e.target.value)}
-                      />
-                    </Grid>
-                    <Grid item xs={12} sm={4}>
-                      <TextField
-                        sx={inputSx}
-                        fullWidth
-                        required
-                        size="small"
-                        label="Nombre del destinatario *"
-                        inputProps={{ style: { textTransform: 'uppercase' } }}
-                        value={form.salida.destinatarioNombre || ''}
-                        onChange={(e) => update('salida', 'destinatarioNombre', e.target.value.toUpperCase())}
-                      />
-                    </Grid>
-                    
-                    <Grid item xs={12} sm={6}>
-                      <TextField
-                        sx={inputSx}
-                        fullWidth
-                        required
-                        size="small"
-                        label="Cargo del destinatario *"
-                        value={form.salida.destinatarioCargo || ''}
-                        onChange={(e) => update('salida', 'destinatarioCargo', e.target.value)}
-                      />
-                    </Grid>
-                    <Grid item xs={12} sm={6}>
-                      <TextField
-                        sx={inputSx}
-                        fullWidth
-                        required
-                        size="small"
-                        label="Empresa / Institución *"
-                        value={form.salida.destinatarioEmpresa || ''}
-                        onChange={(e) => update('salida', 'destinatarioEmpresa', e.target.value)}
-                      />
-                    </Grid>
-
-                    <Grid item xs={12} sm={4}>
-                      <TextField
-                        sx={inputSx}
-                        fullWidth
-                        required
-                        size="small"
-                        label="Dirección o E-mail del destinatario *"
-                        value={form.salida.destinatarioDireccionEmail || ''}
-                        onChange={(e) => update('salida', 'destinatarioDireccionEmail', e.target.value)}
-                      />
-                    </Grid>
-                    <Grid item xs={12} sm={4}>
-                      <TextField
-                        sx={inputSx}
-                        fullWidth
-                        required
-                        size="small"
-                        label="Teléfono del destinatario *"
-                        value={form.salida.destinatarioTelefono || ''}
-                        onChange={(e) => update('salida', 'destinatarioTelefono', e.target.value)}
-                      />
-                    </Grid>
-                    <Grid item xs={12} sm={4}>
-                      <TextField
-                        sx={inputSx}
-                        fullWidth
-                        required
-                        size="small"
-                        label="Ciudad, Depto, provincia *"
-                        value={form.salida.destinatarioUbicacion || ''}
-                        onChange={(e) => update('salida', 'destinatarioUbicacion', e.target.value)}
-                      />
-                    </Grid>
-
-                    <Grid item xs={12} sm={6}>
-                      <TextField
-                        sx={inputSx}
-                        fullWidth
-                        size="small"
-                        label="País (Opcional, para envíos internacionales)"
-                        value={form.salida.destinatarioPais || ''}
-                        onChange={(e) => update('salida', 'destinatarioPais', e.target.value)}
-                      />
-                    </Grid>
-                    <Grid item xs={12} sm={6}>
-                      <TextField
-                        sx={inputSx}
-                        fullWidth
-                        size="small"
-                        label="Anexos (Ej. Copia acta, soportes. Opcional)"
-                        value={form.salida.oficioAnexos || ''}
-                        onChange={(e) => update('salida', 'oficioAnexos', e.target.value)}
-                      />
-                    </Grid>
-
-                    <Grid item xs={12}>
-                      <TextField
-                        sx={inputSx}
-                        fullWidth
-                        required
-                        size="small"
-                        label="Asunto de la carta (síntesis del tema) *"
-                        value={form.salida.oficioAsunto || ''}
-                        onChange={(e) => update('salida', 'oficioAsunto', e.target.value)}
-                      />
-                    </Grid>
-
-                    <Grid item xs={12} sm={4}>
-                      <TextField
-                        select
-                        sx={inputSx}
-                        fullWidth
-                        size="small"
-                        label="Despedida formal"
-                        value={form.salida.oficioDespedida || ''}
-                        onChange={(e) => update('salida', 'oficioDespedida', e.target.value)}
-                      >
-                        <MenuItem value="Cordialmente,">Cordialmente,</MenuItem>
-                        <MenuItem value="Atentamente,">Atentamente,</MenuItem>
-                        <MenuItem value="Sinceramente,">Sinceramente,</MenuItem>
-                        <MenuItem value="Respetuoso y atento,">Respetuoso y atento,</MenuItem>
-                      </TextField>
-                    </Grid>
-                    <Grid item xs={12} sm={8}>
-                      <TextField
-                        sx={inputSx}
-                        fullWidth
-                        size="small"
-                        label="Proyectó (Nombre de quien redacta)"
-                        value={form.salida.oficioProyecto || ''}
-                        onChange={(e) => update('salida', 'oficioProyecto', e.target.value)}
-                      />
-                    </Grid>
-
-                    <Grid item xs={12}>
-                      <TextField
-                        sx={inputSx}
-                        fullWidth
-                        required
-                        multiline
-                        rows={4}
-                        size="small"
-                        label="Cuerpo del oficio / Descripción detallada *"
-                        helperText="Se pre-completa automáticamente, pero puede editarlo libremente."
-                        value={form.salida.oficioCuerpo || ''}
-                        onChange={(e) => update('salida', 'oficioCuerpo', e.target.value)}
-                      />
-                    </Grid>
-                  </Grid>
-                </Box>
-              )}
-
               {/* Subtype Dropdown & Conditional Custom Description */}
               {category === 'propias_cargo' && subtype !== 'salida_campus' ? (
                 <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.5, mb: 1.8 }}>
@@ -2300,6 +2044,262 @@ function ReporteSalidaFormDialog({ open, documento, user, onClose, onSubmitted }
                       </Box>
                     </Box>
                   )}
+                </Box>
+              )}
+
+              {/* Selector de Duración */}
+              <Box sx={{ mb: 1.8, width: '100%' }}>
+                <Typography sx={{ fontSize: 13, fontWeight: 800, color: '#334155', mb: 1 }}>
+                  Duración estimada de la salida:
+                </Typography>
+                <Box sx={{ display: 'flex', flexDirection: { xs: 'column', sm: 'row' }, gap: 1.5, width: '100%' }}>
+                  {[
+                    { value: 'menos_media_jornada', label: 'Equivale a menos de media jornada' },
+                    { value: '1_2_dias', label: 'Entre 1 y 2 días' },
+                    { value: '3_mas_dias', label: '3 o más días' }
+                  ].map((opt) => {
+                    const selected = form.salida.duracionTipo === opt.value;
+                    return (
+                      <Box
+                        key={opt.value}
+                        onClick={() => {
+                          update('salida', 'duracionTipo', opt.value);
+                          update('salida', 'duracionDias', opt.value === 'menos_media_jornada' ? 0 : (opt.value === '1_2_dias' ? 1 : 3));
+                        }}
+                        sx={{
+                          flex: 1,
+                          p: 1.2,
+                          borderRadius: 2.2,
+                          border: '2px solid',
+                          borderColor: selected ? '#2563eb' : '#cbd5e1',
+                          bgcolor: selected ? '#eff6ff' : '#ffffff',
+                          cursor: 'pointer',
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: 1.5,
+                          transition: 'all 0.2s',
+                          '&:hover': { borderColor: '#2563eb', bgcolor: selected ? '#eff6ff' : '#f8fafc' }
+                        }}
+                      >
+                        <Radio checked={selected} size="small" sx={{ p: 0 }} color="primary" />
+                        <Typography sx={{ fontSize: 13, fontWeight: 700, color: selected ? '#1d4ed8' : '#475569' }}>
+                          {opt.label}
+                        </Typography>
+                      </Box>
+                    );
+                  })}
+                </Box>
+              </Box>
+
+              {form.salida.duracionTipo !== 'menos_media_jornada' && (
+                <Box sx={{ mb: 1.8, p: 2, borderRadius: 2.5, border: '1px solid #bfdbfe', bgcolor: '#f0f9ff' }}>
+                  <Typography sx={{ fontSize: 13, fontWeight: 800, color: '#0369a1', mb: 1.2 }}>
+                    Especificación de días del permiso:
+                  </Typography>
+                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, flexWrap: 'wrap' }}>
+                    {form.salida.duracionTipo === '1_2_dias' ? (
+                      <TextField
+                        select
+                        size="small"
+                        sx={{ ...inputSx, width: 180 }}
+                        label="Cantidad de días *"
+                        value={form.salida.duracionDias}
+                        onChange={(e) => update('salida', 'duracionDias', parseInt(e.target.value, 10))}
+                      >
+                        <MenuItem value={1}>1 día</MenuItem>
+                        <MenuItem value={2}>2 días</MenuItem>
+                      </TextField>
+                    ) : (
+                      <TextField
+                        size="small"
+                        type="number"
+                        sx={{ ...inputSx, width: 180 }}
+                        label="Cantidad de días *"
+                        inputProps={{ min: 3, step: 1 }}
+                        value={form.salida.duracionDias}
+                        onChange={(e) => {
+                          const val = parseInt(e.target.value.replace(/[^0-9]/g, ''), 10) || 3;
+                          update('salida', 'duracionDias', Math.max(3, val));
+                        }}
+                      />
+                    )}
+                  </Box>
+                </Box>
+              )}
+
+              {form.salida.duracionTipo !== 'menos_media_jornada' && (
+                <Box sx={{ mb: 1.8, p: 2, borderRadius: 2.5, border: '1px solid #e2e8f0', bgcolor: '#f8fafc' }}>
+                  <Typography sx={{ fontSize: 13, fontWeight: 950, color: '#1e293b', mb: 2, borderBottom: '2px solid #cbd5e1', pb: 0.5 }}>
+                    INFORMACIÓN DEL OFICIO Y DESTINATARIO
+                  </Typography>
+                  <Grid container spacing={1.5}>
+                    <Grid item xs={12} sm={4}>
+                      <TextField
+                        sx={inputSx}
+                        fullWidth
+                        required
+                        size="small"
+                        label="Código de dependencia (Ej. THM, COM-GD) *"
+                        value={form.salida.codigoDependencia || ''}
+                        onChange={(e) => update('salida', 'codigoDependencia', e.target.value)}
+                      />
+                    </Grid>
+                    <Grid item xs={12} sm={4}>
+                      <TextField
+                        sx={inputSx}
+                        fullWidth
+                        required
+                        size="small"
+                        label="Tratamiento (Ej. Señor, Magíster, Esp.) *"
+                        value={form.salida.destinatarioTratamiento || ''}
+                        onChange={(e) => update('salida', 'destinatarioTratamiento', e.target.value)}
+                      />
+                    </Grid>
+                    <Grid item xs={12} sm={4}>
+                      <TextField
+                        sx={inputSx}
+                        fullWidth
+                        required
+                        size="small"
+                        label="Nombre del destinatario *"
+                        inputProps={{ style: { textTransform: 'uppercase' } }}
+                        value={form.salida.destinatarioNombre || ''}
+                        onChange={(e) => update('salida', 'destinatarioNombre', e.target.value.toUpperCase())}
+                      />
+                    </Grid>
+                    
+                    <Grid item xs={12} sm={6}>
+                      <TextField
+                        sx={inputSx}
+                        fullWidth
+                        required
+                        size="small"
+                        label="Cargo del destinatario *"
+                        value={form.salida.destinatarioCargo || ''}
+                        onChange={(e) => update('salida', 'destinatarioCargo', e.target.value)}
+                      />
+                    </Grid>
+                    <Grid item xs={12} sm={6}>
+                      <TextField
+                        sx={inputSx}
+                        fullWidth
+                        required
+                        size="small"
+                        label="Empresa / Institución *"
+                        value={form.salida.destinatarioEmpresa || ''}
+                        onChange={(e) => update('salida', 'destinatarioEmpresa', e.target.value)}
+                      />
+                    </Grid>
+
+                    <Grid item xs={12} sm={4}>
+                      <TextField
+                        sx={inputSx}
+                        fullWidth
+                        required
+                        size="small"
+                        label="Dirección o E-mail del destinatario *"
+                        value={form.salida.destinatarioDireccionEmail || ''}
+                        onChange={(e) => update('salida', 'destinatarioDireccionEmail', e.target.value)}
+                      />
+                    </Grid>
+                    <Grid item xs={12} sm={4}>
+                      <TextField
+                        sx={inputSx}
+                        fullWidth
+                        required
+                        size="small"
+                        label="Teléfono del destinatario *"
+                        value={form.salida.destinatarioTelefono || ''}
+                        onChange={(e) => update('salida', 'destinatarioTelefono', e.target.value)}
+                      />
+                    </Grid>
+                    <Grid item xs={12} sm={4}>
+                      <TextField
+                        sx={inputSx}
+                        fullWidth
+                        required
+                        size="small"
+                        label="Ciudad, Depto, provincia *"
+                        value={form.salida.destinatarioUbicacion || ''}
+                        onChange={(e) => update('salida', 'destinatarioUbicacion', e.target.value)}
+                      />
+                    </Grid>
+
+                    <Grid item xs={12} sm={6}>
+                      <TextField
+                        sx={inputSx}
+                        fullWidth
+                        size="small"
+                        label="País (Opcional, para envíos internacionales)"
+                        value={form.salida.destinatarioPais || ''}
+                        onChange={(e) => update('salida', 'destinatarioPais', e.target.value)}
+                      />
+                    </Grid>
+                    <Grid item xs={12} sm={6}>
+                      <TextField
+                        sx={inputSx}
+                        fullWidth
+                        size="small"
+                        label="Anexos (Ej. Copia acta, soportes. Opcional)"
+                        value={form.salida.oficioAnexos || ''}
+                        onChange={(e) => update('salida', 'oficioAnexos', e.target.value)}
+                      />
+                    </Grid>
+
+                    <Grid item xs={12}>
+                      <TextField
+                        sx={inputSx}
+                        fullWidth
+                        required
+                        size="small"
+                        label="Asunto de la carta (síntesis del tema) *"
+                        value={form.salida.oficioAsunto || ''}
+                        onChange={(e) => update('salida', 'oficioAsunto', e.target.value)}
+                      />
+                    </Grid>
+
+                    <Grid item xs={12} sm={4}>
+                      <TextField
+                        select
+                        sx={inputSx}
+                        fullWidth
+                        size="small"
+                        label="Despedida formal"
+                        value={form.salida.oficioDespedida || ''}
+                        onChange={(e) => update('salida', 'oficioDespedida', e.target.value)}
+                      >
+                        <MenuItem value="Cordialmente,">Cordialmente,</MenuItem>
+                        <MenuItem value="Atentamente,">Atentamente,</MenuItem>
+                        <MenuItem value="Sinceramente,">Sinceramente,</MenuItem>
+                        <MenuItem value="Respetuoso y atento,">Respetuoso y atento,</MenuItem>
+                      </TextField>
+                    </Grid>
+                    <Grid item xs={12} sm={8}>
+                      <TextField
+                        sx={inputSx}
+                        fullWidth
+                        size="small"
+                        label="Proyectó (Nombre de quien redacta)"
+                        value={form.salida.oficioProyecto || ''}
+                        onChange={(e) => update('salida', 'oficioProyecto', e.target.value)}
+                      />
+                    </Grid>
+
+                    <Grid item xs={12}>
+                      <TextField
+                        sx={inputSx}
+                        fullWidth
+                        required
+                        multiline
+                        rows={4}
+                        size="small"
+                        label="Cuerpo del oficio / Descripción detallada *"
+                        helperText="Se pre-completa automáticamente, pero puede editarlo libremente."
+                        value={form.salida.oficioCuerpo || ''}
+                        onChange={(e) => update('salida', 'oficioCuerpo', e.target.value)}
+                      />
+                    </Grid>
+                  </Grid>
                 </Box>
               )}
 
