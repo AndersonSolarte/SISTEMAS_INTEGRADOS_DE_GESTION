@@ -217,6 +217,7 @@ testConnection()
         }
       };
       await addUserColumn('dependencia');
+      await addUserColumn('vicerrectoria');
       await addUserColumn('cargo');
       await addUserColumn('jefe_inmediato');
       await addUserColumn('welcome_email_sent', DataTypes.BOOLEAN, false);

@@ -12,6 +12,7 @@ const addUserManagement = async () => {
       ALTER TABLE users ADD COLUMN IF NOT EXISTS reset_token_expiry TIMESTAMP;
       ALTER TABLE users ADD COLUMN IF NOT EXISTS last_login TIMESTAMP;
       ALTER TABLE users ADD COLUMN IF NOT EXISTS must_change_password BOOLEAN DEFAULT FALSE;
+      ALTER TABLE users ADD COLUMN IF NOT EXISTS vicerrectoria VARCHAR(220);
       
       -- Agregar campos de auditoría a documentos
       ALTER TABLE documentos ADD COLUMN IF NOT EXISTS creado_por INTEGER REFERENCES users(id);

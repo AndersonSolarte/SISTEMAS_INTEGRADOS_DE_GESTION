@@ -113,7 +113,7 @@ const renderObservationHistory = (jefeObs, ghObs, row) => {
       items.push({
         type: 'gh',
         roleLabel: 'Talento Humano',
-        actor: parsed.actor || 'Gestión Humana',
+        actor: parsed.actor || 'Gestión del Talento Humano',
         timestamp: parsed.timestamp || '',
         action: parsed.action,
         comment: parsed.comment,

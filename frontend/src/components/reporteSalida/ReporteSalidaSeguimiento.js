@@ -78,7 +78,7 @@ const ACCESS_COPY = {
 
 const STATUS_LABELS = {
   pendiente_aprobacion_jefe: 'Pendiente Jefe',
-  pendiente_aprobacion_gestion_humana: 'Pendiente Talento Humano',
+  pendiente_aprobacion_gestion_humana: 'Pendiente Gestión del Talento Humano',
   pendiente_aprobacion_sst: 'Pendiente SST',
   finalizada: 'Aprobada',
   no_aprobada: 'No Aprobada'
@@ -233,7 +233,7 @@ const renderObservationHistory = (jefeObs, ghObs, row) => {
       items.push({
         type: 'gh',
         roleLabel: 'Talento Humano',
-        actor: parsed.actor || 'Gestión Humana',
+        actor: parsed.actor || 'Gestión del Talento Humano',
         timestamp: parsed.timestamp || '',
         action: parsed.action,
         comment: parsed.comment,

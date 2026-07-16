@@ -42,7 +42,8 @@ const DEPENDENCY_EMAILS_RAW = {
   "Tecnología En Marketing Digital": "admon@unicesmag.edu.co",
   "Vicerrectoria Academica": "viceacad@unicesmag.edu.co",
   "Vicerrectoria de Investigacion y Extension": "viceinvestiga@unicesmag.edu.co",
-  "Vicerrectoria Financiera y de Desarrollo Institucional": "vicefin@unicesmag.edu.co",
+  "Vicerrectoria Financiera y de Desarrollo Institucional": "viceadfin@unicesmag.edu.co",
+  "Vicerrectoria para la Evangelizacion de las Culturas": "vicebien@unicesmag.edu.co",
   "Vicerrectoría para la Evangelizacion de las Culturas": "vicebien@unicesmag.edu.co"
 };
 

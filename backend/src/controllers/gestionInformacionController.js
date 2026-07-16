@@ -4941,12 +4941,30 @@ const getEstadisticas = async (req, res) => {
         ESPANA: 'España',
         'ESTADOS UNIDOS': 'Estados Unidos'
       };
+      const COUNTRY_VALUE_OVERRIDES = {
+        NARINO: 'Colombia',
+        NO: 'Colombia',
+        'UNIVERSIDAD DEL VALLE': 'Colombia',
+        'INFOTEC SOLUCIONES S A S': 'Colombia',
+        'UNIVERSIDAD CATOLICA': 'Colombia',
+        'COLOMBIA PERU': 'Colombia',
+        'MEXICO ECUADOR BRASIL': 'México',
+        'ECUADOR PERU MEXICO': 'Ecuador',
+        ESCUADOR: 'Ecuador',
+        SALVADOR: 'El Salvador',
+        '32 ARGENTINA': 'Argentina',
+        '862 VEN': 'Venezuela',
+        '840 ESTADOS UNIDOS': 'Estados Unidos',
+        'E E U U': 'Estados Unidos',
+        '484 MEX': 'México',
+        'CHILE 152': 'Chile'
+      };
       const COUNTRY_MATCHERS = [
         { name: 'Colombia', patterns: [/COLOMBIA/, /170\s*COL$/, /^COL$/, /^CO$/, /^170$/] },
         { name: 'Ecuador', patterns: [/ECUADOR/, /ESCUADOR/, /(^|[^A-Z])ECU([^A-Z]|$)/, /218\s*ECU/, /^EC$/, /^218$/] },
         { name: 'México', patterns: [/MEXICO/, /(^|[^A-Z])MEX([^A-Z]|$)/, /484\s*MEX/, /^484$/] },
         { name: 'Perú', patterns: [/PERU/, /604\s*PER/, /^604$/] },
-        { name: 'Chile', patterns: [/CHILE/, /152\s*CHI/, /^152$/] },
+        { name: 'Chile', patterns: [/CHILE/, /152\s*CHI/, /^152$/, /^CL$/] },
         { name: 'El Salvador', patterns: [/EL SALVADOR/, /^SALVADOR$/] },
         { name: 'Brasil', patterns: [/BRASIL/, /BRAZIL/, /^76$/] },
         { name: 'Argentina', patterns: [/ARGENTINA/, /^32$/] },
@@ -4994,7 +5012,8 @@ const getEstadisticas = async (req, res) => {
       const toArr = (obj) => Object.entries(obj).map(([name, value]) => ({ name, value })).sort((a, b) => b.value - a.value);
       const normalizeCountryName = (value = '') => {
         const key = normalizeFilterKey(value);
-        if (!key || ['N A', 'NA', 'N/A', 'NO', 'SIN DATO', 'REGIONAL', 'OTRO', 'OTROS', 'NO APLICA'].includes(key)) return 'Sin dato';
+        if (!key || ['N A', 'NA', 'N/A', 'SIN DATO', 'REGIONAL', 'OTRO', 'OTROS', 'NO APLICA'].includes(key)) return 'Sin dato';
+        if (COUNTRY_VALUE_OVERRIDES[key]) return COUNTRY_VALUE_OVERRIDES[key];
         const matches = COUNTRY_MATCHERS
           .filter((country) => country.patterns.some((pattern) => pattern.test(key)))
           .map((country) => country.name);

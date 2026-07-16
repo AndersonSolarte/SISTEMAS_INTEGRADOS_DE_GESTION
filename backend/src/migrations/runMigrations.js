@@ -261,16 +261,21 @@ const ensureReporteSalidaAdminBossSupport = async (qi) => {
     allowNull: true
   });
 
-  // Agregar valores de SST al enum de estado de solicitudes
-  try {
-    await sequelize.query(`ALTER TYPE "enum_reporte_salida_solicitudes_estado" ADD VALUE IF NOT EXISTS 'pendiente_aprobacion_sst'`);
-  } catch (e) {
-    console.log('[migrate] (ignorable) error al agregar sst_pendiente a enum:', e.message);
-  }
-  try {
-    await sequelize.query(`ALTER TYPE "enum_reporte_salida_solicitudes_estado" ADD VALUE IF NOT EXISTS 'aprobada_sst'`);
-  } catch (e) {
-    console.log('[migrate] (ignorable) error al agregar sst_aprobada a enum:', e.message);
+  // Agregar valores nuevos al enum de estado de solicitudes
+  const reporteSalidaEstadoValues = [
+    'pendiente_aprobacion_vicerrectoria_academica',
+    'aprobada_vicerrectoria_academica',
+    'pendiente_aprobacion_rectoria',
+    'aprobada_rectoria',
+    'pendiente_aprobacion_sst',
+    'aprobada_sst'
+  ];
+  for (const enumValue of reporteSalidaEstadoValues) {
+    try {
+      await sequelize.query(`ALTER TYPE "enum_reporte_salida_solicitudes_estado" ADD VALUE IF NOT EXISTS '${enumValue}'`);
+    } catch (e) {
+      console.log(`[migrate] (ignorable) error al agregar ${enumValue} a enum:`, e.message);
+    }
   }
 
   // Asegurar columnas de SST, Gestión Humana y Reposiciones
@@ -299,12 +304,18 @@ const ensureReporteSalidaAdminBossSupport = async (qi) => {
   });
 
   await ensureColumn(qi, 'reporte_salida_solicitudes', 'jefe_aprobado_at', { type: DataTypes.DATE, allowNull: true });
+  await ensureColumn(qi, 'reporte_salida_solicitudes', 'vicerrectoria_aprobado_at', { type: DataTypes.DATE, allowNull: true });
+  await ensureColumn(qi, 'reporte_salida_solicitudes', 'rectoria_aprobado_at', { type: DataTypes.DATE, allowNull: true });
   await ensureColumn(qi, 'reporte_salida_solicitudes', 'gestion_humana_aprobado_at', { type: DataTypes.DATE, allowNull: true });
   await ensureColumn(qi, 'reporte_salida_solicitudes', 'finalizado_at', { type: DataTypes.DATE, allowNull: true });
   await ensureColumn(qi, 'reporte_salida_solicitudes', 'pdf_generado_at', { type: DataTypes.DATE, allowNull: true });
   await ensureColumn(qi, 'reporte_salida_solicitudes', 'aprobacion_jefe_token_hash', { type: DataTypes.STRING(128), allowNull: true });
+  await ensureColumn(qi, 'reporte_salida_solicitudes', 'aprobacion_vicerrectoria_token_hash', { type: DataTypes.STRING(128), allowNull: true });
+  await ensureColumn(qi, 'reporte_salida_solicitudes', 'aprobacion_rectoria_token_hash', { type: DataTypes.STRING(128), allowNull: true });
   await ensureColumn(qi, 'reporte_salida_solicitudes', 'aprobacion_gh_token_hash', { type: DataTypes.STRING(128), allowNull: true });
   await ensureColumn(qi, 'reporte_salida_solicitudes', 'correo_jefe_enviado_at', { type: DataTypes.DATE, allowNull: true });
+  await ensureColumn(qi, 'reporte_salida_solicitudes', 'correo_vicerrectoria_enviado_at', { type: DataTypes.DATE, allowNull: true });
+  await ensureColumn(qi, 'reporte_salida_solicitudes', 'correo_rectoria_enviado_at', { type: DataTypes.DATE, allowNull: true });
   await ensureColumn(qi, 'reporte_salida_solicitudes', 'correo_gh_enviado_at', { type: DataTypes.DATE, allowNull: true });
   await ensureColumn(qi, 'reporte_salida_solicitudes', 'correo_usuario_enviado_at', { type: DataTypes.DATE, allowNull: true });
   await ensureColumn(qi, 'reporte_salida_solicitudes', 'trazabilidad', { type: DataTypes.JSONB, allowNull: false, defaultValue: [] });
@@ -388,6 +399,7 @@ const runMigrations = async () => {
     await sequelize.query("CREATE INDEX IF NOT EXISTS user_activity_logs_action_idx ON user_activity_logs (action)");
 
     await ensureColumn(qi, 'users', 'dependencia', { type: DataTypes.STRING(220), allowNull: true });
+    await ensureColumn(qi, 'users', 'vicerrectoria', { type: DataTypes.STRING(220), allowNull: true });
     await ensureColumn(qi, 'users', 'cargo', { type: DataTypes.STRING(220), allowNull: true });
     await ensureColumn(qi, 'users', 'jefe_inmediato', { type: DataTypes.STRING(220), allowNull: true });
 

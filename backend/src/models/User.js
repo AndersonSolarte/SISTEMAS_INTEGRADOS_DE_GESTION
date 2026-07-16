@@ -9,6 +9,7 @@ const User = sequelize.define('users', {
   email: { type: DataTypes.STRING(100), allowNull: false, unique: false, validate: { isEmail: true } },
   username: { type: DataTypes.STRING(100), allowNull: true, unique: true },
   dependencia: { type: DataTypes.STRING(220), allowNull: true },
+  vicerrectoria: { type: DataTypes.STRING(220), allowNull: true },
   cargo: { type: DataTypes.STRING(220), allowNull: true },
   jefe_inmediato: { type: DataTypes.STRING(220), allowNull: true },
   password: { type: DataTypes.STRING(255), allowNull: false },

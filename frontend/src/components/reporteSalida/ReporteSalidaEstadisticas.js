@@ -27,7 +27,7 @@ const exportToExcel = (title, summaryData, isTime, rawData) => {
     borrador: 'Borrador',
     pendiente_aprobacion_jefe: 'Pendiente Jefe',
     no_aprobada: 'Rechazada',
-    pendiente_aprobacion_gestion_humana: 'Pendiente GH',
+    pendiente_aprobacion_gestion_humana: 'Pendiente Gestión del Talento Humano',
     pendiente_aprobacion_sst: 'Pendiente SST',
     finalizada: 'Aprobada'
   };

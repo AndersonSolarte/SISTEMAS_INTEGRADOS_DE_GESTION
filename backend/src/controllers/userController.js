@@ -269,6 +269,10 @@ const USER_HEADER_ALIASES = {
   dependencia: 'dependencia',
   dependencia_area: 'dependencia',
   area: 'dependencia',
+  vicerrectoria: 'vicerrectoria',
+  vicerectoria: 'vicerrectoria',
+  vicerrectoría: 'vicerrectoria',
+  vicerectoría: 'vicerrectoria',
   cargo: 'cargo',
   cargo_actual: 'cargo',
   jefe_inmediato: 'jefe_inmediato',
@@ -326,11 +330,12 @@ const sanitizeOptionalText = (value, max = 220) => {
   return clean ? clean.slice(0, max) : null;
 };
 
-const sanitizeUserPayload = ({ nombre, email, username, role, estado, dependencia, cargo, jefe_inmediato } = {}) => ({
+const sanitizeUserPayload = ({ nombre, email, username, role, estado, dependencia, vicerrectoria, cargo, jefe_inmediato } = {}) => ({
   nombre: String(nombre || '').trim().replace(/\s+/g, ' '),
   email: String(email || '').trim().toLowerCase(),
   username: normalizarDocumento(username),
   dependencia: sanitizeOptionalText(dependencia),
+  vicerrectoria: sanitizeOptionalText(vicerrectoria),
   cargo: sanitizeOptionalText(cargo),
   jefe_inmediato: sanitizeOptionalText(jefe_inmediato),
   role,
@@ -588,7 +593,7 @@ const performPhysicalUserDelete = async (userId) => {
 // CREAR USUARIO INDIVIDUAL
 const createUser = async (req, res) => {
   try {
-    const { nombre, email, username, role, dependencia, cargo, jefe_inmediato } = sanitizeUserPayload(req.body);
+    const { nombre, email, username, role, dependencia, vicerrectoria, cargo, jefe_inmediato } = sanitizeUserPayload(req.body);
     const numeroDocumento = username;
     const cleanEmail = email;
     
@@ -664,6 +669,7 @@ const createUser = async (req, res) => {
       email: cleanEmail,
       username: usernameFinal,
       dependencia,
+      vicerrectoria,
       cargo,
       jefe_inmediato,
       password: internalPassword,
@@ -735,6 +741,8 @@ const getUsers = async (req, res) => {
         { username: { [Op.iLike]: `%${search}%` } },
         { dependencia: { [Op.iLike]: `%${search}%` } },
         buildAccentInsensitiveCondition('dependencia', searchText),
+        { vicerrectoria: { [Op.iLike]: `%${search}%` } },
+        buildAccentInsensitiveCondition('vicerrectoria', searchText),
         { cargo: { [Op.iLike]: `%${search}%` } },
         buildAccentInsensitiveCondition('cargo', searchText),
         { jefe_inmediato: { [Op.iLike]: `%${search}%` } },
@@ -820,7 +828,7 @@ const getUsers = async (req, res) => {
 const updateUser = async (req, res) => {
   try {
     const { id } = req.params;
-    const { nombre, email, username, role, estado, dependencia, cargo, jefe_inmediato } = sanitizeUserPayload(req.body);
+    const { nombre, email, username, role, estado, dependencia, vicerrectoria, cargo, jefe_inmediato } = sanitizeUserPayload(req.body);
     
     const user = await User.findByPk(id);
     
@@ -920,6 +928,7 @@ const updateUser = async (req, res) => {
       email: email || user.email,
       username: username || user.username,
       dependencia: hasPayloadField('dependencia') ? dependencia : user.dependencia,
+      vicerrectoria: hasPayloadField('vicerrectoria') ? vicerrectoria : user.vicerrectoria,
       cargo: hasPayloadField('cargo') ? cargo : user.cargo,
       jefe_inmediato: hasPayloadField('jefe_inmediato') ? jefe_inmediato : user.jefe_inmediato,
       role: targetRole,
@@ -1109,6 +1118,7 @@ const downloadUsersTemplate = async (req, res) => {
       'NOMBRE_COMPLETO',
       'CORREO_INSTITUCIONAL',
       'DEPENDENCIA',
+      'VICERRECTORIA',
       'CARGO',
       'JEFE INMEDIATO',
       'ROL'
@@ -1117,6 +1127,7 @@ const downloadUsersTemplate = async (req, res) => {
     const worksheet = XLSX.utils.json_to_sheet([], { header: headers });
     worksheet['!cols'] = [
       { wch: 20 },
+      { wch: 35 },
       { wch: 35 },
       { wch: 35 },
       { wch: 35 },
@@ -1130,7 +1141,7 @@ const downloadUsersTemplate = async (req, res) => {
       {
         type: 'list',
         allowBlank: false,
-        sqref: `G2:G${maxRows}`,
+        sqref: `H2:H${maxRows}`,
         formula1: listFormula
       }
     ];
@@ -1231,6 +1242,7 @@ const bulkUploadUsersLegacy = async (req, res) => {
         const email = rowNormalized.email;
         const username = rowNormalized.username;
         const dependencia = sanitizeOptionalText(rowNormalized.dependencia);
+        const vicerrectoria = sanitizeOptionalText(rowNormalized.vicerrectoria);
         const cargo = sanitizeOptionalText(rowNormalized.cargo);
         const jefe_inmediato = sanitizeOptionalText(rowNormalized.jefe_inmediato);
         const roleInput = rowNormalized.role;
@@ -1292,6 +1304,7 @@ const bulkUploadUsersLegacy = async (req, res) => {
           email: cleanEmail,
           username: usernameFinal,
           dependencia,
+          vicerrectoria,
           cargo,
           jefe_inmediato,
           password: internalPassword,
@@ -1397,13 +1410,14 @@ const bulkUploadUsers = async (req, res) => {
         email: cleanEmail,
         username,
         dependencia: sanitizeOptionalText(mapped.dependencia),
+        vicerrectoria: sanitizeOptionalText(mapped.vicerrectoria),
         cargo: sanitizeOptionalText(mapped.cargo),
         jefe_inmediato: sanitizeOptionalText(mapped.jefe_inmediato),
         roleInput,
         role,
         targetRole: role || ROLES.CONSULTA
       };
-    }).filter((row) => row.nombre || row.email || row.username || row.dependencia || row.cargo || row.jefe_inmediato || row.roleInput);
+    }).filter((row) => row.nombre || row.email || row.username || row.dependencia || row.vicerrectoria || row.cargo || row.jefe_inmediato || row.roleInput);
 
     results.total = normalizedRows.length;
 
@@ -1414,6 +1428,7 @@ const bulkUploadUsers = async (req, res) => {
         nombre: row?.nombre || '',
         email: row?.email || '',
         dependencia: row?.dependencia || '',
+        vicerrectoria: row?.vicerrectoria || '',
         cargo: row?.cargo || '',
         jefe_inmediato: row?.jefe_inmediato || '',
         rol: row?.roleInput || row?.targetRole || '',
@@ -1474,7 +1489,7 @@ const bulkUploadUsers = async (req, res) => {
             { username: { [Op.in]: validRows.map((row) => row.username) } }
           ]
         },
-        attributes: ['id', 'email', 'username', 'role', 'estado']
+        attributes: ['id', 'email', 'username', 'role', 'estado', 'dependencia', 'vicerrectoria', 'cargo', 'jefe_inmediato']
       })
       : [];
 
@@ -1600,6 +1615,7 @@ const bulkUploadUsers = async (req, res) => {
           email: row.email,
           username: row.username,
           dependencia: row.dependencia || existing.dependencia,
+          vicerrectoria: row.vicerrectoria || existing.vicerrectoria,
           cargo: row.cargo || existing.cargo,
           jefe_inmediato: row.jefe_inmediato || existing.jefe_inmediato,
           role: finalRole,
@@ -1620,6 +1636,7 @@ const bulkUploadUsers = async (req, res) => {
           email: row.email,
           username: row.username,
           dependencia: row.dependencia,
+          vicerrectoria: row.vicerrectoria,
           cargo: row.cargo,
           jefe_inmediato: row.jefe_inmediato,
           password: hashedImportPassword,
@@ -1746,8 +1763,9 @@ const getUserFieldSuggestions = async (req, res) => {
         .sort((a, b) => a.localeCompare(b, 'es', { sensitivity: 'base' }));
     };
 
-    const [dependencias, cargos, jefesInmediatos] = await Promise.all([
+    const [dependencias, vicerrectorias, cargos, jefesInmediatos] = await Promise.all([
       loadDistinctValues('dependencia'),
+      loadDistinctValues('vicerrectoria'),
       loadDistinctValues('cargo'),
       loadDistinctValues('jefe_inmediato')
     ]);
@@ -1756,6 +1774,7 @@ const getUserFieldSuggestions = async (req, res) => {
       success: true,
       data: {
         dependencias,
+        vicerrectorias,
         cargos,
         jefesInmediatos
       }
@@ -2107,6 +2126,7 @@ const exportPendingNotificationUsers = async (req, res) => {
       NOMBRE_COMPLETO: u.nombre || '',
       CORREO_INSTITUCIONAL: u.email || '',
       DEPENDENCIA: u.dependencia || '',
+      VICERRECTORIA: u.vicerrectoria || '',
       CARGO: u.cargo || '',
       JEFE_INMEDIATO: u.jefe_inmediato || '',
       ROL: ROLE_LABELS[u.role] || u.role || '',
@@ -2117,6 +2137,7 @@ const exportPendingNotificationUsers = async (req, res) => {
     worksheet['!cols'] = [
       { wch: 20 },
       { wch: 40 },
+      { wch: 35 },
       { wch: 35 },
       { wch: 35 },
       { wch: 35 },

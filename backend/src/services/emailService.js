@@ -15,6 +15,7 @@ const transporter = nodemailer.createTransport({
 });
 
 const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:3000';
+const isLocal = frontendUrl.includes('localhost') || frontendUrl.includes('127.0.0.1');
 const INSTITUTIONAL_EMAIL_REGEX = /^[a-zA-Z0-9._%+-]+@unicesmag\.edu\.co$/i;
 
 const roleLabels = {
@@ -84,11 +85,12 @@ const renderInstitutionalTemplate = ({ title, introHtml, bodyHtml, senderHtml })
     <p style="margin: 0; font-weight: bold; color: #0b3a6f;">SIAC UNICESMAG</p>
     <p style="margin: 2px 0 0 0; font-size: 11.5px; color: #64748b;">Hombres nuevos para tiempos nuevos</p>
   `;
+  const imageSrc = isLocal ? 'cid:encabezadocorreos' : `${frontendUrl}/Encabezado_correos.png`;
   return `
   <div style="font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; max-width: 640px; margin: 0 auto; color: #0f172a; border: 1px solid #dbeafe; border-radius: 12px; overflow: hidden; box-shadow: 0 4px 12px rgba(11, 58, 111, 0.05); background-color: #ffffff;">
     <!-- Encabezado Institucional -->
     <div style="background-color: #ffffff; border-bottom: 1px solid #f1f5f9; text-align: center;">
-      <img src="cid:encabezadocorreos" alt="Universidad CESMAG" width="640" style="display: block; width: 640px; max-width: 100%; height: auto; margin: 0 auto; border: 0;" />
+      <img src="${imageSrc}" alt="Universidad CESMAG" width="640" style="display: block; width: 640px; max-width: 100%; height: auto; margin: 0 auto; border: 0;" />
     </div>
     
     <!-- Barra Azul -->

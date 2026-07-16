@@ -338,7 +338,7 @@ function GestionUsuarios() {
   const [clearSubmitting, setClearSubmitting] = useState(false);
   const [permissionsSaving, setPermissionsSaving] = useState(false);
   const [suggestionUsers, setSuggestionUsers] = useState([]);
-  const [fieldSuggestions, setFieldSuggestions] = useState({ dependencias: [], cargos: [], jefesInmediatos: [] });
+  const [fieldSuggestions, setFieldSuggestions] = useState({ dependencias: [], vicerrectorias: [], cargos: [], jefesInmediatos: [] });
   const [loadingSuggestions, setLoadingSuggestions] = useState(false);
   const [modulePermissionsForm, setModulePermissionsForm] = useState({
     menuPermissions: [],
@@ -358,6 +358,7 @@ function GestionUsuarios() {
     email: '',
     username: '',
     dependencia: '',
+    vicerrectoria: '',
     cargo: '',
     jefe_inmediato: '',
     role: ROLES.CONSULTA
@@ -478,6 +479,7 @@ function GestionUsuarios() {
         email: user.email,
         username: user.username,
         dependencia: user.dependencia || '',
+        vicerrectoria: user.vicerrectoria || '',
         cargo: user.cargo || '',
         jefe_inmediato: user.jefe_inmediato || '',
         role: user.role
@@ -488,6 +490,7 @@ function GestionUsuarios() {
         email: '',
         username: '',
         dependencia: '',
+        vicerrectoria: '',
         cargo: '',
         jefe_inmediato: '',
         role: defaultAssignableRole
@@ -499,7 +502,7 @@ function GestionUsuarios() {
   const handleCloseDialog = () => {
     setOpenDialog(false);
     setSelectedUser(null);
-    setFormData({ nombre: '', email: '', username: '', dependencia: '', cargo: '', jefe_inmediato: '', role: defaultAssignableRole });
+    setFormData({ nombre: '', email: '', username: '', dependencia: '', vicerrectoria: '', cargo: '', jefe_inmediato: '', role: defaultAssignableRole });
     setFormErrors({ nombre: '', email: '', username: '' });
   };
 
@@ -541,6 +544,7 @@ function GestionUsuarios() {
         email: String(formData.email || '').trim().toLowerCase(),
         username: String(formData.username || '').trim(),
         dependencia: String(formData.dependencia || '').trim(),
+        vicerrectoria: String(formData.vicerrectoria || '').trim(),
         cargo: String(formData.cargo || '').trim(),
         jefe_inmediato: String(formData.jefe_inmediato || '').trim()
       };
@@ -781,6 +785,7 @@ function GestionUsuarios() {
         NOMBRE_COMPLETO: u.nombre || '',
         CORREO_INSTITUCIONAL: u.email || '',
         DEPENDENCIA: u.dependencia || '',
+        VICERRECTORIA: u.vicerrectoria || '',
         CARGO: u.cargo || '',
         'JEFE INMEDIATO': u.jefe_inmediato || '',
         ROL: ROLE_LABELS[u.role] || u.role || '',
@@ -804,6 +809,7 @@ function GestionUsuarios() {
       const colWidths = [
         { wch: 20 },
         { wch: 40 },
+        { wch: 35 },
         { wch: 35 },
         { wch: 35 },
         { wch: 35 },
@@ -1295,6 +1301,7 @@ function GestionUsuarios() {
   }, [suggestionUsers, users]);
 
   const dependenciaOptions = useMemo(() => mergeUniqueOptions(fieldSuggestions.dependencias, suggestionRows, 'dependencia'), [fieldSuggestions.dependencias, mergeUniqueOptions, suggestionRows]);
+  const vicerrectoriaOptions = useMemo(() => mergeUniqueOptions(fieldSuggestions.vicerrectorias, suggestionRows, 'vicerrectoria'), [fieldSuggestions.vicerrectorias, mergeUniqueOptions, suggestionRows]);
   const cargoOptions = useMemo(() => mergeUniqueOptions(fieldSuggestions.cargos, suggestionRows, 'cargo'), [fieldSuggestions.cargos, mergeUniqueOptions, suggestionRows]);
   const jefeInmediatoOptions = useMemo(() => mergeUniqueOptions(fieldSuggestions.jefesInmediatos, suggestionRows, 'jefe_inmediato'), [fieldSuggestions.jefesInmediatos, mergeUniqueOptions, suggestionRows]);
 
@@ -1308,6 +1315,7 @@ function GestionUsuarios() {
         if (!ignore) {
           setFieldSuggestions({
             dependencias: response?.data?.dependencias || [],
+            vicerrectorias: response?.data?.vicerrectorias || [],
             cargos: response?.data?.cargos || [],
             jefesInmediatos: response?.data?.jefesInmediatos || []
           });
@@ -1349,6 +1357,7 @@ function GestionUsuarios() {
             user?.email,
             user?.username,
             user?.dependencia,
+            user?.vicerrectoria,
             user?.cargo,
             user?.jefe_inmediato,
             getCompactRoleLabel(user?.role),
@@ -1446,7 +1455,7 @@ function GestionUsuarios() {
                 Gestión de Usuarios
               </Typography>
               <Typography variant="body1" sx={{ color: 'rgba(255,255,255,0.9)', fontSize: { xs: 13, sm: 14, md: 16 } }}>
-                Administra usuarios del sistema institucional (documento, correo, dependencia, cargo, jefe inmediato y rol)
+                Administra usuarios del sistema institucional (documento, correo, dependencia, vicerrectoría, cargo, jefe inmediato y rol)
               </Typography>
             </Box>
           </Stack>
@@ -1702,7 +1711,7 @@ function GestionUsuarios() {
                       Buscar usuarios
                     </Typography>
                     <Typography sx={{ color: '#52657f', fontSize: 11.5, fontWeight: 600, lineHeight: 1.25 }}>
-                      Filtra por nombre, documento, correo, dependencia, cargo, jefe, rol o estado
+                      Filtra por nombre, documento, correo, dependencia, vicerrectoría, cargo, jefe, rol o estado
                     </Typography>
                   </Box>
                 </Stack>
@@ -1925,24 +1934,25 @@ function GestionUsuarios() {
                   <TableCell sx={{ width: '13%' }}>Nombre</TableCell>
                   <TableCell sx={{ width: '16%' }}>Email</TableCell>
                   <TableCell align="center" sx={{ width: '8%' }}>Documento</TableCell>
-                  <TableCell sx={{ width: '11%' }}>Dependencia</TableCell>
-                  <TableCell sx={{ width: '13%' }}>Cargo</TableCell>
-                  <TableCell sx={{ width: '13%' }}>Jefe inmediato</TableCell>
+                  <TableCell sx={{ width: '10%' }}>Dependencia</TableCell>
+                  <TableCell sx={{ width: '10%' }}>Vicerrectoría</TableCell>
+                  <TableCell sx={{ width: '12%' }}>Cargo</TableCell>
+                  <TableCell sx={{ width: '12%' }}>Jefe inmediato</TableCell>
                   <TableCell align="center" sx={{ width: '7%' }}>Rol</TableCell>
                   <TableCell align="center" sx={{ width: '7%' }}>Estado</TableCell>
-                  <TableCell align="center" sx={{ width: '12%' }}>Acciones</TableCell>
+                  <TableCell align="center" sx={{ width: '9%' }}>Acciones</TableCell>
                 </TableRow>
               </TableHead>
               <TableBody>
                 {loading ? (
                   <TableRow>
-                    <TableCell colSpan={9} align="center" sx={{ py: 8 }}>
+                    <TableCell colSpan={10} align="center" sx={{ py: 8 }}>
                       <CircularProgress />
                     </TableCell>
                   </TableRow>
                 ) : users.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={9} align="center" sx={{ py: 8 }}>
+                    <TableCell colSpan={10} align="center" sx={{ py: 8 }}>
                       <Typography color="text.secondary">No hay usuarios registrados</Typography>
                     </TableCell>
                   </TableRow>
@@ -1978,6 +1988,9 @@ function GestionUsuarios() {
                       </TableCell>
                       <TableCell sx={wrapCellSx}>
                         <span className="cellText">{user.dependencia || '-'}</span>
+                      </TableCell>
+                      <TableCell sx={wrapCellSx}>
+                        <span className="cellText">{user.vicerrectoria || '-'}</span>
                       </TableCell>
                       <TableCell sx={wrapCellSx}>
                         <span className="cellText">{user.cargo || '-'}</span>
@@ -2318,6 +2331,28 @@ function GestionUsuarios() {
                     {...params}
                     fullWidth
                     label="Dependencia"
+                    helperText="Elige una existente o escribe una nueva"
+                    inputProps={{ ...params.inputProps, maxLength: 220 }}
+                  />
+                )}
+                sx={smartAutocompleteSx}
+              />
+              <Autocomplete
+                freeSolo
+                autoHighlight
+                options={vicerrectoriaOptions}
+                value={formData.vicerrectoria || ''}
+                inputValue={formData.vicerrectoria || ''}
+                loading={loadingSuggestions}
+                loadingText="Cargando vicerrectorías..."
+                noOptionsText="Sin coincidencias, puedes escribir una nueva"
+                onChange={(event, newValue) => setFormData({ ...formData, vicerrectoria: newValue || '' })}
+                onInputChange={(event, newInputValue) => setFormData({ ...formData, vicerrectoria: newInputValue || '' })}
+                renderInput={(params) => (
+                  <TextField
+                    {...params}
+                    fullWidth
+                    label="Vicerrectoría"
                     helperText="Elige una existente o escribe una nueva"
                     inputProps={{ ...params.inputProps, maxLength: 220 }}
                   />
