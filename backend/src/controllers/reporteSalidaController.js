@@ -1246,6 +1246,13 @@ const buildTerapiasHtml = (solicitud) => {
   return `<div style="margin: 15px 0;"><strong>Detalle de terapias:</strong><table style="width:100%;border-collapse:collapse;margin-top:10px;font-size:13px;"><thead><tr><th style="text-align:center;padding:4px;border:1px solid #ddd;background:#f3f4f6;">#</th><th style="text-align:center;padding:4px;border:1px solid #ddd;background:#f3f4f6;">Fecha</th><th style="text-align:center;padding:4px;border:1px solid #ddd;background:#f3f4f6;">Horario</th></tr></thead><tbody>${rows}</tbody></table></div>`;
 };
 
+const getReporteSalidaEmailLabel = (solicitud) => {
+  const duracionTipo = solicitud.datos_formulario?.salida?.duracionTipo;
+  if (duracionTipo === '1_2_dias') return 'OFICIO DE SOLICITUD DE SALIDA - 1 O 2 DIAS';
+  if (duracionTipo === '3_mas_dias') return 'OFICIO DE SOLICITUD DE SALIDA - 3 O MAS DIAS';
+  return 'REPORTE DE SALIDA';
+};
+
 const sendJefeApprovalEmail = async (solicitud, token, attachments, headers = {}) => {
   const jefe = solicitud.jefe_snapshot || {};
   const solicitante = solicitud.solicitante_snapshot || {};
@@ -1253,7 +1260,7 @@ const sendJefeApprovalEmail = async (solicitud, token, attachments, headers = {}
   const rejectUrl = `${publicBackendUrl.replace(/\/$/, '')}/api/reporte-salida/rechazar/${encodeURIComponent(token)}`;
   
   const isOficio = solicitud.datos_formulario?.salida?.duracionTipo && solicitud.datos_formulario?.salida?.duracionTipo !== 'menos_media_jornada';
-  const labelText = isOficio ? 'OFICIO DE SOLICITUD DE SALIDA' : 'REPORTE DE SALIDA';
+  const labelText = getReporteSalidaEmailLabel(solicitud);
   
   const subject = `${labelText} ${solicitud.consecutivo} | Colaborador(a): ${solicitante.nombre || ''}`;
   const html = renderInstitutionalTemplate({
@@ -1291,7 +1298,7 @@ const sendJefeApprovalEmail = async (solicitud, token, attachments, headers = {}
 const sendColaboradorRadicacionEmail = async (solicitud, attachments) => {
   const solicitante = solicitud.solicitante_snapshot || {};
   const isOficio = solicitud.datos_formulario?.salida?.duracionTipo && solicitud.datos_formulario?.salida?.duracionTipo !== 'menos_media_jornada';
-  const labelText = isOficio ? 'OFICIO DE SOLICITUD DE SALIDA' : 'REPORTE DE SALIDA';
+  const labelText = getReporteSalidaEmailLabel(solicitud);
   const authorityAfterBoss = getAuthorityAfterBoss(solicitud);
   const approveLabel = authorityAfterBoss ? 'DAR VISTO BUENO' : 'AUTORIZAR SALIDA';
   const rejectLabel = authorityAfterBoss ? 'NO DAR VISTO BUENO' : 'NO AUTORIZAR SALIDA';
@@ -1331,7 +1338,7 @@ const sendDependenciaRadicacionInfoEmail = async (solicitud, attachments, header
   }
 
   const isOficio = solicitud.datos_formulario?.salida?.duracionTipo && solicitud.datos_formulario?.salida?.duracionTipo !== 'menos_media_jornada';
-  const labelText = isOficio ? 'OFICIO DE SOLICITUD DE SALIDA' : 'REPORTE DE SALIDA';
+  const labelText = getReporteSalidaEmailLabel(solicitud);
   const subject = `${labelText} ${solicitud.consecutivo} | Copia informativa dependencia`;
   const html = renderInstitutionalTemplate({
     title: `Copia informativa de radicacion - ${isOficio ? 'Oficio de salida' : 'Reporte de salida'}`,
@@ -1367,7 +1374,7 @@ const sendGestionHumanaApprovalEmail = async (solicitud, token, attachments) => 
   const rejectUrl = `${publicBackendUrl.replace(/\/$/, '')}/api/reporte-salida/rechazar/${encodeURIComponent(token)}`;
   
   const isOficio = solicitud.datos_formulario?.salida?.duracionTipo && solicitud.datos_formulario?.salida?.duracionTipo !== 'menos_media_jornada';
-  const labelText = isOficio ? 'OFICIO DE SOLICITUD DE SALIDA' : 'REPORTE DE SALIDA';
+  const labelText = getReporteSalidaEmailLabel(solicitud);
   
   const subject = `Re: ${labelText} ${solicitud.consecutivo} | Colaborador(a): ${solicitante.nombre || ''}`;
   const html = renderInstitutionalTemplate({
@@ -1411,7 +1418,7 @@ const sendAuthorityApprovalEmail = async ({ solicitud, token, authorityName, aut
   const approveUrl = `${publicBackendUrl.replace(/\/$/, '')}/api/reporte-salida/aprobar/${encodeURIComponent(token)}`;
   const rejectUrl = `${publicBackendUrl.replace(/\/$/, '')}/api/reporte-salida/rechazar/${encodeURIComponent(token)}`;
   const isOficio = solicitud.datos_formulario?.salida?.duracionTipo && solicitud.datos_formulario?.salida?.duracionTipo !== 'menos_media_jornada';
-  const labelText = isOficio ? 'OFICIO DE SOLICITUD DE SALIDA' : 'REPORTE DE SALIDA';
+  const labelText = getReporteSalidaEmailLabel(solicitud);
   const subject = `Re: ${labelText} ${solicitud.consecutivo} | Colaborador(a): ${solicitante.nombre || ''}`;
   const html = renderInstitutionalTemplate({
     title: `Aprobacion pendiente de ${stageLabel}`,
@@ -1455,7 +1462,7 @@ const sendSSTApprovalEmail = async (solicitud, token, attachments) => {
   const rejectUrl = `${publicBackendUrl.replace(/\/$/, '')}/api/reporte-salida/rechazar/${encodeURIComponent(token)}`;
   
   const isOficio = solicitud.datos_formulario?.salida?.duracionTipo && solicitud.datos_formulario?.salida?.duracionTipo !== 'menos_media_jornada';
-  const labelText = isOficio ? 'OFICIO DE SOLICITUD DE SALIDA' : 'REPORTE DE SALIDA';
+  const labelText = getReporteSalidaEmailLabel(solicitud);
   
   const subject = `Re: ${labelText} ${solicitud.consecutivo} | Colaborador(a): ${solicitante.nombre || ''}`;
   const alcance = solicitud.datos_formulario?.salida?.alcance || 'Nacional/Internacional';
@@ -1504,7 +1511,7 @@ const sendFinalEmails = async (solicitud, pdfAttachment, supportAttachment) => {
   const headers = threadId ? { 'In-Reply-To': threadId, 'References': threadId } : {};
   
   const isOficio = solicitud.datos_formulario?.salida?.duracionTipo && solicitud.datos_formulario?.salida?.duracionTipo !== 'menos_media_jornada';
-  const labelText = isOficio ? 'OFICIO DE SOLICITUD DE SALIDA' : 'REPORTE DE SALIDA';
+  const labelText = getReporteSalidaEmailLabel(solicitud);
   
   const threadSubject = `Re: ${labelText} ${solicitud.consecutivo} | Colaborador(a): ${nombreColaborador}`;
   const flowSST = solicitud.datos_formulario?.salida?.alcance === 'Internacional' || solicitud.datos_formulario?.salida?.alcance === 'Nacional';
