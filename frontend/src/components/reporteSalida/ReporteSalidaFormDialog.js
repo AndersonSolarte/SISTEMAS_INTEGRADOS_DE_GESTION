@@ -138,6 +138,14 @@ const ALCANCE_OPTIONS = [
   'Internacional'
 ];
 
+const VICERRECTORIA_OPTIONS = [
+  'Rectoria',
+  'Vicerrectoria Academica',
+  'Vicerrectoria de Investigacion y Extension',
+  'Vicerrectoria Financiera y de Desarrollo Institucional',
+  'Vicerrectoria para la Evangelizacion de las Culturas'
+];
+
 const PAISES_OPTIONS = [
   'Afganistán', 'Alemania', 'Andorra', 'Angola', 'Antigua y Barbuda', 'Arabia Saudita', 'Argelia', 'Argentina',
   'Armenia', 'Australia', 'Austria', 'Azerbaiyán', 'Bahamas', 'Bangladés', 'Barbados', 'Baréin', 'Bélgica',
@@ -946,6 +954,7 @@ function ReporteSalidaFormDialog({ open, documento, user, onClose, onSubmitted }
       });
     } else {
       if (!form.laboral.dependencia) issues.push('Seleccione la dependencia del/de la colaborador(a).');
+      if (!form.laboral.vicerrectoria) issues.push('Seleccione la vicerrectoria o Rectoria del/de la colaborador(a).');
       if (!form.laboral.cargo) issues.push('Seleccione el cargo del/de la colaborador(a).');
       if (!jefe) issues.push('Seleccione el jefe inmediato que aprobara la solicitud.');
       else if (!jefe.email) issues.push('El jefe inmediato seleccionado no tiene correo registrado.');
@@ -1060,6 +1069,7 @@ function ReporteSalidaFormDialog({ open, documento, user, onClose, onSubmitted }
     participantes,
     form.laboral.cargo,
     form.laboral.dependencia,
+    form.laboral.vicerrectoria,
     form.salida.fecha,
     form.salida.fechaRegreso,
     form.salida.horaFin,
@@ -1122,7 +1132,11 @@ function ReporteSalidaFormDialog({ open, documento, user, onClose, onSubmitted }
     return uniqueSorted(laboralRows.map((row) => row.cargo));
   }, [cargos, form.laboral.dependencia, laboralRows, selectedDependenciaIsCatalog]);
 
-  const vicerrectoriaOptions = useMemo(() => uniqueSorted(laboralRows.map((row) => row.vicerrectoria).filter(Boolean)), [laboralRows]);
+  const vicerrectoriaOptions = useMemo(() => uniqueSorted([
+    ...VICERRECTORIA_OPTIONS,
+    ...laboralRows.map((row) => row.vicerrectoria).filter(Boolean),
+    form.laboral.vicerrectoria
+  ].filter(Boolean)), [form.laboral.vicerrectoria, laboralRows]);
 
   useEffect(() => {
     if (!laboralRows.length) return;
@@ -1439,13 +1453,12 @@ function ReporteSalidaFormDialog({ open, documento, user, onClose, onSubmitted }
                   renderInput={(params) => <TextField {...params} sx={inputSx} fullWidth size="small" required label="Dependencia" placeholder="Buscar dependencia" />}
                 />
                 <Autocomplete
-                  freeSolo
                   fullWidth
                   openOnFocus
                   options={vicerrectoriaOptions}
                   value={form.laboral.vicerrectoria || ''}
                   onChange={(_, value) => update('laboral', 'vicerrectoria', value || '')}
-                  onInputChange={(_, value) => update('laboral', 'vicerrectoria', value || '')}
+                  isOptionEqualToValue={(option, value) => normalizeOption(option) === normalizeOption(value)}
                   ListboxProps={{ sx: autocompleteListSx }}
                   componentsProps={{
                     popper: {
@@ -1456,7 +1469,7 @@ function ReporteSalidaFormDialog({ open, documento, user, onClose, onSubmitted }
                       }
                     }
                   }}
-                  renderInput={(params) => <TextField {...params} sx={inputSx} fullWidth size="small" label="Vicerrectoría" placeholder="Buscar vicerrectoría" />}
+                  renderInput={(params) => <TextField {...params} sx={inputSx} fullWidth size="small" required label="Vicerrectoría" placeholder="Seleccione vicerrectoría o Rectoría" />}
                 />
                 <Autocomplete
                   freeSolo
