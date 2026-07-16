@@ -692,6 +692,12 @@ function ReporteSalidaFormDialog({ open, documento, user, onClose, onSubmitted }
     user?.nombre
   ]);
 
+  useEffect(() => {
+    if (form.salida.duracionTipo !== 'menos_media_jornada' && form.salida.tiempoReponerHoras) {
+      update('salida', 'tiempoReponerHoras', '');
+    }
+  }, [form.salida.duracionTipo, form.salida.tiempoReponerHoras]);
+
 
 
   const handleCategoryChange = (newCategory) => {
@@ -910,6 +916,7 @@ function ReporteSalidaFormDialog({ open, documento, user, onClose, onSubmitted }
   const reposicionHasAnyValue = Boolean(form.reposicion.fecha || form.reposicion.fechaFin || form.reposicion.horaInicio || form.reposicion.horaFin);
   const reposicionPlanComplete = Boolean(form.reposicion.fecha && form.reposicion.fechaFin && form.reposicion.horaInicio && form.reposicion.horaFin);
   const isOficioSolicitud = form.salida.duracionTipo !== 'menos_media_jornada';
+  const shouldRequestReposicionHoras = category === 'personales' && subtype === 'diligencia_personal' && !isOficioSolicitud;
   const reposicionRangeIssue = useMemo(() => {
     if (!reposicionHasAnyValue) return '';
     if (!reposicionPlanComplete) {
@@ -1218,7 +1225,7 @@ function ReporteSalidaFormDialog({ open, documento, user, onClose, onSubmitted }
           source: jefe.source || 'recurso_humano_administrativos'
         } : null),
         ...form,
-        reposicion_minutos: Math.round(parseFloat(form.salida.tiempoReponerHoras || 0) * 60)
+        reposicion_minutos: isOficioSolicitud ? 0 : Math.round(parseFloat(form.salida.tiempoReponerHoras || 0) * 60)
       };
       
       payload.salida = {
@@ -2231,7 +2238,7 @@ function ReporteSalidaFormDialog({ open, documento, user, onClose, onSubmitted }
                 <Box sx={responsiveFieldGrid(
                   subtype === 'urgencia_medica'
                     ? 'minmax(160px, 1fr) minmax(140px, 1fr)'
-                    : (category === 'personales' && subtype === 'diligencia_personal'
+                    : (shouldRequestReposicionHoras
                         ? 'minmax(160px, 1fr) minmax(140px, 0.8fr) minmax(160px, 1fr) minmax(140px, 0.8fr) minmax(165px, 0.9fr)'
                         : 'minmax(160px, 1fr) minmax(140px, 0.8fr) minmax(160px, 1fr) minmax(140px, 0.8fr)')
                 )}>
@@ -2278,7 +2285,7 @@ function ReporteSalidaFormDialog({ open, documento, user, onClose, onSubmitted }
                       />
                     </>
                   )}
-                  {category === 'personales' && subtype === 'diligencia_personal' && (
+                  {shouldRequestReposicionHoras && (
                     <TextField sx={inputSx} fullWidth size="small" required type="number" label="Tiempo a reponer (horas)" InputLabelProps={{ shrink: true }} inputProps={{ min: 0, step: 1 }} value={form.salida.tiempoReponerHoras || ''} onChange={(e) => update('salida', 'tiempoReponerHoras', e.target.value.replace(/[^0-9]/g, ''))} />
                   )}
                 </Box>
@@ -2405,7 +2412,7 @@ function ReporteSalidaFormDialog({ open, documento, user, onClose, onSubmitted }
               )}
             </Box>
 
-            {category === 'personales' && subtype === 'diligencia_personal' && (
+            {shouldRequestReposicionHoras && (
               <Alert severity={form.salida.tiempoReponerHoras ? 'success' : 'warning'}>
                 Tiempo solicitado: {parseInt(form.salida.tiempoReponerHoras || 0, 10)}h 00m
               </Alert>
