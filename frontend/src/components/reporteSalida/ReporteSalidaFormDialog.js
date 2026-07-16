@@ -954,7 +954,7 @@ function ReporteSalidaFormDialog({ open, documento, user, onClose, onSubmitted }
       });
     } else {
       if (!form.laboral.dependencia) issues.push('Seleccione la dependencia del/de la colaborador(a).');
-      if (!form.laboral.vicerrectoria) issues.push('Seleccione la vicerrectoria o Rectoria del/de la colaborador(a).');
+      if (isOficioSolicitud && !form.laboral.vicerrectoria) issues.push('Seleccione la vicerrectoria o Rectoria del/de la colaborador(a).');
       if (!form.laboral.cargo) issues.push('Seleccione el cargo del/de la colaborador(a).');
       if (!jefe) issues.push('Seleccione el jefe inmediato que aprobara la solicitud.');
       else if (!jefe.email) issues.push('El jefe inmediato seleccionado no tiene correo registrado.');
@@ -1469,7 +1469,7 @@ function ReporteSalidaFormDialog({ open, documento, user, onClose, onSubmitted }
                       }
                     }
                   }}
-                  renderInput={(params) => <TextField {...params} sx={inputSx} fullWidth size="small" required label="Vicerrectoría" placeholder="Seleccione vicerrectoría o Rectoría" />}
+                  renderInput={(params) => <TextField {...params} sx={inputSx} fullWidth size="small" required={isOficioSolicitud} label="Vicerrectoría" placeholder={isOficioSolicitud ? "Seleccione vicerrectoría o Rectoría" : "Opcional para media jornada"} />}
                 />
                 <Autocomplete
                   freeSolo
