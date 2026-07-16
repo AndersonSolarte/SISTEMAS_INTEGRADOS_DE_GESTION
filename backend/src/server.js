@@ -295,10 +295,40 @@ testConnection()
       const ReporteSalidaSolicitud = require('./models/ReporteSalidaSolicitud');
       const SystemSetting = require('./models/SystemSetting');
       await ReporteSalidaSolicitud.sync();
-      await sequelize.getQueryInterface().changeColumn('reporte_salida_solicitudes', 'jefe_inmediato_user_id', {
-        type: require('sequelize').DataTypes.INTEGER,
+      const reporteSalidaTableName = 'reporte_salida_solicitudes';
+      let reporteSalidaTable = await qi.describeTable(reporteSalidaTableName).catch(() => ({}));
+      const ensureReporteSalidaColumn = async (column, definition) => {
+        if (!reporteSalidaTable[column]) {
+          await qi.addColumn(reporteSalidaTableName, column, definition);
+          reporteSalidaTable[column] = definition;
+        }
+      };
+      for (const enumValue of [
+        'pendiente_aprobacion_vicerrectoria_academica',
+        'aprobada_vicerrectoria_academica',
+        'pendiente_aprobacion_rectoria',
+        'aprobada_rectoria',
+        'pendiente_aprobacion_sst',
+        'aprobada_sst'
+      ]) {
+        await sequelize.query(`ALTER TYPE "enum_reporte_salida_solicitudes_estado" ADD VALUE IF NOT EXISTS '${enumValue}'`).catch(() => null);
+      }
+      await qi.changeColumn(reporteSalidaTableName, 'jefe_inmediato_user_id', {
+        type: DataTypes.INTEGER,
         allowNull: true
       });
+      await ensureReporteSalidaColumn('jefe_aprobado_at', { type: DataTypes.DATE, allowNull: true });
+      await ensureReporteSalidaColumn('vicerrectoria_aprobado_at', { type: DataTypes.DATE, allowNull: true });
+      await ensureReporteSalidaColumn('rectoria_aprobado_at', { type: DataTypes.DATE, allowNull: true });
+      await ensureReporteSalidaColumn('gestion_humana_aprobado_at', { type: DataTypes.DATE, allowNull: true });
+      await ensureReporteSalidaColumn('enviado_sst_at', { type: DataTypes.DATE, allowNull: true });
+      await ensureReporteSalidaColumn('aprobacion_vicerrectoria_token_hash', { type: DataTypes.STRING(128), allowNull: true });
+      await ensureReporteSalidaColumn('aprobacion_rectoria_token_hash', { type: DataTypes.STRING(128), allowNull: true });
+      await ensureReporteSalidaColumn('aprobacion_sst_token_hash', { type: DataTypes.STRING(128), allowNull: true });
+      await ensureReporteSalidaColumn('correo_vicerrectoria_enviado_at', { type: DataTypes.DATE, allowNull: true });
+      await ensureReporteSalidaColumn('correo_rectoria_enviado_at', { type: DataTypes.DATE, allowNull: true });
+      await ensureReporteSalidaColumn('correo_sst_enviado_at', { type: DataTypes.DATE, allowNull: true });
+      await ensureReporteSalidaColumn('observacion_gestion_humana', { type: DataTypes.TEXT, allowNull: true });
       await SystemSetting.sync();
       console.log('[gestion-informacion] Tablas autoevaluacion listas.');
     } catch (e) {

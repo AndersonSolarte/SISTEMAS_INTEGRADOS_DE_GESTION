@@ -2287,11 +2287,22 @@ const radicarSolicitud = async (req, res) => {
     }
     const isOficio = salida.duracionTipo && salida.duracionTipo !== 'menos_media_jornada';
     const duracionDiasSolicitada = parseInt(salida.duracionDias, 10);
+    const selectedVicerrectoriaName = canonicalVicerrectoriaName(req.body.laboral?.vicerrectoria || req.user.vicerrectoria || '');
     if (salida.duracionTipo === '1_2_dias' && ![1, 2].includes(duracionDiasSolicitada)) {
       return res.status(400).json({ success: false, message: 'Seleccione si el permiso sera de 1 o 2 dias.' });
     }
     if (salida.duracionTipo === '3_mas_dias' && (!Number.isInteger(duracionDiasSolicitada) || duracionDiasSolicitada < 3)) {
       return res.status(400).json({ success: false, message: 'Digite una cantidad de dias igual o mayor a 3.' });
+    }
+    if (isOficio && !selectedVicerrectoriaName) {
+      return res.status(400).json({ success: false, message: 'Seleccione la vicerrectoria o Rectoria a la que pertenece el colaborador.' });
+    }
+    if (isOficio && selectedVicerrectoriaName && !sanitizeText(req.user.vicerrectoria, 220)) {
+      await User.update({ vicerrectoria: selectedVicerrectoriaName }, { where: { id: req.user.id } });
+      req.user.vicerrectoria = selectedVicerrectoriaName;
+      if (typeof req.user.setDataValue === 'function') {
+        req.user.setDataValue('vicerrectoria', selectedVicerrectoriaName);
+      }
     }
     
     // Dynamic Oficio generation on backend
@@ -2317,7 +2328,7 @@ const radicarSolicitud = async (req, res) => {
       const code = words.map(w => w[0]).join('').toUpperCase().slice(0, 5);
       codigoDependencia = code || 'DP';
 
-      const userVicerrectoriaName = canonicalVicerrectoriaName(req.body.laboral?.vicerrectoria || req.user.vicerrectoria || '');
+      const userVicerrectoriaName = selectedVicerrectoriaName;
       const oficioDirigidoARectoria = salida.duracionTipo === '3_mas_dias' || isRectoriaAuthority(userVicerrectoriaName);
       const oficioAuthorityName = oficioDirigidoARectoria ? 'Rectoria' : (userVicerrectoriaName || '');
       const oficioAuthorityEmail = oficioDirigidoARectoria ? RECTORIA_EMAIL : (getDependencyEmail(oficioAuthorityName) || '');
@@ -2449,7 +2460,7 @@ const radicarSolicitud = async (req, res) => {
         },
         laboral: {
           dependencia: cleanDependenciaLabel(req.body.laboral?.dependencia),
-          vicerrectoria: sanitizeText(req.body.laboral?.vicerrectoria || req.user.vicerrectoria, 220),
+          vicerrectoria: sanitizeText(selectedVicerrectoriaName || req.user.vicerrectoria, 220),
           cargo: sanitizeText(req.body.laboral?.cargo)
         },
         salida: {
