@@ -1020,6 +1020,14 @@ function ReporteSalidaFormDialog({ open, documento, user, onClose, onSubmitted }
       }
     }
 
+    if (form.salida.duracionTipo === '1_2_dias' && [1, 2].includes(Number(form.salida.duracionDias)) && form.salida.fecha && form.salida.fechaRegreso) {
+      const duracionDias = Number(form.salida.duracionDias);
+      const diasHabiles = countBusinessDays(form.salida.fecha, form.salida.fechaRegreso);
+      if (diasHabiles !== null && diasHabiles !== duracionDias) {
+        issues.push(`La cantidad seleccionada es ${duracionDias} dia(s), pero las fechas cubren ${diasHabiles} dia(s) habil(es). Ajuste la fecha de regreso o la cantidad de dias solicitados.`);
+      }
+    }
+
     if (subtype === 'terapias') {
       const list = form.salida.terapiasList || [];
       if (list.length === 0) {

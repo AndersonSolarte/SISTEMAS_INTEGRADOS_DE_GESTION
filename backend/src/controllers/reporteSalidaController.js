@@ -2298,6 +2298,15 @@ const radicarSolicitud = async (req, res) => {
     if (salida.duracionTipo === '1_2_dias' && ![1, 2].includes(duracionDiasSolicitada)) {
       return res.status(400).json({ success: false, message: 'Seleccione si el permiso sera de 1 o 2 dias.' });
     }
+    if (salida.duracionTipo === '1_2_dias' && [1, 2].includes(duracionDiasSolicitada)) {
+      const diasHabiles = countBusinessDays(salida.fecha, salida.fechaRegreso || salida.fecha);
+      if (diasHabiles !== null && diasHabiles !== duracionDiasSolicitada) {
+        return res.status(400).json({
+          success: false,
+          message: `La cantidad seleccionada es ${duracionDiasSolicitada} dia(s), pero las fechas cubren ${diasHabiles} dia(s) habil(es). Ajuste la fecha de regreso o la cantidad de dias solicitados.`
+        });
+      }
+    }
     if (salida.duracionTipo === '3_mas_dias' && (!Number.isInteger(duracionDiasSolicitada) || duracionDiasSolicitada < 3)) {
       return res.status(400).json({ success: false, message: 'Digite una cantidad de dias igual o mayor a 3.' });
     }

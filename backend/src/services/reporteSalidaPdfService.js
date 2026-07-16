@@ -356,6 +356,12 @@ const buildOficioPdfDefinition = (solicitud, ghDirectorNombre, ghDirectorCargo) 
   const hasVicerrectoriaApproval = Boolean(solicitud.vicerrectoria_aprobado_at);
   const hasRectoriaApproval = Boolean(solicitud.rectoria_aprobado_at);
   const vicerrectoriaName = laboral.vicerrectoria || solicitante.vicerrectoria || 'Vicerrectoria';
+  const normalizedVicerrectoria = stripAccents(vicerrectoriaName).toLowerCase();
+  const isRectoriaAuthority = normalizedVicerrectoria.includes('rectoria') && !normalizedVicerrectoria.includes('vicerrectoria') && !normalizedVicerrectoria.includes('vicerectoria');
+  const isOneOrTwoDaysOficio = salida.duracionTipo === '1_2_dias';
+  const isThreeOrMoreDaysOficio = salida.duracionTipo === '3_mas_dias';
+  const requiresVicerrectoriaSignature = (isOneOrTwoDaysOficio || isThreeOrMoreDaysOficio) && !isRectoriaAuthority;
+  const requiresRectoriaSignature = isThreeOrMoreDaysOficio || isRectoriaAuthority;
 
   const sstEvent = Array.isArray(solicitud.trazabilidad)
     ? solicitud.trazabilidad.find(t => t.event === 'aprobada_sst')
@@ -537,11 +543,11 @@ const buildOficioPdfDefinition = (solicitud, ghDirectorNombre, ghDirectorCargo) 
     ]
   );
 
-  if (hasVicerrectoriaApproval) {
+  if (requiresVicerrectoriaSignature && requiresRectoriaSignature) {
     signatureTableBody.push(
       [
         { text: `APROBACION de ${vicerrectoriaName}`, bold: true, alignment: 'center', fillColor: '#e0e0e0', fontSize: 9 },
-        { text: hasRectoriaApproval ? 'APROBACION de Rectoria' : '', bold: true, alignment: 'center', fillColor: '#e0e0e0', fontSize: 9 }
+        { text: 'APROBACION de Rectoria', bold: true, alignment: 'center', fillColor: '#e0e0e0', fontSize: 9 }
       ],
       [
         buildSignatureCell({
@@ -550,17 +556,32 @@ const buildOficioPdfDefinition = (solicitud, ghDirectorNombre, ghDirectorCargo) 
           cargo: vicerrectoriaName,
           date: vicerrectoriaDate
         }),
-        hasRectoriaApproval
-          ? buildSignatureCell({
-              signed: hasRectoriaApproval,
-              name: 'Rectoria',
-              cargo: 'Rectoria',
-              date: rectoriaDate
-            })
-          : {}
+        buildSignatureCell({
+          signed: hasRectoriaApproval,
+          name: 'Rectoria',
+          cargo: 'Rectoria',
+          date: rectoriaDate
+        })
       ]
     );
-  } else if (hasRectoriaApproval) {
+  } else if (requiresVicerrectoriaSignature) {
+    signatureTableBody.push(
+      [
+        { text: `APROBACION de ${vicerrectoriaName}`, bold: true, alignment: 'center', colSpan: 2, fillColor: '#e0e0e0', fontSize: 9 },
+        {}
+      ],
+      [
+        buildSignatureCell({
+          signed: hasVicerrectoriaApproval,
+          name: vicerrectoriaName,
+          cargo: vicerrectoriaName,
+          date: vicerrectoriaDate,
+          extra: { alignment: 'center', colSpan: 2 }
+        }),
+        {}
+      ]
+    );
+  } else if (requiresRectoriaSignature) {
     signatureTableBody.push(
       [
         { text: 'APROBACION de Rectoria', bold: true, alignment: 'center', colSpan: 2, fillColor: '#e0e0e0', fontSize: 9 },
