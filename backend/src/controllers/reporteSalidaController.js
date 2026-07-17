@@ -100,7 +100,18 @@ const normalizeEmail = (value) => String(value || '').trim().toLowerCase();
 const sameEmail = (left, right) => {
   const a = normalizeEmail(left);
   const b = normalizeEmail(right);
-  return Boolean(a && b && a === b);
+  if (!a || !b) return false;
+  if (a === b) return true;
+
+  const mapping = {
+    'sbolanos@unicesmag.edu.co': 'viceacad@unicesmag.edu.co',
+    'jajimenez@unicesmag.edu.co': 'viceinvestiga@unicesmag.edu.co',
+    'jcnandar@unicesmag.edu.co': 'viceadfin@unicesmag.edu.co',
+    'mpagreda@unicesmag.edu.co': 'vicebien@unicesmag.edu.co'
+  };
+
+  if (mapping[a] === b || mapping[b] === a) return true;
+  return false;
 };
 
 const tokenizeName = (value) => normalizeForMatch(value)
