@@ -4036,9 +4036,8 @@ const sendGHRejectionEmails = async ({ solicitud, justificacion, isSST = false }
       </div>
 
       <form action="${safeActionUrl}" method="POST">
-        <div class="btn-container">
-          <button type="button" class="ghost" onclick="closeWindow()">Cerrar ventana</button>
-          <button type="submit" class="primary">${escapeHtml(actionVerb)} solicitud</button>
+        <div class="btn-container" style="justify-content: center;">
+          <button type="submit" class="primary" style="width: 100%; max-width: 300px; padding: 14px 28px; font-size: 15px;">${escapeHtml(actionVerb)} solicitud</button>
         </div>
       </form>
       <div id="close-msg" class="close-alert">
@@ -4178,9 +4177,8 @@ const renderApprovalFormPageGrupo = ({ res, solicitud, token, count }) => {
       <p class="intro">Estás a punto de registrar la recepción y aprobación de Gestión del Talento Humano para el grupo de <strong>${count} colaboradores</strong> asociado a la solicitud consecutivo principal <strong>${safeConsecutivo}</strong>.</p>
       
       <form action="${safeActionUrl}" method="POST">
-        <div class="btn-container">
-          <button type="button" class="ghost" onclick="closeWindow()">Cerrar ventana</button>
-          <button type="submit" class="primary">Registrar Recibido Grupal</button>
+        <div class="btn-container" style="justify-content: center;">
+          <button type="submit" class="primary" style="width: 100%; max-width: 300px; padding: 14px 28px; font-size: 15px;">Registrar Recibido Grupal</button>
         </div>
       </form>
       <div id="close-msg" class="close-alert">
