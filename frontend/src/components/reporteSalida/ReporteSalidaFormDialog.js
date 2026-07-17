@@ -621,6 +621,7 @@ function ReporteSalidaFormDialog({ open, documento, user, onClose, onSubmitted }
   const [qrOpen, setQrOpen] = useState(false);
   const [qrCopied, setQrCopied] = useState(false);
   const [adjuntoFile, setAdjuntoFile] = useState(null);
+  const [adjuntoError, setAdjuntoError] = useState('');
   const [compartirAdjuntoJefe, setCompartirAdjuntoJefe] = useState(true);
   const [showSuccessModal, setShowSuccessModal] = useState(false);
   const [successResponse, setSuccessResponse] = useState(null);
