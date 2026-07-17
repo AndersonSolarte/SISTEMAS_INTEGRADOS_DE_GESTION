@@ -1114,7 +1114,13 @@ function ReporteSalidaFormDialog({ open, documento, user, onClose, onSubmitted }
     form.salida.oficioAsunto,
     form.salida.oficioCuerpo,
     form.salida.oficioAnexos,
-    form.salida.oficioProyecto
+    form.salida.oficioProyecto,
+    form.salida.especialidadMedica,
+    form.salida.alcance,
+    form.salida.pais,
+    form.salida.departamento,
+    form.salida.municipio,
+    form.salida.terapiasList
   ]);
 
   const selectedDependenciaIsCatalog = hasExactOption(form.laboral.dependencia, dependencias);

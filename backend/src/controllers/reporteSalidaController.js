@@ -3866,326 +3866,56 @@ const sendGHRejectionEmails = async ({ solicitud, justificacion, isSST = false }
   }
 
   return { userResult, bossResult };
-};const renderApprovalFormPage = ({ res, solicitud, token, stage }) => {
-  const consecutivo = solicitud?.consecutivo || '';
-  const solicitante = solicitud?.solicitante_snapshot?.nombre || '';
-  const safeConsecutivo = escapeHtml(consecutivo);
-  const safeSolicitante = escapeHtml(solicitante);
-  const safeActionUrl = escapeHtml(`${publicBackendUrl.replace(/\/$/, '')}/api/reporte-salida/aprobar/${encodeURIComponent(token)}`);
-  
-  let stageLabel = 'Jefe Inmediato';
-  let actionVerb = 'Autorizar';
-  if (stage === 'vicerrectoria_academica') {
-    stageLabel = solicitud?.datos_formulario?.laboral?.vicerrectoria || 'Vicerrectoría';
-    actionVerb = 'Dar Visto Bueno';
-  } else if (stage === 'rectoria') {
-    stageLabel = 'Rectoría';
-    actionVerb = 'Aprobar';
-  } else if (stage === 'gestion_humana') {
-    stageLabel = 'Gestión del Talento Humano';
-    actionVerb = 'Registrar Recibido';
-  } else if (stage === 'sst') {
-    stageLabel = 'Seguridad y Salud en el Trabajo (SST)';
-    actionVerb = 'Aprobar';
-  }
+};const renderAutoApprovePage = ({ res, token, isGrupo = false }) => {
+  const actionPath = isGrupo ? 'aprobar-grupo' : 'aprobar';
+  const safeActionUrl = escapeHtml(`${publicBackendUrl.replace(/\/$/, '')}/api/reporte-salida/${actionPath}/${encodeURIComponent(token)}`);
 
   return res.type('html').send(`<!doctype html>
 <html lang="es">
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Aprobar Solicitud | SIAC UNICESMAG</title>
+  <title>Procesando Aprobación | SIAC UNICESMAG</title>
   <style>
-    :root {
-      color-scheme: light;
-      font-family: Inter, "Segoe UI", Arial, sans-serif;
-      --ink: #0f172a;
-      --muted: #64748b;
-      --line: #dbe6f5;
-      --brand: #0b3a6f;
-      --navy: #0b1730;
-    }
-    * { box-sizing: border-box; }
     body {
       margin: 0;
       min-height: 100vh;
-      background:
-        radial-gradient(circle at 20% 0%, rgba(11, 58, 111, 0.1), transparent 32%),
-        linear-gradient(135deg, #f8fbff 0%, #eef4ff 48%, #f7fbff 100%);
-      color: var(--ink);
-      display: grid;
-      place-items: center;
-      padding: 28px;
-    }
-    .shell {
-      width: min(760px, 100%);
-      background: #fff;
-      border: 1px solid var(--line);
-      border-radius: 18px;
-      box-shadow: 0 24px 70px rgba(15, 23, 42, 0.16);
-      overflow: hidden;
-    }
-    .top {
-      padding: 22px 26px;
-      background: linear-gradient(90deg, #0b1730, #2457e6);
-      color: #fff;
-      display: flex;
-      align-items: center;
-      gap: 14px;
-    }
-    .brandmark {
-      width: 46px;
-      height: 46px;
-      border-radius: 14px;
-      background: rgba(255, 255, 255, 0.13);
-      border: 1px solid rgba(255, 255, 255, 0.24);
-      display: grid;
-      place-items: center;
-      font-weight: 900;
-      letter-spacing: .08em;
-    }
-    .brand-title { font-weight: 900; font-size: 18px; line-height: 1.15; }
-    .brand-subtitle { margin-top: 3px; color: #bfdbfe; font-size: 13px; }
-    .content { padding: 30px; }
-    h1 { margin: 0 0 8px 0; font-size: 26px; font-weight: 850; color: var(--navy); }
-    .intro { color: #334155; font-size: 15px; line-height: 1.5; margin: 0 0 24px 0; }
-    .meta-box {
       background: #f8fbff;
-      border: 1px solid var(--line);
-      border-radius: 12px;
-      padding: 20px;
-      margin-bottom: 24px;
-      display: grid;
-      grid-template-columns: 1fr 1fr;
-      gap: 16px;
-    }
-    .meta-item .label { font-size: 11px; text-transform: uppercase; color: var(--muted); font-weight: 900; letter-spacing: 0.05em; }
-    .meta-item .value { font-size: 16px; font-weight: 850; color: var(--navy); margin-top: 4px; }
-    .btn-container { display: flex; justify-content: flex-end; gap: 12px; }
-    button {
-      border: 0;
-      border-radius: 10px;
-      padding: 12px 24px;
-      font-weight: 850;
-      font-size: 14px;
-      cursor: pointer;
-      font-family: inherit;
-    }
-    button.primary {
-      background: var(--brand);
-      color: #fff;
-      box-shadow: 0 8px 20px rgba(11, 58, 111, 0.25);
-    }
-    button.ghost {
-      background: #eef4ff;
-      color: #1d4ed8;
-    }
-    .close-alert {
-      display: none;
-      margin-top: 20px;
-      padding: 14px;
-      background: #eff6ff;
-      border: 1px solid #bfdbfe;
-      border-radius: 12px;
-      color: #1e3a8a;
-      font-size: 13.5px;
-      text-align: center;
-      line-height: 1.5;
-      font-weight: 500;
-      box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05);
-    }
-  </style>
-  <script>
-    function closeWindow() {
-      const msgEl = document.getElementById('close-msg');
-      if (msgEl) {
-        msgEl.style.display = 'block';
-      }
-      try {
-        window.close();
-      } catch (e) {}
-      try {
-        var win = window.open('', '_self', '');
-        if (win) win.close();
-      } catch (e) {}
-    }
-  </script>
-</head>
-<body>
-  <main class="shell">
-    <section class="top">
-      <div class="brandmark">SIAC</div>
-      <div>
-        <div class="brand-title">UNICESMAG</div>
-        <div class="brand-subtitle">Reporte de salida | Aprobación digital</div>
-      </div>
-    </section>
-    <section class="content">
-      <h1>Confirmar Aprobación</h1>
-      <p class="intro">Estás a punto de registrar la aprobación para la solicitud detallada a continuación en calidad de <strong>${escapeHtml(stageLabel)}</strong>. Confirma para continuar.</p>
-      
-      <div class="meta-box">
-        <div class="meta-item">
-          <div class="label">Solicitud</div>
-          <div class="value">${safeConsecutivo}</div>
-        </div>
-        <div class="meta-item">
-          <div class="label">Colaborador</div>
-          <div class="value">${safeSolicitante}</div>
-        </div>
-      </div>
-
-      <form action="${safeActionUrl}" method="POST">
-        <div class="btn-container" style="justify-content: center;">
-          <button type="submit" class="primary" style="width: 100%; max-width: 300px; padding: 14px 28px; font-size: 15px;">${escapeHtml(actionVerb)} solicitud</button>
-        </div>
-      </form>
-      <div id="close-msg" class="close-alert">
-        Ya puedes cerrar esta pestaña de forma segura usando la <strong>X</strong> de tu navegador.
-      </div>
-    </section>
-  </main>
-</body>
-</html>`);
-};
-
-const renderApprovalFormPageGrupo = ({ res, solicitud, token, count }) => {
-  const safeConsecutivo = escapeHtml(solicitud?.consecutivo || '');
-  const safeActionUrl = escapeHtml(`${publicBackendUrl.replace(/\/$/, '')}/api/reporte-salida/aprobar-grupo/${encodeURIComponent(token)}`);
-
-  return res.type('html').send(`<!doctype html>
-<html lang="es">
-<head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Aprobar Grupo | SIAC UNICESMAG</title>
-  <style>
-    :root {
-      color-scheme: light;
+      color: #0f172a;
       font-family: Inter, "Segoe UI", Arial, sans-serif;
-      --ink: #0f172a;
-      --muted: #64748b;
-      --line: #dbe6f5;
-      --brand: #0b3a6f;
-      --navy: #0b1730;
-    }
-    * { box-sizing: border-box; }
-    body {
-      margin: 0;
-      min-height: 100vh;
-      background:
-        radial-gradient(circle at 20% 0%, rgba(11, 58, 111, 0.1), transparent 32%),
-        linear-gradient(135deg, #f8fbff 0%, #eef4ff 48%, #f7fbff 100%);
-      color: var(--ink);
       display: grid;
       place-items: center;
-      padding: 28px;
+      padding: 24px;
     }
-    .shell {
-      width: min(760px, 100%);
-      background: #fff;
-      border: 1px solid var(--line);
-      border-radius: 18px;
-      box-shadow: 0 24px 70px rgba(15, 23, 42, 0.16);
-      overflow: hidden;
-    }
-    .top {
-      padding: 22px 26px;
-      background: linear-gradient(90deg, #0b1730, #2457e6);
-      color: #fff;
-      display: flex;
-      align-items: center;
-      gap: 14px;
-    }
-    .brandmark {
-      width: 46px;
-      height: 46px;
-      border-radius: 14px;
-      background: rgba(255, 255, 255, 0.13);
-      border: 1px solid rgba(255, 255, 255, 0.24);
-      display: grid;
-      place-items: center;
-      font-weight: 900;
-      letter-spacing: .08em;
-    }
-    .brand-title { font-weight: 900; font-size: 18px; line-height: 1.15; }
-    .brand-subtitle { margin-top: 3px; color: #bfdbfe; font-size: 13px; }
-    .content { padding: 30px; }
-    h1 { margin: 0 0 8px 0; font-size: 26px; font-weight: 850; color: var(--navy); }
-    .intro { color: #334155; font-size: 15px; line-height: 1.5; margin: 0 0 24px 0; }
-    .btn-container { display: flex; justify-content: flex-end; gap: 12px; }
-    button {
-      border: 0;
-      border-radius: 10px;
-      padding: 12px 24px;
-      font-weight: 850;
-      font-size: 14px;
-      cursor: pointer;
-      font-family: inherit;
-    }
-    button.primary {
-      background: var(--brand);
-      color: #fff;
-      box-shadow: 0 8px 20px rgba(11, 58, 111, 0.25);
-    }
-    button.ghost {
-      background: #eef4ff;
-      color: #1d4ed8;
-    }
-    .close-alert {
-      display: none;
-      margin-top: 20px;
-      padding: 14px;
-      background: #eff6ff;
-      border: 1px solid #bfdbfe;
-      border-radius: 12px;
-      color: #1e3a8a;
-      font-size: 13.5px;
+    .loader-container {
       text-align: center;
-      line-height: 1.5;
-      font-weight: 500;
-      box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05);
     }
+    .spinner {
+      width: 50px;
+      height: 50px;
+      border: 5px solid #dbe6f5;
+      border-top-color: #0b3a6f;
+      border-radius: 50%;
+      animation: spin 1s linear infinite;
+      margin: 0 auto 20px;
+    }
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+    h2 { margin: 0 0 8px; color: #0b1730; font-size: 20px; }
+    p { margin: 0; color: #64748b; font-size: 14px; }
   </style>
-  <script>
-    function closeWindow() {
-      const msgEl = document.getElementById('close-msg');
-      if (msgEl) {
-        msgEl.style.display = 'block';
-      }
-      try {
-        window.close();
-      } catch (e) {}
-      try {
-        var win = window.open('', '_self', '');
-        if (win) win.close();
-      } catch (e) {}
-    }
-  </script>
 </head>
 <body>
-  <main class="shell">
-    <section class="top">
-      <div class="brandmark">SIAC</div>
-      <div>
-        <div class="brand-title">UNICESMAG</div>
-        <div class="brand-subtitle">Reporte de salida grupal | Aprobación digital</div>
-      </div>
-    </section>
-    <section class="content">
-      <h1>Confirmar Aprobación Grupal</h1>
-      <p class="intro">Estás a punto de registrar la recepción y aprobación de Gestión del Talento Humano para el grupo de <strong>${count} colaboradores</strong> asociado a la solicitud consecutivo principal <strong>${safeConsecutivo}</strong>.</p>
-      
-      <form action="${safeActionUrl}" method="POST">
-        <div class="btn-container" style="justify-content: center;">
-          <button type="submit" class="primary" style="width: 100%; max-width: 300px; padding: 14px 28px; font-size: 15px;">Registrar Recibido Grupal</button>
-        </div>
-      </form>
-      <div id="close-msg" class="close-alert">
-        Ya puedes cerrar esta pestaña de forma segura usando la <strong>X</strong> de tu navegador.
-      </div>
-    </section>
-  </main>
+  <div class="loader-container">
+    <div class="spinner"></div>
+    <h2>Procesando solicitud...</h2>
+    <p>Por favor espere un momento mientras se registra la aprobación.</p>
+  </div>
+  <form id="auto-form" action="${safeActionUrl}" method="POST"></form>
+  <script>
+    document.getElementById('auto-form').submit();
+  </script>
 </body>
 </html>`);
 };
@@ -4355,11 +4085,10 @@ const mostrarFormularioAprobacion = async (req, res) => {
       }
     }
 
-    return renderApprovalFormPage({
+    return renderAutoApprovePage({
       res,
-      solicitud,
       token: req.params.token,
-      stage: payload.stage
+      isGrupo: false
     });
   } catch (error) {
     console.error('Error mostrando formulario de aprobacion:', error);
@@ -4431,11 +4160,10 @@ const mostrarFormularioAprobacionGrupo = async (req, res) => {
 
     const solicitudEjemplo = solicitudes[0];
 
-    return renderApprovalFormPageGrupo({
+    return renderAutoApprovePage({
       res,
-      solicitud: solicitudEjemplo,
       token: req.params.token,
-      count: solicitudes.length
+      isGrupo: true
     });
   } catch (error) {
     console.error('Error mostrando formulario de aprobacion de grupo:', error);
