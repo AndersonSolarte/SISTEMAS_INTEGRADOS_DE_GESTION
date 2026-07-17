@@ -3866,7 +3866,7 @@ const sendGHRejectionEmails = async ({ solicitud, justificacion, isSST = false }
   }
 
   return { userResult, bossResult };
-};const renderAutoApprovePage = ({ res }) => {
+};const renderAutoApprovePage = ({ res, actionUrl }) => {
   return res.type('html').send(`<!doctype html>
 <html lang="es">
 <head>
@@ -3909,7 +3909,7 @@ const sendGHRejectionEmails = async ({ solicitud, justificacion, isSST = false }
     <h2>Procesando solicitud...</h2>
     <p>Por favor espere un momento mientras se registra la aprobación.</p>
   </div>
-  <form id="auto-form" method="POST"></form>
+  <form id="auto-form" action="${escapeHtml(actionUrl)}" method="POST"></form>
   <script>
     document.getElementById('auto-form').submit();
   </script>
@@ -4082,7 +4082,7 @@ const mostrarFormularioAprobacion = async (req, res) => {
       }
     }
 
-    return renderAutoApprovePage({ res });
+    return renderAutoApprovePage({ res, actionUrl: req.originalUrl });
   } catch (error) {
     console.error('Error mostrando formulario de aprobacion:', error);
     return renderApprovalPage({
@@ -4153,7 +4153,7 @@ const mostrarFormularioAprobacionGrupo = async (req, res) => {
 
     const solicitudEjemplo = solicitudes[0];
 
-    return renderAutoApprovePage({ res });
+    return renderAutoApprovePage({ res, actionUrl: req.originalUrl });
   } catch (error) {
     console.error('Error mostrando formulario de aprobacion de grupo:', error);
     return renderApprovalPage({
