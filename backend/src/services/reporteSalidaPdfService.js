@@ -6,6 +6,12 @@ const JSZip = require('jszip');
 const { getReporteSalidaTemplatePath } = require('../config/reporteSalidaConfig');
 
 const execFileAsync = promisify(execFile);
+const DEFAULT_DECLARACION_SIN_ADJUNTO_SALUD = 'Declaro que al momento de radicar esta solicitud no cuento con archivos adjuntos o soportes para cargar en el sistema. Entiendo que la Oficina de Gestion del Talento Humano y/o Seguridad y Salud en el Trabajo podran requerir en cualquier momento los soportes correspondientes; por tanto, me comprometo a conservarlos despues de la atencion o tramite y a suministrarlos oportunamente cuando sean solicitados.';
+
+const getDeclaracionSinAdjunto = (salida = {}) =>
+  salida.noCuentaAdjunto
+    ? (salida.declaracionSinAdjunto || DEFAULT_DECLARACION_SIN_ADJUNTO_SALUD)
+    : '';
 
 const escapePdfText = (value) =>
   String(value ?? '')
@@ -77,29 +83,29 @@ const formatMinutes = (minutes) => {
 
 const getTipoSalidaLabel = (tipo) => {
   const mapping = {
-    cita_eps: 'Cita médica por EPS',
-    cita_particular: 'Cita médica particular',
+    cita_eps: 'Cita medica por EPS',
+    cita_particular: 'Cita medica particular',
     diligencia_personal: 'Diligencia personal',
     compensatorio: 'Compensatorio',
-    voto_jurado: 'Permiso: Jurado de votación',
+    voto_jurado: 'Permiso: Jurado de votaciÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â³n',
     voto_sufragante: 'Permiso: Sufragante',
-    calamidad_domestica: 'Permiso: Calamidad doméstica',
-    entierro_companero: 'Permiso: Entierro compañeros',
+    calamidad_domestica: 'Permiso: Calamidad domÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â©stica',
+    entierro_companero: 'Permiso: Entierro compaÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â±eros',
     comision_sindical: 'Permiso: Comisiones sindicales',
     matrimonio: 'Permiso: Matrimonio',
     lactancia: 'Permiso: Lactancia',
-    luto_conyuge: 'Licencia luto: Cónyuge',
-    luto_companero: 'Licencia luto: Compañero(a)',
+    luto_conyuge: 'Licencia luto: CÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â³nyuge',
+    luto_companero: 'Licencia luto: CompaÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â±ero(a)',
     luto_familiar: 'Licencia luto: Familiar',
-    actos_funebres: 'Licencia: Actos fúnebres',
-    cuidado_ninez: 'Licencia: Cuidado niñez',
+    actos_funebres: 'Licencia: Actos fÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Âºnebres',
+    cuidado_ninez: 'Licencia: Cuidado niÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â±ez',
     calidad_servicio: 'Mejora en la calidad del servicio',
-    jurado_votacion: 'Permiso: Jurado de votación',
+    jurado_votacion: 'Permiso: Jurado de votaciÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â³n',
     sufragante: 'Permiso: Sufragante',
-    cargos_oficiales_transitorios: 'Permiso: Desempeño de cargos oficiales transitorios',
+    cargos_oficiales_transitorios: 'Permiso: DesempeÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â±o de cargos oficiales transitorios',
     comisiones_sindicales: 'Permiso: Comisiones sindicales',
     obligaciones_escolares: 'Permiso: Obligaciones escolares',
-    citaciones_judiciales: 'Permiso: Citaciones judiciales, administrativas y de policía',
+    citaciones_judiciales: 'Permiso: Citaciones judiciales, administrativas y de policÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â­a',
     cuidado_hijo_ley_2174: 'Permiso: Cuidado de hijo(a) - Ley 2174 de 2021'
   };
   if (!tipo) return '';
@@ -200,7 +206,7 @@ const fillReporteSalidaRows = (xml, values) => {
   set(21, 1, ` Nombres y apellidos: ${values.jefeNombre}`);
   set(22, 1, ` Cargo: ${values.jefeCargo}`);
   set(23, 1, ` Cedula: ${values.jefeDocumento}`);
-  set(25, 1, `RECIBIDO (Gestión del Talento Humano)\n\nFirma: ______________________________       Fecha:  ${values.ghFecha || '_________________________'}`);
+  set(25, 1, `RECIBIDO (GestiÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â³n del Talento Humano)\n\nFirma: ______________________________       Fecha:  ${values.ghFecha || '_________________________'}`);
 
   let updatedXml = xml;
   originalRows.forEach((row, index) => {
@@ -305,9 +311,10 @@ const buildLines = (solicitud) => {
     `Fecha salida: ${formatDate(salida.fecha)}`,
     `Fecha regreso: ${formatDate(salida.fechaRegreso || salida.fechaFin || salida.fecha)}`,
     `Hora inicio: ${formatTimeAmPm(salida.horaInicio)}`,
-    `Hora fin: ${formatTimeAmPm(salida.horaFin)}`,
+    `Hora fin: ${salida.categoria === 'salud' && salida.tipo !== 'terapias' && !salida.horaFin ? 'No especificada' : formatTimeAmPm(salida.horaFin)}`,
     `Tiempo solicitado: ${formatMinutes(solicitud.tiempo_solicitado_minutos)}`,
     `Motivo / observacion: ${salida.motivo || ''}`,
+    ...(getDeclaracionSinAdjunto(salida) ? [`Declaracion de soportes: ${getDeclaracionSinAdjunto(salida)}`] : []),
     '',
     'DATOS DE REPOSICION',
     `Fecha reposicion: ${formatDate(reposicion.fecha)}`,
@@ -320,7 +327,7 @@ const buildLines = (solicitud) => {
     'APROBACIONES',
     `Jefe inmediato: ${jefe.nombre || ''} - ${jefe.email || ''}`,
     `Aprobacion jefe: ${solicitud.jefe_aprobado_at ? formatDate(solicitud.jefe_aprobado_at) : 'Pendiente'}`,
-    `Aprobacion Gestión del Talento Humano: ${solicitud.gestion_humana_aprobado_at ? formatDate(solicitud.gestion_humana_aprobado_at) : 'Pendiente'}`,
+    `Aprobacion GestiÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â³n del Talento Humano: ${solicitud.gestion_humana_aprobado_at ? formatDate(solicitud.gestion_humana_aprobado_at) : 'Pendiente'}`,
     '',
     'Este PDF fue generado automaticamente desde SIAC UNICESMAG con la informacion diligenciada en el formulario digital.'
   ];
@@ -386,26 +393,26 @@ const buildOficioPdfDefinition = (solicitud, ghDirectorNombre, ghDirectorCargo) 
   const signatureTableBody = [
     [
       { text: 'Firma del trabajador Solicitante', bold: true, alignment: 'center', fillColor: '#e0e0e0', fontSize: 9 },
-      { text: 'Autorización del Jefe inmediato', bold: true, alignment: 'center', fillColor: '#e0e0e0', fontSize: 9 }
+      { text: 'AutorizaciÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â³n del Jefe inmediato', bold: true, alignment: 'center', fillColor: '#e0e0e0', fontSize: 9 }
     ],
     [
       {
         text: [
-          { text: 'Firmado electrónicamente por:\n', bold: true, fontSize: 8 },
+          { text: 'Firmado electrÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â³nicamente por:\n', bold: true, fontSize: 8 },
           { text: `${solicitante.nombre || personal.nombre || ''}\n`, fontSize: 9 },
           { text: `Documento: ${solicitante.username || personal.documento || ''}\n`, fontSize: 7.5 },
           { text: `Fecha y hora: ${reqDate}\n`, fontSize: 7.5 },
-          { text: `ID Transacción: ${txId}\n`, fontSize: 7, color: 'gray' }
+          { text: `ID TransacciÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â³n: ${txId}\n`, fontSize: 7, color: 'gray' }
         ],
         margin: [5, 5, 5, 5]
       },
       {
         text: [
-          { text: solicitud.jefe_aprobado_at ? 'Firmado electrónicamente por:\n' : '\n', bold: true, fontSize: 8 },
+          { text: solicitud.jefe_aprobado_at ? 'Firmado electrÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â³nicamente por:\n' : '\n', bold: true, fontSize: 8 },
           { text: `${solicitud.jefe_aprobado_at ? (jefe.nombre || '') : 'Pendiente'}\n`, fontSize: 9 },
           { text: `Cargo: ${jefe.cargo || ''}\n`, fontSize: 7.5 },
           { text: `Fecha y hora: ${jefeDate}\n`, fontSize: 7.5 },
-          { text: solicitud.jefe_aprobado_at ? `ID Transacción: ${txId}\n` : '\n', fontSize: 7, color: 'gray' }
+          { text: solicitud.jefe_aprobado_at ? `ID TransacciÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â³n: ${txId}\n` : '\n', fontSize: 7, color: 'gray' }
         ],
         margin: [5, 5, 5, 5]
       }
@@ -442,27 +449,27 @@ const buildOficioPdfDefinition = (solicitud, ghDirectorNombre, ghDirectorCargo) 
       ]);
     }
     signatureTableBody.push([
-      { text: 'RECIBIDO (Gestión del Talento Humano)', bold: true, alignment: 'center', fillColor: '#e0e0e0', fontSize: 9 },
+      { text: 'RECIBIDO (GestiÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â³n del Talento Humano)', bold: true, alignment: 'center', fillColor: '#e0e0e0', fontSize: 9 },
       { text: 'APROBADO (Seguridad y Salud en el Trabajo)', bold: true, alignment: 'center', fillColor: '#e0e0e0', fontSize: 9 }
     ]);
     signatureTableBody.push([
       {
         text: [
-          { text: solicitud.gestion_humana_aprobado_at ? 'Firmado electrónicamente por:\n' : '\n', bold: true, fontSize: 8 },
+          { text: solicitud.gestion_humana_aprobado_at ? 'Firmado electrÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â³nicamente por:\n' : '\n', bold: true, fontSize: 8 },
           { text: `${solicitud.gestion_humana_aprobado_at ? ghDirectorNombre : 'Pendiente'}\n`, fontSize: 9 },
           { text: `Cargo: ${ghDirectorCargo}\n`, fontSize: 7.5 },
           { text: `Fecha y hora: ${ghDate}\n`, fontSize: 7.5 },
-          { text: solicitud.gestion_humana_aprobado_at ? `ID Transacción: ${txId}\n` : '\n', fontSize: 7, color: 'gray' }
+          { text: solicitud.gestion_humana_aprobado_at ? `ID TransacciÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â³n: ${txId}\n` : '\n', fontSize: 7, color: 'gray' }
         ],
         margin: [5, 5, 5, 5]
       },
       {
         text: [
-          { text: sstApprovedAt ? 'Firmado electrónicamente por:\n' : '\n', bold: true, fontSize: 8 },
+          { text: sstApprovedAt ? 'Firmado electrÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â³nicamente por:\n' : '\n', bold: true, fontSize: 8 },
           { text: `${sstApprovedAt ? sstActorName : 'Pendiente'}\n`, fontSize: 9 },
           { text: `Cargo: Coordinador SST\n`, fontSize: 7.5 },
           { text: `Fecha y hora: ${sstDate}\n`, fontSize: 7.5 },
-          { text: sstApprovedAt ? `ID Transacción: ${txId}\n` : '\n', fontSize: 7, color: 'gray' }
+          { text: sstApprovedAt ? `ID TransacciÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â³n: ${txId}\n` : '\n', fontSize: 7, color: 'gray' }
         ],
         margin: [5, 5, 5, 5]
       }
@@ -497,17 +504,17 @@ const buildOficioPdfDefinition = (solicitud, ghDirectorNombre, ghDirectorCargo) 
       ]);
     }
     signatureTableBody.push([
-      { text: 'RECIBIDO (Gestión del Talento Humano)', bold: true, alignment: 'center', colSpan: 2, fillColor: '#e0e0e0', fontSize: 9 },
+      { text: 'RECIBIDO (GestiÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â³n del Talento Humano)', bold: true, alignment: 'center', colSpan: 2, fillColor: '#e0e0e0', fontSize: 9 },
       {}
     ]);
     signatureTableBody.push([
       {
         text: [
-          { text: solicitud.gestion_humana_aprobado_at ? 'Firmado electrónicamente por:\n' : '\n', bold: true, fontSize: 8 },
+          { text: solicitud.gestion_humana_aprobado_at ? 'Firmado electrÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â³nicamente por:\n' : '\n', bold: true, fontSize: 8 },
           { text: `${solicitud.gestion_humana_aprobado_at ? ghDirectorNombre : 'Pendiente'}\n`, fontSize: 9 },
           { text: `Cargo: ${ghDirectorCargo}\n`, fontSize: 7.5 },
           { text: `Fecha y hora: ${ghDate}\n`, fontSize: 7.5 },
-          { text: solicitud.gestion_humana_aprobado_at ? `ID Transacción: ${txId}\n` : '\n', fontSize: 7, color: 'gray' }
+          { text: solicitud.gestion_humana_aprobado_at ? `ID TransacciÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â³n: ${txId}\n` : '\n', fontSize: 7, color: 'gray' }
         ],
         margin: [5, 5, 5, 5],
         alignment: 'center',
@@ -641,10 +648,10 @@ const buildOficioPdfDefinition = (solicitud, ghDirectorNombre, ghDirectorCargo) 
   }
 
   // Destinatario details
-  const destTratamiento = salida.destinatarioTratamiento || '';
+  const destTratamiento = salida.destinatarioTratamiento || 'SeÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â±or(a)';
   const destNombre = (salida.destinatarioNombre || '').toUpperCase();
   const destCargo = salida.destinatarioCargo || '';
-  const destDependencia = jefe.dependencia || salida.destinatarioEmpresa || '';
+  const destDependencia = salida.destinatarioEmpresa || jefe.dependencia || '';
   const destDireccionEmail = salida.destinatarioDireccionEmail || '';
   const fr013Background = path.join(__dirname, '../assets/fr013-carta-bg.png');
   const consecutiveText = [salida.codigoDependencia, solicitud.consecutivo || solicitud.id]
@@ -663,12 +670,12 @@ const buildOficioPdfDefinition = (solicitud, ghDirectorNombre, ghDirectorCargo) 
 
     footer: (currentPage, pageCount) => {
       return {
-        text: `Página ${currentPage} de ${pageCount}`,
+        text: `PÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¡gina ${currentPage} de ${pageCount}`,
         alignment: 'right',
         fontSize: 8,
         margin: [0, 0, 70, 58],
         _unused: [
-          { text: `Página ${currentPage} de ${pageCount}`, alignment: 'right', fontSize: 8.5, margin: [0, 0, 45, 5] },
+          { text: `PÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¡gina ${currentPage} de ${pageCount}`, alignment: 'right', fontSize: 8.5, margin: [0, 0, 45, 5] },
           {
             image: path.join(__dirname, '../assets/pie_de_pag.png'),
             width: 522,
@@ -717,16 +724,12 @@ const buildOficioPdfDefinition = (solicitud, ghDirectorNombre, ghDirectorCargo) 
       
       { text: salida.oficioDespedida || 'Cordialmente,', margin: [0, 0, 0, 24] },
       
-      {
-        text: [
-          { text: `${(solicitante.nombre || personal.nombre || '').toUpperCase()}\n`, bold: true },
-          { text: `${solicitante.cargo || laboral.cargo || ''}\n` }
-        ],
-        margin: [0, 0, 0, 12]
-      },
       
+      ...(getDeclaracionSinAdjunto(salida) ? [
+        { text: `Declaracion de soportes: ${getDeclaracionSinAdjunto(salida)}`, fontSize: 8.8, italics: true, color: '#334155', margin: [0, 0, 0, 6] }
+      ] : []),
       { text: `Anexos: ${salida.oficioAnexos || 'Ninguno'}`, fontSize: 9.5, margin: [0, 0, 0, 2] },
-      { text: `Proyectó: ${salida.oficioProyecto || ''}`, fontSize: 9.5, margin: [0, 0, 0, 16] },
+      { text: `Proyecto: ${salida.oficioProyecto || ''}`, fontSize: 9.5, margin: [0, 0, 0, 16] },
       
       // Signatures container
       {
@@ -736,7 +739,7 @@ const buildOficioPdfDefinition = (solicitud, ghDirectorNombre, ghDirectorCargo) 
           body: signatureTableBody
         },
         layout: 'borders',
-        margin: [0, 8, 0, 10]
+        margin: [0, 0, 0, 8]
       },
       {
         text: '',
@@ -751,8 +754,8 @@ const buildOficioPdfDefinition = (solicitud, ghDirectorNombre, ghDirectorCargo) 
           {
             width: '*',
             text: [
-              { text: 'Verificación de autenticidad e integridad\n', bold: true, fontSize: 8.5 },
-              { text: 'Escanee el código QR o ingrese al enlace para validar este oficio firmado electrónicamente:\n', fontSize: 7.5 },
+              { text: 'Verificacion de autenticidad e integridad\n', bold: true, fontSize: 8.5 },
+              { text: 'Escanee el codigo QR o ingrese al enlace para validar este oficio firmado electronicamente:\n', fontSize: 7.5 },
               { text: verifyUrl, fontSize: 7.5, color: 'blue', link: verifyUrl }
             ],
             margin: [0, 4, 0, 0]
@@ -766,15 +769,15 @@ const buildOficioPdfDefinition = (solicitud, ghDirectorNombre, ghDirectorCargo) 
 
 const buildPdfBuffer = async (solicitud) => {
   let ghDirectorNombre = '';
-  let ghDirectorCargo = 'Jefe de Gestión del Talento Humano';
+  let ghDirectorCargo = 'Jefe de GestiÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â³n del Talento Humano';
   if (solicitud.gestion_humana_aprobado_at) {
     try {
       const { User } = require('../models');
       const { Op } = require('sequelize');
       const ghUser = await User.findOne({
         where: {
-          dependencia: { [Op.in]: ['Gestión del Talento Humano', 'Gestión del Talento Humano'] },
-          cargo: { [Op.in]: ['Jefe Gestión del Talento Humano', 'Jefe de Gestión del Talento Humano', 'Jefe de Gestión del Talento Humano', 'Jefe Gestión del Talento Humano'] }
+          dependencia: { [Op.in]: ['GestiÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â³n del Talento Humano', 'GestiÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â³n del Talento Humano'] },
+          cargo: { [Op.in]: ['Jefe GestiÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â³n del Talento Humano', 'Jefe de GestiÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â³n del Talento Humano', 'Jefe de GestiÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â³n del Talento Humano', 'Jefe GestiÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â³n del Talento Humano'] }
         }
       });
       if (ghUser) {
@@ -829,7 +832,7 @@ const buildPdfBuffer = async (solicitud) => {
         } else if (alcance === 'Nacional' && salida.departamento && salida.municipio) {
           ubicacionStr = `${alcance} (${salida.municipio}, ${salida.departamento})`;
         } else if (alcance === 'Regional' && salida.municipio) {
-          ubicacionStr = `${alcance} (${salida.municipio}, Nariño)`;
+          ubicacionStr = `${alcance} (${salida.municipio}, NariÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â±o)`;
         }
       }
 
@@ -868,8 +871,8 @@ const buildPdfBuffer = async (solicitud) => {
                     table: {
                       widths: ['*'],
                       body: [
-                        [ { text: 'CÓDIGO: THM-DP-FR-002', bold: true, fontSize: 9 } ],
-                        [ { text: 'VERSIÓN: 3', bold: true, fontSize: 9 } ],
+                        [ { text: 'CÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…â€œDIGO: THM-DP-FR-002', bold: true, fontSize: 9 } ],
+                        [ { text: 'VERSIÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…â€œN: 3', bold: true, fontSize: 9 } ],
                         [ { text: 'FECHA: 15/FEB/2023', bold: true, fontSize: 9 } ]
                       ]
                     },
@@ -893,7 +896,7 @@ const buildPdfBuffer = async (solicitud) => {
             table: {
               widths: ['*'],
               body: [
-                [ { text: '1. Información del Trabajador', bold: true, fillColor: '#e0e0e0', margin: [5, 3, 5, 3] } ]
+                [ { text: '1. InformaciÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â³n del Trabajador', bold: true, fillColor: '#e0e0e0', margin: [5, 3, 5, 3] } ]
               ]
             },
             margin: [0, 0, 0, 3]
@@ -950,13 +953,13 @@ const buildPdfBuffer = async (solicitud) => {
                     { text: 'Fecha de regreso:', bold: true },
                     { text: salida.tipo === 'urgencia_medica' ? 'No aplica (Urgencia)' : formatDate(salida.fechaRegreso || salida.fechaFin || salida.fecha) },
                     { text: 'Hora de regreso:', bold: true },
-                    { text: salida.tipo === 'urgencia_medica' ? 'No aplica (Urgencia)' : formatTimeAmPm(salida.horaFin) }
+                    { text: salida.tipo === 'urgencia_medica' ? 'No aplica (Urgencia)' : (salida.categoria === 'salud' && salida.tipo !== 'terapias' && !salida.horaFin ? 'No especificada' : formatTimeAmPm(salida.horaFin)) }
                   ]);
                 }
                 tableBody.push([
                   { text: 'Alcance:', bold: true },
                   { text: ubicacionStr },
-                  { text: 'Categoría:', bold: true },
+                  { text: 'CategorÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â­a:', bold: true },
                   { text: getTipoSalidaLabel(salida.tipo) }
                 ]);
                 if (isReposicionType) {
@@ -973,6 +976,14 @@ const buildPdfBuffer = async (solicitud) => {
                     {}, {}
                   ]);
                 }
+                const declaracionSinAdjunto = getDeclaracionSinAdjunto(salida);
+                if (declaracionSinAdjunto) {
+                  tableBody.push([
+                    { text: 'Declaracion de soportes:', bold: true },
+                    { text: declaracionSinAdjunto, colSpan: 3 },
+                    {}, {}
+                  ]);
+                }
                 return tableBody;
               })()
             },
@@ -985,7 +996,7 @@ const buildPdfBuffer = async (solicitud) => {
       if (salida.tipo === 'terapias' && salida.terapiasList?.length) {
          const tBody = [
            [
-             { text: 'Nº', bold: true, fillColor: '#f8f8f8' },
+             { text: 'NÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Âº', bold: true, fillColor: '#f8f8f8' },
              { text: 'Fecha', bold: true, fillColor: '#f8f8f8' },
              { text: 'Hora inicio', bold: true, fillColor: '#f8f8f8' },
              { text: 'Hora fin', bold: true, fillColor: '#f8f8f8' }
@@ -1070,7 +1081,7 @@ const buildPdfBuffer = async (solicitud) => {
           table: {
             widths: ['*'],
             body: [
-              [ { text: '4. Plan de Reposición', bold: true, fillColor: '#e0e0e0', margin: [5, 3, 5, 3] } ]
+              [ { text: '4. Plan de ReposiciÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â³n', bold: true, fillColor: '#e0e0e0', margin: [5, 3, 5, 3] } ]
             ]
           },
           margin: [0, 0, 0, 3]
@@ -1117,26 +1128,26 @@ const buildPdfBuffer = async (solicitud) => {
       const signatureTableBody = [
         [
           { text: 'Firma del trabajador Solicitante', bold: true, alignment: 'center', fillColor: '#e0e0e0' },
-          { text: 'Autorización del Jefe inmediato', bold: true, alignment: 'center', fillColor: '#e0e0e0' }
+          { text: 'AutorizaciÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â³n del Jefe inmediato', bold: true, alignment: 'center', fillColor: '#e0e0e0' }
         ],
         [
           {
             text: [
-              { text: 'Firmado electrónicamente por:\n', bold: true, fontSize: 9 },
+              { text: 'Firmado electrÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â³nicamente por:\n', bold: true, fontSize: 9 },
               { text: `${solicitante.nombre || personal.nombre || ''}\n`, fontSize: 10 },
               { text: `Documento: ${solicitante.username || personal.documento || ''}\n`, fontSize: 8 },
               { text: `Fecha y hora: ${reqDate}\n`, fontSize: 8 },
-              { text: `ID Transacción: ${txId}\n`, fontSize: 7, color: 'gray' }
+              { text: `ID TransacciÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â³n: ${txId}\n`, fontSize: 7, color: 'gray' }
             ],
             margin: [5, 5, 5, 5]
           },
           {
             text: [
-              { text: solicitud.jefe_aprobado_at ? 'Firmado electrónicamente por:\n' : '\n', bold: true, fontSize: 9 },
+              { text: solicitud.jefe_aprobado_at ? 'Firmado electrÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â³nicamente por:\n' : '\n', bold: true, fontSize: 9 },
               { text: `${solicitud.jefe_aprobado_at ? (jefe.nombre || '') : 'Pendiente'}\n`, fontSize: 10 },
               { text: `Cargo: ${jefe.cargo || ''}\n`, fontSize: 8 },
               { text: `Fecha y hora: ${jefeDate}\n`, fontSize: 8 },
-              { text: solicitud.jefe_aprobado_at ? `ID Transacción: ${txId}\n` : '\n', fontSize: 7, color: 'gray' }
+              { text: solicitud.jefe_aprobado_at ? `ID TransacciÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â³n: ${txId}\n` : '\n', fontSize: 7, color: 'gray' }
             ],
             margin: [5, 5, 5, 5]
           }
@@ -1145,44 +1156,44 @@ const buildPdfBuffer = async (solicitud) => {
 
       if (requiresSst) {
         signatureTableBody.push([
-          { text: 'RECIBIDO (Gestión del Talento Humano)', bold: true, alignment: 'center', fillColor: '#e0e0e0' },
+          { text: 'RECIBIDO (GestiÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â³n del Talento Humano)', bold: true, alignment: 'center', fillColor: '#e0e0e0' },
           { text: 'APROBADO (Seguridad y Salud en el Trabajo)', bold: true, alignment: 'center', fillColor: '#e0e0e0' }
         ]);
         signatureTableBody.push([
           {
             text: [
-              { text: solicitud.gestion_humana_aprobado_at ? 'Firmado electrónicamente por:\n' : '\n', bold: true, fontSize: 9 },
+              { text: solicitud.gestion_humana_aprobado_at ? 'Firmado electrÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â³nicamente por:\n' : '\n', bold: true, fontSize: 9 },
               { text: `${solicitud.gestion_humana_aprobado_at ? ghDirectorNombre : 'Pendiente'}\n`, fontSize: 10 },
               { text: `Cargo: ${ghDirectorCargo}\n`, fontSize: 8 },
               { text: `Fecha y hora: ${ghDate}\n`, fontSize: 8 },
-              { text: solicitud.gestion_humana_aprobado_at ? `ID Transacción: ${txId}\n` : '\n', fontSize: 7, color: 'gray' }
+              { text: solicitud.gestion_humana_aprobado_at ? `ID TransacciÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â³n: ${txId}\n` : '\n', fontSize: 7, color: 'gray' }
             ],
             margin: [5, 5, 5, 5]
           },
           {
             text: [
-              { text: sstApprovedAt ? 'Firmado electrónicamente por:\n' : '\n', bold: true, fontSize: 9 },
+              { text: sstApprovedAt ? 'Firmado electrÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â³nicamente por:\n' : '\n', bold: true, fontSize: 9 },
               { text: `${sstApprovedAt ? sstActorName : 'Pendiente'}\n`, fontSize: 10 },
               { text: `Cargo: Coordinador SST\n`, fontSize: 8 },
               { text: `Fecha y hora: ${sstDate}\n`, fontSize: 8 },
-              { text: sstApprovedAt ? `ID Transacción: ${txId}\n` : '\n', fontSize: 7, color: 'gray' }
+              { text: sstApprovedAt ? `ID TransacciÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â³n: ${txId}\n` : '\n', fontSize: 7, color: 'gray' }
             ],
             margin: [5, 5, 5, 5]
           }
         ]);
       } else {
         signatureTableBody.push([
-          { text: 'RECIBIDO (Gestión del Talento Humano)', bold: true, alignment: 'center', colSpan: 2, fillColor: '#e0e0e0' },
+          { text: 'RECIBIDO (GestiÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â³n del Talento Humano)', bold: true, alignment: 'center', colSpan: 2, fillColor: '#e0e0e0' },
           {}
         ]);
         signatureTableBody.push([
           {
             text: [
-              { text: solicitud.gestion_humana_aprobado_at ? 'Firmado electrónicamente por:\n' : '\n', bold: true, fontSize: 9 },
+              { text: solicitud.gestion_humana_aprobado_at ? 'Firmado electrÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â³nicamente por:\n' : '\n', bold: true, fontSize: 9 },
               { text: `${solicitud.gestion_humana_aprobado_at ? ghDirectorNombre : 'Pendiente'}\n`, fontSize: 10 },
               { text: `Cargo: ${ghDirectorCargo}\n`, fontSize: 8 },
               { text: `Fecha y hora: ${ghDate}\n`, fontSize: 8 },
-              { text: solicitud.gestion_humana_aprobado_at ? `ID Transacción: ${txId}\n` : '\n', fontSize: 7, color: 'gray' }
+              { text: solicitud.gestion_humana_aprobado_at ? `ID TransacciÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â³n: ${txId}\n` : '\n', fontSize: 7, color: 'gray' }
             ],
             margin: [5, 5, 5, 5],
             alignment: 'center',
@@ -1209,24 +1220,24 @@ const buildPdfBuffer = async (solicitud) => {
 
       if (trazabilidad.length > 0) {
         const traceEventLabels = {
-          'radicada': 'Radicación inicial',
-          'radicada_grupal': 'Radicación de salida grupal',
-          'correo_jefe_enviado': 'Notificación a Jefe Inmediato',
+          'radicada': 'RadicaciÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â³n inicial',
+          'radicada_grupal': 'RadicaciÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â³n de salida grupal',
+          'correo_jefe_enviado': 'NotificaciÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â³n a Jefe Inmediato',
           'correo_jefe_error': 'Error al notificar a Jefe Inmediato',
-          'aprobada_jefe': 'Aprobación de Jefe Inmediato',
+          'aprobada_jefe': 'AprobaciÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â³n de Jefe Inmediato',
           'rechazada_jefe': 'Rechazada por Jefe Inmediato',
-          'correo_gestion_humana_enviado': 'Notificación a Gestión del Talento Humano',
-          'correo_gestion_humana_error': 'Error al notificar a Gestión del Talento Humano',
-          'aprobada_gestion_humana': 'Aprobación de Gestión del Talento Humano',
-          'rechazada_gestion_humana': 'Rechazada por Gestión del Talento Humano',
-          'correo_sst_enviado': 'Notificación a SST',
+          'correo_gestion_humana_enviado': 'NotificaciÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â³n a GestiÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â³n del Talento Humano',
+          'correo_gestion_humana_error': 'Error al notificar a GestiÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â³n del Talento Humano',
+          'aprobada_gestion_humana': 'AprobaciÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â³n de GestiÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â³n del Talento Humano',
+          'rechazada_gestion_humana': 'Rechazada por GestiÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â³n del Talento Humano',
+          'correo_sst_enviado': 'NotificaciÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â³n a SST',
           'correo_sst_error': 'Error al notificar a SST',
-          'aprobada_sst': 'Aprobación de SST',
+          'aprobada_sst': 'AprobaciÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â³n de SST',
           'rechazada_sst': 'Rechazada por SST',
-          'notificacion_final_enviada': 'Notificación final enviada',
-          'reposicion_cumplida': 'Reposición marcada como cumplida',
-          'reposicion_incumplida': 'Reposición marcada como incumplida',
-          'reposicion_pendiente': 'Reposición marcada como pendiente'
+          'notificacion_final_enviada': 'NotificaciÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â³n final enviada',
+          'reposicion_cumplida': 'ReposiciÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â³n marcada como cumplida',
+          'reposicion_incumplida': 'ReposiciÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â³n marcada como incumplida',
+          'reposicion_pendiente': 'ReposiciÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â³n marcada como pendiente'
         };
 
         const traceBody = [
@@ -1247,13 +1258,13 @@ const buildPdfBuffer = async (solicitud) => {
             if (t.event.includes('_jefe')) {
               actorStr = solicitud?.jefe_snapshot?.nombre || 'Jefe Inmediato';
             } else if (t.event.includes('_gestion_humana')) {
-              actorStr = 'Gestión del Talento Humano';
+              actorStr = 'GestiÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â³n del Talento Humano';
             } else if (t.event.includes('_sst')) {
               actorStr = 'Seguridad y Salud en el Trabajo';
             } else if (t.event.includes('correo_') || t.event.includes('notificacion_')) {
-              actorStr = 'Sistema Automático';
+              actorStr = 'Sistema AutomÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¡tico';
             } else {
-              actorStr = 'Sistema Automático';
+              actorStr = 'Sistema AutomÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¡tico';
             }
           }
           
@@ -1261,14 +1272,14 @@ const buildPdfBuffer = async (solicitud) => {
           if (t.motivo) detailStr = t.motivo;
           if (t.observacion) detailStr = t.observacion;
           if (t.error) detailStr = `Error: ${t.error}`;
-          if (t.justificacion) detailStr = `Justificación: ${t.justificacion}`;
+          if (t.justificacion) detailStr = `JustificaciÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â³n: ${t.justificacion}`;
 
           if (!detailStr) {
-            if (t.event.includes('radicada')) detailStr = 'Se registró la solicitud en el sistema.';
-            else if (t.event.includes('correo_')) detailStr = 'Correo electrónico enviado exitosamente.';
-            else if (t.event.includes('notificacion_final')) detailStr = 'Correos finales de cierre enviados al colaborador, dependencia, Gestión del Talento Humano y Seguridad y Salud en el Trabajo (SST).';
+            if (t.event.includes('radicada')) detailStr = 'Se registrÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â³ la solicitud en el sistema.';
+            else if (t.event.includes('correo_')) detailStr = 'Correo electrÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â³nico enviado exitosamente.';
+            else if (t.event.includes('notificacion_final')) detailStr = 'Correos finales de cierre enviados al colaborador, dependencia, GestiÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â³n del Talento Humano y Seguridad y Salud en el Trabajo (SST).';
             else if (t.event.includes('aprobada_')) detailStr = 'Aprobado sin observaciones adicionales.';
-            else if (t.event.includes('rechazada_')) detailStr = 'Rechazado sin justificación adicional.';
+            else if (t.event.includes('rechazada_')) detailStr = 'Rechazado sin justificaciÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â³n adicional.';
             else detailStr = 'Procesado exitosamente.';
           }
 
@@ -1292,8 +1303,8 @@ const buildPdfBuffer = async (solicitud) => {
 
       docDefinition.content.push({
         text: [
-          'Documento generado automáticamente desde SIAC UNICESMAG con la información diligenciada en el formulario digital.\n',
-          'Toda la información personal suministrada en este reporte será tratada de forma estrictamente confidencial, en cumplimiento y de acuerdo con la Política de Tratamiento de Datos Personales de UNICESMAG, garantizando su uso exclusivo para los fines administrativos e institucionales correspondientes.'
+          'Documento generado automÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¡ticamente desde SIAC UNICESMAG con la informaciÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â³n diligenciada en el formulario digital.\n',
+          'Toda la informaciÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â³n personal suministrada en este reporte serÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¡ tratada de forma estrictamente confidencial, en cumplimiento y de acuerdo con la PolÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â­tica de Tratamiento de Datos Personales de UNICESMAG, garantizando su uso exclusivo para los fines administrativos e institucionales correspondientes.'
         ],
         fontSize: 8,
         color: '#71717a',
@@ -1315,8 +1326,8 @@ const buildPdfBuffer = async (solicitud) => {
           {
             width: '*',
             text: [
-              { text: 'Verificación de Autenticidad e Integridad\n', bold: true, fontSize: 9 },
-              { text: 'Este documento ha sido firmado electrónicamente. Para verificar su validez legal y confirmar que no ha sido alterado, escanee el código QR o ingrese a:\n', fontSize: 8 },
+              { text: 'VerificaciÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â³n de Autenticidad e Integridad\n', bold: true, fontSize: 9 },
+              { text: 'Este documento ha sido firmado electrÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â³nicamente. Para verificar su validez legal y confirmar que no ha sido alterado, escanee el cÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â³digo QR o ingrese a:\n', fontSize: 8 },
               { text: verifyUrl, fontSize: 8, color: 'blue', link: verifyUrl }
             ],
             margin: [0, 5, 0, 0]

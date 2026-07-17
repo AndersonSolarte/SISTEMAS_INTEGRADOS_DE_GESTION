@@ -112,16 +112,19 @@ const SALUD_SUBTYPES = [
 const PERSONALES_SUBTYPES = [
   { group: 'Trámites y Compensatorios', value: 'diligencia_personal', label: 'Diligencia personal' },
   { group: 'Trámites y Compensatorios', value: 'compensatorio', label: 'Compensatorio' },
-  { group: 'Permisos Electorales', value: 'jurado_votacion', label: 'Jurado de votación' },
-  { group: 'Permisos Electorales', value: 'sufragante', label: 'Sufragante' },
-  { group: 'Permisos y Novedades', value: 'cargos_oficiales_transitorios', label: 'Desempeño de cargos oficiales transitorios' },
-  { group: 'Permisos y Novedades', value: 'calamidad_domestica', label: 'Calamidad doméstica' },
-  { group: 'Permisos y Novedades', value: 'entierro_companero', label: 'Asistir al entierro de un compañero de trabajo' },
+  { group: 'Permisos Electorales - Ejercicio del derecho al sufragio', value: 'sufragante', label: 'Sufragante' },
+  { group: 'Permisos Electorales - Cargos oficiales transitorios de forzosa aceptación', value: 'jurado_votacion', label: 'Jurado de votación' },
+  { group: 'Permisos Electorales - Cargos oficiales transitorios de forzosa aceptación', value: 'cargos_oficiales_transitorios', label: 'Comparecencias por designación oficial' },
+  { group: 'Permisos y Licencias', value: 'calamidad_domestica', label: 'Grave calamidad doméstica' },
+  { group: 'Permisos y Licencias', value: 'entierro_companero', label: 'Entierro de compañeras/os de trabajo' },
+  { group: 'Permisos y Licencias', value: 'luto_familiares_cercanos', label: 'Licencia por luto de familiares cercanos' },
+  { group: 'Permisos y Licencias', value: 'fallecimiento_otros_familiares', label: 'Fallecimiento de otros familiares diferentes a los contemplados en la licencia por luto' },
+  { group: 'Permisos y Licencias', value: 'matrimonio_union_marital', label: 'Permiso por matrimonio o unión marital de hecho' },
   { group: 'Permisos y Novedades', value: 'comisiones_sindicales', label: 'Comisiones sindicales' },
-  { group: 'Permisos y Novedades', value: 'obligaciones_escolares', label: 'Obligaciones escolares' },
-  { group: 'Permisos y Novedades', value: 'citaciones_judiciales', label: 'Citaciones judiciales, administrativas y de policía' },
+  { group: 'Permisos y Licencias', value: 'obligaciones_escolares', label: 'Asistencia a obligaciones escolares' },
+  { group: 'Permisos y Licencias', value: 'citaciones_judiciales', label: 'Citaciones judiciales, administrativas o legales' },
   { group: 'Permisos y Novedades', value: 'cuidado_hijo_ley_2174', label: 'Cuidado de hijo(a) - Términos de la Ley 2174 de 2021' },
-  { group: 'Permisos y Novedades', value: 'otra', label: 'Otra, ¿Cuál?:' }
+  { group: 'Permisos y Novedades', value: 'otra', label: 'Otra, ¿cuál?:' }
 ];
 
 const ESPECIALIDADES_MEDICAS = [
@@ -198,9 +201,13 @@ const REQUIRES_ADJUNTO = [
   'cita_eps', 'cita_particular', 'terapias',
   'voto_jurado', 'voto_sufragante',
   'jurado_votacion', 'sufragante', 'cargos_oficiales_transitorios',
+  'luto_familiares_cercanos', 'fallecimiento_otros_familiares', 'matrimonio_union_marital',
   'comisiones_sindicales', 'obligaciones_escolares',
   'citaciones_judiciales', 'cuidado_hijo_ley_2174'
 ];
+
+const DECLARACION_SIN_ADJUNTO_SALUD = 'Declaro que al momento de radicar esta solicitud no cuento con archivos adjuntos o soportes para cargar en el sistema. Entiendo que la Oficina de Gestion del Talento Humano y/o Seguridad y Salud en el Trabajo podran requerir en cualquier momento los soportes correspondientes; por tanto, me comprometo a conservarlos despues de la atencion o tramite y a suministrarlos oportunamente cuando sean solicitados.';
+const MAX_ADJUNTO_SIZE = 10 * 1024 * 1024;
 
 const DEPARTAMENTOS_MUNICIPIOS = {
   'Amazonas': ['Leticia', 'El Encanto', 'La Chorrera', 'La Pedrera', 'La Victoria', 'Miriití-Paraná', 'Puerto Alegría', 'Puerto Arica', 'Puerto Nariño', 'Puerto Santander', 'Tarapacá'],
@@ -353,19 +360,6 @@ const countElapsedMinutes = (startDate, endDate, startTime, endTime) => {
   to.setMinutes(toMinutesValue);
   if (to <= from) return null;
   return Math.round((to.getTime() - from.getTime()) / 60000);
-};
-
-const countBusinessDays = (startDate, endDate) => {
-  const fromDate = parseDateOnly(startDate);
-  const toDate = parseDateOnly(endDate || startDate);
-  if (!fromDate || !toDate || toDate < fromDate) return null;
-  let count = 0;
-  let current = new Date(fromDate);
-  while (current <= toDate) {
-    if (isBusinessDay(current)) count += 1;
-    current = addDays(current, 1);
-  }
-  return count;
 };
 
 const getBusinessDateIssue = (date, label) => {
@@ -571,6 +565,18 @@ const isPastTimeError = (dateStr, timeStr) => {
   return false;
 };
 
+const filterFutureTimeOptionsForDate = (options, dateStr) => {
+  if (!dateStr) return options;
+  const now = new Date();
+  const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+  if (dateStr !== todayStr) return options;
+  const currentMinutes = now.getHours() * 60 + now.getMinutes();
+  return options.filter((option) => {
+    const optionMinutes = timeToMinutes(option);
+    return optionMinutes != null && optionMinutes > currentMinutes;
+  });
+};
+
 function ReporteSalidaFormDialog({ open, documento, user, onClose, onSubmitted }) {
   const theme = useTheme();
   const fullScreen = useMediaQuery(theme.breakpoints.down('md'));
@@ -603,6 +609,7 @@ function ReporteSalidaFormDialog({ open, documento, user, onClose, onSubmitted }
 
   const [showSaludWarning, setShowSaludWarning] = useState(false);
   const [showPersonalesWarning, setShowPersonalesWarning] = useState(false);
+  const [showCalamidadWarning, setShowCalamidadWarning] = useState(false);
   const [showPropiasCargoWarning, setShowPropiasCargoWarning] = useState(false);
   const [activeCategory, setActiveCategory] = useState('salud');
   const [form, setForm] = useState(INITIAL_FORM);
@@ -622,9 +629,46 @@ function ReporteSalidaFormDialog({ open, documento, user, onClose, onSubmitted }
   const [qrCopied, setQrCopied] = useState(false);
   const [adjuntoFile, setAdjuntoFile] = useState(null);
   const [adjuntoError, setAdjuntoError] = useState('');
-  const [compartirAdjuntoJefe, setCompartirAdjuntoJefe] = useState(true);
+  const [adjuntoPreviewUrl, setAdjuntoPreviewUrl] = useState('');
+  const [noCuentaAdjuntoSalud, setNoCuentaAdjuntoSalud] = useState(false);
   const [showSuccessModal, setShowSuccessModal] = useState(false);
   const [successResponse, setSuccessResponse] = useState(null);
+
+  const setAdjuntoFromFile = (file) => {
+    if (!file) {
+      setAdjuntoFile(null);
+      setAdjuntoError('');
+      return false;
+    }
+    if (file.size > MAX_ADJUNTO_SIZE) {
+      setAdjuntoFile(null);
+      setAdjuntoError('El archivo supera el tamano maximo permitido de 10 MB');
+      return false;
+    }
+    setAdjuntoFile(file);
+    setAdjuntoError('');
+    return true;
+  };
+
+  const getClipboardImageFile = (clipboardData) => {
+    const items = Array.from(clipboardData?.items || []);
+    const imageItem = items.find((item) => item.kind === 'file' && String(item.type || '').startsWith('image/'));
+    if (!imageItem) return null;
+    const blob = imageItem.getAsFile();
+    if (!blob) return null;
+    const extension = String(blob.type || 'image/png').split('/')[1] || 'png';
+    return new File([blob], `captura-adjunta-${Date.now()}.${extension}`, { type: blob.type || 'image/png' });
+  };
+
+  useEffect(() => {
+    if (!adjuntoFile || !String(adjuntoFile.type || '').startsWith('image/')) {
+      setAdjuntoPreviewUrl('');
+      return undefined;
+    }
+    const objectUrl = URL.createObjectURL(adjuntoFile);
+    setAdjuntoPreviewUrl(objectUrl);
+    return () => URL.revokeObjectURL(objectUrl);
+  }, [adjuntoFile]);
 
   const handleAddParticipant = (colaborador) => {
     if (!colaborador) return;
@@ -719,6 +763,9 @@ function ReporteSalidaFormDialog({ open, documento, user, onClose, onSubmitted }
   const handleCategoryChange = (newCategory) => {
     setActiveCategory(newCategory);
     update('salida', 'tiempoReponerHoras', '');
+    setNoCuentaAdjuntoSalud(false);
+    setAdjuntoFile(null);
+    setAdjuntoError('');
     if (newCategory === 'propias_cargo') {
       update('salida', 'tipo', 'ponencia');
       setShowPropiasCargoWarning(true);
@@ -733,10 +780,16 @@ function ReporteSalidaFormDialog({ open, documento, user, onClose, onSubmitted }
 
   const handleSubtypeChange = (newSubtype) => {
     update('salida', 'tiempoReponerHoras', '');
+    setNoCuentaAdjuntoSalud(false);
+    setAdjuntoFile(null);
+    setAdjuntoError('');
     if (newSubtype === 'otra') {
       update('salida', 'tipo', 'otra:');
     } else {
       update('salida', 'tipo', newSubtype);
+      if (newSubtype === 'calamidad_domestica') {
+        setShowCalamidadWarning(true);
+      }
     }
   };
 
@@ -802,7 +855,7 @@ function ReporteSalidaFormDialog({ open, documento, user, onClose, onSubmitted }
     setParticipantes([]);
     setAdjuntoFile(null);
     setAdjuntoError('');
-    setCompartirAdjuntoJefe(true);
+    setNoCuentaAdjuntoSalud(false);
   }, [open, user]);
 
   useEffect(() => {
@@ -878,11 +931,11 @@ function ReporteSalidaFormDialog({ open, documento, user, onClose, onSubmitted }
         return total + tMins;
       }, 0);
     }
-    if (subtype === 'urgencia_medica') {
-      return 0;
+    if (category === 'salud' && subtype !== 'terapias') {
+      return countElapsedMinutes(form.salida.fecha, form.salida.fechaRegreso, form.salida.horaInicio, form.salida.horaFin);
     }
     return countBusinessMinutes(form.salida.fecha, form.salida.fechaRegreso, form.salida.horaInicio, form.salida.horaFin);
-  }, [form.salida.fecha, form.salida.fechaRegreso, form.salida.horaInicio, form.salida.horaFin, form.salida.terapiasList, subtype]);
+  }, [category, form.salida.fecha, form.salida.fechaRegreso, form.salida.horaInicio, form.salida.horaFin, form.salida.terapiasList, subtype]);
 
   const reposicionMinutes = useMemo(
     () => countElapsedMinutes(form.reposicion.fecha, form.reposicion.fechaFin, form.reposicion.horaInicio, form.reposicion.horaFin),
@@ -890,9 +943,6 @@ function ReporteSalidaFormDialog({ open, documento, user, onClose, onSubmitted }
   );
 
   const salidaRangeIssue = useMemo(() => {
-    if (subtype === 'urgencia_medica') {
-      return '';
-    }
     if (subtype === 'terapias') {
       const list = form.salida.terapiasList || [];
       for (let i = 0; i < list.length; i++) {
@@ -917,15 +967,20 @@ function ReporteSalidaFormDialog({ open, documento, user, onClose, onSubmitted }
       label: 'salida'
     });
   }, [form.salida.fecha, form.salida.fechaRegreso, form.salida.horaFin, form.salida.horaInicio, salidaMinutes, form.salida.terapiasList, subtype]);
+  const horaSalidaOptions = useMemo(
+    () => filterFutureTimeOptionsForDate(TIME_OPTIONS, form.salida.fecha),
+    [form.salida.fecha]
+  );
   const horaRegresoOptions = useMemo(() => {
     if (!form.salida.horaInicio) {
-      return TIME_OPTIONS;
+      return filterFutureTimeOptionsForDate(TIME_OPTIONS, form.salida.fechaRegreso);
     }
     const shouldFilterByStartTime = !form.salida.fechaRegreso || !form.salida.fecha || form.salida.fecha === form.salida.fechaRegreso;
-    if (!shouldFilterByStartTime) return TIME_OPTIONS;
+    const baseOptions = filterFutureTimeOptionsForDate(TIME_OPTIONS, form.salida.fechaRegreso);
+    if (!shouldFilterByStartTime) return baseOptions;
     const startMinutes = timeToMinutes(form.salida.horaInicio);
-    if (startMinutes == null) return TIME_OPTIONS;
-    return TIME_OPTIONS.filter((option) => {
+    if (startMinutes == null) return baseOptions;
+    return baseOptions.filter((option) => {
       const optionMinutes = timeToMinutes(option);
       return optionMinutes != null && optionMinutes > startMinutes;
     });
@@ -1009,14 +1064,7 @@ function ReporteSalidaFormDialog({ open, documento, user, onClose, onSubmitted }
       }
     }
 
-    if (form.salida.duracionTipo === 'menos_media_jornada' && form.salida.fecha && form.salida.fechaRegreso && subtype !== 'urgencia_medica' && subtype !== 'terapias') {
-      const diasHabiles = countBusinessDays(form.salida.fecha, form.salida.fechaRegreso);
-      if (diasHabiles === 2) {
-        issues.push(`La fecha seleccionada cubre ${diasHabiles} días hábiles. Para este permiso debe escoger la opción "Entre 1 y 2 días".`);
-      } else if (diasHabiles >= 3) {
-        issues.push(`La fecha seleccionada cubre ${diasHabiles} días hábiles. Para este permiso debe escoger la opción "3 o más días".`);
-      }
-    }
+
 
     if (form.salida.duracionTipo === '1_2_dias' && ![1, 2].includes(Number(form.salida.duracionDias))) {
       issues.push('Seleccione si el permiso será de 1 o 2 días.');
@@ -1029,13 +1077,7 @@ function ReporteSalidaFormDialog({ open, documento, user, onClose, onSubmitted }
       }
     }
 
-    if (form.salida.duracionTipo === '1_2_dias' && [1, 2].includes(Number(form.salida.duracionDias)) && form.salida.fecha && form.salida.fechaRegreso) {
-      const duracionDias = Number(form.salida.duracionDias);
-      const diasHabiles = countBusinessDays(form.salida.fecha, form.salida.fechaRegreso);
-      if (diasHabiles !== null && diasHabiles !== duracionDias) {
-        issues.push(`La cantidad seleccionada es ${duracionDias} dia(s), pero las fechas cubren ${diasHabiles} dia(s) habil(es). Ajuste la fecha de regreso o la cantidad de dias solicitados.`);
-      }
-    }
+
 
     if (subtype === 'terapias') {
       const list = form.salida.terapiasList || [];
@@ -1053,21 +1095,37 @@ function ReporteSalidaFormDialog({ open, documento, user, onClose, onSubmitted }
       } else if (!salidaMinutes) {
         issues.push('El tiempo total de terapias debe ser mayor a cero.');
       }
-    } else if (subtype === 'urgencia_medica') {
-      if (!form.salida.fecha || !form.salida.horaInicio) {
-        issues.push('Complete la fecha y hora de salida a urgencias.');
-      }
     } else {
-      if (!form.salida.fecha || !form.salida.horaInicio || !form.salida.fechaRegreso || !form.salida.horaFin) {
-        issues.push('Complete fecha de salida, hora de salida, fecha de regreso y hora de regreso.');
-      } else if (salidaRangeIssue) {
-        issues.push(salidaRangeIssue);
-      } else if (category === 'personales' && !salidaMinutes) {
-        issues.push('El tiempo solicitado debe sumar al menos un periodo dentro de la jornada laboral.');
+      const isSaludNoTerapias = category === 'salud' && subtype !== 'terapias';
+      if (isSaludNoTerapias) {
+        if (!form.salida.fecha || !form.salida.horaInicio || !form.salida.fechaRegreso) {
+          issues.push('Complete fecha de salida, hora de salida y fecha de regreso.');
+        }
+      } else {
+        if (!form.salida.fecha || !form.salida.horaInicio || !form.salida.fechaRegreso || !form.salida.horaFin) {
+          issues.push('Complete fecha de salida, hora de salida, fecha de regreso y hora de regreso.');
+        }
+      }
+      if (form.salida.horaFin) {
+        if (salidaRangeIssue) {
+          issues.push(salidaRangeIssue);
+        } else if (category === 'personales' && !salidaMinutes) {
+          issues.push('El tiempo solicitado debe sumar al menos un periodo dentro de la jornada laboral.');
+        }
       }
     }
+
+    if (subtype !== 'terapias' && isPastTimeError(form.salida.fecha, form.salida.horaInicio)) {
+      issues.push('La hora de salida no puede ser anterior a la hora actual. Seleccione una franja futura.');
+    }
+    if (subtype !== 'terapias' && form.salida.horaFin && isPastTimeError(form.salida.fechaRegreso, form.salida.horaFin)) {
+      issues.push('La hora de regreso no puede ser anterior a la hora actual cuando la fecha de regreso es hoy.');
+    }
     
-    if (!isOficioSolicitud && REQUIRES_ADJUNTO.includes(subtype) && !adjuntoFile) {
+    const healthAttachmentWaived = category === 'salud' && noCuentaAdjuntoSalud;
+    const shouldRequireHealthAttachment = category === 'salud' && !healthAttachmentWaived;
+    const shouldRequireListedAttachment = REQUIRES_ADJUNTO.includes(subtype);
+    if (!isOficioSolicitud && !adjuntoFile && (shouldRequireHealthAttachment || shouldRequireListedAttachment) && !healthAttachmentWaived) {
       issues.push('Debe subir el soporte, certificado o documento obligatorio.');
     }
     
@@ -1104,6 +1162,7 @@ function ReporteSalidaFormDialog({ open, documento, user, onClose, onSubmitted }
     salidaMinutes,
     salidaRangeIssue,
     adjuntoFile,
+    noCuentaAdjuntoSalud,
     form.salida.motivo,
     form.salida.tiempoReponerHoras,
     form.salida.entidadDestino,
@@ -1268,10 +1327,12 @@ function ReporteSalidaFormDialog({ open, documento, user, onClose, onSubmitted }
       payload.salida = {
         ...payload.salida,
         categoria: category,
-        compartirAdjuntoJefe: category === 'salud' ? compartirAdjuntoJefe : true
+        compartirAdjuntoJefe: true,
+        noCuentaAdjunto: category === 'salud' ? noCuentaAdjuntoSalud : false,
+        declaracionSinAdjunto: category === 'salud' && noCuentaAdjuntoSalud ? DECLARACION_SIN_ADJUNTO_SALUD : ''
       };
       
-      if (adjuntoFile) {
+      if (adjuntoFile && !(category === 'salud' && noCuentaAdjuntoSalud)) {
         const formData = new FormData();
         formData.append('adjunto', adjuntoFile);
         const uploadRes = await reporteSalidaService.uploadAdjunto(formData);
@@ -1293,11 +1354,30 @@ function ReporteSalidaFormDialog({ open, documento, user, onClose, onSubmitted }
 
   const handleSuccessClose = () => {
     setShowSuccessModal(false);
-    onSubmitted?.(successResponse);
-    onClose?.();
+    try {
+      onSubmitted?.(successResponse);
+    } finally {
+      onClose?.();
+    }
   };
 
   const disableSubmit = submitting || validationIssues.length > 0;
+  const shouldShowAdjuntoSection = category === 'propias_cargo' || REQUIRES_ADJUNTO.includes(subtype) || ['urgencia_medica', 'otra'].includes(subtype);
+  const isSaludAdjuntoSection = category === 'salud' && shouldShowAdjuntoSection;
+  const hideAdjuntoUploadByDeclaration = isSaludAdjuntoSection && noCuentaAdjuntoSalud;
+  const canPasteAdjunto = open && shouldShowAdjuntoSection && !hideAdjuntoUploadByDeclaration && !submitting;
+
+  useEffect(() => {
+    if (!canPasteAdjunto) return undefined;
+    const handlePaste = (event) => {
+      const imageFile = getClipboardImageFile(event.clipboardData);
+      if (!imageFile) return;
+      event.preventDefault();
+      setAdjuntoFromFile(imageFile, 'clipboard');
+    };
+    window.addEventListener('paste', handlePaste);
+    return () => window.removeEventListener('paste', handlePaste);
+  }, [canPasteAdjunto]);
 
   return (
     <>
@@ -2280,16 +2360,14 @@ function ReporteSalidaFormDialog({ open, documento, user, onClose, onSubmitted }
 
               {subtype !== 'terapias' && (
                 <Box sx={responsiveFieldGrid(
-                  subtype === 'urgencia_medica'
-                    ? 'minmax(160px, 1fr) minmax(140px, 1fr)'
-                    : (shouldRequestReposicionHoras
+                  shouldRequestReposicionHoras
                         ? 'minmax(160px, 1fr) minmax(140px, 0.8fr) minmax(160px, 1fr) minmax(140px, 0.8fr) minmax(165px, 0.9fr)'
-                        : 'minmax(160px, 1fr) minmax(140px, 0.8fr) minmax(160px, 1fr) minmax(140px, 0.8fr)')
+                        : 'minmax(160px, 1fr) minmax(140px, 0.8fr) minmax(160px, 1fr) minmax(140px, 0.8fr)'
                 )}>
                   <TextField sx={inputSx} fullWidth size="small" required type="date" label={subtype === 'urgencia_medica' ? "Fecha de salida a urgencias" : "Fecha salida"} InputLabelProps={{ shrink: true }} inputProps={{ min: todayString }} value={form.salida.fecha} onChange={(e) => update('salida', 'fecha', e.target.value)} />
                   <Autocomplete
                     disableClearable
-                    options={TIME_OPTIONS}
+                    options={horaSalidaOptions}
                     getOptionLabel={convert24To12}
                     value={form.salida.horaInicio || ''}
                     onChange={(e, newValue) => update('salida', 'horaInicio', newValue)}
@@ -2305,30 +2383,25 @@ function ReporteSalidaFormDialog({ open, documento, user, onClose, onSubmitted }
                       />
                     )}
                   />
-                  {subtype !== 'urgencia_medica' && (
-                    <>
-                      <TextField sx={inputSx} fullWidth size="small" required type="date" label="Fecha regreso" InputLabelProps={{ shrink: true }} inputProps={{ min: todayString }} value={form.salida.fechaRegreso} onChange={(e) => update('salida', 'fechaRegreso', e.target.value)} />
-                      <Autocomplete
-                        disableClearable
-                        options={horaRegresoOptions}
-                        getOptionLabel={convert24To12}
-                        value={form.salida.horaFin || ''}
-                        onChange={(e, newValue) => update('salida', 'horaFin', newValue)}
-                        renderInput={(params) => (
-                          <TextField
-                            {...params}
-                            sx={inputSx}
-                            required
-                            label="Hora regreso"
-                            placeholder="Seleccione hora"
-                            InputLabelProps={{ shrink: true }}
-                            error={isPastTimeError(form.salida.fechaRegreso, form.salida.horaFin) || Boolean(salidaRangeIssue && form.salida.horaInicio && form.salida.horaFin)}
-                            helperText={salidaRangeIssue && form.salida.horaInicio && form.salida.horaFin ? salidaRangeIssue : ''}
-                          />
-                        )}
+                  <TextField sx={inputSx} fullWidth size="small" required type="date" label="Fecha regreso" InputLabelProps={{ shrink: true }} inputProps={{ min: todayString }} value={form.salida.fechaRegreso} onChange={(e) => update('salida', 'fechaRegreso', e.target.value)} />
+                  <Autocomplete
+                    options={horaRegresoOptions}
+                    getOptionLabel={convert24To12}
+                    value={form.salida.horaFin || null}
+                    onChange={(e, newValue) => update('salida', 'horaFin', newValue || '')}
+                    renderInput={(params) => (
+                      <TextField
+                        {...params}
+                        sx={inputSx}
+                        required={!(category === 'salud' && subtype !== 'terapias')}
+                        label="Hora regreso"
+                        placeholder={(category === 'salud' && subtype !== 'terapias') ? "Opcional" : "Seleccione hora"}
+                        InputLabelProps={{ shrink: true }}
+                        error={isPastTimeError(form.salida.fechaRegreso, form.salida.horaFin) || Boolean(salidaRangeIssue && form.salida.horaInicio && form.salida.horaFin)}
+                        helperText={salidaRangeIssue && form.salida.horaInicio && form.salida.horaFin ? salidaRangeIssue : ''}
                       />
-                    </>
-                  )}
+                    )}
+                  />
                   {shouldRequestReposicionHoras && (
                     <TextField sx={inputSx} fullWidth size="small" required type="number" label="Tiempo a reponer (horas)" InputLabelProps={{ shrink: true }} inputProps={{ min: 0, step: 1 }} value={form.salida.tiempoReponerHoras || ''} onChange={(e) => update('salida', 'tiempoReponerHoras', e.target.value.replace(/[^0-9]/g, ''))} />
                   )}
@@ -2337,11 +2410,43 @@ function ReporteSalidaFormDialog({ open, documento, user, onClose, onSubmitted }
 
               {subtype === 'urgencia_medica' && (
                 <Alert severity="info" sx={{ mt: 2, borderRadius: 2 }}>
-                  Para urgencias médicas no es obligatorio adjuntar el soporte al radicar. Recuerde que posteriormente las oficinas encargadas de realizar el seguimiento solicitarán el soporte correspondiente para justificar la salida.
+                  Para urgencias medicas debe adjuntar el soporte si cuenta con el documento. Si aun no lo tiene, marque la opcion "No cuento con archivos adjuntos en este momento" y conserve los soportes para entregarlos cuando sean requeridos.
                 </Alert>
               )}
 
-              {(REQUIRES_ADJUNTO.includes(subtype) || ['urgencia_medica', 'otra'].includes(subtype)) && (
+              {isSaludAdjuntoSection && (
+                <Box sx={{ mt: 1.5 }}>
+                  <FormControlLabel
+                    control={
+                      <Checkbox
+                        checked={noCuentaAdjuntoSalud}
+                        onChange={(e) => {
+                          const checked = e.target.checked;
+                          setNoCuentaAdjuntoSalud(checked);
+                          if (checked) {
+                            setAdjuntoFile(null);
+                            setAdjuntoError('');
+                          }
+                        }}
+                        color="primary"
+                      />
+                    }
+                    label={
+                      <Typography sx={{ fontSize: 13, fontWeight: 700, color: '#1e3a8a', textAlign: 'left' }}>
+                        No cuento con archivos adjuntos en este momento
+                      </Typography>
+                    }
+                    sx={{ mb: noCuentaAdjuntoSalud ? 1 : 0, display: 'flex', alignItems: 'center', textAlign: 'left' }}
+                  />
+                  {noCuentaAdjuntoSalud && (
+                    <Alert severity="info" sx={{ borderRadius: 2, border: '1px solid #93c5fd', bgcolor: '#eff6ff', color: '#1e3a8a' }}>
+                      {DECLARACION_SIN_ADJUNTO_SALUD}
+                    </Alert>
+                  )}
+                </Box>
+              )}
+
+              {shouldShowAdjuntoSection && !hideAdjuntoUploadByDeclaration && (
                 <Box>
                   <Box
                     component="label"
@@ -2369,24 +2474,30 @@ function ReporteSalidaFormDialog({ open, documento, user, onClose, onSubmitted }
                       accept=".pdf,.png,.jpg,.jpeg"
                       onChange={(e) => {
                         const file = e.target.files?.[0] || null;
-                        if (file) {
-                          const maxSize = 10 * 1024 * 1024; // 10 MB
-                          if (file.size > maxSize) {
-                            setAdjuntoFile(null);
-                            setAdjuntoError('El archivo supera el tamaño máximo permitido de 10 MB');
-                          } else {
-                            setAdjuntoFile(file);
-                            setAdjuntoError('');
-                          }
-                        } else {
-                          setAdjuntoFile(null);
-                          setAdjuntoError('');
-                        }
+                        setAdjuntoFromFile(file);
                       }}
                     />
                     {adjuntoFile ? (
                       <>
-                        <CheckCircleOutlineIcon sx={{ fontSize: 40, color: '#16a34a', mb: 1 }} />
+                        {adjuntoPreviewUrl ? (
+                          <Box
+                            component="img"
+                            src={adjuntoPreviewUrl}
+                            alt="Vista previa del adjunto"
+                            sx={{
+                              width: 'min(100%, 360px)',
+                              maxHeight: 180,
+                              objectFit: 'contain',
+                              borderRadius: 1.5,
+                              border: '1px solid #86efac',
+                              bgcolor: '#ffffff',
+                              p: 0.5,
+                              mb: 1.5
+                            }}
+                          />
+                        ) : (
+                          <CheckCircleOutlineIcon sx={{ fontSize: 40, color: '#16a34a', mb: 1 }} />
+                        )}
                         <Typography sx={{ fontWeight: 700, color: '#166534', textAlign: 'center' }}>
                           Archivo adjuntado correctamente
                         </Typography>
@@ -2401,20 +2512,24 @@ function ReporteSalidaFormDialog({ open, documento, user, onClose, onSubmitted }
                       <>
                         <UploadFileIcon sx={{ fontSize: 48, color: adjuntoError ? '#ef4444' : '#3b82f6', mb: 1 }} />
                         <Typography sx={{ fontWeight: 700, color: adjuntoError ? '#991b1b' : '#1e3a8a', textAlign: 'center', mb: 0.5 }}>
-                          {form.salida.duracionTipo !== 'menos_media_jornada'
+                          {category === 'salud'
+                            ? 'Subir soporte / constancia obligatorio'
+                            : form.salida.duracionTipo !== 'menos_media_jornada'
                             ? 'Subir soporte / constancia (Opcional)'
                             : (['voto_jurado', 'voto_sufragante', 'jurado_votacion', 'sufragante'].includes(subtype)
                               ? 'Subir certificado obligatorio'
                               : (['urgencia_medica', 'otra'].includes(subtype) ? 'Subir soporte / constancia (Opcional)' : 'Subir soporte obligatorio'))}
                         </Typography>
                         <Typography sx={{ fontSize: 13, color: adjuntoError ? '#b91c1c' : '#475569', textAlign: 'center' }}>
-                          {form.salida.duracionTipo !== 'menos_media_jornada'
-                            ? 'Haga clic para adjuntar soporte o constancia opcional (PDF o Imagen)'
+                          {category === 'salud'
+                            ? 'Adjunte PDF, imagen o pegue una captura con Ctrl+V. Si no cuenta con soporte en este momento, marque la declaracion anterior.'
+                            : form.salida.duracionTipo !== 'menos_media_jornada'
+                            ? 'Haga clic para adjuntar PDF, imagen o pegue una captura con Ctrl+V'
                             : (['voto_jurado', 'voto_sufragante', 'jurado_votacion', 'sufragante'].includes(subtype)
-                              ? 'Haga clic para adjuntar su certificado electoral (PDF o Imagen)'
+                              ? 'Haga clic para adjuntar su certificado electoral (PDF o imagen) o pegue una captura con Ctrl+V'
                               : (['urgencia_medica', 'otra'].includes(subtype)
-                                  ? 'Haga clic para adjuntar soporte o constancia si ya la tiene (PDF o Imagen)'
-                                  : 'Haga clic para adjuntar constancia, soporte o documento justificado (PDF o Imagen)'))}
+                                  ? 'Haga clic para adjuntar soporte si ya lo tiene, o pegue una captura con Ctrl+V'
+                                  : 'Haga clic para adjuntar PDF, imagen o pegue una captura con Ctrl+V'))}
                         </Typography>
                         <Button component="span" variant="contained" size="small" sx={{ mt: 2, textTransform: 'none', bgcolor: adjuntoError ? '#dc2626' : '#2563eb', boxShadow: 'none', fontWeight: 600 }}>
                           Seleccionar archivo
@@ -2429,25 +2544,6 @@ function ReporteSalidaFormDialog({ open, documento, user, onClose, onSubmitted }
                   )}
                 </Box>
               )}
-
-              {category === 'salud' && (REQUIRES_ADJUNTO.includes(subtype) || ['urgencia_medica', 'otra'].includes(subtype)) && (
-                <FormControlLabel
-                  control={
-                    <Checkbox
-                      checked={compartirAdjuntoJefe}
-                      onChange={(e) => setCompartirAdjuntoJefe(e.target.checked)}
-                      color="primary"
-                    />
-                  }
-                  label={
-                    <Typography sx={{ fontSize: 13, fontWeight: 650, color: '#334155', textAlign: 'left' }}>
-                      ¿Está de acuerdo como colaborador que se comparta este adjunto con su jefe inmediato?
-                    </Typography>
-                  }
-                  sx={{ mt: 1, mb: 1, display: 'flex', alignItems: 'center', textAlign: 'left' }}
-                />
-              )}
-
               {form.salida.duracionTipo === 'menos_media_jornada' && subtype !== 'otra' && (
                 <Box sx={{ mt: 1.5, display: 'flex', alignItems: 'center', gap: 1 }}>
                   <TextField
@@ -2582,6 +2678,29 @@ function ReporteSalidaFormDialog({ open, documento, user, onClose, onSubmitted }
         </DialogActions>
       </Dialog>
 
+      <Dialog open={showCalamidadWarning} onClose={() => setShowCalamidadWarning(false)} maxWidth="sm" fullWidth PaperProps={{ sx: { borderRadius: 3, p: 1 } }}>
+        <DialogTitle sx={{ fontWeight: 900, color: '#7f1d1d', pb: 1, display: 'flex', alignItems: 'center', gap: 1.5 }}>
+          <InfoIcon sx={{ color: '#dc2626' }} />
+          Grave calamidad doméstica
+        </DialogTitle>
+        <DialogContent>
+          <Typography sx={{ color: '#334155', lineHeight: 1.65, fontSize: 14.5, mt: 1 }}>
+            Informar, por cualquier medio, al tiempo de ocurrir la situación que lo constituye, según lo permitan las circunstancias.
+            <br /><br />
+            Justificar con soportes hasta los dos (2) días hábiles siguientes a su reincorporación.
+            <br /><br />
+            La duración del permiso se determinará teniendo en cuenta el tiempo necesario para superar la calamidad.
+            <br /><br />
+            <strong>Reglamento Interno de Trabajo, artículo 37, numeral 3.</strong>
+          </Typography>
+        </DialogContent>
+        <DialogActions sx={{ p: 2, pt: 0, justifyContent: 'center' }}>
+          <Button onClick={() => setShowCalamidadWarning(false)} variant="contained" color="error" sx={{ borderRadius: 2, textTransform: 'none', fontWeight: 800, px: 4, py: 1 }}>
+            Entendido, continuar
+          </Button>
+        </DialogActions>
+      </Dialog>
+
       <Dialog open={showPersonalesWarning} onClose={() => setShowPersonalesWarning(false)} maxWidth="sm" fullWidth PaperProps={{ sx: { borderRadius: 3, p: 1 } }}>
         <DialogTitle sx={{ fontWeight: 900, color: '#1e3a8a', pb: 1, display: 'flex', alignItems: 'center', gap: 1.5 }}>
           <DirectionsWalkIcon sx={{ color: '#2563eb' }} />
@@ -2640,3 +2759,4 @@ function ReporteSalidaFormDialog({ open, documento, user, onClose, onSubmitted }
 }
 
 export default ReporteSalidaFormDialog;
+
