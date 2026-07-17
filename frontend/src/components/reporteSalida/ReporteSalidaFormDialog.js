@@ -956,7 +956,7 @@ function ReporteSalidaFormDialog({ open, documento, user, onClose, onSubmitted }
       });
     } else {
       if (!form.laboral.dependencia) issues.push('Seleccione la dependencia del/de la colaborador(a).');
-      if (isOficioSolicitud && !form.laboral.vicerrectoria) issues.push('Seleccione la vicerrectoria o Rectoria del/de la colaborador(a).');
+      if (isOficioSolicitud && !form.laboral.vicerrectoria) issues.push('Seleccione la Vicerrectoría / Rectoría del/de la colaborador(a).');
       if (!form.laboral.cargo) issues.push('Seleccione el cargo del/de la colaborador(a).');
       if (!jefe) issues.push('Seleccione el jefe inmediato que aprobara la solicitud.');
       else if (!jefe.email) issues.push('El jefe inmediato seleccionado no tiene correo registrado.');
@@ -1447,7 +1447,26 @@ function ReporteSalidaFormDialog({ open, documento, user, onClose, onSubmitted }
 
             <Box sx={sectionSx}>
               <SectionTitle title={isSalidaMultiple ? "Información laboral del líder de la actividad" : "Información laboral"} />
-              <Box sx={responsiveFieldGrid('minmax(300px, 1.25fr) minmax(240px, 0.95fr) minmax(240px, 0.9fr)')}>
+              <Box sx={responsiveFieldGrid('minmax(240px, 0.95fr) minmax(300px, 1.25fr) minmax(240px, 0.9fr)')}>
+                <Autocomplete
+                  fullWidth
+                  openOnFocus
+                  options={vicerrectoriaOptions}
+                  value={form.laboral.vicerrectoria || ''}
+                  onChange={(_, value) => update('laboral', 'vicerrectoria', value || '')}
+                  isOptionEqualToValue={(option, value) => normalizeOption(option) === normalizeOption(value)}
+                  ListboxProps={{ sx: autocompleteListSx }}
+                  componentsProps={{
+                    popper: {
+                      sx: {
+                        ...autocompletePopperSx,
+                        width: { xs: 'calc(100vw - 48px) !important', md: '520px !important' },
+                        maxWidth: 'calc(100vw - 48px)'
+                      }
+                    }
+                  }}
+                  renderInput={(params) => <TextField {...params} sx={inputSx} fullWidth size="small" required={isOficioSolicitud} label="Vicerrectoría / Rectoría" placeholder={isOficioSolicitud ? "Seleccione Vicerrectoría / Rectoría" : "Opcional para media jornada"} />}
+                />
                 <Autocomplete
                   freeSolo
                   fullWidth
@@ -1467,25 +1486,6 @@ function ReporteSalidaFormDialog({ open, documento, user, onClose, onSubmitted }
                     }
                   }}
                   renderInput={(params) => <TextField {...params} sx={inputSx} fullWidth size="small" required label="Dependencia" placeholder="Buscar dependencia" />}
-                />
-                <Autocomplete
-                  fullWidth
-                  openOnFocus
-                  options={vicerrectoriaOptions}
-                  value={form.laboral.vicerrectoria || ''}
-                  onChange={(_, value) => update('laboral', 'vicerrectoria', value || '')}
-                  isOptionEqualToValue={(option, value) => normalizeOption(option) === normalizeOption(value)}
-                  ListboxProps={{ sx: autocompleteListSx }}
-                  componentsProps={{
-                    popper: {
-                      sx: {
-                        ...autocompletePopperSx,
-                        width: { xs: 'calc(100vw - 48px) !important', md: '520px !important' },
-                        maxWidth: 'calc(100vw - 48px)'
-                      }
-                    }
-                  }}
-                  renderInput={(params) => <TextField {...params} sx={inputSx} fullWidth size="small" required={isOficioSolicitud} label="Vicerrectoría" placeholder={isOficioSolicitud ? "Seleccione vicerrectoría o Rectoría" : "Opcional para media jornada"} />}
                 />
                 <Autocomplete
                   freeSolo
