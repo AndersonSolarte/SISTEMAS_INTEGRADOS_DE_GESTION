@@ -793,6 +793,7 @@ function ReporteSalidaFormDialog({ open, documento, user, onClose, onSubmitted }
     setIsSalidaMultiple(false);
     setParticipantes([]);
     setAdjuntoFile(null);
+    setAdjuntoError('');
     setCompartirAdjuntoJefe(true);
   }, [open, user]);
 
@@ -2319,68 +2320,90 @@ function ReporteSalidaFormDialog({ open, documento, user, onClose, onSubmitted }
               )}
 
               {(REQUIRES_ADJUNTO.includes(subtype) || ['urgencia_medica', 'otra'].includes(subtype)) && (
-                <Box
-                  component="label"
-                  sx={{
-                    mt: 2,
-                    p: 3,
-                    borderRadius: 2,
-                    border: adjuntoFile ? '2px solid #22c55e' : '2px dashed #93c5fd',
-                    bgcolor: adjuntoFile ? '#f0fdf4' : '#eff6ff',
-                    display: 'flex',
-                    flexDirection: 'column',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    cursor: 'pointer',
-                    transition: 'all 0.2s ease',
-                    '&:hover': {
-                      bgcolor: adjuntoFile ? '#dcfce7' : '#dbeafe',
-                      borderColor: adjuntoFile ? '#16a34a' : '#3b82f6'
-                    }
-                  }}
-                >
-                  <input
-                    type="file"
-                    hidden
-                    accept=".pdf,.png,.jpg,.jpeg"
-                    onChange={(e) => setAdjuntoFile(e.target.files?.[0] || null)}
-                  />
-                  {adjuntoFile ? (
-                    <>
-                      <CheckCircleOutlineIcon sx={{ fontSize: 40, color: '#16a34a', mb: 1 }} />
-                      <Typography sx={{ fontWeight: 700, color: '#166534', textAlign: 'center' }}>
-                        Archivo adjuntado correctamente
-                      </Typography>
-                      <Typography sx={{ fontSize: 13, color: '#15803d', textAlign: 'center', mt: 0.5, wordBreak: 'break-all' }}>
-                        {adjuntoFile.name}
-                      </Typography>
-                      <Button component="span" size="small" variant="text" color="success" sx={{ mt: 1, textTransform: 'none', fontWeight: 600 }}>
-                        Cambiar archivo
-                      </Button>
-                    </>
-                  ) : (
-                    <>
-                      <UploadFileIcon sx={{ fontSize: 48, color: '#3b82f6', mb: 1 }} />
-                      <Typography sx={{ fontWeight: 700, color: '#1e3a8a', textAlign: 'center', mb: 0.5 }}>
-                        {form.salida.duracionTipo !== 'menos_media_jornada'
-                          ? 'Subir soporte / constancia (Opcional)'
-                          : (['voto_jurado', 'voto_sufragante', 'jurado_votacion', 'sufragante'].includes(subtype)
-                            ? 'Subir certificado obligatorio'
-                            : (['urgencia_medica', 'otra'].includes(subtype) ? 'Subir soporte / constancia (Opcional)' : 'Subir soporte obligatorio'))}
-                      </Typography>
-                      <Typography sx={{ fontSize: 13, color: '#475569', textAlign: 'center' }}>
-                        {form.salida.duracionTipo !== 'menos_media_jornada'
-                          ? 'Haga clic para adjuntar soporte o constancia opcional (PDF o Imagen)'
-                          : (['voto_jurado', 'voto_sufragante', 'jurado_votacion', 'sufragante'].includes(subtype)
-                            ? 'Haga clic para adjuntar su certificado electoral (PDF o Imagen)'
-                            : (['urgencia_medica', 'otra'].includes(subtype)
-                                ? 'Haga clic para adjuntar soporte o constancia si ya la tiene (PDF o Imagen)'
-                                : 'Haga clic para adjuntar constancia, soporte o documento justificado (PDF o Imagen)'))}
-                      </Typography>
-                      <Button component="span" variant="contained" size="small" sx={{ mt: 2, textTransform: 'none', bgcolor: '#2563eb', boxShadow: 'none', fontWeight: 600 }}>
-                        Seleccionar archivo
-                      </Button>
-                    </>
+                <Box>
+                  <Box
+                    component="label"
+                    sx={{
+                      mt: 2,
+                      p: 3,
+                      borderRadius: 2,
+                      border: adjuntoFile ? '2px solid #22c55e' : (adjuntoError ? '2px solid #ef4444' : '2px dashed #93c5fd'),
+                      bgcolor: adjuntoFile ? '#f0fdf4' : (adjuntoError ? '#fef2f2' : '#eff6ff'),
+                      display: 'flex',
+                      flexDirection: 'column',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      cursor: 'pointer',
+                      transition: 'all 0.2s ease',
+                      '&:hover': {
+                        bgcolor: adjuntoFile ? '#dcfce7' : (adjuntoError ? '#fee2e2' : '#dbeafe'),
+                        borderColor: adjuntoFile ? '#16a34a' : (adjuntoError ? '#dc2626' : '#3b82f6')
+                      }
+                    }}
+                  >
+                    <input
+                      type="file"
+                      hidden
+                      accept=".pdf,.png,.jpg,.jpeg"
+                      onChange={(e) => {
+                        const file = e.target.files?.[0] || null;
+                        if (file) {
+                          const maxSize = 10 * 1024 * 1024; // 10 MB
+                          if (file.size > maxSize) {
+                            setAdjuntoFile(null);
+                            setAdjuntoError('El archivo supera el tamaño máximo permitido de 10 MB');
+                          } else {
+                            setAdjuntoFile(file);
+                            setAdjuntoError('');
+                          }
+                        } else {
+                          setAdjuntoFile(null);
+                          setAdjuntoError('');
+                        }
+                      }}
+                    />
+                    {adjuntoFile ? (
+                      <>
+                        <CheckCircleOutlineIcon sx={{ fontSize: 40, color: '#16a34a', mb: 1 }} />
+                        <Typography sx={{ fontWeight: 700, color: '#166534', textAlign: 'center' }}>
+                          Archivo adjuntado correctamente
+                        </Typography>
+                        <Typography sx={{ fontSize: 13, color: '#15803d', textAlign: 'center', mt: 0.5, wordBreak: 'break-all' }}>
+                          {adjuntoFile.name}
+                        </Typography>
+                        <Button component="span" size="small" variant="text" color="success" sx={{ mt: 1, textTransform: 'none', fontWeight: 600 }}>
+                          Cambiar archivo
+                        </Button>
+                      </>
+                    ) : (
+                      <>
+                        <UploadFileIcon sx={{ fontSize: 48, color: adjuntoError ? '#ef4444' : '#3b82f6', mb: 1 }} />
+                        <Typography sx={{ fontWeight: 700, color: adjuntoError ? '#991b1b' : '#1e3a8a', textAlign: 'center', mb: 0.5 }}>
+                          {form.salida.duracionTipo !== 'menos_media_jornada'
+                            ? 'Subir soporte / constancia (Opcional)'
+                            : (['voto_jurado', 'voto_sufragante', 'jurado_votacion', 'sufragante'].includes(subtype)
+                              ? 'Subir certificado obligatorio'
+                              : (['urgencia_medica', 'otra'].includes(subtype) ? 'Subir soporte / constancia (Opcional)' : 'Subir soporte obligatorio'))}
+                        </Typography>
+                        <Typography sx={{ fontSize: 13, color: adjuntoError ? '#b91c1c' : '#475569', textAlign: 'center' }}>
+                          {form.salida.duracionTipo !== 'menos_media_jornada'
+                            ? 'Haga clic para adjuntar soporte o constancia opcional (PDF o Imagen)'
+                            : (['voto_jurado', 'voto_sufragante', 'jurado_votacion', 'sufragante'].includes(subtype)
+                              ? 'Haga clic para adjuntar su certificado electoral (PDF o Imagen)'
+                              : (['urgencia_medica', 'otra'].includes(subtype)
+                                  ? 'Haga clic para adjuntar soporte o constancia si ya la tiene (PDF o Imagen)'
+                                  : 'Haga clic para adjuntar constancia, soporte o documento justificado (PDF o Imagen)'))}
+                        </Typography>
+                        <Button component="span" variant="contained" size="small" sx={{ mt: 2, textTransform: 'none', bgcolor: adjuntoError ? '#dc2626' : '#2563eb', boxShadow: 'none', fontWeight: 600 }}>
+                          Seleccionar archivo
+                        </Button>
+                      </>
+                    )}
+                  </Box>
+                  {adjuntoError && (
+                    <Typography sx={{ color: '#d32f2f', fontSize: 13, fontWeight: 700, mt: 1, textAlign: 'center' }}>
+                      {adjuntoError}
+                    </Typography>
                   )}
                 </Box>
               )}
