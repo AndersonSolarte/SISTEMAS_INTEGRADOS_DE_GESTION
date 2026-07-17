@@ -2201,7 +2201,12 @@ function ReporteSalidaFormDialog({ open, documento, user, onClose, onSubmitted }
                 </Typography>
                 <Box sx={{ display: 'flex', flexDirection: { xs: 'column', md: 'row' }, gap: 1.2, width: '100%', alignItems: 'stretch' }}>
                   {[
-                    { value: 'menos_media_jornada', label: 'Hasta media jornada' },
+                    {
+                      value: 'menos_media_jornada',
+                      label: form.salida.tipo === 'jurado_votacion'
+                        ? 'Equivale a un día'
+                        : (form.salida.tipo === 'sufragante' ? 'Equivale a media jornada' : 'Hasta media jornada')
+                    },
                     { value: '1_2_dias', label: 'Entre 1 y 2 días' },
                     { value: '3_mas_dias', label: '3 o más días' }
                   ].filter((opt) => {
