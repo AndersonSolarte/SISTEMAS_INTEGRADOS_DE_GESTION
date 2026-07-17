@@ -3866,10 +3866,7 @@ const sendGHRejectionEmails = async ({ solicitud, justificacion, isSST = false }
   }
 
   return { userResult, bossResult };
-};const renderAutoApprovePage = ({ res, token, isGrupo = false }) => {
-  const actionPath = isGrupo ? 'aprobar-grupo' : 'aprobar';
-  const safeActionUrl = escapeHtml(`${publicBackendUrl.replace(/\/$/, '')}/api/reporte-salida/${actionPath}/${encodeURIComponent(token)}`);
-
+};const renderAutoApprovePage = ({ res }) => {
   return res.type('html').send(`<!doctype html>
 <html lang="es">
 <head>
@@ -3912,7 +3909,7 @@ const sendGHRejectionEmails = async ({ solicitud, justificacion, isSST = false }
     <h2>Procesando solicitud...</h2>
     <p>Por favor espere un momento mientras se registra la aprobación.</p>
   </div>
-  <form id="auto-form" action="${safeActionUrl}" method="POST"></form>
+  <form id="auto-form" method="POST"></form>
   <script>
     document.getElementById('auto-form').submit();
   </script>
@@ -4085,11 +4082,7 @@ const mostrarFormularioAprobacion = async (req, res) => {
       }
     }
 
-    return renderAutoApprovePage({
-      res,
-      token: req.params.token,
-      isGrupo: false
-    });
+    return renderAutoApprovePage({ res });
   } catch (error) {
     console.error('Error mostrando formulario de aprobacion:', error);
     return renderApprovalPage({
@@ -4160,11 +4153,7 @@ const mostrarFormularioAprobacionGrupo = async (req, res) => {
 
     const solicitudEjemplo = solicitudes[0];
 
-    return renderAutoApprovePage({
-      res,
-      token: req.params.token,
-      isGrupo: true
-    });
+    return renderAutoApprovePage({ res });
   } catch (error) {
     console.error('Error mostrando formulario de aprobacion de grupo:', error);
     return renderApprovalPage({
