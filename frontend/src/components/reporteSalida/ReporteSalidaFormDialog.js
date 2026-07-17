@@ -112,9 +112,9 @@ const SALUD_SUBTYPES = [
 const PERSONALES_SUBTYPES = [
   { group: 'Trámites y Compensatorios', value: 'diligencia_personal', label: 'Diligencia personal' },
   { group: 'Trámites y Compensatorios', value: 'compensatorio', label: 'Compensatorio' },
-  { group: 'Permisos Electorales - Ejercicio del derecho al sufragio', value: 'sufragante', label: 'Sufragante' },
-  { group: 'Permisos Electorales - Cargos oficiales transitorios de forzosa aceptación', value: 'jurado_votacion', label: 'Jurado de votación' },
-  { group: 'Permisos Electorales - Cargos oficiales transitorios de forzosa aceptación', value: 'cargos_oficiales_transitorios', label: 'Comparecencias por designación oficial' },
+  { group: 'Ejercicio del derecho al sufragio', value: 'sufragante', label: 'Sufragante' },
+  { group: 'Cargos oficiales transitorios de forzosa aceptación', value: 'jurado_votacion', label: 'Jurado de votación' },
+  { group: 'Cargos oficiales transitorios de forzosa aceptación', value: 'cargos_oficiales_transitorios', label: 'Comparecencias por designación oficial' },
   { group: 'Permisos y Licencias', value: 'calamidad_domestica', label: 'Grave calamidad doméstica' },
   { group: 'Permisos y Licencias', value: 'entierro_companero', label: 'Entierro de compañeras/os de trabajo' },
   { group: 'Permisos y Licencias', value: 'luto_familiares_cercanos', label: 'Licencia por luto de familiares cercanos' },
@@ -1230,7 +1230,7 @@ function ReporteSalidaFormDialog({ open, documento, user, onClose, onSubmitted }
     );
 
     if (matchedRow && matchedRow.jefe_inmediato) {
-      if (matchedRow.vicerrectoria && normalizeOption(matchedRow.vicerrectoria) !== normalizeOption(form.laboral.vicerrectoria)) {
+      if (!form.laboral.vicerrectoria && matchedRow.vicerrectoria) {
         update('laboral', 'vicerrectoria', matchedRow.vicerrectoria);
       }
       const jefeName = matchedRow.jefe_inmediato;
@@ -1552,7 +1552,7 @@ function ReporteSalidaFormDialog({ open, documento, user, onClose, onSubmitted }
                       }
                     }
                   }}
-                  renderInput={(params) => <TextField {...params} sx={inputSx} fullWidth size="small" required={isOficioSolicitud} label="Vicerrectoría / Rectoría" placeholder={isOficioSolicitud ? "Seleccione Vicerrectoría / Rectoría" : "Opcional para media jornada"} />}
+                  renderInput={(params) => <TextField {...params} sx={inputSx} fullWidth size="small" required={isOficioSolicitud} label="Rectoría / Vicerrectoría" placeholder={isOficioSolicitud ? "Seleccione Rectoría / Vicerrectoría" : "Opcional para media jornada"} />}
                 />
                 <Autocomplete
                   freeSolo

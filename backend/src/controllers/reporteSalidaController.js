@@ -730,8 +730,14 @@ const isOficioSolicitud = (solicitud = {}) => {
   return Boolean(duracionTipo && duracionTipo !== 'menos_media_jornada');
 };
 
+const isPermisoElectoralSinVicerrectoria = (solicitud = {}) => {
+  const tipo = getSolicitudSalida(solicitud).tipo;
+  return ['jurado_votacion', 'voto_jurado', 'sufragante', 'voto_sufragante'].includes(tipo);
+};
+
 const getAuthorityAfterBoss = (solicitud = {}) => {
   if (!isOficioSolicitud(solicitud)) return null;
+  if (isPermisoElectoralSinVicerrectoria(solicitud)) return null;
   const vicerrectoriaName = getSolicitudVicerrectoria(solicitud);
   if (isRectoriaAuthority(vicerrectoriaName)) {
     return {
@@ -759,7 +765,9 @@ const getAuthorityAfterBoss = (solicitud = {}) => {
 };
 
 const requiresRectoriaApproval = (solicitud = {}) =>
-  getSolicitudSalida(solicitud).duracionTipo === '3_mas_dias' && !isRectoriaAuthority(getSolicitudVicerrectoria(solicitud));
+  getSolicitudSalida(solicitud).duracionTipo === '3_mas_dias' &&
+  !isRectoriaAuthority(getSolicitudVicerrectoria(solicitud)) &&
+  !isPermisoElectoralSinVicerrectoria(solicitud);
 
 const requiresSstApproval = (solicitud = {}) => {
   const salida = getSolicitudSalida(solicitud);
@@ -2103,7 +2111,8 @@ const radicarSolicitud = async (req, res) => {
     if (isOficio && !selectedVicerrectoriaName) {
       return res.status(400).json({ success: false, message: 'Seleccione la vicerrectoria o Rectoria a la que pertenece el colaborador.' });
     }
-    if (isOficio && selectedVicerrectoriaName && !sanitizeText(req.user.vicerrectoria, 220)) {
+    const currentUserVicerrectoria = sanitizeText(req.user.vicerrectoria, 220);
+    if (isOficio && selectedVicerrectoriaName && selectedVicerrectoriaName !== currentUserVicerrectoria) {
       await User.update({ vicerrectoria: selectedVicerrectoriaName }, { where: { id: req.user.id } });
       req.user.vicerrectoria = selectedVicerrectoriaName;
       if (typeof req.user.setDataValue === 'function') {
@@ -3197,13 +3206,85 @@ const editarSolicitudAdmin = async (req, res) => {
     }
 
     const { estado, reposicion_aplica, tiempo_solicitado_minutos, reposicion_minutos_pagados, observacion } = req.body;
+    const estadoSolicitado = sanitizeText(estado, 50);
+    const observacionAdmin = sanitizeText(observacion, 600);
+
+    if (
+      solicitud.estado === 'pendiente_aprobacion_gestion_humana' &&
+      ['finalizada', 'no_aprobada'].includes(estadoSolicitado)
+    ) {
+      if (estadoSolicitado === 'no_aprobada' && !observacionAdmin) {
+        return res.status(400).json({ success: false, message: 'Debe ingresar la justificacion del rechazo.' });
+      }
+
+      const now = new Date();
+      const actorName = req.user.nombre || 'Gestion del Talento Humano';
+      const nextTraceEvent = estadoSolicitado === 'finalizada' ? 'aprobada_gestion_humana' : 'rechazada_gestion_humana';
+      const nextTraceDetail = estadoSolicitado === 'finalizada'
+        ? { aprobada_desde: 'modulo_gestion_humana' }
+        : {
+            actorName,
+            justificacion: observacionAdmin
+          };
+
+      const updateData = {
+        estado: estadoSolicitado,
+        trazabilidad: appendTrace(solicitud, nextTraceEvent, req.user, nextTraceDetail)
+      };
+
+      if (estadoSolicitado === 'finalizada') {
+        updateData.gestion_humana_aprobado_at = now;
+        updateData.finalizado_at = now;
+      }
+
+      if (observacionAdmin) {
+        const logEntry = `[${now.toLocaleString('es-CO', {
+          timeZone: 'America/Bogota',
+          year: 'numeric',
+          month: '2-digit',
+          day: '2-digit',
+          hour: '2-digit',
+          minute: '2-digit',
+          hour12: false
+        })}] ${actorName}: ${estadoSolicitado === 'finalizada' ? 'Aprobacion administrativa GH' : 'Rechazo administrativo GH'}${observacionAdmin ? ` - "${observacionAdmin}"` : ''}`;
+        updateData.observacion_gestion_humana = solicitud.observacion_gestion_humana
+          ? `${solicitud.observacion_gestion_humana}\n${logEntry}`
+          : logEntry;
+      }
+
+      await solicitud.update(updateData);
+      await solicitud.reload();
+
+      if (estadoSolicitado === 'finalizada') {
+        const pdfAttachment = await buildReporteSalidaPdfAttachment(solicitud);
+        const userEmailResult = await sendIndividualColaboradorFinalEmail(solicitud, pdfAttachment);
+        await solicitud.update({
+          correo_usuario_enviado_at: userEmailResult.success ? new Date() : null,
+          trazabilidad: appendTrace(solicitud, userEmailResult.success ? 'correo_usuario_enviado' : 'correo_usuario_error', null, { error: userEmailResult.error || '' })
+        });
+        await solicitud.reload();
+        return res.json({
+          success: true,
+          message: 'Solicitud aprobada correctamente desde Gestion del Talento Humano.',
+          data: serializeSolicitud(solicitud)
+        });
+      }
+
+      deleteSupportFile(solicitud);
+      await sendGHRejectionEmails({ solicitud, justificacion: observacionAdmin });
+      return res.json({
+        success: true,
+        message: 'Solicitud rechazada correctamente desde Gestion del Talento Humano.',
+        data: serializeSolicitud(solicitud)
+      });
+    }
 
     const updateData = {};
     const logDetails = [];
 
-    if (estado && estado !== solicitud.estado) {
-      updateData.estado = sanitizeText(estado, 50);
-      logDetails.push(`Estado a "${estado.replace(/_/g, ' ')}"`);
+    if (estadoSolicitado && estadoSolicitado !== solicitud.estado) {
+      updateData.estado = estadoSolicitado;
+      logDetails.push(`Estado a "${estadoSolicitado.replace(/_/g, ' ')}"`);
     }
 
     if (reposicion_aplica !== undefined && Boolean(reposicion_aplica) !== solicitud.reposicion_aplica) {

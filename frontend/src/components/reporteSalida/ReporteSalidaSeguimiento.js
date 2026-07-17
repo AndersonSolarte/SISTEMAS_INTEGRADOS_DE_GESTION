@@ -39,6 +39,7 @@ import FactCheckIcon from '@mui/icons-material/FactCheck';
 import PendingActionsIcon from '@mui/icons-material/PendingActions';
 import DeleteIcon from '@mui/icons-material/Delete';
 import EditIcon from '@mui/icons-material/Edit';
+import CancelOutlinedIcon from '@mui/icons-material/CancelOutlined';
 import ManageHistoryIcon from '@mui/icons-material/ManageHistory';
 import DownloadIcon from '@mui/icons-material/Download';
 import RefreshIcon from '@mui/icons-material/Refresh';
@@ -331,6 +332,10 @@ function ReporteSalidaSeguimiento({ initialAccess = null, onBack }) {
   const [editDialogOpen, setEditDialogOpen] = useState(false);
   const [editTarget, setEditTarget] = useState(null);
   const [editData, setEditData] = useState({ estado: '', reposicion_aplica: false, tiempo_solicitado_minutos: '' });
+  const [ghActionDialogOpen, setGhActionDialogOpen] = useState(false);
+  const [ghActionTarget, setGhActionTarget] = useState(null);
+  const [ghActionType, setGhActionType] = useState('approve');
+  const [ghActionObservation, setGhActionObservation] = useState('');
   
   // Estados para modal de reposición parcial GH
   const [repDialogOpen, setRepDialogOpen] = useState(false);
@@ -722,6 +727,36 @@ function ReporteSalidaSeguimiento({ initialAccess = null, onBack }) {
       }
     } catch (error) {
       enqueueSnackbar('Error al registrar la corrección', { variant: 'error' });
+    }
+  };
+
+  const handleGhActionOpen = (row, type) => {
+    setGhActionTarget(row);
+    setGhActionType(type);
+    setGhActionObservation('');
+    setGhActionDialogOpen(true);
+  };
+
+  const submitGhAction = async () => {
+    if (!ghActionTarget) return;
+    const isReject = ghActionType === 'reject';
+    if (isReject && !ghActionObservation.trim()) {
+      enqueueSnackbar('Debe ingresar la justificacion del rechazo.', { variant: 'error' });
+      return;
+    }
+    try {
+      const res = await api.put(`/reporte-salida/solicitudes/${ghActionTarget.id}/admin`, {
+        estado: isReject ? 'no_aprobada' : 'finalizada',
+        observacion: ghActionObservation
+      });
+      if (res.data.success) {
+        enqueueSnackbar(res.data.message || (isReject ? 'Solicitud rechazada' : 'Solicitud aprobada'), { variant: 'success' });
+        setGhActionDialogOpen(false);
+        const updatedRow = res.data.data;
+        setRows((prev) => prev.map((item) => (item.id === updatedRow.id ? updatedRow : item)));
+      }
+    } catch (error) {
+      enqueueSnackbar(error.response?.data?.message || 'Error al procesar la solicitud', { variant: 'error' });
     }
   };
 
@@ -1300,26 +1335,42 @@ function ReporteSalidaSeguimiento({ initialAccess = null, onBack }) {
                           </TableCell>
                           <TableCell sx={{ py: 0.8, px: 0.8 }}>
                             {canManageAll ? (
-                              <Stack direction="row" spacing={0.5}>
-                                {row.reposicion_aplica && (
-                                  <Tooltip title="Gestionar Reposición" arrow>
-                                    <IconButton size="small" color="primary" onClick={() => handleRepOpen(row)}>
-                                      <ManageHistoryIcon fontSize="small" />
+                              <Stack spacing={0.6}>
+                                {row.estado === 'pendiente_aprobacion_gestion_humana' && (
+                                  <Stack direction="row" spacing={0.5}>
+                                    <Tooltip title="Aprobar desde Gestion Humana" arrow>
+                                      <IconButton size="small" color="success" onClick={() => handleGhActionOpen(row, 'approve')}>
+                                        <CheckCircleIcon fontSize="small" />
+                                      </IconButton>
+                                    </Tooltip>
+                                    <Tooltip title="Rechazar desde Gestion Humana" arrow>
+                                      <IconButton size="small" color="error" onClick={() => handleGhActionOpen(row, 'reject')}>
+                                        <CancelOutlinedIcon fontSize="small" />
+                                      </IconButton>
+                                    </Tooltip>
+                                  </Stack>
+                                )}
+                                <Stack direction="row" spacing={0.5}>
+                                  {row.reposicion_aplica && (
+                                    <Tooltip title="Gestionar Reposición" arrow>
+                                      <IconButton size="small" color="primary" onClick={() => handleRepOpen(row)}>
+                                        <ManageHistoryIcon fontSize="small" />
+                                      </IconButton>
+                                    </Tooltip>
+                                  )}
+                                  {row.reposicion_aplica && (
+                                    <Tooltip title="Editar" arrow>
+                                      <IconButton size="small" onClick={() => handleEditOpen(row)}>
+                                        <EditIcon fontSize="small" />
+                                      </IconButton>
+                                    </Tooltip>
+                                  )}
+                                  <Tooltip title="Eliminar" arrow>
+                                    <IconButton size="small" color="error" onClick={() => handleDeleteOpen(row.id)}>
+                                      <DeleteIcon fontSize="small" />
                                     </IconButton>
                                   </Tooltip>
-                                )}
-                                {row.reposicion_aplica && (
-                                  <Tooltip title="Editar" arrow>
-                                    <IconButton size="small" onClick={() => handleEditOpen(row)}>
-                                      <EditIcon fontSize="small" />
-                                    </IconButton>
-                                  </Tooltip>
-                                )}
-                                <Tooltip title="Eliminar" arrow>
-                                  <IconButton size="small" color="error" onClick={() => handleDeleteOpen(row.id)}>
-                                    <DeleteIcon fontSize="small" />
-                                  </IconButton>
-                                </Tooltip>
+                                </Stack>
                               </Stack>
                             ) : (
                               row.reposicion_aplica ? (
@@ -1421,6 +1472,38 @@ function ReporteSalidaSeguimiento({ initialAccess = null, onBack }) {
               <DialogActions>
                 <Button onClick={() => setDeleteConfirmOpen(false)} color="inherit">Cancelar</Button>
                 <Button onClick={submitDelete} color="error" variant="contained" disableElevation>Eliminar</Button>
+              </DialogActions>
+            </Dialog>
+
+            <Dialog open={ghActionDialogOpen} onClose={() => setGhActionDialogOpen(false)} maxWidth="sm" fullWidth>
+              <DialogTitle sx={{ fontWeight: 900, bgcolor: '#f8fafc', borderBottom: '1px solid #e2e8f0' }}>
+                {ghActionType === 'approve' ? 'Aprobar desde Gestion Humana' : 'Rechazar desde Gestion Humana'}
+              </DialogTitle>
+              <DialogContent sx={{ pt: 2.2 }}>
+                <Typography sx={{ mb: 1.5, color: '#475569', fontSize: 13 }}>
+                  {ghActionType === 'approve'
+                    ? 'Esta solicitud quedara finalizada y se notificara al colaborador con el PDF correspondiente.'
+                    : 'Debe indicar la justificacion del rechazo para enviarla al colaborador y al jefe inmediato.'}
+                </Typography>
+                <TextField
+                  fullWidth
+                  multiline
+                  minRows={4}
+                  label={ghActionType === 'approve' ? 'Observacion opcional' : 'Justificacion del rechazo *'}
+                  value={ghActionObservation}
+                  onChange={(e) => setGhActionObservation(e.target.value)}
+                />
+              </DialogContent>
+              <DialogActions sx={{ bgcolor: '#f8fafc', borderTop: '1px solid #e2e8f0' }}>
+                <Button onClick={() => setGhActionDialogOpen(false)} color="inherit">Cancelar</Button>
+                <Button
+                  onClick={submitGhAction}
+                  variant="contained"
+                  disableElevation
+                  color={ghActionType === 'approve' ? 'success' : 'error'}
+                >
+                  {ghActionType === 'approve' ? 'Aprobar salida' : 'Confirmar rechazo'}
+                </Button>
               </DialogActions>
             </Dialog>
 
