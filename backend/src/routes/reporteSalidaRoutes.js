@@ -25,6 +25,8 @@ const upload = multer({
 });
 const {
   aprobarDesdeCorreo,
+  mostrarFormularioAprobacion,
+  mostrarFormularioAprobacionGrupo,
   mostrarFormularioRechazo,
   procesarRechazo,
   aprobarGrupoDesdeCorreo,
@@ -51,10 +53,12 @@ const { auth, hasAnyRoleOrModulePermission } = require('../middlewares/auth');
 const { publicLimiter } = require('../middlewares/security');
 const { ROLES } = require('../constants/roles');
 
-router.get('/aprobar/:token', publicLimiter, aprobarDesdeCorreo);
+router.get('/aprobar/:token', publicLimiter, mostrarFormularioAprobacion);
+router.post('/aprobar/:token', publicLimiter, aprobarDesdeCorreo);
 router.get('/rechazar/:token', publicLimiter, mostrarFormularioRechazo);
 router.post('/rechazar/:token', publicLimiter, procesarRechazo);
-router.get('/aprobar-grupo/:token', publicLimiter, aprobarGrupoDesdeCorreo);
+router.get('/aprobar-grupo/:token', publicLimiter, mostrarFormularioAprobacionGrupo);
+router.post('/aprobar-grupo/:token', publicLimiter, aprobarGrupoDesdeCorreo);
 router.get('/rechazar-grupo/:token', publicLimiter, mostrarFormularioRechazoGrupo);
 router.post('/rechazar-grupo/:token', publicLimiter, procesarRechazoGrupo);
 router.get('/public/verificar/:id', verificarReportePublico);

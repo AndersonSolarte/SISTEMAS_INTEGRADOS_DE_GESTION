@@ -1012,38 +1012,25 @@ const renderApprovalPage = ({
   </style>
   <script>
     function closeWindow() {
-      // 1. Intentar cerrar la pestaña directamente
+      // 1. Mostrar el aviso de cierre inmediatamente
+      const msgEl = document.getElementById('close-msg');
+      if (msgEl) {
+        msgEl.style.display = 'block';
+      }
+      
+      // 2. Intentar cerrar la pestaña directamente
       try {
         window.close();
       } catch (e) {
         console.log('Error window.close:', e);
       }
       
-      // 2. Intentar truco alternativo para forzar el cierre
       try {
         var win = window.open('', '_self', '');
         if (win) win.close();
       } catch (e) {
         console.log('Error window.open.close:', e);
       }
-      
-      // 3. Si la pestaña no pudo cerrarse (debido al bloqueo de seguridad del navegador),
-      // reemplazamos el cuerpo de la página por una tarjeta limpia y profesional
-      // de "Proceso Finalizado" para que el usuario sepa que puede cerrar la pestaña manualmente.
-      setTimeout(function() {
-        document.body.innerHTML = \`
-          <div style="min-height: 100vh; display: grid; place-items: center; font-family: Inter, system-ui, sans-serif; background: radial-gradient(circle at 20% 0%, rgba(36, 87, 230, 0.08), transparent 32%), linear-gradient(135deg, #f8fbff 0%, #eef4ff 48%, #f7fbff 100%); padding: 20px; text-align: center; margin: 0;">
-            <div style="background: white; border: 1px solid #dbe6f5; padding: 40px; border-radius: 18px; box-shadow: 0 20px 50px rgba(15, 23, 42, 0.08); max-width: 480px; width: 100%;">
-              <div style="width: 60px; height: 60px; border-radius: 50%; background: #ecfdf5; border: 1px solid #a7f3d0; color: #059669; display: grid; place-items: center; font-size: 32px; font-weight: bold; margin: 0 auto 20px;">✓</div>
-              <h1 style="color: #0b1730; margin: 0 0 10px 0; font-size: 22px; font-weight: 850;">Proceso Finalizado</h1>
-              <p style="color: #475569; font-size: 15.5px; line-height: 1.6; margin: 0 0 24px 0;">La transacción ha sido registrada con éxito. Puedes cerrar esta pestaña en tu navegador de forma segura usando la <strong>X</strong>.</p>
-              <button onclick="window.close()" style="background: #0b3a6f; color: white; border: 0; padding: 12px 24px; font-weight: 850; border-radius: 10px; cursor: pointer; box-shadow: 0 10px 20px rgba(11, 58, 111, 0.15); font-size: 14px;">Intentar cerrar automáticamente</button>
-            </div>
-          </div>
-        \`;
-        document.body.style.margin = "0";
-        document.body.style.padding = "0";
-      }, 100);
     }
   </script>
 </head>
@@ -1074,7 +1061,9 @@ const renderApprovalPage = ({
         <button class="primary" type="button" onclick="closeWindow()">Cerrar ventana</button>
       </div>
       <div id="close-msg" class="close-alert">
-        <strong>¡Listo!</strong> La aprobación fue registrada. Ya puedes cerrar esta pestaña de forma segura usando la <strong>X</strong> de tu navegador.
+        ${tone === 'success' 
+          ? '<strong>¡Listo!</strong> La transacción fue registrada. Ya puedes cerrar esta pestaña de forma segura usando la <strong>X</strong> de tu navegador.' 
+          : 'Ya puedes cerrar esta pestaña de forma segura usando la <strong>X</strong> de tu navegador.'}
       </div>
     </section>
   </main>
@@ -3877,6 +3866,590 @@ const sendGHRejectionEmails = async ({ solicitud, justificacion, isSST = false }
   }
 
   return { userResult, bossResult };
+};const renderApprovalFormPage = ({ res, solicitud, token, stage }) => {
+  const consecutivo = solicitud?.consecutivo || '';
+  const solicitante = solicitud?.solicitante_snapshot?.nombre || '';
+  const safeConsecutivo = escapeHtml(consecutivo);
+  const safeSolicitante = escapeHtml(solicitante);
+  const safeActionUrl = escapeHtml(`${publicBackendUrl.replace(/\/$/, '')}/api/reporte-salida/aprobar/${encodeURIComponent(token)}`);
+  
+  let stageLabel = 'Jefe Inmediato';
+  let actionVerb = 'Autorizar';
+  if (stage === 'vicerrectoria_academica') {
+    stageLabel = solicitud?.datos_formulario?.laboral?.vicerrectoria || 'Vicerrectoría';
+    actionVerb = 'Dar Visto Bueno';
+  } else if (stage === 'rectoria') {
+    stageLabel = 'Rectoría';
+    actionVerb = 'Aprobar';
+  } else if (stage === 'gestion_humana') {
+    stageLabel = 'Gestión del Talento Humano';
+    actionVerb = 'Registrar Recibido';
+  } else if (stage === 'sst') {
+    stageLabel = 'Seguridad y Salud en el Trabajo (SST)';
+    actionVerb = 'Aprobar';
+  }
+
+  return res.type('html').send(`<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Aprobar Solicitud | SIAC UNICESMAG</title>
+  <style>
+    :root {
+      color-scheme: light;
+      font-family: Inter, "Segoe UI", Arial, sans-serif;
+      --ink: #0f172a;
+      --muted: #64748b;
+      --line: #dbe6f5;
+      --brand: #0b3a6f;
+      --navy: #0b1730;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      background:
+        radial-gradient(circle at 20% 0%, rgba(11, 58, 111, 0.1), transparent 32%),
+        linear-gradient(135deg, #f8fbff 0%, #eef4ff 48%, #f7fbff 100%);
+      color: var(--ink);
+      display: grid;
+      place-items: center;
+      padding: 28px;
+    }
+    .shell {
+      width: min(760px, 100%);
+      background: #fff;
+      border: 1px solid var(--line);
+      border-radius: 18px;
+      box-shadow: 0 24px 70px rgba(15, 23, 42, 0.16);
+      overflow: hidden;
+    }
+    .top {
+      padding: 22px 26px;
+      background: linear-gradient(90deg, #0b1730, #2457e6);
+      color: #fff;
+      display: flex;
+      align-items: center;
+      gap: 14px;
+    }
+    .brandmark {
+      width: 46px;
+      height: 46px;
+      border-radius: 14px;
+      background: rgba(255, 255, 255, 0.13);
+      border: 1px solid rgba(255, 255, 255, 0.24);
+      display: grid;
+      place-items: center;
+      font-weight: 900;
+      letter-spacing: .08em;
+    }
+    .brand-title { font-weight: 900; font-size: 18px; line-height: 1.15; }
+    .brand-subtitle { margin-top: 3px; color: #bfdbfe; font-size: 13px; }
+    .content { padding: 30px; }
+    h1 { margin: 0 0 8px 0; font-size: 26px; font-weight: 850; color: var(--navy); }
+    .intro { color: #334155; font-size: 15px; line-height: 1.5; margin: 0 0 24px 0; }
+    .meta-box {
+      background: #f8fbff;
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      padding: 20px;
+      margin-bottom: 24px;
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 16px;
+    }
+    .meta-item .label { font-size: 11px; text-transform: uppercase; color: var(--muted); font-weight: 900; letter-spacing: 0.05em; }
+    .meta-item .value { font-size: 16px; font-weight: 850; color: var(--navy); margin-top: 4px; }
+    .btn-container { display: flex; justify-content: flex-end; gap: 12px; }
+    button {
+      border: 0;
+      border-radius: 10px;
+      padding: 12px 24px;
+      font-weight: 850;
+      font-size: 14px;
+      cursor: pointer;
+      font-family: inherit;
+    }
+    button.primary {
+      background: var(--brand);
+      color: #fff;
+      box-shadow: 0 8px 20px rgba(11, 58, 111, 0.25);
+    }
+    button.ghost {
+      background: #eef4ff;
+      color: #1d4ed8;
+    }
+    .close-alert {
+      display: none;
+      margin-top: 20px;
+      padding: 14px;
+      background: #eff6ff;
+      border: 1px solid #bfdbfe;
+      border-radius: 12px;
+      color: #1e3a8a;
+      font-size: 13.5px;
+      text-align: center;
+      line-height: 1.5;
+      font-weight: 500;
+      box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05);
+    }
+  </style>
+  <script>
+    function closeWindow() {
+      const msgEl = document.getElementById('close-msg');
+      if (msgEl) {
+        msgEl.style.display = 'block';
+      }
+      try {
+        window.close();
+      } catch (e) {}
+      try {
+        var win = window.open('', '_self', '');
+        if (win) win.close();
+      } catch (e) {}
+    }
+  </script>
+</head>
+<body>
+  <main class="shell">
+    <section class="top">
+      <div class="brandmark">SIAC</div>
+      <div>
+        <div class="brand-title">UNICESMAG</div>
+        <div class="brand-subtitle">Reporte de salida | Aprobación digital</div>
+      </div>
+    </section>
+    <section class="content">
+      <h1>Confirmar Aprobación</h1>
+      <p class="intro">Estás a punto de registrar la aprobación para la solicitud detallada a continuación en calidad de <strong>${escapeHtml(stageLabel)}</strong>. Confirma para continuar.</p>
+      
+      <div class="meta-box">
+        <div class="meta-item">
+          <div class="label">Solicitud</div>
+          <div class="value">${safeConsecutivo}</div>
+        </div>
+        <div class="meta-item">
+          <div class="label">Colaborador</div>
+          <div class="value">${safeSolicitante}</div>
+        </div>
+      </div>
+
+      <form action="${safeActionUrl}" method="POST">
+        <div class="btn-container">
+          <button type="button" class="ghost" onclick="closeWindow()">Cerrar ventana</button>
+          <button type="submit" class="primary">${escapeHtml(actionVerb)} solicitud</button>
+        </div>
+      </form>
+      <div id="close-msg" class="close-alert">
+        Ya puedes cerrar esta pestaña de forma segura usando la <strong>X</strong> de tu navegador.
+      </div>
+    </section>
+  </main>
+</body>
+</html>`);
+};
+
+const renderApprovalFormPageGrupo = ({ res, solicitud, token, count }) => {
+  const safeConsecutivo = escapeHtml(solicitud?.consecutivo || '');
+  const safeActionUrl = escapeHtml(`${publicBackendUrl.replace(/\/$/, '')}/api/reporte-salida/aprobar-grupo/${encodeURIComponent(token)}`);
+
+  return res.type('html').send(`<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Aprobar Grupo | SIAC UNICESMAG</title>
+  <style>
+    :root {
+      color-scheme: light;
+      font-family: Inter, "Segoe UI", Arial, sans-serif;
+      --ink: #0f172a;
+      --muted: #64748b;
+      --line: #dbe6f5;
+      --brand: #0b3a6f;
+      --navy: #0b1730;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      background:
+        radial-gradient(circle at 20% 0%, rgba(11, 58, 111, 0.1), transparent 32%),
+        linear-gradient(135deg, #f8fbff 0%, #eef4ff 48%, #f7fbff 100%);
+      color: var(--ink);
+      display: grid;
+      place-items: center;
+      padding: 28px;
+    }
+    .shell {
+      width: min(760px, 100%);
+      background: #fff;
+      border: 1px solid var(--line);
+      border-radius: 18px;
+      box-shadow: 0 24px 70px rgba(15, 23, 42, 0.16);
+      overflow: hidden;
+    }
+    .top {
+      padding: 22px 26px;
+      background: linear-gradient(90deg, #0b1730, #2457e6);
+      color: #fff;
+      display: flex;
+      align-items: center;
+      gap: 14px;
+    }
+    .brandmark {
+      width: 46px;
+      height: 46px;
+      border-radius: 14px;
+      background: rgba(255, 255, 255, 0.13);
+      border: 1px solid rgba(255, 255, 255, 0.24);
+      display: grid;
+      place-items: center;
+      font-weight: 900;
+      letter-spacing: .08em;
+    }
+    .brand-title { font-weight: 900; font-size: 18px; line-height: 1.15; }
+    .brand-subtitle { margin-top: 3px; color: #bfdbfe; font-size: 13px; }
+    .content { padding: 30px; }
+    h1 { margin: 0 0 8px 0; font-size: 26px; font-weight: 850; color: var(--navy); }
+    .intro { color: #334155; font-size: 15px; line-height: 1.5; margin: 0 0 24px 0; }
+    .btn-container { display: flex; justify-content: flex-end; gap: 12px; }
+    button {
+      border: 0;
+      border-radius: 10px;
+      padding: 12px 24px;
+      font-weight: 850;
+      font-size: 14px;
+      cursor: pointer;
+      font-family: inherit;
+    }
+    button.primary {
+      background: var(--brand);
+      color: #fff;
+      box-shadow: 0 8px 20px rgba(11, 58, 111, 0.25);
+    }
+    button.ghost {
+      background: #eef4ff;
+      color: #1d4ed8;
+    }
+    .close-alert {
+      display: none;
+      margin-top: 20px;
+      padding: 14px;
+      background: #eff6ff;
+      border: 1px solid #bfdbfe;
+      border-radius: 12px;
+      color: #1e3a8a;
+      font-size: 13.5px;
+      text-align: center;
+      line-height: 1.5;
+      font-weight: 500;
+      box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05);
+    }
+  </style>
+  <script>
+    function closeWindow() {
+      const msgEl = document.getElementById('close-msg');
+      if (msgEl) {
+        msgEl.style.display = 'block';
+      }
+      try {
+        window.close();
+      } catch (e) {}
+      try {
+        var win = window.open('', '_self', '');
+        if (win) win.close();
+      } catch (e) {}
+    }
+  </script>
+</head>
+<body>
+  <main class="shell">
+    <section class="top">
+      <div class="brandmark">SIAC</div>
+      <div>
+        <div class="brand-title">UNICESMAG</div>
+        <div class="brand-subtitle">Reporte de salida grupal | Aprobación digital</div>
+      </div>
+    </section>
+    <section class="content">
+      <h1>Confirmar Aprobación Grupal</h1>
+      <p class="intro">Estás a punto de registrar la recepción y aprobación de Gestión del Talento Humano para el grupo de <strong>${count} colaboradores</strong> asociado a la solicitud consecutivo principal <strong>${safeConsecutivo}</strong>.</p>
+      
+      <form action="${safeActionUrl}" method="POST">
+        <div class="btn-container">
+          <button type="button" class="ghost" onclick="closeWindow()">Cerrar ventana</button>
+          <button type="submit" class="primary">Registrar Recibido Grupal</button>
+        </div>
+      </form>
+      <div id="close-msg" class="close-alert">
+        Ya puedes cerrar esta pestaña de forma segura usando la <strong>X</strong> de tu navegador.
+      </div>
+    </section>
+  </main>
+</body>
+</html>`);
+};
+
+const mostrarFormularioAprobacion = async (req, res) => {
+  if (!(await getReporteSalidaFeatureState())) {
+    return renderApprovalPage({
+      res,
+      status: 403,
+      tone: 'warning',
+      title: 'Formulario no habilitado',
+      message: 'El flujo de reporte de salida aun no esta activo.',
+      nextStep: 'La solicitud no fue procesada.'
+    });
+  }
+  try {
+    const payload = decryptPayload(req.params.token);
+    if (payload?.purpose !== 'reporte_salida_approve' || !payload?.consecutivo || !payload?.stage) {
+      return renderApprovalPage({
+        res,
+        status: 403,
+        tone: 'error',
+        title: 'Enlace no autorizado',
+        message: 'El enlace no corresponde a una solicitud valida.',
+        nextStep: 'Verifique que esta usando el boton original recibido en el correo.'
+      });
+    }
+    const solicitud = await ReporteSalidaSolicitud.findOne({ where: { consecutivo: payload.consecutivo } });
+    if (!solicitud) {
+      return renderApprovalPage({
+        res,
+        status: 404,
+        tone: 'warning',
+        title: 'Solicitud no encontrada',
+        message: 'No se encontro una solicitud asociada a este enlace.',
+        nextStep: 'Puede que la solicitud haya sido eliminada.'
+      });
+    }
+
+    const tokenHash = hashToken(req.params.token);
+    
+    // Validar si ya fue procesada en esta etapa
+    if (payload.stage === 'jefe') {
+      if (solicitud.estado !== 'pendiente_aprobacion_jefe') {
+        const isAprobada = solicitud.estado !== 'no_aprobada';
+        return renderApprovalPage({
+          res,
+          tone: 'info',
+          title: isAprobada ? 'Solicitud aprobada' : 'Solicitud ya procesada',
+          message: isAprobada 
+            ? 'Esta solicitud ya fue aprobada anteriormente.' 
+            : 'Esta solicitud ya no se encuentra pendiente de aprobacion del jefe.',
+          solicitud,
+          nextStep: 'No es necesario realizar ninguna accion adicional.'
+        });
+      }
+      if (solicitud.aprobacion_jefe_token_hash !== tokenHash) {
+        return renderApprovalPage({
+          res,
+          status: 403,
+          tone: 'error',
+          title: 'Enlace no autorizado',
+          message: 'El enlace no coincide con el token esperado para esta solicitud.',
+          solicitud,
+          nextStep: 'Por seguridad, no se puede procesar.'
+        });
+      }
+    } else if (payload.stage === 'vicerrectoria_academica') {
+      if (solicitud.estado !== 'pendiente_aprobacion_vicerrectoria_academica') {
+        const isAprobada = solicitud.estado !== 'no_aprobada';
+        return renderApprovalPage({
+          res,
+          tone: 'info',
+          title: isAprobada ? 'Solicitud aprobada' : 'Solicitud ya procesada',
+          message: isAprobada
+            ? 'Esta solicitud ya fue aprobada anteriormente.'
+            : 'Esta solicitud ya no se encuentra pendiente de aprobacion de la Vicerrectoria.',
+          solicitud,
+          nextStep: 'No es necesario realizar ninguna accion adicional.'
+        });
+      }
+      if (solicitud.aprobacion_vicerrectoria_token_hash !== tokenHash) {
+        return renderApprovalPage({
+          res,
+          status: 403,
+          tone: 'error',
+          title: 'Enlace no autorizado',
+          message: 'El enlace no coincide con el token esperado para la Vicerrectoria.',
+          solicitud,
+          nextStep: 'Por seguridad, no se puede procesar.'
+        });
+      }
+    } else if (payload.stage === 'rectoria') {
+      if (solicitud.estado !== 'pendiente_aprobacion_rectoria') {
+        const isAprobada = solicitud.estado !== 'no_aprobada';
+        return renderApprovalPage({
+          res,
+          tone: 'info',
+          title: isAprobada ? 'Solicitud aprobada' : 'Solicitud ya procesada',
+          message: isAprobada
+            ? 'Esta solicitud ya fue aprobada anteriormente.'
+            : 'Esta solicitud ya no se encuentra pendiente de aprobacion de Rectoria.',
+          solicitud,
+          nextStep: 'No es necesario realizar ninguna accion adicional.'
+        });
+      }
+      if (solicitud.aprobacion_rectoria_token_hash !== tokenHash) {
+        return renderApprovalPage({
+          res,
+          status: 403,
+          tone: 'error',
+          title: 'Enlace no autorizado',
+          message: 'El enlace no coincide con el token esperado para Rectoria.',
+          solicitud,
+          nextStep: 'Por seguridad, no se puede procesar.'
+        });
+      }
+    } else if (payload.stage === 'gestion_humana') {
+      if (solicitud.estado !== 'pendiente_aprobacion_gestion_humana') {
+        const isAprobada = solicitud.estado === 'finalizada';
+        return renderApprovalPage({
+          res,
+          tone: 'info',
+          title: isAprobada ? 'Solicitud aprobada' : 'Solicitud ya procesada',
+          message: isAprobada 
+            ? 'Esta solicitud ya fue aprobada anteriormente.' 
+            : 'Esta solicitud ya no se encuentra pendiente de aprobacion de Gestión del Talento Humano.',
+          solicitud,
+          nextStep: 'No es necesario realizar ninguna accion adicional.'
+        });
+      }
+      if (solicitud.aprobacion_gh_token_hash !== tokenHash) {
+        return renderApprovalPage({
+          res,
+          status: 403,
+          tone: 'error',
+          title: 'Enlace no autorizado',
+          message: 'El enlace no coincide con el token esperado para Gestión del Talento Humano.',
+          solicitud,
+          nextStep: 'Por seguridad, no se puede procesar.'
+        });
+      }
+    } else if (payload.stage === 'sst') {
+      if (solicitud.estado !== 'pendiente_aprobacion_sst') {
+        const isAprobada = solicitud.estado === 'finalizada';
+        return renderApprovalPage({
+          res,
+          tone: 'info',
+          title: isAprobada ? 'Solicitud aprobada' : 'Solicitud ya procesada',
+          message: isAprobada 
+            ? 'Esta solicitud ya fue aprobada anteriormente.' 
+            : 'Esta solicitud ya no se encuentra pendiente de aprobacion de SST.',
+          solicitud,
+          nextStep: 'No es necesario realizar ninguna accion adicional.'
+        });
+      }
+      if (solicitud.aprobacion_sst_token_hash !== tokenHash) {
+        return renderApprovalPage({
+          res,
+          status: 403,
+          tone: 'error',
+          title: 'Enlace no autorizado',
+          message: 'El enlace no coincide con el token esperado para SST.',
+          solicitud,
+          nextStep: 'Por seguridad, no se puede procesar.'
+        });
+      }
+    }
+
+    return renderApprovalFormPage({
+      res,
+      solicitud,
+      token: req.params.token,
+      stage: payload.stage
+    });
+  } catch (error) {
+    console.error('Error mostrando formulario de aprobacion:', error);
+    return renderApprovalPage({
+      res,
+      status: 500,
+      tone: 'error',
+      title: 'Error de servidor',
+      message: 'Ocurrio un error al cargar el formulario de aprobacion.',
+      nextStep: 'Intente nuevamente mas tarde.'
+    });
+  }
+};
+
+const mostrarFormularioAprobacionGrupo = async (req, res) => {
+  if (!(await getReporteSalidaFeatureState())) {
+    return renderApprovalPage({
+      res,
+      status: 403,
+      tone: 'warning',
+      title: 'Formulario no habilitado',
+      message: 'El flujo de reporte de salida aun no esta activo.',
+      nextStep: 'La solicitud no fue procesada.'
+    });
+  }
+  try {
+    const payload = decryptPayload(req.params.token);
+    if (payload?.purpose !== 'reporte_salida_approve_grupo' || !payload?.grupo_id) {
+      return renderApprovalPage({
+        res,
+        status: 403,
+        tone: 'error',
+        title: 'Enlace no autorizado',
+        message: 'El enlace de aprobacion no corresponde a un grupo valido.',
+        nextStep: 'Verifique que esta usando el boton original recibido en el correo.'
+      });
+    }
+    const { grupo_id } = payload;
+    const tokenHash = hashToken(req.params.token);
+    const solicitudes = await ReporteSalidaSolicitud.findAll({
+      where: {
+        datos_formulario: {
+          [Op.contains]: { grupo_id }
+        }
+      }
+    });
+
+    if (!solicitudes.length) {
+      return renderApprovalPage({
+        res,
+        status: 404,
+        tone: 'warning',
+        title: 'Grupo no encontrado',
+        message: 'No se encontro una solicitud asociada a este enlace.',
+        nextStep: 'Puede que la solicitud haya sido eliminada.'
+      });
+    }
+
+    const pendientes = solicitudes.filter(s => s.estado === 'pendiente_aprobacion_gestion_humana');
+    if (!pendientes.length) {
+      return renderApprovalPage({
+        res,
+        tone: 'info',
+        title: 'Grupo ya procesado',
+        message: 'Este grupo ya no se encuentra pendiente de aprobacion de Gestión del Talento Humano.',
+        nextStep: 'No es necesario realizar ninguna accion adicional.'
+      });
+    }
+
+    const solicitudEjemplo = solicitudes[0];
+
+    return renderApprovalFormPageGrupo({
+      res,
+      solicitud: solicitudEjemplo,
+      token: req.params.token,
+      count: solicitudes.length
+    });
+  } catch (error) {
+    console.error('Error mostrando formulario de aprobacion de grupo:', error);
+    return renderApprovalPage({
+      res,
+      status: 500,
+      tone: 'error',
+      title: 'Error de servidor',
+      message: 'Ocurrio un error al cargar el formulario de aprobacion de grupo.',
+      nextStep: 'Intente nuevamente mas tarde.'
+    });
+  }
 };
 
 const mostrarFormularioRechazo = async (req, res) => {
@@ -5224,6 +5797,8 @@ const verificarReportePublico = async (req, res) => {
 
 module.exports = {
   aprobarDesdeCorreo,
+  mostrarFormularioAprobacion,
+  mostrarFormularioAprobacionGrupo,
   mostrarFormularioRechazo,
   procesarRechazo,
   aprobarGrupoDesdeCorreo,
