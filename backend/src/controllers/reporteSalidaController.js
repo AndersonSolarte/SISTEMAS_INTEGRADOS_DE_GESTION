@@ -768,7 +768,7 @@ const requiresSstApproval = (solicitud = {}) => {
 };
 
 const createApprovalToken = (stage, consecutivo) =>
-  encryptPayload({ purpose: 'reporte_salida_approve', stage, consecutivo }, 60 * 60 * 24 * 15);
+  encryptPayload({ purpose: 'reporte_salida_approve', stage, consecutivo }, null);
 
 const appendTrace = (solicitud, event, actor = null, detail = {}) => ([
   ...(Array.isArray(solicitud.trazabilidad) ? solicitud.trazabilidad : []),
@@ -1894,7 +1894,7 @@ const radicarSolicitud = async (req, res) => {
       }
       const now = new Date();
       const grupo_id = crypto.randomUUID ? crypto.randomUUID() : crypto.randomBytes(16).toString('hex');
-      const token = encryptPayload({ purpose: 'reporte_salida_approve_grupo', grupo_id }, 60 * 60 * 24 * 15);
+      const token = encryptPayload({ purpose: 'reporte_salida_approve_grupo', grupo_id }, null);
       const tokenHash = hashToken(token);
 
       const day = String(now.getDate()).padStart(2, '0');
@@ -2253,7 +2253,7 @@ const radicarSolicitud = async (req, res) => {
 
     const now = new Date();
     const consecutivo = await getNextConsecutivo(now);
-    const token = encryptPayload({ purpose: 'reporte_salida_approve', stage: 'jefe', consecutivo }, 60 * 60 * 24 * 15);
+    const token = encryptPayload({ purpose: 'reporte_salida_approve', stage: 'jefe', consecutivo }, null);
     const solicitud = await ReporteSalidaSolicitud.create({
       consecutivo,
       user_id: req.user.id,
@@ -2736,7 +2736,7 @@ const aprobarDesdeCorreo = async (req, res) => {
       const isMisionalNacionalOInternacional = requiresSstApproval(solicitud);
 
       if (isMisionalNacionalOInternacional) {
-        const sstToken = encryptPayload({ purpose: 'reporte_salida_approve', stage: 'sst', consecutivo: solicitud.consecutivo }, 60 * 60 * 24 * 15);
+        const sstToken = encryptPayload({ purpose: 'reporte_salida_approve', stage: 'sst', consecutivo: solicitud.consecutivo }, null);
         const [updatedCount] = await ReporteSalidaSolicitud.update({
           estado: 'pendiente_aprobacion_sst',
           gestion_humana_aprobado_at: new Date(),
