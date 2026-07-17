@@ -1102,6 +1102,10 @@ const validateRadicacionPayload = (payload, user) => {
     if (!salida.fecha || !salida.fechaRegreso || !salida.horaInicio || !salida.horaFin) return 'Debe indicar fecha de salida, hora de salida, fecha de regreso y hora de regreso.';
   }
 
+  if (['jurado_votacion', 'sufragante'].includes(salida.tipo) && salida.duracionTipo !== 'menos_media_jornada') {
+    return 'Los permisos electorales (jurado de votación y sufragante) solo pueden registrarse con duración equivalente a menos de media jornada.';
+  }
+
   if (salida.duracionTipo === 'menos_media_jornada' && salida.tipo !== 'urgencia_medica' && salida.tipo !== 'terapias') {
     const diasHabiles = countBusinessDays(salida.fecha, salida.fechaRegreso);
     if (diasHabiles === 2) {

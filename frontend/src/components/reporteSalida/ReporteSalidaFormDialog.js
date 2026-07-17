@@ -707,6 +707,13 @@ function ReporteSalidaFormDialog({ open, documento, user, onClose, onSubmitted }
     }
   }, [form.salida.duracionTipo, form.salida.tiempoReponerHoras]);
 
+  useEffect(() => {
+    if (['jurado_votacion', 'sufragante'].includes(form.salida.tipo) && form.salida.duracionTipo !== 'menos_media_jornada') {
+      update('salida', 'duracionTipo', 'menos_media_jornada');
+      update('salida', 'duracionDias', 0);
+    }
+  }, [form.salida.tipo, form.salida.duracionTipo]);
+
 
 
   const handleCategoryChange = (newCategory) => {
@@ -2197,7 +2204,10 @@ function ReporteSalidaFormDialog({ open, documento, user, onClose, onSubmitted }
                     { value: 'menos_media_jornada', label: 'Equivale a menos de media jornada' },
                     { value: '1_2_dias', label: 'Entre 1 y 2 días' },
                     { value: '3_mas_dias', label: '3 o más días' }
-                  ].map((opt) => {
+                  ].filter((opt) => {
+                    const isElectoral = ['jurado_votacion', 'sufragante'].includes(form.salida.tipo);
+                    return !isElectoral || opt.value === 'menos_media_jornada';
+                  }).map((opt) => {
                     const selected = form.salida.duracionTipo === opt.value;
                     return (
                       <Box
