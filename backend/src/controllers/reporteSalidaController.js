@@ -1384,6 +1384,8 @@ const sendGestionHumanaApprovalEmail = async (solicitud, token, attachments) => 
   const approveUrl = `${publicBackendUrl.replace(/\/$/, '')}/api/reporte-salida/aprobar/${encodeURIComponent(token)}`;
   const rejectUrl = `${publicBackendUrl.replace(/\/$/, '')}/api/reporte-salida/rechazar/${encodeURIComponent(token)}`;
   
+  const approveLabel = 'REGISTRAR RECIBIDO';
+  const rejectLabel = 'RECHAZAR';
   const isOficio = solicitud.datos_formulario?.salida?.duracionTipo && solicitud.datos_formulario?.salida?.duracionTipo !== 'menos_media_jornada';
   const labelText = getReporteSalidaEmailLabel(solicitud);
   
