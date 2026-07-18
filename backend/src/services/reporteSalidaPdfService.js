@@ -394,19 +394,40 @@ const buildLines = (solicitud) => {
 
 const PdfPrinter = require('pdfmake');
 const PDF_FONT_FAMILY = 'ReportFont';
-const PDF_FONT_FILES = process.platform === 'win32'
-  ? {
-      normal: 'C:/Windows/Fonts/arial.ttf',
-      bold: 'C:/Windows/Fonts/arialbd.ttf',
-      italics: 'C:/Windows/Fonts/ariali.ttf',
-      bolditalics: 'C:/Windows/Fonts/arialbi.ttf'
-    }
-  : {
-      normal: '/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf',
-      bold: '/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf',
-      italics: '/usr/share/fonts/truetype/dejavu/DejaVuSans-Oblique.ttf',
-      bolditalics: '/usr/share/fonts/truetype/dejavu/DejaVuSans-BoldOblique.ttf'
+
+const firstExistingPath = (paths) => paths.find((fontPath) => fs.existsSync(fontPath)) || paths[0];
+
+const resolvePdfFontFiles = () => {
+  if (process.platform === 'win32') {
+    return {
+      normal: firstExistingPath(['C:/Windows/Fonts/arial.ttf', 'C:/Windows/Fonts/segoeui.ttf']),
+      bold: firstExistingPath(['C:/Windows/Fonts/arialbd.ttf', 'C:/Windows/Fonts/segoeuib.ttf']),
+      italics: firstExistingPath(['C:/Windows/Fonts/ariali.ttf', 'C:/Windows/Fonts/segoeuii.ttf']),
+      bolditalics: firstExistingPath(['C:/Windows/Fonts/arialbi.ttf', 'C:/Windows/Fonts/segoeuiz.ttf'])
     };
+  }
+
+  return {
+    normal: firstExistingPath([
+      '/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf',
+      '/usr/share/fonts/dejavu/DejaVuSans.ttf'
+    ]),
+    bold: firstExistingPath([
+      '/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf',
+      '/usr/share/fonts/dejavu/DejaVuSans-Bold.ttf'
+    ]),
+    italics: firstExistingPath([
+      '/usr/share/fonts/truetype/dejavu/DejaVuSans-Oblique.ttf',
+      '/usr/share/fonts/dejavu/DejaVuSans-Oblique.ttf'
+    ]),
+    bolditalics: firstExistingPath([
+      '/usr/share/fonts/truetype/dejavu/DejaVuSans-BoldOblique.ttf',
+      '/usr/share/fonts/dejavu/DejaVuSans-BoldOblique.ttf'
+    ])
+  };
+};
+
+const PDF_FONT_FILES = resolvePdfFontFiles();
 const PDF_FONTS = {
   [PDF_FONT_FAMILY]: PDF_FONT_FILES
 };
