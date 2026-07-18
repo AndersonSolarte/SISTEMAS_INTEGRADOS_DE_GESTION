@@ -37,6 +37,67 @@ const escapeHtml = (value) =>
     .replace(/"/g, '&quot;')
     .replace(/'/g, '&#039;');
 
+const stripAccents = (value) =>
+  String(value || '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '');
+
+const sanitizeEmailText = (value) => {
+  if (value === undefined || value === null) return value;
+  let text = String(value);
+
+  for (let i = 0; i < 2 && /[ÃÂâï¿½�]/.test(text); i += 1) {
+    try {
+      const repaired = Buffer.from(text, 'latin1').toString('utf8');
+      if (!repaired || repaired === text) break;
+      text = repaired;
+    } catch (_) {
+      break;
+    }
+  }
+
+  text = text
+    .replace(/Ã¡/g, 'a').replace(/Ã©/g, 'e').replace(/Ã­/g, 'i').replace(/Ã³/g, 'o').replace(/Ãº/g, 'u')
+    .replace(/Ã/g, 'A').replace(/Ã‰/g, 'E').replace(/Ã/g, 'I').replace(/Ã“/g, 'O').replace(/Ãš/g, 'U')
+    .replace(/Ã±/g, 'n').replace(/Ã‘/g, 'N')
+    .replace(/Â¿/g, '').replace(/Â¡/g, '').replace(/Â°/g, 'No.')
+    .replace(/â€¢/g, '&bull;')
+    .replace(/âœ“/g, '')
+    .replace(/â€“|â€”/g, '-')
+    .replace(/â€œ|â€/g, '"')
+    .replace(/â€˜|â€™/g, "'")
+    .replace(/ï¿½|�/g, '')
+    .replace(/Ã|Â|â/g, '');
+
+  text = text
+    .replace(/\$\s*FLUJO DE FIRMAS COMPLETADO/g, 'FLUJO DE FIRMAS COMPLETADO')
+    .replace(/"\s*Solicitado por/g, '&bull; Solicitado por')
+    .replace(/"\s*Aprobado por/g, '&bull; Aprobado por')
+    .replace(/\bGestin\b/g, 'Gestion')
+    .replace(/\bDireccin\b/g, 'Direccion')
+    .replace(/\bPlaneacin\b/g, 'Planeacion')
+    .replace(/\bAtencin\b/g, 'Atencion')
+    .replace(/\bRevisin\b/g, 'Revision')
+    .replace(/\bAprobacin\b/g, 'Aprobacion')
+    .replace(/\bDecisin\b/g, 'Decision')
+    .replace(/\bRadicacin\b/g, 'Radicacion')
+    .replace(/\bTrmite\b/g, 'Tramite')
+    .replace(/\bAutomtico\b/g, 'Automatico')
+    .replace(/\bDireccin\b/g, 'Direccion')
+    .replace(/\bPlaneacin\b/g, 'Planeacion')
+    .replace(/\batencin\b/g, 'atencion')
+    .replace(/\brevisin\b/g, 'revision')
+    .replace(/\baprobacin\b/g, 'aprobacion')
+    .replace(/\bdecisin\b/g, 'decision')
+    .replace(/\bdireccin\b/g, 'direccion')
+    .replace(/\bradicacin\b/g, 'radicacion')
+    .replace(/\bgestin\b/g, 'gestion')
+    .replace(/\btrmite\b/g, 'tramite')
+    .replace(/\bautomtico\b/g, 'automatico');
+
+  return stripAccents(text);
+};
+
 const normalizeRecipient = (value) => {
   const email = String(value || '').trim().toLowerCase();
 
@@ -390,9 +451,9 @@ const sendInstitutionalEmail = async ({ to, subject, text, html, attachments = [
   const mailOptions = {
     from: resolveMailFrom(),
     to: safeRecipients.join(', '),
-    subject,
-    text,
-    html,
+    subject: sanitizeEmailText(subject),
+    text: sanitizeEmailText(text),
+    html: sanitizeEmailText(html),
     attachments,
     headers
   };

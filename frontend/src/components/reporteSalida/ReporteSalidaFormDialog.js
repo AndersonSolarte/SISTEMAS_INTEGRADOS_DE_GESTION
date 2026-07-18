@@ -2394,7 +2394,7 @@ function ReporteSalidaFormDialog({ open, documento, user, onClose, onSubmitted }
                         {...params}
                         sx={inputSx}
                         required={!(category === 'salud' && subtype !== 'terapias')}
-                        label="Hora regreso"
+                        label={category === 'salud' && subtype !== 'terapias' ? "Hora regreso (Opcional)" : "Hora regreso"}
                         placeholder={(category === 'salud' && subtype !== 'terapias') ? "Opcional" : "Seleccione hora"}
                         InputLabelProps={{ shrink: true }}
                         error={isPastTimeError(form.salida.fechaRegreso, form.salida.horaFin) || Boolean(salidaRangeIssue && form.salida.horaInicio && form.salida.horaFin)}
