@@ -1684,15 +1684,15 @@ const sendFinalEmails = async (solicitud, pdfAttachment, supportAttachment) => {
   });
 
   // 2. Correo de Copia de control para LÃ­der de Dependencia / Jefe Inmediato
-  let depResult = { success: false };
+  let depResult = { success: false, recipients: [] };
   const copyRecipients = [];
   const depEmail = dependenciaTarget.email;
   const solicitanteEmail = solicitud.solicitante_snapshot?.email;
-  if (depEmail && !sameEmail(depEmail, solicitanteEmail)) copyRecipients.push(depEmail);
+  if (depEmail && !sameEmail(depEmail, solicitanteEmail)) copyRecipients.push({ type: 'dependencia', email: depEmail });
   
   const jefeEmail = solicitud.jefe_snapshot?.email;
-  if (jefeEmail && !copyRecipients.includes(jefeEmail)) {
-    copyRecipients.push(jefeEmail);
+  if (jefeEmail && !copyRecipients.some((recipient) => sameEmail(recipient.email, jefeEmail))) {
+    copyRecipients.push({ type: 'jefe', email: jefeEmail });
   }
 
   if (copyRecipients.length > 0) {
@@ -1704,14 +1704,23 @@ const sendFinalEmails = async (solicitud, pdfAttachment, supportAttachment) => {
       senderHtml: finalApprovalGHHtml
     });
 
-    depResult = await sendInstitutionalEmail({
-      to: copyRecipients,
-      subject: workflowThreadSubject,
-      text: `Se remite copia del ${isOficio ? 'oficio' : 'reporte'} de salida aprobado del/de la colaborador(a) ${nombreColaborador} perteneciente a su dependencia. Se adjunta PDF firmado.`,
-      html: depHtml,
-      attachments: [pdfAttachment].filter(Boolean),
-      headers
-    });
+    const copyResults = [];
+    for (const recipient of copyRecipients) {
+      const result = await sendInstitutionalEmail({
+        to: recipient.email,
+        subject: workflowThreadSubject,
+        text: `Se remite copia del ${isOficio ? 'oficio' : 'reporte'} de salida aprobado del/de la colaborador(a) ${nombreColaborador} perteneciente a su dependencia. Se adjunta PDF firmado.`,
+        html: depHtml,
+        attachments: [pdfAttachment].filter(Boolean),
+        headers
+      });
+      copyResults.push({ ...recipient, success: result.success, error: result.error || '' });
+    }
+    depResult = {
+      success: copyResults.some((item) => item.success),
+      recipients: copyResults,
+      error: copyResults.filter((item) => !item.success).map((item) => `${item.email}: ${item.error || 'no enviado'}`).join(' | ')
+    };
   }
 
   // 3. Correo para GestiÃ³n del Talento Humano (PDF firmado + Soporte MÃ©dico/Adjunto)
@@ -3313,6 +3322,9 @@ const aprobarDesdeCorreo = async (req, res) => {
           enviado_sst_at: results.sstResult.success ? new Date() : null,
           trazabilidad: appendTrace(solicitud, 'notificacion_final_enviada', null, {
             usuario: results.userResult.success,
+            dependencia: results.depResult.success,
+            dependencia_destinatarios: results.depResult.recipients || [],
+            dependencia_error: results.depResult.error || '',
             sst: results.sstResult.success
           })
         });
@@ -3387,6 +3399,9 @@ const aprobarDesdeCorreo = async (req, res) => {
         enviado_sst_at: results.sstResult.success ? new Date() : null,
         trazabilidad: appendTrace(solicitud, 'notificacion_final_enviada', null, {
           usuario: results.userResult.success,
+          dependencia: results.depResult.success,
+          dependencia_destinatarios: results.depResult.recipients || [],
+          dependencia_error: results.depResult.error || '',
           sst: results.sstResult.success
         })
       });
