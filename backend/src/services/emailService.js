@@ -39,8 +39,12 @@ const escapeHtml = (value) =>
 
 const stripAccents = (value) =>
   String(value || '')
+    .replace(/ñ/g, '__enie_min__')
+    .replace(/Ñ/g, '__enie_may__')
     .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '');
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/__enie_min__/g, 'ñ')
+    .replace(/__enie_may__/g, 'Ñ');
 
 const sanitizeEmailText = (value) => {
   if (value === undefined || value === null) return value;

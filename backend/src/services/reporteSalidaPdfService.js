@@ -32,8 +32,12 @@ const escapeXmlText = (value) =>
 
 const stripAccents = (value) =>
   String(value ?? '')
+    .replace(/ñ/g, '__enie_min__')
+    .replace(/Ñ/g, '__enie_may__')
     .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '');
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/__enie_min__/g, 'ñ')
+    .replace(/__enie_may__/g, 'Ñ');
 
 const getInitialApprovalTrace = (solicitud = {}) => {
   const traces = Array.isArray(solicitud.trazabilidad) ? solicitud.trazabilidad : [];
@@ -63,7 +67,7 @@ const repairMojibakeText = (value) => {
   let text = String(value ?? '');
   if (!text) return text;
 
-  const toPdfAscii = (input) => stripAccents(input).replace(/[^\x00-\x7F]/g, '');
+  const toPdfAscii = (input) => stripAccents(input).replace(/[^\x00-\x7FñÑ]/g, '');
   const hasMojibake = /[ÃÂâï¿½]|�/.test(text);
   if (!hasMojibake) return toPdfAscii(text);
 
