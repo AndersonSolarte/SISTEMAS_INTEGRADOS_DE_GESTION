@@ -67,7 +67,31 @@ const repairMojibakeText = (value) => {
   let text = String(value ?? '');
   if (!text) return text;
 
-  const toPdfAscii = (input) => stripAccents(input).replace(/[^\x00-\x7FñÑ]/g, '');
+  const repairCommonWords = (input) => String(input)
+    .replace(/\bInvestigacin\b/g, 'Investigacion')
+    .replace(/\binvestigacin\b/g, 'investigacion')
+    .replace(/\bMedelln\b/g, 'Medellin')
+    .replace(/\bInformacin\b/g, 'Informacion')
+    .replace(/\binformacin\b/g, 'informacion')
+    .replace(/\bGestin\b/g, 'Gestion')
+    .replace(/\bgestin\b/g, 'gestion')
+    .replace(/\bRadicacin\b/g, 'Radicacion')
+    .replace(/\bradicacin\b/g, 'radicacion')
+    .replace(/\bAprobacin\b/g, 'Aprobacion')
+    .replace(/\baprobacin\b/g, 'aprobacion')
+    .replace(/\bRevisin\b/g, 'Revision')
+    .replace(/\brevisin\b/g, 'revision')
+    .replace(/\bAutorizacin\b/g, 'Autorizacion')
+    .replace(/\bautorizacin\b/g, 'autorizacion')
+    .replace(/\bAtencin\b/g, 'Atencion')
+    .replace(/\batencin\b/g, 'atencion')
+    .replace(/\bTrmite\b/g, 'Tramite')
+    .replace(/\btrmite\b/g, 'tramite')
+    .replace(/\bTransaccin\b/g, 'Transaccion')
+    .replace(/\btransaccin\b/g, 'transaccion')
+    .replace(/\bVerificacin\b/g, 'Verificacion')
+    .replace(/\bverificacin\b/g, 'verificacion');
+  const toPdfAscii = (input) => repairCommonWords(stripAccents(input).replace(/[^\x00-\x7FñÑ]/g, ''));
   const hasMojibake = /[ÃÂâï¿½]|�/.test(text);
   if (!hasMojibake) return toPdfAscii(text);
 
@@ -82,6 +106,9 @@ const repairMojibakeText = (value) => {
   }
 
   text = text
+    .replace(/Ã¡|ÃƒÂ¡/g, 'a').replace(/Ã©|ÃƒÂ©/g, 'e').replace(/Ã­|ÃƒÂ­/g, 'i').replace(/Ã³|ÃƒÂ³/g, 'o').replace(/Ãº|ÃƒÂº/g, 'u')
+    .replace(/Ã|ÃƒÂ/g, 'A').replace(/Ã‰|Ãƒâ€°/g, 'E').replace(/Ã|ÃƒÂ/g, 'I').replace(/Ã“|Ãƒâ€œ/g, 'O').replace(/Ãš|ÃƒÅ¡/g, 'U')
+    .replace(/Ã±|ÃƒÂ±/g, 'ñ').replace(/Ã‘|Ãƒâ€˜/g, 'Ñ')
     .replace(/C\S*DIGO/g, 'CODIGO')
     .replace(/VERSI\S*N/g, 'VERSION')
     .replace(/Gesti[\uFFFDï¿½]?n/g, 'Gestion')
@@ -98,6 +125,9 @@ const repairMojibakeText = (value) => {
     .replace(/Verificaci[\uFFFDï¿½]?n/g, 'Verificacion')
     .replace(/Autorizaci[\uFFFDï¿½]?n/g, 'Autorizacion')
     .replace(/Aprobaci[\uFFFDï¿½]?n/g, 'Aprobacion')
+    .replace(/Investigaci[\uFFFDï¿½]?n/g, 'Investigacion')
+    .replace(/investigaci[\uFFFDï¿½]?n/g, 'investigacion')
+    .replace(/Medell[\uFFFDï¿½]?n/g, 'Medellin')
     .replace(/informaci[\uFFFDï¿½]?n/g, 'informacion')
     .replace(/atenci[\uFFFDï¿½]?n/g, 'atencion')
     .replace(/revisi[\uFFFDï¿½]?n/g, 'revision')
@@ -604,7 +634,7 @@ const buildOficioPdfDefinition = (solicitud, ghDirectorNombre, ghDirectorCargo) 
     }
     signatureTableBody.push([
       { text: 'RECIBIDO (Gestión del Talento Humano)', bold: true, alignment: 'center', fillColor: '#e0e0e0', fontSize: 9 },
-      { text: 'APROBADO (Seguridad y Salud en el Trabajo)', bold: true, alignment: 'center', fillColor: '#e0e0e0', fontSize: 9 }
+      { text: 'VISTO BUENO (Seguridad y Salud en el Trabajo)', bold: true, alignment: 'center', fillColor: '#e0e0e0', fontSize: 9 }
     ]);
     signatureTableBody.push([
       {
@@ -679,10 +709,11 @@ const buildOficioPdfDefinition = (solicitud, ghDirectorNombre, ghDirectorCargo) 
   }
 
   signatureTableBody.length = 0;
+  const oficioSignatureHeaderFill = '#eaf4ff';
   signatureTableBody.push(
     [
-      { text: 'Firma del trabajador solicitante', bold: true, alignment: 'center', fillColor: '#e0e0e0', fontSize: 9 },
-      { text: 'VISTO BUENO del jefe inmediato', bold: true, alignment: 'center', fillColor: '#e0e0e0', fontSize: 9 }
+      { text: 'Firma del trabajador solicitante', bold: true, alignment: 'center', fillColor: oficioSignatureHeaderFill, fontSize: 9 },
+      { text: 'VISTO BUENO del jefe inmediato', bold: true, alignment: 'center', fillColor: oficioSignatureHeaderFill, fontSize: 9 }
     ],
     [
       {
@@ -707,8 +738,8 @@ const buildOficioPdfDefinition = (solicitud, ghDirectorNombre, ghDirectorCargo) 
   if (requiresVicerrectoriaSignature && requiresRectoriaSignature) {
     signatureTableBody.push(
       [
-        { text: `APROBACION de ${vicerrectoriaName}`, bold: true, alignment: 'center', fillColor: '#e0e0e0', fontSize: 9 },
-        { text: 'APROBACION de Rectoria', bold: true, alignment: 'center', fillColor: '#e0e0e0', fontSize: 9 }
+        { text: `APROBACION de ${vicerrectoriaName}`, bold: true, alignment: 'center', fillColor: oficioSignatureHeaderFill, fontSize: 9 },
+        { text: 'APROBACION de Rectoria', bold: true, alignment: 'center', fillColor: oficioSignatureHeaderFill, fontSize: 9 }
       ],
       [
         buildSignatureCell({
@@ -728,7 +759,7 @@ const buildOficioPdfDefinition = (solicitud, ghDirectorNombre, ghDirectorCargo) 
   } else if (requiresVicerrectoriaSignature) {
     signatureTableBody.push(
       [
-        { text: `APROBACION de ${vicerrectoriaName}`, bold: true, alignment: 'center', colSpan: 2, fillColor: '#e0e0e0', fontSize: 9 },
+        { text: `APROBACION de ${vicerrectoriaName}`, bold: true, alignment: 'center', colSpan: 2, fillColor: oficioSignatureHeaderFill, fontSize: 9 },
         {}
       ],
       [
@@ -745,7 +776,7 @@ const buildOficioPdfDefinition = (solicitud, ghDirectorNombre, ghDirectorCargo) 
   } else if (requiresRectoriaSignature) {
     signatureTableBody.push(
       [
-        { text: 'APROBACION de Rectoria', bold: true, alignment: 'center', colSpan: 2, fillColor: '#e0e0e0', fontSize: 9 },
+        { text: 'APROBACION de Rectoria', bold: true, alignment: 'center', colSpan: 2, fillColor: oficioSignatureHeaderFill, fontSize: 9 },
         {}
       ],
       [
@@ -764,8 +795,8 @@ const buildOficioPdfDefinition = (solicitud, ghDirectorNombre, ghDirectorCargo) 
   if (requiresSst) {
     signatureTableBody.push(
       [
-        { text: 'VISTO BUENO / RECIBIDO (Gestión del Talento Humano)', bold: true, alignment: 'center', fillColor: '#e0e0e0', fontSize: 9 },
-        { text: 'APROBACION (Seguridad y Salud en el Trabajo)', bold: true, alignment: 'center', fillColor: '#e0e0e0', fontSize: 9 }
+        { text: 'VISTO BUENO / RECIBIDO (Gestión del Talento Humano)', bold: true, alignment: 'center', fillColor: oficioSignatureHeaderFill, fontSize: 9 },
+        { text: 'VISTO BUENO (Seguridad y Salud en el Trabajo)', bold: true, alignment: 'center', fillColor: oficioSignatureHeaderFill, fontSize: 9 }
       ],
       [
         buildSignatureCell({
@@ -785,7 +816,7 @@ const buildOficioPdfDefinition = (solicitud, ghDirectorNombre, ghDirectorCargo) 
   } else {
     signatureTableBody.push(
       [
-        { text: 'VISTO BUENO / RECIBIDO (Gestión del Talento Humano)', bold: true, alignment: 'center', colSpan: 2, fillColor: '#e0e0e0', fontSize: 9 },
+        { text: 'VISTO BUENO / RECIBIDO (Gestión del Talento Humano)', bold: true, alignment: 'center', colSpan: 2, fillColor: oficioSignatureHeaderFill, fontSize: 9 },
         {}
       ],
       [
@@ -881,8 +912,6 @@ const buildOficioPdfDefinition = (solicitud, ghDirectorNombre, ghDirectorCargo) 
       ...(getDeclaracionSinAdjunto(salida) ? [
         { text: `Declaracion de soportes: ${getDeclaracionSinAdjunto(salida)}`, fontSize: 8.8, italics: true, color: '#334155', margin: [0, 0, 0, 6] }
       ] : []),
-      { text: `Anexos: ${salida.oficioAnexos || 'Ninguno'}`, fontSize: 8.2, margin: [0, 0, 0, 1] },
-      { text: `Proyecto: ${salida.oficioProyecto || ''}`, fontSize: 8.2, margin: [0, 0, 0, 12] },
       
       // Signatures container
       {
@@ -892,8 +921,10 @@ const buildOficioPdfDefinition = (solicitud, ghDirectorNombre, ghDirectorCargo) 
           body: signatureTableBody
         },
         layout: 'borders',
-        margin: [0, 0, 0, 8]
+        margin: [0, 0, 0, 6]
       },
+      { text: `Anexos: ${salida.oficioAnexos || 'Ninguno'}`, fontSize: 7.6, margin: [0, 0, 0, 1] },
+      { text: `Proyecto: ${salida.oficioProyecto || ''}`, fontSize: 7.6, margin: [0, 0, 0, 8] },
       {
         text: '',
         unbreakable: true,
@@ -1305,7 +1336,7 @@ const buildPdfBuffer = async (solicitud) => {
       if (requiresSst) {
         signatureTableBody.push([
           { text: 'RECIBIDO (Gestión del Talento Humano)', bold: true, alignment: 'center', fillColor: '#e0e0e0' },
-          { text: 'APROBADO (Seguridad y Salud en el Trabajo)', bold: true, alignment: 'center', fillColor: '#e0e0e0' }
+          { text: 'VISTO BUENO (Seguridad y Salud en el Trabajo)', bold: true, alignment: 'center', fillColor: '#e0e0e0' }
         ]);
         signatureTableBody.push([
           {
@@ -1384,7 +1415,7 @@ const buildPdfBuffer = async (solicitud) => {
           'rechazada_gestion_humana': 'Rechazada por Gestión del Talento Humano',
           'correo_sst_enviado': 'Notificación a SST',
           'correo_sst_error': 'Error al notificar a SST',
-          'aprobada_sst': 'Aprobación de SST',
+          'aprobada_sst': 'Visto bueno de SST',
           'rechazada_sst': 'Rechazada por SST',
           'notificacion_final_enviada': 'Notificación final enviada',
           'reposicion_cumplida': 'Reposición marcada como cumplida',

@@ -1614,24 +1614,24 @@ const sendSSTApprovalEmail = async (solicitud, token, attachments) => {
   const subject = getWorkflowThreadSubject(solicitud);
   const alcance = solicitud.datos_formulario?.salida?.alcance || 'Nacional/Internacional';
   const html = renderInstitutionalTemplate({
-    title: 'AprobaciÃ³n pendiente de SST',
-    introHtml: `<p style="margin: 0 0 12px 0;">Saludo de paz y bien,</p><p style="margin: 0 0 4px 0; color: #475569;">Estimados(as) integrantes,</p><p style="margin: 0 0 16px 0; font-size: 16px; font-weight: bold; color: #0b3a6f;">Equipo de Seguridad y Salud en el Trabajo (SST)</p><p>Reciba un cordial saludo. En atenciÃ³n al trÃ¡mite del ${isOficio ? 'oficio de salida' : 'reporte de salida'} de alcance misional (${escapeHtml(alcance)}) con consecutivo <strong>${escapeHtml(solicitud.consecutivo)}</strong> del/de la colaborador(a) <strong>${escapeHtml(solicitante.nombre)}</strong>, se informa que la solicitud cuenta con la aprobaciÃ³n de GestiÃ³n del Talento Humano y requiere su valaciÃ³n y aprobaciÃ³n final de seguridad por su parte.</p>`,
+    title: 'Visto bueno pendiente de SST',
+    introHtml: `<p style="margin: 0 0 12px 0;">Saludo de paz y bien,</p><p style="margin: 0 0 4px 0; color: #475569;">Estimados(as) integrantes,</p><p style="margin: 0 0 16px 0; font-size: 16px; font-weight: bold; color: #0b3a6f;">Equipo de Seguridad y Salud en el Trabajo (SST)</p><p>Reciba un cordial saludo. En atencion al tramite del ${isOficio ? 'oficio de salida' : 'reporte de salida'} de alcance misional (${escapeHtml(alcance)}) con consecutivo <strong>${escapeHtml(solicitud.consecutivo)}</strong> del/de la colaborador(a) <strong>${escapeHtml(solicitante.nombre)}</strong>, se informa que la solicitud cuenta con la aprobacion de Gestion del Talento Humano y requiere su validacion y visto bueno final de seguridad por su parte.</p>`,
     bodyHtml: `
       <p><strong>Colaborador(a):</strong> ${escapeHtml(solicitante.nombre)}</p>
       <div style="text-align:center;margin:20px 0;">
         <a href="${approveUrl}" style="display:inline-block;background:#0b3a6f;color:#fff;padding:12px 24px;border-radius:8px;text-decoration:none;font-weight:700;margin:5px 10px;">AUTORIZAR SALIDA</a>
         <a href="${rejectUrl}" style="display:inline-block;background:#b91c1c;color:#fff;padding:12px 24px;border-radius:8px;text-decoration:none;font-weight:700;margin:5px 10px;">NO AUTORIZAR SALIDA</a>
       </div>
-      <p>Si decide no autorizar la solicitud, haga clic en el botÃ³n "No autorizar salida" para ingresar el motivo de su decisiÃ³n.</p>
+      <p>Si decide no autorizar la solicitud, haga clic en el boton "No autorizar salida" para ingresar el motivo de su decision.</p>
     `,
     senderHtml: `
-      <p style="margin: 0; font-weight: bold; color: #0b3a6f;">Equipo de GestiÃ³n del Talento Humano</p>
+      <p style="margin: 0; font-weight: bold; color: #0b3a6f;">Equipo de Gestion del Talento Humano</p>
       <p style="margin: 2px 0 0 0; font-size: 12px; color: #64748b;">Universidad CESMAG</p>
       <p style="margin: 8px 0 0 0; font-size: 11px; color: #94a3b8; border-top: 1px dashed #e2e8f0; padding-top: 6px;">
         <strong>Flujo de firmas:</strong><br/>
-        â€¢ Solicitado por: ${escapeHtml(solicitante.nombre)}<br/>
-        â€¢ ${escapeHtml(initialApproval.actionLabel)} por ${escapeHtml(initialApproval.roleLabel)}: ${escapeHtml(initialApproval.label)}<br/>
-        â€¢ Aprobado por: GestiÃ³n del Talento Humano
+        &bull; Solicitado por: ${escapeHtml(solicitante.nombre)}<br/>
+        &bull; ${escapeHtml(initialApproval.actionLabel)} por ${escapeHtml(initialApproval.roleLabel)}: ${escapeHtml(initialApproval.label)}<br/>
+        &bull; Aprobado por: Gestion del Talento Humano
       </p>
     `
   });
@@ -1641,7 +1641,7 @@ const sendSSTApprovalEmail = async (solicitud, token, attachments) => {
   return sendInstitutionalEmail({
     to: recipients.sst,
     subject,
-    text: `Solicitud ${solicitud.consecutivo} requiere su aprobaciÃ³n. Para finalizar ingrese a ${approveUrl}. Para rechazar ingrese a ${rejectUrl}.`,
+    text: `Solicitud ${solicitud.consecutivo} requiere visto bueno de SST. Para finalizar ingrese a ${approveUrl}. Para rechazar ingrese a ${rejectUrl}.`,
     html,
     attachments,
     headers
@@ -1670,7 +1670,7 @@ const sendFinalEmails = async (solicitud, pdfAttachment, supportAttachment) => {
       â€¢ Solicitado por: ${escapeHtml(nombreColaborador)}<br/>
       â€¢ ${escapeHtml(initialApproval.actionLabel)} por ${escapeHtml(initialApproval.roleLabel)}: ${escapeHtml(initialApproval.label)}<br/>
       â€¢ Aprobado por: GestiÃ³n del Talento Humano<br/>
-      ${flowSST ? 'â€¢ Aprobado por: Seguridad y Salud en el Trabajo (SST)<br/>' : ''}
+      ${flowSST ? '&bull; Visto bueno por: Seguridad y Salud en el Trabajo (SST)<br/>' : ''}
     </div>
   `;
 
@@ -1681,7 +1681,7 @@ const sendFinalEmails = async (solicitud, pdfAttachment, supportAttachment) => {
       â€¢ Solicitado por: ${escapeHtml(nombreColaborador)}<br/>
       â€¢ ${escapeHtml(initialApproval.actionLabel)} por ${escapeHtml(initialApproval.roleLabel)}: ${escapeHtml(initialApproval.label)}<br/>
       â€¢ Aprobado por: GestiÃ³n del Talento Humano<br/>
-      ${flowSST ? 'â€¢ Aprobado por: Seguridad y Salud en el Trabajo (SST)<br/>' : ''}
+      ${flowSST ? '&bull; Visto bueno por: Seguridad y Salud en el Trabajo (SST)<br/>' : ''}
     </div>
   `;
 
@@ -2718,17 +2718,17 @@ const radicarSolicitud = async (req, res) => {
         const types = {
           cita_eps: 'Cita medica por EPS',
           cita_particular: 'Cita medica particular',
-          terapias: 'Terapias o tratamiento mÃ©dico',
-          urgencia_medica: 'Urgencia mÃ©dica',
+          terapias: 'Terapias o tratamiento medico',
+          urgencia_medica: 'Urgencia medica',
           diligencia_personal: 'Diligencia personal',
           ponencia: 'Ponencia/Conferencia',
           visita_ies: 'Visita a otras IES/Entidades',
-          capacitacion: 'CapacitaciÃ³n/Curso externo',
-          proyecto_investigacion: 'Trabajo de campo / InvestigaciÃ³n',
+          capacitacion: 'Capacitacion/Curso externo',
+          proyecto_investigacion: 'Trabajo de campo / Investigacion',
           asistente_congreso: 'Asistente a congreso/evento',
-          practica_academica: 'PrÃ¡ctica acadÃ©mica extramuros',
-          torneo_deportivo: 'Torneo deportivo/RepresentaciÃ³n',
-          salida_campus: 'Salida de campus (misiÃ³n institucional)',
+          practica_academica: 'Practica academica extramuros',
+          torneo_deportivo: 'Torneo deportivo/Representacion',
+          salida_campus: 'Salida de campus (mision institucional)',
           otra: 'Otra actividad propia del cargo'
         };
         if (String(tipo).startsWith('otra:')) {
@@ -2785,25 +2785,18 @@ const radicarSolicitud = async (req, res) => {
         ? `, en la especialidad de ${salida.especialidadMedica}`
         : '';
       const purposeText = hasPropiasCargoDetails
-        ? `con el proposito de atender la actividad institucional relacionada con ${activityText}`
+        ? `para atender la actividad institucional relacionada con ${activityText}`
         : isHealth
-          ? `con ocasion de ${activityText}${healthDetail}`
-          : `con ocasion de ${activityText}`;
-
-      const repeatedJustification = motivoDescr
-        && [entidadDestino, tipoLabel].some((value) => normalizeForMatch(value) && normalizeForMatch(value) === normalizeForMatch(motivoDescr));
-      const justificationText = motivoDescr && !repeatedJustification
-        ? `La solicitud se sustenta en la siguiente justificacion registrada por el/la colaborador(a): ${motivoDescr}.`
-        : 'La solicitud se sustenta en la informacion registrada para el tramite y en el cumplimiento de la actividad descrita.';
+          ? `para atender ${activityText}${healthDetail}`
+          : `para atender el permiso correspondiente a ${activityText}`;
 
       const closingText = isSalidaMultiple
         ? 'Agradecemos la atencion prestada y la colaboracion brindada para el tramite de la presente solicitud.'
         : 'Agradezco la atencion prestada y la colaboracion brindada para el tramite de la presente solicitud.';
+      const openingText = `Respetuosamente, solicito autorizacion ${requestSubject} ${fechaHoraText}, ${purposeText}.${contextText ? ` ${contextText}` : ''}`;
 
       oficioCuerpo = [
-        `Respetuosamente, solicito autorizacion ${requestSubject} ${fechaHoraText}, ${purposeText}.`,
-        contextText,
-        justificationText,
+        openingText,
         closingText
       ].filter(Boolean).join('\n\n');
     }

@@ -49,6 +49,30 @@ const stripAccents = (value) =>
 const sanitizeEmailText = (value) => {
   if (value === undefined || value === null) return value;
   let text = String(value);
+  const repairCommonWords = (input) => String(input)
+    .replace(/\bInvestigacin\b/g, 'Investigacion')
+    .replace(/\binvestigacin\b/g, 'investigacion')
+    .replace(/\bMedelln\b/g, 'Medellin')
+    .replace(/\bInformacin\b/g, 'Informacion')
+    .replace(/\binformacin\b/g, 'informacion')
+    .replace(/\bGestin\b/g, 'Gestion')
+    .replace(/\bgestin\b/g, 'gestion')
+    .replace(/\bRadicacin\b/g, 'Radicacion')
+    .replace(/\bradicacin\b/g, 'radicacion')
+    .replace(/\bAprobacin\b/g, 'Aprobacion')
+    .replace(/\baprobacin\b/g, 'aprobacion')
+    .replace(/\bRevisin\b/g, 'Revision')
+    .replace(/\brevisin\b/g, 'revision')
+    .replace(/\bAutorizacin\b/g, 'Autorizacion')
+    .replace(/\bautorizacin\b/g, 'autorizacion')
+    .replace(/\bAtencin\b/g, 'Atencion')
+    .replace(/\batencin\b/g, 'atencion')
+    .replace(/\bTrmite\b/g, 'Tramite')
+    .replace(/\btrmite\b/g, 'tramite')
+    .replace(/\bTransaccin\b/g, 'Transaccion')
+    .replace(/\btransaccin\b/g, 'transaccion')
+    .replace(/\bVerificacin\b/g, 'Verificacion')
+    .replace(/\bverificacin\b/g, 'verificacion');
 
   for (let i = 0; i < 2 && /[ÃÂâï¿½�]/.test(text); i += 1) {
     try {
@@ -127,7 +151,7 @@ const sanitizeEmailText = (value) => {
     .replace(/\btrmite\b/g, 'tramite')
     .replace(/\bautomtico\b/g, 'automatico');
 
-  return stripAccents(text);
+  return repairCommonWords(stripAccents(text));
 };
 
 const normalizeRecipient = (value) => {
