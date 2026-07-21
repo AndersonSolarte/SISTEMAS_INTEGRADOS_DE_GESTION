@@ -169,9 +169,22 @@ const getAuthorityRecipient = async (authorityName, fallbackEmail = '') => {
   return {
     nombre: sanitizeText(userRow?.nombre || entry?.nombre || authorityName, 255).toUpperCase(),
     cargo: sanitizeText(userRow?.cargo || entry?.cargo || authorityName, 255),
-    email: sanitizeText(fallbackEmail || entry?.email || userRow?.email || '', 255)
+    email: sanitizeText(entry?.email || fallbackEmail || userRow?.email || '', 255)
   };
 };
+
+const getOfficialAuthorityEmailForActor = (actor = {}) => {
+  const email = normalizeEmail(actor.email);
+  if (!email) return '';
+  const entry = Object.values(AUTHORITY_RECIPIENTS).find((authority) => {
+    const authorityEmails = [authority.email, ...(authority.aliases || [])].map(normalizeEmail);
+    return authorityEmails.includes(email);
+  });
+  return entry?.email || actor.email || '';
+};
+
+const getInitialApprovalRecipientEmail = (solicitud = {}) =>
+  getOfficialAuthorityEmailForActor(solicitud.jefe_snapshot || {}) || solicitud.jefe_snapshot?.email || '';
 
 const tokenizeName = (value) => normalizeForMatch(value)
   .split(/\s+/)
@@ -1697,7 +1710,7 @@ const sendFinalEmails = async (solicitud, pdfAttachment, supportAttachment) => {
   const solicitanteEmail = solicitud.solicitante_snapshot?.email;
   if (depEmail && !sameEmail(depEmail, solicitanteEmail)) copyRecipients.push({ type: 'dependencia', email: depEmail });
   
-  const jefeEmail = solicitud.jefe_snapshot?.email;
+  const jefeEmail = getInitialApprovalRecipientEmail(solicitud);
   if (jefeEmail && !copyRecipients.some((recipient) => sameEmail(recipient.email, jefeEmail))) {
     copyRecipients.push({ type: 'jefe', email: jefeEmail });
   }
@@ -1814,7 +1827,7 @@ const sendJefeApprovalEmail = async (solicitud, token, attachments, headers = {}
   const solicitanteEmail = solicitud.solicitante_snapshot?.email;
   if (depEmail && !sameEmail(depEmail, solicitanteEmail)) copyRecipients.push(depEmail);
   
-  const jefeEmail = solicitud.jefe_snapshot?.email;
+  const jefeEmail = getInitialApprovalRecipientEmail(solicitud);
   if (jefeEmail && !copyRecipients.includes(jefeEmail)) {
     copyRecipients.push(jefeEmail);
   }
@@ -1909,7 +1922,7 @@ const sendJefeRadicacionApprovalEmail = async (solicitud, token, attachments, he
   });
 
   return sendInstitutionalEmail({
-    to: jefe.email,
+    to: getInitialApprovalRecipientEmail(solicitud),
     subject,
     text: `Solicitud ${solicitud.consecutivo} pendiente de autorizacion. Autorizar: ${approveUrl}. No autorizar: ${rejectUrl}.`,
     html,
@@ -4256,9 +4269,10 @@ const sendGHRejectionEmails = async ({ solicitud, justificacion, isSST = false }
   });
 
   let bossResult = { success: false };
-  if (jefe.email) {
+  const jefeEmail = getInitialApprovalRecipientEmail(solicitud);
+  if (jefeEmail) {
     bossResult = await sendInstitutionalEmail({
-      to: jefe.email,
+      to: jefeEmail,
       subject: bossSubject,
       text: `La solicitud ${solicitud.consecutivo} del/de la colaborador(a) ${solicitante.nombre} fue rechazada por ${actorName}. Motivo: ${justificacion}`,
       html: bossHtml,
