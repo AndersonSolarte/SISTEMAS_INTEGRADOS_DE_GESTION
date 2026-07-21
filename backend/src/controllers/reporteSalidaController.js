@@ -1184,6 +1184,10 @@ const validateRadicacionPayload = (payload, user) => {
     return 'El permiso por entierro de companeras/os de trabajo solo puede registrarse con duracion de hasta media jornada.';
   }
 
+  if (salida.tipo === 'obligaciones_escolares' && salida.duracionTipo !== 'menos_media_jornada') {
+    return 'El permiso por asistencia a obligaciones escolares solo puede registrarse con duracion de hasta media jornada.';
+  }
+
   let requestedMinutes = 0;
   if (salida.tipo === 'terapias') {
     requestedMinutes = (salida.terapiasList || []).reduce((acc, t) => acc + (diffBusinessMinutes(t.fecha, t.fecha, t.horaInicio, t.horaFin) || 0), 0);

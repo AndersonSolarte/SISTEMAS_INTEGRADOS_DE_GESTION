@@ -4,7 +4,7 @@ import { Box, InputAdornment, MenuItem, Radio, TextField, Typography } from '@mu
 const DuracionSelector = ({ salida, fieldSx, onChange }) => {
   const options = useMemo(() => {
     const isElectoral = ['jurado_votacion', 'sufragante'].includes(salida.tipo);
-    const isOnlyHalfDay = isElectoral || salida.tipo === 'entierro_companero';
+    const isOnlyHalfDay = isElectoral || ['entierro_companero', 'obligaciones_escolares'].includes(salida.tipo);
     return [
       {
         value: 'menos_media_jornada',

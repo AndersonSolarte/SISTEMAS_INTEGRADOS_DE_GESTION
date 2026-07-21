@@ -753,7 +753,7 @@ function ReporteSalidaFormDialog({ open, documento, user, onClose, onSubmitted }
   }, [form.salida.duracionTipo, form.salida.tiempoReponerHoras]);
 
   useEffect(() => {
-    if (['jurado_votacion', 'sufragante', 'entierro_companero'].includes(form.salida.tipo) && form.salida.duracionTipo !== 'menos_media_jornada') {
+    if (['jurado_votacion', 'sufragante', 'entierro_companero', 'obligaciones_escolares'].includes(form.salida.tipo) && form.salida.duracionTipo !== 'menos_media_jornada') {
       update('salida', 'duracionTipo', 'menos_media_jornada');
       update('salida', 'duracionDias', 0);
     }
