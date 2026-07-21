@@ -7,6 +7,8 @@ const { getReporteSalidaTemplatePath } = require('../config/reporteSalidaConfig'
 
 const execFileAsync = promisify(execFile);
 const DEFAULT_DECLARACION_SIN_ADJUNTO_SALUD = 'Declaro que al momento de radicar esta solicitud no cuento con archivos adjuntos o soportes para cargar en el sistema. Entiendo que la Oficina de Gestión del Talento Humano y/o Seguridad y Salud en el Trabajo podran requerir en cualquier momento los soportes correspondientes; por tanto, me comprometo a conservarlos despues de la atencion o tramite y a suministrarlos oportunamente cuando sean solicitados.';
+const SST_RESPONSABLE_NOMBRE = 'ANGIE MELISSA MUÑOZ RODRIGUEZ';
+const SST_RESPONSABLE_CARGO = 'Jefe de Gestion de Riesgos y Ambiente, Oficina de Seguridad y Salud en el Trabajo';
 
 const getDeclaracionSinAdjunto = (salida = {}) =>
   salida.noCuentaAdjunto
@@ -51,6 +53,8 @@ const getInitialApprovalPdfInfo = (solicitud = {}) => {
   return {
     name: viaDependencia ? (actor.nombre || 'Dependencia') : (jefe.nombre || actor.nombre || ''),
     cargo: viaDependencia ? (actor.cargo || 'Dependencia') : (jefe.cargo || actor.cargo || ''),
+    email: viaDependencia ? (actor.email || '') : '',
+    viaDependencia,
     header: viaDependencia ? 'Autorizacion por Dependencia' : 'Autorizacion del Jefe inmediato'
   };
 };
@@ -495,7 +499,7 @@ const buildOficioPdfDefinition = (solicitud, ghDirectorNombre, ghDirectorCargo) 
     : null;
   const sstApprovedAt = sstEvent ? new Date(sstEvent.at) : null;
   const sstDate = sstApprovedAt ? formatDateTime(sstApprovedAt) : 'Pendiente';
-  const sstActorName = sstEvent?.actor?.nombre || 'Seguridad y Salud en el Trabajo';
+  const sstActorName = sstApprovedAt ? SST_RESPONSABLE_NOMBRE : 'Seguridad y Salud en el Trabajo';
   const frontendUrl = process.env.FRONTEND_URL || 'https://planeaciongp.unicesmag.edu.co';
   const verifyUrl = `${frontendUrl.replace(/\/$/, '')}/verificar/${txId}`;
   const buildSignatureCell = ({ signed, name, cargo, date, extra = {} }) => ({
@@ -531,6 +535,7 @@ const buildOficioPdfDefinition = (solicitud, ghDirectorNombre, ghDirectorCargo) 
           { text: solicitud.jefe_aprobado_at ? 'Firmado electrónicamente por:\n' : '\n', bold: true, fontSize: 8 },
           { text: `${solicitud.jefe_aprobado_at ? initialApprovalPdf.name : 'Pendiente'}\n`, fontSize: 9 },
           { text: `Cargo: ${initialApprovalPdf.cargo || ''}\n`, fontSize: 7.5 },
+          ...(initialApprovalPdf.viaDependencia && initialApprovalPdf.email ? [{ text: `Correo: ${initialApprovalPdf.email}\n`, fontSize: 7.5 }] : []),
           { text: `Fecha y hora: ${jefeDate}\n`, fontSize: 7.5 },
           { text: solicitud.jefe_aprobado_at ? `ID Transacción: ${txId}\n` : '\n', fontSize: 7, color: 'gray' }
         ],
@@ -575,8 +580,8 @@ const buildOficioPdfDefinition = (solicitud, ghDirectorNombre, ghDirectorCargo) 
     signatureTableBody.push([
       {
         text: [
-          { text: solicitud.gestion_humana_aprobado_at ? 'Firmado electrónicamente por:\n' : 'Pendiente de recibido por:\n', bold: true, fontSize: 8 },
-          { text: `${ghDirectorNombre}\n`, fontSize: 9 },
+          { text: solicitud.gestion_humana_aprobado_at ? 'Firmado electrónicamente por:\n' : '\n', bold: true, fontSize: 8 },
+          { text: `${solicitud.gestion_humana_aprobado_at ? ghDirectorNombre : 'Pendiente'}\n`, fontSize: 9 },
           { text: `Cargo: ${ghDirectorCargo}\n`, fontSize: 7.5 },
           { text: `Fecha y hora: ${ghDate}\n`, fontSize: 7.5 },
           { text: solicitud.gestion_humana_aprobado_at ? `ID Transacción: ${txId}\n` : '\n', fontSize: 7, color: 'gray' }
@@ -587,7 +592,7 @@ const buildOficioPdfDefinition = (solicitud, ghDirectorNombre, ghDirectorCargo) 
         text: [
           { text: sstApprovedAt ? 'Firmado electrónicamente por:\n' : '\n', bold: true, fontSize: 8 },
           { text: `${sstApprovedAt ? sstActorName : 'Pendiente'}\n`, fontSize: 9 },
-          { text: `Cargo: Coordinador SST\n`, fontSize: 7.5 },
+          { text: `Cargo: ${SST_RESPONSABLE_CARGO}\n`, fontSize: 7.5 },
           { text: `Fecha y hora: ${sstDate}\n`, fontSize: 7.5 },
           { text: sstApprovedAt ? `ID Transacción: ${txId}\n` : '\n', fontSize: 7, color: 'gray' }
         ],
@@ -630,8 +635,8 @@ const buildOficioPdfDefinition = (solicitud, ghDirectorNombre, ghDirectorCargo) 
     signatureTableBody.push([
       {
         text: [
-          { text: solicitud.gestion_humana_aprobado_at ? 'Firmado electrónicamente por:\n' : 'Pendiente de recibido por:\n', bold: true, fontSize: 8 },
-          { text: `${ghDirectorNombre}\n`, fontSize: 9 },
+          { text: solicitud.gestion_humana_aprobado_at ? 'Firmado electrónicamente por:\n' : '\n', bold: true, fontSize: 8 },
+          { text: `${solicitud.gestion_humana_aprobado_at ? ghDirectorNombre : 'Pendiente'}\n`, fontSize: 9 },
           { text: `Cargo: ${ghDirectorCargo}\n`, fontSize: 7.5 },
           { text: `Fecha y hora: ${ghDate}\n`, fontSize: 7.5 },
           { text: solicitud.gestion_humana_aprobado_at ? `ID Transacción: ${txId}\n` : '\n', fontSize: 7, color: 'gray' }
@@ -743,7 +748,7 @@ const buildOficioPdfDefinition = (solicitud, ghDirectorNombre, ghDirectorCargo) 
         buildSignatureCell({
           signed: Boolean(sstApprovedAt),
           name: sstActorName,
-          cargo: 'Coordinador SST',
+          cargo: SST_RESPONSABLE_CARGO,
           date: sstDate
         })
       ]
@@ -1237,7 +1242,7 @@ const buildPdfBuffer = async (solicitud) => {
         : null;
       const sstApprovedAt = sstEvent ? new Date(sstEvent.at) : null;
       const sstDate = sstApprovedAt ? formatDateTime(sstApprovedAt) : 'Pendiente';
-      const sstActorName = sstEvent?.actor?.nombre || 'Seguridad y Salud en el Trabajo';
+      const sstActorName = sstApprovedAt ? SST_RESPONSABLE_NOMBRE : 'Seguridad y Salud en el Trabajo';
 
       const signatureTableBody = [
         [
@@ -1260,6 +1265,7 @@ const buildPdfBuffer = async (solicitud) => {
               { text: solicitud.jefe_aprobado_at ? 'Firmado electrónicamente por:\n' : '\n', bold: true, fontSize: 9 },
               { text: `${solicitud.jefe_aprobado_at ? initialApprovalPdf.name : 'Pendiente'}\n`, fontSize: 10 },
               { text: `Cargo: ${initialApprovalPdf.cargo || ''}\n`, fontSize: 8 },
+              ...(initialApprovalPdf.viaDependencia && initialApprovalPdf.email ? [{ text: `Correo: ${initialApprovalPdf.email}\n`, fontSize: 8 }] : []),
               { text: `Fecha y hora: ${jefeDate}\n`, fontSize: 8 },
               { text: solicitud.jefe_aprobado_at ? `ID Transacción: ${txId}\n` : '\n', fontSize: 7, color: 'gray' }
             ],
@@ -1276,8 +1282,8 @@ const buildPdfBuffer = async (solicitud) => {
         signatureTableBody.push([
           {
             text: [
-              { text: solicitud.gestion_humana_aprobado_at ? 'Firmado electrónicamente por:\n' : 'Pendiente de recibido por:\n', bold: true, fontSize: 9 },
-              { text: `${ghDirectorNombre}\n`, fontSize: 10 },
+              { text: solicitud.gestion_humana_aprobado_at ? 'Firmado electrónicamente por:\n' : '\n', bold: true, fontSize: 9 },
+              { text: `${solicitud.gestion_humana_aprobado_at ? ghDirectorNombre : 'Pendiente'}\n`, fontSize: 10 },
               { text: `Cargo: ${ghDirectorCargo}\n`, fontSize: 8 },
               { text: `Fecha y hora: ${ghDate}\n`, fontSize: 8 },
               { text: solicitud.gestion_humana_aprobado_at ? `ID Transacción: ${txId}\n` : '\n', fontSize: 7, color: 'gray' }
@@ -1288,7 +1294,7 @@ const buildPdfBuffer = async (solicitud) => {
             text: [
               { text: sstApprovedAt ? 'Firmado electrónicamente por:\n' : '\n', bold: true, fontSize: 9 },
               { text: `${sstApprovedAt ? sstActorName : 'Pendiente'}\n`, fontSize: 10 },
-              { text: `Cargo: Coordinador SST\n`, fontSize: 8 },
+              { text: `Cargo: ${SST_RESPONSABLE_CARGO}\n`, fontSize: 8 },
               { text: `Fecha y hora: ${sstDate}\n`, fontSize: 8 },
               { text: sstApprovedAt ? `ID Transacción: ${txId}\n` : '\n', fontSize: 7, color: 'gray' }
             ],
@@ -1303,8 +1309,8 @@ const buildPdfBuffer = async (solicitud) => {
         signatureTableBody.push([
           {
             text: [
-              { text: solicitud.gestion_humana_aprobado_at ? 'Firmado electrónicamente por:\n' : 'Pendiente de recibido por:\n', bold: true, fontSize: 9 },
-              { text: `${ghDirectorNombre}\n`, fontSize: 10 },
+              { text: solicitud.gestion_humana_aprobado_at ? 'Firmado electrónicamente por:\n' : '\n', bold: true, fontSize: 9 },
+              { text: `${solicitud.gestion_humana_aprobado_at ? ghDirectorNombre : 'Pendiente'}\n`, fontSize: 10 },
               { text: `Cargo: ${ghDirectorCargo}\n`, fontSize: 8 },
               { text: `Fecha y hora: ${ghDate}\n`, fontSize: 8 },
               { text: solicitud.gestion_humana_aprobado_at ? `ID Transacción: ${txId}\n` : '\n', fontSize: 7, color: 'gray' }
