@@ -1368,10 +1368,12 @@ const getDependencyApprovalActor = (solicitud = {}) => {
   const solicitante = solicitud.solicitante_snapshot || {};
   const laboral = solicitud.datos_formulario?.laboral || {};
   const dependencia = laboral.dependencia || solicitante.dependencia || '';
-  const depEmail = getDependencyEmail(dependencia);
+  const dependenciaFallback = laboral.vicerrectoria || solicitante.vicerrectoria || '';
+  const depEmail = getDependencyEmail(dependencia) || getDependencyEmail(dependenciaFallback);
+  const dependenciaLabel = getDependencyEmail(dependencia) ? dependencia : (dependenciaFallback || dependencia);
   if (!depEmail) return null;
   return {
-    nombre: dependencia ? `Dependencia - ${dependencia}` : 'Dependencia',
+    nombre: dependenciaLabel ? `Dependencia - ${dependenciaLabel}` : 'Dependencia',
     email: depEmail,
     role: 'dependencia',
     cargo: 'Dependencia'
@@ -1427,7 +1429,9 @@ const sendDependenciaRadicacionInfoEmail = async (solicitud, token, attachments,
   const laboral = solicitud.datos_formulario?.laboral || {};
   const jefe = solicitud.jefe_snapshot || {};
   const dependencia = laboral.dependencia || solicitante.dependencia || '';
-  const depEmail = getDependencyEmail(dependencia);
+  const dependenciaFallback = laboral.vicerrectoria || solicitante.vicerrectoria || '';
+  const depEmail = getDependencyEmail(dependencia) || getDependencyEmail(dependenciaFallback);
+  const dependenciaLabel = getDependencyEmail(dependencia) ? dependencia : (dependenciaFallback || dependencia);
 
   if (!depEmail) {
     return { success: false, skipped: true, reason: 'dependency_email_not_configured' };
@@ -1446,7 +1450,7 @@ const sendDependenciaRadicacionInfoEmail = async (solicitud, token, attachments,
   const subject = `${labelText} ${solicitud.consecutivo} | Revision dependencia`;
   const html = renderInstitutionalTemplate({
     title: `Revision de dependencia - ${isOficio ? 'Oficio de salida' : 'Reporte de salida'}`,
-    introHtml: `<p style="margin: 0 0 12px 0;">Saludo de paz y bien,</p><p style="margin: 0 0 4px 0; color: #475569;">Estimado(a) equipo de dependencia.</p><p>Reciba un cordial saludo. Se informa que el/la colaborador(a) <strong>${escapeHtml(solicitante.nombre || '')}</strong>, adscrito(a) a <strong>${escapeHtml(dependencia)}</strong>, radico una solicitud de ${isOficio ? 'oficio de salida' : 'reporte de salida'} en el sistema. Este correo permite realizar seguimiento interno y, cuando el jefe inmediato no se encuentre disponible, autorizar o no autorizar la salida desde la dependencia.</p>`,
+    introHtml: `<p style="margin: 0 0 12px 0;">Saludo de paz y bien,</p><p style="margin: 0 0 4px 0; color: #475569;">Estimado(a) equipo de dependencia.</p><p>Reciba un cordial saludo. Se informa que el/la colaborador(a) <strong>${escapeHtml(solicitante.nombre || '')}</strong>, adscrito(a) a <strong>${escapeHtml(dependenciaLabel)}</strong>, radico una solicitud de ${isOficio ? 'oficio de salida' : 'reporte de salida'} en el sistema. Este correo permite realizar seguimiento interno y, cuando el jefe inmediato no se encuentre disponible, autorizar o no autorizar la salida desde la dependencia.</p>`,
     bodyHtml: `
       <p><strong>Colaborador(a):</strong> ${escapeHtml(solicitante.nombre || '')}</p>
       <p><strong>Cargo:</strong> ${escapeHtml(laboral.cargo || solicitante.cargo || '')}</p>
