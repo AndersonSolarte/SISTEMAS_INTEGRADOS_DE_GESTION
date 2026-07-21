@@ -575,8 +575,8 @@ const buildOficioPdfDefinition = (solicitud, ghDirectorNombre, ghDirectorCargo) 
     signatureTableBody.push([
       {
         text: [
-          { text: solicitud.gestion_humana_aprobado_at ? 'Firmado electrónicamente por:\n' : '\n', bold: true, fontSize: 8 },
-          { text: `${solicitud.gestion_humana_aprobado_at ? ghDirectorNombre : 'Pendiente'}\n`, fontSize: 9 },
+          { text: solicitud.gestion_humana_aprobado_at ? 'Firmado electrónicamente por:\n' : 'Pendiente de recibido por:\n', bold: true, fontSize: 8 },
+          { text: `${ghDirectorNombre}\n`, fontSize: 9 },
           { text: `Cargo: ${ghDirectorCargo}\n`, fontSize: 7.5 },
           { text: `Fecha y hora: ${ghDate}\n`, fontSize: 7.5 },
           { text: solicitud.gestion_humana_aprobado_at ? `ID Transacción: ${txId}\n` : '\n', fontSize: 7, color: 'gray' }
@@ -630,8 +630,8 @@ const buildOficioPdfDefinition = (solicitud, ghDirectorNombre, ghDirectorCargo) 
     signatureTableBody.push([
       {
         text: [
-          { text: solicitud.gestion_humana_aprobado_at ? 'Firmado electrónicamente por:\n' : '\n', bold: true, fontSize: 8 },
-          { text: `${solicitud.gestion_humana_aprobado_at ? ghDirectorNombre : 'Pendiente'}\n`, fontSize: 9 },
+          { text: solicitud.gestion_humana_aprobado_at ? 'Firmado electrónicamente por:\n' : 'Pendiente de recibido por:\n', bold: true, fontSize: 8 },
+          { text: `${ghDirectorNombre}\n`, fontSize: 9 },
           { text: `Cargo: ${ghDirectorCargo}\n`, fontSize: 7.5 },
           { text: `Fecha y hora: ${ghDate}\n`, fontSize: 7.5 },
           { text: solicitud.gestion_humana_aprobado_at ? `ID Transacción: ${txId}\n` : '\n', fontSize: 7, color: 'gray' }
@@ -888,25 +888,26 @@ const buildOficioPdfDefinition = (solicitud, ghDirectorNombre, ghDirectorCargo) 
 };
 
 const buildPdfBuffer = async (solicitud) => {
-  let ghDirectorNombre = '';
+  let ghDirectorNombre = 'Gestion del Talento Humano';
   let ghDirectorCargo = 'Jefe de Gestión del Talento Humano';
-  if (solicitud.gestion_humana_aprobado_at) {
-    try {
-      const { User } = require('../models');
-      const { Op } = require('sequelize');
-      const ghUser = await User.findOne({
-        where: {
-          dependencia: { [Op.in]: ['Gestión del Talento Humano', 'Gestión del Talento Humano'] },
-          cargo: { [Op.in]: ['Jefe Gestión del Talento Humano', 'Jefe de Gestión del Talento Humano', 'Jefe de Gestión del Talento Humano', 'Jefe Gestión del Talento Humano'] }
-        }
-      });
-      if (ghUser) {
-        ghDirectorNombre = ghUser.nombre;
-        ghDirectorCargo = ghUser.cargo;
+  try {
+    const { User } = require('../models');
+    const { Op } = require('sequelize');
+    const ghUser = await User.findOne({
+      where: {
+        [Op.and]: [
+          { dependencia: { [Op.iLike]: '%Talento Humano%' } },
+          { cargo: { [Op.iLike]: '%Jefe%' } },
+          { cargo: { [Op.iLike]: '%Talento Humano%' } }
+        ]
       }
-    } catch (err) {
-      console.error('Error fetching GH user for PDF:', err);
+    });
+    if (ghUser) {
+      ghDirectorNombre = ghUser.nombre;
+      ghDirectorCargo = ghUser.cargo;
     }
+  } catch (err) {
+    console.error('Error fetching GH user for PDF:', err);
   }
 
   return new Promise((resolve, reject) => {
@@ -1275,8 +1276,8 @@ const buildPdfBuffer = async (solicitud) => {
         signatureTableBody.push([
           {
             text: [
-              { text: solicitud.gestion_humana_aprobado_at ? 'Firmado electrónicamente por:\n' : '\n', bold: true, fontSize: 9 },
-              { text: `${solicitud.gestion_humana_aprobado_at ? ghDirectorNombre : 'Pendiente'}\n`, fontSize: 10 },
+              { text: solicitud.gestion_humana_aprobado_at ? 'Firmado electrónicamente por:\n' : 'Pendiente de recibido por:\n', bold: true, fontSize: 9 },
+              { text: `${ghDirectorNombre}\n`, fontSize: 10 },
               { text: `Cargo: ${ghDirectorCargo}\n`, fontSize: 8 },
               { text: `Fecha y hora: ${ghDate}\n`, fontSize: 8 },
               { text: solicitud.gestion_humana_aprobado_at ? `ID Transacción: ${txId}\n` : '\n', fontSize: 7, color: 'gray' }
@@ -1302,8 +1303,8 @@ const buildPdfBuffer = async (solicitud) => {
         signatureTableBody.push([
           {
             text: [
-              { text: solicitud.gestion_humana_aprobado_at ? 'Firmado electrónicamente por:\n' : '\n', bold: true, fontSize: 9 },
-              { text: `${solicitud.gestion_humana_aprobado_at ? ghDirectorNombre : 'Pendiente'}\n`, fontSize: 10 },
+              { text: solicitud.gestion_humana_aprobado_at ? 'Firmado electrónicamente por:\n' : 'Pendiente de recibido por:\n', bold: true, fontSize: 9 },
+              { text: `${ghDirectorNombre}\n`, fontSize: 10 },
               { text: `Cargo: ${ghDirectorCargo}\n`, fontSize: 8 },
               { text: `Fecha y hora: ${ghDate}\n`, fontSize: 8 },
               { text: solicitud.gestion_humana_aprobado_at ? `ID Transacción: ${txId}\n` : '\n', fontSize: 7, color: 'gray' }
