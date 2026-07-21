@@ -46,7 +46,7 @@ const reporteSalidaService = {
   },
 
   getSeguimiento: async (params = {}) => {
-    const response = await api.get('/reporte-salida/seguimiento', { params });
+    const response = await api.get('/reporte-salida/seguimiento', { params, timeout: 60000 });
     return response.data;
   },
 

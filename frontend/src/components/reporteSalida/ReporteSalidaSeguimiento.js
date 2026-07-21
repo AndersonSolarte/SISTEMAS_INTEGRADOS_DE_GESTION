@@ -307,6 +307,7 @@ function ReporteSalidaSeguimiento({ initialAccess = null, onBack }) {
   const [rows, setRows] = useState([]);
   const [access, setAccess] = useState(initialAccess);
   const [loading, setLoading] = useState(false);
+  const [loadError, setLoadError] = useState('');
   const [estado, setEstado] = useState('');
   const [viewTab, setViewTab] = useState('todas');
   const [updatingReposicionId, setUpdatingReposicionId] = useState(null);
@@ -346,17 +347,36 @@ function ReporteSalidaSeguimiento({ initialAccess = null, onBack }) {
 
   const fetchSolicitudes = useCallback(async () => {
     setLoading(true);
+    setLoadError('');
     try {
-      const response = await reporteSalidaService.getSeguimiento({ page: 1, limit: 50, estado });
+      let response = null;
+      let lastError = null;
+      for (let attempt = 0; attempt < 2; attempt += 1) {
+        try {
+          response = await reporteSalidaService.getSeguimiento({ page: 1, limit: 50, estado });
+          lastError = null;
+          break;
+        } catch (error) {
+          lastError = error;
+          if (attempt === 0) {
+            await new Promise((resolve) => setTimeout(resolve, 1200));
+          }
+        }
+      }
+      if (lastError) throw lastError;
       setAccess(response?.data?.access || null);
       setRows(response?.data?.solicitudes || []);
+    } catch (error) {
+      const message = error?.response?.data?.message || 'No se pudo cargar el seguimiento de reportes. Intente actualizar nuevamente.';
+      setLoadError(message);
+      enqueueSnackbar(message, { variant: 'warning' });
     } finally {
       setLoading(false);
     }
-  }, [estado]);
+  }, [estado, enqueueSnackbar]);
 
   const load = useCallback(async () => {
-    fetchSolicitudes();
+    await fetchSolicitudes();
   }, [fetchSolicitudes]);
 
   useEffect(() => {
@@ -1017,6 +1037,11 @@ function ReporteSalidaSeguimiento({ initialAccess = null, onBack }) {
             )}
           </Box>
           <Box sx={{ p: { xs: 2, md: 2.2 } }}>
+            {loadError && (
+              <Alert severity="warning" sx={{ mb: 2, borderRadius: 2 }}>
+                {loadError}
+              </Alert>
+            )}
             <Stack direction={{ xs: 'column', md: 'row' }} spacing={1.5} sx={{ mt: 2.2 }}>
               {[
                 { key: 'todas', label: 'Solicitudes', value: summary.total, icon: AssignmentTurnedInIcon, color: '#2563eb', gradient: 'linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%)' },
