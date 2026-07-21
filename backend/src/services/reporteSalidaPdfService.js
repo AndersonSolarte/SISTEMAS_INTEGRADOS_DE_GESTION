@@ -51,7 +51,7 @@ const getInitialApprovalPdfInfo = (solicitud = {}) => {
   return {
     name: viaDependencia ? (actor.nombre || 'Dependencia') : (jefe.nombre || actor.nombre || ''),
     cargo: viaDependencia ? (actor.cargo || 'Dependencia') : (jefe.cargo || actor.cargo || ''),
-    header: viaDependencia ? 'Autorizacion de la Dependencia' : 'Autorizacion del Jefe inmediato'
+    header: viaDependencia ? 'Autorizacion por Dependencia' : 'Autorizacion del Jefe inmediato'
   };
 };
 
@@ -1338,7 +1338,7 @@ const buildPdfBuffer = async (solicitud) => {
           'correo_jefe_enviado': 'Notificación a Jefe Inmediato',
           'correo_jefe_error': 'Error al notificar a Jefe Inmediato',
           'aprobada_jefe': 'Aprobación de Jefe Inmediato',
-          'aprobada_dependencia': 'Aprobación de Dependencia',
+          'aprobada_dependencia': 'Autorizacion por Dependencia',
           'visto_bueno_jefe': 'Visto bueno de Jefe Inmediato',
           'visto_bueno_dependencia': 'Visto bueno de Dependencia',
           'rechazada_jefe': 'Rechazada por Jefe Inmediato',
