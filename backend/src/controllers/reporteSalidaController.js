@@ -1364,13 +1364,24 @@ const sendColaboradorRadicacionEmail = async (solicitud, attachments) => {
   });
 };
 
-const getDependencyApprovalActor = (solicitud = {}) => {
+const getDependencyNotificationTarget = (solicitud = {}) => {
   const solicitante = solicitud.solicitante_snapshot || {};
   const laboral = solicitud.datos_formulario?.laboral || {};
   const dependencia = laboral.dependencia || solicitante.dependencia || '';
-  const dependenciaFallback = laboral.vicerrectoria || solicitante.vicerrectoria || '';
-  const depEmail = getDependencyEmail(dependencia) || getDependencyEmail(dependenciaFallback);
-  const dependenciaLabel = getDependencyEmail(dependencia) ? dependencia : (dependenciaFallback || dependencia);
+  const fallback = laboral.vicerrectoria || solicitante.vicerrectoria || '';
+  const dependenciaEmail = getDependencyEmail(dependencia);
+  const fallbackEmail = getDependencyEmail(fallback);
+  return {
+    email: dependenciaEmail || fallbackEmail || '',
+    label: dependenciaEmail ? dependencia : (fallback || dependencia),
+    source: dependenciaEmail ? 'dependencia' : (fallbackEmail ? 'vicerrectoria' : '')
+  };
+};
+
+const getDependencyApprovalActor = (solicitud = {}) => {
+  const target = getDependencyNotificationTarget(solicitud);
+  const depEmail = target.email;
+  const dependenciaLabel = target.label;
   if (!depEmail) return null;
   return {
     nombre: dependenciaLabel ? `Dependencia - ${dependenciaLabel}` : 'Dependencia',
@@ -1428,10 +1439,9 @@ const sendDependenciaRadicacionInfoEmail = async (solicitud, token, attachments,
   const solicitante = solicitud.solicitante_snapshot || {};
   const laboral = solicitud.datos_formulario?.laboral || {};
   const jefe = solicitud.jefe_snapshot || {};
-  const dependencia = laboral.dependencia || solicitante.dependencia || '';
-  const dependenciaFallback = laboral.vicerrectoria || solicitante.vicerrectoria || '';
-  const depEmail = getDependencyEmail(dependencia) || getDependencyEmail(dependenciaFallback);
-  const dependenciaLabel = getDependencyEmail(dependencia) ? dependencia : (dependenciaFallback || dependencia);
+  const target = getDependencyNotificationTarget(solicitud);
+  const depEmail = target.email;
+  const dependenciaLabel = target.label;
 
   if (!depEmail) {
     return { success: false, skipped: true, reason: 'dependency_email_not_configured' };
@@ -1617,7 +1627,8 @@ const sendSSTApprovalEmail = async (solicitud, token, attachments) => {
 const sendFinalEmails = async (solicitud, pdfAttachment, supportAttachment) => {
   const recipients = getReporteSalidaRecipients();
   const nombreColaborador = solicitud.solicitante_snapshot?.nombre || '';
-  const dependencialabel = solicitud.datos_formulario?.laboral?.dependencia || '';
+  const dependenciaTarget = getDependencyNotificationTarget(solicitud);
+  const dependencialabel = dependenciaTarget.label || solicitud.datos_formulario?.laboral?.dependencia || '';
 
   const threadId = solicitud.datos_formulario?.thread_message_id;
   const headers = threadId ? { 'In-Reply-To': threadId, 'References': threadId } : {};
@@ -1675,7 +1686,7 @@ const sendFinalEmails = async (solicitud, pdfAttachment, supportAttachment) => {
   // 2. Correo de Copia de control para LÃ­der de Dependencia / Jefe Inmediato
   let depResult = { success: false };
   const copyRecipients = [];
-  const depEmail = getDependencyEmail(dependencialabel);
+  const depEmail = dependenciaTarget.email;
   const solicitanteEmail = solicitud.solicitante_snapshot?.email;
   if (depEmail && !sameEmail(depEmail, solicitanteEmail)) copyRecipients.push(depEmail);
   
@@ -1778,7 +1789,9 @@ const sendJefeApprovalEmail = async (solicitud, token, attachments, headers = {}
   // 2. Correo para la Dependencia y el Jefe Inmediato (Copia de control, Solo el PDF firmado)
   let depResult = { success: false };
   const copyRecipients = [];
-  const depEmail = getDependencyEmail(dependencialabel);
+  const dependenciaTarget = getDependencyNotificationTarget(solicitud);
+  const depEmail = dependenciaTarget.email;
+  const dependencialabel = dependenciaTarget.label || solicitud.datos_formulario?.laboral?.dependencia || '';
   const solicitanteEmail = solicitud.solicitante_snapshot?.email;
   if (depEmail && !sameEmail(depEmail, solicitanteEmail)) copyRecipients.push(depEmail);
   
