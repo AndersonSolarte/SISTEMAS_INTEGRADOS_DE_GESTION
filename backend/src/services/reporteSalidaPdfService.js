@@ -863,16 +863,15 @@ const buildOficioPdfDefinition = (solicitud, ghDirectorNombre, ghDirectorCargo) 
         text: [
           { text: destTratamiento ? `${destTratamiento}\n` : '' },
           { text: `${destNombre}\n`, bold: true },
-          { text: destDependencia ? `${destDependencia}\n` : '' },
           { text: destCargo ? `${destCargo}\n` : '' },
-          { text: destDireccionEmail ? `${destDireccionEmail}\n` : '' }
+          { text: destDependencia ? `${destDependencia}\n` : '' }
         ],
         margin: [0, 0, 0, 18]
       },
       
       { text: `Asunto: ${salida.oficioAsunto || ''}`, bold: true, margin: [0, 0, 0, 16] },
       
-      { text: 'Paz y bien:', margin: [0, 0, 0, 12] },
+      { text: 'Paz y bien:', bold: true, margin: [0, 0, 0, 12] },
       
       { text: salida.oficioCuerpo || '', alignment: 'justify', margin: [0, 0, 0, 18] },
       
@@ -882,8 +881,8 @@ const buildOficioPdfDefinition = (solicitud, ghDirectorNombre, ghDirectorCargo) 
       ...(getDeclaracionSinAdjunto(salida) ? [
         { text: `Declaracion de soportes: ${getDeclaracionSinAdjunto(salida)}`, fontSize: 8.8, italics: true, color: '#334155', margin: [0, 0, 0, 6] }
       ] : []),
-      { text: `Anexos: ${salida.oficioAnexos || 'Ninguno'}`, fontSize: 9.5, margin: [0, 0, 0, 2] },
-      { text: `Proyecto: ${salida.oficioProyecto || ''}`, fontSize: 9.5, margin: [0, 0, 0, 16] },
+      { text: `Anexos: ${salida.oficioAnexos || 'Ninguno'}`, fontSize: 8.2, margin: [0, 0, 0, 1] },
+      { text: `Proyecto: ${salida.oficioProyecto || ''}`, fontSize: 8.2, margin: [0, 0, 0, 12] },
       
       // Signatures container
       {

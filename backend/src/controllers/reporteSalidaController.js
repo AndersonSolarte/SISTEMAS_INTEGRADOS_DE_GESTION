@@ -2665,6 +2665,11 @@ const radicarSolicitud = async (req, res) => {
         destinatarioNombre = authorityRecipient?.nombre || oficioAuthorityName.toUpperCase();
         destinatarioCargo = authorityRecipient?.cargo || (oficioDirigidoARectoria ? 'Rectoria' : oficioAuthorityName);
         destinatarioDireccionEmail = authorityRecipient?.email || oficioAuthorityEmail;
+        if (oficioDirigidoARectoria) {
+          destinatarioTratamiento = 'Fray';
+          destinatarioCargo = 'Rector';
+          destinatarioEmpresa = 'Universidad CESMAG';
+        }
       } else {
         destinatarioNombre = (jefeSnapshot.nombre || '').toUpperCase();
         destinatarioCargo = jefeSnapshot.cargo || 'Jefe Inmediato';
@@ -2674,7 +2679,7 @@ const radicarSolicitud = async (req, res) => {
       // 3. Treatment
       const cargoLower = (destinatarioCargo || jefeSnapshot.cargo || '').toLowerCase();
       if (cargoLower.includes('decano') || cargoLower.includes('rector') || cargoLower.includes('vicerrec')) {
-        destinatarioTratamiento = 'SeÃ±or(a)';
+        destinatarioTratamiento = oficioDirigidoARectoria ? 'Fray' : 'Señor(a)';
       }
 
       // 4. VicerrectorÃ­a
@@ -2704,7 +2709,9 @@ const radicarSolicitud = async (req, res) => {
         return 'UNICESMAG';
       };
       const vName = oficioAuthorityName || getVicerrectoriaByDependency(depName || jefeSnapshot.dependencia);
-      destinatarioEmpresa = vName ? `${vName} / UNICESMAG` : 'UNICESMAG';
+      destinatarioEmpresa = oficioDirigidoARectoria
+        ? 'Universidad CESMAG'
+        : (vName ? `${vName} / UNICESMAG` : 'UNICESMAG');
 
       // 5. Asunto
       const getTipoLabel = (tipo) => {
@@ -2746,21 +2753,59 @@ const radicarSolicitud = async (req, res) => {
       const formattedEndDate = formatDateOnly(salida.fechaRegreso || salida.fecha);
       const startHour = salida.horaInicio || '';
       const endHour = salida.horaFin || '';
-      const motivoDescr = salida.motivo || salida.entidadDestino || tipoLabel || 'No especificado';
-      const durationText = totalDias === 1 ? 'un (1) dÃ­a' : `${totalDias} dÃ­as`;
-      const activityText = salida.entidadDestino
-        ? `${tipoLabel} en ${salida.entidadDestino}`
-        : tipoLabel;
-
-      if (isSalidaMultiple) {
-        oficioCuerpo = `Por medio del presente oficio, me permito solicitar de manera respetuosa la autorizacion para ausentarnos de nuestras labores institucionales por un termino de ${totalDias} dia(s), contado a partir del ${formattedStartDate} a las ${startHour} hasta el ${formattedEndDate} a las ${endHour}, para el grupo de colaboradores que lidero.\n\nLa presente solicitud se sustenta en el siguiente motivo o justificacion: ${motivoDescr}.\n\nAgradecemos de antemano la atencion prestada y la colaboracion que se sirvan brindar.`;
-      } else {
-        oficioCuerpo = `Por medio del presente oficio, me permito solicitar de manera respetuosa la autorizacion para ausentarme de mis labores institucionales por un termino de ${totalDias} dia(s), contado a partir del ${formattedStartDate} a las ${startHour} hasta el ${formattedEndDate} a las ${endHour}.\n\nLa presente solicitud de permiso de salida se sustenta en el siguiente motivo o justificacion: ${motivoDescr}.\n\nAgradezco de antemano la atencion prestada y la colaboracion que se sirvan brindar.`;
-      }
+      const motivoDescr = String(salida.motivo || '').trim();
       const oficioDurationText = totalDias === 1 ? 'un (1) dia' : `${totalDias} dias`;
-      oficioCuerpo = isSalidaMultiple
-        ? `Por medio del presente oficio, me permito solicitar respetuosamente la autorizacion para que el grupo de colaboradores registrado en el sistema pueda ausentarse de sus labores institucionales por un termino de ${oficioDurationText}, desde el ${formattedStartDate} a las ${startHour} hasta el ${formattedEndDate} a las ${endHour}, con ocasion de ${activityText}.\n\nLa presente solicitud se fundamenta en el siguiente motivo o justificacion: ${motivoDescr}.\n\nAgradecemos de antemano la atencion prestada y la colaboracion que se sirvan brindar.`
-        : `Por medio del presente oficio, me permito solicitar respetuosamente la autorizacion para ausentarme de mis labores institucionales por un termino de ${oficioDurationText}, desde el ${formattedStartDate} a las ${startHour} hasta el ${formattedEndDate} a las ${endHour}, con ocasion de ${activityText}.\n\nLa presente solicitud se fundamenta en el siguiente motivo o justificacion: ${motivoDescr}.\n\nAgradezco de antemano la atencion prestada y la colaboracion que se sirvan brindar.`;
+      const activityText = tipoLabel || 'la actividad registrada';
+      const categoriaSalida = salida.categoria || salida.category || '';
+      const alcance = String(salida.alcance || '').trim();
+      const entidadDestino = String(salida.entidadDestino || '').trim();
+      const requestSubject = isSalidaMultiple
+        ? 'para que el grupo de colaboradores registrado en el sistema haga uso del permiso de salida'
+        : 'para hacer uso del permiso de salida';
+      const fechaHoraText = `durante el periodo comprendido entre el ${formattedStartDate} a las ${startHour} y el ${formattedEndDate} a las ${endHour}, correspondiente a ${oficioDurationText}`;
+
+      const locationValues = [salida.municipio, salida.departamento].filter(Boolean).join(', ');
+      const entityText = entidadDestino ? `ante la entidad o institucion ${entidadDestino}` : '';
+      const hasPropiasCargoDetails = categoriaSalida === 'propias_cargo' && salida.tipo !== 'salida_campus';
+      let contextText = '';
+      if (hasPropiasCargoDetails) {
+        if (alcance === 'Internacional') {
+          contextText = `La actividad corresponde a una salida de alcance internacional${salida.pais ? `, con destino a ${salida.pais}` : ''}${entityText ? `, ${entityText}` : ''}.`;
+        } else if (alcance === 'Nacional') {
+          contextText = `La actividad corresponde a una salida de alcance nacional${locationValues ? `, con destino a ${locationValues}` : ''}${entityText ? `, ${entityText}` : ''}.`;
+        } else if (alcance === 'Regional') {
+          contextText = `La actividad corresponde a una salida de alcance regional${salida.municipio ? `, con destino al municipio de ${salida.municipio}` : ''}${entityText ? `, ${entityText}` : ''}.`;
+        } else if (entityText) {
+          contextText = `La actividad se desarrollara ${entityText}.`;
+        }
+      }
+
+      const isHealth = categoriaSalida === 'salud';
+      const healthDetail = salida.especialidadMedica
+        ? `, en la especialidad de ${salida.especialidadMedica}`
+        : '';
+      const purposeText = hasPropiasCargoDetails
+        ? `con el proposito de atender la actividad institucional relacionada con ${activityText}`
+        : isHealth
+          ? `con ocasion de ${activityText}${healthDetail}`
+          : `con ocasion de ${activityText}`;
+
+      const repeatedJustification = motivoDescr
+        && [entidadDestino, tipoLabel].some((value) => normalizeForMatch(value) && normalizeForMatch(value) === normalizeForMatch(motivoDescr));
+      const justificationText = motivoDescr && !repeatedJustification
+        ? `La solicitud se sustenta en la siguiente justificacion registrada por el/la colaborador(a): ${motivoDescr}.`
+        : 'La solicitud se sustenta en la informacion registrada para el tramite y en el cumplimiento de la actividad descrita.';
+
+      const closingText = isSalidaMultiple
+        ? 'Agradecemos la atencion prestada y la colaboracion brindada para el tramite de la presente solicitud.'
+        : 'Agradezco la atencion prestada y la colaboracion brindada para el tramite de la presente solicitud.';
+
+      oficioCuerpo = [
+        `Respetuosamente, solicito autorizacion ${requestSubject} ${fechaHoraText}, ${purposeText}.`,
+        contextText,
+        justificationText,
+        closingText
+      ].filter(Boolean).join('\n\n');
     }
 
     const bodyReposicionMinutos = parseInt(req.body.reposicion_minutos, 10);
