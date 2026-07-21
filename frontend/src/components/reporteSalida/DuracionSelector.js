@@ -4,6 +4,7 @@ import { Box, InputAdornment, MenuItem, Radio, TextField, Typography } from '@mu
 const DuracionSelector = ({ salida, fieldSx, onChange }) => {
   const options = useMemo(() => {
     const isElectoral = ['jurado_votacion', 'sufragante'].includes(salida.tipo);
+    const isOnlyHalfDay = isElectoral || salida.tipo === 'entierro_companero';
     return [
       {
         value: 'menos_media_jornada',
@@ -13,7 +14,7 @@ const DuracionSelector = ({ salida, fieldSx, onChange }) => {
       },
       { value: '1_2_dias', label: 'Entre 1 y 2 dias' },
       { value: '3_mas_dias', label: '3 o mas dias' }
-    ].filter((opt) => !isElectoral || opt.value === 'menos_media_jornada');
+    ].filter((opt) => !isOnlyHalfDay || opt.value === 'menos_media_jornada');
   }, [salida.tipo]);
 
   const selectDuration = (value) => {
