@@ -12,7 +12,7 @@ const DEPENDENCY_EMAILS_RAW = {
   "Deporte Universitario": "deporte@unicesmag.edu.co",
   "Derecho": "dir.derecho@unicesmag.edu.co",
   "Direccion Administrativa Campus San Damian": "gerencia.campus@unicesmag.edu.co",
-  "Direccion de Planeacion y Aseguramiento de la Calidad": "gp.planeacion@unicesmag.edu.co",
+  "Direccion de Planeacion y Aseguramiento de la Calidad": "planeacion@unicesmag.edu.co",
   "Direccion de Posgrados": "postgrados@unicesmag.edu.co",
   "Diseño Gráfico": "disenografico@unicesmag.edu.co",
   "Gerencia de proyectos": "pmo@unicesmag.edu.co",
