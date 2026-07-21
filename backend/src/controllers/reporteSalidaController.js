@@ -1333,16 +1333,27 @@ const getReporteSalidaEmailLabel = (solicitud) => {
   return 'REPORTE DE SALIDA';
 };
 
-const getSolicitudThreadHeaders = (solicitud) => {
-  const threadId = solicitud?.datos_formulario?.thread_message_id;
-  return threadId ? { 'In-Reply-To': threadId, 'References': threadId } : {};
-};
+const getThreadHeadersFromId = (threadId) =>
+  threadId ? { 'In-Reply-To': threadId, 'References': threadId } : {};
+
+const getThreadMessageId = (solicitud, key) =>
+  solicitud?.datos_formulario?.[key] || solicitud?.datos_formulario?.thread_message_id || '';
+
+const getUserThreadSubject = (solicitud) =>
+  `${getReporteSalidaEmailLabel(solicitud)} ${solicitud.consecutivo} | Comprobante de radicacion`;
+
+const getWorkflowThreadSubject = (solicitud) =>
+  `${getReporteSalidaEmailLabel(solicitud)} ${solicitud.consecutivo} | Colaborador(a): ${solicitud.solicitante_snapshot?.nombre || ''}`;
+
+const mergeThreadMessageIds = (solicitud, ids = {}) => ({
+  ...(solicitud.datos_formulario || {}),
+  ...Object.fromEntries(Object.entries(ids).filter(([, value]) => Boolean(value)))
+});
 
 const sendColaboradorRadicacionEmail = async (solicitud, attachments) => {
   const solicitante = solicitud.solicitante_snapshot || {};
   const isOficio = solicitud.datos_formulario?.salida?.duracionTipo && solicitud.datos_formulario?.salida?.duracionTipo !== 'menos_media_jornada';
-  const labelText = getReporteSalidaEmailLabel(solicitud);
-  const subject = `${labelText} ${solicitud.consecutivo} | Comprobante de radicaciÃ³n`;
+  const subject = getUserThreadSubject(solicitud);
   const html = renderInstitutionalTemplate({
     title: `Comprobante de radicacion de ${isOficio ? 'oficio de salida' : 'reporte de salida'}: ${escapeHtml(solicitud.consecutivo)}`,
     introHtml: `<p style="margin: 0 0 12px 0;">Saludo de paz y bien,</p><p style="margin: 0 0 4px 0; color: #475569;">Estimado(a) Sr(a).</p><p style="margin: 0 0 16px 0; font-size: 16px; font-weight: bold; color: #0b3a6f;">${escapeHtml(solicitante.nombre)}</p><p>Reciba un cordial saludo. En atenciÃ³n a su solicitud de ${isOficio ? 'oficio de salida' : 'reporte de salida'}, nos permitimos informarle que esta ha sido radicada correctamente y se encuentra actualmente en proceso de revisiÃ³n y aprobaciÃ³n por parte de su jefe inmediato.</p>`,
@@ -1457,7 +1468,7 @@ const sendDependenciaRadicacionInfoEmail = async (solicitud, token, attachments,
   const labelText = isOficio ? 'OFICIO DE SOLICITUD DE SALIDA' : 'REPORTE DE SALIDA';
   const approveUrl = `${publicBackendUrl.replace(/\/$/, '')}/api/reporte-salida/aprobar/${encodeURIComponent(token)}?via=dependencia`;
   const rejectUrl = `${publicBackendUrl.replace(/\/$/, '')}/api/reporte-salida/rechazar/${encodeURIComponent(token)}?via=dependencia`;
-  const subject = `${labelText} ${solicitud.consecutivo} | Revision dependencia`;
+  const subject = getWorkflowThreadSubject(solicitud);
   const html = renderInstitutionalTemplate({
     title: `Revision de dependencia - ${isOficio ? 'Oficio de salida' : 'Reporte de salida'}`,
     introHtml: `<p style="margin: 0 0 12px 0;">Saludo de paz y bien,</p><p style="margin: 0 0 4px 0; color: #475569;">Estimado(a) equipo de dependencia.</p><p>Reciba un cordial saludo. Se informa que el/la colaborador(a) <strong>${escapeHtml(solicitante.nombre || '')}</strong>, adscrito(a) a <strong>${escapeHtml(dependenciaLabel)}</strong>, radico una solicitud de ${isOficio ? 'oficio de salida' : 'reporte de salida'} en el sistema. Este correo permite realizar seguimiento interno y, cuando el jefe inmediato no se encuentre disponible, autorizar o no autorizar la salida desde la dependencia.</p>`,
@@ -1500,7 +1511,7 @@ const sendGestionHumanaApprovalEmail = async (solicitud, token, attachments) => 
   const labelText = getReporteSalidaEmailLabel(solicitud);
   const initialApproval = getInitialApprovalSummary(solicitud);
   
-  const subject = `Re: ${labelText} ${solicitud.consecutivo} | Colaborador(a): ${solicitante.nombre || ''}`;
+  const subject = getWorkflowThreadSubject(solicitud);
   const html = renderInstitutionalTemplate({
     title: 'AprobaciÃ³n pendiente de GestiÃ³n del Talento Humano',
     introHtml: `<p style="margin: 0 0 12px 0;">Saludo de paz y bien,</p><p style="margin: 0 0 4px 0; color: #475569;">Estimados(as) integrantes,</p><p style="margin: 0 0 16px 0; font-size: 16px; font-weight: bold; color: #0b3a6f;">Equipo de GestiÃ³n del Talento Humano</p><p>Reciba un cordial saludo. En atenciÃ³n al trÃ¡mite de ${isOficio ? 'oficio de salida' : 'reporte de salida'} <strong>${escapeHtml(solicitud.consecutivo)}</strong> del/de la colaborador(a) <strong>${escapeHtml(solicitante.nombre)}</strong>, se informa que este ha sido debidamente ${initialApproval.actionLabel.toLowerCase()} por ${escapeHtml(initialApproval.roleLabel.toLowerCase())} (<strong>${escapeHtml(initialApproval.label)}</strong>) y se encuentra listo para su revisiÃ³n y aval correspondiente por parte de GestiÃ³n del Talento Humano.</p>`,
@@ -1543,7 +1554,7 @@ const sendAuthorityApprovalEmail = async ({ solicitud, token, authorityName, aut
   const isOficio = solicitud.datos_formulario?.salida?.duracionTipo && solicitud.datos_formulario?.salida?.duracionTipo !== 'menos_media_jornada';
   const labelText = getReporteSalidaEmailLabel(solicitud);
   const initialApproval = getInitialApprovalSummary(solicitud);
-  const subject = `Re: ${labelText} ${solicitud.consecutivo} | Colaborador(a): ${solicitante.nombre || ''}`;
+  const subject = getWorkflowThreadSubject(solicitud);
   const html = renderInstitutionalTemplate({
     title: `AprobaciÃ³n pendiente de ${stageLabel}`,
     introHtml: `<p style="margin: 0 0 12px 0;">Saludo de paz y bien,</p><p style="margin: 0 0 4px 0; color: #475569;">Estimado(a) Sr(a).</p><p style="margin: 0 0 16px 0; font-size: 16px; font-weight: bold; color: #0b3a6f;">${escapeHtml(authorityName)}</p><p>Reciba un cordial saludo. El/la colaborador(a) <strong>${escapeHtml(solicitante.nombre || '')}</strong> cuenta con ${initialApproval.actionLabel.toLowerCase()} de ${escapeHtml(initialApproval.roleLabel.toLowerCase())} (<strong>${escapeHtml(initialApproval.label)}</strong>) y requiere aprobaciÃ³n de ${escapeHtml(stageLabel)} para continuar el trÃ¡mite institucional.</p>`,
@@ -1587,7 +1598,7 @@ const sendSSTApprovalEmail = async (solicitud, token, attachments) => {
   const labelText = getReporteSalidaEmailLabel(solicitud);
   const initialApproval = getInitialApprovalSummary(solicitud);
   
-  const subject = `Re: ${labelText} ${solicitud.consecutivo} | Colaborador(a): ${solicitante.nombre || ''}`;
+  const subject = getWorkflowThreadSubject(solicitud);
   const alcance = solicitud.datos_formulario?.salida?.alcance || 'Nacional/Internacional';
   const html = renderInstitutionalTemplate({
     title: 'AprobaciÃ³n pendiente de SST',
@@ -1630,14 +1641,10 @@ const sendFinalEmails = async (solicitud, pdfAttachment, supportAttachment) => {
   const dependenciaTarget = getDependencyNotificationTarget(solicitud);
   const dependencialabel = dependenciaTarget.label || solicitud.datos_formulario?.laboral?.dependencia || '';
 
-  const threadId = solicitud.datos_formulario?.thread_message_id;
-  const headers = threadId ? { 'In-Reply-To': threadId, 'References': threadId } : {};
-  
   const isOficio = solicitud.datos_formulario?.salida?.duracionTipo && solicitud.datos_formulario?.salida?.duracionTipo !== 'menos_media_jornada';
-  const labelText = getReporteSalidaEmailLabel(solicitud);
   
-  const userThreadSubject = `Re: ${labelText} ${solicitud.consecutivo} | Comprobante de radicacion`;
-  const workflowThreadSubject = `Re: ${labelText} ${solicitud.consecutivo} | Colaborador(a): ${nombreColaborador}`;
+  const userThreadSubject = getUserThreadSubject(solicitud);
+  const workflowThreadSubject = getWorkflowThreadSubject(solicitud);
   const flowSST = solicitud.datos_formulario?.salida?.alcance === 'Internacional' || solicitud.datos_formulario?.salida?.alcance === 'Nacional';
   const initialApproval = getInitialApprovalSummary(solicitud);
   
@@ -1680,7 +1687,7 @@ const sendFinalEmails = async (solicitud, pdfAttachment, supportAttachment) => {
     text: `Su ${isOficio ? 'oficio de salida' : 'reporte de salida'} ${solicitud.consecutivo} ha sido aprobado exitosamente. Se adjunta PDF firmado.`,
     html: userHtml,
     attachments: [pdfAttachment].filter(Boolean),
-    headers
+    headers: getThreadHeadersFromId(getThreadMessageId(solicitud, 'thread_message_id_colaborador'))
   });
 
   // 2. Correo de Copia de control para LÃ­der de Dependencia / Jefe Inmediato
@@ -1712,7 +1719,10 @@ const sendFinalEmails = async (solicitud, pdfAttachment, supportAttachment) => {
         text: `Se remite copia del ${isOficio ? 'oficio' : 'reporte'} de salida aprobado del/de la colaborador(a) ${nombreColaborador} perteneciente a su dependencia. Se adjunta PDF firmado.`,
         html: depHtml,
         attachments: [pdfAttachment].filter(Boolean),
-        headers
+        headers: getThreadHeadersFromId(getThreadMessageId(
+          solicitud,
+          recipient.type === 'dependencia' ? 'thread_message_id_dependencia' : 'thread_message_id_jefe'
+        ))
       });
       copyResults.push({ ...recipient, success: result.success, error: result.error || '' });
     }
@@ -1740,7 +1750,7 @@ const sendFinalEmails = async (solicitud, pdfAttachment, supportAttachment) => {
       text: `Se remite el ${isOficio ? 'oficio' : 'reporte'} de salida aprobado y el soporte adjunto para el/la colaborador(a) ${nombreColaborador} para su respectivo registro.`,
       html: ghHtml,
       attachments: [pdfAttachment, supportAttachment].filter(Boolean),
-      headers
+      headers: getThreadHeadersFromId(getThreadMessageId(solicitud, 'thread_message_id_gestion_humana'))
     });
   }
 
@@ -1761,7 +1771,7 @@ const sendFinalEmails = async (solicitud, pdfAttachment, supportAttachment) => {
       text: `Se remite el ${isOficio ? 'oficio' : 'reporte'} de salida aprobado y el soporte adjunto para el/la colaborador(a) ${nombreColaborador} para su respectivo control de SST.`,
       html: sstHtml,
       attachments: [pdfAttachment, supportAttachment].filter(Boolean),
-      headers
+      headers: getThreadHeadersFromId(getThreadMessageId(solicitud, 'thread_message_id_sst'))
     });
   }
 
@@ -2194,10 +2204,8 @@ const sendJefeGroupRadicacionNotificationEmail = async (solicitud, jefeSnapshot,
 
 const sendIndividualColaboradorFinalEmail = async (solicitud, pdfAttachment) => {
   const nombreColaborador = solicitud.solicitante_snapshot?.nombre || '';
-  const threadId = solicitud.datos_formulario?.thread_message_id;
-  const headers = threadId ? { 'In-Reply-To': threadId, 'References': threadId } : {};
-  const labelText = getReporteSalidaEmailLabel(solicitud);
-  const threadSubject = `Re: ${labelText} ${solicitud.consecutivo} | Comprobante de radicacion`;
+  const headers = getThreadHeadersFromId(getThreadMessageId(solicitud, 'thread_message_id_colaborador'));
+  const threadSubject = getUserThreadSubject(solicitud);
 
   const userHtml = renderInstitutionalTemplate({
     title: 'Reporte de salida aprobado',
@@ -2852,10 +2860,9 @@ const radicarSolicitud = async (req, res) => {
         if (supportAttachment) radAttachments.push(supportAttachment);
         const radResult = await sendColaboradorRadicacionEmail(solicitud, radAttachments.filter(Boolean));
         
-        // Guardamos el messageId del correo del colaborador como la raÃ­z del hilo de correos
+        // Guardamos el messageId por destinatario para mantener el hilo en cada bandeja.
         const thread_message_id = radResult?.messageId || null;
-        const headers = thread_message_id ? { 'In-Reply-To': thread_message_id, 'References': thread_message_id } : {};
-        const dependenciaInfoResult = await sendDependenciaRadicacionInfoEmail(solicitud, token, [pdfAttachment, supportAttachment].filter(Boolean), headers);
+        const dependenciaInfoResult = await sendDependenciaRadicacionInfoEmail(solicitud, token, [pdfAttachment, supportAttachment].filter(Boolean));
 
         // 2. El jefe inmediato recibe el PDF y el soporte cuando exista.
         const jefeAttachments = [pdfAttachment];
@@ -2863,7 +2870,7 @@ const radicarSolicitud = async (req, res) => {
           jefeAttachments.push(supportAttachment);
         }
 
-        const emailResult = await sendJefeRadicacionApprovalEmail(solicitud, token, jefeAttachments.filter(Boolean), headers);
+        const emailResult = await sendJefeRadicacionApprovalEmail(solicitud, token, jefeAttachments.filter(Boolean));
         
         const trazabilidadConDependencia = appendTrace(
           solicitud,
@@ -2874,10 +2881,12 @@ const radicarSolicitud = async (req, res) => {
 
         await solicitud.update({
           correo_jefe_enviado_at: emailResult.success ? new Date() : null,
-          datos_formulario: {
-            ...solicitud.datos_formulario,
-            thread_message_id
-          },
+          datos_formulario: mergeThreadMessageIds(solicitud, {
+            thread_message_id,
+            thread_message_id_colaborador: thread_message_id,
+            thread_message_id_dependencia: dependenciaInfoResult?.messageId,
+            thread_message_id_jefe: emailResult?.messageId
+          }),
           trazabilidad: appendTrace(
             { trazabilidad: trazabilidadConDependencia },
             emailResult.success ? 'correo_jefe_enviado' : 'correo_jefe_error',
@@ -3045,12 +3054,20 @@ const aprobarDesdeCorreo = async (req, res) => {
               attachments: nextAttachments
             })
         : await sendGestionHumanaApprovalEmail(solicitud, nextToken, nextAttachments);
+      const nextThreadKey = nextStage === 'rectoria'
+        ? 'thread_message_id_rectoria'
+        : nextStage === 'vicerrectoria_academica'
+          ? 'thread_message_id_vicerrectoria'
+          : 'thread_message_id_gestion_humana';
       await solicitud.update({
         ...(nextStage === 'rectoria'
           ? { correo_rectoria_enviado_at: emailResult.success ? new Date() : null }
           : nextStage === 'vicerrectoria_academica'
             ? { correo_vicerrectoria_enviado_at: emailResult.success ? new Date() : null }
             : { correo_gh_enviado_at: emailResult.success ? new Date() : null }),
+        datos_formulario: mergeThreadMessageIds(solicitud, {
+          [nextThreadKey]: emailResult?.messageId
+        }),
         trazabilidad: appendTrace(solicitud, emailResult.success
           ? (nextStage === 'rectoria' ? 'correo_rectoria_enviado' : (nextStage === 'vicerrectoria_academica' ? 'correo_vicerrectoria_academica_enviado' : 'correo_gestion_humana_enviado'))
           : (nextStage === 'rectoria' ? 'correo_rectoria_error' : (nextStage === 'vicerrectoria_academica' ? 'correo_vicerrectoria_academica_error' : 'correo_gestion_humana_error')), null, { error: emailResult.error || '' })
@@ -3143,6 +3160,9 @@ const aprobarDesdeCorreo = async (req, res) => {
         ...(goesToRectoria && !skipRectoriaAfterVicerrectoria
           ? { correo_rectoria_enviado_at: emailResult.success ? new Date() : null }
           : { correo_gh_enviado_at: emailResult.success ? new Date() : null }),
+        datos_formulario: mergeThreadMessageIds(solicitud, {
+          [goesToRectoria && !skipRectoriaAfterVicerrectoria ? 'thread_message_id_rectoria' : 'thread_message_id_gestion_humana']: emailResult?.messageId
+        }),
         trazabilidad: appendTrace(solicitud, emailResult.success
           ? (goesToRectoria && !skipRectoriaAfterVicerrectoria ? 'correo_rectoria_enviado' : 'correo_gestion_humana_enviado')
           : (goesToRectoria && !skipRectoriaAfterVicerrectoria ? 'correo_rectoria_error' : 'correo_gestion_humana_error'), null, { error: emailResult.error || '' })
@@ -3204,6 +3224,9 @@ const aprobarDesdeCorreo = async (req, res) => {
       const emailResult = await sendGestionHumanaApprovalEmail(solicitud, ghToken, [pdfAttachment, supportAttachment].filter(Boolean));
       await solicitud.update({
         correo_gh_enviado_at: emailResult.success ? new Date() : null,
+        datos_formulario: mergeThreadMessageIds(solicitud, {
+          thread_message_id_gestion_humana: emailResult?.messageId
+        }),
         trazabilidad: appendTrace(solicitud, emailResult.success ? 'correo_gestion_humana_enviado' : 'correo_gestion_humana_error', null, { error: emailResult.error || '' })
       });
       return renderApprovalPage({
@@ -3275,6 +3298,9 @@ const aprobarDesdeCorreo = async (req, res) => {
         const emailResult = await sendSSTApprovalEmail(solicitud, sstToken, [pdfAttachment, supportAttachment].filter(Boolean));
         await solicitud.update({
           correo_sst_enviado_at: emailResult.success ? new Date() : null,
+          datos_formulario: mergeThreadMessageIds(solicitud, {
+            thread_message_id_sst: emailResult?.messageId
+          }),
           trazabilidad: appendTrace(solicitud, emailResult.success ? 'correo_sst_enviado' : 'correo_sst_error', null, { error: emailResult.error || '' })
         });
         return renderApprovalPage({
@@ -4154,9 +4180,8 @@ const renderRejectionFormPage = ({ res, solicitud, token, stage, via }) => {
 
 const sendCollaboratorRejectionEmail = async ({ solicitud, rejectedBy, justificacion }) => {
   const solicitante = solicitud.solicitante_snapshot || {};
-  const labelText = getReporteSalidaEmailLabel(solicitud);
-  const subject = `Re: ${labelText} ${solicitud.consecutivo} | Comprobante de radicacion`;
-  const headers = getSolicitudThreadHeaders(solicitud);
+  const subject = getUserThreadSubject(solicitud);
+  const headers = getThreadHeadersFromId(getThreadMessageId(solicitud, 'thread_message_id_colaborador'));
   const html = renderInstitutionalTemplate({
     title: 'Reporte de salida no aprobado',
     introHtml: `<p style="margin: 0 0 12px 0;">Saludo de paz y bien,</p><p style="margin: 0 0 4px 0; color: #475569;">Estimado(a) Sr(a).</p><p style="margin: 0 0 16px 0; font-size: 16px; font-weight: bold; color: #0b3a6f;">${escapeHtml(solicitante.nombre)}</p><p>Reciba un cordial saludo. En atenciÃ³n a su solicitud de reporte de salida con consecutivo <strong>${escapeHtml(solicitud.consecutivo)}</strong>, lamentamos informarle que la solicitud ha sido marcada como no aprobada por su jefe inmediato, <strong>${escapeHtml(rejectedBy)}</strong>.</p>`,
@@ -4187,9 +4212,8 @@ const sendGHRejectionEmails = async ({ solicitud, justificacion, isSST = false }
   
   const actorName = isSST ? 'Seguridad y Salud en el Trabajo' : 'Gestion del Talento Humano';
   
-  const labelText = getReporteSalidaEmailLabel(solicitud);
-  const headers = getSolicitudThreadHeaders(solicitud);
-  const userSubject = `Re: ${labelText} ${solicitud.consecutivo} | Comprobante de radicacion`;
+  const userSubject = getUserThreadSubject(solicitud);
+  const userHeaders = getThreadHeadersFromId(getThreadMessageId(solicitud, 'thread_message_id_colaborador'));
   const userHtml = renderInstitutionalTemplate({
     title: `Reporte de salida no aprobado por ${actorName}`,
     introHtml: `<p style="margin: 0 0 12px 0;">Saludo de paz y bien,</p><p style="margin: 0 0 4px 0; color: #475569;">Estimado(a) Sr(a).</p><p style="margin: 0 0 16px 0; font-size: 16px; font-weight: bold; color: #0b3a6f;">${escapeHtml(solicitante.nombre)}</p><p>Reciba un cordial saludo. En atenciÃ³n a su trÃ¡mite de reporte de salida con consecutivo <strong>${escapeHtml(solicitud.consecutivo)}</strong>, lamentamos informarle que la solicitud ha sido marcada como no aprobada por parte del <strong>${escapeHtml(actorName)}</strong>.</p>`,
@@ -4206,7 +4230,8 @@ const sendGHRejectionEmails = async ({ solicitud, justificacion, isSST = false }
     `
   });
 
-  const bossSubject = `Re: ${labelText} ${solicitud.consecutivo} | Colaborador(a): ${solicitante.nombre || ''}`;
+  const bossSubject = getWorkflowThreadSubject(solicitud);
+  const bossHeaders = getThreadHeadersFromId(getThreadMessageId(solicitud, 'thread_message_id_jefe'));
   const bossHtml = renderInstitutionalTemplate({
     title: 'Notificacion de rechazo de reporte de salida',
     introHtml: `<p style="margin: 0 0 12px 0;">Saludo de paz y bien,</p><p style="margin: 0 0 4px 0; color: #475569;">Estimado(a) Sr(a).</p><p style="margin: 0 0 16px 0; font-size: 16px; font-weight: bold; color: #0b3a6f;">${escapeHtml(jefe.nombre)}</p><p>Reciba un cordial saludo. En atenciÃ³n al seguimiento de personal a su cargo, le informamos que la solicitud de reporte de salida del/de la colaborador(a) <strong>${escapeHtml(solicitante.nombre)}</strong> con consecutivo <strong>${escapeHtml(solicitud.consecutivo)}</strong> ha sido devuelta como no aprobada por parte del <strong>${escapeHtml(actorName)}</strong>.</p>`,
@@ -4227,7 +4252,7 @@ const sendGHRejectionEmails = async ({ solicitud, justificacion, isSST = false }
     subject: userSubject,
     text: `Su solicitud ${solicitud.consecutivo} fue rechazada por ${actorName}. Motivo: ${justificacion}`,
     html: userHtml,
-    headers
+    headers: userHeaders
   });
 
   let bossResult = { success: false };
@@ -4237,7 +4262,7 @@ const sendGHRejectionEmails = async ({ solicitud, justificacion, isSST = false }
       subject: bossSubject,
       text: `La solicitud ${solicitud.consecutivo} del/de la colaborador(a) ${solicitante.nombre} fue rechazada por ${actorName}. Motivo: ${justificacion}`,
       html: bossHtml,
-      headers
+      headers: bossHeaders
     });
   }
 

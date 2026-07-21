@@ -121,9 +121,16 @@ const sanitizePdfDefinition = (value) => {
 const formatDate = (value) => {
   if (!value) return '';
   if (value instanceof Date && !Number.isNaN(value.getTime())) {
-    const day = String(value.getDate()).padStart(2, '0');
-    const month = String(value.getMonth() + 1).padStart(2, '0');
-    const year = value.getFullYear();
+    const parts = new Intl.DateTimeFormat('es-CO', {
+      timeZone: 'America/Bogota',
+      day: '2-digit',
+      month: '2-digit',
+      year: 'numeric'
+    }).formatToParts(value);
+    const getPart = (type) => parts.find(part => part.type === type)?.value || '';
+    const day = getPart('day');
+    const month = getPart('month');
+    const year = getPart('year');
     return `${day}/${month}/${year}`;
   }
   const text = String(value).slice(0, 10);
@@ -135,15 +142,26 @@ const formatDateTime = (value) => {
   if (!value) return '';
   const dateObj = new Date(value);
   if (Number.isNaN(dateObj.getTime())) return value;
-  const day = String(dateObj.getDate()).padStart(2, '0');
-  const month = String(dateObj.getMonth() + 1).padStart(2, '0');
-  const year = dateObj.getFullYear();
-  let hours = dateObj.getHours();
+  const parts = new Intl.DateTimeFormat('es-CO', {
+    timeZone: 'America/Bogota',
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hour12: false
+  }).formatToParts(dateObj);
+  const getPart = (type) => parts.find(part => part.type === type)?.value || '';
+  const day = getPart('day');
+  const month = getPart('month');
+  const year = getPart('year');
+  let hours = Number(getPart('hour'));
+  const mins = getPart('minute');
+  const secs = getPart('second');
   const ampm = hours >= 12 ? 'p. m.' : 'a. m.';
   hours = hours % 12;
   hours = hours ? hours : 12;
-  const mins = String(dateObj.getMinutes()).padStart(2, '0');
-  const secs = String(dateObj.getSeconds()).padStart(2, '0');
   return `${day}/${month}/${year} ${hours}:${mins}:${secs} ${ampm}`;
 };
 
@@ -469,7 +487,14 @@ const buildOficioPdfDefinition = (solicitud, ghDirectorNombre, ghDirectorCargo) 
   // Formatter for date: e.g. "San Juan de Pasto, 15 de julio de 2026"
   const createdDate = new Date(solicitud.createdAt || new Date());
   const meses = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre'];
-  const dateFormatted = `San Juan de Pasto, ${createdDate.getDate()} de ${meses[createdDate.getMonth()]} de ${createdDate.getFullYear()}`;
+  const createdDateParts = new Intl.DateTimeFormat('es-CO', {
+    timeZone: 'America/Bogota',
+    day: 'numeric',
+    month: 'numeric',
+    year: 'numeric'
+  }).formatToParts(createdDate);
+  const getCreatedDatePart = (type) => createdDateParts.find(part => part.type === type)?.value || '';
+  const dateFormatted = `San Juan de Pasto, ${getCreatedDatePart('day')} de ${meses[Number(getCreatedDatePart('month')) - 1]} de ${getCreatedDatePart('year')}`;
 
   // Signature variables
   const txId = data.tx_id || String(solicitud.consecutivo || solicitud.id);
@@ -1374,7 +1399,7 @@ const buildPdfBuffer = async (solicitud) => {
         ];
 
         trazabilidad.forEach(t => {
-          const dateStr = t.at ? new Date(t.at).toLocaleString('es-CO') : '';
+          const dateStr = t.at ? formatDateTime(t.at) : '';
           const eventStr = traceEventLabels[t.event] || t.event;
           
           let actorStr = t.actor?.nombre || t.actor?.username || '';
