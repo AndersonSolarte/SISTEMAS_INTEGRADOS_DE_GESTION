@@ -2964,6 +2964,14 @@ const radicarSolicitud = async (req, res) => {
         // Guardamos el messageId por destinatario para mantener el hilo en cada bandeja.
         const thread_message_id = radResult?.messageId || null;
         const dependenciaInfoResult = await sendDependenciaRadicacionInfoEmail(solicitud, token, [pdfAttachment, supportAttachment].filter(Boolean));
+        console.log('[reporte-salida] Radicacion dependencia:', {
+          consecutivo: solicitud.consecutivo,
+          email: getDependencyNotificationTarget(solicitud).email || '',
+          success: Boolean(dependenciaInfoResult?.success),
+          skipped: Boolean(dependenciaInfoResult?.skipped),
+          reason: dependenciaInfoResult?.reason || '',
+          error: dependenciaInfoResult?.error || ''
+        });
 
         // 2. El jefe inmediato recibe el PDF y el soporte cuando exista.
         const jefeAttachments = [pdfAttachment];
@@ -2972,6 +2980,12 @@ const radicarSolicitud = async (req, res) => {
         }
 
         const emailResult = await sendJefeRadicacionApprovalEmail(solicitud, token, jefeAttachments.filter(Boolean));
+        console.log('[reporte-salida] Radicacion jefe inmediato:', {
+          consecutivo: solicitud.consecutivo,
+          email: solicitud.jefe_snapshot?.email || '',
+          success: Boolean(emailResult?.success),
+          error: emailResult?.error || ''
+        });
         
         const trazabilidadConDependencia = appendTrace(
           solicitud,
