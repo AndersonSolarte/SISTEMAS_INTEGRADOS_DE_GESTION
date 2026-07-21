@@ -1739,7 +1739,7 @@ const sendFinalEmails = async (solicitud, pdfAttachment, supportAttachment) => {
 
     const copyResults = [];
     for (const recipient of copyRecipients) {
-      const result = await sendInstitutionalEmail({
+      let result = await sendInstitutionalEmail({
         to: recipient.email,
         subject: workflowThreadSubject,
         text: `Se remite copia del ${isOficio ? 'oficio' : 'reporte'} de salida aprobado del/de la colaborador(a) ${nombreColaborador} perteneciente a su dependencia. Se adjunta PDF firmado.`,
@@ -1750,7 +1750,37 @@ const sendFinalEmails = async (solicitud, pdfAttachment, supportAttachment) => {
           recipient.type === 'dependencia' ? 'thread_message_id_dependencia' : 'thread_message_id_jefe'
         ))
       });
-      copyResults.push({ ...recipient, success: result.success, error: result.error || '' });
+
+      if (!result.success && recipient.type === 'dependencia') {
+        console.error('[reporte-salida] Reintentando copia final a dependencia sin headers de hilo:', recipient.email, result.error || '');
+        const retryResult = await sendInstitutionalEmail({
+          to: recipient.email,
+          subject: workflowThreadSubject,
+          text: `Se remite copia del ${isOficio ? 'oficio' : 'reporte'} de salida aprobado del/de la colaborador(a) ${nombreColaborador} perteneciente a su dependencia. Se adjunta PDF firmado.`,
+          html: depHtml,
+          attachments: [pdfAttachment].filter(Boolean)
+        });
+        result = {
+          ...retryResult,
+          error: retryResult.success ? '' : (retryResult.error || result.error || ''),
+          retriedWithoutThread: true
+        };
+      }
+
+      console.log('[reporte-salida] Copia final enviada:', {
+        consecutivo: solicitud.consecutivo,
+        tipo: recipient.type,
+        email: recipient.email,
+        success: Boolean(result.success),
+        retry: Boolean(result.retriedWithoutThread),
+        error: result.error || ''
+      });
+      copyResults.push({
+        ...recipient,
+        success: result.success,
+        error: result.error || '',
+        retriedWithoutThread: Boolean(result.retriedWithoutThread)
+      });
     }
     depResult = {
       success: copyResults.some((item) => item.success),
