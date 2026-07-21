@@ -111,6 +111,11 @@ const isRectoriaAuthority = (value) => canonicalVicerrectoriaName(value) === 'Re
 
 const normalizeDocument = (value) => String(value || '').replace(/\D/g, '');
 const normalizeEmail = (value) => String(value || '').trim().toLowerCase();
+const sameExactEmail = (left, right) => {
+  const a = normalizeEmail(left);
+  const b = normalizeEmail(right);
+  return Boolean(a && b && a === b);
+};
 const sameEmail = (left, right) => {
   const a = normalizeEmail(left);
   const b = normalizeEmail(right);
@@ -1483,10 +1488,10 @@ const sendDependenciaRadicacionInfoEmail = async (solicitud, token, attachments,
   if (!depEmail) {
     return { success: false, skipped: true, reason: 'dependency_email_not_configured' };
   }
-  if (sameEmail(depEmail, jefe.email)) {
+  if (sameExactEmail(depEmail, jefe.email)) {
     return { success: false, skipped: true, reason: 'dependency_email_same_as_jefe' };
   }
-  if (sameEmail(depEmail, solicitante.email)) {
+  if (sameExactEmail(depEmail, solicitante.email)) {
     return { success: false, skipped: true, reason: 'dependency_email_same_as_solicitante' };
   }
 
@@ -1721,10 +1726,10 @@ const sendFinalEmails = async (solicitud, pdfAttachment, supportAttachment) => {
   const copyRecipients = [];
   const depEmail = dependenciaTarget.email;
   const solicitanteEmail = solicitud.solicitante_snapshot?.email;
-  if (depEmail && !sameEmail(depEmail, solicitanteEmail)) copyRecipients.push({ type: 'dependencia', email: depEmail });
+  if (depEmail && !sameExactEmail(depEmail, solicitanteEmail)) copyRecipients.push({ type: 'dependencia', email: depEmail });
   
-  const jefeEmail = getInitialApprovalRecipientEmail(solicitud);
-  if (jefeEmail && !copyRecipients.some((recipient) => sameEmail(recipient.email, jefeEmail))) {
+  const jefeEmail = solicitud.jefe_snapshot?.email || '';
+  if (jefeEmail && !copyRecipients.some((recipient) => sameExactEmail(recipient.email, jefeEmail))) {
     copyRecipients.push({ type: 'jefe', email: jefeEmail });
   }
 
@@ -1868,10 +1873,10 @@ const sendJefeApprovalEmail = async (solicitud, token, attachments, headers = {}
   const depEmail = dependenciaTarget.email;
   const dependencialabel = dependenciaTarget.label || solicitud.datos_formulario?.laboral?.dependencia || '';
   const solicitanteEmail = solicitud.solicitante_snapshot?.email;
-  if (depEmail && !sameEmail(depEmail, solicitanteEmail)) copyRecipients.push(depEmail);
+  if (depEmail && !sameExactEmail(depEmail, solicitanteEmail)) copyRecipients.push(depEmail);
   
-  const jefeEmail = getInitialApprovalRecipientEmail(solicitud);
-  if (jefeEmail && !copyRecipients.includes(jefeEmail)) {
+  const jefeEmail = solicitud.jefe_snapshot?.email || '';
+  if (jefeEmail && !copyRecipients.some((email) => sameExactEmail(email, jefeEmail))) {
     copyRecipients.push(jefeEmail);
   }
 
@@ -1965,7 +1970,7 @@ const sendJefeRadicacionApprovalEmail = async (solicitud, token, attachments, he
   });
 
   return sendInstitutionalEmail({
-    to: getInitialApprovalRecipientEmail(solicitud),
+    to: jefe.email || getInitialApprovalRecipientEmail(solicitud),
     subject,
     text: `Solicitud ${solicitud.consecutivo} pendiente de autorizacion. Autorizar: ${approveUrl}. No autorizar: ${rejectUrl}.`,
     html,
