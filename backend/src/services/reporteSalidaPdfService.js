@@ -517,7 +517,7 @@ const buildOficioPdfDefinition = (solicitud, ghDirectorNombre, ghDirectorCargo) 
   const isOneOrTwoDaysOficio = salida.duracionTipo === '1_2_dias';
   const isThreeOrMoreDaysOficio = salida.duracionTipo === '3_mas_dias';
   const requiresVicerrectoriaSignature = (isOneOrTwoDaysOficio || isThreeOrMoreDaysOficio) && !isRectoriaAuthority;
-  const requiresRectoriaSignature = isThreeOrMoreDaysOficio || isRectoriaAuthority;
+  const requiresRectoriaSignature = hasRectoriaApproval || (isRectoriaAuthority && !isThreeOrMoreDaysOficio);
 
   const sstEvent = Array.isArray(solicitud.trazabilidad)
     ? solicitud.trazabilidad.find(t => t.event === 'aprobada_sst')

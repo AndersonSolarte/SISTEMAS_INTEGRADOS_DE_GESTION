@@ -751,6 +751,9 @@ const isPermisoElectoralSinVicerrectoria = (solicitud = {}) => {
 const getAuthorityAfterBoss = (solicitud = {}) => {
   if (!isOficioSolicitud(solicitud)) return null;
   if (isPermisoElectoralSinVicerrectoria(solicitud)) return null;
+  if (getSolicitudSalida(solicitud).duracionTipo === '3_mas_dias' && isRectoriaAuthority(getSolicitudVicerrectoria(solicitud))) {
+    return null;
+  }
   const vicerrectoriaName = getSolicitudVicerrectoria(solicitud);
   if (isRectoriaAuthority(vicerrectoriaName)) {
     return {
@@ -777,10 +780,7 @@ const getAuthorityAfterBoss = (solicitud = {}) => {
   return null;
 };
 
-const requiresRectoriaApproval = (solicitud = {}) =>
-  getSolicitudSalida(solicitud).duracionTipo === '3_mas_dias' &&
-  !isRectoriaAuthority(getSolicitudVicerrectoria(solicitud)) &&
-  !isPermisoElectoralSinVicerrectoria(solicitud);
+const requiresRectoriaApproval = () => false;
 
 const requiresSstApproval = (solicitud = {}) => {
   const salida = getSolicitudSalida(solicitud);
