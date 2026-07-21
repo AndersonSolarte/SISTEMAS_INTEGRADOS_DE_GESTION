@@ -46,6 +46,19 @@ const formatDateOnly = (value) => {
   return year && month && day ? `${day}/${month}/${year}` : text;
 };
 
+const formatHourAmPm = (value) => {
+  if (!value) return '';
+  const match = String(value).trim().match(/^(\d{1,2}):(\d{2})/);
+  if (!match) return String(value).trim();
+  let hour = Number(match[1]);
+  const minutes = match[2];
+  if (!Number.isFinite(hour)) return String(value).trim();
+  const suffix = hour >= 12 ? 'p. m.' : 'a. m.';
+  hour %= 12;
+  if (hour === 0) hour = 12;
+  return `${hour}:${minutes} ${suffix}`;
+};
+
 const cleanDependenciaLabel = (value) =>
   sanitizeText(value, 400)
     .replace(/^[A-Z]{0,3}\d+[_\-\s]+/i, '')
@@ -2751,8 +2764,8 @@ const radicarSolicitud = async (req, res) => {
       const totalDias = duracionDiasSolicitada;
       const formattedStartDate = formatDateOnly(salida.fecha);
       const formattedEndDate = formatDateOnly(salida.fechaRegreso || salida.fecha);
-      const startHour = salida.horaInicio || '';
-      const endHour = salida.horaFin || '';
+      const startHour = formatHourAmPm(salida.horaInicio);
+      const endHour = formatHourAmPm(salida.horaFin);
       const motivoDescr = String(salida.motivo || '').trim();
       const oficioDurationText = totalDias === 1 ? 'un (1) dia' : `${totalDias} dias`;
       const activityText = tipoLabel || 'la actividad registrada';
