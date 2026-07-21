@@ -18,10 +18,8 @@ import {
   useTheme,
   ListSubheader,
   IconButton,
-  Radio,
   Checkbox,
-  FormControlLabel,
-  InputAdornment
+  FormControlLabel
 } from '@mui/material';
 import AssignmentTurnedInIcon from '@mui/icons-material/AssignmentTurnedIn';
 import ContentCopyIcon from '@mui/icons-material/ContentCopy';
@@ -40,6 +38,9 @@ import CheckCircleOutlineIcon from '@mui/icons-material/CheckCircleOutline';
 import UploadFileIcon from '@mui/icons-material/UploadFile';
 import CloseIcon from '@mui/icons-material/Close';
 import reporteSalidaService from '../../services/reporteSalidaService';
+import CategoriaTabs from './CategoriaTabs';
+import CamposDuracionSalida from './CamposDuracionSalida';
+import DuracionSelector from './DuracionSelector';
 
 const INITIAL_FORM = {
   personal: { nombre: '', documento: '', correo: '' },
@@ -1759,104 +1760,11 @@ function ReporteSalidaFormDialog({ open, documento, user, onClose, onSubmitted }
             <Box sx={sectionSx}>
               <SectionTitle title="Datos de la salida" />
 
-              {/* Category Selector Tabs */}
-              <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', md: isSalidaMultiple ? '1fr 1fr' : '1fr 1fr 1fr' }, gap: 1.5, mb: 1.8 }}>
-                <Box
-                  onClick={() => handleCategoryChange('propias_cargo')}
-                  sx={{
-                    py: 0.5,
-                    px: 1.5,
-                    width: '100%',
-                    borderRadius: 3,
-                    border: '2px solid',
-                    borderColor: category === 'propias_cargo' ? '#2563eb' : '#e2e8f0',
-                    bgcolor: category === 'propias_cargo' ? '#eff6ff' : '#ffffff',
-                    boxShadow: category === 'propias_cargo' ? '0 0 12px rgba(37, 99, 235, 0.5)' : '0 2px 5px rgba(0,0,0,0.02)',
-                    cursor: 'pointer',
-                    transition: 'all 0.2s cubic-bezier(0.4, 0, 0.2, 1)',
-                    display: 'flex',
-                    flexDirection: 'row',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    minHeight: 40,
-                    gap: 1.5,
-                    '&:hover': {
-                      borderColor: '#2563eb',
-                      transform: 'translateY(-2px)',
-                      boxShadow: '0 8px 20px rgba(37, 99, 235, 0.3)'
-                    }
-                  }}
-                >
-                  <BusinessCenterIcon sx={{ fontSize: 24, color: category === 'propias_cargo' ? '#2563eb' : '#94a3b8', transition: 'color 0.2s' }} />
-                  <Typography sx={{ fontWeight: 800, fontSize: 12.5, color: category === 'propias_cargo' ? '#1e3a8a' : '#475569', textAlign: 'left', lineHeight: 1.2 }}>
-                    Actividades propias del cargo (Misionales)
-                  </Typography>
-                </Box>
-                <Box
-                  onClick={() => handleCategoryChange('salud')}
-                  sx={{
-                    py: 1,
-                    px: 1.5,
-                    width: '100%',
-                    borderRadius: 3,
-                    border: '2px solid',
-                    borderColor: category === 'salud' ? '#2563eb' : '#e2e8f0',
-                    bgcolor: category === 'salud' ? '#eff6ff' : '#ffffff',
-                    boxShadow: category === 'salud' ? '0 0 12px rgba(37, 99, 235, 0.5)' : '0 2px 5px rgba(0,0,0,0.02)',
-                    cursor: 'pointer',
-                    transition: 'all 0.2s cubic-bezier(0.4, 0, 0.2, 1)',
-                    display: 'flex',
-                    flexDirection: 'row',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    minHeight: 40,
-                    gap: 1.5,
-                    '&:hover': {
-                      borderColor: '#2563eb',
-                      transform: 'translateY(-2px)',
-                      boxShadow: '0 8px 20px rgba(37, 99, 235, 0.3)'
-                    }
-                  }}
-                >
-                  <LocalHospitalIcon sx={{ fontSize: 24, color: category === 'salud' ? '#2563eb' : '#94a3b8', transition: 'color 0.2s' }} />
-                  <Typography sx={{ fontWeight: 800, fontSize: 12.5, color: category === 'salud' ? '#1e3a8a' : '#475569', textAlign: 'left', lineHeight: 1.2 }}>
-                    Salud y Bienestar
-                  </Typography>
-                </Box>
-                {!isSalidaMultiple && (
-                  <Box
-                    onClick={() => handleCategoryChange('personales')}
-                    sx={{
-                      py: 0.5,
-                      px: 1.5,
-                      width: '100%',
-                      borderRadius: 3,
-                      border: '2px solid',
-                      borderColor: category === 'personales' ? '#2563eb' : '#e2e8f0',
-                      bgcolor: category === 'personales' ? '#eff6ff' : '#ffffff',
-                      boxShadow: category === 'personales' ? '0 0 12px rgba(37, 99, 235, 0.5)' : '0 2px 5px rgba(0,0,0,0.02)',
-                      cursor: 'pointer',
-                      transition: 'all 0.2s cubic-bezier(0.4, 0, 0.2, 1)',
-                      display: 'flex',
-                      flexDirection: 'row',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      minHeight: 40,
-                      gap: 1.5,
-                      '&:hover': {
-                        borderColor: '#2563eb',
-                        transform: 'translateY(-2px)',
-                        boxShadow: '0 8px 20px rgba(37, 99, 235, 0.3)'
-                      }
-                    }}
-                  >
-                    <DirectionsWalkIcon sx={{ fontSize: 24, color: category === 'personales' ? '#2563eb' : '#94a3b8', transition: 'color 0.2s' }} />
-                    <Typography sx={{ fontWeight: 800, fontSize: 12.5, color: category === 'personales' ? '#1e3a8a' : '#475569', textAlign: 'left', lineHeight: 1.2 }}>
-                      Trámites, Permisos y Licencias
-                    </Typography>
-                  </Box>
-                )}
-              </Box>
+              <CategoriaTabs
+                category={category}
+                isSalidaMultiple={isSalidaMultiple}
+                onChange={handleCategoryChange}
+              />
 
               {/* Subtype Dropdown & Conditional Custom Description */}
               {category === 'propias_cargo' && subtype !== 'salida_campus' ? (
@@ -2274,139 +2182,29 @@ function ReporteSalidaFormDialog({ open, documento, user, onClose, onSubmitted }
                 </Box>
               )}
 
-              {/* Selector de Duración */}
-              <Box sx={{ mb: 1.8, width: '100%' }}>
-                <Typography sx={{ fontSize: 13, fontWeight: 800, color: '#334155', mb: 1 }}>
-                  Duración estimada de la salida:
-                </Typography>
-                <Box sx={{ display: 'flex', flexDirection: { xs: 'column', md: 'row' }, gap: 1.2, width: '100%', alignItems: 'stretch' }}>
-                  {[
-                    {
-                      value: 'menos_media_jornada',
-                      label: form.salida.tipo === 'jurado_votacion'
-                        ? 'Equivale a un día'
-                        : (form.salida.tipo === 'sufragante' ? 'Equivale a media jornada' : 'Hasta media jornada')
-                    },
-                    { value: '1_2_dias', label: 'Entre 1 y 2 días' },
-                    { value: '3_mas_dias', label: '3 o más días' }
-                  ].filter((opt) => {
-                    const isElectoral = ['jurado_votacion', 'sufragante'].includes(form.salida.tipo);
-                    return !isElectoral || opt.value === 'menos_media_jornada';
-                  }).map((opt) => {
-                    const selected = form.salida.duracionTipo === opt.value;
-                    return (
-                      <Box
-                        key={opt.value}
-                        onClick={() => {
-                          update('salida', 'duracionTipo', opt.value);
-                          update('salida', 'duracionDias', opt.value === 'menos_media_jornada' ? 0 : (opt.value === '1_2_dias' ? 1 : 3));
-                        }}
-                        sx={{
-                          flex: 1,
-                          p: 1.2,
-                          borderRadius: 2.2,
-                          border: '2px solid',
-                          borderColor: selected ? '#2563eb' : '#cbd5e1',
-                          bgcolor: selected ? '#eff6ff' : '#ffffff',
-                          cursor: 'pointer',
-                          display: 'flex',
-                          alignItems: 'center',
-                          gap: 1.5,
-                          transition: 'all 0.2s',
-                          '&:hover': { borderColor: '#2563eb', bgcolor: selected ? '#eff6ff' : '#f8fafc' }
-                        }}
-                      >
-                        <Radio checked={selected} size="small" sx={{ p: 0 }} color="primary" />
-                        <Typography sx={{ fontSize: 13, fontWeight: 700, color: selected ? '#1d4ed8' : '#475569' }}>
-                          {opt.label}
-                        </Typography>
-                      </Box>
-                    );
-                  })}
-                  {form.salida.duracionTipo === '1_2_dias' && (
-                      <TextField
-                        select
-                        size="small"
-                        sx={duracionDiasFieldSx}
-                        label="Digite la cantidad de días a solicitar *"
-                        value={form.salida.duracionDias}
-                        onChange={(e) => update('salida', 'duracionDias', parseInt(e.target.value, 10))}
-                      >
-                        <MenuItem value={1}>1 día</MenuItem>
-                        <MenuItem value={2}>2 días</MenuItem>
-                      </TextField>
-                  )}
-                  {form.salida.duracionTipo === '3_mas_dias' && (
-                      <TextField
-                        size="small"
-                        sx={duracionDiasFieldSx}
-                        type="number"
-                        label="Digite la cantidad de días a solicitar *"
-                        value={form.salida.duracionDias || ''}
-                        onChange={(e) => {
-                          const value = parseInt(e.target.value, 10);
-                          update('salida', 'duracionDias', Number.isNaN(value) ? '' : value);
-                        }}
-                        inputProps={{ min: 3, step: 1 }}
-                        InputProps={{
-                          endAdornment: <InputAdornment position="end">días</InputAdornment>
-                        }}
-                      />
-                  )}
-                </Box>
-              </Box>
+              <DuracionSelector
+                salida={form.salida}
+                fieldSx={duracionDiasFieldSx}
+                onChange={(field, value) => update('salida', field, value)}
+              />
 
 
 
-              {subtype !== 'terapias' && (
-                <Box sx={responsiveFieldGrid(
-                  shouldRequestReposicionHoras
-                        ? 'minmax(160px, 1fr) minmax(140px, 0.8fr) minmax(160px, 1fr) minmax(140px, 0.8fr) minmax(165px, 0.9fr)'
-                        : 'minmax(160px, 1fr) minmax(140px, 0.8fr) minmax(160px, 1fr) minmax(140px, 0.8fr)'
-                )}>
-                  <TextField sx={inputSx} fullWidth size="small" required type="date" label={subtype === 'urgencia_medica' ? "Fecha de salida a urgencias" : "Fecha salida"} InputLabelProps={{ shrink: true }} inputProps={{ min: todayString }} value={form.salida.fecha} onChange={(e) => update('salida', 'fecha', e.target.value)} />
-                  <Autocomplete
-                    disableClearable
-                    options={horaSalidaOptions}
-                    getOptionLabel={convert24To12}
-                    value={form.salida.horaInicio || ''}
-                    onChange={(e, newValue) => update('salida', 'horaInicio', newValue)}
-                    renderInput={(params) => (
-                      <TextField
-                        {...params}
-                        sx={inputSx}
-                        required
-                        label={subtype === 'urgencia_medica' ? "Hora de salida a urgencias" : "Hora salida"}
-                        placeholder="Seleccione hora"
-                        InputLabelProps={{ shrink: true }}
-                        error={isPastTimeError(form.salida.fecha, form.salida.horaInicio)}
-                      />
-                    )}
-                  />
-                  <TextField sx={inputSx} fullWidth size="small" required type="date" label="Fecha regreso" InputLabelProps={{ shrink: true }} inputProps={{ min: todayString }} value={form.salida.fechaRegreso} onChange={(e) => update('salida', 'fechaRegreso', e.target.value)} />
-                  <Autocomplete
-                    options={horaRegresoOptions}
-                    getOptionLabel={convert24To12}
-                    value={form.salida.horaFin || null}
-                    onChange={(e, newValue) => update('salida', 'horaFin', newValue || '')}
-                    renderInput={(params) => (
-                      <TextField
-                        {...params}
-                        sx={inputSx}
-                        required={!(category === 'salud' && subtype !== 'terapias')}
-                        label={category === 'salud' && subtype !== 'terapias' ? "Hora regreso (Opcional)" : "Hora regreso"}
-                        placeholder={(category === 'salud' && subtype !== 'terapias') ? "Opcional" : "Seleccione hora"}
-                        InputLabelProps={{ shrink: true }}
-                        error={isPastTimeError(form.salida.fechaRegreso, form.salida.horaFin) || Boolean(salidaRangeIssue && form.salida.horaInicio && form.salida.horaFin)}
-                        helperText={salidaRangeIssue && form.salida.horaInicio && form.salida.horaFin ? salidaRangeIssue : ''}
-                      />
-                    )}
-                  />
-                  {shouldRequestReposicionHoras && (
-                    <TextField sx={inputSx} fullWidth size="small" required type="number" label="Tiempo a reponer (horas)" InputLabelProps={{ shrink: true }} inputProps={{ min: 0, step: 1 }} value={form.salida.tiempoReponerHoras || ''} onChange={(e) => update('salida', 'tiempoReponerHoras', e.target.value.replace(/[^0-9]/g, ''))} />
-                  )}
-                </Box>
-              )}
+              <CamposDuracionSalida
+                category={category}
+                convert24To12={convert24To12}
+                form={form}
+                horaRegresoOptions={horaRegresoOptions}
+                horaSalidaOptions={horaSalidaOptions}
+                inputSx={inputSx}
+                isPastTimeError={isPastTimeError}
+                responsiveFieldGrid={responsiveFieldGrid}
+                salidaRangeIssue={salidaRangeIssue}
+                shouldRequestReposicionHoras={shouldRequestReposicionHoras}
+                subtype={subtype}
+                todayString={todayString}
+                update={update}
+              />
 
               {subtype === 'urgencia_medica' && (
                 <Alert severity="info" sx={{ mt: 2, borderRadius: 2 }}>

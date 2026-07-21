@@ -33,6 +33,28 @@ const stripAccents = (value) =>
     .normalize('NFD')
     .replace(/[\u0300-\u036f]/g, '');
 
+const getInitialApprovalTrace = (solicitud = {}) => {
+  const traces = Array.isArray(solicitud.trazabilidad) ? solicitud.trazabilidad : [];
+  return [...traces].reverse().find((trace) => [
+    'aprobada_dependencia',
+    'visto_bueno_dependencia',
+    'aprobada_jefe',
+    'visto_bueno_jefe'
+  ].includes(trace.event)) || null;
+};
+
+const getInitialApprovalPdfInfo = (solicitud = {}) => {
+  const trace = getInitialApprovalTrace(solicitud);
+  const actor = trace?.actor || {};
+  const viaDependencia = ['aprobada_dependencia', 'visto_bueno_dependencia'].includes(trace?.event);
+  const jefe = solicitud.jefe_snapshot || {};
+  return {
+    name: viaDependencia ? (actor.nombre || 'Dependencia') : (jefe.nombre || actor.nombre || ''),
+    cargo: viaDependencia ? (actor.cargo || 'Dependencia') : (jefe.cargo || actor.cargo || ''),
+    header: viaDependencia ? 'Autorizacion de la Dependencia' : 'Autorizacion del Jefe inmediato'
+  };
+};
+
 const repairMojibakeText = (value) => {
   let text = String(value ?? '');
   if (!text) return text;
@@ -449,6 +471,7 @@ const buildOficioPdfDefinition = (solicitud, ghDirectorNombre, ghDirectorCargo) 
   const txId = data.tx_id || String(solicitud.consecutivo || solicitud.id);
   const reqDate = formatDateTime(solicitud.createdAt || new Date());
   const jefeDate = solicitud.jefe_aprobado_at ? formatDateTime(solicitud.jefe_aprobado_at) : 'Pendiente';
+  const initialApprovalPdf = getInitialApprovalPdfInfo(solicitud);
   const vicerrectoriaDate = solicitud.vicerrectoria_aprobado_at ? formatDateTime(solicitud.vicerrectoria_aprobado_at) : 'Pendiente';
   const rectoriaDate = solicitud.rectoria_aprobado_at ? formatDateTime(solicitud.rectoria_aprobado_at) : 'Pendiente';
   const ghDate = solicitud.gestion_humana_aprobado_at ? formatDateTime(solicitud.gestion_humana_aprobado_at) : 'Pendiente';
@@ -490,7 +513,7 @@ const buildOficioPdfDefinition = (solicitud, ghDirectorNombre, ghDirectorCargo) 
   const signatureTableBody = [
     [
       { text: 'Firma del trabajador Solicitante', bold: true, alignment: 'center', fillColor: '#e0e0e0', fontSize: 9 },
-      { text: 'Autorización del Jefe inmediato', bold: true, alignment: 'center', fillColor: '#e0e0e0', fontSize: 9 }
+      { text: initialApprovalPdf.header, bold: true, alignment: 'center', fillColor: '#e0e0e0', fontSize: 9 }
     ],
     [
       {
@@ -506,8 +529,8 @@ const buildOficioPdfDefinition = (solicitud, ghDirectorNombre, ghDirectorCargo) 
       {
         text: [
           { text: solicitud.jefe_aprobado_at ? 'Firmado electrónicamente por:\n' : '\n', bold: true, fontSize: 8 },
-          { text: `${solicitud.jefe_aprobado_at ? (jefe.nombre || '') : 'Pendiente'}\n`, fontSize: 9 },
-          { text: `Cargo: ${jefe.cargo || ''}\n`, fontSize: 7.5 },
+          { text: `${solicitud.jefe_aprobado_at ? initialApprovalPdf.name : 'Pendiente'}\n`, fontSize: 9 },
+          { text: `Cargo: ${initialApprovalPdf.cargo || ''}\n`, fontSize: 7.5 },
           { text: `Fecha y hora: ${jefeDate}\n`, fontSize: 7.5 },
           { text: solicitud.jefe_aprobado_at ? `ID Transacción: ${txId}\n` : '\n', fontSize: 7, color: 'gray' }
         ],
@@ -1202,6 +1225,7 @@ const buildPdfBuffer = async (solicitud) => {
       const txId = solicitud.datos_formulario?.tx_id || String(solicitud.consecutivo || solicitud.id);
       const reqDate = formatDateTime(solicitud.createdAt || new Date());
       const jefeDate = solicitud.jefe_aprobado_at ? formatDateTime(solicitud.jefe_aprobado_at) : 'Pendiente';
+      const initialApprovalPdf = getInitialApprovalPdfInfo(solicitud);
       const ghDate = solicitud.gestion_humana_aprobado_at ? formatDateTime(solicitud.gestion_humana_aprobado_at) : 'Pendiente';
 
       const isPropiasCargoSubtype = ['ponencia', 'visita_ies', 'capacitacion', 'proyecto_investigacion', 'asistente_congreso', 'practica_academica', 'torneo_deportivo', 'salida_campus', 'otra'].includes(salida.tipo) || String(salida.tipo).startsWith('otra:');
@@ -1217,7 +1241,7 @@ const buildPdfBuffer = async (solicitud) => {
       const signatureTableBody = [
         [
           { text: 'Firma del trabajador Solicitante', bold: true, alignment: 'center', fillColor: '#e0e0e0' },
-          { text: 'Autorización del Jefe inmediato', bold: true, alignment: 'center', fillColor: '#e0e0e0' }
+          { text: initialApprovalPdf.header, bold: true, alignment: 'center', fillColor: '#e0e0e0' }
         ],
         [
           {
@@ -1233,8 +1257,8 @@ const buildPdfBuffer = async (solicitud) => {
           {
             text: [
               { text: solicitud.jefe_aprobado_at ? 'Firmado electrónicamente por:\n' : '\n', bold: true, fontSize: 9 },
-              { text: `${solicitud.jefe_aprobado_at ? (jefe.nombre || '') : 'Pendiente'}\n`, fontSize: 10 },
-              { text: `Cargo: ${jefe.cargo || ''}\n`, fontSize: 8 },
+              { text: `${solicitud.jefe_aprobado_at ? initialApprovalPdf.name : 'Pendiente'}\n`, fontSize: 10 },
+              { text: `Cargo: ${initialApprovalPdf.cargo || ''}\n`, fontSize: 8 },
               { text: `Fecha y hora: ${jefeDate}\n`, fontSize: 8 },
               { text: solicitud.jefe_aprobado_at ? `ID Transacción: ${txId}\n` : '\n', fontSize: 7, color: 'gray' }
             ],
@@ -1314,7 +1338,11 @@ const buildPdfBuffer = async (solicitud) => {
           'correo_jefe_enviado': 'Notificación a Jefe Inmediato',
           'correo_jefe_error': 'Error al notificar a Jefe Inmediato',
           'aprobada_jefe': 'Aprobación de Jefe Inmediato',
+          'aprobada_dependencia': 'Aprobación de Dependencia',
+          'visto_bueno_jefe': 'Visto bueno de Jefe Inmediato',
+          'visto_bueno_dependencia': 'Visto bueno de Dependencia',
           'rechazada_jefe': 'Rechazada por Jefe Inmediato',
+          'rechazada_dependencia': 'Rechazada por Dependencia',
           'correo_gestion_humana_enviado': 'Notificación a Gestión del Talento Humano',
           'correo_gestion_humana_error': 'Error al notificar a Gestión del Talento Humano',
           'aprobada_gestion_humana': 'Aprobación de Gestión del Talento Humano',
@@ -1344,7 +1372,9 @@ const buildPdfBuffer = async (solicitud) => {
           
           let actorStr = t.actor?.nombre || t.actor?.username || '';
           if (!actorStr) {
-            if (t.event.includes('_jefe')) {
+            if (t.event.includes('_dependencia')) {
+              actorStr = 'Dependencia';
+            } else if (t.event.includes('_jefe')) {
               actorStr = solicitud?.jefe_snapshot?.nombre || 'Jefe Inmediato';
             } else if (t.event.includes('_gestion_humana')) {
               actorStr = 'Gestión del Talento Humano';

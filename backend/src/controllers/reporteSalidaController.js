@@ -18,8 +18,8 @@ const { ROLES } = require('../constants/roles');
 
 const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:3000';
 const publicBackendUrl = process.env.BACKEND_PUBLIC_URL || process.env.API_PUBLIC_URL || frontendUrl;
-const ACADEMIC_VICERRECTORIA_EMAIL = process.env.REPORTE_SALIDA_VICERRECTORIA_ACADEMICA_EMAIL || 'viceacad@unicesmag.edu.co';
-const RECTORIA_EMAIL = process.env.REPORTE_SALIDA_RECTORIA_EMAIL || 'rectoria@unicesmag.edu.co';
+const ACADEMIC_VICERRECTORIA_EMAIL = getDependencyEmail('Vicerrectoria Academica') || 'viceacad@unicesmag.edu.co';
+const RECTORIA_EMAIL = getDependencyEmail('Rectoria') || 'rectoria@unicesmag.edu.co';
 const DEFAULT_DECLARACION_SIN_ADJUNTO_SALUD = 'Declaro que al momento de radicar esta solicitud no cuento con archivos adjuntos o soportes para cargar en el sistema. Entiendo que la Oficina de Gestion del Talento Humano y/o Seguridad y Salud en el Trabajo podran requerir en cualquier momento los soportes correspondientes; por tanto, me comprometo a conservarlos despues de la atencion o tramite y a suministrarlos oportunamente cuando sean solicitados.';
 
 const featureDisabled = (res) =>
@@ -1356,7 +1356,65 @@ const sendColaboradorRadicacionEmail = async (solicitud, attachments) => {
   });
 };
 
-const sendDependenciaRadicacionInfoEmail = async (solicitud, attachments, headers = {}) => {
+const getDependencyApprovalActor = (solicitud = {}) => {
+  const solicitante = solicitud.solicitante_snapshot || {};
+  const laboral = solicitud.datos_formulario?.laboral || {};
+  const dependencia = laboral.dependencia || solicitante.dependencia || '';
+  const depEmail = getDependencyEmail(dependencia);
+  if (!depEmail) return null;
+  return {
+    nombre: dependencia ? `Dependencia - ${dependencia}` : 'Dependencia',
+    email: depEmail,
+    role: 'dependencia',
+    cargo: 'Dependencia'
+  };
+};
+
+const getInitialApprovalActor = (solicitud = {}, via = '') => {
+  if (via === 'dependencia') {
+    return getDependencyApprovalActor(solicitud) || {
+      nombre: 'Dependencia',
+      email: '',
+      role: 'dependencia',
+      cargo: 'Dependencia'
+    };
+  }
+  return {
+    ...(solicitud.jefe_snapshot || {}),
+    role: 'jefe_inmediato'
+  };
+};
+
+const getInitialApprovalLabel = (actor = {}, fallbackJefe = {}) =>
+  actor.role === 'dependencia'
+    ? (actor.nombre || 'Dependencia')
+    : (fallbackJefe.nombre || actor.nombre || 'Jefe Inmediato');
+
+const getInitialApprovalTrace = (solicitud = {}) => {
+  const traces = Array.isArray(solicitud.trazabilidad) ? solicitud.trazabilidad : [];
+  return [...traces].reverse().find((trace) => [
+    'aprobada_dependencia',
+    'visto_bueno_dependencia',
+    'aprobada_jefe',
+    'visto_bueno_jefe'
+  ].includes(trace.event)) || null;
+};
+
+const getInitialApprovalSummary = (solicitud = {}) => {
+  const trace = getInitialApprovalTrace(solicitud);
+  const actor = trace?.actor || {};
+  const viaDependencia = ['aprobada_dependencia', 'visto_bueno_dependencia'].includes(trace?.event);
+  const jefe = solicitud.jefe_snapshot || {};
+  return {
+    actor,
+    viaDependencia,
+    label: viaDependencia ? (actor.nombre || 'Dependencia') : (jefe.nombre || actor.nombre || 'Jefe Inmediato'),
+    roleLabel: viaDependencia ? 'Dependencia' : 'Jefe Inmediato',
+    actionLabel: trace?.event?.startsWith('visto_bueno') ? 'Visto bueno' : 'Aprobado'
+  };
+};
+
+const sendDependenciaRadicacionInfoEmail = async (solicitud, token, attachments, headers = {}) => {
   const solicitante = solicitud.solicitante_snapshot || {};
   const laboral = solicitud.datos_formulario?.laboral || {};
   const jefe = solicitud.jefe_snapshot || {};
@@ -1366,19 +1424,31 @@ const sendDependenciaRadicacionInfoEmail = async (solicitud, attachments, header
   if (!depEmail) {
     return { success: false, skipped: true, reason: 'dependency_email_not_configured' };
   }
+  if (sameEmail(depEmail, jefe.email)) {
+    return { success: false, skipped: true, reason: 'dependency_email_same_as_jefe' };
+  }
+  if (sameEmail(depEmail, solicitante.email)) {
+    return { success: false, skipped: true, reason: 'dependency_email_same_as_solicitante' };
+  }
 
   const isOficio = solicitud.datos_formulario?.salida?.duracionTipo && solicitud.datos_formulario?.salida?.duracionTipo !== 'menos_media_jornada';
   const labelText = isOficio ? 'OFICIO DE SOLICITUD DE SALIDA' : 'REPORTE DE SALIDA';
-  const subject = `${labelText} ${solicitud.consecutivo} | Copia informativa dependencia`;
+  const approveUrl = `${publicBackendUrl.replace(/\/$/, '')}/api/reporte-salida/aprobar/${encodeURIComponent(token)}?via=dependencia`;
+  const rejectUrl = `${publicBackendUrl.replace(/\/$/, '')}/api/reporte-salida/rechazar/${encodeURIComponent(token)}?via=dependencia`;
+  const subject = `${labelText} ${solicitud.consecutivo} | Revision dependencia`;
   const html = renderInstitutionalTemplate({
-    title: `Copia informativa de radicaciÃ³n - ${isOficio ? 'Oficio de salida' : 'Reporte de salida'}`,
-    introHtml: `<p style="margin: 0 0 12px 0;">Saludo de paz y bien,</p><p style="margin: 0 0 4px 0; color: #475569;">Estimado(a) equipo de dependencia.</p><p>Reciba un cordial saludo. Se informa que el/la colaborador(a) <strong>${escapeHtml(solicitante.nombre || '')}</strong>, adscrito(a) a <strong>${escapeHtml(dependencia)}</strong>, radicÃ³ una solicitud de ${isOficio ? 'oficio de salida' : 'reporte de salida'} en el sistema.</p>`,
+    title: `Revision de dependencia - ${isOficio ? 'Oficio de salida' : 'Reporte de salida'}`,
+    introHtml: `<p style="margin: 0 0 12px 0;">Saludo de paz y bien,</p><p style="margin: 0 0 4px 0; color: #475569;">Estimado(a) equipo de dependencia.</p><p>Reciba un cordial saludo. Se informa que el/la colaborador(a) <strong>${escapeHtml(solicitante.nombre || '')}</strong>, adscrito(a) a <strong>${escapeHtml(dependencia)}</strong>, radico una solicitud de ${isOficio ? 'oficio de salida' : 'reporte de salida'} en el sistema. Este correo permite realizar seguimiento interno y, cuando el jefe inmediato no se encuentre disponible, autorizar o no autorizar la salida desde la dependencia.</p>`,
     bodyHtml: `
       <p><strong>Colaborador(a):</strong> ${escapeHtml(solicitante.nombre || '')}</p>
       <p><strong>Cargo:</strong> ${escapeHtml(laboral.cargo || solicitante.cargo || '')}</p>
       <p><strong>Jefe inmediato asignado:</strong> ${escapeHtml(jefe.nombre || 'No especificado')}</p>
-      <p>Este correo es solamente informativo. La autorizaciÃ³n debe realizarla el jefe inmediato desde el correo que recibiÃ³ con los botones de decisiÃ³n.</p>
-      <p>La dependencia puede usar esta copia para hacer seguimiento interno y recordar al jefe inmediato que revise la solicitud pendiente.</p>
+      ${buildTerapiasHtml(solicitud)}
+      <div style="text-align:center;margin:20px 0;">
+        <a href="${approveUrl}" style="display:inline-block;background:#0b3a6f;color:#fff;padding:12px 24px;border-radius:8px;text-decoration:none;font-weight:700;margin:5px 10px;">AUTORIZAR SALIDA</a>
+        <a href="${rejectUrl}" style="display:inline-block;background:#b91c1c;color:#fff;padding:12px 24px;border-radius:8px;text-decoration:none;font-weight:700;margin:5px 10px;">NO AUTORIZAR SALIDA</a>
+      </div>
+      <p>Si la dependencia autoriza o no autoriza primero, el enlace del jefe inmediato quedara registrado como ya procesado para evitar duplicidad.</p>
     `,
     senderHtml: `
       <p style="margin: 0; font-weight: bold; color: #0b3a6f;">DirecciÃ³n de PlaneaciÃ³n y Aseguramiento de la Calidad</p>
@@ -1389,7 +1459,7 @@ const sendDependenciaRadicacionInfoEmail = async (solicitud, attachments, header
   return sendInstitutionalEmail({
     to: depEmail,
     subject,
-    text: `Copia informativa: ${solicitud.consecutivo} fue radicada por ${solicitante.nombre || ''}. La autorizaciÃ³n corresponde al jefe inmediato.`,
+    text: `Solicitud ${solicitud.consecutivo} radicada por ${solicitante.nombre || ''}. Autorizar: ${approveUrl}. No autorizar: ${rejectUrl}.`,
     html,
     attachments,
     headers
@@ -1406,11 +1476,12 @@ const sendGestionHumanaApprovalEmail = async (solicitud, token, attachments) => 
   const rejectLabel = 'RECHAZAR SALIDA';
   const isOficio = solicitud.datos_formulario?.salida?.duracionTipo && solicitud.datos_formulario?.salida?.duracionTipo !== 'menos_media_jornada';
   const labelText = getReporteSalidaEmailLabel(solicitud);
+  const initialApproval = getInitialApprovalSummary(solicitud);
   
   const subject = `Re: ${labelText} ${solicitud.consecutivo} | Colaborador(a): ${solicitante.nombre || ''}`;
   const html = renderInstitutionalTemplate({
     title: 'AprobaciÃ³n pendiente de GestiÃ³n del Talento Humano',
-    introHtml: `<p style="margin: 0 0 12px 0;">Saludo de paz y bien,</p><p style="margin: 0 0 4px 0; color: #475569;">Estimados(as) integrantes,</p><p style="margin: 0 0 16px 0; font-size: 16px; font-weight: bold; color: #0b3a6f;">Equipo de GestiÃ³n del Talento Humano</p><p>Reciba un cordial saludo. En atenciÃ³n al trÃ¡mite de ${isOficio ? 'oficio de salida' : 'reporte de salida'} <strong>${escapeHtml(solicitud.consecutivo)}</strong> del/de la colaborador(a) <strong>${escapeHtml(solicitante.nombre)}</strong>, se informa que este ha sido debidamente aprobado por su jefe inmediato y se encuentra listo para su revisiÃ³n y aval correspondiente por parte de GestiÃ³n del Talento Humano.</p>`,
+    introHtml: `<p style="margin: 0 0 12px 0;">Saludo de paz y bien,</p><p style="margin: 0 0 4px 0; color: #475569;">Estimados(as) integrantes,</p><p style="margin: 0 0 16px 0; font-size: 16px; font-weight: bold; color: #0b3a6f;">Equipo de GestiÃ³n del Talento Humano</p><p>Reciba un cordial saludo. En atenciÃ³n al trÃ¡mite de ${isOficio ? 'oficio de salida' : 'reporte de salida'} <strong>${escapeHtml(solicitud.consecutivo)}</strong> del/de la colaborador(a) <strong>${escapeHtml(solicitante.nombre)}</strong>, se informa que este ha sido debidamente ${initialApproval.actionLabel.toLowerCase()} por ${escapeHtml(initialApproval.roleLabel.toLowerCase())} (<strong>${escapeHtml(initialApproval.label)}</strong>) y se encuentra listo para su revisiÃ³n y aval correspondiente por parte de GestiÃ³n del Talento Humano.</p>`,
     bodyHtml: `
       <p><strong>Colaborador(a):</strong> ${escapeHtml(solicitante.nombre)}</p>
       ${buildTerapiasHtml(solicitud)}
@@ -1421,12 +1492,12 @@ const sendGestionHumanaApprovalEmail = async (solicitud, token, attachments) => 
       <p>Si decide no autorizar la solicitud, haga clic en el botÃ³n "No autorizar salida" para ingresar el motivo de su decisiÃ³n.</p>
     `,
     senderHtml: `
-      <p style="margin: 0; font-weight: bold; color: #0b3a6f;">${escapeHtml(solicitud.jefe_snapshot?.nombre || 'Jefe Inmediato')}</p>
-      <p style="margin: 2px 0 0 0; font-size: 12px; color: #64748b;">Jefe Inmediato</p>
+      <p style="margin: 0; font-weight: bold; color: #0b3a6f;">${escapeHtml(initialApproval.label)}</p>
+      <p style="margin: 2px 0 0 0; font-size: 12px; color: #64748b;">${escapeHtml(initialApproval.roleLabel)}</p>
       <p style="margin: 8px 0 0 0; font-size: 11px; color: #94a3b8; border-top: 1px dashed #e2e8f0; padding-top: 6px;">
         <strong>Flujo de firmas:</strong><br/>
         â€¢ Solicitado por: ${escapeHtml(solicitante.nombre)}<br/>
-        â€¢ Aprobado por Jefe: ${escapeHtml(solicitud.jefe_snapshot?.nombre || 'Jefe Inmediato')}
+        â€¢ ${escapeHtml(initialApproval.actionLabel)} por ${escapeHtml(initialApproval.roleLabel)}: ${escapeHtml(initialApproval.label)}
       </p>
     `
   });
@@ -1436,7 +1507,7 @@ const sendGestionHumanaApprovalEmail = async (solicitud, token, attachments) => 
   return sendInstitutionalEmail({
     to: recipients.gestionHumana,
     subject,
-    text: `Solicitud ${solicitud.consecutivo} aprobada por jefe. Para finalizar ingrese a ${approveUrl}. Para rechazar ingrese a ${rejectUrl}.`,
+    text: `Solicitud ${solicitud.consecutivo} ${initialApproval.actionLabel.toLowerCase()} por ${initialApproval.roleLabel}. Para finalizar ingrese a ${approveUrl}. Para rechazar ingrese a ${rejectUrl}.`,
     html,
     attachments,
     headers
@@ -1449,10 +1520,11 @@ const sendAuthorityApprovalEmail = async ({ solicitud, token, authorityName, aut
   const rejectUrl = `${publicBackendUrl.replace(/\/$/, '')}/api/reporte-salida/rechazar/${encodeURIComponent(token)}`;
   const isOficio = solicitud.datos_formulario?.salida?.duracionTipo && solicitud.datos_formulario?.salida?.duracionTipo !== 'menos_media_jornada';
   const labelText = getReporteSalidaEmailLabel(solicitud);
+  const initialApproval = getInitialApprovalSummary(solicitud);
   const subject = `Re: ${labelText} ${solicitud.consecutivo} | Colaborador(a): ${solicitante.nombre || ''}`;
   const html = renderInstitutionalTemplate({
     title: `AprobaciÃ³n pendiente de ${stageLabel}`,
-    introHtml: `<p style="margin: 0 0 12px 0;">Saludo de paz y bien,</p><p style="margin: 0 0 4px 0; color: #475569;">Estimado(a) Sr(a).</p><p style="margin: 0 0 16px 0; font-size: 16px; font-weight: bold; color: #0b3a6f;">${escapeHtml(authorityName)}</p><p>Reciba un cordial saludo. El/la colaborador(a) <strong>${escapeHtml(solicitante.nombre || '')}</strong> cuenta con visto bueno del jefe inmediato y requiere aprobaciÃ³n de ${escapeHtml(stageLabel)} para continuar el trÃ¡mite institucional.</p>`,
+    introHtml: `<p style="margin: 0 0 12px 0;">Saludo de paz y bien,</p><p style="margin: 0 0 4px 0; color: #475569;">Estimado(a) Sr(a).</p><p style="margin: 0 0 16px 0; font-size: 16px; font-weight: bold; color: #0b3a6f;">${escapeHtml(authorityName)}</p><p>Reciba un cordial saludo. El/la colaborador(a) <strong>${escapeHtml(solicitante.nombre || '')}</strong> cuenta con ${initialApproval.actionLabel.toLowerCase()} de ${escapeHtml(initialApproval.roleLabel.toLowerCase())} (<strong>${escapeHtml(initialApproval.label)}</strong>) y requiere aprobaciÃ³n de ${escapeHtml(stageLabel)} para continuar el trÃ¡mite institucional.</p>`,
     bodyHtml: `
       ${buildTerapiasHtml(solicitud)}
       <div style="text-align:center;margin:20px 0;">
@@ -1462,12 +1534,12 @@ const sendAuthorityApprovalEmail = async ({ solicitud, token, authorityName, aut
       <p>Si decide no aprobar la solicitud, haga clic en el botÃ³n rojo para ingresar el motivo de su decisiÃ³n.</p>
     `,
     senderHtml: `
-      <p style="margin: 0; font-weight: bold; color: #0b3a6f;">${escapeHtml(solicitud.jefe_snapshot?.nombre || 'Jefe Inmediato')}</p>
-      <p style="margin: 2px 0 0 0; font-size: 12px; color: #64748b;">Visto bueno del jefe inmediato</p>
+      <p style="margin: 0; font-weight: bold; color: #0b3a6f;">${escapeHtml(initialApproval.label)}</p>
+      <p style="margin: 2px 0 0 0; font-size: 12px; color: #64748b;">${escapeHtml(initialApproval.actionLabel)} de ${escapeHtml(initialApproval.roleLabel)}</p>
       <p style="margin: 8px 0 0 0; font-size: 11px; color: #94a3b8; border-top: 1px dashed #e2e8f0; padding-top: 6px;">
         <strong>Flujo de firmas:</strong><br/>
         â€¢ Solicitado por: ${escapeHtml(solicitante.nombre || '')}<br/>
-        â€¢ Visto bueno por Jefe: ${escapeHtml(solicitud.jefe_snapshot?.nombre || 'Jefe Inmediato')}
+        â€¢ ${escapeHtml(initialApproval.actionLabel)} por ${escapeHtml(initialApproval.roleLabel)}: ${escapeHtml(initialApproval.label)}
       </p>
     `
   });
@@ -1491,6 +1563,7 @@ const sendSSTApprovalEmail = async (solicitud, token, attachments) => {
   
   const isOficio = solicitud.datos_formulario?.salida?.duracionTipo && solicitud.datos_formulario?.salida?.duracionTipo !== 'menos_media_jornada';
   const labelText = getReporteSalidaEmailLabel(solicitud);
+  const initialApproval = getInitialApprovalSummary(solicitud);
   
   const subject = `Re: ${labelText} ${solicitud.consecutivo} | Colaborador(a): ${solicitante.nombre || ''}`;
   const alcance = solicitud.datos_formulario?.salida?.alcance || 'Nacional/Internacional';
@@ -1511,7 +1584,7 @@ const sendSSTApprovalEmail = async (solicitud, token, attachments) => {
       <p style="margin: 8px 0 0 0; font-size: 11px; color: #94a3b8; border-top: 1px dashed #e2e8f0; padding-top: 6px;">
         <strong>Flujo de firmas:</strong><br/>
         â€¢ Solicitado por: ${escapeHtml(solicitante.nombre)}<br/>
-        â€¢ Aprobado por Jefe: ${escapeHtml(solicitud.jefe_snapshot?.nombre || 'Jefe Inmediato')}<br/>
+        â€¢ ${escapeHtml(initialApproval.actionLabel)} por ${escapeHtml(initialApproval.roleLabel)}: ${escapeHtml(initialApproval.label)}<br/>
         â€¢ Aprobado por: GestiÃ³n del Talento Humano
       </p>
     `
@@ -1543,6 +1616,7 @@ const sendFinalEmails = async (solicitud, pdfAttachment, supportAttachment) => {
   const userThreadSubject = `Re: ${labelText} ${solicitud.consecutivo} | Comprobante de radicacion`;
   const workflowThreadSubject = `Re: ${labelText} ${solicitud.consecutivo} | Colaborador(a): ${nombreColaborador}`;
   const flowSST = solicitud.datos_formulario?.salida?.alcance === 'Internacional' || solicitud.datos_formulario?.salida?.alcance === 'Nacional';
+  const initialApproval = getInitialApprovalSummary(solicitud);
   
   // Firma para el Colaborador, LÃ­der de Dependencia y SST (Firma Talento Humano)
   const finalApprovalGHHtml = `
@@ -1551,7 +1625,7 @@ const sendFinalEmails = async (solicitud, pdfAttachment, supportAttachment) => {
     <div style="margin: 12px 0 0 0; font-size: 11.5px; color: #15803d; border-top: 1px dashed #e2e8f0; padding-top: 8px; line-height: 1.45;">
       <span style="font-weight: 800; color: #166534; text-transform: uppercase; letter-spacing: 0.5px; font-size: 10px; display: block; margin-bottom: 4px;">âœ“ Flujo de Firmas Completado:</span>
       â€¢ Solicitado por: ${escapeHtml(nombreColaborador)}<br/>
-      â€¢ Aprobado por Jefe: ${escapeHtml(solicitud.jefe_snapshot?.nombre || 'Jefe Inmediato')}<br/>
+      â€¢ ${escapeHtml(initialApproval.actionLabel)} por ${escapeHtml(initialApproval.roleLabel)}: ${escapeHtml(initialApproval.label)}<br/>
       â€¢ Aprobado por: GestiÃ³n del Talento Humano<br/>
       ${flowSST ? 'â€¢ Aprobado por: Seguridad y Salud en el Trabajo (SST)<br/>' : ''}
     </div>
@@ -1562,7 +1636,7 @@ const sendFinalEmails = async (solicitud, pdfAttachment, supportAttachment) => {
     <div style="margin: 0; font-size: 11.5px; color: #15803d; padding-top: 4px; line-height: 1.45;">
       <span style="font-weight: 800; color: #166534; text-transform: uppercase; letter-spacing: 0.5px; font-size: 10px; display: block; margin-bottom: 4px;">âœ“ Flujo de Firmas Completado:</span>
       â€¢ Solicitado por: ${escapeHtml(nombreColaborador)}<br/>
-      â€¢ Aprobado por Jefe: ${escapeHtml(solicitud.jefe_snapshot?.nombre || 'Jefe Inmediato')}<br/>
+      â€¢ ${escapeHtml(initialApproval.actionLabel)} por ${escapeHtml(initialApproval.roleLabel)}: ${escapeHtml(initialApproval.label)}<br/>
       â€¢ Aprobado por: GestiÃ³n del Talento Humano<br/>
       ${flowSST ? 'â€¢ Aprobado por: Seguridad y Salud en el Trabajo (SST)<br/>' : ''}
     </div>
@@ -2747,7 +2821,7 @@ const radicarSolicitud = async (req, res) => {
         // Guardamos el messageId del correo del colaborador como la raÃ­z del hilo de correos
         const thread_message_id = radResult?.messageId || null;
         const headers = thread_message_id ? { 'In-Reply-To': thread_message_id, 'References': thread_message_id } : {};
-        const dependenciaInfoResult = await sendDependenciaRadicacionInfoEmail(solicitud, [pdfAttachment].filter(Boolean), headers);
+        const dependenciaInfoResult = await sendDependenciaRadicacionInfoEmail(solicitud, token, [pdfAttachment, supportAttachment].filter(Boolean), headers);
 
         // 2. El jefe inmediato recibe el PDF y el soporte cuando exista.
         const jefeAttachments = [pdfAttachment];
@@ -2824,6 +2898,8 @@ const aprobarDesdeCorreo = async (req, res) => {
 
     const tokenHash = hashToken(req.params.token);
     if (payload.stage === 'jefe') {
+      const initialApprovalVia = String(req.body?.via || req.query?.via || '').trim().toLowerCase() === 'dependencia' ? 'dependencia' : 'jefe';
+      const initialApprovalActor = getInitialApprovalActor(solicitud, initialApprovalVia);
       if (solicitud.estado !== 'pendiente_aprobacion_jefe') {
         const isRechazada = solicitud.estado === 'no_aprobada';
         return renderApprovalPage({
@@ -2864,7 +2940,14 @@ const aprobarDesdeCorreo = async (req, res) => {
         ? 'aprobacion_rectoria_token_hash'
         : (skipAuthorityAfterBoss ? 'aprobacion_gh_token_hash' : (authorityAfterBoss?.tokenColumn || 'aprobacion_gh_token_hash'));
       const nextToken = createApprovalToken(nextStage, solicitud.consecutivo);
-      const baseTrace = appendTrace(solicitud, authorityAfterBoss ? 'visto_bueno_jefe' : 'aprobada_jefe', null);
+      const baseTrace = appendTrace(
+        solicitud,
+        authorityAfterBoss
+          ? (initialApprovalVia === 'dependencia' ? 'visto_bueno_dependencia' : 'visto_bueno_jefe')
+          : (initialApprovalVia === 'dependencia' ? 'aprobada_dependencia' : 'aprobada_jefe'),
+        initialApprovalActor,
+        { via: initialApprovalVia }
+      );
       const skippedTrace = [
         ...(skippedVicerrectoria ? [{
           event: 'aprobada_vicerrectoria_academica',
@@ -2942,7 +3025,9 @@ const aprobarDesdeCorreo = async (req, res) => {
         res,
         tone: 'success',
         title: 'Aprobacion registrada',
-        message: 'La solicitud fue enviada a Gestion del Talento Humano para revision y aprobacion.',
+        message: initialApprovalVia === 'dependencia'
+          ? 'La autorizacion fue registrada por la dependencia y la solicitud continuo el flujo correspondiente.'
+          : 'La solicitud fue enviada a Gestion del Talento Humano para revision y aprobacion.',
         solicitud,
         nextStep: 'Gestion del Talento Humano recibira el correo con el PDF diligenciado para continuar el flujo.'
       });
@@ -3792,12 +3877,13 @@ const updateFeatureConfig = async (req, res) => {
   }
 };
 
-const renderRejectionFormPage = ({ res, solicitud, token, stage }) => {
+const renderRejectionFormPage = ({ res, solicitud, token, stage, via }) => {
   const consecutivo = solicitud?.consecutivo || '';
   const solicitante = solicitud?.solicitante_snapshot?.nombre || '';
   const safeConsecutivo = escapeHtml(consecutivo);
   const safeSolicitante = escapeHtml(solicitante);
   const safeActionUrl = escapeHtml(`${publicBackendUrl.replace(/\/$/, '')}/api/reporte-salida/rechazar/${encodeURIComponent(token)}`);
+  const safeVia = escapeHtml(String(via || '').trim().toLowerCase() === 'dependencia' ? 'dependencia' : '');
   const stageLabel = stage === 'jefe' ? 'Jefe Inmediato' : 'Gestion del Talento Humano';
 
   return res.type('html').send(`<!doctype html>
@@ -4010,6 +4096,7 @@ const renderRejectionFormPage = ({ res, solicitud, token, stage }) => {
         <div class="detail"><div class="label">Colaborador(a)</div><div class="value">${safeSolicitante || 'No disponible'}</div></div>
       </div>
       <form method="POST" action="${safeActionUrl}">
+        <input type="hidden" name="via" value="${safeVia}">
         <div class="form-group">
           <label class="field-label" for="justificacion">Justificacion del rechazo *</label>
           <textarea id="justificacion" name="justificacion" required placeholder="Escriba aqui los motivos detallados del rechazo..."></textarea>
@@ -4593,7 +4680,8 @@ const mostrarFormularioRechazo = async (req, res) => {
       res,
       solicitud,
       token: req.params.token,
-      stage: payload.stage
+      stage: payload.stage,
+      via: req.query?.via
     });
   } catch (error) {
     console.error('Error mostrando formulario de rechazo:', error);
@@ -4700,6 +4788,8 @@ const procesarRechazo = async (req, res) => {
     }
 
     if (payload.stage === 'jefe') {
+      const initialApprovalVia = String(req.body?.via || req.query?.via || '').trim().toLowerCase() === 'dependencia' ? 'dependencia' : 'jefe';
+      const initialApprovalActor = getInitialApprovalActor(solicitud, initialApprovalVia);
       if (solicitud.estado !== 'pendiente_aprobacion_jefe') {
         const isAprobada = solicitud.estado !== 'no_aprobada';
         return renderApprovalPage({
@@ -4728,9 +4818,10 @@ const procesarRechazo = async (req, res) => {
       const [updatedCount] = await ReporteSalidaSolicitud.update({
         estado: 'no_aprobada',
         aprobacion_jefe_token_hash: null,
-        trazabilidad: appendTrace(solicitud, 'rechazada_jefe', null, {
-          actorName: solicitud.jefe_snapshot?.nombre,
-          actorEmail: solicitud.jefe_snapshot?.email,
+        trazabilidad: appendTrace(solicitud, initialApprovalVia === 'dependencia' ? 'rechazada_dependencia' : 'rechazada_jefe', initialApprovalActor, {
+          actorName: getInitialApprovalLabel(initialApprovalActor, solicitud.jefe_snapshot),
+          actorEmail: initialApprovalActor.email || solicitud.jefe_snapshot?.email,
+          via: initialApprovalVia,
           justificacion
         })
       }, {
@@ -4757,7 +4848,7 @@ const procesarRechazo = async (req, res) => {
       deleteSupportFile(solicitud);
       await sendCollaboratorRejectionEmail({
         solicitud,
-        rejectedBy: 'su jefe inmediato',
+        rejectedBy: initialApprovalVia === 'dependencia' ? 'su dependencia' : 'su jefe inmediato',
         justificacion
       });
 
