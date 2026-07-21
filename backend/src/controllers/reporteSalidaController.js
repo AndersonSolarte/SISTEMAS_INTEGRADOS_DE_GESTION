@@ -2775,7 +2775,9 @@ const radicarSolicitud = async (req, res) => {
       const requestSubject = isSalidaMultiple
         ? 'para que el grupo de colaboradores registrado en el sistema haga uso del permiso de salida'
         : 'para hacer uso del permiso de salida';
-      const fechaHoraText = `durante el periodo comprendido entre el ${formattedStartDate} a las ${startHour} y el ${formattedEndDate} a las ${endHour}, correspondiente a ${oficioDurationText}`;
+      const fechaHoraText = endHour
+        ? `durante el periodo comprendido entre el ${formattedStartDate} a las ${startHour} y el ${formattedEndDate} a las ${endHour}, correspondiente a ${oficioDurationText}`
+        : `durante el periodo comprendido entre el ${formattedStartDate} a las ${startHour} y hasta el ${formattedEndDate}, correspondiente a ${oficioDurationText}, con hora de regreso no registrada y asumida al cierre de la jornada laboral correspondiente`;
 
       const locationValues = [salida.municipio, salida.departamento].filter(Boolean).join(', ');
       const entityText = entidadDestino ? `ante la entidad o institucion ${entidadDestino}` : '';
