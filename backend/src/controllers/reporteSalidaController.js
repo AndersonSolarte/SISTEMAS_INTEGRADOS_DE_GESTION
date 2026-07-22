@@ -1057,32 +1057,6 @@ const renderApprovalPage = ({
       color: #334155;
       line-height: 1.5;
     }
-    .actions {
-      margin-top: 26px;
-      display: flex;
-      gap: 12px;
-      flex-wrap: wrap;
-      justify-content: flex-end;
-    }
-    a, button {
-      border: 0;
-      border-radius: 12px;
-      padding: 12px 18px;
-      font-weight: 850;
-      text-decoration: none;
-      cursor: pointer;
-      font-size: 14px;
-      font-family: inherit;
-    }
-    .primary {
-      background: var(--brand);
-      color: #fff;
-      box-shadow: 0 10px 22px rgba(36, 87, 230, .24);
-    }
-    .ghost {
-      background: #eef4ff;
-      color: #1d4ed8;
-    }
     @media (max-width: 640px) {
       body { padding: 14px; }
       .top, .content { padding: 20px; }
@@ -1090,47 +1064,8 @@ const renderApprovalPage = ({
       .details { grid-template-columns: 1fr; }
       .detail { border-right: 0; border-bottom: 1px solid var(--line); }
       .detail:last-child { border-bottom: 0; }
-      .actions { justify-content: stretch; }
-      a, button { width: 100%; text-align: center; }
-    }
-    .close-alert {
-      display: none;
-      margin-top: 20px;
-      padding: 14px;
-      background: #eff6ff;
-      border: 1px solid #bfdbfe;
-      border-radius: 12px;
-      color: #1e3a8a;
-      font-size: 13.5px;
-      text-align: center;
-      line-height: 1.5;
-      font-weight: 500;
-      box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05);
     }
   </style>
-  <script>
-    function closeWindow() {
-      // 1. Mostrar el aviso de cierre inmediatamente
-      const msgEl = document.getElementById('close-msg');
-      if (msgEl) {
-        msgEl.style.display = 'block';
-      }
-      
-      // 2. Intentar cerrar la pestaÃ±a directamente
-      try {
-        window.close();
-      } catch (e) {
-        console.log('Error window.close:', e);
-      }
-      
-      try {
-        var win = window.open('', '_self', '');
-        if (win) win.close();
-      } catch (e) {
-        console.log('Error window.open.close:', e);
-      }
-    }
-  </script>
 </head>
 <body>
   <main class="shell">
@@ -1155,14 +1090,6 @@ const renderApprovalPage = ({
         <div class="detail"><div class="label">Estado</div><div class="value">${safeEstado || 'No disponible'}</div></div>
       </div>` : ''}
       ${safeNextStep ? `<div class="note">${safeNextStep}</div>` : ''}
-      <div class="actions">
-        <button class="primary" type="button" onclick="closeWindow()">Cerrar ventana</button>
-      </div>
-      <div id="close-msg" class="close-alert">
-        ${tone === 'success' 
-          ? '<strong>Ã‚Â¡Listo!</strong> La transacciÃ³n fue registrada. Ya puedes cerrar esta pestaÃ±a de forma segura usando la <strong>X</strong> de tu navegador.' 
-          : 'Ya puedes cerrar esta pestaÃ±a de forma segura usando la <strong>X</strong> de tu navegador.'}
-      </div>
     </section>
   </main>
 </body>
