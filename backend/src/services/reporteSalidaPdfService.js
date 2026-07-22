@@ -1,4 +1,4 @@
-﻿const fs = require('fs');
+const fs = require('fs');
 const path = require('path');
 const { execFile } = require('child_process');
 const { promisify } = require('util');
@@ -1034,7 +1034,7 @@ const buildPdfBuffer = async (solicitud) => {
     console.error('Error fetching GH user for PDF:', err);
   }
 
-  return new Promise((resolve, reject) => {
+  return new Promise(async (resolve, reject) => {
     try {
       const printer = new PdfPrinter(PDF_FONTS);
 
@@ -1058,7 +1058,7 @@ const buildPdfBuffer = async (solicitud) => {
       const laboral = data.laboral || {};
       const personal = data.personal || {};
 
-      const isSalidaMultiple = Boolean(data.isSalidaMultiple);
+      const isSalidaMultiple = Boolean(data.is_salida_multiple || data.isSalidaMultiple);
       const participantes = data.participantes || [];
       const isPropiasCargo = salida.categoria === 'propias_cargo' && salida.tipo !== 'salida_campus';
       const alcance = isPropiasCargo ? (salida.alcance || 'Local') : 'Local';
@@ -1373,83 +1373,259 @@ const buildPdfBuffer = async (solicitud) => {
       const sstDate = sstApprovedAt ? formatDateTime(sstApprovedAt) : 'Pendiente';
       const sstActorName = sstApprovedAt ? SST_RESPONSABLE_NOMBRE : 'Seguridad y Salud en el Trabajo';
 
-      const signatureTableBody = [
-        [
-          { text: 'Firma del trabajador Solicitante', bold: true, alignment: 'center', fillColor: '#e0e0e0' },
-          { text: initialApprovalPdf.header, bold: true, alignment: 'center', fillColor: '#e0e0e0' }
-        ],
-        [
-          {
-            text: [
-              { text: 'Firmado electrónicamente por:\n', bold: true, fontSize: 9 },
-              { text: `${solicitante.nombre || personal.nombre || ''}\n`, fontSize: 10 },
-              { text: `Documento: ${solicitante.username || personal.documento || ''}\n`, fontSize: 8 },
-              { text: `Fecha y hora: ${reqDate}\n`, fontSize: 8 },
-              { text: `ID Transacción: ${txId}\n`, fontSize: 7, color: 'gray' }
-            ],
-            margin: [5, 5, 5, 5]
-          },
-          {
-            text: [
-              { text: hasInitialApproval ? 'Firmado electrónicamente por:\n' : '\n', bold: true, fontSize: 9 },
-              { text: `${hasInitialApproval ? initialApprovalPdf.name : 'Pendiente'}\n`, fontSize: 10 },
-              { text: `Cargo: ${initialApprovalPdf.cargo || ''}\n`, fontSize: 8 },
-              ...(initialApprovalPdf.viaDependencia && initialApprovalPdf.email ? [{ text: `Correo: ${initialApprovalPdf.email}\n`, fontSize: 8 }] : []),
-              { text: `Fecha y hora: ${jefeDate}\n`, fontSize: 8 },
-              { text: hasInitialApproval ? `ID Transacción: ${txId}\n` : '\n', fontSize: 7, color: 'gray' }
-            ],
-            margin: [5, 5, 5, 5]
-          }
-        ]
-      ];
+      const signatureTableBody = [];
+      const isLeader = Boolean(data.is_leader);
 
-      if (requiresSst) {
-        signatureTableBody.push([
-          { text: 'RECIBIDO (Gestión del Talento Humano)', bold: true, alignment: 'center', fillColor: '#e0e0e0' },
-          { text: 'VISTO BUENO (Seguridad y Salud en el Trabajo)', bold: true, alignment: 'center', fillColor: '#e0e0e0' }
-        ]);
-        signatureTableBody.push([
-          {
-            text: [
-              { text: ghDateValue ? 'Firmado electrónicamente por:\n' : '\n', bold: true, fontSize: 9 },
-              { text: `${ghDateValue ? ghDirectorNombre : 'Pendiente'}\n`, fontSize: 10 },
-              { text: `Cargo: ${ghDirectorCargo}\n`, fontSize: 8 },
-              { text: `Fecha y hora: ${ghDate}\n`, fontSize: 8 },
-              { text: ghDateValue ? `ID Transacción: ${txId}\n` : '\n', fontSize: 7, color: 'gray' }
+      if (isSalidaMultiple) {
+        if (isLeader) {
+          // Leader has:
+          // Row 1: Solicitante (Líder) | RECIBIDO (Gestión del Talento Humano)
+          signatureTableBody.push(
+            [
+              { text: 'Firma del trabajador Solicitante (Líder)', bold: true, alignment: 'center', fillColor: '#e0e0e0' },
+              { text: 'RECIBIDO (Gestión del Talento Humano)', bold: true, alignment: 'center', fillColor: '#e0e0e0' }
             ],
-            margin: [5, 5, 5, 5]
-          },
-          {
-            text: [
-              { text: sstApprovedAt ? 'Firmado electrónicamente por:\n' : '\n', bold: true, fontSize: 9 },
-              { text: `${sstApprovedAt ? sstActorName : 'Pendiente'}\n`, fontSize: 10 },
-              { text: `Cargo: ${SST_RESPONSABLE_CARGO}\n`, fontSize: 8 },
-              { text: `Fecha y hora: ${sstDate}\n`, fontSize: 8 },
-              { text: sstApprovedAt ? `ID Transacción: ${txId}\n` : '\n', fontSize: 7, color: 'gray' }
-            ],
-            margin: [5, 5, 5, 5]
+            [
+              {
+                text: [
+                  { text: 'Firmado electrónicamente por:\n', bold: true, fontSize: 9 },
+                  { text: `${solicitante.nombre || personal.nombre || ''}\n`, fontSize: 10 },
+                  { text: `Documento: ${solicitante.username || personal.documento || ''}\n`, fontSize: 8 },
+                  { text: `Fecha y hora: ${reqDate}\n`, fontSize: 8 },
+                  { text: `ID Transacción: ${txId}\n`, fontSize: 7, color: 'gray' }
+                ],
+                margin: [5, 5, 5, 5]
+              },
+              {
+                text: [
+                  { text: ghDateValue ? 'Firmado electrónicamente por:\n' : '\n', bold: true, fontSize: 9 },
+                  { text: `${ghDateValue ? ghDirectorNombre : 'Pendiente'}\n`, fontSize: 10 },
+                  { text: `Cargo: ${ghDirectorCargo}\n`, fontSize: 8 },
+                  { text: `Fecha y hora: ${ghDate}\n`, fontSize: 8 },
+                  { text: ghDateValue ? `ID Transacción: ${txId}\n` : '\n', fontSize: 7, color: 'gray' }
+                ],
+                margin: [5, 5, 5, 5]
+              }
+            ]
+          );
+
+          if (requiresSst) {
+            signatureTableBody.push(
+              [
+                { text: 'VISTO BUENO (Seguridad y Salud en el Trabajo)', bold: true, alignment: 'center', colSpan: 2, fillColor: '#e0e0e0' },
+                {}
+              ],
+              [
+                {
+                  text: [
+                    { text: sstApprovedAt ? 'Firmado electrónicamente por:\n' : '\n', bold: true, fontSize: 9 },
+                    { text: `${sstApprovedAt ? sstActorName : 'Pendiente'}\n`, fontSize: 10 },
+                    { text: `Cargo: ${SST_RESPONSABLE_CARGO}\n`, fontSize: 8 },
+                    { text: `Fecha y hora: ${sstDate}\n`, fontSize: 8 },
+                    { text: sstApprovedAt ? `ID Transacción: ${txId}\n` : '\n', fontSize: 7, color: 'gray' }
+                  ],
+                  margin: [5, 5, 5, 5],
+                  alignment: 'center',
+                  colSpan: 2
+                },
+                {}
+              ]
+            );
           }
-        ]);
-      } else {
-        signatureTableBody.push([
-          { text: 'RECIBIDO (Gestión del Talento Humano)', bold: true, alignment: 'center', colSpan: 2, fillColor: '#e0e0e0' },
-          {}
-        ]);
-        signatureTableBody.push([
-          {
-            text: [
-              { text: ghDateValue ? 'Firmado electrónicamente por:\n' : '\n', bold: true, fontSize: 9 },
-              { text: `${ghDateValue ? ghDirectorNombre : 'Pendiente'}\n`, fontSize: 10 },
-              { text: `Cargo: ${ghDirectorCargo}\n`, fontSize: 8 },
-              { text: `Fecha y hora: ${ghDate}\n`, fontSize: 8 },
-              { text: ghDateValue ? `ID Transacción: ${txId}\n` : '\n', fontSize: 7, color: 'gray' }
+        } else {
+          // Participant has:
+          // Row 1: Solicitante | Líder de la Actividad
+          // Row 2: RECIBIDO (Gestión del Talento Humano) (colSpan 2 if requiresSst is false, else col 1: GH, col 2: SST)
+          let leaderName = 'Líder de la Actividad';
+          let leaderCargo = 'Líder de la Actividad';
+          let leaderDocument = '';
+          let leaderDateValue = null;
+          let hasLeaderApproval = false;
+
+          try {
+            const { ReporteSalidaSolicitud } = require('../models');
+            const leaderSol = await ReporteSalidaSolicitud.findOne({
+              where: {
+                'datos_formulario.grupo_id': data.grupo_id,
+                'datos_formulario.is_leader': true
+              }
+            });
+            if (leaderSol) {
+              leaderName = leaderSol.solicitante_snapshot?.nombre || leaderSol.datos_formulario?.personal?.nombre || '';
+              leaderCargo = leaderSol.solicitante_snapshot?.cargo || leaderSol.datos_formulario?.laboral?.cargo || '';
+              leaderDocument = leaderSol.solicitante_snapshot?.username || leaderSol.datos_formulario?.personal?.documento || '';
+              leaderDateValue = leaderSol.created_at || leaderSol.createdAt;
+              hasLeaderApproval = true;
+            }
+          } catch (err) {
+            console.error('Error fetching leader solicitud for participant PDF:', err);
+          }
+
+          const leaderDateStr = leaderDateValue ? formatDateTime(leaderDateValue) : 'Pendiente';
+
+          signatureTableBody.push(
+            [
+              { text: 'Firma del trabajador Solicitante', bold: true, alignment: 'center', fillColor: '#e0e0e0' },
+              { text: 'Firma del Líder de la Actividad', bold: true, alignment: 'center', fillColor: '#e0e0e0' }
             ],
-            margin: [5, 5, 5, 5],
-            alignment: 'center',
-            colSpan: 2
-          },
-          {}
-        ]);
+            [
+              {
+                text: [
+                  { text: 'Firmado electrónicamente por:\n', bold: true, fontSize: 9 },
+                  { text: `${solicitante.nombre || personal.nombre || ''}\n`, fontSize: 10 },
+                  { text: `Documento: ${solicitante.username || personal.documento || ''}\n`, fontSize: 8 },
+                  { text: `Fecha y hora: ${reqDate}\n`, fontSize: 8 },
+                  { text: `ID Transacción: ${txId}\n`, fontSize: 7, color: 'gray' }
+                ],
+                margin: [5, 5, 5, 5]
+              },
+              {
+                text: [
+                  { text: hasLeaderApproval ? 'Firmado electrónicamente por:\n' : '\n', bold: true, fontSize: 9 },
+                  { text: `${leaderName}\n`, fontSize: 10 },
+                  { text: `Documento: ${leaderDocument}\n`, fontSize: 8 },
+                  { text: `Cargo: ${leaderCargo}\n`, fontSize: 8 },
+                  { text: `Fecha y hora: ${leaderDateStr}\n`, fontSize: 8 },
+                  { text: hasLeaderApproval ? `ID Transacción: ${txId}\n` : '\n', fontSize: 7, color: 'gray' }
+                ],
+                margin: [5, 5, 5, 5]
+              }
+            ]
+          );
+
+          if (requiresSst) {
+            signatureTableBody.push(
+              [
+                { text: 'RECIBIDO (Gestión del Talento Humano)', bold: true, alignment: 'center', fillColor: '#e0e0e0' },
+                { text: 'VISTO BUENO (Seguridad y Salud en el Trabajo)', bold: true, alignment: 'center', fillColor: '#e0e0e0' }
+              ],
+              [
+                {
+                  text: [
+                    { text: ghDateValue ? 'Firmado electrónicamente por:\n' : '\n', bold: true, fontSize: 9 },
+                    { text: `${ghDateValue ? ghDirectorNombre : 'Pendiente'}\n`, fontSize: 10 },
+                    { text: `Cargo: ${ghDirectorCargo}\n`, fontSize: 8 },
+                    { text: `Fecha y hora: ${ghDate}\n`, fontSize: 8 },
+                    { text: ghDateValue ? `ID Transacción: ${txId}\n` : '\n', fontSize: 7, color: 'gray' }
+                  ],
+                  margin: [5, 5, 5, 5]
+                },
+                {
+                  text: [
+                    { text: sstApprovedAt ? 'Firmado electrónicamente por:\n' : '\n', bold: true, fontSize: 9 },
+                    { text: `${sstApprovedAt ? sstActorName : 'Pendiente'}\n`, fontSize: 10 },
+                    { text: `Cargo: ${SST_RESPONSABLE_CARGO}\n`, fontSize: 8 },
+                    { text: `Fecha y hora: ${sstDate}\n`, fontSize: 8 },
+                    { text: sstApprovedAt ? `ID Transacción: ${txId}\n` : '\n', fontSize: 7, color: 'gray' }
+                  ],
+                  margin: [5, 5, 5, 5]
+                }
+              ]
+            );
+          } else {
+            signatureTableBody.push(
+              [
+                { text: 'RECIBIDO (Gestión del Talento Humano)', bold: true, alignment: 'center', colSpan: 2, fillColor: '#e0e0e0' },
+                {}
+              ],
+              [
+                {
+                  text: [
+                    { text: ghDateValue ? 'Firmado electrónicamente por:\n' : '\n', bold: true, fontSize: 9 },
+                    { text: `${ghDateValue ? ghDirectorNombre : 'Pendiente'}\n`, fontSize: 10 },
+                    { text: `Cargo: ${ghDirectorCargo}\n`, fontSize: 8 },
+                    { text: `Fecha y hora: ${ghDate}\n`, fontSize: 8 },
+                    { text: ghDateValue ? `ID Transacción: ${txId}\n` : '\n', fontSize: 7, color: 'gray' }
+                  ],
+                  margin: [5, 5, 5, 5],
+                  alignment: 'center',
+                  colSpan: 2
+                },
+                {}
+              ]
+            );
+          }
+        }
+      } else {
+        // Original non-multiple logic
+        signatureTableBody.push(
+          [
+            { text: 'Firma del trabajador Solicitante', bold: true, alignment: 'center', fillColor: '#e0e0e0' },
+            { text: initialApprovalPdf.header, bold: true, alignment: 'center', fillColor: '#e0e0e0' }
+          ],
+          [
+            {
+              text: [
+                { text: 'Firmado electrónicamente por:\n', bold: true, fontSize: 9 },
+                { text: `${solicitante.nombre || personal.nombre || ''}\n`, fontSize: 10 },
+                { text: `Documento: ${solicitante.username || personal.documento || ''}\n`, fontSize: 8 },
+                { text: `Fecha y hora: ${reqDate}\n`, fontSize: 8 },
+                { text: `ID Transacción: ${txId}\n`, fontSize: 7, color: 'gray' }
+              ],
+              margin: [5, 5, 5, 5]
+            },
+            {
+              text: [
+                { text: hasInitialApproval ? 'Firmado electrónicamente por:\n' : '\n', bold: true, fontSize: 9 },
+                { text: `${hasInitialApproval ? initialApprovalPdf.name : 'Pendiente'}\n`, fontSize: 10 },
+                { text: `Cargo: ${initialApprovalPdf.cargo || ''}\n`, fontSize: 8 },
+                ...(initialApprovalPdf.viaDependencia && initialApprovalPdf.email ? [{ text: `Correo: ${initialApprovalPdf.email}\n`, fontSize: 8 }] : []),
+                { text: `Fecha y hora: ${jefeDate}\n`, fontSize: 8 },
+                { text: hasInitialApproval ? `ID Transacción: ${txId}\n` : '\n', fontSize: 7, color: 'gray' }
+              ],
+              margin: [5, 5, 5, 5]
+            }
+          ]
+        );
+
+        if (requiresSst) {
+          signatureTableBody.push([
+            { text: 'RECIBIDO (Gestión del Talento Humano)', bold: true, alignment: 'center', fillColor: '#e0e0e0' },
+            { text: 'VISTO BUENO (Seguridad y Salud en el Trabajo)', bold: true, alignment: 'center', fillColor: '#e0e0e0' }
+          ]);
+          signatureTableBody.push([
+            {
+              text: [
+                { text: ghDateValue ? 'Firmado electrónicamente por:\n' : '\n', bold: true, fontSize: 9 },
+                { text: `${ghDateValue ? ghDirectorNombre : 'Pendiente'}\n`, fontSize: 10 },
+                { text: `Cargo: ${ghDirectorCargo}\n`, fontSize: 8 },
+                { text: `Fecha y hora: ${ghDate}\n`, fontSize: 8 },
+                { text: ghDateValue ? `ID Transacción: ${txId}\n` : '\n', fontSize: 7, color: 'gray' }
+              ],
+              margin: [5, 5, 5, 5]
+            },
+            {
+              text: [
+                { text: sstApprovedAt ? 'Firmado electrónicamente por:\n' : '\n', bold: true, fontSize: 9 },
+                { text: `${sstApprovedAt ? sstActorName : 'Pendiente'}\n`, fontSize: 10 },
+                { text: `Cargo: ${SST_RESPONSABLE_CARGO}\n`, fontSize: 8 },
+                { text: `Fecha y hora: ${sstDate}\n`, fontSize: 8 },
+                { text: sstApprovedAt ? `ID Transacción: ${txId}\n` : '\n', fontSize: 7, color: 'gray' }
+              ],
+              margin: [5, 5, 5, 5]
+            }
+          ]);
+        } else {
+          signatureTableBody.push([
+            { text: 'RECIBIDO (Gestión del Talento Humano)', bold: true, alignment: 'center', colSpan: 2, fillColor: '#e0e0e0' },
+            {}
+          ]);
+          signatureTableBody.push([
+            {
+              text: [
+                { text: ghDateValue ? 'Firmado electrónicamente por:\n' : '\n', bold: true, fontSize: 9 },
+                { text: `${ghDateValue ? ghDirectorNombre : 'Pendiente'}\n`, fontSize: 10 },
+                { text: `Cargo: ${ghDirectorCargo}\n`, fontSize: 8 },
+                { text: `Fecha y hora: ${ghDate}\n`, fontSize: 8 },
+                { text: ghDateValue ? `ID Transacción: ${txId}\n` : '\n', fontSize: 7, color: 'gray' }
+              ],
+              margin: [5, 5, 5, 5],
+              alignment: 'center',
+              colSpan: 2
+            },
+            {}
+          ]);
+        }
       }
 
       docDefinition.content.push({
