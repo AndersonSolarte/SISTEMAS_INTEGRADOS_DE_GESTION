@@ -1248,7 +1248,7 @@ function ReporteSalidaSeguimiento({ initialAccess = null, onBack }) {
 
         {activeModule === 'estadisticas' && canViewEstadisticas ? (
           <Box sx={{ mt: 2 }}>
-            <ReporteSalidaEstadisticas rows={filteredRows} onVisibleRowsChange={setEstadisticasVisibleRows} />
+            <ReporteSalidaEstadisticas rows={filteredRowsBase} cardFilter={cardFilter} onVisibleRowsChange={setEstadisticasVisibleRows} />
           </Box>
         ) : activeModule !== 'reporte_salida' ? (
           <Paper elevation={0} sx={{ p: 3, border: '1px dashed #bfdbfe', borderRadius: 3, bgcolor: '#f8fbff' }}>

@@ -500,13 +500,13 @@ const renderTable = (title, icon, data, isTime = false, color = '#1d4ed8', bg = 
   </Paper>
 );
 
-export default function ReporteSalidaEstadisticas({ rows = [], onVisibleRowsChange = null }) {
+export default function ReporteSalidaEstadisticas({ rows = [], cardFilter = 'todas', onVisibleRowsChange = null }) {
   const [estadoFiltro, setEstadoFiltro] = useState('');
   const [segmentoFiltro, setSegmentoFiltro] = useState('');
   const [chartTimeFilter, setChartTimeFilter] = useState('all');
   const [selectedDate, setSelectedDate] = useState('');
 
-  const filteredRows = useMemo(() => {
+  const filteredRowsBase = useMemo(() => {
     let result = rows;
     if (estadoFiltro) {
       result = result.filter(r => r.estado === estadoFiltro);
@@ -522,6 +522,30 @@ export default function ReporteSalidaEstadisticas({ rows = [], onVisibleRowsChan
     }
     return result;
   }, [rows, estadoFiltro, segmentoFiltro]);
+
+  const rangeRowsBase = useMemo(() => (
+    filteredRowsBase.filter((row) => isDateInsideRange(getRadicacionDateKey(row), chartTimeFilter))
+  ), [filteredRowsBase, chartTimeFilter]);
+
+  const analysisRowsBase = useMemo(() => {
+    if (!selectedDate) return rangeRowsBase;
+    return rangeRowsBase.filter((row) => getRadicacionDateKey(row) === selectedDate);
+  }, [rangeRowsBase, selectedDate]);
+
+  // Apply cardFilter only for charts/visualizations inside the stats component
+  const filteredRows = useMemo(() => {
+    let result = filteredRowsBase;
+    if (cardFilter === 'pendientes') {
+      result = result.filter((r) => ['pendiente_aprobacion_jefe', 'pendiente_aprobacion_gestion_humana'].includes(r.estado));
+    } else if (cardFilter === 'personales') {
+      result = result.filter((r) => r.reposicion_aplica && r.reposicion_estado !== 'cumplida');
+    } else if (cardFilter === 'reposicionesValidadas') {
+      result = result.filter((r) => r.reposicion_aplica && r.reposicion_estado === 'cumplida');
+    } else if (cardFilter === 'finalizadas') {
+      result = result.filter((r) => r.estado === 'finalizada');
+    }
+    return result;
+  }, [filteredRowsBase, cardFilter]);
 
   const rangeRows = useMemo(() => (
     filteredRows.filter((row) => isDateInsideRange(getRadicacionDateKey(row), chartTimeFilter))
@@ -665,9 +689,9 @@ export default function ReporteSalidaEstadisticas({ rows = [], onVisibleRowsChan
 
   useEffect(() => {
     if (typeof onVisibleRowsChange === 'function') {
-      onVisibleRowsChange(analysisRows);
+      onVisibleRowsChange(analysisRowsBase);
     }
-  }, [analysisRows, onVisibleRowsChange]);
+  }, [analysisRowsBase, onVisibleRowsChange]);
 
   const handleChartClick = (event) => {
     const date = event?.activeLabel;
