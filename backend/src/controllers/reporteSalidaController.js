@@ -1,4 +1,4 @@
-﻿const crypto = require('crypto');
+const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
 const { Op } = require('sequelize');
@@ -2517,8 +2517,8 @@ const radicarSolicitud = async (req, res) => {
     if (isSalidaMultiple) {
       // Validate group payload
       const participantes = req.body.participantes || [];
-      if (!participantes.length) {
-        return res.status(400).json({ success: false, message: 'Debe agregar al menos un participante para la salida grupal.' });
+      if (participantes.length < 2) {
+        return res.status(400).json({ success: false, message: 'Debe agregar al menos un participante adicional a la salida grupal (mínimo 2 personas en total).' });
       }
       for (const p of participantes) {
         if (!p.nombre || !p.documento || !p.correo || !p.dependencia || !p.cargo) {

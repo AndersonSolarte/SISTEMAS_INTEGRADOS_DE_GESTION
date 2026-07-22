@@ -1009,8 +1009,8 @@ function ReporteSalidaFormDialog({ open, documento, user, onClose, onSubmitted }
   const validationIssues = useMemo(() => {
     const issues = [];
     if (isSalidaMultiple) {
-      if (participantes.length === 0) {
-        issues.push('Debe agregar al menos un participante a la salida grupal.');
+      if (participantes.length < 2) {
+        issues.push('Debe agregar al menos un participante adicional a la salida grupal (mínimo 2 personas en total).');
       }
       participantes.forEach((p, idx) => {
         if (!p.correo || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(p.correo)) {
