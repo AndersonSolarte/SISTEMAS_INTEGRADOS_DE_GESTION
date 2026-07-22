@@ -500,6 +500,67 @@ const renderTable = (title, icon, data, isTime = false, color = '#1d4ed8', bg = 
   </Paper>
 );
 
+const renderRequestsTable = (requests) => (
+  <Paper elevation={0} sx={{ border: '1px solid #e2e8f0', borderRadius: 3, overflow: 'hidden', mt: 3, bgcolor: '#fff' }}>
+    <Box sx={{ p: 2, bgcolor: '#f8fafc', borderBottom: '1px solid #e2e8f0', display: 'flex', alignItems: 'center' }}>
+      <AssignmentIcon sx={{ color: '#0ea5e9', mr: 1.5 }} />
+      <Typography sx={{ fontWeight: 900, color: '#0f172a', fontSize: 16 }}>
+        Detalle de Solicitudes ({requests.length})
+      </Typography>
+    </Box>
+    <TableContainer sx={{ maxHeight: 400 }}>
+      <Table stickyHeader size="small">
+        <TableHead>
+          <TableRow>
+            <TableCell sx={{ fontSize: 13, fontWeight: 800, bgcolor: '#f8fafc' }}>Consecutivo</TableCell>
+            <TableCell sx={{ fontSize: 13, fontWeight: 800, bgcolor: '#f8fafc' }}>Colaborador(a)</TableCell>
+            <TableCell sx={{ fontSize: 13, fontWeight: 800, bgcolor: '#f8fafc' }}>Fecha y Hora</TableCell>
+            <TableCell sx={{ fontSize: 13, fontWeight: 800, bgcolor: '#f8fafc' }}>Motivo</TableCell>
+            <TableCell sx={{ fontSize: 13, fontWeight: 800, bgcolor: '#f8fafc' }}>Estado</TableCell>
+          </TableRow>
+        </TableHead>
+        <TableBody>
+          {requests.map((row) => {
+            const tipo = row.datos_formulario?.salida?.tipo || '';
+            const labelTipo = TYPE_LABELS_DISPLAY[tipo] || tipo.replace(/_/g, ' ').toUpperCase();
+            return (
+              <TableRow key={row.id} hover>
+                <TableCell sx={{ fontWeight: 800, color: '#0ea5e9', fontSize: 13 }}>
+                  {row.consecutivo}
+                </TableCell>
+                <TableCell sx={{ fontSize: 13, fontWeight: 600 }}>
+                  {row.solicitante?.nombre || row.datos_formulario?.personal?.nombre || 'Desconocido'}
+                </TableCell>
+                <TableCell sx={{ fontSize: 13 }}>
+                  {row.datos_formulario?.salida?.fecha} ({row.datos_formulario?.salida?.horaInicio || ''} - {row.datos_formulario?.salida?.horaFin || 'No especificada'})
+                </TableCell>
+                <TableCell sx={{ fontSize: 13, color: '#475569' }}>
+                  <strong>{labelTipo}</strong>: {row.datos_formulario?.salida?.motivo}
+                </TableCell>
+                <TableCell sx={{ fontSize: 13 }}>
+                  <Chip
+                    size="small"
+                    label={
+                      row.estado === 'finalizada' ? 'Aprobada' :
+                      row.estado === 'no_aprobada' ? 'Rechazada' : 'Pendiente'
+                    }
+                    sx={{
+                      fontWeight: 800,
+                      fontSize: 11,
+                      bgcolor: row.estado === 'finalizada' ? '#dcfce7' : row.estado === 'no_aprobada' ? '#fee2e2' : '#fef3c7',
+                      color: row.estado === 'finalizada' ? '#15803d' : row.estado === 'no_aprobada' ? '#b91c1c' : '#b45309'
+                    }}
+                  />
+                </TableCell>
+              </TableRow>
+            );
+          })}
+        </TableBody>
+      </Table>
+    </TableContainer>
+  </Paper>
+);
+
 export default function ReporteSalidaEstadisticas({ rows = [], cardFilter = 'todas', onVisibleRowsChange = null }) {
   const [estadoFiltro, setEstadoFiltro] = useState('');
   const [segmentoFiltro, setSegmentoFiltro] = useState('');
@@ -694,7 +755,7 @@ export default function ReporteSalidaEstadisticas({ rows = [], cardFilter = 'tod
   }, [analysisRowsBase, onVisibleRowsChange]);
 
   const handleChartClick = (event) => {
-    const date = event?.activeLabel;
+    const date = event?.activeLabel || event?.activePayload?.[0]?.payload?.date;
     if (!date) return;
     setSelectedDate((current) => current === date ? '' : date);
   };
@@ -804,7 +865,17 @@ export default function ReporteSalidaEstadisticas({ rows = [], cardFilter = 'tod
                     strokeWidth={3.5} 
                     fillOpacity={1} 
                     fill="url(#colorSolicitudes)"
-                    activeDot={{ r: 7, stroke: '#fff', strokeWidth: 2, fill: '#0284c7' }}
+                    activeDot={(props) => (
+                      <circle
+                        cx={props.cx}
+                        cy={props.cy}
+                        r={7}
+                        stroke="#fff"
+                        strokeWidth={2}
+                        fill="#0284c7"
+                        style={{ pointerEvents: 'none' }}
+                      />
+                    )}
                     dot={(props) => {
                       const isSelected = selectedDate === props.payload?.date;
                       return (
@@ -815,6 +886,7 @@ export default function ReporteSalidaEstadisticas({ rows = [], cardFilter = 'tod
                           stroke={isSelected ? '#0f172a' : '#fff'}
                           strokeWidth={isSelected ? 3 : 2}
                           fill={isSelected ? '#0284c7' : '#0ea5e9'}
+                          style={{ pointerEvents: 'none' }}
                         />
                       );
                     }}
@@ -833,14 +905,16 @@ export default function ReporteSalidaEstadisticas({ rows = [], cardFilter = 'tod
       </Box>
 
       <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', lg: '1fr 1fr' }, gap: 3 }}>
-        {renderTable('Tiempo Total Fuera (Horas Acumuladas)', <AccessTimeIcon sx={{ color: '#b45309' }} />, indicators.topTime, true, '#b45309', '#fef3c7', analysisRows)}
-        {renderTable('Total de Permisos Solicitados (Cantidad)', <BarChartIcon sx={{ color: '#1d4ed8' }} />, indicators.topCount, false, '#1d4ed8', '#eff6ff', analysisRows)}
-        {indicators.dynamicTables.map(tbl => (
+        {indicators.topTime.length > 0 && renderTable('Tiempo Total Fuera (Horas Acumuladas)', <AccessTimeIcon sx={{ color: '#b45309' }} />, indicators.topTime, true, '#b45309', '#fef3c7', analysisRows)}
+        {indicators.topCount.length > 0 && renderTable('Total de Permisos Solicitados (Cantidad)', <BarChartIcon sx={{ color: '#1d4ed8' }} />, indicators.topCount, false, '#1d4ed8', '#eff6ff', analysisRows)}
+        {indicators.dynamicTables.filter(tbl => tbl.data.length > 0).map(tbl => (
           <React.Fragment key={tbl.id}>
             {renderTable(tbl.label, tbl.icon, tbl.data, false, tbl.color, tbl.bg, tbl.rawRows, tbl.nameHeader)}
           </React.Fragment>
         ))}
       </Box>
+
+      {selectedDate && analysisRows.length > 0 && renderRequestsTable(analysisRows)}
     </Box>
   );
 }
