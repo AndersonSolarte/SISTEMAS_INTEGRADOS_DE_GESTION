@@ -22,6 +22,23 @@ const formatElapsed = (minutes) => {
   return `${formatted}h`;
 };
 
+const formatBogotaDateKey = (value) => {
+  if (!value) return '';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return '';
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'America/Bogota',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit'
+  }).formatToParts(date);
+  const getPart = (type) => parts.find((part) => part.type === type)?.value || '';
+  const year = getPart('year');
+  const month = getPart('month');
+  const day = getPart('day');
+  return year && month && day ? `${year}-${month}-${day}` : '';
+};
+
 const exportToExcel = (title, summaryData, isTime, rawData) => {
   const STATUS_LABELS = {
     borrador: 'Borrador',
@@ -367,7 +384,7 @@ export default function ReporteSalidaEstadisticas({ rows = [] }) {
 
     const dailyMap = {};
     filteredRows.forEach(row => {
-      const fecha = row.datos_formulario?.salida?.fecha || row.createdAt?.split('T')[0];
+      const fecha = formatBogotaDateKey(row.createdAt);
       if (fecha) {
         if (!dailyMap[fecha]) dailyMap[fecha] = { date: fecha, solicitudes: 0 };
         dailyMap[fecha].solicitudes += 1;

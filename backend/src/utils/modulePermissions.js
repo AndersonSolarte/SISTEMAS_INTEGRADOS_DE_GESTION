@@ -8,6 +8,7 @@ const MENU_KEYS = new Set([
   'gestion_informacion',
   'gestion_usuarios',
   'buscar_documentos',
+  'favoritos',
   'planeacion_efectividad',
   'autoevaluacion',
   'registros_calificados'
@@ -351,6 +352,27 @@ const getUserModulePermissions = async (userId, role) => {
     if (!menuPermissions.includes('gestion_informacion')) menuPermissions.push('gestion_informacion');
     if (!allowedModules.includes('estadistica_institucional')) allowedModules.push('estadistica_institucional');
     if (!allowedModules.includes('recurso_humano')) allowedModules.push('recurso_humano');
+  }
+
+  if (role === ROLES.GESTION_PROCESOS) {
+    [
+      'dashboard',
+      'gestion_informacion',
+      'aseguramiento_calidad',
+      'buscar_documentos',
+      'favoritos',
+      'gestion_usuarios'
+    ].forEach((key) => {
+      if (!menuPermissions.includes(key)) menuPermissions.push(key);
+    });
+
+    ['estadistica_institucional', 'gestion_procesos'].forEach((key) => {
+      if (!allowedModules.includes(key)) allowedModules.push(key);
+    });
+
+    if (!allowedGestionProcesosDashboards.includes('estadistica_documental')) {
+      allowedGestionProcesosDashboards.push('estadistica_documental');
+    }
   }
 
   const restrictedMenusByRole = {

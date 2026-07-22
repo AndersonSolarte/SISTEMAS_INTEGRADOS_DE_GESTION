@@ -2414,15 +2414,14 @@ function GestionInformacion() {
       }
       return;
     }
+    if (!tab && !base && !module) {
+      setMenuView('estadistica');
+      setSelectedCard(null);
+      setGestionProcesosPanel('hub');
+      return;
+    }
     if (!canManageBasesInView) setMenuView('estadistica');
   }, [canManageBasesInView, location.search, location.state?.menuClickToken]);
-
-  useEffect(() => {
-    if (user?.role !== ROLES.GESTION_PROCESOS) return;
-    if (menuView !== 'estadistica') return;
-    if (selectedCard !== 'gestion_procesos') setSelectedCard('gestion_procesos');
-    if (gestionProcesosPanel !== 'estadistica_documental') setGestionProcesosPanel('estadistica_documental');
-  }, [user?.role, menuView, selectedCard, gestionProcesosPanel]);
 
   useEffect(() => {
     if (menuView !== 'estadistica') return;
@@ -14246,10 +14245,6 @@ const renderCategoryBars = (items = [], options = {}) => {
 
         {menuView === 'estadistica' && (
           <>
-            {user?.role === ROLES.GESTION_PROCESOS ? (
-              renderGestionProcesosModule()
-            ) : (
-              <>
                 {!selectedCard && renderStatsCards()}
                 {selectedCard === 'poblacional' && renderStatsModule()}
                 {selectedCard === 'saber_pro' && renderSaberProStatsModule()}
@@ -14318,8 +14313,6 @@ const renderCategoryBars = (items = [], options = {}) => {
                     <PlaneacionEfectividad />
                   </Box>
                 )}
-              </>
-            )}
           </>
         )}
 

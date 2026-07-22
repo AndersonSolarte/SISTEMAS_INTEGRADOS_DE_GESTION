@@ -51,6 +51,8 @@ const { auth, hasAnyRoleOrModulePermission } = require('../middlewares/auth');
 const { publicLimiter } = require('../middlewares/security');
 const { ROLES } = require('../constants/roles');
 
+const SEGUIMIENTO_REPORTE_MODULE_KEYS = ['recurso_humano_seguimiento', 'seguimiento_reportes_rrhh'];
+
 router.get('/aprobar/:token', publicLimiter, aprobarDesdeCorreo);
 router.post('/aprobar/:token', publicLimiter, aprobarDesdeCorreo);
 router.get('/rechazar/:token', publicLimiter, mostrarFormularioRechazo);
@@ -79,7 +81,7 @@ router.get(
   auth,
   hasAnyRoleOrModulePermission({
     roles: [ROLES.ADMINISTRADOR, ROLES.GESTION_INFORMACION, ROLES.PLANEACION_ESTRATEGICA],
-    moduleKeys: ['seguimiento_reportes_rrhh']
+    moduleKeys: SEGUIMIENTO_REPORTE_MODULE_KEYS
   }),
   listarSolicitudes
 );
@@ -89,7 +91,7 @@ router.delete(
   auth,
   hasAnyRoleOrModulePermission({
     roles: [ROLES.ADMINISTRADOR, ROLES.GESTION_INFORMACION, ROLES.PLANEACION_ESTRATEGICA],
-    moduleKeys: ['seguimiento_reportes_rrhh']
+    moduleKeys: SEGUIMIENTO_REPORTE_MODULE_KEYS
   }),
   eliminarSolicitud
 );
@@ -99,7 +101,7 @@ router.delete(
   auth,
   hasAnyRoleOrModulePermission({
     roles: [ROLES.ADMINISTRADOR, ROLES.GESTION_INFORMACION, ROLES.PLANEACION_ESTRATEGICA],
-    moduleKeys: ['seguimiento_reportes_rrhh']
+    moduleKeys: SEGUIMIENTO_REPORTE_MODULE_KEYS
   }),
   limpiarMocks
 );
@@ -109,7 +111,7 @@ router.put(
   auth,
   hasAnyRoleOrModulePermission({
     roles: [ROLES.ADMINISTRADOR, ROLES.GESTION_INFORMACION, ROLES.PLANEACION_ESTRATEGICA],
-    moduleKeys: ['seguimiento_reportes_rrhh']
+    moduleKeys: SEGUIMIENTO_REPORTE_MODULE_KEYS
   }),
   editarSolicitudAdmin
 );

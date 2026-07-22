@@ -710,23 +710,34 @@ const buildOficioPdfDefinition = (solicitud, ghDirectorNombre, ghDirectorCargo) 
 
   signatureTableBody.length = 0;
   const oficioSignatureHeaderFill = '#eaf4ff';
+  const buildOficioSignatureCell = ({ signed, name, cargo, date, extra = {} }) => ({
+    text: [
+      { text: signed ? 'Firmado electrónicamente por:\n' : '\n', bold: true, fontSize: 7.6 },
+      { text: `${signed ? name : 'Pendiente'}\n`, fontSize: 8.4 },
+      { text: `Cargo: ${cargo || ''}\n`, fontSize: 6.9 },
+      { text: `Fecha y hora: ${date}\n`, fontSize: 6.9 },
+      { text: signed ? `ID Transacción: ${txId}\n` : '\n', fontSize: 6.3, color: 'gray' }
+    ],
+    margin: [4, 4, 4, 4],
+    ...extra
+  });
   signatureTableBody.push(
     [
-      { text: 'Firma del trabajador solicitante', bold: true, alignment: 'center', fillColor: oficioSignatureHeaderFill, fontSize: 9 },
-      { text: 'VISTO BUENO del jefe inmediato', bold: true, alignment: 'center', fillColor: oficioSignatureHeaderFill, fontSize: 9 }
+      { text: 'Firma del trabajador solicitante', bold: true, alignment: 'center', fillColor: oficioSignatureHeaderFill, fontSize: 8.4 },
+      { text: 'VISTO BUENO del jefe inmediato', bold: true, alignment: 'center', fillColor: oficioSignatureHeaderFill, fontSize: 8.4 }
     ],
     [
       {
         text: [
-          { text: 'Firmado electrónicamente por:\n', bold: true, fontSize: 8 },
-          { text: `${solicitante.nombre || personal.nombre || ''}\n`, fontSize: 9 },
-          { text: `Documento: ${solicitante.username || personal.documento || ''}\n`, fontSize: 7.5 },
-          { text: `Fecha y hora: ${reqDate}\n`, fontSize: 7.5 },
-          { text: `ID Transacción: ${txId}\n`, fontSize: 7, color: 'gray' }
+          { text: 'Firmado electrónicamente por:\n', bold: true, fontSize: 7.6 },
+          { text: `${solicitante.nombre || personal.nombre || ''}\n`, fontSize: 8.4 },
+          { text: `Documento: ${solicitante.username || personal.documento || ''}\n`, fontSize: 6.9 },
+          { text: `Fecha y hora: ${reqDate}\n`, fontSize: 6.9 },
+          { text: `ID Transacción: ${txId}\n`, fontSize: 6.3, color: 'gray' }
         ],
-        margin: [5, 5, 5, 5]
+        margin: [4, 4, 4, 4]
       },
-      buildSignatureCell({
+      buildOficioSignatureCell({
         signed: Boolean(solicitud.jefe_aprobado_at),
         name: jefe.nombre || 'Jefe inmediato',
         cargo: jefe.cargo || 'Jefe inmediato',
@@ -738,17 +749,17 @@ const buildOficioPdfDefinition = (solicitud, ghDirectorNombre, ghDirectorCargo) 
   if (requiresVicerrectoriaSignature && requiresRectoriaSignature) {
     signatureTableBody.push(
       [
-        { text: `APROBACION de ${vicerrectoriaName}`, bold: true, alignment: 'center', fillColor: oficioSignatureHeaderFill, fontSize: 9 },
-        { text: 'APROBACION de Rectoria', bold: true, alignment: 'center', fillColor: oficioSignatureHeaderFill, fontSize: 9 }
+        { text: `APROBACION de ${vicerrectoriaName}`, bold: true, alignment: 'center', fillColor: oficioSignatureHeaderFill, fontSize: 8.4 },
+        { text: 'APROBACION de Rectoria', bold: true, alignment: 'center', fillColor: oficioSignatureHeaderFill, fontSize: 8.4 }
       ],
       [
-        buildSignatureCell({
+        buildOficioSignatureCell({
           signed: hasVicerrectoriaApproval,
           name: vicerrectoriaName,
           cargo: vicerrectoriaName,
           date: vicerrectoriaDate
         }),
-        buildSignatureCell({
+        buildOficioSignatureCell({
           signed: hasRectoriaApproval,
           name: 'Rectoria',
           cargo: 'Rectoria',
@@ -759,11 +770,11 @@ const buildOficioPdfDefinition = (solicitud, ghDirectorNombre, ghDirectorCargo) 
   } else if (requiresVicerrectoriaSignature) {
     signatureTableBody.push(
       [
-        { text: `APROBACION de ${vicerrectoriaName}`, bold: true, alignment: 'center', colSpan: 2, fillColor: oficioSignatureHeaderFill, fontSize: 9 },
+        { text: `APROBACION de ${vicerrectoriaName}`, bold: true, alignment: 'center', colSpan: 2, fillColor: oficioSignatureHeaderFill, fontSize: 8.4 },
         {}
       ],
       [
-        buildSignatureCell({
+        buildOficioSignatureCell({
           signed: hasVicerrectoriaApproval,
           name: vicerrectoriaName,
           cargo: vicerrectoriaName,
@@ -776,11 +787,11 @@ const buildOficioPdfDefinition = (solicitud, ghDirectorNombre, ghDirectorCargo) 
   } else if (requiresRectoriaSignature) {
     signatureTableBody.push(
       [
-        { text: 'APROBACION de Rectoria', bold: true, alignment: 'center', colSpan: 2, fillColor: oficioSignatureHeaderFill, fontSize: 9 },
+        { text: 'APROBACION de Rectoria', bold: true, alignment: 'center', colSpan: 2, fillColor: oficioSignatureHeaderFill, fontSize: 8.4 },
         {}
       ],
       [
-        buildSignatureCell({
+        buildOficioSignatureCell({
           signed: hasRectoriaApproval,
           name: 'Rectoria',
           cargo: 'Rectoria',
@@ -795,17 +806,17 @@ const buildOficioPdfDefinition = (solicitud, ghDirectorNombre, ghDirectorCargo) 
   if (requiresSst) {
     signatureTableBody.push(
       [
-        { text: 'VISTO BUENO / RECIBIDO (Gestión del Talento Humano)', bold: true, alignment: 'center', fillColor: oficioSignatureHeaderFill, fontSize: 9 },
-        { text: 'VISTO BUENO (Seguridad y Salud en el Trabajo)', bold: true, alignment: 'center', fillColor: oficioSignatureHeaderFill, fontSize: 9 }
+        { text: 'VISTO BUENO / RECIBIDO (Gestión del Talento Humano)', bold: true, alignment: 'center', fillColor: oficioSignatureHeaderFill, fontSize: 8.4 },
+        { text: 'VISTO BUENO (Seguridad y Salud en el Trabajo)', bold: true, alignment: 'center', fillColor: oficioSignatureHeaderFill, fontSize: 8.4 }
       ],
       [
-        buildSignatureCell({
+        buildOficioSignatureCell({
           signed: Boolean(solicitud.gestion_humana_aprobado_at),
           name: ghDirectorNombre,
           cargo: ghDirectorCargo,
           date: ghDate
         }),
-        buildSignatureCell({
+        buildOficioSignatureCell({
           signed: Boolean(sstApprovedAt),
           name: sstActorName,
           cargo: SST_RESPONSABLE_CARGO,
@@ -816,11 +827,11 @@ const buildOficioPdfDefinition = (solicitud, ghDirectorNombre, ghDirectorCargo) 
   } else {
     signatureTableBody.push(
       [
-        { text: 'VISTO BUENO / RECIBIDO (Gestión del Talento Humano)', bold: true, alignment: 'center', colSpan: 2, fillColor: oficioSignatureHeaderFill, fontSize: 9 },
+        { text: 'VISTO BUENO / RECIBIDO (Gestión del Talento Humano)', bold: true, alignment: 'center', colSpan: 2, fillColor: oficioSignatureHeaderFill, fontSize: 8.4 },
         {}
       ],
       [
-        buildSignatureCell({
+        buildOficioSignatureCell({
           signed: Boolean(solicitud.gestion_humana_aprobado_at),
           name: ghDirectorNombre,
           cargo: ghDirectorCargo,
@@ -845,8 +856,8 @@ const buildOficioPdfDefinition = (solicitud, ghDirectorNombre, ghDirectorCargo) 
 
   return {
     pageSize: 'LETTER',
-    pageMargins: [70, 112, 70, 82],
-    defaultStyle: { font: PDF_FONT_FAMILY, fontSize: 11, color: '#000000', lineHeight: 1.18 },
+    pageMargins: [60, 104, 60, 72],
+    defaultStyle: { font: PDF_FONT_FAMILY, fontSize: 11, color: '#000000', lineHeight: 1.12 },
     background: () => ({
       image: fr013Background,
       width: 612,
@@ -874,21 +885,21 @@ const buildOficioPdfDefinition = (solicitud, ghDirectorNombre, ghDirectorCargo) 
     content: [
       {
         qr: verifyUrl,
-        fit: 82,
-        absolutePosition: { x: 472, y: 106 }
+        fit: 78,
+        absolutePosition: { x: 474, y: 104 }
       },
       {
         text: [
           { text: 'Validar oficio:\n', bold: true },
           { text: verifyUrl, link: verifyUrl, color: '#005baa' }
         ],
-        fontSize: 6.8,
+        fontSize: 6.4,
         alignment: 'center',
         width: 132,
-        absolutePosition: { x: 447, y: 191 }
+        absolutePosition: { x: 447, y: 185 }
       },
-      { text: consecutiveText, margin: [0, 0, 0, 12] },
-      { text: dateFormatted, margin: [0, 0, 0, 22] },
+      { text: consecutiveText, margin: [0, 0, 0, 8] },
+      { text: dateFormatted, margin: [0, 0, 0, 16] },
       
       {
         text: [
@@ -897,20 +908,20 @@ const buildOficioPdfDefinition = (solicitud, ghDirectorNombre, ghDirectorCargo) 
           { text: destCargo ? `${destCargo}\n` : '' },
           { text: destDependencia ? `${destDependencia}\n` : '' }
         ],
-        margin: [0, 0, 0, 18]
+        margin: [0, 0, 0, 12]
       },
       
-      { text: `Asunto: ${salida.oficioAsunto || ''}`, bold: true, margin: [0, 0, 0, 16] },
+      { text: `Asunto: ${salida.oficioAsunto || ''}`, bold: true, margin: [0, 0, 0, 10] },
       
-      { text: 'Paz y bien:', bold: true, margin: [0, 0, 0, 12] },
+      { text: 'Paz y bien:', bold: true, margin: [0, 0, 0, 8] },
       
-      { text: salida.oficioCuerpo || '', alignment: 'justify', margin: [0, 0, 0, 18] },
+      { text: salida.oficioCuerpo || '', alignment: 'justify', margin: [0, 0, 0, 12] },
       
-      { text: salida.oficioDespedida || 'Cordialmente,', margin: [0, 0, 0, 24] },
+      { text: salida.oficioDespedida || 'Cordialmente,', margin: [0, 0, 0, 12] },
       
       
       ...(getDeclaracionSinAdjunto(salida) ? [
-        { text: `Declaracion de soportes: ${getDeclaracionSinAdjunto(salida)}`, fontSize: 8.8, italics: true, color: '#334155', margin: [0, 0, 0, 6] }
+        { text: `Declaracion de soportes: ${getDeclaracionSinAdjunto(salida)}`, fontSize: 8.2, italics: true, color: '#334155', margin: [0, 0, 0, 4] }
       ] : []),
       
       // Signatures container
@@ -921,10 +932,10 @@ const buildOficioPdfDefinition = (solicitud, ghDirectorNombre, ghDirectorCargo) 
           body: signatureTableBody
         },
         layout: 'borders',
-        margin: [0, 0, 0, 6]
+        margin: [0, 0, 0, 4]
       },
       { text: `Anexos: ${salida.oficioAnexos || 'Ninguno'}`, fontSize: 7.6, margin: [0, 0, 0, 1] },
-      { text: `Proyecto: ${salida.oficioProyecto || ''}`, fontSize: 7.6, margin: [0, 0, 0, 8] },
+      { text: `Proyecto: ${salida.oficioProyecto || ''}`, fontSize: 7.6, margin: [0, 0, 0, 4] },
       {
         text: '',
         unbreakable: true,
@@ -1012,6 +1023,7 @@ const buildPdfBuffer = async (solicitud) => {
           ubicacionStr = `${alcance} (${salida.municipio}, Nariño)`;
         }
       }
+      const entidadDestinoStr = isPropiasCargo ? String(salida.entidadDestino || '').trim() : '';
 
       let motivoStr = salida.motivo || getTipoSalidaLabel(salida.tipo);
       if (salida.tipo === 'salida_campus' && salida.campusSalida && salida.campusDestino) {
@@ -1139,6 +1151,13 @@ const buildPdfBuffer = async (solicitud) => {
                   { text: 'Categoría:', bold: true },
                   { text: getTipoSalidaLabel(salida.tipo) }
                 ]);
+                if (entidadDestinoStr) {
+                  tableBody.push([
+                    { text: 'Entidad / institucion de destino:', bold: true },
+                    { text: entidadDestinoStr, colSpan: 3 },
+                    {}, {}
+                  ]);
+                }
                 if (isReposicionType) {
                   tableBody.push([
                     { text: 'Tiempo solicitado:', bold: true },

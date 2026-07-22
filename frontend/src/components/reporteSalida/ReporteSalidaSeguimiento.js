@@ -102,6 +102,36 @@ const formatDateTime = (value) => {
   return date.toLocaleString('es-CO', { dateStyle: 'short', timeStyle: 'short' });
 };
 
+const getUltimaGestionDate = (row) => {
+  if (!row) return null;
+  const candidates = [];
+
+  const addDate = (value) => {
+    if (!value) return;
+    const date = new Date(value);
+    if (!Number.isNaN(date.getTime())) candidates.push(date);
+  };
+
+  [
+    row.createdAt,
+    row.jefe_aprobado_at,
+    row.vicerrectoria_aprobado_at,
+    row.rectoria_aprobado_at,
+    row.gestion_humana_aprobado_at,
+    row.sst_aprobado_at,
+    row.finalizado_at,
+    row.rechazado_at,
+    row.no_aprobado_at
+  ].forEach(addDate);
+
+  if (Array.isArray(row.trazabilidad)) {
+    row.trazabilidad.forEach((trace) => addDate(trace?.at || trace?.fecha || trace?.createdAt));
+  }
+
+  if (!candidates.length) return null;
+  return candidates.reduce((latest, current) => current > latest ? current : latest, candidates[0]);
+};
+
 const minutesBetween = (start, end) => {
   if (!start || !end) return null;
   const a = new Date(start);
@@ -1221,15 +1251,23 @@ function ReporteSalidaSeguimiento({ initialAccess = null, onBack }) {
                             })()}
                           </TableCell>
                           <TableCell sx={{ py: 0.8, px: 0.8 }}>
-                            {row.finalizado_at ? (
-                              <Typography sx={{ fontSize: 11, fontWeight: 700, color: '#0f766e' }}>
-                                {new Date(row.finalizado_at).toLocaleDateString('es-CO')}
-                              </Typography>
-                            ) : (
-                              <Typography sx={{ fontSize: 10.5, color: '#94a3b8', fontStyle: 'italic' }}>
-                                Pendiente
-                              </Typography>
-                            )}
+                            {(() => {
+                              const ultimaGestion = getUltimaGestionDate(row);
+                              return ultimaGestion ? (
+                                <Stack spacing={0.1}>
+                                  <Typography sx={{ fontSize: 11, fontWeight: 800, color: '#0f766e', lineHeight: 1.15 }}>
+                                    {ultimaGestion.toLocaleDateString('es-CO')}
+                                  </Typography>
+                                  <Typography sx={{ fontSize: 9.5, fontWeight: 700, color: '#64748b', lineHeight: 1.15 }}>
+                                    {ultimaGestion.toLocaleTimeString('es-CO', { hour: 'numeric', minute: '2-digit' })}
+                                  </Typography>
+                                </Stack>
+                              ) : (
+                                <Typography sx={{ fontSize: 10.5, color: '#94a3b8', fontStyle: 'italic' }}>
+                                  Pendiente
+                                </Typography>
+                              );
+                            })()}
                           </TableCell>
                           <TableCell sx={{ py: 0.8, px: 0.8 }}>
                             {row.isGroupRow ? (
@@ -1383,13 +1421,11 @@ function ReporteSalidaSeguimiento({ initialAccess = null, onBack }) {
                                       </IconButton>
                                     </Tooltip>
                                   )}
-                                  {row.reposicion_aplica && (
-                                    <Tooltip title="Editar" arrow>
-                                      <IconButton size="small" onClick={() => handleEditOpen(row)}>
-                                        <EditIcon fontSize="small" />
-                                      </IconButton>
-                                    </Tooltip>
-                                  )}
+                                  <Tooltip title="Editar" arrow>
+                                    <IconButton size="small" onClick={() => handleEditOpen(row)}>
+                                      <EditIcon fontSize="small" />
+                                    </IconButton>
+                                  </Tooltip>
                                   <Tooltip title="Eliminar" arrow>
                                     <IconButton size="small" color="error" onClick={() => handleDeleteOpen(row.id)}>
                                       <DeleteIcon fontSize="small" />

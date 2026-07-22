@@ -193,6 +193,13 @@ const getAuthorityRecipient = async (authorityName, fallbackEmail = '') => {
 
 const getOfficialAuthorityEmailForActor = (actor = {}) => {
   const email = normalizeEmail(actor.email);
+  const actorName = normalizeForMatch(actor.nombre || actor.name || actor.label);
+  if (actorName.includes('luis eduardo rubiano guaqueta')) {
+    return RECTORIA_EMAIL;
+  }
+  if (actorName.includes('sandra lucia bolanos delgado')) {
+    return ACADEMIC_VICERRECTORIA_EMAIL;
+  }
   if (!email) return '';
   const entry = Object.values(AUTHORITY_RECIPIENTS).find((authority) => {
     const authorityEmails = [authority.email, ...(authority.aliases || [])].map(normalizeEmail);
@@ -740,6 +747,83 @@ const buildAdministrativeBossSnapshot = (boss = {}) => ({
   source: sanitizeText(boss.source, 80) || 'recurso_humano_administrativos'
 });
 
+const extractEmailFromText = (value) => {
+  const match = String(value || '').match(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i);
+  return match ? normalizeEmail(match[0]) : '';
+};
+
+const cleanBossText = (value) => {
+  let text = sanitizeText(value, 260);
+  if (!text) return '';
+  return text.replace(/\([^)]*@[A-Z0-9._%+-]+\.[A-Z]{2,}[^)]*\)/ig, '').trim();
+};
+
+const extractBossNameFromText = (value) => {
+  const text = cleanBossText(value);
+  if (!text) return '';
+  const parts = text.split(/\s+-\s+/).map((part) => part.trim()).filter(Boolean);
+  if (parts.length >= 2) {
+    return parts[parts.length - 1];
+  }
+  return text;
+};
+
+const resolveJefeInmediatoSnapshot = async ({ jefePayload = {}, jefeInmediatoUserId = null, user = null }) => {
+  const explicitId = Number(jefeInmediatoUserId || jefePayload.userId || 0);
+  if (explicitId) {
+    const jefe = await User.findOne({ where: { id: explicitId, estado: 'activo' } });
+    if (jefe) return { user: jefe, snapshot: buildSnapshot(jefe) };
+  }
+
+  const rawNameCandidates = [
+    jefePayload.nombre,
+    jefePayload.name,
+    jefePayload.label,
+    jefePayload.jefe_inmediato,
+    user?.jefe_inmediato
+  ];
+  const jefeNameCandidates = [...new Set(rawNameCandidates
+    .flatMap((value) => [cleanBossText(value), extractBossNameFromText(value)])
+    .filter(Boolean))];
+
+  const jefeEmailCandidates = [
+    jefePayload.email,
+    jefePayload.correo,
+    extractEmailFromText(jefePayload.label),
+    extractEmailFromText(jefePayload.nombre),
+    extractEmailFromText(jefePayload.jefe_inmediato)
+  ]
+    .map(normalizeEmail)
+    .filter(Boolean);
+
+  const userRows = await getUserProfileLaboralRows();
+  for (const candidate of jefeNameCandidates) {
+    const matchedUser = findBestUserMatch(userRows, candidate);
+    if (matchedUser?.email) {
+      return { user: matchedUser, snapshot: buildSnapshot(matchedUser) };
+    }
+  }
+
+  for (const candidateEmail of jefeEmailCandidates) {
+    const matchedUser = userRows.find((row) => normalizeEmail(row.email) === candidateEmail);
+    if (matchedUser?.email) {
+      return { user: matchedUser, snapshot: buildSnapshot(matchedUser) };
+    }
+  }
+
+  const fallbackName = jefeNameCandidates[0] || jefePayload.nombre || jefePayload.label || '';
+  return {
+    user: null,
+    snapshot: buildAdministrativeBossSnapshot({
+      ...jefePayload,
+      userId: null,
+      nombre: fallbackName,
+      email: jefeEmailCandidates[0] || '',
+      source: jefePayload.source || 'users'
+    })
+  };
+};
+
 const getSolicitudLaboral = (solicitud = {}) => solicitud.datos_formulario?.laboral || {};
 const getSolicitudSalida = (solicitud = {}) => solicitud.datos_formulario?.salida || {};
 
@@ -819,15 +903,31 @@ const appendTrace = (solicitud, event, actor = null, detail = {}) => ([
   }
 ]);
 
+const SEGUIMIENTO_REPORTE_MODULE_KEYS = ['recurso_humano_seguimiento', 'seguimiento_reportes_rrhh'];
+
+const userHasSeguimientoReportePermission = (user = {}) => {
+  const permissionLists = [
+    user.menuPermissions,
+    user.modulePermissions,
+    user.allowedModules,
+    user.allowedRecursoHumanoDashboards
+  ].filter(Array.isArray);
+
+  return permissionLists
+    .flat()
+    .some((key) => SEGUIMIENTO_REPORTE_MODULE_KEYS.includes(String(key || '').trim()));
+};
+
 const canManageSeguimientoReportes = async (user) => {
   if (!user) return false;
   if (SEGUIMIENTO_REPORTE_ROLES.includes(String(user.role || ''))) return true;
+  if (userHasSeguimientoReportePermission(user)) return true;
   if (!UserModulePermission) return false;
   const count = await UserModulePermission.count({
     where: {
       user_id: user.id,
       can_view: true,
-      module_key: 'recurso_humano_seguimiento'
+      module_key: { [Op.in]: SEGUIMIENTO_REPORTE_MODULE_KEYS }
     }
   });
   return count > 0;
@@ -1108,7 +1208,7 @@ const validateRadicacionPayload = (payload, user) => {
   }
 
   if (!payload?.documentoId) return 'Documento del formato requerido.';
-  if (!payload?.jefeInmediatoUserId && !payload?.jefeInmediato?.email) {
+  if (!payload?.jefeInmediatoUserId && !payload?.jefeInmediato?.email && !payload?.jefeInmediato?.nombre && !payload?.jefeInmediato?.label && !user?.jefe_inmediato) {
     return 'Debe seleccionar un jefe inmediato con correo registrado en Recurso Humano.';
   }
   if (!salida.tipo) return 'Debe seleccionar el tipo de salida.';
@@ -1333,17 +1433,41 @@ const sendColaboradorRadicacionEmail = async (solicitud, attachments) => {
   });
 };
 
-const getDependencyNotificationTarget = (solicitud = {}) => {
+const getDependencyNotificationTargets = (solicitud = {}) => {
   const solicitante = solicitud.solicitante_snapshot || {};
   const laboral = solicitud.datos_formulario?.laboral || {};
   const dependencia = laboral.dependencia || solicitante.dependencia || '';
-  const fallback = laboral.vicerrectoria || solicitante.vicerrectoria || '';
+  const vicerrectoria = laboral.vicerrectoria || solicitante.vicerrectoria || '';
   const dependenciaEmail = getDependencyEmail(dependencia);
-  const fallbackEmail = getDependencyEmail(fallback);
+  const vicerrectoriaEmail = getDependencyEmail(vicerrectoria);
+  const targets = [];
+
+  const pushTarget = (email, label, source) => {
+    const cleanEmail = normalizeEmail(email);
+    if (!cleanEmail || targets.some((target) => sameExactEmail(target.email, cleanEmail))) return;
+    targets.push({
+      email: cleanEmail,
+      label: label || source || 'Dependencia',
+      source
+    });
+  };
+
+  pushTarget(dependenciaEmail, dependencia, 'dependencia');
+  pushTarget(vicerrectoriaEmail, vicerrectoria, 'vicerrectoria');
+  return targets;
+};
+
+const getDependencyNotificationTarget = (solicitud = {}) => {
+  const targets = getDependencyNotificationTargets(solicitud);
+  if (targets.length) return targets[0];
+  const solicitante = solicitud.solicitante_snapshot || {};
+  const laboral = solicitud.datos_formulario?.laboral || {};
+  const dependencia = laboral.dependencia || solicitante.dependencia || '';
+  const vicerrectoria = laboral.vicerrectoria || solicitante.vicerrectoria || '';
   return {
-    email: dependenciaEmail || fallbackEmail || '',
-    label: dependenciaEmail ? dependencia : (fallback || dependencia),
-    source: dependenciaEmail ? 'dependencia' : (fallbackEmail ? 'vicerrectoria' : '')
+    email: '',
+    label: vicerrectoria || dependencia,
+    source: ''
   };
 };
 
@@ -1408,18 +1532,12 @@ const sendDependenciaRadicacionInfoEmail = async (solicitud, token, attachments,
   const solicitante = solicitud.solicitante_snapshot || {};
   const laboral = solicitud.datos_formulario?.laboral || {};
   const jefe = solicitud.jefe_snapshot || {};
-  const target = getDependencyNotificationTarget(solicitud);
-  const depEmail = target.email;
-  const dependenciaLabel = target.label;
+  const targets = getDependencyNotificationTargets(solicitud);
+  const depEmails = targets.map((target) => target.email).filter(Boolean);
+  const dependenciaLabel = targets.map((target) => target.label).filter(Boolean).join(' / ');
 
-  if (!depEmail) {
+  if (!depEmails.length) {
     return { success: false, skipped: true, reason: 'dependency_email_not_configured' };
-  }
-  if (sameExactEmail(depEmail, jefe.email)) {
-    return { success: false, skipped: true, reason: 'dependency_email_same_as_jefe' };
-  }
-  if (sameExactEmail(depEmail, solicitante.email)) {
-    return { success: false, skipped: true, reason: 'dependency_email_same_as_solicitante' };
   }
 
   const isOficio = solicitud.datos_formulario?.salida?.duracionTipo && solicitud.datos_formulario?.salida?.duracionTipo !== 'menos_media_jornada';
@@ -1447,14 +1565,25 @@ const sendDependenciaRadicacionInfoEmail = async (solicitud, token, attachments,
     `
   });
 
-  return sendInstitutionalEmail({
-    to: depEmail,
-    subject,
-    text: `Solicitud ${solicitud.consecutivo} radicada por ${solicitante.nombre || ''}. Autorizar: ${approveUrl}. No autorizar: ${rejectUrl}.`,
-    html,
-    attachments,
-    headers
-  });
+  const results = [];
+  for (const depEmail of depEmails) {
+    const result = await sendInstitutionalEmail({
+      to: depEmail,
+      subject,
+      text: `Solicitud ${solicitud.consecutivo} radicada por ${solicitante.nombre || ''}. Autorizar: ${approveUrl}. No autorizar: ${rejectUrl}.`,
+      html,
+      attachments,
+      headers
+    });
+    results.push({ email: depEmail, ...result });
+  }
+
+  return {
+    success: results.some((result) => result.success),
+    messageId: results.find((result) => result.messageId)?.messageId || null,
+    recipients: results,
+    error: results.filter((result) => !result.success).map((result) => `${result.email}: ${result.error || 'no enviado'}`).join(' | ')
+  };
 };
 
 const sendGestionHumanaApprovalEmail = async (solicitud, token, attachments) => {
@@ -1597,6 +1726,7 @@ const sendFinalEmails = async (solicitud, pdfAttachment, supportAttachment) => {
   const recipients = getReporteSalidaRecipients();
   const nombreColaborador = solicitud.solicitante_snapshot?.nombre || '';
   const dependenciaTarget = getDependencyNotificationTarget(solicitud);
+  const dependenciaTargets = getDependencyNotificationTargets(solicitud);
   const dependencialabel = dependenciaTarget.label || solicitud.datos_formulario?.laboral?.dependencia || '';
 
   const isOficio = solicitud.datos_formulario?.salida?.duracionTipo && solicitud.datos_formulario?.salida?.duracionTipo !== 'menos_media_jornada';
@@ -1651,9 +1781,12 @@ const sendFinalEmails = async (solicitud, pdfAttachment, supportAttachment) => {
   // 2. Correo de Copia de control para LÃ­der de Dependencia / Jefe Inmediato
   let depResult = { success: false, recipients: [] };
   const copyRecipients = [];
-  const depEmail = dependenciaTarget.email;
   const solicitanteEmail = solicitud.solicitante_snapshot?.email;
-  if (depEmail && !sameExactEmail(depEmail, solicitanteEmail)) copyRecipients.push({ type: 'dependencia', email: depEmail });
+  dependenciaTargets.forEach((target) => {
+    if (target.email && !sameExactEmail(target.email, solicitanteEmail) && !copyRecipients.some((recipient) => sameExactEmail(recipient.email, target.email))) {
+      copyRecipients.push({ type: 'dependencia', email: target.email, label: target.label, source: target.source });
+    }
+  });
   
   const jefeEmail = solicitud.jefe_snapshot?.email || '';
   if (jefeEmail && !copyRecipients.some((recipient) => sameExactEmail(recipient.email, jefeEmail))) {
@@ -1797,10 +1930,14 @@ const sendJefeApprovalEmail = async (solicitud, token, attachments, headers = {}
   let depResult = { success: false };
   const copyRecipients = [];
   const dependenciaTarget = getDependencyNotificationTarget(solicitud);
-  const depEmail = dependenciaTarget.email;
+  const dependenciaTargets = getDependencyNotificationTargets(solicitud);
   const dependencialabel = dependenciaTarget.label || solicitud.datos_formulario?.laboral?.dependencia || '';
   const solicitanteEmail = solicitud.solicitante_snapshot?.email;
-  if (depEmail && !sameExactEmail(depEmail, solicitanteEmail)) copyRecipients.push(depEmail);
+  dependenciaTargets.forEach((target) => {
+    if (target.email && !sameExactEmail(target.email, solicitanteEmail) && !copyRecipients.some((email) => sameExactEmail(email, target.email))) {
+      copyRecipients.push(target.email);
+    }
+  });
   
   const jefeEmail = solicitud.jefe_snapshot?.email || '';
   if (jefeEmail && !copyRecipients.some((email) => sameExactEmail(email, jefeEmail))) {
@@ -1896,8 +2033,10 @@ const sendJefeRadicacionApprovalEmail = async (solicitud, token, attachments, he
     `
   });
 
+  const approvalRecipientEmail = getInitialApprovalRecipientEmail(solicitud) || jefe.email || '';
+
   return sendInstitutionalEmail({
-    to: jefe.email || getInitialApprovalRecipientEmail(solicitud),
+    to: approvalRecipientEmail,
     subject,
     text: `Solicitud ${solicitud.consecutivo} pendiente de autorizacion. Autorizar: ${approveUrl}. No autorizar: ${rejectUrl}.`,
     html,
@@ -2551,21 +2690,15 @@ const radicarSolicitud = async (req, res) => {
     if (errorMessage) return res.status(400).json({ success: false, message: errorMessage });
 
     const jefePayload = req.body.jefeInmediato || {};
-    const jefe = req.body.jefeInmediatoUserId
-      ? await User.findOne({ where: { id: req.body.jefeInmediatoUserId, estado: 'activo' } })
-      : null;
-    const shouldUseAdministrativeBoss = !jefe || jefePayload?.source === 'recurso_humano_administrativos' || jefePayload?.cargo;
-    const jefeSnapshot = shouldUseAdministrativeBoss
-      ? buildAdministrativeBossSnapshot({
-        ...jefePayload,
-        userId: jefe?.id || jefePayload.userId,
-        email: jefePayload.email || jefe?.email || ''
-      })
-      : buildSnapshot(jefe);
-    if (!jefe && !jefeSnapshot.email) {
+    const { user: jefe, snapshot: jefeSnapshot } = await resolveJefeInmediatoSnapshot({
+      jefePayload,
+      jefeInmediatoUserId: req.body.jefeInmediatoUserId,
+      user: req.user
+    });
+    if (!jefeSnapshot.email) {
       return res.status(400).json({ success: false, message: 'El jefe inmediato seleccionado desde Recurso Humano no tiene correo registrado.' });
     }
-    if (jefe && Number(jefe.id) === Number(req.user.id)) {
+    if (jefeSnapshot.id && Number(jefeSnapshot.id) === Number(req.user.id)) {
       return res.status(400).json({ success: false, message: 'El jefe inmediato debe ser un usuario diferente al solicitante.' });
     }
 
@@ -2893,7 +3026,8 @@ const radicarSolicitud = async (req, res) => {
         const dependenciaInfoResult = await sendDependenciaRadicacionInfoEmail(solicitud, token, [pdfAttachment, supportAttachment].filter(Boolean));
         console.log('[reporte-salida] Radicacion dependencia:', {
           consecutivo: solicitud.consecutivo,
-          email: getDependencyNotificationTarget(solicitud).email || '',
+          emails: getDependencyNotificationTargets(solicitud).map((target) => target.email).filter(Boolean),
+          recipients: dependenciaInfoResult?.recipients || [],
           success: Boolean(dependenciaInfoResult?.success),
           skipped: Boolean(dependenciaInfoResult?.skipped),
           reason: dependenciaInfoResult?.reason || '',
@@ -2909,7 +3043,7 @@ const radicarSolicitud = async (req, res) => {
         const emailResult = await sendJefeRadicacionApprovalEmail(solicitud, token, jefeAttachments.filter(Boolean));
         console.log('[reporte-salida] Radicacion jefe inmediato:', {
           consecutivo: solicitud.consecutivo,
-          email: solicitud.jefe_snapshot?.email || '',
+          email: getInitialApprovalRecipientEmail(solicitud) || solicitud.jefe_snapshot?.email || '',
           success: Boolean(emailResult?.success),
           error: emailResult?.error || ''
         });
@@ -3603,8 +3737,7 @@ const getSeguimientoBadge = async (req, res) => {
 const actualizarReposicion = async (req, res) => {
   if (!(await getReporteSalidaFeatureState())) return featureDisabled(res);
   try {
-    const rolesPrivilegiados = ['administrador', 'gestion_informacion', 'planeacion_estrategica'];
-    const tienePrivilegio = rolesPrivilegiados.includes(req.user.role) || (req.user.menuPermissions || []).includes('seguimiento_reportes_rrhh');
+    const tienePrivilegio = await canManageSeguimientoReportes(req.user);
     
     const solicitud = await ReporteSalidaSolicitud.findByPk(req.params.id);
     if (!solicitud) {
@@ -5832,8 +5965,7 @@ const getReposicionesPropias = async (req, res) => {
 
 const getReposicionesEquipo = async (req, res) => {
   try {
-    const rolesPrivilegiados = ['administrador', 'gestion_informacion', 'planeacion_estrategica'];
-    const tienePrivilegio = rolesPrivilegiados.includes(req.user.role) || (req.user.menuPermissions || []).includes('seguimiento_reportes_rrhh');
+    const tienePrivilegio = await canManageSeguimientoReportes(req.user);
     
     const whereClause = { reposicion_aplica: true };
     if (!tienePrivilegio) {

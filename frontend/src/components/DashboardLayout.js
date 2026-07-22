@@ -245,10 +245,9 @@ function DashboardLayout() {
       collapsible: true,
       openKey: 'gestion_procesos',
       items: [
-        { key: 'gestion_informacion', path: '/dashboard/gestion-informacion?tab=estadistica&module=gestion_procesos&panel=estadistica_documental', label: 'Estadística Documental', icon: <InsightsIcon /> },
+        { key: 'estadistica_documental', path: '/dashboard/gestion-informacion?tab=estadistica&module=gestion_procesos&panel=estadistica_documental', label: 'Estadística Documental', icon: <InsightsIcon /> },
         { key: 'aseguramiento_calidad', path: '/dashboard/aseguramiento-calidad', label: 'Administración del Sistema Documental', icon: <CheckIcon /> },
         { key: 'buscar_documentos', path: '/dashboard/buscar-documentos', label: 'Consulta de documentos', icon: <ExploreIcon /> },
-        { key: 'favoritos', path: '/dashboard?section=favoritos', label: 'Documentos Favoritos', icon: <FavoriteIcon /> },
         { key: 'gestion_usuarios', path: '/dashboard/gestion-usuarios', label: 'Gestión de Usuarios', icon: <PeopleIcon /> }
       ]
     }
@@ -287,9 +286,12 @@ function DashboardLayout() {
   }, [user?.allowedGestionProcesosDashboards]);
 
   if (explicitMenuPermissions.length > 0 && user?.role !== ROLES.ADMINISTRADOR) {
-    const effectiveMenuPermissions = user?.role === ROLES.CONSULTA
-      ? [...new Set([...explicitMenuPermissions.filter((key) => key !== 'gestion_usuarios'), ...explicitProcesosDashboards.map(k => k === 'gestion_usuarios_consulta' ? 'gestion_usuarios' : k)])]
-      : explicitMenuPermissions;
+    const gestionProcesosBaseMenu = ['dashboard', 'gestion_informacion', 'aseguramiento_calidad', 'buscar_documentos', 'favoritos', 'gestion_usuarios'];
+    const effectiveMenuPermissions = user?.role === ROLES.GESTION_PROCESOS
+      ? [...new Set([...gestionProcesosBaseMenu, ...explicitMenuPermissions])]
+      : user?.role === ROLES.CONSULTA
+        ? [...new Set([...explicitMenuPermissions.filter((key) => key !== 'gestion_usuarios'), ...explicitProcesosDashboards.map(k => k === 'gestion_usuarios_consulta' ? 'gestion_usuarios' : k)])]
+        : explicitMenuPermissions;
     menuItems = menuCatalog.filter((item) => effectiveMenuPermissions.includes(item.key));
 
     if (user?.role === ROLES.ADMINISTRADOR) {
@@ -363,11 +365,15 @@ function DashboardLayout() {
     }
 
     if (user?.role === ROLES.GESTION_PROCESOS || (user?.role === ROLES.CONSULTA && explicitProcesosDashboards.length > 0)) {
-      const procesosKeys = ['gestion_informacion', 'aseguramiento_calidad', 'buscar_documentos', 'gestion_usuarios', 'favoritos'];
+      const procesosKeys = ['estadistica_documental', 'aseguramiento_calidad', 'buscar_documentos', 'gestion_usuarios'];
       const visibleChildren = gestionProcesosMenuItems
         .filter((item) => item.section)
         .flatMap((section) => section.items)
-        .filter((child) => effectiveMenuPermissions.includes(child.key));
+        .filter((child) => (
+          child.key === 'estadistica_documental'
+            ? explicitProcesosDashboards.includes('estadistica_documental') || user?.role === ROLES.GESTION_PROCESOS
+            : effectiveMenuPermissions.includes(child.key)
+        ));
 
       menuItems = [
         ...menuItems.filter((item) => !procesosKeys.includes(item.key)),
