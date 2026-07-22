@@ -129,7 +129,9 @@ const SABER_PRO_DASHBOARD_PERMISSION_KEYS = [
 const RECURSO_HUMANO_DASHBOARD_PERMISSION_KEYS = [
   'recurso_humano_profesores',
   'recurso_humano_administrativos',
-  'recurso_humano_seguimiento'
+  'recurso_humano_seguimiento',
+  'recurso_humano_reporte_salida',
+  'recurso_humano_indicadores_ausentismo'
 ];
 
 const ALL_MODULE_PERMISSION_KEYS = [

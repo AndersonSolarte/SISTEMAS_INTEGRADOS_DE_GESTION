@@ -211,6 +211,15 @@ const getOfficialAuthorityEmailForActor = (actor = {}) => {
 const getInitialApprovalRecipientEmail = (solicitud = {}) =>
   getOfficialAuthorityEmailForActor(solicitud.jefe_snapshot || {}) || solicitud.jefe_snapshot?.email || '';
 
+const getJefeCopyRecipientEmail = (solicitud = {}) => {
+  const jefe = solicitud.jefe_snapshot || {};
+  const jefeName = normalizeForMatch(jefe.nombre || jefe.name || jefe.label);
+  if (jefeName.includes('sandra lucia bolanos delgado') || sameExactEmail(jefe.email, 'sbolanos@unicesmag.edu.co')) {
+    return ACADEMIC_VICERRECTORIA_EMAIL;
+  }
+  return jefe.email || '';
+};
+
 const tokenizeName = (value) => normalizeForMatch(value)
   .split(/\s+/)
   .map((token) => token.trim())
@@ -903,9 +912,11 @@ const appendTrace = (solicitud, event, actor = null, detail = {}) => ([
   }
 ]);
 
-const SEGUIMIENTO_REPORTE_MODULE_KEYS = ['recurso_humano_seguimiento', 'seguimiento_reportes_rrhh'];
+const SEGUIMIENTO_REPORTE_ADMIN_KEYS = ['seguimiento_reportes_rrhh'];
+const REPORTE_SALIDA_VIEW_KEYS = [...SEGUIMIENTO_REPORTE_ADMIN_KEYS, 'recurso_humano_reporte_salida'];
+const AUSENTISMO_VIEW_KEYS = [...SEGUIMIENTO_REPORTE_ADMIN_KEYS, 'recurso_humano_indicadores_ausentismo'];
 
-const userHasSeguimientoReportePermission = (user = {}) => {
+const userHasAnyRecursoHumanoPermission = (user = {}, keys = []) => {
   const permissionLists = [
     user.menuPermissions,
     user.modulePermissions,
@@ -915,22 +926,44 @@ const userHasSeguimientoReportePermission = (user = {}) => {
 
   return permissionLists
     .flat()
-    .some((key) => SEGUIMIENTO_REPORTE_MODULE_KEYS.includes(String(key || '').trim()));
+    .some((key) => keys.includes(String(key || '').trim()));
+};
+
+const userHasSeguimientoReportePermission = (user = {}) => {
+  return userHasAnyRecursoHumanoPermission(user, SEGUIMIENTO_REPORTE_ADMIN_KEYS);
+};
+
+const userHasModulePermissionInDb = async (user, keys = []) => {
+  if (!user || !UserModulePermission || !Array.isArray(keys) || keys.length === 0) return false;
+  const count = await UserModulePermission.count({
+    where: {
+      user_id: user.id,
+      can_view: true,
+      module_key: { [Op.in]: keys }
+    }
+  });
+  return count > 0;
 };
 
 const canManageSeguimientoReportes = async (user) => {
   if (!user) return false;
   if (SEGUIMIENTO_REPORTE_ROLES.includes(String(user.role || ''))) return true;
   if (userHasSeguimientoReportePermission(user)) return true;
-  if (!UserModulePermission) return false;
-  const count = await UserModulePermission.count({
-    where: {
-      user_id: user.id,
-      can_view: true,
-      module_key: { [Op.in]: SEGUIMIENTO_REPORTE_MODULE_KEYS }
-    }
-  });
-  return count > 0;
+  return userHasModulePermissionInDb(user, SEGUIMIENTO_REPORTE_ADMIN_KEYS);
+};
+
+const canViewReporteSalidaModule = async (user) => {
+  if (!user) return false;
+  if (SEGUIMIENTO_REPORTE_ROLES.includes(String(user.role || ''))) return true;
+  if (userHasAnyRecursoHumanoPermission(user, REPORTE_SALIDA_VIEW_KEYS)) return true;
+  return userHasModulePermissionInDb(user, REPORTE_SALIDA_VIEW_KEYS);
+};
+
+const canViewAusentismoModule = async (user) => {
+  if (!user) return false;
+  if (SEGUIMIENTO_REPORTE_ROLES.includes(String(user.role || ''))) return true;
+  if (userHasAnyRecursoHumanoPermission(user, AUSENTISMO_VIEW_KEYS)) return true;
+  return userHasModulePermissionInDb(user, AUSENTISMO_VIEW_KEYS);
 };
 
 const pendingReposicionWhere = () => ({
@@ -957,11 +990,15 @@ const bossPendingReposicionWhere = (user) => ({
 });
 
 const resolveSeguimientoAccess = async (user) => {
-  const canManageAll = await canManageSeguimientoReportes(user);
-  const [ownPending, bossPending] = await Promise.all([
+  const [canManageAll, canViewReporteSalidaByPermission, canViewEstadisticasByPermission, ownPending, bossPending] = await Promise.all([
+    canManageSeguimientoReportes(user),
+    canViewReporteSalidaModule(user),
+    canViewAusentismoModule(user),
     ReporteSalidaSolicitud.count({ where: ownPendingReposicionWhere(user) }),
     ReporteSalidaSolicitud.count({ where: bossPendingReposicionWhere(user) })
   ]);
+  const canViewReporteSalida = canManageAll || canViewReporteSalidaByPermission || ownPending > 0 || bossPending > 0;
+  const canViewEstadisticas = canManageAll || canViewEstadisticasByPermission;
 
   let mode = 'sin_pendientes';
   if (canManageAll) mode = 'gestion_humana';
@@ -969,7 +1006,11 @@ const resolveSeguimientoAccess = async (user) => {
   else if (ownPending > 0) mode = 'colaborador';
 
   return {
-    canView: canManageAll || ownPending > 0 || bossPending > 0,
+    canView: canViewReporteSalida || canViewEstadisticas,
+    canViewReporteSalida,
+    canViewEstadisticas,
+    canViewReporteSalidaByPermission,
+    canViewEstadisticasByPermission,
     canManageAll,
     canValidateReposicion: canManageAll,
     canManageTeamReposicion: bossPending > 0,
@@ -1528,6 +1569,9 @@ const getInitialApprovalSummary = (solicitud = {}) => {
   };
 };
 
+const hasInitialApprovalRecord = (solicitud = {}) =>
+  Boolean(solicitud.jefe_aprobado_at || getInitialApprovalTrace(solicitud));
+
 const sendDependenciaRadicacionInfoEmail = async (solicitud, token, attachments, headers = {}) => {
   const solicitante = solicitud.solicitante_snapshot || {};
   const laboral = solicitud.datos_formulario?.laboral || {};
@@ -1788,7 +1832,7 @@ const sendFinalEmails = async (solicitud, pdfAttachment, supportAttachment) => {
     }
   });
   
-  const jefeEmail = solicitud.jefe_snapshot?.email || '';
+  const jefeEmail = getJefeCopyRecipientEmail(solicitud);
   if (jefeEmail && !copyRecipients.some((recipient) => sameExactEmail(recipient.email, jefeEmail))) {
     copyRecipients.push({ type: 'jefe', email: jefeEmail });
   }
@@ -1939,7 +1983,7 @@ const sendJefeApprovalEmail = async (solicitud, token, attachments, headers = {}
     }
   });
   
-  const jefeEmail = solicitud.jefe_snapshot?.email || '';
+  const jefeEmail = getJefeCopyRecipientEmail(solicitud);
   if (jefeEmail && !copyRecipients.some((email) => sameExactEmail(email, jefeEmail))) {
     copyRecipients.push(jefeEmail);
   }
@@ -3440,6 +3484,17 @@ const aprobarDesdeCorreo = async (req, res) => {
           nextStep: 'Por seguridad, la aprobacion no fue registrada.'
         });
       }
+      if (!hasInitialApprovalRecord(solicitud)) {
+        return renderApprovalPage({
+          res,
+          status: 409,
+          tone: 'warning',
+          title: 'Visto bueno inicial pendiente',
+          message: 'La solicitud no registra visto bueno previo del jefe inmediato o de la dependencia.',
+          solicitud,
+          nextStep: 'Debe completarse la primera aprobacion del flujo antes de continuar con Gestion del Talento Humano.'
+        });
+      }
       const isMisionalNacionalOInternacional = requiresSstApproval(solicitud);
 
       if (isMisionalNacionalOInternacional) {
@@ -3690,7 +3745,7 @@ const getSeguimientoPersonal = async (req, res) => {
     }
 
     let where = {};
-    if (access.canManageAll) {
+    if (access.canManageAll || access.canViewReporteSalidaByPermission || access.canViewEstadisticasByPermission) {
       if (estado) where.estado = estado;
     } else {
       const scopedConditions = [];
@@ -3921,6 +3976,12 @@ const editarSolicitudAdmin = async (req, res) => {
     ) {
       if (estadoSolicitado === 'no_aprobada' && !observacionAdmin) {
         return res.status(400).json({ success: false, message: 'Debe ingresar la justificacion del rechazo.' });
+      }
+      if (estadoSolicitado === 'finalizada' && !hasInitialApprovalRecord(solicitud)) {
+        return res.status(400).json({
+          success: false,
+          message: 'No se puede aprobar desde Gestion del Talento Humano porque la solicitud no registra visto bueno previo del jefe inmediato o dependencia.'
+        });
       }
 
       const now = new Date();

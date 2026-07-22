@@ -297,7 +297,9 @@ function GestionUsuarios() {
       options: [
         { key: 'recurso_humano_profesores', label: 'Profesores' },
         { key: 'recurso_humano_administrativos', label: 'Administrativos y Directivos' },
-        { key: 'recurso_humano_seguimiento', label: 'Seguimiento a reportes (RRHH)' }
+        { key: 'recurso_humano_seguimiento', label: 'Seguimiento completo a reportes (RRHH)' },
+        { key: 'recurso_humano_reporte_salida', label: 'Reporte de salida' },
+        { key: 'recurso_humano_indicadores_ausentismo', label: 'Indicadores de ausentismo' }
       ]
     }
   ];
@@ -1044,12 +1046,22 @@ function GestionUsuarios() {
       if (group === 'allowedRecursoHumanoDashboards') {
         const nextMenu = Array.isArray(prev.menuPermissions) ? [...prev.menuPermissions] : [];
         const nextModules = Array.isArray(prev.allowedModules) ? [...prev.allowedModules] : [];
-        if (next.length > 0) {
+        let nextRecursoHumanoDashboards = [...next];
+        const seguimientoKeys = [
+          'recurso_humano_reporte_salida',
+          'recurso_humano_indicadores_ausentismo'
+        ];
+        if (key === 'recurso_humano_seguimiento') {
+          if (isSelected) {
+            nextRecursoHumanoDashboards = nextRecursoHumanoDashboards.filter((itemKey) => !seguimientoKeys.includes(itemKey));
+          }
+        }
+        if (nextRecursoHumanoDashboards.length > 0) {
           if (!nextMenu.includes('gestion_informacion')) nextMenu.push('gestion_informacion');
           if (!nextModules.includes('estadistica_institucional')) nextModules.push('estadistica_institucional');
           if (!nextModules.includes('recurso_humano')) nextModules.push('recurso_humano');
         }
-        return { ...prev, allowedRecursoHumanoDashboards: next, allowedModules: nextModules, menuPermissions: nextMenu };
+        return { ...prev, allowedRecursoHumanoDashboards: nextRecursoHumanoDashboards, allowedModules: nextModules, menuPermissions: nextMenu };
       }
 
       if (group === 'allowedInfraestructuraFisicaDashboards') {
@@ -2642,29 +2654,76 @@ function GestionUsuarios() {
                         Activa los sub-módulos para permitir el acceso a Profesores, Administrativos o Seguimiento.
                       </Typography>
                       <Stack spacing={1.5}>
-                        {RECURSO_HUMANO_PERMISSION_GROUPS.map((group) => (
-                          <Paper key={group.title} variant="outlined" sx={{ p: 1.4, borderRadius: 2, bgcolor: '#f8fbff' }}>
-                            <Typography sx={{ fontWeight: 800, color: '#1e3a8a', mb: 0.8 }}>{group.title}</Typography>
-                            <FormGroup>
-                              <Grid container spacing={0.5}>
-                                {group.options.map((item) => (
-                                  <Grid item xs={12} sm={6} md={4} key={`rh-${item.key}`}>
-                                    <FormControlLabel
-                                      control={(
-                                        <Checkbox
-                                          checked={modulePermissionsForm.allowedRecursoHumanoDashboards?.includes(item.key) || false}
-                                          onChange={() => handleTogglePermission('allowedRecursoHumanoDashboards', item.key)}
-                                          size="small"
-                                        />
-                                      )}
-                                      label={item.label}
-                                    />
-                                  </Grid>
-                                ))}
-                              </Grid>
-                            </FormGroup>
-                          </Paper>
-                        ))}
+                        {RECURSO_HUMANO_PERMISSION_GROUPS.map((group) => {
+                          const selectedRecursoHumano = modulePermissionsForm.allowedRecursoHumanoDashboards || [];
+                          const seguimientoChildKeys = ['recurso_humano_reporte_salida', 'recurso_humano_indicadores_ausentismo'];
+                          const mainOptions = group.options.filter((item) => !seguimientoChildKeys.includes(item.key));
+                          const seguimientoOptions = group.options.filter((item) => seguimientoChildKeys.includes(item.key));
+                          const showSeguimientoOptions = selectedRecursoHumano.includes('recurso_humano_seguimiento') || seguimientoOptions.some((item) => selectedRecursoHumano.includes(item.key));
+
+                          return (
+                            <Paper key={group.title} variant="outlined" sx={{ p: 1.4, borderRadius: 2, bgcolor: '#fff' }}>
+                              <Typography sx={{ fontWeight: 800, color: '#1e3a8a', mb: 0.8 }}>{group.title}</Typography>
+                              <FormGroup>
+                                <Grid container spacing={0.5}>
+                                  {mainOptions.map((item) => (
+                                    <Grid item xs={12} sm={6} md={4} key={`rh-${item.key}`}>
+                                      <FormControlLabel
+                                        control={(
+                                          <Checkbox
+                                            checked={modulePermissionsForm.allowedRecursoHumanoDashboards?.includes(item.key) || false}
+                                            onChange={() => handleTogglePermission('allowedRecursoHumanoDashboards', item.key)}
+                                            size="small"
+                                          />
+                                        )}
+                                        label={item.label}
+                                      />
+                                    </Grid>
+                                  ))}
+
+                                  {showSeguimientoOptions && (
+                                    <Grid
+                                      item
+                                      xs={12}
+                                      sx={{ flexBasis: '100% !important', maxWidth: '100% !important', width: '100%' }}
+                                    >
+                                      <Typography
+                                        variant="caption"
+                                        sx={{
+                                          display: 'block',
+                                          mt: 1.4,
+                                          mb: 0.5,
+                                          fontWeight: 800,
+                                          color: '#3b5f9f',
+                                          textTransform: 'uppercase',
+                                          letterSpacing: 0.3
+                                        }}
+                                      >
+                                        Submodulos de seguimiento
+                                      </Typography>
+                                      <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: { xs: 1, sm: 3 }, width: '100%' }}>
+                                        {seguimientoOptions.map((item) => (
+                                          <FormControlLabel
+                                            key={`rh-${item.key}`}
+                                            control={(
+                                              <Checkbox
+                                                checked={modulePermissionsForm.allowedRecursoHumanoDashboards?.includes(item.key) || false}
+                                                onChange={() => handleTogglePermission('allowedRecursoHumanoDashboards', item.key)}
+                                                size="small"
+                                              />
+                                            )}
+                                            label={item.label}
+                                            sx={{ m: 0 }}
+                                          />
+                                        ))}
+                                      </Box>
+                                    </Grid>
+                                  )}
+                                </Grid>
+                              </FormGroup>
+                            </Paper>
+                          );
+                        })}
                       </Stack>
                   </Paper>
                   </>

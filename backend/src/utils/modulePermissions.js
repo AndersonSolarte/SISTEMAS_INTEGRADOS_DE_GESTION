@@ -116,7 +116,9 @@ const INTERNACIONALIZACION_DASHBOARD_KEYS = new Set([
 const RECURSO_HUMANO_DASHBOARD_KEYS = new Set([
   'recurso_humano_profesores',
   'recurso_humano_administrativos',
-  'recurso_humano_seguimiento'
+  'recurso_humano_seguimiento',
+  'recurso_humano_reporte_salida',
+  'recurso_humano_indicadores_ausentismo'
 ]);
 
 const getDefaultPermissionsByRole = (role) => {

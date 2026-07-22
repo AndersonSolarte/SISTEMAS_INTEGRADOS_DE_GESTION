@@ -53,6 +53,7 @@ function RecursoHumanoLandingPage({ onBack }) {
   const { user, isAdmin } = useAuth();
   
   const hasAccess = (key) => isAdmin() || (user?.allowedRecursoHumanoDashboards && user.allowedRecursoHumanoDashboards.includes(key));
+  const hasAnyAccess = (keys) => keys.some((key) => hasAccess(key));
 
   useEffect(() => {
     let active = true;
@@ -91,7 +92,7 @@ function RecursoHumanoLandingPage({ onBack }) {
     visibleCards.push(SUB_CARDS[1]); // Administrativos
   }
   
-  if (hasAccess('recurso_humano_seguimiento')) {
+  if (showSeguimientoCard || hasAnyAccess(['recurso_humano_seguimiento', 'seguimiento_reportes_rrhh', 'recurso_humano_reporte_salida', 'recurso_humano_indicadores_ausentismo'])) {
     visibleCards.push({
       key: 'seguimiento_reportes',
       label: 'Seguimiento a reportes',

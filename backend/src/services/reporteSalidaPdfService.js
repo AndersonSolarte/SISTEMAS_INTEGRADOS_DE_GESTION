@@ -39,15 +39,57 @@ const stripAccents = (value) =>
     .replace(/__enie_min__/g, 'ñ')
     .replace(/__enie_may__/g, 'Ñ');
 
-const getInitialApprovalTrace = (solicitud = {}) => {
-  const traces = Array.isArray(solicitud.trazabilidad) ? solicitud.trazabilidad : [];
-  return [...traces].reverse().find((trace) => [
+const getTraceList = (solicitud = {}) => {
+  const raw = solicitud.trazabilidad;
+  if (Array.isArray(raw)) return raw;
+  if (typeof raw === 'string') {
+    try {
+      const parsed = JSON.parse(raw);
+      return Array.isArray(parsed) ? parsed : [];
+    } catch (_) {
+      return [];
+    }
+  }
+  return [];
+};
+
+const getTraceByEvents = (solicitud = {}, events = []) => {
+  const traces = getTraceList(solicitud);
+  return [...traces].reverse().find((trace) => events.includes(trace.event)) || null;
+};
+
+const getInitialApprovalTrace = (solicitud = {}) =>
+  getTraceByEvents(solicitud, [
     'aprobada_dependencia',
     'visto_bueno_dependencia',
     'aprobada_jefe',
     'visto_bueno_jefe'
-  ].includes(trace.event)) || null;
+  ]);
+
+const getDateCandidate = (solicitud = {}, fields = []) => {
+  for (const field of fields) {
+    const value = solicitud[field];
+    if (!value) continue;
+    const date = new Date(value);
+    if (!Number.isNaN(date.getTime())) return value;
+  }
+  return null;
 };
+
+const getTraceDate = (solicitud = {}, events = []) => {
+  const trace = getTraceByEvents(solicitud, events);
+  if (!trace?.at) return null;
+  const date = new Date(trace.at);
+  return Number.isNaN(date.getTime()) ? null : trace.at;
+};
+
+const getStageDate = (solicitud = {}, fields = [], events = []) =>
+  getTraceDate(solicitud, events) || getDateCandidate(solicitud, fields);
+
+const getSolicitudCreatedAt = (solicitud = {}) =>
+  getTraceDate(solicitud, ['radicada', 'radicada_grupal'])
+  || getDateCandidate(solicitud, ['createdAt', 'created_at', 'fecha_radicacion', 'radicado_at'])
+  || new Date();
 
 const getInitialApprovalPdfInfo = (solicitud = {}) => {
   const trace = getInitialApprovalTrace(solicitud);
@@ -59,7 +101,9 @@ const getInitialApprovalPdfInfo = (solicitud = {}) => {
     cargo: viaDependencia ? (actor.cargo || 'Dependencia') : (jefe.cargo || actor.cargo || ''),
     email: viaDependencia ? (actor.email || '') : '',
     viaDependencia,
-    header: viaDependencia ? 'Autorizacion por Dependencia' : 'Autorizacion del Jefe inmediato'
+    header: viaDependencia ? 'Autorizacion por Dependencia' : 'Autorizacion del Jefe inmediato',
+    signed: Boolean(trace),
+    dateValue: trace?.at || null
   };
 };
 
@@ -519,7 +563,8 @@ const buildOficioPdfDefinition = (solicitud, ghDirectorNombre, ghDirectorCargo) 
   const laboral = data.laboral || {};
 
   // Formatter for date: e.g. "San Juan de Pasto, 15 de julio de 2026"
-  const createdDate = new Date(solicitud.createdAt || new Date());
+  const createdAtValue = getSolicitudCreatedAt(solicitud);
+  const createdDate = new Date(createdAtValue);
   const meses = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre'];
   const createdDateParts = new Intl.DateTimeFormat('es-CO', {
     timeZone: 'America/Bogota',
@@ -532,19 +577,25 @@ const buildOficioPdfDefinition = (solicitud, ghDirectorNombre, ghDirectorCargo) 
 
   // Signature variables
   const txId = data.tx_id || String(solicitud.consecutivo || solicitud.id);
-  const reqDate = formatDateTime(solicitud.createdAt || new Date());
-  const jefeDate = solicitud.jefe_aprobado_at ? formatDateTime(solicitud.jefe_aprobado_at) : 'Pendiente';
   const initialApprovalPdf = getInitialApprovalPdfInfo(solicitud);
-  const vicerrectoriaDate = solicitud.vicerrectoria_aprobado_at ? formatDateTime(solicitud.vicerrectoria_aprobado_at) : 'Pendiente';
-  const rectoriaDate = solicitud.rectoria_aprobado_at ? formatDateTime(solicitud.rectoria_aprobado_at) : 'Pendiente';
-  const ghDate = solicitud.gestion_humana_aprobado_at ? formatDateTime(solicitud.gestion_humana_aprobado_at) : 'Pendiente';
+  const reqDate = formatDateTime(createdAtValue);
+  const initialApprovalDateValue = initialApprovalPdf.dateValue
+    || getDateCandidate(solicitud, ['jefe_aprobado_at']);
+  const hasInitialApproval = Boolean(initialApprovalDateValue || solicitud.jefe_aprobado_at);
+  const jefeDate = initialApprovalDateValue ? formatDateTime(initialApprovalDateValue) : 'Pendiente';
+  const vicerrectoriaDateValue = getStageDate(solicitud, ['vicerrectoria_aprobado_at'], ['aprobada_vicerrectoria_academica']);
+  const rectoriaDateValue = getStageDate(solicitud, ['rectoria_aprobado_at'], ['aprobada_rectoria']);
+  const ghDateValue = getStageDate(solicitud, ['gestion_humana_aprobado_at'], ['aprobada_gestion_humana']);
+  const vicerrectoriaDate = vicerrectoriaDateValue ? formatDateTime(vicerrectoriaDateValue) : 'Pendiente';
+  const rectoriaDate = rectoriaDateValue ? formatDateTime(rectoriaDateValue) : 'Pendiente';
+  const ghDate = ghDateValue ? formatDateTime(ghDateValue) : 'Pendiente';
 
   const isPropiasCargoSubtype = ['ponencia', 'visita_ies', 'capacitacion', 'proyecto_investigacion', 'asistente_congreso', 'practica_academica', 'torneo_deportivo', 'salida_campus', 'otra'].includes(salida.tipo) || String(salida.tipo).startsWith('otra:');
   const isPropiasCargo = salida.categoria === 'propias_cargo' && salida.tipo !== 'salida_campus';
   const alcance = isPropiasCargo ? (salida.alcance || 'Local') : 'Local';
   const requiresSst = isPropiasCargoSubtype && ['Nacional', 'Internacional'].includes(alcance);
-  const hasVicerrectoriaApproval = Boolean(solicitud.vicerrectoria_aprobado_at);
-  const hasRectoriaApproval = Boolean(solicitud.rectoria_aprobado_at);
+  const hasVicerrectoriaApproval = Boolean(vicerrectoriaDateValue);
+  const hasRectoriaApproval = Boolean(rectoriaDateValue);
   const vicerrectoriaName = laboral.vicerrectoria || solicitante.vicerrectoria || 'Vicerrectoria';
   const normalizedVicerrectoria = stripAccents(vicerrectoriaName).toLowerCase();
   const isRectoriaAuthority = normalizedVicerrectoria.includes('rectoria') && !normalizedVicerrectoria.includes('vicerrectoria') && !normalizedVicerrectoria.includes('vicerectoria');
@@ -553,9 +604,7 @@ const buildOficioPdfDefinition = (solicitud, ghDirectorNombre, ghDirectorCargo) 
   const requiresVicerrectoriaSignature = (isOneOrTwoDaysOficio || isThreeOrMoreDaysOficio) && !isRectoriaAuthority;
   const requiresRectoriaSignature = hasRectoriaApproval || (isRectoriaAuthority && !isThreeOrMoreDaysOficio);
 
-  const sstEvent = Array.isArray(solicitud.trazabilidad)
-    ? solicitud.trazabilidad.find(t => t.event === 'aprobada_sst')
-    : null;
+  const sstEvent = getTraceByEvents(solicitud, ['aprobada_sst']);
   const sstApprovedAt = sstEvent ? new Date(sstEvent.at) : null;
   const sstDate = sstApprovedAt ? formatDateTime(sstApprovedAt) : 'Pendiente';
   const sstActorName = sstApprovedAt ? SST_RESPONSABLE_NOMBRE : 'Seguridad y Salud en el Trabajo';
@@ -591,12 +640,12 @@ const buildOficioPdfDefinition = (solicitud, ghDirectorNombre, ghDirectorCargo) 
       },
       {
         text: [
-          { text: solicitud.jefe_aprobado_at ? 'Firmado electrónicamente por:\n' : '\n', bold: true, fontSize: 8 },
-          { text: `${solicitud.jefe_aprobado_at ? initialApprovalPdf.name : 'Pendiente'}\n`, fontSize: 9 },
+          { text: hasInitialApproval ? 'Firmado electrónicamente por:\n' : '\n', bold: true, fontSize: 8 },
+          { text: `${hasInitialApproval ? initialApprovalPdf.name : 'Pendiente'}\n`, fontSize: 9 },
           { text: `Cargo: ${initialApprovalPdf.cargo || ''}\n`, fontSize: 7.5 },
           ...(initialApprovalPdf.viaDependencia && initialApprovalPdf.email ? [{ text: `Correo: ${initialApprovalPdf.email}\n`, fontSize: 7.5 }] : []),
           { text: `Fecha y hora: ${jefeDate}\n`, fontSize: 7.5 },
-          { text: solicitud.jefe_aprobado_at ? `ID Transacción: ${txId}\n` : '\n', fontSize: 7, color: 'gray' }
+          { text: hasInitialApproval ? `ID Transacción: ${txId}\n` : '\n', fontSize: 7, color: 'gray' }
         ],
         margin: [5, 5, 5, 5]
       }
@@ -639,11 +688,11 @@ const buildOficioPdfDefinition = (solicitud, ghDirectorNombre, ghDirectorCargo) 
     signatureTableBody.push([
       {
         text: [
-          { text: solicitud.gestion_humana_aprobado_at ? 'Firmado electrónicamente por:\n' : '\n', bold: true, fontSize: 8 },
-          { text: `${solicitud.gestion_humana_aprobado_at ? ghDirectorNombre : 'Pendiente'}\n`, fontSize: 9 },
+          { text: ghDateValue ? 'Firmado electrónicamente por:\n' : '\n', bold: true, fontSize: 8 },
+          { text: `${ghDateValue ? ghDirectorNombre : 'Pendiente'}\n`, fontSize: 9 },
           { text: `Cargo: ${ghDirectorCargo}\n`, fontSize: 7.5 },
           { text: `Fecha y hora: ${ghDate}\n`, fontSize: 7.5 },
-          { text: solicitud.gestion_humana_aprobado_at ? `ID Transacción: ${txId}\n` : '\n', fontSize: 7, color: 'gray' }
+          { text: ghDateValue ? `ID Transacción: ${txId}\n` : '\n', fontSize: 7, color: 'gray' }
         ],
         margin: [5, 5, 5, 5]
       },
@@ -694,11 +743,11 @@ const buildOficioPdfDefinition = (solicitud, ghDirectorNombre, ghDirectorCargo) 
     signatureTableBody.push([
       {
         text: [
-          { text: solicitud.gestion_humana_aprobado_at ? 'Firmado electrónicamente por:\n' : '\n', bold: true, fontSize: 8 },
-          { text: `${solicitud.gestion_humana_aprobado_at ? ghDirectorNombre : 'Pendiente'}\n`, fontSize: 9 },
+          { text: ghDateValue ? 'Firmado electrónicamente por:\n' : '\n', bold: true, fontSize: 8 },
+          { text: `${ghDateValue ? ghDirectorNombre : 'Pendiente'}\n`, fontSize: 9 },
           { text: `Cargo: ${ghDirectorCargo}\n`, fontSize: 7.5 },
           { text: `Fecha y hora: ${ghDate}\n`, fontSize: 7.5 },
-          { text: solicitud.gestion_humana_aprobado_at ? `ID Transacción: ${txId}\n` : '\n', fontSize: 7, color: 'gray' }
+          { text: ghDateValue ? `ID Transacción: ${txId}\n` : '\n', fontSize: 7, color: 'gray' }
         ],
         margin: [5, 5, 5, 5],
         alignment: 'center',
@@ -738,10 +787,10 @@ const buildOficioPdfDefinition = (solicitud, ghDirectorNombre, ghDirectorCargo) 
         margin: [4, 4, 4, 4]
       },
       buildOficioSignatureCell({
-        signed: Boolean(solicitud.jefe_aprobado_at),
-        name: jefe.nombre || 'Jefe inmediato',
-        cargo: jefe.cargo || 'Jefe inmediato',
-        date: jefeDate
+          signed: hasInitialApproval,
+          name: initialApprovalPdf.name || jefe.nombre || 'Jefe inmediato',
+          cargo: initialApprovalPdf.cargo || jefe.cargo || 'Jefe inmediato',
+          date: jefeDate
       })
     ]
   );
@@ -811,7 +860,7 @@ const buildOficioPdfDefinition = (solicitud, ghDirectorNombre, ghDirectorCargo) 
       ],
       [
         buildOficioSignatureCell({
-          signed: Boolean(solicitud.gestion_humana_aprobado_at),
+          signed: Boolean(ghDateValue),
           name: ghDirectorNombre,
           cargo: ghDirectorCargo,
           date: ghDate
@@ -832,7 +881,7 @@ const buildOficioPdfDefinition = (solicitud, ghDirectorNombre, ghDirectorCargo) 
       ],
       [
         buildOficioSignatureCell({
-          signed: Boolean(solicitud.gestion_humana_aprobado_at),
+          signed: Boolean(ghDateValue),
           name: ghDirectorNombre,
           cargo: ghDirectorCargo,
           date: ghDate,
@@ -1307,17 +1356,19 @@ const buildPdfBuffer = async (solicitud) => {
 
       ghDirectorCargo = solicitud.jefe_snapshot?.director_gh_cargo || ghDirectorCargo;
       const txId = solicitud.datos_formulario?.tx_id || String(solicitud.consecutivo || solicitud.id);
-      const reqDate = formatDateTime(solicitud.createdAt || new Date());
-      const jefeDate = solicitud.jefe_aprobado_at ? formatDateTime(solicitud.jefe_aprobado_at) : 'Pendiente';
       const initialApprovalPdf = getInitialApprovalPdfInfo(solicitud);
-      const ghDate = solicitud.gestion_humana_aprobado_at ? formatDateTime(solicitud.gestion_humana_aprobado_at) : 'Pendiente';
+      const reqDate = formatDateTime(getSolicitudCreatedAt(solicitud));
+      const initialApprovalDateValue = initialApprovalPdf.dateValue
+        || getDateCandidate(solicitud, ['jefe_aprobado_at']);
+      const hasInitialApproval = Boolean(initialApprovalDateValue || solicitud.jefe_aprobado_at);
+      const jefeDate = initialApprovalDateValue ? formatDateTime(initialApprovalDateValue) : 'Pendiente';
+      const ghDateValue = getStageDate(solicitud, ['gestion_humana_aprobado_at'], ['aprobada_gestion_humana']);
+      const ghDate = ghDateValue ? formatDateTime(ghDateValue) : 'Pendiente';
 
       const isPropiasCargoSubtype = ['ponencia', 'visita_ies', 'capacitacion', 'proyecto_investigacion', 'asistente_congreso', 'practica_academica', 'torneo_deportivo', 'salida_campus', 'otra'].includes(salida.tipo) || String(salida.tipo).startsWith('otra:');
       const requiresSst = isPropiasCargoSubtype && ['Nacional', 'Internacional'].includes(alcance);
 
-      const sstEvent = Array.isArray(solicitud.trazabilidad)
-        ? solicitud.trazabilidad.find(t => t.event === 'aprobada_sst')
-        : null;
+      const sstEvent = getTraceByEvents(solicitud, ['aprobada_sst']);
       const sstApprovedAt = sstEvent ? new Date(sstEvent.at) : null;
       const sstDate = sstApprovedAt ? formatDateTime(sstApprovedAt) : 'Pendiente';
       const sstActorName = sstApprovedAt ? SST_RESPONSABLE_NOMBRE : 'Seguridad y Salud en el Trabajo';
@@ -1340,12 +1391,12 @@ const buildPdfBuffer = async (solicitud) => {
           },
           {
             text: [
-              { text: solicitud.jefe_aprobado_at ? 'Firmado electrónicamente por:\n' : '\n', bold: true, fontSize: 9 },
-              { text: `${solicitud.jefe_aprobado_at ? initialApprovalPdf.name : 'Pendiente'}\n`, fontSize: 10 },
+              { text: hasInitialApproval ? 'Firmado electrónicamente por:\n' : '\n', bold: true, fontSize: 9 },
+              { text: `${hasInitialApproval ? initialApprovalPdf.name : 'Pendiente'}\n`, fontSize: 10 },
               { text: `Cargo: ${initialApprovalPdf.cargo || ''}\n`, fontSize: 8 },
               ...(initialApprovalPdf.viaDependencia && initialApprovalPdf.email ? [{ text: `Correo: ${initialApprovalPdf.email}\n`, fontSize: 8 }] : []),
               { text: `Fecha y hora: ${jefeDate}\n`, fontSize: 8 },
-              { text: solicitud.jefe_aprobado_at ? `ID Transacción: ${txId}\n` : '\n', fontSize: 7, color: 'gray' }
+              { text: hasInitialApproval ? `ID Transacción: ${txId}\n` : '\n', fontSize: 7, color: 'gray' }
             ],
             margin: [5, 5, 5, 5]
           }
@@ -1360,11 +1411,11 @@ const buildPdfBuffer = async (solicitud) => {
         signatureTableBody.push([
           {
             text: [
-              { text: solicitud.gestion_humana_aprobado_at ? 'Firmado electrónicamente por:\n' : '\n', bold: true, fontSize: 9 },
-              { text: `${solicitud.gestion_humana_aprobado_at ? ghDirectorNombre : 'Pendiente'}\n`, fontSize: 10 },
+              { text: ghDateValue ? 'Firmado electrónicamente por:\n' : '\n', bold: true, fontSize: 9 },
+              { text: `${ghDateValue ? ghDirectorNombre : 'Pendiente'}\n`, fontSize: 10 },
               { text: `Cargo: ${ghDirectorCargo}\n`, fontSize: 8 },
               { text: `Fecha y hora: ${ghDate}\n`, fontSize: 8 },
-              { text: solicitud.gestion_humana_aprobado_at ? `ID Transacción: ${txId}\n` : '\n', fontSize: 7, color: 'gray' }
+              { text: ghDateValue ? `ID Transacción: ${txId}\n` : '\n', fontSize: 7, color: 'gray' }
             ],
             margin: [5, 5, 5, 5]
           },
@@ -1387,11 +1438,11 @@ const buildPdfBuffer = async (solicitud) => {
         signatureTableBody.push([
           {
             text: [
-              { text: solicitud.gestion_humana_aprobado_at ? 'Firmado electrónicamente por:\n' : '\n', bold: true, fontSize: 9 },
-              { text: `${solicitud.gestion_humana_aprobado_at ? ghDirectorNombre : 'Pendiente'}\n`, fontSize: 10 },
+              { text: ghDateValue ? 'Firmado electrónicamente por:\n' : '\n', bold: true, fontSize: 9 },
+              { text: `${ghDateValue ? ghDirectorNombre : 'Pendiente'}\n`, fontSize: 10 },
               { text: `Cargo: ${ghDirectorCargo}\n`, fontSize: 8 },
               { text: `Fecha y hora: ${ghDate}\n`, fontSize: 8 },
-              { text: solicitud.gestion_humana_aprobado_at ? `ID Transacción: ${txId}\n` : '\n', fontSize: 7, color: 'gray' }
+              { text: ghDateValue ? `ID Transacción: ${txId}\n` : '\n', fontSize: 7, color: 'gray' }
             ],
             margin: [5, 5, 5, 5],
             alignment: 'center',

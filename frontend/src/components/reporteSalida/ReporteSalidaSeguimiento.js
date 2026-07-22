@@ -102,6 +102,8 @@ const formatDateTime = (value) => {
   return date.toLocaleString('es-CO', { dateStyle: 'short', timeStyle: 'short' });
 };
 
+const getCreatedAtValue = (row) => row?.created_at || row?.createdAt || row?.fecha_radicacion || null;
+
 const getUltimaGestionDate = (row) => {
   if (!row) return null;
   const candidates = [];
@@ -193,18 +195,26 @@ const REPORT_MODULES = [
   {
     key: 'reporte_salida',
     label: 'Reporte de salida',
-    description: 'Radicaciones FR-002, aprobaciones y reposicion de tiempo.',
+    description: 'Consulta de radicaciones, aprobaciones, reposiciones y trazabilidad del permiso.',
     icon: AssignmentTurnedInIcon,
-    available: true
+    buttonLabel: 'Ingresar a reportes',
+    color: '#2563eb',
+    gradient: 'linear-gradient(145deg, #2563eb, #1d4ed8 55%, #1e40af)'
   },
   {
     key: 'estadisticas',
     label: 'Indicadores de Ausentismo',
     description: 'Análisis detallado, frecuencia y métricas de control.',
     icon: BarChartIcon,
-    available: true
+    buttonLabel: 'Ingresar a indicadores',
+    color: '#0f766e',
+    gradient: 'linear-gradient(145deg, #0f766e, #0d9488 55%, #115e59)'
   }
 ];
+
+const SEGUIMIENTO_ADMIN_KEYS = ['seguimiento_reportes_rrhh'];
+const REPORTE_SALIDA_KEYS = [...SEGUIMIENTO_ADMIN_KEYS, 'recurso_humano_reporte_salida'];
+const AUSENTISMO_KEYS = [...SEGUIMIENTO_ADMIN_KEYS, 'recurso_humano_indicadores_ausentismo'];
 
 const parseLogLine = (line) => {
   let timestamp = '';
@@ -348,11 +358,27 @@ function ReporteSalidaSeguimiento({ initialAccess = null, onBack }) {
   const [page, setPage] = useState(0);
   const [rowsPerPage, setRowsPerPage] = useState(5);
   const [timeRange, setTimeRange] = useState('todos');
+  const [estadisticasVisibleRows, setEstadisticasVisibleRows] = useState(null);
 
   const accessMode = access?.mode || 'sin_pendientes';
   const copy = ACCESS_COPY[accessMode] || ACCESS_COPY.sin_pendientes;
   const canValidateReposicion = Boolean(access?.canValidateReposicion);
   const canManageAll = Boolean(access?.canManageAll);
+  const userPermissionKeys = [
+    user?.menuPermissions,
+    user?.modulePermissions,
+    user?.allowedModules,
+    user?.allowedRecursoHumanoDashboards
+  ]
+    .filter(Array.isArray)
+    .flat()
+    .map((key) => String(key || '').trim());
+  const hasAnyUserPermission = (keys) => userPermissionKeys.some((key) => keys.includes(key));
+  const canViewReporteSalida = Boolean(access?.canViewReporteSalida) || canManageAll || hasAnyUserPermission(REPORTE_SALIDA_KEYS);
+  const canViewEstadisticas = Boolean(access?.canViewEstadisticas) || canManageAll || hasAnyUserPermission(AUSENTISMO_KEYS);
+  const availableReportModules = useMemo(() => REPORT_MODULES.filter((module) => (
+    module.key === 'reporte_salida' ? canViewReporteSalida : canViewEstadisticas
+  )), [canViewEstadisticas, canViewReporteSalida]);
   const showEstadoFilter = Boolean(access?.canManageAll);
 
   // Estados para modales de administración GH
@@ -413,6 +439,16 @@ function ReporteSalidaSeguimiento({ initialAccess = null, onBack }) {
     if (activeModule === 'reporte_salida' || activeModule === 'estadisticas') load();
   }, [activeModule, load]);
 
+  useEffect(() => {
+    if (availableReportModules.length > 0 && !availableReportModules.some((module) => module.key === activeModule)) {
+      setActiveModule(availableReportModules[0].key);
+    }
+  }, [activeModule, availableReportModules]);
+
+  useEffect(() => {
+    if (activeModule !== 'estadisticas') setEstadisticasVisibleRows(null);
+  }, [activeModule]);
+
   const filteredRowsBase = useMemo(() => {
     let result = rows;
     if (accessMode === 'jefe_y_colaborador') {
@@ -448,21 +484,21 @@ function ReporteSalidaSeguimiento({ initialAccess = null, onBack }) {
       if (timeRange === 'diario') {
         const startOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate());
         result = result.filter(r => {
-          const date = new Date(r.created_at);
+          const date = new Date(getCreatedAtValue(r));
           return date >= startOfDay;
         });
       } else if (timeRange === 'semanal') {
         const startOfWeek = new Date();
         startOfWeek.setDate(now.getDate() - 7);
         result = result.filter(r => {
-          const date = new Date(r.created_at);
+          const date = new Date(getCreatedAtValue(r));
           return date >= startOfWeek;
         });
       } else if (timeRange === 'mensual') {
         const startOfMonth = new Date();
         startOfMonth.setDate(now.getDate() - 30);
         result = result.filter(r => {
-          const date = new Date(r.created_at);
+          const date = new Date(getCreatedAtValue(r));
           return date >= startOfMonth;
         });
       }
@@ -479,14 +515,18 @@ function ReporteSalidaSeguimiento({ initialAccess = null, onBack }) {
     return result;
   }, [rows, viewTab, accessMode, user?.id, tipoFiltro, searchTerm, estado, timeRange]);
 
+  const summaryRows = activeModule === 'estadisticas' && Array.isArray(estadisticasVisibleRows)
+    ? estadisticasVisibleRows
+    : filteredRowsBase;
+
   const summary = useMemo(() => {
-    const total = filteredRowsBase.length;
-    const pendientes = filteredRowsBase.filter((r) => ['pendiente_aprobacion_jefe', 'pendiente_aprobacion_gestion_humana'].includes(r.estado)).length;
-    const personales = filteredRowsBase.filter((r) => r.reposicion_aplica && r.reposicion_estado !== 'cumplida').length;
-    const reposicionesValidadas = filteredRowsBase.filter((r) => r.reposicion_aplica && r.reposicion_estado === 'cumplida').length;
-    const finalizadas = filteredRowsBase.filter((r) => r.estado === 'finalizada').length;
+    const total = summaryRows.length;
+    const pendientes = summaryRows.filter((r) => ['pendiente_aprobacion_jefe', 'pendiente_aprobacion_gestion_humana'].includes(r.estado)).length;
+    const personales = summaryRows.filter((r) => r.reposicion_aplica && r.reposicion_estado !== 'cumplida').length;
+    const reposicionesValidadas = summaryRows.filter((r) => r.reposicion_aplica && r.reposicion_estado === 'cumplida').length;
+    const finalizadas = summaryRows.filter((r) => r.estado === 'finalizada').length;
     return { total, pendientes, personales, reposicionesValidadas, finalizadas };
-  }, [filteredRowsBase]);
+  }, [summaryRows]);
 
   const filteredRows = useMemo(() => {
     let result = filteredRowsBase;
@@ -950,59 +990,112 @@ function ReporteSalidaSeguimiento({ initialAccess = null, onBack }) {
     );
   };
 
+  if (availableReportModules.length === 0) {
+    return (
+      <Fade in timeout={250}>
+        <Box>
+          <Paper elevation={0} sx={{ p: 1.4, mb: 2.5, border: '1px solid #dbe6f5', borderRadius: 2.5, bgcolor: '#f8fbff' }}>
+            <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1} justifyContent="space-between">
+              <Button variant="outlined" startIcon={<ArrowBackRoundedIcon />} onClick={onBack}>Volver a Gestion del Talento Humano</Button>
+            </Stack>
+          </Paper>
+          <Alert severity="info" sx={{ borderRadius: 2 }}>
+            No tiene submodulos activos para Seguimiento a reportes.
+          </Alert>
+        </Box>
+      </Fade>
+    );
+  }
+
   return (
     <Fade in timeout={250}>
       <Box>
         <Paper elevation={0} sx={{ p: 1.4, mb: 2.5, border: '1px solid #dbe6f5', borderRadius: 2.5, bgcolor: '#f8fbff' }}>
           <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1} justifyContent="space-between">
             <Button variant="outlined" startIcon={<ArrowBackRoundedIcon />} onClick={onBack}>Volver a Gestión del Talento Humano</Button>
-            {activeModule === 'reporte_salida' && (
-              <Button variant="outlined" startIcon={<RefreshIcon />} onClick={load} disabled={loading}>Actualizar</Button>
-            )}
+            <Button variant="outlined" startIcon={<RefreshIcon />} onClick={load} disabled={loading}>Actualizar</Button>
           </Stack>
         </Paper>
 
         <Paper elevation={0} sx={{ border: '1px solid #dbe6f5', borderRadius: 4, bgcolor: '#fff', mb: 2.2, overflow: 'hidden' }}>
 
-          <Box sx={{ px: { xs: 1.2, md: 1.6 }, py: 1.2, bgcolor: '#f8fbff', borderBottom: '1px solid #e2e8f0' }}>
-            <Stack direction="row" spacing={1.1} sx={{ width: '100%' }}>
-              {REPORT_MODULES.map((module) => {
-                const Icon = module.icon;
-                const active = activeModule === module.key;
-                return (
-                  <Button
-                    key={module.key}
-                    onClick={() => module.available && setActiveModule(module.key)}
-                    disabled={!module.available}
-                    startIcon={<Icon />}
-                    sx={{
-                      flex: 1,
-                      justifyContent: 'flex-start',
-                      alignItems: 'center',
-                      textAlign: 'left',
-                      borderRadius: 2,
-                      px: 1.5,
-                      py: 1.2,
-                      border: `1px solid ${active ? '#2563eb' : '#dbe6f5'}`,
-                      bgcolor: active ? '#eff6ff' : '#fff',
-                      color: active ? '#1d4ed8' : '#334155',
-                      opacity: module.available ? 1 : 0.72,
-                      textTransform: 'none',
-                      '&:hover': { bgcolor: module.available ? '#eef4ff' : '#fff' },
-                      '& .MuiButton-startIcon': { color: active ? '#2563eb' : '#64748b' }
-                    }}
-                  >
-                    <Box sx={{ minWidth: 0 }}>
-                      <Typography sx={{ fontWeight: 950, fontSize: 13, lineHeight: 1.1 }}>{module.label}</Typography>
-                      <Typography sx={{ color: active ? '#1d4ed8' : '#64748b', fontSize: 11, mt: 0.4, lineHeight: 1.2 }}>
-                        {module.available ? 'Disponible' : 'Proximamente'}
-                      </Typography>
-                    </Box>
-                  </Button>
-                );
-              })}
-            </Stack>
-          </Box>
+          {availableReportModules.length > 1 && (
+            <Box sx={{ p: { xs: 1.2, md: 1.5 }, bgcolor: '#f8fbff', borderBottom: '1px solid #e2e8f0' }}>
+              <Box
+                sx={{
+                  display: 'grid',
+                  gridTemplateColumns: { xs: '1fr', md: `repeat(${availableReportModules.length}, minmax(0, 1fr))` },
+                  gap: 1
+                }}
+              >
+                {availableReportModules.map((module) => {
+                  const Icon = module.icon;
+                  const active = activeModule === module.key;
+                  return (
+                    <Button
+                      key={module.key}
+                      onClick={() => setActiveModule(module.key)}
+                      sx={{
+                        justifyContent: 'flex-start',
+                        alignItems: 'center',
+                        textAlign: 'left',
+                        borderRadius: 2.5,
+                        px: 1.5,
+                        py: 1.35,
+                        minHeight: 58,
+                        border: `1px solid ${active ? module.color : '#dbe6f5'}`,
+                        bgcolor: active ? '#eff6ff' : '#fff',
+                        color: active ? module.color : '#334155',
+                        textTransform: 'none',
+                        boxShadow: active ? `0 10px 24px ${module.color}1f` : '0 1px 2px rgba(15,23,42,0.04)',
+                        transition: 'all 0.2s ease',
+                        '&:hover': {
+                          bgcolor: active ? '#eff6ff' : `${module.color}10`,
+                          borderColor: module.color,
+                          transform: 'translateY(-1px)',
+                          boxShadow: `0 12px 24px ${module.color}22`,
+                          color: module.color,
+                          '& .module-switch-icon': {
+                            color: '#fff',
+                            background: module.gradient,
+                            boxShadow: `0 10px 20px ${module.color}24`
+                          },
+                          '& .module-switch-caption': {
+                            color: module.color
+                          }
+                        }
+                      }}
+                    >
+                      <Box
+                        className="module-switch-icon"
+                        sx={{
+                          width: 34,
+                          height: 34,
+                          borderRadius: 2,
+                          display: 'grid',
+                          placeItems: 'center',
+                          mr: 1.3,
+                          flex: '0 0 auto',
+                          color: active ? '#fff' : module.color,
+                          background: active ? module.gradient : `${module.color}12`
+                        }}
+                      >
+                        <Icon sx={{ fontSize: 20 }} />
+                      </Box>
+                      <Box sx={{ minWidth: 0 }}>
+                        <Typography sx={{ fontWeight: 950, fontSize: 13.5, lineHeight: 1.1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                          {module.label}
+                        </Typography>
+                        <Typography className="module-switch-caption" sx={{ color: active ? module.color : '#64748b', fontSize: 11, mt: 0.35, lineHeight: 1.2 }}>
+                          Disponible
+                        </Typography>
+                      </Box>
+                    </Button>
+                  );
+                })}
+              </Box>
+            </Box>
+          )}
 
           <Box
             sx={{
@@ -1109,12 +1202,21 @@ function ReporteSalidaSeguimiento({ initialAccess = null, onBack }) {
                           ? `0 12px 20px -3px ${card.color}60, 0 6px 8px -4px ${card.color}35` 
                           : '0 8px 16px -4px rgba(0, 0, 0, 0.1)',
                         borderColor: card.color,
-                        bgcolor: active ? undefined : '#f8fafc'
+                        bgcolor: active ? undefined : `${card.color}10`,
+                        color: active ? '#fff' : card.color,
+                        '& .summary-card-icon': {
+                          bgcolor: active ? 'rgba(255,255,255,0.2)' : card.color,
+                          color: '#fff',
+                          boxShadow: `0 10px 20px ${card.color}22`
+                        },
+                        '& .summary-card-label': {
+                          color: active ? 'rgba(255,255,255,0.85)' : card.color
+                        }
                       }
                     }}
                   >
                     <Box sx={{ minWidth: 0 }}>
-                      <Typography sx={{ color: active ? 'rgba(255,255,255,0.85)' : '#64748b', fontSize: 11, fontWeight: 900, textTransform: 'uppercase', letterSpacing: '0.05em', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                      <Typography className="summary-card-label" sx={{ color: active ? 'rgba(255,255,255,0.85)' : '#64748b', fontSize: 11, fontWeight: 900, textTransform: 'uppercase', letterSpacing: '0.05em', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                         {card.label}
                       </Typography>
                       <Typography sx={{ fontSize: 26, fontWeight: 950, mt: 0.2, lineHeight: 1 }}>
@@ -1122,6 +1224,7 @@ function ReporteSalidaSeguimiento({ initialAccess = null, onBack }) {
                       </Typography>
                     </Box>
                     <Box 
+                      className="summary-card-icon"
                       sx={{ 
                         p: 1, 
                         borderRadius: 2, 
@@ -1143,9 +1246,9 @@ function ReporteSalidaSeguimiento({ initialAccess = null, onBack }) {
           </Box>
         </Paper>
 
-        {activeModule === 'estadisticas' && canManageAll ? (
+        {activeModule === 'estadisticas' && canViewEstadisticas ? (
           <Box sx={{ mt: 2 }}>
-            <ReporteSalidaEstadisticas rows={filteredRows} />
+            <ReporteSalidaEstadisticas rows={filteredRows} onVisibleRowsChange={setEstadisticasVisibleRows} />
           </Box>
         ) : activeModule !== 'reporte_salida' ? (
           <Paper elevation={0} sx={{ p: 3, border: '1px dashed #bfdbfe', borderRadius: 3, bgcolor: '#f8fbff' }}>
