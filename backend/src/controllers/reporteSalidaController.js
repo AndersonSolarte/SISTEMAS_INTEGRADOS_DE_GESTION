@@ -93,6 +93,11 @@ const isVicerrectoriaAcademica = (value) => {
   return normalized.includes('vicerrectoria academica') || normalized.includes('vicerectoria academica');
 };
 
+const isEvangelizacionVicerrectoria = (value) => {
+  const normalized = normalizeForMatch(value);
+  return normalized.includes('evangelizacion de las culturas') || normalized.includes('evangelizacion de culturas');
+};
+
 const VICERRECTORIA_CANONICAL_NAMES = [
   'Vicerrectoria Academica',
   'Vicerrectoria de Investigacion y Extension',
@@ -164,6 +169,17 @@ const AUTHORITY_RECIPIENTS = {
     email: getDependencyEmail('Vicerrectoria para la Evangelizacion de las Culturas') || 'vicebien@unicesmag.edu.co',
     aliases: ['vicebien@unicesmag.edu.co', 'mpagreda@unicesmag.edu.co']
   }
+};
+
+const isAuthorityEmail = (email) => {
+  const norm = normalizeEmail(email);
+  if (!norm) return false;
+  for (const key of Object.keys(AUTHORITY_RECIPIENTS)) {
+    const auth = AUTHORITY_RECIPIENTS[key];
+    const emails = [auth.email, ...(auth.aliases || [])].map(normalizeEmail);
+    if (emails.includes(norm)) return true;
+  }
+  return false;
 };
 
 const getAuthorityRecipient = async (authorityName, fallbackEmail = '') => {
@@ -920,13 +936,18 @@ const isLeadershipSolicitud = (solicitud = {}) => {
 
 const isDependencyApprovalBlocked = async (solicitud = {}) => {
   if (isLeadershipSolicitud(solicitud)) return true;
+
+  const bossEmail = getInitialApprovalRecipientEmail(solicitud);
+  if (bossEmail && isAuthorityEmail(bossEmail)) {
+    return true;
+  }
+
   const solicitante = solicitud.solicitante_snapshot || {};
   const laboral = solicitud.datos_formulario?.laboral || {};
   const dependencia = laboral.dependencia || solicitante.dependencia || '';
   
   // If the boss email resolved targets the same inbox as the dependency email,
   // we block dependency approval/actions to avoid duplicates.
-  const bossEmail = getInitialApprovalRecipientEmail(solicitud);
   const depEmail = getDependencyEmail(dependencia);
   if (bossEmail && depEmail && sameEmail(bossEmail, depEmail)) {
     return true;
@@ -1533,12 +1554,15 @@ const getDependencyNotificationTargets = (solicitud = {}) => {
   const vicerrectoria = laboral.vicerrectoria || solicitante.vicerrectoria || '';
   const dependenciaEmail = getDependencyEmail(dependencia);
   const vicerrectoriaEmail = getDependencyEmail(vicerrectoria);
+  const bossEmail = getInitialApprovalRecipientEmail(solicitud);
   const targets = [];
 
   const pushTarget = (email, label, source) => {
     const cleanEmail = normalizeEmail(email);
     if (!cleanEmail || targets.some((target) => sameExactEmail(target.email, cleanEmail))) return;
     if (sameExactEmail(cleanEmail, ACADEMIC_VICERRECTORIA_EMAIL)) return;
+    if (bossEmail && sameEmail(cleanEmail, bossEmail)) return;
+    
     targets.push({
       email: cleanEmail,
       label: label || source || 'Dependencia',
@@ -6298,7 +6322,14 @@ module.exports = {
   eliminarSolicitud,
   limpiarMocks,
   editarSolicitudAdmin,
-  verificarReportePublico
+  verificarReportePublico,
+  // Helper functions exported for testing
+  isAcademicTeacherSolicitud,
+  getOfficialAuthorityEmailForActor,
+  getInitialApprovalRecipientEmail,
+  getJefeCopyRecipientEmail,
+  getDependencyNotificationTargets,
+  isDependencyApprovalBlocked
 };
 
 
