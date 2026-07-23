@@ -918,6 +918,39 @@ const isLeadershipSolicitud = (solicitud = {}) => {
   return isLeadershipCargo(solicitanteCargo) || isLeadershipCargo(laboralCargo);
 };
 
+const isDependencyApprovalBlocked = async (solicitud = {}) => {
+  if (isLeadershipSolicitud(solicitud)) return true;
+  const solicitante = solicitud.solicitante_snapshot || {};
+  const laboral = solicitud.datos_formulario?.laboral || {};
+  const dependencia = laboral.dependencia || solicitante.dependencia || '';
+  
+  // If the boss email resolved targets the same inbox as the dependency email,
+  // we block dependency approval/actions to avoid duplicates.
+  const bossEmail = getInitialApprovalRecipientEmail(solicitud);
+  const depEmail = getDependencyEmail(dependencia);
+  if (bossEmail && depEmail && sameEmail(bossEmail, depEmail)) {
+    return true;
+  }
+
+  if (dependencia) {
+    try {
+      const otherActiveCount = await User.count({
+        where: {
+          dependencia,
+          estado: 'activo',
+          id: { [Op.ne]: solicitante.id || 0 }
+        }
+      });
+      if (otherActiveCount === 0) {
+        return true;
+      }
+    } catch (e) {
+      console.error('[reporte-salida] Error checking other active count:', e);
+    }
+  }
+  return false;
+};
+
 const createApprovalToken = (stage, consecutivo) =>
   encryptPayload({ purpose: 'reporte_salida_approve', stage, consecutivo }, null);
 
@@ -1612,15 +1645,15 @@ const sendDependenciaRadicacionInfoEmail = async (solicitud, token, attachments,
   const rejectUrl = `${publicBackendUrl.replace(/\/$/, '')}/api/reporte-salida/rechazar/${encodeURIComponent(token)}?via=dependencia`;
   const subject = getWorkflowThreadSubject(solicitud);
 
-  const isLeader = isLeadershipSolicitud(solicitud);
-  const introText = isLeader
+  const isBlocked = await isDependencyApprovalBlocked(solicitud);
+  const introText = isBlocked
     ? `<p style="margin: 0 0 12px 0;">Saludo de paz y bien,</p><p style="margin: 0 0 4px 0; color: #475569;">Estimado(a) equipo de dependencia.</p><p>Reciba un cordial saludo. Se informa que el/la colaborador(a) <strong>${escapeHtml(solicitante.nombre || '')}</strong>, adscrito(a) a <strong>${escapeHtml(dependenciaLabel)}</strong>, radico una solicitud de ${isOficio ? 'oficio de salida' : 'reporte de salida'} en el sistema. Este correo es de carácter informativo para su seguimiento interno.</p>`
     : `<p style="margin: 0 0 12px 0;">Saludo de paz y bien,</p><p style="margin: 0 0 4px 0; color: #475569;">Estimado(a) equipo de dependencia.</p><p>Reciba un cordial saludo. Se informa que el/la colaborador(a) <strong>${escapeHtml(solicitante.nombre || '')}</strong>, adscrito(a) a <strong>${escapeHtml(dependenciaLabel)}</strong>, radico una solicitud de ${isOficio ? 'oficio de salida' : 'reporte de salida'} en el sistema. Este correo permite realizar seguimiento interno y, cuando el jefe inmediato no se encuentre disponible, autorizar o no autorizar la salida desde la dependencia.</p>`;
 
-  const actionBlock = isLeader
+  const actionBlock = isBlocked
     ? `
       <div style="background:#fff3cd;color:#856404;border:1px solid #ffeeba;padding:12px;border-radius:8px;margin:20px 0;font-size:13px;line-height:1.4;">
-        <strong>Nota de Control:</strong> Dado que el/la colaborador(a) ocupa un cargo de dirección/jefatura, esta solicitud requiere la revisión y autorización directa de su jefe inmediato. Por lo tanto, esta notificación es de carácter puramente informativo y no habilita la aprobación desde la dependencia.
+        <strong>Nota de Control:</strong> Dado que el/la colaborador(a) ocupa un cargo de dirección/coordinación/jefatura o gestiona su propia dependencia de manera directa, esta solicitud requiere la revisión y autorización directa de su jefe inmediato. Por lo tanto, esta notificación es de carácter puramente informativo y no habilita la aprobación desde la dependencia.
       </div>
     `
     : `
@@ -3217,13 +3250,14 @@ const aprobarDesdeCorreo = async (req, res) => {
     const tokenHash = hashToken(req.params.token);
     if (payload.stage === 'jefe') {
       const initialApprovalVia = String(req.body?.via || req.query?.via || '').trim().toLowerCase() === 'dependencia' ? 'dependencia' : 'jefe';
-      if (initialApprovalVia === 'dependencia' && isLeadershipSolicitud(solicitud)) {
+      const isBlocked = await isDependencyApprovalBlocked(solicitud);
+      if (initialApprovalVia === 'dependencia' && isBlocked) {
         return renderApprovalPage({
           res,
           status: 403,
           tone: 'warning',
           title: 'Acción no permitida',
-          message: 'No está permitido autorizar solicitudes de colaboradores con cargos de jefatura o dirección desde la dependencia.',
+          message: 'No está permitido autorizar solicitudes de colaboradores con cargos de dirección, coordinación, jefatura o que gestionen su propia dependencia desde la misma dependencia.',
           solicitud,
           nextStep: 'Esta solicitud requiere obligatoriamente la firma y autorización directa de su jefe inmediato.'
         });
@@ -4909,13 +4943,14 @@ const mostrarFormularioRechazo = async (req, res) => {
     const tokenHash = hashToken(req.params.token);
     if (payload.stage === 'jefe') {
       const initialApprovalVia = String(req.body?.via || req.query?.via || '').trim().toLowerCase() === 'dependencia' ? 'dependencia' : 'jefe';
-      if (initialApprovalVia === 'dependencia' && isLeadershipSolicitud(solicitud)) {
+      const isBlocked = await isDependencyApprovalBlocked(solicitud);
+      if (initialApprovalVia === 'dependencia' && isBlocked) {
         return renderApprovalPage({
           res,
           status: 403,
           tone: 'warning',
           title: 'Acción no permitida',
-          message: 'No está permitido rechazar solicitudes de colaboradores con cargos de jefatura o dirección desde la dependencia.',
+          message: 'No está permitido rechazar solicitudes de colaboradores con cargos de dirección, coordinación, jefatura o que gestionen su propia dependencia desde la misma dependencia.',
           solicitud,
           nextStep: 'Esta solicitud requiere obligatoriamente la gestión directa de su jefe inmediato.'
         });
@@ -5169,13 +5204,14 @@ const procesarRechazo = async (req, res) => {
 
     if (payload.stage === 'jefe') {
       const initialApprovalVia = String(req.body?.via || req.query?.via || '').trim().toLowerCase() === 'dependencia' ? 'dependencia' : 'jefe';
-      if (initialApprovalVia === 'dependencia' && isLeadershipSolicitud(solicitud)) {
+      const isBlocked = await isDependencyApprovalBlocked(solicitud);
+      if (initialApprovalVia === 'dependencia' && isBlocked) {
         return renderApprovalPage({
           res,
           status: 403,
           tone: 'warning',
           title: 'Acción no permitida',
-          message: 'No está permitido rechazar solicitudes de colaboradores con cargos de jefatura o dirección desde la dependencia.',
+          message: 'No está permitido rechazar solicitudes de colaboradores con cargos de dirección, coordinación, jefatura o que gestionen su propia dependencia desde la misma dependencia.',
           solicitud,
           nextStep: 'Esta solicitud requiere obligatoriamente la gestión directa de su jefe inmediato.'
         });
