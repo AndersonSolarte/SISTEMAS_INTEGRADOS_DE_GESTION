@@ -899,6 +899,19 @@ const requiresSstApproval = (solicitud = {}) => {
   return categoria === 'propias_cargo' && salida.tipo !== 'salida_campus' && ['Nacional', 'Internacional'].includes(salida.alcance);
 };
 
+const isLeadershipCargo = (cargo = '') => {
+  const normalized = String(cargo || '').toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '');
+  return /\b(rector(a)?|vicerrector(a)?|decan[oa]|director(a)?|jefe)\b/i.test(normalized);
+};
+
+const isLeadershipSolicitud = (solicitud = {}) => {
+  const solicitanteCargo = solicitud.solicitante_snapshot?.cargo;
+  const laboralCargo = solicitud.datos_formulario?.laboral?.cargo;
+  return isLeadershipCargo(solicitanteCargo) || isLeadershipCargo(laboralCargo);
+};
+
 const createApprovalToken = (stage, consecutivo) =>
   encryptPayload({ purpose: 'reporte_salida_approve', stage, consecutivo }, null);
 
@@ -1592,19 +1605,35 @@ const sendDependenciaRadicacionInfoEmail = async (solicitud, token, attachments,
   const approveUrl = `${publicBackendUrl.replace(/\/$/, '')}/api/reporte-salida/aprobar/${encodeURIComponent(token)}?via=dependencia`;
   const rejectUrl = `${publicBackendUrl.replace(/\/$/, '')}/api/reporte-salida/rechazar/${encodeURIComponent(token)}?via=dependencia`;
   const subject = getWorkflowThreadSubject(solicitud);
-  const html = renderInstitutionalTemplate({
-    title: `Revision de dependencia - ${isOficio ? 'Oficio de salida' : 'Reporte de salida'}`,
-    introHtml: `<p style="margin: 0 0 12px 0;">Saludo de paz y bien,</p><p style="margin: 0 0 4px 0; color: #475569;">Estimado(a) equipo de dependencia.</p><p>Reciba un cordial saludo. Se informa que el/la colaborador(a) <strong>${escapeHtml(solicitante.nombre || '')}</strong>, adscrito(a) a <strong>${escapeHtml(dependenciaLabel)}</strong>, radico una solicitud de ${isOficio ? 'oficio de salida' : 'reporte de salida'} en el sistema. Este correo permite realizar seguimiento interno y, cuando el jefe inmediato no se encuentre disponible, autorizar o no autorizar la salida desde la dependencia.</p>`,
-    bodyHtml: `
-      <p><strong>Colaborador(a):</strong> ${escapeHtml(solicitante.nombre || '')}</p>
-      <p><strong>Cargo:</strong> ${escapeHtml(laboral.cargo || solicitante.cargo || '')}</p>
-      <p><strong>Jefe inmediato asignado:</strong> ${escapeHtml(jefe.nombre || 'No especificado')}</p>
-      ${buildTerapiasHtml(solicitud)}
+
+  const isLeader = isLeadershipSolicitud(solicitud);
+  const introText = isLeader
+    ? `<p style="margin: 0 0 12px 0;">Saludo de paz y bien,</p><p style="margin: 0 0 4px 0; color: #475569;">Estimado(a) equipo de dependencia.</p><p>Reciba un cordial saludo. Se informa que el/la colaborador(a) <strong>${escapeHtml(solicitante.nombre || '')}</strong>, adscrito(a) a <strong>${escapeHtml(dependenciaLabel)}</strong>, radico una solicitud de ${isOficio ? 'oficio de salida' : 'reporte de salida'} en el sistema. Este correo es de carácter informativo para su seguimiento interno.</p>`
+    : `<p style="margin: 0 0 12px 0;">Saludo de paz y bien,</p><p style="margin: 0 0 4px 0; color: #475569;">Estimado(a) equipo de dependencia.</p><p>Reciba un cordial saludo. Se informa que el/la colaborador(a) <strong>${escapeHtml(solicitante.nombre || '')}</strong>, adscrito(a) a <strong>${escapeHtml(dependenciaLabel)}</strong>, radico una solicitud de ${isOficio ? 'oficio de salida' : 'reporte de salida'} en el sistema. Este correo permite realizar seguimiento interno y, cuando el jefe inmediato no se encuentre disponible, autorizar o no autorizar la salida desde la dependencia.</p>`;
+
+  const actionBlock = isLeader
+    ? `
+      <div style="background:#fff3cd;color:#856404;border:1px solid #ffeeba;padding:12px;border-radius:8px;margin:20px 0;font-size:13px;line-height:1.4;">
+        <strong>Nota de Control:</strong> Dado que el/la colaborador(a) ocupa un cargo de dirección/jefatura, esta solicitud requiere la revisión y autorización directa de su jefe inmediato. Por lo tanto, esta notificación es de carácter puramente informativo y no habilita la aprobación desde la dependencia.
+      </div>
+    `
+    : `
       <div style="text-align:center;margin:20px 0;">
         <a href="${approveUrl}" style="display:inline-block;background:#0b3a6f;color:#fff;padding:12px 24px;border-radius:8px;text-decoration:none;font-weight:700;margin:5px 10px;">AUTORIZAR SALIDA</a>
         <a href="${rejectUrl}" style="display:inline-block;background:#b91c1c;color:#fff;padding:12px 24px;border-radius:8px;text-decoration:none;font-weight:700;margin:5px 10px;">NO AUTORIZAR SALIDA</a>
       </div>
       <p>Si la dependencia autoriza o no autoriza primero, el enlace del jefe inmediato quedara registrado como ya procesado para evitar duplicidad.</p>
+    `;
+
+  const html = renderInstitutionalTemplate({
+    title: `Revision de dependencia - ${isOficio ? 'Oficio de salida' : 'Reporte de salida'}`,
+    introHtml: introText,
+    bodyHtml: `
+      <p><strong>Colaborador(a):</strong> ${escapeHtml(solicitante.nombre || '')}</p>
+      <p><strong>Cargo:</strong> ${escapeHtml(laboral.cargo || solicitante.cargo || '')}</p>
+      <p><strong>Jefe inmediato asignado:</strong> ${escapeHtml(jefe.nombre || 'No especificado')}</p>
+      ${buildTerapiasHtml(solicitud)}
+      ${actionBlock}
     `,
     senderHtml: `
       <p style="margin: 0; font-weight: bold; color: #0b3a6f;">Dirección de Planeación y Aseguramiento de la Calidad</p>
@@ -1614,10 +1643,14 @@ const sendDependenciaRadicacionInfoEmail = async (solicitud, token, attachments,
 
   const results = [];
   for (const depEmail of depEmails) {
+    const textContent = isLeader
+      ? `Solicitud ${solicitud.consecutivo} radicada por ${solicitante.nombre || ''}. (Notificación informativa - requiere firma directa de jefe inmediato).`
+      : `Solicitud ${solicitud.consecutivo} radicada por ${solicitante.nombre || ''}. Autorizar: ${approveUrl}. No autorizar: ${rejectUrl}.`;
+
     const result = await sendInstitutionalEmail({
       to: depEmail,
       subject,
-      text: `Solicitud ${solicitud.consecutivo} radicada por ${solicitante.nombre || ''}. Autorizar: ${approveUrl}. No autorizar: ${rejectUrl}.`,
+      text: textContent,
       html,
       attachments,
       headers
@@ -3178,6 +3211,17 @@ const aprobarDesdeCorreo = async (req, res) => {
     const tokenHash = hashToken(req.params.token);
     if (payload.stage === 'jefe') {
       const initialApprovalVia = String(req.body?.via || req.query?.via || '').trim().toLowerCase() === 'dependencia' ? 'dependencia' : 'jefe';
+      if (initialApprovalVia === 'dependencia' && isLeadershipSolicitud(solicitud)) {
+        return renderApprovalPage({
+          res,
+          status: 403,
+          tone: 'warning',
+          title: 'Acción no permitida',
+          message: 'No está permitido autorizar solicitudes de colaboradores con cargos de jefatura o dirección desde la dependencia.',
+          solicitud,
+          nextStep: 'Esta solicitud requiere obligatoriamente la firma y autorización directa de su jefe inmediato.'
+        });
+      }
       const initialApprovalActor = getInitialApprovalActor(solicitud, initialApprovalVia);
       if (solicitud.estado !== 'pendiente_aprobacion_jefe') {
         const isRechazada = solicitud.estado === 'no_aprobada';
@@ -4858,6 +4902,18 @@ const mostrarFormularioRechazo = async (req, res) => {
 
     const tokenHash = hashToken(req.params.token);
     if (payload.stage === 'jefe') {
+      const initialApprovalVia = String(req.body?.via || req.query?.via || '').trim().toLowerCase() === 'dependencia' ? 'dependencia' : 'jefe';
+      if (initialApprovalVia === 'dependencia' && isLeadershipSolicitud(solicitud)) {
+        return renderApprovalPage({
+          res,
+          status: 403,
+          tone: 'warning',
+          title: 'Acción no permitida',
+          message: 'No está permitido rechazar solicitudes de colaboradores con cargos de jefatura o dirección desde la dependencia.',
+          solicitud,
+          nextStep: 'Esta solicitud requiere obligatoriamente la gestión directa de su jefe inmediato.'
+        });
+      }
       if (solicitud.estado !== 'pendiente_aprobacion_jefe') {
         const isAprobada = solicitud.estado !== 'no_aprobada';
         return renderApprovalPage({
@@ -5107,6 +5163,17 @@ const procesarRechazo = async (req, res) => {
 
     if (payload.stage === 'jefe') {
       const initialApprovalVia = String(req.body?.via || req.query?.via || '').trim().toLowerCase() === 'dependencia' ? 'dependencia' : 'jefe';
+      if (initialApprovalVia === 'dependencia' && isLeadershipSolicitud(solicitud)) {
+        return renderApprovalPage({
+          res,
+          status: 403,
+          tone: 'warning',
+          title: 'Acción no permitida',
+          message: 'No está permitido rechazar solicitudes de colaboradores con cargos de jefatura o dirección desde la dependencia.',
+          solicitud,
+          nextStep: 'Esta solicitud requiere obligatoriamente la gestión directa de su jefe inmediato.'
+        });
+      }
       const initialApprovalActor = getInitialApprovalActor(solicitud, initialApprovalVia);
       if (solicitud.estado !== 'pendiente_aprobacion_jefe') {
         const isAprobada = solicitud.estado !== 'no_aprobada';
