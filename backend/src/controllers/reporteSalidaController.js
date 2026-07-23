@@ -878,9 +878,6 @@ const getAuthorityAfterBoss = (solicitud = {}) => {
     };
   }
   if (vicerrectoriaName) {
-    if (isVicerrectoriaAcademica(vicerrectoriaName)) {
-      return null;
-    }
     return {
       stage: 'vicerrectoria_academica',
       estado: 'pendiente_aprobacion_vicerrectoria_academica',

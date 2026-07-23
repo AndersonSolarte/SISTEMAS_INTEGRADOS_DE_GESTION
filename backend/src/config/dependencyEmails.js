@@ -42,7 +42,7 @@ const DEPENDENCY_EMAILS_RAW = {
   "Programa Academico - Derecho": "dir.derecho@unicesmag.edu.co",
   "Programa Academico - Diseño Grafico": "disenografico@unicesmag.edu.co",
   "Programa Academico - Ingenieria de Electronica": "electronica@unicesmag.edu.co",
-  "Programa Academico - Ingenieria de Sistemas": "ingenieriadesistemas@unicesmag.edu.co",
+  "Programa Academico - Ingenieria de Sistemas": "gp.planeacion@unicesmag.edu.co",
   "Programa Academico - Licenciatura en Educacion Infantil": "edupres@unicesmag.edu.co",
   "Programa Academico - Licenciatura en Educacion fisica": "edufisica@unicesmag.edu.co",
   "Programa Academico -Psicologia": "psicologia@unicesmag.edu.co",
@@ -52,11 +52,13 @@ const DEPENDENCY_EMAILS_RAW = {
   "Rectoria": "rectoria@unicesmag.edu.co",
   "Secretaria General": "secregen@unicesmag.edu.co",
   "Tecnología En Marketing Digital": "admon@unicesmag.edu.co",
-  "Vicerrectoria Academica": "viceacad@unicesmag.edu.co",
+  "Vicerrectoria Academica": "acvaldes@unicesmag.edu.co",
   "Vicerrectoria Financiera y de Desarrollo Institucional": "viceadfin@unicesmag.edu.co",
   "Vicerrectoria de Investigacion y Extension": "viceinvestiga@unicesmag.edu.co",
   "Vicerrectoría para la Evangelizacion de las Culturas": "vicebien@unicesmag.edu.co"
 };
+
+
 
 const normalizeKey = (str) => {
   if (!str) return '';
