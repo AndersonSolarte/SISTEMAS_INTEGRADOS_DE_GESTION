@@ -903,7 +903,7 @@ const isLeadershipCargo = (cargo = '') => {
   const normalized = String(cargo || '').toLowerCase()
     .normalize('NFD')
     .replace(/[\u0300-\u036f]/g, '');
-  return /\b(rector(a)?|vicerrector(a)?|decan[oa]|director(a)?|jefe)\b/i.test(normalized);
+  return /\b(rector(a)?|vicerrector(a)?|decan[oa]|director(a)?|jefe|coordinador(a)?)\b/i.test(normalized);
 };
 
 const isLeadershipSolicitud = (solicitud = {}) => {
