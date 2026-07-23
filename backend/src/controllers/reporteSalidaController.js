@@ -878,6 +878,9 @@ const getAuthorityAfterBoss = (solicitud = {}) => {
     };
   }
   if (vicerrectoriaName) {
+    if (isVicerrectoriaAcademica(vicerrectoriaName)) {
+      return null;
+    }
     return {
       stage: 'vicerrectoria_academica',
       estado: 'pendiente_aprobacion_vicerrectoria_academica',
@@ -1486,6 +1489,7 @@ const getDependencyNotificationTargets = (solicitud = {}) => {
   const pushTarget = (email, label, source) => {
     const cleanEmail = normalizeEmail(email);
     if (!cleanEmail || targets.some((target) => sameExactEmail(target.email, cleanEmail))) return;
+    if (sameExactEmail(cleanEmail, ACADEMIC_VICERRECTORIA_EMAIL)) return;
     targets.push({
       email: cleanEmail,
       label: label || source || 'Dependencia',
@@ -1494,7 +1498,9 @@ const getDependencyNotificationTargets = (solicitud = {}) => {
   };
 
   pushTarget(dependenciaEmail, dependencia, 'dependencia');
-  pushTarget(vicerrectoriaEmail, vicerrectoria, 'vicerrectoria');
+  if (!isVicerrectoriaAcademica(vicerrectoria)) {
+    pushTarget(vicerrectoriaEmail, vicerrectoria, 'vicerrectoria');
+  }
   return targets;
 };
 
@@ -1835,6 +1841,19 @@ const sendFinalEmails = async (solicitud, pdfAttachment, supportAttachment) => {
   const jefeEmail = getJefeCopyRecipientEmail(solicitud);
   if (jefeEmail && !copyRecipients.some((recipient) => sameExactEmail(recipient.email, jefeEmail))) {
     copyRecipients.push({ type: 'jefe', email: jefeEmail });
+  }
+
+  // Si es un Docente de la Vicerrectoría Académica, enviar copia del formato final
+  const isDocenteAcademica = isAcademicTeacherSolicitud(solicitud);
+  if (isDocenteAcademica) {
+    if (!copyRecipients.some((recipient) => sameExactEmail(recipient.email, ACADEMIC_VICERRECTORIA_EMAIL))) {
+      copyRecipients.push({
+        type: 'dependencia',
+        email: ACADEMIC_VICERRECTORIA_EMAIL,
+        label: 'Vicerrectoría Académica',
+        source: 'vicerrectoria'
+      });
+    }
   }
 
   if (copyRecipients.length > 0) {
