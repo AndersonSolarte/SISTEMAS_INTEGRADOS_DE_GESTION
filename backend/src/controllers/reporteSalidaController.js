@@ -200,6 +200,9 @@ const getOfficialAuthorityEmailForActor = (actor = {}) => {
   if (actorName.includes('sandra lucia bolanos delgado')) {
     return ACADEMIC_VICERRECTORIA_EMAIL;
   }
+  if (actorName.includes('maria del pilar agreda guerrero')) {
+    return 'vicebien@unicesmag.edu.co';
+  }
   if (!email) return '';
   const entry = Object.values(AUTHORITY_RECIPIENTS).find((authority) => {
     const authorityEmails = [authority.email, ...(authority.aliases || [])].map(normalizeEmail);
@@ -216,6 +219,9 @@ const getJefeCopyRecipientEmail = (solicitud = {}) => {
   const jefeName = normalizeForMatch(jefe.nombre || jefe.name || jefe.label);
   if (jefeName.includes('sandra lucia bolanos delgado') || sameExactEmail(jefe.email, 'sbolanos@unicesmag.edu.co')) {
     return ACADEMIC_VICERRECTORIA_EMAIL;
+  }
+  if (jefeName.includes('maria del pilar agreda guerrero') || sameExactEmail(jefe.email, 'mpagreda@unicesmag.edu.co')) {
+    return 'vicebien@unicesmag.edu.co';
   }
   return jefe.email || '';
 };
