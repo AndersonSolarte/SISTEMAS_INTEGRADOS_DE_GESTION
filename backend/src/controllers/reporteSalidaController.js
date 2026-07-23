@@ -912,8 +912,8 @@ const appendTrace = (solicitud, event, actor = null, detail = {}) => ([
   }
 ]);
 
-const SEGUIMIENTO_REPORTE_ADMIN_KEYS = ['seguimiento_reportes_rrhh'];
-const REPORTE_SALIDA_VIEW_KEYS = [...SEGUIMIENTO_REPORTE_ADMIN_KEYS, 'recurso_humano_reporte_salida'];
+const SEGUIMIENTO_REPORTE_ADMIN_KEYS = ['seguimiento_reportes_rrhh', 'recurso_humano_seguimiento', 'recurso_humano_reporte_salida'];
+const REPORTE_SALIDA_VIEW_KEYS = [...SEGUIMIENTO_REPORTE_ADMIN_KEYS];
 const AUSENTISMO_VIEW_KEYS = [...SEGUIMIENTO_REPORTE_ADMIN_KEYS, 'recurso_humano_indicadores_ausentismo'];
 
 const userHasAnyRecursoHumanoPermission = (user = {}, keys = []) => {

@@ -212,7 +212,7 @@ const REPORT_MODULES = [
   }
 ];
 
-const SEGUIMIENTO_ADMIN_KEYS = ['seguimiento_reportes_rrhh'];
+const SEGUIMIENTO_ADMIN_KEYS = ['seguimiento_reportes_rrhh', 'recurso_humano_seguimiento', 'recurso_humano_reporte_salida'];
 const REPORTE_SALIDA_KEYS = [...SEGUIMIENTO_ADMIN_KEYS, 'recurso_humano_reporte_salida'];
 const AUSENTISMO_KEYS = [...SEGUIMIENTO_ADMIN_KEYS, 'recurso_humano_indicadores_ausentismo'];
 
@@ -362,8 +362,8 @@ function ReporteSalidaSeguimiento({ initialAccess = null, onBack }) {
 
   const accessMode = access?.mode || 'sin_pendientes';
   const copy = ACCESS_COPY[accessMode] || ACCESS_COPY.sin_pendientes;
-  const canValidateReposicion = Boolean(access?.canValidateReposicion);
-  const canManageAll = Boolean(access?.canManageAll);
+  const canManageAll = Boolean(access?.canManageAll) || hasAnyUserPermission(SEGUIMIENTO_ADMIN_KEYS);
+  const canValidateReposicion = Boolean(access?.canValidateReposicion) || canManageAll;
   const userPermissionKeys = [
     user?.menuPermissions,
     user?.modulePermissions,

@@ -51,7 +51,7 @@ const { auth, hasAnyRoleOrModulePermission } = require('../middlewares/auth');
 const { publicLimiter } = require('../middlewares/security');
 const { ROLES } = require('../constants/roles');
 
-const SEGUIMIENTO_REPORTE_MODULE_KEYS = ['recurso_humano_reporte_salida', 'seguimiento_reportes_rrhh'];
+const SEGUIMIENTO_REPORTE_MODULE_KEYS = ['recurso_humano_reporte_salida', 'seguimiento_reportes_rrhh', 'recurso_humano_seguimiento'];
 
 router.get('/aprobar/:token', publicLimiter, aprobarDesdeCorreo);
 router.post('/aprobar/:token', publicLimiter, aprobarDesdeCorreo);
