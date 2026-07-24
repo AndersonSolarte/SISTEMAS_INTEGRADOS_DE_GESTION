@@ -91,6 +91,8 @@ const GESTION_PROCESOS_DASHBOARD_PERMISSION_KEYS = [
   'aseguramiento_calidad',
   'buscar_documentos',
   'favoritos',
+  'gestion_usuarios_crear_individual',
+  'gestion_usuarios_crear_masivo',
   'gestion_usuarios_consulta'
 ];
 const POBLACIONAL_DASHBOARD_PERMISSION_KEYS = [
@@ -171,7 +173,7 @@ const isGestionProcesosManager = (user) => user?.role === ROLES.GESTION_PROCESOS
 const canManageRole = (operator, targetRole) =>
   isSuperAdmin(operator) ||
   (isPlaneacionManager(operator) && MANAGED_PLANEACION_ROLES.includes(targetRole)) ||
-  ((isGestionProcesosManager(operator) || operator?.role === ROLES.CONSULTA) && MANAGED_GESTION_PROCESOS_ROLES.includes(targetRole));
+  MANAGED_GESTION_PROCESOS_ROLES.includes(targetRole);
 const getManageableRoles = (operator) => {
   if (isSuperAdmin(operator)) return VALID_ROLES;
   if (isPlaneacionManager(operator)) return MANAGED_PLANEACION_ROLES;
@@ -621,7 +623,11 @@ const createUser = async (req, res) => {
       });
     }
 
-    const targetRole = role || ROLES.CONSULTA;
+    let targetRole = role || ROLES.CONSULTA;
+    if (!isSuperAdmin(req.user) && !isPlaneacionManager(req.user)) {
+      targetRole = ROLES.CONSULTA;
+    }
+
     if (!canManageRole(req.user, targetRole)) {
       return res.status(403).json({
         success: false,
@@ -732,29 +738,38 @@ const getUsers = async (req, res) => {
     const where = {};
     
     if (String(search).trim()) {
-      const searchText = normalizeSearchText(search);
-      const matchedRoles = Object.entries(ROLE_SEARCH_LABELS)
-        .filter(([role, labels]) => role.includes(searchText) || labels.some((label) => label.includes(searchText)))
-        .map(([role]) => role);
-      const searchConditions = [
-        { nombre: { [Op.iLike]: `%${search}%` } },
-        buildAccentInsensitiveCondition('nombre', searchText),
-        { email: { [Op.iLike]: `%${search}%` } },
-        { username: { [Op.iLike]: `%${search}%` } },
-        { dependencia: { [Op.iLike]: `%${search}%` } },
-        buildAccentInsensitiveCondition('dependencia', searchText),
-        { vicerrectoria: { [Op.iLike]: `%${search}%` } },
-        buildAccentInsensitiveCondition('vicerrectoria', searchText),
-        { cargo: { [Op.iLike]: `%${search}%` } },
-        buildAccentInsensitiveCondition('cargo', searchText),
-        { jefe_inmediato: { [Op.iLike]: `%${search}%` } },
-        buildAccentInsensitiveCondition('jefe_inmediato', searchText),
-        sequelizeWhere(literal('CAST("estado" AS TEXT)'), { [Op.iLike]: `%${search}%` })
-      ];
-      if (matchedRoles.length) {
-        searchConditions.push({ role: { [Op.in]: matchedRoles } });
-      }
-      where[Op.or] = searchConditions;
+      const rawTokens = String(search).trim().split(/\s+/).filter(Boolean);
+
+      const tokenConditions = rawTokens.map((token) => {
+        const searchText = normalizeSearchText(token);
+        const matchedRoles = Object.entries(ROLE_SEARCH_LABELS)
+          .filter(([roleKey, labels]) => roleKey.includes(searchText) || labels.some((label) => label.includes(searchText)))
+          .map(([roleKey]) => roleKey);
+
+        const singleTokenConditions = [
+          { nombre: { [Op.iLike]: `%${token}%` } },
+          buildAccentInsensitiveCondition('nombre', searchText),
+          { email: { [Op.iLike]: `%${token}%` } },
+          { username: { [Op.iLike]: `%${token}%` } },
+          { dependencia: { [Op.iLike]: `%${token}%` } },
+          buildAccentInsensitiveCondition('dependencia', searchText),
+          { vicerrectoria: { [Op.iLike]: `%${token}%` } },
+          buildAccentInsensitiveCondition('vicerrectoria', searchText),
+          { cargo: { [Op.iLike]: `%${token}%` } },
+          buildAccentInsensitiveCondition('cargo', searchText),
+          { jefe_inmediato: { [Op.iLike]: `%${token}%` } },
+          buildAccentInsensitiveCondition('jefe_inmediato', searchText),
+          sequelizeWhere(literal('CAST("estado" AS TEXT)'), { [Op.iLike]: `%${token}%` })
+        ];
+
+        if (matchedRoles.length) {
+          singleTokenConditions.push({ role: { [Op.in]: matchedRoles } });
+        }
+
+        return { [Op.or]: singleTokenConditions };
+      });
+
+      where[Op.and] = tokenConditions;
     }
     
     if (role) {
@@ -777,8 +792,8 @@ const getUsers = async (req, res) => {
       }
     }
 
-    if (isGestionProcesosManager(req.user)) {
-      if (role && !MANAGED_GESTION_PROCESOS_ROLES.includes(role)) {
+    if (!isSuperAdmin(req.user) && !isPlaneacionManager(req.user)) {
+      if (role && role !== ROLES.CONSULTA) {
         return res.json({
           success: true,
           data: {
@@ -787,10 +802,7 @@ const getUsers = async (req, res) => {
           }
         });
       }
-
-      if (!role) {
-        where.role = { [Op.in]: MANAGED_GESTION_PROCESOS_ROLES };
-      }
+      where.role = ROLES.CONSULTA;
     }
 
     const { count, rows } = await User.findAndCountAll({
@@ -1272,7 +1284,11 @@ const bulkUploadUsersLegacy = async (req, res) => {
           continue;
         }
 
-        const targetRole = role || ROLES.CONSULTA;
+        let targetRole = role || ROLES.CONSULTA;
+        if (!isSuperAdmin(req.user) && !isPlaneacionManager(req.user)) {
+          targetRole = ROLES.CONSULTA;
+        }
+
         if (!canManageRole(req.user, targetRole)) {
           results.errores.push({ fila, email: cleanEmail, error: 'Sin permisos para crear este rol' });
           continue;
@@ -1735,10 +1751,8 @@ const getUserFieldSuggestions = async (req, res) => {
 
     if (isPlaneacionManager(req.user)) {
       where.role = { [Op.in]: MANAGED_PLANEACION_ROLES };
-    }
-
-    if (isGestionProcesosManager(req.user)) {
-      where.role = { [Op.in]: MANAGED_GESTION_PROCESOS_ROLES };
+    } else if (!isSuperAdmin(req.user)) {
+      where.role = ROLES.CONSULTA;
     }
 
     const loadDistinctValues = async (field) => {
@@ -1980,7 +1994,7 @@ const updateUserModulePermissions = async (req, res) => {
       .map((x) => String(x || '').trim())
       .filter((x) => MENU_PERMISSION_KEYS.includes(x))));
 
-    const cleanModules = Array.from(new Set((Array.isArray(allowedModules) ? allowedModules : [])
+    let cleanModules = Array.from(new Set((Array.isArray(allowedModules) ? allowedModules : [])
       .map((x) => String(x || '').trim())
       .filter((x) => GESTION_INFO_MODULE_KEYS.includes(x))));
 
@@ -2012,14 +2026,12 @@ const updateUserModulePermissions = async (req, res) => {
       .map((x) => String(x || '').trim())
       .filter((x) => INTERNACIONALIZACION_DASHBOARD_PERMISSION_KEYS.includes(x))));
 
-    if (user.role === ROLES.CONSULTA) {
-      cleanMenu = cleanMenu.filter((key) => key !== 'gestion_usuarios');
-    }
+    const cleanActualProcesos = cleanGestionProcesosDashboards.filter((k) => !k.startsWith('gestion_usuarios'));
 
-    if (cleanGestionProcesosDashboards.length > 0 && !cleanModules.includes('estadistica_institucional')) {
+    if (cleanActualProcesos.length > 0 && !cleanModules.includes('estadistica_institucional')) {
       cleanModules.push('estadistica_institucional');
     }
-    if (cleanGestionProcesosDashboards.length > 0 && !cleanModules.includes('gestion_procesos')) {
+    if (cleanActualProcesos.length > 0 && !cleanModules.includes('gestion_procesos')) {
       cleanModules.push('gestion_procesos');
     }
     if (cleanPoblacionalDashboards.length > 0 && !cleanModules.includes('estadistica_institucional')) {
@@ -2058,7 +2070,13 @@ const updateUserModulePermissions = async (req, res) => {
     if (cleanInternacionalizacionDashboards.length > 0 && !cleanModules.includes('internacionalizacion')) {
       cleanModules.push('internacionalizacion');
     }
-    if ((cleanModules.length > 0 || cleanGestionProcesosDashboards.length > 0 || cleanPoblacionalDashboards.length > 0 || cleanSaberProDashboards.length > 0 || cleanRecursoHumanoDashboards.length > 0) && !cleanMenu.includes('gestion_informacion')) {
+    const actualGIModules = cleanModules.filter((k) => !['gestion_procesos', 'estadistica_institucional'].includes(k));
+    const hasActualGIDashboards = cleanActualProcesos.length > 0 || cleanPoblacionalDashboards.length > 0 || cleanSaberProDashboards.length > 0 || cleanRecursoHumanoDashboards.length > 0 || cleanInfraestructuraFisicaDashboards.length > 0 || cleanPlanAccionDashboards.length > 0 || cleanInternacionalizacionDashboards.length > 0;
+
+    if (!actualGIModules.length && !hasActualGIDashboards) {
+      cleanMenu = cleanMenu.filter((k) => k !== 'gestion_informacion');
+      cleanModules = actualGIModules;
+    } else if (cleanModules.length > 0 && !cleanMenu.includes('gestion_informacion')) {
       cleanMenu.push('gestion_informacion');
     }
 

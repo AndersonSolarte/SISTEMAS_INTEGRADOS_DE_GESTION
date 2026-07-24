@@ -286,12 +286,31 @@ function DashboardLayout() {
   }, [user?.allowedGestionProcesosDashboards]);
 
   if (explicitMenuPermissions.length > 0 && user?.role !== ROLES.ADMINISTRADOR) {
+    const hasUserMgmt = explicitMenuPermissions.includes('gestion_usuarios') ||
+      explicitProcesosDashboards.some((k) => k.startsWith('gestion_usuarios'));
+
+    const hasRealGIModules = (Array.isArray(user?.allowedModules) && user.allowedModules.length > 0) ||
+      (Array.isArray(user?.allowedPoblacionalDashboards) && user.allowedPoblacionalDashboards.length > 0) ||
+      (Array.isArray(user?.allowedSaberProDashboards) && user.allowedSaberProDashboards.length > 0) ||
+      (Array.isArray(user?.allowedRecursoHumanoDashboards) && user.allowedRecursoHumanoDashboards.length > 0) ||
+      (Array.isArray(user?.allowedInfraestructuraFisicaDashboards) && user.allowedInfraestructuraFisicaDashboards.length > 0) ||
+      (Array.isArray(user?.allowedPlanAccionDashboards) && user.allowedPlanAccionDashboards.length > 0) ||
+      (Array.isArray(user?.allowedInternacionalizacionDashboards) && user.allowedInternacionalizacionDashboards.length > 0) ||
+      explicitProcesosDashboards.some((k) => !k.startsWith('gestion_usuarios'));
+
     const gestionProcesosBaseMenu = ['dashboard', 'gestion_informacion', 'aseguramiento_calidad', 'buscar_documentos', 'favoritos', 'gestion_usuarios'];
-    const effectiveMenuPermissions = user?.role === ROLES.GESTION_PROCESOS
+    let effectiveMenuPermissions = user?.role === ROLES.GESTION_PROCESOS
       ? [...new Set([...gestionProcesosBaseMenu, ...explicitMenuPermissions])]
-      : user?.role === ROLES.CONSULTA
-        ? [...new Set([...explicitMenuPermissions.filter((key) => key !== 'gestion_usuarios'), ...explicitProcesosDashboards.map(k => k === 'gestion_usuarios_consulta' ? 'gestion_usuarios' : k)])]
-        : explicitMenuPermissions;
+      : [...explicitMenuPermissions];
+
+    if (hasUserMgmt && !effectiveMenuPermissions.includes('gestion_usuarios')) {
+      effectiveMenuPermissions.push('gestion_usuarios');
+    }
+
+    if (!hasRealGIModules) {
+      effectiveMenuPermissions = effectiveMenuPermissions.filter((k) => k !== 'gestion_informacion');
+    }
+
     menuItems = menuCatalog.filter((item) => effectiveMenuPermissions.includes(item.key));
 
     if (user?.role === ROLES.ADMINISTRADOR) {
@@ -364,15 +383,16 @@ function DashboardLayout() {
       ];
     }
 
-    if (user?.role === ROLES.GESTION_PROCESOS || (user?.role === ROLES.CONSULTA && explicitProcesosDashboards.length > 0)) {
-      const procesosKeys = ['estadistica_documental', 'aseguramiento_calidad', 'buscar_documentos', 'gestion_usuarios'];
+    const actualProcesosDashboards = explicitProcesosDashboards.filter((k) => !k.startsWith('gestion_usuarios'));
+    if (user?.role === ROLES.GESTION_PROCESOS || (user?.role === ROLES.CONSULTA && actualProcesosDashboards.length > 0)) {
+      const procesosKeys = ['estadistica_documental', 'aseguramiento_calidad', 'buscar_documentos'];
       const visibleChildren = gestionProcesosMenuItems
         .filter((item) => item.section)
         .flatMap((section) => section.items)
         .filter((child) => (
           child.key === 'estadistica_documental'
-            ? explicitProcesosDashboards.includes('estadistica_documental') || user?.role === ROLES.GESTION_PROCESOS
-            : effectiveMenuPermissions.includes(child.key)
+            ? actualProcesosDashboards.includes('estadistica_documental') || user?.role === ROLES.GESTION_PROCESOS
+            : child.key !== 'gestion_usuarios' && effectiveMenuPermissions.includes(child.key)
         ));
 
       menuItems = [

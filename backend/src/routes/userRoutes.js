@@ -23,7 +23,7 @@ const upload = createExcelUpload('uploads/temp/');
 
 const canManageUsers = hasAnyRoleOrModulePermission({
   roles: [ROLES.ADMINISTRADOR, ROLES.PLANEACION_ESTRATEGICA, ROLES.GESTION_PROCESOS],
-  moduleKeys: ['gestion_usuarios', 'gestion_usuarios_consulta']
+  moduleKeys: ['gestion_usuarios', 'gestion_usuarios_consulta', 'gestion_usuarios_crear_individual', 'gestion_usuarios_crear_masivo']
 });
 const canManageModulePermissions = hasAnyRole(ROLES.ADMINISTRADOR);
 

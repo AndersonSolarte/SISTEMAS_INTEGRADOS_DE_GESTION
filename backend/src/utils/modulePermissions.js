@@ -46,7 +46,10 @@ const GESTION_INFO_MODULE_KEYS = new Set([
 ]);
 
 const GESTION_PROCESOS_DASHBOARD_KEYS = new Set([
-  'estadistica_documental'
+  'estadistica_documental',
+  'gestion_usuarios_consulta',
+  'gestion_usuarios_crear_individual',
+  'gestion_usuarios_crear_masivo'
 ]);
 
 const LEGACY_GI_STATS_KEYS = new Set([
@@ -295,8 +298,8 @@ const getUserModulePermissions = async (userId, role) => {
     .map((row) => String(row.module_key || '').trim())
     .filter(Boolean);
 
-  const menuPermissions = Array.from(new Set(keys.filter((k) => MENU_KEYS.has(k))));
-  const allowedModules = Array.from(new Set(keys.filter((k) => GESTION_INFO_MODULE_KEYS.has(k))));
+  let menuPermissions = Array.from(new Set(keys.filter((k) => MENU_KEYS.has(k))));
+  let allowedModules = Array.from(new Set(keys.filter((k) => GESTION_INFO_MODULE_KEYS.has(k))));
   const allowedGestionProcesosDashboards = Array.from(new Set(keys.filter((k) => GESTION_PROCESOS_DASHBOARD_KEYS.has(k))));
   const allowedPoblacionalDashboards = Array.from(new Set(keys.filter((k) => POBLACIONAL_DASHBOARD_KEYS.has(k))));
   const allowedSaberProDashboards = Array.from(new Set(keys.filter((k) => SABER_PRO_DASHBOARD_KEYS.has(k))));
@@ -316,18 +319,36 @@ const getUserModulePermissions = async (userId, role) => {
     menuPermissions.push('buscar_documentos');
   }
 
-  // Si se asignan submódulos de Gestión de la Información, el acceso al menú principal
-  // debe aparecer aunque no se haya marcado explícitamente.
-  if ([ROLES.CONSULTA, ROLES.PRUEBA].includes(role)) {
+  // Si se asignan submódulos de Gestión de Usuarios, el menú principal debe conservarse o agregarse.
+  const hasUserManagementPermission = keys.some((k) => [
+    'gestion_usuarios',
+    'gestion_usuarios_crear_individual',
+    'gestion_usuarios_crear_masivo',
+    'gestion_usuarios_consulta'
+  ].includes(k));
+
+  if ([ROLES.CONSULTA, ROLES.PRUEBA].includes(role) && !hasUserManagementPermission) {
     const userManagementIndex = menuPermissions.indexOf('gestion_usuarios');
     if (userManagementIndex >= 0) menuPermissions.splice(userManagementIndex, 1);
+  } else if (hasUserManagementPermission) {
+    if (!menuPermissions.includes('gestion_usuarios')) {
+      menuPermissions.push('gestion_usuarios');
+    }
   }
 
-  if (allowedModules.length > 0 && !menuPermissions.includes('gestion_informacion')) {
+  const actualGIModules = allowedModules.filter((k) => !['gestion_procesos', 'estadistica_institucional'].includes(k));
+  const actualProcesosDashboards = allowedGestionProcesosDashboards.filter((k) => !k.startsWith('gestion_usuarios'));
+  const hasActualGIDashboards = actualProcesosDashboards.length > 0 || allowedPoblacionalDashboards.length > 0 || allowedSaberProDashboards.length > 0 || allowedRecursoHumanoDashboards.length > 0 || allowedInfraestructuraFisicaDashboards.length > 0 || allowedPlanAccionDashboards.length > 0 || allowedInternacionalizacionDashboards.length > 0;
+
+  if (!actualGIModules.length && !hasActualGIDashboards) {
+    const giIdx = menuPermissions.indexOf('gestion_informacion');
+    if (giIdx >= 0) menuPermissions.splice(giIdx, 1);
+    allowedModules = actualGIModules;
+  } else if (allowedModules.length > 0 && !menuPermissions.includes('gestion_informacion')) {
     menuPermissions.push('gestion_informacion');
   }
 
-  if (allowedGestionProcesosDashboards.length > 0) {
+  if (actualProcesosDashboards.length > 0) {
     if (!menuPermissions.includes('gestion_informacion')) menuPermissions.push('gestion_informacion');
     if (!allowedModules.includes('estadistica_institucional')) allowedModules.push('estadistica_institucional');
     if (!allowedModules.includes('gestion_procesos')) allowedModules.push('gestion_procesos');

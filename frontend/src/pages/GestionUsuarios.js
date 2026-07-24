@@ -214,12 +214,15 @@ function GestionUsuarios() {
       title,
       options: GI_MODULE_OPTIONS.filter((item) => item.group === title)
     }));
+  const GESTION_USUARIOS_SUBMODULE_OPTIONS = [
+    { key: 'gestion_usuarios_crear_individual', label: 'Creación de usuario individual' },
+    { key: 'gestion_usuarios_crear_masivo', label: 'Creación de usuario masivo por Excel' }
+  ];
   const GESTION_PROCESOS_DASHBOARD_OPTIONS = [
     { key: 'estadistica_documental', label: 'Estadística Documental' },
     { key: 'aseguramiento_calidad', label: 'Administración del Sistema Documental' },
     { key: 'buscar_documentos', label: 'Consulta de documentos' },
-    { key: 'favoritos', label: 'Documentos favoritos' },
-    { key: 'gestion_usuarios_consulta', label: 'Gestión de Usuarios (Solo Consulta)' }
+    { key: 'favoritos', label: 'Documentos favoritos' }
   ];
   const POBLACIONAL_DASHBOARD_OPTIONS = [
     { key: 'poblacional_flujo', label: 'Inscritos / Admitidos / Primer Curso' },
@@ -405,6 +408,28 @@ function GestionUsuarios() {
 
   const defaultAssignableRole = allowedRolesForManager[0] || ROLES.CONSULTA;
   const canManageModulePermissions = currentUser?.role === ROLES.ADMINISTRADOR;
+
+  const isSuperAdminUser = currentUser?.role === ROLES.ADMINISTRADOR;
+  const isPlaneacionUser = currentUser?.role === ROLES.PLANEACION_ESTRATEGICA;
+  const isFullAdminUser = isSuperAdminUser || isPlaneacionUser;
+
+  const userProcesosDashboards = useMemo(() => {
+    return Array.isArray(currentUser?.allowedGestionProcesosDashboards)
+      ? currentUser.allowedGestionProcesosDashboards.map((k) => String(k || '').trim())
+      : [];
+  }, [currentUser?.allowedGestionProcesosDashboards]);
+
+  const canCreateIndividualUser = useMemo(() => {
+    if (isFullAdminUser || currentUser?.role === ROLES.GESTION_PROCESOS) return true;
+    return userProcesosDashboards.includes('gestion_usuarios_crear_individual');
+  }, [isFullAdminUser, currentUser?.role, userProcesosDashboards]);
+
+  const canCreateMassiveUser = useMemo(() => {
+    if (isSuperAdminUser) return true;
+    if (userProcesosDashboards.includes('gestion_usuarios_crear_masivo')) return true;
+    if (currentUser?.role === ROLES.GESTION_PROCESOS && !userProcesosDashboards.length) return true;
+    return false;
+  }, [isSuperAdminUser, currentUser?.role, userProcesosDashboards]);
   const isCurrentUserRow = useCallback((row = {}) => {
     const currentId = Number(currentUser?.id || 0);
     const rowId = Number(row?.id || 0);
@@ -899,12 +924,19 @@ function GestionUsuarios() {
         const isSelected = current.includes(key);
         let next = isSelected ? current.filter((x) => x !== key) : [...current, key];
         let nextModules = Array.isArray(prev.allowedModules) ? [...prev.allowedModules] : [];
+        let nextProcesos = Array.isArray(prev.allowedGestionProcesosDashboards) ? [...prev.allowedGestionProcesosDashboards] : [];
 
         if (key === 'autoevaluacion' && isSelected) {
            nextModules = nextModules.filter(k => k !== 'autoevaluacion.instrumentos.access');
         }
 
-        return { ...prev, menuPermissions: next, allowedModules: nextModules };
+        if (key === 'gestion_usuarios') {
+          if (isSelected) {
+            nextProcesos = nextProcesos.filter((k) => !k.startsWith('gestion_usuarios'));
+          }
+        }
+
+        return { ...prev, menuPermissions: next, allowedModules: nextModules, allowedGestionProcesosDashboards: nextProcesos };
       }
 
       const current = Array.isArray(prev[group]) ? prev[group] : [];
@@ -980,7 +1012,7 @@ function GestionUsuarios() {
 
         if (!nextModules.includes('estadistica_institucional')) {
           nextPoblacionalDashboards = [];
-          nextGestionProcesosDashboards = [];
+          nextGestionProcesosDashboards = nextGestionProcesosDashboards.filter((k) => k.startsWith('gestion_usuarios'));
           nextSaberProDashboards = [];
           nextRecursoHumanoDashboards = [];
           nextInfraestructuraFisicaDashboards = [];
@@ -988,7 +1020,9 @@ function GestionUsuarios() {
           nextInternacionalizacionDashboards = [];
         } else {
           if (!nextModules.includes('poblacional')) nextPoblacionalDashboards = [];
-          if (!nextModules.includes('gestion_procesos')) nextGestionProcesosDashboards = [];
+          if (!nextModules.includes('gestion_procesos')) {
+            nextGestionProcesosDashboards = nextGestionProcesosDashboards.filter((k) => k.startsWith('gestion_usuarios'));
+          }
           if (!nextModules.includes('saber_pro')) nextSaberProDashboards = [];
           if (!nextModules.includes('recurso_humano')) nextRecursoHumanoDashboards = [];
           if (!nextModules.includes('infraestructura_fisica')) nextInfraestructuraFisicaDashboards = [];
@@ -1013,7 +1047,8 @@ function GestionUsuarios() {
       if (group === 'allowedGestionProcesosDashboards') {
         const nextMenu = Array.isArray(prev.menuPermissions) ? [...prev.menuPermissions] : [];
         const nextModules = Array.isArray(prev.allowedModules) ? [...prev.allowedModules] : [];
-        if (next.length > 0) {
+        const actualProcesosDashboards = next.filter((k) => !k.startsWith('gestion_usuarios'));
+        if (actualProcesosDashboards.length > 0) {
           if (!nextMenu.includes('gestion_informacion')) nextMenu.push('gestion_informacion');
           if (!nextModules.includes('estadistica_institucional')) nextModules.push('estadistica_institucional');
           if (!nextModules.includes('gestion_procesos')) nextModules.push('gestion_procesos');
@@ -1136,7 +1171,7 @@ function GestionUsuarios() {
         .filter(([key, value]) => GI_MODULE_OPTIONS.some((o) => o.key === key) && value?.can_view)
         .map(([key]) => key);
       const allowedGestionProcesosDashboards = Object.entries(permissions)
-        .filter(([key, value]) => GESTION_PROCESOS_DASHBOARD_OPTIONS.some((o) => o.key === key) && value?.can_view)
+        .filter(([key, value]) => (GESTION_PROCESOS_DASHBOARD_OPTIONS.some((o) => o.key === key) || GESTION_USUARIOS_SUBMODULE_OPTIONS.some((o) => o.key === key)) && value?.can_view)
         .map(([key]) => key);
       const allowedPoblacionalDashboards = Object.entries(permissions)
         .filter(([key, value]) => POBLACIONAL_DASHBOARD_OPTIONS.some((o) => o.key === key) && value?.can_view)
@@ -1318,7 +1353,6 @@ function GestionUsuarios() {
   const jefeInmediatoOptions = useMemo(() => mergeUniqueOptions(fieldSuggestions.jefesInmediatos, suggestionRows, 'jefe_inmediato'), [fieldSuggestions.jefesInmediatos, mergeUniqueOptions, suggestionRows]);
 
   useEffect(() => {
-    if (!openDialog) return undefined;
     let ignore = false;
     const loadSuggestionUsers = async () => {
       setLoadingSuggestions(true);
@@ -1346,7 +1380,7 @@ function GestionUsuarios() {
     return () => {
       ignore = true;
     };
-  }, [openDialog, users]);
+  }, [users]);
 
   const smartAutocompleteSx = {
     mb: 2,
@@ -1362,7 +1396,8 @@ function GestionUsuarios() {
   const visibleUsers = useMemo(() => {
     const list = Array.isArray(users) ? [...users] : [];
     const normalizedSearch = normalizeSearchText(search).trim();
-    const filteredList = normalizedSearch
+    const searchTokens = normalizedSearch.split(/\s+/).filter(Boolean);
+    const filteredList = searchTokens.length > 0
       ? list.filter((user) => {
           const tableText = [
             user?.nombre,
@@ -1376,7 +1411,7 @@ function GestionUsuarios() {
             user?.role,
             user?.estado
           ].filter(Boolean).map(normalizeSearchText).join(' ');
-          return tableText.includes(normalizedSearch);
+          return searchTokens.every((token) => tableText.includes(token));
         })
       : list;
 
@@ -1387,7 +1422,7 @@ function GestionUsuarios() {
       if (roleCompare !== 0) return roleCompare;
       return String(a?.nombre || '').localeCompare(String(b?.nombre || ''), 'es', { sensitivity: 'base' });
     });
-  }, [normalizeSearchText, search, users]);
+  }, [getCompactRoleLabel, normalizeSearchText, search, users]);
 
   const confirmUser = confirmUserAction.user || {};
   const confirmUserConfig = useMemo(() => {
@@ -1508,26 +1543,196 @@ function GestionUsuarios() {
                       Vaciar base de datos
                     </Button>
                   )}
-                  <Button
-                    variant="contained"
-                    startIcon={<AddIcon />}
-                    onClick={() => handleOpenDialog('create')}
-                    sx={{
-                      minWidth: { xs: '100%', sm: 170 },
-                      borderRadius: 1.8,
-                      py: 0.95,
-                      textTransform: 'none',
-                      fontWeight: 800,
-                      background: 'linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%)',
-                      boxShadow: '0 8px 20px rgba(37,99,235,0.25)'
-                    }}
-                  >
-                    Crear usuario
-                  </Button>
+                  {canCreateIndividualUser && (
+                    <Button
+                      variant="contained"
+                      startIcon={<AddIcon />}
+                      onClick={() => handleOpenDialog('create')}
+                      sx={{
+                        minWidth: { xs: '100%', sm: 170 },
+                        borderRadius: 1.8,
+                        py: 0.95,
+                        textTransform: 'none',
+                        fontWeight: 800,
+                        background: 'linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%)',
+                        boxShadow: '0 8px 20px rgba(37,99,235,0.25)'
+                      }}
+                    >
+                      Crear usuario
+                    </Button>
+                  )}
               </Stack>
             </Box>
 
-            <Divider sx={{ borderColor: '#dbeafe' }} />
+            {canCreateMassiveUser && (
+              <>
+                <Divider sx={{ borderColor: '#dbeafe' }} />
+
+                <Box>
+                  <Typography
+                    variant="overline"
+                    sx={{
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      pl: 1.2,
+                      mb: 1.5,
+                      borderLeft: '4px solid #2563eb',
+                      color: '#1e3a8a',
+                      fontWeight: 900,
+                      letterSpacing: 1
+                    }}
+                  >
+                    Cargue masivo por archivo Excel
+                  </Typography>
+
+                  <Box
+                    sx={{
+                      display: 'grid',
+                      gridTemplateColumns: { xs: '1fr', md: '1fr 28px 1fr 28px 1fr' },
+                      gap: { xs: 1.2, md: 1 },
+                      alignItems: 'stretch'
+                    }}
+                  >
+                    <Box sx={{ p: 1.4, borderRadius: 2, border: '1px solid #bfdbfe', bgcolor: '#eff6ff' }}>
+                      <Stack direction="row" spacing={1} alignItems="center" sx={{ mb: 1 }}>
+                        <Chip label="1" size="small" sx={{ bgcolor: '#2563eb', color: '#fff', fontWeight: 900 }} />
+                        <Typography sx={{ fontWeight: 900, color: '#0f172a', fontSize: 14 }}>Descargar plantilla</Typography>
+                      </Stack>
+                      <Typography sx={{ color: '#475569', fontSize: 12.5, mb: 1.2 }}>
+                        Usa el formato oficial con los campos de usuario.
+                      </Typography>
+                      <Button fullWidth variant="outlined" startIcon={<DownloadIcon />} onClick={handleDownloadTemplate} sx={{ borderRadius: 1.5, textTransform: 'none', fontWeight: 800, bgcolor: '#fff' }}>
+                        Descargar plantilla
+                      </Button>
+                    </Box>
+
+                    <Box sx={{ display: { xs: 'none', md: 'grid' }, placeItems: 'center', color: '#94a3b8' }}>
+                      <ArrowForwardIcon fontSize="small" />
+                    </Box>
+
+                    <Box sx={{ p: 1.4, borderRadius: 2, border: uploadFile ? '1px solid #86efac' : '1px solid #d7e3f5', bgcolor: uploadFile ? '#f0fdf4' : '#ffffff' }}>
+                      <Stack direction="row" spacing={1} alignItems="center" sx={{ mb: 1 }}>
+                        <Chip label="2" size="small" sx={{ bgcolor: uploadFile ? '#10b981' : '#94a3b8', color: '#fff', fontWeight: 900 }} />
+                        <Typography sx={{ fontWeight: 900, color: '#0f172a', fontSize: 14 }}>Adjuntar archivo</Typography>
+                      </Stack>
+                      <Typography sx={{ color: '#475569', fontSize: 12.5, mb: 1.2, minHeight: 19 }}>
+                        {uploadFile ? uploadFile.name : 'Selecciona el Excel diligenciado.'}
+                      </Typography>
+                      <Button fullWidth variant="outlined" component="label" startIcon={<UploadIcon />} sx={{ borderRadius: 1.5, textTransform: 'none', fontWeight: 800, bgcolor: '#fff' }}>
+                        Seleccionar archivo
+                        <input
+                          key={uploadInputKey}
+                          type="file"
+                          hidden
+                          accept=".xlsx,.xls"
+                          onChange={(e) => {
+                            setUploadFile(e.target.files[0] || null);
+                            setBulkImportResult(null);
+                            setBulkErrorFile(null);
+                            setBulkWarningFile(null);
+                          }}
+                        />
+                      </Button>
+                    </Box>
+
+                    <Box sx={{ display: { xs: 'none', md: 'grid' }, placeItems: 'center', color: '#94a3b8' }}>
+                      <ArrowForwardIcon fontSize="small" />
+                    </Box>
+
+                    <Box sx={{ p: 1.4, borderRadius: 2, border: uploadFile ? '1px solid #bfdbfe' : '1px solid #d7e3f5', bgcolor: uploadFile ? '#ffffff' : '#f8fafc' }}>
+                      <Stack direction="row" spacing={1} alignItems="center" sx={{ mb: 1 }}>
+                        <Chip label="3" size="small" sx={{ bgcolor: uploadFile ? '#2563eb' : '#94a3b8', color: '#fff', fontWeight: 900 }} />
+                        <Typography sx={{ fontWeight: 900, color: '#0f172a', fontSize: 14 }}>Cargar al sistema</Typography>
+                      </Stack>
+                      <Typography sx={{ color: '#475569', fontSize: 12.5, mb: 1, fontWeight: 700 }}>
+                        Tipo de operación:
+                      </Typography>
+                      <FormControl component="fieldset" sx={{ mb: 1.5, display: 'block' }}>
+                        <RadioGroup
+                          value={operationType}
+                          onChange={(e) => setOperationType(e.target.value)}
+                          sx={{
+                            gap: 0.8,
+                            '& .MuiFormControlLabel-root': {
+                              margin: 0,
+                              padding: '5px 10px',
+                              borderRadius: 2,
+                              border: '1px solid #e2e8f0',
+                              width: '100%',
+                              transition: 'all 0.2s',
+                              bgcolor: '#fff',
+                              mb: 0.6,
+                              '&:hover': {
+                                backgroundColor: '#f8fafc',
+                                borderColor: '#cbd5e1'
+                              },
+                              '&.Mui-checked': {
+                                borderColor: '#2563eb',
+                                backgroundColor: '#f0f6ff'
+                              }
+                            },
+                            '& .MuiFormControlLabel-label': {
+                              fontSize: 11.5,
+                              fontWeight: 700,
+                              color: '#334155'
+                            }
+                          }}
+                        >
+                          <FormControlLabel
+                            value="sync"
+                            control={<Radio size="small" sx={{ p: 0.5 }} />}
+                            label="Sincronizar y actualizar registros"
+                          />
+                          <FormControlLabel
+                            value="replace"
+                            control={<Radio size="small" sx={{ p: 0.5 }} />}
+                            label="Reemplazo total de información"
+                          />
+                        </RadioGroup>
+                      </FormControl>
+                      <FormControlLabel
+                        control={
+                          <Checkbox
+                            size="small"
+                            checked={sendBulkEmails}
+                            onChange={(event) => setSendBulkEmails(event.target.checked)}
+                          />
+                        }
+                        label="Enviar correos de bienvenida (Solo nuevos)"
+                        sx={{
+                          mb: 1.5,
+                          mx: 0,
+                          display: 'flex',
+                          '& .MuiFormControlLabel-label': {
+                            fontSize: 12.5,
+                            color: '#475569',
+                            fontWeight: 600
+                          }
+                        }}
+                      />
+                      <Button
+                        fullWidth
+                        variant="contained"
+                        disabled={!uploadFile || uploading}
+                        onClick={handleBulkUploadProfessional}
+                        sx={{
+                          borderRadius: 1.5,
+                          textTransform: 'none',
+                          fontWeight: 800,
+                          py: 1,
+                          bgcolor: '#2563eb',
+                          boxShadow: '0 4px 12px rgba(37,99,235,0.2)',
+                          '&:hover': { bgcolor: '#1d4ed8' },
+                          '&.Mui-disabled': { bgcolor: '#bfdbfe', color: '#1e3a8a' }
+                        }}
+                      >
+                        {uploading ? <CircularProgress size={20} sx={{ color: '#1d4ed8' }} /> : 'Importar usuarios'}
+                      </Button>
+                    </Box>
+                  </Box>
+                </Box>
+              </>
+            )}
 
             <Box>
               <Typography
@@ -1543,155 +1748,8 @@ function GestionUsuarios() {
                   letterSpacing: 1
                 }}
               >
-                Cargue masivo por archivo Excel
+                Buscar usuarios
               </Typography>
-
-              <Box
-                sx={{
-                  display: 'grid',
-                  gridTemplateColumns: { xs: '1fr', md: '1fr 28px 1fr 28px 1fr' },
-                  gap: { xs: 1.2, md: 1 },
-                  alignItems: 'stretch'
-                }}
-              >
-                <Box sx={{ p: 1.4, borderRadius: 2, border: '1px solid #bfdbfe', bgcolor: '#eff6ff' }}>
-                  <Stack direction="row" spacing={1} alignItems="center" sx={{ mb: 1 }}>
-                    <Chip label="1" size="small" sx={{ bgcolor: '#2563eb', color: '#fff', fontWeight: 900 }} />
-                    <Typography sx={{ fontWeight: 900, color: '#0f172a', fontSize: 14 }}>Descargar plantilla</Typography>
-                  </Stack>
-                  <Typography sx={{ color: '#475569', fontSize: 12.5, mb: 1.2 }}>
-                    Usa el formato oficial con los campos de usuario.
-                  </Typography>
-                  <Button fullWidth variant="outlined" startIcon={<DownloadIcon />} onClick={handleDownloadTemplate} sx={{ borderRadius: 1.5, textTransform: 'none', fontWeight: 800, bgcolor: '#fff' }}>
-                    Descargar plantilla
-                  </Button>
-                </Box>
-
-                <Box sx={{ display: { xs: 'none', md: 'grid' }, placeItems: 'center', color: '#94a3b8' }}>
-                  <ArrowForwardIcon fontSize="small" />
-                </Box>
-
-                <Box sx={{ p: 1.4, borderRadius: 2, border: uploadFile ? '1px solid #86efac' : '1px solid #d7e3f5', bgcolor: uploadFile ? '#f0fdf4' : '#ffffff' }}>
-                  <Stack direction="row" spacing={1} alignItems="center" sx={{ mb: 1 }}>
-                    <Chip label="2" size="small" sx={{ bgcolor: uploadFile ? '#10b981' : '#94a3b8', color: '#fff', fontWeight: 900 }} />
-                    <Typography sx={{ fontWeight: 900, color: '#0f172a', fontSize: 14 }}>Adjuntar archivo</Typography>
-                  </Stack>
-                  <Typography sx={{ color: '#475569', fontSize: 12.5, mb: 1.2, minHeight: 19 }}>
-                    {uploadFile ? uploadFile.name : 'Selecciona el Excel diligenciado.'}
-                  </Typography>
-                  <Button fullWidth variant="outlined" component="label" startIcon={<UploadIcon />} sx={{ borderRadius: 1.5, textTransform: 'none', fontWeight: 800, bgcolor: '#fff' }}>
-                    Seleccionar archivo
-                    <input
-                      key={uploadInputKey}
-                      type="file"
-                      hidden
-                      accept=".xlsx,.xls"
-                      onChange={(e) => {
-                        setUploadFile(e.target.files[0] || null);
-                        setBulkImportResult(null);
-                        setBulkErrorFile(null);
-                        setBulkWarningFile(null);
-                      }}
-                    />
-                  </Button>
-                </Box>
-
-                <Box sx={{ display: { xs: 'none', md: 'grid' }, placeItems: 'center', color: '#94a3b8' }}>
-                  <ArrowForwardIcon fontSize="small" />
-                </Box>
-
-                <Box sx={{ p: 1.4, borderRadius: 2, border: uploadFile ? '1px solid #bfdbfe' : '1px solid #d7e3f5', bgcolor: uploadFile ? '#ffffff' : '#f8fafc' }}>
-                  <Stack direction="row" spacing={1} alignItems="center" sx={{ mb: 1 }}>
-                    <Chip label="3" size="small" sx={{ bgcolor: uploadFile ? '#2563eb' : '#94a3b8', color: '#fff', fontWeight: 900 }} />
-                    <Typography sx={{ fontWeight: 900, color: '#0f172a', fontSize: 14 }}>Cargar al sistema</Typography>
-                  </Stack>
-                  <Typography sx={{ color: '#475569', fontSize: 12.5, mb: 1, fontWeight: 700 }}>
-                    Tipo de operación:
-                  </Typography>
-                  <FormControl component="fieldset" sx={{ mb: 1.5, display: 'block' }}>
-                    <RadioGroup
-                      value={operationType}
-                      onChange={(e) => setOperationType(e.target.value)}
-                      sx={{
-                        gap: 0.8,
-                        '& .MuiFormControlLabel-root': {
-                          margin: 0,
-                          padding: '5px 10px',
-                          borderRadius: 2,
-                          border: '1px solid #e2e8f0',
-                          width: '100%',
-                          transition: 'all 0.2s',
-                          bgcolor: '#fff',
-                          mb: 0.6,
-                          '&:hover': {
-                            backgroundColor: '#f8fafc',
-                            borderColor: '#cbd5e1'
-                          },
-                          '&.Mui-checked': {
-                            borderColor: '#2563eb',
-                            backgroundColor: '#f0f6ff'
-                          }
-                        },
-                        '& .MuiFormControlLabel-label': {
-                          fontSize: 11.5,
-                          fontWeight: 700,
-                          color: '#334155'
-                        }
-                      }}
-                    >
-                      <FormControlLabel
-                        value="sync"
-                        control={<Radio size="small" sx={{ p: 0.5 }} />}
-                        label="Sincronizar y actualizar registros"
-                      />
-                      <FormControlLabel
-                        value="replace"
-                        control={<Radio size="small" sx={{ p: 0.5 }} />}
-                        label="Reemplazo total de información"
-                      />
-                    </RadioGroup>
-                  </FormControl>
-                  <FormControlLabel
-                    control={
-                      <Checkbox
-                        size="small"
-                        checked={sendBulkEmails}
-                        onChange={(event) => setSendBulkEmails(event.target.checked)}
-                      />
-                    }
-                    label="Enviar correos de bienvenida (Solo nuevos)"
-                    sx={{
-                      mb: 1.5,
-                      mx: 0,
-                      display: 'flex',
-                      '& .MuiFormControlLabel-label': {
-                        fontSize: 12.5,
-                        color: '#475569',
-                        fontWeight: 600
-                      }
-                    }}
-                  />
-                  <Button
-                    fullWidth
-                    variant="contained"
-                    disabled={!uploadFile || uploading}
-                    onClick={handleBulkUploadProfessional}
-                    sx={{
-                      borderRadius: 1.5,
-                      textTransform: 'none',
-                      fontWeight: 800,
-                      py: 1,
-                      bgcolor: '#2563eb',
-                      boxShadow: '0 4px 12px rgba(37,99,235,0.2)',
-                      '&:hover': { bgcolor: '#1d4ed8' },
-                      '&.Mui-disabled': { bgcolor: '#bfdbfe', color: '#1e3a8a' }
-                    }}
-                  >
-                    {uploading ? <CircularProgress size={20} sx={{ color: '#1d4ed8' }} /> : 'Importar usuarios'}
-                  </Button>
-                </Box>
-              </Box>
-
               <Box
                 sx={{
                   mt: 1.2,
@@ -1838,70 +1896,72 @@ function GestionUsuarios() {
             placeholder="Buscar dependencia..."
           />
 
-          <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1.5} alignItems="center" sx={{ width: { xs: '100%', md: 'auto' } }}>
-            <Button
-              size="medium"
-              variant="contained"
-              startIcon={<DownloadIcon />}
-              onClick={handleDownloadPendingNotifications}
-              sx={{
-                borderRadius: 1.5,
-                textTransform: 'none',
-                fontWeight: 800,
-                fontSize: 13,
-                px: 2,
-                py: 0.8,
-                bgcolor: '#d97706',
-                boxShadow: '0 4px 12px rgba(217, 119, 6, 0.2)',
-                '&:hover': { bgcolor: '#b45309' },
-                minWidth: { xs: '100%', sm: 'auto' }
-              }}
-            >
-              Descargar sin notificar
-            </Button>
+          { (isFullAdminUser || currentUser?.role === ROLES.GESTION_PROCESOS) && (
+            <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1.5} alignItems="center" sx={{ width: { xs: '100%', md: 'auto' } }}>
+              <Button
+                size="medium"
+                variant="contained"
+                startIcon={<DownloadIcon />}
+                onClick={handleDownloadPendingNotifications}
+                sx={{
+                  borderRadius: 1.5,
+                  textTransform: 'none',
+                  fontWeight: 800,
+                  fontSize: 13,
+                  px: 2,
+                  py: 0.8,
+                  bgcolor: '#d97706',
+                  boxShadow: '0 4px 12px rgba(217, 119, 6, 0.2)',
+                  '&:hover': { bgcolor: '#b45309' },
+                  minWidth: { xs: '100%', sm: 'auto' }
+                }}
+              >
+                Descargar sin notificar
+              </Button>
 
-            <Button
-              size="medium"
-              variant="contained"
-              startIcon={<WarningIcon />}
-              onClick={handleSendPendingNotifications}
-              sx={{
-                borderRadius: 1.5,
-                textTransform: 'none',
-                fontWeight: 800,
-                fontSize: 13,
-                px: 2,
-                py: 0.8,
-                bgcolor: '#2563eb',
-                boxShadow: '0 4px 12px rgba(37, 99, 235, 0.2)',
-                '&:hover': { bgcolor: '#1d4ed8' },
-                minWidth: { xs: '100%', sm: 'auto' }
-              }}
-            >
-              Enviar a pendientes
-            </Button>
+              <Button
+                size="medium"
+                variant="contained"
+                startIcon={<WarningIcon />}
+                onClick={handleSendPendingNotifications}
+                sx={{
+                  borderRadius: 1.5,
+                  textTransform: 'none',
+                  fontWeight: 800,
+                  fontSize: 13,
+                  px: 2,
+                  py: 0.8,
+                  bgcolor: '#2563eb',
+                  boxShadow: '0 4px 12px rgba(37, 99, 235, 0.2)',
+                  '&:hover': { bgcolor: '#1d4ed8' },
+                  minWidth: { xs: '100%', sm: 'auto' }
+                }}
+              >
+                Enviar a pendientes
+              </Button>
 
-            <Button
-              size="medium"
-              variant="contained"
-              startIcon={<DownloadIcon />}
-              onClick={handleExportUsuarios}
-              sx={{
-                borderRadius: 1.5,
-                textTransform: 'none',
-                fontWeight: 800,
-                fontSize: 13,
-                px: 2,
-                py: 0.8,
-                bgcolor: '#059669',
-                boxShadow: '0 4px 12px rgba(5, 150, 105, 0.2)',
-                '&:hover': { bgcolor: '#047857' },
-                minWidth: { xs: '100%', sm: 'auto' }
-              }}
-            >
-              Exportar a Excel
-            </Button>
-          </Stack>
+              <Button
+                size="medium"
+                variant="contained"
+                startIcon={<DownloadIcon />}
+                onClick={handleExportUsuarios}
+                sx={{
+                  borderRadius: 1.5,
+                  textTransform: 'none',
+                  fontWeight: 800,
+                  fontSize: 13,
+                  px: 2,
+                  py: 0.8,
+                  bgcolor: '#059669',
+                  boxShadow: '0 4px 12px rgba(5, 150, 105, 0.2)',
+                  '&:hover': { bgcolor: '#047857' },
+                  minWidth: { xs: '100%', sm: 'auto' }
+                }}
+              >
+                Exportar a Excel
+              </Button>
+            </Stack>
+          ) }
         </Stack>
 
         <Paper elevation={0} sx={{ border: '1px solid #cbd5e1', borderRadius: 1.5, overflow: 'hidden', boxShadow: '0 6px 16px rgba(15,23,42,0.05)' }}>
@@ -2415,12 +2475,13 @@ function GestionUsuarios() {
                 )}
                 sx={smartAutocompleteSx}
               />
-              <FormControl fullWidth sx={{ mb: 2 }}>
+              <FormControl fullWidth sx={{ mb: 2 }} disabled={!isFullAdminUser}>
                 <InputLabel>Rol</InputLabel>
                 <Select
-                  value={formData.role}
+                  value={isFullAdminUser ? formData.role : ROLES.CONSULTA}
                   label="Rol"
                   onChange={(e) => setFormData({ ...formData, role: e.target.value })}
+                  disabled={!isFullAdminUser}
                 >
                   {allowedRolesForManager.map((roleOption) => (
                     <MenuItem key={roleOption} value={roleOption}>
@@ -2473,7 +2534,7 @@ function GestionUsuarios() {
                                   Array.isArray(modulePermissionsForm.allowedModules) &&
                                   (
                                     modulePermissionsForm.allowedModules.length > 0
-                                    || modulePermissionsForm.allowedGestionProcesosDashboards.length > 0
+                                    || (Array.isArray(modulePermissionsForm.allowedGestionProcesosDashboards) && modulePermissionsForm.allowedGestionProcesosDashboards.filter((k) => !k.startsWith('gestion_usuarios')).length > 0)
                                     || modulePermissionsForm.allowedPoblacionalDashboards.length > 0
                                     || modulePermissionsForm.allowedSaberProDashboards.length > 0
                                     || modulePermissionsForm.allowedRecursoHumanoDashboards.length > 0
@@ -2489,6 +2550,44 @@ function GestionUsuarios() {
                     </Grid>
                   </FormGroup>
                 </Paper>
+
+                { (modulePermissionsForm.menuPermissions?.includes('gestion_usuarios') || (Array.isArray(modulePermissionsForm.allowedGestionProcesosDashboards) && modulePermissionsForm.allowedGestionProcesosDashboards.some(k => String(k).startsWith('gestion_usuarios')))) && (
+                  <>
+                    <Divider />
+                    <Paper
+                      variant="outlined"
+                      sx={{ p: 2, borderRadius: 2, bgcolor: '#eff6ff', borderColor: '#bfdbfe' }}
+                    >
+                      <Typography sx={{ fontWeight: 800, mb: 0.6, color: '#1e3a8a' }}>Permisos Específicos de Creación de Usuarios</Typography>
+                      <Typography variant="body2" sx={{ color: '#3b82f6', mb: 1.5, fontWeight: 600 }}>
+                        Al activar Gestión de Usuarios, el usuario podrá consultar la tabla de usuarios consulta. Habilita las opciones de creación que requiera:
+                      </Typography>
+                      <FormGroup>
+                        <Grid container spacing={0.5}>
+                          {GESTION_USUARIOS_SUBMODULE_OPTIONS.map((item) => (
+                            <Grid item xs={12} sm={6} md={4} key={`gusub-${item.key}`}>
+                              <FormControlLabel
+                                control={(
+                                  <Checkbox
+                                    checked={modulePermissionsForm.allowedGestionProcesosDashboards?.includes(item.key)}
+                                    onChange={() => {
+                                      handleTogglePermission('allowedGestionProcesosDashboards', item.key);
+                                      if (!modulePermissionsForm.menuPermissions?.includes('gestion_usuarios')) {
+                                        handleTogglePermission('menuPermissions', 'gestion_usuarios');
+                                      }
+                                    }}
+                                    size="small"
+                                  />
+                                )}
+                                label={item.label}
+                              />
+                            </Grid>
+                          ))}
+                        </Grid>
+                      </FormGroup>
+                    </Paper>
+                  </>
+                )}
 
                 <Divider />
 
@@ -2569,6 +2668,7 @@ function GestionUsuarios() {
                     </Paper>
                   </>
                 )}
+
 
                 { modulePermissionsForm.allowedModules.includes('gestion_procesos') && (
                   <>
