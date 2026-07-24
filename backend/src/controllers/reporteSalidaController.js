@@ -20,6 +20,7 @@ const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:3000';
 const publicBackendUrl = process.env.BACKEND_PUBLIC_URL || process.env.API_PUBLIC_URL || frontendUrl;
 const ACADEMIC_VICERRECTORIA_EMAIL = getDependencyEmail('Vicerrectoria Academica') || 'viceacad@unicesmag.edu.co';
 const RECTORIA_EMAIL = getDependencyEmail('Rectoria') || 'rectoria@unicesmag.edu.co';
+const EVANGELIZACION_VICERRECTORIA_EMAIL = getDependencyEmail('Vicerrectoria para la Evangelizacion de las Culturas') || 'vicebien@unicesmag.edu.co';
 const DEFAULT_DECLARACION_SIN_ADJUNTO_SALUD = 'Declaro que al momento de radicar esta solicitud no cuento con archivos adjuntos o soportes para cargar en el sistema. Entiendo que la Oficina de Gestion del Talento Humano y/o Seguridad y Salud en el Trabajo podran requerir en cualquier momento los soportes correspondientes; por tanto, me comprometo a conservarlos despues de la atencion o tramite y a suministrarlos oportunamente cuando sean solicitados.';
 
 const featureDisabled = (res) =>
@@ -96,6 +97,11 @@ const isVicerrectoriaAcademica = (value) => {
 const isEvangelizacionVicerrectoria = (value) => {
   const normalized = normalizeForMatch(value);
   return normalized.includes('evangelizacion de las culturas') || normalized.includes('evangelizacion de culturas');
+};
+
+const isInvestigacionVicerrectoria = (value) => {
+  const normalized = normalizeForMatch(value);
+  return normalized.includes('investigacion y extension') || (normalized.includes('investigacion') && !normalized.includes('academica'));
 };
 
 const VICERRECTORIA_CANONICAL_NAMES = [
@@ -871,6 +877,14 @@ const isAcademicTeacherSolicitud = (solicitud = {}) => {
   return isDocenteCargo(cargo) && isVicerrectoriaAcademica(getSolicitudVicerrectoria(solicitud));
 };
 
+const isEvangelizacionSolicitud = (solicitud = {}) => {
+  return isEvangelizacionVicerrectoria(getSolicitudVicerrectoria(solicitud));
+};
+
+const isInvestigacionSolicitud = (solicitud = {}) => {
+  return isInvestigacionVicerrectoria(getSolicitudVicerrectoria(solicitud));
+};
+
 const isOficioSolicitud = (solicitud = {}) => {
   const duracionTipo = getSolicitudSalida(solicitud).duracionTipo;
   return Boolean(duracionTipo && duracionTipo !== 'menos_media_jornada');
@@ -1555,24 +1569,29 @@ const getDependencyNotificationTargets = (solicitud = {}) => {
   const dependenciaEmail = getDependencyEmail(dependencia);
   const vicerrectoriaEmail = getDependencyEmail(vicerrectoria);
   const bossEmail = getInitialApprovalRecipientEmail(solicitud);
+  const isEvangelizacion = isEvangelizacionVicerrectoria(vicerrectoria);
   const targets = [];
 
-  const pushTarget = (email, label, source) => {
+  const pushTarget = (email, label, source, forceApproval = false) => {
     const cleanEmail = normalizeEmail(email);
     if (!cleanEmail || targets.some((target) => sameExactEmail(target.email, cleanEmail))) return;
     if (sameExactEmail(cleanEmail, ACADEMIC_VICERRECTORIA_EMAIL)) return;
-    if (bossEmail && sameEmail(cleanEmail, bossEmail)) return;
+    if (sameExactEmail(cleanEmail, RECTORIA_EMAIL)) return;
+    // Para Evangelización: NO excluir el correo de la vicerrectora aunque coincida con el jefe
+    if (!forceApproval && bossEmail && sameEmail(cleanEmail, bossEmail)) return;
     
     targets.push({
       email: cleanEmail,
       label: label || source || 'Dependencia',
-      source
+      source,
+      forceApproval // true = siempre recibe botones de aprobación
     });
   };
 
   pushTarget(dependenciaEmail, dependencia, 'dependencia');
-  if (!isVicerrectoriaAcademica(vicerrectoria)) {
-    pushTarget(vicerrectoriaEmail, vicerrectoria, 'vicerrectoria');
+  if (!isVicerrectoriaAcademica(vicerrectoria) && !isRectoriaAuthority(vicerrectoria)) {
+    // Para Evangelización: la vicerrectora SIEMPRE recibe como target con botones de aprobación
+    pushTarget(vicerrectoriaEmail, vicerrectoria, 'vicerrectoria', isEvangelizacion);
   }
   return targets;
 };
@@ -1656,10 +1675,9 @@ const sendDependenciaRadicacionInfoEmail = async (solicitud, token, attachments,
   const laboral = solicitud.datos_formulario?.laboral || {};
   const jefe = solicitud.jefe_snapshot || {};
   const targets = getDependencyNotificationTargets(solicitud);
-  const depEmails = targets.map((target) => target.email).filter(Boolean);
   const dependenciaLabel = targets.map((target) => target.label).filter(Boolean).join(' / ');
 
-  if (!depEmails.length) {
+  if (!targets.length) {
     return { success: false, skipped: true, reason: 'dependency_email_not_configured' };
   }
 
@@ -1670,55 +1688,64 @@ const sendDependenciaRadicacionInfoEmail = async (solicitud, token, attachments,
   const subject = getWorkflowThreadSubject(solicitud);
 
   const isBlocked = await isDependencyApprovalBlocked(solicitud);
-  const introText = isBlocked
-    ? `<p style="margin: 0 0 12px 0;">Saludo de paz y bien,</p><p style="margin: 0 0 4px 0; color: #475569;">Estimado(a) equipo de dependencia.</p><p>Reciba un cordial saludo. Se informa que el/la colaborador(a) <strong>${escapeHtml(solicitante.nombre || '')}</strong>, adscrito(a) a <strong>${escapeHtml(dependenciaLabel)}</strong>, radico una solicitud de ${isOficio ? 'oficio de salida' : 'reporte de salida'} en el sistema. Este correo es de carácter informativo para su seguimiento interno.</p>`
-    : `<p style="margin: 0 0 12px 0;">Saludo de paz y bien,</p><p style="margin: 0 0 4px 0; color: #475569;">Estimado(a) equipo de dependencia.</p><p>Reciba un cordial saludo. Se informa que el/la colaborador(a) <strong>${escapeHtml(solicitante.nombre || '')}</strong>, adscrito(a) a <strong>${escapeHtml(dependenciaLabel)}</strong>, radico una solicitud de ${isOficio ? 'oficio de salida' : 'reporte de salida'} en el sistema. Este correo permite realizar seguimiento interno y, cuando el jefe inmediato no se encuentre disponible, autorizar o no autorizar la salida desde la dependencia.</p>`;
+  const isEvangelizacion = isEvangelizacionSolicitud(solicitud);
 
-  const actionBlock = isBlocked
-    ? `
-      <div style="background:#fff3cd;color:#856404;border:1px solid #ffeeba;padding:12px;border-radius:8px;margin:20px 0;font-size:13px;line-height:1.4;">
-        <strong>Nota de Control:</strong> Dado que el/la colaborador(a) ocupa un cargo de dirección/coordinación/jefatura o gestiona su propia dependencia de manera directa, esta solicitud requiere la revisión y autorización directa de su jefe inmediato. Por lo tanto, esta notificación es de carácter puramente informativo y no habilita la aprobación desde la dependencia.
-      </div>
-    `
-    : `
-      <div style="text-align:center;margin:20px 0;">
-        <a href="${approveUrl}" style="display:inline-block;background:#0b3a6f;color:#fff;padding:12px 24px;border-radius:8px;text-decoration:none;font-weight:700;margin:5px 10px;">AUTORIZAR SALIDA</a>
-        <a href="${rejectUrl}" style="display:inline-block;background:#b91c1c;color:#fff;padding:12px 24px;border-radius:8px;text-decoration:none;font-weight:700;margin:5px 10px;">NO AUTORIZAR SALIDA</a>
-      </div>
-      <p>Si la dependencia autoriza o no autoriza primero, el enlace del jefe inmediato quedara registrado como ya procesado para evitar duplicidad.</p>
-    `;
+  // Renderiza HTML con o sin botones según si el target está bloqueado
+  const renderDepHtml = (blocked) => {
+    const introText = blocked
+      ? `<p style="margin: 0 0 12px 0;">Saludo de paz y bien,</p><p style="margin: 0 0 4px 0; color: #475569;">Estimado(a) equipo de dependencia.</p><p>Reciba un cordial saludo. Se informa que el/la colaborador(a) <strong>${escapeHtml(solicitante.nombre || '')}</strong>, adscrito(a) a <strong>${escapeHtml(dependenciaLabel)}</strong>, radico una solicitud de ${isOficio ? 'oficio de salida' : 'reporte de salida'} en el sistema. Este correo es de carácter informativo para su seguimiento interno.</p>`
+      : `<p style="margin: 0 0 12px 0;">Saludo de paz y bien,</p><p style="margin: 0 0 4px 0; color: #475569;">Estimado(a) equipo de dependencia.</p><p>Reciba un cordial saludo. Se informa que el/la colaborador(a) <strong>${escapeHtml(solicitante.nombre || '')}</strong>, adscrito(a) a <strong>${escapeHtml(dependenciaLabel)}</strong>, radico una solicitud de ${isOficio ? 'oficio de salida' : 'reporte de salida'} en el sistema. Este correo permite realizar seguimiento interno y, cuando el jefe inmediato no se encuentre disponible, autorizar o no autorizar la salida desde la dependencia.</p>`;
 
-  const html = renderInstitutionalTemplate({
-    title: `Revision de dependencia - ${isOficio ? 'Oficio de salida' : 'Reporte de salida'}`,
-    introHtml: introText,
-    bodyHtml: `
-      <p><strong>Colaborador(a):</strong> ${escapeHtml(solicitante.nombre || '')}</p>
-      <p><strong>Cargo:</strong> ${escapeHtml(laboral.cargo || solicitante.cargo || '')}</p>
-      <p><strong>Jefe inmediato asignado:</strong> ${escapeHtml(jefe.nombre || 'No especificado')}</p>
-      ${buildTerapiasHtml(solicitud)}
-      ${actionBlock}
-    `,
-    senderHtml: `
-      <p style="margin: 0; font-weight: bold; color: #0b3a6f;">Dirección de Planeación y Aseguramiento de la Calidad</p>
-      <p style="margin: 2px 0 0 0; font-size: 12px; color: #64748b;">SIAC UNICESMAG</p>
-    `
-  });
+    const actionBlock = blocked
+      ? `
+        <div style="background:#fff3cd;color:#856404;border:1px solid #ffeeba;padding:12px;border-radius:8px;margin:20px 0;font-size:13px;line-height:1.4;">
+          <strong>Nota de Control:</strong> Dado que el/la colaborador(a) ocupa un cargo de dirección/coordinación/jefatura o gestiona su propia dependencia de manera directa, esta solicitud requiere la revisión y autorización directa de su jefe inmediato. Por lo tanto, esta notificación es de carácter puramente informativo y no habilita la aprobación desde la dependencia.
+        </div>
+      `
+      : `
+        <div style="text-align:center;margin:20px 0;">
+          <a href="${approveUrl}" style="display:inline-block;background:#0b3a6f;color:#fff;padding:12px 24px;border-radius:8px;text-decoration:none;font-weight:700;margin:5px 10px;">AUTORIZAR SALIDA</a>
+          <a href="${rejectUrl}" style="display:inline-block;background:#b91c1c;color:#fff;padding:12px 24px;border-radius:8px;text-decoration:none;font-weight:700;margin:5px 10px;">NO AUTORIZAR SALIDA</a>
+        </div>
+        <p>Si la dependencia autoriza o no autoriza primero, el enlace del jefe inmediato quedara registrado como ya procesado para evitar duplicidad.</p>
+      `;
+
+    return renderInstitutionalTemplate({
+      title: `Revision de dependencia - ${isOficio ? 'Oficio de salida' : 'Reporte de salida'}`,
+      introHtml: introText,
+      bodyHtml: `
+        <p><strong>Colaborador(a):</strong> ${escapeHtml(solicitante.nombre || '')}</p>
+        <p><strong>Cargo:</strong> ${escapeHtml(laboral.cargo || solicitante.cargo || '')}</p>
+        <p><strong>Jefe inmediato asignado:</strong> ${escapeHtml(jefe.nombre || 'No especificado')}</p>
+        ${buildTerapiasHtml(solicitud)}
+        ${actionBlock}
+      `,
+      senderHtml: `
+        <p style="margin: 0; font-weight: bold; color: #0b3a6f;">Dirección de Planeación y Aseguramiento de la Calidad</p>
+        <p style="margin: 2px 0 0 0; font-size: 12px; color: #64748b;">SIAC UNICESMAG</p>
+      `
+    });
+  };
 
   const results = [];
-  for (const depEmail of depEmails) {
-    const textContent = isLeader
+  for (const target of targets) {
+    // Para Evangelización: la vicerrectora (forceApproval=true) recibe botones, los demás informativo
+    // Para los demás: se usa el isBlocked general
+    const targetBlocked = target.forceApproval ? false : (isEvangelizacion ? true : isBlocked);
+    const html = renderDepHtml(targetBlocked);
+    const textContent = targetBlocked
       ? `Solicitud ${solicitud.consecutivo} radicada por ${solicitante.nombre || ''}. (Notificación informativa - requiere firma directa de jefe inmediato).`
       : `Solicitud ${solicitud.consecutivo} radicada por ${solicitante.nombre || ''}. Autorizar: ${approveUrl}. No autorizar: ${rejectUrl}.`;
 
     const result = await sendInstitutionalEmail({
-      to: depEmail,
+      to: target.email,
       subject,
       text: textContent,
       html,
       attachments,
       headers
     });
-    results.push({ email: depEmail, ...result });
+    results.push({ email: target.email, ...result });
   }
 
   return {
@@ -1927,6 +1954,10 @@ const sendFinalEmails = async (solicitud, pdfAttachment, supportAttachment) => {
   const solicitanteEmail = solicitud.solicitante_snapshot?.email;
   dependenciaTargets.forEach((target) => {
     if (target.email && !sameExactEmail(target.email, solicitanteEmail) && !copyRecipients.some((recipient) => sameExactEmail(recipient.email, target.email))) {
+      // Para Evangelización, el correo de la Vicerrectoría se envía sin adjuntos en su sección dedicada
+      if (isEvangelizacionSolicitud(solicitud) && sameExactEmail(target.email, EVANGELIZACION_VICERRECTORIA_EMAIL)) {
+        return;
+      }
       copyRecipients.push({ type: 'dependencia', email: target.email, label: target.label, source: target.source });
     }
   });
@@ -2052,7 +2083,35 @@ const sendFinalEmails = async (solicitud, pdfAttachment, supportAttachment) => {
     });
   }
 
-  return { userResult, depResult, ghResult, sstResult };
+  // 5. Copia final a Vicerrectoría para la Evangelización de las Culturas (PDF firmado incluido, SIN otros adjuntos/soportes)
+  let evanResult = { success: false };
+  if (isEvangelizacionSolicitud(solicitud)) {
+    const evanEmail = EVANGELIZACION_VICERRECTORIA_EMAIL;
+    const evanHtml = renderInstitutionalTemplate({
+      title: `${isOficio ? 'Oficio' : 'Reporte'} de salida aprobado - Notificación Vicerrectoría`,
+      introHtml: `<p style="margin: 0 0 12px 0;">Saludo de paz y bien,</p><p style="margin: 0 0 4px 0; color: #475569;">Estimado(a) Vicerrector(a) para la Evangelización de las Culturas,</p><p style="margin: 0 0 16px 0; font-size: 16px; font-weight: bold; color: #0b3a6f;">MARÍA DEL PILAR AGRADA GUERRERO</p><p>Reciba un cordial saludo. Para su respectiva información y control interno, le notificamos que ha sido aprobado exitosamente el ${isOficio ? 'oficio de salida' : 'reporte de salida'} para el/la colaborador(a) <strong>${escapeHtml(nombreColaborador)}</strong>, adscrito(a) a su vicerrectoría (<strong>${escapeHtml(dependencialabel)}</strong>).</p>`,
+      bodyHtml: `<p>Se adjunta el PDF ${isOficio ? 'del oficio' : 'digital FR-002'} debidamente firmado y aprobado.</p>
+        ${buildTerapiasHtml(solicitud)}`,
+      senderHtml: finalApprovalGHHtml
+    });
+
+    evanResult = await sendInstitutionalEmail({
+      to: [evanEmail],
+      subject: workflowThreadSubject,
+      text: `Notificación de aprobación: Se notifica que el ${isOficio ? 'oficio' : 'reporte'} de salida del/de la colaborador(a) ${nombreColaborador} ha sido aprobado exitosamente. Se adjunta PDF firmado.`,
+      html: evanHtml,
+      attachments: [pdfAttachment].filter(Boolean), // ÚNICAMENTE EL PDF DEL FORMATO/OFICIO FIRMADO, SIN OTROS ADJUNTOS
+      headers: getThreadHeadersFromId(getThreadMessageId(solicitud, 'thread_message_id_dependencia'))
+    });
+
+    console.log('[reporte-salida] Copia final a Vicerrectoría para la Evangelización enviada (con PDF firmado, sin otros adjuntos):', {
+      consecutivo: solicitud.consecutivo,
+      email: evanEmail,
+      success: Boolean(evanResult.success)
+    });
+  }
+
+  return { userResult, depResult, ghResult, sstResult, evanResult };
 };
 
 const sendJefeApprovalEmail = async (solicitud, token, attachments, headers = {}) => {
@@ -3821,7 +3880,9 @@ const listarSolicitudes = async (req, res) => {
   if (!(await getReporteSalidaFeatureState())) return featureDisabled(res);
   try {
     const page = Math.max(1, Number(req.query.page || 1));
-    const limit = Math.min(100, Math.max(1, Number(req.query.limit || 20)));
+    const rawLimit = req.query.limit;
+    const isFetchAll = rawLimit === '0' || rawLimit === 'all' || req.query.all === 'true';
+    const limit = isFetchAll ? undefined : Math.min(10000, Math.max(1, Number(rawLimit || 20)));
     const estado = sanitizeText(req.query.estado, 80);
     const search = sanitizeText(req.query.search, 100);
     const where = {};
@@ -3832,17 +3893,20 @@ const listarSolicitudes = async (req, res) => {
         { solicitante_snapshot: { [Op.contains]: { nombre: search } } }
       ];
     }
-    const { count, rows } = await ReporteSalidaSolicitud.findAndCountAll({
+    const queryOptions = {
       where,
-      order: [['created_at', 'DESC']],
-      limit,
-      offset: (page - 1) * limit
-    });
+      order: [['created_at', 'DESC']]
+    };
+    if (limit !== undefined) {
+      queryOptions.limit = limit;
+      queryOptions.offset = (page - 1) * limit;
+    }
+    const { count, rows } = await ReporteSalidaSolicitud.findAndCountAll(queryOptions);
     res.json({
       success: true,
       data: {
         solicitudes: rows.map(serializeSolicitud),
-        pagination: { total: count, page, limit, totalPages: Math.ceil(count / limit) }
+        pagination: { total: count, page, limit: limit || count, totalPages: limit ? Math.ceil(count / limit) : 1 }
       }
     });
   } catch (error) {
@@ -3853,7 +3917,9 @@ const listarSolicitudes = async (req, res) => {
 const getSeguimientoPersonal = async (req, res) => {
   try {
     const page = Math.max(1, Number(req.query.page || 1));
-    const limit = Math.min(100, Math.max(1, Number(req.query.limit || 50)));
+    const rawLimit = req.query.limit;
+    const isFetchAll = rawLimit === '0' || rawLimit === 'all' || req.query.all === 'true';
+    const limit = isFetchAll ? undefined : Math.min(10000, Math.max(1, Number(rawLimit || 50)));
     const estado = sanitizeText(req.query.estado, 80);
     const access = await resolveSeguimientoAccess(req.user);
 
@@ -3863,7 +3929,7 @@ const getSeguimientoPersonal = async (req, res) => {
         data: {
           access,
           solicitudes: [],
-          pagination: { total: 0, page, limit, totalPages: 0 }
+          pagination: { total: 0, page, limit: limit || 0, totalPages: 0 }
         }
       });
     }
@@ -3879,19 +3945,22 @@ const getSeguimientoPersonal = async (req, res) => {
       if (estado) where = { [Op.and]: [where, { estado }] };
     }
 
-    const { count, rows } = await ReporteSalidaSolicitud.findAndCountAll({
+    const queryOptions = {
       where,
-      order: [['created_at', 'DESC']],
-      limit,
-      offset: (page - 1) * limit
-    });
+      order: [['created_at', 'DESC']]
+    };
+    if (limit !== undefined) {
+      queryOptions.limit = limit;
+      queryOptions.offset = (page - 1) * limit;
+    }
+    const { count, rows } = await ReporteSalidaSolicitud.findAndCountAll(queryOptions);
 
     res.json({
       success: true,
       data: {
         access,
         solicitudes: rows.map(serializeSolicitud),
-        pagination: { total: count, page, limit, totalPages: Math.ceil(count / limit) }
+        pagination: { total: count, page, limit: limit || count, totalPages: limit ? Math.ceil(count / limit) : 1 }
       }
     });
   } catch (error) {

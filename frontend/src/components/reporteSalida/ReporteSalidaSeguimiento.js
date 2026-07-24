@@ -409,7 +409,7 @@ function ReporteSalidaSeguimiento({ initialAccess = null, onBack }) {
       let lastError = null;
       for (let attempt = 0; attempt < 2; attempt += 1) {
         try {
-          response = await reporteSalidaService.getSeguimiento({ page: 1, limit: 50, estado });
+          response = await reporteSalidaService.getSeguimiento({ page: 1, limit: 'all', estado });
           lastError = null;
           break;
         } catch (error) {
