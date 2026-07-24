@@ -3921,8 +3921,8 @@ const getSeguimientoPersonal = async (req, res) => {
   try {
     const page = Math.max(1, Number(req.query.page || 1));
     const rawLimit = req.query.limit;
-    const isFetchAll = rawLimit === '0' || rawLimit === 'all' || req.query.all === 'true';
-    const limit = isFetchAll ? undefined : Math.min(10000, Math.max(1, Number(rawLimit || 50)));
+    const isFetchAll = !rawLimit || rawLimit === '0' || String(rawLimit).toLowerCase() === 'all' || req.query.all === 'true';
+    const limit = isFetchAll ? undefined : Math.min(100000, Math.max(1, Number(rawLimit || 50)));
     const estado = sanitizeText(req.query.estado, 80);
     const access = await resolveSeguimientoAccess(req.user);
 
