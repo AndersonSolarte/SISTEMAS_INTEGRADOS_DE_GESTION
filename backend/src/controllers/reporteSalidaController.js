@@ -225,6 +225,14 @@ const getOfficialAuthorityEmailForActor = (actor = {}) => {
   if (actorName.includes('maria del pilar agreda guerrero')) {
     return 'vicebien@unicesmag.edu.co';
   }
+  if (
+    actorName.includes('juan carlos nandar') ||
+    actorName.includes('nandar lopez') ||
+    sameExactEmail(email, 'viceadfin@unicesmag.edu.co') ||
+    sameExactEmail(email, 'jcnandar@unicesmag.edu.co')
+  ) {
+    return 'viceadfin@unicesmag.edu.co';
+  }
   if (!email) return '';
   const entry = Object.values(AUTHORITY_RECIPIENTS).find((authority) => {
     const authorityEmails = [authority.email, ...(authority.aliases || [])].map(normalizeEmail);
@@ -233,8 +241,28 @@ const getOfficialAuthorityEmailForActor = (actor = {}) => {
   return entry?.email || actor.email || '';
 };
 
-const getInitialApprovalRecipientEmail = (solicitud = {}) =>
-  getOfficialAuthorityEmailForActor(solicitud.jefe_snapshot || {}) || solicitud.jefe_snapshot?.email || '';
+const getInitialApprovalRecipientEmails = (solicitud = {}) => {
+  const jefe = solicitud.jefe_snapshot || {};
+  const jefeName = normalizeForMatch(jefe.nombre || jefe.name || jefe.label || '');
+  const jefeEmail = normalizeEmail(jefe.email);
+
+  if (
+    jefeName.includes('juan carlos nandar') ||
+    jefeName.includes('nandar lopez') ||
+    sameExactEmail(jefeEmail, 'viceadfin@unicesmag.edu.co') ||
+    sameExactEmail(jefeEmail, 'jcnandar@unicesmag.edu.co')
+  ) {
+    return ['viceadfin@unicesmag.edu.co', 'jcnandar@unicesmag.edu.co'];
+  }
+
+  const primary = getOfficialAuthorityEmailForActor(jefe) || jefe.email || '';
+  return primary ? [primary] : [];
+};
+
+const getInitialApprovalRecipientEmail = (solicitud = {}) => {
+  const emails = getInitialApprovalRecipientEmails(solicitud);
+  return emails[0] || solicitud.jefe_snapshot?.email || '';
+};
 
 const getJefeCopyRecipientEmail = (solicitud = {}) => {
   const jefe = solicitud.jefe_snapshot || {};
@@ -244,6 +272,14 @@ const getJefeCopyRecipientEmail = (solicitud = {}) => {
   }
   if (jefeName.includes('maria del pilar agreda guerrero') || sameExactEmail(jefe.email, 'mpagreda@unicesmag.edu.co')) {
     return 'vicebien@unicesmag.edu.co';
+  }
+  if (
+    jefeName.includes('juan carlos nandar') ||
+    jefeName.includes('nandar lopez') ||
+    sameExactEmail(jefe.email, 'jcnandar@unicesmag.edu.co') ||
+    sameExactEmail(jefe.email, 'viceadfin@unicesmag.edu.co')
+  ) {
+    return ['viceadfin@unicesmag.edu.co', 'jcnandar@unicesmag.edu.co'];
   }
   return jefe.email || '';
 };
