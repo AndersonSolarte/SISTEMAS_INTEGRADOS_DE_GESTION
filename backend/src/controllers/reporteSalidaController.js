@@ -14,6 +14,8 @@ const {
 const { ensureReporteSalidaDocx, ensureReporteSalidaPdf, formatMinutes } = require('../services/reporteSalidaPdfService');
 const { sendInstitutionalEmail, renderInstitutionalTemplate, escapeHtml } = require('../services/emailService');
 const { getDependencyEmail } = require('../config/dependencyEmails');
+const workflowEngine = require('../services/reporteSalidaWorkflow');
+
 const { ROLES } = require('../constants/roles');
 
 const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:3000';
@@ -102,6 +104,11 @@ const isEvangelizacionVicerrectoria = (value) => {
 const isInvestigacionVicerrectoria = (value) => {
   const normalized = normalizeForMatch(value);
   return normalized.includes('investigacion y extension') || (normalized.includes('investigacion') && !normalized.includes('academica'));
+};
+
+const isFinancieraVicerrectoria = (value) => {
+  const normalized = normalizeForMatch(value);
+  return normalized.includes('financiera y de desarrollo') || normalized.includes('financiera y desarrollo') || normalized.includes('financiera');
 };
 
 const VICERRECTORIA_CANONICAL_NAMES = [
@@ -931,37 +938,27 @@ const isPermisoElectoralSinVicerrectoria = (solicitud = {}) => {
   return ['jurado_votacion', 'voto_jurado', 'sufragante', 'voto_sufragante'].includes(tipo);
 };
 
+const getWorkflowHelpers = () => ({
+  getSolicitudLaboral,
+  getSolicitudSalida,
+  getSolicitudVicerrectoria,
+  isAcademicTeacherSolicitud,
+  isEvangelizacionSolicitud,
+  isInvestigacionSolicitud,
+  isOficioSolicitud,
+  isPermisoElectoralSinVicerrectoria,
+  isVicerrectoriaAcademica,
+  isEvangelizacionVicerrectoria,
+  isInvestigacionVicerrectoria,
+  isFinancieraVicerrectoria,
+  isRectoriaAuthority,
+  getInitialApprovalRecipientEmail
+});
+
 const getAuthorityAfterBoss = (solicitud = {}) => {
-  if (!isOficioSolicitud(solicitud)) return null;
-  if (isPermisoElectoralSinVicerrectoria(solicitud)) return null;
-  if (getSolicitudSalida(solicitud).duracionTipo === '3_mas_dias' && isRectoriaAuthority(getSolicitudVicerrectoria(solicitud))) {
-    return null;
-  }
-  const vicerrectoriaName = getSolicitudVicerrectoria(solicitud);
-  if (isRectoriaAuthority(vicerrectoriaName)) {
-    return {
-      stage: 'rectoria',
-      estado: 'pendiente_aprobacion_rectoria',
-      tokenColumn: 'aprobacion_rectoria_token_hash',
-      correoColumn: 'correo_rectoria_enviado_at',
-      name: 'Rectoria',
-      email: RECTORIA_EMAIL,
-      label: 'Rectoria'
-    };
-  }
-  if (vicerrectoriaName) {
-    return {
-      stage: 'vicerrectoria_academica',
-      estado: 'pendiente_aprobacion_vicerrectoria_academica',
-      tokenColumn: 'aprobacion_vicerrectoria_token_hash',
-      correoColumn: 'correo_vicerrectoria_enviado_at',
-      name: vicerrectoriaName,
-      email: getDependencyEmail(vicerrectoriaName) || ACADEMIC_VICERRECTORIA_EMAIL,
-      label: vicerrectoriaName
-    };
-  }
-  return null;
+  return workflowEngine.getAuthorityAfterBoss(solicitud, getWorkflowHelpers());
 };
+
 
 const requiresRectoriaApproval = () => false;
 
@@ -1598,39 +1595,9 @@ const sendColaboradorRadicacionEmail = async (solicitud, attachments) => {
 };
 
 const getDependencyNotificationTargets = (solicitud = {}) => {
-  const solicitante = solicitud.solicitante_snapshot || {};
-  const laboral = solicitud.datos_formulario?.laboral || {};
-  const dependencia = laboral.dependencia || solicitante.dependencia || '';
-  const vicerrectoria = laboral.vicerrectoria || solicitante.vicerrectoria || '';
-  const dependenciaEmail = getDependencyEmail(dependencia);
-  const vicerrectoriaEmail = getDependencyEmail(vicerrectoria);
-  const bossEmail = getInitialApprovalRecipientEmail(solicitud);
-  const isEvangelizacion = isEvangelizacionVicerrectoria(vicerrectoria);
-  const targets = [];
-
-  const pushTarget = (email, label, source, forceApproval = false) => {
-    const cleanEmail = normalizeEmail(email);
-    if (!cleanEmail || targets.some((target) => sameExactEmail(target.email, cleanEmail))) return;
-    if (sameExactEmail(cleanEmail, ACADEMIC_VICERRECTORIA_EMAIL)) return;
-    if (sameExactEmail(cleanEmail, RECTORIA_EMAIL)) return;
-    // Para Evangelización: NO excluir el correo de la vicerrectora aunque coincida con el jefe
-    if (!forceApproval && bossEmail && sameEmail(cleanEmail, bossEmail)) return;
-    
-    targets.push({
-      email: cleanEmail,
-      label: label || source || 'Dependencia',
-      source,
-      forceApproval // true = siempre recibe botones de aprobación
-    });
-  };
-
-  pushTarget(dependenciaEmail, dependencia, 'dependencia');
-  if (!isVicerrectoriaAcademica(vicerrectoria) && !isRectoriaAuthority(vicerrectoria)) {
-    // Para Evangelización: la vicerrectora SIEMPRE recibe como target con botones de aprobación
-    pushTarget(vicerrectoriaEmail, vicerrectoria, 'vicerrectoria', isEvangelizacion);
-  }
-  return targets;
+  return workflowEngine.getDependencyNotificationTargets(solicitud, getWorkflowHelpers());
 };
+
 
 const getDependencyNotificationTarget = (solicitud = {}) => {
   const targets = getDependencyNotificationTargets(solicitud);
@@ -2004,7 +1971,7 @@ const sendFinalEmails = async (solicitud, pdfAttachment, supportAttachment) => {
   }
 
   // Si es un Docente de la Vicerrectoría Académica, enviar copia del formato final
-  const isDocenteAcademica = isAcademicTeacherSolicitud(solicitud);
+  const isDocenteAcademica = workflowEngine.shouldSendFinalCopy(solicitud, 'vicerrectoria_academica', getWorkflowHelpers());
   if (isDocenteAcademica) {
     if (!copyRecipients.some((recipient) => sameExactEmail(recipient.email, ACADEMIC_VICERRECTORIA_EMAIL))) {
       copyRecipients.push({
