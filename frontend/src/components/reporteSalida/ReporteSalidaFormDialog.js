@@ -133,7 +133,8 @@ const ESPECIALIDADES_MEDICAS = [
   'Medicina especializada',
   'Odontológica',
   'Optometría',
-  'Laboratorios'
+  'Laboratorios',
+  'Psicológica'
 ];
 
 const ALCANCE_OPTIONS = [
