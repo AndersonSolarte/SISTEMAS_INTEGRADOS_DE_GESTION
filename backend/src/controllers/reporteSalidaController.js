@@ -271,24 +271,44 @@ const getInitialApprovalRecipientEmail = (solicitud = {}) => {
   return emails[0] || solicitud.jefe_snapshot?.email || '';
 };
 
-const getJefeCopyRecipientEmail = (solicitud = {}) => {
+const getJefeCopyRecipientEmails = (solicitud = {}) => {
+  const emails = [];
+  const pushEmail = (e) => {
+    const clean = normalizeEmail(e);
+    if (clean && !emails.includes(clean)) emails.push(clean);
+  };
+
   const jefe = solicitud.jefe_snapshot || {};
   const jefeName = normalizeForMatch(jefe.nombre || jefe.name || jefe.label);
-  if (jefeName.includes('sandra lucia bolanos delgado') || sameExactEmail(jefe.email, 'sbolanos@unicesmag.edu.co')) {
-    return ACADEMIC_VICERRECTORIA_EMAIL;
-  }
-  if (jefeName.includes('maria del pilar agreda guerrero') || sameExactEmail(jefe.email, 'mpagreda@unicesmag.edu.co')) {
-    return 'vicebien@unicesmag.edu.co';
-  }
-  if (
+  const primaryEmail = jefe.email || jefe.correo || '';
+
+  if (jefeName.includes('sandra lucia bolanos delgado') || sameExactEmail(primaryEmail, 'sbolanos@unicesmag.edu.co')) {
+    pushEmail(ACADEMIC_VICERRECTORIA_EMAIL);
+  } else if (jefeName.includes('maria del pilar agreda guerrero') || sameExactEmail(primaryEmail, 'mpagreda@unicesmag.edu.co')) {
+    pushEmail('vicebien@unicesmag.edu.co');
+  } else if (
     jefeName.includes('juan carlos nandar') ||
     jefeName.includes('nandar lopez') ||
-    sameExactEmail(jefe.email, 'jcnandar@unicesmag.edu.co') ||
-    sameExactEmail(jefe.email, 'viceadfin@unicesmag.edu.co')
+    sameExactEmail(primaryEmail, 'jcnandar@unicesmag.edu.co') ||
+    sameExactEmail(primaryEmail, 'viceadfin@unicesmag.edu.co')
   ) {
-    return ['viceadfin@unicesmag.edu.co', 'jcnandar@unicesmag.edu.co'];
+    pushEmail('viceadfin@unicesmag.edu.co');
+    pushEmail('jcnandar@unicesmag.edu.co');
   }
-  return jefe.email || '';
+
+  if (primaryEmail) pushEmail(primaryEmail);
+
+  const initialEmails = getInitialApprovalRecipientEmails(solicitud);
+  if (Array.isArray(initialEmails)) {
+    initialEmails.forEach(pushEmail);
+  }
+
+  return emails;
+};
+
+const getJefeCopyRecipientEmail = (solicitud = {}) => {
+  const emails = getJefeCopyRecipientEmails(solicitud);
+  return emails[0] || '';
 };
 
 const tokenizeName = (value) => normalizeForMatch(value)
@@ -1965,10 +1985,12 @@ const sendFinalEmails = async (solicitud, pdfAttachment, supportAttachment) => {
     }
   });
   
-  const jefeEmail = getJefeCopyRecipientEmail(solicitud);
-  if (jefeEmail && !copyRecipients.some((recipient) => sameExactEmail(recipient.email, jefeEmail))) {
-    copyRecipients.push({ type: 'jefe', email: jefeEmail });
-  }
+  const jefeEmails = getJefeCopyRecipientEmails(solicitud);
+  jefeEmails.forEach((jEmail) => {
+    if (jEmail && !copyRecipients.some((recipient) => sameExactEmail(recipient.email, jEmail))) {
+      copyRecipients.push({ type: 'jefe', email: jEmail });
+    }
+  });
 
   // Si es un Docente de la Vicerrectoría Académica, enviar copia del formato final
   const isDocenteAcademica = workflowEngine.shouldSendFinalCopy(solicitud, 'vicerrectoria_academica', getWorkflowHelpers());
@@ -1979,6 +2001,19 @@ const sendFinalEmails = async (solicitud, pdfAttachment, supportAttachment) => {
         email: ACADEMIC_VICERRECTORIA_EMAIL,
         label: 'Vicerrectoría Académica',
         source: 'vicerrectoria'
+      });
+    }
+  }
+
+  // Si pertenece a Rectoría o es Oficio de 3+ días, enviar copia final a Rectoría
+  const userVicerrectoria = getSolicitudVicerrectoria(solicitud);
+  if (isRectoriaAuthority(userVicerrectoria) || solicitud.datos_formulario?.salida?.duracionTipo === '3_mas_dias') {
+    if (!copyRecipients.some((recipient) => sameExactEmail(recipient.email, RECTORIA_EMAIL))) {
+      copyRecipients.push({
+        type: 'dependencia',
+        email: RECTORIA_EMAIL,
+        label: 'Rectoría',
+        source: 'rectoria'
       });
     }
   }
@@ -3683,14 +3718,30 @@ const aprobarDesdeCorreo = async (req, res) => {
       }
       const isMisionalNacionalOInternacional = requiresSstApproval(solicitud);
 
+      const isRectoriaDelegated = isRectoriaAuthority(getSolicitudVicerrectoria(solicitud)) ||
+        ['1_2_dias', '3_mas_dias'].includes(solicitud.datos_formulario?.salida?.duracionTipo);
+      const now = new Date();
+      const rectoriaDelegatedUpdate = (isRectoriaDelegated && !solicitud.rectoria_aprobado_at) ? { rectoria_aprobado_at: now } : {};
+      const baseGhTrace = appendTrace(solicitud, 'aprobada_gestion_humana', null);
+      const ghTraceWithDelegation = (isRectoriaDelegated && !solicitud.rectoria_aprobado_at) ? [
+        ...baseGhTrace,
+        {
+          event: 'aprobada_rectoria',
+          actor: { nombre: 'Rectoría (Delegado en Gestión del Talento Humano)', email: RECTORIA_EMAIL, role: 'rectoria' },
+          detail: { por_delegacion: true, delegado_en: 'gestion_humana' },
+          at: now.toISOString()
+        }
+      ] : baseGhTrace;
+
       if (isMisionalNacionalOInternacional) {
         const sstToken = encryptPayload({ purpose: 'reporte_salida_approve', stage: 'sst', consecutivo: solicitud.consecutivo }, null);
         const [updatedCount] = await ReporteSalidaSolicitud.update({
           estado: 'pendiente_aprobacion_sst',
-          gestion_humana_aprobado_at: new Date(),
+          gestion_humana_aprobado_at: now,
+          ...rectoriaDelegatedUpdate,
           aprobacion_gh_token_hash: null,
           aprobacion_sst_token_hash: hashToken(sstToken),
-          trazabilidad: appendTrace(solicitud, 'aprobada_gestion_humana', null)
+          trazabilidad: ghTraceWithDelegation
         }, {
           where: {
             id: solicitud.id,
@@ -3731,10 +3782,11 @@ const aprobarDesdeCorreo = async (req, res) => {
       } else {
         const [updatedCount] = await ReporteSalidaSolicitud.update({
           estado: 'finalizada',
-          gestion_humana_aprobado_at: new Date(),
-          finalizado_at: new Date(),
+          gestion_humana_aprobado_at: now,
+          finalizado_at: now,
+          ...rectoriaDelegatedUpdate,
           aprobacion_gh_token_hash: null,
-          trazabilidad: appendTrace(solicitud, 'aprobada_gestion_humana', null)
+          trazabilidad: ghTraceWithDelegation
         }, {
           where: {
             id: solicitud.id,

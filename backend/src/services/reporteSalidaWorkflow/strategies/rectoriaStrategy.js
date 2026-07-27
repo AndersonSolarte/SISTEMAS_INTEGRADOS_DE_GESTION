@@ -11,24 +11,8 @@ class RectoriaWorkflowStrategy extends BaseWorkflowStrategy {
   }
 
   getAuthorityAfterBoss(solicitud = {}, helpers = {}) {
-    const { isOficioSolicitud, isPermisoElectoralSinVicerrectoria, getSolicitudSalida } = helpers;
-
-    if (!isOficioSolicitud(solicitud)) return null;
-    if (isPermisoElectoralSinVicerrectoria(solicitud)) return null;
-
-    if (getSolicitudSalida(solicitud).duracionTipo === '3_mas_dias') {
-      return null;
-    }
-
-    return {
-      stage: 'rectoria',
-      estado: 'pendiente_aprobacion_rectoria',
-      tokenColumn: 'aprobacion_rectoria_token_hash',
-      correoColumn: 'correo_rectoria_enviado_at',
-      name: 'Rectoria',
-      email: RECTORIA_EMAIL,
-      label: 'Rectoria'
-    };
+    // Rectoría le delega el proceso de revisión y aprobación a Gestión del Talento Humano
+    return null;
   }
 }
 

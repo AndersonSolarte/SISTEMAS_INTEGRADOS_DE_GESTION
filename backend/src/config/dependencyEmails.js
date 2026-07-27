@@ -45,6 +45,7 @@ const DEPENDENCY_EMAILS_RAW = {
   "Programa Academico - Ingenieria de Sistemas": "ingenieriadesistemas@unicesmag.edu.co",
   "Programa Academico - Licenciatura en Educacion Infantil": "edupres@unicesmag.edu.co",
   "Programa Academico - Licenciatura en Educacion fisica": "edufisica@unicesmag.edu.co",
+  "Programa Academico - Licenciatura en Quimica": "lic.quimica@unicesmag.edu.co",
   "Programa Academico -Psicologia": "psicologia@unicesmag.edu.co",
   "Programa Academico- Departamento de Ciencias Basicas": "ciencias.basicas@unicesmag.edu.co",
   "Programa Academico- Departamento de Humanidades": "humanidades@unicesmag.edu.co",

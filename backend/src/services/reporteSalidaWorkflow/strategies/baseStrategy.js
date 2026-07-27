@@ -34,15 +34,7 @@ class BaseWorkflowStrategy {
     }
 
     if (isRectoriaAuthority(vicerrectoriaName)) {
-      return {
-        stage: 'rectoria',
-        estado: 'pendiente_aprobacion_rectoria',
-        tokenColumn: 'aprobacion_rectoria_token_hash',
-        correoColumn: 'correo_rectoria_enviado_at',
-        name: 'Rectoria',
-        email: RECTORIA_EMAIL,
-        label: 'Rectoria'
-      };
+      return null;
     }
 
     if (vicerrectoriaName) {

@@ -179,23 +179,88 @@ const PAISES_OPTIONS = [
 
 const TIME_OPTIONS = (() => {
   const options = [];
-  for (let h = 0; h <= 23; h++) {
+  // Horario laboral principal primero (06:00 am a 10:00 pm)
+  for (let h = 6; h <= 22; h++) {
     const hStr = h.toString().padStart(2, '0');
     options.push(`${hStr}:00`);
     options.push(`${hStr}:30`);
   }
+  options.push('22:59');
+  options.push('23:00');
+  options.push('23:30');
   options.push('23:59');
+  // Madrugada al final (00:00 a 05:30)
+  for (let h = 0; h <= 5; h++) {
+    const hStr = h.toString().padStart(2, '0');
+    options.push(`${hStr}:00`);
+    options.push(`${hStr}:30`);
+  }
   return options;
 })();
 
+const normalizeTimeString = (rawInput) => {
+  if (!rawInput) return '';
+  const str = String(rawInput).trim();
+  if (!str) return '';
+
+  // Soporta digitación rápida (ej: "730", "0730", "1430", "730a", "730p")
+  const digitsOnlyMatch = str.match(/^(\d{3,4})\s*(am|pm|a\.m\.|p\.m\.|a|p)?$/i);
+  if (digitsOnlyMatch) {
+    const digits = digitsOnlyMatch[1];
+    const period = (digitsOnlyMatch[2] || '').toLowerCase().replace(/\./g, '');
+    const h = parseInt(digits.length === 3 ? digits.slice(0, 1) : digits.slice(0, 2), 10);
+    const m = parseInt(digits.slice(-2), 10);
+    let finalH = h;
+    if (period.startsWith('p') && finalH < 12) finalH += 12;
+    else if (period.startsWith('a') && finalH === 12) finalH = 0;
+    if (finalH >= 24) finalH = 0;
+    return `${finalH.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}`;
+  }
+
+  if (/^([01]?[0-9]|2[0-3]):[0-5][0-9]$/.test(str)) {
+    const [h, m] = str.split(':');
+    return `${h.padStart(2, '0')}:${m.padStart(2, '0')}`;
+  }
+
+  const cleaned = str.replace('.', ':');
+  const ampmMatch = cleaned.match(/^(\d{1,2})(?::(\d{1,2}))?\s*(am|pm|a\.m\.|p\.m\.|a|p)?$/i);
+  if (ampmMatch) {
+    let h = parseInt(ampmMatch[1], 10);
+    let m = parseInt(ampmMatch[2] || '0', 10);
+    let period = (ampmMatch[3] || '').toLowerCase().replace(/\./g, '');
+
+    if (h < 0 || h > 24 || m < 0 || m > 59) return str;
+
+    if (period.startsWith('p') && h < 12) {
+      h += 12;
+    } else if (period.startsWith('a') && h === 12) {
+      h = 0;
+    }
+
+    if (h >= 24) h = 0;
+
+    const hStr = h.toString().padStart(2, '0');
+    const mStr = m.toString().padStart(2, '0');
+    return `${hStr}:${mStr}`;
+  }
+
+  return str;
+};
+
 const convert24To12 = (time24) => {
   if (!time24) return '';
-  const [hStr, mStr] = time24.split(':');
+  const str = String(time24).trim();
+  if (!str) return '';
+  if (/am|pm/i.test(str)) return str;
+
+  const [hStr, mStr] = str.split(':');
   const h = parseInt(hStr, 10);
-  if (isNaN(h)) return time24;
+  if (isNaN(h) || mStr === undefined) return str;
+  const mClean = mStr.replace(/[^0-9]/g, '');
+  if (!mClean) return str;
   const ampm = h >= 12 ? 'pm' : 'am';
   const h12 = h % 12 === 0 ? 12 : h % 12;
-  return `${h12}:${mStr} ${ampm}`;
+  return `${h12}:${mClean.padStart(2, '0')} ${ampm}`;
 };
 
 const REQUIRES_ADJUNTO = [
@@ -2101,13 +2166,16 @@ function ReporteSalidaFormDialog({ open, documento, user, onClose, onSubmitted }
                         <Box sx={responsiveFieldGrid(category === 'personales' ? 'minmax(160px, 1fr) minmax(140px, 1fr) minmax(140px, 1fr) minmax(100px, 0.5fr)' : 'minmax(160px, 1fr) minmax(140px, 1fr) minmax(140px, 1fr)')}>
                           <TextField sx={inputSx} fullWidth size="small" required type="date" label="Fecha de la terapia" InputLabelProps={{ shrink: true }} inputProps={{ min: todayString }} value={terapia.fecha} onChange={(e) => { const n = [...form.salida.terapiasList]; n[idx].fecha = e.target.value; update('salida', 'terapiasList', n); }} />
                           <Autocomplete
+                            freeSolo
                             disableClearable
                             options={TIME_OPTIONS}
-                            getOptionLabel={convert24To12}
+                            getOptionLabel={(opt) => convert24To12(opt)}
                             value={terapia.horaInicio || ''}
                             onChange={(e, newValue) => {
+                              const val = typeof newValue === 'string' ? newValue : (newValue?.value || '');
+                              const normalized = normalizeTimeString(val);
                               const n = [...form.salida.terapiasList];
-                              n[idx].horaInicio = newValue;
+                              n[idx].horaInicio = normalized;
                               update('salida', 'terapiasList', n);
                             }}
                             renderInput={(params) => (
@@ -2116,20 +2184,31 @@ function ReporteSalidaFormDialog({ open, documento, user, onClose, onSubmitted }
                                 sx={inputSx}
                                 required
                                 label="Hora de salida a la terapia"
-                                placeholder="Seleccione hora"
+                                placeholder="Seleccione o escriba hora"
                                 InputLabelProps={{ shrink: true }}
                                 error={isPastTimeError(terapia.fecha, terapia.horaInicio)}
+                                onBlur={(e) => {
+                                  const normalized = normalizeTimeString(e.target.value || terapia.horaInicio);
+                                  if (normalized) {
+                                    const n = [...form.salida.terapiasList];
+                                    n[idx].horaInicio = normalized;
+                                    update('salida', 'terapiasList', n);
+                                  }
+                                }}
                               />
                             )}
                           />
                           <Autocomplete
+                            freeSolo
                             disableClearable
                             options={TIME_OPTIONS}
-                            getOptionLabel={convert24To12}
+                            getOptionLabel={(opt) => convert24To12(opt)}
                             value={terapia.horaFin || ''}
                             onChange={(e, newValue) => {
+                              const val = typeof newValue === 'string' ? newValue : (newValue?.value || '');
+                              const normalized = normalizeTimeString(val);
                               const n = [...form.salida.terapiasList];
-                              n[idx].horaFin = newValue;
+                              n[idx].horaFin = normalized;
                               update('salida', 'terapiasList', n);
                             }}
                             renderInput={(params) => (
@@ -2138,9 +2217,17 @@ function ReporteSalidaFormDialog({ open, documento, user, onClose, onSubmitted }
                                 sx={inputSx}
                                 required
                                 label="Hora de reintegro a labores"
-                                placeholder="Seleccione hora"
+                                placeholder="Seleccione o escriba hora"
                                 InputLabelProps={{ shrink: true }}
                                 error={isPastTimeError(terapia.fecha, terapia.horaFin)}
+                                onBlur={(e) => {
+                                  const normalized = normalizeTimeString(e.target.value || terapia.horaFin);
+                                  if (normalized) {
+                                    const n = [...form.salida.terapiasList];
+                                    n[idx].horaFin = normalized;
+                                    update('salida', 'terapiasList', n);
+                                  }
+                                }}
                               />
                             )}
                           />

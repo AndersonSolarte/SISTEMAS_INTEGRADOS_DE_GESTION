@@ -444,6 +444,67 @@ function GestionUsuarios() {
     );
   }, [currentUser?.email, currentUser?.id, currentUser?.username]);
 
+  const normalizeSearchText = useCallback((value) => String(value || '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/_/g, ' ')
+    .toLowerCase(), []);
+
+  const buildUniqueOptions = useCallback((rows, field) => {
+    const byNormalizedValue = new Map();
+    (Array.isArray(rows) ? rows : []).forEach((row) => {
+      const value = String(row?.[field] || '').trim();
+      if (!value || value === '-') return;
+      const key = normalizeSearchText(value).trim();
+      if (!key || byNormalizedValue.has(key)) return;
+      byNormalizedValue.set(key, value);
+    });
+    return Array.from(byNormalizedValue.values())
+      .sort((a, b) => a.localeCompare(b, 'es', { sensitivity: 'base' }));
+  }, [normalizeSearchText]);
+
+  const mergeUniqueOptions = useCallback((primaryOptions, rows, field) => {
+    const byNormalizedValue = new Map();
+    (Array.isArray(primaryOptions) ? primaryOptions : []).forEach((option) => {
+      const value = String(option || '').trim();
+      const key = normalizeSearchText(value).trim();
+      if (value && key && !byNormalizedValue.has(key)) {
+        byNormalizedValue.set(key, value);
+      }
+    });
+    buildUniqueOptions(rows, field).forEach((option) => {
+      const key = normalizeSearchText(option).trim();
+      if (key && !byNormalizedValue.has(key)) {
+        byNormalizedValue.set(key, option);
+      }
+    });
+    return Array.from(byNormalizedValue.values())
+      .sort((a, b) => a.localeCompare(b, 'es', { sensitivity: 'base' }));
+  }, [buildUniqueOptions, normalizeSearchText]);
+
+  const suggestionRows = useMemo(() => {
+    const byIdOrIdentity = new Map();
+    [...(Array.isArray(suggestionUsers) ? suggestionUsers : []), ...(Array.isArray(users) ? users : [])].forEach((user, index) => {
+      const key = user?.id ? `id-${user.id}` : `${user?.username || ''}-${user?.email || ''}-${index}`;
+      byIdOrIdentity.set(key, user);
+    });
+    return Array.from(byIdOrIdentity.values());
+  }, [suggestionUsers, users]);
+
+  const dependenciaOptions = useMemo(() => {
+    const base = mergeUniqueOptions(fieldSuggestions.dependencias, suggestionRows, 'dependencia');
+    if (formData.dependencia && selectedUser) {
+      const exists = base.some((opt) => normalizeSearchText(opt) === normalizeSearchText(formData.dependencia));
+      if (!exists) {
+        return [...base, formData.dependencia].sort((a, b) => a.localeCompare(b, 'es', { sensitivity: 'base' }));
+      }
+    }
+    return base;
+  }, [fieldSuggestions.dependencias, mergeUniqueOptions, suggestionRows, formData.dependencia, selectedUser]);
+  const vicerrectoriaOptions = useMemo(() => mergeUniqueOptions(fieldSuggestions.vicerrectorias, suggestionRows, 'vicerrectoria'), [fieldSuggestions.vicerrectorias, mergeUniqueOptions, suggestionRows]);
+  const cargoOptions = useMemo(() => mergeUniqueOptions(fieldSuggestions.cargos, suggestionRows, 'cargo'), [fieldSuggestions.cargos, mergeUniqueOptions, suggestionRows]);
+  const jefeInmediatoOptions = useMemo(() => mergeUniqueOptions(fieldSuggestions.jefesInmediatos, suggestionRows, 'jefe_inmediato'), [fieldSuggestions.jefesInmediatos, mergeUniqueOptions, suggestionRows]);
+
   const loadUsers = useCallback(async (overrides = {}) => {
     const nextPage = Object.prototype.hasOwnProperty.call(overrides, 'page') ? overrides.page : page;
     const nextLimit = Object.prototype.hasOwnProperty.call(overrides, 'rowsPerPage') ? overrides.rowsPerPage : rowsPerPage;
@@ -530,14 +591,37 @@ function GestionUsuarios() {
     setOpenDialog(false);
     setSelectedUser(null);
     setFormData({ nombre: '', email: '', username: '', dependencia: '', vicerrectoria: '', cargo: '', jefe_inmediato: '', role: defaultAssignableRole });
-    setFormErrors({ nombre: '', email: '', username: '' });
+    setFormErrors({ nombre: '', email: '', username: '', dependencia: '' });
+  };
+
+  const formatEmailWithDomain = (val) => {
+    let email = String(val || '').trim().toLowerCase();
+    if (!email) return '';
+    if (!email.includes('@')) {
+      email = `${email}@unicesmag.edu.co`;
+    } else if (email.endsWith('@')) {
+      email = `${email}unicesmag.edu.co`;
+    }
+    return email;
+  };
+
+  const handleEmailBlur = () => {
+    const formatted = formatEmailWithDomain(formData.email);
+    if (formatted !== formData.email) {
+      setFormData((prev) => ({ ...prev, email: formatted }));
+    }
   };
 
   const validateUserForm = () => {
-    const nextErrors = { nombre: '', email: '', username: '' };
+    const nextErrors = { nombre: '', email: '', username: '', dependencia: '' };
     const normalizedName = String(formData.nombre || '').trim();
-    const normalizedEmail = String(formData.email || '').trim().toLowerCase();
+    const formattedEmail = formatEmailWithDomain(formData.email);
     const normalizedDocument = String(formData.username || '').trim();
+    const normalizedDependencia = String(formData.dependencia || '').trim();
+
+    if (formattedEmail !== formData.email) {
+      setFormData((prev) => ({ ...prev, email: formattedEmail }));
+    }
 
     if (!/^[0-9]{4,15}$/.test(normalizedDocument)) {
       nextErrors.username = 'El número de documento debe contener solo números (4 a 15 dígitos).';
@@ -549,26 +633,55 @@ function GestionUsuarios() {
       nextErrors.nombre = 'El nombre no puede contener solo números.';
     }
 
-    if (!normalizedEmail) {
+    if (!formattedEmail) {
       nextErrors.email = 'El correo institucional es obligatorio.';
-    } else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalizedEmail)) {
+    } else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(formattedEmail)) {
       nextErrors.email = 'Ingresa un correo electrónico válido.';
-    } else if (!normalizedEmail.endsWith('@unicesmag.edu.co')) {
+    } else if (!formattedEmail.endsWith('@unicesmag.edu.co')) {
       nextErrors.email = 'El correo debe terminar en @unicesmag.edu.co.';
     }
 
+    if (normalizedDependencia) {
+      const matchFound = dependenciaOptions.some(
+        (opt) => normalizeSearchText(opt) === normalizeSearchText(normalizedDependencia)
+      );
+      if (!matchFound) {
+        nextErrors.dependencia = 'La dependencia no existe. Selecciona una opción válida de la lista.';
+      }
+    }
+
     setFormErrors(nextErrors);
-    return !nextErrors.nombre && !nextErrors.email && !nextErrors.username;
+    return !nextErrors.nombre && !nextErrors.email && !nextErrors.username && !nextErrors.dependencia;
   };
 
+  const isDependenciaInvalid = useMemo(() => {
+    const dep = String(formData.dependencia || '').trim();
+    if (!dep) return false;
+    return !dependenciaOptions.some((opt) => normalizeSearchText(opt) === normalizeSearchText(dep));
+  }, [formData.dependencia, dependenciaOptions, normalizeSearchText]);
+
+  const isFormSubmitDisabled = Boolean(
+    formErrors.dependencia ||
+    formErrors.nombre ||
+    formErrors.email ||
+    formErrors.username ||
+    isDependenciaInvalid
+  );
+
   const handleSubmit = async () => {
-    if (!validateUserForm()) return;
+    if (!validateUserForm()) {
+      if (isDependenciaInvalid || formErrors.dependencia) {
+        enqueueSnackbar('No se puede crear el usuario: La dependencia ingresada no existe en la lista.', { variant: 'error' });
+      }
+      return;
+    }
 
     try {
+      const formattedEmail = formatEmailWithDomain(formData.email);
       const payload = {
         ...formData,
         nombre: String(formData.nombre || '').trim(),
-        email: String(formData.email || '').trim().toLowerCase(),
+        email: formattedEmail,
         username: String(formData.username || '').trim(),
         dependencia: String(formData.dependencia || '').trim(),
         vicerrectoria: String(formData.vicerrectoria || '').trim(),
@@ -1299,58 +1412,6 @@ function GestionUsuarios() {
     textTransform: 'uppercase',
     color: '#fff'
   };
-
-  const normalizeSearchText = useCallback((value) => String(value || '')
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '')
-    .replace(/_/g, ' ')
-    .toLowerCase(), []);
-
-  const buildUniqueOptions = useCallback((rows, field) => {
-    const byNormalizedValue = new Map();
-    (Array.isArray(rows) ? rows : []).forEach((row) => {
-      const value = String(row?.[field] || '').trim();
-      if (!value || value === '-') return;
-      const key = normalizeSearchText(value).trim();
-      if (!key || byNormalizedValue.has(key)) return;
-      byNormalizedValue.set(key, value);
-    });
-    return Array.from(byNormalizedValue.values())
-      .sort((a, b) => a.localeCompare(b, 'es', { sensitivity: 'base' }));
-  }, [normalizeSearchText]);
-
-  const mergeUniqueOptions = useCallback((primaryOptions, rows, field) => {
-    const byNormalizedValue = new Map();
-    (Array.isArray(primaryOptions) ? primaryOptions : []).forEach((option) => {
-      const value = String(option || '').trim();
-      const key = normalizeSearchText(value).trim();
-      if (value && key && !byNormalizedValue.has(key)) {
-        byNormalizedValue.set(key, value);
-      }
-    });
-    buildUniqueOptions(rows, field).forEach((option) => {
-      const key = normalizeSearchText(option).trim();
-      if (key && !byNormalizedValue.has(key)) {
-        byNormalizedValue.set(key, option);
-      }
-    });
-    return Array.from(byNormalizedValue.values())
-      .sort((a, b) => a.localeCompare(b, 'es', { sensitivity: 'base' }));
-  }, [buildUniqueOptions, normalizeSearchText]);
-
-  const suggestionRows = useMemo(() => {
-    const byIdOrIdentity = new Map();
-    [...(Array.isArray(suggestionUsers) ? suggestionUsers : []), ...(Array.isArray(users) ? users : [])].forEach((user, index) => {
-      const key = user?.id ? `id-${user.id}` : `${user?.username || ''}-${user?.email || ''}-${index}`;
-      byIdOrIdentity.set(key, user);
-    });
-    return Array.from(byIdOrIdentity.values());
-  }, [suggestionUsers, users]);
-
-  const dependenciaOptions = useMemo(() => mergeUniqueOptions(fieldSuggestions.dependencias, suggestionRows, 'dependencia'), [fieldSuggestions.dependencias, mergeUniqueOptions, suggestionRows]);
-  const vicerrectoriaOptions = useMemo(() => mergeUniqueOptions(fieldSuggestions.vicerrectorias, suggestionRows, 'vicerrectoria'), [fieldSuggestions.vicerrectorias, mergeUniqueOptions, suggestionRows]);
-  const cargoOptions = useMemo(() => mergeUniqueOptions(fieldSuggestions.cargos, suggestionRows, 'cargo'), [fieldSuggestions.cargos, mergeUniqueOptions, suggestionRows]);
-  const jefeInmediatoOptions = useMemo(() => mergeUniqueOptions(fieldSuggestions.jefesInmediatos, suggestionRows, 'jefe_inmediato'), [fieldSuggestions.jefesInmediatos, mergeUniqueOptions, suggestionRows]);
 
   useEffect(() => {
     let ignore = false;
@@ -2381,33 +2442,68 @@ function GestionUsuarios() {
                   setFormData({ ...formData, email: e.target.value });
                   setFormErrors((prev) => ({ ...prev, email: '' }));
                 }}
+                onBlur={handleEmailBlur}
                 sx={{ mb: 2 }}
                 required
                 error={Boolean(formErrors.email)}
-                helperText={formErrors.email || 'Debe terminar en @unicesmag.edu.co'}
+                helperText={formErrors.email || 'Si escribes solo el usuario (ej: prueba), se autocompletará @unicesmag.edu.co'}
                 placeholder="usuario@unicesmag.edu.co"
               />
               <Autocomplete
-                freeSolo
                 autoHighlight
                 options={dependenciaOptions}
-                value={formData.dependencia || ''}
+                value={
+                  dependenciaOptions.find(
+                    (opt) => normalizeSearchText(opt) === normalizeSearchText(formData.dependencia || '')
+                  ) || null
+                }
                 inputValue={formData.dependencia || ''}
+                getOptionLabel={(option) => (option ? String(option) : '')}
+                isOptionEqualToValue={(option, val) =>
+                  normalizeSearchText(option) === normalizeSearchText(val)
+                }
+                onChange={(event, newValue) => {
+                  setFormData({ ...formData, dependencia: newValue || '' });
+                  setFormErrors((prev) => ({ ...prev, dependencia: '' }));
+                }}
+                onInputChange={(event, newInputValue, reason) => {
+                  if (reason === 'input') {
+                    const trimmed = newInputValue;
+                    setFormData((prev) => ({ ...prev, dependencia: trimmed }));
+                    if (trimmed.trim()) {
+                      const matchFound = dependenciaOptions.some(
+                        (opt) => normalizeSearchText(opt) === normalizeSearchText(trimmed.trim())
+                      );
+                      if (!matchFound) {
+                        setFormErrors((prev) => ({
+                          ...prev,
+                          dependencia: 'La dependencia ingresada no existe. Selecciona una opción válida de la lista.'
+                        }));
+                      } else {
+                        setFormErrors((prev) => ({ ...prev, dependencia: '' }));
+                      }
+                    } else {
+                      setFormErrors((prev) => ({ ...prev, dependencia: '' }));
+                    }
+                  } else if (reason === 'clear') {
+                    setFormData((prev) => ({ ...prev, dependencia: '' }));
+                    setFormErrors((prev) => ({ ...prev, dependencia: '' }));
+                  }
+                }}
                 loading={loadingSuggestions}
                 loadingText="Cargando dependencias..."
-                noOptionsText="Sin coincidencias, puedes escribir una nueva"
-                onChange={(event, newValue) => setFormData({ ...formData, dependencia: newValue || '' })}
-                onInputChange={(event, newInputValue) => setFormData({ ...formData, dependencia: newInputValue || '' })}
+                noOptionsText="La dependencia ingresada no existe"
                 renderInput={(params) => (
                   <TextField
                     {...params}
                     fullWidth
                     label="Dependencia"
-                    helperText="Elige una existente o escribe una nueva"
+                    error={Boolean(formErrors.dependencia)}
+                    helperText={formErrors.dependencia || 'Busca y selecciona una dependencia precargada'}
                     inputProps={{ ...params.inputProps, maxLength: 220 }}
                   />
                 )}
-                sx={smartAutocompleteSx}
+                sx={{ ...smartAutocompleteSx, mb: 2 }}
               />
               <Autocomplete
                 freeSolo
@@ -2415,6 +2511,7 @@ function GestionUsuarios() {
                 options={vicerrectoriaOptions}
                 value={formData.vicerrectoria || ''}
                 inputValue={formData.vicerrectoria || ''}
+                getOptionLabel={(option) => (option ? String(option) : '')}
                 loading={loadingSuggestions}
                 loadingText="Cargando vicerrectorías..."
                 noOptionsText="Sin coincidencias, puedes escribir una nueva"
@@ -2437,6 +2534,7 @@ function GestionUsuarios() {
                 options={cargoOptions}
                 value={formData.cargo || ''}
                 inputValue={formData.cargo || ''}
+                getOptionLabel={(option) => (option ? String(option) : '')}
                 loading={loadingSuggestions}
                 loadingText="Cargando cargos..."
                 noOptionsText="Sin coincidencias, puedes escribir uno nuevo"
@@ -2459,6 +2557,7 @@ function GestionUsuarios() {
                 options={jefeInmediatoOptions}
                 value={formData.jefe_inmediato || ''}
                 inputValue={formData.jefe_inmediato || ''}
+                getOptionLabel={(option) => (option ? String(option) : '')}
                 loading={loadingSuggestions}
                 loadingText="Cargando jefes..."
                 noOptionsText="Sin coincidencias, puedes escribir un nuevo nombre"
@@ -2494,7 +2593,11 @@ function GestionUsuarios() {
           </DialogContent>
           <DialogActions>
             <Button onClick={handleCloseDialog}>Cancelar</Button>
-            <Button variant="contained" onClick={handleSubmit}>
+            <Button
+              variant="contained"
+              onClick={handleSubmit}
+              disabled={isFormSubmitDisabled}
+            >
               {dialogMode === 'create' ? 'Crear' : 'Actualizar'}
             </Button>
           </DialogActions>

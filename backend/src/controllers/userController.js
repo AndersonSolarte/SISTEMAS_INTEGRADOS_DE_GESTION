@@ -7,6 +7,7 @@ const fs = require('fs');
 const bcrypt = require('bcryptjs');
 const { ROLES } = require('../constants/roles');
 const { sendWelcomeEmail, sendPasswordResetEmail } = require('../services/emailService');
+const { getDependencyEmail, DEPENDENCY_EMAILS_RAW } = require('../config/dependencyEmails');
 const MAX_BULK_USER_IMPORT_ROWS = Number(process.env.MAX_BULK_USER_IMPORT_ROWS || 2000);
 
 const VALID_ROLES = Object.values(ROLES);
@@ -599,7 +600,12 @@ const createUser = async (req, res) => {
   try {
     const { nombre, email, username, role, dependencia, vicerrectoria, cargo, jefe_inmediato } = sanitizeUserPayload(req.body);
     const numeroDocumento = username;
-    const cleanEmail = email;
+    let cleanEmail = String(email || '').trim().toLowerCase();
+    if (cleanEmail && !cleanEmail.includes('@')) {
+      cleanEmail = `${cleanEmail}@${getInstitutionalDomain()}`;
+    } else if (cleanEmail && cleanEmail.endsWith('@')) {
+      cleanEmail = `${cleanEmail}${getInstitutionalDomain()}`;
+    }
     
     // Validar dominio
     if (!validarDominio(cleanEmail)) {
@@ -614,6 +620,21 @@ const createUser = async (req, res) => {
         success: false,
         message: 'Número de documento, nombre y correo son obligatorios'
       });
+    }
+
+    if (dependencia) {
+      const isOfficial = Boolean(getDependencyEmail(dependencia));
+      if (!isOfficial) {
+        const dbCount = await User.count({
+          where: buildAccentInsensitiveCondition('dependencia', dependencia)
+        });
+        if (dbCount === 0) {
+          return res.status(400).json({
+            success: false,
+            message: 'La dependencia ingresada no existe. Selecciona una dependencia precargada del sistema.'
+          });
+        }
+      }
     }
 
     if (role && !VALID_ROLES.includes(role)) {
@@ -888,8 +909,15 @@ const updateUser = async (req, res) => {
       }
     }
 
+    let cleanEmail = email ? String(email).trim().toLowerCase() : undefined;
+    if (cleanEmail && !cleanEmail.includes('@')) {
+      cleanEmail = `${cleanEmail}@${getInstitutionalDomain()}`;
+    } else if (cleanEmail && cleanEmail.endsWith('@')) {
+      cleanEmail = `${cleanEmail}${getInstitutionalDomain()}`;
+    }
+
     // Validar dominio si se cambia email
-    if (email && email !== user.email && !validarDominio(email)) {
+    if (cleanEmail && cleanEmail !== user.email && !validarDominio(cleanEmail)) {
       return res.status(400).json({
         success: false,
         message: 'El correo debe pertenecer al dominio @unicesmag.edu.co'
@@ -912,11 +940,11 @@ const updateUser = async (req, res) => {
       }
     }
 
-    if (email && email !== user.email && targetRole !== ROLES.PRUEBA) {
+    if (cleanEmail && cleanEmail !== user.email && targetRole !== ROLES.PRUEBA) {
       const emailExistente = await User.findOne({
         where: {
           id: { [Op.ne]: id },
-          email,
+          email: cleanEmail,
           role: { [Op.ne]: ROLES.PRUEBA }
         }
       });
@@ -939,7 +967,7 @@ const updateUser = async (req, res) => {
 
     await user.update({
       nombre: nombre || user.nombre,
-      email: email || user.email,
+      email: cleanEmail || user.email,
       username: username || user.username,
       dependencia: hasPayloadField('dependencia') ? dependencia : user.dependencia,
       vicerrectoria: hasPayloadField('vicerrectoria') ? vicerrectoria : user.vicerrectoria,
@@ -1779,12 +1807,26 @@ const getUserFieldSuggestions = async (req, res) => {
         .sort((a, b) => a.localeCompare(b, 'es', { sensitivity: 'base' }));
     };
 
-    const [dependencias, vicerrectorias, cargos, jefesInmediatos] = await Promise.all([
+    const [rawDbDependencias, vicerrectorias, cargos, jefesInmediatos] = await Promise.all([
       loadDistinctValues('dependencia'),
       loadDistinctValues('vicerrectoria'),
       loadDistinctValues('cargo'),
       loadDistinctValues('jefe_inmediato')
     ]);
+
+    const preloadedDependencias = Object.keys(DEPENDENCY_EMAILS_RAW || {});
+    const dependenciasSet = new Map();
+    [...preloadedDependencias, ...rawDbDependencias].forEach((item) => {
+      const val = String(item || '').trim();
+      if (!val || val === '-') return;
+      const key = normalizeSearchText(val);
+      if (!dependenciasSet.has(key)) {
+        dependenciasSet.set(key, val);
+      }
+    });
+
+    const dependencias = Array.from(dependenciasSet.values())
+      .sort((a, b) => a.localeCompare(b, 'es', { sensitivity: 'base' }));
 
     return res.json({
       success: true,
