@@ -1110,8 +1110,8 @@ const buildPdfBuffer = async (solicitud) => {
                       widths: ['*'],
                       body: [
                         [ { text: 'CODIGO: THM-DP-FR-002', bold: true, fontSize: 9 } ],
-                        [ { text: 'VERSION: 3', bold: true, fontSize: 9 } ],
-                        [ { text: 'FECHA: 15/FEB/2023', bold: true, fontSize: 9 } ]
+                        [ { text: 'VERSION: 4', bold: true, fontSize: 9 } ],
+                        [ { text: 'FECHA: 15/JUL/2026', bold: true, fontSize: 9 } ]
                       ]
                     },
                     layout: {

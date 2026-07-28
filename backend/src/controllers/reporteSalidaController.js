@@ -2005,16 +2005,13 @@ const sendFinalEmails = async (solicitud, pdfAttachment, supportAttachment) => {
     }
   }
 
-  // Excluir estrictamente a Rectoría de copias finales para menos de media jornada o colaboradores cuya dependencia/jefe no sea Rectoría
+  // Excluir estrictamente a Rectoría de copias finales EXCEPTO cuando Rectoría ES el Jefe Inmediato del colaborador
   const isJefeRectoria = sameExactEmail(solicitud.jefe_snapshot?.email, RECTORIA_EMAIL);
-  const isDepRectoria = isRectoriaAuthority(getSolicitudLaboral(solicitud).dependencia || solicitud.solicitante_snapshot?.dependencia);
-  const duracionTipo = getSolicitudSalida(solicitud).duracionTipo;
-  const isMenosMediaJornada = duracionTipo === 'menos_media_jornada';
 
   const finalFilteredCopyRecipients = copyRecipients.filter((recipient) => {
     if (sameExactEmail(recipient.email, RECTORIA_EMAIL)) {
-      if (isMenosMediaJornada) return false;
-      if (!isJefeRectoria && !isDepRectoria) return false;
+      // Solo permitir copia a Rectoría si Rectoría es el Jefe Inmediato directo
+      return isJefeRectoria;
     }
     return true;
   });
