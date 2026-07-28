@@ -830,15 +830,40 @@ const getUsers = async (req, res) => {
       where.role = ROLES.CONSULTA;
     }
 
+    let orderClause = [
+      [literal('CAST("role" AS TEXT)'), 'ASC'],
+      ['nombre', 'ASC'],
+      ['created_at', 'DESC']
+    ];
+
+    if (String(search).trim()) {
+      const cleanSearch = String(search).trim();
+      const escapedSearch = sequelize.escape(cleanSearch);
+      const escapedSearchStart = sequelize.escape(cleanSearch + '%');
+      const escapedSearchContains = sequelize.escape('%' + cleanSearch + '%');
+
+      const relevanceLiteral = literal(`
+        CASE
+          WHEN LOWER(TRIM("nombre")) = LOWER(TRIM(${escapedSearch})) THEN 0
+          WHEN "username" = ${escapedSearch} OR LOWER(TRIM("email")) = LOWER(TRIM(${escapedSearch})) THEN 1
+          WHEN LOWER(TRIM("nombre")) LIKE LOWER(TRIM(${escapedSearchStart})) THEN 2
+          WHEN LOWER(TRIM("nombre")) LIKE LOWER(TRIM(${escapedSearchContains})) THEN 3
+          ELSE 4
+        END
+      `);
+
+      orderClause = [
+        [relevanceLiteral, 'ASC'],
+        ['nombre', 'ASC'],
+        ['created_at', 'DESC']
+      ];
+    }
+
     const { count, rows } = await User.findAndCountAll({
       where,
       limit: pagination.limit,
       offset: pagination.offset,
-      order: [
-        [literal('CAST("role" AS TEXT)'), 'ASC'],
-        ['nombre', 'ASC'],
-        ['created_at', 'DESC']
-      ],
+      order: orderClause,
       attributes: { exclude: ['password'] }
     });
     
