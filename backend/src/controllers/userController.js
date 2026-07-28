@@ -839,14 +839,15 @@ const getUsers = async (req, res) => {
     if (String(search).trim()) {
       const cleanSearch = String(search).trim();
       const rawTokens = cleanSearch.split(/\s+/).filter(Boolean);
-      const escapedSearch = sequelize.escape(cleanSearch);
-      const escapedSearchStart = sequelize.escape(cleanSearch + '%');
-      const escapedSearchContains = sequelize.escape('%' + cleanSearch + '%');
+      const seq = User.sequelize;
+      const escapedSearch = seq.escape(cleanSearch);
+      const escapedSearchStart = seq.escape(cleanSearch + '%');
+      const escapedSearchContains = seq.escape('%' + cleanSearch + '%');
 
       let allTokensCondition = 'FALSE';
       if (rawTokens.length > 1) {
         allTokensCondition = rawTokens
-          .map((t) => `LOWER(TRIM("nombre")) LIKE LOWER(TRIM(${sequelize.escape('%' + t + '%')}))`)
+          .map((t) => `LOWER(TRIM("nombre")) LIKE LOWER(TRIM(${seq.escape('%' + t + '%')}))`)
           .join(' AND ');
       }
 
@@ -857,7 +858,7 @@ const getUsers = async (req, res) => {
           WHEN LOWER(TRIM("nombre")) LIKE LOWER(TRIM(${escapedSearchStart})) THEN 2
           WHEN LOWER(TRIM("nombre")) LIKE LOWER(TRIM(${escapedSearchContains})) THEN 3
           WHEN ${allTokensCondition} THEN 4
-          WHEN LOWER(TRIM("nombre")) LIKE LOWER(TRIM(${sequelize.escape('%' + (rawTokens[0] || '') + '%')})) THEN 5
+          WHEN LOWER(TRIM("nombre")) LIKE LOWER(TRIM(${seq.escape('%' + (rawTokens[0] || '') + '%')})) THEN 5
           ELSE 6
         END
       `);
