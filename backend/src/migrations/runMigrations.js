@@ -634,6 +634,15 @@ const normalizeUserDependencies = async () => {
       { replacements: { pattern, official }, type: QueryTypes.UPDATE }
     ).catch(() => {});
   }
+
+  const { DEPENDENCY_EMAILS_RAW } = require('../config/dependencyEmails');
+  const officialList = Object.keys(DEPENDENCY_EMAILS_RAW || {});
+  if (officialList.length > 0) {
+    await sequelize.query(
+      `UPDATE users SET dependencia = NULL WHERE dependencia IS NOT NULL AND dependencia NOT IN (:officialList)`,
+      { replacements: { officialList }, type: QueryTypes.UPDATE }
+    ).catch(() => {});
+  }
 };
 
 const runMigrations = async () => {
