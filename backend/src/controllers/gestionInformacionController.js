@@ -3124,6 +3124,30 @@ const detectHeaderRowIndexLoose = (matrix = [], expectedHeaders = []) => {
   return 0;
 };
 
+const parseDateText = (text) => {
+  const clean = String(text || '').trim();
+  if (/^\d{4}-\d{2}-\d{2}$/.test(clean)) return clean;
+
+  const match = clean.match(/^(\d{1,2})[/-](\d{1,2})[/-](\d{2}|\d{4})$/);
+  if (match) {
+    let [, p1, p2, y] = match;
+    const year = y.length === 2 ? `20${y}` : y;
+    let day = parseInt(p1, 10);
+    let month = parseInt(p2, 10);
+
+    if (day <= 12 && month > 12) {
+      const temp = day;
+      day = month;
+      month = temp;
+    }
+
+    if (month >= 1 && month <= 12 && day >= 1 && day <= 31) {
+      return `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+    }
+  }
+  return null;
+};
+
 const matrixToRows = (worksheet, expectedHeaders = [], loose = false) => {
   const matrix = XLSX.utils.sheet_to_json(worksheet, { header: 1, defval: null, blankrows: false });
   const headerRowIndex = loose ? detectHeaderRowIndexLoose(matrix, expectedHeaders) : detectHeaderRowIndex(matrix, expectedHeaders);

@@ -52,24 +52,25 @@ const excelDateToISO = (value) => {
 
   if (/^\d{4}-\d{2}-\d{2}$/.test(text)) return text;
 
-  const slashMatch = text.match(/^(\d{1,2})\/(\d{1,2})\/(\d{2}|\d{4})$/);
-  if (slashMatch) {
-    const [, d, m, y] = slashMatch;
+  const match = text.match(/^(\d{1,2})[/-](\d{1,2})[/-](\d{2}|\d{4})$/);
+  if (match) {
+    let [, p1, p2, y] = match;
     const year = y.length === 2 ? `20${y}` : y;
-    return `${year}-${String(m).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+    let day = parseInt(p1, 10);
+    let month = parseInt(p2, 10);
+
+    if (day <= 12 && month > 12) {
+      const temp = day;
+      day = month;
+      month = temp;
+    }
+
+    if (month >= 1 && month <= 12 && day >= 1 && day <= 31) {
+      return `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+    }
   }
 
-  const dashMatch = text.match(/^(\d{1,2})-(\d{1,2})-(\d{2}|\d{4})$/);
-  if (dashMatch) {
-    const [, d, m, y] = dashMatch;
-    const year = y.length === 2 ? `20${y}` : y;
-    return `${year}-${String(m).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
-  }
-
-  const parsedDate = new Date(text);
-  if (Number.isNaN(parsedDate.getTime())) return null;
-
-  return parsedDate.toISOString().slice(0, 10);
+  return null;
 };
 
 const normalizeHeader = (value) =>
