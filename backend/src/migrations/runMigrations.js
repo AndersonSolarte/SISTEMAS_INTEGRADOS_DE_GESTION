@@ -619,6 +619,17 @@ const runMigrations = async () => {
 const repairInvertedDocumentDates = async () => {
   console.log('[migrate] Verificando y reparando fechas de documentos guardadas de forma invertida...');
   try {
+    // 1. Invertir directamente registros de 2026 en la BD donde mes y dia quedaron intercambiados
+    await sequelize.query(`
+      UPDATE documentos 
+      SET fecha_creacion = (
+        SPLIT_PART(CAST(fecha_creacion AS TEXT), '-', 1) || '-' || 
+        SPLIT_PART(CAST(fecha_creacion AS TEXT), '-', 3) || '-' || 
+        SPLIT_PART(CAST(fecha_creacion AS TEXT), '-', 2)
+      )::date
+      WHERE CAST(fecha_creacion AS TEXT) IN ('2026-09-07', '2026-08-07')
+    `, { type: QueryTypes.UPDATE });
+
     const docs = await models.Documento.findAll({
       attributes: ['id', 'codigo', 'fecha_creacion', 'datos_originales']
     });
