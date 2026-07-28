@@ -2005,7 +2005,21 @@ const sendFinalEmails = async (solicitud, pdfAttachment, supportAttachment) => {
     }
   }
 
-  if (copyRecipients.length > 0) {
+  // Excluir estrictamente a Rectoría de copias finales para menos de media jornada o colaboradores cuya dependencia/jefe no sea Rectoría
+  const isJefeRectoria = sameExactEmail(solicitud.jefe_snapshot?.email, RECTORIA_EMAIL);
+  const isDepRectoria = isRectoriaAuthority(getSolicitudLaboral(solicitud).dependencia || solicitud.solicitante_snapshot?.dependencia);
+  const duracionTipo = getSolicitudSalida(solicitud).duracionTipo;
+  const isMenosMediaJornada = duracionTipo === 'menos_media_jornada';
+
+  const finalFilteredCopyRecipients = copyRecipients.filter((recipient) => {
+    if (sameExactEmail(recipient.email, RECTORIA_EMAIL)) {
+      if (isMenosMediaJornada) return false;
+      if (!isJefeRectoria && !isDepRectoria) return false;
+    }
+    return true;
+  });
+
+  if (finalFilteredCopyRecipients.length > 0) {
     const depHtml = renderInstitutionalTemplate({
       title: `Copia de control - ${isOficio ? 'Oficio de salida' : 'Reporte de salida'} aprobado`,
       introHtml: `<p style="margin: 0 0 12px 0;">Saludo de paz y bien,</p><p style="margin: 0 0 4px 0; color: #475569;">Estimado(a) Sr(a). Líder de Dependencia / Jefe Inmediato,</p><p style="margin: 0 0 16px 0; font-size: 16px; font-weight: bold; color: #0b3a6f;">${escapeHtml(solicitud.jefe_snapshot?.nombre || 'Líder / Jefe Inmediato')}</p><p>Reciba un cordial saludo. Para su respectiva información y control interno, nos permitimos remitirle copia del ${isOficio ? 'oficio de salida aprobado' : 'reporte de salida aprobado'} para el/la colaborador(a) <strong>${escapeHtml(nombreColaborador)}</strong>, adscrito(a) a su dependencia (<strong>${escapeHtml(dependencialabel)}</strong>).</p>`,
@@ -2015,7 +2029,7 @@ const sendFinalEmails = async (solicitud, pdfAttachment, supportAttachment) => {
     });
 
     const copyResults = [];
-    for (const recipient of copyRecipients) {
+    for (const recipient of finalFilteredCopyRecipients) {
       let result = await sendInstitutionalEmail({
         to: recipient.email,
         subject: workflowThreadSubject,
