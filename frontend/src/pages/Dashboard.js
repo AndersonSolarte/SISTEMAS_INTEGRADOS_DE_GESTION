@@ -610,19 +610,19 @@ function Dashboard() {
                           size="small"
                           sx={{
                             width: '100%',
-                            minWidth: { xs: 900, lg: 1080 },
-                            tableLayout: 'fixed'
+                            minWidth: 950,
+                            tableLayout: 'auto'
                           }}
                         >
                           <TableHead>
                             <TableRow sx={{ bgcolor: '#f8fafc' }}>
-                              <TableCell sx={{ width: 145, fontWeight: 700, color: '#1e293b', fontSize: 13, borderBottom: '2px solid #e2e8f0', textTransform: 'uppercase', letterSpacing: 0.5 }}>Código</TableCell>
-                              <TableCell sx={{ width: 145, fontWeight: 700, color: '#1e293b', fontSize: 13, borderBottom: '2px solid #e2e8f0', textTransform: 'uppercase', letterSpacing: 0.5 }}>Tipo</TableCell>
-                              <TableCell sx={{ fontWeight: 700, color: '#1e293b', fontSize: 13, borderBottom: '2px solid #e2e8f0', textTransform: 'uppercase', letterSpacing: 0.5 }}>Nombre Documento</TableCell>
-                              <TableCell sx={{ width: 210, fontWeight: 700, color: '#1e293b', fontSize: 13, borderBottom: '2px solid #e2e8f0', textTransform: 'uppercase', letterSpacing: 0.5 }}>Autor</TableCell>
-                              <TableCell sx={{ width: 145, fontWeight: 700, color: '#1e293b', fontSize: 13, borderBottom: '2px solid #e2e8f0', textTransform: 'uppercase', letterSpacing: 0.5 }}>Fecha Creación</TableCell>
-                              <TableCell sx={{ width: 135, fontWeight: 700, color: '#1e293b', fontSize: 13, borderBottom: '2px solid #e2e8f0', textTransform: 'uppercase', letterSpacing: 0.5 }}>Estado</TableCell>
-                              <TableCell align="center" sx={{ width: 185, fontWeight: 700, color: '#1e293b', fontSize: 13, borderBottom: '2px solid #e2e8f0', textTransform: 'uppercase', letterSpacing: 0.5 }}>Acciones</TableCell>
+                              <TableCell sx={{ width: 130, minWidth: 120, fontWeight: 700, color: '#1e293b', fontSize: 12, borderBottom: '2px solid #e2e8f0', textTransform: 'uppercase', letterSpacing: 0.3, whiteSpace: 'nowrap', py: 1.2, px: 1.5 }}>Código</TableCell>
+                              <TableCell sx={{ width: 130, minWidth: 120, fontWeight: 700, color: '#1e293b', fontSize: 12, borderBottom: '2px solid #e2e8f0', textTransform: 'uppercase', letterSpacing: 0.3, whiteSpace: 'nowrap', py: 1.2, px: 1.5 }}>Tipo</TableCell>
+                              <TableCell sx={{ minWidth: 220, fontWeight: 700, color: '#1e293b', fontSize: 12, borderBottom: '2px solid #e2e8f0', textTransform: 'uppercase', letterSpacing: 0.3, whiteSpace: 'nowrap', py: 1.2, px: 1.5 }}>Nombre Documento</TableCell>
+                              <TableCell sx={{ width: 200, minWidth: 170, fontWeight: 700, color: '#1e293b', fontSize: 12, borderBottom: '2px solid #e2e8f0', textTransform: 'uppercase', letterSpacing: 0.3, whiteSpace: 'nowrap', py: 1.2, px: 1.5 }}>Autor</TableCell>
+                              <TableCell sx={{ width: 135, minWidth: 125, fontWeight: 700, color: '#1e293b', fontSize: 12, borderBottom: '2px solid #e2e8f0', textTransform: 'uppercase', letterSpacing: 0.3, whiteSpace: 'nowrap', py: 1.2, px: 1.5 }}>Fecha Creación</TableCell>
+                              <TableCell sx={{ width: 110, minWidth: 100, fontWeight: 700, color: '#1e293b', fontSize: 12, borderBottom: '2px solid #e2e8f0', textTransform: 'uppercase', letterSpacing: 0.3, whiteSpace: 'nowrap', py: 1.2, px: 1.5 }}>Estado</TableCell>
+                              <TableCell align="center" sx={{ width: 170, minWidth: 160, fontWeight: 700, color: '#1e293b', fontSize: 12, borderBottom: '2px solid #e2e8f0', textTransform: 'uppercase', letterSpacing: 0.3, whiteSpace: 'nowrap', py: 1.2, px: 1.5 }}>Acciones</TableCell>
                             </TableRow>
                           </TableHead>
                           <TableBody>
