@@ -509,6 +509,7 @@ function GestionUsuarios() {
     const nextPage = Object.prototype.hasOwnProperty.call(overrides, 'page') ? overrides.page : page;
     const nextLimit = Object.prototype.hasOwnProperty.call(overrides, 'rowsPerPage') ? overrides.rowsPerPage : rowsPerPage;
     const nextSearch = Object.prototype.hasOwnProperty.call(overrides, 'search') ? overrides.search : searchRef.current;
+    const nextDependencia = Object.prototype.hasOwnProperty.call(overrides, 'dependencia') ? overrides.dependencia : filterDependencia;
     const silent = overrides.silent === true;
     if (!silent) {
       setLoading(true);
@@ -517,7 +518,8 @@ function GestionUsuarios() {
       const response = await userService.getUsers({
         page: nextPage + 1,
         limit: nextLimit,
-        search: nextSearch
+        search: nextSearch,
+        dependencia: Array.isArray(nextDependencia) ? nextDependencia.join('|||') : (nextDependencia || '')
       });
       setUsers(response.data.users);
       setTotal(response.data.pagination.total);
@@ -530,7 +532,7 @@ function GestionUsuarios() {
         setLoading(false);
       }
     }
-  }, [enqueueSnackbar, page, rowsPerPage]);
+  }, [enqueueSnackbar, filterDependencia, page, rowsPerPage]);
 
   useEffect(() => {
     loadUsers();
@@ -541,11 +543,21 @@ function GestionUsuarios() {
   }, [search]);
 
   useEffect(() => {
+    setPage(0);
+    loadUsers({ page: 0, dependencia: filterDependencia });
+  }, [filterDependencia]);
+
+  useEffect(() => {
     const requestId = searchFetchIdRef.current + 1;
     searchFetchIdRef.current = requestId;
     const nextSearch = search.trim();
     const timer = setTimeout(() => {
-      userService.getUsers({ page: 1, limit: rowsPerPage, search: nextSearch })
+      userService.getUsers({
+        page: 1,
+        limit: rowsPerPage,
+        search: nextSearch,
+        dependencia: Array.isArray(filterDependencia) ? filterDependencia.join('|||') : (filterDependencia || '')
+      })
         .then((response) => {
           if (searchFetchIdRef.current !== requestId) return;
           setUsers(response.data.users);
@@ -556,7 +568,7 @@ function GestionUsuarios() {
         });
     }, 450);
     return () => clearTimeout(timer);
-  }, [rowsPerPage, search]);
+  }, [filterDependencia, rowsPerPage, search]);
 
   const handleOpenDialog = (mode, user = null) => {
     setDialogMode(mode);

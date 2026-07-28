@@ -753,10 +753,17 @@ const createUser = async (req, res) => {
 // LISTAR USUARIOS
 const getUsers = async (req, res) => {
   try {
-    const { search = '', role = '' } = req.query;
+    const { search = '', role = '', dependencia = '' } = req.query;
     const pagination = normalizePagination(req.query);
     
     const where = {};
+
+    if (dependencia) {
+      const deps = String(dependencia).split('|||').map(d => d.trim()).filter(Boolean);
+      if (deps.length > 0) {
+        where.dependencia = { [Op.in]: deps };
+      }
+    }
     
     if (String(search).trim()) {
       const rawTokens = String(search).trim().split(/\s+/).filter(Boolean);
