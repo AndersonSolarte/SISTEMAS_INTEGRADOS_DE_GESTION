@@ -603,6 +603,7 @@ const runMigrations = async () => {
     await qi.addIndex('matriculados_ubicacion_incidencias', ['anio', 'periodo', 'estado'], { name: 'idx_matriculados_incidencias_anio_periodo_estado' }).catch(() => {});
 
     await normalizeUserDependencies();
+    await repairInvertedDocumentDates();
     await repairMatriculadosFromEstadisticas();
     await repairGeorreferenciaFromDivipola();
 
@@ -612,6 +613,38 @@ const runMigrations = async () => {
   } catch (error) {
     console.error('[migrate] Error:', error);
     process.exit(1);
+  }
+};
+
+const repairInvertedDocumentDates = async () => {
+  console.log('[migrate] Verificando y reparando fechas de documentos guardadas de forma invertida...');
+  try {
+    const docs = await models.Documento.findAll({
+      attributes: ['id', 'codigo', 'fecha_creacion', 'datos_originales']
+    });
+
+    for (const doc of docs) {
+      const orig = doc.datos_originales?.fecha_creacion || doc.datos_originales?.FECHA_CREACION;
+      if (orig && typeof orig === 'string') {
+        const match = String(orig).trim().match(/^(\d{1,2})[/-](\d{1,2})[/-](\d{2}|\d{4})$/);
+        if (match) {
+          let [, p1, p2, y] = match;
+          const year = y.length === 2 ? `20${y}` : y;
+          const day = parseInt(p1, 10);
+          const month = parseInt(p2, 10);
+
+          if (month >= 1 && month <= 12 && day >= 1 && day <= 31) {
+            const correctISO = `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+            if (doc.fecha_creacion !== correctISO) {
+              await doc.update({ fecha_creacion: correctISO });
+            }
+          }
+        }
+      }
+    }
+    console.log('[migrate] Verificación de fechas de documentos completada.');
+  } catch (err) {
+    console.error('[migrate] Error al reparar fechas de documentos:', err.message);
   }
 };
 
