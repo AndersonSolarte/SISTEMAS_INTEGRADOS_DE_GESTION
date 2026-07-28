@@ -1816,7 +1816,7 @@ const getUserFieldSuggestions = async (req, res) => {
 
     const preloadedDependencias = Object.keys(DEPENDENCY_EMAILS_RAW || {});
     const dependenciasSet = new Map();
-    [...preloadedDependencias, ...rawDbDependencias].forEach((item) => {
+    preloadedDependencias.forEach((item) => {
       const val = String(item || '').trim();
       if (!val || val === '-') return;
       const key = normalizeSearchText(val);

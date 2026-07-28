@@ -602,6 +602,41 @@ const runMigrations = async () => {
     await qi.addIndex('poblacional_graduados', ['anio', 'programa'], { name: 'idx_poblacional_graduados_anio_programa' }).catch(() => {});
     await qi.addIndex('matriculados_ubicacion_incidencias', ['anio', 'periodo', 'estado'], { name: 'idx_matriculados_incidencias_anio_periodo_estado' }).catch(() => {});
 
+const normalizeUserDependencies = async () => {
+  const mappings = [
+    { from: 'Licenciatura En Química', to: 'Programa Academico - Licenciatura en Quimica' },
+    { from: 'Licenciatura en Química', to: 'Programa Academico - Licenciatura en Quimica' },
+    { from: 'Licenciatura en Educación Infantil', to: 'Programa Academico - Licenciatura en Educacion Infantil' },
+    { from: 'Licenciatura en Educación Física', to: 'Programa Academico - Licenciatura en Educacion fisica' },
+    { from: 'Administración de Empresas', to: 'Programa Academico - Administracion de Empresas' },
+    { from: 'Contaduría Pública', to: 'Programa Academico - Contaduria Publica' },
+    { from: 'Derecho', to: 'Programa Academico - Derecho' },
+    { from: 'Diseño Gráfico', to: 'Programa Academico - Diseño Grafico' },
+    { from: 'Ingeniería de Sistemas', to: 'Programa Academico - Ingenieria de Sistemas' },
+    { from: 'Ingeniería Electrónica', to: 'Programa Academico - Ingenieria de Electronica' },
+    { from: 'Psicología', to: 'Programa Academico -Psicologia' },
+    { from: 'Departamento de Ciencias Básicas', to: 'Programa Academico- Departamento de Ciencias Basicas' },
+    { from: 'Departamento de Humanidades', to: 'Programa Academico- Departamento de Humanidades' },
+    { from: 'Arquitectura', to: 'Programa Academico - Arquitectura' }
+  ];
+
+  for (const { from, to } of mappings) {
+    await sequelize.query(
+      `UPDATE users SET dependencia = :to WHERE LOWER(TRIM(dependencia)) = LOWER(TRIM(:from))`,
+      { replacements: { from, to }, type: QueryTypes.UPDATE }
+    ).catch(() => {});
+  }
+};
+
+const runMigrations = async () => {
+  try {
+    await testConnection();
+    await models.sequelize.sync({ alter: false });
+    const qi = sequelize.getQueryInterface();
+
+    await ensureUserRoleEnumValues();
+    await normalizeUserDependencies();
+
     await repairMatriculadosFromEstadisticas();
     await repairGeorreferenciaFromDivipola();
 
