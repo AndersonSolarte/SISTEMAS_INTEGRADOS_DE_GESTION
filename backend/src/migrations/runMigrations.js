@@ -602,6 +602,19 @@ const runMigrations = async () => {
     await qi.addIndex('poblacional_graduados', ['anio', 'programa'], { name: 'idx_poblacional_graduados_anio_programa' }).catch(() => {});
     await qi.addIndex('matriculados_ubicacion_incidencias', ['anio', 'periodo', 'estado'], { name: 'idx_matriculados_incidencias_anio_periodo_estado' }).catch(() => {});
 
+    await normalizeUserDependencies();
+    await repairMatriculadosFromEstadisticas();
+    await repairGeorreferenciaFromDivipola();
+
+    console.log('[migrate] Migraciones completadas');
+    await sequelize.close();
+    process.exit(0);
+  } catch (error) {
+    console.error('[migrate] Error:', error);
+    process.exit(1);
+  }
+};
+
 const normalizeUserDependencies = async () => {
   const ilikeMappings = [
     { pattern: '%quimica%', official: 'Programa Academico - Licenciatura en Quimica' },
@@ -642,27 +655,6 @@ const normalizeUserDependencies = async () => {
       `UPDATE users SET dependencia = NULL WHERE dependencia IS NOT NULL AND dependencia NOT IN (:officialList)`,
       { replacements: { officialList }, type: QueryTypes.UPDATE }
     ).catch(() => {});
-  }
-};
-
-const runMigrations = async () => {
-  try {
-    await testConnection();
-    await models.sequelize.sync({ alter: false });
-    const qi = sequelize.getQueryInterface();
-
-    await ensureUserRoleEnumValues();
-    await normalizeUserDependencies();
-
-    await repairMatriculadosFromEstadisticas();
-    await repairGeorreferenciaFromDivipola();
-
-    console.log('[migrate] Migraciones completadas');
-    await sequelize.close();
-    process.exit(0);
-  } catch (error) {
-    console.error('[migrate] Error:', error);
-    process.exit(1);
   }
 };
 
