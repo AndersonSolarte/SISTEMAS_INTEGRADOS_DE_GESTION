@@ -2469,50 +2469,26 @@ function GestionUsuarios() {
                     (opt) => normalizeSearchText(opt) === normalizeSearchText(formData.dependencia || '')
                   ) || null
                 }
-                inputValue={formData.dependencia || ''}
                 getOptionLabel={(option) => (option ? String(option) : '')}
                 isOptionEqualToValue={(option, val) =>
                   normalizeSearchText(option) === normalizeSearchText(val)
                 }
                 onChange={(event, newValue) => {
-                  setFormData({ ...formData, dependencia: newValue || '' });
+                  const val = newValue ? String(newValue) : '';
+                  setFormData((prev) => ({ ...prev, dependencia: val }));
                   setFormErrors((prev) => ({ ...prev, dependencia: '' }));
-                }}
-                onInputChange={(event, newInputValue, reason) => {
-                  if (reason === 'input') {
-                    const trimmed = newInputValue;
-                    setFormData((prev) => ({ ...prev, dependencia: trimmed }));
-                    if (trimmed.trim()) {
-                      const matchFound = dependenciaOptions.some(
-                        (opt) => normalizeSearchText(opt) === normalizeSearchText(trimmed.trim())
-                      );
-                      if (!matchFound) {
-                        setFormErrors((prev) => ({
-                          ...prev,
-                          dependencia: 'La dependencia ingresada no existe. Selecciona una opción válida de la lista.'
-                        }));
-                      } else {
-                        setFormErrors((prev) => ({ ...prev, dependencia: '' }));
-                      }
-                    } else {
-                      setFormErrors((prev) => ({ ...prev, dependencia: '' }));
-                    }
-                  } else if (reason === 'clear') {
-                    setFormData((prev) => ({ ...prev, dependencia: '' }));
-                    setFormErrors((prev) => ({ ...prev, dependencia: '' }));
-                  }
                 }}
                 loading={loadingSuggestions}
                 loadingText="Cargando dependencias..."
-                noOptionsText="La dependencia ingresada no existe"
+                noOptionsText="No existe en el catálogo oficial de dependencias"
                 renderInput={(params) => (
                   <TextField
                     {...params}
                     fullWidth
-                    label="Dependencia"
+                    label="Dependencia *"
                     error={Boolean(formErrors.dependencia)}
-                    helperText={formErrors.dependencia || 'Busca y selecciona una dependencia precargada'}
-                    inputProps={{ ...params.inputProps, maxLength: 220 }}
+                    helperText={formErrors.dependencia || 'Selecciona una dependencia del catálogo oficial precargado'}
+                    inputProps={{ ...params.inputProps, readOnly: false }}
                   />
                 )}
                 sx={{ ...smartAutocompleteSx, mb: 2 }}
