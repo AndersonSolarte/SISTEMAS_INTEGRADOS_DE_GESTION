@@ -1467,32 +1467,60 @@ function GestionUsuarios() {
   };
 
   const visibleUsers = useMemo(() => {
-    const list = Array.isArray(users) ? [...users] : [];
-    const normalizedSearch = normalizeSearchText(search).trim();
-    const searchTokens = normalizedSearch.split(/\s+/).filter(Boolean);
-    const filteredList = searchTokens.length > 0
-      ? list.filter((user) => {
-          const tableText = [
-            user?.nombre,
-            user?.email,
-            user?.username,
-            user?.dependencia,
-            user?.vicerrectoria,
-            user?.cargo,
-            user?.jefe_inmediato,
-            getCompactRoleLabel(user?.role),
-            user?.role,
-            user?.estado
-          ].filter(Boolean).map(normalizeSearchText).join(' ');
-          return searchTokens.every((token) => tableText.includes(token));
-        })
-      : list;
+    const list = Array.isArray(users) ? users : [];
+    const searchTrimmed = String(search || '').trim();
 
-    return filteredList.sort((a, b) => {
-      const roleA = getCompactRoleLabel(a?.role) || String(a?.role || '');
-      const roleB = getCompactRoleLabel(b?.role) || String(b?.role || '');
-      const roleCompare = roleA.localeCompare(roleB, 'es', { sensitivity: 'base' });
-      if (roleCompare !== 0) return roleCompare;
+    if (!searchTrimmed) {
+      return [...list].sort((a, b) => {
+        const roleA = getCompactRoleLabel(a?.role) || String(a?.role || '');
+        const roleB = getCompactRoleLabel(b?.role) || String(b?.role || '');
+        const roleCompare = roleA.localeCompare(roleB, 'es', { sensitivity: 'base' });
+        if (roleCompare !== 0) return roleCompare;
+        return String(a?.nombre || '').localeCompare(String(b?.nombre || ''), 'es', { sensitivity: 'base' });
+      });
+    }
+
+    const searchLower = normalizeSearchText(searchTrimmed);
+    const searchTokens = searchLower.split(/\s+/).filter(Boolean);
+
+    const getRelevanceScore = (u) => {
+      const nom = normalizeSearchText(u?.nombre);
+      const user = normalizeSearchText(u?.username);
+      const em = normalizeSearchText(u?.email);
+      const jefe = normalizeSearchText(u?.jefe_inmediato);
+      const dep = normalizeSearchText(u?.dependencia);
+
+      if (nom === searchLower) return 0;
+      if (user === searchLower || em === searchLower) return 1;
+      if (nom.startsWith(searchLower)) return 2;
+      if (nom.includes(searchLower)) return 3;
+      if (searchTokens.length > 1 && searchTokens.every((t) => nom.includes(t))) return 4;
+      if (searchTokens.length > 0 && nom.includes(searchTokens[0])) return 5;
+      if (em.includes(searchLower) || user.includes(searchLower)) return 6;
+      if (jefe.includes(searchLower) || dep.includes(searchLower)) return 7;
+      return 8;
+    };
+
+    const searchFiltered = list.filter((user) => {
+      const tableText = [
+        user?.nombre,
+        user?.email,
+        user?.username,
+        user?.dependencia,
+        user?.vicerrectoria,
+        user?.cargo,
+        user?.jefe_inmediato,
+        getCompactRoleLabel(user?.role),
+        user?.role,
+        user?.estado
+      ].filter(Boolean).map(normalizeSearchText).join(' ');
+      return searchTokens.every((token) => tableText.includes(token));
+    });
+
+    return searchFiltered.sort((a, b) => {
+      const scoreA = getRelevanceScore(a);
+      const scoreB = getRelevanceScore(b);
+      if (scoreA !== scoreB) return scoreA - scoreB;
       return String(a?.nombre || '').localeCompare(String(b?.nombre || ''), 'es', { sensitivity: 'base' });
     });
   }, [getCompactRoleLabel, normalizeSearchText, search, users]);
