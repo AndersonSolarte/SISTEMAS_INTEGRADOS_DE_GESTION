@@ -2005,19 +2005,6 @@ const sendFinalEmails = async (solicitud, pdfAttachment, supportAttachment) => {
     }
   }
 
-  // Si pertenece a Rectoría o es Oficio de 3+ días, enviar copia final a Rectoría
-  const userVicerrectoria = getSolicitudVicerrectoria(solicitud);
-  if (isRectoriaAuthority(userVicerrectoria) || solicitud.datos_formulario?.salida?.duracionTipo === '3_mas_dias') {
-    if (!copyRecipients.some((recipient) => sameExactEmail(recipient.email, RECTORIA_EMAIL))) {
-      copyRecipients.push({
-        type: 'dependencia',
-        email: RECTORIA_EMAIL,
-        label: 'Rectoría',
-        source: 'rectoria'
-      });
-    }
-  }
-
   if (copyRecipients.length > 0) {
     const depHtml = renderInstitutionalTemplate({
       title: `Copia de control - ${isOficio ? 'Oficio de salida' : 'Reporte de salida'} aprobado`,
