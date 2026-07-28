@@ -284,8 +284,8 @@ const getOriginalDateValue = (doc, keys = []) => {
 };
 
 const getDocumentoFechaCreacion = (doc) => (
-  getOriginalDateValue(doc, ['FECHA_CREACION', 'fecha_creacion'])
-  || doc?.fecha_creacion
+  doc?.fecha_creacion
+  || getOriginalDateValue(doc, ['FECHA_CREACION', 'fecha_creacion'])
 );
 
 const emptyFilterOptions = {

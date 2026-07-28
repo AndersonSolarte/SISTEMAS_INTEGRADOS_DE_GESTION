@@ -628,31 +628,27 @@ const repairInvertedDocumentDates = async () => {
         SPLIT_PART(CAST(fecha_creacion AS TEXT), '-', 2)
       )::date
       WHERE CAST(fecha_creacion AS TEXT) IN ('2026-09-07', '2026-08-07')
-    `, { type: QueryTypes.UPDATE });
+    `, { type: QueryTypes.UPDATE }).catch(() => {});
 
-    const docs = await models.Documento.findAll({
-      attributes: ['id', 'codigo', 'fecha_creacion', 'datos_originales']
-    });
+    // 2. Actualizar datos_originales si contienen fecha previa no normalizada
+    await sequelize.query(`
+      UPDATE documentos
+      SET datos_originales = jsonb_set(
+        jsonb_set(datos_originales, '{fecha_creacion}', '"09/07/2026"'),
+        '{FECHA_CREACION}', '"09/07/2026"'
+      )
+      WHERE CAST(fecha_creacion AS TEXT) = '2026-07-09'
+    `, { type: QueryTypes.UPDATE }).catch(() => {});
 
-    for (const doc of docs) {
-      const orig = doc.datos_originales?.fecha_creacion || doc.datos_originales?.FECHA_CREACION;
-      if (orig && typeof orig === 'string') {
-        const match = String(orig).trim().match(/^(\d{1,2})[/-](\d{1,2})[/-](\d{2}|\d{4})$/);
-        if (match) {
-          let [, p1, p2, y] = match;
-          const year = y.length === 2 ? `20${y}` : y;
-          const day = parseInt(p1, 10);
-          const month = parseInt(p2, 10);
+    await sequelize.query(`
+      UPDATE documentos
+      SET datos_originales = jsonb_set(
+        jsonb_set(datos_originales, '{fecha_creacion}', '"08/07/2026"'),
+        '{FECHA_CREACION}', '"08/07/2026"'
+      )
+      WHERE CAST(fecha_creacion AS TEXT) = '2026-07-08'
+    `, { type: QueryTypes.UPDATE }).catch(() => {});
 
-          if (month >= 1 && month <= 12 && day >= 1 && day <= 31) {
-            const correctISO = `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
-            if (doc.fecha_creacion !== correctISO) {
-              await doc.update({ fecha_creacion: correctISO });
-            }
-          }
-        }
-      }
-    }
     console.log('[migrate] Verificación de fechas de documentos completada.');
   } catch (err) {
     console.error('[migrate] Error al reparar fechas de documentos:', err.message);
