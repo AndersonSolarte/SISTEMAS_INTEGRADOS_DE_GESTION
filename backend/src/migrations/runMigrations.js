@@ -603,27 +603,35 @@ const runMigrations = async () => {
     await qi.addIndex('matriculados_ubicacion_incidencias', ['anio', 'periodo', 'estado'], { name: 'idx_matriculados_incidencias_anio_periodo_estado' }).catch(() => {});
 
 const normalizeUserDependencies = async () => {
-  const mappings = [
-    { from: 'Licenciatura En Química', to: 'Programa Academico - Licenciatura en Quimica' },
-    { from: 'Licenciatura en Química', to: 'Programa Academico - Licenciatura en Quimica' },
-    { from: 'Licenciatura en Educación Infantil', to: 'Programa Academico - Licenciatura en Educacion Infantil' },
-    { from: 'Licenciatura en Educación Física', to: 'Programa Academico - Licenciatura en Educacion fisica' },
-    { from: 'Administración de Empresas', to: 'Programa Academico - Administracion de Empresas' },
-    { from: 'Contaduría Pública', to: 'Programa Academico - Contaduria Publica' },
-    { from: 'Derecho', to: 'Programa Academico - Derecho' },
-    { from: 'Diseño Gráfico', to: 'Programa Academico - Diseño Grafico' },
-    { from: 'Ingeniería de Sistemas', to: 'Programa Academico - Ingenieria de Sistemas' },
-    { from: 'Ingeniería Electrónica', to: 'Programa Academico - Ingenieria de Electronica' },
-    { from: 'Psicología', to: 'Programa Academico -Psicologia' },
-    { from: 'Departamento de Ciencias Básicas', to: 'Programa Academico- Departamento de Ciencias Basicas' },
-    { from: 'Departamento de Humanidades', to: 'Programa Academico- Departamento de Humanidades' },
-    { from: 'Arquitectura', to: 'Programa Academico - Arquitectura' }
+  const ilikeMappings = [
+    { pattern: '%quimica%', official: 'Programa Academico - Licenciatura en Quimica' },
+    { pattern: '%sistemas%', official: 'Programa Academico - Ingenieria de Sistemas' },
+    { pattern: '%electronica%', official: 'Programa Academico - Ingenieria de Electronica' },
+    { pattern: '%diseno%grafico%', official: 'Programa Academico - Diseño Grafico' },
+    { pattern: '%diseño%grafico%', official: 'Programa Academico - Diseño Grafico' },
+    { pattern: '%derecho%', official: 'Programa Academico - Derecho' },
+    { pattern: '%contaduria%', official: 'Programa Academico - Contaduria Publica' },
+    { pattern: '%contaduría%', official: 'Programa Academico - Contaduria Publica' },
+    { pattern: '%administracion%empresas%', official: 'Programa Academico - Administracion de Empresas' },
+    { pattern: '%admon%empresas%', official: 'Programa Academico - Administracion de Empresas' },
+    { pattern: '%educacion%infantil%', official: 'Programa Academico - Licenciatura en Educacion Infantil' },
+    { pattern: '%educacion%fisica%', official: 'Programa Academico - Licenciatura en Educacion fisica' },
+    { pattern: '%psicologia%', official: 'Programa Academico -Psicologia' },
+    { pattern: '%psicología%', official: 'Programa Academico -Psicologia' },
+    { pattern: '%ciencias%basicas%', official: 'Programa Academico- Departamento de Ciencias Basicas' },
+    { pattern: '%humanidades%', official: 'Programa Academico- Departamento de Humanidades' },
+    { pattern: '%arquitectura%', official: 'Programa Academico - Arquitectura' },
+    { pattern: '%gestion%humana%', official: 'Oficina de Gestion del Talento Humano' },
+    { pattern: '%talento%humano%', official: 'Oficina de Gestion del Talento Humano' },
+    { pattern: '%planeacion%', official: 'Direccion de Planeacion y Aseguramiento de la Calidad' },
+    { pattern: '%posgrados%', official: 'Direccion de Posgrados' },
+    { pattern: '%postgrados%', official: 'Direccion de Posgrados' }
   ];
 
-  for (const { from, to } of mappings) {
+  for (const { pattern, official } of ilikeMappings) {
     await sequelize.query(
-      `UPDATE users SET dependencia = :to WHERE LOWER(TRIM(dependencia)) = LOWER(TRIM(:from))`,
-      { replacements: { from, to }, type: QueryTypes.UPDATE }
+      `UPDATE users SET dependencia = :official WHERE dependencia ILIKE :pattern AND dependencia != :official`,
+      { replacements: { pattern, official }, type: QueryTypes.UPDATE }
     ).catch(() => {});
   }
 };

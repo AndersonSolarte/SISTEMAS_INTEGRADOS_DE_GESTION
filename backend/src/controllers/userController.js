@@ -623,17 +623,14 @@ const createUser = async (req, res) => {
     }
 
     if (dependencia) {
-      const isOfficial = Boolean(getDependencyEmail(dependencia));
+      const isOfficial = Object.keys(DEPENDENCY_EMAILS_RAW || {}).some(
+        (officialKey) => normalizeSearchText(officialKey) === normalizeSearchText(dependencia)
+      );
       if (!isOfficial) {
-        const dbCount = await User.count({
-          where: buildAccentInsensitiveCondition('dependencia', dependencia)
+        return res.status(400).json({
+          success: false,
+          message: 'La dependencia ingresada no pertenece al catálogo oficial institucional. Por favor selecciona una dependencia precargada del sistema.'
         });
-        if (dbCount === 0) {
-          return res.status(400).json({
-            success: false,
-            message: 'La dependencia ingresada no existe. Selecciona una dependencia precargada del sistema.'
-          });
-        }
       }
     }
 
@@ -963,11 +960,16 @@ const updateUser = async (req, res) => {
       }
     }
     
-    if (username && !esDocumentoValido(username)) {
-      return res.status(400).json({
-        success: false,
-        message: 'El número de documento debe contener solo números (4 a 15 dígitos).'
-      });
+    if (dependencia) {
+      const isOfficial = Object.keys(DEPENDENCY_EMAILS_RAW || {}).some(
+        (officialKey) => normalizeSearchText(officialKey) === normalizeSearchText(dependencia)
+      );
+      if (!isOfficial) {
+        return res.status(400).json({
+          success: false,
+          message: 'La dependencia ingresada no pertenece al catálogo oficial institucional. Por favor selecciona una dependencia precargada del sistema.'
+        });
+      }
     }
 
     const hasPayloadField = (field) => Object.prototype.hasOwnProperty.call(req.body || {}, field);
