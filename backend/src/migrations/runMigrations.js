@@ -616,6 +616,7 @@ const runMigrations = async () => {
 };
 
 const normalizeUserDependencies = async () => {
+  console.log('[migrate] Normalizando dependencias de usuarios a nombres oficiales...');
   const ilikeMappings = [
     { pattern: '%quimica%', official: 'Programa Academico - Licenciatura en Quimica' },
     { pattern: '%sistemas%', official: 'Programa Academico - Ingenieria de Sistemas' },
@@ -626,7 +627,7 @@ const normalizeUserDependencies = async () => {
     { pattern: '%contaduria%', official: 'Programa Academico - Contaduria Publica' },
     { pattern: '%contaduría%', official: 'Programa Academico - Contaduria Publica' },
     { pattern: '%administracion%empresas%', official: 'Programa Academico - Administracion de Empresas' },
-    { pattern: '%admon%empresas%', official: 'Programa Academico - Administracion de Empresas' },
+    { pattern: '%admon%', official: 'Programa Academico - Administracion de Empresas' },
     { pattern: '%educacion%infantil%', official: 'Programa Academico - Licenciatura en Educacion Infantil' },
     { pattern: '%educacion%fisica%', official: 'Programa Academico - Licenciatura en Educacion fisica' },
     { pattern: '%psicologia%', official: 'Programa Academico -Psicologia' },
@@ -642,19 +643,27 @@ const normalizeUserDependencies = async () => {
   ];
 
   for (const { pattern, official } of ilikeMappings) {
-    await sequelize.query(
-      `UPDATE users SET dependencia = :official WHERE dependencia ILIKE :pattern AND dependencia != :official`,
-      { replacements: { pattern, official }, type: QueryTypes.UPDATE }
-    ).catch(() => {});
+    try {
+      await sequelize.query(
+        `UPDATE users SET dependencia = :official WHERE TRIM(dependencia) ILIKE :pattern AND dependencia != :official`,
+        { replacements: { pattern, official }, type: QueryTypes.UPDATE }
+      );
+    } catch (err) {
+      console.error(`[migrate] Error al normalizar ${pattern}:`, err.message);
+    }
   }
 
-  const { DEPENDENCY_EMAILS_RAW } = require('../config/dependencyEmails');
-  const officialList = Object.keys(DEPENDENCY_EMAILS_RAW || {});
-  if (officialList.length > 0) {
-    await sequelize.query(
-      `UPDATE users SET dependencia = NULL WHERE dependencia IS NOT NULL AND dependencia NOT IN (:officialList)`,
-      { replacements: { officialList }, type: QueryTypes.UPDATE }
-    ).catch(() => {});
+  try {
+    const { DEPENDENCY_EMAILS_RAW } = require('../config/dependencyEmails');
+    const officialList = Object.keys(DEPENDENCY_EMAILS_RAW || {});
+    if (officialList.length > 0) {
+      await sequelize.query(
+        `UPDATE users SET dependencia = NULL WHERE dependencia IS NOT NULL AND dependencia NOT IN (:officialList)`,
+        { replacements: { officialList }, type: QueryTypes.UPDATE }
+      );
+    }
+  } catch (err) {
+    console.error('[migrate] Error en limpieza final de dependencias:', err.message);
   }
 };
 
