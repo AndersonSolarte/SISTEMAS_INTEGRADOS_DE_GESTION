@@ -47,7 +47,11 @@ const {
   getSystemTablesCatalog,
   exportTableData,
   downloadDatabaseDump,
-  restoreDatabaseDump
+  restoreDatabaseDump,
+  getBackupMonitor,
+  runAutomaticBackupNow,
+  pauseAutomaticBackups,
+  resumeAutomaticBackups
 } = require('../controllers/databaseCenterController');
 const upload = createExcelUpload('uploads/temp/');
 
@@ -224,6 +228,10 @@ router.get('/database/tables-catalog', auth, canExportDatabaseTables, getSystemT
 router.get('/database/export-table', auth, canExportDatabaseTables, exportTableData);
 router.post('/database/backup-dump', auth, canDownloadDatabaseBackup, downloadDatabaseDump);
 router.post('/database/restore-dump', auth, canRestoreDatabaseBackup, databaseRestoreUpload.single('backup'), restoreDatabaseDump);
+router.get('/database/backup-monitor', auth, canDownloadDatabaseBackup, getBackupMonitor);
+router.post('/database/backup-monitor/run', auth, hasAnyRole(ROLES.ADMINISTRADOR), runAutomaticBackupNow);
+router.post('/database/backup-monitor/pause', auth, hasAnyRole(ROLES.ADMINISTRADOR), pauseAutomaticBackups);
+router.post('/database/backup-monitor/resume', auth, hasAnyRole(ROLES.ADMINISTRADOR), resumeAutomaticBackups);
 router.get('/registros-calificados/:id/evidencias', auth, canViewEstadisticaInstitucionalByPermission, getRegistrosCalificadosEvidencias);
 router.get('/divipola/incidencias', auth, canViewEstadisticaInstitucionalByPermission, getDivipolaIncidencias);
 router.put('/divipola/incidencias/:id', auth, canViewEstadisticaInstitucionalByPermission, resolveDivipolaIncidencia);

@@ -15,6 +15,14 @@ set -a
 . "$ENV_FILE"
 set +a
 
+# El programador integrado registra avance, validacion e historial en la
+# interfaz. Este respaldo legado queda solo como mecanismo de emergencia y no
+# debe ejecutarse en paralelo con el monitor de la aplicacion.
+if [[ "${SIAC_AUTOMATIC_BACKUP_ENABLED:-true}" == "true" && "${SIAC_ALLOW_LEGACY_BACKUP_SCRIPT:-false}" != "true" ]]; then
+  echo "La copia automatica esta administrada por el Centro de Respaldo de SIAC."
+  exit 0
+fi
+
 BACKUP_DIR="${SIAC_BACKUP_DIR:-}"
 RETENTION_DAYS="${SIAC_BACKUP_RETENTION_DAYS:-0}"
 

@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
-  Alert, Box, Button, Card, CardContent, Chip, CircularProgress, IconButton,
+  Alert, Box, Button, Card, CardContent, Chip, CircularProgress, IconButton, LinearProgress,
   Dialog, DialogActions, DialogContent, DialogTitle, InputAdornment, Menu, MenuItem, Paper, Stack, Table, TableBody, TableCell,
   TableContainer, TableHead, TableRow, TextField, Tooltip, Typography
 } from '@mui/material';
@@ -17,6 +17,12 @@ import VerifiedUserRoundedIcon from '@mui/icons-material/VerifiedUserRounded';
 import CheckCircleRoundedIcon from '@mui/icons-material/CheckCircleRounded';
 import RestoreRoundedIcon from '@mui/icons-material/RestoreRounded';
 import UploadFileRoundedIcon from '@mui/icons-material/UploadFileRounded';
+import ScheduleRoundedIcon from '@mui/icons-material/ScheduleRounded';
+import PlayArrowRoundedIcon from '@mui/icons-material/PlayArrowRounded';
+import PauseRoundedIcon from '@mui/icons-material/PauseRounded';
+import HistoryRoundedIcon from '@mui/icons-material/HistoryRounded';
+import ErrorOutlineRoundedIcon from '@mui/icons-material/ErrorOutlineRounded';
+import CloudDoneRoundedIcon from '@mui/icons-material/CloudDoneRounded';
 import gestionInformacionService from '../../services/gestionInformacionService';
 import TurnstileVerification from '../security/TurnstileVerification';
 import GoogleIdentityVerification from '../security/GoogleIdentityVerification';
@@ -67,7 +73,208 @@ const MetricCard = ({ icon, label, value, helper, color = '#1d4ed8' }) => (
   </Card>
 );
 
-export function DatabaseBackupPanel({ enqueueSnackbar, canDownload = false, canRestore = false }) {
+const formatDateTime = (value) => value
+  ? new Intl.DateTimeFormat('es-CO', { dateStyle: 'medium', timeStyle: 'short', timeZone: 'America/Bogota' }).format(new Date(value))
+  : 'Sin registro';
+
+const formatDuration = (milliseconds) => {
+  const seconds = Math.max(0, Math.round(Number(milliseconds || 0) / 1000));
+  if (!seconds) return '—';
+  if (seconds < 60) return `${seconds} s`;
+  const minutes = Math.floor(seconds / 60);
+  const remainder = seconds % 60;
+  return `${minutes} min ${remainder} s`;
+};
+
+const formatBytes = (bytes) => {
+  const value = Number(bytes || 0);
+  if (!value) return '—';
+  if (value >= 1024 ** 3) return `${(value / (1024 ** 3)).toFixed(2)} GB`;
+  if (value >= 1024 ** 2) return `${(value / (1024 ** 2)).toFixed(1)} MB`;
+  return `${(value / 1024).toFixed(0)} kB`;
+};
+
+const backupPhaseLabels = {
+  queued: 'En espera',
+  preparing: 'Preparando almacenamiento',
+  generating: 'Copiando estructura y datos',
+  validating: 'Validando integridad',
+  finalizing: 'Finalizando archivo',
+  completed: 'Completada',
+  failed: 'Fallida'
+};
+
+const BackupAutomationMonitor = ({ enqueueSnackbar, canManage = false }) => {
+  const [monitor, setMonitor] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [action, setAction] = useState('');
+
+  const loadMonitor = useCallback(async ({ quiet = false } = {}) => {
+    if (!quiet) setLoading(true);
+    try {
+      const response = await gestionInformacionService.getBackupMonitor();
+      setMonitor(response.data);
+    } catch (error) {
+      if (!quiet) enqueueSnackbar(error?.response?.data?.message || 'No se pudo consultar el monitor de copias', { variant: 'error' });
+    } finally {
+      if (!quiet) setLoading(false);
+    }
+  }, [enqueueSnackbar]);
+
+  useEffect(() => { loadMonitor(); }, [loadMonitor]);
+  useEffect(() => {
+    const delay = monitor?.currentRun ? 3000 : 30000;
+    const timer = setInterval(() => loadMonitor({ quiet: true }), delay);
+    return () => clearInterval(timer);
+  }, [loadMonitor, monitor?.currentRun]);
+
+  const performAction = async (type) => {
+    setAction(type);
+    try {
+      const response = type === 'run'
+        ? await gestionInformacionService.runAutomaticBackupNow()
+        : type === 'pause'
+          ? await gestionInformacionService.pauseAutomaticBackups()
+          : await gestionInformacionService.resumeAutomaticBackups();
+      enqueueSnackbar(response.message, { variant: 'success' });
+      if (type === 'run') await new Promise((resolve) => setTimeout(resolve, 500));
+      await loadMonitor({ quiet: true });
+    } catch (error) {
+      enqueueSnackbar(error?.response?.data?.message || 'No fue posible ejecutar la acción', { variant: 'error' });
+    } finally { setAction(''); }
+  };
+
+  const current = monitor?.currentRun;
+  const history = monitor?.history || [];
+  const stateColor = !monitor?.configured ? '#dc2626' : monitor?.paused ? '#d97706' : '#059669';
+  const stateLabel = !monitor?.configured ? 'No configurada' : monitor?.paused ? 'Pausada' : 'Activa';
+
+  return (
+    <Box>
+      <Stack direction={{ xs: 'column', md: 'row' }} spacing={1} justifyContent="space-between" alignItems={{ xs: 'stretch', md: 'center' }} sx={{ mb: 1.3 }}>
+        <Box>
+          <Typography variant="h6" sx={{ fontWeight: 900, color: '#0f172a' }}>Monitoreo de copias automáticas</Typography>
+          <Typography variant="body2" sx={{ color: '#64748b' }}>Ejecución diaria, avance e historial de resultados.</Typography>
+        </Box>
+        <Stack direction="row" spacing={0.8} flexWrap="wrap" useFlexGap>
+          <Tooltip title="Actualizar estado">
+            <span><IconButton onClick={() => loadMonitor()} disabled={loading || Boolean(action)} sx={{ border: '1px solid #bfdbfe', bgcolor: '#fff' }}><RefreshRoundedIcon /></IconButton></span>
+          </Tooltip>
+          {canManage && monitor?.configured && (
+            <Button
+              variant="outlined"
+              startIcon={monitor.paused ? <PlayArrowRoundedIcon /> : <PauseRoundedIcon />}
+              disabled={Boolean(action)}
+              onClick={() => performAction(monitor.paused ? 'resume' : 'pause')}
+              sx={{ borderRadius: 2.2, fontWeight: 850, bgcolor: '#fff' }}
+            >
+              {monitor.paused ? 'Reanudar' : 'Pausar programación'}
+            </Button>
+          )}
+          {canManage && (
+            <Button
+              variant="contained"
+              startIcon={action === 'run' ? <CircularProgress size={17} color="inherit" /> : <PlayArrowRoundedIcon />}
+              disabled={Boolean(action) || Boolean(current)}
+              onClick={() => performAction('run')}
+              sx={{ borderRadius: 2.2, fontWeight: 900, boxShadow: '0 8px 20px rgba(37,99,235,.2)' }}
+            >
+              Ejecutar ahora
+            </Button>
+          )}
+        </Stack>
+      </Stack>
+
+      <Paper elevation={0} sx={{ border: '1px solid #dbe5f2', borderRadius: 3, overflow: 'hidden', bgcolor: '#fff' }}>
+        <Box sx={{ p: { xs: 1.6, md: 2.2 }, bgcolor: '#f8fbff' }}>
+          <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', sm: 'repeat(3,minmax(0,1fr))' }, gap: 1.2 }}>
+            {[
+              { icon: <CloudDoneRoundedIcon />, title: 'Programación', value: stateLabel, helper: monitor?.configured ? 'Todos los días a las 6:00 p. m.' : 'Requiere configuración del servidor', color: stateColor },
+              { icon: <ScheduleRoundedIcon />, title: 'Próxima ejecución', value: monitor?.enabled ? formatDateTime(monitor?.schedule?.nextRunAt) : 'Sin programación', helper: 'Hora de Colombia', color: '#2563eb' },
+              { icon: <HistoryRoundedIcon />, title: 'Última copia correcta', value: formatDateTime(monitor?.summary?.lastSuccessAt), helper: `${monitor?.summary?.successfulRuns || 0} correctas · ${monitor?.summary?.failedRuns || 0} fallidas`, color: '#7c3aed' }
+            ].map((item) => (
+              <Box key={item.title} sx={{ p: 1.45, border: '1px solid #e2e8f0', borderRadius: 2.3, bgcolor: '#fff' }}>
+                <Stack direction="row" spacing={1.1} alignItems="center">
+                  <Box sx={{ width: 38, height: 38, display: 'grid', placeItems: 'center', borderRadius: 2, bgcolor: `${item.color}12`, color: item.color }}>{item.icon}</Box>
+                  <Box sx={{ minWidth: 0 }}>
+                    <Typography variant="caption" sx={{ color: '#64748b', fontWeight: 800 }}>{item.title}</Typography>
+                    <Typography sx={{ color: item.color, fontWeight: 900, lineHeight: 1.25 }}>{loading && !monitor ? 'Consultando…' : item.value}</Typography>
+                    <Typography variant="caption" sx={{ color: '#94a3b8' }}>{item.helper}</Typography>
+                  </Box>
+                </Stack>
+              </Box>
+            ))}
+          </Box>
+        </Box>
+
+        {current && (
+          <Box sx={{ px: { xs: 1.6, md: 2.2 }, py: 1.8, borderTop: '1px solid #e2e8f0', bgcolor: '#eff6ff' }}>
+            <Stack direction={{ xs: 'column', sm: 'row' }} spacing={0.8} justifyContent="space-between" sx={{ mb: 1 }}>
+              <Box>
+                <Stack direction="row" spacing={0.8} alignItems="center">
+                  <CircularProgress size={17} thickness={5} />
+                  <Typography sx={{ color: '#1e3a8a', fontWeight: 900 }}>Copia en ejecución</Typography>
+                </Stack>
+                <Typography variant="caption" sx={{ color: '#475569' }}>
+                  {backupPhaseLabels[current.phase] || current.phase} · inició {formatDateTime(current.startedAt)}
+                </Typography>
+              </Box>
+              <Chip label={`${current.progress}% estimado`} size="small" sx={{ alignSelf: { xs: 'flex-start', sm: 'center' }, bgcolor: '#dbeafe', color: '#1d4ed8', fontWeight: 900 }} />
+            </Stack>
+            <LinearProgress variant="determinate" value={current.progress} sx={{ height: 9, borderRadius: 9, bgcolor: '#dbeafe', '& .MuiLinearProgress-bar': { borderRadius: 9 } }} />
+            <Typography variant="caption" sx={{ display: 'block', mt: 0.8, color: '#64748b' }}>
+              El porcentaje es una estimación operativa; la integridad se confirma al finalizar con pg_restore.
+            </Typography>
+          </Box>
+        )}
+
+        <Box sx={{ px: { xs: 1.6, md: 2.2 }, pt: 1.8, pb: 1 }}>
+          <Stack direction="row" spacing={1} alignItems="center">
+            <HistoryRoundedIcon sx={{ color: '#2563eb' }} />
+            <Box>
+              <Typography sx={{ color: '#0f172a', fontWeight: 900 }}>Historial de ejecuciones</Typography>
+              <Typography variant="caption" sx={{ color: '#64748b' }}>Mostrando las últimas {history.length} ejecuciones; el historial permanece acumulado.</Typography>
+            </Box>
+          </Stack>
+        </Box>
+        <TableContainer sx={{ maxHeight: 360 }}>
+          <Table stickyHeader size="small" aria-label="Historial de copias de seguridad">
+            <TableHead>
+              <TableRow>
+                {['Estado', 'Inicio', 'Origen', 'Duración', 'Tamaño', 'Resultado'].map((label) => <TableCell key={label} sx={{ bgcolor: '#eff4fb', color: '#475569', fontWeight: 900, whiteSpace: 'nowrap' }}>{label}</TableCell>)}
+              </TableRow>
+            </TableHead>
+            <TableBody>
+              {!history.length && (
+                <TableRow><TableCell colSpan={6} align="center" sx={{ py: 4, color: '#64748b' }}>{loading ? 'Consultando historial…' : 'Aún no hay ejecuciones registradas.'}</TableCell></TableRow>
+              )}
+              {history.map((run) => {
+                const success = run.status === 'completed';
+                const failed = run.status === 'failed';
+                return (
+                  <TableRow key={run.id} hover>
+                    <TableCell><Chip size="small" icon={success ? <CheckCircleRoundedIcon /> : failed ? <ErrorOutlineRoundedIcon /> : <CircularProgress size={13} />} label={success ? 'Correcta' : failed ? 'Fallida' : 'En proceso'} color={success ? 'success' : failed ? 'error' : 'primary'} variant="outlined" sx={{ fontWeight: 850 }} /></TableCell>
+                    <TableCell sx={{ whiteSpace: 'nowrap' }}>{formatDateTime(run.startedAt)}</TableCell>
+                    <TableCell>{run.trigger === 'scheduled' ? 'Automática' : 'Manual'}</TableCell>
+                    <TableCell>{formatDuration(run.durationMs)}</TableCell>
+                    <TableCell>{formatBytes(run.sizeBytes)}</TableCell>
+                    <TableCell sx={{ minWidth: 210 }}>
+                      <Typography variant="body2" sx={{ color: failed ? '#be123c' : '#475569', fontWeight: failed ? 750 : 500 }}>
+                        {failed ? run.errorMessage : success ? 'Copia validada y disponible.' : backupPhaseLabels[run.phase] || 'Procesando'}
+                      </Typography>
+                    </TableCell>
+                  </TableRow>
+                );
+              })}
+            </TableBody>
+          </Table>
+        </TableContainer>
+      </Paper>
+    </Box>
+  );
+};
+
+export function DatabaseBackupPanel({ enqueueSnackbar, canDownload = false, canRestore = false, canManageAutomation = false }) {
   const [health, setHealth] = useState(null);
   const [loading, setLoading] = useState(true);
   const [downloading, setDownloading] = useState(false);
@@ -204,6 +411,8 @@ export function DatabaseBackupPanel({ enqueueSnackbar, canDownload = false, canR
         <Typography sx={{ fontWeight: 900, fontSize: 13.5 }}>Restauración protegida</Typography>
         <Typography variant="body2">Requiere permiso específico, archivo válido, confirmación con Google y verificación de seguridad.</Typography>
       </Alert>
+
+      {canDownload && <BackupAutomationMonitor enqueueSnackbar={enqueueSnackbar} canManage={canManageAutomation} />}
 
       <Dialog open={confirmOpen} onClose={closeDownload} fullWidth maxWidth="xs">
         <DialogTitle sx={{ fontWeight: 900, color: '#0f172a' }}>Confirmar copia de seguridad</DialogTitle>

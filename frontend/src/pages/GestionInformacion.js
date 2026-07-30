@@ -13999,7 +13999,7 @@ const renderCategoryBars = (items = [], options = {}) => {
               </Alert>
             )}
 
-            {databaseCenterTab === 'backup' && canViewDatabaseBackup && <DatabaseBackupPanel enqueueSnackbar={enqueueSnackbar} canDownload={canDownloadDatabaseBackup} canRestore={canRestoreDatabaseBackup} />}
+            {databaseCenterTab === 'backup' && canViewDatabaseBackup && <DatabaseBackupPanel enqueueSnackbar={enqueueSnackbar} canDownload={canDownloadDatabaseBackup} canRestore={canRestoreDatabaseBackup} canManageAutomation={user?.role === ROLES.ADMINISTRADOR} />}
             {databaseCenterTab === 'data' && canViewDatabaseData && (
               <>
             <Paper elevation={0} sx={{ width: '100%', p: { xs: 0.8, md: 1.1 }, mb: 2, border: '1px solid #dbe5f2', borderRadius: 3, bgcolor: '#f8fbff' }}>

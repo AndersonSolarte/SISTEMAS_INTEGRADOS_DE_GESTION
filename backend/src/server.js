@@ -294,6 +294,7 @@ testConnection()
       await SecurityFindingComment.sync();
       const ReporteSalidaSolicitud = require('./models/ReporteSalidaSolicitud');
       const SystemSetting = require('./models/SystemSetting');
+      const DatabaseBackupRun = require('./models/DatabaseBackupRun');
       await ReporteSalidaSolicitud.sync();
       const reporteSalidaTableName = 'reporte_salida_solicitudes';
       let reporteSalidaTable = await qi.describeTable(reporteSalidaTableName).catch(() => ({}));
@@ -330,6 +331,9 @@ testConnection()
       await ensureReporteSalidaColumn('correo_sst_enviado_at', { type: DataTypes.DATE, allowNull: true });
       await ensureReporteSalidaColumn('observacion_gestion_humana', { type: DataTypes.TEXT, allowNull: true });
       await SystemSetting.sync();
+      await DatabaseBackupRun.sync();
+      const { startDatabaseBackupScheduler } = require('./services/databaseBackupScheduler');
+      await startDatabaseBackupScheduler();
       console.log('[gestion-informacion] Tablas autoevaluacion listas.');
     } catch (e) {
       console.warn('[gestion-informacion] No se pudo sincronizar autoevaluacion:', e?.message);

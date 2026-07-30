@@ -19,6 +19,14 @@ const gestionInformacionService = {
     }),
   downloadDatabaseDump: (credentials) =>
     api.post('/planeacion/gestion-informacion/database/backup-dump', credentials, { responseType: 'blob', timeout: 0 }),
+  getBackupMonitor: () =>
+    api.get('/planeacion/gestion-informacion/database/backup-monitor', { timeout: 60000 }).then((r) => r.data),
+  runAutomaticBackupNow: () =>
+    api.post('/planeacion/gestion-informacion/database/backup-monitor/run').then((r) => r.data),
+  pauseAutomaticBackups: () =>
+    api.post('/planeacion/gestion-informacion/database/backup-monitor/pause').then((r) => r.data),
+  resumeAutomaticBackups: () =>
+    api.post('/planeacion/gestion-informacion/database/backup-monitor/resume').then((r) => r.data),
   restoreDatabaseDump: (file, credentials) => {
     const formData = new FormData();
     formData.append('backup', file);

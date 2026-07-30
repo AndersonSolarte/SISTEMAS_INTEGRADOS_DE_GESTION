@@ -389,6 +389,8 @@ const runMigrations = async () => {
     await models.SecurityFinding.sync();
     await models.SecurityRemediationProposal.sync();
     await models.SecurityFindingComment.sync();
+    await models.SystemSetting.sync();
+    await models.DatabaseBackupRun.sync();
     await ensureReporteSalidaAdminBossSupport(qi);
     await sequelize.query("CREATE INDEX IF NOT EXISTS instrument_forms_created_by_status_idx ON instrument_forms (created_by, status)");
     await sequelize.query("CREATE INDEX IF NOT EXISTS instrument_responses_form_submitted_idx ON instrument_responses (form_id, submitted_at)");

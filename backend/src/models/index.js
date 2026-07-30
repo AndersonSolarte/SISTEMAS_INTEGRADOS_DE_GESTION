@@ -59,6 +59,7 @@ const SecurityRemediationProposal = require('./SecurityRemediationProposal');
 const SecurityFindingComment = require('./SecurityFindingComment');
 const ReporteSalidaSolicitud = require('./ReporteSalidaSolicitud');
 const SystemSetting = require('./SystemSetting');
+const DatabaseBackupRun = require('./DatabaseBackupRun');
 
 // Relaciones existentes
 MacroProceso.hasMany(Proceso, { foreignKey: 'macro_proceso_id', as: 'procesos' });
@@ -332,5 +333,6 @@ module.exports = {
   SecurityRemediationProposal,
   SecurityFindingComment,
   ReporteSalidaSolicitud,
-  SystemSetting
+  SystemSetting,
+  DatabaseBackupRun
 };

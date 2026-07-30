@@ -123,6 +123,10 @@ services:
       TAVILY_API_KEY: ${TAVILY_API_KEY:-}
       SERPER_API_KEY: ${SERPER_API_KEY:-}
       BRAVE_SEARCH_API_KEY: ${BRAVE_SEARCH_API_KEY:-}
+      SIAC_AUTOMATIC_BACKUP_ENABLED: ${SIAC_AUTOMATIC_BACKUP_ENABLED:-true}
+      SIAC_BACKUP_STORAGE_DIR: /app/automatic-backups
+      SIAC_BACKUP_HOUR: ${SIAC_BACKUP_HOUR:-18}
+      SIAC_BACKUP_MINUTE: ${SIAC_BACKUP_MINUTE:-0}
     extra_hosts:
       - "host.docker.internal:host-gateway"
     depends_on:
@@ -133,6 +137,7 @@ services:
     volumes:
       - backend_uploads:/app/uploads
       - ./backend/keys:/app/keys:ro
+      - ${SIAC_BACKUP_DIR:-./backups}:/app/automatic-backups
     tmpfs:
       - /tmp:size=512m,nosuid,nodev
     healthcheck:

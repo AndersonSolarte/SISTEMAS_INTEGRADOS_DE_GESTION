@@ -7,6 +7,13 @@ const { OAuth2Client } = require('google-auth-library');
 const { sequelize } = require('../config/database');
 const { User } = require('../models');
 const { verifyTurnstileToken } = require('../utils/turnstile');
+const {
+  executeBackup,
+  getMonitorStatus,
+  setPaused,
+  isBackupRunning,
+  setBackupBlocked
+} = require('../services/databaseBackupScheduler');
 
 const quoteIdentifier = (value) => `"${String(value).replace(/"/g, '""')}"`;
 
@@ -28,6 +35,7 @@ const MODULE_RULES = [
   [/^recurso_humano_/, 'Talento humano'],
   [/^internacionalizacion_/, 'Internacionalización'],
   [/^gestion_informacion_cargas/, 'Importaciones y trazabilidad'],
+  [/^database_backup_/, 'Copias de seguridad'],
   [/^(system_|va_equivalencias|diccionario_)/, 'Configuración']
 ];
 
@@ -36,7 +44,7 @@ const resolveModule = (tableName) => {
   return match ? match[1] : 'Otras tablas del sistema';
 };
 
-const isSensitiveTable = (tableName) => /^(users|user_module_permissions|user_activity_logs|security_|system_settings|reporte_salida_|instrument_(responses|answers|attachments))/i.test(tableName);
+const isSensitiveTable = (tableName) => /^(users|user_module_permissions|user_activity_logs|security_|system_settings|database_backup_|reporte_salida_|instrument_(responses|answers|attachments))/i.test(tableName);
 
 const assertPublicTable = async (tableName) => {
   if (!/^[a-zA-Z_][a-zA-Z0-9_]*$/.test(String(tableName || ''))) return false;
@@ -230,12 +238,17 @@ const validateTurnstileToken = async (req, res, expectedAction) => {
 };
 
 let restoreRunning = false;
+let manualDumpRunning = false;
 
 const restoreDatabaseDump = async (req, res) => {
   const uploadedPath = req.file?.path;
   let ownsRestoreLock = false;
   try {
     if (restoreRunning) return res.status(409).json({ success: false, message: 'Ya existe una restauración en curso' });
+    if (isBackupRunning() || manualDumpRunning) return res.status(409).json({ success: false, message: 'Espere a que finalice la copia de seguridad en curso.' });
+    restoreRunning = true;
+    ownsRestoreLock = true;
+    setBackupBlocked(true);
     if (!(await validateTurnstileToken(req, res, 'database_restore'))) return null;
     if (!(await validateAuthorizedGoogleIdentity(req, res))) return null;
     if (!req.file || !uploadedPath) {
@@ -253,8 +266,6 @@ const restoreDatabaseDump = async (req, res) => {
       return res.status(400).json({ success: false, message: 'El archivo no es una copia PostgreSQL válida' });
     }
 
-    restoreRunning = true;
-    ownsRestoreLock = true;
     const pgRestore = findPgRestore();
     await runProcess(pgRestore, ['--list', uploadedPath]);
     const args = [
@@ -270,7 +281,10 @@ const restoreDatabaseDump = async (req, res) => {
   } catch (error) {
     return res.status(500).json({ success: false, message: 'No fue posible restaurar la copia. La transacción fue revertida.', detail: error.message });
   } finally {
-    if (ownsRestoreLock) restoreRunning = false;
+    if (ownsRestoreLock) {
+      restoreRunning = false;
+      setBackupBlocked(false);
+    }
     if (uploadedPath && fs.existsSync(uploadedPath)) {
       try { fs.unlinkSync(uploadedPath); } catch (error) { /* limpieza no crítica */ }
     }
@@ -280,6 +294,11 @@ const restoreDatabaseDump = async (req, res) => {
 const downloadDatabaseDump = async (req, res) => {
   if (!(await validateTurnstileToken(req, res, 'database_backup'))) return null;
   if (!(await validateAuthorizedGoogleIdentity(req, res))) return null;
+  if (restoreRunning || isBackupRunning() || manualDumpRunning) {
+    return res.status(409).json({ success: false, message: 'Ya existe otra operación de base de datos en curso.' });
+  }
+  manualDumpRunning = true;
+  setBackupBlocked(true);
 
   const stamp = new Date().toISOString().replace(/[:.]/g, '-');
   const filename = `sgc_completo_${stamp}.dump`;
@@ -296,8 +315,16 @@ const downloadDatabaseDump = async (req, res) => {
     stdio: ['ignore', 'pipe', 'pipe']
   });
   let stderr = '';
+  let operationReleased = false;
+  const releaseOperation = () => {
+    if (operationReleased) return;
+    operationReleased = true;
+    manualDumpRunning = false;
+    setBackupBlocked(false);
+  };
   child.stderr.on('data', (chunk) => { stderr += chunk.toString(); });
   child.on('error', (error) => {
+    releaseOperation();
     if (!res.headersSent) res.status(500).json({ success: false, message: 'pg_dump no está disponible en el servidor', detail: error.message });
     else res.destroy(error);
   });
@@ -306,8 +333,57 @@ const downloadDatabaseDump = async (req, res) => {
   child.stdout.pipe(res);
   res.on('close', () => { if (!res.writableEnded && !child.killed) child.kill(); });
   child.on('close', (code) => {
+    releaseOperation();
     if (code !== 0 && !res.writableEnded) res.destroy(new Error(stderr || `pg_dump terminó con código ${code}`));
   });
 };
 
-module.exports = { getDatabaseHealth, getSystemTablesCatalog, exportTableData, downloadDatabaseDump, restoreDatabaseDump };
+const getBackupMonitor = async (_req, res) => {
+  try {
+    return res.json({ success: true, data: await getMonitorStatus() });
+  } catch (error) {
+    return res.status(500).json({ success: false, message: 'No fue posible consultar el monitor de respaldos', detail: error.message });
+  }
+};
+
+const runAutomaticBackupNow = async (req, res) => {
+  try {
+    if (restoreRunning || manualDumpRunning || isBackupRunning()) {
+      return res.status(409).json({ success: false, message: 'Ya existe una copia de seguridad en ejecución.' });
+    }
+    executeBackup({ trigger: 'manual', requestedBy: req.user?.id }).catch((error) => {
+      console.error('[backup] Ejecución manual fallida:', error.message);
+    });
+    return res.status(202).json({ success: true, message: 'La copia fue iniciada y puede seguirse desde el monitor.' });
+  } catch (error) {
+    return res.status(error.status || 500).json({ success: false, message: error.message || 'No fue posible iniciar la copia' });
+  }
+};
+
+const pauseAutomaticBackups = async (req, res) => {
+  try {
+    return res.json({ success: true, message: 'Programación automática pausada.', data: await setPaused(true, req.user?.id) });
+  } catch (error) {
+    return res.status(500).json({ success: false, message: 'No fue posible pausar la programación', detail: error.message });
+  }
+};
+
+const resumeAutomaticBackups = async (req, res) => {
+  try {
+    return res.json({ success: true, message: 'Programación automática reanudada.', data: await setPaused(false, req.user?.id) });
+  } catch (error) {
+    return res.status(500).json({ success: false, message: 'No fue posible reanudar la programación', detail: error.message });
+  }
+};
+
+module.exports = {
+  getDatabaseHealth,
+  getSystemTablesCatalog,
+  exportTableData,
+  downloadDatabaseDump,
+  restoreDatabaseDump,
+  getBackupMonitor,
+  runAutomaticBackupNow,
+  pauseAutomaticBackups,
+  resumeAutomaticBackups
+};
