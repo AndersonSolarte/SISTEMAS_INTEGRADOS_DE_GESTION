@@ -90,6 +90,9 @@ import SearchIcon from '@mui/icons-material/Search';
 import AddIcon from '@mui/icons-material/Add';
 import EditIcon from '@mui/icons-material/Edit';
 import DeleteIcon from '@mui/icons-material/Delete';
+import BackupRoundedIcon from '@mui/icons-material/BackupRounded';
+import DatasetRoundedIcon from '@mui/icons-material/DatasetRounded';
+import TableChartRoundedIcon from '@mui/icons-material/TableChartRounded';
 import InputAdornment from '@mui/material/InputAdornment';
 import {
   ResponsiveContainer,
@@ -126,6 +129,7 @@ import { EstadisticaDocumentalPanel } from './EstadisticaDocumentalImpact';
 import ActivityDashboard from './ActivityDashboard';
 import SecurityApplicationDashboard from './SecurityApplicationDashboard';
 import PlaneacionEfectividad from './PlaneacionEfectividad';
+import { DatabaseBackupPanel, DatabaseCatalogPanel } from '../components/database-center/DatabaseCenterPanels';
 
 const BASES = [
   { key: 'poblacional', label: 'Poblacional', description: 'Históricos de inscritos, admitidos, matriculados y graduados.' },
@@ -1690,6 +1694,8 @@ function GestionInformacion() {
   const [clearing, setClearing] = useState(false);
   const [clearDialogOpen, setClearDialogOpen] = useState(false);
   const [clearCredentials, setClearCredentials] = useState({ identifier: '', password: '' });
+  const [databaseCenterTab, setDatabaseCenterTab] = useState('backup');
+  const [databaseDataView, setDatabaseDataView] = useState('import');
 
   const [selectedCard, setSelectedCard] = useState(null);
   const [gestionProcesosPanel, setGestionProcesosPanel] = useState('hub');
@@ -2013,15 +2019,37 @@ function GestionInformacion() {
     return params.get('tab') === 'estadistica' && params.get('module') === 'gestion_procesos';
   }, [location.search]);
 
+  const canDownloadDatabaseBackup = user?.role === ROLES.ADMINISTRADOR
+    || explicitGiModules.includes('gestion_bases_datos.respaldo_descargar');
+  const canRestoreDatabaseBackup = user?.role === ROLES.ADMINISTRADOR
+    || explicitGiModules.includes('gestion_bases_datos.restaurar');
+  const canExportDatabaseTables = user?.role === ROLES.ADMINISTRADOR
+    || explicitGiModules.includes('gestion_bases_datos.datos_exportar');
+  const canImportDatabaseData = user?.role === ROLES.ADMINISTRADOR
+    || explicitGiModules.includes('gestion_bases_datos.importar');
+  const canViewDatabaseBackup = canDownloadDatabaseBackup || canRestoreDatabaseBackup;
+  const canViewDatabaseData = canExportDatabaseTables || canImportDatabaseData;
   const canManageBases = useMemo(
-    () => [ROLES.ADMINISTRADOR, ROLES.AUTOEVALUACION, ROLES.GESTION_PROCESOS].includes(user?.role)
+    () => user?.role === ROLES.ADMINISTRADOR
       || explicitGiModules.includes('gestion_bases_datos')
-      || explicitGiModules.includes('gestion_procesos')
-      || explicitGiModules.includes('estadistica_documental')
-      || explicitGiModules.includes('infraestructura_fisica.gestionar'),
+      || explicitGiModules.some((key) => key.startsWith('gestion_bases_datos.')),
     [user?.role, explicitGiModules]
   );
   const canManageBasesInView = canManageBases && !isPlaneacionGpInfoContext;
+  useEffect(() => {
+    if (!canViewDatabaseBackup && canViewDatabaseData && databaseCenterTab !== 'data') {
+      setDatabaseCenterTab('data');
+    } else if (!canViewDatabaseData && canViewDatabaseBackup && databaseCenterTab !== 'backup') {
+      setDatabaseCenterTab('backup');
+    }
+  }, [canViewDatabaseBackup, canViewDatabaseData, databaseCenterTab]);
+  useEffect(() => {
+    if (!canImportDatabaseData && canExportDatabaseTables && databaseDataView !== 'catalog') {
+      setDatabaseDataView('catalog');
+    } else if (!canExportDatabaseTables && canImportDatabaseData && databaseDataView !== 'import') {
+      setDatabaseDataView('import');
+    }
+  }, [canExportDatabaseTables, canImportDatabaseData, databaseDataView]);
   const canManageInfraestructura = useMemo(() => {
     return [ROLES.ADMINISTRADOR, ROLES.PLANEACION_ESTRATEGICA].includes(user?.role)
       || explicitGiModules.includes('infraestructura_fisica.gestionar');
@@ -2108,7 +2136,7 @@ function GestionInformacion() {
   const fetchData = useCallback(async () => {
     setLoading(true);
     try {
-      if (canManageBases) {
+      if (canImportDatabaseData) {
         const [listRes, resumenRes] = await Promise.all([
           gestionInformacionService.getCargues({
             page: page + 1,
@@ -2130,7 +2158,7 @@ function GestionInformacion() {
     } finally {
       setLoading(false);
     }
-  }, [canManageBases, enqueueSnackbar, page, rowsPerPage]);
+  }, [canImportDatabaseData, enqueueSnackbar, page, rowsPerPage]);
 
   const fetchRegistrosCalificadosDashboard = useCallback(async () => {
     setRegistrosCalificadosLoading(true);
@@ -13903,9 +13931,131 @@ const renderCategoryBars = (items = [], options = {}) => {
 
         {canManageBasesInView && menuView === 'gestion_bases' && (
           <>
-            <Paper elevation={0} sx={{ p: 3, mb: 3, border: '1px solid #e2e8f0', borderRadius: 3 }}>
-              <Grid container spacing={2}>
-                <Grid item xs={12} md={4}>
+            <Paper elevation={0} sx={{ width: '100%', p: { xs: 0.8, md: 1.1 }, mb: 2, border: '1px solid #dbe5f2', borderRadius: 3, bgcolor: '#f8fbff' }}>
+              <Box sx={{ maxWidth: '100%', overflowX: 'auto' }}>
+                <Tabs
+                  value={canViewDatabaseBackup ? databaseCenterTab : canViewDatabaseData ? 'data' : false}
+                  onChange={(event, value) => setDatabaseCenterTab(value)}
+                  variant="fullWidth"
+                  sx={{
+                    minHeight: 40,
+                    '& .MuiTabs-flexContainer': { gap: 1 },
+                    '& .MuiTab-root': {
+                      minHeight: 58,
+                      minWidth: 0,
+                      flex: 1,
+                      justifyContent: 'flex-start',
+                      px: 1.5,
+                      py: 1.1,
+                      border: '1px solid #dbe6f5',
+                      borderRadius: 2.5,
+                      bgcolor: '#fff',
+                      fontWeight: 850,
+                      textTransform: 'none',
+                      fontSize: 13.5,
+                      cursor: 'pointer',
+                      transition: 'all .2s ease',
+                      boxShadow: '0 1px 2px rgba(15,23,42,.04)',
+                      '& .MuiTab-iconWrapper': {
+                        width: 34,
+                        height: 34,
+                        display: 'grid',
+                        placeItems: 'center',
+                        borderRadius: 2,
+                        mr: 1.2,
+                        mb: '0 !important',
+                        bgcolor: '#eff6ff',
+                        color: '#2563eb',
+                        transition: 'all .2s ease'
+                      },
+                      '&:hover': {
+                        bgcolor: '#eff6ff',
+                        color: '#1d4ed8',
+                        borderColor: '#2563eb',
+                        transform: 'translateY(-1px)',
+                        boxShadow: '0 12px 24px rgba(37,99,235,.14)',
+                        '& .MuiTab-iconWrapper': { bgcolor: '#2563eb', color: '#fff', boxShadow: '0 8px 18px rgba(37,99,235,.24)' }
+                      }
+                    },
+                    '& .MuiTab-root.Mui-selected': {
+                      bgcolor: '#eff6ff',
+                      color: '#1d4ed8',
+                      borderColor: '#2563eb',
+                      boxShadow: '0 10px 24px rgba(37,99,235,.12)',
+                      '& .MuiTab-iconWrapper': { bgcolor: '#2563eb', color: '#fff', boxShadow: '0 8px 18px rgba(37,99,235,.22)' }
+                    },
+                    '& .MuiTabs-indicator': { display: 'none' }
+                  }}
+                >
+                  {canViewDatabaseBackup && <Tab icon={<BackupRoundedIcon sx={{ fontSize: 19 }} />} iconPosition="start" value="backup" label="Respaldo y recuperación" />}
+                  {canViewDatabaseData && <Tab icon={<DatasetRoundedIcon sx={{ fontSize: 19 }} />} iconPosition="start" value="data" label="Datos e importaciones" />}
+                </Tabs>
+              </Box>
+            </Paper>
+
+            {!canViewDatabaseBackup && !canViewDatabaseData && (
+              <Alert severity="warning" sx={{ mb: 2, borderRadius: 2.5 }}>
+                El acceso general está activo, pero este usuario todavía no tiene un submódulo de bases de datos asignado.
+              </Alert>
+            )}
+
+            {databaseCenterTab === 'backup' && canViewDatabaseBackup && <DatabaseBackupPanel enqueueSnackbar={enqueueSnackbar} canDownload={canDownloadDatabaseBackup} canRestore={canRestoreDatabaseBackup} />}
+            {databaseCenterTab === 'data' && canViewDatabaseData && (
+              <>
+            <Paper elevation={0} sx={{ width: '100%', p: { xs: 0.8, md: 1.1 }, mb: 2, border: '1px solid #dbe5f2', borderRadius: 3, bgcolor: '#f8fbff' }}>
+              <ToggleButtonGroup
+                exclusive
+                value={canImportDatabaseData ? databaseDataView : canExportDatabaseTables ? 'catalog' : null}
+                onChange={(event, value) => value && setDatabaseDataView(value)}
+                fullWidth
+                sx={{
+                  display: 'grid',
+                  width: '100%',
+                  gridTemplateColumns: { xs: '1fr', sm: canImportDatabaseData && canExportDatabaseTables ? 'repeat(2, minmax(0, 1fr))' : '1fr' },
+                  gap: 1,
+                  '& .MuiToggleButtonGroup-grouped': {
+                    width: '100%',
+                    minHeight: 56,
+                    justifyContent: 'flex-start',
+                    border: '1px solid #dbe6f5 !important',
+                    borderRadius: '10px !important',
+                    px: 1.5,
+                    py: 1,
+                    bgcolor: '#fff',
+                    color: '#64748b',
+                    fontSize: 13,
+                    fontWeight: 850,
+                    textTransform: 'none',
+                    cursor: 'pointer',
+                    transition: 'all .2s ease',
+                    boxShadow: '0 1px 2px rgba(15,23,42,.04)',
+                    '& .data-nav-icon': { width: 34, height: 34, display: 'grid', placeItems: 'center', borderRadius: 2, mr: 1.1, bgcolor: '#eff6ff', color: '#2563eb', transition: 'all .2s ease' },
+                    '&:hover': { bgcolor: '#eff6ff', color: '#1d4ed8', borderColor: '#2563eb !important', transform: 'translateY(-1px)', boxShadow: '0 12px 24px rgba(37,99,235,.14)', '& .data-nav-icon': { bgcolor: '#2563eb', color: '#fff', boxShadow: '0 8px 18px rgba(37,99,235,.24)' } }
+                  },
+                  '& .Mui-selected': { bgcolor: '#eff6ff !important', color: '#1d4ed8 !important', borderColor: '#2563eb !important', boxShadow: '0 10px 24px rgba(37,99,235,.12)', transform: 'translateY(-1px)', '& .data-nav-icon': { bgcolor: '#2563eb', color: '#fff', boxShadow: '0 8px 18px rgba(37,99,235,.22)' } },
+                  '& .Mui-selected:hover': { bgcolor: '#eff6ff !important' }
+                }}
+              >
+                {canImportDatabaseData && <ToggleButton value="import"><Box className="data-nav-icon"><UploadFileIcon sx={{ fontSize: 19 }} /></Box>Importar información</ToggleButton>}
+                {canExportDatabaseTables && <ToggleButton value="catalog"><Box className="data-nav-icon"><TableChartRoundedIcon sx={{ fontSize: 19 }} /></Box>Tablas e historial de datos</ToggleButton>}
+              </ToggleButtonGroup>
+            </Paper>
+
+            {databaseDataView === 'catalog' && canExportDatabaseTables && <DatabaseCatalogPanel enqueueSnackbar={enqueueSnackbar} />}
+            {databaseDataView === 'import' && canImportDatabaseData && (
+              <>
+            <Paper elevation={0} sx={{ p: { xs: 2, md: 2.5 }, mb: 2.2, border: '1px solid #dbe5f2', borderRadius: 3, bgcolor: '#f8fafc' }}>
+              <Typography variant="h6" sx={{ fontWeight: 900, color: '#0f172a' }}>Importar información</Typography>
+              <Typography variant="body2" sx={{ color: '#64748b', mt: 0.3, mb: 1.8 }}>
+                Conserva las plantillas, validaciones y reglas configuradas para cada conjunto de datos.
+              </Typography>
+              <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', lg: 'repeat(3, minmax(0, 1fr))' }, gap: 1.5, alignItems: 'stretch' }}>
+                <Paper elevation={0} sx={{ p: 2, border: '1px solid #dbe5f2', borderRadius: 2.5, bgcolor: 'white' }}>
+                  <Stack direction="row" spacing={1.1} alignItems="flex-start" sx={{ mb: 2 }}>
+                    <Box sx={{ width: 32, height: 32, flex: '0 0 auto', display: 'grid', placeItems: 'center', borderRadius: '50%', bgcolor: '#2563eb', color: 'white', fontWeight: 900, fontSize: 13 }}>1</Box>
+                    <Box><Typography sx={{ color: '#0f172a', fontWeight: 900 }}>Seleccionar destino</Typography><Typography variant="caption" sx={{ color: '#64748b' }}>Elige la base y su estructura configurada.</Typography></Box>
+                  </Stack>
+                  <Stack spacing={1.4}>
                   <FormControl fullWidth sx={{ minWidth: 220 }}>
                     <InputLabel>Base principal</InputLabel>
                     <Select
@@ -13927,9 +14077,7 @@ const renderCategoryBars = (items = [], options = {}) => {
                       {visibleBases.map((base) => <MenuItem key={base.key} value={base.key}>{base.label}</MenuItem>)}
                     </Select>
                   </FormControl>
-                </Grid>
                 {aplicaSubbase && (
-                  <Grid item xs={12} md={4}>
                     <FormControl fullWidth sx={{ minWidth: 220 }}>
                       <InputLabel>Subbase</InputLabel>
                       <Select value={subBaseSeleccionada} label="Subbase" onChange={(e) => {
@@ -13940,10 +14088,8 @@ const renderCategoryBars = (items = [], options = {}) => {
                         {availableSubbases.map((sub) => <MenuItem key={sub} value={sub}>{sub}</MenuItem>)}
                       </Select>
                     </FormControl>
-                  </Grid>
                 )}
                 {requiresSubSubBase && (
-                  <Grid item xs={12} md={4}>
                     <FormControl fullWidth sx={{ minWidth: 220 }}>
                       <InputLabel>Lista Contexto Externo</InputLabel>
                       <Select value={subSubBaseSeleccionada} label="Lista Contexto Externo" onChange={(e) => setSubSubBaseSeleccionada(e.target.value)}>
@@ -13951,9 +14097,19 @@ const renderCategoryBars = (items = [], options = {}) => {
                         {CONTEXTO_EXTERNO_LISTAS.map((sub) => <MenuItem key={sub} value={sub}>{sub}</MenuItem>)}
                       </Select>
                     </FormControl>
-                  </Grid>
                 )}
-                <Grid item xs={12} md={aplicaSubbase ? (requiresSubSubBase ? 4 : 4) : 8}>
+                  </Stack>
+                </Paper>
+
+                <Paper elevation={0} sx={{ p: 2, border: '1px solid #dbe5f2', borderRadius: 2.5, bgcolor: 'white', display: 'flex', flexDirection: 'column' }}>
+                  <Stack direction="row" spacing={1.1} alignItems="flex-start" sx={{ mb: 2 }}>
+                    <Box sx={{ width: 32, height: 32, flex: '0 0 auto', display: 'grid', placeItems: 'center', borderRadius: '50%', bgcolor: '#2563eb', color: 'white', fontWeight: 900, fontSize: 13 }}>2</Box>
+                    <Box><Typography sx={{ color: '#0f172a', fontWeight: 900 }}>Preparar archivo</Typography><Typography variant="caption" sx={{ color: '#64748b' }}>Descarga la plantilla y adjunta el archivo.</Typography></Box>
+                  </Stack>
+                  <Stack spacing={1.2} sx={{ flex: 1 }}>
+                  <Button variant="outlined" fullWidth startIcon={<DownloadIcon />} onClick={handleDownloadTemplate} disabled={!isSelectionValid} sx={{ py: 1.35, fontWeight: 800 }}>
+                    Exportar plantilla vacía
+                  </Button>
                   <Button variant="outlined" fullWidth component="label" startIcon={<UploadFileIcon />} sx={{ py: 1.8 }}>
                     {importFile ? importFile.name : baseSeleccionada === 'internacionalizacion' ? 'Adjuntar archivo Excel XLSX' : 'Adjuntar archivo Excel o CSV'}
                     <input
@@ -13963,16 +14119,26 @@ const renderCategoryBars = (items = [], options = {}) => {
                       onChange={(e) => setImportFile(e.target.files[0])}
                     />
                   </Button>
-                </Grid>
-              </Grid>
-              <Stack direction={{ xs: 'column', md: 'row' }} spacing={1.2} sx={{ mt: 2 }} alignItems={{ xs: 'stretch', md: 'center' }}>
-                <Button variant="contained" onClick={handleImport} disabled={!isSelectionValid || !importFile || importing}>{importing ? 'Importando...' : 'Importar'}</Button>
-                <Button variant="outlined" startIcon={<DownloadIcon />} onClick={handleDownloadTemplate} disabled={!isSelectionValid}>Descargar plantilla vacia</Button>
-                <Button color="error" variant="outlined" startIcon={<DeleteSweepIcon />} onClick={handleClearDataset} disabled={!isSelectionValid || clearing}>
-                  {clearing ? 'Eliminando...' : 'Eliminar datos de esta tabla'}
-                </Button>
+                  {importFile && <Alert severity="success" sx={{ py: 0.4, borderRadius: 2 }}><Typography variant="caption" sx={{ fontWeight: 800, wordBreak: 'break-word' }}>{importFile.name}</Typography></Alert>}
+                  </Stack>
+                </Paper>
+
+                <Paper elevation={0} sx={{ p: 2, border: '1px solid #dbe5f2', borderRadius: 2.5, bgcolor: 'white', display: 'flex', flexDirection: 'column' }}>
+                  <Stack direction="row" spacing={1.1} alignItems="flex-start" sx={{ mb: 2 }}>
+                    <Box sx={{ width: 32, height: 32, flex: '0 0 auto', display: 'grid', placeItems: 'center', borderRadius: '50%', bgcolor: '#2563eb', color: 'white', fontWeight: 900, fontSize: 13 }}>3</Box>
+                    <Box><Typography sx={{ color: '#0f172a', fontWeight: 900 }}>Importar y verificar</Typography><Typography variant="caption" sx={{ color: '#64748b' }}>Procesa el archivo y revisa el resultado.</Typography></Box>
+                  </Stack>
+                  <Stack spacing={1.2} sx={{ flex: 1, justifyContent: 'flex-end' }}>
+                    <Box sx={{ p: 1.2, borderRadius: 2, bgcolor: isSelectionValid && importFile ? '#ecfdf5' : '#f8fafc', border: `1px solid ${isSelectionValid && importFile ? '#bbf7d0' : '#e2e8f0'}` }}>
+                      <Typography variant="caption" sx={{ color: isSelectionValid && importFile ? '#166534' : '#64748b', fontWeight: 800 }}>
+                        {isSelectionValid && importFile ? 'Todo listo para iniciar la importación.' : 'Completa la selección y adjunta un archivo.'}
+                      </Typography>
+                    </Box>
+                    <Button variant="contained" size="large" onClick={handleImport} disabled={!isSelectionValid || !importFile || importing} sx={{ py: 1.35, fontWeight: 900 }}>
+                      {importing ? 'Importando...' : 'Importar información'}
+                    </Button>
                 <Button
-                  variant="text"
+                  variant="outlined"
                   onClick={() => {
                     setBaseSeleccionada('');
                     setSubBaseSeleccionada('');
@@ -13980,9 +14146,20 @@ const renderCategoryBars = (items = [], options = {}) => {
                     setImportFile(null);
                   }}
                 >
-                  Limpiar seleccion
+                  Limpiar selección
                 </Button>
-              </Stack>
+                  </Stack>
+                </Paper>
+              </Box>
+
+              <Box sx={{ mt: 1.5, p: 1.4, borderRadius: 2, border: '1px dashed #fecaca', bgcolor: '#fffafa' }}>
+                <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1.2} alignItems={{ xs: 'stretch', sm: 'center' }} justifyContent="space-between">
+                  <Box><Typography sx={{ color: '#991b1b', fontWeight: 900, fontSize: 13 }}>Acción administrativa</Typography><Typography variant="caption" sx={{ color: '#7f1d1d' }}>Elimina los datos asociados al destino seleccionado y requiere confirmación.</Typography></Box>
+                  <Button color="error" variant="outlined" startIcon={<DeleteSweepIcon />} onClick={handleClearDataset} disabled={!isSelectionValid || clearing} sx={{ whiteSpace: 'nowrap', fontWeight: 800 }}>
+                    {clearing ? 'Eliminando...' : 'Eliminar datos de esta tabla'}
+                  </Button>
+                </Stack>
+              </Box>
               {baseSeleccionada === 'poblacional' && subBaseSeleccionada === 'Matriculados' && (
                 <Alert severity="info" sx={{ mt: 2.2, borderRadius: 2 }}>
                   La subbase <strong>Matriculados</strong> solo acepta la plantilla institucional de 20 columnas (AÑO, NOMBRE IES, TIPO DOCUMENTO, NUMERO DOCUMENTO, CODIGO ESTUDIANTE, SEXO BIOLOGICO, PRIMER NOMBRE, SEGUNDO NOMBRE, PRIMER APELLIDO, SEGUNDO APELLIDO, PROGRAMA, FECHA NACIMIENTO, EDAD, PAIS, DEPARTAMENTO NACIMIENTO, MUNICIPIO NACIMIENTO, ES_REINTEGRO_ESTD_ANTES_DE1998, ESTRATO, PERIODO, FACULTAD). Puedes cargar Excel o CSV; si falta una columna o el orden no coincide, el archivo sera rechazado.
@@ -14025,10 +14202,14 @@ const renderCategoryBars = (items = [], options = {}) => {
               )}
             </Paper>
 
+              </>
+            )}
+
+            {databaseDataView === 'history' && (
             <Paper elevation={0} sx={{ border: '1px solid #e2e8f0', borderRadius: 3, overflow: 'hidden' }}>
               <Box sx={{ p: 2.2, borderBottom: '1px solid #e2e8f0', bgcolor: '#f8fafc' }}>
                 <Typography sx={{ fontWeight: 900, color: '#0f172a', letterSpacing: 0.2 }}>
-                  Centro De Trazabilidad De Cargues
+                  Historial y calidad de los cargues
                 </Typography>
                 <Typography variant="body2" sx={{ color: '#475569', mt: 0.4 }}>
                   Monitorea la calidad de cada carga con evidencia operativa: base registrada, versión normalizada y paquete de errores para cierre al 100%.
@@ -14060,7 +14241,7 @@ const renderCategoryBars = (items = [], options = {}) => {
                 <Table
                   size="small"
                   sx={{
-                    minWidth: 980,
+                    minWidth: 1280,
                     width: '100%',
                     tableLayout: 'fixed',
                     '& .MuiTableCell-root': {
@@ -14171,7 +14352,7 @@ const renderCategoryBars = (items = [], options = {}) => {
                                       '&:hover': { bgcolor: '#f8fafc', borderColor: '#94a3b8' }
                                     }}
                                   >
-                                    {exportingBaseRowId === row.id ? 'Exportando...' : 'Descargar base'}
+                                    {exportingBaseRowId === row.id ? 'Exportando...' : 'Exportar base'}
                                   </Button>
                                 )}
                                 {canExportContextoRow(row) && (
@@ -14191,7 +14372,7 @@ const renderCategoryBars = (items = [], options = {}) => {
                                       '&:hover': { bgcolor: '#f8fafc', borderColor: '#94a3b8' }
                                     }}
                                   >
-                                    {exportingContextoRowId === row.id ? 'Exportando...' : 'Descargar normalizados'}
+                                    {exportingContextoRowId === row.id ? 'Exportando...' : 'Exportar normalizados'}
                                   </Button>
                                 )}
                                 {canExportErroresRow(row) && (
@@ -14211,7 +14392,7 @@ const renderCategoryBars = (items = [], options = {}) => {
                                       '&:hover': { bgcolor: '#f8fafc', borderColor: '#94a3b8' }
                                     }}
                                   >
-                                    {exportingErroresRowId === row.id ? 'Exportando...' : 'Descargar errores'}
+                                    {exportingErroresRowId === row.id ? 'Exportando...' : 'Exportar errores'}
                                   </Button>
                                 )}
                                 {!canExportBaseRow(row) && !canExportContextoRow(row) && !canExportErroresRow(row) && '-'}
@@ -14240,6 +14421,9 @@ const renderCategoryBars = (items = [], options = {}) => {
                 }}
               />
             </Paper>
+            )}
+              </>
+            )}
           </>
         )}
 

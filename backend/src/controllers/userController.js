@@ -45,6 +45,10 @@ const MENU_PERMISSION_KEYS = [
 ];
 const GESTION_INFO_MODULE_KEYS = [
   'gestion_bases_datos',
+  'gestion_bases_datos.respaldo_descargar',
+  'gestion_bases_datos.restaurar',
+  'gestion_bases_datos.datos_exportar',
+  'gestion_bases_datos.importar',
   'estadistica_institucional',
   'poblacional',
   'georreferencia',
@@ -73,6 +77,24 @@ const GESTION_INFO_MODULE_KEYS = [
   'seguridad_aplicativa.exportar',
   'seguridad_aplicativa.configurar'
 ];
+const STATISTICAL_MODULE_PERMISSION_KEYS = new Set([
+  'poblacional',
+  'georreferencia',
+  'biblioteca',
+  'medios_educativos',
+  'internacionalizacion',
+  'investigacion',
+  'proyectos_convenios',
+  'recurso_humano',
+  'saber_pro',
+  'gestion_procesos',
+  'plan_accion',
+  'autoevaluacion',
+  'registros_calificados_acreditacion',
+  'infraestructura_fisica',
+  'monitor_actividad',
+  'seguridad_aplicativa'
+]);
 const INTERNACIONALIZACION_DASHBOARD_PERMISSION_KEYS = [
   'internacionalizacion_gestion',
   'internacionalizacion_estadistica',
@@ -2084,6 +2106,18 @@ const updateUserModulePermissions = async (req, res) => {
     let cleanModules = Array.from(new Set((Array.isArray(allowedModules) ? allowedModules : [])
       .map((x) => String(x || '').trim())
       .filter((x) => GESTION_INFO_MODULE_KEYS.includes(x))));
+    if (cleanModules.some((key) => key.startsWith('gestion_bases_datos.')) && !cleanModules.includes('gestion_bases_datos')) {
+      cleanModules.push('gestion_bases_datos');
+    }
+    if (cleanModules.some((key) => key.startsWith('seguridad_aplicativa.')) && !cleanModules.includes('seguridad_aplicativa')) {
+      cleanModules.push('seguridad_aplicativa');
+    }
+    if (cleanModules.includes('autoevaluacion.instrumentos.access') && !cleanModules.includes('autoevaluacion')) {
+      cleanModules.push('autoevaluacion');
+    }
+    if (cleanModules.some((key) => STATISTICAL_MODULE_PERMISSION_KEYS.has(key)) && !cleanModules.includes('estadistica_institucional')) {
+      cleanModules.push('estadistica_institucional');
+    }
 
     const cleanGestionProcesosDashboards = Array.from(new Set((Array.isArray(allowedGestionProcesosDashboards) ? allowedGestionProcesosDashboards : [])
       .map((x) => String(x || '').trim())

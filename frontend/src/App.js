@@ -47,6 +47,12 @@ function AppContent({ children }) {
     }
   }, [loading, showLoader]);
 
+  useEffect(() => {
+    if (showLoader) return;
+    window.__SIAC_INITIAL_LOADER_FINISHED__ = true;
+    window.dispatchEvent(new Event('siac-initial-loader-finished'));
+  }, [showLoader]);
+
   return (
     <>
       {showLoader && <AppLoader fadeOut={fadeOut} />}

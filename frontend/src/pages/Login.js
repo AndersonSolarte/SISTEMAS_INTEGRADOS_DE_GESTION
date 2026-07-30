@@ -1,12 +1,13 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { Container, Paper, Button, Typography, Box, Alert, CircularProgress, Divider, Dialog, DialogTitle, DialogContent, DialogActions, Stack, Checkbox, FormControlLabel } from "@mui/material";
-import { AccountBalance as AccountBalanceIcon, Autorenew as AutorenewIcon, RocketLaunch as RocketLaunchIcon, Schema as SchemaIcon } from "@mui/icons-material";
+import { AccountBalance as AccountBalanceIcon, Autorenew as AutorenewIcon, RocketLaunch as RocketLaunchIcon, Schema as SchemaIcon, VerifiedUserOutlined as VerifiedUserOutlinedIcon } from "@mui/icons-material";
 import { useAuth } from "../context/AuthContext";
 import authService from "../services/authService";
 import AppLoader from "../components/AppLoader";
 import VigiladaMineducacion from "../components/VigiladaMineducacion";
 import LoginParticles from "../components/LoginParticles";
+import TurnstileVerification from "../components/security/TurnstileVerification";
 
 const AUTH_LOADER_MS = 2500;
 const AUTH_FADE_MS = 560;
@@ -31,6 +32,30 @@ function Login() {
   const [googleReady, setGoogleReady] = useState(false);
   const [isPruebaMode, setIsPruebaMode] = useState(false);
   const [showPruebaSelector, setShowPruebaSelector] = useState(false);
+  const [turnstileToken, setTurnstileToken] = useState("");
+  const [turnstileError, setTurnstileError] = useState("");
+  const [turnstileAttempt, setTurnstileAttempt] = useState(0);
+  const [turnstileVisualReady, setTurnstileVisualReady] = useState(false);
+  const [initialLoaderFinished, setInitialLoaderFinished] = useState(() => Boolean(window.__SIAC_INITIAL_LOADER_FINISHED__));
+
+  useEffect(() => {
+    if (window.__SIAC_INITIAL_LOADER_FINISHED__) {
+      setInitialLoaderFinished(true);
+      return undefined;
+    }
+    const handleInitialLoaderFinished = () => setInitialLoaderFinished(true);
+    window.addEventListener('siac-initial-loader-finished', handleInitialLoaderFinished, { once: true });
+    return () => window.removeEventListener('siac-initial-loader-finished', handleInitialLoaderFinished);
+  }, []);
+
+  useEffect(() => {
+    if (!turnstileToken) {
+      setTurnstileVisualReady(false);
+      return undefined;
+    }
+    const visualTimer = window.setTimeout(() => setTurnstileVisualReady(true), 750);
+    return () => window.clearTimeout(visualTimer);
+  }, [turnstileToken]);
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
@@ -85,13 +110,20 @@ function Login() {
 
   const handleGoogleCredential = useCallback(async (response) => {
     setError(""); setShowContactDialog(false);
+    if (!turnstileToken) { setError("Complete la verificación de seguridad antes de continuar."); return; }
     if (!response?.credential) { setError(`Google no devolvió credencial. Revisa OAuth (origin_mismatch) para este origen: ${currentOrigin}`); setShowContactDialog(true); return; }
     setLoading(true);
-    const result = await loginWithGoogle(response?.credential, isPruebaMode);
+    const result = await loginWithGoogle(response?.credential, turnstileToken, isPruebaMode);
     setLoading(false);
     if (result.success) { navigateWithLoader(redirectPath); }
-    else { setError(result.message || "No fue posible iniciar sesión con Google"); const message = String(result.message || "").toLowerCase(); setShowContactDialog(!(message.includes("demasiad") || message.includes("muchos intentos") || message.includes("429"))); }
-  }, [currentOrigin, loginWithGoogle, navigateWithLoader, redirectPath, isPruebaMode]);
+    else {
+      setError(result.message || "No fue posible iniciar sesión con Google");
+      setTurnstileToken("");
+      setTurnstileAttempt((current) => current + 1);
+      const message = String(result.message || "").toLowerCase();
+      setShowContactDialog(!(message.includes("demasiad") || message.includes("muchos intentos") || message.includes("429") || message.includes("verificación de seguridad")));
+    }
+  }, [currentOrigin, loginWithGoogle, navigateWithLoader, redirectPath, isPruebaMode, turnstileToken]);
 
   useEffect(() => {
     const hash = String(window.location.hash || "");
@@ -140,7 +172,7 @@ function Login() {
   return (
     <>
       {transitioning && <AppLoader fadeOut={transitionFadeOut} />}
-      <Box sx={{ minHeight: "100dvh", height: "100dvh", display: "flex", position: "relative", overflowX: "hidden", overflowY: "hidden", background: "#060e1a" }}>
+      <Box sx={{ minHeight: "100dvh", height: "100dvh", display: "flex", position: "relative", overflowX: "hidden", overflowY: "auto", background: "#060e1a" }}>
         <Box sx={{ position: "absolute", inset: 0, background: "linear-gradient(135deg,rgba(6,14,26,0.92) 0%,rgba(10,28,56,0.75) 40%,rgba(15,45,87,0.45) 70%,rgba(25,65,120,0.3) 100%),radial-gradient(ellipse at 20% 80%,rgba(29,78,216,0.18) 0%,transparent 60%),radial-gradient(ellipse at 80% 20%,rgba(124,58,237,0.12) 0%,transparent 50%)" }} />
         <LoginParticles destroying={transitioning} />
         <Container maxWidth="lg" sx={{ display: "flex", alignItems: "center", justifyContent: { xs: "center", md: "flex-end" }, px: { xs: 2, sm: 3 }, py: { xs: 2, sm: 3, md: 4 }, pr: { md: 2, lg: 6 }, position: "relative", zIndex: 2 }}>
@@ -204,7 +236,26 @@ function Login() {
             </Divider>
             {error && (<Alert severity="error" sx={{ mb: 3, borderRadius: 2.5, border: "1px solid rgba(239,68,68,0.2)", "& .MuiAlert-icon": { color: "#ef4444" }, animation: "shakeIn 0.5s ease-out", "@keyframes shakeIn": { "0%": { transform: "translateX(-8px)", opacity: 0 }, "25%": { transform: "translateX(6px)" }, "50%": { transform: "translateX(-4px)" }, "75%": { transform: "translateX(2px)" }, "100%": { transform: "translateX(0)", opacity: 1 } } }}>{error}</Alert>)}
             <Box sx={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 2 }}>
-              <Box ref={googleButtonRef} sx={{ minHeight: 48, width: "100%", maxWidth: 420, display: "flex", justifyContent: "center", alignItems: "center", p: 1, borderRadius: 3, transition: "opacity 0.25s ease", opacity: loading ? 0 : 1, pointerEvents: loading ? "none" : "auto", "&:hover": { background: "rgba(59,130,246,0.04)", borderRadius: 3 }, "& iframe": { maxWidth: "100% !important" } }} />
+              <Box sx={{ width: "100%", maxWidth: 420, display: "flex", flexDirection: "column", alignItems: "center" }}>
+                <Box sx={{ minHeight: 38, px: 1.8, display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 1, borderRadius: 99, border: `1px solid ${turnstileError ? "#fda4af" : turnstileVisualReady ? "#86efac" : "#cbdcf5"}`, bgcolor: turnstileVisualReady ? "rgba(236,253,245,.9)" : "rgba(239,246,255,.88)", color: turnstileError ? "#be123c" : turnstileVisualReady ? "#047857" : "#315b9d", transition: "background-color .25s ease, border-color .25s ease, color .25s ease" }}>
+                  {turnstileVisualReady ? <VerifiedUserOutlinedIcon sx={{ fontSize: 19 }} /> : <CircularProgress size={16} thickness={5} sx={{ color: "inherit" }} />}
+                  <Typography variant="caption" sx={{ color: "inherit", fontWeight: 800, lineHeight: 1 }}>
+                    {turnstileError ? "Verificación no disponible" : turnstileVisualReady ? "Acceso protegido" : "Comprobando seguridad"}
+                  </Typography>
+                </Box>
+                <TurnstileVerification
+                  key={turnstileAttempt}
+                  active={initialLoaderFinished && !loading && !transitioning}
+                  action="login"
+                  appearance="interaction-only"
+                  onVerify={(token) => { setTurnstileError(""); setError(""); setTurnstileToken(token); }}
+                  onExpire={() => setTurnstileToken("")}
+                  onError={(message) => { setTurnstileError(message); setTurnstileToken(""); }}
+                  sx={{ maxWidth: 300 }}
+                />
+                {turnstileError && <Typography variant="caption" sx={{ display: "block", mt: 0.5, color: "#be123c", fontWeight: 700 }}>{turnstileError}</Typography>}
+              </Box>
+              <Box ref={googleButtonRef} sx={{ minHeight: 48, width: "100%", maxWidth: 420, display: turnstileVisualReady ? "flex" : "none", justifyContent: "center", alignItems: "center", p: 1, borderRadius: 3, transition: "opacity 0.25s ease", opacity: loading ? 0 : 1, pointerEvents: loading ? "none" : "auto", "&:hover": { background: "rgba(59,130,246,0.04)", borderRadius: 3 }, "& iframe": { maxWidth: "100% !important" } }} />
               {!loading && googleReady && showPruebaSelector && (
                 <FormControlLabel
                   control={

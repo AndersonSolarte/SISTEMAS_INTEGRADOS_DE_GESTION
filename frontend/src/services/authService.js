@@ -18,8 +18,8 @@ const authService = {
     touchSessionTimestamps();
   },
 
-  loginWithGoogle: async (credential, usePruebaProfile = false) => {
-    const response = await api.post('/auth/google', { credential, usePruebaProfile });
+  loginWithGoogle: async (credential, turnstileToken, usePruebaProfile = false) => {
+    const response = await api.post('/auth/google', { credential, turnstileToken, usePruebaProfile });
     if (response.data.success && response.data.data.token) {
       localStorage.setItem('token', response.data.data.token);
       localStorage.setItem('user', JSON.stringify(response.data.data.user));

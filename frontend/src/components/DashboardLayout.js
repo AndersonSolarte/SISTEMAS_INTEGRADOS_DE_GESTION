@@ -170,7 +170,7 @@ function DashboardLayout() {
       openKey: 'gestion_informacion',
       items: [
         { key: 'gestion_informacion', path: '/dashboard/gestion-informacion?tab=gestion_bases', label: 'Gestión de Bases de Datos', icon: <StorageIcon /> },
-        { key: 'gestion_informacion', path: '/dashboard/gestion-informacion?tab=estadistica', label: 'Estadística Institucional', icon: <QueryStatsIcon /> }
+        { key: 'gestion_informacion', path: '/dashboard/gestion-informacion?tab=estadistica', label: 'Tableros estadísticos', icon: <QueryStatsIcon /> }
       ]
     },
     {
@@ -253,12 +253,27 @@ function DashboardLayout() {
     }
   ];
 
+  const assignedGestionInfoModules = Array.isArray(user?.allowedModules)
+    ? user.allowedModules.map((key) => String(key || '').trim()).filter(Boolean)
+    : [];
+  const hasDatabaseCenterPermission = assignedGestionInfoModules.some((key) => key === 'gestion_bases_datos' || key.startsWith('gestion_bases_datos.'));
+  const hasOtherGestionInfoPermission = assignedGestionInfoModules.some((key) => key !== 'gestion_bases_datos' && !key.startsWith('gestion_bases_datos.'));
+
   const menuCatalog = [
     { key: 'dashboard', path: '/dashboard', label: 'Inicio', icon: <DashboardIcon /> },
     { key: 'planeacion_estrategica', path: '/dashboard/planeacion-estrategica', label: 'Planeación Estratégica', icon: <InsightsIcon /> },
     { key: 'registros_calificados', path: '/dashboard/planeacion-estrategica?view=registros-calificados', label: 'Registros Calificados y Acreditación', icon: <CheckIcon /> },
     { key: 'aseguramiento_calidad', path: '/dashboard/aseguramiento-calidad', label: 'Administración del Sistema Documental', icon: <CheckIcon /> },
-    { key: 'gestion_informacion', path: '/dashboard/gestion-informacion', label: 'Gestión de la Información', icon: <InsightsIcon /> },
+    {
+      key: 'gestion_informacion',
+      path: hasDatabaseCenterPermission && !hasOtherGestionInfoPermission
+        ? '/dashboard/gestion-informacion?tab=gestion_bases'
+        : '/dashboard/gestion-informacion',
+      label: hasDatabaseCenterPermission && !hasOtherGestionInfoPermission
+        ? 'Gestión de Bases de Datos'
+        : 'Gestión de la Información',
+      icon: hasDatabaseCenterPermission && !hasOtherGestionInfoPermission ? <StorageIcon /> : <InsightsIcon />
+    },
     { key: 'planeacion_efectividad', path: '/dashboard/planeacion-efectividad', label: 'Planeación y Efectividad', icon: <TimelineIcon /> },
     { key: 'autoevaluacion', path: '/dashboard/autoevaluacion', label: 'Autoevaluación', icon: <FactCheckIcon /> },
     { key: 'gestion_usuarios', path: '/dashboard/gestion-usuarios', label: 'Gestión de Usuarios', icon: <PeopleIcon /> },
@@ -327,7 +342,7 @@ function DashboardLayout() {
       const planeacionChildren = planeacionSectionItems.filter((child) => effectiveMenuPermissions.includes(child.key));
       const giChildren = [
         { key: 'gestion_informacion', path: '/dashboard/gestion-informacion?tab=gestion_bases', label: 'Gestión de Bases de Datos', icon: <StorageIcon /> },
-        { key: 'gestion_informacion', path: '/dashboard/gestion-informacion?tab=estadistica', label: 'Estadística Institucional', icon: <QueryStatsIcon /> }
+        { key: 'gestion_informacion', path: '/dashboard/gestion-informacion?tab=estadistica', label: 'Tableros estadísticos', icon: <QueryStatsIcon /> }
       ].filter((child) => explicitMenuPermissions.includes(child.key));
 
       menuItems = [

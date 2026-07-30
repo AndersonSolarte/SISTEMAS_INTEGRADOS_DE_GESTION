@@ -4,6 +4,7 @@ const { User } = require('../models');
 const { buildUserPayloadWithPermissions } = require('../utils/modulePermissions');
 const { OAuth2Client } = require('google-auth-library');
 const UserActivityLog = require('../models/UserActivityLog');
+const { verifyTurnstileToken } = require('../utils/turnstile');
 
 const getInstitutionalDomain = () => (process.env.INSTITUTIONAL_EMAIL_DOMAIN || 'unicesmag.edu.co').trim().toLowerCase();
 const frontendUrl = String(process.env.FRONTEND_URL || 'http://localhost:3000').replace(/\/+$/, '');
@@ -129,6 +130,14 @@ const verifyGoogleCredentialAndBuildSession = async (credential = '', req = null
 
 const googleLogin = async (req, res) => {
   try {
+    const challenge = await verifyTurnstileToken({
+      token: req.body?.turnstileToken,
+      remoteIp: getRequestIp(req),
+      expectedAction: 'login'
+    });
+    if (!challenge.success) {
+      return res.status(challenge.status).json({ success: false, message: challenge.message });
+    }
     const { credential } = req.body;
     const result = await verifyGoogleCredentialAndBuildSession(credential, req);
     if (result?.error) {
@@ -166,6 +175,14 @@ const googleLogin = async (req, res) => {
 
 const googleRedirectLogin = async (req, res) => {
   try {
+    const challenge = await verifyTurnstileToken({
+      token: req.body?.turnstileToken,
+      remoteIp: getRequestIp(req),
+      expectedAction: 'login'
+    });
+    if (!challenge.success) {
+      return res.redirect(`${frontendUrl}/login#google_error=${encodeURIComponent(challenge.message)}`);
+    }
     const credential = String(req.body?.credential || '').trim();
     const result = await verifyGoogleCredentialAndBuildSession(credential, req);
     if (result?.error) {

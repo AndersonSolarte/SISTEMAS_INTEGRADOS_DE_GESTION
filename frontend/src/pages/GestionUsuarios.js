@@ -182,7 +182,11 @@ function GestionUsuarios() {
     { key: 'gestion_usuarios', label: 'Gestión de Usuarios' }
   ];
   const GI_MODULE_OPTIONS = [
-    { key: 'gestion_bases_datos', label: 'Gestion de Bases de Datos', group: 'Acceso general' },
+    { key: 'gestion_bases_datos', label: 'Acceso al Centro de Bases de Datos', group: 'Bases de datos' },
+    { key: 'gestion_bases_datos.respaldo_descargar', label: 'Descargar respaldos completos', group: 'Bases de datos' },
+    { key: 'gestion_bases_datos.restaurar', label: 'Restaurar respaldos', group: 'Bases de datos' },
+    { key: 'gestion_bases_datos.datos_exportar', label: 'Ver y exportar tablas', group: 'Bases de datos' },
+    { key: 'gestion_bases_datos.importar', label: 'Importar y administrar cargues', group: 'Bases de datos' },
     { key: 'estadistica_institucional', label: 'Estadistica Institucional', group: 'Acceso general' },
     { key: 'poblacional', label: 'Poblacional', group: 'Tableros estadisticos' },
     { key: 'georreferencia', label: 'Georreferencia', group: 'Tableros estadisticos' },
@@ -209,11 +213,17 @@ function GestionUsuarios() {
     { key: 'seguridad_aplicativa.exportar', label: 'Exportar', group: 'Seguridad Aplicativa' },
     { key: 'seguridad_aplicativa.configurar', label: 'Configurar', group: 'Seguridad Aplicativa' }
   ];
-  const GI_MODULE_GROUPS = ['Acceso general', 'Tableros estadisticos', 'Autoevaluacion', 'Seguridad Aplicativa']
-    .map((title) => ({
-      title,
-      options: GI_MODULE_OPTIONS.filter((item) => item.group === title)
-    }));
+  const DATABASE_BACKUP_PERMISSION_OPTIONS = GI_MODULE_OPTIONS.filter((item) => [
+    'gestion_bases_datos.respaldo_descargar',
+    'gestion_bases_datos.restaurar'
+  ].includes(item.key));
+  const DATABASE_DATA_PERMISSION_OPTIONS = GI_MODULE_OPTIONS.filter((item) => [
+    'gestion_bases_datos.importar',
+    'gestion_bases_datos.datos_exportar'
+  ].includes(item.key));
+  const STATISTICAL_MODULE_OPTIONS = GI_MODULE_OPTIONS.filter((item) => item.group === 'Tableros estadisticos');
+  const AUTOEVALUACION_PERMISSION_OPTIONS = GI_MODULE_OPTIONS.filter((item) => item.group === 'Autoevaluacion');
+  const SECURITY_APPLICATION_PERMISSION_OPTIONS = GI_MODULE_OPTIONS.filter((item) => item.group === 'Seguridad Aplicativa');
   const GESTION_USUARIOS_SUBMODULE_OPTIONS = [
     { key: 'gestion_usuarios_crear_individual', label: 'Creación de usuario individual' },
     { key: 'gestion_usuarios_crear_masivo', label: 'Creación de usuario masivo por Excel' }
@@ -338,6 +348,7 @@ function GestionUsuarios() {
   const [openPermissionsDialog, setOpenPermissionsDialog] = useState(false);
   const [permissionsUser, setPermissionsUser] = useState(null);
   const [permissionsLoading, setPermissionsLoading] = useState(false);
+  const [expandedDatabasePermissionSections, setExpandedDatabasePermissionSections] = useState({ backup: false, data: false });
   const [openClearConfirmDialog, setOpenClearConfirmDialog] = useState(false);
   const [clearConfirmText, setClearConfirmText] = useState('');
   const [clearSubmitting, setClearSubmitting] = useState(false);
@@ -1051,6 +1062,21 @@ function GestionUsuarios() {
         let nextModules = Array.isArray(prev.allowedModules) ? [...prev.allowedModules] : [];
         let nextProcesos = Array.isArray(prev.allowedGestionProcesosDashboards) ? [...prev.allowedGestionProcesosDashboards] : [];
 
+        if (key === 'gestion_informacion' && isSelected) {
+          return {
+            ...prev,
+            menuPermissions: next,
+            allowedModules: [],
+            allowedGestionProcesosDashboards: nextProcesos.filter((itemKey) => itemKey.startsWith('gestion_usuarios')),
+            allowedPoblacionalDashboards: [],
+            allowedSaberProDashboards: [],
+            allowedRecursoHumanoDashboards: [],
+            allowedInfraestructuraFisicaDashboards: [],
+            allowedPlanAccionDashboards: [],
+            allowedInternacionalizacionDashboards: []
+          };
+        }
+
         if (key === 'autoevaluacion' && isSelected) {
            nextModules = nextModules.filter(k => k !== 'autoevaluacion.instrumentos.access');
         }
@@ -1081,9 +1107,16 @@ function GestionUsuarios() {
         let nextPlanAccionDashboards = Array.isArray(prev.allowedPlanAccionDashboards) ? [...prev.allowedPlanAccionDashboards] : [];
         let nextInternacionalizacionDashboards = Array.isArray(prev.allowedInternacionalizacionDashboards) ? [...prev.allowedInternacionalizacionDashboards] : [];
 
-        const isTablero = !['gestion_bases_datos', 'estadistica_institucional'].includes(key);
+        const isDatabasePermission = key === 'gestion_bases_datos' || key.startsWith('gestion_bases_datos.');
+        const isDatabaseChild = key.startsWith('gestion_bases_datos.');
+        const isTablero = !isDatabasePermission && key !== 'estadistica_institucional';
 
-        if (isTablero) {
+        if (isDatabaseChild) {
+          if (!isSelected) {
+            if (!nextModules.includes('gestion_bases_datos')) nextModules.push('gestion_bases_datos');
+            if (!nextMenu.includes('gestion_informacion')) nextMenu.push('gestion_informacion');
+          }
+        } else if (isTablero) {
           if (!isSelected) {
             // Se marca un tablero
             if (!nextModules.includes('estadistica_institucional')) nextModules.push('estadistica_institucional');
@@ -1096,34 +1129,21 @@ function GestionUsuarios() {
             if (key === 'autoevaluacion') {
               nextModules = nextModules.filter(k => k !== 'autoevaluacion.instrumentos.access');
             }
-            const hasTableros = nextModules.some(k => !['gestion_bases_datos', 'estadistica_institucional'].includes(k) && !k.startsWith('seguridad_aplicativa.') && k !== 'autoevaluacion.instrumentos.access');
-            if (!hasTableros) {
-              nextModules = nextModules.filter(k => k !== 'estadistica_institucional');
-              if (!nextModules.includes('gestion_bases_datos')) {
-                const idx = nextMenu.indexOf('gestion_informacion');
-                if (idx !== -1) nextMenu.splice(idx, 1);
-              }
-            }
+            const hasTableros = nextModules.some(k => !['gestion_bases_datos', 'estadistica_institucional'].includes(k) && !k.startsWith('gestion_bases_datos.') && !k.startsWith('seguridad_aplicativa.') && k !== 'autoevaluacion.instrumentos.access');
+            if (!hasTableros) nextModules = nextModules.filter(k => k !== 'estadistica_institucional');
           }
         } else if (key === 'estadistica_institucional') {
           if (!isSelected) {
             if (!nextMenu.includes('gestion_informacion')) nextMenu.push('gestion_informacion');
           } else {
             // Se desmarca estadistica_institucional manualmente -> desmarcar TODOS los tableros
-            nextModules = nextModules.filter(k => ['gestion_bases_datos'].includes(k));
-            if (!nextModules.includes('gestion_bases_datos')) {
-              const idx = nextMenu.indexOf('gestion_informacion');
-              if (idx !== -1) nextMenu.splice(idx, 1);
-            }
+            nextModules = nextModules.filter(k => k === 'gestion_bases_datos' || k.startsWith('gestion_bases_datos.'));
           }
         } else if (key === 'gestion_bases_datos') {
           if (!isSelected) {
             if (!nextMenu.includes('gestion_informacion')) nextMenu.push('gestion_informacion');
           } else {
-            if (!nextModules.includes('estadistica_institucional')) {
-              const idx = nextMenu.indexOf('gestion_informacion');
-              if (idx !== -1) nextMenu.splice(idx, 1);
-            }
+            nextModules = nextModules.filter((k) => !k.startsWith('gestion_bases_datos.'));
           }
         } else if (key.startsWith('seguridad_aplicativa.') || key === 'autoevaluacion.instrumentos.access') {
           // If a child of seguridad_aplicativa is selected, ensure the parent is selected
@@ -1332,6 +1352,10 @@ function GestionUsuarios() {
         allowedPlanAccionDashboards,
         allowedInternacionalizacionDashboards
       });
+      setExpandedDatabasePermissionSections({
+        backup: allowedModules.some((key) => ['gestion_bases_datos.respaldo_descargar', 'gestion_bases_datos.restaurar'].includes(key)),
+        data: allowedModules.some((key) => ['gestion_bases_datos.importar', 'gestion_bases_datos.datos_exportar'].includes(key))
+      });
     } catch (error) {
       enqueueSnackbar(error.response?.data?.message || 'Error al cargar permisos de módulos', { variant: 'error' });
       setOpenPermissionsDialog(false);
@@ -1345,6 +1369,7 @@ function GestionUsuarios() {
     if (permissionsSaving) return;
     setOpenPermissionsDialog(false);
     setPermissionsUser(null);
+    setExpandedDatabasePermissionSections({ backup: false, data: false });
     setModulePermissionsForm({ menuPermissions: [], allowedModules: [], allowedGestionProcesosDashboards: [], allowedPoblacionalDashboards: [], allowedSaberProDashboards: [], allowedRecursoHumanoDashboards: [], allowedInfraestructuraFisicaDashboards: [], allowedPlanAccionDashboards: [], allowedInternacionalizacionDashboards: [] });
   };
 
@@ -2631,10 +2656,7 @@ function GestionUsuarios() {
             ) : (
               <Stack spacing={2}>
                 <Alert severity="info">
-                  Asigna menú principal y módulos de Gestión de la Información. Esta sección se organiza en <strong>Gestión de Bases de Datos</strong> y <strong>Estadística Institucional</strong>.
-                </Alert>
-                <Alert severity="success" variant="outlined">
-                  Si marcas un módulo interno, el sistema habilita automáticamente <strong>Gestión de la Información</strong> en el menú principal para conservar la navegación.
+                  Selecciona un acceso principal; sus módulos y acciones aparecerán progresivamente.
                 </Alert>
 
                 <Paper variant="outlined" sx={{ p: 2, borderRadius: 2 }}>
@@ -2647,18 +2669,12 @@ function GestionUsuarios() {
                             control={
                               <Checkbox
                                 checked={modulePermissionsForm.menuPermissions.includes(item.key)}
-                                onChange={() => handleTogglePermission('menuPermissions', item.key)}
-                                disabled={
-                                  item.key === 'gestion_informacion' &&
-                                  Array.isArray(modulePermissionsForm.allowedModules) &&
-                                  (
-                                    modulePermissionsForm.allowedModules.length > 0
-                                    || (Array.isArray(modulePermissionsForm.allowedGestionProcesosDashboards) && modulePermissionsForm.allowedGestionProcesosDashboards.filter((k) => !k.startsWith('gestion_usuarios')).length > 0)
-                                    || modulePermissionsForm.allowedPoblacionalDashboards.length > 0
-                                    || modulePermissionsForm.allowedSaberProDashboards.length > 0
-                                    || modulePermissionsForm.allowedRecursoHumanoDashboards.length > 0
-                                  )
-                                }
+                                onChange={() => {
+                                  if (item.key === 'gestion_informacion' && modulePermissionsForm.menuPermissions.includes(item.key)) {
+                                    setExpandedDatabasePermissionSections({ backup: false, data: false });
+                                  }
+                                  handleTogglePermission('menuPermissions', item.key);
+                                }}
                                 size="small"
                               />
                             }
@@ -2708,51 +2724,100 @@ function GestionUsuarios() {
                   </>
                 )}
 
-                <Divider />
+                {modulePermissionsForm.menuPermissions?.includes('gestion_informacion') && (
+                  <>
+                    <Divider />
+                    <Paper variant="outlined" sx={{ p: 2, borderRadius: 2.5, borderColor: '#bfdbfe', bgcolor: '#f8fbff' }}>
+                      <Typography sx={{ fontWeight: 900, mb: 0.4, color: '#0f172a' }}>Gestión de la Información</Typography>
+                      <Typography variant="body2" sx={{ color: '#64748b', mb: 1.7 }}>
+                        Activa un módulo para desplegar únicamente sus permisos relacionados.
+                      </Typography>
 
-                <Paper variant="outlined" sx={{ p: 2, borderRadius: 2 }}>
-                  <Typography sx={{ fontWeight: 800, mb: 0.6, color: '#0f172a' }}>Modulos de Gestion de la Informacion</Typography>
-                  <Typography variant="body2" sx={{ color: '#64748b', mb: 1.5 }}>
-                    Selecciona el acceso general y los tableros estadisticos que el usuario podra ver.
-                  </Typography>
-                  <Stack spacing={1.4}>
-                    {GI_MODULE_GROUPS.filter(group => {
-                      if (group.title === 'Autoevaluacion') return modulePermissionsForm.menuPermissions?.includes('autoevaluacion') || modulePermissionsForm.allowedModules?.includes('autoevaluacion');
-                      if (group.title === 'Seguridad Aplicativa') return modulePermissionsForm.allowedModules?.includes('seguridad_aplicativa');
-                      return true;
-                    }).map((group) => (
-                      <Paper key={group.title} variant="outlined" sx={{ p: 1.4, borderRadius: 2, bgcolor: '#f8fbff' }}>
-                        <Typography sx={{ fontWeight: 800, color: '#1e3a8a', mb: 0.8 }}>{group.title}</Typography>
-                        <FormGroup>
-                          <Grid container spacing={0.5}>
-                            {group.options.map((item) => (
-                              <Grid item xs={12} sm={6} md={4} key={`gi-${item.key}`}>
-                                <FormControlLabel
-                                  control={
-                                    <Checkbox
-                                      checked={modulePermissionsForm.allowedModules.includes(item.key) || modulePermissionsForm.menuPermissions?.includes(item.key)}
-                                      onChange={() => {
-                                        if (item.key === 'autoevaluacion.instrumentos.access') {
-                                           // special handler maybe? or just allowedModules
-                                           handleTogglePermission('allowedModules', item.key);
-                                        } else {
-                                          handleTogglePermission('allowedModules', item.key);
-                                        }
-                                      }}
-                                      disabled={false}
-                                      size="small"
-                                    />
-                                  }
-                                  label={item.label}
-                                />
+                      <Grid container spacing={1.3}>
+                        <Grid item xs={12} md={6}>
+                          <Paper variant="outlined" sx={{ p: 1.4, height: '100%', borderRadius: 2, borderColor: modulePermissionsForm.allowedModules.includes('estadistica_institucional') ? '#60a5fa' : '#dbe5f2', bgcolor: modulePermissionsForm.allowedModules.includes('estadistica_institucional') ? '#eff6ff' : '#fff' }}>
+                            <FormControlLabel
+                              sx={{ m: 0, alignItems: 'flex-start' }}
+                              control={<Checkbox checked={modulePermissionsForm.allowedModules.includes('estadistica_institucional')} onChange={() => handleTogglePermission('allowedModules', 'estadistica_institucional')} size="small" />}
+                              label={<Box sx={{ pt: 0.25 }}><Typography sx={{ fontWeight: 850, color: '#1e3a8a' }}>Tableros estadísticos</Typography><Typography variant="caption" sx={{ color: '#64748b' }}>Indicadores y módulos institucionales.</Typography></Box>}
+                            />
+                          </Paper>
+                        </Grid>
+                        <Grid item xs={12} md={6}>
+                          <Paper variant="outlined" sx={{ p: 1.4, height: '100%', borderRadius: 2, borderColor: modulePermissionsForm.allowedModules.includes('gestion_bases_datos') ? '#60a5fa' : '#dbe5f2', bgcolor: modulePermissionsForm.allowedModules.includes('gestion_bases_datos') ? '#eff6ff' : '#fff' }}>
+                            <FormControlLabel
+                              sx={{ m: 0, alignItems: 'flex-start' }}
+                              control={<Checkbox checked={modulePermissionsForm.allowedModules.includes('gestion_bases_datos')} onChange={() => { if (modulePermissionsForm.allowedModules.includes('gestion_bases_datos')) setExpandedDatabasePermissionSections({ backup: false, data: false }); handleTogglePermission('allowedModules', 'gestion_bases_datos'); }} size="small" />}
+                              label={<Box sx={{ pt: 0.25 }}><Typography sx={{ fontWeight: 850, color: '#1e3a8a' }}>Gestión de Bases de Datos</Typography><Typography variant="caption" sx={{ color: '#64748b' }}>Acceso al Centro de Bases de Datos.</Typography></Box>}
+                            />
+                          </Paper>
+                        </Grid>
+                      </Grid>
+
+                      {modulePermissionsForm.allowedModules.includes('estadistica_institucional') && (
+                        <Paper variant="outlined" sx={{ mt: 1.5, p: 1.6, borderRadius: 2, borderColor: '#bfdbfe', bgcolor: '#fff' }}>
+                          <Typography sx={{ fontWeight: 850, color: '#1e3a8a', mb: 1 }}>Submódulos de tableros estadísticos</Typography>
+                          <FormGroup>
+                            <Grid container spacing={0.5}>
+                              {STATISTICAL_MODULE_OPTIONS.map((item) => (
+                                <Grid item xs={12} sm={6} md={4} key={`stats-${item.key}`}>
+                                  <FormControlLabel control={<Checkbox checked={modulePermissionsForm.allowedModules.includes(item.key)} onChange={() => handleTogglePermission('allowedModules', item.key)} size="small" />} label={item.label} />
+                                </Grid>
+                              ))}
+                            </Grid>
+                          </FormGroup>
+
+                          {(modulePermissionsForm.menuPermissions?.includes('autoevaluacion') || modulePermissionsForm.allowedModules.includes('autoevaluacion')) && (
+                            <Box sx={{ mt: 1.4, pt: 1.2, borderTop: '1px solid #e2e8f0' }}>
+                              <Typography variant="caption" sx={{ display: 'block', mb: 0.4, color: '#475569', fontWeight: 850, textTransform: 'uppercase' }}>Autoevaluación</Typography>
+                              {AUTOEVALUACION_PERMISSION_OPTIONS.map((item) => <FormControlLabel key={item.key} control={<Checkbox checked={modulePermissionsForm.allowedModules.includes(item.key)} onChange={() => handleTogglePermission('allowedModules', item.key)} size="small" />} label={item.label} />)}
+                            </Box>
+                          )}
+
+                          {modulePermissionsForm.allowedModules.includes('seguridad_aplicativa') && (
+                            <Box sx={{ mt: 1.4, pt: 1.2, borderTop: '1px solid #e2e8f0' }}>
+                              <Typography variant="caption" sx={{ display: 'block', mb: 0.4, color: '#475569', fontWeight: 850, textTransform: 'uppercase' }}>Seguridad Aplicativa</Typography>
+                              <Grid container spacing={0.5}>
+                                {SECURITY_APPLICATION_PERMISSION_OPTIONS.map((item) => <Grid item xs={12} sm={6} md={4} key={item.key}><FormControlLabel control={<Checkbox checked={modulePermissionsForm.allowedModules.includes(item.key)} onChange={() => handleTogglePermission('allowedModules', item.key)} size="small" />} label={item.label} /></Grid>)}
                               </Grid>
-                            ))}
-                          </Grid>
-                        </FormGroup>
-                      </Paper>
-                    ))}
-                  </Stack>
-                </Paper>
+                            </Box>
+                          )}
+                        </Paper>
+                      )}
+
+                      {modulePermissionsForm.allowedModules.includes('gestion_bases_datos') && (
+                        <Box sx={{ mt: 1.5, display: 'grid', gridTemplateColumns: { xs: '1fr', md: 'repeat(2, minmax(0, 1fr))' }, gap: 1.3 }}>
+                          <Paper variant="outlined" sx={{ p: 1.2, borderRadius: 2, borderColor: expandedDatabasePermissionSections.backup ? '#60a5fa' : '#bfdbfe', bgcolor: expandedDatabasePermissionSections.backup ? '#f8fbff' : '#fff' }}>
+                            <Button fullWidth onClick={() => setExpandedDatabasePermissionSections((current) => ({ ...current, backup: !current.backup }))} endIcon={<ArrowForwardIcon sx={{ transform: expandedDatabasePermissionSections.backup ? 'rotate(90deg)' : 'rotate(0deg)', transition: 'transform .2s ease' }} />} sx={{ justifyContent: 'space-between', color: '#1e3a8a', fontWeight: 850, textTransform: 'none', textAlign: 'left' }}>
+                              Respaldo y recuperación
+                            </Button>
+                            {expandedDatabasePermissionSections.backup && (
+                              <Box sx={{ px: 0.8, pt: 0.7, borderTop: '1px solid #dbeafe' }}>
+                                <Typography variant="caption" sx={{ display: 'block', color: '#64748b', mb: 0.5 }}>Habilita solo las acciones autorizadas.</Typography>
+                                <FormGroup>
+                                  {DATABASE_BACKUP_PERMISSION_OPTIONS.map((item) => <FormControlLabel key={item.key} control={<Checkbox checked={modulePermissionsForm.allowedModules.includes(item.key)} onChange={() => handleTogglePermission('allowedModules', item.key)} size="small" />} label={item.key.endsWith('respaldo_descargar') ? 'Descargar copia completa' : 'Restaurar copia'} />)}
+                                </FormGroup>
+                              </Box>
+                            )}
+                          </Paper>
+                          <Paper variant="outlined" sx={{ p: 1.2, borderRadius: 2, borderColor: expandedDatabasePermissionSections.data ? '#60a5fa' : '#bfdbfe', bgcolor: expandedDatabasePermissionSections.data ? '#f8fbff' : '#fff' }}>
+                            <Button fullWidth onClick={() => setExpandedDatabasePermissionSections((current) => ({ ...current, data: !current.data }))} endIcon={<ArrowForwardIcon sx={{ transform: expandedDatabasePermissionSections.data ? 'rotate(90deg)' : 'rotate(0deg)', transition: 'transform .2s ease' }} />} sx={{ justifyContent: 'space-between', color: '#1e3a8a', fontWeight: 850, textTransform: 'none', textAlign: 'left' }}>
+                              Datos e importaciones
+                            </Button>
+                            {expandedDatabasePermissionSections.data && (
+                              <Box sx={{ px: 0.8, pt: 0.7, borderTop: '1px solid #dbeafe' }}>
+                                <Typography variant="caption" sx={{ display: 'block', color: '#64748b', mb: 0.5 }}>Controla la carga y consulta de información.</Typography>
+                                <FormGroup>
+                                  {DATABASE_DATA_PERMISSION_OPTIONS.map((item) => <FormControlLabel key={item.key} control={<Checkbox checked={modulePermissionsForm.allowedModules.includes(item.key)} onChange={() => handleTogglePermission('allowedModules', item.key)} size="small" />} label={item.key.endsWith('.importar') ? 'Importar información' : 'Tablas e historial de datos'} />)}
+                                </FormGroup>
+                              </Box>
+                            )}
+                          </Paper>
+                        </Box>
+                      )}
+                    </Paper>
+                  </>
+                )}
 
                 { modulePermissionsForm.allowedModules.includes('poblacional') && (
                   <>

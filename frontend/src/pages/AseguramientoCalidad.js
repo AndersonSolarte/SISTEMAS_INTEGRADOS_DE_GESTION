@@ -1747,8 +1747,12 @@ function AseguramientoCalidad() {
                   <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 1.2, pt: 0.5, borderTop: '1px solid #f1f5f9' }}>
                     <Box sx={{ display: 'flex', gap: 1.2, flexWrap: 'wrap' }}>
                       {/* Segmentador Formatos Digitalizados */}
-                      <Box sx={{ display: 'flex', borderRadius: '10px', bgcolor: '#f1f5f9', border: '1px solid #d1d5db', overflow: 'hidden' }}>
+                      <Box sx={{ display: 'flex', borderRadius: '14px' }}>
                           <Box
+                            role="button"
+                            tabIndex={0}
+                            aria-pressed={Boolean(filters.formatos_digitales)}
+                            aria-label="Filtrar formatos digitalizados"
                             onClick={() => {
                               const val = !filters.formatos_digitales;
                               const newFilters = { ...filters, formatos_digitales: val };
@@ -1770,16 +1774,51 @@ function AseguramientoCalidad() {
                                 .catch(() => {})
                                 .finally(() => { if (requestId === documentRequestId.current) setLoading(false); });
                             }}
+                            onKeyDown={(event) => {
+                              if (event.key === 'Enter' || event.key === ' ') {
+                                event.preventDefault();
+                                event.currentTarget.click();
+                              }
+                            }}
                             sx={{
-                              display: 'flex', alignItems: 'center', gap: 0.7,
-                              px: 1.6, py: 0.7,
-                              cursor: 'pointer', userSelect: 'none', transition: 'all 0.18s',
-                              bgcolor: filters.formatos_digitales ? '#dbeafe' : 'transparent',
-                              borderTop: `2.5px solid ${filters.formatos_digitales ? '#3b82f6' : 'transparent'}`,
-                              '&:hover': { bgcolor: filters.formatos_digitales ? '#dbeafe' : '#e9eef5' }
+                              position: 'relative', overflow: 'hidden', isolation: 'isolate',
+                              minHeight: 42, display: 'flex', alignItems: 'center', gap: 1,
+                              px: 1.35, py: 0.55, borderRadius: '13px',
+                              cursor: 'pointer', userSelect: 'none',
+                              color: filters.formatos_digitales ? '#fff' : '#1746a2',
+                              background: filters.formatos_digitales
+                                ? 'linear-gradient(135deg,#2563eb 0%,#1d4ed8 52%,#4338ca 100%)'
+                                : 'linear-gradient(135deg,#ffffff 0%,#eff6ff 55%,#eef2ff 100%)',
+                              border: `1px solid ${filters.formatos_digitales ? '#1d4ed8' : '#8eb8ff'}`,
+                              boxShadow: filters.formatos_digitales
+                                ? '0 8px 18px rgba(37,99,235,.24), inset 0 1px 0 rgba(255,255,255,.24)'
+                                : '0 5px 14px rgba(37,99,235,.12), inset 0 1px 0 rgba(255,255,255,.9)',
+                              transition: 'transform .22s ease, box-shadow .22s ease, border-color .22s ease',
+                              animation: filters.formatos_digitales ? 'none' : 'digitalFormatGlow 2.8s ease-in-out infinite',
+                              '@keyframes digitalFormatGlow': {
+                                '0%, 100%': { boxShadow: '0 5px 14px rgba(37,99,235,.10), 0 0 0 0 rgba(59,130,246,0)' },
+                                '50%': { boxShadow: '0 7px 18px rgba(37,99,235,.18), 0 0 0 4px rgba(59,130,246,.08)' }
+                              },
+                              '&::after': {
+                                content: '""', position: 'absolute', zIndex: -1, top: 0, bottom: 0, left: '-45%', width: '32%',
+                                transform: 'skewX(-20deg)', background: 'linear-gradient(90deg,transparent,rgba(255,255,255,.72),transparent)',
+                                animation: 'digitalFormatShimmer 3.4s ease-in-out infinite'
+                              },
+                              '@keyframes digitalFormatShimmer': {
+                                '0%, 62%': { left: '-45%', opacity: 0 },
+                                '72%': { opacity: .85 },
+                                '100%': { left: '125%', opacity: 0 }
+                              },
+                              '&:hover': {
+                                transform: 'translateY(-2px)', borderColor: filters.formatos_digitales ? '#1e40af' : '#3b82f6',
+                                boxShadow: filters.formatos_digitales ? '0 11px 22px rgba(37,99,235,.3)' : '0 9px 20px rgba(37,99,235,.2)'
+                              },
+                              '&:focus-visible': { outline: '3px solid rgba(59,130,246,.28)', outlineOffset: 2 }
                             }}>
-                            <Box sx={{ width: 7, height: 7, borderRadius: '50%', bgcolor: filters.formatos_digitales ? '#3b82f6' : '#d1d5db', flexShrink: 0, transition: 'all 0.18s', boxShadow: filters.formatos_digitales ? `0 0 0 2.5px #3b82f630` : 'none' }} />
-                            <Typography sx={{ fontSize: 11.5, fontWeight: filters.formatos_digitales ? 800 : 500, color: filters.formatos_digitales ? '#1d4ed8' : '#6b7280', whiteSpace: 'nowrap', transition: 'all 0.18s' }}>Formatos digitalizados</Typography>
+                            <Box sx={{ width: 29, height: 29, borderRadius: '9px', display: 'grid', placeItems: 'center', flexShrink: 0, bgcolor: filters.formatos_digitales ? 'rgba(255,255,255,.18)' : '#2563eb', boxShadow: filters.formatos_digitales ? 'inset 0 0 0 1px rgba(255,255,255,.22)' : '0 5px 10px rgba(37,99,235,.22)' }}>
+                              <DescriptionIcon sx={{ fontSize: 17, color: '#fff' }} />
+                            </Box>
+                            <Typography sx={{ fontSize: 12, lineHeight: 1.1, fontWeight: 850, color: 'inherit', whiteSpace: 'nowrap', letterSpacing: .05 }}>Formatos digitalizados</Typography>
                           </Box>
                       </Box>
 

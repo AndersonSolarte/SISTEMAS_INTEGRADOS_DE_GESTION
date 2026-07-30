@@ -123,9 +123,9 @@ export const AuthProvider = ({ children }) => {
     };
   }, [user, logout, touchActivity]);
 
-  const loginWithGoogle = async (credential, usePruebaProfile = false) => {
+  const loginWithGoogle = async (credential, turnstileToken, usePruebaProfile = false) => {
     try {
-      const response = await authService.loginWithGoogle(credential, usePruebaProfile);
+      const response = await authService.loginWithGoogle(credential, turnstileToken, usePruebaProfile);
       if (response.success) {
         setUser(response.data.user);
         return {

@@ -16,6 +16,10 @@ const MENU_KEYS = new Set([
 
 const GESTION_INFO_MODULE_KEYS = new Set([
   'gestion_bases_datos',
+  'gestion_bases_datos.respaldo_descargar',
+  'gestion_bases_datos.restaurar',
+  'gestion_bases_datos.datos_exportar',
+  'gestion_bases_datos.importar',
   'estadistica_institucional',
   'poblacional',
   'georreferencia',
@@ -300,6 +304,23 @@ const getUserModulePermissions = async (userId, role) => {
 
   let menuPermissions = Array.from(new Set(keys.filter((k) => MENU_KEYS.has(k))));
   let allowedModules = Array.from(new Set(keys.filter((k) => GESTION_INFO_MODULE_KEYS.has(k))));
+  if (allowedModules.some((key) => key.startsWith('gestion_bases_datos.')) && !allowedModules.includes('gestion_bases_datos')) {
+    allowedModules.push('gestion_bases_datos');
+  }
+  if (allowedModules.some((key) => key.startsWith('seguridad_aplicativa.')) && !allowedModules.includes('seguridad_aplicativa')) {
+    allowedModules.push('seguridad_aplicativa');
+  }
+  if (allowedModules.includes('autoevaluacion.instrumentos.access') && !allowedModules.includes('autoevaluacion')) {
+    allowedModules.push('autoevaluacion');
+  }
+  const hasStatisticalModule = allowedModules.some((key) => (
+    key !== 'estadistica_institucional'
+    && key !== 'gestion_bases_datos'
+    && !key.startsWith('gestion_bases_datos.')
+  ));
+  if (hasStatisticalModule && !allowedModules.includes('estadistica_institucional')) {
+    allowedModules.push('estadistica_institucional');
+  }
   const allowedGestionProcesosDashboards = Array.from(new Set(keys.filter((k) => GESTION_PROCESOS_DASHBOARD_KEYS.has(k))));
   const allowedPoblacionalDashboards = Array.from(new Set(keys.filter((k) => POBLACIONAL_DASHBOARD_KEYS.has(k))));
   const allowedSaberProDashboards = Array.from(new Set(keys.filter((k) => SABER_PRO_DASHBOARD_KEYS.has(k))));

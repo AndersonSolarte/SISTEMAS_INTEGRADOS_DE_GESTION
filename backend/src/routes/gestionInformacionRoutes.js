@@ -42,6 +42,13 @@ const {
 } = require('../controllers/gestionInformacionController');
 const { ROLES } = require('../constants/roles');
 const { createExcelUpload } = require('../middlewares/excelUpload');
+const {
+  getDatabaseHealth,
+  getSystemTablesCatalog,
+  exportTableData,
+  downloadDatabaseDump,
+  restoreDatabaseDump
+} = require('../controllers/databaseCenterController');
 const upload = createExcelUpload('uploads/temp/');
 
 const multer = require('multer');
@@ -65,6 +72,10 @@ const docxUpload = multer({
     }
     return cb(new Error('Archivo no permitido. Solo se admiten plantillas Word .docx.'));
   }
+});
+const databaseRestoreUpload = multer({
+  dest: process.env.DATABASE_RESTORE_TMP_DIR || 'uploads/temp/',
+  limits: { fileSize: Number(process.env.DATABASE_RESTORE_MAX_GB || 10) * 1024 * 1024 * 1024, files: 1 }
 });
 
 const auditorioFotoStorage = multer.diskStorage({
@@ -161,6 +172,35 @@ const canManageBasesByPermission = hasAnyRoleOrModulePermission({
   ]
 });
 
+// El Centro de Bases de Datos se deniega por defecto. Fuera del administrador,
+// cada capacidad requiere una asignación explícita en Gestión de Usuarios.
+const canAccessDatabaseCenter = hasAnyRoleOrModulePermission({
+  roles: [ROLES.ADMINISTRADOR],
+  moduleKeys: [
+    'gestion_bases_datos',
+    'gestion_bases_datos.respaldo_descargar',
+    'gestion_bases_datos.restaurar',
+    'gestion_bases_datos.datos_exportar',
+    'gestion_bases_datos.importar'
+  ]
+});
+const canDownloadDatabaseBackup = hasAnyRoleOrModulePermission({
+  roles: [ROLES.ADMINISTRADOR],
+  moduleKeys: ['gestion_bases_datos.respaldo_descargar']
+});
+const canRestoreDatabaseBackup = hasAnyRoleOrModulePermission({
+  roles: [ROLES.ADMINISTRADOR],
+  moduleKeys: ['gestion_bases_datos.restaurar']
+});
+const canExportDatabaseTables = hasAnyRoleOrModulePermission({
+  roles: [ROLES.ADMINISTRADOR],
+  moduleKeys: ['gestion_bases_datos.datos_exportar']
+});
+const canImportDatabaseData = hasAnyRoleOrModulePermission({
+  roles: [ROLES.ADMINISTRADOR],
+  moduleKeys: ['gestion_bases_datos.importar']
+});
+
 const canViewInfraestructura = hasAnyRoleOrModulePermission({
   roles: [ROLES.ADMINISTRADOR, ROLES.PLANEACION_ESTRATEGICA],
   moduleKeys: ['infraestructura_fisica', 'infraestructura_fisica.ver', 'infraestructura_fisica.gestionar']
@@ -174,11 +214,16 @@ const canManageInfraestructura = hasAnyRoleOrModulePermission({
 router.get('/', auth, canViewEstadisticaInstitucionalByPermission, getEstadisticas);
 router.get('/matriculados-incidencias', auth, canViewEstadisticaInstitucionalByPermission, getMatriculadosIncidencias);
 router.get('/resumen', auth, canViewEstadisticaInstitucionalByPermission, getResumen);
-router.get('/cargues', auth, canManageBasesByPermission, getCargues);
-router.get('/template', auth, canManageBasesByPermission, downloadTemplate);
-router.get('/contexto-externo/export', auth, canManageBasesByPermission, downloadContextoExternoNormalizado);
-router.get('/cargues/errors/export', auth, canManageBasesByPermission, downloadCargueErrores);
-router.get('/cargues/base/export', auth, canManageBasesByPermission, downloadCargueBase);
+router.get('/cargues', auth, canImportDatabaseData, getCargues);
+router.get('/template', auth, canImportDatabaseData, downloadTemplate);
+router.get('/contexto-externo/export', auth, canImportDatabaseData, downloadContextoExternoNormalizado);
+router.get('/cargues/errors/export', auth, canImportDatabaseData, downloadCargueErrores);
+router.get('/cargues/base/export', auth, canImportDatabaseData, downloadCargueBase);
+router.get('/database/health', auth, canAccessDatabaseCenter, getDatabaseHealth);
+router.get('/database/tables-catalog', auth, canExportDatabaseTables, getSystemTablesCatalog);
+router.get('/database/export-table', auth, canExportDatabaseTables, exportTableData);
+router.post('/database/backup-dump', auth, canDownloadDatabaseBackup, downloadDatabaseDump);
+router.post('/database/restore-dump', auth, canRestoreDatabaseBackup, databaseRestoreUpload.single('backup'), restoreDatabaseDump);
 router.get('/registros-calificados/:id/evidencias', auth, canViewEstadisticaInstitucionalByPermission, getRegistrosCalificadosEvidencias);
 router.get('/divipola/incidencias', auth, canViewEstadisticaInstitucionalByPermission, getDivipolaIncidencias);
 router.put('/divipola/incidencias/:id', auth, canViewEstadisticaInstitucionalByPermission, resolveDivipolaIncidencia);
@@ -191,8 +236,8 @@ router.put('/autoevaluacion/aspectos/:id', auth, canManageBasesByPermission, upd
 router.put('/autoevaluacion/participantes/:id', auth, canManageBasesByPermission, updateAutoevaluacionParticipante);
 router.delete('/autoevaluacion/participantes/:id', auth, canManageBasesByPermission, deleteAutoevaluacionParticipante);
 router.put('/autoevaluacion/programas/:id', auth, canManageBasesByPermission, updateAutoevaluacionPrograma);
-router.post('/import', auth, canManageBasesByPermission, upload.single('file'), importFromExcel);
-router.delete('/clear', auth, canManageBasesByPermission, clearByCategoria);
+router.post('/import', auth, canImportDatabaseData, upload.single('file'), importFromExcel);
+router.delete('/clear', auth, canImportDatabaseData, clearByCategoria);
 router.post('/', auth, canManageBasesByPermission, createEstadistica);
 router.put('/:id', auth, canManageBasesByPermission, updateEstadistica);
 router.delete('/:id', auth, canManageBasesByPermission, deleteEstadistica);

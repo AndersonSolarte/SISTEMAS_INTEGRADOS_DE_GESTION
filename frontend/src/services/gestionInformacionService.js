@@ -9,6 +9,25 @@ const gestionInformacionService = {
     api.get('/planeacion/gestion-informacion/resumen', { params, timeout: 60000 }).then((r) => r.data),
   getCargues: (params = {}) =>
     api.get('/planeacion/gestion-informacion/cargues', { params, timeout: 60000 }).then((r) => r.data),
+  getDatabaseHealth: () =>
+    api.get('/planeacion/gestion-informacion/database/health', { timeout: 60000 }).then((r) => r.data),
+  getSystemTablesCatalog: () =>
+    api.get('/planeacion/gestion-informacion/database/tables-catalog', { timeout: 60000 }).then((r) => r.data),
+  exportTableData: (table, format = 'csv') =>
+    api.get('/planeacion/gestion-informacion/database/export-table', {
+      params: { table, format }, responseType: 'blob', timeout: 0
+    }),
+  downloadDatabaseDump: (credentials) =>
+    api.post('/planeacion/gestion-informacion/database/backup-dump', credentials, { responseType: 'blob', timeout: 0 }),
+  restoreDatabaseDump: (file, credentials) => {
+    const formData = new FormData();
+    formData.append('backup', file);
+    formData.append('googleCredential', credentials.googleCredential);
+    formData.append('turnstileToken', credentials.turnstileToken);
+    return api.post('/planeacion/gestion-informacion/database/restore-dump', formData, {
+      headers: { 'Content-Type': 'multipart/form-data' }, timeout: 0
+    }).then((response) => response.data);
+  },
   getPlanAccionDashboard: () =>
     api.get('/planeacion/gestion-informacion', {
       params: { aggregate: 'plan_accion_dashboard', categoria: 'Plan de Acción', _ts: Date.now() },
