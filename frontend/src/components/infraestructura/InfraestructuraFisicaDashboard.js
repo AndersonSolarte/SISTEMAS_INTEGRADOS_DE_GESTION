@@ -1,4 +1,5 @@
 import React, { useState, useMemo, useEffect, useCallback } from 'react';
+import Swal from 'sweetalert2';
 import {
   Box,
   Paper,
@@ -1464,7 +1465,19 @@ ${card.subspaces.map(s => ` - ${s.descripcion} (Capacidad: ${s.capacidad} pax, �
   };
 
   const handleDeleteBuilding = async (id) => {
-    if (!window.confirm('¿Está seguro de que desea eliminar esta edificación de referencia?')) return;
+    const result = await Swal.fire({
+      title: '¿Eliminar edificación?',
+      text: '¿Está seguro de que desea eliminar esta edificación de referencia?',
+      icon: 'warning',
+      showCancelButton: true,
+      confirmButtonColor: '#dc2626',
+      cancelButtonColor: '#94a3b8',
+      confirmButtonText: 'Sí, eliminar',
+      cancelButtonText: 'Cancelar',
+      reverseButtons: true,
+      focusCancel: true
+    });
+    if (!result.isConfirmed) return;
     try {
       await gestionInformacionService.deleteEdificacionReferencia(id);
       enqueueSnackbar('Edificación eliminada exitosamente.', { variant: 'success' });
@@ -1570,16 +1583,28 @@ ${card.subspaces.map(s => ` - ${s.descripcion} (Capacidad: ${s.capacidad} pax, �
     };
 
     const handleDeleteRow = async (id) => {
-      if (window.confirm('¿Está seguro de que desea eliminar este espacio físico de manera permanente de la base de datos central?')) {
-        try {
-          await gestionInformacionService.deleteInfraestructura(id);
-          enqueueSnackbar('Registro de infraestructura física eliminado con éxito', { variant: 'success' });
-          fetchInfraestructuraFisica();
-          fetchInfraestructuraFisicaAll();
-        } catch (error) {
-          console.error('Error al eliminar registro:', error);
-          enqueueSnackbar('No se pudo eliminar el registro seleccionado.', { variant: 'error' });
-        }
+      const result = await Swal.fire({
+        title: '¿Eliminar espacio físico?',
+        text: '¿Está seguro de que desea eliminar este espacio físico de manera permanente de la base de datos central?',
+        icon: 'warning',
+        showCancelButton: true,
+        confirmButtonColor: '#dc2626',
+        cancelButtonColor: '#94a3b8',
+        confirmButtonText: 'Sí, eliminar',
+        cancelButtonText: 'Cancelar',
+        reverseButtons: true,
+        focusCancel: true
+      });
+      if (!result.isConfirmed) return;
+
+      try {
+        await gestionInformacionService.deleteInfraestructura(id);
+        enqueueSnackbar('Registro de infraestructura física eliminado con éxito', { variant: 'success' });
+        fetchInfraestructuraFisica();
+        fetchInfraestructuraFisicaAll();
+      } catch (error) {
+        console.error('Error al eliminar registro:', error);
+        enqueueSnackbar('No se pudo eliminar el registro seleccionado.', { variant: 'error' });
       }
     };
 
@@ -1603,7 +1628,20 @@ ${card.subspaces.map(s => ` - ${s.descripcion} (Capacidad: ${s.capacidad} pax, �
       const file = e.target.files[0];
       if (!file) return;
 
-      if (!window.confirm('¿Está seguro de que desea realizar la carga masiva desde este archivo Excel? Esto limpiará y reemplazará la información actual en la base de datos para esta sección.')) {
+      const result = await Swal.fire({
+        title: '¿Realizar carga masiva y reemplazar?',
+        html: '¿Está seguro de que desea realizar la carga masiva desde este archivo Excel?<br/><br/><strong style="color: #dc2626;">Atención: Esto limpiará y reemplazará la información actual en la base de datos para esta sección.</strong>',
+        icon: 'warning',
+        showCancelButton: true,
+        confirmButtonColor: '#059669',
+        cancelButtonColor: '#94a3b8',
+        confirmButtonText: 'Sí, Cargar y Reemplazar',
+        cancelButtonText: 'Cancelar',
+        reverseButtons: true,
+        focusCancel: true
+      });
+
+      if (!result.isConfirmed) {
         e.target.value = null;
         return;
       }
@@ -3152,7 +3190,7 @@ ${card.subspaces.map(s => ` - ${s.descripcion} (Capacidad: ${s.capacidad} pax, �
                   <TableContainer sx={{ border: '1px solid #bfdbfe', borderRadius: 3, overflow: 'hidden' }}>
                     <Table size="small" sx={{ borderCollapse: 'collapse' }}>
                       <TableHead>
-                        {/* Fila 1 de cabecera: T├¡tulos principales */}
+                        {/* Fila 1 de cabecera: Títulos principales */}
                         <TableRow sx={{ bgcolor: '#1e3a8a' }}>
                           <TableCell rowSpan={2} sx={{ fontWeight: 900, bgcolor: '#1e3a8a', color: '#fff', borderRight: '1px solid #3b82f6', textAlign: 'left', minWidth: 200, py: 1.8 }}>
                             USO DE ESPACIOS
@@ -4316,7 +4354,7 @@ ${card.subspaces.map(s => ` - ${s.descripcion} (Capacidad: ${s.capacidad} pax, �
                   </Select>
                 </FormControl>
 
-                {/* Bot├│n Nuevo Espacio */}
+                {/* Botón Nuevo Espacio */}
                 <Button
                   variant="contained"
                   onClick={handleOpenCreateDialog}
@@ -4383,14 +4421,14 @@ ${card.subspaces.map(s => ` - ${s.descripcion} (Capacidad: ${s.capacidad} pax, �
                 </Typography>
                 <Box component="ul" sx={{ pl: 2, m: 0, color: '#475569', fontSize: 12.5, display: 'flex', flexDirection: 'column', gap: 0.6 }}>
                   <li><strong>Campus:</strong> Centro, Santiago, San Damián.</li>
-                  <li><strong>Bloque:</strong> Ej. Bloque A, Áreas de administraci├│n.</li>
-                  <li><strong>Nomenclatura:</strong> C├│digos de espacios físicos.</li>
+                  <li><strong>Bloque:</strong> Ej. Bloque A, Áreas de administración.</li>
+                  <li><strong>Nomenclatura:</strong> Códigos de espacios físicos.</li>
                   <li><strong>Asignación:</strong> Áreas académicas o dependencias administrativas.</li>
                   <li><strong>Tipo de espacio:</strong> Aulas, oficinas, laboratorios, baños, etc.</li>
                 </Box>
                 <Divider sx={{ my: 0.5 }} />
                 <Typography variant="caption" sx={{ color: '#64748b', fontWeight: 600 }}>
-                  ­ƒÆí Tip: Puedes combinar esta búsqueda ingresando palabras clave separadas por espacios.
+                  💡 Tip: Puedes combinar esta búsqueda ingresando palabras clave separadas por espacios.
                 </Typography>
               </Stack>
             </Popover>
@@ -4409,14 +4447,14 @@ ${card.subspaces.map(s => ` - ${s.descripcion} (Capacidad: ${s.capacidad} pax, �
                       <TableHead>
                         <TableRow sx={{ bgcolor: '#ecfdf5' }}>
                           <TableCell sx={{ fontWeight: 900, color: '#065f46', fontSize: '0.75rem', textTransform: 'uppercase', letterSpacing: '0.05em', borderBottom: '2px solid #a7f3d0', py: 1.5 }}>Campus</TableCell>
-                          <TableCell sx={{ fontWeight: 900, color: '#065f46', fontSize: '0.75rem', textTransform: 'uppercase', letterSpacing: '0.05em', borderBottom: '2px solid #a7f3d0', py: 1.5 }}>Bloque</TableCell>
-                          <TableCell sx={{ fontWeight: 900, color: '#065f46', fontSize: '0.75rem', textTransform: 'uppercase', letterSpacing: '0.05em', borderBottom: '2px solid #a7f3d0', py: 1.5 }}>Nomenclatura</TableCell>
-                          <TableCell sx={{ fontWeight: 900, color: '#065f46', fontSize: '0.75rem', textTransform: 'uppercase', letterSpacing: '0.05em', borderBottom: '2px solid #a7f3d0', py: 1.5 }}>Piso</TableCell>
-                          <TableCell sx={{ fontWeight: 900, color: '#065f46', fontSize: '0.75rem', textTransform: 'uppercase', letterSpacing: '0.05em', borderBottom: '2px solid #a7f3d0', py: 1.5 }}>Tipo Espacio</TableCell>
-                          <TableCell sx={{ fontWeight: 900, color: '#065f46', fontSize: '0.75rem', textTransform: 'uppercase', letterSpacing: '0.05em', borderBottom: '2px solid #a7f3d0', py: 1.5 }}>Asignación</TableCell>
-                          <TableCell sx={{ fontWeight: 900, color: '#065f46', fontSize: '0.75rem', textTransform: 'uppercase', letterSpacing: '0.05em', borderBottom: '2px solid #a7f3d0', py: 1.5, textAlign: 'right' }}>Capacidad</TableCell>
-                          <TableCell sx={{ fontWeight: 900, color: '#065f46', fontSize: '0.75rem', textTransform: 'uppercase', letterSpacing: '0.05em', borderBottom: '2px solid #a7f3d0', py: 1.5, textAlign: 'right' }}>Área (m²)</TableCell>
-                          <TableCell sx={{ fontWeight: 900, color: '#065f46', fontSize: '0.75rem', textTransform: 'uppercase', letterSpacing: '0.05em', borderBottom: '2px solid #a7f3d0', py: 1.5 }}>Autónomo</TableCell>
+                          <TableCell sx={{ fontWeight: 900, color: '#065f46', fontSize: '0.75rem', textTransform: 'uppercase', letterSpacing: '0.05em', borderBottom: '2px solid #a7f3d0', py: 1.5 }}>Tipo de Área</TableCell>
+                          <TableCell sx={{ fontWeight: 900, color: '#065f46', fontSize: '0.75rem', textTransform: 'uppercase', letterSpacing: '0.05em', borderBottom: '2px solid #a7f3d0', py: 1.5 }}>Tenencia</TableCell>
+                          <TableCell sx={{ fontWeight: 900, color: '#065f46', fontSize: '0.75rem', textTransform: 'uppercase', letterSpacing: '0.05em', borderBottom: '2px solid #a7f3d0', py: 1.5 }}>Ubicación</TableCell>
+                          <TableCell sx={{ fontWeight: 900, color: '#065f46', fontSize: '0.75rem', textTransform: 'uppercase', letterSpacing: '0.05em', borderBottom: '2px solid #a7f3d0', py: 1.5 }}>Piso No.</TableCell>
+                          <TableCell sx={{ fontWeight: 900, color: '#065f46', fontSize: '0.75rem', textTransform: 'uppercase', letterSpacing: '0.05em', borderBottom: '2px solid #a7f3d0', py: 1.5 }}>Tipo de Espacio</TableCell>
+                          <TableCell sx={{ fontWeight: 900, color: '#065f46', fontSize: '0.75rem', textTransform: 'uppercase', letterSpacing: '0.05em', borderBottom: '2px solid #a7f3d0', py: 1.5 }}>Descripción</TableCell>
+                          <TableCell sx={{ fontWeight: 900, color: '#065f46', fontSize: '0.75rem', textTransform: 'uppercase', letterSpacing: '0.05em', borderBottom: '2px solid #a7f3d0', py: 1.5, textAlign: 'right' }}>Capacidad Física</TableCell>
+                          <TableCell sx={{ fontWeight: 900, color: '#065f46', fontSize: '0.75rem', textTransform: 'uppercase', letterSpacing: '0.05em', borderBottom: '2px solid #a7f3d0', py: 1.5, textAlign: 'right' }}>Área (Metros2)</TableCell>
                           <TableCell sx={{ fontWeight: 900, color: '#065f46', fontSize: '0.75rem', textTransform: 'uppercase', letterSpacing: '0.05em', borderBottom: '2px solid #a7f3d0', py: 1.5, textAlign: 'center' }}>Acciones</TableCell>
                         </TableRow>
                       </TableHead>
@@ -4424,36 +4462,33 @@ ${card.subspaces.map(s => ` - ${s.descripcion} (Capacidad: ${s.capacidad} pax, �
                         {infraestructuraFisicaData.length === 0 ? (
                           <TableRow>
                             <TableCell colSpan={10} sx={{ py: 4, textAlign: 'center', color: '#94a3b8' }}>
-                              No se encontraron registros de infraestructura f├¡sica.
+                              No se encontraron registros de infraestructura física.
                             </TableCell>
                           </TableRow>
                         ) : (
                           infraestructuraFisicaData.map((row) => (
                             <TableRow key={row.id} hover>
-                              <TableCell>{row.campus}</TableCell>
-                              <TableCell sx={{ fontWeight: 700, wordBreak: 'break-word', whiteSpace: 'normal', color: '#334155' }}>{row.componente}</TableCell>
-                              <TableCell sx={{ fontWeight: 700, color: '#1d4ed8' }}>{row.nomenclatura || '-'}</TableCell>
-                              <TableCell>Piso {row.piso_no}</TableCell>
-                              <TableCell sx={{ wordBreak: 'break-word', whiteSpace: 'normal', color: '#334155' }}>{row.tipo_espacio}</TableCell>
+                              <TableCell sx={{ fontWeight: 600, color: '#334155' }}>{row.campus || '-'}</TableCell>
+                              <TableCell sx={{ fontWeight: 600, color: '#1e293b' }}>{row.tipo_area || '-'}</TableCell>
+                              <TableCell sx={{ color: '#475569' }}>{row.tenencia || '-'}</TableCell>
+                              <TableCell sx={{ wordBreak: 'break-word', whiteSpace: 'normal', color: '#334155' }}>{row.ubicacion || '-'}</TableCell>
+                              <TableCell sx={{ color: '#334155' }}>{row.piso_no !== null && row.piso_no !== undefined && row.piso_no !== '' ? row.piso_no : '-'}</TableCell>
+                              <TableCell sx={{ wordBreak: 'break-word', whiteSpace: 'normal', color: '#334155' }}>{row.tipo_espacio || '-'}</TableCell>
                               <TableCell sx={{ minWidth: 160, maxWidth: 220, wordBreak: 'break-word', whiteSpace: 'normal', color: '#475569' }}>
-                                {row.asignacion || '-'}
+                                {row.descripcion || '-'}
                               </TableCell>
-                              <TableCell sx={{ textAlign: 'right', fontWeight: 600 }}>{row.capacidad_fisica}</TableCell>
-                              <TableCell sx={{ textAlign: 'right', fontWeight: 600 }}>{row.area_metros2} m²</TableCell>
-                              <TableCell>
-                                <Chip
-                                  size="small"
-                                  label={['Sí', 'Si'].includes(row.acceso_autonomo) ? 'Sí' : 'No'}
-                                  color={['Sí', 'Si'].includes(row.acceso_autonomo) ? 'primary' : 'default'}
-                                  sx={{ fontWeight: 800 }}
-                                />
+                              <TableCell sx={{ textAlign: 'right', fontWeight: 600, color: '#334155' }}>
+                                {row.capacidad_fisica !== null && row.capacidad_fisica !== undefined && row.capacidad_fisica !== '' ? row.capacidad_fisica : '-'}
+                              </TableCell>
+                              <TableCell sx={{ textAlign: 'right', fontWeight: 600, color: '#334155' }}>
+                                {row.area_metros2 !== null && row.area_metros2 !== undefined && row.area_metros2 !== '' ? `${row.area_metros2} m²` : '-'}
                               </TableCell>
                               <TableCell>
                                 <Stack direction="row" spacing={0.5} justifyContent="center">
-                                  <IconButton size="small" color="primary" onClick={() => handleOpenEditDialog(row)}>
+                                  <IconButton size="small" color="primary" onClick={() => handleOpenEditDialog(row)} title="Editar">
                                     <EditIcon size="small" />
                                   </IconButton>
-                                  <IconButton size="small" color="error" onClick={() => handleDeleteRow(row.id)}>
+                                  <IconButton size="small" color="error" onClick={() => handleDeleteRow(row.id)} title="Eliminar">
                                     <DeleteIcon size="small" />
                                   </IconButton>
                                 </Stack>
@@ -4475,7 +4510,7 @@ ${card.subspaces.map(s => ` - ${s.descripcion} (Capacidad: ${s.capacidad} pax, �
                       setInfraestructuraFisicaRowsPerPage(parseInt(e.target.value, 10));
                       setInfraestructuraFisicaPage(0);
                     }}
-                    labelRowsPerPage="Filas por p├ígina"
+                    labelRowsPerPage="Filas por página"
                     labelDisplayedRows={({ from, to, count }) => `${from}-${to} de ${count}`}
                   />
                 </>
@@ -4532,7 +4567,7 @@ ${card.subspaces.map(s => ` - ${s.descripcion} (Capacidad: ${s.capacidad} pax, �
                     <SearchIcon sx={{ color: '#2563eb', fontSize: 20 }} />
                     <Box>
                       <Typography sx={{ fontWeight: 800, color: '#1e3a8a', fontSize: 13.5 }}>
-                        Cargar Espacio Existente (Edici├│n R├ípida)
+                        Cargar Espacio Existente (Edición Rápida)
                       </Typography>
                       <Typography variant="caption" sx={{ color: '#3b82f6', display: 'block', fontSize: 11, fontWeight: 500 }}>
                         Busca un espacio para autocompletar la ficha y editarlo.
@@ -4543,7 +4578,7 @@ ${card.subspaces.map(s => ` - ${s.descripcion} (Capacidad: ${s.capacidad} pax, �
                     <Autocomplete
                       size="small"
                       options={infraestructuraFisicaAllData}
-                      getOptionLabel={(option) => `${option.nomenclatura || 'Sin C├│digo'} - ${option.componente || 'Sin Bloque'} (${option.campus})`}
+                      getOptionLabel={(option) => `${option.nomenclatura || 'Sin Código'} - ${option.componente || 'Sin Bloque'} (${option.campus})`}
                       value={infraestructuraFisicaAllData.find((r) => r.id === infraestructuraFisicaEditingId) || null}
                       filterOptions={(options, { inputValue }) => {
                         const query = inputValue.toLowerCase().trim();
@@ -4608,14 +4643,14 @@ ${card.subspaces.map(s => ` - ${s.descripcion} (Capacidad: ${s.capacidad} pax, �
                           <Stack spacing={0.2} sx={{ width: '100%' }}>
                             <Stack direction="row" justifyContent="space-between" alignItems="center">
                               <Typography variant="body2" sx={{ fontWeight: 700, color: '#1e293b', fontSize: 12.5 }}>
-                                {option.nomenclatura || 'Sin C├│digo'} ÔÇö {option.componente || 'Sin Bloque'}
+                                {option.nomenclatura || 'Sin Código'} — {option.componente || 'Sin Bloque'}
                               </Typography>
                               <Typography variant="caption" sx={{ color: '#64748b', fontWeight: 600, fontSize: 10.5 }}>
                                 {option.campus}
                               </Typography>
                             </Stack>
                             <Typography variant="caption" sx={{ color: '#64748b', display: 'block', textOverflow: 'ellipsis', overflow: 'hidden', whiteSpace: 'nowrap', fontSize: 11 }}>
-                              {option.tipo_espacio || 'Sin tipo'} ÔÇó {option.asignacion || 'Sin asignación'}
+                              {option.tipo_espacio || 'Sin tipo'} • {option.asignacion || 'Sin asignación'}
                             </Typography>
                           </Stack>
                         </Box>
@@ -4626,11 +4661,11 @@ ${card.subspaces.map(s => ` - ${s.descripcion} (Capacidad: ${s.capacidad} pax, �
               </Paper>
 
               <Stack spacing={4}>
-                {/* SECCIÓN 1: UBICACI├ôN Y CAMPUS */}
+                {/* SECCIÓN 1: UBICACIÓN Y CAMPUS */}
                 <Box>
                   <Typography sx={{ fontWeight: 800, color: '#1e293b', display: 'flex', alignItems: 'center', gap: 1.2, mb: 2, fontSize: 15, borderBottom: '2px solid #3b82f6', pb: 1 }}>
                     <PlaceIcon sx={{ color: '#3b82f6' }} />
-                    1. UBICACI├ôN Y CAMPUS
+                    1. UBICACIÓN Y CAMPUS
                   </Typography>
                   <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '100%', sm: 'repeat(3, 1fr)' }, gap: 3 }}>
                     <Box>
@@ -4663,7 +4698,7 @@ ${card.subspaces.map(s => ` - ${s.descripcion} (Capacidad: ${s.capacidad} pax, �
                             required
                             size="medium"
                             label="Bloque (Componente)"
-                            placeholder="Ej: Áreas_administraci├│n"
+                            placeholder="Ej: Áreas_administración"
                             sx={{ '& .MuiOutlinedInput-root': { borderRadius: '10px' } }}
                           />
                         )}
@@ -4689,7 +4724,7 @@ ${card.subspaces.map(s => ` - ${s.descripcion} (Capacidad: ${s.capacidad} pax, �
                         required
                         fullWidth
                         size="medium"
-                        label="Ubicación Espec├¡fica"
+                        label="Ubicación Específica"
                         placeholder="Ej: Bloque Administrativo - Primer Piso"
                         value={infraestructuraFisicaForm.ubicacion}
                         onChange={(e) => setInfraestructuraFisicaForm({ ...infraestructuraFisicaForm, ubicacion: e.target.value })}
@@ -4699,11 +4734,11 @@ ${card.subspaces.map(s => ` - ${s.descripcion} (Capacidad: ${s.capacidad} pax, �
                   </Box>
                 </Box>
 
-                {/* SECCIÓN 2: IDENTIFICACI├ôN Y TIPO DE ESPACIO */}
+                {/* SECCIÓN 2: IDENTIFICACIÓN Y TIPO DE ESPACIO */}
                 <Box>
                   <Typography sx={{ fontWeight: 800, color: '#1e293b', display: 'flex', alignItems: 'center', gap: 1.2, mb: 2, fontSize: 15, borderBottom: '2px solid #10b981', pb: 1 }}>
                     <HomeWorkIcon sx={{ color: '#10b981' }} />
-                    2. IDENTIFICACI├ôN Y TIPO DE ESPACIO
+                    2. IDENTIFICACIÓN Y TIPO DE ESPACIO
                   </Typography>
                   <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '100%', sm: 'repeat(3, 1fr)' }, gap: 3 }}>
                     <Box>
@@ -4711,7 +4746,7 @@ ${card.subspaces.map(s => ` - ${s.descripcion} (Capacidad: ${s.capacidad} pax, �
                         required
                         fullWidth
                         size="medium"
-                        label="Nomenclatura (C├│digo)"
+                        label="Nomenclatura (Código)"
                         placeholder="Ej: 202"
                         value={infraestructuraFisicaForm.nomenclatura}
                         onChange={(e) => setInfraestructuraFisicaForm({ ...infraestructuraFisicaForm, nomenclatura: e.target.value })}
@@ -4724,7 +4759,7 @@ ${card.subspaces.map(s => ` - ${s.descripcion} (Capacidad: ${s.capacidad} pax, �
                         freeSolo
                         options={Array.from(new Set([
                           ...infraestructuraFisicaAllData.map((r) => r.tipo_espacio).filter(Boolean),
-                          'Aulas', 'Oficinas', 'Laboratorios', 'Auditorios', 'Salas de Cómputo', 'Bibliotecas', 'Zonas Verdes', 'Pasillos', 'Ba├▒os', 'Cafeterías', 'Parqueaderos'
+                          'Aulas', 'Oficinas', 'Laboratorios', 'Auditorios', 'Salas de Cómputo', 'Bibliotecas', 'Zonas Verdes', 'Pasillos', 'Baños', 'Cafeterías', 'Parqueaderos'
                         ]))}
                         value={infraestructuraFisicaForm.tipo_espacio}
                         onChange={(_, newValue) => setInfraestructuraFisicaForm((prev) => ({ ...prev, tipo_espacio: newValue || '' }))}
@@ -4747,7 +4782,7 @@ ${card.subspaces.map(s => ` - ${s.descripcion} (Capacidad: ${s.capacidad} pax, �
                         freeSolo
                         options={Array.from(new Set([
                           ...infraestructuraFisicaAllData.map((r) => r.asignacion).filter(Boolean),
-                          'Secretar├¡a General', 'Rector├¡a', 'Decanatura', 'Docentes', 'Estudiantes', 'Administraci├│n', 'Servicios Generales'
+                          'Secretaría General', 'Rectoría', 'Decanatura', 'Docentes', 'Estudiantes', 'Administración', 'Servicios Generales'
                         ]))}
                         value={infraestructuraFisicaForm.asignacion}
                         onChange={(_, newValue) => setInfraestructuraFisicaForm((prev) => ({ ...prev, asignacion: newValue || '' }))}
@@ -4758,7 +4793,7 @@ ${card.subspaces.map(s => ` - ${s.descripcion} (Capacidad: ${s.capacidad} pax, �
                             required
                             size="medium"
                             label="Asignación de Uso"
-                            placeholder="Ej: Secretar├¡a General"
+                            placeholder="Ej: Secretaría General"
                             sx={{ '& .MuiOutlinedInput-root': { borderRadius: '10px' } }}
                           />
                         )}
@@ -4769,8 +4804,8 @@ ${card.subspaces.map(s => ` - ${s.descripcion} (Capacidad: ${s.capacidad} pax, �
                       <TextField
                         fullWidth
                         size="medium"
-                        label="Funci├│n Espec├¡fica"
-                        placeholder="Describa la función específica de este espacio, Ej: Apoyo acad├®mico y atenci├│n al p├║blico..."
+                        label="Función Específica"
+                        placeholder="Describa la función específica de este espacio, Ej: Apoyo académico y atención al público..."
                         value={infraestructuraFisicaForm.funcion_especifica}
                         onChange={(e) => setInfraestructuraFisicaForm({ ...infraestructuraFisicaForm, funcion_especifica: e.target.value })}
                         sx={{ '& .MuiOutlinedInput-root': { borderRadius: '10px' } }}
@@ -4779,11 +4814,11 @@ ${card.subspaces.map(s => ` - ${s.descripcion} (Capacidad: ${s.capacidad} pax, �
                   </Box>
                 </Box>
 
-                {/* SECCIÓN 3: CARACTER├ìSTICAS FÍSICAS Y ACCESO */}
+                {/* SECCIÓN 3: CARACTERÍSTICAS FÍSICAS Y ACCESO */}
                 <Box>
                   <Typography sx={{ fontWeight: 800, color: '#1e293b', display: 'flex', alignItems: 'center', gap: 1.2, mb: 2, fontSize: 15, borderBottom: '2px solid #f59e0b', pb: 1 }}>
                     <InsightsIcon sx={{ color: '#f59e0b' }} />
-                    3. CARACTER├ìSTICAS FÍSICAS Y ACCESO
+                    3. CARACTERÍSTICAS FÍSICAS Y ACCESO
                   </Typography>
                   <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '100%', sm: 'repeat(3, 1fr)' }, gap: 3 }}>
                     <Box>
@@ -4827,7 +4862,7 @@ ${card.subspaces.map(s => ` - ${s.descripcion} (Capacidad: ${s.capacidad} pax, �
                           onChange={(e) => setInfraestructuraFisicaForm({ ...infraestructuraFisicaForm, acceso_autonomo: e.target.value })}
                           sx={{ borderRadius: '10px' }}
                         >
-                          <MenuItem value=""><em>┬┐Tiene Acceso Autónomo?</em></MenuItem>
+                          <MenuItem value=""><em>¿Tiene Acceso Autónomo?</em></MenuItem>
                           <MenuItem value="Sí">Sí</MenuItem>
                           <MenuItem value="No">No</MenuItem>
                         </Select>
@@ -4866,7 +4901,7 @@ ${card.subspaces.map(s => ` - ${s.descripcion} (Capacidad: ${s.capacidad} pax, �
                       <TextField
                         fullWidth
                         size="medium"
-                        label="Fecha Actualizaci├│n (A├▒o)"
+                        label="Fecha Actualización (Año)"
                         placeholder="Ej: 2026"
                         value={infraestructuraFisicaForm.fecha_actualizacion}
                         onChange={(e) => setInfraestructuraFisicaForm({ ...infraestructuraFisicaForm, fecha_actualizacion: e.target.value })}
