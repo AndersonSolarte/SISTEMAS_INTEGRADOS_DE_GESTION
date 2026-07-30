@@ -256,6 +256,8 @@ testConnection()
       console.warn('[gestion-informacion] No se pudo sincronizar plan_accion:', e?.message);
     }
     try {
+      const { DataTypes } = require('sequelize');
+      const qi = sequelize.getQueryInterface();
       const Autoevaluacion = require('./models/Autoevaluacion');
       const AutoevaluacionParticipante = require('./models/AutoevaluacionParticipante');
       const AutoevaluacionPrograma = require('./models/AutoevaluacionPrograma');
