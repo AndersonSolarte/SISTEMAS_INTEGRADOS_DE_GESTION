@@ -59,6 +59,7 @@ sgc_db_*.zip
 *.dump
 *.tar
 *.zip
+scripts/backup/backup-client.config.psd1
 
 # Certificados y archivos sensibles del servidor
 Cert_planeacion.pem

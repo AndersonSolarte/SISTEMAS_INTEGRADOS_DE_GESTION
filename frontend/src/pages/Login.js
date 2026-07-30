@@ -237,9 +237,40 @@ function Login() {
             {error && (<Alert severity="error" sx={{ mb: 3, borderRadius: 2.5, border: "1px solid rgba(239,68,68,0.2)", "& .MuiAlert-icon": { color: "#ef4444" }, animation: "shakeIn 0.5s ease-out", "@keyframes shakeIn": { "0%": { transform: "translateX(-8px)", opacity: 0 }, "25%": { transform: "translateX(6px)" }, "50%": { transform: "translateX(-4px)" }, "75%": { transform: "translateX(2px)" }, "100%": { transform: "translateX(0)", opacity: 1 } } }}>{error}</Alert>)}
             <Box sx={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 2 }}>
               <Box sx={{ width: "100%", maxWidth: 420, display: "flex", flexDirection: "column", alignItems: "center" }}>
-                <Box sx={{ minHeight: 38, px: 1.8, display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 1, borderRadius: 99, border: `1px solid ${turnstileError ? "#fda4af" : turnstileVisualReady ? "#86efac" : "#cbdcf5"}`, bgcolor: turnstileVisualReady ? "rgba(236,253,245,.9)" : "rgba(239,246,255,.88)", color: turnstileError ? "#be123c" : turnstileVisualReady ? "#047857" : "#315b9d", transition: "background-color .25s ease, border-color .25s ease, color .25s ease" }}>
-                  {turnstileVisualReady ? <VerifiedUserOutlinedIcon sx={{ fontSize: 19 }} /> : <CircularProgress size={16} thickness={5} sx={{ color: "inherit" }} />}
-                  <Typography variant="caption" sx={{ color: "inherit", fontWeight: 800, lineHeight: 1 }}>
+                <Box
+                  role="status"
+                  aria-live="polite"
+                  sx={{
+                    minHeight: 34,
+                    display: "inline-flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    gap: 0.9,
+                    color: turnstileError ? "#be123c" : turnstileVisualReady ? "#047857" : "#315b9d",
+                    transition: "color .25s ease, opacity .25s ease",
+                    animation: turnstileVisualReady ? "securityStatusIn .38s ease-out" : "none",
+                    "@keyframes securityStatusIn": {
+                      from: { opacity: 0, transform: "translateY(4px)" },
+                      to: { opacity: 1, transform: "translateY(0)" },
+                    },
+                  }}
+                >
+                  {turnstileVisualReady ? (
+                    <VerifiedUserOutlinedIcon
+                      sx={{
+                        fontSize: 23,
+                        filter: "drop-shadow(0 3px 6px rgba(5,150,105,.18))",
+                        animation: "securityShieldPulse 2.4s ease-in-out infinite",
+                        "@keyframes securityShieldPulse": {
+                          "0%,100%": { transform: "scale(1)" },
+                          "50%": { transform: "scale(1.08)" },
+                        },
+                      }}
+                    />
+                  ) : (
+                    <CircularProgress size={17} thickness={4.5} sx={{ color: "inherit" }} />
+                  )}
+                  <Typography variant="caption" sx={{ color: "inherit", fontWeight: 800, lineHeight: 1, letterSpacing: 0.1 }}>
                     {turnstileError ? "Verificación no disponible" : turnstileVisualReady ? "Acceso protegido" : "Comprobando seguridad"}
                   </Typography>
                 </Box>

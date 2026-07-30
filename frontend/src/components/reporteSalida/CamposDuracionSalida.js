@@ -66,7 +66,7 @@ const normalizeTimeString = (rawInput, isBlur = true) => {
   return str;
 };
 
-const TimeAutocomplete = ({
+export const TimeAutocomplete = ({
   options,
   value,
   onChange,

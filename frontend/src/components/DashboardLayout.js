@@ -328,6 +328,26 @@ function DashboardLayout() {
 
     menuItems = menuCatalog.filter((item) => effectiveMenuPermissions.includes(item.key));
 
+    if (
+      effectiveMenuPermissions.includes('gestion_informacion')
+      && hasDatabaseCenterPermission
+      && hasOtherGestionInfoPermission
+    ) {
+      const gestionInformacionIndex = menuItems.findIndex((item) => item.key === 'gestion_informacion');
+      if (gestionInformacionIndex >= 0) {
+        menuItems = [
+          ...menuItems.slice(0, gestionInformacionIndex + 1),
+          {
+            key: 'gestion_bases_datos',
+            path: '/dashboard/gestion-informacion?tab=gestion_bases',
+            label: 'Gestión de Bases de Datos',
+            icon: <StorageIcon />
+          },
+          ...menuItems.slice(gestionInformacionIndex + 1)
+        ];
+      }
+    }
+
     if (user?.role === ROLES.ADMINISTRADOR) {
       const procesosKeys = ['aseguramiento_calidad', 'buscar_documentos'];
       const planeacionKeys = ['planeacion_estrategica', 'planeacion_efectividad', 'autoevaluacion', 'registros_calificados', 'gestion_informacion'];

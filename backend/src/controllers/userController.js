@@ -780,7 +780,18 @@ const getUsers = async (req, res) => {
     if (dependencia) {
       const deps = String(dependencia).split('|||').map(d => d.trim()).filter(Boolean);
       if (deps.length > 0) {
-        where.dependencia = { [Op.in]: deps };
+        const normalizedDeps = [...new Set(deps.map(normalizeSearchText).filter(Boolean))];
+        where[Op.and] = [
+          sequelizeWhere(
+            fn(
+              'translate',
+              fn('lower', fn('trim', col('dependencia'))),
+              'áéíóúüñ',
+              'aeiouun'
+            ),
+            { [Op.in]: normalizedDeps }
+          )
+        ];
       }
     }
     
@@ -816,7 +827,7 @@ const getUsers = async (req, res) => {
         return { [Op.or]: singleTokenConditions };
       });
 
-      where[Op.and] = tokenConditions;
+      where[Op.and] = [...(where[Op.and] || []), ...tokenConditions];
     }
     
     if (role) {

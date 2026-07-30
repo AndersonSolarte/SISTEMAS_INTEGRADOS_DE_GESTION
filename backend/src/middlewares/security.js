@@ -151,6 +151,11 @@ const sqlInjectionGuard = (req, res, next) => {
     { source: 'body', value: req.body }
   ];
   const maxFieldLength = Number(process.env.REQUEST_MAX_FIELD_LENGTH || 8000);
+  const authTokenLimits = new Map([
+    ['body.credential', 8192],
+    ['body.turnstileToken', 4096]
+  ]);
+  const isGoogleAuthRequest = /^\/api\/auth\/google(?:\/redirect)?(?:\?|$)/i.test(String(req.originalUrl || ''));
   const stack = containers.map((item) => ({ ...item, path: item.source, depth: 0 }));
 
   while (stack.length) {
@@ -158,6 +163,19 @@ const sqlInjectionGuard = (req, res, next) => {
     if (value === null || value === undefined) continue;
 
     if (typeof value === 'string') {
+      const authTokenLimit = isGoogleAuthRequest ? authTokenLimits.get(currentPath) : undefined;
+      if (authTokenLimit) {
+        if (value.length > authTokenLimit) {
+          return res.status(413).json({
+            success: false,
+            message: 'Credencial de autenticacion demasiado grande'
+          });
+        }
+        // Son tokens opacos firmados y se verifican posteriormente con Google y
+        // Cloudflare. Analizarlos como texto SQL produce falsos positivos aleatorios.
+        continue;
+      }
+
       const decoded = (() => {
         try {
           return decodeURIComponent(value.replace(/\+/g, '%20'));

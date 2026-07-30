@@ -912,13 +912,14 @@ function GestionUsuarios() {
 
   const handleClearTools = () => {
     setSearch('');
+    setFilterDependencia([]);
     setUploadFile(null);
     setBulkImportResult(null);
     setBulkErrorFile(null);
     setBulkWarningFile(null);
     setUploadInputKey((prev) => prev + 1);
     setPage(0);
-    loadUsers({ page: 0, search: '' });
+    loadUsers({ page: 0, search: '', dependencia: [] });
   };
 
   const handleExportUsuarios = async () => {
