@@ -10,10 +10,23 @@ if [[ ! -f "$ENV_FILE" ]]; then
   exit 1
 fi
 
-set -a
-# shellcheck disable=SC1090
-. "$ENV_FILE"
-set +a
+read_env_value() {
+  local key="$1"
+  local value
+  value="$(sed -n "s/^${key}=//p" "$ENV_FILE" | tail -n 1)"
+  value="${value%$'\r'}"
+  if [[ ${#value} -ge 2 && "${value:0:1}" == '"' && "${value: -1}" == '"' ]]; then
+    value="${value:1:${#value}-2}"
+  elif [[ ${#value} -ge 2 && "${value:0:1}" == "'" && "${value: -1}" == "'" ]]; then
+    value="${value:1:${#value}-2}"
+  fi
+  printf '%s' "$value"
+}
+
+SIAC_AUTOMATIC_BACKUP_ENABLED="$(read_env_value SIAC_AUTOMATIC_BACKUP_ENABLED)"
+SIAC_ALLOW_LEGACY_BACKUP_SCRIPT="$(read_env_value SIAC_ALLOW_LEGACY_BACKUP_SCRIPT)"
+SIAC_BACKUP_DIR="$(read_env_value SIAC_BACKUP_DIR)"
+SIAC_BACKUP_RETENTION_DAYS="$(read_env_value SIAC_BACKUP_RETENTION_DAYS)"
 
 # El programador integrado registra avance, validacion e historial en la
 # interfaz. Este respaldo legado queda solo como mecanismo de emergencia y no

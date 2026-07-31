@@ -10,13 +10,23 @@ if [[ ! -f "$ENV_FILE" ]]; then
   exit 1
 fi
 
-set -a
-# shellcheck disable=SC1090
-. "$ENV_FILE"
-set +a
+read_env_value() {
+  local key="$1"
+  local value
+  value="$(sed -n "s/^${key}=//p" "$ENV_FILE" | tail -n 1)"
+  value="${value%$'\r'}"
+  if [[ ${#value} -ge 2 && "${value:0:1}" == '"' && "${value: -1}" == '"' ]]; then
+    value="${value:1:${#value}-2}"
+  elif [[ ${#value} -ge 2 && "${value:0:1}" == "'" && "${value: -1}" == "'" ]]; then
+    value="${value:1:${#value}-2}"
+  fi
+  printf '%s' "$value"
+}
 
-BACKUP_DIR="${SIAC_BACKUP_DIR:-}"
-PASSWORD_FILE="${SIAC_RECOVERY_KIT_PASSWORD_FILE:-}"
+# No se ejecuta el .env como codigo shell: algunos valores institucionales
+# contienen espacios y todos deben tratarse como datos privados literales.
+BACKUP_DIR="$(read_env_value SIAC_BACKUP_DIR)"
+PASSWORD_FILE="$(read_env_value SIAC_RECOVERY_KIT_PASSWORD_FILE)"
 
 if [[ -z "$BACKUP_DIR" || "$BACKUP_DIR" != /* || "$BACKUP_DIR" == "/" || "$BACKUP_DIR" == "$PROJECT_DIR" ]]; then
   echo "SIAC_BACKUP_DIR debe ser una ruta absoluta y exclusiva para respaldos." >&2
