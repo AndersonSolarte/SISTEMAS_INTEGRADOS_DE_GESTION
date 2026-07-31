@@ -99,6 +99,8 @@ const backupPhaseLabels = {
   preparing: 'Preparando almacenamiento',
   generating: 'Copiando estructura y datos',
   validating: 'Validando integridad',
+  validating_database: 'Validando PostgreSQL',
+  packaging_files: 'Protegiendo archivos adjuntos',
   finalizing: 'Finalizando archivo',
   completed: 'Completada',
   failed: 'Fallida'
@@ -187,11 +189,20 @@ const BackupAutomationMonitor = ({ enqueueSnackbar, canManage = false }) => {
 
       <Paper elevation={0} sx={{ border: '1px solid #dbe5f2', borderRadius: 3, overflow: 'hidden', bgcolor: '#fff' }}>
         <Box sx={{ p: { xs: 1.6, md: 2.2 }, bgcolor: '#f8fbff' }}>
-          <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', sm: 'repeat(3,minmax(0,1fr))' }, gap: 1.2 }}>
+          <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', sm: 'repeat(2,minmax(0,1fr))', lg: 'repeat(4,minmax(0,1fr))' }, gap: 1.2 }}>
             {[
               { icon: <CloudDoneRoundedIcon />, title: 'Programación', value: stateLabel, helper: monitor?.configured ? 'Todos los días a las 6:00 p. m.' : 'Requiere configuración del servidor', color: stateColor },
               { icon: <ScheduleRoundedIcon />, title: 'Próxima ejecución', value: monitor?.enabled ? formatDateTime(monitor?.schedule?.nextRunAt) : 'Sin programación', helper: 'Hora de Colombia', color: '#2563eb' },
-              { icon: <HistoryRoundedIcon />, title: 'Última copia correcta', value: formatDateTime(monitor?.summary?.lastSuccessAt), helper: `${monitor?.summary?.successfulRuns || 0} correctas · ${monitor?.summary?.failedRuns || 0} fallidas`, color: '#7c3aed' }
+              { icon: <HistoryRoundedIcon />, title: 'Última copia correcta', value: formatDateTime(monitor?.summary?.lastSuccessAt), helper: `${monitor?.summary?.successfulRuns || 0} correctas · ${monitor?.summary?.failedRuns || 0} fallidas`, color: '#7c3aed' },
+              {
+                icon: <LockRoundedIcon />,
+                title: 'Kit privado cifrado',
+                value: formatDateTime(monitor?.privateRecoveryKit?.createdAt),
+                helper: monitor?.privateRecoveryKit
+                  ? `${formatBytes(monitor.privateRecoveryKit.sizeBytes)} · ${monitor.privateRecoveryKit.checksumAvailable ? 'Huella disponible' : 'Sin huella'}`
+                  : 'Pendiente de configurar en el servidor',
+                color: monitor?.privateRecoveryKit?.checksumAvailable ? '#0f766e' : '#d97706'
+              }
             ].map((item) => (
               <Box key={item.title} sx={{ p: 1.45, border: '1px solid #e2e8f0', borderRadius: 2.3, bgcolor: '#fff' }}>
                 <Stack direction="row" spacing={1.1} alignItems="center">
@@ -260,7 +271,7 @@ const BackupAutomationMonitor = ({ enqueueSnackbar, canManage = false }) => {
                     <TableCell>{formatBytes(run.sizeBytes)}</TableCell>
                     <TableCell sx={{ minWidth: 210 }}>
                       <Typography variant="body2" sx={{ color: failed ? '#be123c' : '#475569', fontWeight: failed ? 750 : 500 }}>
-                        {failed ? run.errorMessage : success ? 'Copia validada y disponible.' : backupPhaseLabels[run.phase] || 'Procesando'}
+                        {failed ? run.errorMessage : success ? (run.fileName?.endsWith('.siacbackup') ? 'Base y archivos validados.' : 'Copia PostgreSQL validada.') : backupPhaseLabels[run.phase] || 'Procesando'}
                       </Typography>
                     </TableCell>
                   </TableRow>
@@ -326,8 +337,8 @@ export function DatabaseBackupPanel({ enqueueSnackbar, canDownload = false, canR
     setDownloading(true);
     try {
       const response = await gestionInformacionService.downloadDatabaseDump(credentials);
-      saveResponseBlob(response, `sgc_completo_${new Date().toISOString().slice(0, 10)}.dump`);
-      enqueueSnackbar('Copia de PostgreSQL descargada correctamente', { variant: 'success' });
+      saveResponseBlob(response, `sgc_integral_${new Date().toISOString().slice(0, 10)}.siacbackup`);
+      enqueueSnackbar('Copia integral descargada correctamente', { variant: 'success' });
       setConfirmOpen(false);
       setCredentials({ googleCredential: '', turnstileToken: '' });
     } catch (error) {
@@ -373,7 +384,7 @@ export function DatabaseBackupPanel({ enqueueSnackbar, canDownload = false, canR
 
       <Box>
         <Typography variant="h6" sx={{ fontWeight: 900, color: '#0f172a', mb: 0.4 }}>Centro de respaldo</Typography>
-        <Typography variant="body2" sx={{ color: '#64748b', mb: 1.4 }}>Copia segura de toda la base de datos.</Typography>
+            <Typography variant="body2" sx={{ color: '#64748b', mb: 1.4 }}>Copia integral de PostgreSQL y archivos institucionales.</Typography>
         <Paper elevation={0} sx={{ overflow: 'hidden', border: '1px solid #bfdbfe', borderRadius: 3, background: 'linear-gradient(135deg,#f8fbff 0%,#eef4ff 100%)' }}>
           <Box sx={{ p: { xs: 2.2, md: 3 } }}>
             <Stack direction={{ xs: 'column', md: 'row' }} spacing={2.5} alignItems={{ xs: 'stretch', md: 'center' }} justifyContent="space-between">
@@ -385,7 +396,7 @@ export function DatabaseBackupPanel({ enqueueSnackbar, canDownload = false, canR
                     <Chip size="small" icon={<VerifiedUserRoundedIcon />} label="Acceso autorizado" sx={{ bgcolor: '#dcfce7', color: '#166534', fontWeight: 800 }} />
                   </Stack>
                   <Typography sx={{ color: '#475569', fontSize: 14.5 }}>
-                    Incluye estructura, relaciones y todos los registros.
+                    Incluye estructura, relaciones, registros, documentos, fotos, adjuntos y manifiesto de integridad.
                   </Typography>
                 </Box>
               </Stack>
@@ -478,15 +489,15 @@ export function DatabaseBackupPanel({ enqueueSnackbar, canDownload = false, canR
       </Dialog>
 
       <Dialog open={restoreOpen} onClose={closeRestore} fullWidth maxWidth="sm">
-        <DialogTitle sx={{ fontWeight: 900, color: '#0f172a' }}>Restaurar base de datos</DialogTitle>
+        <DialogTitle sx={{ fontWeight: 900, color: '#0f172a' }}>Restaurar copia del sistema</DialogTitle>
         <DialogContent dividers>
           <Alert severity="error" sx={{ mb: 2, borderRadius: 2 }}>
-            La copia reemplazará la información actual. El proceso se ejecutará en una sola transacción y no debe interrumpirse.
+            La copia integral reemplazará la base de datos y los archivos actuales. El proceso no debe interrumpirse.
           </Alert>
           <Stack spacing={1.6}>
             <Button variant="outlined" component="label" startIcon={<UploadFileRoundedIcon />} disabled={restoring} sx={{ py: 1.4, fontWeight: 850 }}>
-              {restoreFile ? restoreFile.name : 'Seleccionar copia .dump'}
-              <input hidden type="file" accept=".dump,.backup,application/octet-stream" onChange={(event) => setRestoreFile(event.target.files?.[0] || null)} />
+              {restoreFile ? restoreFile.name : 'Seleccionar copia .siacbackup o .dump'}
+              <input hidden type="file" accept=".siacbackup,.dump,.backup,application/octet-stream" onChange={(event) => setRestoreFile(event.target.files?.[0] || null)} />
             </Button>
             <Paper variant="outlined" sx={{ p: 1.5, borderRadius: 2, borderColor: restoreGoogleError ? '#fda4af' : restoreCredentials.googleCredential ? '#86efac' : '#cbd5e1', bgcolor: restoreCredentials.googleCredential ? '#f0fdf4' : '#f8fafc' }}>
               <Stack direction="row" spacing={1} alignItems="center" sx={{ mb: 1 }}>

@@ -1,5 +1,6 @@
 const fs = require('fs');
 const path = require('path');
+const crypto = require('crypto');
 const { spawn } = require('child_process');
 const XLSX = require('xlsx');
 const { QueryTypes } = require('sequelize');
@@ -12,8 +13,14 @@ const {
   getMonitorStatus,
   setPaused,
   isBackupRunning,
-  setBackupBlocked
+  setBackupBlocked,
+  getBackupFilePath
 } = require('../services/databaseBackupScheduler');
+const {
+  UPLOADS_ROOT,
+  runCommand: runArchiveCommand,
+  extractIntegralBundle
+} = require('../services/integralBackupService');
 
 const quoteIdentifier = (value) => `"${String(value).replace(/"/g, '""')}"`;
 
@@ -240,9 +247,78 @@ const validateTurnstileToken = async (req, res, expectedAction) => {
 let restoreRunning = false;
 let manualDumpRunning = false;
 
+const restoreDatabaseFile = async (dumpPath) => {
+  const pgRestore = findPgRestore();
+  await runProcess(pgRestore, ['--list', dumpPath]);
+  await runProcess(pgRestore, [
+    '--clean', '--if-exists', '--no-owner', '--no-privileges', '--exit-on-error', '--single-transaction',
+    '--host', process.env.DB_HOST || 'localhost',
+    '--port', String(process.env.DB_PORT || 5432),
+    '--username', process.env.DB_USER,
+    '--dbname', process.env.DB_NAME,
+    dumpPath
+  ], { env: { ...process.env, PGPASSWORD: process.env.DB_PASSWORD } });
+};
+
+const prepareUploadsReplacement = async (uploadsArchive, stagingRoot) => {
+  const restoredUploads = path.join(stagingRoot, 'restored-uploads');
+  const rollbackDirectory = path.join(UPLOADS_ROOT, `.restore-rollback-${crypto.randomUUID()}`);
+  fs.mkdirSync(restoredUploads, { recursive: true, mode: 0o700 });
+  fs.mkdirSync(rollbackDirectory, { recursive: true, mode: 0o700 });
+  await runArchiveCommand('tar', ['-xzf', uploadsArchive, '--no-same-owner', '--no-same-permissions', '-C', restoredUploads]);
+
+  const protectedNames = new Set(['temp', path.basename(stagingRoot), path.basename(rollbackDirectory)]);
+  const isInternalEntry = (name) => protectedNames.has(name) || /^\.(?:restore|backup)-/.test(name);
+  const previousEntries = fs.readdirSync(UPLOADS_ROOT).filter((name) => !isInternalEntry(name));
+  const replacementEntries = fs.readdirSync(restoredUploads).filter((name) => !isInternalEntry(name));
+  const installedEntries = [];
+  const movedPreviousEntries = [];
+
+  const rollback = () => {
+    installedEntries.slice().reverse().forEach((name) => {
+      const installedPath = path.join(UPLOADS_ROOT, name);
+      if (fs.existsSync(installedPath)) fs.rmSync(installedPath, { recursive: true, force: true });
+    });
+    movedPreviousEntries.slice().reverse().forEach((name) => {
+      const savedPath = path.join(rollbackDirectory, name);
+      if (fs.existsSync(savedPath)) fs.renameSync(savedPath, path.join(UPLOADS_ROOT, name));
+    });
+    fs.rmSync(rollbackDirectory, { recursive: true, force: true });
+  };
+
+  try {
+    previousEntries.forEach((name) => {
+      fs.renameSync(path.join(UPLOADS_ROOT, name), path.join(rollbackDirectory, name));
+      movedPreviousEntries.push(name);
+    });
+    replacementEntries.forEach((name) => {
+      fs.renameSync(path.join(restoredUploads, name), path.join(UPLOADS_ROOT, name));
+      installedEntries.push(name);
+    });
+  } catch (error) {
+    rollback();
+    throw error;
+  }
+
+  return {
+    rollback,
+    commit: () => {
+      try {
+        fs.rmSync(rollbackDirectory, { recursive: true, force: true });
+      } catch (error) {
+        // La restauracion ya fue confirmada. Una reserva pendiente se puede
+        // depurar despues sin convertir una recuperacion correcta en fallo.
+        console.warn('[database-restore] No fue posible depurar la reserva temporal:', error.message);
+      }
+    }
+  };
+};
+
 const restoreDatabaseDump = async (req, res) => {
   const uploadedPath = req.file?.path;
   let ownsRestoreLock = false;
+  let stagingRoot = '';
+  let uploadsReplacement = null;
   try {
     if (restoreRunning) return res.status(409).json({ success: false, message: 'Ya existe una restauración en curso' });
     if (isBackupRunning() || manualDumpRunning) return res.status(409).json({ success: false, message: 'Espere a que finalice la copia de seguridad en curso.' });
@@ -252,32 +328,45 @@ const restoreDatabaseDump = async (req, res) => {
     if (!(await validateTurnstileToken(req, res, 'database_restore'))) return null;
     if (!(await validateAuthorizedGoogleIdentity(req, res))) return null;
     if (!req.file || !uploadedPath) {
-      return res.status(400).json({ success: false, message: 'Debe seleccionar una copia .dump válida' });
+      return res.status(400).json({ success: false, message: 'Debe seleccionar una copia integral o .dump válida' });
     }
-    const extension = path.extname(String(req.file.originalname || '')).toLowerCase();
-    if (!['.dump', '.backup'].includes(extension)) {
-      return res.status(400).json({ success: false, message: 'Solo se admiten copias PostgreSQL .dump o .backup' });
-    }
-    const signature = Buffer.alloc(5);
-    const descriptor = fs.openSync(uploadedPath, 'r');
-    fs.readSync(descriptor, signature, 0, 5, 0);
-    fs.closeSync(descriptor);
-    if (signature.toString('ascii') !== 'PGDMP') {
-      return res.status(400).json({ success: false, message: 'El archivo no es una copia PostgreSQL válida' });
+    const originalName = String(req.file.originalname || '').toLowerCase();
+    const integral = originalName.endsWith('.siacbackup');
+    const legacy = originalName.endsWith('.dump') || originalName.endsWith('.backup');
+    if (!integral && !legacy) {
+      return res.status(400).json({ success: false, message: 'Formato no permitido. Use .siacbackup, .dump o .backup.' });
     }
 
-    const pgRestore = findPgRestore();
-    await runProcess(pgRestore, ['--list', uploadedPath]);
-    const args = [
-      '--clean', '--if-exists', '--no-owner', '--no-privileges', '--exit-on-error', '--single-transaction',
-      '--host', process.env.DB_HOST || 'localhost',
-      '--port', String(process.env.DB_PORT || 5432),
-      '--username', process.env.DB_USER,
-      '--dbname', process.env.DB_NAME,
-      uploadedPath
-    ];
-    await runProcess(pgRestore, args, { env: { ...process.env, PGPASSWORD: process.env.DB_PASSWORD } });
-    return res.json({ success: true, message: 'Base de datos restaurada correctamente. Debe iniciar sesión nuevamente.' });
+    let dumpPath = uploadedPath;
+    if (integral) {
+      stagingRoot = path.join(UPLOADS_ROOT, `.restore-stage-${crypto.randomUUID()}`);
+      const extracted = await extractIntegralBundle(uploadedPath, stagingRoot, { pgRestorePath: findPgRestore() });
+      dumpPath = extracted.dumpPath;
+      uploadsReplacement = await prepareUploadsReplacement(extracted.uploadsArchive, stagingRoot);
+    } else {
+      const signature = Buffer.alloc(5);
+      const descriptor = fs.openSync(uploadedPath, 'r');
+      try { fs.readSync(descriptor, signature, 0, 5, 0); } finally { fs.closeSync(descriptor); }
+      if (signature.toString('ascii') !== 'PGDMP') {
+        return res.status(400).json({ success: false, message: 'El archivo no es una copia PostgreSQL válida' });
+      }
+    }
+
+    try {
+      await restoreDatabaseFile(dumpPath);
+      uploadsReplacement?.commit();
+      uploadsReplacement = null;
+    } catch (error) {
+      uploadsReplacement?.rollback();
+      uploadsReplacement = null;
+      throw error;
+    }
+    return res.json({
+      success: true,
+      message: integral
+        ? 'Base de datos y archivos restaurados correctamente. Debe iniciar sesión nuevamente.'
+        : 'Base de datos restaurada correctamente. Debe iniciar sesión nuevamente.'
+    });
   } catch (error) {
     return res.status(500).json({ success: false, message: 'No fue posible restaurar la copia. La transacción fue revertida.', detail: error.message });
   } finally {
@@ -287,6 +376,9 @@ const restoreDatabaseDump = async (req, res) => {
     }
     if (uploadedPath && fs.existsSync(uploadedPath)) {
       try { fs.unlinkSync(uploadedPath); } catch (error) { /* limpieza no crítica */ }
+    }
+    if (stagingRoot && fs.existsSync(stagingRoot)) {
+      try { fs.rmSync(stagingRoot, { recursive: true, force: true }); } catch (error) { /* limpieza no crítica */ }
     }
   }
 };
@@ -298,44 +390,21 @@ const downloadDatabaseDump = async (req, res) => {
     return res.status(409).json({ success: false, message: 'Ya existe otra operación de base de datos en curso.' });
   }
   manualDumpRunning = true;
-  setBackupBlocked(true);
-
-  const stamp = new Date().toISOString().replace(/[:.]/g, '-');
-  const filename = `sgc_completo_${stamp}.dump`;
-  const args = [
-    '--format=custom', '--compress=6', '--no-owner', '--no-privileges',
-    '--host', process.env.DB_HOST || 'localhost',
-    '--port', String(process.env.DB_PORT || 5432),
-    '--username', process.env.DB_USER,
-    '--dbname', process.env.DB_NAME
-  ];
-  const child = spawn(findPgDump(), args, {
-    env: { ...process.env, PGPASSWORD: process.env.DB_PASSWORD },
-    windowsHide: true,
-    stdio: ['ignore', 'pipe', 'pipe']
-  });
-  let stderr = '';
-  let operationReleased = false;
-  const releaseOperation = () => {
-    if (operationReleased) return;
-    operationReleased = true;
+  try {
+    const run = await executeBackup({ trigger: 'download', requestedBy: req.user?.id });
+    const filename = run.file_name;
+    const filePath = getBackupFilePath(filename);
+    res.setHeader('Content-Type', 'application/octet-stream');
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+    return fs.createReadStream(filePath).pipe(res);
+  } catch (error) {
+    if (!res.headersSent) {
+      return res.status(error.status || 500).json({ success: false, message: error.message || 'No fue posible generar la copia integral' });
+    }
+    return res.destroy(error);
+  } finally {
     manualDumpRunning = false;
-    setBackupBlocked(false);
-  };
-  child.stderr.on('data', (chunk) => { stderr += chunk.toString(); });
-  child.on('error', (error) => {
-    releaseOperation();
-    if (!res.headersSent) res.status(500).json({ success: false, message: 'pg_dump no está disponible en el servidor', detail: error.message });
-    else res.destroy(error);
-  });
-  res.setHeader('Content-Type', 'application/octet-stream');
-  res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
-  child.stdout.pipe(res);
-  res.on('close', () => { if (!res.writableEnded && !child.killed) child.kill(); });
-  child.on('close', (code) => {
-    releaseOperation();
-    if (code !== 0 && !res.writableEnded) res.destroy(new Error(stderr || `pg_dump terminó con código ${code}`));
-  });
+  }
 };
 
 const getBackupMonitor = async (_req, res) => {

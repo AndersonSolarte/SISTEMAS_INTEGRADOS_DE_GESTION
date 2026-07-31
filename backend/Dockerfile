@@ -2,7 +2,7 @@ FROM node:20-alpine
 
 WORKDIR /app
 
-RUN apk add --no-cache libreoffice fontconfig ttf-dejavu postgresql16-client
+RUN apk add --no-cache libreoffice fontconfig ttf-dejavu postgresql16-client tar
 
 COPY package*.json ./
 RUN npm ci --omit=dev

@@ -15,9 +15,9 @@ $taskName = 'SIAC - Descargar copias de seguridad'
 $powerShellExe = (Get-Command powershell.exe).Source
 $arguments = "-NoProfile -NonInteractive -ExecutionPolicy Bypass -File `"$syncScript`" -ConfigPath `"$ConfigPath`""
 $action = New-ScheduledTaskAction -Execute $powerShellExe -Argument $arguments
-$trigger = New-ScheduledTaskTrigger -Daily -At '18:15'
+$trigger = New-ScheduledTaskTrigger -Daily -At '18:35'
 $settings = New-ScheduledTaskSettingsSet -StartWhenAvailable -WakeToRun -MultipleInstances IgnoreNew -ExecutionTimeLimit (New-TimeSpan -Hours 3)
 $principal = New-ScheduledTaskPrincipal -UserId "$env:USERDOMAIN\$env:USERNAME" -LogonType Interactive -RunLevel Limited
 
 Register-ScheduledTask -TaskName $taskName -Action $action -Trigger $trigger -Settings $settings -Principal $principal -Force | Out-Null
-Write-Output 'Tarea local instalada para las 18:15 y configurada para ejecutarse al volver a estar disponible.'
+Write-Output 'Tarea local instalada para las 18:35 y configurada para ejecutarse al volver a estar disponible.'

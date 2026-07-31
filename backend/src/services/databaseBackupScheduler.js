@@ -3,6 +3,7 @@ const path = require('path');
 const { spawn } = require('child_process');
 const { Op } = require('sequelize');
 const { DatabaseBackupRun, SystemSetting } = require('../models');
+const { createIntegralBundle, sha256File } = require('./integralBackupService');
 
 const SETTING_KEY = 'database_backup_automation';
 const SCHEDULE_HOUR = Math.min(23, Math.max(0, Number(process.env.SIAC_BACKUP_HOUR || 18)));
@@ -24,6 +25,8 @@ const storageDirectory = () => {
   if (process.platform === 'win32') return 'D:\\SIAC_COPIAS_DE_SEGURIDAD';
   return path.resolve(process.cwd(), 'backups');
 };
+
+const getBackupFilePath = (fileName) => path.join(storageDirectory(), path.basename(String(fileName || '')));
 
 const findExecutable = (kind) => {
   const isDump = kind === 'dump';
@@ -139,19 +142,24 @@ const executeBackup = async ({ trigger = 'manual', requestedBy = null } = {}) =>
       status: 'running', trigger, phase: 'preparing', progress: 4,
       started_at: startedAt, requested_by: requestedBy
     });
-    let partialPath = '';
+    let workDirectory = '';
+    let finalPath = '';
+    let bundleCreated = false;
     let progressTimer;
     try {
       const directory = storageDirectory();
       fs.mkdirSync(directory, { recursive: true, mode: 0o700 });
       fs.accessSync(directory, fs.constants.W_OK);
-      const stamp = new Intl.DateTimeFormat('en-CA', {
+      const stampParts = Object.fromEntries(new Intl.DateTimeFormat('en-CA', {
         timeZone: TIMEZONE, year: 'numeric', month: '2-digit', day: '2-digit',
         hour: '2-digit', minute: '2-digit', second: '2-digit', hourCycle: 'h23'
-      }).format(startedAt).replace(/[^0-9]/g, '-');
-      const filename = `sgc_completo_${stamp}.dump`;
-      const finalPath = path.join(directory, filename);
-      partialPath = `${finalPath}.partial`;
+      }).formatToParts(startedAt).filter((part) => part.type !== 'literal').map((part) => [part.type, part.value]));
+      const stamp = `${stampParts.year}-${stampParts.month}-${stampParts.day}_${stampParts.hour}-${stampParts.minute}-${stampParts.second}`;
+      const filename = `sgc_integral_${stamp}.siacbackup`;
+      finalPath = path.join(directory, filename);
+      workDirectory = path.join(directory, `.backup-work-${run.id}-${Date.now()}`);
+      fs.mkdirSync(workDirectory, { recursive: true, mode: 0o700 });
+      const dumpPath = path.join(workDirectory, 'database-source.dump');
       await run.update({ phase: 'generating', progress: 10, file_name: filename });
       progressTimer = setInterval(async () => {
         try {
@@ -168,14 +176,25 @@ const executeBackup = async ({ trigger = 'manual', requestedBy = null } = {}) =>
         '--username', process.env.DB_USER,
         '--dbname', process.env.DB_NAME
       ];
-      await spawnToFile(findExecutable('dump'), args, partialPath);
+      await spawnToFile(findExecutable('dump'), args, dumpPath);
       clearInterval(progressTimer);
       progressTimer = null;
-      await run.update({ phase: 'validating', progress: 94 });
-      await validateDump(partialPath);
+      await run.update({ phase: 'validating_database', progress: 82 });
+      await validateDump(dumpPath);
+      await run.update({ phase: 'packaging_files', progress: 88 });
+      await createIntegralBundle({
+        dumpPath,
+        bundlePath: finalPath,
+        workDirectory,
+        createdAt: startedAt,
+        databaseName: process.env.DB_NAME,
+        pgRestorePath: findExecutable('restore')
+      });
+      bundleCreated = true;
+      workDirectory = '';
       await run.update({ phase: 'finalizing', progress: 98 });
-      fs.renameSync(partialPath, finalPath);
-      partialPath = '';
+      const bundleSha256 = await sha256File(finalPath);
+      fs.writeFileSync(`${finalPath}.sha256`, `${bundleSha256}  ${filename}\n`, { mode: 0o600 });
       const stats = fs.statSync(finalPath);
       const finishedAt = new Date();
       await run.update({
@@ -186,8 +205,14 @@ const executeBackup = async ({ trigger = 'manual', requestedBy = null } = {}) =>
       return run;
     } catch (error) {
       if (progressTimer) clearInterval(progressTimer);
-      if (partialPath && fs.existsSync(partialPath)) {
-        try { fs.unlinkSync(partialPath); } catch (_cleanupError) { /* archivo parcial no reutilizable */ }
+      if (workDirectory && fs.existsSync(workDirectory)) {
+        try { fs.rmSync(workDirectory, { recursive: true, force: true }); } catch (_cleanupError) { /* limpieza no critica */ }
+      }
+      if (bundleCreated && finalPath && fs.existsSync(finalPath)) {
+        try { fs.rmSync(finalPath, { force: true }); } catch (_cleanupError) { /* limpieza no critica */ }
+      }
+      if (bundleCreated && finalPath && fs.existsSync(`${finalPath}.sha256`)) {
+        try { fs.rmSync(`${finalPath}.sha256`, { force: true }); } catch (_cleanupError) { /* limpieza no critica */ }
       }
       const finishedAt = new Date();
       await run.update({
@@ -220,6 +245,25 @@ const serializeRun = (row) => row ? {
   requestedBy: row.requested_by
 } : null;
 
+const getPrivateRecoveryKitStatus = () => {
+  const directory = storageDirectory();
+  if (!fs.existsSync(directory)) return null;
+  const candidates = fs.readdirSync(directory)
+    .filter((name) => /^siac_recovery_kit_[0-9-]+_[0-9-]+\.enc$/.test(name))
+    .map((name) => {
+      const filePath = path.join(directory, name);
+      const stats = fs.statSync(filePath);
+      return {
+        fileName: name,
+        createdAt: stats.mtime,
+        sizeBytes: stats.size,
+        checksumAvailable: fs.existsSync(`${filePath}.sha256`)
+      };
+    })
+    .sort((left, right) => right.createdAt.getTime() - left.createdAt.getTime());
+  return candidates[0] || null;
+};
+
 const getMonitorStatus = async () => {
   const { value } = await getSettings();
   const [historyRows, successfulRuns, failedRuns] = await Promise.all([
@@ -247,6 +291,7 @@ const getMonitorStatus = async () => {
       successfulRuns,
       failedRuns
     },
+    privateRecoveryKit: getPrivateRecoveryKitStatus(),
     history: historyRows.map(serializeRun)
   };
 };
@@ -303,5 +348,6 @@ module.exports = {
   startDatabaseBackupScheduler,
   describeFailure,
   isBackupRunning,
-  setBackupBlocked
+  setBackupBlocked,
+  getBackupFilePath
 };
