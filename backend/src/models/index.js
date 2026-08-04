@@ -58,6 +58,7 @@ const SecurityFinding = require('./SecurityFinding');
 const SecurityRemediationProposal = require('./SecurityRemediationProposal');
 const SecurityFindingComment = require('./SecurityFindingComment');
 const ReporteSalidaSolicitud = require('./ReporteSalidaSolicitud');
+const DesplazamientoViaticosSolicitud = require('./DesplazamientoViaticosSolicitud');
 const SystemSetting = require('./SystemSetting');
 const DatabaseBackupRun = require('./DatabaseBackupRun');
 
@@ -83,6 +84,10 @@ User.hasMany(ReporteSalidaSolicitud, { foreignKey: 'jefe_inmediato_user_id', as:
 ReporteSalidaSolicitud.belongsTo(User, { foreignKey: 'jefe_inmediato_user_id', as: 'jefeInmediatoUser' });
 Documento.hasMany(ReporteSalidaSolicitud, { foreignKey: 'documento_id', as: 'reporteSalidaSolicitudes' });
 ReporteSalidaSolicitud.belongsTo(Documento, { foreignKey: 'documento_id', as: 'documento' });
+User.hasMany(DesplazamientoViaticosSolicitud, { foreignKey: 'user_id', as: 'desplazamientosViaticos' });
+DesplazamientoViaticosSolicitud.belongsTo(User, { foreignKey: 'user_id', as: 'solicitanteUser' });
+Documento.hasMany(DesplazamientoViaticosSolicitud, { foreignKey: 'documento_id', as: 'desplazamientosViaticos' });
+DesplazamientoViaticosSolicitud.belongsTo(Documento, { foreignKey: 'documento_id', as: 'documento' });
 
 // NUEVAS RELACIONES - Auditoría de documentos
 User.hasMany(Documento, { foreignKey: 'creado_por', as: 'documentosCreados' });
@@ -333,6 +338,7 @@ module.exports = {
   SecurityRemediationProposal,
   SecurityFindingComment,
   ReporteSalidaSolicitud,
+  DesplazamientoViaticosSolicitud,
   SystemSetting,
   DatabaseBackupRun
 };

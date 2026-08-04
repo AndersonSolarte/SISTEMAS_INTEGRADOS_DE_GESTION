@@ -38,9 +38,12 @@ import CheckCircleOutlineIcon from '@mui/icons-material/CheckCircleOutline';
 import UploadFileIcon from '@mui/icons-material/UploadFile';
 import CloseIcon from '@mui/icons-material/Close';
 import reporteSalidaService from '../../services/reporteSalidaService';
+import desplazamientoViaticosService from '../../services/desplazamientoViaticosService';
+import { DESPLAZAMIENTO_VIATICOS_ENABLED } from '../../config/reporteSalida';
 import CategoriaTabs from './CategoriaTabs';
 import CamposDuracionSalida, { TimeAutocomplete } from './CamposDuracionSalida';
 import DuracionSelector from './DuracionSelector';
+import SolicitudViaticosFields, { ViaticosQuestion } from './SolicitudViaticosFields';
 
 const INITIAL_FORM = {
   personal: { nombre: '', documento: '', correo: '' },
@@ -78,6 +81,22 @@ const INITIAL_FORM = {
     oficioDespedida: 'Cordialmente,',
     oficioAnexos: '',
     oficioProyecto: ''
+  },
+  viaticos: {
+    requiereViaticos: null,
+    lugarVisitar: '',
+    fechaEvento: '',
+    numeroDiasSolicitados: '',
+    objetoComision: '',
+    observacionesEspeciales: '',
+    centroCosto: '',
+    alojamiento: '',
+    transporte: '',
+    tipoCuenta: '',
+    entidadBancariaOpcion: '',
+    entidadBancaria: '',
+    numeroCuenta: '',
+    autorizacionAceptada: false
   },
   reposicion: { fecha: '', fechaFin: '', horaInicio: '', horaFin: '', observacion: '' }
 };
@@ -725,6 +744,16 @@ function ReporteSalidaFormDialog({ open, documento, user, onClose, onSubmitted }
     return { category: activeCategory, subtype: tipo, otraDescripcion: '' };
   }, [form.salida.tipo, activeCategory]);
 
+  const shouldAskViaticos = useMemo(() => {
+    if (!DESPLAZAMIENTO_VIATICOS_ENABLED) return false;
+    if (isSalidaMultiple || category !== 'propias_cargo' || subtype === 'salida_campus') return false;
+    const alcance = normalizeOption(form.salida.alcance);
+    if (alcance === 'nacional' || alcance === 'internacional') return true;
+    return alcance === 'regional' && Boolean(form.salida.municipio) && normalizeOption(form.salida.municipio) !== 'pasto';
+  }, [category, form.salida.alcance, form.salida.municipio, isSalidaMultiple, subtype]);
+
+  const requiresViaticosFlow = shouldAskViaticos && form.viaticos?.requiereViaticos === true;
+
   const lastGeneratedTemplateRef = useRef('');
 
   useEffect(() => {
@@ -1036,7 +1065,7 @@ function ReporteSalidaFormDialog({ open, documento, user, onClose, onSubmitted }
       });
     } else {
       if (!form.laboral.dependencia) issues.push('Seleccione la dependencia del/de la colaborador(a).');
-      if (isOficioSolicitud && !form.laboral.vicerrectoria) issues.push('Seleccione la Vicerrectoría / Rectoría del/de la colaborador(a).');
+      if ((isOficioSolicitud || requiresViaticosFlow) && !form.laboral.vicerrectoria) issues.push('Seleccione la Vicerrectoría / Rectoría del/de la colaborador(a).');
       if (!form.laboral.cargo) issues.push('Seleccione el cargo del/de la colaborador(a).');
       if (!jefe) issues.push('Seleccione el jefe inmediato que aprobara la solicitud.');
       else if (!jefe.email) issues.push('El jefe inmediato seleccionado no tiene correo registrado.');
@@ -1076,6 +1105,31 @@ function ReporteSalidaFormDialog({ open, documento, user, onClose, onSubmitted }
       }
     }
 
+    if (shouldAskViaticos && form.viaticos?.requiereViaticos == null) {
+      issues.push('Indique si el desplazamiento requiere viáticos.');
+    }
+    if (requiresViaticosFlow) {
+      const requiredViaticosFields = [
+        ['lugarVisitar', 'lugar a visitar'],
+        ['fechaEvento', 'fecha del evento'],
+        ['numeroDiasSolicitados', 'número de días solicitados'],
+        ['objetoComision', 'objeto de la comisión'],
+        ['centroCosto', 'centro de costos'],
+        ['alojamiento', 'alojamiento'],
+        ['transporte', 'transporte'],
+        ['tipoCuenta', 'tipo de cuenta'],
+        ['entidadBancaria', 'entidad bancaria'],
+        ['numeroCuenta', 'número de cuenta']
+      ];
+      requiredViaticosFields.forEach(([field, label]) => {
+        if (!String(form.viaticos?.[field] || '').trim()) issues.push(`Complete ${label} para la solicitud de viáticos.`);
+      });
+      if (!Number.isInteger(Number(form.viaticos?.numeroDiasSolicitados)) || Number(form.viaticos?.numeroDiasSolicitados) < 1) {
+        issues.push('Digite una cantidad válida de días solicitados.');
+      }
+      if (!form.viaticos?.autorizacionAceptada) issues.push('Debe aceptar la autorización de descuento para solicitar viáticos.');
+    }
+
     if (form.salida.duracionTipo === 'menos_media_jornada' && subtype !== 'diligencia_personal' && subtype !== 'otra') {
       if (!form.salida.motivo || !form.salida.motivo.trim()) {
         issues.push('El campo Motivo / observación es obligatorio.');
@@ -1084,11 +1138,11 @@ function ReporteSalidaFormDialog({ open, documento, user, onClose, onSubmitted }
 
 
 
-    if (form.salida.duracionTipo === '1_2_dias' && ![1, 2].includes(Number(form.salida.duracionDias))) {
+    if (!requiresViaticosFlow && form.salida.duracionTipo === '1_2_dias' && ![1, 2].includes(Number(form.salida.duracionDias))) {
       issues.push('Seleccione si el permiso será de 1 o 2 días.');
     }
 
-    if (form.salida.duracionTipo === '3_mas_dias') {
+    if (!requiresViaticosFlow && form.salida.duracionTipo === '3_mas_dias') {
       const duracionDias = Number(form.salida.duracionDias);
       if (!Number.isInteger(duracionDias) || duracionDias < 3) {
         issues.push('Digite una cantidad de días igual o mayor a 3.');
@@ -1163,6 +1217,7 @@ function ReporteSalidaFormDialog({ open, documento, user, onClose, onSubmitted }
     form.laboral.cargo,
     form.laboral.dependencia,
     form.laboral.vicerrectoria,
+    form.viaticos,
     form.salida.fecha,
     form.salida.fechaRegreso,
     form.salida.horaFin,
@@ -1181,6 +1236,8 @@ function ReporteSalidaFormDialog({ open, documento, user, onClose, onSubmitted }
     salidaRangeIssue,
     adjuntoFile,
     noCuentaAdjuntoSalud,
+    requiresViaticosFlow,
+    shouldAskViaticos,
     form.salida.motivo,
     form.salida.tiempoReponerHoras,
     form.salida.entidadDestino,
@@ -1307,6 +1364,27 @@ function ReporteSalidaFormDialog({ open, documento, user, onClose, onSubmitted }
     }));
   };
 
+  const updateViaticos = (key, value) => {
+    setForm((prev) => ({ ...prev, viaticos: { ...prev.viaticos, [key]: value } }));
+  };
+
+  const handleViaticosAnswer = (requires) => {
+    setForm((prev) => {
+      const destino = [prev.salida.entidadDestino, prev.salida.municipio || prev.salida.pais].filter(Boolean).join(' - ');
+      return {
+        ...prev,
+        viaticos: {
+          ...prev.viaticos,
+          requiereViaticos: requires,
+          numeroDiasSolicitados: requires ? (prev.viaticos.numeroDiasSolicitados || '1') : prev.viaticos.numeroDiasSolicitados,
+          lugarVisitar: prev.viaticos.lugarVisitar || destino,
+          fechaEvento: prev.viaticos.fechaEvento || prev.salida.fecha || '',
+          objetoComision: prev.viaticos.objetoComision || prev.salida.motivo || ''
+        }
+      };
+    });
+  };
+
   const copyDirectFormUrl = async () => {
     if (!directFormUrl) return;
     try {
@@ -1349,18 +1427,30 @@ function ReporteSalidaFormDialog({ open, documento, user, onClose, onSubmitted }
         noCuentaAdjunto: category === 'salud' ? noCuentaAdjuntoSalud : false,
         declaracionSinAdjunto: category === 'salud' && noCuentaAdjuntoSalud ? DECLARACION_SIN_ADJUNTO_SALUD : ''
       };
+      if (!requiresViaticosFlow) delete payload.viaticos;
       
       if (adjuntoFile && !(category === 'salud' && noCuentaAdjuntoSalud)) {
         const formData = new FormData();
         formData.append('adjunto', adjuntoFile);
-        const uploadRes = await reporteSalidaService.uploadAdjunto(formData);
+        const uploadRes = requiresViaticosFlow
+          ? await desplazamientoViaticosService.uploadAdjunto(formData)
+          : await reporteSalidaService.uploadAdjunto(formData);
         if (uploadRes.success && uploadRes.filename) {
-          payload.datos_formulario = payload.datos_formulario || {};
-          payload.datos_formulario.adjunto_path = uploadRes.filename;
+          if (requiresViaticosFlow) {
+            payload.viaticos = {
+              ...payload.viaticos,
+              soporteAdjunto: { filename: uploadRes.filename, originalName: uploadRes.originalName || adjuntoFile.name }
+            };
+          } else {
+            payload.datos_formulario = payload.datos_formulario || {};
+            payload.datos_formulario.adjunto_path = uploadRes.filename;
+          }
         }
       }
       
-      const response = await reporteSalidaService.radicarSolicitud(payload);
+      const response = requiresViaticosFlow
+        ? await desplazamientoViaticosService.radicarSolicitud(payload)
+        : await reporteSalidaService.radicarSolicitud(payload);
       setSuccessResponse(response);
       setShowSuccessModal(true);
     } catch (error) {
@@ -2185,29 +2275,58 @@ function ReporteSalidaFormDialog({ open, documento, user, onClose, onSubmitted }
                 </Box>
               )}
 
-              <DuracionSelector
-                salida={form.salida}
-                fieldSx={duracionDiasFieldSx}
-                onChange={(field, value) => update('salida', field, value)}
-              />
+              {shouldAskViaticos && (
+                <ViaticosQuestion value={form.viaticos?.requiereViaticos} onChange={handleViaticosAnswer} />
+              )}
+
+              {requiresViaticosFlow && (
+                <SolicitudViaticosFields
+                  viaticos={form.viaticos || INITIAL_FORM.viaticos}
+                  salida={form.salida}
+                  onChange={updateViaticos}
+                  onSalidaChange={(field, value) => update('salida', field, value)}
+                  onObjetoChange={(value) => {
+                    updateViaticos('objetoComision', value);
+                    update('salida', 'motivo', value);
+                  }}
+                  inputSx={inputSx}
+                  todayString={todayString}
+                  TimeFieldComponent={TimeAutocomplete}
+                  horaSalidaOptions={horaSalidaOptions}
+                  horaRegresoOptions={horaRegresoOptions}
+                  convert24To12={convert24To12}
+                  isPastTimeError={isPastTimeError}
+                  salidaRangeIssue={salidaRangeIssue}
+                />
+              )}
+
+              {!requiresViaticosFlow && (
+                <DuracionSelector
+                  salida={form.salida}
+                  fieldSx={duracionDiasFieldSx}
+                  onChange={(field, value) => update('salida', field, value)}
+                />
+              )}
 
 
 
-              <CamposDuracionSalida
-                category={category}
-                convert24To12={convert24To12}
-                form={form}
-                horaRegresoOptions={horaRegresoOptions}
-                horaSalidaOptions={horaSalidaOptions}
-                inputSx={inputSx}
-                isPastTimeError={isPastTimeError}
-                responsiveFieldGrid={responsiveFieldGrid}
-                salidaRangeIssue={salidaRangeIssue}
-                shouldRequestReposicionHoras={shouldRequestReposicionHoras}
-                subtype={subtype}
-                todayString={todayString}
-                update={update}
-              />
+              {!requiresViaticosFlow && (
+                <CamposDuracionSalida
+                  category={category}
+                  convert24To12={convert24To12}
+                  form={form}
+                  horaRegresoOptions={horaRegresoOptions}
+                  horaSalidaOptions={horaSalidaOptions}
+                  inputSx={inputSx}
+                  isPastTimeError={isPastTimeError}
+                  responsiveFieldGrid={responsiveFieldGrid}
+                  salidaRangeIssue={salidaRangeIssue}
+                  shouldRequestReposicionHoras={shouldRequestReposicionHoras}
+                  subtype={subtype}
+                  todayString={todayString}
+                  update={update}
+                />
+              )}
 
               {subtype === 'urgencia_medica' && (
                 <Alert severity="info" sx={{ mt: 2, borderRadius: 2 }}>
@@ -2345,7 +2464,7 @@ function ReporteSalidaFormDialog({ open, documento, user, onClose, onSubmitted }
                   )}
                 </Box>
               )}
-              {form.salida.duracionTipo === 'menos_media_jornada' && subtype !== 'otra' && (
+              {!requiresViaticosFlow && form.salida.duracionTipo === 'menos_media_jornada' && subtype !== 'otra' && (
                 <Box sx={{ mt: 1.5, display: 'flex', alignItems: 'center', gap: 1 }}>
                   <TextField
                     sx={motivoInputSx}

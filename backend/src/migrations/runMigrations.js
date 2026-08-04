@@ -389,6 +389,7 @@ const runMigrations = async () => {
     await models.SecurityFinding.sync();
     await models.SecurityRemediationProposal.sync();
     await models.SecurityFindingComment.sync();
+    await models.DesplazamientoViaticosSolicitud.sync();
     await models.SystemSetting.sync();
     await models.DatabaseBackupRun.sync();
     await ensureReporteSalidaAdminBossSupport(qi);

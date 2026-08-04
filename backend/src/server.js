@@ -56,6 +56,7 @@ app.use('/api/autoevaluacion/instrumentos', require('./routes/instrumentosRoutes
 app.use('/api/public/instrumentos', require('./routes/publicInstrumentosRoutes'));
 app.use('/api/security', require('./routes/securityRoutes'));
 app.use('/api/reporte-salida', require('./routes/reporteSalidaRoutes'));
+app.use('/api/desplazamientos-viaticos', require('./routes/desplazamientoViaticosRoutes'));
 app.use('/api/planeacion/gestion-informacion/saber-pro', require('./routes/saberProAnalyticsRoutes'));
 app.use('/api/planeacion/gestion-informacion/saber-pro/consulta', require('./routes/consultaValidacionRoutes'));
 app.use('/api/admin/activity', require('./routes/activityRoutes'));
@@ -295,9 +296,11 @@ testConnection()
       await SecurityRemediationProposal.sync();
       await SecurityFindingComment.sync();
       const ReporteSalidaSolicitud = require('./models/ReporteSalidaSolicitud');
+      const DesplazamientoViaticosSolicitud = require('./models/DesplazamientoViaticosSolicitud');
       const SystemSetting = require('./models/SystemSetting');
       const DatabaseBackupRun = require('./models/DatabaseBackupRun');
       await ReporteSalidaSolicitud.sync();
+      await DesplazamientoViaticosSolicitud.sync();
       const reporteSalidaTableName = 'reporte_salida_solicitudes';
       let reporteSalidaTable = await qi.describeTable(reporteSalidaTableName).catch(() => ({}));
       const ensureReporteSalidaColumn = async (column, definition) => {

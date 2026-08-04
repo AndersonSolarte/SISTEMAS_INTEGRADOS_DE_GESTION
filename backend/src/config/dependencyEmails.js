@@ -36,15 +36,16 @@ const DEPENDENCY_EMAILS_RAW = {
   "Programa Academico - Licenciatura en Educacion fisica": "edufisica@unicesmag.edu.co",
   "Programa Academico - Licenciatura en Quimica": "lic.quimica@unicesmag.edu.co",
   "Programa Academico -Psicologia": "psicologia@unicesmag.edu.co",
-  "Programa Academico- Departamento de Ciencias Basicas": "ciencias.basicas@unicesmag.edu.co",
-  "Programa Academico- Departamento de Humanidades": "humanidades@unicesmag.edu.co",
+  "Departamento de Ciencias Basicas": "ciencias.basicas@unicesmag.edu.co",
+  "Departamento de Humanidades": "humanidades@unicesmag.edu.co",
   "Rectoria": "rectoria@unicesmag.edu.co",
   "Secretaria General": "secregen@unicesmag.edu.co",
   "Tecnología En Marketing Digital": "admon@unicesmag.edu.co",
   "Vicerrectoria Academica": "viceacad@unicesmag.edu.co",
   "Vicerrectoria Financiera y de Desarrollo Institucional": "viceadfin@unicesmag.edu.co",
   "Vicerrectoria de Investigacion y Extension": "viceinvestiga@unicesmag.edu.co",
-  "Vicerrectoría para la Evangelizacion de las Culturas": "vicebien@unicesmag.edu.co"
+  "Vicerrectoría para la Evangelizacion de las Culturas": "vicebien@unicesmag.edu.co",
+  "Área de Pastoral Franciscano Capuchino": "pastoral@unicesmag.edu.co"
 };
 
 const normalizeKey = (str) => {
