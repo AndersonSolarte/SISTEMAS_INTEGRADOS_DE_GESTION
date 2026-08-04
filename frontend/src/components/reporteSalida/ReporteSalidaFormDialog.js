@@ -1299,18 +1299,32 @@ function ReporteSalidaFormDialog({ open, documento, user, onClose, onSubmitted }
     if (!laboralRows.length) return;
     const depNormalized = normalizeOption(form.laboral.dependencia);
     const cargoNormalized = normalizeOption(form.laboral.cargo);
+    const currentUserId = Number(user?.id || 0);
+    const currentDocument = normalizeOption(user?.username);
+    const currentEmail = normalizeOption(user?.email);
 
-    const matchedRow = laboralRows.find(
-      (row) => normalizeOption(row.dependencia) === depNormalized && normalizeOption(row.cargo) === cargoNormalized
-    );
+    const matchingLaboralRows = laboralRows.filter((row) => (
+      normalizeOption(row.dependencia) === depNormalized
+      && normalizeOption(row.cargo) === cargoNormalized
+    ));
+    const currentEmployeeRow = matchingLaboralRows.find((row) => (
+      (currentUserId > 0 && Number(row.userId || 0) === currentUserId)
+      || (currentDocument && normalizeOption(row.documento) === currentDocument)
+      || (currentEmail && normalizeOption(row.email) === currentEmail)
+    ));
+    const matchedRow = currentEmployeeRow || matchingLaboralRows[0];
 
     if (matchedRow && matchedRow.jefe_inmediato) {
       if (!form.laboral.vicerrectoria && matchedRow.vicerrectoria) {
         update('laboral', 'vicerrectoria', matchedRow.vicerrectoria);
       }
       const jefeName = matchedRow.jefe_inmediato;
+      if (normalizeOption(jefeName) === normalizeOption(user?.nombre)) {
+        setJefe(null);
+        return;
+      }
       const matchedBoss = jefes.find(
-        (item) => normalizeOption(item.jefe_inmediato || item.nombre) === normalizeOption(jefeName)
+        (item) => normalizeOption(item.nombre || item.jefe_inmediato) === normalizeOption(jefeName)
       );
       if (matchedBoss) {
         setJefe(matchedBoss);
@@ -1328,12 +1342,12 @@ function ReporteSalidaFormDialog({ open, documento, user, onClose, onSubmitted }
         });
       }
     }
-  }, [form.laboral.dependencia, form.laboral.cargo, form.laboral.vicerrectoria, laboralRows, jefes]);
+  }, [form.laboral.dependencia, form.laboral.cargo, form.laboral.vicerrectoria, laboralRows, jefes, user?.id, user?.username, user?.email, user?.nombre]);
 
   useEffect(() => {
     if (jefe && !jefe.email && jefes.length > 0) {
       const matchedBoss = jefes.find(
-        (item) => normalizeOption(item.jefe_inmediato || item.nombre) === normalizeOption(jefe.nombre)
+        (item) => normalizeOption(item.nombre || item.jefe_inmediato) === normalizeOption(jefe.nombre)
       );
       if (matchedBoss) {
         setJefe(matchedBoss);
