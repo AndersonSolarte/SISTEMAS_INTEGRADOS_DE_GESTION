@@ -324,6 +324,7 @@ function GestionUsuarios() {
   const [page, setPage] = useState(0);
   const [rowsPerPage, setRowsPerPage] = useState(10);
   const [total, setTotal] = useState(0);
+  const [systemTotal, setSystemTotal] = useState(null);
     const [search, setSearch] = useState('');
   const [filterDependencia, setFilterDependencia] = useState([]);
   const searchRef = useRef('');
@@ -516,6 +517,15 @@ function GestionUsuarios() {
   const cargoOptions = useMemo(() => mergeUniqueOptions(fieldSuggestions.cargos, suggestionRows, 'cargo'), [fieldSuggestions.cargos, mergeUniqueOptions, suggestionRows]);
   const jefeInmediatoOptions = useMemo(() => mergeUniqueOptions(fieldSuggestions.jefesInmediatos, suggestionRows, 'jefe_inmediato'), [fieldSuggestions.jefesInmediatos, mergeUniqueOptions, suggestionRows]);
 
+  const loadSystemTotal = useCallback(async () => {
+    try {
+      const response = await userService.getUsers({ page: 1, limit: 1 });
+      setSystemTotal(response.data.pagination.total);
+    } catch (error) {
+      // La tabla conserva su funcionamiento aunque el indicador no pueda actualizarse.
+    }
+  }, []);
+
   const loadUsers = useCallback(async (overrides = {}) => {
     const nextPage = Object.prototype.hasOwnProperty.call(overrides, 'page') ? overrides.page : page;
     const nextLimit = Object.prototype.hasOwnProperty.call(overrides, 'rowsPerPage') ? overrides.rowsPerPage : rowsPerPage;
@@ -548,6 +558,10 @@ function GestionUsuarios() {
   useEffect(() => {
     loadUsers();
   }, [loadUsers]);
+
+  useEffect(() => {
+    loadSystemTotal();
+  }, [loadSystemTotal]);
 
   useEffect(() => {
     searchRef.current = search;
@@ -721,6 +735,7 @@ function GestionUsuarios() {
       }
       handleCloseDialog();
       loadUsers();
+      loadSystemTotal();
     } catch (error) {
       enqueueSnackbar(error.response?.data?.message || 'Error al guardar usuario', { variant: 'error' });
     }
@@ -745,6 +760,8 @@ function GestionUsuarios() {
     try {
       const response = await userService.deleteUser(user.id);
       const deletedPhysically = response?.data?.deletedPhysically !== false;
+
+      await loadSystemTotal();
 
       enqueueSnackbar(
         response.message || (deletedPhysically ? 'Usuario eliminado' : 'Usuario retirado'),
@@ -875,6 +892,7 @@ function GestionUsuarios() {
         setClearConfirmText('');
         setPage(0);
         await loadUsers({ page: 0, search: '' });
+        await loadSystemTotal();
       } else {
         enqueueSnackbar(res.message || 'Error al limpiar usuarios', { variant: 'error' });
       }
@@ -908,6 +926,7 @@ function GestionUsuarios() {
     setSearch('');
     setPage(0);
     await loadUsers({ page: 0, search: '' });
+    await loadSystemTotal();
   };
 
   const handleClearTools = () => {
@@ -2022,6 +2041,46 @@ function GestionUsuarios() {
             onChange={setFilterDependencia}
             placeholder="Buscar dependencia..."
           />
+
+          <Paper
+            elevation={0}
+            aria-label="Total de usuarios registrados en el sistema"
+            sx={{
+              minWidth: { xs: '100%', md: 190 },
+              px: 1.7,
+              py: 0.85,
+              borderRadius: 2,
+              border: '1px solid #bfdbfe',
+              background: 'linear-gradient(135deg, #eff6ff 0%, #ffffff 58%, #eef2ff 100%)',
+              boxShadow: '0 5px 16px rgba(37, 99, 235, 0.10)'
+            }}
+          >
+            <Stack direction="row" spacing={1.2} alignItems="center">
+              <Box
+                sx={{
+                  width: 36,
+                  height: 36,
+                  flexShrink: 0,
+                  display: 'grid',
+                  placeItems: 'center',
+                  borderRadius: 1.5,
+                  color: '#ffffff',
+                  background: 'linear-gradient(135deg, #2563eb 0%, #1e40af 100%)',
+                  boxShadow: '0 4px 10px rgba(37, 99, 235, 0.24)'
+                }}
+              >
+                <GroupIcon sx={{ fontSize: 21 }} />
+              </Box>
+              <Box sx={{ minWidth: 0 }}>
+                <Typography sx={{ color: '#64748b', fontSize: 10.5, fontWeight: 800, lineHeight: 1.15, textTransform: 'uppercase', letterSpacing: 0.55 }}>
+                  Usuarios registrados
+                </Typography>
+                <Typography sx={{ color: '#0f2f6d', fontSize: 22, fontWeight: 950, lineHeight: 1.15, fontVariantNumeric: 'tabular-nums' }}>
+                  {systemTotal === null ? '—' : systemTotal.toLocaleString('es-CO')}
+                </Typography>
+              </Box>
+            </Stack>
+          </Paper>
 
           { (isFullAdminUser || currentUser?.role === ROLES.GESTION_PROCESOS) && (
             <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1.5} alignItems="center" sx={{ width: { xs: '100%', md: 'auto' } }}>

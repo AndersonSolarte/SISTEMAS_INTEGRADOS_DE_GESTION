@@ -296,7 +296,11 @@ const getJefeCopyRecipientEmails = (solicitud = {}) => {
     pushEmail('jcnandar@unicesmag.edu.co');
   }
 
-  if (primaryEmail) pushEmail(primaryEmail);
+  const isAcademicVicerrectora = jefeName.includes('sandra lucia bolanos delgado') ||
+    sameExactEmail(primaryEmail, 'sbolanos@unicesmag.edu.co') ||
+    sameExactEmail(primaryEmail, ACADEMIC_VICERRECTORIA_EMAIL);
+
+  if (primaryEmail && !isAcademicVicerrectora) pushEmail(primaryEmail);
 
   const initialEmails = getInitialApprovalRecipientEmails(solicitud);
   if (Array.isArray(initialEmails)) {
@@ -2487,7 +2491,8 @@ const resolveJefeForParticipant = async (p, userRows, rhRows) => {
 };
 
 const sendJefeGroupRadicacionNotificationEmail = async (solicitud, jefeSnapshot, allParticipants) => {
-  if (!jefeSnapshot || !jefeSnapshot.email) return { success: false, error: 'No email' };
+  const recipientEmail = getOfficialAuthorityEmailForActor(jefeSnapshot) || jefeSnapshot?.email || '';
+  if (!jefeSnapshot || !recipientEmail) return { success: false, error: 'No email' };
   
   const solicitante = solicitud.solicitante_snapshot || {};
   const salida = solicitud.datos_formulario?.salida || {};
@@ -2573,7 +2578,7 @@ const sendJefeGroupRadicacionNotificationEmail = async (solicitud, jefeSnapshot,
   });
 
   return sendInstitutionalEmail({
-    to: jefeSnapshot.email,
+    to: recipientEmail,
     subject,
     text: `Su colaborador(a) ${solicitante.nombre} participará en una salida grupal. Aprobación a cargo de Gestion del Talento Humano y/o SST.`,
     html
