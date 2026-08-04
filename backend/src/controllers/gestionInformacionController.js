@@ -879,9 +879,9 @@ const GEOREFERENCIA_STRUCTURE_ROWS = [
 const resolveGeorreferenciaSubcategory = () => GEOREFERENCIA_CANONICAL_SUBCATEGORY;
 
 const POBLACIONAL_TEMPLATE_HEADERS = {
-  Inscritos: ['AÃƒÆ’Ã¢â‚¬ËœO', 'IES', 'DOCUMENTO', 'ID TIPO DOCUMENTO', 'PRIMER NOMBRE', 'SEGUNDO NOMBRE', 'PRIMER APELLIDO', 'SEGUNDO APELLIDO', 'PROGRAMA', 'GENERO BIOLOGICO', 'CONTEO', 'PERIODO', 'FACULTAD'],
-  Admitidos: ['AÃƒÆ’Ã¢â‚¬ËœO', 'NOMBRE IES', 'PROGRAMA', 'TIPO DOCUMENTO', 'NÃƒÆ’Ã…Â¡MERO DOCUMENTO', 'GENERO BIOLÃƒÆ’Ã¢â‚¬Å“GICO', 'CONTEO', 'PERIODO', 'FACULTAD'],
-  'Primer Curso': ['AÃƒÆ’Ã¢â‚¬ËœO', 'NOMBRE IES', 'TIPO DOCUMENTO', 'NUMERO DOCUMENTO', 'PRIMER NOMBRE', 'SEGUNDO NOMBRE', 'PRIMER APELLIDO', 'SEGUNDO APELLIDO', 'PROGRAMA', 'GRUPO ÃƒÆ’Ã¢â‚¬Â°TNICO', 'PUEBLO INDIGENA', 'COMUNIDAD NEGRA', 'CAPACIDAD EXCEPCIONAL', 'GENERO BIOLÃƒÆ’Ã¢â‚¬Å“GICO', 'CONTEO', 'PERIODO', 'FACULTAD'],
+  Inscritos: ['AÑO', 'IES', 'DOCUMENTO', 'ID TIPO DOCUMENTO', 'PRIMER NOMBRE', 'SEGUNDO NOMBRE', 'PRIMER APELLIDO', 'SEGUNDO APELLIDO', 'PROGRAMA', 'GENERO BIOLOGICO', 'CONTEO', 'PERIODO', 'FACULTAD'],
+  Admitidos: ['AÑO', 'NOMBRE IES', 'PROGRAMA', 'TIPO DOCUMENTO', 'NUMERO DOCUMENTO', 'GENERO BIOLOGICO', 'CONTEO', 'PERIODO', 'FACULTAD'],
+  'Primer Curso': ['AÑO', 'NOMBRE IES', 'TIPO DOCUMENTO', 'NUMERO DOCUMENTO', 'PRIMER NOMBRE', 'SEGUNDO NOMBRE', 'PRIMER APELLIDO', 'SEGUNDO APELLIDO', 'PROGRAMA', 'GRUPO ETNICO', 'PUEBLO INDIGENA', 'COMUNIDAD NEGRA', 'CAPACIDAD EXCEPCIONAL', 'GENERO BIOLOGICO', 'CONTEO', 'PERIODO', 'FACULTAD'],
   Matriculados: [
     'AÑO',
     'NOMBRE IES',
@@ -904,14 +904,13 @@ const POBLACIONAL_TEMPLATE_HEADERS = {
     'PERIODO',
     'FACULTAD'
   ],
-  Graduados: ['AÑO', 'NOMBRE IES', 'TIPO DOCUMENTO', 'NUMERO DOCUMENTO', 'PRIMER NOMBRE', 'SEGUNDO NOMBRE', 'PRIMER APELLIDO', 'SEGUNDO APELLIDO', 'PROGRAMA', 'DEPARTAMENTO', 'MUNICIPIO', 'No ACTA GRADO', 'FECHA GRADO', 'FOLIO', 'VERIFICADO', 'GENERO BIOLOGICO', 'PERIODO', 'FACULTAD']
-  ,
-  Caracterizacion: ['AÃƒÆ’Ã¢â‚¬ËœO', 'PERIODO', 'No IDENTIFICACION', 'TIPO DOCUMENTACION', 'PROGRAMA', 'CODIGO', 'SEMESTRE', 'APELLIDOS NOMBRES', 'GENERO', 'VICTIMA DE CONFLICTO ARMADO', 'CORREO ELECTRONICO', 'PERSONAS A CARGO', 'ESTADO CIVIL', 'GRUPO ETNICO', 'EPS', 'MUNICIPIO_RESIDENCIA', 'DEPARTAMENTO_RESIDENCIA', 'PAIS_RESIDENCIA', 'DISCAPACIDAD', 'NUCLEO_FAMILIAR', 'ESTRATO', 'ingresos_familiares', 'INGRESOS_FAMILIARES', 'institucion', 'titulo_obtenido', 'Tipo_CRÃƒÆ’Ã¢â‚¬Â°DITO', 'Edad', 'Zona procedencia'],
+  Graduados: ['AÑO', 'NOMBRE IES', 'TIPO DOCUMENTO', 'NUMERO DOCUMENTO', 'PRIMER NOMBRE', 'SEGUNDO NOMBRE', 'PRIMER APELLIDO', 'SEGUNDO APELLIDO', 'PROGRAMA', 'DEPARTAMENTO', 'MUNICIPIO', 'No ACTA GRADO', 'FECHA GRADO', 'FOLIO', 'VERIFICADO', 'GENERO BIOLOGICO', 'PERIODO', 'FACULTAD'],
+  Caracterizacion: ['AÑO', 'PERIODO', 'No IDENTIFICACION', 'TIPO DOCUMENTACION', 'PROGRAMA', 'CODIGO', 'SEMESTRE', 'APELLIDOS NOMBRES', 'GENERO', 'VICTIMA DE CONFLICTO ARMADO', 'CORREO ELECTRONICO', 'PERSONAS A CARGO', 'ESTADO CIVIL', 'GRUPO ETNICO', 'EPS', 'MUNICIPIO_RESIDENCIA', 'DEPARTAMENTO_RESIDENCIA', 'PAIS_RESIDENCIA', 'DISCAPACIDAD', 'NUCLEO_FAMILIAR', 'ESTRATO', 'ingresos_familiares', 'INGRESOS_FAMILIARES', 'institucion', 'titulo_obtenido', 'TIPO_CREDITO', 'Edad', 'Zona procedencia'],
   'Cantidad Total Egresados': ['AÑOS', 'PROGRAMA', 'CANTIDAD', 'DETALLE'],
-  'Desercion por periodo': ['PERIODO', 'DESERCION', 'DESERCIÃƒÆ’Ã¢â‚¬Å“N_NACIONAL', 'DESERCIÃƒÆ’Ã¢â‚¬Å“N_DEPARTAMETAL', 'DESERCIÃƒÆ’Ã¢â‚¬Å“N_INSTITUCIONAL', 'DESERCIÃƒÆ’Ã¢â‚¬Å“N_DEL_PROGRAMA', 'PROGRAMA'],
-  'Desercion por cohorte': ['PERIODOS', 'DESERCION', 'CORTE_INFORMACION', 'DESERCIÃƒÆ’Ã¢â‚¬Å“N_NACIONAL', 'DESERCIÃƒÆ’Ã¢â‚¬Å“N_DEPARTAMETAL', 'DESERCIÃƒÆ’Ã¢â‚¬Å“N_INSTITUCIONAL', 'DESERCIÃƒÆ’Ã¢â‚¬Å“N_DEL_PROGRAMA', 'PROGRAMAS'],
-  'Desercion anual': ['PERIODOS', 'DESERCION', 'DESERCION_NACIONAL', 'DESERCION_DEPARTAMETAL', 'DESERCION_INSTITUCIONAL', 'DESERCION_DEL_PROGRAMA', 'PROGRAMAS'],
-  Empleabilidad: ['AÃƒÆ’Ã¢â‚¬ËœO', 'IES', 'EMPLEABILIDAD_PROGRAMA', 'EMPLEABILIDAD_NACIONAL', 'DENOMINACIÃƒÆ’Ã¢â‚¬Å“N_PROGRAMA']
+  'Desercion por periodo': ['PERIODO', 'DESERCION', 'DESERCION_NACIONAL', 'DESERCION_DEPARTAMENTAL', 'DESERCION_INSTITUCIONAL', 'DESERCION_DEL_PROGRAMA', 'PROGRAMA'],
+  'Desercion por cohorte': ['PERIODOS', 'DESERCION', 'CORTE_INFORMACION', 'DESERCION_NACIONAL', 'DESERCION_DEPARTAMENTAL', 'DESERCION_INSTITUCIONAL', 'DESERCION_DEL_PROGRAMA', 'PROGRAMAS'],
+  'Desercion anual': ['PERIODOS', 'DESERCION', 'DESERCION_NACIONAL', 'DESERCION_DEPARTAMENTAL', 'DESERCION_INSTITUCIONAL', 'DESERCION_DEL_PROGRAMA', 'PROGRAMAS'],
+  Empleabilidad: ['AÑO', 'IES', 'EMPLEABILIDAD_PROGRAMA', 'EMPLEABILIDAD_NACIONAL', 'DENOMINACION_PROGRAMA']
 };
 
 const SABER_PRO_TEMPLATE_HEADERS = {
@@ -1248,7 +1247,7 @@ const POBLACIONAL_SUBCATEGORY_CONFIG = {
     model: PoblacionalAdmitido,
     headers: POBLACIONAL_TEMPLATE_HEADERS.Admitidos,
     map: {
-      anio: ['AÃƒÆ’Ã¢â‚¬ËœO', 'ANO', 'ANIO', 'aÃƒÆ’Ã‚Â±o', 'anio'],
+      anio: ['AÑO', 'AÃƒÆ’Ã¢â‚¬ËœO', 'ANO', 'ANIO', 'aÃƒÆ’Ã‚Â±o', 'anio'],
       nombre_ies: ['NOMBRE IES', 'IES'],
       programa: ['PROGRAMA'],
       tipo_documento: ['TIPO DOCUMENTO'],
@@ -1264,7 +1263,7 @@ const POBLACIONAL_SUBCATEGORY_CONFIG = {
     model: PoblacionalPrimerCurso,
     headers: POBLACIONAL_TEMPLATE_HEADERS['Primer Curso'],
     map: {
-      anio: ['AÃƒÆ’Ã¢â‚¬ËœO', 'ANO', 'ANIO', 'aÃƒÆ’Ã‚Â±o', 'anio'],
+      anio: ['AÑO', 'AÃƒÆ’Ã¢â‚¬ËœO', 'ANO', 'ANIO', 'aÃƒÆ’Ã‚Â±o', 'anio'],
       nombre_ies: ['NOMBRE IES', 'IES'],
       tipo_documento: ['TIPO DOCUMENTO'],
       numero_documento: ['NUMERO DOCUMENTO', 'NÃƒÆ’Ã…Â¡MERO DOCUMENTO'],
@@ -1342,7 +1341,7 @@ const POBLACIONAL_SUBCATEGORY_CONFIG = {
     model: PoblacionalCaracterizacion,
     headers: POBLACIONAL_TEMPLATE_HEADERS.Caracterizacion,
     map: {
-      anio: ['AÃƒÆ’Ã¢â‚¬ËœO', 'ANO', 'ANIO', 'PERIODO'],
+      anio: ['AÑO', 'AÃƒÆ’Ã¢â‚¬ËœO', 'ANO', 'ANIO', 'PERIODO'],
       periodo: ['PERIODO'],
       no_identificacion: ['No IDENTIFICACION', 'NO IDENTIFICACION'],
       tipo_documentacion: ['TIPO DOCUMENTACION'],
@@ -1403,7 +1402,7 @@ const POBLACIONAL_SUBCATEGORY_CONFIG = {
         periodo_referencia: ['PERIODO'],
         tipo_desercion: ['DESERCION'],
         desercion_nacional: ['DESERCIÃƒÆ’Ã¢â‚¬Å“N_NACIONAL', 'DESERCION_NACIONAL'],
-        desercion_departamental: ['DESERCIÃƒÆ’Ã¢â‚¬Å“N_DEPARTAMETAL', 'DESERCION_DEPARTAMETAL'],
+        desercion_departamental: ['DESERCION_DEPARTAMENTAL', 'DESERCIÃƒÆ’Ã¢â‚¬Å“N_DEPARTAMETAL', 'DESERCION_DEPARTAMETAL'],
         desercion_institucional: ['DESERCIÃƒÆ’Ã¢â‚¬Å“N_INSTITUCIONAL', 'DESERCION_INSTITUCIONAL'],
         desercion_programa: ['DESERCIÃƒÆ’Ã¢â‚¬Å“N_DEL_PROGRAMA', 'DESERCION_DEL_PROGRAMA'],
         programa: ['PROGRAMA']
@@ -1413,7 +1412,7 @@ const POBLACIONAL_SUBCATEGORY_CONFIG = {
         tipo_desercion: ['DESERCION'],
         corte_informacion: ['CORTE_INFORMACION'],
         desercion_nacional: ['DESERCIÃƒÆ’Ã¢â‚¬Å“N_NACIONAL', 'DESERCION_NACIONAL'],
-        desercion_departamental: ['DESERCIÃƒÆ’Ã¢â‚¬Å“N_DEPARTAMETAL', 'DESERCION_DEPARTAMETAL'],
+        desercion_departamental: ['DESERCION_DEPARTAMENTAL', 'DESERCIÃƒÆ’Ã¢â‚¬Å“N_DEPARTAMETAL', 'DESERCION_DEPARTAMETAL'],
         desercion_institucional: ['DESERCIÃƒÆ’Ã¢â‚¬Å“N_INSTITUCIONAL', 'DESERCION_INSTITUCIONAL'],
         desercion_programa: ['DESERCIÃƒÆ’Ã¢â‚¬Å“N_DEL_PROGRAMA', 'DESERCION_DEL_PROGRAMA'],
         programa: ['PROGRAMAS', 'PROGRAMA']
@@ -1422,7 +1421,7 @@ const POBLACIONAL_SUBCATEGORY_CONFIG = {
         periodo_referencia: ['PERIODOS', 'PERIODO'],
         tipo_desercion: ['DESERCION'],
         desercion_nacional: ['DESERCION_NACIONAL', 'DESERCIÃƒÆ’Ã¢â‚¬Å“N_NACIONAL'],
-        desercion_departamental: ['DESERCION_DEPARTAMETAL', 'DESERCIÃƒÆ’Ã¢â‚¬Å“N_DEPARTAMETAL'],
+        desercion_departamental: ['DESERCION_DEPARTAMENTAL', 'DESERCION_DEPARTAMETAL', 'DESERCIÃƒÆ’Ã¢â‚¬Å“N_DEPARTAMETAL'],
         desercion_institucional: ['DESERCION_INSTITUCIONAL', 'DESERCIÃƒÆ’Ã¢â‚¬Å“N_INSTITUCIONAL'],
         desercion_programa: ['DESERCION_DEL_PROGRAMA', 'DESERCIÃƒÆ’Ã¢â‚¬Å“N_DEL_PROGRAMA'],
         programa: ['PROGRAMAS', 'PROGRAMA']
@@ -1434,7 +1433,7 @@ const POBLACIONAL_SUBCATEGORY_CONFIG = {
     headers: POBLACIONAL_TEMPLATE_HEADERS.Empleabilidad,
     model: PoblacionalEmpleabilidad,
     map: {
-      anio: ['AÃƒÆ’Ã¢â‚¬ËœO', 'ANO', 'ANIO'],
+      anio: ['AÑO', 'AÃƒÆ’Ã¢â‚¬ËœO', 'ANO', 'ANIO'],
       ies: ['IES'],
       empleabilidad_programa: ['EMPLEABILIDAD_PROGRAMA'],
       empleabilidad_nacional: ['EMPLEABILIDAD_NACIONAL'],
