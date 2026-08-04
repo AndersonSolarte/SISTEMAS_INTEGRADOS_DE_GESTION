@@ -24,11 +24,20 @@ import PlanAccionConsulta from './pages/PlanAccionConsulta';
 import TiempoReponer from './pages/TiempoReponer';
 import VerificacionReporte from './pages/VerificacionReporte';
 import SessionTimeoutModal from './components/SessionTimeoutModal';
+import AppSnackbar from './components/AppSnackbar';
 import InstrumentoPublicView from './modules/planeacionEstrategica/autoevaluacion/instrumentos/InstrumentoPublicView';
 import { ROLES } from './constants/roles';
 
 /* Tiempo mínimo que el loader permanece visible antes de iniciar el fade-out */
 const MIN_LOADER_MS = 3500;
+
+const snackbarComponents = {
+  default: AppSnackbar,
+  success: AppSnackbar,
+  error: AppSnackbar,
+  warning: AppSnackbar,
+  info: AppSnackbar,
+};
 
 /* ── Inner wrapper: consumes AuthContext to drive the loading screen ── */
 function AppContent({ children }) {
@@ -65,7 +74,13 @@ function App() {
   return (
     <ThemeProvider theme={theme}>
       <CssBaseline />
-      <SnackbarProvider maxSnack={3} autoHideDuration={2500} anchorOrigin={{ vertical: 'top', horizontal: 'right' }}>
+      <SnackbarProvider
+        maxSnack={2}
+        autoHideDuration={6000}
+        anchorOrigin={{ vertical: 'top', horizontal: 'center' }}
+        Components={snackbarComponents}
+        preventDuplicate
+      >
         <AuthProvider>
           <SessionTimeoutModal />
           <AppContent>

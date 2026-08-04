@@ -2216,7 +2216,7 @@ const buildPoblacionalSeriesUniqueCountRows = async ({
         nullif(btrim(${config.programColumn}), '') as programa,
         nullif(btrim(${config.dependencyColumn}), '') as dependencia,
         btrim(coalesce(${config.sourcePeriodColumn}, '')) as periodo_normalizado,
-        count(distinct coalesce(nullif(btrim(${config.docColumn}), ''), concat('__row__', id::text))) as unique_count
+        count(*) as total_count
       from ${config.table}
       ${whereClause}
       group by
@@ -2236,7 +2236,7 @@ const buildPoblacionalSeriesUniqueCountRows = async ({
   detailRows.forEach((row) => {
     const programKey = normalizeProgramAggregateKey(row.programa);
     const dependencyKey = normalizeProgramAggregateKey(row.dependencia);
-    const count = Number(row.unique_count || 1);
+    const count = Number(row.total_count || 1);
     const bucketKey = [
       row.subcategoria,
       Number(row.anio) || 0,
@@ -2252,7 +2252,7 @@ const buildPoblacionalSeriesUniqueCountRows = async ({
       programa: row.programa || null,
       dependencia: row.dependencia || null,
       indicador: row.subcategoria,
-      unidad: 'personas',
+      unidad: 'registros',
       fuente: null,
       observaciones: row.periodo_normalizado ? `periodo: ${row.periodo_normalizado}` : null,
       uniqueCount: 0
