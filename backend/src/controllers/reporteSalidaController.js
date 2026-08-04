@@ -248,10 +248,39 @@ const getOfficialAuthorityEmailForActor = (actor = {}) => {
   return entry?.email || actor.email || '';
 };
 
+const getAcademicProgramApprovalEmail = (solicitud = {}) => {
+  const jefe = solicitud.jefe_snapshot || {};
+  const jefeName = normalizeForMatch(jefe.nombre || jefe.name || jefe.label || '');
+  const laboral = solicitud.datos_formulario?.laboral || {};
+  const solicitante = solicitud.solicitante_snapshot || {};
+  const dependencia = normalizeForMatch(laboral.dependencia || solicitante.dependencia || '');
+
+  if (
+    jefeName.includes('karen eugenia ocana figueroa') &&
+    dependencia.includes('programa academico diseno grafico')
+  ) {
+    return getDependencyEmail('Programa Academico - Diseño Grafico') || 'disenografico@unicesmag.edu.co';
+  }
+
+  if (
+    jefeName.includes('lilian magali martinez crespo') &&
+    dependencia.includes('programa academico arquitectura')
+  ) {
+    return getDependencyEmail('Programa Academico - Arquitectura') || 'arquitectura@unicesmag.edu.co';
+  }
+
+  return '';
+};
+
 const getInitialApprovalRecipientEmails = (solicitud = {}) => {
   const jefe = solicitud.jefe_snapshot || {};
   const jefeName = normalizeForMatch(jefe.nombre || jefe.name || jefe.label || '');
   const jefeEmail = normalizeEmail(jefe.email);
+  const academicProgramEmail = getAcademicProgramApprovalEmail(solicitud);
+
+  if (academicProgramEmail) {
+    return [academicProgramEmail];
+  }
 
   if (
     jefeName.includes('juan carlos nandar') ||
@@ -281,6 +310,7 @@ const getJefeCopyRecipientEmails = (solicitud = {}) => {
   const jefe = solicitud.jefe_snapshot || {};
   const jefeName = normalizeForMatch(jefe.nombre || jefe.name || jefe.label);
   const primaryEmail = jefe.email || jefe.correo || '';
+  const academicProgramEmail = getAcademicProgramApprovalEmail(solicitud);
 
   if (jefeName.includes('sandra lucia bolanos delgado') || sameExactEmail(primaryEmail, 'sbolanos@unicesmag.edu.co')) {
     pushEmail(ACADEMIC_VICERRECTORIA_EMAIL);
@@ -300,7 +330,7 @@ const getJefeCopyRecipientEmails = (solicitud = {}) => {
     sameExactEmail(primaryEmail, 'sbolanos@unicesmag.edu.co') ||
     sameExactEmail(primaryEmail, ACADEMIC_VICERRECTORIA_EMAIL);
 
-  if (primaryEmail && !isAcademicVicerrectora) pushEmail(primaryEmail);
+  if (primaryEmail && !isAcademicVicerrectora && !academicProgramEmail) pushEmail(primaryEmail);
 
   const initialEmails = getInitialApprovalRecipientEmails(solicitud);
   if (Array.isArray(initialEmails)) {
@@ -2491,7 +2521,9 @@ const resolveJefeForParticipant = async (p, userRows, rhRows) => {
 };
 
 const sendJefeGroupRadicacionNotificationEmail = async (solicitud, jefeSnapshot, allParticipants) => {
-  const recipientEmail = getOfficialAuthorityEmailForActor(jefeSnapshot) || jefeSnapshot?.email || '';
+  const recipientEmail = getAcademicProgramApprovalEmail(solicitud) ||
+    getOfficialAuthorityEmailForActor(jefeSnapshot) ||
+    jefeSnapshot?.email || '';
   if (!jefeSnapshot || !recipientEmail) return { success: false, error: 'No email' };
   
   const solicitante = solicitud.solicitante_snapshot || {};
