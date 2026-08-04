@@ -593,6 +593,7 @@ const runMigrations = async () => {
     await qi.addIndex('estadisticas', ['programa'], { name: 'idx_estadisticas_programa' }).catch(() => {});
     await qi.addIndex('saber_pro_resultados_individuales', ['anio', 'tipo_prueba'], { name: 'idx_saber_pro_individuales_anio_tipo_prueba' }).catch(() => {});
     await qi.addIndex('poblacional_matriculados', ['anio', 'programa'], { name: 'idx_poblacional_matriculados_anio_programa' }).catch(() => {});
+    await qi.addIndex('poblacional_matriculados', ['anio', 'semestre', 'programa'], { name: 'idx_poblacional_matriculados_anio_semestre_prog' }).catch(() => {});
     await qi.addIndex('saber_pro_resultados_agregados', ['anio', 'programa', 'competencia'], { name: 'idx_saber_pro_agregados_anio_programa_competencia' }).catch(() => {});
     await qi.addIndex('saber_pro_resultados_agregados', ['tipo_prueba'], { name: 'idx_saber_pro_agregados_tipo_prueba' }).catch(() => {});
 
