@@ -3958,7 +3958,7 @@ const importGeorreferenciaFromCsv = async ({ filePath, fileName = '', userId = n
   });
 };
 
-const MATRICULADOS_GEO_CACHE_TTL_MS = 15 * 60 * 1000;
+const MATRICULADOS_GEO_CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutos
 const MATRICULADOS_MIN_DASHBOARD_YEAR = 2000;
 const matriculadosGeoDashboardCache = new Map();
 
