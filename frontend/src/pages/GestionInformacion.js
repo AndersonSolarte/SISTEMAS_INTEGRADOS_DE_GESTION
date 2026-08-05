@@ -2906,13 +2906,24 @@ function GestionInformacion() {
         const programasCatalog = caracterizacionCatalogs.programas || [];
         const allProgramasSelected = activeStatsFilters.programas.length === 0
           || (programasCatalog.length > 0 && activeStatsFilters.programas.length === programasCatalog.length);
-        const response = await gestionInformacionService.getEstadisticas({
+        const requestParams = {
           categoria: 'Poblacional',
           aggregate: 'caracterizacion_dashboard',
           programas: allProgramasSelected ? '' : activeStatsFilters.programas.join(','),
           anios: activeStatsFilters.anios.join(','),
           periodos: activeStatsFilters.periodos.join(',')
-        });
+        };
+        let response;
+        try {
+          response = await gestionInformacionService.getEstadisticas(requestParams);
+        } catch (firstError) {
+          const status = Number(firstError?.response?.status || 0);
+          const isTransientError = status === 0 || status >= 500;
+          if (!isTransientError || cancelled) throw firstError;
+          await new Promise((resolve) => setTimeout(resolve, 650));
+          if (cancelled) return;
+          response = await gestionInformacionService.getEstadisticas(requestParams);
+        }
         if (!cancelled) setCaracterizacionPanel(response?.data || null);
       } catch (error) {
         if (!cancelled) {
@@ -6676,7 +6687,7 @@ const renderCategoryBars = (items = [], options = {}) => {
               gap: 1.8
             }}
           >
-            {generoGeneral.slice(0, 6).map((item, index) => {
+            {generoGeneral.filter((item) => normalizeNumber(item.total) > 0).slice(0, 6).map((item, index) => {
               const styles = [
                 { border: '#3b82f6', bg: '#eff6ff', fg: '#1e40af', chip: '#2563eb', glow: '#3b82f633' },
                 { border: '#ec4899', bg: '#fdf2f8', fg: '#9d174d', chip: '#be185d', glow: '#ec489933' },
