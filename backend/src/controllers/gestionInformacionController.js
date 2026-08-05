@@ -3004,6 +3004,9 @@ const isAfrodescendiente = (grupo) => {
 
 const CARACTERIZACION_DASHBOARD_CACHE_TTL_MS = 60 * 1000;
 const caracterizacionDashboardCache = new Map();
+const CARACTERIZACION_CATALOG_CACHE_TTL_MS = 15 * 60 * 1000;
+let caracterizacionCatalogCache = null;
+let caracterizacionActiveLoadScopeCache = null;
 
 const getCaracterizacionDashboardCache = (key) => {
   const cached = caracterizacionDashboardCache.get(key);
@@ -3021,6 +3024,55 @@ const setCaracterizacionDashboardCache = (key, data) => {
     if (oldestKey) caracterizacionDashboardCache.delete(oldestKey);
   }
   caracterizacionDashboardCache.set(key, { createdAt: Date.now(), data });
+};
+
+const clearCaracterizacionCaches = () => {
+  caracterizacionDashboardCache.clear();
+  caracterizacionCatalogCache = null;
+  caracterizacionActiveLoadScopeCache = null;
+};
+
+const getCaracterizacionActiveLoadScope = async () => {
+  const now = Date.now();
+  if (
+    caracterizacionActiveLoadScopeCache
+    && (now - caracterizacionActiveLoadScopeCache.createdAt) < CARACTERIZACION_DASHBOARD_CACHE_TTL_MS
+  ) {
+    return caracterizacionActiveLoadScopeCache.data;
+  }
+
+  const latestLoads = await PoblacionalCaracterizacion.sequelize.query(`
+    SELECT total_cargados
+    FROM gestion_informacion_cargas
+    WHERE categoria = 'Poblacional'
+      AND subcategoria = 'Caracterizacion'
+      AND estado IN ('exitoso', 'parcial')
+      AND total_cargados > 0
+    ORDER BY id DESC
+    LIMIT 1
+  `, { type: QueryTypes.SELECT });
+  const latestLoadSize = Number(latestLoads[0]?.total_cargados || 0);
+  if (!latestLoadSize) {
+    const data = { minId: null, totalCargados: 0 };
+    caracterizacionActiveLoadScopeCache = { createdAt: now, data };
+    return data;
+  }
+
+  const thresholdRows = await PoblacionalCaracterizacion.sequelize.query(`
+    SELECT MIN(id)::integer AS min_id
+    FROM (
+      SELECT id
+      FROM poblacional_caracterizacion
+      ORDER BY id DESC
+      LIMIT :latestLoadSize
+    ) latest_rows
+  `, { replacements: { latestLoadSize }, type: QueryTypes.SELECT });
+  const data = {
+    minId: Number(thresholdRows[0]?.min_id || 0) || null,
+    totalCargados: latestLoadSize
+  };
+  caracterizacionActiveLoadScopeCache = { createdAt: now, data };
+  return data;
 };
 
 const getPeriodoTokenSort = (value = '') => {
@@ -5491,14 +5543,76 @@ const getEstadisticas = async (req, res) => {
       });
     }
 
+    if (aggregate === 'caracterizacion_catalogos' && where.categoria === 'Poblacional') {
+      const now = Date.now();
+      if (
+        caracterizacionCatalogCache
+        && (now - caracterizacionCatalogCache.createdAt) < CARACTERIZACION_CATALOG_CACHE_TTL_MS
+      ) {
+        return res.json({ success: true, data: caracterizacionCatalogCache.data });
+      }
+      const activeLoadScope = await getCaracterizacionActiveLoadScope();
+      const catalogReplacements = {};
+      const activeLoadWhere = activeLoadScope.minId ? 'WHERE id >= :activeLoadMinId' : '';
+      if (activeLoadScope.minId) catalogReplacements.activeLoadMinId = activeLoadScope.minId;
+
+      const catalogRows = await PoblacionalCaracterizacion.sequelize.query(`
+        SELECT
+          COALESCE(
+            NULLIF(SUBSTRING(COALESCE(periodo, '') FROM '19[0-9]{2}|20[0-9]{2}'), '')::integer,
+            anio,
+            0
+          ) AS derived_anio,
+          CASE
+            WHEN UPPER(COALESCE(periodo, '')) ~ '(^|[^A-Z0-9])(IIP|II|2)($|[^A-Z0-9])' THEN 2
+            ELSE 1
+          END AS period_order,
+          NULLIF(BTRIM(programa), '') AS programa,
+          COUNT(*)::bigint AS total
+        FROM poblacional_caracterizacion
+        ${activeLoadWhere}
+        GROUP BY derived_anio, period_order, NULLIF(BTRIM(programa), '')
+        ORDER BY derived_anio, period_order, programa
+      `, { replacements: catalogReplacements, type: QueryTypes.SELECT });
+
+      const programLabels = new Map();
+      const periodMap = new Map();
+      const years = new Set();
+      catalogRows.forEach((row) => {
+        const anioValue = Number(row.derived_anio) || 0;
+        const periodOrder = Number(row.period_order) || 1;
+        if (anioValue > 0) {
+          years.add(anioValue);
+          const label = `${anioValue}-${periodOrder}`;
+          periodMap.set(label, { label, anio: anioValue, order: anioValue * 10 + periodOrder });
+        }
+        const rawProgram = String(row.programa || '').replace(/\s+/g, ' ').trim();
+        const programKey = normalizeProgramAggregateKey(rawProgram);
+        if (programKey) {
+          programLabels.set(programKey, selectPreferredAggregateLabel(programLabels.get(programKey), rawProgram));
+        }
+      });
+
+      const data = {
+        anios: Array.from(years).sort((a, b) => a - b),
+        periodos: Array.from(periodMap.values()).sort((a, b) => a.order - b.order),
+        programas: Array.from(programLabels.values()).sort((a, b) => a.localeCompare(b, 'es')),
+        registrosActivos: activeLoadScope.totalCargados
+      };
+      caracterizacionCatalogCache = { createdAt: now, data };
+      return res.json({ success: true, data });
+    }
+
     if (aggregate === 'caracterizacion_dashboard' && where.categoria === 'Poblacional') {
       const programas = parseQueryListParam(req.query, 'programas');
       const aniosList = parseQueryListParam(req.query, 'anios').map((x) => Number(x)).filter((x) => Number.isFinite(x));
       const periodos = parseQueryListParam(req.query, 'periodos');
       const replacements = {};
+      const activeLoadScope = await getCaracterizacionActiveLoadScope();
       const normalizedProgramas = Array.from(new Set(programas.map((item) => normalizeComparableText(item)).filter(Boolean)));
       const cacheKey = JSON.stringify({
-        mode: 'all-records-v1',
+        mode: 'latest-active-load-v3',
+        activeLoadMinId: activeLoadScope.minId,
         programas: [...normalizedProgramas].sort(),
         anios: [...aniosList].sort((a, b) => a - b),
         periodos: [...periodos].sort()
@@ -5518,6 +5632,11 @@ const getEstadisticas = async (req, res) => {
         ELSE 1
       END`;
 
+      if (activeLoadScope.minId) {
+        replacements.activeLoadMinId = activeLoadScope.minId;
+        normalizedFilters.push('id >= :activeLoadMinId');
+      }
+
       if (normalizedProgramas.length) {
         replacements.programas = normalizedProgramas;
         normalizedFilters.push(`
@@ -5529,11 +5648,14 @@ const getEstadisticas = async (req, res) => {
       }
       if (aniosList.length) {
         replacements.anios = aniosList;
-        normalizedFilters.push(`${derivedAnioSql} IN (:anios)`);
+        normalizedFilters.push('anio IN (:anios)');
       }
       if (periodos.length) {
-        replacements.periodos = periodos;
-        normalizedFilters.push(`((${derivedAnioSql})::text || '-' || (${periodOrderSql})::text) IN (:periodos)`);
+        replacements.rawPeriodos = periodos.map((periodLabel) => {
+          const [year, slot] = String(periodLabel || '').split('-');
+          return `${year} ${slot === '2' ? 'IIP' : 'IP'}`.trim().toUpperCase();
+        });
+        normalizedFilters.push("UPPER(BTRIM(COALESCE(periodo, ''))) IN (:rawPeriodos)");
       }
 
       // PostgreSQL devuelve solamente los agregados. Antes se transferían las 118.886 filas
@@ -5555,6 +5677,7 @@ const getEstadisticas = async (req, res) => {
               ELSE COALESCE(NULLIF(UPPER(BTRIM(victima_conflicto_armado)), ''), 'SIN INFORMACION')
             END AS victima_label,
             COALESCE(NULLIF(BTRIM(estrato), ''), 'Sin informacion') AS estrato_label,
+            COALESCE(NULLIF(UPPER(BTRIM(municipio_residencia)), ''), 'SIN INFORMACION') AS municipio_residencia_label,
             COALESCE(NULLIF(UPPER(BTRIM(grupo_etnico)), ''), 'SIN INFORMACION') AS grupo_etnico_label
           FROM poblacional_caracterizacion
           ${normalizedFilters.length ? `WHERE ${normalizedFilters.join(' AND ')}` : ''}
@@ -5573,6 +5696,12 @@ const getEstadisticas = async (req, res) => {
         UNION ALL
         SELECT 'victimas_genero', genero_label, COUNT(*)::bigint, NULL::integer, NULL::integer
         FROM scoped WHERE victima_label = 'SI' GROUP BY genero_label
+        UNION ALL
+        SELECT 'victimas_estrato', estrato_label, COUNT(*)::bigint, NULL::integer, NULL::integer
+        FROM scoped WHERE victima_label = 'SI' GROUP BY estrato_label
+        UNION ALL
+        SELECT 'victimas_municipio_residencia', municipio_residencia_label, COUNT(*)::bigint, NULL::integer, NULL::integer
+        FROM scoped WHERE victima_label = 'SI' GROUP BY municipio_residencia_label
         UNION ALL
         SELECT 'afro_genero', genero_label, COUNT(*)::bigint, NULL::integer, NULL::integer
         FROM scoped WHERE grupo_etnico_label ~ '(AFRO|NEGRA|PALENQ|RAIZAL)' GROUP BY genero_label
@@ -5594,6 +5723,8 @@ const getEstadisticas = async (req, res) => {
       const totalRegistros = Number(aggregateRows.find((row) => row.dimension === 'total')?.total || 0);
       const victimasDistribucion = byDimension('victimas_distribucion');
       const victimasGenero = byDimension('victimas_genero');
+      const victimasEstrato = byDimension('victimas_estrato');
+      const victimasMunicipioResidencia = byDimension('victimas_municipio_residencia');
       const afroGenero = byDimension('afro_genero');
       const victimasTotal = Number(victimasDistribucion.find((row) => row.label === 'SI')?.total || 0);
       const afroTotal = afroGenero.reduce((sum, row) => sum + row.total, 0);
@@ -5609,11 +5740,14 @@ const getEstadisticas = async (req, res) => {
 
       const dashboardData = {
         totalRegistros,
+        registrosBaseActiva: activeLoadScope.totalCargados,
         periodSeries,
         victimas: {
           total: victimasTotal,
           distribucion: victimasDistribucion,
-          genero: victimasGenero
+          genero: victimasGenero,
+          estratos: victimasEstrato,
+          municipiosResidencia: victimasMunicipioResidencia
         },
         afrodescendientes: {
           total: afroTotal,
@@ -9365,7 +9499,7 @@ const importFromExcel = async (req, res) => {
     if (categoria === 'Poblacional') {
       poblacionalSeriesCache.clear();
       if (poblacionalConfig?.label === 'Caracterizacion') {
-        caracterizacionDashboardCache.clear();
+        clearCaracterizacionCaches();
       }
     }
 
@@ -9441,7 +9575,7 @@ const clearByCategoria = async (req, res) => {
       internacionalizacionConfig
     });
     if (categoria === 'Poblacional' && (!subcategoria || poblacionalConfig?.label === 'Caracterizacion')) {
-      caracterizacionDashboardCache.clear();
+      clearCaracterizacionCaches();
     }
     return res.json({
       success: true,

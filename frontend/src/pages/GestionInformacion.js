@@ -2013,6 +2013,8 @@ function GestionInformacion() {
   const [, setLastSeriesSyncAt] = useState(null);
   const [caracterizacionPanel, setCaracterizacionPanel] = useState(null);
   const [caracterizacionPanelLoading, setCaracterizacionPanelLoading] = useState(false);
+  const [caracterizacionCatalogs, setCaracterizacionCatalogs] = useState({ anios: [], periodos: [], programas: [] });
+  const [caracterizacionCatalogsLoading, setCaracterizacionCatalogsLoading] = useState(false);
   const [caracterizacionUi, setCaracterizacionUi] = useState({ estrato: '', grupoEtnico: '' });
   const [egresadosDetalleActivo, setEgresadosDetalleActivo] = useState('');
   const [graduadosDashboardView, setGraduadosDashboardView] = useState('estadistica');
@@ -2789,9 +2791,40 @@ function GestionInformacion() {
 
   useEffect(() => {
     if (menuView === 'estadistica' && selectedCard === 'poblacional') {
+      if (poblacionalPanel === 'analytics' && statSection === 'caracterizacion') return;
       fetchSeriesRows();
     }
   }, [fetchSeriesRows, menuView, selectedCard, statSection, poblacionalPanel]);
+
+  useEffect(() => {
+    if (menuView !== 'estadistica' || selectedCard !== 'poblacional' || poblacionalPanel !== 'analytics' || statSection !== 'caracterizacion') return;
+    let cancelled = false;
+    const loadCaracterizacionCatalogs = async () => {
+      setCaracterizacionCatalogsLoading(true);
+      try {
+        const response = await gestionInformacionService.getEstadisticas({
+          categoria: 'Poblacional',
+          aggregate: 'caracterizacion_catalogos'
+        });
+        if (!cancelled) {
+          setCaracterizacionCatalogs({
+            anios: response?.data?.anios || [],
+            periodos: response?.data?.periodos || [],
+            programas: response?.data?.programas || []
+          });
+        }
+      } catch (error) {
+        if (!cancelled) {
+          setCaracterizacionCatalogs({ anios: [], periodos: [], programas: [] });
+          enqueueSnackbar(error.response?.data?.message || 'Error al cargar filtros de caracterización', { variant: 'error' });
+        }
+      } finally {
+        if (!cancelled) setCaracterizacionCatalogsLoading(false);
+      }
+    };
+    loadCaracterizacionCatalogs();
+    return () => { cancelled = true; };
+  }, [enqueueSnackbar, menuView, poblacionalPanel, selectedCard, statSection]);
 
   useEffect(() => {
     if (menuView === 'estadistica' && selectedCard === 'registros_calificados_acreditacion') {
@@ -2870,32 +2903,15 @@ function GestionInformacion() {
     const loadCaracterizacionPanel = async () => {
       setCaracterizacionPanelLoading(true);
       try {
-        const caracterizacionCatalogRows = seriesRows.filter((row) =>
-          row.subcategoria === 'Caracterizacion' && isValidPoblacionalAnalysisYear(row.anio)
-        );
-        const programasMap = new Map();
-        caracterizacionCatalogRows.forEach((row) => {
-          const rawProgram = String(row.programa || '').replace(/\s+/g, ' ').trim();
-          const key = normalizeProgramKey(rawProgram);
-          if (!key) return;
-          const existing = programasMap.get(key);
-          programasMap.set(key, selectPreferredProgramLabel(existing, rawProgram));
-        });
-        const programasCatalog = Array.from(programasMap.values());
-        const aniosCatalog = Array.from(new Set(caracterizacionCatalogRows.map((row) => Number(row.anio)).filter((year) => Number.isFinite(year) && year > 0)));
-        const periodosCatalog = Array.from(new Set(
-          caracterizacionCatalogRows.map((row) => getRowPeriodMeta(row).periodLabel).filter(Boolean)
-        ));
-
-        const allProgramasSelected = programasCatalog.length > 0 && activeStatsFilters.programas.length === programasCatalog.length;
-        const allAniosSelected = aniosCatalog.length > 0 && activeStatsFilters.anios.length === aniosCatalog.length;
-        const allPeriodosSelected = periodosCatalog.length > 0 && activeStatsFilters.periodos.length === periodosCatalog.length;
+        const programasCatalog = caracterizacionCatalogs.programas || [];
+        const allProgramasSelected = activeStatsFilters.programas.length === 0
+          || (programasCatalog.length > 0 && activeStatsFilters.programas.length === programasCatalog.length);
         const response = await gestionInformacionService.getEstadisticas({
           categoria: 'Poblacional',
           aggregate: 'caracterizacion_dashboard',
           programas: allProgramasSelected ? '' : activeStatsFilters.programas.join(','),
-          anios: allAniosSelected ? '' : activeStatsFilters.anios.join(','),
-          periodos: allPeriodosSelected ? '' : activeStatsFilters.periodos.join(',')
+          anios: activeStatsFilters.anios.join(','),
+          periodos: activeStatsFilters.periodos.join(',')
         });
         if (!cancelled) setCaracterizacionPanel(response?.data || null);
       } catch (error) {
@@ -2909,7 +2925,7 @@ function GestionInformacion() {
     };
     loadCaracterizacionPanel();
     return () => { cancelled = true; };
-  }, [enqueueSnackbar, menuView, selectedCard, statSection, activeStatsFilters, seriesRows]);
+  }, [enqueueSnackbar, menuView, selectedCard, statSection, activeStatsFilters, caracterizacionCatalogs.programas]);
 
   const countMap = useMemo(() => {
     const map = {};
@@ -6087,6 +6103,7 @@ const renderCategoryBars = (items = [], options = {}) => {
       selectedKey = '',
       onSelect = () => {},
       compactLabel = (label) => label,
+      getColor = null,
       title = 'INFORMACION GENERAL'
     } = options;
     return (
@@ -6098,7 +6115,9 @@ const renderCategoryBars = (items = [], options = {}) => {
         ) : null}
         <Stack spacing={1}>
           {items.map((item, index) => {
-            const color = colorPalette[index % colorPalette.length];
+            const color = typeof getColor === 'function'
+              ? getColor(item.label, index)
+              : colorPalette[index % colorPalette.length];
             const isSelected = selectedKey === item.label;
             const pct = total > 0 ? (normalizeNumber(item.total) / total) * 100 : 0;
             return (
@@ -6188,6 +6207,13 @@ const renderCategoryBars = (items = [], options = {}) => {
       && (activeStatsFilters.periodos || []).length === 1;
     const victimasDistribucion = data.victimas?.distribucion || [];
     const victimasGenero = data.victimas?.genero || [];
+    const victimasEstratos = [...(data.victimas?.estratos || [])].sort((a, b) => {
+      const numericA = Number(a.label);
+      const numericB = Number(b.label);
+      if (Number.isFinite(numericA) && Number.isFinite(numericB)) return numericA - numericB;
+      return String(a.label || '').localeCompare(String(b.label || ''), 'es');
+    });
+    const victimasMunicipios = data.victimas?.municipiosResidencia || [];
     const afroGenero = data.afrodescendientes?.genero || [];
     const generoGeneral = data.generoGeneral?.distribucion || [];
     const estratosDistribucion = [...(data.estratos?.distribucion || [])].sort((a, b) => {
@@ -6201,18 +6227,28 @@ const renderCategoryBars = (items = [], options = {}) => {
     const victimasPct = totalRegistros > 0 ? ((normalizeNumber(data.victimas?.total) / totalRegistros) * 100) : 0;
     const afroPct = totalRegistros > 0 ? ((normalizeNumber(data.afrodescendientes?.total) / totalRegistros) * 100) : 0;
     const afroTotal = normalizeNumber(data.afrodescendientes?.total);
-    const afroPoblacionGeneral = Math.max(0, totalRegistros - afroTotal);
-    const afroComparativoGeneral = [
-      { label: 'Poblacion general', total: afroPoblacionGeneral },
-      { label: 'Afrodescendientes', total: afroTotal }
-    ];
+    const noAfroTotal = Math.max(0, totalRegistros - afroTotal);
     const getPct = (value, total) => (total > 0 ? (normalizeNumber(value) / total) * 100 : 0);
     const estratoPalette = ['#ef4444', '#f59e0b', '#facc15', '#10b981', '#6366f1', '#1d4ed8', '#64748b', '#0ea5e9'];
     const etnicoPalette = ['#3b82f6', '#10b981', '#8b5cf6', '#f97316', '#ec4899', '#14b8a6', '#64748b', '#f43f5e', '#6366f1', '#84cc16'];
+    const normalizeCategoryKey = (label) => String(label || '').trim().toLocaleUpperCase('es-CO');
+    const etnicoColorByLabel = new Map(
+      gruposEtnicos.map((item, index) => [
+        normalizeCategoryKey(item.label),
+        etnicoPalette[index % etnicoPalette.length]
+      ])
+    );
+    const getEtnicoColor = (label, index = 0) => (
+      etnicoColorByLabel.get(normalizeCategoryKey(label))
+      || etnicoPalette[index % etnicoPalette.length]
+    );
     const genderSeriesPalette = ['#2563eb', '#be185d', '#7c3aed'];
     const estratosChartData = caracterizacionUi.estrato ? estratosDistribucion.filter((x) => x.label === caracterizacionUi.estrato) : estratosDistribucion;
     const gruposEtnicosTotal = gruposEtnicos.reduce((acc, item) => acc + normalizeNumber(item.total), 0);
-    const gruposSoloEtnicos = gruposEtnicos.filter((x) => !String(x.label || '').toUpperCase().includes('NO APLICA'));
+    const gruposSoloEtnicos = gruposEtnicos.filter((x) => {
+      const token = String(x.label || '').toUpperCase();
+      return !token.includes('NO APLICA') && !token.includes('SIN INFORMACION') && !token.includes('SIN INFORMACIÓN');
+    });
     const gruposSoloEtnicosTotal = gruposSoloEtnicos.reduce((acc, item) => acc + normalizeNumber(item.total), 0);
     const gruposSoloEtnicosPct = totalRegistros > 0 ? (gruposSoloEtnicosTotal / totalRegistros) * 100 : 0;
     const genderIconFor = (label) => {
@@ -6351,21 +6387,26 @@ const renderCategoryBars = (items = [], options = {}) => {
         </Box>
       </Paper>
     );
-    const caracterizacionYearOptions = [...aniosDisponibles].map(String).sort((a, b) => Number(b) - Number(a));
+    const caracterizacionYearOptions = [...(caracterizacionCatalogs.anios || [])].map(String).sort((a, b) => Number(b) - Number(a));
     const selectedCaracterizacionYear = (activeStatsFilters.anios || []).length === 1
       ? String(activeStatsFilters.anios[0])
       : '';
     const selectedCaracterizacionPeriod = (activeStatsFilters.periodos || []).length === 1
       ? String(activeStatsFilters.periodos[0])
       : '';
-    const caracterizacionPeriodOptions = periodosDisponibles
+    const caracterizacionPeriodOptions = (caracterizacionCatalogs.periodos || [])
       .map((item) => item.label || item)
       .filter((label) => selectedCaracterizacionYear && String(label).startsWith(`${selectedCaracterizacionYear}-`))
       .map((label) => {
         const [year, slot] = String(label).split('-');
-        return { value: label, label: `${year} ${slot === '2' ? 'IIP' : 'IP'}` };
+        return {
+          value: label,
+          label: slot === '2'
+            ? `${year} IIP · Segundo período`
+            : `${year} IP · Primer período`
+        };
       });
-    const caracterizacionProgramOptions = programasDisponibles;
+    const caracterizacionProgramOptions = caracterizacionCatalogs.programas || [];
     const selectedCaracterizacionPrograms = (activeStatsFilters.programas || []).filter((item) =>
       caracterizacionProgramOptions.some((option) => normalizeProgramKey(option) === normalizeProgramKey(item))
     );
@@ -6397,7 +6438,7 @@ const renderCategoryBars = (items = [], options = {}) => {
     const activeCaracterizacionFilterCount = [
       Boolean(selectedCaracterizacionYear),
       Boolean(selectedCaracterizacionPeriod),
-      caracterizacionProgramOptions.length > 0 && selectedCaracterizacionPrograms.length < caracterizacionProgramOptions.length
+      selectedCaracterizacionPrograms.length > 0 && selectedCaracterizacionPrograms.length < caracterizacionProgramOptions.length
     ].filter(Boolean).length;
     const kpiItems = [
       {
@@ -6425,8 +6466,9 @@ const renderCategoryBars = (items = [], options = {}) => {
       },
       {
         icon: <GroupsIcon />,
-        label: 'Grupos étnicos reportados',
-        value: (data.gruposEtnicos?.distribucion || []).length,
+        label: 'Pertenencia étnica',
+        value: gruposSoloEtnicosTotal,
+        badge: `${gruposSoloEtnicosPct.toFixed(2)}%`,
         color: '#7c3aed',
         gradient: 'linear-gradient(135deg, #8b5cf6 0%, #6d28d9 100%)'
       }
@@ -6471,7 +6513,7 @@ const renderCategoryBars = (items = [], options = {}) => {
             </Stack>
             <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1} sx={{ width: { xs: '100%', md: 'auto' } }}>
               <Chip
-                label={`${periodosDisponibles.length} períodos disponibles`}
+                label={caracterizacionCatalogsLoading ? 'Cargando filtros...' : `${(caracterizacionCatalogs.periodos || []).length} períodos disponibles`}
                 sx={{ bgcolor: '#eef4ff', color: '#3155a6', border: '1px solid #d7e3fb', fontWeight: 800 }}
               />
               <Button
@@ -6504,6 +6546,7 @@ const renderCategoryBars = (items = [], options = {}) => {
               value={selectedCaracterizacionYear ? [selectedCaracterizacionYear] : []}
               onChange={handleCaracterizacionYearChange}
               accentColor="#3155a6"
+              disabled={caracterizacionCatalogsLoading}
               single
             />
             <DocFilterPanel
@@ -6523,6 +6566,7 @@ const renderCategoryBars = (items = [], options = {}) => {
               value={selectedCaracterizacionPrograms}
               onChange={(nextValues) => handleMultiFilterChange('programas', nextValues, caracterizacionProgramOptions)}
               accentColor="#3155a6"
+              disabled={caracterizacionCatalogsLoading}
             />
             <Button
               variant="outlined"
@@ -6634,31 +6678,60 @@ const renderCategoryBars = (items = [], options = {}) => {
           >
             {generoGeneral.slice(0, 6).map((item, index) => {
               const styles = [
-                { border: '#3b82f6', bg: '#dbeafe', fg: '#1e40af', chip: '#2563eb' },
-                { border: '#e879b9', bg: '#fdf2f8', fg: '#9d174d', chip: '#be185d' },
-                { border: '#8b5cf6', bg: '#f3e8ff', fg: '#6d28d9', chip: '#7c3aed' }
+                { border: '#3b82f6', bg: '#eff6ff', fg: '#1e40af', chip: '#2563eb', glow: '#3b82f633' },
+                { border: '#ec4899', bg: '#fdf2f8', fg: '#9d174d', chip: '#be185d', glow: '#ec489933' },
+                { border: '#8b5cf6', bg: '#f5f3ff', fg: '#6d28d9', chip: '#7c3aed', glow: '#8b5cf633' }
               ];
               const s = styles[index % styles.length];
               const pct = getPct(item.total, totalRegistros);
               return (
                 <Box key={`gen-top-${item.label}`}>
-                  <Card sx={{ borderRadius: 3, border: `2px solid ${s.border}`, bgcolor: s.bg, boxShadow: 'none', height: '100%', transition: 'transform .2s ease, box-shadow .2s ease', '&:hover': { transform: 'translateY(-4px)', boxShadow: `0 14px 26px -16px ${s.chip}`, '& .genero-card-icon': { transform: 'scale(1.08)' } } }}>
-                    <CardContent sx={{ p: 2.4, height: '100%', display: 'flex', flexDirection: 'column' }}>
-                      <Stack direction="row" spacing={1.2} alignItems="center">
-                        <Box className="genero-card-icon" sx={{ color: s.fg, display: 'grid', placeItems: 'center', width: 46, height: 46, borderRadius: 2.3, bgcolor: 'rgba(255,255,255,.75)', transition: 'transform .2s ease', '& .MuiSvgIcon-root': { fontSize: 30 } }}>
+                  <Card
+                    sx={{
+                      position: 'relative',
+                      borderRadius: 3,
+                      border: '1px solid #dbe6f5',
+                      borderTop: `4px solid ${s.border}`,
+                      background: `linear-gradient(145deg, #ffffff 20%, ${s.bg} 100%)`,
+                      boxShadow: `0 10px 24px -18px ${s.chip}`,
+                      height: '100%',
+                      overflow: 'hidden',
+                      transition: 'transform .2s ease, box-shadow .2s ease',
+                      '&:hover': {
+                        transform: 'translateY(-4px)',
+                        boxShadow: `0 18px 32px -18px ${s.chip}`,
+                        '& .genero-card-icon': { transform: 'scale(1.08)' }
+                      }
+                    }}
+                  >
+                    <CardContent sx={{ p: { xs: 1.7, md: 2 }, '&:last-child': { pb: { xs: 1.7, md: 2 } } }}>
+                      <Stack direction="row" spacing={1.1} alignItems="center" justifyContent="space-between">
+                        <Stack direction="row" spacing={1.1} alignItems="center" sx={{ minWidth: 0 }}>
+                        <Box className="genero-card-icon" sx={{ color: '#fff', display: 'grid', placeItems: 'center', width: 44, height: 44, borderRadius: 2.2, bgcolor: s.chip, boxShadow: `0 8px 18px ${s.glow}`, flexShrink: 0, transition: 'transform .2s ease', '& .MuiSvgIcon-root': { fontSize: 28 } }}>
                           {genderIconFor(item.label)}
                         </Box>
-                        <Typography variant="caption" sx={{ color: s.fg, fontWeight: 900, textTransform: 'uppercase', letterSpacing: '.06em', fontSize: 13 }}>
+                        <Typography variant="caption" sx={{ color: s.fg, fontWeight: 900, textTransform: 'uppercase', letterSpacing: '.055em', fontSize: 12.5, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                           {item.label}
                         </Typography>
+                        </Stack>
                       </Stack>
-                      <Typography sx={{ mt: 1.2, fontWeight: 900, color: s.fg, fontSize: { xs: 24, md: 30, xl: 33 }, lineHeight: 1 }}>
-                        {formatNumber(item.total)}
-                      </Typography>
-                      <Stack direction="row" spacing={1} alignItems="center" sx={{ mt: 1.2, flexWrap: 'wrap' }}>
-                        <Chip size="small" label={`${pct.toFixed(2)}%`} sx={{ bgcolor: s.chip, color: '#fff', fontWeight: 900, fontSize: 14, height: 31, '& .MuiChip-label': { px: 1.25 } }} />
+                      <Stack direction="row" spacing={1.2} alignItems="flex-end" justifyContent="space-between" sx={{ mt: 1.55 }}>
+                        <Typography sx={{ fontWeight: 950, color: s.fg, fontSize: { xs: 27, md: 32 }, lineHeight: 1 }}>
+                          {formatNumber(item.total)}
+                        </Typography>
+                        <Chip size="small" label={`${pct.toFixed(2)}%`} sx={{ bgcolor: s.chip, color: '#fff', fontWeight: 900, fontSize: 12.5, height: 27, flexShrink: 0, '& .MuiChip-label': { px: 1.1 } }} />
                       </Stack>
-                      <LinearProgress variant="determinate" value={Math.max(0, Math.min(100, pct))} sx={{ mt: 'auto', pt: 1.4, height: 10, borderRadius: 999, bgcolor: 'rgba(255,255,255,.8)', '& .MuiLinearProgress-bar': { bgcolor: s.chip } }} />
+                      <LinearProgress
+                        variant="determinate"
+                        value={Math.max(0, Math.min(100, pct))}
+                        sx={{
+                          mt: 1.6,
+                          height: 8,
+                          borderRadius: 999,
+                          bgcolor: '#e8eef7',
+                          '& .MuiLinearProgress-bar': { bgcolor: s.chip, borderRadius: 999 }
+                        }}
+                      />
                     </CardContent>
                   </Card>
                 </Box>
@@ -6683,8 +6756,8 @@ const renderCategoryBars = (items = [], options = {}) => {
                         <Chip size="small" label={`${victimasPct.toFixed(2)}% del total filtrado`} sx={{ bgcolor: '#ef4444', color: '#fff', fontWeight: 900, fontSize: 12.5, height: 28 }} />
                       </Stack>
                     </Box>
-                    <Typography variant="body2" sx={{ color: '#64748b', maxWidth: 560 }}>
-                      Respuesta consolidada a la variable de victima del conflicto armado, con lectura general y composicion por genero.
+                    <Typography variant="body2" sx={{ color: '#475569', maxWidth: 560, fontWeight: 600 }}>
+                      Cruce de las victimas identificadas por genero, estrato y municipio de residencia.
                     </Typography>
                   </Stack>
                 </CardContent>
@@ -6698,49 +6771,21 @@ const renderCategoryBars = (items = [], options = {}) => {
                 }}
               >
                 {renderDonutPanel({
-                  title: 'PORCENTAJE SOBRE POBLACION TOTAL',
-                  subtitle: 'Victimas',
+                  title: 'DISTRIBUCION DEL TOTAL FILTRADO',
+                  subtitle: 'Total registros',
                   total: totalRegistros,
+                  headerValue: totalRegistros,
+                  centerValue: totalRegistros,
                   accent: '#b91c1c',
                   segments: [
                     { label: 'Victimas (SI)', value: victimasSi, color: '#ef4444' },
-                    { label: 'Resto de poblacion', value: victimasResto, color: '#cbd5e1' }
+                    { label: 'No identificadas como victimas', value: victimasResto, color: '#cbd5e1' }
                   ]
                 })}
 
                 <Paper elevation={0} sx={{ p: 1.4, borderRadius: 3, border: '1px solid #dbe6f5', bgcolor: '#fff', height: '100%' }}>
                   <Box sx={{ px: 1.2, py: 0.9, borderRadius: 2, bgcolor: '#1d4ed8', mb: 1.2 }}>
-                    <Typography sx={{ color: '#fff', fontWeight: 900, fontSize: 12, letterSpacing: '.06em' }}>INFORMACION GENERAL (SI / NO)</Typography>
-                  </Box>
-                  {renderCategoryBars(victimasDistribucion, {
-                    color: '#3b82f6',
-                    maxItems: 4,
-                    minBarWidth: 104,
-                    baseMinWidth: 320,
-                    height: 280,
-                    labelSize: 13,
-                    valueSize: 16,
-                    smartOutsideLabels: true,
-                    outsideLabelColor: '#0f172a',
-                    insideLabelMinHeight: 30
-                  })}
-                </Paper>
-
-                {renderDonutPanel({
-                  title: 'COMPOSICION POR GENERO (VICTIMAS)',
-                  subtitle: 'Genero',
-                  total: victimasTotal,
-                  accent: '#ef4444',
-                  segments: victimasGenero.map((item, index) => ({
-                    label: item.label,
-                    value: item.total,
-                    color: genderSeriesPalette[index % genderSeriesPalette.length]
-                  }))
-                })}
-
-                <Paper elevation={0} sx={{ p: 1.4, borderRadius: 3, border: '1px solid #dbe6f5', bgcolor: '#fff', height: '100%' }}>
-                  <Box sx={{ px: 1.2, py: 0.9, borderRadius: 2, bgcolor: '#1d4ed8', mb: 1.2 }}>
-                    <Typography sx={{ color: '#fff', fontWeight: 900, fontSize: 12, letterSpacing: '.06em' }}>DISTRIBUCION POR GENERO (VICTIMAS) - BARRAS</Typography>
+                    <Typography sx={{ color: '#fff', fontWeight: 900, fontSize: 12, letterSpacing: '.06em' }}>VICTIMAS IDENTIFICADAS POR GENERO</Typography>
                   </Box>
                   {renderCategoryBars(victimasGenero, {
                     color: genderSeriesPalette[0],
@@ -6756,6 +6801,21 @@ const renderCategoryBars = (items = [], options = {}) => {
                     insideLabelMinHeight: 30
                   })}
                 </Paper>
+              </Box>
+
+              <Box sx={{ mt: 1.6, display: 'grid', gridTemplateColumns: { xs: '1fr', lg: 'repeat(2, minmax(0, 1fr))' }, gap: 1.6, alignItems: 'start' }}>
+                {renderInsightRows(victimasMunicipios.slice(0, 6), {
+                  total: victimasTotal,
+                  colorPalette: ['#ef4444', '#f97316', '#f59e0b', '#14b8a6', '#3b82f6', '#8b5cf6'],
+                  compactLabel: (label) => String(label || '').slice(0, 28),
+                  title: 'MUNICIPIO DE RESIDENCIA'
+                })}
+                {renderInsightRows(victimasEstratos.slice(0, 6), {
+                  total: victimasTotal,
+                  colorPalette: estratoPalette,
+                  compactLabel: (label) => `Estrato ${String(label || '').replace(/ESTRATO\s*/i, '')}`,
+                  title: 'ESTRATO SOCIOECONOMICO'
+                })}
               </Box>
             </Paper>
           </Grid>
@@ -6777,8 +6837,8 @@ const renderCategoryBars = (items = [], options = {}) => {
                         <Chip size="small" label={`${afroPct.toFixed(2)}% del total filtrado`} sx={{ bgcolor: '#2563eb', color: '#fff', fontWeight: 900, fontSize: 12.5, height: 28 }} />
                       </Stack>
                     </Box>
-                    <Typography variant="body2" sx={{ color: '#64748b', maxWidth: 560 }}>
-                      Lectura consolidada de la poblacion afrodescendiente y su composicion por genero para la ventana de observacion filtrada.
+                    <Typography variant="body2" sx={{ color: '#475569', maxWidth: 560, fontWeight: 600 }}>
+                      De {formatNumber(totalRegistros)} registros filtrados, {formatNumber(afroTotal)} reportan pertenencia afrodescendiente.
                     </Typography>
                   </Stack>
                 </CardContent>
@@ -6792,52 +6852,21 @@ const renderCategoryBars = (items = [], options = {}) => {
                 }}
               >
                 {renderDonutPanel({
-                  title: 'PORCENTAJE SOBRE POBLACION TOTAL',
-                  subtitle: 'Poblacion general',
+                  title: 'DISTRIBUCION DEL TOTAL FILTRADO',
+                  subtitle: 'Total registros',
                   total: totalRegistros,
-                  headerValue: afroPoblacionGeneral,
-                  centerValue: afroPoblacionGeneral,
+                  headerValue: totalRegistros,
+                  centerValue: totalRegistros,
                   accent: '#1d4ed8',
                   segments: [
-                    { label: 'Poblacion general', value: afroPoblacionGeneral, color: '#cbd5e1' },
+                    { label: 'No afrodescendientes', value: noAfroTotal, color: '#cbd5e1' },
                     { label: 'Afrodescendientes', value: afroTotal, color: '#2563eb' }
                   ]
                 })}
 
                 <Paper elevation={0} sx={{ p: 1.4, borderRadius: 3, border: '1px solid #dbe6f5', bgcolor: '#fff', height: '100%' }}>
                   <Box sx={{ px: 1.2, py: 0.9, borderRadius: 2, bgcolor: '#1d4ed8', mb: 1.2 }}>
-                    <Typography sx={{ color: '#fff', fontWeight: 900, fontSize: 12, letterSpacing: '.06em' }}>COMPARATIVO GENERAL (POBLACION VS AFRO)</Typography>
-                  </Box>
-                  {renderCategoryBars(afroComparativoGeneral, {
-                    color: '#2563eb',
-                    palette: ['#cbd5e1', '#2563eb'],
-                    maxItems: 2,
-                    minBarWidth: 132,
-                    baseMinWidth: 340,
-                    height: 280,
-                    labelSize: 13,
-                    valueSize: 16,
-                    smartOutsideLabels: true,
-                    outsideLabelColor: '#0f172a',
-                    insideLabelMinHeight: 30
-                  })}
-                </Paper>
-
-                {renderDonutPanel({
-                  title: 'COMPOSICION POR GENERO (AFRO)',
-                  subtitle: 'Genero',
-                  total: normalizeNumber(data.afrodescendientes?.total),
-                  accent: '#2563eb',
-                  segments: afroGenero.map((item, index) => ({
-                    label: item.label,
-                    value: item.total,
-                    color: genderSeriesPalette[index % genderSeriesPalette.length]
-                  }))
-                })}
-
-                <Paper elevation={0} sx={{ p: 1.4, borderRadius: 3, border: '1px solid #dbe6f5', bgcolor: '#fff', height: '100%' }}>
-                  <Box sx={{ px: 1.2, py: 0.9, borderRadius: 2, bgcolor: '#1d4ed8', mb: 1.2 }}>
-                    <Typography sx={{ color: '#fff', fontWeight: 900, fontSize: 12, letterSpacing: '.06em' }}>DETALLE POR GENERO (AFRO) - BARRAS</Typography>
+                    <Typography sx={{ color: '#fff', fontWeight: 900, fontSize: 12, letterSpacing: '.06em' }}>AFRODESCENDIENTES POR GENERO</Typography>
                   </Box>
                   {renderCategoryBars(afroGenero, {
                     color: genderSeriesPalette[0],
@@ -6916,6 +6945,7 @@ const renderCategoryBars = (items = [], options = {}) => {
                   {renderInsightRows(gruposEtnicos.slice(0, 10), {
                     total: gruposEtnicosTotal,
                     colorPalette: etnicoPalette,
+                    getColor: getEtnicoColor,
                     selectedKey: caracterizacionUi.grupoEtnico,
                     onSelect: (label) => setCaracterizacionUi((prev) => ({ ...prev, grupoEtnico: label })),
                     compactLabel: (label) => String(label || '').slice(0, 28),
@@ -6932,6 +6962,7 @@ const renderCategoryBars = (items = [], options = {}) => {
                   {renderInsightRows(gruposSoloEtnicos.slice(0, 10), {
                     total: gruposSoloEtnicosTotal,
                     colorPalette: etnicoPalette,
+                    getColor: getEtnicoColor,
                     selectedKey: caracterizacionUi.grupoEtnico,
                     onSelect: (label) => setCaracterizacionUi((prev) => ({ ...prev, grupoEtnico: label })),
                     compactLabel: (label) => String(label || '').slice(0, 28),
@@ -13571,7 +13602,9 @@ const renderCategoryBars = (items = [], options = {}) => {
                     const gradStart = isFemale ? currentStageObj.gradientStart : gItem.gradientStart;
                     const gradEnd = isFemale ? currentStageObj.gradientEnd : gItem.gradientEnd;
                     const pctVal = Number(gItem.pct || 0);
-                    const exactCount = gItem.totalCount > 0 ? gItem.totalCount : gItem.count;
+                    const exactCount = gItem.count;
+                    const displayPct = pctVal > 0 && pctVal < 0.1 ? '< 0.1%' : `${pctVal.toFixed(1)}%`;
+                    const barWidth = Math.max(pctVal > 0 ? 1 : 0, Math.min(100, pctVal));
                     return (
                       <Box key={gItem.rawName} sx={{ display: 'flex', flexDirection: 'column', gap: 0.4 }}>
                         <Stack direction="row" alignItems="center" justifyContent="space-between">
@@ -13589,8 +13622,8 @@ const renderCategoryBars = (items = [], options = {}) => {
                               </Typography>
                             </Box>
                           </Stack>
-                          <Typography sx={{ fontSize: 20, fontWeight: 950, color: cardColor, lineHeight: 1 }}>
-                            {pctVal.toFixed(1)}%
+                          <Typography sx={{ fontSize: 18, fontWeight: 950, color: cardColor, lineHeight: 1 }}>
+                            {displayPct}
                           </Typography>
                         </Stack>
                         <Box sx={{ width: '100%', height: 5, bgcolor: 'rgba(0,0,0,0.06)', borderRadius: 999, overflow: 'hidden' }}>
