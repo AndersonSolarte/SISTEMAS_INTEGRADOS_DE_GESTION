@@ -5498,6 +5498,7 @@ const getEstadisticas = async (req, res) => {
       const replacements = {};
       const normalizedProgramas = Array.from(new Set(programas.map((item) => normalizeComparableText(item)).filter(Boolean)));
       const cacheKey = JSON.stringify({
+        mode: 'all-records-v1',
         programas: [...normalizedProgramas].sort(),
         anios: [...aniosList].sort((a, b) => a - b),
         periodos: [...periodos].sort()
@@ -5540,12 +5541,6 @@ const getEstadisticas = async (req, res) => {
       const aggregateRows = await PoblacionalCaracterizacion.sequelize.query(`
         WITH normalized AS MATERIALIZED (
           SELECT
-            id,
-            COALESCE(
-              NULLIF(BTRIM(no_identificacion), ''),
-              NULLIF(BTRIM(codigo), ''),
-              'ROW-' || id::text
-            ) AS person_key,
             ${derivedAnioSql} AS derived_anio,
             ${periodOrderSql} AS period_order,
             CASE
@@ -5565,17 +5560,7 @@ const getEstadisticas = async (req, res) => {
           ${normalizedFilters.length ? `WHERE ${normalizedFilters.join(' AND ')}` : ''}
         ),
         scoped AS MATERIALIZED (
-          SELECT *
-          FROM (
-            SELECT
-              normalized.*,
-              ROW_NUMBER() OVER (
-                PARTITION BY derived_anio, period_order, person_key
-                ORDER BY id DESC
-              ) AS person_row
-            FROM normalized
-          ) ranked
-          WHERE person_row = 1
+          SELECT * FROM normalized
         )
         SELECT 'total'::text AS dimension, 'TOTAL'::text AS label, COUNT(*)::bigint AS total, NULL::integer AS anio, NULL::integer AS period_order
         FROM scoped

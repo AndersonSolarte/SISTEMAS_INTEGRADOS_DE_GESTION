@@ -2597,7 +2597,8 @@ function GestionInformacion() {
         anios: _sendAnios,
         periodos: _sendSemestres,
         sexos: [...(geoFiltersRef.current.sexos || [])],
-        niveles: [...(geoFiltersRef.current.niveles || [])]
+        niveles: [...(geoFiltersRef.current.niveles || [])],
+        _bust: Math.floor(Date.now() / (5 * 60 * 1000)) // cambia cada 5 min — fuerza recarga del caché
       };
       const response = await gestionInformacionService.getEstadisticas(requestParams);
       if (matriculadosPanelReqRef.current !== requestId) return;
@@ -6216,11 +6217,11 @@ const renderCategoryBars = (items = [], options = {}) => {
     const gruposSoloEtnicosPct = totalRegistros > 0 ? (gruposSoloEtnicosTotal / totalRegistros) * 100 : 0;
     const genderIconFor = (label) => {
       const t = String(label || '').toUpperCase();
-      if (t.includes('MASC')) return <MaleIcon sx={{ fontSize: 26 }} />;
-      if (t.includes('FEM')) return <FemaleIcon sx={{ fontSize: 26 }} />;
-      return <TransgenderIcon sx={{ fontSize: 26 }} />;
+      if (t.includes('MASC')) return <MaleIcon sx={{ fontSize: 30 }} />;
+      if (t.includes('FEM')) return <FemaleIcon sx={{ fontSize: 30 }} />;
+      return <TransgenderIcon sx={{ fontSize: 30 }} />;
     };
-    const sectionHeader = (icon, title, subtitle, colorA, colorB) => (
+    const sectionHeader = (icon, title, colorA, colorB) => (
       <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, mb: 2.2, pb: 1.6, borderBottom: '2px solid #eef2ff' }}>
         <Box
           sx={{
@@ -6231,14 +6232,14 @@ const renderCategoryBars = (items = [], options = {}) => {
             placeItems: 'center',
             color: '#fff',
             background: `linear-gradient(135deg, ${colorA}, ${colorB})`,
-            boxShadow: `0 12px 22px -14px ${colorA}`
+            boxShadow: `0 12px 22px -14px ${colorA}`,
+            '& .MuiSvgIcon-root': { fontSize: 30 }
           }}
         >
           {icon}
         </Box>
         <Box>
           <Typography sx={{ fontWeight: 900, color: '#0f172a', fontSize: { xs: 22, md: 28 }, lineHeight: 1.1 }}>{title}</Typography>
-          <Typography variant="body2" sx={{ color: '#64748b' }}>{subtitle}</Typography>
         </Box>
       </Box>
     );
@@ -6401,35 +6402,33 @@ const renderCategoryBars = (items = [], options = {}) => {
     const kpiItems = [
       {
         icon: <PeopleIcon />,
-        label: 'Estudiantes caracterizados',
+        label: 'Registros de caracterización',
         value: totalRegistros,
-        caption: 'Personas únicas según los filtros',
-        color: '#3155a6',
-        soft: '#eef4ff'
+        color: '#2563eb',
+        gradient: 'linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%)'
       },
       {
         icon: <SecurityIcon />,
         label: 'Víctimas del conflicto',
         value: data.victimas?.total || 0,
-        caption: `${victimasPct.toFixed(2)}% de los estudiantes`,
-        color: '#b42338',
-        soft: '#fff1f2'
+        badge: `${victimasPct.toFixed(2)}%`,
+        color: '#dc2626',
+        gradient: 'linear-gradient(135deg, #ef4444 0%, #b91c1c 100%)'
       },
       {
         icon: <Diversity3Icon />,
         label: 'Afrodescendientes',
         value: data.afrodescendientes?.total || 0,
-        caption: `${afroPct.toFixed(2)}% de los estudiantes`,
+        badge: `${afroPct.toFixed(2)}%`,
         color: '#0f766e',
-        soft: '#ecfdf5'
+        gradient: 'linear-gradient(135deg, #14b8a6 0%, #0f766e 100%)'
       },
       {
         icon: <GroupsIcon />,
         label: 'Grupos étnicos reportados',
         value: (data.gruposEtnicos?.distribucion || []).length,
-        caption: 'Categorías presentes en la selección',
         color: '#7c3aed',
-        soft: '#f5f3ff'
+        gradient: 'linear-gradient(135deg, #8b5cf6 0%, #6d28d9 100%)'
       }
     ];
     return (
@@ -6563,7 +6562,6 @@ const renderCategoryBars = (items = [], options = {}) => {
         >
           <Box sx={{ mb: 1.8 }}>
             <Typography sx={{ color: '#10233f', fontWeight: 900, fontSize: 17 }}>Resumen de la selección</Typography>
-            <Typography sx={{ color: '#64748b', fontSize: 12.5 }}>Indicadores principales para una lectura ejecutiva.</Typography>
           </Box>
           <Box
             sx={{
@@ -6581,32 +6579,44 @@ const renderCategoryBars = (items = [], options = {}) => {
               <Box key={item.label}>
                 <Card
                   sx={{
-                    borderRadius: 2.5,
+                    borderRadius: 3,
                     height: '100%',
-                    color: '#10233f',
-                    bgcolor: '#ffffff',
-                    border: '1px solid #dbe6f5',
-                    borderTop: `3px solid ${item.color}`,
-                    boxShadow: '0 8px 24px -20px rgba(15,35,63,.55)'
+                    minHeight: 96,
+                    color: '#ffffff',
+                    background: item.gradient,
+                    border: '1px solid rgba(255,255,255,.18)',
+                    boxShadow: `0 10px 20px -10px ${item.color}88`,
+                    overflow: 'hidden',
+                    transition: 'transform .2s ease, box-shadow .2s ease, filter .2s ease',
+                    '&:hover': {
+                      transform: 'translateY(-4px)',
+                      boxShadow: `0 16px 28px -12px ${item.color}aa`,
+                      filter: 'saturate(1.08)',
+                      '& .caracterizacion-kpi-icon': { transform: 'scale(1.08)' }
+                    }
                   }}
                 >
-                  <CardContent sx={{ p: 1.55, height: '100%', '&:last-child': { pb: 1.55 } }}>
-                    <Stack direction="row" spacing={1.1} alignItems="center">
-                      <Box sx={{ width: 38, height: 38, borderRadius: 1.7, display: 'grid', placeItems: 'center', bgcolor: item.soft, color: item.color, border: `1px solid ${item.color}22`, flexShrink: 0, '& .MuiSvgIcon-root': { fontSize: 21 } }}>
-                        {item.icon}
-                      </Box>
+                  <CardContent sx={{ p: 1.7, height: '100%', display: 'flex', flexDirection: 'column', justifyContent: 'space-between', '&:last-child': { pb: 1.7 } }}>
+                    <Stack direction="row" spacing={1.1} alignItems="center" justifyContent="space-between">
                       <Box sx={{ minWidth: 0 }}>
-                        <Typography sx={{ color: '#52647c', fontWeight: 800, fontSize: 11.5, lineHeight: 1.2, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                        <Typography sx={{ color: 'rgba(255,255,255,.88)', fontWeight: 900, fontSize: 10.5, lineHeight: 1.2, textTransform: 'uppercase', letterSpacing: '.045em', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                           {item.label}
                         </Typography>
-                        <Typography sx={{ color: '#10233f', fontSize: { xs: 22, md: 25 }, fontWeight: 900, lineHeight: 1.05, mt: 0.35 }}>
-                          {formatNumber(item.value)}
-                        </Typography>
+                        <Stack direction="row" spacing={0.8} alignItems="center" sx={{ mt: 0.45 }}>
+                          <Typography sx={{ color: '#ffffff', fontSize: { xs: 24, md: 27 }, fontWeight: 950, lineHeight: 1 }}>
+                            {formatNumber(item.value)}
+                          </Typography>
+                          {item.badge && (
+                            <Box sx={{ px: 0.75, py: 0.2, borderRadius: 99, bgcolor: 'rgba(255,255,255,.2)', color: '#fff', fontSize: 10.5, fontWeight: 900 }}>
+                              {item.badge}
+                            </Box>
+                          )}
+                        </Stack>
+                      </Box>
+                      <Box className="caracterizacion-kpi-icon" sx={{ width: 48, height: 48, borderRadius: 2.3, display: 'grid', placeItems: 'center', bgcolor: 'rgba(255,255,255,.18)', color: '#ffffff', border: '1px solid rgba(255,255,255,.16)', flexShrink: 0, transition: 'transform .2s ease', '& .MuiSvgIcon-root': { fontSize: 27 } }}>
+                        {item.icon}
                       </Box>
                     </Stack>
-                    <Typography sx={{ display: 'block', mt: 1, color: '#64748b', fontSize: 11.25, fontWeight: 600, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                      {item.caption}
-                    </Typography>
                   </CardContent>
                 </Card>
               </Box>
@@ -6615,7 +6625,7 @@ const renderCategoryBars = (items = [], options = {}) => {
         </Paper>
 
         <Paper elevation={0} sx={{ p: { xs: 1.6, md: 2.2 }, borderRadius: 4, border: '1px solid #dbe6f5' }}>
-          {sectionHeader(<PeopleIcon />, 'Distribucion general por genero', 'Se integra al bloque principal de caracterizacion para lectura ejecutiva inmediata', '#f59e0b', '#d97706')}
+          {sectionHeader(<PeopleIcon />, 'Distribucion general por genero', '#f59e0b', '#d97706')}
           <Box
             sx={{
               ...GI_DASHBOARD_AUTO_GRID_SX,
@@ -6632,10 +6642,10 @@ const renderCategoryBars = (items = [], options = {}) => {
               const pct = getPct(item.total, totalRegistros);
               return (
                 <Box key={`gen-top-${item.label}`}>
-                  <Card sx={{ borderRadius: 3, border: `2px solid ${s.border}`, bgcolor: s.bg, boxShadow: 'none', height: '100%' }}>
+                  <Card sx={{ borderRadius: 3, border: `2px solid ${s.border}`, bgcolor: s.bg, boxShadow: 'none', height: '100%', transition: 'transform .2s ease, box-shadow .2s ease', '&:hover': { transform: 'translateY(-4px)', boxShadow: `0 14px 26px -16px ${s.chip}`, '& .genero-card-icon': { transform: 'scale(1.08)' } } }}>
                     <CardContent sx={{ p: 2.4, height: '100%', display: 'flex', flexDirection: 'column' }}>
                       <Stack direction="row" spacing={1.2} alignItems="center">
-                        <Box sx={{ color: s.fg, display: 'grid', placeItems: 'center', width: 34, height: 34, borderRadius: 2, bgcolor: 'rgba(255,255,255,.7)' }}>
+                        <Box className="genero-card-icon" sx={{ color: s.fg, display: 'grid', placeItems: 'center', width: 46, height: 46, borderRadius: 2.3, bgcolor: 'rgba(255,255,255,.75)', transition: 'transform .2s ease', '& .MuiSvgIcon-root': { fontSize: 30 } }}>
                           {genderIconFor(item.label)}
                         </Box>
                         <Typography variant="caption" sx={{ color: s.fg, fontWeight: 900, textTransform: 'uppercase', letterSpacing: '.06em', fontSize: 13 }}>
@@ -6647,7 +6657,6 @@ const renderCategoryBars = (items = [], options = {}) => {
                       </Typography>
                       <Stack direction="row" spacing={1} alignItems="center" sx={{ mt: 1.2, flexWrap: 'wrap' }}>
                         <Chip size="small" label={`${pct.toFixed(2)}%`} sx={{ bgcolor: s.chip, color: '#fff', fontWeight: 900, fontSize: 14, height: 31, '& .MuiChip-label': { px: 1.25 } }} />
-                        <Typography variant="caption" sx={{ color: '#64748b', fontSize: 13.5, fontWeight: 600 }}>participacion sobre caracterizacion total</Typography>
                       </Stack>
                       <LinearProgress variant="determinate" value={Math.max(0, Math.min(100, pct))} sx={{ mt: 'auto', pt: 1.4, height: 10, borderRadius: 999, bgcolor: 'rgba(255,255,255,.8)', '& .MuiLinearProgress-bar': { bgcolor: s.chip } }} />
                     </CardContent>
@@ -6661,7 +6670,7 @@ const renderCategoryBars = (items = [], options = {}) => {
         <Grid container spacing={2}>
           <Grid item xs={12}>
             <Paper elevation={0} sx={{ p: { xs: 1.5, md: 2 }, borderRadius: 4, border: '1px solid #dbe6f5' }}>
-              {sectionHeader(<SecurityIcon />, 'Victimas del conflicto armado', 'Distribucion general y composicion por genero', '#ef4444', '#b91c1c')}
+              {sectionHeader(<SecurityIcon />, 'Victimas del conflicto armado', '#ef4444', '#b91c1c')}
               <Card sx={{ mb: 1.6, borderRadius: 2.8, border: '1px solid #fecaca', bgcolor: '#fff7f7' }}>
                 <CardContent sx={{ p: { xs: 1.4, md: 1.6 } }}>
                   <Stack direction={{ xs: 'column', md: 'row' }} spacing={1.2} alignItems={{ xs: 'flex-start', md: 'center' }} justifyContent="space-between">
@@ -6755,7 +6764,7 @@ const renderCategoryBars = (items = [], options = {}) => {
         <Grid container spacing={2}>
           <Grid item xs={12}>
             <Paper elevation={0} sx={{ p: { xs: 1.5, md: 2 }, borderRadius: 4, border: '1px solid #dbe6f5', height: '100%' }}>
-              {sectionHeader(<Diversity3Icon />, 'Afrodescendientes', 'Conteo y distribucion por genero', '#0ea5e9', '#2563eb')}
+              {sectionHeader(<Diversity3Icon />, 'Afrodescendientes', '#0ea5e9', '#2563eb')}
               <Card sx={{ mb: 1.6, borderRadius: 2.8, border: '1px solid #bfdbfe', bgcolor: '#eff6ff' }}>
                 <CardContent sx={{ p: { xs: 1.4, md: 1.6 } }}>
                   <Stack direction={{ xs: 'column', md: 'row' }} spacing={1.2} alignItems={{ xs: 'flex-start', md: 'center' }} justifyContent="space-between">
@@ -6849,7 +6858,7 @@ const renderCategoryBars = (items = [], options = {}) => {
           </Grid>
           <Grid item xs={12}>
             <Paper elevation={0} sx={{ p: { xs: 1.5, md: 2 }, borderRadius: 4, border: '1px solid #dbe6f5', height: '100%' }}>
-              {sectionHeader(<HomeWorkIcon />, 'Estratos socioeconomicos', 'Distribucion general de registros por estrato', '#10b981', '#059669')}
+              {sectionHeader(<HomeWorkIcon />, 'Estratos socioeconomicos', '#10b981', '#059669')}
               <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', md: '1fr 1fr' }, gap: 1.6 }}>
                 {renderInsightRows(estratosDistribucion.slice(0, 8), {
                   total: totalRegistros,
@@ -6876,7 +6885,7 @@ const renderCategoryBars = (items = [], options = {}) => {
         <Grid container spacing={2}>
           <Grid item xs={12}>
             <Paper elevation={0} sx={{ p: { xs: 1.5, md: 2 }, borderRadius: 4, border: '1px solid #dbe6f5' }}>
-              {sectionHeader(<GroupsIcon />, 'Grupos etnicos', 'Categorias y participacion con estilos de tarjetas', '#2563eb', '#0ea5e9')}
+              {sectionHeader(<GroupsIcon />, 'Grupos etnicos', '#2563eb', '#0ea5e9')}
               <Card sx={{ mb: 1.6, borderRadius: 2.8, border: '1px solid #bfdbfe', bgcolor: '#eff6ff' }}>
                 <CardContent sx={{ p: { xs: 1.4, md: 1.6 } }}>
                   <Box
