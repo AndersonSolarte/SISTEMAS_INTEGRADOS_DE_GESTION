@@ -13517,127 +13517,85 @@ const renderCategoryBars = (items = [], options = {}) => {
 
         {/* ── Active Stage View Details ── */}
         <Stack spacing={2}>
-          <Paper
-            elevation={0}
-            sx={{
-              p: 2.4,
-              borderRadius: 3.5,
-              border: `1px solid ${currentStageObj.color}40`,
-              bgcolor: currentStageObj.bg,
-              background: `linear-gradient(135deg, ${currentStageObj.bg} 0%, #ffffff 100%)`,
-              boxShadow: '0 10px 24px rgba(15,23,42,0.05)'
-            }}
-          >
-            <Stack direction="row" justifyContent="space-between" alignItems="center">
-              <Box>
-                <Typography sx={{ fontSize: 12.5, fontWeight: 950, color: currentStageObj.color, textTransform: 'uppercase', letterSpacing: 0.8 }}>
-                  {currentStageObj.label}
-                </Typography>
-                <Typography sx={{ fontSize: { xs: 36, md: 46 }, fontWeight: 950, color: '#0f172a', lineHeight: 1.05, mt: 0.4, letterSpacing: '-0.5px' }}>
-                  {formatNumber(currentStageObj.total)}
-                </Typography>
-                <Typography sx={{ fontSize: 12.5, color: '#64748b', fontWeight: 600, mt: 0.4 }}>
-                  Total consolidado para los filtros seleccionados
-                </Typography>
-              </Box>
-              <Box sx={{ width: 66, height: 66, borderRadius: 3, bgcolor: `${currentStageObj.color}18`, display: 'grid', placeItems: 'center', color: currentStageObj.color, boxShadow: `0 8px 18px ${currentStageObj.color}20` }}>
-                {currentStageObj.icon}
-              </Box>
-            </Stack>
-          </Paper>
-
           <Box
             sx={{
               display: 'grid',
-              gridTemplateColumns: { xs: '1fr', md: '1.1fr 1.9fr' },
+              gridTemplateColumns: { xs: '1fr', md: '1fr 2fr' },
               gap: 2,
               alignItems: 'stretch'
             }}
           >
-            {/* Left: Innovative Infographic Gender Breakdown */}
-            <Paper elevation={0} sx={{ p: 2.5, borderRadius: 3.5, border: '1px solid #e2e8f0', bgcolor: '#ffffff', display: 'flex', flexDirection: 'column', justifyContent: 'space-between' }}>
-              <Box>
-                <Typography sx={{ fontWeight: 950, color: '#0f172a', fontSize: 15, letterSpacing: '-0.2px' }}>
+            {/* LEFT COLUMN: Total card + Gender compact list */}
+            <Stack spacing={1.5}>
+              {/* Total card */}
+              <Paper elevation={0} sx={{ p: 2.2, borderRadius: 3, border: `1px solid ${currentStageObj.color}35`, background: `linear-gradient(135deg, ${currentStageObj.bg} 0%, #ffffff 100%)`, boxShadow: `0 6px 18px ${currentStageObj.color}12` }}>
+                <Stack direction="row" justifyContent="space-between" alignItems="center">
+                  <Box>
+                    <Typography sx={{ fontSize: 11, fontWeight: 900, color: currentStageObj.color, textTransform: 'uppercase', letterSpacing: 0.8 }}>
+                      {currentStageObj.label}
+                    </Typography>
+                    <Typography sx={{ fontSize: { xs: 34, md: 42 }, fontWeight: 950, color: '#0f172a', lineHeight: 1.05, mt: 0.3, letterSpacing: '-0.5px' }}>
+                      {formatNumber(currentStageObj.total)}
+                    </Typography>
+                    <Typography sx={{ fontSize: 11.5, color: '#64748b', fontWeight: 600, mt: 0.3 }}>
+                      Total consolidado para los filtros seleccionados
+                    </Typography>
+                  </Box>
+                  <Box sx={{ width: 56, height: 56, borderRadius: 2.5, bgcolor: `${currentStageObj.color}18`, display: 'grid', placeItems: 'center', color: currentStageObj.color }}>
+                    {currentStageObj.icon}
+                  </Box>
+                </Stack>
+              </Paper>
+
+              {/* Gender compact list */}
+              <Paper elevation={0} sx={{ p: 2, borderRadius: 3, border: '1px solid #e2e8f0', bgcolor: '#ffffff', flex: 1 }}>
+                <Typography sx={{ fontWeight: 900, color: '#0f172a', fontSize: 13.5, mb: 0.4 }}>
                   Distribución por Género
                 </Typography>
-                <Typography sx={{ color: '#64748b', fontSize: 12, fontWeight: 600, mt: 0.2, mb: 1.5 }}>
-                  Desglose poblacional por género y proporción
+                <Typography sx={{ color: '#64748b', fontSize: 11.5, fontWeight: 600, mb: 1.6 }}>
+                  Desglose por género y proporción
                 </Typography>
-              </Box>
-
-              {(() => {
-                const genders = currentStageObj.genders || [];
-                return (
-                  <Stack spacing={1.6} sx={{ width: '100%', my: 'auto' }}>
-                    {genders.map((gItem) => {
-                      const isFemale = gItem.key === 'femenino';
-                      const cardColor = isFemale ? currentStageObj.color : gItem.color;
-                      const cardBg = isFemale ? currentStageObj.bg : gItem.bg;
-                      const gradStart = isFemale ? currentStageObj.gradientStart : gItem.gradientStart;
-                      const gradEnd = isFemale ? currentStageObj.gradientEnd : gItem.gradientEnd;
-                      const pctVal = Number(gItem.pct || 0);
-
-                      return (
-                        <Paper
-                          key={gItem.rawName}
-                          elevation={0}
-                          sx={{
-                            p: 1.6,
-                            borderRadius: 3,
-                            bgcolor: cardBg,
-                            border: `1px solid ${cardColor}30`,
-                            borderLeft: `5px solid ${cardColor}`,
-                            transition: 'transform 0.2s ease, boxShadow 0.2s ease',
-                            '&:hover': { transform: 'translateY(-2px)', boxShadow: `0 8px 20px ${cardColor}18` }
-                          }}
-                        >
-                          <Stack direction="row" alignItems="center" justifyContent="space-between" spacing={1.5}>
-                            <Stack direction="row" alignItems="center" spacing={1.5}>
-                              <Box
-                                sx={{
-                                  width: 42,
-                                  height: 42,
-                                  borderRadius: '50%',
-                                  bgcolor: isFemale ? '#ffffff' : `${gItem.color}15`,
-                                  color: cardColor,
-                                  display: 'grid',
-                                  placeItems: 'center',
-                                  boxShadow: '0 2px 8px rgba(0,0,0,0.06)'
-                                }}
-                              >
-                                {gItem.icon}
-                              </Box>
-                              <Box>
-                                <Typography sx={{ fontSize: 10.5, fontWeight: 900, color: cardColor, textTransform: 'uppercase', letterSpacing: 0.5 }}>
-                                  {gItem.rawName} {gItem.symbol}
-                                </Typography>
-                                <Typography sx={{ fontSize: 14.5, fontWeight: 950, color: '#0f172a' }}>
-                                  {formatNumber(gItem.count)} <Typography component="span" sx={{ fontSize: 11.5, color: '#64748b', fontWeight: 600 }}>estudiantes</Typography>
-                                </Typography>
-                              </Box>
-                            </Stack>
-
-                            <Box sx={{ textAlign: 'right' }}>
-                              <Typography sx={{ fontSize: 21, fontWeight: 950, color: cardColor, lineHeight: 1 }}>
-                                {pctVal.toFixed(1)}%
+                <Stack spacing={1}>
+                  {(currentStageObj.genders || []).map((gItem) => {
+                    const isFemale = gItem.key === 'femenino';
+                    const cardColor = isFemale ? currentStageObj.color : gItem.color;
+                    const gradStart = isFemale ? currentStageObj.gradientStart : gItem.gradientStart;
+                    const gradEnd = isFemale ? currentStageObj.gradientEnd : gItem.gradientEnd;
+                    const pctVal = Number(gItem.pct || 0);
+                    const exactCount = gItem.totalCount > 0 ? gItem.totalCount : gItem.count;
+                    return (
+                      <Box key={gItem.rawName} sx={{ display: 'flex', flexDirection: 'column', gap: 0.4 }}>
+                        <Stack direction="row" alignItems="center" justifyContent="space-between">
+                          <Stack direction="row" alignItems="center" spacing={1}>
+                            <Box sx={{ color: cardColor, display: 'flex', alignItems: 'center', fontSize: 18 }}>
+                              {gItem.icon}
+                            </Box>
+                            <Box>
+                              <Typography sx={{ fontSize: 10.5, fontWeight: 900, color: cardColor, textTransform: 'uppercase', letterSpacing: 0.4, lineHeight: 1 }}>
+                                {gItem.rawName}
+                              </Typography>
+                              <Typography sx={{ fontSize: 13.5, fontWeight: 950, color: '#0f172a', lineHeight: 1.2 }}>
+                                {formatNumber(exactCount)}{' '}
+                                <Typography component="span" sx={{ fontSize: 10.5, color: '#94a3b8', fontWeight: 600 }}>estudiantes</Typography>
                               </Typography>
                             </Box>
                           </Stack>
+                          <Typography sx={{ fontSize: 20, fontWeight: 950, color: cardColor, lineHeight: 1 }}>
+                            {pctVal.toFixed(1)}%
+                          </Typography>
+                        </Stack>
+                        <Box sx={{ width: '100%', height: 5, bgcolor: 'rgba(0,0,0,0.06)', borderRadius: 999, overflow: 'hidden' }}>
+                          <Box sx={{ width: `${Math.min(100, pctVal)}%`, height: '100%', background: `linear-gradient(90deg, ${gradStart} 0%, ${gradEnd} 100%)`, borderRadius: 999 }} />
+                        </Box>
+                      </Box>
+                    );
+                  })}
+                </Stack>
+              </Paper>
+            </Stack>
 
-                          {/* Progress Bar */}
-                          <Box sx={{ mt: 1.3, width: '100%', height: 7, bgcolor: 'rgba(0,0,0,0.06)', borderRadius: 999, overflow: 'hidden' }}>
-                            <Box sx={{ width: `${Math.min(100, pctVal)}%`, height: '100%', background: `linear-gradient(90deg, ${gradStart} 0%, ${gradEnd} 100%)`, borderRadius: 999 }} />
-                          </Box>
-                        </Paper>
-                      );
-                    })}
-                  </Stack>
-                );
-              })()}
-            </Paper>
-
-            {/* Right: Ranking por Programa Table with Matching Stage Theme Header */}
-            <Paper elevation={0} sx={{ p: 0, borderRadius: 3.5, border: '1px solid #e2e8f0', bgcolor: '#ffffff', overflow: 'hidden' }}>
+            {/* RIGHT COLUMN: Programs table full height */}
+            <Paper elevation={0} sx={{ p: 0, borderRadius: 3, border: '1px solid #e2e8f0', bgcolor: '#ffffff', overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
               <Box
                 sx={{
                   p: 1.5,
@@ -13646,8 +13604,7 @@ const renderCategoryBars = (items = [], options = {}) => {
                   color: '#ffffff',
                   display: 'flex',
                   justifyContent: 'space-between',
-                  alignItems: 'center',
-                  boxShadow: `0 4px 12px ${currentStageObj.color}30`
+                  alignItems: 'center'
                 }}
               >
                 <Typography sx={{ fontWeight: 950, fontSize: 13, textTransform: 'uppercase', letterSpacing: 0.5, color: '#ffffff' }}>
@@ -13658,7 +13615,7 @@ const renderCategoryBars = (items = [], options = {}) => {
                 </Typography>
               </Box>
 
-              <TableContainer sx={{ maxHeight: 370 }}>
+              <TableContainer sx={{ flex: 1 }}>
                 <Table size="small" stickyHeader>
                   <TableBody>
                     {currentStageObj.programas.length === 0 ? (
