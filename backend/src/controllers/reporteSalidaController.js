@@ -29,7 +29,9 @@ const featureDisabled = (res) =>
   res.status(403).json({ success: false, message: 'El formulario de reporte de salida aun no esta habilitado.' });
 
 const isAdminUser = (user) => String(user?.role || '') === 'administrador';
-const SEGUIMIENTO_REPORTE_ROLES = [ROLES.ADMINISTRADOR, ROLES.GESTION_INFORMACION, ROLES.PLANEACION_ESTRATEGICA];
+// Estos roles pueden consultar institucionalmente todos los reportes. La
+// capacidad de modificarlos se resuelve por separado: Planeacion es lectura.
+const SEGUIMIENTO_REPORTE_VIEW_ALL_ROLES = [ROLES.ADMINISTRADOR, ROLES.PLANEACION_ESTRATEGICA];
 const REPOSICION_PENDIENTE_ESTADOS = ['pendiente', 'programada', 'incumplida'];
 
 const hashToken = (token) => crypto.createHash('sha256').update(String(token || '')).digest('hex');
@@ -1103,10 +1105,6 @@ const userHasAnyRecursoHumanoPermission = (user = {}, keys = []) => {
     .some((key) => keys.includes(String(key || '').trim()));
 };
 
-const userHasSeguimientoReportePermission = (user = {}) => {
-  return userHasAnyRecursoHumanoPermission(user, SEGUIMIENTO_REPORTE_ADMIN_KEYS);
-};
-
 const userHasModulePermissionInDb = async (user, keys = []) => {
   if (!user || !UserModulePermission || !Array.isArray(keys) || keys.length === 0) return false;
   const count = await UserModulePermission.count({
@@ -1121,21 +1119,25 @@ const userHasModulePermissionInDb = async (user, keys = []) => {
 
 const canManageSeguimientoReportes = async (user) => {
   if (!user) return false;
-  if (SEGUIMIENTO_REPORTE_ROLES.includes(String(user.role || ''))) return true;
-  if (userHasSeguimientoReportePermission(user)) return true;
+  const role = String(user.role || '');
+  if (role === ROLES.ADMINISTRADOR) return true;
+  if (role !== ROLES.GESTION_INFORMACION) return false;
+
+  // Gestion de la Informacion solo obtiene alcance institucional cuando un
+  // administrador le asigna expresamente el seguimiento desde Permisos.
   return userHasModulePermissionInDb(user, SEGUIMIENTO_REPORTE_ADMIN_KEYS);
 };
 
 const canViewReporteSalidaModule = async (user) => {
   if (!user) return false;
-  if (SEGUIMIENTO_REPORTE_ROLES.includes(String(user.role || ''))) return true;
+  if (SEGUIMIENTO_REPORTE_VIEW_ALL_ROLES.includes(String(user.role || ''))) return true;
   if (userHasAnyRecursoHumanoPermission(user, REPORTE_SALIDA_VIEW_KEYS)) return true;
   return userHasModulePermissionInDb(user, REPORTE_SALIDA_VIEW_KEYS);
 };
 
 const canViewAusentismoModule = async (user) => {
   if (!user) return false;
-  if (SEGUIMIENTO_REPORTE_ROLES.includes(String(user.role || ''))) return true;
+  if (String(user.role || '') === ROLES.ADMINISTRADOR) return true;
   if (userHasAnyRecursoHumanoPermission(user, AUSENTISMO_VIEW_KEYS)) return true;
   return userHasModulePermissionInDb(user, AUSENTISMO_VIEW_KEYS);
 };
@@ -1151,6 +1153,14 @@ const bossScopeWhere = (user) => {
   const email = sanitizeText(user.email, 180);
   if (email) conditions.push({ jefe_snapshot: { [Op.contains]: { email } } });
   return { [Op.or]: conditions };
+};
+
+const isAssignedBoss = (solicitud, user) => {
+  const bossId = Number(solicitud?.jefe_inmediato_user_id || 0);
+  const userId = Number(user?.id || 0);
+  if (bossId > 0 && userId > 0 && bossId === userId) return true;
+  const bossEmail = normalizeEmail(solicitud?.jefe_snapshot?.email);
+  return Boolean(bossEmail && bossEmail === normalizeEmail(user?.email));
 };
 
 const ownPendingReposicionWhere = (user) => ({
@@ -1171,11 +1181,13 @@ const resolveSeguimientoAccess = async (user) => {
     ReporteSalidaSolicitud.count({ where: ownPendingReposicionWhere(user) }),
     ReporteSalidaSolicitud.count({ where: bossPendingReposicionWhere(user) })
   ]);
-  const canViewReporteSalida = canManageAll || canViewReporteSalidaByPermission || ownPending > 0 || bossPending > 0;
-  const canViewEstadisticas = canManageAll || canViewEstadisticasByPermission;
+  const canViewAll = canManageAll || String(user?.role || '') === ROLES.PLANEACION_ESTRATEGICA;
+  const canViewReporteSalida = canViewAll || ownPending > 0 || bossPending > 0;
+  const canViewEstadisticas = canManageAll;
 
   let mode = 'sin_pendientes';
   if (canManageAll) mode = 'gestion_humana';
+  else if (canViewAll) mode = 'planeacion_estrategica';
   else if (bossPending > 0) mode = ownPending > 0 ? 'jefe_y_colaborador' : 'jefe';
   else if (ownPending > 0) mode = 'colaborador';
 
@@ -1185,6 +1197,7 @@ const resolveSeguimientoAccess = async (user) => {
     canViewEstadisticas,
     canViewReporteSalidaByPermission,
     canViewEstadisticasByPermission,
+    canViewAll,
     canManageAll,
     canValidateReposicion: canManageAll,
     canManageTeamReposicion: bossPending > 0,
@@ -4028,7 +4041,7 @@ const getSeguimientoPersonal = async (req, res) => {
     }
 
     let where = {};
-    if (access.canManageAll || access.canViewReporteSalidaByPermission || access.canViewEstadisticasByPermission) {
+    if (access.canViewAll) {
       if (estado) where.estado = estado;
     } else {
       const scopedConditions = [];
@@ -4085,7 +4098,7 @@ const actualizarReposicion = async (req, res) => {
       return res.status(404).json({ success: false, message: 'Solicitud no encontrada.' });
     }
 
-    if (!tienePrivilegio && solicitud.jefe_inmediato_user_id !== req.user.id) {
+    if (!tienePrivilegio && !isAssignedBoss(solicitud, req.user)) {
       return res.status(403).json({ success: false, message: 'No tienes permiso para actualizar la reposición de esta solicitud.' });
     }
     if (!solicitud.reposicion_aplica) {
@@ -4190,6 +4203,9 @@ const actualizarReposicion = async (req, res) => {
 const eliminarSolicitud = async (req, res) => {
   if (!(await getReporteSalidaFeatureState())) return featureDisabled(res);
   try {
+    if (!(await canManageSeguimientoReportes(req.user))) {
+      return res.status(403).json({ success: false, message: 'No tienes permiso para eliminar solicitudes.' });
+    }
     const solicitud = await ReporteSalidaSolicitud.findByPk(req.params.id);
     if (!solicitud) {
       return res.status(404).json({ success: false, message: 'Solicitud no encontrada.' });
@@ -4223,6 +4239,9 @@ const eliminarSolicitud = async (req, res) => {
 const limpiarMocks = async (req, res) => {
   if (!(await getReporteSalidaFeatureState())) return featureDisabled(res);
   try {
+    if (!(await canManageSeguimientoReportes(req.user))) {
+      return res.status(403).json({ success: false, message: 'No tienes permiso para eliminar datos de prueba.' });
+    }
     const deletedCount = await ReporteSalidaSolicitud.destroy({
       where: {
         consecutivo: {
@@ -4247,6 +4266,9 @@ const limpiarMocks = async (req, res) => {
 const editarSolicitudAdmin = async (req, res) => {
   if (!(await getReporteSalidaFeatureState())) return featureDisabled(res);
   try {
+    if (!(await canManageSeguimientoReportes(req.user))) {
+      return res.status(403).json({ success: false, message: 'No tienes permiso para administrar solicitudes.' });
+    }
     const solicitud = await ReporteSalidaSolicitud.findByPk(req.params.id);
     if (!solicitud) {
       return res.status(404).json({ success: false, message: 'Solicitud no encontrada.' });

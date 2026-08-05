@@ -53,7 +53,6 @@ function RecursoHumanoLandingPage({ onBack }) {
   const { user, isAdmin } = useAuth();
   
   const hasAccess = (key) => isAdmin() || (user?.allowedRecursoHumanoDashboards && user.allowedRecursoHumanoDashboards.includes(key));
-  const hasAnyAccess = (keys) => keys.some((key) => hasAccess(key));
 
   useEffect(() => {
     let active = true;
@@ -78,6 +77,8 @@ function RecursoHumanoLandingPage({ onBack }) {
   const showSeguimientoCard = Boolean(seguimientoAccess?.canView);
   const seguimientoDescription = seguimientoAccess?.mode === 'colaborador'
     ? 'Consulta tus horas pendientes por reponer y el estado de validacion de Talento Humano.'
+    : seguimientoAccess?.mode === 'planeacion_estrategica'
+      ? 'Consulta institucional de reportes y reposiciones, sin acciones de validacion ni indicadores.'
     : seguimientoAccess?.mode === 'jefe' || seguimientoAccess?.mode === 'jefe_y_colaborador'
       ? 'Seguimiento de horas pendientes por reponer de tus colaboradores(as) a cargo.'
       : 'Control de radicaciones, aprobaciones, tiempos y reposicion gestionados por Gestión del Talento Humano.';
@@ -92,7 +93,7 @@ function RecursoHumanoLandingPage({ onBack }) {
     visibleCards.push(SUB_CARDS[1]); // Administrativos
   }
   
-  if (showSeguimientoCard || hasAnyAccess(['recurso_humano_seguimiento', 'seguimiento_reportes_rrhh', 'recurso_humano_reporte_salida', 'recurso_humano_indicadores_ausentismo'])) {
+  if (showSeguimientoCard) {
     visibleCards.push({
       key: 'seguimiento_reportes',
       label: 'Seguimiento a reportes',

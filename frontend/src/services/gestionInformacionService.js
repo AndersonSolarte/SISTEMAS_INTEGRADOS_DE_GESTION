@@ -5,6 +5,12 @@ const isNotFoundError = (error) => Number(error?.response?.status || 0) === 404;
 const gestionInformacionService = {
   getEstadisticas: (params = {}) =>
     api.get('/planeacion/gestion-informacion', { params, timeout: 120000 }).then((r) => r.data),
+  exportCaracterizacionRecords: (params = {}) =>
+    api.get('/planeacion/gestion-informacion/caracterizacion/export', {
+      params,
+      responseType: 'blob',
+      timeout: 120000
+    }),
   getResumen: (params = {}) =>
     api.get('/planeacion/gestion-informacion/resumen', { params, timeout: 60000 }).then((r) => r.data),
   getCargues: (params = {}) =>

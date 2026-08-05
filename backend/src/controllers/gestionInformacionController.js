@@ -2076,21 +2076,24 @@ const POBLACIONAL_SERIES_UNIQUE_COUNT_CONFIG = {
     docColumn: 'documento',
     sourcePeriodColumn: 'periodo',
     programColumn: 'programa',
-    dependencyColumn: 'facultad'
+    dependencyColumn: 'facultad',
+    genderColumn: 'genero_biologico'
   },
   Admitidos: {
     table: 'poblacional_admitidos',
     docColumn: 'numero_documento',
     sourcePeriodColumn: 'periodo',
     programColumn: 'programa',
-    dependencyColumn: 'facultad'
+    dependencyColumn: 'facultad',
+    genderColumn: 'genero_biologico'
   },
   'Primer Curso': {
     table: 'poblacional_primer_curso',
     docColumn: 'numero_documento',
     sourcePeriodColumn: 'periodo',
     programColumn: 'programa',
-    dependencyColumn: 'facultad'
+    dependencyColumn: 'facultad',
+    genderColumn: 'genero_biologico'
   },
   Matriculados: {
     table: 'poblacional_matriculados',
@@ -2098,14 +2101,16 @@ const POBLACIONAL_SERIES_UNIQUE_COUNT_CONFIG = {
     sourcePeriodColumn: 'semestre',
     programColumn: 'programa',
     dependencyColumn: 'departamento',
-    minValidYear: 2000
+    minValidYear: 2000,
+    genderColumn: 'sexo_biologico'
   },
   Graduados: {
     table: 'poblacional_graduados',
     docColumn: 'numero_documento',
     sourcePeriodColumn: 'periodo',
     programColumn: 'programa',
-    dependencyColumn: 'facultad'
+    dependencyColumn: 'facultad',
+    genderColumn: 'genero_biologico'
   }
 };
 
@@ -2208,6 +2213,8 @@ const buildPoblacionalSeriesUniqueCountRows = async ({
       )`);
     }
     const whereClause = itemFilters.length ? `where ${itemFilters.join(' and ')}` : '';
+    const genderSelectExpr = config.genderColumn ? `coalesce(nullif(btrim(${config.genderColumn}), ''), 'MASCULINO')` : "'MASCULINO'";
+    const genderGroupExpr = config.genderColumn ? `, coalesce(nullif(btrim(${config.genderColumn}), ''), 'MASCULINO')` : '';
 
     return `
       select
@@ -2216,6 +2223,7 @@ const buildPoblacionalSeriesUniqueCountRows = async ({
         nullif(btrim(${config.programColumn}), '') as programa,
         nullif(btrim(${config.dependencyColumn}), '') as dependencia,
         btrim(coalesce(${config.sourcePeriodColumn}, '')) as periodo_normalizado,
+        ${genderSelectExpr} as sexo_biologico,
         count(*) as total_count
       from ${config.table}
       ${whereClause}
@@ -2223,7 +2231,7 @@ const buildPoblacionalSeriesUniqueCountRows = async ({
         anio,
         nullif(btrim(${config.programColumn}), ''),
         nullif(btrim(${config.dependencyColumn}), ''),
-        btrim(coalesce(${config.sourcePeriodColumn}, ''))
+        btrim(coalesce(${config.sourcePeriodColumn}, ''))${genderGroupExpr}
     `;
   }).join(' union all ');
 
@@ -2236,13 +2244,15 @@ const buildPoblacionalSeriesUniqueCountRows = async ({
   detailRows.forEach((row) => {
     const programKey = normalizeProgramAggregateKey(row.programa);
     const dependencyKey = normalizeProgramAggregateKey(row.dependencia);
+    const genderKey = String(row.sexo_biologico || 'MASCULINO').trim().toUpperCase();
     const count = Number(row.total_count || 1);
     const bucketKey = [
       row.subcategoria,
       Number(row.anio) || 0,
       row.periodo_normalizado || '',
       programKey,
-      dependencyKey
+      dependencyKey,
+      genderKey
     ].join('||');
 
     const current = buckets.get(bucketKey) || {
@@ -2255,6 +2265,7 @@ const buildPoblacionalSeriesUniqueCountRows = async ({
       unidad: 'registros',
       fuente: null,
       observaciones: row.periodo_normalizado ? `periodo: ${row.periodo_normalizado}` : null,
+      sexo_biologico: genderKey,
       uniqueCount: 0
     };
 
@@ -2275,7 +2286,8 @@ const buildPoblacionalSeriesUniqueCountRows = async ({
       valor: row.uniqueCount,
       unidad: row.unidad,
       fuente: row.fuente,
-      observaciones: row.observaciones
+      observaciones: row.observaciones,
+      sexo_biologico: row.sexo_biologico || null
     }))
     .sort((a, b) =>
       (a.anio - b.anio)

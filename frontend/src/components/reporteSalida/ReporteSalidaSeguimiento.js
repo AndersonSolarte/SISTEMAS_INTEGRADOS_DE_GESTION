@@ -4,7 +4,6 @@ import {
   Alert,
   Box,
   Button,
-  Checkbox,
   Chip,
   CircularProgress,
   Fade,
@@ -50,6 +49,11 @@ import reporteSalidaService from '../../services/reporteSalidaService';
 import ReporteSalidaEstadisticas from './ReporteSalidaEstadisticas';
 
 const ACCESS_COPY = {
+  planeacion_estrategica: {
+    title: 'Seguimiento institucional',
+    subtitle: 'Consulta general de reportes y reposiciones de tiempo.',
+    notice: 'Vista de consulta. Solo puedes gestionar reposiciones de colaboradores(as) que tengas a cargo.'
+  },
   gestion_humana: {
     title: 'Reporte de salida',
     subtitle: 'Seguimiento de aprobaciones, notificaciones y reposicion de tiempo.',
@@ -212,10 +216,6 @@ const REPORT_MODULES = [
   }
 ];
 
-const SEGUIMIENTO_ADMIN_KEYS = ['seguimiento_reportes_rrhh', 'recurso_humano_seguimiento', 'recurso_humano_reporte_salida'];
-const REPORTE_SALIDA_KEYS = [...SEGUIMIENTO_ADMIN_KEYS, 'recurso_humano_reporte_salida'];
-const AUSENTISMO_KEYS = [...SEGUIMIENTO_ADMIN_KEYS, 'recurso_humano_indicadores_ausentismo'];
-
 const parseLogLine = (line) => {
   let timestamp = '';
   let rest = line;
@@ -350,8 +350,6 @@ function ReporteSalidaSeguimiento({ initialAccess = null, onBack }) {
   const [loadError, setLoadError] = useState('');
   const [estado, setEstado] = useState('');
   const [viewTab, setViewTab] = useState('todas');
-  const [updatingReposicionId, setUpdatingReposicionId] = useState(null);
-  const [actionMessage, setActionMessage] = useState('');
   const [tipoFiltro, setTipoFiltro] = useState('');
   const [searchTerm, setSearchTerm] = useState('');
   const [cardFilter, setCardFilter] = useState('todas');
@@ -362,24 +360,33 @@ function ReporteSalidaSeguimiento({ initialAccess = null, onBack }) {
 
   const accessMode = access?.mode || 'sin_pendientes';
   const copy = ACCESS_COPY[accessMode] || ACCESS_COPY.sin_pendientes;
-  const canManageAll = Boolean(access?.canManageAll) || hasAnyUserPermission(SEGUIMIENTO_ADMIN_KEYS);
+  // El alcance global lo determina exclusivamente el backend según el rol.
+  // Un permiso de visualización no debe elevar a un usuario a gestor institucional.
+  const canManageAll = Boolean(access?.canManageAll);
   const canValidateReposicion = Boolean(access?.canValidateReposicion) || canManageAll;
-  const userPermissionKeys = [
-    user?.menuPermissions,
-    user?.modulePermissions,
-    user?.allowedModules,
-    user?.allowedRecursoHumanoDashboards
-  ]
-    .filter(Array.isArray)
-    .flat()
-    .map((key) => String(key || '').trim());
-  const hasAnyUserPermission = (keys) => userPermissionKeys.some((key) => keys.includes(key));
-  const canViewReporteSalida = Boolean(access?.canViewReporteSalida) || canManageAll || hasAnyUserPermission(REPORTE_SALIDA_KEYS);
-  const canViewEstadisticas = Boolean(access?.canViewEstadisticas) || canManageAll || hasAnyUserPermission(AUSENTISMO_KEYS);
+  const canManageTeamReposicion = Boolean(access?.canManageTeamReposicion);
+  const canViewAll = Boolean(access?.canViewAll);
+  const isReadOnlyInstitutional = canViewAll && !canManageAll;
+  const canViewReporteSalida = Boolean(access?.canViewReporteSalida) || canManageAll;
+  const canViewEstadisticas = Boolean(access?.canViewEstadisticas) || canManageAll;
   const availableReportModules = useMemo(() => REPORT_MODULES.filter((module) => (
     module.key === 'reporte_salida' ? canViewReporteSalida : canViewEstadisticas
   )), [canViewEstadisticas, canViewReporteSalida]);
   const showEstadoFilter = Boolean(access?.canManageAll);
+  const ownPendingCount = Number(access?.counts?.ownPending || 0);
+  const teamPendingCount = Number(access?.counts?.bossPending || 0);
+  const showScopeTabs = accessMode === 'jefe_y_colaborador'
+    || (canViewAll && (ownPendingCount > 0 || teamPendingCount > 0));
+
+  const isOwnRow = (row) => String(row?.user_id || row?.solicitante?.id || row?.solicitante?.userId || '') === String(user?.id || '');
+  const isTeamRow = (row) => {
+    const bossId = String(row?.jefe_inmediato_user_id || row?.jefe?.id || row?.jefe?.userId || '');
+    const userId = String(user?.id || '');
+    const matchesId = Boolean(bossId && userId && bossId === userId);
+    const bossEmail = String(row?.jefe?.email || '').trim().toLowerCase();
+    return matchesId || Boolean(bossEmail && bossEmail === String(user?.email || '').trim().toLowerCase());
+  };
+  const canManageReposicionRow = (row) => canValidateReposicion || (canManageTeamReposicion && isTeamRow(row) && !isOwnRow(row));
 
   // Estados para modales de administración GH
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
@@ -451,9 +458,17 @@ function ReporteSalidaSeguimiento({ initialAccess = null, onBack }) {
 
   const filteredRowsBase = useMemo(() => {
     let result = rows;
-    if (accessMode === 'jefe_y_colaborador') {
-      if (viewTab === 'mis_reposiciones') result = rows.filter((r) => r.solicitante?.userId === user?.id);
-      else if (viewTab === 'equipo') result = rows.filter((r) => r.solicitante?.userId !== user?.id);
+    const currentUserId = String(user?.id || '');
+    if (viewTab === 'mis_reposiciones') {
+      result = rows.filter((row) => String(row?.user_id || row?.solicitante?.id || row?.solicitante?.userId || '') === currentUserId);
+    } else if (viewTab === 'equipo') {
+      const currentUserEmail = String(user?.email || '').trim().toLowerCase();
+      result = rows.filter((row) => {
+        const bossId = String(row?.jefe_inmediato_user_id || row?.jefe?.id || row?.jefe?.userId || '');
+        const matchesId = Boolean(bossId && currentUserId && bossId === currentUserId);
+        const bossEmail = String(row?.jefe?.email || '').trim().toLowerCase();
+        return matchesId || Boolean(bossEmail && bossEmail === currentUserEmail);
+      });
     }
 
     if (tipoFiltro) {
@@ -513,7 +528,7 @@ function ReporteSalidaSeguimiento({ initialAccess = null, onBack }) {
       });
     }
     return result;
-  }, [rows, viewTab, accessMode, user?.id, tipoFiltro, searchTerm, estado, timeRange]);
+  }, [rows, viewTab, user?.id, user?.email, tipoFiltro, searchTerm, estado, timeRange]);
 
   const summaryRows = activeModule === 'estadisticas' && Array.isArray(estadisticasVisibleRows)
     ? estadisticasVisibleRows
@@ -759,31 +774,6 @@ function ReporteSalidaSeguimiento({ initialAccess = null, onBack }) {
     XLSX.utils.book_append_sheet(workbook, worksheetSummary, "Resumen de Tabla");
     XLSX.utils.book_append_sheet(workbook, worksheetDetail, "Detalle y Trazabilidad");
     XLSX.writeFile(workbook, `Seguimiento_Reportes_${new Date().getTime()}.xlsx`);
-  };
-
-  const updateReposicion = async (row, nextEstado) => {
-    if (!canValidateReposicion) return;
-    setUpdatingReposicionId(row.id);
-    setActionMessage('');
-    try {
-      const response = await reporteSalidaService.actualizarReposicion(row.id, {
-        estado: nextEstado,
-        observacion: nextEstado === 'cumplida'
-          ? 'Tiempo repuesto validado desde seguimiento de reportes.'
-          : nextEstado === 'incumplida'
-            ? 'Reposicion marcada como incumplida desde seguimiento de reportes.'
-            : 'Reposicion marcada como pendiente/programada desde seguimiento de reportes.'
-      });
-      const updated = response?.data;
-      if (updated) {
-        setRows((prev) => prev.map((item) => (item.id === updated.id ? updated : item)));
-      }
-      setActionMessage(response?.message || 'Seguimiento actualizado.');
-    } catch (error) {
-      setActionMessage(error?.response?.data?.message || 'No se pudo actualizar la reposicion.');
-    } finally {
-      setUpdatingReposicionId(null);
-    }
   };
 
   const handleEditOpen = (row) => {
@@ -1165,6 +1155,7 @@ function ReporteSalidaSeguimiento({ initialAccess = null, onBack }) {
                 {loadError}
               </Alert>
             )}
+            {!isReadOnlyInstitutional && (
             <Stack direction={{ xs: 'column', md: 'row' }} spacing={1.5} sx={{ mt: 2.2 }}>
               {[
                 { key: 'todas', label: 'Solicitudes', value: summary.total, icon: AssignmentTurnedInIcon, color: '#2563eb', gradient: 'linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%)' },
@@ -1242,7 +1233,7 @@ function ReporteSalidaSeguimiento({ initialAccess = null, onBack }) {
                 );
               })}
             </Stack>
-            {actionMessage && <Alert sx={{ mt: 1.5 }} severity={actionMessage.includes('No se pudo') ? 'error' : 'success'}>{actionMessage}</Alert>}
+            )}
           </Box>
         </Paper>
 
@@ -1262,12 +1253,16 @@ function ReporteSalidaSeguimiento({ initialAccess = null, onBack }) {
           </Paper>
         ) : (
           <>
-            {accessMode === 'jefe_y_colaborador' && (
+            {showScopeTabs && (
               <Box sx={{ borderBottom: 1, borderColor: 'divider', mb: 2 }}>
                 <Tabs value={viewTab} onChange={(_, newValue) => setViewTab(newValue)} textColor="primary" indicatorColor="primary">
-                  <Tab label="Todas" value="todas" sx={{ fontWeight: 800, textTransform: 'none' }} />
-                  <Tab label="Mis reposiciones" value="mis_reposiciones" sx={{ fontWeight: 800, textTransform: 'none' }} />
-                  <Tab label="Reposiciones de mi equipo" value="equipo" sx={{ fontWeight: 800, textTransform: 'none' }} />
+                  <Tab label={canViewAll ? 'Vista institucional' : 'Todas'} value="todas" sx={{ fontWeight: 800, textTransform: 'none' }} />
+                  {ownPendingCount > 0 && (
+                    <Tab label="Mi tiempo por reponer" value="mis_reposiciones" sx={{ fontWeight: 800, textTransform: 'none' }} />
+                  )}
+                  {teamPendingCount > 0 && (
+                    <Tab label="Reposiciones de mi equipo" value="equipo" sx={{ fontWeight: 800, textTransform: 'none' }} />
+                  )}
                 </Tabs>
               </Box>
             )}
@@ -1288,7 +1283,7 @@ function ReporteSalidaSeguimiento({ initialAccess = null, onBack }) {
                 <Table size="small">
                   <TableHead>
                     <TableRow>
-                      {['Solicitud', 'F. Radicación', 'Colaborador(a)', 'Jefe inmediato', 'Motivo / Detalles', 'Estado', 'Reposición', 'Observaciones', canManageAll ? 'Acciones Adm' : (canValidateReposicion ? 'Validación GH' : 'Seguimiento')].map((label) => (
+                      {['Solicitud', 'F. Radicación', 'Colaborador(a)', 'Jefe inmediato', 'Motivo / Detalles', 'Estado', 'Reposición', 'Observaciones', canManageAll ? 'Acciones Adm' : (canManageTeamReposicion ? 'Seguimiento' : 'Consulta')].map((label) => (
                         <TableCell key={label} sx={{ bgcolor: '#f8fafc', fontWeight: 950, color: '#334155', fontSize: 11, py: 1, px: 0.8 }}>{label}</TableCell>
                       ))}
                     </TableRow>
@@ -1538,36 +1533,17 @@ function ReporteSalidaSeguimiento({ initialAccess = null, onBack }) {
                               </Stack>
                             ) : (
                               row.reposicion_aplica ? (
-                                canValidateReposicion ? (
-                                  <Stack direction="row" spacing={0.7} alignItems="center">
-                                    <Checkbox
-                                      size="small"
-                                      checked={row.reposicion_estado === 'cumplida'}
-                                      disabled={row.estado !== 'finalizada' || updatingReposicionId === row.id}
-                                      onChange={(event) => updateReposicion(row, event.target.checked ? 'cumplida' : 'programada')}
-                                      sx={{ color: '#0f766e', '&.Mui-checked': { color: '#0f766e' } }}
-                                    />
-                                    <Box sx={{ minWidth: 96 }}>
-                                      <Typography sx={{ fontSize: 12, fontWeight: 900, color: row.reposicion_estado === 'cumplida' ? '#0f766e' : '#64748b' }}>
-                                        {row.reposicion_estado === 'cumplida' ? 'Validado' : 'Por validar'}
-                                      </Typography>
-                                      <Typography sx={{ fontSize: 11, color: '#94a3b8' }}>
-                                        {row.estado === 'finalizada' ? 'Talento Humano' : 'Esperar cierre'}
-                                      </Typography>
-                                    </Box>
-                                    {row.reposicion_estado !== 'incumplida' && (
-                                      <Button
-                                        size="small"
-                                        variant="outlined"
-                                        color="warning"
-                                        disabled={row.estado !== 'finalizada' || updatingReposicionId === row.id}
-                                        onClick={() => updateReposicion(row, 'incumplida')}
-                                        sx={{ borderRadius: 2, fontSize: 11, fontWeight: 900 }}
-                                      >
-                                        Incumplida
-                                      </Button>
-                                    )}
-                                  </Stack>
+                                canManageReposicionRow(row) ? (
+                                  <Button
+                                    size="small"
+                                    variant="outlined"
+                                    startIcon={<ManageHistoryIcon />}
+                                    disabled={row.estado !== 'finalizada'}
+                                    onClick={() => handleRepOpen(row)}
+                                    sx={{ borderRadius: 2, fontSize: 11, fontWeight: 900, textTransform: 'none' }}
+                                  >
+                                    Gestionar reposiciÃ³n
+                                  </Button>
                                 ) : (
                                   <Stack spacing={0.3}>
                                     <Typography sx={{ fontSize: 12, fontWeight: 900, color: row.reposicion_estado === 'cumplida' ? '#0f766e' : '#475569' }}>

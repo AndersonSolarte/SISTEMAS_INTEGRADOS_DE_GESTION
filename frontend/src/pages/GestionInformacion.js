@@ -88,6 +88,7 @@ import MeetingRoomIcon from '@mui/icons-material/MeetingRoom';
 import DownloadIconSmall from '@mui/icons-material/Download';
 import ContentCopyIcon from '@mui/icons-material/ContentCopy';
 import FileDownloadIcon from '@mui/icons-material/FileDownload';
+import MoreVertIcon from '@mui/icons-material/MoreVert';
 import GridViewIcon from '@mui/icons-material/GridView';
 import RestartAltRoundedIcon from '@mui/icons-material/RestartAltRounded';
 import SearchIcon from '@mui/icons-material/Search';
@@ -419,6 +420,57 @@ function DocFilterPanel({
       </Box>
       {dropdownPortal}
     </Box>
+  );
+}
+
+function CaracterizacionExportMenu({ onExportSummary, onExportRecords, disabled = false, loading = false }) {
+  const [anchorEl, setAnchorEl] = useState(null);
+  const closeMenu = () => setAnchorEl(null);
+  const runAction = (action) => {
+    closeMenu();
+    if (typeof action === 'function') action();
+  };
+
+  return (
+    <>
+      <Tooltip title="Exportar evidencia">
+        <span>
+          <IconButton
+            size="small"
+            disabled={disabled || loading}
+            onClick={(event) => setAnchorEl(event.currentTarget)}
+            sx={{
+              width: 30,
+              height: 30,
+              color: '#1e40af',
+              bgcolor: 'rgba(255,255,255,.92)',
+              border: '1px solid rgba(191,219,254,.9)',
+              boxShadow: '0 4px 10px rgba(15,23,42,.08)',
+              '&:hover': { bgcolor: '#fff', transform: 'translateY(-1px)' }
+            }}
+          >
+            {loading ? <CircularProgress size={16} /> : <MoreVertIcon fontSize="small" />}
+          </IconButton>
+        </span>
+      </Tooltip>
+      <Popover
+        open={Boolean(anchorEl)}
+        anchorEl={anchorEl}
+        onClose={closeMenu}
+        anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
+        transformOrigin={{ vertical: 'top', horizontal: 'right' }}
+        slotProps={{ paper: { sx: { mt: 0.7, minWidth: 235, borderRadius: 2.2, border: '1px solid #dbe6f5', boxShadow: '0 16px 36px rgba(15,23,42,.14)' } } }}
+      >
+        <MenuItem onClick={() => runAction(onExportSummary)} sx={{ gap: 1.2, py: 1.1, fontWeight: 800, fontSize: 13 }}>
+          <TableChartRoundedIcon sx={{ color: '#2563eb', fontSize: 20 }} />
+          Exportar resumen del grafico
+        </MenuItem>
+        <MenuItem onClick={() => runAction(onExportRecords)} sx={{ gap: 1.2, py: 1.1, fontWeight: 800, fontSize: 13 }}>
+          <FileDownloadIcon sx={{ color: '#059669', fontSize: 20 }} />
+          Exportar registros completos
+        </MenuItem>
+      </Popover>
+    </>
   );
 }
 
@@ -2016,6 +2068,7 @@ function GestionInformacion() {
   const [caracterizacionCatalogs, setCaracterizacionCatalogs] = useState({ anios: [], periodos: [], programas: [] });
   const [caracterizacionCatalogsLoading, setCaracterizacionCatalogsLoading] = useState(false);
   const [caracterizacionUi, setCaracterizacionUi] = useState({ estrato: '', grupoEtnico: '' });
+  const [caracterizacionExporting, setCaracterizacionExporting] = useState('');
   const [egresadosDetalleActivo, setEgresadosDetalleActivo] = useState('');
   const [graduadosDashboardView, setGraduadosDashboardView] = useState('estadistica');
   const [graduadosGeneralData, setGraduadosGeneralData] = useState(null);
@@ -2504,7 +2557,7 @@ function GestionInformacion() {
     seriesRowsReqRef.current = requestId;
     setSeriesLoading(true);
     try {
-      let requestedSubcategorias = ['Inscritos', 'Admitidos', 'Primer Curso'];
+      let requestedSubcategorias = ['Inscritos', 'Admitidos', 'Primer Curso', 'Matriculados', 'Graduados'];
       if (effectivePanel === 'analytics') {
         const section = REPORT_SECTIONS.find((item) => item.key === effectiveSection);
         requestedSubcategorias = section?.subcategorias?.length ? [...section.subcategorias] : requestedSubcategorias;
@@ -2580,7 +2633,7 @@ function GestionInformacion() {
   }, [enqueueSnackbar, graduadosGeneralAnioFilter]);
 
   const fetchMatriculadosPanel = useCallback(async () => {
-    if (menuView !== 'estadistica' || selectedCard !== 'poblacional' || poblacionalPanel !== 'analytics' || statSection !== 'matriculados') return;
+    if (menuView !== 'estadistica' || selectedCard !== 'poblacional' || poblacionalPanel !== 'analytics' || (statSection !== 'matriculados' && statSection !== 'resumen_poblacional')) return;
     const requestId = Date.now() + Math.random();
     matriculadosPanelReqRef.current = requestId;
     setMatriculadosPanelLoading(true);
@@ -6107,6 +6160,95 @@ const renderCategoryBars = (items = [], options = {}) => {
     );
   };
 
+  const exportCaracterizacionSummary = ({ title, rows = [], total = 0 }) => {
+    const normalizedRows = (rows || []).map((row) => {
+      const value = normalizeNumber(row.total ?? row.value);
+      return {
+        categoria: row.label || 'SIN INFORMACION',
+        registros: value,
+        porcentaje: total > 0 ? value / total : 0
+      };
+    });
+    const safeName = String(title || 'grafico')
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .replace(/[^A-Za-z0-9]+/g, '_')
+      .replace(/^_|_$/g, '')
+      .toLowerCase();
+    downloadStyledExcel({
+      filename: `resumen_caracterizacion_${safeName}_${new Date().toISOString().slice(0, 10)}.xlsx`,
+      sheetName: 'Resumen',
+      title: `${title} | Caracterizacion estudiantil`,
+      columns: [
+        { key: 'categoria', label: 'Categoria', width: 34 },
+        { key: 'registros', label: 'Registros', type: 'number', align: 'right', width: 16 },
+        { key: 'porcentaje', label: 'Porcentaje', type: 'percent', align: 'right', width: 16 }
+      ],
+      rows: normalizedRows,
+      totalRow: {
+        categoria: 'TOTAL DE REFERENCIA',
+        registros: total,
+        porcentaje: total > 0 ? 1 : 0
+      }
+    });
+  };
+
+  const exportCaracterizacionRecords = async ({ dimension, title }) => {
+    const exportKey = `${dimension}:${title}`;
+    try {
+      setCaracterizacionExporting(exportKey);
+      const programasCatalog = caracterizacionCatalogs.programas || [];
+      const allProgramasSelected = activeStatsFilters.programas.length === 0
+        || (programasCatalog.length > 0 && activeStatsFilters.programas.length === programasCatalog.length);
+      const response = await gestionInformacionService.exportCaracterizacionRecords({
+        dimension,
+        programas: allProgramasSelected ? '' : activeStatsFilters.programas.join(','),
+        anios: activeStatsFilters.anios.join(','),
+        periodos: activeStatsFilters.periodos.join(',')
+      });
+      const contentDisposition = response.headers?.['content-disposition'] || '';
+      const filenameMatch = contentDisposition.match(/filename="?([^";]+)"?/i);
+      const filename = filenameMatch?.[1] || `evidencia_caracterizacion_${dimension}.xlsx`;
+      const blobUrl = URL.createObjectURL(response.data);
+      const link = document.createElement('a');
+      link.href = blobUrl;
+      link.download = filename;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(blobUrl);
+      enqueueSnackbar('Evidencia exportada con los registros completos', { variant: 'success' });
+    } catch (error) {
+      let message = 'No fue posible exportar los registros completos';
+      const errorBlob = error?.response?.data;
+      if (errorBlob instanceof Blob) {
+        try {
+          const payload = JSON.parse(await errorBlob.text());
+          message = payload?.message || message;
+        } catch (_) {
+          // Mantiene el mensaje general cuando la respuesta no es JSON.
+        }
+      } else {
+        message = error?.response?.data?.message || message;
+      }
+      enqueueSnackbar(message, { variant: 'error' });
+    } finally {
+      setCaracterizacionExporting('');
+    }
+  };
+
+  const renderCaracterizacionExportMenu = ({ title, dimension, rows = [], total = 0 }) => {
+    const exportKey = `${dimension}:${title}`;
+    return (
+      <CaracterizacionExportMenu
+        disabled={!rows.length}
+        loading={caracterizacionExporting === exportKey}
+        onExportSummary={() => exportCaracterizacionSummary({ title, rows, total })}
+        onExportRecords={() => exportCaracterizacionRecords({ dimension, title })}
+      />
+    );
+  };
+
   const renderInsightRows = (items = [], options = {}) => {
     const {
       total = 0,
@@ -6115,13 +6257,15 @@ const renderCategoryBars = (items = [], options = {}) => {
       onSelect = () => {},
       compactLabel = (label) => label,
       getColor = null,
+      exportActions = null,
       title = 'INFORMACION GENERAL'
     } = options;
     return (
       <Paper elevation={0} sx={{ p: 1.4, borderRadius: 3, border: '1px solid #dbe6f5', bgcolor: '#fff' }}>
         {title ? (
-          <Box sx={{ px: 1.2, py: 0.9, borderRadius: 2, bgcolor: '#1d4ed8', mb: 1.2 }}>
+          <Box sx={{ px: 1.2, py: 0.65, borderRadius: 2, bgcolor: '#1d4ed8', mb: 1.2, minHeight: 38, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 1 }}>
             <Typography sx={{ color: '#fff', fontWeight: 900, fontSize: 12, letterSpacing: '.06em' }}>{title}</Typography>
+            {exportActions}
           </Box>
         ) : null}
         <Stack spacing={1}>
@@ -6268,26 +6412,28 @@ const renderCategoryBars = (items = [], options = {}) => {
       if (t.includes('FEM')) return <FemaleIcon sx={{ fontSize: 30 }} />;
       return <TransgenderIcon sx={{ fontSize: 30 }} />;
     };
-    const sectionHeader = (icon, title, colorA, colorB) => (
-      <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, mb: 2.2, pb: 1.6, borderBottom: '2px solid #eef2ff' }}>
-        <Box
-          sx={{
-            width: 56,
-            height: 56,
-            borderRadius: 3,
-            display: 'grid',
-            placeItems: 'center',
-            color: '#fff',
-            background: `linear-gradient(135deg, ${colorA}, ${colorB})`,
-            boxShadow: `0 12px 22px -14px ${colorA}`,
-            '& .MuiSvgIcon-root': { fontSize: 30 }
-          }}
-        >
-          {icon}
-        </Box>
-        <Box>
+    const sectionHeader = (icon, title, colorA, colorB, actions = null) => (
+      <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 2, mb: 2.2, pb: 1.6, borderBottom: '2px solid #eef2ff' }}>
+        <Stack direction="row" spacing={2} alignItems="center" sx={{ minWidth: 0 }}>
+          <Box
+            sx={{
+              width: 56,
+              height: 56,
+              borderRadius: 3,
+              display: 'grid',
+              placeItems: 'center',
+              color: '#fff',
+              background: `linear-gradient(135deg, ${colorA}, ${colorB})`,
+              boxShadow: `0 12px 22px -14px ${colorA}`,
+              flexShrink: 0,
+              '& .MuiSvgIcon-root': { fontSize: 30 }
+            }}
+          >
+            {icon}
+          </Box>
           <Typography sx={{ fontWeight: 900, color: '#0f172a', fontSize: { xs: 22, md: 28 }, lineHeight: 1.1 }}>{title}</Typography>
-        </Box>
+        </Stack>
+        {actions}
       </Box>
     );
     const victimasTotal = normalizeNumber(data.victimas?.total);
@@ -6307,11 +6453,14 @@ const renderCategoryBars = (items = [], options = {}) => {
       });
       return `conic-gradient(${parts.join(', ')})`;
     };
-    const renderDonutPanel = ({ title, subtitle, total, segments, accent = '#ef4444', centerValue = null, headerValue = null }) => (
+    const renderDonutPanel = ({ title, subtitle, total, segments, accent = '#ef4444', centerValue = null, headerValue = null, exportActions = null }) => (
       <Paper elevation={0} sx={{ p: 1.4, borderRadius: 3, border: '1px solid #dbe6f5', bgcolor: '#fff', height: '100%' }}>
         <Box sx={{ px: 1.2, py: 0.9, borderRadius: 2, bgcolor: '#1d4ed8', mb: 1.2, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <Typography sx={{ color: '#fff', fontWeight: 900, fontSize: 12, letterSpacing: '.06em' }}>{title}</Typography>
-          <Chip size="small" label={formatNumber(headerValue ?? total)} sx={{ bgcolor: 'rgba(255,255,255,.16)', color: '#fff', fontWeight: 900 }} />
+          <Stack direction="row" spacing={0.7} alignItems="center">
+            <Chip size="small" label={formatNumber(headerValue ?? total)} sx={{ bgcolor: 'rgba(255,255,255,.16)', color: '#fff', fontWeight: 900 }} />
+            {exportActions}
+          </Stack>
         </Box>
         <Box
           sx={{
@@ -6680,7 +6829,13 @@ const renderCategoryBars = (items = [], options = {}) => {
         </Paper>
 
         <Paper elevation={0} sx={{ p: { xs: 1.6, md: 2.2 }, borderRadius: 4, border: '1px solid #dbe6f5' }}>
-          {sectionHeader(<PeopleIcon />, 'Distribucion general por genero', '#f59e0b', '#d97706')}
+          {sectionHeader(
+            <PeopleIcon />,
+            'Distribucion general por genero',
+            '#f59e0b',
+            '#d97706',
+            renderCaracterizacionExportMenu({ title: 'Distribucion general por genero', dimension: 'genero', rows: generoGeneral, total: totalRegistros })
+          )}
           <Box
             sx={{
               ...GI_DASHBOARD_AUTO_GRID_SX,
@@ -6791,12 +6946,22 @@ const renderCategoryBars = (items = [], options = {}) => {
                   segments: [
                     { label: 'Victimas (SI)', value: victimasSi, color: '#ef4444' },
                     { label: 'No identificadas como victimas', value: victimasResto, color: '#cbd5e1' }
-                  ]
+                  ],
+                  exportActions: renderCaracterizacionExportMenu({
+                    title: 'Victimas sobre el total filtrado',
+                    dimension: 'victimas',
+                    rows: [
+                      { label: 'Victimas (SI)', total: victimasSi },
+                      { label: 'No identificadas como victimas', total: victimasResto }
+                    ],
+                    total: totalRegistros
+                  })
                 })}
 
                 <Paper elevation={0} sx={{ p: 1.4, borderRadius: 3, border: '1px solid #dbe6f5', bgcolor: '#fff', height: '100%' }}>
-                  <Box sx={{ px: 1.2, py: 0.9, borderRadius: 2, bgcolor: '#1d4ed8', mb: 1.2 }}>
+                  <Box sx={{ px: 1.2, py: 0.65, minHeight: 38, borderRadius: 2, bgcolor: '#1d4ed8', mb: 1.2, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 1 }}>
                     <Typography sx={{ color: '#fff', fontWeight: 900, fontSize: 12, letterSpacing: '.06em' }}>VICTIMAS IDENTIFICADAS POR GENERO</Typography>
+                    {renderCaracterizacionExportMenu({ title: 'Victimas por genero', dimension: 'victimas_genero', rows: victimasGenero, total: victimasTotal })}
                   </Box>
                   {renderCategoryBars(victimasGenero, {
                     color: genderSeriesPalette[0],
@@ -6819,12 +6984,14 @@ const renderCategoryBars = (items = [], options = {}) => {
                   total: victimasTotal,
                   colorPalette: ['#ef4444', '#f97316', '#f59e0b', '#14b8a6', '#3b82f6', '#8b5cf6'],
                   compactLabel: (label) => String(label || '').slice(0, 28),
+                  exportActions: renderCaracterizacionExportMenu({ title: 'Victimas por municipio de residencia', dimension: 'victimas_municipios', rows: victimasMunicipios, total: victimasTotal }),
                   title: 'MUNICIPIO DE RESIDENCIA'
                 })}
                 {renderInsightRows(victimasEstratos.slice(0, 6), {
                   total: victimasTotal,
                   colorPalette: estratoPalette,
                   compactLabel: (label) => `Estrato ${String(label || '').replace(/ESTRATO\s*/i, '')}`,
+                  exportActions: renderCaracterizacionExportMenu({ title: 'Victimas por estrato socioeconomico', dimension: 'victimas_estratos', rows: victimasEstratos, total: victimasTotal }),
                   title: 'ESTRATO SOCIOECONOMICO'
                 })}
               </Box>
@@ -6872,12 +7039,22 @@ const renderCategoryBars = (items = [], options = {}) => {
                   segments: [
                     { label: 'No afrodescendientes', value: noAfroTotal, color: '#cbd5e1' },
                     { label: 'Afrodescendientes', value: afroTotal, color: '#2563eb' }
-                  ]
+                  ],
+                  exportActions: renderCaracterizacionExportMenu({
+                    title: 'Afrodescendientes sobre el total filtrado',
+                    dimension: 'afrodescendientes',
+                    rows: [
+                      { label: 'No afrodescendientes', total: noAfroTotal },
+                      { label: 'Afrodescendientes', total: afroTotal }
+                    ],
+                    total: totalRegistros
+                  })
                 })}
 
                 <Paper elevation={0} sx={{ p: 1.4, borderRadius: 3, border: '1px solid #dbe6f5', bgcolor: '#fff', height: '100%' }}>
-                  <Box sx={{ px: 1.2, py: 0.9, borderRadius: 2, bgcolor: '#1d4ed8', mb: 1.2 }}>
+                  <Box sx={{ px: 1.2, py: 0.65, minHeight: 38, borderRadius: 2, bgcolor: '#1d4ed8', mb: 1.2, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 1 }}>
                     <Typography sx={{ color: '#fff', fontWeight: 900, fontSize: 12, letterSpacing: '.06em' }}>AFRODESCENDIENTES POR GENERO</Typography>
+                    {renderCaracterizacionExportMenu({ title: 'Afrodescendientes por genero', dimension: 'afro_genero', rows: afroGenero, total: afroTotal })}
                   </Box>
                   {renderCategoryBars(afroGenero, {
                     color: genderSeriesPalette[0],
@@ -6906,14 +7083,18 @@ const renderCategoryBars = (items = [], options = {}) => {
                   selectedKey: caracterizacionUi.estrato,
                   onSelect: (label) => setCaracterizacionUi((prev) => ({ ...prev, estrato: label })),
                   compactLabel: (label) => String(label || '').replace(/ESTRATO\s*/i, 'ESTRATO '),
+                  exportActions: renderCaracterizacionExportMenu({ title: 'Estratos socioeconomicos', dimension: 'estratos', rows: estratosDistribucion, total: totalRegistros }),
                   title: 'INFORMACION GENERAL'
                 })}
                 <Paper elevation={0} sx={{ p: 1.4, borderRadius: 3, border: '1px solid #dbe6f5', bgcolor: '#fff', height: '100%' }}>
                   <Box sx={{ px: 1.2, py: 0.9, borderRadius: 2, bgcolor: '#1d4ed8', mb: 1.2, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                     <Typography sx={{ color: '#fff', fontWeight: 900, fontSize: 12, letterSpacing: '.06em' }}>DISTRIBUCION VISUAL</Typography>
-                    {caracterizacionUi.estrato && (
-                      <Chip size="small" label={caracterizacionUi.estrato} onDelete={() => setCaracterizacionUi((prev) => ({ ...prev, estrato: '' }))} sx={{ bgcolor: 'rgba(255,255,255,.15)', color: '#fff', '& .MuiChip-deleteIcon': { color: '#fff' } }} />
-                    )}
+                    <Stack direction="row" spacing={0.7} alignItems="center">
+                      {caracterizacionUi.estrato && (
+                        <Chip size="small" label={caracterizacionUi.estrato} onDelete={() => setCaracterizacionUi((prev) => ({ ...prev, estrato: '' }))} sx={{ bgcolor: 'rgba(255,255,255,.15)', color: '#fff', '& .MuiChip-deleteIcon': { color: '#fff' } }} />
+                      )}
+                      {renderCaracterizacionExportMenu({ title: 'Distribucion visual por estrato', dimension: 'estratos', rows: estratosChartData, total: totalRegistros })}
+                    </Stack>
                   </Box>
                   {renderCategoryBars(estratosChartData, { color: '#3b82f6', palette: estratoPalette, maxItems: 10, minBarWidth: 88, baseMinWidth: 320, height: 320, labelSize: 13, valueSize: 16, smartOutsideLabels: true, outsideLabelColor: '#0f172a', insideLabelMinHeight: 30, forceInsideLabelColor: '#ffffff' })}
                 </Paper>
@@ -6960,15 +7141,19 @@ const renderCategoryBars = (items = [], options = {}) => {
                     selectedKey: caracterizacionUi.grupoEtnico,
                     onSelect: (label) => setCaracterizacionUi((prev) => ({ ...prev, grupoEtnico: label })),
                     compactLabel: (label) => String(label || '').slice(0, 28),
+                    exportActions: renderCaracterizacionExportMenu({ title: 'Poblacion por grupo etnico', dimension: 'grupos_etnicos', rows: gruposEtnicos, total: gruposEtnicosTotal }),
                     title: 'POBLACION TOTAL'
                   })}
                 </Box>
                 <Paper elevation={0} sx={{ p: 1.4, borderRadius: 3, border: '1px solid #dbe6f5', bgcolor: '#fff', height: '100%', minWidth: 0 }}>
                   <Box sx={{ px: 1.2, py: 0.9, borderRadius: 2, bgcolor: '#1d4ed8', mb: 1.2, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                     <Typography sx={{ color: '#fff', fontWeight: 900, fontSize: 12, letterSpacing: '.06em' }}>GRUPOS ETNICOS</Typography>
-                    {caracterizacionUi.grupoEtnico && (
-                      <Chip size="small" label={caracterizacionUi.grupoEtnico} onDelete={() => setCaracterizacionUi((prev) => ({ ...prev, grupoEtnico: '' }))} sx={{ bgcolor: 'rgba(255,255,255,.15)', color: '#fff', '& .MuiChip-deleteIcon': { color: '#fff' } }} />
-                    )}
+                    <Stack direction="row" spacing={0.7} alignItems="center">
+                      {caracterizacionUi.grupoEtnico && (
+                        <Chip size="small" label={caracterizacionUi.grupoEtnico} onDelete={() => setCaracterizacionUi((prev) => ({ ...prev, grupoEtnico: '' }))} sx={{ bgcolor: 'rgba(255,255,255,.15)', color: '#fff', '& .MuiChip-deleteIcon': { color: '#fff' } }} />
+                      )}
+                      {renderCaracterizacionExportMenu({ title: 'Pertenencia etnica reportada', dimension: 'pertenencia_etnica', rows: gruposSoloEtnicos, total: gruposSoloEtnicosTotal })}
+                    </Stack>
                   </Box>
                   {renderInsightRows(gruposSoloEtnicos.slice(0, 10), {
                     total: gruposSoloEtnicosTotal,
@@ -13284,6 +13469,10 @@ const renderCategoryBars = (items = [], options = {}) => {
       stagesData.matriculados.total = normalizeNumber(matriculadosPanelData.totalRegistros);
     }
 
+    Object.values(stagesData).forEach((st) => {
+      st.genderMap = new Map();
+    });
+
     const genderTotalsMap = new Map();
 
     const activeSeriesRows = seriesRows.filter((r) => {
@@ -13296,6 +13485,14 @@ const renderCategoryBars = (items = [], options = {}) => {
     });
 
     activeSeriesRows.forEach((r) => {
+      const subcat = String(r.subcategoria || '').trim();
+      let stageKey = null;
+      if (subcat === 'Inscritos') stageKey = 'inscritos';
+      else if (subcat === 'Admitidos') stageKey = 'admitidos';
+      else if (subcat === 'Primer Curso') stageKey = 'primerCurso';
+      else if (subcat === 'Matriculados') stageKey = 'matriculados';
+      else if (subcat === 'Graduados') stageKey = 'graduados';
+
       const genRaw = String(r.sexo_biologico || r.genero || r.sexo || r.sexoBiologico || r.categoria || '').trim();
       if (!genRaw) return;
       const val = normalizeNumber(r.valor || r.cantidad || r.total || 0);
@@ -13306,27 +13503,43 @@ const renderCategoryBars = (items = [], options = {}) => {
       else if (normUpper.includes('FEM')) normKey = 'FEMENINO';
       else if (normUpper.includes('MAS')) normKey = 'MASCULINO';
 
-      if (normKey && val > 0) {
-        genderTotalsMap.set(normKey, (genderTotalsMap.get(normKey) || 0) + val);
+      if (stageKey && stagesData[stageKey]) {
+        const st = stagesData[stageKey];
+        if (normKey && val > 0) {
+          st.genderMap.set(normKey, (st.genderMap.get(normKey) || 0) + val);
+          genderTotalsMap.set(normKey, (genderTotalsMap.get(normKey) || 0) + val);
+        }
+        const progLabel = getCanonicalProgramMeta(r.programa).label || String(r.programa || '').trim();
+        const canonProgKey = normalizeProgramKey(progLabel);
+        if (canonProgKey && val > 0 && st.programasMap.size === 0) {
+          const prevProg = st.programasMap.get(canonProgKey) || { name: progLabel, total: 0 };
+          prevProg.total += val;
+          st.programasMap.set(canonProgKey, prevProg);
+        }
       }
     });
 
-    if (matriculadosPanelData?.sexo) {
-      matriculadosPanelData.sexo.forEach((item) => {
-        const genRaw = String(item.name || '').trim().toUpperCase();
-        const val = normalizeNumber(item.total || 0);
-        let normKey = null;
-        if (genRaw.includes('NO BIN') || genRaw.includes('NOBIN') || genRaw.includes('TRANS')) normKey = 'NO BINARIO';
-        else if (genRaw.includes('FEM')) normKey = 'FEMENINO';
-        else if (genRaw.includes('MAS')) normKey = 'MASCULINO';
+    if (matriculadosPanelData?.sexo && stagesData.matriculados) {
+      const panelSum = matriculadosPanelData.sexo.reduce((acc, item) => acc + normalizeNumber(item.total || 0), 0);
+      const matTotal = stagesData.matriculados.total || 1;
+      if (panelSum <= matTotal * 1.5) {
+        matriculadosPanelData.sexo.forEach((item) => {
+          const genRaw = String(item.name || '').trim().toUpperCase();
+          const val = normalizeNumber(item.total || 0);
+          let normKey = null;
+          if (genRaw.includes('NO BIN') || genRaw.includes('NOBIN') || genRaw.includes('TRANS')) normKey = 'NO BINARIO';
+          else if (genRaw.includes('FEM')) normKey = 'FEMENINO';
+          else if (genRaw.includes('MAS')) normKey = 'MASCULINO';
 
-        if (normKey && val > 0) {
-          genderTotalsMap.set(normKey, val);
-        }
-      });
+          if (normKey && val > 0) {
+            stagesData.matriculados.genderMap.set(normKey, val);
+            genderTotalsMap.set(normKey, val);
+          }
+        });
+      }
     }
 
-    if (caracterizacionPanel?.sexo) {
+    if (caracterizacionPanel?.sexo && stagesData.caracterizacion) {
       caracterizacionPanel.sexo.forEach((item) => {
         const genRaw = String(item.name || item.genero || '').trim().toUpperCase();
         const val = normalizeNumber(item.total || item.cantidad || 0);
@@ -13336,73 +13549,66 @@ const renderCategoryBars = (items = [], options = {}) => {
         else if (genRaw.includes('MAS')) normKey = 'MASCULINO';
 
         if (normKey && val > 0) {
-          genderTotalsMap.set(normKey, val);
+          stagesData.caracterizacion.genderMap.set(normKey, val);
         }
       });
     }
 
-    const totalMasc = genderTotalsMap.get('MASCULINO') || 0;
-    const totalFem = genderTotalsMap.get('FEMENINO') || 0;
-    const totalNoBin = genderTotalsMap.get('NO BINARIO') || 0;
-
-    const realSum = totalMasc + totalFem + totalNoBin;
-
-    const mascRatio = realSum > 0 && totalMasc > 0 ? totalMasc / realSum : 0.518;
-    const femRatio = realSum > 0 && totalFem > 0 ? totalFem / realSum : (realSum > 0 && totalMasc > 0 ? (1 - totalMasc / realSum) : 0.482);
-    const noBinRatio = realSum > 0 && totalNoBin > 0 ? totalNoBin / realSum : 0;
-
-    const allPossibleCategories = [
-      {
-        rawName: 'MASCULINO',
-        key: 'masculino',
-        icon: <MaleIcon sx={{ fontSize: 28 }} />,
-        color: '#475569',
-        gradientStart: '#64748b',
-        gradientEnd: '#334155',
-        bg: '#f8fafc',
-        symbol: '♂',
-        ratio: mascRatio,
-        alwaysShow: true
-      },
-      {
-        rawName: 'FEMENINO',
-        key: 'femenino',
-        icon: <FemaleIcon sx={{ fontSize: 28 }} />,
-        color: '#2563eb',
-        gradientStart: '#3b82f6',
-        gradientEnd: '#1d4ed8',
-        bg: '#eff6ff',
-        symbol: '♀',
-        ratio: femRatio,
-        alwaysShow: true
-      },
-      {
-        rawName: 'NO BINARIO',
-        key: 'noBinario',
-        icon: <TransgenderIcon sx={{ fontSize: 28 }} />,
-        color: '#7c3aed',
-        gradientStart: '#a78bfa',
-        gradientEnd: '#5b21b6',
-        bg: '#f5f3ff',
-        symbol: '⚧',
-        ratio: noBinRatio,
-        totalCount: totalNoBin,
-        alwaysShow: false
-      }
-    ];
-
     Object.values(stagesData).forEach((st) => {
-      st.genders = allPossibleCategories
-        .map((g) => {
-          let calcCount = Math.round(st.total * g.ratio);
-          if (g.totalCount > 0 && calcCount === 0) calcCount = 1;
-          return {
-            ...g,
-            count: calcCount,
-            pct: (g.ratio * 100).toFixed(1)
-          };
-        })
-        .filter((g) => g.alwaysShow || g.totalCount > 0 || g.ratio > 0);
+      const gMap = st.genderMap || new Map();
+      const stMasc = gMap.get('MASCULINO') || 0;
+      const stFem = gMap.get('FEMENINO') || 0;
+      const stNoBin = gMap.get('NO BINARIO') || 0;
+
+      const calcMasc = stMasc > 0 ? stMasc : Math.round(st.total * 0.518);
+      const calcFem = stFem > 0 ? stFem : Math.max(0, st.total - calcMasc - stNoBin);
+      const calcNoBin = stNoBin;
+
+      const stageTotalCalc = calcMasc + calcFem + calcNoBin || st.total || 1;
+
+      const allCategories = [
+        {
+          rawName: 'MASCULINO',
+          key: 'masculino',
+          icon: <MaleIcon sx={{ fontSize: 28 }} />,
+          color: '#475569',
+          gradientStart: '#64748b',
+          gradientEnd: '#334155',
+          bg: '#f8fafc',
+          symbol: '♂',
+          count: calcMasc,
+          pct: (calcMasc / stageTotalCalc) * 100,
+          alwaysShow: true
+        },
+        {
+          rawName: 'FEMENINO',
+          key: 'femenino',
+          icon: <FemaleIcon sx={{ fontSize: 28 }} />,
+          color: '#2563eb',
+          gradientStart: '#3b82f6',
+          gradientEnd: '#1d4ed8',
+          bg: '#eff6ff',
+          symbol: '♀',
+          count: calcFem,
+          pct: (calcFem / stageTotalCalc) * 100,
+          alwaysShow: true
+        },
+        {
+          rawName: 'NO BINARIO',
+          key: 'noBinario',
+          icon: <TransgenderIcon sx={{ fontSize: 28 }} />,
+          color: '#7c3aed',
+          gradientStart: '#a78bfa',
+          gradientEnd: '#5b21b6',
+          bg: '#f5f3ff',
+          symbol: '⚧',
+          count: calcNoBin,
+          pct: (calcNoBin / stageTotalCalc) * 100,
+          alwaysShow: false
+        }
+      ];
+
+      st.genders = allCategories.filter((g) => g.alwaysShow || g.count > 0);
       st.programas = Array.from(st.programasMap.values()).sort((a, b) => b.total - a.total);
     });
 
@@ -13608,13 +13814,15 @@ const renderCategoryBars = (items = [], options = {}) => {
                 </Typography>
                 <Stack spacing={1}>
                   {(currentStageObj.genders || []).map((gItem) => {
-                    const isFemale = gItem.key === 'femenino';
-                    const cardColor = isFemale ? currentStageObj.color : gItem.color;
-                    const gradStart = isFemale ? currentStageObj.gradientStart : gItem.gradientStart;
-                    const gradEnd = isFemale ? currentStageObj.gradientEnd : gItem.gradientEnd;
+                    const isThemeGender = gItem.key === 'femenino' || gItem.key === 'noBinario';
+                    const cardColor = gItem.key === 'noBinario'
+                      ? (currentStageObj.gradientEnd || currentStageObj.color)
+                      : (isThemeGender ? currentStageObj.color : gItem.color);
+                    const gradStart = isThemeGender ? currentStageObj.gradientStart : gItem.gradientStart;
+                    const gradEnd = isThemeGender ? currentStageObj.gradientEnd : gItem.gradientEnd;
                     const pctVal = Number(gItem.pct || 0);
                     const exactCount = gItem.count;
-                    const displayPct = pctVal > 0 && pctVal < 0.1 ? '< 0.1%' : `${pctVal.toFixed(1)}%`;
+                    const displayPct = exactCount > 0 ? (pctVal < 0.01 ? `${pctVal.toFixed(3)}%` : pctVal < 0.1 ? `${pctVal.toFixed(2)}%` : `${pctVal.toFixed(1)}%`) : '0%';
                     const barWidth = Math.max(pctVal > 0 ? 1 : 0, Math.min(100, pctVal));
                     return (
                       <Box key={gItem.rawName} sx={{ display: 'flex', flexDirection: 'column', gap: 0.4 }}>
@@ -13668,7 +13876,7 @@ const renderCategoryBars = (items = [], options = {}) => {
                 </Typography>
               </Box>
 
-              <TableContainer sx={{ flex: 1 }}>
+              <TableContainer sx={{ flex: 1, maxHeight: 330, overflowY: 'auto' }}>
                 <Table size="small" stickyHeader>
                   <TableBody>
                     {currentStageObj.programas.length === 0 ? (
@@ -13682,26 +13890,50 @@ const renderCategoryBars = (items = [], options = {}) => {
                         const maxTotal = currentStageObj.programas[0]?.total || 1;
                         const pct = Math.min(100, (prog.total / maxTotal) * 100);
                         return (
-                          <TableRow key={prog.name} hover sx={{ '&:nth-of-type(even) td': { bgcolor: '#f8fafc' } }}>
-                            <TableCell sx={{ py: 1.15, position: 'relative' }}>
+                          <TableRow key={prog.name} hover sx={{ '& td': { borderColor: '#e2e8f0' } }}>
+                            {/* Column 1: Program Name (Ultra-compact text) */}
+                            <TableCell sx={{ py: 0.45, px: 1.2, fontSize: 10.8, fontWeight: 700, color: '#1e293b', borderRight: '1px solid #e2e8f0', width: '58%', lineHeight: 1.15 }}>
+                              {prog.name}
+                            </TableCell>
+
+                            {/* Column 2: CANTIDAD with horizontal bar fill on right */}
+                            <TableCell
+                              align="right"
+                              sx={{
+                                py: 0.45,
+                                px: 1.2,
+                                position: 'relative',
+                                overflow: 'hidden',
+                                width: '42%',
+                                bgcolor: `${currentStageObj.color}10`
+                              }}
+                            >
+                              {/* Horizontal Bar Chart inside CANTIDAD column */}
                               <Box
                                 sx={{
                                   position: 'absolute',
-                                  top: 4,
-                                  bottom: 4,
-                                  left: 4,
+                                  top: 1,
+                                  bottom: 1,
+                                  left: 0,
                                   width: `${pct}%`,
-                                  bgcolor: `${currentStageObj.color}15`,
-                                  borderRadius: 1,
-                                  zIndex: 0
+                                  background: `linear-gradient(90deg, ${currentStageObj.color} 0%, ${currentStageObj.gradientStart || currentStageObj.color} 100%)`,
+                                  borderRadius: '0 2px 2px 0',
+                                  zIndex: 0,
+                                  transition: 'width 0.4s ease'
                                 }}
                               />
-                              <Typography sx={{ position: 'relative', zIndex: 1, fontSize: 12, fontWeight: 800, color: '#1e293b' }}>
-                                {prog.name}
+                              <Typography
+                                sx={{
+                                  position: 'relative',
+                                  zIndex: 1,
+                                  fontSize: 11.5,
+                                  fontWeight: 950,
+                                  color: pct >= 82 ? '#ffffff' : (currentStageObj.gradientEnd || '#0f172a'),
+                                  textShadow: pct >= 82 ? '0 1px 2px rgba(0,0,0,0.6)' : 'none'
+                                }}
+                              >
+                                {formatNumber(prog.total)}
                               </Typography>
-                            </TableCell>
-                            <TableCell align="right" sx={{ py: 1.15, fontWeight: 950, color: currentStageObj.color, width: 85 }}>
-                              {formatNumber(prog.total)}
                             </TableCell>
                           </TableRow>
                         );
