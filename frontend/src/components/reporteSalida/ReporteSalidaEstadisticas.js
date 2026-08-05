@@ -123,6 +123,7 @@ const readSalidaValue = (salida, keys) => {
 const TYPE_LABELS_DISPLAY = {
   cita_eps: 'CITAS MEDICAS EPS',
   cita_particular: 'CITAS ESPEC. / PART.',
+  cita_medica_laboral: 'CITA MEDICA LABORAL',
   terapias: 'TERAPIAS',
   urgencia_medica: 'URGENCIAS MEDICAS',
   diligencia_personal: 'DILIGENCIAS PERSONALES',
@@ -238,6 +239,7 @@ const exportToExcel = (title, summaryData, isTime, rawData, nameHeader = 'Colabo
   const TYPE_LABELS = {
     cita_eps: 'Cita Médica EPS',
     cita_particular: 'Cita Especialista / Particular',
+    cita_medica_laboral: 'Cita Médica Laboral',
     terapias: 'Terapias',
     urgencia_medica: 'Urgencia Médica',
     diligencia_personal: 'Diligencia Personal',
@@ -335,7 +337,7 @@ const exportToExcel = (title, summaryData, isTime, rawData, nameHeader = 'Colabo
     else if (rowCat === 'personales') segmentoText = 'Trámites, Permisos y Licencias';
     else if (rowCat === 'propias_cargo') segmentoText = 'Actividades propias del cargo (Misionales)';
     else {
-      if (['cita_eps', 'cita_particular', 'terapias', 'urgencia_medica'].includes(tipo)) segmentoText = 'Salud y Bienestar';
+      if (['cita_eps', 'cita_particular', 'cita_medica_laboral', 'terapias', 'urgencia_medica'].includes(tipo)) segmentoText = 'Salud y Bienestar';
       else if (['diligencia_personal', 'calamidad', 'jurado_votacion', 'sufragante'].includes(tipo)) segmentoText = 'Trámites, Permisos y Licencias';
       else if (['reunion_institucional', 'evento_institucional', 'ponencia', 'visita_ies', 'salida_campus'].includes(tipo)) segmentoText = 'Actividades propias del cargo (Misionales)';
     }
@@ -575,7 +577,7 @@ export default function ReporteSalidaEstadisticas({ rows = [], cardFilter = 'tod
     if (segmentoFiltro) {
       result = result.filter(r => {
         const tipo = r.datos_formulario?.salida?.tipo;
-        if (segmentoFiltro === 'salud') return ['cita_eps', 'cita_particular', 'terapias'].includes(tipo);
+        if (segmentoFiltro === 'salud') return ['cita_eps', 'cita_particular', 'cita_medica_laboral', 'terapias', 'urgencia_medica'].includes(tipo);
         if (segmentoFiltro === 'personales') return ['diligencia_personal', 'calamidad'].includes(tipo);
         if (segmentoFiltro === 'institucionales') return ['reunion_institucional', 'evento_institucional', 'ponencia'].includes(tipo);
         return tipo === segmentoFiltro;

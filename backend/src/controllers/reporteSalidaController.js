@@ -2534,6 +2534,7 @@ const sendJefeGroupRadicacionNotificationEmail = async (solicitud, jefeSnapshot,
   const mapping = {
     cita_eps: 'Cita medica por EPS',
     cita_particular: 'Cita medica particular',
+    cita_medica_laboral: 'Cita medica laboral',
     urgencia_medica: 'Urgencia Medica',
     diligencia_personal: 'Diligencia personal',
     compensatorio: 'Compensatorio',
@@ -2656,6 +2657,7 @@ const sendGroupFinalConsolidatedEmail = async (solicitudes, pdfAttachments) => {
   const mapping = {
     cita_eps: 'Cita medica por EPS',
     cita_particular: 'Cita medica particular',
+    cita_medica_laboral: 'Cita medica laboral',
     urgencia_medica: 'Urgencia Medica',
     diligencia_personal: 'Diligencia personal',
     compensatorio: 'Compensatorio',
@@ -3114,6 +3116,7 @@ const radicarSolicitud = async (req, res) => {
         const types = {
           cita_eps: 'Cita medica por EPS',
           cita_particular: 'Cita medica particular',
+          cita_medica_laboral: 'Cita medica laboral',
           terapias: 'Terapias o tratamiento medico',
           urgencia_medica: 'Urgencia medica',
           diligencia_personal: 'Diligencia personal',
@@ -5634,6 +5637,7 @@ const sendGestionHumanaGroupApprovalEmail = async (solicitudes, token) => {
   const mapping = {
     cita_eps: 'Cita medica por EPS',
     cita_particular: 'Cita medica particular',
+    cita_medica_laboral: 'Cita medica laboral',
     urgencia_medica: 'Urgencia Medica',
     diligencia_personal: 'Diligencia personal',
     compensatorio: 'Compensatorio',

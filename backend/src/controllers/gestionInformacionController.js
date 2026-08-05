@@ -3002,6 +3002,27 @@ const isAfrodescendiente = (grupo) => {
   return /(AFRO|NEGRA|PALENQ|RAIZAL)/.test(text);
 };
 
+const CARACTERIZACION_DASHBOARD_CACHE_TTL_MS = 60 * 1000;
+const caracterizacionDashboardCache = new Map();
+
+const getCaracterizacionDashboardCache = (key) => {
+  const cached = caracterizacionDashboardCache.get(key);
+  if (!cached) return null;
+  if (Date.now() - cached.createdAt > CARACTERIZACION_DASHBOARD_CACHE_TTL_MS) {
+    caracterizacionDashboardCache.delete(key);
+    return null;
+  }
+  return cached.data;
+};
+
+const setCaracterizacionDashboardCache = (key, data) => {
+  if (caracterizacionDashboardCache.size >= 60) {
+    const oldestKey = caracterizacionDashboardCache.keys().next().value;
+    if (oldestKey) caracterizacionDashboardCache.delete(oldestKey);
+  }
+  caracterizacionDashboardCache.set(key, { createdAt: Date.now(), data });
+};
+
 const getPeriodoTokenSort = (value = '') => {
   const text = String(value || '').toUpperCase();
   if (/\b(IIP|II|2)\b/.test(text)) return 2;
@@ -4695,8 +4716,11 @@ const formatGraduadoShortDate = (date) => {
 };
 
 const buildGraduadosGeneralDashboardPayload = async (anioFilter = null) => {
-  const anioNum = anioFilter && anioFilter !== 'todos' ? Number(anioFilter) : null;
-  const hasYearFilter = anioNum && !Number.isNaN(anioNum);
+  const rawYears = Array.isArray(anioFilter)
+    ? anioFilter.flatMap((v) => String(v).split(','))
+    : (anioFilter && anioFilter !== 'todos' ? String(anioFilter).split(',') : []);
+  const anioValues = rawYears.map((v) => Number(v)).filter((n) => !Number.isNaN(n) && n > 0);
+  const hasYearFilter = anioValues.length > 0;
 
   const [aniosHistRaw, aniosDinRaw, historicoRawRows, graduadosRawRows] = await Promise.all([
     PoblacionalCantidadTotalEgresado.findAll({
@@ -4713,19 +4737,19 @@ const buildGraduadosGeneralDashboardPayload = async (anioFilter = null) => {
       order: [['anio', 'ASC']],
       raw: true
     }),
-    hasYearFilter && anioNum >= 2020
+    hasYearFilter && anioValues.every((y) => y >= 2020)
       ? Promise.resolve([])
       : PoblacionalCantidadTotalEgresado.findAll({
           attributes: ['id', 'anio', 'programa', 'cantidad', 'detalle'],
-          where: hasYearFilter ? { anio: anioNum } : {},
+          where: hasYearFilter ? { anio: { [Op.in]: anioValues } } : {},
           order: [['programa', 'ASC'], ['id', 'ASC']],
           raw: true
         }),
-    hasYearFilter && anioNum <= 2019
+    hasYearFilter && anioValues.every((y) => y <= 2019)
       ? Promise.resolve([])
       : PoblacionalGraduado.findAll({
           attributes: ['id', 'anio', 'periodo', 'programa', 'numero_documento', 'fecha_grado'],
-          where: hasYearFilter ? { anio: anioNum } : { anio: { [Op.gte]: 2020 } },
+          where: hasYearFilter ? { anio: { [Op.in]: anioValues } } : { anio: { [Op.gte]: 2020 } },
           order: [['anio', 'ASC'], ['periodo', 'ASC'], ['programa', 'ASC'], ['id', 'ASC']],
           raw: true
         })
@@ -5471,73 +5495,157 @@ const getEstadisticas = async (req, res) => {
       const programas = parseQueryListParam(req.query, 'programas');
       const aniosList = parseQueryListParam(req.query, 'anios').map((x) => Number(x)).filter((x) => Number.isFinite(x));
       const periodos = parseQueryListParam(req.query, 'periodos');
-      const rawWhere = {};
-      if (programas.length) rawWhere.programa = { [Op.in]: programas };
-      // No filtramos por columna "anio" en SQL cuando se usa este agregado:
-      // en caracterizacion el periodo puede ser la fuente mas confiable (ej. "2025 IIP")
-      // y existen filas con inconsistencias entre anio y periodo. El filtro por anio se aplica
-      // despues usando anio derivado desde periodo para mantener los recuentos exactos.
-
-      let rows = await PoblacionalCaracterizacion.findAll({
-        where: rawWhere,
-        attributes: ['anio', 'periodo', 'programa', 'genero', 'victima_conflicto_armado', 'estrato', 'grupo_etnico'],
-        raw: true
+      const replacements = {};
+      const normalizedProgramas = Array.from(new Set(programas.map((item) => normalizeComparableText(item)).filter(Boolean)));
+      const cacheKey = JSON.stringify({
+        programas: [...normalizedProgramas].sort(),
+        anios: [...aniosList].sort((a, b) => a - b),
+        periodos: [...periodos].sort()
       });
+      const cachedDashboard = getCaracterizacionDashboardCache(cacheKey);
+      if (cachedDashboard) {
+        return res.json({ success: true, data: cachedDashboard });
+      }
+      const normalizedFilters = [];
+      const derivedAnioSql = `COALESCE(
+        NULLIF(SUBSTRING(COALESCE(periodo, '') FROM '19[0-9]{2}|20[0-9]{2}'), '')::integer,
+        anio,
+        0
+      )`;
+      const periodOrderSql = `CASE
+        WHEN UPPER(COALESCE(periodo, '')) ~ '(^|[^A-Z0-9])(IIP|II|2)($|[^A-Z0-9])' THEN 2
+        ELSE 1
+      END`;
 
-      if (periodos.length) {
-        rows = rows.filter((row) => periodos.includes(getRawPeriodLabel(row)));
+      if (normalizedProgramas.length) {
+        replacements.programas = normalizedProgramas;
+        normalizedFilters.push(`
+          BTRIM(REGEXP_REPLACE(
+            TRANSLATE(UPPER(COALESCE(programa, '')), 'ÁÉÍÓÚÜÑ', 'AEIOUUN'),
+            '[^A-Z0-9]+', ' ', 'g'
+          )) IN (:programas)
+        `);
       }
       if (aniosList.length) {
-        rows = rows.filter((row) => {
-          const derivedAnio = parseAnio(row.periodo) || Number(row.anio) || 0;
-          return aniosList.includes(derivedAnio);
-        });
+        replacements.anios = aniosList;
+        normalizedFilters.push(`${derivedAnioSql} IN (:anios)`);
+      }
+      if (periodos.length) {
+        replacements.periodos = periodos;
+        normalizedFilters.push(`((${derivedAnioSql})::text || '-' || (${periodOrderSql})::text) IN (:periodos)`);
       }
 
-      const countBy = (list, getter) => {
-        const map = new Map();
-        list.forEach((item) => {
-          const key = getter(item);
-          map.set(key, (map.get(key) || 0) + 1);
-        });
-        return Array.from(map.entries()).map(([label, total]) => ({ label, total })).sort((a, b) => b.total - a.total);
-      };
+      // PostgreSQL devuelve solamente los agregados. Antes se transferían las 118.886 filas
+      // a Node para contarlas en memoria, aumentando el tiempo y el consumo por solicitud.
+      const aggregateRows = await PoblacionalCaracterizacion.sequelize.query(`
+        WITH normalized AS MATERIALIZED (
+          SELECT
+            id,
+            COALESCE(
+              NULLIF(BTRIM(no_identificacion), ''),
+              NULLIF(BTRIM(codigo), ''),
+              'ROW-' || id::text
+            ) AS person_key,
+            ${derivedAnioSql} AS derived_anio,
+            ${periodOrderSql} AS period_order,
+            CASE
+              WHEN UPPER(BTRIM(COALESCE(genero, ''))) LIKE '%NO BIN%' THEN 'NO BINARIO'
+              WHEN UPPER(BTRIM(COALESCE(genero, ''))) = 'F' OR UPPER(BTRIM(COALESCE(genero, ''))) LIKE '%FEM%' THEN 'FEMENINO'
+              WHEN UPPER(BTRIM(COALESCE(genero, ''))) = 'M' OR UPPER(BTRIM(COALESCE(genero, ''))) LIKE '%MAS%' THEN 'MASCULINO'
+              ELSE COALESCE(NULLIF(UPPER(BTRIM(genero)), ''), 'SIN INFORMACION')
+            END AS genero_label,
+            CASE
+              WHEN UPPER(BTRIM(COALESCE(victima_conflicto_armado, ''))) IN ('SI', 'SÍ', 'YES') THEN 'SI'
+              WHEN UPPER(BTRIM(COALESCE(victima_conflicto_armado, ''))) IN ('NO', 'N') THEN 'NO'
+              ELSE COALESCE(NULLIF(UPPER(BTRIM(victima_conflicto_armado)), ''), 'SIN INFORMACION')
+            END AS victima_label,
+            COALESCE(NULLIF(BTRIM(estrato), ''), 'Sin informacion') AS estrato_label,
+            COALESCE(NULLIF(UPPER(BTRIM(grupo_etnico)), ''), 'SIN INFORMACION') AS grupo_etnico_label
+          FROM poblacional_caracterizacion
+          ${normalizedFilters.length ? `WHERE ${normalizedFilters.join(' AND ')}` : ''}
+        ),
+        scoped AS MATERIALIZED (
+          SELECT *
+          FROM (
+            SELECT
+              normalized.*,
+              ROW_NUMBER() OVER (
+                PARTITION BY derived_anio, period_order, person_key
+                ORDER BY id DESC
+              ) AS person_row
+            FROM normalized
+          ) ranked
+          WHERE person_row = 1
+        )
+        SELECT 'total'::text AS dimension, 'TOTAL'::text AS label, COUNT(*)::bigint AS total, NULL::integer AS anio, NULL::integer AS period_order
+        FROM scoped
+        UNION ALL
+        SELECT 'periodo', derived_anio::text || '-' || period_order::text, COUNT(*)::bigint, derived_anio, period_order
+        FROM scoped GROUP BY derived_anio, period_order
+        UNION ALL
+        SELECT 'victimas_distribucion', victima_label, COUNT(*)::bigint, NULL::integer, NULL::integer
+        FROM scoped GROUP BY victima_label
+        UNION ALL
+        SELECT 'victimas_genero', genero_label, COUNT(*)::bigint, NULL::integer, NULL::integer
+        FROM scoped WHERE victima_label = 'SI' GROUP BY genero_label
+        UNION ALL
+        SELECT 'afro_genero', genero_label, COUNT(*)::bigint, NULL::integer, NULL::integer
+        FROM scoped WHERE grupo_etnico_label ~ '(AFRO|NEGRA|PALENQ|RAIZAL)' GROUP BY genero_label
+        UNION ALL
+        SELECT 'genero_general', genero_label, COUNT(*)::bigint, NULL::integer, NULL::integer
+        FROM scoped GROUP BY genero_label
+        UNION ALL
+        SELECT 'estratos', estrato_label, COUNT(*)::bigint, NULL::integer, NULL::integer
+        FROM scoped GROUP BY estrato_label
+        UNION ALL
+        SELECT 'grupos_etnicos', grupo_etnico_label, COUNT(*)::bigint, NULL::integer, NULL::integer
+        FROM scoped GROUP BY grupo_etnico_label
+      `, { replacements, type: QueryTypes.SELECT });
 
-      const victimasRows = rows.filter((row) => normalizeSiNo(row.victima_conflicto_armado) === 'SI');
-      const afroRows = rows.filter((row) => isAfrodescendiente(row.grupo_etnico));
-
-      const periodSeries = countBy(rows, (row) => getRawPeriodLabel(row))
-        .map((item) => {
-          const [anioLabel, p] = item.label.split('-');
-          return { periodLabel: item.label, anio: Number(anioLabel) || 0, periodOrder: (Number(anioLabel) || 0) * 10 + (Number(p) || 1), total: item.total };
-        })
+      const byDimension = (dimension) => aggregateRows
+        .filter((row) => row.dimension === dimension)
+        .map((row) => ({ label: row.label, total: Number(row.total || 0) }))
+        .sort((a, b) => b.total - a.total);
+      const totalRegistros = Number(aggregateRows.find((row) => row.dimension === 'total')?.total || 0);
+      const victimasDistribucion = byDimension('victimas_distribucion');
+      const victimasGenero = byDimension('victimas_genero');
+      const afroGenero = byDimension('afro_genero');
+      const victimasTotal = Number(victimasDistribucion.find((row) => row.label === 'SI')?.total || 0);
+      const afroTotal = afroGenero.reduce((sum, row) => sum + row.total, 0);
+      const periodSeries = aggregateRows
+        .filter((row) => row.dimension === 'periodo')
+        .map((row) => ({
+          periodLabel: row.label,
+          anio: Number(row.anio) || 0,
+          periodOrder: (Number(row.anio) || 0) * 10 + (Number(row.period_order) || 1),
+          total: Number(row.total || 0)
+        }))
         .sort((a, b) => a.periodOrder - b.periodOrder);
 
-      return res.json({
-        success: true,
-        data: {
-          totalRegistros: rows.length,
-          periodSeries,
-          victimas: {
-            total: victimasRows.length,
-            distribucion: countBy(rows, (row) => normalizeSiNo(row.victima_conflicto_armado)),
-            genero: countBy(victimasRows, (row) => normalizeGenero(row.genero))
-          },
-          afrodescendientes: {
-            total: afroRows.length,
-            genero: countBy(afroRows, (row) => normalizeGenero(row.genero))
-          },
-          generoGeneral: {
-            distribucion: countBy(rows, (row) => normalizeGenero(row.genero))
-          },
-          estratos: {
-            distribucion: countBy(rows, (row) => String(row.estrato || 'Sin informacion').trim() || 'Sin informacion')
-          },
-          gruposEtnicos: {
-            distribucion: countBy(rows, (row) => normalizeGrupoEtnico(row.grupo_etnico))
-          }
+      const dashboardData = {
+        totalRegistros,
+        periodSeries,
+        victimas: {
+          total: victimasTotal,
+          distribucion: victimasDistribucion,
+          genero: victimasGenero
+        },
+        afrodescendientes: {
+          total: afroTotal,
+          genero: afroGenero
+        },
+        generoGeneral: {
+          distribucion: byDimension('genero_general')
+        },
+        estratos: {
+          distribucion: byDimension('estratos')
+        },
+        gruposEtnicos: {
+          distribucion: byDimension('grupos_etnicos')
         }
-      });
+      };
+      setCaracterizacionDashboardCache(cacheKey, dashboardData);
+      return res.json({ success: true, data: dashboardData });
     }
 
     if (aggregate === 'matriculados_geo_dashboard' && where.categoria === 'Poblacional') {
@@ -9271,6 +9379,9 @@ const importFromExcel = async (req, res) => {
     }
     if (categoria === 'Poblacional') {
       poblacionalSeriesCache.clear();
+      if (poblacionalConfig?.label === 'Caracterizacion') {
+        caracterizacionDashboardCache.clear();
+      }
     }
 
     const porcentaje = result.total > 0 ? Number(((result.importados / result.total) * 100).toFixed(2)) : 0;
@@ -9344,6 +9455,9 @@ const clearByCategoria = async (req, res) => {
       recursoHumanoConfig,
       internacionalizacionConfig
     });
+    if (categoria === 'Poblacional' && (!subcategoria || poblacionalConfig?.label === 'Caracterizacion')) {
+      caracterizacionDashboardCache.clear();
+    }
     return res.json({
       success: true,
       message: `Se eliminaron ${deleted} registros de la base ${categoria}${subcategoria ? ` / ${subcategoria}` : ''}`,

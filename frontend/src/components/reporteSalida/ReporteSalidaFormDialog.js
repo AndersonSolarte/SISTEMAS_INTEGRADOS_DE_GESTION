@@ -235,7 +235,7 @@ const convert24To12 = (time24) => {
 };
 
 const REQUIRES_ADJUNTO = [
-  'cita_eps', 'cita_particular', 'terapias',
+  'cita_eps', 'cita_particular', 'cita_medica_laboral', 'terapias',
   'voto_jurado', 'voto_sufragante',
   'jurado_votacion', 'sufragante', 'cargos_oficiales_transitorios',
   'luto_familiares_cercanos', 'fallecimiento_otros_familiares', 'matrimonio_union_marital',

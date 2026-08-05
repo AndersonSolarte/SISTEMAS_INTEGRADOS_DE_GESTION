@@ -467,7 +467,7 @@ function ReporteSalidaSeguimiento({ initialAccess = null, onBack }) {
         }
         if (tipoFiltro === 'salud') {
           if (rowCat === 'salud') return true;
-          return ['cita_eps', 'cita_particular', 'terapias', 'urgencia_medica'].includes(tipo);
+          return ['cita_eps', 'cita_particular', 'cita_medica_laboral', 'terapias', 'urgencia_medica'].includes(tipo);
         }
         if (tipoFiltro === 'personales') {
           if (rowCat === 'personales') return true;
@@ -617,7 +617,7 @@ function ReporteSalidaSeguimiento({ initialAccess = null, onBack }) {
       else if (rowCat === 'personales') segmentoText = 'Trámites, Permisos y Licencias';
       else if (rowCat === 'propias_cargo') segmentoText = 'Actividades propias del cargo (Misionales)';
       else {
-        if (['cita_eps', 'cita_particular', 'terapias', 'urgencia_medica'].includes(tipo)) segmentoText = 'Salud y Bienestar';
+        if (['cita_eps', 'cita_particular', 'cita_medica_laboral', 'terapias', 'urgencia_medica'].includes(tipo)) segmentoText = 'Salud y Bienestar';
         else if (['diligencia_personal', 'calamidad', 'jurado_votacion', 'sufragante'].includes(tipo)) segmentoText = 'Trámites, Permisos y Licencias';
         else if (['reunion_institucional', 'evento_institucional', 'ponencia', 'visita_ies', 'salida_campus'].includes(tipo)) segmentoText = 'Actividades propias del cargo (Misionales)';
       }
@@ -667,7 +667,7 @@ function ReporteSalidaSeguimiento({ initialAccess = null, onBack }) {
       else if (rowCat === 'personales') segmentoText = 'Trámites, Permisos y Licencias';
       else if (rowCat === 'propias_cargo') segmentoText = 'Actividades propias del cargo (Misionales)';
       else {
-        if (['cita_eps', 'cita_particular', 'terapias', 'urgencia_medica'].includes(tipo)) segmentoText = 'Salud y Bienestar';
+        if (['cita_eps', 'cita_particular', 'cita_medica_laboral', 'terapias', 'urgencia_medica'].includes(tipo)) segmentoText = 'Salud y Bienestar';
         else if (['diligencia_personal', 'calamidad', 'jurado_votacion', 'sufragante'].includes(tipo)) segmentoText = 'Trámites, Permisos y Licencias';
         else if (['reunion_institucional', 'evento_institucional', 'ponencia', 'visita_ies', 'salida_campus'].includes(tipo)) segmentoText = 'Actividades propias del cargo (Misionales)';
       }

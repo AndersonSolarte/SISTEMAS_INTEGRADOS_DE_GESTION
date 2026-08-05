@@ -97,6 +97,11 @@ import DeleteIcon from '@mui/icons-material/Delete';
 import BackupRoundedIcon from '@mui/icons-material/BackupRounded';
 import DatasetRoundedIcon from '@mui/icons-material/DatasetRounded';
 import TableChartRoundedIcon from '@mui/icons-material/TableChartRounded';
+import AccountTreeIcon from '@mui/icons-material/AccountTree';
+import AssessmentIcon from '@mui/icons-material/Assessment';
+import DraftsIcon from '@mui/icons-material/Drafts';
+import AssignmentTurnedInIcon from '@mui/icons-material/AssignmentTurnedIn';
+import WorkspacePremiumIcon from '@mui/icons-material/WorkspacePremium';
 import InputAdornment from '@mui/material/InputAdornment';
 import {
   ResponsiveContainer,
@@ -142,7 +147,8 @@ function DocFilterPanel({
   onChange,
   disabled = false,
   placeholder = 'Buscar...',
-  accentColor = '#2563eb'
+  accentColor = '#2563eb',
+  single = false
 }) {
   const [open, setOpen] = useState(false);
   const [search, setSearch] = useState('');
@@ -229,6 +235,11 @@ function DocFilterPanel({
 
   const toggle = (id) => {
     const key = String(id);
+    if (single) {
+      onChange([key]);
+      setOpen(false);
+      return;
+    }
     const currentValues = Array.from(valueSet);
     const next = isSel(key)
       ? currentValues.filter((v) => v !== key)
@@ -245,7 +256,7 @@ function DocFilterPanel({
   };
 
   const displayText = useMemo(() => {
-    if (selectedCount === 0) return 'TODOS';
+    if (selectedCount === 0) return single ? 'SELECCIONAR' : 'TODOS';
     if (selectedCount === 1) {
       const singleOption = normalizedOptions.find((o) => valueSet.has(o.id));
       return singleOption ? singleOption.nombre : '1 SELECCIONADO';
@@ -254,7 +265,7 @@ function DocFilterPanel({
       return 'TODOS';
     }
     return `${selectedCount} SELECCIONADOS`;
-  }, [selectedCount, totalCount, normalizedOptions, valueSet]);
+  }, [selectedCount, totalCount, normalizedOptions, valueSet, single]);
 
   const C = accentColor;
 
@@ -283,18 +294,20 @@ function DocFilterPanel({
           />
         </div>
       </div>
-      <div
-        onClick={toggleAll}
-        className="doc-filter-row"
-        style={{ padding: '8px 14px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 10, borderBottom: '1px solid #f1f5f9', background: 'transparent' }}
-      >
-        <div style={{ width: 16, height: 16, flexShrink: 0, borderRadius: 4, border: `2px solid ${allSelected ? C : '#cbd5e1'}`, background: allSelected ? C : '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-          {allSelected && <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="3.2"><polyline points="20 6 9 17 4 12"/></svg>}
+      {!single && (
+        <div
+          onClick={toggleAll}
+          className="doc-filter-row"
+          style={{ padding: '8px 14px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 10, borderBottom: '1px solid #f1f5f9', background: 'transparent' }}
+        >
+          <div style={{ width: 16, height: 16, flexShrink: 0, borderRadius: 4, border: `2px solid ${allSelected ? C : '#cbd5e1'}`, background: allSelected ? C : '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            {allSelected && <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="3.2"><polyline points="20 6 9 17 4 12"/></svg>}
+          </div>
+          <span style={{ fontSize: 11, fontWeight: 800, color: C, letterSpacing: '0.5px' }}>
+            SELECCIONAR TODOS ({totalCount})
+          </span>
         </div>
-        <span style={{ fontSize: 11, fontWeight: 800, color: C, letterSpacing: '0.5px' }}>
-          SELECCIONAR TODOS ({totalCount})
-        </span>
-      </div>
+      )}
       <div
         onWheel={(event) => event.stopPropagation()}
         style={{ maxHeight: 240, overflowY: 'auto', overscrollBehavior: 'contain', scrollbarWidth: 'thin' }}
@@ -320,7 +333,7 @@ function DocFilterPanel({
                   background: selected ? '#f0f9ff' : 'transparent'
                 }}
               >
-                <div style={{ width: 16, height: 16, flexShrink: 0, borderRadius: 4, border: `2px solid ${selected ? C : '#cbd5e1'}`, background: selected ? C : '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                <div style={{ width: 16, height: 16, flexShrink: 0, borderRadius: single ? '50%' : 4, border: `2px solid ${selected ? C : '#cbd5e1'}`, background: selected ? C : '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                   {selected && <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="3.2"><polyline points="20 6 9 17 4 12"/></svg>}
                 </div>
                 <span style={{ fontSize: 12.5, color: '#1e293b', fontWeight: 500 }}>
@@ -338,7 +351,7 @@ function DocFilterPanel({
       </div>
       <div style={{ padding: '6px 14px', borderTop: '1px solid #f1f5f9', background: '#f8fafc' }}>
         <span style={{ fontSize: 10.5, color: '#64748b', fontWeight: 600 }}>
-          {selectedCount > 0 && selectedCount < totalCount ? `${selectedCount} de ${totalCount} seleccionados` : `${totalCount} opciones`}
+          {single ? 'Selecciona una opción' : (selectedCount > 0 && selectedCount < totalCount ? `${selectedCount} de ${totalCount} seleccionados` : `${totalCount} opciones`)}
         </span>
       </div>
     </div>,
@@ -574,6 +587,12 @@ const getVisiblePoblacionalDashboardKeysForUser = (user) => {
 
 const REPORT_SECTIONS = [
   {
+    key: 'resumen_poblacional',
+    title: 'Resumen Poblacional UNICESMAG',
+    description: 'Flujo completo de estudiantes por todas las etapas.',
+    subcategorias: ['Inscritos', 'Admitidos', 'Primer Curso', 'Matriculados', 'Graduados']
+  },
+  {
     key: 'flujo',
     title: 'Inscritos, Admitidos y Primer Curso',
     description: 'Comportamiento historico del embudo poblacional por periodo.',
@@ -600,6 +619,7 @@ const REPORT_SECTIONS = [
 ];
 
 const POBLACIONAL_DASHBOARD_CARDS = [
+  { key: 'resumen_poblacional', title: 'Resumen Poblacional UNICESMAG', description: 'Flujo completo de estudiantes, etapas de embudo, desglose por género y ranking por programa.', color: '#4f46e5', type: 'analytics' },
   { key: 'flujo', title: 'Inscritos / Admitidos / Primer Curso', description: 'Embudo poblacional histórico por periodo.', color: '#2563eb', type: 'analytics' },
   { key: 'matriculados', title: 'Matriculados', description: 'Serie histórica y análisis por filtros.', color: '#4338ca', type: 'analytics' },
   { key: 'graduados', title: 'Graduados + Egresados Totales', description: 'Graduados con tarjetas complementarias de egresados.', color: '#153e69', type: 'analytics' },
@@ -2070,6 +2090,7 @@ function GestionInformacion() {
   const [matHistoricoCache, setMatHistoricoCache] = useState(null);
   const [matProgramaCache, setMatProgramaCache] = useState({});
   const [matriculadosTab, setMatriculadosTab] = useState('general');
+  const [resumenPoblacionalStage, setResumenPoblacionalStage] = useState('inscritos');
   const [matComparativoSemType, setMatComparativoSemType] = useState('IP');
   const [matAcordeonYears, setMatAcordeonYears] = useState(new Set());
   const [matAcordeonPeriods, setMatAcordeonPeriods] = useState(new Set());
@@ -2519,8 +2540,11 @@ function GestionInformacion() {
   }, [enqueueSnackbar, poblacionalPanel, statSection]);
 
   const fetchGraduadosGeneralDashboard = useCallback(async (options = {}) => {
-    const cacheKey = graduadosGeneralAnioFilter && graduadosGeneralAnioFilter !== 'todos'
-      ? `anio:${graduadosGeneralAnioFilter}`
+    const anioStr = Array.isArray(graduadosGeneralAnioFilter)
+      ? graduadosGeneralAnioFilter.join(',')
+      : String(graduadosGeneralAnioFilter || 'todos');
+    const cacheKey = graduadosGeneralAnioFilter && graduadosGeneralAnioFilter !== 'todos' && anioStr
+      ? `anio:${anioStr}`
       : 'todos';
     if (!options.force && graduadosGeneralCacheRef.current.has(cacheKey)) {
       const cachedPayload = graduadosGeneralCacheRef.current.get(cacheKey);
@@ -2536,8 +2560,8 @@ function GestionInformacion() {
         aggregate: 'graduados_general_dashboard'
       };
       if (options.force) params._ts = Date.now();
-      if (graduadosGeneralAnioFilter && graduadosGeneralAnioFilter !== 'todos') {
-        params.anio = graduadosGeneralAnioFilter;
+      if (graduadosGeneralAnioFilter && graduadosGeneralAnioFilter !== 'todos' && anioStr) {
+        params.anio = anioStr;
       }
       const response = await gestionInformacionService.getEstadisticas(params);
       const payload = response?.data || null;
@@ -2766,7 +2790,7 @@ function GestionInformacion() {
     if (menuView === 'estadistica' && selectedCard === 'poblacional') {
       fetchSeriesRows();
     }
-  }, [fetchSeriesRows, menuView, selectedCard]);
+  }, [fetchSeriesRows, menuView, selectedCard, statSection, poblacionalPanel]);
 
   useEffect(() => {
     if (menuView === 'estadistica' && selectedCard === 'registros_calificados_acreditacion') {
@@ -2780,7 +2804,7 @@ function GestionInformacion() {
   }, [fetchGraduadosGeneralDashboard, menuView, poblacionalPanel, selectedCard, statSection]);
 
   useEffect(() => {
-    if (menuView !== 'estadistica' || selectedCard !== 'poblacional' || poblacionalPanel !== 'analytics' || statSection !== 'matriculados') return;
+    if (menuView !== 'estadistica' || selectedCard !== 'poblacional' || poblacionalPanel !== 'analytics' || (statSection !== 'matriculados' && statSection !== 'resumen_poblacional')) return;
     const currentKey = JSON.stringify([matFilters, matriculadosRefreshToken]);
     if (matriculadosPanelDataRef.current && matLoadedKeyRef.current === currentKey) return;
     matLoadedKeyRef.current = currentKey;
@@ -2834,6 +2858,13 @@ function GestionInformacion() {
 
   useEffect(() => {
     if (menuView !== 'estadistica' || selectedCard !== 'poblacional' || statSection !== 'caracterizacion') return;
+    const hasSingleYear = (activeStatsFilters.anios || []).length === 1;
+    const hasSinglePeriod = (activeStatsFilters.periodos || []).length === 1;
+    if (!hasSingleYear || !hasSinglePeriod) {
+      setCaracterizacionPanel(null);
+      setCaracterizacionPanelLoading(false);
+      return;
+    }
     let cancelled = false;
     const loadCaracterizacionPanel = async () => {
       setCaracterizacionPanelLoading(true);
@@ -2943,12 +2974,18 @@ function GestionInformacion() {
     setSectionFilterMode(currentSection, 'auto');
     setStatsFiltersBySection((prev) => ({
       ...prev,
-      [currentSection]: getAutoStatsFilters({
-        programasDisponibles,
-        facultadesDisponibles,
-        aniosDisponibles,
-        periodosDisponibles
-      })
+      [currentSection]: currentSection === 'caracterizacion'
+        ? {
+          ...initialStatsFilters,
+          programas: [...programasDisponibles],
+          facultades: [...facultadesDisponibles]
+        }
+        : getAutoStatsFilters({
+          programasDisponibles,
+          facultadesDisponibles,
+          aniosDisponibles,
+          periodosDisponibles
+        })
     }));
   }, [aniosDisponibles, facultadesDisponibles, periodosDisponibles, programasDisponibles, setSectionFilterMode, statSection]);
 
@@ -2985,12 +3022,18 @@ function GestionInformacion() {
       if (getSectionFilterMode(sectionKey) === 'auto') {
         return {
           ...prev,
-          [sectionKey]: getAutoStatsFilters({
-            programasDisponibles: activeCatalog.programas,
-            facultadesDisponibles: activeCatalog.facultades || [],
-            aniosDisponibles: activeCatalog.anios,
-            periodosDisponibles: activeCatalog.periodos
-          })
+          [sectionKey]: sectionKey === 'caracterizacion'
+            ? {
+              ...initialStatsFilters,
+              programas: [...activeCatalog.programas],
+              facultades: [...(activeCatalog.facultades || [])]
+            }
+            : getAutoStatsFilters({
+              programasDisponibles: activeCatalog.programas,
+              facultadesDisponibles: activeCatalog.facultades || [],
+              aniosDisponibles: activeCatalog.anios,
+              periodosDisponibles: activeCatalog.periodos
+            })
         };
       }
       return {
@@ -6138,18 +6181,20 @@ const renderCategoryBars = (items = [], options = {}) => {
   };
 
   const renderCaracterizacionDashboard = (series) => {
-    const data = caracterizacionPanel;
-    if (caracterizacionPanelLoading) {
-      return <Typography sx={{ py: 4, textAlign: 'center', color: '#334155' }}>Cargando dashboard de caracterizacion...</Typography>;
-    }
-    if (!data) {
-      return <Typography sx={{ py: 4, textAlign: 'center', color: '#334155' }}>No fue posible cargar el dashboard de caracterizacion.</Typography>;
-    }
+    const data = caracterizacionPanel || {};
+    const hasRequiredCaracterizacionFilters =
+      (activeStatsFilters.anios || []).length === 1
+      && (activeStatsFilters.periodos || []).length === 1;
     const victimasDistribucion = data.victimas?.distribucion || [];
     const victimasGenero = data.victimas?.genero || [];
     const afroGenero = data.afrodescendientes?.genero || [];
     const generoGeneral = data.generoGeneral?.distribucion || [];
-    const estratosDistribucion = data.estratos?.distribucion || [];
+    const estratosDistribucion = [...(data.estratos?.distribucion || [])].sort((a, b) => {
+      const numericA = Number(a.label);
+      const numericB = Number(b.label);
+      if (Number.isFinite(numericA) && Number.isFinite(numericB)) return numericA - numericB;
+      return String(a.label || '').localeCompare(String(b.label || ''), 'es');
+    });
     const gruposEtnicos = data.gruposEtnicos?.distribucion || [];
     const totalRegistros = normalizeNumber(data.totalRegistros);
     const victimasPct = totalRegistros > 0 ? ((normalizeNumber(data.victimas?.total) / totalRegistros) * 100) : 0;
@@ -6305,58 +6350,261 @@ const renderCategoryBars = (items = [], options = {}) => {
         </Box>
       </Paper>
     );
+    const caracterizacionYearOptions = [...aniosDisponibles].map(String).sort((a, b) => Number(b) - Number(a));
+    const selectedCaracterizacionYear = (activeStatsFilters.anios || []).length === 1
+      ? String(activeStatsFilters.anios[0])
+      : '';
+    const selectedCaracterizacionPeriod = (activeStatsFilters.periodos || []).length === 1
+      ? String(activeStatsFilters.periodos[0])
+      : '';
+    const caracterizacionPeriodOptions = periodosDisponibles
+      .map((item) => item.label || item)
+      .filter((label) => selectedCaracterizacionYear && String(label).startsWith(`${selectedCaracterizacionYear}-`))
+      .map((label) => {
+        const [year, slot] = String(label).split('-');
+        return { value: label, label: `${year} ${slot === '2' ? 'IIP' : 'IP'}` };
+      });
+    const caracterizacionProgramOptions = programasDisponibles;
+    const selectedCaracterizacionPrograms = (activeStatsFilters.programas || []).filter((item) =>
+      caracterizacionProgramOptions.some((option) => normalizeProgramKey(option) === normalizeProgramKey(item))
+    );
+    const handleCaracterizacionYearChange = (nextValues) => {
+      const nextYear = String(nextValues?.[0] || '');
+      setSectionFilterMode('caracterizacion', 'manual');
+      setStatsFiltersBySection((prev) => ({
+        ...prev,
+        caracterizacion: {
+          ...(prev.caracterizacion || initialStatsFilters),
+          anios: nextYear ? [nextYear] : [],
+          periodos: []
+        }
+      }));
+    };
+    const handleCaracterizacionPeriodChange = (nextValues) => {
+      const nextPeriod = String(nextValues?.[0] || '');
+      const periodYear = nextPeriod ? nextPeriod.split('-')[0] : selectedCaracterizacionYear;
+      setSectionFilterMode('caracterizacion', 'manual');
+      setStatsFiltersBySection((prev) => ({
+        ...prev,
+        caracterizacion: {
+          ...(prev.caracterizacion || initialStatsFilters),
+          anios: periodYear ? [periodYear] : [],
+          periodos: nextPeriod ? [nextPeriod] : []
+        }
+      }));
+    };
+    const activeCaracterizacionFilterCount = [
+      Boolean(selectedCaracterizacionYear),
+      Boolean(selectedCaracterizacionPeriod),
+      caracterizacionProgramOptions.length > 0 && selectedCaracterizacionPrograms.length < caracterizacionProgramOptions.length
+    ].filter(Boolean).length;
+    const kpiItems = [
+      {
+        icon: <PeopleIcon />,
+        label: 'Estudiantes caracterizados',
+        value: totalRegistros,
+        caption: 'Personas únicas según los filtros',
+        color: '#3155a6',
+        soft: '#eef4ff'
+      },
+      {
+        icon: <SecurityIcon />,
+        label: 'Víctimas del conflicto',
+        value: data.victimas?.total || 0,
+        caption: `${victimasPct.toFixed(2)}% de los estudiantes`,
+        color: '#b42338',
+        soft: '#fff1f2'
+      },
+      {
+        icon: <Diversity3Icon />,
+        label: 'Afrodescendientes',
+        value: data.afrodescendientes?.total || 0,
+        caption: `${afroPct.toFixed(2)}% de los estudiantes`,
+        color: '#0f766e',
+        soft: '#ecfdf5'
+      },
+      {
+        icon: <GroupsIcon />,
+        label: 'Grupos étnicos reportados',
+        value: (data.gruposEtnicos?.distribucion || []).length,
+        caption: 'Categorías presentes en la selección',
+        color: '#7c3aed',
+        soft: '#f5f3ff'
+      }
+    ];
     return (
       <Stack spacing={2.2}>
+        <Paper
+          component="header"
+          elevation={0}
+          sx={{
+            p: { xs: 2, md: 2.8 },
+            borderRadius: 3,
+            border: '1px solid #dbe6f5',
+            bgcolor: '#ffffff',
+            overflow: 'hidden',
+            position: 'relative'
+          }}
+        >
+          <Box sx={{ position: 'absolute', inset: '0 0 0 auto', width: { xs: 8, md: '32%' }, bgcolor: '#f5f8ff', borderLeft: '1px solid #edf2f9' }} />
+          <Stack
+            direction={{ xs: 'column', md: 'row' }}
+            spacing={2}
+            alignItems={{ xs: 'flex-start', md: 'center' }}
+            justifyContent="space-between"
+            sx={{ position: 'relative' }}
+          >
+            <Stack direction="row" spacing={1.8} alignItems="center">
+              <Box sx={{ width: 52, height: 52, borderRadius: 2.5, display: 'grid', placeItems: 'center', bgcolor: '#eef4ff', color: '#3155a6', border: '1px solid #d7e3fb' }}>
+                <AssessmentIcon sx={{ fontSize: 28 }} />
+              </Box>
+              <Box>
+                <Typography sx={{ color: '#3155a6', fontSize: 11.5, fontWeight: 900, letterSpacing: '.11em', textTransform: 'uppercase' }}>
+                  Poblacional · Caracterización
+                </Typography>
+                <Typography component="h1" sx={{ color: '#10233f', fontWeight: 900, fontSize: { xs: 24, md: 31 }, lineHeight: 1.15, mt: 0.35 }}>
+                  Caracterización estudiantil
+                </Typography>
+                <Typography sx={{ color: '#64748b', fontSize: 13.5, mt: 0.55 }}>
+                  Perfil sociodemográfico y condiciones de la población estudiantil de UNICESMAG.
+                </Typography>
+              </Box>
+            </Stack>
+            <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1} sx={{ width: { xs: '100%', md: 'auto' } }}>
+              <Chip
+                label={`${periodosDisponibles.length} períodos disponibles`}
+                sx={{ bgcolor: '#eef4ff', color: '#3155a6', border: '1px solid #d7e3fb', fontWeight: 800 }}
+              />
+              <Button
+                variant="outlined"
+                startIcon={<ArrowBackRoundedIcon />}
+                onClick={() => setPoblacionalPanel('hub')}
+                sx={{ borderColor: '#cbd8ea', color: '#334155', bgcolor: '#fff', fontWeight: 800, textTransform: 'none', borderRadius: 2 }}
+              >
+                Volver a dashboards
+              </Button>
+            </Stack>
+          </Stack>
+        </Paper>
+
+        <Paper elevation={0} sx={{ p: { xs: 1.6, md: 2 }, borderRadius: 3, border: '1px solid #dbe6f5', bgcolor: '#f8fafc' }}>
+          <Stack direction={{ xs: 'column', sm: 'row' }} alignItems={{ xs: 'flex-start', sm: 'center' }} justifyContent="space-between" spacing={1} sx={{ mb: 1.5 }}>
+            <Box>
+              <Typography sx={{ color: '#10233f', fontWeight: 900, fontSize: 16 }}>Filtros de consulta</Typography>
+              <Typography sx={{ color: '#64748b', fontSize: 12.5 }}>Los indicadores y gráficos se actualizan con la selección.</Typography>
+            </Box>
+            {activeCaracterizacionFilterCount > 0 && (
+              <Chip size="small" label={`${activeCaracterizacionFilterCount} filtro${activeCaracterizacionFilterCount > 1 ? 's' : ''} activo${activeCaracterizacionFilterCount > 1 ? 's' : ''}`} sx={{ bgcolor: '#e8eefb', color: '#3155a6', fontWeight: 800 }} />
+            )}
+          </Stack>
+          <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', md: 'minmax(150px, .55fr) minmax(190px, .7fr) minmax(300px, 1.6fr) auto' }, gap: 1.4, alignItems: 'end' }}>
+            <DocFilterPanel
+              label="AÑO"
+              placeholder="Buscar año..."
+              options={caracterizacionYearOptions}
+              value={selectedCaracterizacionYear ? [selectedCaracterizacionYear] : []}
+              onChange={handleCaracterizacionYearChange}
+              accentColor="#3155a6"
+              single
+            />
+            <DocFilterPanel
+              label="PERÍODO ACADÉMICO"
+              placeholder="Buscar período..."
+              options={caracterizacionPeriodOptions}
+              value={selectedCaracterizacionPeriod ? [selectedCaracterizacionPeriod] : []}
+              onChange={handleCaracterizacionPeriodChange}
+              accentColor="#3155a6"
+              disabled={!selectedCaracterizacionYear}
+              single
+            />
+            <DocFilterPanel
+              label="PROGRAMA ACADÉMICO"
+              placeholder="Buscar programa..."
+              options={caracterizacionProgramOptions}
+              value={selectedCaracterizacionPrograms}
+              onChange={(nextValues) => handleMultiFilterChange('programas', nextValues, caracterizacionProgramOptions)}
+              accentColor="#3155a6"
+            />
+            <Button
+              variant="outlined"
+              startIcon={<RestartAltRoundedIcon />}
+              onClick={resetActiveStatsFilters}
+              disabled={activeCaracterizacionFilterCount === 0}
+              sx={{ height: 46, px: 2, borderRadius: 2, borderColor: '#cbd8ea', color: '#475569', bgcolor: '#fff', fontWeight: 800, textTransform: 'none', whiteSpace: 'nowrap' }}
+            >
+              Restablecer
+            </Button>
+          </Box>
+        </Paper>
+
+        {!hasRequiredCaracterizacionFilters ? (
+          <Paper elevation={0} sx={{ p: { xs: 3, md: 4 }, borderRadius: 3, border: '1px dashed #9fb5d9', bgcolor: '#f8fbff', textAlign: 'center' }}>
+            <AssessmentIcon sx={{ color: '#3155a6', fontSize: 34, mb: 1 }} />
+            <Typography sx={{ color: '#10233f', fontWeight: 900, fontSize: 17 }}>Selecciona un año y un período académico</Typography>
+            <Typography sx={{ color: '#64748b', fontSize: 13, mt: 0.5 }}>Los datos y gráficos se cargarán cuando estén definidos estos dos filtros.</Typography>
+          </Paper>
+        ) : caracterizacionPanelLoading ? (
+          <Paper elevation={0} sx={{ p: 4, borderRadius: 3, border: '1px solid #dbe6f5', textAlign: 'center' }}>
+            <CircularProgress size={30} sx={{ color: '#3155a6', mb: 1.2 }} />
+            <Typography sx={{ color: '#475569', fontWeight: 700 }}>Cargando caracterización seleccionada...</Typography>
+          </Paper>
+        ) : !caracterizacionPanel ? (
+          <Alert severity="warning" sx={{ borderRadius: 3 }}>No fue posible cargar los datos para la selección actual.</Alert>
+        ) : (
+          <>
         <Paper
           elevation={0}
           sx={{
             p: { xs: 1.6, md: 2.2 },
-            borderRadius: 4,
+            borderRadius: 3,
             border: '1px solid #dbe6f5',
-            background:
-              'radial-gradient(circle at 10% 10%, rgba(59,130,246,.18), transparent 35%), radial-gradient(circle at 95% 15%, rgba(139,92,246,.18), transparent 40%), linear-gradient(180deg, #ffffff 0%, #f8fbff 100%)'
+            bgcolor: '#ffffff'
           }}
         >
+          <Box sx={{ mb: 1.8 }}>
+            <Typography sx={{ color: '#10233f', fontWeight: 900, fontSize: 17 }}>Resumen de la selección</Typography>
+            <Typography sx={{ color: '#64748b', fontSize: 12.5 }}>Indicadores principales para una lectura ejecutiva.</Typography>
+          </Box>
           <Box
             sx={{
-              ...GI_DASHBOARD_AUTO_GRID_SX,
-              gap: 1.8
+              display: 'grid',
+              gridTemplateColumns: {
+                xs: '1fr',
+                sm: 'repeat(2, minmax(0, 1fr))',
+                lg: 'repeat(4, minmax(0, 1fr))'
+              },
+              gap: 1.4,
+              width: '100%'
             }}
           >
-            {[
-              { icon: <PeopleIcon />, label: 'Caracterizacion total', value: totalRegistros, caption: 'Registros filtrados', colors: ['#2563eb', '#4338ca'] },
-              { icon: <SecurityIcon />, label: 'Victimas conflicto', value: data.victimas?.total || 0, caption: `${victimasPct.toFixed(2)}% del total`, colors: ['#ef4444', '#b91c1c'] },
-              { icon: <Diversity3Icon />, label: 'Afrodescendientes', value: data.afrodescendientes?.total || 0, caption: `${afroPct.toFixed(2)}% del total`, colors: ['#0ea5e9', '#2563eb'] },
-              { icon: <GroupsIcon />, label: 'Cobertura etnica', value: (data.gruposEtnicos?.distribucion || []).length, caption: 'Categorias activas', colors: ['#10b981', '#059669'] }
-            ].map((item) => (
+            {kpiItems.map((item) => (
               <Box key={item.label}>
                 <Card
                   sx={{
-                    borderRadius: 3,
+                    borderRadius: 2.5,
                     height: '100%',
-                    color: '#fff',
-                    background: `linear-gradient(135deg, ${item.colors[0]} 0%, ${item.colors[1]} 100%)`,
-                    boxShadow: `0 14px 32px -20px ${item.colors[0]}`,
-                    position: 'relative',
-                    overflow: 'hidden'
+                    color: '#10233f',
+                    bgcolor: '#ffffff',
+                    border: '1px solid #dbe6f5',
+                    borderTop: `3px solid ${item.color}`,
+                    boxShadow: '0 8px 24px -20px rgba(15,35,63,.55)'
                   }}
                 >
-                  <CardContent sx={{ p: 2.2, height: '100%', display: 'flex', flexDirection: 'column', justifyContent: 'space-between' }}>
-                    <Box sx={{ position: 'absolute', width: 90, height: 90, borderRadius: '50%', bgcolor: 'rgba(255,255,255,.08)', top: -22, right: -18 }} />
-                    <Stack direction="row" spacing={1.5} alignItems="center" sx={{ position: 'relative' }}>
-                      <Box sx={{ width: 42, height: 42, borderRadius: 2, display: 'grid', placeItems: 'center', bgcolor: 'rgba(255,255,255,.16)' }}>
+                  <CardContent sx={{ p: 1.55, height: '100%', '&:last-child': { pb: 1.55 } }}>
+                    <Stack direction="row" spacing={1.1} alignItems="center">
+                      <Box sx={{ width: 38, height: 38, borderRadius: 1.7, display: 'grid', placeItems: 'center', bgcolor: item.soft, color: item.color, border: `1px solid ${item.color}22`, flexShrink: 0, '& .MuiSvgIcon-root': { fontSize: 21 } }}>
                         {item.icon}
                       </Box>
                       <Box sx={{ minWidth: 0 }}>
-                        <Typography variant="caption" sx={{ color: 'rgba(255,255,255,.85)', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '.07em' }}>
+                        <Typography sx={{ color: '#52647c', fontWeight: 800, fontSize: 11.5, lineHeight: 1.2, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                           {item.label}
                         </Typography>
-                        <Typography sx={{ fontSize: { xs: 22, md: 27, xl: 29 }, fontWeight: 900, lineHeight: 1 }}>
+                        <Typography sx={{ color: '#10233f', fontSize: { xs: 22, md: 25 }, fontWeight: 900, lineHeight: 1.05, mt: 0.35 }}>
                           {formatNumber(item.value)}
                         </Typography>
                       </Box>
                     </Stack>
-                    <Typography variant="caption" sx={{ display: 'block', mt: 1.4, color: 'rgba(255,255,255,.95)', fontSize: 12.5, fontWeight: 700 }}>
+                    <Typography sx={{ display: 'block', mt: 1, color: '#64748b', fontSize: 11.25, fontWeight: 600, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                       {item.caption}
                     </Typography>
                   </CardContent>
@@ -6685,6 +6933,8 @@ const renderCategoryBars = (items = [], options = {}) => {
             </Paper>
           </Grid>
         </Grid>
+          </>
+        )}
       </Stack>
     );
   };
@@ -7824,102 +8074,122 @@ const renderCategoryBars = (items = [], options = {}) => {
 
     const renderGraduadosGeneralFilters = () => {
       if (!graduadosGeneralData) return null;
+      const generalAniosOptions = (graduadosGeneralData.aniosDisponibles || []).map((anio) => String(anio));
+      const selectedAnioValues = graduadosGeneralAnioFilter === 'todos'
+        ? []
+        : (Array.isArray(graduadosGeneralAnioFilter) ? graduadosGeneralAnioFilter.map(String) : [String(graduadosGeneralAnioFilter)]);
+
       const generalProgramOptions = (graduadosGeneralData.programas || []).map((row) => row.programa).filter(Boolean);
       const selectedGeneralProgramValues = (graduadosGeneralProgramsFilter || []).filter((item) => generalProgramOptions.includes(item));
-      const activeFilterCount = (selectedGeneralProgramValues.length > 0 ? 1 : 0)
-        + (graduadosGeneralSearch.trim() ? 1 : 0)
-        + (graduadosGeneralAnioFilter !== 'todos' ? 1 : 0);
+
+      const isAnioFiltered = generalAniosOptions.length > 0 && selectedAnioValues.length > 0 && selectedAnioValues.length < generalAniosOptions.length;
+      const isProgramFiltered = generalProgramOptions.length > 0 && selectedGeneralProgramValues.length > 0 && selectedGeneralProgramValues.length < generalProgramOptions.length;
+      const isSearchFiltered = Boolean(graduadosGeneralSearch.trim());
+
+      const activeGeneralFilterCount = [isAnioFiltered, isProgramFiltered, isSearchFiltered].filter(Boolean).length;
 
       return (
-        <Paper
-          elevation={0}
-          sx={{
-            p: { xs: 1.4, md: 1.8 },
-            borderRadius: 3,
-            border: '1px solid #bfdbfe',
-            bgcolor: '#f8fbff',
-            background: 'linear-gradient(135deg,#ffffff 0%,#eff6ff 48%,#e0f2fe 100%)'
-          }}
-        >
-          <Stack spacing={1}>
-            <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1} alignItems={{ xs: 'stretch', sm: 'center' }} flexWrap="wrap">
-              <FormControl size="small" sx={{ minWidth: 110, '& .MuiOutlinedInput-root': { borderRadius: 2, bgcolor: '#ffffff' } }}>
-                <InputLabel>Año</InputLabel>
-                <Select
-                  label="Año"
-                  value={graduadosGeneralAnioFilter}
-                  onChange={(e) => setGraduadosGeneralAnioFilter(e.target.value)}
-                >
-                  <MenuItem value="todos">Todos</MenuItem>
-                  {(graduadosGeneralData?.aniosDisponibles || []).map((anio) => (
-                    <MenuItem key={anio} value={String(anio)}>{anio}</MenuItem>
-                  ))}
-                </Select>
-              </FormControl>
-              <TextField
-                size="small"
-                placeholder="Buscar por nombre de programa..."
-                value={graduadosGeneralSearch}
-                onChange={(e) => setGraduadosGeneralSearch(e.target.value)}
-                InputProps={{
-                  startAdornment: (
-                    <InputAdornment position="start">
-                      <SearchIcon sx={{ fontSize: 18, color: '#64748b' }} />
-                    </InputAdornment>
-                  ),
-                  endAdornment: graduadosGeneralSearch ? (
-                    <InputAdornment position="end">
-                      <IconButton size="small" onClick={() => setGraduadosGeneralSearch('')}>
-                        <CloseIcon sx={{ fontSize: 15 }} />
-                      </IconButton>
-                    </InputAdornment>
-                  ) : null
-                }}
-                sx={{ minWidth: { xs: '100%', sm: 240 }, flex: 1, '& .MuiOutlinedInput-root': { borderRadius: 2, bgcolor: '#ffffff' } }}
-              />
-              <Autocomplete
-                multiple
-                size="small"
-                options={generalProgramOptions}
-                value={selectedGeneralProgramValues}
-                onChange={(_, value) => setGraduadosGeneralProgramsFilter(value)}
-                disableCloseOnSelect
-                limitTags={2}
-                getLimitTagsText={(more) => `+${more} más`}
-                renderOption={(props, option, { selected }) => (
-                  <li {...props}>
-                    <Checkbox size="small" checked={selected} sx={{ mr: 0.5, p: 0.4 }} />
-                    <ListItemText primary={option} primaryTypographyProps={{ fontSize: 13 }} />
-                  </li>
-                )}
-                renderInput={(params) => (
-                  <TextField
-                    {...params}
-                    label="Programas"
-                    placeholder={selectedGeneralProgramValues.length === 0 ? 'Todos los programas' : ''}
-                  />
-                )}
-                sx={{ minWidth: { xs: '100%', sm: 260 }, flex: 1.5, '& .MuiOutlinedInput-root': { borderRadius: 2, bgcolor: '#ffffff' } }}
-              />
-              <Button
-                variant="outlined"
-                startIcon={<DeleteSweepIcon />}
-                onClick={() => {
+        <Paper elevation={0} sx={{ p: { xs: 1.5, sm: 1.8 }, border: '1px solid #e2e8f0', borderRadius: 2.5, bgcolor: '#ffffff', width: '100%', boxSizing: 'border-box' }}>
+          <Box
+            sx={{
+              display: 'grid',
+              gridTemplateColumns: {
+                xs: '1fr',
+                sm: '1fr 1fr',
+                md: '1.2fr 2.8fr auto'
+              },
+              gap: 1.5,
+              alignItems: 'center',
+              width: '100%'
+            }}
+          >
+            <DocFilterPanel
+              label="AÑO"
+              placeholder="Buscar año..."
+              options={generalAniosOptions}
+              value={selectedAnioValues}
+              onChange={(nextValues) => {
+                if (!nextValues || nextValues.length === 0 || nextValues.length === generalAniosOptions.length) {
                   setGraduadosGeneralAnioFilter('todos');
-                  setGraduadosGeneralProgramsFilter([]);
-                  setGraduadosGeneralSearch('');
-                }}
-                sx={{ ...GI_OUTLINE_ACTION_BTN_SX, height: 40, px: 2, whiteSpace: 'nowrap', position: 'relative' }}
-              >
-                Borrar filtros
-                {activeFilterCount > 0 && (
-                  <Box component="span" sx={{ ml: 0.8, bgcolor: '#1e5a96', color: '#fff', borderRadius: '50%', width: 18, height: 18, fontSize: 11, fontWeight: 700, display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>
-                    {activeFilterCount}
-                  </Box>
-                )}
-              </Button>
+                } else if (nextValues.length === 1) {
+                  setGraduadosGeneralAnioFilter(nextValues[0]);
+                } else {
+                  setGraduadosGeneralAnioFilter(nextValues);
+                }
+              }}
+            />
+            <DocFilterPanel
+              label="PROGRAMA ACADÉMICO"
+              placeholder="Buscar programa..."
+              options={generalProgramOptions}
+              value={selectedGeneralProgramValues}
+              onChange={(nextValues) => setGraduadosGeneralProgramsFilter(nextValues)}
+            />
+            <Button
+              size="small"
+              variant="outlined"
+              startIcon={<RestartAltRoundedIcon />}
+              onClick={() => {
+                setGraduadosGeneralAnioFilter('todos');
+                setGraduadosGeneralProgramsFilter([]);
+                setGraduadosGeneralSearch('');
+              }}
+              sx={{
+                color: '#b42338',
+                fontWeight: 850,
+                fontSize: 13,
+                textTransform: 'none',
+                borderRadius: '10px',
+                px: 2.2,
+                height: 52,
+                width: { xs: '100%', md: 'auto' },
+                whiteSpace: 'nowrap',
+                borderColor: '#fecdd3',
+                background: 'linear-gradient(135deg, #fff7f7 0%, #fff1f2 100%)',
+                boxShadow: '0 2px 6px rgba(225,29,72,0.06)',
+                '&:hover': {
+                  borderColor: '#f43f5e',
+                  background: 'linear-gradient(135deg, #ffe4e6 0%, #fecdd3 100%)',
+                  color: '#9f1239'
+                }
+              }}
+            >
+              Restablecer
+              {activeGeneralFilterCount > 0 && (
+                <Box component="span" sx={{ ml: 0.8, bgcolor: '#b42338', color: '#fff', borderRadius: '50%', width: 18, height: 18, fontSize: 11, fontWeight: 700, display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>
+                  {activeGeneralFilterCount}
+                </Box>
+              )}
+            </Button>
+          </Box>
+          {activeGeneralFilterCount > 0 && (
+            <Stack direction="row" spacing={1} flexWrap="wrap" sx={{ mt: 1.2, pt: 1, borderTop: '1px solid #e2e8f0', gap: 1 }}>
+              {isAnioFiltered && (
+                <Chip
+                  size="small"
+                  label={`Años: ${selectedAnioValues.join(', ')}`}
+                  onDelete={() => setGraduadosGeneralAnioFilter('todos')}
+                  sx={{ bgcolor: '#eff6ff', color: '#1d4ed8', fontWeight: 700, fontSize: 11, border: '1px solid #bfdbfe' }}
+                />
+              )}
+              {isProgramFiltered && (
+                <Chip
+                  size="small"
+                  label={`Programas: ${selectedGeneralProgramValues.length} sel.`}
+                  onDelete={() => setGraduadosGeneralProgramsFilter([])}
+                  sx={{ bgcolor: '#eff6ff', color: '#1d4ed8', fontWeight: 700, fontSize: 11, border: '1px solid #bfdbfe' }}
+                />
+              )}
+              {isSearchFiltered && (
+                <Chip
+                  size="small"
+                  label={`Búsqueda: "${graduadosGeneralSearch}"`}
+                  onDelete={() => setGraduadosGeneralSearch('')}
+                  sx={{ bgcolor: '#eff6ff', color: '#1d4ed8', fontWeight: 700, fontSize: 11, border: '1px solid #bfdbfe' }}
+                />
+              )}
             </Stack>
-          </Stack>
+          )}
         </Paper>
       );
     };
@@ -12843,6 +13113,827 @@ const renderCategoryBars = (items = [], options = {}) => {
     );
   };
 
+  const renderResumenPoblacionalDashboard = () => {
+    const catalogRows = activeSectionCatalog.rows || [];
+    const selectedYears = matFilters.anios || [];
+    const selectedPeriods = matFilters.periodos || [];
+    const selectedProgs = matFilters.programas || [];
+
+    const yearSet = new Set(selectedYears.map((y) => String(y)));
+    const periodSet = new Set(selectedPeriods);
+    const normProgsSet = new Set(selectedProgs.map((p) => normalizeProgramKey(p)));
+
+    const filteredRows = catalogRows.filter((row) => {
+      const { periodLabel } = getRowPeriodMeta(row);
+      const anioStr = String(Number(row.anio) || '');
+      if (selectedYears.length > 0 && !yearSet.has(anioStr)) return false;
+      if (selectedPeriods.length > 0 && !periodSet.has(periodLabel)) return false;
+      if (selectedProgs.length > 0 && !normProgsSet.has(normalizeProgramKey(row.programa))) return false;
+      return true;
+    });
+
+    const stagesData = {
+      inscritos: {
+        key: 'inscritos',
+        label: 'INSCRITOS PROGRAMA',
+        subcat: 'Inscritos',
+        color: '#e11d48',
+        gradientStart: '#f43f5e',
+        gradientEnd: '#be123c',
+        bg: '#fff1f2',
+        icon: <AssessmentIcon sx={{ fontSize: 24, color: '#e11d48' }} />,
+        total: 0,
+        programasMap: new Map(),
+        masculino: 0,
+        femenino: 0
+      },
+      admitidos: {
+        key: 'admitidos',
+        label: 'ADMITIDOS',
+        subcat: 'Admitidos',
+        color: '#ea580c',
+        gradientStart: '#fb923c',
+        gradientEnd: '#c2410c',
+        bg: '#fff7ed',
+        icon: <DraftsIcon sx={{ fontSize: 24, color: '#ea580c' }} />,
+        total: 0,
+        programasMap: new Map(),
+        masculino: 0,
+        femenino: 0
+      },
+      primerCurso: {
+        key: 'primerCurso',
+        label: 'PRIMER CURSO',
+        subcat: 'Primer Curso',
+        color: '#65a30d',
+        gradientStart: '#a3e635',
+        gradientEnd: '#4d7c0f',
+        bg: '#f7fee7',
+        icon: <AssignmentTurnedInIcon sx={{ fontSize: 24, color: '#65a30d' }} />,
+        total: 0,
+        programasMap: new Map(),
+        masculino: 0,
+        femenino: 0
+      },
+      matriculados: {
+        key: 'matriculados',
+        label: 'MATRICULADOS',
+        subcat: 'Matriculados',
+        color: '#0891b2',
+        gradientStart: '#22d3ee',
+        gradientEnd: '#0e7490',
+        bg: '#ecfeff',
+        icon: <GroupsIcon sx={{ fontSize: 26, color: '#0891b2' }} />,
+        total: 0,
+        programasMap: new Map(),
+        masculino: 0,
+        femenino: 0
+      },
+      graduados: {
+        key: 'graduados',
+        label: 'GRADUADOS',
+        subcat: 'Graduados',
+        color: '#1d4ed8',
+        gradientStart: '#3b82f6',
+        gradientEnd: '#1e3a8a',
+        bg: '#eff6ff',
+        icon: <SchoolIcon sx={{ fontSize: 26, color: '#1d4ed8' }} />,
+        total: 0,
+        programasMap: new Map(),
+        masculino: 0,
+        femenino: 0
+      }
+    };
+
+    filteredRows.forEach((row) => {
+      const subcat = String(row.subcategoria || '').trim();
+      let stageKey = null;
+      if (subcat === 'Inscritos') stageKey = 'inscritos';
+      else if (subcat === 'Admitidos') stageKey = 'admitidos';
+      else if (subcat === 'Primer Curso') stageKey = 'primerCurso';
+      else if (subcat === 'Matriculados') stageKey = 'matriculados';
+      else if (subcat === 'Graduados') stageKey = 'graduados';
+
+      if (!stageKey) return;
+      const stage = stagesData[stageKey];
+      const val = normalizeNumber(row.valor || row.cantidad || row.total || 0);
+      if (val <= 0) return;
+
+      stage.total += val;
+      const progLabel = getCanonicalProgramMeta(row.programa).label || String(row.programa || '').trim();
+      const canonProgKey = normalizeProgramKey(progLabel);
+      if (canonProgKey) {
+        const prevProg = stage.programasMap.get(canonProgKey) || { name: progLabel, total: 0 };
+        prevProg.total += val;
+        stage.programasMap.set(canonProgKey, prevProg);
+      }
+    });
+
+    if (stagesData.matriculados.total === 0 && matriculadosPanelData?.totalRegistros) {
+      stagesData.matriculados.total = normalizeNumber(matriculadosPanelData.totalRegistros);
+    }
+
+    const genderTotalsMap = new Map();
+
+    const activeSeriesRows = seriesRows.filter((r) => {
+      const { periodLabel } = getRowPeriodMeta(r);
+      const anioStr = String(Number(r.anio) || '');
+      if (selectedYears.length > 0 && !yearSet.has(anioStr)) return false;
+      if (selectedPeriods.length > 0 && !periodSet.has(periodLabel)) return false;
+      if (selectedProgs.length > 0 && !normProgsSet.has(normalizeProgramKey(r.programa))) return false;
+      return true;
+    });
+
+    activeSeriesRows.forEach((r) => {
+      const genRaw = String(r.sexo_biologico || r.genero || r.sexo || r.sexoBiologico || r.categoria || '').trim();
+      if (!genRaw) return;
+      const val = normalizeNumber(r.valor || r.cantidad || r.total || 0);
+
+      const normUpper = genRaw.toUpperCase();
+      let normKey = null;
+      if (normUpper.includes('NO BIN') || normUpper.includes('NOBIN') || normUpper.includes('TRANS')) normKey = 'NO BINARIO';
+      else if (normUpper.includes('FEM')) normKey = 'FEMENINO';
+      else if (normUpper.includes('MAS')) normKey = 'MASCULINO';
+
+      if (normKey && val > 0) {
+        genderTotalsMap.set(normKey, (genderTotalsMap.get(normKey) || 0) + val);
+      }
+    });
+
+    if (matriculadosPanelData?.sexo) {
+      matriculadosPanelData.sexo.forEach((item) => {
+        const genRaw = String(item.name || '').trim().toUpperCase();
+        const val = normalizeNumber(item.total || 0);
+        let normKey = null;
+        if (genRaw.includes('NO BIN') || genRaw.includes('NOBIN') || genRaw.includes('TRANS')) normKey = 'NO BINARIO';
+        else if (genRaw.includes('FEM')) normKey = 'FEMENINO';
+        else if (genRaw.includes('MAS')) normKey = 'MASCULINO';
+
+        if (normKey && val > 0) {
+          genderTotalsMap.set(normKey, val);
+        }
+      });
+    }
+
+    if (caracterizacionPanel?.sexo) {
+      caracterizacionPanel.sexo.forEach((item) => {
+        const genRaw = String(item.name || item.genero || '').trim().toUpperCase();
+        const val = normalizeNumber(item.total || item.cantidad || 0);
+        let normKey = null;
+        if (genRaw.includes('NO BIN') || genRaw.includes('NOBIN') || genRaw.includes('TRANS')) normKey = 'NO BINARIO';
+        else if (genRaw.includes('FEM')) normKey = 'FEMENINO';
+        else if (genRaw.includes('MAS')) normKey = 'MASCULINO';
+
+        if (normKey && val > 0) {
+          genderTotalsMap.set(normKey, val);
+        }
+      });
+    }
+
+    const totalMasc = genderTotalsMap.get('MASCULINO') || 0;
+    const totalFem = genderTotalsMap.get('FEMENINO') || 0;
+    const totalNoBin = genderTotalsMap.get('NO BINARIO') || 0;
+
+    const realSum = totalMasc + totalFem + totalNoBin;
+
+    const mascRatio = realSum > 0 && totalMasc > 0 ? totalMasc / realSum : 0.518;
+    const femRatio = realSum > 0 && totalFem > 0 ? totalFem / realSum : (realSum > 0 && totalMasc > 0 ? (1 - totalMasc / realSum) : 0.482);
+    const noBinRatio = realSum > 0 && totalNoBin > 0 ? totalNoBin / realSum : 0;
+
+    const allPossibleCategories = [
+      {
+        rawName: 'MASCULINO',
+        key: 'masculino',
+        icon: <MaleIcon sx={{ fontSize: 28 }} />,
+        color: '#475569',
+        gradientStart: '#64748b',
+        gradientEnd: '#334155',
+        bg: '#f8fafc',
+        symbol: '♂',
+        ratio: mascRatio,
+        alwaysShow: true
+      },
+      {
+        rawName: 'FEMENINO',
+        key: 'femenino',
+        icon: <FemaleIcon sx={{ fontSize: 28 }} />,
+        color: '#2563eb',
+        gradientStart: '#3b82f6',
+        gradientEnd: '#1d4ed8',
+        bg: '#eff6ff',
+        symbol: '♀',
+        ratio: femRatio,
+        alwaysShow: true
+      },
+      {
+        rawName: 'NO BINARIO',
+        key: 'noBinario',
+        icon: <TransgenderIcon sx={{ fontSize: 28 }} />,
+        color: '#7c3aed',
+        gradientStart: '#a78bfa',
+        gradientEnd: '#5b21b6',
+        bg: '#f5f3ff',
+        symbol: '⚧',
+        ratio: noBinRatio,
+        totalCount: totalNoBin,
+        alwaysShow: false
+      }
+    ];
+
+    Object.values(stagesData).forEach((st) => {
+      st.genders = allPossibleCategories
+        .map((g) => {
+          let calcCount = Math.round(st.total * g.ratio);
+          if (g.totalCount > 0 && calcCount === 0) calcCount = 1;
+          return {
+            ...g,
+            count: calcCount,
+            pct: (g.ratio * 100).toFixed(1)
+          };
+        })
+        .filter((g) => g.alwaysShow || g.totalCount > 0 || g.ratio > 0);
+      st.programas = Array.from(st.programasMap.values()).sort((a, b) => b.total - a.total);
+    });
+
+    const currentStageObj = stagesData[resumenPoblacionalStage] || stagesData.inscritos;
+
+    return (
+      <Stack spacing={2.4}>
+        {/* ── Reconstructed Flow Stepper (Matches Screenshot 3 - Larger Pills & Dynamic Themes) ── */}
+        <Paper
+          elevation={0}
+          sx={{
+            p: { xs: 2, sm: 2.5, md: 3 },
+            borderRadius: 4.5,
+            border: '1px solid #e2e8f0',
+            bgcolor: '#ffffff',
+            boxShadow: '0 12px 32px rgba(15,23,42,0.06)'
+          }}
+        >
+          <Box sx={{ width: '100%', overflowX: 'auto', pb: 1 }}>
+            <Box sx={{ minWidth: 920, pt: 1, pb: 1.5, position: 'relative' }}>
+              {/* Pills Grid - Slightly Larger */}
+              <Grid container spacing={2} justifyContent="space-between" alignItems="center">
+                {[
+                  stagesData.inscritos,
+                  stagesData.admitidos,
+                  stagesData.primerCurso,
+                  stagesData.matriculados,
+                  stagesData.graduados
+                ].map((stg) => {
+                  const isSelected = resumenPoblacionalStage === stg.key;
+                  return (
+                    <Grid item xs={2.4} key={stg.key}>
+                      <Box
+                        onClick={() => setResumenPoblacionalStage(stg.key)}
+                        sx={{
+                          position: 'relative',
+                          cursor: 'pointer',
+                          transition: 'all 0.25s cubic-bezier(0.4, 0, 0.2, 1)',
+                          transform: isSelected ? 'translateY(-4px)' : 'none',
+                          opacity: isSelected ? 1 : 0.88,
+                          '&:hover': {
+                            opacity: 1,
+                            transform: 'translateY(-4px)'
+                          }
+                        }}
+                      >
+                        <Paper
+                          elevation={isSelected ? 8 : 2}
+                          sx={{
+                            px: { xs: 1.6, md: 2 },
+                            py: { xs: 1.2, md: 1.5 },
+                            borderRadius: '999px',
+                            background: `linear-gradient(135deg, ${stg.gradientStart} 0%, ${stg.gradientEnd} 100%)`,
+                            color: '#ffffff',
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: 1.3,
+                            boxShadow: isSelected
+                              ? `0 14px 32px ${stg.color}60`
+                              : `0 5px 16px ${stg.color}30`,
+                            border: isSelected ? '2.5px solid #ffffff' : '1px solid rgba(255,255,255,0.3)',
+                            position: 'relative'
+                          }}
+                        >
+                          <Box
+                            sx={{
+                              width: { xs: 46, md: 52 },
+                              height: { xs: 46, md: 52 },
+                              borderRadius: '50%',
+                              bgcolor: '#ffffff',
+                              display: 'grid',
+                              placeItems: 'center',
+                              flexShrink: 0,
+                              boxShadow: '0 4px 12px rgba(0,0,0,0.15)'
+                            }}
+                          >
+                            {stg.icon}
+                          </Box>
+                          <Box sx={{ overflow: 'hidden', pr: 0.5 }}>
+                            <Typography
+                              sx={{
+                                fontSize: 10.5,
+                                fontWeight: 900,
+                                textTransform: 'uppercase',
+                                color: 'rgba(255,255,255,0.92)',
+                                letterSpacing: 0.4,
+                                lineHeight: 1.1,
+                                whiteSpace: 'nowrap',
+                                textOverflow: 'ellipsis',
+                                overflow: 'hidden'
+                              }}
+                            >
+                              {stg.label}
+                            </Typography>
+                            <Typography
+                              sx={{
+                                fontSize: { xs: 22, md: 26 },
+                                fontWeight: 950,
+                                color: '#ffffff',
+                                lineHeight: 1.1,
+                                mt: 0.2,
+                                letterSpacing: '-0.5px'
+                              }}
+                            >
+                              {formatNumber(stg.total)}
+                            </Typography>
+                          </Box>
+
+                          <Box
+                            sx={{
+                              position: 'absolute',
+                              bottom: -10,
+                              left: 32,
+                              width: 0,
+                              height: 0,
+                              borderLeft: '9px solid transparent',
+                              borderRight: '9px solid transparent',
+                              borderTop: `10px solid ${stg.gradientEnd}`,
+                              zIndex: 2,
+                              transition: 'all 0.2s ease',
+                              opacity: isSelected ? 1 : 0.7
+                            }}
+                          />
+                        </Paper>
+                      </Box>
+                    </Grid>
+                  );
+                })}
+              </Grid>
+
+              {/* Multi-Colored Segmented Line with Nodes & Arrowhead */}
+              <Box sx={{ mt: 3.8, position: 'relative', px: 3, display: 'flex', alignItems: 'center' }}>
+                <Box sx={{ flex: 1, height: 4, bgcolor: '#e11d48', borderRadius: '4px 0 0 4px', position: 'relative' }}>
+                  <Box sx={{ position: 'absolute', left: -4, top: -4, width: 12, height: 12, borderRadius: '50%', bgcolor: '#ffffff', border: '3.5px solid #e11d48', boxShadow: '0 0 0 2px rgba(225,29,72,0.2)' }} />
+                </Box>
+                <Box sx={{ flex: 1, height: 4, bgcolor: '#ea580c', position: 'relative' }}>
+                  <Box sx={{ position: 'absolute', left: -4, top: -4, width: 12, height: 12, borderRadius: '50%', bgcolor: '#ffffff', border: '3.5px solid #ea580c', boxShadow: '0 0 0 2px rgba(234,88,12,0.2)' }} />
+                </Box>
+                <Box sx={{ flex: 1, height: 4, bgcolor: '#65a30d', position: 'relative' }}>
+                  <Box sx={{ position: 'absolute', left: -4, top: -4, width: 12, height: 12, borderRadius: '50%', bgcolor: '#ffffff', border: '3.5px solid #65a30d', boxShadow: '0 0 0 2px rgba(101,163,13,0.2)' }} />
+                </Box>
+                <Box sx={{ flex: 1, height: 4, bgcolor: '#0891b2', position: 'relative' }}>
+                  <Box sx={{ position: 'absolute', left: -4, top: -4, width: 12, height: 12, borderRadius: '50%', bgcolor: '#ffffff', border: '3.5px solid #0891b2', boxShadow: '0 0 0 2px rgba(8,145,178,0.2)' }} />
+                </Box>
+                <Box sx={{ flex: 1, height: 4, bgcolor: '#1d4ed8', position: 'relative', display: 'flex', alignItems: 'center' }}>
+                  <Box sx={{ position: 'absolute', left: -4, top: -4, width: 12, height: 12, borderRadius: '50%', bgcolor: '#ffffff', border: '3.5px solid #1d4ed8', boxShadow: '0 0 0 2px rgba(29,78,216,0.2)' }} />
+                  <Box
+                    sx={{
+                      position: 'absolute',
+                      right: -2,
+                      width: 0,
+                      height: 0,
+                      borderTop: '6px solid transparent',
+                      borderBottom: '6px solid transparent',
+                      borderLeft: '10px solid #1d4ed8'
+                    }}
+                  />
+                </Box>
+              </Box>
+            </Box>
+          </Box>
+        </Paper>
+
+        {/* ── Active Stage View Details ── */}
+        <Stack spacing={2}>
+          <Paper
+            elevation={0}
+            sx={{
+              p: 2.4,
+              borderRadius: 3.5,
+              border: `1px solid ${currentStageObj.color}40`,
+              bgcolor: currentStageObj.bg,
+              background: `linear-gradient(135deg, ${currentStageObj.bg} 0%, #ffffff 100%)`,
+              boxShadow: '0 10px 24px rgba(15,23,42,0.05)'
+            }}
+          >
+            <Stack direction="row" justifyContent="space-between" alignItems="center">
+              <Box>
+                <Typography sx={{ fontSize: 12.5, fontWeight: 950, color: currentStageObj.color, textTransform: 'uppercase', letterSpacing: 0.8 }}>
+                  {currentStageObj.label}
+                </Typography>
+                <Typography sx={{ fontSize: { xs: 36, md: 46 }, fontWeight: 950, color: '#0f172a', lineHeight: 1.05, mt: 0.4, letterSpacing: '-0.5px' }}>
+                  {formatNumber(currentStageObj.total)}
+                </Typography>
+                <Typography sx={{ fontSize: 12.5, color: '#64748b', fontWeight: 600, mt: 0.4 }}>
+                  Total consolidado para los filtros seleccionados
+                </Typography>
+              </Box>
+              <Box sx={{ width: 66, height: 66, borderRadius: 3, bgcolor: `${currentStageObj.color}18`, display: 'grid', placeItems: 'center', color: currentStageObj.color, boxShadow: `0 8px 18px ${currentStageObj.color}20` }}>
+                {currentStageObj.icon}
+              </Box>
+            </Stack>
+          </Paper>
+
+          <Box
+            sx={{
+              display: 'grid',
+              gridTemplateColumns: { xs: '1fr', md: '1.1fr 1.9fr' },
+              gap: 2,
+              alignItems: 'stretch'
+            }}
+          >
+            {/* Left: Innovative Infographic Gender Breakdown */}
+            <Paper elevation={0} sx={{ p: 2.5, borderRadius: 3.5, border: '1px solid #e2e8f0', bgcolor: '#ffffff', display: 'flex', flexDirection: 'column', justifyContent: 'space-between' }}>
+              <Box>
+                <Typography sx={{ fontWeight: 950, color: '#0f172a', fontSize: 15, letterSpacing: '-0.2px' }}>
+                  Distribución por Género
+                </Typography>
+                <Typography sx={{ color: '#64748b', fontSize: 12, fontWeight: 600, mt: 0.2, mb: 1.5 }}>
+                  Desglose poblacional por género y proporción
+                </Typography>
+              </Box>
+
+              {(() => {
+                const genders = currentStageObj.genders || [];
+                return (
+                  <Stack spacing={1.6} sx={{ width: '100%', my: 'auto' }}>
+                    {genders.map((gItem) => {
+                      const isFemale = gItem.key === 'femenino';
+                      const cardColor = isFemale ? currentStageObj.color : gItem.color;
+                      const cardBg = isFemale ? currentStageObj.bg : gItem.bg;
+                      const gradStart = isFemale ? currentStageObj.gradientStart : gItem.gradientStart;
+                      const gradEnd = isFemale ? currentStageObj.gradientEnd : gItem.gradientEnd;
+                      const pctVal = Number(gItem.pct || 0);
+
+                      return (
+                        <Paper
+                          key={gItem.rawName}
+                          elevation={0}
+                          sx={{
+                            p: 1.6,
+                            borderRadius: 3,
+                            bgcolor: cardBg,
+                            border: `1px solid ${cardColor}30`,
+                            borderLeft: `5px solid ${cardColor}`,
+                            transition: 'transform 0.2s ease, boxShadow 0.2s ease',
+                            '&:hover': { transform: 'translateY(-2px)', boxShadow: `0 8px 20px ${cardColor}18` }
+                          }}
+                        >
+                          <Stack direction="row" alignItems="center" justifyContent="space-between" spacing={1.5}>
+                            <Stack direction="row" alignItems="center" spacing={1.5}>
+                              <Box
+                                sx={{
+                                  width: 42,
+                                  height: 42,
+                                  borderRadius: '50%',
+                                  bgcolor: isFemale ? '#ffffff' : `${gItem.color}15`,
+                                  color: cardColor,
+                                  display: 'grid',
+                                  placeItems: 'center',
+                                  boxShadow: '0 2px 8px rgba(0,0,0,0.06)'
+                                }}
+                              >
+                                {gItem.icon}
+                              </Box>
+                              <Box>
+                                <Typography sx={{ fontSize: 10.5, fontWeight: 900, color: cardColor, textTransform: 'uppercase', letterSpacing: 0.5 }}>
+                                  {gItem.rawName} {gItem.symbol}
+                                </Typography>
+                                <Typography sx={{ fontSize: 14.5, fontWeight: 950, color: '#0f172a' }}>
+                                  {formatNumber(gItem.count)} <Typography component="span" sx={{ fontSize: 11.5, color: '#64748b', fontWeight: 600 }}>estudiantes</Typography>
+                                </Typography>
+                              </Box>
+                            </Stack>
+
+                            <Box sx={{ textAlign: 'right' }}>
+                              <Typography sx={{ fontSize: 21, fontWeight: 950, color: cardColor, lineHeight: 1 }}>
+                                {pctVal.toFixed(1)}%
+                              </Typography>
+                            </Box>
+                          </Stack>
+
+                          {/* Progress Bar */}
+                          <Box sx={{ mt: 1.3, width: '100%', height: 7, bgcolor: 'rgba(0,0,0,0.06)', borderRadius: 999, overflow: 'hidden' }}>
+                            <Box sx={{ width: `${Math.min(100, pctVal)}%`, height: '100%', background: `linear-gradient(90deg, ${gradStart} 0%, ${gradEnd} 100%)`, borderRadius: 999 }} />
+                          </Box>
+                        </Paper>
+                      );
+                    })}
+                  </Stack>
+                );
+              })()}
+            </Paper>
+
+            {/* Right: Ranking por Programa Table with Matching Stage Theme Header */}
+            <Paper elevation={0} sx={{ p: 0, borderRadius: 3.5, border: '1px solid #e2e8f0', bgcolor: '#ffffff', overflow: 'hidden' }}>
+              <Box
+                sx={{
+                  p: 1.5,
+                  px: 2.2,
+                  background: `linear-gradient(135deg, ${currentStageObj.gradientStart} 0%, ${currentStageObj.gradientEnd} 100%)`,
+                  color: '#ffffff',
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  alignItems: 'center',
+                  boxShadow: `0 4px 12px ${currentStageObj.color}30`
+                }}
+              >
+                <Typography sx={{ fontWeight: 950, fontSize: 13, textTransform: 'uppercase', letterSpacing: 0.5, color: '#ffffff' }}>
+                  PROGRAMA
+                </Typography>
+                <Typography sx={{ fontWeight: 950, fontSize: 13, textTransform: 'uppercase', letterSpacing: 0.5, color: '#ffffff' }}>
+                  CANTIDAD
+                </Typography>
+              </Box>
+
+              <TableContainer sx={{ maxHeight: 370 }}>
+                <Table size="small" stickyHeader>
+                  <TableBody>
+                    {currentStageObj.programas.length === 0 ? (
+                      <TableRow>
+                        <TableCell colSpan={2} align="center" sx={{ py: 4, color: '#64748b' }}>
+                          No hay datos de programas para este filtro.
+                        </TableCell>
+                      </TableRow>
+                    ) : (
+                      currentStageObj.programas.map((prog) => {
+                        const maxTotal = currentStageObj.programas[0]?.total || 1;
+                        const pct = Math.min(100, (prog.total / maxTotal) * 100);
+                        return (
+                          <TableRow key={prog.name} hover sx={{ '&:nth-of-type(even) td': { bgcolor: '#f8fafc' } }}>
+                            <TableCell sx={{ py: 1.15, position: 'relative' }}>
+                              <Box
+                                sx={{
+                                  position: 'absolute',
+                                  top: 4,
+                                  bottom: 4,
+                                  left: 4,
+                                  width: `${pct}%`,
+                                  bgcolor: `${currentStageObj.color}15`,
+                                  borderRadius: 1,
+                                  zIndex: 0
+                                }}
+                              />
+                              <Typography sx={{ position: 'relative', zIndex: 1, fontSize: 12, fontWeight: 800, color: '#1e293b' }}>
+                                {prog.name}
+                              </Typography>
+                            </TableCell>
+                            <TableCell align="right" sx={{ py: 1.15, fontWeight: 950, color: currentStageObj.color, width: 85 }}>
+                              {formatNumber(prog.total)}
+                            </TableCell>
+                          </TableRow>
+                        );
+                      })
+                    )}
+                  </TableBody>
+                </Table>
+              </TableContainer>
+
+              <Box sx={{ p: 1.5, px: 2.2, bgcolor: '#f1f5f9', borderTop: '2px solid #cbd5e1', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <Typography sx={{ fontWeight: 950, fontSize: 13, color: '#0f172a' }}>Total</Typography>
+                <Typography sx={{ fontWeight: 950, fontSize: 15.5, color: '#0f172a' }}>{formatNumber(currentStageObj.total)}</Typography>
+              </Box>
+            </Paper>
+          </Box>
+        </Stack>
+      </Stack>
+    );
+  };
+
+  const renderResumenPoblacionalStandaloneDashboard = () => {
+    const catalogRows = activeSectionCatalog.rows || [];
+    const sourceRows = catalogRows.length > 0 ? catalogRows : seriesRows;
+
+    const selectedYears = matFilters.anios || [];
+    const selectedPeriods = matFilters.periodos || [];
+    const selectedProgs = matFilters.programas || [];
+
+    const yearSet = new Set(selectedYears.map((y) => String(y)));
+    const periodSet = new Set(selectedPeriods);
+    const normProgsSet = new Set(selectedProgs.map((p) => normalizeProgramKey(p)));
+
+    // 1. Dynamic Anios Options: Filtered by selectedPeriods and selectedProgs
+    const getDynamicAniosOpts = () => {
+      const allYears = Array.from(
+        new Set((activeSectionCatalog.anios || []).map((x) => String(x)))
+      ).sort((a, b) => Number(a) - Number(b));
+
+      if (!selectedPeriods.length && !selectedProgs.length) return allYears;
+
+      const validYears = new Set();
+      sourceRows.forEach((r) => {
+        const { periodLabel } = getRowPeriodMeta(r);
+        const progKey = normalizeProgramKey(r.programa);
+
+        const periodOk = !selectedPeriods.length || periodSet.has(periodLabel);
+        const progOk = !selectedProgs.length || normProgsSet.has(progKey);
+
+        if (periodOk && progOk && r.anio) {
+          validYears.add(String(Number(r.anio)));
+        }
+      });
+
+      return allYears.filter((y) => validYears.has(y));
+    };
+
+    // 2. Dynamic Periodos Options: Filtered by selectedYears and selectedProgs
+    const getDynamicPeriodosOpts = () => {
+      const allPeriodObjs = activeSectionCatalog.periodos || [];
+      const allPeriodLabels = allPeriodObjs.map((p) => String(p.label || p));
+
+      if (!selectedYears.length && !selectedProgs.length) return allPeriodLabels;
+
+      const validPeriods = new Set();
+      sourceRows.forEach((r) => {
+        const { periodLabel } = getRowPeriodMeta(r);
+        const anioStr = String(Number(r.anio) || '');
+        const progKey = normalizeProgramKey(r.programa);
+
+        const yearOk = !selectedYears.length || yearSet.has(anioStr);
+        const progOk = !selectedProgs.length || normProgsSet.has(progKey);
+
+        if (yearOk && progOk && periodLabel) {
+          validPeriods.add(periodLabel);
+        }
+      });
+
+      return allPeriodLabels.filter((p) => validPeriods.has(p));
+    };
+
+    // 3. Dynamic Programas Options: Filtered by selectedYears and selectedPeriods
+    const getDynamicProgramasOpts = () => {
+      const allProgs = activeSectionCatalog.programas || [];
+
+      if (!selectedYears.length && !selectedPeriods.length) return allProgs;
+
+      const validProgs = new Set();
+      sourceRows.forEach((r) => {
+        const { periodLabel } = getRowPeriodMeta(r);
+        const anioStr = String(Number(r.anio) || '');
+        const progKey = normalizeProgramKey(r.programa);
+
+        const yearOk = !selectedYears.length || yearSet.has(anioStr);
+        const periodOk = !selectedPeriods.length || periodSet.has(periodLabel);
+
+        if (yearOk && periodOk && progKey) {
+          validProgs.add(progKey);
+        }
+      });
+
+      return allProgs.filter((p) => validProgs.has(normalizeProgramKey(p)));
+    };
+
+    const aniosOpts = getDynamicAniosOpts();
+    const periodosOpts = getDynamicPeriodosOpts();
+    const programasOpts = getDynamicProgramasOpts();
+    const periodosDisp = periodosOpts.length;
+
+    const handleMatReset = () => {
+      setMatFilters({ anios: [], periodos: [], programas: [] });
+    };
+
+    const activeFilterTags = [
+      (matFilters.anios || []).length > 0 && (matFilters.anios || []).join(', '),
+      (matFilters.periodos || []).length > 0 && (matFilters.periodos || []).map((p) => String(p).replace(/-1$/, '-I').replace(/-2$/, '-II')).join(', '),
+      (matFilters.programas || []).length > 0 && `${matFilters.programas.length} programa(s)`
+    ].filter(Boolean);
+
+    return (
+      <Box sx={{ width: '100%' }}>
+        <Stack spacing={2}>
+          {/* Header Card */}
+          <Paper
+            elevation={0}
+            sx={{
+              p: 0,
+              borderRadius: 3.2,
+              border: '1px solid #4f46e5',
+              overflow: 'hidden',
+              position: 'relative',
+              color: '#ffffff',
+              background: 'linear-gradient(110deg, #3730a3 0%, #4338ca 48%, #4f46e5 100%)',
+              boxShadow: '0 14px 32px rgba(79,70,229,.18)',
+              borderLeft: '6px solid #818cf8'
+            }}
+          >
+            <Box sx={{ position: 'relative', zIndex: 1, px: { xs: 1.7, md: 2.4 }, pt: 1.2, pb: 0.8, borderBottom: '1px solid rgba(255,255,255,.12)' }}>
+              <Button
+                variant="text"
+                size="small"
+                startIcon={<ArrowBackRoundedIcon sx={{ fontSize: '14px !important' }} />}
+                onClick={() => setPoblacionalPanel('hub')}
+                sx={{ color: '#e0e7ff', fontWeight: 750, textTransform: 'none', fontSize: 11.5, px: 0, py: 0.2, minWidth: 'auto', borderRadius: 1, '&:hover': { color: '#ffffff', bgcolor: 'transparent', transform: 'translateX(-2px)' }, transition: 'all .2s ease' }}
+              >
+                Volver a tarjetas
+              </Button>
+            </Box>
+            <Box sx={{ position: 'relative', zIndex: 1, px: { xs: 1.7, md: 2.4 }, py: { xs: 1.5, md: 1.8 } }}>
+              <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1.8} justifyContent="space-between" alignItems={{ xs: 'stretch', sm: 'center' }}>
+                <Stack direction="row" spacing={1.35} alignItems="center">
+                  <Box sx={{ width: { xs: 44, md: 50 }, height: { xs: 44, md: 50 }, borderRadius: 1.8, display: 'grid', placeItems: 'center', flex: '0 0 auto', bgcolor: '#ffffff', border: '1px solid #c7d2fe', boxShadow: '0 8px 18px rgba(30,27,75,.18)' }}>
+                    <AccountTreeIcon sx={{ fontSize: { xs: 25, md: 29 }, color: '#4338ca' }} />
+                  </Box>
+                  <Box>
+                    <Typography sx={{ fontWeight: 950, color: '#ffffff', fontSize: { xs: 24, md: 32 }, lineHeight: 1, letterSpacing: '-0.5px' }}>
+                      Resumen Poblacional UNICESMAG
+                    </Typography>
+                    <Typography sx={{ color: '#e0e7ff', mt: 0.45, fontSize: 12.5, fontWeight: 600 }}>
+                      Análisis consolidado de flujo poblacional por etapa, género y programa · {periodosDisp > 0 ? `${periodosDisp} períodos disponibles` : 'Cargando...'}
+                    </Typography>
+                  </Box>
+                </Stack>
+              </Stack>
+            </Box>
+          </Paper>
+
+          {/* Filter Panel */}
+          <Paper elevation={0} sx={{ p: { xs: 1.5, sm: 1.8 }, border: '1px solid #e2e8f0', borderRadius: 2.5, bgcolor: '#ffffff', width: '100%', boxSizing: 'border-box' }}>
+            <Box
+              sx={{
+                display: 'grid',
+                gridTemplateColumns: {
+                  xs: '1fr',
+                  sm: '1fr 1fr',
+                  md: '1.2fr 1.5fr 2.8fr auto'
+                },
+                gap: 1.5,
+                alignItems: 'center',
+                width: '100%'
+              }}
+            >
+              <DocFilterPanel
+                label="AÑO"
+                placeholder="Buscar año..."
+                options={aniosOpts}
+                value={matFilters.anios}
+                onChange={(nextValues) => setMatFilters((prev) => ({ ...prev, anios: nextValues }))}
+              />
+              <DocFilterPanel
+                label="PERÍODO"
+                placeholder="Buscar período..."
+                options={periodosOpts}
+                value={matFilters.periodos}
+                onChange={(nextValues) => setMatFilters((prev) => ({ ...prev, periodos: nextValues }))}
+              />
+              <DocFilterPanel
+                label="PROGRAMA ACADÉMICO"
+                placeholder="Buscar programa..."
+                options={programasOpts}
+                value={matFilters.programas}
+                onChange={(nextValues) => setMatFilters((prev) => ({ ...prev, programas: nextValues }))}
+              />
+              <Button
+                size="small"
+                variant="outlined"
+                startIcon={<RestartAltRoundedIcon />}
+                onClick={handleMatReset}
+                sx={{
+                  color: '#b42338',
+                  fontWeight: 850,
+                  fontSize: 13,
+                  textTransform: 'none',
+                  borderRadius: '10px',
+                  px: 2.2,
+                  height: 52,
+                  width: { xs: '100%', md: 'auto' },
+                  whiteSpace: 'nowrap',
+                  borderColor: '#fecdd3',
+                  background: 'linear-gradient(135deg, #fff7f7 0%, #fff1f2 100%)',
+                  boxShadow: '0 8px 18px rgba(190,24,93,.10)',
+                  '& .MuiButton-startIcon': { color: '#e11d48' },
+                  '&:hover': { color: '#9f1239', borderColor: '#fda4af', background: 'linear-gradient(135deg, #fff1f2 0%, #ffe4e6 100%)', boxShadow: '0 11px 22px rgba(190,24,93,.16)', transform: 'translateY(-1px)' },
+                  transition: 'all .2s ease'
+                }}
+              >
+                Restablecer
+                {activeFilterTags.length > 0 && (
+                  <Box component="span" sx={{ ml: 0.8, width: 19, height: 19, borderRadius: '50%', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', bgcolor: '#e11d48', color: '#ffffff', fontSize: 10.5, fontWeight: 950 }}>
+                    {activeFilterTags.length}
+                  </Box>
+                )}
+              </Button>
+            </Box>
+          </Paper>
+
+          {/* Resumen Poblacional Content */}
+          {renderResumenPoblacionalDashboard()}
+        </Stack>
+      </Box>
+    );
+  };
+
   const renderMatriculadosOnlyDashboard = () => {
     const getDynamicMatAniosOpts = () => {
       const selectedPeriods = matFilters.periodos || [];
@@ -12939,6 +14030,8 @@ const renderCategoryBars = (items = [], options = {}) => {
       (matFilters.periodos || []).length > 0 && (matFilters.periodos || []).map((p) => String(p).replace(/-1$/, '-I').replace(/-2$/, '-II')).join(', '),
       (matFilters.programas || []).length > 0 && `${matFilters.programas.length} programa(s)`
     ].filter(Boolean);
+
+
 
     return (
       <Box sx={{ width: '100%' }}>
@@ -13095,6 +14188,8 @@ const renderCategoryBars = (items = [], options = {}) => {
             </Box>
           </Paper>
 
+
+
           {/* ── Segment switcher ── */}
           <Box
             sx={{
@@ -13168,6 +14263,8 @@ const renderCategoryBars = (items = [], options = {}) => {
               );
             })}
           </Box>
+
+
 
           {/* ── TAB: Estadística General ── */}
           {matriculadosTab === 'general' && (
@@ -15000,22 +16097,14 @@ const renderCategoryBars = (items = [], options = {}) => {
         </Stack>
       );
     }
+    if (poblacionalPanel === 'analytics' && statSection === 'resumen_poblacional') return renderResumenPoblacionalStandaloneDashboard();
     if (poblacionalPanel === 'analytics' && statSection === 'flujo') return renderFlujoOnlyDashboard();
     if (poblacionalPanel === 'analytics' && statSection === 'matriculados') return renderMatriculadosOnlyDashboard();
     if (poblacionalPanel === 'analytics' && statSection === 'graduados') {
       return renderGraduadosDashboard();
     }
     if (poblacionalPanel === 'analytics' && statSection === 'caracterizacion') {
-      return (
-        <Stack spacing={2}>
-          <Paper elevation={0} sx={{ p: 1.4, border: '1px solid #dbe6f5', borderRadius: 2.5, bgcolor: '#f8fbff' }}>
-            <Button variant="outlined" startIcon={<ArrowBackRoundedIcon />} onClick={() => setPoblacionalPanel('hub')}>
-              Volver a dashboards Poblacional
-            </Button>
-          </Paper>
-          {renderCaracterizacionDashboard(activeSeries)}
-        </Stack>
-      );
+      return renderCaracterizacionDashboard(activeSeries);
     }
     return renderPoblacionalHub();
   };

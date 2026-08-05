@@ -266,6 +266,7 @@ const getTipoSalidaLabel = (tipo) => {
   const mapping = {
     cita_eps: 'Cita medica por EPS',
     cita_particular: 'Cita medica particular',
+    cita_medica_laboral: 'Cita medica laboral',
     diligencia_personal: 'Diligencia personal',
     compensatorio: 'Compensatorio',
     voto_jurado: 'Permiso: Jurado de votación',
