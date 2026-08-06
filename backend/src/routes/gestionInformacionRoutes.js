@@ -6,6 +6,7 @@ const path = require('path');
 const {
   uploadAuditorioFoto,
   getEstadisticas,
+  exportCaracterizacionRegistros,
   getMatriculadosIncidencias,
   getResumen,
   getCargues,
@@ -216,6 +217,7 @@ const canManageInfraestructura = hasAnyRoleOrModulePermission({
 });
 
 router.get('/', auth, canViewEstadisticaInstitucionalByPermission, getEstadisticas);
+router.get('/caracterizacion/export', auth, canImportDatabaseData, exportCaracterizacionRegistros);
 router.get('/matriculados-incidencias', auth, canViewEstadisticaInstitucionalByPermission, getMatriculadosIncidencias);
 router.get('/resumen', auth, canViewEstadisticaInstitucionalByPermission, getResumen);
 router.get('/cargues', auth, canImportDatabaseData, getCargues);

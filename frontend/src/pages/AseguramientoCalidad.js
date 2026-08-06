@@ -550,7 +550,7 @@ function AseguramientoCalidad() {
         .replace(/^_+|_+$/g, ''),
     [user?.role]
   );
-  const hasDocumentalManagementPermission = useMemo(() => {
+const hasDocumentalManagementPermission = useMemo(() => {
     const permissions = [
       ...(Array.isArray(user?.menuPermissions) ? user.menuPermissions : []),
       ...(Array.isArray(user?.modulePermissions) ? user.modulePermissions : []),
@@ -562,7 +562,7 @@ function AseguramientoCalidad() {
     () => (
       ['administrador', 'gestion_por_procesos', 'gestion_procesos'].includes(normalizedRole)
       || hasDocumentalManagementPermission
-    ) && !forceReadOnly && !(isDocumentSearchRoute && ['gestion_por_procesos', 'gestion_procesos'].includes(normalizedRole)),
+    ) && !forceReadOnly && !isDocumentSearchRoute,
     [normalizedRole, hasDocumentalManagementPermission, forceReadOnly, isDocumentSearchRoute]
   );
   const [activeDocumentScope, setActiveDocumentScope] = useState('documentos');

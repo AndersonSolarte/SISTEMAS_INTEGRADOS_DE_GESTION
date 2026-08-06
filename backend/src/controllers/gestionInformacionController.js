@@ -5993,6 +5993,153 @@ const getEstadisticas = async (req, res) => {
   }
 };
 
+const exportCaracterizacionRegistros = async (req, res) => {
+  try {
+    const programas = parseQueryListParam(req.query, 'programas');
+    const anios = parseQueryListParam(req.query, 'anios')
+      .map((value) => Number(value))
+      .filter(Number.isFinite);
+    const periodos = parseQueryListParam(req.query, 'periodos');
+    const dimension = String(req.query.dimension || 'total').trim().toLowerCase();
+
+    if (anios.length !== 1 || periodos.length !== 1) {
+      return res.status(400).json({
+        success: false,
+        message: 'Selecciona exactamente un ano y un periodo antes de exportar.'
+      });
+    }
+
+    const dimensionFilters = {
+      total: '',
+      genero: '',
+      estratos: '',
+      grupos_etnicos: '',
+      victimas: "UPPER(BTRIM(COALESCE(victima_conflicto_armado, ''))) IN ('SI', 'SÃ', 'YES')",
+      victimas_genero: "UPPER(BTRIM(COALESCE(victima_conflicto_armado, ''))) IN ('SI', 'SÃ', 'YES')",
+      victimas_estratos: "UPPER(BTRIM(COALESCE(victima_conflicto_armado, ''))) IN ('SI', 'SÃ', 'YES')",
+      victimas_municipios: "UPPER(BTRIM(COALESCE(victima_conflicto_armado, ''))) IN ('SI', 'SÃ', 'YES')",
+      afrodescendientes: "UPPER(BTRIM(COALESCE(grupo_etnico, ''))) ~ '(AFRO|NEGRA|PALENQ|RAIZAL)'",
+      afro_genero: "UPPER(BTRIM(COALESCE(grupo_etnico, ''))) ~ '(AFRO|NEGRA|PALENQ|RAIZAL)'",
+      pertenencia_etnica: `
+        UPPER(BTRIM(COALESCE(grupo_etnico, ''))) NOT LIKE '%NO APLICA%'
+        AND UPPER(BTRIM(COALESCE(grupo_etnico, ''))) NOT LIKE '%SIN INFORMACION%'
+        AND UPPER(BTRIM(COALESCE(grupo_etnico, ''))) NOT LIKE '%SIN INFORMACIÃ“N%'
+        AND BTRIM(COALESCE(grupo_etnico, '')) <> ''
+      `
+    };
+
+    if (!Object.prototype.hasOwnProperty.call(dimensionFilters, dimension)) {
+      return res.status(400).json({ success: false, message: 'Dimension de exportacion no valida.' });
+    }
+
+    const activeLoadScope = await getCaracterizacionActiveLoadScope();
+    const [periodYear, periodSlot] = String(periodos[0] || '').split('-');
+    const replacements = {
+      anio: anios[0],
+      periodo: `${periodYear} ${periodSlot === '2' ? 'IIP' : 'IP'}`.trim().toUpperCase()
+    };
+    const filters = [
+      'anio = :anio',
+      "UPPER(BTRIM(COALESCE(periodo, ''))) = :periodo"
+    ];
+
+    if (activeLoadScope.minId) {
+      replacements.activeLoadMinId = activeLoadScope.minId;
+      filters.push('id >= :activeLoadMinId');
+    }
+
+    const normalizedProgramas = Array.from(new Set(
+      programas.map((item) => normalizeComparableText(item)).filter(Boolean)
+    ));
+    if (normalizedProgramas.length) {
+      replacements.programas = normalizedProgramas;
+      filters.push(`
+        BTRIM(REGEXP_REPLACE(
+          TRANSLATE(UPPER(COALESCE(programa, '')), 'ÃÃ‰ÃÃ“ÃšÃœÃ‘', 'AEIOUUN'),
+          '[^A-Z0-9]+', ' ', 'g'
+        )) IN (:programas)
+      `);
+    }
+
+    if (dimensionFilters[dimension]) filters.push(dimensionFilters[dimension]);
+
+    const records = await PoblacionalCaracterizacion.sequelize.query(`
+      SELECT *
+      FROM poblacional_caracterizacion
+      WHERE ${filters.join(' AND ')}
+      ORDER BY id ASC
+    `, { replacements, type: QueryTypes.SELECT });
+
+    const exportRows = records.map((row) => ({
+      ID_REGISTRO: row.id,
+      ANO: row.anio,
+      PERIODO: row.periodo,
+      NUMERO_IDENTIFICACION: row.no_identificacion,
+      TIPO_DOCUMENTACION: row.tipo_documentacion,
+      PROGRAMA: row.programa,
+      CODIGO: row.codigo,
+      SEMESTRE: row.semestre,
+      APELLIDOS_NOMBRES: row.apellidos_nombres,
+      GENERO: row.genero,
+      VICTIMA_CONFLICTO_ARMADO: row.victima_conflicto_armado,
+      CORREO_ELECTRONICO: row.correo_electronico,
+      PERSONAS_A_CARGO: row.personas_a_cargo,
+      ESTADO_CIVIL: row.estado_civil,
+      GRUPO_ETNICO: row.grupo_etnico,
+      EPS: row.eps,
+      MUNICIPIO_RESIDENCIA: row.municipio_residencia,
+      DEPARTAMENTO_RESIDENCIA: row.departamento_residencia,
+      PAIS_RESIDENCIA: row.pais_residencia,
+      DISCAPACIDAD: row.discapacidad,
+      NUCLEO_FAMILIAR: row.nucleo_familiar,
+      ESTRATO: row.estrato,
+      INGRESOS_FAMILIARES: row.ingresos_familiares,
+      INGRESOS_FAMILIARES_2: row.ingresos_familiares_2,
+      INSTITUCION: row.institucion,
+      TITULO_OBTENIDO: row.titulo_obtenido,
+      TIPO_CREDITO: row.tipo_credito,
+      EDAD: row.edad,
+      ZONA_PROCEDENCIA: row.zona_procedencia,
+      FECHA_CARGA: row.created_at
+    }));
+
+    const workbook = XLSX.utils.book_new();
+    const contextSheet = XLSX.utils.aoa_to_sheet([
+      ['EXPORTACION DE EVIDENCIA - CARACTERIZACION ESTUDIANTIL'],
+      ['Fecha de generacion', new Date().toLocaleString('es-CO')],
+      ['Ano', anios[0]],
+      ['Periodo', replacements.periodo],
+      ['Programas', programas.length ? programas.join(', ') : 'TODOS'],
+      ['Dimension', dimension],
+      ['Registros exportados', exportRows.length],
+      ['Usuario', req.user?.email || req.user?.id || '']
+    ]);
+    contextSheet['!cols'] = [{ wch: 26 }, { wch: 80 }];
+    XLSX.utils.book_append_sheet(workbook, contextSheet, 'CONTEXTO');
+
+    const dataSheet = exportRows.length
+      ? XLSX.utils.json_to_sheet(exportRows)
+      : XLSX.utils.aoa_to_sheet([['SIN REGISTROS PARA LOS FILTROS SELECCIONADOS']]);
+    if (exportRows.length) {
+      dataSheet['!autofilter'] = { ref: dataSheet['!ref'] };
+      dataSheet['!cols'] = Object.keys(exportRows[0]).map((key) => ({
+        wch: Math.max(14, Math.min(38, key.length + 4))
+      }));
+    }
+    XLSX.utils.book_append_sheet(workbook, dataSheet, 'REGISTROS_COMPLETOS');
+
+    const buffer = XLSX.write(workbook, { type: 'buffer', bookType: 'xlsx' });
+    const safeDimension = dimension.replace(/[^a-z0-9_-]+/g, '_');
+    const filename = `evidencia_caracterizacion_${safeDimension}_${anios[0]}_${periodos[0]}.xlsx`;
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+    return res.send(buffer);
+  } catch (error) {
+    console.error('Error al exportar evidencia de caracterizacion:', error);
+    return res.status(500).json({ success: false, message: 'No fue posible exportar la evidencia de caracterizacion.' });
+  }
+};
+
 const getResumen = async (req, res) => {
   try {
     const { anio = '' } = req.query;
@@ -10584,6 +10731,7 @@ const uploadAuditorioFoto = async (req, res) => {
 module.exports = {
   uploadAuditorioFoto,
   getEstadisticas,
+  exportCaracterizacionRegistros,
   getMatriculadosIncidencias,
   getResumen,
   getCargues,
