@@ -13809,17 +13809,8 @@ const renderCategoryBars = (items = [], options = {}) => {
             boxShadow: '0 8px 24px rgba(15,23,42,0.04)'
           }}
         >
-          <Stack direction="row" justifyContent="space-between" alignItems="center" sx={{ mb: 1.8 }} data-copy-exclude="false">
-            <Box>
-              <Typography sx={{ fontWeight: 900, color: currentStageObj.color, fontSize: 15 }}>
-                Detalle Consolidado por Programa y Género ({currentStageObj.label})
-              </Typography>
-              <Typography sx={{ color: '#64748b', fontSize: 12, fontWeight: 600 }}>
-                Estadísticas específicas de {currentStageObj.label.toLowerCase()} para los filtros activos.
-              </Typography>
-            </Box>
+          <Box sx={{ display: 'flex', justifyContent: 'flex-end', mb: 1.2 }} data-copy-exclude="true">
             <Button
-              data-copy-exclude="true"
               size="small"
               variant="outlined"
               startIcon={<ContentCopyIcon />}
@@ -13828,7 +13819,7 @@ const renderCategoryBars = (items = [], options = {}) => {
             >
               Copiar grafico
             </Button>
-          </Stack>
+          </Box>
 
           <Box
             sx={{
@@ -13850,8 +13841,14 @@ const renderCategoryBars = (items = [], options = {}) => {
                     <Typography sx={{ fontSize: { xs: 34, md: 42 }, fontWeight: 950, color: '#0f172a', lineHeight: 1.05, mt: 0.3, letterSpacing: '-0.5px' }}>
                       {formatNumber(currentStageObj.total)}
                     </Typography>
-                    <Typography sx={{ fontSize: 11.5, color: '#64748b', fontWeight: 600, mt: 0.3 }}>
-                      Total consolidado para los filtros seleccionados
+                    <Typography sx={{ fontSize: 11.5, color: '#64748b', fontWeight: 700, mt: 0.3 }}>
+                      {(() => {
+                        const parts = [];
+                        if ((matFilters.anios || []).length > 0) parts.push(`Año: ${matFilters.anios.join(', ')}`);
+                        if ((matFilters.periodos || []).length > 0) parts.push(`Período: ${matFilters.periodos.join(', ')}`);
+                        if (parts.length === 0) return 'Total general';
+                        return `Total general · ${parts.join(' | ')}`;
+                      })()}
                     </Typography>
                   </Box>
                   <Box sx={{ width: 56, height: 56, borderRadius: 2.5, bgcolor: `${currentStageObj.color}18`, display: 'grid', placeItems: 'center', color: currentStageObj.color }}>
