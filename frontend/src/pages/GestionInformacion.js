@@ -5015,26 +5015,61 @@ function GestionInformacion() {
     }
   };
 
+  const downloadPngBlob = (blob, fileName = 'grafico.png') => {
+    try {
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = fileName;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      console.error('Error al descargar blob PNG:', err);
+    }
+  };
+
   const handleCopyChartNode = async (node, successMessage = 'Grafico copiado al portapapeles') => {
     try {
       if (!node) {
         enqueueSnackbar('No se encontro el grafico para copiar', { variant: 'warning' });
         return;
       }
-      if (!navigator.clipboard || !window.ClipboardItem) {
-        enqueueSnackbar('Tu navegador no permite copiar imagen. Usa Descargar.', { variant: 'info' });
+      let blob = null;
+      try {
+        blob = await captureNodeAsPngBlob(node, 2);
+      } catch (e1) {
+        console.warn('captureNodeAsPngBlob scale 2 falló, intentando escala 1:', e1);
+        try {
+          blob = await captureNodeAsPngBlob(node, 1);
+        } catch (e2) {
+          console.warn('captureNodeAsPngBlob scale 1 falló, intentando series fallback:', e2);
+          blob = await capturePoblacionalSeriesAsPngBlob();
+        }
+      }
+
+      if (!blob) {
+        enqueueSnackbar('No fue posible generar la imagen del grafico', { variant: 'error' });
         return;
       }
-      try {
-        const blob = await captureNodeAsPngBlob(node, 3);
-        await writeImageBlobToClipboard(blob);
-      } catch (_) {
-        const blob = await captureNodeAsPngBlob(node, 2);
-        await writeImageBlobToClipboard(blob);
+
+      if (navigator.clipboard && window.ClipboardItem) {
+        try {
+          await writeImageBlobToClipboard(blob);
+          enqueueSnackbar(successMessage, { variant: 'success' });
+          return;
+        } catch (clipErr) {
+          console.warn('Escritura en portapapeles no permitida directamente por el navegador, se procede a descargar:', clipErr);
+        }
       }
-      enqueueSnackbar(successMessage, { variant: 'success' });
-    } catch (_) {
-      enqueueSnackbar('No fue posible copiar el grafico', { variant: 'error' });
+
+      // Fallback: descargar la imagen PNG si el navegador restringe la API del portapapeles
+      downloadPngBlob(blob, `grafico_${new Date().toISOString().slice(0, 10)}.png`);
+      enqueueSnackbar('Grafico descargado como imagen (portapapeles restringido en este navegador)', { variant: 'info' });
+    } catch (err) {
+      console.error('handleCopyChartNode error final:', err);
+      enqueueSnackbar('No fue posible exportar el grafico', { variant: 'error' });
     }
   };
 
@@ -13826,33 +13861,6 @@ const renderCategoryBars = (items = [], options = {}) => {
             boxShadow: '0 8px 24px rgba(15,23,42,0.04)'
           }}
         >
-          <Box sx={{ display: 'flex', justifyContent: 'flex-end', mb: 1 }} data-copy-exclude="true">
-            <Tooltip title="Copiar gráfico" arrow data-copy-exclude="true">
-              <IconButton
-                data-copy-exclude="true"
-                size="small"
-                onClick={() => handleCopyChartNode(resumenStageDetailsRef.current, `Detalle de ${currentStageObj.label} copiado`)}
-                sx={{
-                  bgcolor: '#f1f5f9',
-                  border: '1px solid #cbd5e1',
-                  color: '#475569',
-                  borderRadius: 2,
-                  width: 32,
-                  height: 32,
-                  transition: 'all 0.2s ease',
-                  '&:hover': {
-                    bgcolor: '#e2e8f0',
-                    color: '#0f172a',
-                    borderColor: '#94a3b8',
-                    transform: 'scale(1.05)'
-                  }
-                }}
-              >
-                <ContentCopyIcon sx={{ fontSize: 16 }} />
-              </IconButton>
-            </Tooltip>
-          </Box>
-
           <Box
             sx={{
               display: 'grid',
@@ -13867,10 +13875,45 @@ const renderCategoryBars = (items = [], options = {}) => {
               <Paper
                 ref={resumenTotalCardRef}
                 elevation={0}
-                sx={{ p: 2.2, borderRadius: 3, border: `1px solid ${currentStageObj.color}35`, background: `linear-gradient(135deg, ${currentStageObj.bg} 0%, #ffffff 100%)`, boxShadow: `0 6px 18px ${currentStageObj.color}12` }}
+                sx={{
+                  p: 2.2,
+                  borderRadius: 3,
+                  border: `1px solid ${currentStageObj.color}35`,
+                  background: `linear-gradient(135deg, ${currentStageObj.bg} 0%, #ffffff 100%)`,
+                  boxShadow: `0 6px 18px ${currentStageObj.color}12`,
+                  position: 'relative'
+                }}
               >
+                {/* Top-Right Copy Icon for Total Card */}
+                <Tooltip title="Copiar tarjeta de total" arrow data-copy-exclude="true">
+                  <IconButton
+                    data-copy-exclude="true"
+                    size="small"
+                    onClick={() => handleCopyChartNode(resumenTotalCardRef.current, `Total de ${currentStageObj.label} copiado`)}
+                    sx={{
+                      position: 'absolute',
+                      top: 10,
+                      right: 10,
+                      bgcolor: 'rgba(255,255,255,0.85)',
+                      border: `1px solid ${currentStageObj.color}35`,
+                      color: currentStageObj.color,
+                      borderRadius: 2,
+                      width: 28,
+                      height: 28,
+                      transition: 'all 0.2s ease',
+                      zIndex: 2,
+                      '&:hover': {
+                        bgcolor: '#ffffff',
+                        transform: 'scale(1.08)'
+                      }
+                    }}
+                  >
+                    <ContentCopyIcon sx={{ fontSize: 14 }} />
+                  </IconButton>
+                </Tooltip>
+
                 <Stack direction="row" justifyContent="space-between" alignItems="center">
-                  <Box>
+                  <Box sx={{ pr: 3 }}>
                     <Typography sx={{ fontSize: 11, fontWeight: 900, color: currentStageObj.color, textTransform: 'uppercase', letterSpacing: 0.8 }}>
                       {currentStageObj.label}
                     </Typography>
@@ -13887,33 +13930,9 @@ const renderCategoryBars = (items = [], options = {}) => {
                       })()}
                     </Typography>
                   </Box>
-                  <Stack direction="row" spacing={1} alignItems="center">
-                    <Tooltip title="Copiar tarjeta de total" arrow data-copy-exclude="true">
-                      <IconButton
-                        data-copy-exclude="true"
-                        size="small"
-                        onClick={() => handleCopyChartNode(resumenTotalCardRef.current, `Total de ${currentStageObj.label} copiado`)}
-                        sx={{
-                          bgcolor: 'rgba(255,255,255,0.7)',
-                          border: `1px solid ${currentStageObj.color}30`,
-                          color: currentStageObj.color,
-                          borderRadius: 2,
-                          width: 32,
-                          height: 32,
-                          transition: 'all 0.2s ease',
-                          '&:hover': {
-                            bgcolor: '#ffffff',
-                            transform: 'scale(1.05)'
-                          }
-                        }}
-                      >
-                        <ContentCopyIcon sx={{ fontSize: 15 }} />
-                      </IconButton>
-                    </Tooltip>
-                    <Box sx={{ width: 52, height: 52, borderRadius: 2.5, bgcolor: `${currentStageObj.color}18`, display: 'grid', placeItems: 'center', color: currentStageObj.color }}>
-                      {currentStageObj.icon}
-                    </Box>
-                  </Stack>
+                  <Box sx={{ width: 52, height: 52, borderRadius: 2.5, bgcolor: `${currentStageObj.color}18`, display: 'grid', placeItems: 'center', color: currentStageObj.color, flexShrink: 0 }}>
+                    {currentStageObj.icon}
+                  </Box>
                 </Stack>
               </Paper>
 
