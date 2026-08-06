@@ -13859,11 +13859,8 @@ const renderCategoryBars = (items = [], options = {}) => {
 
               {/* Gender compact list */}
               <Paper elevation={0} sx={{ p: 2, borderRadius: 3, border: '1px solid #e2e8f0', bgcolor: '#ffffff', flex: 1 }}>
-                <Typography sx={{ fontWeight: 900, color: '#0f172a', fontSize: 13.5, mb: 0.4 }}>
+                <Typography sx={{ fontWeight: 900, color: '#0f172a', fontSize: 13.5, mb: 1.2 }}>
                   Distribución por Género
-                </Typography>
-                <Typography sx={{ color: '#64748b', fontSize: 11.5, fontWeight: 600, mb: 1.6 }}>
-                  Desglose por género y proporción
                 </Typography>
                 <Stack spacing={1}>
                   {(currentStageObj.genders || []).map((gItem) => {
