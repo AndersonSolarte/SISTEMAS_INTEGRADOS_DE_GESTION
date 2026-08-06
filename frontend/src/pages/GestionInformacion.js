@@ -13735,25 +13735,27 @@ const renderCategoryBars = (items = [], options = {}) => {
                         <Paper
                           elevation={isSelected ? 8 : 2}
                           sx={{
-                            px: { xs: 1.6, md: 2 },
-                            py: { xs: 1.2, md: 1.5 },
+                            px: { xs: 1.4, md: 1.8 },
+                            py: 1.2,
+                            height: { xs: 74, md: 80 },
                             borderRadius: '999px',
                             background: `linear-gradient(135deg, ${stg.gradientStart} 0%, ${stg.gradientEnd} 100%)`,
                             color: '#ffffff',
                             display: 'flex',
                             alignItems: 'center',
-                            gap: 1.3,
+                            gap: 1.2,
                             boxShadow: isSelected
                               ? `0 14px 32px ${stg.color}60`
                               : `0 5px 16px ${stg.color}30`,
                             border: isSelected ? '2.5px solid #ffffff' : '1px solid rgba(255,255,255,0.3)',
-                            position: 'relative'
+                            position: 'relative',
+                            boxSizing: 'border-box'
                           }}
                         >
                           <Box
                             sx={{
-                              width: { xs: 46, md: 52 },
-                              height: { xs: 46, md: 52 },
+                              width: { xs: 44, md: 48 },
+                              height: { xs: 44, md: 48 },
                               borderRadius: '50%',
                               bgcolor: '#ffffff',
                               display: 'grid',
@@ -13764,15 +13766,15 @@ const renderCategoryBars = (items = [], options = {}) => {
                           >
                             {stg.icon}
                           </Box>
-                          <Box sx={{ overflow: 'hidden', pr: 0.5 }}>
+                          <Box sx={{ overflow: 'hidden', flex: 1, minWidth: 0, pr: 0.5 }}>
                             <Typography
                               sx={{
-                                fontSize: 10.5,
+                                fontSize: 10,
                                 fontWeight: 900,
                                 textTransform: 'uppercase',
                                 color: 'rgba(255,255,255,0.92)',
-                                letterSpacing: 0.4,
-                                lineHeight: 1.1,
+                                letterSpacing: 0.3,
+                                lineHeight: 1.15,
                                 whiteSpace: 'nowrap',
                                 textOverflow: 'ellipsis',
                                 overflow: 'hidden'
@@ -13782,7 +13784,7 @@ const renderCategoryBars = (items = [], options = {}) => {
                             </Typography>
                             <Typography
                               sx={{
-                                fontSize: { xs: 22, md: 26 },
+                                fontSize: { xs: 20, md: 24 },
                                 fontWeight: 950,
                                 color: '#ffffff',
                                 lineHeight: 1.1,
