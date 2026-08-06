@@ -3340,38 +3340,21 @@ function GestionInformacion() {
     setMatriculadosMunicipioSelection('');
   }, [matriculadosGeoSelection]);
   useEffect(() => {
-    if ((matFilters.anios || []).length > 0 && matriculadosPeriodosDisponibles?.length > 0) {
+    if ((matFilters.anios || []).length > 0) {
       const selectedYears = matFilters.anios || [];
       const yearSet = new Set(selectedYears.map((y) => String(y)));
-      const filteredForYears = (matriculadosPeriodosDisponibles || [])
-        .filter((p) => {
-          const label = String(p.label || p);
-          const pYear = label.split('-')[0];
+      setMatFilters((prev) => {
+        const valid = (prev.periodos || []).filter((p) => {
+          const pYear = String(p).split('-')[0];
           return yearSet.has(pYear);
-        })
-        .map((p) => String(p.label || p));
-
-      // Auto-select ONLY if exactly 1 period exists for the selected year(s)
-      if (filteredForYears.length === 1) {
-        const singleP = filteredForYears[0];
-        if ((matFilters.periodos || [])[0] !== singleP || (matFilters.periodos || []).length !== 1) {
-          setMatFilters((prev) => ({ ...prev, periodos: [singleP] }));
-        }
-      } else {
-        // Validate that currently selected periodos belong to the selected year(s)
-        setMatFilters((prev) => {
-          const valid = (prev.periodos || []).filter((p) => {
-            const pYear = String(p).split('-')[0];
-            return yearSet.has(pYear);
-          });
-          if (valid.length !== (prev.periodos || []).length) {
-            return { ...prev, periodos: valid };
-          }
-          return prev;
         });
-      }
+        if (valid.length !== (prev.periodos || []).length) {
+          return { ...prev, periodos: valid };
+        }
+        return prev;
+      });
     }
-  }, [matFilters.anios, matriculadosPeriodosDisponibles]);
+  }, [matFilters.anios]);
   useEffect(() => {
     if ((activeStatsFilters.anios || []).length > 0 && activeSectionCatalog.rows?.length > 0) {
       const selectedYears = activeStatsFilters.anios || [];
