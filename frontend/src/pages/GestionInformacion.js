@@ -2157,6 +2157,8 @@ function GestionInformacion() {
   const graduadosBarChartRef = useRef(null);
   const graduadosLineChartRef = useRef(null);
   const graduadosGeneralCompositionRef = useRef(null);
+  const resumenFlowStepperRef = useRef(null);
+  const resumenStageDetailsRef = useRef(null);
   const GI_FILTER_LABEL_SX = { mb: 0.6, color: '#475569', fontWeight: 700, fontSize: 12.5 };
   const GI_FILTER_SELECT_SX = {
     width: '100%',
@@ -13620,6 +13622,7 @@ const renderCategoryBars = (items = [], options = {}) => {
       <Stack spacing={2.4}>
         {/* ── Reconstructed Flow Stepper (Matches Screenshot 3 - Larger Pills & Dynamic Themes) ── */}
         <Paper
+          ref={resumenFlowStepperRef}
           elevation={0}
           sx={{
             p: { xs: 2, sm: 2.5, md: 3 },
@@ -13629,6 +13632,26 @@ const renderCategoryBars = (items = [], options = {}) => {
             boxShadow: '0 12px 32px rgba(15,23,42,0.06)'
           }}
         >
+          <Stack direction="row" justifyContent="space-between" alignItems="center" sx={{ mb: 1.5 }}>
+            <Box>
+              <Typography sx={{ fontWeight: 900, color: '#0f172a', fontSize: 14 }}>
+                Embudo del Flujo Poblacional Estudiantil
+              </Typography>
+              <Typography sx={{ color: '#64748b', fontSize: 12 }}>
+                Avance por cada una de las 5 etapas del ciclo institucional.
+              </Typography>
+            </Box>
+            <Button
+              data-copy-exclude="true"
+              size="small"
+              variant="outlined"
+              startIcon={<ContentCopyIcon />}
+              onClick={() => handleCopyChartNode(resumenFlowStepperRef.current, 'Grafico de flujo poblacional copiado')}
+              sx={GI_OUTLINE_ACTION_BTN_SX}
+            >
+              Copiar grafico
+            </Button>
+          </Stack>
           <Box sx={{ width: '100%', overflowX: 'auto', pb: 1 }}>
             <Box sx={{ minWidth: 920, pt: 1, pb: 1.5, position: 'relative' }}>
               {/* Pills Grid - Slightly Larger */}
@@ -13775,7 +13798,38 @@ const renderCategoryBars = (items = [], options = {}) => {
         </Paper>
 
         {/* ── Active Stage View Details ── */}
-        <Stack spacing={2}>
+        <Paper
+          ref={resumenStageDetailsRef}
+          elevation={0}
+          sx={{
+            p: { xs: 1.8, md: 2.2 },
+            borderRadius: 4,
+            border: '1px solid #e2e8f0',
+            bgcolor: '#ffffff',
+            boxShadow: '0 8px 24px rgba(15,23,42,0.04)'
+          }}
+        >
+          <Stack direction="row" justifyContent="space-between" alignItems="center" sx={{ mb: 1.8 }} data-copy-exclude="false">
+            <Box>
+              <Typography sx={{ fontWeight: 900, color: currentStageObj.color, fontSize: 15 }}>
+                Detalle Consolidado por Programa y Género ({currentStageObj.label})
+              </Typography>
+              <Typography sx={{ color: '#64748b', fontSize: 12, fontWeight: 600 }}>
+                Estadísticas específicas de {currentStageObj.label.toLowerCase()} para los filtros activos.
+              </Typography>
+            </Box>
+            <Button
+              data-copy-exclude="true"
+              size="small"
+              variant="outlined"
+              startIcon={<ContentCopyIcon />}
+              onClick={() => handleCopyChartNode(resumenStageDetailsRef.current, `Detalle de ${currentStageObj.label} copiado`)}
+              sx={GI_OUTLINE_ACTION_BTN_SX}
+            >
+              Copiar grafico
+            </Button>
+          </Stack>
+
           <Box
             sx={{
               display: 'grid',
@@ -13857,12 +13911,12 @@ const renderCategoryBars = (items = [], options = {}) => {
               </Paper>
             </Stack>
 
-            {/* RIGHT COLUMN: Programs table full height */}
+            {/* RIGHT COLUMN: Programs table full height without scrollbar */}
             <Paper elevation={0} sx={{ p: 0, borderRadius: 3, border: '1px solid #e2e8f0', bgcolor: '#ffffff', overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
               <Box
                 sx={{
-                  p: 1.5,
-                  px: 2.2,
+                  p: 1.2,
+                  px: 2,
                   background: `linear-gradient(135deg, ${currentStageObj.gradientStart} 0%, ${currentStageObj.gradientEnd} 100%)`,
                   color: '#ffffff',
                   display: 'flex',
@@ -13870,20 +13924,40 @@ const renderCategoryBars = (items = [], options = {}) => {
                   alignItems: 'center'
                 }}
               >
-                <Typography sx={{ fontWeight: 950, fontSize: 13, textTransform: 'uppercase', letterSpacing: 0.5, color: '#ffffff' }}>
+                <Typography sx={{ fontWeight: 950, fontSize: 12.5, textTransform: 'uppercase', letterSpacing: 0.5, color: '#ffffff' }}>
                   PROGRAMA
                 </Typography>
-                <Typography sx={{ fontWeight: 950, fontSize: 13, textTransform: 'uppercase', letterSpacing: 0.5, color: '#ffffff' }}>
+
+                {/* PROGRAM COUNT BADGE IN HEADER */}
+                <Box
+                  sx={{
+                    px: 1.2,
+                    py: 0.25,
+                    borderRadius: '999px',
+                    bgcolor: 'rgba(255,255,255,0.22)',
+                    backdropFilter: 'blur(4px)',
+                    border: '1px solid rgba(255,255,255,0.35)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center'
+                  }}
+                >
+                  <Typography sx={{ fontWeight: 900, fontSize: 11, color: '#ffffff', letterSpacing: 0.3 }}>
+                    {currentStageObj.programas.length} {currentStageObj.programas.length === 1 ? 'PROGRAMA' : 'PROGRAMAS'}
+                  </Typography>
+                </Box>
+
+                <Typography sx={{ fontWeight: 950, fontSize: 12.5, textTransform: 'uppercase', letterSpacing: 0.5, color: '#ffffff' }}>
                   CANTIDAD
                 </Typography>
               </Box>
 
-              <TableContainer sx={{ flex: 1, maxHeight: 330, overflowY: 'auto' }}>
-                <Table size="small" stickyHeader>
+              <TableContainer sx={{ flex: 1, overflow: 'visible' }}>
+                <Table size="small">
                   <TableBody>
                     {currentStageObj.programas.length === 0 ? (
                       <TableRow>
-                        <TableCell colSpan={2} align="center" sx={{ py: 4, color: '#64748b' }}>
+                        <TableCell colSpan={2} align="center" sx={{ py: 3, color: '#64748b', fontSize: 11 }}>
                           No hay datos de programas para este filtro.
                         </TableCell>
                       </TableRow>
@@ -13892,9 +13966,9 @@ const renderCategoryBars = (items = [], options = {}) => {
                         const maxTotal = currentStageObj.programas[0]?.total || 1;
                         const pct = Math.min(100, (prog.total / maxTotal) * 100);
                         return (
-                          <TableRow key={prog.name} hover sx={{ '& td': { borderColor: '#e2e8f0' } }}>
+                          <TableRow key={prog.name} hover sx={{ '& td': { borderColor: '#f1f5f9' } }}>
                             {/* Column 1: Program Name (Ultra-compact text) */}
-                            <TableCell sx={{ py: 0.45, px: 1.2, fontSize: 10.8, fontWeight: 700, color: '#1e293b', borderRight: '1px solid #e2e8f0', width: '58%', lineHeight: 1.15 }}>
+                            <TableCell sx={{ py: 0.25, px: 1, fontSize: 10, fontWeight: 700, color: '#1e293b', borderRight: '1px solid #f1f5f9', width: '58%', lineHeight: 1.1 }}>
                               {prog.name}
                             </TableCell>
 
@@ -13902,12 +13976,12 @@ const renderCategoryBars = (items = [], options = {}) => {
                             <TableCell
                               align="right"
                               sx={{
-                                py: 0.45,
-                                px: 1.2,
+                                py: 0.25,
+                                px: 1,
                                 position: 'relative',
                                 overflow: 'hidden',
                                 width: '42%',
-                                bgcolor: `${currentStageObj.color}10`
+                                bgcolor: `${currentStageObj.color}08`
                               }}
                             >
                               {/* Horizontal Bar Chart inside CANTIDAD column */}
@@ -13928,10 +14002,11 @@ const renderCategoryBars = (items = [], options = {}) => {
                                 sx={{
                                   position: 'relative',
                                   zIndex: 1,
-                                  fontSize: 11.5,
+                                  fontSize: 10.5,
                                   fontWeight: 950,
                                   color: pct >= 82 ? '#ffffff' : (currentStageObj.gradientEnd || '#0f172a'),
-                                  textShadow: pct >= 82 ? '0 1px 2px rgba(0,0,0,0.6)' : 'none'
+                                  textShadow: pct >= 82 ? '0 1px 2px rgba(0,0,0,0.6)' : 'none',
+                                  lineHeight: 1.1
                                 }}
                               >
                                 {formatNumber(prog.total)}
@@ -13945,13 +14020,13 @@ const renderCategoryBars = (items = [], options = {}) => {
                 </Table>
               </TableContainer>
 
-              <Box sx={{ p: 1.5, px: 2.2, bgcolor: '#f1f5f9', borderTop: '2px solid #cbd5e1', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <Typography sx={{ fontWeight: 950, fontSize: 13, color: '#0f172a' }}>Total</Typography>
-                <Typography sx={{ fontWeight: 950, fontSize: 15.5, color: '#0f172a' }}>{formatNumber(currentStageObj.total)}</Typography>
+              <Box sx={{ p: 1, px: 1.8, bgcolor: '#f8fafc', borderTop: '2px solid #e2e8f0', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <Typography sx={{ fontWeight: 950, fontSize: 12, color: '#0f172a' }}>Total</Typography>
+                <Typography sx={{ fontWeight: 950, fontSize: 14, color: '#0f172a' }}>{formatNumber(currentStageObj.total)}</Typography>
               </Box>
             </Paper>
           </Box>
-        </Stack>
+        </Paper>
       </Stack>
     );
   };
