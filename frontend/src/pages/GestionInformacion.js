@@ -13641,16 +13641,30 @@ const renderCategoryBars = (items = [], options = {}) => {
                 Avance por cada una de las 5 etapas del ciclo institucional.
               </Typography>
             </Box>
-            <Button
-              data-copy-exclude="true"
-              size="small"
-              variant="outlined"
-              startIcon={<ContentCopyIcon />}
-              onClick={() => handleCopyChartNode(resumenFlowStepperRef.current, 'Grafico de flujo poblacional copiado')}
-              sx={GI_OUTLINE_ACTION_BTN_SX}
-            >
-              Copiar grafico
-            </Button>
+            <Tooltip title="Copiar gráfico de flujo" arrow data-copy-exclude="true">
+              <IconButton
+                data-copy-exclude="true"
+                size="small"
+                onClick={() => handleCopyChartNode(resumenFlowStepperRef.current, 'Grafico de flujo poblacional copiado')}
+                sx={{
+                  bgcolor: '#f1f5f9',
+                  border: '1px solid #cbd5e1',
+                  color: '#475569',
+                  borderRadius: 2,
+                  width: 32,
+                  height: 32,
+                  transition: 'all 0.2s ease',
+                  '&:hover': {
+                    bgcolor: '#e2e8f0',
+                    color: '#0f172a',
+                    borderColor: '#94a3b8',
+                    transform: 'scale(1.05)'
+                  }
+                }}
+              >
+                <ContentCopyIcon sx={{ fontSize: 16 }} />
+              </IconButton>
+            </Tooltip>
           </Stack>
           <Box sx={{ width: '100%', overflowX: 'auto', pb: 1 }}>
             <Box sx={{ minWidth: 920, pt: 1, pb: 1.5, position: 'relative' }}>
@@ -13809,16 +13823,31 @@ const renderCategoryBars = (items = [], options = {}) => {
             boxShadow: '0 8px 24px rgba(15,23,42,0.04)'
           }}
         >
-          <Box sx={{ display: 'flex', justifyContent: 'flex-end', mb: 1.2 }} data-copy-exclude="true">
-            <Button
-              size="small"
-              variant="outlined"
-              startIcon={<ContentCopyIcon />}
-              onClick={() => handleCopyChartNode(resumenStageDetailsRef.current, `Detalle de ${currentStageObj.label} copiado`)}
-              sx={GI_OUTLINE_ACTION_BTN_SX}
-            >
-              Copiar grafico
-            </Button>
+          <Box sx={{ display: 'flex', justifyContent: 'flex-end', mb: 1 }} data-copy-exclude="true">
+            <Tooltip title="Copiar gráfico" arrow data-copy-exclude="true">
+              <IconButton
+                data-copy-exclude="true"
+                size="small"
+                onClick={() => handleCopyChartNode(resumenStageDetailsRef.current, `Detalle de ${currentStageObj.label} copiado`)}
+                sx={{
+                  bgcolor: '#f1f5f9',
+                  border: '1px solid #cbd5e1',
+                  color: '#475569',
+                  borderRadius: 2,
+                  width: 32,
+                  height: 32,
+                  transition: 'all 0.2s ease',
+                  '&:hover': {
+                    bgcolor: '#e2e8f0',
+                    color: '#0f172a',
+                    borderColor: '#94a3b8',
+                    transform: 'scale(1.05)'
+                  }
+                }}
+              >
+                <ContentCopyIcon sx={{ fontSize: 16 }} />
+              </IconButton>
+            </Tooltip>
           </Box>
 
           <Box
@@ -13909,7 +13938,7 @@ const renderCategoryBars = (items = [], options = {}) => {
             <Paper elevation={0} sx={{ p: 0, borderRadius: 3, border: '1px solid #e2e8f0', bgcolor: '#ffffff', overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
               <Box
                 sx={{
-                  p: 1.2,
+                  p: 1.1,
                   px: 2,
                   background: `linear-gradient(135deg, ${currentStageObj.gradientStart} 0%, ${currentStageObj.gradientEnd} 100%)`,
                   color: '#ffffff',
@@ -13918,32 +13947,34 @@ const renderCategoryBars = (items = [], options = {}) => {
                   alignItems: 'center'
                 }}
               >
-                <Typography sx={{ fontWeight: 950, fontSize: 12.5, textTransform: 'uppercase', letterSpacing: 0.5, color: '#ffffff' }}>
+                <Typography sx={{ fontWeight: 950, fontSize: 12, textTransform: 'uppercase', letterSpacing: 0.5, color: '#ffffff' }}>
                   PROGRAMA
                 </Typography>
 
-                {/* PROGRAM COUNT BADGE IN HEADER */}
-                <Box
-                  sx={{
-                    px: 1.2,
-                    py: 0.25,
-                    borderRadius: '999px',
-                    bgcolor: 'rgba(255,255,255,0.22)',
-                    backdropFilter: 'blur(4px)',
-                    border: '1px solid rgba(255,255,255,0.35)',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center'
-                  }}
-                >
-                  <Typography sx={{ fontWeight: 900, fontSize: 11, color: '#ffffff', letterSpacing: 0.3 }}>
-                    {currentStageObj.programas.length} {currentStageObj.programas.length === 1 ? 'PROGRAMA' : 'PROGRAMAS'}
-                  </Typography>
-                </Box>
+                <Stack direction="row" alignItems="center" spacing={1.2}>
+                  {/* PROGRAM COUNT BADGE POSITIONED RIGHT BEFORE CANTIDAD */}
+                  <Box
+                    sx={{
+                      px: 1,
+                      py: 0.2,
+                      borderRadius: '999px',
+                      bgcolor: 'rgba(255,255,255,0.22)',
+                      backdropFilter: 'blur(4px)',
+                      border: '1px solid rgba(255,255,255,0.35)',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center'
+                    }}
+                  >
+                    <Typography sx={{ fontWeight: 900, fontSize: 10.5, color: '#ffffff', letterSpacing: 0.2 }}>
+                      {currentStageObj.programas.length} {currentStageObj.programas.length === 1 ? 'programa' : 'programas'}
+                    </Typography>
+                  </Box>
 
-                <Typography sx={{ fontWeight: 950, fontSize: 12.5, textTransform: 'uppercase', letterSpacing: 0.5, color: '#ffffff' }}>
-                  CANTIDAD
-                </Typography>
+                  <Typography sx={{ fontWeight: 950, fontSize: 12, textTransform: 'uppercase', letterSpacing: 0.5, color: '#ffffff' }}>
+                    CANTIDAD
+                  </Typography>
+                </Stack>
               </Box>
 
               <TableContainer sx={{ flex: 1, overflow: 'visible' }}>
