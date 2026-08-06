@@ -119,6 +119,8 @@ const GESTION_PROCESOS_DASHBOARD_PERMISSION_KEYS = [
   'gestion_usuarios_consulta'
 ];
 const POBLACIONAL_DASHBOARD_PERMISSION_KEYS = [
+  'poblacional_resumen_poblacional',
+  'poblacional_resumen',
   'poblacional_flujo',
   'poblacional_matriculados',
   'poblacional_graduados',

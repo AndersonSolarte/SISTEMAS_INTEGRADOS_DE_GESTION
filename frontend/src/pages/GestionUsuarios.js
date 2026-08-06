@@ -235,6 +235,7 @@ function GestionUsuarios() {
     { key: 'favoritos', label: 'Documentos favoritos' }
   ];
   const POBLACIONAL_DASHBOARD_OPTIONS = [
+    { key: 'poblacional_resumen_poblacional', label: 'Resumen Poblacional' },
     { key: 'poblacional_flujo', label: 'Inscritos / Admitidos / Primer Curso' },
     { key: 'poblacional_matriculados', label: 'Matriculados' },
     { key: 'poblacional_graduados', label: 'Graduados' },

@@ -69,6 +69,8 @@ const LEGACY_GI_STATS_KEYS = new Set([
 ]);
 
 const POBLACIONAL_DASHBOARD_KEYS = new Set([
+  'poblacional_resumen_poblacional',
+  'poblacional_resumen',
   'poblacional_flujo',
   'poblacional_matriculados',
   'poblacional_graduados',
