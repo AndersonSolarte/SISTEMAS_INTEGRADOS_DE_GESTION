@@ -2159,6 +2159,9 @@ function GestionInformacion() {
   const graduadosGeneralCompositionRef = useRef(null);
   const resumenFlowStepperRef = useRef(null);
   const resumenStageDetailsRef = useRef(null);
+  const resumenTotalCardRef = useRef(null);
+  const resumenGenderCardRef = useRef(null);
+  const resumenProgramTableRef = useRef(null);
   const GI_FILTER_LABEL_SX = { mb: 0.6, color: '#475569', fontWeight: 700, fontSize: 12.5 };
   const GI_FILTER_SELECT_SX = {
     width: '100%',
@@ -13861,7 +13864,11 @@ const renderCategoryBars = (items = [], options = {}) => {
             {/* LEFT COLUMN: Total card + Gender compact list */}
             <Stack spacing={1.5}>
               {/* Total card */}
-              <Paper elevation={0} sx={{ p: 2.2, borderRadius: 3, border: `1px solid ${currentStageObj.color}35`, background: `linear-gradient(135deg, ${currentStageObj.bg} 0%, #ffffff 100%)`, boxShadow: `0 6px 18px ${currentStageObj.color}12` }}>
+              <Paper
+                ref={resumenTotalCardRef}
+                elevation={0}
+                sx={{ p: 2.2, borderRadius: 3, border: `1px solid ${currentStageObj.color}35`, background: `linear-gradient(135deg, ${currentStageObj.bg} 0%, #ffffff 100%)`, boxShadow: `0 6px 18px ${currentStageObj.color}12` }}
+              >
                 <Stack direction="row" justifyContent="space-between" alignItems="center">
                   <Box>
                     <Typography sx={{ fontSize: 11, fontWeight: 900, color: currentStageObj.color, textTransform: 'uppercase', letterSpacing: 0.8 }}>
@@ -13880,17 +13887,71 @@ const renderCategoryBars = (items = [], options = {}) => {
                       })()}
                     </Typography>
                   </Box>
-                  <Box sx={{ width: 56, height: 56, borderRadius: 2.5, bgcolor: `${currentStageObj.color}18`, display: 'grid', placeItems: 'center', color: currentStageObj.color }}>
-                    {currentStageObj.icon}
-                  </Box>
+                  <Stack direction="row" spacing={1} alignItems="center">
+                    <Tooltip title="Copiar tarjeta de total" arrow data-copy-exclude="true">
+                      <IconButton
+                        data-copy-exclude="true"
+                        size="small"
+                        onClick={() => handleCopyChartNode(resumenTotalCardRef.current, `Total de ${currentStageObj.label} copiado`)}
+                        sx={{
+                          bgcolor: 'rgba(255,255,255,0.7)',
+                          border: `1px solid ${currentStageObj.color}30`,
+                          color: currentStageObj.color,
+                          borderRadius: 2,
+                          width: 32,
+                          height: 32,
+                          transition: 'all 0.2s ease',
+                          '&:hover': {
+                            bgcolor: '#ffffff',
+                            transform: 'scale(1.05)'
+                          }
+                        }}
+                      >
+                        <ContentCopyIcon sx={{ fontSize: 15 }} />
+                      </IconButton>
+                    </Tooltip>
+                    <Box sx={{ width: 52, height: 52, borderRadius: 2.5, bgcolor: `${currentStageObj.color}18`, display: 'grid', placeItems: 'center', color: currentStageObj.color }}>
+                      {currentStageObj.icon}
+                    </Box>
+                  </Stack>
                 </Stack>
               </Paper>
 
               {/* Gender compact list */}
-              <Paper elevation={0} sx={{ p: 2, borderRadius: 3, border: '1px solid #e2e8f0', bgcolor: '#ffffff', flex: 1 }}>
-                <Typography sx={{ fontWeight: 900, color: '#0f172a', fontSize: 13.5, mb: 1.2 }}>
-                  Distribución por Género
-                </Typography>
+              <Paper
+                ref={resumenGenderCardRef}
+                elevation={0}
+                sx={{ p: 2, borderRadius: 3, border: '1px solid #e2e8f0', bgcolor: '#ffffff', flex: 1 }}
+              >
+                <Stack direction="row" justifyContent="space-between" alignItems="center" sx={{ mb: 1.2 }}>
+                  <Typography sx={{ fontWeight: 900, color: '#0f172a', fontSize: 13.5 }}>
+                    Distribución por Género
+                  </Typography>
+                  <Tooltip title="Copiar distribución por género" arrow data-copy-exclude="true">
+                    <IconButton
+                      data-copy-exclude="true"
+                      size="small"
+                      onClick={() => handleCopyChartNode(resumenGenderCardRef.current, `Distribución por género de ${currentStageObj.label} copiada`)}
+                      sx={{
+                        bgcolor: '#f1f5f9',
+                        border: '1px solid #cbd5e1',
+                        color: '#475569',
+                        borderRadius: 2,
+                        width: 30,
+                        height: 30,
+                        transition: 'all 0.2s ease',
+                        '&:hover': {
+                          bgcolor: '#e2e8f0',
+                          color: '#0f172a',
+                          borderColor: '#94a3b8',
+                          transform: 'scale(1.05)'
+                        }
+                      }}
+                    >
+                      <ContentCopyIcon sx={{ fontSize: 15 }} />
+                    </IconButton>
+                  </Tooltip>
+                </Stack>
                 <Stack spacing={1}>
                   {(currentStageObj.genders || []).map((gItem) => {
                     const isThemeGender = gItem.key === 'femenino' || gItem.key === 'noBinario';
@@ -13935,7 +13996,11 @@ const renderCategoryBars = (items = [], options = {}) => {
             </Stack>
 
             {/* RIGHT COLUMN: Programs table full height without scrollbar */}
-            <Paper elevation={0} sx={{ p: 0, borderRadius: 3, border: '1px solid #e2e8f0', bgcolor: '#ffffff', overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
+            <Paper
+              ref={resumenProgramTableRef}
+              elevation={0}
+              sx={{ p: 0, borderRadius: 3, border: '1px solid #e2e8f0', bgcolor: '#ffffff', overflow: 'hidden', display: 'flex', flexDirection: 'column' }}
+            >
               <Box
                 sx={{
                   p: 1.1,
@@ -13974,6 +14039,30 @@ const renderCategoryBars = (items = [], options = {}) => {
                   <Typography sx={{ fontWeight: 950, fontSize: 12, textTransform: 'uppercase', letterSpacing: 0.5, color: '#ffffff' }}>
                     CANTIDAD
                   </Typography>
+
+                  <Tooltip title="Copiar tabla de programas" arrow data-copy-exclude="true">
+                    <IconButton
+                      data-copy-exclude="true"
+                      size="small"
+                      onClick={() => handleCopyChartNode(resumenProgramTableRef.current, `Tabla de programas de ${currentStageObj.label} copiada`)}
+                      sx={{
+                        bgcolor: 'rgba(255,255,255,0.22)',
+                        border: '1px solid rgba(255,255,255,0.35)',
+                        color: '#ffffff',
+                        borderRadius: 2,
+                        width: 28,
+                        height: 28,
+                        ml: 0.5,
+                        transition: 'all 0.2s ease',
+                        '&:hover': {
+                          bgcolor: 'rgba(255,255,255,0.4)',
+                          transform: 'scale(1.05)'
+                        }
+                      }}
+                    >
+                      <ContentCopyIcon sx={{ fontSize: 14 }} />
+                    </IconButton>
+                  </Tooltip>
                 </Stack>
               </Box>
 
