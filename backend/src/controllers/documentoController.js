@@ -266,6 +266,54 @@ const resolveSubprocesoIds = async ({ subIds, procIds, macroIds }) => {
   return rows.map((row) => Number(row.id)).filter(Number.isFinite);
 };
 
+const normalizeDocumentCode = (value = '') => String(value || '').trim().toUpperCase();
+
+const documentVersionParts = (value = '') => {
+  const matches = String(value || '').match(/\d+/g);
+  return matches?.length ? matches.map((part) => Number(part) || 0) : [0];
+};
+
+const compareDocumentVersions = (left, right) => {
+  const leftParts = documentVersionParts(left?.version);
+  const rightParts = documentVersionParts(right?.version);
+  const length = Math.max(leftParts.length, rightParts.length);
+  for (let index = 0; index < length; index += 1) {
+    const difference = (leftParts[index] || 0) - (rightParts[index] || 0);
+    if (difference !== 0) return difference;
+  }
+
+  const leftDate = Date.parse(left?.fecha_creacion || '') || 0;
+  const rightDate = Date.parse(right?.fecha_creacion || '') || 0;
+  if (leftDate !== rightDate) return leftDate - rightDate;
+  return Number(left?.id || 0) - Number(right?.id || 0);
+};
+
+const selectLatestDocuments = (documents = []) => {
+  const latestByCode = new Map();
+  documents.forEach((documento) => {
+    const normalizedCode = normalizeDocumentCode(documento.codigo);
+    const key = normalizedCode || `__ID__${documento.id}`;
+    const current = latestByCode.get(key);
+    if (!current || compareDocumentVersions(documento, current) > 0) {
+      latestByCode.set(key, documento);
+    }
+  });
+
+  const today = new Date().toISOString().slice(0, 10);
+  return Array.from(latestByCode.values()).sort((left, right) => {
+    const leftDate = String(left.fecha_creacion || '');
+    const rightDate = String(right.fecha_creacion || '');
+    const leftPublishedDate = leftDate && leftDate <= today ? leftDate : '';
+    const rightPublishedDate = rightDate && rightDate <= today ? rightDate : '';
+    if (leftPublishedDate !== rightPublishedDate) return rightPublishedDate.localeCompare(leftPublishedDate);
+
+    const leftOrder = Number.isFinite(Number(left.orden_origen)) ? Number(left.orden_origen) : Number.MAX_SAFE_INTEGER;
+    const rightOrder = Number.isFinite(Number(right.orden_origen)) ? Number(right.orden_origen) : Number.MAX_SAFE_INTEGER;
+    if (leftOrder !== rightOrder) return leftOrder - rightOrder;
+    return Number(left.id || 0) - Number(right.id || 0);
+  });
+};
+
 const getDocumentos = async (req, res) => {
   try {
     const {
@@ -284,7 +332,9 @@ const getDocumentos = async (req, res) => {
       limit = 10
     } = req.query;
 
-    const offset = (page - 1) * limit;
+    const parsedPage = Math.max(1, parseInt(page, 10) || 1);
+    const parsedLimit = Math.max(1, Math.min(5000, parseInt(limit, 10) || 10));
+    const offset = (parsedPage - 1) * parsedLimit;
     const where = {};
     const include = [
       {
@@ -373,18 +423,23 @@ const getDocumentos = async (req, res) => {
       where.estado = PUBLIC_DOCUMENT_STATE;
     }
 
-    const { count, rows } = await Documento.findAndCountAll({
+    const candidates = await Documento.findAll({
       where,
-      include,
-      limit: parseInt(limit),
-      offset: parseInt(offset),
-      order: [
-        literal(`CASE WHEN fecha_creacion <= CURRENT_DATE THEN fecha_creacion ELSE NULL END DESC NULLS LAST`),
-        literal('orden_origen ASC NULLS LAST'),
-        ['id', 'ASC']
-      ],
-      distinct: true
+      attributes: ['id', 'codigo', 'version', 'fecha_creacion', 'orden_origen'],
+      raw: true
     });
+
+    const latestDocuments = selectLatestDocuments(candidates);
+    const pageIds = latestDocuments.slice(offset, offset + parsedLimit).map((documento) => documento.id);
+    const pageOrder = new Map(pageIds.map((id, index) => [Number(id), index]));
+    const rows = pageIds.length > 0
+      ? await Documento.findAll({ where: { id: { [Op.in]: pageIds } }, include, distinct: true })
+      : [];
+    rows.sort((left, right) => (
+      (pageOrder.get(Number(left.id)) ?? Number.MAX_SAFE_INTEGER)
+      - (pageOrder.get(Number(right.id)) ?? Number.MAX_SAFE_INTEGER)
+    ));
+    const count = latestDocuments.length;
 
     res.json({
       success: true,
@@ -392,9 +447,9 @@ const getDocumentos = async (req, res) => {
         documentos: rows.map((doc) => serializeDocumento(req, doc)),
         pagination: {
           total: count,
-          page: parseInt(page),
-          limit: parseInt(limit),
-          totalPages: Math.ceil(count / limit)
+          page: parsedPage,
+          limit: parsedLimit,
+          totalPages: Math.ceil(count / parsedLimit)
         }
       }
     });
