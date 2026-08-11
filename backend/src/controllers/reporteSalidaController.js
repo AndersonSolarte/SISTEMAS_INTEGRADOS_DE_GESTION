@@ -1088,9 +1088,9 @@ const appendTrace = (solicitud, event, actor = null, detail = {}) => ([
   }
 ]);
 
-const SEGUIMIENTO_REPORTE_ADMIN_KEYS = ['seguimiento_reportes_rrhh', 'recurso_humano_seguimiento', 'recurso_humano_reporte_salida'];
-const REPORTE_SALIDA_VIEW_KEYS = [...SEGUIMIENTO_REPORTE_ADMIN_KEYS];
-const AUSENTISMO_VIEW_KEYS = ['seguimiento_reportes_rrhh', 'recurso_humano_seguimiento', 'recurso_humano_indicadores_ausentismo'];
+const SEGUIMIENTO_REPORTE_MANAGE_KEYS = ['seguimiento_reportes_rrhh', 'recurso_humano_seguimiento'];
+const REPORTE_SALIDA_VIEW_KEYS = [...SEGUIMIENTO_REPORTE_MANAGE_KEYS, 'recurso_humano_reporte_salida'];
+const AUSENTISMO_VIEW_KEYS = [...SEGUIMIENTO_REPORTE_MANAGE_KEYS, 'recurso_humano_indicadores_ausentismo'];
 
 const userHasAnyRecursoHumanoPermission = (user = {}, keys = []) => {
   const permissionLists = [
@@ -1121,11 +1121,11 @@ const canManageSeguimientoReportes = async (user) => {
   if (!user) return false;
   const role = String(user.role || '');
   if (role === ROLES.ADMINISTRADOR) return true;
-  if (role !== ROLES.GESTION_INFORMACION) return false;
+  if (userHasAnyRecursoHumanoPermission(user, SEGUIMIENTO_REPORTE_MANAGE_KEYS)) return true;
 
-  // Gestion de la Informacion solo obtiene alcance institucional cuando un
-  // administrador le asigna expresamente el seguimiento desde Permisos.
-  return userHasModulePermissionInDb(user, SEGUIMIENTO_REPORTE_ADMIN_KEYS);
+  // El permiso de seguimiento completo es una delegacion administrativa
+  // explicita y no depende del rol general asignado al usuario.
+  return userHasModulePermissionInDb(user, SEGUIMIENTO_REPORTE_MANAGE_KEYS);
 };
 
 const canViewReporteSalidaModule = async (user) => {
