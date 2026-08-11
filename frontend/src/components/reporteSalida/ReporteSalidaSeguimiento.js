@@ -366,13 +366,12 @@ function ReporteSalidaSeguimiento({ initialAccess = null, onBack }) {
   const canValidateReposicion = Boolean(access?.canValidateReposicion) || canManageAll;
   const canManageTeamReposicion = Boolean(access?.canManageTeamReposicion);
   const canViewAll = Boolean(access?.canViewAll);
-  const isReadOnlyInstitutional = canViewAll && !canManageAll;
   const canViewReporteSalida = Boolean(access?.canViewReporteSalida) || canManageAll;
   const canViewEstadisticas = Boolean(access?.canViewEstadisticas) || canManageAll;
   const availableReportModules = useMemo(() => REPORT_MODULES.filter((module) => (
     module.key === 'reporte_salida' ? canViewReporteSalida : canViewEstadisticas
   )), [canViewEstadisticas, canViewReporteSalida]);
-  const showEstadoFilter = Boolean(access?.canManageAll);
+  const showInstitutionalTools = canViewAll;
   const ownPendingCount = Number(access?.counts?.ownPending || 0);
   const teamPendingCount = Number(access?.counts?.bossPending || 0);
   const showScopeTabs = accessMode === 'jefe_y_colaborador'
@@ -1125,7 +1124,7 @@ function ReporteSalidaSeguimiento({ initialAccess = null, onBack }) {
               </Box>
             </Box>
 
-            {showEstadoFilter && (
+            {showInstitutionalTools && (
               <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1.2} alignItems="center" sx={{ width: { xs: '100%', sm: 'auto' } }}>
                 <TextField select size="small" label="Filtrar por Segmento" value={tipoFiltro} onChange={(e) => setTipoFiltro(e.target.value)} sx={{ minWidth: 220, bgcolor: '#fff', borderRadius: 1.5 }}>
                   <MenuItem value="">Todos los Segmentos</MenuItem>
@@ -1155,7 +1154,6 @@ function ReporteSalidaSeguimiento({ initialAccess = null, onBack }) {
                 {loadError}
               </Alert>
             )}
-            {!isReadOnlyInstitutional && (
             <Stack direction={{ xs: 'column', md: 'row' }} spacing={1.5} sx={{ mt: 2.2 }}>
               {[
                 { key: 'todas', label: 'Solicitudes', value: summary.total, icon: AssignmentTurnedInIcon, color: '#2563eb', gradient: 'linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%)' },
@@ -1233,7 +1231,6 @@ function ReporteSalidaSeguimiento({ initialAccess = null, onBack }) {
                 );
               })}
             </Stack>
-            )}
           </Box>
         </Paper>
 
