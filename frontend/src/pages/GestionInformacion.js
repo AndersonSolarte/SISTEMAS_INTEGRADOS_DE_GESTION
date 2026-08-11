@@ -125,7 +125,7 @@ import {
   ReferenceLine
 } from 'recharts';
 import { useSnackbar } from 'notistack';
-import { useLocation } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 import XLSXStyle from 'xlsx-js-style';
 import { useAuth } from '../context/AuthContext';
 import gestionInformacionService from '../services/gestionInformacionService';
@@ -620,7 +620,7 @@ const canViewSecurityApplication = (user) => {
 const getVisiblePoblacionalDashboardKeysForUser = (user) => {
   // Para administradores mostramos todas las tarjetas siempre, incluso si
   // existen permisos guardados antes de agregar nuevas tarjetas (compatibilidad).
-  if (user?.role === ROLES.ADMINISTRADOR) {
+  if ([ROLES.ADMINISTRADOR, ROLES.PLANEACION_ESTRATEGICA].includes(user?.role)) {
     return POBLACIONAL_DASHBOARD_CARDS.map((item) => `poblacional_${item.key}`);
   }
 
@@ -634,9 +634,7 @@ const getVisiblePoblacionalDashboardKeysForUser = (user) => {
 
   const valid = new Set(POBLACIONAL_DASHBOARD_CARDS.map((item) => `poblacional_${item.key}`));
   const explicitValid = Array.from(new Set(explicit.filter((key) => valid.has(key))));
-  if (explicitValid.length > 0) return explicitValid;
-
-  return POBLACIONAL_DASHBOARD_CARDS.map((item) => `poblacional_${item.key}`);
+  return explicitValid;
 };
 
 const REPORT_SECTIONS = [
@@ -2029,6 +2027,7 @@ function GestionInformacion() {
   const { enqueueSnackbar } = useSnackbar();
   const { user } = useAuth();
   const location = useLocation();
+  const navigate = useNavigate();
   const [menuView, setMenuView] = useState('estadistica');
   const [baseSeleccionada, setBaseSeleccionada] = useState('');
   const [subBaseSeleccionada, setSubBaseSeleccionada] = useState('');
@@ -2936,19 +2935,6 @@ function GestionInformacion() {
   useEffect(() => {
     if (statSection !== 'matriculados') setMatriculadosGeoSelection('');
   }, [statSection]);
-
-  useEffect(() => {
-    if (selectedCard !== 'poblacional') return;
-    if (poblacionalPanel !== 'hub') return;
-    if (visiblePoblacionalDashboardCards.length !== 1) return;
-    const only = visiblePoblacionalDashboardCards[0];
-    if (only.type === 'analytics') {
-      setStatSection(only.key);
-      setPoblacionalPanel('analytics');
-      return;
-    }
-    setPoblacionalPanel(only.key);
-  }, [selectedCard, poblacionalPanel, visiblePoblacionalDashboardCards]);
 
   useEffect(() => {
     if (menuView !== 'estadistica' || selectedCard !== 'poblacional' || statSection !== 'caracterizacion') return;
@@ -4643,6 +4629,15 @@ function GestionInformacion() {
     setSelectedCard(key);
   };
 
+  const returnToCards = useCallback(() => {
+    setMenuView('estadistica');
+    setSelectedCard(null);
+    setGestionProcesosPanel('hub');
+    setPoblacionalPanel('hub');
+    setSaberProStatSection('hub');
+    navigate('/dashboard/gestion-informacion?tab=estadistica', { replace: true });
+  }, [navigate]);
+
   const cloneNodeWithComputedStyles = (node) => {
     const clone = node.cloneNode(true);
     const applyComputedStyles = (source, target) => {
@@ -5453,7 +5448,7 @@ function GestionInformacion() {
   };
 
   const renderRecursoHumanoStatsModule = () => (
-    <RecursoHumanoLandingPage onBack={() => setSelectedCard(null)} />
+    <RecursoHumanoLandingPage onBack={returnToCards} />
   );
 
   const renderStackedBars = (series) => {
@@ -7503,7 +7498,16 @@ const renderCategoryBars = (items = [], options = {}) => {
     }
 
     if (user?.role === ROLES.GESTION_PROCESOS || isDirectDocumentalView) {
-      return <EstadisticaDocumentalPanel embedded />;
+      return (
+        <Stack spacing={2}>
+          <Paper elevation={0} sx={{ p: 1.4, border: '1px solid #dbe6f5', borderRadius: 2.5, bgcolor: '#f8fbff' }}>
+            <Button variant="outlined" startIcon={<ArrowBackRoundedIcon />} onClick={returnToCards}>
+              Volver a tarjetas
+            </Button>
+          </Paper>
+          <EstadisticaDocumentalPanel embedded />
+        </Stack>
+      );
     }
 
     return gestionProcesosPanel === 'hub' ? (
@@ -7511,7 +7515,7 @@ const renderCategoryBars = (items = [], options = {}) => {
         <Paper elevation={0} sx={{ p: 2.5, border: '1px solid #dbe6f5', borderRadius: 3, background: 'linear-gradient(120deg, #f8fbff 0%, #eef6ff 100%)' }}>
           <Stack direction={{ xs: 'column', md: 'row' }} spacing={1.4} justifyContent="space-between" alignItems={{ xs: 'flex-start', md: 'center' }}>
             <Stack direction="row" spacing={1} alignItems="center">
-              <Button variant="outlined" startIcon={<ArrowBackRoundedIcon />} onClick={() => setSelectedCard(null)}>Volver a tarjetas</Button>
+              <Button variant="outlined" startIcon={<ArrowBackRoundedIcon />} onClick={returnToCards}>Volver a tarjetas</Button>
               <Chip label="Modulo Gestión por Procesos" color="primary" variant="outlined" />
             </Stack>
             <Typography variant="caption" sx={{ color: '#64748b' }}>
@@ -7569,9 +7573,14 @@ const renderCategoryBars = (items = [], options = {}) => {
     ) : (
       <Stack spacing={2}>
         <Paper elevation={0} sx={{ p: 1.4, border: '1px solid #dbe6f5', borderRadius: 2.5, bgcolor: '#f8fbff' }}>
-          <Button variant="outlined" startIcon={<ArrowBackRoundedIcon />} onClick={() => setGestionProcesosPanel('hub')}>
-            Volver a módulo Gestión por Procesos
-          </Button>
+          <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1}>
+            <Button variant="outlined" startIcon={<ArrowBackRoundedIcon />} onClick={() => setGestionProcesosPanel('hub')}>
+              Volver a módulo Gestión por Procesos
+            </Button>
+            <Button variant="text" startIcon={<GridViewIcon />} onClick={returnToCards}>
+              Volver a tarjetas
+            </Button>
+          </Stack>
         </Paper>
         <EstadisticaDocumentalPanel embedded />
       </Stack>
@@ -8895,7 +8904,7 @@ const renderCategoryBars = (items = [], options = {}) => {
       <Paper elevation={0} sx={{ p: 2.5, border: '1px solid #dbe6f5', borderRadius: 3, background: 'linear-gradient(120deg, #f8fbff 0%, #eef6ff 100%)' }}>
         <Stack direction={{ xs: 'column', md: 'row' }} spacing={1.4} justifyContent="space-between" alignItems={{ xs: 'flex-start', md: 'center' }}>
           <Stack direction="row" spacing={1} alignItems="center">
-            <Button variant="outlined" startIcon={<ArrowBackRoundedIcon />} onClick={() => setSelectedCard(null)}>Volver a tarjetas</Button>
+            <Button variant="outlined" startIcon={<ArrowBackRoundedIcon />} onClick={returnToCards}>Volver a tarjetas</Button>
             <Chip label="Modulo Poblacional" color="primary" variant="outlined" />
           </Stack>
           <Typography variant="caption" sx={{ color: '#64748b' }}>
@@ -14673,7 +14682,7 @@ const renderCategoryBars = (items = [], options = {}) => {
                 variant="text"
                 size="small"
                 startIcon={<ArrowBackRoundedIcon sx={{ fontSize: '14px !important' }} />}
-                onClick={() => setSelectedCard(null)}
+                onClick={returnToCards}
                 sx={{ color: '#dbeafe', fontWeight: 750, textTransform: 'none', fontSize: 11.5, px: 0, py: 0.2, minWidth: 'auto', borderRadius: 1, '&:hover': { color: '#ffffff', bgcolor: 'transparent', transform: 'translateX(-2px)' }, transition: 'all .2s ease' }}
               >
                 Volver a tarjetas
@@ -16597,7 +16606,7 @@ const renderCategoryBars = (items = [], options = {}) => {
     return (
       <Stack spacing={2}>
         <Paper elevation={0} sx={{ p: 1.4, border: '1px solid #dbe6f5', borderRadius: 2.5, bgcolor: '#f8fbff' }}>
-          <Button variant="outlined" startIcon={<ArrowBackRoundedIcon />} onClick={() => setSelectedCard(null)}>
+          <Button variant="outlined" startIcon={<ArrowBackRoundedIcon />} onClick={returnToCards}>
             Volver a tarjetas
           </Button>
         </Paper>
@@ -16738,7 +16747,7 @@ const renderCategoryBars = (items = [], options = {}) => {
 
   const renderSaberProStatsModule = (options = {}) => (
     <SaberProLandingPage
-      onBack={() => (options.embedded ? setPoblacionalPanel('hub') : setSelectedCard(null))}
+      onBack={() => (options.embedded ? setPoblacionalPanel('hub') : returnToCards())}
       allowedDashboards={visibleSaberProDashboards}
     />
   );
@@ -17270,7 +17279,7 @@ const renderCategoryBars = (items = [], options = {}) => {
                 {selectedCard === 'internacionalizacion' && (
                   <InternacionalizacionLandingPage
                     user={user}
-                    onBack={() => setSelectedCard(null)}
+                    onBack={returnToCards}
                   />
                 )}
                 {selectedCard === 'registros_calificados_acreditacion' && renderRegistrosCalificadosModule()}
@@ -17294,14 +17303,14 @@ const renderCategoryBars = (items = [], options = {}) => {
                     [ROLES.ADMINISTRADOR, ROLES.PLANEACION_ESTRATEGICA].includes(user?.role) ||
                     (user?.allowedInfraestructuraFisicaDashboards || []).some(k => k.startsWith('infraestructura_fisica'))
                   }
-                  onBack={() => setSelectedCard(null)}
+                  onBack={returnToCards}
                 />
               )}
                 {selectedCard === 'gestion_procesos' && renderGestionProcesosModule()}
                 {selectedCard === 'activity_monitor' && (
                   <Box>
                     <Stack direction="row" spacing={1} sx={{ mb: 2.5 }} alignItems="center">
-                      <Button variant="outlined" startIcon={<ArrowBackRoundedIcon />} onClick={() => setSelectedCard(null)}>
+                      <Button variant="outlined" startIcon={<ArrowBackRoundedIcon />} onClick={returnToCards}>
                         Volver a tarjetas
                       </Button>
                       <Chip label="Monitor de Actividad" color="primary" variant="outlined" />
@@ -17312,7 +17321,7 @@ const renderCategoryBars = (items = [], options = {}) => {
                 {selectedCard === 'security_application' && canAccessSecurityApplication && (
                   <Box>
                     <Stack direction="row" spacing={1} sx={{ mb: 2.5 }} alignItems="center">
-                      <Button variant="outlined" startIcon={<ArrowBackRoundedIcon />} onClick={() => setSelectedCard(null)}>
+                      <Button variant="outlined" startIcon={<ArrowBackRoundedIcon />} onClick={returnToCards}>
                         Volver a tarjetas
                       </Button>
                       <Chip label="Gestión de Seguridad Aplicativa" color="primary" variant="outlined" />
@@ -17323,7 +17332,7 @@ const renderCategoryBars = (items = [], options = {}) => {
                 {selectedCard === 'plan_accion' && (
                   <Box>
                     <Stack direction="row" spacing={1} sx={{ mb: 2.5 }} alignItems="center">
-                      <Button variant="outlined" startIcon={<ArrowBackRoundedIcon />} onClick={() => setSelectedCard(null)}>
+                      <Button variant="outlined" startIcon={<ArrowBackRoundedIcon />} onClick={returnToCards}>
                         Volver a tarjetas
                       </Button>
                       <Chip label="Plan de Acción" color="primary" variant="outlined" />

@@ -161,10 +161,9 @@ const getDefaultPermissionsByRole = (role) => {
         'dashboard',
         'aseguramiento_calidad',
         'buscar_documentos',
-        'gestion_usuarios',
-        'gestion_informacion'
+        'gestion_usuarios'
       ],
-      allowedModules: ['estadistica_institucional'],
+      allowedModules: ['estadistica_institucional', 'gestion_procesos'],
       allowedGestionProcesosDashboards: ['estadistica_documental'],
       allowedPoblacionalDashboards: [],
       allowedSaberProDashboards: [],
@@ -403,7 +402,6 @@ const getUserModulePermissions = async (userId, role) => {
   if (role === ROLES.GESTION_PROCESOS) {
     [
       'dashboard',
-      'gestion_informacion',
       'aseguramiento_calidad',
       'buscar_documentos',
       'favoritos',

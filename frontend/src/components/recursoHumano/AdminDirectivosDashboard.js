@@ -975,22 +975,15 @@ function AdminDirectivosDashboard({ onBack }) {
         </Box>
 
         {/* ════════════════════ PROYECTO ONDAS ════════════════════════════ */}
-        <Paper ref={ondasRef} elevation={0} sx={{
-          mb: 3, position: 'relative',
-          border: `1px solid ${C.ondas.border}`, borderRadius: 1,
-          overflow: 'hidden', background: '#ffffff', boxShadow: `0 12px 28px ${C.ondas.shadow}`
-        }}>
-          <PillHeader label="Proyecto Ondas" palette={C.ondas} />
-          <Box sx={{ px: { xs: 2, md: 3 }, py: 2.5, position: 'relative' }}>
-            <CopyChartBtn chartRef={ondasRef} />
-            {ondasM.total === 0 ? (
-              <Stack alignItems="center" justifyContent="center" sx={{ minHeight: 130 }}>
-                <Typography sx={{ color: C.ondas.base, fontSize: 72, fontWeight: 300, lineHeight: 1 }}>0</Typography>
-                <Typography sx={{ color: '#94a3b8', fontSize: 11, fontWeight: 800, textTransform: 'uppercase', mt: 0.5 }}>
-                  Sin registros disponibles
-                </Typography>
-              </Stack>
-            ) : (
+        {ondasM.total > 0 && (
+          <Paper ref={ondasRef} elevation={0} sx={{
+            mb: 3, position: 'relative',
+            border: `1px solid ${C.ondas.border}`, borderRadius: 1,
+            overflow: 'hidden', background: '#ffffff', boxShadow: `0 12px 28px ${C.ondas.shadow}`
+          }}>
+            <PillHeader label="Proyecto Ondas" palette={C.ondas} />
+            <Box sx={{ px: { xs: 2, md: 3 }, py: 2.5, position: 'relative' }}>
+              <CopyChartBtn chartRef={ondasRef} />
               <Box sx={{ display: 'grid', gap: 2.4, gridTemplateColumns: { xs: '1fr', md: '220px 1fr' }, alignItems: 'center' }}>
                 <Stack alignItems="center" justifyContent="center" spacing={1}>
                   <Typography sx={{ color: C.ondas.base, fontSize: 72, fontWeight: 400, lineHeight: 1 }}>
@@ -1013,9 +1006,9 @@ function AdminDirectivosDashboard({ onBack }) {
                   <DonutContent total={ondasM.total} genderData={ondasM.gender} palette={C.ondas} />
                 </Box>
               </Box>
-            )}
-          </Box>
-        </Paper>
+            </Box>
+          </Paper>
+        )}
 
         {/* ════════════════════ DISTRIBUCIÓN ADMINISTRATIVA ═══════════════ */}
         {adminM.total > 0 && (adminM.vicerectoria.length > 0 || adminM.dependencia.length > 0) && (

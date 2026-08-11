@@ -313,7 +313,7 @@ function DashboardLayout() {
       (Array.isArray(user?.allowedInternacionalizacionDashboards) && user.allowedInternacionalizacionDashboards.length > 0) ||
       explicitProcesosDashboards.some((k) => !k.startsWith('gestion_usuarios'));
 
-    const gestionProcesosBaseMenu = ['dashboard', 'gestion_informacion', 'aseguramiento_calidad', 'buscar_documentos', 'favoritos', 'gestion_usuarios'];
+    const gestionProcesosBaseMenu = ['dashboard', 'aseguramiento_calidad', 'buscar_documentos', 'favoritos', 'gestion_usuarios'];
     let effectiveMenuPermissions = user?.role === ROLES.GESTION_PROCESOS
       ? [...new Set([...gestionProcesosBaseMenu, ...explicitMenuPermissions])]
       : [...explicitMenuPermissions];
