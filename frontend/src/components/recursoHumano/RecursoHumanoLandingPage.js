@@ -74,11 +74,18 @@ function RecursoHumanoLandingPage({ onBack }) {
     return () => { active = false; };
   }, []);
 
-  const showSeguimientoCard = Boolean(seguimientoAccess?.canView);
+  const hasSeguimientoPermission = [
+    'recurso_humano_seguimiento',
+    'recurso_humano_reporte_salida',
+    'recurso_humano_indicadores_ausentismo'
+  ].some(hasAccess);
+  const showSeguimientoCard = hasSeguimientoPermission || Boolean(seguimientoAccess?.canView);
   const seguimientoDescription = seguimientoAccess?.mode === 'colaborador'
     ? 'Consulta tus horas pendientes por reponer y el estado de validacion de Talento Humano.'
     : seguimientoAccess?.mode === 'planeacion_estrategica'
       ? 'Consulta institucional de reportes y reposiciones, sin acciones de validacion ni indicadores.'
+      : seguimientoAccess?.mode === 'consulta_institucional'
+        ? 'Consulta institucional de los reportes e indicadores habilitados, sin acciones administrativas.'
     : seguimientoAccess?.mode === 'jefe' || seguimientoAccess?.mode === 'jefe_y_colaborador'
       ? 'Seguimiento de horas pendientes por reponer de tus colaboradores(as) a cargo.'
       : 'Control de radicaciones, aprobaciones, tiempos y reposicion gestionados por Gestión del Talento Humano.';

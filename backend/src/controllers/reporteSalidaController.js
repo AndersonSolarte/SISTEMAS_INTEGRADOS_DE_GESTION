@@ -1090,7 +1090,7 @@ const appendTrace = (solicitud, event, actor = null, detail = {}) => ([
 
 const SEGUIMIENTO_REPORTE_ADMIN_KEYS = ['seguimiento_reportes_rrhh', 'recurso_humano_seguimiento', 'recurso_humano_reporte_salida'];
 const REPORTE_SALIDA_VIEW_KEYS = [...SEGUIMIENTO_REPORTE_ADMIN_KEYS];
-const AUSENTISMO_VIEW_KEYS = [...SEGUIMIENTO_REPORTE_ADMIN_KEYS, 'recurso_humano_indicadores_ausentismo'];
+const AUSENTISMO_VIEW_KEYS = ['seguimiento_reportes_rrhh', 'recurso_humano_seguimiento', 'recurso_humano_indicadores_ausentismo'];
 
 const userHasAnyRecursoHumanoPermission = (user = {}, keys = []) => {
   const permissionLists = [
@@ -1181,13 +1181,22 @@ const resolveSeguimientoAccess = async (user) => {
     ReporteSalidaSolicitud.count({ where: ownPendingReposicionWhere(user) }),
     ReporteSalidaSolicitud.count({ where: bossPendingReposicionWhere(user) })
   ]);
-  const canViewAll = canManageAll || String(user?.role || '') === ROLES.PLANEACION_ESTRATEGICA;
-  const canViewReporteSalida = canViewAll || ownPending > 0 || bossPending > 0;
-  const canViewEstadisticas = canManageAll;
+  const isPlaneacionReadOnly = String(user?.role || '') === ROLES.PLANEACION_ESTRATEGICA;
+  const canViewAll = canManageAll
+    || isPlaneacionReadOnly
+    || canViewReporteSalidaByPermission
+    || canViewEstadisticasByPermission;
+  const canViewReporteSalida = canManageAll
+    || isPlaneacionReadOnly
+    || canViewReporteSalidaByPermission
+    || ownPending > 0
+    || bossPending > 0;
+  const canViewEstadisticas = canManageAll || canViewEstadisticasByPermission;
 
   let mode = 'sin_pendientes';
   if (canManageAll) mode = 'gestion_humana';
-  else if (canViewAll) mode = 'planeacion_estrategica';
+  else if (isPlaneacionReadOnly) mode = 'planeacion_estrategica';
+  else if (canViewReporteSalidaByPermission || canViewEstadisticasByPermission) mode = 'consulta_institucional';
   else if (bossPending > 0) mode = ownPending > 0 ? 'jefe_y_colaborador' : 'jefe';
   else if (ownPending > 0) mode = 'colaborador';
 
