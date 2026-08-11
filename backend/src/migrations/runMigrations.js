@@ -359,6 +359,7 @@ const runMigrations = async () => {
     await models.SaberProResultadoIndividual.sync();
     await models.SaberProResultadoAgregado.sync();
     await models.RecursoHumanoDocente.sync();
+    await ensureColumn(qi, 'recurso_humano_docentes', 'nivel_contratacion', { type: DataTypes.STRING(120), allowNull: true });
     await models.RecursoHumanoAdministrativo.sync();
     await models.RecursoHumanoOutsourcing.sync();
     await models.RecursoHumanoOnda.sync();

@@ -1123,7 +1123,7 @@ const SABER11_FIELD_MAP = {
 };
 
 const RECURSO_HUMANO_TEMPLATE_HEADERS = {
-  Docentes: ['AÑO', 'Identificación', 'DOCENTE', 'GENERO BIÓLOGICO', 'DEPARTAMENTO/DEPENDENCIA', 'PROGRAMA', 'TIPOVINCULACIÓN', 'CONTRATO', 'HORAS INDIRECTAS', '% HORAS INDIRECTAS', 'Horas Administrativas', '% Horas Administrativas', 'Horas Investigación', '% Horas Investigación', 'Horas Proyección Institucional', '% Horas Proyección Institucional', 'Horas Academicas', '% Horas Academicas', 'Horas Aseguramiento de la Calidad', '% Horas Aseguramiento de la Calidad', 'Total Horas', 'PORCENTAJE TOTAL', 'FECHA_NACIMIENTO', 'EDAD', 'PAIS', 'MUNICIPIO_NACIMIENTO', 'NIVEL MAXIMO ESTUDIO', 'TITULO RECIBIDO', 'FECHA GRADO', 'PAIS INSTITUCION ESTUDIO', 'TITULO CONVALIDADO', 'NOMBRE INSTITUCION ESTUDIO', 'METODOLOGIA PROGRAMA', 'FECHA INGRESO', 'TOTAL TIEMPO', 'Total docentes', 'ESCALAFÓN', 'CARGO', 'PERIODO'],
+  Docentes: ['AÑO', 'Identificación', 'DOCENTE', 'GENERO BIÓLOGICO', 'DEPARTAMENTO/DEPENDENCIA', 'PROGRAMA', 'NIVEL_CONTRATACIÓN', 'TIPOVINCULACIÓN', 'CONTRATO', 'HORAS INDIRECTAS', '% HORAS INDIRECTAS', 'Horas Administrativas', '% Horas Administrativas', 'Horas Investigación', '% Horas Investigación', 'Horas Proyección Institucional', '% Horas Proyección Institucional', 'Horas Academicas', '% Horas Academicas', 'Horas Aseguramiento de la Calidad', '% Horas Aseguramiento de la Calidad', 'Total Horas', 'PORCENTAJE TOTAL', 'FECHA_NACIMIENTO', 'EDAD', 'PAIS', 'MUNICIPIO_NACIMIENTO', 'NIVEL MAXIMO ESTUDIO', 'TITULO RECIBIDO', 'FECHA GRADO', 'PAIS INSTITUCION ESTUDIO', 'TITULO CONVALIDADO', 'NOMBRE INSTITUCION ESTUDIO', 'METODOLOGIA PROGRAMA', 'FECHA INGRESO', 'TOTAL TIEMPO', 'Total docentes', 'ESCALAFÓN', 'CARGO', 'PERIODO'],
   Administrativos: ['PERIODO', 'Nº Cédula', 'Activo /Retirado', 'Nombre Empleado', 'Cargo Especifico', 'Dependencia', 'GRADO', 'Vicerectoria', 'Tipo de cotizante', 'Clase de Contrato', 'FECHA INICIO', 'FECHA DE TERMINACION', 'Sueldo año 2023', 'Auxilio Transporte 2023', 'Dias Trabajados Septiembre 2023', 'Sueldo Mes Septiembre 2023', 'Dias Auxilio Transporte', 'Auxilio Transporte', 'CORTE INFORMACIÓN', 'GENERO BIÓLOGICO', 'AÑO'],
   Outsourcing: ['AÑO', 'CARGO', 'GENERO BIÓLOGICO', 'CANTIDAD'],
   Ondas: ['PERIODO', 'NOMBRE', 'GENERO', 'FECHA DE CORTE']
@@ -2406,6 +2406,7 @@ const RECURSO_HUMANO_SUBCATEGORY_CONFIG = {
       genero_biologico: ['GENERO BIÓLOGICO', 'GENERO BIÃƒÆ’Ã¢â‚¬Å“LOGICO', 'GENERO BIOLOGICO'],
       departamento_dependencia: ['DEPARTAMENTO/DEPENDENCIA', 'DEPARTAMENTO DEPENDENCIA'],
       programa: ['PROGRAMA'],
+      nivel_contratacion: ['NIVEL_CONTRATACIÓN', 'NIVEL CONTRATACIÓN', 'NIVEL_CONTRATACION', 'NIVEL CONTRATACION'],
       tipo_vinculacion: ['TIPOVINCULACIÓN', 'TIPOVINCULACIÃƒÆ’Ã¢â‚¬Å“N', 'TIPOVINCULACION', 'TIPO VINCULACION'],
       contrato: ['CONTRATO'],
       total_horas: ['Total Horas'],
@@ -5832,7 +5833,7 @@ const getEstadisticas = async (req, res) => {
         includeDocentes ? RecursoHumanoDocente.findAll({
           attributes: [
             'anio', 'periodo', 'docente', 'genero_biologico', 'departamento_dependencia', 'programa',
-            'tipo_vinculacion', 'contrato', 'cargo', 'escalafon', 'total_horas', 'total_docentes', 'edad',
+            'nivel_contratacion', 'tipo_vinculacion', 'contrato', 'cargo', 'escalafon', 'total_horas', 'total_docentes', 'edad',
             [literal(`COALESCE("raw_data"->>'NIVEL MAXIMO ESTUDIO', "raw_data"->>'NIVEL_MAXIMO_ESTUDIO', "raw_data"->>'nivel_maximo_estudio')`), 'nivel_maximo_estudio']
           ],
           raw: true
@@ -5909,6 +5910,7 @@ const getEstadisticas = async (req, res) => {
             docentes: {
               dependencias: uniq(docentes, 'departamento_dependencia'),
               programas: uniq(docentes, 'programa'),
+              nivelesContratacion: uniq(docentes, 'nivel_contratacion'),
               vinculaciones: uniq(docentes, 'tipo_vinculacion')
             },
             administrativos: {
@@ -5925,6 +5927,7 @@ const getEstadisticas = async (req, res) => {
             promedioHoras: avgNum(docentes, 'total_horas'),
             porAnio: byYear(docentes, 'peso'),
             porGenero: asList(docentes, (row) => row.genero, 'peso'),
+            porNivelContratacion: asList(docentes, 'nivel_contratacion', 'peso'),
             porVinculacion: asList(docentes, 'tipo_vinculacion', 'peso'),
             porContrato: asList(docentes, 'contrato', 'peso'),
             porDependencia: top(asList(docentes, 'departamento_dependencia', 'peso'), 12),
@@ -7231,6 +7234,7 @@ const importFromExcel = async (req, res) => {
                 genero_biologico: toDbText(normalizeGenero(payload.genero_biologico), 60),
                 departamento_dependencia: toDbText(payload.departamento_dependencia, 220),
                 programa: toDbText(payload.programa, 220),
+                nivel_contratacion: toDbText(payload.nivel_contratacion, 120),
                 tipo_vinculacion: toDbText(payload.tipo_vinculacion, 120),
                 contrato: toDbText(payload.contrato, 120),
                 cargo: toDbText(payload.cargo || 'DOCENTE', 180),

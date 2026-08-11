@@ -10,6 +10,7 @@ const RecursoHumanoDocente = sequelize.define('recurso_humano_docentes', {
   genero_biologico: { type: DataTypes.STRING(60), allowNull: true },
   departamento_dependencia: { type: DataTypes.STRING(220), allowNull: true },
   programa: { type: DataTypes.STRING(220), allowNull: true },
+  nivel_contratacion: { type: DataTypes.STRING(120), allowNull: true },
   tipo_vinculacion: { type: DataTypes.STRING(120), allowNull: true },
   contrato: { type: DataTypes.STRING(120), allowNull: true },
   cargo: { type: DataTypes.STRING(180), allowNull: true },

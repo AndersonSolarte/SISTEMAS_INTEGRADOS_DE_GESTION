@@ -48,7 +48,7 @@ const TARGETS = [
   { model: models.PoblacionalEmpleabilidad, fields: ['ies', 'denominacion_programa'] },
   { model: models.SaberProResultadoIndividual, fields: ['tipo_prueba', 'tipo_documento', 'nombre', 'tipo_evaluado', 'programa', 'ciudad', 'grupo_referencia', 'modulo', 'nivel_desempeno', 'novedades', 'periodo', 'periodo_icfes', 'lugar_presentacion', 'modalidad', 'competencias'] },
   { model: models.SaberProResultadoAgregado, fields: ['programa', 'competencia', 'tipo_prueba'] },
-  { model: models.RecursoHumanoDocente, fields: ['periodo', 'docente', 'genero_biologico', 'departamento_dependencia', 'programa', 'tipo_vinculacion', 'contrato', 'cargo', 'escalafon', 'pais', 'municipio_nacimiento', 'nivel_maximo_estudio', 'titulo_recibido', 'pais_institucion_estudio', 'titulo_convalidado', 'nombre_institucion_estudio', 'metodologia_programa'] },
+  { model: models.RecursoHumanoDocente, fields: ['periodo', 'docente', 'genero_biologico', 'departamento_dependencia', 'programa', 'nivel_contratacion', 'tipo_vinculacion', 'contrato', 'cargo', 'escalafon', 'pais', 'municipio_nacimiento', 'nivel_maximo_estudio', 'titulo_recibido', 'pais_institucion_estudio', 'titulo_convalidado', 'nombre_institucion_estudio', 'metodologia_programa'] },
   { model: models.RecursoHumanoAdministrativo, fields: ['periodo', 'estado_laboral', 'nombre_empleado', 'cargo_especifico', 'dependencia', 'vicerectoria', 'tipo_cotizante', 'clase_contrato', 'corte_informacion', 'genero_biologico'] },
   { model: models.RecursoHumanoOutsourcing, fields: ['periodo', 'cargo', 'genero_biologico'] },
   { model: models.RecursoHumanoOnda, fields: ['periodo', 'nombre', 'genero'] }
