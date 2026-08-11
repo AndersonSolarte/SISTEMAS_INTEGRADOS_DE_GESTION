@@ -58,7 +58,8 @@ api.interceptors.response.use(
       window.location.href = '/login';
     }
 
-    if (error?.response && !error.response.data?.message) {
+    const responseIsBlob = typeof Blob !== 'undefined' && error?.response?.data instanceof Blob;
+    if (error?.response && !responseIsBlob && !error.response.data?.message) {
       const status = Number(error.response.status) || 500;
       const fallbackMessage = HTTP_STATUS_MESSAGES[status] || 'Error de comunicacion con la API';
       error.response.data = { ...(error.response.data || {}), message: fallbackMessage };
