@@ -55,6 +55,14 @@ const {
   resumeAutomaticBackups
 } = require('../controllers/databaseCenterController');
 const upload = createExcelUpload('uploads/temp/');
+const contextoExternoCleanerUpload = createExcelUpload('uploads/temp/', {
+  maxFileSizeMb: Number(process.env.CONTEXTO_EXTERNO_UPLOAD_MAX_MB || 2048)
+});
+const {
+  cleanContextoExternoFile,
+  approveContextoExternoReview,
+  rejectContextoExternoReview
+} = require('../controllers/contextoExternoCleanerController');
 
 const multer = require('multer');
 const docxUpload = multer({
@@ -223,6 +231,9 @@ router.get('/resumen', auth, canViewEstadisticaInstitucionalByPermission, getRes
 router.get('/cargues', auth, canImportDatabaseData, getCargues);
 router.get('/template', auth, canImportDatabaseData, downloadTemplate);
 router.get('/contexto-externo/export', auth, canImportDatabaseData, downloadContextoExternoNormalizado);
+router.post('/contexto-externo/limpiar', auth, canImportDatabaseData, contextoExternoCleanerUpload.single('file'), cleanContextoExternoFile);
+router.post('/contexto-externo/reviews/:reviewId/approve', auth, canImportDatabaseData, approveContextoExternoReview);
+router.delete('/contexto-externo/reviews/:reviewId', auth, canImportDatabaseData, rejectContextoExternoReview);
 router.get('/cargues/errors/export', auth, canImportDatabaseData, downloadCargueErrores);
 router.get('/cargues/base/export', auth, canImportDatabaseData, downloadCargueBase);
 router.get('/database/health', auth, canAccessDatabaseCenter, getDatabaseHealth);

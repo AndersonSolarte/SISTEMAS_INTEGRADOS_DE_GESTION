@@ -134,6 +134,7 @@ import SaberProAgregadosDashboard from '../components/saberPro/SaberProAgregados
 import SaberProLandingPage from '../components/saberPro/SaberProLandingPage';
 import RecursoHumanoLandingPage from '../components/recursoHumano/RecursoHumanoLandingPage';
 import InternacionalizacionLandingPage from '../components/internacionalizacion/InternacionalizacionLandingPage';
+import ContextoExternoGestionPanel from '../components/contextoExterno/ContextoExternoGestionPanel';
 import { ROLES } from '../constants/roles';
 import { EstadisticaDocumentalPanel } from './EstadisticaDocumentalImpact';
 import ActivityDashboard from './ActivityDashboard';
@@ -8735,7 +8736,7 @@ const renderCategoryBars = (items = [], options = {}) => {
                               </linearGradient>
                             </defs>
                             <CartesianGrid strokeDasharray="4 4" stroke="#e2e8f0" />
-                            <XAxis dataKey="periodDisplay" tick={false} axisLine={{ stroke: '#cbd5e1' }} height={10} />
+                            <XAxis dataKey="periodDisplay" tick={false} axisLine={{ stroke: '#cbd5e1' }} height={10} padding={{ left: 0, right: 0 }} />
                             <YAxis tickFormatter={(v) => v >= 1000 ? `${(v / 1000).toFixed(1)}k` : v} tick={{ fontSize: 11, fill: '#64748b' }} axisLine={false} tickLine={false} />
                             <RechartsTooltip formatter={(value) => [formatNumber(value), 'Graduados']} />
                             <Bar dataKey="graduados" radius={[6, 6, 0, 0]} maxBarSize={48} cursor="pointer" onClick={(_, index) => toggleGraduadosChartPeriod(trendData[index]?.periodLabel)} isAnimationActive={false}>
@@ -9030,6 +9031,158 @@ const renderCategoryBars = (items = [], options = {}) => {
       </Paper>
     </Stack>
   );
+
+  const openContextoExternoDataManagement = (lista = '') => {
+    if (!canManageBasesInView || !canViewDatabaseData) {
+      enqueueSnackbar('No tienes permisos para gestionar la base de datos de Contexto Externo.', { variant: 'warning' });
+      return;
+    }
+
+    setBaseSeleccionada('poblacional');
+    setSubBaseSeleccionada('Contexto Externo');
+    setSubSubBaseSeleccionada(lista);
+    setDatabaseCenterTab('data');
+    setDatabaseDataView(canImportDatabaseData ? 'import' : 'catalog');
+    setSelectedCard(null);
+    setMenuView('gestion_bases');
+  };
+
+  const renderContextoExternoLanding = () => {
+    const cards = [
+      {
+        key: 'gestion',
+        title: 'Gestión de base de datos de Contexto Externo',
+        description: 'Limpia, normaliza y prepara las bases de Contexto Externo antes de importarlas al sistema.',
+        buttonLabel: 'Abrir gestión de datos',
+        icon: UploadFileIcon,
+        color: '#0891b2',
+        lightColor: '#ecfeff',
+        gradient: 'linear-gradient(135deg, #0891b2 0%, #0e7490 100%)',
+        shadow: 'rgba(8,145,178,0.18)',
+        onClick: () => setPoblacionalPanel('contexto_externo_gestion')
+      },
+      {
+        key: 'estadistica',
+        title: 'Estadística de Contexto Externo',
+        description: 'Dashboard interactivo con indicadores, gráficas y filtros para analizar la oferta nacional, regional y las series históricas externas.',
+        buttonLabel: 'Abrir dashboard',
+        icon: InsightsIcon,
+        color: '#2563eb',
+        lightColor: '#eff6ff',
+        gradient: 'linear-gradient(135deg, #3b82f6 0%, #2563eb 100%)',
+        shadow: 'rgba(37,99,235,0.18)',
+        onClick: () => setPoblacionalPanel('contexto_externo_estadistica')
+      }
+    ];
+
+    return (
+      <Fade in timeout={300}>
+        <Stack spacing={2.5}>
+          <Paper elevation={0} sx={{ p: 1.4, border: '1px solid #dbe6f5', borderRadius: 2.5, bgcolor: '#f8fbff' }}>
+            <Button variant="outlined" startIcon={<ArrowBackRoundedIcon />} onClick={() => setPoblacionalPanel('hub')} sx={{ fontWeight: 800 }}>
+              Volver a dashboards Poblacional
+            </Button>
+          </Paper>
+
+          <Paper
+            elevation={0}
+            sx={{
+              p: { xs: 2, md: 2.5 },
+              borderRadius: 3.5,
+              background: 'linear-gradient(135deg, #0f766e 0%, #0ea5a4 100%)',
+              boxShadow: '0 6px 20px rgba(15, 23, 42, 0.08)',
+              color: '#fff'
+            }}
+          >
+            <Stack direction="row" spacing={2} alignItems="center">
+              <Box sx={{ p: 1.2, borderRadius: 2, bgcolor: 'rgba(255,255,255,.15)', display: 'grid', placeItems: 'center' }}>
+                <PublicIcon sx={{ fontSize: 28 }} />
+              </Box>
+              <Box>
+                <Typography sx={{ fontWeight: 900, fontSize: { xs: 20, md: 22 }, lineHeight: 1.1 }}>
+                  Contexto Externo
+                </Typography>
+                <Typography sx={{ color: 'rgba(255,255,255,.86)', fontSize: 13.5, mt: 0.5 }}>
+                  Gestión y análisis de información externa para la comparación institucional.
+                </Typography>
+              </Box>
+            </Stack>
+          </Paper>
+
+          <Box>
+            <Typography variant="h5" sx={{ fontWeight: 900, color: '#0f172a', mb: 3.5, mt: 1.5, textAlign: 'center', letterSpacing: -0.5 }}>
+              Seleccione un submódulo para ingresar
+            </Typography>
+
+            <Box sx={{ display: 'grid', gap: 3, gridTemplateColumns: { xs: '1fr', md: 'repeat(2, minmax(0, 1fr))' }, maxWidth: 820, mx: 'auto', px: 1 }}>
+              {cards.map((card) => {
+                const Icon = card.icon;
+                return (
+                  <Paper
+                    key={card.key}
+                    elevation={0}
+                    onClick={card.onClick}
+                    sx={{
+                      p: { xs: 3.5, md: 4.5 },
+                      minHeight: 420,
+                      borderRadius: 5,
+                      border: '1px solid #e2e8f0',
+                      background: 'linear-gradient(135deg, #ffffff 0%, #f8fafc 100%)',
+                      boxShadow: '0 10px 25px rgba(15,23,42,.03)',
+                      cursor: 'pointer',
+                      transition: 'all .3s cubic-bezier(.4,0,.2,1)',
+                      display: 'flex',
+                      flexDirection: 'column',
+                      alignItems: 'center',
+                      textAlign: 'center',
+                      '&:hover': {
+                        transform: 'translateY(-6px)',
+                        boxShadow: `0 25px 50px ${card.shadow}`,
+                        borderColor: card.color,
+                        '& .contexto-icon': { background: card.gradient, color: '#fff', transform: 'scale(1.08) rotate(4deg)' },
+                        '& .contexto-action': { background: card.gradient, boxShadow: `0 8px 22px ${card.shadow}` }
+                      }
+                    }}
+                  >
+                    <Box
+                      className="contexto-icon"
+                      sx={{
+                        width: 84,
+                        height: 84,
+                        borderRadius: 4.5,
+                        bgcolor: card.lightColor,
+                        color: card.color,
+                        display: 'grid',
+                        placeItems: 'center',
+                        transition: 'all .3s ease',
+                        boxShadow: `0 12px 24px ${card.shadow}`
+                      }}
+                    >
+                      <Icon sx={{ fontSize: 38 }} />
+                    </Box>
+                    <Typography sx={{ mt: 4, color: card.key === 'gestion' ? '#164e63' : '#1e3a8a', fontWeight: 900, fontSize: 20, lineHeight: 1.2 }}>
+                      {card.title}
+                    </Typography>
+                    <Typography sx={{ mt: 2.2, color: '#64748b', fontSize: 15, lineHeight: 1.55, maxWidth: 300 }}>
+                      {card.description}
+                    </Typography>
+                    <Button
+                      className="contexto-action"
+                      variant="contained"
+                      onClick={(event) => { event.stopPropagation(); card.onClick(); }}
+                      sx={{ mt: 'auto', pt: 1.15, pb: 1.15, px: 3.5, borderRadius: 999, textTransform: 'none', fontWeight: 900, background: card.gradient, boxShadow: `0 6px 16px ${card.shadow}` }}
+                    >
+                      {card.buttonLabel}
+                    </Button>
+                  </Paper>
+                );
+              })}
+            </Box>
+          </Box>
+        </Stack>
+      </Fade>
+    );
+  };
 
   const renderPoblacionalPlaceholderPanel = ({ title, description, templateHint, hideToolbar = false, filterEmptyState = false }) => (
     <Stack spacing={2}>
@@ -11317,8 +11470,8 @@ const renderCategoryBars = (items = [], options = {}) => {
           <Stack direction={{ xs: 'column', lg: 'row' }} spacing={1.4} justifyContent="space-between" alignItems={{ xs: 'flex-start', lg: 'center' }}>
             <Stack spacing={0.8}>
               <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap" useFlexGap>
-                <Button variant="outlined" startIcon={<ArrowBackRoundedIcon />} onClick={() => setPoblacionalPanel('hub')}>
-                  Volver a dashboards Poblacional
+                <Button variant="outlined" startIcon={<ArrowBackRoundedIcon />} onClick={() => setPoblacionalPanel('contexto_externo')}>
+                  Volver a Contexto Externo
                 </Button>
                 <Chip label="Contexto Externo" sx={{ bgcolor: '#ccfbf1', color: '#0f766e', fontWeight: 800 }} />
                 <Chip label={hasData ? 'Dashboard activo' : 'Esperando datos'} sx={{ bgcolor: hasData ? '#dcfce7' : '#fff7ed', color: hasData ? '#166534' : '#c2410c', fontWeight: 700 }} />
@@ -16146,7 +16299,7 @@ const renderCategoryBars = (items = [], options = {}) => {
                       <ResponsiveContainer width="100%" height="100%">
                         <BarChart data={flujoDashboardChartData} margin={{ top: 26, right: 20, bottom: 4, left: 0 }} barCategoryGap="18%">
                           <CartesianGrid strokeDasharray="4 4" stroke="#e2e8f0" />
-                          <XAxis dataKey="periodo" tick={false} axisLine={{ stroke: '#cbd5e1' }} height={10} />
+                          <XAxis dataKey="periodo" tick={false} axisLine={{ stroke: '#cbd5e1' }} height={10} padding={{ left: 0, right: 0 }} />
                           <YAxis tickFormatter={fmtAxis} tick={{ fontSize: 13, fill: '#475569', fontWeight: 700 }} axisLine={false} tickLine={false} width={52} />
                           <RechartsTooltip formatter={(value, name) => [formatNumber(value), name]} labelFormatter={(label) => `Periodo ${label}`} />
                           <Bar dataKey="inscritos" name="Inscritos" stackId="flujo" fill={INSCRITOS_BAR_BLUE} radius={[0, 0, 5, 5]} maxBarSize={54} isAnimationActive={false}>
@@ -16299,7 +16452,7 @@ const renderCategoryBars = (items = [], options = {}) => {
                         <ResponsiveContainer width="100%" height="100%">
                           <BarChart data={flujoDashboardChartData} margin={{ top: 22, right: 18, bottom: 4, left: 0 }} barCategoryGap="18%">
                             <CartesianGrid strokeDasharray="4 4" stroke="#e2e8f0" />
-                            <XAxis dataKey="periodo" tick={false} axisLine={{ stroke: '#cbd5e1' }} height={10} />
+                            <XAxis dataKey="periodo" tick={false} axisLine={{ stroke: '#cbd5e1' }} height={10} padding={{ left: 0, right: 0 }} />
                             <YAxis tickFormatter={fmtAxis} tick={{ fontSize: 13, fill: '#475569', fontWeight: 700 }} axisLine={false} tickLine={false} width={46} />
                             <RechartsTooltip formatter={(value) => [formatNumber(value), chart.title]} labelFormatter={(label) => `Periodo ${label}`} />
                             <Bar dataKey={chart.key} fill={chart.color} radius={[6, 6, 0, 0]} maxBarSize={54} isAnimationActive={false}>
@@ -16545,7 +16698,18 @@ const renderCategoryBars = (items = [], options = {}) => {
   const renderStatsModule = () => {
     if (poblacionalPanel === 'hub') return renderPoblacionalHub();
     if (poblacionalPanel === 'desercion') return renderDesercionDashboardPanel();
-    if (poblacionalPanel === 'contexto_externo') return renderContextoExternoDashboardPanel();
+    if (poblacionalPanel === 'contexto_externo') return renderContextoExternoLanding();
+    if (poblacionalPanel === 'contexto_externo_gestion') {
+      return (
+        <ContextoExternoGestionPanel
+          listas={CONTEXTO_EXTERNO_LISTAS}
+          onBack={() => setPoblacionalPanel('contexto_externo')}
+          onOpenImporter={openContextoExternoDataManagement}
+          enqueueSnackbar={enqueueSnackbar}
+        />
+      );
+    }
+    if (poblacionalPanel === 'contexto_externo_estadistica') return renderContextoExternoDashboardPanel();
     if (poblacionalPanel === 'empleabilidad') return renderEmpleabilidadDashboardPanel();
     if (poblacionalPanel === 'resumen_estadistico') return renderResumenEstadisticoPanel();
     if (poblacionalPanel === 'saber_pro') {

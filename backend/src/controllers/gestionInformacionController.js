@@ -115,6 +115,7 @@ const clearDatasetStorage = async ({
   const deletedLogs = await GestionInformacionCarga.destroy({ where });
 
   if (categoria === 'Poblacional') {
+    clearAllPoblacionalCaches();
     if (poblacionalConfig) {
       if (poblacionalConfig.model) {
         await poblacionalConfig.model.destroy({ where: {} });
@@ -6588,6 +6589,9 @@ const deleteEstadistica = async (req, res) => {
       return res.status(404).json({ success: false, message: 'Registro no encontrado' });
     }
 
+    if (estadistica.categoria === 'Poblacional') {
+      clearAllPoblacionalCaches();
+    }
     await estadistica.destroy();
     return res.json({
       success: true,

@@ -82,6 +82,20 @@ const gestionInformacionService = {
       responseType: 'blob',
       timeout: 0
     }),
+  cleanContextoExterno: (file, lista) => {
+    const formData = new FormData();
+    formData.append('file', file);
+    formData.append('lista', lista);
+    return api.post('/planeacion/gestion-informacion/contexto-externo/limpiar', formData, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+      responseType: 'blob',
+      timeout: 0
+    });
+  },
+  approveContextoExternoReview: (reviewId) =>
+    api.post(`/planeacion/gestion-informacion/contexto-externo/reviews/${reviewId}/approve`).then((r) => r.data),
+  rejectContextoExternoReview: (reviewId) =>
+    api.delete(`/planeacion/gestion-informacion/contexto-externo/reviews/${reviewId}`).then((r) => r.data),
   downloadCargueErrores: (params = {}) =>
     api.get('/planeacion/gestion-informacion/cargues/errors/export', { params, responseType: 'blob', timeout: 0 }),
   downloadCargueBase: (params = {}) =>

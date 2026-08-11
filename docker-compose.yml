@@ -46,7 +46,7 @@ services:
     extra_hosts:
       - "host.docker.internal:host-gateway"
     tmpfs:
-      - /tmp:size=128m,noexec,nosuid,nodev
+      - /tmp:size=4g,noexec,nosuid,nodev
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=5)"]
       interval: 10s
@@ -112,6 +112,11 @@ services:
       REPORTE_SALIDA_TEMPLATE_PATH: ${REPORTE_SALIDA_TEMPLATE_PATH:-}
       SABER_PRO_PYTHON_URL: http://python-service:8000
       SABER_PRO_PYTHON_TIMEOUT_MS: ${SABER_PRO_PYTHON_TIMEOUT_MS:-15000}
+      CONTEXTO_EXTERNO_PYTHON_URL: http://python-service:8000
+      CONTEXTO_EXTERNO_PYTHON_TIMEOUT_MS: ${CONTEXTO_EXTERNO_PYTHON_TIMEOUT_MS:-1800000}
+      CONTEXTO_EXTERNO_UPLOAD_MAX_MB: ${CONTEXTO_EXTERNO_UPLOAD_MAX_MB:-2048}
+      CONTEXTO_EXTERNO_MAX_NEW_RULES: ${CONTEXTO_EXTERNO_MAX_NEW_RULES:-10000}
+      CONTEXTO_EXTERNO_RULE_BATCH_SIZE: ${CONTEXTO_EXTERNO_RULE_BATCH_SIZE:-300}
       AI_PROVIDER: ${AI_PROVIDER:-auto}
       AI_PROVIDER_TIMEOUT_MS: ${AI_PROVIDER_TIMEOUT_MS:-7000}
       GEMINI_API_KEY: ${GEMINI_API_KEY:-}
@@ -140,7 +145,7 @@ services:
       - ./backend/keys:/app/keys:ro
       - ${SIAC_BACKUP_DIR:-./backups}:/app/automatic-backups
     tmpfs:
-      - /tmp:size=512m,nosuid,nodev
+      - /tmp:size=4g,nosuid,nodev
     healthcheck:
       test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:5000/api/health').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"]
       interval: 10s

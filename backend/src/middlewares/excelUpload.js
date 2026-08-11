@@ -38,17 +38,22 @@ const excelFileFilter = (req, file, cb) => {
   return cb(null, true);
 };
 
-const createExcelUpload = (dest) => {
+const createExcelUpload = (dest, options = {}) => {
   const finalDir = process.env.EXCEL_UPLOAD_TMP_DIR
     ? path.resolve(process.env.EXCEL_UPLOAD_TMP_DIR)
     : path.join(os.tmpdir(), 'sgc_uploads');
   ensureDir(finalDir);
 
+  const requestedMaxMb = Number(options.maxFileSizeMb || DEFAULT_MAX_FILE_SIZE_MB);
+  const maxFileSizeBytes = Number.isFinite(requestedMaxMb) && requestedMaxMb > 0
+    ? Math.trunc(requestedMaxMb * 1024 * 1024)
+    : MAX_FILE_SIZE_BYTES;
+
   return multer({
     dest: finalDir,
     fileFilter: excelFileFilter,
     limits: {
-      fileSize: MAX_FILE_SIZE_BYTES,
+      fileSize: maxFileSizeBytes,
       files: 1
     }
   });
