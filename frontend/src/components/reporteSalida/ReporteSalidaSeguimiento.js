@@ -26,6 +26,8 @@ import {
   TablePagination,
   TextField,
   Tooltip,
+  ToggleButton,
+  ToggleButtonGroup,
   Typography
 } from '@mui/material';
 import { useSnackbar } from 'notistack';
@@ -147,19 +149,27 @@ const minutesBetween = (start, end) => {
 };
 
 const formatElapsed = (minutes) => {
-  const total = Number(minutes);
+  const total = Math.round(Number(minutes));
   if (!Number.isFinite(total) || total <= 0) return '0h';
-  const hours = total / 60;
-  const formatted = Number(hours.toFixed(1));
-  return `${formatted}h`;
+  const hours = Math.floor(total / 60);
+  const remainingMinutes = total % 60;
+  if (!remainingMinutes) return `${hours} h`;
+  return `${hours} h ${remainingMinutes} min`;
 };
+
+const REPOSICION_WORKDAY_MINUTES = 520;
+const getAbonoMinutes = ({ unit, days, hours, minutes }) => (
+  unit === 'dias'
+    ? (Number(days) || 0) * REPOSICION_WORKDAY_MINUTES
+    : ((Number(hours) || 0) * 60) + (Number(minutes) || 0)
+);
 
 const getHorasPendientes = (row) => {
   if (!row) return '0 hrs';
   const totalMinutos = row.reposicion_minutos || row.tiempo_solicitado_minutos || 0;
   const minutosPagados = row.reposicion_minutos_pagados || row.datos_formulario?.reposicion_minutos_pagados || 0;
   const pendientes = totalMinutos - minutosPagados;
-  return pendientes > 0 ? (pendientes / 60).toFixed(1) + ' hrs' : '0 hrs';
+  return pendientes > 0 ? formatElapsed(pendientes) : '0 h';
 };
 
 const getReposicionText = (row) => {
@@ -385,7 +395,9 @@ function ReporteSalidaSeguimiento({ initialAccess = null, onBack }) {
     const bossEmail = String(row?.jefe?.email || '').trim().toLowerCase();
     return matchesId || Boolean(bossEmail && bossEmail === String(user?.email || '').trim().toLowerCase());
   };
-  const canManageReposicionRow = (row) => canValidateReposicion || (canManageTeamReposicion && isTeamRow(row) && !isOwnRow(row));
+  const canManageReposicionRow = (row) => canValidateReposicion
+    || (Boolean(row?.canManageReposicion) && !isOwnRow(row))
+    || (canManageTeamReposicion && isTeamRow(row) && !isOwnRow(row));
 
   // Estados para modales de administración GH
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
@@ -403,7 +415,10 @@ function ReporteSalidaSeguimiento({ initialAccess = null, onBack }) {
   // Estados para modal de reposición parcial GH
   const [repDialogOpen, setRepDialogOpen] = useState(false);
   const [repTarget, setRepTarget] = useState(null);
+  const [repUnidad, setRepUnidad] = useState('tiempo');
+  const [repDiasAbonados, setRepDiasAbonados] = useState('');
   const [repHorasAbonadas, setRepHorasAbonadas] = useState('');
+  const [repMinutosAbonados, setRepMinutosAbonados] = useState('');
   const [repEstado, setRepEstado] = useState('programada');
   const [repObservacion, setRepObservacion] = useState('');
 
@@ -888,35 +903,47 @@ function ReporteSalidaSeguimiento({ initialAccess = null, onBack }) {
     const totalMinutos = repTarget.reposicion_minutos || repTarget.tiempo_solicitado_minutos || 0;
     const minutosPagados = repTarget.reposicion_minutos_pagados || repTarget.datos_formulario?.reposicion_minutos_pagados || 0;
     const minutosPendientes = totalMinutos - minutosPagados;
-    const minutosAbonar = Math.round((parseFloat(repHorasAbonadas) || 0) * 60);
+    const minutosAbonar = getAbonoMinutes({
+      unit: repUnidad,
+      days: repDiasAbonados,
+      hours: repHorasAbonadas,
+      minutes: repMinutosAbonados
+    });
     if (minutosPendientes - minutosAbonar <= 0) {
       setRepEstado('cumplida');
     } else {
       setRepEstado('pendiente');
     }
-  }, [repHorasAbonadas, repTarget]);
+  }, [repDiasAbonados, repHorasAbonadas, repMinutosAbonados, repTarget, repUnidad]);
 
   const handleRepOpen = (row) => {
     setRepTarget(row);
     setRepEstado(row.reposicion_estado === 'cumplida' ? 'cumplida' : 'pendiente');
     setRepObservacion('');
+    setRepUnidad('tiempo');
+    setRepDiasAbonados('');
     setRepHorasAbonadas('');
+    setRepMinutosAbonados('');
     setRepDialogOpen(true);
   };
 
   const submitRep = async () => {
     if (!repTarget) return;
-    if (!repHorasAbonadas || Number(repHorasAbonadas) <= 0) {
-      enqueueSnackbar('La cantidad de horas a abonar debe ser mayor que cero.', { variant: 'error' });
+    const minutosAbonar = getAbonoMinutes({
+      unit: repUnidad,
+      days: repDiasAbonados,
+      hours: repHorasAbonadas,
+      minutes: repMinutosAbonados
+    });
+    if (minutosAbonar <= 0) {
+      enqueueSnackbar('El tiempo a abonar debe ser mayor que cero.', { variant: 'error' });
       return;
     }
     const totalMinutos = repTarget.reposicion_minutos || repTarget.tiempo_solicitado_minutos || 0;
     const minutosPagados = repTarget.reposicion_minutos_pagados || repTarget.datos_formulario?.reposicion_minutos_pagados || 0;
     const minutosPendientes = totalMinutos - minutosPagados;
-    const minutosAbonar = Math.round(Number(repHorasAbonadas) * 60);
-
     if (minutosAbonar > minutosPendientes) {
-      enqueueSnackbar('La cantidad de horas a abonar no puede exceder el tiempo pendiente.', { variant: 'error' });
+      enqueueSnackbar('El abono no puede exceder el tiempo pendiente.', { variant: 'error' });
       return;
     }
     if (minutosPendientes - minutosAbonar <= 0 && repEstado === 'pendiente') {
@@ -928,7 +955,10 @@ function ReporteSalidaSeguimiento({ initialAccess = null, onBack }) {
       const res = await api.patch(`/reporte-salida/solicitudes/${repTarget.id}/reposicion`, {
         estado: repEstado,
         observacion: repObservacion,
-        horasAbonadas: repHorasAbonadas
+        unidadReposicion: repUnidad,
+        diasAbonados: repUnidad === 'dias' ? Number(repDiasAbonados) : 0,
+        horasAbonadas: repUnidad === 'tiempo' ? Number(repHorasAbonadas || 0) : 0,
+        minutosAbonados: repUnidad === 'tiempo' ? Number(repMinutosAbonados || 0) : 0
       });
       if (res.data.success) {
         enqueueSnackbar('Reposición actualizada', { variant: 'success' });
@@ -1750,7 +1780,7 @@ function ReporteSalidaSeguimiento({ initialAccess = null, onBack }) {
 
             {/* Modal de Gestionar Reposición */}
             <Dialog open={repDialogOpen} onClose={() => setRepDialogOpen(false)} maxWidth="sm" fullWidth>
-              <DialogTitle>Gestionar Reposición (Horas)</DialogTitle>
+              <DialogTitle>Gestionar reposición de tiempo</DialogTitle>
               <DialogContent>
                 <Box sx={{ mb: 2, mt: 1 }}>
                   <Typography variant="subtitle2">Consecutivo: {repTarget?.consecutivo}</Typography>
@@ -1763,9 +1793,14 @@ function ReporteSalidaSeguimiento({ initialAccess = null, onBack }) {
                   const totalMinutos = repTarget?.reposicion_minutos || repTarget?.tiempo_solicitado_minutos || 0;
                   const minutosPagados = repTarget?.reposicion_minutos_pagados || repTarget?.datos_formulario?.reposicion_minutos_pagados || 0;
                   const minutosPendientes = totalMinutos - minutosPagados;
-                  const horasPendientes = minutosPendientes / 60;
-                  
-                  if (horasPendientes <= 0) {
+                  const minutosAbono = getAbonoMinutes({
+                    unit: repUnidad,
+                    days: repDiasAbonados,
+                    hours: repHorasAbonadas,
+                    minutes: repMinutosAbonados
+                  });
+
+                  if (minutosPendientes <= 0) {
                     return (
                       <Alert severity="success" sx={{ mb: 2, borderRadius: 2 }}>
                         El/la colaborador(a) ya repuso la totalidad del tiempo pendiente para esta salida.
@@ -1773,55 +1808,89 @@ function ReporteSalidaSeguimiento({ initialAccess = null, onBack }) {
                     );
                   }
 
-                  if (!repHorasAbonadas) {
+                  if (minutosAbono <= 0) {
                     return (
                       <Alert severity="warning" sx={{ mb: 2, borderRadius: 2 }}>
-                        Ingrese las horas repuestas por el colaborador (no puede ser vacío ni 0).
+                        Ingrese los días o el tiempo repuesto por el colaborador (no puede ser vacío ni 0).
                       </Alert>
                     );
                   }
 
-                  if (repHorasAbonadas) {
-                    const val = Number(repHorasAbonadas);
-                    if (val <= 0) {
-                      return <Alert severity="error" sx={{ mb: 2, borderRadius: 2 }}>No se permiten valores negativos ni ceros.</Alert>;
-                    }
-                    if (val > horasPendientes) {
-                      return (
-                        <Alert severity="error" sx={{ mb: 2, borderRadius: 2 }}>
-                          La cantidad ingresada ({val} hrs) supera el saldo pendiente de {horasPendientes.toFixed(1)} horas.
-                        </Alert>
-                      );
-                    }
-                    const restante = horasPendientes - val;
-                    if (restante === 0) {
-                      return <Alert severity="success" sx={{ mb: 2, borderRadius: 2 }}>Correcto. La deuda quedará totalmente saldada.</Alert>;
-                    }
+                  if (minutosAbono > minutosPendientes) {
                     return (
-                      <Alert severity="info" sx={{ mb: 2, borderRadius: 2 }}>
-                        Correcto. Quedará un saldo pendiente de {restante.toFixed(1)} horas.
+                      <Alert severity="error" sx={{ mb: 2, borderRadius: 2 }}>
+                        El abono supera el saldo pendiente de {formatElapsed(minutosPendientes)}.
                       </Alert>
                     );
                   }
-                  return null;
+
+                  const restante = minutosPendientes - minutosAbono;
+                  return restante === 0 ? (
+                    <Alert severity="success" sx={{ mb: 2, borderRadius: 2 }}>
+                      Correcto. La deuda quedará totalmente saldada.
+                    </Alert>
+                  ) : (
+                    <Alert severity="info" sx={{ mb: 2, borderRadius: 2 }}>
+                      Correcto. Quedará un saldo pendiente de {formatElapsed(restante)}.
+                    </Alert>
+                  );
                 })()}
 
-                <TextField
-                  label="Horas a abonar (Repuestas hoy)"
-                  type="number"
-                  value={repHorasAbonadas}
-                  onChange={(e) => setRepHorasAbonadas(e.target.value.replace(/[^0-9]/g, ''))}
-                  fullWidth
-                  margin="normal"
-                  size="small"
-                  disabled={(() => {
-                    const totalMinutos = repTarget?.reposicion_minutos || repTarget?.tiempo_solicitado_minutos || 0;
-                    const minutosPagados = repTarget?.reposicion_minutos_pagados || repTarget?.datos_formulario?.reposicion_minutos_pagados || 0;
-                    return (totalMinutos - minutosPagados) <= 0;
-                  })()}
-                  inputProps={{ min: 0, step: 1 }}
-                  helperText="Ingrese las horas repuestas como número entero (ej: 2). El saldo se descontará automáticamente."
-                />
+                {['1_2_dias', '3_mas_dias'].includes(repTarget?.datos_formulario?.salida?.duracionTipo) && (
+                  <ToggleButtonGroup
+                    exclusive
+                    fullWidth
+                    size="small"
+                    value={repUnidad}
+                    onChange={(_, value) => value && setRepUnidad(value)}
+                    sx={{ mb: 1.5 }}
+                  >
+                    <ToggleButton value="dias" sx={{ fontWeight: 800, textTransform: 'none' }}>
+                      Reponer por días
+                    </ToggleButton>
+                    <ToggleButton value="tiempo" sx={{ fontWeight: 800, textTransform: 'none' }}>
+                      Reponer por horas y minutos
+                    </ToggleButton>
+                  </ToggleButtonGroup>
+                )}
+
+                {repUnidad === 'dias' ? (
+                  <TextField
+                    label="Días laborales repuestos"
+                    type="number"
+                    value={repDiasAbonados}
+                    onChange={(e) => setRepDiasAbonados(e.target.value.replace(/[^0-9]/g, ''))}
+                    fullWidth
+                    size="small"
+                    inputProps={{ min: 1, step: 1 }}
+                    helperText="Cada día laboral equivale a 8 horas y 40 minutos."
+                  />
+                ) : (
+                  <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1.5}>
+                    <TextField
+                      label="Horas repuestas"
+                      type="number"
+                      value={repHorasAbonadas}
+                      onChange={(e) => setRepHorasAbonadas(e.target.value.replace(/[^0-9]/g, ''))}
+                      fullWidth
+                      size="small"
+                      inputProps={{ min: 0, step: 1 }}
+                    />
+                    <TextField
+                      label="Minutos adicionales"
+                      type="number"
+                      value={repMinutosAbonados}
+                      onChange={(e) => {
+                        const value = e.target.value.replace(/[^0-9]/g, '');
+                        if (value === '' || Number(value) <= 59) setRepMinutosAbonados(value);
+                      }}
+                      fullWidth
+                      size="small"
+                      inputProps={{ min: 0, max: 59, step: 1 }}
+                      helperText="De 0 a 59 minutos."
+                    />
+                  </Stack>
+                )}
 
                 <TextField
                   select
@@ -1871,10 +1940,15 @@ function ReporteSalidaSeguimiento({ initialAccess = null, onBack }) {
                     const totalMinutos = repTarget?.reposicion_minutos || repTarget?.tiempo_solicitado_minutos || 0;
                     const minutosPagados = repTarget?.reposicion_minutos_pagados || repTarget?.datos_formulario?.reposicion_minutos_pagados || 0;
                     const minutosPendientes = totalMinutos - minutosPagados;
+                    const minutosAbono = getAbonoMinutes({
+                      unit: repUnidad,
+                      days: repDiasAbonados,
+                      hours: repHorasAbonadas,
+                      minutes: repMinutosAbonados
+                    });
                     if (minutosPendientes <= 0) return true;
-                    if (!repHorasAbonadas || Number(repHorasAbonadas) <= 0) return true;
-                    if (Number(repHorasAbonadas) > (minutosPendientes / 60)) return true;
-                    if (minutosPendientes - (Number(repHorasAbonadas) * 60) <= 0 && repEstado === 'pendiente') return true;
+                    if (minutosAbono <= 0 || minutosAbono > minutosPendientes) return true;
+                    if (minutosPendientes - minutosAbono <= 0 && repEstado === 'pendiente') return true;
                     return false;
                   })()}
                 >

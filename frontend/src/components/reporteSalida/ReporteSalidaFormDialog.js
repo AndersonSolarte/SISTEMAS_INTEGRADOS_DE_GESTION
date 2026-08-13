@@ -1116,7 +1116,6 @@ function ReporteSalidaFormDialog({ open, documento, user, onClose, onSubmitted }
         ['fechaEvento', 'fecha del evento'],
         ['numeroDiasSolicitados', 'número de días solicitados'],
         ['objetoComision', 'objeto de la comisión'],
-        ['centroCosto', 'centro de costos'],
         ['alojamiento', 'alojamiento'],
         ['transporte', 'transporte'],
         ['tipoCuenta', 'tipo de cuenta'],

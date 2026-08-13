@@ -303,6 +303,37 @@ const ensureReporteSalidaAdminBossSupport = async (qi) => {
     defaultValue: 'no_aplica'
   });
 
+  // Regla institucional vigente: los permisos de 1, 2, 3 o más días también
+  // generan reposición. La actualización es idempotente y solo recupera
+  // registros anteriores que todavía estaban marcados como "no aplica".
+  await sequelize.query(`
+    WITH candidatos AS (
+      SELECT
+        "id",
+        CASE
+          WHEN COALESCE("datos_formulario"->'salida'->>'duracionDias', '') ~ '^[0-9]+$'
+            THEN ("datos_formulario"->'salida'->>'duracionDias')::int * 520
+          ELSE COALESCE("tiempo_solicitado_minutos", 0)
+        END AS minutos_calculados
+      FROM "reporte_salida_solicitudes"
+      WHERE "datos_formulario"->'salida'->>'duracionTipo' IN ('1_2_dias', '3_mas_dias')
+        AND "estado" <> 'no_aprobada'
+        AND ("reposicion_aplica" = false OR "reposicion_minutos" IS NULL OR "reposicion_minutos" <= 0)
+    )
+    UPDATE "reporte_salida_solicitudes" AS solicitud
+    SET
+      "reposicion_aplica" = true,
+      "reposicion_minutos" = candidatos.minutos_calculados,
+      "reposicion_estado" = CASE
+        WHEN COALESCE(solicitud."reposicion_minutos_pagados", 0) >= candidatos.minutos_calculados
+          AND candidatos.minutos_calculados > 0 THEN 'cumplida'::"enum_reporte_salida_solicitudes_reposicion_estado"
+        ELSE 'pendiente'::"enum_reporte_salida_solicitudes_reposicion_estado"
+      END
+    FROM candidatos
+    WHERE solicitud."id" = candidatos."id"
+      AND candidatos.minutos_calculados > 0
+  `);
+
   await ensureColumn(qi, 'reporte_salida_solicitudes', 'jefe_aprobado_at', { type: DataTypes.DATE, allowNull: true });
   await ensureColumn(qi, 'reporte_salida_solicitudes', 'vicerrectoria_aprobado_at', { type: DataTypes.DATE, allowNull: true });
   await ensureColumn(qi, 'reporte_salida_solicitudes', 'rectoria_aprobado_at', { type: DataTypes.DATE, allowNull: true });

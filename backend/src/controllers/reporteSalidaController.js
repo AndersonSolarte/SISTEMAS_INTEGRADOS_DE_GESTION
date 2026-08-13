@@ -1164,14 +1164,70 @@ const pendingReposicionWhere = () => ({
   reposicion_estado: { [Op.in]: REPOSICION_PENDIENTE_ESTADOS }
 });
 
-const bossScopeWhere = (user) => {
+const ACADEMIC_PERSONAL_EMAIL = 'sbolanos@unicesmag.edu.co';
+
+const isAcademicInstitutionalAccount = (user = {}) => (
+  sameExactEmail(user.email, ACADEMIC_VICERRECTORIA_EMAIL)
+);
+
+const isAcademicPersonalAccount = (user = {}) => (
+  sameExactEmail(user.email, ACADEMIC_PERSONAL_EMAIL)
+);
+
+const canManageInstitutionalReposicion = async (user = {}) => {
+  // Académica consulta y gestiona desde el buzón institucional únicamente
+  // las reposiciones cuyo jefe inmediato sea Sandra Bolaños.
+  if (isAcademicPersonalAccount(user) || isAcademicInstitutionalAccount(user)) return false;
+  return canManageSeguimientoReportes(user);
+};
+
+const resolveAcademicAuthorityUserIds = async (user = {}) => {
+  if (!isAcademicInstitutionalAccount(user)) return [];
+  const authorityUsers = await User.findAll({
+    attributes: ['id'],
+    where: { email: { [Op.in]: [ACADEMIC_VICERRECTORIA_EMAIL, ACADEMIC_PERSONAL_EMAIL] } }
+  });
+  return authorityUsers.map((item) => Number(item.id)).filter((id) => id > 0);
+};
+
+const isAcademicAuthorityAssignment = (solicitud = {}) => {
+  const jefe = solicitud.jefe_snapshot || {};
+  const jefeEmail = normalizeEmail(jefe.email || jefe.correo);
+  const jefeName = normalizeForMatch(jefe.nombre || jefe.name || jefe.label);
+  return sameExactEmail(jefeEmail, ACADEMIC_VICERRECTORIA_EMAIL)
+    || sameExactEmail(jefeEmail, ACADEMIC_PERSONAL_EMAIL)
+    || jefeName.includes('sandra lucia bolanos delgado');
+};
+
+const bossScopeWhere = (user, academicAuthorityUserIds = []) => {
+  // La bandeja funcional de la Vicerrectoría Académica pertenece al buzón
+  // institucional. La cuenta personal de la Vicerrectora conserva únicamente
+  // sus solicitudes propias y no hereda la gestión del equipo.
+  if (isAcademicPersonalAccount(user)) return { id: -1 };
+  if (isAcademicInstitutionalAccount(user)) {
+    const historicalIdScope = academicAuthorityUserIds.length
+      ? [{ jefe_inmediato_user_id: { [Op.in]: academicAuthorityUserIds } }]
+      : [];
+    return {
+      [Op.or]: [
+        { jefe_snapshot: { [Op.contains]: { email: ACADEMIC_VICERRECTORIA_EMAIL } } },
+        { jefe_snapshot: { [Op.contains]: { email: ACADEMIC_PERSONAL_EMAIL } } },
+        ...historicalIdScope
+      ]
+    };
+  }
   const conditions = [{ jefe_inmediato_user_id: user.id }];
   const email = sanitizeText(user.email, 180);
   if (email) conditions.push({ jefe_snapshot: { [Op.contains]: { email } } });
   return { [Op.or]: conditions };
 };
 
-const isAssignedBoss = (solicitud, user) => {
+const isAssignedBoss = (solicitud, user, academicAuthorityUserIds = []) => {
+  if (isAcademicPersonalAccount(user)) return false;
+  if (isAcademicInstitutionalAccount(user)) {
+    return isAcademicAuthorityAssignment(solicitud)
+      || academicAuthorityUserIds.includes(Number(solicitud?.jefe_inmediato_user_id || 0));
+  }
   const bossId = Number(solicitud?.jefe_inmediato_user_id || 0);
   const userId = Number(user?.id || 0);
   if (bossId > 0 && userId > 0 && bossId === userId) return true;
@@ -1184,25 +1240,28 @@ const ownPendingReposicionWhere = (user) => ({
   user_id: user.id
 });
 
-const bossPendingReposicionWhere = (user) => ({
+const bossPendingReposicionWhere = (user, academicAuthorityUserIds = []) => ({
   ...pendingReposicionWhere(),
-  ...bossScopeWhere(user)
+  ...bossScopeWhere(user, academicAuthorityUserIds)
 });
 
 const resolveSeguimientoAccess = async (user) => {
+  const isAcademicInstitutional = isAcademicInstitutionalAccount(user);
+  const academicAuthorityUserIds = await resolveAcademicAuthorityUserIds(user);
   const [canManageAll, canViewReporteSalidaByPermission, canViewEstadisticasByPermission, ownPending, bossPending] = await Promise.all([
-    canManageSeguimientoReportes(user),
+    canManageInstitutionalReposicion(user),
     canViewReporteSalidaModule(user),
     canViewAusentismoModule(user),
     ReporteSalidaSolicitud.count({ where: ownPendingReposicionWhere(user) }),
-    ReporteSalidaSolicitud.count({ where: bossPendingReposicionWhere(user) })
+    ReporteSalidaSolicitud.count({ where: bossPendingReposicionWhere(user, academicAuthorityUserIds) })
   ]);
   const isPlaneacionReadOnly = String(user?.role || '') === ROLES.PLANEACION_ESTRATEGICA;
   const canViewAll = canManageAll
     || isPlaneacionReadOnly
     || canViewReporteSalidaByPermission
     || canViewEstadisticasByPermission;
-  const canViewReporteSalida = canManageAll
+  const canViewReporteSalida = isAcademicInstitutional
+    || canManageAll
     || isPlaneacionReadOnly
     || canViewReporteSalidaByPermission
     || ownPending > 0
@@ -1210,7 +1269,8 @@ const resolveSeguimientoAccess = async (user) => {
   const canViewEstadisticas = canManageAll || canViewEstadisticasByPermission;
 
   let mode = 'sin_pendientes';
-  if (canManageAll) mode = 'gestion_humana';
+  if (isAcademicInstitutional) mode = 'vicerrectoria_academica';
+  else if (canManageAll) mode = 'gestion_humana';
   else if (isPlaneacionReadOnly) mode = 'planeacion_estrategica';
   else if (canViewReporteSalidaByPermission || canViewEstadisticasByPermission) mode = 'consulta_institucional';
   else if (bossPending > 0) mode = ownPending > 0 ? 'jefe_y_colaborador' : 'jefe';
@@ -1223,11 +1283,62 @@ const resolveSeguimientoAccess = async (user) => {
     canViewReporteSalidaByPermission,
     canViewEstadisticasByPermission,
     canViewAll,
+    academicAssignmentScope: isAcademicInstitutional,
     canManageAll,
     canValidateReposicion: canManageAll,
     canManageTeamReposicion: bossPending > 0,
     mode,
     counts: { ownPending, bossPending }
+  };
+};
+
+const REPOSICION_WORKDAY_MINUTES = 520;
+
+const resolveReposicionValues = ({ isOficio = false, requestedMinutes = 0, bodyMinutes = 0, durationDays = 0 } = {}) => {
+  const calculatedMinutes = Math.max(0, Number(requestedMinutes) || 0);
+  const declaredMinutes = Math.max(0, Number(bodyMinutes) || 0);
+  const days = Math.max(0, Number(durationDays) || 0);
+  const minutes = isOficio
+    ? (days > 0 ? Math.round(days * REPOSICION_WORKDAY_MINUTES) : calculatedMinutes)
+    : declaredMinutes;
+  return { minutes, applies: minutes > 0 };
+};
+
+const resolveReposicionAbono = (payload = {}) => {
+  const unit = String(payload.unidadReposicion || payload.unidad || 'tiempo').trim().toLowerCase();
+  if (unit === 'dias') {
+    const days = Number(payload.diasAbonados);
+    if (!Number.isInteger(days) || days <= 0) {
+      return { valid: false, message: 'La cantidad de dias a reponer debe ser un numero entero mayor que cero.' };
+    }
+    return {
+      valid: true,
+      unit: 'dias',
+      days,
+      hours: 0,
+      extraMinutes: 0,
+      minutes: days * REPOSICION_WORKDAY_MINUTES,
+      label: `${days} dia(s) laboral(es)`
+    };
+  }
+
+  const hours = Number(payload.horasAbonadas || 0);
+  const extraMinutes = Number(payload.minutosAbonados || 0);
+  if (!Number.isFinite(hours) || hours < 0 || !Number.isInteger(extraMinutes) || extraMinutes < 0 || extraMinutes > 59) {
+    return { valid: false, message: 'Digite horas validas y minutos entre 0 y 59.' };
+  }
+  const minutes = Math.round(hours * 60) + extraMinutes;
+  if (minutes <= 0) {
+    return { valid: false, message: 'El tiempo a abonar debe ser mayor que cero.' };
+  }
+  return {
+    valid: true,
+    unit: 'tiempo',
+    days: 0,
+    hours,
+    extraMinutes,
+    minutes,
+    label: `${Math.floor(minutes / 60)} h ${minutes % 60} min`
   };
 };
 
@@ -3242,8 +3353,14 @@ const radicarSolicitud = async (req, res) => {
     }
 
     const bodyReposicionMinutos = parseInt(req.body.reposicion_minutos, 10);
-    const finalReposicionMinutos = isOficio ? 0 : (isNaN(bodyReposicionMinutos) ? 0 : bodyReposicionMinutos);
-    const reposicionAplica = !isOficio && finalReposicionMinutos > 0;
+    const reposicionValues = resolveReposicionValues({
+      isOficio,
+      requestedMinutes,
+      bodyMinutes: isNaN(bodyReposicionMinutos) ? 0 : bodyReposicionMinutos,
+      durationDays: duracionDiasSolicitada
+    });
+    const finalReposicionMinutos = reposicionValues.minutes;
+    const reposicionAplica = reposicionValues.applies;
     const hasReposicionPlan = Boolean(reposicion.fecha || reposicion.fechaFin || reposicion.horaInicio || reposicion.horaFin);
     const reposicionEstado = reposicionAplica ? (hasReposicionPlan ? 'programada' : 'pendiente') : 'no_aplica';
 
@@ -4069,9 +4186,16 @@ const getSeguimientoPersonal = async (req, res) => {
     let where = {};
     if (access.canViewAll) {
       if (estado) where.estado = estado;
+    } else if (access.academicAssignmentScope) {
+      const academicAuthorityUserIds = await resolveAcademicAuthorityUserIds(req.user);
+      where = bossScopeWhere(req.user, academicAuthorityUserIds);
+      if (estado) where = { [Op.and]: [where, { estado }] };
     } else {
       const scopedConditions = [];
-      if (access.counts.bossPending > 0) scopedConditions.push(bossPendingReposicionWhere(req.user));
+      if (access.counts.bossPending > 0) {
+        const academicAuthorityUserIds = await resolveAcademicAuthorityUserIds(req.user);
+        scopedConditions.push(bossPendingReposicionWhere(req.user, academicAuthorityUserIds));
+      }
       if (access.counts.ownPending > 0) scopedConditions.push(ownPendingReposicionWhere(req.user));
       where = scopedConditions.length === 1 ? scopedConditions[0] : { [Op.or]: scopedConditions };
       if (estado) where = { [Op.and]: [where, { estado }] };
@@ -4086,12 +4210,19 @@ const getSeguimientoPersonal = async (req, res) => {
       queryOptions.offset = (page - 1) * limit;
     }
     const { count, rows } = await ReporteSalidaSolicitud.findAndCountAll(queryOptions);
+    const academicAuthorityUserIds = await resolveAcademicAuthorityUserIds(req.user);
 
     res.json({
       success: true,
       data: {
         access,
-        solicitudes: rows.map(serializeSolicitud),
+        solicitudes: rows.map((row) => ({
+          ...serializeSolicitud(row),
+          canManageReposicion: Boolean(
+            access.canManageAll
+            || (access.canManageTeamReposicion && isAssignedBoss(row, req.user, academicAuthorityUserIds))
+          )
+        })),
         pagination: { total: count, page, limit: limit || count, totalPages: limit ? Math.ceil(count / limit) : 1 }
       }
     });
@@ -4117,14 +4248,15 @@ const getSeguimientoBadge = async (req, res) => {
 const actualizarReposicion = async (req, res) => {
   if (!(await getReporteSalidaFeatureState())) return featureDisabled(res);
   try {
-    const tienePrivilegio = await canManageSeguimientoReportes(req.user);
+    const tienePrivilegio = await canManageInstitutionalReposicion(req.user);
     
     const solicitud = await ReporteSalidaSolicitud.findByPk(req.params.id);
     if (!solicitud) {
       return res.status(404).json({ success: false, message: 'Solicitud no encontrada.' });
     }
 
-    if (!tienePrivilegio && !isAssignedBoss(solicitud, req.user)) {
+    const academicAuthorityUserIds = await resolveAcademicAuthorityUserIds(req.user);
+    if (!tienePrivilegio && !isAssignedBoss(solicitud, req.user, academicAuthorityUserIds)) {
       return res.status(403).json({ success: false, message: 'No tienes permiso para actualizar la reposición de esta solicitud.' });
     }
     if (!solicitud.reposicion_aplica) {
@@ -4135,11 +4267,15 @@ const actualizarReposicion = async (req, res) => {
     }
 
     let nextEstado = sanitizeText(req.body?.estado, 40);
-    const horasAbonadas = parseFloat(req.body?.horasAbonadas) || 0;
-    if (horasAbonadas <= 0) {
-      return res.status(400).json({ success: false, message: 'La cantidad de horas a abonar debe ser mayor que cero.' });
+    const abono = resolveReposicionAbono(req.body || {});
+    if (!abono.valid) {
+      return res.status(400).json({ success: false, message: abono.message });
     }
-    const minutosAbonados = Math.round(horasAbonadas * 60);
+    const durationType = solicitud.datos_formulario?.salida?.duracionTipo;
+    if (abono.unit === 'dias' && !['1_2_dias', '3_mas_dias'].includes(durationType)) {
+      return res.status(400).json({ success: false, message: 'Esta solicitud solo admite reposicion por horas y minutos.' });
+    }
+    const minutosAbonados = abono.minutes;
 
     const previousData = solicitud.datos_formulario || {};
     const minutosYaPagados = previousData.reposicion_minutos_pagados || 0;
@@ -4151,10 +4287,9 @@ const actualizarReposicion = async (req, res) => {
 
     const minutosPendientes = tiempoTotal - minutosYaPagados;
     if (minutosAbonados > minutosPendientes) {
-      const horasPendientes = (minutosPendientes / 60).toFixed(2);
       return res.status(400).json({
         success: false,
-        message: `La cantidad de horas ingresada (${horasAbonadas}h) excede el saldo de tiempo pendiente de reponer (${horasPendientes}h).`
+        message: `El abono ingresado (${abono.label}) excede el saldo pendiente de ${formatMinutes(minutosPendientes)}.`
       });
     }
 
@@ -4192,7 +4327,7 @@ const actualizarReposicion = async (req, res) => {
     
     const actorName = req.user.nombre || 'Gestion del Talento Humano';
     const msgComentario = observacionNueva ? ` - "${observacionNueva}"` : '';
-    const entradaLog = `[${formattedTime}] ${actorName}: Abonó ${horasAbonadas} hrs${msgComentario}`;
+    const entradaLog = `[${formattedTime}] ${actorName}: Abono ${abono.label} (${minutosAbonados} minutos)${msgComentario}`;
     
     observacionAcumulada = observacionAcumulada 
       ? `${observacionAcumulada}\n${entradaLog}`
@@ -4207,12 +4342,23 @@ const actualizarReposicion = async (req, res) => {
         reposicion_validacion: {
           estado: nextEstado,
           observacion: observacionNueva,
-          horas_abonadas_esta_sesion: horasAbonadas,
+          unidad_abono: abono.unit,
+          dias_abonados_esta_sesion: abono.days,
+          horas_abonadas_esta_sesion: abono.hours,
+          minutos_adicionales_esta_sesion: abono.extraMinutes,
+          minutos_abonados_esta_sesion: minutosAbonados,
           validado_por: buildSnapshot(req.user),
           validado_at: now.toISOString()
         }
       },
-      trazabilidad: appendTrace(solicitud, `reposicion_${nextEstado}`, req.user, { observacion: observacionNueva, horas_abonadas: horasAbonadas })
+      trazabilidad: appendTrace(solicitud, `reposicion_${nextEstado}`, req.user, {
+        observacion: observacionNueva,
+        unidad_abono: abono.unit,
+        dias_abonados: abono.days,
+        horas_abonadas: abono.hours,
+        minutos_adicionales: abono.extraMinutes,
+        minutos_abonados: minutosAbonados
+      })
     });
 
     await solicitud.reload();
@@ -6386,12 +6532,12 @@ const getReposicionesPropias = async (req, res) => {
 
 const getReposicionesEquipo = async (req, res) => {
   try {
-    const tienePrivilegio = await canManageSeguimientoReportes(req.user);
+    const tienePrivilegio = await canManageInstitutionalReposicion(req.user);
     
-    const whereClause = { reposicion_aplica: true };
-    if (!tienePrivilegio) {
-      whereClause.jefe_inmediato_user_id = req.user.id;
-    }
+    const academicAuthorityUserIds = await resolveAcademicAuthorityUserIds(req.user);
+    const whereClause = tienePrivilegio
+      ? { reposicion_aplica: true }
+      : { reposicion_aplica: true, ...bossScopeWhere(req.user, academicAuthorityUserIds) };
 
     const solicitudes = await ReporteSalidaSolicitud.findAll({
       where: whereClause,
@@ -6540,7 +6686,13 @@ module.exports = {
   getInitialApprovalRecipientEmail,
   getJefeCopyRecipientEmail,
   getDependencyNotificationTargets,
-  isDependencyApprovalBlocked
+  isDependencyApprovalBlocked,
+  bossScopeWhere,
+  isAssignedBoss,
+  isAcademicAuthorityAssignment,
+  resolveReposicionValues,
+  resolveReposicionAbono,
+  REPOSICION_WORKDAY_MINUTES
 };
 
 

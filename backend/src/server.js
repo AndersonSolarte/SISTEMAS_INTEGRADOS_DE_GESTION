@@ -97,7 +97,7 @@ app.use((err, req, res, next) => {
 
   if (err instanceof multer.MulterError) {
     if (err.code === 'LIMIT_FILE_SIZE') {
-      const maxMb = Number(process.env.EXCEL_UPLOAD_MAX_MB || 50);
+      const maxMb = Number(process.env.EXCEL_UPLOAD_MAX_MB || 500);
       return res.status(413).json({
         success: false,
         status: 413,

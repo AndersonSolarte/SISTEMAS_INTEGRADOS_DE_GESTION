@@ -46,7 +46,7 @@ const stripAccents = (value) =>
     .replace(/__enie_min__/g, 'ñ')
     .replace(/__enie_may__/g, 'Ñ');
 
-const sanitizeEmailText = (value) => {
+const sanitizeEmailTextLegacy = (value) => {
   if (value === undefined || value === null) return value;
   let text = String(value);
   const repairCommonWords = (input) => String(input)
@@ -152,6 +152,39 @@ const sanitizeEmailText = (value) => {
     .replace(/\bautomtico\b/g, 'automatico');
 
   return repairCommonWords(stripAccents(text));
+};
+
+// Preserve valid UTF-8 (including Spanish accents) and only repair text that
+// actually contains the characteristic markers of UTF-8 decoded as Latin-1.
+// The former sanitizer stripped accents from every outgoing message and could
+// turn words such as "Técnico" and "viáticos" into corrupted text.
+const mojibakeScore = (value) => {
+  const matches = String(value || '').match(/(?:Ã.|Â.|â(?:€|€™|€œ|€|€“|€”|€¢)|ï¿½|�)/g);
+  return matches ? matches.length : 0;
+};
+
+const repairMojibake = (value) => {
+  let text = String(value);
+
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    const currentScore = mojibakeScore(text);
+    if (currentScore === 0) break;
+
+    const candidate = Buffer.from(text, 'latin1').toString('utf8');
+    const candidateScore = mojibakeScore(candidate);
+
+    // A replacement character means the conversion lost information. In that
+    // case retain the original value instead of making the corruption worse.
+    if (!candidate || candidate.includes('\uFFFD') || candidateScore >= currentScore) break;
+    text = candidate;
+  }
+
+  return text;
+};
+
+const sanitizeEmailText = (value) => {
+  if (value === undefined || value === null) return value;
+  return repairMojibake(value);
 };
 
 const normalizeRecipient = (value) => {
@@ -544,5 +577,9 @@ module.exports = {
   sendTemporaryPasswordEmail,
   sendInstitutionalEmail,
   renderInstitutionalTemplate,
-  escapeHtml
+  escapeHtml,
+  _internals: {
+    sanitizeEmailText,
+    repairMojibake
+  }
 };

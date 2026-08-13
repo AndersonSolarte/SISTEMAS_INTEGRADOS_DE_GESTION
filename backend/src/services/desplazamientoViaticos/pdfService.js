@@ -307,13 +307,28 @@ const buildLiquidationDefinition = (solicitud) => {
           [label('Consecutivo'), cell(solicitud.consecutivo), label('Fecha de solicitud'), cell(formatDate(solicitud.created_at || new Date()))],
           [label('Colaborador'), cell(personal.nombre), label('Documento'), cell(personal.documento)],
           [label('Dependencia'), cell(laboral.dependencia), label('Cargo'), cell(laboral.cargo)],
+          [label('Correo electrónico'), cell(personal.email || personal.correo), label('Fecha del evento'), cell(formatDate(viaticos.fechaEvento))],
           [label('Lugar a visitar'), cell(viaticos.lugarVisitar), label('No. días'), cell(calculateDays(salida, viaticos.numeroDiasSolicitados))],
           [label('Salida'), cell(`${formatDate(salida.fecha)} · ${formatTime(salida.horaInicio)}`), label('Regreso'), cell(`${formatDate(salida.fechaRegreso)} · ${formatTime(salida.horaFin)}`)],
-          [label('Objeto de la comisión'), { ...cell(viaticos.objetoComision), colSpan: 3 }, {}, {}]
+          [label('Centro de costos'), cell(viaticos.centroCosto), label('Alojamiento / Transporte'), cell([viaticos.alojamiento, viaticos.transporte].filter(Boolean).join(' / '))],
+          [label('Tipo de cuenta'), cell(viaticos.tipoCuenta), label('Entidad / No. cuenta'), cell([viaticos.entidadBancaria, viaticos.numeroCuenta].filter(Boolean).join(' · '))],
+          [label('Objeto de la comisión'), { ...cell(viaticos.objetoComision), colSpan: 3 }, {}, {}],
+          [label('Observaciones especiales'), { ...cell(viaticos.observacionesEspeciales || 'Sin observaciones'), colSpan: 3 }, {}, {}]
         ]
       },
       margin: [0, 0, 0, 14]
     },
+    {
+      table: {
+        widths: [105, '*'],
+        body: [[
+          label('Autorización'),
+          cell(viaticos.autorizacionAceptada ? `Aceptada electrónicamente. ${AUTHORIZATION_TEXT}` : AUTHORIZATION_TEXT)
+        ]]
+      },
+      margin: [0, 0, 0, 7]
+    },
+    { text: LEGALIZATION_NOTICE, bold: true, fontSize: 8.5, color: '#92400e', fillColor: '#fffbeb', margin: [7, 6, 7, 8] },
     {
       table: {
         headerRows: 1,
