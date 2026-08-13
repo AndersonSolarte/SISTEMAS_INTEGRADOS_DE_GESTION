@@ -1,16 +1,25 @@
 import io
 import json
+import os
 import re
 import struct
 
 from fastapi import APIRouter, File, Form, HTTPException, UploadFile
 from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import StreamingResponse
+from pydantic import BaseModel
 
 from ..services.contexto_externo_cleaner import CleaningError, clean_contexto_externo_file, normalize_key
 
 
 router = APIRouter()
+
+
+class CleanPathPayload(BaseModel):
+    input_path: str
+    output_path: str
+    lista: str
+    reglas: list[dict] = []
 
 
 @router.post("/limpiar")
@@ -59,3 +68,36 @@ async def limpiar_contexto_externo(
     }, ensure_ascii=False).encode("utf-8")
     envelope = b"CXCLN1" + struct.pack(">I", len(metadata)) + metadata + result.content
     return StreamingResponse(io.BytesIO(envelope), media_type="application/octet-stream", headers=headers)
+
+
+@router.post("/limpiar-path")
+async def limpiar_contexto_externo_path(payload: CleanPathPayload):
+    if not os.path.exists(payload.input_path):
+        raise HTTPException(status_code=400, detail="El archivo de entrada no existe en disco.")
+    try:
+        os.makedirs(os.path.dirname(payload.output_path), exist_ok=True)
+        with open(payload.input_path, "rb") as f:
+            result = await run_in_threadpool(
+                clean_contexto_externo_file,
+                f,
+                os.path.basename(payload.input_path),
+                payload.lista,
+                payload.reglas,
+                payload.output_path,
+            )
+
+        return {
+            "success": True,
+            "inputRows": result.input_rows,
+            "outputRows": result.output_rows,
+            "duplicatesRemoved": result.duplicates_removed,
+            "emptyRowsRemoved": result.empty_rows_removed,
+            "matchedColumns": result.matched_columns,
+            "correctionsCount": result.corrections_count,
+            "sourceSheet": result.source_sheet,
+            "correcciones": result.corrections or [],
+        }
+    except CleaningError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"No fue posible limpiar el archivo: {exc}") from exc

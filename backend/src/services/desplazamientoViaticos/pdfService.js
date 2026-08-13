@@ -58,19 +58,29 @@ const findTrace = (solicitud, key) => [...(solicitud.trazabilidad || [])].revers
   || entry.event === `completado_${key}`
   || entry.event === `no_aprobado_${key}`
   || (key === 'jefe' && entry.event === 'aprobada_jefe')
+  || (key === 'financiera_previa' && entry.event === 'aprobada_vicerrectoria_financiera')
   || (key === 'vicerrectoria_dependencia' && entry.event === 'aprobada_vicerrectoria_academica')
   || (key === 'sst' && entry.event === 'aprobada_sst')
   || (key === 'rectoria' && entry.event === 'aprobada_rectoria')
   || (key === 'gestion_humana' && entry.event === 'aprobada_gestion_humana')
 ));
 
-const buildApprovalTable = (solicitud) => ({
+const buildApprovalTable = (solicitud) => {
+  const radication = (solicitud.trazabilidad || []).find((entry) => entry.event === 'radicada');
+  const collaborator = solicitud.solicitante_snapshot || {};
+  return ({
   margin: [0, 10, 0, 0],
   table: {
     headerRows: 1,
     widths: ['*', 90, 135, 100],
     body: [
       [label('Etapa'), label('Estado'), label('Responsable'), label('Fecha')],
+      [
+        cell('Radicación y aceptación de la autorización por el colaborador'),
+        cell(radication ? 'Firmado electrónicamente' : 'Pendiente'),
+        cell(radication?.actor?.nombre || collaborator.nombre || collaborator.email || ''),
+        cell(radication?.at ? new Date(radication.at).toLocaleString('es-CO') : '')
+      ],
       ...(solicitud.plan_aprobacion || []).map((step) => {
         const trace = findTrace(solicitud, step.key);
         const rejected = trace?.event === `no_aprobado_${step.key}`;
@@ -84,11 +94,11 @@ const buildApprovalTable = (solicitud) => ({
     ]
   },
   layout: 'lightHorizontalLines'
-});
+  });
+};
 
 const FINANCIAL_SIGNATURE_STAGES = [
   { key: 'tecnico_contable', label: 'Técnico contable' },
-  { key: 'financiera_final', label: 'Vicerrectoría Financiera y de Desarrollo Institucional' },
   { key: 'tesoreria', label: 'Tesorería / Pagaduría – autorización de pago' }
 ];
 
@@ -144,7 +154,7 @@ const buildDefinition = (solicitud, { includeFinancial = true } = {}) => {
   const salida = solicitud.datos_salida || {};
   const viaticos = solicitud.datos_viaticos || {};
   const liquidacion = solicitud.liquidacion || {};
-  const permitSteps = (solicitud.plan_aprobacion || []).filter((step) => ['jefe', 'vicerrectoria_dependencia', 'sst', 'rectoria', 'gestion_humana'].includes(step.key));
+  const permitSteps = (solicitud.plan_aprobacion || []).filter((step) => ['jefe', 'financiera_previa', 'vicerrectoria_dependencia', 'sst', 'rectoria', 'gestion_humana'].includes(step.key));
   const content = [
     {
       table: {
@@ -328,7 +338,7 @@ const buildLiquidationDefinition = (solicitud) => {
     {
       unbreakable: true,
       table: {
-        widths: ['33.33%', '33.33%', '33.34%'],
+        widths: ['50%', '50%'],
         body: [[...financialSteps.map((stage) => financialSignatureCell(solicitud, stage, transactionId))]]
       },
       layout: {

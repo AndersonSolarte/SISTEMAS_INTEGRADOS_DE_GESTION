@@ -66,6 +66,33 @@ const SolicitudViaticosFields = ({
     '& .MuiInputBase-input': { py: 1, fontSize: 13 },
     '& .MuiInputLabel-root': { fontSize: 13 }
   };
+  const commissionTextareaSx = {
+    width: '100%',
+    height: 76,
+    boxSizing: 'border-box',
+    resize: 'vertical',
+    display: 'block',
+    px: 1.5,
+    py: 1.2,
+    border: '1px solid #cbd5e1',
+    borderRadius: 1.8,
+    outline: 'none',
+    bgcolor: '#fff',
+    color: '#1e293b',
+    fontFamily: 'inherit',
+    fontSize: 13,
+    lineHeight: 1.5,
+    transition: 'border-color 160ms ease, box-shadow 160ms ease',
+    '&::placeholder': { color: '#94a3b8', opacity: 1 },
+    '&:hover': { borderColor: '#94a3b8' },
+    '&:focus': {
+      borderColor: '#2563eb',
+      borderWidth: '2px',
+      px: '11px',
+      py: '8px',
+      boxShadow: '0 0 0 3px rgba(37, 99, 235, 0.10)'
+    }
+  };
   const bankOption = viaticos.entidadBancariaOpcion || (BANK_OPTIONS.includes(viaticos.entidadBancaria) ? viaticos.entidadBancaria : (viaticos.entidadBancaria ? 'Otro' : ''));
 
   return (
@@ -127,44 +154,90 @@ const SolicitudViaticosFields = ({
           helperText={salidaRangeIssue && salida.horaInicio && salida.horaFin ? salidaRangeIssue : ''}
         />
 
-        <TextField sx={{ ...compactSx, gridColumn: { sm: 'span 2' } }} size="small" required multiline minRows={2} label="Objeto de la comisión" value={viaticos.objetoComision || ''} onChange={(e) => onObjetoChange(e.target.value)} />
-        <TextField sx={{ ...compactSx, gridColumn: { sm: 'span 2' } }} size="small" multiline minRows={2} label="Observaciones especiales" value={viaticos.observacionesEspeciales || ''} onChange={(e) => onChange('observacionesEspeciales', e.target.value)} />
-
-        <SectionLabel>Logística y consignación</SectionLabel>
-        <TextField sx={compactSx} size="small" required label="Centro de costos" value={viaticos.centroCosto || ''} onChange={(e) => onChange('centroCosto', e.target.value)} />
-        <TextField sx={compactSx} size="small" required select label="Alojamiento" value={viaticos.alojamiento || ''} onChange={(e) => onChange('alojamiento', e.target.value)}>
-          <MenuItem value="Hotel">Hotel</MenuItem>
-          <MenuItem value="Casa de familia">Casa de familia</MenuItem>
-          <MenuItem value="No requiere">No requiere</MenuItem>
-        </TextField>
-        <TextField sx={compactSx} size="small" required select label="Transporte" value={viaticos.transporte || ''} onChange={(e) => onChange('transporte', e.target.value)}>
-          <MenuItem value="Terrestre">Terrestre</MenuItem>
-          <MenuItem value="Aéreo">Aéreo</MenuItem>
-          <MenuItem value="Mixto">Mixto</MenuItem>
-        </TextField>
-        <TextField sx={compactSx} size="small" required select label="Tipo de cuenta" value={viaticos.tipoCuenta || ''} onChange={(e) => onChange('tipoCuenta', e.target.value)}>
-          <MenuItem value="Ahorros">Ahorros</MenuItem>
-          <MenuItem value="Corriente">Corriente</MenuItem>
-        </TextField>
-        <TextField
-          sx={compactSx}
-          size="small"
-          required
-          select
-          label="Entidad bancaria"
-          value={bankOption}
-          onChange={(e) => {
-            const option = e.target.value;
-            onChange('entidadBancariaOpcion', option);
-            onChange('entidadBancaria', option === 'Otro' ? '' : option);
+        <Box
+          sx={{
+            gridColumn: '1 / -1',
+            display: 'grid',
+            gridTemplateColumns: 'minmax(0, 1fr)',
+            gap: 1.1,
+            alignItems: 'stretch'
           }}
         >
-          {BANK_OPTIONS.map((bank) => <MenuItem key={bank} value={bank}>{bank}</MenuItem>)}
-        </TextField>
-        {bankOption === 'Otro' && (
-          <TextField sx={compactSx} size="small" required label="¿Cuál entidad bancaria?" value={viaticos.entidadBancaria || ''} onChange={(e) => onChange('entidadBancaria', e.target.value)} />
-        )}
-        <TextField sx={compactSx} size="small" required label="Número de cuenta" value={viaticos.numeroCuenta || ''} onChange={(e) => onChange('numeroCuenta', e.target.value.replace(/[^0-9-]/g, ''))} />
+          <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.55, minWidth: 0 }}>
+            <Typography component="label" htmlFor="viaticos-objeto-comision" sx={{ pl: 0.25, fontSize: 11.5, lineHeight: 1.2, fontWeight: 800, color: '#475569' }}>
+              Objeto de la comisión <Box component="span" sx={{ color: '#dc2626' }}>*</Box>
+            </Typography>
+            <Box
+              component="textarea"
+              id="viaticos-objeto-comision"
+              sx={commissionTextareaSx}
+              required
+              placeholder="Describa claramente el propósito de la comisión"
+              value={viaticos.objetoComision || ''}
+              onChange={(e) => onObjetoChange(e.target.value)}
+              aria-label="Objeto de la comisión"
+            />
+          </Box>
+          <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.55, minWidth: 0 }}>
+            <Typography component="label" htmlFor="viaticos-observaciones-especiales" sx={{ pl: 0.25, fontSize: 11.5, lineHeight: 1.2, fontWeight: 800, color: '#475569' }}>
+              Observaciones especiales
+            </Typography>
+            <Box
+              component="textarea"
+              id="viaticos-observaciones-especiales"
+              sx={commissionTextareaSx}
+              placeholder="Agregue indicaciones o condiciones especiales (opcional)"
+              value={viaticos.observacionesEspeciales || ''}
+              onChange={(e) => onChange('observacionesEspeciales', e.target.value)}
+              aria-label="Observaciones especiales"
+            />
+          </Box>
+        </Box>
+
+        <SectionLabel>Logística y consignación</SectionLabel>
+        <Box
+          sx={{
+            gridColumn: '1 / -1',
+            display: 'grid',
+            gridTemplateColumns: { xs: '1fr', sm: 'repeat(2, minmax(0, 1fr))', md: 'repeat(3, minmax(0, 1fr))' },
+            gap: 1.1
+          }}
+        >
+          <TextField sx={compactSx} size="small" required label="Centro de costos" value={viaticos.centroCosto || ''} onChange={(e) => onChange('centroCosto', e.target.value)} />
+          <TextField sx={compactSx} size="small" required select label="Alojamiento" value={viaticos.alojamiento || ''} onChange={(e) => onChange('alojamiento', e.target.value)}>
+            <MenuItem value="Hotel">Hotel</MenuItem>
+            <MenuItem value="Casa de familia">Casa de familia</MenuItem>
+            <MenuItem value="No requiere">No requiere</MenuItem>
+          </TextField>
+          <TextField sx={compactSx} size="small" required select label="Transporte" value={viaticos.transporte || ''} onChange={(e) => onChange('transporte', e.target.value)}>
+            <MenuItem value="Terrestre">Terrestre</MenuItem>
+            <MenuItem value="Aéreo">Aéreo</MenuItem>
+            <MenuItem value="Mixto">Mixto</MenuItem>
+          </TextField>
+          <TextField sx={compactSx} size="small" required select label="Tipo de cuenta" value={viaticos.tipoCuenta || ''} onChange={(e) => onChange('tipoCuenta', e.target.value)}>
+            <MenuItem value="Ahorros">Ahorros</MenuItem>
+            <MenuItem value="Corriente">Corriente</MenuItem>
+          </TextField>
+          <TextField
+            sx={compactSx}
+            size="small"
+            required
+            select
+            label="Entidad bancaria"
+            value={bankOption}
+            onChange={(e) => {
+              const option = e.target.value;
+              onChange('entidadBancariaOpcion', option);
+              onChange('entidadBancaria', option === 'Otro' ? '' : option);
+            }}
+          >
+            {BANK_OPTIONS.map((bank) => <MenuItem key={bank} value={bank}>{bank}</MenuItem>)}
+          </TextField>
+          {bankOption === 'Otro' && (
+            <TextField sx={compactSx} size="small" required label="¿Cuál entidad bancaria?" value={viaticos.entidadBancaria || ''} onChange={(e) => onChange('entidadBancaria', e.target.value)} />
+          )}
+          <TextField sx={compactSx} size="small" required label="Número de cuenta" value={viaticos.numeroCuenta || ''} onChange={(e) => onChange('numeroCuenta', e.target.value.replace(/[^0-9-]/g, ''))} />
+        </Box>
       </Box>
 
       <Box sx={{ px: { xs: 1.2, md: 1.5 }, pb: 1.4 }}>

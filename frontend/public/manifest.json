@@ -3,17 +3,12 @@
   "name": "Sistema Interno de Aseguramiento de la Calidad - Universidad CESMAG",
   "icons": [
     {
-      "src": "Logo Universidad CESMAG.png",
+      "src": "logo192.png",
       "sizes": "192x192",
       "type": "image/png"
     },
     {
-      "src": "Logo Universidad CESMAG.png",
-      "type": "image/png",
-      "sizes": "192x192"
-    },
-    {
-      "src": "Logo Universidad CESMAG.png",
+      "src": "logo512.png",
       "type": "image/png",
       "sizes": "512x512"
     }

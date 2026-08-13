@@ -49,6 +49,9 @@ tmp_docx_inspect/
 backend/tmp_docx_v2/
 backend/uploads/
 .docker-tmp/
+python-service/openpyxl.*
+python-service/test_*.xlsx
+python-service/contexto_externo_*/
 
 # Backups y dumps locales
 backups/

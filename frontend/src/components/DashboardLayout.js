@@ -11,12 +11,14 @@ import {
   Hub as HubIcon,
   Favorite as FavoriteIcon,
   AssignmentTurnedIn as AssignmentTurnedInIcon
+  ,ReceiptLong as ReceiptLongIcon
 } from '@mui/icons-material';
 import { useAuth } from '../context/AuthContext';
 import { ROLE_LABELS, ROLES } from '../constants/roles';
 import VigiladaMineducacion from './VigiladaMineducacion';
 import planAccionWorkflowService from '../services/planAccionWorkflowService';
 import reporteSalidaService from '../services/reporteSalidaService';
+import { getEstadoLegalizacion } from '../services/legalizacionViaticosService';
 
 const drawerWidth = 280;
 const FIXED_SECTION_ORDER = [
@@ -38,6 +40,7 @@ function DashboardLayout() {
   const [openAdministracionSistema, setOpenAdministracionSistema] = useState(false);
   const [planAccionPendientes, setPlanAccionPendientes] = useState(0);
   const [reposicionBadge, setReposicionBadge] = useState(null);
+  const [legalizacionesPendientes, setLegalizacionesPendientes] = useState(0);
 
   const refrescarBadgePlanAccion = useCallback(async () => {
     if (!user?.role) return;
@@ -62,10 +65,21 @@ function DashboardLayout() {
     }
   }, [user]);
 
+  const refrescarLegalizaciones = useCallback(async () => {
+    if (!user) return;
+    try {
+      const response = await getEstadoLegalizacion();
+      setLegalizacionesPendientes(Number(response?.active || 0));
+    } catch (_) {
+      setLegalizacionesPendientes(0);
+    }
+  }, [user]);
+
   useEffect(() => {
     refrescarBadgePlanAccion();
     refrescarBadgeReposicion();
-  }, [refrescarBadgePlanAccion, refrescarBadgeReposicion, location.pathname]);
+    refrescarLegalizaciones();
+  }, [refrescarBadgePlanAccion, refrescarBadgeReposicion, refrescarLegalizaciones, location.pathname]);
 
   const normalizeMenuByBlocks = (items) => {
     if (!Array.isArray(items)) return [];
@@ -466,6 +480,20 @@ function DashboardLayout() {
       }
     }
 
+  }
+
+  if (legalizacionesPendientes > 0) {
+    const item = {
+      key: 'legalizacion_viaticos',
+      path: '/dashboard/legalizacion-viaticos',
+      label: 'Legalización de viáticos',
+      icon: <ReceiptLongIcon />,
+      badge: legalizacionesPendientes
+    };
+    const inicioIdx = menuItems.findIndex((entry) => entry.key === 'dashboard');
+    menuItems = inicioIdx >= 0
+      ? [...menuItems.slice(0, inicioIdx + 1), item, ...menuItems.slice(inicioIdx + 1)]
+      : [item, ...menuItems];
   }
 
   // Para Planeación Estratégica: reemplazar "Planeación y Efectividad" (constructor de PyE)

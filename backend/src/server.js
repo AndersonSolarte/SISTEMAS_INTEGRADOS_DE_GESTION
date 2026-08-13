@@ -57,6 +57,7 @@ app.use('/api/public/instrumentos', require('./routes/publicInstrumentosRoutes')
 app.use('/api/security', require('./routes/securityRoutes'));
 app.use('/api/reporte-salida', require('./routes/reporteSalidaRoutes'));
 app.use('/api/desplazamientos-viaticos', require('./routes/desplazamientoViaticosRoutes'));
+app.use('/api/legalizacion-viaticos', require('./routes/legalizacionViaticosRoutes'));
 app.use('/api/planeacion/gestion-informacion/saber-pro', require('./routes/saberProAnalyticsRoutes'));
 app.use('/api/planeacion/gestion-informacion/saber-pro/consulta', require('./routes/consultaValidacionRoutes'));
 app.use('/api/admin/activity', require('./routes/activityRoutes'));
@@ -297,10 +298,33 @@ testConnection()
       await SecurityFindingComment.sync();
       const ReporteSalidaSolicitud = require('./models/ReporteSalidaSolicitud');
       const DesplazamientoViaticosSolicitud = require('./models/DesplazamientoViaticosSolicitud');
+      const ViaticosLegalizacion = require('./models/ViaticosLegalizacion');
       const SystemSetting = require('./models/SystemSetting');
       const DatabaseBackupRun = require('./models/DatabaseBackupRun');
       await ReporteSalidaSolicitud.sync();
       await DesplazamientoViaticosSolicitud.sync();
+      await ViaticosLegalizacion.sync();
+      const legalizacionesTableName = 'viaticos_legalizaciones';
+      const legalizacionesTable = await qi.describeTable(legalizacionesTableName).catch(() => ({}));
+      if (!legalizacionesTable.codigo_verificacion) {
+        await qi.addColumn(legalizacionesTableName, 'codigo_verificacion', {
+          type: DataTypes.UUID,
+          allowNull: true
+        });
+        await sequelize.query(`
+          UPDATE "${legalizacionesTableName}"
+          SET "codigo_verificacion" = md5(random()::text || clock_timestamp()::text || "id"::text)::uuid
+          WHERE "codigo_verificacion" IS NULL
+        `);
+        await qi.changeColumn(legalizacionesTableName, 'codigo_verificacion', {
+          type: DataTypes.UUID,
+          allowNull: false
+        });
+      }
+      await qi.addIndex(legalizacionesTableName, ['codigo_verificacion'], {
+        name: 'viaticos_legalizaciones_codigo_verificacion_unique',
+        unique: true
+      }).catch(() => null);
       const reporteSalidaTableName = 'reporte_salida_solicitudes';
       let reporteSalidaTable = await qi.describeTable(reporteSalidaTableName).catch(() => ({}));
       const ensureReporteSalidaColumn = async (column, definition) => {

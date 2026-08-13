@@ -23,6 +23,8 @@ const publicBackendUrl = process.env.BACKEND_PUBLIC_URL || process.env.API_PUBLI
 const ACADEMIC_VICERRECTORIA_EMAIL = getDependencyEmail('Vicerrectoria Academica') || 'viceacad@unicesmag.edu.co';
 const RECTORIA_EMAIL = getDependencyEmail('Rectoria') || 'rectoria@unicesmag.edu.co';
 const EVANGELIZACION_VICERRECTORIA_EMAIL = getDependencyEmail('Vicerrectoria para la Evangelizacion de las Culturas') || 'vicebien@unicesmag.edu.co';
+const FINANCIAL_VICERRECTOR_EMAIL = process.env.REPORTE_SALIDA_VICERRECTORIA_FINANCIERA_EMAIL || 'jcnandar@unicesmag.edu.co';
+const FINANCIAL_VICERRECTORIA_OFFICE_EMAIL = getDependencyEmail('Vicerrectoria Financiera y de Desarrollo Institucional') || 'viceadfin@unicesmag.edu.co';
 const DEFAULT_DECLARACION_SIN_ADJUNTO_SALUD = 'Declaro que al momento de radicar esta solicitud no cuento con archivos adjuntos o soportes para cargar en el sistema. Entiendo que la Oficina de Gestion del Talento Humano y/o Seguridad y Salud en el Trabajo podran requerir en cualquier momento los soportes correspondientes; por tanto, me comprometo a conservarlos despues de la atencion o tramite y a suministrarlos oportunamente cuando sean solicitados.';
 
 const featureDisabled = (res) =>
@@ -175,7 +177,7 @@ const AUTHORITY_RECIPIENTS = {
   'Vicerrectoria Financiera y de Desarrollo Institucional': {
     nombre: process.env.REPORTE_SALIDA_VICERRECTORIA_FINANCIERA_NOMBRE || 'JUAN CARLOS NANDAR LÓPEZ',
     cargo: process.env.REPORTE_SALIDA_VICERRECTORIA_FINANCIERA_CARGO || 'Vicerrector Financiero y de Desarrollo Institucional',
-    email: getDependencyEmail('Vicerrectoria Financiera y de Desarrollo Institucional') || 'viceadfin@unicesmag.edu.co',
+    email: FINANCIAL_VICERRECTOR_EMAIL,
     aliases: ['viceadfin@unicesmag.edu.co', 'jcnandar@unicesmag.edu.co']
   },
   'Vicerrectoría para la Evangelizacion de las Culturas': {
@@ -240,7 +242,7 @@ const getOfficialAuthorityEmailForActor = (actor = {}) => {
     sameExactEmail(email, 'viceadfin@unicesmag.edu.co') ||
     sameExactEmail(email, 'jcnandar@unicesmag.edu.co')
   ) {
-    return 'viceadfin@unicesmag.edu.co';
+    return FINANCIAL_VICERRECTOR_EMAIL;
   }
   if (!email) return '';
   const entry = Object.values(AUTHORITY_RECIPIENTS).find((authority) => {
@@ -278,10 +280,16 @@ const getInitialApprovalRecipientEmails = (solicitud = {}) => {
   const jefe = solicitud.jefe_snapshot || {};
   const jefeName = normalizeForMatch(jefe.nombre || jefe.name || jefe.label || '');
   const jefeEmail = normalizeEmail(jefe.email);
+  const requesterName = normalizeForMatch(solicitud.solicitante_snapshot?.nombre || '');
   const academicProgramEmail = getAcademicProgramApprovalEmail(solicitud);
 
   if (academicProgramEmail) {
     return [academicProgramEmail];
+  }
+
+  if (jefeName.includes('luis eduardo rubiano guaqueta')) {
+    const isOwnRectorRequest = requesterName.includes('luis eduardo rubiano guaqueta');
+    return [isOwnRectorRequest && jefeEmail ? jefeEmail : RECTORIA_EMAIL];
   }
 
   if (
@@ -290,7 +298,7 @@ const getInitialApprovalRecipientEmails = (solicitud = {}) => {
     sameExactEmail(jefeEmail, 'viceadfin@unicesmag.edu.co') ||
     sameExactEmail(jefeEmail, 'jcnandar@unicesmag.edu.co')
   ) {
-    return ['viceadfin@unicesmag.edu.co', 'jcnandar@unicesmag.edu.co'];
+    return [FINANCIAL_VICERRECTOR_EMAIL, FINANCIAL_VICERRECTORIA_OFFICE_EMAIL];
   }
 
   const primary = getOfficialAuthorityEmailForActor(jefe) || jefe.email || '';
@@ -312,7 +320,14 @@ const getJefeCopyRecipientEmails = (solicitud = {}) => {
   const jefe = solicitud.jefe_snapshot || {};
   const jefeName = normalizeForMatch(jefe.nombre || jefe.name || jefe.label);
   const primaryEmail = jefe.email || jefe.correo || '';
+  const requesterName = normalizeForMatch(solicitud.solicitante_snapshot?.nombre || '');
   const academicProgramEmail = getAcademicProgramApprovalEmail(solicitud);
+
+  if (jefeName.includes('luis eduardo rubiano guaqueta')) {
+    const isOwnRectorRequest = requesterName.includes('luis eduardo rubiano guaqueta');
+    pushEmail(isOwnRectorRequest && primaryEmail ? primaryEmail : RECTORIA_EMAIL);
+    return emails;
+  }
 
   if (jefeName.includes('sandra lucia bolanos delgado') || sameExactEmail(primaryEmail, 'sbolanos@unicesmag.edu.co')) {
     pushEmail(ACADEMIC_VICERRECTORIA_EMAIL);
@@ -324,8 +339,9 @@ const getJefeCopyRecipientEmails = (solicitud = {}) => {
     sameExactEmail(primaryEmail, 'jcnandar@unicesmag.edu.co') ||
     sameExactEmail(primaryEmail, 'viceadfin@unicesmag.edu.co')
   ) {
-    pushEmail('viceadfin@unicesmag.edu.co');
-    pushEmail('jcnandar@unicesmag.edu.co');
+    pushEmail(FINANCIAL_VICERRECTOR_EMAIL);
+    pushEmail(FINANCIAL_VICERRECTORIA_OFFICE_EMAIL);
+    return emails;
   }
 
   const isAcademicVicerrectora = jefeName.includes('sandra lucia bolanos delgado') ||
@@ -2340,10 +2356,11 @@ const sendJefeRadicacionApprovalEmail = async (solicitud, token, attachments, he
     `
   });
 
-  const approvalRecipientEmail = getInitialApprovalRecipientEmail(solicitud) || jefe.email || '';
+  const approvalRecipientEmails = getInitialApprovalRecipientEmails(solicitud);
+  const approvalRecipients = approvalRecipientEmails.length ? approvalRecipientEmails : [jefe.email].filter(Boolean);
 
   return sendInstitutionalEmail({
-    to: approvalRecipientEmail,
+    to: approvalRecipients,
     subject,
     text: `Solicitud ${solicitud.consecutivo} pendiente de autorizacion. Autorizar: ${approveUrl}. No autorizar: ${rejectUrl}.`,
     html,
@@ -2544,7 +2561,7 @@ const resolveJefeForParticipant = async (p, userRows, rhRows) => {
 
 const sendJefeGroupRadicacionNotificationEmail = async (solicitud, jefeSnapshot, allParticipants) => {
   const recipientEmail = getAcademicProgramApprovalEmail(solicitud) ||
-    getOfficialAuthorityEmailForActor(jefeSnapshot) ||
+    getInitialApprovalRecipientEmail(solicitud) ||
     jefeSnapshot?.email || '';
   if (!jefeSnapshot || !recipientEmail) return { success: false, error: 'No email' };
   

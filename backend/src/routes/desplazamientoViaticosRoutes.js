@@ -36,6 +36,7 @@ const upload = multer({
 
 router.get('/assets/escudo.png', (_req, res) => res.sendFile(path.join(__dirname, '../assets/logo-cesmag.png')));
 router.get('/assets/encabezado-correos.png', (_req, res) => res.sendFile(path.join(__dirname, '../assets/Encabezado_correos.png')));
+router.get('/assets/logo-formatos.jpg', (_req, res) => res.sendFile(path.join(__dirname, '../assets/logo_formatos.jpg')));
 router.get('/accion/:token', publicLimiter, mostrarAccion);
 router.post('/accion/:token', publicLimiter, procesarAccion);
 router.get('/prueba/liquidacion/:token', publicLimiter, mostrarDemoLiquidacion);

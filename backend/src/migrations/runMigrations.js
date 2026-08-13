@@ -391,6 +391,28 @@ const runMigrations = async () => {
     await models.SecurityRemediationProposal.sync();
     await models.SecurityFindingComment.sync();
     await models.DesplazamientoViaticosSolicitud.sync();
+    await models.ViaticosLegalizacion.sync();
+    const legalizacionesTableName = 'viaticos_legalizaciones';
+    const legalizacionesTable = await qi.describeTable(legalizacionesTableName).catch(() => ({}));
+    if (!legalizacionesTable.codigo_verificacion) {
+      await qi.addColumn(legalizacionesTableName, 'codigo_verificacion', {
+        type: DataTypes.UUID,
+        allowNull: true
+      });
+      await sequelize.query(`
+        UPDATE "${legalizacionesTableName}"
+        SET "codigo_verificacion" = md5(random()::text || clock_timestamp()::text || "id"::text)::uuid
+        WHERE "codigo_verificacion" IS NULL
+      `);
+      await qi.changeColumn(legalizacionesTableName, 'codigo_verificacion', {
+        type: DataTypes.UUID,
+        allowNull: false
+      });
+    }
+    await qi.addIndex(legalizacionesTableName, ['codigo_verificacion'], {
+      name: 'viaticos_legalizaciones_codigo_verificacion_unique',
+      unique: true
+    }).catch(() => null);
     await models.SystemSetting.sync();
     await models.DatabaseBackupRun.sync();
     await ensureReporteSalidaAdminBossSupport(qi);
@@ -407,7 +429,7 @@ const runMigrations = async () => {
     await ensureColumn(qi, 'users', 'cargo', { type: DataTypes.STRING(220), allowNull: true });
     await ensureColumn(qi, 'users', 'jefe_inmediato', { type: DataTypes.STRING(220), allowNull: true });
 
-    // Workflow plan_accion: agregar columnas no destructivas + backfill de filas legadas como 'Aprobado'.
+    // Workflow plan_accion: conservar columnas existentes sin alterar su logica ni sus datos.
     await ensureColumn(qi, 'plan_accion', 'dependencia', { type: DataTypes.STRING(400), allowNull: true });
     await ensureColumn(qi, 'plan_accion', 'plan_codigo', { type: DataTypes.STRING(80), allowNull: true });
     await ensureColumn(qi, 'plan_accion', 'estado_workflow', { type: DataTypes.STRING(40), allowNull: true });

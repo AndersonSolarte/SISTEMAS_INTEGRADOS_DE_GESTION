@@ -75,7 +75,11 @@ const GESTION_INFO_MODULE_KEYS = [
   'seguridad_aplicativa.gestionar_hallazgos',
   'seguridad_aplicativa.analizar_remediacion',
   'seguridad_aplicativa.exportar',
-  'seguridad_aplicativa.configurar'
+  'seguridad_aplicativa.configurar',
+  'vicerrectoria_financiera',
+  'vicerrectoria_financiera.viaticos',
+  'vicerrectoria_financiera.viaticos.gestion',
+  'vicerrectoria_financiera.viaticos.estadistica'
 ];
 const STATISTICAL_MODULE_PERMISSION_KEYS = new Set([
   'poblacional',
@@ -2124,6 +2128,12 @@ const updateUserModulePermissions = async (req, res) => {
     }
     if (cleanModules.some((key) => key.startsWith('seguridad_aplicativa.')) && !cleanModules.includes('seguridad_aplicativa')) {
       cleanModules.push('seguridad_aplicativa');
+    }
+    if (cleanModules.some((key) => key.startsWith('vicerrectoria_financiera.viaticos.')) && !cleanModules.includes('vicerrectoria_financiera.viaticos')) {
+      cleanModules.push('vicerrectoria_financiera.viaticos');
+    }
+    if (cleanModules.some((key) => key.startsWith('vicerrectoria_financiera.viaticos')) && !cleanModules.includes('vicerrectoria_financiera')) {
+      cleanModules.push('vicerrectoria_financiera');
     }
     if (cleanModules.includes('autoevaluacion.instrumentos.access') && !cleanModules.includes('autoevaluacion')) {
       cleanModules.push('autoevaluacion');

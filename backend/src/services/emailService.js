@@ -495,7 +495,7 @@ const sendTemporaryPasswordEmail = async (user, tempPassword) => {
   }
 };
 
-const sendInstitutionalEmail = async ({ to, subject, text, html, attachments = [], replyTo = '', headers = {} }) => {
+const sendInstitutionalEmail = async ({ to, subject, text, html, attachments = [], replyTo = '', headers = {}, messageId = '', inReplyTo = '', references = '' }) => {
   const recipients = Array.isArray(to) ? to : [to];
   const safeRecipients = recipients.map(normalizeRecipient);
 
@@ -514,10 +514,14 @@ const sendInstitutionalEmail = async ({ to, subject, text, html, attachments = [
     headers
   };
 
-  if (headers['In-Reply-To']) {
+  if (messageId) mailOptions.messageId = messageId;
+  if (inReplyTo) mailOptions.inReplyTo = inReplyTo;
+  if (references) mailOptions.references = references;
+
+  if (!inReplyTo && headers['In-Reply-To']) {
     mailOptions.inReplyTo = headers['In-Reply-To'];
   }
-  if (headers['References']) {
+  if (!references && headers['References']) {
     mailOptions.references = headers['References'];
   }
 

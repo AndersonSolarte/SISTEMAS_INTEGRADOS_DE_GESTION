@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import ReactDOM from 'react-dom';
 import InfraestructuraFisicaDashboard from '../components/infraestructura/InfraestructuraFisicaDashboard';
+import ViaticosGestionDashboard from '../components/viaticos/ViaticosGestionDashboard';
 import {
   Box,
   Paper,
@@ -491,6 +492,7 @@ const BASES = [
   { key: 'autoevaluacion', label: 'Autoevaluación', description: 'Estructura base de factores, características, aspectos, indicadores y evidencias.' },
   { key: 'registros_calificados_acreditacion', label: 'Registros Calificados y Acreditación', description: 'Histórico de registros calificados, resoluciones, planes de estudio y evidencias de Drive.' },
   { key: 'infraestructura_fisica', label: 'Infraestructura Física', description: 'Inventario físico unificado de áreas, aforos, tenencias y accesos de los campus.' }
+  ,{ key: 'vicerrectoria_financiera', label: 'Vicerrectoría Financiera y de Desarrollo Institucional', description: 'Gestión, legalización y análisis institucional de viáticos y gastos de viaje.' }
 ];
 
 const SUBBASES_POBLACIONAL = ['Inscritos', 'Admitidos', 'Primer Curso', 'Matriculados', 'Graduados', 'Cantidad Total Egresados', 'Caracterizacion', 'Desercion', 'Empleabilidad', 'Contexto Externo'];
@@ -2050,6 +2052,7 @@ function GestionInformacion() {
   const [databaseDataView, setDatabaseDataView] = useState('import');
 
   const [selectedCard, setSelectedCard] = useState(null);
+  const [financialPanel, setFinancialPanel] = useState('hub');
   const [gestionProcesosPanel, setGestionProcesosPanel] = useState('hub');
   const [planAccionTab, setPlanAccionTab] = useState('estadistica');
   const [poblacionalPanel, setPoblacionalPanel] = useState('hub');
@@ -4607,7 +4610,7 @@ function GestionInformacion() {
   };
 
   const enterCard = (key) => {
-    if (!['poblacional', 'saber_pro', 'recurso_humano', 'internacionalizacion', 'gestion_procesos', 'registros_calificados_acreditacion', 'infraestructura_fisica', 'plan_accion', 'activity_monitor', 'security_application'].includes(key)) {
+    if (!['poblacional', 'saber_pro', 'recurso_humano', 'internacionalizacion', 'gestion_procesos', 'registros_calificados_acreditacion', 'infraestructura_fisica', 'plan_accion', 'vicerrectoria_financiera', 'activity_monitor', 'security_application'].includes(key)) {
       enqueueSnackbar('Modulo en construccion. La estructura ya quedo lista para activarlo.', { variant: 'info' });
       return;
     }
@@ -4626,6 +4629,9 @@ function GestionInformacion() {
     if (key === 'gestion_procesos') {
       setGestionProcesosPanel('hub');
     }
+    if (key === 'vicerrectoria_financiera') {
+      setFinancialPanel('hub');
+    }
     setSelectedCard(key);
   };
 
@@ -4633,10 +4639,85 @@ function GestionInformacion() {
     setMenuView('estadistica');
     setSelectedCard(null);
     setGestionProcesosPanel('hub');
+    setFinancialPanel('hub');
     setPoblacionalPanel('hub');
     setSaberProStatSection('hub');
     navigate('/dashboard/gestion-informacion?tab=estadistica', { replace: true });
   }, [navigate]);
+
+  const renderFinancialHub = () => {
+    const canOpenViaticos = user?.role === ROLES.ADMINISTRADOR
+      || explicitGiModules.includes('vicerrectoria_financiera.viaticos')
+      || explicitGiModules.some((key) => key.startsWith('vicerrectoria_financiera.viaticos.'));
+
+    return (
+      <Box sx={{ maxWidth: 1500, mx: 'auto' }}>
+        <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1.2} alignItems={{ xs: 'stretch', sm: 'center' }} sx={{ mb: 2 }}>
+          <Button variant="outlined" startIcon={<ArrowBackRoundedIcon />} onClick={returnToCards} sx={{ alignSelf: { sm: 'flex-start' }, borderRadius: 2, textTransform: 'none', fontWeight: 800 }}>
+            Volver a módulos
+          </Button>
+          <Chip label="Módulo financiero institucional" color="primary" variant="outlined" sx={{ alignSelf: { xs: 'flex-start', sm: 'center' }, fontWeight: 800 }} />
+        </Stack>
+
+        <Paper
+          elevation={0}
+          sx={{
+            position: 'relative',
+            overflow: 'hidden',
+            p: { xs: 2.2, sm: 2.8, md: 3.4 },
+            mb: 2.3,
+            borderRadius: { xs: 3, md: 4 },
+            color: '#fff',
+            background: 'linear-gradient(125deg, #071f43 0%, #0b3a6f 58%, #185ea5 100%)',
+            boxShadow: '0 18px 42px rgba(11,58,111,.19)',
+            '&:before': { content: '""', position: 'absolute', width: 230, height: 230, borderRadius: '50%', right: -65, top: -130, bgcolor: 'rgba(96,165,250,.20)' }
+          }}
+        >
+          <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2} alignItems={{ xs: 'flex-start', sm: 'center' }} sx={{ position: 'relative', zIndex: 1 }}>
+            <Box sx={{ width: { xs: 54, md: 64 }, height: { xs: 54, md: 64 }, flex: '0 0 auto', display: 'grid', placeItems: 'center', borderRadius: 2.8, bgcolor: 'rgba(255,255,255,.14)', border: '1px solid rgba(255,255,255,.24)' }}>
+              <AccountBalanceIcon sx={{ fontSize: { xs: 31, md: 37 } }} />
+            </Box>
+            <Box>
+              <Typography variant="overline" sx={{ color: '#bfdbfe', fontWeight: 900, letterSpacing: 1.1 }}>Gestión de la Información</Typography>
+              <Typography variant="h4" sx={{ fontSize: { xs: 24, sm: 29, md: 34 }, lineHeight: 1.12, fontWeight: 950 }}>
+                Vicerrectoría Financiera y de Desarrollo Institucional
+              </Typography>
+              <Typography sx={{ mt: 0.8, maxWidth: 850, color: '#dbeafe', fontSize: { xs: 13.5, md: 15 } }}>
+                Seleccione una solución financiera para consultar, gestionar y analizar la información institucional.
+              </Typography>
+            </Box>
+          </Stack>
+        </Paper>
+
+        <Box sx={{ mb: 1.2 }}>
+          <Typography sx={{ color: '#0f172a', fontWeight: 900, fontSize: { xs: 19, md: 22 } }}>Soluciones disponibles</Typography>
+          <Typography sx={{ color: '#64748b', fontSize: 13.5 }}>Los accesos se muestran de acuerdo con los permisos asignados al usuario.</Typography>
+        </Box>
+
+        <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', md: 'repeat(2, minmax(0, 1fr))', xl: 'repeat(3, minmax(0, 1fr))' }, gap: 1.8 }}>
+          {canOpenViaticos && (
+            <Paper elevation={0} sx={{ display: 'flex', flexDirection: 'column', minHeight: 270, p: { xs: 2, sm: 2.4 }, borderRadius: 3.5, border: '1px solid #cfe0f5', bgcolor: '#fff', boxShadow: '0 12px 30px rgba(15,45,80,.08)', transition: 'transform .2s ease, box-shadow .2s ease', '&:hover': { transform: 'translateY(-4px)', boxShadow: '0 20px 38px rgba(37,99,235,.15)' } }}>
+              <Stack direction="row" justifyContent="space-between" alignItems="flex-start" gap={1}>
+                <Box sx={{ width: 58, height: 58, display: 'grid', placeItems: 'center', borderRadius: 2.7, color: '#fff', background: 'linear-gradient(145deg,#4f46e5,#2563eb)', boxShadow: '0 12px 24px rgba(79,70,229,.28)' }}>
+                  <FolderIcon sx={{ fontSize: 32 }} />
+                </Box>
+                <Chip label="Disponible" size="small" sx={{ bgcolor: '#ecfdf5', color: '#047857', fontWeight: 850, border: '1px solid #a7f3d0' }} />
+              </Stack>
+              <Typography sx={{ mt: 2.2, color: '#0f172a', fontWeight: 950, fontSize: { xs: 22, md: 25 } }}>Viáticos</Typography>
+              <Typography sx={{ mt: 0.7, mb: 2.2, color: '#64748b', lineHeight: 1.55, fontSize: 13.5 }}>
+                Gestión de solicitudes, liquidaciones, legalizaciones e indicadores de viáticos y gastos de viaje.
+              </Typography>
+              <Button fullWidth variant="contained" endIcon={<ArrowForwardRoundedIcon />} onClick={() => setFinancialPanel('viaticos')} sx={{ mt: 'auto', py: 1.15, borderRadius: 99, textTransform: 'none', fontWeight: 900, background: 'linear-gradient(135deg,#2563eb,#4f46e5)', boxShadow: '0 10px 22px rgba(37,99,235,.22)' }}>
+                Ingresar a Viáticos
+              </Button>
+            </Paper>
+          )}
+        </Box>
+
+        {!canOpenViaticos && <Alert severity="info" sx={{ mt: 2, borderRadius: 2.5 }}>No tiene soluciones financieras internas habilitadas. Solicite el permiso de Viáticos al administrador.</Alert>}
+      </Box>
+    );
+  };
 
   const cloneNodeWithComputedStyles = (node) => {
     const clone = node.cloneNode(true);
@@ -7333,6 +7414,8 @@ const renderCategoryBars = (items = [], options = {}) => {
                 ? `${countMap['Infraestructura Fisica'] || 0} registros disponibles`
                 : base.key === 'internacionalizacion'
                 ? 'Movilidad, convenios y actividades de cooperación'
+                : base.key === 'vicerrectoria_financiera'
+                ? 'Gestión de Viáticos y Estadística de Viáticos'
                 : 'Interfaz preparada para activacion'}
             </Typography>
           </Box>
@@ -16755,7 +16838,7 @@ const renderCategoryBars = (items = [], options = {}) => {
   return (
     <Fade in={true}>
       <Box>
-        {!isGestionProcesosStatsRoute && !isDirectDocumentalView && !(selectedCard === 'poblacional' && poblacionalPanel !== 'hub') && selectedCard !== 'infraestructura_fisica' && selectedCard !== 'recurso_humano' && selectedCard !== 'internacionalizacion' && selectedCard !== 'activity_monitor' && selectedCard !== 'plan_accion' && (
+        {!isGestionProcesosStatsRoute && !isDirectDocumentalView && !(selectedCard === 'poblacional' && poblacionalPanel !== 'hub') && selectedCard !== 'infraestructura_fisica' && selectedCard !== 'recurso_humano' && selectedCard !== 'internacionalizacion' && selectedCard !== 'vicerrectoria_financiera' && selectedCard !== 'activity_monitor' && selectedCard !== 'plan_accion' && (
           <Paper elevation={0} sx={{ p: 3, mb: 3, borderRadius: 3, border: '1px solid #dbe2f1', background: 'linear-gradient(135deg,#0f172a,#1d4ed8)' }}>
             <Stack direction="row" spacing={1.5} alignItems="center">
               <InsightsIcon sx={{ color: 'white' }} />
@@ -17306,6 +17389,11 @@ const renderCategoryBars = (items = [], options = {}) => {
                   onBack={returnToCards}
                 />
               )}
+                {selectedCard === 'vicerrectoria_financiera' && (
+                  financialPanel === 'viaticos'
+                    ? <ViaticosGestionDashboard user={user} onBack={() => setFinancialPanel('hub')} />
+                    : renderFinancialHub()
+                )}
                 {selectedCard === 'gestion_procesos' && renderGestionProcesosModule()}
                 {selectedCard === 'activity_monitor' && (
                   <Box>

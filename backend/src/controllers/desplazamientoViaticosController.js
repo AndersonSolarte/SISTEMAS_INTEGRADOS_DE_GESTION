@@ -2,7 +2,7 @@ const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
 const { Op } = require('sequelize');
-const { DesplazamientoViaticosSolicitud, ReporteSalidaSolicitud, SystemSetting } = require('../models');
+const { DesplazamientoViaticosSolicitud, ReporteSalidaSolicitud, SystemSetting, ViaticosLegalizacion } = require('../models');
 const { getDependencyEmail } = require('../config/dependencyEmails');
 const { sequelize } = require('../config/database');
 const { decryptPayload, encryptPayload } = require('../utils/secureUrlToken');
@@ -11,6 +11,7 @@ const { sendInstitutionalEmail, renderInstitutionalTemplate, escapeHtml } = requ
 const { AUTHORIZATION_TEXT, LEGALIZATION_NOTICE, buildXlsxAttachment, calculateDays } = require('../services/desplazamientoViaticos/formatService');
 const { buildLiquidationPdfAttachment, buildPdfAttachment } = require('../services/desplazamientoViaticos/pdfService');
 const { ensureReporteSalidaPdf } = require('../services/reporteSalidaPdfService');
+const { addColombiaBusinessDays } = require('../utils/colombiaBusinessDays');
 
 const publicBackendUrl = process.env.BACKEND_PUBLIC_URL || process.env.API_PUBLIC_URL || process.env.FRONTEND_URL || 'http://localhost:5000';
 const BASE_DETAIL_NAMES = [
@@ -79,6 +80,10 @@ const parseLiquidationBody = (body = {}) => {
     if (!detalle && (valorDiario > 0 || dias > 0)) return { error: 'Debe escribir el nombre de cada concepto adicional.' };
     if (detalle) detalles.push({ detalle, valorDiario, dias, valorTotal: valorDiario * dias });
   }
+  if (!detalles.length) return { error: 'Debe conservar al menos un concepto para la liquidación.' };
+  if (detalles.some((item) => item.valorDiario <= 0 || item.dias < 1 || item.valorTotal <= 0)) {
+    return { error: 'Elimine los conceptos no utilizados. Cada concepto conservado debe tener valor diario mayor que cero y mínimo un día.' };
+  }
   return {
     detalles,
     totalAnticipo: detalles.reduce((total, item) => total + item.valorTotal, 0),
@@ -95,8 +100,36 @@ const appendTrace = (solicitud, event, actor = {}, detail = {}) => [
   { event, actor, detail, at: new Date().toISOString() }
 ];
 
+const formatDateOnly = (date) => date.toISOString().slice(0, 10);
+
+const ensureLegalizacion = async (solicitud) => {
+  const fechaRegreso = String(solicitud.datos_salida?.fechaRegreso || '').slice(0, 10) || formatDateOnly(new Date());
+  const detalles = (solicitud.liquidacion?.detalles || []).filter((item) => Number(item.valorTotal) > 0).map((item, index) => ({
+    id: `concepto-${index + 1}`,
+    detalle: clean(item.detalle, 120),
+    valorAnticipo: Number(item.valorTotal) || 0,
+    valorLegalizado: null,
+    diferencia: null
+  }));
+  const today = formatDateOnly(new Date());
+  const [legalizacion] = await ViaticosLegalizacion.findOrCreate({
+    where: { solicitud_id: solicitud.id },
+    defaults: {
+      solicitud_id: solicitud.id,
+      user_id: solicitud.user_id,
+      estado: today < fechaRegreso ? 'pendiente_habilitacion' : 'pendiente_legalizacion',
+      fecha_habilitacion: fechaRegreso,
+      fecha_limite: addColombiaBusinessDays(fechaRegreso, 3),
+      detalles,
+      trazabilidad: [{ event: 'pago_autorizado', at: new Date().toISOString() }]
+    }
+  });
+  return legalizacion;
+};
+
 const NORMAL_REPORT_EVENT_BY_STAGE = {
   jefe: 'aprobada_jefe',
+  financiera_previa: 'aprobada_vicerrectoria_financiera',
   vicerrectoria_dependencia: 'aprobada_vicerrectoria_academica',
   sst: 'aprobada_sst',
   rectoria: 'aprobada_rectoria',
@@ -129,7 +162,7 @@ const buildNormalReportData = ({ consecutivo, userId, documentoId, jefeUserId, p
       duracionTipo: 'menos_media_jornada'
     },
     viaticos,
-    plan_aprobacion_normal: (steps || []).filter((step) => ['jefe', 'vicerrectoria_dependencia', 'sst', 'rectoria', 'gestion_humana'].includes(step.key)),
+    plan_aprobacion_normal: (steps || []).filter((step) => ['jefe', 'financiera_previa', 'vicerrectoria_dependencia', 'sst', 'rectoria', 'gestion_humana'].includes(step.key)),
     reposicion: {},
     origen_flujo: 'desplazamiento_viaticos'
   },
@@ -179,7 +212,6 @@ const syncNormalReportApproval = async (solicitud, step, actor, detail = {}) => 
 };
 
 const syncNormalReportRejection = async (solicitud, step, actor, observacion) => {
-  if (!NORMAL_REPORT_EVENT_BY_STAGE[step.key]) return null;
   const report = await getLinkedNormalReport(solicitud);
   if (!report) return null;
   await report.update({
@@ -266,7 +298,7 @@ const isRectorImmediateBoss = (jefe = {}, rectoriaEmail = '') => {
   );
 };
 
-const buildApprovalPlan = ({ jefe = {}, laboral = {} }) => {
+const buildApprovalPlan = ({ jefe = {}, laboral = {}, personal = {} }) => {
   const recipients = getDesplazamientoViaticosRecipients();
   const dependenciaEmail = normalizeEmail(getDependencyEmail(laboral.dependencia));
   const viceDependenciaEmail = normalizeEmail(getDependencyEmail(laboral.vicerrectoria));
@@ -274,27 +306,83 @@ const buildApprovalPlan = ({ jefe = {}, laboral = {} }) => {
   const academicAssignment = isAcademicVicerrectoriaAssignment(laboral);
   const researchAssignment = isResearchVicerrectoriaAssignment(laboral);
   const evangelizationAssignment = isEvangelizationVicerrectoriaAssignment(laboral);
-  const rectorIsBoss = rectoriaAssignment && isRectorImmediateBoss(jefe, recipients.rectoria);
+  const rectorIsBoss = isRectorImmediateBoss(jefe, recipients.rectoria);
+  const isJuanCarlosNandarRequest = normalizeEmail(personal.email) === normalizeEmail(recipients.financiera)
+    && normalize(personal.nombre).includes('juan carlos nandar lopez');
+  const rectorOwnRequest = rectorIsBoss
+    && normalize(personal.nombre).includes('luis eduardo rubiano guaqueta');
+  const rectorApprovalEmail = rectorOwnRequest
+    ? (normalizeEmail(jefe.email) || recipients.rectoria)
+    : recipients.rectoria;
   const steps = [];
+  const financialReview = {
+    key: 'financiera_previa',
+    label: 'Vicerrectoría Financiera y de Desarrollo Institucional',
+    email: recipients.financiera,
+    action: 'approval',
+    alternateApprovalEmail: recipients.financieraInstitucional,
+    alternateApprovalLabel: 'Vicerrectoría Financiera y de Desarrollo Institucional',
+    alternateAccessSource: 'vicerrectoria_financiera_institucional',
+    alternateAuthorityLabel: 'Vicerrectoría Financiera y de Desarrollo Institucional',
+    alternateObservationRequired: false,
+    parallelEquivalentAccess: true
+  };
 
-  if (rectoriaAssignment) {
-    if (!rectorIsBoss) {
-      steps.push({ key: 'jefe', label: 'Jefe inmediato', email: normalizeEmail(jefe.email), action: 'approval' });
-    }
-    steps.push({ key: 'sst', label: 'Seguridad y Salud en el Trabajo', email: recipients.sst, action: 'approval' });
+  if (rectorIsBoss) {
     steps.push({
       key: 'rectoria',
-      label: rectorIsBoss ? 'Rector – jefe inmediato y autoridad de Rectoría' : 'Rectoría',
-      email: recipients.rectoria,
+      label: 'Rector – jefe inmediato y autoridad de Rectoría',
+      email: rectorApprovalEmail,
       action: 'approval',
-      fulfillsImmediateBoss: rectorIsBoss
+      fulfillsImmediateBoss: true
     });
+    steps.push(financialReview);
+    steps.push({ key: 'sst', label: 'Seguridad y Salud en el Trabajo', email: recipients.sst, action: 'approval' });
+  } else if (rectoriaAssignment) {
+    if (!rectorIsBoss) {
+      steps.push({ key: 'jefe', label: 'Jefe inmediato', email: normalizeEmail(jefe.email), action: 'approval' });
+      steps.push(financialReview);
+      steps.push({ key: 'sst', label: 'Seguridad y Salud en el Trabajo', email: recipients.sst, action: 'approval' });
+      steps.push({ key: 'rectoria', label: 'Rectoría', email: recipients.rectoria, action: 'approval' });
+    }
   } else if (academicAssignment) {
-    const directorEmail = normalizeEmail(jefe.email);
-    const programEmail = dependenciaEmail && dependenciaEmail !== directorEmail ? dependenciaEmail : '';
+    const requesterName = normalize(personal.nombre);
+    const bossName = normalize(jefe.nombre);
+    const dependencyName = normalize(laboral.dependencia);
+    const academicViceIsBoss = isVicerrectorImmediateBoss(jefe, recipients.academica)
+      || bossName.includes('sandra lucia bolanos delgado');
+    const isDesignProgram = dependencyName.includes('programa academico')
+      && dependencyName.includes('diseno grafico');
+    const isArchitectureProgram = dependencyName.includes('programa academico')
+      && dependencyName.includes('arquitectura');
+    const designProgramOnly = isDesignProgram
+      && bossName.includes('karen eugenia ocana figueroa')
+      && !requesterName.includes('karen eugenia ocana figueroa');
+    const architectureProgramOnly = isArchitectureProgram
+      && bossName.includes('lilian magali martinez crespo')
+      && !requesterName.includes('lilian magali martinez crespo');
+    const routesOnlyToProgram = designProgramOnly || architectureProgramOnly;
+    const restrictedProgramOwnerRequest = (isDesignProgram && requesterName.includes('karen eugenia ocana figueroa'))
+      || (isArchitectureProgram && requesterName.includes('lilian magali martinez crespo'));
+    const directorEmail = routesOnlyToProgram
+      ? dependenciaEmail
+      : academicViceIsBoss
+        ? recipients.academica
+        : normalizeEmail(jefe.email);
+    const programEmail = !routesOnlyToProgram
+      && !restrictedProgramOwnerRequest
+      && !academicViceIsBoss
+      && dependenciaEmail
+      && dependenciaEmail !== directorEmail
+      ? dependenciaEmail
+      : '';
     steps.push({
       key: 'jefe',
-      label: 'Director de Programa – jefe inmediato',
+      label: routesOnlyToProgram
+        ? `${laboral.dependencia} – aprobación institucional`
+        : academicViceIsBoss
+          ? 'Vicerrectora Académica – jefe inmediato y autoridad académica'
+          : 'Director de Programa – jefe inmediato',
       email: directorEmail,
       action: 'approval',
       alternateApprovalEmail: programEmail,
@@ -303,9 +391,12 @@ const buildApprovalPlan = ({ jefe = {}, laboral = {} }) => {
       alternateAuthorityLabel: 'Vicerrectoría Académica',
       alternateAbsenceRole: 'Director de Programa'
     });
+    steps.push(financialReview);
+    if (!academicViceIsBoss) {
+      steps.push({ key: 'vicerrectoria_dependencia', label: 'Vicerrectoría Académica', email: recipients.academica, action: 'approval' });
+    }
     steps.push(
       { key: 'sst', label: 'Seguridad y Salud en el Trabajo', email: recipients.sst, action: 'approval' },
-      { key: 'vicerrectoria_dependencia', label: 'Vicerrectoría Académica', email: recipients.academica, action: 'approval' },
       { key: 'rectoria', label: 'Rectoría', email: recipients.rectoria, action: 'approval' }
     );
   } else if (researchAssignment) {
@@ -323,6 +414,7 @@ const buildApprovalPlan = ({ jefe = {}, laboral = {} }) => {
       alternateAbsenceRole: 'Vicerrector de Investigación y Extensión'
     });
     steps.push(
+      financialReview,
       { key: 'sst', label: 'Seguridad y Salud en el Trabajo', email: recipients.sst, action: 'approval' },
       { key: 'rectoria', label: 'Rectoría', email: recipients.rectoria, action: 'approval' }
     );
@@ -345,13 +437,27 @@ const buildApprovalPlan = ({ jefe = {}, laboral = {} }) => {
       alternateAuthorityLabel: viceIsBoss ? 'Vicerrectoría para la Evangelización de las Culturas' : '',
       alternateAbsenceRole: viceIsBoss ? 'Vicerrector para la Evangelización de las Culturas' : ''
     });
+    steps.push(financialReview);
+    if (!viceIsBoss) {
+      steps.push({
+        key: 'vicerrectoria_dependencia',
+        label: 'Vicerrectoría para la Evangelización de las Culturas',
+        email: recipients.evangelizacion,
+        action: 'approval'
+      });
+    }
     steps.push(
       { key: 'sst', label: 'Seguridad y Salud en el Trabajo', email: recipients.sst, action: 'approval' },
       { key: 'rectoria', label: 'Rectoría', email: recipients.rectoria, action: 'approval' }
     );
   } else {
     steps.push({ key: 'jefe', label: 'Jefe inmediato', email: normalizeEmail(jefe.email), action: 'approval' });
-    if (viceDependenciaEmail && viceDependenciaEmail !== recipients.financiera) {
+    steps.push(financialReview);
+    const financialViceEmails = new Set([
+      normalizeEmail(recipients.financiera),
+      normalizeEmail(recipients.financieraInstitucional)
+    ].filter(Boolean));
+    if (viceDependenciaEmail && !financialViceEmails.has(viceDependenciaEmail)) {
       steps.push({ key: 'vicerrectoria_dependencia', label: laboral.vicerrectoria || 'Vicerrectoría correspondiente', email: viceDependenciaEmail, action: 'approval' });
     }
     steps.push(
@@ -362,16 +468,17 @@ const buildApprovalPlan = ({ jefe = {}, laboral = {} }) => {
   steps.push(
     { key: 'gestion_humana', label: 'Gestión Humana', email: recipients.gestionHumana, action: 'approval' },
     { key: 'tecnico_contable', label: 'Técnico contable', email: recipients.tecnicoContable, action: 'liquidacion' },
-    {
-      key: 'financiera_final',
-      label: 'Vicerrectoría Financiera y de Desarrollo Institucional',
-      email: recipients.financiera,
-      action: 'approval',
-      infoEmails: (rectoriaAssignment || academicAssignment || researchAssignment || evangelizationAssignment) ? [] : [dependenciaEmail].filter((email) => email && email !== recipients.financiera)
-    },
-    { key: 'tesoreria', label: 'Tesorería / Pagaduría', email: recipients.tesoreria, action: 'pago' }
+    { key: 'tesoreria', label: 'Tesorería / Pagaduría', email: recipients.tesoreria, action: 'pago', infoEmails: [recipients.financiera] }
   );
-  return { steps: steps.filter((step) => step.email), dependenciaEmail, rectoriaAssignment, academicAssignment, researchAssignment, evangelizationAssignment, rectorIsBoss };
+  return {
+    steps: steps.filter((step) => step.email && !(isJuanCarlosNandarRequest && step.key === 'financiera_previa')),
+    dependenciaEmail,
+    rectoriaAssignment,
+    academicAssignment,
+    researchAssignment,
+    evangelizationAssignment,
+    rectorIsBoss
+  };
 };
 
 const nextConsecutivo = async () => {
@@ -510,7 +617,7 @@ const emailStep = async (solicitud, step, tokenBundle) => {
       ? 'Autorización de pago pendiente'
       : step.action === 'tramite'
         ? 'Trámite de Tesorería pendiente'
-      : step.key === 'financiera_final'
+      : step.key === 'financiera_previa'
         ? 'Revisión y aprobación financiera pendiente'
       : `Visto bueno pendiente: ${step.label}`;
   const buttonLabel = step.action === 'liquidacion'
@@ -540,27 +647,34 @@ const emailStep = async (solicitud, step, tokenBundle) => {
     const alternateActionUrl = `${publicBackendUrl}/api/desplazamientos-viaticos/accion/${alternateToken}`;
     const absenceRole = step.alternateAbsenceRole || step.label;
     const authorityLabel = step.alternateAuthorityLabel || step.alternateApprovalLabel || 'la autoridad correspondiente';
+    const isParallelEquivalent = Boolean(step.parallelEquivalentAccess);
     alternateResult = await sendInstitutionalEmail({
       to: step.alternateApprovalEmail,
-      subject: `${solicitud.consecutivo} | Acceso alterno para visto bueno`,
-      text: `La solicitud ${solicitud.consecutivo} requiere el visto bueno de ${absenceRole}. Este acceso alterno solo debe utilizarse ante su ausencia y exige observación.`,
+      subject: isParallelEquivalent ? `${solicitud.consecutivo} | ${title}` : `${solicitud.consecutivo} | Acceso alterno para visto bueno`,
+      text: isParallelEquivalent
+        ? `${title}. Ingrese a ${alternateActionUrl}. El enlace quedará cerrado cuando alguno de los dos destinatarios registre la decisión.`
+        : `La solicitud ${solicitud.consecutivo} requiere el visto bueno de ${absenceRole}. Este acceso alterno solo debe utilizarse ante su ausencia y exige observación.`,
       html: renderInstitutionalTemplate({
-        title: 'Acceso alterno para visto bueno',
-        introHtml: `<p>Saludo de paz y bien,</p><p>Se remite al correo institucional de <strong>${escapeHtml(step.alternateApprovalLabel || 'la dependencia')}</strong> un acceso alterno para la solicitud <strong>${escapeHtml(solicitud.consecutivo)}</strong>.</p>`,
-        bodyHtml: `<div style="padding:14px 16px;border-left:4px solid #d97706;background:#fffbeb;color:#713f12;margin-bottom:18px"><strong>Uso restringido:</strong> este acceso solo debe utilizarse cuando ${escapeHtml(absenceRole)} no se encuentre disponible. La actuación se registrará a nombre de ${escapeHtml(authorityLabel)}, exige una observación y quedará identificada en la trazabilidad.</div>${summaryHtml(solicitud)}<p style="text-align:center;margin:22px 0"><a href="${alternateActionUrl}" style="display:inline-block;background:#1d4ed8;color:#fff;padding:12px 20px;border-radius:8px;text-decoration:none;font-weight:700">Revisar solicitud</a></p>`
+        title: isParallelEquivalent ? title : 'Acceso alterno para visto bueno',
+        introHtml: isParallelEquivalent
+          ? `<p>Saludo de paz y bien,</p><p>La solicitud de desplazamiento <strong>${escapeHtml(solicitud.consecutivo)}</strong> requiere la actuación de <strong>${escapeHtml(authorityLabel)}</strong>. Este acceso tiene la misma validez que el remitido al Vicerrector Financiero.</p>`
+          : `<p>Saludo de paz y bien,</p><p>Se remite al correo institucional de <strong>${escapeHtml(step.alternateApprovalLabel || 'la dependencia')}</strong> un acceso alterno para la solicitud <strong>${escapeHtml(solicitud.consecutivo)}</strong>.</p>`,
+        bodyHtml: isParallelEquivalent
+          ? `${summaryHtml(solicitud)}<p style="text-align:center;margin:22px 0"><a href="${alternateActionUrl}" style="display:inline-block;background:#1d4ed8;color:#fff;padding:12px 20px;border-radius:8px;text-decoration:none;font-weight:700">${buttonLabel}</a></p><p style="color:#64748b;font-size:12px">La solicitud solo puede procesarse una vez. Cuando uno de los dos destinatarios registre la decisión, el otro enlace quedará cerrado.</p>`
+          : `<div style="padding:14px 16px;border-left:4px solid #d97706;background:#fffbeb;color:#713f12;margin-bottom:18px"><strong>Uso restringido:</strong> este acceso solo debe utilizarse cuando ${escapeHtml(absenceRole)} no se encuentre disponible. La actuación se registrará a nombre de ${escapeHtml(authorityLabel)}, exige una observación y quedará identificada en la trazabilidad.</div>${summaryHtml(solicitud)}<p style="text-align:center;margin:22px 0"><a href="${alternateActionUrl}" style="display:inline-block;background:#1d4ed8;color:#fff;padding:12px 20px;border-radius:8px;text-decoration:none;font-weight:700">Revisar solicitud</a></p>`
       }),
       attachments: [pdfAttachment, attachment, supportAttachment].filter(Boolean)
     });
   }
   const infoEmails = [...new Set((step.infoEmails || []).filter(Boolean).map(normalizeEmail))];
-  if (step.key === 'financiera_final' && infoEmails.length) {
+  if (step.key === 'tesoreria' && infoEmails.length) {
     await sendInstitutionalEmail({
       to: infoEmails,
-      subject: `${solicitud.consecutivo} | Copia para revisión financiera`,
-      text: `La solicitud ${solicitud.consecutivo} fue remitida a la Vicerrectoría Financiera y de Desarrollo Institucional. Después de su aprobación pasará a Tesorería/Pagaduría para autorizar el pago. Esta copia es informativa.`,
+      subject: `${solicitud.consecutivo} | Copia informativa de liquidación remitida a Tesorería`,
+      text: `La liquidación ${solicitud.consecutivo} fue remitida a Tesorería/Pagaduría para autorizar el pago. Esta copia para la Vicerrectoría Financiera es informativa.`,
       html: renderInstitutionalTemplate({
-        title: 'Copia informativa - revisión financiera',
-        introHtml: '<p>Saludo de paz y bien,</p><p>La solicitud fue remitida a la Vicerrectoría Financiera y de Desarrollo Institucional. Una vez aprobada pasará a Tesorería/Pagaduría para autorizar el pago. Esta copia no contiene un botón de aprobación.</p>',
+        title: 'Copia informativa de liquidación',
+        introHtml: '<p>Saludo de paz y bien,</p><p>El Técnico Contable registró la liquidación y la remitió a Tesorería/Pagaduría para autorizar el pago. Esta copia no contiene un botón de actuación.</p>',
         bodyHtml: summaryHtml(solicitud)
       }),
       attachments: [pdfAttachment, attachment, supportAttachment].filter(Boolean)
@@ -593,14 +707,14 @@ const sendRadicationCopies = async (solicitud, recipients = []) => {
   });
 };
 
-const sendRequesterNotice = async (solicitud, title, message, { final = false } = {}) => {
+const sendRequesterNotice = async (solicitud, title, message, { final = false, includeAttachments = false } = {}) => {
   const recipient = solicitud.solicitante_snapshot?.email || solicitud.solicitante_snapshot?.correo;
   if (!recipient) return { success: false, error: 'Solicitante sin correo' };
-  const [attachment, pdfAttachment] = await Promise.all([
+  const [attachment, pdfAttachment] = includeAttachments ? await Promise.all([
     buildXlsxAttachment(solicitud, { includeFinancial: final }),
     final ? buildLiquidationPdfAttachment(solicitud) : buildPdfAttachment(solicitud, { includeFinancial: false })
-  ]);
-  const supportAttachment = buildSupportAttachment(solicitud);
+  ]) : [null, null];
+  const supportAttachment = includeAttachments ? buildSupportAttachment(solicitud) : null;
   return sendInstitutionalEmail({
     to: recipient,
     subject: `${solicitud.consecutivo} | ${title}`,
@@ -661,17 +775,18 @@ const sendFinalizedCopies = async (solicitud) => {
   const collaboratorEmail = normalizeEmail(solicitud.solicitante_snapshot?.email || solicitud.solicitante_snapshot?.correo);
   const financialRecipients = [...new Set([
     recipients.tecnicoContable,
-    recipients.financiera
+    recipients.financiera,
+    recipients.tesoreria
   ].filter(Boolean).map(normalizeEmail))];
   const results = [];
   if (collaboratorEmail) {
     results.push(await sendInstitutionalEmail({
       to: collaboratorEmail,
-      subject: `${solicitud.consecutivo} | Solicitud aprobada y finalizada`,
-      text: `Tesorería/Pagaduría autorizó el pago de la solicitud ${solicitud.consecutivo}. Se adjuntan el reporte de salida y la liquidación final firmada.`,
+      subject: `${solicitud.consecutivo} | Pago autorizado - pendiente de legalización`,
+      text: `Tesorería/Pagaduría autorizó el pago de la solicitud ${solicitud.consecutivo}. Se adjuntan los dos formatos firmados. La legalización se habilitará en la fecha de regreso y tendrá un plazo de tres días hábiles.`,
       html: renderInstitutionalTemplate({
-        title: 'Solicitud aprobada y finalizada',
-        introHtml: '<p>Saludo de paz y bien,</p><p>Tesorería/Pagaduría autorizó el pago y finalizó la solicitud. Como colaborador solicitante, recibe el reporte de salida aprobado y la liquidación final firmada.</p>',
+        title: 'Pago autorizado - pendiente de legalización',
+        introHtml: '<p>Saludo de paz y bien,</p><p>Tesorería/Pagaduría autorizó el pago. Como colaborador solicitante, recibe el reporte de salida y la liquidación firmada. El módulo de legalización se habilitará en la fecha de regreso y conservará la obligación visible si vence el plazo de tres días hábiles.</p>',
         bodyHtml: summaryHtml(solicitud)
       }),
       attachments: [normalReportPdfAttachment, liquidationPdfAttachment, supportAttachment].filter(Boolean)
@@ -756,7 +871,7 @@ const radicarSolicitud = async (req, res) => {
       cargo: clean(body.jefeInmediato?.cargo, 180),
       dependencia: clean(body.jefeInmediato?.dependencia, 220)
     };
-    const { steps, dependenciaEmail } = buildApprovalPlan({ jefe, laboral });
+    const { steps, dependenciaEmail } = buildApprovalPlan({ jefe, laboral, personal });
     if (!steps.length) return res.status(400).json({ success: false, message: 'No fue posible construir el flujo de aprobación.' });
     const consecutivo = await nextConsecutivo();
     const transaction = await sequelize.transaction();
@@ -868,26 +983,31 @@ const liquidacionForm = (solicitud, token, nonce, { demo = false, demoCanSubmit 
       ? '<button class="primary" type="submit">Procesar liquidación de prueba</button>'
     : demoCanSubmit
       ? '<button class="primary" type="submit">Enviar liquidación de prueba a Tesorería</button>'
-    : '<button class="primary" type="submit">Enviar liquidación a Tesorería</button>';
+    : '<div class="actions"><button class="primary" name="accion" value="liquidar" type="submit">Enviar liquidación a Tesorería</button><button class="bad" name="accion" value="rechazar" type="submit">Rechazar financiación</button></div>';
   const formAction = demoCanSubmit
     ? `/api/desplazamientos-viaticos/prueba/liquidacion/${token}`
     : demo ? '#' : `/api/desplazamientos-viaticos/accion/${token}`;
-  return page('Generar liquidación de viáticos y gastos de viaje', `${demoNotice}${summaryHtml(solicitud)}<form method="post" action="${formAction}">${demo && !demoCanSubmit ? '' : '<input type="hidden" name="accion" value="liquidar">'}<input id="extra-count" type="hidden" name="extraCount" value="0"><table><thead><tr><th>Detalle</th><th>Valor diario (COP)</th><th>No. días</th><th>Valor total (COP)</th><th>Acción</th></tr></thead><tbody id="liquidacion-detalles">${rows}</tbody><tfoot><tr><th colspan="3">TOTAL ANTICIPO</th><th id="total-anticipo">$0</th><th></th></tr></tfoot></table><button id="agregar-concepto" class="primary add-concept" type="button">+ Agregar otro concepto</button><label class="observations-label">Observaciones a la liquidación</label><textarea name="observaciones" maxlength="2000" rows="4" placeholder="Escriba aquí las observaciones de la liquidación..."></textarea>${submitButton}</form>${calculator}`);
+  const hiddenDemoAction = demo && demoCanSubmit ? '<input type="hidden" name="accion" value="liquidar">' : '';
+  return page('Generar liquidación de viáticos y gastos de viaje', `${demoNotice}${summaryHtml(solicitud)}<form method="post" action="${formAction}">${hiddenDemoAction}<input id="extra-count" type="hidden" name="extraCount" value="0"><table><thead><tr><th>Detalle</th><th>Valor diario (COP)</th><th>No. días</th><th>Valor total (COP)</th><th>Acción</th></tr></thead><tbody id="liquidacion-detalles">${rows}</tbody><tfoot><tr><th colspan="3">TOTAL ANTICIPO</th><th id="total-anticipo">$0</th><th></th></tr></tfoot></table><button id="agregar-concepto" class="primary add-concept" type="button">+ Agregar otro concepto</button><label class="observations-label">Observaciones a la liquidación (obligatorias si rechaza)</label><textarea name="observaciones" maxlength="2000" rows="4" placeholder="Escriba aquí las observaciones de la liquidación..."></textarea>${submitButton}</form>${calculator}`);
 };
 
 const approvalForm = (solicitud, step, token, { accessSource = 'primary' } = {}) => {
-  const isAlternateAccess = accessSource === step.alternateAccessSource && step.key === 'jefe';
+  const isAlternateAccess = accessSource === step.alternateAccessSource;
+  const isParallelEquivalent = isAlternateAccess && Boolean(step.parallelEquivalentAccess);
+  const alternateObservationRequired = isAlternateAccess && step.alternateObservationRequired !== false;
   const privacyNotice = ['sst', 'gestion_humana'].includes(step.key)
     ? '<div class="notice">Esta vista contiene únicamente la información del permiso. La liquidación financiera se gestiona posteriormente y con acceso restringido.</div>'
     : '';
-  const delegatedNotice = isAlternateAccess
+  const delegatedNotice = isParallelEquivalent
+    ? '<div class="notice"><strong>Acceso institucional equivalente.</strong> Este enlace fue enviado al buzón de la Vicerrectoría Financiera y tiene la misma validez que el remitido al Vicerrector. La primera decisión registrada cerrará ambos enlaces.</div>'
+    : isAlternateAccess
     ? `<div class="notice"><strong>Acceso alterno de ${escapeHtml(step.alternateApprovalLabel || 'la dependencia')}.</strong> Utilice este enlace únicamente cuando ${escapeHtml(step.alternateAbsenceRole || step.label)} no esté disponible. La observación es obligatoria y este acceso quedará identificado en la trazabilidad a nombre de ${escapeHtml(step.alternateAuthorityLabel || step.alternateApprovalLabel || 'la autoridad correspondiente')}.</div>`
     : '';
-  const observationLabel = isAlternateAccess ? 'Observación obligatoria de la actuación delegada' : 'Observación (obligatoria si no aprueba)';
-  return page(`Revisión pendiente: ${step.label}`, `${summaryHtml(solicitud)}${privacyNotice}${delegatedNotice}<form method="post" action="/api/desplazamientos-viaticos/accion/${token}"><div class="actions"><button class="ok" name="accion" value="aprobar" type="submit">Dar visto bueno</button><button class="bad" name="accion" value="rechazar" type="submit">No aprobar</button></div><label>${observationLabel}</label><textarea name="observacion" maxlength="1200" rows="4"${isAlternateAccess ? ' required' : ''}></textarea></form>`);
+  const observationLabel = alternateObservationRequired ? 'Observación obligatoria de la actuación delegada' : 'Observación (obligatoria si no aprueba)';
+  return page(`Revisión pendiente: ${step.label}`, `${summaryHtml(solicitud)}${privacyNotice}${delegatedNotice}<form method="post" action="/api/desplazamientos-viaticos/accion/${token}"><div class="actions"><button class="ok" name="accion" value="aprobar" type="submit">Dar visto bueno</button><button class="bad" name="accion" value="rechazar" type="submit">No aprobar</button></div><label>${observationLabel}</label><textarea name="observacion" maxlength="1200" rows="4"${alternateObservationRequired ? ' required' : ''}></textarea></form>`);
 };
 
-const treasuryForm = (solicitud, token) => page('Autorizar pago en Tesorería / Pagaduría', `${summaryHtml(solicitud)}<p>La liquidación ya cuenta con la aprobación de la Vicerrectoría Financiera y de Desarrollo Institucional. Revise el documento y autorice el pago para finalizar la solicitud.</p><form method="post" action="/api/desplazamientos-viaticos/accion/${token}"><label>Observación de Tesorería / Pagaduría</label><textarea name="observacion" maxlength="1200" rows="4"></textarea><button class="primary" name="accion" value="autorizar_pago" type="submit">Autorizar pago</button></form>`);
+const treasuryForm = (solicitud, token) => page('Autorizar pago en Tesorería / Pagaduría', `${summaryHtml(solicitud)}<p>Revise la liquidación registrada por el Técnico Contable y decida si autoriza el pago.</p><form method="post" action="/api/desplazamientos-viaticos/accion/${token}"><label>Observación de Tesorería / Pagaduría (obligatoria si no autoriza)</label><textarea name="observacion" maxlength="1200" rows="4"></textarea><div class="actions"><button class="primary" name="accion" value="autorizar_pago" type="submit">Autorizar pago</button><button class="bad" name="accion" value="rechazar_pago" type="submit">No autorizar pago</button></div></form>`);
 
 const legacyTreasuryForm = (solicitud, token) => page('Tramitar solicitud en Tesorería', `${summaryHtml(solicitud)}<div class="notice"><strong>Solicitud iniciada con el flujo anterior.</strong> Esta actuación se conserva únicamente para finalizar correctamente solicitudes que ya estaban en curso.</div><form method="post" action="/api/desplazamientos-viaticos/accion/${token}"><label>Observación de Tesorería</label><textarea name="observacion" maxlength="1200" rows="4"></textarea><button class="primary" name="accion" value="tramitar" type="submit">Tramitar solicitud</button></form>`);
 
@@ -951,28 +1071,28 @@ const procesarDemoLiquidacion = async (req, res) => {
     const solicitudDemo = buildDemoSolicitud(liquidacion);
     solicitudDemo.solicitante_snapshot.email = payload.email || '';
     solicitudDemo.trazabilidad = [{ event: 'completado_tecnico_contable', actor: { nombre: 'Técnico contable de prueba', email: payload.email || '' }, at: new Date().toISOString() }];
-    const financialToken = encryptPayload({
-      purpose: 'demo_financiera_aprobar',
+    const treasuryToken = encryptPayload({
+      purpose: 'demo_tesoreria_tramitar',
       technicianEmail: payload.email || '',
       liquidacion
     }, 24 * 60 * 60);
-    const financialUrl = `${publicBackendUrl}/api/desplazamientos-viaticos/prueba/financiera/${financialToken}`;
+    const treasuryUrl = `${publicBackendUrl}/api/desplazamientos-viaticos/prueba/tesoreria/${treasuryToken}`;
     const pdfAttachment = await buildLiquidationPdfAttachment(solicitudDemo);
     const html = renderInstitutionalTemplate({
-      title: 'PRUEBA - Revisión y aprobación financiera',
-      introHtml: '<p><strong>ESTE ES UN CORREO DE PRUEBA. NO REALICE NINGÚN TRÁMITE REAL.</strong></p><p>El técnico contable diligenció la liquidación. Corresponde realizar la revisión y aprobación financiera.</p>',
-      bodyHtml: `${summaryHtml(solicitudDemo)}<p><strong>Total anticipo:</strong> $${liquidacion.totalAnticipo.toLocaleString('es-CO')}</p><p><strong>Observaciones:</strong> ${escapeHtml(liquidacion.observaciones || 'Sin observaciones')}</p><p style="text-align:center;margin:22px 0"><a href="${financialUrl}" style="display:inline-block;background:#1d4ed8;color:#fff;padding:12px 20px;border-radius:8px;text-decoration:none;font-weight:700">Revisar y aprobar liquidación</a></p>`
+      title: 'PRUEBA - Autorización de pago en Tesorería',
+      introHtml: '<p><strong>ESTE ES UN CORREO DE PRUEBA. NO REALICE NINGÚN TRÁMITE REAL.</strong></p><p>El técnico contable diligenció la liquidación. De acuerdo con el flujo actualizado, pasa directamente a Tesorería/Pagaduría para autorizar el pago.</p>',
+      bodyHtml: `${summaryHtml(solicitudDemo)}<p><strong>Total anticipo:</strong> $${liquidacion.totalAnticipo.toLocaleString('es-CO')}</p><p><strong>Observaciones:</strong> ${escapeHtml(liquidacion.observaciones || 'Sin observaciones')}</p><p style="text-align:center;margin:22px 0"><a href="${treasuryUrl}" style="display:inline-block;background:#1d4ed8;color:#fff;padding:12px 20px;border-radius:8px;text-decoration:none;font-weight:700">Autorizar pago de prueba</a></p>`
     });
     const result = await sendInstitutionalEmail({
-      to: normalizeEmail(payload.email || 'adsolarte@unicesmag.edu.co'),
-      subject: `${solicitudDemo.consecutivo} | PRUEBA - Aprobación financiera`,
+      to: DEMO_TREASURY_EMAIL,
+      subject: `${solicitudDemo.consecutivo} | PRUEBA - Autorización de pago`,
       text: `Correo de prueba. Total del anticipo: $${liquidacion.totalAnticipo.toLocaleString('es-CO')}.`,
       html,
       attachments: [pdfAttachment]
     });
     if (!result.success) throw new Error(result.error || 'No fue posible enviar el correo de prueba.');
     await markDemoTokenProcessed(tokenHash, usedDemoLiquidationTokens, payload.exp);
-    return res.send(page('Solicitud procesada', `<p>La liquidación de prueba por <strong>$${liquidacion.totalAnticipo.toLocaleString('es-CO')}</strong> fue enviada a la revisión financiera de prueba.</p><p>Este enlace quedó cerrado y no permite un segundo envío.</p>`));
+    return res.send(page('Solicitud procesada', `<p>La liquidación de prueba por <strong>$${liquidacion.totalAnticipo.toLocaleString('es-CO')}</strong> fue enviada directamente a Tesorería/Pagaduría de prueba.</p><p>Este enlace quedó cerrado y no permite un segundo envío.</p>`));
   } catch (error) {
     return res.status(400).send(page('No fue posible enviar la prueba', `<p>${escapeHtml(error.message || 'El enlace no es válido o ya expiró.')}</p>`));
   }
@@ -986,7 +1106,7 @@ const mostrarDemoTesoreria = async (req, res) => {
     if (await isDemoTokenProcessed(tokenHash, usedDemoTreasuryTokens)) return res.status(409).send(page('Pago ya autorizado', '<p>Esta autorización de pago de prueba ya fue registrada.</p>'));
     const solicitudDemo = buildDemoSolicitud(payload.liquidacion || {});
     res.setHeader('Content-Security-Policy', "default-src 'none'; img-src 'self' data:; style-src 'unsafe-inline'; form-action 'self'; base-uri 'none'; frame-ancestors 'none'");
-    return res.send(page('Autorizar pago de prueba en Tesorería', `${summaryHtml(solicitudDemo)}<p>La liquidación ya fue aprobada por la Vicerrectoría Financiera. Al confirmar se autorizará el pago y finalizará la prueba.</p><form method="post" action="/api/desplazamientos-viaticos/prueba/tesoreria/${req.params.token}"><label>Observación de Tesorería / Pagaduría</label><textarea name="observacion" maxlength="1200" rows="4"></textarea><button class="primary" type="submit">Autorizar pago</button></form>`));
+    return res.send(page('Autorizar pago de prueba en Tesorería', `${summaryHtml(solicitudDemo)}<p>La liquidación fue registrada por el Técnico Contable y remitida directamente a Tesorería/Pagaduría. Al confirmar se autorizará el pago y finalizará la prueba.</p><form method="post" action="/api/desplazamientos-viaticos/prueba/tesoreria/${req.params.token}"><label>Observación de Tesorería / Pagaduría</label><textarea name="observacion" maxlength="1200" rows="4"></textarea><button class="primary" type="submit">Autorizar pago</button></form>`));
   } catch (_) {
     return res.status(404).send(page('Vista de prueba no disponible', '<p>El enlace no es válido o ya expiró.</p>'));
   }
@@ -1003,17 +1123,16 @@ const procesarDemoTesoreria = async (req, res) => {
     const solicitudDemo = buildDemoSolicitud(liquidacion);
     solicitudDemo.trazabilidad = [
       { event: 'completado_tecnico_contable', actor: { nombre: 'Técnico contable de prueba', email: technicianEmail }, at: new Date(Date.now() - 120000).toISOString() },
-      { event: 'aprobado_financiera_final', actor: { nombre: 'Vicerrectoría Financiera de prueba', email: technicianEmail }, at: new Date(Date.now() - 60000).toISOString() },
       { event: 'completado_tesoreria', actor: { nombre: 'Tesorería / Pagaduría de prueba', email: DEMO_TREASURY_EMAIL }, detail: { observacion: clean(req.body.observacion, 1200), pagoAutorizado: true }, at: new Date().toISOString() }
     ];
     const pdfAttachment = await buildLiquidationPdfAttachment(solicitudDemo);
     const result = await sendInstitutionalEmail({
       to: technicianEmail,
       subject: `${solicitudDemo.consecutivo} | PRUEBA - Pago autorizado y solicitud finalizada`,
-      text: 'Prueba controlada finalizada. Se adjunta la liquidación con las tres actuaciones registradas.',
+      text: 'Prueba controlada finalizada. Se adjunta la liquidación con las actuaciones del Técnico Contable y Tesorería.',
       html: renderInstitutionalTemplate({
         title: 'PRUEBA - Pago autorizado y solicitud finalizada',
-        introHtml: '<p><strong>ESTE ES UN CORREO DE PRUEBA.</strong></p><p>Tesorería/Pagaduría autorizó el pago. La liquidación contiene las actuaciones del técnico contable, Vicerrectoría Financiera y Tesorería.</p>',
+        introHtml: '<p><strong>ESTE ES UN CORREO DE PRUEBA.</strong></p><p>Tesorería/Pagaduría autorizó el pago. La liquidación contiene las actuaciones del Técnico Contable y Tesorería, conforme al flujo actualizado.</p>',
         bodyHtml: summaryHtml(solicitudDemo)
       }),
       attachments: [pdfAttachment]
@@ -1086,13 +1205,19 @@ const procesarAccion = async (req, res) => {
     }
     const { solicitud, payload, step } = actionContext;
     if (!step || step.key !== solicitud.token_etapa) return res.status(409).send(page('Etapa no disponible', '<p>Esta etapa ya no está activa.</p>'));
-    const isAlternateAccess = payload.accessSource === step.alternateAccessSource && step.key === 'jefe';
+    const isAlternateAccess = payload.accessSource === step.alternateAccessSource;
     const actor = isAlternateAccess
-      ? buildActor(step.key, `${step.alternateApprovalLabel || 'Programa académico'} – acceso alterno`, step.alternateApprovalEmail)
+      ? buildActor(
+        step.key,
+        step.parallelEquivalentAccess
+          ? `${step.alternateApprovalLabel || step.label} – buzón institucional`
+          : `${step.alternateApprovalLabel || 'Programa académico'} – acceso alterno`,
+        step.alternateApprovalEmail
+      )
       : buildActor(step.key, step.label, step.email);
     const accion = clean(req.body.accion, 30);
     const actionObservation = clean(req.body.observacion, 1200);
-    if (isAlternateAccess && !actionObservation) {
+    if (isAlternateAccess && step.alternateObservationRequired !== false && !actionObservation) {
       return res.status(400).send(page('Observación obligatoria', `<p>Debe explicar la ausencia de ${escapeHtml(step.alternateAbsenceRole || step.label)} y el motivo de utilización del acceso alterno de ${escapeHtml(step.alternateApprovalLabel || 'la dependencia')}.</p>`));
     }
     if (step.action === 'approval') {
@@ -1108,15 +1233,13 @@ const procesarAccion = async (req, res) => {
       const approvalDetail = {
         observacion: actionObservation,
         ...(isAlternateAccess ? {
-          accesoAlterno: true,
+          accesoAlterno: !step.parallelEquivalentAccess,
+          accesoInstitucionalEquivalente: Boolean(step.parallelEquivalentAccess),
           origenAcceso: payload.accessSource,
           autoridadAlterna: step.alternateAuthorityLabel || step.alternateApprovalLabel
         } : {})
       };
-      const normalReport = await syncNormalReportApproval(solicitud, step, actor, approvalDetail);
-      if (step.key === 'gestion_humana' && normalReport) {
-        await sendNormalReportFinalCopies(solicitud, normalReport);
-      }
+      await syncNormalReportApproval(solicitud, step, actor, approvalDetail);
       const next = await advance(solicitud, actor, approvalDetail);
       if (step.key === 'financiera_final' && !next) {
         await solicitud.update({ estado: 'finalizada', finalizado_at: new Date() });
@@ -1126,7 +1249,20 @@ const procesarAccion = async (req, res) => {
       return res.send(page('Visto bueno registrado', `<p>Su actuación fue registrada correctamente.${next ? ` La solicitud pasó a ${escapeHtml(next.label)}.` : ''}</p>`));
     }
     if (step.action === 'liquidacion') {
-      if (accion !== 'liquidar') return res.status(400).send(page('Acción inválida', '<p>Debe enviar la liquidación.</p>'));
+      if (accion === 'rechazar') {
+        const observacion = clean(req.body.observaciones || req.body.observacion, 2000);
+        if (!observacion) return res.status(400).send(page('Falta la observación', '<p>Debe indicar por qué no se financiarán los viáticos o gastos de viaje.</p>'));
+        await solicitud.update({
+          estado: 'no_aprobada',
+          token_accion_hash: null,
+          token_etapa: null,
+          trazabilidad: appendTrace(solicitud, 'no_aprobado_tecnico_contable', actor, { observacion })
+        });
+        await syncNormalReportRejection(solicitud, step, actor, observacion);
+        await sendRequesterNotice(solicitud, 'Financiación de viáticos no aprobada', `La solicitud fue rechazada por ${step.label}, en la etapa de liquidación. Motivo: ${observacion}`);
+        return res.send(page('Decisión registrada', '<p>La financiación fue rechazada, los enlaces pendientes quedaron cerrados y se notificó al colaborador sin adjuntar documentos finales.</p>'));
+      }
+      if (accion !== 'liquidar') return res.status(400).send(page('Acción inválida', '<p>Debe enviar la liquidación o rechazarla con una observación.</p>'));
       const liquidacion = parseLiquidationBody(req.body);
       if (liquidacion.error) return res.status(400).send(page('Falta el detalle', `<p>${escapeHtml(liquidacion.error)}</p>`));
       const { detalles, totalAnticipo, observaciones } = liquidacion;
@@ -1137,21 +1273,35 @@ const procesarAccion = async (req, res) => {
       return res.send(page('Solicitud procesada', `<p>La liquidación por $${totalAnticipo.toLocaleString('es-CO')} fue registrada y enviada a ${escapeHtml(next?.label || 'la siguiente etapa')}.</p><p>El enlace del técnico contable quedó cerrado y no puede utilizarse nuevamente.</p>`));
     }
     if (step.action === 'pago') {
-      if (accion !== 'autorizar_pago') return res.status(400).send(page('Acción inválida', '<p>Debe confirmar la autorización del pago.</p>'));
+      if (accion === 'rechazar_pago') {
+        if (!actionObservation) return res.status(400).send(page('Falta la observación', '<p>Debe indicar por qué no autoriza el pago.</p>'));
+        await solicitud.update({
+          estado: 'no_aprobada',
+          token_accion_hash: null,
+          token_etapa: null,
+          trazabilidad: appendTrace(solicitud, 'no_aprobado_tesoreria', actor, { observacion: actionObservation })
+        });
+        await syncNormalReportRejection(solicitud, step, actor, actionObservation);
+        await sendRequesterNotice(solicitud, 'Pago de viáticos no autorizado', `La solicitud fue rechazada por ${step.label}, en la etapa de autorización de pago. Motivo: ${actionObservation}`);
+        return res.send(page('Decisión registrada', '<p>El pago no fue autorizado, el enlace quedó cerrado y se notificó al colaborador sin adjuntar documentos finales.</p>'));
+      }
+      if (accion !== 'autorizar_pago') return res.status(400).send(page('Acción inválida', '<p>Debe autorizar o no autorizar el pago.</p>'));
       const trace = appendTrace(solicitud, 'completado_tesoreria', actor, {
         observacion: actionObservation,
         pagoAutorizado: true
       });
       await solicitud.update({
-        estado: 'finalizada',
+        estado: 'pago_autorizado_pendiente_legalizacion',
         paso_actual: solicitud.paso_actual + 1,
         token_accion_hash: null,
         token_etapa: null,
         trazabilidad: trace,
         finalizado_at: new Date()
       });
+      await ensureLegalizacion(solicitud);
       await sendFinalizedCopies(solicitud);
-      return res.send(page('Pago autorizado y solicitud finalizada', '<p>La autorización de pago fue registrada correctamente. El colaborador recibió ambos formatos; el técnico contable y la Vicerrectoría Financiera recibieron la liquidación final firmada.</p>'));
+      await sendNormalReportFinalCopies(solicitud);
+      return res.send(page('Pago autorizado', '<p>La autorización de pago fue registrada correctamente. Los dos formatos finales fueron distribuidos y la solicitud quedó pendiente de legalización desde la fecha de regreso.</p>'));
     }
     if (step.action === 'tramite') {
       if (accion !== 'tramitar') return res.status(400).send(page('Acción inválida', '<p>Debe confirmar el trámite.</p>'));
@@ -1193,6 +1343,7 @@ const descargarPdf = async (req, res) => {
 };
 
 module.exports = {
+  _internals: { buildApprovalPlan, parseLiquidationBody },
   descargarFormato,
   descargarPdf,
   mostrarAccion,

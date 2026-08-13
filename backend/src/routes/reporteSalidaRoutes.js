@@ -21,7 +21,14 @@ const storage = multer.diskStorage({
 
 const upload = multer({ 
   storage: storage,
-  limits: { fileSize: 10 * 1024 * 1024 } 
+  limits: { fileSize: Number(process.env.REPORTE_SALIDA_ADJUNTO_MAX_MB || 15) * 1024 * 1024 },
+  fileFilter: (req, file, cb) => {
+    const allowedMimeTypes = new Set(['application/pdf', 'image/png', 'image/jpeg']);
+    const allowedExtensions = new Set(['.pdf', '.png', '.jpg', '.jpeg']);
+    const extension = path.extname(file.originalname || '').toLowerCase();
+    const allowed = allowedMimeTypes.has(String(file.mimetype || '').toLowerCase()) && allowedExtensions.has(extension);
+    cb(allowed ? null : new Error('Solo se permiten archivos PDF, PNG, JPG o JPEG.'), allowed);
+  }
 });
 const {
   aprobarDesdeCorreo,

@@ -22,6 +22,7 @@ import GestionInformacion from './pages/GestionInformacion';
 import PlanAccionRevision from './pages/PlanAccionRevision';
 import PlanAccionConsulta from './pages/PlanAccionConsulta';
 import TiempoReponer from './pages/TiempoReponer';
+import LegalizacionViaticos from './pages/LegalizacionViaticos';
 import VerificacionReporte from './pages/VerificacionReporte';
 import SessionTimeoutModal from './components/SessionTimeoutModal';
 import AppSnackbar from './components/AppSnackbar';
@@ -97,6 +98,7 @@ function App() {
                 <Route path="/dashboard" element={<PrivateRoute><DashboardLayout /></PrivateRoute>}>
                   <Route index element={<Dashboard />} />
                   <Route path="tiempo-reponer" element={<TiempoReponer />} />
+                  <Route path="legalizacion-viaticos" element={<LegalizacionViaticos />} />
                   <Route
                     path="aseguramiento-calidad"
                     element={(

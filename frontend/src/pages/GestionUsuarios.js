@@ -211,7 +211,11 @@ function GestionUsuarios() {
     { key: 'seguridad_aplicativa.gestionar_hallazgos', label: 'Gestionar hallazgos', group: 'Seguridad Aplicativa' },
     { key: 'seguridad_aplicativa.analizar_remediacion', label: 'Analizar remediacion', group: 'Seguridad Aplicativa' },
     { key: 'seguridad_aplicativa.exportar', label: 'Exportar', group: 'Seguridad Aplicativa' },
-    { key: 'seguridad_aplicativa.configurar', label: 'Configurar', group: 'Seguridad Aplicativa' }
+    { key: 'seguridad_aplicativa.configurar', label: 'Configurar', group: 'Seguridad Aplicativa' },
+    { key: 'vicerrectoria_financiera', label: 'Vicerrectoría Financiera y de Desarrollo Institucional', group: 'Tableros estadisticos' },
+    { key: 'vicerrectoria_financiera.viaticos', label: 'Módulo de Viáticos', group: 'Viáticos' },
+    { key: 'vicerrectoria_financiera.viaticos.gestion', label: 'Gestión de Viáticos', group: 'Viáticos' },
+    { key: 'vicerrectoria_financiera.viaticos.estadistica', label: 'Estadística de Viáticos', group: 'Viáticos' }
   ];
   const DATABASE_BACKUP_PERMISSION_OPTIONS = GI_MODULE_OPTIONS.filter((item) => [
     'gestion_bases_datos.respaldo_descargar',
@@ -224,6 +228,12 @@ function GestionUsuarios() {
   const STATISTICAL_MODULE_OPTIONS = GI_MODULE_OPTIONS.filter((item) => item.group === 'Tableros estadisticos');
   const AUTOEVALUACION_PERMISSION_OPTIONS = GI_MODULE_OPTIONS.filter((item) => item.group === 'Autoevaluacion');
   const SECURITY_APPLICATION_PERMISSION_OPTIONS = GI_MODULE_OPTIONS.filter((item) => item.group === 'Seguridad Aplicativa');
+  const VIATICOS_PERMISSION_KEYS = {
+    area: 'vicerrectoria_financiera',
+    module: 'vicerrectoria_financiera.viaticos',
+    management: 'vicerrectoria_financiera.viaticos.gestion',
+    statistics: 'vicerrectoria_financiera.viaticos.estadistica'
+  };
   const GESTION_USUARIOS_SUBMODULE_OPTIONS = [
     { key: 'gestion_usuarios_crear_individual', label: 'Creación de usuario individual' },
     { key: 'gestion_usuarios_crear_masivo', label: 'Creación de usuario masivo por Excel' }
@@ -1130,9 +1140,21 @@ function GestionUsuarios() {
 
         const isDatabasePermission = key === 'gestion_bases_datos' || key.startsWith('gestion_bases_datos.');
         const isDatabaseChild = key.startsWith('gestion_bases_datos.');
-        const isTablero = !isDatabasePermission && key !== 'estadistica_institucional';
+        const isViaticosPermission = key === 'vicerrectoria_financiera' || key.startsWith('vicerrectoria_financiera.viaticos');
+        const isTablero = !isDatabasePermission && !isViaticosPermission && key !== 'estadistica_institucional';
 
-        if (isDatabaseChild) {
+        if (isViaticosPermission) {
+          if (!isSelected) {
+            if (key.startsWith('vicerrectoria_financiera.viaticos.') && !nextModules.includes('vicerrectoria_financiera.viaticos')) nextModules.push('vicerrectoria_financiera.viaticos');
+            if (key.startsWith('vicerrectoria_financiera.viaticos') && !nextModules.includes('vicerrectoria_financiera')) nextModules.push('vicerrectoria_financiera');
+            if (!nextModules.includes('estadistica_institucional')) nextModules.push('estadistica_institucional');
+            if (!nextMenu.includes('gestion_informacion')) nextMenu.push('gestion_informacion');
+          } else if (key === 'vicerrectoria_financiera') {
+            nextModules = nextModules.filter((moduleKey) => !moduleKey.startsWith('vicerrectoria_financiera.viaticos'));
+          } else if (key === 'vicerrectoria_financiera.viaticos') {
+            nextModules = nextModules.filter((moduleKey) => !moduleKey.startsWith('vicerrectoria_financiera.viaticos.'));
+          }
+        } else if (isDatabaseChild) {
           if (!isSelected) {
             if (!nextModules.includes('gestion_bases_datos')) nextModules.push('gestion_bases_datos');
             if (!nextMenu.includes('gestion_informacion')) nextMenu.push('gestion_informacion');
@@ -2827,6 +2849,28 @@ function GestionUsuarios() {
                               ))}
                             </Grid>
                           </FormGroup>
+
+                          {modulePermissionsForm.allowedModules.includes(VIATICOS_PERMISSION_KEYS.area) && (
+                            <Box sx={{ mt: 1.2, pt: 1.2, borderTop: '1px solid #e2e8f0' }}>
+                              <Typography variant="caption" sx={{ display: 'block', mb: .5, color: '#475569', fontWeight: 850, textTransform: 'uppercase' }}>Permisos de Viáticos</Typography>
+                              <FormControlLabel
+                                control={<Checkbox checked={modulePermissionsForm.allowedModules.includes(VIATICOS_PERMISSION_KEYS.module)} onChange={() => handleTogglePermission('allowedModules', VIATICOS_PERMISSION_KEYS.module)} size="small" />}
+                                label="Viáticos"
+                              />
+                              {modulePermissionsForm.allowedModules.includes(VIATICOS_PERMISSION_KEYS.module) && (
+                                <Grid container spacing={0.5} sx={{ pl: { xs: 0, sm: 3.5 } }}>
+                                  {[
+                                    { key: VIATICOS_PERMISSION_KEYS.management, label: 'Gestión de Viáticos' },
+                                    { key: VIATICOS_PERMISSION_KEYS.statistics, label: 'Estadística de Viáticos' }
+                                  ].map((item) => (
+                                    <Grid item xs={12} sm={6} md={4} key={item.key}>
+                                      <FormControlLabel control={<Checkbox checked={modulePermissionsForm.allowedModules.includes(item.key)} onChange={() => handleTogglePermission('allowedModules', item.key)} size="small" />} label={item.label} />
+                                    </Grid>
+                                  ))}
+                                </Grid>
+                              )}
+                            </Box>
+                          )}
 
                           {(modulePermissionsForm.menuPermissions?.includes('autoevaluacion') || modulePermissionsForm.allowedModules.includes('autoevaluacion')) && (
                             <Box sx={{ mt: 1.4, pt: 1.2, borderTop: '1px solid #e2e8f0' }}>

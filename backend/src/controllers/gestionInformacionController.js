@@ -2624,6 +2624,49 @@ const resolveContextoExternoCargaConfig = (value = '') => {
   return CONTEXTO_EXTERNO_CARGA_MAP[key] || null;
 };
 
+const CONTEXTO_EXTERNO_USER_TEMPLATE_BASE_HEADERS = [
+  'CÓDIGO_INSTITUCIÓN_PADRE',
+  'CÓDIGO_INSTITUCIÓN',
+  'Institución de Educación Superior (IES)',
+  'Principal o Seccional',
+  'ID Sector IES',
+  'Sector IES',
+  'IES Acreditada',
+  'ID Caracter',
+  'Caracter IES',
+  'Código del departamento (IES)',
+  'Departamento de domicilio de la IES',
+  'Código del Municipio (IES)',
+  'Municipio de domicilio de la IES',
+  'Código SNIES del programa',
+  'Programa Académico',
+  'Programa Acreditado',
+  'ID Nivel Académico',
+  'Nivel Académico',
+  'ID Nivel de Formación',
+  'Nivel de Formación',
+  'ID Metodología',
+  'Metodología',
+  'ID Área',
+  'Área de Conocimiento',
+  'Id_Nucleo',
+  'Núcleo Básico del Conocimiento (NBC)',
+  'ID CINE CAMPO AMPLIO',
+  'DESC CINE CAMPO AMPLIO',
+  'ID CINE CAMPO ESPECIFICO',
+  'DESC CINE CAMPO ESPECIFICO',
+  'ID CINE CODIGO DETALLADO',
+  'DESC CINE CODIGO DETALLADO',
+  'Código del Departamento (Programa)',
+  'Departamento de oferta del programa',
+  'Código del Municipio (Programa)',
+  'Municipio de oferta del programa',
+  'ID Sexo',
+  'Sexo',
+  'Año',
+  'Semestre'
+];
+
 const CONTEXTO_EXTERNO_TABULAR_BASE_HEADERS = [
   'CODIGO DE LA INSTITUCION',
   'IES PADRE',
@@ -2668,7 +2711,7 @@ const CONTEXTO_EXTERNO_TABULAR_BASE_HEADERS = [
 ];
 
 const buildContextoExternoTabularHeaders = (metricColumn) => [
-  ...CONTEXTO_EXTERNO_TABULAR_BASE_HEADERS,
+  ...CONTEXTO_EXTERNO_USER_TEMPLATE_BASE_HEADERS,
   metricColumn
 ];
 

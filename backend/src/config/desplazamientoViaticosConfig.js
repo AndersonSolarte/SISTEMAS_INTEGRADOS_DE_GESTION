@@ -20,6 +20,10 @@ const getDesplazamientoViaticosRecipients = () => ({
   ),
   financiera: normalizeEmail(
     process.env.VIATICOS_VICERRECTORIA_FINANCIERA_EMAIL
+      || 'jcnandar@unicesmag.edu.co'
+  ),
+  financieraInstitucional: normalizeEmail(
+    process.env.VIATICOS_VICERRECTORIA_FINANCIERA_INSTITUCIONAL_EMAIL
       || getDependencyEmail('Vicerrectoria Financiera y de Desarrollo Institucional')
       || 'viceadfin@unicesmag.edu.co'
   ),

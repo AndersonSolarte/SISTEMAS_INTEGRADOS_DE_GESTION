@@ -1,0 +1,323 @@
+const fs = require('fs');
+const path = require('path');
+const { Op } = require('sequelize');
+const { DesplazamientoViaticosSolicitud, ViaticosLegalizacion, UserModulePermission } = require('../models');
+const { ROLES } = require('../constants/roles');
+const { getDesplazamientoViaticosRecipients, normalizeEmail } = require('../config/desplazamientoViaticosConfig');
+const { sendInstitutionalEmail, renderInstitutionalTemplate, escapeHtml } = require('../services/emailService');
+const { buildLegalizacionPdfBuffer } = require('../services/desplazamientoViaticos/legalizacionPdfService');
+
+const MANAGEMENT_PERMISSION = 'vicerrectoria_financiera.viaticos.gestion';
+const STATS_PERMISSION = 'vicerrectoria_financiera.viaticos.estadistica';
+const uploadRoot = path.resolve(__dirname, '../../uploads/legalizaciones_viaticos');
+const today = () => new Date().toISOString().slice(0, 10);
+const clean = (value, max = 2000) => String(value || '').trim().slice(0, max);
+const currency = (value) => `$${Number(value || 0).toLocaleString('es-CO')}`;
+const removeUploadedFiles = (files = []) => files.forEach((file) => {
+  const resolved = file?.path ? path.resolve(file.path) : '';
+  if (!resolved.startsWith(uploadRoot)) return;
+  try { if (fs.existsSync(resolved)) fs.unlinkSync(resolved); } catch (_) { /* Limpieza de carga fallida. */ }
+});
+const trace = (legalizacion, event, actor = {}, detail = {}) => [
+  ...(legalizacion.trazabilidad || []),
+  { event, actor, detail, at: new Date().toISOString() }
+];
+
+const controlledTestRecipients = (solicitud) => {
+  if (!solicitud?.datos_viaticos?.pruebaControlada) return null;
+  const configured = Array.isArray(solicitud.datos_viaticos.correosPrueba)
+    ? solicitud.datos_viaticos.correosPrueba
+    : [];
+  return [...new Set(configured.map(normalizeEmail).filter(Boolean))];
+};
+
+const legalizationRecipients = (solicitud, fallbackCollaboratorEmail) => {
+  const testRecipients = controlledTestRecipients(solicitud);
+  if (testRecipients) return testRecipients;
+  return [
+    normalizeEmail(solicitud?.solicitante_snapshot?.email || fallbackCollaboratorEmail),
+    getDesplazamientoViaticosRecipients().tecnicoContable
+  ].filter(Boolean);
+};
+
+const legalizationMailThread = (legalizacion, solicitud) => {
+  const testPrefix = controlledTestRecipients(solicitud) ? 'PRUEBA CONTROLADA | ' : '';
+  const rootMessageId = `<legalizacion-${legalizacion.id}-${legalizacion.codigo_verificacion}@siac.unicesmag.edu.co>`;
+  return {
+    subject: `${testPrefix}Legalización de viáticos | ${solicitud.consecutivo}`,
+    rootMessageId,
+    finalMessageId: `<legalizacion-${legalizacion.id}-${legalizacion.codigo_verificacion}-validada@siac.unicesmag.edu.co>`
+  };
+};
+
+const legalizationEmailSummary = (legalizacion, solicitud, statusLabel) => {
+  const details = legalizacion.detalles || [];
+  const totalAnticipo = details.reduce((sum, row) => sum + Number(row.valorAnticipo || 0), 0);
+  const totalLegalizado = details.reduce((sum, row) => sum + Number(row.valorLegalizado || 0), 0);
+  const difference = totalAnticipo - totalLegalizado;
+  const detailRows = details.map((row) => `<tr><td style="padding:9px;border-bottom:1px solid #dbe3ee">${escapeHtml(row.detalle)}</td><td style="padding:9px;border-bottom:1px solid #dbe3ee;text-align:right">${escapeHtml(currency(row.valorAnticipo))}</td><td style="padding:9px;border-bottom:1px solid #dbe3ee;text-align:right">${escapeHtml(currency(row.valorLegalizado))}</td></tr>`).join('');
+  return `<div style="border:1px solid #dbe6f2;border-radius:12px;overflow:hidden;margin:18px 0"><div style="padding:14px 16px;background:#0b3a6f;color:#fff"><strong>${escapeHtml(solicitud.consecutivo)}</strong><div style="font-size:12px;margin-top:3px;opacity:.9">${escapeHtml(statusLabel)}</div></div><div style="padding:15px 16px;background:#f8fbff"><p style="margin:0 0 7px"><strong>Colaborador:</strong> ${escapeHtml(solicitud.solicitante_snapshot?.nombre || '')}</p><p style="margin:0 0 7px"><strong>Dependencia:</strong> ${escapeHtml(solicitud.datos_laborales?.dependencia || '')}</p><p style="margin:0"><strong>Destino:</strong> ${escapeHtml(solicitud.datos_viaticos?.lugarVisitar || '')}</p></div><table style="width:100%;border-collapse:collapse"><thead><tr style="background:#e8eef6"><th style="padding:9px;text-align:left">Concepto</th><th style="padding:9px;text-align:right">Anticipo</th><th style="padding:9px;text-align:right">Legalizado</th></tr></thead><tbody>${detailRows}</tbody><tfoot><tr style="background:#eff6ff;font-weight:700"><td style="padding:10px">Totales</td><td style="padding:10px;text-align:right">${escapeHtml(currency(totalAnticipo))}</td><td style="padding:10px;text-align:right">${escapeHtml(currency(totalLegalizado))}</td></tr></tfoot></table><div style="padding:13px 16px;color:#0b3a6f;font-weight:700">${difference >= 0 ? 'Saldo a favor de la Universidad' : 'Saldo a favor del colaborador'}: ${escapeHtml(currency(Math.abs(difference)))}</div></div>`;
+};
+
+const canAccess = async (user, permission) => {
+  if (user?.role === ROLES.ADMINISTRADOR) return true;
+  return Boolean(await UserModulePermission.count({ where: { user_id: user.id, module_key: permission, can_view: true } }));
+};
+
+const effectiveState = (legalizacion) => {
+  if (!legalizacion) return null;
+  if (['finalizada', 'en_revision'].includes(legalizacion.estado)) return legalizacion.estado;
+  const current = today();
+  if (current < legalizacion.fecha_habilitacion) return 'pendiente_habilitacion';
+  if (current > legalizacion.fecha_limite) return 'legalizacion_vencida';
+  return legalizacion.estado === 'presentada' ? 'en_revision' : 'pendiente_legalizacion';
+};
+
+const safeLegalizacion = (legalizacion) => {
+  if (!legalizacion) return null;
+  const data = legalizacion.toJSON ? legalizacion.toJSON() : legalizacion;
+  return {
+    ...data,
+    estado: effectiveState(data),
+    adjuntos: (data.adjuntos || []).map(({ path: _path, ...file }) => file)
+  };
+};
+
+const includeLegalizacion = [{ model: ViaticosLegalizacion, as: 'legalizacion', required: false }];
+
+const listarPropias = async (req, res) => {
+  try {
+    const solicitudes = await DesplazamientoViaticosSolicitud.findAll({
+      where: { user_id: req.user.id, estado: 'pago_autorizado_pendiente_legalizacion' },
+      include: includeLegalizacion,
+      order: [['created_at', 'DESC']]
+    });
+    const rows = solicitudes.filter((row) => row.legalizacion).map((row) => ({
+      solicitud: row.toJSON(),
+      legalizacion: safeLegalizacion(row.legalizacion)
+    }));
+    return res.json({ success: true, total: rows.length, data: rows });
+  } catch (error) {
+    console.error('Error en listarPropias:', error);
+    return res.json({ success: true, total: 0, data: [] });
+  }
+};
+
+const estadoPropio = async (req, res) => {
+  try {
+    const legalizaciones = await ViaticosLegalizacion.findAll({ where: { user_id: req.user.id } });
+    const active = legalizaciones.map(safeLegalizacion).filter((item) => !['finalizada', 'en_revision'].includes(item.estado));
+    return res.json({ success: true, active: active.length, overdue: active.filter((item) => item.estado === 'legalizacion_vencida').length });
+  } catch (error) {
+    console.error('Error en estadoPropio:', error);
+    return res.json({ success: true, active: 0, overdue: 0 });
+  }
+};
+
+const presentar = async (req, res) => {
+  const rejectUpload = (status, message) => {
+    removeUploadedFiles(req.files);
+    return res.status(status).json({ success: false, message });
+  };
+  const legalizacion = await ViaticosLegalizacion.findOne({
+    where: { id: req.params.id, user_id: req.user.id },
+    include: [{ model: DesplazamientoViaticosSolicitud, as: 'solicitud', required: true }]
+  });
+  if (!legalizacion) return rejectUpload(404, 'Legalización no encontrada.');
+  if (['en_revision', 'finalizada'].includes(effectiveState(legalizacion))) return rejectUpload(409, 'La legalización ya fue enviada o finalizada.');
+  if (today() < legalizacion.fecha_habilitacion) return rejectUpload(409, `La legalización se habilitará el ${legalizacion.fecha_habilitacion}.`);
+
+  let submitted;
+  try {
+    submitted = JSON.parse(req.body.detalles || '[]');
+  } catch (_) {
+    return rejectUpload(400, 'El detalle de la legalización no es válido.');
+  }
+  const expected = legalizacion.detalles || [];
+  if (!Array.isArray(submitted) || submitted.length !== expected.length) return rejectUpload(400, 'Debe legalizar todos los conceptos autorizados.');
+  const files = Array.isArray(req.files) ? req.files : [];
+  const result = [];
+  const attachments = [];
+  for (const concept of expected) {
+    const received = submitted.find((item) => item.id === concept.id);
+    const legalized = Number(received?.valorLegalizado);
+    if (!Number.isFinite(legalized) || legalized < 0) return rejectUpload(400, `Ingrese un valor legalizado válido para ${concept.detalle}.`);
+    const support = files.find((file) => file.fieldname === `soporte_${concept.id}`);
+    result.push({ ...concept, valorLegalizado: legalized, diferencia: Number(concept.valorAnticipo || 0) - legalized });
+    if (support) {
+      attachments.push({
+        id: `${concept.id}-${Date.now()}`,
+        conceptoId: concept.id,
+        detalle: concept.detalle,
+        originalName: path.basename(clean(support.originalname, 240)),
+        filename: support.filename,
+        mimetype: support.mimetype,
+        size: support.size,
+        path: support.path
+      });
+    }
+  }
+  const actor = { id: req.user.id, nombre: req.user.nombre || req.user.name, email: req.user.email };
+  await legalizacion.update({
+    estado: 'en_revision',
+    detalles: result,
+    observaciones: clean(req.body.observaciones),
+    adjuntos: attachments,
+    presentado_at: new Date(),
+    trazabilidad: trace(legalizacion, 'legalizacion_presentada', actor)
+  });
+  const mailThread = legalizationMailThread(legalizacion, legalizacion.solicitud);
+  const mailResult = await sendInstitutionalEmail({
+    to: legalizationRecipients(legalizacion.solicitud, req.user.email),
+    subject: mailThread.subject,
+    messageId: mailThread.rootMessageId,
+    text: 'La legalización fue presentada y quedó pendiente de revisión del Técnico Contable.',
+    html: renderInstitutionalTemplate({
+      title: 'Legalización de viáticos presentada',
+      introHtml: '<p>Saludo de paz y bien,</p><p>La legalización fue firmada electrónicamente por el colaborador y quedó pendiente de revisión del Técnico Contable.</p>',
+      bodyHtml: `${legalizationEmailSummary(legalizacion, legalizacion.solicitud, 'Pendiente de revisión del Técnico Contable')}<p><strong>Soportes adjuntos:</strong> ${attachments.length}</p><p style="color:#64748b">Los anexos permanecerán disponibles temporalmente en SIAC hasta finalizar la revisión.</p>`
+    }),
+    attachments: attachments.map((file) => ({ filename: file.originalName, path: file.path }))
+  });
+  return res.status(201).json({ success: true, message: 'Legalización enviada al Técnico Contable.', emailSent: mailResult.success });
+};
+
+const listarGestion = async (req, res) => {
+  if (!(await canAccess(req.user, MANAGEMENT_PERMISSION))) return res.status(403).json({ success: false, message: 'No tiene permiso para Gestión de Viáticos.' });
+  const where = {};
+  if (req.query.estado && req.query.estado !== 'todas') where.estado = req.query.estado;
+  if (req.query.search) {
+    where[Op.or] = [
+      { consecutivo: { [Op.iLike]: `%${clean(req.query.search, 120)}%` } },
+      { solicitante_snapshot: { [Op.contains]: { nombre: clean(req.query.search, 120) } } }
+    ];
+  }
+  const solicitudes = await DesplazamientoViaticosSolicitud.findAll({ where, include: includeLegalizacion, order: [['created_at', 'DESC']], limit: 500 });
+  return res.json({ success: true, data: solicitudes.map((row) => ({ ...row.toJSON(), legalizacion: safeLegalizacion(row.legalizacion) })) });
+};
+
+const obtenerGestion = async (req, res) => {
+  if (!(await canAccess(req.user, MANAGEMENT_PERMISSION))) return res.status(403).json({ success: false, message: 'No tiene permiso para Gestión de Viáticos.' });
+  const solicitud = await DesplazamientoViaticosSolicitud.findByPk(req.params.solicitudId, { include: includeLegalizacion });
+  if (!solicitud) return res.status(404).json({ success: false, message: 'Solicitud no encontrada.' });
+  return res.json({ success: true, data: { ...solicitud.toJSON(), legalizacion: safeLegalizacion(solicitud.legalizacion) } });
+};
+
+const verAdjunto = async (req, res) => {
+  const legalizacion = await ViaticosLegalizacion.findByPk(req.params.id);
+  if (!legalizacion) return res.status(404).json({ success: false, message: 'Legalización no encontrada.' });
+  const owner = Number(legalizacion.user_id) === Number(req.user.id);
+  if (!owner && !(await canAccess(req.user, MANAGEMENT_PERMISSION))) return res.status(403).json({ success: false, message: 'No autorizado.' });
+  const attachment = (legalizacion.adjuntos || []).find((file) => file.id === req.params.fileId);
+  const resolved = attachment?.path ? path.resolve(attachment.path) : '';
+  if (!attachment || !resolved.startsWith(uploadRoot) || !fs.existsSync(resolved)) return res.status(404).json({ success: false, message: 'El soporte temporal ya no está disponible.' });
+  res.setHeader('Content-Type', attachment.mimetype || 'application/octet-stream');
+  return res.sendFile(resolved);
+};
+
+const validar = async (req, res) => {
+  if (!(await canAccess(req.user, MANAGEMENT_PERMISSION))) return res.status(403).json({ success: false, message: 'No tiene permiso para validar legalizaciones.' });
+  const legalizacion = await ViaticosLegalizacion.findByPk(req.params.id, { include: [{ model: DesplazamientoViaticosSolicitud, as: 'solicitud', required: true }] });
+  if (!legalizacion) return res.status(404).json({ success: false, message: 'Legalización no encontrada.' });
+  if (legalizacion.estado === 'finalizada') return res.status(409).json({ success: false, message: 'La legalización ya fue finalizada.' });
+  if (legalizacion.estado !== 'en_revision') return res.status(409).json({ success: false, message: 'La legalización todavía no fue presentada.' });
+  let details = legalizacion.detalles || [];
+  if (req.body.detalles) {
+    const edited = Array.isArray(req.body.detalles) ? req.body.detalles : JSON.parse(req.body.detalles);
+    details = details.map((row) => {
+      const update = edited.find((item) => item.id === row.id);
+      const legalized = Number(update?.valorLegalizado ?? row.valorLegalizado);
+      if (!Number.isFinite(legalized) || legalized < 0) throw new Error(`Valor inválido para ${row.detalle}.`);
+      return { ...row, valorLegalizado: legalized, diferencia: Number(row.valorAnticipo) - legalized };
+    });
+  }
+  const actor = { id: req.user.id, nombre: req.user.nombre || req.user.name, email: req.user.email };
+  const finalTrace = trace(legalizacion, 'legalizacion_validada', actor, { observaciones: clean(req.body.observaciones) });
+  await legalizacion.update({ detalles: details, observaciones: clean(req.body.observaciones || legalizacion.observaciones), trazabilidad: finalTrace });
+  const pdf = await buildLegalizacionPdfBuffer(legalizacion, legalizacion.solicitud);
+  const temporaryAttachments = (legalizacion.adjuntos || []).filter((file) => {
+    const resolved = file.path ? path.resolve(file.path) : '';
+    return resolved.startsWith(uploadRoot) && fs.existsSync(resolved);
+  });
+  const mailThread = legalizationMailThread(legalizacion, legalizacion.solicitud);
+  const result = await sendInstitutionalEmail({
+    to: legalizationRecipients(legalizacion.solicitud),
+    subject: mailThread.subject,
+    messageId: mailThread.finalMessageId,
+    inReplyTo: mailThread.rootMessageId,
+    references: mailThread.rootMessageId,
+    text: 'La legalización de viáticos fue revisada y validada por el Técnico Contable.',
+    html: renderInstitutionalTemplate({ title: 'Legalización de viáticos validada', introHtml: '<p>Saludo de paz y bien,</p><p>La legalización fue revisada y firmada electrónicamente por el Técnico Contable. Se adjuntan el formato final y sus soportes.</p>', bodyHtml: `${legalizationEmailSummary(legalizacion, legalizacion.solicitud, 'Legalización validada y finalizada')}<p style="color:#64748b">El PDF incorpora las firmas electrónicas del colaborador y del Técnico Contable, la trazabilidad, el código QR y el enlace institucional de verificación.</p>` }),
+    attachments: [
+      { filename: `LEGALIZACION-VIATICOS-${legalizacion.solicitud.consecutivo}.pdf`, content: pdf, contentType: 'application/pdf' },
+      ...temporaryAttachments.map((file) => ({ filename: file.originalName, path: file.path }))
+    ]
+  });
+  if (!result.success) return res.status(502).json({ success: false, message: 'No fue posible enviar los documentos finales. Los soportes se conservaron para reintentar.', error: result.error });
+  for (const file of temporaryAttachments) {
+    try { fs.unlinkSync(file.path); } catch (_) { /* El registro queda sin ruta pública aunque el archivo ya no exista. */ }
+  }
+  await legalizacion.update({
+    estado: 'finalizada',
+    revisado_at: new Date(),
+    revisado_por: req.user.id,
+    finalizado_at: new Date(),
+    adjuntos: (legalizacion.adjuntos || []).map(({ path: _path, ...file }) => file)
+  });
+  await legalizacion.solicitud.update({ estado: 'legalizacion_finalizada' });
+  return res.json({ success: true, message: 'Legalización validada, enviada y soportes temporales eliminados.' });
+};
+
+const estadisticas = async (req, res) => {
+  if (!(await canAccess(req.user, STATS_PERMISSION))) return res.status(403).json({ success: false, message: 'No tiene permiso para Estadística de Viáticos.' });
+  const solicitudes = await DesplazamientoViaticosSolicitud.findAll({ include: includeLegalizacion, order: [['created_at', 'DESC']] });
+  const totals = { solicitudes: solicitudes.length, liquidado: 0, pagoAutorizado: 0, legalizado: 0, pendienteLegalizar: 0, rechazadas: 0 };
+  const rubros = {};
+  const actividades = {};
+  const dependencias = {};
+  const destinos = {};
+  solicitudes.forEach((solicitud) => {
+    if (solicitud.estado === 'no_aprobada') totals.rechazadas += 1;
+    (solicitud.liquidacion?.detalles || []).forEach((row) => {
+      const amount = Number(row.valorTotal || 0);
+      totals.liquidado += amount;
+      rubros[row.detalle] = (rubros[row.detalle] || 0) + amount;
+    });
+    const totalSolicitud = Number(solicitud.liquidacion?.totalAnticipo || 0);
+    if (['pago_autorizado_pendiente_legalizacion', 'legalizacion_finalizada'].includes(solicitud.estado)) totals.pagoAutorizado += totalSolicitud;
+    (solicitud.legalizacion?.detalles || []).forEach((row) => { totals.legalizado += Number(row.valorLegalizado || 0); });
+    if (solicitud.estado === 'pago_autorizado_pendiente_legalizacion') totals.pendienteLegalizar += 1;
+    const activity = solicitud.datos_salida?.motivo || solicitud.datos_viaticos?.objetoComision || 'Sin clasificar';
+    actividades[activity] = (actividades[activity] || 0) + totalSolicitud;
+    const dependencia = solicitud.datos_laborales?.dependencia || 'Sin clasificar';
+    const destino = solicitud.datos_viaticos?.lugarVisitar || solicitud.datos_salida?.municipio || 'Sin clasificar';
+    dependencias[dependencia] = (dependencias[dependencia] || 0) + totalSolicitud;
+    destinos[destino] = (destinos[destino] || 0) + totalSolicitud;
+  });
+  const rows = (record) => Object.entries(record).map(([name, total]) => ({ name, total })).sort((a, b) => b.total - a.total);
+  return res.json({ success: true, data: { totals, rubros: rows(rubros), actividades: rows(actividades), dependencias: rows(dependencias), destinos: rows(destinos) } });
+};
+
+const verificar = async (req, res) => {
+  const legalizacion = await ViaticosLegalizacion.findOne({ where: { codigo_verificacion: req.params.codigo }, include: [{ model: DesplazamientoViaticosSolicitud, as: 'solicitud', required: true }] });
+  if (!legalizacion) return res.status(404).json({ success: false, message: 'Documento no encontrado.' });
+  const transactionCode = String(legalizacion.codigo_verificacion || '').toUpperCase();
+  const payload = { success: true, documento: 'ADF-PP-FR-005 - Legalización de viáticos', consecutivo: legalizacion.solicitud.consecutivo, codigoValidacionTransaccional: transactionCode, estado: effectiveState(legalizacion), finalizadoAt: legalizacion.finalizado_at };
+  if (req.query.format === 'json' || String(req.headers.accept || '').includes('application/json')) return res.json(payload);
+  const status = effectiveState(legalizacion);
+  return res.send(`<!doctype html><html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Validación de legalización</title><style>body{margin:0;padding:24px;background:#eef4fa;font-family:Arial,sans-serif;color:#24364b}.card{max-width:760px;margin:auto;background:#fff;border-radius:18px;box-shadow:0 18px 45px #0f172a24;overflow:hidden}.header{width:100%;max-height:150px;object-fit:contain}.bar{padding:18px 28px;background:#0b3a6f;color:#fff}.body{padding:30px}.status{display:inline-block;padding:8px 13px;border-radius:999px;background:#dcfce7;color:#166534;font-weight:800}.row{padding:13px 0;border-bottom:1px solid #e2e8f0}.row span{display:block;color:#64748b;font-size:12px;font-weight:700;text-transform:uppercase}.row strong{display:block;margin-top:4px;font-size:16px;overflow-wrap:anywhere}</style></head><body><main class="card"><img class="header" src="/api/desplazamientos-viaticos/assets/encabezado-correos.png" alt="Universidad CESMAG"><div class="bar"><strong>SIAC UNICESMAG</strong><div>Validación institucional de documentos</div></div><section class="body"><h1>Legalización de viáticos</h1><p class="status">Documento encontrado</p><div class="row"><span>Formato</span><strong>ADF-PP-FR-005</strong></div><div class="row"><span>Consecutivo</span><strong>${escapeHtml(legalizacion.solicitud.consecutivo)}</strong></div><div class="row"><span>Código de validación transaccional</span><strong>${escapeHtml(transactionCode)}</strong></div><div class="row"><span>Estado</span><strong>${escapeHtml(status.replaceAll('_', ' '))}</strong></div><div class="row"><span>Finalizado</span><strong>${escapeHtml(legalizacion.finalizado_at ? new Date(legalizacion.finalizado_at).toLocaleString('es-CO') : 'Pendiente')}</strong></div></section></main></body></html>`);
+};
+
+const descargarPdf = async (req, res) => {
+  const legalizacion = await ViaticosLegalizacion.findByPk(req.params.id, { include: [{ model: DesplazamientoViaticosSolicitud, as: 'solicitud', required: true }] });
+  if (!legalizacion) return res.status(404).json({ success: false, message: 'Legalización no encontrada.' });
+  const owner = Number(legalizacion.user_id) === Number(req.user.id);
+  if (!owner && !(await canAccess(req.user, MANAGEMENT_PERMISSION))) return res.status(403).json({ success: false, message: 'No autorizado.' });
+  if (legalizacion.estado !== 'finalizada') return res.status(409).json({ success: false, message: 'El PDF final aún no está disponible.' });
+  const pdf = await buildLegalizacionPdfBuffer(legalizacion, legalizacion.solicitud);
+  res.setHeader('Content-Type', 'application/pdf');
+  res.setHeader('Content-Disposition', `inline; filename="LEGALIZACION-VIATICOS-${legalizacion.solicitud.consecutivo}.pdf"`);
+  return res.send(pdf);
+};
+
+module.exports = { descargarPdf, estadoPropio, estadisticas, listarGestion, listarPropias, obtenerGestion, presentar, validar, verAdjunto, verificar };

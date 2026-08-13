@@ -60,6 +60,11 @@ const contextoExternoCleanerUpload = createExcelUpload('uploads/temp/', {
 });
 const {
   cleanContextoExternoFile,
+  createContextoExternoCleaningJob,
+  listContextoExternoCleaningJobs,
+  downloadContextoExternoCleaningJob,
+  retryContextoExternoCleaningJob,
+  deleteContextoExternoCleaningJob,
   approveContextoExternoReview,
   rejectContextoExternoReview
 } = require('../controllers/contextoExternoCleanerController');
@@ -232,6 +237,11 @@ router.get('/cargues', auth, canImportDatabaseData, getCargues);
 router.get('/template', auth, canImportDatabaseData, downloadTemplate);
 router.get('/contexto-externo/export', auth, canImportDatabaseData, downloadContextoExternoNormalizado);
 router.post('/contexto-externo/limpiar', auth, canImportDatabaseData, contextoExternoCleanerUpload.single('file'), cleanContextoExternoFile);
+router.post('/contexto-externo/cleaning-jobs', auth, canImportDatabaseData, contextoExternoCleanerUpload.single('file'), createContextoExternoCleaningJob);
+router.get('/contexto-externo/cleaning-jobs', auth, canImportDatabaseData, listContextoExternoCleaningJobs);
+router.get('/contexto-externo/cleaning-jobs/:jobId/download', auth, canImportDatabaseData, downloadContextoExternoCleaningJob);
+router.post('/contexto-externo/cleaning-jobs/:jobId/retry', auth, canImportDatabaseData, retryContextoExternoCleaningJob);
+router.delete('/contexto-externo/cleaning-jobs/:jobId', auth, canImportDatabaseData, deleteContextoExternoCleaningJob);
 router.post('/contexto-externo/reviews/:reviewId/approve', auth, canImportDatabaseData, approveContextoExternoReview);
 router.delete('/contexto-externo/reviews/:reviewId', auth, canImportDatabaseData, rejectContextoExternoReview);
 router.get('/cargues/errors/export', auth, canImportDatabaseData, downloadCargueErrores);

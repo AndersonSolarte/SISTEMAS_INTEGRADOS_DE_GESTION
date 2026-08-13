@@ -244,7 +244,9 @@ const REQUIRES_ADJUNTO = [
 ];
 
 const DECLARACION_SIN_ADJUNTO_SALUD = 'Declaro que al momento de radicar esta solicitud no cuento con archivos adjuntos o soportes para cargar en el sistema. Entiendo que la Oficina de Gestion del Talento Humano y/o Seguridad y Salud en el Trabajo podran requerir en cualquier momento los soportes correspondientes; por tanto, me comprometo a conservarlos despues de la atencion o tramite y a suministrarlos oportunamente cuando sean solicitados.';
-const MAX_ADJUNTO_SIZE = 10 * 1024 * 1024;
+// Un máximo de 15 MB deja margen para el PDF institucional y la codificación MIME del correo.
+const MAX_ADJUNTO_SIZE_MB = 15;
+const MAX_ADJUNTO_SIZE = MAX_ADJUNTO_SIZE_MB * 1024 * 1024;
 
 const DEPARTAMENTOS_MUNICIPIOS = {
   'Amazonas': ['Leticia', 'El Encanto', 'La Chorrera', 'La Pedrera', 'La Victoria', 'Miriití-Paraná', 'Puerto Alegría', 'Puerto Arica', 'Puerto Nariño', 'Puerto Santander', 'Tarapacá'],
@@ -679,7 +681,7 @@ function ReporteSalidaFormDialog({ open, documento, user, onClose, onSubmitted }
     }
     if (file.size > MAX_ADJUNTO_SIZE) {
       setAdjuntoFile(null);
-      setAdjuntoError('El archivo supera el tamano maximo permitido de 10 MB');
+      setAdjuntoError(`El archivo supera el tamaño máximo permitido de ${MAX_ADJUNTO_SIZE_MB} MB`);
       return false;
     }
     setAdjuntoFile(file);
@@ -1484,7 +1486,8 @@ function ReporteSalidaFormDialog({ open, documento, user, onClose, onSubmitted }
   };
 
   const disableSubmit = submitting || validationIssues.length > 0;
-  const shouldShowAdjuntoSection = category === 'propias_cargo' || REQUIRES_ADJUNTO.includes(subtype) || ['urgencia_medica', 'otra'].includes(subtype);
+  const shouldShowOptionalPersonalAttachment = !isSalidaMultiple && category === 'personales' && subtype === 'diligencia_personal';
+  const shouldShowAdjuntoSection = category === 'propias_cargo' || REQUIRES_ADJUNTO.includes(subtype) || ['urgencia_medica', 'otra'].includes(subtype) || shouldShowOptionalPersonalAttachment;
   const isSaludAdjuntoSection = category === 'salud' && shouldShowAdjuntoSection;
   const hideAdjuntoUploadByDeclaration = isSaludAdjuntoSection && noCuentaAdjuntoSalud;
   const canPasteAdjunto = open && shouldShowAdjuntoSection && !hideAdjuntoUploadByDeclaration && !submitting;
@@ -2450,7 +2453,9 @@ function ReporteSalidaFormDialog({ open, documento, user, onClose, onSubmitted }
                             ? 'Subir soporte / constancia obligatorio'
                             : form.salida.duracionTipo !== 'menos_media_jornada'
                             ? 'Subir soporte / constancia (Opcional)'
-                            : (['voto_jurado', 'voto_sufragante', 'jurado_votacion', 'sufragante'].includes(subtype)
+                            : (subtype === 'diligencia_personal'
+                              ? 'Adjuntar soporte de la diligencia (Opcional)'
+                              : ['voto_jurado', 'voto_sufragante', 'jurado_votacion', 'sufragante'].includes(subtype)
                               ? 'Subir certificado obligatorio'
                               : (['urgencia_medica', 'otra'].includes(subtype) ? 'Subir soporte / constancia (Opcional)' : 'Subir soporte obligatorio'))}
                         </Typography>
@@ -2459,7 +2464,9 @@ function ReporteSalidaFormDialog({ open, documento, user, onClose, onSubmitted }
                             ? 'Adjunte PDF, imagen o pegue una captura con Ctrl+V. Si no cuenta con soporte en este momento, marque la declaracion anterior.'
                             : form.salida.duracionTipo !== 'menos_media_jornada'
                             ? 'Haga clic para adjuntar PDF, imagen o pegue una captura con Ctrl+V'
-                            : (['voto_jurado', 'voto_sufragante', 'jurado_votacion', 'sufragante'].includes(subtype)
+                            : (subtype === 'diligencia_personal'
+                              ? `Si cuenta con un documento, puede adjuntarlo en PDF o imagen (máximo ${MAX_ADJUNTO_SIZE_MB} MB). También puede pegar una captura con Ctrl+V.`
+                              : ['voto_jurado', 'voto_sufragante', 'jurado_votacion', 'sufragante'].includes(subtype)
                               ? 'Haga clic para adjuntar su certificado electoral (PDF o imagen) o pegue una captura con Ctrl+V'
                               : (['urgencia_medica', 'otra'].includes(subtype)
                                   ? 'Haga clic para adjuntar soporte si ya lo tiene, o pegue una captura con Ctrl+V'

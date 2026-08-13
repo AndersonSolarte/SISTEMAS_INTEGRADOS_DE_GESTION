@@ -92,6 +92,26 @@ const gestionInformacionService = {
       timeout: 0
     });
   },
+  createContextoExternoCleaningJob: (file, lista) => {
+    const formData = new FormData();
+    formData.append('file', file);
+    formData.append('lista', lista);
+    return api.post('/planeacion/gestion-informacion/contexto-externo/cleaning-jobs', formData, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+      timeout: 0
+    }).then((r) => r.data);
+  },
+  getContextoExternoCleaningJobs: () =>
+    api.get('/planeacion/gestion-informacion/contexto-externo/cleaning-jobs', { timeout: 60000 }).then((r) => r.data),
+  downloadContextoExternoCleaningJob: (jobId) =>
+    api.get(`/planeacion/gestion-informacion/contexto-externo/cleaning-jobs/${jobId}/download`, {
+      responseType: 'blob',
+      timeout: 0
+    }),
+  retryContextoExternoCleaningJob: (jobId) =>
+    api.post(`/planeacion/gestion-informacion/contexto-externo/cleaning-jobs/${jobId}/retry`).then((r) => r.data),
+  deleteContextoExternoCleaningJob: (jobId) =>
+    api.delete(`/planeacion/gestion-informacion/contexto-externo/cleaning-jobs/${jobId}`).then((r) => r.data),
   approveContextoExternoReview: (reviewId) =>
     api.post(`/planeacion/gestion-informacion/contexto-externo/reviews/${reviewId}/approve`).then((r) => r.data),
   rejectContextoExternoReview: (reviewId) =>
