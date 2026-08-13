@@ -7737,11 +7737,19 @@ const importFromExcel = async (req, res) => {
             onHeader: async ({ headers }) => {
             csvHeaders = (headers || []).map((h) => String(h || '').trim());
             const normalizedHeaders = csvHeaders.map((h) => normalizeHeader(h)).filter(Boolean);
-            const hasTabularHeader = normalizedHeaders.includes('CODIGO_DE_LA_INSTITUCION')
-              && normalizedHeaders.includes('INSTITUCION_DE_EDUCACION_SUPERIOR_IES')
-              && normalizedHeaders.includes('PROGRAMA_ACADEMICO')
-              && normalizedHeaders.includes('ANO')
-              && normalizedHeaders.includes('SEMESTRE');
+            const hasInstCode = normalizedHeaders.includes('CODIGO_INSTITUCION')
+              || normalizedHeaders.includes('CODIGO_DE_LA_INSTITUCION')
+              || normalizedHeaders.includes('CODIGO_INSTITUCION_PADRE');
+            const hasIesName = normalizedHeaders.includes('INSTITUCION_DE_EDUCACION_SUPERIOR_IES')
+              || normalizedHeaders.includes('INSTITUCION_DE_EDUCACION_SUPERIOR')
+              || normalizedHeaders.includes('IES');
+            const hasProg = normalizedHeaders.includes('PROGRAMA_ACADEMICO')
+              || normalizedHeaders.includes('PROGRAMA');
+            const hasAno = normalizedHeaders.includes('ANO')
+              || normalizedHeaders.includes('ANIO');
+            const hasSem = normalizedHeaders.includes('SEMESTRE');
+
+            const hasTabularHeader = hasInstCode && hasIesName && hasProg && hasAno && hasSem;
             const hasMetric = normalizedHeaders.some((key) => metricRegexCsv.test(key));
             if (!hasTabularHeader || !hasMetric) {
               throw new Error('CSV no valido para Contexto Externo: faltan columnas obligatorias o la columna de metrica.');
@@ -7951,15 +7959,23 @@ const importFromExcel = async (req, res) => {
         const seriesHeaderRowIndex = findRowIndexByFirstCell(matrix, ['Sector/Universidad/Programa']);
         const tabularHeaderRowCandidate = detectHeaderRowIndexLoose(
           matrix,
-          ['CÃƒâ€œDIGO DE LA INSTITUCIÃƒâ€œN', 'INSTITUCIÃƒâ€œN DE EDUCACIÃƒâ€œN SUPERIOR (IES)', 'PROGRAMA ACADÃƒâ€°MICO', 'AÃƒâ€˜O', 'SEMESTRE']
+          ['CÓDIGO_INSTITUCIÓN_PADRE', 'CÓDIGO_INSTITUCIÓN', 'CÓDIGO DE LA INSTITUCIÓN', 'INSTITUCIÓN DE EDUCACIÓN SUPERIOR (IES)', 'PROGRAMA ACADÉMICO', 'AÑO', 'SEMESTRE']
         );
         const tabularHeadersNormalized = ((matrix[tabularHeaderRowCandidate] || []).map((cell) => normalizeHeader(cell)).filter(Boolean));
         const metricAliases = getContextoExternoTabularMetricAliases(baseIndicador);
-        const hasTabularHeader = tabularHeadersNormalized.includes('CODIGO_DE_LA_INSTITUCION')
-          && tabularHeadersNormalized.includes('INSTITUCION_DE_EDUCACION_SUPERIOR_IES')
-          && tabularHeadersNormalized.includes('PROGRAMA_ACADEMICO')
-          && tabularHeadersNormalized.includes('ANO')
-          && tabularHeadersNormalized.includes('SEMESTRE');
+        const hasInstCodeTabular = tabularHeadersNormalized.includes('CODIGO_INSTITUCION')
+          || tabularHeadersNormalized.includes('CODIGO_DE_LA_INSTITUCION')
+          || tabularHeadersNormalized.includes('CODIGO_INSTITUCION_PADRE');
+        const hasIesNameTabular = tabularHeadersNormalized.includes('INSTITUCION_DE_EDUCACION_SUPERIOR_IES')
+          || tabularHeadersNormalized.includes('INSTITUCION_DE_EDUCACION_SUPERIOR')
+          || tabularHeadersNormalized.includes('IES');
+        const hasProgTabular = tabularHeadersNormalized.includes('PROGRAMA_ACADEMICO')
+          || tabularHeadersNormalized.includes('PROGRAMA');
+        const hasAnoTabular = tabularHeadersNormalized.includes('ANO')
+          || tabularHeadersNormalized.includes('ANIO');
+        const hasSemTabular = tabularHeadersNormalized.includes('SEMESTRE');
+
+        const hasTabularHeader = hasInstCodeTabular && hasIesNameTabular && hasProgTabular && hasAnoTabular && hasSemTabular;
         const tabularHeaderRowIndex = hasTabularHeader ? tabularHeaderRowCandidate : -1;
         const isOfertaLike = ofertaSectorHeaderRowIndex >= 0 || programasHeaderRowIndex >= 0;
         const isSeriesLike = seriesHeaderRowIndex >= 0 || tabularHeaderRowIndex >= 0;
@@ -8349,6 +8365,19 @@ const importFromExcel = async (req, res) => {
             });
           });
 
+          const detailsBatch = [];
+          const statsBatch = [];
+          const flushTabularBatches = async () => {
+            if (detailsBatch.length > 0) {
+              await PoblacionalContextoExterno.bulkCreate(detailsBatch, { validate: false, hooks: false });
+              detailsBatch.length = 0;
+            }
+            if (statsBatch.length > 0) {
+              await Estadistica.bulkCreate(statsBatch, { validate: false, hooks: false });
+              statsBatch.length = 0;
+            }
+          };
+
           for (let i = 0; i < preparedRows.length; i += 1) {
             const { fila, originalRow, normalizedRowByHeader } = preparedRows[i];
             try {
@@ -8452,23 +8481,34 @@ const importFromExcel = async (req, res) => {
                 actualizado_por: req.user?.id || null
               };
 
-              await PoblacionalContextoExterno.create(detail);
-              await createContextoStat({
-                anio: detail.anio,
-                programaComparado: detail.programa_comparado,
-                ies: detail.ies,
+              detailsBatch.push(detail);
+              statsBatch.push({
+                categoria: 'Poblacional',
+                subcategoria: 'Contexto Externo',
                 indicador: baseIndicador,
+                variable: baseIndicador,
                 valor: Number(valueNum),
                 unidad: 'estudiantes',
-                baseIndicador,
-                alcance,
-                hoja: sheetName,
-                periodoRef: periodoLabel,
-                sector: detail.sector,
-                corte: sheetMeta.corte,
-                programaObjetivo: programaObjetivoStd,
-                tipoRegistro: 'serie'
+                fuente: `Contexto Externo - ${baseIndicador}`,
+                anio: detail.anio,
+                periodo_referencia: periodoLabel,
+                programa: detail.programa_comparado,
+                ies: detail.ies,
+                meta_json: JSON.stringify({
+                  baseIndicador,
+                  alcance,
+                  hoja: sheetName,
+                  periodoRef: periodoLabel,
+                  sector: detail.sector,
+                  corte: sheetMeta.corte,
+                  programaObjetivo: programaObjetivoStd,
+                  tipoRegistro: 'serie'
+                })
               });
+
+              if (detailsBatch.length >= 2000) {
+                await flushTabularBatches();
+              }
 
               sheetResult.importados += 1;
               result.importados += 1;
@@ -8478,6 +8518,8 @@ const importFromExcel = async (req, res) => {
               result.errores.push({ hoja: sheetName, fila, error: sheetErr.message });
             }
           }
+
+          await flushTabularBatches();
         } else {
           const headerRowIndex = seriesHeaderRowIndex;
           if (headerRowIndex < 0) continue;

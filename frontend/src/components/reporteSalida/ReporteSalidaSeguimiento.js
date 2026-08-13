@@ -182,6 +182,21 @@ const getReposicionText = (row) => {
   return `Abonó ${formatElapsed(minutosPagados)} - Debe ${formatElapsed(pendientes)}`;
 };
 
+const isApprovedRequest = (row) => row?.estado === 'finalizada';
+const isRejectedRequest = (row) => row?.estado === 'no_aprobada';
+const isPendingRequest = (row) => !isApprovedRequest(row) && !isRejectedRequest(row);
+const hasPendingReposicion = (row) => {
+  if (!isApprovedRequest(row) || !row?.reposicion_aplica || row?.reposicion_estado === 'cumplida') return false;
+  const total = Number(row?.reposicion_minutos || row?.tiempo_solicitado_minutos || 0);
+  const paid = Number(row?.reposicion_minutos_pagados || row?.datos_formulario?.reposicion_minutos_pagados || 0);
+  return total - paid > 0;
+};
+const hasValidatedReposicion = (row) => (
+  isApprovedRequest(row)
+  && Boolean(row?.reposicion_aplica)
+  && row?.reposicion_estado === 'cumplida'
+);
+
 const getJefeObservacion = (row) => {
   if (!row || !Array.isArray(row.trazabilidad)) return null;
   const trace = row.trazabilidad.find(t => 
@@ -550,9 +565,9 @@ function ReporteSalidaSeguimiento({ initialAccess = null, onBack }) {
 
   const summary = useMemo(() => {
     const total = summaryRows.length;
-    const pendientes = summaryRows.filter((r) => ['pendiente_aprobacion_jefe', 'pendiente_aprobacion_gestion_humana'].includes(r.estado)).length;
-    const personales = summaryRows.filter((r) => r.reposicion_aplica && r.reposicion_estado !== 'cumplida').length;
-    const reposicionesValidadas = summaryRows.filter((r) => r.reposicion_aplica && r.reposicion_estado === 'cumplida').length;
+    const pendientes = summaryRows.filter(isPendingRequest).length;
+    const personales = summaryRows.filter(hasPendingReposicion).length;
+    const reposicionesValidadas = summaryRows.filter(hasValidatedReposicion).length;
     const finalizadas = summaryRows.filter((r) => r.estado === 'finalizada').length;
     return { total, pendientes, personales, reposicionesValidadas, finalizadas };
   }, [summaryRows]);
@@ -560,11 +575,11 @@ function ReporteSalidaSeguimiento({ initialAccess = null, onBack }) {
   const filteredRows = useMemo(() => {
     let result = filteredRowsBase;
     if (cardFilter === 'pendientes') {
-      result = result.filter((r) => ['pendiente_aprobacion_jefe', 'pendiente_aprobacion_gestion_humana'].includes(r.estado));
+      result = result.filter(isPendingRequest);
     } else if (cardFilter === 'personales') {
-      result = result.filter((r) => r.reposicion_aplica && r.reposicion_estado !== 'cumplida');
+      result = result.filter(hasPendingReposicion);
     } else if (cardFilter === 'reposicionesValidadas') {
-      result = result.filter((r) => r.reposicion_aplica && r.reposicion_estado === 'cumplida');
+      result = result.filter(hasValidatedReposicion);
     } else if (cardFilter === 'finalizadas') {
       result = result.filter((r) => r.estado === 'finalizada');
     }

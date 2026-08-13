@@ -39,7 +39,10 @@ import UploadFileIcon from '@mui/icons-material/UploadFile';
 import CloseIcon from '@mui/icons-material/Close';
 import reporteSalidaService from '../../services/reporteSalidaService';
 import desplazamientoViaticosService from '../../services/desplazamientoViaticosService';
-import { DESPLAZAMIENTO_VIATICOS_ENABLED } from '../../config/reporteSalida';
+import {
+  DESPLAZAMIENTO_VIATICOS_ENABLED,
+  DESPLAZAMIENTO_VIATICOS_QUESTION_VISIBLE
+} from '../../config/reporteSalida';
 import CategoriaTabs from './CategoriaTabs';
 import CamposDuracionSalida, { TimeAutocomplete } from './CamposDuracionSalida';
 import DuracionSelector from './DuracionSelector';
@@ -747,7 +750,7 @@ function ReporteSalidaFormDialog({ open, documento, user, onClose, onSubmitted }
   }, [form.salida.tipo, activeCategory]);
 
   const shouldAskViaticos = useMemo(() => {
-    if (!DESPLAZAMIENTO_VIATICOS_ENABLED) return false;
+    if (!DESPLAZAMIENTO_VIATICOS_ENABLED || !DESPLAZAMIENTO_VIATICOS_QUESTION_VISIBLE) return false;
     if (isSalidaMultiple || category !== 'propias_cargo' || subtype === 'salida_campus') return false;
     const alcance = normalizeOption(form.salida.alcance);
     if (alcance === 'nacional' || alcance === 'internacional') return true;

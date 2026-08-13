@@ -7,6 +7,10 @@ export const DESPLAZAMIENTO_VIATICOS_ENABLED = String(
   process.env.REACT_APP_ENABLE_DESPLAZAMIENTO_VIATICOS ?? 'true'
 ).trim().toLowerCase() !== 'false';
 
+// Liberación controlada: conserva compilado todo el flujo de viáticos, pero
+// oculta temporalmente la pregunta Sí/No en el formulario de reporte de salida.
+export const DESPLAZAMIENTO_VIATICOS_QUESTION_VISIBLE = false;
+
 export const REPORTE_SALIDA_DOCUMENT_CODE = 'THM-DP-FR-002';
 
 const normalize = (value) =>

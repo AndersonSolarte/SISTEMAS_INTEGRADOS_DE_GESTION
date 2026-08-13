@@ -180,11 +180,11 @@ const renderObservationHistory = (jefeObs, ghObs, row) => {
 };
 
 const getHorasPendientes = (row) => {
-  if (!row) return '0 hrs';
+  if (!row) return '0 h';
   const totalMinutos = row.reposicion_minutos || row.tiempo_solicitado_minutos || 0;
   const minutosPagados = row.datos_formulario?.reposicion_minutos_pagados || 0;
   const pendientes = totalMinutos - minutosPagados;
-  return pendientes > 0 ? (pendientes / 60).toFixed(1) + ' hrs' : '0 hrs';
+  return pendientes > 0 ? formatElapsed(pendientes) : '0 h';
 };
 
 const getJefeObservacion = (row) => {
@@ -197,12 +197,16 @@ const getJefeObservacion = (row) => {
 };
 
 const formatElapsed = (minutes) => {
-  const total = Number(minutes);
+  const total = Math.round(Number(minutes));
   if (!Number.isFinite(total) || total <= 0) return '0h';
-  const hours = total / 60;
-  const formatted = Number(hours.toFixed(1));
-  return `${formatted}h`;
+  const hours = Math.floor(total / 60);
+  const remainingMinutes = total % 60;
+  return remainingMinutes ? `${hours} h ${remainingMinutes} min` : `${hours} h`;
 };
+
+const getAbonoMinutes = (hours, minutes) => (
+  ((Number(hours) || 0) * 60) + (Number(minutes) || 0)
+);
 
 export default function TiempoReponer() {
   const [tabIndex, setTabIndex] = useState(0);
@@ -216,6 +220,7 @@ export default function TiempoReponer() {
   const [updateEstado, setUpdateEstado] = useState('programada');
   const [updateObservacion, setUpdateObservacion] = useState('');
   const [updateHorasAbonadas, setUpdateHorasAbonadas] = useState('');
+  const [updateMinutosAbonados, setUpdateMinutosAbonados] = useState('');
 
   const fetchMisReposiciones = async () => {
     try {
@@ -251,36 +256,37 @@ export default function TiempoReponer() {
     const totalMinutos = selectedRep.reposicion_minutos || selectedRep.tiempo_solicitado_minutos || 0;
     const minutosPagados = selectedRep.datos_formulario?.reposicion_minutos_pagados || 0;
     const minutosPendientes = totalMinutos - minutosPagados;
-    const minutosAbonar = Math.round((parseFloat(updateHorasAbonadas) || 0) * 60);
+    const minutosAbonar = getAbonoMinutes(updateHorasAbonadas, updateMinutosAbonados);
     if (minutosPendientes - minutosAbonar <= 0) {
       setUpdateEstado('cumplida');
     } else {
       setUpdateEstado('pendiente');
     }
-  }, [updateHorasAbonadas, selectedRep]);
+  }, [updateHorasAbonadas, updateMinutosAbonados, selectedRep]);
 
   const handleUpdateClick = (rep) => {
     setSelectedRep(rep);
     setUpdateEstado(rep.reposicion_estado === 'cumplida' ? 'cumplida' : 'pendiente');
     setUpdateObservacion('');
     setUpdateHorasAbonadas('');
+    setUpdateMinutosAbonados('');
     setOpenDialog(true);
   };
 
   const handleSaveUpdate = async () => {
     if (!selectedRep) return;
-    if (!updateHorasAbonadas || Number(updateHorasAbonadas) <= 0) {
-      enqueueSnackbar('La cantidad de horas a abonar debe ser mayor que cero.', { variant: 'error' });
+    const minutosAbonar = getAbonoMinutes(updateHorasAbonadas, updateMinutosAbonados);
+    if (minutosAbonar <= 0) {
+      enqueueSnackbar('El tiempo a abonar debe ser mayor que cero.', { variant: 'error' });
       return;
     }
     const totalMinutos = selectedRep.reposicion_minutos || selectedRep.tiempo_solicitado_minutos || 0;
     const minutosPagados = selectedRep.reposicion_minutos_pagados || selectedRep.datos_formulario?.reposicion_minutos_pagados || 0;
     const minutosPendientes = totalMinutos - minutosPagados;
-    if (Number(updateHorasAbonadas) > (minutosPendientes / 60)) {
-      enqueueSnackbar('La cantidad de horas a abonar no puede exceder el tiempo pendiente.', { variant: 'error' });
+    if (minutosAbonar > minutosPendientes) {
+      enqueueSnackbar('El tiempo a abonar no puede exceder el saldo pendiente.', { variant: 'error' });
       return;
     }
-    const minutosAbonar = Math.round(Number(updateHorasAbonadas) * 60);
     if (minutosPendientes - minutosAbonar <= 0 && updateEstado === 'pendiente') {
       enqueueSnackbar('No se puede guardar como "Pendiente" si se ha repuesto la totalidad de las horas.', { variant: 'error' });
       return;
@@ -290,7 +296,9 @@ export default function TiempoReponer() {
       const res = await api.patch(`/reporte-salida/solicitudes/${selectedRep.id}/reposicion`, {
         estado: updateEstado,
         observacion: updateObservacion,
-        horasAbonadas: updateHorasAbonadas
+        unidadReposicion: 'tiempo',
+        horasAbonadas: Number(updateHorasAbonadas || 0),
+        minutosAbonados: Number(updateMinutosAbonados || 0)
       });
       if (res.data.success) {
         enqueueSnackbar('Reposición actualizada', { variant: 'success' });
@@ -458,9 +466,9 @@ export default function TiempoReponer() {
             const totalMinutos = selectedRep.reposicion_minutos || selectedRep.tiempo_solicitado_minutos || 0;
             const minutosPagados = selectedRep.reposicion_minutos_pagados || selectedRep.datos_formulario?.reposicion_minutos_pagados || 0;
             const minutosPendientes = totalMinutos - minutosPagados;
-            const horasPendientes = minutosPendientes / 60;
+            const minutosAbono = getAbonoMinutes(updateHorasAbonadas, updateMinutosAbonados);
 
-            if (horasPendientes <= 0) {
+            if (minutosPendientes <= 0) {
               return (
                 <Alert severity="success" sx={{ mb: 2, borderRadius: 2 }}>
                   El/la colaborador(a) ya repuso la totalidad del tiempo pendiente para esta salida.
@@ -468,50 +476,58 @@ export default function TiempoReponer() {
               );
             }
 
-            if (!updateHorasAbonadas) {
+            if (minutosAbono <= 0) {
               return (
                 <Alert severity="warning" sx={{ mb: 2, borderRadius: 2 }}>
-                  Ingrese las horas repuestas por el colaborador (no puede ser vacío ni 0).
+                  Ingrese las horas o minutos repuestos por el colaborador (no puede ser vacío ni 0).
                 </Alert>
               );
             }
 
-            if (updateHorasAbonadas) {
-              const val = Number(updateHorasAbonadas);
-              if (val <= 0) {
-                return <Alert severity="error" sx={{ mb: 2, borderRadius: 2 }}>No se permiten valores negativos ni ceros.</Alert>;
-              }
-              if (val > horasPendientes) {
-                return (
-                  <Alert severity="error" sx={{ mb: 2, borderRadius: 2 }}>
-                    La cantidad ingresada ({val} hrs) supera el saldo pendiente de {horasPendientes.toFixed(1)} horas.
-                  </Alert>
-                );
-              }
-              const restante = horasPendientes - val;
-              if (restante === 0) {
-                return <Alert severity="success" sx={{ mb: 2, borderRadius: 2 }}>Correcto. La deuda quedará totalmente saldada.</Alert>;
-              }
+            if (minutosAbono > minutosPendientes) {
               return (
-                <Alert severity="info" sx={{ mb: 2, borderRadius: 2 }}>
-                  Correcto. Quedará un saldo pendiente de {restante.toFixed(1)} horas.
+                <Alert severity="error" sx={{ mb: 2, borderRadius: 2 }}>
+                  El tiempo ingresado supera el saldo pendiente de {formatElapsed(minutosPendientes)}.
                 </Alert>
               );
             }
-            return null;
+
+            const restante = minutosPendientes - minutosAbono;
+            return restante === 0 ? (
+              <Alert severity="success" sx={{ mb: 2, borderRadius: 2 }}>
+                Correcto. La deuda quedará totalmente saldada.
+              </Alert>
+            ) : (
+              <Alert severity="info" sx={{ mb: 2, borderRadius: 2 }}>
+                Correcto. Quedará un saldo pendiente de {formatElapsed(restante)}.
+              </Alert>
+            );
           })()}
 
-          <TextField
-            label="Horas a abonar (Repuestas hoy)"
-            type="number"
-            value={updateHorasAbonadas}
-            onChange={(e) => setUpdateHorasAbonadas(e.target.value.replace(/[^0-9]/g, ''))}
-            fullWidth
-            margin="normal"
-            size="small"
-            inputProps={{ min: 0, step: 1 }}
-            helperText="Ingrese las horas repuestas como número entero (ej: 2). El saldo se descontará automáticamente."
-          />
+          <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1.5} sx={{ mt: 2 }}>
+            <TextField
+              label="Horas repuestas"
+              type="number"
+              value={updateHorasAbonadas}
+              onChange={(e) => setUpdateHorasAbonadas(e.target.value.replace(/[^0-9]/g, ''))}
+              fullWidth
+              size="small"
+              inputProps={{ min: 0, step: 1 }}
+            />
+            <TextField
+              label="Minutos adicionales"
+              type="number"
+              value={updateMinutosAbonados}
+              onChange={(e) => {
+                const value = e.target.value.replace(/[^0-9]/g, '');
+                if (value === '' || Number(value) <= 59) setUpdateMinutosAbonados(value);
+              }}
+              fullWidth
+              size="small"
+              inputProps={{ min: 0, max: 59, step: 1 }}
+              helperText="De 0 a 59 minutos."
+            />
+          </Stack>
 
           <TextField
             select
@@ -549,10 +565,10 @@ export default function TiempoReponer() {
               const totalMinutos = selectedRep.reposicion_minutos || selectedRep.tiempo_solicitado_minutos || 0;
               const minutosPagados = selectedRep.reposicion_minutos_pagados || selectedRep.datos_formulario?.reposicion_minutos_pagados || 0;
               const minutosPendientes = totalMinutos - minutosPagados;
+              const minutosAbono = getAbonoMinutes(updateHorasAbonadas, updateMinutosAbonados);
               if (minutosPendientes <= 0) return true;
-              if (!updateHorasAbonadas || Number(updateHorasAbonadas) <= 0) return true;
-              if (Number(updateHorasAbonadas) > (minutosPendientes / 60)) return true;
-              if (minutosPendientes - (Number(updateHorasAbonadas) * 60) <= 0 && updateEstado === 'pendiente') return true;
+              if (minutosAbono <= 0 || minutosAbono > minutosPendientes) return true;
+              if (minutosPendientes - minutosAbono <= 0 && updateEstado === 'pendiente') return true;
               return false;
             })()}
           >
