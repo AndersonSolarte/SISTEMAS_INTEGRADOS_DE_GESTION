@@ -18,6 +18,7 @@ git checkout main
 
 # 3. Descargar últimos cambios
 echo ">> Descargando actualizaciones desde GitHub..."
+git checkout -- .
 git pull origin main
 
 # 4. Recompilar e iniciar contenedores
