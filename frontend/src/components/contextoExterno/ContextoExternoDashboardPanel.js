@@ -16,6 +16,8 @@ import ArrowBackRoundedIcon from '@mui/icons-material/ArrowBackRounded';
 import HubRoundedIcon from '@mui/icons-material/HubRounded';
 import HexagonRoundedIcon from '@mui/icons-material/HexagonRounded';
 import ViewModuleRoundedIcon from '@mui/icons-material/ViewModuleRounded';
+import MapRoundedIcon from '@mui/icons-material/MapRounded';
+import PlaceRoundedIcon from '@mui/icons-material/PlaceRounded';
 import {
   ResponsiveContainer, BarChart, Bar, LineChart, Line, XAxis, YAxis,
   CartesianGrid, Tooltip as RechartsTooltip, Legend
@@ -35,6 +37,26 @@ const REGIONAL_DEPARTMENTS = ['NARINO', 'CAUCA', 'VALLE DEL CAUCA', 'VALLE', 'PU
 const isRegionalDept = (deptoStr = '') => {
   const norm = normalizeStr(deptoStr);
   return REGIONAL_DEPARTMENTS.some((d) => norm.includes(d));
+};
+
+// Coordinates for Colombia Southwest Municipalities for Map Pins
+const MUNICIPIO_COORDINATES = {
+  'SANTIAGO DE CALI': { lat: 3.4516, lng: -76.5320, top: '35%', left: '42%' },
+  'CALI': { lat: 3.4516, lng: -76.5320, top: '35%', left: '42%' },
+  'POPAYAN': { lat: 2.4448, lng: -76.6147, top: '56%', left: '38%' },
+  'PASTO': { lat: 1.2136, lng: -77.2811, top: '75%', left: '30%' },
+  'SAN JUAN DE PASTO': { lat: 1.2136, lng: -77.2811, top: '75%', left: '30%' },
+  'PALMIRA': { lat: 3.5394, lng: -76.3036, top: '38%', left: '48%' },
+  'CARTAGO': { lat: 4.7464, lng: -75.9117, top: '18%', left: '55%' },
+  'CARTAGO VALLE DEL CAUCA': { lat: 4.7464, lng: -75.9117, top: '18%', left: '55%' },
+  'TULUA': { lat: 4.0847, lng: -76.1954, top: '28%', left: '50%' },
+  'IPIALES': { lat: 0.8248, lng: -77.6433, top: '85%', left: '25%' },
+  'MIRANDA CAUCA': { lat: 3.2500, lng: -76.2333, top: '44%', left: '45%' },
+  'MIRANDA': { lat: 3.2500, lng: -76.2333, top: '44%', left: '45%' },
+  'SANTANDER DE QUILICHAO': { lat: 3.0094, lng: -76.4844, top: '48%', left: '40%' },
+  'MOCOA': { lat: 1.1528, lng: -76.6521, top: '78%', left: '48%' },
+  'NARINO': { lat: 1.2800, lng: -77.3500, top: '74%', left: '28%' },
+  'VALLE DEL CAUCA': { lat: 3.8000, lng: -76.5000, top: '32%', left: '44%' }
 };
 
 export default function ContextoExternoDashboardPanel({ onBack }) {
@@ -215,7 +237,23 @@ export default function ContextoExternoDashboardPanel({ onBack }) {
     return programSummary.reduce((acc, curr) => acc + curr.total, 0);
   }, [programSummary]);
 
-  // Municipio summary table
+  // Departamento summary table
+  const departamentoSummary = useMemo(() => {
+    const map = {};
+    filteredOferta.forEach((r) => {
+      const dep = r.departamento || 'NO ESPECIFICADO';
+      map[dep] = (map[dep] || 0) + 1;
+    });
+    return Object.entries(map)
+      .map(([departamento, total]) => ({ departamento, total }))
+      .sort((a, b) => b.total - a.total);
+  }, [filteredOferta]);
+
+  const totalDeptoSum = useMemo(() => {
+    return departamentoSummary.reduce((acc, curr) => acc + curr.total, 0);
+  }, [departamentoSummary]);
+
+  // Municipio summary table matching user screenshot
   const municipioSummary = useMemo(() => {
     const map = {};
     filteredOferta.forEach((r) => {
@@ -226,6 +264,10 @@ export default function ContextoExternoDashboardPanel({ onBack }) {
       .map(([municipio, total]) => ({ municipio, total }))
       .sort((a, b) => b.total - a.total);
   }, [filteredOferta]);
+
+  const totalMunicipioSum = useMemo(() => {
+    return municipioSummary.reduce((acc, curr) => acc + curr.total, 0);
+  }, [municipioSummary]);
 
   // Data processing for Poblacional Sub-segments
   const parsedPoblacionalRows = useMemo(() => {
@@ -1221,90 +1263,295 @@ export default function ContextoExternoDashboardPanel({ onBack }) {
             </Paper>
           )}
 
-          {/* Municipality Summary & Detailed Table */}
+          {/* ========================================================================= */}
+          {/* MAPAS Y TABLAS DE DATOS: DEPARTAMENTO Y MUNICIPIO (Fiel a Captura de Pantalla) */}
+          {/* ========================================================================= */}
           <Grid container spacing={2.5}>
-            {/* Municipality breakdown table */}
-            <Grid item xs={12} md={4}>
-              <Paper elevation={0} sx={{ p: 2, border: '1px solid #cbd5e1', borderRadius: 3, height: '100%' }}>
-                <Stack direction="row" spacing={1} alignItems="center" sx={{ mb: 1.5 }}>
-                  <LocationOnRoundedIcon sx={{ color: '#0369a1' }} />
-                  <Typography variant="subtitle2" sx={{ fontWeight: 900, color: '#0f172a' }}>
-                    MUNICIPIO OFERTA PROGRAMA
+            {/* 1. SECCIÓN DEPARTAMENTO OFERTA (MAPA + TABLA) */}
+            <Grid item xs={12} lg={6}>
+              <Paper elevation={0} sx={{ p: 2, border: '1px solid #cbd5e1', borderRadius: 3, height: '100%', bgcolor: '#ffffff' }}>
+                <Stack direction="row" spacing={1} alignItems="center" sx={{ mb: 1.5, pb: 1, borderBottom: '1px solid #e2e8f0' }}>
+                  <MapRoundedIcon sx={{ color: '#003399' }} />
+                  <Typography variant="subtitle2" sx={{ fontWeight: 900, color: '#0f172a', textTransform: 'uppercase' }}>
+                    DEPARTAMENTO OFERTA
                   </Typography>
                 </Stack>
 
-                <TableContainer sx={{ maxHeight: 380 }}>
-                  <Table stickyHeader size="small">
-                    <TableHead>
-                      <TableRow sx={{ bgcolor: '#f1f5f9' }}>
-                        <TableCell sx={{ fontWeight: 800 }}>Municipio</TableCell>
-                        <TableCell align="right" sx={{ fontWeight: 800 }}>
-                          Total Programas
-                        </TableCell>
-                      </TableRow>
-                    </TableHead>
-                    <TableBody>
-                      {municipioSummary.map((m) => (
-                        <TableRow key={m.municipio} hover>
-                          <TableCell sx={{ fontWeight: 700, fontSize: 12.5 }}>{m.municipio}</TableCell>
-                          <TableCell align="right" sx={{ fontWeight: 900, color: '#0369a1' }}>
-                            {m.total}
-                          </TableCell>
-                        </TableRow>
-                      ))}
-                    </TableBody>
-                  </Table>
-                </TableContainer>
+                <Grid container spacing={2}>
+                  {/* Left: Departamento Map Component */}
+                  <Grid item xs={12} sm={6}>
+                    <Box
+                      sx={{
+                        width: '100%',
+                        height: 340,
+                        borderRadius: 2,
+                        bgcolor: '#f1f5f9',
+                        position: 'relative',
+                        overflow: 'hidden',
+                        border: '1px solid #cbd5e1',
+                        display: 'flex',
+                        flexDirection: 'column',
+                        alignItems: 'center',
+                        justifyContent: 'center'
+                      }}
+                    >
+                      {/* Leaflet/OpenStreetMap Embed Iframe */}
+                      <iframe
+                        title="Mapa Departamento Oferta"
+                        width="100%"
+                        height="100%"
+                        frameBorder="0"
+                        scrolling="no"
+                        src="https://www.openstreetmap.org/export/embed.html?bbox=-79.5%2C0.5%2C-73.5%2C6.5&amp;layer=mapnik"
+                        style={{ filter: 'contrast(1.05) saturate(1.1)' }}
+                      />
+                      {/* Department Pins Layer Overlay */}
+                      <Box sx={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', pointerEvents: 'none' }}>
+                        {departamentoSummary.map((d, i) => {
+                          const isReg = REGIONAL_DEPARTMENTS.some((rd) => d.departamento.includes(rd));
+                          return (
+                            <Chip
+                              key={d.departamento}
+                              size="small"
+                              label={`${d.departamento}: ${d.total}`}
+                              sx={{
+                                position: 'absolute',
+                                top: `${25 + i * 16}%`,
+                                left: `${30 + (i % 3) * 20}%`,
+                                bgcolor: isReg ? '#15803d' : '#1e3a8a',
+                                color: '#ffffff',
+                                fontWeight: 900,
+                                fontSize: 11,
+                                boxShadow: '0 2px 8px rgba(0,0,0,0.3)',
+                                border: '1.5px solid #ffffff'
+                              }}
+                            />
+                          );
+                        })}
+                      </Box>
+                    </Box>
+                  </Grid>
+
+                  {/* Right: Departamento Table (Fiel a Captura de Pantalla) */}
+                  <Grid item xs={12} sm={6}>
+                    <Paper elevation={0} sx={{ border: '1px solid #001b44', borderRadius: 2, overflow: 'hidden' }}>
+                      <TableContainer sx={{ maxHeight: 340 }}>
+                        <Table stickyHeader size="small">
+                          <TableHead>
+                            <TableRow>
+                              <TableCell sx={{ bgcolor: '#001b44', color: '#ffffff', fontWeight: 900, fontSize: 11.5, textTransform: 'uppercase', py: 1 }}>
+                                DEPARTAMENTO OFERTA PROGRAMA
+                              </TableCell>
+                              <TableCell align="right" sx={{ bgcolor: '#001b44', color: '#ffffff', fontWeight: 900, fontSize: 11.5, textTransform: 'uppercase', py: 1 }}>
+                                TOTAL PROGRAMAS ▼
+                              </TableCell>
+                            </TableRow>
+                          </TableHead>
+                          <TableBody>
+                            {departamentoSummary.map((d, index) => (
+                              <TableRow key={d.departamento} sx={{ bgcolor: index % 2 === 0 ? '#ffffff' : '#f8fafc', '&:hover': { bgcolor: '#f1f5f9' } }}>
+                                <TableCell sx={{ fontWeight: 700, fontSize: 12, color: '#1e293b', py: 0.7 }}>
+                                  {d.departamento}
+                                </TableCell>
+                                <TableCell align="right" sx={{ fontWeight: 900, fontSize: 12.5, color: '#001b44', py: 0.7 }}>
+                                  {d.total}
+                                </TableCell>
+                              </TableRow>
+                            ))}
+                            {/* Total Row */}
+                            <TableRow sx={{ bgcolor: '#f1f5f9', borderTop: '2px solid #001b44' }}>
+                              <TableCell sx={{ fontWeight: 900, fontSize: 12.5, color: '#001b44' }}>
+                                Total
+                              </TableCell>
+                              <TableCell align="right" sx={{ fontWeight: 900, fontSize: 13, color: '#001b44' }}>
+                                {totalDeptoSum}
+                              </TableCell>
+                            </TableRow>
+                          </TableBody>
+                        </Table>
+                      </TableContainer>
+                    </Paper>
+                  </Grid>
+                </Grid>
               </Paper>
             </Grid>
 
-            {/* Program details table */}
-            <Grid item xs={12} md={8}>
-              <Paper elevation={0} sx={{ p: 2, border: '1px solid #cbd5e1', borderRadius: 3 }}>
-                <Stack direction="row" justifyContent="space-between" alignItems="center" sx={{ mb: 1.5 }}>
-                  <Typography variant="subtitle2" sx={{ fontWeight: 900, color: '#0f172a' }}>
-                    Listado Detallado de Programas Coincidentes ({filteredOferta.length})
+            {/* 2. SECCIÓN MUNICIPIO OFERTA (MAPA + TABLA — RÉPLICA EXACTA DE TU IMAGEN REFERENCIA) */}
+            <Grid item xs={12} lg={6}>
+              <Paper elevation={0} sx={{ p: 2, border: '1px solid #cbd5e1', borderRadius: 3, height: '100%', bgcolor: '#ffffff' }}>
+                <Stack direction="row" spacing={1} alignItems="center" sx={{ mb: 1.5, pb: 1, borderBottom: '1px solid #e2e8f0' }}>
+                  <PlaceRoundedIcon sx={{ color: '#be123c' }} />
+                  <Typography variant="subtitle2" sx={{ fontWeight: 900, color: '#0f172a', textTransform: 'uppercase' }}>
+                    MUNICIPIO OFERTA
                   </Typography>
-                  <Button size="small" startIcon={<DownloadRoundedIcon />} variant="outlined" sx={{ textTransform: 'none', fontWeight: 800 }}>
-                    Exportar Lista
-                  </Button>
                 </Stack>
 
-                <TableContainer sx={{ maxHeight: 380 }}>
-                  <Table stickyHeader size="small">
-                    <TableHead>
-                      <TableRow sx={{ bgcolor: '#f1f5f9' }}>
-                        <TableCell sx={{ fontWeight: 800 }}>Institución (IES)</TableCell>
-                        <TableCell sx={{ fontWeight: 800 }}>Programa Académico</TableCell>
-                        <TableCell sx={{ fontWeight: 800 }}>Municipio</TableCell>
-                        <TableCell sx={{ fontWeight: 800 }}>Modalidad</TableCell>
-                        <TableCell align="right" sx={{ fontWeight: 800 }}>
-                          Créditos
-                        </TableCell>
-                      </TableRow>
-                    </TableHead>
-                    <TableBody>
-                      {filteredOferta.slice(0, 50).map((r) => (
-                        <TableRow key={r.id} hover>
-                          <TableCell sx={{ fontWeight: 700, fontSize: 12, maxWidth: 200, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                            {r.ies}
-                          </TableCell>
-                          <TableCell sx={{ fontWeight: 800, fontSize: 12, color: '#0369a1' }}>{r.programa}</TableCell>
-                          <TableCell sx={{ fontSize: 12 }}>{r.municipio}</TableCell>
-                          <TableCell sx={{ fontSize: 12 }}>
-                            <Chip size="small" label={r.modalidad} sx={{ fontSize: 10, height: 20 }} />
-                          </TableCell>
-                          <TableCell align="right" sx={{ fontWeight: 800, fontSize: 12 }}>
-                            {r.creditos || '—'}
-                          </TableCell>
-                        </TableRow>
-                      ))}
-                    </TableBody>
-                  </Table>
-                </TableContainer>
+                <Grid container spacing={2}>
+                  {/* Left: Municipio OpenStreetMap Component with Pin Bubbles (Réplica Fiel a la Imagen del Usuario) */}
+                  <Grid item xs={12} sm={6}>
+                    <Box
+                      sx={{
+                        width: '100%',
+                        height: 340,
+                        borderRadius: 2,
+                        bgcolor: '#e2e8f0',
+                        position: 'relative',
+                        overflow: 'hidden',
+                        border: '1px solid #cbd5e1'
+                      }}
+                    >
+                      {/* OpenStreetMap Tile Layer */}
+                      <iframe
+                        title="Mapa Municipio Oferta"
+                        width="100%"
+                        height="100%"
+                        frameBorder="0"
+                        scrolling="no"
+                        src="https://www.openstreetmap.org/export/embed.html?bbox=-78.5%2C0.5%2C-75.2%2C5.0&amp;layer=mapnik"
+                        style={{ filter: 'contrast(1.05) saturate(1.1)' }}
+                      />
+
+                      {/* Municipio Geographic Bubble Markers Overlay */}
+                      <Box sx={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', pointerEvents: 'none' }}>
+                        {municipioSummary.slice(0, 10).map((m, idx) => {
+                          const coords = MUNICIPIO_COORDINATES[normalizeStr(m.municipio)] || { top: `${20 + idx * 7}%`, left: `${30 + (idx % 2) * 25}%` };
+                          const pinColors = ['#1d4ed8', '#7e22ce', '#c2410c', '#15803d', '#0f766e', '#be123c', '#0284c7'];
+                          const color = pinColors[idx % pinColors.length];
+
+                          return (
+                            <Box
+                              key={m.municipio}
+                              sx={{
+                                position: 'absolute',
+                                top: coords.top,
+                                left: coords.left,
+                                transform: 'translate(-50%, -50%)',
+                                display: 'flex',
+                                flexDirection: 'column',
+                                alignItems: 'center'
+                              }}
+                            >
+                              <Chip
+                                size="small"
+                                label={`${m.municipio} (${m.total})`}
+                                sx={{
+                                  bgcolor: '#1e293b',
+                                  color: '#ffffff',
+                                  fontWeight: 900,
+                                  fontSize: 10,
+                                  height: 20,
+                                  boxShadow: '0 2px 6px rgba(0,0,0,0.4)',
+                                  border: '1px solid #ffffff',
+                                  mb: 0.3
+                                }}
+                              />
+                              <Box
+                                sx={{
+                                  width: Math.max(16, m.total * 3),
+                                  height: Math.max(16, m.total * 3),
+                                  borderRadius: '50%',
+                                  bgcolor: color,
+                                  opacity: 0.75,
+                                  border: '2px solid #ffffff',
+                                  boxShadow: '0 0 10px rgba(0,0,0,0.3)'
+                                }}
+                              />
+                            </Box>
+                          );
+                        })}
+                      </Box>
+                    </Box>
+                  </Grid>
+
+                  {/* Right: Municipio Table (Fiel a la Captura de Pantalla del Usuario) */}
+                  <Grid item xs={12} sm={6}>
+                    <Paper elevation={0} sx={{ border: '1px solid #001b44', borderRadius: 2, overflow: 'hidden' }}>
+                      <TableContainer sx={{ maxHeight: 340 }}>
+                        <Table stickyHeader size="small">
+                          <TableHead>
+                            <TableRow>
+                              <TableCell sx={{ bgcolor: '#001b44', color: '#ffffff', fontWeight: 900, fontSize: 11.5, textTransform: 'uppercase', py: 1 }}>
+                                MUNICIPIO OFERTA PROGRAMA
+                              </TableCell>
+                              <TableCell align="right" sx={{ bgcolor: '#001b44', color: '#ffffff', fontWeight: 900, fontSize: 11.5, textTransform: 'uppercase', py: 1 }}>
+                                TOTAL PROGRAMAS ▼
+                              </TableCell>
+                            </TableRow>
+                          </TableHead>
+                          <TableBody>
+                            {municipioSummary.map((m, index) => (
+                              <TableRow key={m.municipio} sx={{ bgcolor: index % 2 === 0 ? '#ffffff' : '#f8fafc', '&:hover': { bgcolor: '#f1f5f9' } }}>
+                                <TableCell sx={{ fontWeight: 700, fontSize: 12, color: '#1e293b', py: 0.7 }}>
+                                  {m.municipio}
+                                </TableCell>
+                                <TableCell align="right" sx={{ fontWeight: 900, fontSize: 12.5, color: '#001b44', py: 0.7 }}>
+                                  {m.total}
+                                </TableCell>
+                              </TableRow>
+                            ))}
+                            {/* Total Row */}
+                            <TableRow sx={{ bgcolor: '#f1f5f9', borderTop: '2px solid #001b44' }}>
+                              <TableCell sx={{ fontWeight: 900, fontSize: 12.5, color: '#001b44' }}>
+                                Total
+                              </TableCell>
+                              <TableCell align="right" sx={{ fontWeight: 900, fontSize: 13, color: '#001b44' }}>
+                                {totalMunicipioSum}
+                              </TableCell>
+                            </TableRow>
+                          </TableBody>
+                        </Table>
+                      </TableContainer>
+                    </Paper>
+                  </Grid>
+                </Grid>
               </Paper>
             </Grid>
           </Grid>
+
+          {/* Detailed Program List Table */}
+          <Paper elevation={0} sx={{ p: 2, border: '1px solid #cbd5e1', borderRadius: 3 }}>
+            <Stack direction="row" justifyContent="space-between" alignItems="center" sx={{ mb: 1.5 }}>
+              <Typography variant="subtitle2" sx={{ fontWeight: 900, color: '#0f172a' }}>
+                Listado Detallado de Programas Coincidentes ({filteredOferta.length})
+              </Typography>
+              <Button size="small" startIcon={<DownloadRoundedIcon />} variant="outlined" sx={{ textTransform: 'none', fontWeight: 800 }}>
+                Exportar Lista
+              </Button>
+            </Stack>
+
+            <TableContainer sx={{ maxHeight: 380 }}>
+              <Table stickyHeader size="small">
+                <TableHead>
+                  <TableRow sx={{ bgcolor: '#f1f5f9' }}>
+                    <TableCell sx={{ fontWeight: 800 }}>Institución (IES)</TableCell>
+                    <TableCell sx={{ fontWeight: 800 }}>Programa Académico</TableCell>
+                    <TableCell sx={{ fontWeight: 800 }}>Municipio</TableCell>
+                    <TableCell sx={{ fontWeight: 800 }}>Modalidad</TableCell>
+                    <TableCell align="right" sx={{ fontWeight: 800 }}>
+                      Créditos
+                    </TableCell>
+                  </TableRow>
+                </TableHead>
+                <TableBody>
+                  {filteredOferta.slice(0, 50).map((r) => (
+                    <TableRow key={r.id} hover>
+                      <TableCell sx={{ fontWeight: 700, fontSize: 12, maxWidth: 200, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                        {r.ies}
+                      </TableCell>
+                      <TableCell sx={{ fontWeight: 800, fontSize: 12, color: '#0369a1' }}>{r.programa}</TableCell>
+                      <TableCell sx={{ fontSize: 12 }}>{r.municipio}</TableCell>
+                      <TableCell sx={{ fontSize: 12 }}>
+                        <Chip size="small" label={r.modalidad} sx={{ fontSize: 10, height: 20 }} />
+                      </TableCell>
+                      <TableCell align="right" sx={{ fontWeight: 800, fontSize: 12 }}>
+                        {r.creditos || '—'}
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </TableContainer>
+          </Paper>
         </Stack>
       )}
 
