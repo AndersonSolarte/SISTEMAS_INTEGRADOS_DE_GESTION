@@ -163,13 +163,26 @@ const getJobPaths = (jobId, extension = '') => {
   };
 };
 
+const moveFileSafe = async (src, dst) => {
+  try {
+    await fs.rename(src, dst);
+  } catch (err) {
+    if (err?.code === 'EXDEV' || err?.code === 'EPERM') {
+      await fs.copyFile(src, dst);
+      await fs.unlink(src).catch(() => {});
+    } else {
+      throw err;
+    }
+  }
+};
+
 const writeJob = async (job) => {
   await fs.mkdir(JOB_ROOT, { recursive: true });
   const paths = getJobPaths(job?.jobId, path.extname(job?.inputPath || ''));
-  if (!paths) throw new Error('Identificador de trabajo invÃ¡lido.');
+  if (!paths) throw new Error('Identificador de trabajo inválido.');
   const tempPath = `${paths.metadata}.${process.pid}.${Date.now()}.tmp`;
   await fs.writeFile(tempPath, JSON.stringify(job), 'utf8');
-  await fs.rename(tempPath, paths.metadata);
+  await moveFileSafe(tempPath, paths.metadata);
   await fs.unlink(paths.legacyMetadata).catch(() => {});
   return job;
 };
@@ -471,7 +484,7 @@ const createContextoExternoCleaningJob = async (req, res) => {
     const jobId = crypto.randomUUID();
     const extension = path.extname(req.file.originalname || '').toLowerCase();
     const paths = getJobPaths(jobId, extension);
-    await fs.rename(uploadedPath, paths.input);
+    await moveFileSafe(uploadedPath, paths.input);
     jobInputPath = paths.input;
     const createdAt = new Date();
     const job = {
