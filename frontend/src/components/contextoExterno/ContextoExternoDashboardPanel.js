@@ -266,8 +266,8 @@ export default function ContextoExternoDashboardPanel({ onBack }) {
               <Typography variant="h6" sx={{ fontWeight: 900, textTransform: 'uppercase', letterSpacing: 0.8, fontSize: { xs: 15, md: 18 } }}>
                 OFERTA REGIONAL DE PROGRAMAS ACADÉMICOS SIMILARES
               </Typography>
-              <Typography variant="caption" sx={{ color: 'rgba(255,255,255,0.85)', fontWeight: 600 }}>
-                Sistema de Gestión de Información del Contexto Externo — UNICESMAG
+              <Typography variant="caption" sx={{ color: 'rgba(255,255,255,0.85)', fontWeight: 700 }}>
+                UNICESMAG
               </Typography>
             </Box>
           </Stack>
@@ -277,8 +277,8 @@ export default function ContextoExternoDashboardPanel({ onBack }) {
         {/* Main Tabs Navigation */}
         <Box sx={{ borderBottom: 1, borderColor: 'divider', bgcolor: '#f8fafc', px: 2 }}>
           <Tabs value={mainTab} onChange={(_, val) => setMainTab(val)} textColor="primary" indicatorColor="primary">
-            <Tab label="1. Oferta Académica (Programas)" icon={<SchoolRoundedIcon fontSize="small" />} iconPosition="start" sx={{ fontWeight: 800, textTransform: 'none', py: 1.5 }} />
-            <Tab label="2. Información Poblacional Contexto" icon={<GroupsRoundedIcon fontSize="small" />} iconPosition="start" sx={{ fontWeight: 800, textTransform: 'none', py: 1.5 }} />
+            <Tab label="1. Oferta Académica" icon={<SchoolRoundedIcon fontSize="small" />} iconPosition="start" sx={{ fontWeight: 800, textTransform: 'none', py: 1.5 }} />
+            <Tab label="2. Información Poblacional" icon={<GroupsRoundedIcon fontSize="small" />} iconPosition="start" sx={{ fontWeight: 800, textTransform: 'none', py: 1.5 }} />
           </Tabs>
         </Box>
       </Paper>
@@ -1012,16 +1012,16 @@ export default function ContextoExternoDashboardPanel({ onBack }) {
           {/* Sub-segment Tabs */}
           <Paper elevation={0} sx={{ border: '1px solid #cbd5e1', borderRadius: 3, p: 1, bgcolor: '#f8fafc' }}>
             <Tabs value={poblacionalSubTab} onChange={(_, val) => setPoblacionalSubTab(val)} indicatorColor="secondary" textColor="secondary">
-              <Tab label="🔹 Sub-segmento A: Ingreso y Absorción (Inscritos, Admitidos, Primer Curso)" sx={{ fontWeight: 800, textTransform: 'none' }} />
-              <Tab label="🔹 Sub-segmento B: Cobertura y Permanencia (Matriculados)" sx={{ fontWeight: 800, textTransform: 'none' }} />
-              <Tab label="🔹 Sub-segmento C: Salida y Graduación (Graduados)" sx={{ fontWeight: 800, textTransform: 'none' }} />
+              <Tab label="Ingreso y Absorción" sx={{ fontWeight: 800, textTransform: 'none' }} />
+              <Tab label="Cobertura y Permanencia" sx={{ fontWeight: 800, textTransform: 'none' }} />
+              <Tab label="Salida y Graduación" sx={{ fontWeight: 800, textTransform: 'none' }} />
             </Tabs>
           </Paper>
 
           {/* Table of Poblacional Series */}
           <Paper elevation={0} sx={{ p: 2.5, border: '1px solid #cbd5e1', borderRadius: 3 }}>
             <Typography variant="h6" sx={{ fontWeight: 900, color: '#0f172a', mb: 2 }}>
-              Series Históricas del Contexto Externo — {activePoblacionalBase.join(', ')}
+              Series Históricas — {activePoblacionalBase.join(', ')}
             </Typography>
 
             <TableContainer sx={{ maxHeight: 500 }}>
