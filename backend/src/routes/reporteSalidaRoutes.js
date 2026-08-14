@@ -3,6 +3,8 @@ const router = express.Router();
 const multer = require('multer');
 const fs = require('fs');
 const path = require('path');
+const crypto = require('crypto');
+const { ReporteSalidaAdjunto } = require('../models');
 
 const uploadDir = path.join(__dirname, '../../uploads/adjuntos_reporte');
 if (!fs.existsSync(uploadDir)) {
@@ -74,11 +76,37 @@ router.patch('/config', auth, updateFeatureConfig);
 router.get('/catalogo-laboral', auth, getCatalogoLaboral);
 router.get('/jefes', auth, searchJefes);
 router.get('/dependencias', auth, listarDependencias);
-router.post('/upload-adjunto', auth, upload.single('adjunto'), (req, res) => {
+router.post('/upload-adjunto', auth, upload.single('adjunto'), async (req, res) => {
   if (!req.file) {
     return res.status(400).json({ success: false, message: 'No se subió ningún archivo' });
   }
-  res.json({ success: true, filename: req.file.filename });
+  try {
+    const contenido = await fs.promises.readFile(req.file.path);
+    const sha256 = crypto.createHash('sha256').update(contenido).digest('hex');
+    const adjunto = await ReporteSalidaAdjunto.create({
+      uploaded_by_user_id: req.user?.id || null,
+      storage_key: req.file.filename,
+      nombre_original: String(req.file.originalname || req.file.filename).slice(0, 500),
+      mime_type: String(req.file.mimetype || 'application/octet-stream').slice(0, 120),
+      extension: path.extname(req.file.originalname || req.file.filename).toLowerCase().slice(0, 20),
+      tamano_bytes: contenido.length,
+      sha256,
+      contenido,
+      origen: 'formulario',
+      metadata: { persistido_en_base_datos: true }
+    });
+    return res.json({
+      success: true,
+      filename: req.file.filename,
+      originalName: req.file.originalname,
+      attachmentId: String(adjunto.id),
+      persisted: true
+    });
+  } catch (error) {
+    try { await fs.promises.unlink(req.file.path); } catch (_) { /* archivo temporal ya inexistente */ }
+    console.error('[reporte-salida] No fue posible persistir el adjunto:', error);
+    return res.status(500).json({ success: false, message: 'No fue posible guardar el archivo en la base de datos.' });
+  }
 });
 router.post('/solicitudes', auth, radicarSolicitud);
 router.get('/seguimiento/badge', auth, getSeguimientoBadge);

@@ -2,7 +2,7 @@ const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
 const { Op } = require('sequelize');
-const { Documento, PlanAccion, ReporteSalidaSolicitud, RecursoHumanoAdministrativo, RecursoHumanoDocente, User, UserModulePermission } = require('../models');
+const { Documento, PlanAccion, ReporteSalidaAdjunto, ReporteSalidaSolicitud, RecursoHumanoAdministrativo, RecursoHumanoDocente, User, UserModulePermission } = require('../models');
 const { encryptPayload, decryptPayload } = require('../utils/secureUrlToken');
 const {
   getReporteSalidaRecipients,
@@ -1995,13 +1995,51 @@ const buildReporteSalidaPdfAttachment = async (solicitud) => {
   return pdf;
 };
 
-const buildReporteSalidaSupportAttachment = (solicitud) => {
-  const adjuntoPath = solicitud.datos_formulario?.adjunto_path;
+const getSolicitudAttachmentKey = (solicitud) => solicitud.datos_formulario?.adjunto_path
+  || solicitud.datos_formulario?.salida?.adjunto_path
+  || solicitud.datos_formulario?.salida?.adjunto_url
+  || '';
+
+const sanitizeAttachmentMetadata = (metadata = {}) => ({
+  id: metadata?.id ? sanitizeText(metadata.id, 40) : null,
+  nombre_original: metadata?.nombre_original ? sanitizeText(metadata.nombre_original, 500) : null,
+  persistido_en_base_datos: metadata?.persistido_en_base_datos === true
+});
+
+const associateStoredSupportWithSolicitud = async (solicitud) => {
+  const storageKey = path.basename(String(getSolicitudAttachmentKey(solicitud) || ''));
+  if (!storageKey) return null;
+  const adjunto = await ReporteSalidaAdjunto.findOne({ where: { storage_key: storageKey } });
+  if (!adjunto) return null;
+  if (!adjunto.solicitud_id) {
+    await adjunto.update({
+      solicitud_id: solicitud.id,
+      metadata: {
+        ...(adjunto.metadata || {}),
+        consecutivo: solicitud.consecutivo,
+        asociado_at: new Date().toISOString()
+      }
+    });
+  }
+  return adjunto;
+};
+
+const buildReporteSalidaSupportAttachment = async (solicitud) => {
+  const adjuntoPath = getSolicitudAttachmentKey(solicitud);
   if (adjuntoPath) {
-    const fullPath = path.join(__dirname, '../../uploads/adjuntos_reporte', adjuntoPath);
+    const safeFilename = path.basename(String(adjuntoPath));
+    const stored = await ReporteSalidaAdjunto.findOne({ where: { storage_key: safeFilename } });
+    if (stored?.contenido) {
+      return {
+        filename: stored.nombre_original || `Soporte_${solicitud.consecutivo}${stored.extension || ''}`,
+        content: Buffer.from(stored.contenido),
+        contentType: stored.mime_type || 'application/octet-stream'
+      };
+    }
+    const fullPath = path.join(__dirname, '../../uploads/adjuntos_reporte', safeFilename);
     if (fs.existsSync(fullPath)) {
       return {
-        filename: `Soporte_${solicitud.consecutivo}${path.extname(adjuntoPath)}`,
+        filename: `Soporte_${solicitud.consecutivo}${path.extname(safeFilename)}`,
         path: fullPath
       };
     }
@@ -2010,9 +2048,10 @@ const buildReporteSalidaSupportAttachment = (solicitud) => {
 };
 
 const deleteSupportFile = (solicitud) => {
-  const adjuntoPath = solicitud.datos_formulario?.adjunto_path;
+  const adjuntoPath = getSolicitudAttachmentKey(solicitud);
   if (adjuntoPath) {
-    const fullPath = path.join(__dirname, '../../uploads/adjuntos_reporte', adjuntoPath);
+    const safeFilename = path.basename(String(adjuntoPath));
+    const fullPath = path.join(__dirname, '../../uploads/adjuntos_reporte', safeFilename);
     if (fs.existsSync(fullPath)) {
       try {
         fs.unlinkSync(fullPath);
@@ -2026,7 +2065,7 @@ const deleteSupportFile = (solicitud) => {
 
 const buildReporteSalidaAttachments = async (solicitud) => {
   const pdf = await buildReporteSalidaPdfAttachment(solicitud);
-  const support = buildReporteSalidaSupportAttachment(solicitud);
+  const support = await buildReporteSalidaSupportAttachment(solicitud);
   return [pdf, support].filter(Boolean);
 };
 
@@ -2453,7 +2492,7 @@ const sendFinalEmails = async (solicitud, pdfAttachment, supportAttachment) => {
     </div>
   `;
 
-  // 1. Correo para el/la Colaborador(a) (Solo el PDF firmado)
+  // 1. Correo para el/la Colaborador(a), con PDF firmado y soporte cuando exista.
   const userHtml = renderInstitutionalTemplate({
     title: `${isOficio ? 'Oficio de salida' : 'Reporte de salida'} aprobado`,
     introHtml: `<p style="margin: 0 0 12px 0;">Saludo de paz y bien,</p><p style="margin: 0 0 4px 0; color: #475569;">Estimado(a) Sr(a).</p><p style="margin: 0 0 16px 0; font-size: 16px; font-weight: bold; color: #0b3a6f;">${escapeHtml(nombreColaborador)}</p><p>Reciba un cordial saludo. En atención a su trámite de ${isOficio ? 'oficio de salida' : 'reporte de salida'} con consecutivo <strong>${escapeHtml(solicitud.consecutivo)}</strong>, nos complace informarle que la solicitud ha sido aprobada de manera exitosa y finalizada en el sistema.</p>`,
@@ -2467,7 +2506,7 @@ const sendFinalEmails = async (solicitud, pdfAttachment, supportAttachment) => {
     subject: userThreadSubject,
     text: `Su ${isOficio ? 'oficio de salida' : 'reporte de salida'} ${solicitud.consecutivo} ha sido aprobado exitosamente. Se adjunta PDF firmado.`,
     html: userHtml,
-    attachments: [pdfAttachment].filter(Boolean),
+    attachments: [pdfAttachment, supportAttachment].filter(Boolean),
     headers: getThreadHeadersFromId(getThreadMessageId(solicitud, 'thread_message_id_colaborador'))
   });
 
@@ -2532,7 +2571,7 @@ const sendFinalEmails = async (solicitud, pdfAttachment, supportAttachment) => {
         subject: workflowThreadSubject,
         text: `Se remite copia del ${isOficio ? 'oficio' : 'reporte'} de salida aprobado del/de la colaborador(a) ${nombreColaborador} perteneciente a su dependencia. Se adjunta PDF firmado.`,
         html: depHtml,
-        attachments: [pdfAttachment].filter(Boolean),
+        attachments: [pdfAttachment, supportAttachment].filter(Boolean),
         headers: getThreadHeadersFromId(getThreadMessageId(
           solicitud,
           recipient.type === 'dependencia' ? 'thread_message_id_dependencia' : 'thread_message_id_jefe'
@@ -2546,7 +2585,7 @@ const sendFinalEmails = async (solicitud, pdfAttachment, supportAttachment) => {
           subject: workflowThreadSubject,
           text: `Se remite copia del ${isOficio ? 'oficio' : 'reporte'} de salida aprobado del/de la colaborador(a) ${nombreColaborador} perteneciente a su dependencia. Se adjunta PDF firmado.`,
           html: depHtml,
-          attachments: [pdfAttachment].filter(Boolean)
+          attachments: [pdfAttachment, supportAttachment].filter(Boolean)
         });
         result = {
           ...retryResult,
@@ -2619,7 +2658,7 @@ const sendFinalEmails = async (solicitud, pdfAttachment, supportAttachment) => {
     });
   }
 
-  // 5. Copia final a Vicerrectoría para la Evangelización de las Culturas (PDF firmado incluido, SIN otros adjuntos/soportes)
+  // 5. Copia final a Vicerrectoria para la Evangelizacion con el PDF y el soporte de la solicitud.
   let evanResult = { success: false };
   if (isEvangelizacionSolicitud(solicitud)) {
     const evanEmail = EVANGELIZACION_VICERRECTORIA_EMAIL;
@@ -2636,11 +2675,11 @@ const sendFinalEmails = async (solicitud, pdfAttachment, supportAttachment) => {
       subject: workflowThreadSubject,
       text: `Notificación de aprobación: Se notifica que el ${isOficio ? 'oficio' : 'reporte'} de salida del/de la colaborador(a) ${nombreColaborador} ha sido aprobado exitosamente. Se adjunta PDF firmado.`,
       html: evanHtml,
-      attachments: [pdfAttachment].filter(Boolean), // ÚNICAMENTE EL PDF DEL FORMATO/OFICIO FIRMADO, SIN OTROS ADJUNTOS
+      attachments: [pdfAttachment, supportAttachment].filter(Boolean),
       headers: getThreadHeadersFromId(getThreadMessageId(solicitud, 'thread_message_id_dependencia'))
     });
 
-    console.log('[reporte-salida] Copia final a Vicerrectoría para la Evangelización enviada (con PDF firmado, sin otros adjuntos):', {
+    console.log('[reporte-salida] Copia final a Vicerrectoria para la Evangelizacion enviada con los adjuntos del tramite:', {
       consecutivo: solicitud.consecutivo,
       email: evanEmail,
       success: Boolean(evanResult.success)
@@ -2677,7 +2716,7 @@ const sendJefeApprovalEmail = async (solicitud, token, attachments, headers = {}
     headers
   });
 
-  // 2. Correo para la Dependencia y el Jefe Inmediato (Copia de control, Solo el PDF firmado)
+  // 2. Correo para la Dependencia y el Jefe Inmediato (funcion heredada sin uso activo).
   let depResult = { success: false };
   const copyRecipients = [];
   const dependenciaTarget = getDependencyNotificationTarget(solicitud);
@@ -3366,6 +3405,7 @@ const radicarSolicitud = async (req, res) => {
             is_salida_multiple: true,
             is_leader: i === 0,
             adjunto_path: req.body.datos_formulario?.adjunto_path ? sanitizeText(req.body.datos_formulario.adjunto_path, 255) : null,
+            adjunto_metadata: sanitizeAttachmentMetadata(req.body.datos_formulario?.adjunto_metadata),
             personal: {
               nombre: sanitizeText(p.nombre),
               documento: sanitizeText(p.documento),
@@ -3419,6 +3459,8 @@ const radicarSolicitud = async (req, res) => {
           aprobacion_gh_token_hash: tokenHash,
           trazabilidad: [{ event: 'radicada_grupal', actor: buildSnapshot(req.user), at: now.toISOString() }]
         });
+
+        await associateStoredSupportWithSolicitud(solicitud);
 
         if (jefeSnapshot?.email) {
           sendJefeGroupRadicacionNotificationEmail(solicitud, jefeSnapshot, participantes).catch(err => {
@@ -3736,6 +3778,9 @@ const radicarSolicitud = async (req, res) => {
       datos_formulario: {
         tx_id: crypto.randomUUID(),
         adjunto_path: !isSaludNoAdjuntoDeclarado && req.body.datos_formulario?.adjunto_path ? sanitizeText(req.body.datos_formulario.adjunto_path, 255) : null,
+        adjunto_metadata: !isSaludNoAdjuntoDeclarado
+          ? sanitizeAttachmentMetadata(req.body.datos_formulario?.adjunto_metadata)
+          : {},
         personal: {
           nombre: sanitizeText(req.body.personal?.nombre || req.user.nombre),
           documento: sanitizeText(req.body.personal?.documento || req.user.username),
@@ -3809,10 +3854,17 @@ const radicarSolicitud = async (req, res) => {
       tiempo_solicitado_minutos: requestedMinutes,
       reposicion_aplica: reposicionAplica,
       reposicion_minutos: finalReposicionMinutos,
+      reposicion_minutos_pagados: 0,
+      reposicion_minutos_por_dia: isDiligenciaPersonal ? effectiveDailyMinutes : null,
+      reposicion_tipo_vinculacion: isDiligenciaPersonal ? reposicionLaboralProfile.tipoVinculacion : null,
+      reposicion_nivel_contratacion: isDiligenciaPersonal ? reposicionLaboralProfile.nivelContratacion : null,
+      reposicion_perfil_laboral: isDiligenciaPersonal ? reposicionLaboralProfile : {},
       reposicion_estado: reposicionEstado,
       aprobacion_jefe_token_hash: hashToken(token),
       trazabilidad: [{ event: 'radicada', actor: buildSnapshot(req.user), at: now.toISOString() }]
     });
+
+    await associateStoredSupportWithSolicitud(solicitud);
 
     res.status(201).json({
       success: true,
@@ -3824,7 +3876,7 @@ const radicarSolicitud = async (req, res) => {
     Promise.resolve().then(async () => {
       try {
         const pdfAttachment = await buildReporteSalidaPdfAttachment(solicitud);
-        const supportAttachment = buildReporteSalidaSupportAttachment(solicitud);
+        const supportAttachment = await buildReporteSalidaSupportAttachment(solicitud);
         await solicitud.update({ pdf_generado_at: new Date() });
         
         // 1. Enviar correo de radicación al colaborador primero
@@ -4032,7 +4084,7 @@ const aprobarDesdeCorreo = async (req, res) => {
       }
       await solicitud.reload();
       const pdfAttachment = await buildReporteSalidaPdfAttachment(solicitud);
-      const supportAttachment = buildReporteSalidaSupportAttachment(solicitud);
+      const supportAttachment = await buildReporteSalidaSupportAttachment(solicitud);
       const nextAttachments = [pdfAttachment, supportAttachment].filter(Boolean);
       const emailResult = nextStage === 'rectoria'
         ? await sendAuthorityApprovalEmail({
@@ -4143,7 +4195,7 @@ const aprobarDesdeCorreo = async (req, res) => {
       }
       await solicitud.reload();
       const pdfAttachment = await buildReporteSalidaPdfAttachment(solicitud);
-      const supportAttachment = buildReporteSalidaSupportAttachment(solicitud);
+      const supportAttachment = await buildReporteSalidaSupportAttachment(solicitud);
       const nextAttachments = [pdfAttachment, supportAttachment].filter(Boolean);
       const emailResult = goesToRectoria && !skipRectoriaAfterVicerrectoria
         ? await sendAuthorityApprovalEmail({
@@ -4219,7 +4271,7 @@ const aprobarDesdeCorreo = async (req, res) => {
       }
       await solicitud.reload();
       const pdfAttachment = await buildReporteSalidaPdfAttachment(solicitud);
-      const supportAttachment = buildReporteSalidaSupportAttachment(solicitud);
+      const supportAttachment = await buildReporteSalidaSupportAttachment(solicitud);
       const emailResult = await sendGestionHumanaApprovalEmail(solicitud, ghToken, [pdfAttachment, supportAttachment].filter(Boolean));
       await solicitud.update({
         correo_gh_enviado_at: emailResult.success ? new Date() : null,
@@ -4320,7 +4372,7 @@ const aprobarDesdeCorreo = async (req, res) => {
         }
         await solicitud.reload();
         const pdfAttachment = await buildReporteSalidaPdfAttachment(solicitud);
-        const supportAttachment = buildReporteSalidaSupportAttachment(solicitud);
+        const supportAttachment = await buildReporteSalidaSupportAttachment(solicitud);
         const emailResult = await sendSSTApprovalEmail(solicitud, sstToken, [pdfAttachment, supportAttachment].filter(Boolean));
         await solicitud.update({
           correo_sst_enviado_at: emailResult.success ? new Date() : null,
@@ -4366,7 +4418,7 @@ const aprobarDesdeCorreo = async (req, res) => {
         await solicitud.reload();
         solicitud.trazabilidad = appendTrace(solicitud, 'notificacion_final_enviada', null, { usuario: true, sst: true });
         const pdfAttachment = await buildReporteSalidaPdfAttachment(solicitud);
-        const supportAttachment = buildReporteSalidaSupportAttachment(solicitud);
+        const supportAttachment = await buildReporteSalidaSupportAttachment(solicitud);
         const results = await sendFinalEmails(solicitud, pdfAttachment, supportAttachment);
         deleteSupportFile(solicitud);
         await solicitud.update({
@@ -4443,7 +4495,7 @@ const aprobarDesdeCorreo = async (req, res) => {
       await solicitud.reload();
       solicitud.trazabilidad = appendTrace(solicitud, 'notificacion_final_enviada', null, { usuario: true, sst: true });
       const pdfAttachment = await buildReporteSalidaPdfAttachment(solicitud);
-      const supportAttachment = buildReporteSalidaSupportAttachment(solicitud);
+      const supportAttachment = await buildReporteSalidaSupportAttachment(solicitud);
       const results = await sendFinalEmails(solicitud, pdfAttachment, supportAttachment);
       deleteSupportFile(solicitud);
       await solicitud.update({
@@ -4643,7 +4695,7 @@ const actualizarReposicion = async (req, res) => {
     const minutosAbonados = abono.minutes;
 
     const previousData = solicitud.datos_formulario || {};
-    const minutosYaPagados = previousData.reposicion_minutos_pagados || 0;
+    const minutosYaPagados = solicitud.reposicion_minutos_pagados || previousData.reposicion_minutos_pagados || 0;
     const tiempoTotal = solicitud.reposicion_minutos || solicitud.tiempo_solicitado_minutos || 0;
 
     if (minutosYaPagados >= tiempoTotal && tiempoTotal > 0) {
@@ -4700,6 +4752,7 @@ const actualizarReposicion = async (req, res) => {
     
     await solicitud.update({
       reposicion_estado: nextEstado,
+      reposicion_minutos_pagados: nuevoTotalPagados,
       observacion_gestion_humana: observacionAcumulada,
       datos_formulario: {
         ...previousData,
@@ -4915,7 +4968,7 @@ const editarSolicitudAdmin = async (req, res) => {
     }
 
     const previousData = solicitud.datos_formulario || {};
-    const antiguoPagados = previousData.reposicion_minutos_pagados || 0;
+    const antiguoPagados = solicitud.reposicion_minutos_pagados || previousData.reposicion_minutos_pagados || 0;
     let nuevoPagados = antiguoPagados;
 
     if (reposicion_minutos_pagados !== undefined) {
@@ -4926,6 +4979,7 @@ const editarSolicitudAdmin = async (req, res) => {
           ...previousData,
           reposicion_minutos_pagados: nuevoPagados
         };
+        updateData.reposicion_minutos_pagados = nuevoPagados;
       }
     }
 

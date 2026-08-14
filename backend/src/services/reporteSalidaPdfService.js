@@ -262,6 +262,77 @@ const formatMinutes = (minutes) => {
   return `${h}h ${String(m).padStart(2, '0')}m`;
 };
 
+const getReposicionPdfInfo = (solicitud = {}) => {
+  const data = solicitud.datos_formulario || {};
+  const salida = data.salida || {};
+  const reposicion = data.reposicion || {};
+  const profile = solicitud.reposicion_perfil_laboral
+    || data.laboral?.reposicionPerfil
+    || data.parametrizacion_tiempo?.perfil_laboral
+    || {};
+  const total = Number(solicitud.reposicion_minutos || solicitud.tiempo_solicitado_minutos || 0);
+  const paid = Number(solicitud.reposicion_minutos_pagados || data.reposicion_minutos_pagados || 0);
+  const daily = Number(solicitud.reposicion_minutos_por_dia || data.parametrizacion_tiempo?.reposicion_minutos_por_dia || profile.minutesPerDay || 0);
+  const durationLabels = {
+    menos_media_jornada: 'Hasta media jornada',
+    '1_2_dias': 'Entre 1 y 2 dias',
+    '3_mas_dias': '3 o mas dias'
+  };
+  const stateLabels = { no_aplica: 'No aplica', pendiente: 'Pendiente', programada: 'Programada', cumplida: 'Cumplida', incumplida: 'Incumplida' };
+  const attachmentName = data.adjunto_metadata?.nombre_original
+    || data.adjunto_path
+    || salida.adjunto_path
+    || salida.adjunto_url
+    || '';
+  return {
+    applies: Boolean(solicitud.reposicion_aplica),
+    requested: Number(solicitud.tiempo_solicitado_minutos || total),
+    total,
+    paid,
+    pending: Math.max(0, total - paid),
+    daily,
+    profileLabel: profile.label || profile.key || solicitud.reposicion_tipo_vinculacion || data.laboral?.tipoVinculacion || 'No registrado',
+    contractLevel: solicitud.reposicion_nivel_contratacion || data.laboral?.nivelContratacion || 'No registrado',
+    durationLabel: durationLabels[salida.duracionTipo] || salida.duracionTipo || 'No registrado',
+    stateLabel: stateLabels[solicitud.reposicion_estado] || solicitud.reposicion_estado || 'Pendiente',
+    attachmentName: attachmentName ? path.basename(String(attachmentName)) : '',
+    reposicion
+  };
+};
+
+const buildReposicionPdfSection = (solicitud = {}, sectionTitle = 'Informacion de reposicion de tiempo') => {
+  const info = getReposicionPdfInfo(solicitud);
+  if (!info.applies) return [];
+  const rows = [
+    [{ text: 'Tiempo solicitado:', bold: true }, { text: formatMinutes(info.requested) }, { text: 'Jornada diaria:', bold: true }, { text: formatMinutes(info.daily) }],
+    [{ text: 'Perfil laboral:', bold: true }, { text: info.profileLabel }, { text: 'Nivel de contratacion:', bold: true }, { text: info.contractLevel }],
+    [{ text: 'Duracion del permiso:', bold: true }, { text: info.durationLabel }, { text: 'Estado de reposicion:', bold: true }, { text: info.stateLabel }],
+    [{ text: 'Total a reponer:', bold: true }, { text: formatMinutes(info.total) }, { text: 'Saldo pendiente:', bold: true }, { text: formatMinutes(info.pending) }],
+    [{ text: 'Tiempo abonado:', bold: true }, { text: formatMinutes(info.paid) }, { text: 'Soporte adjunto:', bold: true }, { text: info.attachmentName || 'No adjuntado' }]
+  ];
+  const plan = info.reposicion || {};
+  if (plan.fecha || plan.horaInicio || plan.observacion) {
+    rows.push([
+      { text: 'Plan informado:', bold: true },
+      { text: [formatDate(plan.fecha), formatTimeAmPm(plan.horaInicio)].filter(Boolean).join(' ') || 'Sin fecha definida' },
+      { text: 'Finalizacion:', bold: true },
+      { text: [formatDate(plan.fechaFin || plan.fecha), formatTimeAmPm(plan.horaFin)].filter(Boolean).join(' ') || 'Sin fecha definida' }
+    ]);
+    if (plan.observacion) rows.push([{ text: 'Observacion:', bold: true }, { text: plan.observacion, colSpan: 3 }, {}, {}]);
+  }
+  if (solicitud.observacion_gestion_humana) {
+    rows.push([
+      { text: 'Seguimiento de reposicion:', bold: true },
+      { text: solicitud.observacion_gestion_humana, colSpan: 3 },
+      {}, {}
+    ]);
+  }
+  return [
+    { table: { widths: ['*'], body: [[{ text: sectionTitle, bold: true, fillColor: '#dbeafe', color: '#0b3a6f', margin: [5, 3, 5, 3] }]] }, margin: [0, 4, 0, 3] },
+    { table: { widths: ['22%', '28%', '22%', '28%'], body: rows }, layout: 'lightHorizontalLines', margin: [0, 0, 0, 8] }
+  ];
+};
+
 const getTipoSalidaLabel = (tipo) => {
   const mapping = {
     cita_eps: 'Cita medica por EPS',
@@ -475,6 +546,7 @@ const buildLines = (solicitud) => {
   const reposicion = data.reposicion || {};
   const laboral = data.laboral || {};
   const personal = data.personal || {};
+  const reposicionInfo = getReposicionPdfInfo(solicitud);
 
   return [
     'UNIVERSIDAD CESMAG',
@@ -504,7 +576,13 @@ const buildLines = (solicitud) => {
     `Hora inicio reposicion: ${formatTimeAmPm(reposicion.horaInicio)}`,
     `Hora fin reposicion: ${formatTimeAmPm(reposicion.horaFin)}`,
     `Tiempo reposicion: ${formatMinutes(solicitud.reposicion_minutos)}`,
+    `Jornada diaria: ${formatMinutes(reposicionInfo.daily)}`,
+    `Perfil laboral: ${reposicionInfo.profileLabel}`,
+    `Nivel de contratacion: ${reposicionInfo.contractLevel}`,
+    `Tiempo abonado: ${formatMinutes(reposicionInfo.paid)}`,
+    `Saldo pendiente: ${formatMinutes(reposicionInfo.pending)}`,
     `Estado reposicion: ${solicitud.reposicion_estado || 'no_aplica'}`,
+    `Soporte adjunto: ${reposicionInfo.attachmentName || 'No adjuntado'}`,
     '',
     'APROBACIONES',
     `Jefe inmediato: ${jefe.nombre || ''} - ${jefe.email || ''}`,
@@ -973,6 +1051,8 @@ const buildOficioPdfDefinition = (solicitud, ghDirectorNombre, ghDirectorCargo) 
       ...(getDeclaracionSinAdjunto(salida) ? [
         { text: `Declaracion de soportes: ${getDeclaracionSinAdjunto(salida)}`, fontSize: 8.2, italics: true, color: '#334155', margin: [0, 0, 0, 4] }
       ] : []),
+
+      ...buildReposicionPdfSection(solicitud, 'REPOSICION DE TIEMPO ASOCIADA A LA SALIDA'),
       
       // Signatures container
       {
@@ -1055,7 +1135,6 @@ const buildPdfBuffer = async (solicitud) => {
 
       const solicitante = solicitud?.solicitante_snapshot || {};
       const jefe = solicitud?.jefe_snapshot || {};
-      const reposicion = data.reposicion || {};
       const laboral = data.laboral || {};
       const personal = data.personal || {};
 
@@ -1322,38 +1401,7 @@ const buildPdfBuffer = async (solicitud) => {
         });
       }
 
-      if (reposicion.fecha) {
-        docDefinition.content.push({
-          table: {
-            widths: ['*'],
-            body: [
-              [ { text: '4. Plan de Reposición', bold: true, fillColor: '#e0e0e0', margin: [5, 3, 5, 3] } ]
-            ]
-          },
-          margin: [0, 0, 0, 3]
-        });
-        docDefinition.content.push({
-          table: {
-            widths: ['25%', '25%', '25%', '25%'],
-            body: [
-              [
-                { text: 'Fecha Inicio:', bold: true },
-                { text: formatDate(reposicion.fecha) },
-                { text: 'Fecha Fin:', bold: true },
-                { text: formatDate(reposicion.fechaFin || reposicion.fecha) }
-              ],
-              [
-                { text: 'Hora Inicio:', bold: true },
-                { text: formatTimeAmPm(reposicion.horaInicio) },
-                { text: 'Hora Fin:', bold: true },
-                { text: formatTimeAmPm(reposicion.horaFin) }
-              ]
-            ]
-          },
-          layout: 'lightHorizontalLines',
-          margin: [0, 0, 0, 8]
-        });
-      }
+      docDefinition.content.push(...buildReposicionPdfSection(solicitud, '4. Reposicion de tiempo'));
 
       ghDirectorCargo = solicitud.jefe_snapshot?.director_gh_cargo || ghDirectorCargo;
       const txId = solicitud.datos_formulario?.tx_id || String(solicitud.consecutivo || solicitud.id);
@@ -1848,5 +1896,7 @@ const ensureReporteSalidaDocx = async (solicitud) => {
 module.exports = {
   ensureReporteSalidaDocx,
   ensureReporteSalidaPdf,
-  formatMinutes
+  formatMinutes,
+  getReposicionPdfInfo,
+  buildReposicionPdfSection
 };

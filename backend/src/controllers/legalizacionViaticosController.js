@@ -1,7 +1,13 @@
 const fs = require('fs');
 const path = require('path');
+const crypto = require('crypto');
 const { Op } = require('sequelize');
-const { DesplazamientoViaticosSolicitud, ViaticosLegalizacion, UserModulePermission } = require('../models');
+const {
+  DesplazamientoViaticosSolicitud,
+  ViaticosLegalizacion,
+  ViaticosLegalizacionAdjunto,
+  UserModulePermission
+} = require('../models');
 const { ROLES } = require('../constants/roles');
 const { getDesplazamientoViaticosRecipients, normalizeEmail } = require('../config/desplazamientoViaticosConfig');
 const { sendInstitutionalEmail, renderInstitutionalTemplate, escapeHtml } = require('../services/emailService');
@@ -138,6 +144,14 @@ const presentar = async (req, res) => {
   const files = Array.isArray(req.files) ? req.files : [];
   const result = [];
   const attachments = [];
+  const storedAttachmentIds = [];
+  for (const concept of expected) {
+    const received = submitted.find((item) => item.id === concept.id);
+    const legalized = Number(received?.valorLegalizado);
+    if (!Number.isFinite(legalized) || legalized < 0) {
+      return rejectUpload(400, `Ingrese un valor legalizado válido para ${concept.detalle}.`);
+    }
+  }
   for (const concept of expected) {
     const received = submitted.find((item) => item.id === concept.id);
     const legalized = Number(received?.valorLegalizado);
@@ -145,27 +159,56 @@ const presentar = async (req, res) => {
     const support = files.find((file) => file.fieldname === `soporte_${concept.id}`);
     result.push({ ...concept, valorLegalizado: legalized, diferencia: Number(concept.valorAnticipo || 0) - legalized });
     if (support) {
-      attachments.push({
-        id: `${concept.id}-${Date.now()}`,
-        conceptoId: concept.id,
-        detalle: concept.detalle,
-        originalName: path.basename(clean(support.originalname, 240)),
-        filename: support.filename,
-        mimetype: support.mimetype,
-        size: support.size,
-        path: support.path
-      });
+      try {
+        const contenido = await fs.promises.readFile(support.path);
+        const stored = await ViaticosLegalizacionAdjunto.create({
+          legalizacion_id: legalizacion.id,
+          concepto_id: clean(concept.id, 120),
+          detalle: clean(concept.detalle, 500),
+          storage_key: support.filename,
+          nombre_original: path.basename(clean(support.originalname, 500)),
+          mime_type: clean(support.mimetype || 'application/octet-stream', 120),
+          extension: path.extname(support.originalname || support.filename).toLowerCase().slice(0, 20),
+          tamano_bytes: contenido.length,
+          sha256: crypto.createHash('sha256').update(contenido).digest('hex'),
+          contenido,
+          metadata: { persistido_en_base_datos: true, cargado_por: req.user.id }
+        });
+        storedAttachmentIds.push(stored.id);
+        attachments.push({
+          id: String(stored.id),
+          conceptoId: concept.id,
+          detalle: concept.detalle,
+          originalName: stored.nombre_original,
+          filename: stored.storage_key,
+          mimetype: stored.mime_type,
+          size: Number(stored.tamano_bytes),
+          persistidoEnBaseDatos: true
+        });
+      } catch (error) {
+        if (storedAttachmentIds.length) {
+          await ViaticosLegalizacionAdjunto.destroy({ where: { id: storedAttachmentIds } }).catch(() => null);
+        }
+        return rejectUpload(500, `No fue posible guardar en la base de datos el soporte de ${concept.detalle}.`);
+      }
     }
   }
   const actor = { id: req.user.id, nombre: req.user.nombre || req.user.name, email: req.user.email };
-  await legalizacion.update({
-    estado: 'en_revision',
-    detalles: result,
-    observaciones: clean(req.body.observaciones),
-    adjuntos: attachments,
-    presentado_at: new Date(),
-    trazabilidad: trace(legalizacion, 'legalizacion_presentada', actor)
-  });
+  try {
+    await legalizacion.update({
+      estado: 'en_revision',
+      detalles: result,
+      observaciones: clean(req.body.observaciones),
+      adjuntos: attachments,
+      presentado_at: new Date(),
+      trazabilidad: trace(legalizacion, 'legalizacion_presentada', actor)
+    });
+  } catch (error) {
+    if (storedAttachmentIds.length) {
+      await ViaticosLegalizacionAdjunto.destroy({ where: { id: storedAttachmentIds } }).catch(() => null);
+    }
+    return rejectUpload(500, 'No fue posible registrar la legalización en la base de datos.');
+  }
   const mailThread = legalizationMailThread(legalizacion, legalizacion.solicitud);
   const mailResult = await sendInstitutionalEmail({
     to: legalizationRecipients(legalizacion.solicitud, req.user.email),
@@ -175,10 +218,18 @@ const presentar = async (req, res) => {
     html: renderInstitutionalTemplate({
       title: 'Legalización de viáticos presentada',
       introHtml: '<p>Saludo de paz y bien,</p><p>La legalización fue firmada electrónicamente por el colaborador y quedó pendiente de revisión del Técnico Contable.</p>',
-      bodyHtml: `${legalizationEmailSummary(legalizacion, legalizacion.solicitud, 'Pendiente de revisión del Técnico Contable')}<p><strong>Soportes adjuntos:</strong> ${attachments.length}</p><p style="color:#64748b">Los anexos permanecerán disponibles temporalmente en SIAC hasta finalizar la revisión.</p>`
+      bodyHtml: `${legalizationEmailSummary(legalizacion, legalizacion.solicitud, 'Pendiente de revisión del Técnico Contable')}<p><strong>Soportes adjuntos:</strong> ${attachments.length}</p><p style="color:#64748b">Los anexos quedaron almacenados en la base de datos institucional y permanecerán disponibles para consulta y respaldo.</p>`
     }),
-    attachments: attachments.map((file) => ({ filename: file.originalName, path: file.path }))
+    attachments: await Promise.all(attachments.map(async (file) => {
+      const stored = await ViaticosLegalizacionAdjunto.findByPk(file.id);
+      return {
+        filename: file.originalName,
+        content: Buffer.from(stored.contenido),
+        contentType: stored.mime_type
+      };
+    }))
   });
+  removeUploadedFiles(files);
   return res.status(201).json({ success: true, message: 'Legalización enviada al Técnico Contable.', emailSent: mailResult.success });
 };
 
@@ -209,6 +260,16 @@ const verAdjunto = async (req, res) => {
   const owner = Number(legalizacion.user_id) === Number(req.user.id);
   if (!owner && !(await canAccess(req.user, MANAGEMENT_PERMISSION))) return res.status(403).json({ success: false, message: 'No autorizado.' });
   const attachment = (legalizacion.adjuntos || []).find((file) => file.id === req.params.fileId);
+  if (attachment) {
+    const stored = await ViaticosLegalizacionAdjunto.findOne({
+      where: { id: attachment.id, legalizacion_id: legalizacion.id }
+    });
+    if (stored?.contenido) {
+      res.setHeader('Content-Type', stored.mime_type || 'application/octet-stream');
+      res.setHeader('Content-Disposition', `inline; filename="${encodeURIComponent(stored.nombre_original)}"`);
+      return res.send(Buffer.from(stored.contenido));
+    }
+  }
   const resolved = attachment?.path ? path.resolve(attachment.path) : '';
   if (!attachment || !resolved.startsWith(uploadRoot) || !fs.existsSync(resolved)) return res.status(404).json({ success: false, message: 'El soporte temporal ya no está disponible.' });
   res.setHeader('Content-Type', attachment.mimetype || 'application/octet-stream');
@@ -235,9 +296,9 @@ const validar = async (req, res) => {
   const finalTrace = trace(legalizacion, 'legalizacion_validada', actor, { observaciones: clean(req.body.observaciones) });
   await legalizacion.update({ detalles: details, observaciones: clean(req.body.observaciones || legalizacion.observaciones), trazabilidad: finalTrace });
   const pdf = await buildLegalizacionPdfBuffer(legalizacion, legalizacion.solicitud);
-  const temporaryAttachments = (legalizacion.adjuntos || []).filter((file) => {
-    const resolved = file.path ? path.resolve(file.path) : '';
-    return resolved.startsWith(uploadRoot) && fs.existsSync(resolved);
+  const storedAttachments = await ViaticosLegalizacionAdjunto.findAll({
+    where: { legalizacion_id: legalizacion.id },
+    order: [['id', 'ASC']]
   });
   const mailThread = legalizationMailThread(legalizacion, legalizacion.solicitud);
   const result = await sendInstitutionalEmail({
@@ -250,22 +311,23 @@ const validar = async (req, res) => {
     html: renderInstitutionalTemplate({ title: 'Legalización de viáticos validada', introHtml: '<p>Saludo de paz y bien,</p><p>La legalización fue revisada y firmada electrónicamente por el Técnico Contable. Se adjuntan el formato final y sus soportes.</p>', bodyHtml: `${legalizationEmailSummary(legalizacion, legalizacion.solicitud, 'Legalización validada y finalizada')}<p style="color:#64748b">El PDF incorpora las firmas electrónicas del colaborador y del Técnico Contable, la trazabilidad, el código QR y el enlace institucional de verificación.</p>` }),
     attachments: [
       { filename: `LEGALIZACION-VIATICOS-${legalizacion.solicitud.consecutivo}.pdf`, content: pdf, contentType: 'application/pdf' },
-      ...temporaryAttachments.map((file) => ({ filename: file.originalName, path: file.path }))
+      ...storedAttachments.map((file) => ({
+        filename: file.nombre_original,
+        content: Buffer.from(file.contenido),
+        contentType: file.mime_type
+      }))
     ]
   });
   if (!result.success) return res.status(502).json({ success: false, message: 'No fue posible enviar los documentos finales. Los soportes se conservaron para reintentar.', error: result.error });
-  for (const file of temporaryAttachments) {
-    try { fs.unlinkSync(file.path); } catch (_) { /* El registro queda sin ruta pública aunque el archivo ya no exista. */ }
-  }
   await legalizacion.update({
     estado: 'finalizada',
     revisado_at: new Date(),
     revisado_por: req.user.id,
     finalizado_at: new Date(),
-    adjuntos: (legalizacion.adjuntos || []).map(({ path: _path, ...file }) => file)
+    adjuntos: (legalizacion.adjuntos || []).map(({ path: _path, ...file }) => ({ ...file, persistidoEnBaseDatos: true }))
   });
   await legalizacion.solicitud.update({ estado: 'legalizacion_finalizada' });
-  return res.json({ success: true, message: 'Legalización validada, enviada y soportes temporales eliminados.' });
+  return res.json({ success: true, message: 'Legalización validada y enviada. Los soportes permanecen respaldados en la base de datos.' });
 };
 
 const estadisticas = async (req, res) => {

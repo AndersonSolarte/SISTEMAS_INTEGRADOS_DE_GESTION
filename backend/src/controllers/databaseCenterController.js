@@ -51,7 +51,7 @@ const resolveModule = (tableName) => {
   return match ? match[1] : 'Otras tablas del sistema';
 };
 
-const isSensitiveTable = (tableName) => /^(users|user_module_permissions|user_activity_logs|security_|system_settings|database_backup_|reporte_salida_|instrument_(responses|answers|attachments))/i.test(tableName);
+const isSensitiveTable = (tableName) => /^(users|user_module_permissions|user_activity_logs|security_|system_settings|database_backup_|reporte_salida_|viaticos_|instrument_(responses|answers|attachments))/i.test(tableName);
 
 const assertPublicTable = async (tableName) => {
   if (!/^[a-zA-Z_][a-zA-Z0-9_]*$/.test(String(tableName || ''))) return false;

@@ -1,4 +1,7 @@
 require('dotenv').config();
+const fs = require('fs');
+const path = require('path');
+const crypto = require('crypto');
 const { sequelize, testConnection } = require('../config/database');
 const { DataTypes, QueryTypes } = require('sequelize');
 const models = require('../models');
@@ -256,6 +259,7 @@ const ensureDocumentSheetsView = async () => {
 
 const ensureReporteSalidaAdminBossSupport = async (qi) => {
   await models.ReporteSalidaSolicitud.sync();
+  await models.ReporteSalidaAdjunto.sync();
   await qi.changeColumn('reporte_salida_solicitudes', 'jefe_inmediato_user_id', {
     type: DataTypes.INTEGER,
     allowNull: true
@@ -289,6 +293,10 @@ const ensureReporteSalidaAdminBossSupport = async (qi) => {
   await ensureColumn(qi, 'reporte_salida_solicitudes', 'reposicion_aplica', { type: DataTypes.BOOLEAN, allowNull: false, defaultValue: false });
   await ensureColumn(qi, 'reporte_salida_solicitudes', 'reposicion_minutos', { type: DataTypes.INTEGER, allowNull: true });
   await ensureColumn(qi, 'reporte_salida_solicitudes', 'reposicion_minutos_pagados', { type: DataTypes.INTEGER, allowNull: false, defaultValue: 0 });
+  await ensureColumn(qi, 'reporte_salida_solicitudes', 'reposicion_minutos_por_dia', { type: DataTypes.INTEGER, allowNull: true });
+  await ensureColumn(qi, 'reporte_salida_solicitudes', 'reposicion_tipo_vinculacion', { type: DataTypes.STRING(120), allowNull: true });
+  await ensureColumn(qi, 'reporte_salida_solicitudes', 'reposicion_nivel_contratacion', { type: DataTypes.STRING(120), allowNull: true });
+  await ensureColumn(qi, 'reporte_salida_solicitudes', 'reposicion_perfil_laboral', { type: DataTypes.JSONB, allowNull: false, defaultValue: {} });
 
   // Crear tipo enum para reposicion_estado si no existe
   try {
@@ -302,6 +310,46 @@ const ensureReporteSalidaAdminBossSupport = async (qi) => {
     allowNull: false,
     defaultValue: 'no_aplica'
   });
+
+  // Llevar a columnas consultables la parametrizacion que las versiones
+  // anteriores almacenaban exclusivamente dentro de datos_formulario.
+  await sequelize.query(`
+    UPDATE "reporte_salida_solicitudes"
+    SET
+      "reposicion_minutos_pagados" = CASE
+        WHEN COALESCE("reposicion_minutos_pagados", 0) = 0
+          AND COALESCE("datos_formulario"->>'reposicion_minutos_pagados', '') ~ '^[0-9]+$'
+          THEN ("datos_formulario"->>'reposicion_minutos_pagados')::int
+        ELSE COALESCE("reposicion_minutos_pagados", 0)
+      END,
+      "reposicion_minutos_por_dia" = COALESCE(
+        "reposicion_minutos_por_dia",
+        CASE
+          WHEN COALESCE("datos_formulario"->'parametrizacion_tiempo'->>'reposicion_minutos_por_dia', '') ~ '^[0-9]+$'
+            THEN ("datos_formulario"->'parametrizacion_tiempo'->>'reposicion_minutos_por_dia')::int
+          ELSE NULL
+        END
+      ),
+      "reposicion_tipo_vinculacion" = COALESCE(
+        "reposicion_tipo_vinculacion",
+        NULLIF("datos_formulario"->'laboral'->>'tipoVinculacion', '')
+      ),
+      "reposicion_nivel_contratacion" = COALESCE(
+        "reposicion_nivel_contratacion",
+        NULLIF("datos_formulario"->'laboral'->>'nivelContratacion', '')
+      ),
+      "reposicion_perfil_laboral" = CASE
+        WHEN COALESCE("reposicion_perfil_laboral", '{}'::jsonb) = '{}'::jsonb
+          THEN COALESCE(
+            "datos_formulario"->'laboral'->'reposicionPerfil',
+            "datos_formulario"->'parametrizacion_tiempo'->'perfil_laboral',
+            '{}'::jsonb
+          )
+        ELSE "reposicion_perfil_laboral"
+      END
+    WHERE "reposicion_aplica" = true
+       OR "datos_formulario" ? 'parametrizacion_tiempo'
+  `);
 
   // Regla institucional vigente: toda diligencia personal genera reposición
   // en cualquiera de las tres duraciones. La actualización es idempotente y
@@ -354,6 +402,127 @@ const ensureReporteSalidaAdminBossSupport = async (qi) => {
   await ensureColumn(qi, 'reporte_salida_solicitudes', 'correo_gh_enviado_at', { type: DataTypes.DATE, allowNull: true });
   await ensureColumn(qi, 'reporte_salida_solicitudes', 'correo_usuario_enviado_at', { type: DataTypes.DATE, allowNull: true });
   await ensureColumn(qi, 'reporte_salida_solicitudes', 'trazabilidad', { type: DataTypes.JSONB, allowNull: false, defaultValue: [] });
+};
+
+const mimeFromExtension = (extension = '') => ({
+  '.pdf': 'application/pdf',
+  '.png': 'image/png',
+  '.jpg': 'image/jpeg',
+  '.jpeg': 'image/jpeg',
+  '.webp': 'image/webp'
+}[String(extension).toLowerCase()] || 'application/octet-stream');
+
+const backfillReporteSalidaAttachments = async () => {
+  const uploadDir = path.resolve(__dirname, '../../uploads/adjuntos_reporte');
+  const solicitudes = await models.ReporteSalidaSolicitud.findAll({
+    attributes: ['id', 'user_id', 'consecutivo', 'datos_formulario'],
+    order: [['id', 'ASC']]
+  });
+  let migrated = 0;
+  let missing = 0;
+  for (const solicitud of solicitudes) {
+    const data = solicitud.datos_formulario || {};
+    const rawKey = data.adjunto_path || data.salida?.adjunto_path || data.salida?.adjunto_url || '';
+    const storageKey = path.basename(String(rawKey || ''));
+    if (!storageKey) continue;
+    let stored = await models.ReporteSalidaAdjunto.findOne({ where: { storage_key: storageKey } });
+    if (!stored) {
+      const fullPath = path.join(uploadDir, storageKey);
+      if (!fs.existsSync(fullPath)) {
+        missing += 1;
+        continue;
+      }
+      const contenido = fs.readFileSync(fullPath);
+      const extension = path.extname(storageKey).toLowerCase();
+      stored = await models.ReporteSalidaAdjunto.create({
+        solicitud_id: solicitud.id,
+        uploaded_by_user_id: solicitud.user_id || null,
+        storage_key: storageKey,
+        nombre_original: data.adjunto_metadata?.nombre_original || storageKey,
+        mime_type: mimeFromExtension(extension),
+        extension,
+        tamano_bytes: contenido.length,
+        sha256: crypto.createHash('sha256').update(contenido).digest('hex'),
+        contenido,
+        origen: 'migracion_historica',
+        metadata: { consecutivo: solicitud.consecutivo, persistido_en_base_datos: true }
+      });
+      migrated += 1;
+    }
+    if (!data.adjunto_metadata?.persistido_en_base_datos) {
+      await solicitud.update({
+        datos_formulario: {
+          ...data,
+          adjunto_metadata: {
+            id: String(stored.id),
+            nombre_original: stored.nombre_original,
+            persistido_en_base_datos: true
+          }
+        }
+      });
+    }
+  }
+  console.log(`[migrate] Adjuntos de reporte persistidos en BD: ${migrated}; archivos históricos no encontrados: ${missing}`);
+};
+
+const backfillLegalizacionAttachments = async () => {
+  const uploadDir = path.resolve(__dirname, '../../uploads/legalizaciones_viaticos');
+  const legalizaciones = await models.ViaticosLegalizacion.findAll({
+    attributes: ['id', 'adjuntos'],
+    order: [['id', 'ASC']]
+  });
+  let migrated = 0;
+  let missing = 0;
+  for (const legalizacion of legalizaciones) {
+    const adjuntos = Array.isArray(legalizacion.adjuntos) ? legalizacion.adjuntos : [];
+    let changed = false;
+    const normalized = [];
+    for (const file of adjuntos) {
+      const storageKey = path.basename(String(file.filename || file.path || ''));
+      if (!storageKey) {
+        normalized.push(file);
+        continue;
+      }
+      let stored = await models.ViaticosLegalizacionAdjunto.findOne({ where: { storage_key: storageKey } });
+      if (!stored) {
+        const candidatePath = file.path ? path.resolve(file.path) : path.join(uploadDir, storageKey);
+        if (!candidatePath.startsWith(uploadDir) || !fs.existsSync(candidatePath)) {
+          missing += 1;
+          normalized.push(file);
+          continue;
+        }
+        const contenido = fs.readFileSync(candidatePath);
+        const extension = path.extname(storageKey).toLowerCase();
+        stored = await models.ViaticosLegalizacionAdjunto.create({
+          legalizacion_id: legalizacion.id,
+          concepto_id: file.conceptoId || null,
+          detalle: file.detalle || null,
+          storage_key: storageKey,
+          nombre_original: file.originalName || storageKey,
+          mime_type: file.mimetype || mimeFromExtension(extension),
+          extension,
+          tamano_bytes: contenido.length,
+          sha256: crypto.createHash('sha256').update(contenido).digest('hex'),
+          contenido,
+          metadata: { persistido_en_base_datos: true, origen: 'migracion_historica' }
+        });
+        migrated += 1;
+      }
+      normalized.push({
+        ...file,
+        id: String(stored.id),
+        filename: stored.storage_key,
+        originalName: stored.nombre_original,
+        mimetype: stored.mime_type,
+        size: Number(stored.tamano_bytes),
+        persistidoEnBaseDatos: true,
+        path: undefined
+      });
+      changed = true;
+    }
+    if (changed) await legalizacion.update({ adjuntos: normalized });
+  }
+  console.log(`[migrate] Soportes de legalización persistidos en BD: ${migrated}; archivos históricos no encontrados: ${missing}`);
 };
 
 const runMigrations = async () => {
@@ -427,6 +596,7 @@ const runMigrations = async () => {
     await models.SecurityFindingComment.sync();
     await models.DesplazamientoViaticosSolicitud.sync();
     await models.ViaticosLegalizacion.sync();
+    await models.ViaticosLegalizacionAdjunto.sync();
     const legalizacionesTableName = 'viaticos_legalizaciones';
     const legalizacionesTable = await qi.describeTable(legalizacionesTableName).catch(() => ({}));
     if (!legalizacionesTable.codigo_verificacion) {
@@ -451,6 +621,8 @@ const runMigrations = async () => {
     await models.SystemSetting.sync();
     await models.DatabaseBackupRun.sync();
     await ensureReporteSalidaAdminBossSupport(qi);
+    await backfillReporteSalidaAttachments();
+    await backfillLegalizacionAttachments();
     await sequelize.query("CREATE INDEX IF NOT EXISTS instrument_forms_created_by_status_idx ON instrument_forms (created_by, status)");
     await sequelize.query("CREATE INDEX IF NOT EXISTS instrument_responses_form_submitted_idx ON instrument_responses (form_id, submitted_at)");
     await sequelize.query("CREATE INDEX IF NOT EXISTS security_findings_scan_severity_idx ON security_findings (scan_id, severity)");

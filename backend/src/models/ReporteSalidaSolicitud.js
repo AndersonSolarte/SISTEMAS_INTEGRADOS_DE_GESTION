@@ -1,6 +1,4 @@
 const { DataTypes } = require('sequelize');
-const fs = require('fs');
-const path = require('path');
 const { sequelize } = require('../config/database');
 
 const ReporteSalidaSolicitud = sequelize.define('reporte_salida_solicitudes', {
@@ -33,6 +31,11 @@ const ReporteSalidaSolicitud = sequelize.define('reporte_salida_solicitudes', {
   tiempo_solicitado_minutos: { type: DataTypes.INTEGER, allowNull: true },
   reposicion_aplica: { type: DataTypes.BOOLEAN, allowNull: false, defaultValue: false },
   reposicion_minutos: { type: DataTypes.INTEGER, allowNull: true },
+  reposicion_minutos_pagados: { type: DataTypes.INTEGER, allowNull: false, defaultValue: 0 },
+  reposicion_minutos_por_dia: { type: DataTypes.INTEGER, allowNull: true },
+  reposicion_tipo_vinculacion: { type: DataTypes.STRING(120), allowNull: true },
+  reposicion_nivel_contratacion: { type: DataTypes.STRING(120), allowNull: true },
+  reposicion_perfil_laboral: { type: DataTypes.JSONB, allowNull: false, defaultValue: {} },
   reposicion_estado: {
     type: DataTypes.ENUM('no_aplica', 'pendiente', 'programada', 'cumplida', 'incumplida'),
     allowNull: false,
@@ -61,25 +64,7 @@ const ReporteSalidaSolicitud = sequelize.define('reporte_salida_solicitudes', {
 }, {
   timestamps: true,
   createdAt: 'created_at',
-  updatedAt: 'updated_at',
-  hooks: {
-    afterUpdate: (solicitud, options) => {
-      if (['finalizada', 'no_aprobada'].includes(solicitud.estado)) {
-        const adjuntoUrl = solicitud.datos_formulario?.salida?.adjunto_url;
-        if (adjuntoUrl) {
-          try {
-            const filename = path.basename(adjuntoUrl);
-            const filepath = path.join(__dirname, '..', '..', 'uploads', 'adjuntos_reporte', filename);
-            if (fs.existsSync(filepath)) {
-              fs.unlinkSync(filepath);
-            }
-          } catch (e) {
-            console.error('Error eliminando adjunto temporal:', e);
-          }
-        }
-      }
-    }
-  }
+  updatedAt: 'updated_at'
 });
 
 module.exports = ReporteSalidaSolicitud;

@@ -1522,6 +1522,11 @@ function ReporteSalidaFormDialog({ open, documento, user, onClose, onSubmitted }
           } else {
             payload.datos_formulario = payload.datos_formulario || {};
             payload.datos_formulario.adjunto_path = uploadRes.filename;
+            payload.datos_formulario.adjunto_metadata = {
+              id: uploadRes.attachmentId || null,
+              nombre_original: uploadRes.originalName || adjuntoFile.name,
+              persistido_en_base_datos: uploadRes.persisted === true
+            };
           }
         }
       }

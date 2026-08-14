@@ -12,6 +12,10 @@ const {
   resolveReposicionValues,
   resolveReposicionAbono
 } = require('../../controllers/reporteSalidaController');
+const {
+  getReposicionPdfInfo,
+  buildReposicionPdfSection
+} = require('../reporteSalidaPdfService');
 
 test('la reposicion aplica exclusivamente a diligencia personal', () => {
   const duraciones = ['menos_media_jornada', '1_2_dias', '3_mas_dias'];
@@ -343,4 +347,39 @@ test('rechaza minutos adicionales mayores que cincuenta y nueve', () => {
     horasAbonadas: 1,
     minutosAbonados: 60
   }).valid, false);
+});
+
+test('el PDF conserva la parametrizacion completa de una salida con reposicion', () => {
+  const solicitud = {
+    tiempo_solicitado_minutos: 500,
+    reposicion_aplica: true,
+    reposicion_minutos: 500,
+    reposicion_minutos_pagados: 150,
+    reposicion_minutos_por_dia: 480,
+    reposicion_tipo_vinculacion: 'DOCENTE',
+    reposicion_nivel_contratacion: 'TIEMPO COMPLETO',
+    reposicion_perfil_laboral: { key: 'DOCENTE_TIEMPO_COMPLETO', label: 'Docente tiempo completo' },
+    reposicion_estado: 'pendiente',
+    observacion_gestion_humana: 'Abono validado por Gestion Humana.',
+    datos_formulario: {
+      adjunto_path: 'soporte-permiso.pdf',
+      salida: { duracionTipo: '1_2_dias' },
+      reposicion: { observacion: 'Reposicion acordada con el jefe inmediato.' }
+    }
+  };
+  const info = getReposicionPdfInfo(solicitud);
+  assert.equal(info.total, 500);
+  assert.equal(info.paid, 150);
+  assert.equal(info.pending, 350);
+  assert.equal(info.daily, 480);
+  assert.equal(info.attachmentName, 'soporte-permiso.pdf');
+  assert.equal(info.durationLabel, 'Entre 1 y 2 dias');
+  const section = buildReposicionPdfSection(solicitud);
+  assert.equal(section.length, 2);
+  assert.match(JSON.stringify(section), /Seguimiento de reposicion/);
+  assert.match(JSON.stringify(section), /soporte-permiso\.pdf/);
+});
+
+test('el PDF no agrega el bloque de reposicion a otros tipos de salida', () => {
+  assert.deepEqual(buildReposicionPdfSection({ reposicion_aplica: false }), []);
 });

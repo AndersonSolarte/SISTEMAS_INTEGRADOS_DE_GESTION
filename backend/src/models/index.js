@@ -58,6 +58,8 @@ const SecurityFinding = require('./SecurityFinding');
 const SecurityRemediationProposal = require('./SecurityRemediationProposal');
 const SecurityFindingComment = require('./SecurityFindingComment');
 const ReporteSalidaSolicitud = require('./ReporteSalidaSolicitud');
+const ReporteSalidaAdjunto = require('./ReporteSalidaAdjunto');
+const ViaticosLegalizacionAdjunto = require('./ViaticosLegalizacionAdjunto');
 const DesplazamientoViaticosSolicitud = require('./DesplazamientoViaticosSolicitud');
 const ViaticosLegalizacion = require('./ViaticosLegalizacion');
 const SystemSetting = require('./SystemSetting');
@@ -85,6 +87,12 @@ User.hasMany(ReporteSalidaSolicitud, { foreignKey: 'jefe_inmediato_user_id', as:
 ReporteSalidaSolicitud.belongsTo(User, { foreignKey: 'jefe_inmediato_user_id', as: 'jefeInmediatoUser' });
 Documento.hasMany(ReporteSalidaSolicitud, { foreignKey: 'documento_id', as: 'reporteSalidaSolicitudes' });
 ReporteSalidaSolicitud.belongsTo(Documento, { foreignKey: 'documento_id', as: 'documento' });
+ReporteSalidaSolicitud.hasMany(ReporteSalidaAdjunto, { foreignKey: 'solicitud_id', as: 'adjuntos', onDelete: 'SET NULL' });
+ReporteSalidaAdjunto.belongsTo(ReporteSalidaSolicitud, { foreignKey: 'solicitud_id', as: 'solicitud', onDelete: 'SET NULL' });
+User.hasMany(ReporteSalidaAdjunto, { foreignKey: 'uploaded_by_user_id', as: 'reporteSalidaAdjuntosSubidos' });
+ReporteSalidaAdjunto.belongsTo(User, { foreignKey: 'uploaded_by_user_id', as: 'usuarioCarga' });
+ViaticosLegalizacion.hasMany(ViaticosLegalizacionAdjunto, { foreignKey: 'legalizacion_id', as: 'archivos', onDelete: 'CASCADE' });
+ViaticosLegalizacionAdjunto.belongsTo(ViaticosLegalizacion, { foreignKey: 'legalizacion_id', as: 'legalizacion', onDelete: 'CASCADE' });
 User.hasMany(DesplazamientoViaticosSolicitud, { foreignKey: 'user_id', as: 'desplazamientosViaticos' });
 DesplazamientoViaticosSolicitud.belongsTo(User, { foreignKey: 'user_id', as: 'solicitanteUser' });
 Documento.hasMany(DesplazamientoViaticosSolicitud, { foreignKey: 'documento_id', as: 'desplazamientosViaticos' });
@@ -343,6 +351,8 @@ module.exports = {
   SecurityRemediationProposal,
   SecurityFindingComment,
   ReporteSalidaSolicitud,
+  ReporteSalidaAdjunto,
+  ViaticosLegalizacionAdjunto,
   DesplazamientoViaticosSolicitud,
   ViaticosLegalizacion,
   SystemSetting,
