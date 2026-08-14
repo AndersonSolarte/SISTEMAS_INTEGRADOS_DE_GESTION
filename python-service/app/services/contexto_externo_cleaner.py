@@ -154,6 +154,8 @@ CANONICAL_RELATIONS = [
     ("Código del departamento (IES)", "Departamento de domicilio de la IES", "DEPARTAMENTO"),
     ("Código del Municipio (IES)", "Municipio de domicilio de la IES", "MUNICIPIO"),
     ("Código SNIES del programa", "Programa Académico", "PROGRAMA"),
+    ("CODIGO_SNIES_DEL_PROGRAMA", "NOMBRE_DEL_PROGRAMA", "PROGRAMA"),
+    ("CODIGO SNIES DEL PROGRAMA", "PROGRAMA ACADEMICO", "PROGRAMA"),
     ("ID Nivel Académico", "Nivel Académico", "NIVEL_ACADEMICO"),
     ("ID Nivel de Formación", "Nivel de Formación", "NIVEL_FORMACION"),
     ("ID Metodología", "Metodología", "MODALIDAD"),
@@ -167,7 +169,21 @@ CANONICAL_RELATIONS = [
     ("ID Sexo", "Sexo", "SEXO"),
 ]
 
-GLOBAL_CANONICAL_HEADERS = {value_header for _, value_header, _ in CANONICAL_RELATIONS}
+GLOBAL_CANONICAL_HEADERS = {
+    value_header for _, value_header, _ in CANONICAL_RELATIONS
+}.union({
+    "NOMBRE_DEL_PROGRAMA",
+    "TITULO_OTORGADO",
+    "PROGRAMA ACADEMICO",
+    "Programa Académico",
+    "PROGRAMA",
+    "NOMBRE_INSTITUCION",
+    "Institución de Educación Superior (IES)",
+    "DEPARTAMENTO_OFERTA_PROGRAMA",
+    "MUNICIPIO_OFERTA_PROGRAMA",
+    "DEPARTAMENTO DE OFERTA DEL PROGRAMA",
+    "MUNICIPIO DE OFERTA DEL PROGRAMA",
+})
 
 OFFICIAL_METADATA_MAPS = {
     ("ID Sector IES", "Sector IES"): {
@@ -242,6 +258,14 @@ def fix_corrupted_encoding(value: Any) -> Any:
     if not isinstance(value, str) or not value:
         return value
     t = value
+
+    # Convert grave accents (Ò, Ì, À, È, Ù) to acute accents (Ó, Í, Á, É, Ú)
+    GRAVE_TRANS = str.maketrans({
+        'Ò': 'Ó', 'Ì': 'Í', 'À': 'Á', 'È': 'É', 'Ù': 'Ú',
+        'ò': 'ó', 'ì': 'í', 'à': 'á', 'è': 'é', 'ù': 'ú'
+    })
+    t = t.translate(GRAVE_TRANS)
+
     BAD = r'[\xbf\ufffd¿\?]'
 
     # 1. Words with DISEÑO / DISEÑADOR / SEÑAL / Ñ / GRÁFICO
@@ -471,8 +495,12 @@ _ACCENT_RULES: list[tuple[str, str, int]] = [
     (r'\bMATEMATICA\b', 'MATEMÁTICA', 0),
     (r'\bMATEMATICAS\b', 'MATEMÁTICAS', 0),
     (r'\bINFORMATICA\b', 'INFORMÁTICA', 0),
-    (r'\bTELEMATICA\b', 'TELEMÁTICA', 0),
-    (r'\bESTADISTICA\b', 'ESTADÍSTICA', 0),
+    (r'\bINFORMATICO\b', 'INFORMÁTICO', 0),
+    (r'\bINFORMATICOS\b', 'INFORMÁTICOS', 0),
+    (r'\bTURISTICA\b', 'TURÍSTICA', 0),
+    (r'\bTURISTICAS\b', 'TURÍSTICAS', 0),
+    (r'\bTURISTICO\b', 'TURÍSTICO', 0),
+    (r'\bTURISTICOS\b', 'TURÍSTICOS', 0),
     (r'\bLOGISTICA\b', 'LOGÍSTICA', 0),
     (r'\bLINGUISTICA\b', 'LINGÜÍSTICA', 0),
     (r'\bGENETICA\b', 'GENÉTICA', 0),
