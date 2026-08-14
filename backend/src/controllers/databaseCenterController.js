@@ -99,10 +99,68 @@ const getSystemTablesCatalog = async (req, res) => {
        ORDER BY t.table_name`,
       { type: QueryTypes.SELECT }
     );
+    let contextoExternoSubdatasets = [];
+    try {
+      const breakdown = await sequelize.query(`
+        SELECT 
+          CASE 
+            WHEN base_indicador ILIKE '%admitid%' THEN 'ADMITIDOS'
+            WHEN base_indicador ILIKE '%inscrit%' THEN 'INSCRITOS'
+            WHEN base_indicador ILIKE '%matricul%' THEN 'MATRICULADOS'
+            WHEN base_indicador ILIKE '%graduad%' THEN 'GRADUADOS'
+            WHEN base_indicador ILIKE '%primer%curso%' THEN 'PRIMER CURSO'
+            WHEN base_indicador ILIKE '%oferta%' OR base_indicador ILIKE '%programa%' THEN 'PROGRAMAS'
+            ELSE UPPER(base_indicador)
+          END AS key_name,
+          COUNT(*)::bigint AS row_count,
+          MAX(created_at) AS last_created,
+          MAX(updated_at) AS last_updated
+        FROM poblacional_contexto_externo
+        GROUP BY 1
+      `, { type: QueryTypes.SELECT });
+
+      const cargasMap = new Map();
+      const cargas = await sequelize.query(`
+        SELECT subcategoria, variable, MAX(created_at) as last_carga, MAX(archivo_nombre) as filename
+        FROM gestion_informacion_cargas
+        WHERE categoria = 'Poblacional' AND (subcategoria ILIKE '%contexto%' OR variable ILIKE '%contexto%')
+        GROUP BY subcategoria, variable
+      `, { type: QueryTypes.SELECT }).catch(() => []);
+
+      (cargas || []).forEach(c => {
+        const key = (c.variable || c.subcategoria || '').toUpperCase();
+        cargasMap.set(key, c);
+      });
+
+      const ALL_KEYS = [
+        { label: 'INSCRITOS CONTEXTO EXTERNO', key: 'INSCRITOS' },
+        { label: 'ADMITIDOS CONTEXTO EXTERNO', key: 'ADMITIDOS' },
+        { label: 'PRIMER CURSO CONTEXTO EXTERNO', key: 'PRIMER CURSO' },
+        { label: 'MATRICULADOS CONTEXTO EXTERNO', key: 'MATRICULADOS' },
+        { label: 'GRADUADOS CONTEXTO EXTERNO', key: 'GRADUADOS' },
+        { label: 'PROGRAMAS CONTEXTO EXTERNO', key: 'PROGRAMAS' },
+      ];
+
+      contextoExternoSubdatasets = ALL_KEYS.map(item => {
+        const found = (breakdown || []).find(b => b.key_name === item.key);
+        const cargaInfo = Array.from(cargasMap.entries()).find(([k]) => k.includes(item.key))?.[1];
+        const rows = Number(found?.row_count || 0);
+        return {
+          key: item.key,
+          label: item.label,
+          rows,
+          status: rows > 0 ? 'Cargado y compilado' : 'Sin datos cargados',
+          lastUpload: cargaInfo?.last_carga || found?.last_updated || found?.last_created || null,
+          filename: cargaInfo?.filename || null
+        };
+      });
+    } catch (_) {}
+
     const data = rows.map((row) => ({
       ...row,
       module: resolveModule(row.table_name),
-      sensitive: isSensitiveTable(row.table_name)
+      sensitive: isSensitiveTable(row.table_name),
+      subdatasets: row.table_name === 'poblacional_contexto_externo' ? contextoExternoSubdatasets : undefined
     }));
     return res.json({ success: true, data, total: data.length });
   } catch (error) {

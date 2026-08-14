@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
-  Alert, Box, Button, Card, CardContent, Chip, CircularProgress, IconButton, LinearProgress,
+  Alert, Box, Button, Card, CardContent, Chip, CircularProgress, Collapse, IconButton, LinearProgress,
   Dialog, DialogActions, DialogContent, DialogTitle, InputAdornment, Menu, MenuItem, Paper, Stack, Table, TableBody, TableCell,
   TableContainer, TableHead, TableRow, TextField, Tooltip, Typography
 } from '@mui/material';
@@ -13,6 +13,8 @@ import SearchRoundedIcon from '@mui/icons-material/SearchRounded';
 import MoreVertRoundedIcon from '@mui/icons-material/MoreVertRounded';
 import RefreshRoundedIcon from '@mui/icons-material/RefreshRounded';
 import LockRoundedIcon from '@mui/icons-material/LockRounded';
+import KeyboardArrowDownRoundedIcon from '@mui/icons-material/KeyboardArrowDownRounded';
+import KeyboardArrowUpRoundedIcon from '@mui/icons-material/KeyboardArrowUpRounded';
 import VerifiedUserRoundedIcon from '@mui/icons-material/VerifiedUserRounded';
 import CheckCircleRoundedIcon from '@mui/icons-material/CheckCircleRounded';
 import RestoreRoundedIcon from '@mui/icons-material/RestoreRounded';
@@ -596,6 +598,12 @@ export function DatabaseCatalogPanel({ enqueueSnackbar }) {
     return result;
   }, [filtered, modules]);
 
+  const [expandedRows, setExpandedRows] = useState({ poblacional_contexto_externo: true });
+
+  const toggleExpand = (tableName) => {
+    setExpandedRows((prev) => ({ ...prev, [tableName]: !prev[tableName] }));
+  };
+
   const exportTable = async (format) => {
     setAnchor(null);
     setExporting(`${selected?.table_name}:${format}`);
@@ -634,21 +642,110 @@ export function DatabaseCatalogPanel({ enqueueSnackbar }) {
             <TableCell align="right" sx={{ fontWeight: 900, bgcolor: '#f1f5f9' }}>Columnas</TableCell><TableCell align="center" sx={{ fontWeight: 900, bgcolor: '#f1f5f9' }}>Estado</TableCell><TableCell align="center" sx={{ fontWeight: 900, bgcolor: '#f1f5f9' }}>Acciones</TableCell>
           </TableRow></TableHead>
           <TableBody>
-            {loading ? <TableRow><TableCell colSpan={6} align="center" sx={{ py: 7 }}><CircularProgress size={28} /></TableCell></TableRow> : filtered.length === 0 ? <TableRow><TableCell colSpan={6} align="center" sx={{ py: 7 }}>No hay tablas que coincidan con la búsqueda.</TableCell></TableRow> : groupedRows.map((row) => row.__group ? (
-              <TableRow key={`group-${row.module}`}>
-                <TableCell colSpan={6} sx={{ py: 1, bgcolor: '#dbeafe', color: '#1e3a8a', fontWeight: 900, textTransform: 'uppercase', letterSpacing: 0.35 }}>
-                  <Stack direction="row" spacing={1} alignItems="center"><span>{row.module}</span><Chip size="small" label={`${row.count} tablas`} sx={{ height: 21, bgcolor: 'white', color: '#1e3a8a', fontWeight: 800 }} /></Stack>
-                </TableCell>
-              </TableRow>
-            ) : (
-              <TableRow hover key={row.table_name}>
-                <TableCell><Stack direction="row" spacing={0.8} alignItems="center"><Typography sx={{ fontFamily: 'monospace', fontWeight: 800, fontSize: 13 }}>{row.table_name}</Typography>{row.sensitive && <Tooltip title="Información restringida"><LockRoundedIcon sx={{ fontSize: 15, color: '#b45309' }} /></Tooltip>}</Stack></TableCell>
-                <TableCell align="right">{Number(row.estimated_rows || 0).toLocaleString('es-CO')}</TableCell>
-                <TableCell align="right">{row.size_pretty}</TableCell><TableCell align="right">{row.column_count}</TableCell>
-                <TableCell align="center"><Chip size="small" color="success" label="Disponible" sx={{ fontWeight: 800 }} /></TableCell>
-                <TableCell align="center"><Button size="small" variant="outlined" endIcon={<MoreVertRoundedIcon />} disabled={Boolean(exporting)} onClick={(event) => { setSelected(row); setAnchor(event.currentTarget); }} sx={{ textTransform: 'none', fontWeight: 800, borderRadius: 2 }}>Exportar tabla</Button></TableCell>
-              </TableRow>
-            ))}
+            {loading ? <TableRow><TableCell colSpan={6} align="center" sx={{ py: 7 }}><CircularProgress size={28} /></TableCell></TableRow> : filtered.length === 0 ? <TableRow><TableCell colSpan={6} align="center" sx={{ py: 7 }}>No hay tablas que coincidan con la búsqueda.</TableCell></TableRow> : groupedRows.map((row) => {
+              if (row.__group) {
+                return (
+                  <TableRow key={`group-${row.module}`}>
+                    <TableCell colSpan={6} sx={{ py: 1, bgcolor: '#dbeafe', color: '#1e3a8a', fontWeight: 900, textTransform: 'uppercase', letterSpacing: 0.35 }}>
+                      <Stack direction="row" spacing={1} alignItems="center"><span>{row.module}</span><Chip size="small" label={`${row.count} tablas`} sx={{ height: 21, bgcolor: 'white', color: '#1e3a8a', fontWeight: 800 }} /></Stack>
+                    </TableCell>
+                  </TableRow>
+                );
+              }
+              const hasSubdatasets = Array.isArray(row.subdatasets) && row.subdatasets.length > 0;
+              const isExpanded = Boolean(expandedRows[row.table_name]);
+              const loadedCount = hasSubdatasets ? row.subdatasets.filter((s) => s.rows > 0).length : 0;
+
+              return (
+                <React.Fragment key={row.table_name}>
+                  <TableRow hover>
+                    <TableCell>
+                      <Stack direction="row" spacing={0.8} alignItems="center">
+                        {hasSubdatasets && (
+                          <Tooltip title={isExpanded ? 'Ocultar desglose por subbase' : 'Ver desglose por subbase'}>
+                            <IconButton size="small" onClick={() => toggleExpand(row.table_name)} sx={{ p: 0.2 }}>
+                              {isExpanded ? <KeyboardArrowUpRoundedIcon fontSize="small" /> : <KeyboardArrowDownRoundedIcon fontSize="small" />}
+                            </IconButton>
+                          </Tooltip>
+                        )}
+                        <Typography sx={{ fontFamily: 'monospace', fontWeight: 800, fontSize: 13 }}>{row.table_name}</Typography>
+                        {row.sensitive && <Tooltip title="Información restringida"><LockRoundedIcon sx={{ fontSize: 15, color: '#b45309' }} /></Tooltip>}
+                        {hasSubdatasets && (
+                          <Chip
+                            size="small"
+                            color={loadedCount > 0 ? 'info' : 'default'}
+                            variant="outlined"
+                            label={`${loadedCount} / ${row.subdatasets.length} subbases compiladas`}
+                            sx={{ height: 20, fontSize: 11, fontWeight: 700 }}
+                          />
+                        )}
+                      </Stack>
+                    </TableCell>
+                    <TableCell align="right">{Number(row.estimated_rows || 0).toLocaleString('es-CO')}</TableCell>
+                    <TableCell align="right">{row.size_pretty}</TableCell><TableCell align="right">{row.column_count}</TableCell>
+                    <TableCell align="center"><Chip size="small" color="success" label="Disponible" sx={{ fontWeight: 800 }} /></TableCell>
+                    <TableCell align="center"><Button size="small" variant="outlined" endIcon={<MoreVertRoundedIcon />} disabled={Boolean(exporting)} onClick={(event) => { setSelected(row); setAnchor(event.currentTarget); }} sx={{ textTransform: 'none', fontWeight: 800, borderRadius: 2 }}>Exportar tabla</Button></TableCell>
+                  </TableRow>
+                  {hasSubdatasets && isExpanded && (
+                    <TableRow sx={{ bgcolor: '#f8fafc' }}>
+                      <TableCell colSpan={6} sx={{ p: 2, borderBottom: '2px solid #cbd5e1' }}>
+                        <Box sx={{ p: 2, bgcolor: 'white', borderRadius: 2.5, border: '1px solid #cbd5e1', boxShadow: '0 1px 3px rgba(0,0,0,0.05)' }}>
+                          <Stack direction="row" spacing={1} alignItems="center" sx={{ mb: 1.5 }}>
+                            <CloudDoneRoundedIcon sx={{ color: '#0284c7', fontSize: 20 }} />
+                            <Typography variant="subtitle2" sx={{ fontWeight: 900, color: '#0f172a' }}>
+                              Detalle y Estado de Subbases por Lista (Contexto Externo)
+                            </Typography>
+                          </Stack>
+                          <Table size="small" sx={{ border: '1px solid #e2e8f0', borderRadius: 1.5, overflow: 'hidden' }}>
+                            <TableHead>
+                              <TableRow sx={{ bgcolor: '#f1f5f9' }}>
+                                <TableCell sx={{ fontWeight: 800, fontSize: 12 }}>Subbase / Lista</TableCell>
+                                <TableCell align="center" sx={{ fontWeight: 800, fontSize: 12 }}>Estado de Carga</TableCell>
+                                <TableCell align="right" sx={{ fontWeight: 800, fontSize: 12 }}>Registros Compilados</TableCell>
+                                <TableCell sx={{ fontWeight: 800, fontSize: 12 }}>Archivo de Último Cargue</TableCell>
+                                <TableCell sx={{ fontWeight: 800, fontSize: 12 }}>Fecha de Último Cargue</TableCell>
+                              </TableRow>
+                            </TableHead>
+                            <TableBody>
+                              {row.subdatasets.map((ds) => {
+                                const isLoaded = ds.rows > 0;
+                                const formattedDate = ds.lastUpload
+                                  ? new Date(ds.lastUpload).toLocaleString('es-CO', { dateStyle: 'short', timeStyle: 'short' })
+                                  : 'Sin registro';
+                                return (
+                                  <TableRow key={ds.key} hover sx={{ '&:last-child td': { borderBottom: 0 } }}>
+                                    <TableCell sx={{ fontWeight: 800, fontSize: 12.5, color: '#1e293b' }}>
+                                      {ds.label}
+                                    </TableCell>
+                                    <TableCell align="center">
+                                      <Chip
+                                        size="small"
+                                        color={isLoaded ? 'success' : 'default'}
+                                        label={isLoaded ? '🟢 Cargado y compilado' : '⚪ Sin datos cargados'}
+                                        sx={{ fontWeight: 800, fontSize: 11, height: 22 }}
+                                      />
+                                    </TableCell>
+                                    <TableCell align="right" sx={{ fontWeight: 900, fontSize: 13, color: isLoaded ? '#0f766e' : '#64748b' }}>
+                                      {Number(ds.rows || 0).toLocaleString('es-CO')}
+                                    </TableCell>
+                                    <TableCell sx={{ fontSize: 12, color: '#475569', fontFamily: ds.filename ? 'monospace' : 'inherit' }}>
+                                      {ds.filename || '—'}
+                                    </TableCell>
+                                    <TableCell sx={{ fontSize: 12, color: '#475569', fontWeight: 600 }}>
+                                      {formattedDate}
+                                    </TableCell>
+                                  </TableRow>
+                                );
+                              })}
+                            </TableBody>
+                          </Table>
+                        </Box>
+                      </TableCell>
+                    </TableRow>
+                  )}
+                </React.Fragment>
+              );
+            })}
           </TableBody>
         </Table>
       </TableContainer>
