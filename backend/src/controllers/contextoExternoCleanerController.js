@@ -64,8 +64,13 @@ const readReview = async (reviewId) => {
   }
 };
 
+const isAdminUser = (user) => (
+  Boolean(user?.role && ['admin', 'administrador', 'superadmin'].includes(String(user.role).toLowerCase()))
+  || Boolean(user?.id && Number(user.id) === 1)
+);
+
 const canAccessReview = (review, user) => (
-  !review?.userId || String(review.userId) === String(user?.id || '')
+  !review?.userId || String(review.userId) === String(user?.id || '') || isAdminUser(user)
 );
 
 const saveReview = async ({ cleanFile, cleanPath, corrections, filename, lista, userId, reviewId: customReviewId }) => {
@@ -191,7 +196,7 @@ const listStoredJobIds = async () => {
     .filter((jobId) => JOB_ID_PATTERN.test(jobId))));
 };
 
-const canAccessJob = (job, user) => !job?.userId || String(job.userId) === String(user?.id || '');
+const canAccessJob = (job, user) => !job?.userId || String(job.userId) === String(user?.id || '') || isAdminUser(user);
 
 const axios = require('axios');
 const http = require('http');
@@ -545,13 +550,23 @@ const recoverCleaningJobs = async () => {
     if (!job) continue;
     const jobStartedAt = Date.parse(job.startedAt || job.updatedAt || job.createdAt || '') || 0;
     if (job.status === 'processing' && jobStartedAt < SERVICE_STARTED_AT) {
-      await updateJob(job.jobId, {
-        status: 'interrupted',
-        progress: 100,
-        stage: 'Proceso interrumpido por reinicio del servicio',
-        errorMessage: 'El servidor se reiniciÃ³ durante la limpieza. Puedes reintentar el trabajo mientras el archivo original siga disponible.',
-        expiresAt: new Date(Date.now() + JOB_RETENTION_MS).toISOString()
-      });
+      if (job.inputPath && (await fs.stat(job.inputPath).catch(() => null))) {
+        await updateJob(job.jobId, {
+          status: 'queued',
+          progress: 5,
+          stage: 'Reanudando la limpieza tras reinicio...',
+          errorMessage: null
+        });
+        enqueueCleaningJob(job.jobId);
+      } else {
+        await updateJob(job.jobId, {
+          status: 'interrupted',
+          progress: 100,
+          stage: 'Proceso interrumpido por reinicio del servicio',
+          errorMessage: 'El servidor se reinicio durante la limpieza. Puedes reintentar el trabajo mientras el archivo original siga disponible.',
+          expiresAt: new Date(Date.now() + JOB_RETENTION_MS).toISOString()
+        });
+      }
     } else if (job.status === 'queued') {
       enqueueCleaningJob(job.jobId);
     }
