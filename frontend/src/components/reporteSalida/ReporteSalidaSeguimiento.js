@@ -158,9 +158,23 @@ const formatElapsed = (minutes) => {
 };
 
 const REPOSICION_WORKDAY_MINUTES = 520;
-const getAbonoMinutes = ({ unit, days, hours, minutes }) => (
+const getReposicionLaboralProfile = (row) => (
+  row?.datos_formulario?.laboral?.reposicionPerfil
+  || row?.datos_formulario?.parametrizacion_tiempo?.perfil_laboral
+  || { key: 'administrativo', label: 'Administrativo', minutesPerDay: REPOSICION_WORKDAY_MINUTES, manualTime: false }
+);
+
+const getReposicionDailyMinutes = (row) => {
+  const profile = getReposicionLaboralProfile(row);
+  if (profile.manualTime) {
+    return Number(row?.datos_formulario?.parametrizacion_tiempo?.reposicion_minutos_por_dia) || 0;
+  }
+  return Number(profile.minutesPerDay) || REPOSICION_WORKDAY_MINUTES;
+};
+
+const getAbonoMinutes = ({ unit, days, hours, minutes, minutesPerDay = REPOSICION_WORKDAY_MINUTES }) => (
   unit === 'dias'
-    ? (Number(days) || 0) * REPOSICION_WORKDAY_MINUTES
+    ? (Number(days) || 0) * (Number(minutesPerDay) || REPOSICION_WORKDAY_MINUTES)
     : ((Number(hours) || 0) * 60) + (Number(minutes) || 0)
 );
 
@@ -922,7 +936,8 @@ function ReporteSalidaSeguimiento({ initialAccess = null, onBack }) {
       unit: repUnidad,
       days: repDiasAbonados,
       hours: repHorasAbonadas,
-      minutes: repMinutosAbonados
+      minutes: repMinutosAbonados,
+      minutesPerDay: getReposicionLaboralProfile(repTarget).minutesPerDay
     });
     if (minutosPendientes - minutosAbonar <= 0) {
       setRepEstado('cumplida');
@@ -948,7 +963,8 @@ function ReporteSalidaSeguimiento({ initialAccess = null, onBack }) {
       unit: repUnidad,
       days: repDiasAbonados,
       hours: repHorasAbonadas,
-      minutes: repMinutosAbonados
+      minutes: repMinutosAbonados,
+      minutesPerDay: getReposicionLaboralProfile(repTarget).minutesPerDay
     });
     if (minutosAbonar <= 0) {
       enqueueSnackbar('El tiempo a abonar debe ser mayor que cero.', { variant: 'error' });
@@ -1802,6 +1818,12 @@ function ReporteSalidaSeguimiento({ initialAccess = null, onBack }) {
                   <Typography variant="body2" sx={{ mt: 1 }}>Tiempo Total Solicitado: {formatElapsed(repTarget?.reposicion_minutos || repTarget?.tiempo_solicitado_minutos || 0)}</Typography>
                   <Typography variant="body2" sx={{ mt: 0.5 }}>Tiempo Abonado: {formatElapsed(repTarget?.reposicion_minutos_pagados || repTarget?.datos_formulario?.reposicion_minutos_pagados || 0)}</Typography>
                   <Typography variant="body2" sx={{ mt: 0.5, fontWeight: 'bold', color: '#b45309' }}>Saldo pendiente: {getHorasPendientes(repTarget)}</Typography>
+                  <Typography variant="body2" sx={{ mt: 0.5, color: '#475569' }}>
+                    Jornada de referencia: {getReposicionDailyMinutes(repTarget) > 0
+                      ? formatElapsed(getReposicionDailyMinutes(repTarget))
+                      : 'Abonos únicamente por horas y minutos'}
+                    {' · '}{getReposicionLaboralProfile(repTarget).label}
+                  </Typography>
                 </Box>
 
                 {(() => {
@@ -1812,7 +1834,8 @@ function ReporteSalidaSeguimiento({ initialAccess = null, onBack }) {
                     unit: repUnidad,
                     days: repDiasAbonados,
                     hours: repHorasAbonadas,
-                    minutes: repMinutosAbonados
+                    minutes: repMinutosAbonados,
+                    minutesPerDay: getReposicionLaboralProfile(repTarget).minutesPerDay
                   });
 
                   if (minutosPendientes <= 0) {
@@ -1851,7 +1874,8 @@ function ReporteSalidaSeguimiento({ initialAccess = null, onBack }) {
                   );
                 })()}
 
-                {['1_2_dias', '3_mas_dias'].includes(repTarget?.datos_formulario?.salida?.duracionTipo) && (
+                {['1_2_dias', '3_mas_dias'].includes(repTarget?.datos_formulario?.salida?.duracionTipo)
+                  && !getReposicionLaboralProfile(repTarget).manualTime && (
                   <ToggleButtonGroup
                     exclusive
                     fullWidth
@@ -1878,7 +1902,7 @@ function ReporteSalidaSeguimiento({ initialAccess = null, onBack }) {
                     fullWidth
                     size="small"
                     inputProps={{ min: 1, step: 1 }}
-                    helperText="Cada día laboral equivale a 8 horas y 40 minutos."
+                    helperText={`Cada día laboral equivale a ${formatElapsed(getReposicionLaboralProfile(repTarget).minutesPerDay)} para este perfil.`}
                   />
                 ) : (
                   <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1.5}>
@@ -1959,7 +1983,8 @@ function ReporteSalidaSeguimiento({ initialAccess = null, onBack }) {
                       unit: repUnidad,
                       days: repDiasAbonados,
                       hours: repHorasAbonadas,
-                      minutes: repMinutosAbonados
+                      minutes: repMinutosAbonados,
+                      minutesPerDay: getReposicionLaboralProfile(repTarget).minutesPerDay
                     });
                     if (minutosPendientes <= 0) return true;
                     if (minutosAbono <= 0 || minutosAbono > minutosPendientes) return true;

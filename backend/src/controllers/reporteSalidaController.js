@@ -2,7 +2,7 @@ const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
 const { Op } = require('sequelize');
-const { Documento, PlanAccion, ReporteSalidaSolicitud, RecursoHumanoAdministrativo, User, UserModulePermission } = require('../models');
+const { Documento, PlanAccion, ReporteSalidaSolicitud, RecursoHumanoAdministrativo, RecursoHumanoDocente, User, UserModulePermission } = require('../models');
 const { encryptPayload, decryptPayload } = require('../utils/secureUrlToken');
 const {
   getReporteSalidaRecipients,
@@ -1144,6 +1144,75 @@ const canManageSeguimientoReportes = async (user) => {
   return userHasModulePermissionInDb(user, SEGUIMIENTO_REPORTE_MANAGE_KEYS);
 };
 
+const findCurrentTeacherRow = async (user = {}) => {
+  const rawDocument = sanitizeText(user.username, 80);
+  const normalizedDocument = normalizeDocument(rawDocument);
+  const documentCandidates = [...new Set([rawDocument, normalizedDocument].filter(Boolean))];
+  const userName = sanitizeText(user.nombre, 220);
+  const conditions = [];
+  if (documentCandidates.length) conditions.push({ identificacion: { [Op.in]: documentCandidates } });
+  if (userName) conditions.push({ docente: { [Op.iLike]: userName } });
+  if (!conditions.length) return null;
+
+  return RecursoHumanoDocente.findOne({
+    where: { [Op.or]: conditions },
+    order: [['anio', 'DESC'], ['periodo', 'DESC'], ['id', 'DESC']],
+    raw: true
+  });
+};
+
+const REPOSICION_LABORAL_PROFILES = Object.freeze({
+  ADMINISTRATIVO: Object.freeze({ key: 'administrativo', label: 'Administrativo', minutesPerDay: 520, manualTime: false }),
+  DOCENTE_TIEMPO_COMPLETO: Object.freeze({ key: 'docente_tiempo_completo', label: 'Docente tiempo completo', minutesPerDay: 480, manualTime: false }),
+  DOCENTE_MEDIO_TIEMPO: Object.freeze({ key: 'docente_medio_tiempo', label: 'Docente medio tiempo', minutesPerDay: 240, manualTime: false }),
+  DOCENTE_HORA_CATEDRA: Object.freeze({ key: 'docente_hora_catedra', label: 'Docente hora catedra', minutesPerDay: null, manualTime: true }),
+  DOCENTE_SIN_CLASIFICAR: Object.freeze({ key: 'docente_sin_clasificar', label: 'Docente por horas', minutesPerDay: null, manualTime: true })
+});
+
+const resolveReposicionLaboralProfile = ({ teacherRow = null, cargo = '' } = {}) => {
+  const cargoDescriptor = normalizeForMatch(cargo);
+  const isDean = /\bdecano\b|\bdecana\b/.test(cargoDescriptor);
+  if (isDean) {
+    return {
+      ...REPOSICION_LABORAL_PROFILES.ADMINISTRATIVO,
+      totalContractHours: 40,
+      administrativeOverride: 'decanatura'
+    };
+  }
+  const descriptor = normalizeForMatch([
+    teacherRow?.tipo_vinculacion,
+    teacherRow?.nivel_contratacion,
+    teacherRow?.contrato,
+    teacherRow?.cargo,
+    cargo
+  ].filter(Boolean).join(' '));
+  const isTeacher = Boolean(teacherRow) || descriptor.includes('docente') || descriptor.includes('catedra');
+
+  if (!isTeacher) return { ...REPOSICION_LABORAL_PROFILES.ADMINISTRATIVO, totalContractHours: null };
+  if (descriptor.includes('hora catedra') || descriptor.includes('horas catedra') || descriptor.includes('catedratico')) {
+    return { ...REPOSICION_LABORAL_PROFILES.DOCENTE_HORA_CATEDRA, totalContractHours: Number(teacherRow?.total_horas) || null };
+  }
+  if (descriptor.includes('medio tiempo') || descriptor.includes('media jornada')) {
+    return { ...REPOSICION_LABORAL_PROFILES.DOCENTE_MEDIO_TIEMPO, totalContractHours: Number(teacherRow?.total_horas) || 20 };
+  }
+  if (descriptor.includes('tiempo completo') || descriptor.includes('tiempo total') || descriptor.includes('jornada completa')) {
+    return { ...REPOSICION_LABORAL_PROFILES.DOCENTE_TIEMPO_COMPLETO, totalContractHours: Number(teacherRow?.total_horas) || 40 };
+  }
+  return { ...REPOSICION_LABORAL_PROFILES.DOCENTE_SIN_CLASIFICAR, totalContractHours: Number(teacherRow?.total_horas) || null };
+};
+
+const resolveUserReposicionLaboralProfile = async (user, cargo = '') => {
+  const teacherRow = await findCurrentTeacherRow(user);
+  const profile = resolveReposicionLaboralProfile({ teacherRow, cargo });
+  const usesAdministrativeOverride = Boolean(profile.administrativeOverride);
+  return {
+    ...profile,
+    source: usesAdministrativeOverride ? 'regla_institucional_cargo' : (teacherRow ? 'recurso_humano_docentes' : 'users'),
+    tipoVinculacion: sanitizeText(usesAdministrativeOverride ? profile.label : (teacherRow?.tipo_vinculacion || profile.label), 120),
+    nivelContratacion: sanitizeText(usesAdministrativeOverride ? '' : teacherRow?.nivel_contratacion, 120)
+  };
+};
+
 const canViewReporteSalidaModule = async (user) => {
   if (!user) return false;
   if (SEGUIMIENTO_REPORTE_VIEW_ALL_ROLES.includes(String(user.role || ''))) return true;
@@ -1165,6 +1234,67 @@ const pendingReposicionWhere = () => ({
 });
 
 const ACADEMIC_PERSONAL_EMAIL = 'sbolanos@unicesmag.edu.co';
+const ACADEMIC_PROGRAM_REPOSICION_SCOPES = Object.freeze([
+  Object.freeze({
+    institutionalEmail: 'disenografico@unicesmag.edu.co',
+    directorEmail: 'keocana@unicesmag.edu.co',
+    directorName: 'karen eugenia ocana figueroa'
+  }),
+  Object.freeze({
+    institutionalEmail: 'arquitectura@unicesmag.edu.co',
+    directorEmail: 'lmmartinez@unicesmag.edu.co',
+    directorName: 'lilian magali martinez crespo'
+  })
+]);
+
+const getAcademicProgramReposicionScope = (user = {}) => {
+  const email = normalizeEmail(user.email);
+  return ACADEMIC_PROGRAM_REPOSICION_SCOPES.find((scope) => (
+    sameExactEmail(email, scope.institutionalEmail)
+    || sameExactEmail(email, scope.directorEmail)
+  )) || null;
+};
+
+const isAcademicProgramInstitutionalAccount = (user = {}) => {
+  const scope = getAcademicProgramReposicionScope(user);
+  return Boolean(scope && sameExactEmail(user.email, scope.institutionalEmail));
+};
+
+const isAcademicProgramPersonalAccount = (user = {}) => {
+  const scope = getAcademicProgramReposicionScope(user);
+  return Boolean(scope && sameExactEmail(user.email, scope.directorEmail));
+};
+
+const FINANCIAL_REPOSICION_EMAILS = Object.freeze([
+  normalizeEmail(FINANCIAL_VICERRECTOR_EMAIL),
+  normalizeEmail(FINANCIAL_VICERRECTORIA_OFFICE_EMAIL)
+].filter(Boolean));
+
+const isFinancialReposicionAccount = (user = {}) => (
+  FINANCIAL_REPOSICION_EMAILS.includes(normalizeEmail(user.email))
+);
+
+const INVESTIGATION_REPOSICION_EMAILS = Object.freeze([
+  'jajimenez@unicesmag.edu.co',
+  normalizeEmail(getDependencyEmail('Vicerrectoria de Investigacion y Extension') || 'viceinvestiga@unicesmag.edu.co')
+].filter(Boolean));
+
+const isInvestigationReposicionAccount = (user = {}) => (
+  INVESTIGATION_REPOSICION_EMAILS.includes(normalizeEmail(user.email))
+);
+
+const isRectoriaReposicionAccount = (user = {}) => (
+  sameExactEmail(user.email, RECTORIA_EMAIL)
+);
+
+const EVANGELIZATION_REPOSICION_EMAILS = Object.freeze([
+  'mpagreda@unicesmag.edu.co',
+  normalizeEmail(EVANGELIZACION_VICERRECTORIA_EMAIL)
+].filter(Boolean));
+
+const isEvangelizationReposicionAccount = (user = {}) => (
+  EVANGELIZATION_REPOSICION_EMAILS.includes(normalizeEmail(user.email))
+);
 
 const isAcademicInstitutionalAccount = (user = {}) => (
   sameExactEmail(user.email, ACADEMIC_VICERRECTORIA_EMAIL)
@@ -1177,15 +1307,36 @@ const isAcademicPersonalAccount = (user = {}) => (
 const canManageInstitutionalReposicion = async (user = {}) => {
   // Académica consulta y gestiona desde el buzón institucional únicamente
   // las reposiciones cuyo jefe inmediato sea Sandra Bolaños.
-  if (isAcademicPersonalAccount(user) || isAcademicInstitutionalAccount(user)) return false;
+  if (
+    isAcademicPersonalAccount(user)
+    || isAcademicInstitutionalAccount(user)
+    || isAcademicProgramPersonalAccount(user)
+    || isAcademicProgramInstitutionalAccount(user)
+    || isFinancialReposicionAccount(user)
+    || isInvestigationReposicionAccount(user)
+    || isRectoriaReposicionAccount(user)
+    || isEvangelizationReposicionAccount(user)
+  ) return false;
   return canManageSeguimientoReportes(user);
 };
 
 const resolveAcademicAuthorityUserIds = async (user = {}) => {
-  if (!isAcademicInstitutionalAccount(user)) return [];
+  const programScope = getAcademicProgramReposicionScope(user);
+  const emails = isAcademicInstitutionalAccount(user)
+    ? [ACADEMIC_VICERRECTORIA_EMAIL, ACADEMIC_PERSONAL_EMAIL]
+    : (isAcademicProgramInstitutionalAccount(user)
+      ? [programScope.institutionalEmail, programScope.directorEmail]
+      : (isFinancialReposicionAccount(user)
+        ? FINANCIAL_REPOSICION_EMAILS
+        : (isInvestigationReposicionAccount(user)
+          ? INVESTIGATION_REPOSICION_EMAILS
+          : (isRectoriaReposicionAccount(user)
+            ? [RECTORIA_EMAIL]
+            : (isEvangelizationReposicionAccount(user) ? EVANGELIZATION_REPOSICION_EMAILS : [])))));
+  if (!emails.length) return [];
   const authorityUsers = await User.findAll({
     attributes: ['id'],
-    where: { email: { [Op.in]: [ACADEMIC_VICERRECTORIA_EMAIL, ACADEMIC_PERSONAL_EMAIL] } }
+    where: { email: { [Op.in]: emails } }
   });
   return authorityUsers.map((item) => Number(item.id)).filter((id) => id > 0);
 };
@@ -1199,11 +1350,84 @@ const isAcademicAuthorityAssignment = (solicitud = {}) => {
     || jefeName.includes('sandra lucia bolanos delgado');
 };
 
+const isAcademicProgramAssignment = (solicitud = {}, scope = null) => {
+  if (!scope) return false;
+  const jefe = solicitud.jefe_snapshot || {};
+  const jefeEmail = normalizeEmail(jefe.email || jefe.correo);
+  const jefeName = normalizeForMatch(jefe.nombre || jefe.name || jefe.label);
+  return sameExactEmail(jefeEmail, scope.institutionalEmail)
+    || sameExactEmail(jefeEmail, scope.directorEmail)
+    || jefeName.includes(scope.directorName);
+};
+
 const bossScopeWhere = (user, academicAuthorityUserIds = []) => {
   // La bandeja funcional de la Vicerrectoría Académica pertenece al buzón
   // institucional. La cuenta personal de la Vicerrectora conserva únicamente
   // sus solicitudes propias y no hereda la gestión del equipo.
-  if (isAcademicPersonalAccount(user)) return { id: -1 };
+  if (isAcademicPersonalAccount(user) || isAcademicProgramPersonalAccount(user)) return { id: -1 };
+  if (isFinancialReposicionAccount(user)) {
+    const historicalIdScope = academicAuthorityUserIds.length
+      ? [{ jefe_inmediato_user_id: { [Op.in]: academicAuthorityUserIds } }]
+      : [];
+    return {
+      [Op.or]: [
+        ...FINANCIAL_REPOSICION_EMAILS.map((email) => ({
+          jefe_snapshot: { [Op.contains]: { email } }
+        })),
+        ...historicalIdScope
+      ]
+    };
+  }
+  if (isInvestigationReposicionAccount(user)) {
+    const historicalIdScope = academicAuthorityUserIds.length
+      ? [{ jefe_inmediato_user_id: { [Op.in]: academicAuthorityUserIds } }]
+      : [];
+    return {
+      [Op.or]: [
+        ...INVESTIGATION_REPOSICION_EMAILS.map((email) => ({
+          jefe_snapshot: { [Op.contains]: { email } }
+        })),
+        ...historicalIdScope
+      ]
+    };
+  }
+  if (isRectoriaReposicionAccount(user)) {
+    const historicalIdScope = academicAuthorityUserIds.length
+      ? [{ jefe_inmediato_user_id: { [Op.in]: academicAuthorityUserIds } }]
+      : [];
+    return {
+      [Op.or]: [
+        { jefe_snapshot: { [Op.contains]: { email: RECTORIA_EMAIL } } },
+        ...historicalIdScope
+      ]
+    };
+  }
+  if (isEvangelizationReposicionAccount(user)) {
+    const historicalIdScope = academicAuthorityUserIds.length
+      ? [{ jefe_inmediato_user_id: { [Op.in]: academicAuthorityUserIds } }]
+      : [];
+    return {
+      [Op.or]: [
+        ...EVANGELIZATION_REPOSICION_EMAILS.map((email) => ({
+          jefe_snapshot: { [Op.contains]: { email } }
+        })),
+        ...historicalIdScope
+      ]
+    };
+  }
+  const programScope = getAcademicProgramReposicionScope(user);
+  if (isAcademicProgramInstitutionalAccount(user) && programScope) {
+    const historicalIdScope = academicAuthorityUserIds.length
+      ? [{ jefe_inmediato_user_id: { [Op.in]: academicAuthorityUserIds } }]
+      : [];
+    return {
+      [Op.or]: [
+        { jefe_snapshot: { [Op.contains]: { email: programScope.institutionalEmail } } },
+        { jefe_snapshot: { [Op.contains]: { email: programScope.directorEmail } } },
+        ...historicalIdScope
+      ]
+    };
+  }
   if (isAcademicInstitutionalAccount(user)) {
     const historicalIdScope = academicAuthorityUserIds.length
       ? [{ jefe_inmediato_user_id: { [Op.in]: academicAuthorityUserIds } }]
@@ -1223,7 +1447,34 @@ const bossScopeWhere = (user, academicAuthorityUserIds = []) => {
 };
 
 const isAssignedBoss = (solicitud, user, academicAuthorityUserIds = []) => {
-  if (isAcademicPersonalAccount(user)) return false;
+  if (isAcademicPersonalAccount(user) || isAcademicProgramPersonalAccount(user)) return false;
+  if (isFinancialReposicionAccount(user)) {
+    const bossEmail = normalizeEmail(solicitud?.jefe_snapshot?.email || solicitud?.jefe_snapshot?.correo);
+    return FINANCIAL_REPOSICION_EMAILS.includes(bossEmail)
+      || academicAuthorityUserIds.includes(Number(solicitud?.jefe_inmediato_user_id || 0));
+  }
+  if (isInvestigationReposicionAccount(user)) {
+    const bossEmail = normalizeEmail(solicitud?.jefe_snapshot?.email || solicitud?.jefe_snapshot?.correo);
+    return INVESTIGATION_REPOSICION_EMAILS.includes(bossEmail)
+      || academicAuthorityUserIds.includes(Number(solicitud?.jefe_inmediato_user_id || 0));
+  }
+  if (isRectoriaReposicionAccount(user)) {
+    const bossEmail = normalizeEmail(solicitud?.jefe_snapshot?.email || solicitud?.jefe_snapshot?.correo);
+    const bossName = normalizeForMatch(solicitud?.jefe_snapshot?.nombre || solicitud?.jefe_snapshot?.name);
+    return sameExactEmail(bossEmail, RECTORIA_EMAIL)
+      || bossName.includes('luis eduardo rubiano guaqueta')
+      || academicAuthorityUserIds.includes(Number(solicitud?.jefe_inmediato_user_id || 0));
+  }
+  if (isEvangelizationReposicionAccount(user)) {
+    const bossEmail = normalizeEmail(solicitud?.jefe_snapshot?.email || solicitud?.jefe_snapshot?.correo);
+    return EVANGELIZATION_REPOSICION_EMAILS.includes(bossEmail)
+      || academicAuthorityUserIds.includes(Number(solicitud?.jefe_inmediato_user_id || 0));
+  }
+  const programScope = getAcademicProgramReposicionScope(user);
+  if (isAcademicProgramInstitutionalAccount(user) && programScope) {
+    return isAcademicProgramAssignment(solicitud, programScope)
+      || academicAuthorityUserIds.includes(Number(solicitud?.jefe_inmediato_user_id || 0));
+  }
   if (isAcademicInstitutionalAccount(user)) {
     return isAcademicAuthorityAssignment(solicitud)
       || academicAuthorityUserIds.includes(Number(solicitud?.jefe_inmediato_user_id || 0));
@@ -1247,6 +1498,17 @@ const bossPendingReposicionWhere = (user, academicAuthorityUserIds = []) => ({
 
 const resolveSeguimientoAccess = async (user) => {
   const isAcademicInstitutional = isAcademicInstitutionalAccount(user);
+  const isAcademicProgramInstitutional = isAcademicProgramInstitutionalAccount(user);
+  const isFinancialInstitutional = isFinancialReposicionAccount(user);
+  const isInvestigationInstitutional = isInvestigationReposicionAccount(user);
+  const isRectoriaInstitutional = isRectoriaReposicionAccount(user);
+  const isEvangelizationInstitutional = isEvangelizationReposicionAccount(user);
+  const hasInstitutionalReposicionScope = isAcademicInstitutional
+    || isAcademicProgramInstitutional
+    || isFinancialInstitutional
+    || isInvestigationInstitutional
+    || isRectoriaInstitutional
+    || isEvangelizationInstitutional;
   const academicAuthorityUserIds = await resolveAcademicAuthorityUserIds(user);
   const [canManageAll, canViewReporteSalidaByPermission, canViewEstadisticasByPermission, ownPending, bossPending] = await Promise.all([
     canManageInstitutionalReposicion(user),
@@ -1260,7 +1522,7 @@ const resolveSeguimientoAccess = async (user) => {
     || isPlaneacionReadOnly
     || canViewReporteSalidaByPermission
     || canViewEstadisticasByPermission;
-  const canViewReporteSalida = isAcademicInstitutional
+  const canViewReporteSalida = hasInstitutionalReposicionScope
     || canManageAll
     || isPlaneacionReadOnly
     || canViewReporteSalidaByPermission
@@ -1270,6 +1532,11 @@ const resolveSeguimientoAccess = async (user) => {
 
   let mode = 'sin_pendientes';
   if (isAcademicInstitutional) mode = 'vicerrectoria_academica';
+  else if (isAcademicProgramInstitutional) mode = 'jefe';
+  else if (isFinancialInstitutional) mode = 'jefe';
+  else if (isInvestigationInstitutional) mode = 'jefe';
+  else if (isRectoriaInstitutional) mode = 'jefe';
+  else if (isEvangelizationInstitutional) mode = 'jefe';
   else if (canManageAll) mode = 'gestion_humana';
   else if (isPlaneacionReadOnly) mode = 'planeacion_estrategica';
   else if (canViewReporteSalidaByPermission || canViewEstadisticasByPermission) mode = 'consulta_institucional';
@@ -1283,7 +1550,7 @@ const resolveSeguimientoAccess = async (user) => {
     canViewReporteSalidaByPermission,
     canViewEstadisticasByPermission,
     canViewAll,
-    academicAssignmentScope: isAcademicInstitutional,
+    academicAssignmentScope: hasInstitutionalReposicionScope,
     canManageAll,
     canValidateReposicion: canManageAll,
     canManageTeamReposicion: bossPending > 0,
@@ -1294,30 +1561,80 @@ const resolveSeguimientoAccess = async (user) => {
 
 const REPOSICION_WORKDAY_MINUTES = 520;
 
-const resolveReposicionValues = ({ isOficio = false, requestedMinutes = 0, bodyMinutes = 0, durationDays = 0 } = {}) => {
+const isReposicionEligibleSalida = (salida = {}) => (
+  sanitizeText(salida.categoria || salida.category, 100) === 'personales'
+  && sanitizeText(salida.tipo, 100) === 'diligencia_personal'
+);
+
+const resolveHoraCatedraDuration = ({ dailyMinutes = 0, requestedMinutes = 0 } = {}) => {
+  const daily = Math.max(0, Math.round(Number(dailyMinutes) || 0));
+  const requested = Math.max(0, Math.round(Number(requestedMinutes) || 0));
+  if (!daily || !requested) return { valid: false, durationType: '', durationDays: 0 };
+  if (requested < daily) {
+    return { valid: true, durationType: 'menos_media_jornada', durationDays: 0 };
+  }
+  const durationDays = Math.ceil(requested / daily);
+  return {
+    valid: true,
+    durationType: durationDays <= 2 ? '1_2_dias' : '3_mas_dias',
+    durationDays
+  };
+};
+
+const resolveReposicionValues = ({
+  isOficio = false,
+  requestedMinutes = 0,
+  bodyMinutes = 0,
+  durationDays = 0,
+  laboralProfile = REPOSICION_LABORAL_PROFILES.ADMINISTRATIVO
+} = {}) => {
   const calculatedMinutes = Math.max(0, Number(requestedMinutes) || 0);
   const declaredMinutes = Math.max(0, Number(bodyMinutes) || 0);
   const days = Math.max(0, Number(durationDays) || 0);
-  const minutes = isOficio
-    ? (days > 0 ? Math.round(days * REPOSICION_WORKDAY_MINUTES) : calculatedMinutes)
-    : declaredMinutes;
+  const minutesPerDay = Number(laboralProfile?.minutesPerDay);
+  const requiresManualTime = Boolean(laboralProfile?.manualTime);
+  const minutes = declaredMinutes > 0
+    ? declaredMinutes
+    : (isOficio
+      ? (requiresManualTime
+      ? declaredMinutes
+      : (days > 0 ? Math.round(days * (minutesPerDay > 0 ? minutesPerDay : REPOSICION_WORKDAY_MINUTES)) : calculatedMinutes))
+      : declaredMinutes);
   return { minutes, applies: minutes > 0 };
 };
 
-const resolveReposicionAbono = (payload = {}) => {
+const getStoredReposicionLaboralProfile = (solicitud = {}) => (
+  solicitud?.datos_formulario?.laboral?.reposicionPerfil
+  || solicitud?.datos_formulario?.parametrizacion_tiempo?.perfil_laboral
+  || REPOSICION_LABORAL_PROFILES.ADMINISTRATIVO
+);
+
+const resolveReposicionAbono = (
+  payload = {},
+  laboralProfile = REPOSICION_LABORAL_PROFILES.ADMINISTRATIVO
+) => {
   const unit = String(payload.unidadReposicion || payload.unidad || 'tiempo').trim().toLowerCase();
   if (unit === 'dias') {
+    if (laboralProfile?.manualTime) {
+      return {
+        valid: false,
+        message: 'Este tipo de vinculacion solo admite reposicion por horas y minutos.'
+      };
+    }
     const days = Number(payload.diasAbonados);
     if (!Number.isInteger(days) || days <= 0) {
       return { valid: false, message: 'La cantidad de dias a reponer debe ser un numero entero mayor que cero.' };
     }
+    const minutesPerDay = Number(laboralProfile?.minutesPerDay) > 0
+      ? Number(laboralProfile.minutesPerDay)
+      : REPOSICION_WORKDAY_MINUTES;
     return {
       valid: true,
       unit: 'dias',
       days,
       hours: 0,
       extraMinutes: 0,
-      minutes: days * REPOSICION_WORKDAY_MINUTES,
+      minutes: days * minutesPerDay,
       label: `${days} dia(s) laboral(es)`
     };
   }
@@ -2552,6 +2869,7 @@ const getCatalogoLaboral = async (req, res) => {
     const userRows = await getUserProfileLaboralRows();
     if (userRows.length) {
       const current = findCurrentUserProfileRow(userRows, req.user);
+      const reposicionProfile = await resolveUserReposicionLaboralProfile(req.user, current?.cargo || req.user?.cargo || '');
       const relaciones = userRows.map(serializeUserLaboralRow).filter((row) => row.dependencia || row.cargo || row.jefe_inmediato);
       const jefes = mapUserProfileBosses(userRows, req.query.search || '')
         .filter((boss) => !boss.userId || Number(boss.userId) !== Number(req.user?.id));
@@ -2573,6 +2891,9 @@ const getCatalogoLaboral = async (req, res) => {
             vicerrectoria: sanitizeText(current.vicerrectoria, 220),
             cargo: sanitizeText(current.cargo, 220),
             jefe_inmediato: sanitizeText(current.jefe_inmediato, 220),
+            tipoVinculacion: reposicionProfile.tipoVinculacion,
+            nivelContratacion: reposicionProfile.nivelContratacion,
+            reposicionPerfil: reposicionProfile,
             source: 'users'
           } : null,
           periodo: '',
@@ -2583,6 +2904,7 @@ const getCatalogoLaboral = async (req, res) => {
 
     const { latestYear, latestPeriod, rows } = await getLatestAdministrativos();
     const current = findCurrentAdministrativeRow(rows, req.user);
+    const reposicionProfile = await resolveUserReposicionLaboralProfile(req.user, current?.cargo_especifico || req.user?.cargo || '');
     const jefes = (await mapAdministrativeBosses(rows, req.query.search || ''))
       .filter((boss) => !boss.userId || Number(boss.userId) !== Number(req.user?.id));
 
@@ -2600,6 +2922,9 @@ const getCatalogoLaboral = async (req, res) => {
           dependencia: cleanDependenciaLabel(current.dependencia),
           cargo: sanitizeText(current.cargo_especifico, 220),
           jefe_inmediato: '',
+          tipoVinculacion: reposicionProfile.tipoVinculacion,
+          nivelContratacion: reposicionProfile.nivelContratacion,
+          reposicionPerfil: reposicionProfile,
           anio: current.anio,
           periodo: sanitizeText(current.periodo, 40)
         } : null,
@@ -3353,12 +3678,46 @@ const radicarSolicitud = async (req, res) => {
     }
 
     const bodyReposicionMinutos = parseInt(req.body.reposicion_minutos, 10);
-    const reposicionValues = resolveReposicionValues({
+    const bodyReposicionMinutosPorDia = parseInt(req.body.reposicion_minutos_por_dia, 10);
+    const isDiligenciaPersonal = isReposicionEligibleSalida(salida);
+    const reposicionLaboralProfile = await resolveUserReposicionLaboralProfile(
+      req.user,
+      req.body.laboral?.cargo || req.user?.cargo || ''
+    );
+    const effectiveDailyMinutes = reposicionLaboralProfile.manualTime
+      ? bodyReposicionMinutosPorDia
+      : Number(reposicionLaboralProfile.minutesPerDay);
+    if (isDiligenciaPersonal && reposicionLaboralProfile.manualTime && (!Number.isInteger(bodyReposicionMinutosPorDia) || bodyReposicionMinutosPorDia <= 0)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Indique la jornada diaria del docente hora catedra en horas y minutos.'
+      });
+    }
+    if (isDiligenciaPersonal && (!Number.isInteger(bodyReposicionMinutos) || bodyReposicionMinutos <= 0)) {
+      return res.status(400).json({ success: false, message: 'Indique las horas y minutos solicitados.' });
+    }
+    if (isDiligenciaPersonal) {
+      const derivedDuration = resolveHoraCatedraDuration({
+        dailyMinutes: effectiveDailyMinutes,
+        requestedMinutes: bodyReposicionMinutos
+      });
+      const hasExpectedDuration = derivedDuration.valid
+        && salida.duracionTipo === derivedDuration.durationType
+        && (derivedDuration.durationType === 'menos_media_jornada' || duracionDiasSolicitada === derivedDuration.durationDays);
+      if (!hasExpectedDuration) {
+        return res.status(400).json({
+          success: false,
+          message: 'La duración seleccionada no coincide con la jornada diaria y las horas solicitadas.'
+        });
+      }
+    }
+    const reposicionValues = isDiligenciaPersonal ? resolveReposicionValues({
       isOficio,
       requestedMinutes,
       bodyMinutes: isNaN(bodyReposicionMinutos) ? 0 : bodyReposicionMinutos,
-      durationDays: duracionDiasSolicitada
-    });
+      durationDays: duracionDiasSolicitada,
+      laboralProfile: reposicionLaboralProfile
+    }) : { minutes: 0, applies: false };
     const finalReposicionMinutos = reposicionValues.minutes;
     const reposicionAplica = reposicionValues.applies;
     const hasReposicionPlan = Boolean(reposicion.fecha || reposicion.fechaFin || reposicion.horaInicio || reposicion.horaFin);
@@ -3385,7 +3744,10 @@ const radicarSolicitud = async (req, res) => {
         laboral: {
           dependencia: cleanDependenciaLabel(req.body.laboral?.dependencia),
           vicerrectoria: sanitizeText(selectedVicerrectoriaName || req.user.vicerrectoria, 220),
-          cargo: sanitizeText(req.body.laboral?.cargo)
+          cargo: sanitizeText(req.body.laboral?.cargo),
+          tipoVinculacion: reposicionLaboralProfile.tipoVinculacion,
+          nivelContratacion: reposicionLaboralProfile.nivelContratacion,
+          reposicionPerfil: reposicionLaboralProfile
         },
         salida: {
           tipo: sanitizeText(salida.tipo, 60),
@@ -3435,6 +3797,8 @@ const radicarSolicitud = async (req, res) => {
           fecha_calculo: now.toISOString(),
           criterio_salida: 'horas adeudadas segun jornada laboral institucional',
           criterio_reposicion: 'horas acumuladas por seguimiento, sin restriccion de dia',
+          perfil_laboral: reposicionLaboralProfile,
+          reposicion_minutos_por_dia: isDiligenciaPersonal ? effectiveDailyMinutes : null,
           jornada_salida: {
             dias_laborales: 'lunes a viernes',
             excluye: ['sabados', 'domingos', 'festivos_colombia'],
@@ -4267,7 +4631,8 @@ const actualizarReposicion = async (req, res) => {
     }
 
     let nextEstado = sanitizeText(req.body?.estado, 40);
-    const abono = resolveReposicionAbono(req.body || {});
+    const laboralProfile = getStoredReposicionLaboralProfile(solicitud);
+    const abono = resolveReposicionAbono(req.body || {}, laboralProfile);
     if (!abono.valid) {
       return res.status(400).json({ success: false, message: abono.message });
     }
@@ -6690,8 +7055,13 @@ module.exports = {
   bossScopeWhere,
   isAssignedBoss,
   isAcademicAuthorityAssignment,
+  isReposicionEligibleSalida,
+  resolveHoraCatedraDuration,
+  resolveReposicionLaboralProfile,
   resolveReposicionValues,
   resolveReposicionAbono,
+  getStoredReposicionLaboralProfile,
+  REPOSICION_LABORAL_PROFILES,
   REPOSICION_WORKDAY_MINUTES
 };
 

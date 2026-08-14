@@ -303,20 +303,24 @@ const ensureReporteSalidaAdminBossSupport = async (qi) => {
     defaultValue: 'no_aplica'
   });
 
-  // Regla institucional vigente: los permisos de 1, 2, 3 o más días también
-  // generan reposición. La actualización es idempotente y solo recupera
-  // registros anteriores que todavía estaban marcados como "no aplica".
+  // Regla institucional vigente: toda diligencia personal genera reposición
+  // en cualquiera de las tres duraciones. La actualización es idempotente y
+  // solo recupera registros anteriores que todavía estaban como "no aplica".
   await sequelize.query(`
     WITH candidatos AS (
       SELECT
         "id",
         CASE
+          WHEN COALESCE("tiempo_solicitado_minutos", 0) > 0
+            THEN "tiempo_solicitado_minutos"
           WHEN COALESCE("datos_formulario"->'salida'->>'duracionDias', '') ~ '^[0-9]+$'
             THEN ("datos_formulario"->'salida'->>'duracionDias')::int * 520
-          ELSE COALESCE("tiempo_solicitado_minutos", 0)
+          ELSE 0
         END AS minutos_calculados
       FROM "reporte_salida_solicitudes"
-      WHERE "datos_formulario"->'salida'->>'duracionTipo' IN ('1_2_dias', '3_mas_dias')
+      WHERE "datos_formulario"->'salida'->>'categoria' = 'personales'
+        AND "datos_formulario"->'salida'->>'tipo' = 'diligencia_personal'
+        AND "datos_formulario"->'salida'->>'duracionTipo' IN ('menos_media_jornada', '1_2_dias', '3_mas_dias')
         AND "estado" <> 'no_aprobada'
         AND ("reposicion_aplica" = false OR "reposicion_minutos" IS NULL OR "reposicion_minutos" <= 0)
     )

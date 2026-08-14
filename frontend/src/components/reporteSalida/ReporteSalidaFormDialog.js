@@ -50,7 +50,7 @@ import SolicitudViaticosFields, { ViaticosQuestion } from './SolicitudViaticosFi
 
 const INITIAL_FORM = {
   personal: { nombre: '', documento: '', correo: '' },
-  laboral: { dependencia: '', vicerrectoria: '', cargo: '' },
+  laboral: { dependencia: '', vicerrectoria: '', cargo: '', tipoVinculacion: '', nivelContratacion: '', reposicionPerfil: null },
   salida: { 
     tipo: 'cita_eps', 
     alcance: '', 
@@ -65,8 +65,10 @@ const INITIAL_FORM = {
     horaFin: '', 
     motivo: '', 
     campusSalida: '', 
-    campusDestino: '', 
+    campusDestino: '',
+    jornadaDiariaHoras: '',
     tiempoReponerHoras: '', 
+    tiempoReponerMinutos: '',
     entidadDestino: '',
     duracionTipo: 'menos_media_jornada',
     duracionDias: 0,
@@ -798,10 +800,16 @@ function ReporteSalidaFormDialog({ open, documento, user, onClose, onSubmitted }
   ]);
 
   useEffect(() => {
-    if (form.salida.duracionTipo !== 'menos_media_jornada' && form.salida.tiempoReponerHoras) {
+    const isDiligenciaPersonalTime = activeCategory === 'personales'
+      && form.salida.tipo === 'diligencia_personal';
+    const keepsManualTime = isDiligenciaPersonalTime
+      || form.salida.duracionTipo === 'menos_media_jornada'
+      || form.laboral.reposicionPerfil?.manualTime === true;
+    if (!keepsManualTime && (form.salida.tiempoReponerHoras || form.salida.tiempoReponerMinutos)) {
       update('salida', 'tiempoReponerHoras', '');
+      update('salida', 'tiempoReponerMinutos', '');
     }
-  }, [form.salida.duracionTipo, form.salida.tiempoReponerHoras]);
+  }, [activeCategory, form.laboral.reposicionPerfil?.manualTime, form.salida.duracionTipo, form.salida.tipo, form.salida.tiempoReponerHoras, form.salida.tiempoReponerMinutos]);
 
   useEffect(() => {
     if (['jurado_votacion', 'sufragante', 'entierro_companero', 'obligaciones_escolares'].includes(form.salida.tipo) && form.salida.duracionTipo !== 'menos_media_jornada') {
@@ -815,6 +823,8 @@ function ReporteSalidaFormDialog({ open, documento, user, onClose, onSubmitted }
   const handleCategoryChange = (newCategory) => {
     setActiveCategory(newCategory);
     update('salida', 'tiempoReponerHoras', '');
+    update('salida', 'tiempoReponerMinutos', '');
+    update('salida', 'jornadaDiariaHoras', '');
     setNoCuentaAdjuntoSalud(false);
     setAdjuntoFile(null);
     setAdjuntoError('');
@@ -832,6 +842,8 @@ function ReporteSalidaFormDialog({ open, documento, user, onClose, onSubmitted }
 
   const handleSubtypeChange = (newSubtype) => {
     update('salida', 'tiempoReponerHoras', '');
+    update('salida', 'tiempoReponerMinutos', '');
+    update('salida', 'jornadaDiariaHoras', '');
     setNoCuentaAdjuntoSalud(false);
     setAdjuntoFile(null);
     setAdjuntoError('');
@@ -877,7 +889,10 @@ function ReporteSalidaFormDialog({ open, documento, user, onClose, onSubmitted }
       laboral: {
         dependencia: user?.dependencia || '',
         vicerrectoria: user?.vicerrectoria || '',
-        cargo: user?.cargo || ''
+        cargo: user?.cargo || '',
+        tipoVinculacion: '',
+        nivelContratacion: '',
+        reposicionPerfil: null
       },
       salida: {
         ...INITIAL_FORM.salida,
@@ -957,7 +972,10 @@ function ReporteSalidaFormDialog({ open, documento, user, onClose, onSubmitted }
             laboral: {
               dependencia: data.currentEmployee.dependencia || prev.laboral.dependencia,
               vicerrectoria: data.currentEmployee.vicerrectoria || prev.laboral.vicerrectoria,
-              cargo: data.currentEmployee.cargo || prev.laboral.cargo
+              cargo: data.currentEmployee.cargo || prev.laboral.cargo,
+              tipoVinculacion: data.currentEmployee.tipoVinculacion || '',
+              nivelContratacion: data.currentEmployee.nivelContratacion || '',
+              reposicionPerfil: data.currentEmployee.reposicionPerfil || null
             }
           }));
           if (currentBoss) setJefe(currentBoss);
@@ -1040,7 +1058,31 @@ function ReporteSalidaFormDialog({ open, documento, user, onClose, onSubmitted }
   const reposicionHasAnyValue = Boolean(form.reposicion.fecha || form.reposicion.fechaFin || form.reposicion.horaInicio || form.reposicion.horaFin);
   const reposicionPlanComplete = Boolean(form.reposicion.fecha && form.reposicion.fechaFin && form.reposicion.horaInicio && form.reposicion.horaFin);
   const isOficioSolicitud = form.salida.duracionTipo !== 'menos_media_jornada';
-  const shouldRequestReposicionHoras = category === 'personales' && subtype === 'diligencia_personal' && !isOficioSolicitud;
+  const reposicionLaboralProfile = form.laboral.reposicionPerfil || {};
+  const isDiligenciaPersonal = category === 'personales' && subtype === 'diligencia_personal';
+  const requiresManualProfileTime = isDiligenciaPersonal && reposicionLaboralProfile.manualTime === true;
+  const shouldRequestReposicionHoras = isDiligenciaPersonal;
+  const requestedReposicionMinutes = (
+    (Number(form.salida.tiempoReponerHoras) || 0) * 60
+    + (Number(form.salida.tiempoReponerMinutos) || 0)
+  );
+  const dailyJornadaMinutes = requiresManualProfileTime
+    ? (Number(form.salida.jornadaDiariaHoras) || 0) * 60
+    : Math.max(0, Number(reposicionLaboralProfile.minutesPerDay) || 520);
+  const declaredReposicionMinutes = requestedReposicionMinutes;
+  const reposicionEquivalentDays = dailyJornadaMinutes > 0 && requestedReposicionMinutes > 0
+    ? Math.ceil(requestedReposicionMinutes / dailyJornadaMinutes)
+    : 0;
+
+  useEffect(() => {
+    if (!isDiligenciaPersonal || reposicionEquivalentDays <= 0) return;
+    const nextDurationType = requestedReposicionMinutes < dailyJornadaMinutes
+      ? 'menos_media_jornada'
+      : (reposicionEquivalentDays <= 2 ? '1_2_dias' : '3_mas_dias');
+    const nextDurationDays = nextDurationType === 'menos_media_jornada' ? 0 : reposicionEquivalentDays;
+    if (form.salida.duracionTipo !== nextDurationType) update('salida', 'duracionTipo', nextDurationType);
+    if (Number(form.salida.duracionDias || 0) !== nextDurationDays) update('salida', 'duracionDias', nextDurationDays);
+  }, [dailyJornadaMinutes, form.salida.duracionDias, form.salida.duracionTipo, isDiligenciaPersonal, reposicionEquivalentDays, requestedReposicionMinutes]);
   const reposicionRangeIssue = useMemo(() => {
     if (!reposicionHasAnyValue) return '';
     if (!reposicionPlanComplete) {
@@ -1205,11 +1247,22 @@ function ReporteSalidaFormDialog({ open, documento, user, onClose, onSubmitted }
       issues.push('Debe subir el soporte, certificado o documento obligatorio.');
     }
     
-    if (category === 'personales' && subtype === 'diligencia_personal' && form.salida.duracionTipo === 'menos_media_jornada') {
-      if (form.salida.tiempoReponerHoras === undefined || form.salida.tiempoReponerHoras === '' || isNaN(Number(form.salida.tiempoReponerHoras))) {
-        issues.push('Debe indicar de forma manual el tiempo a reponer en horas (digite 0 si no requiere reposición).');
-      } else if (Number(form.salida.tiempoReponerHoras) < 0) {
-        issues.push('El tiempo a reponer no puede ser un valor negativo.');
+    if (shouldRequestReposicionHoras) {
+      const dailyHours = Number(form.salida.jornadaDiariaHoras || 0);
+      const hoursProvided = form.salida.tiempoReponerHoras !== undefined && form.salida.tiempoReponerHoras !== '';
+      const minutesProvided = form.salida.tiempoReponerMinutos !== undefined && form.salida.tiempoReponerMinutos !== '';
+      const hours = Number(form.salida.tiempoReponerHoras || 0);
+      const minutes = Number(form.salida.tiempoReponerMinutos || 0);
+      if (requiresManualProfileTime && (!Number.isInteger(dailyHours) || dailyHours <= 0)) {
+        issues.push('Indique cuántas horas trabaja al día el docente hora cátedra.');
+      } else if (!hoursProvided && !minutesProvided) {
+        issues.push('Indique las horas y minutos solicitados.');
+      } else if (!Number.isInteger(hours) || hours < 0) {
+        issues.push('Las horas a reponer deben ser un número entero mayor o igual a cero.');
+      } else if (!Number.isInteger(minutes) || minutes < 0 || minutes > 59) {
+        issues.push('Los minutos a reponer deben estar entre 0 y 59.');
+      } else if (requestedReposicionMinutes <= 0) {
+        issues.push('Las horas solicitadas deben ser mayores que cero.');
       }
     }
 
@@ -1244,6 +1297,12 @@ function ReporteSalidaFormDialog({ open, documento, user, onClose, onSubmitted }
     shouldAskViaticos,
     form.salida.motivo,
     form.salida.tiempoReponerHoras,
+    form.salida.tiempoReponerMinutos,
+    form.salida.jornadaDiariaHoras,
+    shouldRequestReposicionHoras,
+    requiresManualProfileTime,
+    requestedReposicionMinutes,
+    declaredReposicionMinutes,
     form.salida.entidadDestino,
     form.salida.duracionTipo,
     form.salida.duracionDias,
@@ -1435,7 +1494,8 @@ function ReporteSalidaFormDialog({ open, documento, user, onClose, onSubmitted }
           source: jefe.source || 'recurso_humano_administrativos'
         } : null),
         ...form,
-        reposicion_minutos: isOficioSolicitud ? 0 : Math.round(parseFloat(form.salida.tiempoReponerHoras || 0) * 60)
+        reposicion_minutos: Math.round(declaredReposicionMinutes),
+        reposicion_minutos_por_dia: isDiligenciaPersonal ? Math.round(dailyJornadaMinutes) : null
       };
       
       payload.salida = {
@@ -2319,10 +2379,28 @@ function ReporteSalidaFormDialog({ open, documento, user, onClose, onSubmitted }
                 />
               )}
 
+              {!requiresViaticosFlow && isDiligenciaPersonal && (
+                <CamposDuracionSalida
+                  panelOnly
+                  form={form}
+                  inputSx={inputSx}
+                  shouldRequestReposicionHoras={shouldRequestReposicionHoras}
+                  reposicionTimeIsDaily={isDiligenciaPersonal}
+                  reposicionRequiresDailyInput={requiresManualProfileTime}
+                  reposicionProfileKey={reposicionLaboralProfile.key || 'administrativo'}
+                  reposicionProfileLabel={reposicionLaboralProfile.label || 'Administrativo'}
+                  reposicionTotalMinutes={declaredReposicionMinutes}
+                  reposicionDailyMinutes={dailyJornadaMinutes}
+                  subtype={subtype}
+                  update={update}
+                />
+              )}
+
               {!requiresViaticosFlow && (
                 <DuracionSelector
                   salida={form.salida}
                   fieldSx={duracionDiasFieldSx}
+                  locked={isDiligenciaPersonal}
                   onChange={(field, value) => update('salida', field, value)}
                 />
               )}
@@ -2341,6 +2419,13 @@ function ReporteSalidaFormDialog({ open, documento, user, onClose, onSubmitted }
                   responsiveFieldGrid={responsiveFieldGrid}
                   salidaRangeIssue={salidaRangeIssue}
                   shouldRequestReposicionHoras={shouldRequestReposicionHoras}
+                  reposicionTimeIsDaily={isDiligenciaPersonal}
+                  reposicionRequiresDailyInput={requiresManualProfileTime}
+                  reposicionProfileKey={reposicionLaboralProfile.key || 'administrativo'}
+                  reposicionProfileLabel={reposicionLaboralProfile.label || 'Administrativo'}
+                  reposicionTotalMinutes={declaredReposicionMinutes}
+                  reposicionDailyMinutes={dailyJornadaMinutes}
+                  reposicionEquivalentDays={reposicionEquivalentDays}
                   subtype={subtype}
                   todayString={todayString}
                   update={update}
@@ -2391,7 +2476,7 @@ function ReporteSalidaFormDialog({ open, documento, user, onClose, onSubmitted }
                     component="label"
                     sx={{
                       mt: 2,
-                      p: 3,
+                      p: subtype === 'diligencia_personal' ? 1.5 : 3,
                       borderRadius: 2,
                       border: adjuntoFile ? '2px solid #22c55e' : (adjuntoError ? '2px solid #ef4444' : '2px dashed #93c5fd'),
                       bgcolor: adjuntoFile ? '#f0fdf4' : (adjuntoError ? '#fef2f2' : '#eff6ff'),
@@ -2449,32 +2534,34 @@ function ReporteSalidaFormDialog({ open, documento, user, onClose, onSubmitted }
                       </>
                     ) : (
                       <>
-                        <UploadFileIcon sx={{ fontSize: 48, color: adjuntoError ? '#ef4444' : '#3b82f6', mb: 1 }} />
+                        <UploadFileIcon sx={{ fontSize: subtype === 'diligencia_personal' ? 34 : 48, color: adjuntoError ? '#ef4444' : '#3b82f6', mb: subtype === 'diligencia_personal' ? 0.5 : 1 }} />
                         <Typography sx={{ fontWeight: 700, color: adjuntoError ? '#991b1b' : '#1e3a8a', textAlign: 'center', mb: 0.5 }}>
                           {category === 'salud'
                             ? 'Subir soporte / constancia obligatorio'
                             : form.salida.duracionTipo !== 'menos_media_jornada'
                             ? 'Subir soporte / constancia (Opcional)'
                             : (subtype === 'diligencia_personal'
-                              ? 'Adjuntar soporte de la diligencia (Opcional)'
+                              ? 'Adjuntar soporte (opcional)'
                               : ['voto_jurado', 'voto_sufragante', 'jurado_votacion', 'sufragante'].includes(subtype)
                               ? 'Subir certificado obligatorio'
                               : (['urgencia_medica', 'otra'].includes(subtype) ? 'Subir soporte / constancia (Opcional)' : 'Subir soporte obligatorio'))}
                         </Typography>
-                        <Typography sx={{ fontSize: 13, color: adjuntoError ? '#b91c1c' : '#475569', textAlign: 'center' }}>
+                        {subtype !== 'diligencia_personal' && (
+                          <Typography sx={{ fontSize: 13, color: adjuntoError ? '#b91c1c' : '#475569', textAlign: 'center' }}>
                           {category === 'salud'
                             ? 'Adjunte PDF, imagen o pegue una captura con Ctrl+V. Si no cuenta con soporte en este momento, marque la declaracion anterior.'
                             : form.salida.duracionTipo !== 'menos_media_jornada'
                             ? 'Haga clic para adjuntar PDF, imagen o pegue una captura con Ctrl+V'
                             : (subtype === 'diligencia_personal'
-                              ? `Si cuenta con un documento, puede adjuntarlo en PDF o imagen (máximo ${MAX_ADJUNTO_SIZE_MB} MB). También puede pegar una captura con Ctrl+V.`
+                              ? 'Puede adjuntar un PDF, una imagen o pegar una captura con Ctrl+V.'
                               : ['voto_jurado', 'voto_sufragante', 'jurado_votacion', 'sufragante'].includes(subtype)
                               ? 'Haga clic para adjuntar su certificado electoral (PDF o imagen) o pegue una captura con Ctrl+V'
                               : (['urgencia_medica', 'otra'].includes(subtype)
                                   ? 'Haga clic para adjuntar soporte si ya lo tiene, o pegue una captura con Ctrl+V'
                                   : 'Haga clic para adjuntar PDF, imagen o pegue una captura con Ctrl+V'))}
-                        </Typography>
-                        <Button component="span" variant="contained" size="small" sx={{ mt: 2, textTransform: 'none', bgcolor: adjuntoError ? '#dc2626' : '#2563eb', boxShadow: 'none', fontWeight: 600 }}>
+                          </Typography>
+                        )}
+                        <Button component="span" variant="contained" size="small" sx={{ mt: subtype === 'diligencia_personal' ? 1 : 2, textTransform: 'none', bgcolor: adjuntoError ? '#dc2626' : '#2563eb', boxShadow: 'none', fontWeight: 600 }}>
                           Seleccionar archivo
                         </Button>
                       </>
@@ -2517,11 +2604,6 @@ function ReporteSalidaFormDialog({ open, documento, user, onClose, onSubmitted }
               )}
             </Box>
 
-            {shouldRequestReposicionHoras && (
-              <Alert severity={form.salida.tiempoReponerHoras ? 'success' : 'warning'}>
-                Tiempo solicitado: {parseInt(form.salida.tiempoReponerHoras || 0, 10)}h 00m
-              </Alert>
-            )}
             {salidaRangeIssue && <Alert severity="warning">{salidaRangeIssue}</Alert>}
 
 

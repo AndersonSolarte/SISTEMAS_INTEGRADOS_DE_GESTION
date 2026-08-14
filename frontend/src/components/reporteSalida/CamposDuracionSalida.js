@@ -1,9 +1,9 @@
 import React from 'react';
-import { Autocomplete, Box, TextField } from '@mui/material';
+import { Autocomplete, Box, TextField, Typography } from '@mui/material';
 
 const getColumns = (shouldRequestReposicionHoras) =>
   shouldRequestReposicionHoras
-    ? 'minmax(160px, 1fr) minmax(140px, 0.8fr) minmax(160px, 1fr) minmax(140px, 0.8fr) minmax(165px, 0.9fr)'
+    ? 'minmax(160px, 1fr) minmax(140px, 0.8fr) minmax(160px, 1fr) minmax(140px, 0.8fr) minmax(260px, 1.2fr)'
     : 'minmax(160px, 1fr) minmax(140px, 0.8fr) minmax(160px, 1fr) minmax(140px, 0.8fr)';
 
 const normalizeTimeString = (rawInput, isBlur = true) => {
@@ -146,6 +146,55 @@ export const TimeAutocomplete = ({
   );
 };
 
+const formatMinutes = (value) => {
+  const total = Math.max(0, Math.round(Number(value) || 0));
+  return `${Math.floor(total / 60)} h ${String(total % 60).padStart(2, '0')} min`;
+};
+
+const formatEquivalentTime = (totalValue, dailyValue) => {
+  const total = Math.max(0, Math.round(Number(totalValue) || 0));
+  const daily = Math.max(0, Math.round(Number(dailyValue) || 0));
+  if (!total || !daily) return 'Complete los valores';
+  const fullDays = Math.floor(total / daily);
+  const remaining = total % daily;
+  const parts = [];
+  if (fullDays) parts.push(`${fullDays} ${fullDays === 1 ? 'día' : 'días'}`);
+  if (remaining) parts.push(formatMinutes(remaining));
+  return parts.length ? parts.join(' y ') : formatMinutes(total);
+};
+
+const ReposicionTimeFields = ({ form, inputSx, isDaily = false, update }) => (
+  <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 1, width: '100%' }}>
+    <TextField
+      sx={inputSx}
+      fullWidth
+      size="small"
+      required
+      type="number"
+      label={isDaily ? 'Horas diarias' : 'Horas a reponer'}
+      InputLabelProps={{ shrink: true }}
+      inputProps={{ min: 0, step: 1 }}
+      value={form.salida.tiempoReponerHoras ?? ''}
+      onChange={(e) => update('salida', 'tiempoReponerHoras', e.target.value.replace(/[^0-9]/g, ''))}
+    />
+    <TextField
+      sx={inputSx}
+      fullWidth
+      size="small"
+      required
+      type="number"
+      label={isDaily ? 'Minutos adicionales' : 'Minutos'}
+      InputLabelProps={{ shrink: true }}
+      inputProps={{ min: 0, max: 59, step: 1 }}
+      value={form.salida.tiempoReponerMinutos ?? ''}
+      onChange={(e) => {
+        const clean = e.target.value.replace(/[^0-9]/g, '');
+        update('salida', 'tiempoReponerMinutos', clean === '' ? '' : String(Math.min(59, Number(clean))));
+      }}
+    />
+  </Box>
+);
+
 const FechaHoraFields = ({
   category,
   convert24To12,
@@ -156,6 +205,7 @@ const FechaHoraFields = ({
   isPastTimeError,
   salidaRangeIssue,
   shouldRequestReposicionHoras,
+  reposicionTimeIsDaily,
   subtype,
   todayString,
   update
@@ -208,19 +258,8 @@ const FechaHoraFields = ({
       error={isPastTimeError(form.salida.fechaRegreso, form.salida.horaFin) || Boolean(salidaRangeIssue && form.salida.horaInicio && form.salida.horaFin)}
       helperText={salidaRangeIssue && form.salida.horaInicio && form.salida.horaFin ? salidaRangeIssue : ''}
     />
-    {shouldRequestReposicionHoras && (
-      <TextField
-        sx={inputSx}
-        fullWidth
-        size="small"
-        required
-        type="number"
-        label="Tiempo a reponer (horas)"
-        InputLabelProps={{ shrink: true }}
-        inputProps={{ min: 0, step: 1 }}
-        value={form.salida.tiempoReponerHoras || ''}
-        onChange={(e) => update('salida', 'tiempoReponerHoras', e.target.value.replace(/[^0-9]/g, ''))}
-      />
+    {shouldRequestReposicionHoras && !reposicionTimeIsDaily && (
+      <ReposicionTimeFields form={form} inputSx={inputSx} update={update} />
     )}
   </>
 );
@@ -239,9 +278,103 @@ const CamposDuracionSalida = (props) => {
       : CamposHastaMediaJornada;
 
   return (
-    <Box sx={props.responsiveFieldGrid(getColumns(props.shouldRequestReposicionHoras))}>
-      <Component {...props} />
-    </Box>
+    <>
+      {!props.panelOnly && (
+        <Box sx={props.responsiveFieldGrid(getColumns(props.shouldRequestReposicionHoras && !props.reposicionTimeIsDaily))}>
+          <Component {...props} />
+        </Box>
+      )}
+      {props.panelOnly && props.shouldRequestReposicionHoras && props.reposicionTimeIsDaily && (
+        <Box
+          sx={{
+            mt: 1.5,
+            border: '1px solid #bfdbfe',
+            borderRadius: 2,
+            bgcolor: '#ffffff',
+            overflow: 'hidden'
+          }}
+        >
+          <Box sx={{ px: { xs: 1.5, sm: 2 }, py: 1.25, display: 'grid', gridTemplateColumns: { xs: '1fr', sm: 'minmax(240px, 1fr) minmax(220px, 0.7fr)' }, gap: 1.5, alignItems: 'center', bgcolor: '#f1f6ff', borderBottom: '1px solid #dbeafe' }}>
+            <Box>
+              <Typography sx={{ fontSize: 13, fontWeight: 800, color: '#173f78' }}>
+                Cálculo de reposición · {props.reposicionProfileLabel}
+              </Typography>
+              <Typography sx={{ mt: 0.25, fontSize: 12, color: '#64748b' }}>
+                La duración se selecciona automáticamente según el tiempo solicitado.
+              </Typography>
+            </Box>
+            {props.reposicionRequiresDailyInput ? (
+              <TextField
+                sx={props.inputSx}
+                fullWidth
+                size="small"
+                required
+                type="number"
+                label="Horas que trabaja al día"
+                InputLabelProps={{ shrink: true }}
+                inputProps={{ min: 1, step: 1 }}
+                value={props.form.salida.jornadaDiariaHoras ?? ''}
+                onChange={(e) => props.update('salida', 'jornadaDiariaHoras', e.target.value.replace(/[^0-9]/g, ''))}
+              />
+            ) : (
+              <Box sx={{ px: 1.5, py: 0.9, border: '1px solid #bfdbfe', borderRadius: 1.5, bgcolor: '#ffffff' }}>
+                <Typography sx={{ fontSize: 10.5, fontWeight: 800, color: '#64748b', textTransform: 'uppercase' }}>
+                  {props.reposicionProfileKey === 'docente_medio_tiempo'
+                    ? '20 horas semanales'
+                    : props.reposicionProfileKey === 'docente_tiempo_completo'
+                      ? '40 horas semanales'
+                    : 'Jornada diaria según contrato'}
+                </Typography>
+                <Typography sx={{ mt: 0.2, fontSize: 14, fontWeight: 800, color: '#173f78' }}>
+                  {props.reposicionProfileKey === 'docente_medio_tiempo'
+                    ? '1 día equivale a 4 horas'
+                    : props.reposicionProfileKey === 'docente_tiempo_completo'
+                      ? '1 día equivale a 8 horas'
+                    : formatMinutes(props.reposicionDailyMinutes)}
+                </Typography>
+              </Box>
+            )}
+          </Box>
+          <Box sx={{ p: { xs: 1.5, sm: 2 }, display: 'grid', gridTemplateColumns: { xs: '1fr', sm: 'repeat(2, minmax(0, 1fr))', md: 'minmax(180px, 0.8fr) minmax(180px, 0.8fr) minmax(230px, 1fr)' }, gap: 1.5, alignItems: 'center' }}>
+            <TextField
+              sx={props.inputSx}
+              fullWidth
+              size="small"
+              required
+              type="number"
+              label="Horas solicitadas"
+              InputLabelProps={{ shrink: true }}
+              inputProps={{ min: 0, step: 1 }}
+              value={props.form.salida.tiempoReponerHoras ?? ''}
+              onChange={(e) => props.update('salida', 'tiempoReponerHoras', e.target.value.replace(/[^0-9]/g, ''))}
+            />
+            <TextField
+              sx={props.inputSx}
+              fullWidth
+              size="small"
+              required
+              type="number"
+              label="Minutos solicitados"
+              InputLabelProps={{ shrink: true }}
+              inputProps={{ min: 0, max: 59, step: 1 }}
+              value={props.form.salida.tiempoReponerMinutos ?? ''}
+              onChange={(e) => {
+                const clean = e.target.value.replace(/[^0-9]/g, '');
+                props.update('salida', 'tiempoReponerMinutos', clean === '' ? '' : String(Math.min(59, Number(clean))));
+              }}
+            />
+            <Box sx={{ px: 1.5, py: 1, borderRadius: 1.5, bgcolor: '#eaf2ff', color: '#173f78', gridColumn: { xs: '1', sm: '1 / -1', md: 'auto' } }}>
+              <Typography sx={{ fontSize: 11, fontWeight: 800, textTransform: 'uppercase' }}>
+                Equivalencia del permiso
+              </Typography>
+              <Typography sx={{ mt: 0.25, fontSize: 15, fontWeight: 800 }}>
+                {formatEquivalentTime(props.reposicionTotalMinutes, props.reposicionDailyMinutes)}
+              </Typography>
+            </Box>
+          </Box>
+        </Box>
+      )}
+    </>
   );
 };
 

@@ -1,7 +1,7 @@
 import React, { useMemo } from 'react';
 import { Box, InputAdornment, MenuItem, Radio, TextField, Typography } from '@mui/material';
 
-const DuracionSelector = ({ salida, fieldSx, onChange }) => {
+const DuracionSelector = ({ salida, fieldSx, locked = false, onChange }) => {
   const options = useMemo(() => {
     const isElectoral = ['jurado_votacion', 'sufragante'].includes(salida.tipo);
     const isOnlyHalfDay = isElectoral || ['entierro_companero', 'obligaciones_escolares'].includes(salida.tipo);
@@ -18,6 +18,7 @@ const DuracionSelector = ({ salida, fieldSx, onChange }) => {
   }, [salida.tipo]);
 
   const selectDuration = (value) => {
+    if (locked) return;
     onChange('duracionTipo', value);
     onChange('duracionDias', value === 'menos_media_jornada' ? 0 : (value === '1_2_dias' ? 1 : 3));
   };
@@ -41,12 +42,13 @@ const DuracionSelector = ({ salida, fieldSx, onChange }) => {
                 border: '2px solid',
                 borderColor: selected ? '#2563eb' : '#cbd5e1',
                 bgcolor: selected ? '#eff6ff' : '#ffffff',
-                cursor: 'pointer',
+                cursor: locked ? 'default' : 'pointer',
                 display: 'flex',
                 alignItems: 'center',
                 gap: 1.5,
                 transition: 'all 0.2s',
-                '&:hover': { borderColor: '#2563eb', bgcolor: selected ? '#eff6ff' : '#f8fafc' }
+                opacity: locked && !selected ? 0.72 : 1,
+                '&:hover': locked ? {} : { borderColor: '#2563eb', bgcolor: selected ? '#eff6ff' : '#f8fafc' }
               }}
             >
               <Radio checked={selected} size="small" sx={{ p: 0 }} color="primary" />
@@ -65,6 +67,7 @@ const DuracionSelector = ({ salida, fieldSx, onChange }) => {
             label="Digite la cantidad de dias a solicitar *"
             value={salida.duracionDias}
             onChange={(e) => onChange('duracionDias', parseInt(e.target.value, 10))}
+            disabled={locked}
           >
             <MenuItem value={1}>1 dia</MenuItem>
             <MenuItem value={2}>2 dias</MenuItem>
@@ -78,6 +81,7 @@ const DuracionSelector = ({ salida, fieldSx, onChange }) => {
             type="number"
             label="Digite la cantidad de dias a solicitar *"
             value={salida.duracionDias || ''}
+            disabled={locked}
             onChange={(e) => {
               const value = parseInt(e.target.value, 10);
               onChange('duracionDias', Number.isNaN(value) ? '' : value);
