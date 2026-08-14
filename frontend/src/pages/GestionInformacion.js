@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import ReactDOM from 'react-dom';
 import InfraestructuraFisicaDashboard from '../components/infraestructura/InfraestructuraFisicaDashboard';
 import ViaticosGestionDashboard from '../components/viaticos/ViaticosGestionDashboard';
+import ContextoExternoDashboardPanel from '../components/contextoExterno/ContextoExternoDashboardPanel';
 import {
   Box,
   Paper,
@@ -16801,7 +16802,9 @@ const renderCategoryBars = (items = [], options = {}) => {
         />
       );
     }
-    if (poblacionalPanel === 'contexto_externo_estadistica') return renderContextoExternoDashboardPanel();
+    if (poblacionalPanel === 'contexto_externo_estadistica') {
+      return <ContextoExternoDashboardPanel onBack={() => setPoblacionalPanel('contexto_externo_landing')} />;
+    }
     if (poblacionalPanel === 'empleabilidad') return renderEmpleabilidadDashboardPanel();
     if (poblacionalPanel === 'resumen_estadistico') return renderResumenEstadisticoPanel();
     if (poblacionalPanel === 'saber_pro') {
