@@ -350,17 +350,17 @@ export default function ContextoExternoDashboardPanel({ onBack }) {
           />
         </Box>
 
-        {/* Title Bar in Rich Executive UNICESMAG Deep Blue */}
+        {/* Title Bar in Soft Elegant Executive Blue */}
         <Box
           sx={{
-            background: 'linear-gradient(135deg, #0b1f3a 0%, #003399 55%, #1d4ed8 100%)',
+            background: 'linear-gradient(135deg, #1e3a8a 0%, #2563eb 100%)',
             color: '#ffffff',
-            py: 2.2,
+            py: 2,
             px: 3,
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'space-between',
-            boxShadow: 'inset 0 -2px 10px rgba(0,0,0,0.15)'
+            boxShadow: 'inset 0 -2px 10px rgba(0,0,0,0.1)'
           }}
         >
           <Stack direction="row" spacing={2} alignItems="center">
@@ -370,10 +370,10 @@ export default function ContextoExternoDashboardPanel({ onBack }) {
               </IconButton>
             )}
             <Box>
-              <Typography variant="h6" sx={{ fontWeight: 900, textTransform: 'uppercase', letterSpacing: 1.1, fontSize: { xs: 16, md: 21 }, color: '#ffffff', textShadow: '0 2px 4px rgba(0,0,0,0.3)' }}>
+              <Typography variant="h6" sx={{ fontWeight: 900, textTransform: 'uppercase', letterSpacing: 1, fontSize: { xs: 16, md: 20 }, color: '#ffffff' }}>
                 OFERTA REGIONAL DE PROGRAMAS ACADÉMICOS SIMILARES
               </Typography>
-              <Typography variant="caption" sx={{ color: '#fde047', fontWeight: 800, fontSize: 13, letterSpacing: 0.5 }}>
+              <Typography variant="caption" sx={{ color: '#ffffff', fontWeight: 800, fontSize: 13, opacity: 0.95 }}>
                 Sistema de Gestión e Inteligencia de Información — UNICESMAG
               </Typography>
             </Box>
@@ -385,10 +385,10 @@ export default function ContextoExternoDashboardPanel({ onBack }) {
               color: '#ffffff',
               fontWeight: 900,
               px: 2,
-              py: 0.6,
-              fontSize: 13.5,
+              py: 0.5,
+              fontSize: 13,
               border: '1px solid rgba(255,255,255,0.4)',
-              boxShadow: '0 4px 12px rgba(0,0,0,0.2)'
+              boxShadow: '0 2px 8px rgba(0,0,0,0.12)'
             }}
           />
         </Box>
@@ -656,8 +656,8 @@ export default function ContextoExternoDashboardPanel({ onBack }) {
                       </Box>
 
                       <Paper elevation={0} sx={{ border: '2px solid #003399', borderRadius: 3, bgcolor: '#ffffff', p: 1.8, pt: 3.2 }}>
-                        <Box sx={{ bgcolor: '#003399', color: '#fff', borderRadius: 2, textAlign: 'center', py: 0.6, mb: 1.5 }}>
-                          <Typography variant="subtitle2" sx={{ fontWeight: 900, fontSize: 13 }}>
+                        <Box sx={{ bgcolor: '#003399', color: '#ffffff', borderRadius: 2, textAlign: 'center', py: 0.6, mb: 1.5 }}>
+                          <Typography variant="subtitle2" sx={{ fontWeight: 900, fontSize: 13, color: '#ffffff' }}>
                             Reconocimiento MEN
                           </Typography>
                         </Box>
@@ -704,8 +704,8 @@ export default function ContextoExternoDashboardPanel({ onBack }) {
                       </Box>
 
                       <Paper elevation={0} sx={{ border: '2px solid #2e7d32', borderRadius: 3, bgcolor: '#ffffff', p: 1.8, pt: 3.2 }}>
-                        <Box sx={{ bgcolor: '#2e7d32', color: '#fff', borderRadius: 2, textAlign: 'center', py: 0.6, mb: 1.5 }}>
-                          <Typography variant="subtitle2" sx={{ fontWeight: 900, fontSize: 13 }}>
+                        <Box sx={{ bgcolor: '#2e7d32', color: '#ffffff', borderRadius: 2, textAlign: 'center', py: 0.6, mb: 1.5 }}>
+                          <Typography variant="subtitle2" sx={{ fontWeight: 900, fontSize: 13, color: '#ffffff' }}>
                             Sector
                           </Typography>
                         </Box>
@@ -752,8 +752,8 @@ export default function ContextoExternoDashboardPanel({ onBack }) {
                       </Box>
 
                       <Paper elevation={0} sx={{ border: '2px solid #6a1b9a', borderRadius: 3, bgcolor: '#ffffff', p: 1.8, pt: 3.2 }}>
-                        <Box sx={{ bgcolor: '#6a1b9a', color: '#fff', borderRadius: 2, textAlign: 'center', py: 0.6, mb: 1.5 }}>
-                          <Typography variant="subtitle2" sx={{ fontWeight: 900, fontSize: 13 }}>
+                        <Box sx={{ bgcolor: '#6a1b9a', color: '#ffffff', borderRadius: 2, textAlign: 'center', py: 0.6, mb: 1.5 }}>
+                          <Typography variant="subtitle2" sx={{ fontWeight: 900, fontSize: 13, color: '#ffffff' }}>
                             Modalidades
                           </Typography>
                         </Box>
@@ -812,8 +812,8 @@ export default function ContextoExternoDashboardPanel({ onBack }) {
                       </Box>
 
                       <Paper elevation={0} sx={{ border: '2px solid #e65100', borderRadius: 3, bgcolor: '#ffffff', p: 1.8, pt: 3.2 }}>
-                        <Box sx={{ bgcolor: '#e65100', color: '#fff', borderRadius: 2, textAlign: 'center', py: 0.6, mb: 1.5 }}>
-                          <Typography variant="subtitle2" sx={{ fontWeight: 900, fontSize: 13 }}>
+                        <Box sx={{ bgcolor: '#e65100', color: '#ffffff', borderRadius: 2, textAlign: 'center', py: 0.6, mb: 1.5 }}>
+                          <Typography variant="subtitle2" sx={{ fontWeight: 900, fontSize: 13, color: '#ffffff' }}>
                             Rango Créditos Académicos
                           </Typography>
                         </Box>
@@ -866,8 +866,8 @@ export default function ContextoExternoDashboardPanel({ onBack }) {
                       </Box>
 
                       <Paper elevation={0} sx={{ border: '2px solid #00838f', borderRadius: 3, bgcolor: '#ffffff', p: 1.8, pt: 3.2 }}>
-                        <Box sx={{ bgcolor: '#00838f', color: '#fff', borderRadius: 2, textAlign: 'center', py: 0.6, mb: 1.5 }}>
-                          <Typography variant="subtitle2" sx={{ fontWeight: 900, fontSize: 13 }}>
+                        <Box sx={{ bgcolor: '#00838f', color: '#ffffff', borderRadius: 2, textAlign: 'center', py: 0.6, mb: 1.5 }}>
+                          <Typography variant="subtitle2" sx={{ fontWeight: 900, fontSize: 13, color: '#ffffff' }}>
                             Nº semestres
                           </Typography>
                         </Box>
