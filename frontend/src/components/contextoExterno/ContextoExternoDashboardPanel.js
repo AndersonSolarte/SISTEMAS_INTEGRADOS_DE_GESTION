@@ -312,15 +312,15 @@ export default function ContextoExternoDashboardPanel({ onBack }) {
 
   return (
     <Stack spacing={2.5} sx={{ width: '100%', pb: 6 }}>
-      {/* Top Header Banner — Clean Light Pastel Style */}
+      {/* Top Header Banner — Executive UNICESMAG Blue Style */}
       <Paper
         elevation={0}
         sx={{
           p: 0,
           borderRadius: 3.5,
           overflow: 'hidden',
-          border: '1px solid #e2e8f0',
-          boxShadow: '0 4px 20px rgba(15, 23, 42, 0.05)',
+          border: '1px solid #cbd5e1',
+          boxShadow: '0 8px 24px rgba(0, 51, 153, 0.15)',
           bgcolor: '#ffffff'
         }}
       >
@@ -336,44 +336,44 @@ export default function ContextoExternoDashboardPanel({ onBack }) {
             overflow: 'hidden',
             py: 1.5,
             px: 2,
-            borderBottom: '1px solid #f1f5f9'
+            borderBottom: '2px solid #e2e8f0'
           }}
         >
           <img
             src={encabezadoCorreosImg}
             alt="Encabezado Institucional UNICESMAG"
             style={{
-              maxHeight: 90,
+              maxHeight: 95,
               maxWidth: '100%',
               objectFit: 'contain'
             }}
           />
         </Box>
 
-        {/* Title Bar in Soft Pastel Slate/Blue */}
+        {/* Title Bar in Rich Executive UNICESMAG Deep Blue */}
         <Box
           sx={{
-            background: 'linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%)',
-            color: '#0f172a',
-            py: 2,
+            background: 'linear-gradient(135deg, #0b1f3a 0%, #003399 55%, #1d4ed8 100%)',
+            color: '#ffffff',
+            py: 2.2,
             px: 3,
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'space-between',
-            borderBottom: '1px solid #e2e8f0'
+            boxShadow: 'inset 0 -2px 10px rgba(0,0,0,0.15)'
           }}
         >
           <Stack direction="row" spacing={2} alignItems="center">
             {onBack && (
-              <IconButton onClick={onBack} sx={{ color: '#0f172a', bgcolor: '#ffffff', border: '1px solid #cbd5e1', '&:hover': { bgcolor: '#e2e8f0' } }}>
+              <IconButton onClick={onBack} sx={{ color: '#ffffff', bgcolor: 'rgba(255,255,255,0.18)', border: '1px solid rgba(255,255,255,0.3)', '&:hover': { bgcolor: 'rgba(255,255,255,0.3)' } }}>
                 <ArrowBackRoundedIcon />
               </IconButton>
             )}
             <Box>
-              <Typography variant="h6" sx={{ fontWeight: 900, textTransform: 'uppercase', letterSpacing: 0.8, fontSize: { xs: 16, md: 20 }, color: '#0f172a' }}>
+              <Typography variant="h6" sx={{ fontWeight: 900, textTransform: 'uppercase', letterSpacing: 1.1, fontSize: { xs: 16, md: 21 }, color: '#ffffff', textShadow: '0 2px 4px rgba(0,0,0,0.3)' }}>
                 OFERTA REGIONAL DE PROGRAMAS ACADÉMICOS SIMILARES
               </Typography>
-              <Typography variant="caption" sx={{ color: '#0284c7', fontWeight: 800, fontSize: 13 }}>
+              <Typography variant="caption" sx={{ color: '#fde047', fontWeight: 800, fontSize: 13, letterSpacing: 0.5 }}>
                 Sistema de Gestión e Inteligencia de Información — UNICESMAG
               </Typography>
             </Box>
@@ -381,20 +381,20 @@ export default function ContextoExternoDashboardPanel({ onBack }) {
           <Chip
             label="Contexto Externo"
             sx={{
-              bgcolor: '#e0f2fe',
-              color: '#0369a1',
+              bgcolor: 'rgba(255,255,255,0.2)',
+              color: '#ffffff',
               fontWeight: 900,
-              px: 1.8,
-              py: 0.5,
-              fontSize: 13,
-              border: '1px solid #bae6fd',
-              boxShadow: '0 2px 6px rgba(2, 132, 199, 0.08)'
+              px: 2,
+              py: 0.6,
+              fontSize: 13.5,
+              border: '1px solid rgba(255,255,255,0.4)',
+              boxShadow: '0 4px 12px rgba(0,0,0,0.2)'
             }}
           />
         </Box>
 
         {/* Main Full-Width Segment Cards Navigation */}
-        <Box sx={{ p: 1.5, bgcolor: '#f8fafc' }}>
+        <Box sx={{ p: 1.8, bgcolor: '#f8fafc' }}>
           <Tabs
             value={mainTab}
             onChange={(_, val) => setMainTab(val)}
@@ -406,20 +406,21 @@ export default function ContextoExternoDashboardPanel({ onBack }) {
               '& .MuiTab-root': {
                 textTransform: 'none',
                 fontWeight: 900,
-                fontSize: 15,
-                minHeight: 52,
+                fontSize: 15.5,
+                minHeight: 54,
                 borderRadius: 2.5,
-                color: '#64748b',
+                color: '#475569',
                 bgcolor: '#ffffff',
-                border: '1px solid #e2e8f0',
-                transition: 'all 0.2s ease',
-                '&:hover': { bgcolor: '#f1f5f9' }
+                border: '1.5px solid #cbd5e1',
+                boxShadow: '0 2px 6px rgba(0,0,0,0.04)',
+                transition: 'all 0.25s ease',
+                '&:hover': { bgcolor: '#f1f5f9', transform: 'translateY(-1px)' }
               },
               '& .MuiTab-root.Mui-selected': {
-                color: mainTab === 0 ? '#1d4ed8' : '#15803d',
-                background: mainTab === 0 ? 'linear-gradient(135deg, #eff6ff 0%, #dbeafe 100%)' : 'linear-gradient(135deg, #f0fdf4 0%, #dcfce7 100%)',
-                border: mainTab === 0 ? '2px solid #93c5fd' : '2px solid #86efac',
-                boxShadow: mainTab === 0 ? '0 4px 14px rgba(59, 130, 246, 0.15)' : '0 4px 14px rgba(34, 197, 94, 0.15)'
+                color: '#ffffff !important',
+                background: mainTab === 0 ? 'linear-gradient(135deg, #003399 0%, #1d4ed8 100%)' : 'linear-gradient(135deg, #059669 0%, #10b981 100%)',
+                border: 'none',
+                boxShadow: mainTab === 0 ? '0 6px 20px rgba(0, 51, 153, 0.35)' : '0 6px 20px rgba(5, 150, 105, 0.35)'
               }
             }}
           >
