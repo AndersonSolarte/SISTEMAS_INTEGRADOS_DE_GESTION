@@ -564,37 +564,36 @@ export default function ContextoExternoDashboardPanel({ onBack }) {
           {/* ========================================================================= */}
           {visualStyle === 'mindmap' && (
             <Paper elevation={0} sx={{ p: { xs: 2, md: 3 }, border: '1px solid #cbd5e1', borderRadius: 4, bgcolor: '#ffffff', overflow: 'hidden' }}>
-              <Box sx={{ width: '100%', minHeight: 640, position: 'relative', display: 'flex', justifyContent: 'center', alignItems: 'center' }}>
-                
-                {/* SVG Connecting Lines Layer */}
-                <svg style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', pointerEvents: 'none', zIndex: 1 }}>
-                  {/* Top-Left: Reconocimiento MEN (Blue #003399) */}
-                  <path d="M 470 320 Q 370 140 280 140" stroke="#003399" strokeWidth="3.5" fill="none" />
-                  <circle cx="390" cy="230" r="5" fill="#003399" />
-                  <circle cx="280" cy="140" r="5" fill="#003399" />
+              <Box sx={{ width: '100%', minHeight: 640, display: 'flex', justifyContent: 'center', alignItems: 'center' }}>
+                <Box sx={{ width: 940, height: 620, position: 'relative' }}>
+                  
+                  {/* SVG Connecting Lines Layer - Perfectly Aligned inside 940x620 Box */}
+                  <svg style={{ position: 'absolute', top: 0, left: 0, width: 940, height: 620, pointerEvents: 'none', zIndex: 1 }}>
+                    {/* Top-Left: Reconocimiento MEN (Blue #003399) */}
+                    <path d="M 405 245 Q 345 190 280 140" stroke="#003399" strokeWidth="3.5" fill="none" strokeDasharray="none" />
+                    <circle cx="405" cy="245" r="5" fill="#003399" />
+                    <circle cx="280" cy="140" r="5" fill="#003399" />
 
-                  {/* Top-Right: Sector (Green #2e7d32) */}
-                  <path d="M 470 320 Q 570 140 660 140" stroke="#2e7d32" strokeWidth="3.5" fill="none" />
-                  <circle cx="550" cy="230" r="5" fill="#2e7d32" />
-                  <circle cx="660" cy="140" r="5" fill="#2e7d32" />
+                    {/* Top-Right: Sector (Green #2e7d32) */}
+                    <path d="M 535 245 Q 595 190 660 140" stroke="#2e7d32" strokeWidth="3.5" fill="none" />
+                    <circle cx="535" cy="245" r="5" fill="#2e7d32" />
+                    <circle cx="660" cy="140" r="5" fill="#2e7d32" />
 
-                  {/* Middle-Left: Modalidades (Purple #6a1b9a) */}
-                  <path d="M 470 320 Q 350 320 280 340" stroke="#6a1b9a" strokeWidth="3.5" fill="none" />
-                  <circle cx="365" cy="320" r="5" fill="#6a1b9a" />
-                  <circle cx="280" cy="340" r="5" fill="#6a1b9a" />
+                    {/* Middle-Left: Modalidades (Purple #6a1b9a) */}
+                    <path d="M 376 310 Q 330 310 280 335" stroke="#6a1b9a" strokeWidth="3.5" fill="none" />
+                    <circle cx="376" cy="310" r="5" fill="#6a1b9a" />
+                    <circle cx="280" cy="335" r="5" fill="#6a1b9a" />
 
-                  {/* Middle-Right: Rango Créditos (Orange #e65100) */}
-                  <path d="M 470 320 Q 590 320 660 340" stroke="#e65100" strokeWidth="3.5" fill="none" />
-                  <circle cx="575" cy="320" r="5" fill="#e65100" />
-                  <circle cx="660" cy="340" r="5" fill="#e65100" />
+                    {/* Middle-Right: Rango Créditos (Orange #e65100) */}
+                    <path d="M 564 310 Q 610 310 660 335" stroke="#e65100" strokeWidth="3.5" fill="none" />
+                    <circle cx="564" cy="310" r="5" fill="#e65100" />
+                    <circle cx="660" cy="335" r="5" fill="#e65100" />
 
-                  {/* Bottom-Center: N° Semestres (Teal #00838f) */}
-                  <path d="M 470 320 L 470 470" stroke="#00838f" strokeWidth="3.5" fill="none" />
-                  <circle cx="470" cy="395" r="5" fill="#00838f" />
-                  <circle cx="470" cy="470" r="5" fill="#00838f" />
-                </svg>
-
-                <Box sx={{ width: 940, height: 620, position: 'relative', zIndex: 2 }}>
+                    {/* Bottom-Center: N° Semestres (Teal #00838f) */}
+                    <path d="M 470 404 L 470 460" stroke="#00838f" strokeWidth="3.5" fill="none" />
+                    <circle cx="470" cy="404" r="5" fill="#00838f" />
+                    <circle cx="470" cy="460" r="5" fill="#00838f" />
+                  </svg>
                   
                   {/* CENTER NODE: Total programas */}
                   <Box
