@@ -199,6 +199,22 @@ export default function ContextoExternoDashboardPanel({ onBack }) {
     };
   }, [filteredOferta]);
 
+  // Program summary table calculation matching user screenshot
+  const programSummary = useMemo(() => {
+    const map = {};
+    filteredOferta.forEach((r) => {
+      const prog = r.programa || 'NO ESPECIFICADO';
+      map[prog] = (map[prog] || 0) + 1;
+    });
+    return Object.entries(map)
+      .map(([programa, total]) => ({ programa, total }))
+      .sort((a, b) => b.total - a.total);
+  }, [filteredOferta]);
+
+  const totalProgramSum = useMemo(() => {
+    return programSummary.reduce((acc, curr) => acc + curr.total, 0);
+  }, [programSummary]);
+
   // Municipio summary table
   const municipioSummary = useMemo(() => {
     const map = {};
@@ -550,14 +566,43 @@ export default function ContextoExternoDashboardPanel({ onBack }) {
             </Stack>
           </Paper>
 
-          {/* Search Result Summary Chip */}
-          <Paper elevation={0} sx={{ p: 1.5, px: 2.5, bgcolor: '#f0f9ff', border: '1px solid #bae6fd', borderRadius: 2.5 }}>
-            <Stack direction="row" spacing={1.5} alignItems="center" justifyContent="space-between">
-              <Typography variant="body2" sx={{ fontWeight: 800, color: '#0369a1' }}>
-                Filtro de Programas Activo: {searchKeyword ? `"${searchKeyword}"` : 'Todos los programas'} — Total Coincidentes: <strong>{ofertaMetrics.total}</strong>
-              </Typography>
-              <Chip size="small" label={`${ofertaMetrics.total} Programas Analizados`} color="primary" sx={{ fontWeight: 900 }} />
-            </Stack>
+          {/* Search Result Summary Chip & Program Summary Table */}
+          <Paper elevation={0} sx={{ border: '1px solid #001b44', borderRadius: 2.5, overflow: 'hidden', bgcolor: '#ffffff', boxShadow: '0 4px 12px rgba(0,27,68,0.08)' }}>
+            <TableContainer sx={{ maxHeight: 240 }}>
+              <Table stickyHeader size="small">
+                <TableHead>
+                  <TableRow>
+                    <TableCell sx={{ bgcolor: '#001b44', color: '#ffffff', fontWeight: 900, fontSize: 13, textTransform: 'uppercase', py: 1.2 }}>
+                      PROGRAMAS ACADÉMICOS ANALIZADOS
+                    </TableCell>
+                    <TableCell align="right" sx={{ bgcolor: '#001b44', color: '#ffffff', fontWeight: 900, fontSize: 13, textTransform: 'uppercase', width: 140, py: 1.2 }}>
+                      TOTAL ▼
+                    </TableCell>
+                  </TableRow>
+                </TableHead>
+                <TableBody>
+                  {programSummary.map((item, index) => (
+                    <TableRow key={item.programa} sx={{ bgcolor: index % 2 === 0 ? '#ffffff' : '#f8fafc', '&:hover': { bgcolor: '#f1f5f9' } }}>
+                      <TableCell sx={{ fontWeight: 700, fontSize: 12.5, color: '#1e293b', py: 0.9 }}>
+                        {item.programa}
+                      </TableCell>
+                      <TableCell align="right" sx={{ fontWeight: 900, fontSize: 13, color: '#001b44', py: 0.9 }}>
+                        {item.total}
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                  {/* Total Summary Row */}
+                  <TableRow sx={{ bgcolor: '#f1f5f9', borderTop: '2px solid #001b44' }}>
+                    <TableCell sx={{ fontWeight: 900, fontSize: 13.5, color: '#001b44' }}>
+                      Total
+                    </TableCell>
+                    <TableCell align="right" sx={{ fontWeight: 900, fontSize: 14, color: '#001b44' }}>
+                      {totalProgramSum}
+                    </TableCell>
+                  </TableRow>
+                </TableBody>
+              </Table>
+            </TableContainer>
           </Paper>
 
           {/* ========================================================================= */}
