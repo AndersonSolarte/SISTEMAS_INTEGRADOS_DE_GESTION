@@ -214,7 +214,8 @@ const runPythonCleanerPath = async ({ inputPath, outputPath, lista }) => {
     lista,
     reglas: activeRules
   }, {
-    timeout: timeoutMs
+    timeout: timeoutMs,
+    httpAgent
   });
 
   const data = response.data || {};
