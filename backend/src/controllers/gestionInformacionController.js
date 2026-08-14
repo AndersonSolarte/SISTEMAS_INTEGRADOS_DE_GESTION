@@ -46,6 +46,7 @@ const {
   Documento
 } = require('../models');
 const XLSX = require('xlsx');
+const ExcelJS = require('exceljs');
 const fs = require('fs');
 const mammoth = require('mammoth');
 const path = require('path');
@@ -1218,6 +1219,34 @@ const streamCsvFile = async ({ filePath, onHeader, onRow }) => {
     // Cede control periodicamente para evitar bloquear el event loop
     if (lineNumber % 2000 === 0) {
       await new Promise((resolve) => setImmediate(resolve));
+    }
+  }
+};
+
+const streamExcelXlsxFile = async ({ filePath, onSheet }) => {
+  const workbookReader = new ExcelJS.stream.xlsx.WorkbookReader(filePath, {
+    entries: 'emit',
+    sharedStrings: 'cache',
+    worksheets: 'emit'
+  });
+
+  for await (const worksheetReader of workbookReader) {
+    const sheetName = worksheetReader.name;
+    const matrix = [];
+    for await (const row of worksheetReader) {
+      const cells = (row.values || []).slice(1).map((val) => {
+        if (val === null || val === undefined) return '';
+        if (typeof val === 'object') {
+          if (val.result !== undefined) return String(val.result ?? '').trim();
+          if (val.text !== undefined) return String(val.text ?? '').trim();
+          if (val.richText) return val.richText.map((t) => t.text).join('').trim();
+        }
+        return String(val ?? '').trim();
+      });
+      matrix.push(cells);
+    }
+    if (matrix.length > 0) {
+      await onSheet({ sheetName, matrix });
     }
   }
 };
@@ -6984,22 +7013,28 @@ const importFromExcel = async (req, res) => {
     }
 
     if (!isCsvUpload) {
-      workbook = XLSX.readFile(req.file.path);
-      const validSheetCount = (workbook.SheetNames || [])
-        .map((name) => workbook.Sheets[name])
-        .filter((sheet) => Boolean(sheet && sheet['!ref']))
-        .length;
-      if (!validSheetCount) {
-        const isContextoSerieUpload = categoria === 'Poblacional'
-          && poblacionalConfig?.customImport === 'contexto_externo'
-          && contextoCargaConfig?.onlyType === 'serie';
+      try {
+        workbook = XLSX.readFile(req.file.path, { cellDates: false, cellStyles: false, cellFormulas: false, cellHTML: false, cellText: false });
+      } catch (_) {
+        workbook = { SheetNames: [] };
+      }
+      let sheetNames = (workbook?.SheetNames || []).filter((name) => Boolean(workbook?.Sheets?.[name] && workbook?.Sheets?.[name]['!ref']));
+      if (!sheetNames.length) {
+        try {
+          const workbookReader = new ExcelJS.stream.xlsx.WorkbookReader(req.file.path, { entries: 'emit' });
+          sheetNames = [];
+          for await (const worksheetReader of workbookReader) {
+            if (worksheetReader.name) sheetNames.push(worksheetReader.name);
+          }
+        } catch (_) {}
+      }
+      if (!sheetNames.length) {
         return res.status(400).json({
           success: false,
-          message: isContextoSerieUpload
-            ? 'No se pudo leer la hoja del archivo XLSX (archivo demasiado grande o no compatible). Para cargas masivas usa CSV UTF-8.'
-            : 'El archivo Excel no contiene hojas validas para procesar (posible archivo corrupto o plantilla incompleta).'
+          message: 'El archivo Excel no contiene hojas validas para procesar (posible archivo corrupto o plantilla incompleta).'
         });
       }
+      workbook = { SheetNames: sheetNames, Sheets: workbook?.Sheets || {} };
     }
 
     if (categoria === 'Saber Pro' && saberProConfig?.label === 'Resultados individuales' && isCsvUpload) {
@@ -7926,11 +7961,11 @@ const importFromExcel = async (req, res) => {
           result.hojasProcesadas.push({ hoja: sheetNameCsv, ...sheetResult });
         }
       } else {
-        for (const sheetName of Object.values(workbookSheetsByKey)) {
-        const worksheetCx = workbook.Sheets[sheetName];
-        if (!worksheetCx || !worksheetCx['!ref']) continue;
-        const matrix = XLSX.utils.sheet_to_json(worksheetCx, { header: 1, defval: null, blankrows: false });
-        const sheetMeta = readContextoMeta(matrix);
+        await streamExcelXlsxFile({
+          filePath: req.file.path,
+          onSheet: async ({ sheetName, matrix }) => {
+            if (normalizeHeader(sheetName) === 'REPORTE_NORMALIZACION') return;
+            const sheetMeta = readContextoMeta(matrix);
         const programaObjetivoStd = standardizeTextWithDictionary({
           value: sheetMeta.programaObjetivo,
           ambito: 'CONTEXTO_EXTERNO',
@@ -7980,12 +8015,12 @@ const importFromExcel = async (req, res) => {
         const isOfertaLike = ofertaSectorHeaderRowIndex >= 0 || programasHeaderRowIndex >= 0;
         const isSeriesLike = seriesHeaderRowIndex >= 0 || tabularHeaderRowIndex >= 0;
 
-        if (contextoCargaConfig?.onlyType === 'oferta' && !isOfertaLike) continue;
-        if (contextoCargaConfig?.onlyType === 'serie' && !isSeriesLike) continue;
+        if (contextoCargaConfig?.onlyType === 'oferta' && !isOfertaLike) return;
+        if (contextoCargaConfig?.onlyType === 'serie' && !isSeriesLike) return;
 
         if (ofertaSectorHeaderRowIndex >= 0) {
           const headerRowIndex = ofertaSectorHeaderRowIndex;
-          if (headerRowIndex < 0) continue;
+          if (headerRowIndex < 0) return;
           const headers = (matrix[headerRowIndex] || []).map((h) => String(h || '').trim());
           const headerIndex = headers.reduce((acc, h, i) => ({ ...acc, [normalizeHeader(h)]: i }), {});
           const rows = matrix.slice(headerRowIndex + 1);
@@ -8522,9 +8557,9 @@ const importFromExcel = async (req, res) => {
           await flushTabularBatches();
         } else {
           const headerRowIndex = seriesHeaderRowIndex;
-          if (headerRowIndex < 0) continue;
+          if (headerRowIndex < 0) return;
           const periodHeaders = (matrix[headerRowIndex] || []).slice(1).map((v) => String(v || '').trim()).filter(Boolean);
-          if (!periodHeaders.length) continue;
+          if (!periodHeaders.length) return;
 
           let currentSector = null;
           let currentIes = null;
@@ -8662,7 +8697,8 @@ const importFromExcel = async (req, res) => {
             result.hojasProcesadas.push({ hoja: sheetName, ...sheetResult });
           }
         }
-      }
+      });
+    }
 
       if (!result.total) {
         return res.status(400).json({ success: false, message: 'No se detectaron tablas validas para Contexto Externo en el archivo' });
