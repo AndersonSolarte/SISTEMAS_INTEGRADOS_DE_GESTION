@@ -1,21 +1,21 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import {
-  Box, Card, Paper, Typography, Stack, Grid, TextField, MenuItem, Button, Chip, CircularProgress,
-  Table, TableBody, TableCell, TableContainer, TableHead, TableRow, Tooltip, IconButton, Tabs, Tab
+  Box, Paper, Typography, Stack, Grid, TextField, MenuItem, Button, Chip,
+  Table, TableBody, TableCell, TableContainer, TableHead, TableRow, IconButton, Tabs, Tab
 } from '@mui/material';
 import SearchRoundedIcon from '@mui/icons-material/SearchRounded';
 import FilterAltRoundedIcon from '@mui/icons-material/FilterAltRounded';
 import DownloadRoundedIcon from '@mui/icons-material/DownloadRounded';
-import RefreshRoundedIcon from '@mui/icons-material/RefreshRounded';
 import SchoolRoundedIcon from '@mui/icons-material/SchoolRounded';
 import AccountBalanceRoundedIcon from '@mui/icons-material/AccountBalanceRounded';
 import GroupsRoundedIcon from '@mui/icons-material/GroupsRounded';
 import DevicesRoundedIcon from '@mui/icons-material/DevicesRounded';
 import CalendarMonthRoundedIcon from '@mui/icons-material/CalendarMonthRounded';
-import StyleRoundedIcon from '@mui/icons-material/StyleRounded';
 import LocationOnRoundedIcon from '@mui/icons-material/LocationOnRounded';
-import TrendingUpRoundedIcon from '@mui/icons-material/TrendingUpRounded';
 import ArrowBackRoundedIcon from '@mui/icons-material/ArrowBackRounded';
+import HubRoundedIcon from '@mui/icons-material/HubRounded';
+import HexagonRoundedIcon from '@mui/icons-material/HexagonRounded';
+import ViewModuleRoundedIcon from '@mui/icons-material/ViewModuleRounded';
 import gestionInformacionService from '../../services/gestionInformacionService';
 
 const normalizeStr = (str = '') =>
@@ -31,11 +31,11 @@ export default function ContextoExternoDashboardPanel({ onBack }) {
 
   const [loading, setLoading] = useState(false);
   const [rawRows, setRawRows] = useState([]);
-  const [visualStyle, setVisualStyle] = useState('mindmap'); // 'hex', 'mindmap', 'cards'
+  const [visualStyle, setVisualStyle] = useState('mindmap'); // 'mindmap', 'hex', 'cards'
 
   // Filters for Oferta Académica
   const [nivelFormacion, setNivelFormacion] = useState('TODOS');
-  const [searchKeyword, setSearchKeyword] = useState('DERECHO');
+  const [searchKeyword, setSearchKeyword] = useState('');
   const [selectedDepto, setSelectedDepto] = useState('TODOS');
   const [selectedMunicipio, setSelectedMunicipio] = useState('TODOS');
 
@@ -46,7 +46,6 @@ export default function ContextoExternoDashboardPanel({ onBack }) {
   const loadData = useCallback(async () => {
     setLoading(true);
     try {
-      // Fetch normalized rows for Contexto Externo
       const response = await gestionInformacionService.getNormalizadosContextoExterno();
       const rows = response?.data || response?.records || [];
       setRawRows(rows);
@@ -94,6 +93,7 @@ export default function ContextoExternoDashboardPanel({ onBack }) {
   // Filtered Oferta rows by keywords & Nivel
   const filteredOferta = useMemo(() => {
     const keywords = searchKeyword
+      .replace(/[,;]/g, ' ')
       .split(/\s+/)
       .map(normalizeStr)
       .filter((k) => k.length > 1);
@@ -232,6 +232,27 @@ export default function ContextoExternoDashboardPanel({ onBack }) {
     });
   }, [parsedPoblacionalRows, activePoblacionalBase, pobPeriodo, pobDepto]);
 
+  // Helper box for metric value input display
+  const ValueBox = ({ value, color = '#1e293b' }) => (
+    <Box
+      sx={{
+        minWidth: 44,
+        height: 25,
+        border: '1px solid #cbd5e1',
+        borderRadius: 1.5,
+        display: 'grid',
+        placeItems: 'center',
+        fontWeight: 900,
+        fontSize: 12.5,
+        color: color,
+        bgcolor: '#ffffff',
+        boxShadow: 'inset 0 1px 2px rgba(0,0,0,0.06)'
+      }}
+    >
+      {value}
+    </Box>
+  );
+
   return (
     <Stack spacing={2.5} sx={{ width: '100%', pb: 6 }}>
       {/* Top Header Banner */}
@@ -291,7 +312,7 @@ export default function ContextoExternoDashboardPanel({ onBack }) {
             <Stack direction="row" spacing={1} alignItems="center" sx={{ mb: 2 }}>
               <FilterAltRoundedIcon sx={{ color: '#0284c7' }} />
               <Typography variant="subtitle1" sx={{ fontWeight: 900, color: '#0f172a' }}>
-                Filtros Inteligentes de Programas Académicos Similares
+                Filtros de Búsqueda de Oferta Académica
               </Typography>
             </Stack>
 
@@ -319,7 +340,7 @@ export default function ContextoExternoDashboardPanel({ onBack }) {
                   fullWidth
                   size="small"
                   label="Búsqueda por Nombre / Palabras Clave"
-                  placeholder="Ej: DERECHO PENAL, ADMINISTRACION..."
+                  placeholder="Ej: DERECHO, PENAL, ADMINISTRACION..."
                   value={searchKeyword}
                   onChange={(e) => setSearchKeyword(e.target.value)}
                   InputProps={{
@@ -368,180 +389,165 @@ export default function ContextoExternoDashboardPanel({ onBack }) {
 
             {/* Visual Style Selector Toolbar */}
             <Stack direction="row" spacing={1.5} alignItems="center" justifyContent="space-between" sx={{ mt: 2.5, pt: 2, borderTop: '1px dashed #cbd5e1' }}>
-              <Stack direction="row" spacing={1} alignItems="center">
-                <StyleRoundedIcon sx={{ color: '#0f766e', fontSize: 20 }} />
-                <Typography variant="body2" sx={{ fontWeight: 800, color: '#334155' }}>
-                  Diseño Visual del Tablero:
-                </Typography>
-              </Stack>
+              <Typography variant="body2" sx={{ fontWeight: 800, color: '#334155' }}>
+                Estilo de Visualización del Esquema:
+              </Typography>
               <Stack direction="row" spacing={1}>
                 <Button
                   size="small"
                   variant={visualStyle === 'mindmap' ? 'contained' : 'outlined'}
                   onClick={() => setVisualStyle('mindmap')}
+                  startIcon={<HubRoundedIcon />}
                   sx={{ textTransform: 'none', fontWeight: 800, borderRadius: 2 }}
                 >
-                  🧠 Estilo 1: Mapa Radial (Mindmap)
+                  Mapa Radial (Mindmap con Enlaces)
                 </Button>
                 <Button
                   size="small"
                   variant={visualStyle === 'hex' ? 'contained' : 'outlined'}
                   onClick={() => setVisualStyle('hex')}
+                  startIcon={<HexagonRoundedIcon />}
                   sx={{ textTransform: 'none', fontWeight: 800, borderRadius: 2 }}
                 >
-                  ⬢ Estilo 2: Nodos Hexagonales
+                  Diagrama Nodos Hexagonales
                 </Button>
                 <Button
                   size="small"
                   variant={visualStyle === 'cards' ? 'contained' : 'outlined'}
                   onClick={() => setVisualStyle('cards')}
+                  startIcon={<ViewModuleRoundedIcon />}
                   sx={{ textTransform: 'none', fontWeight: 800, borderRadius: 2 }}
                 >
-                  📊 Estilo 3: Tarjetas Módulo
+                  Módulos de Tarjetas
                 </Button>
               </Stack>
             </Stack>
           </Paper>
 
-          {/* Keyword Search Summary Chip */}
+          {/* Search Result Summary Chip */}
           <Paper elevation={0} sx={{ p: 1.5, px: 2.5, bgcolor: '#f0f9ff', border: '1px solid #bae6fd', borderRadius: 2.5 }}>
             <Stack direction="row" spacing={1.5} alignItems="center" justifyContent="space-between">
               <Typography variant="body2" sx={{ fontWeight: 800, color: '#0369a1' }}>
-                Programas Académicos Analizados con coincidecia: <strong>"{searchKeyword}"</strong> — Total Encontrados: <strong>{ofertaMetrics.total}</strong>
+                Filtro de Programas Activo: {searchKeyword ? `"${searchKeyword}"` : 'Todos los programas'} — Total Coincidentes: <strong>{ofertaMetrics.total}</strong>
               </Typography>
-              <Chip size="small" label={`${ofertaMetrics.total} Programas Coincidentes`} color="primary" sx={{ fontWeight: 900 }} />
+              <Chip size="small" label={`${ofertaMetrics.total} Programas Analizados`} color="primary" sx={{ fontWeight: 900 }} />
             </Stack>
           </Paper>
 
           {/* ========================================================================= */}
-          {/* VARIANTE 1: RADIAL MAP / MINDMAP DESIGN (Imagen 2 de la solicitud) */}
+          {/* VARIANTE 1: RADIAL MAP / MINDMAP CON LÍNEAS DE CONEXIÓN SVG (Imagen 2) */}
           {/* ========================================================================= */}
           {visualStyle === 'mindmap' && (
-            <Paper elevation={0} sx={{ p: { xs: 2, md: 4 }, border: '1px solid #cbd5e1', borderRadius: 4, bgcolor: '#fafafa', position: 'relative' }}>
-              <Box sx={{ maxWidth: 900, mx: 'auto', position: 'relative' }}>
-                {/* Central Circle Node */}
+            <Paper elevation={0} sx={{ p: { xs: 2, md: 4 }, border: '1px solid #cbd5e1', borderRadius: 4, bgcolor: '#ffffff', position: 'relative', overflow: 'hidden' }}>
+              {/* SVG Connecting Lines Overlay */}
+              <svg style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', pointerEvents: 'none', zIndex: 1 }}>
+                {/* Curved paths from center node to surrounding cards */}
+                <path d="M 450 180 C 450 100, 250 130, 220 160" stroke="#1d4ed8" strokeWidth="2.5" fill="none" strokeDasharray="4 2" />
+                <path d="M 450 180 C 450 100, 650 130, 680 160" stroke="#15803d" strokeWidth="2.5" fill="none" strokeDasharray="4 2" />
+                <path d="M 450 180 C 300 180, 220 280, 220 320" stroke="#7e22ce" strokeWidth="2.5" fill="none" strokeDasharray="4 2" />
+                <path d="M 450 180 C 600 180, 680 280, 680 320" stroke="#c2410c" strokeWidth="2.5" fill="none" strokeDasharray="4 2" />
+                <path d="M 450 240 L 450 360" stroke="#0f766e" strokeWidth="2.5" fill="none" strokeDasharray="4 2" />
+
+                {/* Connection Anchor Dots */}
+                <circle cx="220" cy="160" r="5" fill="#1d4ed8" />
+                <circle cx="680" cy="160" r="5" fill="#15803d" />
+                <circle cx="220" cy="320" r="5" fill="#7e22ce" />
+                <circle cx="680" cy="320" r="5" fill="#c2410c" />
+                <circle cx="450" cy="360" r="5" fill="#0f766e" />
+              </svg>
+
+              <Box sx={{ maxWidth: 920, mx: 'auto', position: 'relative', zIndex: 2 }}>
+                {/* Central Circle Node (Total programas) */}
                 <Box
                   sx={{
-                    width: 200,
-                    height: 200,
+                    width: 170,
+                    height: 170,
                     borderRadius: '50%',
-                    background: 'linear-gradient(135deg, #ffffff 0%, #f1f5f9 100%)',
-                    border: '8px solid #0284c7',
-                    boxShadow: '0 10px 30px rgba(2, 132, 199, 0.25)',
+                    background: 'linear-gradient(135deg, #ffffff 0%, #f8fafc 100%)',
+                    border: '6px solid #0284c7',
+                    boxShadow: '0 8px 24px rgba(2, 132, 199, 0.22)',
                     mx: 'auto',
-                    my: 3,
+                    mb: 3,
                     display: 'flex',
                     flexDirection: 'column',
                     alignItems: 'center',
-                    justifyContent: 'center',
-                    position: 'relative',
-                    zIndex: 2
+                    justifyContent: 'center'
                   }}
                 >
-                  <Typography variant="body2" sx={{ fontWeight: 900, color: '#1e3a8a', textTransform: 'uppercase', letterSpacing: 0.5 }}>
+                  <Typography variant="caption" sx={{ fontWeight: 900, color: '#1e3a8a', textTransform: 'uppercase', letterSpacing: 0.5, fontSize: 11 }}>
                     Total programas
                   </Typography>
-                  <Typography variant="h3" sx={{ fontWeight: 900, color: '#0284c7', my: 0.5 }}>
+                  <Typography variant="h4" sx={{ fontWeight: 900, color: '#0284c7', my: 0.3 }}>
                     {ofertaMetrics.total}
                   </Typography>
-                  <Chip size="small" label="Programas Coincidentes" sx={{ bgcolor: '#e0f2fe', color: '#0369a1', fontWeight: 800, fontSize: 11 }} />
+                  <ValueBox value={ofertaMetrics.total} color="#0284c7" />
                 </Box>
 
-                {/* 5 Surrounding Radial Metric Cards */}
-                <Grid container spacing={3} sx={{ mt: 1 }}>
+                {/* Surrounding Radial Cards Container */}
+                <Grid container spacing={2.5}>
                   {/* Reconocimiento MEN */}
-                  <Grid item xs={12} sm={6} md={4}>
-                    <Card elevation={0} sx={{ border: '2px solid #1d4ed8', borderRadius: 3, bgcolor: '#fff', p: 2 }}>
-                      <Stack direction="row" spacing={1} alignItems="center" sx={{ mb: 1.5, pb: 1, borderBottom: '2px solid #1d4ed8' }}>
-                        <AccountBalanceRoundedIcon sx={{ color: '#1d4ed8' }} />
+                  <Grid item xs={12} sm={6}>
+                    <Paper elevation={0} sx={{ border: '2px solid #1d4ed8', borderRadius: 3, bgcolor: '#fff', p: 2, position: 'relative' }}>
+                      <Stack direction="row" spacing={1} alignItems="center" sx={{ mb: 1.5, pb: 0.8, borderBottom: '2px solid #1d4ed8' }}>
+                        <Box sx={{ p: 0.5, borderRadius: 1.5, bgcolor: '#dbeafe', color: '#1d4ed8', display: 'grid' }}>
+                          <AccountBalanceRoundedIcon fontSize="small" />
+                        </Box>
                         <Typography variant="subtitle2" sx={{ fontWeight: 900, color: '#1d4ed8' }}>
                           Reconocimiento MEN
                         </Typography>
                       </Stack>
                       <Stack spacing={1}>
                         <Stack direction="row" justifyContent="space-between" alignItems="center">
-                          <Typography variant="caption" sx={{ fontWeight: 700, color: '#475569' }}>
+                          <Typography variant="body2" sx={{ fontWeight: 700, color: '#475569', fontSize: 12.5 }}>
                             • Registro calificado
                           </Typography>
-                          <Chip size="small" label={ofertaMetrics.registroCalificado} sx={{ fontWeight: 900, bgcolor: '#f1f5f9' }} />
+                          <ValueBox value={ofertaMetrics.registroCalificado} />
                         </Stack>
                         <Stack direction="row" justifyContent="space-between" alignItems="center">
-                          <Typography variant="caption" sx={{ fontWeight: 700, color: '#475569' }}>
+                          <Typography variant="body2" sx={{ fontWeight: 700, color: '#475569', fontSize: 12.5 }}>
                             • Acreditación alta calidad
                           </Typography>
-                          <Chip size="small" label={ofertaMetrics.acreditacionAltaCalidad} color="primary" sx={{ fontWeight: 900 }} />
+                          <ValueBox value={ofertaMetrics.acreditacionAltaCalidad} color="#1d4ed8" />
                         </Stack>
                       </Stack>
-                    </Card>
+                    </Paper>
                   </Grid>
 
                   {/* Sector */}
-                  <Grid item xs={12} sm={6} md={4}>
-                    <Card elevation={0} sx={{ border: '2px solid #15803d', borderRadius: 3, bgcolor: '#fff', p: 2 }}>
-                      <Stack direction="row" spacing={1} alignItems="center" sx={{ mb: 1.5, pb: 1, borderBottom: '2px solid #15803d' }}>
-                        <GroupsRoundedIcon sx={{ color: '#15803d' }} />
+                  <Grid item xs={12} sm={6}>
+                    <Paper elevation={0} sx={{ border: '2px solid #15803d', borderRadius: 3, bgcolor: '#fff', p: 2, position: 'relative' }}>
+                      <Stack direction="row" spacing={1} alignItems="center" sx={{ mb: 1.5, pb: 0.8, borderBottom: '2px solid #15803d' }}>
+                        <Box sx={{ p: 0.5, borderRadius: 1.5, bgcolor: '#dcfce7', color: '#15803d', display: 'grid' }}>
+                          <GroupsRoundedIcon fontSize="small" />
+                        </Box>
                         <Typography variant="subtitle2" sx={{ fontWeight: 900, color: '#15803d' }}>
                           Sector
                         </Typography>
                       </Stack>
                       <Stack spacing={1}>
                         <Stack direction="row" justifyContent="space-between" alignItems="center">
-                          <Typography variant="caption" sx={{ fontWeight: 700, color: '#475569' }}>
+                          <Typography variant="body2" sx={{ fontWeight: 700, color: '#475569', fontSize: 12.5 }}>
                             • Público / Oficial
                           </Typography>
-                          <Chip size="small" label={ofertaMetrics.publico} color="success" sx={{ fontWeight: 900 }} />
+                          <ValueBox value={ofertaMetrics.publico} color="#15803d" />
                         </Stack>
                         <Stack direction="row" justifyContent="space-between" alignItems="center">
-                          <Typography variant="caption" sx={{ fontWeight: 700, color: '#475569' }}>
+                          <Typography variant="body2" sx={{ fontWeight: 700, color: '#475569', fontSize: 12.5 }}>
                             • Privado
                           </Typography>
-                          <Chip size="small" label={ofertaMetrics.privado} sx={{ fontWeight: 900, bgcolor: '#f1f5f9' }} />
+                          <ValueBox value={ofertaMetrics.privado} />
                         </Stack>
                       </Stack>
-                    </Card>
-                  </Grid>
-
-                  {/* Rango Créditos Académicos */}
-                  <Grid item xs={12} sm={6} md={4}>
-                    <Card elevation={0} sx={{ border: '2px solid #c2410c', borderRadius: 3, bgcolor: '#fff', p: 2 }}>
-                      <Stack direction="row" spacing={1} alignItems="center" sx={{ mb: 1.5, pb: 1, borderBottom: '2px solid #c2410c' }}>
-                        <SchoolRoundedIcon sx={{ color: '#c2410c' }} />
-                        <Typography variant="subtitle2" sx={{ fontWeight: 900, color: '#c2410c' }}>
-                          Rango Créditos Académicos
-                        </Typography>
-                      </Stack>
-                      <Stack spacing={1}>
-                        <Stack direction="row" justifyContent="space-between" alignItems="center">
-                          <Typography variant="caption" sx={{ fontWeight: 700, color: '#475569' }}>
-                            • N° créditos mínimo
-                          </Typography>
-                          <Typography variant="subtitle2" sx={{ fontWeight: 900, color: '#0f172a' }}>
-                            {ofertaMetrics.minCreditos}
-                          </Typography>
-                        </Stack>
-                        <Stack direction="row" justifyContent="space-between" alignItems="center">
-                          <Typography variant="caption" sx={{ fontWeight: 700, color: '#475569' }}>
-                            • N° créditos máximo
-                          </Typography>
-                          <Typography variant="subtitle2" sx={{ fontWeight: 900, color: '#0f172a' }}>
-                            {ofertaMetrics.maxCreditos}
-                          </Typography>
-                        </Stack>
-                        <Stack direction="row" justifyContent="space-between" alignItems="center">
-                          <Typography variant="caption" sx={{ fontWeight: 700, color: '#475569' }}>
-                            • Promedio de créditos
-                          </Typography>
-                          <Chip size="small" label={ofertaMetrics.avgCreditos} color="warning" sx={{ fontWeight: 900 }} />
-                        </Stack>
-                      </Stack>
-                    </Card>
+                    </Paper>
                   </Grid>
 
                   {/* Modalidades */}
-                  <Grid item xs={12} sm={6} md={6}>
-                    <Card elevation={0} sx={{ border: '2px solid #7e22ce', borderRadius: 3, bgcolor: '#fff', p: 2 }}>
-                      <Stack direction="row" spacing={1} alignItems="center" sx={{ mb: 1.5, pb: 1, borderBottom: '2px solid #7e22ce' }}>
-                        <DevicesRoundedIcon sx={{ color: '#7e22ce' }} />
+                  <Grid item xs={12} sm={6}>
+                    <Paper elevation={0} sx={{ border: '2px solid #7e22ce', borderRadius: 3, bgcolor: '#fff', p: 2, position: 'relative' }}>
+                      <Stack direction="row" spacing={1} alignItems="center" sx={{ mb: 1.5, pb: 0.8, borderBottom: '2px solid #7e22ce' }}>
+                        <Box sx={{ p: 0.5, borderRadius: 1.5, bgcolor: '#f3e8ff', color: '#7e22ce', display: 'grid' }}>
+                          <DevicesRoundedIcon fontSize="small" />
+                        </Box>
                         <Typography variant="subtitle2" sx={{ fontWeight: 900, color: '#7e22ce' }}>
                           Modalidades
                         </Typography>
@@ -549,68 +555,104 @@ export default function ContextoExternoDashboardPanel({ onBack }) {
                       <Grid container spacing={1}>
                         <Grid item xs={6}>
                           <Stack direction="row" justifyContent="space-between" alignItems="center">
-                            <Typography variant="caption" sx={{ fontWeight: 700, color: '#475569' }}>
+                            <Typography variant="body2" sx={{ fontWeight: 700, color: '#475569', fontSize: 12 }}>
                               • Presencial
                             </Typography>
-                            <Chip size="small" label={ofertaMetrics.presencial} color="secondary" sx={{ fontWeight: 900 }} />
+                            <ValueBox value={ofertaMetrics.presencial} color="#7e22ce" />
                           </Stack>
                         </Grid>
                         <Grid item xs={6}>
                           <Stack direction="row" justifyContent="space-between" alignItems="center">
-                            <Typography variant="caption" sx={{ fontWeight: 700, color: '#475569' }}>
+                            <Typography variant="body2" sx={{ fontWeight: 700, color: '#475569', fontSize: 12 }}>
                               • Virtual
                             </Typography>
-                            <Chip size="small" label={ofertaMetrics.virtual} sx={{ fontWeight: 900, bgcolor: '#f1f5f9' }} />
+                            <ValueBox value={ofertaMetrics.virtual} />
                           </Stack>
                         </Grid>
                         <Grid item xs={6}>
                           <Stack direction="row" justifyContent="space-between" alignItems="center">
-                            <Typography variant="caption" sx={{ fontWeight: 700, color: '#475569' }}>
+                            <Typography variant="body2" sx={{ fontWeight: 700, color: '#475569', fontSize: 12 }}>
                               • A distancia
                             </Typography>
-                            <Chip size="small" label={ofertaMetrics.aDistancia} sx={{ fontWeight: 900, bgcolor: '#f1f5f9' }} />
+                            <ValueBox value={ofertaMetrics.aDistancia} />
                           </Stack>
                         </Grid>
                         <Grid item xs={6}>
                           <Stack direction="row" justifyContent="space-between" alignItems="center">
-                            <Typography variant="caption" sx={{ fontWeight: 700, color: '#475569' }}>
+                            <Typography variant="body2" sx={{ fontWeight: 700, color: '#475569', fontSize: 12 }}>
                               • Dual
                             </Typography>
-                            <Chip size="small" label={ofertaMetrics.dual} sx={{ fontWeight: 900, bgcolor: '#f1f5f9' }} />
+                            <ValueBox value={ofertaMetrics.dual} />
                           </Stack>
                         </Grid>
                       </Grid>
-                    </Card>
+                    </Paper>
                   </Grid>
 
-                  {/* N° Semestres */}
-                  <Grid item xs={12} sm={6} md={6}>
-                    <Card elevation={0} sx={{ border: '2px solid #0f766e', borderRadius: 3, bgcolor: '#fff', p: 2 }}>
-                      <Stack direction="row" spacing={1} alignItems="center" sx={{ mb: 1.5, pb: 1, borderBottom: '2px solid #0f766e' }}>
-                        <CalendarMonthRoundedIcon sx={{ color: '#0f766e' }} />
+                  {/* Rango Créditos Académicos */}
+                  <Grid item xs={12} sm={6}>
+                    <Paper elevation={0} sx={{ border: '2px solid #c2410c', borderRadius: 3, bgcolor: '#fff', p: 2, position: 'relative' }}>
+                      <Stack direction="row" spacing={1} alignItems="center" sx={{ mb: 1.5, pb: 0.8, borderBottom: '2px solid #c2410c' }}>
+                        <Box sx={{ p: 0.5, borderRadius: 1.5, bgcolor: '#ffedd5', color: '#c2410c', display: 'grid' }}>
+                          <SchoolRoundedIcon fontSize="small" />
+                        </Box>
+                        <Typography variant="subtitle2" sx={{ fontWeight: 900, color: '#c2410c' }}>
+                          Rango Créditos Académicos
+                        </Typography>
+                      </Stack>
+                      <Stack spacing={1}>
+                        <Stack direction="row" justifyContent="space-between" alignItems="center">
+                          <Typography variant="body2" sx={{ fontWeight: 700, color: '#475569', fontSize: 12 }}>
+                            • N° créditos mínimo
+                          </Typography>
+                          <ValueBox value={ofertaMetrics.minCreditos} />
+                        </Stack>
+                        <Stack direction="row" justifyContent="space-between" alignItems="center">
+                          <Typography variant="body2" sx={{ fontWeight: 700, color: '#475569', fontSize: 12 }}>
+                            • N° créditos máximo
+                          </Typography>
+                          <ValueBox value={ofertaMetrics.maxCreditos} />
+                        </Stack>
+                        <Stack direction="row" justifyContent="space-between" alignItems="center">
+                          <Typography variant="body2" sx={{ fontWeight: 700, color: '#475569', fontSize: 12 }}>
+                            • Promedio de créditos
+                          </Typography>
+                          <ValueBox value={ofertaMetrics.avgCreditos} color="#c2410c" />
+                        </Stack>
+                      </Stack>
+                    </Paper>
+                  </Grid>
+
+                  {/* N° Semestres (Duración) */}
+                  <Grid item xs={12}>
+                    <Paper elevation={0} sx={{ border: '2px solid #0f766e', borderRadius: 3, bgcolor: '#fff', p: 2, position: 'relative' }}>
+                      <Stack direction="row" spacing={1} alignItems="center" sx={{ mb: 1.5, pb: 0.8, borderBottom: '2px solid #0f766e' }}>
+                        <Box sx={{ p: 0.5, borderRadius: 1.5, bgcolor: '#ccfbf1', color: '#0f766e', display: 'grid' }}>
+                          <CalendarMonthRoundedIcon fontSize="small" />
+                        </Box>
                         <Typography variant="subtitle2" sx={{ fontWeight: 900, color: '#0f766e' }}>
                           N° Semestres (Duración)
                         </Typography>
                       </Stack>
-                      <Grid container spacing={1}>
+                      <Grid container spacing={1.5}>
                         {Object.entries(ofertaMetrics.semestresMap).length === 0 ? (
                           <Typography variant="caption" sx={{ color: '#64748b', fontStyle: 'italic', px: 1 }}>
                             No hay información de semestres
                           </Typography>
                         ) : (
                           Object.entries(ofertaMetrics.semestresMap).map(([sem, cnt]) => (
-                            <Grid item xs={6} key={sem}>
+                            <Grid item xs={6} sm={3} key={sem}>
                               <Stack direction="row" justifyContent="space-between" alignItems="center">
-                                <Typography variant="caption" sx={{ fontWeight: 700, color: '#475569' }}>
+                                <Typography variant="body2" sx={{ fontWeight: 700, color: '#475569', fontSize: 12 }}>
                                   • {sem} semestres
                                 </Typography>
-                                <Chip size="small" label={cnt} sx={{ fontWeight: 900, bgcolor: '#ccfbf1', color: '#0f766e' }} />
+                                <ValueBox value={cnt} color="#0f766e" />
                               </Stack>
                             </Grid>
                           ))
                         )}
                       </Grid>
-                    </Card>
+                    </Paper>
                   </Grid>
                 </Grid>
               </Box>
@@ -618,12 +660,17 @@ export default function ContextoExternoDashboardPanel({ onBack }) {
           )}
 
           {/* ========================================================================= */}
-          {/* VARIANTE 2: LINEAR HEXAGON FLOW DIAGRAM (Imagen 3 de la solicitud) */}
+          {/* VARIANTE 2: LINEAR HEXAGON FLOW DIAGRAM CON LÍNEAS DE ENLACE (Imagen 3) */}
           {/* ========================================================================= */}
           {visualStyle === 'hex' && (
-            <Paper elevation={0} sx={{ p: { xs: 2, md: 3 }, border: '1px solid #cbd5e1', borderRadius: 4, bgcolor: '#ffffff' }}>
-              <Box sx={{ overflowX: 'auto', py: 2 }}>
-                <Grid container spacing={2} sx={{ minWidth: 850 }}>
+            <Paper elevation={0} sx={{ p: { xs: 2, md: 3 }, border: '1px solid #cbd5e1', borderRadius: 4, bgcolor: '#ffffff', position: 'relative', overflow: 'hidden' }}>
+              <Box sx={{ overflowX: 'auto', py: 2, position: 'relative' }}>
+                {/* Horizontal connecting SVG line */}
+                <svg style={{ position: 'absolute', top: 40, left: 0, width: '100%', height: 60, pointerEvents: 'none', zIndex: 1 }}>
+                  <line x1="50" y1="28" x2="850" y2="28" stroke="#cbd5e1" strokeWidth="4" />
+                </svg>
+
+                <Grid container spacing={2} sx={{ minWidth: 850, position: 'relative', zIndex: 2 }}>
                   {/* Reconocimiento MEN */}
                   <Grid item xs={2.4}>
                     <Box sx={{ textAlign: 'center', mb: 1.5 }}>
@@ -637,33 +684,28 @@ export default function ContextoExternoDashboardPanel({ onBack }) {
                           color: '#fff',
                           display: 'grid',
                           placeItems: 'center',
-                          boxShadow: '0 4px 12px rgba(30,58,138,0.25)',
-                          clipPath: 'polygon(50% 0%, 100% 25%, 100% 75%, 50% 100%, 0% 75%, 0% 25%)'
+                          boxShadow: '0 4px 12px rgba(30,58,138,0.25)'
                         }}
                       >
                         <AccountBalanceRoundedIcon fontSize="small" />
                       </Box>
                     </Box>
                     <Paper elevation={0} sx={{ p: 2, border: '2px solid #1e3a8a', borderRadius: 3, textAlign: 'center', bgcolor: '#f8fafc' }}>
-                      <Typography variant="subtitle2" sx={{ fontWeight: 900, color: '#1e3a8a', mb: 1 }}>
+                      <Typography variant="subtitle2" sx={{ fontWeight: 900, color: '#1e3a8a', mb: 1.5 }}>
                         Reconocimiento MEN
                       </Typography>
                       <Stack spacing={1} sx={{ textAlign: 'left' }}>
-                        <Stack direction="row" justifyContent="space-between">
+                        <Stack direction="row" justifyContent="space-between" alignItems="center">
                           <Typography variant="caption" sx={{ fontWeight: 700 }}>
                             Registro calificado
                           </Typography>
-                          <Typography variant="caption" sx={{ fontWeight: 900 }}>
-                            {ofertaMetrics.registroCalificado}
-                          </Typography>
+                          <ValueBox value={ofertaMetrics.registroCalificado} />
                         </Stack>
-                        <Stack direction="row" justifyContent="space-between">
+                        <Stack direction="row" justifyContent="space-between" alignItems="center">
                           <Typography variant="caption" sx={{ fontWeight: 700 }}>
                             Acreditación alta calidad
                           </Typography>
-                          <Typography variant="caption" sx={{ fontWeight: 900, color: '#1e3a8a' }}>
-                            {ofertaMetrics.acreditacionAltaCalidad}
-                          </Typography>
+                          <ValueBox value={ofertaMetrics.acreditacionAltaCalidad} color="#1e3a8a" />
                         </Stack>
                       </Stack>
                     </Paper>
@@ -682,33 +724,28 @@ export default function ContextoExternoDashboardPanel({ onBack }) {
                           color: '#fff',
                           display: 'grid',
                           placeItems: 'center',
-                          boxShadow: '0 4px 12px rgba(21,128,61,0.25)',
-                          clipPath: 'polygon(50% 0%, 100% 25%, 100% 75%, 50% 100%, 0% 75%, 0% 25%)'
+                          boxShadow: '0 4px 12px rgba(21,128,61,0.25)'
                         }}
                       >
                         <GroupsRoundedIcon fontSize="small" />
                       </Box>
                     </Box>
                     <Paper elevation={0} sx={{ p: 2, border: '2px solid #15803d', borderRadius: 3, textAlign: 'center', bgcolor: '#f8fafc' }}>
-                      <Typography variant="subtitle2" sx={{ fontWeight: 900, color: '#15803d', mb: 1 }}>
+                      <Typography variant="subtitle2" sx={{ fontWeight: 900, color: '#15803d', mb: 1.5 }}>
                         Sector
                       </Typography>
                       <Stack spacing={1} sx={{ textAlign: 'left' }}>
-                        <Stack direction="row" justifyContent="space-between">
+                        <Stack direction="row" justifyContent="space-between" alignItems="center">
                           <Typography variant="caption" sx={{ fontWeight: 700 }}>
                             Público / Oficial
                           </Typography>
-                          <Typography variant="caption" sx={{ fontWeight: 900, color: '#15803d' }}>
-                            {ofertaMetrics.publico}
-                          </Typography>
+                          <ValueBox value={ofertaMetrics.publico} color="#15803d" />
                         </Stack>
-                        <Stack direction="row" justifyContent="space-between">
+                        <Stack direction="row" justifyContent="space-between" alignItems="center">
                           <Typography variant="caption" sx={{ fontWeight: 700 }}>
                             Privado
                           </Typography>
-                          <Typography variant="caption" sx={{ fontWeight: 900 }}>
-                            {ofertaMetrics.privado}
-                          </Typography>
+                          <ValueBox value={ofertaMetrics.privado} />
                         </Stack>
                       </Stack>
                     </Paper>
@@ -727,41 +764,34 @@ export default function ContextoExternoDashboardPanel({ onBack }) {
                           color: '#fff',
                           display: 'grid',
                           placeItems: 'center',
-                          boxShadow: '0 4px 12px rgba(126,34,206,0.25)',
-                          clipPath: 'polygon(50% 0%, 100% 25%, 100% 75%, 50% 100%, 0% 75%, 0% 25%)'
+                          boxShadow: '0 4px 12px rgba(126,34,206,0.25)'
                         }}
                       >
                         <DevicesRoundedIcon fontSize="small" />
                       </Box>
                     </Box>
                     <Paper elevation={0} sx={{ p: 2, border: '2px solid #7e22ce', borderRadius: 3, textAlign: 'center', bgcolor: '#f8fafc' }}>
-                      <Typography variant="subtitle2" sx={{ fontWeight: 900, color: '#7e22ce', mb: 1 }}>
+                      <Typography variant="subtitle2" sx={{ fontWeight: 900, color: '#7e22ce', mb: 1.5 }}>
                         Modalidades
                       </Typography>
                       <Stack spacing={0.8} sx={{ textAlign: 'left' }}>
-                        <Stack direction="row" justifyContent="space-between">
+                        <Stack direction="row" justifyContent="space-between" alignItems="center">
                           <Typography variant="caption" sx={{ fontWeight: 700 }}>
                             Presencial
                           </Typography>
-                          <Typography variant="caption" sx={{ fontWeight: 900 }}>
-                            {ofertaMetrics.presencial}
-                          </Typography>
+                          <ValueBox value={ofertaMetrics.presencial} color="#7e22ce" />
                         </Stack>
-                        <Stack direction="row" justifyContent="space-between">
+                        <Stack direction="row" justifyContent="space-between" alignItems="center">
                           <Typography variant="caption" sx={{ fontWeight: 700 }}>
                             Virtual
                           </Typography>
-                          <Typography variant="caption" sx={{ fontWeight: 900 }}>
-                            {ofertaMetrics.virtual}
-                          </Typography>
+                          <ValueBox value={ofertaMetrics.virtual} />
                         </Stack>
-                        <Stack direction="row" justifyContent="space-between">
+                        <Stack direction="row" justifyContent="space-between" alignItems="center">
                           <Typography variant="caption" sx={{ fontWeight: 700 }}>
                             A distancia
                           </Typography>
-                          <Typography variant="caption" sx={{ fontWeight: 900 }}>
-                            {ofertaMetrics.aDistancia}
-                          </Typography>
+                          <ValueBox value={ofertaMetrics.aDistancia} />
                         </Stack>
                       </Stack>
                     </Paper>
@@ -780,28 +810,25 @@ export default function ContextoExternoDashboardPanel({ onBack }) {
                           color: '#fff',
                           display: 'grid',
                           placeItems: 'center',
-                          boxShadow: '0 4px 12px rgba(15,118,110,0.25)',
-                          clipPath: 'polygon(50% 0%, 100% 25%, 100% 75%, 50% 100%, 0% 75%, 0% 25%)'
+                          boxShadow: '0 4px 12px rgba(15,118,110,0.25)'
                         }}
                       >
                         <CalendarMonthRoundedIcon fontSize="small" />
                       </Box>
                     </Box>
                     <Paper elevation={0} sx={{ p: 2, border: '2px solid #0f766e', borderRadius: 3, textAlign: 'center', bgcolor: '#f8fafc' }}>
-                      <Typography variant="subtitle2" sx={{ fontWeight: 900, color: '#0f766e', mb: 1 }}>
+                      <Typography variant="subtitle2" sx={{ fontWeight: 900, color: '#0f766e', mb: 1.5 }}>
                         N° semestres
                       </Typography>
                       <Stack spacing={0.8} sx={{ textAlign: 'left' }}>
                         {Object.entries(ofertaMetrics.semestresMap)
                           .slice(0, 3)
                           .map(([sem, cnt]) => (
-                            <Stack direction="row" justifyContent="space-between" key={sem}>
+                            <Stack direction="row" justifyContent="space-between" alignItems="center" key={sem}>
                               <Typography variant="caption" sx={{ fontWeight: 700 }}>
                                 {sem} semestres
                               </Typography>
-                              <Typography variant="caption" sx={{ fontWeight: 900 }}>
-                                {cnt}
-                              </Typography>
+                              <ValueBox value={cnt} color="#0f766e" />
                             </Stack>
                           ))}
                       </Stack>
@@ -821,41 +848,34 @@ export default function ContextoExternoDashboardPanel({ onBack }) {
                           color: '#fff',
                           display: 'grid',
                           placeItems: 'center',
-                          boxShadow: '0 4px 12px rgba(194,65,12,0.25)',
-                          clipPath: 'polygon(50% 0%, 100% 25%, 100% 75%, 50% 100%, 0% 75%, 0% 25%)'
+                          boxShadow: '0 4px 12px rgba(194,65,12,0.25)'
                         }}
                       >
                         <SchoolRoundedIcon fontSize="small" />
                       </Box>
                     </Box>
                     <Paper elevation={0} sx={{ p: 2, border: '2px solid #c2410c', borderRadius: 3, textAlign: 'center', bgcolor: '#f8fafc' }}>
-                      <Typography variant="subtitle2" sx={{ fontWeight: 900, color: '#c2410c', mb: 1 }}>
+                      <Typography variant="subtitle2" sx={{ fontWeight: 900, color: '#c2410c', mb: 1.5 }}>
                         Rango Créditos
                       </Typography>
                       <Stack spacing={0.8} sx={{ textAlign: 'left' }}>
-                        <Stack direction="row" justifyContent="space-between">
+                        <Stack direction="row" justifyContent="space-between" alignItems="center">
                           <Typography variant="caption" sx={{ fontWeight: 700 }}>
                             Mínimo
                           </Typography>
-                          <Typography variant="caption" sx={{ fontWeight: 900 }}>
-                            {ofertaMetrics.minCreditos}
-                          </Typography>
+                          <ValueBox value={ofertaMetrics.minCreditos} />
                         </Stack>
-                        <Stack direction="row" justifyContent="space-between">
+                        <Stack direction="row" justifyContent="space-between" alignItems="center">
                           <Typography variant="caption" sx={{ fontWeight: 700 }}>
                             Máximo
                           </Typography>
-                          <Typography variant="caption" sx={{ fontWeight: 900 }}>
-                            {ofertaMetrics.maxCreditos}
-                          </Typography>
+                          <ValueBox value={ofertaMetrics.maxCreditos} />
                         </Stack>
-                        <Stack direction="row" justifyContent="space-between">
+                        <Stack direction="row" justifyContent="space-between" alignItems="center">
                           <Typography variant="caption" sx={{ fontWeight: 700 }}>
                             Promedio
                           </Typography>
-                          <Typography variant="caption" sx={{ fontWeight: 900, color: '#c2410c' }}>
-                            {ofertaMetrics.avgCreditos}
-                          </Typography>
+                          <ValueBox value={ofertaMetrics.avgCreditos} color="#c2410c" />
                         </Stack>
                       </Stack>
                     </Paper>
@@ -866,7 +886,7 @@ export default function ContextoExternoDashboardPanel({ onBack }) {
           )}
 
           {/* ========================================================================= */}
-          {/* VARIANTE 3: STRUCTURED CARDS DESIGN (Imagen 4 de la solicitud) */}
+          {/* VARIANTE 3: STRUCTURED EXECUTIVE CARDS (Imagen 4) */}
           {/* ========================================================================= */}
           {visualStyle === 'cards' && (
             <Paper elevation={0} sx={{ p: 3, border: '1px solid #cbd5e1', borderRadius: 4, bgcolor: '#f8fafc' }}>
@@ -875,7 +895,7 @@ export default function ContextoExternoDashboardPanel({ onBack }) {
                   <Typography variant="h6" sx={{ fontWeight: 900 }}>
                     TOTAL PROGRAMAS ANALIZADOS
                   </Typography>
-                  <Chip size="medium" label={ofertaMetrics.total} color="primary" sx={{ fontWeight: 900, fontSize: 16, height: 32 }} />
+                  <ValueBox value={ofertaMetrics.total} color="#0284c7" />
                 </Stack>
               </Box>
 
@@ -883,16 +903,16 @@ export default function ContextoExternoDashboardPanel({ onBack }) {
                 <Grid item xs={12} md={6}>
                   <Paper elevation={0} sx={{ p: 2, border: '1px solid #cbd5e1', borderRadius: 3 }}>
                     <Typography variant="subtitle2" sx={{ fontWeight: 900, color: '#1e3a8a', mb: 1 }}>
-                      🏛️ Reconocimiento MEN
+                      Reconocimiento MEN
                     </Typography>
                     <Stack spacing={1}>
-                      <Stack direction="row" justifyContent="space-between">
+                      <Stack direction="row" justifyContent="space-between" alignItems="center">
                         <Typography variant="body2">Registro calificado</Typography>
-                        <Chip size="small" label={ofertaMetrics.registroCalificado} />
+                        <ValueBox value={ofertaMetrics.registroCalificado} />
                       </Stack>
-                      <Stack direction="row" justifyContent="space-between">
+                      <Stack direction="row" justifyContent="space-between" alignItems="center">
                         <Typography variant="body2">Acreditación de alta calidad</Typography>
-                        <Chip size="small" label={ofertaMetrics.acreditacionAltaCalidad} color="primary" />
+                        <ValueBox value={ofertaMetrics.acreditacionAltaCalidad} color="#1d4ed8" />
                       </Stack>
                     </Stack>
                   </Paper>
@@ -901,16 +921,16 @@ export default function ContextoExternoDashboardPanel({ onBack }) {
                 <Grid item xs={12} md={6}>
                   <Paper elevation={0} sx={{ p: 2, border: '1px solid #cbd5e1', borderRadius: 3 }}>
                     <Typography variant="subtitle2" sx={{ fontWeight: 900, color: '#15803d', mb: 1 }}>
-                      👥 Sector IES
+                      Sector IES
                     </Typography>
                     <Stack spacing={1}>
-                      <Stack direction="row" justifyContent="space-between">
+                      <Stack direction="row" justifyContent="space-between" alignItems="center">
                         <Typography variant="body2">Público / Oficial</Typography>
-                        <Chip size="small" label={ofertaMetrics.publico} color="success" />
+                        <ValueBox value={ofertaMetrics.publico} color="#15803d" />
                       </Stack>
-                      <Stack direction="row" justifyContent="space-between">
+                      <Stack direction="row" justifyContent="space-between" alignItems="center">
                         <Typography variant="body2">Privado</Typography>
-                        <Chip size="small" label={ofertaMetrics.privado} />
+                        <ValueBox value={ofertaMetrics.privado} />
                       </Stack>
                     </Stack>
                   </Paper>
