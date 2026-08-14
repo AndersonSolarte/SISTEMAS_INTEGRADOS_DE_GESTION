@@ -192,9 +192,9 @@ services:
       - ./fullchain.pem:/etc/nginx/certs/fullchain.pem:ro
       - ./Cert_planeacion.key:/etc/nginx/certs/Cert_planeacion.key:ro
     tmpfs:
-      - /var/cache/nginx:size=64m,nosuid,nodev
+      - /var/cache/nginx:size=4g,nosuid,nodev
       - /var/run:size=16m,nosuid,nodev
-      - /tmp:size=64m,noexec,nosuid,nodev
+      - /tmp:size=4g,noexec,nosuid,nodev
 
 volumes:
   postgres_data:
