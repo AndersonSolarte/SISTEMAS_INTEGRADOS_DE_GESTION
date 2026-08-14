@@ -312,66 +312,68 @@ export default function ContextoExternoDashboardPanel({ onBack }) {
 
   return (
     <Stack spacing={2.5} sx={{ width: '100%', pb: 6 }}>
-      {/* Top Header Banner */}
+      {/* Top Header Banner — Clean Light Pastel Style */}
       <Paper
         elevation={0}
         sx={{
           p: 0,
-          borderRadius: 3,
+          borderRadius: 3.5,
           overflow: 'hidden',
-          border: '1px solid #cbd5e1',
-          boxShadow: '0 4px 16px rgba(0, 51, 153, 0.12)'
+          border: '1px solid #e2e8f0',
+          boxShadow: '0 4px 20px rgba(15, 23, 42, 0.05)',
+          bgcolor: '#ffffff'
         }}
       >
-        {/* Official UNICESMAG Header Image Banner */}
+        {/* Official UNICESMAG Header Image Banner on Pure Light Background */}
         <Box
           sx={{
             width: '100%',
-            bgcolor: '#0a192f',
-            borderBottom: '3px solid #fbbf24',
+            bgcolor: '#ffffff',
             position: 'relative',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
             overflow: 'hidden',
-            maxHeight: 110
+            py: 1.5,
+            px: 2,
+            borderBottom: '1px solid #f1f5f9'
           }}
         >
           <img
             src={encabezadoCorreosImg}
             alt="Encabezado Institucional UNICESMAG"
             style={{
-              width: '100%',
-              maxHeight: 110,
-              objectFit: 'cover',
-              objectPosition: 'center'
+              maxHeight: 90,
+              maxWidth: '100%',
+              objectFit: 'contain'
             }}
           />
         </Box>
 
-        {/* Title & Navigation Bar in UNICESMAG Deep Blue */}
+        {/* Title Bar in Soft Pastel Slate/Blue */}
         <Box
           sx={{
-            background: 'linear-gradient(135deg, #002244 0%, #003399 60%, #1e40af 100%)',
-            color: '#fff',
-            py: 1.8,
+            background: 'linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%)',
+            color: '#0f172a',
+            py: 2,
             px: 3,
             display: 'flex',
             alignItems: 'center',
-            justifyContent: 'space-between'
+            justifyContent: 'space-between',
+            borderBottom: '1px solid #e2e8f0'
           }}
         >
           <Stack direction="row" spacing={2} alignItems="center">
             {onBack && (
-              <IconButton onClick={onBack} sx={{ color: '#fff', bgcolor: 'rgba(255,255,255,0.15)', '&:hover': { bgcolor: 'rgba(255,255,255,0.3)' } }}>
+              <IconButton onClick={onBack} sx={{ color: '#0f172a', bgcolor: '#ffffff', border: '1px solid #cbd5e1', '&:hover': { bgcolor: '#e2e8f0' } }}>
                 <ArrowBackRoundedIcon />
               </IconButton>
             )}
             <Box>
-              <Typography variant="h6" sx={{ fontWeight: 900, textTransform: 'uppercase', letterSpacing: 1.1, fontSize: { xs: 15, md: 19 }, color: '#ffffff' }}>
+              <Typography variant="h6" sx={{ fontWeight: 900, textTransform: 'uppercase', letterSpacing: 0.8, fontSize: { xs: 16, md: 20 }, color: '#0f172a' }}>
                 OFERTA REGIONAL DE PROGRAMAS ACADÉMICOS SIMILARES
               </Typography>
-              <Typography variant="caption" sx={{ color: '#fbbf24', fontWeight: 800, fontSize: 12 }}>
+              <Typography variant="caption" sx={{ color: '#0284c7', fontWeight: 800, fontSize: 13 }}>
                 Sistema de Gestión e Inteligencia de Información — UNICESMAG
               </Typography>
             </Box>
@@ -379,21 +381,50 @@ export default function ContextoExternoDashboardPanel({ onBack }) {
           <Chip
             label="Contexto Externo"
             sx={{
-              bgcolor: 'rgba(255,255,255,0.18)',
-              color: '#ffffff',
+              bgcolor: '#e0f2fe',
+              color: '#0369a1',
               fontWeight: 900,
-              px: 1.5,
-              border: '1px solid rgba(255,255,255,0.3)',
-              boxShadow: '0 2px 8px rgba(0,0,0,0.15)'
+              px: 1.8,
+              py: 0.5,
+              fontSize: 13,
+              border: '1px solid #bae6fd',
+              boxShadow: '0 2px 6px rgba(2, 132, 199, 0.08)'
             }}
           />
         </Box>
 
-        {/* Main Tabs Navigation */}
-        <Box sx={{ borderBottom: 1, borderColor: 'divider', bgcolor: '#ffffff', px: 2 }}>
-          <Tabs value={mainTab} onChange={(_, val) => setMainTab(val)} textColor="primary" indicatorColor="primary">
-            <Tab label="1. Oferta Académica" icon={<SchoolRoundedIcon fontSize="small" />} iconPosition="start" sx={{ fontWeight: 800, textTransform: 'none', py: 1.5, fontSize: 14 }} />
-            <Tab label="2. Información Poblacional" icon={<GroupsRoundedIcon fontSize="small" />} iconPosition="start" sx={{ fontWeight: 800, textTransform: 'none', py: 1.5, fontSize: 14 }} />
+        {/* Main Full-Width Segment Cards Navigation */}
+        <Box sx={{ p: 1.5, bgcolor: '#f8fafc' }}>
+          <Tabs
+            value={mainTab}
+            onChange={(_, val) => setMainTab(val)}
+            variant="fullWidth"
+            sx={{
+              minHeight: 56,
+              '& .MuiTabs-indicator': { display: 'none' },
+              '& .MuiTabs-flexContainer': { gap: 1.5 },
+              '& .MuiTab-root': {
+                textTransform: 'none',
+                fontWeight: 900,
+                fontSize: 15,
+                minHeight: 52,
+                borderRadius: 2.5,
+                color: '#64748b',
+                bgcolor: '#ffffff',
+                border: '1px solid #e2e8f0',
+                transition: 'all 0.2s ease',
+                '&:hover': { bgcolor: '#f1f5f9' }
+              },
+              '& .MuiTab-root.Mui-selected': {
+                color: mainTab === 0 ? '#1d4ed8' : '#15803d',
+                background: mainTab === 0 ? 'linear-gradient(135deg, #eff6ff 0%, #dbeafe 100%)' : 'linear-gradient(135deg, #f0fdf4 0%, #dcfce7 100%)',
+                border: mainTab === 0 ? '2px solid #93c5fd' : '2px solid #86efac',
+                boxShadow: mainTab === 0 ? '0 4px 14px rgba(59, 130, 246, 0.15)' : '0 4px 14px rgba(34, 197, 94, 0.15)'
+              }
+            }}
+          >
+            <Tab label="1. Oferta Académica" icon={<SchoolRoundedIcon />} iconPosition="start" />
+            <Tab label="2. Información Poblacional" icon={<GroupsRoundedIcon />} iconPosition="start" />
           </Tabs>
         </Box>
       </Paper>
@@ -1235,12 +1266,39 @@ export default function ContextoExternoDashboardPanel({ onBack }) {
       {/* ==================== SECCIÓN 2: INFORMACIÓN POBLACIONAL CONTEXTO ==================== */}
       {mainTab === 1 && (
         <Stack spacing={2.5}>
-          {/* Sub-segment Tabs */}
-          <Paper elevation={0} sx={{ border: '1px solid #cbd5e1', borderRadius: 3, p: 1, bgcolor: '#ffffff' }}>
-            <Tabs value={poblacionalSubTab} onChange={(_, val) => setPoblacionalSubTab(val)} indicatorColor="primary" textColor="primary">
-              <Tab label="INSCRITOS, ADMITIDOS Y PRIMER CURSO" sx={{ fontWeight: 900, textTransform: 'none', fontSize: 13.5 }} />
-              <Tab label="Cobertura y Permanencia (Matriculados)" sx={{ fontWeight: 800, textTransform: 'none', fontSize: 13.5 }} />
-              <Tab label="Salida y Graduación (Graduados)" sx={{ fontWeight: 800, textTransform: 'none', fontSize: 13.5 }} />
+          {/* Sub-segment Tabs — Full Width Dynamic Pastel Cards */}
+          <Paper elevation={0} sx={{ border: '1px solid #cbd5e1', borderRadius: 3, p: 1, bgcolor: '#f8fafc' }}>
+            <Tabs
+              value={poblacionalSubTab}
+              onChange={(_, val) => setPoblacionalSubTab(val)}
+              variant="fullWidth"
+              sx={{
+                minHeight: 54,
+                '& .MuiTabs-indicator': { display: 'none' },
+                '& .MuiTabs-flexContainer': { gap: 1.5 },
+                '& .MuiTab-root': {
+                  textTransform: 'none',
+                  fontWeight: 900,
+                  fontSize: 14,
+                  minHeight: 48,
+                  borderRadius: 2.5,
+                  color: '#64748b',
+                  bgcolor: '#ffffff',
+                  border: '1px solid #e2e8f0',
+                  transition: 'all 0.2s ease',
+                  '&:hover': { bgcolor: '#f1f5f9' }
+                },
+                '& .MuiTab-root.Mui-selected': {
+                  color: '#991b1b',
+                  background: 'linear-gradient(135deg, #fef2f2 0%, #fee2e2 100%)',
+                  border: '2px solid #fca5a5',
+                  boxShadow: '0 4px 14px rgba(239, 68, 68, 0.12)'
+                }
+              }}
+            >
+              <Tab label="INSCRITOS, ADMITIDOS Y PRIMER CURSO" />
+              <Tab label="Cobertura y Permanencia (Matriculados)" />
+              <Tab label="Salida y Graduación (Graduados)" />
             </Tabs>
           </Paper>
 
@@ -1285,7 +1343,7 @@ export default function ContextoExternoDashboardPanel({ onBack }) {
               <Grid item xs={12} sm={6} md={3}>
                 <Chip
                   color="primary"
-                  label={`Clasificación: Regional (Nariño, Cauca, Valle, Putumayo) vs Nacional`}
+                  label={`Clasificación: Regional vs Nacional`}
                   sx={{ fontWeight: 800, py: 1, width: '100%' }}
                 />
               </Grid>
@@ -1297,12 +1355,12 @@ export default function ContextoExternoDashboardPanel({ onBack }) {
           {/* ========================================================================= */}
           {poblacionalSubTab === 0 && (
             <Stack spacing={2.5}>
-              {/* Header Box Banner */}
-              <Paper elevation={0} sx={{ p: 1.5, px: 3, bgcolor: '#0f172a', color: '#fff', borderRadius: 3, borderLeft: '6px solid #be123c' }}>
-                <Typography variant="overline" sx={{ color: '#fbbf24', fontWeight: 900, letterSpacing: 1 }}>
+              {/* Header Box Banner in Executive Soft Slate */}
+              <Paper elevation={0} sx={{ p: 1.5, px: 3, bgcolor: '#ffffff', color: '#0f172a', borderRadius: 3, border: '1px solid #e2e8f0', borderLeft: '6px solid #be123c' }}>
+                <Typography variant="overline" sx={{ color: '#0369a1', fontWeight: 900, letterSpacing: 1 }}>
                   CONTEXTO EXTERNO POBLACIONAL
                 </Typography>
-                <Typography variant="h6" sx={{ fontWeight: 900, textTransform: 'uppercase', fontSize: 16 }}>
+                <Typography variant="h6" sx={{ fontWeight: 900, textTransform: 'uppercase', fontSize: 16, color: '#0f172a' }}>
                   {pobProgramaFilter === 'TODOS' ? 'TODOS LOS PROGRAMAS ANALIZADOS' : pobProgramaFilter}
                 </Typography>
               </Paper>
