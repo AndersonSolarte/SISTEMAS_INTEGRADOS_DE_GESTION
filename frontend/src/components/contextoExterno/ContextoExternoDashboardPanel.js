@@ -16,6 +16,10 @@ import ArrowBackRoundedIcon from '@mui/icons-material/ArrowBackRounded';
 import HubRoundedIcon from '@mui/icons-material/HubRounded';
 import HexagonRoundedIcon from '@mui/icons-material/HexagonRounded';
 import ViewModuleRoundedIcon from '@mui/icons-material/ViewModuleRounded';
+import {
+  ResponsiveContainer, BarChart, Bar, LineChart, Line, XAxis, YAxis,
+  CartesianGrid, Tooltip as RechartsTooltip, Legend
+} from 'recharts';
 import gestionInformacionService from '../../services/gestionInformacionService';
 import encabezadoCorreosImg from '../../assets/Encabezado_correos.png';
 
@@ -26,9 +30,16 @@ const normalizeStr = (str = '') =>
     .toUpperCase()
     .trim();
 
+const REGIONAL_DEPARTMENTS = ['NARINO', 'CAUCA', 'VALLE DEL CAUCA', 'VALLE', 'PUTUMAYO'];
+
+const isRegionalDept = (deptoStr = '') => {
+  const norm = normalizeStr(deptoStr);
+  return REGIONAL_DEPARTMENTS.some((d) => norm.includes(d));
+};
+
 export default function ContextoExternoDashboardPanel({ onBack }) {
   const [mainTab, setMainTab] = useState(0); // 0: Oferta Académica, 1: Información Poblacional
-  const [poblacionalSubTab, setPoblacionalSubTab] = useState(0); // 0: Ingreso, 1: Cobertura, 2: Salida
+  const [poblacionalSubTab, setPoblacionalSubTab] = useState(0); // 0: Inscritos, Admitidos, Primer Curso, 1: Cobertura, 2: Salida
 
   const [loading, setLoading] = useState(false);
   const [rawRows, setRawRows] = useState([]);
@@ -41,6 +52,7 @@ export default function ContextoExternoDashboardPanel({ onBack }) {
   const [selectedMunicipio, setSelectedMunicipio] = useState('TODOS');
 
   // Filters for Poblacional
+  const [pobProgramaFilter, setPobProgramaFilter] = useState('TODOS');
   const [pobPeriodo, setPobPeriodo] = useState('TODOS');
   const [pobDepto, setPobDepto] = useState('TODOS');
 
@@ -61,7 +73,7 @@ export default function ContextoExternoDashboardPanel({ onBack }) {
     loadData();
   }, [loadData]);
 
-  // Parse and extract normalized data
+  // Parse and extract normalized data for Oferta
   const parsedOfertaRows = useMemo(() => {
     return rawRows
       .filter((r) => String(r.base_indicador || r.baseIndicador || '').toUpperCase() === 'OFERTA' || r.tipo_registro === 'oferta')
@@ -217,21 +229,65 @@ export default function ContextoExternoDashboardPanel({ onBack }) {
           ies: r.ies || norm.NOMBRE_INSTITUCION || '',
           programa: r.programa_comparado || norm.NOMBRE_DEL_PROGRAMA || '',
           departamento: normalizeStr(r.departamento || norm.DEPARTAMENTO_OFERTA_PROGRAMA || ''),
-          municipio: normalizeStr(r.municipio || norm.MUNICIPIO_OFERTA_PROGRAMA || '')
+          municipio: normalizeStr(r.municipio || norm.MUNICIPIO_OFERTA_PROGRAMA || ''),
+          isRegional: isRegionalDept(r.departamento || norm.DEPARTAMENTO_OFERTA_PROGRAMA || '')
         };
       });
   }, [rawRows]);
+
+  const pobProgramOptions = useMemo(() => {
+    return ['TODOS', ...Array.from(new Set(parsedPoblacionalRows.map((r) => r.programa).filter(Boolean))).sort()];
+  }, [parsedPoblacionalRows]);
 
   const activePoblacionalBase = poblacionalSubTab === 0 ? ['INSCRITOS', 'ADMITIDOS', 'PRIMER CURSO'] : poblacionalSubTab === 1 ? ['MATRICULADOS'] : ['GRADUADOS'];
 
   const filteredPoblacional = useMemo(() => {
     return parsedPoblacionalRows.filter((r) => {
       if (!activePoblacionalBase.some((b) => r.base.includes(b))) return false;
+      if (pobProgramaFilter !== 'TODOS' && r.programa !== pobProgramaFilter) return false;
       if (pobPeriodo !== 'TODOS' && r.periodo !== pobPeriodo) return false;
       if (pobDepto !== 'TODOS' && r.departamento !== pobDepto) return false;
       return true;
     });
-  }, [parsedPoblacionalRows, activePoblacionalBase, pobPeriodo, pobDepto]);
+  }, [parsedPoblacionalRows, activePoblacionalBase, pobProgramaFilter, pobPeriodo, pobDepto]);
+
+  // Aggregated Chart Data for Sub-segment A: INSCRITOS, ADMITIDOS Y PRIMER CURSO (Regional vs Nacional)
+  const chartDataSubsegmentA = useMemo(() => {
+    const periodMap = {};
+
+    filteredPoblacional.forEach((r) => {
+      const per = r.periodo;
+      if (!per) return;
+
+      if (!periodMap[per]) {
+        periodMap[per] = {
+          periodo: per,
+          inscritosNacional: 0,
+          admitidosNacional: 0,
+          primerCursoNacional: 0,
+          inscritosRegional: 0,
+          admitidosRegional: 0,
+          primerCursoRegional: 0
+        };
+      }
+
+      const isReg = r.isRegional;
+      const baseName = r.base;
+
+      if (baseName.includes('INSCRITOS')) {
+        if (isReg) periodMap[per].inscritosRegional += r.valorNum;
+        else periodMap[per].inscritosNacional += r.valorNum;
+      } else if (baseName.includes('ADMITIDOS')) {
+        if (isReg) periodMap[per].admitidosRegional += r.valorNum;
+        else periodMap[per].admitidosNacional += r.valorNum;
+      } else if (baseName.includes('PRIMER CURSO')) {
+        if (isReg) periodMap[per].primerCursoRegional += r.valorNum;
+        else periodMap[per].primerCursoNacional += r.valorNum;
+      }
+    });
+
+    return Object.values(periodMap).sort((a, b) => a.periodo.localeCompare(b.periodo));
+  }, [filteredPoblacional]);
 
   // Helper box for metric value input display matching the reference images
   const ValueBox = ({ value, color = '#1e293b' }) => (
@@ -1180,25 +1236,196 @@ export default function ContextoExternoDashboardPanel({ onBack }) {
       {mainTab === 1 && (
         <Stack spacing={2.5}>
           {/* Sub-segment Tabs */}
-          <Paper elevation={0} sx={{ border: '1px solid #cbd5e1', borderRadius: 3, p: 1, bgcolor: '#f8fafc' }}>
-            <Tabs value={poblacionalSubTab} onChange={(_, val) => setPoblacionalSubTab(val)} indicatorColor="secondary" textColor="secondary">
-              <Tab label="Ingreso y Absorción" sx={{ fontWeight: 800, textTransform: 'none' }} />
-              <Tab label="Cobertura y Permanencia" sx={{ fontWeight: 800, textTransform: 'none' }} />
-              <Tab label="Salida y Graduación" sx={{ fontWeight: 800, textTransform: 'none' }} />
+          <Paper elevation={0} sx={{ border: '1px solid #cbd5e1', borderRadius: 3, p: 1, bgcolor: '#ffffff' }}>
+            <Tabs value={poblacionalSubTab} onChange={(_, val) => setPoblacionalSubTab(val)} indicatorColor="primary" textColor="primary">
+              <Tab label="INSCRITOS, ADMITIDOS Y PRIMER CURSO" sx={{ fontWeight: 900, textTransform: 'none', fontSize: 13.5 }} />
+              <Tab label="Cobertura y Permanencia (Matriculados)" sx={{ fontWeight: 800, textTransform: 'none', fontSize: 13.5 }} />
+              <Tab label="Salida y Graduación (Graduados)" sx={{ fontWeight: 800, textTransform: 'none', fontSize: 13.5 }} />
             </Tabs>
           </Paper>
+
+          {/* Program Filter Bar for Poblacional */}
+          <Paper elevation={0} sx={{ p: 2, border: '1px solid #cbd5e1', borderRadius: 3, bgcolor: '#ffffff' }}>
+            <Grid container spacing={2} alignItems="center">
+              <Grid item xs={12} md={6}>
+                <TextField
+                  select
+                  fullWidth
+                  size="small"
+                  label="Programa Académico para Análisis Poblacional"
+                  value={pobProgramaFilter}
+                  onChange={(e) => setPobProgramaFilter(e.target.value)}
+                >
+                  {pobProgramOptions.map((p) => (
+                    <MenuItem key={p} value={p}>
+                      {p}
+                    </MenuItem>
+                  ))}
+                </TextField>
+              </Grid>
+              <Grid item xs={12} sm={6} md={3}>
+                <TextField
+                  select
+                  fullWidth
+                  size="small"
+                  label="Periodo / Año"
+                  value={pobPeriodo}
+                  onChange={(e) => setPobPeriodo(e.target.value)}
+                >
+                  <MenuItem value="TODOS">Todos los periodos</MenuItem>
+                  {Array.from(new Set(parsedPoblacionalRows.map((r) => r.periodo).filter(Boolean)))
+                    .sort()
+                    .map((p) => (
+                      <MenuItem key={p} value={p}>
+                        {p}
+                      </MenuItem>
+                    ))}
+                </TextField>
+              </Grid>
+              <Grid item xs={12} sm={6} md={3}>
+                <Chip
+                  color="primary"
+                  label={`Clasificación: Regional (Nariño, Cauca, Valle, Putumayo) vs Nacional`}
+                  sx={{ fontWeight: 800, py: 1, width: '100%' }}
+                />
+              </Grid>
+            </Grid>
+          </Paper>
+
+          {/* ========================================================================= */}
+          {/* SUB-SEGMENTO A: INSCRITOS, ADMITIDOS Y PRIMER CURSO (RÉPLICA FIEL IMAGEN 2) */}
+          {/* ========================================================================= */}
+          {poblacionalSubTab === 0 && (
+            <Stack spacing={2.5}>
+              {/* Header Box Banner */}
+              <Paper elevation={0} sx={{ p: 1.5, px: 3, bgcolor: '#0f172a', color: '#fff', borderRadius: 3, borderLeft: '6px solid #be123c' }}>
+                <Typography variant="overline" sx={{ color: '#fbbf24', fontWeight: 900, letterSpacing: 1 }}>
+                  CONTEXTO EXTERNO POBLACIONAL
+                </Typography>
+                <Typography variant="h6" sx={{ fontWeight: 900, textTransform: 'uppercase', fontSize: 16 }}>
+                  {pobProgramaFilter === 'TODOS' ? 'TODOS LOS PROGRAMAS ANALIZADOS' : pobProgramaFilter}
+                </Typography>
+              </Paper>
+
+              {/* 2x2 Grid of Charts matching User Image 2 */}
+              <Grid container spacing={2.5}>
+                {/* 1. TOP LEFT: INSCRITOS, ADMITIDOS Y PRIMER CURSO NACIONAL (BARRAS APILADAS) */}
+                <Grid item xs={12} md={6}>
+                  <Paper elevation={0} sx={{ p: 2, border: '2px solid #003399', borderRadius: 3, bgcolor: '#ffffff' }}>
+                    <Box sx={{ bgcolor: '#003399', color: '#fff', px: 2, py: 0.8, borderRadius: 1.5, mb: 2, textAlign: 'center' }}>
+                      <Typography variant="subtitle2" sx={{ fontWeight: 900, fontSize: 13, textTransform: 'uppercase' }}>
+                        INSCRITOS, ADMITIDOS Y PRIMER CURSO NACIONAL
+                      </Typography>
+                    </Box>
+
+                    <Box sx={{ width: '100%', height: 310 }}>
+                      <ResponsiveContainer width="100%" height="100%">
+                        <BarChart data={chartDataSubsegmentA} margin={{ top: 10, right: 10, left: -10, bottom: 25 }}>
+                          <CartesianGrid strokeDasharray="3 3" vertical={false} />
+                          <XAxis dataKey="periodo" tick={{ fontSize: 11, fontWeight: 700 }} interval={0} angle={-25} textAnchor="end" />
+                          <YAxis tick={{ fontSize: 11 }} />
+                          <RechartsTooltip />
+                          <Legend wrapperStyle={{ fontSize: 11, fontWeight: 700 }} />
+                          <Bar dataKey="inscritosNacional" name="INSCRITOS NACIONAL" stackId="a" fill="#1e3a8a" />
+                          <Bar dataKey="admitidosNacional" name="ADMITIDOS NACIONAL" stackId="a" fill="#991b1b" />
+                          <Bar dataKey="primerCursoNacional" name="PRIMER CURSO NACIONAL" stackId="a" fill="#64748b" />
+                        </BarChart>
+                      </ResponsiveContainer>
+                    </Box>
+                  </Paper>
+                </Grid>
+
+                {/* 2. TOP RIGHT: INSCRITOS, ADMITIDOS Y PRIMER CURSO REGIONAL (BARRAS APILADAS) */}
+                <Grid item xs={12} md={6}>
+                  <Paper elevation={0} sx={{ p: 2, border: '2px solid #003399', borderRadius: 3, bgcolor: '#ffffff' }}>
+                    <Box sx={{ bgcolor: '#003399', color: '#fff', px: 2, py: 0.8, borderRadius: 1.5, mb: 2, textAlign: 'center' }}>
+                      <Typography variant="subtitle2" sx={{ fontWeight: 900, fontSize: 13, textTransform: 'uppercase' }}>
+                        INSCRITOS, ADMITIDOS Y PRIMER CURSO REGIONAL
+                      </Typography>
+                    </Box>
+
+                    <Box sx={{ width: '100%', height: 310 }}>
+                      <ResponsiveContainer width="100%" height="100%">
+                        <BarChart data={chartDataSubsegmentA} margin={{ top: 10, right: 10, left: -10, bottom: 25 }}>
+                          <CartesianGrid strokeDasharray="3 3" vertical={false} />
+                          <XAxis dataKey="periodo" tick={{ fontSize: 11, fontWeight: 700 }} interval={0} angle={-25} textAnchor="end" />
+                          <YAxis tick={{ fontSize: 11 }} />
+                          <RechartsTooltip />
+                          <Legend wrapperStyle={{ fontSize: 11, fontWeight: 700 }} />
+                          <Bar dataKey="inscritosRegional" name="INSCRITOS REGIONAL" stackId="a" fill="#1e3a8a" />
+                          <Bar dataKey="admitidosRegional" name="ADMITIDOS REGIONAL" stackId="a" fill="#991b1b" />
+                          <Bar dataKey="primerCursoRegional" name="PRIMER CURSO REGIONAL" stackId="a" fill="#64748b" />
+                        </BarChart>
+                      </ResponsiveContainer>
+                    </Box>
+                  </Paper>
+                </Grid>
+
+                {/* 3. BOTTOM LEFT: INSCRITOS, ADMITIDOS Y PRIMER CURSO NACIONAL (TENDENCIAS LINEALES) */}
+                <Grid item xs={12} md={6}>
+                  <Paper elevation={0} sx={{ p: 2, border: '2px solid #003399', borderRadius: 3, bgcolor: '#ffffff' }}>
+                    <Box sx={{ bgcolor: '#003399', color: '#fff', px: 2, py: 0.8, borderRadius: 1.5, mb: 2, textAlign: 'center' }}>
+                      <Typography variant="subtitle2" sx={{ fontWeight: 900, fontSize: 13, textTransform: 'uppercase' }}>
+                        TENDENCIA HISTÓRICA NACIONAL
+                      </Typography>
+                    </Box>
+
+                    <Box sx={{ width: '100%', height: 310 }}>
+                      <ResponsiveContainer width="100%" height="100%">
+                        <LineChart data={chartDataSubsegmentA} margin={{ top: 10, right: 10, left: -10, bottom: 25 }}>
+                          <CartesianGrid strokeDasharray="3 3" vertical={false} />
+                          <XAxis dataKey="periodo" tick={{ fontSize: 11, fontWeight: 700 }} interval={0} angle={-25} textAnchor="end" />
+                          <YAxis tick={{ fontSize: 11 }} />
+                          <RechartsTooltip />
+                          <Legend wrapperStyle={{ fontSize: 11, fontWeight: 700 }} />
+                          <Line type="monotone" dataKey="inscritosNacional" name="INSCRITOS NACIONAL" stroke="#1e3a8a" strokeWidth={2.5} dot={{ r: 4 }} />
+                          <Line type="monotone" dataKey="primerCursoNacional" name="PRIMER CURSO NACIONAL" stroke="#0284c7" strokeWidth={2.5} dot={{ r: 4 }} />
+                        </LineChart>
+                      </ResponsiveContainer>
+                    </Box>
+                  </Paper>
+                </Grid>
+
+                {/* 4. BOTTOM RIGHT: INSCRITOS, ADMITIDOS Y PRIMER CURSO REGIONAL (TENDENCIAS LINEALES) */}
+                <Grid item xs={12} md={6}>
+                  <Paper elevation={0} sx={{ p: 2, border: '2px solid #003399', borderRadius: 3, bgcolor: '#ffffff' }}>
+                    <Box sx={{ bgcolor: '#003399', color: '#fff', px: 2, py: 0.8, borderRadius: 1.5, mb: 2, textAlign: 'center' }}>
+                      <Typography variant="subtitle2" sx={{ fontWeight: 900, fontSize: 13, textTransform: 'uppercase' }}>
+                        TENDENCIA HISTÓRICA REGIONAL
+                      </Typography>
+                    </Box>
+
+                    <Box sx={{ width: '100%', height: 310 }}>
+                      <ResponsiveContainer width="100%" height="100%">
+                        <LineChart data={chartDataSubsegmentA} margin={{ top: 10, right: 10, left: -10, bottom: 25 }}>
+                          <CartesianGrid strokeDasharray="3 3" vertical={false} />
+                          <XAxis dataKey="periodo" tick={{ fontSize: 11, fontWeight: 700 }} interval={0} angle={-25} textAnchor="end" />
+                          <YAxis tick={{ fontSize: 11 }} />
+                          <RechartsTooltip />
+                          <Legend wrapperStyle={{ fontSize: 11, fontWeight: 700 }} />
+                          <Line type="monotone" dataKey="inscritosRegional" name="INSCRITOS REGIONAL" stroke="#1e3a8a" strokeWidth={2.5} dot={{ r: 4 }} />
+                          <Line type="monotone" dataKey="primerCursoRegional" name="PRIMER CURSO REGIONAL" stroke="#0284c7" strokeWidth={2.5} dot={{ r: 4 }} />
+                        </LineChart>
+                      </ResponsiveContainer>
+                    </Box>
+                  </Paper>
+                </Grid>
+              </Grid>
+            </Stack>
+          )}
 
           {/* Table of Poblacional Series */}
           <Paper elevation={0} sx={{ p: 2.5, border: '1px solid #cbd5e1', borderRadius: 3 }}>
             <Typography variant="h6" sx={{ fontWeight: 900, color: '#0f172a', mb: 2 }}>
-              Series Históricas — {activePoblacionalBase.join(', ')}
+              Series Históricas Registradas en Contexto Externo ({filteredPoblacional.length})
             </Typography>
 
-            <TableContainer sx={{ maxHeight: 500 }}>
+            <TableContainer sx={{ maxHeight: 420 }}>
               <Table stickyHeader size="small">
                 <TableHead>
                   <TableRow sx={{ bgcolor: '#f1f5f9' }}>
                     <TableCell sx={{ fontWeight: 800 }}>Subbase / Indicador</TableCell>
+                    <TableCell sx={{ fontWeight: 800 }}>Clasificación Territorial</TableCell>
                     <TableCell sx={{ fontWeight: 800 }}>Periodo / Año</TableCell>
                     <TableCell sx={{ fontWeight: 800 }}>Institución (IES)</TableCell>
                     <TableCell sx={{ fontWeight: 800 }}>Programa</TableCell>
@@ -1212,6 +1439,14 @@ export default function ContextoExternoDashboardPanel({ onBack }) {
                     <TableRow key={r.id} hover>
                       <TableCell>
                         <Chip size="small" color="primary" label={r.base} sx={{ fontWeight: 800 }} />
+                      </TableCell>
+                      <TableCell>
+                        <Chip
+                          size="small"
+                          color={r.isRegional ? 'success' : 'default'}
+                          label={r.isRegional ? 'REGIONAL' : 'NACIONAL'}
+                          sx={{ fontWeight: 800, fontSize: 11 }}
+                        />
                       </TableCell>
                       <TableCell sx={{ fontWeight: 800, fontSize: 12 }}>{r.periodo}</TableCell>
                       <TableCell sx={{ fontSize: 12, maxWidth: 220, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
