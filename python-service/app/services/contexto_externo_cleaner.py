@@ -68,7 +68,7 @@ PROGRAM_HEADERS = [
     "NIVEL_ACADEMICO", "NIVEL_DE_FORMACION", "MODALIDAD", "NUMERO_CREDITOS",
     "NUMERO_PERIODOS_DE_DURACION", "PERIODICIDAD", "SE_OFRECE_POR_CICLOS_PROPEDUT",
     "PERIODICIDAD_ADMISIONES", "PROGRAMA_EN_CONVENIO", "DEPARTAMENTO_OFERTA_PROGRAMA",
-    "MUNICIPIO_OFERTA_PROGRAMA", "COSTO_MATRICULA_ESTUD_NUEVOS", "VIGENCIA_TRANSITORIA",
+    "MUNICIPIO_OFERTA_PROGRAMA", "TIPO_CUBRIMIENTO", "COSTO_MATRICULA_ESTUD_NUEVOS", "VIGENCIA_TRANSITORIA",
     "OBSERVACION_DECRETO_1174_23",
 ]
 
@@ -717,23 +717,44 @@ def _resolve_columns(frame: pd.DataFrame, required_headers: list[str]) -> dict[s
 
 
 def _select_source(content: bytes, extension: str, required_headers: list[str]) -> tuple[str, pd.DataFrame, dict[str, Any]]:
-    best: tuple[int, str, pd.DataFrame, dict[str, Any]] | None = None
-    for sheet, _, frame in _candidate_frames(content, extension):
-        resolved = _resolve_columns(frame, required_headers)
-        score = len(resolved)
-        if best is None or score > best[0]:
-            best = (score, sheet, frame, resolved)
-    if not best or best[0] == 0:
-        raise CleaningError("No se reconocieron columnas compatibles con la lista seleccionada.")
+    minimum = max(2, int(len(required_headers) * 0.20))
+    candidate_frames = _candidate_frames(content, extension)
+    matched_sources: list[tuple[str, pd.DataFrame, dict[str, Any]]] = []
 
-    minimum = max(2, int(len(required_headers) * 0.35))
-    if best[0] < minimum:
+    for sheet, _, frame in candidate_frames:
+        resolved = _resolve_columns(frame, required_headers)
+        if len(resolved) >= minimum:
+            matched_sources.append((sheet, frame, resolved))
+
+    if not matched_sources:
+        best: tuple[int, str, pd.DataFrame, dict[str, Any]] | None = None
+        for sheet, _, frame in candidate_frames:
+            resolved = _resolve_columns(frame, required_headers)
+            score = len(resolved)
+            if best is None or score > best[0]:
+                best = (score, sheet, frame, resolved)
+        if not best or best[0] == 0:
+            raise CleaningError("No se reconocieron columnas compatibles con la lista seleccionada.")
         missing = [header for header in required_headers if header not in best[3]][:8]
         raise CleaningError(
             f"La estructura no corresponde a la lista seleccionada. Solo se reconocieron {best[0]} de "
             f"{len(required_headers)} columnas. Faltan, entre otras: {', '.join(missing)}."
         )
-    return best[1], best[2], best[3]
+    if len(matched_sources) == 1:
+        return matched_sources[0][0], matched_sources[0][1], matched_sources[0][2]
+
+    sheet_names = ", ".join(s[0] for s in matched_sources)
+    combined_rows: list[pd.DataFrame] = []
+    for sheet, frame, resolved in matched_sources:
+        sub_df = pd.DataFrame({
+            header: frame[resolved[header]] if header in resolved else ""
+            for header in required_headers
+        })
+        combined_rows.append(sub_df)
+
+    unified_frame = pd.concat(combined_rows, ignore_index=True)
+    unified_resolved = {h: h for h in required_headers if any(h in r for _, _, r in matched_sources)}
+    return sheet_names, unified_frame, unified_resolved
 
 
 def _rules_index(rules: list[dict[str, Any]] | None) -> dict[tuple[str, str], str]:
