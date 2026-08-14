@@ -17,6 +17,7 @@ import HubRoundedIcon from '@mui/icons-material/HubRounded';
 import HexagonRoundedIcon from '@mui/icons-material/HexagonRounded';
 import ViewModuleRoundedIcon from '@mui/icons-material/ViewModuleRounded';
 import gestionInformacionService from '../../services/gestionInformacionService';
+import encabezadoCorreosImg from '../../assets/Encabezado_correos.png';
 
 const normalizeStr = (str = '') =>
   String(str || '')
@@ -263,12 +264,39 @@ export default function ContextoExternoDashboardPanel({ onBack }) {
           borderRadius: 3,
           overflow: 'hidden',
           border: '1px solid #cbd5e1',
-          boxShadow: '0 4px 12px rgba(15, 23, 42, 0.08)'
+          boxShadow: '0 4px 16px rgba(0, 51, 153, 0.12)'
         }}
       >
+        {/* Official UNICESMAG Header Image Banner */}
         <Box
           sx={{
-            background: 'linear-gradient(135deg, #881337 0%, #be123c 50%, #9f1239 100%)',
+            width: '100%',
+            bgcolor: '#0a192f',
+            borderBottom: '3px solid #fbbf24',
+            position: 'relative',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            overflow: 'hidden',
+            maxHeight: 110
+          }}
+        >
+          <img
+            src={encabezadoCorreosImg}
+            alt="Encabezado Institucional UNICESMAG"
+            style={{
+              width: '100%',
+              maxHeight: 110,
+              objectFit: 'cover',
+              objectPosition: 'center'
+            }}
+          />
+        </Box>
+
+        {/* Title & Navigation Bar in UNICESMAG Deep Blue */}
+        <Box
+          sx={{
+            background: 'linear-gradient(135deg, #002244 0%, #003399 60%, #1e40af 100%)',
             color: '#fff',
             py: 1.8,
             px: 3,
@@ -279,27 +307,37 @@ export default function ContextoExternoDashboardPanel({ onBack }) {
         >
           <Stack direction="row" spacing={2} alignItems="center">
             {onBack && (
-              <IconButton onClick={onBack} sx={{ color: '#fff', bgcolor: 'rgba(255,255,255,0.15)', '&:hover': { bgcolor: 'rgba(255,255,255,0.25)' } }}>
+              <IconButton onClick={onBack} sx={{ color: '#fff', bgcolor: 'rgba(255,255,255,0.15)', '&:hover': { bgcolor: 'rgba(255,255,255,0.3)' } }}>
                 <ArrowBackRoundedIcon />
               </IconButton>
             )}
             <Box>
-              <Typography variant="h6" sx={{ fontWeight: 900, textTransform: 'uppercase', letterSpacing: 0.8, fontSize: { xs: 15, md: 18 } }}>
+              <Typography variant="h6" sx={{ fontWeight: 900, textTransform: 'uppercase', letterSpacing: 1.1, fontSize: { xs: 15, md: 19 }, color: '#ffffff' }}>
                 OFERTA REGIONAL DE PROGRAMAS ACADÉMICOS SIMILARES
               </Typography>
-              <Typography variant="caption" sx={{ color: 'rgba(255,255,255,0.85)', fontWeight: 700 }}>
-                UNICESMAG
+              <Typography variant="caption" sx={{ color: '#fbbf24', fontWeight: 800, fontSize: 12 }}>
+                Sistema de Gestión e Inteligencia de Información — UNICESMAG
               </Typography>
             </Box>
           </Stack>
-          <Chip label="Contexto Externo" sx={{ bgcolor: 'rgba(255,255,255,0.2)', color: '#fff', fontWeight: 800, px: 1 }} />
+          <Chip
+            label="Contexto Externo"
+            sx={{
+              bgcolor: 'rgba(255,255,255,0.18)',
+              color: '#ffffff',
+              fontWeight: 900,
+              px: 1.5,
+              border: '1px solid rgba(255,255,255,0.3)',
+              boxShadow: '0 2px 8px rgba(0,0,0,0.15)'
+            }}
+          />
         </Box>
 
         {/* Main Tabs Navigation */}
-        <Box sx={{ borderBottom: 1, borderColor: 'divider', bgcolor: '#f8fafc', px: 2 }}>
+        <Box sx={{ borderBottom: 1, borderColor: 'divider', bgcolor: '#ffffff', px: 2 }}>
           <Tabs value={mainTab} onChange={(_, val) => setMainTab(val)} textColor="primary" indicatorColor="primary">
-            <Tab label="1. Oferta Académica" icon={<SchoolRoundedIcon fontSize="small" />} iconPosition="start" sx={{ fontWeight: 800, textTransform: 'none', py: 1.5 }} />
-            <Tab label="2. Información Poblacional" icon={<GroupsRoundedIcon fontSize="small" />} iconPosition="start" sx={{ fontWeight: 800, textTransform: 'none', py: 1.5 }} />
+            <Tab label="1. Oferta Académica" icon={<SchoolRoundedIcon fontSize="small" />} iconPosition="start" sx={{ fontWeight: 800, textTransform: 'none', py: 1.5, fontSize: 14 }} />
+            <Tab label="2. Información Poblacional" icon={<GroupsRoundedIcon fontSize="small" />} iconPosition="start" sx={{ fontWeight: 800, textTransform: 'none', py: 1.5, fontSize: 14 }} />
           </Tabs>
         </Box>
       </Paper>
