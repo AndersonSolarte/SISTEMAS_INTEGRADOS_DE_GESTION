@@ -6935,6 +6935,50 @@ const downloadTemplate = async (req, res) => {
       return res.send(buffer);
     }
 
+    if (categoria === 'Poblacional' && poblacionalConfig?.customImport === 'contexto_externo' && normalizeHeader(fixedSubSubcategoria).includes('PROGRAMAS')) {
+      const workbook = XLSX.utils.book_new();
+
+      const sheet1Headers = [
+        'CÓDIGO_INSTITUCIÓN_PADRE', 'CÓDIGO_INSTITUCIÓN', 'NOMBRE_INSTITUCIÓN', 'ESTADO_INSTITUCIÓN',
+        'CARÁCTER_ACADÉMICO', 'SECTOR', 'REGISTRO_UNICO', 'CÓDIGO_SNIES_DEL_PROGRAMA',
+        'CÓDIGO_ANTERIOR_ICFES', 'NOMBRE_DEL_PROGRAMA', 'TITULO_OTORGADO', 'ESTADO_PROGRAMA',
+        'JUSTIFICACION', 'JUSTIFICACION_DETALLADA', 'RECONOCIMIENTO_DEL_MINISTERIO',
+        'RESOLUCIÓN_DE_APROBACIÓN', 'FECHA_DE_RESOLUCIÓN', 'FECHA_EJECUTORIA', 'VIGENCIA_AÑOS',
+        'FECHA_DE_REGISTRO_EN_SNIES', 'CINE_F_2013_AC_CAMPO_AMPLIO', 'CINE_F_2013_AC_CAMPO_ESPECÍFIC',
+        'CINE_F_2013_AC_CAMPO_DETALLADO', 'ÁREA_DE_CONOCIMIENTO', 'NÚCLEO_BÁSICO_DEL_CONOCIMIENTO',
+        'NIVEL_ACADÉMICO', 'NIVEL_DE_FORMACIÓN', 'MODALIDAD', 'NÚMERO_CRÉDITOS',
+        'NÚMERO_PERIODOS_DE_DURACIÓN', 'PERIODICIDAD', 'SE_OFRECE_POR_CICLOS_PROPEDÉUT',
+        'PERIODICIDAD_ADMISIONES', 'PROGRAMA_EN_CONVENIO', 'DEPARTAMENTO_OFERTA_PROGRAMA',
+        'MUNICIPIO_OFERTA_PROGRAMA', 'COSTO_MATRÍCULA_ESTUD_NUEVOS', 'VIGENCIA TRANSITORIA',
+        'OBSERVACIÓN DECRETO 1174/23'
+      ];
+      const sheet2Headers = [
+        'CÓDIGO_SNIES_DEL_PROGRAMA', 'NOMBRE_DEL_PROGRAMA', 'TIPO_CUBRIMIENTO',
+        'DEPARTAMENTO', 'MUNICIPIO', 'NOMBRE_IES', 'CODIGO_IES'
+      ];
+      const sheet3Headers = [
+        'CÓDIGO_SNIES_DEL_PROGRAMA', 'NOMBRE_DEL_PROGRAMA', 'TIPO_CUBRIMIENTO',
+        'DEPARTAMENTO', 'MUNICIPIO', 'NOMBRE_IES', 'CODIGO_IES', 'VALOR_MATRICULA'
+      ];
+
+      const ws1 = buildHeaderOnlyWorksheet(sheet1Headers);
+      ws1['!cols'] = sheet1Headers.map((h) => ({ wch: Math.max(14, Math.min(42, String(h).length + 6)) }));
+      XLSX.utils.book_append_sheet(workbook, ws1, 'Programas');
+
+      const ws2 = buildHeaderOnlyWorksheet(sheet2Headers);
+      ws2['!cols'] = sheet2Headers.map((h) => ({ wch: Math.max(14, Math.min(42, String(h).length + 6)) }));
+      XLSX.utils.book_append_sheet(workbook, ws2, 'Cobertura convenios');
+
+      const ws3 = buildHeaderOnlyWorksheet(sheet3Headers);
+      ws3['!cols'] = sheet3Headers.map((h) => ({ wch: Math.max(14, Math.min(42, String(h).length + 6)) }));
+      XLSX.utils.book_append_sheet(workbook, ws3, 'Cobertura');
+
+      const buffer = XLSX.write(workbook, { type: 'buffer', bookType: 'xlsx' });
+      res.setHeader('Content-Disposition', 'attachment; filename=plantilla_programas_contexto_externo.xlsx');
+      res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+      return res.send(buffer);
+    }
+
     const headers = (categoria === 'Poblacional' && poblacionalConfig?.customImport === 'contexto_externo')
       ? contextoTemplateHeaders
       : categoria === 'Poblacional'
