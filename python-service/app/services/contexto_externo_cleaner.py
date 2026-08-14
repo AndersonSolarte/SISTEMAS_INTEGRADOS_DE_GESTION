@@ -678,11 +678,21 @@ def _candidate_frames(content: bytes, extension: str) -> list[tuple[str, int, pd
     for sheet, raw in _read_excel(content, extension):
         if raw.empty:
             continue
-        for header_index in range(min(25, len(raw.index))):
-            header = [clean_visible_value(value) for value in raw.iloc[header_index].tolist()]
-            frame = raw.iloc[header_index + 1 :].copy()
-            frame.columns = header
-            candidates.append((sheet, header_index, frame))
+        best_header_idx = 0
+        best_score = -1
+        max_scan = min(25, len(raw.index))
+        for idx in range(max_scan):
+            hdr = [clean_visible_value(val) for val in raw.iloc[idx].tolist()]
+            norm_set = {normalize_key(h) for h in hdr if normalize_key(h)}
+            score = len(norm_set)
+            if score > best_score:
+                best_score = score
+                best_header_idx = idx
+
+        header = [clean_visible_value(value) for value in raw.iloc[best_header_idx].tolist()]
+        frame = raw.iloc[best_header_idx + 1 :].copy()
+        frame.columns = header
+        candidates.append((sheet, best_header_idx, frame))
     return candidates
 
 
