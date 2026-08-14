@@ -226,15 +226,28 @@ const runPythonCleanerPath = async ({ inputPath, outputPath, lista }) => {
 
   const timeoutMs = Number(process.env.CONTEXTO_EXTERNO_PYTHON_TIMEOUT_MS || 1800000);
 
-  const response = await axios.post(`${PYTHON_SERVICE_URL}/contexto-externo/limpiar-path`, {
-    input_path: inputPath,
-    output_path: outputPath,
-    lista,
-    reglas: activeRules
-  }, {
-    timeout: timeoutMs,
-    httpAgent
-  });
+  let response;
+  try {
+    response = await axios.post(`${PYTHON_SERVICE_URL}/contexto-externo/limpiar-path`, {
+      input_path: inputPath,
+      output_path: outputPath,
+      lista,
+      reglas: activeRules
+    }, {
+      timeout: timeoutMs,
+      httpAgent
+    });
+  } catch (axiosError) {
+    if (axiosError.response) {
+      const status = axiosError.response.status;
+      const data = axiosError.response.data || {};
+      const message = typeof data === 'object' ? (data.detail || data.message || 'No fue posible limpiar el archivo.') : String(data);
+      const err = new Error(message);
+      err.status = status;
+      throw err;
+    }
+    throw axiosError;
+  }
 
   const data = response.data || {};
   return {

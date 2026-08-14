@@ -1297,7 +1297,7 @@ def _clean_excel_streaming(
     report_df = pd.DataFrame(correction_rows if correction_rows else [], columns=["COLUMNA", "CODIGO_REFERENCIA", "VALOR_DETECTADO", "VALOR_ESTANDAR", "MOTIVO", "OCURRENCIAS"])
 
     write_target = output_path if output_path else output_buffer
-    with pd.ExcelWriter(write_target, engine='xlsxwriter') as writer:
+    with pd.ExcelWriter(write_target, engine='openpyxl') as writer:
         df.to_excel(writer, sheet_name=sheet_name, index=False)
         report_df.to_excel(writer, sheet_name="REPORTE_NORMALIZACION", index=False)
 
