@@ -232,21 +232,21 @@ export default function ContextoExternoDashboardPanel({ onBack }) {
     });
   }, [parsedPoblacionalRows, activePoblacionalBase, pobPeriodo, pobDepto]);
 
-  // Helper box for metric value input display
+  // Helper box for metric value input display matching the reference images
   const ValueBox = ({ value, color = '#1e293b' }) => (
     <Box
       sx={{
-        minWidth: 44,
-        height: 25,
-        border: '1px solid #cbd5e1',
-        borderRadius: 1.5,
+        minWidth: 54,
+        height: 26,
+        border: '1.5px solid #94a3b8',
+        borderRadius: 1,
         display: 'grid',
         placeItems: 'center',
         fontWeight: 900,
-        fontSize: 12.5,
+        fontSize: 13,
         color: color,
         bgcolor: '#ffffff',
-        boxShadow: 'inset 0 1px 2px rgba(0,0,0,0.06)'
+        boxShadow: 'inset 0 1px 3px rgba(0,0,0,0.06)'
       }}
     >
       {value}
@@ -400,7 +400,7 @@ export default function ContextoExternoDashboardPanel({ onBack }) {
                   startIcon={<HubRoundedIcon />}
                   sx={{ textTransform: 'none', fontWeight: 800, borderRadius: 2 }}
                 >
-                  Mapa Radial (Mindmap con Enlaces)
+                  Mapa Radial (Fiel a tu Imagen Referencia)
                 </Button>
                 <Button
                   size="small"
@@ -435,226 +435,338 @@ export default function ContextoExternoDashboardPanel({ onBack }) {
           </Paper>
 
           {/* ========================================================================= */}
-          {/* VARIANTE 1: RADIAL MAP / MINDMAP CON LÍNEAS DE CONEXIÓN SVG (Imagen 2) */}
+          {/* VARIANTE 1: RADIAL MAP / MINDMAP (RÉPLICA FIEL 1:1 DE TU IMAGEN REFERENCIA) */}
           {/* ========================================================================= */}
           {visualStyle === 'mindmap' && (
-            <Paper elevation={0} sx={{ p: { xs: 2, md: 4 }, border: '1px solid #cbd5e1', borderRadius: 4, bgcolor: '#ffffff', position: 'relative', overflow: 'hidden' }}>
-              {/* SVG Connecting Lines Overlay */}
-              <svg style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', pointerEvents: 'none', zIndex: 1 }}>
-                {/* Curved paths from center node to surrounding cards */}
-                <path d="M 450 180 C 450 100, 250 130, 220 160" stroke="#1d4ed8" strokeWidth="2.5" fill="none" strokeDasharray="4 2" />
-                <path d="M 450 180 C 450 100, 650 130, 680 160" stroke="#15803d" strokeWidth="2.5" fill="none" strokeDasharray="4 2" />
-                <path d="M 450 180 C 300 180, 220 280, 220 320" stroke="#7e22ce" strokeWidth="2.5" fill="none" strokeDasharray="4 2" />
-                <path d="M 450 180 C 600 180, 680 280, 680 320" stroke="#c2410c" strokeWidth="2.5" fill="none" strokeDasharray="4 2" />
-                <path d="M 450 240 L 450 360" stroke="#0f766e" strokeWidth="2.5" fill="none" strokeDasharray="4 2" />
+            <Paper elevation={0} sx={{ p: { xs: 2, md: 3 }, border: '1px solid #cbd5e1', borderRadius: 4, bgcolor: '#ffffff', overflow: 'hidden' }}>
+              <Box sx={{ width: '100%', minHeight: 640, position: 'relative', display: 'flex', justifyContent: 'center', alignItems: 'center' }}>
+                
+                {/* SVG Connecting Lines Layer */}
+                <svg style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', pointerEvents: 'none', zIndex: 1 }}>
+                  {/* Top-Left: Reconocimiento MEN (Blue #003399) */}
+                  <path d="M 470 320 Q 370 140 280 140" stroke="#003399" strokeWidth="3.5" fill="none" />
+                  <circle cx="390" cy="230" r="5" fill="#003399" />
+                  <circle cx="280" cy="140" r="5" fill="#003399" />
 
-                {/* Connection Anchor Dots */}
-                <circle cx="220" cy="160" r="5" fill="#1d4ed8" />
-                <circle cx="680" cy="160" r="5" fill="#15803d" />
-                <circle cx="220" cy="320" r="5" fill="#7e22ce" />
-                <circle cx="680" cy="320" r="5" fill="#c2410c" />
-                <circle cx="450" cy="360" r="5" fill="#0f766e" />
-              </svg>
+                  {/* Top-Right: Sector (Green #2e7d32) */}
+                  <path d="M 470 320 Q 570 140 660 140" stroke="#2e7d32" strokeWidth="3.5" fill="none" />
+                  <circle cx="550" cy="230" r="5" fill="#2e7d32" />
+                  <circle cx="660" cy="140" r="5" fill="#2e7d32" />
 
-              <Box sx={{ maxWidth: 920, mx: 'auto', position: 'relative', zIndex: 2 }}>
-                {/* Central Circle Node (Total programas) */}
-                <Box
-                  sx={{
-                    width: 170,
-                    height: 170,
-                    borderRadius: '50%',
-                    background: 'linear-gradient(135deg, #ffffff 0%, #f8fafc 100%)',
-                    border: '6px solid #0284c7',
-                    boxShadow: '0 8px 24px rgba(2, 132, 199, 0.22)',
-                    mx: 'auto',
-                    mb: 3,
-                    display: 'flex',
-                    flexDirection: 'column',
-                    alignItems: 'center',
-                    justifyContent: 'center'
-                  }}
-                >
-                  <Typography variant="caption" sx={{ fontWeight: 900, color: '#1e3a8a', textTransform: 'uppercase', letterSpacing: 0.5, fontSize: 11 }}>
-                    Total programas
-                  </Typography>
-                  <Typography variant="h4" sx={{ fontWeight: 900, color: '#0284c7', my: 0.3 }}>
-                    {ofertaMetrics.total}
-                  </Typography>
-                  <ValueBox value={ofertaMetrics.total} color="#0284c7" />
-                </Box>
+                  {/* Middle-Left: Modalidades (Purple #6a1b9a) */}
+                  <path d="M 470 320 Q 350 320 280 340" stroke="#6a1b9a" strokeWidth="3.5" fill="none" />
+                  <circle cx="365" cy="320" r="5" fill="#6a1b9a" />
+                  <circle cx="280" cy="340" r="5" fill="#6a1b9a" />
 
-                {/* Surrounding Radial Cards Container */}
-                <Grid container spacing={2.5}>
-                  {/* Reconocimiento MEN */}
-                  <Grid item xs={12} sm={6}>
-                    <Paper elevation={0} sx={{ border: '2px solid #1d4ed8', borderRadius: 3, bgcolor: '#fff', p: 2, position: 'relative' }}>
-                      <Stack direction="row" spacing={1} alignItems="center" sx={{ mb: 1.5, pb: 0.8, borderBottom: '2px solid #1d4ed8' }}>
-                        <Box sx={{ p: 0.5, borderRadius: 1.5, bgcolor: '#dbeafe', color: '#1d4ed8', display: 'grid' }}>
-                          <AccountBalanceRoundedIcon fontSize="small" />
+                  {/* Middle-Right: Rango Créditos (Orange #e65100) */}
+                  <path d="M 470 320 Q 590 320 660 340" stroke="#e65100" strokeWidth="3.5" fill="none" />
+                  <circle cx="575" cy="320" r="5" fill="#e65100" />
+                  <circle cx="660" cy="340" r="5" fill="#e65100" />
+
+                  {/* Bottom-Center: N° Semestres (Teal #00838f) */}
+                  <path d="M 470 320 L 470 470" stroke="#00838f" strokeWidth="3.5" fill="none" />
+                  <circle cx="470" cy="395" r="5" fill="#00838f" />
+                  <circle cx="470" cy="470" r="5" fill="#00838f" />
+                </svg>
+
+                <Box sx={{ width: 940, height: 620, position: 'relative', zIndex: 2 }}>
+                  
+                  {/* CENTER NODE: Total programas */}
+                  <Box
+                    sx={{
+                      position: 'absolute',
+                      top: '50%',
+                      left: '50%',
+                      transform: 'translate(-50%, -50%)',
+                      width: 175,
+                      height: 175,
+                      borderRadius: '50%',
+                      background: '#ffffff',
+                      boxShadow: '0 10px 30px rgba(0, 51, 153, 0.15)',
+                      display: 'flex',
+                      flexDirection: 'column',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      zIndex: 10
+                    }}
+                  >
+                    {/* Multi-color arc ring SVG overlay */}
+                    <svg style={{ position: 'absolute', top: -8, left: -8, width: 191, height: 191, pointerEvents: 'none' }}>
+                      <circle cx="95.5" cy="95.5" r="88" stroke="#003399" strokeWidth="6" fill="none" strokeDasharray="110 440" strokeDashoffset="0" />
+                      <circle cx="95.5" cy="95.5" r="88" stroke="#2e7d32" strokeWidth="6" fill="none" strokeDasharray="110 440" strokeDashoffset="-110" />
+                      <circle cx="95.5" cy="95.5" r="88" stroke="#e65100" strokeWidth="6" fill="none" strokeDasharray="110 440" strokeDashoffset="-220" />
+                      <circle cx="95.5" cy="95.5" r="88" stroke="#00838f" strokeWidth="6" fill="none" strokeDasharray="110 440" strokeDashoffset="-330" />
+                      <circle cx="95.5" cy="95.5" r="88" stroke="#6a1b9a" strokeWidth="6" fill="none" strokeDasharray="110 440" strokeDashoffset="-440" />
+                    </svg>
+
+                    <Typography variant="h6" sx={{ fontWeight: 900, color: '#002244', textTransform: 'none', lineHeight: 1.1, textAlign: 'center', mb: 1 }}>
+                      Total<br />programas
+                    </Typography>
+                    
+                    <ValueBox value={ofertaMetrics.total} color="#003399" />
+                  </Box>
+
+                  {/* 1. TOP-LEFT: Reconocimiento MEN (Blue #003399) */}
+                  <Box sx={{ position: 'absolute', top: 20, left: 10, width: 270 }}>
+                    <Box sx={{ position: 'relative', pt: 2.5 }}>
+                      <Box
+                        sx={{
+                          position: 'absolute',
+                          top: 0,
+                          left: '50%',
+                          transform: 'translateX(-50%)',
+                          width: 44,
+                          height: 44,
+                          borderRadius: '50%',
+                          bgcolor: '#ffffff',
+                          border: '2.5px solid #003399',
+                          color: '#003399',
+                          display: 'grid',
+                          placeItems: 'center',
+                          boxShadow: '0 4px 10px rgba(0, 51, 153, 0.2)',
+                          zIndex: 3
+                        }}
+                      >
+                        <AccountBalanceRoundedIcon fontSize="small" />
+                      </Box>
+
+                      <Paper elevation={0} sx={{ border: '2px solid #003399', borderRadius: 3, bgcolor: '#ffffff', p: 1.8, pt: 3.2 }}>
+                        <Box sx={{ bgcolor: '#003399', color: '#fff', borderRadius: 2, textAlign: 'center', py: 0.6, mb: 1.5 }}>
+                          <Typography variant="subtitle2" sx={{ fontWeight: 900, fontSize: 13 }}>
+                            Reconocimiento MEN
+                          </Typography>
                         </Box>
-                        <Typography variant="subtitle2" sx={{ fontWeight: 900, color: '#1d4ed8' }}>
-                          Reconocimiento MEN
-                        </Typography>
-                      </Stack>
-                      <Stack spacing={1}>
-                        <Stack direction="row" justifyContent="space-between" alignItems="center">
-                          <Typography variant="body2" sx={{ fontWeight: 700, color: '#475569', fontSize: 12.5 }}>
-                            • Registro calificado
-                          </Typography>
-                          <ValueBox value={ofertaMetrics.registroCalificado} />
-                        </Stack>
-                        <Stack direction="row" justifyContent="space-between" alignItems="center">
-                          <Typography variant="body2" sx={{ fontWeight: 700, color: '#475569', fontSize: 12.5 }}>
-                            • Acreditación alta calidad
-                          </Typography>
-                          <ValueBox value={ofertaMetrics.acreditacionAltaCalidad} color="#1d4ed8" />
-                        </Stack>
-                      </Stack>
-                    </Paper>
-                  </Grid>
-
-                  {/* Sector */}
-                  <Grid item xs={12} sm={6}>
-                    <Paper elevation={0} sx={{ border: '2px solid #15803d', borderRadius: 3, bgcolor: '#fff', p: 2, position: 'relative' }}>
-                      <Stack direction="row" spacing={1} alignItems="center" sx={{ mb: 1.5, pb: 0.8, borderBottom: '2px solid #15803d' }}>
-                        <Box sx={{ p: 0.5, borderRadius: 1.5, bgcolor: '#dcfce7', color: '#15803d', display: 'grid' }}>
-                          <GroupsRoundedIcon fontSize="small" />
-                        </Box>
-                        <Typography variant="subtitle2" sx={{ fontWeight: 900, color: '#15803d' }}>
-                          Sector
-                        </Typography>
-                      </Stack>
-                      <Stack spacing={1}>
-                        <Stack direction="row" justifyContent="space-between" alignItems="center">
-                          <Typography variant="body2" sx={{ fontWeight: 700, color: '#475569', fontSize: 12.5 }}>
-                            • Público / Oficial
-                          </Typography>
-                          <ValueBox value={ofertaMetrics.publico} color="#15803d" />
-                        </Stack>
-                        <Stack direction="row" justifyContent="space-between" alignItems="center">
-                          <Typography variant="body2" sx={{ fontWeight: 700, color: '#475569', fontSize: 12.5 }}>
-                            • Privado
-                          </Typography>
-                          <ValueBox value={ofertaMetrics.privado} />
-                        </Stack>
-                      </Stack>
-                    </Paper>
-                  </Grid>
-
-                  {/* Modalidades */}
-                  <Grid item xs={12} sm={6}>
-                    <Paper elevation={0} sx={{ border: '2px solid #7e22ce', borderRadius: 3, bgcolor: '#fff', p: 2, position: 'relative' }}>
-                      <Stack direction="row" spacing={1} alignItems="center" sx={{ mb: 1.5, pb: 0.8, borderBottom: '2px solid #7e22ce' }}>
-                        <Box sx={{ p: 0.5, borderRadius: 1.5, bgcolor: '#f3e8ff', color: '#7e22ce', display: 'grid' }}>
-                          <DevicesRoundedIcon fontSize="small" />
-                        </Box>
-                        <Typography variant="subtitle2" sx={{ fontWeight: 900, color: '#7e22ce' }}>
-                          Modalidades
-                        </Typography>
-                      </Stack>
-                      <Grid container spacing={1}>
-                        <Grid item xs={6}>
+                        <Stack spacing={1}>
                           <Stack direction="row" justifyContent="space-between" alignItems="center">
-                            <Typography variant="body2" sx={{ fontWeight: 700, color: '#475569', fontSize: 12 }}>
+                            <Typography variant="body2" sx={{ fontWeight: 700, color: '#334155', fontSize: 12 }}>
+                              • Registro calificado
+                            </Typography>
+                            <ValueBox value={ofertaMetrics.registroCalificado} />
+                          </Stack>
+                          <Stack direction="row" justifyContent="space-between" alignItems="center">
+                            <Typography variant="body2" sx={{ fontWeight: 700, color: '#334155', fontSize: 12 }}>
+                              • Acreditación de alta calidad
+                            </Typography>
+                            <ValueBox value={ofertaMetrics.acreditacionAltaCalidad} color="#003399" />
+                          </Stack>
+                        </Stack>
+                      </Paper>
+                    </Box>
+                  </Box>
+
+                  {/* 2. TOP-RIGHT: Sector (Green #2e7d32) */}
+                  <Box sx={{ position: 'absolute', top: 20, right: 10, width: 270 }}>
+                    <Box sx={{ position: 'relative', pt: 2.5 }}>
+                      <Box
+                        sx={{
+                          position: 'absolute',
+                          top: 0,
+                          left: '50%',
+                          transform: 'translateX(-50%)',
+                          width: 44,
+                          height: 44,
+                          borderRadius: '50%',
+                          bgcolor: '#ffffff',
+                          border: '2.5px solid #2e7d32',
+                          color: '#2e7d32',
+                          display: 'grid',
+                          placeItems: 'center',
+                          boxShadow: '0 4px 10px rgba(46, 125, 50, 0.2)',
+                          zIndex: 3
+                        }}
+                      >
+                        <GroupsRoundedIcon fontSize="small" />
+                      </Box>
+
+                      <Paper elevation={0} sx={{ border: '2px solid #2e7d32', borderRadius: 3, bgcolor: '#ffffff', p: 1.8, pt: 3.2 }}>
+                        <Box sx={{ bgcolor: '#2e7d32', color: '#fff', borderRadius: 2, textAlign: 'center', py: 0.6, mb: 1.5 }}>
+                          <Typography variant="subtitle2" sx={{ fontWeight: 900, fontSize: 13 }}>
+                            Sector
+                          </Typography>
+                        </Box>
+                        <Stack spacing={1}>
+                          <Stack direction="row" justifyContent="space-between" alignItems="center">
+                            <Typography variant="body2" sx={{ fontWeight: 700, color: '#334155', fontSize: 12 }}>
+                              • Público
+                            </Typography>
+                            <ValueBox value={ofertaMetrics.publico} color="#2e7d32" />
+                          </Stack>
+                          <Stack direction="row" justifyContent="space-between" alignItems="center">
+                            <Typography variant="body2" sx={{ fontWeight: 700, color: '#334155', fontSize: 12 }}>
+                              • Privado
+                            </Typography>
+                            <ValueBox value={ofertaMetrics.privado} />
+                          </Stack>
+                        </Stack>
+                      </Paper>
+                    </Box>
+                  </Box>
+
+                  {/* 3. MIDDLE-LEFT: Modalidades (Purple #6a1b9a) */}
+                  <Box sx={{ position: 'absolute', top: 230, left: 10, width: 270 }}>
+                    <Box sx={{ position: 'relative', pt: 2.5 }}>
+                      <Box
+                        sx={{
+                          position: 'absolute',
+                          top: 0,
+                          left: '50%',
+                          transform: 'translateX(-50%)',
+                          width: 44,
+                          height: 44,
+                          borderRadius: '50%',
+                          bgcolor: '#ffffff',
+                          border: '2.5px solid #6a1b9a',
+                          color: '#6a1b9a',
+                          display: 'grid',
+                          placeItems: 'center',
+                          boxShadow: '0 4px 10px rgba(106, 27, 154, 0.2)',
+                          zIndex: 3
+                        }}
+                      >
+                        <DevicesRoundedIcon fontSize="small" />
+                      </Box>
+
+                      <Paper elevation={0} sx={{ border: '2px solid #6a1b9a', borderRadius: 3, bgcolor: '#ffffff', p: 1.8, pt: 3.2 }}>
+                        <Box sx={{ bgcolor: '#6a1b9a', color: '#fff', borderRadius: 2, textAlign: 'center', py: 0.6, mb: 1.5 }}>
+                          <Typography variant="subtitle2" sx={{ fontWeight: 900, fontSize: 13 }}>
+                            Modalidades
+                          </Typography>
+                        </Box>
+                        <Stack spacing={0.8}>
+                          <Stack direction="row" justifyContent="space-between" alignItems="center">
+                            <Typography variant="body2" sx={{ fontWeight: 700, color: '#334155', fontSize: 12 }}>
                               • Presencial
                             </Typography>
-                            <ValueBox value={ofertaMetrics.presencial} color="#7e22ce" />
+                            <ValueBox value={ofertaMetrics.presencial} color="#6a1b9a" />
                           </Stack>
-                        </Grid>
-                        <Grid item xs={6}>
                           <Stack direction="row" justifyContent="space-between" alignItems="center">
-                            <Typography variant="body2" sx={{ fontWeight: 700, color: '#475569', fontSize: 12 }}>
+                            <Typography variant="body2" sx={{ fontWeight: 700, color: '#334155', fontSize: 12 }}>
                               • Virtual
                             </Typography>
                             <ValueBox value={ofertaMetrics.virtual} />
                           </Stack>
-                        </Grid>
-                        <Grid item xs={6}>
                           <Stack direction="row" justifyContent="space-between" alignItems="center">
-                            <Typography variant="body2" sx={{ fontWeight: 700, color: '#475569', fontSize: 12 }}>
+                            <Typography variant="body2" sx={{ fontWeight: 700, color: '#334155', fontSize: 12 }}>
                               • A distancia
                             </Typography>
                             <ValueBox value={ofertaMetrics.aDistancia} />
                           </Stack>
-                        </Grid>
-                        <Grid item xs={6}>
                           <Stack direction="row" justifyContent="space-between" alignItems="center">
-                            <Typography variant="body2" sx={{ fontWeight: 700, color: '#475569', fontSize: 12 }}>
+                            <Typography variant="body2" sx={{ fontWeight: 700, color: '#334155', fontSize: 12 }}>
                               • Dual
                             </Typography>
                             <ValueBox value={ofertaMetrics.dual} />
                           </Stack>
-                        </Grid>
-                      </Grid>
-                    </Paper>
-                  </Grid>
+                        </Stack>
+                      </Paper>
+                    </Box>
+                  </Box>
 
-                  {/* Rango Créditos Académicos */}
-                  <Grid item xs={12} sm={6}>
-                    <Paper elevation={0} sx={{ border: '2px solid #c2410c', borderRadius: 3, bgcolor: '#fff', p: 2, position: 'relative' }}>
-                      <Stack direction="row" spacing={1} alignItems="center" sx={{ mb: 1.5, pb: 0.8, borderBottom: '2px solid #c2410c' }}>
-                        <Box sx={{ p: 0.5, borderRadius: 1.5, bgcolor: '#ffedd5', color: '#c2410c', display: 'grid' }}>
-                          <SchoolRoundedIcon fontSize="small" />
-                        </Box>
-                        <Typography variant="subtitle2" sx={{ fontWeight: 900, color: '#c2410c' }}>
-                          Rango Créditos Académicos
-                        </Typography>
-                      </Stack>
-                      <Stack spacing={1}>
-                        <Stack direction="row" justifyContent="space-between" alignItems="center">
-                          <Typography variant="body2" sx={{ fontWeight: 700, color: '#475569', fontSize: 12 }}>
-                            • N° créditos mínimo
-                          </Typography>
-                          <ValueBox value={ofertaMetrics.minCreditos} />
-                        </Stack>
-                        <Stack direction="row" justifyContent="space-between" alignItems="center">
-                          <Typography variant="body2" sx={{ fontWeight: 700, color: '#475569', fontSize: 12 }}>
-                            • N° créditos máximo
-                          </Typography>
-                          <ValueBox value={ofertaMetrics.maxCreditos} />
-                        </Stack>
-                        <Stack direction="row" justifyContent="space-between" alignItems="center">
-                          <Typography variant="body2" sx={{ fontWeight: 700, color: '#475569', fontSize: 12 }}>
-                            • Promedio de créditos
-                          </Typography>
-                          <ValueBox value={ofertaMetrics.avgCreditos} color="#c2410c" />
-                        </Stack>
-                      </Stack>
-                    </Paper>
-                  </Grid>
+                  {/* 4. MIDDLE-RIGHT: Rango Créditos Académicos (Orange #e65100) */}
+                  <Box sx={{ position: 'absolute', top: 230, right: 10, width: 270 }}>
+                    <Box sx={{ position: 'relative', pt: 2.5 }}>
+                      <Box
+                        sx={{
+                          position: 'absolute',
+                          top: 0,
+                          left: '50%',
+                          transform: 'translateX(-50%)',
+                          width: 44,
+                          height: 44,
+                          borderRadius: '50%',
+                          bgcolor: '#ffffff',
+                          border: '2.5px solid #e65100',
+                          color: '#e65100',
+                          display: 'grid',
+                          placeItems: 'center',
+                          boxShadow: '0 4px 10px rgba(230, 81, 0, 0.2)',
+                          zIndex: 3
+                        }}
+                      >
+                        <SchoolRoundedIcon fontSize="small" />
+                      </Box>
 
-                  {/* N° Semestres (Duración) */}
-                  <Grid item xs={12}>
-                    <Paper elevation={0} sx={{ border: '2px solid #0f766e', borderRadius: 3, bgcolor: '#fff', p: 2, position: 'relative' }}>
-                      <Stack direction="row" spacing={1} alignItems="center" sx={{ mb: 1.5, pb: 0.8, borderBottom: '2px solid #0f766e' }}>
-                        <Box sx={{ p: 0.5, borderRadius: 1.5, bgcolor: '#ccfbf1', color: '#0f766e', display: 'grid' }}>
-                          <CalendarMonthRoundedIcon fontSize="small" />
-                        </Box>
-                        <Typography variant="subtitle2" sx={{ fontWeight: 900, color: '#0f766e' }}>
-                          N° Semestres (Duración)
-                        </Typography>
-                      </Stack>
-                      <Grid container spacing={1.5}>
-                        {Object.entries(ofertaMetrics.semestresMap).length === 0 ? (
-                          <Typography variant="caption" sx={{ color: '#64748b', fontStyle: 'italic', px: 1 }}>
-                            No hay información de semestres
+                      <Paper elevation={0} sx={{ border: '2px solid #e65100', borderRadius: 3, bgcolor: '#ffffff', p: 1.8, pt: 3.2 }}>
+                        <Box sx={{ bgcolor: '#e65100', color: '#fff', borderRadius: 2, textAlign: 'center', py: 0.6, mb: 1.5 }}>
+                          <Typography variant="subtitle2" sx={{ fontWeight: 900, fontSize: 13 }}>
+                            Rango Créditos Académicos
                           </Typography>
-                        ) : (
-                          Object.entries(ofertaMetrics.semestresMap).map(([sem, cnt]) => (
-                            <Grid item xs={6} sm={3} key={sem}>
-                              <Stack direction="row" justifyContent="space-between" alignItems="center">
-                                <Typography variant="body2" sx={{ fontWeight: 700, color: '#475569', fontSize: 12 }}>
-                                  • {sem} semestres
+                        </Box>
+                        <Stack spacing={1}>
+                          <Stack direction="row" justifyContent="space-between" alignItems="center">
+                            <Typography variant="body2" sx={{ fontWeight: 700, color: '#334155', fontSize: 12 }}>
+                              • Nº de créditos mínimo
+                            </Typography>
+                            <ValueBox value={ofertaMetrics.minCreditos} />
+                          </Stack>
+                          <Stack direction="row" justifyContent="space-between" alignItems="center">
+                            <Typography variant="body2" sx={{ fontWeight: 700, color: '#334155', fontSize: 12 }}>
+                              • Nº de créditos máximo
+                            </Typography>
+                            <ValueBox value={ofertaMetrics.maxCreditos} />
+                          </Stack>
+                          <Stack direction="row" justifyContent="space-between" alignItems="center">
+                            <Typography variant="body2" sx={{ fontWeight: 700, color: '#334155', fontSize: 12 }}>
+                              • Promedio de créditos
+                            </Typography>
+                            <ValueBox value={ofertaMetrics.avgCreditos} color="#e65100" />
+                          </Stack>
+                        </Stack>
+                      </Paper>
+                    </Box>
+                  </Box>
+
+                  {/* 5. BOTTOM-CENTER: Nº semestres (Teal #00838f) */}
+                  <Box sx={{ position: 'absolute', bottom: 10, left: '50%', transform: 'translateX(-50%)', width: 290 }}>
+                    <Box sx={{ position: 'relative', pt: 2.5 }}>
+                      <Box
+                        sx={{
+                          position: 'absolute',
+                          top: 0,
+                          left: '50%',
+                          transform: 'translateX(-50%)',
+                          width: 44,
+                          height: 44,
+                          borderRadius: '50%',
+                          bgcolor: '#ffffff',
+                          border: '2.5px solid #00838f',
+                          color: '#00838f',
+                          display: 'grid',
+                          placeItems: 'center',
+                          boxShadow: '0 4px 10px rgba(0, 131, 143, 0.2)',
+                          zIndex: 3
+                        }}
+                      >
+                        <CalendarMonthRoundedIcon fontSize="small" />
+                      </Box>
+
+                      <Paper elevation={0} sx={{ border: '2px solid #00838f', borderRadius: 3, bgcolor: '#ffffff', p: 1.8, pt: 3.2 }}>
+                        <Box sx={{ bgcolor: '#00838f', color: '#fff', borderRadius: 2, textAlign: 'center', py: 0.6, mb: 1.5 }}>
+                          <Typography variant="subtitle2" sx={{ fontWeight: 900, fontSize: 13 }}>
+                            Nº semestres
+                          </Typography>
+                        </Box>
+                        <Stack spacing={0.8}>
+                          {Object.entries(ofertaMetrics.semestresMap).length === 0 ? (
+                            <Typography variant="caption" sx={{ color: '#64748b', fontStyle: 'italic', textAlign: 'center' }}>
+                              No hay información de semestres
+                            </Typography>
+                          ) : (
+                            Object.entries(ofertaMetrics.semestresMap).slice(0, 4).map(([sem, cnt]) => (
+                              <Stack direction="row" justifyContent="space-between" alignItems="center" key={sem}>
+                                <Typography variant="body2" sx={{ fontWeight: 700, color: '#334155', fontSize: 12 }}>
+                                  • {sem}
                                 </Typography>
-                                <ValueBox value={cnt} color="#0f766e" />
+                                <ValueBox value={cnt} color="#00838f" />
                               </Stack>
-                            </Grid>
-                          ))
-                        )}
-                      </Grid>
-                    </Paper>
-                  </Grid>
-                </Grid>
+                            ))
+                          )}
+                        </Stack>
+                      </Paper>
+                    </Box>
+                  </Box>
+
+                </Box>
               </Box>
             </Paper>
           )}
