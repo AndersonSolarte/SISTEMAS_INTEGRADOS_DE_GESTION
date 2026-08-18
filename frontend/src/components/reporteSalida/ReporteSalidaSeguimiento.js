@@ -85,16 +85,26 @@ const ACCESS_COPY = {
 
 const STATUS_LABELS = {
   pendiente_aprobacion_jefe: 'Pendiente Jefe',
+  pendiente_jefe: 'Pendiente Jefe',
+  pendiente_aprobacion_vicerrectoria_academica: 'Pendiente Vicerrectoría',
+  pendiente_aprobacion_rectoria: 'Pendiente Rectoría',
   pendiente_aprobacion_gestion_humana: 'Pendiente Gestión del Talento Humano',
+  pendiente_gestion_humana: 'Pendiente Gestión del Talento Humano',
   pendiente_aprobacion_sst: 'Pendiente SST',
+  pendiente_sst: 'Pendiente SST',
   finalizada: 'Aprobada',
   no_aprobada: 'No Aprobada'
 };
 
 const STATUS_COLORS = {
   pendiente_aprobacion_jefe: { bg: '#fef3c7', color: '#92400e' },
+  pendiente_jefe: { bg: '#fef3c7', color: '#92400e' },
+  pendiente_aprobacion_vicerrectoria_academica: { bg: '#fed7aa', color: '#9a3412' },
+  pendiente_aprobacion_rectoria: { bg: '#fbcfe8', color: '#9d174d' },
   pendiente_aprobacion_gestion_humana: { bg: '#ede9fe', color: '#6d28d9' },
+  pendiente_gestion_humana: { bg: '#ede9fe', color: '#6d28d9' },
   pendiente_aprobacion_sst: { bg: '#e0f2fe', color: '#0369a1' },
+  pendiente_sst: { bg: '#e0f2fe', color: '#0369a1' },
   finalizada: { bg: '#dcfce7', color: '#166534' },
   no_aprobada: { bg: '#fee2e2', color: '#991b1b' },
   aprobada_jefe: { bg: '#dbeafe', color: '#1d4ed8' },
@@ -1592,7 +1602,7 @@ function ReporteSalidaSeguimiento({ initialAccess = null, onBack }) {
                           <TableCell sx={{ py: 0.8, px: 0.8 }}>
                             {canManageAll ? (
                               <Stack spacing={0.6}>
-                                {row.estado?.startsWith('pendiente_aprobacion_') && (
+                                {Boolean(row.estado && (row.estado.startsWith('pendiente') || row.estado.includes('pendiente'))) && (
                                   <Stack direction="row" spacing={0.5}>
                                     <Tooltip title={`Aprobar ${getPendingStageLabel(row.estado)}`} arrow>
                                       <IconButton size="small" color="success" onClick={() => handleGhActionOpen(row, 'approve')}>
