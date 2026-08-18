@@ -105,6 +105,21 @@ const SolicitudViaticosFields = ({
       </Box>
 
       <Box sx={{ p: { xs: 1.2, md: 1.5 }, display: 'grid', gridTemplateColumns: { xs: '1fr', sm: 'repeat(2, minmax(0, 1fr))', lg: 'repeat(4, minmax(0, 1fr))' }, gap: 1.1 }}>
+        <Alert
+          severity="info"
+          sx={{
+            gridColumn: '1 / -1',
+            borderRadius: 1.5,
+            fontSize: 12.5,
+            py: 0.6,
+            bgcolor: '#eff6ff',
+            color: '#1e40af',
+            border: '1px solid #bfdbfe',
+            '& .MuiAlert-icon': { color: '#2563eb' }
+          }}
+        >
+          <strong>Aviso institucional:</strong> En este momento el módulo de solicitud de viáticos (ADF-PP-FR-004) se encuentra en <strong>periodo de prueba y validación</strong>. Puede diligenciar los datos requeridos para efectuar las pruebas correspondientes del flujo.
+        </Alert>
         <SectionLabel>Datos de la comisión</SectionLabel>
         <TextField sx={{ ...compactSx, gridColumn: { sm: 'span 2' } }} size="small" required label="Lugar a visitar" value={viaticos.lugarVisitar || ''} onChange={(e) => onChange('lugarVisitar', e.target.value)} />
         <TextField sx={compactSx} size="small" required type="date" label="Fecha del evento" InputLabelProps={{ shrink: true }} inputProps={{ min: todayString }} value={viaticos.fechaEvento || ''} onChange={(e) => onChange('fechaEvento', e.target.value)} />
