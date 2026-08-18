@@ -1001,8 +1001,15 @@ const isInvestigacionSolicitud = (solicitud = {}) => {
 };
 
 const isOficioSolicitud = (solicitud = {}) => {
-  const duracionTipo = getSolicitudSalida(solicitud).duracionTipo;
-  return Boolean(duracionTipo && duracionTipo !== 'menos_media_jornada');
+  const salida = getSolicitudSalida(solicitud);
+  const categoria = salida.categoria || salida.category;
+  const duracionTipo = salida.duracionTipo;
+  return Boolean(
+    categoria === 'propias_cargo' &&
+    salida.tipo !== 'salida_campus' &&
+    duracionTipo &&
+    duracionTipo !== 'menos_media_jornada'
+  );
 };
 
 const isPermisoElectoralSinVicerrectoria = (solicitud = {}) => {
@@ -2105,6 +2112,7 @@ const buildTerapiasHtml = (solicitud) => {
 };
 
 const getReporteSalidaEmailLabel = (solicitud) => {
+  if (!isOficioSolicitud(solicitud)) return 'REPORTE DE SALIDA';
   const duracionTipo = solicitud.datos_formulario?.salida?.duracionTipo;
   if (duracionTipo === '1_2_dias') return 'OFICIO DE SOLICITUD DE SALIDA - 1 O 2 DIAS';
   if (duracionTipo === '3_mas_dias') return 'OFICIO DE SOLICITUD DE SALIDA - 3 O MAS DIAS';
@@ -2130,7 +2138,7 @@ const mergeThreadMessageIds = (solicitud, ids = {}) => ({
 
 const sendColaboradorRadicacionEmail = async (solicitud, attachments) => {
   const solicitante = solicitud.solicitante_snapshot || {};
-  const isOficio = solicitud.datos_formulario?.salida?.duracionTipo && solicitud.datos_formulario?.salida?.duracionTipo !== 'menos_media_jornada';
+  const isOficio = isOficioSolicitud(solicitud);
   const subject = getUserThreadSubject(solicitud);
   const html = renderInstitutionalTemplate({
     title: `Comprobante de radicacion de ${isOficio ? 'oficio de salida' : 'reporte de salida'}: ${escapeHtml(solicitud.consecutivo)}`,
@@ -2243,7 +2251,7 @@ const sendDependenciaRadicacionInfoEmail = async (solicitud, token, attachments,
     return { success: false, skipped: true, reason: 'dependency_email_not_configured' };
   }
 
-  const isOficio = solicitud.datos_formulario?.salida?.duracionTipo && solicitud.datos_formulario?.salida?.duracionTipo !== 'menos_media_jornada';
+  const isOficio = isOficioSolicitud(solicitud);
   const labelText = isOficio ? 'OFICIO DE SOLICITUD DE SALIDA' : 'REPORTE DE SALIDA';
   const approveUrl = `${publicBackendUrl.replace(/\/$/, '')}/api/reporte-salida/aprobar/${encodeURIComponent(token)}?via=dependencia`;
   const rejectUrl = `${publicBackendUrl.replace(/\/$/, '')}/api/reporte-salida/rechazar/${encodeURIComponent(token)}?via=dependencia`;
@@ -2326,7 +2334,7 @@ const sendGestionHumanaApprovalEmail = async (solicitud, token, attachments) => 
   
   const approveLabel = 'APROBAR SALIDA';
   const rejectLabel = 'RECHAZAR SALIDA';
-  const isOficio = solicitud.datos_formulario?.salida?.duracionTipo && solicitud.datos_formulario?.salida?.duracionTipo !== 'menos_media_jornada';
+  const isOficio = isOficioSolicitud(solicitud);
   const labelText = getReporteSalidaEmailLabel(solicitud);
   const initialApproval = getInitialApprovalSummary(solicitud);
   
@@ -2370,7 +2378,7 @@ const sendAuthorityApprovalEmail = async ({ solicitud, token, authorityName, aut
   const solicitante = solicitud.solicitante_snapshot || {};
   const approveUrl = `${publicBackendUrl.replace(/\/$/, '')}/api/reporte-salida/aprobar/${encodeURIComponent(token)}`;
   const rejectUrl = `${publicBackendUrl.replace(/\/$/, '')}/api/reporte-salida/rechazar/${encodeURIComponent(token)}`;
-  const isOficio = solicitud.datos_formulario?.salida?.duracionTipo && solicitud.datos_formulario?.salida?.duracionTipo !== 'menos_media_jornada';
+  const isOficio = isOficioSolicitud(solicitud);
   const labelText = getReporteSalidaEmailLabel(solicitud);
   const initialApproval = getInitialApprovalSummary(solicitud);
   const subject = getWorkflowThreadSubject(solicitud);
@@ -2413,7 +2421,7 @@ const sendSSTApprovalEmail = async (solicitud, token, attachments) => {
   const approveUrl = `${publicBackendUrl.replace(/\/$/, '')}/api/reporte-salida/aprobar/${encodeURIComponent(token)}`;
   const rejectUrl = `${publicBackendUrl.replace(/\/$/, '')}/api/reporte-salida/rechazar/${encodeURIComponent(token)}`;
   
-  const isOficio = solicitud.datos_formulario?.salida?.duracionTipo && solicitud.datos_formulario?.salida?.duracionTipo !== 'menos_media_jornada';
+  const isOficio = isOficioSolicitud(solicitud);
   const labelText = getReporteSalidaEmailLabel(solicitud);
   const initialApproval = getInitialApprovalSummary(solicitud);
   
@@ -2461,7 +2469,7 @@ const sendFinalEmails = async (solicitud, pdfAttachment, supportAttachment) => {
   const dependenciaTargets = getDependencyNotificationTargets(solicitud);
   const dependencialabel = dependenciaTarget.label || solicitud.datos_formulario?.laboral?.dependencia || '';
 
-  const isOficio = solicitud.datos_formulario?.salida?.duracionTipo && solicitud.datos_formulario?.salida?.duracionTipo !== 'menos_media_jornada';
+  const isOficio = isOficioSolicitud(solicitud);
   
   const userThreadSubject = getUserThreadSubject(solicitud);
   const workflowThreadSubject = getWorkflowThreadSubject(solicitud);
@@ -2695,7 +2703,7 @@ const sendJefeApprovalEmail = async (solicitud, token, attachments, headers = {}
   const approveUrl = `${publicBackendUrl.replace(/\/$/, '')}/api/reporte-salida/aprobar/${encodeURIComponent(token)}`;
   const rejectUrl = `${publicBackendUrl.replace(/\/$/, '')}/api/reporte-salida/rechazar/${encodeURIComponent(token)}`;
   
-  const isOficio = solicitud.datos_formulario?.salida?.duracionTipo && solicitud.datos_formulario?.salida?.duracionTipo !== 'menos_media_jornada';
+  const isOficio = isOficioSolicitud(solicitud);
   const labelText = getReporteSalidaEmailLabel(solicitud);
   
   const subject = `${labelText} ${solicitud.consecutivo} | Colaborador(a): ${solicitante.nombre || ''}`;
@@ -2803,7 +2811,7 @@ const sendJefeRadicacionApprovalEmail = async (solicitud, token, attachments, he
   const solicitante = solicitud.solicitante_snapshot || {};
   const approveUrl = `${publicBackendUrl.replace(/\/$/, '')}/api/reporte-salida/aprobar/${encodeURIComponent(token)}`;
   const rejectUrl = `${publicBackendUrl.replace(/\/$/, '')}/api/reporte-salida/rechazar/${encodeURIComponent(token)}`;
-  const isOficio = solicitud.datos_formulario?.salida?.duracionTipo && solicitud.datos_formulario?.salida?.duracionTipo !== 'menos_media_jornada';
+  const isOficio = isOficioSolicitud(solicitud);
   const labelText = getReporteSalidaEmailLabel(solicitud);
   const subject = `${labelText} ${solicitud.consecutivo} | Colaborador(a): ${solicitante.nombre || ''}`;
   const html = renderInstitutionalTemplate({
@@ -3035,10 +3043,14 @@ const resolveJefeForParticipant = async (p, userRows, rhRows) => {
 };
 
 const sendJefeGroupRadicacionNotificationEmail = async (solicitud, jefeSnapshot, allParticipants) => {
+  const bossEmails = getJefeCopyRecipientEmails(solicitud);
+  const depTargets = getDependencyNotificationTargets(solicitud).map(t => t.email);
   const recipientEmail = getAcademicProgramApprovalEmail(solicitud) ||
     getInitialApprovalRecipientEmail(solicitud) ||
     jefeSnapshot?.email || '';
-  if (!jefeSnapshot || !recipientEmail) return { success: false, error: 'No email' };
+  
+  const to = [...new Set([...bossEmails, ...depTargets, jefeSnapshot?.email, recipientEmail])].map(normalizeEmail).filter(Boolean);
+  if (!to.length) return { success: false, error: 'No email' };
   
   const solicitante = solicitud.solicitante_snapshot || {};
   const salida = solicitud.datos_formulario?.salida || {};
@@ -3125,7 +3137,7 @@ const sendJefeGroupRadicacionNotificationEmail = async (solicitud, jefeSnapshot,
   });
 
   return sendInstitutionalEmail({
-    to: recipientEmail,
+    to,
     subject,
     text: `Su colaborador(a) ${solicitante.nombre} participará en una salida grupal. Aprobación a cargo de Gestion del Talento Humano y/o SST.`,
     html
@@ -3163,7 +3175,24 @@ const sendGroupFinalConsolidatedEmail = async (solicitudes, pdfAttachments) => {
   const consecutivoGroup = leaderSol.consecutivo.split('-').slice(0, 3).join('-') + '-GRUPO';
   const salida = leaderSol.datos_formulario?.salida || {};
 
-  const to = [recipients.sst, leaderEmail].filter(Boolean);
+  const allBossEmails = [];
+  const allDepEmails = [];
+
+  solicitudes.forEach((sol) => {
+    const jefeEmails = getJefeCopyRecipientEmails(sol);
+    jefeEmails.forEach((e) => {
+      const clean = normalizeEmail(e);
+      if (clean && !allBossEmails.includes(clean)) allBossEmails.push(clean);
+    });
+
+    const depTargets = getDependencyNotificationTargets(sol);
+    depTargets.forEach((t) => {
+      const clean = normalizeEmail(t.email);
+      if (clean && !allDepEmails.includes(clean)) allDepEmails.push(clean);
+    });
+  });
+
+  const to = [...new Set([recipients.sst, leaderEmail, ...allBossEmails, ...allDepEmails])].filter(Boolean);
   if (!to.length) return { success: false, error: 'No recipients' };
 
   const threadSubject = `REPORTE DE SALIDA GRUPAL APROBADO ${consecutivoGroup} | [APROBADO]`;
@@ -3225,7 +3254,7 @@ const sendGroupFinalConsolidatedEmail = async (solicitudes, pdfAttachments) => {
 
   const html = renderInstitutionalTemplate({
     title: 'Notificación de Aprobación - Reporte de Salida Grupal',
-    introHtml: `<p style="margin: 0 0 12px 0;">Saludo de paz y bien,</p><p style="margin: 0 0 4px 0; color: #475569;">Estimado(a) Sr(a). Líder de Actividad,</p><p style="margin: 0 0 16px 0; font-size: 16px; font-weight: bold; color: #0b3a6f;">${escapeHtml(leaderNombre)}</p><p>Reciba un cordial saludo. Se ha finalizado de manera exitosa el proceso de revisión y aprobación de la salida grupal liderada por su parte.</p>`,
+    introHtml: `<p style="margin: 0 0 12px 0;">Saludo de paz y bien,</p><p style="margin: 0 0 4px 0; color: #475569;">Estimados(as) Líderes de Actividad, Jefes Inmediatos y Dependencias,</p><p style="margin: 0 0 16px 0; font-size: 16px; font-weight: bold; color: #0b3a6f;">${escapeHtml(leaderNombre)} (Líder) y Equipo</p><p>Reciba un cordial saludo. Se ha finalizado de manera exitosa el proceso de revisión y aprobación de la salida grupal.</p>`,
     bodyHtml: `
       <p><strong>Grupo ID / Consecutivo General:</strong> ${escapeHtml(consecutivoGroup)}</p>
       <p><strong>Tipo de salida / Motivo:</strong> ${escapeHtml(getSubtypeLabel(salida.tipo))}${salida.motivo ? ` - ${escapeHtml(salida.motivo)}` : ''}</p>
@@ -3248,7 +3277,7 @@ const sendGroupFinalConsolidatedEmail = async (solicitudes, pdfAttachments) => {
         </tbody>
       </table>
 
-      <p>Se adjuntan en este correo todos los reportes de salida individuales (PDF digital FR-002) debidamente firmados y aprobados para su registro general de SST y control del líder de la actividad.</p>
+      <p>Se adjuntan en este correo todos los reportes de salida individuales (PDF digital FR-002) debidamente firmados y aprobados para su respectivo control, archivo de dependencia y seguimiento institucional.</p>
     `
   });
 
@@ -4864,84 +4893,294 @@ const editarSolicitudAdmin = async (req, res) => {
       return res.status(404).json({ success: false, message: 'Solicitud no encontrada.' });
     }
 
-    const { estado, reposicion_aplica, tiempo_solicitado_minutos, reposicion_minutos_pagados, observacion } = req.body;
+    const { action, estado, reposicion_aplica, tiempo_solicitado_minutos, reposicion_minutos_pagados, observacion } = req.body;
+    const actionSolicitada = action || (estado === 'no_aprobada' ? 'reject' : (['finalizada', 'aprobada'].includes(estado) ? 'approve' : null));
     const estadoSolicitado = sanitizeText(estado, 50);
     const observacionAdmin = sanitizeText(observacion, 600);
 
-    if (
-      solicitud.estado === 'pendiente_aprobacion_gestion_humana' &&
-      ['finalizada', 'no_aprobada'].includes(estadoSolicitado)
-    ) {
-      if (estadoSolicitado === 'no_aprobada' && !observacionAdmin) {
-        return res.status(400).json({ success: false, message: 'Debe ingresar la justificacion del rechazo.' });
-      }
-      if (estadoSolicitado === 'finalizada' && !hasInitialApprovalRecord(solicitud)) {
-        return res.status(400).json({
-          success: false,
-          message: 'No se puede aprobar desde Gestion del Talento Humano porque la solicitud no registra visto bueno previo del jefe inmediato o dependencia.'
-        });
+    if (actionSolicitada && typeof solicitud.estado === 'string' && solicitud.estado.startsWith('pendiente_aprobacion_')) {
+      const isReject = actionSolicitada === 'reject';
+      if (isReject && !observacionAdmin) {
+        return res.status(400).json({ success: false, message: 'Debe ingresar la justificación del rechazo.' });
       }
 
       const now = new Date();
-      const actorName = req.user.nombre || 'Gestion del Talento Humano';
-      const nextTraceEvent = estadoSolicitado === 'finalizada' ? 'aprobada_gestion_humana' : 'rechazada_gestion_humana';
-      const nextTraceDetail = estadoSolicitado === 'finalizada'
-        ? { aprobada_desde: 'modulo_gestion_humana' }
-        : {
+      const actorName = req.user.nombre || 'Administrador SIAC';
+      const isGrupal = Boolean(solicitud.datos_formulario?.is_salida_multiple || solicitud.datos_formulario?.grupo_id);
+
+      if (isReject) {
+        let traceEvent = 'rechazada_gestion_humana';
+        if (solicitud.estado === 'pendiente_aprobacion_jefe') traceEvent = 'rechazada_jefe';
+        else if (solicitud.estado === 'pendiente_aprobacion_vicerrectoria_academica') traceEvent = 'rechazada_vicerrectoria_academica';
+        else if (solicitud.estado === 'pendiente_aprobacion_rectoria') traceEvent = 'rechazada_rectoria';
+        else if (solicitud.estado === 'pendiente_aprobacion_sst') traceEvent = 'rechazada_sst';
+
+        const updateData = {
+          estado: 'no_aprobada',
+          aprobacion_jefe_token_hash: null,
+          aprobacion_vicerrectoria_token_hash: null,
+          aprobacion_rectoria_token_hash: null,
+          aprobacion_gh_token_hash: null,
+          aprobacion_sst_token_hash: null,
+          trazabilidad: appendTrace(solicitud, traceEvent, req.user, {
+            via: 'admin_dashboard',
             actorName,
             justificacion: observacionAdmin
-          };
+          })
+        };
 
-      const updateData = {
-        estado: estadoSolicitado,
-        trazabilidad: appendTrace(solicitud, nextTraceEvent, req.user, nextTraceDetail)
-      };
+        if (observacionAdmin) {
+          const logEntry = `[${now.toLocaleDateString('es-CO')}] ${actorName} (Admin): Rechazo - "${observacionAdmin}"`;
+          if (solicitud.estado === 'pendiente_aprobacion_jefe') {
+            updateData.observacion_jefe = solicitud.observacion_jefe ? `${solicitud.observacion_jefe}\n${logEntry}` : logEntry;
+          } else {
+            updateData.observacion_gestion_humana = solicitud.observacion_gestion_humana ? `${solicitud.observacion_gestion_humana}\n${logEntry}` : logEntry;
+          }
+        }
 
-      if (estadoSolicitado === 'finalizada') {
-        updateData.gestion_humana_aprobado_at = now;
-        updateData.finalizado_at = now;
-      }
-
-      if (observacionAdmin) {
-        const logEntry = `[${now.toLocaleString('es-CO', {
-          timeZone: 'America/Bogota',
-          year: 'numeric',
-          month: '2-digit',
-          day: '2-digit',
-          hour: '2-digit',
-          minute: '2-digit',
-          hour12: false
-        })}] ${actorName}: ${estadoSolicitado === 'finalizada' ? 'Aprobacion administrativa GH' : 'Rechazo administrativo GH'}${observacionAdmin ? ` - "${observacionAdmin}"` : ''}`;
-        updateData.observacion_gestion_humana = solicitud.observacion_gestion_humana
-          ? `${solicitud.observacion_gestion_humana}\n${logEntry}`
-          : logEntry;
-      }
-
-      await solicitud.update(updateData);
-      await solicitud.reload();
-
-      if (estadoSolicitado === 'finalizada') {
-        const pdfAttachment = await buildReporteSalidaPdfAttachment(solicitud);
-        const userEmailResult = await sendIndividualColaboradorFinalEmail(solicitud, pdfAttachment);
-        await solicitud.update({
-          correo_usuario_enviado_at: userEmailResult.success ? new Date() : null,
-          trazabilidad: appendTrace(solicitud, userEmailResult.success ? 'correo_usuario_enviado' : 'correo_usuario_error', null, { error: userEmailResult.error || '' })
-        });
+        await solicitud.update(updateData);
         await solicitud.reload();
+        deleteSupportFile(solicitud);
+
+        if (solicitud.estado === 'pendiente_aprobacion_jefe') {
+          await sendCollaboratorRejectionEmail({ solicitud, rejectedBy: `${actorName} (Administrador)`, justificacion: observacionAdmin }).catch(e => console.error('Error rejection email:', e));
+        } else {
+          await sendGHRejectionEmails({ solicitud, justificacion: observacionAdmin, isSST: solicitud.estado === 'pendiente_aprobacion_sst' }).catch(e => console.error('Error rejection email:', e));
+        }
+
         return res.json({
           success: true,
-          message: 'Solicitud aprobada correctamente desde Gestion del Talento Humano.',
+          message: 'Solicitud rechazada correctamente por el administrador.',
           data: serializeSolicitud(solicitud)
         });
       }
 
-      deleteSupportFile(solicitud);
-      await sendGHRejectionEmails({ solicitud, justificacion: observacionAdmin });
-      return res.json({
-        success: true,
-        message: 'Solicitud rechazada correctamente desde Gestion del Talento Humano.',
-        data: serializeSolicitud(solicitud)
-      });
+      // APPROVE FLOW
+      if (solicitud.estado === 'pendiente_aprobacion_jefe') {
+        const authorityAfterBoss = getAuthorityAfterBoss(solicitud);
+        const skipAuthorityAfterBoss = authorityAfterBoss && sameEmail(authorityAfterBoss.email, solicitud.jefe_snapshot?.email);
+        const nextStage = authorityAfterBoss ? (skipAuthorityAfterBoss ? 'gestion_humana' : authorityAfterBoss.stage) : 'gestion_humana';
+        const nextEstado = authorityAfterBoss ? (skipAuthorityAfterBoss ? 'pendiente_aprobacion_gestion_humana' : authorityAfterBoss.estado) : 'pendiente_aprobacion_gestion_humana';
+        const nextTokenColumn = authorityAfterBoss ? (skipAuthorityAfterBoss ? 'aprobacion_gh_token_hash' : authorityAfterBoss.tokenColumn) : 'aprobacion_gh_token_hash';
+        const nextToken = createApprovalToken(nextStage, solicitud.consecutivo);
+
+        const updateData = {
+          estado: nextEstado,
+          jefe_aprobado_at: now,
+          aprobacion_jefe_token_hash: null,
+          [nextTokenColumn]: hashToken(nextToken),
+          trazabilidad: appendTrace(solicitud, 'aprobada_jefe', req.user, {
+            via: 'admin_dashboard',
+            observacion: observacionAdmin || 'Aprobada por Administrador SIAC'
+          })
+        };
+
+        if (observacionAdmin) {
+          const logEntry = `[${now.toLocaleDateString('es-CO')}] ${actorName} (Admin): Aprobación Jefe - "${observacionAdmin}"`;
+          updateData.observacion_jefe = solicitud.observacion_jefe ? `${solicitud.observacion_jefe}\n${logEntry}` : logEntry;
+        }
+
+        await solicitud.update(updateData);
+        await solicitud.reload();
+
+        const pdfAttachment = await buildReporteSalidaPdfAttachment(solicitud);
+        const supportAttachment = await buildReporteSalidaSupportAttachment(solicitud);
+        const nextAttachments = [pdfAttachment, supportAttachment].filter(Boolean);
+
+        if (nextStage === 'rectoria') {
+          await sendAuthorityApprovalEmail({
+            solicitud,
+            token: nextToken,
+            authorityName: 'Rectoria',
+            authorityEmail: RECTORIA_EMAIL,
+            stageLabel: 'Rectoria',
+            attachments: nextAttachments
+          }).catch(e => console.error(e));
+        } else if (nextStage === 'vicerrectoria_academica') {
+          await sendAuthorityApprovalEmail({
+            solicitud,
+            token: nextToken,
+            authorityName: authorityAfterBoss.name,
+            authorityEmail: authorityAfterBoss.email,
+            stageLabel: authorityAfterBoss.label,
+            attachments: nextAttachments
+          }).catch(e => console.error(e));
+        } else {
+          await sendGestionHumanaApprovalEmail(solicitud, nextToken, nextAttachments).catch(e => console.error(e));
+        }
+
+        return res.json({
+          success: true,
+          message: 'Solicitud aprobada como Jefe Inmediato por el administrador.',
+          data: serializeSolicitud(solicitud)
+        });
+      }
+
+      if (solicitud.estado === 'pendiente_aprobacion_vicerrectoria_academica' || solicitud.estado === 'pendiente_aprobacion_rectoria') {
+        const nextStage = 'gestion_humana';
+        const nextEstado = 'pendiente_aprobacion_gestion_humana';
+        const nextToken = createApprovalToken(nextStage, solicitud.consecutivo);
+        const isVicerrectoria = solicitud.estado === 'pendiente_aprobacion_vicerrectoria_academica';
+
+        const updateData = {
+          estado: nextEstado,
+          ...(isVicerrectoria ? { vicerrectoria_aprobado_at: now, aprobacion_vicerrectoria_token_hash: null } : { rectoria_aprobado_at: now, aprobacion_rectoria_token_hash: null }),
+          aprobacion_gh_token_hash: hashToken(nextToken),
+          trazabilidad: appendTrace(solicitud, isVicerrectoria ? 'aprobada_vicerrectoria_academica' : 'aprobada_rectoria', req.user, {
+            via: 'admin_dashboard',
+            observacion: observacionAdmin || 'Aprobada por Administrador SIAC'
+          })
+        };
+
+        await solicitud.update(updateData);
+        await solicitud.reload();
+
+        const pdfAttachment = await buildReporteSalidaPdfAttachment(solicitud);
+        const supportAttachment = await buildReporteSalidaSupportAttachment(solicitud);
+        await sendGestionHumanaApprovalEmail(solicitud, nextToken, [pdfAttachment, supportAttachment].filter(Boolean)).catch(e => console.error(e));
+
+        return res.json({
+          success: true,
+          message: `Solicitud aprobada desde ${isVicerrectoria ? 'Vicerrectoría' : 'Rectoría'} por el administrador.`,
+          data: serializeSolicitud(solicitud)
+        });
+      }
+
+      if (solicitud.estado === 'pendiente_aprobacion_gestion_humana') {
+        const isMisionalNacionalOInternacional = requiresSstApproval(solicitud);
+        if (isMisionalNacionalOInternacional) {
+          const sstToken = createApprovalToken('sst', solicitud.consecutivo);
+          const updateData = {
+            estado: 'pendiente_aprobacion_sst',
+            gestion_humana_aprobado_at: now,
+            aprobacion_gh_token_hash: null,
+            aprobacion_sst_token_hash: hashToken(sstToken),
+            trazabilidad: appendTrace(solicitud, 'aprobada_gestion_humana', req.user, {
+              via: 'admin_dashboard',
+              observacion: observacionAdmin || 'Aprobada por Administrador SIAC'
+            })
+          };
+
+          if (observacionAdmin) {
+            const logEntry = `[${now.toLocaleDateString('es-CO')}] ${actorName} (Admin): Aprobación GH - "${observacionAdmin}"`;
+            updateData.observacion_gestion_humana = solicitud.observacion_gestion_humana ? `${solicitud.observacion_gestion_humana}\n${logEntry}` : logEntry;
+          }
+
+          await solicitud.update(updateData);
+          await solicitud.reload();
+
+          const pdfAttachment = await buildReporteSalidaPdfAttachment(solicitud);
+          const supportAttachment = await buildReporteSalidaSupportAttachment(solicitud);
+          await sendSSTApprovalEmail(solicitud, sstToken, [pdfAttachment, supportAttachment].filter(Boolean)).catch(e => console.error(e));
+
+          return res.json({
+            success: true,
+            message: 'Solicitud aprobada desde Gestión Humana y enviada a SST por el administrador.',
+            data: serializeSolicitud(solicitud)
+          });
+        }
+
+        const updateData = {
+          estado: 'finalizada',
+          gestion_humana_aprobado_at: now,
+          finalizado_at: now,
+          aprobacion_gh_token_hash: null,
+          trazabilidad: appendTrace(solicitud, 'aprobada_gestion_humana', req.user, {
+            via: 'admin_dashboard',
+            observacion: observacionAdmin || 'Aprobada por Administrador SIAC'
+          })
+        };
+
+        if (observacionAdmin) {
+          const logEntry = `[${now.toLocaleDateString('es-CO')}] ${actorName} (Admin): Aprobación GH - "${observacionAdmin}"`;
+          updateData.observacion_gestion_humana = solicitud.observacion_gestion_humana ? `${solicitud.observacion_gestion_humana}\n${logEntry}` : logEntry;
+        }
+
+        await solicitud.update(updateData);
+        await solicitud.reload();
+
+        const pdfAttachment = await buildReporteSalidaPdfAttachment(solicitud);
+        const supportAttachment = await buildReporteSalidaSupportAttachment(solicitud);
+        if (isGrupal && solicitud.datos_formulario?.grupo_id) {
+          const grupo_id = solicitud.datos_formulario.grupo_id;
+          const groupSolicitudes = await ReporteSalidaSolicitud.findAll({
+            where: {
+              datos_formulario: {
+                [Op.contains]: { grupo_id }
+              }
+            }
+          });
+
+          const groupAttachments = [];
+          for (const s of groupSolicitudes) {
+            if (s.estado === 'pendiente_aprobacion_gestion_humana' && s.id !== solicitud.id) {
+              await s.update({
+                estado: 'finalizada',
+                gestion_humana_aprobado_at: now,
+                finalizado_at: now,
+                aprobacion_gh_token_hash: null,
+                trazabilidad: appendTrace(s, 'aprobada_gestion_humana', req.user, {
+                  via: 'admin_dashboard',
+                  observacion: observacionAdmin || 'Aprobada por Administrador SIAC'
+                })
+              });
+              await s.reload();
+            }
+            try {
+              const pAtt = await buildReporteSalidaPdfAttachment(s);
+              if (pAtt) groupAttachments.push(pAtt);
+              const uRes = await sendIndividualColaboradorFinalEmail(s, pAtt);
+              await s.update({
+                correo_usuario_enviado_at: uRes.success ? new Date() : null
+              });
+            } catch (e) {
+              console.error('Error procesando participante de grupo:', e);
+            }
+          }
+
+          if (groupAttachments.length > 0) {
+            await sendGroupFinalConsolidatedEmail(groupSolicitudes, groupAttachments).catch(e => console.error('Error sending group consolidated email:', e));
+          }
+        } else if (isGrupal) {
+          const userEmailResult = await sendIndividualColaboradorFinalEmail(solicitud, pdfAttachment);
+          await solicitud.update({
+            correo_usuario_enviado_at: userEmailResult.success ? new Date() : null
+          });
+        } else {
+          await sendFinalEmails(solicitud, pdfAttachment, supportAttachment).catch(e => console.error(e));
+        }
+
+        return res.json({
+          success: true,
+          message: 'Solicitud aprobada y finalizada correctamente por el administrador.',
+          data: serializeSolicitud(solicitud)
+        });
+      }
+
+      if (solicitud.estado === 'pendiente_aprobacion_sst') {
+        const updateData = {
+          estado: 'finalizada',
+          finalizado_at: now,
+          aprobacion_sst_token_hash: null,
+          trazabilidad: appendTrace(solicitud, 'aprobada_sst', req.user, {
+            via: 'admin_dashboard',
+            observacion: observacionAdmin || 'Aprobada por Administrador SIAC'
+          })
+        };
+
+        await solicitud.update(updateData);
+        await solicitud.reload();
+
+        const pdfAttachment = await buildReporteSalidaPdfAttachment(solicitud);
+        const supportAttachment = await buildReporteSalidaSupportAttachment(solicitud);
+        await sendFinalEmails(solicitud, pdfAttachment, supportAttachment).catch(e => console.error(e));
+
+        return res.json({
+          success: true,
+          message: 'Solicitud aprobada por SST y finalizada por el administrador.',
+          data: serializeSolicitud(solicitud)
+        });
+      }
     }
 
     const updateData = {};

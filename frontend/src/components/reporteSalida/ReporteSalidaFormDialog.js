@@ -1057,7 +1057,7 @@ function ReporteSalidaFormDialog({ open, documento, user, onClose, onSubmitted }
   }, [form.salida.fecha, form.salida.fechaRegreso, form.salida.horaInicio]);
   const reposicionHasAnyValue = Boolean(form.reposicion.fecha || form.reposicion.fechaFin || form.reposicion.horaInicio || form.reposicion.horaFin);
   const reposicionPlanComplete = Boolean(form.reposicion.fecha && form.reposicion.fechaFin && form.reposicion.horaInicio && form.reposicion.horaFin);
-  const isOficioSolicitud = form.salida.duracionTipo !== 'menos_media_jornada';
+  const isOficioSolicitud = category === 'propias_cargo' && subtype !== 'salida_campus' && form.salida.duracionTipo !== 'menos_media_jornada';
   const reposicionLaboralProfile = form.laboral.reposicionPerfil || {};
   const isDiligenciaPersonal = category === 'personales' && subtype === 'diligencia_personal';
   const requiresManualProfileTime = isDiligenciaPersonal && reposicionLaboralProfile.manualTime === true;

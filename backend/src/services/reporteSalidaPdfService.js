@@ -678,8 +678,8 @@ const buildOficioPdfDefinition = (solicitud, ghDirectorNombre, ghDirectorCargo) 
   const vicerrectoriaName = laboral.vicerrectoria || solicitante.vicerrectoria || 'Vicerrectoria';
   const normalizedVicerrectoria = stripAccents(vicerrectoriaName).toLowerCase();
   const isRectoriaAuthority = normalizedVicerrectoria.includes('rectoria') && !normalizedVicerrectoria.includes('vicerrectoria') && !normalizedVicerrectoria.includes('vicerectoria');
-  const isOneOrTwoDaysOficio = salida.duracionTipo === '1_2_dias';
-  const isThreeOrMoreDaysOficio = salida.duracionTipo === '3_mas_dias';
+  const isOneOrTwoDaysOficio = isPropiasCargo && salida.duracionTipo === '1_2_dias';
+  const isThreeOrMoreDaysOficio = isPropiasCargo && salida.duracionTipo === '3_mas_dias';
   const requiresVicerrectoriaSignature = (isOneOrTwoDaysOficio || isThreeOrMoreDaysOficio) && !isRectoriaAuthority;
   const requiresRectoriaSignature = hasRectoriaApproval || (isRectoriaAuthority && !isThreeOrMoreDaysOficio);
 
@@ -1122,7 +1122,8 @@ const buildPdfBuffer = async (solicitud) => {
       const data = solicitud?.datos_formulario || {};
       const salida = data.salida || {};
 
-      if (salida.duracionTipo && salida.duracionTipo !== 'menos_media_jornada') {
+      const isPropiasCargoOficio = salida.categoria === 'propias_cargo' && salida.tipo !== 'salida_campus' && salida.duracionTipo && salida.duracionTipo !== 'menos_media_jornada';
+      if (isPropiasCargoOficio) {
         const docDefinition = sanitizePdfDefinition(buildOficioPdfDefinition(solicitud, ghDirectorNombre, ghDirectorCargo));
         const pdfDoc = printer.createPdfKitDocument(docDefinition);
         const docChunks = [];
@@ -1844,7 +1845,7 @@ const ensureReporteSalidaPdf = async (solicitud, docxAttachment = null) => {
   await fs.promises.mkdir(outDir, { recursive: true });
   
   const data = solicitud.datos_formulario || {};
-  const isOficio = data.salida?.duracionTipo && data.salida?.duracionTipo !== 'menos_media_jornada';
+  const isOficio = data.salida?.categoria === 'propias_cargo' && data.salida?.tipo !== 'salida_campus' && data.salida?.duracionTipo && data.salida?.duracionTipo !== 'menos_media_jornada';
   const docType = data.origen_flujo === 'desplazamiento_viaticos'
     ? 'REPORTE-SALIDA-DESPLAZAMIENTO'
     : isOficio ? 'Oficio-Salida' : 'FR-002-digital';

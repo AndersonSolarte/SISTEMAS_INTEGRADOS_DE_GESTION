@@ -853,6 +853,42 @@ function ReporteSalidaSeguimiento({ initialAccess = null, onBack }) {
     }
   };
 
+  const getPendingStageLabel = (estado) => {
+    switch (estado) {
+      case 'pendiente_aprobacion_jefe':
+        return 'como Jefe Inmediato';
+      case 'pendiente_aprobacion_vicerrectoria_academica':
+        return 'desde Vicerrectoría';
+      case 'pendiente_aprobacion_rectoria':
+        return 'desde Rectoría';
+      case 'pendiente_aprobacion_gestion_humana':
+        return 'desde Gestión Humana';
+      case 'pendiente_aprobacion_sst':
+        return 'desde SST';
+      default:
+        return 'como Administrador';
+    }
+  };
+
+  const getPendingStageDescription = (estado, type) => {
+    if (type === 'reject') {
+      return 'Debe indicar la justificación del rechazo. Se registrará la trazabilidad con su usuario administrador y se notificará al colaborador.';
+    }
+    switch (estado) {
+      case 'pendiente_aprobacion_jefe':
+        return 'Aprobará la solicitud en la etapa de Jefe Inmediato y avanzará al siguiente paso del flujo (Gestión Humana o Vicerrectoría).';
+      case 'pendiente_aprobacion_vicerrectoria_academica':
+      case 'pendiente_aprobacion_rectoria':
+        return 'Aprobará la solicitud en la instancia superior y avanzará a Gestión del Talento Humano.';
+      case 'pendiente_aprobacion_gestion_humana':
+        return 'Aprobará desde Gestión Humana. Si no requiere SST, la solicitud quedará finalizada y se enviarán los PDFs firmados.';
+      case 'pendiente_aprobacion_sst':
+        return 'Aprobará desde SST y la solicitud quedará formalmente finalizada.';
+      default:
+        return 'Esta acción registrará la aprobación con trazabilidad de su usuario administrador.';
+    }
+  };
+
   const handleGhActionOpen = (row, type) => {
     setGhActionTarget(row);
     setGhActionType(type);
@@ -864,11 +900,12 @@ function ReporteSalidaSeguimiento({ initialAccess = null, onBack }) {
     if (!ghActionTarget) return;
     const isReject = ghActionType === 'reject';
     if (isReject && !ghActionObservation.trim()) {
-      enqueueSnackbar('Debe ingresar la justificacion del rechazo.', { variant: 'error' });
+      enqueueSnackbar('Debe ingresar la justificación del rechazo.', { variant: 'error' });
       return;
     }
     try {
       const res = await api.put(`/reporte-salida/solicitudes/${ghActionTarget.id}/admin`, {
+        action: isReject ? 'reject' : 'approve',
         estado: isReject ? 'no_aprobada' : 'finalizada',
         observacion: ghActionObservation
       });
@@ -1555,14 +1592,14 @@ function ReporteSalidaSeguimiento({ initialAccess = null, onBack }) {
                           <TableCell sx={{ py: 0.8, px: 0.8 }}>
                             {canManageAll ? (
                               <Stack spacing={0.6}>
-                                {row.estado === 'pendiente_aprobacion_gestion_humana' && (
+                                {row.estado?.startsWith('pendiente_aprobacion_') && (
                                   <Stack direction="row" spacing={0.5}>
-                                    <Tooltip title="Aprobar desde Gestion Humana" arrow>
+                                    <Tooltip title={`Aprobar ${getPendingStageLabel(row.estado)}`} arrow>
                                       <IconButton size="small" color="success" onClick={() => handleGhActionOpen(row, 'approve')}>
                                         <CheckCircleIcon fontSize="small" />
                                       </IconButton>
                                     </Tooltip>
-                                    <Tooltip title="Rechazar desde Gestion Humana" arrow>
+                                    <Tooltip title={`Rechazar ${getPendingStageLabel(row.estado)}`} arrow>
                                       <IconButton size="small" color="error" onClick={() => handleGhActionOpen(row, 'reject')}>
                                         <CancelOutlinedIcon fontSize="small" />
                                       </IconButton>
@@ -1675,21 +1712,22 @@ function ReporteSalidaSeguimiento({ initialAccess = null, onBack }) {
 
             <Dialog open={ghActionDialogOpen} onClose={() => setGhActionDialogOpen(false)} maxWidth="sm" fullWidth>
               <DialogTitle sx={{ fontWeight: 900, bgcolor: '#f8fafc', borderBottom: '1px solid #e2e8f0' }}>
-                {ghActionType === 'approve' ? 'Aprobar desde Gestion Humana' : 'Rechazar desde Gestion Humana'}
+                {ghActionType === 'approve'
+                  ? `Aprobar Solicitud (${getPendingStageLabel(ghActionTarget?.estado)})`
+                  : `Rechazar Solicitud (${getPendingStageLabel(ghActionTarget?.estado)})`}
               </DialogTitle>
               <DialogContent sx={{ pt: 2.2 }}>
                 <Typography sx={{ mb: 1.5, color: '#475569', fontSize: 13 }}>
-                  {ghActionType === 'approve'
-                    ? 'Esta solicitud quedara finalizada y se notificara al colaborador con el PDF correspondiente.'
-                    : 'Debe indicar la justificacion del rechazo para enviarla al colaborador y al jefe inmediato.'}
+                  {getPendingStageDescription(ghActionTarget?.estado, ghActionType)}
                 </Typography>
                 <TextField
                   fullWidth
                   multiline
                   minRows={4}
-                  label={ghActionType === 'approve' ? 'Observacion opcional' : 'Justificacion del rechazo *'}
+                  label={ghActionType === 'approve' ? 'Observación / Nota administrativa (opcional)' : 'Justificación del rechazo *'}
                   value={ghActionObservation}
                   onChange={(e) => setGhActionObservation(e.target.value)}
+                  placeholder={ghActionType === 'approve' ? 'Ej: Aprobado administrativamente por requerimiento institucional...' : 'Explique el motivo del rechazo...'}
                 />
               </DialogContent>
               <DialogActions sx={{ bgcolor: '#f8fafc', borderTop: '1px solid #e2e8f0' }}>
@@ -1700,7 +1738,7 @@ function ReporteSalidaSeguimiento({ initialAccess = null, onBack }) {
                   disableElevation
                   color={ghActionType === 'approve' ? 'success' : 'error'}
                 >
-                  {ghActionType === 'approve' ? 'Aprobar salida' : 'Confirmar rechazo'}
+                  {ghActionType === 'approve' ? 'Aprobar solicitud' : 'Confirmar rechazo'}
                 </Button>
               </DialogActions>
             </Dialog>

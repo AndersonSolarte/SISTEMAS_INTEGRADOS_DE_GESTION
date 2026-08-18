@@ -9,7 +9,7 @@ export const DESPLAZAMIENTO_VIATICOS_ENABLED = String(
 
 // Liberación controlada: conserva compilado todo el flujo de viáticos, pero
 // oculta temporalmente la pregunta Sí/No en el formulario de reporte de salida.
-export const DESPLAZAMIENTO_VIATICOS_QUESTION_VISIBLE = false;
+export const DESPLAZAMIENTO_VIATICOS_QUESTION_VISIBLE = true;
 
 export const REPORTE_SALIDA_DOCUMENT_CODE = 'THM-DP-FR-002';
 
