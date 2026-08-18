@@ -121,7 +121,7 @@ const SolicitudViaticosFields = ({
             '& .MuiAlert-icon': { color: '#d97706', fontSize: 22 }
           }}
         >
-          <strong>⚠️ ATENCIÓN - MÓDULO EN PRUEBAS:</strong> En este momento la solicitud de viáticos (<strong>ADF-PP-FR-004</strong>) se encuentra en <strong>periodo de prueba y validación institucional</strong>.
+          <strong>ATENCIÓN - MÓDULO EN PRUEBAS:</strong> En este momento la solicitud de viáticos (<strong>ADF-PP-FR-004</strong>) se encuentra en <strong>periodo de prueba y validación institucional</strong>.
         </Alert>
         <SectionLabel>Datos de la comisión</SectionLabel>
         <TextField sx={{ ...compactSx, gridColumn: { sm: 'span 2' } }} size="small" required label="Lugar a visitar" value={viaticos.lugarVisitar || ''} onChange={(e) => onChange('lugarVisitar', e.target.value)} />
