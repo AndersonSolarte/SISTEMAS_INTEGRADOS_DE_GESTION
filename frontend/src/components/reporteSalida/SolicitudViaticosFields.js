@@ -106,19 +106,22 @@ const SolicitudViaticosFields = ({
 
       <Box sx={{ p: { xs: 1.2, md: 1.5 }, display: 'grid', gridTemplateColumns: { xs: '1fr', sm: 'repeat(2, minmax(0, 1fr))', lg: 'repeat(4, minmax(0, 1fr))' }, gap: 1.1 }}>
         <Alert
-          severity="info"
+          severity="warning"
           sx={{
             gridColumn: '1 / -1',
-            borderRadius: 1.5,
-            fontSize: 12.5,
-            py: 0.6,
-            bgcolor: '#eff6ff',
-            color: '#1e40af',
-            border: '1px solid #bfdbfe',
-            '& .MuiAlert-icon': { color: '#2563eb' }
+            borderRadius: 2,
+            fontSize: 13,
+            fontWeight: 500,
+            py: 0.8,
+            px: 1.5,
+            bgcolor: '#fffbeb',
+            color: '#92400e',
+            border: '2px solid #f59e0b',
+            boxShadow: '0 2px 8px rgba(245, 158, 11, 0.15)',
+            '& .MuiAlert-icon': { color: '#d97706', fontSize: 22 }
           }}
         >
-          <strong>Aviso institucional:</strong> En este momento el módulo de solicitud de viáticos (ADF-PP-FR-004) se encuentra en <strong>periodo de prueba y validación</strong>. Puede diligenciar los datos requeridos para efectuar las pruebas correspondientes del flujo.
+          <strong>⚠️ ATENCIÓN - MÓDULO EN PRUEBAS:</strong> En este momento la solicitud de viáticos (<strong>ADF-PP-FR-004</strong>) se encuentra en <strong>periodo de prueba y validación institucional</strong>.
         </Alert>
         <SectionLabel>Datos de la comisión</SectionLabel>
         <TextField sx={{ ...compactSx, gridColumn: { sm: 'span 2' } }} size="small" required label="Lugar a visitar" value={viaticos.lugarVisitar || ''} onChange={(e) => onChange('lugarVisitar', e.target.value)} />
