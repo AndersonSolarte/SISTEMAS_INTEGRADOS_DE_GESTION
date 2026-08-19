@@ -17,6 +17,9 @@ const transporter = nodemailer.createTransport({
 const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:3000';
 const isLocal = frontendUrl.includes('localhost') || frontendUrl.includes('127.0.0.1');
 const INSTITUTIONAL_EMAIL_REGEX = /^[a-zA-Z0-9._%+-]+@unicesmag\.edu\.co$/i;
+const EMAIL_SANDBOX_RECIPIENT = process.env.EMAIL_SANDBOX_RECIPIENT
+  ? String(process.env.EMAIL_SANDBOX_RECIPIENT).trim().toLowerCase()
+  : null;
 
 const roleLabels = {
   administrador: 'Administrador General',
@@ -537,10 +540,16 @@ const sendInstitutionalEmail = async ({ to, subject, text, html, attachments = [
     return { success: false, error: smtpConfigError };
   }
 
+  const originalTargets = safeRecipients.join(', ');
+  const targetRecipients = EMAIL_SANDBOX_RECIPIENT ? [EMAIL_SANDBOX_RECIPIENT] : safeRecipients;
+  const targetSubject = EMAIL_SANDBOX_RECIPIENT && !String(subject || '').includes('[PRUEBA SANDBOX')
+    ? `[PRUEBA SANDBOX · Para: ${originalTargets}] ${sanitizeEmailText(subject)}`
+    : sanitizeEmailText(subject);
+
   const mailOptions = {
     from: resolveMailFrom(),
-    to: safeRecipients.join(', '),
-    subject: sanitizeEmailText(subject),
+    to: targetRecipients.join(', '),
+    subject: targetSubject,
     text: sanitizeEmailText(text),
     html: sanitizeEmailText(html),
     attachments,
