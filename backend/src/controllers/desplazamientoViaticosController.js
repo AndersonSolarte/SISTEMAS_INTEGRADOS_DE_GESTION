@@ -582,21 +582,27 @@ const createStageToken = (solicitud, step, accessSource = 'primary') => encryptP
   }, null);
 
 const issueTokens = async (solicitud, step) => {
+  const plan = [...(solicitud.plan_aprobacion || [])];
+  const stepIndex = plan.findIndex((s) => s.key === step.key);
+  const targetIndex = stepIndex >= 0 ? stepIndex : Number(solicitud.paso_actual || 0);
   const primary = createStageToken(solicitud, step, 'primary');
   const alternateAccessSource = step.alternateAccessSource || 'alternate';
   const alternate = step.alternateApprovalEmail
     ? createStageToken(solicitud, step, alternateAccessSource)
     : null;
-  const plan = [...(solicitud.plan_aprobacion || [])];
-  const stepIndex = Number(solicitud.paso_actual || 0);
-  plan[stepIndex] = {
-    ...plan[stepIndex],
+  plan[targetIndex] = {
+    ...plan[targetIndex],
     actionTokenHashes: [
       { source: 'primary', hash: hashToken(primary) },
       ...(alternate ? [{ source: alternateAccessSource, hash: hashToken(alternate) }] : [])
     ]
   };
+  solicitud.paso_actual = targetIndex;
+  solicitud.plan_aprobacion = plan;
+  solicitud.token_etapa = step.key;
+  solicitud.token_accion_hash = hashToken(primary);
   await solicitud.update({
+    paso_actual: targetIndex,
     plan_aprobacion: plan,
     token_accion_hash: hashToken(primary),
     token_etapa: step.key,
@@ -981,13 +987,17 @@ const sendFinalizedCopies = async (solicitud) => {
 };
 
 const advance = async (solicitud, actor, detail = {}) => {
-  const plan = solicitud.plan_aprobacion || [];
+  const plan = [...(solicitud.plan_aprobacion || [])];
   const current = plan[solicitud.paso_actual];
-  const nextIndex = solicitud.paso_actual + 1;
+  const nextIndex = Number(solicitud.paso_actual || 0) + 1;
   const traceEvent = current.action === 'approval' ? `aprobado_${current.key}` : `completado_${current.key}`;
+  solicitud.paso_actual = nextIndex;
+  solicitud.trazabilidad = appendTrace(solicitud, traceEvent, actor, detail);
+  solicitud.token_accion_hash = null;
+  solicitud.token_etapa = null;
   await solicitud.update({
     paso_actual: nextIndex,
-    trazabilidad: appendTrace(solicitud, traceEvent, actor, detail),
+    trazabilidad: solicitud.trazabilidad,
     token_accion_hash: null,
     token_etapa: null
   });
@@ -1810,10 +1820,11 @@ const procesarAccion = async (req, res) => {
       if (!centroCosto) return res.status(400).send(page('Centro de costos obligatorio', '<p>Debe registrar el centro de costos antes de enviar la liquidación.</p>'));
       const liquidacion = parseLiquidationBody(req.body);
       if (liquidacion.error) return res.status(400).send(page('Falta el detalle', `<p>${escapeHtml(liquidacion.error)}</p>`));
-      const { detalles, totalAnticipo, observaciones } = liquidacion;
+      solicitud.datos_viaticos = { ...(solicitud.datos_viaticos || {}), centroCosto };
+      solicitud.liquidacion = { detalles, totalAnticipo, observaciones };
       await solicitud.update({
-        datos_viaticos: { ...(solicitud.datos_viaticos || {}), centroCosto },
-        liquidacion: { detalles, totalAnticipo, observaciones }
+        datos_viaticos: solicitud.datos_viaticos,
+        liquidacion: solicitud.liquidacion
       });
       const linkedReport = await getLinkedNormalReport(solicitud);
       if (linkedReport) {
@@ -1827,7 +1838,7 @@ const procesarAccion = async (req, res) => {
           }]
         });
       }
-      const next = await advance(solicitud, actor);
+      const next = await advance(solicitud, actor, { totalAnticipo, centroCosto, observaciones });
       return res.send(page('Solicitud procesada', `<p>La liquidación por $${totalAnticipo.toLocaleString('es-CO')} fue registrada y enviada a ${escapeHtml(next?.label || 'la siguiente etapa')}.</p><p>El enlace del técnico contable quedó cerrado y no puede utilizarse nuevamente.</p>`));
     }
     if (step.action === 'pago') {
