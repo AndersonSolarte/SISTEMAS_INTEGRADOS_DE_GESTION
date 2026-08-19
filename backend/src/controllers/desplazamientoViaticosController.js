@@ -747,12 +747,68 @@ const financialAmountHtml = (solicitud) => {
     </table>`;
 };
 
+const liquidationBreakdownEmailHtml = (solicitud) => {
+  const liquidacion = solicitud.liquidacion || {};
+  const visibleDetails = getVisibleLiquidationDetails(liquidacion);
+  const total = Number(liquidacion.totalAnticipo) || visibleDetails.reduce((sum, item) => sum + (Number(item.valorTotal) || 0), 0);
+
+  if (!visibleDetails.length && !total) return '';
+
+  const rows = visibleDetails.map((item) => `
+    <tr style="border-bottom: 1px solid #e2e8f0;">
+      <td style="padding: 8px 10px; font-size: 12px; color: #1e293b; font-weight: 600;">${escapeHtml(item.detalle)}</td>
+      <td style="padding: 8px 10px; font-size: 12px; text-align: right; color: #334155;">${escapeHtml(formatCop(item.valorDiario))}</td>
+      <td style="padding: 8px 10px; font-size: 12px; text-align: center; color: #334155;">${escapeHtml(item.dias)}</td>
+      <td style="padding: 8px 10px; font-size: 12px; text-align: right; font-weight: 700; color: #0b3a6f;">${escapeHtml(formatCop(item.valorTotal))}</td>
+    </tr>
+  `).join('');
+
+  return `
+    <div style="margin: 18px 0; border: 1.5px solid #0b3a6f; border-radius: 8px; overflow: hidden; background-color: #ffffff; box-shadow: 0 4px 12px rgba(11,58,111,.08);">
+      <div style="background-color: #0b3a6f; padding: 10px 14px; color: #ffffff;">
+        <div style="font-size: 11.5px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.5px;">Resumen de Liquidación de Viáticos y Gastos de Viaje</div>
+      </div>
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="border-collapse: collapse;">
+        <thead>
+          <tr style="background-color: #f1f5f9; border-bottom: 1px solid #cbd5e1;">
+            <th style="padding: 8px 10px; text-align: left; font-size: 10.5px; font-weight: 800; color: #0b3a6f; text-transform: uppercase;">Detalle de Concepto</th>
+            <th style="padding: 8px 10px; text-align: right; font-size: 10.5px; font-weight: 800; color: #0b3a6f; text-transform: uppercase; width: 120px;">Valor diario</th>
+            <th style="padding: 8px 10px; text-align: center; font-size: 10.5px; font-weight: 800; color: #0b3a6f; text-transform: uppercase; width: 65px;">Días</th>
+            <th style="padding: 8px 10px; text-align: right; font-size: 10.5px; font-weight: 800; color: #0b3a6f; text-transform: uppercase; width: 130px;">Valor total</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${rows}
+        </tbody>
+        <tfoot>
+          <tr style="background-color: #dbeafe; border-top: 2px solid #0b3a6f;">
+            <td colspan="3" style="padding: 10px 10px; text-align: right; font-size: 12.5px; font-weight: 900; color: #0b3a6f; text-transform: uppercase;">TOTAL ANTICIPO LIQUIDADO:</td>
+            <td style="padding: 10px 10px; text-align: right; font-size: 14px; font-weight: 900; color: #0b3a6f;">${escapeHtml(formatCop(total))}</td>
+          </tr>
+        </tfoot>
+      </table>
+      ${liquidacion.observaciones ? `
+        <div style="padding: 12px 14px; background-color: #f8fafc; border-top: 1px solid #e2e8f0;">
+          <div style="font-size: 10px; font-weight: 800; color: #64748b; text-transform: uppercase; margin-bottom: 3px;">Observaciones de la Liquidación (Técnico Contable):</div>
+          <div style="font-size: 12px; color: #1e293b; line-height: 1.45;">${escapeHtml(liquidacion.observaciones)}</div>
+        </div>
+      ` : ''}
+    </div>
+  `;
+};
+
+const getThreadHeaders = (solicitud) => {
+  const id = `<DEV-${solicitud?.consecutivo || solicitud?.id || '2026'}@unicesmag.edu.co>`;
+  return { inReplyTo: id, references: id };
+};
+
 const emailStep = async (solicitud, step, tokenBundle) => {
   const primaryToken = typeof tokenBundle === 'string' ? tokenBundle : tokenBundle.primary;
   const alternateToken = typeof tokenBundle === 'string' ? null : tokenBundle.alternate;
   const actionUrl = `${publicBackendUrl}/api/desplazamientos-viaticos/accion/${primaryToken}`;
   const isFinancialStage = ['tecnico_contable', 'tesoreria', 'financiera_final'].includes(step.key);
   const supportAttachment = buildSupportAttachment(solicitud);
+  const threadId = `<DEV-${solicitud.consecutivo}@unicesmag.edu.co>`;
   const title = step.key === 'sst'
     ? 'Validación de salida y ampliación de cobertura ARL'
     : step.action === 'liquidacion'
@@ -795,7 +851,9 @@ const emailStep = async (solicitud, step, tokenBundle) => {
     subject: `${solicitud.consecutivo} | ${title}`,
     text: `${title}. Ingrese a ${actionUrl}`,
     html,
-    attachments: [supportAttachment].filter(Boolean)
+    attachments: [supportAttachment].filter(Boolean),
+    inReplyTo: threadId,
+    references: threadId
   });
   let alternateResult = null;
   if (alternateToken && step.alternateApprovalEmail) {
@@ -828,7 +886,9 @@ const emailStep = async (solicitud, step, tokenBundle) => {
           ? `${summaryHtml(solicitud)}${financialAmount}${alternateButtonHtml}<p style="color:#64748b;font-size:12px;text-align:center;">La solicitud solo puede procesarse una vez. Cuando uno de los dos destinatarios registre la decisión, el otro enlace quedará cerrado automáticamente.</p>`
           : `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin: 0 0 18px 0; border-left: 4px solid #d97706; background-color: #fffbeb; border-radius: 4px;"><tr><td style="padding: 12px 16px; color: #92400e; font-size: 13px; line-height: 1.45;"><strong>Uso restringido:</strong> Este acceso solo debe utilizarse cuando ${escapeHtml(absenceRole)} no se encuentre disponible. La actuación se registrará formalmente a nombre de ${escapeHtml(authorityLabel)}, exige una observación y quedará identificada en la trazabilidad institucional.</td></tr></table>${summaryHtml(solicitud)}${financialAmount}${alternateButtonHtml}`
       }),
-      attachments: [supportAttachment].filter(Boolean)
+      attachments: [supportAttachment].filter(Boolean),
+      inReplyTo: threadId,
+      references: threadId
     });
   }
   const infoEmails = [...new Set((step.infoEmails || []).filter(Boolean).map(normalizeEmail))];
@@ -836,13 +896,15 @@ const emailStep = async (solicitud, step, tokenBundle) => {
     await sendInstitutionalEmail({
       to: infoEmails,
       subject: `${solicitud.consecutivo} | Copia informativa de liquidación remitida a Tesorería`,
-      text: `La liquidación ${solicitud.consecutivo} fue remitida a Tesorería/Pagaduría para autorizar el pago. Esta copia para la Vicerrectoría Financiera es informativa.`,
+      text: `La liquidación ${solicitud.consecutivo} fue registrada por el Técnico Contable y remitida a Tesorería/Pagaduría para autorizar el pago. Esta copia para la Vicerrectoría Financiera es de carácter informativo.`,
       html: renderInstitutionalTemplate({
-        title: 'Copia informativa de liquidación',
-        introHtml: '<p style="margin: 0 0 10px 0;">Saludo de paz y bien,</p><p style="margin: 0 0 14px 0;">El Técnico Contable registró la liquidación de viáticos y la remitió a Tesorería / Pagaduría para autorizar el pago. Esta copia es de carácter informativo.</p>',
-        bodyHtml: `${summaryHtml(solicitud)}${financialAmountHtml(solicitud)}`
+        title: 'Copia informativa de liquidación de viáticos',
+        introHtml: `<p style="margin: 0 0 10px 0;">Saludo de paz y bien,</p><p style="margin: 0 0 14px 0;">Se remite a la <strong>Vicerrectoría Financiera y de Desarrollo Institucional</strong> copia informativa de la liquidación formal de viáticos registrada por el Técnico Contable para la solicitud <strong>${escapeHtml(solicitud.consecutivo)}</strong>, la cual ha sido remitida a Tesorería / Pagaduría para autorizar el pago correspondiente.</p>`,
+        bodyHtml: `${summaryHtml(solicitud)}${liquidationBreakdownEmailHtml(solicitud)}`
       }),
-      attachments: [supportAttachment].filter(Boolean)
+      attachments: [supportAttachment].filter(Boolean),
+      inReplyTo: threadId,
+      references: threadId
     });
   }
   return alternateResult
@@ -864,7 +926,8 @@ const sendRadicationCopies = async (solicitud, recipients = []) => {
       introHtml: `<p style="margin: 0 0 10px 0;">Saludo de paz y bien,</p><p style="margin: 0 0 14px 0;">Se remite copia informativa de la solicitud de desplazamiento radicada. La primera actuación de visto bueno corresponde a <strong>${escapeHtml(firstStep?.label || 'la instancia responsable')}</strong>.</p>`,
       bodyHtml: summaryHtml(solicitud)
     }),
-    attachments: [supportAttachment].filter(Boolean)
+    attachments: [supportAttachment].filter(Boolean),
+    ...getThreadHeaders(solicitud)
   });
 };
 
@@ -885,7 +948,8 @@ const sendRequesterNotice = async (solicitud, title, message, { final = false, i
       introHtml: `<p style="margin: 0 0 10px 0;">Saludo de paz y bien,</p><p style="margin: 0 0 14px 0;">${escapeHtml(message)}</p>`,
       bodyHtml: summaryHtml(solicitud)
     }),
-    attachments: [pdfAttachment, attachment, supportAttachment].filter(Boolean)
+    attachments: [pdfAttachment, attachment, supportAttachment].filter(Boolean),
+    ...getThreadHeaders(solicitud)
   });
 };
 
@@ -924,7 +988,8 @@ const sendNormalReportFinalCopies = async (solicitud, report = null) => {
       introHtml: '<p style="margin: 0 0 10px 0;">Saludo de paz y bien,</p><p style="margin: 0 0 14px 0;">Gestión Humana aprobó el reporte de salida. Se remite copia informativa del documento finalizado con todas las firmas electrónicas.</p>',
       bodyHtml: summaryHtml(solicitud)
     }),
-    attachments: [pdfAttachment, supportAttachment].filter(Boolean)
+    attachments: [pdfAttachment, supportAttachment].filter(Boolean),
+    ...getThreadHeaders(solicitud)
   })));
   return { success: results.every((result) => result.success), recipients: targets, results };
 };
@@ -956,7 +1021,8 @@ const sendFinalizedCopies = async (solicitud) => {
         introHtml: '<p style="margin: 0 0 10px 0;">Saludo de paz y bien,</p><p style="margin: 0 0 14px 0;">Tesorería / Pagaduría ha autorizado el pago de su anticipo de viáticos. Se remite copia del reporte de salida y de la liquidación oficial debidamente firmados. El módulo de legalización se habilitará automáticamente en la fecha de regreso y dispondrá de tres (3) días hábiles conforme al Acuerdo 001 de 2013.</p>',
         bodyHtml: summaryHtml(solicitud)
       }),
-      attachments: [normalReportPdfAttachment, liquidationPdfAttachment, supportAttachment].filter(Boolean)
+      attachments: [normalReportPdfAttachment, liquidationPdfAttachment, supportAttachment].filter(Boolean),
+      ...getThreadHeaders(solicitud)
     }));
   }
   results.push(...await Promise.all(finalRecipients.map((email) => sendInstitutionalEmail({
@@ -968,7 +1034,8 @@ const sendFinalizedCopies = async (solicitud) => {
       introHtml: '<p style="margin: 0 0 10px 0;">Saludo de paz y bien,</p><p style="margin: 0 0 14px 0;">Tesorería / Pagaduría ha autorizado el pago del anticipo. Se adjuntan el reporte de salida y la liquidación final de viáticos con todas las firmas y actuaciones registradas.</p>',
       bodyHtml: summaryHtml(solicitud)
     }),
-    attachments: [normalReportPdfAttachment, liquidationPdfAttachment, supportAttachment].filter(Boolean)
+    attachments: [normalReportPdfAttachment, liquidationPdfAttachment, supportAttachment].filter(Boolean),
+    ...getThreadHeaders(solicitud)
   }))));
   return { success: results.length > 0 && results.every((result) => result.success), results };
 };
