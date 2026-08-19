@@ -25,11 +25,12 @@ const calculateDays = (salida = {}, requestedDays = null) => {
 
 const currency = (value) => Number(value || 0);
 
-const getVisibleLiquidationDetails = (liquidacion = {}) => (liquidacion.detalles || []).filter((detail) => (
-  Number(detail?.valorDiario || 0) > 0
-  || Number(detail?.dias || 0) > 0
-  || Number(detail?.valorTotal || 0) > 0
-));
+const getVisibleLiquidationDetails = (liquidacion = {}) => (liquidacion.detalles || []).filter((detail) => {
+  const v = Number(detail?.valorDiario || 0);
+  const d = Number(detail?.dias || 0);
+  const t = Number(detail?.valorTotal || 0);
+  return t > 0 || (v > 0 && d > 0);
+});
 
 const mergeAndSet = (sheet, range, value, style = {}) => {
   sheet.mergeCells(range);

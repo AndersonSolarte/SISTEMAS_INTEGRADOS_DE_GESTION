@@ -1357,6 +1357,7 @@ const renderLiquidationSectionHtml = (solicitud, currentStepKey, { isTreasury = 
     const baseRows = BASE_DETAIL_NAMES.map((name, index) => {
       const match = visibleDetails.find((d) => d.detalle?.toLowerCase() === name.toLowerCase());
       const isIncluded = Boolean(match && (match.valorTotal > 0 || match.valorDiario > 0));
+      if (!isIncluded) return '';
       const valorDiario = match ? match.valorDiario : 0;
       const dias = match ? match.dias : 0;
       const rowTotal = valorDiario * dias;
