@@ -2224,9 +2224,15 @@ const procesarAccion = async (req, res) => {
         ...(numeroCuenta ? { numeroCuenta } : {})
       };
 
+      const prevTotal = Number(solicitud.liquidacion?.totalAnticipo) || 0;
+      const prevDetalles = solicitud.liquidacion?.detalles || [];
+      let wasModified = false;
+
       if (req.body.liquidationRowsVersion) {
         const updatedLiquidation = parseLiquidationBody(req.body);
         if (!updatedLiquidation.error && updatedLiquidation.detalles?.length > 0) {
+          const newTotal = Number(updatedLiquidation.totalAnticipo) || 0;
+          wasModified = (newTotal !== prevTotal) || JSON.stringify(updatedLiquidation.detalles) !== JSON.stringify(prevDetalles);
           solicitud.liquidacion = {
             detalles: updatedLiquidation.detalles,
             totalAnticipo: updatedLiquidation.totalAnticipo,
@@ -2238,7 +2244,10 @@ const procesarAccion = async (req, res) => {
       const trace = appendTrace(solicitud, 'completado_tesoreria', actor, {
         observacion: actionObservation,
         pagoAutorizado: true,
-        totalAnticipo: solicitud.liquidacion?.totalAnticipo
+        liquidacionModificada: wasModified,
+        totalAnticipoAnterior: wasModified ? prevTotal : undefined,
+        totalAnticipoFinal: solicitud.liquidacion?.totalAnticipo,
+        detallesFinales: solicitud.liquidacion?.detalles
       });
       await solicitud.update({
         estado: 'pago_autorizado_pendiente_legalizacion',

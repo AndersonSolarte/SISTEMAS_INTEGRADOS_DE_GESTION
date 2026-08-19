@@ -73,13 +73,19 @@ const addTraceabilitySheet = (workbook, solicitud) => {
     const approved = [...traces].reverse().find((entry) => entry.event === `aprobado_${step.key}` || entry.event === `completado_${step.key}`);
     const rejected = [...traces].reverse().find((entry) => entry.event === `no_aprobado_${step.key}`);
     const trace = rejected || approved;
+    let obsText = trace?.detail?.observacion || '';
+    if (step.key === 'tesoreria' && trace?.detail?.liquidacionModificada) {
+      const prev = trace.detail.totalAnticipoAnterior ? `$${Number(trace.detail.totalAnticipoAnterior).toLocaleString('es-CO')}` : 'N/A';
+      const fin = trace.detail.totalAnticipoFinal ? `$${Number(trace.detail.totalAnticipoFinal).toLocaleString('es-CO')}` : 'N/A';
+      obsText = `[Liquidación ajustada en Tesorería: de ${prev} a ${fin}] ${obsText}`.trim();
+    }
     sheet.addRow({
       etapa: step.label,
       estado: rejected ? 'No aprobado' : approved ? 'Aprobado / completado' : 'Pendiente',
       responsable: trace?.actor?.nombre || '',
       correo: trace?.actor?.email || step.email || '',
       fecha: trace?.at ? new Date(trace.at).toLocaleString('es-CO') : '',
-      observacion: trace?.detail?.observacion || ''
+      observacion: obsText
     });
   });
   sheet.addRow([]);
