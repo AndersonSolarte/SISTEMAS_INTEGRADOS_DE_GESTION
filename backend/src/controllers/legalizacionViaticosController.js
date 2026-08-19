@@ -202,8 +202,8 @@ const includeLegalizacion = [{ model: ViaticosLegalizacion, as: 'legalizacion', 
 const listarPropias = async (req, res) => {
   try {
     const solicitudes = await DesplazamientoViaticosSolicitud.findAll({
-      where: { user_id: req.user.id, estado: 'pago_autorizado_pendiente_legalizacion' },
-      include: includeLegalizacion,
+      where: { user_id: req.user.id },
+      include: [{ model: ViaticosLegalizacion, as: 'legalizacion', required: true }],
       order: [['created_at', 'DESC']]
     });
     const rows = solicitudes.filter((row) => row.legalizacion).map((row) => ({
