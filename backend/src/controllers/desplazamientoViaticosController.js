@@ -837,7 +837,7 @@ const emailStep = async (solicitud, step, tokenBundle) => {
           ? `${summaryHtml(solicitud)}${financialAmount}${alternateButtonHtml}<p style="color:#64748b;font-size:12px;text-align:center;">La solicitud solo puede procesarse una vez. Cuando uno de los dos destinatarios registre la decisión, el otro enlace quedará cerrado automáticamente.</p>`
           : `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin: 0 0 18px 0; border-left: 4px solid #d97706; background-color: #fffbeb; border-radius: 4px;"><tr><td style="padding: 12px 16px; color: #92400e; font-size: 13px; line-height: 1.45;"><strong>Uso restringido:</strong> Este acceso solo debe utilizarse cuando ${escapeHtml(absenceRole)} no se encuentre disponible. La actuación se registrará formalmente a nombre de ${escapeHtml(authorityLabel)}, exige una observación y quedará identificada en la trazabilidad institucional.</td></tr></table>${summaryHtml(solicitud)}${financialAmount}${alternateButtonHtml}`
       }),
-      attachments: [pdfAttachment, attachment, supportAttachment].filter(Boolean)
+      attachments: [viaticosPdfAttachment, normalReportPdfAttachment, supportAttachment].filter(Boolean)
     });
   }
   const infoEmails = [...new Set((step.infoEmails || []).filter(Boolean).map(normalizeEmail))];
@@ -851,7 +851,7 @@ const emailStep = async (solicitud, step, tokenBundle) => {
         introHtml: '<p style="margin: 0 0 10px 0;">Saludo de paz y bien,</p><p style="margin: 0 0 14px 0;">El Técnico Contable registró la liquidación de viáticos y la remitió a Tesorería / Pagaduría para autorizar el pago. Esta copia es de carácter informativo.</p>',
         bodyHtml: `${summaryHtml(solicitud)}${financialAmountHtml(solicitud)}`
       }),
-      attachments: [pdfAttachment, attachment, supportAttachment].filter(Boolean)
+      attachments: [viaticosPdfAttachment, normalReportPdfAttachment, supportAttachment].filter(Boolean)
     });
   }
   return alternateResult
