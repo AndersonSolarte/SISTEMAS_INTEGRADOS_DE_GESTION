@@ -1185,21 +1185,6 @@ const renderDepartureSignatures = (solicitud, currentStepKey) => {
     return Number.isNaN(date.getTime()) ? String(d) : date.toLocaleString('es-CO');
   };
 
-const renderDepartureSignatures = (solicitud, currentStepKey) => {
-  const radication = (solicitud.trazabilidad || []).find((entry) => entry.event === 'radicada');
-  const collaborator = solicitud.solicitante_snapshot || {};
-  const laboral = solicitud.datos_laborales || {};
-  const plan = solicitud.plan_aprobacion || [];
-  const txId = `SGC-DEV-${solicitud.id}-${solicitud.consecutivo || '2026'}`;
-
-  const departureSteps = plan.filter((step) => !['tecnico_contable', 'tesoreria'].includes(step.key));
-
-  const formatTraceDate = (d) => {
-    if (!d) return 'No registrado';
-    const date = new Date(d);
-    return Number.isNaN(date.getTime()) ? String(d) : date.toLocaleString('es-CO');
-  };
-
   const signatureBoxes = [];
 
   // 1. Firma del Solicitante (Aceptación Electrónica)
