@@ -268,6 +268,7 @@ const buildLiquidationDefinition = (solicitud) => {
   const viaticos = solicitud.datos_viaticos || {};
   const liquidacion = solicitud.liquidacion || {};
   const financialSteps = buildFinancialSteps(solicitud);
+  const permitSteps = (solicitud.plan_aprobacion || []).filter((s) => !['tecnico_contable', 'tesoreria'].includes(s.key));
   const transactionId = text(solicitud.consecutivo || solicitud.id);
   const frontendUrl = process.env.FRONTEND_URL || 'https://planeaciongp.unicesmag.edu.co';
   const verifyUrl = `${frontendUrl.replace(/\/$/, '')}/verificar/${encodeURIComponent(transactionId)}`;
@@ -316,7 +317,7 @@ const buildLiquidationDefinition = (solicitud) => {
           [label('Observaciones especiales'), { ...cell(viaticos.observacionesEspeciales || 'Sin observaciones'), colSpan: 3 }, {}, {}]
         ]
       },
-      margin: [0, 0, 0, 14]
+      margin: [0, 0, 0, 10]
     },
     {
       table: {
@@ -328,7 +329,9 @@ const buildLiquidationDefinition = (solicitud) => {
       },
       margin: [0, 0, 0, 7]
     },
-    { text: LEGALIZATION_NOTICE, bold: true, fontSize: 8.5, color: '#92400e', fillColor: '#fffbeb', margin: [7, 6, 7, 8] },
+    { text: 'CONTROL DE FIRMAS ELECTRÓNICAS DE SALIDA', style: 'sectionTitle', margin: [0, 6, 0, 4] },
+    buildApprovalTable({ ...solicitud, plan_aprobacion: permitSteps }),
+    { text: LEGALIZATION_NOTICE, bold: true, fontSize: 8.5, color: '#92400e', fillColor: '#fffbeb', margin: [7, 8, 7, 8] },
     {
       table: {
         headerRows: 1,

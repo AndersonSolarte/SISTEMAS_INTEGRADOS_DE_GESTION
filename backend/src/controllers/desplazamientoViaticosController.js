@@ -8,7 +8,7 @@ const { sequelize } = require('../config/database');
 const { decryptPayload, encryptPayload } = require('../utils/secureUrlToken');
 const { getDesplazamientoViaticosRecipients, normalizeEmail } = require('../config/desplazamientoViaticosConfig');
 const { sendInstitutionalEmail, renderInstitutionalTemplate, escapeHtml } = require('../services/emailService');
-const { AUTHORIZATION_TEXT, LEGALIZATION_NOTICE, buildXlsxAttachment, calculateDays } = require('../services/desplazamientoViaticos/formatService');
+const { AUTHORIZATION_TEXT, LEGALIZATION_NOTICE, buildXlsxAttachment, calculateDays, getVisibleLiquidationDetails } = require('../services/desplazamientoViaticos/formatService');
 const { buildLiquidationPdfAttachment, buildPdfAttachment } = require('../services/desplazamientoViaticos/pdfService');
 const { ensureReporteSalidaPdf } = require('../services/reporteSalidaPdfService');
 const { addColombiaBusinessDays } = require('../utils/colombiaBusinessDays');
@@ -1183,12 +1183,14 @@ const findTrace = (solicitud, key) => [...(solicitud.trazabilidad || [])].revers
   || (key === 'gestion_humana' && entry.event === 'aprobada_gestion_humana')
 ));
 
-const renderSignaturesSection = (solicitud, currentStepKey) => {
+const renderDepartureSignatures = (solicitud, currentStepKey) => {
   const radication = (solicitud.trazabilidad || []).find((entry) => entry.event === 'radicada');
   const collaborator = solicitud.solicitante_snapshot || {};
   const laboral = solicitud.datos_laborales || {};
   const plan = solicitud.plan_aprobacion || [];
   const txId = `SGC-DEV-${solicitud.id}-${solicitud.consecutivo || '2026'}`;
+
+  const departureSteps = plan.filter((step) => !['tecnico_contable', 'tesoreria'].includes(step.key));
 
   const formatTraceDate = (d) => {
     if (!d) return 'No registrado';
@@ -1215,8 +1217,8 @@ const renderSignaturesSection = (solicitud, currentStepKey) => {
     </div>
   `);
 
-  // 2. Firmas de los pasos del plan
-  plan.forEach((step) => {
+  // 2. Firmas de los pasos del plan de salida
+  departureSteps.forEach((step) => {
     const trace = findTrace(solicitud, step.key);
     const isCurrent = step.key === currentStepKey;
     const isApproved = Boolean(trace && trace.event !== `no_aprobado_${step.key}`);
@@ -1271,11 +1273,145 @@ const renderSignaturesSection = (solicitud, currentStepKey) => {
     `);
   });
 
-  // 3. Tabla de Trazabilidad Detallada
+  return `
+    <section class="fr004-section" style="padding-top:0">
+      <h2 class="fr004-section-title">Control de Firmas Electrónicas y Aprobaciones de Salida</h2>
+      <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 12px; margin-bottom: 18px;">
+        ${signatureBoxes.join('')}
+      </div>
+    </section>
+  `;
+};
+
+const renderLiquidationSectionHtml = (solicitud, currentStepKey) => {
+  const liquidacion = solicitud.liquidacion || {};
+  const visibleDetails = getVisibleLiquidationDetails(liquidacion);
+  const total = Number(liquidacion.totalAnticipo) || visibleDetails.reduce((sum, item) => sum + (Number(item.valorTotal) || 0), 0);
+  const plan = solicitud.plan_aprobacion || [];
+  const financialSteps = plan.filter((step) => ['tecnico_contable', 'tesoreria'].includes(step.key));
+  const txId = `SGC-DEV-${solicitud.id}-${solicitud.consecutivo || '2026'}`;
+
+  const formatTraceDate = (d) => {
+    if (!d) return 'No registrado';
+    const date = new Date(d);
+    return Number.isNaN(date.getTime()) ? String(d) : date.toLocaleString('es-CO');
+  };
+
+  const rowsHtml = visibleDetails.map((item) => `
+    <tr style="border-bottom: 1px solid #e2e8f0;">
+      <td style="padding: 9px 12px; font-size: 12px; color: #1e293b; font-weight: 600;">${escapeHtml(item.detalle)}</td>
+      <td style="padding: 9px 12px; font-size: 12px; text-align: right; color: #334155;">$${Number(item.valorDiario || 0).toLocaleString('es-CO')}</td>
+      <td style="padding: 9px 12px; font-size: 12px; text-align: center; color: #334155;">${escapeHtml(item.dias)}</td>
+      <td style="padding: 9px 12px; font-size: 12px; text-align: right; font-weight: 700; color: #0b3a6f;">$${Number(item.valorTotal || 0).toLocaleString('es-CO')}</td>
+    </tr>
+  `).join('');
+
+  const finBoxes = financialSteps.map((step) => {
+    const trace = findTrace(solicitud, step.key);
+    const isCurrent = step.key === currentStepKey;
+    const isApproved = Boolean(trace && trace.event !== `no_aprobado_${step.key}`);
+    const isRejected = trace?.event === `no_aprobado_${step.key}`;
+
+    let contentHtml = '';
+    let actorName = trace?.actor?.nombre || trace?.actor?.email || step.nombre || step.label;
+    let actorCargo = trace?.actor?.cargo || step.label;
+
+    if (isApproved) {
+      contentHtml = `
+        <div style="font-weight: 700; color: #166534; font-size: 10.5px; margin-bottom: 2px;">FIRMADO ELECTRÓNICAMENTE:</div>
+        <div style="font-weight: 800; color: #0b3a6f; font-size: 12.5px; text-transform: uppercase;">${escapeHtml(actorName)}</div>
+        <div><strong>Cargo:</strong> ${escapeHtml(actorCargo)}</div>
+        <div><strong>Fecha y hora:</strong> ${formatTraceDate(trace.at)}</div>
+        <div style="font-size: 9px; color: #64748b; margin-top: 4px; font-family: monospace;">ID Transacción: ${escapeHtml(txId)}</div>
+      `;
+    } else if (isRejected) {
+      contentHtml = `
+        <div style="font-weight: 700; color: #991b1b; font-size: 10.5px; margin-bottom: 2px;">No autorizado por:</div>
+        <div style="font-weight: 800; color: #991b1b; font-size: 12.5px; text-transform: uppercase;">${escapeHtml(actorName)}</div>
+        <div><strong>Cargo:</strong> ${escapeHtml(actorCargo)}</div>
+        <div><strong>Fecha y hora:</strong> ${formatTraceDate(trace.at)}</div>
+        <div style="font-size: 10.5px; color: #991b1b; margin-top: 3px;"><strong>Motivo:</strong> ${escapeHtml(trace.observacion || trace.motivo || 'Sin observación')}</div>
+      `;
+    } else if (isCurrent) {
+      contentHtml = `
+        <div style="font-weight: 700; color: #0b3a6f; font-size: 11px; margin-bottom: 2px;">Pendiente de autorización de pago</div>
+        <div style="color: #475569; font-size: 10.5px; line-height: 1.35;">Espacio reservado para la firma electrónica de <strong>${escapeHtml(step.label)}</strong>.</div>
+        <div style="margin-top: 5px; font-size: 10px; color: #0b3a6f; font-style: italic;">Utilice el panel inferior para registrar la decisión.</div>
+      `;
+    } else {
+      contentHtml = `
+        <div style="font-weight: 600; color: #64748b; font-size: 10.5px; margin-bottom: 2px;">Estado: Pendiente</div>
+        <div style="color: #94a3b8; font-size: 10px;">Esta etapa se habilitará al liquidar los viáticos.</div>
+      `;
+    }
+
+    const headerBg = isApproved ? '#f0fdf4' : (isRejected ? '#fef2f2' : (isCurrent ? '#eff6ff' : '#f8fafc'));
+    const headerColor = isApproved ? '#166534' : (isRejected ? '#991b1b' : (isCurrent ? '#1e3a8a' : '#475569'));
+    const borderCol = isCurrent ? '#93c5fd' : (isApproved ? '#86efac' : '#cbd5e1');
+
+    return `
+      <div style="border: 1px solid ${borderCol}; border-radius: 4px; overflow: hidden; background: #ffffff;">
+        <div style="background-color: ${headerBg}; color: ${headerColor}; font-weight: 800; font-size: 10.5px; padding: 7px 10px; text-align: center; text-transform: uppercase; letter-spacing: 0.5px; border-bottom: 1px solid ${borderCol};">
+          ${escapeHtml(step.label)}
+        </div>
+        <div style="padding: 10px 12px; font-size: 11px; line-height: 1.45; color: #1e293b;">
+          ${contentHtml}
+        </div>
+      </div>
+    `;
+  }).join('');
+
+  return `
+    <section class="fr004-section" style="padding-top:0">
+      <h2 class="fr004-section-title">Liquidación de Viáticos y Gastos de Viaje</h2>
+      <div style="overflow-x: auto; border: 1px solid #cbd5e1; border-radius: 6px; margin-bottom: 14px; background: #ffffff;">
+        <table style="width: 100%; border-collapse: collapse; font-size: 11.5px;">
+          <thead>
+            <tr style="background-color: #0b3a6f; color: #ffffff;">
+              <th style="padding: 10px 12px; text-align: left; font-size: 11px; font-weight: 800; text-transform: uppercase;">Detalle</th>
+              <th style="padding: 10px 12px; text-align: right; font-size: 11px; font-weight: 800; text-transform: uppercase; width: 140px;">Valor diario (COP)</th>
+              <th style="padding: 10px 12px; text-align: center; font-size: 11px; font-weight: 800; text-transform: uppercase; width: 90px;">No. días</th>
+              <th style="padding: 10px 12px; text-align: right; font-size: 11px; font-weight: 800; text-transform: uppercase; width: 160px;">Valor total (COP)</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${rowsHtml || '<tr><td colspan="4" style="padding: 10px; text-align: center; color: #64748b;">Pendiente de registrar conceptos.</td></tr>'}
+          </tbody>
+          <tfoot>
+            <tr style="background-color: #dbeafe; border-top: 2px solid #0b3a6f;">
+              <th colspan="3" style="padding: 10px 12px; text-align: right; font-size: 12.5px; font-weight: 800; color: #0b3a6f; text-transform: uppercase;">TOTAL ANTICIPO:</th>
+              <th style="padding: 10px 12px; text-align: right; font-size: 13.5px; font-weight: 800; color: #0b3a6f;">$${total.toLocaleString('es-CO')}</th>
+            </tr>
+          </tfoot>
+        </table>
+      </div>
+
+      ${liquidacion.observaciones ? `
+      <div style="margin-bottom: 16px; padding: 10px 14px; background-color: #f8fafc; border: 1px solid #e2e8f0; border-radius: 6px;">
+        <div style="font-size: 10px; font-weight: 800; color: #64748b; text-transform: uppercase; margin-bottom: 3px;">Observaciones a la liquidación</div>
+        <div style="font-size: 12px; color: #1e293b; line-height: 1.4;">${escapeHtml(liquidacion.observaciones)}</div>
+      </div>
+      ` : ''}
+
+      <h2 class="fr004-section-title">Control de Firmas Electrónicas del Flujo Financiero</h2>
+      <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 12px; margin-bottom: 18px;">
+        ${finBoxes}
+      </div>
+    </section>
+  `;
+};
+
+const renderTraceabilitySection = (solicitud) => {
+  const formatTraceDate = (d) => {
+    if (!d) return 'No registrado';
+    const date = new Date(d);
+    return Number.isNaN(date.getTime()) ? String(d) : date.toLocaleString('es-CO');
+  };
+
   const traces = solicitud.trazabilidad || [];
   const traceRows = traces.map((t) => {
-    let detailStr = t.motivo || t.observacion || t.justificacion || (t.event === 'radicada' ? 'Se registró la solicitud en el sistema.' : 'Procesado exitosamente.');
-    let actorStr = t.actor?.nombre || t.actor?.email || 'Sistema SIAC';
+    const detailStr = t.motivo || t.observacion || t.justificacion || (t.event === 'radicada' ? 'Se registró la solicitud en el sistema.' : 'Procesado exitosamente.');
+    const actorStr = t.actor?.nombre || t.actor?.email || 'Sistema SIAC';
     return `
       <tr style="border-bottom: 1px solid #e2e8f0;">
         <td style="padding: 7px 10px; font-size: 10.5px; color: #475569; white-space: nowrap;">${formatTraceDate(t.at)}</td>
@@ -1288,11 +1424,6 @@ const renderSignaturesSection = (solicitud, currentStepKey) => {
 
   return `
     <section class="fr004-section" style="padding-top:0">
-      <h2 class="fr004-section-title">Control de Firmas Electrónicas y Aprobaciones</h2>
-      <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 12px; margin-bottom: 18px;">
-        ${signatureBoxes.join('')}
-      </div>
-
       <h2 class="fr004-section-title">Trazabilidad Cronológica del Trámite</h2>
       <div style="overflow-x: auto; border: 1px solid #cbd5e1; border-radius: 4px; margin-bottom: 12px;">
         <table style="width: 100%; border-collapse: collapse; font-size: 11px;">
@@ -1346,6 +1477,10 @@ const liquidationRequestDocumentHtml = (solicitud, { currentStepKey = null, form
 
   const numeroCuentaField = `<div class="fr004-field fr004-span-2"><label for="numero-cuenta-input">Número de cuenta (Corregible) <span class="fr004-required">*</span></label><input class="fr004-editable" id="numero-cuenta-input" form="${formId}" name="numeroCuenta" maxlength="60" value="${escapeHtml(viaticos.numeroCuenta || '')}" placeholder="Número de cuenta bancaria" required></div>`;
 
+  const hasLiquidation = Array.isArray(solicitud.liquidacion?.detalles) && solicitud.liquidacion.detalles.length > 0;
+  const isTreasuryOrFinal = currentStepKey === 'tesoreria' || ['pendiente_autorizacion_pago', 'pago_autorizado_pendiente_legalizacion', 'finalizada'].includes(solicitud.estado);
+  const showLiquidationSection = hasLiquidation || isTreasuryOrFinal;
+
   return `
     <style>
       body{padding:20px 12px}.card{max-width:1080px;border:0;background:transparent;box-shadow:none;overflow:visible}.institutional-image,.page-title,.institutional-signature{display:none}.brand-bar{display:block;margin:0 0 18px;padding:16px 22px;border-radius:12px;background:linear-gradient(135deg,#0b3a6f,#124f8d);box-shadow:0 9px 24px rgba(11,58,111,.18)}.brand-name{font-size:16px}.brand-subtitle{font-size:11px}.body{padding:0}.fr004-document{overflow:hidden;margin:0 0 20px;border:1px solid #bfd0e3;border-radius:16px;background:#fff;box-shadow:0 14px 34px rgba(15,52,96,.09)}
@@ -1398,8 +1533,18 @@ const liquidationRequestDocumentHtml = (solicitud, { currentStepKey = null, form
         </div>
       </section>
       <div class="fr004-authorization"><strong>Autorización aceptada electrónicamente por el colaborador.</strong><br>${escapeHtml(viaticos.autorizacionTexto || AUTHORIZATION_TEXT)}</div>
+      
+      <!-- Firmas de Salida y Permiso -->
+      ${renderDepartureSignatures(solicitud, currentStepKey)}
+
+      <!-- Aviso Normativo -->
       <div class="fr004-legal"><strong>IMPORTANTE:</strong> ${escapeHtml((viaticos.avisoLegalizacion || LEGALIZATION_NOTICE).replace(/^IMPORTANTE:\s*/i, ''))}</div>
-      ${renderSignaturesSection(solicitud, currentStepKey)}
+
+      <!-- Tabla de Liquidación y Firmas Financieras (Si ya fue liquidada o está en Tesorería) -->
+      ${showLiquidationSection ? renderLiquidationSectionHtml(solicitud, currentStepKey) : ''}
+
+      <!-- Trazabilidad del Trámite -->
+      ${renderTraceabilitySection(solicitud)}
     </article>`;
 };
 
@@ -1529,7 +1674,7 @@ const approvalForm = (solicitud, step, token, { accessSource = 'primary' } = {})
   return page(`Revisión pendiente: ${step.label}`, `<form id="action-form" method="post" action="/api/desplazamientos-viaticos/accion/${token}">${liquidationRequestDocumentHtml(solicitud, { currentStepKey: step.key, formId: 'action-form', isTechnician: false })}${privacyNotice}${delegatedNotice}<label class="observations-label" style="display:block;margin-top:24px;font-weight:700;color:#0b3a6f;">${observationLabel}</label><textarea name="observacion" maxlength="1200" rows="4"${alternateObservationRequired ? ' required' : ''} placeholder="Escriba aquí sus observaciones..."></textarea><div class="actions"><button class="ok" name="accion" value="aprobar" type="submit">Dar visto bueno</button><button class="bad" name="accion" value="rechazar" type="submit">No aprobar</button></div></form>`);
 };
 
-const treasuryForm = (solicitud, token) => page('Autorizar pago en Tesorería / Pagaduría', `<form id="action-form" method="post" action="/api/desplazamientos-viaticos/accion/${token}">${liquidationRequestDocumentHtml(solicitud, { currentStepKey: 'tesoreria', formId: 'action-form', isTechnician: false })}<p style="margin:16px 0 12px;color:#475569">Revise la liquidación registrada por el Técnico Contable y decida si autoriza el pago.</p><label class="observations-label" style="display:block;margin-top:16px;font-weight:700;color:#0b3a6f;">Observación de Tesorería / Pagaduría (obligatoria si no autoriza)</label><textarea name="observacion" maxlength="1200" rows="4" placeholder="Escriba aquí sus observaciones..."></textarea><div class="actions"><button class="primary" name="accion" value="autorizar_pago" type="submit">Autorizar pago</button><button class="bad" name="accion" value="rechazar_pago" type="submit">No autorizar pago</button></div></form>`);
+const treasuryForm = (solicitud, token) => page('Autorizar pago en Tesorería / Pagaduría', `<form id="action-form" method="post" action="/api/desplazamientos-viaticos/accion/${token}">${liquidationRequestDocumentHtml(solicitud, { currentStepKey: 'tesoreria', formId: 'action-form', isTechnician: false })}<p style="margin:16px 0 12px;color:#475569">Revise la liquidación registrada por el Técnico Contable y decida si autoriza el pago.</p><label class="observations-label" style="display:block;margin-top:16px;font-weight:700;color:#0b3a6f;">Observación de Tesorería / Pagaduría (obligatoria si no autoriza)</label><textarea name="observacion" maxlength="1200" rows="4" placeholder="Escriba aquí sus observaciones..."></textarea><div class="actions"><button class="ok" name="accion" value="autorizar_pago" type="submit">Autorizar pago</button><button class="bad" name="accion" value="rechazar_pago" type="submit">No autorizar pago</button></div></form>`);
 
 const legacyTreasuryForm = (solicitud, token) => page('Tramitar solicitud en Tesorería', `<form id="action-form" method="post" action="/api/desplazamientos-viaticos/accion/${token}">${liquidationRequestDocumentHtml(solicitud, { currentStepKey: 'tesoreria', formId: 'action-form', isTechnician: false })}<div class="notice"><strong>Solicitud iniciada con el flujo anterior.</strong> Esta actuación se conserva únicamente para finalizar correctamente solicitudes que ya estaban en curso.</div><label class="observations-label" style="display:block;margin-top:16px;font-weight:700;color:#0b3a6f;">Observación de Tesorería</label><textarea name="observacion" maxlength="1200" rows="4" placeholder="Escriba aquí sus observaciones..."></textarea><div class="actions"><button class="primary" name="accion" value="tramitar" type="submit">Tramitar solicitud</button></div></form>`);
 
