@@ -1283,7 +1283,7 @@ const renderDepartureSignatures = (solicitud, currentStepKey) => {
   `;
 };
 
-const renderLiquidationSectionHtml = (solicitud, currentStepKey) => {
+const renderLiquidationSectionHtml = (solicitud, currentStepKey, { isTreasury = false, formId = 'action-form' } = {}) => {
   const liquidacion = solicitud.liquidacion || {};
   const visibleDetails = getVisibleLiquidationDetails(liquidacion);
   const total = Number(liquidacion.totalAnticipo) || visibleDetails.reduce((sum, item) => sum + (Number(item.valorTotal) || 0), 0);
@@ -1297,14 +1297,185 @@ const renderLiquidationSectionHtml = (solicitud, currentStepKey) => {
     return Number.isNaN(date.getTime()) ? String(d) : date.toLocaleString('es-CO');
   };
 
-  const rowsHtml = visibleDetails.map((item) => `
-    <tr style="border-bottom: 1px solid #e2e8f0;">
-      <td style="padding: 9px 12px; font-size: 12px; color: #1e293b; font-weight: 600;">${escapeHtml(item.detalle)}</td>
-      <td style="padding: 9px 12px; font-size: 12px; text-align: right; color: #334155;">$${Number(item.valorDiario || 0).toLocaleString('es-CO')}</td>
-      <td style="padding: 9px 12px; font-size: 12px; text-align: center; color: #334155;">${escapeHtml(item.dias)}</td>
-      <td style="padding: 9px 12px; font-size: 12px; text-align: right; font-weight: 700; color: #0b3a6f;">$${Number(item.valorTotal || 0).toLocaleString('es-CO')}</td>
-    </tr>
-  `).join('');
+  let rowsHtml = '';
+  let addConceptButtonHtml = '';
+  let calculatorScript = '';
+
+  if (isTreasury) {
+    // Modo editable para Tesorería
+    const baseRows = BASE_DETAIL_NAMES.map((name, index) => {
+      const match = visibleDetails.find((d) => d.detalle?.toLowerCase() === name.toLowerCase());
+      const isIncluded = Boolean(match && (match.valorTotal > 0 || match.valorDiario > 0));
+      const valorDiario = match ? match.valorDiario : 0;
+      const dias = match ? match.dias : 0;
+      const rowTotal = valorDiario * dias;
+      return `
+        <tr data-liquidation-row style="border-bottom: 1px solid #e2e8f0;">
+          <td style="padding: 8px 12px; font-weight: 700; color: #1e293b; vertical-align: middle;">
+            <input type="hidden" name="baseIncluded${index}" value="${isIncluded ? '1' : '0'}" form="${formId}">
+            ${escapeHtml(name)}
+          </td>
+          <td style="padding: 6px 12px; vertical-align: middle;">
+            <div class="currency-input" style="margin: 0; display: flex; align-items: center; border: 1.5px solid #cbd5e1; border-radius: 6px; background: #fff;">
+              <span style="padding-left: 8px; font-weight: 700; color: #64748b;">$</span>
+              <input class="valor-diario" form="${formId}" inputmode="numeric" type="number" min="0" step="1" name="valorDiario${index}" value="${valorDiario}" style="width: 100%; border: 0; outline: none; padding: 6px; font-weight: 700; color: #0b3a6f;" oninput="window.calcLiquidation && window.calcLiquidation()">
+            </div>
+          </td>
+          <td style="padding: 6px 12px; vertical-align: middle;">
+            <input class="dias" form="${formId}" inputmode="numeric" type="number" min="0" step="1" name="dias${index}" value="${dias}" style="width: 70px; text-align: center; border: 1.5px solid #cbd5e1; border-radius: 6px; padding: 6px; font-weight: 700; color: #1e293b;" oninput="window.calcLiquidation && window.calcLiquidation()">
+          </td>
+          <td class="row-total" style="padding: 8px 12px; text-align: right; font-weight: 800; color: #0b3a6f; font-size: 12.5px; vertical-align: middle;">
+            $${rowTotal.toLocaleString('es-CO')}
+          </td>
+          <td style="padding: 6px 12px; text-align: center; vertical-align: middle;">
+            <button class="remove-row" type="button" style="min-width: auto; background: #ef4444; color: #fff; border: none; padding: 6px 10px; border-radius: 6px; font-size: 11px; font-weight: 700; cursor: pointer;">Quitar</button>
+          </td>
+        </tr>
+      `;
+    }).join('');
+
+    // Extra rows if any existed
+    const extraConcepts = visibleDetails.filter((d) => !BASE_DETAIL_NAMES.some((b) => b.toLowerCase() === d.detalle?.toLowerCase()));
+    const extraRows = extraConcepts.map((item, i) => `
+      <tr data-liquidation-row style="border-bottom: 1px solid #e2e8f0;">
+        <td style="padding: 6px 12px; vertical-align: middle;">
+          <input class="detalle-extra" form="${formId}" name="extraDetalle${i}" maxlength="120" value="${escapeHtml(item.detalle)}" placeholder="Nombre del concepto" style="width: 100%; border: 1.5px solid #cbd5e1; border-radius: 6px; padding: 6px; font-weight: 700; color: #1e293b;">
+        </td>
+        <td style="padding: 6px 12px; vertical-align: middle;">
+          <div class="currency-input" style="margin: 0; display: flex; align-items: center; border: 1.5px solid #cbd5e1; border-radius: 6px; background: #fff;">
+            <span style="padding-left: 8px; font-weight: 700; color: #64748b;">$</span>
+            <input class="valor-diario" form="${formId}" inputmode="numeric" type="number" min="0" step="1" name="extraValorDiario${i}" value="${item.valorDiario}" style="width: 100%; border: 0; outline: none; padding: 6px; font-weight: 700; color: #0b3a6f;" oninput="window.calcLiquidation && window.calcLiquidation()">
+          </div>
+        </td>
+        <td style="padding: 6px 12px; vertical-align: middle;">
+          <input class="dias" form="${formId}" inputmode="numeric" type="number" min="0" step="1" name="extraDias${i}" value="${item.dias}" style="width: 70px; text-align: center; border: 1.5px solid #cbd5e1; border-radius: 6px; padding: 6px; font-weight: 700; color: #1e293b;" oninput="window.calcLiquidation && window.calcLiquidation()">
+        </td>
+        <td class="row-total" style="padding: 8px 12px; text-align: right; font-weight: 800; color: #0b3a6f; font-size: 12.5px; vertical-align: middle;">
+          $${Number(item.valorTotal || 0).toLocaleString('es-CO')}
+        </td>
+        <td style="padding: 6px 12px; text-align: center; vertical-align: middle;">
+          <button class="remove-row" type="button" style="min-width: auto; background: #ef4444; color: #fff; border: none; padding: 6px 10px; border-radius: 6px; font-size: 11px; font-weight: 700; cursor: pointer;">Eliminar</button>
+        </td>
+      </tr>
+    `).join('');
+
+    rowsHtml = `<input type="hidden" name="liquidationRowsVersion" value="2" form="${formId}"><input type="hidden" id="extra-count" name="extraCount" value="${extraConcepts.length}" form="${formId}">${baseRows}${extraRows}`;
+    addConceptButtonHtml = `
+      <div style="margin-top: 10px; margin-bottom: 14px; text-align: left;">
+        <button id="agregar-concepto" type="button" style="min-width: auto; background: #0b3a6f; color: #fff; padding: 8px 16px; border-radius: 6px; font-size: 12px; font-weight: 700; border: none; cursor: pointer;">+ Agregar otro concepto</button>
+      </div>
+    `;
+
+    calculatorScript = `
+      <script>
+      (function() {
+        function formatMoney(num) {
+          return new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', maximumFractionDigits: 0 }).format(num || 0);
+        }
+        function parseVal(val) {
+          if (typeof val === 'number') return isNaN(val) ? 0 : val;
+          var cleanStr = String(val || '').replace(/[^0-9.-]/g, '');
+          var n = parseFloat(cleanStr);
+          return isNaN(n) ? 0 : n;
+        }
+        function recalculate() {
+          var body = document.getElementById('liquidacion-detalles');
+          if (!body) return;
+          var rows = body.querySelectorAll('tr[data-liquidation-row]');
+          var grandTotal = 0;
+          rows.forEach(function(row) {
+            var vInput = row.querySelector('.valor-diario');
+            var dInput = row.querySelector('.dias');
+            var tCell = row.querySelector('.row-total');
+            var v = vInput ? parseVal(vInput.value) : 0;
+            var d = dInput ? Math.max(0, Math.floor(parseVal(dInput.value))) : 0;
+            var rowTotal = v * d;
+            grandTotal += rowTotal;
+            if (tCell) {
+              tCell.textContent = formatMoney(rowTotal);
+            }
+          });
+          var totalEl = document.getElementById('total-anticipo-val');
+          if (totalEl) {
+            totalEl.textContent = formatMoney(grandTotal);
+          }
+        }
+        window.calcLiquidation = recalculate;
+
+        function init() {
+          var body = document.getElementById('liquidacion-detalles');
+          var addBtn = document.getElementById('agregar-concepto');
+          var countInput = document.getElementById('extra-count');
+
+          if (body) {
+            body.addEventListener('input', recalculate);
+            body.addEventListener('change', recalculate);
+            body.addEventListener('keyup', recalculate);
+            body.addEventListener('click', function(e) {
+              var btn = e.target.closest('.remove-row');
+              if (btn) {
+                var tr = btn.closest('tr');
+                if (tr) {
+                  var baseInc = tr.querySelector('input[name^="baseIncluded"]');
+                  if (baseInc) {
+                    baseInc.value = '0';
+                    var v = tr.querySelector('.valor-diario');
+                    var d = tr.querySelector('.dias');
+                    if (v) v.value = '0';
+                    if (d) d.value = '0';
+                    tr.style.opacity = '0.4';
+                  } else {
+                    tr.remove();
+                  }
+                  recalculate();
+                }
+              }
+            });
+          }
+
+          if (addBtn && countInput && body) {
+            addBtn.addEventListener('click', function(e) {
+              e.preventDefault();
+              var i = parseInt(countInput.value, 10) || 0;
+              if (i >= 30) return;
+              var tr = document.createElement('tr');
+              tr.setAttribute('data-liquidation-row', '');
+              tr.style.borderBottom = '1px solid #e2e8f0';
+              tr.innerHTML = '<td style="padding: 6px 12px; vertical-align: middle;"><input class="detalle-extra" form="${formId}" name="extraDetalle' + i + '" maxlength="120" placeholder="Nombre del concepto" style="width: 100%; border: 1.5px solid #cbd5e1; border-radius: 6px; padding: 6px; font-weight: 700; color: #1e293b;" required></td>' +
+                '<td style="padding: 6px 12px; vertical-align: middle;"><div class="currency-input" style="margin: 0; display: flex; align-items: center; border: 1.5px solid #cbd5e1; border-radius: 6px; background: #fff;"><span style="padding-left: 8px; font-weight: 700; color: #64748b;">$</span><input class="valor-diario" form="${formId}" inputmode="numeric" type="number" min="0" step="1" name="extraValorDiario' + i + '" value="0" style="width: 100%; border: 0; outline: none; padding: 6px; font-weight: 700; color: #0b3a6f;" required oninput="window.calcLiquidation && window.calcLiquidation()"></div></td>' +
+                '<td style="padding: 6px 12px; vertical-align: middle;"><input class="dias" form="${formId}" inputmode="numeric" type="number" min="0" step="1" name="extraDias' + i + '" value="0" style="width: 70px; text-align: center; border: 1.5px solid #cbd5e1; border-radius: 6px; padding: 6px; font-weight: 700; color: #1e293b;" required oninput="window.calcLiquidation && window.calcLiquidation()"></td>' +
+                '<td class="row-total" style="padding: 8px 12px; text-align: right; font-weight: 800; color: #0b3a6f; font-size: 12.5px; vertical-align: middle;">$0</td>' +
+                '<td style="padding: 6px 12px; text-align: center; vertical-align: middle;"><button class="remove-row" type="button" style="min-width: auto; background: #ef4444; color: #fff; border: none; padding: 6px 10px; border-radius: 6px; font-size: 11px; font-weight: 700; cursor: pointer;">Eliminar</button></td>';
+              body.appendChild(tr);
+              countInput.value = String(i + 1);
+              recalculate();
+            });
+          }
+
+          recalculate();
+        }
+
+        if (document.readyState === 'loading') {
+          document.addEventListener('DOMContentLoaded', init);
+        } else {
+          init();
+        }
+        window.addEventListener('load', recalculate);
+        setTimeout(recalculate, 200);
+      })();
+      </script>
+    `;
+  } else {
+    // Modo solo lectura para otros roles
+    rowsHtml = visibleDetails.map((item) => `
+      <tr style="border-bottom: 1px solid #e2e8f0;">
+        <td style="padding: 9px 12px; font-size: 12px; color: #1e293b; font-weight: 600;">${escapeHtml(item.detalle)}</td>
+        <td style="padding: 9px 12px; font-size: 12px; text-align: right; color: #334155;">$${Number(item.valorDiario || 0).toLocaleString('es-CO')}</td>
+        <td style="padding: 9px 12px; font-size: 12px; text-align: center; color: #334155;">${escapeHtml(item.dias)}</td>
+        <td style="padding: 9px 12px; font-size: 12px; text-align: right; font-weight: 700; color: #0b3a6f;">$${Number(item.valorTotal || 0).toLocaleString('es-CO')}</td>
+      </tr>
+    `).join('') || '<tr><td colspan="4" style="padding: 10px; text-align: center; color: #64748b;">Pendiente de registrar conceptos.</td></tr>';
+  }
 
   const finBoxes = financialSteps.map((step) => {
     const trace = findTrace(solicitud, step.key);
@@ -1336,7 +1507,7 @@ const renderLiquidationSectionHtml = (solicitud, currentStepKey) => {
       contentHtml = `
         <div style="font-weight: 700; color: #0b3a6f; font-size: 11px; margin-bottom: 2px;">Pendiente de autorización de pago</div>
         <div style="color: #475569; font-size: 10.5px; line-height: 1.35;">Espacio reservado para la firma electrónica de <strong>${escapeHtml(step.label)}</strong>.</div>
-        <div style="margin-top: 5px; font-size: 10px; color: #0b3a6f; font-style: italic;">Utilice el panel inferior para registrar la decisión.</div>
+        <div style="margin-top: 5px; font-size: 10px; color: #0b3a6f; font-style: italic;">Revise o corrija los valores y utilice el panel inferior para registrar la decisión.</div>
       `;
     } else {
       contentHtml = `
@@ -1363,35 +1534,48 @@ const renderLiquidationSectionHtml = (solicitud, currentStepKey) => {
 
   return `
     <section class="fr004-section" style="padding-top:0">
-      <h2 class="fr004-section-title">Liquidación de Viáticos y Gastos de Viaje</h2>
-      <div style="overflow-x: auto; border: 1px solid #cbd5e1; border-radius: 6px; margin-bottom: 14px; background: #ffffff;">
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 7px;">
+        <h2 class="fr004-section-title" style="margin-bottom: 0;">Liquidación de Viáticos y Gastos de Viaje</h2>
+        ${isTreasury ? '<span style="font-size: 11px; font-weight: 700; color: #0b3a6f; background: #e0f2fe; padding: 3px 8px; border-radius: 4px;">Valores editables por Tesorería</span>' : ''}
+      </div>
+      <div style="overflow-x: auto; border: 1.5px solid #0b3a6f; border-radius: 8px; margin-bottom: 14px; background: #ffffff; box-shadow: 0 4px 12px rgba(11,58,111,.08);">
         <table style="width: 100%; border-collapse: collapse; font-size: 11.5px;">
           <thead>
-            <tr style="background-color: #0b3a6f; color: #ffffff;">
-              <th style="padding: 10px 12px; text-align: left; font-size: 11px; font-weight: 800; text-transform: uppercase;">Detalle</th>
-              <th style="padding: 10px 12px; text-align: right; font-size: 11px; font-weight: 800; text-transform: uppercase; width: 140px;">Valor diario (COP)</th>
-              <th style="padding: 10px 12px; text-align: center; font-size: 11px; font-weight: 800; text-transform: uppercase; width: 90px;">No. días</th>
-              <th style="padding: 10px 12px; text-align: right; font-size: 11px; font-weight: 800; text-transform: uppercase; width: 160px;">Valor total (COP)</th>
+            <tr style="background-color: #0b3a6f !important; color: #ffffff !important;">
+              <th style="background-color: #0b3a6f !important; color: #ffffff !important; padding: 11px 12px; text-align: left; font-size: 11px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.5px;">Detalle</th>
+              <th style="background-color: #0b3a6f !important; color: #ffffff !important; padding: 11px 12px; text-align: right; font-size: 11px; font-weight: 800; text-transform: uppercase; width: 140px; letter-spacing: 0.5px;">Valor diario (COP)</th>
+              <th style="background-color: #0b3a6f !important; color: #ffffff !important; padding: 11px 12px; text-align: center; font-size: 11px; font-weight: 800; text-transform: uppercase; width: 90px; letter-spacing: 0.5px;">No. días</th>
+              <th style="background-color: #0b3a6f !important; color: #ffffff !important; padding: 11px 12px; text-align: right; font-size: 11px; font-weight: 800; text-transform: uppercase; width: 160px; letter-spacing: 0.5px;">Valor total (COP)</th>
+              ${isTreasury ? '<th style="background-color: #0b3a6f !important; color: #ffffff !important; padding: 11px 12px; text-align: center; font-size: 11px; font-weight: 800; text-transform: uppercase; width: 80px;">Acción</th>' : ''}
             </tr>
           </thead>
-          <tbody>
-            ${rowsHtml || '<tr><td colspan="4" style="padding: 10px; text-align: center; color: #64748b;">Pendiente de registrar conceptos.</td></tr>'}
+          <tbody id="liquidacion-detalles">
+            ${rowsHtml}
           </tbody>
           <tfoot>
-            <tr style="background-color: #dbeafe; border-top: 2px solid #0b3a6f;">
-              <th colspan="3" style="padding: 10px 12px; text-align: right; font-size: 12.5px; font-weight: 800; color: #0b3a6f; text-transform: uppercase;">TOTAL ANTICIPO:</th>
-              <th style="padding: 10px 12px; text-align: right; font-size: 13.5px; font-weight: 800; color: #0b3a6f;">$${total.toLocaleString('es-CO')}</th>
+            <tr style="background-color: #dbeafe !important; border-top: 2px solid #0b3a6f;">
+              <th colspan="${isTreasury ? 3 : 3}" style="background-color: #dbeafe !important; padding: 11px 12px; text-align: right; font-size: 12.5px; font-weight: 900; color: #0b3a6f !important; text-transform: uppercase;">TOTAL ANTICIPO:</th>
+              <th id="total-anticipo-val" style="background-color: #dbeafe !important; padding: 11px 12px; text-align: right; font-size: 13.5px; font-weight: 900; color: #0b3a6f !important;">$${total.toLocaleString('es-CO')}</th>
+              ${isTreasury ? '<th style="background-color: #dbeafe !important;"></th>' : ''}
             </tr>
           </tfoot>
         </table>
       </div>
+      ${addConceptButtonHtml}
 
-      ${liquidacion.observaciones ? `
-      <div style="margin-bottom: 16px; padding: 10px 14px; background-color: #f8fafc; border: 1px solid #e2e8f0; border-radius: 6px;">
-        <div style="font-size: 10px; font-weight: 800; color: #64748b; text-transform: uppercase; margin-bottom: 3px;">Observaciones a la liquidación</div>
-        <div style="font-size: 12px; color: #1e293b; line-height: 1.4;">${escapeHtml(liquidacion.observaciones)}</div>
-      </div>
-      ` : ''}
+      ${isTreasury ? `
+        <div style="margin-bottom: 16px; padding: 12px 14px; background-color: #f8fafc; border: 1.5px solid #cbd5e1; border-radius: 6px;">
+          <label style="display: block; font-size: 11px; font-weight: 800; color: #0b3a6f; text-transform: uppercase; margin-bottom: 4px;">Observaciones a la liquidación (editables)</label>
+          <textarea form="${formId}" name="observaciones" maxlength="2000" rows="2" style="width: 100%; padding: 8px; border: 1px solid #cbd5e1; border-radius: 6px; font-size: 12px; font-family: inherit;" placeholder="Observaciones a la liquidación...">${escapeHtml(liquidacion.observaciones || '')}</textarea>
+        </div>
+      ` : (liquidacion.observaciones ? `
+        <div style="margin-bottom: 16px; padding: 10px 14px; background-color: #f8fafc; border: 1px solid #e2e8f0; border-radius: 6px;">
+          <div style="font-size: 10px; font-weight: 800; color: #64748b; text-transform: uppercase; margin-bottom: 3px;">Observaciones a la liquidación</div>
+          <div style="font-size: 12px; color: #1e293b; line-height: 1.4;">${escapeHtml(liquidacion.observaciones)}</div>
+        </div>
+      ` : '')}
+
+      ${calculatorScript}
 
       <h2 class="fr004-section-title">Control de Firmas Electrónicas del Flujo Financiero</h2>
       <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 12px; margin-bottom: 18px;">
@@ -1444,7 +1628,7 @@ const renderTraceabilitySection = (solicitud) => {
   `;
 };
 
-const liquidationRequestDocumentHtml = (solicitud, { currentStepKey = null, formId = 'action-form', isTechnician = false } = {}) => {
+const liquidationRequestDocumentHtml = (solicitud, { currentStepKey = null, formId = 'action-form', isTechnician = false, isTreasury = false } = {}) => {
   const personal = solicitud.solicitante_snapshot || {};
   const laboral = solicitud.datos_laborales || {};
   const salida = solicitud.datos_salida || {};
@@ -1541,7 +1725,7 @@ const liquidationRequestDocumentHtml = (solicitud, { currentStepKey = null, form
       <div class="fr004-legal"><strong>IMPORTANTE:</strong> ${escapeHtml((viaticos.avisoLegalizacion || LEGALIZATION_NOTICE).replace(/^IMPORTANTE:\s*/i, ''))}</div>
 
       <!-- Tabla de Liquidación y Firmas Financieras (Si ya fue liquidada o está en Tesorería) -->
-      ${showLiquidationSection ? renderLiquidationSectionHtml(solicitud, currentStepKey) : ''}
+      ${showLiquidationSection ? renderLiquidationSectionHtml(solicitud, currentStepKey, { isTreasury, formId }) : ''}
 
       <!-- Trazabilidad del Trámite -->
       ${renderTraceabilitySection(solicitud)}
@@ -1674,7 +1858,7 @@ const approvalForm = (solicitud, step, token, { accessSource = 'primary' } = {})
   return page(`Revisión pendiente: ${step.label}`, `<form id="action-form" method="post" action="/api/desplazamientos-viaticos/accion/${token}">${liquidationRequestDocumentHtml(solicitud, { currentStepKey: step.key, formId: 'action-form', isTechnician: false })}${privacyNotice}${delegatedNotice}<label class="observations-label" style="display:block;margin-top:24px;font-weight:700;color:#0b3a6f;">${observationLabel}</label><textarea name="observacion" maxlength="1200" rows="4"${alternateObservationRequired ? ' required' : ''} placeholder="Escriba aquí sus observaciones..."></textarea><div class="actions"><button class="ok" name="accion" value="aprobar" type="submit">Dar visto bueno</button><button class="bad" name="accion" value="rechazar" type="submit">No aprobar</button></div></form>`);
 };
 
-const treasuryForm = (solicitud, token) => page('Autorizar pago en Tesorería / Pagaduría', `<form id="action-form" method="post" action="/api/desplazamientos-viaticos/accion/${token}">${liquidationRequestDocumentHtml(solicitud, { currentStepKey: 'tesoreria', formId: 'action-form', isTechnician: false })}<p style="margin:16px 0 12px;color:#475569">Revise la liquidación registrada por el Técnico Contable y decida si autoriza el pago.</p><label class="observations-label" style="display:block;margin-top:16px;font-weight:700;color:#0b3a6f;">Observación de Tesorería / Pagaduría (obligatoria si no autoriza)</label><textarea name="observacion" maxlength="1200" rows="4" placeholder="Escriba aquí sus observaciones..."></textarea><div class="actions"><button class="ok" name="accion" value="autorizar_pago" type="submit">Autorizar pago</button><button class="bad" name="accion" value="rechazar_pago" type="submit">No autorizar pago</button></div></form>`);
+const treasuryForm = (solicitud, token) => page('Autorizar pago en Tesorería / Pagaduría', `<form id="action-form" method="post" action="/api/desplazamientos-viaticos/accion/${token}">${liquidationRequestDocumentHtml(solicitud, { currentStepKey: 'tesoreria', formId: 'action-form', isTechnician: false, isTreasury: true })}<p style="margin:16px 0 12px;color:#475569">Revise o corrija los valores de la liquidación y la logística si es necesario, y decida si autoriza el pago.</p><label class="observations-label" style="display:block;margin-top:16px;font-weight:700;color:#0b3a6f;">Observación de Tesorería / Pagaduría (obligatoria si no autoriza)</label><textarea name="observacion" maxlength="1200" rows="4" placeholder="Escriba aquí sus observaciones..."></textarea><div class="actions"><button class="ok" name="accion" value="autorizar_pago" type="submit">Autorizar pago</button><button class="bad" name="accion" value="rechazar_pago" type="submit">No autorizar pago</button></div></form>`);
 
 const legacyTreasuryForm = (solicitud, token) => page('Tramitar solicitud en Tesorería', `<form id="action-form" method="post" action="/api/desplazamientos-viaticos/accion/${token}">${liquidationRequestDocumentHtml(solicitud, { currentStepKey: 'tesoreria', formId: 'action-form', isTechnician: false })}<div class="notice"><strong>Solicitud iniciada con el flujo anterior.</strong> Esta actuación se conserva únicamente para finalizar correctamente solicitudes que ya estaban en curso.</div><label class="observations-label" style="display:block;margin-top:16px;font-weight:700;color:#0b3a6f;">Observación de Tesorería</label><textarea name="observacion" maxlength="1200" rows="4" placeholder="Escriba aquí sus observaciones..."></textarea><div class="actions"><button class="primary" name="accion" value="tramitar" type="submit">Tramitar solicitud</button></div></form>`);
 
@@ -1890,34 +2074,6 @@ const procesarAccion = async (req, res) => {
       return res.status(400).send(page('Observación obligatoria', `<p>Debe explicar la ausencia de ${escapeHtml(step.alternateAbsenceRole || step.label)} y el motivo de utilización del acceso alterno de ${escapeHtml(step.alternateApprovalLabel || 'la dependencia')}.</p>`));
     }
 
-    // Persistir correcciones en información bancaria y logística realizadas por la autoridad
-    const submittedEntidad = clean(req.body.entidadBancaria, 100);
-    const submittedTipo = clean(req.body.tipoCuenta, 30);
-    const submittedNumero = clean(req.body.numeroCuenta, 60);
-    const submittedCentroCosto = clean(req.body.centroCosto, 100);
-    const submittedAlojamiento = clean(req.body.alojamiento, 50);
-    const submittedTransporte = clean(req.body.transporte, 50);
-
-    if (submittedEntidad || submittedTipo || submittedNumero || submittedCentroCosto || submittedAlojamiento || submittedTransporte) {
-      const currentViaticos = { ...(solicitud.datos_viaticos || {}) };
-      if (submittedEntidad) currentViaticos.entidadBancaria = submittedEntidad;
-      if (submittedTipo) currentViaticos.tipoCuenta = submittedTipo;
-      if (submittedNumero) currentViaticos.numeroCuenta = submittedNumero;
-      if (submittedCentroCosto) currentViaticos.centroCosto = submittedCentroCosto;
-      if (submittedAlojamiento) currentViaticos.alojamiento = submittedAlojamiento;
-      if (submittedTransporte) currentViaticos.transporte = submittedTransporte;
-      
-      await solicitud.update({ datos_viaticos: currentViaticos });
-
-      // Sincronizar también con el reporte de salida normal vinculado
-      const linkedReport = await getLinkedNormalReport(solicitud);
-      if (linkedReport) {
-        const formData = { ...(linkedReport.datos_formulario || {}) };
-        formData.viaticos = { ...(formData.viaticos || {}), ...currentViaticos };
-        await linkedReport.update({ datos_formulario: formData });
-      }
-    }
-
     if (step.action === 'approval') {
       if (accion === 'rechazar') {
         const observacion = actionObservation;
@@ -2000,15 +2156,47 @@ const procesarAccion = async (req, res) => {
         return res.send(page('Decisión registrada', '<p>El pago no fue autorizado, el enlace quedó cerrado y se notificó al colaborador sin adjuntar documentos finales.</p>'));
       }
       if (accion !== 'autorizar_pago') return res.status(400).send(page('Acción inválida', '<p>Debe autorizar o no autorizar el pago.</p>'));
+      
+      const centroCosto = clean(req.body.centroCosto, 100);
+      const alojamiento = clean(req.body.alojamiento, 60);
+      const transporte = clean(req.body.transporte, 60);
+      const tipoCuenta = clean(req.body.tipoCuenta, 40);
+      const entidadBancaria = clean(req.body.entidadBancaria, 100);
+      const numeroCuenta = clean(req.body.numeroCuenta, 60);
+
+      solicitud.datos_viaticos = {
+        ...(solicitud.datos_viaticos || {}),
+        ...(centroCosto ? { centroCosto } : {}),
+        ...(alojamiento ? { alojamiento } : {}),
+        ...(transporte ? { transporte } : {}),
+        ...(tipoCuenta ? { tipoCuenta } : {}),
+        ...(entidadBancaria ? { entidadBancaria } : {}),
+        ...(numeroCuenta ? { numeroCuenta } : {})
+      };
+
+      if (req.body.liquidationRowsVersion) {
+        const updatedLiquidation = parseLiquidationBody(req.body);
+        if (!updatedLiquidation.error && updatedLiquidation.detalles?.length > 0) {
+          solicitud.liquidacion = {
+            detalles: updatedLiquidation.detalles,
+            totalAnticipo: updatedLiquidation.totalAnticipo,
+            observaciones: updatedLiquidation.observaciones !== undefined ? updatedLiquidation.observaciones : (solicitud.liquidacion?.observaciones || '')
+          };
+        }
+      }
+
       const trace = appendTrace(solicitud, 'completado_tesoreria', actor, {
         observacion: actionObservation,
-        pagoAutorizado: true
+        pagoAutorizado: true,
+        totalAnticipo: solicitud.liquidacion?.totalAnticipo
       });
       await solicitud.update({
         estado: 'pago_autorizado_pendiente_legalizacion',
         paso_actual: solicitud.paso_actual + 1,
         token_accion_hash: null,
         token_etapa: null,
+        datos_viaticos: solicitud.datos_viaticos,
+        liquidacion: solicitud.liquidacion,
         trazabilidad: trace,
         finalizado_at: new Date()
       });
