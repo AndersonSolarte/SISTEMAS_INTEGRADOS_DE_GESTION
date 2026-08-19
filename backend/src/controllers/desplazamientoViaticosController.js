@@ -547,7 +547,7 @@ const buildApprovalPlan = ({ jefe = {}, laboral = {}, personal = {} }) => {
     );
   }
   steps.push(
-    { key: 'gestion_humana', label: 'Gestión Humana', email: recipients.gestionHumana, action: 'approval' },
+    { key: 'gestion_humana', label: 'Oficina de Gestión del Talento Humano', email: recipients.gestionHumana, action: 'approval' },
     { key: 'tecnico_contable', label: 'Técnico contable', email: recipients.tecnicoContable, action: 'liquidacion' },
     { key: 'tesoreria', label: 'Tesorería / Pagaduría', email: recipients.tesoreria, action: 'pago', infoEmails: [recipients.financiera] }
   );
@@ -985,7 +985,7 @@ const sendNormalReportFinalCopies = async (solicitud, report = null) => {
     text: `El reporte de salida ${solicitud.consecutivo} finalizó su flujo de autorización. Se adjunta el PDF aprobado.`,
     html: renderInstitutionalTemplate({
       title: 'Reporte de salida aprobado',
-      introHtml: '<p style="margin: 0 0 10px 0;">Saludo de paz y bien,</p><p style="margin: 0 0 14px 0;">Gestión Humana aprobó el reporte de salida. Se remite copia informativa del documento finalizado con todas las firmas electrónicas.</p>',
+      introHtml: '<p style="margin: 0 0 10px 0;">Saludo de paz y bien,</p><p style="margin: 0 0 14px 0;">La Oficina de Gestión del Talento Humano aprobó el reporte de salida. Se remite copia informativa del documento finalizado con todas las firmas electrónicas.</p>',
       bodyHtml: summaryHtml(solicitud)
     }),
     attachments: [pdfAttachment, supportAttachment].filter(Boolean),

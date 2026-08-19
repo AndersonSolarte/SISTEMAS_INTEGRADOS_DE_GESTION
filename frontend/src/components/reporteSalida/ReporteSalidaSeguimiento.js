@@ -894,7 +894,7 @@ function ReporteSalidaSeguimiento({ initialAccess = null, onBack }) {
       case 'pendiente_aprobacion_rectoria':
         return 'desde Rectoría';
       case 'pendiente_aprobacion_gestion_humana':
-        return 'desde Gestión Humana';
+        return 'desde la Oficina de Gestión del Talento Humano';
       case 'pendiente_aprobacion_sst':
         return 'desde SST';
       default:
@@ -908,12 +908,12 @@ function ReporteSalidaSeguimiento({ initialAccess = null, onBack }) {
     }
     switch (estado) {
       case 'pendiente_aprobacion_jefe':
-        return 'Aprobará la solicitud en la etapa de Jefe Inmediato y avanzará al siguiente paso del flujo (Gestión Humana o Vicerrectoría).';
+        return 'Aprobará la solicitud en la etapa de Jefe Inmediato y avanzará al siguiente paso del flujo (Oficina de Gestión del Talento Humano o Vicerrectoría).';
       case 'pendiente_aprobacion_vicerrectoria_academica':
       case 'pendiente_aprobacion_rectoria':
-        return 'Aprobará la solicitud en la instancia superior y avanzará a Gestión del Talento Humano.';
+        return 'Aprobará la solicitud en la instancia superior y avanzará a la Oficina de Gestión del Talento Humano.';
       case 'pendiente_aprobacion_gestion_humana':
-        return 'Aprobará desde Gestión Humana. Si no requiere SST, la solicitud quedará finalizada y se enviarán los PDFs firmados.';
+        return 'Aprobará desde la Oficina de Gestión del Talento Humano. Si no requiere SST, la solicitud quedará finalizada y se enviarán los PDFs firmados.';
       case 'pendiente_aprobacion_sst':
         return 'Aprobará desde SST y la solicitud quedará formalmente finalizada.';
       default:
