@@ -638,18 +638,18 @@ const summaryHtml = (solicitud) => {
   const days = calculateDays(salida, viaticos.numeroDiasSolicitados);
 
   return `
-    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="border-collapse: separate; border: 1px solid #dce6f2; border-radius: 12px; overflow: hidden; background-color: #ffffff; margin: 16px 0 20px 0; box-shadow: 0 4px 14px rgba(11, 58, 111, 0.05); font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;">
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="border-collapse: separate; border: 1px solid #e2e8f0; border-radius: 10px; overflow: hidden; background-color: #ffffff; margin: 16px 0 18px 0; font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;">
       <!-- Encabezado de la tarjeta -->
       <tr>
-        <td style="padding: 16px 20px; background-color: #0b3a6f; background: linear-gradient(135deg, #0b3a6f 0%, #125394 100%); color: #ffffff;">
+        <td style="padding: 12px 18px; background-color: #0b3a6f; color: #ffffff;">
           <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
             <tr>
               <td valign="middle" align="left">
-                <div style="font-size: 10.5px; font-weight: 800; letter-spacing: 1px; text-transform: uppercase; color: #bfdbfe; margin-bottom: 3px;">SOLICITUD DE DESPLAZAMIENTO · ADF-PP-FR-004</div>
-                <div style="font-size: 17px; font-weight: 800; color: #ffffff; letter-spacing: 0.2px;">${escapeHtml(solicitud.consecutivo)}</div>
+                <div style="font-size: 10px; font-weight: 800; letter-spacing: 0.8px; text-transform: uppercase; color: #93c5fd; margin-bottom: 2px;">SOLICITUD DE DESPLAZAMIENTO</div>
+                <div style="font-size: 15.5px; font-weight: 800; color: #ffffff; letter-spacing: 0.2px;">${escapeHtml(solicitud.consecutivo)}</div>
               </td>
               <td valign="middle" align="right" style="white-space: nowrap;">
-                <span style="display: inline-block; padding: 6px 14px; background-color: rgba(255, 255, 255, 0.16); border: 1px solid rgba(255, 255, 255, 0.35); border-radius: 20px; font-size: 12.5px; font-weight: 700; color: #ffffff;">
+                <span style="display: inline-block; padding: 4px 12px; background-color: rgba(255, 255, 255, 0.18); border-radius: 14px; font-size: 12px; font-weight: 700; color: #ffffff;">
                   ${escapeHtml(days)} ${Number(days) === 1 ? 'día' : 'días'} de comisión
                 </span>
               </td>
@@ -658,108 +658,59 @@ const summaryHtml = (solicitud) => {
         </td>
       </tr>
 
-      <!-- Fila 1: Solicitante y Documento -->
+      <!-- Datos Clave Resumidos -->
       <tr>
-        <td style="padding: 0;">
+        <td style="padding: 14px 18px; background-color: #f8fafc;">
           <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
             <tr>
-              <td width="55%" valign="top" style="padding: 12px 18px; border-bottom: 1px solid #e8eef5; border-right: 1px solid #e8eef5;">
-                <div style="font-size: 10px; font-weight: 800; letter-spacing: 0.6px; text-transform: uppercase; color: #64748b; margin-bottom: 4px;">SOLICITANTE</div>
-                <div style="font-size: 13.5px; font-weight: 700; color: #1e293b; line-height: 1.4;">${escapeHtml(personal.nombre || 'No registrado')}</div>
+              <td width="50%" valign="top" style="padding-bottom: 10px; padding-right: 10px;">
+                <div style="font-size: 10px; font-weight: 700; text-transform: uppercase; color: #64748b; margin-bottom: 2px;">COLABORADOR</div>
+                <div style="font-size: 13px; font-weight: 700; color: #0f172a;">${escapeHtml(personal.nombre || 'No registrado')}</div>
+                <div style="font-size: 11.5px; color: #475569;">C.C. ${escapeHtml(personal.documento || 'No registrado')}</div>
               </td>
-              <td width="45%" valign="top" style="padding: 12px 18px; border-bottom: 1px solid #e8eef5;">
-                <div style="font-size: 10px; font-weight: 800; letter-spacing: 0.6px; text-transform: uppercase; color: #64748b; margin-bottom: 4px;">NO. DOCUMENTO</div>
-                <div style="font-size: 13.5px; font-weight: 700; color: #1e293b; line-height: 1.4;">${escapeHtml(personal.documento || 'No registrado')}</div>
+              <td width="50%" valign="top" style="padding-bottom: 10px;">
+                <div style="font-size: 10px; font-weight: 700; text-transform: uppercase; color: #64748b; margin-bottom: 2px;">DEPENDENCIA Y CARGO</div>
+                <div style="font-size: 12.5px; font-weight: 600; color: #0f172a;">${escapeHtml(laboral.dependencia || 'No registrada')}</div>
+                <div style="font-size: 11.5px; color: #475569;">${escapeHtml(laboral.cargo || 'No registrado')}</div>
+              </td>
+            </tr>
+            <tr>
+              <td width="50%" valign="top" style="padding-top: 6px; padding-right: 10px; border-top: 1px solid #e2e8f0;">
+                <div style="font-size: 10px; font-weight: 700; text-transform: uppercase; color: #64748b; margin-bottom: 2px;">DESTINO</div>
+                <div style="font-size: 13.5px; font-weight: 700; color: #0b3a6f;">${escapeHtml(viaticos.lugarVisitar || salida.municipio || salida.pais || 'No registrado')}</div>
+              </td>
+              <td width="50%" valign="top" style="padding-top: 6px; border-top: 1px solid #e2e8f0;">
+                <div style="font-size: 10px; font-weight: 700; text-transform: uppercase; color: #64748b; margin-bottom: 2px;">FECHAS DEL VIAJE</div>
+                <div style="font-size: 12px; font-weight: 700; color: #0f172a;">${escapeHtml(formatTripMoment(salida.fecha, salida.horaInicio))}</div>
+                <div style="font-size: 11.5px; color: #475569;">hasta ${escapeHtml(formatTripMoment(salida.fechaRegreso, salida.horaFin))}</div>
               </td>
             </tr>
           </table>
         </td>
       </tr>
 
-      <!-- Fila 2: Dependencia y Cargo -->
+      <!-- Objeto de la comisión -->
       <tr>
-        <td style="padding: 0;">
-          <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
-            <tr>
-              <td width="55%" valign="top" style="padding: 12px 18px; border-bottom: 1px solid #e8eef5; border-right: 1px solid #e8eef5;">
-                <div style="font-size: 10px; font-weight: 800; letter-spacing: 0.6px; text-transform: uppercase; color: #64748b; margin-bottom: 4px;">PROGRAMA / DEPENDENCIA</div>
-                <div style="font-size: 13px; font-weight: 600; color: #334155; line-height: 1.4;">${escapeHtml(laboral.dependencia || 'No registrada')}</div>
-              </td>
-              <td width="45%" valign="top" style="padding: 12px 18px; border-bottom: 1px solid #e8eef5;">
-                <div style="font-size: 10px; font-weight: 800; letter-spacing: 0.6px; text-transform: uppercase; color: #64748b; margin-bottom: 4px;">CARGO</div>
-                <div style="font-size: 13px; font-weight: 600; color: #334155; line-height: 1.4;">${escapeHtml(laboral.cargo || 'No registrado')}</div>
-              </td>
-            </tr>
-          </table>
+        <td style="padding: 12px 18px; border-top: 1px solid #e2e8f0; background-color: #ffffff;">
+          <div style="font-size: 10px; font-weight: 700; text-transform: uppercase; color: #64748b; margin-bottom: 3px;">OBJETO DE LA COMISIÓN</div>
+          <div style="font-size: 12.5px; color: #334155; line-height: 1.45;">${escapeHtml(viaticos.objetoComision || salida.motivo || 'No registrado')}</div>
         </td>
       </tr>
-
-      <!-- Fila 3: Destino / Lugar a visitar -->
-      <tr>
-        <td style="padding: 14px 18px; background-color: #f4f8fd; border-bottom: 1px solid #e8eef5;">
-          <div style="font-size: 10px; font-weight: 800; letter-spacing: 0.6px; text-transform: uppercase; color: #0b3a6f; margin-bottom: 4px;">LUGAR A VISITAR / DESTINO</div>
-          <div style="font-size: 15px; font-weight: 800; color: #0b3a6f; line-height: 1.4;">${escapeHtml(viaticos.lugarVisitar || salida.municipio || salida.pais || 'No registrado')}</div>
-        </td>
-      </tr>
-
-      <!-- Fila 4: Cronograma Salida y Regreso -->
-      <tr>
-        <td style="padding: 14px 18px; border-bottom: 1px solid #e8eef5; background-color: #ffffff;">
-          <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
-            <tr>
-              <td width="47%" valign="top" style="padding: 10px 14px; background-color: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px;">
-                <div style="font-size: 9.5px; font-weight: 800; letter-spacing: 0.6px; text-transform: uppercase; color: #64748b; margin-bottom: 3px;">DÍA Y HORA DE SALIDA</div>
-                <div style="font-size: 13px; font-weight: 700; color: #0f172a;">${escapeHtml(formatTripMoment(salida.fecha, salida.horaInicio))}</div>
-              </td>
-              <td width="6%" align="center" valign="middle" style="font-size: 18px; color: #2563eb; font-weight: bold;">
-                →
-              </td>
-              <td width="47%" valign="top" style="padding: 10px 14px; background-color: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px;">
-                <div style="font-size: 9.5px; font-weight: 800; letter-spacing: 0.6px; text-transform: uppercase; color: #64748b; margin-bottom: 3px;">DÍA Y HORA DE REGRESO</div>
-                <div style="font-size: 13px; font-weight: 700; color: #0f172a;">${escapeHtml(formatTripMoment(salida.fechaRegreso, salida.horaFin))}</div>
-              </td>
-            </tr>
-          </table>
-        </td>
-      </tr>
-
-      <!-- Fila 5: Objeto de la comisión -->
-      <tr>
-        <td style="padding: 14px 18px; border-bottom: 1px solid #e8eef5;">
-          <div style="font-size: 10px; font-weight: 800; letter-spacing: 0.6px; text-transform: uppercase; color: #64748b; margin-bottom: 4px;">OBJETO DE LA COMISIÓN</div>
-          <div style="font-size: 13px; font-weight: 600; color: #1e293b; line-height: 1.5;">${escapeHtml(viaticos.objetoComision || salida.motivo || 'No registrado')}</div>
-        </td>
-      </tr>
-
-      ${viaticos.observacionesEspeciales ? `
-      <!-- Fila 6: Observaciones especiales -->
-      <tr>
-        <td style="padding: 12px 18px; border-bottom: 1px solid #e8eef5; background-color: #fafbfc;">
-          <div style="font-size: 10px; font-weight: 800; letter-spacing: 0.6px; text-transform: uppercase; color: #64748b; margin-bottom: 4px;">OBSERVACIONES ESPECIALES</div>
-          <div style="font-size: 12.5px; color: #475569; line-height: 1.4;">${escapeHtml(viaticos.observacionesEspeciales)}</div>
-        </td>
-      </tr>
-      ` : ''}
 
       ${viaticos.centroCosto ? `
-      <!-- Fila 7: Centro de costos -->
       <tr>
-        <td style="padding: 10px 18px; background-color: #ffffff;">
-          <div style="font-size: 10px; font-weight: 800; letter-spacing: 0.6px; text-transform: uppercase; color: #64748b; margin-bottom: 2px;">CENTRO DE COSTOS</div>
-          <div style="font-size: 12.5px; font-weight: 700; color: #0b3a6f;">${escapeHtml(viaticos.centroCosto)}</div>
+        <td style="padding: 8px 18px 12px 18px; background-color: #ffffff;">
+          <div style="font-size: 10px; font-weight: 700; text-transform: uppercase; color: #64748b; margin-bottom: 2px;">CENTRO DE COSTOS ASIGNADO</div>
+          <div style="font-size: 12px; font-weight: 700; color: #0b3a6f;">${escapeHtml(viaticos.centroCosto)}</div>
         </td>
       </tr>
       ` : ''}
     </table>
 
     <!-- Aviso Normativo Acuerdo 001 de 2013 -->
-    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin: 0 0 20px 0; border-left: 4px solid #d97706; background-color: #fffbeb; border-radius: 4px;">
-      <tr>
-        <td style="padding: 12px 16px; color: #92400e; font-size: 13px; line-height: 1.45;">
-          <strong style="color: #b45309;">Aviso Normativo Importante:</strong> ${escapeHtml(LEGALIZATION_NOTICE.replace(/^IMPORTANTE:\s*/i, ''))}
-        </td>
-      </tr>
-    </table>`;
+    <div style="margin: 0 0 16px 0; padding: 8px 12px; border-left: 3px solid #d97706; background-color: #fffbeb; border-radius: 4px; font-size: 11.5px; color: #92400e; line-height: 1.4;">
+      <strong style="color: #b45309;">Aviso Normativo:</strong> ${escapeHtml(LEGALIZATION_NOTICE.replace(/^IMPORTANTE:\s*/i, ''))}
+    </div>`;
 };
 
 const formatCop = (value) => new Intl.NumberFormat('es-CO', {
@@ -768,22 +719,22 @@ const formatCop = (value) => new Intl.NumberFormat('es-CO', {
   maximumFractionDigits: 0
 }).format(Number(value) || 0);
 
-const financialAmountHtml = (solicitud, { pendingLabel = 'Pendiente de liquidar' } = {}) => {
+const financialAmountHtml = (solicitud) => {
   const total = Number(solicitud.liquidacion?.totalAnticipo);
   const hasLiquidation = Number.isFinite(total) && total > 0;
 
+  if (!hasLiquidation) return '';
+
   return `
-    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin: 0 0 22px 0; border: 1px solid #bfdbfe; border-radius: 10px; background-color: #f0f6ff; border-collapse: separate;">
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin: 0 0 18px 0; border: 1px solid #bfdbfe; border-radius: 8px; background-color: #f0f6ff; border-collapse: separate;">
       <tr>
-        <td style="padding: 16px 20px;">
-          <div style="font-size: 11px; font-weight: 800; letter-spacing: 0.7px; text-transform: uppercase; color: #1e40af; margin-bottom: 5px;">VALOR TOTAL DEL ANTICIPO</div>
-          <div style="font-size: 24px; font-weight: 800; color: #0b3a6f; line-height: 1.2;">
-            ${hasLiquidation ? escapeHtml(formatCop(total)) : escapeHtml(pendingLabel)}
+        <td style="padding: 12px 16px;">
+          <div style="font-size: 10px; font-weight: 800; letter-spacing: 0.6px; text-transform: uppercase; color: #1e40af; margin-bottom: 3px;">VALOR TOTAL DEL ANTICIPO LIQUIDADO</div>
+          <div style="font-size: 20px; font-weight: 800; color: #0b3a6f; line-height: 1.2;">
+            ${escapeHtml(formatCop(total))}
           </div>
-          <div style="font-size: 12px; color: #475569; margin-top: 6px; line-height: 1.4;">
-            ${hasLiquidation
-              ? 'Valor formal registrado en la liquidación de viáticos y gastos de viaje (pesos colombianos · COP).'
-              : 'El valor se calculará y registrará conforme a los conceptos, tarifas diarias y días autorizados por el Técnico Contable.'}
+          <div style="font-size: 11.5px; color: #475569; margin-top: 4px;">
+            Liquidación formal registrada por el Técnico Contable para trámite de pago.
           </div>
         </td>
       </tr>
@@ -1549,7 +1500,7 @@ const liquidacionForm = (solicitud, token, nonce, { demo = false, demoCanSubmit 
     ? `/api/desplazamientos-viaticos/prueba/liquidacion/${token}`
     : demo ? '#' : `/api/desplazamientos-viaticos/accion/${token}`;
   const hiddenDemoAction = demo && demoCanSubmit ? '<input type="hidden" name="accion" value="liquidar">' : '<input type="hidden" id="form-accion" name="accion" value="liquidar">';
-  return page('Generar liquidación de viáticos y gastos de viaje', `<form id="liquidacion-form" method="post" action="${formAction}">${hiddenDemoAction}<input id="extra-count" type="hidden" name="extraCount" value="0">${demoNotice}${liquidationRequestDocumentHtml(solicitud, { currentStepKey: 'tecnico_contable', formId: 'liquidacion-form', isTechnician: true })}<section class="liquidation-panel"><div class="liquidation-panel-head"><div><h2>Liquidación de viáticos y gastos de viaje</h2><p>Registre únicamente los conceptos autorizados que realmente serán utilizados.</p></div><span class="liquidation-badge">Valores en pesos colombianos (COP)</span></div><div class="liquidation-table-wrap"><table><thead><tr><th>Detalle</th><th>Valor diario (COP)</th><th>No. días</th><th>Valor total (COP)</th><th>Acción</th></tr></thead><tbody id="liquidacion-detalles">${rows}</tbody><tfoot><tr><th colspan="3">TOTAL ANTICIPO</th><th id="total-anticipo">$0</th><th></th></tr></tfoot></table></div><div class="liquidation-actions"><button id="agregar-concepto" class="primary add-concept" type="button">+ Agregar otro concepto</button><span style="color:#64748b;font-size:12px">Puede eliminar los conceptos que no apliquen.</span></div><label class="observations-label">Observaciones a la liquidación (obligatorias si rechaza)</label><textarea name="observaciones" maxlength="2000" rows="4" placeholder="Escriba aquí las observaciones de la liquidación..."></textarea>${submitButton}</section></form>${calculator}`);
+  return page('Generar liquidación de viáticos y gastos de viaje', `<form id="liquidacion-form" method="post" action="${formAction}">${hiddenDemoAction}<input id="extra-count" type="hidden" name="extraCount" value="0">${demoNotice}${liquidationRequestDocumentHtml(solicitud, { currentStepKey: 'tecnico_contable', formId: 'liquidacion-form', isTechnician: true })}<section class="liquidation-panel"><div class="liquidation-panel-head"><div><h2>Liquidación de viáticos y gastos de viaje</h2><p>Registre únicamente los conceptos autorizados que realmente serán utilizados.</p></div><span class="liquidation-badge">Valores en pesos colombianos (COP)</span></div><div class="liquidation-table-wrap"><table><thead><tr><th>Detalle</th><th>Valor diario (COP)</th><th>No. días</th><th>Valor total (COP)</th><th>Acción</th></tr></thead><tbody id="liquidacion-detalles">${rows}</tbody><tfoot><tr><th colspan="3">TOTAL ANTICIPO</th><th id="total-anticipo">$0</th><th></th></tr></tfoot></table></div><div class="liquidation-actions"><button id="agregar-concepto" class="primary add-concept" type="button">+ Agregar otro concepto</button><span style="color:#64748b;font-size:12px">Puede eliminar los conceptos que no apliquen.</span></div><label class="observations-label">Observaciones a la liquidación</label><textarea name="observaciones" maxlength="2000" rows="4" placeholder="Escriba aquí las observaciones de la liquidación..."></textarea>${submitButton}</section></form>${calculator}`);
 };
 
 const approvalForm = (solicitud, step, token, { accessSource = 'primary' } = {}) => {
