@@ -542,12 +542,12 @@ const buildApprovalPlan = ({ jefe = {}, laboral = {}, personal = {} }) => {
       steps.push({ key: 'vicerrectoria_dependencia', label: laboral.vicerrectoria || 'Vicerrectoría correspondiente', email: viceDependenciaEmail, action: 'approval' });
     }
     steps.push(
-      { key: 'sst', label: 'Seguridad y Salud en el Trabajo', email: recipients.sst, action: 'approval' },
       { key: 'rectoria', label: 'Rectoría', email: recipients.rectoria, action: 'approval' }
     );
   }
   steps.push(
     { key: 'gestion_humana', label: 'Oficina de Gestión del Talento Humano', email: recipients.gestionHumana, action: 'approval' },
+    { key: 'sst', label: 'Seguridad y Salud en el Trabajo', email: recipients.sst, action: 'approval' },
     { key: 'tecnico_contable', label: 'Técnico contable', email: recipients.tecnicoContable, action: 'liquidacion' },
     { key: 'tesoreria', label: 'Tesorería / Pagaduría', email: recipients.tesoreria, action: 'pago', infoEmails: [recipients.financiera] }
   );
@@ -1327,7 +1327,7 @@ const renderDepartureSignatures = (solicitud, currentStepKey) => {
   return `
     <section class="fr004-section" style="padding-top:0">
       <h2 class="fr004-section-title">Control de Firmas y Aprobaciones de Salida</h2>
-      <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 8px; margin-bottom: 12px;">
+      <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 8px; margin-bottom: 12px;">
         ${signatureBoxes.join('')}
       </div>
     </section>
