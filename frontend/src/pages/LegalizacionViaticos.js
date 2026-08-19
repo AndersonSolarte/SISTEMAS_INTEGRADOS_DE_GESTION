@@ -57,7 +57,7 @@ export default function LegalizacionViaticos() {
   const [rows, setRows] = useState([]);
   const [selectedRow, setSelectedRow] = useState(null);
   const [searchTerm, setSearchTerm] = useState('');
-  const [filterState, setFilterState] = useState('ALL');
+  const [filterState, setFilterState] = useState('PENDING');
 
   // Form states when viewing a single legalización
   const [values, setValues] = useState({});
@@ -92,7 +92,12 @@ export default function LegalizacionViaticos() {
       const matchSearch = !search ||
         (sol.consecutivo || '').toLowerCase().includes(search) ||
         (sol.datos_viaticos?.lugarVisitar || sol.datos_salida?.municipio || '').toLowerCase().includes(search);
-      const matchState = filterState === 'ALL' || leg.estado === filterState;
+      let matchState = true;
+      if (filterState === 'PENDING') {
+        matchState = leg.estado !== 'finalizada';
+      } else if (filterState !== 'ALL') {
+        matchState = leg.estado === filterState;
+      }
       return matchSearch && matchState;
     });
   }, [rows, searchTerm, filterState]);
@@ -162,7 +167,7 @@ export default function LegalizacionViaticos() {
   // -------------------------------------------------------------
   if (selectedRow) {
     const active = selectedRow;
-    const editable = ['pendiente_legalizacion', 'legalizacion_vencida'].includes(active.legalizacion.estado);
+    const editable = ['pendiente_legalizacion', 'legalizacion_vencida', 'pendiente_habilitacion'].includes(active.legalizacion.estado);
     const cfg = stateConfigs[active.legalizacion.estado] || {};
 
     return (
@@ -387,7 +392,7 @@ export default function LegalizacionViaticos() {
               {filteredRows.map((row) => {
                 const sol = row.solicitud || {};
                 const leg = row.legalizacion || {};
-                const editable = ['pendiente_legalizacion', 'legalizacion_vencida'].includes(leg.estado);
+                const editable = ['pendiente_legalizacion', 'legalizacion_vencida', 'pendiente_habilitacion'].includes(leg.estado);
                 const cfg = stateConfigs[leg.estado] || {};
                 const total = Number(sol.liquidacion?.totalAnticipo) || (leg.detalles || []).reduce((s, i) => s + Number(i.valorAnticipo || 0), 0);
 

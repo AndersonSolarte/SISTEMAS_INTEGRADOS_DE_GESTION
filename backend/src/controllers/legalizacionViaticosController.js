@@ -239,7 +239,6 @@ const presentar = async (req, res) => {
   });
   if (!legalizacion) return rejectUpload(404, 'Legalización no encontrada.');
   if (['en_revision', 'finalizada'].includes(effectiveState(legalizacion))) return rejectUpload(409, 'La legalización ya fue enviada o finalizada.');
-  if (today() < legalizacion.fecha_habilitacion) return rejectUpload(409, `La legalización se habilitará el ${legalizacion.fecha_habilitacion}.`);
 
   let submitted;
   try {

@@ -125,7 +125,7 @@ const ensureLegalizacion = async (solicitud) => {
     defaults: {
       solicitud_id: solicitud.id,
       user_id: solicitud.user_id,
-      estado: today < fechaRegreso ? 'pendiente_habilitacion' : 'pendiente_legalizacion',
+      estado: 'pendiente_legalizacion',
       fecha_habilitacion: fechaRegreso,
       fecha_limite: addColombiaBusinessDays(fechaRegreso, 3),
       detalles,
