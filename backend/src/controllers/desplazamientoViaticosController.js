@@ -1820,6 +1820,7 @@ const procesarAccion = async (req, res) => {
       if (!centroCosto) return res.status(400).send(page('Centro de costos obligatorio', '<p>Debe registrar el centro de costos antes de enviar la liquidación.</p>'));
       const liquidacion = parseLiquidationBody(req.body);
       if (liquidacion.error) return res.status(400).send(page('Falta el detalle', `<p>${escapeHtml(liquidacion.error)}</p>`));
+      const { detalles, totalAnticipo, observaciones } = liquidacion;
       solicitud.datos_viaticos = { ...(solicitud.datos_viaticos || {}), centroCosto };
       solicitud.liquidacion = { detalles, totalAnticipo, observaciones };
       await solicitud.update({
@@ -1829,7 +1830,6 @@ const procesarAccion = async (req, res) => {
       const linkedReport = await getLinkedNormalReport(solicitud);
       if (linkedReport) {
         await linkedReport.update({
-          estado: 'en_tramite_tesoreria',
           trazabilidad: [...(linkedReport.trazabilidad || []), {
             event: 'liquidada_tecnico_contable',
             actor,
