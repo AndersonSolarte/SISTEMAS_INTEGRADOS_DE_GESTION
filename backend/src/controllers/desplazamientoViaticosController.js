@@ -830,8 +830,8 @@ const emailStep = async (solicitud, step, tokenBundle) => {
   const actionButtonHtml = `
     <table role="presentation" cellpadding="0" cellspacing="0" border="0" align="center" style="margin: 24px auto;">
       <tr>
-        <td align="center" style="background-color: #0b3a6f; border-radius: 8px;">
-          <a href="${actionUrl}" target="_blank" style="display: inline-block; padding: 13px 26px; font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; font-size: 14px; font-weight: 800; color: #ffffff; text-decoration: none; border-radius: 8px; letter-spacing: 0.3px;">
+        <td align="center" style="background-color: #15803d; border-radius: 8px; box-shadow: 0 4px 14px rgba(21, 128, 61, 0.35);">
+          <a href="${actionUrl}" target="_blank" style="display: inline-block; padding: 14px 28px; font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; font-size: 14.5px; font-weight: 800; color: #ffffff; text-decoration: none; border-radius: 8px; letter-spacing: 0.3px;">
             ${escapeHtml(buttonLabel)} →
           </a>
         </td>
@@ -858,8 +858,8 @@ const emailStep = async (solicitud, step, tokenBundle) => {
     const alternateButtonHtml = `
       <table role="presentation" cellpadding="0" cellspacing="0" border="0" align="center" style="margin: 24px auto;">
         <tr>
-          <td align="center" style="background-color: #0b3a6f; border-radius: 8px;">
-            <a href="${alternateActionUrl}" target="_blank" style="display: inline-block; padding: 13px 26px; font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; font-size: 14px; font-weight: 800; color: #ffffff; text-decoration: none; border-radius: 8px; letter-spacing: 0.3px;">
+          <td align="center" style="background-color: #15803d; border-radius: 8px; box-shadow: 0 4px 14px rgba(21, 128, 61, 0.35);">
+            <a href="${alternateActionUrl}" target="_blank" style="display: inline-block; padding: 14px 28px; font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; font-size: 14.5px; font-weight: 800; color: #ffffff; text-decoration: none; border-radius: 8px; letter-spacing: 0.3px;">
               ${escapeHtml(buttonLabel)} →
             </a>
           </td>
