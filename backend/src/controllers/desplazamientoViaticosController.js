@@ -752,15 +752,6 @@ const emailStep = async (solicitud, step, tokenBundle) => {
   const alternateToken = typeof tokenBundle === 'string' ? null : tokenBundle.alternate;
   const actionUrl = `${publicBackendUrl}/api/desplazamientos-viaticos/accion/${primaryToken}`;
   const isFinancialStage = ['tecnico_contable', 'tesoreria', 'financiera_final'].includes(step.key);
-  const normalReport = await getLinkedNormalReport(solicitud);
-  const [viaticosPdfAttachment, normalReportPdfAttachment] = await Promise.all([
-    isFinancialStage
-      ? buildLiquidationPdfAttachment(solicitud)
-      : buildPdfAttachment(solicitud, { includeFinancial: false }),
-    normalReport
-      ? ensureReporteSalidaPdf(normalReport)
-      : Promise.resolve(null)
-  ]);
   const supportAttachment = buildSupportAttachment(solicitud);
   const title = step.key === 'sst'
     ? 'Validación de salida y ampliación de cobertura ARL'
@@ -804,7 +795,7 @@ const emailStep = async (solicitud, step, tokenBundle) => {
     subject: `${solicitud.consecutivo} | ${title}`,
     text: `${title}. Ingrese a ${actionUrl}`,
     html,
-    attachments: [viaticosPdfAttachment, normalReportPdfAttachment, supportAttachment].filter(Boolean)
+    attachments: [supportAttachment].filter(Boolean)
   });
   let alternateResult = null;
   if (alternateToken && step.alternateApprovalEmail) {
@@ -837,7 +828,7 @@ const emailStep = async (solicitud, step, tokenBundle) => {
           ? `${summaryHtml(solicitud)}${financialAmount}${alternateButtonHtml}<p style="color:#64748b;font-size:12px;text-align:center;">La solicitud solo puede procesarse una vez. Cuando uno de los dos destinatarios registre la decisión, el otro enlace quedará cerrado automáticamente.</p>`
           : `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin: 0 0 18px 0; border-left: 4px solid #d97706; background-color: #fffbeb; border-radius: 4px;"><tr><td style="padding: 12px 16px; color: #92400e; font-size: 13px; line-height: 1.45;"><strong>Uso restringido:</strong> Este acceso solo debe utilizarse cuando ${escapeHtml(absenceRole)} no se encuentre disponible. La actuación se registrará formalmente a nombre de ${escapeHtml(authorityLabel)}, exige una observación y quedará identificada en la trazabilidad institucional.</td></tr></table>${summaryHtml(solicitud)}${financialAmount}${alternateButtonHtml}`
       }),
-      attachments: [viaticosPdfAttachment, normalReportPdfAttachment, supportAttachment].filter(Boolean)
+      attachments: [supportAttachment].filter(Boolean)
     });
   }
   const infoEmails = [...new Set((step.infoEmails || []).filter(Boolean).map(normalizeEmail))];
@@ -851,7 +842,7 @@ const emailStep = async (solicitud, step, tokenBundle) => {
         introHtml: '<p style="margin: 0 0 10px 0;">Saludo de paz y bien,</p><p style="margin: 0 0 14px 0;">El Técnico Contable registró la liquidación de viáticos y la remitió a Tesorería / Pagaduría para autorizar el pago. Esta copia es de carácter informativo.</p>',
         bodyHtml: `${summaryHtml(solicitud)}${financialAmountHtml(solicitud)}`
       }),
-      attachments: [viaticosPdfAttachment, normalReportPdfAttachment, supportAttachment].filter(Boolean)
+      attachments: [supportAttachment].filter(Boolean)
     });
   }
   return alternateResult
@@ -862,10 +853,6 @@ const emailStep = async (solicitud, step, tokenBundle) => {
 const sendRadicationCopies = async (solicitud, recipients = []) => {
   const targetEmails = [...new Set(recipients.filter(Boolean).map(normalizeEmail))];
   if (!targetEmails.length) return { success: true };
-  const normalReport = await getLinkedNormalReport(solicitud);
-  const pdfAttachment = normalReport
-    ? await ensureReporteSalidaPdf(normalReport)
-    : await buildPdfAttachment(solicitud, { includeFinancial: false });
   const supportAttachment = buildSupportAttachment(solicitud);
   const firstStep = (solicitud.plan_aprobacion || [])[0];
   return sendInstitutionalEmail({
@@ -877,7 +864,7 @@ const sendRadicationCopies = async (solicitud, recipients = []) => {
       introHtml: `<p style="margin: 0 0 10px 0;">Saludo de paz y bien,</p><p style="margin: 0 0 14px 0;">Se remite copia informativa de la solicitud de desplazamiento radicada. La primera actuación de visto bueno corresponde a <strong>${escapeHtml(firstStep?.label || 'la instancia responsable')}</strong>.</p>`,
       bodyHtml: summaryHtml(solicitud)
     }),
-    attachments: [pdfAttachment, supportAttachment].filter(Boolean)
+    attachments: [supportAttachment].filter(Boolean)
   });
 };
 
@@ -1198,21 +1185,35 @@ const renderDepartureSignatures = (solicitud, currentStepKey) => {
     return Number.isNaN(date.getTime()) ? String(d) : date.toLocaleString('es-CO');
   };
 
+const renderDepartureSignatures = (solicitud, currentStepKey) => {
+  const radication = (solicitud.trazabilidad || []).find((entry) => entry.event === 'radicada');
+  const collaborator = solicitud.solicitante_snapshot || {};
+  const laboral = solicitud.datos_laborales || {};
+  const plan = solicitud.plan_aprobacion || [];
+  const txId = `SGC-DEV-${solicitud.id}-${solicitud.consecutivo || '2026'}`;
+
+  const departureSteps = plan.filter((step) => !['tecnico_contable', 'tesoreria'].includes(step.key));
+
+  const formatTraceDate = (d) => {
+    if (!d) return 'No registrado';
+    const date = new Date(d);
+    return Number.isNaN(date.getTime()) ? String(d) : date.toLocaleString('es-CO');
+  };
+
   const signatureBoxes = [];
 
   // 1. Firma del Solicitante (Aceptación Electrónica)
   signatureBoxes.push(`
     <div style="border: 1px solid #cbd5e1; border-radius: 4px; overflow: hidden; background: #ffffff;">
-      <div style="background-color: #f1f5f9; color: #1e293b; font-weight: 800; font-size: 10.5px; padding: 7px 10px; text-align: center; text-transform: uppercase; letter-spacing: 0.5px; border-bottom: 1px solid #cbd5e1;">
-        Firma del Trabajador Solicitante
+      <div style="background-color: #f1f5f9; color: #1e293b; font-weight: 700; font-size: 8.5px; padding: 4px 6px; text-align: center; text-transform: uppercase; border-bottom: 1px solid #cbd5e1;">
+        Trabajador Solicitante
       </div>
-      <div style="padding: 10px 12px; font-size: 11px; line-height: 1.45; color: #1e293b;">
-        <div style="font-weight: 700; color: #334155; font-size: 10.5px; margin-bottom: 2px;">Firmado electrónicamente por:</div>
-        <div style="font-weight: 800; color: #0b3a6f; font-size: 12.5px; text-transform: uppercase;">${escapeHtml(collaborator.nombre || 'Colaborador')}</div>
-        <div><strong>Documento:</strong> ${escapeHtml(collaborator.documento || collaborator.username || 'No registrado')}</div>
-        <div><strong>Cargo:</strong> ${escapeHtml(laboral.cargo || collaborator.cargo || 'No registrado')}</div>
-        <div><strong>Fecha y hora:</strong> ${formatTraceDate(radication?.at || solicitud.created_at)}</div>
-        <div style="font-size: 9px; color: #64748b; margin-top: 4px; font-family: monospace;">ID Transacción: ${escapeHtml(txId)}</div>
+      <div style="padding: 5px 8px; font-size: 9px; line-height: 1.3; color: #1e293b;">
+        <div style="font-size: 8px; color: #64748b;">Firmado electrónicamente por:</div>
+        <div style="font-weight: 800; color: #0b3a6f; font-size: 10px; text-transform: uppercase; margin: 1px 0;">${escapeHtml(collaborator.nombre || 'Colaborador')}</div>
+        <div style="color: #475569; font-size: 8.5px;"><strong>Doc:</strong> ${escapeHtml(collaborator.documento || collaborator.username || 'No registrado')} | <strong>Cargo:</strong> ${escapeHtml(laboral.cargo || collaborator.cargo || 'No registrado')}</div>
+        <div style="color: #64748b; font-size: 8px; margin-top: 2px;">${formatTraceDate(radication?.at || solicitud.created_at)}</div>
+        <div style="font-size: 7.5px; color: #94a3b8; font-family: monospace;">ID: ${escapeHtml(txId)}</div>
       </div>
     </div>
   `);
@@ -1230,43 +1231,41 @@ const renderDepartureSignatures = (solicitud, currentStepKey) => {
 
     if (isApproved) {
       contentHtml = `
-        <div style="font-weight: 700; color: #334155; font-size: 10.5px; margin-bottom: 2px;">Firmado electrónicamente por:</div>
-        <div style="font-weight: 800; color: #0b3a6f; font-size: 12.5px; text-transform: uppercase;">${escapeHtml(actorName)}</div>
-        <div><strong>Cargo:</strong> ${escapeHtml(actorCargo)}</div>
-        <div><strong>Fecha y hora:</strong> ${formatTraceDate(trace.at)}</div>
-        <div style="font-size: 9px; color: #64748b; margin-top: 4px; font-family: monospace;">ID Transacción: ${escapeHtml(txId)}</div>
+        <div style="font-size: 8px; color: #64748b;">Firmado electrónicamente por:</div>
+        <div style="font-weight: 800; color: #0b3a6f; font-size: 10px; text-transform: uppercase; margin: 1px 0;">${escapeHtml(actorName)}</div>
+        <div style="color: #475569; font-size: 8.5px;"><strong>Cargo:</strong> ${escapeHtml(actorCargo)}</div>
+        <div style="color: #64748b; font-size: 8px; margin-top: 2px;">${formatTraceDate(trace.at)}</div>
+        <div style="font-size: 7.5px; color: #94a3b8; font-family: monospace;">ID: ${escapeHtml(txId)}</div>
       `;
     } else if (isRejected) {
       contentHtml = `
-        <div style="font-weight: 700; color: #991b1b; font-size: 10.5px; margin-bottom: 2px;">No aprobado por:</div>
-        <div style="font-weight: 800; color: #991b1b; font-size: 12.5px; text-transform: uppercase;">${escapeHtml(actorName)}</div>
-        <div><strong>Cargo:</strong> ${escapeHtml(actorCargo)}</div>
-        <div><strong>Fecha y hora:</strong> ${formatTraceDate(trace.at)}</div>
-        <div style="font-size: 10.5px; color: #991b1b; margin-top: 3px;"><strong>Motivo:</strong> ${escapeHtml(trace.observacion || trace.motivo || 'Sin observación')}</div>
+        <div style="font-size: 8px; color: #991b1b; font-weight: 700;">No aprobado por:</div>
+        <div style="font-weight: 800; color: #991b1b; font-size: 10px; text-transform: uppercase; margin: 1px 0;">${escapeHtml(actorName)}</div>
+        <div style="color: #7f1d1d; font-size: 8.5px;"><strong>Cargo:</strong> ${escapeHtml(actorCargo)}</div>
+        <div style="color: #991b1b; font-size: 8.5px; margin-top: 2px;"><strong>Motivo:</strong> ${escapeHtml(trace.observacion || trace.motivo || 'Sin observación')}</div>
       `;
     } else if (isCurrent) {
       contentHtml = `
-        <div style="font-weight: 700; color: #0b3a6f; font-size: 11px; margin-bottom: 2px;">Pendiente de firma y visto bueno</div>
-        <div style="color: #475569; font-size: 10.5px; line-height: 1.35;">Espacio reservado para la firma electrónica de <strong>${escapeHtml(step.label)}</strong>.</div>
-        <div style="margin-top: 5px; font-size: 10px; color: #0b3a6f; font-style: italic;">Utilice el panel inferior para emitir su visto bueno formal.</div>
+        <div style="font-weight: 700; color: #0b3a6f; font-size: 9px;">Pendiente de firma</div>
+        <div style="color: #64748b; font-size: 8.5px; margin-top: 2px;">Espacio reservado para visto bueno.</div>
       `;
     } else {
       contentHtml = `
-        <div style="font-weight: 600; color: #64748b; font-size: 10.5px; margin-bottom: 2px;">Estado: Pendiente</div>
-        <div style="color: #94a3b8; font-size: 10px;">Esta etapa se habilitará una vez aprobadas las instancias previas.</div>
+        <div style="font-weight: 600; color: #94a3b8; font-size: 8.5px;">Pendiente</div>
+        <div style="color: #cbd5e1; font-size: 8px;">En espera de etapas previas.</div>
       `;
     }
 
     const headerBg = isApproved ? '#f1f5f9' : (isRejected ? '#fef2f2' : (isCurrent ? '#eff6ff' : '#f8fafc'));
-    const headerColor = isApproved ? '#0b3a6f' : (isRejected ? '#991b1b' : (isCurrent ? '#1e3a8a' : '#475569'));
+    const headerColor = isApproved ? '#0b3a6f' : (isRejected ? '#991b1b' : (isCurrent ? '#1e3a8a' : '#64748b'));
     const borderCol = isCurrent ? '#93c5fd' : '#cbd5e1';
 
     signatureBoxes.push(`
       <div style="border: 1px solid ${borderCol}; border-radius: 4px; overflow: hidden; background: #ffffff;">
-        <div style="background-color: ${headerBg}; color: ${headerColor}; font-weight: 800; font-size: 10.5px; padding: 7px 10px; text-align: center; text-transform: uppercase; letter-spacing: 0.5px; border-bottom: 1px solid ${borderCol};">
+        <div style="background-color: ${headerBg}; color: ${headerColor}; font-weight: 700; font-size: 8.5px; padding: 4px 6px; text-align: center; text-transform: uppercase; border-bottom: 1px solid ${borderCol};">
           ${escapeHtml(step.label)}
         </div>
-        <div style="padding: 10px 12px; font-size: 11px; line-height: 1.45; color: #1e293b;">
+        <div style="padding: 5px 8px; font-size: 9px; line-height: 1.3; color: #1e293b;">
           ${contentHtml}
         </div>
       </div>
@@ -1275,8 +1274,8 @@ const renderDepartureSignatures = (solicitud, currentStepKey) => {
 
   return `
     <section class="fr004-section" style="padding-top:0">
-      <h2 class="fr004-section-title">Control de Firmas Electrónicas y Aprobaciones de Salida</h2>
-      <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 12px; margin-bottom: 18px;">
+      <h2 class="fr004-section-title">Control de Firmas y Aprobaciones de Salida</h2>
+      <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 8px; margin-bottom: 12px;">
         ${signatureBoxes.join('')}
       </div>
     </section>
@@ -1489,43 +1488,41 @@ const renderLiquidationSectionHtml = (solicitud, currentStepKey, { isTreasury = 
 
     if (isApproved) {
       contentHtml = `
-        <div style="font-weight: 700; color: #166534; font-size: 10.5px; margin-bottom: 2px;">FIRMADO ELECTRÓNICAMENTE:</div>
-        <div style="font-weight: 800; color: #0b3a6f; font-size: 12.5px; text-transform: uppercase;">${escapeHtml(actorName)}</div>
-        <div><strong>Cargo:</strong> ${escapeHtml(actorCargo)}</div>
-        <div><strong>Fecha y hora:</strong> ${formatTraceDate(trace.at)}</div>
-        <div style="font-size: 9px; color: #64748b; margin-top: 4px; font-family: monospace;">ID Transacción: ${escapeHtml(txId)}</div>
+        <div style="font-size: 8px; color: #166534; font-weight: 700;">FIRMADO ELECTRÓNICAMENTE:</div>
+        <div style="font-weight: 800; color: #0b3a6f; font-size: 10px; text-transform: uppercase; margin: 1px 0;">${escapeHtml(actorName)}</div>
+        <div style="color: #475569; font-size: 8.5px;"><strong>Cargo:</strong> ${escapeHtml(actorCargo)}</div>
+        <div style="color: #64748b; font-size: 8px; margin-top: 2px;">${formatTraceDate(trace.at)}</div>
+        <div style="font-size: 7.5px; color: #94a3b8; font-family: monospace;">ID: ${escapeHtml(txId)}</div>
       `;
     } else if (isRejected) {
       contentHtml = `
-        <div style="font-weight: 700; color: #991b1b; font-size: 10.5px; margin-bottom: 2px;">No autorizado por:</div>
-        <div style="font-weight: 800; color: #991b1b; font-size: 12.5px; text-transform: uppercase;">${escapeHtml(actorName)}</div>
-        <div><strong>Cargo:</strong> ${escapeHtml(actorCargo)}</div>
-        <div><strong>Fecha y hora:</strong> ${formatTraceDate(trace.at)}</div>
-        <div style="font-size: 10.5px; color: #991b1b; margin-top: 3px;"><strong>Motivo:</strong> ${escapeHtml(trace.observacion || trace.motivo || 'Sin observación')}</div>
+        <div style="font-size: 8px; color: #991b1b; font-weight: 700;">No autorizado por:</div>
+        <div style="font-weight: 800; color: #991b1b; font-size: 10px; text-transform: uppercase; margin: 1px 0;">${escapeHtml(actorName)}</div>
+        <div style="color: #7f1d1d; font-size: 8.5px;"><strong>Cargo:</strong> ${escapeHtml(actorCargo)}</div>
+        <div style="color: #991b1b; font-size: 8.5px; margin-top: 2px;"><strong>Motivo:</strong> ${escapeHtml(trace.observacion || trace.motivo || 'Sin observación')}</div>
       `;
     } else if (isCurrent) {
       contentHtml = `
-        <div style="font-weight: 700; color: #0b3a6f; font-size: 11px; margin-bottom: 2px;">Pendiente de autorización de pago</div>
-        <div style="color: #475569; font-size: 10.5px; line-height: 1.35;">Espacio reservado para la firma electrónica de <strong>${escapeHtml(step.label)}</strong>.</div>
-        <div style="margin-top: 5px; font-size: 10px; color: #0b3a6f; font-style: italic;">Revise o corrija los valores y utilice el panel inferior para registrar la decisión.</div>
+        <div style="font-weight: 700; color: #0b3a6f; font-size: 9px;">Pendiente de autorización de pago</div>
+        <div style="color: #64748b; font-size: 8.5px; margin-top: 2px;">Espacio reservado para Tesorería / Pagaduría.</div>
       `;
     } else {
       contentHtml = `
-        <div style="font-weight: 600; color: #64748b; font-size: 10.5px; margin-bottom: 2px;">Estado: Pendiente</div>
-        <div style="color: #94a3b8; font-size: 10px;">Esta etapa se habilitará al liquidar los viáticos.</div>
+        <div style="font-weight: 600; color: #94a3b8; font-size: 8.5px;">Pendiente</div>
+        <div style="color: #cbd5e1; font-size: 8px;">Esta etapa se habilitará al liquidar.</div>
       `;
     }
 
     const headerBg = isApproved ? '#f0fdf4' : (isRejected ? '#fef2f2' : (isCurrent ? '#eff6ff' : '#f8fafc'));
-    const headerColor = isApproved ? '#166534' : (isRejected ? '#991b1b' : (isCurrent ? '#1e3a8a' : '#475569'));
+    const headerColor = isApproved ? '#166534' : (isRejected ? '#991b1b' : (isCurrent ? '#1e3a8a' : '#64748b'));
     const borderCol = isCurrent ? '#93c5fd' : (isApproved ? '#86efac' : '#cbd5e1');
 
     return `
       <div style="border: 1px solid ${borderCol}; border-radius: 4px; overflow: hidden; background: #ffffff;">
-        <div style="background-color: ${headerBg}; color: ${headerColor}; font-weight: 800; font-size: 10.5px; padding: 7px 10px; text-align: center; text-transform: uppercase; letter-spacing: 0.5px; border-bottom: 1px solid ${borderCol};">
+        <div style="background-color: ${headerBg}; color: ${headerColor}; font-weight: 700; font-size: 8.5px; padding: 4px 6px; text-align: center; text-transform: uppercase; border-bottom: 1px solid ${borderCol};">
           ${escapeHtml(step.label)}
         </div>
-        <div style="padding: 10px 12px; font-size: 11px; line-height: 1.45; color: #1e293b;">
+        <div style="padding: 5px 8px; font-size: 9px; line-height: 1.3; color: #1e293b;">
           ${contentHtml}
         </div>
       </div>
@@ -1578,7 +1575,7 @@ const renderLiquidationSectionHtml = (solicitud, currentStepKey, { isTreasury = 
       ${calculatorScript}
 
       <h2 class="fr004-section-title">Control de Firmas Electrónicas del Flujo Financiero</h2>
-      <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 12px; margin-bottom: 18px;">
+      <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 8px; margin-bottom: 12px;">
         ${finBoxes}
       </div>
     </section>
