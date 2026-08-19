@@ -412,7 +412,7 @@ const buildLiquidationPdfBuffer = (solicitud) => new Promise((resolve, reject) =
 });
 
 const buildPdfAttachment = async (solicitud, options = {}) => ({
-  filename: `REPORTE-SALIDA-${solicitud.consecutivo}.pdf`,
+  filename: `SOLICITUD-DESPLAZAMIENTO-VIATICOS-${solicitud.consecutivo}.pdf`,
   content: await buildPdfBuffer(solicitud, options),
   contentType: 'application/pdf'
 });

@@ -1846,30 +1846,12 @@ const ensureReporteSalidaPdf = async (solicitud, docxAttachment = null) => {
   
   const data = solicitud.datos_formulario || {};
   const isOficio = data.salida?.categoria === 'propias_cargo' && data.salida?.tipo !== 'salida_campus' && data.salida?.duracionTipo && data.salida?.duracionTipo !== 'menos_media_jornada';
-  const docType = data.origen_flujo === 'desplazamiento_viaticos'
-    ? 'REPORTE-SALIDA-DESPLAZAMIENTO'
-    : isOficio ? 'Oficio-Salida' : 'FR-002-digital';
+  const docType = isOficio ? 'Oficio-Salida' : 'FR-002-digital';
   
-  const filename = `${String(solicitud.consecutivo || solicitud.id).replace(/[^a-zA-Z0-9_-]/g, '_')}-${docType}.pdf`;
+  const filename = `REPORTE-SALIDA-${String(solicitud.consecutivo || solicitud.id).replace(/[^a-zA-Z0-9_-]/g, '_')}-${docType}.pdf`;
   const filePath = path.join(outDir, filename);
 
-  let buffer;
-  if (data.origen_flujo === 'desplazamiento_viaticos') {
-    const { buildPdfBuffer: buildDesplazamientoPdfBuffer } = require('./desplazamientoViaticos/pdfService');
-    buffer = await buildDesplazamientoPdfBuffer({
-      consecutivo: solicitud.consecutivo,
-      created_at: solicitud.created_at || solicitud.createdAt,
-      solicitante_snapshot: solicitud.solicitante_snapshot || {},
-      datos_laborales: data.laboral || {},
-      datos_salida: data.salida || {},
-      datos_viaticos: data.viaticos || {},
-      plan_aprobacion: data.plan_aprobacion_normal || [],
-      trazabilidad: solicitud.trazabilidad || [],
-      liquidacion: {}
-    }, { includeFinancial: false });
-  } else {
-    buffer = await buildPdfBuffer(solicitud);
-  }
+  const buffer = await buildPdfBuffer(solicitud);
   await fs.promises.writeFile(filePath, buffer);
   
   return {
