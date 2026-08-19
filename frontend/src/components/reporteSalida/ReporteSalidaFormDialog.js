@@ -37,6 +37,7 @@ import InfoIcon from '@mui/icons-material/Info';
 import CheckCircleOutlineIcon from '@mui/icons-material/CheckCircleOutline';
 import UploadFileIcon from '@mui/icons-material/UploadFile';
 import CloseIcon from '@mui/icons-material/Close';
+import { useAuth } from '../../context/AuthContext';
 import reporteSalidaService from '../../services/reporteSalidaService';
 import desplazamientoViaticosService from '../../services/desplazamientoViaticosService';
 import {
@@ -52,7 +53,7 @@ const INITIAL_FORM = {
   personal: { nombre: '', documento: '', correo: '' },
   laboral: { dependencia: '', vicerrectoria: '', cargo: '', tipoVinculacion: '', nivelContratacion: '', reposicionPerfil: null },
   salida: { 
-    tipo: 'cita_eps', 
+    tipo: '', 
     alcance: '', 
     pais: '', 
     departamento: '', 
@@ -622,6 +623,9 @@ const filterFutureTimeOptionsForDate = (options, dateStr) => {
 };
 
 function ReporteSalidaFormDialog({ open, documento, user, onClose, onSubmitted }) {
+  const { user: authUser } = useAuth();
+  const currentUser = user || authUser;
+  const isAdmin = currentUser?.role === 'administrador';
   const theme = useTheme();
   const fullScreen = useMediaQuery(theme.breakpoints.down('md'));
   const todayDate = new Date();
@@ -759,7 +763,66 @@ function ReporteSalidaFormDialog({ open, documento, user, onClose, onSubmitted }
     return alcance === 'regional' && Boolean(form.salida.municipio) && normalizeOption(form.salida.municipio) !== 'pasto';
   }, [category, form.salida.alcance, form.salida.municipio, isSalidaMultiple, subtype]);
 
+  const hasCompletedGeoDestino = useMemo(() => {
+    if (category !== 'propias_cargo' || subtype === 'salida_campus') return true;
+    const alcance = form.salida.alcance;
+    if (!alcance) return false;
+    if (alcance === 'Internacional') return Boolean(form.salida.pais?.trim());
+    if (alcance === 'Nacional') return Boolean(form.salida.departamento?.trim() && form.salida.municipio?.trim());
+    if (alcance === 'Regional') return Boolean(form.salida.municipio?.trim());
+    return true;
+  }, [category, form.salida.alcance, form.salida.departamento, form.salida.municipio, form.salida.pais, subtype]);
+
+  const hasCompletedEntidadDestino = useMemo(() => {
+    if (category !== 'propias_cargo' || subtype === 'salida_campus') return true;
+    return hasCompletedGeoDestino && Boolean(form.salida.entidadDestino?.trim());
+  }, [category, form.salida.entidadDestino, hasCompletedGeoDestino, subtype]);
+
+  const hasCompletedPropiasCargoSteps = useMemo(() => {
+    if (category !== 'propias_cargo') return true;
+    if (!subtype) return false;
+    if (subtype === 'salida_campus') return true;
+    if (!hasCompletedEntidadDestino) return false;
+    if (shouldAskViaticos) {
+      return form.viaticos?.requiereViaticos === false;
+    }
+    return true;
+  }, [category, form.viaticos?.requiereViaticos, hasCompletedEntidadDestino, shouldAskViaticos, subtype]);
+
+  const hasCompletedSaludMotivo = useMemo(() => {
+    if (!subtype) return false;
+    if (category !== 'salud') return true;
+    if (['cita_eps', 'cita_particular'].includes(subtype)) {
+      return Boolean(form.salida.especialidadMedica && String(form.salida.especialidadMedica).trim());
+    }
+    if (subtype === 'terapias') {
+      return Number(form.salida.terapiasCount) > 0;
+    }
+    if (subtype === 'otra') {
+      return Boolean(otraDescripcion && String(otraDescripcion).trim());
+    }
+    return true;
+  }, [category, form.salida.especialidadMedica, form.salida.terapiasCount, otraDescripcion, subtype]);
+
   const requiresViaticosFlow = shouldAskViaticos && form.viaticos?.requiereViaticos === true;
+
+  const hasCompletedSalidaTime = useMemo(() => {
+    if (category === 'salud') {
+      if (!hasCompletedSaludMotivo) return false;
+      if (subtype === 'terapias') {
+        const list = form.salida.terapiasList || [];
+        return list.length > 0 && list.every((t) => t.fecha && t.horaInicio && t.horaFin);
+      }
+      return Boolean(form.salida.fecha && form.salida.horaInicio && form.salida.fechaRegreso);
+    }
+    if (category === 'propias_cargo') {
+      if (requiresViaticosFlow) {
+        return Boolean(form.salida.fecha && form.salida.horaInicio && form.salida.fechaRegreso && form.salida.horaFin);
+      }
+      return Boolean(form.salida.fecha && form.salida.horaInicio && form.salida.fechaRegreso);
+    }
+    return Boolean(form.salida.fecha && form.salida.horaInicio && form.salida.fechaRegreso);
+  }, [category, form.salida.fecha, form.salida.fechaRegreso, form.salida.horaFin, form.salida.horaInicio, form.salida.terapiasList, hasCompletedSaludMotivo, requiresViaticosFlow, subtype]);
 
   const lastGeneratedTemplateRef = useRef('');
 
@@ -822,20 +885,27 @@ function ReporteSalidaFormDialog({ open, documento, user, onClose, onSubmitted }
 
   const handleCategoryChange = (newCategory) => {
     setActiveCategory(newCategory);
+    update('salida', 'tipo', '');
     update('salida', 'tiempoReponerHoras', '');
     update('salida', 'tiempoReponerMinutos', '');
     update('salida', 'jornadaDiariaHoras', '');
+    update('salida', 'alcance', '');
+    update('salida', 'entidadDestino', '');
+    update('salida', 'departamento', '');
+    update('salida', 'municipio', '');
+    update('salida', 'pais', '');
+    update('salida', 'especialidadMedica', '');
+    update('salida', 'terapiasCount', '');
+    update('salida', 'terapiasList', []);
+    setForm((prev) => ({ ...prev, viaticos: { ...INITIAL_FORM.viaticos, requiereViaticos: null } }));
     setNoCuentaAdjuntoSalud(false);
     setAdjuntoFile(null);
     setAdjuntoError('');
     if (newCategory === 'propias_cargo') {
-      update('salida', 'tipo', 'ponencia');
       setShowPropiasCargoWarning(true);
     } else if (newCategory === 'salud') {
-      update('salida', 'tipo', 'cita_eps');
       setShowSaludWarning(true);
     } else if (newCategory === 'personales') {
-      update('salida', 'tipo', 'diligencia_personal');
       setShowPersonalesWarning(true);
     }
   };
@@ -844,6 +914,12 @@ function ReporteSalidaFormDialog({ open, documento, user, onClose, onSubmitted }
     update('salida', 'tiempoReponerHoras', '');
     update('salida', 'tiempoReponerMinutos', '');
     update('salida', 'jornadaDiariaHoras', '');
+    update('salida', 'alcance', '');
+    update('salida', 'entidadDestino', '');
+    update('salida', 'departamento', '');
+    update('salida', 'municipio', '');
+    update('salida', 'pais', '');
+    setForm((prev) => ({ ...prev, viaticos: { ...INITIAL_FORM.viaticos, requiereViaticos: null } }));
     setNoCuentaAdjuntoSalud(false);
     setAdjuntoFile(null);
     setAdjuntoError('');
@@ -1070,6 +1146,7 @@ function ReporteSalidaFormDialog({ open, documento, user, onClose, onSubmitted }
     ? (Number(form.salida.jornadaDiariaHoras) || 0) * 60
     : Math.max(0, Number(reposicionLaboralProfile.minutesPerDay) || 520);
   const declaredReposicionMinutes = requestedReposicionMinutes;
+  const hasEnteredDiligenciaTime = !isDiligenciaPersonal || requestedReposicionMinutes > 0;
   const reposicionEquivalentDays = dailyJornadaMinutes > 0 && requestedReposicionMinutes > 0
     ? Math.ceil(requestedReposicionMinutes / dailyJornadaMinutes)
     : 0;
@@ -1170,8 +1247,11 @@ function ReporteSalidaFormDialog({ open, documento, user, onClose, onSubmitted }
       requiredViaticosFields.forEach(([field, label]) => {
         if (!String(form.viaticos?.[field] || '').trim()) issues.push(`Complete ${label} para la solicitud de viáticos.`);
       });
-      if (!Number.isInteger(Number(form.viaticos?.numeroDiasSolicitados)) || Number(form.viaticos?.numeroDiasSolicitados) < 1) {
-        issues.push('Digite una cantidad válida de días solicitados.');
+      const isEc = form.salida.alcance === 'Internacional' && String(form.salida.pais || '').trim().toLowerCase() === 'ecuador';
+      const requiresMinTwoDays = form.salida.alcance === 'Nacional' || (form.salida.alcance === 'Internacional' && !isEc);
+      const minDias = requiresMinTwoDays ? 2 : 1;
+      if (!Number.isInteger(Number(form.viaticos?.numeroDiasSolicitados)) || Number(form.viaticos?.numeroDiasSolicitados) < minDias) {
+        issues.push(`El número de días solicitados para viáticos debe ser mínimo ${minDias} días.`);
       }
       if (!form.viaticos?.autorizacionAceptada) issues.push('Debe aceptar la autorización de descuento para solicitar viáticos.');
     }
@@ -1429,16 +1509,58 @@ function ReporteSalidaFormDialog({ open, documento, user, onClose, onSubmitted }
     ? 'No hay jefe inmediato relacionado con la dependencia y cargo seleccionados.'
     : '';
 
-  const update = (section, key, value) => {
-    setForm((prev) => ({
-      ...prev,
-      [section]: {
+  const update = (section, keyOrUpdates, maybeValue) => {
+    setForm((prev) => {
+      const updates = typeof keyOrUpdates === 'object' && keyOrUpdates !== null
+        ? keyOrUpdates
+        : { [keyOrUpdates]: maybeValue };
+
+      const updatedSection = {
         ...prev[section],
-        [key]: value,
-        ...(section === 'salida' && key === 'fecha' && !prev.salida.fechaRegreso ? { fechaRegreso: value } : {}),
-        ...(section === 'reposicion' && key === 'fecha' && !prev.reposicion.fechaFin ? { fechaFin: value } : {})
+        ...updates,
+        ...(section === 'salida' && 'fecha' in updates && !prev.salida.fechaRegreso ? { fechaRegreso: updates.fecha } : {}),
+        ...(section === 'reposicion' && 'fecha' in updates && !prev.reposicion.fechaFin ? { fechaFin: updates.fecha } : {})
+      };
+
+      let updatedViaticos = prev.viaticos;
+      if (section === 'salida') {
+        const tempSalida = { ...prev.salida, ...updates };
+        const geoKeysChanged = ['alcance', 'pais', 'departamento', 'municipio', 'entidadDestino'].some((k) => k in updates);
+        if (geoKeysChanged) {
+          const parts = [];
+          if (tempSalida.entidadDestino) parts.push(tempSalida.entidadDestino);
+          if (tempSalida.municipio) parts.push(tempSalida.municipio);
+          if (tempSalida.departamento && tempSalida.alcance === 'Nacional' && tempSalida.departamento !== 'Nariño') {
+            parts.push(tempSalida.departamento);
+          }
+          if (tempSalida.pais && tempSalida.alcance === 'Internacional') {
+            parts.push(tempSalida.pais);
+          }
+          updatedViaticos = {
+            ...updatedViaticos,
+            lugarVisitar: parts.join(' - ')
+          };
+        }
+        if ('motivo' in updates) {
+          updatedViaticos = {
+            ...updatedViaticos,
+            objetoComision: updates.motivo
+          };
+        }
+        if ('fecha' in updates) {
+          updatedViaticos = {
+            ...updatedViaticos,
+            fechaEvento: updates.fecha
+          };
+        }
       }
-    }));
+
+      return {
+        ...prev,
+        [section]: updatedSection,
+        viaticos: updatedViaticos
+      };
+    });
   };
 
   const updateViaticos = (key, value) => {
@@ -1447,16 +1569,31 @@ function ReporteSalidaFormDialog({ open, documento, user, onClose, onSubmitted }
 
   const handleViaticosAnswer = (requires) => {
     setForm((prev) => {
-      const destino = [prev.salida.entidadDestino, prev.salida.municipio || prev.salida.pais].filter(Boolean).join(' - ');
+      const parts = [];
+      if (prev.salida.entidadDestino) parts.push(prev.salida.entidadDestino);
+      if (prev.salida.municipio) parts.push(prev.salida.municipio);
+      if (prev.salida.departamento && prev.salida.alcance === 'Nacional' && prev.salida.departamento !== 'Nariño') {
+        parts.push(prev.salida.departamento);
+      }
+      if (prev.salida.pais && prev.salida.alcance === 'Internacional') {
+        parts.push(prev.salida.pais);
+      }
+      const destino = parts.join(' - ');
+
+      const isEc = prev.salida.alcance === 'Internacional' && String(prev.salida.pais || '').trim().toLowerCase() === 'ecuador';
+      const requiresMinTwoDays = prev.salida.alcance === 'Nacional' || (prev.salida.alcance === 'Internacional' && !isEc);
+      const minDias = requiresMinTwoDays ? '2' : '1';
+      const currentDias = prev.viaticos.numeroDiasSolicitados;
+      const effectiveDias = currentDias && Number(currentDias) >= Number(minDias) ? currentDias : minDias;
       return {
         ...prev,
         viaticos: {
           ...prev.viaticos,
           requiereViaticos: requires,
-          numeroDiasSolicitados: requires ? (prev.viaticos.numeroDiasSolicitados || '1') : prev.viaticos.numeroDiasSolicitados,
-          lugarVisitar: prev.viaticos.lugarVisitar || destino,
-          fechaEvento: prev.viaticos.fechaEvento || prev.salida.fecha || '',
-          objetoComision: prev.viaticos.objetoComision || prev.salida.motivo || ''
+          numeroDiasSolicitados: requires ? effectiveDias : prev.viaticos.numeroDiasSolicitados,
+          lugarVisitar: destino,
+          fechaEvento: prev.salida.fecha || prev.viaticos.fechaEvento || '',
+          objetoComision: prev.salida.motivo || prev.viaticos.objetoComision || ''
         }
       };
     });
@@ -1728,6 +1865,7 @@ function ReporteSalidaFormDialog({ open, documento, user, onClose, onSubmitted }
               <SectionTitle title={isSalidaMultiple ? "Información laboral del líder de la actividad" : "Información laboral"} />
               <Box sx={responsiveFieldGrid('minmax(240px, 0.95fr) minmax(300px, 1.25fr) minmax(240px, 0.9fr)')}>
                 <Autocomplete
+                  disabled={!isAdmin}
                   fullWidth
                   openOnFocus
                   options={vicerrectoriaOptions}
@@ -1744,9 +1882,10 @@ function ReporteSalidaFormDialog({ open, documento, user, onClose, onSubmitted }
                       }
                     }
                   }}
-                  renderInput={(params) => <TextField {...params} sx={inputSx} fullWidth size="small" required={isOficioSolicitud} label="Rectoría / Vicerrectoría" placeholder={isOficioSolicitud ? "Seleccione Rectoría / Vicerrectoría" : "Opcional para media jornada"} />}
+                  renderInput={(params) => <TextField {...params} sx={inputSx} fullWidth size="small" required={isOficioSolicitud} label="Rectoría / Vicerrectoría" placeholder={isOficioSolicitud ? "Seleccione Rectoría / Vicerrectoría" : "Opcional para media jornada"} helperText={!isAdmin ? "Dato precargado institucional" : ""} />}
                 />
                 <Autocomplete
+                  disabled={!isAdmin}
                   freeSolo
                   fullWidth
                   openOnFocus
@@ -1764,9 +1903,10 @@ function ReporteSalidaFormDialog({ open, documento, user, onClose, onSubmitted }
                       }
                     }
                   }}
-                  renderInput={(params) => <TextField {...params} sx={inputSx} fullWidth size="small" required label="Dependencia" placeholder="Buscar dependencia" />}
+                  renderInput={(params) => <TextField {...params} sx={inputSx} fullWidth size="small" required label="Dependencia" placeholder="Buscar dependencia" helperText={!isAdmin ? "Dato precargado institucional" : ""} />}
                 />
                 <Autocomplete
+                  disabled={!isAdmin}
                   freeSolo
                   fullWidth
                   openOnFocus
@@ -1784,7 +1924,7 @@ function ReporteSalidaFormDialog({ open, documento, user, onClose, onSubmitted }
                       }
                     }
                   }}
-                  renderInput={(params) => <TextField {...params} sx={inputSx} fullWidth size="small" required label="Cargo" placeholder="Buscar cargo" />}
+                  renderInput={(params) => <TextField {...params} sx={inputSx} fullWidth size="small" required label="Cargo" placeholder="Buscar cargo" helperText={!isAdmin ? "Dato precargado institucional" : ""} />}
                 />
               </Box>
               {!isSalidaMultiple && (
@@ -1796,7 +1936,7 @@ function ReporteSalidaFormDialog({ open, documento, user, onClose, onSubmitted }
                     size="small"
                     label="Jefe inmediato"
                     value={displayJefeValue}
-                    helperText={jefe && !jefe.email ? 'El jefe inmediato asignado no tiene correo registrado en el sistema. Solicite su registro a un administrador.' : jefeHelperText}
+                    helperText={jefe && !jefe.email ? 'El jefe inmediato asignado no tiene correo registrado en el sistema. Solicite su registro a un administrador.' : (!isAdmin ? 'Jefe inmediato asignado institucionalmente a su cargo' : jefeHelperText)}
                     error={Boolean(jefe && !jefe.email) || Boolean(!jefe && (form.laboral.dependencia || form.laboral.cargo))}
                   />
                 </Box>
@@ -1960,10 +2100,10 @@ function ReporteSalidaFormDialog({ open, documento, user, onClose, onSubmitted }
               {/* Subtype Dropdown & Conditional Custom Description */}
               {category === 'propias_cargo' && subtype !== 'salida_campus' ? (
                 <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.5, mb: 1.8 }}>
-                  {/* ROW 1: Opción, Alcance, Geo sub-field */}
+                  {/* ROW 1: Opción / Motivo y Alcance de la actividad */}
                   <Box sx={{
                     display: 'grid',
-                    gridTemplateColumns: { xs: '1fr', md: '1.2fr 1fr 1.8fr' },
+                    gridTemplateColumns: subtype ? { xs: '1fr', md: '1.2fr 1fr' } : '1fr',
                     gap: 1.5
                   }}>
                     {/* Opción / Motivo */}
@@ -1973,8 +2113,8 @@ function ReporteSalidaFormDialog({ open, documento, user, onClose, onSubmitted }
                         select
                         fullWidth
                         size="medium"
-                        label="Opción / Motivo de la salida"
-                        value={subtype}
+                        label="Opción / Motivo de la salida *"
+                        value={subtype || ''}
                         onChange={(e) => handleSubtypeChange(e.target.value)}
                       >
                         {CARGO_SUBTYPES.reduce((acc, opt, index, arr) => {
@@ -1999,111 +2139,37 @@ function ReporteSalidaFormDialog({ open, documento, user, onClose, onSubmitted }
                     </Box>
 
                     {/* Alcance de la actividad */}
-                    <TextField
-                      sx={inputSx}
-                      select
-                      fullWidth
-                      required
-                      size="medium"
-                      label="Alcance de la actividad"
-                      value={form.salida.alcance || ''}
-                      onChange={(e) => {
-                        const val = e.target.value;
-                        update('salida', 'alcance', val);
-                        if (val !== 'Internacional') update('salida', 'pais', '');
-                        if (val !== 'Nacional') update('salida', 'departamento', '');
-                        if (val !== 'Nacional' && val !== 'Regional') update('salida', 'municipio', '');
-                        if (val === 'Regional') update('salida', 'departamento', 'Nariño');
-                      }}
-                    >
-                      {ALCANCE_OPTIONS.map((opt) => (
-                        <MenuItem key={opt} value={opt}>{opt}</MenuItem>
-                      ))}
-                    </TextField>
-
-                    {/* Geo sub-field (col 3): changes based on alcance */}
-                    {form.salida.alcance === 'Internacional' && (
-                      <Autocomplete
+                    {subtype && (
+                      <TextField
                         sx={inputSx}
-                        options={PAISES_OPTIONS}
-                        value={form.salida.pais || null}
-                        onChange={(event, newValue) => update('salida', 'pais', newValue || '')}
-                        renderInput={(params) => (
-                          <TextField {...params} sx={inputSx} label="País de destino *" required fullWidth size="medium" />
-                        )}
-                      />
-                    )}
-
-                    {form.salida.alcance === 'Nacional' && (
-                      <Box sx={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 1.5 }}>
-                        <Autocomplete
-                          options={Object.keys(DEPARTAMENTOS_MUNICIPIOS).filter(d => d !== 'Nariño')}
-                          value={form.salida.departamento || null}
-                          onChange={(event, newValue) => {
-                            update('salida', 'departamento', newValue || '');
-                            update('salida', 'municipio', '');
-                          }}
-                          renderInput={(params) => (
-                            <TextField {...params} sx={inputSx} label="Departamento *" required fullWidth size="medium" />
-                          )}
-                        />
-                        <Autocomplete
-                          options={
-                            form.salida.departamento
-                              ? TODAS_MUNICIPIOS_COMPLETOS.filter(item => item.departamento === form.salida.departamento)
-                              : TODAS_MUNICIPIOS_COMPLETOS.filter(item => item.departamento !== 'Nariño')
-                          }
-                          getOptionLabel={(option) => typeof option === 'string' ? option : (form.salida.departamento ? option.municipio : option.label)}
-                          value={
-                            form.salida.municipio
-                              ? (TODAS_MUNICIPIOS_COMPLETOS.find(item => item.municipio === form.salida.municipio && item.departamento === (form.salida.departamento || item.departamento)) || null)
-                              : null
-                          }
-                          onChange={(event, newValue) => {
-                            if (newValue) {
-                              update('salida', 'departamento', newValue.departamento);
-                              update('salida', 'municipio', newValue.municipio);
-                            } else {
-                              update('salida', 'municipio', '');
+                        select
+                        fullWidth
+                        required
+                        size="medium"
+                        label="Alcance de la actividad *"
+                        value={form.salida.alcance || ''}
+                        onChange={(e) => {
+                          const val = e.target.value;
+                          update('salida', 'alcance', val);
+                          updateViaticos('requiereViaticos', null);
+                          if (val !== 'Internacional') update('salida', 'pais', '');
+                          if (val !== 'Nacional') update('salida', 'departamento', '');
+                          if (val !== 'Nacional' && val !== 'Regional') update('salida', 'municipio', '');
+                          if (val === 'Regional') update('salida', 'departamento', 'Nariño');
+                          if (val === 'Nacional' || val === 'Internacional') {
+                            if (form.salida.duracionTipo === 'menos_media_jornada') {
+                              update('salida', 'duracionTipo', '1_2_dias');
+                              update('salida', 'duracionDias', 2);
                             }
-                          }}
-                          renderInput={(params) => (
-                            <TextField {...params} sx={inputSx} label="Municipio *" required fullWidth size="medium" />
-                          )}
-                        />
-                      </Box>
-                    )}
-
-                    {form.salida.alcance === 'Regional' && (
-                      <Autocomplete
-                        sx={inputSx}
-                        options={DEPARTAMENTOS_MUNICIPIOS['Nariño']}
-                        value={form.salida.municipio || null}
-                        onChange={(event, newValue) => {
-                          update('salida', 'municipio', newValue || '');
-                          update('salida', 'departamento', 'Nariño');
+                          }
                         }}
-                        renderInput={(params) => (
-                          <TextField {...params} sx={inputSx} label="Municipio de Nariño *" required fullWidth size="medium" />
-                        )}
-                      />
+                      >
+                        {ALCANCE_OPTIONS.map((opt) => (
+                          <MenuItem key={opt} value={opt}>{opt}</MenuItem>
+                        ))}
+                      </TextField>
                     )}
-
-                    {/* Placeholder when no alcance selected to maintain grid height */}
-                    {!form.salida.alcance && <Box />}
                   </Box>
-
-                  {/* ROW 2: Entidad de destino — full width */}
-                  <TextField
-                    sx={inputSx}
-                    fullWidth
-                    required
-                    size="medium"
-                    label="Entidad de destino *"
-                    placeholder="Escriba el nombre de la entidad o institución de destino"
-                    value={form.salida.entidadDestino || ''}
-                    onChange={(e) => update('salida', 'entidadDestino', e.target.value)}
-                  />
 
                   {/* Especifique motivo si es 'otra' */}
                   {subtype === 'otra' && (
@@ -2116,6 +2182,96 @@ function ReporteSalidaFormDialog({ open, documento, user, onClose, onSubmitted }
                       placeholder="Ej: Visita técnica a laboratorios"
                       value={otraDescripcion}
                       onChange={(e) => handleOtraDescripcionChange(e.target.value)}
+                    />
+                  )}
+
+                  {/* ROW 2: Geo fields según alcance */}
+                  {form.salida.alcance === 'Internacional' && (
+                    <Autocomplete
+                      sx={inputSx}
+                      options={PAISES_OPTIONS}
+                      value={form.salida.pais || null}
+                      onChange={(event, newValue) => {
+                        const country = newValue || '';
+                        update('salida', 'pais', country);
+                        updateViaticos('requiereViaticos', null);
+                        const isEc = String(country).trim().toLowerCase() === 'ecuador';
+                        if (!isEc && form.salida.duracionTipo === '1_2_dias' && Number(form.salida.duracionDias) < 2) {
+                          update('salida', 'duracionDias', 2);
+                        }
+                        if (!isEc && form.viaticos?.numeroDiasSolicitados && Number(form.viaticos.numeroDiasSolicitados) < 2) {
+                          updateViaticos('numeroDiasSolicitados', '2');
+                        }
+                      }}
+                      renderInput={(params) => (
+                        <TextField {...params} sx={inputSx} label="País de destino *" required fullWidth size="medium" />
+                      )}
+                    />
+                  )}
+
+                  {form.salida.alcance === 'Nacional' && (
+                    <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', md: '1fr 1fr' }, gap: 1.5 }}>
+                      <Autocomplete
+                        options={Object.keys(DEPARTAMENTOS_MUNICIPIOS).filter(d => d !== 'Nariño')}
+                        value={form.salida.departamento || null}
+                        onChange={(event, newValue) => {
+                          update('salida', { departamento: newValue || '', municipio: '' });
+                        }}
+                        renderInput={(params) => (
+                          <TextField {...params} sx={inputSx} label="Departamento *" required fullWidth size="medium" />
+                        )}
+                      />
+                      <Autocomplete
+                        options={
+                          form.salida.departamento
+                            ? TODAS_MUNICIPIOS_COMPLETOS.filter(item => item.departamento === form.salida.departamento)
+                            : TODAS_MUNICIPIOS_COMPLETOS.filter(item => item.departamento !== 'Nariño')
+                        }
+                        getOptionLabel={(option) => typeof option === 'string' ? option : (form.salida.departamento ? option.municipio : option.label)}
+                        value={
+                          form.salida.municipio
+                            ? (TODAS_MUNICIPIOS_COMPLETOS.find(item => item.municipio === form.salida.municipio && item.departamento === (form.salida.departamento || item.departamento)) || null)
+                            : null
+                        }
+                        onChange={(event, newValue) => {
+                          if (newValue) {
+                            update('salida', { departamento: newValue.departamento, municipio: newValue.municipio });
+                          } else {
+                            update('salida', 'municipio', '');
+                          }
+                        }}
+                        renderInput={(params) => (
+                          <TextField {...params} sx={inputSx} label="Municipio *" required fullWidth size="medium" />
+                        )}
+                      />
+                    </Box>
+                  )}
+
+                  {form.salida.alcance === 'Regional' && (
+                    <Autocomplete
+                      sx={inputSx}
+                      options={DEPARTAMENTOS_MUNICIPIOS['Nariño']}
+                      value={form.salida.municipio || null}
+                      onChange={(event, newValue) => {
+                        update('salida', { departamento: 'Nariño', municipio: newValue || '' });
+                      }}
+                      renderInput={(params) => (
+                        <TextField {...params} sx={inputSx} label="Municipio de Nariño *" required fullWidth size="medium" />
+                      )}
+                    />
+                  )}
+
+                  {/* ROW 3: Entidad de destino (visible solo si completó la ubicación geográfica) */}
+                  {hasCompletedGeoDestino && (
+                    <TextField
+                      sx={inputSx}
+                      fullWidth
+                      required
+                      size="medium"
+                      label="Entidad de destino *"
+                      placeholder="Escriba el nombre de la entidad o institución de destino"
+                      value={form.salida.entidadDestino || ''}
+                      onChange={(e) => update('salida', 'entidadDestino', e.target.value)}
                     />
                   )}
                 </Box>
@@ -2141,8 +2297,8 @@ function ReporteSalidaFormDialog({ open, documento, user, onClose, onSubmitted }
                     select
                     fullWidth
                     size="medium"
-                    label="Opción / Motivo de la salida"
-                    value={subtype}
+                    label="Opción / Motivo de la salida *"
+                    value={subtype || ''}
                     onChange={(e) => handleSubtypeChange(e.target.value)}
                   >
                     {(category === 'propias_cargo'
@@ -2359,7 +2515,7 @@ function ReporteSalidaFormDialog({ open, documento, user, onClose, onSubmitted }
                 </Box>
               )}
 
-              {shouldAskViaticos && (
+              {shouldAskViaticos && hasCompletedEntidadDestino && (
                 <ViaticosQuestion value={form.viaticos?.requiereViaticos} onChange={handleViaticosAnswer} />
               )}
 
@@ -2401,7 +2557,7 @@ function ReporteSalidaFormDialog({ open, documento, user, onClose, onSubmitted }
                 />
               )}
 
-              {!requiresViaticosFlow && (
+              {!requiresViaticosFlow && hasCompletedPropiasCargoSteps && hasCompletedSaludMotivo && hasEnteredDiligenciaTime && (
                 <DuracionSelector
                   salida={form.salida}
                   fieldSx={duracionDiasFieldSx}
@@ -2410,9 +2566,7 @@ function ReporteSalidaFormDialog({ open, documento, user, onClose, onSubmitted }
                 />
               )}
 
-
-
-              {!requiresViaticosFlow && (
+              {!requiresViaticosFlow && hasCompletedPropiasCargoSteps && hasCompletedSaludMotivo && hasEnteredDiligenciaTime && (
                 <CamposDuracionSalida
                   category={category}
                   convert24To12={convert24To12}
@@ -2437,13 +2591,13 @@ function ReporteSalidaFormDialog({ open, documento, user, onClose, onSubmitted }
                 />
               )}
 
-              {subtype === 'urgencia_medica' && (
+              {subtype === 'urgencia_medica' && hasCompletedSalidaTime && (
                 <Alert severity="info" sx={{ mt: 2, borderRadius: 2 }}>
                   Para urgencias medicas debe adjuntar el soporte si cuenta con el documento. Si aun no lo tiene, marque la opcion "No cuento con archivos adjuntos en este momento" y conserve los soportes para entregarlos cuando sean requeridos.
                 </Alert>
               )}
 
-              {isSaludAdjuntoSection && (
+              {isSaludAdjuntoSection && hasCompletedSalidaTime && (
                 <Box sx={{ mt: 1.5 }}>
                   <FormControlLabel
                     control={
@@ -2475,7 +2629,7 @@ function ReporteSalidaFormDialog({ open, documento, user, onClose, onSubmitted }
                 </Box>
               )}
 
-              {shouldShowAdjuntoSection && !hideAdjuntoUploadByDeclaration && (
+              {shouldShowAdjuntoSection && hasCompletedSalidaTime && !hideAdjuntoUploadByDeclaration && (
                 <Box>
                   <Box
                     component="label"
@@ -2579,7 +2733,7 @@ function ReporteSalidaFormDialog({ open, documento, user, onClose, onSubmitted }
                   )}
                 </Box>
               )}
-              {!requiresViaticosFlow && form.salida.duracionTipo === 'menos_media_jornada' && subtype !== 'otra' && (
+              {Boolean(subtype) && !requiresViaticosFlow && form.salida.duracionTipo === 'menos_media_jornada' && subtype !== 'otra' && hasCompletedSaludMotivo && hasEnteredDiligenciaTime && hasCompletedSalidaTime && (
                 <Box sx={{ mt: 1.5, display: 'flex', alignItems: 'center', gap: 1 }}>
                   <TextField
                     sx={motivoInputSx}

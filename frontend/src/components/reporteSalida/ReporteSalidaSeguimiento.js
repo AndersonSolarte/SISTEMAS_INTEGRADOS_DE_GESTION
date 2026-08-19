@@ -92,6 +92,14 @@ const STATUS_LABELS = {
   pendiente_gestion_humana: 'Pendiente Gestión del Talento Humano',
   pendiente_aprobacion_sst: 'Pendiente SST',
   pendiente_sst: 'Pendiente SST',
+  aprobada_jefe: 'Aprobada Jefe',
+  aprobada_vicerrectoria_academica: 'Aprobada Vicerrectoría',
+  aprobada_rectoria: 'Aprobada Rectoría',
+  aprobada_sst: 'Aprobada SST',
+  aprobada_gestion_humana: 'En trámite contable / viáticos',
+  en_tramite_viaticos: 'En trámite contable / viáticos',
+  en_tramite_tesoreria: 'En trámite Tesorería / Pago',
+  pago_autorizado_pendiente_legalizacion: 'Pago autorizado · Pendiente legalización',
   finalizada: 'Aprobada',
   no_aprobada: 'No Aprobada'
 };
@@ -108,7 +116,13 @@ const STATUS_COLORS = {
   finalizada: { bg: '#dcfce7', color: '#166534' },
   no_aprobada: { bg: '#fee2e2', color: '#991b1b' },
   aprobada_jefe: { bg: '#dbeafe', color: '#1d4ed8' },
-  aprobada_gestion_humana: { bg: '#dcfce7', color: '#166534' }
+  aprobada_vicerrectoria_academica: { bg: '#e0e7ff', color: '#3730a3' },
+  aprobada_rectoria: { bg: '#fce7f3', color: '#be185d' },
+  aprobada_sst: { bg: '#e0f2fe', color: '#0369a1' },
+  aprobada_gestion_humana: { bg: '#eff6ff', color: '#1e40af' },
+  en_tramite_viaticos: { bg: '#eff6ff', color: '#1e40af' },
+  en_tramite_tesoreria: { bg: '#fef3c7', color: '#92400e' },
+  pago_autorizado_pendiente_legalizacion: { bg: '#dcfce7', color: '#166534' }
 };
 
 const formatDateTime = (value) => {
@@ -209,15 +223,23 @@ const getReposicionText = (row) => {
 const isApprovedRequest = (row) => row?.estado === 'finalizada';
 const isRejectedRequest = (row) => row?.estado === 'no_aprobada';
 const isPendingRequest = (row) => !isApprovedRequest(row) && !isRejectedRequest(row);
+
+const isDiligenciaPersonalRow = (row) => {
+  if (!row) return false;
+  const salidaTipo = String(row.datos_formulario?.salida?.tipo || row.datos_formulario?.tipo || '').toLowerCase();
+  if (salidaTipo && salidaTipo !== 'diligencia_personal') return false;
+  return Boolean(row.reposicion_aplica);
+};
+
 const hasPendingReposicion = (row) => {
-  if (!isApprovedRequest(row) || !row?.reposicion_aplica || row?.reposicion_estado === 'cumplida') return false;
+  if (!isApprovedRequest(row) || !isDiligenciaPersonalRow(row) || row?.reposicion_estado === 'cumplida') return false;
   const total = Number(row?.reposicion_minutos || row?.tiempo_solicitado_minutos || 0);
   const paid = Number(row?.reposicion_minutos_pagados || row?.datos_formulario?.reposicion_minutos_pagados || 0);
   return total - paid > 0;
 };
 const hasValidatedReposicion = (row) => (
   isApprovedRequest(row)
-  && Boolean(row?.reposicion_aplica)
+  && isDiligenciaPersonalRow(row)
   && row?.reposicion_estado === 'cumplida'
 );
 
@@ -1542,7 +1564,7 @@ function ReporteSalidaSeguimiento({ initialAccess = null, onBack }) {
                             </Stack>
                           </TableCell>
                           <TableCell sx={{ py: 0.8, px: 0.8, minWidth: 130 }}>
-                            {row.reposicion_aplica ? (
+                            {isDiligenciaPersonalRow(row) ? (
                               <Stack spacing={0.6}>
                                 <Chip
                                   size="small"
@@ -1574,7 +1596,7 @@ function ReporteSalidaSeguimiento({ initialAccess = null, onBack }) {
                               const jefeObs = getJefeObservacion(row);
                               const ghObs = row.observacion_gestion_humana || '';
                               return (
-                                <Stack spacing={0.8}>
+                                <Stack spacing={0.5}>
                                   {jefeObs && (
                                     <Box>
                                       <Typography sx={{ fontSize: 9.5, fontWeight: 700, color: '#475569', display: 'inline-block', mr: 0.5 }}>Jefe:</Typography>
@@ -1617,7 +1639,7 @@ function ReporteSalidaSeguimiento({ initialAccess = null, onBack }) {
                                   </Stack>
                                 )}
                                 <Stack direction="row" spacing={0.5}>
-                                  {row.reposicion_aplica && (
+                                  {isDiligenciaPersonalRow(row) && (
                                     <Tooltip title="Gestionar Reposición" arrow>
                                       <IconButton size="small" color="primary" onClick={() => handleRepOpen(row)}>
                                         <ManageHistoryIcon fontSize="small" />
@@ -1637,7 +1659,7 @@ function ReporteSalidaSeguimiento({ initialAccess = null, onBack }) {
                                 </Stack>
                               </Stack>
                             ) : (
-                              row.reposicion_aplica ? (
+                              isDiligenciaPersonalRow(row) ? (
                                 canManageReposicionRow(row) ? (
                                   <Button
                                     size="small"
@@ -1647,7 +1669,7 @@ function ReporteSalidaSeguimiento({ initialAccess = null, onBack }) {
                                     onClick={() => handleRepOpen(row)}
                                     sx={{ borderRadius: 2, fontSize: 11, fontWeight: 900, textTransform: 'none' }}
                                   >
-                                    Gestionar reposiciÃ³n
+                                    Gestionar reposición
                                   </Button>
                                 ) : (
                                   <Stack spacing={0.3}>

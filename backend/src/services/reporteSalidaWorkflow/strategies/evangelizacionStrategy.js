@@ -53,6 +53,31 @@ class EvangelizacionWorkflowStrategy extends BaseWorkflowStrategy {
 
     return targets;
   }
+
+  /**
+   * Determina la autoridad requerida después del jefe inmediato.
+   * Para Evangelización: Garantiza que el correo sea enviado a vicebien@unicesmag.edu.co.
+   */
+  getAuthorityAfterBoss(solicitud = {}, helpers = {}) {
+    const { isOficioSolicitud, isPermisoElectoralSinVicerrectoria, getSolicitudLaboral } = helpers;
+
+    if (!isOficioSolicitud(solicitud)) return null;
+    if (isPermisoElectoralSinVicerrectoria(solicitud)) return null;
+
+    const laboral = getSolicitudLaboral ? getSolicitudLaboral(solicitud) : (solicitud.datos_formulario?.laboral || {});
+    const vicerrectoriaName = laboral.vicerrectoria || 'Vicerrectoría para la Evangelizacion de las Culturas';
+    const email = getDependencyEmail(vicerrectoriaName) || 'vicebien@unicesmag.edu.co';
+
+    return {
+      stage: 'vicerrectoria_academica',
+      estado: 'pendiente_aprobacion_vicerrectoria_academica',
+      tokenColumn: 'aprobacion_vicerrectoria_token_hash',
+      correoColumn: 'correo_vicerrectoria_enviado_at',
+      name: vicerrectoriaName,
+      email: email,
+      label: vicerrectoriaName
+    };
+  }
 }
 
 module.exports = EvangelizacionWorkflowStrategy;

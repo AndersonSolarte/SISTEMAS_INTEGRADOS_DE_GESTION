@@ -383,3 +383,39 @@ test('el PDF conserva la parametrizacion completa de una salida con reposicion',
 test('el PDF no agrega el bloque de reposicion a otros tipos de salida', () => {
   assert.deepEqual(buildReposicionPdfSection({ reposicion_aplica: false }), []);
 });
+
+test('Vicerrectoría Financiera envía la aprobación de autoridad a viceadfin@unicesmag.edu.co y no a viceacadémica', () => {
+  const workflowEngine = require('./index');
+  const helpers = {
+    getSolicitudLaboral: (s) => s.datos_formulario?.laboral || {},
+    getSolicitudSalida: (s) => s.datos_formulario?.salida || {},
+    getSolicitudVicerrectoria: (s) => s.datos_formulario?.laboral?.vicerrectoria || '',
+    isOficioSolicitud: () => true,
+    isPermisoElectoralSinVicerrectoria: () => false,
+    isVicerrectoriaAcademica: (v) => String(v || '').toLowerCase().includes('academica'),
+    isFinancieraVicerrectoria: (v) => String(v || '').toLowerCase().includes('financiera'),
+    isEvangelizacionVicerrectoria: (v) => String(v || '').toLowerCase().includes('evangelizacion'),
+    isInvestigacionVicerrectoria: (v) => String(v || '').toLowerCase().includes('investigacion'),
+    isRectoriaAuthority: (v) => String(v || '').toLowerCase().includes('rectoria')
+  };
+
+  const solicitud = {
+    datos_formulario: {
+      laboral: {
+        dependencia: 'Oficina de Medios Educativos',
+        vicerrectoria: 'Vicerrectoria Financiera y de Desarrollo Institucional',
+        cargo: 'Auxiliar de Medios Educativos'
+      },
+      salida: {
+        categoria: 'propias_cargo',
+        duracionTipo: 'jornada_completa'
+      }
+    }
+  };
+
+  const authority = workflowEngine.getAuthorityAfterBoss(solicitud, helpers);
+  assert.ok(authority);
+  assert.equal(authority.email, 'viceadfin@unicesmag.edu.co');
+  assert.notEqual(authority.email, 'viceacad@unicesmag.edu.co');
+  assert.equal(authority.name, 'Vicerrectoria Financiera y de Desarrollo Institucional');
+});

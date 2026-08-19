@@ -15,6 +15,10 @@ const { ensureReporteSalidaDocx, ensureReporteSalidaPdf, formatMinutes } = requi
 const { sendInstitutionalEmail, renderInstitutionalTemplate, escapeHtml } = require('../services/emailService');
 const { getDependencyEmail } = require('../config/dependencyEmails');
 const workflowEngine = require('../services/reporteSalidaWorkflow');
+const {
+  syncAdminViaticosApproval,
+  syncAdminViaticosRejection
+} = require('./desplazamientoViaticosController');
 
 const { ROLES } = require('../constants/roles');
 
@@ -301,6 +305,15 @@ const getInitialApprovalRecipientEmails = (solicitud = {}) => {
     return [FINANCIAL_VICERRECTOR_EMAIL, FINANCIAL_VICERRECTORIA_OFFICE_EMAIL];
   }
 
+  if (
+    jefeName.includes('diego armando salazar') ||
+    jefeName.includes('salazar usamag') ||
+    sameExactEmail(jefeEmail, 'dasalazar@unicesmag.edu.co') ||
+    sameExactEmail(jefeEmail, 'medioseducativos@unicesmag.edu.co')
+  ) {
+    return ['medioseducativos@unicesmag.edu.co', 'dasalazar@unicesmag.edu.co'];
+  }
+
   const primary = getOfficialAuthorityEmailForActor(jefe) || jefe.email || '';
   return primary ? [primary] : [];
 };
@@ -341,6 +354,15 @@ const getJefeCopyRecipientEmails = (solicitud = {}) => {
   ) {
     pushEmail(FINANCIAL_VICERRECTOR_EMAIL);
     pushEmail(FINANCIAL_VICERRECTORIA_OFFICE_EMAIL);
+    return emails;
+  } else if (
+    jefeName.includes('diego armando salazar') ||
+    jefeName.includes('salazar usamag') ||
+    sameExactEmail(primaryEmail, 'dasalazar@unicesmag.edu.co') ||
+    sameExactEmail(primaryEmail, 'medioseducativos@unicesmag.edu.co')
+  ) {
+    pushEmail('medioseducativos@unicesmag.edu.co');
+    pushEmail('dasalazar@unicesmag.edu.co');
     return emails;
   }
 
@@ -3816,9 +3838,9 @@ const radicarSolicitud = async (req, res) => {
           correo: sanitizeText(req.user.email)
         },
         laboral: {
-          dependencia: cleanDependenciaLabel(req.body.laboral?.dependencia),
-          vicerrectoria: sanitizeText(selectedVicerrectoriaName || req.user.vicerrectoria, 220),
-          cargo: sanitizeText(req.body.laboral?.cargo),
+          dependencia: (isAdminUser(req.user) && req.body.laboral?.dependencia) ? cleanDependenciaLabel(req.body.laboral.dependencia) : (cleanDependenciaLabel(req.user.dependencia) || cleanDependenciaLabel(req.body.laboral?.dependencia)),
+          vicerrectoria: (isAdminUser(req.user) && req.body.laboral?.vicerrectoria) ? sanitizeText(selectedVicerrectoriaName, 220) : (sanitizeText(req.user.vicerrectoria || selectedVicerrectoriaName, 220)),
+          cargo: (isAdminUser(req.user) && req.body.laboral?.cargo) ? sanitizeText(req.body.laboral.cargo) : (sanitizeText(req.user.cargo || req.body.laboral?.cargo)),
           tipoVinculacion: reposicionLaboralProfile.tipoVinculacion,
           nivelContratacion: reposicionLaboralProfile.nivelContratacion,
           reposicionPerfil: reposicionLaboralProfile
@@ -4942,6 +4964,8 @@ const editarSolicitudAdmin = async (req, res) => {
         await solicitud.reload();
         deleteSupportFile(solicitud);
 
+        await syncAdminViaticosRejection(solicitud, req.user, observacionAdmin).catch(e => console.error('[editarSolicitudAdmin] Error syncAdminViaticosRejection:', e));
+
         if (solicitud.estado === 'pendiente_aprobacion_jefe') {
           await sendCollaboratorRejectionEmail({ solicitud, rejectedBy: `${actorName} (Administrador)`, justificacion: observacionAdmin }).catch(e => console.error('Error rejection email:', e));
         } else {
@@ -4982,6 +5006,8 @@ const editarSolicitudAdmin = async (req, res) => {
 
         await solicitud.update(updateData);
         await solicitud.reload();
+
+        await syncAdminViaticosApproval(solicitud, req.user, observacionAdmin).catch(e => console.error('[editarSolicitudAdmin] Error syncAdminViaticosApproval jefe:', e));
 
         const pdfAttachment = await buildReporteSalidaPdfAttachment(solicitud);
         const supportAttachment = await buildReporteSalidaSupportAttachment(solicitud);
@@ -5035,6 +5061,8 @@ const editarSolicitudAdmin = async (req, res) => {
         await solicitud.update(updateData);
         await solicitud.reload();
 
+        await syncAdminViaticosApproval(solicitud, req.user, observacionAdmin).catch(e => console.error('[editarSolicitudAdmin] Error syncAdminViaticosApproval vice/rec:', e));
+
         const pdfAttachment = await buildReporteSalidaPdfAttachment(solicitud);
         const supportAttachment = await buildReporteSalidaSupportAttachment(solicitud);
         await sendGestionHumanaApprovalEmail(solicitud, nextToken, [pdfAttachment, supportAttachment].filter(Boolean)).catch(e => console.error(e));
@@ -5069,6 +5097,8 @@ const editarSolicitudAdmin = async (req, res) => {
           await solicitud.update(updateData);
           await solicitud.reload();
 
+          await syncAdminViaticosApproval(solicitud, req.user, observacionAdmin).catch(e => console.error('[editarSolicitudAdmin] Error syncAdminViaticosApproval GH->SST:', e));
+
           const pdfAttachment = await buildReporteSalidaPdfAttachment(solicitud);
           const supportAttachment = await buildReporteSalidaSupportAttachment(solicitud);
           await sendSSTApprovalEmail(solicitud, sstToken, [pdfAttachment, supportAttachment].filter(Boolean)).catch(e => console.error(e));
@@ -5098,6 +5128,8 @@ const editarSolicitudAdmin = async (req, res) => {
 
         await solicitud.update(updateData);
         await solicitud.reload();
+
+        await syncAdminViaticosApproval(solicitud, req.user, observacionAdmin).catch(e => console.error('[editarSolicitudAdmin] Error syncAdminViaticosApproval GH->Final:', e));
 
         const pdfAttachment = await buildReporteSalidaPdfAttachment(solicitud);
         const supportAttachment = await buildReporteSalidaSupportAttachment(solicitud);
@@ -5170,6 +5202,8 @@ const editarSolicitudAdmin = async (req, res) => {
 
         await solicitud.update(updateData);
         await solicitud.reload();
+
+        await syncAdminViaticosApproval(solicitud, req.user, observacionAdmin).catch(e => console.error('[editarSolicitudAdmin] Error syncAdminViaticosApproval SST->Final:', e));
 
         const pdfAttachment = await buildReporteSalidaPdfAttachment(solicitud);
         const supportAttachment = await buildReporteSalidaSupportAttachment(solicitud);

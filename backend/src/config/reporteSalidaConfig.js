@@ -34,8 +34,8 @@ const setReporteSalidaFeatureState = async (enabled, userId = null) => {
 };
 
 const getReporteSalidaRecipients = () => ({
-  gestionHumana: String(process.env.REPORTE_SALIDA_GESTION_HUMANA_EMAIL || 'adsolarte@unicesmag.edu.co').trim().toLowerCase(),
-  sst: String(process.env.REPORTE_SALIDA_SST_EMAIL || 'acvaldes@unicesmag.edu.co').trim().toLowerCase()
+  gestionHumana: String(process.env.REPORTE_SALIDA_GESTION_HUMANA_EMAIL || 'talento.humano@unicesmag.edu.co').trim().toLowerCase(),
+  sst: String(process.env.REPORTE_SALIDA_SST_EMAIL || 'seguridadysalud@unicesmag.edu.co').trim().toLowerCase()
 });
 
 const getReporteSalidaTemplatePath = () => {

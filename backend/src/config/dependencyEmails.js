@@ -55,6 +55,7 @@ const normalizeKey = (str) => {
     .toLowerCase()
     .normalize('NFD')
     .replace(/[\u0300-\u036f]/g, '')
+    .replace(/vicerectoria/g, 'vicerrectoria')
     .replace(/\s+/g, ' ')
     .trim();
 };
@@ -64,10 +65,63 @@ Object.entries(DEPENDENCY_EMAILS_RAW).forEach(([key, val]) => {
   DEPENDENCY_EMAILS[normalizeKey(key)] = val;
 });
 
+// Synonyms / Aliases
+const SYNONYMS = {
+  "medios educativos": "medioseducativos@unicesmag.edu.co",
+  "oficina de medios educativos": "medioseducativos@unicesmag.edu.co",
+  "infraestructura tecnologica": "sistemas.internet@unicesmag.edu.co",
+  "gestion del talento humano": "gestionhumana@unicesmag.edu.co",
+  "talento humano": "gestionhumana@unicesmag.edu.co",
+  "seguridad y salud en el trabajo": "seguridadysalud@unicesmag.edu.co",
+  "tesoreria y pagaduria": "tesoreria1@unicesmag.edu.co",
+  "tesoreria": "tesoreria1@unicesmag.edu.co",
+  "contabilidad": "contabil@unicesmag.edu.co",
+  "biblioteca": "biblioteca@unicesmag.edu.co",
+  "planeacion y aseguramiento de la calidad": "planeacion@unicesmag.edu.co",
+  "direccion de planeacion": "planeacion@unicesmag.edu.co",
+  "planeacion": "planeacion@unicesmag.edu.co",
+  "vicerrectoria financiera": "viceadfin@unicesmag.edu.co",
+  "vicerrectoria administrativa y financiera": "viceadfin@unicesmag.edu.co",
+  "vicerrectoria financiera y de desarrollo institucional": "viceadfin@unicesmag.edu.co",
+  "vicerrectoria de desarrollo institucional": "viceadfin@unicesmag.edu.co",
+  "vicerrectoria academica": "viceacad@unicesmag.edu.co",
+  "vicerrectoria de investigacion": "viceinvestiga@unicesmag.edu.co",
+  "vicerrectoria de investigacion y extension": "viceinvestiga@unicesmag.edu.co",
+  "vicerrectoria para la evangelizacion de las culturas": "vicebien@unicesmag.edu.co",
+  "vicerrectoria de evangelizacion": "vicebien@unicesmag.edu.co",
+  "evangelizacion de las culturas": "vicebien@unicesmag.edu.co"
+};
+
+Object.entries(SYNONYMS).forEach(([key, val]) => {
+  const norm = normalizeKey(key);
+  if (!DEPENDENCY_EMAILS[norm]) {
+    DEPENDENCY_EMAILS[norm] = val;
+  }
+});
+
 const getDependencyEmail = (dependencyName) => {
   if (!dependencyName) return null;
   const normalized = normalizeKey(dependencyName);
-  return DEPENDENCY_EMAILS[normalized] || null;
+  if (DEPENDENCY_EMAILS[normalized]) return DEPENDENCY_EMAILS[normalized];
+
+  // Try partial matches
+  if (normalized.includes('financiera') || normalized.includes('desarrollo institucional')) {
+    return 'viceadfin@unicesmag.edu.co';
+  }
+  if (normalized.includes('evangelizacion')) {
+    return 'vicebien@unicesmag.edu.co';
+  }
+  if (normalized.includes('investigacion')) {
+    return 'viceinvestiga@unicesmag.edu.co';
+  }
+  if (normalized.includes('academica') && normalized.includes('vicerrectoria')) {
+    return 'viceacad@unicesmag.edu.co';
+  }
+  if (normalized.includes('medios educativos')) {
+    return 'medioseducativos@unicesmag.edu.co';
+  }
+
+  return null;
 };
 
 module.exports = {

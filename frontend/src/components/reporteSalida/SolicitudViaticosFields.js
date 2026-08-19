@@ -12,6 +12,7 @@ import {
   TextField,
   Typography
 } from '@mui/material';
+import { getFieldDateTimeErrors } from './CamposDuracionSalida';
 
 export const AUTORIZACION_VIATICOS = 'Autorizo a la Universidad CESMAG para que descuente de mi salario, prestaciones sociales a la fecha consignadas en los fondos de cesantías y/o cualquier otra acreencia relacionada con honorarios o servicios, el valor recibido o al que mi cargo diera lugar la no oportuna legalización de este anticipo.';
 export const AVISO_LEGALIZACION_VIATICOS = 'IMPORTANTE: El Acuerdo 001 de 2013 exige la legalización de este anticipo dentro de los tres días hábiles siguientes al regreso de la comisión.';
@@ -59,13 +60,34 @@ const SolicitudViaticosFields = ({
     ...inputSx,
     '& .MuiOutlinedInput-root': {
       ...(inputSx?.['& .MuiOutlinedInput-root'] || {}),
-      minHeight: 42,
-      borderRadius: 1.6,
-      bgcolor: '#fff'
+      minHeight: '38px',
+      borderRadius: '8px'
     },
-    '& .MuiInputBase-input': { py: 1, fontSize: 13 },
-    '& .MuiInputLabel-root': { fontSize: 13 }
+    '& .MuiInputBase-input': {
+      ...(inputSx?.['& .MuiInputBase-input'] || {}),
+      padding: '7px 11px',
+      fontSize: 12.5
+    },
+    '& .MuiInputLabel-root': {
+      ...(inputSx?.['& .MuiInputLabel-root'] || {}),
+      fontSize: 12.5
+    }
   };
+
+  const {
+    fechaInicioError,
+    horaInicioError,
+    fechaFinError,
+    horaFinError
+  } = getFieldDateTimeErrors({
+    fechaInicio: salida.fecha,
+    horaInicio: salida.horaInicio,
+    fechaFin: salida.fechaRegreso,
+    horaFin: salida.horaFin,
+    todayString,
+    isPastTimeError
+  });
+
   const commissionTextareaSx = {
     width: '100%',
     height: 76,
@@ -96,33 +118,23 @@ const SolicitudViaticosFields = ({
   const bankOption = viaticos.entidadBancariaOpcion || (BANK_OPTIONS.includes(viaticos.entidadBancaria) ? viaticos.entidadBancaria : (viaticos.entidadBancaria ? 'Otro' : ''));
 
   return (
-    <Box sx={{ mb: 1.3, border: '1px solid #cbd5e1', borderRadius: 2, bgcolor: '#f8fafc', overflow: 'hidden' }}>
-      <Box sx={{ px: 1.6, py: 1, bgcolor: '#eef4fb', borderBottom: '1px solid #dbe3ee', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 1, flexWrap: 'wrap' }}>
-        <Typography sx={{ fontWeight: 900, fontSize: 13.5, color: '#0b3a6f' }}>
+    <Box sx={{ mt: 1.5, p: 2, borderRadius: 2.2, border: '1px solid #cbd5e1', bgcolor: '#f8fafc' }}>
+      <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 1.2, gap: 1, flexWrap: 'wrap' }}>
+        <Typography sx={{ fontSize: 13.5, fontWeight: 900, color: '#0f172a' }}>
           Solicitud de desplazamiento fuera de la ciudad
         </Typography>
-        <Typography sx={{ fontWeight: 800, fontSize: 11.5, color: '#64748b' }}>ADF-PP-FR-004</Typography>
+        <Typography sx={{ fontSize: 11, fontWeight: 800, color: '#475569', bgcolor: '#e2e8f0', px: 1, py: 0.3, borderRadius: 1 }}>
+          ADF-PP-FR-004
+        </Typography>
       </Box>
 
-      <Box sx={{ p: { xs: 1.2, md: 1.5 }, display: 'grid', gridTemplateColumns: { xs: '1fr', sm: 'repeat(2, minmax(0, 1fr))', lg: 'repeat(4, minmax(0, 1fr))' }, gap: 1.1 }}>
-        <Alert
-          severity="warning"
-          sx={{
-            gridColumn: '1 / -1',
-            borderRadius: 2,
-            fontSize: 13,
-            fontWeight: 500,
-            py: 0.8,
-            px: 1.5,
-            bgcolor: '#fffbeb',
-            color: '#92400e',
-            border: '2px solid #f59e0b',
-            boxShadow: '0 2px 8px rgba(245, 158, 11, 0.15)',
-            '& .MuiAlert-icon': { color: '#d97706', fontSize: 22 }
-          }}
-        >
-          <strong>ATENCIÓN - MÓDULO EN PRUEBAS:</strong> En este momento la solicitud de viáticos (<strong>ADF-PP-FR-004</strong>) se encuentra en <strong>periodo de prueba y validación institucional</strong>.
-        </Alert>
+      <Alert severity="warning" sx={{ mb: 1.5, borderRadius: 1.5, py: 0.2 }}>
+        <Typography sx={{ fontSize: 11.5, fontWeight: 700 }}>
+          ATENCIÓN - MÓDULO EN PRUEBAS: En este momento la solicitud de viáticos (ADF-PP-FR-004) se encuentra en periodo de prueba y validación institucional.
+        </Typography>
+      </Alert>
+
+      <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', sm: 'repeat(4, minmax(0, 1fr))' }, gap: 1.2 }}>
         <SectionLabel>Datos de la comisión</SectionLabel>
         <TextField sx={{ ...compactSx, gridColumn: { sm: 'span 2' } }} size="small" required label="Lugar a visitar" value={viaticos.lugarVisitar || ''} onChange={(e) => onChange('lugarVisitar', e.target.value)} />
         <TextField sx={compactSx} size="small" required type="date" label="Fecha del evento" InputLabelProps={{ shrink: true }} inputProps={{ min: todayString }} value={viaticos.fechaEvento || ''} onChange={(e) => onChange('fechaEvento', e.target.value)} />
@@ -131,22 +143,42 @@ const SolicitudViaticosFields = ({
           size="small"
           required
           type="number"
-          label="Número de días"
+          label="Número de días *"
           InputLabelProps={{ shrink: true }}
-          inputProps={{ min: 1, step: 1, inputMode: 'numeric' }}
+          inputProps={{
+            min: salida?.alcance === 'Nacional' || (salida?.alcance === 'Internacional' && String(salida?.pais || '').trim().toLowerCase() !== 'ecuador') ? 2 : 1,
+            step: 1,
+            inputMode: 'numeric'
+          }}
           value={viaticos.numeroDiasSolicitados || ''}
           onChange={(e) => {
             const digits = e.target.value.replace(/[^0-9]/g, '');
-            onChange('numeroDiasSolicitados', digits === '' ? '' : String(Math.max(1, Number(digits))));
+            onChange('numeroDiasSolicitados', digits);
           }}
           onBlur={() => {
-            if (!Number.isInteger(Number(viaticos.numeroDiasSolicitados)) || Number(viaticos.numeroDiasSolicitados) < 1) {
-              onChange('numeroDiasSolicitados', '1');
+            const isEcuador = salida?.alcance === 'Internacional' && String(salida?.pais || '').trim().toLowerCase() === 'ecuador';
+            const requiresMinTwoDays = salida?.alcance === 'Nacional' || (salida?.alcance === 'Internacional' && !isEcuador);
+            const minDias = requiresMinTwoDays ? 2 : 1;
+            const val = Number(viaticos.numeroDiasSolicitados);
+            if (!Number.isInteger(val) || val < minDias) {
+              onChange('numeroDiasSolicitados', String(minDias));
             }
           }}
         />
 
-        <TextField sx={compactSx} size="small" required type="date" label="Día de salida" InputLabelProps={{ shrink: true }} inputProps={{ min: todayString }} value={salida.fecha || ''} onChange={(e) => onSalidaChange('fecha', e.target.value)} />
+        <TextField
+          sx={compactSx}
+          size="small"
+          required
+          type="date"
+          label="Día de salida"
+          InputLabelProps={{ shrink: true }}
+          inputProps={{ min: todayString }}
+          value={salida.fecha || ''}
+          onChange={(e) => onSalidaChange('fecha', e.target.value)}
+          error={Boolean(fechaInicioError)}
+          helperText={fechaInicioError || ''}
+        />
         <TimeFieldComponent
           options={horaSalidaOptions}
           value={salida.horaInicio || ''}
@@ -156,9 +188,22 @@ const SolicitudViaticosFields = ({
           required
           label="Hora de salida"
           placeholder="hh:mm am/pm"
-          error={isPastTimeError(salida.fecha, salida.horaInicio)}
+          error={Boolean(horaInicioError)}
+          helperText={horaInicioError || ''}
         />
-        <TextField sx={compactSx} size="small" required type="date" label="Día de regreso" InputLabelProps={{ shrink: true }} inputProps={{ min: salida.fecha || todayString }} value={salida.fechaRegreso || ''} onChange={(e) => onSalidaChange('fechaRegreso', e.target.value)} />
+        <TextField
+          sx={compactSx}
+          size="small"
+          required
+          type="date"
+          label="Día de regreso"
+          InputLabelProps={{ shrink: true }}
+          inputProps={{ min: salida.fecha || todayString }}
+          value={salida.fechaRegreso || ''}
+          onChange={(e) => onSalidaChange('fechaRegreso', e.target.value)}
+          error={Boolean(fechaFinError)}
+          helperText={fechaFinError || ''}
+        />
         <TimeFieldComponent
           options={horaRegresoOptions}
           value={salida.horaFin || ''}
@@ -168,8 +213,8 @@ const SolicitudViaticosFields = ({
           required
           label="Hora de regreso"
           placeholder="hh:mm am/pm"
-          error={isPastTimeError(salida.fechaRegreso, salida.horaFin) || Boolean(salidaRangeIssue && salida.horaInicio && salida.horaFin)}
-          helperText={salidaRangeIssue && salida.horaInicio && salida.horaFin ? salidaRangeIssue : ''}
+          error={Boolean(horaFinError)}
+          helperText={horaFinError || ''}
         />
 
         <Box

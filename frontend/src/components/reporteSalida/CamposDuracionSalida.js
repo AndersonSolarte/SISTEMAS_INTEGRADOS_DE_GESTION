@@ -195,6 +195,63 @@ const ReposicionTimeFields = ({ form, inputSx, isDaily = false, update }) => (
   </Box>
 );
 
+export const timeToMinutes = (time) => {
+  const [hours, minutes] = String(time || '').split(':').map(Number);
+  if (!Number.isFinite(hours) || !Number.isFinite(minutes)) return null;
+  return hours * 60 + minutes;
+};
+
+export const getFieldDateTimeErrors = ({
+  fechaInicio,
+  horaInicio,
+  fechaFin,
+  horaFin,
+  todayString,
+  isPastTimeError
+}) => {
+  let fechaInicioError = '';
+  let horaInicioError = '';
+  let fechaFinError = '';
+  let horaFinError = '';
+
+  // 1. Fecha inicio en el pasado
+  if (fechaInicio && todayString && fechaInicio < todayString) {
+    fechaInicioError = 'La fecha de salida no puede ser anterior a la fecha actual.';
+  }
+
+  // 2. Hora inicio en el pasado (si es hoy)
+  if (fechaInicio && horaInicio && isPastTimeError && isPastTimeError(fechaInicio, horaInicio)) {
+    horaInicioError = 'La hora de salida no puede ser anterior a la hora actual.';
+  }
+
+  // 3. Fecha fin en el pasado o antes de fechaInicio
+  if (fechaFin) {
+    if (todayString && fechaFin < todayString) {
+      fechaFinError = 'La fecha de regreso no puede ser anterior a la fecha actual.';
+    } else if (fechaInicio && fechaFin < fechaInicio) {
+      fechaFinError = 'La fecha de regreso no puede ser anterior a la fecha de salida.';
+    }
+  }
+
+  // 4. Hora fin en el pasado (si es hoy) o antes de horaInicio (si es el mismo día)
+  if (fechaFin && horaFin && isPastTimeError && isPastTimeError(fechaFin, horaFin)) {
+    horaFinError = 'La hora de regreso no puede ser anterior a la hora actual.';
+  } else if (fechaInicio && fechaFin && fechaInicio === fechaFin && horaInicio && horaFin) {
+    const startM = timeToMinutes(horaInicio);
+    const endM = timeToMinutes(horaFin);
+    if (startM != null && endM != null && endM <= startM) {
+      horaFinError = 'La hora de regreso debe ser posterior a la hora de salida.';
+    }
+  }
+
+  return {
+    fechaInicioError,
+    horaInicioError,
+    fechaFinError,
+    horaFinError
+  };
+};
+
 const FechaHoraFields = ({
   category,
   convert24To12,
@@ -209,60 +266,81 @@ const FechaHoraFields = ({
   subtype,
   todayString,
   update
-}) => (
-  <>
-    <TextField
-      sx={inputSx}
-      fullWidth
-      size="small"
-      required
-      type="date"
-      label={subtype === 'urgencia_medica' ? 'Fecha de salida a urgencias' : 'Fecha salida'}
-      InputLabelProps={{ shrink: true }}
-      inputProps={{ min: todayString }}
-      value={form.salida.fecha}
-      onChange={(e) => update('salida', 'fecha', e.target.value)}
-    />
-    <TimeAutocomplete
-      options={horaSalidaOptions}
-      value={form.salida.horaInicio}
-      onChange={(val) => update('salida', 'horaInicio', val)}
-      convert24To12={convert24To12}
-      inputSx={inputSx}
-      required
-      label={subtype === 'urgencia_medica' ? 'Hora de salida a urgencias' : 'Hora salida'}
-      placeholder="hh:mm am/pm"
-      error={isPastTimeError(form.salida.fecha, form.salida.horaInicio)}
-    />
-    <TextField
-      sx={inputSx}
-      fullWidth
-      size="small"
-      required
-      type="date"
-      label="Fecha regreso"
-      InputLabelProps={{ shrink: true }}
-      inputProps={{ min: todayString }}
-      value={form.salida.fechaRegreso}
-      onChange={(e) => update('salida', 'fechaRegreso', e.target.value)}
-    />
-    <TimeAutocomplete
-      options={horaRegresoOptions}
-      value={form.salida.horaFin}
-      onChange={(val) => update('salida', 'horaFin', val)}
-      convert24To12={convert24To12}
-      inputSx={inputSx}
-      required={!(category === 'salud' && subtype !== 'terapias')}
-      label={category === 'salud' && subtype !== 'terapias' ? 'Hora regreso (Opcional)' : 'Hora regreso'}
-      placeholder={(category === 'salud' && subtype !== 'terapias') ? 'Opcional (hh:mm am/pm)' : 'hh:mm am/pm'}
-      error={isPastTimeError(form.salida.fechaRegreso, form.salida.horaFin) || Boolean(salidaRangeIssue && form.salida.horaInicio && form.salida.horaFin)}
-      helperText={salidaRangeIssue && form.salida.horaInicio && form.salida.horaFin ? salidaRangeIssue : ''}
-    />
-    {shouldRequestReposicionHoras && !reposicionTimeIsDaily && (
-      <ReposicionTimeFields form={form} inputSx={inputSx} update={update} />
-    )}
-  </>
-);
+}) => {
+  const {
+    fechaInicioError,
+    horaInicioError,
+    fechaFinError,
+    horaFinError
+  } = getFieldDateTimeErrors({
+    fechaInicio: form.salida.fecha,
+    horaInicio: form.salida.horaInicio,
+    fechaFin: form.salida.fechaRegreso,
+    horaFin: form.salida.horaFin,
+    todayString,
+    isPastTimeError
+  });
+
+  return (
+    <>
+      <TextField
+        sx={inputSx}
+        fullWidth
+        size="small"
+        required
+        type="date"
+        label={subtype === 'urgencia_medica' ? 'Fecha de salida a urgencias' : 'Fecha salida'}
+        InputLabelProps={{ shrink: true }}
+        inputProps={{ min: todayString }}
+        value={form.salida.fecha}
+        onChange={(e) => update('salida', 'fecha', e.target.value)}
+        error={Boolean(fechaInicioError)}
+        helperText={fechaInicioError || ''}
+      />
+      <TimeAutocomplete
+        options={horaSalidaOptions}
+        value={form.salida.horaInicio}
+        onChange={(val) => update('salida', 'horaInicio', val)}
+        convert24To12={convert24To12}
+        inputSx={inputSx}
+        required
+        label={subtype === 'urgencia_medica' ? 'Hora de salida a urgencias' : 'Hora salida'}
+        placeholder="hh:mm am/pm"
+        error={Boolean(horaInicioError)}
+        helperText={horaInicioError || ''}
+      />
+      <TextField
+        sx={inputSx}
+        fullWidth
+        size="small"
+        required
+        type="date"
+        label="Fecha regreso"
+        InputLabelProps={{ shrink: true }}
+        inputProps={{ min: form.salida.fecha || todayString }}
+        value={form.salida.fechaRegreso}
+        onChange={(e) => update('salida', 'fechaRegreso', e.target.value)}
+        error={Boolean(fechaFinError)}
+        helperText={fechaFinError || ''}
+      />
+      <TimeAutocomplete
+        options={horaRegresoOptions}
+        value={form.salida.horaFin}
+        onChange={(val) => update('salida', 'horaFin', val)}
+        convert24To12={convert24To12}
+        inputSx={inputSx}
+        required={!(category === 'salud' && subtype !== 'terapias')}
+        label={category === 'salud' && subtype !== 'terapias' ? 'Hora regreso (Opcional)' : 'Hora regreso'}
+        placeholder={(category === 'salud' && subtype !== 'terapias') ? 'Opcional (hh:mm am/pm)' : 'hh:mm am/pm'}
+        error={Boolean(horaFinError)}
+        helperText={horaFinError || ''}
+      />
+      {shouldRequestReposicionHoras && !reposicionTimeIsDaily && (
+        <ReposicionTimeFields form={form} inputSx={inputSx} update={update} />
+      )}
+    </>
+  );
+};
 
 const CamposHastaMediaJornada = (props) => <FechaHoraFields {...props} />;
 const CamposUnoDosDias = (props) => <FechaHoraFields {...props} />;

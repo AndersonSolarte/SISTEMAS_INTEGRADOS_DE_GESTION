@@ -2,9 +2,13 @@ import React, { useMemo } from 'react';
 import { Box, InputAdornment, MenuItem, Radio, TextField, Typography } from '@mui/material';
 
 const DuracionSelector = ({ salida, fieldSx, locked = false, onChange }) => {
+  const isEcuador = salida?.alcance === 'Internacional' && String(salida?.pais || '').trim().toLowerCase() === 'ecuador';
+  const requiresMinTwoDays = salida?.alcance === 'Nacional' || (salida?.alcance === 'Internacional' && !isEcuador);
+
   const options = useMemo(() => {
     const isElectoral = ['jurado_votacion', 'sufragante'].includes(salida.tipo);
     const isOnlyHalfDay = isElectoral || ['entierro_companero', 'obligaciones_escolares'].includes(salida.tipo);
+
     return [
       {
         value: 'menos_media_jornada',
@@ -14,13 +18,18 @@ const DuracionSelector = ({ salida, fieldSx, locked = false, onChange }) => {
       },
       { value: '1_2_dias', label: 'Entre 1 y 2 dias' },
       { value: '3_mas_dias', label: '3 o mas dias' }
-    ].filter((opt) => !isOnlyHalfDay || opt.value === 'menos_media_jornada');
-  }, [salida.tipo]);
+    ].filter((opt) => {
+      if (isOnlyHalfDay) return opt.value === 'menos_media_jornada';
+      if (requiresMinTwoDays) return opt.value !== 'menos_media_jornada';
+      return true;
+    });
+  }, [salida.tipo, salida.alcance, requiresMinTwoDays]);
 
   const selectDuration = (value) => {
     if (locked) return;
     onChange('duracionTipo', value);
-    onChange('duracionDias', value === 'menos_media_jornada' ? 0 : (value === '1_2_dias' ? 1 : 3));
+    const defaultDays = value === 'menos_media_jornada' ? 0 : (value === '1_2_dias' ? (requiresMinTwoDays ? 2 : 1) : 3);
+    onChange('duracionDias', defaultDays);
   };
 
   return (
@@ -65,11 +74,11 @@ const DuracionSelector = ({ salida, fieldSx, locked = false, onChange }) => {
             size="small"
             sx={fieldSx}
             label="Digite la cantidad de dias a solicitar *"
-            value={salida.duracionDias}
+            value={salida.duracionDias || (requiresMinTwoDays ? 2 : 1)}
             onChange={(e) => onChange('duracionDias', parseInt(e.target.value, 10))}
             disabled={locked}
           >
-            <MenuItem value={1}>1 dia</MenuItem>
+            {!requiresMinTwoDays && <MenuItem value={1}>1 dia</MenuItem>}
             <MenuItem value={2}>2 dias</MenuItem>
           </TextField>
         )}

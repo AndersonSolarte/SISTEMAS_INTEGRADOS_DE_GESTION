@@ -128,3 +128,25 @@ test('el PDF final de liquidación conserva toda la información del desplazamie
     'Aceptada electrónicamente', 'Manutención', 'Liquidación revisada'
   ].forEach((expected) => assert.ok(content.includes(expected), `Falta en el PDF: ${expected}`));
 });
+
+test('parseLiquidationBody procesa correctamente conceptos diligenciados e ignora conceptos en cero', () => {
+  const result = _internals.parseLiquidationBody({
+    liquidationRowsVersion: '2',
+    baseIncluded0: '1',
+    valorDiario0: '50000',
+    dias0: '1',
+    baseIncluded1: '1',
+    valorDiario1: '0',
+    dias1: '0',
+    baseIncluded2: '1',
+    valorDiario2: '0',
+    dias2: '0',
+    observaciones: 'Pago único'
+  });
+
+  assert.equal(result.error, undefined);
+  assert.equal(result.totalAnticipo, 50000);
+  assert.equal(result.detalles.length, 1);
+  assert.equal(result.detalles[0].detalle, 'Manutención');
+  assert.equal(result.detalles[0].valorTotal, 50000);
+});

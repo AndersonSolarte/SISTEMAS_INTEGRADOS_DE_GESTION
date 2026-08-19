@@ -61,8 +61,116 @@ const legalizationEmailSummary = (legalizacion, solicitud, statusLabel) => {
   const totalAnticipo = details.reduce((sum, row) => sum + Number(row.valorAnticipo || 0), 0);
   const totalLegalizado = details.reduce((sum, row) => sum + Number(row.valorLegalizado || 0), 0);
   const difference = totalAnticipo - totalLegalizado;
-  const detailRows = details.map((row) => `<tr><td style="padding:9px;border-bottom:1px solid #dbe3ee">${escapeHtml(row.detalle)}</td><td style="padding:9px;border-bottom:1px solid #dbe3ee;text-align:right">${escapeHtml(currency(row.valorAnticipo))}</td><td style="padding:9px;border-bottom:1px solid #dbe3ee;text-align:right">${escapeHtml(currency(row.valorLegalizado))}</td></tr>`).join('');
-  return `<div style="border:1px solid #dbe6f2;border-radius:12px;overflow:hidden;margin:18px 0"><div style="padding:14px 16px;background:#0b3a6f;color:#fff"><strong>${escapeHtml(solicitud.consecutivo)}</strong><div style="font-size:12px;margin-top:3px;opacity:.9">${escapeHtml(statusLabel)}</div></div><div style="padding:15px 16px;background:#f8fbff"><p style="margin:0 0 7px"><strong>Colaborador:</strong> ${escapeHtml(solicitud.solicitante_snapshot?.nombre || '')}</p><p style="margin:0 0 7px"><strong>Dependencia:</strong> ${escapeHtml(solicitud.datos_laborales?.dependencia || '')}</p><p style="margin:0"><strong>Destino:</strong> ${escapeHtml(solicitud.datos_viaticos?.lugarVisitar || '')}</p></div><table style="width:100%;border-collapse:collapse"><thead><tr style="background:#e8eef6"><th style="padding:9px;text-align:left">Concepto</th><th style="padding:9px;text-align:right">Anticipo</th><th style="padding:9px;text-align:right">Legalizado</th></tr></thead><tbody>${detailRows}</tbody><tfoot><tr style="background:#eff6ff;font-weight:700"><td style="padding:10px">Totales</td><td style="padding:10px;text-align:right">${escapeHtml(currency(totalAnticipo))}</td><td style="padding:10px;text-align:right">${escapeHtml(currency(totalLegalizado))}</td></tr></tfoot></table><div style="padding:13px 16px;color:#0b3a6f;font-weight:700">${difference >= 0 ? 'Saldo a favor de la Universidad' : 'Saldo a favor del colaborador'}: ${escapeHtml(currency(Math.abs(difference)))}</div></div>`;
+  const isFavorUni = difference >= 0;
+
+  const detailRows = details.map((row) => `
+    <tr>
+      <td style="padding: 10px 14px; border-bottom: 1px solid #e2e8f0; font-size: 13px; color: #1e293b;">
+        <strong>${escapeHtml(row.detalle)}</strong>
+      </td>
+      <td style="padding: 10px 14px; border-bottom: 1px solid #e2e8f0; text-align: right; font-size: 13px; color: #475569;">
+        ${escapeHtml(currency(row.valorAnticipo))}
+      </td>
+      <td style="padding: 10px 14px; border-bottom: 1px solid #e2e8f0; text-align: right; font-size: 13px; font-weight: 700; color: #0b3a6f;">
+        ${escapeHtml(currency(row.valorLegalizado))}
+      </td>
+      <td style="padding: 10px 14px; border-bottom: 1px solid #e2e8f0; text-align: right; font-size: 13px; font-weight: 700; color: ${Number(row.diferencia ?? (Number(row.valorAnticipo) - Number(row.valorLegalizado))) < 0 ? '#b91c1c' : '#15803d'};">
+        ${escapeHtml(currency(row.diferencia ?? (Number(row.valorAnticipo) - Number(row.valorLegalizado))))}
+      </td>
+    </tr>
+  `).join('');
+
+  return `
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="border-collapse: separate; border: 1px solid #dce6f2; border-radius: 12px; overflow: hidden; background-color: #ffffff; margin: 16px 0 20px 0; box-shadow: 0 4px 14px rgba(11, 58, 111, 0.05); font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;">
+      <!-- Header -->
+      <tr>
+        <td style="padding: 16px 20px; background-color: #0b3a6f; color: #ffffff;">
+          <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
+            <tr>
+              <td valign="middle">
+                <div style="font-size: 10.5px; font-weight: 800; letter-spacing: 1px; text-transform: uppercase; color: #bfdbfe; margin-bottom: 3px;">LEGALIZACIÓN DE VIÁTICOS Y GASTOS DE VIAJE</div>
+                <div style="font-size: 17px; font-weight: 800; color: #ffffff;">${escapeHtml(solicitud.consecutivo)}</div>
+              </td>
+              <td align="right" valign="middle">
+                <span style="display: inline-block; padding: 5px 12px; background-color: rgba(255, 255, 255, 0.18); border: 1px solid rgba(255, 255, 255, 0.35); border-radius: 16px; font-size: 12px; font-weight: 700; color: #ffffff;">
+                  ${escapeHtml(statusLabel)}
+                </span>
+              </td>
+            </tr>
+          </table>
+        </td>
+      </tr>
+
+      <!-- Datos del Solicitante -->
+      <tr>
+        <td style="padding: 14px 18px; background-color: #f8fbff; border-bottom: 1px solid #e8eef5;">
+          <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
+            <tr>
+              <td width="50%" valign="top" style="padding-right: 10px;">
+                <div style="font-size: 10px; font-weight: 800; text-transform: uppercase; color: #64748b; margin-bottom: 3px;">COLABORADOR</div>
+                <div style="font-size: 13.5px; font-weight: 700; color: #1e293b;">${escapeHtml(solicitud.solicitante_snapshot?.nombre || '')}</div>
+              </td>
+              <td width="50%" valign="top">
+                <div style="font-size: 10px; font-weight: 800; text-transform: uppercase; color: #64748b; margin-bottom: 3px;">DEPENDENCIA</div>
+                <div style="font-size: 13px; font-weight: 600; color: #334155;">${escapeHtml(solicitud.datos_laborales?.dependencia || '')}</div>
+              </td>
+            </tr>
+            <tr>
+              <td colspan="2" style="padding-top: 10px;">
+                <div style="font-size: 10px; font-weight: 800; text-transform: uppercase; color: #64748b; margin-bottom: 3px;">DESTINO</div>
+                <div style="font-size: 13px; font-weight: 700; color: #0b3a6f;">${escapeHtml(solicitud.datos_viaticos?.lugarVisitar || solicitud.datos_salida?.municipio || '')}</div>
+              </td>
+            </tr>
+          </table>
+        </td>
+      </tr>
+
+      <!-- Tabla de Conceptos -->
+      <tr>
+        <td style="padding: 0;">
+          <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="border-collapse: collapse;">
+            <thead>
+              <tr style="background-color: #e8eef6;">
+                <th align="left" style="padding: 10px 14px; font-size: 11px; font-weight: 800; color: #24364b; text-transform: uppercase;">Concepto</th>
+                <th align="right" style="padding: 10px 14px; font-size: 11px; font-weight: 800; color: #24364b; text-transform: uppercase;">Anticipo</th>
+                <th align="right" style="padding: 10px 14px; font-size: 11px; font-weight: 800; color: #24364b; text-transform: uppercase;">Legalizado</th>
+                <th align="right" style="padding: 10px 14px; font-size: 11px; font-weight: 800; color: #24364b; text-transform: uppercase;">Diferencia</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${detailRows}
+            </tbody>
+            <tfoot>
+              <tr style="background-color: #eff6ff; font-weight: 800;">
+                <td style="padding: 12px 14px; font-size: 13px; color: #0b3a6f;">TOTALES</td>
+                <td align="right" style="padding: 12px 14px; font-size: 13px; color: #0b3a6f;">${escapeHtml(currency(totalAnticipo))}</td>
+                <td align="right" style="padding: 12px 14px; font-size: 13px; color: #0b3a6f;">${escapeHtml(currency(totalLegalizado))}</td>
+                <td align="right" style="padding: 12px 14px; font-size: 13px; color: ${difference < 0 ? '#b91c1c' : '#15803d'};">${escapeHtml(currency(difference))}</td>
+              </tr>
+            </tfoot>
+          </table>
+        </td>
+      </tr>
+
+      <!-- Saldo Final -->
+      <tr>
+        <td style="padding: 14px 18px; background-color: ${isFavorUni ? '#f0fdf4' : '#fffbeb'}; border-top: 1px solid ${isFavorUni ? '#bbf7d0' : '#fed7aa'};">
+          <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
+            <tr>
+              <td>
+                <div style="font-size: 10.5px; font-weight: 800; text-transform: uppercase; color: ${isFavorUni ? '#166534' : '#9a3412'}; margin-bottom: 2px;">
+                  ${isFavorUni ? 'SALDO A REINTEGRAR A LA UNIVERSIDAD' : 'SALDO A FAVOR DEL COLABORADOR'}
+                </div>
+                <div style="font-size: 18px; font-weight: 800; color: ${isFavorUni ? '#15803d' : '#c2410c'};">
+                  ${escapeHtml(currency(Math.abs(difference)))} COP
+                </div>
+              </td>
+            </tr>
+          </table>
+        </td>
+      </tr>
+    </table>
+  `;
 };
 
 const canAccess = async (user, permission) => {
@@ -217,8 +325,8 @@ const presentar = async (req, res) => {
     text: 'La legalización fue presentada y quedó pendiente de revisión del Técnico Contable.',
     html: renderInstitutionalTemplate({
       title: 'Legalización de viáticos presentada',
-      introHtml: '<p>Saludo de paz y bien,</p><p>La legalización fue firmada electrónicamente por el colaborador y quedó pendiente de revisión del Técnico Contable.</p>',
-      bodyHtml: `${legalizationEmailSummary(legalizacion, legalizacion.solicitud, 'Pendiente de revisión del Técnico Contable')}<p><strong>Soportes adjuntos:</strong> ${attachments.length}</p><p style="color:#64748b">Los anexos quedaron almacenados en la base de datos institucional y permanecerán disponibles para consulta y respaldo.</p>`
+      introHtml: `<p style="margin: 0 0 10px 0;">Saludo de paz y bien,</p><p style="margin: 0 0 14px 0;">El colaborador <strong>${escapeHtml(legalizacion.solicitud?.solicitante_snapshot?.nombre || '')}</strong> ha presentado y firmado electrónicamente la legalización de viáticos de la comisión <strong>${escapeHtml(legalizacion.solicitud.consecutivo)}</strong>. La actuación pasa a revisión y validación por parte del Técnico Contable.</p>`,
+      bodyHtml: `${legalizationEmailSummary(legalizacion, legalizacion.solicitud, 'Pendiente de revisión del Técnico Contable')}<p style="margin: 12px 0 4px; font-size: 13.5px;"><strong>Soportes adjuntos archivados:</strong> ${attachments.length}</p><p style="color:#64748b; font-size: 12px; margin: 0;">Los anexos y comprobantes quedaron debidamente respaldados en la base de datos institucional.</p>`
     }),
     attachments: await Promise.all(attachments.map(async (file) => {
       const stored = await ViaticosLegalizacionAdjunto.findByPk(file.id);
@@ -308,7 +416,11 @@ const validar = async (req, res) => {
     inReplyTo: mailThread.rootMessageId,
     references: mailThread.rootMessageId,
     text: 'La legalización de viáticos fue revisada y validada por el Técnico Contable.',
-    html: renderInstitutionalTemplate({ title: 'Legalización de viáticos validada', introHtml: '<p>Saludo de paz y bien,</p><p>La legalización fue revisada y firmada electrónicamente por el Técnico Contable. Se adjuntan el formato final y sus soportes.</p>', bodyHtml: `${legalizationEmailSummary(legalizacion, legalizacion.solicitud, 'Legalización validada y finalizada')}<p style="color:#64748b">El PDF incorpora las firmas electrónicas del colaborador y del Técnico Contable, la trazabilidad, el código QR y el enlace institucional de verificación.</p>` }),
+    html: renderInstitutionalTemplate({
+      title: 'Legalización de viáticos validada',
+      introHtml: `<p style="margin: 0 0 10px 0;">Saludo de paz y bien,</p><p style="margin: 0 0 14px 0;">La legalización de viáticos correspondiente a la solicitud <strong>${escapeHtml(legalizacion.solicitud.consecutivo)}</strong> fue revisada, validada y firmada electrónicamente por el Técnico Contable. Se adjuntan el formato oficial en PDF y sus respectivos soportes.</p>`,
+      bodyHtml: `${legalizationEmailSummary(legalizacion, legalizacion.solicitud, 'Legalización validada y finalizada')}<p style="color:#64748b; font-size: 12px; margin-top: 12px;">El documento PDF incorpora las firmas electrónicas del colaborador y del Técnico Contable, la trazabilidad completa, el código QR y el enlace institucional de verificación.</p>`
+    }),
     attachments: [
       { filename: `LEGALIZACION-VIATICOS-${legalizacion.solicitud.consecutivo}.pdf`, content: pdf, contentType: 'application/pdf' },
       ...storedAttachments.map((file) => ({

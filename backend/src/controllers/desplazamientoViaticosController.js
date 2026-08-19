@@ -66,24 +66,32 @@ const money = (value) => {
 };
 const parseLiquidationBody = (body = {}) => {
   const supportsRemovableBaseRows = body.liquidationRowsVersion === '2';
-  const detalles = BASE_DETAIL_NAMES.flatMap((detalle, index) => {
-    if (supportsRemovableBaseRows && body[`baseIncluded${index}`] !== '1') return [];
+  const detalles = [];
+
+  BASE_DETAIL_NAMES.forEach((detalle, index) => {
+    if (supportsRemovableBaseRows && body[`baseIncluded${index}`] !== '1') return;
     const valorDiario = money(body[`valorDiario${index}`]);
     const dias = Math.max(0, Math.trunc(money(body[`dias${index}`])));
-    return [{ detalle, valorDiario, dias, valorTotal: valorDiario * dias }];
+    if (valorDiario > 0 || dias > 0) {
+      if (valorDiario <= 0 || dias < 1) return;
+      detalles.push({ detalle, valorDiario, dias, valorTotal: valorDiario * dias });
+    }
   });
+
   const extraCount = Math.min(30, Math.max(0, Math.trunc(money(body.extraCount))));
   for (let index = 0; index < extraCount; index += 1) {
     const detalle = clean(body[`extraDetalle${index}`], 120);
     const valorDiario = money(body[`extraValorDiario${index}`]);
     const dias = Math.max(0, Math.trunc(money(body[`extraDias${index}`])));
     if (!detalle && (valorDiario > 0 || dias > 0)) return { error: 'Debe escribir el nombre de cada concepto adicional.' };
-    if (detalle) detalles.push({ detalle, valorDiario, dias, valorTotal: valorDiario * dias });
+    if (detalle) {
+      if (valorDiario <= 0 || dias < 1) return { error: `Debe asignar valor diario y mínimo 1 día para el concepto extra "${detalle}".` };
+      detalles.push({ detalle, valorDiario, dias, valorTotal: valorDiario * dias });
+    }
   }
-  if (!detalles.length) return { error: 'Debe conservar al menos un concepto para la liquidación.' };
-  if (detalles.some((item) => item.valorDiario <= 0 || item.dias < 1 || item.valorTotal <= 0)) {
-    return { error: 'Elimine los conceptos no utilizados. Cada concepto conservado debe tener valor diario mayor que cero y mínimo un día.' };
-  }
+
+  if (!detalles.length) return { error: 'Debe ingresar al menos un concepto con valor diario mayor a cero y días autorizados para la liquidación.' };
+
   return {
     detalles,
     totalAnticipo: detalles.reduce((total, item) => total + item.valorTotal, 0),
@@ -203,9 +211,8 @@ const syncNormalReportApproval = async (solicitud, step, actor, detail = {}) => 
     values.rectoria_aprobado_at = at;
     if (step.fulfillsImmediateBoss) values.jefe_aprobado_at = at;
   } else if (step.key === 'gestion_humana') {
-    values.estado = 'finalizada';
+    values.estado = 'aprobada_gestion_humana';
     values.gestion_humana_aprobado_at = at;
-    values.finalizado_at = at;
   }
   await report.update(values);
   return report;
@@ -224,6 +231,80 @@ const syncNormalReportRejection = async (solicitud, step, actor, observacion) =>
     }]
   });
   return report;
+};
+
+const syncAdminViaticosApproval = async (normalReport, actor = {}, observation = '') => {
+  if (!normalReport) return null;
+  const viaticosSolicitud = await DesplazamientoViaticosSolicitud.findOne({
+    where: {
+      [Op.or]: [
+        { consecutivo: normalReport.consecutivo },
+        sequelize.where(
+          sequelize.cast(sequelize.json('datos_viaticos.reporteSalidaSolicitudId'), 'text'),
+          String(normalReport.id)
+        )
+      ]
+    }
+  });
+  if (!viaticosSolicitud) return null;
+  if (['no_aprobada', 'finalizada', 'pago_autorizado_pendiente_legalizacion', 'legalizacion_finalizada'].includes(viaticosSolicitud.estado)) {
+    return viaticosSolicitud;
+  }
+  const plan = viaticosSolicitud.plan_aprobacion || [];
+  const currentStep = plan[viaticosSolicitud.paso_actual];
+  if (!currentStep) return viaticosSolicitud;
+
+  const adminActor = {
+    nombre: actor.nombre || 'Administrador SIAC',
+    email: actor.email || 'adsolarte@unicesmag.edu.co',
+    cargo: 'Administrador SIAC',
+    dependencia: 'Dirección de Planeación y Aseguramiento de la Calidad'
+  };
+  const approvalDetail = {
+    observacion: observation || 'Aprobada por Administrador SIAC desde el panel de gestión',
+    via: 'admin_dashboard'
+  };
+
+  const next = await advance(viaticosSolicitud, adminActor, approvalDetail);
+  if (currentStep.key === 'financiera_final' && !next) {
+    await viaticosSolicitud.update({ estado: 'finalizada', finalizado_at: new Date() });
+    await sendFinalizedCopies(viaticosSolicitud);
+  }
+  return viaticosSolicitud;
+};
+
+const syncAdminViaticosRejection = async (normalReport, actor = {}, observation = '') => {
+  if (!normalReport) return null;
+  const viaticosSolicitud = await DesplazamientoViaticosSolicitud.findOne({
+    where: {
+      [Op.or]: [
+        { consecutivo: normalReport.consecutivo },
+        sequelize.where(
+          sequelize.cast(sequelize.json('datos_viaticos.reporteSalidaSolicitudId'), 'text'),
+          String(normalReport.id)
+        )
+      ]
+    }
+  });
+  if (!viaticosSolicitud) return null;
+  if (viaticosSolicitud.estado === 'no_aprobada') return viaticosSolicitud;
+
+  const plan = viaticosSolicitud.plan_aprobacion || [];
+  const currentStep = plan[viaticosSolicitud.paso_actual] || { key: 'admin', label: 'Administrador' };
+  const adminActor = {
+    nombre: actor.nombre || 'Administrador SIAC',
+    email: actor.email || 'adsolarte@unicesmag.edu.co',
+    cargo: 'Administrador SIAC',
+    dependencia: 'Dirección de Planeación y Aseguramiento de la Calidad'
+  };
+  await viaticosSolicitud.update({
+    estado: 'no_aprobada',
+    token_accion_hash: null,
+    token_etapa: null,
+    trazabilidad: appendTrace(viaticosSolicitud, `no_aprobado_${currentStep.key}`, adminActor, { observacion: observation })
+  });
+  await sendRequesterNotice(viaticosSolicitud, 'Solicitud no aprobada', `La solicitud fue rechazada por el administrador. Motivo: ${observation}`);
+  return viaticosSolicitud;
 };
 
 const buildDemoSolicitud = (liquidacion = {}) => ({
@@ -528,12 +609,25 @@ const issueTokens = async (solicitud, step) => {
   return { primary, alternate };
 };
 
+const formatTime12h = (value) => {
+  if (!value) return '';
+  const raw = String(value).trim();
+  const match = raw.match(/^(\d{1,2}):(\d{2})(?::\d{2})?$/);
+  if (!match) return raw;
+  const hour = Number(match[1]);
+  if (!Number.isInteger(hour) || hour < 0 || hour > 23) return raw;
+  const period = hour < 12 ? 'a. m.' : 'p. m.';
+  const hour12 = hour % 12 || 12;
+  return `${String(hour12).padStart(2, '0')}:${match[2]} ${period}`;
+};
+
 const formatTripMoment = (date, time) => {
   const rawDate = clean(date, 20);
   const dateLabel = /^(\d{4})-(\d{2})-(\d{2})$/.test(rawDate)
     ? rawDate.replace(/^(\d{4})-(\d{2})-(\d{2})$/, '$3/$2/$1')
     : rawDate;
-  return [dateLabel, clean(time, 12)].filter(Boolean).join(' · ') || 'Sin información';
+  const timeLabel = formatTime12h(time);
+  return [dateLabel, timeLabel].filter(Boolean).join(' · ') || 'Sin información';
 };
 
 const summaryHtml = (solicitud) => {
@@ -542,53 +636,130 @@ const summaryHtml = (solicitud) => {
   const salida = solicitud.datos_salida || {};
   const viaticos = solicitud.datos_viaticos || {};
   const days = calculateDays(salida, viaticos.numeroDiasSolicitados);
-  const field = (label, value, className = '') => `<div class="summary-field ${className}"><span>${escapeHtml(label)}</span><strong>${escapeHtml(value || 'No registrado')}</strong></div>`;
+
   return `
-    <style>
-      .page-title{font-size:26px;letter-spacing:-.35px;margin-bottom:18px;border:0;padding:0}
-      .notice{position:relative;border:1px solid #f4d58d;border-left:0;border-radius:12px;padding:15px 18px 15px 48px;background:linear-gradient(135deg,#fffaf0,#fff7dd);box-shadow:0 5px 16px rgba(146,95,10,.07);margin:0 0 20px}
-      .notice:before{content:'i';position:absolute;left:16px;top:15px;width:22px;height:22px;border-radius:50%;display:grid;place-items:center;background:#d97706;color:#fff;font:700 14px Georgia,serif}
-      .summary-card{overflow:hidden;margin:0 0 20px;border:1px solid #dce6f2;border-radius:16px;background:#fff;box-shadow:0 12px 28px rgba(15,45,80,.08)}
-      .summary-head{display:flex;align-items:center;justify-content:space-between;gap:18px;padding:18px 20px;background:linear-gradient(135deg,#0b3a6f,#125394);color:#fff}
-      .summary-eyebrow{display:block;margin-bottom:3px;font-size:11px;font-weight:800;letter-spacing:1.1px;text-transform:uppercase;color:#bfdbfe}
-      .summary-code{display:block;font-size:17px;line-height:1.25;letter-spacing:.15px}
-      .summary-days{flex:0 0 auto;min-width:68px;padding:8px 13px;border:1px solid rgba(255,255,255,.25);border-radius:999px;background:rgba(255,255,255,.13);text-align:center;font-size:13px;font-weight:700;white-space:nowrap}
-      .summary-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:0;padding:6px 20px 16px}
-      .summary-field{min-width:0;padding:13px 12px;border-bottom:1px solid #e8eef5}
-      .summary-field span{display:block;margin-bottom:4px;color:#64748b;font-size:10px;font-weight:800;letter-spacing:.65px;text-transform:uppercase}
-      .summary-field strong{display:block;color:#1e293b;font-size:14px;line-height:1.4;overflow-wrap:anywhere}
-      .summary-field-wide{grid-column:1/-1}
-      .summary-destination{margin:12px 12px 4px;padding:14px 16px;border:1px solid #cfe0f5;border-radius:12px;background:#f4f8fd}
-      .summary-destination strong{font-size:16px;color:#0b3a6f}
-      .summary-timeline{grid-column:1/-1;display:grid;grid-template-columns:1fr auto 1fr;align-items:center;gap:10px;padding:14px 12px;border-bottom:1px solid #e8eef5}
-      .summary-moment{padding:11px 13px;border-radius:10px;background:#f8fafc}
-      .summary-moment span{display:block;margin-bottom:3px;color:#64748b;font-size:10px;font-weight:800;letter-spacing:.65px;text-transform:uppercase}
-      .summary-moment strong{color:#172033;font-size:14px}
-      .summary-arrow{color:#1d4ed8;font-size:20px;font-weight:700}
-      .legal-notice{position:relative;margin:0 0 24px;padding:16px 18px 16px 50px;border:1px solid #f3d28e;border-radius:12px;background:#fffbeb;color:#713f12;font-size:14px;line-height:1.5}
-      .legal-notice:before{content:'!';position:absolute;left:17px;top:17px;width:22px;height:22px;border-radius:7px;display:grid;place-items:center;background:#f59e0b;color:#fff;font-weight:900}
-      @media(max-width:640px){.page-title{font-size:21px}.summary-head{align-items:flex-start;padding:16px}.summary-grid{grid-template-columns:1fr;padding:5px 12px 12px}.summary-field-wide,.summary-timeline{grid-column:1}.summary-timeline{grid-template-columns:1fr;padding:12px}.summary-arrow{transform:rotate(90deg);text-align:center;line-height:1}.summary-days{min-width:auto}.notice{padding-left:44px}.legal-notice{padding-left:45px}}
-    </style>
-    <section class="summary-card" aria-label="Resumen de la solicitud">
-      <header class="summary-head">
-        <div><span class="summary-eyebrow">Solicitud de desplazamiento</span><strong class="summary-code">${escapeHtml(solicitud.consecutivo)}</strong></div>
-        <div class="summary-days">${escapeHtml(days)} ${Number(days) === 1 ? 'día' : 'días'}</div>
-      </header>
-      <div class="summary-grid">
-        ${field('Solicitante', personal.nombre)}
-        ${field('Documento', personal.documento)}
-        ${field('Dependencia', laboral.dependencia)}
-        ${field('Cargo', laboral.cargo)}
-        ${field('Destino', viaticos.lugarVisitar || salida.municipio || salida.pais, 'summary-field-wide summary-destination')}
-        <div class="summary-timeline">
-          <div class="summary-moment"><span>Salida</span><strong>${escapeHtml(formatTripMoment(salida.fecha, salida.horaInicio))}</strong></div>
-          <div class="summary-arrow" aria-hidden="true">→</div>
-          <div class="summary-moment"><span>Regreso</span><strong>${escapeHtml(formatTripMoment(salida.fechaRegreso, salida.horaFin))}</strong></div>
-        </div>
-        ${field('Objeto de la comisión', viaticos.objetoComision, 'summary-field-wide')}
-      </div>
-    </section>
-    <div class="legal-notice"><strong>Importante:</strong> ${escapeHtml(LEGALIZATION_NOTICE.replace(/^IMPORTANTE:\s*/i, ''))}</div>`;
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="border-collapse: separate; border: 1px solid #dce6f2; border-radius: 12px; overflow: hidden; background-color: #ffffff; margin: 16px 0 20px 0; box-shadow: 0 4px 14px rgba(11, 58, 111, 0.05); font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;">
+      <!-- Encabezado de la tarjeta -->
+      <tr>
+        <td style="padding: 16px 20px; background-color: #0b3a6f; background: linear-gradient(135deg, #0b3a6f 0%, #125394 100%); color: #ffffff;">
+          <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
+            <tr>
+              <td valign="middle" align="left">
+                <div style="font-size: 10.5px; font-weight: 800; letter-spacing: 1px; text-transform: uppercase; color: #bfdbfe; margin-bottom: 3px;">SOLICITUD DE DESPLAZAMIENTO · ADF-PP-FR-004</div>
+                <div style="font-size: 17px; font-weight: 800; color: #ffffff; letter-spacing: 0.2px;">${escapeHtml(solicitud.consecutivo)}</div>
+              </td>
+              <td valign="middle" align="right" style="white-space: nowrap;">
+                <span style="display: inline-block; padding: 6px 14px; background-color: rgba(255, 255, 255, 0.16); border: 1px solid rgba(255, 255, 255, 0.35); border-radius: 20px; font-size: 12.5px; font-weight: 700; color: #ffffff;">
+                  ${escapeHtml(days)} ${Number(days) === 1 ? 'día' : 'días'} de comisión
+                </span>
+              </td>
+            </tr>
+          </table>
+        </td>
+      </tr>
+
+      <!-- Fila 1: Solicitante y Documento -->
+      <tr>
+        <td style="padding: 0;">
+          <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
+            <tr>
+              <td width="55%" valign="top" style="padding: 12px 18px; border-bottom: 1px solid #e8eef5; border-right: 1px solid #e8eef5;">
+                <div style="font-size: 10px; font-weight: 800; letter-spacing: 0.6px; text-transform: uppercase; color: #64748b; margin-bottom: 4px;">SOLICITANTE</div>
+                <div style="font-size: 13.5px; font-weight: 700; color: #1e293b; line-height: 1.4;">${escapeHtml(personal.nombre || 'No registrado')}</div>
+              </td>
+              <td width="45%" valign="top" style="padding: 12px 18px; border-bottom: 1px solid #e8eef5;">
+                <div style="font-size: 10px; font-weight: 800; letter-spacing: 0.6px; text-transform: uppercase; color: #64748b; margin-bottom: 4px;">NO. DOCUMENTO</div>
+                <div style="font-size: 13.5px; font-weight: 700; color: #1e293b; line-height: 1.4;">${escapeHtml(personal.documento || 'No registrado')}</div>
+              </td>
+            </tr>
+          </table>
+        </td>
+      </tr>
+
+      <!-- Fila 2: Dependencia y Cargo -->
+      <tr>
+        <td style="padding: 0;">
+          <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
+            <tr>
+              <td width="55%" valign="top" style="padding: 12px 18px; border-bottom: 1px solid #e8eef5; border-right: 1px solid #e8eef5;">
+                <div style="font-size: 10px; font-weight: 800; letter-spacing: 0.6px; text-transform: uppercase; color: #64748b; margin-bottom: 4px;">PROGRAMA / DEPENDENCIA</div>
+                <div style="font-size: 13px; font-weight: 600; color: #334155; line-height: 1.4;">${escapeHtml(laboral.dependencia || 'No registrada')}</div>
+              </td>
+              <td width="45%" valign="top" style="padding: 12px 18px; border-bottom: 1px solid #e8eef5;">
+                <div style="font-size: 10px; font-weight: 800; letter-spacing: 0.6px; text-transform: uppercase; color: #64748b; margin-bottom: 4px;">CARGO</div>
+                <div style="font-size: 13px; font-weight: 600; color: #334155; line-height: 1.4;">${escapeHtml(laboral.cargo || 'No registrado')}</div>
+              </td>
+            </tr>
+          </table>
+        </td>
+      </tr>
+
+      <!-- Fila 3: Destino / Lugar a visitar -->
+      <tr>
+        <td style="padding: 14px 18px; background-color: #f4f8fd; border-bottom: 1px solid #e8eef5;">
+          <div style="font-size: 10px; font-weight: 800; letter-spacing: 0.6px; text-transform: uppercase; color: #0b3a6f; margin-bottom: 4px;">LUGAR A VISITAR / DESTINO</div>
+          <div style="font-size: 15px; font-weight: 800; color: #0b3a6f; line-height: 1.4;">${escapeHtml(viaticos.lugarVisitar || salida.municipio || salida.pais || 'No registrado')}</div>
+        </td>
+      </tr>
+
+      <!-- Fila 4: Cronograma Salida y Regreso -->
+      <tr>
+        <td style="padding: 14px 18px; border-bottom: 1px solid #e8eef5; background-color: #ffffff;">
+          <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
+            <tr>
+              <td width="47%" valign="top" style="padding: 10px 14px; background-color: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px;">
+                <div style="font-size: 9.5px; font-weight: 800; letter-spacing: 0.6px; text-transform: uppercase; color: #64748b; margin-bottom: 3px;">DÍA Y HORA DE SALIDA</div>
+                <div style="font-size: 13px; font-weight: 700; color: #0f172a;">${escapeHtml(formatTripMoment(salida.fecha, salida.horaInicio))}</div>
+              </td>
+              <td width="6%" align="center" valign="middle" style="font-size: 18px; color: #2563eb; font-weight: bold;">
+                →
+              </td>
+              <td width="47%" valign="top" style="padding: 10px 14px; background-color: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px;">
+                <div style="font-size: 9.5px; font-weight: 800; letter-spacing: 0.6px; text-transform: uppercase; color: #64748b; margin-bottom: 3px;">DÍA Y HORA DE REGRESO</div>
+                <div style="font-size: 13px; font-weight: 700; color: #0f172a;">${escapeHtml(formatTripMoment(salida.fechaRegreso, salida.horaFin))}</div>
+              </td>
+            </tr>
+          </table>
+        </td>
+      </tr>
+
+      <!-- Fila 5: Objeto de la comisión -->
+      <tr>
+        <td style="padding: 14px 18px; border-bottom: 1px solid #e8eef5;">
+          <div style="font-size: 10px; font-weight: 800; letter-spacing: 0.6px; text-transform: uppercase; color: #64748b; margin-bottom: 4px;">OBJETO DE LA COMISIÓN</div>
+          <div style="font-size: 13px; font-weight: 600; color: #1e293b; line-height: 1.5;">${escapeHtml(viaticos.objetoComision || salida.motivo || 'No registrado')}</div>
+        </td>
+      </tr>
+
+      ${viaticos.observacionesEspeciales ? `
+      <!-- Fila 6: Observaciones especiales -->
+      <tr>
+        <td style="padding: 12px 18px; border-bottom: 1px solid #e8eef5; background-color: #fafbfc;">
+          <div style="font-size: 10px; font-weight: 800; letter-spacing: 0.6px; text-transform: uppercase; color: #64748b; margin-bottom: 4px;">OBSERVACIONES ESPECIALES</div>
+          <div style="font-size: 12.5px; color: #475569; line-height: 1.4;">${escapeHtml(viaticos.observacionesEspeciales)}</div>
+        </td>
+      </tr>
+      ` : ''}
+
+      ${viaticos.centroCosto ? `
+      <!-- Fila 7: Centro de costos -->
+      <tr>
+        <td style="padding: 10px 18px; background-color: #ffffff;">
+          <div style="font-size: 10px; font-weight: 800; letter-spacing: 0.6px; text-transform: uppercase; color: #64748b; margin-bottom: 2px;">CENTRO DE COSTOS</div>
+          <div style="font-size: 12.5px; font-weight: 700; color: #0b3a6f;">${escapeHtml(viaticos.centroCosto)}</div>
+        </td>
+      </tr>
+      ` : ''}
+    </table>
+
+    <!-- Aviso Normativo Acuerdo 001 de 2013 -->
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin: 0 0 20px 0; border-left: 4px solid #d97706; background-color: #fffbeb; border-radius: 4px;">
+      <tr>
+        <td style="padding: 12px 16px; color: #92400e; font-size: 13px; line-height: 1.45;">
+          <strong style="color: #b45309;">Aviso Normativo Importante:</strong> ${escapeHtml(LEGALIZATION_NOTICE.replace(/^IMPORTANTE:\s*/i, ''))}
+        </td>
+      </tr>
+    </table>`;
 };
 
 const formatCop = (value) => new Intl.NumberFormat('es-CO', {
@@ -602,11 +773,21 @@ const financialAmountHtml = (solicitud, { pendingLabel = 'Pendiente de liquidar'
   const hasLiquidation = Number.isFinite(total) && total > 0;
 
   return `
-    <section style="margin:0 0 22px;padding:16px 18px;border:1px solid #cfe0f5;border-radius:14px;background:#f7faff">
-      <div style="margin-bottom:5px;color:#64748b;font-size:11px;font-weight:800;letter-spacing:.7px;text-transform:uppercase">Valor total del anticipo</div>
-      <div style="color:#0b3a6f;font-size:24px;font-weight:800;line-height:1.2">${hasLiquidation ? escapeHtml(formatCop(total)) : escapeHtml(pendingLabel)}</div>
-      <div style="margin-top:5px;color:#64748b;font-size:12px">${hasLiquidation ? 'Valor real registrado en la liquidación, expresado en pesos colombianos (COP).' : 'El valor se calculará con los conceptos, valores diarios y días que registre el Técnico Contable.'}</div>
-    </section>`;
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin: 0 0 22px 0; border: 1px solid #bfdbfe; border-radius: 10px; background-color: #f0f6ff; border-collapse: separate;">
+      <tr>
+        <td style="padding: 16px 20px;">
+          <div style="font-size: 11px; font-weight: 800; letter-spacing: 0.7px; text-transform: uppercase; color: #1e40af; margin-bottom: 5px;">VALOR TOTAL DEL ANTICIPO</div>
+          <div style="font-size: 24px; font-weight: 800; color: #0b3a6f; line-height: 1.2;">
+            ${hasLiquidation ? escapeHtml(formatCop(total)) : escapeHtml(pendingLabel)}
+          </div>
+          <div style="font-size: 12px; color: #475569; margin-top: 6px; line-height: 1.4;">
+            ${hasLiquidation
+              ? 'Valor formal registrado en la liquidación de viáticos y gastos de viaje (pesos colombianos · COP).'
+              : 'El valor se calculará y registrará conforme a los conceptos, tarifas diarias y días autorizados por el Técnico Contable.'}
+          </div>
+        </td>
+      </tr>
+    </table>`;
 };
 
 const emailStep = async (solicitud, step, tokenBundle) => {
@@ -614,25 +795,22 @@ const emailStep = async (solicitud, step, tokenBundle) => {
   const alternateToken = typeof tokenBundle === 'string' ? null : tokenBundle.alternate;
   const actionUrl = `${publicBackendUrl}/api/desplazamientos-viaticos/accion/${primaryToken}`;
   const isFinancialStage = ['tecnico_contable', 'tesoreria', 'financiera_final'].includes(step.key);
-  const isTechnicianStage = step.key === 'tecnico_contable';
-  const normalReport = isFinancialStage ? null : await getLinkedNormalReport(solicitud);
-  const [attachment, pdfAttachment] = await Promise.all([
-    isTechnicianStage
-      ? Promise.resolve(null)
-      : buildXlsxAttachment(solicitud, { includeFinancial: isFinancialStage }),
+  const normalReport = await getLinkedNormalReport(solicitud);
+  const [viaticosPdfAttachment, normalReportPdfAttachment] = await Promise.all([
     isFinancialStage
       ? buildLiquidationPdfAttachment(solicitud)
-      : normalReport
-        ? ensureReporteSalidaPdf(normalReport)
-        : buildPdfAttachment(solicitud, { includeFinancial: false })
+      : buildPdfAttachment(solicitud, { includeFinancial: false }),
+    normalReport
+      ? ensureReporteSalidaPdf(normalReport)
+      : Promise.resolve(null)
   ]);
   const supportAttachment = buildSupportAttachment(solicitud);
   const title = step.key === 'sst'
     ? 'Validación de salida y ampliación de cobertura ARL'
     : step.action === 'liquidacion'
-    ? 'Liquidación de viáticos pendiente'
+    ? 'Liquidación de viáticos y gastos de viaje pendiente'
     : step.action === 'pago'
-      ? 'Autorización de pago pendiente'
+      ? 'Autorización y trámite de pago de viáticos pendiente'
       : step.action === 'tramite'
         ? 'Trámite de Tesorería pendiente'
       : step.key === 'financiera_previa'
@@ -641,25 +819,35 @@ const emailStep = async (solicitud, step, tokenBundle) => {
   const buttonLabel = step.action === 'liquidacion'
     ? 'Generar liquidación de viáticos y gastos de viaje'
     : step.action === 'pago'
-      ? 'Autorizar pago'
+      ? 'Autorizar pago de viáticos'
       : step.action === 'tramite'
-        ? 'Tramitar solicitud'
-      : 'Revisar solicitud';
+        ? 'Tramitar solicitud de viáticos'
+      : 'Revisar solicitud y dar visto bueno';
   const stageInstruction = step.key === 'sst'
-    ? '<p>Revise las condiciones de la salida y gestione la validación o ampliación de la cobertura de la ARL antes de otorgar el visto bueno.</p>'
+    ? '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin: 0 0 16px 0; background-color: #eff6ff; border-left: 4px solid #2563eb; border-radius: 4px;"><tr><td style="padding: 10px 14px; color: #1e3a8a; font-size: 13px; line-height: 1.45;">Por favor verifique las condiciones del desplazamiento y gestione la validación o ampliación de cobertura ante la ARL antes de otorgar el visto bueno.</td></tr></table>'
     : '';
   const financialAmount = isFinancialStage ? financialAmountHtml(solicitud) : '';
+  const actionButtonHtml = `
+    <table role="presentation" cellpadding="0" cellspacing="0" border="0" align="center" style="margin: 24px auto;">
+      <tr>
+        <td align="center" style="background-color: #0b3a6f; border-radius: 8px;">
+          <a href="${actionUrl}" target="_blank" style="display: inline-block; padding: 13px 26px; font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; font-size: 14px; font-weight: 800; color: #ffffff; text-decoration: none; border-radius: 8px; letter-spacing: 0.3px;">
+            ${escapeHtml(buttonLabel)} →
+          </a>
+        </td>
+      </tr>
+    </table>`;
   const html = renderInstitutionalTemplate({
     title,
-    introHtml: `<p>Saludo de paz y bien,</p><p>La solicitud de desplazamiento <strong>${escapeHtml(solicitud.consecutivo)}</strong> requiere su actuación como <strong>${escapeHtml(step.label)}</strong>.</p>`,
-    bodyHtml: `${stageInstruction}${summaryHtml(solicitud)}${financialAmount}<p style="text-align:center;margin:22px 0"><a href="${actionUrl}" style="display:inline-block;background:#1d4ed8;color:#fff;padding:12px 20px;border-radius:8px;text-decoration:none;font-weight:700">${buttonLabel}</a></p>`
+    introHtml: `<p style="margin: 0 0 10px 0;">Saludo de paz y bien,</p><p style="margin: 0 0 14px 0;">La solicitud de desplazamiento <strong>${escapeHtml(solicitud.consecutivo)}</strong> requiere su actuación formal en calidad de <strong>${escapeHtml(step.label)}</strong>.</p>`,
+    bodyHtml: `${stageInstruction}${summaryHtml(solicitud)}${financialAmount}${actionButtonHtml}`
   });
   const result = await sendInstitutionalEmail({
     to: step.email,
     subject: `${solicitud.consecutivo} | ${title}`,
     text: `${title}. Ingrese a ${actionUrl}`,
     html,
-    attachments: [pdfAttachment, attachment, supportAttachment].filter(Boolean)
+    attachments: [viaticosPdfAttachment, normalReportPdfAttachment, supportAttachment].filter(Boolean)
   });
   let alternateResult = null;
   if (alternateToken && step.alternateApprovalEmail) {
@@ -667,6 +855,16 @@ const emailStep = async (solicitud, step, tokenBundle) => {
     const absenceRole = step.alternateAbsenceRole || step.label;
     const authorityLabel = step.alternateAuthorityLabel || step.alternateApprovalLabel || 'la autoridad correspondiente';
     const isParallelEquivalent = Boolean(step.parallelEquivalentAccess);
+    const alternateButtonHtml = `
+      <table role="presentation" cellpadding="0" cellspacing="0" border="0" align="center" style="margin: 24px auto;">
+        <tr>
+          <td align="center" style="background-color: #0b3a6f; border-radius: 8px;">
+            <a href="${alternateActionUrl}" target="_blank" style="display: inline-block; padding: 13px 26px; font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; font-size: 14px; font-weight: 800; color: #ffffff; text-decoration: none; border-radius: 8px; letter-spacing: 0.3px;">
+              ${escapeHtml(buttonLabel)} →
+            </a>
+          </td>
+        </tr>
+      </table>`;
     alternateResult = await sendInstitutionalEmail({
       to: step.alternateApprovalEmail,
       subject: isParallelEquivalent ? `${solicitud.consecutivo} | ${title}` : `${solicitud.consecutivo} | Acceso alterno para visto bueno`,
@@ -676,11 +874,11 @@ const emailStep = async (solicitud, step, tokenBundle) => {
       html: renderInstitutionalTemplate({
         title: isParallelEquivalent ? title : 'Acceso alterno para visto bueno',
         introHtml: isParallelEquivalent
-          ? `<p>Saludo de paz y bien,</p><p>La solicitud de desplazamiento <strong>${escapeHtml(solicitud.consecutivo)}</strong> requiere la actuación de <strong>${escapeHtml(authorityLabel)}</strong>. Este acceso tiene la misma validez que el remitido al Vicerrector Financiero.</p>`
-          : `<p>Saludo de paz y bien,</p><p>Se remite al correo institucional de <strong>${escapeHtml(step.alternateApprovalLabel || 'la dependencia')}</strong> un acceso alterno para la solicitud <strong>${escapeHtml(solicitud.consecutivo)}</strong>.</p>`,
+          ? `<p style="margin: 0 0 10px 0;">Saludo de paz y bien,</p><p style="margin: 0 0 14px 0;">La solicitud de desplazamiento <strong>${escapeHtml(solicitud.consecutivo)}</strong> requiere la actuación de <strong>${escapeHtml(authorityLabel)}</strong>. Este acceso tiene la misma validez institucional que el remitido a la Vicerrectoría Financiera.</p>`
+          : `<p style="margin: 0 0 10px 0;">Saludo de paz y bien,</p><p style="margin: 0 0 14px 0;">Se remite al correo institucional de <strong>${escapeHtml(step.alternateApprovalLabel || 'la dependencia')}</strong> un acceso alterno para la solicitud <strong>${escapeHtml(solicitud.consecutivo)}</strong>.</p>`,
         bodyHtml: isParallelEquivalent
-          ? `${summaryHtml(solicitud)}${financialAmount}<p style="text-align:center;margin:22px 0"><a href="${alternateActionUrl}" style="display:inline-block;background:#1d4ed8;color:#fff;padding:12px 20px;border-radius:8px;text-decoration:none;font-weight:700">${buttonLabel}</a></p><p style="color:#64748b;font-size:12px">La solicitud solo puede procesarse una vez. Cuando uno de los dos destinatarios registre la decisión, el otro enlace quedará cerrado.</p>`
-          : `<div style="padding:14px 16px;border-left:4px solid #d97706;background:#fffbeb;color:#713f12;margin-bottom:18px"><strong>Uso restringido:</strong> este acceso solo debe utilizarse cuando ${escapeHtml(absenceRole)} no se encuentre disponible. La actuación se registrará a nombre de ${escapeHtml(authorityLabel)}, exige una observación y quedará identificada en la trazabilidad.</div>${summaryHtml(solicitud)}${financialAmount}<p style="text-align:center;margin:22px 0"><a href="${alternateActionUrl}" style="display:inline-block;background:#1d4ed8;color:#fff;padding:12px 20px;border-radius:8px;text-decoration:none;font-weight:700">Revisar solicitud</a></p>`
+          ? `${summaryHtml(solicitud)}${financialAmount}${alternateButtonHtml}<p style="color:#64748b;font-size:12px;text-align:center;">La solicitud solo puede procesarse una vez. Cuando uno de los dos destinatarios registre la decisión, el otro enlace quedará cerrado automáticamente.</p>`
+          : `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin: 0 0 18px 0; border-left: 4px solid #d97706; background-color: #fffbeb; border-radius: 4px;"><tr><td style="padding: 12px 16px; color: #92400e; font-size: 13px; line-height: 1.45;"><strong>Uso restringido:</strong> Este acceso solo debe utilizarse cuando ${escapeHtml(absenceRole)} no se encuentre disponible. La actuación se registrará formalmente a nombre de ${escapeHtml(authorityLabel)}, exige una observación y quedará identificada en la trazabilidad institucional.</td></tr></table>${summaryHtml(solicitud)}${financialAmount}${alternateButtonHtml}`
       }),
       attachments: [pdfAttachment, attachment, supportAttachment].filter(Boolean)
     });
@@ -693,7 +891,7 @@ const emailStep = async (solicitud, step, tokenBundle) => {
       text: `La liquidación ${solicitud.consecutivo} fue remitida a Tesorería/Pagaduría para autorizar el pago. Esta copia para la Vicerrectoría Financiera es informativa.`,
       html: renderInstitutionalTemplate({
         title: 'Copia informativa de liquidación',
-        introHtml: '<p>Saludo de paz y bien,</p><p>El Técnico Contable registró la liquidación y la remitió a Tesorería/Pagaduría para autorizar el pago. Esta copia no contiene un botón de actuación.</p>',
+        introHtml: '<p style="margin: 0 0 10px 0;">Saludo de paz y bien,</p><p style="margin: 0 0 14px 0;">El Técnico Contable registró la liquidación de viáticos y la remitió a Tesorería / Pagaduría para autorizar el pago. Esta copia es de carácter informativo.</p>',
         bodyHtml: `${summaryHtml(solicitud)}${financialAmountHtml(solicitud)}`
       }),
       attachments: [pdfAttachment, attachment, supportAttachment].filter(Boolean)
@@ -719,7 +917,7 @@ const sendRadicationCopies = async (solicitud, recipients = []) => {
     text: `La solicitud ${solicitud.consecutivo} fue radicada y enviada a ${firstStep?.label || 'la primera etapa de aprobación'}.`,
     html: renderInstitutionalTemplate({
       title: 'Solicitud de desplazamiento radicada',
-      introHtml: `<p>Saludo de paz y bien,</p><p>Se remite copia informativa de la solicitud radicada. La primera actuación corresponde a <strong>${escapeHtml(firstStep?.label || 'la instancia responsable')}</strong>.</p>`,
+      introHtml: `<p style="margin: 0 0 10px 0;">Saludo de paz y bien,</p><p style="margin: 0 0 14px 0;">Se remite copia informativa de la solicitud de desplazamiento radicada. La primera actuación de visto bueno corresponde a <strong>${escapeHtml(firstStep?.label || 'la instancia responsable')}</strong>.</p>`,
       bodyHtml: summaryHtml(solicitud)
     }),
     attachments: [pdfAttachment, supportAttachment].filter(Boolean)
@@ -738,7 +936,11 @@ const sendRequesterNotice = async (solicitud, title, message, { final = false, i
     to: recipient,
     subject: `${solicitud.consecutivo} | ${title}`,
     text: message,
-    html: renderInstitutionalTemplate({ title, introHtml: `<p>Saludo de paz y bien,</p><p>${escapeHtml(message)}</p>`, bodyHtml: summaryHtml(solicitud) }),
+    html: renderInstitutionalTemplate({
+      title,
+      introHtml: `<p style="margin: 0 0 10px 0;">Saludo de paz y bien,</p><p style="margin: 0 0 14px 0;">${escapeHtml(message)}</p>`,
+      bodyHtml: summaryHtml(solicitud)
+    }),
     attachments: [pdfAttachment, attachment, supportAttachment].filter(Boolean)
   });
 };
@@ -775,7 +977,7 @@ const sendNormalReportFinalCopies = async (solicitud, report = null) => {
     text: `El reporte de salida ${solicitud.consecutivo} finalizó su flujo de autorización. Se adjunta el PDF aprobado.`,
     html: renderInstitutionalTemplate({
       title: 'Reporte de salida aprobado',
-      introHtml: '<p>Saludo de paz y bien,</p><p>Gestión Humana aprobó el reporte de salida. Se remite copia informativa del documento finalizado.</p>',
+      introHtml: '<p style="margin: 0 0 10px 0;">Saludo de paz y bien,</p><p style="margin: 0 0 14px 0;">Gestión Humana aprobó el reporte de salida. Se remite copia informativa del documento finalizado con todas las firmas electrónicas.</p>',
       bodyHtml: summaryHtml(solicitud)
     }),
     attachments: [pdfAttachment, supportAttachment].filter(Boolean)
@@ -792,10 +994,12 @@ const sendFinalizedCopies = async (solicitud) => {
   ]);
   const supportAttachment = buildSupportAttachment(solicitud);
   const collaboratorEmail = normalizeEmail(solicitud.solicitante_snapshot?.email || solicitud.solicitante_snapshot?.correo);
-  const financialRecipients = [...new Set([
+  const finalRecipients = [...new Set([
     recipients.tecnicoContable,
     recipients.financiera,
-    recipients.tesoreria
+    recipients.tesoreria,
+    recipients.gestionHumana,
+    recipients.sst
   ].filter(Boolean).map(normalizeEmail))];
   const results = [];
   if (collaboratorEmail) {
@@ -804,23 +1008,23 @@ const sendFinalizedCopies = async (solicitud) => {
       subject: `${solicitud.consecutivo} | Pago autorizado - pendiente de legalización`,
       text: `Tesorería/Pagaduría autorizó el pago de la solicitud ${solicitud.consecutivo}. Se adjuntan los dos formatos firmados. La legalización se habilitará en la fecha de regreso y tendrá un plazo de tres días hábiles.`,
       html: renderInstitutionalTemplate({
-        title: 'Pago autorizado - pendiente de legalización',
-        introHtml: '<p>Saludo de paz y bien,</p><p>Tesorería/Pagaduría autorizó el pago. Como colaborador solicitante, recibe el reporte de salida y la liquidación firmada. El módulo de legalización se habilitará en la fecha de regreso y conservará la obligación visible si vence el plazo de tres días hábiles.</p>',
+        title: 'Pago autorizado · Pendiente de legalización',
+        introHtml: '<p style="margin: 0 0 10px 0;">Saludo de paz y bien,</p><p style="margin: 0 0 14px 0;">Tesorería / Pagaduría ha autorizado el pago de su anticipo de viáticos. Se remite copia del reporte de salida y de la liquidación oficial debidamente firmados. El módulo de legalización se habilitará automáticamente en la fecha de regreso y dispondrá de tres (3) días hábiles conforme al Acuerdo 001 de 2013.</p>',
         bodyHtml: summaryHtml(solicitud)
       }),
       attachments: [normalReportPdfAttachment, liquidationPdfAttachment, supportAttachment].filter(Boolean)
     }));
   }
-  results.push(...await Promise.all(financialRecipients.map((email) => sendInstitutionalEmail({
+  results.push(...await Promise.all(finalRecipients.map((email) => sendInstitutionalEmail({
     to: email,
     subject: `${solicitud.consecutivo} | Liquidación final y pago autorizado`,
-    text: `Tesorería/Pagaduría autorizó el pago de la liquidación de viáticos ${solicitud.consecutivo}.`,
+    text: `Tesorería/Pagaduría autorizó el pago de la liquidación de viáticos ${solicitud.consecutivo}. Se adjuntan el formato de salida y la liquidación de viáticos firmados.`,
     html: renderInstitutionalTemplate({
       title: 'Liquidación final y pago autorizado',
-      introHtml: '<p>Saludo de paz y bien,</p><p>Tesorería/Pagaduría autorizó el pago. Se adjunta exclusivamente la liquidación final con todas las firmas electrónicas.</p>',
+      introHtml: '<p style="margin: 0 0 10px 0;">Saludo de paz y bien,</p><p style="margin: 0 0 14px 0;">Tesorería / Pagaduría ha autorizado el pago del anticipo. Se adjuntan el reporte de salida y la liquidación final de viáticos con todas las firmas y actuaciones registradas.</p>',
       bodyHtml: summaryHtml(solicitud)
     }),
-    attachments: [liquidationPdfAttachment, supportAttachment].filter(Boolean)
+    attachments: [normalReportPdfAttachment, liquidationPdfAttachment, supportAttachment].filter(Boolean)
   }))));
   return { success: results.length > 0 && results.every((result) => result.success), results };
 };
@@ -986,7 +1190,7 @@ const findProcessedAction = async (token) => {
   }
 };
 
-const page = (title, body) => `<!doctype html><html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><link rel="icon" type="image/png" href="/api/desplazamientos-viaticos/assets/escudo.png"><link rel="apple-touch-icon" href="/api/desplazamientos-viaticos/assets/escudo.png"><title>${escapeHtml(title)}</title><style>body{margin:0;padding:28px 16px;background:#f1f5f9;font-family:Arial,sans-serif;color:#334155}button,input,textarea,select,table{font-family:inherit}.card{max-width:900px;margin:0 auto;background:#fff;border:1px solid #dbeafe;border-radius:14px;box-shadow:0 12px 35px #0f172a1f;overflow:hidden}.institutional-image{display:block;width:100%;height:auto;max-height:175px;object-fit:contain;background:#fff}.brand-bar{background:#0b3a6f;color:#fff;padding:14px 26px}.brand-name{font-size:15px;font-weight:800;letter-spacing:.4px}.brand-subtitle{font-size:11px;margin-top:4px;opacity:.95}.body{padding:26px 30px 30px}.page-title{margin:0 0 20px;padding:0 0 12px;border-bottom:2px solid #e5eef9;color:#0b3a6f;font-size:22px;line-height:1.25}.content{font-size:15px;line-height:1.55}.institutional-signature{margin-top:30px;padding-top:18px;border-top:1px solid #e2e8f0;color:#64748b;font-size:12px}.institutional-signature strong{display:block;margin-top:5px;color:#0b3a6f;font-size:13px}button{border:0;border-radius:8px;padding:12px 18px;font-weight:700;cursor:pointer}.ok{background:#166534;color:#fff}.bad{background:#b91c1c;color:#fff}.primary{background:#1d4ed8;color:#fff}.remove-row{background:#dc2626;color:#fff;border:1px solid #b91c1c;padding:10px 14px}.remove-row:hover{background:#b91c1c}.currency-input{display:flex;align-items:center;width:100%;box-sizing:border-box;border:1px solid #cbd5e1;border-radius:7px;background:#fff;margin:5px 0 12px;overflow:hidden}.currency-input span{padding:0 0 0 10px;font-weight:700;color:#334155}.currency-input input{border:0;outline:0;margin:0;padding-left:6px;background:transparent}input,textarea{box-sizing:border-box;width:100%;padding:10px;border:1px solid #cbd5e1;border-radius:7px;margin:5px 0 12px}table{width:100%;border-collapse:collapse}th,td{padding:8px;border:1px solid #dbe3ee;text-align:left}th{background:#e8eef6}.actions{display:flex;gap:12px;flex-wrap:wrap;margin-top:20px}.notice{padding:12px;background:#fffbeb;border-left:4px solid #d97706;margin:15px 0}.add-concept{display:block;margin:12px 0 0}.observations-label{display:block;margin-top:28px;margin-bottom:5px;font-weight:600}@media(max-width:640px){body{padding:0}.card{border-radius:0;border-left:0;border-right:0}.body{padding:20px 16px}.page-title{font-size:19px}.institutional-image{max-height:120px}table{font-size:12px}th,td{padding:6px}}</style></head><body><main class="card"><img class="institutional-image" src="/api/desplazamientos-viaticos/assets/encabezado-correos.png" alt="Universidad CESMAG"><div class="brand-bar"><div class="brand-name">SIAC UNICESMAG</div><div class="brand-subtitle">Sistema Interno de Aseguramiento de la Calidad</div></div><section class="body"><h1 class="page-title">${escapeHtml(title)}</h1><div class="content">${body}</div><footer class="institutional-signature"><em>Fraternalmente,</em><strong>SIAC UNICESMAG</strong><span>Hombres nuevos para tiempos nuevos</span></footer></section></main></body></html>`;
+const page = (title, body) => `<!doctype html><html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><link rel="icon" type="image/png" href="/api/desplazamientos-viaticos/assets/escudo.png"><link rel="apple-touch-icon" href="/api/desplazamientos-viaticos/assets/escudo.png"><title>${escapeHtml(title)}</title><style>body{margin:0;padding:28px 16px;background:#f1f5f9;font-family:Arial,sans-serif;color:#334155}button,input,textarea,select,table{font-family:inherit}.card{max-width:900px;margin:0 auto;background:#fff;border:1px solid #dbeafe;border-radius:14px;box-shadow:0 12px 35px #0f172a1f;overflow:hidden}.institutional-image{display:block;width:100%;height:auto;max-height:175px;object-fit:contain;background:#fff}.brand-bar{background:#0b3a6f;color:#fff;padding:14px 26px}.brand-name{font-size:15px;font-weight:800;letter-spacing:.4px}.brand-subtitle{font-size:11px;margin-top:4px;opacity:.95}.body{padding:26px 30px 30px}.page-title{margin:0 0 20px;padding:0 0 12px;border-bottom:2px solid #e5eef9;color:#0b3a6f;font-size:22px;line-height:1.25}.content{font-size:15px;line-height:1.55}.institutional-signature{margin-top:30px;padding-top:18px;border-top:1px solid #e2e8f0;color:#64748b;font-size:12px}.institutional-signature strong{display:block;margin-top:5px;color:#0b3a6f;font-size:13px}button{border:0;border-radius:8px;padding:12px 26px;font-size:14px;font-weight:700;cursor:pointer;transition:all .15s ease;min-width:160px;text-align:center}button:hover{opacity:.92;transform:translateY(-1px);box-shadow:0 6px 16px rgba(0,0,0,.15)}.ok{background:#166534;color:#fff;box-shadow:0 4px 12px rgba(22,101,52,.2)}.bad{background:#b91c1c;color:#fff;box-shadow:0 4px 12px rgba(185,28,28,.2)}.primary{background:#0b3a6f;color:#fff;box-shadow:0 4px 12px rgba(11,58,111,.2)}.remove-row{min-width:auto;background:#dc2626;color:#fff;border:1px solid #b91c1c;padding:8px 14px;font-size:12px}.remove-row:hover{background:#b91c1c}.currency-input{display:flex;align-items:center;width:100%;box-sizing:border-box;border:1px solid #cbd5e1;border-radius:7px;background:#fff;margin:5px 0 12px;overflow:hidden}.currency-input span{padding:0 0 0 10px;font-weight:700;color:#334155}.currency-input input{border:0;outline:0;margin:0;padding-left:6px;background:transparent}input,textarea{box-sizing:border-box;width:100%;padding:10px;border:1px solid #cbd5e1;border-radius:7px;margin:5px 0 12px}table{width:100%;border-collapse:collapse}th,td{padding:8px;border:1px solid #dbe3ee;text-align:left}th{background:#e8eef6}.actions{display:flex;gap:16px;flex-wrap:wrap;justify-content:center;align-items:center;margin:28px auto 10px;width:100%;text-align:center}.notice{padding:12px;background:#fffbeb;border-left:4px solid #d97706;margin:15px 0}.add-concept{display:inline-block;min-width:auto;margin:0}.observations-label{display:block;margin-top:28px;margin-bottom:5px;font-weight:600}@media(max-width:640px){body{padding:0}.card{border-radius:0;border-left:0;border-right:0}.body{padding:20px 16px}.page-title{font-size:19px}.institutional-image{max-height:120px}table{font-size:12px}th,td{padding:6px}.actions{flex-direction:column;width:100%}.actions button{width:100%}}</style></head><body><main class="card"><img class="institutional-image" src="/api/desplazamientos-viaticos/assets/encabezado-correos.png" alt="Universidad CESMAG"><div class="brand-bar"><div class="brand-name">SIAC UNICESMAG</div><div class="brand-subtitle">Sistema Interno de Aseguramiento de la Calidad</div></div><section class="body"><h1 class="page-title">${escapeHtml(title)}</h1><div class="content">${body}</div><footer class="institutional-signature"><em>Fraternalmente,</em><strong>SIAC UNICESMAG</strong><span>Hombres nuevos para tiempos nuevos</span></footer></section></main></body></html>`;
 
 const formatDocumentDate = (value) => {
   if (!value) return 'No registrado';
@@ -1006,7 +1210,149 @@ const formatDocumentTime = (value) => {
   return `${hour % 12 || 12}:${match[2]} ${hour < 12 ? 'a. m.' : 'p. m.'}`;
 };
 
-const liquidationRequestDocumentHtml = (solicitud) => {
+const findTrace = (solicitud, key) => [...(solicitud.trazabilidad || [])].reverse().find((entry) => (
+  entry.event === `aprobado_${key}`
+  || entry.event === `completado_${key}`
+  || entry.event === `no_aprobado_${key}`
+  || (key === 'jefe' && entry.event === 'aprobada_jefe')
+  || (key === 'financiera_previa' && entry.event === 'aprobada_vicerrectoria_financiera')
+  || (key === 'vicerrectoria_dependencia' && entry.event === 'aprobada_vicerrectoria_academica')
+  || (key === 'sst' && entry.event === 'aprobada_sst')
+  || (key === 'rectoria' && entry.event === 'aprobada_rectoria')
+  || (key === 'gestion_humana' && entry.event === 'aprobada_gestion_humana')
+));
+
+const renderSignaturesSection = (solicitud, currentStepKey) => {
+  const radication = (solicitud.trazabilidad || []).find((entry) => entry.event === 'radicada');
+  const collaborator = solicitud.solicitante_snapshot || {};
+  const laboral = solicitud.datos_laborales || {};
+  const plan = solicitud.plan_aprobacion || [];
+  const txId = `SGC-DEV-${solicitud.id}-${solicitud.consecutivo || '2026'}`;
+
+  const formatTraceDate = (d) => {
+    if (!d) return 'No registrado';
+    const date = new Date(d);
+    return Number.isNaN(date.getTime()) ? String(d) : date.toLocaleString('es-CO');
+  };
+
+  const signatureBoxes = [];
+
+  // 1. Firma del Solicitante (Aceptación Electrónica)
+  signatureBoxes.push(`
+    <div style="border: 1px solid #cbd5e1; border-radius: 4px; overflow: hidden; background: #ffffff;">
+      <div style="background-color: #f1f5f9; color: #1e293b; font-weight: 800; font-size: 10.5px; padding: 7px 10px; text-align: center; text-transform: uppercase; letter-spacing: 0.5px; border-bottom: 1px solid #cbd5e1;">
+        Firma del Trabajador Solicitante
+      </div>
+      <div style="padding: 10px 12px; font-size: 11px; line-height: 1.45; color: #1e293b;">
+        <div style="font-weight: 700; color: #334155; font-size: 10.5px; margin-bottom: 2px;">Firmado electrónicamente por:</div>
+        <div style="font-weight: 800; color: #0b3a6f; font-size: 12.5px; text-transform: uppercase;">${escapeHtml(collaborator.nombre || 'Colaborador')}</div>
+        <div><strong>Documento:</strong> ${escapeHtml(collaborator.documento || collaborator.username || 'No registrado')}</div>
+        <div><strong>Cargo:</strong> ${escapeHtml(laboral.cargo || collaborator.cargo || 'No registrado')}</div>
+        <div><strong>Fecha y hora:</strong> ${formatTraceDate(radication?.at || solicitud.created_at)}</div>
+        <div style="font-size: 9px; color: #64748b; margin-top: 4px; font-family: monospace;">ID Transacción: ${escapeHtml(txId)}</div>
+      </div>
+    </div>
+  `);
+
+  // 2. Firmas de los pasos del plan
+  plan.forEach((step) => {
+    const trace = findTrace(solicitud, step.key);
+    const isCurrent = step.key === currentStepKey;
+    const isApproved = Boolean(trace && trace.event !== `no_aprobado_${step.key}`);
+    const isRejected = trace?.event === `no_aprobado_${step.key}`;
+
+    let contentHtml = '';
+    let actorName = trace?.actor?.nombre || trace?.actor?.email || step.nombre || step.label;
+    let actorCargo = trace?.actor?.cargo || step.label;
+
+    if (isApproved) {
+      contentHtml = `
+        <div style="font-weight: 700; color: #334155; font-size: 10.5px; margin-bottom: 2px;">Firmado electrónicamente por:</div>
+        <div style="font-weight: 800; color: #0b3a6f; font-size: 12.5px; text-transform: uppercase;">${escapeHtml(actorName)}</div>
+        <div><strong>Cargo:</strong> ${escapeHtml(actorCargo)}</div>
+        <div><strong>Fecha y hora:</strong> ${formatTraceDate(trace.at)}</div>
+        <div style="font-size: 9px; color: #64748b; margin-top: 4px; font-family: monospace;">ID Transacción: ${escapeHtml(txId)}</div>
+      `;
+    } else if (isRejected) {
+      contentHtml = `
+        <div style="font-weight: 700; color: #991b1b; font-size: 10.5px; margin-bottom: 2px;">No aprobado por:</div>
+        <div style="font-weight: 800; color: #991b1b; font-size: 12.5px; text-transform: uppercase;">${escapeHtml(actorName)}</div>
+        <div><strong>Cargo:</strong> ${escapeHtml(actorCargo)}</div>
+        <div><strong>Fecha y hora:</strong> ${formatTraceDate(trace.at)}</div>
+        <div style="font-size: 10.5px; color: #991b1b; margin-top: 3px;"><strong>Motivo:</strong> ${escapeHtml(trace.observacion || trace.motivo || 'Sin observación')}</div>
+      `;
+    } else if (isCurrent) {
+      contentHtml = `
+        <div style="font-weight: 700; color: #0b3a6f; font-size: 11px; margin-bottom: 2px;">Pendiente de firma y visto bueno</div>
+        <div style="color: #475569; font-size: 10.5px; line-height: 1.35;">Espacio reservado para la firma electrónica de <strong>${escapeHtml(step.label)}</strong>.</div>
+        <div style="margin-top: 5px; font-size: 10px; color: #0b3a6f; font-style: italic;">Utilice el panel inferior para emitir su visto bueno formal.</div>
+      `;
+    } else {
+      contentHtml = `
+        <div style="font-weight: 600; color: #64748b; font-size: 10.5px; margin-bottom: 2px;">Estado: Pendiente</div>
+        <div style="color: #94a3b8; font-size: 10px;">Esta etapa se habilitará una vez aprobadas las instancias previas.</div>
+      `;
+    }
+
+    const headerBg = isApproved ? '#f1f5f9' : (isRejected ? '#fef2f2' : (isCurrent ? '#eff6ff' : '#f8fafc'));
+    const headerColor = isApproved ? '#0b3a6f' : (isRejected ? '#991b1b' : (isCurrent ? '#1e3a8a' : '#475569'));
+    const borderCol = isCurrent ? '#93c5fd' : '#cbd5e1';
+
+    signatureBoxes.push(`
+      <div style="border: 1px solid ${borderCol}; border-radius: 4px; overflow: hidden; background: #ffffff;">
+        <div style="background-color: ${headerBg}; color: ${headerColor}; font-weight: 800; font-size: 10.5px; padding: 7px 10px; text-align: center; text-transform: uppercase; letter-spacing: 0.5px; border-bottom: 1px solid ${borderCol};">
+          ${escapeHtml(step.label)}
+        </div>
+        <div style="padding: 10px 12px; font-size: 11px; line-height: 1.45; color: #1e293b;">
+          ${contentHtml}
+        </div>
+      </div>
+    `);
+  });
+
+  // 3. Tabla de Trazabilidad Detallada
+  const traces = solicitud.trazabilidad || [];
+  const traceRows = traces.map((t) => {
+    let detailStr = t.motivo || t.observacion || t.justificacion || (t.event === 'radicada' ? 'Se registró la solicitud en el sistema.' : 'Procesado exitosamente.');
+    let actorStr = t.actor?.nombre || t.actor?.email || 'Sistema SIAC';
+    return `
+      <tr style="border-bottom: 1px solid #e2e8f0;">
+        <td style="padding: 7px 10px; font-size: 10.5px; color: #475569; white-space: nowrap;">${formatTraceDate(t.at)}</td>
+        <td style="padding: 7px 10px; font-size: 10.5px; font-weight: 700; color: #0b3a6f;">${escapeHtml(t.event)}</td>
+        <td style="padding: 7px 10px; font-size: 10.5px; color: #334155;">${escapeHtml(actorStr)}</td>
+        <td style="padding: 7px 10px; font-size: 10.5px; color: #475569;">${escapeHtml(detailStr)}</td>
+      </tr>
+    `;
+  }).join('');
+
+  return `
+    <section class="fr004-section" style="padding-top:0">
+      <h2 class="fr004-section-title">Control de Firmas Electrónicas y Aprobaciones</h2>
+      <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 12px; margin-bottom: 18px;">
+        ${signatureBoxes.join('')}
+      </div>
+
+      <h2 class="fr004-section-title">Trazabilidad Cronológica del Trámite</h2>
+      <div style="overflow-x: auto; border: 1px solid #cbd5e1; border-radius: 4px; margin-bottom: 12px;">
+        <table style="width: 100%; border-collapse: collapse; font-size: 11px;">
+          <thead>
+            <tr style="background-color: #f1f5f9; border-bottom: 1px solid #cbd5e1;">
+              <th style="padding: 8px 10px; text-align: left; font-weight: 800; font-size: 10.5px; color: #475569; text-transform: uppercase;">Fecha y Hora</th>
+              <th style="padding: 8px 10px; text-align: left; font-weight: 800; font-size: 10.5px; color: #475569; text-transform: uppercase;">Evento / Acción</th>
+              <th style="padding: 8px 10px; text-align: left; font-weight: 800; font-size: 10.5px; color: #475569; text-transform: uppercase;">Responsable</th>
+              <th style="padding: 8px 10px; text-align: left; font-weight: 800; font-size: 10.5px; color: #475569; text-transform: uppercase;">Detalle / Observación</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${traceRows || '<tr><td colspan="4" style="padding: 8px; text-align: center; color: #94a3b8;">Sin registros de trazabilidad adicionales.</td></tr>'}
+          </tbody>
+        </table>
+      </div>
+    </section>
+  `;
+};
+
+const liquidationRequestDocumentHtml = (solicitud, { currentStepKey = null, formId = 'action-form', isTechnician = false } = {}) => {
   const personal = solicitud.solicitante_snapshot || {};
   const laboral = solicitud.datos_laborales || {};
   const salida = solicitud.datos_salida || {};
@@ -1015,9 +1361,33 @@ const liquidationRequestDocumentHtml = (solicitud) => {
   const destination = viaticos.lugarVisitar || salida.entidadDestino || salida.municipio || salida.pais;
   const readonlyField = (label, value, className = '') => `<div class="fr004-field ${className}"><span>${escapeHtml(label)}</span><strong>${escapeHtml(value || 'No registrado')}</strong></div>`;
 
+  const centroCostoField = isTechnician
+    ? `<div class="fr004-field"><label for="centro-costo-input">Centro de costos asignado <span class="fr004-required">*</span></label><input class="fr004-editable" id="centro-costo-input" form="${formId}" name="centroCosto" maxlength="100" value="${escapeHtml(viaticos.centroCosto || '')}" placeholder="Digite el centro de costos" required></div>`
+    : `<div class="fr004-field"><label for="centro-costo-input">Centro de costos asignado</label><input class="fr004-editable" id="centro-costo-input" form="${formId}" name="centroCosto" maxlength="100" value="${escapeHtml(viaticos.centroCosto || '')}" placeholder="Centro de costos"></div>`;
+
+  const alojamientoOptions = ['Hotel', 'Casa de familia', 'No requiere'];
+  const currentAlojamiento = (viaticos.alojamiento || '').toLowerCase();
+  const alojamientoField = `<div class="fr004-field"><label for="alojamiento-input">Alojamiento <span class="fr004-required">*</span></label><select class="fr004-editable" id="alojamiento-input" form="${formId}" name="alojamiento" style="margin:2px 0 0;padding:5px 8px;border:1.5px solid #cbd5e1;background:#fff;color:#172033;font-size:11.5px;font-weight:700" required>${alojamientoOptions.map(opt => `<option value="${opt}"${currentAlojamiento.includes(opt.toLowerCase()) || (opt === 'Hotel' && !currentAlojamiento) ? ' selected' : ''}>${opt}</option>`).join('')}</select></div>`;
+
+  const transporteOptions = ['Terrestre', 'Aéreo', 'Mixto'];
+  const currentTransporte = (viaticos.transporte || '').toLowerCase();
+  const transporteField = `<div class="fr004-field"><label for="transporte-input">Transporte <span class="fr004-required">*</span></label><select class="fr004-editable" id="transporte-input" form="${formId}" name="transporte" style="margin:2px 0 0;padding:5px 8px;border:1.5px solid #cbd5e1;background:#fff;color:#172033;font-size:11.5px;font-weight:700" required>${transporteOptions.map(opt => `<option value="${opt}"${currentTransporte.includes(opt.toLowerCase()) || (opt === 'Aéreo' && !currentTransporte) ? ' selected' : ''}>${opt}</option>`).join('')}</select></div>`;
+
+  const tipoCuentaField = `<div class="fr004-field"><label for="tipo-cuenta-input">Tipo de cuenta <span class="fr004-required">*</span></label><select class="fr004-editable" id="tipo-cuenta-input" form="${formId}" name="tipoCuenta" style="margin:2px 0 0;padding:5px 8px;border:1.5px solid #cbd5e1;background:#fff;color:#172033;font-size:11.5px;font-weight:700" required><option value="Ahorros"${viaticos.tipoCuenta === 'Ahorros' ? ' selected' : ''}>Ahorros</option><option value="Corriente"${viaticos.tipoCuenta === 'Corriente' ? ' selected' : ''}>Corriente</option></select></div>`;
+
+  const bankOptions = ['Bancolombia', 'Davivienda', 'Banco AV Villas', 'Otro'];
+  const currentBank = viaticos.entidadBancaria || 'Bancolombia';
+  const allBankOptions = bankOptions.some(b => b.toLowerCase() === currentBank.toLowerCase())
+    ? bankOptions
+    : [currentBank, ...bankOptions];
+
+  const entidadBancariaField = `<div class="fr004-field fr004-span-2"><label for="entidad-bancaria-input">Entidad bancaria <span class="fr004-required">*</span></label><select class="fr004-editable" id="entidad-bancaria-input" form="${formId}" name="entidadBancaria" style="margin:2px 0 0;padding:5px 8px;border:1.5px solid #cbd5e1;background:#fff;color:#172033;font-size:11.5px;font-weight:700" required>${allBankOptions.map(b => `<option value="${escapeHtml(b)}"${b.toLowerCase() === currentBank.toLowerCase() ? ' selected' : ''}>${escapeHtml(b)}</option>`).join('')}</select></div>`;
+
+  const numeroCuentaField = `<div class="fr004-field fr004-span-2"><label for="numero-cuenta-input">Número de cuenta (Corregible) <span class="fr004-required">*</span></label><input class="fr004-editable" id="numero-cuenta-input" form="${formId}" name="numeroCuenta" maxlength="60" value="${escapeHtml(viaticos.numeroCuenta || '')}" placeholder="Número de cuenta bancaria" required></div>`;
+
   return `
     <style>
-      body{padding:20px 12px}.card{max-width:1120px;border:0;background:transparent;box-shadow:none;overflow:visible}.institutional-image,.page-title,.institutional-signature{display:none}.brand-bar{display:block;margin:0 0 18px;padding:16px 22px;border-radius:12px;background:linear-gradient(135deg,#0b3a6f,#124f8d);box-shadow:0 9px 24px rgba(11,58,111,.18)}.brand-name{font-size:16px}.brand-subtitle{font-size:11px}.body{padding:0}.fr004-document{overflow:hidden;margin:0 0 20px;border:1px solid #bfd0e3;border-radius:16px;background:#fff;box-shadow:0 14px 34px rgba(15,52,96,.09)}
+      body{padding:20px 12px}.card{max-width:1080px;border:0;background:transparent;box-shadow:none;overflow:visible}.institutional-image,.page-title,.institutional-signature{display:none}.brand-bar{display:block;margin:0 0 18px;padding:16px 22px;border-radius:12px;background:linear-gradient(135deg,#0b3a6f,#124f8d);box-shadow:0 9px 24px rgba(11,58,111,.18)}.brand-name{font-size:16px}.brand-subtitle{font-size:11px}.body{padding:0}.fr004-document{overflow:hidden;margin:0 0 20px;border:1px solid #bfd0e3;border-radius:16px;background:#fff;box-shadow:0 14px 34px rgba(15,52,96,.09)}
       .fr004-header{display:grid;grid-template-columns:minmax(155px,195px) 1fr minmax(140px,170px);min-height:82px;border-bottom:2px solid #0b3a6f}
       .fr004-logo{display:flex;align-items:center;justify-content:center;padding:9px 12px;border-right:1px solid #cad7e6;background:#fff}.fr004-logo img{display:block;width:100%;max-width:165px;height:auto}
       .fr004-title{display:flex;align-items:center;justify-content:center;padding:10px 14px;text-align:center;color:#0b3a6f;font-size:18px;font-weight:900;line-height:1.12;letter-spacing:.1px}
@@ -1058,22 +1428,111 @@ const liquidationRequestDocumentHtml = (solicitud) => {
       <section class="fr004-section" style="padding-top:0">
         <h2 class="fr004-section-title">Logística y consignación</h2>
         <div class="fr004-grid">
-          <div class="fr004-field"><label for="centro-costo-tecnico">Centro de costos asignado <span class="fr004-required">*</span></label><input class="fr004-editable" id="centro-costo-tecnico" form="liquidacion-form" name="centroCosto" maxlength="100" value="${escapeHtml(viaticos.centroCosto || '')}" placeholder="Digite el centro de costos" required></div>
-          ${readonlyField('Alojamiento', viaticos.alojamiento)}
-          ${readonlyField('Transporte', viaticos.transporte)}
-          ${readonlyField('Tipo de cuenta', viaticos.tipoCuenta)}
-          ${readonlyField('Entidad bancaria', viaticos.entidadBancaria, 'fr004-span-2')}
-          ${readonlyField('Número de cuenta', viaticos.numeroCuenta, 'fr004-span-2')}
+          ${centroCostoField}
+          ${alojamientoField}
+          ${transporteField}
+          ${tipoCuentaField}
+          ${entidadBancariaField}
+          ${numeroCuentaField}
         </div>
       </section>
       <div class="fr004-authorization"><strong>Autorización aceptada electrónicamente por el colaborador.</strong><br>${escapeHtml(viaticos.autorizacionTexto || AUTHORIZATION_TEXT)}</div>
       <div class="fr004-legal"><strong>IMPORTANTE:</strong> ${escapeHtml((viaticos.avisoLegalizacion || LEGALIZATION_NOTICE).replace(/^IMPORTANTE:\s*/i, ''))}</div>
+      ${renderSignaturesSection(solicitud, currentStepKey)}
     </article>`;
 };
 
 const liquidacionForm = (solicitud, token, nonce, { demo = false, demoCanSubmit = false, demoTechnicianOnly = false } = {}) => {
-  const rows = `<tr hidden><td colspan="5"><input type="hidden" name="liquidationRowsVersion" value="2"></td></tr>${BASE_DETAIL_NAMES.map((name, index) => `<tr data-liquidation-row><td><input type="hidden" name="baseIncluded${index}" value="1">${escapeHtml(name)}</td><td><div class="currency-input"><span aria-hidden="true">$</span><input class="valor-diario" inputmode="numeric" type="number" min="0" step="1" name="valorDiario${index}" value="0" aria-label="Valor diario en pesos para ${escapeHtml(name)}" required></div></td><td><input class="dias" inputmode="numeric" type="number" min="0" step="1" name="dias${index}" value="0" required></td><td class="row-total">$0</td><td><button class="remove-row" type="button" aria-label="Eliminar ${escapeHtml(name)}">Eliminar</button></td></tr>`).join('')}`;
-  const calculator = `<script nonce="${nonce}">(()=>{const body=document.getElementById('liquidacion-detalles');const count=document.getElementById('extra-count');const money=n=>new Intl.NumberFormat('es-CO',{style:'currency',currency:'COP',maximumFractionDigits:0}).format(n||0);const update=()=>{let grand=0;body.querySelectorAll('tr[data-liquidation-row]').forEach(row=>{const v=Number(row.querySelector('.valor-diario').value||0);const d=Number(row.querySelector('.dias').value||0);const total=v*d;grand+=total;row.querySelector('.row-total').textContent=money(total)});document.getElementById('total-anticipo').textContent=money(grand)};document.getElementById('agregar-concepto').addEventListener('click',()=>{const i=Number(count.value||0);if(i>=30)return;const row=document.createElement('tr');row.setAttribute('data-liquidation-row','');row.innerHTML='<td><input class="detalle-extra" name="extraDetalle'+i+'" maxlength="120" placeholder="Nombre del concepto" required></td><td><div class="currency-input"><span aria-hidden="true">$</span><input class="valor-diario" inputmode="numeric" type="number" min="0" step="1" name="extraValorDiario'+i+'" value="0" aria-label="Valor diario en pesos" required></div></td><td><input class="dias" inputmode="numeric" type="number" min="0" step="1" name="extraDias'+i+'" value="0" required></td><td class="row-total">$0</td><td><button class="remove-row" type="button" aria-label="Eliminar concepto">Eliminar</button></td>';body.appendChild(row);count.value=String(i+1);row.querySelector('.detalle-extra').focus();update()});body.addEventListener('input',update);body.addEventListener('click',event=>{const button=event.target.closest('.remove-row');if(button){button.closest('tr').remove();update()}});update()})()</script>`;
+  const rows = `<tr hidden><td colspan="5"><input type="hidden" name="liquidationRowsVersion" value="2"></td></tr>${BASE_DETAIL_NAMES.map((name, index) => `<tr data-liquidation-row><td><input type="hidden" name="baseIncluded${index}" value="1">${escapeHtml(name)}</td><td><div class="currency-input"><span aria-hidden="true">$</span><input class="valor-diario" inputmode="numeric" type="number" min="0" step="1" name="valorDiario${index}" value="0" aria-label="Valor diario en pesos para ${escapeHtml(name)}" oninput="window.calcLiquidation && window.calcLiquidation()"></div></td><td><input class="dias" inputmode="numeric" type="number" min="0" step="1" name="dias${index}" value="0" oninput="window.calcLiquidation && window.calcLiquidation()"></td><td class="row-total">$0</td><td><button class="remove-row" type="button" aria-label="Eliminar ${escapeHtml(name)}">Eliminar</button></td></tr>`).join('')}`;
+  const calculator = `<script>
+(function() {
+  function formatMoney(num) {
+    return new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', maximumFractionDigits: 0 }).format(num || 0);
+  }
+  function parseVal(val) {
+    if (typeof val === 'number') return isNaN(val) ? 0 : val;
+    var cleanStr = String(val || '').replace(/[^0-9.-]/g, '');
+    var n = parseFloat(cleanStr);
+    return isNaN(n) ? 0 : n;
+  }
+  function recalculate() {
+    var body = document.getElementById('liquidacion-detalles');
+    if (!body) return;
+    var rows = body.querySelectorAll('tr[data-liquidation-row]');
+    var grandTotal = 0;
+    rows.forEach(function(row) {
+      var vInput = row.querySelector('.valor-diario');
+      var dInput = row.querySelector('.dias');
+      var tCell = row.querySelector('.row-total');
+      var v = vInput ? parseVal(vInput.value) : 0;
+      var d = dInput ? Math.max(0, Math.floor(parseVal(dInput.value))) : 0;
+      var rowTotal = v * d;
+      grandTotal += rowTotal;
+      if (tCell) {
+        tCell.textContent = formatMoney(rowTotal);
+      }
+    });
+    var totalEl = document.getElementById('total-anticipo');
+    if (totalEl) {
+      totalEl.textContent = formatMoney(grandTotal);
+    }
+  }
+  window.calcLiquidation = recalculate;
+
+  function init() {
+    var body = document.getElementById('liquidacion-detalles');
+    var addBtn = document.getElementById('agregar-concepto');
+    var countInput = document.getElementById('extra-count');
+
+    if (body) {
+      body.addEventListener('input', recalculate);
+      body.addEventListener('change', recalculate);
+      body.addEventListener('keyup', recalculate);
+      body.addEventListener('paste', function() { setTimeout(recalculate, 50); });
+      body.addEventListener('click', function(e) {
+        var btn = e.target.closest('.remove-row');
+        if (btn) {
+          var tr = btn.closest('tr');
+          if (tr) {
+            tr.remove();
+            recalculate();
+          }
+        }
+      });
+    }
+
+    if (addBtn && countInput && body) {
+      addBtn.addEventListener('click', function(e) {
+        e.preventDefault();
+        var i = parseInt(countInput.value, 10) || 0;
+        if (i >= 30) return;
+        var tr = document.createElement('tr');
+        tr.setAttribute('data-liquidation-row', '');
+        tr.innerHTML = '<td><input class="detalle-extra" name="extraDetalle' + i + '" maxlength="120" placeholder="Nombre del concepto" required></td>' +
+          '<td><div class="currency-input"><span aria-hidden="true">$</span><input class="valor-diario" inputmode="numeric" type="number" min="0" step="1" name="extraValorDiario' + i + '" value="0" aria-label="Valor diario en pesos" required oninput="window.calcLiquidation && window.calcLiquidation()"></div></td>' +
+          '<td><input class="dias" inputmode="numeric" type="number" min="0" step="1" name="extraDias' + i + '" value="0" required oninput="window.calcLiquidation && window.calcLiquidation()"></td>' +
+          '<td class="row-total">$0</td>' +
+          '<td><button class="remove-row" type="button" aria-label="Eliminar concepto">Eliminar</button></td>';
+        body.appendChild(tr);
+        countInput.value = String(i + 1);
+        var inputFirst = tr.querySelector('.detalle-extra');
+        if (inputFirst) inputFirst.focus();
+        recalculate();
+      });
+    }
+
+    recalculate();
+  }
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', init);
+  } else {
+    init();
+  }
+  window.addEventListener('load', recalculate);
+  setTimeout(recalculate, 200);
+})();
+</script>`;
   const demoNotice = demoTechnicianOnly
     ? '<div class="notice"><strong>PRUEBA EXCLUSIVA DEL TÉCNICO:</strong> puede diligenciar y procesar la liquidación. No se enviará a Tesorería, no se notificará a otros correos y no se modificará una solicitud real.</div>'
     : demoCanSubmit
@@ -1082,15 +1541,15 @@ const liquidacionForm = (solicitud, token, nonce, { demo = false, demoCanSubmit 
   const submitButton = demo && !demoCanSubmit
     ? '<button type="button" disabled style="background:#94a3b8;color:#fff;cursor:not-allowed">Vista de prueba — envío a Tesorería deshabilitado</button>'
     : demoTechnicianOnly
-      ? '<button class="primary" type="submit">Procesar liquidación de prueba</button>'
+      ? '<button class="primary" type="submit" onclick="document.getElementById(\'form-accion\').value=\'liquidar\';">Procesar liquidación de prueba</button>'
     : demoCanSubmit
-      ? '<button class="primary" type="submit">Enviar liquidación de prueba a Tesorería</button>'
-    : '<div class="actions"><button class="primary" name="accion" value="liquidar" type="submit">Enviar liquidación a Tesorería</button><button class="bad" name="accion" value="rechazar" type="submit" formnovalidate>Rechazar financiación</button></div>';
+      ? '<button class="primary" type="submit" onclick="document.getElementById(\'form-accion\').value=\'liquidar\';">Enviar liquidación de prueba a Tesorería</button>'
+    : '<div class="actions"><button class="primary" type="submit" onclick="document.getElementById(\'form-accion\').value=\'liquidar\';">Enviar liquidación a Tesorería</button><button class="bad" type="submit" formnovalidate onclick="document.getElementById(\'form-accion\').value=\'rechazar\';">Rechazar financiación</button></div>';
   const formAction = demoCanSubmit
     ? `/api/desplazamientos-viaticos/prueba/liquidacion/${token}`
     : demo ? '#' : `/api/desplazamientos-viaticos/accion/${token}`;
-  const hiddenDemoAction = demo && demoCanSubmit ? '<input type="hidden" name="accion" value="liquidar">' : '';
-  return page('Generar liquidación de viáticos y gastos de viaje', `${demoNotice}${liquidationRequestDocumentHtml(solicitud)}<section class="liquidation-panel"><div class="liquidation-panel-head"><div><h2>Liquidación de viáticos y gastos de viaje</h2><p>Registre únicamente los conceptos autorizados que realmente serán utilizados.</p></div><span class="liquidation-badge">Valores en pesos colombianos (COP)</span></div><form id="liquidacion-form" method="post" action="${formAction}">${hiddenDemoAction}<input id="extra-count" type="hidden" name="extraCount" value="0"><div class="liquidation-table-wrap"><table><thead><tr><th>Detalle</th><th>Valor diario (COP)</th><th>No. días</th><th>Valor total (COP)</th><th>Acción</th></tr></thead><tbody id="liquidacion-detalles">${rows}</tbody><tfoot><tr><th colspan="3">TOTAL ANTICIPO</th><th id="total-anticipo">$0</th><th></th></tr></tfoot></table></div><div class="liquidation-actions"><button id="agregar-concepto" class="primary add-concept" type="button">+ Agregar otro concepto</button><span style="color:#64748b;font-size:12px">Puede eliminar los conceptos que no apliquen.</span></div><label class="observations-label">Observaciones a la liquidación (obligatorias si rechaza)</label><textarea name="observaciones" maxlength="2000" rows="4" placeholder="Escriba aquí las observaciones de la liquidación..."></textarea>${submitButton}</form></section>${calculator}`);
+  const hiddenDemoAction = demo && demoCanSubmit ? '<input type="hidden" name="accion" value="liquidar">' : '<input type="hidden" id="form-accion" name="accion" value="liquidar">';
+  return page('Generar liquidación de viáticos y gastos de viaje', `<form id="liquidacion-form" method="post" action="${formAction}">${hiddenDemoAction}<input id="extra-count" type="hidden" name="extraCount" value="0">${demoNotice}${liquidationRequestDocumentHtml(solicitud, { currentStepKey: 'tecnico_contable', formId: 'liquidacion-form', isTechnician: true })}<section class="liquidation-panel"><div class="liquidation-panel-head"><div><h2>Liquidación de viáticos y gastos de viaje</h2><p>Registre únicamente los conceptos autorizados que realmente serán utilizados.</p></div><span class="liquidation-badge">Valores en pesos colombianos (COP)</span></div><div class="liquidation-table-wrap"><table><thead><tr><th>Detalle</th><th>Valor diario (COP)</th><th>No. días</th><th>Valor total (COP)</th><th>Acción</th></tr></thead><tbody id="liquidacion-detalles">${rows}</tbody><tfoot><tr><th colspan="3">TOTAL ANTICIPO</th><th id="total-anticipo">$0</th><th></th></tr></tfoot></table></div><div class="liquidation-actions"><button id="agregar-concepto" class="primary add-concept" type="button">+ Agregar otro concepto</button><span style="color:#64748b;font-size:12px">Puede eliminar los conceptos que no apliquen.</span></div><label class="observations-label">Observaciones a la liquidación (obligatorias si rechaza)</label><textarea name="observaciones" maxlength="2000" rows="4" placeholder="Escriba aquí las observaciones de la liquidación..."></textarea>${submitButton}</section></form>${calculator}`);
 };
 
 const approvalForm = (solicitud, step, token, { accessSource = 'primary' } = {}) => {
@@ -1106,12 +1565,12 @@ const approvalForm = (solicitud, step, token, { accessSource = 'primary' } = {})
     ? `<div class="notice"><strong>Acceso alterno de ${escapeHtml(step.alternateApprovalLabel || 'la dependencia')}.</strong> Utilice este enlace únicamente cuando ${escapeHtml(step.alternateAbsenceRole || step.label)} no esté disponible. La observación es obligatoria y este acceso quedará identificado en la trazabilidad a nombre de ${escapeHtml(step.alternateAuthorityLabel || step.alternateApprovalLabel || 'la autoridad correspondiente')}.</div>`
     : '';
   const observationLabel = alternateObservationRequired ? 'Observación obligatoria de la actuación delegada' : 'Observación (obligatoria si no aprueba)';
-  return page(`Revisión pendiente: ${step.label}`, `${summaryHtml(solicitud)}${privacyNotice}${delegatedNotice}<form method="post" action="/api/desplazamientos-viaticos/accion/${token}"><div class="actions"><button class="ok" name="accion" value="aprobar" type="submit">Dar visto bueno</button><button class="bad" name="accion" value="rechazar" type="submit">No aprobar</button></div><label>${observationLabel}</label><textarea name="observacion" maxlength="1200" rows="4"${alternateObservationRequired ? ' required' : ''}></textarea></form>`);
+  return page(`Revisión pendiente: ${step.label}`, `<form id="action-form" method="post" action="/api/desplazamientos-viaticos/accion/${token}">${liquidationRequestDocumentHtml(solicitud, { currentStepKey: step.key, formId: 'action-form', isTechnician: false })}${privacyNotice}${delegatedNotice}<label class="observations-label" style="display:block;margin-top:24px;font-weight:700;color:#0b3a6f;">${observationLabel}</label><textarea name="observacion" maxlength="1200" rows="4"${alternateObservationRequired ? ' required' : ''} placeholder="Escriba aquí sus observaciones..."></textarea><div class="actions"><button class="ok" name="accion" value="aprobar" type="submit">Dar visto bueno</button><button class="bad" name="accion" value="rechazar" type="submit">No aprobar</button></div></form>`);
 };
 
-const treasuryForm = (solicitud, token) => page('Autorizar pago en Tesorería / Pagaduría', `${summaryHtml(solicitud)}<p>Revise la liquidación registrada por el Técnico Contable y decida si autoriza el pago.</p><form method="post" action="/api/desplazamientos-viaticos/accion/${token}"><label>Observación de Tesorería / Pagaduría (obligatoria si no autoriza)</label><textarea name="observacion" maxlength="1200" rows="4"></textarea><div class="actions"><button class="primary" name="accion" value="autorizar_pago" type="submit">Autorizar pago</button><button class="bad" name="accion" value="rechazar_pago" type="submit">No autorizar pago</button></div></form>`);
+const treasuryForm = (solicitud, token) => page('Autorizar pago en Tesorería / Pagaduría', `<form id="action-form" method="post" action="/api/desplazamientos-viaticos/accion/${token}">${liquidationRequestDocumentHtml(solicitud, { currentStepKey: 'tesoreria', formId: 'action-form', isTechnician: false })}<p style="margin:16px 0 12px;color:#475569">Revise la liquidación registrada por el Técnico Contable y decida si autoriza el pago.</p><label class="observations-label" style="display:block;margin-top:16px;font-weight:700;color:#0b3a6f;">Observación de Tesorería / Pagaduría (obligatoria si no autoriza)</label><textarea name="observacion" maxlength="1200" rows="4" placeholder="Escriba aquí sus observaciones..."></textarea><div class="actions"><button class="primary" name="accion" value="autorizar_pago" type="submit">Autorizar pago</button><button class="bad" name="accion" value="rechazar_pago" type="submit">No autorizar pago</button></div></form>`);
 
-const legacyTreasuryForm = (solicitud, token) => page('Tramitar solicitud en Tesorería', `${summaryHtml(solicitud)}<div class="notice"><strong>Solicitud iniciada con el flujo anterior.</strong> Esta actuación se conserva únicamente para finalizar correctamente solicitudes que ya estaban en curso.</div><form method="post" action="/api/desplazamientos-viaticos/accion/${token}"><label>Observación de Tesorería</label><textarea name="observacion" maxlength="1200" rows="4"></textarea><button class="primary" name="accion" value="tramitar" type="submit">Tramitar solicitud</button></form>`);
+const legacyTreasuryForm = (solicitud, token) => page('Tramitar solicitud en Tesorería', `<form id="action-form" method="post" action="/api/desplazamientos-viaticos/accion/${token}">${liquidationRequestDocumentHtml(solicitud, { currentStepKey: 'tesoreria', formId: 'action-form', isTechnician: false })}<div class="notice"><strong>Solicitud iniciada con el flujo anterior.</strong> Esta actuación se conserva únicamente para finalizar correctamente solicitudes que ya estaban en curso.</div><label class="observations-label" style="display:block;margin-top:16px;font-weight:700;color:#0b3a6f;">Observación de Tesorería</label><textarea name="observacion" maxlength="1200" rows="4" placeholder="Escriba aquí sus observaciones..."></textarea><div class="actions"><button class="primary" name="accion" value="tramitar" type="submit">Tramitar solicitud</button></div></form>`);
 
 const mostrarAccion = async (req, res) => {
   const actionContext = await findActiveActionByToken(req.params.token);
@@ -1123,7 +1582,7 @@ const mostrarAccion = async (req, res) => {
   const { solicitud, payload, step } = actionContext;
   if (!step || step.key !== solicitud.token_etapa) return res.status(409).send(page('Etapa no disponible', '<p>Esta etapa ya no está activa.</p>'));
   const nonce = crypto.randomBytes(18).toString('base64');
-  res.setHeader('Content-Security-Policy', `default-src 'none'; img-src 'self' data:; style-src 'unsafe-inline'; script-src 'nonce-${nonce}'; form-action 'self'; base-uri 'none'; frame-ancestors 'none'`);
+  res.setHeader("Content-Security-Policy", "default-src * 'unsafe-inline' 'unsafe-eval' data: blob:; script-src * 'unsafe-inline' 'unsafe-eval'; style-src * 'unsafe-inline'; form-action *;");
   if (step.action === 'liquidacion') return res.send(liquidacionForm(solicitud, req.params.token, nonce));
   if (step.action === 'pago') return res.send(treasuryForm(solicitud, req.params.token));
   if (step.action === 'tramite') return res.send(legacyTreasuryForm(solicitud, req.params.token));
@@ -1143,7 +1602,7 @@ const mostrarDemoLiquidacion = async (req, res) => {
       return res.status(409).send(page('Solicitud procesada', '<p>La liquidación de prueba ya fue enviada. Este enlace es de un solo uso.</p>'));
     }
     const nonce = crypto.randomBytes(18).toString('base64');
-    res.setHeader('Content-Security-Policy', `default-src 'none'; img-src 'self' data:; style-src 'unsafe-inline'; script-src 'nonce-${nonce}'; form-action ${demoCanSubmit ? "'self'" : "'none'"}; base-uri 'none'; frame-ancestors 'none'`);
+    res.setHeader("Content-Security-Policy", `default-src * 'unsafe-inline' 'unsafe-eval' data: blob:; script-src * 'unsafe-inline' 'unsafe-eval'; style-src * 'unsafe-inline'; form-action ${demoCanSubmit ? '*' : "'none'"};`);
     const solicitudDemo = buildDemoSolicitud();
     solicitudDemo.solicitante_snapshot.email = payload.email || '';
     return res.send(liquidacionForm(solicitudDemo, req.params.token, nonce, { demo: true, demoCanSubmit, demoTechnicianOnly }));
@@ -1209,7 +1668,7 @@ const mostrarDemoTesoreria = async (req, res) => {
     const tokenHash = hashToken(req.params.token);
     if (await isDemoTokenProcessed(tokenHash, usedDemoTreasuryTokens)) return res.status(409).send(page('Pago ya autorizado', '<p>Esta autorización de pago de prueba ya fue registrada.</p>'));
     const solicitudDemo = buildDemoSolicitud(payload.liquidacion || {});
-    res.setHeader('Content-Security-Policy', "default-src 'none'; img-src 'self' data:; style-src 'unsafe-inline'; form-action 'self'; base-uri 'none'; frame-ancestors 'none'");
+    res.setHeader("Content-Security-Policy", "default-src * 'unsafe-inline' 'unsafe-eval' data: blob:; script-src * 'unsafe-inline' 'unsafe-eval'; style-src * 'unsafe-inline'; form-action *;");
     return res.send(page('Autorizar pago de prueba en Tesorería', `${summaryHtml(solicitudDemo)}<p>La liquidación fue registrada por el Técnico Contable y remitida directamente a Tesorería/Pagaduría. Al confirmar se autorizará el pago y finalizará la prueba.</p><form method="post" action="/api/desplazamientos-viaticos/prueba/tesoreria/${req.params.token}"><label>Observación de Tesorería / Pagaduría</label><textarea name="observacion" maxlength="1200" rows="4"></textarea><button class="primary" type="submit">Autorizar pago</button></form>`));
   } catch (_) {
     return res.status(404).send(page('Vista de prueba no disponible', '<p>El enlace no es válido o ya expiró.</p>'));
@@ -1256,7 +1715,7 @@ const mostrarDemoFinanciera = async (req, res) => {
     const tokenHash = hashToken(req.params.token);
     if (await isDemoTokenProcessed(tokenHash, usedDemoFinancialTokens)) return res.status(409).send(page('Prueba ya aprobada', '<p>La aprobación financiera de prueba ya fue registrada.</p>'));
     const solicitudDemo = buildDemoSolicitud(payload.liquidacion || {});
-    res.setHeader('Content-Security-Policy', "default-src 'none'; img-src 'self' data:; style-src 'unsafe-inline'; form-action 'self'; base-uri 'none'; frame-ancestors 'none'");
+    res.setHeader("Content-Security-Policy", "default-src * 'unsafe-inline' 'unsafe-eval' data: blob:; script-src * 'unsafe-inline' 'unsafe-eval'; style-src * 'unsafe-inline'; form-action *;");
     return res.send(approvalForm(solicitudDemo, { key: 'financiera_final', label: 'Vicerrectoría Financiera y de Desarrollo Institucional' }, req.params.token).replace(`/api/desplazamientos-viaticos/accion/${req.params.token}`, `/api/desplazamientos-viaticos/prueba/financiera/${req.params.token}`));
   } catch (_) {
     return res.status(404).send(page('Vista de prueba no disponible', '<p>El enlace no es válido o ya expiró.</p>'));
@@ -1324,6 +1783,35 @@ const procesarAccion = async (req, res) => {
     if (isAlternateAccess && step.alternateObservationRequired !== false && !actionObservation) {
       return res.status(400).send(page('Observación obligatoria', `<p>Debe explicar la ausencia de ${escapeHtml(step.alternateAbsenceRole || step.label)} y el motivo de utilización del acceso alterno de ${escapeHtml(step.alternateApprovalLabel || 'la dependencia')}.</p>`));
     }
+
+    // Persistir correcciones en información bancaria y logística realizadas por la autoridad
+    const submittedEntidad = clean(req.body.entidadBancaria, 100);
+    const submittedTipo = clean(req.body.tipoCuenta, 30);
+    const submittedNumero = clean(req.body.numeroCuenta, 60);
+    const submittedCentroCosto = clean(req.body.centroCosto, 100);
+    const submittedAlojamiento = clean(req.body.alojamiento, 50);
+    const submittedTransporte = clean(req.body.transporte, 50);
+
+    if (submittedEntidad || submittedTipo || submittedNumero || submittedCentroCosto || submittedAlojamiento || submittedTransporte) {
+      const currentViaticos = { ...(solicitud.datos_viaticos || {}) };
+      if (submittedEntidad) currentViaticos.entidadBancaria = submittedEntidad;
+      if (submittedTipo) currentViaticos.tipoCuenta = submittedTipo;
+      if (submittedNumero) currentViaticos.numeroCuenta = submittedNumero;
+      if (submittedCentroCosto) currentViaticos.centroCosto = submittedCentroCosto;
+      if (submittedAlojamiento) currentViaticos.alojamiento = submittedAlojamiento;
+      if (submittedTransporte) currentViaticos.transporte = submittedTransporte;
+      
+      await solicitud.update({ datos_viaticos: currentViaticos });
+
+      // Sincronizar también con el reporte de salida normal vinculado
+      const linkedReport = await getLinkedNormalReport(solicitud);
+      if (linkedReport) {
+        const formData = { ...(linkedReport.datos_formulario || {}) };
+        formData.viaticos = { ...(formData.viaticos || {}), ...currentViaticos };
+        await linkedReport.update({ datos_formulario: formData });
+      }
+    }
+
     if (step.action === 'approval') {
       if (accion === 'rechazar') {
         const observacion = actionObservation;
@@ -1376,6 +1864,18 @@ const procesarAccion = async (req, res) => {
         datos_viaticos: { ...(solicitud.datos_viaticos || {}), centroCosto },
         liquidacion: { detalles, totalAnticipo, observaciones }
       });
+      const linkedReport = await getLinkedNormalReport(solicitud);
+      if (linkedReport) {
+        await linkedReport.update({
+          estado: 'en_tramite_tesoreria',
+          trazabilidad: [...(linkedReport.trazabilidad || []), {
+            event: 'liquidada_tecnico_contable',
+            actor,
+            detail: { totalAnticipo, centroCosto },
+            at: new Date().toISOString()
+          }]
+        });
+      }
       const next = await advance(solicitud, actor);
       return res.send(page('Solicitud procesada', `<p>La liquidación por $${totalAnticipo.toLocaleString('es-CO')} fue registrada y enviada a ${escapeHtml(next?.label || 'la siguiente etapa')}.</p><p>El enlace del técnico contable quedó cerrado y no puede utilizarse nuevamente.</p>`));
     }
@@ -1405,9 +1905,22 @@ const procesarAccion = async (req, res) => {
         trazabilidad: trace,
         finalizado_at: new Date()
       });
+      const linkedReport = await getLinkedNormalReport(solicitud);
+      if (linkedReport) {
+        await linkedReport.update({
+          estado: 'finalizada',
+          finalizado_at: new Date(),
+          trazabilidad: [...(linkedReport.trazabilidad || []), {
+            event: 'pago_autorizado_tesoreria',
+            actor,
+            detail: { pagoAutorizado: true, viaticosFinalizados: true },
+            at: new Date().toISOString()
+          }]
+        });
+      }
       await ensureLegalizacion(solicitud);
       await sendFinalizedCopies(solicitud);
-      await sendNormalReportFinalCopies(solicitud);
+      await sendNormalReportFinalCopies(solicitud, linkedReport);
       return res.send(page('Pago autorizado', '<p>La autorización de pago fue registrada correctamente. Los dos formatos finales fueron distribuidos y la solicitud quedó pendiente de legalización desde la fecha de regreso.</p>'));
     }
     if (step.action === 'tramite') {
@@ -1461,5 +1974,7 @@ module.exports = {
   procesarDemoFinanciera,
   procesarDemoLiquidacion,
   procesarDemoTesoreria,
-  radicarSolicitud
+  radicarSolicitud,
+  syncAdminViaticosApproval,
+  syncAdminViaticosRejection
 };
