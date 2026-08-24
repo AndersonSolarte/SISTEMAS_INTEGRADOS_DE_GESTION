@@ -323,6 +323,54 @@ const getInitialApprovalRecipientEmail = (solicitud = {}) => {
   return emails[0] || solicitud.jefe_snapshot?.email || '';
 };
 
+const getGroupInitialApprovalRecipients = (solicitudes = []) => {
+  const recipients = [];
+  const pushEmail = (e) => {
+    const clean = normalizeEmail(e);
+    if (clean && !recipients.includes(clean)) recipients.push(clean);
+  };
+
+  for (const sol of solicitudes) {
+    const laboral = sol.datos_formulario?.laboral || {};
+    const solicitante = sol.solicitante_snapshot || {};
+    const dep = laboral.dependencia || solicitante.dependencia || '';
+    const depNorm = normalizeForMatch(dep);
+    const jefe = sol.jefe_snapshot || {};
+    const jefeEmail = normalizeEmail(jefe.email);
+
+    // 1. Arquitectura: Exclusivamente a arquitectura@unicesmag.edu.co
+    if (depNorm.includes('arquitectura')) {
+      const arqEmail = getDependencyEmail('Programa Academico - Arquitectura') || 'arquitectura@unicesmag.edu.co';
+      pushEmail(arqEmail);
+      continue;
+    }
+
+    // 2. Diseño Gráfico: Exclusivamente a disenografico@unicesmag.edu.co
+    if (depNorm.includes('diseno grafico') || (depNorm.includes('diseno') && !depNorm.includes('modas'))) {
+      const disEmail = getDependencyEmail('Programa Academico - Diseño Grafico') || 'disenografico@unicesmag.edu.co';
+      pushEmail(disEmail);
+      continue;
+    }
+
+    // 3. Demás programas académicos o departamentos académicos:
+    // Remitir al correo del programa y al jefe inmediato
+    if (depNorm.includes('programa academico') || depNorm.includes('programa') || depNorm.includes('departamento')) {
+      const progEmail = getDependencyEmail(dep);
+      if (progEmail) pushEmail(progEmail);
+      if (jefeEmail) pushEmail(jefeEmail);
+      continue;
+    }
+
+    // 4. Dependencias administrativas o generales:
+    const initialEmails = getInitialApprovalRecipientEmails(sol);
+    if (Array.isArray(initialEmails)) {
+      initialEmails.forEach(pushEmail);
+    }
+  }
+
+  return recipients;
+};
+
 const getJefeCopyRecipientEmails = (solicitud = {}) => {
   const emails = [];
   const pushEmail = (e) => {
@@ -3086,6 +3134,7 @@ const sendJefeGroupRadicacionNotificationEmail = async (solicitud, jefeSnapshot,
     urgencia_medica: 'Urgencia Medica',
     diligencia_personal: 'Diligencia personal',
     compensatorio: 'Compensatorio',
+    practica_integral_movilidad: 'PRÁCTICA INTEGRAL DE MOVILIDAD',
     ponencia: 'Ponencia',
     visita_ies: 'Visita a otras IES',
     capacitacion: 'Capacitacion',
@@ -3380,7 +3429,7 @@ const radicarSolicitud = async (req, res) => {
       }
       const now = new Date();
       const grupo_id = crypto.randomUUID ? crypto.randomUUID() : crypto.randomBytes(16).toString('hex');
-      const token = encryptPayload({ purpose: 'reporte_salida_approve_grupo', grupo_id }, null);
+      const token = encryptPayload({ purpose: 'reporte_salida_approve_jefe_grupo', grupo_id }, null);
       const tokenHash = hashToken(token);
 
       const day = String(now.getDate()).padStart(2, '0');
@@ -3450,7 +3499,7 @@ const radicarSolicitud = async (req, res) => {
           jefe_inmediato_user_id,
           solicitante_snapshot: buildSnapshot(participantUser),
           jefe_snapshot: jefeSnapshot,
-          estado: 'pendiente_aprobacion_gestion_humana',
+          estado: 'pendiente_aprobacion_jefe',
           datos_formulario: {
             grupo_id,
             is_salida_multiple: true,
@@ -3507,38 +3556,32 @@ const radicarSolicitud = async (req, res) => {
           reposicion_aplica: false,
           reposicion_minutos: null,
           reposicion_estado: 'no_aplica',
-          aprobacion_gh_token_hash: tokenHash,
+          aprobacion_jefe_token_hash: tokenHash,
           trazabilidad: [{ event: 'radicada_grupal', actor: buildSnapshot(req.user), at: now.toISOString() }]
         });
 
         await associateStoredSupportWithSolicitud(solicitud);
-
-        if (jefeSnapshot?.email) {
-          sendJefeGroupRadicacionNotificationEmail(solicitud, jefeSnapshot, participantes).catch(err => {
-            console.error(`Error enviando correo informativo al jefe de la solicitud grupal ${solicitud.consecutivo}:`, err);
-          });
-        }
-
         creadas.push(solicitud);
       }
 
-      const emailResult = await sendGestionHumanaGroupApprovalEmail(creadas, token);
+      const initialRecipients = getGroupInitialApprovalRecipients(creadas);
+      const emailResult = await sendJefeGroupApprovalEmail(creadas, token, initialRecipients);
       const thread_message_id = emailResult.messageId || null;
 
       for (const solicitud of creadas) {
         await solicitud.update({
-          correo_gh_enviado_at: emailResult.success ? new Date() : null,
+          correo_jefe_enviado_at: emailResult.success ? new Date() : null,
           datos_formulario: {
             ...solicitud.datos_formulario,
             thread_message_id
           },
-          trazabilidad: appendTrace(solicitud, emailResult.success ? 'correo_gestion_humana_enviado' : 'correo_gestion_humana_error', null, { error: emailResult.error || '' })
+          trazabilidad: appendTrace(solicitud, emailResult.success ? 'correo_jefe_enviado' : 'correo_jefe_error', null, { error: emailResult.error || '' })
         });
       }
 
       return res.status(201).json({
         success: true,
-        message: 'Salida grupal radicada exitosamente. Se envio un correo a Gestion del Talento Humano para aprobacion.',
+        message: 'Salida grupal radicada exitosamente. Se envió la solicitud de visto bueno / aprobación a la Dirección de Programa / Jefatura correspondiente.',
         data: creadas.map(serializeSolicitud)
       });
     }
@@ -4937,6 +4980,47 @@ const editarSolicitudAdmin = async (req, res) => {
         else if (solicitud.estado === 'pendiente_aprobacion_rectoria') traceEvent = 'rechazada_rectoria';
         else if (solicitud.estado === 'pendiente_aprobacion_sst') traceEvent = 'rechazada_sst';
 
+        if (isGrupal && solicitud.datos_formulario?.grupo_id) {
+          const grupo_id = solicitud.datos_formulario.grupo_id;
+          const groupSolicitudes = await ReporteSalidaSolicitud.findAll({
+            where: {
+              datos_formulario: {
+                [Op.contains]: { grupo_id }
+              }
+            }
+          });
+
+          for (const s of groupSolicitudes) {
+            await s.update({
+              estado: 'no_aprobada',
+              aprobacion_jefe_token_hash: null,
+              aprobacion_vicerrectoria_token_hash: null,
+              aprobacion_rectoria_token_hash: null,
+              aprobacion_gh_token_hash: null,
+              aprobacion_sst_token_hash: null,
+              trazabilidad: appendTrace(s, traceEvent, req.user, {
+                via: 'admin_dashboard',
+                actorName,
+                justificacion: observacionAdmin
+              })
+            });
+            deleteSupportFile(s);
+            if (s.solicitante_snapshot?.email) {
+              await sendCollaboratorRejectionEmail({
+                solicitud: s,
+                rejectedBy: `${actorName} (Administrador)`,
+                justificacion: observacionAdmin
+              }).catch(e => console.error('Error group rejection email:', e));
+            }
+          }
+
+          return res.json({
+            success: true,
+            message: 'Salida grupal rechazada correctamente por el administrador.',
+            data: serializeSolicitud(solicitud)
+          });
+        }
+
         const updateData = {
           estado: 'no_aprobada',
           aprobacion_jefe_token_hash: null,
@@ -4981,6 +5065,41 @@ const editarSolicitudAdmin = async (req, res) => {
 
       // APPROVE FLOW
       if (solicitud.estado === 'pendiente_aprobacion_jefe') {
+        if (isGrupal && solicitud.datos_formulario?.grupo_id) {
+          const grupo_id = solicitud.datos_formulario.grupo_id;
+          const groupSolicitudes = await ReporteSalidaSolicitud.findAll({
+            where: {
+              datos_formulario: {
+                [Op.contains]: { grupo_id }
+              }
+            }
+          });
+
+          const ghToken = encryptPayload({ purpose: 'reporte_salida_approve_gh_grupo', grupo_id }, null);
+          const ghTokenHash = hashToken(ghToken);
+
+          for (const s of groupSolicitudes) {
+            await s.update({
+              estado: 'pendiente_aprobacion_gestion_humana',
+              jefe_aprobado_at: now,
+              aprobacion_jefe_token_hash: null,
+              aprobacion_gh_token_hash: ghTokenHash,
+              trazabilidad: appendTrace(s, 'aprobada_jefe', req.user, {
+                via: 'admin_dashboard',
+                observacion: observacionAdmin || 'Aprobada por Administrador SIAC'
+              })
+            });
+          }
+
+          await sendGestionHumanaGroupApprovalEmail(groupSolicitudes, ghToken).catch(e => console.error('Error sendGestionHumanaGroupApprovalEmail admin:', e));
+
+          return res.json({
+            success: true,
+            message: 'Salida grupal aprobada como Jefe/Programa y enviada a Gestión del Talento Humano.',
+            data: serializeSolicitud(solicitud)
+          });
+        }
+
         const authorityAfterBoss = getAuthorityAfterBoss(solicitud);
         const skipAuthorityAfterBoss = authorityAfterBoss && sameEmail(authorityAfterBoss.email, solicitud.jefe_snapshot?.email);
         const nextStage = authorityAfterBoss ? (skipAuthorityAfterBoss ? 'gestion_humana' : authorityAfterBoss.stage) : 'gestion_humana';
@@ -6512,6 +6631,171 @@ const procesarRechazo = async (req, res) => {
   }
 };
 
+const sendJefeGroupApprovalEmail = async (solicitudes, token, recipients = []) => {
+  if (!recipients.length) return { success: false, error: 'No recipients' };
+  const approveUrl = `${publicBackendUrl.replace(/\/$/, '')}/api/reporte-salida/aprobar-grupo/${encodeURIComponent(token)}`;
+  const rejectUrl = `${publicBackendUrl.replace(/\/$/, '')}/api/reporte-salida/rechazar-grupo/${encodeURIComponent(token)}`;
+
+  const leaderSol = solicitudes.find(s => s.datos_formulario?.is_leader === true) || solicitudes[0];
+  const leaderNombre = leaderSol?.solicitante_snapshot?.nombre || '';
+  const consecutivoGroup = leaderSol.consecutivo.split('-').slice(0, 3).join('-') + '-GRUPO';
+  const salida = leaderSol.datos_formulario?.salida || {};
+
+  const subject = `REPORTE DE SALIDA GRUPAL ${consecutivoGroup} | Solicitud de Aprobación / Visto Bueno`;
+
+  const mapping = {
+    cita_eps: 'Cita medica por EPS',
+    cita_particular: 'Cita medica particular',
+    cita_medica_laboral: 'Cita medica laboral',
+    urgencia_medica: 'Urgencia Medica',
+    diligencia_personal: 'Diligencia personal',
+    compensatorio: 'Compensatorio',
+    practica_integral_movilidad: 'PRÁCTICA INTEGRAL DE MOVILIDAD',
+    ponencia: 'Ponencia',
+    visita_ies: 'Visita a otras IES',
+    capacitacion: 'Capacitacion',
+    proyecto_investigacion: 'Proyecto de investigacion',
+    asistente_congreso: 'Asistente a congreso',
+    practica_academica: 'Practica academica',
+    torneo_deportivo: 'Participante en torneo deportivo',
+    salida_campus: 'Salida de Campus',
+    otra: 'Otra actividad'
+  };
+  const getSubtypeLabel = (tipo) => {
+    if (!tipo) return '';
+    if (mapping[tipo]) return mapping[tipo];
+    if (tipo.startsWith('otra:')) return `Otra: ${tipo.substring(5)}`;
+    return tipo;
+  };
+
+  let tableRows = '';
+  solicitudes.forEach((sol, idx) => {
+    const p = sol.datos_formulario?.personal || sol.solicitante_snapshot || {};
+    const lab = sol.datos_formulario?.laboral || {};
+    tableRows += `
+      <tr>
+        <td style="border:1px solid #dbe6f5;padding:8px;text-align:center;">${idx + 1}</td>
+        <td style="border:1px solid #dbe6f5;padding:8px;"><strong>${escapeHtml(p.nombre)}</strong> ${sol.datos_formulario?.is_leader ? '<span style="color:#0f52ba;font-size:11px;font-weight:bold;">(Líder)</span>' : ''}</td>
+        <td style="border:1px solid #dbe6f5;padding:8px;">${escapeHtml(lab.cargo || p.cargo || '')}</td>
+        <td style="border:1px solid #dbe6f5;padding:8px;">${escapeHtml(lab.dependencia || p.dependencia || '')}</td>
+        <td style="border:1px solid #dbe6f5;padding:8px;">${escapeHtml(p.correo || p.email || '')}</td>
+      </tr>
+    `;
+  });
+
+  const html = renderInstitutionalTemplate({
+    title: 'Solicitud de Aprobación - Salida Grupal',
+    introHtml: `<p style="margin: 0 0 12px 0;">Saludo de paz y bien,</p><p style="margin: 0 0 4px 0; color: #475569;">Estimados(as) Directores(as) de Programa / Jefes Inmediatos,</p><p>Reciba un cordial saludo. Se ha radicado una solicitud de <strong>salida grupal</strong> liderada por <strong>${escapeHtml(leaderNombre)}</strong> con un total de <strong>${solicitudes.length}</strong> colaboradores(as) participantes, la cual requiere su respectivo <strong>Visto Bueno / Aprobación</strong> institucional.</p>`,
+    bodyHtml: `
+      <p><strong>Detalles de la actividad grupal:</strong></p>
+      <ul>
+        <li><strong>Tipo de salida:</strong> ${escapeHtml(getSubtypeLabel(salida.tipo))}</li>
+        <li><strong>Fecha y hora salida:</strong> ${escapeHtml(salida.fecha)} a las ${escapeHtml(salida.horaInicio)}</li>
+        <li><strong>Fecha y hora regreso:</strong> ${escapeHtml(salida.fechaRegreso)} a las ${escapeHtml(salida.horaFin)}</li>
+        <li><strong>Tiempo por persona:</strong> ${escapeHtml(formatMinutes(solicitudes[0].tiempo_solicitado_minutos))}</li>
+        <li><strong>Motivo / Descripción:</strong> ${escapeHtml(salida.motivo || 'N/A')}</li>
+        ${salida.entidadDestino ? `<li><strong>Entidad / Lugar Destino:</strong> ${escapeHtml(salida.entidadDestino)}</li>` : ''}
+        ${salida.alcance ? `<li><strong>Alcance:</strong> ${escapeHtml(salida.alcance)}</li>` : ''}
+      </ul>
+      <p><strong>Colaboradores(as) participantes:</strong></p>
+      <table style="width:100%;border-collapse:collapse;margin:15px 0;font-size:13px;">
+        <thead>
+          <tr style="background:#f1f5f9;">
+            <th style="border:1px solid #dbe6f5;padding:8px;text-align:center;width:35px;">#</th>
+            <th style="border:1px solid #dbe6f5;padding:8px;text-align:left;">Nombre</th>
+            <th style="border:1px solid #dbe6f5;padding:8px;text-align:left;">Cargo</th>
+            <th style="border:1px solid #dbe6f5;padding:8px;text-align:left;">Dependencia / Programa</th>
+            <th style="border:1px solid #dbe6f5;padding:8px;text-align:left;">Correo</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${tableRows}
+        </tbody>
+      </table>
+      <div style="text-align:center;margin:24px 0;">
+        <a href="${approveUrl}" style="display:inline-block;background:#0b3a6f;color:#fff;padding:12px 24px;border-radius:8px;text-decoration:none;font-weight:700;margin:5px 10px;">DAR VISTO BUENO / AUTORIZAR</a>
+        <a href="${rejectUrl}" style="display:inline-block;background:#b91c1c;color:#fff;padding:12px 24px;border-radius:8px;text-decoration:none;font-weight:700;margin:5px 10px;">NO AUTORIZAR SALIDA</a>
+      </div>
+      <p style="font-size:12.5px;color:#475569;">Al otorgar el Visto Bueno, la salida grupal continuará su trámite hacia la Oficina de Gestión del Talento Humano.</p>
+    `
+  });
+
+  return sendInstitutionalEmail({
+    to: recipients,
+    subject,
+    text: `Solicitud de visto bueno para salida grupal liderada por ${leaderNombre} con ${solicitudes.length} participantes. Para autorizar ingrese a ${approveUrl}.`,
+    html
+  });
+};
+
+const sendSSTGroupApprovalEmail = async (solicitudes, token) => {
+  const recipients = getReporteSalidaRecipients();
+  const approveUrl = `${publicBackendUrl.replace(/\/$/, '')}/api/reporte-salida/aprobar-grupo/${encodeURIComponent(token)}`;
+  const rejectUrl = `${publicBackendUrl.replace(/\/$/, '')}/api/reporte-salida/rechazar-grupo/${encodeURIComponent(token)}`;
+
+  const leaderSol = solicitudes.find(s => s.datos_formulario?.is_leader === true) || solicitudes[0];
+  const leaderNombre = leaderSol?.solicitante_snapshot?.nombre || '';
+  const consecutivoGroup = leaderSol.consecutivo.split('-').slice(0, 3).join('-') + '-GRUPO';
+  const salida = leaderSol.datos_formulario?.salida || {};
+
+  const subject = `REPORTE DE SALIDA GRUPAL ${consecutivoGroup} | Visto Bueno Seguridad y Salud en el Trabajo (SST)`;
+
+  let tableRows = '';
+  solicitudes.forEach((sol, idx) => {
+    const p = sol.datos_formulario?.personal || sol.solicitante_snapshot || {};
+    const lab = sol.datos_formulario?.laboral || {};
+    tableRows += `
+      <tr>
+        <td style="border:1px solid #dbe6f5;padding:8px;text-align:center;">${idx + 1}</td>
+        <td style="border:1px solid #dbe6f5;padding:8px;"><strong>${escapeHtml(p.nombre)}</strong> ${sol.datos_formulario?.is_leader ? '<span style="color:#0f52ba;font-size:11px;font-weight:bold;">(Líder)</span>' : ''}</td>
+        <td style="border:1px solid #dbe6f5;padding:8px;">${escapeHtml(lab.cargo || p.cargo || '')}</td>
+        <td style="border:1px solid #dbe6f5;padding:8px;">${escapeHtml(lab.dependencia || p.dependencia || '')}</td>
+        <td style="border:1px solid #dbe6f5;padding:8px;">${escapeHtml(p.correo || p.email || '')}</td>
+      </tr>
+    `;
+  });
+
+  const html = renderInstitutionalTemplate({
+    title: 'Visto Bueno SST - Salida Grupal',
+    introHtml: `<p style="margin: 0 0 12px 0;">Saludo de paz y bien,</p><p style="margin: 0 0 4px 0;">Estimado equipo de Seguridad y Salud en el Trabajo (SST),</p><p>Reciba un cordial saludo. La salida grupal liderada por <strong>${escapeHtml(leaderNombre)}</strong> con <strong>${solicitudes.length}</strong> participantes ha sido aprobada por la Jefatura/Programa y por Gestión del Talento Humano. Al tratarse de una salida <strong>${escapeHtml(salida.alcance || 'Nacional')}</strong>, requiere su visto bueno final.</p>`,
+    bodyHtml: `
+      <p><strong>Detalles de la salida:</strong></p>
+      <ul>
+        <li><strong>Tipo de salida:</strong> ${escapeHtml(salida.tipo || 'N/A')}</li>
+        <li><strong>Lugar / Destino:</strong> ${escapeHtml(salida.entidadDestino || salida.municipio || salida.pais || 'Fuera de sede')}</li>
+        <li><strong>Fecha y hora salida:</strong> ${escapeHtml(salida.fecha)} a las ${escapeHtml(salida.horaInicio)}</li>
+        <li><strong>Fecha y hora regreso:</strong> ${escapeHtml(salida.fechaRegreso)} a las ${escapeHtml(salida.horaFin)}</li>
+        <li><strong>Motivo:</strong> ${escapeHtml(salida.motivo || 'N/A')}</li>
+      </ul>
+      <table style="width:100%;border-collapse:collapse;margin:15px 0;font-size:13px;">
+        <thead>
+          <tr style="background:#f1f5f9;">
+            <th style="border:1px solid #dbe6f5;padding:8px;text-align:center;">#</th>
+            <th style="border:1px solid #dbe6f5;padding:8px;">Nombre</th>
+            <th style="border:1px solid #dbe6f5;padding:8px;">Cargo</th>
+            <th style="border:1px solid #dbe6f5;padding:8px;">Dependencia / Programa</th>
+            <th style="border:1px solid #dbe6f5;padding:8px;">Correo</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${tableRows}
+        </tbody>
+      </table>
+      <div style="text-align:center;margin:24px 0;">
+        <a href="${approveUrl}" style="display:inline-block;background:#0b3a6f;color:#fff;padding:12px 24px;border-radius:8px;text-decoration:none;font-weight:700;margin:5px 10px;">APROBAR VISTO BUENO SST</a>
+        <a href="${rejectUrl}" style="display:inline-block;background:#b91c1c;color:#fff;padding:12px 24px;border-radius:8px;text-decoration:none;font-weight:700;margin:5px 10px;">NO APROBAR</a>
+      </div>
+    `
+  });
+
+  return sendInstitutionalEmail({
+    to: recipients.sst,
+    subject,
+    text: `Solicitud de visto bueno SST para salida grupal con ${solicitudes.length} participantes. Para autorizar ingrese a ${approveUrl}.`,
+    html
+  });
+};
+
 const sendGestionHumanaGroupApprovalEmail = async (solicitudes, token) => {
   const recipients = getReporteSalidaRecipients();
   const approveUrl = `${publicBackendUrl.replace(/\/$/, '')}/api/reporte-salida/aprobar-grupo/${encodeURIComponent(token)}`;
@@ -6877,7 +7161,13 @@ const aprobarGrupoDesdeCorreo = async (req, res) => {
   }
   try {
     const payload = decryptPayload(req.params.token);
-    if (payload?.purpose !== 'reporte_salida_approve_grupo' || !payload?.grupo_id) {
+    const validPurposes = [
+      'reporte_salida_approve_jefe_grupo',
+      'reporte_salida_approve_gh_grupo',
+      'reporte_salida_approve_sst_grupo',
+      'reporte_salida_approve_grupo'
+    ];
+    if (!validPurposes.includes(payload?.purpose) || !payload?.grupo_id) {
       return renderApprovalPage({
         res,
         status: 403,
@@ -6888,7 +7178,7 @@ const aprobarGrupoDesdeCorreo = async (req, res) => {
       });
     }
 
-    const { grupo_id } = payload;
+    const { grupo_id, purpose } = payload;
     const tokenHash = hashToken(req.params.token);
 
     const solicitudes = await ReporteSalidaSolicitud.findAll({
@@ -6912,49 +7202,130 @@ const aprobarGrupoDesdeCorreo = async (req, res) => {
       });
     }
 
-    const pendientes = solicitudes.filter(s => s.estado === 'pendiente_aprobacion_gestion_humana');
-    if (!pendientes.length) {
+    // ETAPA 1: VISTO BUENO JEFE / DIRECCION DE PROGRAMA
+    if (purpose === 'reporte_salida_approve_jefe_grupo') {
+      const pendientes = solicitudes.filter(s => s.estado === 'pendiente_aprobacion_jefe');
+      if (!pendientes.length) {
+        return renderApprovalPage({
+          res,
+          tone: 'info',
+          title: 'Visto bueno ya procesado',
+          message: 'El visto bueno / aprobación de esta salida grupal ya fue registrado previamente.',
+          nextStep: 'La solicitud se encuentra en trámite en las siguientes etapas institucionales.'
+        });
+      }
+
+      const ghToken = encryptPayload({ purpose: 'reporte_salida_approve_gh_grupo', grupo_id }, null);
+      const ghTokenHash = hashToken(ghToken);
+      const now = new Date();
+
+      for (const sol of pendientes) {
+        await ReporteSalidaSolicitud.update({
+          estado: 'pendiente_aprobacion_gestion_humana',
+          jefe_aprobado_at: now,
+          aprobacion_jefe_token_hash: null,
+          aprobacion_gh_token_hash: ghTokenHash,
+          trazabilidad: appendTrace(sol, 'aprobada_jefe', null, { via: 'correo_grupo' })
+        }, {
+          where: { id: sol.id }
+        });
+        await sol.reload();
+      }
+
+      const emailResult = await sendGestionHumanaGroupApprovalEmail(pendientes, ghToken);
+      for (const sol of pendientes) {
+        await sol.update({
+          correo_gh_enviado_at: emailResult.success ? new Date() : null,
+          trazabilidad: appendTrace(sol, emailResult.success ? 'correo_gestion_humana_enviado' : 'correo_gestion_humana_error', null, { error: emailResult.error || '' })
+        });
+      }
+
       return renderApprovalPage({
         res,
-        tone: 'info',
-        title: 'Grupo ya procesado',
-        message: 'Esta aprobacion de grupo ya fue registrada previamente.',
-        nextStep: 'No es necesario realizar ninguna accion adicional.'
+        tone: 'success',
+        title: 'Visto Bueno de Salida Grupal registrado',
+        message: `Se registró exitosamente el visto bueno / autorización de la salida grupal para ${pendientes.length} colaboradores(as).`,
+        nextStep: 'La solicitud ha sido enviada a Gestión del Talento Humano para su respectiva validación institucional.'
       });
     }
 
-    let approvedCount = 0;
-    const pdfAttachments = [];
+    // ETAPA 2: APROBACION GESTION DEL TALENTO HUMANO
+    if (purpose === 'reporte_salida_approve_gh_grupo' || purpose === 'reporte_salida_approve_grupo') {
+      const pendientes = solicitudes.filter(s => s.estado === 'pendiente_aprobacion_gestion_humana');
+      if (!pendientes.length) {
+        return renderApprovalPage({
+          res,
+          tone: 'info',
+          title: 'Grupo ya procesado',
+          message: 'Esta aprobación de grupo ya fue registrada previamente por Gestión del Talento Humano.',
+          nextStep: 'No es necesario realizar ninguna acción adicional.'
+        });
+      }
 
-    for (const solicitud of pendientes) {
-      if (solicitud.aprobacion_gh_token_hash === tokenHash) {
+      const isNationalOrInternational = pendientes.some(s => {
+        const alcance = s.datos_formulario?.salida?.alcance;
+        return alcance === 'Nacional' || alcance === 'Internacional';
+      });
+      const requiresSst = pendientes.some(s => requiresSstApproval(s)) || isNationalOrInternational;
+      const now = new Date();
+
+      if (requiresSst) {
+        const sstToken = encryptPayload({ purpose: 'reporte_salida_approve_sst_grupo', grupo_id }, null);
+        const sstTokenHash = hashToken(sstToken);
+
+        for (const sol of pendientes) {
+          await ReporteSalidaSolicitud.update({
+            estado: 'pendiente_aprobacion_sst',
+            gestion_humana_aprobado_at: now,
+            aprobacion_gh_token_hash: null,
+            aprobacion_sst_token_hash: sstTokenHash,
+            trazabilidad: appendTrace(sol, 'aprobada_gestion_humana', null, { via: 'correo_grupo' })
+          }, {
+            where: { id: sol.id }
+          });
+          await sol.reload();
+        }
+
+        const emailResult = await sendSSTGroupApprovalEmail(pendientes, sstToken);
+        for (const sol of pendientes) {
+          await sol.update({
+            correo_sst_enviado_at: emailResult.success ? new Date() : null,
+            trazabilidad: appendTrace(sol, emailResult.success ? 'correo_sst_enviado' : 'correo_sst_error', null, { error: emailResult.error || '' })
+          });
+        }
+
+        return renderApprovalPage({
+          res,
+          tone: 'success',
+          title: 'Aprobación de Gestión Humana registrada',
+          message: `Se aprobó la salida grupal desde Gestión del Talento Humano. Al tratarse de una salida fuera de la región (${pendientes[0]?.datos_formulario?.salida?.alcance || 'Nacional'}), fue remitida a Seguridad y Salud en el Trabajo (SST) para su visto bueno.`,
+          nextStep: 'SST recibirá la notificación para su respectiva validación institucional.'
+        });
+      }
+
+      // Local / Regional -> Finaliza
+      let approvedCount = 0;
+      const pdfAttachments = [];
+
+      for (const solicitud of pendientes) {
         await ReporteSalidaSolicitud.update({
           estado: 'finalizada',
-          gestion_humana_aprobado_at: new Date(),
-          finalizado_at: new Date(),
+          gestion_humana_aprobado_at: now,
+          finalizado_at: now,
           aprobacion_gh_token_hash: null,
-          trazabilidad: appendTrace(solicitud, 'aprobada_gestion_humana', null)
+          trazabilidad: appendTrace(solicitud, 'aprobada_gestion_humana', null, { via: 'correo_grupo' })
         }, {
-          where: {
-            id: solicitud.id,
-            estado: 'pendiente_aprobacion_gestion_humana',
-            aprobacion_gh_token_hash: tokenHash
-          }
+          where: { id: solicitud.id }
         });
-        
-        approvedCount++;
 
+        approvedCount++;
         await solicitud.reload();
+
         try {
           const pdfAttachment = await buildReporteSalidaPdfAttachment(solicitud);
           const userEmailResult = await sendIndividualColaboradorFinalEmail(solicitud, pdfAttachment);
-          
-          if (pdfAttachment) {
-            pdfAttachments.push(pdfAttachment);
-          }
-          
+          if (pdfAttachment) pdfAttachments.push(pdfAttachment);
           deleteSupportFile(solicitud);
-          
           await solicitud.update({
             correo_usuario_enviado_at: userEmailResult.success ? new Date() : null,
             correo_sst_enviado_at: new Date(),
@@ -6968,22 +7339,96 @@ const aprobarGrupoDesdeCorreo = async (req, res) => {
           console.error(`Error procesando notificacion final de grupo para solicitud ${solicitud.consecutivo}:`, err);
         }
       }
+
+      if (approvedCount > 0) {
+        try {
+          await sendGroupFinalConsolidatedEmail(solicitudes, pdfAttachments);
+        } catch (err) {
+          console.error('Error enviando correo consolidado final de grupo:', err);
+        }
+      }
+
+      return renderApprovalPage({
+        res,
+        tone: 'success',
+        title: 'Aprobación de Salida Grupal finalizada',
+        message: `Se aprobó y finalizó exitosamente la salida grupal para ${approvedCount} participantes.`,
+        nextStep: 'A cada participante se le ha enviado su formato PDF firmado y soporte por correo, y copia consolidada a las jefaturas y programas correspondientes.'
+      });
     }
 
-    if (approvedCount > 0) {
-      try {
-        await sendGroupFinalConsolidatedEmail(solicitudes, pdfAttachments);
-      } catch (err) {
-        console.error('Error enviando correo consolidado final de grupo:', err);
+    // ETAPA 3: APROBACION SST
+    if (purpose === 'reporte_salida_approve_sst_grupo') {
+      const pendientes = solicitudes.filter(s => s.estado === 'pendiente_aprobacion_sst');
+      if (!pendientes.length) {
+        return renderApprovalPage({
+          res,
+          tone: 'info',
+          title: 'Grupo ya procesado',
+          message: 'Esta aprobación de SST ya fue registrada previamente.',
+          nextStep: 'No es necesario realizar ninguna acción adicional.'
+        });
       }
+
+      let approvedCount = 0;
+      const pdfAttachments = [];
+      const now = new Date();
+
+      for (const solicitud of pendientes) {
+        await ReporteSalidaSolicitud.update({
+          estado: 'finalizada',
+          finalizado_at: now,
+          aprobacion_sst_token_hash: null,
+          trazabilidad: appendTrace(solicitud, 'aprobada_sst', null, { via: 'correo_grupo' })
+        }, {
+          where: { id: solicitud.id }
+        });
+
+        approvedCount++;
+        await solicitud.reload();
+
+        try {
+          const pdfAttachment = await buildReporteSalidaPdfAttachment(solicitud);
+          const userEmailResult = await sendIndividualColaboradorFinalEmail(solicitud, pdfAttachment);
+          if (pdfAttachment) pdfAttachments.push(pdfAttachment);
+          deleteSupportFile(solicitud);
+          await solicitud.update({
+            correo_usuario_enviado_at: userEmailResult.success ? new Date() : null,
+            correo_sst_enviado_at: new Date(),
+            enviado_sst_at: new Date(),
+            trazabilidad: appendTrace(solicitud, 'notificacion_final_enviada', null, {
+              usuario: userEmailResult.success,
+              sst: true
+            })
+          });
+        } catch (err) {
+          console.error(`Error procesando notificacion final de SST grupo para solicitud ${solicitud.consecutivo}:`, err);
+        }
+      }
+
+      if (approvedCount > 0) {
+        try {
+          await sendGroupFinalConsolidatedEmail(solicitudes, pdfAttachments);
+        } catch (err) {
+          console.error('Error enviando correo consolidado final de grupo tras SST:', err);
+        }
+      }
+
+      return renderApprovalPage({
+        res,
+        tone: 'success',
+        title: 'Visto Bueno SST registrado y Grupo Finalizado',
+        message: `Se registró exitosamente el visto bueno de SST y se finalizó la salida grupal para ${approvedCount} participantes.`,
+        nextStep: 'Se enviaron los formatos PDF firmados a los participantes y los correos consolidados a las direcciones y dependencias correspondientes.'
+      });
     }
 
     return renderApprovalPage({
       res,
-      tone: 'success',
-      title: 'Aprobacion de Grupo registrada',
-      message: `Se aprobo exitosamente el reporte de salida para ${approvedCount} participantes de manera individual.`,
-      nextStep: 'A cada participante se le ha enviado su respectivo formato PDF y soporte editable por correo.'
+      status: 400,
+      tone: 'error',
+      title: 'Etapa no reconocida',
+      message: 'No fue posible identificar la etapa de aprobación del grupo.'
     });
 
   } catch (error) {
@@ -7012,7 +7457,13 @@ const mostrarFormularioRechazoGrupo = async (req, res) => {
   }
   try {
     const payload = decryptPayload(req.params.token);
-    if (payload?.purpose !== 'reporte_salida_approve_grupo' || !payload?.grupo_id) {
+    const validPurposes = [
+      'reporte_salida_approve_jefe_grupo',
+      'reporte_salida_approve_gh_grupo',
+      'reporte_salida_approve_sst_grupo',
+      'reporte_salida_approve_grupo'
+    ];
+    if (!validPurposes.includes(payload?.purpose) || !payload?.grupo_id) {
       return renderApprovalPage({
         res,
         status: 403,
@@ -7024,8 +7475,6 @@ const mostrarFormularioRechazoGrupo = async (req, res) => {
     }
 
     const { grupo_id } = payload;
-    const tokenHash = hashToken(req.params.token);
-
     const solicitudes = await ReporteSalidaSolicitud.findAll({
       where: {
         datos_formulario: {
@@ -7047,14 +7496,14 @@ const mostrarFormularioRechazoGrupo = async (req, res) => {
       });
     }
 
-    const pendientes = solicitudes.filter(s => s.estado === 'pendiente_aprobacion_gestion_humana');
+    const pendientes = solicitudes.filter(s => s.estado?.startsWith('pendiente_'));
     if (!pendientes.length) {
       return renderApprovalPage({
         res,
         tone: 'info',
         title: 'Grupo ya procesado',
-        message: 'Este grupo ya no se encuentra pendiente de aprobacion de Gestion del Talento Humano.',
-        nextStep: 'No es necesario realizar ninguna accion adicional.'
+        message: 'Este grupo ya no se encuentra pendiente de aprobación.',
+        nextStep: 'No es necesario realizar ninguna acción adicional.'
       });
     }
 
@@ -7089,7 +7538,13 @@ const procesarRechazoGrupo = async (req, res) => {
   }
   try {
     const payload = decryptPayload(req.params.token);
-    if (payload?.purpose !== 'reporte_salida_approve_grupo' || !payload?.grupo_id) {
+    const validPurposes = [
+      'reporte_salida_approve_jefe_grupo',
+      'reporte_salida_approve_gh_grupo',
+      'reporte_salida_approve_sst_grupo',
+      'reporte_salida_approve_grupo'
+    ];
+    if (!validPurposes.includes(payload?.purpose) || !payload?.grupo_id) {
       return renderApprovalPage({
         res,
         status: 403,
@@ -7100,8 +7555,7 @@ const procesarRechazoGrupo = async (req, res) => {
       });
     }
 
-    const { grupo_id } = payload;
-    const tokenHash = hashToken(req.params.token);
+    const { grupo_id, purpose } = payload;
     const justificacion = sanitizeText(req.body.justificacion, 800) || 'Sin justificacion especificada.';
 
     const solicitudes = await ReporteSalidaSolicitud.findAll({
@@ -7125,7 +7579,7 @@ const procesarRechazoGrupo = async (req, res) => {
       });
     }
 
-    const pendientes = solicitudes.filter(s => s.estado === 'pendiente_aprobacion_gestion_humana');
+    const pendientes = solicitudes.filter(s => s.estado?.startsWith('pendiente_'));
     if (!pendientes.length) {
       return renderApprovalPage({
         res,
@@ -7136,61 +7590,63 @@ const procesarRechazoGrupo = async (req, res) => {
       });
     }
 
+    const actorLabel = purpose === 'reporte_salida_approve_jefe_grupo'
+      ? 'Dirección de Programa / Jefatura'
+      : (purpose === 'reporte_salida_approve_sst_grupo' ? 'Seguridad y Salud en el Trabajo (SST)' : 'Gestión del Talento Humano');
+
     let rejectedCount = 0;
     for (const solicitud of pendientes) {
-      if (solicitud.aprobacion_gh_token_hash === tokenHash) {
-        await ReporteSalidaSolicitud.update({
-          estado: 'no_aprobada',
-          aprobacion_gh_token_hash: null,
-          trazabilidad: appendTrace(solicitud, 'rechazada_gestion_humana', null, {
-            actorName: 'Gestion del Talento Humano',
-            justificacion
-          })
-        }, {
-          where: {
-            id: solicitud.id,
-            estado: 'pendiente_aprobacion_gestion_humana',
-            aprobacion_gh_token_hash: tokenHash
-          }
+      await ReporteSalidaSolicitud.update({
+        estado: 'no_aprobada',
+        aprobacion_jefe_token_hash: null,
+        aprobacion_gh_token_hash: null,
+        aprobacion_sst_token_hash: null,
+        trazabilidad: appendTrace(solicitud, 'rechazada_grupo', null, {
+          actorName: actorLabel,
+          justificacion
+        })
+      }, {
+        where: { id: solicitud.id }
+      });
+
+      rejectedCount++;
+      await solicitud.reload();
+      deleteSupportFile(solicitud);
+
+      try {
+        const solicitante = solicitud.solicitante_snapshot || {};
+        const userSubject = `REPORTE DE SALIDA GRUPAL ${solicitud.consecutivo} | Solicitud no aprobada por ${actorLabel}`;
+        const userHtml = renderInstitutionalTemplate({
+          title: `Reporte de salida grupal no aprobado`,
+          introHtml: `<p style="margin: 0 0 12px 0;">Saludo de paz y bien,</p><p style="margin: 0 0 4px 0;">Estimado(a) colaborador(a),</p><p style="margin: 0 0 16px 0;"><strong>${escapeHtml(solicitante.nombre)}</strong></p><p>Reciba un cordial saludo. En atención a la solicitud de reporte de salida de modalidad grupal con consecutivo <strong>${escapeHtml(solicitud.consecutivo)}</strong>, le informamos que la solicitud ha sido marcada como <strong>no aprobada</strong> por parte de <strong>${escapeHtml(actorLabel)}</strong>.</p>`,
+          bodyHtml: `
+            <p><strong>Motivo / Justificacion del rechazo:</strong></p>
+            <div style="margin:15px 0;padding:12px 16px;background:#fef2f2;border-left:4px solid #e11d48;color:#1e293b;font-style:italic;border-radius:4px;">
+              ${escapeHtml(justificacion)}
+            </div>
+            <p>Consulte más información en el módulo de Seguimiento a reportes del sistema SIAC.</p>
+          `
         });
 
-        rejectedCount++;
-        
-        await solicitud.reload();
-        deleteSupportFile(solicitud);
-        try {
-          const solicitante = solicitud.solicitante_snapshot || {};
-          const userSubject = `REPORTE DE SALIDA GRUPAL ${solicitud.consecutivo} | Solicitud no aprobada por Gestion del Talento Humano`;
-          const userHtml = renderInstitutionalTemplate({
-            title: 'Reporte de salida grupal no aprobado por Gestion del Talento Humano',
-            introHtml: `<p style="margin: 0 0 12px 0;">Saludo de paz y bien,</p><p style="margin: 0 0 4px 0;">Estimado(a) colaborador(a),</p><p style="margin: 0 0 16px 0;"><strong>${escapeHtml(solicitante.nombre)}</strong></p><p>Reciba un cordial saludo. En atención a la solicitud de reporte de salida de modalidad grupal en la que participaba con consecutivo <strong>${escapeHtml(solicitud.consecutivo)}</strong>, lamentamos informarle que la solicitud ha sido marcada como no aprobada por parte de <strong>Gestion del Talento Humano</strong>.</p>`,
-            bodyHtml: `
-              <p><strong>Motivo / Justificacion del rechazo:</strong></p>
-              <div style="margin:15px 0;padding:12px 16px;background:#fef2f2;border-left:4px solid #e11d48;color:#1e293b;font-style:italic;border-radius:4px;">
-                ${escapeHtml(justificacion)}
-              </div>
-              <p>Consulte mas informacion en el modulo de Seguimiento a reportes del sistema SIAC.</p>
-            `
-          });
-
+        if (solicitante.email) {
           await sendInstitutionalEmail({
             to: solicitante.email,
             subject: userSubject,
-            text: `Su solicitud de salida grupal ${solicitud.consecutivo} fue rechazada por Gestion del Talento Humano. Motivo: ${justificacion}`,
+            text: `Reporte grupal ${solicitud.consecutivo} no aprobado por ${actorLabel}: ${justificacion}`,
             html: userHtml
           });
-        } catch (err) {
-          console.error(`Error enviando email de rechazo a participante de solicitud ${solicitud.consecutivo}:`, err);
         }
+      } catch (err) {
+        console.error(`Error enviando correo de rechazo grupal a participante ${solicitud.consecutivo}:`, err);
       }
     }
 
     return renderApprovalPage({
       res,
-      tone: 'success',
-      title: 'Rechazo de Grupo registrado',
-      message: `Se registro el rechazo para ${rejectedCount} solicitudes del grupo por Gestion del Talento Humano.`,
-      nextStep: 'Se ha notificado a cada uno(a) de los(as) colaboradores(as) por correo institucional con el motivo correspondiente.'
+      tone: 'warning',
+      title: 'Rechazo de Salida Grupal registrado',
+      message: `Se ha registrado el rechazo de la salida grupal para ${rejectedCount} colaboradores(as).`,
+      nextStep: 'Se ha notificado por correo electronico a los participantes con la justificacion indicada.'
     });
 
   } catch (error) {
@@ -7387,6 +7843,7 @@ module.exports = {
   resolveReposicionLaboralProfile,
   resolveReposicionValues,
   resolveReposicionAbono,
+  getGroupInitialApprovalRecipients,
   getStoredReposicionLaboralProfile,
   REPOSICION_LABORAL_PROFILES,
   REPOSICION_WORKDAY_MINUTES

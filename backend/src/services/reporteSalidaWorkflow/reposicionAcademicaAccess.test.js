@@ -419,3 +419,65 @@ test('Vicerrectoría Financiera envía la aprobación de autoridad a viceadfin@u
   assert.notEqual(authority.email, 'viceacad@unicesmag.edu.co');
   assert.equal(authority.name, 'Vicerrectoria Financiera y de Desarrollo Institucional');
 });
+
+test('salida grupal de Arquitectura envía aprobación exclusivamente al correo del programa arquitectura@unicesmag.edu.co', () => {
+  const { getGroupInitialApprovalRecipients } = require('../../controllers/reporteSalidaController');
+  const groupSolicitudes = [
+    {
+      datos_formulario: {
+        is_leader: true,
+        personal: { nombre: 'JUAN CARLOS MARQUEZ CORDOBA' },
+        laboral: { dependencia: 'Programa Academico - Arquitectura', cargo: 'Docente Medio Tiempo' }
+      },
+      jefe_snapshot: { nombre: 'LILIAN MAGALI MARTINEZ CRESPO', email: 'lmmartinez@unicesmag.edu.co' }
+    },
+    {
+      datos_formulario: {
+        personal: { nombre: 'ANGELA JANNETH HIDALGO MELO' },
+        laboral: { dependencia: 'Programa Academico - Arquitectura', cargo: 'Docente Tiempo Completo' }
+      },
+      jefe_snapshot: { nombre: 'LILIAN MAGALI MARTINEZ CRESPO', email: 'lmmartinez@unicesmag.edu.co' }
+    }
+  ];
+
+  const recipients = getGroupInitialApprovalRecipients(groupSolicitudes);
+  assert.deepEqual(recipients, ['arquitectura@unicesmag.edu.co']);
+  assert.equal(recipients.includes('lmmartinez@unicesmag.edu.co'), false);
+});
+
+test('salida grupal de Diseño Gráfico envía aprobación exclusivamente a disenografico@unicesmag.edu.co', () => {
+  const { getGroupInitialApprovalRecipients } = require('../../controllers/reporteSalidaController');
+  const groupSolicitudes = [
+    {
+      datos_formulario: {
+        is_leader: true,
+        personal: { nombre: 'DOCENTE DISENO' },
+        laboral: { dependencia: 'Programa Academico - Diseño Grafico', cargo: 'Docente' }
+      },
+      jefe_snapshot: { nombre: 'KAREN EUGENIA OCANA FIGUEROA', email: 'kocana@unicesmag.edu.co' }
+    }
+  ];
+
+  const recipients = getGroupInitialApprovalRecipients(groupSolicitudes);
+  assert.deepEqual(recipients, ['disenografico@unicesmag.edu.co']);
+  assert.equal(recipients.includes('kocana@unicesmag.edu.co'), false);
+});
+
+test('salida grupal de otros programas académicos envía a ambos: correo del programa y correo del director/jefe', () => {
+  const { getGroupInitialApprovalRecipients } = require('../../controllers/reporteSalidaController');
+  const groupSolicitudes = [
+    {
+      datos_formulario: {
+        is_leader: true,
+        personal: { nombre: 'DOCENTE DERECHO' },
+        laboral: { dependencia: 'Programa Academico - Derecho', cargo: 'Docente' }
+      },
+      jefe_snapshot: { nombre: 'DIRECTOR DERECHO', email: 'director.derecho@unicesmag.edu.co' }
+    }
+  ];
+
+  const recipients = getGroupInitialApprovalRecipients(groupSolicitudes);
+  assert.ok(recipients.includes('dir.derecho@unicesmag.edu.co'));
+  assert.ok(recipients.includes('director.derecho@unicesmag.edu.co'));
+});
+
