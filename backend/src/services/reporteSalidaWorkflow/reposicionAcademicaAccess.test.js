@@ -481,3 +481,30 @@ test('salida grupal de otros programas académicos envía a ambos: correo del pr
   assert.ok(recipients.includes('director.derecho@unicesmag.edu.co'));
 });
 
+test('isSingleHomogeneousGroup reconoce grupos de un solo programa o jefe vs grupos heterogéneos', () => {
+  const { isSingleHomogeneousGroup } = require('../../controllers/reporteSalidaController');
+
+  // Grupo 1: Mismo programa (Arquitectura)
+  const groupMismoPrograma = [
+    { datos_formulario: { laboral: { dependencia: 'Programa Academico - Arquitectura' } }, jefe_snapshot: { nombre: 'LILIAN MARTINEZ' } },
+    { datos_formulario: { laboral: { dependencia: 'Programa Academico - Arquitectura' } }, jefe_snapshot: { nombre: 'LILIAN MARTINEZ' } }
+  ];
+  assert.equal(isSingleHomogeneousGroup(groupMismoPrograma), true);
+
+  // Grupo 2: Misma jefatura aunque cargos diferentes
+  const groupMismoJefe = [
+    { datos_formulario: { laboral: { dependencia: 'Oficina A' } }, jefe_snapshot: { nombre: 'JEFE CENTRAL', email: 'jefe@unicesmag.edu.co' } },
+    { datos_formulario: { laboral: { dependencia: 'Oficina B' } }, jefe_snapshot: { nombre: 'JEFE CENTRAL', email: 'jefe@unicesmag.edu.co' } }
+  ];
+  assert.equal(isSingleHomogeneousGroup(groupMismoJefe), true);
+
+  // Grupo 3: Diversos programas con diferentes jefaturas (Heterogéneo -> directo a Gestión Humana)
+  const groupHeterogeneo = [
+    { datos_formulario: { laboral: { dependencia: 'Programa Academico - Arquitectura' } }, jefe_snapshot: { nombre: 'LILIAN MARTINEZ', email: 'lmmartinez@unicesmag.edu.co' } },
+    { datos_formulario: { laboral: { dependencia: 'Programa Academico - Derecho' } }, jefe_snapshot: { nombre: 'DIRECTOR DERECHO', email: 'dir.derecho@unicesmag.edu.co' } },
+    { datos_formulario: { laboral: { dependencia: 'Oficina de Infraestructura' } }, jefe_snapshot: { nombre: 'JEFE INFRA', email: 'infra@unicesmag.edu.co' } }
+  ];
+  assert.equal(isSingleHomogeneousGroup(groupHeterogeneo), false);
+});
+
+

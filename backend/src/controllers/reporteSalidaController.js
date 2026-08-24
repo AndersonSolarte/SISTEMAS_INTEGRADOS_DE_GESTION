@@ -371,6 +371,25 @@ const getGroupInitialApprovalRecipients = (solicitudes = []) => {
   return recipients;
 };
 
+const isSingleHomogeneousGroup = (solicitudes = []) => {
+  if (!solicitudes.length || solicitudes.length === 1) return true;
+
+  const dependencias = [...new Set(solicitudes.map(s => {
+    const dep = s.datos_formulario?.laboral?.dependencia || s.dependencia || s.solicitante_snapshot?.dependencia || '';
+    return normalizeForMatch(dep);
+  }))].filter(Boolean);
+
+  const jefes = [...new Set(solicitudes.map(s => {
+    const j = s.jefe_snapshot || s.jefeInmediato || {};
+    const name = j.nombre || j.name || j.label || '';
+    const email = j.email || j.correo || '';
+    return normalizeForMatch(`${name}_${email}`);
+  }))].filter(Boolean);
+
+  // Es homogéneo si todos pertenecen a la misma dependencia/programa O todos tienen el mismo jefe
+  return dependencias.length <= 1 || jefes.length <= 1;
+};
+
 const getJefeCopyRecipientEmails = (solicitud = {}) => {
   const emails = [];
   const pushEmail = (e) => {
@@ -3564,26 +3583,82 @@ const radicarSolicitud = async (req, res) => {
         creadas.push(solicitud);
       }
 
-      const initialRecipients = getGroupInitialApprovalRecipients(creadas);
-      const emailResult = await sendJefeGroupApprovalEmail(creadas, token, initialRecipients);
-      const thread_message_id = emailResult.messageId || null;
+      const isHomogeneous = isSingleHomogeneousGroup(creadas);
 
-      for (const solicitud of creadas) {
-        await solicitud.update({
-          correo_jefe_enviado_at: emailResult.success ? new Date() : null,
-          datos_formulario: {
-            ...solicitud.datos_formulario,
-            thread_message_id
-          },
-          trazabilidad: appendTrace(solicitud, emailResult.success ? 'correo_jefe_enviado' : 'correo_jefe_error', null, { error: emailResult.error || '' })
+      if (isHomogeneous) {
+        // 1. MISMA DEPENDENCIA / PROGRAMA O MISMO JEFE -> FLUJO DE VISTO BUENO DIRECTO
+        const token = encryptPayload({ purpose: 'reporte_salida_approve_jefe_grupo', grupo_id }, null);
+        const tokenHash = hashToken(token);
+
+        for (const sol of creadas) {
+          await sol.update({
+            estado: 'pendiente_aprobacion_jefe',
+            aprobacion_jefe_token_hash: tokenHash,
+            aprobacion_gh_token_hash: null
+          });
+        }
+
+        const initialRecipients = getGroupInitialApprovalRecipients(creadas);
+        const emailResult = await sendJefeGroupApprovalEmail(creadas, token, initialRecipients);
+        const thread_message_id = emailResult.messageId || null;
+
+        for (const solicitud of creadas) {
+          await solicitud.update({
+            correo_jefe_enviado_at: emailResult.success ? new Date() : null,
+            datos_formulario: {
+              ...solicitud.datos_formulario,
+              thread_message_id
+            },
+            trazabilidad: appendTrace(solicitud, emailResult.success ? 'correo_jefe_enviado' : 'correo_jefe_error', null, { error: emailResult.error || '' })
+          });
+        }
+
+        return res.status(201).json({
+          success: true,
+          message: 'Salida grupal radicada exitosamente. Se envió la solicitud de visto bueno / aprobación a la Dirección de Programa / Jefatura correspondiente.',
+          data: creadas.map(serializeSolicitud)
+        });
+      } else {
+        // 2. DIVERSOS PROGRAMAS / DIVERSAS JEFATURAS -> DIRECTO A GESTIÓN HUMANA (Para evitar reprocesos y bloqueos)
+        const token = encryptPayload({ purpose: 'reporte_salida_approve_gh_grupo', grupo_id }, null);
+        const tokenHash = hashToken(token);
+
+        for (const sol of creadas) {
+          await sol.update({
+            estado: 'pendiente_aprobacion_gestion_humana',
+            aprobacion_jefe_token_hash: null,
+            aprobacion_gh_token_hash: tokenHash
+          });
+
+          // Notificación informativa a cada jefatura/dependencia
+          const jefeSnapshot = sol.jefe_snapshot;
+          if (jefeSnapshot?.email) {
+            sendJefeGroupRadicacionNotificationEmail(sol, jefeSnapshot, participantes).catch(err => {
+              console.error(`Error enviando correo informativo al jefe de la solicitud grupal ${sol.consecutivo}:`, err);
+            });
+          }
+        }
+
+        const emailResult = await sendGestionHumanaGroupApprovalEmail(creadas, token);
+        const thread_message_id = emailResult.messageId || null;
+
+        for (const solicitud of creadas) {
+          await solicitud.update({
+            correo_gh_enviado_at: emailResult.success ? new Date() : null,
+            datos_formulario: {
+              ...solicitud.datos_formulario,
+              thread_message_id
+            },
+            trazabilidad: appendTrace(solicitud, emailResult.success ? 'correo_gestion_humana_enviado' : 'correo_gestion_humana_error', null, { error: emailResult.error || '' })
+          });
+        }
+
+        return res.status(201).json({
+          success: true,
+          message: 'Salida grupal radicada exitosamente. Por involucrar diversas dependencias/programas, fue remitida directamente a Gestión del Talento Humano para aprobación centralizada.',
+          data: creadas.map(serializeSolicitud)
         });
       }
-
-      return res.status(201).json({
-        success: true,
-        message: 'Salida grupal radicada exitosamente. Se envió la solicitud de visto bueno / aprobación a la Dirección de Programa / Jefatura correspondiente.',
-        data: creadas.map(serializeSolicitud)
-      });
     }
 
     // Single Exit Flow
@@ -7844,6 +7919,7 @@ module.exports = {
   resolveReposicionValues,
   resolveReposicionAbono,
   getGroupInitialApprovalRecipients,
+  isSingleHomogeneousGroup,
   getStoredReposicionLaboralProfile,
   REPOSICION_LABORAL_PROFILES,
   REPOSICION_WORKDAY_MINUTES
