@@ -409,7 +409,47 @@ const CronogramaMovilidadModule = ({ initialPrograma = null }) => {
     }
   };
 
+  const [formValidationErrors, setFormValidationErrors] = useState([]);
+
+  const validateCronogramaParaRadicar = (acts) => {
+    const issues = [];
+    if (!formPrograma || !formPrograma.trim()) {
+      issues.push('Debe indicar el Programa Académico.');
+    }
+    if (!formCoordinador || !formCoordinador.trim()) {
+      issues.push('Debe indicar el Coordinador(a) de Práctica.');
+    }
+    if (!acts || acts.length === 0) {
+      issues.push('Debe tener al menos una (1) Visita a Escenario de Práctica programada.');
+      return issues;
+    }
+
+    acts.forEach((act, idx) => {
+      const num = idx + 1;
+      if (!act.entidad_destino || !act.entidad_destino.trim()) {
+        issues.push(`Visita #${num}: Debe indicar la Entidad de Destino / Escenario de Práctica.`);
+      }
+      if (!act.fecha_salida || !act.fecha_regreso) {
+        issues.push(`Visita #${num}: Debe seleccionar las fechas de salida y regreso.`);
+      }
+      if (!act.responsables || !Array.isArray(act.responsables) || act.responsables.length === 0) {
+        issues.push(`Visita #${num}: Debe seleccionar al menos un (1) Tutor Responsable.`);
+      }
+      if (!act.estudiantes || !Array.isArray(act.estudiantes) || act.estudiantes.length === 0) {
+        issues.push(`Visita #${num}: Debe asociar al menos un (1) Estudiante en Práctica Formativa.`);
+      }
+    });
+
+    return issues;
+  };
+
   const handleRadicar = async (cronId) => {
+    const valErrors = validateCronogramaParaRadicar(actividades);
+    if (valErrors.length > 0) {
+      setFormValidationErrors(valErrors);
+      return;
+    }
+    setFormValidationErrors([]);
     setSaving(true);
     setStatusMessage(null);
     try {
@@ -894,6 +934,17 @@ const CronogramaMovilidadModule = ({ initialPrograma = null }) => {
           </IconButton>
         </DialogTitle>
         <DialogContent sx={{ p: 3, bgcolor: '#f8fafc' }}>
+          {formValidationErrors.length > 0 && (
+            <Alert severity="error" onClose={() => setFormValidationErrors([])} sx={{ mb: 2.5, borderRadius: 2, border: '1px solid #fca5a5' }}>
+              <AlertTitle sx={{ fontWeight: 800 }}>No se puede radicar el cronograma todavía:</AlertTitle>
+              <ul style={{ margin: '4px 0 0 18px', padding: 0 }}>
+                {formValidationErrors.map((err, i) => (
+                  <li key={i} style={{ fontWeight: 700, fontSize: '0.85rem' }}>{err}</li>
+                ))}
+              </ul>
+            </Alert>
+          )}
+
           {activeCronograma?.observaciones_correccion && (
             <Alert severity="warning" sx={{ mb: 3, borderRadius: 2 }}>
               <AlertTitle sx={{ fontWeight: 800 }}>Observaciones de Corrección Registradas:</AlertTitle>

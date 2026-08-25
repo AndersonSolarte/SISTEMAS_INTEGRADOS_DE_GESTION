@@ -222,7 +222,22 @@ const radicarCronograma = async (req, res) => {
       return res.status(404).json({ error: 'Cronograma no encontrado' });
     }
 
-    // Generar PDF del oficio
+    if (!cronograma.actividades || cronograma.actividades.length === 0) {
+      return res.status(400).json({ error: 'El cronograma debe tener al menos una (1) visita a escenario de práctica programada.' });
+    }
+
+    for (let i = 0; i < cronograma.actividades.length; i++) {
+      const act = cronograma.actividades[i];
+      const resp = Array.isArray(act.responsables) ? act.responsables : [];
+      const ests = Array.isArray(act.estudiantes) ? act.estudiantes : [];
+
+      if (resp.length === 0) {
+        return res.status(400).json({ error: `La Visita a Escenario de Práctica #${i + 1} requiere al menos un (1) Tutor Responsable asignado.` });
+      }
+      if (ests.length === 0) {
+        return res.status(400).json({ error: `La Visita a Escenario de Práctica #${i + 1} requiere asociar al menos un (1) Estudiante en Práctica Formativa.` });
+      }
+    }
     const pdfBuffer = await generateCronogramaPdfBuffer(cronograma, cronograma.actividades);
     const pdfFilename = `oficio_cronograma_${cronograma.id}_${Date.now()}.pdf`;
     const pdfFilePath = path.join(UPLOADS_CRONOGRAMAS_DIR, pdfFilename);
