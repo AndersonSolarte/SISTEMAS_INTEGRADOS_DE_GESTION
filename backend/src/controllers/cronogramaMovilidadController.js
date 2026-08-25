@@ -587,14 +587,23 @@ const buscarEstudiantesMatriculados = async (req, res) => {
       limit: Number(limit)
     });
 
-    const resultado = estudiantes.map((e) => ({
-      id: e.id,
-      nombre_completo: `${e.primer_nombre || ''} ${e.segundo_nombre || ''} ${e.primer_apellido || ''} ${e.segundo_apellido || ''}`.replace(/\s+/g, ' ').trim(),
-      numero_documento: e.numero_documento,
-      codigo_estudiante: e.codigo_estudiante,
-      programa: e.programa,
-      semestre: e.semestre
-    }));
+    const seenKeys = new Set();
+    const resultado = [];
+    for (const e of estudiantes) {
+      const nombreCompleto = `${e.primer_nombre || ''} ${e.segundo_nombre || ''} ${e.primer_apellido || ''} ${e.segundo_apellido || ''}`.replace(/\s+/g, ' ').trim();
+      const uniqueKey = (e.numero_documento || e.codigo_estudiante || nombreCompleto).toString().trim().toLowerCase();
+      if (!seenKeys.has(uniqueKey)) {
+        seenKeys.add(uniqueKey);
+        resultado.push({
+          id: e.id,
+          nombre_completo: nombreCompleto,
+          numero_documento: e.numero_documento,
+          codigo_estudiante: e.codigo_estudiante,
+          programa: e.programa,
+          semestre: e.semestre
+        });
+      }
+    }
 
     const distinctProgs = await PoblacionalMatriculado.findAll({
       attributes: [[Sequelize.fn('DISTINCT', Sequelize.col('programa')), 'programa']],
@@ -650,6 +659,16 @@ const buscarResponsables = async (req, res) => {
       limit: Number(limit)
     });
 
+    const seenUserKeys = new Set();
+    const usuariosUnicos = [];
+    for (const u of usuarios) {
+      const key = (u.email || u.id).toString().trim().toLowerCase();
+      if (!seenUserKeys.has(key)) {
+        seenUserKeys.add(key);
+        usuariosUnicos.push(u);
+      }
+    }
+
     const distinctDeps = await User.findAll({
       attributes: [[Sequelize.fn('DISTINCT', Sequelize.col('dependencia')), 'dependencia']],
       raw: true
@@ -657,7 +676,7 @@ const buscarResponsables = async (req, res) => {
 
     const dependencias = distinctDeps.map(d => d.dependencia).filter(Boolean).sort();
 
-    return res.json({ usuarios, dependencias });
+    return res.json({ usuarios: usuariosUnicos, dependencias });
   } catch (error) {
     console.error('Error al buscar responsables:', error);
     return res.status(500).json({ error: 'Error al buscar responsables' });
