@@ -542,21 +542,36 @@ const aprobarFinanciera = async (req, res) => {
 // 9. Buscar Estudiantes Matriculados
 const buscarEstudiantesMatriculados = async (req, res) => {
   try {
-    const { query, programa, limit = 50 } = req.query;
+    const { query, programa, limit = 500 } = req.query;
     let whereConditions = [];
 
     if (query && query.trim()) {
-      const q = `%${query.trim()}%`;
-      whereConditions.push({
-        [Op.or]: [
-          { primer_nombre: { [Op.iLike]: q } },
-          { segundo_nombre: { [Op.iLike]: q } },
-          { primer_apellido: { [Op.iLike]: q } },
-          { segundo_apellido: { [Op.iLike]: q } },
-          { numero_documento: { [Op.iLike]: q } },
-          { codigo_estudiante: { [Op.iLike]: q } }
-        ]
-      });
+      const tokens = query.trim().split(/\s+/).filter(Boolean);
+      if (tokens.length > 1) {
+        const tokenConditions = tokens.map((token) => ({
+          [Op.or]: [
+            { primer_nombre: { [Op.iLike]: `%${token}%` } },
+            { segundo_nombre: { [Op.iLike]: `%${token}%` } },
+            { primer_apellido: { [Op.iLike]: `%${token}%` } },
+            { segundo_apellido: { [Op.iLike]: `%${token}%` } },
+            { numero_documento: { [Op.iLike]: `%${token}%` } },
+            { codigo_estudiante: { [Op.iLike]: `%${token}%` } }
+          ]
+        }));
+        whereConditions.push({ [Op.and]: tokenConditions });
+      } else {
+        const q = `%${query.trim()}%`;
+        whereConditions.push({
+          [Op.or]: [
+            { primer_nombre: { [Op.iLike]: q } },
+            { segundo_nombre: { [Op.iLike]: q } },
+            { primer_apellido: { [Op.iLike]: q } },
+            { segundo_apellido: { [Op.iLike]: q } },
+            { numero_documento: { [Op.iLike]: q } },
+            { codigo_estudiante: { [Op.iLike]: q } }
+          ]
+        });
+      }
     }
 
     if (programa && programa.trim() && programa.trim() !== 'TODOS') {
