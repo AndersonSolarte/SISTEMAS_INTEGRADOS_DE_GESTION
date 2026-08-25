@@ -542,42 +542,33 @@ const aprobarFinanciera = async (req, res) => {
 // 9. Buscar Estudiantes Matriculados
 const buscarEstudiantesMatriculados = async (req, res) => {
   try {
-    const { query, programa, limit = 20 } = req.query;
+    const { query, programa, limit = 50 } = req.query;
     let whereConditions = [];
 
     if (query && query.trim()) {
-      const q = `%${query.trim().toLowerCase()}%`;
-      const qClean = `%${query.trim().normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase()}%`;
+      const q = `%${query.trim()}%`;
       whereConditions.push({
         [Op.or]: [
-          Sequelize.where(Sequelize.fn('LOWER', Sequelize.fn('TRANSLATE', Sequelize.col('primer_nombre'), 'ÁÉÍÓÚáéíóú', 'AEIOUaeiou')), { [Op.like]: qClean }),
-          Sequelize.where(Sequelize.fn('LOWER', Sequelize.fn('TRANSLATE', Sequelize.col('segundo_nombre'), 'ÁÉÍÓÚáéíóú', 'AEIOUaeiou')), { [Op.like]: qClean }),
-          Sequelize.where(Sequelize.fn('LOWER', Sequelize.fn('TRANSLATE', Sequelize.col('primer_apellido'), 'ÁÉÍÓÚáéíóú', 'AEIOUaeiou')), { [Op.like]: qClean }),
-          Sequelize.where(Sequelize.fn('LOWER', Sequelize.fn('TRANSLATE', Sequelize.col('segundo_apellido'), 'ÁÉÍÓÚáéíóú', 'AEIOUaeiou')), { [Op.like]: qClean }),
-          Sequelize.where(Sequelize.fn('LOWER', Sequelize.col('numero_documento')), { [Op.like]: q }),
-          Sequelize.where(Sequelize.fn('LOWER', Sequelize.col('codigo_estudiante')), { [Op.like]: q })
+          { primer_nombre: { [Op.iLike]: q } },
+          { segundo_nombre: { [Op.iLike]: q } },
+          { primer_apellido: { [Op.iLike]: q } },
+          { segundo_apellido: { [Op.iLike]: q } },
+          { numero_documento: { [Op.iLike]: q } },
+          { codigo_estudiante: { [Op.iLike]: q } }
         ]
       });
     }
 
     if (programa && programa.trim() && programa.trim() !== 'TODOS') {
-      const cleanProg = programa.trim().normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
-      const tokens = cleanProg.split(/\s+/).filter((t) => t.length > 2);
-      if (tokens.length > 0) {
-        tokens.forEach((token) => {
-          whereConditions.push(
-            Sequelize.where(
-              Sequelize.fn('LOWER', Sequelize.fn('TRANSLATE', Sequelize.col('programa'), 'ÁÉÍÓÚáéíóú', 'AEIOUaeiou')),
-              { [Op.like]: `%${token}%` }
-            )
-          );
-        });
-      }
+      whereConditions.push({
+        programa: { [Op.iLike]: `%${programa.trim()}%` }
+      });
     }
 
     const estudiantes = await PoblacionalMatriculado.findAll({
       where: whereConditions.length > 0 ? { [Op.and]: whereConditions } : {},
       attributes: ['id', 'primer_nombre', 'segundo_nombre', 'primer_apellido', 'segundo_apellido', 'numero_documento', 'codigo_estudiante', 'programa', 'semestre'],
+      order: [['primer_apellido', 'ASC'], ['primer_nombre', 'ASC']],
       limit: Number(limit)
     });
 
@@ -606,34 +597,35 @@ const buscarEstudiantesMatriculados = async (req, res) => {
 // 10. Buscar Responsables (Usuarios/Docentes)
 const buscarResponsables = async (req, res) => {
   try {
-    const { query, dependencia, limit = 500 } = req.query;
-    let whereConditions = [{ estado: 'activo' }];
+    const { query, dependencia, limit = 1000 } = req.query;
+    let whereConditions = [];
+
+    // Incluir usuarios activos (soporta 'activo', 'ACTIVO' o no inactivos)
+    whereConditions.push({
+      [Op.or]: [
+        { estado: 'activo' },
+        { estado: 'ACTIVO' },
+        { estado: null },
+        Sequelize.where(Sequelize.fn('LOWER', Sequelize.cast(Sequelize.col('estado'), 'text')), { [Op.ne]: 'inactivo' })
+      ]
+    });
 
     if (query && query.trim()) {
-      const qClean = `%${query.trim().normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase()}%`;
+      const q = `%${query.trim()}%`;
       whereConditions.push({
         [Op.or]: [
-          Sequelize.where(Sequelize.fn('LOWER', Sequelize.fn('TRANSLATE', Sequelize.col('nombre'), 'ÁÉÍÓÚáéíóú', 'AEIOUaeiou')), { [Op.like]: qClean }),
-          Sequelize.where(Sequelize.fn('LOWER', Sequelize.fn('TRANSLATE', Sequelize.col('email'), 'ÁÉÍÓÚáéíóú', 'AEIOUaeiou')), { [Op.like]: qClean }),
-          Sequelize.where(Sequelize.fn('LOWER', Sequelize.fn('TRANSLATE', Sequelize.col('cargo'), 'ÁÉÍÓÚáéíóú', 'AEIOUaeiou')), { [Op.like]: qClean }),
-          Sequelize.where(Sequelize.fn('LOWER', Sequelize.fn('TRANSLATE', Sequelize.col('dependencia'), 'ÁÉÍÓÚáéíóú', 'AEIOUaeiou')), { [Op.like]: qClean })
+          { nombre: { [Op.iLike]: q } },
+          { email: { [Op.iLike]: q } },
+          { cargo: { [Op.iLike]: q } },
+          { dependencia: { [Op.iLike]: q } }
         ]
       });
     }
 
     if (dependencia && dependencia.trim() && dependencia !== 'TODOS') {
-      const cleanDep = dependencia.trim().normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
-      const tokens = cleanDep.split(/\s+/).filter((t) => t.length > 2);
-      if (tokens.length > 0) {
-        tokens.forEach((token) => {
-          whereConditions.push(
-            Sequelize.where(
-              Sequelize.fn('LOWER', Sequelize.fn('TRANSLATE', Sequelize.col('dependencia'), 'ÁÉÍÓÚáéíóú', 'AEIOUaeiou')),
-              { [Op.like]: `%${token}%` }
-            )
-          );
-        });
-      }
+      whereConditions.push({
+        dependencia: { [Op.iLike]: `%${dependencia.trim()}%` }
+      });
     }
 
     const usuarios = await User.findAll({
@@ -645,7 +637,6 @@ const buscarResponsables = async (req, res) => {
 
     const distinctDeps = await User.findAll({
       attributes: [[Sequelize.fn('DISTINCT', Sequelize.col('dependencia')), 'dependencia']],
-      where: { estado: 'activo' },
       raw: true
     });
 
