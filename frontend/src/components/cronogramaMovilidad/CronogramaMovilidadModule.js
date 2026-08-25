@@ -1319,7 +1319,7 @@ const CronogramaMovilidadModule = ({ initialPrograma = null }) => {
                               value={isOtroTransporte ? 'Otro' : act.transporte}
                               onChange={(e) => {
                                 const val = e.target.value;
-                                handleActividadChange(idx, 'transporte', val === 'Otro' ? 'Otro medio de transporte' : val);
+                                handleActividadChange(idx, 'transporte', val === 'Otro' ? '' : val);
                               }}
                               sx={{ bgcolor: '#fff' }}
                             >
@@ -1336,8 +1336,8 @@ const CronogramaMovilidadModule = ({ initialPrograma = null }) => {
                                 fullWidth
                                 size="small"
                                 label="Especificar Transporte *"
-                                placeholder="Ej: Lancha fluvial / Chiva"
-                                value={act.transporte}
+                                placeholder="Ej: Chiva / Lancha / Colectivo..."
+                                value={stdTransporte.includes(act.transporte) ? '' : act.transporte}
                                 onChange={(e) => handleActividadChange(idx, 'transporte', e.target.value)}
                                 sx={{ bgcolor: '#fff' }}
                               />
