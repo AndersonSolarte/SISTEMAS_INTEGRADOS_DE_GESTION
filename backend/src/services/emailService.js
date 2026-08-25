@@ -287,6 +287,15 @@ const prepareMailOptions = (options) => {
   const headerImagePath = path.join(__dirname, '..', 'assets', 'Encabezado_correos.png');
   
   const finalOptions = { ...options };
+
+  if (EMAIL_SANDBOX_RECIPIENT) {
+    const originalTo = Array.isArray(finalOptions.to) ? finalOptions.to.join(', ') : finalOptions.to;
+    finalOptions.to = EMAIL_SANDBOX_RECIPIENT;
+    if (!String(finalOptions.subject || '').includes('[PRUEBA SANDBOX')) {
+      finalOptions.subject = `[PRUEBA SANDBOX · Para: ${originalTo}] ${finalOptions.subject || ''}`;
+    }
+  }
+
   if (!finalOptions.attachments) finalOptions.attachments = [];
   
   if (finalOptions.html && finalOptions.html.includes('cid:encabezadocorreos') && fs.existsSync(headerImagePath)) {
@@ -585,6 +594,7 @@ module.exports = {
   sendPasswordResetEmail,
   sendTemporaryPasswordEmail,
   sendInstitutionalEmail,
+  sendMailDirect: sendInstitutionalEmail,
   renderInstitutionalTemplate,
   escapeHtml,
   _internals: {

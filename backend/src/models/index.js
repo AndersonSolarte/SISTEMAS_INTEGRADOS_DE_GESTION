@@ -64,6 +64,17 @@ const DesplazamientoViaticosSolicitud = require('./DesplazamientoViaticosSolicit
 const ViaticosLegalizacion = require('./ViaticosLegalizacion');
 const SystemSetting = require('./SystemSetting');
 const DatabaseBackupRun = require('./DatabaseBackupRun');
+const CronogramaMovilidad = require('./CronogramaMovilidad');
+const CronogramaMovilidadActividad = require('./CronogramaMovilidadActividad');
+const strategicPlanning = require('./StrategicPlanning');
+
+strategicPlanning.registerStrategicPlanningAssociations({ User });
+
+// Relaciones Cronograma Movilidad
+CronogramaMovilidad.hasMany(CronogramaMovilidadActividad, { foreignKey: 'id_cronograma', as: 'actividades', onDelete: 'CASCADE' });
+CronogramaMovilidadActividad.belongsTo(CronogramaMovilidad, { foreignKey: 'id_cronograma', as: 'cronograma' });
+User.hasMany(CronogramaMovilidad, { foreignKey: 'id_director', as: 'cronogramasMovilidad' });
+CronogramaMovilidad.belongsTo(User, { foreignKey: 'id_director', as: 'directorUser' });
 
 // Relaciones existentes
 MacroProceso.hasMany(Proceso, { foreignKey: 'macro_proceso_id', as: 'procesos' });
@@ -356,5 +367,8 @@ module.exports = {
   DesplazamientoViaticosSolicitud,
   ViaticosLegalizacion,
   SystemSetting,
-  DatabaseBackupRun
+  DatabaseBackupRun,
+  CronogramaMovilidad,
+  CronogramaMovilidadActividad,
+  ...strategicPlanning
 };

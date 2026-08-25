@@ -3,6 +3,8 @@ import ReactDOM from 'react-dom';
 import InfraestructuraFisicaDashboard from '../components/infraestructura/InfraestructuraFisicaDashboard';
 import ViaticosGestionDashboard from '../components/viaticos/ViaticosGestionDashboard';
 import ContextoExternoDashboardPanel from '../components/contextoExterno/ContextoExternoDashboardPanel';
+import CronogramaMovilidadModule from '../components/cronogramaMovilidad/CronogramaMovilidadModule';
+import FlightTakeoffIcon from '@mui/icons-material/FlightTakeoff';
 import {
   Box,
   Paper,
@@ -138,6 +140,7 @@ import RecursoHumanoLandingPage from '../components/recursoHumano/RecursoHumanoL
 import InternacionalizacionLandingPage from '../components/internacionalizacion/InternacionalizacionLandingPage';
 import ContextoExternoGestionPanel from '../components/contextoExterno/ContextoExternoGestionPanel';
 import { ROLES } from '../constants/roles';
+import { ACADEMIC_PROGRAMS, ACADEMIC_PROGRAM_LEVELS, getAcademicProgramPermissionKey } from '../constants/academicPrograms';
 import { EstadisticaDocumentalPanel } from './EstadisticaDocumentalImpact';
 import ActivityDashboard from './ActivityDashboard';
 import SecurityApplicationDashboard from './SecurityApplicationDashboard';
@@ -492,8 +495,9 @@ const BASES = [
   { key: 'plan_accion', label: 'Plan de Acción', description: 'Seguimiento anual del Plan de Acción institucional: metas, avances IP/IIP y ejecución total.' },
   { key: 'autoevaluacion', label: 'Autoevaluación', description: 'Estructura base de factores, características, aspectos, indicadores y evidencias.' },
   { key: 'registros_calificados_acreditacion', label: 'Registros Calificados y Acreditación', description: 'Histórico de registros calificados, resoluciones, planes de estudio y evidencias de Drive.' },
-  { key: 'infraestructura_fisica', label: 'Infraestructura Física', description: 'Inventario físico unificado de áreas, aforos, tenencias y accesos de los campus.' }
-  ,{ key: 'vicerrectoria_financiera', label: 'Vicerrectoría Financiera y de Desarrollo Institucional', description: 'Gestión, legalización y análisis institucional de viáticos y gastos de viaje.' }
+  { key: 'infraestructura_fisica', label: 'Infraestructura Física', description: 'Inventario físico unificado de áreas, aforos, tenencias y accesos de los campus.' },
+  { key: 'vicerrectoria_academica', label: 'Vicerrectoría Académica', description: 'Oferta académica institucional organizada por programas de pregrado y posgrado.' },
+  { key: 'vicerrectoria_financiera', label: 'Vicerrectoría Financiera y de Desarrollo Institucional', description: 'Gestión, legalización y análisis institucional de viáticos y gastos de viaje.' }
 ];
 
 const SUBBASES_POBLACIONAL = ['Inscritos', 'Admitidos', 'Primer Curso', 'Matriculados', 'Graduados', 'Cantidad Total Egresados', 'Caracterizacion', 'Desercion', 'Empleabilidad', 'Contexto Externo'];
@@ -599,6 +603,24 @@ const getVisibleBaseKeysForUser = (user) => {
   }
 
   return [];
+};
+
+const getVisibleAcademicProgramsForUser = (user) => {
+  if ([ROLES.ADMINISTRADOR, ROLES.PLANEACION_ESTRATEGICA].includes(user?.role)) {
+    return ACADEMIC_PROGRAMS;
+  }
+
+  const permissionKeys = [
+    user?.allowedModules,
+    user?.modulePermissions,
+    user?.modules,
+    user?.permissions?.modules
+  ]
+    .flatMap((entry) => normalizeModulePermissionList(entry))
+    .map((key) => String(key || '').trim());
+  const allowedPrograms = new Set(permissionKeys);
+
+  return ACADEMIC_PROGRAMS.filter((program) => allowedPrograms.has(getAcademicProgramPermissionKey(program.name)));
 };
 
 const SECURITY_PERMISSION_KEYS = [
@@ -2054,6 +2076,9 @@ function GestionInformacion() {
 
   const [selectedCard, setSelectedCard] = useState(null);
   const [financialPanel, setFinancialPanel] = useState('hub');
+  const [showAcademicMovilidadModule, setShowAcademicMovilidadModule] = useState(false);
+  const [academicMovilidadPrograma, setAcademicMovilidadPrograma] = useState(null);
+  const [selectedProgramHub, setSelectedProgramHub] = useState(null);
   const [gestionProcesosPanel, setGestionProcesosPanel] = useState('hub');
   const [planAccionTab, setPlanAccionTab] = useState('estadistica');
   const [poblacionalPanel, setPoblacionalPanel] = useState('hub');
@@ -2136,6 +2161,14 @@ function GestionInformacion() {
   const [adm2GeoFeatures, setAdm2GeoFeatures] = useState([]);
   const [deptGeoFeaturesReady, setDeptGeoFeaturesReady] = useState(false);
   const [matriculadosBundleReady, setMatriculadosBundleReady] = useState(false);
+  useEffect(() => {
+    const params = new URLSearchParams(location.search);
+    const cronId = params.get('cronogramaId') || params.get('id');
+    const isCronTab = params.get('tab') === 'cronograma_movilidad';
+    if (cronId || isCronTab) {
+      navigate(`/dashboard/practica-integral-movilidad${location.search}`, { replace: true });
+    }
+  }, [location.search, navigate]);
   const geoFiltersInitializedRef = useRef(false);
   const geoTerritorialFiltersInitializedRef = useRef(false);
   const deptGeoLoadedRef = useRef(false);
@@ -2436,6 +2469,7 @@ function GestionInformacion() {
   }, [isPlaneacionGpInfoContext, user]);
   const visiblePoblacionalDashboardKeys = useMemo(() => getVisiblePoblacionalDashboardKeysForUser(user), [user]);
   const visibleBases = useMemo(() => BASES.filter((base) => base.key !== 'georreferencia' && visibleBaseKeys.includes(base.key)), [visibleBaseKeys]);
+  const visibleAcademicPrograms = useMemo(() => getVisibleAcademicProgramsForUser(user), [user]);
   const canAccessSecurityApplication = useMemo(() => canViewSecurityApplication(user), [user]);
   const visiblePoblacionalDashboardCards = useMemo(
     () => POBLACIONAL_DASHBOARD_CARDS.filter((card) => visiblePoblacionalDashboardKeys.includes(`poblacional_${card.key}`)),
@@ -4611,7 +4645,7 @@ function GestionInformacion() {
   };
 
   const enterCard = (key) => {
-    if (!['poblacional', 'saber_pro', 'recurso_humano', 'internacionalizacion', 'gestion_procesos', 'registros_calificados_acreditacion', 'infraestructura_fisica', 'plan_accion', 'vicerrectoria_financiera', 'activity_monitor', 'security_application'].includes(key)) {
+    if (!['poblacional', 'saber_pro', 'recurso_humano', 'internacionalizacion', 'gestion_procesos', 'registros_calificados_acreditacion', 'infraestructura_fisica', 'plan_accion', 'vicerrectoria_academica', 'vicerrectoria_financiera', 'activity_monitor', 'security_application'].includes(key)) {
       enqueueSnackbar('Modulo en construccion. La estructura ya quedo lista para activarlo.', { variant: 'info' });
       return;
     }
@@ -4641,10 +4675,441 @@ function GestionInformacion() {
     setSelectedCard(null);
     setGestionProcesosPanel('hub');
     setFinancialPanel('hub');
+    setSelectedProgramHub(null);
+    setShowAcademicMovilidadModule(false);
+    setAcademicMovilidadPrograma(null);
     setPoblacionalPanel('hub');
     setSaberProStatSection('hub');
     navigate('/dashboard/gestion-informacion?tab=estadistica', { replace: true });
   }, [navigate]);
+
+  const renderAcademicViceRectoryHub = () => {
+    // 1. Vista del Módulo de Movilidad
+    if (showAcademicMovilidadModule) {
+      return (
+        <Box sx={{ maxWidth: 1500, mx: 'auto' }}>
+          <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1.2} alignItems="center" justifyContent="space-between" sx={{ mb: 2 }}>
+            <Button
+              variant="outlined"
+              startIcon={<ArrowBackRoundedIcon />}
+              onClick={() => {
+                setShowAcademicMovilidadModule(false);
+              }}
+              sx={{ borderRadius: 2, textTransform: 'none', fontWeight: 800 }}
+            >
+              {selectedProgramHub ? `Volver a ${selectedProgramHub.name}` : 'Volver a Vicerrectoría Académica'}
+            </Button>
+            <Chip
+              icon={<FlightTakeoffIcon />}
+              label={academicMovilidadPrograma ? `Práctica Integral de Movilidad: ${academicMovilidadPrograma}` : 'Práctica Integral de Movilidad (Todos los Programas)'}
+              color="primary"
+              sx={{ fontWeight: 800, py: 0.5, px: 1 }}
+            />
+          </Stack>
+
+          <Paper elevation={0} sx={{ p: { xs: 1.5, sm: 2.5 }, borderRadius: 3, border: '1px solid #dbe6f5', bgcolor: '#fff' }}>
+            <CronogramaMovilidadModule initialPrograma={academicMovilidadPrograma} />
+          </Paper>
+        </Box>
+      );
+    }
+
+    // 2. Vista de Módulos del Programa Seleccionado (Hub del Programa)
+    if (selectedProgramHub) {
+      return (
+        <Box sx={{ maxWidth: 1500, mx: 'auto' }}>
+          <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1.2} alignItems={{ xs: 'stretch', sm: 'center' }} sx={{ mb: 2 }}>
+            <Button
+              variant="outlined"
+              startIcon={<ArrowBackRoundedIcon />}
+              onClick={() => setSelectedProgramHub(null)}
+              sx={{ alignSelf: { sm: 'flex-start' }, borderRadius: 2, textTransform: 'none', fontWeight: 800 }}
+            >
+              Volver a programas académicos
+            </Button>
+            <Chip label={selectedProgramHub.level} color="primary" variant="outlined" sx={{ fontWeight: 800 }} />
+            {selectedProgramHub.snies && (
+              <Chip label={`SNIES ${selectedProgramHub.snies}`} variant="outlined" sx={{ fontWeight: 750 }} />
+            )}
+          </Stack>
+
+          {/* Hero Banner del Programa */}
+          <Paper
+            elevation={0}
+            sx={{
+              p: { xs: 2.2, sm: 2.8, md: 3.4 },
+              mb: 3,
+              borderRadius: { xs: 3, md: 4 },
+              color: '#fff',
+              background: 'linear-gradient(135deg, #1e3a8a 0%, #2563eb 58%, #3b82f6 100%)',
+              boxShadow: '0 18px 40px rgba(30,64,175,.18)'
+            }}
+          >
+            <Stack direction={{ xs: 'column', md: 'row' }} spacing={2} alignItems={{ xs: 'flex-start', md: 'center' }} justifyContent="space-between">
+              <Box>
+                <Typography variant="overline" sx={{ color: '#bfdbfe', fontWeight: 900, letterSpacing: 1.1 }}>
+                  {selectedProgramHub.faculty}
+                </Typography>
+                <Typography sx={{ mt: 0.2, fontWeight: 900, fontSize: { xs: 24, md: 34 }, lineHeight: 1.1 }}>
+                  {selectedProgramHub.name}
+                </Typography>
+                <Typography sx={{ mt: 1, maxWidth: 760, color: 'rgba(255,255,255,.88)', lineHeight: 1.5 }}>
+                  Módulos de información, estadísticas, movilidad y trazabilidad institucional del programa.
+                </Typography>
+              </Box>
+              <SchoolGradIcon sx={{ fontSize: { xs: 58, md: 78 }, color: '#dbeafe', opacity: 0.9 }} />
+            </Stack>
+          </Paper>
+
+          <Typography sx={{ mb: 2, fontWeight: 900, color: '#0f172a', fontSize: { xs: 19, md: 22 } }}>
+            Módulos disponibles para {selectedProgramHub.name}
+          </Typography>
+
+          {/* MÓDULOS DEL PROGRAMA */}
+          <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', md: 'repeat(2, minmax(0, 1fr))' }, gap: 2.2 }}>
+
+            {/* MÓDULO 1: PRÁCTICA INTEGRAL DE MOVILIDAD */}
+            <Paper
+              elevation={0}
+              sx={{
+                p: 2.5,
+                borderRadius: 3.5,
+                border: '2px solid #3b82f6',
+                bgcolor: '#fff',
+                display: 'flex',
+                flexDirection: 'column',
+                justifyContent: 'space-between',
+                boxShadow: '0 10px 28px rgba(37,99,235,.08)',
+                transition: 'transform .18s ease, box-shadow .18s ease',
+                '&:hover': { transform: 'translateY(-3px)', boxShadow: '0 16px 36px rgba(37,99,235,.15)' }
+              }}
+            >
+              <Box>
+                <Stack direction="row" justifyContent="space-between" alignItems="flex-start" sx={{ mb: 1.5 }}>
+                  <Box sx={{ width: 50, height: 50, borderRadius: 2.5, bgcolor: '#2563eb', color: '#fff', display: 'grid', placeItems: 'center', boxShadow: '0 8px 18px rgba(37,99,235,.28)' }}>
+                    <FlightTakeoffIcon sx={{ fontSize: 28 }} />
+                  </Box>
+                  <Chip label="Permanente" size="small" color="primary" sx={{ fontWeight: 800 }} />
+                </Stack>
+                <Typography variant="h6" sx={{ fontWeight: 950, color: '#0f172a' }}>
+                  Práctica Integral de Movilidad
+                </Typography>
+                <Typography variant="body2" sx={{ color: '#64748b', mt: 0.8, lineHeight: 1.5 }}>
+                  Gestión, radicación y consulta permanente de cronogramas de salidas pedagógicas, prácticas formativas y oficios PDF de movilidad del programa.
+                </Typography>
+              </Box>
+              <Button
+                fullWidth
+                variant="contained"
+                endIcon={<ArrowForwardRoundedIcon />}
+                onClick={() => {
+                  setAcademicMovilidadPrograma(selectedProgramHub.name);
+                  setShowAcademicMovilidadModule(true);
+                }}
+                sx={{ mt: 2.5, borderRadius: 99, fontWeight: 900, textTransform: 'none', py: 1.1, bgcolor: '#2563eb', '&:hover': { bgcolor: '#1d4ed8' } }}
+              >
+                Ingresar a Movilidad →
+              </Button>
+            </Paper>
+
+            {/* MÓDULO 2: ESTADÍSTICAS POBLACIONALES */}
+            <Paper
+              elevation={0}
+              sx={{
+                p: 2.5,
+                borderRadius: 3.5,
+                border: '1px solid #dbe6f5',
+                bgcolor: '#fff',
+                display: 'flex',
+                flexDirection: 'column',
+                justifyContent: 'space-between',
+                boxShadow: '0 8px 22px rgba(15,23,42,.045)',
+                transition: 'transform .18s ease, box-shadow .18s ease',
+                '&:hover': { transform: 'translateY(-3px)', borderColor: '#93c5fd', boxShadow: '0 14px 30px rgba(37,99,235,.10)' }
+              }}
+            >
+              <Box>
+                <Stack direction="row" justifyContent="space-between" alignItems="flex-start" sx={{ mb: 1.5 }}>
+                  <Box sx={{ width: 50, height: 50, borderRadius: 2.5, bgcolor: '#0b3a6f', color: '#fff', display: 'grid', placeItems: 'center', boxShadow: '0 8px 18px rgba(11,58,111,.22)' }}>
+                    <GroupsIcon sx={{ fontSize: 28 }} />
+                  </Box>
+                  <Chip label="Indicadores" size="small" variant="outlined" sx={{ fontWeight: 800, borderColor: '#93c5fd', color: '#1e40af' }} />
+                </Stack>
+                <Typography variant="h6" sx={{ fontWeight: 950, color: '#0f172a' }}>
+                  Estadísticas Poblacionales
+                </Typography>
+                <Typography variant="body2" sx={{ color: '#64748b', mt: 0.8, lineHeight: 1.5 }}>
+                  Series históricas e indicadores de inscritos, admitidos, matriculados, graduados y tasas de deserción del programa.
+                </Typography>
+              </Box>
+              <Button
+                fullWidth
+                variant="outlined"
+                endIcon={<ArrowForwardRoundedIcon />}
+                onClick={() => {
+                  setBaseSeleccionada('poblacional');
+                  setSelectedCard(null);
+                  setMenuView('estadistica');
+                }}
+                sx={{ mt: 2.5, borderRadius: 99, fontWeight: 900, textTransform: 'none', py: 1.1 }}
+              >
+                Ver Estadísticas Poblacionales →
+              </Button>
+            </Paper>
+
+            {/* MÓDULO 3: SABER PRO */}
+            <Paper
+              elevation={0}
+              sx={{
+                p: 2.5,
+                borderRadius: 3.5,
+                border: '1px solid #dbe6f5',
+                bgcolor: '#fff',
+                display: 'flex',
+                flexDirection: 'column',
+                justifyContent: 'space-between',
+                boxShadow: '0 8px 22px rgba(15,23,42,.045)',
+                transition: 'transform .18s ease, box-shadow .18s ease',
+                '&:hover': { transform: 'translateY(-3px)', borderColor: '#93c5fd', boxShadow: '0 14px 30px rgba(37,99,235,.10)' }
+              }}
+            >
+              <Box>
+                <Stack direction="row" justifyContent="space-between" alignItems="flex-start" sx={{ mb: 1.5 }}>
+                  <Box sx={{ width: 50, height: 50, borderRadius: 2.5, bgcolor: '#059669', color: '#fff', display: 'grid', placeItems: 'center', boxShadow: '0 8px 18px rgba(5,150,105,.22)' }}>
+                    <SchoolIcon sx={{ fontSize: 28 }} />
+                  </Box>
+                  <Chip label="Pruebas Estado" size="small" variant="outlined" sx={{ fontWeight: 800, borderColor: '#a7f3d0', color: '#047857' }} />
+                </Stack>
+                <Typography variant="h6" sx={{ fontWeight: 950, color: '#0f172a' }}>
+                  Resultados Saber Pro
+                </Typography>
+                <Typography variant="body2" sx={{ color: '#64748b', mt: 0.8, lineHeight: 1.5 }}>
+                  Resultados agregados e individuales de las competencias genéricas y específicas evaluadas por el ICFES.
+                </Typography>
+              </Box>
+              <Button
+                fullWidth
+                variant="outlined"
+                color="success"
+                endIcon={<ArrowForwardRoundedIcon />}
+                onClick={() => {
+                  setBaseSeleccionada('saber_pro');
+                  setSelectedCard(null);
+                  setMenuView('estadistica');
+                }}
+                sx={{ mt: 2.5, borderRadius: 99, fontWeight: 900, textTransform: 'none', py: 1.1 }}
+              >
+                Ver Resultados Saber Pro →
+              </Button>
+            </Paper>
+
+            {/* MÓDULO 4: REGISTROS CALIFICADOS */}
+            <Paper
+              elevation={0}
+              sx={{
+                p: 2.5,
+                borderRadius: 3.5,
+                border: '1px solid #dbe6f5',
+                bgcolor: '#fff',
+                display: 'flex',
+                flexDirection: 'column',
+                justifyContent: 'space-between',
+                boxShadow: '0 8px 22px rgba(15,23,42,.045)',
+                transition: 'transform .18s ease, box-shadow .18s ease',
+                '&:hover': { transform: 'translateY(-3px)', borderColor: '#93c5fd', boxShadow: '0 14px 30px rgba(37,99,235,.10)' }
+              }}
+            >
+              <Box>
+                <Stack direction="row" justifyContent="space-between" alignItems="flex-start" sx={{ mb: 1.5 }}>
+                  <Box sx={{ width: 50, height: 50, borderRadius: 2.5, bgcolor: '#7c3aed', color: '#fff', display: 'grid', placeItems: 'center', boxShadow: '0 8px 18px rgba(124,58,237,.22)' }}>
+                    <FolderIcon sx={{ fontSize: 28 }} />
+                  </Box>
+                  <Chip label="Normatividad" size="small" variant="outlined" sx={{ fontWeight: 800, borderColor: '#ddd6fe', color: '#6d28d9' }} />
+                </Stack>
+                <Typography variant="h6" sx={{ fontWeight: 950, color: '#0f172a' }}>
+                  Registros Calificados y Acreditación
+                </Typography>
+                <Typography variant="body2" sx={{ color: '#64748b', mt: 0.8, lineHeight: 1.5 }}>
+                  Resoluciones del Ministerio de Educación, registros vigentes, planes de estudio y evidencias de acreditación.
+                </Typography>
+              </Box>
+              <Button
+                fullWidth
+                variant="outlined"
+                color="secondary"
+                endIcon={<ArrowForwardRoundedIcon />}
+                onClick={() => {
+                  setBaseSeleccionada('registros_calificados_acreditacion');
+                  setSelectedCard(null);
+                  setMenuView('estadistica');
+                }}
+                sx={{ mt: 2.5, borderRadius: 99, fontWeight: 900, textTransform: 'none', py: 1.1 }}
+              >
+                Ver Registros y Evidencias →
+              </Button>
+            </Paper>
+
+          </Box>
+        </Box>
+      );
+    }
+
+    // 3. Catálogo General de Programas Académicos
+    const groupedPrograms = ACADEMIC_PROGRAM_LEVELS.map((level) => ({
+      level,
+      programs: visibleAcademicPrograms.filter((program) => program.level === level)
+    })).filter(({ programs }) => programs.length > 0);
+
+    return (
+      <Box sx={{ maxWidth: 1500, mx: 'auto' }}>
+        <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1.2} alignItems={{ xs: 'stretch', sm: 'center' }} sx={{ mb: 2 }}>
+          <Button variant="outlined" startIcon={<ArrowBackRoundedIcon />} onClick={returnToCards} sx={{ alignSelf: { sm: 'flex-start' }, borderRadius: 2, textTransform: 'none', fontWeight: 800 }}>
+            Volver a módulos
+          </Button>
+          <Chip label={`${visibleAcademicPrograms.length} programas autorizados`} color="primary" variant="outlined" sx={{ alignSelf: { xs: 'flex-start', sm: 'center' }, fontWeight: 800 }} />
+        </Stack>
+
+        <Paper
+          elevation={0}
+          sx={{
+            p: { xs: 2.2, sm: 2.8, md: 3.4 },
+            mb: 2.5,
+            borderRadius: { xs: 3, md: 4 },
+            color: '#fff',
+            background: 'linear-gradient(135deg, #172554 0%, #1d4ed8 58%, #2563eb 100%)',
+            boxShadow: '0 18px 40px rgba(30,64,175,.18)'
+          }}
+        >
+          <Stack direction={{ xs: 'column', md: 'row' }} spacing={2} alignItems={{ xs: 'flex-start', md: 'center' }} justifyContent="space-between">
+            <Box>
+              <Typography variant="overline" sx={{ color: '#bfdbfe', fontWeight: 900, letterSpacing: 1.1 }}>Gestión académica institucional</Typography>
+              <Typography sx={{ mt: 0.2, fontWeight: 900, fontSize: { xs: 28, md: 36 }, lineHeight: 1.08 }}>Vicerrectoría Académica</Typography>
+              <Typography sx={{ mt: 1, maxWidth: 760, color: 'rgba(255,255,255,.84)', lineHeight: 1.5 }}>
+                Seleccione un programa académico para acceder a sus módulos de movilidad, estadísticas, resultados Saber Pro y normatividad.
+              </Typography>
+            </Box>
+            <SchoolIcon sx={{ fontSize: { xs: 58, md: 78 }, color: '#dbeafe', opacity: 0.9 }} />
+          </Stack>
+        </Paper>
+
+        {/* MÓDULO DESTACADO GLOBAL DE MOVILIDAD: solo perfiles institucionales */}
+        {[ROLES.ADMINISTRADOR, ROLES.PLANEACION_ESTRATEGICA].includes(user?.role) && <Paper
+          elevation={0}
+          sx={{
+            p: { xs: 2.2, sm: 2.8 },
+            mb: 3,
+            borderRadius: 3.5,
+            border: '2px solid #3b82f6',
+            background: 'linear-gradient(135deg, #eff6ff 0%, #ffffff 100%)',
+            boxShadow: '0 10px 28px rgba(37,99,235,.08)'
+          }}
+        >
+          <Stack direction={{ xs: 'column', md: 'row' }} spacing={2.5} alignItems={{ xs: 'flex-start', md: 'center' }} justifyContent="space-between">
+            <Stack direction="row" spacing={2} alignItems="center">
+              <Box sx={{ width: 54, height: 54, borderRadius: 2.8, bgcolor: '#2563eb', color: '#fff', display: 'grid', placeItems: 'center', boxShadow: '0 8px 20px rgba(37,99,235,.28)', flexShrink: 0 }}>
+                <FlightTakeoffIcon sx={{ fontSize: 30 }} />
+              </Box>
+              <Box>
+                <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap" gap={0.5}>
+                  <Typography variant="h6" sx={{ fontWeight: 950, color: '#1e3a8a', fontSize: { xs: 18, md: 21 } }}>
+                    Práctica Integral de Movilidad (Consolidado Institucional)
+                  </Typography>
+                  <Chip label="Módulo Permanente" size="small" color="primary" sx={{ fontWeight: 800, fontSize: 11 }} />
+                </Stack>
+                <Typography variant="body2" sx={{ color: '#475569', mt: 0.5, lineHeight: 1.45 }}>
+                  Gestión, radicación y consulta institucional de cronogramas de movilidad para todos los programas académicos.
+                </Typography>
+              </Box>
+            </Stack>
+            <Button
+              variant="contained"
+              endIcon={<ArrowForwardRoundedIcon />}
+              onClick={() => {
+                setAcademicMovilidadPrograma(null);
+                setShowAcademicMovilidadModule(true);
+              }}
+              sx={{
+                borderRadius: 99,
+                fontWeight: 900,
+                textTransform: 'none',
+                px: 3,
+                py: 1.2,
+                bgcolor: '#2563eb',
+                '&:hover': { bgcolor: '#1d4ed8' },
+                whiteSpace: 'nowrap',
+                alignSelf: { xs: 'stretch', md: 'auto' }
+              }}
+            >
+              Ingresar al Módulo General →
+            </Button>
+          </Stack>
+        </Paper>}
+
+        {/* CATÁLOGO DE PROGRAMAS ACADÉMICOS */}
+        {visibleAcademicPrograms.length === 0 ? (
+          <Paper elevation={0} sx={{ p: 3, borderRadius: 3, border: '1px dashed #93c5fd', bgcolor: '#f8fbff', textAlign: 'center' }}>
+            <SchoolGradIcon sx={{ color: '#2563eb', fontSize: 42, mb: 0.8 }} />
+            <Typography sx={{ color: '#1e3a8a', fontWeight: 900 }}>Sin programas académicos asignados</Typography>
+            <Typography variant="body2" sx={{ mt: 0.5, color: '#64748b' }}>
+              Un administrador debe habilitar al menos un programa dentro del permiso Vicerrectoría Académica.
+            </Typography>
+          </Paper>
+        ) : <Stack spacing={3}>
+          {groupedPrograms.map(({ level, programs }) => (
+            <Box key={level}>
+              <Stack direction="row" spacing={1} alignItems="center" sx={{ mb: 1.4 }}>
+                <Typography sx={{ fontWeight: 900, color: '#0f172a', fontSize: { xs: 20, md: 23 } }}>{level}</Typography>
+                <Chip size="small" label={`${programs.length} programas`} sx={{ bgcolor: '#e0e7ff', color: '#3730a3', fontWeight: 900 }} />
+              </Stack>
+              <Box sx={{ display: 'grid', gap: 1.6, gridTemplateColumns: { xs: '1fr', sm: 'repeat(2, minmax(0, 1fr))', lg: 'repeat(3, minmax(0, 1fr))' } }}>
+                {programs.map((program) => (
+                  <Paper
+                    key={`${program.level}-${program.name}`}
+                    elevation={0}
+                    onClick={() => setSelectedProgramHub(program)}
+                    sx={{
+                      p: 2.2,
+                      minHeight: 160,
+                      display: 'flex',
+                      flexDirection: 'column',
+                      justifyContent: 'space-between',
+                      borderRadius: 3,
+                      border: '1px solid #dbe6f5',
+                      bgcolor: '#fff',
+                      cursor: 'pointer',
+                      boxShadow: '0 8px 22px rgba(15,23,42,.045)',
+                      transition: 'transform .18s ease, box-shadow .18s ease, border-color .18s ease',
+                      '&:hover': { transform: 'translateY(-3px)', borderColor: '#2563eb', boxShadow: '0 14px 30px rgba(37,99,235,.15)' }
+                    }}
+                  >
+                    <Stack direction="row" spacing={1.4} alignItems="flex-start">
+                      <Box sx={{ width: 46, height: 46, flex: '0 0 auto', borderRadius: 2, display: 'grid', placeItems: 'center', bgcolor: level === 'Pregrado' ? '#eff6ff' : '#eef2ff', color: level === 'Pregrado' ? '#2563eb' : '#4f46e5' }}>
+                        <SchoolGradIcon sx={{ fontSize: 26 }} />
+                      </Box>
+                      <Box sx={{ minWidth: 0 }}>
+                        <Typography sx={{ fontWeight: 900, color: '#0f172a', lineHeight: 1.24, fontSize: 16.5 }}>{program.name}</Typography>
+                        <Typography sx={{ mt: 0.65, color: '#64748b', fontSize: 12.5, lineHeight: 1.35 }}>{program.faculty}</Typography>
+                      </Box>
+                    </Stack>
+
+                    <Stack direction="row" justifyContent="space-between" alignItems="center" sx={{ mt: 2 }}>
+                      <Stack direction="row" spacing={0.8} alignItems="center">
+                        <Chip size="small" label={program.level} sx={{ bgcolor: level === 'Pregrado' ? '#dbeafe' : '#e0e7ff', color: level === 'Pregrado' ? '#1e40af' : '#3730a3', fontWeight: 800 }} />
+                        <Chip size="small" variant="outlined" label={program.snies ? `SNIES ${program.snies}` : 'SNIES'} sx={{ borderColor: '#cbd5e1', color: '#475569', fontWeight: 750 }} />
+                      </Stack>
+                      <Button size="small" variant="contained" disableElevation endIcon={<ArrowForwardRoundedIcon fontSize="small" />} sx={{ fontWeight: 850, textTransform: 'none', borderRadius: 99, px: 2, py: 0.6, fontSize: 12.5, bgcolor: '#2563eb' }}>
+                        Ingresar
+                      </Button>
+                    </Stack>
+                  </Paper>
+                ))}
+              </Box>
+            </Box>
+          ))}
+        </Stack>}
+      </Box>
+    );
+  };
 
   const renderFinancialHub = () => {
     const canOpenViaticos = user?.role === ROLES.ADMINISTRADOR
@@ -7417,6 +7882,8 @@ const renderCategoryBars = (items = [], options = {}) => {
                 ? 'Movilidad, convenios y actividades de cooperación'
                 : base.key === 'vicerrectoria_financiera'
                 ? 'Gestión de Viáticos y Estadística de Viáticos'
+                : base.key === 'vicerrectoria_academica'
+                ? `${visibleAcademicPrograms.length} programas académicos autorizados`
                 : 'Interfaz preparada para activacion'}
             </Typography>
           </Box>
@@ -16841,7 +17308,7 @@ const renderCategoryBars = (items = [], options = {}) => {
   return (
     <Fade in={true}>
       <Box>
-        {!isGestionProcesosStatsRoute && !isDirectDocumentalView && !(selectedCard === 'poblacional' && poblacionalPanel !== 'hub') && selectedCard !== 'infraestructura_fisica' && selectedCard !== 'recurso_humano' && selectedCard !== 'internacionalizacion' && selectedCard !== 'vicerrectoria_financiera' && selectedCard !== 'activity_monitor' && selectedCard !== 'plan_accion' && (
+        {!isGestionProcesosStatsRoute && !isDirectDocumentalView && !(selectedCard === 'poblacional' && poblacionalPanel !== 'hub') && selectedCard !== 'infraestructura_fisica' && selectedCard !== 'recurso_humano' && selectedCard !== 'internacionalizacion' && selectedCard !== 'vicerrectoria_academica' && selectedCard !== 'vicerrectoria_financiera' && selectedCard !== 'activity_monitor' && selectedCard !== 'plan_accion' && (
           <Paper elevation={0} sx={{ p: 3, mb: 3, borderRadius: 3, border: '1px solid #dbe2f1', background: 'linear-gradient(135deg,#0f172a,#1d4ed8)' }}>
             <Stack direction="row" spacing={1.5} alignItems="center">
               <InsightsIcon sx={{ color: 'white' }} />
@@ -17392,6 +17859,7 @@ const renderCategoryBars = (items = [], options = {}) => {
                   onBack={returnToCards}
                 />
               )}
+                {selectedCard === 'vicerrectoria_academica' && renderAcademicViceRectoryHub()}
                 {selectedCard === 'vicerrectoria_financiera' && (
                   financialPanel === 'viaticos'
                     ? <ViaticosGestionDashboard user={user} onBack={() => setFinancialPanel('hub')} />

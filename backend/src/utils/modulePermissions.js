@@ -1,4 +1,5 @@
 const { ROLES } = require('../constants/roles');
+const { ACADEMIC_PROGRAM_PERMISSION_KEYS } = require('../constants/academicPrograms');
 const { UserModulePermission } = require('../models');
 
 const MENU_KEYS = new Set([
@@ -47,6 +48,8 @@ const GESTION_INFO_MODULE_KEYS = new Set([
   'seguridad_aplicativa.configurar',
   'monitor_actividad',
   'seguridad_aplicativa',
+  'vicerrectoria_academica',
+  ...ACADEMIC_PROGRAM_PERMISSION_KEYS,
   'vicerrectoria_financiera',
   'vicerrectoria_financiera.viaticos',
   'vicerrectoria_financiera.viaticos.gestion',
@@ -117,7 +120,17 @@ const INFRAESTRUCTURA_FISICA_DASHBOARD_KEYS = new Set([
 
 const PLAN_ACCION_DASHBOARD_KEYS = new Set([
   'plan_accion_estadistica',
-  'plan_accion_gestion'
+  'plan_accion_gestion',
+  'plan_accion_nuevo',
+  'pei_configurar',
+  'pei_formular',
+  'pei_revision_tecnica',
+  'pei_validar_responsable',
+  'pei_seguimiento',
+  'pei_presupuesto',
+  'pei_consulta_ejecutiva',
+  'pei_auditoria',
+  'pei_drive'
 ]);
 
 const INTERNACIONALIZACION_DASHBOARD_KEYS = new Set([
@@ -209,7 +222,7 @@ const getDefaultPermissionsByRole = (role) => {
       allowedSaberProDashboards: [],
       allowedRecursoHumanoDashboards: [],
       allowedInfraestructuraFisicaDashboards: [],
-      allowedPlanAccionDashboards: ['plan_accion_estadistica', 'plan_accion_gestion'],
+      allowedPlanAccionDashboards: Array.from(PLAN_ACCION_DASHBOARD_KEYS),
       allowedInternacionalizacionDashboards: []
     };
   }
@@ -314,6 +327,9 @@ const getUserModulePermissions = async (userId, role) => {
   }
   if (allowedModules.some((key) => key.startsWith('seguridad_aplicativa.')) && !allowedModules.includes('seguridad_aplicativa')) {
     allowedModules.push('seguridad_aplicativa');
+  }
+  if (allowedModules.some((key) => key.startsWith('vicerrectoria_academica.')) && !allowedModules.includes('vicerrectoria_academica')) {
+    allowedModules.push('vicerrectoria_academica');
   }
   if (allowedModules.some((key) => key.startsWith('vicerrectoria_financiera.viaticos.')) && !allowedModules.includes('vicerrectoria_financiera.viaticos')) {
     allowedModules.push('vicerrectoria_financiera.viaticos');
@@ -440,7 +456,7 @@ const getUserModulePermissions = async (userId, role) => {
       ? allowedModules.filter((key) => key === 'autoevaluacion.instrumentos.access')
       : [];
     const restrictedAllowedPlanAccion = role === ROLES.PLANEACION_EFECTIVIDAD
-      ? ['plan_accion_estadistica', 'plan_accion_gestion']
+      ? Array.from(PLAN_ACCION_DASHBOARD_KEYS)
       : [];
 
     const finalMenuPermissions = [...restrictedMenu];

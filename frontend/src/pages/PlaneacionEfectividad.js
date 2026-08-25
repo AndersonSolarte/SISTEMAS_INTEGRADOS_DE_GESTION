@@ -74,6 +74,7 @@ import gestionInformacionService from '../services/gestionInformacionService';
 import planAccionWorkflowService, { ESTADOS_WORKFLOW, ESTADO_LABEL, ESTADO_COLOR } from '../services/planAccionWorkflowService';
 import { useAuth } from '../context/AuthContext';
 import { ROLES } from '../constants/roles';
+import StrategicPlanningPlatform from './StrategicPlanningPlatform';
 
 const PED_YEAR_WEIGHT = 14.28;
 
@@ -4454,6 +4455,7 @@ function PlaneacionEfectividad() {
   const dashboards = (user && user.allowedPlanAccionDashboards) || [];
   const canEstadistica = isAdmin || dashboards.includes('plan_accion_estadistica');
   const canGestion = isAdmin || dashboards.includes('plan_accion_gestion');
+  const canNuevo = isAdmin || dashboards.includes('plan_accion_nuevo');
 
   const createDefaultFilters = () => ({
     mode: 'estadistica',
@@ -4464,13 +4466,15 @@ function PlaneacionEfectividad() {
 
   useEffect(() => {
     if (section === null) {
-      if (canEstadistica && !canGestion) {
+      if (canEstadistica && !canGestion && !canNuevo) {
         setSection('estadistica');
-      } else if (!canEstadistica && canGestion) {
+      } else if (!canEstadistica && canGestion && !canNuevo) {
         setSection('gestion');
+      } else if (!canEstadistica && !canGestion && canNuevo) {
+        setSection('nuevo');
       }
     }
-  }, [canEstadistica, canGestion, section]);
+  }, [canEstadistica, canGestion, canNuevo, section]);
   const [tab, setTab] = useState('estadistica');
   const [loading, setLoading] = useState(true);
   const [dashboard, setDashboard] = useState({ rows: [], filters: { anios: [], peds: [], responsables: [], tiposIndicador: [], estados: [] }, meta: {} });
@@ -4569,11 +4573,11 @@ function PlaneacionEfectividad() {
     <Fade in={true}>
       <Box>
         <Stack spacing={3.2}>
-          <HeroBanner compact={section !== null} onBack={canEstadistica && canGestion ? () => setSection(null) : null} />
+          <HeroBanner compact={section !== null} onBack={[canEstadistica, canGestion, canNuevo].filter(Boolean).length > 1 ? () => setSection(null) : null} />
 
           {section === null ? (
             <Box>
-              {!canEstadistica && !canGestion ? (
+              {!canEstadistica && !canGestion && !canNuevo ? (
                 <Alert severity="warning" sx={{ borderRadius: 3.5, border: '1px solid #fed7aa', bgcolor: '#fff7ed', color: '#9a3412', fontWeight: 600 }}>
                   No tienes permisos asignados para ingresar a los submódulos de Plan de Acción. Por favor, solicita acceso al administrador.
                 </Alert>
@@ -4587,8 +4591,8 @@ function PlaneacionEfectividad() {
                     sx={{
                       display: 'grid',
                       gap: 3,
-                      gridTemplateColumns: { xs: '1fr', md: '1fr 1fr' },
-                      maxWidth: 1000,
+                      gridTemplateColumns: { xs: '1fr', md: 'repeat(3, 1fr)' },
+                      maxWidth: 1400,
                       margin: '0 auto',
                       px: 1
                     }}
@@ -4746,6 +4750,35 @@ function PlaneacionEfectividad() {
                         </Button>
                       </Paper>
                     )}
+
+                    {canNuevo && (
+                      <Paper
+                        elevation={0}
+                        onClick={() => setSection('nuevo')}
+                        sx={{
+                          p: 4.5, borderRadius: 5, border: '1px solid #c4b5fd',
+                          background: 'linear-gradient(145deg,#ffffff 0%,#f5f3ff 100%)',
+                          boxShadow: '0 10px 25px rgba(91,33,182,.06)', cursor: 'pointer',
+                          transition: 'all .3s ease', display: 'flex', flexDirection: 'column',
+                          alignItems: 'center', textAlign: 'center',
+                          '&:hover': { transform: 'translateY(-6px)', borderColor: '#7c3aed', boxShadow: '0 25px 50px rgba(124,58,237,.16)' }
+                        }}
+                      >
+                        <Box sx={{ width: 84, height: 84, borderRadius: 4.5, background: 'linear-gradient(135deg,#7c3aed,#4f46e5)', color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', mb: 3.5, boxShadow: '0 12px 24px rgba(124,58,237,.2)' }}>
+                          <AutoAwesomeIcon sx={{ fontSize: 44 }} />
+                        </Box>
+                        <Chip label="NUEVA PLATAFORMA" color="secondary" size="small" sx={{ mb: 1.2, fontWeight: 900 }} />
+                        <Typography variant="h6" sx={{ fontWeight: 900, color: '#4c1d95', mb: 1.8, fontSize: 20 }}>
+                          Crear Planes de Acción
+                        </Typography>
+                        <Typography sx={{ color: '#64748b', fontSize: 14.5, mb: 4, flexGrow: 1, lineHeight: 1.6, px: 2 }}>
+                          Nueva gestión parametrizable del PED, formulación, actas, firma electrónica, evidencias, presupuesto y analítica.
+                        </Typography>
+                        <Button variant="contained" sx={{ textTransform: 'none', borderRadius: 3, px: 3.5, py: 1.2, fontWeight: 800, background: 'linear-gradient(135deg,#7c3aed,#4f46e5)' }}>
+                          Ingresar a la nueva plataforma
+                        </Button>
+                      </Paper>
+                    )}
                   </Box>
                 </Box>
               )}
@@ -4754,7 +4787,9 @@ function PlaneacionEfectividad() {
             <>
 
 
-              {section === 'gestion' ? (
+              {section === 'nuevo' ? (
+                <StrategicPlanningPlatform />
+              ) : section === 'gestion' ? (
                 <GestionPlanesWorkspaceV2 sourceRows={dashboard.rows || []} onWorkflowChanged={cargarDashboardPlanAccion} />
               ) : (
                 <>

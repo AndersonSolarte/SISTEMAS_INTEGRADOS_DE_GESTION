@@ -6,6 +6,7 @@ const XLSX = require('xlsx');
 const fs = require('fs');
 const bcrypt = require('bcryptjs');
 const { ROLES } = require('../constants/roles');
+const { ACADEMIC_PROGRAM_PERMISSION_KEYS } = require('../constants/academicPrograms');
 const { sendWelcomeEmail, sendPasswordResetEmail } = require('../services/emailService');
 const { getDependencyEmail, DEPENDENCY_EMAILS_RAW } = require('../config/dependencyEmails');
 const MAX_BULK_USER_IMPORT_ROWS = Number(process.env.MAX_BULK_USER_IMPORT_ROWS || 2000);
@@ -76,6 +77,8 @@ const GESTION_INFO_MODULE_KEYS = [
   'seguridad_aplicativa.analizar_remediacion',
   'seguridad_aplicativa.exportar',
   'seguridad_aplicativa.configurar',
+  'vicerrectoria_academica',
+  ...ACADEMIC_PROGRAM_PERMISSION_KEYS,
   'vicerrectoria_financiera',
   'vicerrectoria_financiera.viaticos',
   'vicerrectoria_financiera.viaticos.gestion',
@@ -97,7 +100,8 @@ const STATISTICAL_MODULE_PERMISSION_KEYS = new Set([
   'registros_calificados_acreditacion',
   'infraestructura_fisica',
   'monitor_actividad',
-  'seguridad_aplicativa'
+  'seguridad_aplicativa',
+  'vicerrectoria_academica'
 ]);
 const INTERNACIONALIZACION_DASHBOARD_PERMISSION_KEYS = [
   'internacionalizacion_gestion',
@@ -106,7 +110,11 @@ const INTERNACIONALIZACION_DASHBOARD_PERMISSION_KEYS = [
 ];
 const PLAN_ACCION_DASHBOARD_PERMISSION_KEYS = [
   'plan_accion_estadistica',
-  'plan_accion_gestion'
+  'plan_accion_gestion',
+  'plan_accion_nuevo',
+  'pei_configurar', 'pei_formular', 'pei_revision_tecnica',
+  'pei_validar_responsable', 'pei_seguimiento', 'pei_presupuesto',
+  'pei_consulta_ejecutiva', 'pei_auditoria', 'pei_drive'
 ];
 const INFRAESTRUCTURA_FISICA_DASHBOARD_PERMISSION_KEYS = [
   'infraestructura_fisica_crud',
@@ -2128,6 +2136,9 @@ const updateUserModulePermissions = async (req, res) => {
     }
     if (cleanModules.some((key) => key.startsWith('seguridad_aplicativa.')) && !cleanModules.includes('seguridad_aplicativa')) {
       cleanModules.push('seguridad_aplicativa');
+    }
+    if (cleanModules.some((key) => key.startsWith('vicerrectoria_academica.')) && !cleanModules.includes('vicerrectoria_academica')) {
+      cleanModules.push('vicerrectoria_academica');
     }
     if (cleanModules.some((key) => key.startsWith('vicerrectoria_financiera.viaticos.')) && !cleanModules.includes('vicerrectoria_financiera.viaticos')) {
       cleanModules.push('vicerrectoria_financiera.viaticos');

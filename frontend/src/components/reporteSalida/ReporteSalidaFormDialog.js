@@ -19,7 +19,8 @@ import {
   ListSubheader,
   IconButton,
   Checkbox,
-  FormControlLabel
+  FormControlLabel,
+  CircularProgress
 } from '@mui/material';
 import AssignmentTurnedInIcon from '@mui/icons-material/AssignmentTurnedIn';
 import ContentCopyIcon from '@mui/icons-material/ContentCopy';
@@ -40,6 +41,8 @@ import CloseIcon from '@mui/icons-material/Close';
 import { useAuth } from '../../context/AuthContext';
 import reporteSalidaService from '../../services/reporteSalidaService';
 import desplazamientoViaticosService from '../../services/desplazamientoViaticosService';
+import cronogramaMovilidadService from '../../services/cronogramaMovilidadService';
+import CronogramaMovilidadModule from '../cronogramaMovilidad/CronogramaMovilidadModule';
 import {
   DESPLAZAMIENTO_VIATICOS_ENABLED,
   DESPLAZAMIENTO_VIATICOS_QUESTION_VISIBLE
@@ -116,6 +119,7 @@ const generateOficioTemplate = (solicitanteNombre, tipoLabel, duracionDias, fech
 };
 
 const CARGO_SUBTYPES = [
+  { value: 'practica_integral_movilidad', label: 'Práctica Integral de Movilidad' },
   { value: 'ponencia', label: 'Ponencia' },
   { value: 'visita_ies', label: 'Visita a otras IES' },
   { value: 'capacitacion', label: 'Capacitación' },
@@ -253,6 +257,33 @@ const DECLARACION_SIN_ADJUNTO_SALUD = 'Declaro que al momento de radicar esta so
 // Un máximo de 15 MB deja margen para el PDF institucional y la codificación MIME del correo.
 const MAX_ADJUNTO_SIZE_MB = 15;
 const MAX_ADJUNTO_SIZE = MAX_ADJUNTO_SIZE_MB * 1024 * 1024;
+
+const PROGRAM_EMAILS = [
+  'admon@unicesmag.edu.co',
+  'arquitectura@unicesmag.edu.co',
+  'contaduria@unicesmag.edu.co',
+  'dir.derecho@unicesmag.edu.co',
+  'disenografico@unicesmag.edu.co',
+  'electronica@unicesmag.edu.co',
+  'ingenieriadesistemas@unicesmag.edu.co',
+  'edupres@unicesmag.edu.co',
+  'edufisica@unicesmag.edu.co',
+  'lic.quimica@unicesmag.edu.co',
+  'psicologia@unicesmag.edu.co',
+  'fisioterapia@unicesmag.edu.co'
+];
+
+const checkIsDirector = (user) => {
+  if (!user) return false;
+  const email = String(user.email || '').trim().toLowerCase();
+  const cargo = String(user.cargo || '').trim().toLowerCase();
+
+  if (email === 'sgc@unicesmag.edu.co') return true;
+  if (PROGRAM_EMAILS.includes(email)) return true;
+  if (cargo.includes('director') || cargo.includes('decano')) return true;
+
+  return false;
+};
 
 const DEPARTAMENTOS_MUNICIPIOS = {
   'Amazonas': ['Leticia', 'El Encanto', 'La Chorrera', 'La Pedrera', 'La Victoria', 'Miriití-Paraná', 'Puerto Alegría', 'Puerto Arica', 'Puerto Nariño', 'Puerto Santander', 'Tarapacá'],
@@ -681,6 +712,30 @@ function ReporteSalidaFormDialog({ open, documento, user, onClose, onSubmitted }
   const [noCuentaAdjuntoSalud, setNoCuentaAdjuntoSalud] = useState(false);
   const [showSuccessModal, setShowSuccessModal] = useState(false);
   const [successResponse, setSuccessResponse] = useState(null);
+  const [actividadesMovilidadAprobadas, setActividadesMovilidadAprobadas] = useState([]);
+  const [selectedMovilidadActividadId, setSelectedMovilidadActividadId] = useState('');
+  const [loadingMovilidadActividades, setLoadingMovilidadActividades] = useState(false);
+  const [openCronogramaModal, setOpenCronogramaModal] = useState(false);
+
+  const { category, subtype, otraDescripcion } = useMemo(() => {
+    const tipo = form.salida.tipo || '';
+    if (tipo.startsWith('otra:')) {
+      return { category: activeCategory, subtype: 'otra', otraDescripcion: tipo.substring(5) };
+    }
+    return { category: activeCategory, subtype: tipo, otraDescripcion: '' };
+  }, [form.salida.tipo, activeCategory]);
+
+  useEffect(() => {
+    if (open) {
+      setLoadingMovilidadActividades(true);
+      cronogramaMovilidadService.misActividadesAsignadas()
+        .then((res) => {
+          setActividadesMovilidadAprobadas(res.actividades || []);
+        })
+        .catch((err) => console.error('Error al cargar actividades de movilidad:', err))
+        .finally(() => setLoadingMovilidadActividades(false));
+    }
+  }, [subtype, open]);
 
   const setAdjuntoFromFile = (file) => {
     if (!file) {
@@ -746,14 +801,6 @@ function ReporteSalidaFormDialog({ open, documento, user, onClose, onSubmitted }
   const handleRemoveParticipant = (index) => {
     setParticipantes((prev) => prev.filter((_, i) => i !== index));
   };
-
-  const { category, subtype, otraDescripcion } = useMemo(() => {
-    const tipo = form.salida.tipo || '';
-    if (tipo.startsWith('otra:')) {
-      return { category: activeCategory, subtype: 'otra', otraDescripcion: tipo.substring(5) };
-    }
-    return { category: activeCategory, subtype: tipo, otraDescripcion: '' };
-  }, [form.salida.tipo, activeCategory]);
 
   const shouldAskViaticos = useMemo(() => {
     if (!DESPLAZAMIENTO_VIATICOS_ENABLED || !DESPLAZAMIENTO_VIATICOS_QUESTION_VISIBLE) return false;
@@ -1256,13 +1303,12 @@ function ReporteSalidaFormDialog({ open, documento, user, onClose, onSubmitted }
       if (!form.viaticos?.autorizacionAceptada) issues.push('Debe aceptar la autorización de descuento para solicitar viáticos.');
     }
 
-    if (form.salida.duracionTipo === 'menos_media_jornada' && subtype !== 'diligencia_personal' && subtype !== 'otra') {
-      if (!form.salida.motivo || !form.salida.motivo.trim()) {
-        issues.push('El campo Motivo / observación es obligatorio.');
-      }
-    }
-
-
+    // Motivo / observación es completamente OPCIONAL por requerimiento de usuario
+    // if (form.salida.duracionTipo === 'menos_media_jornada' && subtype !== 'diligencia_personal' && subtype !== 'otra') {
+    //   if (!form.salida.motivo || !form.salida.motivo.trim()) {
+    //     issues.push('El campo Motivo / observación es obligatorio.');
+    //   }
+    // }
 
     if (!requiresViaticosFlow && form.salida.duracionTipo === '1_2_dias' && ![1, 2].includes(Number(form.salida.duracionDias))) {
       issues.push('Seleccione si el permiso será de 1 o 2 días.');
@@ -1320,12 +1366,10 @@ function ReporteSalidaFormDialog({ open, documento, user, onClose, onSubmitted }
       issues.push('La hora de regreso no puede ser anterior a la hora actual cuando la fecha de regreso es hoy.');
     }
     
-    const healthAttachmentWaived = category === 'salud' && noCuentaAdjuntoSalud;
-    const shouldRequireHealthAttachment = category === 'salud' && !healthAttachmentWaived;
-    const shouldRequireListedAttachment = REQUIRES_ADJUNTO.includes(subtype);
-    if (!isOficioSolicitud && !adjuntoFile && (shouldRequireHealthAttachment || shouldRequireListedAttachment) && !healthAttachmentWaived) {
-      issues.push('Debe subir el soporte, certificado o documento obligatorio.');
-    }
+    // Adjuntos/soportes son completamente OPCIONALES por requerimiento de usuario
+    // if (!isOficioSolicitud && !adjuntoFile && (shouldRequireHealthAttachment || shouldRequireListedAttachment) && !healthAttachmentWaived) {
+    //   issues.push('Debe subir el soporte, certificado o documento obligatorio.');
+    // }
     
     if (shouldRequestReposicionHoras) {
       const dailyHours = Number(form.salida.jornadaDiariaHoras || 0);
@@ -1691,7 +1735,7 @@ function ReporteSalidaFormDialog({ open, documento, user, onClose, onSubmitted }
 
   const disableSubmit = submitting || validationIssues.length > 0;
   const shouldShowOptionalPersonalAttachment = !isSalidaMultiple && category === 'personales' && subtype === 'diligencia_personal';
-  const shouldShowAdjuntoSection = category === 'propias_cargo' || REQUIRES_ADJUNTO.includes(subtype) || ['urgencia_medica', 'otra'].includes(subtype) || shouldShowOptionalPersonalAttachment;
+  const shouldShowAdjuntoSection = category === 'propias_cargo' || category === 'salud' || REQUIRES_ADJUNTO.includes(subtype) || ['urgencia_medica', 'otra'].includes(subtype) || shouldShowOptionalPersonalAttachment;
   const isSaludAdjuntoSection = category === 'salud' && shouldShowAdjuntoSection;
   const hideAdjuntoUploadByDeclaration = isSaludAdjuntoSection && noCuentaAdjuntoSalud;
   const canPasteAdjunto = open && shouldShowAdjuntoSection && !hideAdjuntoUploadByDeclaration && !submitting;
@@ -2117,29 +2161,107 @@ function ReporteSalidaFormDialog({ open, documento, user, onClose, onSubmitted }
                         value={subtype || ''}
                         onChange={(e) => handleSubtypeChange(e.target.value)}
                       >
-                        {CARGO_SUBTYPES.reduce((acc, opt, index, arr) => {
-                          if (opt.group) {
-                            const prevGroup = index > 0 ? arr[index - 1].group : null;
-                            if (opt.group !== prevGroup) {
-                              acc.push(
-                                <ListSubheader key={`group-${opt.group}`} sx={{ fontWeight: 800, bgcolor: '#f8fafc', color: '#334155', lineHeight: '36px' }}>
-                                  {opt.group}
-                                </ListSubheader>
-                              );
+                        {(() => {
+                          const isDirectorUser = checkIsDirector(currentUser);
+                          const hasAssignedMovilidad = actividadesMovilidadAprobadas.length > 0;
+                          const availableCargoSubtypes = CARGO_SUBTYPES.filter((opt) => {
+                            if (opt.value === 'practica_integral_movilidad') {
+                              return isDirectorUser || hasAssignedMovilidad;
                             }
-                          }
-                          acc.push(
-                            <MenuItem key={opt.value} value={opt.value} sx={{ whiteSpace: 'normal', pl: opt.group ? 3 : 2 }}>
-                              {opt.label}
-                            </MenuItem>
-                          );
-                          return acc;
-                        }, [])}
+                            return true;
+                          });
+
+                          return availableCargoSubtypes.reduce((acc, opt, index, arr) => {
+                            if (opt.group) {
+                              const prevGroup = index > 0 ? arr[index - 1].group : null;
+                              if (opt.group !== prevGroup) {
+                                acc.push(
+                                  <ListSubheader key={`group-${opt.group}`} sx={{ fontWeight: 800, bgcolor: '#f8fafc', color: '#334155', lineHeight: '36px' }}>
+                                    {opt.group}
+                                  </ListSubheader>
+                                );
+                              }
+                            }
+                            acc.push(
+                              <MenuItem key={opt.value} value={opt.value} sx={{ whiteSpace: 'normal', pl: opt.group ? 3 : 2 }}>
+                                {opt.label}
+                              </MenuItem>
+                            );
+                            return acc;
+                          }, []);
+                        })()}
                       </TextField>
                     </Box>
 
-                    {/* Alcance de la actividad */}
-                    {subtype && (
+                    {/* Selector de Actividad Asignada para Práctica Integral de Movilidad (Solo para Docentes) */}
+                    {subtype === 'practica_integral_movilidad' && !checkIsDirector(currentUser) && (
+                      <Box sx={{ gridColumn: '1 / -1', p: 2, bgcolor: '#eff6ff', borderRadius: 2.5, border: '1.5px solid #2563eb', my: 1 }}>
+                        <Typography variant="subtitle2" sx={{ fontWeight: 800, color: '#1e3a8a', mb: 1 }}>
+                          Seleccionar Actividad de Movilidad Asignada (Cronograma Aprobado) *
+                        </Typography>
+                        {loadingMovilidadActividades ? (
+                          <CircularProgress size={24} sx={{ display: 'block', my: 1 }} />
+                        ) : (
+                          <TextField
+                            select
+                            fullWidth
+                            size="medium"
+                            label="Actividad de Movilidad Asignada *"
+                            value={selectedMovilidadActividadId}
+                            onChange={(e) => {
+                              const actId = e.target.value;
+                              setSelectedMovilidadActividadId(actId);
+                              const act = actividadesMovilidadAprobadas.find((a) => String(a.id_actividad) === String(actId));
+                              if (act) {
+                                update('salida', 'alcance', act.alcance || 'Regional');
+                                update('salida', 'departamento', act.departamento || 'Nariño');
+                                update('salida', 'municipio', act.municipio || 'Pasto');
+                                update('salida', 'pais', act.pais || 'COLOMBIA');
+                                update('salida', 'fecha', act.fecha_salida);
+                                update('salida', 'fechaRegreso', act.fecha_regreso);
+                                update('salida', 'horaSalida', act.hora_salida || '07:00 AM');
+                                update('salida', 'horaRegreso', act.hora_regreso || '04:00 PM');
+                                update('salida', 'entidadDestino', act.entidad_destino || act.contexto_practica);
+                                update('salida', 'motivo', `Práctica Integral de Movilidad: ${act.contexto_practica} - ${act.funciones}`);
+
+                                // Auto-diligenciar completo de solicitud de viáticos
+                                const reqViaticos = act.requiere_viaticos !== false ? 'si' : 'no';
+                                updateViaticos('requiereViaticos', reqViaticos);
+                                updateViaticos('lugar', act.localidad_texto || `${act.municipio || 'Pasto'} - ${act.departamento || 'Nariño'}`);
+                                updateViaticos('fechaEvento', act.fecha_salida);
+                                updateViaticos('diaSalida', act.fecha_salida);
+                                updateViaticos('diaRegreso', act.fecha_regreso);
+                                updateViaticos('horaSalida', act.hora_salida || '07:00 AM');
+                                updateViaticos('horaRegreso', act.hora_regreso || '04:00 PM');
+                                updateViaticos('objetoComision', `Práctica Integral de Movilidad: ${act.contexto_practica} - ${act.funciones}`);
+                                if (reqViaticos === 'no') {
+                                  updateViaticos('alojamiento', 'No requiere alojamiento');
+                                  updateViaticos('transporte', 'No requiere transporte especial');
+                                } else {
+                                  updateViaticos('alojamiento', act.alojamiento || 'Hotel / Hospedaje en destino');
+                                  updateViaticos('transporte', act.transporte || 'Terrestre Intermunicipal');
+                                }
+                              }
+                            }}
+                          >
+                            {actividadesMovilidadAprobadas.map((act) => (
+                              <MenuItem key={act.id_actividad} value={act.id_actividad}>
+                                {act.contexto_practica} ({act.localidad_texto}) | Salida: {act.fecha_salida} - Regreso: {act.fecha_regreso}
+                              </MenuItem>
+                            ))}
+                          </TextField>
+                        )}
+
+                        {actividadesMovilidadAprobadas.length === 0 && !loadingMovilidadActividades && (
+                          <Alert severity="info" sx={{ mt: 1.5, borderRadius: 2 }}>
+                            No tienes actividades de movilidad asignadas en cronogramas aprobados actualmente.
+                          </Alert>
+                        )}
+                      </Box>
+                    )}
+
+                    {/* Alcance de la actividad (Para los demás tipos excepto movilidad) */}
+                    {subtype && subtype !== 'practica_integral_movilidad' && (
                       <TextField
                         sx={inputSx}
                         select
@@ -2168,6 +2290,46 @@ function ReporteSalidaFormDialog({ open, documento, user, onClose, onSubmitted }
                           <MenuItem key={opt} value={opt}>{opt}</MenuItem>
                         ))}
                       </TextField>
+                    )}
+
+                    {/* Botón para Estructurar / Crear Cronograma directamente (Solo Creadores / Directores / Admin) */}
+                    {subtype === 'practica_integral_movilidad' && checkIsDirector(currentUser) && (
+                      <Box sx={{ mt: 1.5, mb: 1, gridColumn: '1 / -1', width: '100%' }}>
+                        <Button
+                          fullWidth
+                          variant="contained"
+                          size="large"
+                          startIcon={<AddIcon />}
+                          onClick={() => setOpenCronogramaModal(true)}
+                          sx={{
+                            bgcolor: '#22c55e',
+                            color: '#064e3b',
+                            fontWeight: 900,
+                            fontSize: '0.95rem',
+                            py: 1.4,
+                            borderRadius: 2.5,
+                            textTransform: 'none',
+                            boxShadow: '0 4px 14px rgba(34, 197, 94, 0.4)',
+                            '&:hover': { bgcolor: '#16a34a', color: '#fff' }
+                          }}
+                        >
+                          CRONOGRAMA DE PRÁCTICA INTEGRAL DE MOVILIDAD
+                        </Button>
+
+                        <Dialog open={openCronogramaModal} onClose={() => setOpenCronogramaModal(false)} maxWidth="xl" fullWidth>
+                          <DialogTitle sx={{ bgcolor: '#1e3a8a', color: '#fff', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                            <Typography variant="h6" sx={{ fontWeight: 'bold' }}>
+                              CRONOGRAMA DE PRÁCTICA INTEGRAL DE MOVILIDAD
+                            </Typography>
+                            <IconButton onClick={() => setOpenCronogramaModal(false)} sx={{ color: '#fff' }}>
+                              <CloseIcon />
+                            </IconButton>
+                          </DialogTitle>
+                          <DialogContent sx={{ p: 2 }}>
+                            <CronogramaMovilidadModule />
+                          </DialogContent>
+                        </Dialog>
+                      </Box>
                     )}
                   </Box>
 
@@ -2696,14 +2858,14 @@ function ReporteSalidaFormDialog({ open, documento, user, onClose, onSubmitted }
                         <UploadFileIcon sx={{ fontSize: subtype === 'diligencia_personal' ? 34 : 48, color: adjuntoError ? '#ef4444' : '#3b82f6', mb: subtype === 'diligencia_personal' ? 0.5 : 1 }} />
                         <Typography sx={{ fontWeight: 700, color: adjuntoError ? '#991b1b' : '#1e3a8a', textAlign: 'center', mb: 0.5 }}>
                           {category === 'salud'
-                            ? 'Subir soporte / constancia obligatorio'
+                            ? 'Subir soporte / constancia (Opcional)'
                             : form.salida.duracionTipo !== 'menos_media_jornada'
                             ? 'Subir soporte / constancia (Opcional)'
                             : (subtype === 'diligencia_personal'
                               ? 'Adjuntar soporte (opcional)'
                               : ['voto_jurado', 'voto_sufragante', 'jurado_votacion', 'sufragante'].includes(subtype)
-                              ? 'Subir certificado obligatorio'
-                              : (['urgencia_medica', 'otra'].includes(subtype) ? 'Subir soporte / constancia (Opcional)' : 'Subir soporte obligatorio'))}
+                              ? 'Subir certificado (Opcional)'
+                              : 'Subir soporte / constancia (Opcional)')}
                         </Typography>
                         {subtype !== 'diligencia_personal' && (
                           <Typography sx={{ fontSize: 13, color: adjuntoError ? '#b91c1c' : '#475569', textAlign: 'center' }}>
@@ -2733,7 +2895,7 @@ function ReporteSalidaFormDialog({ open, documento, user, onClose, onSubmitted }
                   )}
                 </Box>
               )}
-              {Boolean(subtype) && !requiresViaticosFlow && form.salida.duracionTipo === 'menos_media_jornada' && subtype !== 'otra' && hasCompletedSaludMotivo && hasEnteredDiligenciaTime && hasCompletedSalidaTime && (
+              {Boolean(subtype) && !requiresViaticosFlow && hasCompletedSalidaTime && (
                 <Box sx={{ mt: 1.5, display: 'flex', alignItems: 'center', gap: 1 }}>
                   <TextField
                     sx={motivoInputSx}
@@ -2743,8 +2905,8 @@ function ReporteSalidaFormDialog({ open, documento, user, onClose, onSubmitted }
                     minRows={2}
                     label={
                       subtype === 'terapias'
-                        ? 'Diagnóstico de las terapias *'
-                        : (subtype === 'diligencia_personal' ? 'Motivo / observación' : 'Motivo / observación *')
+                        ? 'Diagnóstico de las terapias (Opcional)'
+                        : 'Motivo / observación (Opcional)'
                     }
                     placeholder="Por favor describa de manera clara y detallada el motivo de su solicitud..."
                     value={form.salida.motivo}

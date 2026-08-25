@@ -24,6 +24,8 @@ import PlanAccionConsulta from './pages/PlanAccionConsulta';
 import TiempoReponer from './pages/TiempoReponer';
 import LegalizacionViaticos from './pages/LegalizacionViaticos';
 import VerificacionReporte from './pages/VerificacionReporte';
+import StrategicMinuteSigning from './pages/StrategicMinuteSigning';
+import CronogramaMovilidadModule from './components/cronogramaMovilidad/CronogramaMovilidadModule';
 import SessionTimeoutModal from './components/SessionTimeoutModal';
 import AppSnackbar from './components/AppSnackbar';
 import InstrumentoPublicView from './modules/planeacionEstrategica/autoevaluacion/instrumentos/InstrumentoPublicView';
@@ -93,12 +95,14 @@ function App() {
                 <Route path="/instrumentos/responder/:code" element={<InstrumentoPublicView />} />
                 <Route path="/instrumentos/preview/:id" element={<PrivateRoute><InstrumentoPublicView previewMode /></PrivateRoute>} />
                 <Route path="/verificar/:id" element={<VerificacionReporte />} />
+                <Route path="/firmar-acta/:token" element={<StrategicMinuteSigning />} />
 
                 {/* Rutas protegidas */}
                 <Route path="/dashboard" element={<PrivateRoute><DashboardLayout /></PrivateRoute>}>
                   <Route index element={<Dashboard />} />
                   <Route path="tiempo-reponer" element={<TiempoReponer />} />
                   <Route path="legalizacion-viaticos" element={<LegalizacionViaticos />} />
+                  <Route path="practica-integral-movilidad" element={<CronogramaMovilidadModule />} />
                   <Route
                     path="aseguramiento-calidad"
                     element={(

@@ -562,6 +562,16 @@ function DashboardLayout() {
     }
   }
 
+  const movilidadItem = {
+    key: 'practica_integral_movilidad',
+    path: '/dashboard/practica-integral-movilidad',
+    label: 'Práctica Integral de Movilidad',
+    icon: <AssignmentTurnedInIcon />
+  };
+  if (!menuItems.some((it) => it.key === 'practica_integral_movilidad')) {
+    menuItems = [...menuItems, movilidadItem];
+  }
+
   const drawer = (
     <Box sx={{ height: '100dvh', display: 'flex', flexDirection: 'column', bgcolor: '#0f1f3a', overflow: 'hidden' }}>
       <Toolbar

@@ -669,7 +669,7 @@ const buildOficioPdfDefinition = (solicitud, ghDirectorNombre, ghDirectorCargo) 
   const rectoriaDate = rectoriaDateValue ? formatDateTime(rectoriaDateValue) : 'Pendiente';
   const ghDate = ghDateValue ? formatDateTime(ghDateValue) : 'Pendiente';
 
-  const isPropiasCargoSubtype = ['ponencia', 'visita_ies', 'capacitacion', 'proyecto_investigacion', 'asistente_congreso', 'practica_academica', 'torneo_deportivo', 'salida_campus', 'otra'].includes(salida.tipo) || String(salida.tipo).startsWith('otra:');
+  const isPropiasCargoSubtype = ['practica_integral_movilidad', 'ponencia', 'visita_ies', 'capacitacion', 'proyecto_investigacion', 'asistente_congreso', 'practica_academica', 'torneo_deportivo', 'salida_campus', 'otra'].includes(salida.tipo) || String(salida.tipo).startsWith('otra:');
   const isPropiasCargo = salida.categoria === 'propias_cargo' && salida.tipo !== 'salida_campus';
   const alcance = isPropiasCargo ? (salida.alcance || 'Local') : 'Local';
   const requiresSst = isPropiasCargoSubtype && ['Nacional', 'Internacional'].includes(alcance);
@@ -1415,7 +1415,7 @@ const buildPdfBuffer = async (solicitud) => {
       const ghDateValue = getStageDate(solicitud, ['gestion_humana_aprobado_at'], ['aprobada_gestion_humana']);
       const ghDate = ghDateValue ? formatDateTime(ghDateValue) : 'Pendiente';
 
-      const isPropiasCargoSubtype = ['ponencia', 'visita_ies', 'capacitacion', 'proyecto_investigacion', 'asistente_congreso', 'practica_academica', 'torneo_deportivo', 'salida_campus', 'otra'].includes(salida.tipo) || String(salida.tipo).startsWith('otra:');
+      const isPropiasCargoSubtype = ['practica_integral_movilidad', 'ponencia', 'visita_ies', 'capacitacion', 'proyecto_investigacion', 'asistente_congreso', 'practica_academica', 'torneo_deportivo', 'salida_campus', 'otra'].includes(salida.tipo) || String(salida.tipo).startsWith('otra:');
       const requiresSst = isPropiasCargoSubtype && ['Nacional', 'Internacional'].includes(alcance);
 
       const sstEvent = getTraceByEvents(solicitud, ['aprobada_sst']);

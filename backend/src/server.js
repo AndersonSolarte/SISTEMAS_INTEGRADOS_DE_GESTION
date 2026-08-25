@@ -36,9 +36,18 @@ app.use(express.urlencoded({ extended: false, limit: process.env.URLENCODED_BODY
 app.use(morgan('dev'));
 app.use(compression());
 
-if (String(process.env.PUBLIC_UPLOADS_ENABLED || '').toLowerCase() === 'true') {
-  app.use('/uploads', express.static(path.join(__dirname, '../uploads'), uploadsStaticOptions));
+const uploadsDir = path.join(__dirname, '../uploads');
+if (!fs.existsSync(uploadsDir)) {
+  fs.mkdirSync(uploadsDir, { recursive: true });
 }
+const cronogramasUploadsDir = path.join(uploadsDir, 'cronogramas');
+if (!fs.existsSync(cronogramasUploadsDir)) {
+  fs.mkdirSync(cronogramasUploadsDir, { recursive: true });
+}
+
+app.use('/uploads', express.static(uploadsDir, uploadsStaticOptions));
+app.use('/api/uploads', express.static(uploadsDir, uploadsStaticOptions));
+
 app.use('/api/auth', authLimiter);
 app.use('/api/public', publicLimiter);
 app.use('/api', apiLimiter, methodGuard, sensitivePathGuard, noStore, payloadShapeGuard, sqlInjectionGuard);
@@ -52,12 +61,15 @@ app.use('/api/users', require('./routes/userRoutes'));
 app.use('/api/evidencias', require('./routes/evidenciaRoutes'));
 app.use('/api/planeacion/gestion-informacion', require('./routes/gestionInformacionRoutes'));
 app.use('/api/planeacion/plan-accion-workflow', require('./routes/planAccionWorkflowRoutes'));
+app.use('/api/strategic-planning', require('./routes/strategicPlanningRoutes'));
+app.use('/api/public/strategic-planning', require('./routes/publicStrategicPlanningRoutes'));
 app.use('/api/autoevaluacion/instrumentos', require('./routes/instrumentosRoutes'));
 app.use('/api/public/instrumentos', require('./routes/publicInstrumentosRoutes'));
 app.use('/api/security', require('./routes/securityRoutes'));
 app.use('/api/reporte-salida', require('./routes/reporteSalidaRoutes'));
 app.use('/api/desplazamientos-viaticos', require('./routes/desplazamientoViaticosRoutes'));
 app.use('/api/legalizacion-viaticos', require('./routes/legalizacionViaticosRoutes'));
+app.use('/api/cronograma-movilidad', require('./routes/cronogramaMovilidadRoutes'));
 app.use('/api/planeacion/gestion-informacion/saber-pro', require('./routes/saberProAnalyticsRoutes'));
 app.use('/api/planeacion/gestion-informacion/saber-pro/consulta', require('./routes/consultaValidacionRoutes'));
 app.use('/api/admin/activity', require('./routes/activityRoutes'));
@@ -242,13 +254,30 @@ testConnection()
     } catch (e) {
       console.warn('[users] No se pudo sincronizar columnas de perfil laboral:', e?.message);
     }
-    /* Garantizar que la tabla de actividad exista sin afectar otras tablas */
     try {
-      const UserActivityLog = require('./models/UserActivityLog');
-      await UserActivityLog.sync();
-      console.log('[activity] Tabla user_activity_logs lista.');
-    } catch (e) {
-      console.warn('[activity] No se pudo sincronizar user_activity_logs:', e?.message);
+      const { DataTypes } = require('sequelize');
+      const CronogramaMovilidadActividad = require('./models/CronogramaMovilidadActividad');
+      const qi = sequelize.getQueryInterface();
+      await CronogramaMovilidadActividad.sync();
+      const actTable = await qi.describeTable('cronograma_movilidad_actividades');
+      const addActColumn = async (column, type, defaultValue = null) => {
+        if (!actTable[column]) {
+          const opts = { type, allowNull: true };
+          if (defaultValue !== null) {
+            opts.defaultValue = defaultValue;
+          }
+          await qi.addColumn('cronograma_movilidad_actividades', column, opts);
+        }
+      };
+      await addActColumn('hora_salida', DataTypes.STRING(20), '06:00 AM');
+      await addActColumn('hora_regreso', DataTypes.STRING(20), '06:00 PM');
+      await addActColumn('requiere_viaticos', DataTypes.BOOLEAN, true);
+      await addActColumn('alojamiento', DataTypes.STRING(100), 'Hotel / Hospedaje en destino');
+      await addActColumn('transporte', DataTypes.STRING(100), 'Terrestre Intermunicipal');
+      await addActColumn('entidad_destino', DataTypes.STRING(255), '');
+      console.log('[cronograma-movilidad] Columnas de viáticos, horarios y entidad_destino listas.');
+    } catch (err) {
+      console.warn('[cronograma-movilidad] Error al sincronizar columnas de actividades:', err?.message);
     }
     try {
       const PlanAccion = require('./models/PlanAccion');
@@ -256,6 +285,16 @@ testConnection()
       console.log('[gestion-informacion] Tabla plan_accion lista.');
     } catch (e) {
       console.warn('[gestion-informacion] No se pudo sincronizar plan_accion:', e?.message);
+    }
+    try {
+      const { syncStrategicPlanningModels, ensureStrategicPlanningDefaults } = require('./services/strategicPlanningBootstrap');
+      await syncStrategicPlanningModels();
+      await ensureStrategicPlanningDefaults();
+      const { startStrategicPlanningSyncWorker } = require('./services/strategicPlanningDriveService');
+      startStrategicPlanningSyncWorker();
+      console.log('[planeacion-estrategica] Nueva plataforma parametrizable lista.');
+    } catch (e) {
+      console.warn('[planeacion-estrategica] No se pudo inicializar la nueva plataforma:', e?.message);
     }
     try {
       const { DataTypes } = require('sequelize');

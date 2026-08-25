@@ -578,6 +578,9 @@ const runMigrations = async () => {
     await models.GeorreferenciaMunicipio.sync();
     await models.UserActivityLog.sync();
     await models.PlanAccion.sync();
+    const { syncStrategicPlanningModels, ensureStrategicPlanningDefaults } = require('../services/strategicPlanningBootstrap');
+    await syncStrategicPlanningModels();
+    await ensureStrategicPlanningDefaults();
     await models.Autoevaluacion.sync();
     await models.AutoevaluacionParticipante.sync();
     await models.AutoevaluacionPrograma.sync();
@@ -597,6 +600,8 @@ const runMigrations = async () => {
     await models.DesplazamientoViaticosSolicitud.sync();
     await models.ViaticosLegalizacion.sync();
     await models.ViaticosLegalizacionAdjunto.sync();
+    await models.CronogramaMovilidad.sync();
+    await models.CronogramaMovilidadActividad.sync();
     const legalizacionesTableName = 'viaticos_legalizaciones';
     const legalizacionesTable = await qi.describeTable(legalizacionesTableName).catch(() => ({}));
     if (!legalizacionesTable.codigo_verificacion) {

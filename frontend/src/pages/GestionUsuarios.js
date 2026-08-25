@@ -17,6 +17,7 @@ import { useSnackbar } from 'notistack';
 import * as XLSX from 'xlsx';
 import userService from '../services/userService';
 import { ROLES, ROLE_LABELS } from '../constants/roles';
+import { ACADEMIC_PROGRAM_PERMISSION_OPTIONS, ACADEMIC_PROGRAM_LEVELS } from '../constants/academicPrograms';
 import { useAuth } from '../context/AuthContext';
 
 
@@ -204,6 +205,7 @@ function GestionUsuarios() {
     { key: 'registros_calificados_acreditacion', label: 'Registros Calificados y Acreditacion', group: 'Tableros estadisticos' },
     { key: 'monitor_actividad', label: 'Monitor de Actividad', group: 'Tableros estadisticos' },
     { key: 'seguridad_aplicativa', label: 'Gestión de Seguridad Aplicativa', group: 'Tableros estadisticos' },
+    { key: 'vicerrectoria_academica', label: 'Vicerrectoría Académica', group: 'Tableros estadisticos' },
     { key: 'autoevaluacion.instrumentos.access', label: 'Gestión de Instrumentos', group: 'Autoevaluacion' },
     { key: 'seguridad_aplicativa.ver', label: 'Ver modulo', group: 'Seguridad Aplicativa' },
     { key: 'seguridad_aplicativa.escanear', label: 'Ejecutar escaneo', group: 'Seguridad Aplicativa' },
@@ -215,7 +217,8 @@ function GestionUsuarios() {
     { key: 'vicerrectoria_financiera', label: 'Vicerrectoría Financiera y de Desarrollo Institucional', group: 'Tableros estadisticos' },
     { key: 'vicerrectoria_financiera.viaticos', label: 'Módulo de Viáticos', group: 'Viáticos' },
     { key: 'vicerrectoria_financiera.viaticos.gestion', label: 'Gestión de Viáticos', group: 'Viáticos' },
-    { key: 'vicerrectoria_financiera.viaticos.estadistica', label: 'Estadística de Viáticos', group: 'Viáticos' }
+    { key: 'vicerrectoria_financiera.viaticos.estadistica', label: 'Estadística de Viáticos', group: 'Viáticos' },
+    ...ACADEMIC_PROGRAM_PERMISSION_OPTIONS.map((item) => ({ ...item, group: 'Vicerrectoría Académica' }))
   ];
   const DATABASE_BACKUP_PERMISSION_OPTIONS = GI_MODULE_OPTIONS.filter((item) => [
     'gestion_bases_datos.respaldo_descargar',
@@ -270,7 +273,17 @@ function GestionUsuarios() {
 
   const PLAN_ACCION_DASHBOARD_OPTIONS = [
     { key: 'plan_accion_estadistica', label: 'Estadística Plan de Acción' },
-    { key: 'plan_accion_gestion', label: 'Gestión de Planes de Acción' }
+    { key: 'plan_accion_gestion', label: 'Gestión de Planes de Acción' },
+    { key: 'plan_accion_nuevo', label: 'Crear Planes de Acción (nueva plataforma)' },
+    { key: 'pei_configurar', label: 'PEI · Configurar planeación' },
+    { key: 'pei_formular', label: 'PEI · Formular planes' },
+    { key: 'pei_revision_tecnica', label: 'PEI · Revisión técnica' },
+    { key: 'pei_validar_responsable', label: 'PEI · Validar responsable' },
+    { key: 'pei_seguimiento', label: 'PEI · Gestionar seguimientos' },
+    { key: 'pei_presupuesto', label: 'PEI · Administrar presupuesto' },
+    { key: 'pei_consulta_ejecutiva', label: 'PEI · Consulta ejecutiva' },
+    { key: 'pei_auditoria', label: 'PEI · Auditoría' },
+    { key: 'pei_drive', label: 'PEI · Administrar Drive' }
   ];
 
   const SABER_PRO_PERMISSION_GROUPS = [
@@ -1141,9 +1154,18 @@ function GestionUsuarios() {
         const isDatabasePermission = key === 'gestion_bases_datos' || key.startsWith('gestion_bases_datos.');
         const isDatabaseChild = key.startsWith('gestion_bases_datos.');
         const isViaticosPermission = key === 'vicerrectoria_financiera' || key.startsWith('vicerrectoria_financiera.viaticos');
-        const isTablero = !isDatabasePermission && !isViaticosPermission && key !== 'estadistica_institucional';
+        const isAcademicPermission = key === 'vicerrectoria_academica' || key.startsWith('vicerrectoria_academica.');
+        const isTablero = !isDatabasePermission && !isViaticosPermission && !isAcademicPermission && key !== 'estadistica_institucional';
 
-        if (isViaticosPermission) {
+        if (isAcademicPermission) {
+          if (!isSelected) {
+            if (key.startsWith('vicerrectoria_academica.') && !nextModules.includes('vicerrectoria_academica')) nextModules.push('vicerrectoria_academica');
+            if (!nextModules.includes('estadistica_institucional')) nextModules.push('estadistica_institucional');
+            if (!nextMenu.includes('gestion_informacion')) nextMenu.push('gestion_informacion');
+          } else if (key === 'vicerrectoria_academica') {
+            nextModules = nextModules.filter((moduleKey) => !moduleKey.startsWith('vicerrectoria_academica.'));
+          }
+        } else if (isViaticosPermission) {
           if (!isSelected) {
             if (key.startsWith('vicerrectoria_financiera.viaticos.') && !nextModules.includes('vicerrectoria_financiera.viaticos')) nextModules.push('vicerrectoria_financiera.viaticos');
             if (key.startsWith('vicerrectoria_financiera.viaticos') && !nextModules.includes('vicerrectoria_financiera')) nextModules.push('vicerrectoria_financiera');
@@ -2849,6 +2871,50 @@ function GestionUsuarios() {
                               ))}
                             </Grid>
                           </FormGroup>
+
+                          {modulePermissionsForm.allowedModules.includes('vicerrectoria_academica') && (
+                            <Box sx={{ mt: 1.4, pt: 1.3, borderTop: '1px solid #dbeafe' }}>
+                              <Typography sx={{ fontWeight: 900, color: '#1e3a8a', mb: 0.35 }}>Vicerrectoría Académica</Typography>
+                              <Typography variant="body2" sx={{ color: '#64748b', mb: 1.3 }}>
+                                Selecciona únicamente los programas académicos que podrá consultar este usuario.
+                              </Typography>
+                              <Stack spacing={1.3}>
+                                {ACADEMIC_PROGRAM_LEVELS.map((level) => {
+                                  const options = ACADEMIC_PROGRAM_PERMISSION_OPTIONS.filter((item) => item.level === level);
+                                  return (
+                                    <Paper key={level} variant="outlined" sx={{ p: 1.3, borderRadius: 2, bgcolor: '#f8fbff', borderColor: '#dbeafe' }}>
+                                      <Typography variant="caption" sx={{ display: 'block', mb: 0.65, color: '#475569', fontWeight: 900, textTransform: 'uppercase', letterSpacing: 0.4 }}>
+                                        {level} ({options.length})
+                                      </Typography>
+                                      <FormGroup>
+                                        <Grid container spacing={0.5}>
+                                          {options.map((item) => (
+                                            <Grid item xs={12} sm={6} md={4} key={`academic-${item.key}`}>
+                                              <FormControlLabel
+                                                sx={{ alignItems: 'flex-start' }}
+                                                control={(
+                                                  <Checkbox
+                                                    checked={modulePermissionsForm.allowedModules.includes(item.key)}
+                                                    onChange={() => handleTogglePermission('allowedModules', item.key)}
+                                                    size="small"
+                                                  />
+                                                )}
+                                                label={(
+                                                  <Box sx={{ pt: 0.35 }}>
+                                                    <Typography sx={{ fontSize: 13.5, lineHeight: 1.25, color: '#1e293b' }}>{item.label}</Typography>
+                                                  </Box>
+                                                )}
+                                              />
+                                            </Grid>
+                                          ))}
+                                        </Grid>
+                                      </FormGroup>
+                                    </Paper>
+                                  );
+                                })}
+                              </Stack>
+                            </Box>
+                          )}
 
                           {modulePermissionsForm.allowedModules.includes(VIATICOS_PERMISSION_KEYS.area) && (
                             <Box sx={{ mt: 1.2, pt: 1.2, borderTop: '1px solid #e2e8f0' }}>

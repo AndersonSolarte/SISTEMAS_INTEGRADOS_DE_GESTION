@@ -59,7 +59,22 @@ La aplicación genera la copia integral a las 18:00 y el cron genera el kit priv
 
 ## Copia local en Windows
 
-`Sync-ServerBackups.ps1` descarga paquetes integrales, dumps heredados, kits cifrados y huellas hacia la ruta configurada, por ejemplo `D:\SIAC_COPIAS_DE_SEGURIDAD`. La tarea local se programa a las 18:35, después de generar ambos respaldos. Nunca descarga el archivo de contraseña automáticamente.
+`Sync-ServerBackups.ps1` descarga paquetes integrales, dumps heredados, kits cifrados y huellas hacia la ruta configurada, por ejemplo `D:\SIAC_COPIAS_DE_SEGURIDAD`. Cada jornada queda aislada en una carpeta `AAAA-MM-DD`:
+
+```text
+D:\SIAC_COPIAS_DE_SEGURIDAD\
+├── 2026-08-20\
+│   ├── sgc_integral_2026-08-20_18-00-14.siacbackup
+│   ├── sgc_integral_2026-08-20_18-00-14.siacbackup.sha256
+│   ├── siac_recovery_kit_2026-08-20_18-20-02.enc
+│   ├── siac_recovery_kit_2026-08-20_18-20-02.enc.sha256
+│   ├── recuperar-siac.sh
+│   └── recuperar-siac.sh.sha256
+└── 2026-08-21\
+    └── ...
+```
+
+En su primera ejecución, el sincronizador mueve también las copias antiguas que estén sueltas a su carpeta diaria. Si `RetentionDays` está activo, elimina la carpeta diaria completa cuando vence su retención. La tarea local se programa a las 18:35, después de generar ambos respaldos. Nunca descarga el archivo de contraseña automáticamente.
 
 ## Restauración
 
