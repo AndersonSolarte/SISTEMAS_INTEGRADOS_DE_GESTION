@@ -410,6 +410,8 @@ const CronogramaMovilidadModule = ({ initialPrograma = null }) => {
   };
 
   const [formValidationErrors, setFormValidationErrors] = useState([]);
+  const [showFieldErrors, setShowFieldErrors] = useState(false);
+  const [openValidationErrorModal, setOpenValidationErrorModal] = useState(false);
 
   const validateCronogramaParaRadicar = (acts) => {
     const issues = [];
@@ -447,9 +449,12 @@ const CronogramaMovilidadModule = ({ initialPrograma = null }) => {
     const valErrors = validateCronogramaParaRadicar(actividades);
     if (valErrors.length > 0) {
       setFormValidationErrors(valErrors);
+      setShowFieldErrors(true);
+      setOpenValidationErrorModal(true);
       return;
     }
     setFormValidationErrors([]);
+    setShowFieldErrors(false);
     setSaving(true);
     setStatusMessage(null);
     try {
@@ -1171,6 +1176,8 @@ const CronogramaMovilidadModule = ({ initialPrograma = null }) => {
                             placeholder="Ej: Institución Educativa Rural de Ipiaes, Hospital San Pedro"
                             value={act.entidad_destino || ''}
                             onChange={(e) => handleActividadChange(idx, 'entidad_destino', e.target.value)}
+                            error={showFieldErrors && (!act.entidad_destino || !act.entidad_destino.trim())}
+                            helperText={showFieldErrors && (!act.entidad_destino || !act.entidad_destino.trim()) ? '⚠️ Debe indicar la Entidad de Destino' : ''}
                             sx={{ bgcolor: '#fff' }}
                           />
                         </Box>
@@ -1232,6 +1239,8 @@ const CronogramaMovilidadModule = ({ initialPrograma = null }) => {
                             placeholder="Ej: Institución Educativa Rural de Ipiaes, Hospital San Pedro"
                             value={act.entidad_destino || ''}
                             onChange={(e) => handleActividadChange(idx, 'entidad_destino', e.target.value)}
+                            error={showFieldErrors && (!act.entidad_destino || !act.entidad_destino.trim())}
+                            helperText={showFieldErrors && (!act.entidad_destino || !act.entidad_destino.trim()) ? '⚠️ Debe indicar la Entidad de Destino' : ''}
                             sx={{ bgcolor: '#fff' }}
                           />
                         </Box>
@@ -1281,6 +1290,8 @@ const CronogramaMovilidadModule = ({ initialPrograma = null }) => {
                             placeholder="Ej: Universidad de Barcelona"
                             value={act.entidad_destino || ''}
                             onChange={(e) => handleActividadChange(idx, 'entidad_destino', e.target.value)}
+                            error={showFieldErrors && (!act.entidad_destino || !act.entidad_destino.trim())}
+                            helperText={showFieldErrors && (!act.entidad_destino || !act.entidad_destino.trim()) ? '⚠️ Debe indicar la Entidad de Destino' : ''}
                             sx={{ bgcolor: '#fff' }}
                           />
                         </Box>
@@ -1324,17 +1335,23 @@ const CronogramaMovilidadModule = ({ initialPrograma = null }) => {
                         <GroupIcon sx={{ fontSize: 18, color: '#1e3a8a' }} /> 4. Asignación de Tutores y Estudiantes
                       </Typography>
                       <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', md: '1fr 1fr' }, gap: 1.5, width: '100%' }}>
-                        <Box sx={{ p: 1.25, border: '1.5px dashed #0f766e', borderRadius: 2, bgcolor: '#f0fdf4' }}>
+                        <Box sx={{
+                          p: 1.25,
+                          border: showFieldErrors && (!act.responsables || act.responsables.length === 0) ? '2px solid #ef4444' : '1.5px dashed #0f766e',
+                          borderRadius: 2,
+                          bgcolor: showFieldErrors && (!act.responsables || act.responsables.length === 0) ? '#fef2f2' : '#f0fdf4',
+                          transition: 'all 0.2s ease'
+                        }}>
                           <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1 }}>
-                            <Typography variant="subtitle2" sx={{ fontWeight: 800, color: '#0f766e', fontSize: '0.82rem' }}>
-                              Tutor(es) Responsable(s): {(act.responsables || []).length}
+                            <Typography variant="subtitle2" sx={{ fontWeight: 800, color: showFieldErrors && (!act.responsables || act.responsables.length === 0) ? '#dc2626' : '#0f766e', fontSize: '0.82rem' }}>
+                              Tutor(es) Responsable(s): {(act.responsables || []).length} {showFieldErrors && (!act.responsables || act.responsables.length === 0) && '⚠️ REQUERIDO'}
                             </Typography>
                             <Button
                               size="small"
                               variant="contained"
                               startIcon={<SupervisorAccountIcon />}
                               onClick={() => handleOpenResponsablesModal(idx)}
-                              sx={{ bgcolor: '#0f766e', color: '#fff', '&:hover': { bgcolor: '#0d9488' }, textTransform: 'none', fontWeight: 700, py: 0.25, fontSize: '0.75rem' }}
+                              sx={{ bgcolor: showFieldErrors && (!act.responsables || act.responsables.length === 0) ? '#dc2626' : '#0f766e', color: '#fff', '&:hover': { bgcolor: '#b91c1c' }, textTransform: 'none', fontWeight: 700, py: 0.25, fontSize: '0.75rem' }}
                             >
                               Seleccionar Tutores
                             </Button>
@@ -1346,21 +1363,29 @@ const CronogramaMovilidadModule = ({ initialPrograma = null }) => {
                               ))}
                             </Box>
                           ) : (
-                            <Typography variant="caption" color="text.secondary">Ningún tutor seleccionado aún</Typography>
+                            <Typography variant="caption" color={showFieldErrors ? 'error' : 'text.secondary'} sx={{ fontWeight: showFieldErrors ? 700 : 400 }}>
+                              {showFieldErrors ? '❌ Debe seleccionar al menos un tutor responsable' : 'Ningún tutor seleccionado aún'}
+                            </Typography>
                           )}
                         </Box>
 
-                        <Box sx={{ p: 1.25, border: '1.5px dashed #1e3a8a', borderRadius: 2, bgcolor: '#eff6ff' }}>
+                        <Box sx={{
+                          p: 1.25,
+                          border: showFieldErrors && (!act.estudiantes || act.estudiantes.length === 0) ? '2px solid #ef4444' : '1.5px dashed #1e3a8a',
+                          borderRadius: 2,
+                          bgcolor: showFieldErrors && (!act.estudiantes || act.estudiantes.length === 0) ? '#fef2f2' : '#eff6ff',
+                          transition: 'all 0.2s ease'
+                        }}>
                           <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1 }}>
-                            <Typography variant="subtitle2" sx={{ fontWeight: 800, color: '#1e3a8a', fontSize: '0.82rem' }}>
-                              Estudiantes en Práctica Formativa: {(act.estudiantes || []).length}
+                            <Typography variant="subtitle2" sx={{ fontWeight: 800, color: showFieldErrors && (!act.estudiantes || act.estudiantes.length === 0) ? '#dc2626' : '#1e3a8a', fontSize: '0.82rem' }}>
+                              Estudiantes en Práctica Formativa: {(act.estudiantes || []).length} {showFieldErrors && (!act.estudiantes || act.estudiantes.length === 0) && '⚠️ REQUERIDO'}
                             </Typography>
                             <Button
                               size="small"
                               variant="contained"
                               startIcon={<PeopleIcon />}
                               onClick={() => handleOpenMatriculadosModal(idx)}
-                              sx={{ bgcolor: '#1e3a8a', color: '#fff', '&:hover': { bgcolor: '#1d4ed8' }, textTransform: 'none', fontWeight: 700, py: 0.25, fontSize: '0.75rem' }}
+                              sx={{ bgcolor: showFieldErrors && (!act.estudiantes || act.estudiantes.length === 0) ? '#dc2626' : '#1e3a8a', color: '#fff', '&:hover': { bgcolor: '#b91c1c' }, textTransform: 'none', fontWeight: 700, py: 0.25, fontSize: '0.75rem' }}
                             >
                               Asociar Matriculados
                             </Button>
@@ -1372,7 +1397,9 @@ const CronogramaMovilidadModule = ({ initialPrograma = null }) => {
                               ))}
                             </Box>
                           ) : (
-                            <Typography variant="caption" color="text.secondary">Ningún estudiante seleccionado aún</Typography>
+                            <Typography variant="caption" color={showFieldErrors ? 'error' : 'text.secondary'} sx={{ fontWeight: showFieldErrors ? 700 : 400 }}>
+                              {showFieldErrors ? '❌ Debe asociar al menos un estudiante matriculado' : 'Ningún estudiante seleccionado aún'}
+                            </Typography>
                           )}
                         </Box>
                       </Box>
@@ -1475,6 +1502,48 @@ const CronogramaMovilidadModule = ({ initialPrograma = null }) => {
           </Button>
           <Button onClick={() => handleRadicar()} variant="contained" color="success" startIcon={<SendIcon />} disabled={saving}>
             Radicar Cronograma
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Modal Emergente de Error de Validación */}
+      <Dialog
+        open={openValidationErrorModal}
+        onClose={() => setOpenValidationErrorModal(false)}
+        maxWidth="sm"
+        fullWidth
+        PaperProps={{
+          sx: { borderRadius: 3, p: 1 }
+        }}
+      >
+        <DialogTitle sx={{ display: 'flex', alignItems: 'center', gap: 1.5, color: '#dc2626', pb: 1 }}>
+          <ErrorIcon sx={{ fontSize: 32, color: '#dc2626' }} />
+          <Typography variant="h6" sx={{ fontWeight: 800 }}>
+            Atención: Faltan datos obligatorios para radicar
+          </Typography>
+        </DialogTitle>
+        <DialogContent sx={{ pb: 1 }}>
+          <Typography variant="body2" sx={{ color: '#475569', mb: 2, fontWeight: 500 }}>
+            Para poder enviar el cronograma a la Vicerrectoría Académica, debe completar los siguientes campos resaltados en rojo en el formulario:
+          </Typography>
+          <Box sx={{ p: 2, bgcolor: '#fef2f2', borderRadius: 2, border: '1.5px solid #fca5a5' }}>
+            <ul style={{ margin: 0, paddingLeft: 20 }}>
+              {formValidationErrors.map((err, i) => (
+                <li key={i} style={{ color: '#991b1b', fontWeight: 700, fontSize: '0.88rem', marginBottom: '6px' }}>
+                  {err}
+                </li>
+              ))}
+            </ul>
+          </Box>
+        </DialogContent>
+        <DialogActions sx={{ px: 3, pb: 2.5 }}>
+          <Button
+            variant="contained"
+            color="error"
+            onClick={() => setOpenValidationErrorModal(false)}
+            sx={{ fontWeight: 800, textTransform: 'none', px: 3, py: 1, borderRadius: 2, fontSize: '0.9rem' }}
+          >
+            Entendido, corregir información
           </Button>
         </DialogActions>
       </Dialog>
