@@ -19,6 +19,13 @@ import PersonAddIcon from '@mui/icons-material/PersonAdd';
 import FilterAltIcon from '@mui/icons-material/FilterAlt';
 import cronogramaMovilidadService from '../../services/cronogramaMovilidadService';
 
+const normalizeString = (str) =>
+  String(str || '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .trim();
+
 const MatriculadosSelectorModal = ({ open, onClose, selectedEstudiantes = [], onSelect, programaFilter = '' }) => {
   const [query, setQuery] = useState('');
   const [selectedPrograma, setSelectedPrograma] = useState(programaFilter || 'TODOS');
@@ -120,6 +127,18 @@ const MatriculadosSelectorModal = ({ open, onClose, selectedEstudiantes = [], on
             onChange={(event, newValue) => setTempSelected(newValue)}
             getOptionLabel={(option) => `${option.nombre_completo} (${option.codigo_estudiante || option.numero_documento}) - ${option.programa || ''}`}
             isOptionEqualToValue={(option, value) => option.id === value.id || option.numero_documento === value.numero_documento}
+            filterOptions={(opts, state) => {
+              if (!state.inputValue) return opts;
+              const inputClean = normalizeString(state.inputValue);
+              const tokens = inputClean.split(/\s+/).filter(Boolean);
+
+              return opts.filter((opt) => {
+                const targetText = normalizeString(
+                  `${opt.nombre_completo || ''} ${opt.numero_documento || ''} ${opt.codigo_estudiante || ''} ${opt.programa || ''}`
+                );
+                return tokens.every((token) => targetText.includes(token));
+              });
+            }}
             loading={loading}
             onInputChange={(e, newInputValue) => setQuery(newInputValue)}
             renderInput={(params) => (

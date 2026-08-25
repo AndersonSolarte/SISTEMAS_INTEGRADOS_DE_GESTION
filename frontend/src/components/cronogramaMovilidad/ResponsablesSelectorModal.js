@@ -19,6 +19,13 @@ import SupervisorAccountIcon from '@mui/icons-material/SupervisorAccount';
 import FilterAltIcon from '@mui/icons-material/FilterAlt';
 import cronogramaMovilidadService from '../../services/cronogramaMovilidadService';
 
+const normalizeString = (str) =>
+  String(str || '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .trim();
+
 const ResponsablesSelectorModal = ({ open, onClose, selectedResponsables = [], onSelect }) => {
   const [query, setQuery] = useState('');
   const [dependenciaFilter, setDependenciaFilter] = useState('TODOS');
@@ -113,6 +120,18 @@ const ResponsablesSelectorModal = ({ open, onClose, selectedResponsables = [], o
             onChange={(event, newValue) => setTempSelected(newValue)}
             getOptionLabel={(option) => `${option.nombre} (${option.cargo || option.dependencia || option.email})`}
             isOptionEqualToValue={(option, value) => option.id === value.id || option.email === value.email}
+            filterOptions={(opts, state) => {
+              if (!state.inputValue) return opts;
+              const inputClean = normalizeString(state.inputValue);
+              const tokens = inputClean.split(/\s+/).filter(Boolean);
+
+              return opts.filter((opt) => {
+                const targetText = normalizeString(
+                  `${opt.nombre || ''} ${opt.email || ''} ${opt.cargo || ''} ${opt.dependencia || ''}`
+                );
+                return tokens.every((token) => targetText.includes(token));
+              });
+            }}
             loading={loading}
             onInputChange={(e, newInputValue) => setQuery(newInputValue)}
             renderInput={(params) => (
