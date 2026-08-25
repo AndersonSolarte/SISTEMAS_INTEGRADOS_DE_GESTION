@@ -275,6 +275,9 @@ const CronogramaMovilidadModule = ({ initialPrograma = null }) => {
     setActividades([{ ...INITIAL_ACTIVIDAD }]);
     setFormAsunto(`Solicitud aprobación de cronograma de salidas práctica integral de movilidad ${formPrograma}`);
     setFormCuerpo('');
+    setShowFieldErrors(false);
+    setOpenValidationErrorModal(false);
+    setFormValidationErrors([]);
     setOpenModalForm(true);
   };
 
@@ -287,6 +290,9 @@ const CronogramaMovilidadModule = ({ initialPrograma = null }) => {
     setFormCoordinador(cron.coordinador_practica || '');
     setFormEmailCoord(cron.email_coordinador || '');
     setActividades(cron.actividades && cron.actividades.length > 0 ? cron.actividades : [{ ...INITIAL_ACTIVIDAD }]);
+    setShowFieldErrors(false);
+    setOpenValidationErrorModal(false);
+    setFormValidationErrors([]);
     setOpenModalForm(true);
   };
 
