@@ -1289,20 +1289,12 @@ const CronogramaMovilidadModule = ({ initialPrograma = null }) => {
                           </TextField>
                         </Box>
                       ) : (() => {
-                        const stdAlojamiento = ['Hotel / Hospedaje en destino', 'Alojamiento Convenio', 'No requiere alojamiento'];
                         const stdTransporte = ['Terrestre Intermunicipal', 'Vehículo Institucional UNICESMAG', 'Aéreo Nacional', 'Aéreo Internacional', 'Urbano / Local'];
-                        
-                        const isOtroAlojamiento = !stdAlojamiento.includes(act.alojamiento);
                         const isOtroTransporte = !stdTransporte.includes(act.transporte);
 
-                        let gridCols = { xs: '1fr', md: '1.2fr 2fr 2fr' };
-                        if (isOtroAlojamiento && isOtroTransporte) {
-                          gridCols = { xs: '1fr', md: '1.1fr 1.3fr 2fr 1.3fr 2fr' };
-                        } else if (isOtroAlojamiento) {
-                          gridCols = { xs: '1fr', md: '1.2fr 1.4fr 2.4fr 2fr' };
-                        } else if (isOtroTransporte) {
-                          gridCols = { xs: '1fr', md: '1.2fr 2fr 1.4fr 2.4fr' };
-                        }
+                        const gridCols = isOtroTransporte
+                          ? { xs: '1fr', md: '1.2fr 2fr 2.4fr' }
+                          : { xs: '1fr', md: '1.2fr 3fr' };
 
                         return (
                           <Box sx={{ display: 'grid', gridTemplateColumns: gridCols, gap: 1.2, width: '100%', alignItems: 'center' }}>
@@ -1318,36 +1310,6 @@ const CronogramaMovilidadModule = ({ initialPrograma = null }) => {
                               <MenuItem value="si">Sí (Aplica Viáticos)</MenuItem>
                               <MenuItem value="no">No requiere Viáticos</MenuItem>
                             </TextField>
-
-                            <TextField
-                              select
-                              fullWidth
-                              size="small"
-                              label="Alojamiento Pre-Autorizado *"
-                              value={isOtroAlojamiento ? 'Otro' : act.alojamiento}
-                              onChange={(e) => {
-                                const val = e.target.value;
-                                handleActividadChange(idx, 'alojamiento', val === 'Otro' ? 'Otro hospedaje' : val);
-                              }}
-                              sx={{ bgcolor: '#fff' }}
-                            >
-                              <MenuItem value="Hotel / Hospedaje en destino">Hotel / Hospedaje en destino</MenuItem>
-                              <MenuItem value="Alojamiento Convenio">Alojamiento Convenio</MenuItem>
-                              <MenuItem value="No requiere alojamiento">No requiere alojamiento</MenuItem>
-                              <MenuItem value="Otro">Otro (Especificar)</MenuItem>
-                            </TextField>
-
-                            {isOtroAlojamiento && (
-                              <TextField
-                                fullWidth
-                                size="small"
-                                label="Especificar Alojamiento *"
-                                placeholder="Ej: Hospedaje rural"
-                                value={act.alojamiento}
-                                onChange={(e) => handleActividadChange(idx, 'alojamiento', e.target.value)}
-                                sx={{ bgcolor: '#fff' }}
-                              />
-                            )}
 
                             <TextField
                               select

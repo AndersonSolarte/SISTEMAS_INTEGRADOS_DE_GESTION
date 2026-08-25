@@ -267,11 +267,13 @@ const SolicitudViaticosFields = ({
           }}
         >
           <TextField sx={compactSx} size="small" label="Centro de costos (opcional)" helperText="Si no lo conoce, el Técnico Contable lo completará." value={viaticos.centroCosto || ''} onChange={(e) => onChange('centroCosto', e.target.value)} />
-          <TextField sx={compactSx} size="small" required select label="Alojamiento" value={viaticos.alojamiento || ''} onChange={(e) => onChange('alojamiento', e.target.value)}>
-            <MenuItem value="Hotel">Hotel</MenuItem>
-            <MenuItem value="Casa de familia">Casa de familia</MenuItem>
-            <MenuItem value="No requiere">No requiere</MenuItem>
-          </TextField>
+          {!(salida?.cronogramaActividadId || salida?.isCronogramaMovilidad || salida?.tipo === 'practica_movilidad') && (
+            <TextField sx={compactSx} size="small" required select label="Alojamiento" value={viaticos.alojamiento || ''} onChange={(e) => onChange('alojamiento', e.target.value)}>
+              <MenuItem value="Hotel">Hotel</MenuItem>
+              <MenuItem value="Casa de familia">Casa de familia</MenuItem>
+              <MenuItem value="No requiere">No requiere</MenuItem>
+            </TextField>
+          )}
           <TextField sx={compactSx} size="small" required select label="Transporte" value={viaticos.transporte || ''} onChange={(e) => onChange('transporte', e.target.value)}>
             <MenuItem value="Terrestre">Terrestre</MenuItem>
             <MenuItem value="Aéreo">Aéreo</MenuItem>
