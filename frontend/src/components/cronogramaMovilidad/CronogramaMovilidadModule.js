@@ -55,6 +55,7 @@ import PlaceIcon from '@mui/icons-material/Place';
 import PaymentsIcon from '@mui/icons-material/Payments';
 import GroupIcon from '@mui/icons-material/Group';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
+import ErrorIcon from '@mui/icons-material/Error';
 
 import { useAuth } from '../../context/AuthContext';
 import cronogramaMovilidadService from '../../services/cronogramaMovilidadService';
