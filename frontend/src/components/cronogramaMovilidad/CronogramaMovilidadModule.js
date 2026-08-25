@@ -1318,10 +1318,70 @@ const CronogramaMovilidadModule = ({ initialPrograma = null }) => {
                       </Box>
                     </Paper>
 
-                    {/* SECCIÓN 4: Logística y Viáticos Pre-Autorizados */}
+                    {/* SECCIÓN 4: Asignación de Tutores y Estudiantes */}
+                    <Paper elevation={0} sx={{ p: 1.5, bgcolor: '#f8fafc', borderRadius: 2, border: '1px solid #e2e8f0', width: '100%' }}>
+                      <Typography variant="subtitle2" sx={{ fontWeight: 800, color: '#1e3a8a', mb: 1, display: 'flex', alignItems: 'center', gap: 0.8, fontSize: '0.88rem' }}>
+                        <GroupIcon sx={{ fontSize: 18, color: '#1e3a8a' }} /> 4. Asignación de Tutores y Estudiantes
+                      </Typography>
+                      <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', md: '1fr 1fr' }, gap: 1.5, width: '100%' }}>
+                        <Box sx={{ p: 1.25, border: '1.5px dashed #0f766e', borderRadius: 2, bgcolor: '#f0fdf4' }}>
+                          <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1 }}>
+                            <Typography variant="subtitle2" sx={{ fontWeight: 800, color: '#0f766e', fontSize: '0.82rem' }}>
+                              Tutor(es) Responsable(s): {(act.responsables || []).length}
+                            </Typography>
+                            <Button
+                              size="small"
+                              variant="contained"
+                              startIcon={<SupervisorAccountIcon />}
+                              onClick={() => handleOpenResponsablesModal(idx)}
+                              sx={{ bgcolor: '#0f766e', color: '#fff', '&:hover': { bgcolor: '#0d9488' }, textTransform: 'none', fontWeight: 700, py: 0.25, fontSize: '0.75rem' }}
+                            >
+                              Seleccionar Tutores
+                            </Button>
+                          </Box>
+                          {(act.responsables || []).length > 0 ? (
+                            <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.6 }}>
+                              {act.responsables.map((r, rIdx) => (
+                                <Chip key={rIdx} label={r.nombre || r.email} size="small" color="success" sx={{ fontWeight: 600, height: 22, fontSize: '0.72rem' }} />
+                              ))}
+                            </Box>
+                          ) : (
+                            <Typography variant="caption" color="text.secondary">Ningún tutor seleccionado aún</Typography>
+                          )}
+                        </Box>
+
+                        <Box sx={{ p: 1.25, border: '1.5px dashed #1e3a8a', borderRadius: 2, bgcolor: '#eff6ff' }}>
+                          <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1 }}>
+                            <Typography variant="subtitle2" sx={{ fontWeight: 800, color: '#1e3a8a', fontSize: '0.82rem' }}>
+                              Estudiantes en Práctica Formativa: {(act.estudiantes || []).length}
+                            </Typography>
+                            <Button
+                              size="small"
+                              variant="contained"
+                              startIcon={<PeopleIcon />}
+                              onClick={() => handleOpenMatriculadosModal(idx)}
+                              sx={{ bgcolor: '#1e3a8a', color: '#fff', '&:hover': { bgcolor: '#1d4ed8' }, textTransform: 'none', fontWeight: 700, py: 0.25, fontSize: '0.75rem' }}
+                            >
+                              Asociar Matriculados
+                            </Button>
+                          </Box>
+                          {(act.estudiantes || []).length > 0 ? (
+                            <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.6 }}>
+                              {act.estudiantes.map((e, eIdx) => (
+                                <Chip key={eIdx} label={`${e.nombre_completo} (${e.codigo_estudiante || e.numero_documento})`} size="small" color="primary" sx={{ fontWeight: 600, height: 22, fontSize: '0.72rem' }} />
+                              ))}
+                            </Box>
+                          ) : (
+                            <Typography variant="caption" color="text.secondary">Ningún estudiante seleccionado aún</Typography>
+                          )}
+                        </Box>
+                      </Box>
+                    </Paper>
+
+                    {/* SECCIÓN 5: Logística y Viáticos Pre-Autorizados */}
                     <Paper elevation={0} sx={{ p: 1.5, bgcolor: '#f0f9ff', borderRadius: 2, border: '1.5px solid #bae6fd', width: '100%' }}>
                       <Typography variant="subtitle2" sx={{ fontWeight: 800, color: '#0369a1', mb: 1, display: 'flex', alignItems: 'center', gap: 0.8, fontSize: '0.88rem' }}>
-                        <PaymentsIcon sx={{ fontSize: 18, color: '#0369a1' }} /> 4. Logística y Viáticos Pre-Autorizados
+                        <PaymentsIcon sx={{ fontSize: 18, color: '#0369a1' }} /> 5. Logística y Viáticos Pre-Autorizados
                       </Typography>
                       
                       {act.requiere_viaticos === false ? (
@@ -1397,66 +1457,6 @@ const CronogramaMovilidadModule = ({ initialPrograma = null }) => {
                           </Box>
                         );
                       })()}
-                    </Paper>
-
-                    {/* SECCIÓN 5: Participantes Asignados */}
-                    <Paper elevation={0} sx={{ p: 1.5, bgcolor: '#f8fafc', borderRadius: 2, border: '1px solid #e2e8f0', width: '100%' }}>
-                      <Typography variant="subtitle2" sx={{ fontWeight: 800, color: '#1e3a8a', mb: 1, display: 'flex', alignItems: 'center', gap: 0.8, fontSize: '0.88rem' }}>
-                        <GroupIcon sx={{ fontSize: 18, color: '#1e3a8a' }} /> 5. Asignación de Tutores y Estudiantes
-                      </Typography>
-                      <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', md: '1fr 1fr' }, gap: 1.5, width: '100%' }}>
-                        <Box sx={{ p: 1.25, border: '1.5px dashed #0f766e', borderRadius: 2, bgcolor: '#f0fdf4' }}>
-                          <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1 }}>
-                            <Typography variant="subtitle2" sx={{ fontWeight: 800, color: '#0f766e', fontSize: '0.82rem' }}>
-                              Tutor(es) Responsable(s): {(act.responsables || []).length}
-                            </Typography>
-                            <Button
-                              size="small"
-                              variant="contained"
-                              startIcon={<SupervisorAccountIcon />}
-                              onClick={() => handleOpenResponsablesModal(idx)}
-                              sx={{ bgcolor: '#0f766e', color: '#fff', '&:hover': { bgcolor: '#0d9488' }, textTransform: 'none', fontWeight: 700, py: 0.25, fontSize: '0.75rem' }}
-                            >
-                              Seleccionar Tutores
-                            </Button>
-                          </Box>
-                          {(act.responsables || []).length > 0 ? (
-                            <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.6 }}>
-                              {act.responsables.map((r, rIdx) => (
-                                <Chip key={rIdx} label={r.nombre || r.email} size="small" color="success" sx={{ fontWeight: 600, height: 22, fontSize: '0.72rem' }} />
-                              ))}
-                            </Box>
-                          ) : (
-                            <Typography variant="caption" color="text.secondary">Ningún tutor seleccionado aún</Typography>
-                          )}
-                        </Box>
-
-                        <Box sx={{ p: 1.25, border: '1.5px dashed #1e3a8a', borderRadius: 2, bgcolor: '#eff6ff' }}>
-                          <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1 }}>
-                            <Typography variant="subtitle2" sx={{ fontWeight: 800, color: '#1e3a8a', fontSize: '0.82rem' }}>
-                              Estudiantes en Práctica Formativa: {(act.estudiantes || []).length}
-                            </Typography>
-                            <Button
-                              size="small"
-                              variant="contained"
-                              startIcon={<PeopleIcon />}
-                              onClick={() => handleOpenMatriculadosModal(idx)}
-                              sx={{ bgcolor: '#1e3a8a', color: '#fff', '&:hover': { bgcolor: '#1d4ed8' }, textTransform: 'none', fontWeight: 700, py: 0.25, fontSize: '0.75rem' }}
-                            >
-                              Asociar Matriculados
-                            </Button>
-                          </Box>
-                          {(act.estudiantes || []).length > 0 ? (
-                            <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.6 }}>
-                              {act.estudiantes.map((e, eIdx) => (
-                                <Chip key={eIdx} label={`${e.nombre_completo} (${e.codigo_estudiante || e.numero_documento})`} size="small" color="primary" sx={{ fontWeight: 600, height: 22, fontSize: '0.72rem' }} />
-                              ))}
-                            </Box>
-                          ) : (
-                            <Typography variant="caption" color="text.secondary">Ningún estudiante seleccionado aún</Typography>
-                          )}
-                        </Box>
-                      </Box>
                     </Paper>
 
                   </Box>
