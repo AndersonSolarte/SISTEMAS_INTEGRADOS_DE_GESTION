@@ -2719,7 +2719,7 @@ function ReporteSalidaFormDialog({ open, documento, user, onClose, onSubmitted }
                 />
               )}
 
-              {!requiresViaticosFlow && hasCompletedPropiasCargoSteps && hasCompletedSaludMotivo && hasEnteredDiligenciaTime && (
+              {!requiresViaticosFlow && subtype !== 'terapias' && hasCompletedPropiasCargoSteps && hasCompletedSaludMotivo && hasEnteredDiligenciaTime && (
                 <DuracionSelector
                   salida={form.salida}
                   fieldSx={duracionDiasFieldSx}
@@ -2728,7 +2728,7 @@ function ReporteSalidaFormDialog({ open, documento, user, onClose, onSubmitted }
                 />
               )}
 
-              {!requiresViaticosFlow && hasCompletedPropiasCargoSteps && hasCompletedSaludMotivo && hasEnteredDiligenciaTime && (
+              {!requiresViaticosFlow && subtype !== 'terapias' && hasCompletedPropiasCargoSteps && hasCompletedSaludMotivo && hasEnteredDiligenciaTime && (
                 <CamposDuracionSalida
                   category={category}
                   convert24To12={convert24To12}
