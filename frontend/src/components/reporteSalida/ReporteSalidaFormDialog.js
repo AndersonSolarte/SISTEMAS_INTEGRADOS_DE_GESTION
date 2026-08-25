@@ -1372,10 +1372,9 @@ function ReporteSalidaFormDialog({ open, documento, user, onClose, onSubmitted }
       issues.push('La hora de regreso no puede ser anterior a la hora actual cuando la fecha de regreso es hoy.');
     }
     
-    // Adjuntos/soportes son completamente OPCIONALES por requerimiento de usuario
-    // if (!isOficioSolicitud && !adjuntoFile && (shouldRequireHealthAttachment || shouldRequireListedAttachment) && !healthAttachmentWaived) {
-    //   issues.push('Debe subir el soporte, certificado o documento obligatorio.');
-    // }
+    if (category === 'salud' && !adjuntoFile && !noCuentaAdjuntoSalud) {
+      issues.push("Debe adjuntar un archivo de soporte o marcar la opción 'No cuento con archivos adjuntos en este momento'.");
+    }
     
     if (shouldRequestReposicionHoras) {
       const dailyHours = Number(form.salida.jornadaDiariaHoras || 0);
