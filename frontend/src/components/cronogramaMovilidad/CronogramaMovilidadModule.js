@@ -55,7 +55,6 @@ import PlaceIcon from '@mui/icons-material/Place';
 import PaymentsIcon from '@mui/icons-material/Payments';
 import GroupIcon from '@mui/icons-material/Group';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
-import ErrorIcon from '@mui/icons-material/Error';
 
 import { useAuth } from '../../context/AuthContext';
 import cronogramaMovilidadService from '../../services/cronogramaMovilidadService';
@@ -1518,7 +1517,7 @@ const CronogramaMovilidadModule = ({ initialPrograma = null }) => {
         }}
       >
         <DialogTitle sx={{ display: 'flex', alignItems: 'center', gap: 1.5, color: '#dc2626', pb: 1 }}>
-          <ErrorIcon sx={{ fontSize: 32, color: '#dc2626' }} />
+          <WarningIcon sx={{ fontSize: 32, color: '#dc2626' }} />
           <Typography variant="h6" sx={{ fontWeight: 800 }}>
             Atención: Faltan datos obligatorios para radicar
           </Typography>
