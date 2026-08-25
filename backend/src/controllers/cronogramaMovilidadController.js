@@ -96,8 +96,14 @@ const obtenerCronogramas = async (req, res) => {
       || (user.dependencia && /vicerrec/i.test(user.dependencia));
 
     if (!isAuthority) {
-      if (user.cargo && /director/i.test(user.cargo)) {
-        whereClause.programa_academico = user.dependencia || user.programa_academico;
+      const userDepClean = (user.dependencia || '').replace(/^PROGRAMA ACADEMICO - /i, '').trim();
+      if (userDepClean) {
+        whereClause = {
+          [Op.or]: [
+            { id_director: user.id },
+            { programa_academico: { [Op.iLike]: `%${userDepClean}%` } }
+          ]
+        };
       } else {
         whereClause.id_director = user.id;
       }

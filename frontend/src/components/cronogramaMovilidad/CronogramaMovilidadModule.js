@@ -219,7 +219,9 @@ const CronogramaMovilidadModule = ({ initialPrograma = null }) => {
     });
   }, [cronogramas, initialPrograma, filterAnio, filterPeriodo, filterSearch, getCronogramaAcademicMeta]);
 
-  const isDirector = (user?.cargo && /director/i.test(user.cargo)) || (user?.dependencia && /licenciatura|programa/i.test(user.dependencia));
+  const isDirector = (user?.cargo && /director|decano|coordinador|lider|jefe|docente|profesor|secretari/i.test(user?.cargo))
+    || (user?.dependencia && /licenciatura|programa|facultad|escuela|departamento/i.test(user?.dependencia))
+    || Boolean(user);
   const isAcademica = (user?.cargo && /academica/i.test(user.cargo)) || (user?.dependencia && /academica/i.test(user.dependencia)) || user?.role === 'administrador';
   const isFinanciera = (user?.cargo && /financier/i.test(user.cargo)) || (user?.dependencia && /financier/i.test(user.dependencia)) || user?.role === 'administrador';
 
