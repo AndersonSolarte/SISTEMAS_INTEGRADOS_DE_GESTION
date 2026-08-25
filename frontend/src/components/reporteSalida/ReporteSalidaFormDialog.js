@@ -1735,7 +1735,7 @@ function ReporteSalidaFormDialog({ open, documento, user, onClose, onSubmitted }
 
   const disableSubmit = submitting || validationIssues.length > 0;
   const shouldShowOptionalPersonalAttachment = !isSalidaMultiple && category === 'personales' && subtype === 'diligencia_personal';
-  const shouldShowAdjuntoSection = category === 'propias_cargo' || category === 'salud' || REQUIRES_ADJUNTO.includes(subtype) || ['urgencia_medica', 'otra'].includes(subtype) || shouldShowOptionalPersonalAttachment;
+  const shouldShowAdjuntoSection = Boolean(subtype) && (category === 'propias_cargo' || category === 'salud' || REQUIRES_ADJUNTO.includes(subtype) || ['urgencia_medica', 'otra'].includes(subtype) || shouldShowOptionalPersonalAttachment);
   const isSaludAdjuntoSection = category === 'salud' && shouldShowAdjuntoSection;
   const hideAdjuntoUploadByDeclaration = isSaludAdjuntoSection && noCuentaAdjuntoSalud;
   const canPasteAdjunto = open && shouldShowAdjuntoSection && !hideAdjuntoUploadByDeclaration && !submitting;
@@ -2759,7 +2759,7 @@ function ReporteSalidaFormDialog({ open, documento, user, onClose, onSubmitted }
                 </Alert>
               )}
 
-              {isSaludAdjuntoSection && (
+              {Boolean(subtype) && isSaludAdjuntoSection && (
                 <Box sx={{ mt: 1.5 }}>
                   <FormControlLabel
                     control={
@@ -2791,7 +2791,7 @@ function ReporteSalidaFormDialog({ open, documento, user, onClose, onSubmitted }
                 </Box>
               )}
 
-              {shouldShowAdjuntoSection && !hideAdjuntoUploadByDeclaration && (
+              {Boolean(subtype) && shouldShowAdjuntoSection && !hideAdjuntoUploadByDeclaration && (
                 <Box>
                   <Box
                     component="label"
