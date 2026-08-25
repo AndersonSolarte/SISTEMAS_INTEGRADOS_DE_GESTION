@@ -2759,7 +2759,7 @@ function ReporteSalidaFormDialog({ open, documento, user, onClose, onSubmitted }
                 </Alert>
               )}
 
-              {Boolean(subtype) && isSaludAdjuntoSection && (
+              {Boolean(subtype) && isSaludAdjuntoSection && hasCompletedSalidaTime && (
                 <Box sx={{ mt: 1.5 }}>
                   <FormControlLabel
                     control={
@@ -2791,7 +2791,7 @@ function ReporteSalidaFormDialog({ open, documento, user, onClose, onSubmitted }
                 </Box>
               )}
 
-              {Boolean(subtype) && shouldShowAdjuntoSection && !hideAdjuntoUploadByDeclaration && (
+              {Boolean(subtype) && shouldShowAdjuntoSection && hasCompletedSalidaTime && !hideAdjuntoUploadByDeclaration && (
                 <Box>
                   <Box
                     component="label"
@@ -2895,7 +2895,7 @@ function ReporteSalidaFormDialog({ open, documento, user, onClose, onSubmitted }
                   )}
                 </Box>
               )}
-              {Boolean(subtype) && !requiresViaticosFlow && (
+              {Boolean(subtype) && !requiresViaticosFlow && hasCompletedSalidaTime && (
                 <Box sx={{ mt: 1.5, display: 'flex', alignItems: 'center', gap: 1 }}>
                   <TextField
                     sx={motivoInputSx}
