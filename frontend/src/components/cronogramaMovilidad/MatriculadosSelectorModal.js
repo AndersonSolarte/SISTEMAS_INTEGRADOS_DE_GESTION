@@ -128,16 +128,28 @@ const MatriculadosSelectorModal = ({ open, onClose, selectedEstudiantes = [], on
             getOptionLabel={(option) => `${option.nombre_completo} (${option.codigo_estudiante || option.numero_documento}) - ${option.programa || ''}`}
             isOptionEqualToValue={(option, value) => option.id === value.id || option.numero_documento === value.numero_documento}
             filterOptions={(opts, state) => {
-              if (!state.inputValue) return opts;
-              const inputClean = normalizeString(state.inputValue);
-              const tokens = inputClean.split(/\s+/).filter(Boolean);
+              let filtered = opts;
 
-              return opts.filter((opt) => {
-                const targetText = normalizeString(
-                  `${opt.nombre_completo || ''} ${opt.numero_documento || ''} ${opt.codigo_estudiante || ''} ${opt.programa || ''}`
-                );
-                return tokens.every((token) => targetText.includes(token));
-              });
+              if (selectedPrograma && selectedPrograma !== 'TODOS') {
+                const progClean = normalizeString(selectedPrograma);
+                filtered = filtered.filter((opt) => {
+                  const estProg = normalizeString(opt.programa);
+                  return estProg && (estProg.includes(progClean) || progClean.includes(estProg));
+                });
+              }
+
+              if (state.inputValue) {
+                const inputClean = normalizeString(state.inputValue);
+                const tokens = inputClean.split(/\s+/).filter(Boolean);
+                filtered = filtered.filter((opt) => {
+                  const targetText = normalizeString(
+                    `${opt.nombre_completo || ''} ${opt.numero_documento || ''} ${opt.codigo_estudiante || ''} ${opt.programa || ''}`
+                  );
+                  return tokens.every((token) => targetText.includes(token));
+                });
+              }
+
+              return filtered;
             }}
             loading={loading}
             onInputChange={(e, newInputValue) => setQuery(newInputValue)}

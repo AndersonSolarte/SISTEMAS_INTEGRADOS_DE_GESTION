@@ -121,16 +121,28 @@ const ResponsablesSelectorModal = ({ open, onClose, selectedResponsables = [], o
             getOptionLabel={(option) => `${option.nombre} (${option.cargo || option.dependencia || option.email})`}
             isOptionEqualToValue={(option, value) => option.id === value.id || option.email === value.email}
             filterOptions={(opts, state) => {
-              if (!state.inputValue) return opts;
-              const inputClean = normalizeString(state.inputValue);
-              const tokens = inputClean.split(/\s+/).filter(Boolean);
+              let filtered = opts;
 
-              return opts.filter((opt) => {
-                const targetText = normalizeString(
-                  `${opt.nombre || ''} ${opt.email || ''} ${opt.cargo || ''} ${opt.dependencia || ''}`
-                );
-                return tokens.every((token) => targetText.includes(token));
-              });
+              if (dependenciaFilter && dependenciaFilter !== 'TODOS') {
+                const depClean = normalizeString(dependenciaFilter);
+                filtered = filtered.filter((opt) => {
+                  const userDep = normalizeString(opt.dependencia);
+                  return userDep && (userDep.includes(depClean) || depClean.includes(userDep));
+                });
+              }
+
+              if (state.inputValue) {
+                const inputClean = normalizeString(state.inputValue);
+                const tokens = inputClean.split(/\s+/).filter(Boolean);
+                filtered = filtered.filter((opt) => {
+                  const targetText = normalizeString(
+                    `${opt.nombre || ''} ${opt.email || ''} ${opt.cargo || ''} ${opt.dependencia || ''}`
+                  );
+                  return tokens.every((token) => targetText.includes(token));
+                });
+              }
+
+              return filtered;
             }}
             loading={loading}
             onInputChange={(e, newInputValue) => setQuery(newInputValue)}
