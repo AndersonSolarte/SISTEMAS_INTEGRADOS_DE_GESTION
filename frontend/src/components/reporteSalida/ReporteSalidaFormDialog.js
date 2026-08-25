@@ -1331,6 +1331,12 @@ function ReporteSalidaFormDialog({ open, documento, user, onClose, onSubmitted }
         list.forEach((t, i) => {
           if (!t.fecha || !t.horaInicio || !t.horaFin) {
             issues.push(`Complete fecha, hora inicio y hora fin para la terapia #${i + 1}.`);
+          } else {
+            const startM = timeToMinutes(t.horaInicio);
+            const endM = timeToMinutes(t.horaFin);
+            if (startM !== null && endM !== null && endM <= startM) {
+              issues.push(`En la terapia #${i + 1}, la hora de reintegro a labores debe ser posterior a la hora de salida.`);
+            }
           }
         });
       }
@@ -2625,7 +2631,16 @@ function ReporteSalidaFormDialog({ open, documento, user, onClose, onSubmitted }
                             error={isPastTimeError(terapia.fecha, terapia.horaInicio)}
                           />
                           <TimeAutocomplete
-                            options={TIME_OPTIONS}
+                            options={(() => {
+                              const baseOptions = filterFutureTimeOptionsForDate(TIME_OPTIONS, terapia.fecha);
+                              if (!terapia.horaInicio) return baseOptions;
+                              const startM = timeToMinutes(terapia.horaInicio);
+                              if (startM == null) return baseOptions;
+                              return baseOptions.filter((opt) => {
+                                const optM = timeToMinutes(opt);
+                                return optM != null && optM > startM;
+                              });
+                            })()}
                             value={terapia.horaFin || ''}
                             onChange={(value) => {
                               const n = [...form.salida.terapiasList];
@@ -2637,7 +2652,15 @@ function ReporteSalidaFormDialog({ open, documento, user, onClose, onSubmitted }
                             required
                             label="Hora de reintegro a labores"
                             placeholder="hh:mm am/pm"
-                            error={isPastTimeError(terapia.fecha, terapia.horaFin)}
+                            error={
+                              isPastTimeError(terapia.fecha, terapia.horaFin) ||
+                              Boolean(terapia.horaInicio && terapia.horaFin && timeToMinutes(terapia.horaFin) <= timeToMinutes(terapia.horaInicio))
+                            }
+                            helperText={
+                              terapia.horaInicio && terapia.horaFin && timeToMinutes(terapia.horaFin) <= timeToMinutes(terapia.horaInicio)
+                                ? 'La hora de reintegro debe ser posterior a la hora de salida'
+                                : ''
+                            }
                           />
                           {category === 'personales' && (
                             <Box sx={{ minHeight: 40, px: 1.5, borderRadius: 1.5, bgcolor: tMins ? '#ecfdf5' : '#fff7ed', border: `1px solid ${tMins ? '#bbf7d0' : '#fed7aa'}`, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
