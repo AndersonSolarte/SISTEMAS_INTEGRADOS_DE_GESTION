@@ -275,7 +275,9 @@ const SolicitudViaticosFields = ({
             </TextField>
           )}
           <TextField sx={compactSx} size="small" required select label="Transporte" value={viaticos.transporte || ''} onChange={(e) => onChange('transporte', e.target.value)}>
-            <MenuItem value="Terrestre">Terrestre</MenuItem>
+            <MenuItem value="Terrestre Intermunicipal">Terrestre Intermunicipal</MenuItem>
+            <MenuItem value="Vehículo Institucional UNICESMAG">Vehículo Institucional UNICESMAG</MenuItem>
+            <MenuItem value="Vehículo Propio">Vehículo Propio</MenuItem>
             <MenuItem value="Aéreo">Aéreo</MenuItem>
             <MenuItem value="Mixto">Mixto</MenuItem>
           </TextField>

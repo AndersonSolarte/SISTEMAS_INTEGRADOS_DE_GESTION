@@ -1340,7 +1340,7 @@ const CronogramaMovilidadModule = ({ initialPrograma = null }) => {
                           </TextField>
                         </Box>
                       ) : (() => {
-                        const stdTransporte = ['Terrestre Intermunicipal', 'Vehículo Institucional UNICESMAG', 'Aéreo Nacional', 'Aéreo Internacional', 'Urbano / Local'];
+                        const stdTransporte = ['Terrestre Intermunicipal', 'Vehículo Institucional UNICESMAG', 'Vehículo Propio', 'Aéreo Nacional', 'Aéreo Internacional', 'Urbano / Local'];
                         const isOtroTransporte = !stdTransporte.includes(act.transporte);
 
                         const gridCols = isOtroTransporte
@@ -1376,6 +1376,7 @@ const CronogramaMovilidadModule = ({ initialPrograma = null }) => {
                             >
                               <MenuItem value="Terrestre Intermunicipal">Terrestre Intermunicipal</MenuItem>
                               <MenuItem value="Vehículo Institucional UNICESMAG">Vehículo Institucional UNICESMAG</MenuItem>
+                              <MenuItem value="Vehículo Propio">Vehículo Propio</MenuItem>
                               <MenuItem value="Aéreo Nacional">Aéreo Nacional</MenuItem>
                               <MenuItem value="Aéreo Internacional">Aéreo Internacional</MenuItem>
                               <MenuItem value="Urbano / Local">Urbano / Local</MenuItem>
