@@ -1376,6 +1376,14 @@ function ReporteSalidaFormDialog({ open, documento, user, onClose, onSubmitted }
       issues.push("Debe adjuntar un archivo de soporte o marcar la opción 'No cuento con archivos adjuntos en este momento'.");
     }
     
+    if (category === 'salud' && !adjuntoFile && (!form.salida.motivo || !form.salida.motivo.trim())) {
+      if (subtype === 'terapias') {
+        issues.push('Al no adjuntar un archivo de soporte, el diagnóstico de las terapias es obligatorio.');
+      } else {
+        issues.push('Al no adjuntar un archivo de soporte, el motivo / observación es obligatorio.');
+      }
+    }
+    
     if (shouldRequestReposicionHoras) {
       const dailyHours = Number(form.salida.jornadaDiariaHoras || 0);
       const hoursProvided = form.salida.tiempoReponerHoras !== undefined && form.salida.tiempoReponerHoras !== '';
@@ -2925,10 +2933,11 @@ function ReporteSalidaFormDialog({ open, documento, user, onClose, onSubmitted }
                     size="small"
                     multiline
                     minRows={2}
+                    required={category === 'salud' && !adjuntoFile}
                     label={
                       subtype === 'terapias'
-                        ? 'Diagnóstico de las terapias (Opcional)'
-                        : 'Motivo / observación (Opcional)'
+                        ? (!adjuntoFile ? 'Diagnóstico de las terapias *' : 'Diagnóstico de las terapias (Opcional)')
+                        : (!adjuntoFile ? 'Motivo / observación *' : 'Motivo / observación (Opcional)')
                     }
                     placeholder="Por favor describa de manera clara y detallada el motivo de su solicitud..."
                     value={form.salida.motivo}
