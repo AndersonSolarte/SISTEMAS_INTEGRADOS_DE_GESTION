@@ -843,13 +843,13 @@ function ReporteSalidaFormDialog({ open, documento, user, onClose, onSubmitted }
       return Boolean(form.salida.especialidadMedica && String(form.salida.especialidadMedica).trim());
     }
     if (subtype === 'terapias') {
-      return Number(form.salida.terapiasCount) > 0;
+      return (form.salida.terapiasList || []).length > 0;
     }
     if (subtype === 'otra') {
       return Boolean(otraDescripcion && String(otraDescripcion).trim());
     }
     return true;
-  }, [category, form.salida.especialidadMedica, form.salida.terapiasCount, otraDescripcion, subtype]);
+  }, [category, form.salida.especialidadMedica, form.salida.terapiasList, otraDescripcion, subtype]);
 
   const requiresViaticosFlow = shouldAskViaticos && form.viaticos?.requiereViaticos === true;
 
