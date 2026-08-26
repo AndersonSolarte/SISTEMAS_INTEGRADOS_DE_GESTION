@@ -4,7 +4,8 @@ const XLSX = require('xlsx');
 const ExcelJS = require('exceljs');
 const { Op } = require('sequelize');
 const {
-  PesvParqueaderoRegistro, PesvRuntValidacion, PesvSoatHistorico, PesvRtmHistorico, User
+  PesvParqueaderoRegistro, PesvRuntValidacion, PesvSoatHistorico, PesvRtmHistorico, User,
+  RecursoHumanoDocente, RecursoHumanoAdministrativo, PoblacionalCaracterizacion, PoblacionalMatriculado
 } = require('../models');
 const { sequelize } = require('../config/database');
 const { sendMailDirect, renderInstitutionalTemplate, escapeHtml } = require('../services/emailService');
@@ -555,8 +556,160 @@ const notifyExpiry = async (req, res) => {
   } catch (error) { return res.status(500).json({ success: false, message: 'No se pudo enviar la notificación' }); }
 };
 
+const lookupPersona = async (req, res) => {
+  try {
+    const rawIdentificacion = clean(req.query.identificacion, 60);
+    if (!rawIdentificacion || rawIdentificacion.trim().length < 3) {
+      return res.json({ success: true, found: false, data: null });
+    }
+    const cleanId = rawIdentificacion.replace(/[^a-zA-Z0-9]/g, '');
+
+    // 1. Buscar primero en registros existentes de Parqueaderos PESV
+    const pesvRow = await PesvParqueaderoRegistro.findOne({
+      where: sequelize.where(sequelize.fn('REGEXP_REPLACE', sequelize.col('identificacion'), '[^a-zA-Z0-9]', 'g'), cleanId),
+      order: [['id', 'DESC']]
+    });
+    if (pesvRow) {
+      return res.json({
+        success: true,
+        found: true,
+        source: 'Registros PESV Parqueaderos',
+        data: {
+          identificacion: pesvRow.identificacion || rawIdentificacion,
+          nombres_apellidos: pesvRow.nombres_apellidos || '',
+          correo: pesvRow.correo || '',
+          vinculacion: pesvRow.vinculacion || '',
+          dependencia_programa: pesvRow.dependencia_programa || '',
+          campus: pesvRow.campus || ''
+        }
+      });
+    }
+
+    // 2. Buscar en Usuarios del sistema SIAC
+    if (User) {
+      const userRow = await User.findOne({
+        where: sequelize.where(sequelize.fn('REGEXP_REPLACE', sequelize.col('username'), '[^a-zA-Z0-9]', 'g'), cleanId)
+      });
+      if (userRow) {
+        return res.json({
+          success: true,
+          found: true,
+          source: 'Usuarios del Sistema SIAC',
+          data: {
+            identificacion: userRow.username || rawIdentificacion,
+            nombres_apellidos: userRow.nombre || '',
+            correo: userRow.email || '',
+            vinculacion: userRow.role === 'DOCENTE' ? 'DOCENTE' : userRow.role === 'ADMINISTRATIVO' ? 'ADMINISTRATIVO' : userRow.cargo || 'ADMINISTRATIVO',
+            dependencia_programa: userRow.dependencia || userRow.programa || '',
+            campus: ''
+          }
+        });
+      }
+    }
+
+    // 3. Buscar en Recurso Humano Docentes
+    if (RecursoHumanoDocente) {
+      const docenteRow = await RecursoHumanoDocente.findOne({
+        where: sequelize.where(sequelize.fn('REGEXP_REPLACE', sequelize.col('identificacion'), '[^a-zA-Z0-9]', 'g'), cleanId),
+        order: [['anio', 'DESC'], ['id', 'DESC']]
+      });
+      if (docenteRow) {
+        return res.json({
+          success: true,
+          found: true,
+          source: 'Base de Docentes',
+          data: {
+            identificacion: docenteRow.identificacion || rawIdentificacion,
+            nombres_apellidos: docenteRow.docente || '',
+            correo: docenteRow.correo || '',
+            vinculacion: 'DOCENTE',
+            dependencia_programa: docenteRow.programa || docenteRow.facultad || '',
+            campus: ''
+          }
+        });
+      }
+    }
+
+    // 4. Buscar en Recurso Humano Administrativos
+    if (RecursoHumanoAdministrativo) {
+      const adminRow = await RecursoHumanoAdministrativo.findOne({
+        where: sequelize.where(sequelize.fn('REGEXP_REPLACE', sequelize.col('numero_cedula'), '[^a-zA-Z0-9]', 'g'), cleanId),
+        order: [['id', 'DESC']]
+      });
+      if (adminRow) {
+        return res.json({
+          success: true,
+          found: true,
+          source: 'Base de Administrativos',
+          data: {
+            identificacion: adminRow.numero_cedula || rawIdentificacion,
+            nombres_apellidos: adminRow.nombre_empleado || '',
+            correo: '',
+            vinculacion: 'ADMINISTRATIVO',
+            dependencia_programa: adminRow.dependencia || adminRow.vicerectoria || adminRow.cargo_especifico || '',
+            campus: ''
+          }
+        });
+      }
+    }
+
+    // 5. Buscar en Caracterización Estudiantil
+    if (PoblacionalCaracterizacion) {
+      const estudianteRow = await PoblacionalCaracterizacion.findOne({
+        where: sequelize.where(sequelize.fn('REGEXP_REPLACE', sequelize.col('no_identificacion'), '[^a-zA-Z0-9]', 'g'), cleanId),
+        order: [['anio', 'DESC'], ['id', 'DESC']]
+      });
+      if (estudianteRow) {
+        return res.json({
+          success: true,
+          found: true,
+          source: 'Base de Caracterización Estudiantil',
+          data: {
+            identificacion: estudianteRow.no_identificacion || rawIdentificacion,
+            nombres_apellidos: estudianteRow.apellidos_nombres || '',
+            correo: estudianteRow.correo_electronico || '',
+            vinculacion: 'ESTUDIANTE',
+            dependencia_programa: estudianteRow.programa || '',
+            campus: ''
+          }
+        });
+      }
+    }
+
+    // 6. Buscar en Matriculados
+    if (PoblacionalMatriculado) {
+      const matriculadoRow = await PoblacionalMatriculado.findOne({
+        where: sequelize.where(sequelize.fn('REGEXP_REPLACE', sequelize.col('numero_documento'), '[^a-zA-Z0-9]', 'g'), cleanId),
+        order: [['anio', 'DESC'], ['id', 'DESC']]
+      });
+      if (matriculadoRow) {
+        const fullNombre = [matriculadoRow.primer_nombre, matriculadoRow.segundo_nombre, matriculadoRow.primer_apellido, matriculadoRow.segundo_apellido]
+          .filter(Boolean).join(' ').trim();
+        return res.json({
+          success: true,
+          found: true,
+          source: 'Base de Matriculados',
+          data: {
+            identificacion: matriculadoRow.numero_documento || rawIdentificacion,
+            nombres_apellidos: fullNombre,
+            correo: '',
+            vinculacion: 'ESTUDIANTE',
+            dependencia_programa: matriculadoRow.programa || matriculadoRow.facultad || '',
+            campus: ''
+          }
+        });
+      }
+    }
+
+    return res.json({ success: true, found: false, data: null });
+  } catch (error) {
+    console.error('Error buscando persona por identificación:', error);
+    return res.status(500).json({ success: false, message: 'No se pudo buscar la persona' });
+  }
+};
+
 module.exports = {
   list, create, update, remove, importExcel, downloadExcelTemplate, notifyExpiry,
   startRuntValidation, captureManualRuntResult, getRuntValidation,
-  confirmRuntValidation, getRuntHistory
+  confirmRuntValidation, getRuntHistory, lookupPersona
 };

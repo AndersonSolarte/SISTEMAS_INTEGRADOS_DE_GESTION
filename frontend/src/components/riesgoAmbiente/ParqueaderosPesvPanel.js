@@ -202,7 +202,35 @@ function ParqueaderosPesvPanel({ onBack }) {
   const [runtForm, setRuntForm] = useState(EMPTY_RUNT_FORM);
   const [runtCopiedText, setRuntCopiedText] = useState('');
   const [history, setHistory] = useState({ open: false, row: null, loading: false, data: [] });
+  const [lookingUpPerson, setLookingUpPerson] = useState(false);
   const loadRequestRef = useRef(0);
+
+  const handleLookupPersona = async (identificacionValue) => {
+    const query = String(identificacionValue || form.identificacion || '').trim();
+    if (!query || query.length < 3) return;
+    setLookingUpPerson(true);
+    try {
+      const res = await gestionInformacionService.lookupPesvPersona(query);
+      if (res?.found && res?.data) {
+        setForm((prev) => ({
+          ...prev,
+          identificacion: res.data.identificacion || query,
+          nombres_apellidos: res.data.nombres_apellidos || prev.nombres_apellidos,
+          correo: res.data.correo || prev.correo,
+          vinculacion: res.data.vinculacion || prev.vinculacion,
+          dependencia_programa: res.data.dependencia_programa || prev.dependencia_programa,
+          campus: res.data.campus || prev.campus
+        }));
+        enqueueSnackbar(`Datos de ${res.data.nombres_apellidos} autocompletados desde ${res.source}`, { variant: 'success' });
+      } else {
+        enqueueSnackbar('No se encontraron datos de esta cédula en el sistema. Puede digitar los campos manualmente.', { variant: 'info' });
+      }
+    } catch (err) {
+      console.error('Error autocompletando persona:', err);
+    } finally {
+      setLookingUpPerson(false);
+    }
+  };
 
   const load = useCallback(async () => {
     const requestId = ++loadRequestRef.current;
@@ -394,6 +422,39 @@ function ParqueaderosPesvPanel({ onBack }) {
     vehiculo_servicio: catalogs.serviciosVehiculo || [], soat_entidad: catalogs.aseguradoras || [], rtm_cda: catalogs.centrosDiagnostico || []
   };
   const renderFormField = ([key, label]) => {
+    if (key === 'identificacion') {
+      return (
+        <TextField
+          key={key}
+          label={label}
+          value={form[key]}
+          onChange={updateField(key)}
+          onBlur={(e) => e.target.value.trim().length >= 3 && handleLookupPersona(e.target.value)}
+          onKeyDown={(e) => e.key === 'Enter' && (e.preventDefault(), handleLookupPersona(form.identificacion))}
+          placeholder="Ej: 1085327166"
+          helperText="Al digitar la cédula y presionar Enter o cambiar de campo, se autocompletarán los datos."
+          fullWidth
+          size="small"
+          InputProps={{
+            endAdornment: (
+              <InputAdornment position="end">
+                <Tooltip title="Buscar persona por cédula en bases institucionales">
+                  <span>
+                    <IconButton
+                      size="small"
+                      onClick={() => handleLookupPersona(form.identificacion)}
+                      disabled={lookingUpPerson || !form.identificacion?.trim()}
+                    >
+                      {lookingUpPerson ? <CircularProgress size={16} /> : <SearchRoundedIcon fontSize="small" />}
+                    </IconButton>
+                  </span>
+                </Tooltip>
+              </InputAdornment>
+            )
+          }}
+        />
+      );
+    }
     const options = formCatalogOptions[key];
     if (options) return (
       <Autocomplete

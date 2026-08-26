@@ -199,6 +199,8 @@ const gestionInformacionService = {
     api.delete(`/planeacion/gestion-informacion/infraestructura/edificaciones-referencia/${id}`).then((r) => r.data),
   getPesvParqueaderos: (params = {}) =>
     api.get('/pesv/parqueaderos', { params, timeout: 60000 }).then((r) => r.data),
+  lookupPesvPersona: (identificacion) =>
+    api.get('/pesv/parqueaderos/lookup-persona', { params: { identificacion } }).then((r) => r.data),
   createPesvParqueadero: (payload) =>
     api.post('/pesv/parqueaderos', payload).then((r) => r.data),
   updatePesvParqueadero: (id, payload) =>
