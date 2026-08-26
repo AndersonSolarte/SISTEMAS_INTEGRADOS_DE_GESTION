@@ -37,13 +37,13 @@ const EMPTY_RUNT_FORM = {
   vehiculo_fecha_matricula: '', vehiculo_clase: '', vehiculo_servicio: '', vehiculo_modelo: '', rtm_fecha_exigibilidad: ''
 };
 const STATUS_STYLE = {
-  vencido: { color: '#991b1b', bgcolor: '#fee2e2', border: '#fecaca' },
-  proximo: { color: '#92400e', bgcolor: '#fef3c7', border: '#fde68a' },
-  vigente: { color: '#166534', bgcolor: '#dcfce7', border: '#bbf7d0' },
-  no_exigible: { color: '#166534', bgcolor: '#dcfce7', border: '#86efac' },
-  sin_registro: { color: '#9a3412', bgcolor: '#ffedd5', border: '#fdba74' },
-  no_aplica: { color: '#155e75', bgcolor: '#cffafe', border: '#67e8f9' },
-  sin_fecha: { color: '#475569', bgcolor: '#f1f5f9', border: '#e2e8f0' }
+  vencido: { dotColor: '#ef4444', shadow: '0 0 8px rgba(239,68,68,0.7)', color: '#991b1b', bgcolor: '#fee2e2', border: '#fecaca' },
+  proximo: { dotColor: '#f59e0b', shadow: '0 0 8px rgba(245,158,11,0.7)', color: '#92400e', bgcolor: '#fef3c7', border: '#fde68a' },
+  vigente: { dotColor: '#22c55e', shadow: '0 0 8px rgba(34,197,94,0.7)', color: '#166534', bgcolor: '#dcfce7', border: '#bbf7d0' },
+  no_exigible: { dotColor: '#0284c7', shadow: '0 0 8px rgba(2,132,199,0.7)', color: '#0369a1', bgcolor: '#e0f2fe', border: '#bae6fd' },
+  sin_registro: { dotColor: '#ea580c', shadow: '0 0 8px rgba(234,88,12,0.7)', color: '#9a3412', bgcolor: '#ffedd5', border: '#fdba74' },
+  no_aplica: { dotColor: '#0891b2', shadow: '0 0 8px rgba(8,145,178,0.7)', color: '#155e75', bgcolor: '#cffafe', border: '#67e8f9' },
+  sin_fecha: { dotColor: '#64748b', shadow: '0 0 6px rgba(100,116,139,0.5)', color: '#475569', bgcolor: '#f1f5f9', border: '#e2e8f0' }
 };
 const RTM_RULES = Object.freeze({
   MOTO: { firstReviewYears: 2, renewalYears: 1, classes: ['MOTOCICLETA', 'MOTOCICLO', 'MOTOTRICICLO', 'CUATRIMOTO', 'CICLOMOTOR', 'TRICIMOTO'] },
@@ -149,8 +149,39 @@ function ExpiryCell({ type, date, rawText, status, row, onNotify, notifying }) {
   const style = STATUS_STYLE[status?.code] || STATUS_STYLE.sin_fecha;
   return (
     <Stack spacing={.65} alignItems="flex-start">
-      <Typography variant="body2" sx={{ fontWeight: 800, color: '#0f172a' }}>{date ? formatDate(date) : rawText || 'Sin información'}</Typography>
-      <Chip size="small" label={expiryLabel(status)} sx={{ height: 23, color: style.color, bgcolor: style.bgcolor, border: `1px solid ${style.border}`, fontWeight: 800, fontSize: 11 }} />
+      <Stack direction="row" spacing={0.7} alignItems="center">
+        <Box
+          title={`Semáforo: ${status?.label || 'Sin fecha'}`}
+          sx={{
+            width: 8,
+            height: 8,
+            borderRadius: '50%',
+            bgcolor: style.dotColor,
+            boxShadow: style.shadow,
+            flexShrink: 0
+          }}
+        />
+        <Typography variant="body2" sx={{ fontWeight: 800, color: '#0f172a' }}>
+          {date ? formatDate(date) : rawText || 'Sin información'}
+        </Typography>
+      </Stack>
+      <Chip
+        size="small"
+        icon={
+          <Box
+            sx={{
+              width: 6,
+              height: 6,
+              borderRadius: '50%',
+              bgcolor: style.dotColor,
+              ml: '7px !important',
+              mr: '-3px !important'
+            }}
+          />
+        }
+        label={expiryLabel(status)}
+        sx={{ height: 23, color: style.color, bgcolor: style.bgcolor, border: `1px solid ${style.border}`, fontWeight: 800, fontSize: 11 }}
+      />
       {date && status?.code !== 'vigente' && (
         <Button size="small" startIcon={notifying ? <CircularProgress size={13} /> : <EmailRoundedIcon />} disabled={notifying || !row.correo} onClick={() => onNotify(row, type)} sx={{ p: 0, minWidth: 0, textTransform: 'none', fontWeight: 800, fontSize: 11.5 }}>
           Notificar
