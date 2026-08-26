@@ -149,31 +149,19 @@ function ExpiryCell({ type, date, rawText, status, row, onNotify, notifying }) {
   const style = STATUS_STYLE[status?.code] || STATUS_STYLE.sin_fecha;
   return (
     <Stack spacing={.65} alignItems="flex-start">
-      <Stack direction="row" spacing={0.7} alignItems="center">
-        <Box
-          title={`Semáforo: ${status?.label || 'Sin fecha'}`}
-          sx={{
-            width: 8,
-            height: 8,
-            borderRadius: '50%',
-            bgcolor: style.dotColor,
-            boxShadow: style.shadow,
-            flexShrink: 0
-          }}
-        />
-        <Typography variant="body2" sx={{ fontWeight: 800, color: '#0f172a' }}>
-          {date ? formatDate(date) : rawText || 'Sin información'}
-        </Typography>
-      </Stack>
+      <Typography variant="body2" sx={{ fontWeight: 800, color: '#0f172a' }}>
+        {date ? formatDate(date) : rawText || 'Sin información'}
+      </Typography>
       <Chip
         size="small"
         icon={
           <Box
             sx={{
-              width: 6,
-              height: 6,
+              width: 7,
+              height: 7,
               borderRadius: '50%',
               bgcolor: style.dotColor,
+              boxShadow: style.shadow,
               ml: '7px !important',
               mr: '-3px !important'
             }}
