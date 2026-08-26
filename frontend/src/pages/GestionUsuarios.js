@@ -1166,6 +1166,11 @@ function GestionUsuarios() {
         if (isRiesgoAmbientePermission) {
           if (!isSelected) {
             if (key.startsWith('gestion_riesgo_ambiente.') && !nextModules.includes('gestion_riesgo_ambiente')) nextModules.push('gestion_riesgo_ambiente');
+            if (key === 'gestion_riesgo_ambiente') {
+              ['gestion_riesgo_ambiente.seguridad_salud_trabajo', 'gestion_riesgo_ambiente.gestion_ambiental', 'gestion_riesgo_ambiente.seguridad_vial'].forEach((subKey) => {
+                if (!nextModules.includes(subKey)) nextModules.push(subKey);
+              });
+            }
             if (!nextModules.includes('estadistica_institucional')) nextModules.push('estadistica_institucional');
             if (!nextMenu.includes('gestion_informacion')) nextMenu.push('gestion_informacion');
           } else if (key === 'gestion_riesgo_ambiente') {
@@ -2885,6 +2890,37 @@ function GestionUsuarios() {
                               ))}
                             </Grid>
                           </FormGroup>
+
+                          {modulePermissionsForm.allowedModules.includes('gestion_riesgo_ambiente') && (
+                            <Box sx={{ mt: 1.4, pt: 1.3, borderTop: '1px solid #dbeafe' }}>
+                              <Typography sx={{ fontWeight: 900, color: '#1e3a8a', mb: 0.35 }}>Gestión del Riesgo y Ambiente</Typography>
+                              <Typography variant="body2" sx={{ color: '#64748b', mb: 1 }}>
+                                Selecciona los 3 submódulos específicos a los que tendrá acceso este usuario:
+                              </Typography>
+                              <FormGroup>
+                                <Grid container spacing={0.5}>
+                                  {[
+                                    { key: 'gestion_riesgo_ambiente.seguridad_salud_trabajo', label: 'Seguridad y Salud en el Trabajo (SST)' },
+                                    { key: 'gestion_riesgo_ambiente.gestion_ambiental', label: 'Gestión Ambiental' },
+                                    { key: 'gestion_riesgo_ambiente.seguridad_vial', label: 'Plan Estratégico de Seguridad Vial (PESV)' }
+                                  ].map((item) => (
+                                    <Grid item xs={12} sm={6} md={4} key={`riesgo-${item.key}`}>
+                                      <FormControlLabel
+                                        control={
+                                          <Checkbox
+                                            checked={modulePermissionsForm.allowedModules.includes(item.key)}
+                                            onChange={() => handleTogglePermission('allowedModules', item.key)}
+                                            size="small"
+                                          />
+                                        }
+                                        label={item.label}
+                                      />
+                                    </Grid>
+                                  ))}
+                                </Grid>
+                              </FormGroup>
+                            </Box>
+                          )}
 
                           {modulePermissionsForm.allowedModules.includes('vicerrectoria_academica') && (
                             <Box sx={{ mt: 1.4, pt: 1.3, borderTop: '1px solid #dbeafe' }}>
