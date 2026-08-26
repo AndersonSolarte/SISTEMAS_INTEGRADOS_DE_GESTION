@@ -70,6 +70,7 @@ app.use('/api/reporte-salida', require('./routes/reporteSalidaRoutes'));
 app.use('/api/desplazamientos-viaticos', require('./routes/desplazamientoViaticosRoutes'));
 app.use('/api/legalizacion-viaticos', require('./routes/legalizacionViaticosRoutes'));
 app.use('/api/cronograma-movilidad', require('./routes/cronogramaMovilidadRoutes'));
+app.use('/api/pesv/parqueaderos', require('./routes/pesvParqueaderoRoutes'));
 app.use('/api/planeacion/gestion-informacion/saber-pro', require('./routes/saberProAnalyticsRoutes'));
 app.use('/api/planeacion/gestion-informacion/saber-pro/consulta', require('./routes/consultaValidacionRoutes'));
 app.use('/api/admin/activity', require('./routes/activityRoutes'));

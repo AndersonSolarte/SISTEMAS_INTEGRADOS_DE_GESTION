@@ -138,6 +138,7 @@ import SaberProAgregadosDashboard from '../components/saberPro/SaberProAgregados
 import SaberProLandingPage from '../components/saberPro/SaberProLandingPage';
 import RecursoHumanoLandingPage from '../components/recursoHumano/RecursoHumanoLandingPage';
 import InternacionalizacionLandingPage from '../components/internacionalizacion/InternacionalizacionLandingPage';
+import RiesgoAmbienteLandingPage from '../components/riesgoAmbiente/RiesgoAmbienteLandingPage';
 import ContextoExternoGestionPanel from '../components/contextoExterno/ContextoExternoGestionPanel';
 import { ROLES } from '../constants/roles';
 import { ACADEMIC_PROGRAMS, ACADEMIC_PROGRAM_LEVELS, getAcademicProgramPermissionKey } from '../constants/academicPrograms';
@@ -176,7 +177,20 @@ function DocFilterPanel({
     });
   }, [options]);
 
-  const valueSet = useMemo(() => new Set((value || []).map((v) => String(v))), [value]);
+  const allOptionIds = useMemo(() => normalizedOptions.map((o) => o.id), [normalizedOptions]);
+  const totalCount = normalizedOptions.length;
+
+  const rawValues = useMemo(() => (Array.isArray(value) ? value.map((v) => String(v)) : []), [value]);
+  const isExplicitNone = rawValues.length === 1 && rawValues[0] === '__NONE__';
+  const isImplicitAll = !rawValues.length;
+  const isExplicitAll = !isImplicitAll && !isExplicitNone && totalCount > 0 && rawValues.length >= totalCount;
+  const isAllSelected = !single && (isImplicitAll || isExplicitAll);
+
+  const valueSet = useMemo(() => {
+    if (isImplicitAll || isExplicitAll) return new Set(allOptionIds);
+    if (isExplicitNone) return new Set();
+    return new Set(rawValues);
+  }, [isImplicitAll, isExplicitAll, isExplicitNone, rawValues, allOptionIds]);
 
   const computePosition = useCallback(() => {
     if (!triggerRef.current) return;
@@ -235,10 +249,7 @@ function DocFilterPanel({
 
   const visibleFiltered = useMemo(() => filtered.slice(0, 100), [filtered]);
 
-  const selectedCount = valueSet.size;
-  const totalCount = normalizedOptions.length;
-  const allSelected = selectedCount === 0 || selectedCount === totalCount;
-  const isSel = useCallback((id) => valueSet.has(String(id)), [valueSet]);
+  const selectedCount = isExplicitNone ? 0 : (isAllSelected ? totalCount : valueSet.size);
 
   const toggle = (id) => {
     const key = String(id);
@@ -247,33 +258,58 @@ function DocFilterPanel({
       setOpen(false);
       return;
     }
+
+    if (isAllSelected) {
+      const next = allOptionIds.filter((v) => v !== key);
+      onChange(next);
+      return;
+    }
+
+    if (isExplicitNone) {
+      onChange([key]);
+      return;
+    }
+
     const currentValues = Array.from(valueSet);
-    const next = isSel(key)
+    const currentlySelected = valueSet.has(key);
+    let next = currentlySelected
       ? currentValues.filter((v) => v !== key)
       : [...currentValues, key];
+
+    if (totalCount > 0 && next.length >= totalCount) {
+      next = [];
+    } else if (next.length === 0) {
+      next = ['__NONE__'];
+    }
 
     onChange(next);
   };
 
   const toggleAll = () => {
-    if (selectedCount === 0 || selectedCount === totalCount) {
-      onChange([]);
+    if (isAllSelected) {
+      onChange(['__NONE__']);
     } else {
-      onChange(normalizedOptions.map((o) => o.id));
+      onChange([]);
     }
   };
 
   const displayText = useMemo(() => {
-    if (selectedCount === 0) return single ? 'SELECCIONAR' : 'TODOS';
-    if (selectedCount === 1) {
+    if (single) {
+      if (rawValues.length > 0 && rawValues[0] !== '__NONE__') {
+        const sel = normalizedOptions.find((o) => o.id === String(rawValues[0]));
+        return sel ? sel.nombre : String(rawValues[0]);
+      }
+      return 'SELECCIONAR';
+    }
+
+    if (isAllSelected) return 'TODOS';
+    if (isExplicitNone) return 'SELECCIONAR';
+    if (valueSet.size === 1) {
       const singleOption = normalizedOptions.find((o) => valueSet.has(o.id));
       return singleOption ? singleOption.nombre : '1 SELECCIONADO';
     }
-    if (selectedCount === totalCount && totalCount > 1) {
-      return 'TODOS';
-    }
-    return `${selectedCount} SELECCIONADOS`;
-  }, [selectedCount, totalCount, normalizedOptions, valueSet, single]);
+    return `${valueSet.size} SELECCIONADOS`;
+  }, [single, rawValues, isAllSelected, isExplicitNone, normalizedOptions, valueSet]);
 
   const C = accentColor;
 
@@ -308,8 +344,8 @@ function DocFilterPanel({
           className="doc-filter-row"
           style={{ padding: '8px 14px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 10, borderBottom: '1px solid #f1f5f9', background: 'transparent' }}
         >
-          <div style={{ width: 16, height: 16, flexShrink: 0, borderRadius: 4, border: `2px solid ${allSelected ? C : '#cbd5e1'}`, background: allSelected ? C : '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-            {allSelected && <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="3.2"><polyline points="20 6 9 17 4 12"/></svg>}
+          <div style={{ width: 16, height: 16, flexShrink: 0, borderRadius: 4, border: `2px solid ${isAllSelected ? C : '#cbd5e1'}`, background: isAllSelected ? C : '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            {isAllSelected && <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="3.2"><polyline points="20 6 9 17 4 12"/></svg>}
           </div>
           <span style={{ fontSize: 11, fontWeight: 800, color: C, letterSpacing: '0.5px' }}>
             SELECCIONAR TODOS ({totalCount})
@@ -366,6 +402,8 @@ function DocFilterPanel({
     document.body
   ) : null;
 
+  const hasFilterSubset = !single && !isAllSelected && !isExplicitNone;
+
   return (
     <Box ref={triggerRef} sx={{ position: 'relative', width: '100%', opacity: disabled ? 0.5 : 1, pointerEvents: disabled ? 'none' : 'auto' }}>
       <Box
@@ -376,8 +414,8 @@ function DocFilterPanel({
           p: '8px 14px',
           minHeight: 52,
           width: '100%',
-          bgcolor: selectedCount > 0 ? '#eff6ff' : '#ffffff',
-          border: `1.5px solid ${selectedCount > 0 ? C : '#cbd5e1'}`,
+          bgcolor: hasFilterSubset ? '#eff6ff' : '#ffffff',
+          border: `1.5px solid ${hasFilterSubset ? C : '#cbd5e1'}`,
           display: 'flex',
           justifyContent: 'space-between',
           alignItems: 'center',
@@ -385,8 +423,8 @@ function DocFilterPanel({
           transition: 'all 0.15s ease-in-out',
           userSelect: 'none',
           boxSizing: 'border-box',
-          boxShadow: selectedCount > 0 ? '0 2px 8px rgba(37, 99, 235, 0.12)' : 'none',
-          '&:hover': { borderColor: C, bgcolor: selectedCount > 0 ? '#dbeafe' : '#f8fafc' }
+          boxShadow: hasFilterSubset ? '0 2px 8px rgba(37, 99, 235, 0.12)' : 'none',
+          '&:hover': { borderColor: C, bgcolor: hasFilterSubset ? '#dbeafe' : '#f8fafc' }
         }}
       >
         <Box sx={{ minWidth: 0, flex: 1 }}>
@@ -398,7 +436,7 @@ function DocFilterPanel({
           </Typography>
         </Box>
         <Stack direction="row" alignItems="center" spacing={0.6} sx={{ flexShrink: 0 }}>
-          {selectedCount > 0 && (
+          {hasFilterSubset && (
             <Box
               onClick={(e) => {
                 e.stopPropagation();
@@ -483,6 +521,7 @@ function CaracterizacionExportMenu({ onExportSummary, onExportRecords, disabled 
 
 const BASES = [
   { key: 'poblacional', label: 'Poblacional', description: 'Históricos de inscritos, admitidos, matriculados y graduados.' },
+  { key: 'gestion_riesgo_ambiente', label: 'Gestión del Riesgo y Ambiente', description: 'Seguridad y salud en el trabajo, gestión ambiental y seguridad vial.' },
   { key: 'georreferencia', label: 'Georreferencia', description: 'Catálogo oficial DIVIPOLA para departamentos y municipios.' },
   { key: 'biblioteca', label: 'Biblioteca', description: 'Indicadores de uso, colecciones y servicios bibliográficos.' },
   { key: 'medios_educativos', label: 'Medios Educativos', description: 'Seguimiento de recursos y apoyos para docencia.' },
@@ -1667,25 +1706,91 @@ const getAutoStatsFilters = ({ programasDisponibles = [], facultadesDisponibles 
 };
 
 const applyStatsFiltersToRows = ({ rows = [], filters = initialStatsFilters, programasDisponibles = [], facultadesDisponibles = [], aniosDisponibles = [], periodosDisponibles = [] }) => {
-  const allProgramasSelected = programasDisponibles.length > 0 && (filters?.programas || []).length === programasDisponibles.length;
-  const allFacultadesSelected = facultadesDisponibles.length > 0 && (filters?.facultades || []).length === facultadesDisponibles.length;
-  const allAniosSelected = aniosDisponibles.length > 0 && (filters?.anios || []).length === aniosDisponibles.length;
-  const allPeriodosSelected = periodosDisponibles.length > 0 && (filters?.periodos || []).length === periodosDisponibles.length;
-  const programasSet = new Set((filters?.programas || []).map((item) => normalizeProgramKey(item)));
-  const facultadesSet = new Set((filters?.facultades || []).map((item) => normalizeRawProgramKey(item)));
-  const aniosSet = new Set(filters?.anios || []);
-  const periodosSet = new Set(filters?.periodos || []);
+  const selectedProgs = filters?.programas || [];
+  const selectedFacs = filters?.facultades || [];
+  const selectedAnios = filters?.anios || [];
+  const selectedPeriodos = filters?.periodos || [];
+
+  const isImplicitAllProgs = !selectedProgs.length;
+  const isExplicitNoneProgs = selectedProgs.length === 1 && selectedProgs[0] === '__NONE__';
+  const allProgramasSelected = isImplicitAllProgs || (programasDisponibles.length > 0 && selectedProgs.length >= programasDisponibles.length);
+  const programasSet = new Set(selectedProgs.map((item) => normalizeProgramKey(item)));
+
+  const isImplicitAllFacs = !selectedFacs.length;
+  const isExplicitNoneFacs = selectedFacs.length === 1 && selectedFacs[0] === '__NONE__';
+  const allFacultadesSelected = isImplicitAllFacs || (facultadesDisponibles.length > 0 && selectedFacs.length >= facultadesDisponibles.length);
+  const facultadesSet = new Set(selectedFacs.map((item) => normalizeRawProgramKey(item)));
+
+  const isImplicitAllAnios = !selectedAnios.length;
+  const isExplicitNoneAnios = selectedAnios.length === 1 && selectedAnios[0] === '__NONE__';
+  const allAniosSelected = isImplicitAllAnios || (aniosDisponibles.length > 0 && selectedAnios.length >= aniosDisponibles.length);
+  const aniosSet = new Set(selectedAnios.map((x) => String(x)));
+
+  const isImplicitAllPeriodos = !selectedPeriodos.length;
+  const isExplicitNonePeriodos = selectedPeriodos.length === 1 && selectedPeriodos[0] === '__NONE__';
+  const allPeriodosSelected = isImplicitAllPeriodos || (periodosDisponibles.length > 0 && selectedPeriodos.length >= periodosDisponibles.length);
+
+  const normalizedPeriodosSet = new Set(selectedPeriodos.map((p) => String(p).trim().toUpperCase()));
+  const yearsWithPeriodFilter = new Set();
+  selectedPeriodos.forEach((p) => {
+    const yr = String(p).split('-')[0];
+    if (yr && /^\d{4}$/.test(yr)) yearsWithPeriodFilter.add(yr);
+  });
 
   return rows.filter((row) => {
     const { periodLabel } = getRowPeriodMeta(row);
     const programa = normalizeProgramKey(row.programa);
     const facultad = normalizeRawProgramKey(getRowFacultyValue(row));
     const anio = String(Number(row.anio) || '');
-    if (!allProgramasSelected && programasSet.size > 0 && !programasSet.has(programa)) return false;
-    if (!allFacultadesSelected && facultadesSet.size > 0 && !facultadesSet.has(facultad)) return false;
-    if (!allAniosSelected && aniosSet.size > 0 && !aniosSet.has(anio)) return false;
-    if (!allPeriodosSelected && periodosSet.size > 0 && !periodosSet.has(periodLabel)) return false;
+    const normPeriodLabel = String(periodLabel || '').toUpperCase();
+    const altPeriodLabel = normPeriodLabel.replace('-1', '-I').replace('-2', '-II');
+    const slotToken = String(periodLabel || '').split('-')[1] || '';
+    const romanSlotToken = slotToken === '1' ? 'I' : slotToken === '2' ? 'II' : slotToken;
+
+    if (isExplicitNoneProgs || (!allProgramasSelected && programasSet.size > 0 && !programasSet.has(programa))) return false;
+    if (isExplicitNoneFacs || (!allFacultadesSelected && facultadesSet.size > 0 && !facultadesSet.has(facultad))) return false;
+    if (isExplicitNoneAnios || (!allAniosSelected && aniosSet.size > 0 && !aniosSet.has(anio))) return false;
+
+    if (isExplicitNonePeriodos) return false;
+    if (!allPeriodosSelected && normalizedPeriodosSet.size > 0) {
+      if (yearsWithPeriodFilter.has(anio)) {
+        const matchesPeriod = normalizedPeriodosSet.has(normPeriodLabel) ||
+                              normalizedPeriodosSet.has(altPeriodLabel) ||
+                              normalizedPeriodosSet.has(slotToken) ||
+                              normalizedPeriodosSet.has(romanSlotToken);
+        if (!matchesPeriod) return false;
+      } else if (!yearsWithPeriodFilter.size) {
+        const matchesSlot = normalizedPeriodosSet.has(slotToken) || normalizedPeriodosSet.has(romanSlotToken);
+        if (!matchesSlot) return false;
+      }
+    }
+
     return true;
+  });
+};
+
+const getFacetFilteredRows = ({
+  rows = [],
+  filters = initialStatsFilters,
+  excludeKey = '',
+  programasDisponibles = [],
+  facultadesDisponibles = [],
+  aniosDisponibles = [],
+  periodosDisponibles = []
+}) => {
+  const facetFilters = {
+    programas: excludeKey === 'programas' ? [] : (filters?.programas || []),
+    facultades: excludeKey === 'facultades' ? [] : (filters?.facultades || []),
+    anios: excludeKey === 'anios' ? [] : (filters?.anios || []),
+    periodos: excludeKey === 'periodos' ? [] : (filters?.periodos || [])
+  };
+  return applyStatsFiltersToRows({
+    rows,
+    filters: facetFilters,
+    programasDisponibles,
+    facultadesDisponibles,
+    aniosDisponibles,
+    periodosDisponibles
   });
 };
 
@@ -2292,87 +2397,20 @@ function GestionInformacion() {
     autoFilterCatalogSignatureRef.current = {};
   }, []);
 
-  const handleMultiFilterChange = (key, value, options = []) => {
+  const handleMultiFilterChange = (key, value) => {
     const currentSection = statSection;
     setSectionFilterMode(currentSection, 'manual');
-    const list = typeof value === 'string' ? value.split(',') : value;
-    const allYearValues = aniosDisponibles.map((x) => String(x));
-    const allPeriodLabels = periodosDisponibles.map((x) => x.label);
-    const getYearFromPeriodLabel = (label) => String(label || '').split('-')[0];
-    const getPeriodsForYears = (years = []) =>
-      periodosDisponibles
-        .filter((item) => years.includes(getYearFromPeriodLabel(item.label)))
-        .map((item) => item.label);
+    const list = typeof value === 'string' ? value.split(',') : (Array.isArray(value) ? value : []);
+    const clean = list.filter((item) => item !== '__ALL__');
 
-    if (list.includes('__ALL__')) {
-      setStatsFiltersBySection((prev) => {
-        const currentFilters = prev[currentSection] || initialStatsFilters;
-        const current = Array.isArray(currentFilters[key]) ? currentFilters[key] : [];
-        const allSelected = options.length > 0 && current.length === options.length;
-        const nextValue = allSelected ? [] : [...options];
-
-        if (key === 'anios') {
-          const nextPeriods = nextValue.length > 0 ? getPeriodsForYears(nextValue) : [];
-          return {
-            ...prev,
-            [currentSection]: { ...currentFilters, anios: nextValue, periodos: nextPeriods }
-          };
-        }
-
-        if (key === 'periodos') {
-          const nextYears = nextValue.length > 0
-            ? Array.from(new Set(nextValue.map(getYearFromPeriodLabel))).filter((y) => allYearValues.includes(y))
-            : [];
-          return {
-          ...prev,
-          [currentSection]: { ...currentFilters, periodos: nextValue, anios: nextYears }
-        };
-      }
-
-        if (key === 'facultades') {
-          return {
-            ...prev,
-            [currentSection]: { ...currentFilters, facultades: nextValue }
-          };
-        }
-
-        return {
-          ...prev,
-          [currentSection]: { ...currentFilters, [key]: nextValue }
-        };
-      });
-      return;
-    }
-    const clean = list.filter((item) => item !== '__ALL__' && options.includes(item));
     setStatsFiltersBySection((prev) => {
       const currentFilters = prev[currentSection] || initialStatsFilters;
-      if (key === 'anios') {
-        const nextPeriods = clean.length > 0 ? getPeriodsForYears(clean) : allPeriodLabels;
-        return {
-          ...prev,
-          [currentSection]: { ...currentFilters, anios: clean, periodos: nextPeriods }
-        };
-      }
-
-      if (key === 'periodos') {
-        const yearsFromPeriods = Array.from(new Set(clean.map(getYearFromPeriodLabel))).filter((y) => allYearValues.includes(y));
-        const nextYears = clean.length > 0 ? yearsFromPeriods : allYearValues;
-        return {
-          ...prev,
-          [currentSection]: { ...currentFilters, periodos: clean, anios: nextYears }
-        };
-      }
-
-      if (key === 'facultades') {
-        return {
-          ...prev,
-          [currentSection]: { ...currentFilters, facultades: clean }
-        };
-      }
-
       return {
         ...prev,
-        [currentSection]: { ...currentFilters, [key]: clean }
+        [currentSection]: {
+          ...currentFilters,
+          [key]: clean
+        }
       };
     });
   };
@@ -4645,7 +4683,7 @@ function GestionInformacion() {
   };
 
   const enterCard = (key) => {
-    if (!['poblacional', 'saber_pro', 'recurso_humano', 'internacionalizacion', 'gestion_procesos', 'registros_calificados_acreditacion', 'infraestructura_fisica', 'plan_accion', 'vicerrectoria_academica', 'vicerrectoria_financiera', 'activity_monitor', 'security_application'].includes(key)) {
+    if (!['poblacional', 'gestion_riesgo_ambiente', 'saber_pro', 'recurso_humano', 'internacionalizacion', 'gestion_procesos', 'registros_calificados_acreditacion', 'infraestructura_fisica', 'plan_accion', 'vicerrectoria_academica', 'vicerrectoria_financiera', 'activity_monitor', 'security_application'].includes(key)) {
       enqueueSnackbar('Modulo en construccion. La estructura ya quedo lista para activarlo.', { variant: 'info' });
       return;
     }
@@ -7309,7 +7347,7 @@ const renderCategoryBars = (items = [], options = {}) => {
               placeholder="Buscar programa..."
               options={caracterizacionProgramOptions}
               value={selectedCaracterizacionPrograms}
-              onChange={(nextValues) => handleMultiFilterChange('programas', nextValues, caracterizacionProgramOptions)}
+              onChange={(nextValues) => handleMultiFilterChange('programas', nextValues)}
               accentColor="#3155a6"
               disabled={caracterizacionCatalogsLoading}
             />
@@ -8276,123 +8314,48 @@ const renderCategoryBars = (items = [], options = {}) => {
     const allPeriodFilterOptions = allPeriodObjs.map((p) => p.label || p);
     const allYearOptions = aniosDisponibles.map((x) => String(x));
 
-    const buildProgramOptionsFromRows = (rows = []) => {
-      const labelByKey = new Map();
-      rows.forEach((row) => {
-        const rawProgram = String(row.programa || '').replace(/\s+/g, ' ').trim();
-        const key = normalizeProgramKey(rawProgram);
-        if (!key) return;
-        const existing = labelByKey.get(key);
-        labelByKey.set(key, selectPreferredProgramLabel(existing, rawProgram));
-      });
-      return Array.from(labelByKey.values()).sort((a, b) => a.localeCompare(b, 'es'));
-    };
-    const buildFacultyOptionsFromRows = (rows = []) => {
-      const labelByKey = new Map();
-      rows.forEach((row) => {
-        const rawFacultad = String(getRowFacultyValue(row)).replace(/\s+/g, ' ').trim();
-        const key = normalizeRawProgramKey(rawFacultad);
-        if (!key) return;
-        if (!labelByKey.has(key)) labelByKey.set(key, rawFacultad);
-      });
-      return Array.from(labelByKey.values()).sort((a, b) => a.localeCompare(b, 'es'));
-    };
-
     const getGraduadosFacetRows = (excludeKey = '') => {
-      const programaBaseOptions = programasDisponibles;
-      const facultadBaseOptions = facultadesDisponibles;
-      const allProgramasSelected = programaBaseOptions.length > 0 && (activeStatsFilters.programas || []).length === programaBaseOptions.length;
-      const allFacultadesSelected = facultadBaseOptions.length > 0 && (activeStatsFilters.facultades || []).length === facultadBaseOptions.length;
-      const allAniosSelected = allYearOptions.length > 0 && (activeStatsFilters.anios || []).length === allYearOptions.length;
-      const allPeriodosSelected = allPeriodFilterOptions.length > 0 && (activeStatsFilters.periodos || []).length === allPeriodFilterOptions.length;
-      const programasSet = new Set((activeStatsFilters.programas || []).map((item) => normalizeProgramKey(item)));
-      const facultadesSet = new Set((activeStatsFilters.facultades || []).map((item) => normalizeRawProgramKey(item)));
-      const aniosSet = new Set(activeStatsFilters.anios || []);
-      const periodosSet = new Set(activeStatsFilters.periodos || []);
-      return (activeSectionCatalog.rows || [])
-        .filter((row) => row.subcategoria === 'Graduados')
-        .filter((row) => {
-          const { periodLabel } = getRowPeriodMeta(row);
-          const anio = String(Number(row.anio) || '');
-          if (excludeKey !== 'programas' && !allProgramasSelected && programasSet.size > 0 && !programasSet.has(normalizeProgramKey(row.programa))) return false;
-          if (excludeKey !== 'facultades' && !allFacultadesSelected && facultadesSet.size > 0 && !facultadesSet.has(normalizeRawProgramKey(getRowFacultyValue(row)))) return false;
-          if (excludeKey !== 'anios' && !allAniosSelected && aniosSet.size > 0 && !aniosSet.has(anio)) return false;
-          if (excludeKey !== 'periodos' && !allPeriodosSelected && periodosSet.size > 0 && !periodosSet.has(periodLabel)) return false;
-          return true;
-        });
+      return getFacetFilteredRows({
+        rows: (activeSectionCatalog.rows || []).filter((row) => row.subcategoria === 'Graduados'),
+        filters: activeStatsFilters,
+        excludeKey,
+        programasDisponibles,
+        facultadesDisponibles,
+        aniosDisponibles: allYearOptions,
+        periodosDisponibles: allPeriodFilterOptions
+      });
     };
 
-    const getDynamicGradPeriodosOpts = () => {
-      const selectedYears = activeStatsFilters.anios || [];
-      const selectedProgs = activeStatsFilters.programas || [];
-      let filtered = allPeriodObjs;
-      if (selectedYears.length > 0) {
-        const yearSet = new Set(selectedYears.map((y) => String(y)));
-        filtered = filtered.filter((p) => {
-          const yr = String(p.label || p).split('-')[0];
-          return yearSet.has(yr);
-        });
-      }
-      if (selectedProgs.length > 0) {
-        const facetRows = getGraduadosFacetRows('periodos');
-        if (facetRows.length > 0) {
-          const normProgsSet = new Set(selectedProgs.map((p) => normalizeProgramKey(p)));
-          const validPeriods = new Set();
-          facetRows.forEach((r) => {
-            if (normProgsSet.has(normalizeProgramKey(r.programa))) {
-              const { periodLabel } = getRowPeriodMeta(r);
-              if (periodLabel) validPeriods.add(periodLabel);
-            }
-          });
-          if (validPeriods.size > 0) {
-            filtered = filtered.filter((p) => validPeriods.has(p.label || p));
-          }
-        }
-      }
-      return filtered.map((p) => p.label || p);
-    };
+    const periodFilterOptions = (() => {
+      const facetRows = getGraduadosFacetRows('periodos');
+      const validPeriods = new Set(facetRows.map((r) => getRowPeriodMeta(r).periodLabel));
+      const res = allPeriodFilterOptions.filter((p) => validPeriods.has(p));
+      return res.length > 0 ? res : allPeriodFilterOptions;
+    })();
 
-    const getDynamicGradAniosOpts = () => {
-      const selectedPeriods = activeStatsFilters.periodos || [];
-      const selectedProgs = activeStatsFilters.programas || [];
-      let allYearVals = [...allYearOptions];
-      if (selectedPeriods.length > 0) {
-        const yearsFromPeriods = new Set(selectedPeriods.map((p) => String(p).split('-')[0]));
-        allYearVals = allYearVals.filter((y) => yearsFromPeriods.has(y));
-      }
-      if (selectedProgs.length > 0) {
-        const facetRows = getGraduadosFacetRows('anios');
-        if (facetRows.length > 0) {
-          const normProgsSet = new Set(selectedProgs.map((p) => normalizeProgramKey(p)));
-          const validYears = new Set();
-          facetRows.forEach((r) => {
-            if (normProgsSet.has(normalizeProgramKey(r.programa))) {
-              validYears.add(String(Number(r.anio) || ''));
-            }
-          });
-          if (validYears.size > 0) {
-            allYearVals = allYearVals.filter((y) => validYears.has(y));
-          }
-        }
-      }
-      return allYearVals;
-    };
+    const allYears = (() => {
+      const facetRows = getGraduadosFacetRows('anios');
+      const validYears = new Set(facetRows.map((r) => String(Number(r.anio) || '')));
+      const res = allYearOptions.filter((y) => validYears.has(y));
+      return res.length > 0 ? res : allYearOptions;
+    })();
 
-    const periodFilterOptions = getDynamicGradPeriodosOpts();
-    const allYears = getDynamicGradAniosOpts();
-    const dynamicProgramaOptions = statSection === 'graduados'
-      ? buildProgramOptionsFromRows(getGraduadosFacetRows('programas'))
-      : programasDisponibles;
-    const dynamicFacultadOptions = statSection === 'graduados'
-      ? buildFacultyOptionsFromRows(getGraduadosFacetRows('facultades'))
-      : facultadesDisponibles;
-    const getVisibleSelectedValues = (selected = [], options = [], normalizeFn = (value) => value) => {
-      if (!Array.isArray(selected) || selected.length === 0) return [];
-      const optionKeys = new Set(options.map((item) => normalizeFn(item)));
-      return selected.filter((item) => optionKeys.has(normalizeFn(item)));
-    };
-    const visibleProgramValues = getVisibleSelectedValues(activeStatsFilters.programas, dynamicProgramaOptions, normalizeProgramKey);
-    const visibleFacultadValues = getVisibleSelectedValues(activeStatsFilters.facultades, dynamicFacultadOptions, normalizeRawProgramKey);
+    const dynamicProgramaOptions = (() => {
+      const facetRows = getGraduadosFacetRows('programas');
+      const validProgs = new Set(facetRows.map((r) => normalizeProgramKey(r.programa)));
+      const res = programasDisponibles.filter((p) => validProgs.has(normalizeProgramKey(p)));
+      return res.length > 0 ? res : programasDisponibles;
+    })();
+
+    const dynamicFacultadOptions = (() => {
+      const facetRows = getGraduadosFacetRows('facultades');
+      const validFacs = new Set(facetRows.map((r) => normalizeRawProgramKey(getRowFacultyValue(r))));
+      const res = facultadesDisponibles.filter((f) => validFacs.has(normalizeRawProgramKey(f)));
+      return res.length > 0 ? res : facultadesDisponibles;
+    })();
+
+    const visibleProgramValues = activeStatsFilters.programas || [];
+    const visibleFacultadValues = activeStatsFilters.facultades || [];
     const activeGraduadosSegmentCount = [
       allYearOptions.length > 0 && activeStatsFilters.anios.length < allYearOptions.length,
       allPeriodFilterOptions.length > 0 && activeStatsFilters.periodos.length < allPeriodFilterOptions.length,
@@ -9108,21 +9071,21 @@ const renderCategoryBars = (items = [], options = {}) => {
                     placeholder="Buscar año..."
                     options={allYears}
                     value={activeStatsFilters.anios}
-                    onChange={(nextValues) => handleMultiFilterChange('anios', nextValues, allYears)}
+                    onChange={(nextValues) => handleMultiFilterChange('anios', nextValues)}
                   />
                   <DocFilterPanel
                     label="PERÍODO"
                     placeholder="Buscar período..."
                     options={periodFilterOptions}
                     value={activeStatsFilters.periodos}
-                    onChange={(nextValues) => handleMultiFilterChange('periodos', nextValues, periodFilterOptions)}
+                    onChange={(nextValues) => handleMultiFilterChange('periodos', nextValues)}
                   />
                   <DocFilterPanel
                     label="PROGRAMA ACADÉMICO"
                     placeholder="Buscar programa..."
                     options={dynamicProgramaOptions}
                     value={visibleProgramValues}
-                    onChange={(nextValues) => handleMultiFilterChange('programas', nextValues, dynamicProgramaOptions)}
+                    onChange={(nextValues) => handleMultiFilterChange('programas', nextValues)}
                   />
                   <Button
                     size="small"
@@ -14881,90 +14844,11 @@ const renderCategoryBars = (items = [], options = {}) => {
 
   const renderResumenPoblacionalStandaloneDashboard = () => {
     const catalogRows = activeSectionCatalog.rows || [];
-    const sourceRows = catalogRows.length > 0 ? catalogRows : seriesRows;
-
-    const selectedYears = matFilters.anios || [];
-    const selectedPeriods = matFilters.periodos || [];
-    const selectedProgs = matFilters.programas || [];
-
-    const yearSet = new Set(selectedYears.map((y) => String(y)));
-    const periodSet = new Set(selectedPeriods);
-    const normProgsSet = new Set(selectedProgs.map((p) => normalizeProgramKey(p)));
-
-    // 1. Dynamic Anios Options: Filtered by selectedPeriods and selectedProgs
-    const getDynamicAniosOpts = () => {
-      const allYears = Array.from(
-        new Set((activeSectionCatalog.anios || []).map((x) => String(x)))
-      ).sort((a, b) => Number(a) - Number(b));
-
-      if (!selectedPeriods.length && !selectedProgs.length) return allYears;
-
-      const validYears = new Set();
-      sourceRows.forEach((r) => {
-        const { periodLabel } = getRowPeriodMeta(r);
-        const progKey = normalizeProgramKey(r.programa);
-
-        const periodOk = !selectedPeriods.length || periodSet.has(periodLabel);
-        const progOk = !selectedProgs.length || normProgsSet.has(progKey);
-
-        if (periodOk && progOk && r.anio) {
-          validYears.add(String(Number(r.anio)));
-        }
-      });
-
-      return allYears.filter((y) => validYears.has(y));
-    };
-
-    // 2. Dynamic Periodos Options: Filtered by selectedYears and selectedProgs
-    const getDynamicPeriodosOpts = () => {
-      const allPeriodObjs = activeSectionCatalog.periodos || [];
-      const allPeriodLabels = allPeriodObjs.map((p) => String(p.label || p));
-
-      if (!selectedYears.length && !selectedProgs.length) return allPeriodLabels;
-
-      const validPeriods = new Set();
-      sourceRows.forEach((r) => {
-        const { periodLabel } = getRowPeriodMeta(r);
-        const anioStr = String(Number(r.anio) || '');
-        const progKey = normalizeProgramKey(r.programa);
-
-        const yearOk = !selectedYears.length || yearSet.has(anioStr);
-        const progOk = !selectedProgs.length || normProgsSet.has(progKey);
-
-        if (yearOk && progOk && periodLabel) {
-          validPeriods.add(periodLabel);
-        }
-      });
-
-      return allPeriodLabels.filter((p) => validPeriods.has(p));
-    };
-
-    // 3. Dynamic Programas Options: Filtered by selectedYears and selectedPeriods
-    const getDynamicProgramasOpts = () => {
-      const allProgs = activeSectionCatalog.programas || [];
-
-      if (!selectedYears.length && !selectedPeriods.length) return allProgs;
-
-      const validProgs = new Set();
-      sourceRows.forEach((r) => {
-        const { periodLabel } = getRowPeriodMeta(r);
-        const anioStr = String(Number(r.anio) || '');
-        const progKey = normalizeProgramKey(r.programa);
-
-        const yearOk = !selectedYears.length || yearSet.has(anioStr);
-        const periodOk = !selectedPeriods.length || periodSet.has(periodLabel);
-
-        if (yearOk && periodOk && progKey) {
-          validProgs.add(progKey);
-        }
-      });
-
-      return allProgs.filter((p) => validProgs.has(normalizeProgramKey(p)));
-    };
-
-    const aniosOpts = getDynamicAniosOpts();
-    const periodosOpts = getDynamicPeriodosOpts();
-    const programasOpts = getDynamicProgramasOpts();
+    const aniosOpts = Array.from(
+      new Set((activeSectionCatalog.anios || []).map((x) => String(x)))
+    ).sort((a, b) => Number(a) - Number(b));
+    const periodosOpts = (activeSectionCatalog.periodos || []).map((p) => String(p.label || p));
+    const programasOpts = activeSectionCatalog.programas || [];
     const periodosDisp = periodosOpts.length;
 
     const handleMatReset = () => {
@@ -15045,16 +14929,7 @@ const renderCategoryBars = (items = [], options = {}) => {
                 placeholder="Buscar año..."
                 options={aniosOpts}
                 value={matFilters.anios}
-                onChange={(nextValues) => setMatFilters((prev) => {
-                  const newYears = nextValues;
-                  const yearSet = new Set(newYears.map((y) => String(y)));
-                  const validPeriodos = (prev.periodos || []).filter((p) => {
-                    if (!newYears.length) return true;
-                    const periodYear = String(p).split('-')[0];
-                    return yearSet.has(periodYear);
-                  });
-                  return { ...prev, anios: newYears, periodos: validPeriodos };
-                })}
+                onChange={(nextValues) => setMatFilters((prev) => ({ ...prev, anios: nextValues }))}
               />
               <DocFilterPanel
                 label="PERÍODO"
@@ -15111,87 +14986,9 @@ const renderCategoryBars = (items = [], options = {}) => {
   };
 
   const renderMatriculadosOnlyDashboard = () => {
-    const getDynamicMatAniosOpts = () => {
-      const selectedPeriods = matFilters.periodos || [];
-      const allYears = (matriculadosAniosDisponibles || []).map((x) => String(x));
-
-      if (selectedPeriods.length > 0) {
-        const periodYears = new Set(selectedPeriods.map((p) => String(p).split('-')[0]));
-        return allYears.filter((y) => periodYears.has(y));
-      }
-      return allYears;
-    };
-
-    const getDynamicMatPeriodosOpts = () => {
-      const selectedYears = matFilters.anios || [];
-      const selectedProgs = matFilters.programas || [];
-      const allPeriodObjs = matriculadosPeriodosDisponibles || [];
-
-      let filtered = allPeriodObjs;
-
-      if (selectedYears.length > 0) {
-        const yearSet = new Set(selectedYears.map((y) => String(y)));
-        filtered = filtered.filter((p) => {
-          const yr = String(p.label || p).split('-')[0];
-          return yearSet.has(yr);
-        });
-      }
-
-      if (selectedProgs.length > 0) {
-        const geoRows = matriculadosPanelData?.geoData || [];
-        if (geoRows.length > 0) {
-          const normProgsSet = new Set(selectedProgs.map((p) => normalizeProgramKey(p)));
-          const validPeriodsFromProgs = new Set();
-          geoRows.forEach((r) => {
-            if (normProgsSet.has(normalizeProgramKey(r.programa))) {
-              const periodStr = r.periodo || r.periodo_normalizado || (r.anio && r.semestre ? `${r.anio}-${r.semestre}` : '');
-              if (periodStr) validPeriodsFromProgs.add(periodStr);
-            }
-          });
-          if (validPeriodsFromProgs.size > 0) {
-            filtered = filtered.filter((p) => validPeriodsFromProgs.has(p.label || p));
-          }
-        }
-      }
-
-      return filtered.map((p) => p.label || p);
-    };
-
-    const getDynamicMatProgramasOpts = () => {
-      const selectedYears = matFilters.anios || [];
-      const selectedPeriods = matFilters.periodos || [];
-      const allProgs = matriculadosProgramasDisponibles || [];
-
-      if (!selectedYears.length && !selectedPeriods.length) {
-        return allProgs;
-      }
-
-      const geoRows = matriculadosPanelData?.geoData || [];
-      if (!geoRows.length) return allProgs;
-
-      const yearSet = new Set(selectedYears.map((y) => String(y)));
-      const periodSet = new Set(selectedPeriods);
-
-      const validPrograms = new Set();
-      geoRows.forEach((r) => {
-        const yearMatch = !selectedYears.length || yearSet.has(String(r.anio));
-        const periodStr = r.periodo || r.periodo_normalizado || '';
-        const periodMatch = !selectedPeriods.length || periodSet.has(periodStr);
-        if (yearMatch && periodMatch && r.programa) {
-          validPrograms.add(normalizeProgramKey(r.programa));
-        }
-      });
-
-      if (!validPrograms.size) return allProgs;
-      return allProgs.filter((p) => validPrograms.has(normalizeProgramKey(p)));
-    };
-
-    const matAniosOpts = getDynamicMatAniosOpts();
-    const matPeriodosOpts = getDynamicMatPeriodosOpts();
-    const matProgramasOpts = getDynamicMatProgramasOpts();
-    const aniosOpts = matAniosOpts;
-    const periodosOpts = matPeriodosOpts;
-    const programasOpts = matProgramasOpts;
+    const matAniosOpts = (matriculadosAniosDisponibles || []).map((x) => String(x));
+    const matPeriodosOpts = (matriculadosPeriodosDisponibles || []).map((p) => p.label || p);
+    const matProgramasOpts = matriculadosProgramasDisponibles || [];
     const periodosDisp = matriculadosPeriodosDisponibles.length;
     const totalRegistros = normalizeNumber(matriculadosPanelData?.totalRegistros || 0);
 
@@ -16431,13 +16228,60 @@ const renderCategoryBars = (items = [], options = {}) => {
       </Box>
     );
   };
-
   const renderFlujoOnlyDashboard = () => {
     const kpis = [
       { label: 'Inscritos', value: flujoDashboardMetrics.inscritos, color: INSCRITOS_BAR_BLUE, sub: 'Demanda registrada', icon: BarChartIcon },
       { label: 'Admitidos', value: flujoDashboardMetrics.admitidos, color: '#dc2626', sub: `${flujoDashboardMetrics.selectividad.toFixed(1)}% selectividad`, icon: InsightsIcon },
       { label: 'Primer Curso', value: flujoDashboardMetrics.primerCurso, color: '#475569', sub: `${flujoDashboardMetrics.absorcion.toFixed(1)}% absorcion`, icon: AutoGraphIcon }
     ];
+
+    const dynamicFlujoAniosOptions = (() => {
+      const facetRows = getFacetFilteredRows({
+        rows: sectionCatalogs.flujo?.rows || [],
+        filters: activeStatsFilters,
+        excludeKey: 'anios',
+        programasDisponibles,
+        facultadesDisponibles,
+        aniosDisponibles,
+        periodosDisponibles
+      });
+      const validYears = new Set(facetRows.map((r) => String(Number(r.anio) || '')));
+      const catalogYears = (aniosDisponibles || []).map((x) => String(x));
+      const res = catalogYears.filter((y) => validYears.has(y));
+      return res.length > 0 ? res : catalogYears;
+    })();
+
+    const dynamicFlujoPeriodosOptions = (() => {
+      const facetRows = getFacetFilteredRows({
+        rows: sectionCatalogs.flujo?.rows || [],
+        filters: activeStatsFilters,
+        excludeKey: 'periodos',
+        programasDisponibles,
+        facultadesDisponibles,
+        aniosDisponibles,
+        periodosDisponibles
+      });
+      const validPeriods = new Set(facetRows.map((r) => getRowPeriodMeta(r).periodLabel));
+      const catalogPeriods = (periodosDisponibles || []).map((p) => p.label || p);
+      const res = catalogPeriods.filter((p) => validPeriods.has(p));
+      return res.length > 0 ? res : catalogPeriods;
+    })();
+
+    const dynamicFlujoProgramasOptions = (() => {
+      const facetRows = getFacetFilteredRows({
+        rows: sectionCatalogs.flujo?.rows || [],
+        filters: activeStatsFilters,
+        excludeKey: 'programas',
+        programasDisponibles,
+        facultadesDisponibles,
+        aniosDisponibles,
+        periodosDisponibles
+      });
+      const validProgs = new Set(facetRows.map((r) => normalizeProgramKey(r.programa)));
+      const res = (programasDisponibles || []).filter((p) => validProgs.has(normalizeProgramKey(p)));
+      return res.length > 0 ? res : programasDisponibles;
+    })();
+
     const latest = flujoDashboardMetrics.latest || {};
     const latestSelectividad = normalizeNumber(latest.inscritos) > 0 ? (normalizeNumber(latest.admitidos) / normalizeNumber(latest.inscritos)) * 100 : 0;
     const latestAbsorcion = normalizeNumber(latest.admitidos) > 0 ? (normalizeNumber(latest.primerCurso) / normalizeNumber(latest.admitidos)) * 100 : 0;
@@ -16457,142 +16301,6 @@ const renderCategoryBars = (items = [], options = {}) => {
       { label: 'Admitidos', color: '#dc2626' },
       { label: 'Primer Curso', color: '#64748b' }
     ];
-    const getDynamicAniosOptions = () => {
-      const rows = activeSectionCatalog.rows || [];
-      const selectedProgs = activeStatsFilters.programas || [];
-      const selectedPeriods = activeStatsFilters.periodos || [];
-
-      if (!selectedProgs.length && !selectedPeriods.length) {
-        return (aniosDisponibles || []).map((x) => String(x));
-      }
-
-      const normProgsSet = new Set(selectedProgs.map((p) => normalizeProgramKey(p)));
-      const periodSet = new Set(selectedPeriods);
-
-      const validYears = new Set();
-      rows.forEach((r) => {
-        const progMatch = !selectedProgs.length || normProgsSet.has(normalizeProgramKey(r.programa));
-        const periodStr = r.periodo_normalizado || r.periodo || getRowPeriodMeta(r)?.periodLabel || '';
-        const periodMatch = !selectedPeriods.length || periodSet.has(periodStr);
-        if (progMatch && periodMatch && r.anio) {
-          validYears.add(String(r.anio));
-        }
-      });
-
-      return (aniosDisponibles || []).map((x) => String(x)).filter((y) => validYears.has(y));
-    };
-
-    const getDynamicPeriodosOptions = () => {
-      const rows = activeSectionCatalog.rows || [];
-      const selectedYears = activeStatsFilters.anios || [];
-      const selectedProgs = activeStatsFilters.programas || [];
-
-      if (!selectedYears.length && !selectedProgs.length) {
-        return (periodosDisponibles || []).map((p) => p.label || p);
-      }
-
-      const yearSet = new Set(selectedYears.map((y) => String(y)));
-      const normProgsSet = new Set(selectedProgs.map((p) => normalizeProgramKey(p)));
-
-      const validPeriods = new Set();
-      rows.forEach((r) => {
-        const yearMatch = !selectedYears.length || yearSet.has(String(r.anio));
-        const progMatch = !selectedProgs.length || normProgsSet.has(normalizeProgramKey(r.programa));
-        const periodStr = r.periodo_normalizado || r.periodo || getRowPeriodMeta(r)?.periodLabel || '';
-        if (yearMatch && progMatch && periodStr) {
-          validPeriods.add(periodStr);
-        }
-      });
-
-      const allOptions = (periodosDisponibles || []).map((p) => p.label || p);
-      return allOptions.filter((p) => validPeriods.has(p));
-    };
-
-    const getDynamicProgramasOptions = () => {
-      const rows = activeSectionCatalog.rows || [];
-      const selectedYears = activeStatsFilters.anios || [];
-      const selectedPeriods = activeStatsFilters.periodos || [];
-
-      if (!selectedYears.length && !selectedPeriods.length) {
-        return programasDisponibles;
-      }
-
-      const yearSet = new Set(selectedYears.map((y) => String(y)));
-      const periodSet = new Set(selectedPeriods);
-
-      const validPrograms = new Set();
-      rows.forEach((r) => {
-        const yearMatch = !selectedYears.length || yearSet.has(String(r.anio));
-        const periodStr = r.periodo_normalizado || r.periodo || getRowPeriodMeta(r)?.periodLabel || '';
-        const periodMatch = !selectedPeriods.length || periodSet.has(periodStr);
-        if (yearMatch && periodMatch && r.programa) {
-          validPrograms.add(normalizeProgramKey(r.programa));
-        }
-      });
-
-      return programasDisponibles.filter((p) => validPrograms.has(normalizeProgramKey(p)));
-    };
-
-    const dynamicAniosOptions = getDynamicAniosOptions();
-    const dynamicPeriodosOptions = getDynamicPeriodosOptions();
-    const dynamicProgramasOptions = getDynamicProgramasOptions();
-
-    const periodFilterOptions = dynamicPeriodosOptions;
-    const filterAutocompleteSx = {
-      '& .MuiOutlinedInput-root': {
-        minHeight: 48,
-        borderRadius: 2,
-        bgcolor: '#ffffff',
-        boxShadow: '0 8px 20px rgba(37,99,235,0.08)',
-        '& fieldset': { borderColor: '#9ec5ff' },
-        '&:hover fieldset': { borderColor: '#60a5fa' },
-        '&.Mui-focused fieldset': { borderColor: '#2563eb', borderWidth: 1.5 }
-      },
-      '& .MuiAutocomplete-tag': {
-        maxWidth: 150,
-        height: 24,
-        borderRadius: 999,
-        bgcolor: '#eff6ff',
-        color: '#1d4ed8',
-        fontWeight: 800,
-        fontSize: 11.5
-      },
-      '& .MuiInputBase-input': {
-        fontSize: 13,
-        fontWeight: 700,
-        color: '#0f172a'
-      }
-    };
-    const filterPopperProps = {
-      paper: {
-        sx: {
-          mt: 0.5,
-          borderRadius: 2,
-          border: '1px solid #dbeafe',
-          boxShadow: '0 18px 48px rgba(15,23,42,0.16)'
-        }
-      }
-    };
-    const renderFilterOption = (selected, option) => (
-      <Stack direction="row" spacing={1} alignItems="center" sx={{ width: '100%' }}>
-        <Checkbox checked={selected} size="small" sx={{ p: 0.4 }} />
-        <Typography sx={{ fontSize: 13, fontWeight: selected ? 800 : 600, color: '#0f172a' }}>{option}</Typography>
-      </Stack>
-    );
-    const renderFilterTags = (allLabel, partialLabel, optionsLength) => (value, getTagProps) => {
-      const count = Array.isArray(value) ? value.length : 0;
-      const label = !count || (optionsLength > 0 && count === optionsLength)
-        ? allLabel
-        : `${count} ${partialLabel}`;
-      return (
-        <Chip
-          {...getTagProps({ index: 0 })}
-          label={label}
-          size="small"
-          sx={{ height: 26, borderRadius: 999, bgcolor: '#eff6ff', color: '#1d4ed8', fontWeight: 900, maxWidth: '100%' }}
-        />
-      );
-    };
     const rateTrendData = flujoDashboardChartData.map((row) => ({
       periodo: row.periodo,
       year: row.year,
@@ -16759,23 +16467,23 @@ const renderCategoryBars = (items = [], options = {}) => {
               <DocFilterPanel
                 label="AÑO"
                 placeholder="Buscar año..."
-                options={dynamicAniosOptions}
+                options={dynamicFlujoAniosOptions}
                 value={activeStatsFilters.anios}
-                onChange={(nextValues) => handleMultiFilterChange('anios', nextValues, dynamicAniosOptions)}
+                onChange={(nextValues) => handleMultiFilterChange('anios', nextValues)}
               />
               <DocFilterPanel
                 label="PERÍODO ACADÉMICO"
                 placeholder="Buscar período..."
-                options={dynamicPeriodosOptions}
+                options={dynamicFlujoPeriodosOptions}
                 value={activeStatsFilters.periodos}
-                onChange={(nextValues) => handleMultiFilterChange('periodos', nextValues, dynamicPeriodosOptions)}
+                onChange={(nextValues) => handleMultiFilterChange('periodos', nextValues)}
               />
               <DocFilterPanel
                 label="PROGRAMA ACADÉMICO"
                 placeholder="Buscar programa..."
-                options={dynamicProgramasOptions}
+                options={dynamicFlujoProgramasOptions}
                 value={activeStatsFilters.programas}
-                onChange={(nextValues) => handleMultiFilterChange('programas', nextValues, dynamicProgramasOptions)}
+                onChange={(nextValues) => handleMultiFilterChange('programas', nextValues)}
               />
               <Button
                 size="small"
@@ -17308,7 +17016,7 @@ const renderCategoryBars = (items = [], options = {}) => {
   return (
     <Fade in={true}>
       <Box>
-        {!isGestionProcesosStatsRoute && !isDirectDocumentalView && !(selectedCard === 'poblacional' && poblacionalPanel !== 'hub') && selectedCard !== 'infraestructura_fisica' && selectedCard !== 'recurso_humano' && selectedCard !== 'internacionalizacion' && selectedCard !== 'vicerrectoria_academica' && selectedCard !== 'vicerrectoria_financiera' && selectedCard !== 'activity_monitor' && selectedCard !== 'plan_accion' && (
+        {!isGestionProcesosStatsRoute && !isDirectDocumentalView && !(selectedCard === 'poblacional' && poblacionalPanel !== 'hub') && selectedCard !== 'gestion_riesgo_ambiente' && selectedCard !== 'infraestructura_fisica' && selectedCard !== 'recurso_humano' && selectedCard !== 'internacionalizacion' && selectedCard !== 'vicerrectoria_academica' && selectedCard !== 'vicerrectoria_financiera' && selectedCard !== 'activity_monitor' && selectedCard !== 'plan_accion' && (
           <Paper elevation={0} sx={{ p: 3, mb: 3, borderRadius: 3, border: '1px solid #dbe2f1', background: 'linear-gradient(135deg,#0f172a,#1d4ed8)' }}>
             <Stack direction="row" spacing={1.5} alignItems="center">
               <InsightsIcon sx={{ color: 'white' }} />
@@ -17831,6 +17539,12 @@ const renderCategoryBars = (items = [], options = {}) => {
                 {selectedCard === 'recurso_humano' && renderRecursoHumanoStatsModule()}
                 {selectedCard === 'internacionalizacion' && (
                   <InternacionalizacionLandingPage
+                    user={user}
+                    onBack={returnToCards}
+                  />
+                )}
+                {selectedCard === 'gestion_riesgo_ambiente' && (
+                  <RiesgoAmbienteLandingPage
                     user={user}
                     onBack={returnToCards}
                   />

@@ -33,6 +33,10 @@ const RecursoHumanoOutsourcing = require('./RecursoHumanoOutsourcing');
 const RecursoHumanoOnda = require('./RecursoHumanoOnda');
 const InternacionalizacionMovilidad = require('./InternacionalizacionMovilidad');
 const InternacionalizacionConvenio = require('./InternacionalizacionConvenio');
+const PesvParqueaderoRegistro = require('./PesvParqueaderoRegistro');
+const PesvRuntValidacion = require('./PesvRuntValidacion');
+const PesvSoatHistorico = require('./PesvSoatHistorico');
+const PesvRtmHistorico = require('./PesvRtmHistorico');
 const RefDepartamento = require('./RefDepartamento');
 const RefMunicipio = require('./RefMunicipio');
 const RefDivipolaCarga = require('./RefDivipolaCarga');
@@ -255,6 +259,18 @@ User.hasMany(InternacionalizacionConvenio, { foreignKey: 'creado_por', as: 'inte
 InternacionalizacionConvenio.belongsTo(User, { foreignKey: 'creado_por', as: 'creador' });
 User.hasMany(InternacionalizacionConvenio, { foreignKey: 'actualizado_por', as: 'internacionalizacionConveniosActualizados' });
 InternacionalizacionConvenio.belongsTo(User, { foreignKey: 'actualizado_por', as: 'actualizador' });
+User.hasMany(PesvParqueaderoRegistro, { foreignKey: 'creado_por', as: 'pesvParqueaderosCreados' });
+PesvParqueaderoRegistro.belongsTo(User, { foreignKey: 'creado_por', as: 'creador' });
+User.hasMany(PesvParqueaderoRegistro, { foreignKey: 'actualizado_por', as: 'pesvParqueaderosActualizados' });
+PesvParqueaderoRegistro.belongsTo(User, { foreignKey: 'actualizado_por', as: 'actualizador' });
+PesvParqueaderoRegistro.hasMany(PesvRuntValidacion, { foreignKey: 'parqueadero_registro_id', as: 'validacionesRunt', onDelete: 'CASCADE' });
+PesvRuntValidacion.belongsTo(PesvParqueaderoRegistro, { foreignKey: 'parqueadero_registro_id', as: 'registroParqueadero' });
+PesvRuntValidacion.belongsTo(User, { foreignKey: 'iniciada_por', as: 'usuarioInicia' });
+PesvRuntValidacion.belongsTo(User, { foreignKey: 'confirmada_por', as: 'usuarioConfirma' });
+PesvRuntValidacion.hasOne(PesvSoatHistorico, { foreignKey: 'validacion_id', as: 'soat', onDelete: 'CASCADE' });
+PesvSoatHistorico.belongsTo(PesvRuntValidacion, { foreignKey: 'validacion_id', as: 'validacion' });
+PesvRuntValidacion.hasOne(PesvRtmHistorico, { foreignKey: 'validacion_id', as: 'rtm', onDelete: 'CASCADE' });
+PesvRtmHistorico.belongsTo(PesvRuntValidacion, { foreignKey: 'validacion_id', as: 'validacion' });
 
 User.hasMany(InstrumentForm, { foreignKey: 'created_by', as: 'instrumentForms' });
 InstrumentForm.belongsTo(User, { foreignKey: 'created_by', as: 'creator' });
@@ -337,6 +353,10 @@ module.exports = {
   RecursoHumanoOnda,
   InternacionalizacionMovilidad,
   InternacionalizacionConvenio,
+  PesvParqueaderoRegistro,
+  PesvRuntValidacion,
+  PesvSoatHistorico,
+  PesvRtmHistorico,
   RefDepartamento,
   RefMunicipio,
   RefDivipolaCarga,

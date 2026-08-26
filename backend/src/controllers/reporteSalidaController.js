@@ -3583,20 +3583,56 @@ const radicarSolicitud = async (req, res) => {
         creadas.push(solicitud);
       }
 
-      // TODAS LAS SALIDAS GRUPALES REQUIEREN VISTO BUENO Y APROBACIÓN PREVIA DE LA DIRECCIÓN DE PROGRAMA / JEFATURA
-      const token = encryptPayload({ purpose: 'reporte_salida_approve_jefe_grupo', grupo_id }, null);
-      const tokenHash = hashToken(token);
+      const isProyeccionSocialGroup = (salida.tipo === 'proyeccion_social');
+      const isMeryGroupLeader = isProyeccionSocialLeaderSolicitud(creadas[0]);
+
+      if (isProyeccionSocialGroup && !isMeryGroupLeader) {
+        const psToken = encryptPayload({ purpose: 'reporte_salida_approve_proyeccion_social_grupo', grupo_id }, null);
+        const psTokenHash = hashToken(psToken);
+
+        for (const sol of creadas) {
+          await sol.update({
+            estado: 'pendiente_aprobacion_proyeccion_social',
+            aprobacion_proyeccion_social_token_hash: psTokenHash,
+            aprobacion_jefe_token_hash: null
+          });
+        }
+
+        const emailResult = await sendProyeccionSocialGroupApprovalEmail(creadas, psToken);
+        const thread_message_id = emailResult.messageId || null;
+
+        for (const solicitud of creadas) {
+          await solicitud.update({
+            correo_proyeccion_social_enviado_at: emailResult.success ? new Date() : null,
+            datos_formulario: {
+              ...solicitud.datos_formulario,
+              thread_message_id
+            },
+            trazabilidad: appendTrace(solicitud, emailResult.success ? 'correo_proyeccion_social_enviado' : 'correo_proyeccion_social_error', null, { error: emailResult.error || '' })
+          });
+        }
+
+        return res.status(201).json({
+          success: true,
+          message: 'Salida grupal de Proyección Social radicada exitosamente. Se remitió para revisión a la Coordinación de Proyección Social y Extensión.',
+          data: creadas.map(serializeSolicitud)
+        });
+      }
+
+      // TODAS LAS DEMÁS SALIDAS GRUPALES REQUIEREN VISTO BUENO Y APROBACIÓN PREVIA DE LA DIRECCIÓN DE PROGRAMA / JEFATURA
+      const jefeToken = encryptPayload({ purpose: 'reporte_salida_approve_jefe_grupo', grupo_id }, null);
+      const jefeTokenHash = hashToken(jefeToken);
 
       for (const sol of creadas) {
         await sol.update({
           estado: 'pendiente_aprobacion_jefe',
-          aprobacion_jefe_token_hash: tokenHash,
+          aprobacion_jefe_token_hash: jefeTokenHash,
           aprobacion_gh_token_hash: null
         });
       }
 
       const initialRecipients = getGroupInitialApprovalRecipients(creadas);
-      const emailResult = await sendJefeGroupApprovalEmail(creadas, token, initialRecipients);
+      const emailResult = await sendJefeGroupApprovalEmail(creadas, jefeToken, initialRecipients);
       const thread_message_id = emailResult.messageId || null;
 
       for (const solicitud of creadas) {
@@ -6940,6 +6976,77 @@ const sendGestionHumanaGroupApprovalEmail = async (solicitudes, token) => {
   });
 };
 
+const sendVicerrectoriaGroupApprovalEmail = async (solicitudes, token) => {
+  const approveUrl = `${publicBackendUrl.replace(/\/$/, '')}/api/reporte-salida/aprobar-grupo/${encodeURIComponent(token)}`;
+  const rejectUrl = `${publicBackendUrl.replace(/\/$/, '')}/api/reporte-salida/rechazar-grupo/${encodeURIComponent(token)}`;
+
+  const leaderSol = solicitudes.find(s => s.datos_formulario?.is_leader === true) || solicitudes[0];
+  const leaderNombre = leaderSol?.solicitante_snapshot?.nombre || '';
+  const consecutivoGroup = leaderSol.consecutivo.split('-').slice(0, 3).join('-') + '-GRUPO';
+  const salida = leaderSol.datos_formulario?.salida || {};
+
+  const subject = `REPORTE DE SALIDA GRUPAL ${consecutivoGroup} | Solicitud de Aprobación Vicerrectoría Académica`;
+
+  let tableRows = '';
+  solicitudes.forEach((sol, idx) => {
+    const p = sol.datos_formulario?.personal || sol.solicitante_snapshot || {};
+    const lab = sol.datos_formulario?.laboral || {};
+    tableRows += `
+      <tr>
+        <td style="border:1px solid #dbe6f5;padding:8px;text-align:center;">${idx + 1}</td>
+        <td style="border:1px solid #dbe6f5;padding:8px;"><strong>${escapeHtml(p.nombre)}</strong> ${sol.datos_formulario?.is_leader ? '<span style="color:#0f52ba;font-size:11px;font-weight:bold;">(Líder)</span>' : ''}</td>
+        <td style="border:1px solid #dbe6f5;padding:8px;">${escapeHtml(lab.cargo || p.cargo || '')}</td>
+        <td style="border:1px solid #dbe6f5;padding:8px;">${escapeHtml(lab.dependencia || p.dependencia || '')}</td>
+        <td style="border:1px solid #dbe6f5;padding:8px;">${escapeHtml(p.correo || p.email || '')}</td>
+      </tr>
+    `;
+  });
+
+  const attachments = await buildReporteSalidaSupportAttachments(leaderSol);
+
+  const html = renderInstitutionalTemplate({
+    title: 'Solicitud de Aprobación - Vicerrectoría Académica (Grupal)',
+    introHtml: `<p style="margin: 0 0 12px 0;">Saludo de paz y bien,</p><p style="margin: 0 0 4px 0; color: #475569;">Estimado(a) Vicerrector(a) Académico(a),</p><p>Reciba un cordial saludo. Se ha completado la autorización de las Direcciones de Programa para la <strong>salida grupal</strong> liderada por <strong>${escapeHtml(leaderNombre)}</strong> con <strong>${solicitudes.length}</strong> participantes. Al tener una duración de 1 o más días, requiere su correspondiente aprobación institucional.</p>`,
+    bodyHtml: `
+      <p><strong>Detalles de la salida grupal:</strong></p>
+      <ul>
+        <li><strong>Tipo de salida:</strong> ${escapeHtml(salida.tipo || 'N/A')}</li>
+        <li><strong>Fecha y hora salida:</strong> ${escapeHtml(salida.fecha)} a las ${escapeHtml(salida.horaInicio)}</li>
+        <li><strong>Fecha y hora regreso:</strong> ${escapeHtml(salida.fechaRegreso)} a las ${escapeHtml(salida.horaFin)}</li>
+        <li><strong>Motivo / Descripción:</strong> ${escapeHtml(salida.motivo || 'N/A')}</li>
+        ${salida.entidadDestino ? `<li><strong>Entidad / Lugar Destino:</strong> ${escapeHtml(salida.entidadDestino)}</li>` : ''}
+        ${salida.alcance ? `<li><strong>Alcance:</strong> ${escapeHtml(salida.alcance)}</li>` : ''}
+      </ul>
+      <table style="width:100%;border-collapse:collapse;margin:15px 0;font-size:13px;">
+        <thead>
+          <tr style="background:#f1f5f9;">
+            <th style="border:1px solid #dbe6f5;padding:8px;text-align:center;width:35px;">#</th>
+            <th style="border:1px solid #dbe6f5;padding:8px;text-align:left;">Nombre</th>
+            <th style="border:1px solid #dbe6f5;padding:8px;text-align:left;">Cargo</th>
+            <th style="border:1px solid #dbe6f5;padding:8px;text-align:left;">Dependencia / Programa</th>
+            <th style="border:1px solid #dbe6f5;padding:8px;text-align:left;">Correo</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${tableRows}
+        </tbody>
+      </table>
+      <div style="text-align:center;margin:24px 0;">
+        <a href="${approveUrl}" style="display:inline-block;background:#0b3a6f;color:#fff;padding:12px 24px;border-radius:8px;text-decoration:none;font-weight:700;margin:5px 10px;">APROBAR SALIDA GRUPAL</a>
+        <a href="${rejectUrl}" style="display:inline-block;background:#b91c1c;color:#fff;padding:12px 24px;border-radius:8px;text-decoration:none;font-weight:700;margin:5px 10px;">NO AUTORIZAR SALIDA GRUPAL</a>
+      </div>
+    `
+  });
+
+  return sendInstitutionalEmail({
+    to: [ACADEMIC_VICERRECTORIA_EMAIL],
+    subject,
+    text: `Solicitud de aprobación Vicerrectoría Académica para salida grupal liderada por ${leaderNombre}. Para autorizar ingrese a ${approveUrl}.`,
+    html,
+    attachments
+  });
+};
+
 const renderRejectionFormPageGrupo = ({ res, solicitudes, token }) => {
   const consecutivo = solicitudes[0]?.consecutivo.split('-').slice(0, 3).join('-') + '-GRUPO';
   const safeConsecutivo = escapeHtml(consecutivo);
@@ -7202,6 +7309,7 @@ const aprobarGrupoDesdeCorreo = async (req, res) => {
   try {
     const payload = decryptPayload(req.params.token);
     const validPurposes = [
+      'reporte_salida_approve_proyeccion_social_grupo',
       'reporte_salida_approve_jefe_grupo',
       'reporte_salida_approve_gh_grupo',
       'reporte_salida_approve_sst_grupo',
@@ -7242,6 +7350,54 @@ const aprobarGrupoDesdeCorreo = async (req, res) => {
       });
     }
 
+    // ETAPA 0: APROBACIÓN PROYECCIÓN SOCIAL (GRUPAL)
+    if (purpose === 'reporte_salida_approve_proyeccion_social_grupo') {
+      const pendientes = solicitudes.filter(s => s.estado === 'pendiente_aprobacion_proyeccion_social');
+      if (!pendientes.length) {
+        return renderApprovalPage({
+          res,
+          tone: 'info',
+          title: 'Grupo ya procesado por Proyección Social',
+          message: 'La revisión y visto bueno de esta salida grupal de Proyección Social ya fue registrada previamente.',
+          nextStep: 'La solicitud avanzó hacia las Direcciones de Programa y Jefaturas correspondientes.'
+        });
+      }
+
+      const jefeToken = encryptPayload({ purpose: 'reporte_salida_approve_jefe_grupo', grupo_id }, null);
+      const jefeTokenHash = hashToken(jefeToken);
+      const now = new Date();
+
+      for (const sol of pendientes) {
+        await ReporteSalidaSolicitud.update({
+          estado: 'pendiente_aprobacion_jefe',
+          proyeccion_social_aprobado_at: now,
+          aprobacion_proyeccion_social_token_hash: null,
+          aprobacion_jefe_token_hash: jefeTokenHash,
+          trazabilidad: appendTrace(sol, 'aprobada_proyeccion_social', null, { via: 'correo_grupo' })
+        }, {
+          where: { id: sol.id }
+        });
+        await sol.reload();
+      }
+
+      const initialRecipients = getGroupInitialApprovalRecipients(solicitudes);
+      const emailResult = await sendJefeGroupApprovalEmail(solicitudes, jefeToken, initialRecipients);
+      for (const sol of solicitudes) {
+        await sol.update({
+          correo_jefe_enviado_at: emailResult.success ? new Date() : null,
+          trazabilidad: appendTrace(sol, emailResult.success ? 'correo_jefe_enviado' : 'correo_jefe_error', null, { error: emailResult.error || '' })
+        });
+      }
+
+      return renderApprovalPage({
+        res,
+        tone: 'success',
+        title: 'Visto Bueno de Proyección Social Registrado',
+        message: `Se aprobó la salida grupal de Proyección Social. Se remitió la notificación de autorización a las Direcciones de Programa y Jefaturas de los ${solicitudes.length} participantes.`,
+        nextStep: 'Las Direcciones de Programa recibirán el correo para otorgar su respectivo visto bueno.'
+      });
+    }
+
     // ETAPA 1: VISTO BUENO JEFE / DIRECCION DE PROGRAMA
     if (purpose === 'reporte_salida_approve_jefe_grupo') {
       const pendientes = solicitudes.filter(s => s.estado === 'pendiente_aprobacion_jefe');
@@ -7268,16 +7424,31 @@ const aprobarGrupoDesdeCorreo = async (req, res) => {
         if (!toApprove.length) toApprove = pendientes;
       }
 
-      const ghToken = encryptPayload({ purpose: 'reporte_salida_approve_gh_grupo', grupo_id }, null);
-      const ghTokenHash = hashToken(ghToken);
+      const isNationalOrInternational = solicitudes.some(s => {
+        const alcance = s.datos_formulario?.salida?.alcance;
+        return alcance === 'Nacional' || alcance === 'Internacional';
+      });
+
+      const requiresVicerrectoria = solicitudes.some(s => s.datos_formulario?.salida?.duracionTipo !== 'menos_media_jornada');
+
+      const nextStage = requiresVicerrectoria
+        ? 'pendiente_aprobacion_vicerrectoria_academica'
+        : (isNationalOrInternational ? 'pendiente_aprobacion_sst' : 'pendiente_aprobacion_gestion_humana');
+
+      const nextTokenPurpose = requiresVicerrectoria
+        ? 'reporte_salida_approve_vice_academica_grupo'
+        : (isNationalOrInternational ? 'reporte_salida_approve_sst_grupo' : 'reporte_salida_approve_gh_grupo');
+
+      const nextToken = encryptPayload({ purpose: nextTokenPurpose, grupo_id }, null);
+      const nextTokenHash = hashToken(nextToken);
       const now = new Date();
 
       for (const sol of toApprove) {
         await ReporteSalidaSolicitud.update({
-          estado: 'pendiente_aprobacion_gestion_humana',
+          estado: nextStage,
           jefe_aprobado_at: now,
           aprobacion_jefe_token_hash: null,
-          aprobacion_gh_token_hash: ghTokenHash,
+          ...(requiresVicerrectoria ? { aprobacion_vicerrectoria_token_hash: nextTokenHash } : (isNationalOrInternational ? { aprobacion_sst_token_hash: nextTokenHash } : { aprobacion_gh_token_hash: nextTokenHash })),
           trazabilidad: appendTrace(sol, 'aprobada_jefe', null, { via: 'correo_grupo', jefe_email: targetJefeEmail })
         }, {
           where: { id: sol.id }
@@ -7296,30 +7467,136 @@ const aprobarGrupoDesdeCorreo = async (req, res) => {
           tone: 'success',
           title: 'Visto Bueno Parcial registrado',
           message: `Se registró exitosamente su Visto Bueno / Autorización para los ${toApprove.length} colaborador(es) pertenecientes a su programa/dependencia.`,
-          nextStep: `El grupo pasará a Gestión del Talento Humano una vez que el resto de los Directores de Programa de los demás ${remainingJefePendientes.length} colaborador(es) otorguen su Visto Bueno.`
+          nextStep: `El grupo pasará a la siguiente etapa institucional una vez que el resto de los Directores de Programa de los demás ${remainingJefePendientes.length} colaborador(es) otorguen su Visto Bueno.`
         });
       }
 
-      // SI TODOS LOS DIRECTORES DE PROGRAMA INVOLUCRADOS YA APROBARON -> ENVIAR A GESTIÓN HUMANA
+      // SI TODOS LOS DIRECTORES DE PROGRAMA INVOLUCRADOS YA APROBARON
       const allApprovedGroupSols = await ReporteSalidaSolicitud.findAll({
-        where: { grupo_id, estado: 'pendiente_aprobacion_gestion_humana' }
+        where: { grupo_id, estado: nextStage }
       });
 
-      const emailResult = await sendGestionHumanaGroupApprovalEmail(allApprovedGroupSols, ghToken);
-      for (const sol of allApprovedGroupSols) {
-        await sol.update({
-          correo_gh_enviado_at: emailResult.success ? new Date() : null,
-          trazabilidad: appendTrace(sol, emailResult.success ? 'correo_gestion_humana_enviado' : 'correo_gestion_humana_error', null, { error: emailResult.error || '' })
+      if (requiresVicerrectoria) {
+        const emailResult = await sendVicerrectoriaGroupApprovalEmail(allApprovedGroupSols, nextToken);
+        for (const sol of allApprovedGroupSols) {
+          await sol.update({
+            correo_vicerrectoria_enviado_at: emailResult.success ? new Date() : null,
+            trazabilidad: appendTrace(sol, emailResult.success ? 'correo_vicerrectoria_enviado' : 'correo_vicerrectoria_error', null, { error: emailResult.error || '' })
+          });
+        }
+        return renderApprovalPage({
+          res,
+          tone: 'success',
+          title: 'Visto Bueno de Salida Grupal registrado',
+          message: `Se registró el Visto Bueno / Autorización de la salida grupal para la totalidad de los ${allApprovedGroupSols.length} colaboradores(as). Al tener una duración de 1 o más días, fue remitida a Vicerrectoría Académica.`,
+          nextStep: 'Vicerrectoría Académica recibirá la notificación para su aprobación.'
+        });
+      } else if (isNationalOrInternational) {
+        const emailResult = await sendSSTGroupApprovalEmail(allApprovedGroupSols, nextToken);
+        for (const sol of allApprovedGroupSols) {
+          await sol.update({
+            correo_sst_enviado_at: emailResult.success ? new Date() : null,
+            trazabilidad: appendTrace(sol, emailResult.success ? 'correo_sst_enviado' : 'correo_sst_error', null, { error: emailResult.error || '' })
+          });
+        }
+        return renderApprovalPage({
+          res,
+          tone: 'success',
+          title: 'Visto Bueno de Salida Grupal registrado',
+          message: `Se registró el Visto Bueno / Autorización de la salida grupal para la totalidad de los ${allApprovedGroupSols.length} colaboradores(as). Al ser una salida nacional/internacional, fue remitida a Seguridad y Salud en el Trabajo (SST).`,
+          nextStep: 'SST recibirá la notificación para su visto bueno antes de pasar a Gestión del Talento Humano.'
+        });
+      } else {
+        const emailResult = await sendGestionHumanaGroupApprovalEmail(allApprovedGroupSols, nextToken);
+        for (const sol of allApprovedGroupSols) {
+          await sol.update({
+            correo_gh_enviado_at: emailResult.success ? new Date() : null,
+            trazabilidad: appendTrace(sol, emailResult.success ? 'correo_gestion_humana_enviado' : 'correo_gestion_humana_error', null, { error: emailResult.error || '' })
+          });
+        }
+        return renderApprovalPage({
+          res,
+          tone: 'success',
+          title: 'Visto Bueno de Salida Grupal registrado',
+          message: `Se registró el Visto Bueno / Autorización de la salida grupal para la totalidad de los ${allApprovedGroupSols.length} colaboradores(as).`,
+          nextStep: 'La solicitud ha sido enviada a Gestión del Talento Humano para su respectiva validación institucional.'
+        });
+      }
+    }
+
+    // ETAPA 1.5: APROBACIÓN VICERRECTORÍA ACADÉMICA (GRUPAL)
+    if (purpose === 'reporte_salida_approve_vice_academica_grupo') {
+      const pendientes = solicitudes.filter(s => s.estado === 'pendiente_aprobacion_vicerrectoria_academica');
+      if (!pendientes.length) {
+        return renderApprovalPage({
+          res,
+          tone: 'info',
+          title: 'Grupo ya procesado por Vicerrectoría Académica',
+          message: 'La aprobación de esta salida grupal ya fue registrada previamente por Vicerrectoría Académica.',
+          nextStep: 'La solicitud se encuentra en trámite en las siguientes etapas institucionales.'
         });
       }
 
-      return renderApprovalPage({
-        res,
-        tone: 'success',
-        title: 'Visto Bueno de Salida Grupal registrado',
-        message: `Se registró el Visto Bueno / Autorización de la salida grupal para la totalidad de los ${allApprovedGroupSols.length} colaboradores(as).`,
-        nextStep: 'La solicitud ha sido enviada a Gestión del Talento Humano para su respectiva validación institucional.'
+      const isNationalOrInternational = solicitudes.some(s => {
+        const alcance = s.datos_formulario?.salida?.alcance;
+        return alcance === 'Nacional' || alcance === 'Internacional';
       });
+
+      const nextStage = isNationalOrInternational ? 'pendiente_aprobacion_sst' : 'pendiente_aprobacion_gestion_humana';
+      const nextTokenPurpose = isNationalOrInternational ? 'reporte_salida_approve_sst_grupo' : 'reporte_salida_approve_gh_grupo';
+
+      const nextToken = encryptPayload({ purpose: nextTokenPurpose, grupo_id }, null);
+      const nextTokenHash = hashToken(nextToken);
+      const now = new Date();
+
+      for (const sol of pendientes) {
+        await ReporteSalidaSolicitud.update({
+          estado: nextStage,
+          vicerrectoria_aprobado_at: now,
+          aprobacion_vicerrectoria_token_hash: null,
+          ...(isNationalOrInternational ? { aprobacion_sst_token_hash: nextTokenHash } : { aprobacion_gh_token_hash: nextTokenHash }),
+          trazabilidad: appendTrace(sol, 'aprobada_vicerrectoria', null, { via: 'correo_grupo' })
+        }, {
+          where: { id: sol.id }
+        });
+        await sol.reload();
+      }
+
+      const allApprovedGroupSols = await ReporteSalidaSolicitud.findAll({
+        where: { grupo_id, estado: nextStage }
+      });
+
+      if (isNationalOrInternational) {
+        const emailResult = await sendSSTGroupApprovalEmail(allApprovedGroupSols, nextToken);
+        for (const sol of allApprovedGroupSols) {
+          await sol.update({
+            correo_sst_enviado_at: emailResult.success ? new Date() : null,
+            trazabilidad: appendTrace(sol, emailResult.success ? 'correo_sst_enviado' : 'correo_sst_error', null, { error: emailResult.error || '' })
+          });
+        }
+        return renderApprovalPage({
+          res,
+          tone: 'success',
+          title: 'Aprobación de Vicerrectoría Académica registrada',
+          message: `Se aprobó la salida grupal por Vicerrectoría Académica. Al ser una salida fuera de la región (${solicitudes[0]?.datos_formulario?.salida?.alcance || 'Nacional'}), fue remitida a Seguridad y Salud en el Trabajo (SST).`,
+          nextStep: 'SST recibirá la notificación para su visto bueno antes de pasar a Gestión del Talento Humano.'
+        });
+      } else {
+        const emailResult = await sendGestionHumanaGroupApprovalEmail(allApprovedGroupSols, nextToken);
+        for (const sol of allApprovedGroupSols) {
+          await sol.update({
+            correo_gh_enviado_at: emailResult.success ? new Date() : null,
+            trazabilidad: appendTrace(sol, emailResult.success ? 'correo_gestion_humana_enviado' : 'correo_gestion_humana_error', null, { error: emailResult.error || '' })
+          });
+        }
+        return renderApprovalPage({
+          res,
+          tone: 'success',
+          title: 'Aprobación de Vicerrectoría Académica registrada',
+          message: 'Se aprobó la salida grupal por Vicerrectoría Académica. La solicitud ha sido enviada a Gestión del Talento Humano para su aprobación.',
+          nextStep: 'Gestión del Talento Humano validará la solicitud.'
+        });
+      }
     }
 
     // ETAPA 2: APROBACION GESTION DEL TALENTO HUMANO

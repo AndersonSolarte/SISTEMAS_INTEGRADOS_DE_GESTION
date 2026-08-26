@@ -1,6 +1,7 @@
 const { DataTypes } = require('sequelize');
 const { sequelize } = require('../config/database');
 
+
 const ReporteSalidaSolicitud = sequelize.define('reporte_salida_solicitudes', {
   id: { type: DataTypes.INTEGER, primaryKey: true, autoIncrement: true },
   consecutivo: { type: DataTypes.STRING(40), allowNull: false, unique: true },
@@ -9,6 +10,8 @@ const ReporteSalidaSolicitud = sequelize.define('reporte_salida_solicitudes', {
   jefe_inmediato_user_id: { type: DataTypes.INTEGER, allowNull: true },
   estado: {
     type: DataTypes.ENUM(
+      'pendiente_aprobacion_proyeccion_social',
+      'aprobada_proyeccion_social',
       'pendiente_aprobacion_jefe',
       'aprobada_jefe',
       'pendiente_aprobacion_vicerrectoria_academica',
@@ -41,6 +44,7 @@ const ReporteSalidaSolicitud = sequelize.define('reporte_salida_solicitudes', {
     allowNull: false,
     defaultValue: 'no_aplica'
   },
+  proyeccion_social_aprobado_at: { type: DataTypes.DATE, allowNull: true },
   jefe_aprobado_at: { type: DataTypes.DATE, allowNull: true },
   vicerrectoria_aprobado_at: { type: DataTypes.DATE, allowNull: true },
   rectoria_aprobado_at: { type: DataTypes.DATE, allowNull: true },
@@ -48,6 +52,7 @@ const ReporteSalidaSolicitud = sequelize.define('reporte_salida_solicitudes', {
   enviado_sst_at: { type: DataTypes.DATE, allowNull: true },
   finalizado_at: { type: DataTypes.DATE, allowNull: true },
   pdf_generado_at: { type: DataTypes.DATE, allowNull: true },
+  aprobacion_proyeccion_social_token_hash: { type: DataTypes.STRING(128), allowNull: true },
   aprobacion_jefe_token_hash: { type: DataTypes.STRING(128), allowNull: true },
   aprobacion_vicerrectoria_token_hash: { type: DataTypes.STRING(128), allowNull: true },
   aprobacion_rectoria_token_hash: { type: DataTypes.STRING(128), allowNull: true },

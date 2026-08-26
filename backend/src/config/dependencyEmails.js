@@ -124,7 +124,10 @@ const getDependencyEmail = (dependencyName) => {
   return null;
 };
 
+const ACADEMIC_VICERRECTORIA_EMAIL = getDependencyEmail('Vicerrectoria Academica') || 'viceacad@unicesmag.edu.co';
+
 module.exports = {
+  ACADEMIC_VICERRECTORIA_EMAIL,
   getDependencyEmail,
   DEPENDENCY_EMAILS_RAW
 };

@@ -126,6 +126,7 @@ const CARGO_SUBTYPES = [
   { value: 'proyecto_investigacion', label: 'Proyecto de investigación' },
   { value: 'asistente_congreso', label: 'Asistente a congreso' },
   { value: 'practica_academica', label: 'Práctica académica' },
+  { value: 'proyeccion_social', label: 'Proyección Social' },
   { value: 'torneo_deportivo', label: 'Participante en torneo deportivo' },
   { value: 'salida_campus', label: 'Salida entre campus' },
   { value: 'otra', label: 'Otra, ¿Cuál?:' }
@@ -2291,7 +2292,7 @@ function ReporteSalidaFormDialog({ open, documento, user, onClose, onSubmitted }
                           if (val !== 'Nacional') update('salida', 'departamento', '');
                           if (val !== 'Nacional' && val !== 'Regional') update('salida', 'municipio', '');
                           if (val === 'Regional') update('salida', 'departamento', 'Nariño');
-                          if (val === 'Nacional' || val === 'Internacional') {
+                          if ((val === 'Nacional' || val === 'Internacional') && form.viaticos?.requiereViaticos === 'Sí') {
                             if (form.salida.duracionTipo === 'menos_media_jornada') {
                               update('salida', 'duracionTipo', '1_2_dias');
                               update('salida', 'duracionDias', 2);
@@ -2751,7 +2752,7 @@ function ReporteSalidaFormDialog({ open, documento, user, onClose, onSubmitted }
 
               {!requiresViaticosFlow && subtype !== 'terapias' && hasCompletedPropiasCargoSteps && hasCompletedSaludMotivo && hasEnteredDiligenciaTime && (
                 <DuracionSelector
-                  salida={form.salida}
+                  salida={{ ...form.salida, requiereViaticos: form.viaticos?.requiereViaticos }}
                   fieldSx={duracionDiasFieldSx}
                   locked={isDiligenciaPersonal}
                   onChange={(field, value) => update('salida', field, value)}

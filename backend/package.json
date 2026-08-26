@@ -11,6 +11,7 @@
     "seed": "node src/seeds/runSeeds.js",
     "sanitize:gestion-informacion": "node src/scripts/sanitizeGestionInformacionText.js",
     "audit:document-links": "node src/scripts/auditDocumentDownloadLinks.js",
+    "test:pesv-rtm": "node src/scripts/testPesvRtmRules.js",
     "divipola:load": "node src/scripts/divipola/loadDivipolaCatalog.js",
     "divipola:enrich-matriculados": "node src/scripts/divipola/enrichMatriculadosUbicacion.js",
     "divipola:topo-departamentos": "node src/scripts/divipola/extractDepartamentosTopojson.js"

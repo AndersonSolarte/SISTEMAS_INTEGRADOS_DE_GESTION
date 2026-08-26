@@ -260,6 +260,10 @@ const ensureDocumentSheetsView = async () => {
 const ensureReporteSalidaAdminBossSupport = async (qi) => {
   await models.ReporteSalidaSolicitud.sync();
   await models.ReporteSalidaAdjunto.sync();
+  if (models.PesvParqueaderoRegistro) await models.PesvParqueaderoRegistro.sync();
+  if (models.PesvRuntValidacion) await models.PesvRuntValidacion.sync();
+  if (models.PesvSoatHistorico) await models.PesvSoatHistorico.sync();
+  if (models.PesvRtmHistorico) await models.PesvRtmHistorico.sync();
   await qi.changeColumn('reporte_salida_solicitudes', 'jefe_inmediato_user_id', {
     type: DataTypes.INTEGER,
     allowNull: true
@@ -267,6 +271,8 @@ const ensureReporteSalidaAdminBossSupport = async (qi) => {
 
   // Agregar valores nuevos al enum de estado de solicitudes
   const reporteSalidaEstadoValues = [
+    'pendiente_aprobacion_proyeccion_social',
+    'aprobada_proyeccion_social',
     'pendiente_aprobacion_vicerrectoria_academica',
     'aprobada_vicerrectoria_academica',
     'pendiente_aprobacion_rectoria',
@@ -387,16 +393,19 @@ const ensureReporteSalidaAdminBossSupport = async (qi) => {
   `);
 
   await ensureColumn(qi, 'reporte_salida_solicitudes', 'jefe_aprobado_at', { type: DataTypes.DATE, allowNull: true });
+  await ensureColumn(qi, 'reporte_salida_solicitudes', 'proyeccion_social_aprobado_at', { type: DataTypes.DATE, allowNull: true });
   await ensureColumn(qi, 'reporte_salida_solicitudes', 'vicerrectoria_aprobado_at', { type: DataTypes.DATE, allowNull: true });
   await ensureColumn(qi, 'reporte_salida_solicitudes', 'rectoria_aprobado_at', { type: DataTypes.DATE, allowNull: true });
   await ensureColumn(qi, 'reporte_salida_solicitudes', 'gestion_humana_aprobado_at', { type: DataTypes.DATE, allowNull: true });
   await ensureColumn(qi, 'reporte_salida_solicitudes', 'finalizado_at', { type: DataTypes.DATE, allowNull: true });
   await ensureColumn(qi, 'reporte_salida_solicitudes', 'pdf_generado_at', { type: DataTypes.DATE, allowNull: true });
   await ensureColumn(qi, 'reporte_salida_solicitudes', 'aprobacion_jefe_token_hash', { type: DataTypes.STRING(128), allowNull: true });
+  await ensureColumn(qi, 'reporte_salida_solicitudes', 'aprobacion_proyeccion_social_token_hash', { type: DataTypes.STRING(128), allowNull: true });
   await ensureColumn(qi, 'reporte_salida_solicitudes', 'aprobacion_vicerrectoria_token_hash', { type: DataTypes.STRING(128), allowNull: true });
   await ensureColumn(qi, 'reporte_salida_solicitudes', 'aprobacion_rectoria_token_hash', { type: DataTypes.STRING(128), allowNull: true });
   await ensureColumn(qi, 'reporte_salida_solicitudes', 'aprobacion_gh_token_hash', { type: DataTypes.STRING(128), allowNull: true });
   await ensureColumn(qi, 'reporte_salida_solicitudes', 'correo_jefe_enviado_at', { type: DataTypes.DATE, allowNull: true });
+  await ensureColumn(qi, 'reporte_salida_solicitudes', 'correo_proyeccion_social_enviado_at', { type: DataTypes.DATE, allowNull: true });
   await ensureColumn(qi, 'reporte_salida_solicitudes', 'correo_vicerrectoria_enviado_at', { type: DataTypes.DATE, allowNull: true });
   await ensureColumn(qi, 'reporte_salida_solicitudes', 'correo_rectoria_enviado_at', { type: DataTypes.DATE, allowNull: true });
   await ensureColumn(qi, 'reporte_salida_solicitudes', 'correo_gh_enviado_at', { type: DataTypes.DATE, allowNull: true });

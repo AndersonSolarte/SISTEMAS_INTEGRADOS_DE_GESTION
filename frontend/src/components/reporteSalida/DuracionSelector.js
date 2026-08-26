@@ -2,8 +2,9 @@ import React, { useMemo } from 'react';
 import { Box, InputAdornment, MenuItem, Radio, TextField, Typography } from '@mui/material';
 
 const DuracionSelector = ({ salida, fieldSx, locked = false, onChange }) => {
+  const requiresViaticos = salida?.requiereViaticos === 'Sí';
   const isEcuador = salida?.alcance === 'Internacional' && String(salida?.pais || '').trim().toLowerCase() === 'ecuador';
-  const requiresMinTwoDays = salida?.alcance === 'Nacional' || (salida?.alcance === 'Internacional' && !isEcuador);
+  const requiresMinTwoDays = requiresViaticos && (salida?.alcance === 'Nacional' || (salida?.alcance === 'Internacional' && !isEcuador));
 
   const options = useMemo(() => {
     const isElectoral = ['jurado_votacion', 'sufragante'].includes(salida.tipo);

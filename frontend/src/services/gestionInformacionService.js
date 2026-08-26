@@ -197,6 +197,34 @@ const gestionInformacionService = {
     api.put(`/planeacion/gestion-informacion/infraestructura/edificaciones-referencia/${id}`, payload).then((r) => r.data),
   deleteEdificacionReferencia: (id) =>
     api.delete(`/planeacion/gestion-informacion/infraestructura/edificaciones-referencia/${id}`).then((r) => r.data),
+  getPesvParqueaderos: (params = {}) =>
+    api.get('/pesv/parqueaderos', { params, timeout: 60000 }).then((r) => r.data),
+  createPesvParqueadero: (payload) =>
+    api.post('/pesv/parqueaderos', payload).then((r) => r.data),
+  updatePesvParqueadero: (id, payload) =>
+    api.put(`/pesv/parqueaderos/${id}`, payload).then((r) => r.data),
+  deletePesvParqueadero: (id) =>
+    api.delete(`/pesv/parqueaderos/${id}`).then((r) => r.data),
+  importPesvParqueaderos: (file, replace = true) => {
+    const formData = new FormData();
+    formData.append('file', file);
+    formData.append('replace', String(replace));
+    return api.post('/pesv/parqueaderos/import', formData, { headers: { 'Content-Type': 'multipart/form-data' }, timeout: 120000 }).then((r) => r.data);
+  },
+  downloadPesvParqueaderosTemplate: () =>
+    api.get('/pesv/parqueaderos/template', { responseType: 'blob', timeout: 60000 }).then((r) => r),
+  notifyPesvExpiry: (id, tipo = 'soat') =>
+    api.post(`/pesv/parqueaderos/${id}/notificar`, { tipo }).then((r) => r.data),
+  startPesvRuntValidation: (id) =>
+    api.post(`/pesv/parqueaderos/${id}/runt/session`).then((r) => r.data),
+  getPesvRuntValidation: (sessionId) =>
+    api.get(`/pesv/parqueaderos/runt/sessions/${sessionId}`, { timeout: 30000 }).then((r) => r.data),
+  capturePesvRuntManual: (sessionId, payload) =>
+    api.post(`/pesv/parqueaderos/runt/sessions/${sessionId}/capture-manual`, payload).then((r) => r.data),
+  confirmPesvRuntValidation: (sessionId) =>
+    api.post(`/pesv/parqueaderos/runt/sessions/${sessionId}/confirm`).then((r) => r.data),
+  getPesvRuntHistory: (id) =>
+    api.get(`/pesv/parqueaderos/${id}/runt/history`, { timeout: 30000 }).then((r) => r.data),
   uploadAuditorioFoto: (groupKey, file) => {
     const formData = new FormData();
     formData.append('groupKey', groupKey);

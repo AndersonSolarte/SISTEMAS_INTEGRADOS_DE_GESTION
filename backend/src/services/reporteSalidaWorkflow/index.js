@@ -9,6 +9,7 @@ const FinancieraWorkflowStrategy = require('./strategies/financieraStrategy');
 const EvangelizacionWorkflowStrategy = require('./strategies/evangelizacionStrategy');
 const InvestigacionWorkflowStrategy = require('./strategies/investigacionStrategy');
 const RectoriaWorkflowStrategy = require('./strategies/rectoriaStrategy');
+const ProyeccionSocialWorkflowStrategy = require('./strategies/proyeccionSocialStrategy');
 
 const strategies = {
   base: new BaseWorkflowStrategy(),
@@ -16,7 +17,8 @@ const strategies = {
   financiera: new FinancieraWorkflowStrategy(),
   evangelizacion: new EvangelizacionWorkflowStrategy(),
   investigacion: new InvestigacionWorkflowStrategy(),
-  rectoria: new RectoriaWorkflowStrategy()
+  rectoria: new RectoriaWorkflowStrategy(),
+  proyeccionSocial: new ProyeccionSocialWorkflowStrategy()
 };
 
 /**
@@ -24,6 +26,7 @@ const strategies = {
   */
 const getWorkflowStrategy = (solicitud = {}, helpers = {}) => {
   const {
+    getSolicitudSalida,
     getSolicitudVicerrectoria,
     isVicerrectoriaAcademica,
     isEvangelizacionVicerrectoria,
@@ -31,6 +34,11 @@ const getWorkflowStrategy = (solicitud = {}, helpers = {}) => {
     isFinancieraVicerrectoria,
     isRectoriaAuthority
   } = helpers;
+
+  const salida = getSolicitudSalida ? getSolicitudSalida(solicitud) : (solicitud.datos_formulario?.salida || {});
+  if (salida && (salida.tipo === 'proyeccion_social' || salida.tipo === 'proyeccion_social_extension')) {
+    return strategies.proyeccionSocial;
+  }
 
   const vicerrectoriaName = getSolicitudVicerrectoria ? getSolicitudVicerrectoria(solicitud) : '';
 

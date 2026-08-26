@@ -562,14 +562,33 @@ function DashboardLayout() {
     }
   }
 
-  const movilidadItem = {
-    key: 'practica_integral_movilidad',
-    path: '/dashboard/practica-integral-movilidad',
-    label: 'Práctica Integral de Movilidad',
-    icon: <AssignmentTurnedInIcon />
-  };
-  if (!menuItems.some((it) => it.key === 'practica_integral_movilidad')) {
-    menuItems = [...menuItems, movilidadItem];
+  const hasExplicitMovilidadPerm = Boolean(
+    (Array.isArray(user?.allowedModules) && user.allowedModules.includes('practica_integral_movilidad')) ||
+    (Array.isArray(user?.modulos_autorizados) && user.modulos_autorizados.includes('practica_integral_movilidad')) ||
+    (Array.isArray(user?.permissions) && user.permissions.includes('practica_integral_movilidad')) ||
+    (Array.isArray(explicitMenuPermissions) && explicitMenuPermissions.includes('practica_integral_movilidad'))
+  );
+
+  const isMovilidadAuthorizedRole = Boolean(
+    user?.role === ROLES.ADMINISTRADOR ||
+    user?.role === ROLES.GESTION_PROCESOS ||
+    user?.role === ROLES.PLANEACION_ESTRATEGICA ||
+    (user?.cargo && /director|decano|coordinador|lider|docente|profesor|tutor|vicerrec|academica|financiera/i.test(user.cargo)) ||
+    (user?.dependencia && /licenciatura|programa|facultad|escuela|departamento|practica|movilidad|vicerrec|academica|financiera/i.test(user.dependencia))
+  );
+
+  const canAccessMovilidad = hasExplicitMovilidadPerm || isMovilidadAuthorizedRole;
+
+  if (canAccessMovilidad) {
+    const movilidadItem = {
+      key: 'practica_integral_movilidad',
+      path: '/dashboard/practica-integral-movilidad',
+      label: 'Práctica Integral de Movilidad',
+      icon: <AssignmentTurnedInIcon />
+    };
+    if (!menuItems.some((it) => it.key === 'practica_integral_movilidad')) {
+      menuItems = [...menuItems, movilidadItem];
+    }
   }
 
   const drawer = (

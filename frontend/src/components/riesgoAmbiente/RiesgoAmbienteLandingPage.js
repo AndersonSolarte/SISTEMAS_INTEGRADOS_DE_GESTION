@@ -7,12 +7,14 @@ import ArrowForwardRoundedIcon from '@mui/icons-material/ArrowForwardRounded';
 import BarChartRoundedIcon from '@mui/icons-material/BarChartRounded';
 import CheckCircleOutlineRoundedIcon from '@mui/icons-material/CheckCircleOutlineRounded';
 import DirectionsCarFilledRoundedIcon from '@mui/icons-material/DirectionsCarFilledRounded';
-import EcoRoundedIcon from '@mui/icons-material/EcoRounded';
+import EnergySavingsLeafRoundedIcon from '@mui/icons-material/EnergySavingsLeafRounded';
 import HealthAndSafetyRoundedIcon from '@mui/icons-material/HealthAndSafetyRounded';
 import InsightsRoundedIcon from '@mui/icons-material/InsightsRounded';
 import ShieldRoundedIcon from '@mui/icons-material/ShieldRounded';
 import WarningAmberRoundedIcon from '@mui/icons-material/WarningAmberRounded';
+import LocalParkingRoundedIcon from '@mui/icons-material/LocalParkingRounded';
 import { ROLES } from '../../constants/roles';
+import ParqueaderosPesvPanel from './ParqueaderosPesvPanel';
 
 const MODULES = [
   {
@@ -36,7 +38,7 @@ const MODULES = [
     title: 'Gestión Ambiental',
     shortTitle: 'Ambiental',
     description: 'Control del desempeño ambiental institucional: recursos, residuos, impactos y programas de sostenibilidad.',
-    icon: EcoRoundedIcon,
+    icon: EnergySavingsLeafRoundedIcon,
     color: '#059669',
     dark: '#065f46',
     light: '#ecfdf5',
@@ -128,11 +130,37 @@ function RiesgoAmbienteLandingPage({ user, onBack }) {
   const [activeModule, setActiveModule] = useState(null);
   const visibleModules = useMemo(() => {
     if ([ROLES.ADMINISTRADOR, ROLES.PLANEACION_ESTRATEGICA].includes(user?.role)) return MODULES;
-    const permissions = Array.isArray(user?.allowedModules) ? user.allowedModules : [];
+    const permissions = [user?.allowedModules, user?.modulePermissions, user?.modules, user?.permissions?.modules]
+      .flatMap((entry) => Array.isArray(entry) ? entry : [])
+      .map((key) => String(key || '').trim());
     return MODULES.filter((item) => permissions.includes(item.permission));
   }, [user]);
 
   const selected = MODULES.find((item) => item.key === activeModule);
+  if (activeModule === 'parqueaderos') return <ParqueaderosPesvPanel onBack={() => setActiveModule('seguridad_vial')} />;
+  if (selected?.key === 'seguridad_vial') {
+    return (
+      <Fade in timeout={250}>
+        <Stack spacing={2.4}>
+          <Button startIcon={<ArrowBackRoundedIcon />} onClick={() => setActiveModule(null)} sx={{ alignSelf: 'flex-start', fontWeight: 800, textTransform: 'none' }}>Volver a Gestión del Riesgo y Ambiente</Button>
+          <Paper elevation={0} sx={{ p: { xs: 2.5, md: 3.2 }, borderRadius: 4, color: '#fff', background: selected.gradient }}>
+            <Stack direction="row" spacing={2} alignItems="center"><DirectionsCarFilledRoundedIcon sx={{ fontSize: 44 }} /><Box><Typography variant="overline" sx={{ fontWeight: 900, opacity: .85 }}>PESV UNICESMAG</Typography><Typography variant="h4" sx={{ fontWeight: 900 }}>Plan Estratégico de Seguridad Vial</Typography><Typography sx={{ mt: .5, opacity: .9 }}>Seleccione un submódulo para gestionar y analizar la movilidad segura institucional.</Typography></Box></Stack>
+          </Paper>
+          <Box>
+            <Typography variant="h5" sx={{ fontWeight: 900, color: '#0f172a', textAlign: 'center' }}>Submódulos de Seguridad Vial</Typography>
+            <Typography sx={{ color: '#64748b', textAlign: 'center', mt: .5 }}>La arquitectura queda preparada para incorporar nuevos componentes del PESV.</Typography>
+          </Box>
+          <Paper elevation={0} onClick={() => setActiveModule('parqueaderos')} sx={{ maxWidth: 480, width: '100%', mx: 'auto', p: 3.2, borderRadius: 4, border: '1px solid #fde68a', cursor: 'pointer', bgcolor: '#fffdf7', transition: 'all .22s ease', '&:hover': { transform: 'translateY(-4px)', borderColor: '#d97706', boxShadow: '0 18px 40px rgba(217,119,6,.16)' } }}>
+            <Box sx={{ width: 72, height: 72, borderRadius: 3, display: 'grid', placeItems: 'center', color: '#fff', background: selected.gradient, mb: 2 }}><LocalParkingRoundedIcon sx={{ fontSize: 42 }} /></Box>
+            <Chip label="SUBMÓDULO 01" size="small" sx={{ bgcolor: '#fef3c7', color: '#92400e', fontWeight: 900, mb: 1.2 }} />
+            <Typography variant="h5" sx={{ fontWeight: 900, color: '#0f172a' }}>Parqueaderos UNICESMAG</Typography>
+            <Typography sx={{ mt: 1, color: '#64748b', lineHeight: 1.55 }}>Administración de cupos, personas y vehículos, con alertas de vencimiento de SOAT y revisión tecnomecánica.</Typography>
+            <Button fullWidth variant="contained" endIcon={<ArrowForwardRoundedIcon />} sx={{ mt: 2.5, borderRadius: 999, textTransform: 'none', fontWeight: 900, background: selected.gradient }}>Gestionar parqueaderos</Button>
+          </Paper>
+        </Stack>
+      </Fade>
+    );
+  }
   if (selected) return <ModuleDashboard module={selected} onBack={() => setActiveModule(null)} />;
 
   return (
