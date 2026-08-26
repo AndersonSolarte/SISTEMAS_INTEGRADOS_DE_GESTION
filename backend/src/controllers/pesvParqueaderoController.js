@@ -180,6 +180,8 @@ const list = async (req, res) => {
     const indicador = clean(req.query.indicador, 30);
     if (indicador === 'soat_vencido') data = data.filter((row) => row.soat_estado.code === 'vencido');
     if (indicador === 'soat_proximo') data = data.filter((row) => row.soat_estado.code === 'proximo');
+    if (indicador === 'rtm_vencido') data = data.filter((row) => row.tecnomecanica_estado.code === 'vencido');
+    if (indicador === 'rtm_proximo') data = data.filter((row) => row.tecnomecanica_estado.code === 'proximo');
     if (indicador === 'rtm_alerta') data = data.filter((row) => ['vencido', 'proximo'].includes(row.tecnomecanica_estado.code));
     data.sort((a, b) => search
       ? b._searchScore - a._searchScore || String(a.nombres_apellidos || '').localeCompare(String(b.nombres_apellidos || ''), 'es')
@@ -532,7 +534,20 @@ const notifyExpiry = async (req, res) => {
       <p style="margin: 2px 0 0 0; font-size: 11.5px; color: #64748b;">Plan Estratégico de Seguridad Vial · UNICESMAG</p>
       <p style="margin: 2px 0 0 0; font-size: 11.5px; color: #64748b;">Hombres nuevos para tiempos nuevos</p>
     `;
-    const result = await sendMailDirect({ to: row.correo, subject: `Aviso de vigencia ${documentType} · PESV UNICESMAG`, text: `Saludo cordial, ${row.nombres_apellidos}. Su ${documentType} asociado a la placa ${row.placa || 'sin placa'} ${statusText}. Por favor realice la renovación y actualice la información. Fraternalmente, Seguridad y Salud en el Trabajo, Plan Estratégico de Seguridad Vial de UNICESMAG.`, html: renderInstitutionalTemplate({ title: `Aviso de vigencia ${documentType}`, introHtml: '', bodyHtml: body, senderHtml }) });
+    const threadId = `<pesv-parqueadero-${row.id}@unicesmag.edu.co>`;
+    const subject = `[PESV UNICESMAG] Vigencias Documentales · Placa ${row.placa || row.identificacion || 'Vehículo'}`;
+    const result = await sendMailDirect({
+      to: row.correo,
+      subject,
+      inReplyTo: threadId,
+      references: threadId,
+      headers: {
+        'In-Reply-To': threadId,
+        'References': threadId
+      },
+      text: `Saludo cordial, ${row.nombres_apellidos}. Su ${documentType} asociado a la placa ${row.placa || 'sin placa'} ${statusText}. Por favor realice la renovación y actualice la información. Fraternalmente, Seguridad y Salud en el Trabajo, Plan Estratégico de Seguridad Vial de UNICESMAG.`,
+      html: renderInstitutionalTemplate({ title: `Aviso de vigencia ${documentType}`, introHtml: '', bodyHtml: body, senderHtml })
+    });
     if (!result.success) return res.status(503).json({ success: false, message: `No se pudo enviar el correo: ${result.error}` });
     const notificationField = documentType === 'SOAT' ? 'ultima_notificacion_soat' : 'ultima_notificacion_tecnomecanica';
     await row.update({ [notificationField]: new Date(), actualizado_por: req.user?.id });

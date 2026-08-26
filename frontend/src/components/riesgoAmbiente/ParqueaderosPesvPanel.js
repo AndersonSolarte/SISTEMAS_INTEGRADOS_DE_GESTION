@@ -358,7 +358,8 @@ function ParqueaderosPesvPanel({ onBack }) {
     { key: '', label: 'Cupos registrados', value: summary.total || 0, color: '#1d4ed8', background: '#eff6ff', icon: <DirectionsCarRoundedIcon /> },
     { key: 'soat_vencido', label: 'SOAT vencidos', value: summary.soat_vencidos || 0, color: '#dc2626', background: '#fef2f2', icon: <WarningAmberRoundedIcon /> },
     { key: 'soat_proximo', label: 'SOAT próximos (30 días)', value: summary.soat_proximos || 0, color: '#d97706', background: '#fffbeb', icon: <EmailRoundedIcon /> },
-    { key: 'rtm_alerta', label: 'Tecnomecánica en alerta', value: (summary.tecnomecanica_vencidos || 0) + (summary.tecnomecanica_proximos || 0), color: '#7c3aed', background: '#f5f3ff', icon: <FactCheckRoundedIcon /> }
+    { key: 'rtm_vencido', label: 'Tecnomecánica vencidas', value: summary.tecnomecanica_vencidos || 0, color: '#be123c', background: '#fff1f2', icon: <WarningAmberRoundedIcon /> },
+    { key: 'rtm_proximo', label: 'Tecnomecánica próximas (30 días)', value: summary.tecnomecanica_proximos || 0, color: '#7c3aed', background: '#f5f3ff', icon: <FactCheckRoundedIcon /> }
   ];
   const applyIndicatorFilter = (key) => {
     const next = key && indicator === key ? '' : key;
@@ -400,7 +401,7 @@ function ParqueaderosPesvPanel({ onBack }) {
         <Stack direction="row" spacing={1.5} alignItems="center"><DirectionsCarRoundedIcon sx={{ fontSize: 38 }} /><Box><Typography variant="overline" sx={{ fontWeight: 900, opacity: .85 }}>PESV · Submódulo 01</Typography><Typography variant="h4" sx={{ fontWeight: 900 }}>Parqueaderos UNICESMAG</Typography><Typography sx={{ opacity: .88 }}>Gestión de cupos, vehículos y vigencias documentales.</Typography></Box></Stack>
       </Paper>
       {importResult?.warningCount > 0 && <Alert severity="warning">Se importaron {importResult.imported} registros con {importResult.warningCount} advertencias de datos. Las vigencias no reconocibles quedaron marcadas como “Sin fecha verificable”.</Alert>}
-      <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr 1fr', lg: 'repeat(4,1fr)' }, gap: 1.4 }}>
+      <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr 1fr', sm: 'repeat(3,1fr)', lg: 'repeat(5,1fr)' }, gap: 1.4 }}>
         {stats.map((item) => {
           const selected = indicator === item.key && (item.key !== '' || (!indicator && !estado));
           return <Paper
@@ -446,7 +447,7 @@ function ParqueaderosPesvPanel({ onBack }) {
       <TableContainer component={Paper} elevation={0} sx={{ borderRadius: 3, border: '1px solid #e2e8f0', overflowX: 'auto' }}>
         <Table size="small" sx={{ width: '100%', minWidth: 1040, tableLayout: 'fixed', '& .MuiTableCell-head': { px: 1.1, py: 1.25, fontSize: 11.5, lineHeight: 1.2 }, '& .MuiTableCell-body': { px: 1.1, py: 1.15, fontSize: 12.5, verticalAlign: 'top', overflowWrap: 'anywhere' }, '& .MuiTypography-body2': { fontSize: 12.5, lineHeight: 1.3 }, '& .MuiTypography-caption': { fontSize: 10.8, lineHeight: 1.35 }, '& .MuiChip-root': { height: 22, fontSize: 10.5 } }}>
           <colgroup><col style={{ width: '18%' }} /><col style={{ width: '19%' }} /><col style={{ width: '11%' }} /><col style={{ width: '13%' }} /><col style={{ width: '11.5%' }} /><col style={{ width: '15%' }} /><col style={{ width: '12.5%' }} /></colgroup>
-          <TableHead><TableRow sx={{ bgcolor: '#eaf2ff', borderBottom: '2px solid #2563eb' }}>{['Persona / identificación', 'Contacto', 'Parqueadero', 'Vehículo / placa', 'SOAT', 'Tecnomecánica', 'Acciones'].map((label) => <TableCell key={label} sx={{ color: '#173b72', fontWeight: 900, borderBottom: 0 }}>{label}</TableCell>)}</TableRow></TableHead>
+          <TableHead><TableRow sx={{ bgcolor: '#eaf2ff', borderBottom: '2px solid #2563eb' }}>{['Persona / identificación', 'Contacto', 'Parqueadero', 'Vehículo / placa', 'SOAT', 'Tecnomecánica'].map((label) => <TableCell key={label} sx={{ color: '#173b72', fontWeight: 900, borderBottom: 0 }}>{label}</TableCell>)}<TableCell align="center" sx={{ color: '#173b72', fontWeight: 900, borderBottom: 0 }}>Acciones</TableCell></TableRow></TableHead>
           <TableBody>{loading ? <TableRow><TableCell colSpan={7} align="center" sx={{ py: 7 }}><CircularProgress /></TableCell></TableRow> : visibleRows.length === 0 ? <TableRow><TableCell colSpan={7} align="center" sx={{ py: 7 }}><WarningAmberRoundedIcon sx={{ color: '#d97706' }} /><Typography sx={{ fontWeight: 800, color: '#64748b' }}>No hay registros para los filtros seleccionados</Typography></TableCell></TableRow> : visibleRows.map((row, rowIndex) => {
             const critical = row.soat_estado?.code === 'vencido' || row.tecnomecanica_estado?.code === 'vencido';
             return <TableRow key={row.id} sx={{ bgcolor: critical ? '#fff7f7' : rowIndex % 2 ? '#f8fbff' : '#fff', '&:hover': { bgcolor: critical ? '#feecec' : '#eef5ff' }, '& td': { borderBottomColor: '#e5edf7' } }}>
@@ -456,15 +457,31 @@ function ParqueaderosPesvPanel({ onBack }) {
               <TableCell><Chip label={row.placa || 'SIN PLACA'} size="small" sx={{ fontWeight: 900, bgcolor: '#e0e7ff', color: '#3730a3' }} /><Typography variant="caption" sx={{ display: 'block', mt: .5 }}>{row.tipo_vehiculo || 'Sin tipo'}</Typography></TableCell>
               <TableCell><ExpiryCell type="soat" date={row.soat_vigencia} rawText={row.soat_vigencia_texto} status={row.soat_estado} row={row} onNotify={notify} notifying={notifying === `${row.id}-soat`} /></TableCell>
               <TableCell><ExpiryCell type="tecnomecanica" date={row.tecnomecanica_vigencia} rawText={row.tecnomecanica_vigencia_texto} status={row.tecnomecanica_estado} row={row} onNotify={notify} notifying={notifying === `${row.id}-tecnomecanica`} /></TableCell>
-              <TableCell>
-                <Stack direction="row" spacing={0} alignItems="center" sx={{ whiteSpace: 'nowrap' }}>
-                  <Tooltip title="Validar SOAT y RTM en RUNT"><span><IconButton size="small" onClick={() => startRuntValidation(row)} disabled={!row.placa || !row.identificacion} sx={{ p: .55, color: '#d97706' }}><FactCheckRoundedIcon sx={{ fontSize: 18 }} /></IconButton></span></Tooltip>
-                  <Tooltip title="Ver las consultas RUNT confirmadas">
-                    <Button size="small" startIcon={<HistoryRoundedIcon sx={{ fontSize: '17px !important' }} />} onClick={() => openHistory(row)} sx={{ minWidth: 0, px: .55, fontSize: 10.5, textTransform: 'none', fontWeight: 800, '& .MuiButton-startIcon': { mr: .3 } }}>Historial</Button>
+              <TableCell align="center">
+                <Box sx={{ display: 'inline-grid', gridTemplateColumns: 'repeat(2, auto)', gap: 0.6, justifyItems: 'center', alignItems: 'center' }}>
+                  <Tooltip title="Validar SOAT y RTM en RUNT" arrow placement="top">
+                    <span>
+                      <IconButton size="small" onClick={() => startRuntValidation(row)} disabled={!row.placa || !row.identificacion} sx={{ color: '#d97706', bgcolor: '#fffbeb', border: '1px solid #fde68a', p: 0.55, '&:hover': { bgcolor: '#fef3c7' }, '&.Mui-disabled': { bgcolor: '#f1f5f9', color: '#cbd5e1', borderColor: '#e2e8f0' } }}>
+                        <FactCheckRoundedIcon sx={{ fontSize: 16 }} />
+                      </IconButton>
+                    </span>
                   </Tooltip>
-                  <Tooltip title="Editar"><IconButton size="small" onClick={() => openEdit(row)} sx={{ p: .55 }}><EditRoundedIcon sx={{ fontSize: 18 }} /></IconButton></Tooltip>
-                  <Tooltip title="Eliminar"><IconButton size="small" color="error" onClick={() => remove(row)} sx={{ p: .55 }}><DeleteOutlineRoundedIcon sx={{ fontSize: 18 }} /></IconButton></Tooltip>
-                </Stack>
+                  <Tooltip title="Ver historial de consultas RUNT" arrow placement="top">
+                    <IconButton size="small" onClick={() => openHistory(row)} sx={{ color: '#2563eb', bgcolor: '#eff6ff', border: '1px solid #bfdbfe', p: 0.55, '&:hover': { bgcolor: '#dbeafe' } }}>
+                      <HistoryRoundedIcon sx={{ fontSize: 16 }} />
+                    </IconButton>
+                  </Tooltip>
+                  <Tooltip title="Editar cupo de parqueadero" arrow placement="bottom">
+                    <IconButton size="small" onClick={() => openEdit(row)} sx={{ color: '#475569', bgcolor: '#f8fafc', border: '1px solid #cbd5e1', p: 0.55, '&:hover': { bgcolor: '#f1f5f9', color: '#0f172a' } }}>
+                      <EditRoundedIcon sx={{ fontSize: 16 }} />
+                    </IconButton>
+                  </Tooltip>
+                  <Tooltip title="Eliminar registro" arrow placement="bottom">
+                    <IconButton size="small" onClick={() => remove(row)} sx={{ color: '#dc2626', bgcolor: '#fef2f2', border: '1px solid #fecaca', p: 0.55, '&:hover': { bgcolor: '#fee2e2' } }}>
+                      <DeleteOutlineRoundedIcon sx={{ fontSize: 16 }} />
+                    </IconButton>
+                  </Tooltip>
+                </Box>
               </TableCell>
             </TableRow>;
           })}</TableBody></Table>
