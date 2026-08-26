@@ -3222,14 +3222,14 @@ const sendJefeGroupRadicacionNotificationEmail = async (solicitud, jefeSnapshot,
       </table>
 
       <p style="font-weight:bold;color:#1e3a8a;">Nota importante:</p>
-      <p>Dado que esta es una <strong>solicitud de salida grupal</strong>, la aprobación correspondiente será gestionada directamente por el equipo de <strong>Gestion del Talento Humano</strong> (y por <strong>Seguridad y Salud en el Trabajo</strong> en caso de ser una salida nacional/internacional). Por lo tanto, <strong>no se requiere ninguna acción de aprobación por su parte</strong>.</p>
+      <p>Esta es una <strong>solicitud de salida grupal</strong>. Como Dirección de Programa / Jefatura Inmediata, se requiere su <strong>Visto Bueno / Aprobación</strong> institucional antes de continuar con la gestión en Talento Humano y SST.</p>
     `
   });
 
   return sendInstitutionalEmail({
     to,
     subject,
-    text: `Su colaborador(a) ${solicitante.nombre} participará en una salida grupal. Aprobación a cargo de Gestion del Talento Humano y/o SST.`,
+    text: `Su colaborador(a) ${solicitante.nombre} participará en una salida grupal. Se requiere su visto bueno / aprobación.`,
     html
   });
 };
@@ -3583,82 +3583,38 @@ const radicarSolicitud = async (req, res) => {
         creadas.push(solicitud);
       }
 
-      const isHomogeneous = isSingleHomogeneousGroup(creadas);
+      // TODAS LAS SALIDAS GRUPALES REQUIEREN VISTO BUENO Y APROBACIÓN PREVIA DE LA DIRECCIÓN DE PROGRAMA / JEFATURA
+      const token = encryptPayload({ purpose: 'reporte_salida_approve_jefe_grupo', grupo_id }, null);
+      const tokenHash = hashToken(token);
 
-      if (isHomogeneous) {
-        // 1. MISMA DEPENDENCIA / PROGRAMA O MISMO JEFE -> FLUJO DE VISTO BUENO DIRECTO
-        const token = encryptPayload({ purpose: 'reporte_salida_approve_jefe_grupo', grupo_id }, null);
-        const tokenHash = hashToken(token);
-
-        for (const sol of creadas) {
-          await sol.update({
-            estado: 'pendiente_aprobacion_jefe',
-            aprobacion_jefe_token_hash: tokenHash,
-            aprobacion_gh_token_hash: null
-          });
-        }
-
-        const initialRecipients = getGroupInitialApprovalRecipients(creadas);
-        const emailResult = await sendJefeGroupApprovalEmail(creadas, token, initialRecipients);
-        const thread_message_id = emailResult.messageId || null;
-
-        for (const solicitud of creadas) {
-          await solicitud.update({
-            correo_jefe_enviado_at: emailResult.success ? new Date() : null,
-            datos_formulario: {
-              ...solicitud.datos_formulario,
-              thread_message_id
-            },
-            trazabilidad: appendTrace(solicitud, emailResult.success ? 'correo_jefe_enviado' : 'correo_jefe_error', null, { error: emailResult.error || '' })
-          });
-        }
-
-        return res.status(201).json({
-          success: true,
-          message: 'Salida grupal radicada exitosamente. Se envió la solicitud de visto bueno / aprobación a la Dirección de Programa / Jefatura correspondiente.',
-          data: creadas.map(serializeSolicitud)
-        });
-      } else {
-        // 2. DIVERSOS PROGRAMAS / DIVERSAS JEFATURAS -> DIRECTO A GESTIÓN HUMANA (Para evitar reprocesos y bloqueos)
-        const token = encryptPayload({ purpose: 'reporte_salida_approve_gh_grupo', grupo_id }, null);
-        const tokenHash = hashToken(token);
-
-        for (const sol of creadas) {
-          await sol.update({
-            estado: 'pendiente_aprobacion_gestion_humana',
-            aprobacion_jefe_token_hash: null,
-            aprobacion_gh_token_hash: tokenHash
-          });
-
-          // Notificación informativa a cada jefatura/dependencia
-          const jefeSnapshot = sol.jefe_snapshot;
-          if (jefeSnapshot?.email) {
-            sendJefeGroupRadicacionNotificationEmail(sol, jefeSnapshot, participantes).catch(err => {
-              console.error(`Error enviando correo informativo al jefe de la solicitud grupal ${sol.consecutivo}:`, err);
-            });
-          }
-        }
-
-        const emailResult = await sendGestionHumanaGroupApprovalEmail(creadas, token);
-        const thread_message_id = emailResult.messageId || null;
-
-        for (const solicitud of creadas) {
-          await solicitud.update({
-            correo_gh_enviado_at: emailResult.success ? new Date() : null,
-            datos_formulario: {
-              ...solicitud.datos_formulario,
-              thread_message_id
-            },
-            trazabilidad: appendTrace(solicitud, emailResult.success ? 'correo_gestion_humana_enviado' : 'correo_gestion_humana_error', null, { error: emailResult.error || '' })
-          });
-        }
-
-        return res.status(201).json({
-          success: true,
-          message: 'Salida grupal radicada exitosamente. Por involucrar diversas dependencias/programas, fue remitida directamente a Gestión del Talento Humano para aprobación centralizada.',
-          data: creadas.map(serializeSolicitud)
+      for (const sol of creadas) {
+        await sol.update({
+          estado: 'pendiente_aprobacion_jefe',
+          aprobacion_jefe_token_hash: tokenHash,
+          aprobacion_gh_token_hash: null
         });
       }
+
+      const initialRecipients = getGroupInitialApprovalRecipients(creadas);
+      const emailResult = await sendJefeGroupApprovalEmail(creadas, token, initialRecipients);
+      const thread_message_id = emailResult.messageId || null;
+
+      for (const solicitud of creadas) {
+        await solicitud.update({
+          correo_jefe_enviado_at: emailResult.success ? new Date() : null,
+          datos_formulario: {
+            ...solicitud.datos_formulario,
+            thread_message_id
+          },
+          trazabilidad: appendTrace(solicitud, emailResult.success ? 'correo_jefe_enviado' : 'correo_jefe_error', null, { error: emailResult.error || '' })
+        });
+      }
+
+      return res.status(201).json({
+        success: true,
+        message: 'Salida grupal radicada exitosamente. Se envió la solicitud de visto bueno / aprobación a la Dirección de Programa / Jefatura correspondiente.',
+        data: creadas.map(serializeSolicitud)
+      });
     }
 
     // Single Exit Flow
