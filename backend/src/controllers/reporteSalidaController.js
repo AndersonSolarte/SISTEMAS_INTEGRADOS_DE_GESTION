@@ -6662,13 +6662,12 @@ const procesarRechazo = async (req, res) => {
   }
 };
 
-const sendJefeGroupApprovalEmail = async (solicitudes, token, recipients = []) => {
+const sendJefeGroupApprovalEmail = async (solicitudes, defaultToken, recipients = []) => {
   if (!recipients.length) return { success: false, error: 'No recipients' };
-  const approveUrl = `${publicBackendUrl.replace(/\/$/, '')}/api/reporte-salida/aprobar-grupo/${encodeURIComponent(token)}`;
-  const rejectUrl = `${publicBackendUrl.replace(/\/$/, '')}/api/reporte-salida/rechazar-grupo/${encodeURIComponent(token)}`;
 
   const leaderSol = solicitudes.find(s => s.datos_formulario?.is_leader === true) || solicitudes[0];
   const leaderNombre = leaderSol?.solicitante_snapshot?.nombre || '';
+  const grupo_id = leaderSol.grupo_id;
   const consecutivoGroup = leaderSol.consecutivo.split('-').slice(0, 3).join('-') + '-GRUPO';
   const salida = leaderSol.datos_formulario?.salida || {};
 
@@ -6699,64 +6698,74 @@ const sendJefeGroupApprovalEmail = async (solicitudes, token, recipients = []) =
     return tipo;
   };
 
-  let tableRows = '';
-  solicitudes.forEach((sol, idx) => {
-    const p = sol.datos_formulario?.personal || sol.solicitante_snapshot || {};
-    const lab = sol.datos_formulario?.laboral || {};
-    tableRows += `
-      <tr>
-        <td style="border:1px solid #dbe6f5;padding:8px;text-align:center;">${idx + 1}</td>
-        <td style="border:1px solid #dbe6f5;padding:8px;"><strong>${escapeHtml(p.nombre)}</strong> ${sol.datos_formulario?.is_leader ? '<span style="color:#0f52ba;font-size:11px;font-weight:bold;">(Líder)</span>' : ''}</td>
-        <td style="border:1px solid #dbe6f5;padding:8px;">${escapeHtml(lab.cargo || p.cargo || '')}</td>
-        <td style="border:1px solid #dbe6f5;padding:8px;">${escapeHtml(lab.dependencia || p.dependencia || '')}</td>
-        <td style="border:1px solid #dbe6f5;padding:8px;">${escapeHtml(p.correo || p.email || '')}</td>
-      </tr>
-    `;
-  });
+  let lastResult = { success: true };
 
-  const html = renderInstitutionalTemplate({
-    title: 'Solicitud de Aprobación - Salida Grupal',
-    introHtml: `<p style="margin: 0 0 12px 0;">Saludo de paz y bien,</p><p style="margin: 0 0 4px 0; color: #475569;">Estimados(as) Directores(as) de Programa / Jefes Inmediatos,</p><p>Reciba un cordial saludo. Se ha radicado una solicitud de <strong>salida grupal</strong> liderada por <strong>${escapeHtml(leaderNombre)}</strong> con un total de <strong>${solicitudes.length}</strong> colaboradores(as) participantes, la cual requiere su respectivo <strong>Visto Bueno / Aprobación</strong> institucional.</p>`,
-    bodyHtml: `
-      <p><strong>Detalles de la actividad grupal:</strong></p>
-      <ul>
-        <li><strong>Tipo de salida:</strong> ${escapeHtml(getSubtypeLabel(salida.tipo))}</li>
-        <li><strong>Fecha y hora salida:</strong> ${escapeHtml(salida.fecha)} a las ${escapeHtml(salida.horaInicio)}</li>
-        <li><strong>Fecha y hora regreso:</strong> ${escapeHtml(salida.fechaRegreso)} a las ${escapeHtml(salida.horaFin)}</li>
-        <li><strong>Tiempo por persona:</strong> ${escapeHtml(formatMinutes(solicitudes[0].tiempo_solicitado_minutos))}</li>
-        <li><strong>Motivo / Descripción:</strong> ${escapeHtml(salida.motivo || 'N/A')}</li>
-        ${salida.entidadDestino ? `<li><strong>Entidad / Lugar Destino:</strong> ${escapeHtml(salida.entidadDestino)}</li>` : ''}
-        ${salida.alcance ? `<li><strong>Alcance:</strong> ${escapeHtml(salida.alcance)}</li>` : ''}
-      </ul>
-      <p><strong>Colaboradores(as) participantes:</strong></p>
-      <table style="width:100%;border-collapse:collapse;margin:15px 0;font-size:13px;">
-        <thead>
-          <tr style="background:#f1f5f9;">
-            <th style="border:1px solid #dbe6f5;padding:8px;text-align:center;width:35px;">#</th>
-            <th style="border:1px solid #dbe6f5;padding:8px;text-align:left;">Nombre</th>
-            <th style="border:1px solid #dbe6f5;padding:8px;text-align:left;">Cargo</th>
-            <th style="border:1px solid #dbe6f5;padding:8px;text-align:left;">Dependencia / Programa</th>
-            <th style="border:1px solid #dbe6f5;padding:8px;text-align:left;">Correo</th>
-          </tr>
-        </thead>
-        <tbody>
-          ${tableRows}
-        </tbody>
-      </table>
-      <div style="text-align:center;margin:24px 0;">
-        <a href="${approveUrl}" style="display:inline-block;background:#0b3a6f;color:#fff;padding:12px 24px;border-radius:8px;text-decoration:none;font-weight:700;margin:5px 10px;">DAR VISTO BUENO / AUTORIZAR</a>
-        <a href="${rejectUrl}" style="display:inline-block;background:#b91c1c;color:#fff;padding:12px 24px;border-radius:8px;text-decoration:none;font-weight:700;margin:5px 10px;">NO AUTORIZAR SALIDA</a>
-      </div>
-      <p style="font-size:12.5px;color:#475569;">Al otorgar el Visto Bueno, la salida grupal continuará su trámite hacia la Oficina de Gestión del Talento Humano.</p>
-    `
-  });
+  for (const rEmail of recipients) {
+    const customToken = encryptPayload({ purpose: 'reporte_salida_approve_jefe_grupo', grupo_id, jefe_email: rEmail }, null);
+    const approveUrl = `${publicBackendUrl.replace(/\/$/, '')}/api/reporte-salida/aprobar-grupo/${encodeURIComponent(customToken)}`;
+    const rejectUrl = `${publicBackendUrl.replace(/\/$/, '')}/api/reporte-salida/rechazar-grupo/${encodeURIComponent(customToken)}`;
 
-  return sendInstitutionalEmail({
-    to: recipients,
-    subject,
-    text: `Solicitud de visto bueno para salida grupal liderada por ${leaderNombre} con ${solicitudes.length} participantes. Para autorizar ingrese a ${approveUrl}.`,
-    html
-  });
+    let tableRows = '';
+    solicitudes.forEach((sol, idx) => {
+      const p = sol.datos_formulario?.personal || sol.solicitante_snapshot || {};
+      const lab = sol.datos_formulario?.laboral || {};
+      tableRows += `
+        <tr>
+          <td style="border:1px solid #dbe6f5;padding:8px;text-align:center;">${idx + 1}</td>
+          <td style="border:1px solid #dbe6f5;padding:8px;"><strong>${escapeHtml(p.nombre)}</strong> ${sol.datos_formulario?.is_leader ? '<span style="color:#0f52ba;font-size:11px;font-weight:bold;">(Líder)</span>' : ''}</td>
+          <td style="border:1px solid #dbe6f5;padding:8px;">${escapeHtml(lab.cargo || p.cargo || '')}</td>
+          <td style="border:1px solid #dbe6f5;padding:8px;">${escapeHtml(lab.dependencia || p.dependencia || '')}</td>
+          <td style="border:1px solid #dbe6f5;padding:8px;">${escapeHtml(p.correo || p.email || '')}</td>
+        </tr>
+      `;
+    });
+
+    const html = renderInstitutionalTemplate({
+      title: 'Solicitud de Aprobación - Salida Grupal',
+      introHtml: `<p style="margin: 0 0 12px 0;">Saludo de paz y bien,</p><p style="margin: 0 0 4px 0; color: #475569;">Estimado(a) Director(a) de Programa / Jefe Inmediato,</p><p>Reciba un cordial saludo. Se ha radicado una solicitud de <strong>salida grupal</strong> liderada por <strong>${escapeHtml(leaderNombre)}</strong> con un total de <strong>${solicitudes.length}</strong> colaboradores(as) participantes, la cual requiere su respectivo <strong>Visto Bueno / Aprobación</strong> institucional para los docentes/colaboradores pertenecientes a su área.</p>`,
+      bodyHtml: `
+        <p><strong>Detalles de la actividad grupal:</strong></p>
+        <ul>
+          <li><strong>Tipo de salida:</strong> ${escapeHtml(getSubtypeLabel(salida.tipo))}</li>
+          <li><strong>Fecha y hora salida:</strong> ${escapeHtml(salida.fecha)} a las ${escapeHtml(salida.horaInicio)}</li>
+          <li><strong>Fecha y hora regreso:</strong> ${escapeHtml(salida.fechaRegreso)} a las ${escapeHtml(salida.horaFin)}</li>
+          <li><strong>Tiempo por persona:</strong> ${escapeHtml(formatMinutes(solicitudes[0].tiempo_solicitado_minutos))}</li>
+          <li><strong>Motivo / Descripción:</strong> ${escapeHtml(salida.motivo || 'N/A')}</li>
+          ${salida.entidadDestino ? `<li><strong>Entidad / Lugar Destino:</strong> ${escapeHtml(salida.entidadDestino)}</li>` : ''}
+          ${salida.alcance ? `<li><strong>Alcance:</strong> ${escapeHtml(salida.alcance)}</li>` : ''}
+        </ul>
+        <p><strong>Colaboradores(as) participantes:</strong></p>
+        <table style="width:100%;border-collapse:collapse;margin:15px 0;font-size:13px;">
+          <thead>
+            <tr style="background:#f1f5f9;">
+              <th style="border:1px solid #dbe6f5;padding:8px;text-align:center;width:35px;">#</th>
+              <th style="border:1px solid #dbe6f5;padding:8px;text-align:left;">Nombre</th>
+              <th style="border:1px solid #dbe6f5;padding:8px;text-align:left;">Cargo</th>
+              <th style="border:1px solid #dbe6f5;padding:8px;text-align:left;">Dependencia / Programa</th>
+              <th style="border:1px solid #dbe6f5;padding:8px;text-align:left;">Correo</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${tableRows}
+          </tbody>
+        </table>
+        <div style="text-align:center;margin:24px 0;">
+          <a href="${approveUrl}" style="display:inline-block;background:#0b3a6f;color:#fff;padding:12px 24px;border-radius:8px;text-decoration:none;font-weight:700;margin:5px 10px;">DAR VISTO BUENO / AUTORIZAR</a>
+          <a href="${rejectUrl}" style="display:inline-block;background:#b91c1c;color:#fff;padding:12px 24px;border-radius:8px;text-decoration:none;font-weight:700;margin:5px 10px;">NO AUTORIZAR SALIDA</a>
+        </div>
+        <p style="font-size:12.5px;color:#475569;">Al otorgar el Visto Bueno, el trámite avanzará hacia la Oficina de Gestión del Talento Humano una vez que todas las Direcciones de Programa / Jefaturas involucradas otorguen su respectiva autorización.</p>
+      `
+    });
+
+    lastResult = await sendInstitutionalEmail({
+      to: [rEmail],
+      subject,
+      text: `Solicitud de visto bueno para salida grupal liderada por ${leaderNombre} con ${solicitudes.length} participantes. Para autorizar ingrese a ${approveUrl}.`,
+      html
+    });
+  }
+
+  return lastResult;
 };
 
 const sendSSTGroupApprovalEmail = async (solicitudes, token) => {
@@ -7246,25 +7255,58 @@ const aprobarGrupoDesdeCorreo = async (req, res) => {
         });
       }
 
+      // Si el token incluye un jefe_email específico, filtrar solicitudes del programa/jefe correspondiente
+      const targetJefeEmail = payload.jefe_email ? normalizeEmail(payload.jefe_email) : null;
+      let toApprove = pendientes;
+
+      if (targetJefeEmail) {
+        toApprove = pendientes.filter(sol => {
+          const jefeEm = normalizeEmail(sol.jefe_snapshot?.email);
+          const depEm = normalizeEmail(getDependencyEmail(sol.datos_formulario?.laboral?.dependencia || sol.dependencia));
+          return jefeEm === targetJefeEmail || depEm === targetJefeEmail;
+        });
+        if (!toApprove.length) toApprove = pendientes;
+      }
+
       const ghToken = encryptPayload({ purpose: 'reporte_salida_approve_gh_grupo', grupo_id }, null);
       const ghTokenHash = hashToken(ghToken);
       const now = new Date();
 
-      for (const sol of pendientes) {
+      for (const sol of toApprove) {
         await ReporteSalidaSolicitud.update({
           estado: 'pendiente_aprobacion_gestion_humana',
           jefe_aprobado_at: now,
           aprobacion_jefe_token_hash: null,
           aprobacion_gh_token_hash: ghTokenHash,
-          trazabilidad: appendTrace(sol, 'aprobada_jefe', null, { via: 'correo_grupo' })
+          trazabilidad: appendTrace(sol, 'aprobada_jefe', null, { via: 'correo_grupo', jefe_email: targetJefeEmail })
         }, {
           where: { id: sol.id }
         });
         await sol.reload();
       }
 
-      const emailResult = await sendGestionHumanaGroupApprovalEmail(pendientes, ghToken);
-      for (const sol of pendientes) {
+      // Verificar si AÚN QUEDAN otros colaboradores del grupo pendientes de visto bueno de su Director/Jefe
+      const remainingJefePendientes = await ReporteSalidaSolicitud.findAll({
+        where: { grupo_id, estado: 'pendiente_aprobacion_jefe' }
+      });
+
+      if (remainingJefePendientes.length > 0) {
+        return renderApprovalPage({
+          res,
+          tone: 'success',
+          title: 'Visto Bueno Parcial registrado',
+          message: `Se registró exitosamente su Visto Bueno / Autorización para los ${toApprove.length} colaborador(es) pertenecientes a su programa/dependencia.`,
+          nextStep: `El grupo pasará a Gestión del Talento Humano una vez que el resto de los Directores de Programa de los demás ${remainingJefePendientes.length} colaborador(es) otorguen su Visto Bueno.`
+        });
+      }
+
+      // SI TODOS LOS DIRECTORES DE PROGRAMA INVOLUCRADOS YA APROBARON -> ENVIAR A GESTIÓN HUMANA
+      const allApprovedGroupSols = await ReporteSalidaSolicitud.findAll({
+        where: { grupo_id, estado: 'pendiente_aprobacion_gestion_humana' }
+      });
+
+      const emailResult = await sendGestionHumanaGroupApprovalEmail(allApprovedGroupSols, ghToken);
+      for (const sol of allApprovedGroupSols) {
         await sol.update({
           correo_gh_enviado_at: emailResult.success ? new Date() : null,
           trazabilidad: appendTrace(sol, emailResult.success ? 'correo_gestion_humana_enviado' : 'correo_gestion_humana_error', null, { error: emailResult.error || '' })
@@ -7275,7 +7317,7 @@ const aprobarGrupoDesdeCorreo = async (req, res) => {
         res,
         tone: 'success',
         title: 'Visto Bueno de Salida Grupal registrado',
-        message: `Se registró exitosamente el visto bueno / autorización de la salida grupal para ${pendientes.length} colaboradores(as).`,
+        message: `Se registró el Visto Bueno / Autorización de la salida grupal para la totalidad de los ${allApprovedGroupSols.length} colaboradores(as).`,
         nextStep: 'La solicitud ha sido enviada a Gestión del Talento Humano para su respectiva validación institucional.'
       });
     }

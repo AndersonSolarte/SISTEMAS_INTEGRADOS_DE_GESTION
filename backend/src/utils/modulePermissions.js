@@ -27,6 +27,10 @@ const GESTION_INFO_MODULE_KEYS = new Set([
   'biblioteca',
   'medios_educativos',
   'internacionalizacion',
+  'gestion_riesgo_ambiente',
+  'gestion_riesgo_ambiente.seguridad_salud_trabajo',
+  'gestion_riesgo_ambiente.gestion_ambiental',
+  'gestion_riesgo_ambiente.seguridad_vial',
   'investigacion',
   'proyectos_convenios',
   'recurso_humano',
@@ -339,6 +343,9 @@ const getUserModulePermissions = async (userId, role) => {
   }
   if (allowedModules.includes('autoevaluacion.instrumentos.access') && !allowedModules.includes('autoevaluacion')) {
     allowedModules.push('autoevaluacion');
+  }
+  if (allowedModules.some((key) => key.startsWith('gestion_riesgo_ambiente.')) && !allowedModules.includes('gestion_riesgo_ambiente')) {
+    allowedModules.push('gestion_riesgo_ambiente');
   }
   const hasStatisticalModule = allowedModules.some((key) => (
     key !== 'estadistica_institucional'

@@ -194,6 +194,10 @@ function GestionUsuarios() {
     { key: 'biblioteca', label: 'Biblioteca', group: 'Tableros estadisticos' },
     { key: 'medios_educativos', label: 'Medios Educativos', group: 'Tableros estadisticos' },
     { key: 'internacionalizacion', label: 'Internacionalizacion', group: 'Tableros estadisticos' },
+    { key: 'gestion_riesgo_ambiente', label: 'Gestión del Riesgo y Ambiente', group: 'Tableros estadisticos' },
+    { key: 'gestion_riesgo_ambiente.seguridad_salud_trabajo', label: 'Seguridad y Salud en el Trabajo', group: 'Gestión del Riesgo y Ambiente' },
+    { key: 'gestion_riesgo_ambiente.gestion_ambiental', label: 'Gestión Ambiental', group: 'Gestión del Riesgo y Ambiente' },
+    { key: 'gestion_riesgo_ambiente.seguridad_vial', label: 'Plan Estratégico de Seguridad Vial', group: 'Gestión del Riesgo y Ambiente' },
     { key: 'investigacion', label: 'Investigacion', group: 'Tableros estadisticos' },
     { key: 'proyectos_convenios', label: 'Proyectos y Convenios', group: 'Tableros estadisticos' },
     { key: 'recurso_humano', label: 'Gestión del Talento Humano', group: 'Tableros estadisticos' },
@@ -229,6 +233,7 @@ function GestionUsuarios() {
     'gestion_bases_datos.datos_exportar'
   ].includes(item.key));
   const STATISTICAL_MODULE_OPTIONS = GI_MODULE_OPTIONS.filter((item) => item.group === 'Tableros estadisticos');
+  const RIESGO_AMBIENTE_PERMISSION_OPTIONS = GI_MODULE_OPTIONS.filter((item) => item.group === 'Gestión del Riesgo y Ambiente');
   const AUTOEVALUACION_PERMISSION_OPTIONS = GI_MODULE_OPTIONS.filter((item) => item.group === 'Autoevaluacion');
   const SECURITY_APPLICATION_PERMISSION_OPTIONS = GI_MODULE_OPTIONS.filter((item) => item.group === 'Seguridad Aplicativa');
   const VIATICOS_PERMISSION_KEYS = {
@@ -1155,9 +1160,18 @@ function GestionUsuarios() {
         const isDatabaseChild = key.startsWith('gestion_bases_datos.');
         const isViaticosPermission = key === 'vicerrectoria_financiera' || key.startsWith('vicerrectoria_financiera.viaticos');
         const isAcademicPermission = key === 'vicerrectoria_academica' || key.startsWith('vicerrectoria_academica.');
-        const isTablero = !isDatabasePermission && !isViaticosPermission && !isAcademicPermission && key !== 'estadistica_institucional';
+        const isRiesgoAmbientePermission = key === 'gestion_riesgo_ambiente' || key.startsWith('gestion_riesgo_ambiente.');
+        const isTablero = !isDatabasePermission && !isViaticosPermission && !isAcademicPermission && !isRiesgoAmbientePermission && key !== 'estadistica_institucional';
 
-        if (isAcademicPermission) {
+        if (isRiesgoAmbientePermission) {
+          if (!isSelected) {
+            if (key.startsWith('gestion_riesgo_ambiente.') && !nextModules.includes('gestion_riesgo_ambiente')) nextModules.push('gestion_riesgo_ambiente');
+            if (!nextModules.includes('estadistica_institucional')) nextModules.push('estadistica_institucional');
+            if (!nextMenu.includes('gestion_informacion')) nextMenu.push('gestion_informacion');
+          } else if (key === 'gestion_riesgo_ambiente') {
+            nextModules = nextModules.filter((moduleKey) => !moduleKey.startsWith('gestion_riesgo_ambiente.'));
+          }
+        } else if (isAcademicPermission) {
           if (!isSelected) {
             if (key.startsWith('vicerrectoria_academica.') && !nextModules.includes('vicerrectoria_academica')) nextModules.push('vicerrectoria_academica');
             if (!nextModules.includes('estadistica_institucional')) nextModules.push('estadistica_institucional');

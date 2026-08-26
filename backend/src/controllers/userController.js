@@ -90,6 +90,14 @@ const STATISTICAL_MODULE_PERMISSION_KEYS = new Set([
   'biblioteca',
   'medios_educativos',
   'internacionalizacion',
+  'gestion_riesgo_ambiente',
+  'gestion_riesgo_ambiente.seguridad_salud_trabajo',
+  'gestion_riesgo_ambiente.gestion_ambiental',
+  'gestion_riesgo_ambiente.seguridad_vial',
+  'gestion_riesgo_ambiente',
+  'gestion_riesgo_ambiente.seguridad_salud_trabajo',
+  'gestion_riesgo_ambiente.gestion_ambiental',
+  'gestion_riesgo_ambiente.seguridad_vial',
   'investigacion',
   'proyectos_convenios',
   'recurso_humano',
@@ -2148,6 +2156,9 @@ const updateUserModulePermissions = async (req, res) => {
     }
     if (cleanModules.includes('autoevaluacion.instrumentos.access') && !cleanModules.includes('autoevaluacion')) {
       cleanModules.push('autoevaluacion');
+    }
+    if (cleanModules.some((key) => key.startsWith('gestion_riesgo_ambiente.')) && !cleanModules.includes('gestion_riesgo_ambiente')) {
+      cleanModules.push('gestion_riesgo_ambiente');
     }
     if (cleanModules.some((key) => STATISTICAL_MODULE_PERMISSION_KEYS.has(key)) && !cleanModules.includes('estadistica_institucional')) {
       cleanModules.push('estadistica_institucional');
