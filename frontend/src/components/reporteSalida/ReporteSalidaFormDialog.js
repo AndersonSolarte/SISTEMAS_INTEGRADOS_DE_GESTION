@@ -20,8 +20,16 @@ import {
   IconButton,
   Checkbox,
   FormControlLabel,
-  CircularProgress
+  CircularProgress,
+  Switch,
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableRow,
+  Chip
 } from '@mui/material';
+import SchoolIcon from '@mui/icons-material/School';
 import AssignmentTurnedInIcon from '@mui/icons-material/AssignmentTurnedIn';
 import ContentCopyIcon from '@mui/icons-material/ContentCopy';
 import DownloadIcon from '@mui/icons-material/Download';
@@ -717,6 +725,64 @@ function ReporteSalidaFormDialog({ open, documento, user, onClose, onSubmitted }
   const [selectedMovilidadActividadId, setSelectedMovilidadActividadId] = useState('');
   const [loadingMovilidadActividades, setLoadingMovilidadActividades] = useState(false);
   const [openCronogramaModal, setOpenCronogramaModal] = useState(false);
+
+  const [incluyeEstudiantes, setIncluyeEstudiantes] = useState(false);
+  const [estudiantesList, setEstudiantesList] = useState([]);
+  const [studentSearchInput, setStudentSearchInput] = useState('');
+  const [studentOptions, setStudentOptions] = useState([]);
+  const [loadingStudentSearch, setLoadingStudentSearch] = useState(false);
+  const [showManualStudentForm, setShowManualStudentForm] = useState(false);
+  const [manualStudent, setManualStudent] = useState({ cedula: '', nombre: '', programa: '', codigo: '' });
+
+  const handleSearchEstudiantes = async (query) => {
+    setStudentSearchInput(query);
+    if (!query || query.trim().length < 2) {
+      setStudentOptions([]);
+      return;
+    }
+    setLoadingStudentSearch(true);
+    try {
+      const res = await reporteSalidaService.searchEstudiantesMatriculados(query);
+      if (res?.success && Array.isArray(res.data)) {
+        setStudentOptions(res.data);
+      } else {
+        setStudentOptions([]);
+      }
+    } catch (err) {
+      console.error('Error buscando estudiantes:', err);
+      setStudentOptions([]);
+    } finally {
+      setLoadingStudentSearch(false);
+    }
+  };
+
+  const handleAddStudent = (student) => {
+    if (!student || !student.cedula) return;
+    if (estudiantesList.some(e => String(e.cedula).trim() === String(student.cedula).trim())) {
+      return;
+    }
+    setEstudiantesList(prev => [...prev, student]);
+    setStudentSearchInput('');
+    setStudentOptions([]);
+  };
+
+  const handleRemoveStudent = (index) => {
+    setEstudiantesList(prev => prev.filter((_, i) => i !== index));
+  };
+
+  const handleAddManualStudent = () => {
+    if (!manualStudent.cedula || !manualStudent.nombre || !manualStudent.programa) {
+      return;
+    }
+    handleAddStudent({
+      cedula: manualStudent.cedula.trim(),
+      nombre: manualStudent.nombre.trim().toUpperCase(),
+      programa: manualStudent.programa.trim(),
+      codigo: manualStudent.codigo ? manualStudent.codigo.trim() : ''
+    });
+    setManualStudent({ cedula: '', nombre: '', programa: '', codigo: '' });
+    setShowManualStudentForm(false);
+  };
 
   const { category, subtype, otraDescripcion } = useMemo(() => {
     const tipo = form.salida.tipo || '';
@@ -1698,7 +1764,9 @@ function ReporteSalidaFormDialog({ open, documento, user, onClose, onSubmitted }
         categoria: category,
         compartirAdjuntoJefe: true,
         noCuentaAdjunto: category === 'salud' ? noCuentaAdjuntoSalud : false,
-        declaracionSinAdjunto: category === 'salud' && noCuentaAdjuntoSalud ? DECLARACION_SIN_ADJUNTO_SALUD : ''
+        declaracionSinAdjunto: category === 'salud' && noCuentaAdjuntoSalud ? DECLARACION_SIN_ADJUNTO_SALUD : '',
+        incluyeEstudiantes: subtype === 'proyeccion_social' ? incluyeEstudiantes : false,
+        estudiantesList: (subtype === 'proyeccion_social' && incluyeEstudiantes) ? estudiantesList : []
       };
       if (!requiresViaticosFlow) delete payload.viaticos;
       
@@ -2304,6 +2372,174 @@ function ReporteSalidaFormDialog({ open, documento, user, onClose, onSubmitted }
                           <MenuItem key={opt} value={opt}>{opt}</MenuItem>
                         ))}
                       </TextField>
+                    )}
+
+                    {/* Bloque Exclusivo: Estudiantes Participantes en Proyección Social */}
+                    {subtype === 'proyeccion_social' && (
+                      <Box sx={{ gridColumn: '1 / -1', mt: 1.5, p: 2.5, bgcolor: '#f0f9ff', borderRadius: 2.5, border: '1.5px solid #0284c7' }}>
+                        <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 1.5, flexWrap: 'wrap', gap: 1 }}>
+                          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                            <SchoolIcon sx={{ color: '#0369a1' }} />
+                            <Typography variant="subtitle1" sx={{ fontWeight: 800, color: '#0369a1' }}>
+                              Estudiantes Participantes en Proyección Social
+                            </Typography>
+                          </Box>
+                          <FormControlLabel
+                            control={
+                              <Switch
+                                checked={incluyeEstudiantes}
+                                onChange={(e) => {
+                                  setIncluyeEstudiantes(e.target.checked);
+                                  if (!e.target.checked) setEstudiantesList([]);
+                                }}
+                                color="primary"
+                              />
+                            }
+                            label={
+                              <Typography sx={{ fontWeight: 700, fontSize: 13, color: incluyeEstudiantes ? '#0369a1' : '#64748b' }}>
+                                {incluyeEstudiantes ? 'La salida INCLUYE estudiantes' : '¿La salida incluye estudiantes?'}
+                              </Typography>
+                            }
+                          />
+                        </Box>
+
+                        {incluyeEstudiantes && (
+                          <Box sx={{ mt: 1.5 }}>
+                            <Typography variant="body2" sx={{ color: '#334155', fontSize: 12.5, mb: 1.5, fontWeight: 500 }}>
+                              Busque y seleccione estudiantes matriculados por <strong>Cédula, Código o Nombre</strong> para incluirlos en el listado anexo del oficio.
+                            </Typography>
+
+                            <Autocomplete
+                              options={studentOptions}
+                              getOptionLabel={(opt) => `${opt.nombre} (Cédula: ${opt.cedula}${opt.codigo ? ` | Cód: ${opt.codigo}` : ''}) - ${opt.programa}`}
+                              loading={loadingStudentSearch}
+                              onInputChange={(_, value) => handleSearchEstudiantes(value)}
+                              onChange={(_, value) => {
+                                if (value) handleAddStudent(value);
+                              }}
+                              renderInput={(params) => (
+                                <TextField
+                                  {...params}
+                                  size="small"
+                                  fullWidth
+                                  placeholder="Escriba la cédula, código o nombre del estudiante..."
+                                  label="Buscar estudiante matriculado..."
+                                  sx={{ bgcolor: '#fff', borderRadius: 1.5 }}
+                                  InputProps={{
+                                    ...params.InputProps,
+                                    endAdornment: (
+                                      <>
+                                        {loadingStudentSearch ? <CircularProgress color="inherit" size={20} /> : null}
+                                        {params.InputProps.endAdornment}
+                                      </>
+                                    )
+                                  }}
+                                />
+                              )}
+                            />
+
+                            <Box sx={{ display: 'flex', justifyContent: 'flex-end', mt: 1 }}>
+                              <Button
+                                size="small"
+                                onClick={() => setShowManualStudentForm(!showManualStudentForm)}
+                                sx={{ textTransform: 'none', fontSize: 12, fontWeight: 600, color: '#0284c7' }}
+                              >
+                                {showManualStudentForm ? 'Ocultar registro manual' : '¿No encuentra un estudiante? Agregar manualmente'}
+                              </Button>
+                            </Box>
+
+                            {showManualStudentForm && (
+                              <Box sx={{ mt: 1.5, p: 2, bgcolor: '#fff', borderRadius: 2, border: '1px solid #cbd5e1' }}>
+                                <Typography variant="caption" sx={{ fontWeight: 800, color: '#334155', display: 'block', mb: 1 }}>
+                                  Agregar estudiante manualmente:
+                                </Typography>
+                                <Grid container spacing={1.5}>
+                                  <Grid item xs={12} sm={4}>
+                                    <TextField
+                                      size="small"
+                                      fullWidth
+                                      label="Cédula *"
+                                      value={manualStudent.cedula}
+                                      onChange={(e) => setManualStudent({ ...manualStudent, cedula: e.target.value })}
+                                    />
+                                  </Grid>
+                                  <Grid item xs={12} sm={4}>
+                                    <TextField
+                                      size="small"
+                                      fullWidth
+                                      label="Nombres y Apellidos *"
+                                      value={manualStudent.nombre}
+                                      onChange={(e) => setManualStudent({ ...manualStudent, nombre: e.target.value })}
+                                    />
+                                  </Grid>
+                                  <Grid item xs={12} sm={4}>
+                                    <TextField
+                                      size="small"
+                                      fullWidth
+                                      label="Programa *"
+                                      value={manualStudent.programa}
+                                      onChange={(e) => setManualStudent({ ...manualStudent, programa: e.target.value })}
+                                    />
+                                  </Grid>
+                                </Grid>
+                                <Box sx={{ display: 'flex', justifyContent: 'flex-end', mt: 1.5 }}>
+                                  <Button
+                                    variant="contained"
+                                    size="small"
+                                    onClick={handleAddManualStudent}
+                                    disabled={!manualStudent.cedula || !manualStudent.nombre || !manualStudent.programa}
+                                    sx={{ bgcolor: '#0284c7', '&:hover': { bgcolor: '#0369a1' } }}
+                                  >
+                                    Añadir Estudiante
+                                  </Button>
+                                </Box>
+                              </Box>
+                            )}
+
+                            {estudiantesList.length > 0 ? (
+                              <Box sx={{ mt: 2, bgcolor: '#fff', borderRadius: 2, border: '1px solid #bae6fd', overflow: 'hidden' }}>
+                                <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', p: 1.5, bgcolor: '#e0f2fe', borderBottom: '1px solid #bae6fd' }}>
+                                  <Typography sx={{ fontWeight: 800, fontSize: 13, color: '#0369a1' }}>
+                                    Estudiantes Agregados ({estudiantesList.length})
+                                  </Typography>
+                                  <Chip label={`${estudiantesList.length} estudiantes`} size="small" color="primary" />
+                                </Box>
+
+                                <Table size="small">
+                                  <TableHead sx={{ bgcolor: '#f8fafc' }}>
+                                    <TableRow>
+                                      <TableCell sx={{ fontWeight: 800, fontSize: 11.5 }}>#</TableCell>
+                                      <TableCell sx={{ fontWeight: 800, fontSize: 11.5 }}>NOMBRES Y APELLIDOS</TableCell>
+                                      <TableCell sx={{ fontWeight: 800, fontSize: 11.5 }}>PROGRAMA</TableCell>
+                                      <TableCell align="center" sx={{ fontWeight: 800, fontSize: 11.5 }}>CÉDULA</TableCell>
+                                      <TableCell align="center" sx={{ fontWeight: 800, fontSize: 11.5 }}>ACCIÓN</TableCell>
+                                    </TableRow>
+                                  </TableHead>
+                                  <TableBody>
+                                    {estudiantesList.map((est, idx) => (
+                                      <TableRow key={est.cedula + idx} hover>
+                                        <TableCell sx={{ fontSize: 12, fontWeight: 700, color: '#64748b' }}>{idx + 1}</TableCell>
+                                        <TableCell sx={{ fontSize: 12.5, fontWeight: 700, color: '#1e293b' }}>{est.nombre}</TableCell>
+                                        <TableCell sx={{ fontSize: 12, color: '#334155' }}>{est.programa}</TableCell>
+                                        <TableCell align="center" sx={{ fontSize: 12, fontWeight: 600, color: '#0f172a' }}>{est.cedula}</TableCell>
+                                        <TableCell align="center">
+                                          <IconButton size="small" onClick={() => handleRemoveStudent(idx)} color="error">
+                                            <DeleteIcon fontSize="small" />
+                                          </IconButton>
+                                        </TableCell>
+                                      </TableRow>
+                                    ))}
+                                  </TableBody>
+                                </Table>
+                              </Box>
+                            ) : (
+                              <Alert severity="info" sx={{ mt: 1.5, borderRadius: 2, bgcolor: '#fff' }}>
+                                No ha agregado ningún estudiante aún. Use el buscador superior.
+                              </Alert>
+                            )}
+                          </Box>
+                        )}
+                      </Box>
                     )}
 
                     {/* Botón para Estructurar / Crear Cronograma directamente (Solo Creadores / Directores / Admin) */}

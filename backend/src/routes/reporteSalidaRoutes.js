@@ -48,6 +48,7 @@ const {
   listarSolicitudes,
   radicarSolicitud,
   searchJefes,
+  searchEstudiantesMatriculados,
   updateFeatureConfig,
   getReposicionesPropias,
   getReposicionesEquipo,
@@ -75,6 +76,7 @@ router.get('/config', auth, getFeatureConfig);
 router.patch('/config', auth, updateFeatureConfig);
 router.get('/catalogo-laboral', auth, getCatalogoLaboral);
 router.get('/jefes', auth, searchJefes);
+router.get('/estudiantes-matriculados', auth, searchEstudiantesMatriculados);
 router.get('/dependencias', auth, listarDependencias);
 router.post('/upload-adjunto', auth, upload.single('adjunto'), async (req, res) => {
   if (!req.file) {

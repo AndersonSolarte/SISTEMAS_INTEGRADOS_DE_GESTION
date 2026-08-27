@@ -972,15 +972,57 @@ const buildOficioPdfDefinition = (solicitud, ghDirectorNombre, ghDirectorCargo) 
   }
 
   // Destinatario details
-  const destTratamiento = salida.destinatarioTratamiento || 'Señor(a)';
-  const destNombre = (salida.destinatarioNombre || '').toUpperCase();
-  const destCargo = salida.destinatarioCargo || '';
-  const destDependencia = salida.destinatarioEmpresa || jefe.dependencia || '';
-  const destDireccionEmail = salida.destinatarioDireccionEmail || '';
+  const isProyeccionSocial = salida.tipo === 'proyeccion_social';
+  const destTratamiento = isProyeccionSocial ? 'Magíster' : (salida.destinatarioTratamiento || 'Señor(a)');
+  const destNombre = isProyeccionSocial ? 'SANDRA LUCIA BOLAÑOS' : ((salida.destinatarioNombre || '').toUpperCase());
+  const destCargo = isProyeccionSocial ? 'Vicerrectora Académica' : (salida.destinatarioCargo || '');
+  const destDependencia = isProyeccionSocial ? 'Universidad CESMAG' : (salida.destinatarioEmpresa || jefe.dependencia || '');
   const fr013Background = path.join(__dirname, '../assets/fr013-carta-bg.png');
   const consecutiveText = [salida.codigoDependencia, solicitud.consecutivo || solicitud.id]
     .filter(Boolean)
     .join(' - ');
+
+  const numDocentes = isSalidaMultiple && participantes.length > 0 ? participantes.length : 1;
+  const estudiantesList = salida.estudiantesList || salida.estudiantes || [];
+  const numEstudiantes = estudiantesList.length;
+
+  const defaultPSAsunto = `Reporte de salida ${salida.entidadDestino || salida.municipio || salida.motivo || 'Jornada Comunitaria de Proyección Social'}`;
+  const defaultPSCuerpo = `Por medio de la presente me permito informar que la Universidad CESMAG, a través del Área de Proyección Social y Extensión, lidera las acciones comunitarias e institucionales en el marco del desarrollo de proyectos y jornadas sociales. En este contexto, se desarrollará la actividad "${salida.motivo || 'Jornada Comunitaria'}", la cual tendrá lugar en ${salida.entidadDestino || salida.municipio || 'el sector programado'}.\n\n` +
+    `La actividad contará con la participación de ${numDocentes} docente(s)/colaborador(es) y ${numEstudiantes} estudiante(s) de nuestra institución, quienes serán los responsables de orientar y dinamizar las diferentes acciones programadas durante la jornada.\n\n` +
+    `Información logística:\n` +
+    `• Fecha: ${salida.fecha || ''}${salida.fechaRegreso && salida.fechaRegreso !== salida.fecha ? ` al ${salida.fechaRegreso}` : ''}\n` +
+    `• Hora de salida: ${salida.horaInicio || ''}\n` +
+    `• Lugar de salida: Universidad CESMAG (Pasto)\n` +
+    `• Hora estimada de retorno: ${salida.horaFin || ''}\n\n` +
+    `Agradezco su atención y el apoyo brindado para el desarrollo de esta actividad, la cual contribuye al fortalecimiento de los procesos de interacción social, participación comunitaria y construcción de tejido social en el territorio.`;
+
+  const finalOficioAsunto = isProyeccionSocial ? (salida.oficioAsunto || defaultPSAsunto) : (salida.oficioAsunto || '');
+  const finalOficioSaludo = isProyeccionSocial ? 'Estimada Dra. Sandra,\n\nReciba un cordial saludo de Paz y Bien.' : 'Paz y bien:';
+  const finalOficioCuerpo = isProyeccionSocial ? (salida.oficioCuerpo || defaultPSCuerpo) : (salida.oficioCuerpo || '');
+  const finalOficioDespedida = isProyeccionSocial ? (salida.oficioDespedida || 'Fraternalmente,') : (salida.oficioDespedida || 'Cordialmente,');
+
+  const docentesRows = [];
+  if (isSalidaMultiple && participantes.length > 0) {
+    participantes.forEach((p) => {
+      docentesRows.push([
+        { text: p.nombre || '', fontSize: 8.5 },
+        { text: p.dependencia || p.cargo || '', fontSize: 8.5 },
+        { text: p.documento || '', fontSize: 8.5, alignment: 'center' }
+      ]);
+    });
+  } else {
+    docentesRows.push([
+      { text: solicitante.nombre || personal.nombre || '', fontSize: 8.5 },
+      { text: laboral.dependencia || solicitante.dependencia || '', fontSize: 8.5 },
+      { text: solicitante.username || personal.documento || '', fontSize: 8.5, alignment: 'center' }
+    ]);
+  }
+
+  const estudiantesRows = (estudiantesList || []).map((est) => [
+    { text: est.nombre || '', fontSize: 8.5 },
+    { text: est.programa || '', fontSize: 8.5 },
+    { text: est.cedula || est.documento || '', fontSize: 8.5, alignment: 'center' }
+  ]);
 
   return {
     pageSize: 'LETTER',
@@ -997,16 +1039,7 @@ const buildOficioPdfDefinition = (solicitud, ghDirectorNombre, ghDirectorCargo) 
         text: `Página ${currentPage} de ${pageCount}`,
         alignment: 'right',
         fontSize: 8,
-        margin: [0, 0, 70, 58],
-        _unused: [
-          { text: `Página ${currentPage} de ${pageCount}`, alignment: 'right', fontSize: 8.5, margin: [0, 0, 45, 5] },
-          {
-            image: path.join(__dirname, '../assets/pie_de_pag.png'),
-            width: 522,
-            alignment: 'center'
-          }
-        ],
-        _unusedMargin: [0, 0, 0, 15]
+        margin: [0, 0, 70, 58]
       };
     },
 
@@ -1039,14 +1072,13 @@ const buildOficioPdfDefinition = (solicitud, ghDirectorNombre, ghDirectorCargo) 
         margin: [0, 0, 0, 12]
       },
       
-      { text: `Asunto: ${salida.oficioAsunto || ''}`, bold: true, margin: [0, 0, 0, 10] },
+      { text: `Asunto: ${finalOficioAsunto}`, bold: true, margin: [0, 0, 0, 10] },
       
-      { text: 'Paz y bien:', bold: true, margin: [0, 0, 0, 8] },
+      { text: finalOficioSaludo, bold: true, margin: [0, 0, 0, 8] },
       
-      { text: salida.oficioCuerpo || '', alignment: 'justify', margin: [0, 0, 0, 12] },
+      { text: finalOficioCuerpo, alignment: 'justify', margin: [0, 0, 0, 12] },
       
-      { text: salida.oficioDespedida || 'Cordialmente,', margin: [0, 0, 0, 12] },
-      
+      { text: finalOficioDespedida, margin: [0, 0, 0, 12] },
       
       ...(getDeclaracionSinAdjunto(salida) ? [
         { text: `Declaracion de soportes: ${getDeclaracionSinAdjunto(salida)}`, fontSize: 8.2, italics: true, color: '#334155', margin: [0, 0, 0, 4] }
@@ -1062,32 +1094,49 @@ const buildOficioPdfDefinition = (solicitud, ghDirectorNombre, ghDirectorCargo) 
           body: signatureTableBody
         },
         layout: 'borders',
-        margin: [0, 0, 0, 4]
+        margin: [0, 0, 0, 10]
       },
-      { text: `Anexos: ${salida.oficioAnexos || 'Ninguno'}`, fontSize: 7.6, margin: [0, 0, 0, 1] },
-      { text: `Proyecto: ${salida.oficioProyecto || ''}`, fontSize: 7.6, margin: [0, 0, 0, 4] },
+      { text: `Anexos: ${salida.oficioAnexos || (estudiantesRows.length > 0 ? 'Listado Docentes y Estudiantes' : 'Listado Docentes')}`, fontSize: 7.6, margin: [0, 0, 0, 1] },
+      { text: `Proyecto: ${salida.oficioProyecto || 'Proyección Social y Extensión'}`, fontSize: 7.6, margin: [0, 0, 0, 10] },
+      
+      // Anexo 1: Listado Docentes / Colaboradores
+      { text: 'Anexo.', bold: true, fontSize: 10, pageBreak: 'before', margin: [0, 10, 0, 6] },
+      { text: '1. Listado Docentes / Colaboradores', bold: true, fontSize: 9.5, margin: [0, 0, 0, 6] },
       {
-        text: '',
-        unbreakable: true,
-        _unusedColumns: [
-          {
-            width: 78,
-            qr: verifyUrl,
-            fit: 70,
-            margin: [0, 0, 8, 0]
-          },
-          {
-            width: '*',
-            text: [
-              { text: 'Verificación de autenticidad e integridad\n', bold: true, fontSize: 8.5 },
-              { text: 'Escanee el código QR o ingrese al enlace para validar este oficio firmado electrónicamente:\n', fontSize: 7.5 },
-              { text: verifyUrl, fontSize: 7.5, color: 'blue', link: verifyUrl }
+        table: {
+          headerRows: 1,
+          widths: ['45%', '35%', '20%'],
+          body: [
+            [
+              { text: 'NOMBRE Y APELLIDOS', bold: true, fillColor: '#f1f5f9', fontSize: 8.5 },
+              { text: 'PROGRAMA / DEPENDENCIA', bold: true, fillColor: '#f1f5f9', fontSize: 8.5 },
+              { text: 'CÉDULA', bold: true, fillColor: '#f1f5f9', fontSize: 8.5, alignment: 'center' }
             ],
-            margin: [0, 4, 0, 0]
-          }
-        ],
-        margin: [0, 4, 0, 0]
-      }
+            ...docentesRows
+          ]
+        },
+        margin: [0, 0, 0, 14]
+      },
+
+      // Anexo 2: Listado Estudiantes (si aplica)
+      ...(estudiantesRows.length > 0 ? [
+        { text: '2. Listado estudiantes', bold: true, fontSize: 9.5, margin: [0, 0, 0, 6] },
+        {
+          table: {
+            headerRows: 1,
+            widths: ['45%', '35%', '20%'],
+            body: [
+              [
+                { text: 'NOMBRES Y APELLIDOS', bold: true, fillColor: '#f1f5f9', fontSize: 8.5 },
+                { text: 'PROGRAMA', bold: true, fillColor: '#f1f5f9', fontSize: 8.5 },
+                { text: 'CÉDULA', bold: true, fillColor: '#f1f5f9', fontSize: 8.5, alignment: 'center' }
+              ],
+              ...estudiantesRows
+            ]
+          },
+          margin: [0, 0, 0, 14]
+        }
+      ] : [])
     ]
   };
 };
@@ -1122,7 +1171,7 @@ const buildPdfBuffer = async (solicitud) => {
       const data = solicitud?.datos_formulario || {};
       const salida = data.salida || {};
 
-      const isPropiasCargoOficio = salida.categoria === 'propias_cargo' && salida.tipo !== 'salida_campus' && salida.duracionTipo && salida.duracionTipo !== 'menos_media_jornada';
+      const isPropiasCargoOficio = (salida.categoria === 'propias_cargo' || salida.tipo === 'proyeccion_social') && salida.tipo !== 'salida_campus' && salida.duracionTipo && salida.duracionTipo !== 'menos_media_jornada';
       if (isPropiasCargoOficio) {
         const docDefinition = sanitizePdfDefinition(buildOficioPdfDefinition(solicitud, ghDirectorNombre, ghDirectorCargo));
         const pdfDoc = printer.createPdfKitDocument(docDefinition);

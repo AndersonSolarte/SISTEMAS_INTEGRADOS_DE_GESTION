@@ -8178,6 +8178,93 @@ const verificarReportePublico = async (req, res) => {
   }
 };
 
+const searchEstudiantesMatriculados = async (req, res) => {
+  try {
+    const q = String(req.query.q || '').trim();
+    if (!q || q.length < 2) {
+      return res.json({ success: true, data: [] });
+    }
+
+    const { PoblacionalMatriculado } = require('../models');
+    if (!PoblacionalMatriculado) {
+      return res.json({ success: true, data: [] });
+    }
+
+    const cleanQuery = q.replace(/[^a-zA-Z0-9\s]/g, '').trim();
+    const searchTerms = cleanQuery.split(/\s+/).filter(Boolean);
+
+    const whereConditions = [];
+
+    if (/^\d+$/.test(cleanQuery)) {
+      whereConditions.push({ numero_documento: { [Op.like]: `%${cleanQuery}%` } });
+      whereConditions.push({ codigo_estudiante: { [Op.like]: `%${cleanQuery}%` } });
+    }
+
+    if (searchTerms.length > 0) {
+      const nameAndList = searchTerms.map(term => ({
+        [Op.or]: [
+          { primer_nombre: { [Op.iLike]: `%${term}%` } },
+          { segundo_nombre: { [Op.iLike]: `%${term}%` } },
+          { primer_apellido: { [Op.iLike]: `%${term}%` } },
+          { segundo_apellido: { [Op.iLike]: `%${term}%` } },
+          { programa: { [Op.iLike]: `%${term}%` } },
+          { numero_documento: { [Op.like]: `%${term}%` } },
+          { codigo_estudiante: { [Op.like]: `%${term}%` } }
+        ]
+      }));
+      whereConditions.push({ [Op.and]: nameAndList });
+    }
+
+    const rows = await PoblacionalMatriculado.findAll({
+      where: {
+        [Op.or]: whereConditions
+      },
+      attributes: [
+        'numero_documento',
+        'codigo_estudiante',
+        'primer_nombre',
+        'segundo_nombre',
+        'primer_apellido',
+        'segundo_apellido',
+        'programa'
+      ],
+      limit: 30,
+      order: [['id', 'DESC']]
+    });
+
+    const seenCedulas = new Set();
+    const results = [];
+
+    for (const r of rows) {
+      const cedula = String(r.numero_documento || '').trim();
+      if (!cedula || seenCedulas.has(cedula)) continue;
+      seenCedulas.add(cedula);
+
+      const nombre = [r.primer_nombre, r.segundo_nombre, r.primer_apellido, r.segundo_apellido]
+        .filter(Boolean)
+        .join(' ')
+        .replace(/\s+/g, ' ')
+        .trim();
+
+      if (!nombre) continue;
+
+      results.push({
+        cedula,
+        codigo: String(r.codigo_estudiante || '').trim(),
+        nombre,
+        programa: String(r.programa || '').trim()
+      });
+
+      if (results.length >= 15) break;
+    }
+
+    return res.json({ success: true, data: results });
+  } catch (error) {
+    console.error('Error buscando estudiantes matriculados:', error);
+    return res.status(500).json({ success: false, message: 'Error buscando estudiantes: ' + error.message });
+  }
+};
+
 module.exports = {
   aprobarDesdeCorreo,
   mostrarFormularioAprobacion,
@@ -8196,6 +8283,7 @@ module.exports = {
   listarSolicitudes,
   radicarSolicitud,
   searchJefes,
+  searchEstudiantesMatriculados,
   updateFeatureConfig,
   getReposicionesPropias,
   getReposicionesEquipo,

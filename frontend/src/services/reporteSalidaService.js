@@ -16,6 +16,11 @@ const reporteSalidaService = {
     return response.data;
   },
 
+  searchEstudiantesMatriculados: async (search = '') => {
+    const response = await api.get('/reporte-salida/estudiantes-matriculados', { params: { q: search } });
+    return response.data;
+  },
+
   getDependencias: async () => {
     const response = await api.get('/reporte-salida/dependencias');
     return response.data;
