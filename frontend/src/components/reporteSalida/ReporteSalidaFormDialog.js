@@ -1406,6 +1406,10 @@ function ReporteSalidaFormDialog({ open, documento, user, onClose, onSubmitted }
       }
     }
 
+    if (subtype === 'proyeccion_social' && incluyeEstudiantes && estudiantesList.length === 0) {
+      issues.push('Indica que la salida incluye estudiantes. Debe agregar al menos un estudiante al listado.');
+    }
+
 
 
     if (subtype === 'terapias') {

@@ -985,11 +985,9 @@ const buildOficioPdfDefinition = (solicitud, ghDirectorNombre, ghDirectorCargo) 
 
   const numDocentes = isSalidaMultiple && participantes.length > 0 ? participantes.length : 1;
   const estudiantesList = salida.estudiantesList || salida.estudiantes || [];
-  const numEstudiantes = estudiantesList.length;
-
-  const defaultPSAsunto = `Solicitud de permiso y salida de Proyección Social - ${salida.entidadDestino || salida.municipio || salida.motivo || 'Jornada Comunitaria'}`;
+  const estudiantesText = numEstudiantes > 0 ? ` y ${numEstudiantes} estudiante(s)` : '';
   const defaultPSCuerpo = `Por medio de la presente me permito informar que la Universidad CESMAG, a través del Área de Proyección Social y Extensión, lidera las acciones comunitarias e institucionales en el marco del desarrollo de proyectos y jornadas sociales. En este contexto, se desarrollará la actividad "${salida.motivo || 'Jornada Comunitaria'}", la cual tendrá lugar en ${salida.entidadDestino || salida.municipio || 'el sector programado'}.\n\n` +
-    `La actividad contará con la participación de ${numDocentes} docente(s)/colaborador(es) y ${numEstudiantes} estudiante(s) de nuestra institución, quienes serán los responsables de orientar y dinamizar las diferentes acciones programadas durante la jornada.\n\n` +
+    `La actividad contará con la participación de ${numDocentes} docente(s)/colaborador(es)${estudiantesText} de nuestra institución, quienes serán los responsables de orientar y dinamizar las diferentes acciones programadas durante la jornada.\n\n` +
     `Información logística:\n` +
     `• Fecha: ${salida.fecha || ''}${salida.fechaRegreso && salida.fechaRegreso !== salida.fecha ? ` al ${salida.fechaRegreso}` : ''}\n` +
     `• Hora de salida: ${salida.horaInicio || ''}\n` +
