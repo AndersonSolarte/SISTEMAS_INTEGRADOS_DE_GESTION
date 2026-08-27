@@ -938,6 +938,16 @@ function ReporteSalidaFormDialog({ open, documento, user, onClose, onSubmitted }
     return Boolean(form.salida.fecha && form.salida.horaInicio && form.salida.fechaRegreso);
   }, [category, form.salida.fecha, form.salida.fechaRegreso, form.salida.horaFin, form.salida.horaInicio, form.salida.terapiasList, hasCompletedSaludMotivo, requiresViaticosFlow, subtype]);
 
+  const canShowProyeccionSocialEstudiantes = useMemo(() => {
+    if (subtype !== 'proyeccion_social') return false;
+    if (!hasCompletedEntidadDestino) return false;
+    if (shouldAskViaticos && form.viaticos?.requiereViaticos == null) return false;
+    if (requiresViaticosFlow) {
+      return Boolean(form.viaticos?.lugarVisitar && form.viaticos?.fechaEvento);
+    }
+    return Boolean(hasCompletedSalidaTime);
+  }, [subtype, hasCompletedEntidadDestino, shouldAskViaticos, form.viaticos, requiresViaticosFlow, hasCompletedSalidaTime]);
+
   const lastGeneratedTemplateRef = useRef('');
 
   useEffect(() => {
@@ -3024,8 +3034,8 @@ function ReporteSalidaFormDialog({ open, documento, user, onClose, onSubmitted }
               )}
             </Box>
 
-            {/* Bloque Exclusivo: Estudiantes Participantes en Proyección Social (Al final del formulario) */}
-            {subtype === 'proyeccion_social' && (
+            {/* Bloque Exclusivo: Estudiantes Participantes en Proyección Social (Solo visible cuando se completaron los datos principales del desplazamiento) */}
+            {canShowProyeccionSocialEstudiantes && (
               <Box sx={{ width: '100%', mt: 1, mb: 1, p: 2.5, bgcolor: '#f0f9ff', borderRadius: 2.5, border: '1.5px solid #0284c7' }}>
                 <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 1.5, flexWrap: 'wrap', gap: 1 }}>
                   <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
