@@ -14874,11 +14874,6 @@ const renderCategoryBars = (items = [], options = {}) => {
   };
 
   const renderResumenPoblacionalStandaloneDashboard = () => {
-    const catalogRows = activeSectionCatalog.rows || [];
-    const aniosOpts = Array.from(
-      new Set((activeSectionCatalog.anios || []).map((x) => String(x)))
-    ).sort((a, b) => Number(a) - Number(b));
-    const periodosOpts = (activeSectionCatalog.periodos || []).map((p) => String(p.label || p));
     const programasOpts = activeSectionCatalog.programas || [];
     const periodosDisp = periodosOpts.length;
 

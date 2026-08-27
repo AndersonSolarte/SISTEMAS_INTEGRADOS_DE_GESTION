@@ -9,6 +9,7 @@ const {
   getReporteSalidaFeatureState,
   isReporteSalidaDocumento,
   isReporteSalidaEnabled,
+  isProyeccionSocialLeaderSolicitud,
   setReporteSalidaFeatureState
 } = require('../config/reporteSalidaConfig');
 const { ensureReporteSalidaDocx, ensureReporteSalidaPdf, formatMinutes } = require('../services/reporteSalidaPdfService');
