@@ -206,6 +206,7 @@ function ParqueaderosPesvPanel({ onBack }) {
   const [runtCopiedText, setRuntCopiedText] = useState('');
   const [history, setHistory] = useState({ open: false, row: null, loading: false, data: [] });
   const [lookingUpPerson, setLookingUpPerson] = useState(false);
+  const [refreshKey, setRefreshKey] = useState(0);
   const loadRequestRef = useRef(0);
 
   const handleLookupPersona = async (identificacionValue) => {
@@ -261,7 +262,7 @@ function ParqueaderosPesvPanel({ onBack }) {
     finally { if (requestId === loadRequestRef.current) setLoading(false); }
   }, [campus, enqueueSnackbar, estado, indicator, search]);
 
-  useEffect(() => { const timer = setTimeout(load, 450); return () => clearTimeout(timer); }, [load]);
+  useEffect(() => { const timer = setTimeout(load, 450); return () => clearTimeout(timer); }, [load, refreshKey]);
   const visibleRows = useMemo(() => rows.slice(page * rowsPerPage, page * rowsPerPage + rowsPerPage), [page, rows, rowsPerPage]);
   const openCreate = () => { setForm(EMPTY_FORM); setDialog({ open: true, row: null }); };
   const openEdit = (row) => {
@@ -277,13 +278,20 @@ function ParqueaderosPesvPanel({ onBack }) {
         ? await gestionInformacionService.updatePesvParqueadero(dialog.row.id, form)
         : await gestionInformacionService.createPesvParqueadero(form);
       if (result.data) {
+        loadRequestRef.current += 1;
         setRows((current) => dialog.row
           ? current.map((row) => row.id === dialog.row.id ? result.data : row)
           : [result.data, ...current]);
+        const focusQuery = String(result.data.identificacion || result.data.placa || result.data.nombres_apellidos || '').trim();
+        setSearch(focusQuery);
+        setCampus('');
+        setEstado('');
+        setIndicator('');
+        setPage(0);
       }
-      enqueueSnackbar(dialog.row ? 'Información actualizada correctamente' : 'Registro creado correctamente', { variant: 'success' });
+      enqueueSnackbar(dialog.row ? 'Información actualizada. El registro quedó filtrado para su revisión.' : 'Registro creado. Quedó filtrado para su revisión.', { variant: 'success' });
       setDialog({ open: false, row: null });
-      await load();
+      setRefreshKey((current) => current + 1);
     } catch (error) {
       const message = !error.response ? 'El servidor no está disponible. Intente nuevamente en unos segundos.' : error.response?.data?.message || 'No se pudo guardar';
       enqueueSnackbar(message, { variant: 'error' });
@@ -413,9 +421,24 @@ function ParqueaderosPesvPanel({ onBack }) {
     { key: 'rtm_proximo', label: 'Tecnomecánica próximas (30 días)', value: summary.tecnomecanica_proximos || 0, color: '#7c3aed', background: '#f5f3ff', icon: <FactCheckRoundedIcon /> }
   ];
   const applyIndicatorFilter = (key) => {
+    const selectedStat = stats.find((item) => item.key === key);
+    if (key && selectedStat?.value === 0) {
+      setIndicator('');
+      setEstado('');
+      setPage(0);
+      enqueueSnackbar(`No hay registros en “${selectedStat.label}” para la búsqueda actual. Se conservan visibles los resultados encontrados.`, { variant: 'info' });
+      return;
+    }
     const next = key && indicator === key ? '' : key;
     setIndicator(next);
     setEstado('');
+    setPage(0);
+  };
+  const handleSearchChange = (value) => {
+    setSearch(value);
+    setIndicator('');
+    setEstado('');
+    setCampus('');
     setPage(0);
   };
   const bicycleSelected = isBicycleVehicle(form);
@@ -489,14 +512,17 @@ function ParqueaderosPesvPanel({ onBack }) {
       {importResult?.warningCount > 0 && <Alert severity="warning">Se importaron {importResult.imported} registros con {importResult.warningCount} advertencias de datos. Las vigencias no reconocibles quedaron marcadas como “Sin fecha verificable”.</Alert>}
       <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr 1fr', sm: 'repeat(3,1fr)', lg: 'repeat(5,1fr)' }, gap: 1.4 }}>
         {stats.map((item) => {
-          const selected = indicator === item.key && (item.key !== '' || (!indicator && !estado));
+          const hasSearch = Boolean(search.trim());
+          const selected = item.key ? indicator === item.key : !indicator && !estado && !hasSearch;
+          const relatedToSearch = hasSearch && !indicator && Boolean(item.key) && item.value > 0;
+          const emphasized = selected || relatedToSearch;
           return <Paper
             key={item.label} component="button" type="button" aria-pressed={selected} onClick={() => applyIndicatorFilter(item.key)}
             elevation={0}
             sx={{
               position: 'relative', overflow: 'hidden', width: '100%', p: 2, borderRadius: 3, textAlign: 'left', font: 'inherit', cursor: 'pointer',
-              color: item.color, bgcolor: selected ? item.background : '#fff', border: `2px solid ${selected ? item.color : '#e2e8f0'}`,
-              boxShadow: selected ? `0 12px 26px ${item.color}2b` : '0 4px 12px rgba(15,23,42,.04)',
+              color: item.color, bgcolor: emphasized ? item.background : '#fff', border: `2px solid ${emphasized ? item.color : '#e2e8f0'}`,
+              boxShadow: emphasized ? `0 12px 26px ${item.color}2b` : '0 4px 12px rgba(15,23,42,.04)',
               transform: selected ? 'translateY(-3px)' : 'none', transition: 'transform .18s ease, box-shadow .18s ease, border-color .18s ease, background-color .18s ease',
               '&:hover': { transform: 'translateY(-4px)', borderColor: item.color, boxShadow: `0 14px 28px ${item.color}30` },
               '&:focus-visible': { outline: `3px solid ${item.color}55`, outlineOffset: 2 },
@@ -504,7 +530,7 @@ function ParqueaderosPesvPanel({ onBack }) {
             }}
           >
             <Stack direction="row" justifyContent="space-between" alignItems="flex-start" spacing={1} sx={{ position: 'relative', zIndex: 1 }}>
-              <Box><Typography variant="caption" sx={{ display: 'block', color: selected ? item.color : '#64748b', fontWeight: 900 }}>{item.label}</Typography><Typography sx={{ mt: .65, fontSize: 30, lineHeight: 1, fontWeight: 900, color: '#0f172a' }}>{item.value.toLocaleString('es-CO')}</Typography></Box>
+              <Box><Typography variant="caption" sx={{ display: 'block', color: emphasized ? item.color : '#64748b', fontWeight: 900 }}>{item.label}</Typography><Typography sx={{ mt: .65, fontSize: 30, lineHeight: 1, fontWeight: 900, color: '#0f172a' }}>{item.value.toLocaleString('es-CO')}</Typography></Box>
               <Box sx={{ display: 'grid', placeItems: 'center', width: 42, height: 42, flexShrink: 0, borderRadius: 2.2, color: '#fff', bgcolor: item.color, boxShadow: `0 7px 16px ${item.color}38` }}>{item.icon}</Box>
             </Stack>
           </Paper>;
@@ -514,12 +540,12 @@ function ParqueaderosPesvPanel({ onBack }) {
         <Stack direction={{ xs: 'column', md: 'row' }} spacing={1.2}>
           <Box sx={{ flex: 1 }}>
             <TextField
-              fullWidth size="small" value={search} onChange={(e) => setSearch(e.target.value)}
+              fullWidth size="small" value={search} onChange={(e) => handleSearchChange(e.target.value)}
               placeholder="Buscar en todos los campos"
               autoComplete="off"
               InputProps={{
                 startAdornment: <InputAdornment position="start"><SearchRoundedIcon sx={{ color: '#64748b' }} /></InputAdornment>,
-                endAdornment: search ? <InputAdornment position="end"><IconButton size="small" aria-label="Limpiar búsqueda" onClick={() => setSearch('')}><ClearRoundedIcon fontSize="small" /></IconButton></InputAdornment> : null
+                endAdornment: search ? <InputAdornment position="end"><IconButton size="small" aria-label="Limpiar búsqueda" onClick={() => handleSearchChange('')}><ClearRoundedIcon fontSize="small" /></IconButton></InputAdornment> : null
               }}
               sx={{ '& .MuiOutlinedInput-root': { bgcolor: '#fff', borderRadius: 2.2 } }}
             />

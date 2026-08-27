@@ -1550,7 +1550,9 @@ function ReporteSalidaFormDialog({ open, documento, user, onClose, onSubmitted }
     form.salida.pais,
     form.salida.departamento,
     form.salida.municipio,
-    form.salida.terapiasList
+    form.salida.terapiasList,
+    incluyeEstudiantes,
+    estudiantesList
   ]);
 
   const selectedDependenciaIsCatalog = hasExactOption(form.laboral.dependencia, dependencias);
