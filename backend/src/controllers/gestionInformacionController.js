@@ -4157,6 +4157,7 @@ const buildMatriculadosGeoCacheKey = ({ programas = [], anios = [], periodos = [
 
 const buildMatriculadosGeoDashboard = async ({ programas = [], anios = [], periodos = [], sexos = [], niveles = [] }) => {
   const selectedRawPeriods = new Set((periodos || []).map((item) => String(item || '').trim()).filter(Boolean));
+  const normalizedPeriodos = Array.from(selectedRawPeriods);
   const normalizedSexos = Array.from(new Set((sexos || []).map((item) => normalizeGenero(item)).filter(Boolean)));
   const normalizedNiveles = Array.from(new Set((niveles || []).map((item) => String(item || '').trim().toUpperCase()).filter(Boolean)));
   const selectedPrograms = new Set((programas || []).map((item) => normalizeGeoJoinKey(item)));

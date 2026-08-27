@@ -258,24 +258,28 @@ const getOfficialAuthorityEmailForActor = (actor = {}) => {
 };
 
 const getAcademicProgramApprovalEmail = (solicitud = {}) => {
-  const jefe = solicitud.jefe_snapshot || {};
-  const jefeName = normalizeForMatch(jefe.nombre || jefe.name || jefe.label || '');
   const laboral = solicitud.datos_formulario?.laboral || {};
   const solicitante = solicitud.solicitante_snapshot || {};
   const dependencia = normalizeForMatch(laboral.dependencia || solicitante.dependencia || '');
+  const requesterName = normalizeForMatch(solicitante.nombre || '');
+  const requesterEmail = normalizeEmail(solicitante.email || solicitante.correo || '');
 
-  if (
-    jefeName.includes('karen eugenia ocana figueroa') &&
-    dependencia.includes('programa academico diseno grafico')
-  ) {
-    return getDependencyEmail('Programa Academico - Diseño Grafico') || 'disenografico@unicesmag.edu.co';
+  // 1. Programa de Arquitectura
+  if (dependencia.includes('arquitectura')) {
+    const isMagalySelf = requesterName.includes('lilian magali') || requesterName.includes('martinez crespo') || sameExactEmail(requesterEmail, 'lmmartinez@unicesmag.edu.co');
+    if (isMagalySelf) {
+      return ''; // Solicitud propia de Magaly: pasa a su jefe/correo personal
+    }
+    return getDependencyEmail('Programa Academico - Arquitectura') || 'arquitectura@unicesmag.edu.co';
   }
 
-  if (
-    jefeName.includes('lilian magali martinez crespo') &&
-    dependencia.includes('programa academico arquitectura')
-  ) {
-    return getDependencyEmail('Programa Academico - Arquitectura') || 'arquitectura@unicesmag.edu.co';
+  // 2. Programa de Diseño Gráfico
+  if (dependencia.includes('diseno grafico') || (dependencia.includes('diseno') && !dependencia.includes('modas'))) {
+    const isDisenoLeaderSelf = requesterName.includes('karen eugenia') || requesterName.includes('ocana figueroa') || requesterName.includes('ajeen') || sameExactEmail(requesterEmail, 'disenografico@unicesmag.edu.co');
+    if (isDisenoLeaderSelf) {
+      return ''; // Solicitud propia de la líder de Diseño Gráfico: pasa a su jefe/correo personal
+    }
+    return getDependencyEmail('Programa Academico - Diseño Grafico') || 'disenografico@unicesmag.edu.co';
   }
 
   return '';
@@ -338,18 +342,30 @@ const getGroupInitialApprovalRecipients = (solicitudes = []) => {
     const depNorm = normalizeForMatch(dep);
     const jefe = sol.jefe_snapshot || {};
     const jefeEmail = normalizeEmail(jefe.email);
+    const requesterName = normalizeForMatch(solicitante.nombre || '');
+    const requesterEmail = normalizeEmail(solicitante.email || solicitante.correo || '');
 
-    // 1. Arquitectura: Exclusivamente a arquitectura@unicesmag.edu.co
+    // 1. Arquitectura: A arquitectura@unicesmag.edu.co salvo solicitud propia de Magaly
     if (depNorm.includes('arquitectura')) {
-      const arqEmail = getDependencyEmail('Programa Academico - Arquitectura') || 'arquitectura@unicesmag.edu.co';
-      pushEmail(arqEmail);
+      const isMagalySelf = requesterName.includes('lilian magali') || requesterName.includes('martinez crespo') || sameExactEmail(requesterEmail, 'lmmartinez@unicesmag.edu.co');
+      if (isMagalySelf && jefeEmail) {
+        pushEmail(jefeEmail);
+      } else {
+        const arqEmail = getDependencyEmail('Programa Academico - Arquitectura') || 'arquitectura@unicesmag.edu.co';
+        pushEmail(arqEmail);
+      }
       continue;
     }
 
-    // 2. Diseño Gráfico: Exclusivamente a disenografico@unicesmag.edu.co
+    // 2. Diseño Gráfico: A disenografico@unicesmag.edu.co salvo solicitud propia de la líder
     if (depNorm.includes('diseno grafico') || (depNorm.includes('diseno') && !depNorm.includes('modas'))) {
-      const disEmail = getDependencyEmail('Programa Academico - Diseño Grafico') || 'disenografico@unicesmag.edu.co';
-      pushEmail(disEmail);
+      const isDisenoLeaderSelf = requesterName.includes('karen eugenia') || requesterName.includes('ocana figueroa') || requesterName.includes('ajeen') || sameExactEmail(requesterEmail, 'disenografico@unicesmag.edu.co');
+      if (isDisenoLeaderSelf && jefeEmail) {
+        pushEmail(jefeEmail);
+      } else {
+        const disEmail = getDependencyEmail('Programa Academico - Diseño Grafico') || 'disenografico@unicesmag.edu.co';
+        pushEmail(disEmail);
+      }
       continue;
     }
 
@@ -3585,7 +3601,14 @@ const radicarSolicitud = async (req, res) => {
       }
 
       const isProyeccionSocialGroup = (salida.tipo === 'proyeccion_social');
-      const isMeryGroupLeader = isProyeccionSocialLeaderSolicitud(creadas[0]);
+      const checkIsPSLeader = (typeof isProyeccionSocialLeaderSolicitud === 'function')
+        ? isProyeccionSocialLeaderSolicitud
+        : ((sol = {}) => {
+            const name = String(sol?.solicitante_snapshot?.nombre || '').toLowerCase();
+            const email = String(sol?.solicitante_snapshot?.email || '').toLowerCase();
+            return name.includes('mery') || email.includes('proyeccion');
+          });
+      const isMeryGroupLeader = checkIsPSLeader(creadas[0]);
 
       if (isProyeccionSocialGroup && !isMeryGroupLeader) {
         const psToken = encryptPayload({ purpose: 'reporte_salida_approve_proyeccion_social_grupo', grupo_id }, null);

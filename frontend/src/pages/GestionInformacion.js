@@ -1814,6 +1814,23 @@ const formatAcademicPeriodLabel = (value = '') => {
   return text;
 };
 
+const formatTitleCase = (str = '') => {
+  if (!str) return '';
+  const clean = String(str).trim();
+  if (!clean) return '';
+  return clean
+    .toLowerCase()
+    .split(/\s+/)
+    .map((word, idx) => {
+      const lower = word.toLowerCase();
+      if (idx > 0 && ['de', 'del', 'y', 'la', 'los', 'las', 'en', 'e', 'o', 'por', 'para', 'con', 'al'].includes(lower)) {
+        return lower;
+      }
+      return lower.charAt(0).toUpperCase() + lower.slice(1);
+    })
+    .join(' ');
+};
+
 const describeVariation = (values = []) => {
   if (values.length < 3) return 'comportamiento puntual con pocos periodos para inferencia';
   const max = Math.max(...values);
@@ -2318,6 +2335,42 @@ function GestionInformacion() {
       };
     });
   }, [matriculadosPanelData]);
+
+  useEffect(() => {
+    if (menuView !== 'estadistica' || selectedCard !== 'poblacional') return;
+    if (matMasterCatalog.programas.length > 0) return;
+
+    let isMounted = true;
+    gestionInformacionService
+      .getEstadisticas({
+        categoria: 'Poblacional',
+        aggregate: 'matriculados_geo_dashboard'
+      })
+      .then((res) => {
+        if (!isMounted || !res?.data) return;
+        const payload = res.data;
+        const anios = (payload.aniosDisponibles || []).map(String).filter(Boolean);
+        const programas = (payload.programasDisponibles || []).filter(Boolean);
+        let periodos = (payload.periodosDisponibles || []).map((p) => String(p.label || p)).filter(Boolean);
+        if (!periodos.length && (payload.semestres || []).length) {
+          (payload.semestres || []).forEach((s) => {
+            const yr = String(s.anio);
+            if (s.semestre1 > 0) periodos.push(`${yr}-1`);
+            if (s.semestre2 > 0) periodos.push(`${yr}-2`);
+          });
+        }
+        setMatMasterCatalog((prev) => ({
+          anios: Array.from(new Set([...prev.anios, ...anios])).sort((a, b) => Number(a) - Number(b)),
+          periodos: Array.from(new Set([...prev.periodos, ...periodos])).sort(),
+          programas: Array.from(new Set([...prev.programas, ...programas])).sort((a, b) => a.localeCompare(b, 'es'))
+        }));
+      })
+      .catch((err) => console.error('[MatriculadosMasterCatalog] Error fetching master options:', err));
+
+    return () => {
+      isMounted = false;
+    };
+  }, [menuView, selectedCard, matMasterCatalog.programas.length]);
   const [matHistoricoCache, setMatHistoricoCache] = useState(null);
   const [matProgramaCache, setMatProgramaCache] = useState({});
   const [matriculadosTab, setMatriculadosTab] = useState('general');
@@ -2337,6 +2390,7 @@ function GestionInformacion() {
   const resumenTotalCardRef = useRef(null);
   const resumenGenderCardRef = useRef(null);
   const resumenProgramTableRef = useRef(null);
+  const matRechartsChartRef = useRef(null);
   const GI_FILTER_LABEL_SX = { mb: 0.6, color: '#475569', fontWeight: 700, fontSize: 12.5 };
   const GI_FILTER_SELECT_SX = {
     width: '100%',
@@ -2809,35 +2863,44 @@ function GestionInformacion() {
 
   const fetchMatriculadosProgramaComparison = useCallback(async (periods) => {
     if (!periods || periods.length === 0) return;
-    const newCache = {};
-    for (const period of periods) {
-      try {
-        const parts = String(period).split('-');
-        const anio = parts[0];
-        const sem = parts[1];
-        const response = await gestionInformacionService.getEstadisticas({
-          categoria: 'Poblacional',
-          aggregate: 'matriculados_geo_dashboard',
-          programas: [],
-          anios: [anio],
-          periodos: [sem],
-          sexos: [],
-          niveles: []
-        });
-        const payload = response?.data || null;
-        const progData = {};
-        Object.values(payload?.programasPorSexo || {}).forEach((progList) => {
-          (progList || []).forEach((p) => {
-            const label = String(p.programa || '').trim();
-            if (!label) return;
-            if (!progData[label]) progData[label] = 0;
-            progData[label] += normalizeNumber(p.total || 0);
-          });
-        });
-        newCache[period] = progData;
-      } catch (_) {}
-    }
-    setMatProgramaCache(newCache);
+    try {
+      const results = await Promise.all(
+        periods.map(async (period) => {
+          const parts = String(period).split('-');
+          const anio = parts[0];
+          const sem = parts[1];
+          try {
+            const response = await gestionInformacionService.getEstadisticas({
+              categoria: 'Poblacional',
+              aggregate: 'matriculados_geo_dashboard',
+              programas: [],
+              anios: [anio],
+              periodos: [sem],
+              sexos: [],
+              niveles: []
+            });
+            const payload = response?.data || null;
+            const progData = {};
+            Object.values(payload?.programasPorSexo || {}).forEach((progList) => {
+              (progList || []).forEach((p) => {
+                const label = String(p.programa || '').trim();
+                if (!label) return;
+                if (!progData[label]) progData[label] = 0;
+                progData[label] += normalizeNumber(p.total || 0);
+              });
+            });
+            return { period, progData };
+          } catch (_) {
+            return { period, progData: {} };
+          }
+        })
+      );
+      const newCache = {};
+      results.forEach(({ period, progData }) => {
+        if (period) newCache[period] = progData;
+      });
+      setMatProgramaCache((prev) => ({ ...prev, ...newCache }));
+    } catch (_) {}
   }, []);
 
   const matProgCacheFetchedRef = useRef(false);
@@ -5256,6 +5319,8 @@ function GestionInformacion() {
 
   const cloneNodeWithComputedStyles = (node) => {
     const clone = node.cloneNode(true);
+    const defaultFont = '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif';
+
     const applyComputedStyles = (source, target) => {
       if (!(source instanceof Element) || !(target instanceof Element)) return;
       const computed = window.getComputedStyle(source);
@@ -5268,6 +5333,18 @@ function GestionInformacion() {
           .join('');
       }
       target.setAttribute('style', styleText);
+
+      const fontFamily = computed.fontFamily || defaultFont;
+      target.style.fontFamily = fontFamily;
+
+      const tagName = String(source.tagName || '').toLowerCase();
+      if (['text', 'tspan', 'svg', 'g'].includes(tagName)) {
+        target.setAttribute('font-family', fontFamily);
+        if (computed.fontWeight) target.setAttribute('font-weight', computed.fontWeight);
+        if (computed.fontSize) target.setAttribute('font-size', computed.fontSize);
+        if (computed.fill && computed.fill !== 'none') target.setAttribute('fill', computed.fill);
+      }
+
       const sourceChildren = source.children || [];
       const targetChildren = target.children || [];
       for (let i = 0; i < sourceChildren.length; i += 1) {
@@ -5280,6 +5357,7 @@ function GestionInformacion() {
 
   const captureNodeAsPngBlob = async (node, scale = 2) => {
     if (!node) throw new Error('Nodo de grafico no encontrado');
+
     const rect = node.getBoundingClientRect();
     const contentWidth = Array.from(node.querySelectorAll('*')).reduce((max, element) => {
       const elementRect = element.getBoundingClientRect();
@@ -5295,8 +5373,10 @@ function GestionInformacion() {
       const next = Math.ceil(relativeTop + elementHeight);
       return Number.isFinite(next) ? Math.max(max, next) : max;
     }, node.scrollHeight);
+
     const width = Math.max(640, Math.round(rect.width), contentWidth);
     const height = Math.max(360, Math.round(rect.height), contentHeight);
+
     const clonedNode = cloneNodeWithComputedStyles(node);
     clonedNode.querySelectorAll('[data-copy-exclude="true"]').forEach((element) => element.remove());
     clonedNode.querySelectorAll('[data-chart-scroll="true"]').forEach((element) => {
@@ -5308,28 +5388,33 @@ function GestionInformacion() {
     clonedNode.style.width = `${width}px`;
     clonedNode.style.maxWidth = 'none';
     clonedNode.style.overflow = 'visible';
+
     const serialized = new XMLSerializer().serializeToString(clonedNode);
+    const fontCss = `
+      * { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif !important; }
+      text, tspan { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif !important; }
+    `;
     const svgText = `
       <svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}">
+        <style>${fontCss}</style>
         <foreignObject x="0" y="0" width="100%" height="100%">
-          <div xmlns="http://www.w3.org/1999/xhtml" style="width:${width}px;height:${height}px;background:#ffffff;overflow:hidden;">
+          <div xmlns="http://www.w3.org/1999/xhtml" style="width:${width}px;height:${height}px;background:#ffffff;overflow:hidden;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;">
             ${serialized}
           </div>
         </foreignObject>
       </svg>
     `;
-    const svgBlob = new Blob([svgText], { type: 'image/svg+xml;charset=utf-8' });
-    const svgUrl = URL.createObjectURL(svgBlob);
+    const dataUri = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svgText);
 
     return new Promise((resolve, reject) => {
       const img = new Image();
+      img.crossOrigin = 'anonymous';
       img.onload = () => {
         const canvas = document.createElement('canvas');
         canvas.width = width * scale;
         canvas.height = height * scale;
         const ctx = canvas.getContext('2d');
         if (!ctx) {
-          URL.revokeObjectURL(svgUrl);
           reject(new Error('No fue posible crear canvas'));
           return;
         }
@@ -5337,7 +5422,6 @@ function GestionInformacion() {
         ctx.fillRect(0, 0, canvas.width, canvas.height);
         ctx.scale(scale, scale);
         ctx.drawImage(img, 0, 0, width, height);
-        URL.revokeObjectURL(svgUrl);
         try {
           canvas.toBlob((blob) => {
             if (!blob) {
@@ -5351,10 +5435,9 @@ function GestionInformacion() {
         }
       };
       img.onerror = () => {
-        URL.revokeObjectURL(svgUrl);
         reject(new Error('Error al renderizar la imagen del grafico'));
       };
-      img.src = svgUrl;
+      img.src = dataUri;
     });
   };
 
@@ -5533,11 +5616,9 @@ function GestionInformacion() {
     });
 
     if (sectionKey !== 'flujo') {
-      const legend = [
-        { l: 'Inscritos', c: '#3b3fbf' },
-        { l: 'Admitidos', c: '#b91c1c' },
-        { l: 'Primer Curso', c: '#6b7280' }
-      ];
+      const legend = sectionKey === 'matriculados'
+        ? [{ l: 'Matriculados', c: '#4338ca' }]
+        : [{ l: 'Graduados', c: '#1e5a96' }];
       legend.forEach((item, i) => {
         const lx = margin.left + i * 150;
         const ly = height - 28;
@@ -8995,34 +9076,6 @@ const renderCategoryBars = (items = [], options = {}) => {
               )}
             </Button>
           </Box>
-          {activeGeneralFilterCount > 0 && (
-            <Stack direction="row" spacing={1} flexWrap="wrap" sx={{ mt: 1.2, pt: 1, borderTop: '1px solid #e2e8f0', gap: 1 }}>
-              {isAnioFiltered && (
-                <Chip
-                  size="small"
-                  label={`Años: ${selectedAnioValues.join(', ')}`}
-                  onDelete={() => setGraduadosGeneralAnioFilter('todos')}
-                  sx={{ bgcolor: '#eff6ff', color: '#1d4ed8', fontWeight: 700, fontSize: 11, border: '1px solid #bfdbfe' }}
-                />
-              )}
-              {isProgramFiltered && (
-                <Chip
-                  size="small"
-                  label={`Programas: ${selectedGeneralProgramValues.length} sel.`}
-                  onDelete={() => setGraduadosGeneralProgramsFilter([])}
-                  sx={{ bgcolor: '#eff6ff', color: '#1d4ed8', fontWeight: 700, fontSize: 11, border: '1px solid #bfdbfe' }}
-                />
-              )}
-              {isSearchFiltered && (
-                <Chip
-                  size="small"
-                  label={`Búsqueda: "${graduadosGeneralSearch}"`}
-                  onDelete={() => setGraduadosGeneralSearch('')}
-                  sx={{ bgcolor: '#eff6ff', color: '#1d4ed8', fontWeight: 700, fontSize: 11, border: '1px solid #bfdbfe' }}
-                />
-              )}
-            </Stack>
-          )}
         </Paper>
       );
     };
@@ -9155,42 +9208,6 @@ const renderCategoryBars = (items = [], options = {}) => {
                     )}
                   </Button>
                 </Box>
-                {activeGraduadosSegmentCount > 0 && (
-                  <Stack direction="row" spacing={1} flexWrap="wrap" sx={{ mt: 1.2, pt: 1, borderTop: '1px solid #e2e8f0', gap: 1 }}>
-                    {allYearOptions.length > 0 && activeStatsFilters.anios.length < allYearOptions.length && (
-                      <Chip
-                        size="small"
-                        label={`Años: ${activeStatsFilters.anios.join(', ')}`}
-                        onDelete={() => handleMultiFilterChange('anios', '__ALL__', allYearOptions)}
-                        sx={{ bgcolor: '#eff6ff', color: '#1d4ed8', fontWeight: 700, fontSize: 11, border: '1px solid #bfdbfe' }}
-                      />
-                    )}
-                    {allPeriodFilterOptions.length > 0 && activeStatsFilters.periodos.length < allPeriodFilterOptions.length && (
-                      <Chip
-                        size="small"
-                        label={`Períodos: ${activeStatsFilters.periodos.map(formatAcademicPeriodLabel).join(', ')}`}
-                        onDelete={() => handleMultiFilterChange('periodos', '__ALL__', allPeriodFilterOptions)}
-                        sx={{ bgcolor: '#eff6ff', color: '#1d4ed8', fontWeight: 700, fontSize: 11, border: '1px solid #bfdbfe' }}
-                      />
-                    )}
-                    {dynamicProgramaOptions.length > 0 && visibleProgramValues.length < dynamicProgramaOptions.length && (
-                      <Chip
-                        size="small"
-                        label={`Programas: ${visibleProgramValues.length} sel.`}
-                        onDelete={() => handleMultiFilterChange('programas', '__ALL__', dynamicProgramaOptions)}
-                        sx={{ bgcolor: '#eff6ff', color: '#1d4ed8', fontWeight: 700, fontSize: 11, border: '1px solid #bfdbfe' }}
-                      />
-                    )}
-                    {Boolean(graduadosChartPeriodFilter) && (
-                      <Chip
-                        size="small"
-                        label={`Período: ${graduadosChartPeriodFilter}`}
-                        onDelete={() => setGraduadosChartPeriodFilter('')}
-                        sx={{ bgcolor: '#eff6ff', color: '#1d4ed8', fontWeight: 700, fontSize: 11, border: '1px solid #bfdbfe' }}
-                      />
-                    )}
-                  </Stack>
-                )}
               </Paper>
             )}
             {graduadosDashboardView === 'general' && (
@@ -10219,66 +10236,22 @@ const renderCategoryBars = (items = [], options = {}) => {
     const downloadChartAsPng = async (chartDomId, fileBaseName) => {
       try {
         const root = document.getElementById(chartDomId);
-        const svg = root?.querySelector('svg');
-        if (!root || !svg) {
+        if (!root) {
           enqueueSnackbar('No fue posible encontrar el gráfico para descargar', { variant: 'warning' });
           return;
         }
 
-        const rect = root.getBoundingClientRect();
-        const width = Math.max(640, Math.round(rect.width));
-        const height = Math.max(360, Math.round(rect.height));
-        const scale = 3;
+        const blob = await captureNodeAsPngBlob(root, 2);
+        if (!blob) {
+          enqueueSnackbar('No fue posible generar la imagen del gráfico', { variant: 'error' });
+          return;
+        }
 
-        const clone = svg.cloneNode(true);
-        clone.setAttribute('xmlns', 'http://www.w3.org/2000/svg');
-        clone.setAttribute('width', String(width));
-        clone.setAttribute('height', String(height));
-
-        const serializer = new XMLSerializer();
-        const svgText = serializer.serializeToString(clone);
-        const svgBlob = new Blob([svgText], { type: 'image/svg+xml;charset=utf-8' });
-        const url = URL.createObjectURL(svgBlob);
-
-        const img = new Image();
-        img.onload = () => {
-          const canvas = document.createElement('canvas');
-          canvas.width = width * scale;
-          canvas.height = height * scale;
-          const ctx = canvas.getContext('2d');
-          if (!ctx) {
-            URL.revokeObjectURL(url);
-            enqueueSnackbar('No fue posible generar la imagen', { variant: 'error' });
-            return;
-          }
-
-          ctx.fillStyle = '#ffffff';
-          ctx.fillRect(0, 0, canvas.width, canvas.height);
-          ctx.scale(scale, scale);
-          ctx.drawImage(img, 0, 0, width, height);
-          URL.revokeObjectURL(url);
-
-          canvas.toBlob((blob) => {
-            if (!blob) {
-              enqueueSnackbar('No fue posible exportar el gráfico', { variant: 'error' });
-              return;
-            }
-            const blobUrl = URL.createObjectURL(blob);
-            const link = document.createElement('a');
-            link.href = blobUrl;
-            link.download = `${fileBaseName || 'grafico'}_${new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-')}.png`;
-            document.body.appendChild(link);
-            link.click();
-            link.remove();
-            URL.revokeObjectURL(blobUrl);
-          }, 'image/png');
-        };
-        img.onerror = () => {
-          URL.revokeObjectURL(url);
-          enqueueSnackbar('Error al renderizar el gráfico para descarga', { variant: 'error' });
-        };
-        img.src = url;
+        const fileName = `${fileBaseName || 'grafico'}_${new Date().toISOString().slice(0, 10)}.png`;
+        downloadPngBlob(blob, fileName);
+        enqueueSnackbar('Gráfico descargado exitosamente (PNG)', { variant: 'success' });
       } catch (err) {
+        console.error('Error al descargar gráfico:', err);
         enqueueSnackbar('Error al descargar el gráfico', { variant: 'error' });
       }
     };
@@ -10332,7 +10305,13 @@ const renderCategoryBars = (items = [], options = {}) => {
               formatter={(value, name) => [pct2(value), name]}
               labelFormatter={(label, payload) => payload?.[0]?.payload?.periodDisplay || label}
             />
-            <Bar dataKey="programa" name="Programa" fill="#0f2358" radius={[0, 0, 0, 0]} maxBarSize={42}>
+            <Legend
+              verticalAlign="bottom"
+              align="center"
+              wrapperStyle={{ paddingTop: 10, fontSize: 12, fontWeight: 700 }}
+              formatter={(value) => <span style={{ color: '#0f172a', fontWeight: 800 }}>{value}</span>}
+            />
+            <Bar dataKey="programa" name={desercionUi.programa ? formatTitleCase(desercionUi.programa) : 'Programa'} fill="#0f2358" radius={[0, 0, 0, 0]} maxBarSize={42}>
               <LabelList
                 dataKey="programa"
                 position="top"
@@ -10477,12 +10456,14 @@ const renderCategoryBars = (items = [], options = {}) => {
               />
             </Bar>
             <Legend
+              verticalAlign="bottom"
+              align="center"
               wrapperStyle={{ fontSize: 12, fontWeight: 700, paddingTop: 10 }}
               payload={[
                 { value: 'Deserción nacional', type: 'square', color: '#0f2358' },
                 { value: 'Deserción departamental', type: 'square', color: '#275294' },
                 { value: 'Deserción institucional', type: 'square', color: '#5f91da' },
-                { value: 'Deserción del programa', type: 'square', color: '#a8c4ec' }
+                { value: desercionUi.programa ? `Deserción ${formatTitleCase(desercionUi.programa)}` : 'Deserción del programa', type: 'square', color: '#a8c4ec' }
               ]}
             />
           </BarChart>
@@ -10555,7 +10536,17 @@ const renderCategoryBars = (items = [], options = {}) => {
                 formatter={(v, name) => [pct2(v), name]}
                 labelFormatter={(label) => `Periodo: ${label}`}
               />
-              <Bar dataKey={panel.leftKey} name={panel.leftLabel} fill={panel.leftColor} radius={[0, 0, 0, 0]} barSize={36}>
+              <Legend
+                verticalAlign="bottom"
+                align="center"
+                wrapperStyle={{ paddingTop: 10, fontSize: 12, fontWeight: 700 }}
+                payload={[
+                  { value: desercionUi.programa ? formatTitleCase(desercionUi.programa) : panel.leftLabel, type: 'rect', color: panel.leftColor },
+                  { value: panel.rightLabel, type: 'rect', color: panel.rightColor }
+                ]}
+                formatter={(value) => <span style={{ color: '#0f172a', fontWeight: 800 }}>{value}</span>}
+              />
+              <Bar dataKey={panel.leftKey} name={desercionUi.programa ? formatTitleCase(desercionUi.programa) : panel.leftLabel} fill={panel.leftColor} radius={[0, 0, 0, 0]} barSize={36}>
                 <LabelList
                   dataKey={panel.leftKey}
                   position="top"
@@ -14873,8 +14864,45 @@ const renderCategoryBars = (items = [], options = {}) => {
     );
   };
 
+  const computeMatriculadosFilterOptions = (activeCatalog = {}) => {
+    const selectedYears = (matFilters.anios || []).filter((y) => y && y !== '__NONE__');
+    const selectedPeriods = (matFilters.periodos || []).filter((p) => p && p !== '__NONE__');
+
+    const masterAnios = (matMasterCatalog.anios.length ? matMasterCatalog.anios : (activeCatalog.anios || []).map(String));
+    const masterPeriodos = matMasterCatalog.periodos.length ? matMasterCatalog.periodos : (activeCatalog.periodos || []).map((p) => String(p.label || p));
+    const masterProgramas = matMasterCatalog.programas.length ? matMasterCatalog.programas : (activeCatalog.programas || []);
+
+    let aniosOpts = Array.from(new Set(masterAnios)).sort((a, b) => Number(a) - Number(b));
+    if (selectedPeriods.length > 0) {
+      const periodYears = new Set(selectedPeriods.map((p) => String(p).split('-')[0]));
+      const filtered = aniosOpts.filter((yr) => periodYears.has(yr));
+      if (filtered.length > 0) aniosOpts = filtered;
+    }
+
+    let periodosOpts = masterPeriodos;
+    if (selectedYears.length > 0) {
+      const filtered = masterPeriodos.filter((p) => selectedYears.includes(String(p).split('-')[0]));
+      if (filtered.length > 0) periodosOpts = filtered;
+    }
+
+    let programasOpts = masterProgramas;
+    const currentPayloadProgs = matriculadosPanelData?.programasDisponibles || [];
+    const selectedProgs = (matFilters.programas || []).filter((p) => p && p !== '__NONE__');
+    if (selectedProgs.length === 0 && currentPayloadProgs.length > 0 && (selectedYears.length > 0 || selectedPeriods.length > 0)) {
+      const progSet = new Set(currentPayloadProgs);
+      const filtered = masterProgramas.filter((p) => progSet.has(p));
+      if (filtered.length > 0) programasOpts = filtered;
+    }
+
+    if (aniosOpts.length === 0) aniosOpts = masterAnios;
+    if (periodosOpts.length === 0) periodosOpts = masterPeriodos;
+    if (programasOpts.length === 0) programasOpts = masterProgramas;
+
+    return { aniosOpts, periodosOpts, programasOpts };
+  };
+
   const renderResumenPoblacionalStandaloneDashboard = () => {
-    const programasOpts = activeSectionCatalog.programas || [];
+    const { aniosOpts, periodosOpts, programasOpts } = computeMatriculadosFilterOptions(activeSectionCatalog);
     const periodosDisp = periodosOpts.length;
 
     const handleMatReset = () => {
@@ -15012,10 +15040,8 @@ const renderCategoryBars = (items = [], options = {}) => {
   };
 
   const renderMatriculadosOnlyDashboard = () => {
-    const matAniosOpts = (matriculadosAniosDisponibles || []).map((x) => String(x));
-    const matPeriodosOpts = (matriculadosPeriodosDisponibles || []).map((p) => p.label || p);
-    const matProgramasOpts = matriculadosProgramasDisponibles || [];
-    const periodosDisp = matriculadosPeriodosDisponibles.length;
+    const { aniosOpts: matAniosOpts, periodosOpts: matPeriodosOpts, programasOpts: matProgramasOpts } = computeMatriculadosFilterOptions();
+    const periodosDisp = matPeriodosOpts.length;
     const totalRegistros = normalizeNumber(matriculadosPanelData?.totalRegistros || 0);
 
     const handleMatReset = () => {
@@ -15319,14 +15345,7 @@ const renderCategoryBars = (items = [], options = {}) => {
                       </Box>
                     </Box>
                   )}
-                  {matriculadosPanelLoading && matriculadosPanelData !== null ? (
-                    <Box sx={{ py: 5, textAlign: 'center' }}>
-                      <CircularProgress size={28} sx={{ color: '#3b82f6' }} />
-                      <Typography sx={{ mt: 1, color: '#64748b', fontWeight: 600, fontSize: 13 }}>Actualizando panel...</Typography>
-                    </Box>
-                  ) : (
-                    renderMatriculadosDashboardPanel()
-                  )}
+                  {renderMatriculadosDashboardPanel()}
                 </>
               )}
             </Paper>
@@ -15565,6 +15584,14 @@ const renderCategoryBars = (items = [], options = {}) => {
       });
     }
 
+    if (selectedPeriods.length > 0 && !selectedPeriods.includes('__NONE__')) {
+      const periodSet = new Set(selectedPeriods.map((p) => String(p).toLowerCase()));
+      filteredSeries = filteredSeries.filter((row) => {
+        const rawP = String(row.periodLabel || '').toLowerCase();
+        return periodSet.has(rawP);
+      });
+    }
+
     if (selectedProgs.length > 0 && matProgramaCache && Object.keys(matProgramaCache).length > 0) {
       const normSelectedProgs = new Set(selectedProgs.map((p) => normalizeProgramKey(p)));
       filteredSeries = filteredSeries.map((row) => {
@@ -15641,32 +15668,40 @@ const renderCategoryBars = (items = [], options = {}) => {
       );
     };
 
-    const handleCopyChartData = () => {
+    const handleCopyChartData = async () => {
       try {
-        const header = 'Período\tMatriculados\n';
-        const body = chartData.map((c) => `${c.name}\t${c.value}`).join('\n');
-        navigator.clipboard.writeText(header + body);
-        enqueueSnackbar('¡Datos del gráfico copiados al portapapeles!', { variant: 'success', autoHideDuration: 2500 });
+        if (!matRechartsChartRef.current) {
+          enqueueSnackbar('No se encontró el gráfico para copiar', { variant: 'warning' });
+          return;
+        }
+        await handleCopyChartNode(matRechartsChartRef.current, '¡Imagen del gráfico copiada al portapapeles! (Ctrl+V para pegar)');
       } catch (err) {
-        enqueueSnackbar('Error al copiar los datos.', { variant: 'error' });
+        console.error('Error al copiar gráfico:', err);
+        enqueueSnackbar('Error al copiar la imagen del gráfico.', { variant: 'error' });
       }
     };
 
-    const handleDownloadChartData = () => {
+    const handleDownloadChartData = async () => {
       try {
-        const header = 'Periodo,Matriculados\n';
-        const body = chartData.map((c) => `"${c.name}",${c.value}`).join('\n');
-        const blob = new Blob([header + body], { type: 'text/csv;charset=utf-8;' });
-        const url = URL.createObjectURL(blob);
-        const link = document.createElement('a');
-        link.setAttribute('href', url);
-        link.setAttribute('download', `reporte_matriculados_por_periodo_${new Date().toISOString().slice(0, 10)}.csv`);
-        document.body.appendChild(link);
-        link.click();
-        document.body.removeChild(link);
-        enqueueSnackbar('¡Reporte del gráfico descargado con éxito!', { variant: 'success', autoHideDuration: 2500 });
+        if (!matRechartsChartRef.current) {
+          enqueueSnackbar('No se encontró el gráfico para descargar', { variant: 'warning' });
+          return;
+        }
+        let blob = null;
+        try {
+          blob = await captureNodeAsPngBlob(matRechartsChartRef.current, 2);
+        } catch (_) {
+          blob = await captureNodeAsPngBlob(matRechartsChartRef.current, 1);
+        }
+        if (!blob) {
+          enqueueSnackbar('No se pudo generar la imagen del gráfico', { variant: 'error' });
+          return;
+        }
+        downloadPngBlob(blob, `grafico_matriculados_por_periodo_${new Date().toISOString().slice(0, 10)}.png`);
+        enqueueSnackbar('¡Imagen del gráfico descargada con éxito! (PNG)', { variant: 'success', autoHideDuration: 3000 });
       } catch (err) {
-        enqueueSnackbar('Error al descargar el reporte.', { variant: 'error' });
+        console.error('Error al descargar gráfico:', err);
+        enqueueSnackbar('Error al descargar la imagen del gráfico.', { variant: 'error' });
       }
     };
 
@@ -15687,19 +15722,24 @@ const renderCategoryBars = (items = [], options = {}) => {
             </Typography>
           </Box>
           <Stack direction="row" spacing={0.8} alignItems="center">
-            <Tooltip title="Copiar datos del gráfico (para Excel/Word)">
+            <Tooltip title="Copiar imagen del gráfico (para pegar con Ctrl+V)">
               <IconButton
                 size="small"
                 onClick={handleCopyChartData}
                 sx={{
                   bgcolor: '#ffffff',
+                  color: '#475569',
+                  borderRadius: 1.8,
+                  p: 0.6,
+                  border: '1px solid #cbd5e1',
+                  boxShadow: '0 1px 3px rgba(0,0,0,0.05)',
                   '&:hover': { bgcolor: '#eff6ff', color: '#1d4ed8', borderColor: '#bfdbfe' }
                 }}
               >
                 <ContentCopyIcon sx={{ fontSize: 15 }} />
               </IconButton>
             </Tooltip>
-            <Tooltip title="Descargar datos del gráfico (CSV / Excel)">
+            <Tooltip title="Descargar imagen del gráfico (PNG)">
               <IconButton
                 size="small"
                 onClick={handleDownloadChartData}
@@ -15718,7 +15758,7 @@ const renderCategoryBars = (items = [], options = {}) => {
             </Tooltip>
           </Stack>
         </Box>
-        <Box sx={{ width: '100%', overflowX: 'auto', pb: 1 }}>
+        <Box ref={matRechartsChartRef} sx={{ width: '100%', overflowX: 'auto', pb: 1, bgcolor: '#ffffff' }}>
           <Box sx={{ width: '100%' }}>
             {matChartViewMode === 'cards' && (() => {
               const dbProgToFacMap = new Map();
