@@ -10351,9 +10351,9 @@ const renderCategoryBars = (items = [], options = {}) => {
               formatter={(value, name) => [pct2(value), name]}
               labelFormatter={(label, payload) => payload?.[0]?.payload?.periodDisplay || label}
             />
-            <Bar dataKey="nacional" name="Deserción nacional" fill="#0f2358" radius={[0, 0, 0, 0]} maxBarSize={34}>
+            <Bar dataKey="programa" name={desercionUi.programa ? formatTitleCase(desercionUi.programa) : 'Programa'} fill="#0f2358" radius={[0, 0, 0, 0]} maxBarSize={34}>
               <LabelList
-                dataKey="nacional"
+                dataKey="programa"
                 content={({ x, y, width, height, value }) => (
                   Number.isFinite(Number(value)) && Number(value) > 0 && height > 22
                     ? (
@@ -10377,33 +10377,7 @@ const renderCategoryBars = (items = [], options = {}) => {
                 )}
               />
             </Bar>
-            <Bar dataKey="departamental" name="Deserción departamental" fill="#275294" radius={[0, 0, 0, 0]} maxBarSize={34}>
-              <LabelList
-                dataKey="departamental"
-                content={({ x, y, width, height, value }) => (
-                  Number.isFinite(Number(value)) && Number(value) > 0 && height > 22
-                    ? (
-                      <text
-                        x={Number(x) + Number(width) / 2}
-                        y={Number(y) + Number(height) / 2 + 5}
-                        textAnchor="middle"
-                        dominantBaseline="middle"
-                        transform={`rotate(-90 ${Number(x) + Number(width) / 2} ${Number(y) + Number(height) / 2 + 5})`}
-                        style={{
-                          fontFamily: 'Arial, Helvetica, sans-serif',
-                          fontSize: 11,
-                          fontWeight: 600,
-                          fill: '#fff'
-                        }}
-                      >
-                        {pct1(value)}
-                      </text>
-                    )
-                    : null
-                )}
-              />
-            </Bar>
-            <Bar dataKey="institucional" name="Deserción institucional" fill="#5f91da" radius={[0, 0, 0, 0]} maxBarSize={34}>
+            <Bar dataKey="institucional" name="Deserción institucional" fill="#2563eb" radius={[0, 0, 0, 0]} maxBarSize={34}>
               <LabelList
                 dataKey="institucional"
                 content={({ x, y, width, height, value }) => (
@@ -10429,9 +10403,35 @@ const renderCategoryBars = (items = [], options = {}) => {
                 )}
               />
             </Bar>
-            <Bar dataKey="programa" name="Deserción del programa" fill="#a8c4ec" radius={[0, 0, 0, 0]} maxBarSize={34}>
+            <Bar dataKey="departamental" name="Deserción departamental" fill="#3b82f6" radius={[0, 0, 0, 0]} maxBarSize={34}>
               <LabelList
-                dataKey="programa"
+                dataKey="departamental"
+                content={({ x, y, width, height, value }) => (
+                  Number.isFinite(Number(value)) && Number(value) > 0 && height > 22
+                    ? (
+                      <text
+                        x={Number(x) + Number(width) / 2}
+                        y={Number(y) + Number(height) / 2 + 5}
+                        textAnchor="middle"
+                        dominantBaseline="middle"
+                        transform={`rotate(-90 ${Number(x) + Number(width) / 2} ${Number(y) + Number(height) / 2 + 5})`}
+                        style={{
+                          fontFamily: 'Arial, Helvetica, sans-serif',
+                          fontSize: 11,
+                          fontWeight: 600,
+                          fill: '#fff'
+                        }}
+                      >
+                        {pct1(value)}
+                      </text>
+                    )
+                    : null
+                )}
+              />
+            </Bar>
+            <Bar dataKey="nacional" name="Deserción nacional" fill="#93c5fd" radius={[0, 0, 0, 0]} maxBarSize={34}>
+              <LabelList
+                dataKey="nacional"
                 content={({ x, y, width, height, value }) => (
                   Number.isFinite(Number(value)) && Number(value) > 0 && height > 22
                     ? (
@@ -10460,11 +10460,12 @@ const renderCategoryBars = (items = [], options = {}) => {
               align="center"
               wrapperStyle={{ fontSize: 12, fontWeight: 700, paddingTop: 10 }}
               payload={[
-                { value: 'Deserción nacional', type: 'square', color: '#0f2358' },
-                { value: 'Deserción departamental', type: 'square', color: '#275294' },
-                { value: 'Deserción institucional', type: 'square', color: '#5f91da' },
-                { value: desercionUi.programa ? `Deserción ${formatTitleCase(desercionUi.programa)}` : 'Deserción del programa', type: 'square', color: '#a8c4ec' }
+                { value: desercionUi.programa ? formatTitleCase(desercionUi.programa) : 'Programa', type: 'square', color: '#0f2358' },
+                { value: 'Institucional', type: 'square', color: '#2563eb' },
+                { value: 'Departamental', type: 'square', color: '#3b82f6' },
+                { value: 'Nacional', type: 'square', color: '#93c5fd' }
               ]}
+              formatter={(value) => <span style={{ color: '#0f172a', fontWeight: 800 }}>{value}</span>}
             />
           </BarChart>
         </ResponsiveContainer>
