@@ -2351,7 +2351,10 @@ const sendDependenciaRadicacionInfoEmail = async (solicitud, token, attachments,
   const laboral = solicitud.datos_formulario?.laboral || {};
   const jefe = solicitud.jefe_snapshot || {};
   const targets = getDependencyNotificationTargets(solicitud);
-  const dependenciaLabel = targets.map((target) => target.label).filter(Boolean).join(' / ');
+  const userDependencia = cleanDependenciaLabel(laboral.dependencia || solicitante.dependencia || '');
+  const salidaInfo = solicitud.datos_formulario?.salida || {};
+  const isProyeccionSocial = salidaInfo.tipo === 'proyeccion_social';
+  const proyeccionSocialNotice = isProyeccionSocial ? ' en el marco del desarrollo de actividades de Proyección Social' : '';
 
   if (!targets.length) {
     return { success: false, skipped: true, reason: 'dependency_email_not_configured' };
@@ -2369,8 +2372,8 @@ const sendDependenciaRadicacionInfoEmail = async (solicitud, token, attachments,
   // Renderiza HTML con o sin botones según si el target está bloqueado
   const renderDepHtml = (blocked) => {
     const introText = blocked
-      ? `<p style="margin: 0 0 12px 0;">Saludo de paz y bien,</p><p style="margin: 0 0 4px 0; color: #475569;">Estimado(a) equipo de dependencia.</p><p>Reciba un cordial saludo. Se informa que el/la colaborador(a) <strong>${escapeHtml(solicitante.nombre || '')}</strong>, adscrito(a) a <strong>${escapeHtml(dependenciaLabel)}</strong>, radico una solicitud de ${isOficio ? 'oficio de salida' : 'reporte de salida'} en el sistema. Este correo es de carácter informativo para su seguimiento interno.</p>`
-      : `<p style="margin: 0 0 12px 0;">Saludo de paz y bien,</p><p style="margin: 0 0 4px 0; color: #475569;">Estimado(a) equipo de dependencia.</p><p>Reciba un cordial saludo. Se informa que el/la colaborador(a) <strong>${escapeHtml(solicitante.nombre || '')}</strong>, adscrito(a) a <strong>${escapeHtml(dependenciaLabel)}</strong>, radico una solicitud de ${isOficio ? 'oficio de salida' : 'reporte de salida'} en el sistema. Este correo permite realizar seguimiento interno y, cuando el jefe inmediato no se encuentre disponible, autorizar o no autorizar la salida desde la dependencia.</p>`;
+      ? `<p style="margin: 0 0 12px 0;">Saludo de paz y bien,</p><p style="margin: 0 0 4px 0; color: #475569;">Estimado(a) equipo de dependencia.</p><p>Reciba un cordial saludo. Se informa que el/la colaborador(a) <strong>${escapeHtml(solicitante.nombre || '')}</strong>, adscrito(a) a la dependencia <strong>${escapeHtml(userDependencia)}</strong>${proyeccionSocialNotice}, radico una solicitud de ${isOficio ? 'oficio de salida' : 'reporte de salida'} en el sistema. Este correo es de carácter informativo para su seguimiento interno.</p>`
+      : `<p style="margin: 0 0 12px 0;">Saludo de paz y bien,</p><p style="margin: 0 0 4px 0; color: #475569;">Estimado(a) equipo de dependencia.</p><p>Reciba un cordial saludo. Se informa que el/la colaborador(a) <strong>${escapeHtml(solicitante.nombre || '')}</strong>, adscrito(a) a la dependencia <strong>${escapeHtml(userDependencia)}</strong>${proyeccionSocialNotice}, radico una solicitud de ${isOficio ? 'oficio de salida' : 'reporte de salida'} en el sistema. Este correo permite realizar seguimiento interno y, cuando el jefe inmediato no se encuentre disponible, autorizar o no autorizar la salida desde la dependencia.</p>`;
 
     const actionBlock = blocked
       ? `
@@ -2573,7 +2576,7 @@ const sendFinalEmails = async (solicitud, pdfAttachment, supportAttachment) => {
   const nombreColaborador = solicitud.solicitante_snapshot?.nombre || '';
   const dependenciaTarget = getDependencyNotificationTarget(solicitud);
   const dependenciaTargets = getDependencyNotificationTargets(solicitud);
-  const dependencialabel = dependenciaTarget.label || solicitud.datos_formulario?.laboral?.dependencia || '';
+  const dependencialabel = cleanDependenciaLabel(solicitud.datos_formulario?.laboral?.dependencia || solicitud.solicitante_snapshot?.dependencia || dependenciaTarget.label || '');
 
   const isOficio = isOficioSolicitud(solicitud);
   
