@@ -8,8 +8,8 @@ const {
   RecursoHumanoDocente, RecursoHumanoAdministrativo, PoblacionalCaracterizacion, PoblacionalMatriculado
 } = require('../models');
 const { sequelize } = require('../config/database');
-const { sendMailDirect, renderInstitutionalTemplate, escapeHtml } = require('../services/emailService');
 const { evaluateRtmStatus } = require('../services/pesvRtmRules');
+const { sendPesvExpiryNotification, isBicycleVehicle } = require('../services/pesvExpiryNotificationScheduler');
 
 const EXCEL_FIELDS = {
   IDENTIFICACION: 'identificacion', NOMBRES_Y_APELLIDOS: 'nombres_apellidos', CORREO: 'correo',
@@ -123,6 +123,10 @@ const getSearchScore = (row, rawQuery) => {
 };
 const serialize = (row) => {
   const data = row.toJSON ? row.toJSON() : row;
+  if (isBicycleVehicle(data)) {
+    const noAplica = { code: 'no_aplica', label: 'No aplica · Bicicleta', days: null, priority: 2 };
+    return { ...data, documentos_no_aplican: true, soat_estado: noAplica, tecnomecanica_estado: noAplica };
+  }
   const specialRtm = {
     NO_EXIGIBLE: { code: 'no_exigible', label: `RTM no exigible a la fecha${data.vehiculo_modelo ? ` · Modelo ${data.vehiculo_modelo}` : ''}`, days: daysUntil(data.rtm_fecha_exigibilidad), priority: 2 },
     SIN_REGISTRO_RUNT: { code: 'sin_registro', label: 'Sin registro en RUNT', days: null, priority: 1 },
@@ -130,7 +134,8 @@ const serialize = (row) => {
   }[data.rtm_estado];
   return { ...data, soat_estado: expiryStatus(data.soat_vigencia), tecnomecanica_estado: specialRtm || expiryStatus(data.tecnomecanica_vigencia) };
 };
-const payloadFromBody = (body = {}) => ({
+const payloadFromBody = (body = {}) => {
+  const payload = {
   identificacion: clean(body.identificacion, 40), nombres_apellidos: clean(body.nombres_apellidos, 220),
   correo: clean(body.correo, 220)?.toLowerCase() || null, vinculacion: clean(body.vinculacion, 140),
   dependencia_programa: clean(body.dependencia_programa, 220), campus: clean(body.campus, 120),
@@ -147,8 +152,17 @@ const payloadFromBody = (body = {}) => ({
   rtm_numero_certificado: clean(body.rtm_numero_certificado, 140), rtm_cda: clean(body.rtm_cda, 220),
   vehiculo_fecha_matricula: parseDate(body.vehiculo_fecha_matricula), vehiculo_clase: clean(body.vehiculo_clase, 120),
   vehiculo_servicio: clean(body.vehiculo_servicio, 120), vehiculo_modelo: clean(body.vehiculo_modelo, 20),
-  horario: clean(body.horario, 180), observaciones: clean(body.observaciones, 4000)
-});
+    horario: clean(body.horario, 180), observaciones: clean(body.observaciones, 4000)
+  };
+  if (!isBicycleVehicle(payload)) return payload;
+  return {
+    ...payload,
+    soat_vigencia: null, soat_vigencia_texto: 'No aplica para bicicleta', soat_fecha_expedicion: null,
+    soat_fecha_inicio: null, soat_numero_poliza: null, soat_entidad: null,
+    tecnomecanica_vigencia: null, tecnomecanica_vigencia_texto: 'No aplica para bicicleta', rtm_estado: 'NO_APLICA',
+    rtm_fecha_expedicion: null, rtm_fecha_exigibilidad: null, rtm_numero_certificado: null, rtm_cda: null
+  };
+};
 const validate = (payload) => {
   const errors = [];
   if (!payload.nombres_apellidos) errors.push('Los nombres y apellidos son obligatorios');
@@ -276,6 +290,7 @@ const startRuntValidation = async (req, res) => {
   try {
     const record = await PesvParqueaderoRegistro.findByPk(req.params.id);
     if (!record) return res.status(404).json({ success: false, message: 'Registro no encontrado' });
+    if (isBicycleVehicle(record)) return res.status(400).json({ success: false, message: 'Las bicicletas no requieren validación documental en RUNT' });
     if (!record.placa || !record.identificacion) return res.status(400).json({ success: false, message: 'La consulta RUNT requiere placa e identificación' });
     await PesvRuntValidacion.update({ estado: 'CANCELADA' }, {
       where: { parqueadero_registro_id: record.id, estado: { [Op.in]: ['PENDIENTE', 'ABIERTA'] } }
@@ -520,34 +535,14 @@ const notifyExpiry = async (req, res) => {
   try {
     const row = await PesvParqueaderoRegistro.findByPk(req.params.id);
     if (!row) return res.status(404).json({ success: false, message: 'Registro no encontrado' });
+    if (isBicycleVehicle(row)) return res.status(400).json({ success: false, message: 'SOAT y RTM no aplican para bicicletas; no se genera notificación' });
     if (!row.correo) return res.status(400).json({ success: false, message: 'El registro no tiene correo electrónico' });
-    const documentType = req.body?.tipo === 'tecnomecanica' ? 'tecnomecánica' : 'SOAT';
+    const tipo = req.body?.tipo === 'tecnomecanica' ? 'tecnomecanica' : 'soat';
+    const documentType = tipo === 'tecnomecanica' ? 'tecnomecánica' : 'SOAT';
     const field = documentType === 'SOAT' ? 'soat_vigencia' : 'tecnomecanica_vigencia';
-    const date = row[field]; const status = expiryStatus(date);
+    const date = row[field];
     if (!date) return res.status(400).json({ success: false, message: `No existe una fecha verificable de ${documentType}` });
-    const dateLabel = new Intl.DateTimeFormat('es-CO', { dateStyle: 'long', timeZone: 'UTC' }).format(new Date(`${date}T00:00:00Z`));
-    const remainingDaysLabel = `${status.days} ${Math.abs(status.days) === 1 ? 'día' : 'días'}`;
-    const statusText = status.code === 'vencido' ? `se encuentra vencido desde el ${dateLabel}` : `vence el ${dateLabel} (${remainingDaysLabel})`;
-    const body = `<p>Saludo cordial, <strong>${escapeHtml(row.nombres_apellidos)}</strong>.</p><p>Desde el Plan Estratégico de Seguridad Vial de UNICESMAG informamos que el documento <strong>${escapeHtml(documentType)}</strong> asociado al vehículo de placa <strong>${escapeHtml(row.placa || 'sin placa registrada')}</strong> ${escapeHtml(statusText)}.</p><p>Le agradecemos realizar la renovación y actualizar oportunamente la información institucional.</p>`;
-    const senderHtml = `
-      <p style="margin: 0; font-weight: bold; color: #0b3a6f;">Seguridad y Salud en el Trabajo</p>
-      <p style="margin: 2px 0 0 0; font-size: 11.5px; color: #64748b;">Plan Estratégico de Seguridad Vial · UNICESMAG</p>
-      <p style="margin: 2px 0 0 0; font-size: 11.5px; color: #64748b;">Hombres nuevos para tiempos nuevos</p>
-    `;
-    const threadId = `<pesv-parqueadero-${row.id}@unicesmag.edu.co>`;
-    const subject = `[PESV UNICESMAG] Vigencias Documentales · Placa ${row.placa || row.identificacion || 'Vehículo'}`;
-    const result = await sendMailDirect({
-      to: row.correo,
-      subject,
-      inReplyTo: threadId,
-      references: threadId,
-      headers: {
-        'In-Reply-To': threadId,
-        'References': threadId
-      },
-      text: `Saludo cordial, ${row.nombres_apellidos}. Su ${documentType} asociado a la placa ${row.placa || 'sin placa'} ${statusText}. Por favor realice la renovación y actualice la información. Fraternalmente, Seguridad y Salud en el Trabajo, Plan Estratégico de Seguridad Vial de UNICESMAG.`,
-      html: renderInstitutionalTemplate({ title: `Aviso de vigencia ${documentType}`, introHtml: '', bodyHtml: body, senderHtml })
-    });
+    const result = await sendPesvExpiryNotification(row, tipo);
     if (!result.success) return res.status(503).json({ success: false, message: `No se pudo enviar el correo: ${result.error}` });
     const notificationField = documentType === 'SOAT' ? 'ultima_notificacion_soat' : 'ultima_notificacion_tecnomecanica';
     await row.update({ [notificationField]: new Date(), actualizado_por: req.user?.id });

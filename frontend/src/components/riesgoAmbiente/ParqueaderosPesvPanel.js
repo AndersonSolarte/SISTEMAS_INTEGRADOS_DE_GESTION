@@ -31,6 +31,7 @@ const EMPTY_FORM = {
   rtm_estado: '', rtm_fecha_expedicion: '', rtm_fecha_exigibilidad: '', rtm_numero_certificado: '', rtm_cda: ''
 };
 const FORM_DATE_FIELDS = new Set(['vehiculo_fecha_matricula', 'soat_fecha_expedicion', 'soat_fecha_inicio', 'soat_vigencia', 'rtm_fecha_expedicion', 'tecnomecanica_vigencia', 'rtm_fecha_exigibilidad']);
+const BICYCLE_DOCUMENT_FIELDS = new Set(['soat_fecha_expedicion', 'soat_fecha_inicio', 'soat_vigencia', 'soat_numero_poliza', 'soat_entidad', 'rtm_fecha_expedicion', 'tecnomecanica_vigencia', 'rtm_fecha_exigibilidad', 'rtm_numero_certificado', 'rtm_cda']);
 const EMPTY_RUNT_FORM = {
   soat_fecha_fin: '', soat_numero_poliza: '', soat_entidad: '',
   rtm_aplica: 'SI', rtm_fecha_vigencia: '', rtm_numero_certificado: '', rtm_cda: '',
@@ -59,6 +60,7 @@ const documentStatusLabel = (value) => ({
   SIN_REGISTRO_RUNT: 'Sin RTM registrada en RUNT', NO_APLICA: 'Exento de RTM'
 }[value] || value || 'Sin información');
 const normalizeRuntLine = (value = '') => String(value || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/\s+/g, ' ').trim().toUpperCase();
+const isBicycleVehicle = (row = {}) => [row.tipo_vehiculo, row.vehiculo_clase].some((value) => /\b(BICI|BICICLETA|CICLA)\b/.test(normalizeRuntLine(value)));
 const runtDateToIso = (value = '') => {
   const match = String(value || '').trim().match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
   if (!match) return '';
@@ -147,10 +149,11 @@ const expiryLabel = (status) => status?.code === 'vencido'
 
 function ExpiryCell({ type, date, rawText, status, row, onNotify, notifying }) {
   const style = STATUS_STYLE[status?.code] || STATUS_STYLE.sin_fecha;
+  const documentsDoNotApply = status?.code === 'no_aplica' && isBicycleVehicle(row);
   return (
     <Stack spacing={.65} alignItems="flex-start">
       <Typography variant="body2" sx={{ fontWeight: 800, color: '#0f172a' }}>
-        {date ? formatDate(date) : rawText || 'Sin información'}
+        {documentsDoNotApply ? 'No aplica para bicicleta' : date ? formatDate(date) : rawText || 'Sin información'}
       </Typography>
       <Chip
         size="small"
@@ -170,7 +173,7 @@ function ExpiryCell({ type, date, rawText, status, row, onNotify, notifying }) {
         label={expiryLabel(status)}
         sx={{ height: 23, color: style.color, bgcolor: style.bgcolor, border: `1px solid ${style.border}`, fontWeight: 800, fontSize: 11 }}
       />
-      {date && status?.code !== 'vigente' && (
+      {date && status?.code !== 'no_aplica' && (
         <Button size="small" startIcon={notifying ? <CircularProgress size={13} /> : <EmailRoundedIcon />} disabled={notifying || !row.correo} onClick={() => onNotify(row, type)} sx={{ p: 0, minWidth: 0, textTransform: 'none', fontWeight: 800, fontSize: 11.5 }}>
           Notificar
         </Button>
@@ -319,6 +322,7 @@ function ParqueaderosPesvPanel({ onBack }) {
     finally { setNotifying(''); }
   };
   const startRuntValidation = async (row) => {
+    if (isBicycleVehicle(row)) return enqueueSnackbar('SOAT, RTM y validación RUNT no aplican para bicicletas', { variant: 'info' });
     if (!row.placa || !row.identificacion) return enqueueSnackbar('La validación RUNT requiere placa e identificación', { variant: 'warning' });
     const popup = window.open('', '_blank');
     try {
@@ -414,6 +418,7 @@ function ParqueaderosPesvPanel({ onBack }) {
     setEstado('');
     setPage(0);
   };
+  const bicycleSelected = isBicycleVehicle(form);
   const formCatalogOptions = {
     vinculacion: catalogs.vinculaciones || [], dependencia_programa: catalogs.dependencias || [], campus: catalogs.campus || [],
     parqueadero_ingreso: catalogs.parqueaderos || [], categoria_ingreso: catalogs.categorias || [],
@@ -461,10 +466,11 @@ function ParqueaderosPesvPanel({ onBack }) {
         key={key} freeSolo autoHighlight options={options} value={form[key] || null} inputValue={form[key] || ''}
         onChange={(_, value) => setForm((prev) => ({ ...prev, [key]: value || '' }))}
         onInputChange={(_, value) => setForm((prev) => ({ ...prev, [key]: value || '' }))}
+        disabled={bicycleSelected && BICYCLE_DOCUMENT_FIELDS.has(key)}
         renderInput={(params) => <TextField {...params} label={label} fullWidth size="small" />}
       />
     );
-    return <TextField key={key} label={label} type={FORM_DATE_FIELDS.has(key) ? 'date' : 'text'} value={form[key]} onChange={updateField(key)} InputLabelProps={FORM_DATE_FIELDS.has(key) ? { shrink: true } : undefined} fullWidth size="small" />;
+    return <TextField key={key} label={label} type={FORM_DATE_FIELDS.has(key) ? 'date' : 'text'} value={form[key]} onChange={updateField(key)} disabled={bicycleSelected && BICYCLE_DOCUMENT_FIELDS.has(key)} InputLabelProps={FORM_DATE_FIELDS.has(key) ? { shrink: true } : undefined} fullWidth size="small" />;
   };
 
   return (
@@ -539,9 +545,9 @@ function ParqueaderosPesvPanel({ onBack }) {
               <TableCell><ExpiryCell type="tecnomecanica" date={row.tecnomecanica_vigencia} rawText={row.tecnomecanica_vigencia_texto} status={row.tecnomecanica_estado} row={row} onNotify={notify} notifying={notifying === `${row.id}-tecnomecanica`} /></TableCell>
               <TableCell align="center">
                 <Box sx={{ display: 'inline-grid', gridTemplateColumns: 'repeat(2, auto)', gap: 0.6, justifyItems: 'center', alignItems: 'center' }}>
-                  <Tooltip title="Validar SOAT y RTM en RUNT" arrow placement="top">
+                  <Tooltip title={isBicycleVehicle(row) ? 'No aplica para bicicletas' : 'Validar SOAT y RTM en RUNT'} arrow placement="top">
                     <span>
-                      <IconButton size="small" onClick={() => startRuntValidation(row)} disabled={!row.placa || !row.identificacion} sx={{ color: '#d97706', bgcolor: '#fffbeb', border: '1px solid #fde68a', p: 0.55, '&:hover': { bgcolor: '#fef3c7' }, '&.Mui-disabled': { bgcolor: '#f1f5f9', color: '#cbd5e1', borderColor: '#e2e8f0' } }}>
+                      <IconButton size="small" onClick={() => startRuntValidation(row)} disabled={isBicycleVehicle(row) || !row.placa || !row.identificacion} sx={{ color: '#d97706', bgcolor: '#fffbeb', border: '1px solid #fde68a', p: 0.55, '&:hover': { bgcolor: '#fef3c7' }, '&.Mui-disabled': { bgcolor: '#f1f5f9', color: '#cbd5e1', borderColor: '#e2e8f0' } }}>
                         <FactCheckRoundedIcon sx={{ fontSize: 16 }} />
                       </IconButton>
                     </span>
@@ -577,20 +583,24 @@ function ParqueaderosPesvPanel({ onBack }) {
           ].map(renderFormField)}
 
           <Typography sx={{ gridColumn: { sm: '1 / -1' }, mt: 1, fontWeight: 900, color: '#1e3a8a' }}>Información del vehículo</Typography>
-          {[
+          {[ 
             ['tipo_vehiculo', 'Tipo de vehículo institucional'], ['placa', 'Placa'], ['vehiculo_clase', 'Clase del vehículo (RUNT)'], ['vehiculo_servicio', 'Tipo de servicio (RUNT)'], ['vehiculo_modelo', 'Modelo'], ['vehiculo_fecha_matricula', 'Fecha inicial de matrícula']
           ].map(renderFormField)}
 
-          <Typography sx={{ gridColumn: { sm: '1 / -1' }, mt: 1, fontWeight: 900, color: '#1e3a8a' }}>Seguro obligatorio — SOAT</Typography>
-          {[
-            ['soat_fecha_expedicion', 'Fecha de expedición'], ['soat_fecha_inicio', 'Inicio de vigencia'], ['soat_vigencia', 'Fin de vigencia'], ['soat_numero_poliza', 'Número de póliza'], ['soat_entidad', 'Entidad aseguradora']
-          ].map(renderFormField)}
+          {bicycleSelected && <Alert severity="info" sx={{ gridColumn: { sm: '1 / -1' } }}><strong>Bicicleta:</strong> no requiere SOAT, revisión técnico-mecánica ni validación en RUNT. Al guardar, estos campos se registrarán como “No aplica”.</Alert>}
 
-          <Typography sx={{ gridColumn: { sm: '1 / -1' }, mt: 1, fontWeight: 900, color: '#1e3a8a' }}>Revisión técnico-mecánica — RTM</Typography>
-          <FormControl size="small" fullWidth><InputLabel>Estado de la RTM</InputLabel><Select label="Estado de la RTM" value={form.rtm_estado} onChange={updateField('rtm_estado')}><MenuItem value="">Sin clasificar</MenuItem><MenuItem value="VIGENTE">Vigente</MenuItem><MenuItem value="VENCIDO">Vencida</MenuItem><MenuItem value="NO_EXIGIBLE">RTM no exigible a la fecha</MenuItem><MenuItem value="SIN_REGISTRO_RUNT">Sin RTM registrada en RUNT</MenuItem><MenuItem value="NO_APLICA">Exento por disposición aplicable</MenuItem></Select></FormControl>
-          {[
-            ['rtm_fecha_expedicion', 'Fecha de expedición RTM'], ['tecnomecanica_vigencia', 'Fin de vigencia RTM'], ['rtm_fecha_exigibilidad', 'Primera fecha de exigibilidad'], ['rtm_numero_certificado', 'Número de certificado'], ['rtm_cda', 'Centro de Diagnóstico Automotor (CDA)']
-          ].map(renderFormField)}
+          {!bicycleSelected && <>
+            <Typography sx={{ gridColumn: { sm: '1 / -1' }, mt: 1, fontWeight: 900, color: '#1e3a8a' }}>Seguro obligatorio — SOAT</Typography>
+            {[
+              ['soat_fecha_expedicion', 'Fecha de expedición'], ['soat_fecha_inicio', 'Inicio de vigencia'], ['soat_vigencia', 'Fin de vigencia'], ['soat_numero_poliza', 'Número de póliza'], ['soat_entidad', 'Entidad aseguradora']
+            ].map(renderFormField)}
+
+            <Typography sx={{ gridColumn: { sm: '1 / -1' }, mt: 1, fontWeight: 900, color: '#1e3a8a' }}>Revisión técnico-mecánica — RTM</Typography>
+            <FormControl size="small" fullWidth><InputLabel>Estado de la RTM</InputLabel><Select label="Estado de la RTM" value={form.rtm_estado} onChange={updateField('rtm_estado')}><MenuItem value="">Sin clasificar</MenuItem><MenuItem value="VIGENTE">Vigente</MenuItem><MenuItem value="VENCIDO">Vencida</MenuItem><MenuItem value="NO_EXIGIBLE">RTM no exigible a la fecha</MenuItem><MenuItem value="SIN_REGISTRO_RUNT">Sin RTM registrada en RUNT</MenuItem><MenuItem value="NO_APLICA">Exento por disposición aplicable</MenuItem></Select></FormControl>
+            {[
+              ['rtm_fecha_expedicion', 'Fecha de expedición RTM'], ['tecnomecanica_vigencia', 'Fin de vigencia RTM'], ['rtm_fecha_exigibilidad', 'Primera fecha de exigibilidad'], ['rtm_numero_certificado', 'Número de certificado'], ['rtm_cda', 'Centro de Diagnóstico Automotor (CDA)']
+            ].map(renderFormField)}
+          </>}
 
           <TextField label="Observaciones" value={form.observaciones} onChange={updateField('observaciones')} multiline minRows={3} fullWidth sx={{ gridColumn: { sm: '1 / -1' } }} />
         </Box></DialogContent>

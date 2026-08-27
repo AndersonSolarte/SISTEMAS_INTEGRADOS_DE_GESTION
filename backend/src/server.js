@@ -407,6 +407,12 @@ testConnection()
     } catch (e) {
       console.warn('[gestion-informacion] No se pudo sincronizar autoevaluacion:', e?.message);
     }
+    try {
+      const { startPesvExpiryNotificationScheduler } = require('./services/pesvExpiryNotificationScheduler');
+      startPesvExpiryNotificationScheduler();
+    } catch (e) {
+      console.warn('[pesv-notificaciones] No se pudo iniciar el programador:', e?.message);
+    }
     startServer(DEFAULT_PORT);
   })
   .catch((error) => {
