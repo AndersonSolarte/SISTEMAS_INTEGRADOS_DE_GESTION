@@ -3169,6 +3169,7 @@ const sendJefeGroupRadicacionNotificationEmail = async (solicitud, jefeSnapshot,
     cita_medica_laboral: 'Cita medica laboral',
     urgencia_medica: 'Urgencia Medica',
     diligencia_personal: 'Diligencia personal',
+    proyeccion_social: 'Proyección Social',
     compensatorio: 'Compensatorio',
     practica_integral_movilidad: 'PRÁCTICA INTEGRAL DE MOVILIDAD',
     ponencia: 'Ponencia',
@@ -3310,6 +3311,7 @@ const sendGroupFinalConsolidatedEmail = async (solicitudes, pdfAttachments) => {
     cita_medica_laboral: 'Cita medica laboral',
     urgencia_medica: 'Urgencia Medica',
     diligencia_personal: 'Diligencia personal',
+    proyeccion_social: 'Proyección Social',
     compensatorio: 'Compensatorio',
     ponencia: 'Ponencia',
     visita_ies: 'Visita a otras IES',
@@ -3568,7 +3570,11 @@ const radicarSolicitud = async (req, res) => {
               alcance: (salida.categoria === 'propias_cargo' && salida.tipo !== 'salida_campus') ? sanitizeText(salida.alcance || 'Local', 100) : 'Local',
               pais: (salida.categoria === 'propias_cargo' && salida.alcance === 'Internacional') ? sanitizeText(salida.pais || '', 100) : '',
               departamento: (salida.categoria === 'propias_cargo' && salida.alcance === 'Nacional') ? sanitizeText(salida.departamento || '', 100) : '',
-              municipio: (salida.categoria === 'propias_cargo' && ['Nacional', 'Regional'].includes(salida.alcance)) ? sanitizeText(salida.municipio || '', 100) : ''
+              municipio: (salida.categoria === 'propias_cargo' && ['Nacional', 'Regional'].includes(salida.alcance)) ? sanitizeText(salida.municipio || '', 100) : '',
+              duracionTipo: sanitizeText(salida.duracionTipo || 'menos_media_jornada', 50),
+              duracionDias: salida.duracionDias ? Number(salida.duracionDias) : 0,
+              incluyeEstudiantes: salida.tipo === 'proyeccion_social' ? Boolean(salida.incluyeEstudiantes) : false,
+              estudiantesList: (salida.tipo === 'proyeccion_social' && salida.incluyeEstudiantes) ? (salida.estudiantesList || salida.estudiantes || []) : []
             },
             reposicion: {
               fecha: '',
@@ -3822,6 +3828,7 @@ const radicarSolicitud = async (req, res) => {
           terapias: 'Terapias o tratamiento medico',
           urgencia_medica: 'Urgencia medica',
           diligencia_personal: 'Diligencia personal',
+          proyeccion_social: 'Proyección Social',
           ponencia: 'Ponencia/Conferencia',
           visita_ies: 'Visita a otras IES/Entidades',
           capacitacion: 'Capacitacion/Curso externo',
@@ -4014,7 +4021,9 @@ const radicarSolicitud = async (req, res) => {
           oficioCuerpo: sanitizeText(oficioCuerpo || '', 5000),
           oficioDespedida: sanitizeText(oficioDespedida || '', 100),
           oficioAnexos: sanitizeText(oficioAnexos || '', 1000),
-          oficioProyecto: sanitizeText(oficioProyecto || '', 255)
+          oficioProyecto: sanitizeText(oficioProyecto || '', 255),
+          incluyeEstudiantes: salida.tipo === 'proyeccion_social' ? Boolean(salida.incluyeEstudiantes) : false,
+          estudiantesList: (salida.tipo === 'proyeccion_social' && salida.incluyeEstudiantes) ? (salida.estudiantesList || salida.estudiantes || []) : []
         },
         reposicion: {
           fecha: sanitizeText(reposicion.fecha, 20),
@@ -6739,6 +6748,7 @@ const sendJefeGroupApprovalEmail = async (solicitudes, defaultToken, recipients 
     cita_medica_laboral: 'Cita medica laboral',
     urgencia_medica: 'Urgencia Medica',
     diligencia_personal: 'Diligencia personal',
+    proyeccion_social: 'Proyección Social',
     compensatorio: 'Compensatorio',
     practica_integral_movilidad: 'PRÁCTICA INTEGRAL DE MOVILIDAD',
     ponencia: 'Ponencia',
@@ -6910,6 +6920,7 @@ const sendGestionHumanaGroupApprovalEmail = async (solicitudes, token) => {
     cita_medica_laboral: 'Cita medica laboral',
     urgencia_medica: 'Urgencia Medica',
     diligencia_personal: 'Diligencia personal',
+    proyeccion_social: 'Proyección Social',
     compensatorio: 'Compensatorio',
     ponencia: 'Ponencia',
     visita_ies: 'Visita a otras IES',

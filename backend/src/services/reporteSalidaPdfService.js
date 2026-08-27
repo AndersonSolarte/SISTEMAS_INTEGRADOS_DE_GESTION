@@ -339,6 +339,7 @@ const getTipoSalidaLabel = (tipo) => {
     cita_particular: 'Cita medica particular',
     cita_medica_laboral: 'Cita medica laboral',
     diligencia_personal: 'Diligencia personal',
+    proyeccion_social: 'Proyección Social',
     compensatorio: 'Compensatorio',
     voto_jurado: 'Permiso: Jurado de votación',
     voto_sufragante: 'Permiso: Sufragante',
@@ -986,7 +987,7 @@ const buildOficioPdfDefinition = (solicitud, ghDirectorNombre, ghDirectorCargo) 
   const estudiantesList = salida.estudiantesList || salida.estudiantes || [];
   const numEstudiantes = estudiantesList.length;
 
-  const defaultPSAsunto = `Reporte de salida ${salida.entidadDestino || salida.municipio || salida.motivo || 'Jornada Comunitaria de Proyección Social'}`;
+  const defaultPSAsunto = `Solicitud de permiso y salida de Proyección Social - ${salida.entidadDestino || salida.municipio || salida.motivo || 'Jornada Comunitaria'}`;
   const defaultPSCuerpo = `Por medio de la presente me permito informar que la Universidad CESMAG, a través del Área de Proyección Social y Extensión, lidera las acciones comunitarias e institucionales en el marco del desarrollo de proyectos y jornadas sociales. En este contexto, se desarrollará la actividad "${salida.motivo || 'Jornada Comunitaria'}", la cual tendrá lugar en ${salida.entidadDestino || salida.municipio || 'el sector programado'}.\n\n` +
     `La actividad contará con la participación de ${numDocentes} docente(s)/colaborador(es) y ${numEstudiantes} estudiante(s) de nuestra institución, quienes serán los responsables de orientar y dinamizar las diferentes acciones programadas durante la jornada.\n\n` +
     `Información logística:\n` +
@@ -1445,6 +1446,47 @@ const buildPdfBuffer = async (solicitud) => {
             headerRows: 1,
             widths: ['20%', '40%', '40%'],
             body: pBody
+          },
+          layout: 'lightHorizontalLines',
+          margin: [0, 0, 0, 8]
+        });
+      }
+
+      const estudiantesList = salida.estudiantesList || salida.estudiantes || [];
+      if (estudiantesList.length > 0) {
+        const secNum = (isSalidaMultiple && participantes.length > 0) ? 4 : (salida.tipo === 'terapias' ? 4 : 3);
+        docDefinition.content.push({
+          table: {
+            widths: ['*'],
+            body: [
+              [ { text: `${secNum}. Estudiantes Participantes (Proyección Social) (${estudiantesList.length})`, bold: true, fillColor: '#e0e0e0', margin: [5, 3, 5, 3] } ]
+            ]
+          },
+          margin: [0, 0, 0, 3]
+        });
+
+        const estBody = [
+          [
+            { text: '#', bold: true, fillColor: '#f8f8f8', alignment: 'center' },
+            { text: 'Nombres y Apellidos', bold: true, fillColor: '#f8f8f8' },
+            { text: 'Programa Académico', bold: true, fillColor: '#f8f8f8' },
+            { text: 'Cédula / Documento', bold: true, fillColor: '#f8f8f8', alignment: 'center' }
+          ]
+        ];
+        estudiantesList.forEach((est, idx) => {
+          estBody.push([
+            { text: (idx + 1).toString(), alignment: 'center' },
+            est.nombre || est.nombres || '',
+            est.programa || '',
+            { text: est.cedula || est.documento || '', alignment: 'center' }
+          ]);
+        });
+
+        docDefinition.content.push({
+          table: {
+            headerRows: 1,
+            widths: ['8%', '42%', '32%', '18%'],
+            body: estBody
           },
           layout: 'lightHorizontalLines',
           margin: [0, 0, 0, 8]
