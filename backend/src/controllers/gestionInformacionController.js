@@ -4156,17 +4156,14 @@ const buildMatriculadosGeoCacheKey = ({ programas = [], anios = [], periodos = [
   });
 
 const buildMatriculadosGeoDashboard = async ({ programas = [], anios = [], periodos = [], sexos = [], niveles = [] }) => {
-  const normalizedPeriodos = Array.from(
-    new Set((periodos || []).map((item) => normalizeSemesterToken(item)).filter(Boolean))
-  );
+  const selectedRawPeriods = new Set((periodos || []).map((item) => String(item || '').trim()).filter(Boolean));
   const normalizedSexos = Array.from(new Set((sexos || []).map((item) => normalizeGenero(item)).filter(Boolean)));
   const normalizedNiveles = Array.from(new Set((niveles || []).map((item) => String(item || '').trim().toUpperCase()).filter(Boolean)));
   const selectedPrograms = new Set((programas || []).map((item) => normalizeGeoJoinKey(item)));
   const selectedYears = new Set((anios || []).map((item) => String(Number(item))));
-  const selectedPeriods = new Set(normalizedPeriodos);
   const selectedSexos = new Set(normalizedSexos);
   const selectedNiveles = new Set(normalizedNiveles);
-  const cacheKey = buildMatriculadosGeoCacheKey({ programas, anios, periodos: normalizedPeriodos, sexos: normalizedSexos, niveles: normalizedNiveles });
+  const cacheKey = buildMatriculadosGeoCacheKey({ programas, anios, periodos: Array.from(selectedRawPeriods), sexos: normalizedSexos, niveles: normalizedNiveles });
   const now = Date.now();
   const cached = matriculadosGeoDashboardCache.get(cacheKey);
   if (cached && (now - cached.ts) < MATRICULADOS_GEO_CACHE_TTL_MS) {
@@ -4275,8 +4272,15 @@ const buildMatriculadosGeoDashboard = async ({ programas = [], anios = [], perio
   const filteredRows = allRows.filter((row) => {
     const programOk = !selectedPrograms.size || selectedPrograms.has(normalizeGeoJoinKey(row.programa));
     const yearOk = !selectedYears.size || selectedYears.has(String(Number(row.anio || 0)));
-    const periodToken = /\b(2|3|II|IIP)\b/i.test(String(row.semestre || '')) ? '2' : '1';
-    const periodOk = !selectedPeriods.size || selectedPeriods.has(periodToken);
+    const semToken = /\b(2|3|II|IIP)\b/i.test(String(row.semestre || '')) ? '2' : '1';
+    const rowYearStr = String(Number(row.anio || 0));
+    const fullPeriodKey = `${rowYearStr}-${semToken}`;
+    let periodOk = true;
+    if (selectedRawPeriods.size > 0) {
+      periodOk = selectedRawPeriods.has(fullPeriodKey)
+        || selectedRawPeriods.has(semToken)
+        || selectedRawPeriods.has(String(row.semestre));
+    }
     const sexoOk = !selectedSexos.size || selectedSexos.has(normalizeGenero(row.sexo_biologico));
     const nivelOk = !selectedNiveles.size || selectedNiveles.has(classifyMatriculadosProgramLevel(row.programa));
     const pass = programOk && yearOk && periodOk && sexoOk && nivelOk;
@@ -4682,6 +4686,17 @@ const buildMatriculadosGeoDashboard = async ({ programas = [], anios = [], perio
     ).sort((a, b) => a.localeCompare(b, 'es')),
     nivelesDisponibles: Array.from(new Set(allRows.map((r) => classifyMatriculadosProgramLevel(r.programa)).filter((x) => x && x !== 'SIN INFORMACION'))).sort((a, b) => a.localeCompare(b, 'es')),
     aniosDisponibles: Array.from(new Set(allRows.map((r) => String(Number(r.anio || 0))).filter((yr) => yr !== '0'))).sort(),
+    periodosDisponibles: Array.from(
+      new Set(
+        allRows
+          .map((r) => {
+            const yr = String(Number(r.anio || 0));
+            const sem = /\b(2|3|II|IIP)\b/i.test(String(r.semestre || '')) ? '2' : '1';
+            return yr && yr !== '0' ? `${yr}-${sem}` : null;
+          })
+          .filter(Boolean)
+      )
+    ).sort((a, b) => a.localeCompare(b, 'es', { numeric: true })),
     calidadCruce: {
       coberturaDepartamento: dimensionalRows.length ? Number(((matchedDepartments / dimensionalRows.length) * 100).toFixed(2)) : 0,
       coberturaMunicipio: dimensionalRows.length ? Number(((matchedMunicipios / dimensionalRows.length) * 100).toFixed(2)) : 0,

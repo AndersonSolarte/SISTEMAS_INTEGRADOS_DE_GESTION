@@ -2285,6 +2285,39 @@ function GestionInformacion() {
   const graduadosGeneralCacheRef = useRef(new Map());
   const geoFiltersRef = useRef({ sexos: [], niveles: [] });
   const [matFilters, setMatFilters] = useState({ anios: [], periodos: [], programas: [] });
+  const [matMasterCatalog, setMatMasterCatalog] = useState({ anios: [], periodos: [], programas: [] });
+  useEffect(() => {
+    if (!matriculadosPanelData) return;
+    const newAnios = (matriculadosPanelData.aniosDisponibles || []).map(String).filter(Boolean);
+    const newProgramas = (matriculadosPanelData.programasDisponibles || []).filter(Boolean);
+    let newPeriodos = (matriculadosPanelData.periodosDisponibles || []).map((p) => String(p.label || p)).filter(Boolean);
+    if (!newPeriodos.length && (matriculadosPanelData.semestres || []).length) {
+      const periodos = [];
+      (matriculadosPanelData.semestres || []).forEach((s) => {
+        const yr = String(s.anio);
+        if (s.semestre1 > 0) periodos.push(`${yr}-1`);
+        if (s.semestre2 > 0) periodos.push(`${yr}-2`);
+      });
+      newPeriodos = periodos;
+    }
+    setMatMasterCatalog((prev) => {
+      const mergedAnios = Array.from(new Set([...prev.anios, ...newAnios])).sort((a, b) => Number(a) - Number(b));
+      const mergedPeriodos = Array.from(new Set([...prev.periodos, ...newPeriodos])).sort();
+      const mergedProgramas = Array.from(new Set([...prev.programas, ...newProgramas])).sort();
+      if (
+        mergedAnios.length === prev.anios.length &&
+        mergedPeriodos.length === prev.periodos.length &&
+        mergedProgramas.length === prev.programas.length
+      ) {
+        return prev;
+      }
+      return {
+        anios: mergedAnios,
+        periodos: mergedPeriodos,
+        programas: mergedProgramas
+      };
+    });
+  }, [matriculadosPanelData]);
   const [matHistoricoCache, setMatHistoricoCache] = useState(null);
   const [matProgramaCache, setMatProgramaCache] = useState({});
   const [matriculadosTab, setMatriculadosTab] = useState('general');
@@ -2721,21 +2754,19 @@ function GestionInformacion() {
     setMatriculadosPanelLoading(true);
     try {
       const _selPeriodos = matFilters.periodos || [];
-      const _sendAnios = _selPeriodos.length > 0
-        ? [...new Set(_selPeriodos.map((p) => String(p).split('-')[0]))]
-        : (matFilters.anios || []);
-      const _sendSemestres = _selPeriodos.length > 0
-        ? [...new Set(_selPeriodos.map((p) => String(p).split('-')[1]))]
-        : ['1', '2'];
+      const isExplicitNonePeriod = _selPeriodos.length === 1 && _selPeriodos[0] === '__NONE__';
+      const isExplicitNoneAnio = (matFilters.anios || []).length === 1 && (matFilters.anios || [])[0] === '__NONE__';
+      const isExplicitNoneProg = (matFilters.programas || []).length === 1 && (matFilters.programas || [])[0] === '__NONE__';
+
       const requestParams = {
         categoria: 'Poblacional',
         aggregate: 'matriculados_geo_dashboard',
-        programas: matFilters.programas || [],
-        anios: _sendAnios,
-        periodos: _sendSemestres,
+        programas: isExplicitNoneProg ? ['__NONE__'] : (matFilters.programas || []),
+        anios: isExplicitNoneAnio ? ['__NONE__'] : (matFilters.anios || []),
+        periodos: isExplicitNonePeriod ? ['__NONE__'] : _selPeriodos,
         sexos: [...(geoFiltersRef.current.sexos || [])],
         niveles: [...(geoFiltersRef.current.niveles || [])],
-        _bust: Math.floor(Date.now() / (5 * 60 * 1000)) // cambia cada 5 min — fuerza recarga del caché
+        _bust: Math.floor(Date.now() / (5 * 60 * 1000))
       };
       const response = await gestionInformacionService.getEstadisticas(requestParams);
       if (matriculadosPanelReqRef.current !== requestId) return;

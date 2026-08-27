@@ -23,22 +23,32 @@ class ProyeccionSocialWorkflowStrategy extends BaseWorkflowStrategy {
    *   - 1 o más días (entre 1 y 2 días, 3 o más días): Pasa a Vicerrectoría Académica.
    */
   getAuthorityAfterBoss(solicitud = {}, helpers = {}) {
-    const { getSolicitudSalida } = helpers;
+    const { getSolicitudSalida, getSolicitudLaboral, isDocenteCargo } = helpers;
     const salida = getSolicitudSalida ? getSolicitudSalida(solicitud) : (solicitud.datos_formulario?.salida || {});
+    const laboral = getSolicitudLaboral ? getSolicitudLaboral(solicitud) : (solicitud.datos_formulario?.laboral || {});
+    const solicitante = solicitud.solicitante_snapshot || {};
 
     if (salida.duracionTipo === 'menos_media_jornada') {
       return null;
     }
 
-    return {
-      stage: 'vicerrectoria_academica',
-      estado: 'pendiente_aprobacion_vicerrectoria_academica',
-      tokenColumn: 'aprobacion_vicerrectoria_token_hash',
-      correoColumn: 'correo_vicerrectoria_enviado_at',
-      name: 'Vicerrectoría Académica',
-      email: ACADEMIC_VICERRECTORIA_EMAIL,
-      label: 'Vicerrectoría Académica'
-    };
+    const cargo = laboral.cargo || solicitante.cargo || '';
+    const esDocente = isDocenteCargo ? isDocenteCargo(cargo) : /\bdocente\b/i.test(cargo);
+
+    if (esDocente) {
+      return {
+        stage: 'vicerrectoria_academica',
+        estado: 'pendiente_aprobacion_vicerrectoria_academica',
+        tokenColumn: 'aprobacion_vicerrectoria_token_hash',
+        correoColumn: 'correo_vicerrectoria_enviado_at',
+        name: 'Vicerrectoría Académica',
+        email: ACADEMIC_VICERRECTORIA_EMAIL,
+        label: 'Vicerrectoría Académica'
+      };
+    }
+
+    // Para administrativos: Pasa a su propia Vicerrectoría / Secretaría / Rectoría según su dependencia
+    return super.getAuthorityAfterBoss(solicitud, helpers);
   }
 
   /**

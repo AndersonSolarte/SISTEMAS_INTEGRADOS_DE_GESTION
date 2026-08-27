@@ -7429,7 +7429,8 @@ const aprobarGrupoDesdeCorreo = async (req, res) => {
         return alcance === 'Nacional' || alcance === 'Internacional';
       });
 
-      const requiresVicerrectoria = solicitudes.some(s => s.datos_formulario?.salida?.duracionTipo !== 'menos_media_jornada');
+      const hasDocenteParticipant = solicitudes.some(s => isDocenteCargo(s.datos_formulario?.laboral?.cargo || s.solicitante_snapshot?.cargo || ''));
+      const requiresVicerrectoria = solicitudes.some(s => s.datos_formulario?.salida?.duracionTipo !== 'menos_media_jornada') && hasDocenteParticipant;
 
       const nextStage = requiresVicerrectoria
         ? 'pendiente_aprobacion_vicerrectoria_academica'
