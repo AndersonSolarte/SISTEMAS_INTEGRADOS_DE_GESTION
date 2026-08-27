@@ -552,6 +552,7 @@ const CONTEXTO_EXTERNO_LISTAS = [
 ];
 const SUBBASES_SABER_PRO = ['Resultados individuales', 'Resultados agregados', 'Resultados Saber 11'];
 const SUBBASES_RECURSO_HUMANO = ['Docentes', 'Administrativos', 'Outsourcing', 'Ondas'];
+const SUBBASES_GESTION_RIESGO_AMBIENTE = ['Parqueaderos PESV'];
 const SUBBASES_AUTOEVALUACION = ['Autoevaluación', 'Participantes', 'informacion_programas'];
 const SUBBASES_REGISTROS_CALIFICADOS = ['Historico_RC'];
 const SUBBASE_ORDER = SUBBASES_POBLACIONAL.reduce((acc, item, index) => ({ ...acc, [item]: index + 1 }), {});
@@ -2641,6 +2642,7 @@ function GestionInformacion() {
   const subbasesByBase = {
     poblacional: SUBBASES_POBLACIONAL,
     georreferencia: SUBBASES_GEOREFERENCIA,
+    gestion_riesgo_ambiente: SUBBASES_GESTION_RIESGO_AMBIENTE,
     saber_pro: SUBBASES_SABER_PRO,
     recurso_humano: SUBBASES_RECURSO_HUMANO,
     autoevaluacion: SUBBASES_AUTOEVALUACION,
@@ -2655,6 +2657,7 @@ function GestionInformacion() {
       ? 'Registros Calificados y Acreditacion'
       : baseSeleccionada;
   const requiresSubSubBase = baseSeleccionada === 'poblacional' && subcategoria === 'Contexto Externo';
+  const isPesvParkingSelection = baseSeleccionada === 'gestion_riesgo_ambiente' && subcategoria === 'Parqueaderos PESV';
   const isSelectionValid = Boolean(baseSeleccionada)
     && (!aplicaSubbase || Boolean(subBaseSeleccionada))
     && (!requiresSubSubBase || Boolean(subSubBaseSeleccionada));
@@ -4429,11 +4432,13 @@ function GestionInformacion() {
       const effectiveSubcategoria = baseSeleccionada === 'georreferencia'
         ? GEOREFERENCIA_CANONICAL_SUBBASE
         : subcategoria;
-      const response = await gestionInformacionService.downloadTemplate(
-        backendCategoria,
-        effectiveSubcategoria,
-        requiresSubSubBase ? subSubBaseSeleccionada : ''
-      );
+      const response = isPesvParkingSelection
+        ? await gestionInformacionService.downloadPesvParqueaderosTemplate()
+        : await gestionInformacionService.downloadTemplate(
+          backendCategoria,
+          effectiveSubcategoria,
+          requiresSubSubBase ? subSubBaseSeleccionada : ''
+        );
       const url = window.URL.createObjectURL(new Blob([response.data]));
       const link = document.createElement('a');
       link.href = url;
@@ -4461,22 +4466,28 @@ function GestionInformacion() {
       enqueueSnackbar('Selecciona un archivo Excel o CSV', { variant: 'warning' });
       return;
     }
+    if (isPesvParkingSelection && !window.confirm('La importación reemplazará la base actual de Parqueaderos PESV. ¿Deseas continuar?')) return;
     setImporting(true);
     try {
       const effectiveSubcategoria = baseSeleccionada === 'georreferencia'
         ? GEOREFERENCIA_CANONICAL_SUBBASE
         : subcategoria;
-      const response = await gestionInformacionService.importExcel(
-        backendCategoria,
-        importFile,
-        effectiveSubcategoria,
-        requiresSubSubBase ? subSubBaseSeleccionada : ''
-      );
+      const response = isPesvParkingSelection
+        ? await gestionInformacionService.importPesvParqueaderos(importFile, true)
+        : await gestionInformacionService.importExcel(
+          backendCategoria,
+          importFile,
+          effectiveSubcategoria,
+          requiresSubSubBase ? subSubBaseSeleccionada : ''
+        );
       enqueueSnackbar(response.message || 'Importacion completada', { variant: 'success' });
       const errores = response?.data?.errores || [];
       if (errores.length > 0) {
         const primerError = errores[0];
         enqueueSnackbar(`Se omitieron ${errores.length} filas. Ejemplo fila ${primerError.fila}: ${primerError.error}`, { variant: 'warning' });
+      }
+      if (isPesvParkingSelection && response?.data?.warningCount > 0) {
+        enqueueSnackbar(`Se importaron ${response.data.imported} registros con ${response.data.warningCount} advertencias para revisar.`, { variant: 'warning' });
       }
       setImportFile(null);
       await fetchData();
@@ -17236,6 +17247,7 @@ const renderCategoryBars = (items = [], options = {}) => {
                         const nextBase = e.target.value;
                         setBaseSeleccionada(nextBase);
                         if (nextBase === 'georreferencia') setSubBaseSeleccionada(GEOREFERENCIA_CANONICAL_SUBBASE);
+                        else if (nextBase === 'gestion_riesgo_ambiente') setSubBaseSeleccionada('Parqueaderos PESV');
                         else if (nextBase === 'autoevaluacion') setSubBaseSeleccionada('Autoevaluación');
                         else if (nextBase === 'registros_calificados_acreditacion') setSubBaseSeleccionada('Historico_RC');
                         else if (nextBase === 'internacionalizacion') setSubBaseSeleccionada('');
@@ -17282,11 +17294,11 @@ const renderCategoryBars = (items = [], options = {}) => {
                     Exportar plantilla vacía
                   </Button>
                   <Button variant="outlined" fullWidth component="label" startIcon={<UploadFileIcon />} sx={{ py: 1.8 }}>
-                    {importFile ? importFile.name : baseSeleccionada === 'internacionalizacion' ? 'Adjuntar archivo Excel XLSX' : 'Adjuntar archivo Excel o CSV'}
+                    {importFile ? importFile.name : (baseSeleccionada === 'internacionalizacion' || isPesvParkingSelection) ? 'Adjuntar archivo Excel XLSX' : 'Adjuntar archivo Excel o CSV'}
                     <input
                       type="file"
                       hidden
-                      accept={baseSeleccionada === 'internacionalizacion' ? '.xlsx,.xls' : '.xlsx,.xls,.csv,text/csv'}
+                      accept={(baseSeleccionada === 'internacionalizacion' || isPesvParkingSelection) ? '.xlsx,.xls' : '.xlsx,.xls,.csv,text/csv'}
                       onChange={(e) => setImportFile(e.target.files[0])}
                     />
                   </Button>

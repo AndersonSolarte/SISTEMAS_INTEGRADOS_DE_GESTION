@@ -183,7 +183,6 @@ const list = async (req, res) => {
     if (indicador === 'soat_proximo') data = data.filter((row) => row.soat_estado.code === 'proximo');
     if (indicador === 'rtm_vencido') data = data.filter((row) => row.tecnomecanica_estado.code === 'vencido');
     if (indicador === 'rtm_proximo') data = data.filter((row) => row.tecnomecanica_estado.code === 'proximo');
-    if (indicador === 'rtm_alerta') data = data.filter((row) => ['vencido', 'proximo'].includes(row.tecnomecanica_estado.code));
     data.sort((a, b) => search
       ? b._searchScore - a._searchScore || String(a.nombres_apellidos || '').localeCompare(String(b.nombres_apellidos || ''), 'es')
       : Math.min(a.soat_estado.priority, a.tecnomecanica_estado.priority) - Math.min(b.soat_estado.priority, b.tecnomecanica_estado.priority) || (a.soat_estado.days ?? 99999) - (b.soat_estado.days ?? 99999));

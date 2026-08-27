@@ -1118,16 +1118,24 @@ function ReporteSalidaFormDialog({ open, documento, user, onClose, onSubmitted }
   useEffect(() => {
     if (!open) return;
     if (isSalidaMultiple) {
-      setParticipantes([
-        {
+      setParticipantes((prev) => {
+        const leaderObj = {
           nombre: user?.nombre || '',
           documento: user?.username || '',
           correo: user?.email || '',
           dependencia: form.laboral.dependencia || '',
           vicerrectoria: form.laboral.vicerrectoria || '',
           cargo: form.laboral.cargo || ''
+        };
+        if (prev.length === 0) {
+          return [leaderObj];
         }
-      ]);
+        const firstIsUser = String(prev[0].documento).trim() === String(user?.username).trim();
+        if (firstIsUser) {
+          return [{ ...leaderObj, correo: prev[0].correo || leaderObj.correo }, ...prev.slice(1)];
+        }
+        return prev;
+      });
       if (PERSONALES_SUBTYPES.some(s => s.value === form.salida.tipo)) {
         setForm(prev => ({
           ...prev,
@@ -1140,7 +1148,7 @@ function ReporteSalidaFormDialog({ open, documento, user, onClose, onSubmitted }
     } else {
       setParticipantes([]);
     }
-  }, [isSalidaMultiple, open, user, form.laboral.dependencia, form.laboral.vicerrectoria, form.laboral.cargo, form.salida.tipo]);
+  }, [isSalidaMultiple, open, user]);
 
   useEffect(() => {
     if (!open) return;
