@@ -281,16 +281,24 @@ const renderInstitutionalTemplate = ({ title, introHtml, bodyHtml, senderHtml })
 `;
 };
 
+const getSandboxRecipient = () => {
+  const raw = process.env.EMAIL_SANDBOX_RECIPIENT !== undefined
+    ? process.env.EMAIL_SANDBOX_RECIPIENT
+    : 'adsolarte@unicesmag.edu.co';
+  return raw ? String(raw).trim().toLowerCase() : null;
+};
+
 const prepareMailOptions = (options) => {
   const path = require('path');
   const fs = require('fs');
   const headerImagePath = path.join(__dirname, '..', 'assets', 'Encabezado_correos.png');
   
   const finalOptions = { ...options };
+  const sandboxRecipient = getSandboxRecipient();
 
-  if (EMAIL_SANDBOX_RECIPIENT) {
+  if (sandboxRecipient) {
     const originalTo = Array.isArray(finalOptions.to) ? finalOptions.to.join(', ') : finalOptions.to;
-    finalOptions.to = EMAIL_SANDBOX_RECIPIENT;
+    finalOptions.to = sandboxRecipient;
     if (!String(finalOptions.subject || '').includes('[PRUEBA SANDBOX')) {
       finalOptions.subject = `[PRUEBA SANDBOX · Para: ${originalTo}] ${finalOptions.subject || ''}`;
     }
