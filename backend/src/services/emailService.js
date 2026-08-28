@@ -282,10 +282,9 @@ const renderInstitutionalTemplate = ({ title, introHtml, bodyHtml, senderHtml })
 };
 
 const getSandboxRecipient = () => {
-  const raw = process.env.EMAIL_SANDBOX_RECIPIENT !== undefined
-    ? process.env.EMAIL_SANDBOX_RECIPIENT
-    : 'adsolarte@unicesmag.edu.co';
-  return raw ? String(raw).trim().toLowerCase() : null;
+  const raw = process.env.EMAIL_SANDBOX_RECIPIENT;
+  if (!raw || !String(raw).trim()) return null;
+  return String(raw).trim().toLowerCase();
 };
 
 const prepareMailOptions = (options) => {
