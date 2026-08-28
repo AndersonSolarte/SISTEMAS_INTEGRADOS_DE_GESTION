@@ -2,7 +2,7 @@ const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
 const { Op } = require('sequelize');
-const { Documento, PlanAccion, ReporteSalidaAdjunto, ReporteSalidaSolicitud, RecursoHumanoAdministrativo, RecursoHumanoDocente, User, UserModulePermission } = require('../models');
+const { DesplazamientoViaticosSolicitud, Documento, PlanAccion, ReporteSalidaAdjunto, ReporteSalidaSolicitud, RecursoHumanoAdministrativo, RecursoHumanoDocente, User, UserModulePermission } = require('../models');
 const { encryptPayload, decryptPayload } = require('../utils/secureUrlToken');
 const {
   getReporteSalidaRecipients,
@@ -30,6 +30,7 @@ const RECTORIA_EMAIL = getDependencyEmail('Rectoria') || 'rectoria@unicesmag.edu
 const EVANGELIZACION_VICERRECTORIA_EMAIL = getDependencyEmail('Vicerrectoria para la Evangelizacion de las Culturas') || 'vicebien@unicesmag.edu.co';
 const FINANCIAL_VICERRECTOR_EMAIL = process.env.REPORTE_SALIDA_VICERRECTORIA_FINANCIERA_EMAIL || 'jcnandar@unicesmag.edu.co';
 const FINANCIAL_VICERRECTORIA_OFFICE_EMAIL = getDependencyEmail('Vicerrectoria Financiera y de Desarrollo Institucional') || 'viceadfin@unicesmag.edu.co';
+const INVESTIGATION_VICERRECTOR_EMAIL = process.env.REPORTE_SALIDA_VICERRECTORIA_INVESTIGACION_EMAIL || 'jajimenez@unicesmag.edu.co';
 const DEFAULT_DECLARACION_SIN_ADJUNTO_SALUD = 'Declaro que al momento de radicar esta solicitud no cuento con archivos adjuntos o soportes para cargar en el sistema. Entiendo que la Oficina de Gestion del Talento Humano y/o Seguridad y Salud en el Trabajo podran requerir en cualquier momento los soportes correspondientes; por tanto, me comprometo a conservarlos despues de la atencion o tramite y a suministrarlos oportunamente cuando sean solicitados.';
 
 const featureDisabled = (res) =>
@@ -176,7 +177,7 @@ const AUTHORITY_RECIPIENTS = {
   'Vicerrectoria de Investigacion y Extension': {
     nombre: process.env.REPORTE_SALIDA_VICERRECTORIA_INVESTIGACION_NOMBRE || 'JAVIER ALEJANDRO JIMENEZ TOLEDO',
     cargo: process.env.REPORTE_SALIDA_VICERRECTORIA_INVESTIGACION_CARGO || 'Vicerrector de Investigación y Extensión',
-    email: getDependencyEmail('Vicerrectoria de Investigacion y Extension') || 'viceinvestiga@unicesmag.edu.co',
+    email: INVESTIGATION_VICERRECTOR_EMAIL,
     aliases: ['viceinvestiga@unicesmag.edu.co', 'jajimenez@unicesmag.edu.co']
   },
   'Vicerrectoria Financiera y de Desarrollo Institucional': {
@@ -248,6 +249,14 @@ const getOfficialAuthorityEmailForActor = (actor = {}) => {
     sameExactEmail(email, 'jcnandar@unicesmag.edu.co')
   ) {
     return FINANCIAL_VICERRECTOR_EMAIL;
+  }
+  if (
+    actorName.includes('javier alejandro jimenez') ||
+    actorName.includes('javier jimenez') ||
+    sameExactEmail(email, 'viceinvestiga@unicesmag.edu.co') ||
+    sameExactEmail(email, 'jajimenez@unicesmag.edu.co')
+  ) {
+    return INVESTIGATION_VICERRECTOR_EMAIL;
   }
   if (!email) return '';
   const entry = Object.values(AUTHORITY_RECIPIENTS).find((authority) => {
@@ -1147,10 +1156,75 @@ const getAuthorityAfterBoss = (solicitud = {}) => {
 
 const requiresRectoriaApproval = () => false;
 
+const hasSstApproved = (solicitud = {}) => {
+  if (solicitud.sst_aprobado_at) return true;
+  const trazabilidad = Array.isArray(solicitud.trazabilidad) ? solicitud.trazabilidad : [];
+  return trazabilidad.some((trace) => ['aprobada_sst', 'visto_bueno_sst', 'aprobado_sst'].includes(trace?.event));
+};
+
 const requiresSstApproval = (solicitud = {}) => {
   const salida = getSolicitudSalida(solicitud);
   const categoria = salida.categoria || salida.category;
   return categoria === 'propias_cargo' && salida.tipo !== 'salida_campus' && ['Nacional', 'Internacional'].includes(salida.alcance);
+};
+
+const shouldAdvanceToSst = (solicitud = {}) => {
+  if (hasSstApproved(solicitud)) return false;
+  return requiresSstApproval(solicitud);
+};
+
+const hasLinkedViaticosInProgress = async (solicitud = {}) => {
+  try {
+    const viaticosSolicitud = await DesplazamientoViaticosSolicitud.findOne({
+      where: {
+        [Op.or]: [
+          { consecutivo: solicitud.consecutivo },
+          sequelize.where(
+            sequelize.cast(sequelize.json('datos_viaticos.reporteSalidaSolicitudId'), 'text'),
+            String(solicitud.id)
+          )
+        ]
+      }
+    });
+    return Boolean(viaticosSolicitud);
+  } catch (e) {
+    return false;
+  }
+};
+
+const syncLinkedViaticosRejection = async (solicitud, stageKey, actorName, observacion) => {
+  try {
+    const viaticosSolicitud = await DesplazamientoViaticosSolicitud.findOne({
+      where: {
+        [Op.or]: [
+          { consecutivo: solicitud.consecutivo },
+          sequelize.where(
+            sequelize.cast(sequelize.json('datos_viaticos.reporteSalidaSolicitudId'), 'text'),
+            String(solicitud.id)
+          )
+        ]
+      }
+    });
+
+    if (viaticosSolicitud && viaticosSolicitud.estado !== 'no_aprobada') {
+      await viaticosSolicitud.update({
+        estado: 'no_aprobada',
+        token_accion_hash: null,
+        token_etapa: null,
+        trazabilidad: [
+          ...(viaticosSolicitud.trazabilidad || []),
+          {
+            event: `no_aprobado_${stageKey}`,
+            actor: { nombre: actorName || 'Rechazo Institucional', role: stageKey },
+            detail: { observacion, origen: 'reporte_salida_rechazo' },
+            at: new Date().toISOString()
+          }
+        ]
+      });
+    }
+  } catch (error) {
+    console.error('[syncLinkedViaticosRejection] Error al rechazar viáticos vinculados:', error);
+  }
 };
 
 const isLeadershipCargo = (cargo = '') => {
@@ -2618,14 +2692,48 @@ const sendFinalEmails = async (solicitud, pdfAttachment, supportAttachment) => {
     senderHtml: finalApprovalGHHtml
   });
 
-  const userResult = await sendInstitutionalEmail({
-    to: solicitud.solicitante_snapshot?.email,
-    subject: userThreadSubject,
-    text: `Su ${isOficio ? 'oficio de salida' : 'reporte de salida'} ${solicitud.consecutivo} ha sido aprobado exitosamente. Se adjunta PDF firmado.`,
-    html: userHtml,
-    attachments: [pdfAttachment, supportAttachment].filter(Boolean),
-    headers: getThreadHeadersFromId(getThreadMessageId(solicitud, 'thread_message_id_colaborador'))
-  });
+  let isViaticosPending = false;
+  try {
+    const isViaticosFlow = solicitud.origen_flujo === 'desplazamiento_viaticos'
+      || solicitud.datos_formulario?.viaticos?.requiereViaticos === true
+      || solicitud.datos_formulario?.viaticos?.requiereViaticos === 'Sí';
+
+    if (isViaticosFlow) {
+      const viaticosSolicitud = await DesplazamientoViaticosSolicitud.findOne({
+        where: {
+          [Op.or]: [
+            { consecutivo: solicitud.consecutivo },
+            ReporteSalidaSolicitud.sequelize.where(
+              ReporteSalidaSolicitud.sequelize.cast(ReporteSalidaSolicitud.sequelize.json('datos_viaticos.reporteSalidaSolicitudId'), 'text'),
+              String(solicitud.id)
+            )
+          ]
+        }
+      });
+      if (viaticosSolicitud) {
+        const isFinished = ['pago_autorizado_pendiente_legalizacion', 'finalizada', 'legalizacion_finalizada', 'no_aprobada'].includes(viaticosSolicitud.estado);
+        if (!isFinished) {
+          isViaticosPending = true;
+        }
+      }
+    }
+  } catch (err) {
+    console.error('[sendFinalEmails] Error al verificar viáticos pendientes:', err);
+  }
+
+  let userResult = { success: true, skipped: true, reason: 'viaticos_pendiente' };
+  if (!isViaticosPending) {
+    userResult = await sendInstitutionalEmail({
+      to: solicitud.solicitante_snapshot?.email,
+      subject: userThreadSubject,
+      text: `Su ${isOficio ? 'oficio de salida' : 'reporte de salida'} ${solicitud.consecutivo} ha sido aprobado exitosamente. Se adjunta PDF firmado.`,
+      html: userHtml,
+      attachments: [pdfAttachment, supportAttachment].filter(Boolean),
+      headers: getThreadHeadersFromId(getThreadMessageId(solicitud, 'thread_message_id_colaborador'))
+    });
+  } else {
+    console.log(`[sendFinalEmails] Se omite el envío del correo de salida individual a ${solicitud.solicitante_snapshot?.email} para ${solicitud.consecutivo} porque el flujo de viáticos aún está pendiente. Se enviarán los dos documentos juntos al finalizar Tesorería.`);
+  }
 
   // 2. Correo de Copia de control para Líder de Dependencia / Jefe Inmediato
   let depResult = { success: false, recipients: [] };
@@ -2656,6 +2764,29 @@ const sendFinalEmails = async (solicitud, pdfAttachment, supportAttachment) => {
         type: 'dependencia',
         email: ACADEMIC_VICERRECTORIA_EMAIL,
         label: 'Vicerrectoría Académica',
+        source: 'vicerrectoria'
+      });
+    }
+  }
+
+  // Si pertenece a Vicerrectoría de Investigación, la copia final del reporte firmado se remite a ambas cuentas (personal e institucional)
+  const vicerrectoriaName = getSolicitudVicerrectoria(solicitud);
+  if (isInvestigacionVicerrectoria(vicerrectoriaName)) {
+    const researchInstEmail = 'viceinvestiga@unicesmag.edu.co';
+    const researchPersonalEmail = INVESTIGATION_VICERRECTOR_EMAIL;
+    if (!copyRecipients.some((recipient) => sameExactEmail(recipient.email, researchInstEmail))) {
+      copyRecipients.push({
+        type: 'dependencia',
+        email: researchInstEmail,
+        label: 'Vicerrectoría de Investigación y Extensión',
+        source: 'vicerrectoria'
+      });
+    }
+    if (!copyRecipients.some((recipient) => sameExactEmail(recipient.email, researchPersonalEmail))) {
+      copyRecipients.push({
+        type: 'dependencia',
+        email: researchPersonalEmail,
+        label: 'Vicerrector de Investigación y Extensión',
         source: 'vicerrectoria'
       });
     }
@@ -4140,6 +4271,114 @@ const radicarSolicitud = async (req, res) => {
   }
 };
 
+const renderReporteSalidaReviewPage = ({
+  res,
+  solicitud,
+  token,
+  stageLabel = 'Revisión de solicitud',
+  via = ''
+}) => {
+  const consecutivo = solicitud?.consecutivo || '';
+  const solicitante = solicitud?.solicitante_snapshot?.nombre || '';
+  const documento = solicitud?.solicitante_snapshot?.documento || '';
+  const cargo = solicitud?.datos_formulario?.laboral?.cargo || solicitud?.solicitante_snapshot?.cargo || 'No registrado';
+  const dependencia = solicitud?.datos_formulario?.laboral?.dependencia || solicitud?.solicitante_snapshot?.dependencia || 'No registrada';
+  
+  const salida = solicitud?.datos_formulario?.salida || {};
+  const viaticos = solicitud?.datos_formulario?.viaticos || {};
+
+  const destino = salida.municipio
+    ? `${salida.municipio}${salida.departamento ? `, ${salida.departamento}` : ''}`
+    : (salida.pais || 'San Juan de Pasto');
+  
+  const fechas = `${salida.fecha || ''} al ${salida.fechaRegreso || ''}`;
+  const horario = `${salida.horaInicio || ''} a ${salida.horaFin || ''}`;
+  const motivo = salida.motivo || 'No registrado';
+  const requiereViaticosText = (viaticos.requiereViaticos || solicitud.origen_flujo === 'desplazamiento_viaticos')
+    ? 'Sí requiere viáticos (ADF-PP-FR-004)'
+    : 'No requiere viáticos';
+
+  res.setHeader("Content-Security-Policy", "default-src * 'unsafe-inline' 'unsafe-eval' data: blob:; script-src * 'unsafe-inline' 'unsafe-eval'; style-src * 'unsafe-inline'; form-action *;");
+  return res.status(200).type('html').send(`<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Revisar Solicitud de Salida - ${escapeHtml(consecutivo)}</title>
+  <style>
+    * { box-sizing: border-box; }
+    body { margin: 0; font-family: Arial, sans-serif; background: #f1f5f9; color: #334155; padding: 24px 16px; }
+    .card { max-width: 780px; margin: 0 auto; background: #fff; border: 1px solid #cbd5e1; border-radius: 16px; box-shadow: 0 12px 35px rgba(15,23,42,0.12); overflow: hidden; }
+    .header { background: linear-gradient(90deg, #0b1730, #123a7a); color: #fff; padding: 20px 26px; }
+    .header h1 { margin: 0; font-size: 20px; font-weight: 800; }
+    .header p { margin: 4px 0 0 0; color: #bfdbfe; font-size: 13px; }
+    .body { padding: 26px; }
+    .section-title { font-size: 11px; font-weight: 900; text-transform: uppercase; color: #64748b; letter-spacing: 0.05em; margin-bottom: 8px; }
+    .grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 12px; padding: 16px; margin-bottom: 20px; }
+    .full { grid-column: 1 / -1; }
+    .item label { display: block; font-size: 11px; font-weight: 800; color: #64748b; text-transform: uppercase; }
+    .item div { font-size: 14.5px; font-weight: 700; color: #0f172a; margin-top: 3px; word-break: break-word; }
+    label.obs-label { display: block; margin-top: 18px; font-weight: 700; color: #0b3a6f; font-size: 14px; }
+    textarea { width: 100%; padding: 12px; border: 1px solid #cbd5e1; border-radius: 8px; margin-top: 6px; font-family: inherit; font-size: 14px; box-sizing: border-box; min-height: 90px; }
+    .actions { display: flex; gap: 14px; justify-content: center; margin-top: 24px; flex-wrap: wrap; }
+    button { border: 0; border-radius: 8px; padding: 12px 28px; font-size: 14.5px; font-weight: 800; cursor: pointer; transition: all 0.15s ease; min-width: 180px; text-align: center; }
+    button.ok { background: #166534; color: #fff; box-shadow: 0 4px 12px rgba(22,101,52,0.25); }
+    button.ok:hover { background: #15803d; }
+    button.bad { background: #b91c1c; color: #fff; box-shadow: 0 4px 12px rgba(185,28,28,0.25); }
+    button.bad:hover { background: #dc2626; }
+    @media(max-width: 600px) { .grid { grid-template-columns: 1fr; } .actions { flex-direction: column; } button { width: 100%; } }
+  </style>
+</head>
+<body>
+  <main class="card">
+    <div class="header">
+      <h1>SIAC UNICESMAG</h1>
+      <p>${escapeHtml(stageLabel)} — Solicitud: <strong>${escapeHtml(consecutivo)}</strong></p>
+    </div>
+    <div class="body">
+      <div class="section-title">Información general de la salida</div>
+      <div class="grid">
+        <div class="item">
+          <label>Solicitante</label>
+          <div>${escapeHtml(solicitante)} (${escapeHtml(documento)})</div>
+        </div>
+        <div class="item">
+          <label>Cargo / Dependencia</label>
+          <div>${escapeHtml(cargo)} — ${escapeHtml(dependencia)}</div>
+        </div>
+        <div class="item">
+          <label>Destino</label>
+          <div>${escapeHtml(destino)}</div>
+        </div>
+        <div class="item">
+          <label>Fechas de salida y regreso</label>
+          <div>${escapeHtml(fechas)} (${escapeHtml(horario)})</div>
+        </div>
+        <div class="item full">
+          <label>Propósito / Motivo</label>
+          <div>${escapeHtml(motivo)}</div>
+        </div>
+        <div class="item full">
+          <label>Solicitud de viáticos</label>
+          <div>${escapeHtml(requiereViaticosText)}</div>
+        </div>
+      </div>
+
+      <form method="POST" action="/api/reportes-salida/aprobar/${escapeHtml(token)}">
+        ${via ? `<input type="hidden" name="via" value="${escapeHtml(via)}">` : ''}
+        <label class="obs-label">Observaciones de la actuación (opcional si aprueba, obligatoria si rechaza):</label>
+        <textarea name="observacion" maxlength="1200" placeholder="Escriba aquí sus observaciones..."></textarea>
+        <div class="actions">
+          <button type="submit" name="accion" value="aprobar" class="ok">✓ Dar visto bueno / Aprobar</button>
+          <button type="submit" name="accion" value="rechazar" class="bad">✕ No aprobar / Rechazar</button>
+        </div>
+      </form>
+    </div>
+  </main>
+</body>
+</html>`);
+};
+
 const aprobarDesdeCorreo = async (req, res) => {
   if (!(await getReporteSalidaFeatureState())) {
     return renderApprovalPage({
@@ -4172,6 +4411,33 @@ const aprobarDesdeCorreo = async (req, res) => {
         title: 'Solicitud no encontrada',
         message: 'No se encontro una solicitud asociada a este enlace.',
         nextStep: 'Puede que la solicitud haya sido eliminada o que el enlace no corresponda al sistema actual.'
+      });
+    }
+
+    if (req.method === 'GET') {
+      if (['finalizada', 'no_aprobada'].includes(solicitud.estado)) {
+        const isRechazada = solicitud.estado === 'no_aprobada';
+        return renderApprovalPage({
+          res,
+          tone: 'info',
+          title: isRechazada ? 'Solicitud rechazada' : 'Solicitud ya procesada',
+          message: isRechazada 
+            ? 'Esta solicitud fue rechazada anteriormente y no puede ser aprobada.' 
+            : 'Esta aprobacion ya fue registrada previamente.',
+          solicitud,
+          nextStep: 'No es necesario realizar ninguna accion adicional desde este enlace.'
+        });
+      }
+
+      const initialApprovalVia = String(req.query?.via || req.body?.via || '').trim().toLowerCase() === 'dependencia' ? 'dependencia' : 'jefe';
+      return renderReporteSalidaReviewPage({
+        res,
+        solicitud,
+        token: req.params.token,
+        stageLabel: payload.stage === 'jefe' 
+          ? (initialApprovalVia === 'dependencia' ? 'Líder de Dependencia' : 'Jefe Inmediato')
+          : (payload.stage === 'vicerrectoria_academica' ? (getSolicitudVicerrectoria(solicitud) || 'Vicerrectoría Académica') : (payload.stage === 'rectoria' ? 'Rectoría' : (payload.stage === 'gestion_humana' ? 'Gestión del Talento Humano' : (payload.stage === 'sst' ? 'Seguridad y Salud en el Trabajo' : 'Revisión de solicitud')))),
+        via: initialApprovalVia
       });
     }
 
@@ -4213,6 +4479,43 @@ const aprobarDesdeCorreo = async (req, res) => {
           message: 'El enlace no coincide con el token de aprobacion esperado para esta solicitud.',
           solicitud,
           nextStep: 'Por seguridad, la aprobacion no fue registrada.'
+        });
+      }
+      if (req.method === 'GET') {
+        return renderReporteSalidaReviewPage({
+          res,
+          solicitud,
+          token: req.params.token,
+          stageLabel: initialApprovalVia === 'dependencia' ? 'Líder de Dependencia' : 'Jefe Inmediato',
+          via: initialApprovalVia
+        });
+      }
+      if (req.body?.accion === 'rechazar') {
+        const observacion = String(req.body?.observacion || '').trim();
+        if (!observacion) {
+          return renderApprovalPage({
+            res,
+            status: 400,
+            tone: 'warning',
+            title: 'Observación obligatoria',
+            message: 'Debe indicar el motivo por el cual no aprueba la solicitud.',
+            solicitud,
+            nextStep: 'Por favor regrese e indique la observación de rechazo.'
+          });
+        }
+        await solicitud.update({
+          estado: 'no_aprobada',
+          aprobacion_jefe_token_hash: null,
+          trazabilidad: appendTrace(solicitud, 'rechazada_jefe', initialApprovalActor, { observacion, via: initialApprovalVia })
+        });
+        await syncLinkedViaticosRejection(solicitud, 'jefe', initialApprovalActor?.nombre || 'Jefe Inmediato', observacion);
+        await sendRequesterNotice(solicitud, 'Solicitud no aprobada', `La solicitud no fue aprobada por ${initialApprovalVia === 'dependencia' ? 'la dependencia' : 'el jefe inmediato'}. Motivo: ${observacion}`);
+        return renderApprovalPage({
+          res,
+          tone: 'info',
+          title: 'Solicitud rechazada',
+          message: 'La solicitud fue marcada como no aprobada y se notificó al colaborador.',
+          solicitud
         });
       }
       const authorityAfterBoss = getAuthorityAfterBoss(solicitud);
@@ -4358,6 +4661,29 @@ const aprobarDesdeCorreo = async (req, res) => {
 
       const vicerrectoriaName = getSolicitudVicerrectoria(solicitud) || 'Vicerrectoria';
       const vicerrectoriaEmail = getDependencyEmail(vicerrectoriaName) || ACADEMIC_VICERRECTORIA_EMAIL;
+
+      if (req.method === 'GET') {
+        return renderReporteSalidaReviewPage({
+          res,
+          solicitud,
+          token: req.params.token,
+          stageLabel: vicerrectoriaName
+        });
+      }
+      if (req.body?.accion === 'rechazar') {
+        const observacion = String(req.body?.observacion || '').trim();
+        if (!observacion) {
+          return renderApprovalPage({ res, status: 400, tone: 'warning', title: 'Observación obligatoria', message: 'Debe indicar el motivo por el cual no aprueba la solicitud.', solicitud });
+        }
+        await solicitud.update({
+          estado: 'no_aprobada',
+          aprobacion_vicerrectoria_token_hash: null,
+          trazabilidad: appendTrace(solicitud, 'rechazada_vicerrectoria_academica', { nombre: vicerrectoriaName, email: vicerrectoriaEmail, role: 'vicerrectoria' }, { observacion })
+        });
+        await syncLinkedViaticosRejection(solicitud, 'vicerrectoria_academica', vicerrectoriaName, observacion);
+        await sendRequesterNotice(solicitud, 'Solicitud no aprobada', `La solicitud no fue aprobada por ${vicerrectoriaName}. Motivo: ${observacion}`);
+        return renderApprovalPage({ res, tone: 'info', title: 'Solicitud rechazada', message: 'La solicitud fue marcada como no aprobada y se notificó al colaborador.', solicitud });
+      }
       const goesToRectoria = requiresRectoriaApproval(solicitud);
       const skipRectoriaAfterVicerrectoria = goesToRectoria && sameEmail(RECTORIA_EMAIL, vicerrectoriaEmail);
       const nextStage = goesToRectoria && !skipRectoriaAfterVicerrectoria ? 'rectoria' : 'gestion_humana';
@@ -4448,6 +4774,28 @@ const aprobarDesdeCorreo = async (req, res) => {
           nextStep: 'Por seguridad, la aprobacion no fue registrada.'
         });
       }
+      if (req.method === 'GET') {
+        return renderReporteSalidaReviewPage({
+          res,
+          solicitud,
+          token: req.params.token,
+          stageLabel: 'Rectoría'
+        });
+      }
+      if (req.body?.accion === 'rechazar') {
+        const observacion = String(req.body?.observacion || '').trim();
+        if (!observacion) {
+          return renderApprovalPage({ res, status: 400, tone: 'warning', title: 'Observación obligatoria', message: 'Debe indicar el motivo por el cual no aprueba la solicitud.', solicitud });
+        }
+        await solicitud.update({
+          estado: 'no_aprobada',
+          aprobacion_rectoria_token_hash: null,
+          trazabilidad: appendTrace(solicitud, 'rechazada_rectoria', { nombre: 'Rectoría', email: RECTORIA_EMAIL, role: 'rectoria' }, { observacion })
+        });
+        await syncLinkedViaticosRejection(solicitud, 'rectoria', 'Rectoría', observacion);
+        await sendRequesterNotice(solicitud, 'Solicitud no aprobada', `La solicitud no fue aprobada por Rectoría. Motivo: ${observacion}`);
+        return renderApprovalPage({ res, tone: 'info', title: 'Solicitud rechazada', message: 'La solicitud fue marcada como no aprobada y se notificó al colaborador.', solicitud });
+      }
       const ghToken = createApprovalToken('gestion_humana', solicitud.consecutivo);
       const [updatedCount] = await ReporteSalidaSolicitud.update({
         estado: 'pendiente_aprobacion_gestion_humana',
@@ -4523,7 +4871,29 @@ const aprobarDesdeCorreo = async (req, res) => {
           nextStep: 'Debe completarse la primera aprobacion del flujo antes de continuar con Gestion del Talento Humano.'
         });
       }
-      const isMisionalNacionalOInternacional = requiresSstApproval(solicitud);
+      if (req.method === 'GET') {
+        return renderReporteSalidaReviewPage({
+          res,
+          solicitud,
+          token: req.params.token,
+          stageLabel: 'Gestión del Talento Humano'
+        });
+      }
+      if (req.body?.accion === 'rechazar') {
+        const observacion = String(req.body?.observacion || '').trim();
+        if (!observacion) {
+          return renderApprovalPage({ res, status: 400, tone: 'warning', title: 'Observación obligatoria', message: 'Debe indicar el motivo por el cual no aprueba la solicitud.', solicitud });
+        }
+        await solicitud.update({
+          estado: 'no_aprobada',
+          aprobacion_gh_token_hash: null,
+          trazabilidad: appendTrace(solicitud, 'rechazada_gestion_humana', { nombre: 'Gestión del Talento Humano', role: 'gestion_humana' }, { observacion })
+        });
+        await syncLinkedViaticosRejection(solicitud, 'gestion_humana', 'Gestión del Talento Humano', observacion);
+        await sendRequesterNotice(solicitud, 'Solicitud no aprobada', `La solicitud no fue aprobada por Gestión del Talento Humano. Motivo: ${observacion}`);
+        return renderApprovalPage({ res, tone: 'info', title: 'Solicitud rechazada', message: 'La solicitud fue marcada como no aprobada y se notificó al colaborador.', solicitud });
+      }
+      const isMisionalNacionalOInternacional = shouldAdvanceToSst(solicitud);
 
       const isRectoriaDelegated = isRectoriaAuthority(getSolicitudVicerrectoria(solicitud)) ||
         ['1_2_dias', '3_mas_dias'].includes(solicitud.datos_formulario?.salida?.duracionTipo);
@@ -4616,8 +4986,14 @@ const aprobarDesdeCorreo = async (req, res) => {
         solicitud.trazabilidad = appendTrace(solicitud, 'notificacion_final_enviada', null, { usuario: true, sst: true });
         const pdfAttachment = await buildReporteSalidaPdfAttachment(solicitud);
         const supportAttachment = await buildReporteSalidaSupportAttachment(solicitud);
-        const results = await sendFinalEmails(solicitud, pdfAttachment, supportAttachment);
-        deleteSupportFile(solicitud);
+
+        const isLinkedToViaticos = await hasLinkedViaticosInProgress(solicitud);
+        let results = { userResult: { success: true }, sstResult: { success: true }, depResult: { success: true } };
+        if (!isLinkedToViaticos) {
+          results = await sendFinalEmails(solicitud, pdfAttachment, supportAttachment);
+          deleteSupportFile(solicitud);
+        }
+
         await solicitud.update({
           correo_usuario_enviado_at: results.userResult.success ? new Date() : null,
           correo_sst_enviado_at: results.sstResult.success ? new Date() : null,
@@ -4627,7 +5003,8 @@ const aprobarDesdeCorreo = async (req, res) => {
             dependencia: results.depResult.success,
             dependencia_destinatarios: results.depResult.recipients || [],
             dependencia_error: results.depResult.error || '',
-            sst: results.sstResult.success
+            sst: results.sstResult.success,
+            consolidado_con_viaticos: isLinkedToViaticos
           })
         });
         return renderApprovalPage({
@@ -4665,6 +5042,28 @@ const aprobarDesdeCorreo = async (req, res) => {
           solicitud,
           nextStep: 'Por seguridad, la aprobacion no fue registrada.'
         });
+      }
+      if (req.method === 'GET') {
+        return renderReporteSalidaReviewPage({
+          res,
+          solicitud,
+          token: req.params.token,
+          stageLabel: 'Seguridad y Salud en el Trabajo (SST)'
+        });
+      }
+      if (req.body?.accion === 'rechazar') {
+        const observacion = String(req.body?.observacion || '').trim();
+        if (!observacion) {
+          return renderApprovalPage({ res, status: 400, tone: 'warning', title: 'Observación obligatoria', message: 'Debe indicar el motivo por el cual no aprueba la solicitud.', solicitud });
+        }
+        await solicitud.update({
+          estado: 'no_aprobada',
+          aprobacion_sst_token_hash: null,
+          trazabilidad: appendTrace(solicitud, 'rechazada_sst', { nombre: 'Seguridad y Salud en el Trabajo', role: 'sst' }, { observacion })
+        });
+        await syncLinkedViaticosRejection(solicitud, 'sst', 'Seguridad y Salud en el Trabajo', observacion);
+        await sendRequesterNotice(solicitud, 'Solicitud no aprobada', `La solicitud no fue aprobada por SST. Motivo: ${observacion}`);
+        return renderApprovalPage({ res, tone: 'info', title: 'Solicitud rechazada', message: 'La solicitud fue marcada como no aprobada y se notificó al colaborador.', solicitud });
       }
       const [updatedCount] = await ReporteSalidaSolicitud.update({
         estado: 'finalizada',
@@ -5297,7 +5696,7 @@ const editarSolicitudAdmin = async (req, res) => {
       }
 
       if (solicitud.estado === 'pendiente_aprobacion_gestion_humana') {
-        const isMisionalNacionalOInternacional = requiresSstApproval(solicitud);
+        const isMisionalNacionalOInternacional = shouldAdvanceToSst(solicitud);
         if (isMisionalNacionalOInternacional) {
           const sstToken = createApprovalToken('sst', solicitud.consecutivo);
           const updateData = {
@@ -5332,10 +5731,11 @@ const editarSolicitudAdmin = async (req, res) => {
           });
         }
 
+        const isLinkedToViaticos = await hasLinkedViaticosInProgress(solicitud);
         const updateData = {
-          estado: 'finalizada',
+          estado: isLinkedToViaticos ? 'pendiente_tecnico_contable' : 'finalizada',
           gestion_humana_aprobado_at: now,
-          finalizado_at: now,
+          ...(isLinkedToViaticos ? {} : { finalizado_at: now }),
           aprobacion_gh_token_hash: null,
           trazabilidad: appendTrace(solicitud, 'aprobada_gestion_humana', req.user, {
             via: 'admin_dashboard',
@@ -5351,70 +5751,76 @@ const editarSolicitudAdmin = async (req, res) => {
         await solicitud.update(updateData);
         await solicitud.reload();
 
-        await syncAdminViaticosApproval(solicitud, req.user, observacionAdmin).catch(e => console.error('[editarSolicitudAdmin] Error syncAdminViaticosApproval GH->Final:', e));
+        await syncAdminViaticosApproval(solicitud, req.user, observacionAdmin).catch(e => console.error('[editarSolicitudAdmin] Error syncAdminViaticosApproval GH->Next:', e));
 
         const pdfAttachment = await buildReporteSalidaPdfAttachment(solicitud);
         const supportAttachment = await buildReporteSalidaSupportAttachment(solicitud);
-        if (isGrupal && solicitud.datos_formulario?.grupo_id) {
-          const grupo_id = solicitud.datos_formulario.grupo_id;
-          const groupSolicitudes = await ReporteSalidaSolicitud.findAll({
-            where: {
-              datos_formulario: {
-                [Op.contains]: { grupo_id }
+
+        if (!isLinkedToViaticos) {
+          if (isGrupal && solicitud.datos_formulario?.grupo_id) {
+            const grupo_id = solicitud.datos_formulario.grupo_id;
+            const groupSolicitudes = await ReporteSalidaSolicitud.findAll({
+              where: {
+                datos_formulario: {
+                  [Op.contains]: { grupo_id }
+                }
+              }
+            });
+
+            const groupAttachments = [];
+            for (const s of groupSolicitudes) {
+              if (s.estado === 'pendiente_aprobacion_gestion_humana' && s.id !== solicitud.id) {
+                await s.update({
+                  estado: 'finalizada',
+                  gestion_humana_aprobado_at: now,
+                  finalizado_at: now,
+                  aprobacion_gh_token_hash: null,
+                  trazabilidad: appendTrace(s, 'aprobada_gestion_humana', req.user, {
+                    via: 'admin_dashboard',
+                    observacion: observacionAdmin || 'Aprobada por Administrador SIAC'
+                  })
+                });
+                await s.reload();
+              }
+              try {
+                const pAtt = await buildReporteSalidaPdfAttachment(s);
+                if (pAtt) groupAttachments.push(pAtt);
+                const uRes = await sendIndividualColaboradorFinalEmail(s, pAtt);
+                await s.update({
+                  correo_usuario_enviado_at: uRes.success ? new Date() : null
+                });
+              } catch (e) {
+                console.error('Error procesando participante de grupo:', e);
               }
             }
-          });
 
-          const groupAttachments = [];
-          for (const s of groupSolicitudes) {
-            if (s.estado === 'pendiente_aprobacion_gestion_humana' && s.id !== solicitud.id) {
-              await s.update({
-                estado: 'finalizada',
-                gestion_humana_aprobado_at: now,
-                finalizado_at: now,
-                aprobacion_gh_token_hash: null,
-                trazabilidad: appendTrace(s, 'aprobada_gestion_humana', req.user, {
-                  via: 'admin_dashboard',
-                  observacion: observacionAdmin || 'Aprobada por Administrador SIAC'
-                })
-              });
-              await s.reload();
+            if (groupAttachments.length > 0) {
+              await sendGroupFinalConsolidatedEmail(groupSolicitudes, groupAttachments).catch(e => console.error('Error sending group consolidated email:', e));
             }
-            try {
-              const pAtt = await buildReporteSalidaPdfAttachment(s);
-              if (pAtt) groupAttachments.push(pAtt);
-              const uRes = await sendIndividualColaboradorFinalEmail(s, pAtt);
-              await s.update({
-                correo_usuario_enviado_at: uRes.success ? new Date() : null
-              });
-            } catch (e) {
-              console.error('Error procesando participante de grupo:', e);
-            }
+          } else if (isGrupal) {
+            const userEmailResult = await sendIndividualColaboradorFinalEmail(solicitud, pdfAttachment);
+            await solicitud.update({
+              correo_usuario_enviado_at: userEmailResult.success ? new Date() : null
+            });
+          } else {
+            await sendFinalEmails(solicitud, pdfAttachment, supportAttachment).catch(e => console.error(e));
           }
-
-          if (groupAttachments.length > 0) {
-            await sendGroupFinalConsolidatedEmail(groupSolicitudes, groupAttachments).catch(e => console.error('Error sending group consolidated email:', e));
-          }
-        } else if (isGrupal) {
-          const userEmailResult = await sendIndividualColaboradorFinalEmail(solicitud, pdfAttachment);
-          await solicitud.update({
-            correo_usuario_enviado_at: userEmailResult.success ? new Date() : null
-          });
-        } else {
-          await sendFinalEmails(solicitud, pdfAttachment, supportAttachment).catch(e => console.error(e));
         }
 
         return res.json({
           success: true,
-          message: 'Solicitud aprobada y finalizada correctamente por el administrador.',
+          message: isLinkedToViaticos
+            ? 'Aprobación de Gestión Humana registrada. El flujo continúa en las etapas de viáticos.'
+            : 'Solicitud aprobada y finalizada correctamente por el administrador.',
           data: serializeSolicitud(solicitud)
         });
       }
 
       if (solicitud.estado === 'pendiente_aprobacion_sst') {
+        const isLinkedToViaticos = await hasLinkedViaticosInProgress(solicitud);
         const updateData = {
-          estado: 'finalizada',
-          finalizado_at: now,
+          estado: isLinkedToViaticos ? 'pendiente_aprobacion_gestion_humana' : 'finalizada',
+          ...(isLinkedToViaticos ? {} : { finalizado_at: now }),
           aprobacion_sst_token_hash: null,
           trazabilidad: appendTrace(solicitud, 'aprobada_sst', req.user, {
             via: 'admin_dashboard',
@@ -5425,15 +5831,29 @@ const editarSolicitudAdmin = async (req, res) => {
         await solicitud.update(updateData);
         await solicitud.reload();
 
-        await syncAdminViaticosApproval(solicitud, req.user, observacionAdmin).catch(e => console.error('[editarSolicitudAdmin] Error syncAdminViaticosApproval SST->Final:', e));
+        await syncAdminViaticosApproval(solicitud, req.user, observacionAdmin).catch(e => console.error('[editarSolicitudAdmin] Error syncAdminViaticosApproval SST->Next:', e));
 
-        const pdfAttachment = await buildReporteSalidaPdfAttachment(solicitud);
-        const supportAttachment = await buildReporteSalidaSupportAttachment(solicitud);
-        await sendFinalEmails(solicitud, pdfAttachment, supportAttachment).catch(e => console.error(e));
+        if (!isLinkedToViaticos) {
+          const pdfAttachment = await buildReporteSalidaPdfAttachment(solicitud);
+          const supportAttachment = await buildReporteSalidaSupportAttachment(solicitud);
+          await sendFinalEmails(solicitud, pdfAttachment, supportAttachment).catch(e => console.error(e));
+        }
 
         return res.json({
           success: true,
-          message: 'Solicitud aprobada por SST y finalizada por el administrador.',
+          message: isLinkedToViaticos
+            ? 'Aprobación de SST registrada por el administrador. Continúa en Gestión Humana.'
+            : 'Solicitud aprobada por SST y finalizada por el administrador.',
+          data: serializeSolicitud(solicitud)
+        });
+      }
+
+      if (['pendiente_aprobacion_financiera_previa', 'pendiente_tecnico_contable', 'pendiente_tesoreria'].includes(solicitud.estado)) {
+        await syncAdminViaticosApproval(solicitud, req.user, observacionAdmin).catch(e => console.error('[editarSolicitudAdmin] Error syncAdminViaticosApproval etapa viaticos:', e));
+        await solicitud.reload();
+        return res.json({
+          success: true,
+          message: `Etapa ${solicitud.estado.replace(/_/g, ' ')} aprobada correctamente por el administrador.`,
           data: serializeSolicitud(solicitud)
         });
       }
@@ -7388,6 +7808,50 @@ const aprobarGrupoDesdeCorreo = async (req, res) => {
       });
     }
 
+    if (req.method === 'GET') {
+      const participantes = solicitudes.map(s => `<li>${escapeHtml(s.solicitante_snapshot?.nombre || 'Colaborador')} — C.C. ${escapeHtml(s.solicitante_snapshot?.documento || '')}</li>`).join('');
+      return res.status(200).type('html').send(`<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <title>Revisar Salida Grupal - ${escapeHtml(grupo_id)}</title>
+  <style>
+    * { box-sizing: border-box; }
+    body { margin: 0; font-family: Arial, sans-serif; background: #f1f5f9; color: #334155; padding: 24px 16px; }
+    .card { max-width: 780px; margin: 0 auto; background: #fff; border: 1px solid #cbd5e1; border-radius: 16px; box-shadow: 0 12px 35px rgba(15,23,42,0.12); overflow: hidden; }
+    .header { background: linear-gradient(90deg, #0b1730, #123a7a); color: #fff; padding: 20px 26px; }
+    .header h1 { margin: 0; font-size: 20px; font-weight: 800; }
+    .header p { margin: 4px 0 0 0; color: #bfdbfe; font-size: 13px; }
+    .body { padding: 26px; }
+    .actions { display: flex; gap: 14px; justify-content: center; margin-top: 24px; }
+    button { border: 0; border-radius: 8px; padding: 12px 28px; font-size: 14.5px; font-weight: 800; cursor: pointer; }
+    button.ok { background: #166534; color: #fff; }
+    button.bad { background: #b91c1c; color: #fff; }
+  </style>
+</head>
+<body>
+  <main class="card">
+    <div class="header">
+      <h1>SIAC UNICESMAG</h1>
+      <p>Revisión de Salida Grupal: <strong>${escapeHtml(grupo_id)}</strong> (${solicitudes.length} integrantes)</p>
+    </div>
+    <div class="body">
+      <h3 style="margin-top:0;color:#0b3a6f;">Integrantes de la salida grupal:</h3>
+      <ul style="line-height:1.6;color:#334155;">${participantes}</ul>
+      <form method="POST" action="/api/reportes-salida/aprobar-grupo/${escapeHtml(req.params.token)}">
+        <label style="display:block;margin-top:18px;font-weight:700;color:#0b3a6f;">Observaciones de la actuación (opcional si aprueba, obligatoria si no aprueba):</label>
+        <textarea name="justificacion" style="width:100%;min-height:90px;padding:10px;margin-top:6px;border:1px solid #cbd5e1;border-radius:8px;" placeholder="Escriba aquí sus observaciones..."></textarea>
+        <div class="actions">
+          <button type="submit" name="accion" value="aprobar" class="ok">✓ Dar visto bueno al grupo</button>
+          <button type="submit" name="accion" value="rechazar" class="bad">✕ No aprobar salida grupal</button>
+        </div>
+      </form>
+    </div>
+  </main>
+</body>
+</html>`);
+    }
+
     // ETAPA 0: APROBACIÓN PROYECCIÓN SOCIAL (GRUPAL)
     if (purpose === 'reporte_salida_approve_proyeccion_social_grupo') {
       const pendientes = solicitudes.filter(s => s.estado === 'pendiente_aprobacion_proyeccion_social');
@@ -7655,7 +8119,7 @@ const aprobarGrupoDesdeCorreo = async (req, res) => {
         const alcance = s.datos_formulario?.salida?.alcance;
         return alcance === 'Nacional' || alcance === 'Internacional';
       });
-      const requiresSst = pendientes.some(s => requiresSstApproval(s)) || isNationalOrInternational;
+      const requiresSst = pendientes.some(s => shouldAdvanceToSst(s));
       const now = new Date();
 
       if (requiresSst) {

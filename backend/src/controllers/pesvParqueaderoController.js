@@ -9,14 +9,16 @@ const {
 } = require('../models');
 const { sequelize } = require('../config/database');
 const { evaluateRtmStatus } = require('../services/pesvRtmRules');
-const { sendPesvExpiryNotification, isBicycleVehicle } = require('../services/pesvExpiryNotificationScheduler');
+const { sendPesvExpiryNotification, sendPesvRuntUpdateConfirmation, isBicycleVehicle } = require('../services/pesvExpiryNotificationScheduler');
 
 const EXCEL_FIELDS = {
   IDENTIFICACION: 'identificacion', NOMBRES_Y_APELLIDOS: 'nombres_apellidos', CORREO: 'correo',
   VINCULACION: 'vinculacion', DEPENDENCIA_PROGRAMA: 'dependencia_programa', CAMPUS: 'campus',
   PARQUEADERO_INGRESO: 'parqueadero_ingreso', CATEGORIA_INGRESO: 'categoria_ingreso',
   TIPO_VEHICULO: 'tipo_vehiculo', PLACA: 'placa', CURSO_PAS: 'curso_pas',
-  PAGO_VALIDACION: 'pago_validacion', HORARIO: 'horario', OBSERVACIONES: 'observaciones',
+  PAGO_VALIDACION: 'pago_validacion', VEHICULO_AUTORIZADO: 'vehiculo_autorizado',
+  VEHICULO_ES_PROPIO: 'vehiculo_es_propio', PROPIETARIO_IDENTIFICACION: 'propietario_identificacion',
+  HORARIO: 'horario', OBSERVACIONES: 'observaciones',
   VEHICULO_CLASE: 'vehiculo_clase', VEHICULO_SERVICIO: 'vehiculo_servicio', VEHICULO_MODELO: 'vehiculo_modelo',
   FECHA_MATRICULA: 'vehiculo_fecha_matricula', SOAT_FECHA_EXPEDICION: 'soat_fecha_expedicion',
   SOAT_FECHA_INICIO: 'soat_fecha_inicio', SOAT_VIGENCIA: 'soat_vigencia', SOAT_NUMERO_POLIZA: 'soat_numero_poliza',
@@ -27,6 +29,7 @@ const EXCEL_FIELDS = {
 const PESV_TEMPLATE_COLUMNS = [
   'IDENTIFICACION', 'NOMBRES_Y_APELLIDOS', 'CORREO', 'VINCULACION', 'DEPENDENCIA_PROGRAMA', 'CAMPUS',
   'PARQUEADERO_INGRESO', 'CATEGORIA_INGRESO', 'TIPO_VEHICULO', 'PLACA', 'CURSO_PAS', 'PAGO_VALIDACION',
+  'VEHICULO_AUTORIZADO', 'VEHICULO_ES_PROPIO', 'PROPIETARIO_IDENTIFICACION',
   'VEHICULO_CLASE', 'VEHICULO_SERVICIO', 'VEHICULO_MODELO', 'FECHA_MATRICULA',
   'SOAT_FECHA_EXPEDICION', 'SOAT_FECHA_INICIO', 'SOAT_VIGENCIA', 'SOAT_NUMERO_POLIZA', 'SOAT_ENTIDAD',
   'RTM_ESTADO', 'RTM_FECHA_EXPEDICION', 'TECNOMECANICA_VIGENCIA', 'RTM_FECHA_EXIGIBILIDAD',
@@ -63,7 +66,14 @@ const clean = (value, max = 500) => {
   const result = String(value ?? '').trim();
   return result ? result.slice(0, max) : null;
 };
-const normalizePlate = (value) => clean(value, 30)?.replace(/\s+/g, '').toUpperCase() || null;
+const normalizePlate = (value) => clean(value, 30)?.toUpperCase().replace(/[^A-Z0-9]/g, '') || null;
+const parseOptionalBoolean = (value) => {
+  if (value === true || value === false) return value;
+  const normalized = String(value ?? '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim().toUpperCase();
+  if (['SI', 'S', 'TRUE', '1'].includes(normalized)) return true;
+  if (['NO', 'N', 'FALSE', '0'].includes(normalized)) return false;
+  return null;
+};
 const parseDate = (value) => {
   if (!value) return null;
   if (value instanceof Date && !Number.isNaN(value.getTime())) return value.toISOString().slice(0, 10);
@@ -96,6 +106,7 @@ const expiryStatus = (value) => {
 const SEARCHABLE_FIELDS = Object.freeze([
   'identificacion', 'nombres_apellidos', 'correo', 'vinculacion', 'dependencia_programa', 'campus',
   'parqueadero_ingreso', 'categoria_ingreso', 'tipo_vehiculo', 'placa', 'curso_pas', 'pago_validacion',
+  'propietario_identificacion',
   'vehiculo_clase', 'vehiculo_servicio', 'vehiculo_modelo', 'soat_numero_poliza', 'soat_entidad',
   'rtm_estado', 'rtm_numero_certificado', 'rtm_cda', 'horario', 'observaciones'
 ]);
@@ -106,10 +117,11 @@ const getSearchScore = (row, rawQuery) => {
   const values = Object.fromEntries(SEARCHABLE_FIELDS.map((field) => [field, normalizeSearchText(row[field])]));
   const combined = SEARCHABLE_FIELDS.map((field) => values[field]).filter(Boolean).join(' ');
   const tokens = query.split(/\s+/).filter(Boolean);
-  if (!tokens.every((token) => combined.includes(token))) return -1;
+  const compactCombined = combined.replace(/[^a-z0-9]/g, '');
+  if (!tokens.every((token) => combined.includes(token) || compactCombined.includes(token.replace(/[^a-z0-9]/g, '')))) return -1;
 
   let score = tokens.reduce((total, token) => total + SEARCHABLE_FIELDS.reduce((fieldScore, field) => fieldScore + (values[field].includes(token) ? 3 : 0), 0), 0);
-  if (values.placa === query) score += 140;
+  if (values.placa.replace(/[^a-z0-9]/g, '') === query.replace(/[^a-z0-9]/g, '')) score += 140;
   if (values.identificacion === query) score += 130;
   if (values.correo === query) score += 120;
   if (values.nombres_apellidos === query) score += 110;
@@ -142,6 +154,9 @@ const payloadFromBody = (body = {}) => {
   parqueadero_ingreso: clean(body.parqueadero_ingreso, 140), categoria_ingreso: clean(body.categoria_ingreso, 120),
   tipo_vehiculo: clean(body.tipo_vehiculo, 120), placa: normalizePlate(body.placa), curso_pas: clean(body.curso_pas, 120),
   pago_validacion: clean(body.pago_validacion, 120), soat_vigencia: parseDate(body.soat_vigencia),
+  vehiculo_autorizado: parseOptionalBoolean(body.vehiculo_autorizado),
+  vehiculo_es_propio: parseOptionalBoolean(body.vehiculo_es_propio) ?? true,
+  propietario_identificacion: clean(body.propietario_identificacion, 40)?.replace(/[^a-zA-Z0-9]/g, '') || null,
   soat_vigencia_texto: clean(body.soat_vigencia || body.soat_vigencia_texto, 140),
   soat_fecha_expedicion: parseDate(body.soat_fecha_expedicion), soat_fecha_inicio: parseDate(body.soat_fecha_inicio),
   soat_numero_poliza: clean(body.soat_numero_poliza, 120), soat_entidad: clean(body.soat_entidad, 220),
@@ -154,6 +169,7 @@ const payloadFromBody = (body = {}) => {
   vehiculo_servicio: clean(body.vehiculo_servicio, 120), vehiculo_modelo: clean(body.vehiculo_modelo, 20),
     horario: clean(body.horario, 180), observaciones: clean(body.observaciones, 4000)
   };
+  if (payload.vehiculo_es_propio !== false) payload.propietario_identificacion = null;
   if (!isBicycleVehicle(payload)) return payload;
   return {
     ...payload,
@@ -167,40 +183,49 @@ const validate = (payload) => {
   const errors = [];
   if (!payload.nombres_apellidos) errors.push('Los nombres y apellidos son obligatorios');
   if (payload.correo && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(payload.correo)) errors.push('El correo no es válido');
+  if (payload.vehiculo_es_propio === false && !payload.propietario_identificacion) errors.push('La identificación del propietario es obligatoria cuando el vehículo no es propio');
   return errors;
+};
+
+const getFilteredRows = async (query = {}) => {
+  const search = clean(query.search, 120);
+  const where = {};
+  if (query.campus) where.campus = query.campus;
+  if (query.parqueadero) where.parqueadero_ingreso = query.parqueadero;
+  const rows = await PesvParqueaderoRegistro.findAll({
+    where,
+    order: [['soat_vigencia', 'ASC NULLS LAST'], ['nombres_apellidos', 'ASC']]
+  });
+  let data = rows.map(serialize);
+  if (search) data = data.map((row) => ({ ...row, _searchScore: getSearchScore(row, search) })).filter((row) => row._searchScore >= 0);
+  const summary = {
+    total: data.length,
+    vehiculos: data.filter((r) => r.placa).length,
+    soat_vencidos: data.filter((r) => r.soat_estado.code === 'vencido').length,
+    soat_proximos: data.filter((r) => r.soat_estado.code === 'proximo').length,
+    tecnomecanica_vencidos: data.filter((r) => r.tecnomecanica_estado.code === 'vencido').length,
+    tecnomecanica_proximos: data.filter((r) => r.tecnomecanica_estado.code === 'proximo').length
+  };
+  const estado = clean(query.estado, 30);
+  if (estado) data = data.filter((row) => row.soat_estado.code === estado || row.tecnomecanica_estado.code === estado);
+  const indicador = clean(query.indicador, 30);
+  if (indicador === 'soat_vencido') data = data.filter((row) => row.soat_estado.code === 'vencido');
+  if (indicador === 'soat_proximo') data = data.filter((row) => row.soat_estado.code === 'proximo');
+  if (indicador === 'rtm_vencido') data = data.filter((row) => row.tecnomecanica_estado.code === 'vencido');
+  if (indicador === 'rtm_proximo') data = data.filter((row) => row.tecnomecanica_estado.code === 'proximo');
+  data.sort((a, b) => search
+    ? b._searchScore - a._searchScore || String(a.nombres_apellidos || '').localeCompare(String(b.nombres_apellidos || ''), 'es')
+    : Math.min(a.soat_estado.priority, a.tecnomecanica_estado.priority) - Math.min(b.soat_estado.priority, b.tecnomecanica_estado.priority) || (a.soat_estado.days ?? 99999) - (b.soat_estado.days ?? 99999));
+  data = data.map(({ _searchScore, ...row }) => row);
+  return { data, summary };
 };
 
 const list = async (req, res) => {
   try {
-    const search = clean(req.query.search, 120);
-    const where = {};
-    if (req.query.campus) where.campus = req.query.campus;
-    if (req.query.parqueadero) where.parqueadero_ingreso = req.query.parqueadero;
-    const [rows, catalogRows] = await Promise.all([
-      PesvParqueaderoRegistro.findAll({ where, order: [['soat_vigencia', 'ASC NULLS LAST'], ['nombres_apellidos', 'ASC']] }),
+    const [{ data, summary }, catalogRows] = await Promise.all([
+      getFilteredRows(req.query),
       PesvParqueaderoRegistro.findAll({ attributes: [...new Set(Object.values(CATALOG_FIELD_MAP))], raw: true })
     ]);
-    let data = rows.map(serialize);
-    if (search) data = data.map((row) => ({ ...row, _searchScore: getSearchScore(row, search) })).filter((row) => row._searchScore >= 0);
-    const summary = {
-      total: data.length,
-      vehiculos: data.filter((r) => r.placa).length,
-      soat_vencidos: data.filter((r) => r.soat_estado.code === 'vencido').length,
-      soat_proximos: data.filter((r) => r.soat_estado.code === 'proximo').length,
-      tecnomecanica_vencidos: data.filter((r) => r.tecnomecanica_estado.code === 'vencido').length,
-      tecnomecanica_proximos: data.filter((r) => r.tecnomecanica_estado.code === 'proximo').length
-    };
-    const estado = clean(req.query.estado, 30);
-    if (estado) data = data.filter((row) => row.soat_estado.code === estado || row.tecnomecanica_estado.code === estado);
-    const indicador = clean(req.query.indicador, 30);
-    if (indicador === 'soat_vencido') data = data.filter((row) => row.soat_estado.code === 'vencido');
-    if (indicador === 'soat_proximo') data = data.filter((row) => row.soat_estado.code === 'proximo');
-    if (indicador === 'rtm_vencido') data = data.filter((row) => row.tecnomecanica_estado.code === 'vencido');
-    if (indicador === 'rtm_proximo') data = data.filter((row) => row.tecnomecanica_estado.code === 'proximo');
-    data.sort((a, b) => search
-      ? b._searchScore - a._searchScore || String(a.nombres_apellidos || '').localeCompare(String(b.nombres_apellidos || ''), 'es')
-      : Math.min(a.soat_estado.priority, a.tecnomecanica_estado.priority) - Math.min(b.soat_estado.priority, b.tecnomecanica_estado.priority) || (a.soat_estado.days ?? 99999) - (b.soat_estado.days ?? 99999));
-    data = data.map(({ _searchScore, ...row }) => row);
     res.json({ success: true, data, summary, catalogs: buildPesvCatalogs(catalogRows) });
   } catch (error) {
     console.error('Error consultando registros PESV:', error);
@@ -217,7 +242,15 @@ const create = async (req, res) => {
 const update = async (req, res) => {
   const payload = payloadFromBody(req.body); const errors = validate(payload);
   if (errors.length) return res.status(400).json({ success: false, message: errors.join('. ') });
-  try { const row = await PesvParqueaderoRegistro.findByPk(req.params.id); if (!row) return res.status(404).json({ success: false, message: 'Registro no encontrado' }); await row.update({ ...payload, actualizado_por: req.user?.id }); return res.json({ success: true, data: serialize(row) }); }
+  try {
+    const row = await PesvParqueaderoRegistro.findByPk(req.params.id);
+    if (!row) return res.status(404).json({ success: false, message: 'Registro no encontrado' });
+    const notificationReset = {};
+    if ((row.soat_vigencia || null) !== (payload.soat_vigencia || null)) notificationReset.ultima_notificacion_soat = null;
+    if ((row.tecnomecanica_vigencia || null) !== (payload.tecnomecanica_vigencia || null)) notificationReset.ultima_notificacion_tecnomecanica = null;
+    await row.update({ ...payload, ...notificationReset, actualizado_por: req.user?.id });
+    return res.json({ success: true, data: serialize(row) });
+  }
   catch (error) { return res.status(500).json({ success: false, message: 'No se pudo actualizar el registro' }); }
 };
 const remove = async (req, res) => {
@@ -274,6 +307,23 @@ const normalizeRuntPayload = (body = {}) => {
     pagina_origen: clean(body.pagina_origen, 500)
   };
 };
+const assessRuntUpdate = (record, result = {}) => {
+  const isLater = (nextValue, currentValue) => Boolean(nextValue) && (!currentValue || String(nextValue) > String(currentValue));
+  const soat = result.soat || null;
+  const rtm = result.rtm || null;
+  const soatActualizado = isLater(soat?.fecha_fin, record?.soat_vigencia);
+  const rtmFechaActualizada = isLater(rtm?.fecha_vigencia, record?.tecnomecanica_vigencia);
+  const rtmSituacionActualizada = Boolean(rtm && !rtm.fecha_vigencia && rtm.estado && rtm.estado !== record?.rtm_estado);
+  const rtmActualizada = rtmFechaActualizada || rtmSituacionActualizada;
+  return {
+    detectada: soatActualizado || rtmActualizada,
+    soat_actualizado: soatActualizado,
+    rtm_actualizada: rtmActualizada,
+    mensaje: soatActualizado || rtmActualizada
+      ? 'RUNT refleja una vigencia o situación documental nueva frente a la información registrada en SIAC.'
+      : 'RUNT aún no refleja una vigencia posterior a la registrada. Si la persona informó una renovación, realice una nueva consulta cuando RUNT haya sido actualizado.'
+  };
+};
 const getConsolidatedStatus = (soat, rtm) => {
   const soatOk = soat?.estado === 'VIGENTE';
   const soatBad = soat && ['VENCIDO', 'NO_VIGENTE'].includes(soat.estado);
@@ -291,7 +341,10 @@ const startRuntValidation = async (req, res) => {
     const record = await PesvParqueaderoRegistro.findByPk(req.params.id);
     if (!record) return res.status(404).json({ success: false, message: 'Registro no encontrado' });
     if (isBicycleVehicle(record)) return res.status(400).json({ success: false, message: 'Las bicicletas no requieren validación documental en RUNT' });
-    if (!record.placa || !record.identificacion) return res.status(400).json({ success: false, message: 'La consulta RUNT requiere placa e identificación' });
+    const placaConsulta = normalizePlate(record.placa);
+    const documentoConsulta = record.vehiculo_es_propio === false ? clean(record.propietario_identificacion, 40)?.replace(/[^a-zA-Z0-9]/g, '') : clean(record.identificacion, 40)?.replace(/[^a-zA-Z0-9]/g, '');
+    if (!placaConsulta || !documentoConsulta) return res.status(400).json({ success: false, message: record.vehiculo_es_propio === false ? 'La consulta RUNT requiere la placa y la identificación del propietario' : 'La consulta RUNT requiere placa e identificación' });
+    if (placaConsulta !== record.placa) await record.update({ placa: placaConsulta, actualizado_por: req.user.id });
     await PesvRuntValidacion.update({ estado: 'CANCELADA' }, {
       where: { parqueadero_registro_id: record.id, estado: { [Op.in]: ['PENDIENTE', 'ABIERTA'] } }
     });
@@ -303,7 +356,7 @@ const startRuntValidation = async (req, res) => {
       iniciada_por: req.user.id
     });
     const runtUrl = RUNT_PUBLIC_URL;
-    return res.status(201).json({ success: true, data: { id: session.id, runtUrl, estado: session.estado, expira_en: session.expira_en } });
+    return res.status(201).json({ success: true, data: { id: session.id, runtUrl, estado: session.estado, expira_en: session.expira_en, placaConsulta, documentoConsulta, usaDocumentoPropietario: record.vehiculo_es_propio === false } });
   } catch (error) {
     console.error('Error al iniciar validación RUNT:', error);
     return res.status(500).json({ success: false, message: 'No se pudo iniciar la validación RUNT' });
@@ -363,6 +416,9 @@ const captureManualRuntResult = async (req, res) => {
       },
       pagina_origen: 'REGISTRO_MANUAL_SIAC'
     });
+    const currentRecord = await PesvParqueaderoRegistro.findByPk(session.parqueadero_registro_id);
+    if (!currentRecord) return res.status(404).json({ success: false, message: 'Registro de parqueadero no encontrado' });
+    result.comparacion_actualizacion = assessRuntUpdate(currentRecord, result);
     await session.update({ estado: 'CAPTURADA', resultado: result, pagina_origen: result.pagina_origen, capturada_en: new Date() });
     return res.json({ success: true, message: 'Fechas RUNT cargadas para revisión', data: { ...session.toJSON(), token_hash: undefined } });
   } catch (error) { return res.status(500).json({ success: false, message: 'No se pudo registrar el resultado consultado' }); }
@@ -384,6 +440,10 @@ const confirmRuntValidation = async (req, res) => {
     if (session.iniciada_por !== req.user.id && req.user.role !== 'administrador') return res.status(403).json({ success: false, message: 'No tienes acceso a esta validación' });
     if (session.estado !== 'CAPTURADA') return res.status(409).json({ success: false, message: 'La validación aún no tiene un resultado para confirmar' });
     const result = session.resultado || {}; const soat = result.soat; const rtm = result.rtm; const vehiculo = result.vehiculo || {};
+    const currentRecord = await PesvParqueaderoRegistro.findByPk(session.parqueadero_registro_id);
+    if (!currentRecord) return res.status(404).json({ success: false, message: 'Registro de parqueadero no encontrado' });
+    const comparison = assessRuntUpdate(currentRecord, result);
+    if (!comparison.detectada) return res.status(409).json({ success: false, code: 'RUNT_SIN_ACTUALIZACION', message: comparison.mensaje, data: comparison });
     const consolidated = getConsolidatedStatus(soat, rtm);
     await sequelize.transaction(async (transaction) => {
       const record = await PesvParqueaderoRegistro.findByPk(session.parqueadero_registro_id, { transaction, lock: transaction.LOCK.UPDATE });
@@ -393,6 +453,8 @@ const confirmRuntValidation = async (req, res) => {
       await record.update({
         ...(soat ? { soat_estado: soat.estado, soat_fecha_expedicion: soat.fecha_expedicion, soat_fecha_inicio: soat.fecha_inicio, soat_vigencia: soat.fecha_fin, soat_vigencia_texto: soat.fecha_fin, soat_numero_poliza: soat.numero_poliza, soat_entidad: soat.entidad } : {}),
         ...(rtm ? { rtm_estado: rtm.estado, tecnomecanica_vigencia: rtm.fecha_vigencia, tecnomecanica_vigencia_texto: rtm.fecha_vigencia || (rtm.estado === 'NO_EXIGIBLE' ? 'RTM no exigible a la fecha' : rtm.estado === 'SIN_REGISTRO_RUNT' ? 'Sin registro en RUNT' : 'No aplica'), rtm_fecha_expedicion: rtm.fecha_expedicion, rtm_numero_certificado: rtm.numero_certificado, rtm_cda: rtm.cda } : {}),
+        ...(soat ? { ultima_notificacion_soat: null } : {}),
+        ...(rtm ? { ultima_notificacion_tecnomecanica: null } : {}),
         vehiculo_fecha_matricula: vehiculo.fecha_matricula, vehiculo_clase: vehiculo.clase,
         vehiculo_servicio: vehiculo.servicio, vehiculo_modelo: vehiculo.modelo,
         rtm_fecha_exigibilidad: vehiculo.rtm_fecha_exigibilidad,
@@ -400,8 +462,43 @@ const confirmRuntValidation = async (req, res) => {
       }, { transaction });
       await session.update({ estado: 'CONFIRMADA', confirmada_en: new Date(), confirmada_por: req.user.id }, { transaction });
     });
-    return res.json({ success: true, message: 'Información RUNT confirmada y almacenada en el histórico', data: { estado_validacion: consolidated } });
+    return res.json({
+      success: true,
+      message: 'Información RUNT confirmada y actualizada. Puede notificar manualmente a la persona.',
+      data: { estado_validacion: consolidated, comparacion_actualizacion: comparison, confirmacion_enviada: false }
+    });
   } catch (error) { return res.status(500).json({ success: false, message: 'No se pudo confirmar la validación RUNT' }); }
+};
+
+const notifyRuntUpdate = async (req, res) => {
+  try {
+    const session = await PesvRuntValidacion.findByPk(req.params.sessionId);
+    if (!session) return res.status(404).json({ success: false, message: 'Validación no encontrada' });
+    if (session.iniciada_por !== req.user.id && req.user.role !== 'administrador') return res.status(403).json({ success: false, message: 'No tienes acceso a esta validación' });
+    if (session.estado !== 'CONFIRMADA') return res.status(409).json({ success: false, message: 'Primero debe confirmar la actualización consultada en RUNT' });
+    if (session.notificacion_actualizacion_en) return res.status(409).json({ success: false, alreadyNotified: true, message: 'La confirmación de esta actualización ya fue enviada' });
+    const row = await PesvParqueaderoRegistro.findByPk(session.parqueadero_registro_id);
+    if (!row) return res.status(404).json({ success: false, message: 'Registro de parqueadero no encontrado' });
+    const claimAt = new Date();
+    const [claimed] = await PesvRuntValidacion.update(
+      { notificacion_actualizacion_en: claimAt, notificacion_actualizacion_por: req.user.id },
+      { where: { id: session.id, estado: 'CONFIRMADA', notificacion_actualizacion_en: null } }
+    );
+    if (!claimed) return res.status(409).json({ success: false, alreadyNotified: true, message: 'La confirmación ya fue enviada o está siendo procesada' });
+    const result = session.resultado || {};
+    const notification = await sendPesvRuntUpdateConfirmation(row, { soat: result.soat, rtm: result.rtm });
+    if (!notification.success) {
+      await PesvRuntValidacion.update(
+        { notificacion_actualizacion_en: null, notificacion_actualizacion_por: null },
+        { where: { id: session.id, notificacion_actualizacion_en: claimAt } }
+      );
+      return res.status(503).json({ success: false, message: `La actualización está guardada, pero no se pudo enviar la confirmación: ${notification.error}` });
+    }
+    return res.json({ success: true, message: `Confirmación de actualización enviada a ${row.correo}`, data: { notificacion_actualizacion_en: claimAt } });
+  } catch (error) {
+    console.error('Error notificando actualización RUNT:', error);
+    return res.status(500).json({ success: false, message: 'No se pudo enviar la confirmación de actualización' });
+  }
 };
 
 const getRuntHistory = async (req, res) => {
@@ -419,8 +516,7 @@ const getRuntHistory = async (req, res) => {
   } catch (error) { return res.status(500).json({ success: false, message: 'No se pudo consultar el histórico RUNT' }); }
 };
 
-const downloadExcelTemplate = async (req, res) => {
-  try {
+const buildPesvExcelWorkbook = async (dataRows = []) => {
     const rows = await PesvParqueaderoRegistro.findAll({ attributes: [...new Set(Object.values(CATALOG_FIELD_MAP))], raw: true });
     const catalogs = buildPesvCatalogs(rows);
     const workbook = new ExcelJS.Workbook();
@@ -444,6 +540,7 @@ const downloadExcelTemplate = async (req, res) => {
       TIPO_VEHICULO: catalogs.tiposVehiculo, VEHICULO_CLASE: catalogs.clasesVehiculo,
       VEHICULO_SERVICIO: catalogs.serviciosVehiculo, CURSO_PAS: catalogs.cursosPas,
       PAGO_VALIDACION: catalogs.pagosValidacion, SOAT_ENTIDAD: catalogs.aseguradoras,
+      VEHICULO_AUTORIZADO: ['SI', 'NO'], VEHICULO_ES_PROPIO: ['SI', 'NO'],
       RTM_ESTADO: catalogs.estadosRtm, RTM_CDA: catalogs.centrosDiagnostico
     };
     Object.entries(validationMap).forEach(([header, options], listIndex) => {
@@ -453,7 +550,8 @@ const downloadExcelTemplate = async (req, res) => {
       const dataColumn = PESV_TEMPLATE_COLUMNS.indexOf(header) + 1;
       if (!dataColumn || options.length === 0) return;
       const letter = listSheet.getColumn(listColumn).letter;
-      for (let rowIndex = 2; rowIndex <= 1001; rowIndex += 1) {
+      const validationRowLimit = Math.max(1001, dataRows.length + 101);
+      for (let rowIndex = 2; rowIndex <= validationRowLimit; rowIndex += 1) {
         sheet.getCell(rowIndex, dataColumn).dataValidation = {
           type: 'list', allowBlank: true, errorStyle: 'stop', showErrorMessage: true,
           errorTitle: 'Valor no permitido', error: 'Seleccione un valor de la lista desplegable.',
@@ -468,6 +566,17 @@ const downloadExcelTemplate = async (req, res) => {
       column.numFmt = 'yyyy-mm-dd';
     });
 
+    dataRows.forEach((source, rowIndex) => {
+      const row = sheet.getRow(rowIndex + 2);
+      PESV_TEMPLATE_COLUMNS.forEach((header, columnIndex) => {
+        const field = EXCEL_FIELDS[header];
+        const value = source[field];
+        row.getCell(columnIndex + 1).value = ['VEHICULO_AUTORIZADO', 'VEHICULO_ES_PROPIO'].includes(header) && value !== null && value !== undefined
+          ? value ? 'SI' : 'NO'
+          : value ?? null;
+      });
+    });
+
     const instructions = workbook.addWorksheet('INSTRUCCIONES');
     instructions.columns = [{ header: 'CAMPO', key: 'campo', width: 30 }, { header: 'INDICACIÓN', key: 'indicacion', width: 100 }];
     instructions.addRows([
@@ -475,16 +584,43 @@ const downloadExcelTemplate = async (req, res) => {
       { campo: 'LISTAS DESPLEGABLES', indicacion: 'En las columnas categóricas seleccione uno de los valores disponibles.' },
       { campo: 'FECHAS', indicacion: 'Utilice el formato AAAA-MM-DD.' },
       { campo: 'RTM_ESTADO', indicacion: 'Seleccione VIGENTE, VENCIDO, NO_EXIGIBLE, SIN_REGISTRO_RUNT o NO_APLICA.' },
+      { campo: 'VEHICULO_ES_PROPIO', indicacion: 'Seleccione SI o NO. Si selecciona NO, diligencie PROPIETARIO_IDENTIFICACION para consultar el vehículo en RUNT.' },
+      { campo: 'VEHICULO_AUTORIZADO', indicacion: 'Seleccione SI o NO según la autorización institucional del vehículo.' },
+      { campo: 'PLACA', indicacion: 'Digite únicamente letras y números. SIAC elimina automáticamente guiones, espacios y otros caracteres.' },
       { campo: 'IMPORTACIÓN', indicacion: 'La importación reemplaza la base actual. Revise el archivo antes de cargarlo.' }
     ]);
     instructions.getRow(1).eachCell((cell) => { cell.font = { bold: true, color: { argb: 'FFFFFFFF' } }; cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF173B72' } }; });
 
+    return workbook;
+};
+
+const sendExcelWorkbook = async (res, workbook, filename) => {
     const buffer = await workbook.xlsx.writeBuffer();
     res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
-    res.setHeader('Content-Disposition', 'attachment; filename="Plantilla_Parqueaderos_PESV_UNICESMAG.xlsx"');
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
     return res.send(Buffer.from(buffer));
+};
+
+const downloadExcelTemplate = async (req, res) => {
+  try {
+    const workbook = await buildPesvExcelWorkbook();
+    return sendExcelWorkbook(res, workbook, 'Plantilla_Parqueaderos_PESV_UNICESMAG.xlsx');
   } catch (error) {
     return res.status(500).json({ success: false, message: 'No se pudo generar la plantilla Excel' });
+  }
+};
+
+const exportExcelData = async (req, res) => {
+  try {
+    const { data } = await getFilteredRows(req.query);
+    const workbook = await buildPesvExcelWorkbook(data);
+    const date = new Intl.DateTimeFormat('en-CA', {
+      timeZone: 'America/Bogota', year: 'numeric', month: '2-digit', day: '2-digit'
+    }).format(new Date());
+    return sendExcelWorkbook(res, workbook, `Base_Parqueaderos_PESV_UNICESMAG_${date}.xlsx`);
+  } catch (error) {
+    console.error('Error exportando registros PESV:', error);
+    return res.status(500).json({ success: false, message: 'No se pudo descargar la base de datos de parqueaderos' });
   }
 };
 
@@ -540,162 +676,155 @@ const notifyExpiry = async (req, res) => {
     const tipo = req.body?.tipo === 'tecnomecanica' ? 'tecnomecanica' : 'soat';
     const documentType = tipo === 'tecnomecanica' ? 'tecnomecánica' : 'SOAT';
     const field = documentType === 'SOAT' ? 'soat_vigencia' : 'tecnomecanica_vigencia';
+    const notificationField = documentType === 'SOAT' ? 'ultima_notificacion_soat' : 'ultima_notificacion_tecnomecanica';
     const date = row[field];
     if (!date) return res.status(400).json({ success: false, message: `No existe una fecha verificable de ${documentType}` });
+    const remainingDays = daysUntil(date);
+    if (remainingDays > 30) {
+      return res.status(409).json({
+        success: false,
+        message: `El aviso de ${documentType} estará disponible cuando falten 30 días o menos para su vencimiento`
+      });
+    }
+
+    const formatNotificationDate = (value) => new Intl.DateTimeFormat('es-CO', {
+      timeZone: 'America/Bogota', dateStyle: 'long', timeStyle: 'short'
+    }).format(new Date(value)).replace(/\.$/, '');
+    if (row[notificationField]) {
+      return res.status(409).json({
+        success: false,
+        alreadyNotified: true,
+        notifiedAt: row[notificationField],
+        message: `El aviso de ${documentType} ya fue enviado a ${row.correo} el ${formatNotificationDate(row[notificationField])}. No se envió un correo duplicado.`
+      });
+    }
+
+    const claimAt = new Date();
+    const [claimed] = await PesvParqueaderoRegistro.update(
+      { [notificationField]: claimAt, actualizado_por: req.user?.id },
+      { where: { id: row.id, [notificationField]: null } }
+    );
+    if (!claimed) {
+      const refreshed = await PesvParqueaderoRegistro.findByPk(row.id);
+      const notifiedAt = refreshed?.[notificationField] || null;
+      return res.status(409).json({
+        success: false,
+        alreadyNotified: true,
+        notifiedAt,
+        message: notifiedAt
+          ? `El aviso de ${documentType} ya fue enviado a ${row.correo} el ${formatNotificationDate(notifiedAt)}. No se envió un correo duplicado.`
+          : `El aviso de ${documentType} ya está siendo procesado. No se envió un correo duplicado.`
+      });
+    }
+
     const result = await sendPesvExpiryNotification(row, tipo);
-    if (!result.success) return res.status(503).json({ success: false, message: `No se pudo enviar el correo: ${result.error}` });
-    const notificationField = documentType === 'SOAT' ? 'ultima_notificacion_soat' : 'ultima_notificacion_tecnomecanica';
-    await row.update({ [notificationField]: new Date(), actualizado_por: req.user?.id });
+    if (!result.success) {
+      await PesvParqueaderoRegistro.update({ [notificationField]: null }, { where: { id: row.id, [notificationField]: claimAt } });
+      return res.status(503).json({ success: false, message: `No se pudo enviar el correo: ${result.error}` });
+    }
     return res.json({ success: true, message: `Notificación de ${documentType} enviada a ${row.correo}` });
   } catch (error) { return res.status(500).json({ success: false, message: 'No se pudo enviar la notificación' }); }
 };
 
+const normalizeInstitutionalText = (value = '') => String(value || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim().toUpperCase();
+const institutionalPeriodRank = (value = '') => {
+  const text = normalizeInstitutionalText(value);
+  if (/(^|\s)(IIP|II|2|SEGUNDO)(\s|$)/.test(text)) return 2;
+  if (/(^|\s)(IP|I|1|PRIMERO)(\s|$)/.test(text)) return 1;
+  return Number.parseInt(text.replace(/\D/g, ''), 10) || 0;
+};
+const institutionalPeriodScore = (row, periodField = 'periodo') => (Number(row?.anio) || 0) * 10 + institutionalPeriodRank(row?.[periodField]);
+const latestInstitutionalRow = (rows = [], periodField = 'periodo') => [...rows].sort((a, b) =>
+  institutionalPeriodScore(b, periodField) - institutionalPeriodScore(a, periodField) || (Number(b.id) || 0) - (Number(a.id) || 0)
+)[0] || null;
+const matriculatedFullName = (row = {}) => [row.primer_nombre, row.segundo_nombre, row.primer_apellido, row.segundo_apellido]
+  .map((value) => String(value || '').trim()).filter(Boolean).join(' ');
+
 const lookupPersona = async (req, res) => {
   try {
     const rawIdentificacion = clean(req.query.identificacion, 60);
-    if (!rawIdentificacion || rawIdentificacion.trim().length < 3) {
-      return res.json({ success: true, found: false, data: null });
-    }
+    if (!rawIdentificacion || rawIdentificacion.trim().length < 3) return res.json({ success: true, found: false, data: null });
     const cleanId = rawIdentificacion.replace(/[^a-zA-Z0-9]/g, '');
+    const normalizedMatch = (column) => sequelize.where(sequelize.fn('REGEXP_REPLACE', sequelize.col(column), '[^a-zA-Z0-9]', 'g'), cleanId);
 
-    // 1. Buscar primero en registros existentes de Parqueaderos PESV
-    const pesvRow = await PesvParqueaderoRegistro.findOne({
-      where: sequelize.where(sequelize.fn('REGEXP_REPLACE', sequelize.col('identificacion'), '[^a-zA-Z0-9]', 'g'), cleanId),
-      order: [['id', 'DESC']]
-    });
-    if (pesvRow) {
-      return res.json({
-        success: true,
-        found: true,
-        source: 'Registros PESV Parqueaderos',
-        data: {
-          identificacion: pesvRow.identificacion || rawIdentificacion,
-          nombres_apellidos: pesvRow.nombres_apellidos || '',
-          correo: pesvRow.correo || '',
-          vinculacion: pesvRow.vinculacion || '',
-          dependencia_programa: pesvRow.dependencia_programa || '',
-          campus: pesvRow.campus || ''
-        }
-      });
+    const [pesvRow, userRows, docenteRows, adminRows, caracterizacionRows, matriculadoRows] = await Promise.all([
+      PesvParqueaderoRegistro.findOne({ where: normalizedMatch('identificacion'), order: [['id', 'DESC']] }),
+      User ? User.findAll({ where: normalizedMatch('username'), order: [['updated_at', 'DESC'], ['id', 'DESC']] }) : [],
+      RecursoHumanoDocente ? RecursoHumanoDocente.findAll({ where: normalizedMatch('identificacion') }) : [],
+      RecursoHumanoAdministrativo ? RecursoHumanoAdministrativo.findAll({ where: normalizedMatch('numero_cedula') }) : [],
+      PoblacionalCaracterizacion ? PoblacionalCaracterizacion.findAll({ where: normalizedMatch('no_identificacion') }) : [],
+      PoblacionalMatriculado ? PoblacionalMatriculado.findAll({ where: normalizedMatch('numero_documento') }) : []
+    ]);
+
+    const userRow = userRows[0] || null;
+    const docenteRow = latestInstitutionalRow(docenteRows);
+    const activeAdminRows = adminRows.filter((row) => !row.estado_laboral || normalizeInstitutionalText(row.estado_laboral).includes('ACTIVO'));
+    const adminRow = latestInstitutionalRow(activeAdminRows.length ? activeAdminRows : adminRows);
+    const caracterizacionRow = latestInstitutionalRow(caracterizacionRows);
+    const matriculadoRow = latestInstitutionalRow(matriculadoRows, 'semestre');
+    const cargoText = normalizeInstitutionalText(userRow?.cargo);
+    const explicitUserType = cargoText.includes('DOCENTE') ? 'DOCENTE'
+      : cargoText.includes('ESTUDIANTE') ? 'ESTUDIANTE'
+        : cargoText ? 'ADMINISTRATIVO' : null;
+    const docenteScore = institutionalPeriodScore(docenteRow);
+    const adminScore = institutionalPeriodScore(adminRow);
+    const employeeType = docenteScore >= adminScore && docenteRow ? 'DOCENTE' : adminRow ? 'ADMINISTRATIVO' : docenteRow ? 'DOCENTE' : null;
+    const employeeScore = Math.max(docenteScore, adminScore);
+    const studentScore = Math.max(institutionalPeriodScore(matriculadoRow, 'semestre'), institutionalPeriodScore(caracterizacionRow));
+    const vinculacion = explicitUserType || (studentScore > employeeScore ? 'ESTUDIANTE' : employeeType) || (matriculadoRow || caracterizacionRow ? 'ESTUDIANTE' : userRow ? 'ADMINISTRATIVO' : null);
+
+    const pesvFallback = pesvRow ? {
+      identificacion: pesvRow.identificacion, nombres_apellidos: pesvRow.nombres_apellidos, correo: pesvRow.correo,
+      dependencia_programa: pesvRow.dependencia_programa, campus: pesvRow.campus
+    } : {};
+    const commonFallback = {
+      identificacion: userRow?.username || rawIdentificacion,
+      nombres_apellidos: userRow?.nombre || pesvFallback.nombres_apellidos || '',
+      correo: userRow?.email || caracterizacionRow?.correo_electronico || pesvFallback.correo || '',
+      campus: pesvFallback.campus || ''
+    };
+    let data = null;
+    let source = '';
+    let sourcePeriod = '';
+
+    if (vinculacion === 'DOCENTE') {
+      data = {
+        ...commonFallback,
+        identificacion: docenteRow?.identificacion || commonFallback.identificacion,
+        nombres_apellidos: userRow?.nombre || docenteRow?.docente || commonFallback.nombres_apellidos,
+        vinculacion: 'DOCENTE',
+        dependencia_programa: docenteRow?.departamento_dependencia || docenteRow?.programa || userRow?.dependencia || pesvFallback.dependencia_programa || ''
+      };
+      source = docenteRow ? 'Base de Docentes' : 'Usuario SIAC · cargo docente';
+      sourcePeriod = docenteRow ? `${docenteRow.anio || ''} ${docenteRow.periodo || ''}`.trim() : '';
+    } else if (vinculacion === 'ADMINISTRATIVO') {
+      data = {
+        ...commonFallback,
+        identificacion: adminRow?.numero_cedula || commonFallback.identificacion,
+        nombres_apellidos: userRow?.nombre || adminRow?.nombre_empleado || commonFallback.nombres_apellidos,
+        vinculacion: 'ADMINISTRATIVO',
+        dependencia_programa: adminRow?.dependencia || userRow?.dependencia || adminRow?.vicerectoria || pesvFallback.dependencia_programa || ''
+      };
+      source = adminRow ? 'Base de Administrativos' : 'Usuarios del Sistema SIAC';
+      sourcePeriod = adminRow ? `${adminRow.anio || ''} ${adminRow.periodo || ''}`.trim() : '';
+    } else if (vinculacion === 'ESTUDIANTE') {
+      data = {
+        ...commonFallback,
+        identificacion: matriculadoRow?.numero_documento || caracterizacionRow?.no_identificacion || commonFallback.identificacion,
+        nombres_apellidos: matriculatedFullName(matriculadoRow) || caracterizacionRow?.apellidos_nombres || commonFallback.nombres_apellidos,
+        correo: userRow?.email || caracterizacionRow?.correo_electronico || pesvFallback.correo || '',
+        vinculacion: 'ESTUDIANTE',
+        dependencia_programa: matriculadoRow?.programa || caracterizacionRow?.programa || matriculadoRow?.facultad || pesvFallback.dependencia_programa || ''
+      };
+      source = matriculadoRow ? 'Base de Matriculados' : 'Base de Caracterización Estudiantil';
+      sourcePeriod = matriculadoRow ? `${matriculadoRow.anio || ''}-${matriculadoRow.semestre || ''}`.replace(/-$/, '') : `${caracterizacionRow?.anio || ''} ${caracterizacionRow?.periodo || ''}`.trim();
+    } else if (pesvRow) {
+      data = { ...commonFallback, vinculacion: pesvRow.vinculacion || '', dependencia_programa: pesvFallback.dependencia_programa || '' };
+      source = 'Registros PESV Parqueaderos (respaldo)';
     }
 
-    // 2. Buscar en Usuarios del sistema SIAC
-    if (User) {
-      const userRow = await User.findOne({
-        where: sequelize.where(sequelize.fn('REGEXP_REPLACE', sequelize.col('username'), '[^a-zA-Z0-9]', 'g'), cleanId)
-      });
-      if (userRow) {
-        return res.json({
-          success: true,
-          found: true,
-          source: 'Usuarios del Sistema SIAC',
-          data: {
-            identificacion: userRow.username || rawIdentificacion,
-            nombres_apellidos: userRow.nombre || '',
-            correo: userRow.email || '',
-            vinculacion: userRow.role === 'DOCENTE' ? 'DOCENTE' : userRow.role === 'ADMINISTRATIVO' ? 'ADMINISTRATIVO' : userRow.cargo || 'ADMINISTRATIVO',
-            dependencia_programa: userRow.dependencia || userRow.programa || '',
-            campus: ''
-          }
-        });
-      }
-    }
-
-    // 3. Buscar en Recurso Humano Docentes
-    if (RecursoHumanoDocente) {
-      const docenteRow = await RecursoHumanoDocente.findOne({
-        where: sequelize.where(sequelize.fn('REGEXP_REPLACE', sequelize.col('identificacion'), '[^a-zA-Z0-9]', 'g'), cleanId),
-        order: [['anio', 'DESC'], ['id', 'DESC']]
-      });
-      if (docenteRow) {
-        return res.json({
-          success: true,
-          found: true,
-          source: 'Base de Docentes',
-          data: {
-            identificacion: docenteRow.identificacion || rawIdentificacion,
-            nombres_apellidos: docenteRow.docente || '',
-            correo: docenteRow.correo || '',
-            vinculacion: 'DOCENTE',
-            dependencia_programa: docenteRow.programa || docenteRow.facultad || '',
-            campus: ''
-          }
-        });
-      }
-    }
-
-    // 4. Buscar en Recurso Humano Administrativos
-    if (RecursoHumanoAdministrativo) {
-      const adminRow = await RecursoHumanoAdministrativo.findOne({
-        where: sequelize.where(sequelize.fn('REGEXP_REPLACE', sequelize.col('numero_cedula'), '[^a-zA-Z0-9]', 'g'), cleanId),
-        order: [['id', 'DESC']]
-      });
-      if (adminRow) {
-        return res.json({
-          success: true,
-          found: true,
-          source: 'Base de Administrativos',
-          data: {
-            identificacion: adminRow.numero_cedula || rawIdentificacion,
-            nombres_apellidos: adminRow.nombre_empleado || '',
-            correo: '',
-            vinculacion: 'ADMINISTRATIVO',
-            dependencia_programa: adminRow.dependencia || adminRow.vicerectoria || adminRow.cargo_especifico || '',
-            campus: ''
-          }
-        });
-      }
-    }
-
-    // 5. Buscar en Caracterización Estudiantil
-    if (PoblacionalCaracterizacion) {
-      const estudianteRow = await PoblacionalCaracterizacion.findOne({
-        where: sequelize.where(sequelize.fn('REGEXP_REPLACE', sequelize.col('no_identificacion'), '[^a-zA-Z0-9]', 'g'), cleanId),
-        order: [['anio', 'DESC'], ['id', 'DESC']]
-      });
-      if (estudianteRow) {
-        return res.json({
-          success: true,
-          found: true,
-          source: 'Base de Caracterización Estudiantil',
-          data: {
-            identificacion: estudianteRow.no_identificacion || rawIdentificacion,
-            nombres_apellidos: estudianteRow.apellidos_nombres || '',
-            correo: estudianteRow.correo_electronico || '',
-            vinculacion: 'ESTUDIANTE',
-            dependencia_programa: estudianteRow.programa || '',
-            campus: ''
-          }
-        });
-      }
-    }
-
-    // 6. Buscar en Matriculados
-    if (PoblacionalMatriculado) {
-      const matriculadoRow = await PoblacionalMatriculado.findOne({
-        where: sequelize.where(sequelize.fn('REGEXP_REPLACE', sequelize.col('numero_documento'), '[^a-zA-Z0-9]', 'g'), cleanId),
-        order: [['anio', 'DESC'], ['id', 'DESC']]
-      });
-      if (matriculadoRow) {
-        const fullNombre = [matriculadoRow.primer_nombre, matriculadoRow.segundo_nombre, matriculadoRow.primer_apellido, matriculadoRow.segundo_apellido]
-          .filter(Boolean).join(' ').trim();
-        return res.json({
-          success: true,
-          found: true,
-          source: 'Base de Matriculados',
-          data: {
-            identificacion: matriculadoRow.numero_documento || rawIdentificacion,
-            nombres_apellidos: fullNombre,
-            correo: '',
-            vinculacion: 'ESTUDIANTE',
-            dependencia_programa: matriculadoRow.programa || matriculadoRow.facultad || '',
-            campus: ''
-          }
-        });
-      }
-    }
-
-    return res.json({ success: true, found: false, data: null });
+    if (!data) return res.json({ success: true, found: false, data: null });
+    return res.json({ success: true, found: true, source: sourcePeriod ? `${source} · período ${sourcePeriod}` : source, data });
   } catch (error) {
     console.error('Error buscando persona por identificación:', error);
     return res.status(500).json({ success: false, message: 'No se pudo buscar la persona' });
@@ -703,7 +832,7 @@ const lookupPersona = async (req, res) => {
 };
 
 module.exports = {
-  list, create, update, remove, importExcel, downloadExcelTemplate, notifyExpiry,
+  list, create, update, remove, importExcel, downloadExcelTemplate, exportExcelData, notifyExpiry,
   startRuntValidation, captureManualRuntResult, getRuntValidation,
-  confirmRuntValidation, getRuntHistory, lookupPersona
+  confirmRuntValidation, notifyRuntUpdate, getRuntHistory, lookupPersona
 };

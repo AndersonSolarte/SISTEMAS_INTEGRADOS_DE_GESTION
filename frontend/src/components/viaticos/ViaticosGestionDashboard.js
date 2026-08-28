@@ -93,6 +93,7 @@ export default function ViaticosGestionDashboard({ user, onBack }) {
   const [stats, setStats] = useState(null);
   const [filter, setFilter] = useState('todas');
   const [selected, setSelected] = useState(null);
+  const [detailRow, setDetailRow] = useState(null);
   const [editValues, setEditValues] = useState({});
   const [notes, setNotes] = useState('');
   const [saving, setSaving] = useState(false);
@@ -145,6 +146,34 @@ export default function ViaticosGestionDashboard({ user, onBack }) {
       enqueueSnackbar('Legalización validada y enviada.', { variant: 'success' }); setSelected(null); await load();
     } catch (error) { enqueueSnackbar(error.response?.data?.message || 'No fue posible validar.', { variant: 'error' }); }
     finally { setSaving(false); }
+  };
+
+  const getLastSignatureDate = (row) => {
+    if (!row) return null;
+    const traces = Array.isArray(row.trazabilidad) ? row.trazabilidad : [];
+    if (traces.length > 0) {
+      const lastTrace = traces[traces.length - 1];
+      if (lastTrace?.at) return lastTrace.at;
+    }
+    return row.updatedAt || row.updated_at || row.createdAt || row.created_at || null;
+  };
+
+  const openStageAction = (row) => {
+    if (row.token_etapa === 'tecnico_contable' || row.estado === 'pendiente_tecnico_contable') {
+      window.open(`/api/desplazamientos-viaticos/accion/${row.token_accion_hash || row.token}`, '_blank');
+      return;
+    }
+    if (row.token_etapa === 'tesoreria' || row.estado === 'pendiente_tesoreria') {
+      window.open(`/api/desplazamientos-viaticos/accion/${row.token_accion_hash || row.token}`, '_blank');
+      return;
+    }
+    if (row.legalizacion) {
+      openReview(row);
+      return;
+    }
+    if (row.token_accion_hash) {
+      window.open(`/api/desplazamientos-viaticos/accion/${row.token_accion_hash}`, '_blank');
+    }
   };
 
   const segments = [
@@ -265,25 +294,68 @@ export default function ViaticosGestionDashboard({ user, onBack }) {
         })}
       </Box>
       <TableContainer component={Paper} variant="outlined" sx={{ borderRadius: 3, maxWidth: '100%', overflowX: 'auto', boxShadow: '0 10px 28px rgba(15,23,42,.05)' }}>
-        <Table sx={{ minWidth: 1120 }}>
-          <TableHead><TableRow sx={{ bgcolor: '#f8fafc' }}><TableCell>Consecutivo</TableCell><TableCell>Colaborador</TableCell><TableCell>Estado del trámite</TableCell><TableCell>Legalización</TableCell><TableCell align="center">Soportes</TableCell><TableCell>Presentada</TableCell><TableCell align="right">Anticipo</TableCell><TableCell align="center">Revisión</TableCell></TableRow></TableHead>
+        <Table sx={{ minWidth: 1220 }}>
+          <TableHead><TableRow sx={{ bgcolor: '#f8fafc' }}><TableCell sx={{ fontSize: 11, fontWeight: 900, color: '#334155' }}>Consecutivo</TableCell><TableCell sx={{ fontSize: 11, fontWeight: 900, color: '#334155' }}>Colaborador</TableCell><TableCell sx={{ fontSize: 11, fontWeight: 900, color: '#334155' }}>Estado del trámite</TableCell><TableCell sx={{ fontSize: 11, fontWeight: 900, color: '#334155' }}>F. Última Firma</TableCell><TableCell sx={{ fontSize: 11, fontWeight: 900, color: '#334155' }}>Legalización</TableCell><TableCell align="center" sx={{ fontSize: 11, fontWeight: 900, color: '#334155' }}>Soportes</TableCell><TableCell sx={{ fontSize: 11, fontWeight: 900, color: '#334155' }}>Presentada</TableCell><TableCell align="right" sx={{ fontSize: 11, fontWeight: 900, color: '#334155' }}>Anticipo</TableCell><TableCell align="center" sx={{ fontSize: 11, fontWeight: 900, color: '#334155' }}>Gestión / Revisión</TableCell></TableRow></TableHead>
           <TableBody>
             {filtered.map((row) => {
               const legalStatus = legalizationStatus(row);
               const supportCount = row.legalizacion?.adjuntos?.length || 0;
               const canReview = Boolean(row.legalizacion);
+              const isTecnicoContableStep = row.estado === 'pendiente_tecnico_contable' || row.token_etapa === 'tecnico_contable';
+              const isTesoreriaStep = row.estado === 'pendiente_tesoreria' || row.token_etapa === 'tesoreria';
+
               return <TableRow key={row.id} hover sx={{ '&:last-child td': { borderBottom: 0 } }}>
-                <TableCell><Typography fontWeight={900} color="#0b3a6f">{row.consecutivo}</Typography>{row._demo && <Chip label="PRUEBA" size="small" sx={{ mt: .5, height: 19, bgcolor: '#e0f2fe', color: '#0369a1', fontWeight: 900, fontSize: 9 }} />}</TableCell>
-                <TableCell><Typography fontWeight={750}>{row.solicitante_snapshot?.nombre}</Typography><Typography variant="caption" color="text.secondary">{row.datos_laborales?.dependencia}</Typography></TableCell>
-                <TableCell><Chip size="small" color={row.estado === 'no_aprobada' ? 'error' : 'primary'} variant="outlined" label={stateLabel(row)} sx={{ maxWidth: 260 }} /></TableCell>
+                <TableCell><Typography fontWeight={900} color="#0b3a6f" sx={{ fontSize: 11.5 }}>{row.consecutivo}</Typography>{row._demo && <Chip label="PRUEBA" size="small" sx={{ mt: .5, height: 19, bgcolor: '#e0f2fe', color: '#0369a1', fontWeight: 900, fontSize: 9 }} />}</TableCell>
+                <TableCell><Typography fontWeight={750} sx={{ fontSize: 11.5 }}>{row.solicitante_snapshot?.nombre}</Typography><Typography variant="caption" color="text.secondary" sx={{ fontSize: 10.5 }}>{row.datos_laborales?.dependencia}</Typography></TableCell>
+                <TableCell><Chip size="small" color={row.estado === 'no_aprobada' ? 'error' : 'primary'} variant="outlined" label={stateLabel(row)} sx={{ maxWidth: 260, fontSize: 10.5 }} /></TableCell>
+                <TableCell sx={{ py: 0.8, px: 0.8 }}>
+                  {(() => {
+                    const rawDate = getLastSignatureDate(row);
+                    if (!rawDate) return <Typography sx={{ fontSize: 10.5, color: '#94a3b8', fontStyle: 'italic' }}>Pendiente</Typography>;
+                    const dateObj = new Date(rawDate);
+                    if (Number.isNaN(dateObj.getTime())) return <Typography sx={{ fontSize: 10.5, color: '#94a3b8' }}>-</Typography>;
+                    return (
+                      <Stack spacing={0.1}>
+                        <Typography sx={{ fontSize: 11, fontWeight: 700, color: '#334155', lineHeight: 1.15 }}>
+                          {dateObj.toLocaleDateString('es-CO')}
+                        </Typography>
+                        <Typography sx={{ fontSize: 9.5, fontWeight: 600, color: '#64748b', lineHeight: 1.15 }}>
+                          {dateObj.toLocaleTimeString('es-CO', { hour: 'numeric', minute: '2-digit' })}
+                        </Typography>
+                      </Stack>
+                    );
+                  })()}
+                </TableCell>
                 <TableCell><Chip size="small" icon={legalStatus.label === 'Gestionada' ? <VerifiedRoundedIcon /> : legalStatus.label === 'Por revisar' ? <ScheduleRoundedIcon /> : undefined} label={legalStatus.label} sx={{ color: legalStatus.color, bgcolor: legalStatus.soft, border: `1px solid ${legalStatus.color}35`, fontWeight: 850, '& .MuiChip-icon': { color: legalStatus.color } }} /></TableCell>
                 <TableCell align="center"><Chip size="small" icon={<AttachFileRoundedIcon />} label={supportCount} variant={supportCount ? 'filled' : 'outlined'} sx={{ bgcolor: supportCount ? '#eef2ff' : 'transparent', color: supportCount ? '#4f46e5' : '#94a3b8', fontWeight: 900, '& .MuiChip-icon': { color: 'inherit' } }} /></TableCell>
                 <TableCell><Typography variant="body2" color={row.legalizacion?.presentado_at ? '#334155' : '#94a3b8'}>{row.legalizacion?.presentado_at ? formatDateTime(row.legalizacion.presentado_at) : 'Aún no presentada'}</Typography></TableCell>
                 <TableCell align="right"><Typography fontWeight={900}>{currency(row.liquidacion?.totalAnticipo)}</Typography></TableCell>
-                <TableCell align="center"><Tooltip title={canReview ? (legalStatus.label === 'Gestionada' ? 'Consultar legalización gestionada' : 'Abrir revisión') : 'El colaborador aún no ha presentado la legalización'}><span><IconButton disabled={!canReview} onClick={() => openReview(row)} sx={{ color: canReview ? legalStatus.color : '#cbd5e1', bgcolor: canReview ? legalStatus.soft : 'transparent', border: `1px solid ${canReview ? `${legalStatus.color}35` : '#e2e8f0'}`, '&:hover': { bgcolor: canReview ? `${legalStatus.color}18` : 'transparent' } }}><VisibilityRoundedIcon /></IconButton></span></Tooltip></TableCell>
+                <TableCell align="center">
+                  {isTecnicoContableStep ? (
+                    <Button size="small" variant="contained" color="primary" onClick={() => openStageAction(row)} sx={{ textTransform: 'none', fontWeight: 850, fontSize: 11, borderRadius: 2 }}>
+                      Liquidar
+                    </Button>
+                  ) : isTesoreriaStep ? (
+                    <Button size="small" variant="contained" color="info" onClick={() => openStageAction(row)} sx={{ textTransform: 'none', fontWeight: 850, fontSize: 11, borderRadius: 2 }}>
+                      Autorizar Pago
+                    </Button>
+                  ) : canReview ? (
+                    <Tooltip title={legalStatus.label === 'Gestionada' ? 'Consultar legalización gestionada' : 'Abrir revisión de legalización'}>
+                      <IconButton onClick={() => openReview(row)} sx={{ color: legalStatus.color, bgcolor: legalStatus.soft, border: `1px solid ${legalStatus.color}35`, '&:hover': { bgcolor: `${legalStatus.color}18` } }}>
+                        <VisibilityRoundedIcon />
+                      </IconButton>
+                    </Tooltip>
+                  ) : (
+                    <Tooltip title="Consultar detalle del trámite y trazabilidad">
+                      <IconButton onClick={() => setDetailRow(row)} sx={{ color: '#0b3a6f', bgcolor: '#eff6ff', border: '1px solid #bfdbfe', '&:hover': { bgcolor: '#dbeafe' } }}>
+                        <VisibilityRoundedIcon />
+                      </IconButton>
+                    </Tooltip>
+                  )}
+                </TableCell>
               </TableRow>;
             })}
-            {filtered.length === 0 && <TableRow><TableCell colSpan={8} align="center" sx={{ py: 5 }}><Typography fontWeight={800} color="text.secondary">No hay solicitudes en este estado.</Typography></TableCell></TableRow>}
+            {filtered.length === 0 && <TableRow><TableCell colSpan={9} align="center" sx={{ py: 5 }}><Typography fontWeight={800} color="text.secondary">No hay solicitudes en este estado.</Typography></TableCell></TableRow>}
           </TableBody>
         </Table>
       </TableContainer>
@@ -350,6 +422,71 @@ export default function ViaticosGestionDashboard({ user, onBack }) {
       <DialogTitle sx={{ fontWeight: 950, color: '#0b3a6f' }}>Confirmar validación final</DialogTitle>
       <DialogContent dividers><Alert severity="warning" sx={{ mb: 1.5 }}>Esta actuación finaliza la legalización y no podrá editarse nuevamente.</Alert><Typography>Al confirmar, se generará el PDF firmado, se enviará junto con los soportes al colaborador y al Técnico Contable, y después se eliminarán los anexos temporales del servidor.</Typography></DialogContent>
       <DialogActions sx={{ p: 2 }}><Button disabled={saving} onClick={() => setConfirmValidationOpen(false)}>Cancelar</Button><Button disabled={saving} variant="contained" color="success" startIcon={saving ? <CircularProgress size={18} color="inherit" /> : <CheckCircleRoundedIcon />} onClick={validate}>Confirmar y finalizar</Button></DialogActions>
+    </Dialog>
+    <Dialog open={Boolean(detailRow)} onClose={() => setDetailRow(null)} fullWidth maxWidth="md" PaperProps={{ sx: { borderRadius: 3 } }}>
+      <DialogTitle sx={{ background: 'linear-gradient(120deg, #082f5f, #2563eb)', color: '#fff' }}>
+        <Stack direction="row" justifyContent="space-between" alignItems="center">
+          <Box>
+            <Typography variant="overline" sx={{ color: '#bfdbfe', fontWeight: 900 }}>Detalle de la Solicitud</Typography>
+            <Typography variant="h6" fontWeight={950}>{detailRow?.consecutivo}</Typography>
+          </Box>
+          {detailRow && <Chip label={stateLabel(detailRow)} sx={{ bgcolor: 'rgba(255,255,255,.2)', color: '#fff', fontWeight: 850 }} />}
+        </Stack>
+      </DialogTitle>
+      <DialogContent dividers sx={{ p: 3, bgcolor: '#f8fafc' }}>
+        {detailRow && (
+          <Stack spacing={2}>
+            <Paper variant="outlined" sx={{ p: 2, borderRadius: 2.5, bgcolor: '#fff' }}>
+              <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', sm: 'repeat(2, 1fr)' }, gap: 2 }}>
+                <Box>
+                  <Typography variant="caption" color="text.secondary" fontWeight={800}>COLABORADOR</Typography>
+                  <Typography fontWeight={850}>{detailRow.solicitante_snapshot?.nombre || 'Sin registrar'}</Typography>
+                </Box>
+                <Box>
+                  <Typography variant="caption" color="text.secondary" fontWeight={800}>DEPENDENCIA</Typography>
+                  <Typography fontWeight={750}>{detailRow.datos_laborales?.dependencia || 'Sin registrar'}</Typography>
+                </Box>
+                <Box>
+                  <Typography variant="caption" color="text.secondary" fontWeight={800}>ANTICIPO CALCULADO</Typography>
+                  <Typography fontWeight={900} color="#059669">{currency(detailRow.liquidacion?.totalAnticipo)}</Typography>
+                </Box>
+                <Box>
+                  <Typography variant="caption" color="text.secondary" fontWeight={800}>ÚLTIMA FIRMA / GESTIÓN</Typography>
+                  <Typography fontWeight={750}>{formatDateTime(getLastSignatureDate(detailRow))}</Typography>
+                </Box>
+              </Box>
+            </Paper>
+
+            <Typography variant="subtitle2" fontWeight={900} color="#0b3a6f">Historial y Trazabilidad de Aprobaciones</Typography>
+            <Stack spacing={1}>
+              {Array.isArray(detailRow.trazabilidad) && detailRow.trazabilidad.map((t, idx) => (
+                <Paper key={idx} variant="outlined" sx={{ p: 1.5, borderRadius: 2, bgcolor: '#fff' }}>
+                  <Stack direction="row" justifyContent="space-between" alignItems="center">
+                    <Box>
+                      <Typography variant="body2" fontWeight={800}>{t.evento || t.event || 'Firma / Actuación'}</Typography>
+                      <Typography variant="caption" color="text.secondary">{t.actor?.nombre || t.actor?.role || 'Sistema / Instancia'}</Typography>
+                    </Box>
+                    <Typography variant="caption" fontWeight={700} color="#475569">
+                      {t.at ? new Date(t.at).toLocaleString('es-CO') : '-'}
+                    </Typography>
+                  </Stack>
+                </Paper>
+              ))}
+              {(!detailRow.trazabilidad || detailRow.trazabilidad.length === 0) && (
+                <Alert severity="info" sx={{ borderRadius: 2 }}>Sin trazabilidad registrada aún.</Alert>
+              )}
+            </Stack>
+          </Stack>
+        )}
+      </DialogContent>
+      <DialogActions sx={{ p: 2 }}>
+        <Button onClick={() => setDetailRow(null)}>Cerrar</Button>
+        {detailRow && (detailRow.token_accion_hash || detailRow.token) && (
+          <Button variant="contained" color="primary" onClick={() => openStageAction(detailRow)}>
+            Ir a la gestión del paso
+          </Button>
+        )}
+      </DialogActions>
     </Dialog>
   </Box>;
 }

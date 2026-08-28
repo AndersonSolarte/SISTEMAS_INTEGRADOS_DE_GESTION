@@ -8,6 +8,8 @@ const { getDependencyEmail, RECTORIA_EMAIL } = require('../../../config/dependen
 const normalizeEmail = (email = '') => String(email || '').trim().toLowerCase();
 const sameExactEmail = (a = '', b = '') => Boolean(normalizeEmail(a) && normalizeEmail(a) === normalizeEmail(b));
 
+const INVESTIGATION_VICERRECTOR_EMAIL = process.env.REPORTE_SALIDA_VICERRECTORIA_INVESTIGACION_EMAIL || 'jajimenez@unicesmag.edu.co';
+
 class InvestigacionWorkflowStrategy extends BaseWorkflowStrategy {
   constructor() {
     super('vicerrectoria_investigacion');
@@ -15,8 +17,8 @@ class InvestigacionWorkflowStrategy extends BaseWorkflowStrategy {
 
   /**
    * Determina los destinatarios informativos de la dependencia al radicar.
-   * Exclusivo para Investigaciones: la Vicerrectoría (viceinvestiga@unicesmag.edu.co)
-   * recibe SIEMPRE el correo con botones de aprobación (forceApproval = true).
+   * Exclusivo para Investigaciones: los botones de aprobación de la Vicerrectoría (forceApproval = true)
+   * se envían ÚNICAMENTE al correo personal del Vicerrector Javier Jiménez (jajimenez@unicesmag.edu.co).
    */
   getDependencyNotificationTargets(solicitud = {}, helpers = {}) {
     const { getSolicitudLaboral } = helpers;
@@ -25,7 +27,7 @@ class InvestigacionWorkflowStrategy extends BaseWorkflowStrategy {
     const dependencia = laboral.dependencia || solicitante.dependencia || '';
     const vicerrectoria = laboral.vicerrectoria || solicitante.vicerrectoria || '';
     const dependenciaEmail = getDependencyEmail(dependencia);
-    const vicerrectoriaEmail = getDependencyEmail(vicerrectoria);
+    const vicerrectoriaEmail = INVESTIGATION_VICERRECTOR_EMAIL;
 
     const targets = [];
 
@@ -48,9 +50,12 @@ class InvestigacionWorkflowStrategy extends BaseWorkflowStrategy {
       });
     };
 
-    pushTarget(dependenciaEmail, dependencia, 'dependencia');
+    if (dependenciaEmail && !sameExactEmail(dependenciaEmail, INVESTIGATION_VICERRECTOR_EMAIL)) {
+      pushTarget(dependenciaEmail, dependencia, 'dependencia');
+    }
+
     if (vicerrectoria && vicerrectoriaEmail) {
-      // Vicerrectoría de Investigación recibe correo con botones de aprobación (forceApproval = true)
+      // Vicerrectoría de Investigación recibe correo con botones de aprobación (forceApproval = true) solo al correo personal de Javier Jiménez
       pushTarget(vicerrectoriaEmail, vicerrectoria, 'vicerrectoria', true);
     }
 
@@ -59,7 +64,7 @@ class InvestigacionWorkflowStrategy extends BaseWorkflowStrategy {
 
   /**
    * Determina la autoridad requerida después del jefe inmediato.
-   * Para Investigación: Garantiza que el correo sea enviado a viceinvestiga@unicesmag.edu.co.
+   * Para Investigación: Garantiza que los botones de aprobación sean enviados al correo personal de Javier Jiménez (jajimenez@unicesmag.edu.co).
    */
   getAuthorityAfterBoss(solicitud = {}, helpers = {}) {
     const { isOficioSolicitud, isPermisoElectoralSinVicerrectoria, getSolicitudLaboral } = helpers;
@@ -69,7 +74,7 @@ class InvestigacionWorkflowStrategy extends BaseWorkflowStrategy {
 
     const laboral = getSolicitudLaboral ? getSolicitudLaboral(solicitud) : (solicitud.datos_formulario?.laboral || {});
     const vicerrectoriaName = laboral.vicerrectoria || 'Vicerrectoria de Investigacion y Extension';
-    const email = getDependencyEmail(vicerrectoriaName) || 'viceinvestiga@unicesmag.edu.co';
+    const email = INVESTIGATION_VICERRECTOR_EMAIL;
 
     return {
       stage: 'vicerrectoria_academica',

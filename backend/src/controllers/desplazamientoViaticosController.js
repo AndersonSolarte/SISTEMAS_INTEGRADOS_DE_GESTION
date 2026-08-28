@@ -418,13 +418,10 @@ const buildApprovalPlan = ({ jefe = {}, laboral = {}, personal = {} }) => {
       fulfillsImmediateBoss: true
     });
     steps.push(financialReview);
-    steps.push({ key: 'sst', label: 'Seguridad y Salud en el Trabajo', email: recipients.sst, action: 'approval' });
   } else if (rectoriaAssignment) {
     if (!rectorIsBoss) {
       steps.push({ key: 'jefe', label: 'Jefe inmediato', email: normalizeEmail(jefe.email), action: 'approval' });
       steps.push(financialReview);
-      steps.push({ key: 'sst', label: 'Seguridad y Salud en el Trabajo', email: recipients.sst, action: 'approval' });
-      steps.push({ key: 'rectoria', label: 'Rectoría', email: recipients.rectoria, action: 'approval' });
     }
   } else if (academicAssignment) {
     const requesterName = normalize(personal.nombre);
@@ -476,10 +473,6 @@ const buildApprovalPlan = ({ jefe = {}, laboral = {}, personal = {} }) => {
     if (!academicViceIsBoss) {
       steps.push({ key: 'vicerrectoria_dependencia', label: 'Vicerrectoría Académica', email: recipients.academica, action: 'approval' });
     }
-    steps.push(
-      { key: 'sst', label: 'Seguridad y Salud en el Trabajo', email: recipients.sst, action: 'approval' },
-      { key: 'rectoria', label: 'Rectoría', email: recipients.rectoria, action: 'approval' }
-    );
   } else if (researchAssignment) {
     const vicePersonalEmail = normalizeEmail(jefe.email);
     const viceInstitutionalEmail = recipients.investigacion !== vicePersonalEmail ? recipients.investigacion : '';
@@ -494,11 +487,7 @@ const buildApprovalPlan = ({ jefe = {}, laboral = {}, personal = {} }) => {
       alternateAuthorityLabel: 'Vicerrectoría de Investigación y Extensión',
       alternateAbsenceRole: 'Vicerrector de Investigación y Extensión'
     });
-    steps.push(
-      financialReview,
-      { key: 'sst', label: 'Seguridad y Salud en el Trabajo', email: recipients.sst, action: 'approval' },
-      { key: 'rectoria', label: 'Rectoría', email: recipients.rectoria, action: 'approval' }
-    );
+    steps.push(financialReview);
   } else if (evangelizationAssignment) {
     const bossEmail = normalizeEmail(jefe.email);
     const viceIsBoss = isVicerrectorImmediateBoss(jefe, recipients.evangelizacion);
@@ -527,10 +516,6 @@ const buildApprovalPlan = ({ jefe = {}, laboral = {}, personal = {} }) => {
         action: 'approval'
       });
     }
-    steps.push(
-      { key: 'sst', label: 'Seguridad y Salud en el Trabajo', email: recipients.sst, action: 'approval' },
-      { key: 'rectoria', label: 'Rectoría', email: recipients.rectoria, action: 'approval' }
-    );
   } else {
     steps.push({ key: 'jefe', label: 'Jefe inmediato', email: normalizeEmail(jefe.email), action: 'approval' });
     steps.push(financialReview);
@@ -541,18 +526,24 @@ const buildApprovalPlan = ({ jefe = {}, laboral = {}, personal = {} }) => {
     if (viceDependenciaEmail && !financialViceEmails.has(viceDependenciaEmail)) {
       steps.push({ key: 'vicerrectoria_dependencia', label: laboral.vicerrectoria || 'Vicerrectoría correspondiente', email: viceDependenciaEmail, action: 'approval' });
     }
-    steps.push(
-      { key: 'rectoria', label: 'Rectoría', email: recipients.rectoria, action: 'approval' }
-    );
   }
   steps.push(
-    { key: 'gestion_humana', label: 'Oficina de Gestión del Talento Humano', email: recipients.gestionHumana, action: 'approval' },
     { key: 'sst', label: 'Seguridad y Salud en el Trabajo', email: recipients.sst, action: 'approval' },
+    { key: 'gestion_humana', label: 'Oficina de Gestión del Talento Humano', email: recipients.gestionHumana, action: 'approval' },
     { key: 'tecnico_contable', label: 'Técnico contable', email: recipients.tecnicoContable, action: 'liquidacion' },
     { key: 'tesoreria', label: 'Tesorería / Pagaduría', email: recipients.tesoreria, action: 'pago', infoEmails: [recipients.financiera] }
   );
+  const uniqueSteps = [];
+  const seenKeys = new Set();
+  for (const step of steps) {
+    if (!step.email) continue;
+    if (isJuanCarlosNandarRequest && step.key === 'financiera_previa') continue;
+    if (seenKeys.has(step.key)) continue;
+    seenKeys.add(step.key);
+    uniqueSteps.push(step);
+  }
   return {
-    steps: steps.filter((step) => step.email && !(isJuanCarlosNandarRequest && step.key === 'financiera_previa')),
+    steps: uniqueSteps,
     dependenciaEmail,
     rectoriaAssignment,
     academicAssignment,
@@ -972,11 +963,15 @@ const sendNormalReportFinalCopies = async (solicitud, report = null) => {
   const rectoriaFinalCopyEmail = isResearchVicerrectoriaAssignment(solicitud.datos_laborales)
     ? recipients.rectoria
     : '';
+  const researchInstitutionalEmail = isResearchVicerrectoriaAssignment(solicitud.datos_laborales)
+    ? 'viceinvestiga@unicesmag.edu.co'
+    : '';
   const targets = [...new Set([
     recipients.sst,
     recipients.gestionHumana,
     dependenciaEmail,
     authorityEmail,
+    researchInstitutionalEmail,
     rectoriaFinalCopyEmail
   ].filter(Boolean).map(normalizeEmail))];
   const results = await Promise.all(targets.map((email) => sendInstitutionalEmail({
@@ -997,65 +992,172 @@ const sendNormalReportFinalCopies = async (solicitud, report = null) => {
 const sendFinalizedCopies = async (solicitud) => {
   const recipients = getDesplazamientoViaticosRecipients();
   const normalReport = await getLinkedNormalReport(solicitud);
+  if (normalReport) {
+    const now = new Date();
+    await normalReport.update({
+      estado: 'finalizada',
+      finalizado_at: now,
+      trazabilidad: appendTrace(normalReport, 'finalizada', { nombre: 'Tesorería / Pagaduría', role: 'tesoreria' }, { pago_autorizado: true })
+    });
+  }
   const [liquidationPdfAttachment, normalReportPdfAttachment] = await Promise.all([
     buildLiquidationPdfAttachment(solicitud),
     normalReport ? ensureReporteSalidaPdf(normalReport) : Promise.resolve(null)
   ]);
   const supportAttachment = buildSupportAttachment(solicitud);
   const collaboratorEmail = normalizeEmail(solicitud.solicitante_snapshot?.email || solicitud.solicitante_snapshot?.correo);
-  const finalRecipients = [...new Set([
+
+  const dependenciaEmail = normalizeEmail(getDependencyEmail(solicitud.datos_laborales?.dependencia));
+  const jefeEmail = normalizeEmail(solicitud.datos_laborales?.jefeEmail || (solicitud.plan_aprobacion || []).find(s => s.key === 'jefe')?.email);
+  const researchVicerrectorEmail = isResearchVicerrectoriaAssignment(solicitud.datos_laborales)
+    ? recipients.investigacion
+    : '';
+
+  const allInvolvedRecipients = [...new Set([
     recipients.tecnicoContable,
     recipients.financiera,
     recipients.tesoreria,
     recipients.gestionHumana,
-    recipients.sst
+    recipients.sst,
+    dependenciaEmail,
+    jefeEmail,
+    viceEmail,
+    researchVicerrectorEmail,
+    recipients.rectoria
   ].filter(Boolean).map(normalizeEmail))];
+
+  const threadHeaders = getThreadHeaders(solicitud);
+  const pdfAttachments = [normalReportPdfAttachment, liquidationPdfAttachment, supportAttachment].filter(Boolean);
+
   const results = [];
   if (collaboratorEmail) {
     results.push(await sendInstitutionalEmail({
       to: collaboratorEmail,
-      subject: `${solicitud.consecutivo} | Pago autorizado - pendiente de legalización`,
-      text: `Tesorería/Pagaduría autorizó el pago de la solicitud ${solicitud.consecutivo}. Se adjuntan los dos formatos firmados. La legalización se habilitará en la fecha de regreso y tendrá un plazo de tres días hábiles.`,
+      subject: `${solicitud.consecutivo} | Pago autorizado y comision aprobada - Formatos firmados`,
+      text: `Tesorería/Pagaduría autorizó el pago de la solicitud ${solicitud.consecutivo}. Se adjuntan el Formato de Reporte de Salida (FR-002) y la Liquidación de Viáticos (FR-004) debidamente firmados.`,
       html: renderInstitutionalTemplate({
-        title: 'Pago autorizado · Pendiente de legalización',
-        introHtml: '<p style="margin: 0 0 10px 0;">Saludo de paz y bien,</p><p style="margin: 0 0 14px 0;">Tesorería / Pagaduría ha autorizado el pago de su anticipo de viáticos. Se remite copia del reporte de salida y de la liquidación oficial debidamente firmados. El módulo de legalización se habilitará automáticamente en la fecha de regreso y dispondrá de tres (3) días hábiles conforme al Acuerdo 001 de 2013.</p>',
+        title: 'Trámite Aprobado y Pago Autorizado',
+        introHtml: '<p style="margin: 0 0 10px 0;">Saludo de paz y bien,</p><p style="margin: 0 0 14px 0;">Tesorería / Pagaduría ha autorizado el pago de su anticipo de viáticos. Se remite copia de los dos formatos institucionales (Reporte de Salida y Liquidación de Viáticos) debidamente aprobados y firmados. El módulo de legalización se habilitará automáticamente en la fecha de regreso y dispondrá de tres (3) días hábiles conforme al Acuerdo 001 de 2013.</p>',
         bodyHtml: summaryHtml(solicitud)
       }),
-      attachments: [normalReportPdfAttachment, liquidationPdfAttachment, supportAttachment].filter(Boolean),
-      ...getThreadHeaders(solicitud)
+      attachments: pdfAttachments,
+      ...threadHeaders
     }));
   }
-  results.push(...await Promise.all(finalRecipients.map((email) => sendInstitutionalEmail({
+
+  results.push(...await Promise.all(allInvolvedRecipients.map((email) => sendInstitutionalEmail({
     to: email,
-    subject: `${solicitud.consecutivo} | Liquidación final y pago autorizado`,
-    text: `Tesorería/Pagaduría autorizó el pago de la liquidación de viáticos ${solicitud.consecutivo}. Se adjuntan el formato de salida y la liquidación de viáticos firmados.`,
+    subject: `${solicitud.consecutivo} | Proceso finalizado y pago autorizado - Formatos firmados`,
+    text: `Se informa que la comisión y liquidación de viáticos ${solicitud.consecutivo} ha completado exitosamente todo el flujo de visto bueno y pago. Se adjuntan los formatos de Reporte de Salida (FR-002) y Liquidación de Viáticos (FR-004) firmados.`,
     html: renderInstitutionalTemplate({
-      title: 'Liquidación final y pago autorizado',
-      introHtml: '<p style="margin: 0 0 10px 0;">Saludo de paz y bien,</p><p style="margin: 0 0 14px 0;">Tesorería / Pagaduría ha autorizado el pago del anticipo. Se adjuntan el reporte de salida y la liquidación final de viáticos con todas las firmas y actuaciones registradas.</p>',
+      title: 'Proceso Finalizado · Formatos Aprobados',
+      introHtml: '<p style="margin: 0 0 10px 0;">Saludo de paz y bien,</p><p style="margin: 0 0 14px 0;">Se remite copia final del proceso completado. Tesorería / Pagaduría ha autorizado el pago y la comisión cuenta con el visto bueno de todas las instancias (Jefatura, Vicerrectoría, SST, Gestión Humana, Contabilidad y Tesorería). Se adjuntan los formatos oficiales debidamente firmados.</p>',
       bodyHtml: summaryHtml(solicitud)
     }),
-    attachments: [normalReportPdfAttachment, liquidationPdfAttachment, supportAttachment].filter(Boolean),
-    ...getThreadHeaders(solicitud)
+    attachments: pdfAttachments,
+    ...threadHeaders
   }))));
+
   return { success: results.length > 0 && results.every((result) => result.success), results };
 };
 
+const isStepAlreadyApproved = (solicitud, step, linkedReport = null) => {
+  if (!step || !step.key) return false;
+  const traceList = Array.isArray(solicitud.trazabilidad) ? solicitud.trazabilidad : [];
+  const linkedTraceList = Array.isArray(linkedReport?.trazabilidad) ? linkedReport.trazabilidad : [];
+  const combinedTraces = [...traceList, ...linkedTraceList];
+  const key = step.key;
+
+  // 1. Coincidencia directa en trazabilidad por nombre del evento
+  const hasEventMatch = combinedTraces.some((t) => {
+    const ev = String(t?.event || '').toLowerCase();
+    return ev === `aprobado_${key}` || ev === `aprobada_${key}` || ev === `visto_bueno_${key}` || ev === `completado_${key}`;
+  });
+  if (hasEventMatch) return true;
+
+  // 2. Coincidencia por fecha de aprobación específica de cada rol en la solicitud o el reporte vinculado
+  if (key === 'rectoria' && (solicitud.rectoria_aprobado_at || linkedReport?.rectoria_aprobado_at)) return true;
+  if (key === 'sst' && (solicitud.sst_aprobado_at || linkedReport?.enviado_sst_at)) return true;
+  if (key === 'gestion_humana' && (solicitud.gestion_humana_aprobado_at || linkedReport?.gestion_humana_aprobado_at)) return true;
+  if (key === 'jefe' && (solicitud.jefe_aprobado_at || linkedReport?.jefe_aprobado_at)) return true;
+
+  // 3. Caso especial: El Rector es el jefe inmediato y ya aprobó previamente en la etapa de Jefe
+  if (key === 'rectoria') {
+    const jefeApprovedByRector = combinedTraces.some((t) => {
+      const ev = String(t?.event || '').toLowerCase();
+      const isJefeApproval = ev === 'aprobado_jefe' || ev === 'aprobada_jefe' || ev === 'visto_bueno_jefe';
+      const isRectorActor = String(t?.actor?.role || t?.actor?.nombre || t?.actor?.cargo || '').toLowerCase().includes('rector');
+      return isJefeApproval && isRectorActor;
+    });
+    if (jefeApprovedByRector) return true;
+  }
+
+  return false;
+};
+
 const advance = async (solicitud, actor, detail = {}) => {
-  const plan = [...(solicitud.plan_aprobacion || [])];
-  const current = plan[solicitud.paso_actual];
+  let rawPlan = [...(solicitud.plan_aprobacion || [])];
+
+  // Deduplicar etapas en el plan de aprobación de la solicitud
+  const uniquePlan = [];
+  const seenPlanKeys = new Set();
+  for (const s of rawPlan) {
+    if (!seenPlanKeys.has(s.key)) {
+      seenPlanKeys.add(s.key);
+      uniquePlan.push(s);
+    }
+  }
+  const plan = uniquePlan;
+  const current = plan[solicitud.paso_actual] || plan[plan.length - 1];
   const nextIndex = Number(solicitud.paso_actual || 0) + 1;
   const traceEvent = current.action === 'approval' ? `aprobado_${current.key}` : `completado_${current.key}`;
   solicitud.paso_actual = nextIndex;
   solicitud.trazabilidad = appendTrace(solicitud, traceEvent, actor, detail);
   solicitud.token_accion_hash = null;
   solicitud.token_etapa = null;
+
+  const linkedReport = await getLinkedNormalReport(solicitud);
+  let next = plan[nextIndex];
+  let currentIndex = nextIndex;
+
+  // Omitir automáticamente cualquier etapa cuya aprobación ya se encuentre registrada previamente
+  while (next && isStepAlreadyApproved(solicitud, next, linkedReport)) {
+    const autoTraceEvent = `aprobado_${next.key}`;
+    const autoDetail = {
+      omitido_envio_correo: true,
+      motivo: 'aprobacion_previa_registrada',
+      etapa_omitida: next.key
+    };
+    currentIndex += 1;
+    solicitud.paso_actual = currentIndex;
+    solicitud.trazabilidad = appendTrace(solicitud, autoTraceEvent, actor, autoDetail);
+    next = plan[currentIndex];
+  }
+
+  if (linkedReport && next) {
+    const reportStateMap = {
+      jefe: 'pendiente_aprobacion_jefe',
+      financiera_previa: 'pendiente_aprobacion_financiera_previa',
+      sst: 'pendiente_aprobacion_sst',
+      gestion_humana: 'pendiente_aprobacion_gestion_humana',
+      tecnico_contable: 'pendiente_tecnico_contable',
+      tesoreria: 'pendiente_tesoreria'
+    };
+    const nextReportState = reportStateMap[next.key] || `pendiente_${next.key}`;
+    await linkedReport.update({
+      estado: nextReportState,
+      trazabilidad: appendTrace(linkedReport, `etapa_${next.key}`, actor, { via: 'viaticos_flujo' })
+    });
+  }
+
   await solicitud.update({
-    paso_actual: nextIndex,
+    plan_aprobacion: plan,
+    paso_actual: currentIndex,
     trazabilidad: solicitud.trazabilidad,
     token_accion_hash: null,
     token_etapa: null
   });
-  const next = plan[nextIndex];
+
   if (!next) return null;
   const tokens = await issueTokens(solicitud, next);
   await emailStep(solicitud, next, tokens);
@@ -1080,7 +1182,13 @@ const validatePayload = (body = {}) => {
   if (!body.jefeInmediato?.email) issues.push('El jefe inmediato debe tener correo registrado.');
   if (!clean(body.laboral?.dependencia) || !clean(body.laboral?.cargo) || !clean(body.laboral?.vicerrectoria)) issues.push('La información laboral está incompleta.');
   if (!['Hotel', 'Casa de familia', 'No requiere'].includes(viaticos.alojamiento)) issues.push('Seleccione una opción válida de alojamiento.');
-  if (!['Terrestre', 'Aéreo', 'Mixto'].includes(viaticos.transporte)) issues.push('Seleccione una opción válida de transporte.');
+  const validTransportOptions = ['Terrestre', 'Terrestre Intermunicipal', 'Vehículo Propio', 'Aéreo', 'Mixto'];
+  const userTransportList = String(viaticos.transporte || '')
+    .split(',')
+    .map((item) => item.trim())
+    .filter(Boolean);
+  const isValidTransport = userTransportList.length > 0 && userTransportList.every((opt) => validTransportOptions.some((v) => opt.includes(v) || v.includes(opt)));
+  if (!isValidTransport) issues.push('Seleccione una opción válida de transporte.');
   if (!['Ahorros', 'Corriente'].includes(viaticos.tipoCuenta)) issues.push('Seleccione un tipo de cuenta válido.');
   const start = new Date(`${salida.fecha || ''}T${salida.horaInicio || ''}`);
   const end = new Date(`${salida.fechaRegreso || ''}T${salida.horaFin || ''}`);
@@ -1194,12 +1302,21 @@ const findProcessedAction = async (token) => {
     if (payload?.purpose !== 'desplazamiento_viaticos_action' || !payload.solicitudId || !payload.stage) return null;
     const solicitud = await DesplazamientoViaticosSolicitud.findByPk(payload.solicitudId);
     if (!solicitud) return null;
-    const trace = (solicitud.trazabilidad || []).find((entry) => (
-      entry.event === `aprobado_${payload.stage}`
-      || entry.event === `completado_${payload.stage}`
-      || entry.event === `no_aprobado_${payload.stage}`
-    ));
-    return trace ? { solicitud, stage: payload.stage, trace } : null;
+
+    const plan = solicitud.plan_aprobacion || [];
+    const stageIndex = plan.findIndex(s => s.key === payload.stage);
+    const isPastStage = stageIndex !== -1 && solicitud.paso_actual > stageIndex;
+
+    const trace = (solicitud.trazabilidad || []).find((entry) => {
+      const eventName = String(entry.event || '').toLowerCase();
+      const stageName = String(payload.stage || '').toLowerCase();
+      return eventName.includes(stageName);
+    });
+
+    if (isPastStage || trace || ['no_aprobada', 'finalizada', 'pago_autorizado_pendiente_legalizacion'].includes(solicitud.estado)) {
+      return { solicitud, stage: payload.stage, trace };
+    }
+    return null;
   } catch (_) {
     return null;
   }
@@ -1244,7 +1361,13 @@ const renderDepartureSignatures = (solicitud, currentStepKey) => {
   const plan = solicitud.plan_aprobacion || [];
   const txId = `SGC-DEV-${solicitud.id}-${solicitud.consecutivo || '2026'}`;
 
-  const departureSteps = plan.filter((step) => !['tecnico_contable', 'tesoreria'].includes(step.key));
+  const seenStepKeys = new Set();
+  const departureSteps = plan.filter((step) => {
+    if (['tecnico_contable', 'tesoreria'].includes(step.key)) return false;
+    if (seenStepKeys.has(step.key)) return false;
+    seenStepKeys.add(step.key);
+    return true;
+  });
 
   const formatTraceDate = (d) => {
     if (!d) return 'No registrado';
@@ -1687,19 +1810,62 @@ const liquidationRequestDocumentHtml = (solicitud, { currentStepKey = null, form
   const destination = viaticos.lugarVisitar || salida.entidadDestino || salida.municipio || salida.pais;
   const readonlyField = (label, value, className = '') => `<div class="fr004-field ${className}"><span>${escapeHtml(label)}</span><strong>${escapeHtml(value || 'No registrado')}</strong></div>`;
 
-  const centroCostoField = isTechnician
-    ? `<div class="fr004-field"><label for="centro-costo-input">Centro de costos asignado <span class="fr004-required">*</span></label><input class="fr004-editable" id="centro-costo-input" form="${formId}" name="centroCosto" maxlength="100" value="${escapeHtml(viaticos.centroCosto || '')}" placeholder="Digite el centro de costos" required></div>`
-    : `<div class="fr004-field"><label for="centro-costo-input">Centro de costos asignado</label><input class="fr004-editable" id="centro-costo-input" form="${formId}" name="centroCosto" maxlength="100" value="${escapeHtml(viaticos.centroCosto || '')}" placeholder="Centro de costos"></div>`;
+  const canEditLogistics = isTechnician || isTreasury || ['tecnico_contable', 'tesoreria', 'vicerrectoria_financiera', 'financiera_previa'].includes(currentStepKey);
+
+  const centroCostoField = canEditLogistics
+    ? `<div class="fr004-field"><label for="centro-costo-input">Centro de costos asignado <span class="fr004-required">*</span></label><input class="fr004-editable" id="centro-costo-input" form="${formId}" name="centroCosto" maxlength="100" value="${escapeHtml(viaticos.centroCosto || '')}" placeholder="Digite el centro de costos" ${isTechnician ? 'required' : ''}></div>`
+    : readonlyField('Centro de costos asignado', viaticos.centroCosto || 'No asignado');
 
   const alojamientoOptions = ['Hotel', 'Casa de familia', 'No requiere'];
   const currentAlojamiento = (viaticos.alojamiento || '').toLowerCase();
-  const alojamientoField = `<div class="fr004-field"><label for="alojamiento-input">Alojamiento <span class="fr004-required">*</span></label><select class="fr004-editable" id="alojamiento-input" form="${formId}" name="alojamiento" style="margin:2px 0 0;padding:5px 8px;border:1.5px solid #cbd5e1;background:#fff;color:#172033;font-size:11.5px;font-weight:700" required>${alojamientoOptions.map(opt => `<option value="${opt}"${currentAlojamiento.includes(opt.toLowerCase()) || (opt === 'Hotel' && !currentAlojamiento) ? ' selected' : ''}>${opt}</option>`).join('')}</select></div>`;
+  const alojamientoField = canEditLogistics
+    ? `<div class="fr004-field"><label for="alojamiento-input">Alojamiento <span class="fr004-required">*</span></label><select class="fr004-editable" id="alojamiento-input" form="${formId}" name="alojamiento" style="margin:2px 0 0;padding:5px 8px;border:1.5px solid #cbd5e1;background:#fff;color:#172033;font-size:11.5px;font-weight:700" required>${alojamientoOptions.map(opt => `<option value="${opt}"${currentAlojamiento.includes(opt.toLowerCase()) || (opt === 'Hotel' && !currentAlojamiento) ? ' selected' : ''}>${opt}</option>`).join('')}</select></div>`
+    : readonlyField('Alojamiento', viaticos.alojamiento || 'No requiere');
 
-  const transporteOptions = ['Terrestre', 'Aéreo', 'Mixto'];
-  const currentTransporte = (viaticos.transporte || '').toLowerCase();
-  const transporteField = `<div class="fr004-field"><label for="transporte-input">Transporte <span class="fr004-required">*</span></label><select class="fr004-editable" id="transporte-input" form="${formId}" name="transporte" style="margin:2px 0 0;padding:5px 8px;border:1.5px solid #cbd5e1;background:#fff;color:#172033;font-size:11.5px;font-weight:700" required>${transporteOptions.map(opt => `<option value="${opt}"${currentTransporte.includes(opt.toLowerCase()) || (opt === 'Aéreo' && !currentTransporte) ? ' selected' : ''}>${opt}</option>`).join('')}</select></div>`;
+  const allTransportOptions = [
+    'Terrestre Intermunicipal',
+    'Vehículo Propio',
+    'Aéreo'
+  ];
+  const rawTransporte = String(viaticos.transporte || '').trim();
+  const selectedTransports = rawTransporte.split(',').map(s => s.trim()).filter(Boolean);
 
-  const tipoCuentaField = `<div class="fr004-field"><label for="tipo-cuenta-input">Tipo de cuenta <span class="fr004-required">*</span></label><select class="fr004-editable" id="tipo-cuenta-input" form="${formId}" name="tipoCuenta" style="margin:2px 0 0;padding:5px 8px;border:1.5px solid #cbd5e1;background:#fff;color:#172033;font-size:11.5px;font-weight:700" required><option value="Ahorros"${viaticos.tipoCuenta === 'Ahorros' ? ' selected' : ''}>Ahorros</option><option value="Corriente"${viaticos.tipoCuenta === 'Corriente' ? ' selected' : ''}>Corriente</option></select></div>`;
+  const transportCheckboxesHtml = allTransportOptions.map(opt => {
+    const isChecked = selectedTransports.some(st => st.toLowerCase() === opt.toLowerCase()) || (selectedTransports.length === 0 && opt === 'Terrestre Intermunicipal');
+    return `
+      <label style="display:inline-flex;align-items:center;gap:6px;background:${isChecked ? '#eff6ff' : '#f8fafc'};color:${isChecked ? '#1d4ed8' : '#64748b'};border:1.5px solid ${isChecked ? '#3b82f6' : '#cbd5e1'};border-radius:6px;padding:3px 9px;font-size:11px;font-weight:800;cursor:pointer;user-select:none;margin:2px 4px 2px 0;">
+        <input type="checkbox" name="transporte_check_${formId}" value="${escapeHtml(opt)}"${isChecked ? ' checked' : ''} form="${formId}" onchange="updateTransporteValue_${formId}()" style="margin:0;cursor:pointer;">
+        ${escapeHtml(opt)}
+      </label>
+    `;
+  }).join('');
+
+  const transportBadgesHtml = selectedTransports.length > 0
+    ? selectedTransports.map(t => `<span style="display:inline-block;background:#eff6ff;color:#1d4ed8;border:1px solid #bfdbfe;border-radius:6px;padding:3px 8px;font-size:11px;font-weight:800;margin:2px 4px 2px 0;">✓ ${escapeHtml(t)}</span>`).join('')
+    : '<span style="color:#94a3b8;font-size:11.5px;">No registrado</span>';
+
+  const transporteField = canEditLogistics
+    ? `
+    <div class="fr004-field fr004-span-2">
+      <label>Transporte autorizado (desmarque los no autorizados) <span class="fr004-required">*</span></label>
+      <div style="margin-top:4px;display:flex;flex-wrap:wrap;align-items:center;">${transportCheckboxesHtml}</div>
+      <input type="hidden" id="transporte-hidden-${formId}" form="${formId}" name="transporte" value="${escapeHtml(selectedTransports.join(', '))}">
+      <script>
+        function updateTransporteValue_${formId}() {
+          const form = document.getElementById('${formId}');
+          if (!form) return;
+          const checked = Array.from(form.querySelectorAll('input[name="transporte_check_${formId}"]:checked')).map(cb => cb.value);
+          const hidden = document.getElementById('transporte-hidden-${formId}');
+          if (hidden) hidden.value = checked.join(', ');
+        }
+      </script>
+    </div>
+  `
+    : `<div class="fr004-field fr004-span-2"><span>Transporte autorizado</span><div style="margin-top:4px;display:flex;flex-wrap:wrap;align-items:center;">${transportBadgesHtml}</div></div>`;
+
+  const tipoCuentaField = canEditLogistics
+    ? `<div class="fr004-field"><label for="tipo-cuenta-input">Tipo de cuenta <span class="fr004-required">*</span></label><select class="fr004-editable" id="tipo-cuenta-input" form="${formId}" name="tipoCuenta" style="margin:2px 0 0;padding:5px 8px;border:1.5px solid #cbd5e1;background:#fff;color:#172033;font-size:11.5px;font-weight:700" required><option value="Ahorros"${viaticos.tipoCuenta === 'Ahorros' ? ' selected' : ''}>Ahorros</option><option value="Corriente"${viaticos.tipoCuenta === 'Corriente' ? ' selected' : ''}>Corriente</option></select></div>`
+    : readonlyField('Tipo de cuenta', viaticos.tipoCuenta);
 
   const bankOptions = ['Bancolombia', 'Davivienda', 'Banco AV Villas', 'Otro'];
   const currentBank = viaticos.entidadBancaria || 'Bancolombia';
@@ -1707,9 +1873,13 @@ const liquidationRequestDocumentHtml = (solicitud, { currentStepKey = null, form
     ? bankOptions
     : [currentBank, ...bankOptions];
 
-  const entidadBancariaField = `<div class="fr004-field fr004-span-2"><label for="entidad-bancaria-input">Entidad bancaria <span class="fr004-required">*</span></label><select class="fr004-editable" id="entidad-bancaria-input" form="${formId}" name="entidadBancaria" style="margin:2px 0 0;padding:5px 8px;border:1.5px solid #cbd5e1;background:#fff;color:#172033;font-size:11.5px;font-weight:700" required>${allBankOptions.map(b => `<option value="${escapeHtml(b)}"${b.toLowerCase() === currentBank.toLowerCase() ? ' selected' : ''}>${escapeHtml(b)}</option>`).join('')}</select></div>`;
+  const entidadBancariaField = canEditLogistics
+    ? `<div class="fr004-field"><label for="entidad-bancaria-input">Entidad bancaria <span class="fr004-required">*</span></label><select class="fr004-editable" id="entidad-bancaria-input" form="${formId}" name="entidadBancaria" style="margin:2px 0 0;padding:5px 8px;border:1.5px solid #cbd5e1;background:#fff;color:#172033;font-size:11.5px;font-weight:700" required>${allBankOptions.map(b => `<option value="${escapeHtml(b)}"${b.toLowerCase() === currentBank.toLowerCase() ? ' selected' : ''}>${escapeHtml(b)}</option>`).join('')}</select></div>`
+    : readonlyField('Entidad bancaria', viaticos.entidadBancaria);
 
-  const numeroCuentaField = `<div class="fr004-field fr004-span-2"><label for="numero-cuenta-input">Número de cuenta (Corregible) <span class="fr004-required">*</span></label><input class="fr004-editable" id="numero-cuenta-input" form="${formId}" name="numeroCuenta" maxlength="60" value="${escapeHtml(viaticos.numeroCuenta || '')}" placeholder="Número de cuenta bancaria" required></div>`;
+  const numeroCuentaField = canEditLogistics
+    ? `<div class="fr004-field fr004-span-2"><label for="numero-cuenta-input">Número de cuenta (Corregible) <span class="fr004-required">*</span></label><input class="fr004-editable" id="numero-cuenta-input" form="${formId}" name="numeroCuenta" maxlength="60" value="${escapeHtml(viaticos.numeroCuenta || '')}" placeholder="Número de cuenta bancaria" required></div>`
+    : readonlyField('Número de cuenta', viaticos.numeroCuenta, 'fr004-span-2');
 
   const hasLiquidation = Array.isArray(solicitud.liquidacion?.detalles) && solicitud.liquidacion.detalles.length > 0;
   const isTreasuryOrFinal = currentStepKey === 'tesoreria' || ['pendiente_autorizacion_pago', 'pago_autorizado_pendiente_legalizacion', 'finalizada'].includes(solicitud.estado);
@@ -1913,20 +2083,27 @@ const treasuryForm = (solicitud, token) => page('Autorizar pago en Tesorería / 
 const legacyTreasuryForm = (solicitud, token) => page('Tramitar solicitud en Tesorería', `<form id="action-form" method="post" action="/api/desplazamientos-viaticos/accion/${token}">${liquidationRequestDocumentHtml(solicitud, { currentStepKey: 'tesoreria', formId: 'action-form', isTechnician: false })}<div class="notice"><strong>Solicitud iniciada con el flujo anterior.</strong> Esta actuación se conserva únicamente para finalizar correctamente solicitudes que ya estaban en curso.</div><label class="observations-label" style="display:block;margin-top:16px;font-weight:700;color:#0b3a6f;">Observación de Tesorería</label><textarea name="observacion" maxlength="1200" rows="4" placeholder="Escriba aquí sus observaciones..."></textarea><div class="actions"><button class="primary" name="accion" value="tramitar" type="submit">Tramitar solicitud</button></div></form>`);
 
 const mostrarAccion = async (req, res) => {
-  const actionContext = await findActiveActionByToken(req.params.token);
-  if (!actionContext) {
-    const processed = await findProcessedAction(req.params.token);
-    if (processed) return res.status(409).send(page('Solicitud procesada', '<p>Esta actuación ya fue registrada correctamente. El enlace es de un solo uso y no permite realizar nuevamente el proceso.</p>'));
-    return res.status(404).send(page('Enlace no disponible', '<p>El enlace no existe o dejó de estar vigente.</p>'));
+  try {
+    const actionContext = await findActiveActionByToken(req.params.token);
+    if (!actionContext) {
+      const processed = await findProcessedAction(req.params.token);
+      if (processed) return res.status(200).send(page('Solicitud procesada', '<p>Esta actuación ya fue registrada formalmente y el proceso avanzó a la siguiente etapa.</p><p>El enlace es de un solo uso y quedó inhabilitado para nuevos registros.</p>'));
+      return res.status(404).send(page('Enlace no disponible', '<p>El enlace no está disponible o el trámite ya avanzó a la siguiente etapa.</p>'));
+    }
+    const { solicitud, payload, step } = actionContext;
+    if (!step || step.key !== solicitud.token_etapa) return res.status(200).send(page('Solicitud procesada', '<p>Esta etapa ya no está activa. La solicitud avanzó a la siguiente instancia del flujo.</p>'));
+    const nonce = crypto.randomBytes(18).toString('base64');
+    res.setHeader("Content-Security-Policy", "default-src * 'unsafe-inline' 'unsafe-eval' data: blob:; script-src * 'unsafe-inline' 'unsafe-eval'; style-src * 'unsafe-inline'; form-action *;");
+    if (step.action === 'liquidacion') return res.send(liquidacionForm(solicitud, req.params.token, nonce));
+    if (step.action === 'pago') return res.send(treasuryForm(solicitud, req.params.token));
+    if (step.action === 'tramite') return res.send(legacyTreasuryForm(solicitud, req.params.token));
+    return res.send(approvalForm(solicitud, step, req.params.token, { accessSource: payload.accessSource }));
+  } catch (error) {
+    console.error('[desplazamientos-viaticos] Error en mostrarAccion:', error);
+    const processed = await findProcessedAction(req.params.token).catch(() => null);
+    if (processed) return res.status(200).send(page('Solicitud procesada', '<p>Esta actuación ya fue registrada formalmente y el proceso avanzó a la siguiente etapa.</p><p>El enlace es de un solo uso y quedó inhabilitado para nuevos registros.</p>'));
+    return res.status(400).send(page('Enlace no disponible', '<p>El enlace no está disponible o el trámite ya avanzó a la siguiente etapa.</p>'));
   }
-  const { solicitud, payload, step } = actionContext;
-  if (!step || step.key !== solicitud.token_etapa) return res.status(409).send(page('Etapa no disponible', '<p>Esta etapa ya no está activa.</p>'));
-  const nonce = crypto.randomBytes(18).toString('base64');
-  res.setHeader("Content-Security-Policy", "default-src * 'unsafe-inline' 'unsafe-eval' data: blob:; script-src * 'unsafe-inline' 'unsafe-eval'; style-src * 'unsafe-inline'; form-action *;");
-  if (step.action === 'liquidacion') return res.send(liquidacionForm(solicitud, req.params.token, nonce));
-  if (step.action === 'pago') return res.send(treasuryForm(solicitud, req.params.token));
-  if (step.action === 'tramite') return res.send(legacyTreasuryForm(solicitud, req.params.token));
-  return res.send(approvalForm(solicitud, step, req.params.token, { accessSource: payload.accessSource }));
 };
 
 const mostrarDemoLiquidacion = async (req, res) => {
@@ -2124,6 +2301,44 @@ const procesarAccion = async (req, res) => {
       return res.status(400).send(page('Observación obligatoria', `<p>Debe explicar la ausencia de ${escapeHtml(step.alternateAbsenceRole || step.label)} y el motivo de utilización del acceso alterno de ${escapeHtml(step.alternateApprovalLabel || 'la dependencia')}.</p>`));
     }
 
+    if (req.body.transporte !== undefined) {
+      const rawTrans = req.body.transporte;
+      const updatedTransporte = Array.isArray(rawTrans)
+        ? rawTrans.map(t => clean(t, 100)).filter(Boolean).join(', ')
+        : clean(rawTrans, 300);
+      const updatedAlojamiento = req.body.alojamiento ? clean(req.body.alojamiento, 100) : null;
+      const updatedTipoCuenta = req.body.tipoCuenta ? clean(req.body.tipoCuenta, 50) : null;
+      const updatedEntidadBancaria = req.body.entidadBancaria ? clean(req.body.entidadBancaria, 100) : null;
+      const updatedNumeroCuenta = req.body.numeroCuenta ? clean(req.body.numeroCuenta, 60) : null;
+
+      const newDatosViaticos = {
+        ...(solicitud.datos_viaticos || {}),
+        transporte: updatedTransporte,
+        ...(updatedAlojamiento ? { alojamiento: updatedAlojamiento } : {}),
+        ...(updatedTipoCuenta ? { tipoCuenta: updatedTipoCuenta } : {}),
+        ...(updatedEntidadBancaria ? { entidadBancaria: updatedEntidadBancaria } : {}),
+        ...(updatedNumeroCuenta ? { numeroCuenta: updatedNumeroCuenta } : {})
+      };
+
+      solicitud.datos_viaticos = newDatosViaticos;
+      solicitud.changed('datos_viaticos', true);
+      await solicitud.save();
+
+      const linkedReport = await getLinkedNormalReport(solicitud);
+      if (linkedReport) {
+        const newFormulario = {
+          ...(linkedReport.datos_formulario || {}),
+          viaticos: {
+            ...(linkedReport.datos_formulario?.viaticos || {}),
+            ...newDatosViaticos
+          }
+        };
+        linkedReport.datos_formulario = newFormulario;
+        linkedReport.changed('datos_formulario', true);
+        await linkedReport.save();
+      }
+    }
+
     if (step.action === 'approval') {
       if (accion === 'rechazar') {
         const observacion = actionObservation;
@@ -2172,23 +2387,35 @@ const procesarAccion = async (req, res) => {
       const liquidacion = parseLiquidationBody(req.body);
       if (liquidacion.error) return res.status(400).send(page('Falta el detalle', `<p>${escapeHtml(liquidacion.error)}</p>`));
       const { detalles, totalAnticipo, observaciones } = liquidacion;
-      solicitud.datos_viaticos = { ...(solicitud.datos_viaticos || {}), centroCosto };
+
+      const newDatosViaticos = { ...(solicitud.datos_viaticos || {}), centroCosto };
+      solicitud.datos_viaticos = newDatosViaticos;
       solicitud.liquidacion = { detalles, totalAnticipo, observaciones };
-      await solicitud.update({
-        datos_viaticos: solicitud.datos_viaticos,
-        liquidacion: solicitud.liquidacion
-      });
+      solicitud.changed('datos_viaticos', true);
+      solicitud.changed('liquidacion', true);
+      await solicitud.save();
+
       const linkedReport = await getLinkedNormalReport(solicitud);
       if (linkedReport) {
-        await linkedReport.update({
-          trazabilidad: [...(linkedReport.trazabilidad || []), {
-            event: 'liquidada_tecnico_contable',
-            actor,
-            detail: { totalAnticipo, centroCosto },
-            at: new Date().toISOString()
-          }]
-        });
+        const newFormulario = {
+          ...(linkedReport.datos_formulario || {}),
+          viaticos: {
+            ...(linkedReport.datos_formulario?.viaticos || {}),
+            ...newDatosViaticos
+          },
+          liquidacion: { detalles, totalAnticipo, observaciones }
+        };
+        linkedReport.datos_formulario = newFormulario;
+        linkedReport.trazabilidad = [...(linkedReport.trazabilidad || []), {
+          event: 'liquidada_tecnico_contable',
+          actor,
+          detail: { totalAnticipo, centroCosto },
+          at: new Date().toISOString()
+        }];
+        linkedReport.changed('datos_formulario', true);
+        await linkedReport.save();
       }
+
       const next = await advance(solicitud, actor, { totalAnticipo, centroCosto, observaciones });
       return res.send(page('Solicitud procesada', `<p>La liquidación por $${totalAnticipo.toLocaleString('es-CO')} fue registrada y enviada a ${escapeHtml(next?.label || 'la siguiente etapa')}.</p><p>El enlace del técnico contable quedó cerrado y no puede utilizarse nuevamente.</p>`));
     }
@@ -2209,20 +2436,26 @@ const procesarAccion = async (req, res) => {
       
       const centroCosto = clean(req.body.centroCosto, 100);
       const alojamiento = clean(req.body.alojamiento, 60);
-      const transporte = clean(req.body.transporte, 60);
+      const transporteRaw = req.body.transporte;
+      const transporte = Array.isArray(transporteRaw)
+        ? transporteRaw.map(t => clean(t, 100)).filter(Boolean).join(', ')
+        : (req.body.transporte !== undefined ? clean(req.body.transporte, 300) : undefined);
       const tipoCuenta = clean(req.body.tipoCuenta, 40);
       const entidadBancaria = clean(req.body.entidadBancaria, 100);
       const numeroCuenta = clean(req.body.numeroCuenta, 60);
 
-      solicitud.datos_viaticos = {
+      const newDatosViaticos = {
         ...(solicitud.datos_viaticos || {}),
         ...(centroCosto ? { centroCosto } : {}),
         ...(alojamiento ? { alojamiento } : {}),
-        ...(transporte ? { transporte } : {}),
+        ...(transporte !== undefined ? { transporte } : {}),
         ...(tipoCuenta ? { tipoCuenta } : {}),
         ...(entidadBancaria ? { entidadBancaria } : {}),
         ...(numeroCuenta ? { numeroCuenta } : {})
       };
+
+      solicitud.datos_viaticos = newDatosViaticos;
+      solicitud.changed('datos_viaticos', true);
 
       const prevTotal = Number(solicitud.liquidacion?.totalAnticipo) || 0;
       const prevDetalles = solicitud.liquidacion?.detalles || [];
@@ -2238,6 +2471,7 @@ const procesarAccion = async (req, res) => {
             totalAnticipo: updatedLiquidation.totalAnticipo,
             observaciones: updatedLiquidation.observaciones !== undefined ? updatedLiquidation.observaciones : (solicitud.liquidacion?.observaciones || '')
           };
+          solicitud.changed('liquidacion', true);
         }
       }
 
@@ -2249,28 +2483,36 @@ const procesarAccion = async (req, res) => {
         totalAnticipoFinal: solicitud.liquidacion?.totalAnticipo,
         detallesFinales: solicitud.liquidacion?.detalles
       });
-      await solicitud.update({
-        estado: 'pago_autorizado_pendiente_legalizacion',
-        paso_actual: solicitud.paso_actual + 1,
-        token_accion_hash: null,
-        token_etapa: null,
-        datos_viaticos: solicitud.datos_viaticos,
-        liquidacion: solicitud.liquidacion,
-        trazabilidad: trace,
-        finalizado_at: new Date()
-      });
+
+      solicitud.estado = 'pago_autorizado_pendiente_legalizacion';
+      solicitud.paso_actual = solicitud.paso_actual + 1;
+      solicitud.token_accion_hash = null;
+      solicitud.token_etapa = null;
+      solicitud.trazabilidad = trace;
+      solicitud.finalizado_at = new Date();
+      await solicitud.save();
+
       const linkedReport = await getLinkedNormalReport(solicitud);
       if (linkedReport) {
-        await linkedReport.update({
-          estado: 'finalizada',
-          finalizado_at: new Date(),
-          trazabilidad: [...(linkedReport.trazabilidad || []), {
-            event: 'pago_autorizado_tesoreria',
-            actor,
-            detail: { pagoAutorizado: true, viaticosFinalizados: true },
-            at: new Date().toISOString()
-          }]
-        });
+        const newFormulario = {
+          ...(linkedReport.datos_formulario || {}),
+          viaticos: {
+            ...(linkedReport.datos_formulario?.viaticos || {}),
+            ...newDatosViaticos
+          },
+          ...(solicitud.liquidacion ? { liquidacion: solicitud.liquidacion } : {})
+        };
+        linkedReport.estado = 'finalizada';
+        linkedReport.finalizado_at = new Date();
+        linkedReport.datos_formulario = newFormulario;
+        linkedReport.trazabilidad = [...(linkedReport.trazabilidad || []), {
+          event: 'pago_autorizado_tesoreria',
+          actor,
+          detail: { pagoAutorizado: true, viaticosFinalizados: true },
+          at: new Date().toISOString()
+        }];
+        linkedReport.changed('datos_formulario', true);
+        await linkedReport.save();
       }
       await ensureLegalizacion(solicitud);
       await sendFinalizedCopies(solicitud);
@@ -2285,7 +2527,9 @@ const procesarAccion = async (req, res) => {
     return res.status(400).send(page('Etapa inválida', '<p>No se pudo procesar la etapa actual.</p>'));
   } catch (error) {
     console.error('[desplazamientos-viaticos] Error procesando acción:', error);
-    return res.status(500).send(page('Error', '<p>No fue posible procesar la actuación. Intente nuevamente.</p>'));
+    const processed = await findProcessedAction(req.params.token).catch(() => null);
+    if (processed) return res.status(200).send(page('Solicitud procesada', '<p>Esta actuación ya fue registrada formalmente y el proceso avanzó a la siguiente etapa.</p><p>El enlace es de un solo uso y quedó inhabilitado para nuevos registros.</p>'));
+    return res.status(400).send(page('Solicitud no disponible', `<p>${escapeHtml(error.message || 'La solicitud ya fue tramitada o el enlace no se encuentra disponible.')}</p>`));
   }
 };
 

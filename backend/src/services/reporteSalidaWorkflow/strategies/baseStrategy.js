@@ -38,13 +38,18 @@ class BaseWorkflowStrategy {
     }
 
     if (vicerrectoriaName) {
+      const { isInvestigacionVicerrectoria } = helpers;
+      let email = getDependencyEmail(vicerrectoriaName) || ACADEMIC_VICERRECTORIA_EMAIL;
+      if (isInvestigacionVicerrectoria && isInvestigacionVicerrectoria(vicerrectoriaName)) {
+        email = process.env.REPORTE_SALIDA_VICERRECTORIA_INVESTIGACION_EMAIL || 'jajimenez@unicesmag.edu.co';
+      }
       return {
         stage: 'vicerrectoria_academica',
         estado: 'pendiente_aprobacion_vicerrectoria_academica',
         tokenColumn: 'aprobacion_vicerrectoria_token_hash',
         correoColumn: 'correo_vicerrectoria_enviado_at',
         name: vicerrectoriaName,
-        email: getDependencyEmail(vicerrectoriaName) || ACADEMIC_VICERRECTORIA_EMAIL,
+        email: email,
         label: vicerrectoriaName
       };
     }

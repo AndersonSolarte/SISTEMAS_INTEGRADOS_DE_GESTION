@@ -379,7 +379,10 @@ testConnection()
         'pendiente_aprobacion_rectoria',
         'aprobada_rectoria',
         'pendiente_aprobacion_sst',
-        'aprobada_sst'
+        'aprobada_sst',
+        'pendiente_aprobacion_financiera_previa',
+        'pendiente_tecnico_contable',
+        'pendiente_tesoreria'
       ]) {
         await sequelize.query(`ALTER TYPE "enum_reporte_salida_solicitudes_estado" ADD VALUE IF NOT EXISTS '${enumValue}'`).catch(() => null);
       }

@@ -189,7 +189,7 @@ const buildDefinition = (solicitud, { includeFinancial = true } = {}) => {
       table: {
         widths: [75, '*', 75, '*', 75, '*'],
         body: [
-          [label('Alojamiento'), cell(viaticos.alojamiento), label('Transporte'), cell(viaticos.transporte), label('Tipo cuenta'), cell(viaticos.tipoCuenta)],
+          [label('Alojamiento'), cell(viaticos.alojamiento), label('Transporte'), cell(String(viaticos.transporte || '').split(',').map(s => s.trim()).filter(Boolean).join(' • ') || 'No registrado'), label('Tipo cuenta'), cell(viaticos.tipoCuenta)],
           [label('Banco'), cell(viaticos.entidadBancaria), label('No. cuenta'), cell(viaticos.numeroCuenta), label('Aceptación'), cell(viaticos.autorizacionAceptada ? 'Sí' : 'No')]
         ]
       }
@@ -311,7 +311,7 @@ const buildLiquidationDefinition = (solicitud) => {
           [label('Correo electrónico'), cell(personal.email || personal.correo), label('Fecha del evento'), cell(formatDate(viaticos.fechaEvento))],
           [label('Lugar a visitar'), cell(viaticos.lugarVisitar), label('No. días'), cell(calculateDays(salida, viaticos.numeroDiasSolicitados))],
           [label('Salida'), cell(`${formatDate(salida.fecha)} · ${formatTime(salida.horaInicio)}`), label('Regreso'), cell(`${formatDate(salida.fechaRegreso)} · ${formatTime(salida.horaFin)}`)],
-          [label('Centro de costos'), cell(viaticos.centroCosto), label('Alojamiento / Transporte'), cell([viaticos.alojamiento, viaticos.transporte].filter(Boolean).join(' / '))],
+          [label('Centro de costos'), cell(viaticos.centroCosto), label('Alojamiento / Transporte'), cell([viaticos.alojamiento, String(viaticos.transporte || '').split(',').map(s => s.trim()).filter(Boolean).join(' • ')].filter(Boolean).join(' / '))],
           [label('Tipo de cuenta'), cell(viaticos.tipoCuenta), label('Entidad / No. cuenta'), cell([viaticos.entidadBancaria, viaticos.numeroCuenta].filter(Boolean).join(' · '))],
           [label('Objeto de la comisión'), { ...cell(viaticos.objetoComision), colSpan: 3 }, {}, {}],
           [label('Observaciones especiales'), { ...cell(viaticos.observacionesEspeciales || 'Sin observaciones'), colSpan: 3 }, {}, {}]

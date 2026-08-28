@@ -88,7 +88,7 @@ const buildLegalizacionDefinition = (legalizacion, solicitud) => {
             [label('Nombre del empleado'), { ...cell(personal.nombre), colSpan: 3 }, {}, {}],
             [label('Documento de identidad'), cell(personal.documento), label('Cargo'), cell(laboral.cargo)],
             [label('Lugar visitado'), cell(viaticos.lugarVisitar), label('No. días / Periodo'), cell(`${value(viaticos.numeroDiasSolicitados)} día(s) · Del ${dateLabel(salida.fecha)} al ${dateLabel(salida.fechaRegreso)}`)],
-            [label('Alojamiento'), cell(`Hotel [${mark(alojamiento === 'Hotel')}]  Casa de Familia [${mark(alojamiento === 'Casa de familia')}]  No requiere [${mark(alojamiento === 'No requiere')}]`), label('Transporte'), cell(`Terrestre [${mark(['Terrestre', 'Mixto'].includes(transporte))}]  Aéreo [${mark(['Aéreo', 'Mixto'].includes(transporte))}]`)]
+            [label('Alojamiento'), cell(`Hotel [${mark(alojamiento === 'Hotel')}]  Casa de Familia [${mark(alojamiento === 'Casa de familia')}]  No requiere [${mark(alojamiento === 'No requiere')}]`), label('Transporte'), cell(`Terrestre [${mark(transporte.includes('Terrestre') || transporte.includes('Vehículo Propio') || transporte === 'Mixto')}]  Aéreo [${mark(transporte.includes('Aéreo') || transporte === 'Mixto')}]${value(viaticos.transporte) ? ` (${value(viaticos.transporte)})` : ''}`)]
           ]
         }
       },

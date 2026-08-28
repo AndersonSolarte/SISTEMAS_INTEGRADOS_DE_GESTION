@@ -22,6 +22,9 @@ const ReporteSalidaSolicitud = sequelize.define('reporte_salida_solicitudes', {
       'aprobada_gestion_humana',
       'pendiente_aprobacion_sst',
       'aprobada_sst',
+      'pendiente_aprobacion_financiera_previa',
+      'pendiente_tecnico_contable',
+      'pendiente_tesoreria',
       'finalizada',
       'no_aprobada'
     ),

@@ -10,8 +10,7 @@ const getDesplazamientoViaticosRecipients = () => ({
   ),
   investigacion: normalizeEmail(
     process.env.VIATICOS_VICERRECTORIA_INVESTIGACION_EMAIL
-      || getDependencyEmail('Vicerrectoria de Investigacion y Extension')
-      || 'viceinvestiga@unicesmag.edu.co'
+      || 'jajimenez@unicesmag.edu.co'
   ),
   evangelizacion: normalizeEmail(
     process.env.VIATICOS_VICERRECTORIA_EVANGELIZACION_EMAIL

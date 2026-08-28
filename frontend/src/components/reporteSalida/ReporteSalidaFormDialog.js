@@ -2876,13 +2876,13 @@ function ReporteSalidaFormDialog({ open, documento, user, onClose, onSubmitted }
                 />
               )}
 
-              {subtype === 'urgencia_medica' && hasCompletedSalidaTime && (
+              {subtype === 'urgencia_medica' && (
                 <Alert severity="info" sx={{ mt: 2, borderRadius: 2 }}>
                   Para urgencias medicas debe adjuntar el soporte si cuenta con el documento. Si aun no lo tiene, marque la opcion "No cuento con archivos adjuntos en este momento" y conserve los soportes para entregarlos cuando sean requeridos.
                 </Alert>
               )}
 
-              {Boolean(subtype) && isSaludAdjuntoSection && hasCompletedSalidaTime && (
+              {Boolean(subtype) && isSaludAdjuntoSection && (
                 <Box sx={{ mt: 1.5 }}>
                   <FormControlLabel
                     control={
@@ -2914,7 +2914,7 @@ function ReporteSalidaFormDialog({ open, documento, user, onClose, onSubmitted }
                 </Box>
               )}
 
-              {Boolean(subtype) && shouldShowAdjuntoSection && hasCompletedSalidaTime && !hideAdjuntoUploadByDeclaration && (
+              {Boolean(subtype) && shouldShowAdjuntoSection && !hideAdjuntoUploadByDeclaration && (
                 <Box>
                   <Box
                     component="label"

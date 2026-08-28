@@ -17,6 +17,8 @@ const PesvRuntValidacion = sequelize.define('pesv_runt_validaciones', {
   abierta_en: { type: DataTypes.DATE, allowNull: true },
   capturada_en: { type: DataTypes.DATE, allowNull: true },
   confirmada_en: { type: DataTypes.DATE, allowNull: true },
+  notificacion_actualizacion_en: { type: DataTypes.DATE, allowNull: true },
+  notificacion_actualizacion_por: { type: DataTypes.INTEGER, allowNull: true },
   iniciada_por: { type: DataTypes.INTEGER, allowNull: false },
   confirmada_por: { type: DataTypes.INTEGER, allowNull: true }
 }, {

@@ -262,13 +262,10 @@ const ensureReporteSalidaAdminBossSupport = async (qi) => {
   await models.ReporteSalidaAdjunto.sync();
   if (models.PesvParqueaderoRegistro) await models.PesvParqueaderoRegistro.sync();
   if (models.PesvRuntValidacion) await models.PesvRuntValidacion.sync();
-  if (models.PesvSoatHistorico) await models.PesvSoatHistorico.sync();
-  if (models.PesvRtmHistorico) await models.PesvRtmHistorico.sync();
-  await qi.changeColumn('reporte_salida_solicitudes', 'jefe_inmediato_user_id', {
-    type: DataTypes.INTEGER,
-    allowNull: true
-  });
-
+  if (models.PesvRuntValidacion) {
+    await ensureColumn(qi, 'pesv_runt_validaciones', 'notificacion_actualizacion_en', { type: DataTypes.DATE, allowNull: true });
+    await ensureColumn(qi, 'pesv_runt_validaciones', 'notificacion_actualizacion_por', { type: DataTypes.INTEGER, allowNull: true });
+  }
   // Agregar valores nuevos al enum de estado de solicitudes
   const reporteSalidaEstadoValues = [
     'pendiente_aprobacion_proyeccion_social',
@@ -278,7 +275,10 @@ const ensureReporteSalidaAdminBossSupport = async (qi) => {
     'pendiente_aprobacion_rectoria',
     'aprobada_rectoria',
     'pendiente_aprobacion_sst',
-    'aprobada_sst'
+    'aprobada_sst',
+    'pendiente_aprobacion_financiera_previa',
+    'pendiente_tecnico_contable',
+    'pendiente_tesoreria'
   ];
   for (const enumValue of reporteSalidaEstadoValues) {
     try {
@@ -288,9 +288,6 @@ const ensureReporteSalidaAdminBossSupport = async (qi) => {
     }
   }
 
-  // Asegurar columnas de SST, Gestión Humana y Reposiciones
-  await ensureColumn(qi, 'reporte_salida_solicitudes', 'enviado_sst_at', { type: DataTypes.DATE, allowNull: true });
-  await ensureColumn(qi, 'reporte_salida_solicitudes', 'aprobacion_sst_token_hash', { type: DataTypes.STRING(128), allowNull: true });
   await ensureColumn(qi, 'reporte_salida_solicitudes', 'correo_sst_enviado_at', { type: DataTypes.DATE, allowNull: true });
   await ensureColumn(qi, 'reporte_salida_solicitudes', 'observacion_gestion_humana', { type: DataTypes.TEXT, allowNull: true });
 
@@ -635,6 +632,10 @@ const runMigrations = async () => {
     await models.SystemSetting.sync();
     await models.DatabaseBackupRun.sync();
     await ensureReporteSalidaAdminBossSupport(qi);
+    await ensureColumn(qi, 'pesv_parqueadero_registros', 'vehiculo_autorizado', { type: DataTypes.BOOLEAN, allowNull: true });
+    await ensureColumn(qi, 'pesv_parqueadero_registros', 'vehiculo_es_propio', { type: DataTypes.BOOLEAN, allowNull: true, defaultValue: true });
+    await ensureColumn(qi, 'pesv_parqueadero_registros', 'propietario_identificacion', { type: DataTypes.STRING(40), allowNull: true });
+    await sequelize.query(`UPDATE pesv_parqueadero_registros SET placa = UPPER(REGEXP_REPLACE(placa, '[^A-Za-z0-9]', '', 'g')) WHERE placa IS NOT NULL AND placa ~ '[^A-Za-z0-9]'`);
     await backfillReporteSalidaAttachments();
     await backfillLegalizacionAttachments();
     await sequelize.query("CREATE INDEX IF NOT EXISTS instrument_forms_created_by_status_idx ON instrument_forms (created_by, status)");

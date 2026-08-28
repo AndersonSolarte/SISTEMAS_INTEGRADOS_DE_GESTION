@@ -507,4 +507,46 @@ test('isSingleHomogeneousGroup reconoce grupos de un solo programa o jefe vs gru
   assert.equal(isSingleHomogeneousGroup(groupHeterogeneo), false);
 });
 
+test('Vicerrectoría de Investigación envía la aprobación de autoridad exclusivamente al correo personal jajimenez@unicesmag.edu.co para los 3 componentes grandes', () => {
+  const workflowEngine = require('./index');
+  const helpers = {
+    getSolicitudLaboral: (s) => s.datos_formulario?.laboral || {},
+    getSolicitudSalida: (s) => s.datos_formulario?.salida || {},
+    getSolicitudVicerrectoria: (s) => s.datos_formulario?.laboral?.vicerrectoria || '',
+    isOficioSolicitud: () => true,
+    isPermisoElectoralSinVicerrectoria: () => false,
+    isVicerrectoriaAcademica: (v) => String(v || '').toLowerCase().includes('academica'),
+    isFinancieraVicerrectoria: (v) => String(v || '').toLowerCase().includes('financiera'),
+    isEvangelizacionVicerrectoria: (v) => String(v || '').toLowerCase().includes('evangelizacion'),
+    isInvestigacionVicerrectoria: (v) => String(v || '').toLowerCase().includes('investigacion'),
+    isRectoriaAuthority: (v) => String(v || '').toLowerCase().includes('rectoria')
+  };
+
+  const categorias = ['propias_cargo', 'salud_bienestar', 'tramites_permisos'];
+
+  categorias.forEach((categoria) => {
+    const solicitud = {
+      datos_formulario: {
+        salida: { categoria, tipo: 'oficio' },
+        laboral: {
+          vicerrectoria: 'Vicerrectoria de Investigacion y Extension',
+          dependencia: 'Direccion de Posgrados'
+        }
+      }
+    };
+
+    const authority = workflowEngine.getAuthorityAfterBoss(solicitud, helpers);
+    assert.ok(authority);
+    assert.equal(authority.email, 'jajimenez@unicesmag.edu.co');
+    assert.notEqual(authority.email, 'viceinvestiga@unicesmag.edu.co');
+
+    const targets = workflowEngine.getDependencyNotificationTargets(solicitud, helpers);
+    const vicerrectoriaTarget = targets.find(t => t.source === 'vicerrectoria');
+    assert.ok(vicerrectoriaTarget);
+    assert.equal(vicerrectoriaTarget.email, 'jajimenez@unicesmag.edu.co');
+    assert.equal(vicerrectoriaTarget.forceApproval, true);
+  });
+});
+
+
 

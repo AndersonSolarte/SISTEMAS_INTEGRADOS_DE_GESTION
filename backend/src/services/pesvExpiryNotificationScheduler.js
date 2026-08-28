@@ -3,6 +3,7 @@ const { PesvParqueaderoRegistro } = require('../models');
 const { sendMailDirect, renderInstitutionalTemplate, escapeHtml } = require('./emailService');
 
 const TIMEZONE = 'America/Bogota';
+const PESV_REPLY_TO = String(process.env.PESV_REPLY_TO_EMAIL || 'seguridadysalud@unicesmag.edu.co').trim().toLowerCase();
 const NOTIFICATION_DAYS = Math.max(1, Number(process.env.PESV_NOTIFICATION_DAYS_BEFORE || 15));
 const SCHEDULE_HOUR = Math.min(23, Math.max(0, Number(process.env.PESV_NOTIFICATION_HOUR || 7)));
 
@@ -49,26 +50,75 @@ const senderHtml = `
 
 const sendPesvExpiryNotification = async (row, tipo) => {
   const isRtm = tipo === 'tecnomecanica';
-  const documentType = isRtm ? 'tecnomecánica' : 'SOAT';
+  const documentName = isRtm ? 'certificado de revisión técnico-mecánica (RTM)' : 'Seguro Obligatorio de Accidentes de Tránsito (SOAT)';
+  const documentTitle = isRtm ? 'Revisión Técnico-Mecánica y de Emisiones Contaminantes (RTM)' : 'SOAT';
+  const plateLabel = row.placa || row.identificacion || 'Sin placa registrada';
+  const notificationTitle = `Plan Estratégico de Seguridad Vial - ${documentTitle} - Placa ${plateLabel}`;
   const date = row[isRtm ? 'tecnomecanica_vigencia' : 'soat_vigencia'];
   const days = daysBetween(bogotaDateIso(), date);
   const dateLabel = new Intl.DateTimeFormat('es-CO', { dateStyle: 'long', timeZone: 'UTC' }).format(new Date(`${date}T00:00:00Z`));
   const daysLabel = `${days} ${Math.abs(days) === 1 ? 'día' : 'días'}`;
   const expiresToday = days === 0;
-  const statusText = expiresToday ? `vence hoy, ${dateLabel}` : days < 0 ? `se encuentra vencido desde el ${dateLabel}` : `vence el ${dateLabel} (${daysLabel})`;
-  const actionText = expiresToday
-    ? 'Este es el último día de vigencia. Le solicitamos gestionar la renovación y actualizar la información institucional para evitar que el documento quede vencido.'
-    : 'Le agradecemos realizar la renovación y actualizar oportunamente la información institucional.';
-  const body = `<p>Saludo cordial, <strong>${escapeHtml(row.nombres_apellidos)}</strong>.</p><p>Desde el Plan Estratégico de Seguridad Vial de UNICESMAG informamos que el documento <strong>${escapeHtml(documentType)}</strong> asociado al vehículo de placa <strong>${escapeHtml(row.placa || 'sin placa registrada')}</strong> ${escapeHtml(statusText)}.</p><p>${escapeHtml(actionText)}</p>`;
+  const isExpired = days < 0;
+  const statusText = expiresToday
+    ? `vence hoy, ${dateLabel}`
+    : isExpired
+      ? `se encuentra vencido desde el ${dateLabel}`
+      : `está próximo a vencer. Su vigencia finaliza el ${dateLabel} (faltan ${daysLabel})`;
+  const recommendationText = expiresToday
+    ? 'le recomendamos iniciar la gestión de renovación a partir del día de hoy'
+    : isExpired
+      ? 'le recomendamos gestionar la renovación a la mayor brevedad posible'
+      : 'le recomendamos programar oportunamente la renovación antes de la fecha de vencimiento';
+  const body = `
+    <p>Saludo de Paz y Bien,</p>
+    <p>Estimado(a) <strong>${escapeHtml(row.nombres_apellidos)}</strong>:</p>
+    <p>En cumplimiento del <strong>Plan Estratégico de Seguridad Vial de la Universidad CESMAG</strong>, nos permitimos informarle que el <strong>${escapeHtml(documentName)}</strong> del vehículo de placa <strong>${escapeHtml(row.placa || 'sin placa registrada')}</strong> ${escapeHtml(statusText)}.</p>
+    <p>En este sentido, ${escapeHtml(recommendationText)}.</p>
+    <p>Cuando haya finalizado la renovación, le agradecemos <strong>responder a este mismo correo</strong> confirmando la actualización. No es necesario adjuntar el documento; el equipo de Seguridad y Salud en el Trabajo verificará posteriormente su vigencia en RUNT.</p>
+    <p>Al seleccionar <strong>Responder</strong>, su mensaje será dirigido automáticamente a <a href="mailto:${escapeHtml(PESV_REPLY_TO)}" style="color:#0b3a6f;font-weight:bold;">${escapeHtml(PESV_REPLY_TO)}</a>.</p>
+    <p>La actualización de este documento es fundamental para mantener vigente la información institucional del vehículo y garantizar la continuidad de su acceso al cupo de parqueadero en nuestras instalaciones.</p>
+    <p>Agradecemos su atención y quedamos atentos a su confirmación.</p>
+  `;
   const threadId = `<pesv-parqueadero-${row.id}@unicesmag.edu.co>`;
   return sendMailDirect({
     to: row.correo,
-    subject: `[PESV UNICESMAG] Vigencias Documentales · Placa ${row.placa || row.identificacion || 'Vehículo'}`,
+    subject: notificationTitle,
+    replyTo: PESV_REPLY_TO,
     inReplyTo: threadId,
     references: threadId,
     headers: { 'In-Reply-To': threadId, References: threadId },
-    text: `Saludo cordial, ${row.nombres_apellidos}. Su ${documentType} asociado a la placa ${row.placa || 'sin placa'} ${statusText}. ${actionText} Fraternalmente, Seguridad y Salud en el Trabajo, Plan Estratégico de Seguridad Vial de UNICESMAG.`,
-    html: renderInstitutionalTemplate({ title: `Aviso de vigencia ${documentType}`, introHtml: '', bodyHtml: body, senderHtml })
+    text: `Saludo de Paz y Bien. Estimado(a) ${row.nombres_apellidos}: En cumplimiento del Plan Estratégico de Seguridad Vial de la Universidad CESMAG, informamos que el ${documentName} del vehículo de placa ${row.placa || 'sin placa registrada'} ${statusText}. En este sentido, ${recommendationText}. Cuando haya finalizado la renovación, agradecemos responder a este mismo correo confirmando la actualización. No es necesario adjuntar el documento; Seguridad y Salud en el Trabajo verificará posteriormente su vigencia en RUNT. La respuesta será dirigida automáticamente a ${PESV_REPLY_TO}. La actualización es fundamental para garantizar la continuidad de acceso al cupo de parqueadero. Agradecemos su atención y quedamos atentos a su confirmación. Fraternalmente, Seguridad y Salud en el Trabajo.`,
+    html: renderInstitutionalTemplate({ title: notificationTitle, introHtml: '', bodyHtml: body, senderHtml })
+  });
+};
+
+const sendPesvRuntUpdateConfirmation = async (row, { soat = null, rtm = null } = {}) => {
+  if (!String(row?.correo || '').trim()) return { success: false, error: 'El registro no tiene correo electrónico' };
+  const plateLabel = row.placa || row.identificacion || 'Sin placa registrada';
+  const confirmedDocuments = [soat && 'SOAT', rtm && 'Revisión Técnico-Mecánica (RTM)'].filter(Boolean).join(' y ');
+  const title = `Plan Estratégico de Seguridad Vial - Actualización ${confirmedDocuments || 'documental'} - Placa ${plateLabel}`;
+  const formatDate = (value) => value
+    ? new Intl.DateTimeFormat('es-CO', { dateStyle: 'long', timeZone: 'UTC' }).format(new Date(`${value}T00:00:00Z`))
+    : '';
+  const details = [
+    soat && `<li><strong>SOAT:</strong> ${soat.fecha_fin ? `vigencia registrada hasta el ${escapeHtml(formatDate(soat.fecha_fin))}` : escapeHtml(soat.estado || 'información registrada')}.</li>`,
+    rtm && `<li><strong>Revisión Técnico-Mecánica (RTM):</strong> ${rtm.fecha_vigencia ? `vigencia registrada hasta el ${escapeHtml(formatDate(rtm.fecha_vigencia))}` : escapeHtml(rtm.estado === 'NO_EXIGIBLE' ? 'no exigible a la fecha según la información consultada' : rtm.estado || 'información registrada')}.</li>`
+  ].filter(Boolean).join('');
+  const body = `
+    <p>Saludo de Paz y Bien,</p>
+    <p>Estimado(a) <strong>${escapeHtml(row.nombres_apellidos)}</strong>:</p>
+    <p>Le confirmamos que la información documental del vehículo de placa <strong>${escapeHtml(plateLabel)}</strong> fue consultada en RUNT y actualizada en el sistema institucional.</p>
+    ${details ? `<ul>${details}</ul>` : ''}
+    <p>No es necesario enviar ni adjuntar documentos. El registro queda sujeto al seguimiento periódico del Plan Estratégico de Seguridad Vial.</p>
+    <p>Agradecemos su confirmación y la actualización oportuna de la información.</p>
+  `;
+  return sendMailDirect({
+    to: row.correo,
+    subject: title,
+    replyTo: PESV_REPLY_TO,
+    text: `Saludo de Paz y Bien. Estimado(a) ${row.nombres_apellidos}: Le confirmamos que la información de ${confirmedDocuments || 'los documentos'} del vehículo de placa ${plateLabel} fue consultada en RUNT y actualizada en el sistema institucional. No es necesario enviar ni adjuntar documentos. Fraternalmente, Seguridad y Salud en el Trabajo.`,
+    html: renderInstitutionalTemplate({ title, introHtml: '', bodyHtml: body, senderHtml })
   });
 };
 
@@ -166,6 +216,7 @@ module.exports = {
   startPesvExpiryNotificationScheduler,
   runPesvExpiryNotifications,
   sendPesvExpiryNotification,
+  sendPesvRuntUpdateConfirmation,
   isBicycleVehicle,
   _internals: { shouldNotifyDocument, getNotificationMilestone, millisecondsUntilNextRun, bogotaDateIso, addDaysIso, daysBetween, NOTIFICATION_DAYS }
 };

@@ -6,9 +6,13 @@ import {
   FormControl,
   FormControlLabel,
   FormLabel,
+  InputLabel,
+  ListItemText,
   MenuItem,
+  OutlinedInput,
   Radio,
   RadioGroup,
+  Select,
   TextField,
   Typography
 } from '@mui/material';
@@ -274,13 +278,35 @@ const SolicitudViaticosFields = ({
               <MenuItem value="No requiere">No requiere</MenuItem>
             </TextField>
           )}
-          <TextField sx={compactSx} size="small" required select label="Transporte" value={viaticos.transporte || ''} onChange={(e) => onChange('transporte', e.target.value)}>
-            <MenuItem value="Terrestre Intermunicipal">Terrestre Intermunicipal</MenuItem>
-            <MenuItem value="Vehículo Institucional UNICESMAG">Vehículo Institucional UNICESMAG</MenuItem>
-            <MenuItem value="Vehículo Propio">Vehículo Propio</MenuItem>
-            <MenuItem value="Aéreo">Aéreo</MenuItem>
-            <MenuItem value="Mixto">Mixto</MenuItem>
-          </TextField>
+          {(() => {
+            const currentTransporte = (viaticos.transporte || '')
+              .split(',')
+              .map((s) => s.trim())
+              .filter(Boolean);
+            return (
+              <FormControl sx={compactSx} size="small" required fullWidth>
+                <InputLabel id="transporte-multi-label">Transporte *</InputLabel>
+                <Select
+                  labelId="transporte-multi-label"
+                  multiple
+                  value={currentTransporte}
+                  onChange={(e) => {
+                    const selected = typeof e.target.value === 'string' ? e.target.value.split(',') : e.target.value;
+                    onChange('transporte', selected.join(', '));
+                  }}
+                  input={<OutlinedInput label="Transporte *" />}
+                  renderValue={(selected) => selected.join(', ')}
+                >
+                  {['Terrestre Intermunicipal', 'Vehículo Propio', 'Aéreo'].map((name) => (
+                    <MenuItem key={name} value={name}>
+                      <Checkbox checked={currentTransporte.indexOf(name) > -1} size="small" />
+                      <ListItemText primary={name} />
+                    </MenuItem>
+                  ))}
+                </Select>
+              </FormControl>
+            );
+          })()}
           <TextField sx={compactSx} size="small" required select label="Tipo de cuenta" value={viaticos.tipoCuenta || ''} onChange={(e) => onChange('tipoCuenta', e.target.value)}>
             <MenuItem value="Ahorros">Ahorros</MenuItem>
             <MenuItem value="Corriente">Corriente</MenuItem>

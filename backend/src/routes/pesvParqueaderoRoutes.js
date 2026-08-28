@@ -11,11 +11,13 @@ const canView = hasAnyRoleOrModulePermission({ roles: [ROLES.ADMINISTRADOR, ROLE
 router.use(auth, canView);
 router.get('/', controller.list);
 router.get('/template', controller.downloadExcelTemplate);
+router.get('/export', controller.exportExcelData);
 router.get('/lookup-persona', controller.lookupPersona);
 router.post('/import', upload.single('file'), controller.importExcel);
 router.get('/runt/sessions/:sessionId', controller.getRuntValidation);
 router.post('/runt/sessions/:sessionId/capture-manual', controller.captureManualRuntResult);
 router.post('/runt/sessions/:sessionId/confirm', controller.confirmRuntValidation);
+router.post('/runt/sessions/:sessionId/notificar-actualizacion', controller.notifyRuntUpdate);
 router.post('/:id/runt/session', controller.startRuntValidation);
 router.get('/:id/runt/history', controller.getRuntHistory);
 router.post('/:id/notificar', controller.notifyExpiry);

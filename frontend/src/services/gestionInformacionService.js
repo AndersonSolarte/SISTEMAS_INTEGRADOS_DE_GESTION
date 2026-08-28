@@ -215,6 +215,8 @@ const gestionInformacionService = {
   },
   downloadPesvParqueaderosTemplate: () =>
     api.get('/pesv/parqueaderos/template', { responseType: 'blob', timeout: 60000 }).then((r) => r),
+  exportPesvParqueaderos: (params = {}) =>
+    api.get('/pesv/parqueaderos/export', { params, responseType: 'blob', timeout: 60000 }).then((r) => r),
   notifyPesvExpiry: (id, tipo = 'soat') =>
     api.post(`/pesv/parqueaderos/${id}/notificar`, { tipo }).then((r) => r.data),
   startPesvRuntValidation: (id) =>
@@ -225,6 +227,8 @@ const gestionInformacionService = {
     api.post(`/pesv/parqueaderos/runt/sessions/${sessionId}/capture-manual`, payload).then((r) => r.data),
   confirmPesvRuntValidation: (sessionId) =>
     api.post(`/pesv/parqueaderos/runt/sessions/${sessionId}/confirm`).then((r) => r.data),
+  notifyPesvRuntUpdate: (sessionId) =>
+    api.post(`/pesv/parqueaderos/runt/sessions/${sessionId}/notificar-actualizacion`).then((r) => r.data),
   getPesvRuntHistory: (id) =>
     api.get(`/pesv/parqueaderos/${id}/runt/history`, { timeout: 30000 }).then((r) => r.data),
   uploadAuditorioFoto: (groupKey, file) => {

@@ -12,12 +12,14 @@ import EditRoundedIcon from '@mui/icons-material/EditRounded';
 import EmailRoundedIcon from '@mui/icons-material/EmailRounded';
 import FileUploadRoundedIcon from '@mui/icons-material/FileUploadRounded';
 import FileDownloadRoundedIcon from '@mui/icons-material/FileDownloadRounded';
+import TableViewRoundedIcon from '@mui/icons-material/TableViewRounded';
 import FactCheckRoundedIcon from '@mui/icons-material/FactCheckRounded';
 import HistoryRoundedIcon from '@mui/icons-material/HistoryRounded';
 import RefreshRoundedIcon from '@mui/icons-material/RefreshRounded';
 import SearchRoundedIcon from '@mui/icons-material/SearchRounded';
 import WarningAmberRoundedIcon from '@mui/icons-material/WarningAmberRounded';
 import ClearRoundedIcon from '@mui/icons-material/ClearRounded';
+import ContentCopyRoundedIcon from '@mui/icons-material/ContentCopyRounded';
 import { useSnackbar } from 'notistack';
 import gestionInformacionService from '../../services/gestionInformacionService';
 
@@ -25,6 +27,7 @@ const EMPTY_FORM = {
   identificacion: '', nombres_apellidos: '', correo: '', vinculacion: '', dependencia_programa: '',
   campus: '', parqueadero_ingreso: '', categoria_ingreso: '', tipo_vehiculo: '', placa: '',
   curso_pas: '', pago_validacion: '', soat_vigencia: '', soat_vigencia_texto: '', tecnomecanica_vigencia: '',
+  vehiculo_autorizado: '', vehiculo_es_propio: 'SI', propietario_identificacion: '',
   tecnomecanica_vigencia_texto: '', horario: '', observaciones: '',
   vehiculo_fecha_matricula: '', vehiculo_clase: '', vehiculo_servicio: '', vehiculo_modelo: '',
   soat_fecha_expedicion: '', soat_fecha_inicio: '', soat_numero_poliza: '', soat_entidad: '',
@@ -54,13 +57,15 @@ const RTM_RULES = Object.freeze({
 const RTM_TRANSITION_RULES = Object.freeze([{ type: 'CARRO_PARTICULAR', from: '2017-05-20', to: '2018-05-19', firstReviewYears: 6 }]);
 
 const formatDate = (value) => value ? new Intl.DateTimeFormat('es-CO', { dateStyle: 'medium', timeZone: 'UTC' }).format(new Date(`${value}T00:00:00Z`)) : 'Sin fecha';
-const formatDateTime = (value) => value ? new Intl.DateTimeFormat('es-CO', { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(value)) : 'Sin consultas confirmadas';
+const formatDateTime = (value) => value ? new Intl.DateTimeFormat('es-CO', { dateStyle: 'medium', timeStyle: 'short', timeZone: 'America/Bogota' }).format(new Date(value)) : 'Sin consultas confirmadas';
 const documentStatusLabel = (value) => ({
   VIGENTE: 'Vigente', VENCIDO: 'Vencido', NO_EXIGIBLE: 'RTM no exigible a la fecha',
   SIN_REGISTRO_RUNT: 'Sin RTM registrada en RUNT', NO_APLICA: 'Exento de RTM'
 }[value] || value || 'Sin información');
 const normalizeRuntLine = (value = '') => String(value || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/\s+/g, ' ').trim().toUpperCase();
 const isBicycleVehicle = (row = {}) => [row.tipo_vehiculo, row.vehiculo_clase].some((value) => /\b(BICI|BICICLETA|CICLA)\b/.test(normalizeRuntLine(value)));
+const normalizePlateForRunt = (value = '') => String(value || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
+const getRuntDocument = (row = {}) => String((row.vehiculo_es_propio === false || row.vehiculo_es_propio === 'NO' ? row.propietario_identificacion : row.identificacion) || '').replace(/[^A-Za-z0-9]/g, '');
 const runtDateToIso = (value = '') => {
   const match = String(value || '').trim().match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
   if (!match) return '';
@@ -150,12 +155,15 @@ const expiryLabel = (status) => status?.code === 'vencido'
 function ExpiryCell({ type, date, rawText, status, row, onNotify, notifying }) {
   const style = STATUS_STYLE[status?.code] || STATUS_STYLE.sin_fecha;
   const documentsDoNotApply = status?.code === 'no_aplica' && isBicycleVehicle(row);
+  const lastNotification = row[type === 'tecnomecanica' ? 'ultima_notificacion_tecnomecanica' : 'ultima_notificacion_soat'];
+  const notificationAvailable = Number.isFinite(status?.days) && status.days <= 30;
   return (
     <Stack spacing={.65} alignItems="flex-start">
       <Typography variant="body2" sx={{ fontWeight: 800, color: '#0f172a' }}>
         {documentsDoNotApply ? 'No aplica para bicicleta' : date ? formatDate(date) : rawText || 'Sin información'}
       </Typography>
       <Chip
+        className="pesv-expiry-chip"
         size="small"
         icon={
           <Box
@@ -171,12 +179,14 @@ function ExpiryCell({ type, date, rawText, status, row, onNotify, notifying }) {
           />
         }
         label={expiryLabel(status)}
-        sx={{ height: 23, color: style.color, bgcolor: style.bgcolor, border: `1px solid ${style.border}`, fontWeight: 800, fontSize: 11 }}
+        sx={{ color: style.color, bgcolor: style.bgcolor, border: `1px solid ${style.border}`, fontWeight: 800, fontSize: 11 }}
       />
-      {date && status?.code !== 'no_aplica' && (
-        <Button size="small" startIcon={notifying ? <CircularProgress size={13} /> : <EmailRoundedIcon />} disabled={notifying || !row.correo} onClick={() => onNotify(row, type)} sx={{ p: 0, minWidth: 0, textTransform: 'none', fontWeight: 800, fontSize: 11.5 }}>
-          Notificar
-        </Button>
+      {date && status?.code !== 'no_aplica' && notificationAvailable && (
+        <Tooltip title={lastNotification ? `Último aviso enviado: ${formatDateTime(lastNotification)}. Pulse para consultar el estado.` : 'Enviar notificación manual'} arrow placement="bottom-start">
+          <span><Button size="small" startIcon={notifying ? <CircularProgress size={13} /> : <EmailRoundedIcon />} disabled={notifying || !row.correo} onClick={() => onNotify(row, type)} sx={{ p: 0, minWidth: 0, textTransform: 'none', fontWeight: 800, fontSize: 11.5, color: lastNotification ? '#64748b' : undefined }}>
+            {lastNotification ? 'Aviso enviado' : 'Notificar'}
+          </Button></span>
+        </Tooltip>
       )}
     </Stack>
   );
@@ -199,8 +209,10 @@ function ParqueaderosPesvPanel({ onBack }) {
   const [saving, setSaving] = useState(false);
   const [importing, setImporting] = useState(false);
   const [downloadingTemplate, setDownloadingTemplate] = useState(false);
+  const [exportingData, setExportingData] = useState(false);
   const [importResult, setImportResult] = useState(null);
   const [notifying, setNotifying] = useState('');
+  const [notifyingRuntUpdate, setNotifyingRuntUpdate] = useState(false);
   const [runtValidation, setRuntValidation] = useState({ open: false, row: null, sessionId: null, estado: '', data: null, loading: false });
   const [runtForm, setRuntForm] = useState(EMPTY_RUNT_FORM);
   const [runtCopiedText, setRuntCopiedText] = useState('');
@@ -216,16 +228,22 @@ function ParqueaderosPesvPanel({ onBack }) {
     try {
       const res = await gestionInformacionService.lookupPesvPersona(query);
       if (res?.found && res?.data) {
-        setForm((prev) => ({
-          ...prev,
-          identificacion: res.data.identificacion || query,
-          nombres_apellidos: res.data.nombres_apellidos || prev.nombres_apellidos,
-          correo: res.data.correo || prev.correo,
-          vinculacion: res.data.vinculacion || prev.vinculacion,
-          dependencia_programa: res.data.dependencia_programa || prev.dependencia_programa,
-          campus: res.data.campus || prev.campus
-        }));
-        enqueueSnackbar(`Datos de ${res.data.nombres_apellidos} autocompletados desde ${res.source}`, { variant: 'success' });
+        setForm((prev) => {
+          // La consulta institucional solo refresca datos personales. Un valor
+          // vacio nunca debe borrar informacion ya diligenciada del cupo.
+          const personalUpdates = {
+            identificacion: res.data.identificacion || query,
+            nombres_apellidos: res.data.nombres_apellidos,
+            correo: res.data.correo,
+            vinculacion: res.data.vinculacion,
+            dependencia_programa: res.data.dependencia_programa
+          };
+          const nonEmptyPersonalUpdates = Object.fromEntries(
+            Object.entries(personalUpdates).filter(([, value]) => String(value ?? '').trim() !== '')
+          );
+          return { ...prev, ...nonEmptyPersonalUpdates };
+        });
+        enqueueSnackbar(`Información personal actualizada desde ${res.source}. Revise los datos y pulse Guardar para confirmarlos.`, { variant: 'success' });
       } else {
         enqueueSnackbar('No se encontraron datos de esta cédula en el sistema. Puede digitar los campos manualmente.', { variant: 'info' });
       }
@@ -266,12 +284,25 @@ function ParqueaderosPesvPanel({ onBack }) {
   const visibleRows = useMemo(() => rows.slice(page * rowsPerPage, page * rowsPerPage + rowsPerPage), [page, rows, rowsPerPage]);
   const openCreate = () => { setForm(EMPTY_FORM); setDialog({ open: true, row: null }); };
   const openEdit = (row) => {
-    setForm(Object.keys(EMPTY_FORM).reduce((acc, key) => ({ ...acc, [key]: row[key] || '' }), {}));
+    setForm(Object.keys(EMPTY_FORM).reduce((acc, key) => ({
+      ...acc,
+      [key]: ['vehiculo_autorizado', 'vehiculo_es_propio'].includes(key)
+        ? row[key] === true ? 'SI' : row[key] === false ? 'NO' : key === 'vehiculo_es_propio' ? 'SI' : ''
+        : row[key] || ''
+    }), {}));
     setDialog({ open: true, row });
   };
-  const updateField = (key) => (event) => setForm((prev) => ({ ...prev, [key]: event.target.value }));
+  const updateField = (key) => (event) => {
+    let value = event.target.value;
+    if (key === 'placa') value = normalizePlateForRunt(value);
+    if (key === 'propietario_identificacion') value = String(value || '').replace(/[^A-Za-z0-9]/g, '');
+    setForm((prev) => ({ ...prev, [key]: value, ...(key === 'vehiculo_es_propio' && value !== 'NO' ? { propietario_identificacion: '' } : {}) }));
+  };
   const save = async () => {
     if (!form.nombres_apellidos.trim()) return enqueueSnackbar('Los nombres y apellidos son obligatorios', { variant: 'warning' });
+    if (!form.vehiculo_autorizado) return enqueueSnackbar('Seleccione si el vehículo está autorizado', { variant: 'warning' });
+    if (!form.vehiculo_es_propio) return enqueueSnackbar('Seleccione si el vehículo es propio', { variant: 'warning' });
+    if (form.vehiculo_es_propio === 'NO' && !form.propietario_identificacion.trim()) return enqueueSnackbar('Digite la identificación del propietario del vehículo', { variant: 'warning' });
     setSaving(true);
     try {
       const result = dialog.row
@@ -323,23 +354,49 @@ function ParqueaderosPesvPanel({ onBack }) {
     } catch (error) { enqueueSnackbar(error.response?.data?.message || 'No se pudo descargar la plantilla', { variant: 'error' }); }
     finally { setDownloadingTemplate(false); }
   };
+  const downloadExcelData = async () => {
+    setExportingData(true);
+    try {
+      const response = await gestionInformacionService.exportPesvParqueaderos({ search, campus, estado, indicador: indicator });
+      const url = window.URL.createObjectURL(response.data);
+      const link = document.createElement('a');
+      const date = new Date().toLocaleDateString('en-CA', { timeZone: 'America/Bogota' });
+      link.href = url; link.download = `Base_Parqueaderos_PESV_UNICESMAG_${date}.xlsx`;
+      document.body.appendChild(link); link.click(); link.remove(); window.URL.revokeObjectURL(url);
+      enqueueSnackbar(`${rows.length} registro${rows.length === 1 ? '' : 's'} exportado${rows.length === 1 ? '' : 's'} en formato compatible con la importación`, { variant: 'success' });
+    } catch (error) { enqueueSnackbar(error.response?.data?.message || 'No se pudo descargar la base de datos', { variant: 'error' }); }
+    finally { setExportingData(false); }
+  };
   const notify = async (row, tipo) => {
     const key = `${row.id}-${tipo}`; setNotifying(key);
     try { const result = await gestionInformacionService.notifyPesvExpiry(row.id, tipo); enqueueSnackbar(result.message, { variant: 'success' }); await load(); }
-    catch (error) { enqueueSnackbar(error.response?.data?.message || 'No se pudo enviar la notificación', { variant: 'error' }); }
+    catch (error) {
+      const alreadyNotified = Number(error.response?.status) === 409 && error.response?.data?.alreadyNotified;
+      enqueueSnackbar(error.response?.data?.message || 'No se pudo enviar la notificación', { variant: alreadyNotified ? 'warning' : 'error', autoHideDuration: alreadyNotified ? 8000 : 5000 });
+      if (alreadyNotified) await load();
+    }
     finally { setNotifying(''); }
+  };
+  const copyRuntValue = async (label, value) => {
+    if (!value) return;
+    try {
+      await navigator.clipboard.writeText(String(value));
+      enqueueSnackbar(`${label} copiada`, { variant: 'success' });
+    } catch (error) { enqueueSnackbar(`No se pudo copiar ${label.toLowerCase()}`, { variant: 'error' }); }
   };
   const startRuntValidation = async (row) => {
     if (isBicycleVehicle(row)) return enqueueSnackbar('SOAT, RTM y validación RUNT no aplican para bicicletas', { variant: 'info' });
-    if (!row.placa || !row.identificacion) return enqueueSnackbar('La validación RUNT requiere placa e identificación', { variant: 'warning' });
+    const placaConsulta = normalizePlateForRunt(row.placa);
+    const documentoConsulta = getRuntDocument(row);
+    if (!placaConsulta || !documentoConsulta) return enqueueSnackbar(row.vehiculo_es_propio === false ? 'La validación RUNT requiere la placa y la identificación del propietario' : 'La validación RUNT requiere placa e identificación', { variant: 'warning' });
     const popup = window.open('', '_blank');
     try {
       const result = await gestionInformacionService.startPesvRuntValidation(row.id);
       const session = result.data;
       setRuntForm(EMPTY_RUNT_FORM);
       setRuntCopiedText('');
-      setRuntValidation({ open: true, row, sessionId: session.id, runtUrl: session.runtUrl, estado: session.estado, data: null, loading: false });
-      navigator.clipboard?.writeText(`Placa: ${row.placa}\nIdentificación: ${row.identificacion}`).catch(() => {});
+      const normalizedRow = { ...row, placa: session.placaConsulta || placaConsulta };
+      setRuntValidation({ open: true, row: normalizedRow, sessionId: session.id, runtUrl: session.runtUrl, estado: session.estado, data: null, loading: false, placaConsulta: session.placaConsulta || placaConsulta, documentoConsulta: session.documentoConsulta || documentoConsulta, usaDocumentoPropietario: Boolean(session.usaDocumentoPropietario) });
       if (popup) {
         try {
           popup.location.replace(session.runtUrl);
@@ -354,7 +411,7 @@ function ParqueaderosPesvPanel({ onBack }) {
   };
   const extractCopiedRuntResult = () => {
     const parsed = parseRuntCopiedText(runtCopiedText);
-    const expectedPlate = String(runtValidation.row?.placa || '').replace(/[^A-Za-z0-9]/g, '').toUpperCase();
+    const expectedPlate = runtValidation.placaConsulta || normalizePlateForRunt(runtValidation.row?.placa);
     if (parsed.plate && expectedPlate && parsed.plate !== expectedPlate) return enqueueSnackbar(`El texto corresponde a la placa ${parsed.plate}, no a ${expectedPlate}`, { variant: 'error' });
     if (!parsed.soat && !parsed.rtm && !parsed.rtmSituation) return enqueueSnackbar('No se encontraron tablas SOAT ni RTM. Expande los acordeones antes de copiar.', { variant: 'warning' });
     setRuntForm((prev) => ({
@@ -389,10 +446,31 @@ function ParqueaderosPesvPanel({ onBack }) {
     if (!runtValidation.sessionId) return;
     setRuntValidation((prev) => ({ ...prev, loading: true }));
     try {
+      const focusQuery = String(runtValidation.row?.identificacion || runtValidation.row?.placa || '').trim();
       const result = await gestionInformacionService.confirmPesvRuntValidation(runtValidation.sessionId);
-      enqueueSnackbar(result.message, { variant: 'success' });
-      setRuntValidation({ open: false, row: null, sessionId: null, estado: '', data: null, loading: false }); await load();
+      loadRequestRef.current += 1;
+      setSearch(focusQuery);
+      setCampus('');
+      setEstado('');
+      setIndicator('');
+      setPage(0);
+      setRuntValidation((prev) => ({ ...prev, estado: 'CONFIRMADA', loading: false, confirmationSent: false }));
+      setRefreshKey((current) => current + 1);
+      enqueueSnackbar(`${result.message} El registro quedó filtrado para su revisión.`, { variant: 'success' });
     } catch (error) { enqueueSnackbar(error.response?.data?.message || 'No se pudo confirmar la validación', { variant: 'error' }); setRuntValidation((prev) => ({ ...prev, loading: false })); }
+  };
+  const notifyRuntUpdate = async () => {
+    if (!runtValidation.sessionId || runtValidation.estado !== 'CONFIRMADA') return;
+    setNotifyingRuntUpdate(true);
+    try {
+      const result = await gestionInformacionService.notifyPesvRuntUpdate(runtValidation.sessionId);
+      setRuntValidation((prev) => ({ ...prev, confirmationSent: true }));
+      enqueueSnackbar(result.message, { variant: 'success' });
+    } catch (error) {
+      const alreadyNotified = Number(error.response?.status) === 409 && error.response?.data?.alreadyNotified;
+      if (alreadyNotified) setRuntValidation((prev) => ({ ...prev, confirmationSent: true }));
+      enqueueSnackbar(error.response?.data?.message || 'No se pudo enviar la confirmación de actualización', { variant: alreadyNotified ? 'warning' : 'error' });
+    } finally { setNotifyingRuntUpdate(false); }
   };
   const openHistory = async (row) => {
     setHistory({ open: true, row, loading: true, data: [] });
@@ -412,6 +490,8 @@ function ParqueaderosPesvPanel({ onBack }) {
     poll(); const timer = setInterval(poll, 2500);
     return () => { active = false; clearInterval(timer); };
   }, [runtValidation.estado, runtValidation.open, runtValidation.sessionId]);
+
+  const runtUpdateDetected = Boolean(runtValidation.data?.resultado?.comparacion_actualizacion?.detectada);
 
   const stats = [
     { key: '', label: 'Cupos registrados', value: summary.total || 0, color: '#1d4ed8', background: '#eff6ff', icon: <DirectionsCarRoundedIcon /> },
@@ -483,6 +563,16 @@ function ParqueaderosPesvPanel({ onBack }) {
         />
       );
     }
+    if (['vehiculo_autorizado', 'vehiculo_es_propio'].includes(key)) return (
+      <FormControl key={key} size="small" fullWidth>
+        <InputLabel>{label}</InputLabel>
+        <Select label={label} value={form[key]} onChange={updateField(key)}>
+          <MenuItem value=""><em>Seleccione una opción</em></MenuItem>
+          <MenuItem value="SI">Sí</MenuItem>
+          <MenuItem value="NO">No</MenuItem>
+        </Select>
+      </FormControl>
+    );
     const options = formCatalogOptions[key];
     if (options) return (
       <Autocomplete
@@ -502,6 +592,9 @@ function ParqueaderosPesvPanel({ onBack }) {
         <Button startIcon={<ArrowBackRoundedIcon />} onClick={onBack} sx={{ alignSelf: 'flex-start', textTransform: 'none', fontWeight: 800 }}>Volver a Seguridad Vial</Button>
         <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
           <Button variant="outlined" startIcon={downloadingTemplate ? <CircularProgress size={16} /> : <FileDownloadRoundedIcon />} onClick={downloadExcelTemplate} disabled={downloadingTemplate} sx={{ textTransform: 'none', fontWeight: 800 }}>{downloadingTemplate ? 'Preparando…' : 'Descargar plantilla'}</Button>
+          <Tooltip title="Exporta los resultados actuales. Limpie la búsqueda y los filtros para descargar toda la base.">
+            <span><Button variant="outlined" startIcon={exportingData ? <CircularProgress size={16} /> : <TableViewRoundedIcon />} onClick={downloadExcelData} disabled={exportingData} sx={{ textTransform: 'none', fontWeight: 800 }}>{exportingData ? 'Descargando…' : `Descargar base (${rows.length})`}</Button></span>
+          </Tooltip>
           <Button component="label" variant="outlined" startIcon={importing ? <CircularProgress size={16} /> : <FileUploadRoundedIcon />} disabled={importing} sx={{ textTransform: 'none', fontWeight: 800 }}>Importar Excel<input hidden type="file" accept=".xlsx,.xls" onChange={importFile} /></Button>
           <Button variant="contained" startIcon={<AddRoundedIcon />} onClick={openCreate} sx={{ textTransform: 'none', fontWeight: 800 }}>Nuevo cupo</Button>
         </Stack>
@@ -556,8 +649,8 @@ function ParqueaderosPesvPanel({ onBack }) {
           <Tooltip title="Actualizar"><IconButton onClick={load}><RefreshRoundedIcon /></IconButton></Tooltip>
         </Stack>
       </Paper>
-      <TableContainer component={Paper} elevation={0} sx={{ borderRadius: 3, border: '1px solid #e2e8f0', overflowX: 'auto' }}>
-        <Table size="small" sx={{ width: '100%', minWidth: 1040, tableLayout: 'fixed', '& .MuiTableCell-head': { px: 1.1, py: 1.25, fontSize: 11.5, lineHeight: 1.2 }, '& .MuiTableCell-body': { px: 1.1, py: 1.15, fontSize: 12.5, verticalAlign: 'top', overflowWrap: 'anywhere' }, '& .MuiTypography-body2': { fontSize: 12.5, lineHeight: 1.3 }, '& .MuiTypography-caption': { fontSize: 10.8, lineHeight: 1.35 }, '& .MuiChip-root': { height: 22, fontSize: 10.5 } }}>
+      <TableContainer component={Paper} elevation={0} sx={{ borderRadius: 3, border: '1px solid #e2e8f0', maxHeight: { xs: '65vh', md: '72vh' }, overflow: 'auto', scrollbarGutter: 'stable' }}>
+        <Table stickyHeader size="small" sx={{ width: '100%', minWidth: 1040, tableLayout: 'fixed', '& .MuiTableCell-head': { px: 1.1, py: 1.25, fontSize: 11.5, lineHeight: 1.2, bgcolor: '#eaf2ff', boxShadow: 'inset 0 -2px 0 #2563eb', zIndex: 5 }, '& .MuiTableCell-body': { px: 1.1, py: 1.15, fontSize: 12.5, verticalAlign: 'top', overflowWrap: 'anywhere' }, '& .MuiTypography-body2': { fontSize: 12.5, lineHeight: 1.3 }, '& .MuiTypography-caption': { fontSize: 10.8, lineHeight: 1.35 }, '& .MuiChip-root': { height: 22, fontSize: 10.5 }, '& .pesv-expiry-chip.MuiChip-root': { width: 'fit-content', maxWidth: '100%', height: 'auto', minHeight: 22, alignItems: 'center' }, '& .pesv-expiry-chip .MuiChip-label': { display: 'block', px: 0.8, py: 0.35, whiteSpace: 'normal', overflow: 'visible', textOverflow: 'clip', lineHeight: 1.15 }, '& .pesv-expiry-chip .MuiChip-icon': { flexShrink: 0 } }}>
           <colgroup><col style={{ width: '18%' }} /><col style={{ width: '19%' }} /><col style={{ width: '11%' }} /><col style={{ width: '13%' }} /><col style={{ width: '11.5%' }} /><col style={{ width: '15%' }} /><col style={{ width: '12.5%' }} /></colgroup>
           <TableHead><TableRow sx={{ bgcolor: '#eaf2ff', borderBottom: '2px solid #2563eb' }}>{['Persona / identificación', 'Contacto', 'Parqueadero', 'Vehículo / placa', 'SOAT', 'Tecnomecánica'].map((label) => <TableCell key={label} sx={{ color: '#173b72', fontWeight: 900, borderBottom: 0 }}>{label}</TableCell>)}<TableCell align="center" sx={{ color: '#173b72', fontWeight: 900, borderBottom: 0 }}>Acciones</TableCell></TableRow></TableHead>
           <TableBody>{loading ? <TableRow><TableCell colSpan={7} align="center" sx={{ py: 7 }}><CircularProgress /></TableCell></TableRow> : visibleRows.length === 0 ? <TableRow><TableCell colSpan={7} align="center" sx={{ py: 7 }}><WarningAmberRoundedIcon sx={{ color: '#d97706' }} /><Typography sx={{ fontWeight: 800, color: '#64748b' }}>No hay registros para los filtros seleccionados</Typography></TableCell></TableRow> : visibleRows.map((row, rowIndex) => {
@@ -573,7 +666,7 @@ function ParqueaderosPesvPanel({ onBack }) {
                 <Box sx={{ display: 'inline-grid', gridTemplateColumns: 'repeat(2, auto)', gap: 0.6, justifyItems: 'center', alignItems: 'center' }}>
                   <Tooltip title={isBicycleVehicle(row) ? 'No aplica para bicicletas' : 'Validar SOAT y RTM en RUNT'} arrow placement="top">
                     <span>
-                      <IconButton size="small" onClick={() => startRuntValidation(row)} disabled={isBicycleVehicle(row) || !row.placa || !row.identificacion} sx={{ color: '#d97706', bgcolor: '#fffbeb', border: '1px solid #fde68a', p: 0.55, '&:hover': { bgcolor: '#fef3c7' }, '&.Mui-disabled': { bgcolor: '#f1f5f9', color: '#cbd5e1', borderColor: '#e2e8f0' } }}>
+                      <IconButton size="small" onClick={() => startRuntValidation(row)} disabled={isBicycleVehicle(row) || !normalizePlateForRunt(row.placa) || !getRuntDocument(row)} sx={{ color: '#d97706', bgcolor: '#fffbeb', border: '1px solid #fde68a', p: 0.55, '&:hover': { bgcolor: '#fef3c7' }, '&.Mui-disabled': { bgcolor: '#f1f5f9', color: '#cbd5e1', borderColor: '#e2e8f0' } }}>
                         <FactCheckRoundedIcon sx={{ fontSize: 16 }} />
                       </IconButton>
                     </span>
@@ -608,6 +701,13 @@ function ParqueaderosPesvPanel({ onBack }) {
             ['identificacion', 'Identificación'], ['nombres_apellidos', 'Nombres y apellidos *'], ['correo', 'Correo electrónico'], ['vinculacion', 'Vinculación'], ['dependencia_programa', 'Dependencia o programa'], ['campus', 'Campus'], ['parqueadero_ingreso', 'Parqueadero de ingreso'], ['categoria_ingreso', 'Categoría de ingreso'], ['curso_pas', 'Curso PAS'], ['pago_validacion', 'Pago / validación'], ['horario', 'Horario']
           ].map(renderFormField)}
 
+          <Typography sx={{ gridColumn: { sm: '1 / -1' }, mt: 1, fontWeight: 900, color: '#1e3a8a' }}>Propiedad y autorización del vehículo</Typography>
+          {[
+            ['vehiculo_autorizado', '¿El vehículo está autorizado?'], ['vehiculo_es_propio', '¿El vehículo es propio?']
+          ].map(renderFormField)}
+          {form.vehiculo_es_propio === 'NO' && <TextField label="Identificación del propietario *" value={form.propietario_identificacion} onChange={updateField('propietario_identificacion')} helperText="Este documento se utilizará junto con la placa para realizar la consulta pública en RUNT." fullWidth size="small" />}
+          {form.vehiculo_es_propio === 'NO' && <Alert severity="info" sx={{ alignItems: 'center' }}>La persona asignada al cupo se conserva como conductor. Para consultar el vehículo en RUNT se utilizará exclusivamente la identificación del propietario.</Alert>}
+
           <Typography sx={{ gridColumn: { sm: '1 / -1' }, mt: 1, fontWeight: 900, color: '#1e3a8a' }}>Información del vehículo</Typography>
           {[ 
             ['tipo_vehiculo', 'Tipo de vehículo institucional'], ['placa', 'Placa'], ['vehiculo_clase', 'Clase del vehículo (RUNT)'], ['vehiculo_servicio', 'Tipo de servicio (RUNT)'], ['vehiculo_modelo', 'Modelo'], ['vehiculo_fecha_matricula', 'Fecha inicial de matrícula']
@@ -634,7 +734,7 @@ function ParqueaderosPesvPanel({ onBack }) {
       </Dialog>
 
       <Dialog open={runtValidation.open} onClose={() => !runtValidation.loading && setRuntValidation({ open: false, row: null, sessionId: null, estado: '', data: null, loading: false })} fullWidth maxWidth="md">
-        <DialogTitle sx={{ fontWeight: 900 }}>Validación RUNT · {runtValidation.row?.placa}</DialogTitle>
+        <DialogTitle sx={{ fontWeight: 900 }}>Validación RUNT · {runtValidation.placaConsulta || runtValidation.row?.placa}</DialogTitle>
         <DialogContent dividers>
           <Stack spacing={2}>
             <Alert severity={runtValidation.estado === 'CAPTURADA' ? 'success' : runtValidation.estado === 'ERROR' ? 'error' : 'info'}>
@@ -644,7 +744,11 @@ function ParqueaderosPesvPanel({ onBack }) {
                   ? 'La sesión presentó un error. Cierre esta ventana e intente nuevamente.'
                   : 'Consulte el vehículo en RUNT, complete personalmente el CAPTCHA y pegue aquí el resultado. SIAC identificará el SOAT y la RTM vigentes. No necesita instalar ni pagar nada.'}
             </Alert>
-            <Stack direction="row" spacing={1} flexWrap="wrap"><Chip label={`Estado: ${runtValidation.estado === 'CAPTURADA' ? 'LISTO PARA REVISAR' : 'ESPERANDO FECHAS'}`} color={runtValidation.estado === 'CAPTURADA' ? 'success' : 'info'} /><Chip label={`Placa: ${runtValidation.row?.placa || ''}`} /><Chip label={`Documento: ${runtValidation.row?.identificacion || ''}`} /></Stack>
+            <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap alignItems="center">
+              <Chip label={`Estado: ${runtValidation.estado === 'CAPTURADA' ? 'LISTO PARA REVISAR' : 'ESPERANDO FECHAS'}`} color={runtValidation.estado === 'CAPTURADA' ? 'success' : 'info'} />
+              <Stack direction="row" spacing={.25} alignItems="center"><Chip label={`Placa: ${runtValidation.placaConsulta || ''}`} /><Tooltip title="Copiar placa"><IconButton size="small" onClick={() => copyRuntValue('Placa', runtValidation.placaConsulta)}><ContentCopyRoundedIcon sx={{ fontSize: 17 }} /></IconButton></Tooltip></Stack>
+              <Stack direction="row" spacing={.25} alignItems="center"><Chip label={`${runtValidation.usaDocumentoPropietario ? 'Documento propietario' : 'Documento conductor'}: ${runtValidation.documentoConsulta || ''}`} /><Tooltip title="Copiar documento"><IconButton size="small" onClick={() => copyRuntValue('Identificación', runtValidation.documentoConsulta)}><ContentCopyRoundedIcon sx={{ fontSize: 17 }} /></IconButton></Tooltip></Stack>
+            </Stack>
             {runtValidation.estado !== 'CAPTURADA' && (
               <Stack spacing={1.5}>
                 <Paper variant="outlined" sx={{ p: 1.5, borderRadius: 2.5, bgcolor: '#f8fafc' }}><Typography sx={{ fontWeight: 900, color: '#0f172a' }}>1. Realice la consulta pública</Typography><Typography variant="body2" color="text.secondary">Use la placa y el documento mostrados arriba, resuelva el CAPTCHA y abra los acordeones de SOAT y tecnomecánica.</Typography><Button size="small" sx={{ mt: 1, fontWeight: 800 }} onClick={() => window.open(runtValidation.runtUrl, '_blank', 'noopener,noreferrer')}>Abrir RUNT nuevamente</Button></Paper>
@@ -679,6 +783,7 @@ function ParqueaderosPesvPanel({ onBack }) {
             )}
             {runtValidation.estado === 'CAPTURADA' && (() => {
               const captured = runtValidation.data?.resultado || {};
+              const comparison = captured.comparacion_actualizacion || {};
               const rtmStatusLabel = captured.rtm?.estado === 'NO_EXIGIBLE'
                 ? `RTM no exigible a la fecha · Modelo ${captured.vehiculo?.modelo || 'sin identificar'}`
                 : { VIGENTE: 'Vigente', VENCIDO: 'Vencida', SIN_REGISTRO_RUNT: 'Sin registro en RUNT', NO_APLICA: 'No aplica' }[captured.rtm?.estado] || captured.rtm?.estado || 'Sin información';
@@ -690,11 +795,23 @@ function ParqueaderosPesvPanel({ onBack }) {
                 ['Vigencia / primera exigibilidad RTM', runtValidation.row?.tecnomecanica_vigencia ? formatDate(runtValidation.row.tecnomecanica_vigencia) : 'Sin fecha', captured.rtm?.fecha_vigencia ? formatDate(captured.rtm.fecha_vigencia) : captured.vehiculo?.rtm_fecha_exigibilidad ? `Estimada: ${formatDate(captured.vehiculo.rtm_fecha_exigibilidad)}` : 'Sin fecha'],
                 ['Certificado / CDA', runtValidation.row?.rtm_numero_certificado || 'Sin información', [captured.rtm?.numero_certificado, captured.rtm?.cda].filter(Boolean).join(' · ') || 'Sin información']
               ];
-              return <TableContainer component={Paper} variant="outlined"><Table size="small"><TableHead><TableRow><TableCell sx={{ fontWeight: 900 }}>Campo</TableCell><TableCell sx={{ fontWeight: 900 }}>SIAC actual</TableCell><TableCell sx={{ fontWeight: 900, color: '#166534' }}>Resultado RUNT</TableCell></TableRow></TableHead><TableBody>{comparisons.map(([field, current, next]) => <TableRow key={field}><TableCell sx={{ fontWeight: 800 }}>{field}</TableCell><TableCell>{current}</TableCell><TableCell sx={{ bgcolor: current !== next ? '#f0fdf4' : undefined, fontWeight: current !== next ? 800 : 400 }}>{next}</TableCell></TableRow>)}</TableBody></Table></TableContainer>;
+              return <Stack spacing={1.5}>
+                <Alert severity={comparison.detectada ? 'success' : 'warning'}>
+                  <strong>{comparison.detectada ? 'RUNT confirma una actualización.' : 'RUNT aún no refleja una nueva vigencia.'}</strong>{' '}
+                  {comparison.mensaje || (comparison.detectada ? 'Puede confirmar los cambios.' : 'Realice una nueva consulta cuando la renovación aparezca registrada en RUNT.')}
+                </Alert>
+                <TableContainer component={Paper} variant="outlined"><Table size="small"><TableHead><TableRow><TableCell sx={{ fontWeight: 900 }}>Campo</TableCell><TableCell sx={{ fontWeight: 900 }}>SIAC actual</TableCell><TableCell sx={{ fontWeight: 900, color: '#166534' }}>Resultado RUNT</TableCell></TableRow></TableHead><TableBody>{comparisons.map(([field, current, next]) => <TableRow key={field}><TableCell sx={{ fontWeight: 800 }}>{field}</TableCell><TableCell>{current}</TableCell><TableCell sx={{ bgcolor: current !== next ? '#f0fdf4' : undefined, fontWeight: current !== next ? 800 : 400 }}>{next}</TableCell></TableRow>)}</TableBody></Table></TableContainer>
+              </Stack>;
             })()}
+            {runtValidation.estado === 'CONFIRMADA' && <Alert severity="success"><strong>Información actualizada en SIAC.</strong> Revise el resultado y, si lo considera pertinente, envíe manualmente la confirmación a la persona.</Alert>}
           </Stack>
         </DialogContent>
-        <DialogActions><Button onClick={() => setRuntValidation({ open: false, row: null, sessionId: null, estado: '', data: null, loading: false })} disabled={runtValidation.loading}>Cerrar</Button>{runtValidation.estado !== 'CAPTURADA' && <Button variant="contained" onClick={captureManualRunt} disabled={runtValidation.loading}>{runtValidation.loading ? 'Cargando…' : 'Cargar fechas consultadas'}</Button>}<Button variant="contained" color="success" onClick={confirmRuntValidation} disabled={runtValidation.estado !== 'CAPTURADA' || runtValidation.loading}>{runtValidation.loading ? 'Confirmando…' : 'Confirmar actualización'}</Button></DialogActions>
+        <DialogActions>
+          <Button onClick={() => setRuntValidation({ open: false, row: null, sessionId: null, estado: '', data: null, loading: false })} disabled={runtValidation.loading || notifyingRuntUpdate}>Cerrar</Button>
+          {!['CAPTURADA', 'CONFIRMADA'].includes(runtValidation.estado) && <Button variant="contained" onClick={captureManualRunt} disabled={runtValidation.loading}>{runtValidation.loading ? 'Cargando…' : 'Cargar fechas consultadas'}</Button>}
+          {runtValidation.estado === 'CAPTURADA' && <Button variant="contained" color="success" onClick={confirmRuntValidation} disabled={!runtUpdateDetected || runtValidation.loading}>{runtValidation.loading ? 'Confirmando…' : 'Confirmar actualización'}</Button>}
+          {runtValidation.estado === 'CONFIRMADA' && <Button variant="contained" onClick={notifyRuntUpdate} disabled={notifyingRuntUpdate || runtValidation.confirmationSent}>{notifyingRuntUpdate ? 'Enviando…' : runtValidation.confirmationSent ? 'Confirmación enviada' : 'Notificar actualización'}</Button>}
+        </DialogActions>
       </Dialog>
 
       <Dialog open={history.open} onClose={() => setHistory({ open: false, row: null, loading: false, data: [] })} fullWidth maxWidth="md">
