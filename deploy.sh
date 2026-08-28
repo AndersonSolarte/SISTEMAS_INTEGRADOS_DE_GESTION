@@ -22,6 +22,9 @@ git checkout -- .
 git pull origin main
 
 # 4. Recompilar e iniciar contenedores
+echo ">> Deteniendo y limpiando contenedores previos..."
+docker compose down --remove-orphans || true
+
 echo ">> Recompilando y levantando contenedores con Docker Compose..."
 docker compose up -d --build
 
