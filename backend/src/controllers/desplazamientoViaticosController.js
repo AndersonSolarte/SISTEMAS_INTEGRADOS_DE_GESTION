@@ -1805,6 +1805,86 @@ const renderTraceabilitySection = (solicitud) => {
   `;
 };
 
+const renderApprovalObservationsHtml = (solicitud) => {
+  const formatTraceDate = (d) => {
+    if (!d) return 'No registrado';
+    const date = new Date(d);
+    return Number.isNaN(date.getTime()) ? String(d) : date.toLocaleString('es-CO');
+  };
+
+  const observations = [];
+  const seenKeys = new Set();
+
+  const plan = solicitud.plan_aprobacion || [];
+  plan.forEach((step) => {
+    const trace = findTrace(solicitud, step.key);
+    if (trace) {
+      const obsText = trace.detail?.observacion || trace.detail?.observation || trace.observacion || trace.motivo || trace.justificacion || '';
+      if (obsText && obsText.trim() && !obsText.includes('Se registró la solicitud') && !obsText.includes('Procesado exitosamente.')) {
+        const key = `${step.key}_${obsText.trim()}`;
+        if (!seenKeys.has(key)) {
+          seenKeys.add(key);
+          observations.push({
+            stepLabel: step.label || 'Aprobador',
+            actorName: trace.actor?.nombre || trace.actor?.email || step.label,
+            actorCargo: trace.actor?.cargo || step.label,
+            date: trace.at,
+            text: obsText.trim()
+          });
+        }
+      }
+    }
+  });
+
+  const traces = solicitud.trazabilidad || [];
+  traces.forEach((t) => {
+    const obsText = t.detail?.observacion || t.detail?.observation || t.observacion || t.motivo || t.justificacion || '';
+    if (obsText && obsText.trim() && !obsText.includes('Se registró la solicitud') && !obsText.includes('Procesado exitosamente.')) {
+      const key = `${t.event}_${obsText.trim()}`;
+      if (!seenKeys.has(key)) {
+        seenKeys.add(key);
+        observations.push({
+          stepLabel: t.event ? String(t.event).replace(/^aprobada?_/, '').replace(/_/g, ' ') : 'Anotación',
+          actorName: t.actor?.nombre || t.actor?.email || 'Aprobador',
+          actorCargo: t.actor?.cargo || '',
+          date: t.at,
+          text: obsText.trim()
+        });
+      }
+    }
+  });
+
+  let contentHtml = '';
+  if (observations.length > 0) {
+    contentHtml = observations.map((obs) => `
+      <div style="padding: 8px 12px; background: #f0f9ff; border: 1px solid #bae6fd; border-left: 4px solid #0284c7; border-radius: 6px; margin-bottom: 6px;">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 3px; flex-wrap: wrap; gap: 4px;">
+          <span style="color: #0369a1; font-size: 10.5px; font-weight: 800; text-transform: uppercase;">
+            ${escapeHtml(obs.stepLabel)} &mdash; ${escapeHtml(obs.actorName)} ${obs.actorCargo ? `(${escapeHtml(obs.actorCargo)})` : ''}
+          </span>
+          <span style="color: #64748b; font-size: 9.5px; font-weight: 600;">${formatTraceDate(obs.date)}</span>
+        </div>
+        <div style="color: #0f172a; font-size: 11.5px; font-weight: 600; line-height: 1.35; white-space: pre-wrap;">${escapeHtml(obs.text)}</div>
+      </div>
+    `).join('');
+  } else {
+    contentHtml = `
+      <div style="padding: 8px 12px; background: #f8fafc; border: 1px dashed #cbd5e1; border-radius: 6px; color: #64748b; font-size: 10.5px; font-style: italic;">
+        Sin observaciones o anotaciones adicionales registradas por los aprobadores hasta el momento.
+      </div>
+    `;
+  }
+
+  return `
+    <section class="fr004-section" style="padding-top:0; margin-top: 10px;">
+      <h2 class="fr004-section-title" style="border-left-color: #0284c7; background: linear-gradient(90deg, #f0f9ff, #f8fafc); color: #0369a1;">
+        Observaciones y Anotaciones Registradas en el Flujo
+      </h2>
+      ${contentHtml}
+    </section>
+  `;
+};
+
 const liquidationRequestDocumentHtml = (solicitud, { currentStepKey = null, formId = 'action-form', isTechnician = false, isTreasury = false } = {}) => {
   const personal = solicitud.solicitante_snapshot || {};
   const laboral = solicitud.datos_laborales || {};
@@ -1943,8 +2023,14 @@ const liquidationRequestDocumentHtml = (solicitud, { currentStepKey = null, form
       </section>
       <div class="fr004-authorization"><strong>Autorización aceptada electrónicamente por el colaborador.</strong><br>${escapeHtml(viaticos.autorizacionTexto || AUTHORIZATION_TEXT)}</div>
       
+      <!-- Observaciones y Anotaciones de Aprobadores -->
+      ${renderApprovalObservationsHtml(solicitud)}
+
       <!-- Firmas de Salida y Permiso -->
       ${renderDepartureSignatures(solicitud, currentStepKey)}
+
+      <!-- Aviso Normativo -->
+      <div class="fr004-legal"><strong>IMPORTANTE:</strong> ${escapeHtml((viaticos.avisoLegalizacion || LEGALIZATION_NOTICE).replace(/^IMPORTANTE:\s*/i, ''))}</div>Signatures(solicitud, currentStepKey)}
 
       <!-- Aviso Normativo -->
       <div class="fr004-legal"><strong>IMPORTANTE:</strong> ${escapeHtml((viaticos.avisoLegalizacion || LEGALIZATION_NOTICE).replace(/^IMPORTANTE:\s*/i, ''))}</div>
