@@ -158,22 +158,18 @@ export default function ViaticosGestionDashboard({ user, onBack }) {
     return row.updatedAt || row.updated_at || row.createdAt || row.created_at || null;
   };
 
+  const getBackendApiUrl = () => {
+    if (process.env.REACT_APP_API_URL) {
+      return process.env.REACT_APP_API_URL.replace(/\/$/, '');
+    }
+    const port = window.location.port === '3000' ? ':5000' : (window.location.port ? `:${window.location.port}` : '');
+    return `${window.location.protocol}//${window.location.hostname}${port}/api`;
+  };
+
   const openStageAction = (row) => {
-    if (row.token_etapa === 'tecnico_contable' || row.estado === 'pendiente_tecnico_contable') {
-      window.open(`/api/desplazamientos-viaticos/accion/${row.token_accion_hash || row.token}`, '_blank');
-      return;
-    }
-    if (row.token_etapa === 'tesoreria' || row.estado === 'pendiente_tesoreria') {
-      window.open(`/api/desplazamientos-viaticos/accion/${row.token_accion_hash || row.token}`, '_blank');
-      return;
-    }
-    if (row.legalizacion) {
-      openReview(row);
-      return;
-    }
-    if (row.token_accion_hash) {
-      window.open(`/api/desplazamientos-viaticos/accion/${row.token_accion_hash}`, '_blank');
-    }
+    if (!row || !row.id) return;
+    const baseUrl = getBackendApiUrl();
+    window.open(`${baseUrl}/desplazamientos-viaticos/solicitudes/${row.id}/accion-admin`, '_blank');
   };
 
   const segments = [
@@ -294,8 +290,18 @@ export default function ViaticosGestionDashboard({ user, onBack }) {
         })}
       </Box>
       <TableContainer component={Paper} variant="outlined" sx={{ borderRadius: 3, maxWidth: '100%', overflowX: 'auto', boxShadow: '0 10px 28px rgba(15,23,42,.05)' }}>
-        <Table sx={{ minWidth: 1220 }}>
-          <TableHead><TableRow sx={{ bgcolor: '#f8fafc' }}><TableCell sx={{ fontSize: 11, fontWeight: 900, color: '#334155' }}>Consecutivo</TableCell><TableCell sx={{ fontSize: 11, fontWeight: 900, color: '#334155' }}>Colaborador</TableCell><TableCell sx={{ fontSize: 11, fontWeight: 900, color: '#334155' }}>Estado del trámite</TableCell><TableCell sx={{ fontSize: 11, fontWeight: 900, color: '#334155' }}>F. Última Firma</TableCell><TableCell sx={{ fontSize: 11, fontWeight: 900, color: '#334155' }}>Legalización</TableCell><TableCell align="center" sx={{ fontSize: 11, fontWeight: 900, color: '#334155' }}>Soportes</TableCell><TableCell sx={{ fontSize: 11, fontWeight: 900, color: '#334155' }}>Presentada</TableCell><TableCell align="right" sx={{ fontSize: 11, fontWeight: 900, color: '#334155' }}>Anticipo</TableCell><TableCell align="center" sx={{ fontSize: 11, fontWeight: 900, color: '#334155' }}>Gestión / Revisión</TableCell></TableRow></TableHead>
+        <Table sx={{ minWidth: 880, tableLayout: 'auto' }}>
+          <TableHead>
+            <TableRow sx={{ bgcolor: '#f8fafc' }}>
+              <TableCell sx={{ py: 1, px: 1.2, fontSize: 10.5, fontWeight: 900, color: '#334155', whiteSpace: 'nowrap' }}>Consecutivo / Colaborador</TableCell>
+              <TableCell sx={{ py: 1, px: 1, fontSize: 10.5, fontWeight: 900, color: '#334155' }}>Estado del trámite</TableCell>
+              <TableCell sx={{ py: 1, px: 1, fontSize: 10.5, fontWeight: 900, color: '#334155', whiteSpace: 'nowrap' }}>F. Última Firma</TableCell>
+              <TableCell sx={{ py: 1, px: 1, fontSize: 10.5, fontWeight: 900, color: '#334155' }}>Legalización</TableCell>
+              <TableCell align="center" sx={{ py: 1, px: 1, fontSize: 10.5, fontWeight: 900, color: '#334155' }}>Soportes / Presentación</TableCell>
+              <TableCell align="right" sx={{ py: 1, px: 1, fontSize: 10.5, fontWeight: 900, color: '#334155' }}>Anticipo</TableCell>
+              <TableCell align="center" sx={{ py: 1, px: 1, fontSize: 10.5, fontWeight: 900, color: '#334155' }}>Gestión / Revisión</TableCell>
+            </TableRow>
+          </TableHead>
           <TableBody>
             {filtered.map((row) => {
               const legalStatus = legalizationStatus(row);
@@ -305,57 +311,77 @@ export default function ViaticosGestionDashboard({ user, onBack }) {
               const isTesoreriaStep = row.estado === 'pendiente_tesoreria' || row.token_etapa === 'tesoreria';
 
               return <TableRow key={row.id} hover sx={{ '&:last-child td': { borderBottom: 0 } }}>
-                <TableCell><Typography fontWeight={900} color="#0b3a6f" sx={{ fontSize: 11.5 }}>{row.consecutivo}</Typography>{row._demo && <Chip label="PRUEBA" size="small" sx={{ mt: .5, height: 19, bgcolor: '#e0f2fe', color: '#0369a1', fontWeight: 900, fontSize: 9 }} />}</TableCell>
-                <TableCell><Typography fontWeight={750} sx={{ fontSize: 11.5 }}>{row.solicitante_snapshot?.nombre}</Typography><Typography variant="caption" color="text.secondary" sx={{ fontSize: 10.5 }}>{row.datos_laborales?.dependencia}</Typography></TableCell>
-                <TableCell><Chip size="small" color={row.estado === 'no_aprobada' ? 'error' : 'primary'} variant="outlined" label={stateLabel(row)} sx={{ maxWidth: 260, fontSize: 10.5 }} /></TableCell>
-                <TableCell sx={{ py: 0.8, px: 0.8 }}>
+                <TableCell sx={{ py: 0.8, px: 1.2 }}>
+                  <Stack spacing={0.2}>
+                    <Stack direction="row" alignItems="center" spacing={0.6}>
+                      <Typography fontWeight={900} color="#0b3a6f" sx={{ fontSize: 11, lineHeight: 1.1 }}>{row.consecutivo}</Typography>
+                      {row._demo && <Chip label="PRUEBA" size="small" sx={{ height: 16, bgcolor: '#e0f2fe', color: '#0369a1', fontWeight: 900, fontSize: 8.5, px: 0.3 }} />}
+                    </Stack>
+                    <Typography fontWeight={750} sx={{ fontSize: 10.5, color: '#0f172a', lineHeight: 1.1 }}>{row.solicitante_snapshot?.nombre}</Typography>
+                    <Typography variant="caption" color="text.secondary" sx={{ fontSize: 9.5, lineHeight: 1.15 }}>{row.datos_laborales?.dependencia}</Typography>
+                  </Stack>
+                </TableCell>
+                <TableCell sx={{ py: 0.8, px: 1 }}>
+                  <Chip size="small" color={row.estado === 'no_aprobada' ? 'error' : 'primary'} variant="outlined" label={stateLabel(row)} sx={{ maxWidth: 210, fontSize: 9.5, height: 22, '& .MuiChip-label': { px: 0.8, py: 0 } }} />
+                </TableCell>
+                <TableCell sx={{ py: 0.8, px: 1, whiteSpace: 'nowrap' }}>
                   {(() => {
                     const rawDate = getLastSignatureDate(row);
-                    if (!rawDate) return <Typography sx={{ fontSize: 10.5, color: '#94a3b8', fontStyle: 'italic' }}>Pendiente</Typography>;
+                    if (!rawDate) return <Typography sx={{ fontSize: 10, color: '#94a3b8', fontStyle: 'italic' }}>Pendiente</Typography>;
                     const dateObj = new Date(rawDate);
-                    if (Number.isNaN(dateObj.getTime())) return <Typography sx={{ fontSize: 10.5, color: '#94a3b8' }}>-</Typography>;
+                    if (Number.isNaN(dateObj.getTime())) return <Typography sx={{ fontSize: 10, color: '#94a3b8' }}>-</Typography>;
                     return (
                       <Stack spacing={0.1}>
-                        <Typography sx={{ fontSize: 11, fontWeight: 700, color: '#334155', lineHeight: 1.15 }}>
+                        <Typography sx={{ fontSize: 10.5, fontWeight: 700, color: '#334155', lineHeight: 1.15 }}>
                           {dateObj.toLocaleDateString('es-CO')}
                         </Typography>
-                        <Typography sx={{ fontSize: 9.5, fontWeight: 600, color: '#64748b', lineHeight: 1.15 }}>
+                        <Typography sx={{ fontSize: 9, fontWeight: 600, color: '#64748b', lineHeight: 1.15 }}>
                           {dateObj.toLocaleTimeString('es-CO', { hour: 'numeric', minute: '2-digit' })}
                         </Typography>
                       </Stack>
                     );
                   })()}
                 </TableCell>
-                <TableCell><Chip size="small" icon={legalStatus.label === 'Gestionada' ? <VerifiedRoundedIcon /> : legalStatus.label === 'Por revisar' ? <ScheduleRoundedIcon /> : undefined} label={legalStatus.label} sx={{ color: legalStatus.color, bgcolor: legalStatus.soft, border: `1px solid ${legalStatus.color}35`, fontWeight: 850, '& .MuiChip-icon': { color: legalStatus.color } }} /></TableCell>
-                <TableCell align="center"><Chip size="small" icon={<AttachFileRoundedIcon />} label={supportCount} variant={supportCount ? 'filled' : 'outlined'} sx={{ bgcolor: supportCount ? '#eef2ff' : 'transparent', color: supportCount ? '#4f46e5' : '#94a3b8', fontWeight: 900, '& .MuiChip-icon': { color: 'inherit' } }} /></TableCell>
-                <TableCell><Typography variant="body2" color={row.legalizacion?.presentado_at ? '#334155' : '#94a3b8'}>{row.legalizacion?.presentado_at ? formatDateTime(row.legalizacion.presentado_at) : 'Aún no presentada'}</Typography></TableCell>
-                <TableCell align="right"><Typography fontWeight={900}>{currency(row.liquidacion?.totalAnticipo)}</Typography></TableCell>
-                <TableCell align="center">
+                <TableCell sx={{ py: 0.8, px: 1 }}>
+                  <Chip size="small" icon={legalStatus.label === 'Gestionada' ? <VerifiedRoundedIcon /> : legalStatus.label === 'Por revisar' ? <ScheduleRoundedIcon /> : undefined} label={legalStatus.label} sx={{ color: legalStatus.color, bgcolor: legalStatus.soft, border: `1px solid ${legalStatus.color}35`, fontWeight: 850, fontSize: 9.5, height: 22, '& .MuiChip-icon': { color: legalStatus.color, fontSize: 14 } }} />
+                </TableCell>
+                <TableCell align="center" sx={{ py: 0.8, px: 1 }}>
+                  <Stack spacing={0.3} alignItems="center">
+                    <Chip size="small" icon={<AttachFileRoundedIcon />} label={`${supportCount} soportes`} variant={supportCount ? 'filled' : 'outlined'} sx={{ bgcolor: supportCount ? '#eef2ff' : 'transparent', color: supportCount ? '#4f46e5' : '#94a3b8', fontWeight: 900, fontSize: 9, height: 19, '& .MuiChip-icon': { color: 'inherit', fontSize: 12 } }} />
+                    <Typography variant="caption" sx={{ fontSize: 9, color: row.legalizacion?.presentado_at ? '#334155' : '#94a3b8' }}>
+                      {row.legalizacion?.presentado_at ? formatDateTime(row.legalizacion.presentado_at) : 'Sin presentar'}
+                    </Typography>
+                  </Stack>
+                </TableCell>
+                <TableCell align="right" sx={{ py: 0.8, px: 1, whiteSpace: 'nowrap' }}>
+                  <Typography fontWeight={900} sx={{ fontSize: 11, color: '#0b3a6f' }}>{currency(row.liquidacion?.totalAnticipo)}</Typography>
+                </TableCell>
+                <TableCell align="center" sx={{ py: 0.8, px: 1 }}>
                   {isTecnicoContableStep ? (
-                    <Button size="small" variant="contained" color="primary" onClick={() => openStageAction(row)} sx={{ textTransform: 'none', fontWeight: 850, fontSize: 11, borderRadius: 2 }}>
+                    <Button size="small" variant="contained" color="primary" onClick={() => openStageAction(row)} sx={{ textTransform: 'none', fontWeight: 850, fontSize: 10, py: 0.4, px: 1.2, borderRadius: 1.5, minWidth: 'auto', whiteSpace: 'nowrap' }}>
                       Liquidar
                     </Button>
                   ) : isTesoreriaStep ? (
-                    <Button size="small" variant="contained" color="info" onClick={() => openStageAction(row)} sx={{ textTransform: 'none', fontWeight: 850, fontSize: 11, borderRadius: 2 }}>
+                    <Button size="small" variant="contained" color="info" onClick={() => openStageAction(row)} sx={{ textTransform: 'none', fontWeight: 850, fontSize: 10, py: 0.4, px: 1.2, borderRadius: 1.5, minWidth: 'auto', whiteSpace: 'nowrap' }}>
                       Autorizar Pago
                     </Button>
                   ) : canReview ? (
                     <Tooltip title={legalStatus.label === 'Gestionada' ? 'Consultar legalización gestionada' : 'Abrir revisión de legalización'}>
-                      <IconButton onClick={() => openReview(row)} sx={{ color: legalStatus.color, bgcolor: legalStatus.soft, border: `1px solid ${legalStatus.color}35`, '&:hover': { bgcolor: `${legalStatus.color}18` } }}>
-                        <VisibilityRoundedIcon />
+                      <IconButton size="small" onClick={() => openReview(row)} sx={{ p: 0.5, color: legalStatus.color, bgcolor: legalStatus.soft, border: `1px solid ${legalStatus.color}35`, '&:hover': { bgcolor: `${legalStatus.color}18` } }}>
+                        <VisibilityRoundedIcon sx={{ fontSize: 17 }} />
                       </IconButton>
                     </Tooltip>
                   ) : (
-                    <Tooltip title="Consultar detalle del trámite y trazabilidad">
-                      <IconButton onClick={() => setDetailRow(row)} sx={{ color: '#0b3a6f', bgcolor: '#eff6ff', border: '1px solid #bfdbfe', '&:hover': { bgcolor: '#dbeafe' } }}>
-                        <VisibilityRoundedIcon />
+                    <Tooltip title="Abrir y gestionar formulario de la etapa o consultar documento">
+                      <IconButton size="small" onClick={() => openStageAction(row)} sx={{ p: 0.5, color: '#0b3a6f', bgcolor: '#eff6ff', border: '1px solid #bfdbfe', '&:hover': { bgcolor: '#dbeafe' } }}>
+                        <VisibilityRoundedIcon sx={{ fontSize: 17 }} />
                       </IconButton>
                     </Tooltip>
                   )}
                 </TableCell>
               </TableRow>;
             })}
-            {filtered.length === 0 && <TableRow><TableCell colSpan={9} align="center" sx={{ py: 5 }}><Typography fontWeight={800} color="text.secondary">No hay solicitudes en este estado.</Typography></TableCell></TableRow>}
+            {filtered.length === 0 && <TableRow><TableCell colSpan={7} align="center" sx={{ py: 5 }}><Typography fontWeight={800} color="text.secondary">No hay solicitudes en este estado.</Typography></TableCell></TableRow>}
           </TableBody>
         </Table>
       </TableContainer>

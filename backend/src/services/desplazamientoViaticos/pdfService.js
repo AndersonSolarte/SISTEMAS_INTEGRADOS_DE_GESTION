@@ -84,8 +84,9 @@ const buildApprovalTable = (solicitud) => {
       ...(solicitud.plan_aprobacion || []).map((step) => {
         const trace = findTrace(solicitud, step.key);
         const rejected = trace?.event === `no_aprobado_${step.key}`;
+        const obs = trace?.detail?.observacion || trace?.detail?.observation || trace?.observacion || '';
         return [
-          cell(step.label),
+          cell(step.label + (obs ? `\nObs: ${obs}` : '')),
           cell(rejected ? 'No aprobado' : trace ? 'Aprobado / completado' : 'Pendiente'),
           cell(trace?.actor?.nombre || trace?.actor?.email || ''),
           cell(trace?.at ? new Date(trace.at).toLocaleString('es-CO') : '')

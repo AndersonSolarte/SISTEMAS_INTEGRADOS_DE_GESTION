@@ -1404,13 +1404,15 @@ const renderDepartureSignatures = (solicitud, currentStepKey) => {
     let actorName = trace?.actor?.nombre || trace?.actor?.email || step.nombre || step.label;
     let actorCargo = trace?.actor?.cargo || step.label;
 
+    const obsText = trace?.detail?.observacion || trace?.detail?.observation || trace?.observacion || '';
     if (isApproved) {
       contentHtml = `
         <div style="font-size: 8px; color: #64748b;">Firmado electrónicamente por:</div>
         <div style="font-weight: 800; color: #0b3a6f; font-size: 10px; text-transform: uppercase; margin: 1px 0;">${escapeHtml(actorName)}</div>
         <div style="color: #475569; font-size: 8.5px;"><strong>Cargo:</strong> ${escapeHtml(actorCargo)}</div>
         <div style="color: #64748b; font-size: 8px; margin-top: 2px;">${formatTraceDate(trace.at)}</div>
-        <div style="font-size: 7.5px; color: #94a3b8; font-family: monospace;">ID: ${escapeHtml(txId)}</div>
+        ${obsText ? `<div style="color: #0369a1; font-size: 8px; margin-top: 3px; background: #f0f9ff; padding: 3px 5px; border-radius: 4px; border-left: 2px solid #0284c7; word-break: break-word;"><strong>Obs:</strong> ${escapeHtml(obsText)}</div>` : ''}
+        <div style="font-size: 7.5px; color: #94a3b8; font-family: monospace; margin-top: 2px;">ID: ${escapeHtml(txId)}</div>
       `;
     } else if (isRejected) {
       contentHtml = `
@@ -1662,13 +1664,15 @@ const renderLiquidationSectionHtml = (solicitud, currentStepKey, { isTreasury = 
     let actorName = trace?.actor?.nombre || trace?.actor?.email || step.nombre || step.label;
     let actorCargo = trace?.actor?.cargo || step.label;
 
+    const obsText = trace?.detail?.observacion || trace?.detail?.observation || trace?.observacion || '';
     if (isApproved) {
       contentHtml = `
         <div style="font-size: 8px; color: #166534; font-weight: 700;">FIRMADO ELECTRÓNICAMENTE:</div>
         <div style="font-weight: 800; color: #0b3a6f; font-size: 10px; text-transform: uppercase; margin: 1px 0;">${escapeHtml(actorName)}</div>
         <div style="color: #475569; font-size: 8.5px;"><strong>Cargo:</strong> ${escapeHtml(actorCargo)}</div>
         <div style="color: #64748b; font-size: 8px; margin-top: 2px;">${formatTraceDate(trace.at)}</div>
-        <div style="font-size: 7.5px; color: #94a3b8; font-family: monospace;">ID: ${escapeHtml(txId)}</div>
+        ${obsText ? `<div style="color: #15803d; font-size: 8px; margin-top: 3px; background: #f0fdf4; padding: 3px 5px; border-radius: 4px; border-left: 2px solid #22c55e; word-break: break-word;"><strong>Obs:</strong> ${escapeHtml(obsText)}</div>` : ''}
+        <div style="font-size: 7.5px; color: #94a3b8; font-family: monospace; margin-top: 2px;">ID: ${escapeHtml(txId)}</div>
       `;
     } else if (isRejected) {
       contentHtml = `
@@ -1830,11 +1834,12 @@ const liquidationRequestDocumentHtml = (solicitud, { currentStepKey = null, form
   const rawTransporte = String(viaticos.transporte || '').trim();
   const selectedTransports = rawTransporte.split(',').map(s => s.trim()).filter(Boolean);
 
+  const safeFormId = String(formId || 'action_form').replace(/[^a-zA-Z0-9_]/g, '_');
   const transportCheckboxesHtml = allTransportOptions.map(opt => {
     const isChecked = selectedTransports.some(st => st.toLowerCase() === opt.toLowerCase()) || (selectedTransports.length === 0 && opt === 'Terrestre Intermunicipal');
     return `
       <label style="display:inline-flex;align-items:center;gap:6px;background:${isChecked ? '#eff6ff' : '#f8fafc'};color:${isChecked ? '#1d4ed8' : '#64748b'};border:1.5px solid ${isChecked ? '#3b82f6' : '#cbd5e1'};border-radius:6px;padding:3px 9px;font-size:11px;font-weight:800;cursor:pointer;user-select:none;margin:2px 4px 2px 0;">
-        <input type="checkbox" name="transporte_check_${formId}" value="${escapeHtml(opt)}"${isChecked ? ' checked' : ''} form="${formId}" onchange="updateTransporteValue_${formId}()" style="margin:0;cursor:pointer;">
+        <input type="checkbox" name="transporte_check_${safeFormId}" value="${escapeHtml(opt)}"${isChecked ? ' checked' : ''} form="${formId}" onchange="updateTransporteValue_${safeFormId}()" style="margin:0;cursor:pointer;">
         ${escapeHtml(opt)}
       </label>
     `;
@@ -1849,13 +1854,13 @@ const liquidationRequestDocumentHtml = (solicitud, { currentStepKey = null, form
     <div class="fr004-field fr004-span-2">
       <label>Transporte autorizado (desmarque los no autorizados) <span class="fr004-required">*</span></label>
       <div style="margin-top:4px;display:flex;flex-wrap:wrap;align-items:center;">${transportCheckboxesHtml}</div>
-      <input type="hidden" id="transporte-hidden-${formId}" form="${formId}" name="transporte" value="${escapeHtml(selectedTransports.join(', '))}">
+      <input type="hidden" id="transporte-hidden-${safeFormId}" form="${formId}" name="transporte" value="${escapeHtml(selectedTransports.join(', '))}">
       <script>
-        function updateTransporteValue_${formId}() {
+        function updateTransporteValue_${safeFormId}() {
           const form = document.getElementById('${formId}');
           if (!form) return;
-          const checked = Array.from(form.querySelectorAll('input[name="transporte_check_${formId}"]:checked')).map(cb => cb.value);
-          const hidden = document.getElementById('transporte-hidden-${formId}');
+          const checked = Array.from(form.querySelectorAll('input[name="transporte_check_${safeFormId}"]:checked')).map(cb => cb.value);
+          const hidden = document.getElementById('transporte-hidden-${safeFormId}');
           if (hidden) hidden.value = checked.join(', ');
         }
       </script>
@@ -2560,8 +2565,47 @@ const descargarPdf = async (req, res) => {
   return res.send(attachment.content || await fs.promises.readFile(attachment.path));
 };
 
+const abrirAccionAdmin = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const isNum = !isNaN(Number(id));
+    const solicitud = await DesplazamientoViaticosSolicitud.findOne({
+      where: {
+        [Op.or]: [
+          { id: isNum ? Number(id) : 0 },
+          { consecutivo: String(id) }
+        ]
+      }
+    });
+
+    if (!solicitud) {
+      return res.status(404).send(page('Solicitud no encontrada', '<p>No se encontró la solicitud de viáticos especificada.</p>'));
+    }
+
+    const plan = solicitud.plan_aprobacion || [];
+    const currentStep = plan[solicitud.paso_actual];
+
+    if (!currentStep || ['no_aprobada', 'finalizada', 'pago_autorizado_pendiente_legalizacion', 'legalizacion_finalizada'].includes(solicitud.estado)) {
+      const html = liquidationRequestDocumentHtml(solicitud, {
+        currentStepKey: null,
+        formId: 'view_form',
+        isTechnician: false,
+        isTreasury: false
+      });
+      return res.send(html);
+    }
+
+    const adminToken = createStageToken(solicitud, currentStep, 'admin_dashboard');
+    return res.redirect(`/api/desplazamientos-viaticos/accion/${adminToken}`);
+  } catch (error) {
+    console.error('Error al abrir acción admin:', error);
+    return res.status(500).send(page('Error al abrir formulario', `<p>${escapeHtml(error.message)}</p>`));
+  }
+};
+
 module.exports = {
   _internals: { buildApprovalPlan, parseLiquidationBody, liquidationRequestDocumentHtml, validatePayload },
+  abrirAccionAdmin,
   descargarFormato,
   descargarPdf,
   mostrarAccion,
