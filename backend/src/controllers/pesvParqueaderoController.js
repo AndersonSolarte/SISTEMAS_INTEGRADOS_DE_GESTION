@@ -951,12 +951,20 @@ const notifyExpiry = async (req, res) => {
   try {
     const row = await PesvParqueaderoRegistro.findByPk(req.params.id);
     if (!row) return res.status(404).json({ success: false, message: 'Registro no encontrado' });
-    if (isBicycleVehicle(row)) return res.status(400).json({ success: false, message: 'SOAT y RTM no aplican para bicicletas; no se genera notificación' });
+
+    const tipo = ['licencia', 'tecnomecanica', 'soat'].includes(req.body?.tipo) ? req.body.tipo : 'soat';
+    const isLicencia = tipo === 'licencia';
+    const isRtm = tipo === 'tecnomecanica';
+
+    if (!isLicencia && isBicycleVehicle(row)) {
+      return res.status(400).json({ success: false, message: 'SOAT y RTM no aplican para bicicletas; no se genera notificación' });
+    }
     if (!row.correo) return res.status(400).json({ success: false, message: 'El registro no tiene correo electrónico' });
-    const tipo = req.body?.tipo === 'tecnomecanica' ? 'tecnomecanica' : 'soat';
-    const documentType = tipo === 'tecnomecanica' ? 'tecnomecánica' : 'SOAT';
-    const field = documentType === 'SOAT' ? 'soat_vigencia' : 'tecnomecanica_vigencia';
-    const notificationField = documentType === 'SOAT' ? 'ultima_notificacion_soat' : 'ultima_notificacion_tecnomecanica';
+
+    const documentType = isLicencia ? 'Licencia de Conducción' : isRtm ? 'Tecnomecánica' : 'SOAT';
+    const field = isLicencia ? 'licencia_vencimiento' : isRtm ? 'tecnomecanica_vigencia' : 'soat_vigencia';
+    const notificationField = isLicencia ? 'ultima_notificacion_licencia' : isRtm ? 'ultima_notificacion_tecnomecanica' : 'ultima_notificacion_soat';
+
     const date = row[field];
     if (!date) return res.status(400).json({ success: false, message: `No existe una fecha verificable de ${documentType}` });
     const remainingDays = daysUntil(date);
