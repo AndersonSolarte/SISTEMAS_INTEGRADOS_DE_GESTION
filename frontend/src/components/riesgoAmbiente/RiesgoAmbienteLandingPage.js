@@ -54,10 +54,10 @@ const MODULES = [
     shortTitle: 'PESV',
     description: 'Monitoreo de movilidad segura, siniestros, factores de riesgo y avance del Plan Estratégico de Seguridad Vial.',
     icon: DirectionsCarFilledRoundedIcon,
-    color: '#d97706',
-    dark: '#92400e',
-    light: '#fffbeb',
-    gradient: 'linear-gradient(135deg, #f59e0b 0%, #b45309 100%)',
+    color: '#1d4ed8',
+    dark: '#1e3a8a',
+    light: '#eff6ff',
+    gradient: 'linear-gradient(135deg, #0f172a 0%, #1e3a8a 50%, #2563eb 100%)',
     metrics: ['Siniestros viales', 'Personas capacitadas', 'Vehículos inspeccionados', 'Avance del PESV'],
     analyses: ['Siniestros por severidad', 'Actores y factores de riesgo', 'Inspecciones preoperacionales', 'Cumplimiento del plan de movilidad'],
     standards: ['Ley 1503 de 2011', 'Decreto 1252 de 2021', 'Resolución 40595 de 2022']
@@ -150,9 +150,9 @@ function RiesgoAmbienteLandingPage({ user, onBack }) {
             <Typography variant="h5" sx={{ fontWeight: 900, color: '#0f172a', textAlign: 'center' }}>Submódulos de Seguridad Vial</Typography>
             <Typography sx={{ color: '#64748b', textAlign: 'center', mt: .5 }}>La arquitectura queda preparada para incorporar nuevos componentes del PESV.</Typography>
           </Box>
-          <Paper elevation={0} onClick={() => setActiveModule('parqueaderos')} sx={{ maxWidth: 480, width: '100%', mx: 'auto', p: 3.2, borderRadius: 4, border: '1px solid #fde68a', cursor: 'pointer', bgcolor: '#fffdf7', transition: 'all .22s ease', '&:hover': { transform: 'translateY(-4px)', borderColor: '#d97706', boxShadow: '0 18px 40px rgba(217,119,6,.16)' } }}>
+          <Paper elevation={0} onClick={() => setActiveModule('parqueaderos')} sx={{ maxWidth: 480, width: '100%', mx: 'auto', p: 3.2, borderRadius: 4, border: '1px solid #bfdbfe', cursor: 'pointer', bgcolor: '#f8fafc', transition: 'all .22s ease', '&:hover': { transform: 'translateY(-4px)', borderColor: '#2563eb', boxShadow: '0 18px 40px rgba(37,99,235,.18)' } }}>
             <Box sx={{ width: 72, height: 72, borderRadius: 3, display: 'grid', placeItems: 'center', color: '#fff', background: selected.gradient, mb: 2 }}><LocalParkingRoundedIcon sx={{ fontSize: 42 }} /></Box>
-            <Chip label="SUBMÓDULO 01" size="small" sx={{ bgcolor: '#fef3c7', color: '#92400e', fontWeight: 900, mb: 1.2 }} />
+            <Chip label="SUBMÓDULO 01" size="small" sx={{ bgcolor: '#dbeafe', color: '#1e40af', fontWeight: 900, mb: 1.2 }} />
             <Typography variant="h5" sx={{ fontWeight: 900, color: '#0f172a' }}>Parqueaderos UNICESMAG</Typography>
             <Typography sx={{ mt: 1, color: '#64748b', lineHeight: 1.55 }}>Administración de cupos, personas y vehículos, con alertas de vencimiento de SOAT y revisión tecnomecánica.</Typography>
             <Button fullWidth variant="contained" endIcon={<ArrowForwardRoundedIcon />} sx={{ mt: 2.5, borderRadius: 999, textTransform: 'none', fontWeight: 900, background: selected.gradient }}>Gestionar parqueaderos</Button>
