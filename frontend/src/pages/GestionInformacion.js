@@ -5366,6 +5366,72 @@ function GestionInformacion() {
     return clone;
   };
 
+  const cropCanvasToVisualContent = (sourceCanvas, padding = 20) => {
+    const sourceContext = sourceCanvas.getContext('2d', { willReadFrequently: true });
+    if (!sourceContext) return sourceCanvas;
+
+    const { width, height } = sourceCanvas;
+    const pixels = sourceContext.getImageData(0, 0, width, height).data;
+    let minX = width;
+    let minY = height;
+    let maxX = -1;
+    let maxY = -1;
+
+    // The export canvas is white. Anything visibly different from white belongs
+    // to the chart (including the very light grid, axes and grouped-year border).
+    for (let y = 0; y < height; y += 1) {
+      for (let x = 0; x < width; x += 1) {
+        const offset = (y * width + x) * 4;
+        const alpha = pixels[offset + 3];
+        const isVisualPixel = alpha > 8 && (
+          pixels[offset] < 252
+          || pixels[offset + 1] < 252
+          || pixels[offset + 2] < 252
+        );
+        if (!isVisualPixel) continue;
+        if (x < minX) minX = x;
+        if (x > maxX) maxX = x;
+        if (y < minY) minY = y;
+        if (y > maxY) maxY = y;
+      }
+    }
+
+    if (maxX < minX || maxY < minY) return sourceCanvas;
+
+    const safePadding = Math.max(0, Math.round(padding));
+    const cropLeft = Math.max(0, minX - safePadding);
+    const cropTop = Math.max(0, minY - safePadding);
+    const cropRight = Math.min(width, maxX + safePadding + 1);
+    const cropBottom = Math.min(height, maxY + safePadding + 1);
+    const cropWidth = cropRight - cropLeft;
+    const cropHeight = cropBottom - cropTop;
+
+    // Avoid an extra rasterization when the node already fits its visual bounds.
+    if (cropLeft === 0 && cropTop === 0 && cropRight === width && cropBottom === height) {
+      return sourceCanvas;
+    }
+
+    const croppedCanvas = document.createElement('canvas');
+    croppedCanvas.width = cropWidth;
+    croppedCanvas.height = cropHeight;
+    const croppedContext = croppedCanvas.getContext('2d');
+    if (!croppedContext) return sourceCanvas;
+    croppedContext.fillStyle = '#ffffff';
+    croppedContext.fillRect(0, 0, cropWidth, cropHeight);
+    croppedContext.drawImage(
+      sourceCanvas,
+      cropLeft,
+      cropTop,
+      cropWidth,
+      cropHeight,
+      0,
+      0,
+      cropWidth,
+      cropHeight
+    );
+    return croppedCanvas;
+  };
+
   const captureNodeAsPngBlob = async (node, scale = 2) => {
     if (!node) throw new Error('Nodo de grafico no encontrado');
 
@@ -5434,7 +5500,8 @@ function GestionInformacion() {
         ctx.scale(scale, scale);
         ctx.drawImage(img, 0, 0, width, height);
         try {
-          canvas.toBlob((blob) => {
+          const exportCanvas = cropCanvasToVisualContent(canvas, 10 * scale);
+          exportCanvas.toBlob((blob) => {
             if (!blob) {
               reject(new Error('No fue posible exportar el grafico'));
               return;
@@ -8693,8 +8760,8 @@ const renderCategoryBars = (items = [], options = {}) => {
           >
             {rows.map((row, index) => (
               <Box key={`grad-sem-${row.periodLabel || index}`} sx={{ display: 'grid', placeItems: 'center' }}>
-                <Box sx={{ width: 24, height: 20, borderRadius: 999, bgcolor: '#e2e8f0', display: 'grid', placeItems: 'center' }}>
-                  <Typography sx={{ color: '#64748b', fontSize: 11, fontWeight: 900, lineHeight: 1 }}>
+                <Box sx={{ width: 28, height: 23, borderRadius: 999, bgcolor: '#e2e8f0', display: 'grid', placeItems: 'center' }}>
+                  <Typography sx={{ color: '#64748b', fontSize: 13, fontWeight: 900, lineHeight: 1 }}>
                     {row.semester || 'I'}
                   </Typography>
                 </Box>
@@ -8714,14 +8781,14 @@ const renderCategoryBars = (items = [], options = {}) => {
                 key={`grad-year-${group.year}-${group.start}`}
                 sx={{
                   gridColumn: `${group.start + 1} / ${group.start + group.count + 1}`,
-                  minHeight: 28,
+                  minHeight: 32,
                   display: 'grid',
                   placeItems: 'center',
                   border: '1px solid #94a3b8',
                   bgcolor: '#f8fafc'
                 }}
               >
-                <Typography sx={{ color: '#0f172a', fontWeight: 900, fontSize: 12 }}>
+                <Typography sx={{ color: '#0f172a', fontWeight: 900, fontSize: 15 }}>
                   {group.year}
                 </Typography>
               </Box>
@@ -9319,7 +9386,7 @@ const renderCategoryBars = (items = [], options = {}) => {
                             </defs>
                             <CartesianGrid strokeDasharray="4 4" stroke="#e2e8f0" />
                             <XAxis dataKey="periodDisplay" tick={false} axisLine={{ stroke: '#cbd5e1' }} height={10} padding={{ left: 0, right: 0 }} />
-                            <YAxis tickFormatter={(v) => v >= 1000 ? `${(v / 1000).toFixed(1)}k` : v} tick={{ fontSize: 11, fill: '#64748b' }} axisLine={false} tickLine={false} />
+                            <YAxis tickFormatter={(v) => v >= 1000 ? `${(v / 1000).toFixed(1)}k` : v} tick={{ fontSize: 14, fill: '#64748b', fontWeight: 700 }} axisLine={false} tickLine={false} width={54} />
                             <RechartsTooltip formatter={(value) => [formatNumber(value), 'Graduados']} />
                             <Bar dataKey="graduados" radius={[6, 6, 0, 0]} maxBarSize={48} cursor="pointer" onClick={(_, index) => toggleGraduadosChartPeriod(trendData[index]?.periodLabel)} isAnimationActive={false}>
                               {trendData.map((entry) => {
@@ -9335,7 +9402,7 @@ const renderCategoryBars = (items = [], options = {}) => {
                                   />
                                 );
                               })}
-                              <LabelList dataKey="graduados" position="top" formatter={(value) => formatNumber(value)} style={{ fontSize: 11, fill: GRAD_DARK, fontWeight: 900 }} />
+                              <LabelList dataKey="graduados" position="top" formatter={(value) => formatNumber(value)} style={{ fontSize: 15, fill: GRAD_DARK, fontWeight: 900 }} />
                             </Bar>
                           </BarChart>
                         </ResponsiveContainer>
@@ -15673,7 +15740,7 @@ const renderCategoryBars = (items = [], options = {}) => {
       return (
         <text x={x + width / 2} y={y - 6} textAnchor="middle"
           fill={isDimmed ? '#bfdbfe' : '#1d4ed8'}
-          fontSize={isSelected ? 13 : 11}
+          fontSize={isSelected ? 17 : 15}
           fontWeight={isSelected ? 900 : 700}>
           {formatNumber(value)}
         </text>
@@ -16233,10 +16300,10 @@ const renderCategoryBars = (items = [], options = {}) => {
                       </linearGradient>
                     </defs>
                     <CartesianGrid strokeDasharray="3 3" stroke="#cbd5e1" strokeWidth={0.8} />
-                    <XAxis dataKey="name" tick={{ fontSize: 10.5, fill: '#334155', fontWeight: 700 }} axisLine={{ stroke: '#94a3b8', strokeWidth: 1 }} tickLine={false} interval={0} />
+                    <XAxis dataKey="name" tick={{ fontSize: 13, fill: '#334155', fontWeight: 800 }} axisLine={{ stroke: '#94a3b8', strokeWidth: 1 }} tickLine={false} interval={0} />
                     <YAxis
                       domain={[0, 'auto']}
-                      tick={{ fontSize: 10, fill: '#475569', fontWeight: 600 }}
+                      tick={{ fontSize: 13, fill: '#475569', fontWeight: 700 }}
                       axisLine={false}
                       tickLine={false}
                       tickFormatter={fmtAxis}
@@ -16277,8 +16344,8 @@ const renderCategoryBars = (items = [], options = {}) => {
                       </filter>
                     </defs>
                     <CartesianGrid strokeDasharray="4 3" stroke="#93b8d8" strokeWidth={0.9} />
-                    <XAxis dataKey="name" tick={{ fontSize: 10.5, fill: '#334155', fontWeight: 700 }} axisLine={{ stroke: '#94a3b8', strokeWidth: 1 }} tickLine={false} interval={0} />
-                    <YAxis tick={{ fontSize: 10, fill: '#64748b' }} axisLine={false} tickLine={false} tickFormatter={fmtAxis} width={48} />
+                    <XAxis dataKey="name" tick={{ fontSize: 13, fill: '#334155', fontWeight: 800 }} axisLine={{ stroke: '#94a3b8', strokeWidth: 1 }} tickLine={false} interval={0} />
+                    <YAxis tick={{ fontSize: 13, fill: '#64748b', fontWeight: 700 }} axisLine={false} tickLine={false} tickFormatter={fmtAxis} width={54} />
                     <RechartsTooltip content={<CustomTooltip />} cursor={{ fill: 'rgba(29,78,216,0.05)' }} />
                     <Bar dataKey="value" radius={[5, 5, 0, 0]} cursor="pointer" onClick={handleBarClick} isAnimationActive={false}>
                       {chartData.map((entry, index) => {
@@ -16416,8 +16483,8 @@ const renderCategoryBars = (items = [], options = {}) => {
           >
             {rows.map((row, index) => (
               <Box key={`sem-${row.periodo || index}`} sx={{ display: 'grid', placeItems: 'center' }}>
-                <Box sx={{ width: 24, height: 20, borderRadius: 999, bgcolor: '#e2e8f0', display: 'grid', placeItems: 'center' }}>
-                  <Typography sx={{ color: '#64748b', fontSize: 11, fontWeight: 900, lineHeight: 1 }}>
+                <Box sx={{ width: 28, height: 23, borderRadius: 999, bgcolor: '#e2e8f0', display: 'grid', placeItems: 'center' }}>
+                  <Typography sx={{ color: '#64748b', fontSize: 13, fontWeight: 900, lineHeight: 1 }}>
                     {row.semester || (String(row.periodo || '').endsWith('II') ? 'II' : 'I')}
                   </Typography>
                 </Box>
@@ -16437,14 +16504,14 @@ const renderCategoryBars = (items = [], options = {}) => {
                 key={`yr-${group.year}-${group.start}`}
                 sx={{
                   gridColumn: `${group.start + 1} / ${group.start + group.count + 1}`,
-                  minHeight: 28,
+                  minHeight: 32,
                   display: 'grid',
                   placeItems: 'center',
                   border: '1px solid #94a3b8',
                   bgcolor: '#f8fafc'
                 }}
               >
-                <Typography sx={{ color: '#0f172a', fontWeight: 900, fontSize: 12 }}>
+                <Typography sx={{ color: '#0f172a', fontWeight: 900, fontSize: 15 }}>
                   {group.year}
                 </Typography>
               </Box>
@@ -16646,21 +16713,21 @@ const renderCategoryBars = (items = [], options = {}) => {
                         <BarChart data={flujoDashboardChartData} margin={{ top: 26, right: 20, bottom: 4, left: 0 }} barCategoryGap="18%">
                           <CartesianGrid strokeDasharray="4 4" stroke="#e2e8f0" />
                           <XAxis dataKey="periodo" tick={false} axisLine={{ stroke: '#cbd5e1' }} height={10} padding={{ left: 0, right: 0 }} />
-                          <YAxis tickFormatter={fmtAxis} tick={{ fontSize: 13, fill: '#475569', fontWeight: 700 }} axisLine={false} tickLine={false} width={52} />
+                          <YAxis tickFormatter={fmtAxis} tick={{ fontSize: 15, fill: '#475569', fontWeight: 800 }} axisLine={false} tickLine={false} width={58} />
                           <RechartsTooltip formatter={(value, name) => [formatNumber(value), name]} labelFormatter={(label) => `Periodo ${label}`} />
                           <Bar dataKey="inscritos" name="Inscritos" stackId="flujo" fill={INSCRITOS_BAR_BLUE} radius={[0, 0, 5, 5]} maxBarSize={54} isAnimationActive={false}>
-                            <LabelList dataKey="inscritos" position="center" formatter={(v) => formatNumber(v)} style={{ fontSize: 11, fill: '#fff', fontWeight: 900 }} />
+                            <LabelList dataKey="inscritos" position="center" formatter={(v) => formatNumber(v)} style={{ fontSize: 15, fill: '#fff', fontWeight: 900 }} />
                           </Bar>
                           <Bar dataKey="admitidos" name="Admitidos" stackId="flujo" fill="#dc2626" maxBarSize={54} isAnimationActive={false}>
-                            <LabelList dataKey="admitidos" position="center" formatter={(v) => formatNumber(v)} style={{ fontSize: 11, fill: '#fff', fontWeight: 900 }} />
+                            <LabelList dataKey="admitidos" position="center" formatter={(v) => formatNumber(v)} style={{ fontSize: 15, fill: '#fff', fontWeight: 900 }} />
                           </Bar>
                           <Bar dataKey="primerCurso" name="Primer Curso" stackId="flujo" fill="#64748b" radius={[5, 5, 0, 0]} maxBarSize={54} isAnimationActive={false}>
-                            <LabelList dataKey="primerCurso" position="center" formatter={(v) => formatNumber(v)} style={{ fontSize: 11, fill: '#fff', fontWeight: 900 }} />
+                            <LabelList dataKey="primerCurso" position="center" formatter={(v) => formatNumber(v)} style={{ fontSize: 15, fill: '#fff', fontWeight: 900 }} />
                           </Bar>
                         </BarChart>
                       </ResponsiveContainer>
                     </Box>
-                    {renderPeriodAxis(flujoDashboardChartData, 58, { left: 52, right: 20 })}
+                    {renderPeriodAxis(flujoDashboardChartData, 58, { left: 58, right: 20 })}
                       </Box>
                     </Box>
                   </Paper>
@@ -16799,15 +16866,15 @@ const renderCategoryBars = (items = [], options = {}) => {
                           <BarChart data={flujoDashboardChartData} margin={{ top: 22, right: 18, bottom: 4, left: 0 }} barCategoryGap="18%">
                             <CartesianGrid strokeDasharray="4 4" stroke="#e2e8f0" />
                             <XAxis dataKey="periodo" tick={false} axisLine={{ stroke: '#cbd5e1' }} height={10} padding={{ left: 0, right: 0 }} />
-                            <YAxis tickFormatter={fmtAxis} tick={{ fontSize: 13, fill: '#475569', fontWeight: 700 }} axisLine={false} tickLine={false} width={46} />
+                            <YAxis tickFormatter={fmtAxis} tick={{ fontSize: 15, fill: '#475569', fontWeight: 800 }} axisLine={false} tickLine={false} width={54} />
                             <RechartsTooltip formatter={(value) => [formatNumber(value), chart.title]} labelFormatter={(label) => `Periodo ${label}`} />
                             <Bar dataKey={chart.key} fill={chart.color} radius={[6, 6, 0, 0]} maxBarSize={54} isAnimationActive={false}>
-                              <LabelList dataKey={chart.key} position="top" offset={7} formatter={(v) => formatNumber(v)} style={{ fontSize: 11, fill: chart.color, fontWeight: 900, stroke: '#ffffff', strokeWidth: 2.4, paintOrder: 'stroke' }} />
+                              <LabelList dataKey={chart.key} position="top" offset={8} formatter={(v) => formatNumber(v)} style={{ fontSize: 15, fill: chart.color, fontWeight: 900, stroke: '#ffffff', strokeWidth: 3, paintOrder: 'stroke' }} />
                             </Bar>
                           </BarChart>
                         </ResponsiveContainer>
                       </Box>
-                      {renderPeriodAxis(flujoDashboardChartData, 58, { left: 46, right: 18 })}
+                      {renderPeriodAxis(flujoDashboardChartData, 58, { left: 54, right: 18 })}
                         </Box>
                       </Box>
                   </Paper>
