@@ -1306,22 +1306,17 @@ function ParqueaderosPesvPanel({ onBack }) {
               <Stack spacing={2}>
                 <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap" useFlexGap justifyContent="space-between">
                   <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap" useFlexGap>
+                    {runtValidation.row?.nombres_apellidos && (
+                      <Chip
+                        label={`Persona: ${runtValidation.row.nombres_apellidos}`}
+                        variant="outlined"
+                        sx={{ fontWeight: 800, color: '#1e3a8a', borderColor: '#93c5fd', bgcolor: '#eff6ff' }}
+                      />
+                    )}
                     <Stack direction="row" spacing={0.25} alignItems="center">
                       <Chip label={`Cédula: ${runtValidation.documentoConsulta || runtValidation.row?.identificacion || ''}`} color="primary" sx={{ fontWeight: 800 }} />
                       <Tooltip title="Copiar Cédula">
                         <IconButton size="small" onClick={() => copyRuntValue('Cédula', runtValidation.documentoConsulta || runtValidation.row?.identificacion)}>
-                          <ContentCopyRoundedIcon sx={{ fontSize: 17 }} />
-                        </IconButton>
-                      </Tooltip>
-                    </Stack>
-
-                    <Stack direction="row" spacing={0.25} alignItems="center">
-                      <Chip
-                        label={`Primer Apellido: ${getPrimerApellido(runtValidation.row) || 'Sin apellido'}`}
-                        sx={{ fontWeight: 800, bgcolor: '#fef3c7', color: '#92400e', border: '1px solid #fde68a' }}
-                      />
-                      <Tooltip title="Copiar Primer Apellido para formulario RUNT">
-                        <IconButton size="small" onClick={() => copyRuntValue('Primer Apellido', getPrimerApellido(runtValidation.row))}>
                           <ContentCopyRoundedIcon sx={{ fontSize: 17 }} />
                         </IconButton>
                       </Tooltip>
