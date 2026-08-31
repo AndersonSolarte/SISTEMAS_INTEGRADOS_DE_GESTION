@@ -1067,6 +1067,7 @@ function ParqueaderosPesvPanel({ onBack }) {
               <TableCell><Typography variant="body2" sx={{ fontWeight: 800 }}>{row.parqueadero_ingreso || 'Sin asignar'}</Typography><Typography variant="caption" color="text.secondary">{row.campus || 'Sin campus'}</Typography></TableCell>
               <TableCell><Chip label={row.placa || 'SIN PLACA'} size="small" sx={{ fontWeight: 900, bgcolor: '#e0e7ff', color: '#3730a3' }} /><Typography variant="caption" sx={{ display: 'block', mt: .5 }}>{row.tipo_vehiculo || 'Sin tipo'}</Typography></TableCell>
               <TableCell><ExpiryCell type="soat" date={row.soat_vigencia} rawText={row.soat_vigencia_texto} status={row.soat_estado} row={row} onNotify={notify} notifying={notifying === `${row.id}-soat`} /></TableCell>
+              <TableCell><ExpiryCell type="tecnomecanica" date={row.tecnomecanica_vigencia} rawText={row.tecnomecanica_vigencia_texto} status={row.tecnomecanica_estado} row={row} onNotify={notify} notifying={notifying === `${row.id}-tecnomecanica`} /></TableCell>
               <TableCell><ExpiryCell type="licencia" date={row.licencia_vencimiento} rawText={row.licencia_categorias ? `Cat. ${row.licencia_categorias}` : ''} status={row.licencia_estado} row={row} onNotify={notify} notifying={notifying === `${row.id}-licencia`} /></TableCell>
               <TableCell align="center" sx={{ whiteSpace: 'nowrap' }}>
                 <Stack direction="row" spacing={0.6} alignItems="center" justifyContent="center" flexWrap="nowrap">
