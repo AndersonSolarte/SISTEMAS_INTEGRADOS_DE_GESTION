@@ -394,6 +394,8 @@ const getFilteredRows = async (query = {}) => {
     total_activos: totalActivos,
     total_inactivos: totalInactivos,
     vehiculos: data.filter((r) => r.placa).length,
+    vencidos: data.filter((r) => r.soat_estado.code === 'vencido' || r.tecnomecanica_estado.code === 'vencido' || r.licencia_estado?.code === 'vencido').length,
+    proximos: data.filter((r) => (r.soat_estado.code === 'proximo' || r.tecnomecanica_estado.code === 'proximo' || r.licencia_estado?.code === 'proximo') && r.soat_estado.code !== 'vencido' && r.tecnomecanica_estado.code !== 'vencido' && r.licencia_estado?.code !== 'vencido').length,
     soat_vencidos: data.filter((r) => r.soat_estado.code === 'vencido').length,
     soat_proximos: data.filter((r) => r.soat_estado.code === 'proximo').length,
     tecnomecanica_vencidos: data.filter((r) => r.tecnomecanica_estado.code === 'vencido').length,
@@ -404,6 +406,8 @@ const getFilteredRows = async (query = {}) => {
   const estado = clean(query.estado, 30);
   if (estado) data = data.filter((row) => row.soat_estado.code === estado || row.tecnomecanica_estado.code === estado || row.licencia_estado?.code === estado);
   const indicador = clean(query.indicador, 30);
+  if (indicador === 'vencido') data = data.filter((row) => row.soat_estado.code === 'vencido' || row.tecnomecanica_estado.code === 'vencido' || row.licencia_estado?.code === 'vencido');
+  if (indicador === 'proximo') data = data.filter((row) => row.soat_estado.code === 'proximo' || row.tecnomecanica_estado.code === 'proximo' || row.licencia_estado?.code === 'proximo');
   if (indicador === 'soat_vencido') data = data.filter((row) => row.soat_estado.code === 'vencido');
   if (indicador === 'soat_proximo') data = data.filter((row) => row.soat_estado.code === 'proximo');
   if (indicador === 'rtm_vencido') data = data.filter((row) => row.tecnomecanica_estado.code === 'vencido');

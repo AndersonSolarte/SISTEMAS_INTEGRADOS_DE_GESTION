@@ -648,14 +648,18 @@ function ParqueaderosPesvPanel({ onBack }) {
 
   const runtUpdateDetected = Boolean(runtValidation.data?.resultado?.comparacion_actualizacion?.detectada);
 
+  const vencidosCount = summary.vencidos !== undefined
+    ? summary.vencidos
+    : rows.filter((r) => r.soat_estado?.code === 'vencido' || r.tecnomecanica_estado?.code === 'vencido' || r.licencia_estado?.code === 'vencido').length;
+
+  const proximosCount = summary.proximos !== undefined
+    ? summary.proximos
+    : rows.filter((r) => (r.soat_estado?.code === 'proximo' || r.tecnomecanica_estado?.code === 'proximo' || r.licencia_estado?.code === 'proximo') && r.soat_estado?.code !== 'vencido' && r.tecnomecanica_estado?.code !== 'vencido' && r.licencia_estado?.code !== 'vencido').length;
+
   const stats = [
     { key: '', label: 'Cupos registrados', value: summary.total || 0, color: '#1d4ed8', background: '#eff6ff', icon: <DirectionsCarRoundedIcon /> },
-    { key: 'soat_vencido', label: 'SOAT vencidos', value: summary.soat_vencidos || 0, color: '#dc2626', background: '#fef2f2', icon: <WarningAmberRoundedIcon /> },
-    { key: 'soat_proximo', label: 'SOAT próximos (30 días)', value: summary.soat_proximos || 0, color: '#d97706', background: '#fffbeb', icon: <EmailRoundedIcon /> },
-    { key: 'rtm_vencido', label: 'Tecnomecánica vencidas', value: summary.tecnomecanica_vencidos || 0, color: '#be123c', background: '#fff1f2', icon: <WarningAmberRoundedIcon /> },
-    { key: 'rtm_proximo', label: 'Tecnomecánica próximas (30 días)', value: summary.tecnomecanica_proximos || 0, color: '#7c3aed', background: '#f5f3ff', icon: <FactCheckRoundedIcon /> },
-    { key: 'licencia_vencido', label: 'Licencias vencidas', value: summary.licencia_vencidos || 0, color: '#b91c1c', background: '#fff1f1', icon: <WarningAmberRoundedIcon /> },
-    { key: 'licencia_proximo', label: 'Licencias próximas (30 días)', value: summary.licencia_proximos || 0, color: '#0284c7', background: '#e0f2fe', icon: <EmailRoundedIcon /> }
+    { key: 'vencido', label: 'Vencidos', value: vencidosCount, color: '#dc2626', background: '#fef2f2', icon: <WarningAmberRoundedIcon /> },
+    { key: 'proximo', label: 'Próximos a vencer (30 días)', value: proximosCount, color: '#d97706', background: '#fffbeb', icon: <FactCheckRoundedIcon /> }
   ];
   const applyIndicatorFilter = (key) => {
     const selectedStat = stats.find((item) => item.key === key);
@@ -842,7 +846,7 @@ function ParqueaderosPesvPanel({ onBack }) {
         <Stack direction="row" spacing={1.5} alignItems="center"><DirectionsCarRoundedIcon sx={{ fontSize: 38 }} /><Box><Typography variant="overline" sx={{ fontWeight: 900, opacity: .85 }}>PESV · Submódulo 01</Typography><Typography variant="h4" sx={{ fontWeight: 900 }}>Parqueaderos UNICESMAG</Typography><Typography sx={{ opacity: .88 }}>Gestión de cupos, vehículos y vigencias documentales.</Typography></Box></Stack>
       </Paper>
       {importResult?.warningCount > 0 && <Alert severity="warning">Se importaron {importResult.imported} registros con {importResult.warningCount} advertencias de datos. Las vigencias no reconocibles quedaron marcadas como “Sin fecha verificable”.</Alert>}
-      <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr 1fr', sm: 'repeat(3,1fr)', lg: 'repeat(7,1fr)' }, gap: 1.4 }}>
+      <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', sm: 'repeat(3, 1fr)' }, gap: 1.6 }}>
         {stats.map((item) => {
           const hasSearch = Boolean(search.trim());
           const selected = item.key ? indicator === item.key : !indicator && !estado && !hasSearch;
@@ -852,18 +856,17 @@ function ParqueaderosPesvPanel({ onBack }) {
             key={item.label} component="button" type="button" aria-pressed={selected} onClick={() => applyIndicatorFilter(item.key)}
             elevation={0}
             sx={{
-              position: 'relative', overflow: 'hidden', width: '100%', p: 2, borderRadius: 3, textAlign: 'left', font: 'inherit', cursor: 'pointer',
-              color: item.color, bgcolor: emphasized ? item.background : '#fff', border: `2px solid ${emphasized ? item.color : '#e2e8f0'}`,
-              boxShadow: emphasized ? `0 12px 26px ${item.color}2b` : '0 4px 12px rgba(15,23,42,.04)',
+              position: 'relative', overflow: 'hidden', width: '100%', p: 2.2, borderRadius: 3.5, textAlign: 'left', font: 'inherit', cursor: 'pointer',
+              color: item.color, bgcolor: emphasized ? item.background : '#fff', border: `2px solid ${emphasized ? item.color : '#cbd5e1'}`,
+              boxShadow: emphasized ? `0 12px 24px ${item.color}2b` : '0 3px 10px rgba(15,23,42,.04)',
               transform: selected ? 'translateY(-3px)' : 'none', transition: 'transform .18s ease, box-shadow .18s ease, border-color .18s ease, background-color .18s ease',
               '&:hover': { transform: 'translateY(-4px)', borderColor: item.color, boxShadow: `0 14px 28px ${item.color}30` },
-              '&:focus-visible': { outline: `3px solid ${item.color}55`, outlineOffset: 2 },
-              '&::after': { content: '""', position: 'absolute', right: -22, bottom: -30, width: 105, height: 105, borderRadius: '50%', bgcolor: `${item.color}12` }
+              '&:focus-visible': { outline: `3px solid ${item.color}55`, outlineOffset: 2 }
             }}
           >
-            <Stack direction="row" justifyContent="space-between" alignItems="flex-start" spacing={1} sx={{ position: 'relative', zIndex: 1 }}>
-              <Box><Typography variant="caption" sx={{ display: 'block', color: emphasized ? item.color : '#64748b', fontWeight: 900 }}>{item.label}</Typography><Typography sx={{ mt: .65, fontSize: 30, lineHeight: 1, fontWeight: 900, color: '#0f172a' }}>{item.value.toLocaleString('es-CO')}</Typography></Box>
-              <Box sx={{ display: 'grid', placeItems: 'center', width: 42, height: 42, flexShrink: 0, borderRadius: 2.2, color: '#fff', bgcolor: item.color, boxShadow: `0 7px 16px ${item.color}38` }}>{item.icon}</Box>
+            <Stack direction="row" justifyContent="space-between" alignItems="center" spacing={1.5} sx={{ position: 'relative', zIndex: 1 }}>
+              <Box><Typography variant="caption" sx={{ display: 'block', color: emphasized ? item.color : '#475569', fontWeight: 900, fontSize: 13 }}>{item.label}</Typography><Typography sx={{ mt: .65, fontSize: 32, lineHeight: 1, fontWeight: 900, color: '#0f172a' }}>{item.value.toLocaleString('es-CO')}</Typography></Box>
+              <Box sx={{ display: 'grid', placeItems: 'center', width: 48, height: 48, flexShrink: 0, borderRadius: 2.8, color: '#fff', bgcolor: item.color, boxShadow: `0 7px 16px ${item.color}38` }}>{item.icon}</Box>
             </Stack>
           </Paper>;
         })}
