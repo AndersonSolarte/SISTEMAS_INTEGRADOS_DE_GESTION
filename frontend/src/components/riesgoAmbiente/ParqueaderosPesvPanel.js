@@ -846,7 +846,6 @@ function ParqueaderosPesvPanel({ onBack }) {
             />
             <Typography variant="caption" sx={{ display: 'block', mt: .55, ml: .5, color: '#64748b' }}>Busca por persona, identificación, correo, dependencia, campus, parqueadero, placa, modelo, SOAT o RTM.</Typography>
           </Box>
-          <FormControl size="small" sx={{ minWidth: 150 }}><InputLabel>Ver registros</InputLabel><Select label="Ver registros" value={estadoRegistro} onChange={(e) => { setEstadoRegistro(e.target.value); setPage(0); }}><MenuItem value="activos">Activos ({summary.total_activos ?? summary.total ?? 0})</MenuItem><MenuItem value="inactivos">Inactivos ({summary.total_inactivos || 0})</MenuItem><MenuItem value="todos">Todos</MenuItem></Select></FormControl>
           <FormControl size="small" sx={{ minWidth: 180 }}><InputLabel>Campus</InputLabel><Select label="Campus" value={campus} onChange={(e) => setCampus(e.target.value)}><MenuItem value="">Todos</MenuItem>{catalogs.campus.map((item) => <MenuItem key={item} value={item}>{item}</MenuItem>)}</Select></FormControl>
           <FormControl size="small" sx={{ minWidth: 190 }}><InputLabel>Estado documental</InputLabel><Select label="Estado documental" value={estado} onChange={(e) => { setEstado(e.target.value); setIndicator(''); }}><MenuItem value="">Todos</MenuItem><MenuItem value="vencido">Vencidos</MenuItem><MenuItem value="proximo">Próximos a vencer</MenuItem><MenuItem value="vigente">Vigentes</MenuItem><MenuItem value="sin_fecha">Sin fecha verificable</MenuItem></Select></FormControl>
           <Tooltip title="Actualizar"><IconButton onClick={load}><RefreshRoundedIcon /></IconButton></Tooltip>
@@ -891,19 +890,11 @@ function ParqueaderosPesvPanel({ onBack }) {
                       <EditRoundedIcon sx={{ fontSize: 16 }} />
                     </IconButton>
                   </Tooltip>
-                  {row.activo === false ? (
-                    <Tooltip title="Reactivar cupo en parqueadero" arrow placement="bottom">
-                      <IconButton size="small" onClick={() => reactivateRow(row)} sx={{ color: '#16a34a', bgcolor: '#f0fdf4', border: '1px solid #bbf7d0', p: 0.55, '&:hover': { bgcolor: '#dcfce7' } }}>
-                        <CheckCircleRoundedIcon sx={{ fontSize: 16 }} />
-                      </IconButton>
-                    </Tooltip>
-                  ) : (
-                    <Tooltip title="Inactivar cupo (conserva historial)" arrow placement="bottom">
-                      <IconButton size="small" onClick={() => remove(row)} sx={{ color: '#dc2626', bgcolor: '#fef2f2', border: '1px solid #fecaca', p: 0.55, '&:hover': { bgcolor: '#fee2e2' } }}>
-                        <DeleteOutlineRoundedIcon sx={{ fontSize: 16 }} />
-                      </IconButton>
-                    </Tooltip>
-                  )}
+                  <Tooltip title="Inactivar cupo (conserva historial en BD)" arrow placement="bottom">
+                    <IconButton size="small" onClick={() => remove(row)} sx={{ color: '#dc2626', bgcolor: '#fef2f2', border: '1px solid #fecaca', p: 0.55, '&:hover': { bgcolor: '#fee2e2' } }}>
+                      <DeleteOutlineRoundedIcon sx={{ fontSize: 16 }} />
+                    </IconButton>
+                  </Tooltip>
                 </Box>
               </TableCell>
             </TableRow>;
