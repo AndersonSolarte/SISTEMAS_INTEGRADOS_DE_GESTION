@@ -1,8 +1,8 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Alert, Autocomplete, Box, Button, Chip, CircularProgress, Dialog, DialogActions, DialogContent, DialogContentText, DialogTitle,
-  FormControl, IconButton, InputAdornment, InputLabel, MenuItem, Paper, Select, Stack, Table, TableBody,
-  TableCell, TableContainer, TableHead, TablePagination, TableRow, TextField, Tooltip, Typography
+  FormControl, IconButton, InputAdornment, InputLabel, MenuItem, Paper, Select, Stack, Tab, Table, TableBody,
+  TableCell, TableContainer, TableHead, TablePagination, TableRow, Tabs, TextField, Tooltip, Typography
 } from '@mui/material';
 import AddRoundedIcon from '@mui/icons-material/AddRounded';
 import ArrowBackRoundedIcon from '@mui/icons-material/ArrowBackRounded';
@@ -21,6 +21,8 @@ import WarningAmberRoundedIcon from '@mui/icons-material/WarningAmberRounded';
 import ClearRoundedIcon from '@mui/icons-material/ClearRounded';
 import ContentCopyRoundedIcon from '@mui/icons-material/ContentCopyRounded';
 import CheckCircleRoundedIcon from '@mui/icons-material/CheckCircleRounded';
+import BadgeRoundedIcon from '@mui/icons-material/BadgeRounded';
+import ContactPageRoundedIcon from '@mui/icons-material/ContactPageRounded';
 import { useSnackbar } from 'notistack';
 import gestionInformacionService from '../../services/gestionInformacionService';
 
@@ -196,6 +198,47 @@ const parseRuntCopiedText = (text = '') => {
   }
   return { plate, soat: currentSoat, rtm: currentRtm, vehicle, rtmSituation, rtmDueDate };
 };
+
+const parseRuntDriverCopiedText = (text = '') => {
+  const lines = String(text || '').split(/\r?\n/).map((l) => l.replace(/\s+/g, ' ').trim()).filter(Boolean);
+  const normalized = lines.map(normalizeRuntLine);
+  const categoryRegex = /\b(A1|A2|B1|B2|B3|C1|C2|C3)\b/gi;
+  const categoriesFound = new Set();
+  const datesFound = [];
+  let estado = 'VIGENTE';
+
+  lines.forEach((line, idx) => {
+    const norm = normalized[idx];
+    const catMatches = line.match(categoryRegex);
+    if (catMatches) {
+      catMatches.forEach((c) => categoriesFound.add(c.toUpperCase()));
+    }
+    const dateMatches = line.match(/\b(\d{1,2}[\/\.-]\d{1,2}[\/\.-]\d{2,4})\b/g);
+    if (dateMatches) {
+      dateMatches.forEach((dStr) => {
+        const iso = runtDateToIso(dStr);
+        if (iso) datesFound.push(iso);
+      });
+    }
+    if (norm.includes('INACTIVA') || norm.includes('SUSPENDIDA') || norm.includes('CANCELADA')) {
+      estado = 'INACTIVA';
+    }
+  });
+
+  datesFound.sort();
+  const earliestExpedicion = datesFound.length > 0 ? datesFound[0] : '';
+  const latestVencimiento = datesFound.length > 1 ? datesFound[datesFound.length - 1] : (datesFound[0] || '');
+  const categoriesList = Array.from(categoriesFound).join(', ');
+  const hasLicencia = categoriesFound.size > 0 || datesFound.length > 0;
+
+  return {
+    hasLicencia,
+    categorias: categoriesList,
+    expedicion: earliestExpedicion,
+    vencimiento: latestVencimiento,
+    estado
+  };
+};
 const expiryLabel = (status) => status?.code === 'vencido'
   ? `${Math.abs(status.days)} días vencido`
   : status?.code === 'proximo' ? `${status.days} días restantes`
@@ -266,7 +309,14 @@ function ParqueaderosPesvPanel({ onBack }) {
   const [notifying, setNotifying] = useState('');
   const [notifyingRuntUpdate, setNotifyingRuntUpdate] = useState(false);
   const [runtValidation, setRuntValidation] = useState({ open: false, row: null, sessionId: null, estado: '', data: null, loading: false });
+  const [runtValidationMode, setRuntValidationMode] = useState('vehicle');
   const [runtForm, setRuntForm] = useState(EMPTY_RUNT_FORM);
+  const [runtDriverForm, setRuntDriverForm] = useState({
+    tiene_licencia: 'SI',
+    licencia_categorias: '',
+    licencia_expedicion: '',
+    licencia_vencimiento: ''
+  });
   const [runtCopiedText, setRuntCopiedText] = useState('');
   const [history, setHistory] = useState({ open: false, row: null, loading: false, data: [] });
   const [lookingUpPerson, setLookingUpPerson] = useState(false);
@@ -539,12 +589,61 @@ function ParqueaderosPesvPanel({ onBack }) {
       enqueueSnackbar(`${label} copiada`, { variant: 'success' });
     } catch (error) { enqueueSnackbar(`No se pudo copiar ${label.toLowerCase()}`, { variant: 'error' }); }
   };
-  const startRuntValidation = async (row) => {
-    if (isBicycleVehicle(row)) return enqueueSnackbar('SOAT, RTM y validación RUNT no aplican para bicicletas', { variant: 'info' });
+  const startRuntValidation = async (row, mode = 'vehicle') => {
+    setRuntValidationMode(mode);
+    const isDriverMode = mode === 'driver';
+    const driverUrl = 'https://portalpublico.runt.gov.co/#/consulta-ciudadano-documento/consulta/consulta-ciudadano-documento';
+
+    if (!isDriverMode && isBicycleVehicle(row)) {
+      return enqueueSnackbar('SOAT, RTM y validación RUNT no aplican para bicicletas', { variant: 'info' });
+    }
+
     const placaConsulta = normalizePlateForRunt(row.placa);
-    const documentoConsulta = getRuntDocument(row);
-    if (!placaConsulta || !documentoConsulta) return enqueueSnackbar(row.vehiculo_es_propio === false ? 'La validación RUNT requiere la placa y la identificación del propietario' : 'La validación RUNT requiere placa e identificación', { variant: 'warning' });
+    const documentoConsulta = getRuntDocument(row) || String(row.identificacion || '').trim();
+
+    if (!documentoConsulta) {
+      return enqueueSnackbar('La consulta RUNT requiere la cédula / identificación', { variant: 'warning' });
+    }
+    if (!isDriverMode && !placaConsulta) {
+      return enqueueSnackbar(row.vehiculo_es_propio === false ? 'La validación RUNT requiere la placa y la identificación del propietario' : 'La validación RUNT requiere placa e identificación', { variant: 'warning' });
+    }
+
     const popup = window.open('', '_blank');
+
+    if (isDriverMode) {
+      setRuntDriverForm({
+        tiene_licencia: row.tiene_licencia === false ? 'NO' : 'SI',
+        licencia_categorias: row.licencia_categorias || '',
+        licencia_expedicion: formatDateForInput(row.licencia_expedicion) || '',
+        licencia_vencimiento: formatDateForInput(row.licencia_vencimiento) || ''
+      });
+      setRuntCopiedText('');
+      setRuntValidation({
+        open: true,
+        row,
+        sessionId: null,
+        runtUrl: driverUrl,
+        estado: 'PENDIENTE',
+        data: null,
+        loading: false,
+        placaConsulta: row.placa || '',
+        documentoConsulta,
+        usaDocumentoPropietario: false
+      });
+      if (popup) {
+        try {
+          popup.location.replace(driverUrl);
+          popup.opener = null;
+        } catch (popupError) {
+          popup.close();
+          enqueueSnackbar('La ventana RUNT se configuró. Use el botón «Abrir RUNT por Documento».', { variant: 'warning' });
+        }
+      } else {
+        enqueueSnackbar('El navegador bloqueó la ventana emergente RUNT. Permita emergentes para SIAC.', { variant: 'warning' });
+      }
+      return;
+    }
+
     try {
       const result = await gestionInformacionService.startPesvRuntValidation(row.id);
       const session = result.data;
@@ -563,6 +662,44 @@ function ParqueaderosPesvPanel({ onBack }) {
       }
       else enqueueSnackbar('El navegador bloqueó la pestaña RUNT. Habilita ventanas emergentes para SIAC.', { variant: 'warning' });
     } catch (error) { if (popup) popup.close(); enqueueSnackbar(error.response?.data?.message || 'No se pudo iniciar la validación RUNT', { variant: 'error' }); }
+  };
+
+  const extractCopiedRuntDriverResult = () => {
+    const parsed = parseRuntDriverCopiedText(runtCopiedText);
+    if (!parsed.hasLicencia && !parsed.categorias && !parsed.vencimiento) {
+      return enqueueSnackbar('No se encontraron licencias ni categorías en el texto pegado. Expande el acordeón «Licencias de Conducción» en RUNT antes de copiar.', { variant: 'warning' });
+    }
+    setRuntDriverForm({
+      tiene_licencia: parsed.hasLicencia ? 'SI' : 'NO',
+      licencia_categorias: parsed.categorias || '',
+      licencia_expedicion: parsed.expedicion || '',
+      licencia_vencimiento: parsed.vencimiento || ''
+    });
+    setRuntCopiedText('');
+    enqueueSnackbar(`Licencia extraída: Categorías (${parsed.categorias || 'Sin especificar'}). Revisa la información antes de guardar.`, { variant: 'success' });
+  };
+
+  const confirmRuntDriverValidation = async () => {
+    if (!runtValidation.row?.id) return;
+    setRuntValidation((prev) => ({ ...prev, loading: true }));
+    try {
+      const payload = {
+        ...runtValidation.row,
+        tiene_licencia: runtDriverForm.tiene_licencia === 'SI',
+        licencia_categorias: runtDriverForm.licencia_categorias,
+        licencia_expedicion: runtDriverForm.licencia_expedicion,
+        licencia_vencimiento: runtDriverForm.licencia_vencimiento
+      };
+      await gestionInformacionService.updatePesvParqueadero(runtValidation.row.id, payload);
+      setSearch(String(runtValidation.row.identificacion || runtValidation.row.placa || '').trim());
+      setPage(0);
+      setRuntValidation((prev) => ({ ...prev, open: false, loading: false }));
+      setRefreshKey((current) => current + 1);
+      enqueueSnackbar('Licencia de conducción actualizada exitosamente en SIAC.', { variant: 'success' });
+    } catch (error) {
+      enqueueSnackbar(error.response?.data?.message || 'No se pudo guardar la licencia de conducción', { variant: 'error' });
+      setRuntValidation((prev) => ({ ...prev, loading: false }));
+    }
   };
   const extractCopiedRuntResult = () => {
     const parsed = parseRuntCopiedText(runtCopiedText);
@@ -913,17 +1050,19 @@ function ParqueaderosPesvPanel({ onBack }) {
               <TableCell><ExpiryCell type="licencia" date={row.licencia_vencimiento} rawText={row.licencia_categorias ? `Cat. ${row.licencia_categorias}` : ''} status={row.licencia_estado} row={row} onNotify={notify} notifying={notifying === `${row.id}-licencia`} /></TableCell>
               <TableCell align="center">
                 <Box sx={{ display: 'inline-grid', gridTemplateColumns: 'repeat(2, auto)', gap: 0.6, justifyItems: 'center', alignItems: 'center' }}>
-                  <Tooltip title={isBicycleVehicle(row) ? 'No aplica para bicicletas' : 'Validar SOAT y RTM en RUNT'} arrow placement="top">
+                  <Tooltip title={isBicycleVehicle(row) ? 'No aplica para bicicletas' : 'Validar SOAT y RTM en RUNT (por Placa + Cédula)'} arrow placement="top">
                     <span>
-                      <IconButton size="small" onClick={() => startRuntValidation(row)} disabled={isBicycleVehicle(row) || !normalizePlateForRunt(row.placa) || !getRuntDocument(row)} sx={{ color: '#d97706', bgcolor: '#fffbeb', border: '1px solid #fde68a', p: 0.55, '&:hover': { bgcolor: '#fef3c7' }, '&.Mui-disabled': { bgcolor: '#f1f5f9', color: '#cbd5e1', borderColor: '#e2e8f0' } }}>
+                      <IconButton size="small" onClick={() => startRuntValidation(row, 'vehicle')} disabled={isBicycleVehicle(row) || !normalizePlateForRunt(row.placa) || !getRuntDocument(row)} sx={{ color: '#d97706', bgcolor: '#fffbeb', border: '1px solid #fde68a', p: 0.55, '&:hover': { bgcolor: '#fef3c7' }, '&.Mui-disabled': { bgcolor: '#f1f5f9', color: '#cbd5e1', borderColor: '#e2e8f0' } }}>
                         <FactCheckRoundedIcon sx={{ fontSize: 16 }} />
                       </IconButton>
                     </span>
                   </Tooltip>
-                  <Tooltip title="Ver historial de consultas RUNT" arrow placement="top">
-                    <IconButton size="small" onClick={() => openHistory(row)} sx={{ color: '#2563eb', bgcolor: '#eff6ff', border: '1px solid #bfdbfe', p: 0.55, '&:hover': { bgcolor: '#dbeafe' } }}>
-                      <HistoryRoundedIcon sx={{ fontSize: 16 }} />
-                    </IconButton>
+                  <Tooltip title="Validar Licencia de Conducción en RUNT (por Cédula de Ciudadanía)" arrow placement="top">
+                    <span>
+                      <IconButton size="small" onClick={() => startRuntValidation(row, 'driver')} disabled={!getRuntDocument(row) && !row.identificacion} sx={{ color: '#166534', bgcolor: '#f0fdf4', border: '1px solid #bbf7d0', p: 0.55, '&:hover': { bgcolor: '#dcfce7' }, '&.Mui-disabled': { bgcolor: '#f1f5f9', color: '#cbd5e1', borderColor: '#e2e8f0' } }}>
+                        <BadgeRoundedIcon sx={{ fontSize: 16 }} />
+                      </IconButton>
+                    </span>
                   </Tooltip>
                   <Tooltip title="Editar cupo de parqueadero" arrow placement="bottom">
                     <IconButton size="small" onClick={() => openEdit(row)} sx={{ color: '#475569', bgcolor: '#f8fafc', border: '1px solid #cbd5e1', p: 0.55, '&:hover': { bgcolor: '#f1f5f9', color: '#0f172a' } }}>
@@ -1076,83 +1215,167 @@ function ParqueaderosPesvPanel({ onBack }) {
       </Dialog>
 
       <Dialog open={runtValidation.open} onClose={() => !runtValidation.loading && setRuntValidation({ open: false, row: null, sessionId: null, estado: '', data: null, loading: false })} fullWidth maxWidth="md">
-        <DialogTitle sx={{ fontWeight: 900 }}>Validación RUNT · {runtValidation.placaConsulta || runtValidation.row?.placa}</DialogTitle>
+        <DialogTitle sx={{ fontWeight: 900, pb: 1 }}>
+          Validación RUNT · {runtValidationMode === 'driver' ? `Licencia (${runtValidation.row?.nombres_apellidos || 'Conductor'})` : `Vehículo (${runtValidation.placaConsulta || runtValidation.row?.placa || ''})`}
+        </DialogTitle>
         <DialogContent dividers>
           <Stack spacing={2}>
-            <Alert severity={runtValidation.estado === 'CAPTURADA' ? 'success' : runtValidation.estado === 'ERROR' ? 'error' : 'info'}>
-              {runtValidation.estado === 'CAPTURADA'
-                ? 'Resultado recibido. Compare la información antes de confirmarla.'
-                : runtValidation.estado === 'ERROR'
-                  ? 'La sesión presentó un error. Cierre esta ventana e intente nuevamente.'
-                  : 'Consulte el vehículo en RUNT, complete personalmente el CAPTCHA y pegue aquí el resultado. SIAC identificará el SOAT y la RTM vigentes. No necesita instalar ni pagar nada.'}
-            </Alert>
-            <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap alignItems="center">
-              <Chip label={`Estado: ${runtValidation.estado === 'CAPTURADA' ? 'LISTO PARA REVISAR' : 'ESPERANDO FECHAS'}`} color={runtValidation.estado === 'CAPTURADA' ? 'success' : 'info'} />
-              <Stack direction="row" spacing={.25} alignItems="center"><Chip label={`Placa: ${runtValidation.placaConsulta || ''}`} /><Tooltip title="Copiar placa"><IconButton size="small" onClick={() => copyRuntValue('Placa', runtValidation.placaConsulta)}><ContentCopyRoundedIcon sx={{ fontSize: 17 }} /></IconButton></Tooltip></Stack>
-              <Stack direction="row" spacing={.25} alignItems="center"><Chip label={`${runtValidation.usaDocumentoPropietario ? 'Documento propietario' : 'Documento conductor'}: ${runtValidation.documentoConsulta || ''}`} /><Tooltip title="Copiar documento"><IconButton size="small" onClick={() => copyRuntValue('Identificación', runtValidation.documentoConsulta)}><ContentCopyRoundedIcon sx={{ fontSize: 17 }} /></IconButton></Tooltip></Stack>
-            </Stack>
-            {runtValidation.estado !== 'CAPTURADA' && (
-              <Stack spacing={1.5}>
-                <Paper variant="outlined" sx={{ p: 1.5, borderRadius: 2.5, bgcolor: '#f8fafc' }}><Typography sx={{ fontWeight: 900, color: '#0f172a' }}>1. Realice la consulta pública</Typography><Typography variant="body2" color="text.secondary">Use la placa y el documento mostrados arriba, resuelva el CAPTCHA y abra los acordeones de SOAT y tecnomecánica.</Typography><Button size="small" sx={{ mt: 1, fontWeight: 800 }} onClick={() => window.open(runtValidation.runtUrl, '_blank', 'noopener,noreferrer')}>Abrir RUNT nuevamente</Button></Paper>
-                <Paper variant="outlined" sx={{ p: 1.5, borderRadius: 2.5, borderColor: '#67e8f9', bgcolor: '#ecfeff' }}>
-                  <Typography sx={{ fontWeight: 900, color: '#0f172a' }}>2. Pegado inteligente del resultado</Typography>
+            <Tabs
+              value={runtValidationMode}
+              onChange={(_, val) => {
+                setRuntValidationMode(val);
+                setRuntCopiedText('');
+              }}
+              sx={{ borderBottom: 1, borderColor: 'divider', mb: 0.5 }}
+            >
+              <Tab value="vehicle" icon={<DirectionsCarRoundedIcon />} iconPosition="start" label="1. SOAT y Tecnomecánica (RUNT por Placa)" />
+              <Tab value="driver" icon={<BadgeRoundedIcon />} iconPosition="start" label="2. Licencia de Conducción (RUNT por Cédula)" />
+            </Tabs>
+
+            {runtValidationMode === 'driver' ? (
+              <Stack spacing={2}>
+                <Alert severity="info">
+                  Consulte el conductor en RUNT por documento de identidad (Cédula), resuelva el CAPTCHA, expanda el acordeón <strong>«Licencias de Conducción»</strong>, copie el contenido de la página y péguelo abajo. SIAC identificará la vigencia y las categorías autorizadas.
+                </Alert>
+                <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap" useFlexGap>
+                  <Chip label={`Cédula / Documento: ${runtValidation.documentoConsulta || runtValidation.row?.identificacion || ''}`} color="primary" sx={{ fontWeight: 800 }} />
+                  <Tooltip title="Copiar documento"><IconButton size="small" onClick={() => copyRuntValue('Identificación', runtValidation.documentoConsulta || runtValidation.row?.identificacion)}><ContentCopyRoundedIcon sx={{ fontSize: 17 }} /></IconButton></Tooltip>
+                  <Button size="small" variant="outlined" startIcon={<BadgeRoundedIcon />} sx={{ fontWeight: 800 }} onClick={() => window.open('https://portalpublico.runt.gov.co/#/consulta-ciudadano-documento/consulta/consulta-ciudadano-documento', '_blank', 'noopener,noreferrer')}>
+                    Abrir RUNT por Documento
+                  </Button>
+                </Stack>
+
+                <Paper variant="outlined" sx={{ p: 1.8, borderRadius: 2.5, borderColor: '#67e8f9', bgcolor: '#ecfeff' }}>
+                  <Typography sx={{ fontWeight: 900, color: '#0f172a' }}>Pegado inteligente de Licencia RUNT</Typography>
                   <Typography variant="body2" color="text.secondary" sx={{ mb: 1.2 }}>
-                    En RUNT expanda «Póliza SOAT» y «Certificado de revisión técnico-mecánica», copie el contenido de la página y péguelo aquí.
+                    Copie el texto completo del resultado de RUNT por documento y péguelo aquí para autoextraer las categorías y vigencias.
                   </Typography>
                   <TextField
-                    fullWidth
-                    multiline
-                    minRows={3}
-                    maxRows={7}
-                    value={runtCopiedText}
-                    onChange={(e) => setRuntCopiedText(e.target.value)}
-                    placeholder="Pegue aquí el texto completo copiado de RUNT"
-                    inputProps={{ 'aria-label': 'Resultado copiado de RUNT' }}
+                    fullWidth multiline minRows={3} maxRows={6}
+                    value={runtCopiedText} onChange={(e) => setRuntCopiedText(e.target.value)}
+                    placeholder="Pegue aquí el texto copiado de RUNT por documento"
                   />
-                  <Button variant="contained" size="small" sx={{ mt: 1.2, fontWeight: 900 }} onClick={extractCopiedRuntResult} disabled={!runtCopiedText.trim()}>
-                    Extraer SOAT y RTM
+                  <Button variant="contained" size="small" sx={{ mt: 1.2, fontWeight: 900 }} onClick={extractCopiedRuntDriverResult} disabled={!runtCopiedText.trim()}>
+                    Extraer Licencia y Categorías
                   </Button>
                 </Paper>
-                <Typography sx={{ fontWeight: 900, color: '#0f172a' }}>3. Revise las fechas extraídas o ingréselas manualmente</Typography>
+
+                <Typography sx={{ fontWeight: 900, color: '#0f172a' }}>Datos de Licencia de Conducción</Typography>
                 <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', sm: '1fr 1fr' }, gap: 1.5 }}>
-                  <TextField required label="Fecha final del SOAT" type="date" value={runtForm.soat_fecha_fin} onChange={(e) => setRuntForm((prev) => ({ ...prev, soat_fecha_fin: e.target.value }))} InputLabelProps={{ shrink: true }} helperText="Acordeón Póliza SOAT" />
-                  <FormControl><InputLabel id="rtm-aplica-label">Situación de la RTM</InputLabel><Select labelId="rtm-aplica-label" label="Situación de la RTM" value={runtForm.rtm_aplica} onChange={(e) => setRuntForm((prev) => ({ ...prev, rtm_aplica: e.target.value, rtm_fecha_vigencia: e.target.value === 'SI' ? prev.rtm_fecha_vigencia : '' }))}><MenuItem value="SI">RTM registrada en RUNT</MenuItem><MenuItem value="NO_EXIGIBLE">RTM no exigible a la fecha</MenuItem><MenuItem value="SIN_REGISTRO_RUNT">Sin RTM registrada en RUNT</MenuItem><MenuItem value="NO_APLICA">Exento de RTM por disposición aplicable</MenuItem></Select></FormControl>
-                  {runtForm.rtm_aplica === 'SI' && <TextField required label="Vigencia tecnomecánica" type="date" value={runtForm.rtm_fecha_vigencia} onChange={(e) => setRuntForm((prev) => ({ ...prev, rtm_fecha_vigencia: e.target.value }))} InputLabelProps={{ shrink: true }} helperText="Acordeón revisión técnico-mecánica" />}
+                  <FormControl size="small" fullWidth>
+                    <InputLabel>¿Tiene Licencia de Conducción?</InputLabel>
+                    <Select label="¿Tiene Licencia de Conducción?" value={runtDriverForm.tiene_licencia} onChange={(e) => setRuntDriverForm((prev) => ({ ...prev, tiene_licencia: e.target.value }))}>
+                      <MenuItem value="SI">Sí</MenuItem>
+                      <MenuItem value="NO">No</MenuItem>
+                    </Select>
+                  </FormControl>
+                  <TextField label="Categoría(s) autorizadas" placeholder="Ej: A2, B1, C1" value={runtDriverForm.licencia_categorias} onChange={(e) => setRuntDriverForm((prev) => ({ ...prev, licencia_categorias: e.target.value }))} size="small" helperText="Categorías de conducción registradas en RUNT" />
+                  <TextField label="Fecha de expedición" type="date" value={runtDriverForm.licencia_expedicion} onChange={(e) => setRuntDriverForm((prev) => ({ ...prev, licencia_expedicion: e.target.value }))} InputLabelProps={{ shrink: true }} size="small" />
+                  <TextField label="Fecha de vencimiento" type="date" value={runtDriverForm.licencia_vencimiento} onChange={(e) => setRuntDriverForm((prev) => ({ ...prev, licencia_vencimiento: e.target.value }))} InputLabelProps={{ shrink: true }} size="small" />
                 </Box>
-                {runtForm.rtm_aplica === 'NO_EXIGIBLE' && <Alert severity="success"><strong>RTM no exigible a la fecha · Modelo {runtForm.vehiculo_modelo || 'sin identificar'}.</strong> Matrícula inicial: {runtForm.vehiculo_fecha_matricula ? formatDate(runtForm.vehiculo_fecha_matricula) : 'sin fecha'} · Fecha estimada de primera exigibilidad: {runtForm.rtm_fecha_exigibilidad ? formatDate(runtForm.rtm_fecha_exigibilidad) : 'por verificar'}. Resultado calculado con la información consultada en RUNT.</Alert>}
-                {runtForm.rtm_aplica === 'SIN_REGISTRO_RUNT' && <Alert severity="warning"><strong>RUNT no registra una RTM.</strong> Esto no significa automáticamente que el vehículo esté exento. El registro quedará marcado para revisión.</Alert>}
+
+                {runtDriverForm.tiene_licencia === 'SI' && runtDriverForm.licencia_categorias && runtValidation.row?.tipo_vehiculo && (() => {
+                  const compat = checkLicenseVehicleCompatibility(runtDriverForm.licencia_categorias, runtValidation.row.tipo_vehiculo);
+                  if (!compat.compatible) {
+                    return (
+                      <Alert severity="error" sx={{ fontWeight: 800 }}>
+                        🚨 <strong>Incompatibilidad Detectada:</strong> {compat.reason}
+                      </Alert>
+                    );
+                  }
+                  return (
+                    <Alert severity="success" sx={{ fontWeight: 800 }}>
+                      ✅ <strong>Licencia Compatible:</strong> Las categorías autorizadas ({runtDriverForm.licencia_categorias}) cumplen con el tipo de vehículo ({runtValidation.row.tipo_vehiculo}).
+                    </Alert>
+                  );
+                })()}
               </Stack>
-            )}
-            {runtValidation.estado === 'CAPTURADA' && (() => {
-              const captured = runtValidation.data?.resultado || {};
-              const comparison = captured.comparacion_actualizacion || {};
-              const rtmStatusLabel = captured.rtm?.estado === 'NO_EXIGIBLE'
-                ? `RTM no exigible a la fecha · Modelo ${captured.vehiculo?.modelo || 'sin identificar'}`
-                : { VIGENTE: 'Vigente', VENCIDO: 'Vencida', SIN_REGISTRO_RUNT: 'Sin registro en RUNT', NO_APLICA: 'No aplica' }[captured.rtm?.estado] || captured.rtm?.estado || 'Sin información';
-              const comparisons = [
-                ['Estado SOAT', runtValidation.row?.soat_estado?.label || 'Importado / sin verificar', captured.soat?.estado || 'Sin información'],
-                ['Fin de vigencia SOAT', runtValidation.row?.soat_vigencia ? formatDate(runtValidation.row.soat_vigencia) : 'Sin fecha', captured.soat?.fecha_fin ? formatDate(captured.soat.fecha_fin) : 'Sin fecha'],
-                ['Póliza / entidad', runtValidation.row?.soat_numero_poliza || 'Sin información', [captured.soat?.numero_poliza, captured.soat?.entidad].filter(Boolean).join(' · ') || 'Sin información'],
-                ['Estado RTM', runtValidation.row?.tecnomecanica_estado?.label || 'Importado / sin verificar', rtmStatusLabel],
-                ['Vigencia / primera exigibilidad RTM', runtValidation.row?.tecnomecanica_vigencia ? formatDate(runtValidation.row.tecnomecanica_vigencia) : 'Sin fecha', captured.rtm?.fecha_vigencia ? formatDate(captured.rtm.fecha_vigencia) : captured.vehiculo?.rtm_fecha_exigibilidad ? `Estimada: ${formatDate(captured.vehiculo.rtm_fecha_exigibilidad)}` : 'Sin fecha'],
-                ['Certificado / CDA', runtValidation.row?.rtm_numero_certificado || 'Sin información', [captured.rtm?.numero_certificado, captured.rtm?.cda].filter(Boolean).join(' · ') || 'Sin información']
-              ];
-              return <Stack spacing={1.5}>
-                <Alert severity={comparison.detectada ? 'success' : 'warning'}>
-                  <strong>{comparison.detectada ? 'RUNT confirma una actualización.' : 'RUNT aún no refleja una nueva vigencia.'}</strong>{' '}
-                  {comparison.mensaje || (comparison.detectada ? 'Puede confirmar los cambios.' : 'Realice una nueva consulta cuando la renovación aparezca registrada en RUNT.')}
+            ) : (
+              <>
+                <Alert severity={runtValidation.estado === 'CAPTURADA' ? 'success' : runtValidation.estado === 'ERROR' ? 'error' : 'info'}>
+                  {runtValidation.estado === 'CAPTURADA'
+                    ? 'Resultado recibido. Compare la información antes de confirmarla.'
+                    : runtValidation.estado === 'ERROR'
+                      ? 'La sesión presentó un error. Cierre esta ventana e intente nuevamente.'
+                      : 'Consulte el vehículo en RUNT por placa, complete personalmente el CAPTCHA y pegue aquí el resultado. SIAC identificará el SOAT y la RTM vigentes.'}
                 </Alert>
-                <TableContainer component={Paper} variant="outlined"><Table size="small"><TableHead><TableRow><TableCell sx={{ fontWeight: 900 }}>Campo</TableCell><TableCell sx={{ fontWeight: 900 }}>SIAC actual</TableCell><TableCell sx={{ fontWeight: 900, color: '#166534' }}>Resultado RUNT</TableCell></TableRow></TableHead><TableBody>{comparisons.map(([field, current, next]) => <TableRow key={field}><TableCell sx={{ fontWeight: 800 }}>{field}</TableCell><TableCell>{current}</TableCell><TableCell sx={{ bgcolor: current !== next ? '#f0fdf4' : undefined, fontWeight: current !== next ? 800 : 400 }}>{next}</TableCell></TableRow>)}</TableBody></Table></TableContainer>
-              </Stack>;
-            })()}
-            {runtValidation.estado === 'CONFIRMADA' && <Alert severity="success"><strong>Información actualizada en SIAC.</strong> Revise el resultado y, si lo considera pertinente, envíe manualmente la confirmación a la persona.</Alert>}
+                <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap alignItems="center">
+                  <Chip label={`Estado: ${runtValidation.estado === 'CAPTURADA' ? 'LISTO PARA REVISAR' : 'ESPERANDO FECHAS'}`} color={runtValidation.estado === 'CAPTURADA' ? 'success' : 'info'} />
+                  <Stack direction="row" spacing={.25} alignItems="center"><Chip label={`Placa: ${runtValidation.placaConsulta || ''}`} /><Tooltip title="Copiar placa"><IconButton size="small" onClick={() => copyRuntValue('Placa', runtValidation.placaConsulta)}><ContentCopyRoundedIcon sx={{ fontSize: 17 }} /></IconButton></Tooltip></Stack>
+                  <Stack direction="row" spacing={.25} alignItems="center"><Chip label={`${runtValidation.usaDocumentoPropietario ? 'Documento propietario' : 'Documento conductor'}: ${runtValidation.documentoConsulta || ''}`} /><Tooltip title="Copiar documento"><IconButton size="small" onClick={() => copyRuntValue('Identificación', runtValidation.documentoConsulta)}><ContentCopyRoundedIcon sx={{ fontSize: 17 }} /></IconButton></Tooltip></Stack>
+                </Stack>
+                {runtValidation.estado !== 'CAPTURADA' && (
+                  <Stack spacing={1.5}>
+                    <Paper variant="outlined" sx={{ p: 1.5, borderRadius: 2.5, bgcolor: '#f8fafc' }}><Typography sx={{ fontWeight: 900, color: '#0f172a' }}>1. Realice la consulta pública</Typography><Typography variant="body2" color="text.secondary">Use la placa y el documento mostrados arriba, resuelva el CAPTCHA y abra los acordeones de SOAT y tecnomecánica.</Typography><Button size="small" sx={{ mt: 1, fontWeight: 800 }} onClick={() => window.open(runtValidation.runtUrl, '_blank', 'noopener,noreferrer')}>Abrir RUNT por Placa</Button></Paper>
+                    <Paper variant="outlined" sx={{ p: 1.5, borderRadius: 2.5, borderColor: '#67e8f9', bgcolor: '#ecfeff' }}>
+                      <Typography sx={{ fontWeight: 900, color: '#0f172a' }}>2. Pegado inteligente del resultado</Typography>
+                      <Typography variant="body2" color="text.secondary" sx={{ mb: 1.2 }}>
+                        En RUNT expanda «Póliza SOAT» y «Certificado de revisión técnico-mecánica», copie el contenido de la página y péguelo aquí.
+                      </Typography>
+                      <TextField
+                        fullWidth
+                        multiline
+                        minRows={3}
+                        maxRows={7}
+                        value={runtCopiedText}
+                        onChange={(e) => setRuntCopiedText(e.target.value)}
+                        placeholder="Pegue aquí el texto completo copiado de RUNT por placa"
+                        inputProps={{ 'aria-label': 'Resultado copiado de RUNT' }}
+                      />
+                      <Button variant="contained" size="small" sx={{ mt: 1.2, fontWeight: 900 }} onClick={extractCopiedRuntResult} disabled={!runtCopiedText.trim()}>
+                        Extraer SOAT y RTM
+                      </Button>
+                    </Paper>
+                    <Typography sx={{ fontWeight: 900, color: '#0f172a' }}>3. Revise las fechas extraídas o ingréselas manualmente</Typography>
+                    <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', sm: '1fr 1fr' }, gap: 1.5 }}>
+                      <TextField required label="Fecha final del SOAT" type="date" value={runtForm.soat_fecha_fin} onChange={(e) => setRuntForm((prev) => ({ ...prev, soat_fecha_fin: e.target.value }))} InputLabelProps={{ shrink: true }} helperText="Acordeón Póliza SOAT" />
+                      <FormControl><InputLabel id="rtm-aplica-label">Situación de la RTM</InputLabel><Select labelId="rtm-aplica-label" label="Situación de la RTM" value={runtForm.rtm_aplica} onChange={(e) => setRuntForm((prev) => ({ ...prev, rtm_aplica: e.target.value, rtm_fecha_vigencia: e.target.value === 'SI' ? prev.rtm_fecha_vigencia : '' }))}><MenuItem value="SI">RTM registrada en RUNT</MenuItem><MenuItem value="NO_EXIGIBLE">RTM no exigible a la fecha</MenuItem><MenuItem value="SIN_REGISTRO_RUNT">Sin RTM registrada en RUNT</MenuItem><MenuItem value="NO_APLICA">Exento de RTM por disposición aplicable</MenuItem></Select></FormControl>
+                      {runtForm.rtm_aplica === 'SI' && <TextField required label="Vigencia tecnomecánica" type="date" value={runtForm.rtm_fecha_vigencia} onChange={(e) => setRuntForm((prev) => ({ ...prev, rtm_fecha_vigencia: e.target.value }))} InputLabelProps={{ shrink: true }} helperText="Acordeón revisión técnico-mecánica" />}
+                    </Box>
+                    {runtForm.rtm_aplica === 'NO_EXIGIBLE' && <Alert severity="success"><strong>RTM no exigible a la fecha · Modelo {runtForm.vehiculo_modelo || 'sin identificar'}.</strong> Matrícula inicial: {runtForm.vehiculo_fecha_matricula ? formatDate(runtForm.vehiculo_fecha_matricula) : 'sin fecha'} · Fecha estimada de primera exigibilidad: {runtForm.rtm_fecha_exigibilidad ? formatDate(runtForm.rtm_fecha_exigibilidad) : 'por verificar'}. Resultado calculado con la información consultada en RUNT.</Alert>}
+                    {runtForm.rtm_aplica === 'SIN_REGISTRO_RUNT' && <Alert severity="warning"><strong>RUNT no registra una RTM.</strong> Esto no significa automáticamente que el vehículo esté exento. El registro quedará marcado para revisión.</Alert>}
+                  </Stack>
+                )}
+                {runtValidation.estado === 'CAPTURADA' && (() => {
+                  const captured = runtValidation.data?.resultado || {};
+                  const comparison = captured.comparacion_actualizacion || {};
+                  const rtmStatusLabel = captured.rtm?.estado === 'NO_EXIGIBLE'
+                    ? `RTM no exigible a la fecha · Modelo ${captured.vehiculo?.modelo || 'sin identificar'}`
+                    : { VIGENTE: 'Vigente', VENCIDO: 'Vencida', SIN_REGISTRO_RUNT: 'Sin registro en RUNT', NO_APLICA: 'No aplica' }[captured.rtm?.estado] || captured.rtm?.estado || 'Sin información';
+                  const comparisons = [
+                    ['Estado SOAT', runtValidation.row?.soat_estado?.label || 'Importado / sin verificar', captured.soat?.estado || 'Sin información'],
+                    ['Fin de vigencia SOAT', runtValidation.row?.soat_vigencia ? formatDate(runtValidation.row.soat_vigencia) : 'Sin fecha', captured.soat?.fecha_fin ? formatDate(captured.soat.fecha_fin) : 'Sin fecha'],
+                    ['Póliza / entidad', runtValidation.row?.soat_numero_poliza || 'Sin información', [captured.soat?.numero_poliza, captured.soat?.entidad].filter(Boolean).join(' · ') || 'Sin información'],
+                    ['Estado RTM', runtValidation.row?.tecnomecanica_estado?.label || 'Importado / sin verificar', rtmStatusLabel],
+                    ['Vigencia / primera exigibilidad RTM', runtValidation.row?.tecnomecanica_vigencia ? formatDate(runtValidation.row.tecnomecanica_vigencia) : 'Sin fecha', captured.rtm?.fecha_vigencia ? formatDate(captured.rtm.fecha_vigencia) : captured.vehiculo?.rtm_fecha_exigibilidad ? `Estimada: ${formatDate(captured.vehiculo.rtm_fecha_exigibilidad)}` : 'Sin fecha'],
+                    ['Certificado / CDA', runtValidation.row?.rtm_numero_certificado || 'Sin información', [captured.rtm?.numero_certificado, captured.rtm?.cda].filter(Boolean).join(' · ') || 'Sin información']
+                  ];
+                  return <Stack spacing={1.5}>
+                    <Alert severity={comparison.detectada ? 'success' : 'warning'}>
+                      <strong>{comparison.detectada ? 'RUNT confirma una actualización.' : 'RUNT aún no refleja una nueva vigencia.'}</strong>{' '}
+                      {comparison.mensaje || (comparison.detectada ? 'Puede confirmar los cambios.' : 'Realice una nueva consulta cuando la renovación aparezca registrada en RUNT.')}
+                    </Alert>
+                    <TableContainer component={Paper} variant="outlined"><Table size="small"><TableHead><TableRow><TableCell sx={{ fontWeight: 900 }}>Campo</TableCell><TableCell sx={{ fontWeight: 900 }}>SIAC actual</TableCell><TableCell sx={{ fontWeight: 900, color: '#166534' }}>Resultado RUNT</TableCell></TableRow></TableHead><TableBody>{comparisons.map(([field, current, next]) => <TableRow key={field}><TableCell sx={{ fontWeight: 800 }}>{field}</TableCell><TableCell>{current}</TableCell><TableCell sx={{ bgcolor: current !== next ? '#f0fdf4' : undefined, fontWeight: current !== next ? 800 : 400 }}>{next}</TableCell></TableRow>)}</TableBody></Table></TableContainer>
+                  </Stack>;
+                })()}
+                {runtValidation.estado === 'CONFIRMADA' && <Alert severity="success"><strong>Información actualizada en SIAC.</strong> Revise el resultado y, si lo considera pertinente, envíe manualmente la confirmación a la persona.</Alert>}
+              </>
+            )}
           </Stack>
         </DialogContent>
         <DialogActions>
           <Button onClick={() => setRuntValidation({ open: false, row: null, sessionId: null, estado: '', data: null, loading: false })} disabled={runtValidation.loading || notifyingRuntUpdate}>Cerrar</Button>
-          {!['CAPTURADA', 'CONFIRMADA'].includes(runtValidation.estado) && <Button variant="contained" onClick={captureManualRunt} disabled={runtValidation.loading}>{runtValidation.loading ? 'Cargando…' : 'Cargar fechas consultadas'}</Button>}
-          {runtValidation.estado === 'CAPTURADA' && <Button variant="contained" color="success" onClick={confirmRuntValidation} disabled={!runtUpdateDetected || runtValidation.loading}>{runtValidation.loading ? 'Confirmando…' : 'Confirmar actualización'}</Button>}
-          {runtValidation.estado === 'CONFIRMADA' && <Button variant="contained" onClick={notifyRuntUpdate} disabled={notifyingRuntUpdate || runtValidation.confirmationSent}>{notifyingRuntUpdate ? 'Enviando…' : runtValidation.confirmationSent ? 'Confirmación enviada' : 'Notificar actualización'}</Button>}
+          {runtValidationMode === 'driver' ? (
+            <Button variant="contained" color="success" onClick={confirmRuntDriverValidation} disabled={runtValidation.loading}>
+              {runtValidation.loading ? 'Guardando…' : 'Confirmar y Guardar Licencia'}
+            </Button>
+          ) : (
+            <>
+              {!['CAPTURADA', 'CONFIRMADA'].includes(runtValidation.estado) && <Button variant="contained" onClick={captureManualRunt} disabled={runtValidation.loading}>{runtValidation.loading ? 'Cargando…' : 'Cargar fechas consultadas'}</Button>}
+              {runtValidation.estado === 'CAPTURADA' && <Button variant="contained" color="success" onClick={confirmRuntValidation} disabled={!runtUpdateDetected || runtValidation.loading}>{runtValidation.loading ? 'Confirmando…' : 'Confirmar actualización'}</Button>}
+              {runtValidation.estado === 'CONFIRMADA' && <Button variant="contained" onClick={notifyRuntUpdate} disabled={notifyingRuntUpdate || runtValidation.confirmationSent}>{notifyingRuntUpdate ? 'Enviando…' : runtValidation.confirmationSent ? 'Confirmación enviada' : 'Notificar actualización'}</Button>}
+            </>
+          )}
         </DialogActions>
       </Dialog>
 
