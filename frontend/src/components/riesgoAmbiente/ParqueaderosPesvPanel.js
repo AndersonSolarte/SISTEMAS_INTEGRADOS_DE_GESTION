@@ -826,16 +826,20 @@ function ParqueaderosPesvPanel({ onBack }) {
 
   const runtUpdateDetected = Boolean(runtValidation.data?.resultado?.comparacion_actualizacion?.detectada);
 
-  const vencidosCount = summary.vencidos !== undefined
-    ? summary.vencidos
-    : rows.filter((r) => r.soat_estado?.code === 'vencido' || r.tecnomecanica_estado?.code === 'vencido' || r.licencia_estado?.code === 'vencido').length;
+  const isFiltered = Boolean(search.trim() || campus || estado || indicator);
 
-  const proximosCount = summary.proximos !== undefined
-    ? summary.proximos
-    : rows.filter((r) => (r.soat_estado?.code === 'proximo' || r.tecnomecanica_estado?.code === 'proximo' || r.licencia_estado?.code === 'proximo') && r.soat_estado?.code !== 'vencido' && r.tecnomecanica_estado?.code !== 'vencido' && r.licencia_estado?.code !== 'vencido').length;
+  const totalCount = isFiltered ? rows.length : (summary.total !== undefined ? summary.total : rows.length);
+
+  const vencidosCount = isFiltered
+    ? rows.filter((r) => r.soat_estado?.code === 'vencido' || r.tecnomecanica_estado?.code === 'vencido' || r.licencia_estado?.code === 'vencido').length
+    : (summary.vencidos !== undefined ? summary.vencidos : rows.filter((r) => r.soat_estado?.code === 'vencido' || r.tecnomecanica_estado?.code === 'vencido' || r.licencia_estado?.code === 'vencido').length);
+
+  const proximosCount = isFiltered
+    ? rows.filter((r) => (r.soat_estado?.code === 'proximo' || r.tecnomecanica_estado?.code === 'proximo' || r.licencia_estado?.code === 'proximo') && r.soat_estado?.code !== 'vencido' && r.tecnomecanica_estado?.code !== 'vencido' && r.licencia_estado?.code !== 'vencido').length
+    : (summary.proximos !== undefined ? summary.proximos : rows.filter((r) => (r.soat_estado?.code === 'proximo' || r.tecnomecanica_estado?.code === 'proximo' || r.licencia_estado?.code === 'proximo') && r.soat_estado?.code !== 'vencido' && r.tecnomecanica_estado?.code !== 'vencido' && r.licencia_estado?.code !== 'vencido').length);
 
   const stats = [
-    { key: '', label: 'Cupos registrados', value: summary.total || 0, color: '#1d4ed8', background: '#eff6ff', icon: <DirectionsCarRoundedIcon /> },
+    { key: '', label: isFiltered ? `Filtrados (${totalCount})` : 'Cupos registrados', value: totalCount, color: '#1d4ed8', background: '#eff6ff', icon: <DirectionsCarRoundedIcon /> },
     { key: 'vencido', label: 'Vencidos', value: vencidosCount, color: '#dc2626', background: '#fef2f2', icon: <WarningAmberRoundedIcon /> },
     { key: 'proximo', label: 'Próximos a vencer (30 días)', value: proximosCount, color: '#d97706', background: '#fffbeb', icon: <FactCheckRoundedIcon /> }
   ];
@@ -1108,8 +1112,8 @@ function ParqueaderosPesvPanel({ onBack }) {
               <TableCell align="center"><ExpiryCell type="soat" date={row.soat_vigencia} rawText={row.soat_vigencia_texto} status={row.soat_estado} row={row} onNotify={notify} notifying={notifying === `${row.id}-soat`} /></TableCell>
               <TableCell align="center"><ExpiryCell type="tecnomecanica" date={row.tecnomecanica_vigencia} rawText={row.tecnomecanica_vigencia_texto} status={row.tecnomecanica_estado} row={row} onNotify={notify} notifying={notifying === `${row.id}-tecnomecanica`} /></TableCell>
               <TableCell align="center"><ExpiryCell type="licencia" date={row.licencia_vencimiento} rawText={row.licencia_categorias ? `Cat. ${row.licencia_categorias}` : ''} status={row.licencia_estado} row={row} onNotify={notify} notifying={notifying === `${row.id}-licencia`} /></TableCell>
-              <TableCell align="center" sx={{ whiteSpace: 'nowrap' }}>
-                <Stack direction="row" spacing={0.6} alignItems="center" justifyContent="center" flexWrap="nowrap">
+              <TableCell align="center" sx={{ whiteSpace: 'nowrap', verticalAlign: 'middle' }}>
+                <Stack direction="row" spacing={0.8} alignItems="center" justifyContent="center" flexWrap="nowrap">
                   <Tooltip title={isBicycleVehicle(row) ? 'No aplica para bicicletas' : 'Validar en RUNT (SOAT, Tecnomecánica y Licencia)'} arrow placement="top">
                     <span>
                       <IconButton
@@ -1120,25 +1124,25 @@ function ParqueaderosPesvPanel({ onBack }) {
                           color: '#d97706',
                           bgcolor: '#fffbeb',
                           border: '1px solid #fde68a',
-                          p: 0.55,
-                          '&:hover': { bgcolor: '#fef3c7' },
+                          p: 0.75,
+                          '&:hover': { bgcolor: '#fef3c7', color: '#b45309' },
                           '&.Mui-disabled': { bgcolor: '#f1f5f9', color: '#cbd5e1', borderColor: '#e2e8f0' }
                         }}
                       >
-                        <FactCheckRoundedIcon sx={{ fontSize: 16 }} />
+                        <FactCheckRoundedIcon sx={{ fontSize: 19 }} />
                       </IconButton>
                     </span>
                   </Tooltip>
 
                   <Tooltip title="Editar cupo de parqueadero" arrow placement="top">
-                    <IconButton size="small" onClick={() => openEdit(row)} sx={{ color: '#475569', bgcolor: '#f8fafc', border: '1px solid #cbd5e1', p: 0.55, '&:hover': { bgcolor: '#f1f5f9', color: '#0f172a' } }}>
-                      <EditRoundedIcon sx={{ fontSize: 16 }} />
+                    <IconButton size="small" onClick={() => openEdit(row)} sx={{ color: '#475569', bgcolor: '#f8fafc', border: '1px solid #cbd5e1', p: 0.75, '&:hover': { bgcolor: '#f1f5f9', color: '#0f172a' } }}>
+                      <EditRoundedIcon sx={{ fontSize: 19 }} />
                     </IconButton>
                   </Tooltip>
 
                   <Tooltip title="Inactivar cupo (conserva historial en BD)" arrow placement="top">
-                    <IconButton size="small" onClick={() => remove(row)} sx={{ color: '#dc2626', bgcolor: '#fef2f2', border: '1px solid #fecaca', p: 0.55, '&:hover': { bgcolor: '#fee2e2' } }}>
-                      <DeleteOutlineRoundedIcon sx={{ fontSize: 16 }} />
+                    <IconButton size="small" onClick={() => remove(row)} sx={{ color: '#dc2626', bgcolor: '#fef2f2', border: '1px solid #fecaca', p: 0.75, '&:hover': { bgcolor: '#fee2e2' } }}>
+                      <DeleteOutlineRoundedIcon sx={{ fontSize: 19 }} />
                     </IconButton>
                   </Tooltip>
                 </Stack>
@@ -1170,30 +1174,44 @@ function ParqueaderosPesvPanel({ onBack }) {
             </Stack>
           </Box>
           <Box sx={{ gridColumn: { sm: '1 / -1' }, display: 'grid', gridTemplateColumns: { xs: '1fr', sm: '1.2fr 0.8fr' }, gap: 1.5, alignItems: 'start' }}>
-            <Box sx={{ display: 'flex', gap: 1, alignItems: 'flex-start' }}>
-              <TextField
-                label="Identificación / Cédula *"
-                placeholder="Digite cédula o nit..."
-                value={form.identificacion || ''}
-                onChange={updateField('identificacion')}
-                onBlur={(e) => handleLookupPersona(e.target.value)}
-                error={submittedAttempt && !form.identificacion?.trim()}
-                helperText={submittedAttempt && !form.identificacion?.trim() ? 'Campo obligatorio' : 'Presione fuera para buscar'}
-                fullWidth size="small"
-                InputProps={{
-                  endAdornment: lookingUpPerson ? <CircularProgress size={18} /> : null
-                }}
-              />
-              <Button
-                variant="outlined"
-                size="small"
-                onClick={() => handleLookupPersona(form.identificacion)}
-                disabled={lookingUpPerson || !form.identificacion?.trim()}
-                sx={{ textTransform: 'none', fontWeight: 800, whiteSpace: 'nowrap', height: 40 }}
-              >
-                Buscar persona
-              </Button>
-            </Box>
+            <TextField
+              label="Identificación / Cédula *"
+              placeholder="Digite cédula o nit..."
+              value={form.identificacion || ''}
+              onChange={updateField('identificacion')}
+              onBlur={(e) => handleLookupPersona(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') {
+                  e.preventDefault();
+                  handleLookupPersona(form.identificacion);
+                }
+              }}
+              error={submittedAttempt && !form.identificacion?.trim()}
+              helperText={submittedAttempt && !form.identificacion?.trim() ? 'Campo obligatorio' : 'Digite o presione la lupa para buscar'}
+              fullWidth size="small"
+              InputProps={{
+                endAdornment: (
+                  <InputAdornment position="end">
+                    {lookingUpPerson ? (
+                      <CircularProgress size={18} />
+                    ) : (
+                      <Tooltip title="Buscar persona por cédula">
+                        <span>
+                          <IconButton
+                            size="small"
+                            onClick={() => handleLookupPersona(form.identificacion)}
+                            disabled={!form.identificacion?.trim()}
+                            edge="end"
+                          >
+                            <SearchRoundedIcon sx={{ color: form.identificacion?.trim() ? '#2563eb' : '#94a3b8' }} />
+                          </IconButton>
+                        </span>
+                      </Tooltip>
+                    )}
+                  </InputAdornment>
+                )
+              }}
+            />
 
             <TextField
               label="Placa del vehículo *"
