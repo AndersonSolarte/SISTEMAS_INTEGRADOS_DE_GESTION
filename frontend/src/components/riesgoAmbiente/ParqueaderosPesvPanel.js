@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
-  Alert, Autocomplete, Box, Button, Chip, CircularProgress, Dialog, DialogActions, DialogContent, DialogTitle,
+  Alert, Autocomplete, Box, Button, Chip, CircularProgress, Dialog, DialogActions, DialogContent, DialogContentText, DialogTitle,
   FormControl, IconButton, InputAdornment, InputLabel, MenuItem, Paper, Select, Stack, Table, TableBody,
   TableCell, TableContainer, TableHead, TablePagination, TableRow, TextField, Tooltip, Typography
 } from '@mui/material';
@@ -272,6 +272,13 @@ function ParqueaderosPesvPanel({ onBack }) {
   const [lookingUpPerson, setLookingUpPerson] = useState(false);
   const [submittedAttempt, setSubmittedAttempt] = useState(false);
   const [refreshKey, setRefreshKey] = useState(0);
+  const [confirmModal, setConfirmModal] = useState({
+    open: false, title: '', message: '', confirmText: 'Aceptar', severity: 'warning', onConfirm: null
+  });
+  const showConfirm = ({ title, message, confirmText = 'Aceptar', severity = 'warning', onConfirm }) => {
+    setConfirmModal({ open: true, title, message, confirmText, severity, onConfirm });
+  };
+  const closeConfirm = () => setConfirmModal((prev) => ({ ...prev, open: false }));
   const loadRequestRef = useRef(0);
 
   const handleLookupPersona = async (identificacionValue) => {
@@ -434,31 +441,61 @@ function ParqueaderosPesvPanel({ onBack }) {
     }
     finally { setSaving(false); }
   };
-  const remove = async (row) => {
-    if (!window.confirm(`¿Inactivar el cupo de ${row.nombres_apellidos}? El registro dejará de mostrarse en la lista activa, pero su información histórica se conservará en el sistema.`)) return;
-    try {
-      const res = await gestionInformacionService.deletePesvParqueadero(row.id);
-      enqueueSnackbar(res.message || 'Cupo pasado a inactivo', { variant: 'success' });
-      await load();
-    }
-    catch (error) { enqueueSnackbar(error.response?.data?.message || 'No se pudo inactivar', { variant: 'error' }); }
+  const remove = (row) => {
+    showConfirm({
+      title: 'Confirmar inactivación de cupo',
+      message: `¿Está seguro de inactivar el cupo de parqueadero de ${row.nombres_apellidos}? El registro dejará de mostrarse en la lista activa, pero su información histórica se conservará de forma segura en la base de datos.`,
+      confirmText: 'Inactivar cupo',
+      severity: 'error',
+      onConfirm: async () => {
+        try {
+          const res = await gestionInformacionService.deletePesvParqueadero(row.id);
+          enqueueSnackbar(res.message || 'Cupo pasado a inactivo', { variant: 'success' });
+          await load();
+        } catch (error) {
+          enqueueSnackbar(error.response?.data?.message || 'No se pudo inactivar', { variant: 'error' });
+        }
+      }
+    });
   };
-  const reactivateRow = async (row) => {
-    if (!window.confirm(`¿Reactivar el cupo de ${row.nombres_apellidos}?`)) return;
-    try {
-      const res = await gestionInformacionService.reactivatePesvParqueadero(row.id);
-      enqueueSnackbar(res.message || 'Cupo reactivado exitosamente', { variant: 'success' });
-      await load();
-    }
-    catch (error) { enqueueSnackbar(error.response?.data?.message || 'No se pudo reactivar el cupo', { variant: 'error' }); }
+  const reactivateRow = (row) => {
+    showConfirm({
+      title: 'Confirmar reactivación de cupo',
+      message: `¿Desea reactivar el cupo de parqueadero para ${row.nombres_apellidos}?`,
+      confirmText: 'Reactivar cupo',
+      severity: 'warning',
+      onConfirm: async () => {
+        try {
+          const res = await gestionInformacionService.reactivatePesvParqueadero(row.id);
+          enqueueSnackbar(res.message || 'Cupo reactivado exitosamente', { variant: 'success' });
+          await load();
+        } catch (error) {
+          enqueueSnackbar(error.response?.data?.message || 'No se pudo reactivar el cupo', { variant: 'error' });
+        }
+      }
+    });
   };
-  const importFile = async (event) => {
+  const importFile = (event) => {
     const file = event.target.files?.[0]; event.target.value = ''; if (!file) return;
-    if (!window.confirm('La importación reemplazará la base actual de Parqueaderos UNICESMAG. ¿Deseas continuar?')) return;
-    setImporting(true); setImportResult(null);
-    try { const result = await gestionInformacionService.importPesvParqueaderos(file, true); setImportResult(result.data); enqueueSnackbar(result.message, { variant: 'success' }); await load(); }
-    catch (error) { enqueueSnackbar(error.response?.data?.message || 'No se pudo importar el Excel', { variant: 'error' }); }
-    finally { setImporting(false); }
+    showConfirm({
+      title: 'Reemplazar base de parqueaderos',
+      message: 'La importación desde el archivo Excel actualizará y reemplazará los registros actuales de Parqueaderos UNICESMAG. ¿Desea continuar?',
+      confirmText: 'Continuar importación',
+      severity: 'warning',
+      onConfirm: async () => {
+        setImporting(true); setImportResult(null);
+        try {
+          const result = await gestionInformacionService.importPesvParqueaderos(file, true);
+          setImportResult(result.data);
+          enqueueSnackbar(result.message, { variant: 'success' });
+          await load();
+        } catch (error) {
+          enqueueSnackbar(error.response?.data?.message || 'No se pudo importar el Excel', { variant: 'error' });
+        } finally {
+          setImporting(false);
+        }
+      }
+    });
   };
   const downloadExcelTemplate = async () => {
     setDownloadingTemplate(true);
@@ -1150,6 +1187,55 @@ function ParqueaderosPesvPanel({ onBack }) {
           </Stack>
         </DialogContent>
         <DialogActions><Button onClick={() => setHistory({ open: false, row: null, loading: false, data: [] })}>Cerrar</Button></DialogActions>
+      </Dialog>
+
+      {/* Modal Profesional de Confirmación Material-UI */}
+      <Dialog
+        open={confirmModal.open}
+        onClose={closeConfirm}
+        maxWidth="xs"
+        fullWidth
+        PaperProps={{
+          sx: { borderRadius: 3.5, p: 1, boxShadow: '0 20px 40px rgba(15,23,42,0.18)' }
+        }}
+      >
+        <DialogTitle sx={{ pb: 1, display: 'flex', alignItems: 'center', gap: 1.5, fontWeight: 900 }}>
+          <Box
+            sx={{
+              display: 'grid', placeItems: 'center', width: 40, height: 40, borderRadius: '50%',
+              bgcolor: confirmModal.severity === 'error' ? '#fef2f2' : '#fffbeb',
+              color: confirmModal.severity === 'error' ? '#dc2626' : '#d97706',
+              flexShrink: 0
+            }}
+          >
+            <WarningAmberRoundedIcon />
+          </Box>
+          <Typography variant="h6" sx={{ fontWeight: 900, color: '#0f172a', fontSize: 17, lineHeight: 1.25 }}>
+            {confirmModal.title}
+          </Typography>
+        </DialogTitle>
+        <DialogContent sx={{ py: 1 }}>
+          <DialogContentText sx={{ color: '#475569', fontSize: 14, lineHeight: 1.5 }}>
+            {confirmModal.message}
+          </DialogContentText>
+        </DialogContent>
+        <DialogActions sx={{ p: 2, pt: 1 }}>
+          <Button onClick={closeConfirm} sx={{ color: '#64748b', fontWeight: 800, textTransform: 'none', borderRadius: 2 }}>
+            Cancelar
+          </Button>
+          <Button
+            variant="contained"
+            color={confirmModal.severity === 'error' ? 'error' : 'primary'}
+            onClick={async () => {
+              const action = confirmModal.onConfirm;
+              closeConfirm();
+              if (action) await action();
+            }}
+            sx={{ fontWeight: 800, textTransform: 'none', borderRadius: 2, px: 2.5 }}
+          >
+            {confirmModal.confirmText}
+          </Button>
+        </DialogActions>
       </Dialog>
     </Stack>
   );
