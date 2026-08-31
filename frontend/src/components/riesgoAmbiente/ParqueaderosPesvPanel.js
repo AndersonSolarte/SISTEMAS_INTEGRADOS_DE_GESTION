@@ -695,14 +695,6 @@ function ParqueaderosPesvPanel({ onBack }) {
   const handleRuntTabSwitch = (newMode) => {
     setRuntValidationMode(newMode);
     setRuntCopiedText('');
-    const targetUrl = newMode === 'driver'
-      ? 'https://portalpublico.runt.gov.co/#/consulta-ciudadano-documento/consulta/consulta-ciudadano-documento'
-      : (runtValidation.runtUrl || 'https://portalpublico.runt.gov.co/#/consulta-vehiculo-documento/consulta/consulta-vehiculo-documento');
-    try {
-      window.open(targetUrl, '_blank', 'noopener,noreferrer');
-    } catch (e) {
-      enqueueSnackbar('Permita ventanas emergentes para abrir automáticamente la consulta RUNT', { variant: 'info' });
-    }
   };
 
   const extractCopiedRuntDriverResult = () => {
