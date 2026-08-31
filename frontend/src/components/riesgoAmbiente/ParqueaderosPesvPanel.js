@@ -1020,7 +1020,7 @@ function ParqueaderosPesvPanel({ onBack }) {
           <Button variant="contained" startIcon={<AddRoundedIcon />} onClick={openCreate} sx={{ textTransform: 'none', fontWeight: 800 }}>Nuevo cupo</Button>
         </Stack>
       </Stack>
-      <Paper elevation={0} sx={{ p: 2.5, borderRadius: 3.5, color: '#fff', background: 'linear-gradient(135deg, #064e3b 0%, #059669 100%)', boxShadow: '0 8px 20px rgba(5, 150, 105, 0.22)' }}>
+      <Paper elevation={0} sx={{ p: 2.5, borderRadius: 3.5, color: '#fff', background: 'linear-gradient(135deg, #0f172a 0%, #1e3a8a 50%, #2563eb 100%)', boxShadow: '0 8px 24px rgba(30, 58, 138, 0.28)' }}>
         <Stack direction="row" spacing={1.5} alignItems="center"><DirectionsCarRoundedIcon sx={{ fontSize: 38 }} /><Box><Typography variant="overline" sx={{ fontWeight: 900, opacity: .85 }}>PESV · Submódulo 01</Typography><Typography variant="h4" sx={{ fontWeight: 900 }}>Parqueaderos UNICESMAG</Typography><Typography sx={{ opacity: .88 }}>Gestión de cupos, vehículos y vigencias documentales.</Typography></Box></Stack>
       </Paper>
       {importResult?.warningCount > 0 && <Alert severity="warning">Se importaron {importResult.imported} registros con {importResult.warningCount} advertencias de datos. Las vigencias no reconocibles quedaron marcadas como “Sin fecha verificable”.</Alert>}
@@ -1034,17 +1034,27 @@ function ParqueaderosPesvPanel({ onBack }) {
             key={item.label} component="button" type="button" aria-pressed={selected} onClick={() => applyIndicatorFilter(item.key)}
             elevation={0}
             sx={{
-              position: 'relative', overflow: 'hidden', width: '100%', p: 2.2, borderRadius: 3.5, textAlign: 'left', font: 'inherit', cursor: 'pointer',
-              color: item.color, bgcolor: emphasized ? item.background : '#fff', border: `2px solid ${emphasized ? item.color : '#cbd5e1'}`,
-              boxShadow: emphasized ? `0 12px 24px ${item.color}2b` : '0 3px 10px rgba(15,23,42,.04)',
+              position: 'relative', overflow: 'hidden', width: '100%', p: 2.4, borderRadius: 3.5, textAlign: 'left', font: 'inherit', cursor: 'pointer',
+              color: item.color,
+              bgcolor: emphasized ? item.background : '#fff',
+              backgroundImage: `radial-gradient(circle at 90% 10%, ${item.color}15 0%, transparent 65%), linear-gradient(135deg, #ffffff 0%, #f8fafc 100%)`,
+              border: `1.5px solid ${emphasized ? item.color : '#e2e8f0'}`,
+              borderTop: `4px solid ${item.color}`,
+              boxShadow: emphasized ? `0 12px 24px ${item.color}2b` : '0 4px 16px rgba(15,23,42,.05)',
               transform: selected ? 'translateY(-3px)' : 'none', transition: 'transform .18s ease, box-shadow .18s ease, border-color .18s ease, background-color .18s ease',
               '&:hover': { transform: 'translateY(-4px)', borderColor: item.color, boxShadow: `0 14px 28px ${item.color}30` },
               '&:focus-visible': { outline: `3px solid ${item.color}55`, outlineOffset: 2 }
             }}
           >
+            <Box sx={{ position: 'absolute', right: -12, bottom: -12, opacity: 0.06, pointerEvents: 'none', transform: 'rotate(-10deg)', color: item.color, '& svg': { fontSize: 88 } }}>
+              {item.icon}
+            </Box>
             <Stack direction="row" justifyContent="space-between" alignItems="center" spacing={1.5} sx={{ position: 'relative', zIndex: 1 }}>
-              <Box><Typography variant="caption" sx={{ display: 'block', color: emphasized ? item.color : '#475569', fontWeight: 900, fontSize: 13 }}>{item.label}</Typography><Typography sx={{ mt: .65, fontSize: 32, lineHeight: 1, fontWeight: 900, color: '#0f172a' }}>{item.value.toLocaleString('es-CO')}</Typography></Box>
-              <Box sx={{ display: 'grid', placeItems: 'center', width: 48, height: 48, flexShrink: 0, borderRadius: 2.8, color: '#fff', bgcolor: item.color, boxShadow: `0 7px 16px ${item.color}38` }}>{item.icon}</Box>
+              <Box>
+                <Typography variant="caption" sx={{ display: 'block', color: emphasized ? item.color : '#475569', fontWeight: 900, fontSize: 13 }}>{item.label}</Typography>
+                <Typography sx={{ mt: .65, fontSize: 32, lineHeight: 1, fontWeight: 900, color: '#0f172a' }}>{item.value.toLocaleString('es-CO')}</Typography>
+              </Box>
+              <Box sx={{ display: 'grid', placeItems: 'center', width: 50, height: 50, flexShrink: 0, borderRadius: 2.8, color: '#fff', background: `linear-gradient(135deg, ${item.color} 0%, #1e40af 100%)`, boxShadow: `0 7px 18px ${item.color}40` }}>{item.icon}</Box>
             </Stack>
           </Paper>;
         })}
