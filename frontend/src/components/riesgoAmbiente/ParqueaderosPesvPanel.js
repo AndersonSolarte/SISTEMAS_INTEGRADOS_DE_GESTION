@@ -209,41 +209,61 @@ const getPrimerApellido = (row) => {
 
 const parseRuntDriverCopiedText = (text = '') => {
   const lines = String(text || '').split(/\r?\n/).map((l) => l.replace(/\s+/g, ' ').trim()).filter(Boolean);
-  const normalized = lines.map(normalizeRuntLine);
   const categoryRegex = /\b(A1|A2|B1|B2|B3|C1|C2|C3)\b/gi;
+  const dateRegex = /\b(\d{1,2}[\/\.-]\d{1,2}[\/\.-]\d{2,4})\b/g;
+
   const categoriesFound = new Set();
-  const datesFound = [];
+  const expedicionDates = [];
+  const vencimientoDates = [];
   let estado = 'VIGENTE';
 
-  lines.forEach((line, idx) => {
-    const norm = normalized[idx];
-    const catMatches = line.match(categoryRegex);
-    if (catMatches) {
-      catMatches.forEach((c) => categoriesFound.add(c.toUpperCase()));
-    }
-    const dateMatches = line.match(/\b(\d{1,2}[\/\.-]\d{1,2}[\/\.-]\d{2,4})\b/g);
-    if (dateMatches) {
-      dateMatches.forEach((dStr) => {
-        const iso = runtDateToIso(dStr);
-        if (iso) datesFound.push(iso);
-      });
-    }
+  lines.forEach((line) => {
+    const norm = normalizeRuntLine(line);
     if (norm.includes('INACTIVA') || norm.includes('SUSPENDIDA') || norm.includes('CANCELADA')) {
       estado = 'INACTIVA';
     }
+    if (norm.includes('INSCRIPCION')) return; // Ignorar la fecha de inscripción del ciudadano en RUNT
+
+    const catMatches = line.match(categoryRegex);
+    const dateMatches = line.match(dateRegex);
+
+    if (catMatches) {
+      catMatches.forEach((c) => categoriesFound.add(c.toUpperCase()));
+      if (dateMatches && dateMatches.length >= 2) {
+        const expIso = runtDateToIso(dateMatches[0]);
+        const vencIso = runtDateToIso(dateMatches[1]);
+        if (expIso) expedicionDates.push(expIso);
+        if (vencIso) vencimientoDates.push(vencIso);
+      } else if (dateMatches && dateMatches.length === 1) {
+        const dIso = runtDateToIso(dateMatches[0]);
+        if (dIso) vencimientoDates.push(dIso);
+      }
+    } else if (dateMatches && (line.includes('\t') || dateMatches.length >= 2 || line.includes('ACTIVA'))) {
+      if (dateMatches.length >= 2) {
+        const expIso = runtDateToIso(dateMatches[0]);
+        const vencIso = runtDateToIso(dateMatches[1]);
+        if (expIso) expedicionDates.push(expIso);
+        if (vencIso) vencimientoDates.push(vencIso);
+      } else {
+        const dIso = runtDateToIso(dateMatches[0]);
+        if (dIso) expedicionDates.push(dIso);
+      }
+    }
   });
 
-  datesFound.sort();
-  const earliestExpedicion = datesFound.length > 0 ? datesFound[0] : '';
-  const latestVencimiento = datesFound.length > 1 ? datesFound[datesFound.length - 1] : (datesFound[0] || '');
+  expedicionDates.sort();
+  vencimientoDates.sort();
+
+  const finalExpedicion = expedicionDates.length > 0 ? expedicionDates[0] : '';
+  const finalVencimiento = vencimientoDates.length > 0 ? vencimientoDates[vencimientoDates.length - 1] : (expedicionDates.length > 1 ? expedicionDates[1] : '');
   const categoriesList = Array.from(categoriesFound).join(', ');
-  const hasLicencia = categoriesFound.size > 0 || datesFound.length > 0;
+  const hasLicencia = categoriesFound.size > 0 || vencimientoDates.length > 0 || expedicionDates.length > 0;
 
   return {
     hasLicencia,
     categorias: categoriesList,
-    expedicion: earliestExpedicion,
-    vencimiento: latestVencimiento,
+    expedicion: finalExpedicion,
+    vencimiento: finalVencimiento,
     estado
   };
 };
@@ -1348,13 +1368,13 @@ function ParqueaderosPesvPanel({ onBack }) {
                   if (!compat.compatible) {
                     return (
                       <Alert severity="error" sx={{ fontWeight: 800 }}>
-                        🚨 <strong>Incompatibilidad Detectada:</strong> {compat.reason}
+                        <strong>Incompatibilidad Detectada:</strong> {compat.reason}
                       </Alert>
                     );
                   }
                   return (
                     <Alert severity="success" sx={{ fontWeight: 800 }}>
-                      ✅ <strong>Licencia Compatible:</strong> Las categorías autorizadas ({runtDriverForm.licencia_categorias}) cumplen con el tipo de vehículo ({runtValidation.row.tipo_vehiculo}).
+                      <strong>Licencia Compatible:</strong> Las categorías autorizadas ({runtDriverForm.licencia_categorias}) cumplen con el tipo de vehículo ({runtValidation.row.tipo_vehiculo}).
                     </Alert>
                   );
                 })()}
