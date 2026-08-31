@@ -199,6 +199,14 @@ const parseRuntCopiedText = (text = '') => {
   return { plate, soat: currentSoat, rtm: currentRtm, vehicle, rtmSituation, rtmDueDate };
 };
 
+const getPrimerApellido = (row) => {
+  if (row?.primer_apellido) return String(row.primer_apellido).trim();
+  const full = String(row?.nombres_apellidos || '').trim();
+  if (!full) return '';
+  const parts = full.split(/\s+/).filter(Boolean);
+  return parts.length > 0 ? parts[0] : '';
+};
+
 const parseRuntDriverCopiedText = (text = '') => {
   const lines = String(text || '').split(/\r?\n/).map((l) => l.replace(/\s+/g, ' ').trim()).filter(Boolean);
   const normalized = lines.map(normalizeRuntLine);
@@ -1273,7 +1281,29 @@ function ParqueaderosPesvPanel({ onBack }) {
             {runtValidationMode === 'driver' ? (
               <Stack spacing={2}>
                 <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap" useFlexGap justifyContent="space-between">
-                  <Chip label={`Cédula / Documento: ${runtValidation.documentoConsulta || runtValidation.row?.identificacion || ''}`} color="primary" sx={{ fontWeight: 800 }} />
+                  <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap" useFlexGap>
+                    <Stack direction="row" spacing={0.25} alignItems="center">
+                      <Chip label={`Cédula: ${runtValidation.documentoConsulta || runtValidation.row?.identificacion || ''}`} color="primary" sx={{ fontWeight: 800 }} />
+                      <Tooltip title="Copiar Cédula">
+                        <IconButton size="small" onClick={() => copyRuntValue('Cédula', runtValidation.documentoConsulta || runtValidation.row?.identificacion)}>
+                          <ContentCopyRoundedIcon sx={{ fontSize: 17 }} />
+                        </IconButton>
+                      </Tooltip>
+                    </Stack>
+
+                    <Stack direction="row" spacing={0.25} alignItems="center">
+                      <Chip
+                        label={`Primer Apellido: ${getPrimerApellido(runtValidation.row) || 'Sin apellido'}`}
+                        sx={{ fontWeight: 800, bgcolor: '#fef3c7', color: '#92400e', border: '1px solid #fde68a' }}
+                      />
+                      <Tooltip title="Copiar Primer Apellido para formulario RUNT">
+                        <IconButton size="small" onClick={() => copyRuntValue('Primer Apellido', getPrimerApellido(runtValidation.row))}>
+                          <ContentCopyRoundedIcon sx={{ fontSize: 17 }} />
+                        </IconButton>
+                      </Tooltip>
+                    </Stack>
+                  </Stack>
+
                   <Button size="small" variant="outlined" startIcon={<BadgeRoundedIcon />} sx={{ fontWeight: 800 }} onClick={() => window.open('https://portalpublico.runt.gov.co/#/consulta-ciudadano-documento/consulta/consulta-ciudadano-documento', '_blank', 'noopener,noreferrer')}>
                     Abrir RUNT por Documento
                   </Button>
