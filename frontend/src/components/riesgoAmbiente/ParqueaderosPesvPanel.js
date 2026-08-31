@@ -979,7 +979,7 @@ function ParqueaderosPesvPanel({ onBack }) {
           <Button variant="contained" startIcon={<AddRoundedIcon />} onClick={openCreate} sx={{ textTransform: 'none', fontWeight: 800 }}>Nuevo cupo</Button>
         </Stack>
       </Stack>
-      <Paper elevation={0} sx={{ p: 2.5, borderRadius: 3.5, color: '#fff', background: 'linear-gradient(135deg,#92400e,#d97706)' }}>
+      <Paper elevation={0} sx={{ p: 2.5, borderRadius: 3.5, color: '#fff', background: 'linear-gradient(135deg, #064e3b 0%, #059669 100%)', boxShadow: '0 8px 20px rgba(5, 150, 105, 0.22)' }}>
         <Stack direction="row" spacing={1.5} alignItems="center"><DirectionsCarRoundedIcon sx={{ fontSize: 38 }} /><Box><Typography variant="overline" sx={{ fontWeight: 900, opacity: .85 }}>PESV · Submódulo 01</Typography><Typography variant="h4" sx={{ fontWeight: 900 }}>Parqueaderos UNICESMAG</Typography><Typography sx={{ opacity: .88 }}>Gestión de cupos, vehículos y vigencias documentales.</Typography></Box></Stack>
       </Paper>
       {importResult?.warningCount > 0 && <Alert severity="warning">Se importaron {importResult.imported} registros con {importResult.warningCount} advertencias de datos. Las vigencias no reconocibles quedaron marcadas como “Sin fecha verificable”.</Alert>}
