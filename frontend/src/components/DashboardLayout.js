@@ -571,10 +571,7 @@ function DashboardLayout() {
 
   const isMovilidadAuthorizedRole = Boolean(
     user?.role === ROLES.ADMINISTRADOR ||
-    user?.role === ROLES.GESTION_PROCESOS ||
-    user?.role === ROLES.PLANEACION_ESTRATEGICA ||
-    (user?.cargo && /director|decano|coordinador|lider|docente|profesor|tutor|vicerrec|academica|financiera/i.test(user.cargo)) ||
-    (user?.dependencia && /licenciatura|programa|facultad|escuela|departamento|practica|movilidad|vicerrec|academica|financiera/i.test(user.dependencia))
+    user?.role === ROLES.PLANEACION_ESTRATEGICA
   );
 
   const canAccessMovilidad = hasExplicitMovilidadPerm || isMovilidadAuthorizedRole;
