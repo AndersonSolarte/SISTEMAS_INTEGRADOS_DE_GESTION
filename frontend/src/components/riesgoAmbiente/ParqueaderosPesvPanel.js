@@ -1169,29 +1169,41 @@ function ParqueaderosPesvPanel({ onBack }) {
               </Box>
             </Stack>
           </Box>
-          <Box sx={{ gridColumn: { sm: '1 / -1' }, display: 'flex', gap: 1, alignItems: 'center' }}>
+          <Box sx={{ gridColumn: { sm: '1 / -1' }, display: 'grid', gridTemplateColumns: { xs: '1fr', sm: '1.2fr 0.8fr' }, gap: 1.5, alignItems: 'start' }}>
+            <Box sx={{ display: 'flex', gap: 1, alignItems: 'flex-start' }}>
+              <TextField
+                label="Identificación / Cédula *"
+                placeholder="Digite cédula o nit..."
+                value={form.identificacion || ''}
+                onChange={updateField('identificacion')}
+                onBlur={(e) => handleLookupPersona(e.target.value)}
+                error={submittedAttempt && !form.identificacion?.trim()}
+                helperText={submittedAttempt && !form.identificacion?.trim() ? 'Campo obligatorio' : 'Presione fuera para buscar'}
+                fullWidth size="small"
+                InputProps={{
+                  endAdornment: lookingUpPerson ? <CircularProgress size={18} /> : null
+                }}
+              />
+              <Button
+                variant="outlined"
+                size="small"
+                onClick={() => handleLookupPersona(form.identificacion)}
+                disabled={lookingUpPerson || !form.identificacion?.trim()}
+                sx={{ textTransform: 'none', fontWeight: 800, whiteSpace: 'nowrap', height: 40 }}
+              >
+                Buscar persona
+              </Button>
+            </Box>
+
             <TextField
-              label="Identificación / Cédula *"
-              placeholder="Digite cédula o nit..."
-              value={form.identificacion || ''}
-              onChange={updateField('identificacion')}
-              onBlur={(e) => handleLookupPersona(e.target.value)}
-              error={submittedAttempt && !form.identificacion?.trim()}
-              helperText={submittedAttempt && !form.identificacion?.trim() ? 'La identificación es obligatoria' : 'Presione fuera del campo para buscar'}
+              label="Placa del vehículo *"
+              placeholder="Ej: IHN450, VBQ99E..."
+              value={form.placa || ''}
+              onChange={updateField('placa')}
+              error={submittedAttempt && !form.placa?.trim()}
+              helperText={submittedAttempt && !form.placa?.trim() ? 'Campo obligatorio' : 'Placa registrada'}
               fullWidth size="small"
-              InputProps={{
-                endAdornment: lookingUpPerson ? <CircularProgress size={18} /> : null
-              }}
             />
-            <Button
-              variant="outlined"
-              size="small"
-              onClick={() => handleLookupPersona(form.identificacion)}
-              disabled={lookingUpPerson || !form.identificacion?.trim()}
-              sx={{ textTransform: 'none', fontWeight: 800, whiteSpace: 'nowrap', height: 40 }}
-            >
-              Buscar persona
-            </Button>
           </Box>
           {renderFormField(['nombres_apellidos', 'Nombres y Apellidos *'])}
           {renderFormField(['correo', 'Correo electrónico'])}
