@@ -16,12 +16,13 @@ import VisibilityRoundedIcon from '@mui/icons-material/VisibilityRounded';
 import CheckCircleRoundedIcon from '@mui/icons-material/CheckCircleRounded';
 import WarningAmberRoundedIcon from '@mui/icons-material/WarningAmberRounded';
 import ErrorRoundedIcon from '@mui/icons-material/ErrorRounded';
+import FolderOpenRoundedIcon from '@mui/icons-material/FolderOpenRounded';
 import XLSXStyle from 'xlsx-js-style';
 import { extractDocumentInformation } from '../../services/documentExtractionService';
 
 const MAX_FILE_SIZE = 12 * 1024 * 1024;
-const MAX_BATCH_SIZE = 60 * 1024 * 1024;
-const MAX_FILES = 20;
+const API_BATCH_MAX_SIZE = 60 * 1024 * 1024;
+const API_BATCH_MAX_FILES = 20;
 const ACCEPTED_TYPES = ['application/pdf', 'image/jpeg', 'image/png', 'image/webp'];
 const FILTERS = ['Todos', 'Procesado', 'Revisar', 'Error'];
 
@@ -43,8 +44,27 @@ const StatusChip = ({ status }) => {
 
 const confidenceColor = (value) => value >= 85 ? 'success' : value >= 60 ? 'warning' : 'error';
 
+const splitIntoUploadBatches = (files) => {
+  const batches = [];
+  let current = [];
+  let currentSize = 0;
+  files.forEach((file) => {
+    const requiresNextBatch = current.length >= API_BATCH_MAX_FILES || currentSize + file.size > API_BATCH_MAX_SIZE;
+    if (requiresNextBatch && current.length > 0) {
+      batches.push(current);
+      current = [];
+      currentSize = 0;
+    }
+    current.push(file);
+    currentSize += file.size;
+  });
+  if (current.length > 0) batches.push(current);
+  return batches;
+};
+
 export default function ExtraccionDocumentos() {
   const inputRef = useRef(null);
+  const folderInputRef = useRef(null);
   const [files, setFiles] = useState([]);
   const [instructions, setInstructions] = useState('');
   const [dragging, setDragging] = useState(false);
@@ -54,6 +74,7 @@ export default function ExtraccionDocumentos() {
   const [batch, setBatch] = useState(null);
   const [filter, setFilter] = useState('Todos');
   const [expandedFile, setExpandedFile] = useState('');
+  const [progress, setProgress] = useState({ processed: 0, total: 0, batch: 0, batches: 0 });
 
   const addFiles = (incoming) => {
     setError('');
@@ -65,25 +86,16 @@ export default function ExtraccionDocumentos() {
     const valid = candidates.filter((file) => ACCEPTED_TYPES.includes(file.type) && file.size <= MAX_FILE_SIZE);
     const byKey = new Map(files.map((file) => [`${file.name}-${file.size}-${file.lastModified}`, file]));
     valid.forEach((file) => byKey.set(`${file.name}-${file.size}-${file.lastModified}`, file));
-    const next = Array.from(byKey.values()).slice(0, MAX_FILES);
-    const acceptedBatch = [];
-    let batchSize = 0;
-    next.forEach((file) => {
-      if (batchSize + file.size <= MAX_BATCH_SIZE) {
-        acceptedBatch.push(file);
-        batchSize += file.size;
-      }
-    });
-    setFiles(acceptedBatch);
-    if (invalid.length || oversized.length || byKey.size > MAX_FILES || acceptedBatch.length < next.length) {
+    const next = Array.from(byKey.values());
+    setFiles(next);
+    if (invalid.length || oversized.length) {
       const messages = [];
       if (invalid.length) messages.push(`${invalid.length} archivo(s) con formato no permitido`);
       if (oversized.length) messages.push(`${oversized.length} archivo(s) superiores a 12 MB`);
-      if (byKey.size > MAX_FILES) messages.push(`solo se conservaron los primeros ${MAX_FILES}`);
-      if (acceptedBatch.length < next.length) messages.push('el lote total no puede superar 60 MB');
       setError(messages.join('. ') + '.');
     }
     if (inputRef.current) inputRef.current.value = '';
+    if (folderInputRef.current) folderInputRef.current.value = '';
   };
 
   const removeFile = (indexToRemove) => {
@@ -99,7 +111,9 @@ export default function ExtraccionDocumentos() {
     setExpandedFile('');
     setError('');
     setNotice('');
+    setProgress({ processed: 0, total: 0, batch: 0, batches: 0 });
     if (inputRef.current) inputRef.current.value = '';
+    if (folderInputRef.current) folderInputRef.current.value = '';
   };
 
   const analyzeBatch = async () => {
@@ -108,12 +122,36 @@ export default function ExtraccionDocumentos() {
     setError('');
     setNotice('');
     setBatch(null);
+    setProgress({ processed: 0, total: files.length, batch: 0, batches: 0 });
     try {
-      const payload = await extractDocumentInformation({ files, instructions: instructions.trim() });
-      setBatch(payload);
-      setNotice(`Analisis terminado: ${payload?.stats?.total || 0} documento(s) procesados.`);
+      const uploadBatches = splitIntoUploadBatches(files);
+      const combinedResults = [];
+      setProgress({ processed: 0, total: files.length, batch: 0, batches: uploadBatches.length });
+      for (let index = 0; index < uploadBatches.length; index += 1) {
+        const currentFiles = uploadBatches[index];
+        setProgress((current) => ({ ...current, batch: index + 1 }));
+        try {
+          const payload = await extractDocumentInformation({ files: currentFiles, instructions: instructions.trim() });
+          combinedResults.push(...(payload?.resultados || []));
+        } catch (requestError) {
+          const message = requestError?.response?.data?.message || 'No fue posible procesar este bloque de archivos.';
+          combinedResults.push(...currentFiles.map((file) => ({
+            archivo: { nombre: file.webkitRelativePath || file.name, tipo: file.type, tamano: file.size },
+            estado: 'Error', resultado: null, error: message
+          })));
+        }
+        setProgress((current) => ({ ...current, processed: Math.min(files.length, current.processed + currentFiles.length) }));
+      }
+      const stats = {
+        total: combinedResults.length,
+        procesados: combinedResults.filter((item) => item.estado === 'Procesado').length,
+        revisar: combinedResults.filter((item) => item.estado === 'Revisar').length,
+        errores: combinedResults.filter((item) => item.estado === 'Error').length
+      };
+      setBatch({ success: true, resultados: combinedResults, stats, persistido: false });
+      setNotice(`Analisis terminado: ${stats.total} documento(s), ${stats.procesados} procesados, ${stats.revisar} para revisar y ${stats.errores} con error.`);
     } catch (requestError) {
-      setError(requestError?.response?.data?.message || 'No fue posible procesar el lote de documentos.');
+      setError(requestError?.message || 'No fue posible procesar la carpeta.');
     } finally {
       setLoading(false);
     }
@@ -177,7 +215,7 @@ export default function ExtraccionDocumentos() {
               </Box>
               <Box>
                 <Typography sx={{ fontSize: 18, fontWeight: 900, color: '#0f172a' }}>Extraccion masiva de PDF e imagenes</Typography>
-                <Typography sx={{ fontSize: 12.5, color: '#64748b' }}>Carga hasta 20 documentos, consolida los datos en una tabla y exportalos a Excel.</Typography>
+                <Typography sx={{ fontSize: 12.5, color: '#64748b' }}>Selecciona una carpeta completa o archivos individuales; el sistema los procesa por bloques y consolida una sola tabla.</Typography>
               </Box>
             </Stack>
             {documentRows.length > 0 && <Button variant="contained" startIcon={<DownloadRoundedIcon />} onClick={exportExcel} sx={{ bgcolor: '#15803d', textTransform: 'none', fontWeight: 850, '&:hover': { bgcolor: '#166534' } }}>Exportar tabla a Excel</Button>}
@@ -192,24 +230,31 @@ export default function ExtraccionDocumentos() {
             onClick={() => inputRef.current?.click()}
             sx={{ minHeight: 150, borderRadius: 3, border: `2px dashed ${dragging ? '#7c3aed' : '#bfdbfe'}`, bgcolor: dragging ? '#f5f3ff' : '#f8fbff', display: 'grid', placeItems: 'center', cursor: 'pointer', textAlign: 'center', px: 2, transition: 'all .18s', '&:hover': { borderColor: '#7c3aed', bgcolor: '#f5f3ff' } }}
           >
-            <input ref={inputRef} hidden multiple type="file" accept=".pdf,.png,.jpg,.jpeg,.webp" onChange={(event) => addFiles(event.target.files)} />
+            <input ref={inputRef} hidden multiple type="file" accept=".pdf,.png,.jpg,.jpeg,.webp" onClick={(event) => event.stopPropagation()} onChange={(event) => addFiles(event.target.files)} />
+            <input ref={folderInputRef} hidden multiple type="file" accept=".pdf,.png,.jpg,.jpeg,.webp" webkitdirectory="" directory="" onClick={(event) => event.stopPropagation()} onChange={(event) => addFiles(event.target.files)} />
             <Stack spacing={.7} alignItems="center">
               <UploadFileRoundedIcon sx={{ fontSize: 52, color: '#7c3aed' }} />
               <Typography sx={{ fontWeight: 900, color: '#1e293b', fontSize: 16 }}>Arrastra varios documentos o haz clic para seleccionarlos</Typography>
-              <Typography sx={{ color: '#64748b', fontSize: 12.5 }}>PDF, PNG, JPG, JPEG o WEBP · 12 MB por archivo · 60 MB por lote · hasta 20 archivos</Typography>
+              <Typography sx={{ color: '#64748b', fontSize: 12.5 }}>PDF, PNG, JPG, JPEG o WEBP · 12 MB por archivo · envio automatico en bloques de 20/60 MB</Typography>
             </Stack>
           </Box>
+
+          <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1} justifyContent="center" sx={{ mt: 1.2 }}>
+            <Button variant="contained" startIcon={<FolderOpenRoundedIcon />} onClick={() => folderInputRef.current?.click()} disabled={loading} sx={{ bgcolor: '#7c3aed', textTransform: 'none', fontWeight: 850, '&:hover': { bgcolor: '#6d28d9' } }}>Seleccionar carpeta completa</Button>
+            <Button variant="outlined" startIcon={<UploadFileRoundedIcon />} onClick={() => inputRef.current?.click()} disabled={loading} sx={{ textTransform: 'none', fontWeight: 800 }}>Seleccionar archivos</Button>
+          </Stack>
 
           {files.length > 0 && (
             <Paper elevation={0} sx={{ mt: 1.5, p: 1.5, bgcolor: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: 2.5 }}>
               <Stack direction="row" justifyContent="space-between" alignItems="center" sx={{ mb: 1 }}>
-                <Typography sx={{ fontWeight: 850, color: '#334155', fontSize: 13 }}>Archivos seleccionados ({files.length}/{MAX_FILES})</Typography>
+                <Typography sx={{ fontWeight: 850, color: '#334155', fontSize: 13 }}>Documentos compatibles encontrados: {files.length}</Typography>
                 <Button size="small" color="error" startIcon={<DeleteOutlineRoundedIcon />} onClick={(event) => { event.stopPropagation(); reset(); }} sx={{ textTransform: 'none' }}>Quitar todos</Button>
               </Stack>
               <Stack direction="row" spacing={.8} useFlexGap flexWrap="wrap">
-                {files.map((file, index) => (
-                  <Chip key={`${file.name}-${file.size}-${index}`} icon={file.type === 'application/pdf' ? <PictureAsPdfRoundedIcon /> : <ImageRoundedIcon />} label={`${file.name} · ${formatBytes(file.size)}`} onDelete={() => removeFile(index)} sx={{ maxWidth: 360, '& .MuiChip-label': { overflow: 'hidden', textOverflow: 'ellipsis' } }} />
+                {files.slice(0, 100).map((file, index) => (
+                  <Chip key={`${file.webkitRelativePath || file.name}-${file.size}-${index}`} icon={file.type === 'application/pdf' ? <PictureAsPdfRoundedIcon /> : <ImageRoundedIcon />} label={`${file.webkitRelativePath || file.name} · ${formatBytes(file.size)}`} onDelete={() => removeFile(index)} sx={{ maxWidth: 420, '& .MuiChip-label': { overflow: 'hidden', textOverflow: 'ellipsis' } }} />
                 ))}
+                {files.length > 100 && <Chip color="primary" variant="outlined" label={`+ ${files.length - 100} archivos adicionales`} />}
               </Stack>
             </Paper>
           )}
@@ -220,7 +265,12 @@ export default function ExtraccionDocumentos() {
             <Button variant="contained" startIcon={loading ? <CircularProgress color="inherit" size={18} /> : <AutoAwesomeRoundedIcon />} disabled={files.length === 0 || loading} onClick={analyzeBatch} sx={{ bgcolor: '#7c3aed', fontWeight: 850, textTransform: 'none', '&:hover': { bgcolor: '#6d28d9' } }}>{loading ? `Analizando ${files.length} documento(s)...` : `Analizar ${files.length || ''} documento(s)`}</Button>
             {(files.length > 0 || batch) && <Button variant="outlined" startIcon={<RestartAltRoundedIcon />} disabled={loading} onClick={reset} sx={{ textTransform: 'none' }}>Nuevo lote</Button>}
           </Stack>
-          {loading && <LinearProgress sx={{ mt: 1.5, borderRadius: 99 }} />}
+          {loading && (
+            <Box sx={{ mt: 1.5 }}>
+              <LinearProgress variant={progress.total > 0 ? 'determinate' : 'indeterminate'} value={progress.total > 0 ? (progress.processed / progress.total) * 100 : 0} sx={{ borderRadius: 99, height: 8 }} />
+              <Typography sx={{ mt: .6, color: '#64748b', fontSize: 12, textAlign: 'center' }}>Bloque {progress.batch} de {progress.batches} · {progress.processed} de {progress.total} documentos completados</Typography>
+            </Box>
+          )}
           {error && <Alert severity="error" sx={{ mt: 1.5 }}>{error}</Alert>}
           {notice && <Alert severity="success" sx={{ mt: 1.5 }}>{notice}</Alert>}
           <Alert severity="info" sx={{ mt: 1.5, fontSize: 12 }}>Los archivos no se almacenan, pero se envian al proveedor de IA configurado. No cargues informacion sensible sin autorizacion y revisa los resultados contra el original.</Alert>

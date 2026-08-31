@@ -10,5 +10,14 @@ export const extractDocumentInformation = async ({ files, instructions = '' }) =
     headers: { 'Content-Type': 'multipart/form-data' },
     timeout: 600000
   });
-  return response.data;
+  return {
+    ...response.data,
+    resultados: (response.data?.resultados || []).map((item, index) => ({
+      ...item,
+      archivo: {
+        ...(item.archivo || {}),
+        nombre: files[index]?.webkitRelativePath || files[index]?.name || item.archivo?.nombre
+      }
+    }))
+  };
 };
