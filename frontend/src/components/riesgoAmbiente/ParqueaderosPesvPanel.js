@@ -1067,67 +1067,35 @@ function ParqueaderosPesvPanel({ onBack }) {
               <TableCell><Typography variant="body2" sx={{ fontWeight: 800 }}>{row.parqueadero_ingreso || 'Sin asignar'}</Typography><Typography variant="caption" color="text.secondary">{row.campus || 'Sin campus'}</Typography></TableCell>
               <TableCell><Chip label={row.placa || 'SIN PLACA'} size="small" sx={{ fontWeight: 900, bgcolor: '#e0e7ff', color: '#3730a3' }} /><Typography variant="caption" sx={{ display: 'block', mt: .5 }}>{row.tipo_vehiculo || 'Sin tipo'}</Typography></TableCell>
               <TableCell><ExpiryCell type="soat" date={row.soat_vigencia} rawText={row.soat_vigencia_texto} status={row.soat_estado} row={row} onNotify={notify} notifying={notifying === `${row.id}-soat`} /></TableCell>
-              <TableCell><ExpiryCell type="tecnomecanica" date={row.tecnomecanica_vigencia} rawText={row.tecnomecanica_vigencia_texto} status={row.tecnomecanica_estado} row={row} onNotify={notify} notifying={notifying === `${row.id}-tecnomecanica`} /></TableCell>
               <TableCell><ExpiryCell type="licencia" date={row.licencia_vencimiento} rawText={row.licencia_categorias ? `Cat. ${row.licencia_categorias}` : ''} status={row.licencia_estado} row={row} onNotify={notify} notifying={notifying === `${row.id}-licencia`} /></TableCell>
               <TableCell align="center" sx={{ whiteSpace: 'nowrap' }}>
                 <Stack direction="row" spacing={0.6} alignItems="center" justifyContent="center" flexWrap="nowrap">
-                  <Box
-                    sx={{
-                      display: 'inline-flex',
-                      alignItems: 'center',
-                      borderRadius: '20px',
-                      border: '1px solid #cbd5e1',
-                      bgcolor: '#f8fafc',
-                      p: '2px',
-                      boxShadow: '0 1px 3px rgba(15,23,42,.05)',
-                      '&:hover': { borderColor: '#94a3b8', bgcolor: '#f1f5f9' }
-                    }}
-                  >
-                    <Tooltip title={isBicycleVehicle(row) ? 'No aplica para bicicletas' : 'Consultar SOAT y RTM (RUNT por Placa)'} arrow placement="top">
-                      <span>
-                        <IconButton
-                          size="small"
-                          onClick={() => startRuntValidation(row, 'vehicle')}
-                          disabled={isBicycleVehicle(row) || !normalizePlateForRunt(row.placa) || !getRuntDocument(row)}
-                          sx={{
-                            color: '#d97706',
-                            p: '4px 8px',
-                            borderRadius: '16px 0 0 16px',
-                            '&:hover': { bgcolor: '#fef3c7' },
-                            '&.Mui-disabled': { color: '#cbd5e1' }
-                          }}
-                        >
-                          <DirectionsCarRoundedIcon sx={{ fontSize: 16 }} />
-                        </IconButton>
-                      </span>
-                    </Tooltip>
+                  <Tooltip title={isBicycleVehicle(row) ? 'No aplica para bicicletas' : 'Validar en RUNT (SOAT, Tecnomecánica y Licencia)'} arrow placement="top">
+                    <span>
+                      <IconButton
+                        size="small"
+                        onClick={() => startRuntValidation(row, 'vehicle')}
+                        disabled={isBicycleVehicle(row) || (!normalizePlateForRunt(row.placa) && !getRuntDocument(row))}
+                        sx={{
+                          color: '#d97706',
+                          bgcolor: '#fffbeb',
+                          border: '1px solid #fde68a',
+                          p: 0.55,
+                          '&:hover': { bgcolor: '#fef3c7' },
+                          '&.Mui-disabled': { bgcolor: '#f1f5f9', color: '#cbd5e1', borderColor: '#e2e8f0' }
+                        }}
+                      >
+                        <FactCheckRoundedIcon sx={{ fontSize: 16 }} />
+                      </IconButton>
+                    </span>
+                  </Tooltip>
 
-                    <Box sx={{ width: '1px', height: '14px', bgcolor: '#cbd5e1' }} />
-
-                    <Tooltip title="Consultar Licencia de Conducción (RUNT por Cédula)" arrow placement="top">
-                      <span>
-                        <IconButton
-                          size="small"
-                          onClick={() => startRuntValidation(row, 'driver')}
-                          disabled={!getRuntDocument(row) && !row.identificacion}
-                          sx={{
-                            color: '#166534',
-                            p: '4px 8px',
-                            borderRadius: '0 16px 16px 0',
-                            '&:hover': { bgcolor: '#dcfce7' },
-                            '&.Mui-disabled': { color: '#cbd5e1' }
-                          }}
-                        >
-                          <BadgeRoundedIcon sx={{ fontSize: 16 }} />
-                        </IconButton>
-                      </span>
-                    </Tooltip>
-                  </Box>
                   <Tooltip title="Editar cupo de parqueadero" arrow placement="top">
                     <IconButton size="small" onClick={() => openEdit(row)} sx={{ color: '#475569', bgcolor: '#f8fafc', border: '1px solid #cbd5e1', p: 0.55, '&:hover': { bgcolor: '#f1f5f9', color: '#0f172a' } }}>
                       <EditRoundedIcon sx={{ fontSize: 16 }} />
                     </IconButton>
                   </Tooltip>
+
                   <Tooltip title="Inactivar cupo (conserva historial en BD)" arrow placement="top">
                     <IconButton size="small" onClick={() => remove(row)} sx={{ color: '#dc2626', bgcolor: '#fef2f2', border: '1px solid #fecaca', p: 0.55, '&:hover': { bgcolor: '#fee2e2' } }}>
                       <DeleteOutlineRoundedIcon sx={{ fontSize: 16 }} />
