@@ -665,11 +665,24 @@ function ParqueaderosPesvPanel({ onBack }) {
           popup.opener = null;
         } catch (popupError) {
           popup.close();
-          enqueueSnackbar('La validación quedó lista. Use el botón «Abrir RUNT nuevamente» del formulario.', { variant: 'warning' });
+          enqueueSnackbar('La validación quedó lista. Use el botón «Abrir RUNT por Placa».', { variant: 'warning' });
         }
       }
       else enqueueSnackbar('El navegador bloqueó la pestaña RUNT. Habilita ventanas emergentes para SIAC.', { variant: 'warning' });
     } catch (error) { if (popup) popup.close(); enqueueSnackbar(error.response?.data?.message || 'No se pudo iniciar la validación RUNT', { variant: 'error' }); }
+  };
+
+  const handleRuntTabSwitch = (newMode) => {
+    setRuntValidationMode(newMode);
+    setRuntCopiedText('');
+    const targetUrl = newMode === 'driver'
+      ? 'https://portalpublico.runt.gov.co/#/consulta-ciudadano-documento/consulta/consulta-ciudadano-documento'
+      : (runtValidation.runtUrl || 'https://portalpublico.runt.gov.co/#/consulta-vehiculo-documento/consulta/consulta-vehiculo-documento');
+    try {
+      window.open(targetUrl, '_blank', 'noopener,noreferrer');
+    } catch (e) {
+      enqueueSnackbar('Permita ventanas emergentes para abrir automáticamente la consulta RUNT', { variant: 'info' });
+    }
   };
 
   const extractCopiedRuntDriverResult = () => {
@@ -1037,8 +1050,8 @@ function ParqueaderosPesvPanel({ onBack }) {
         </Stack>
       </Paper>
       <TableContainer component={Paper} elevation={0} sx={{ borderRadius: 3, border: '1px solid #e2e8f0', maxHeight: { xs: '65vh', md: '72vh' }, overflow: 'auto', scrollbarGutter: 'stable' }}>
-        <Table stickyHeader size="small" sx={{ width: '100%', minWidth: 1140, tableLayout: 'fixed', '& .MuiTableCell-head': { px: 1.1, py: 1.25, fontSize: 11.5, lineHeight: 1.2, bgcolor: '#eaf2ff', boxShadow: 'inset 0 -2px 0 #2563eb', zIndex: 5 }, '& .MuiTableCell-body': { px: 1.1, py: 1.15, fontSize: 12.5, verticalAlign: 'top', overflowWrap: 'anywhere' }, '& .MuiTypography-body2': { fontSize: 12.5, lineHeight: 1.3 }, '& .MuiTypography-caption': { fontSize: 10.8, lineHeight: 1.35 }, '& .MuiChip-root': { height: 22, fontSize: 10.5 }, '& .pesv-expiry-chip.MuiChip-root': { width: 'fit-content', maxWidth: '100%', height: 'auto', minHeight: 22, alignItems: 'center' }, '& .pesv-expiry-chip .MuiChip-label': { display: 'block', px: 0.8, py: 0.35, whiteSpace: 'normal', overflow: 'visible', textOverflow: 'clip', lineHeight: 1.15 }, '& .pesv-expiry-chip .MuiChip-icon': { flexShrink: 0 } }}>
-          <colgroup><col style={{ width: '25%' }} /><col style={{ width: '12%' }} /><col style={{ width: '13%' }} /><col style={{ width: '13%' }} /><col style={{ width: '13%' }} /><col style={{ width: '14%' }} /><col style={{ width: '10%' }} /></colgroup>
+        <Table stickyHeader size="small" sx={{ width: '100%', minWidth: 1140, tableLayout: 'fixed', '& .MuiTableCell-head': { px: 0.9, py: 1, fontSize: 11, fontWeight: 900, lineHeight: 1.2, bgcolor: '#eaf2ff', boxShadow: 'inset 0 -2px 0 #2563eb', zIndex: 5, whiteSpace: 'nowrap' }, '& .MuiTableCell-body': { px: 0.9, py: 0.9, fontSize: 11.5, verticalAlign: 'top', overflowWrap: 'anywhere' }, '& .MuiTypography-body2': { fontSize: 11.5, lineHeight: 1.25 }, '& .MuiTypography-caption': { fontSize: 10, lineHeight: 1.3 }, '& .MuiChip-root': { height: 20, fontSize: 10 }, '& .pesv-expiry-chip.MuiChip-root': { width: 'fit-content', maxWidth: '100%', height: 'auto', minHeight: 20, alignItems: 'center' }, '& .pesv-expiry-chip .MuiChip-label': { display: 'block', px: 0.6, py: 0.25, whiteSpace: 'normal', overflow: 'visible', textOverflow: 'clip', lineHeight: 1.15 }, '& .pesv-expiry-chip .MuiChip-icon': { flexShrink: 0 } }}>
+          <colgroup><col style={{ width: '25%' }} /><col style={{ width: '11%' }} /><col style={{ width: '12%' }} /><col style={{ width: '12%' }} /><col style={{ width: '12%' }} /><col style={{ width: '15%' }} /><col style={{ width: '13%' }} /></colgroup>
           <TableHead><TableRow sx={{ bgcolor: '#eaf2ff', borderBottom: '2px solid #2563eb' }}>{['Persona / identificación', 'Parqueadero', 'Vehículo / placa', 'SOAT', 'Tecnomecánica', 'Licencia de conducción'].map((label) => <TableCell key={label} sx={{ color: '#173b72', fontWeight: 900, borderBottom: 0 }}>{label}</TableCell>)}<TableCell align="center" sx={{ color: '#173b72', fontWeight: 900, borderBottom: 0 }}>Acciones</TableCell></TableRow></TableHead>
           <TableBody>{loading ? <TableRow><TableCell colSpan={7} align="center" sx={{ py: 7 }}><CircularProgress /></TableCell></TableRow> : visibleRows.length === 0 ? <TableRow><TableCell colSpan={7} align="center" sx={{ py: 7 }}><WarningAmberRoundedIcon sx={{ color: '#d97706' }} /><Typography sx={{ fontWeight: 800, color: '#64748b' }}>No hay registros para los filtros seleccionados</Typography></TableCell></TableRow> : visibleRows.map((row, rowIndex) => {
             const critical = row.soat_estado?.code === 'vencido' || row.tecnomecanica_estado?.code === 'vencido' || row.licencia_estado?.code === 'vencido';
@@ -1056,8 +1069,8 @@ function ParqueaderosPesvPanel({ onBack }) {
               <TableCell><ExpiryCell type="soat" date={row.soat_vigencia} rawText={row.soat_vigencia_texto} status={row.soat_estado} row={row} onNotify={notify} notifying={notifying === `${row.id}-soat`} /></TableCell>
               <TableCell><ExpiryCell type="tecnomecanica" date={row.tecnomecanica_vigencia} rawText={row.tecnomecanica_vigencia_texto} status={row.tecnomecanica_estado} row={row} onNotify={notify} notifying={notifying === `${row.id}-tecnomecanica`} /></TableCell>
               <TableCell><ExpiryCell type="licencia" date={row.licencia_vencimiento} rawText={row.licencia_categorias ? `Cat. ${row.licencia_categorias}` : ''} status={row.licencia_estado} row={row} onNotify={notify} notifying={notifying === `${row.id}-licencia`} /></TableCell>
-              <TableCell align="center">
-                <Box sx={{ display: 'inline-grid', gridTemplateColumns: 'repeat(2, auto)', gap: 0.6, justifyItems: 'center', alignItems: 'center' }}>
+              <TableCell align="center" sx={{ whiteSpace: 'nowrap' }}>
+                <Stack direction="row" spacing={0.6} alignItems="center" justifyContent="center" flexWrap="nowrap">
                   <Box
                     sx={{
                       display: 'inline-flex',
@@ -1110,17 +1123,17 @@ function ParqueaderosPesvPanel({ onBack }) {
                       </span>
                     </Tooltip>
                   </Box>
-                  <Tooltip title="Editar cupo de parqueadero" arrow placement="bottom">
+                  <Tooltip title="Editar cupo de parqueadero" arrow placement="top">
                     <IconButton size="small" onClick={() => openEdit(row)} sx={{ color: '#475569', bgcolor: '#f8fafc', border: '1px solid #cbd5e1', p: 0.55, '&:hover': { bgcolor: '#f1f5f9', color: '#0f172a' } }}>
                       <EditRoundedIcon sx={{ fontSize: 16 }} />
                     </IconButton>
                   </Tooltip>
-                  <Tooltip title="Inactivar cupo (conserva historial en BD)" arrow placement="bottom">
+                  <Tooltip title="Inactivar cupo (conserva historial en BD)" arrow placement="top">
                     <IconButton size="small" onClick={() => remove(row)} sx={{ color: '#dc2626', bgcolor: '#fef2f2', border: '1px solid #fecaca', p: 0.55, '&:hover': { bgcolor: '#fee2e2' } }}>
                       <DeleteOutlineRoundedIcon sx={{ fontSize: 16 }} />
                     </IconButton>
                   </Tooltip>
-                </Box>
+                </Stack>
               </TableCell>
             </TableRow>;
           })}</TableBody></Table>
@@ -1136,33 +1149,47 @@ function ParqueaderosPesvPanel({ onBack }) {
             borderRadius: 2,
             bgcolor: '#f0f7ff',
             border: '1.5px solid #93c5fd',
-            boxShadow: '0 2px 8px rgba(30,58,138,0.06)'
+            boxShadow: '0 2px 8px rgba(37,99,235,.08)'
           }}>
-            <Typography sx={{ fontWeight: 900, color: '#1e3a8a', mb: 1, fontSize: 13.5 }}>
-              Campos principales de búsqueda e identificación
-            </Typography>
-            <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', sm: '1fr 1fr' }, gap: 1.5 }}>
-              {renderFormField(['identificacion', 'Identificación *'])}
-              {renderFormField(['placa', 'Placa *'])}
-            </Box>
+            <Stack direction="row" spacing={1.5} alignItems="center">
+              <Box sx={{ p: 1, borderRadius: 1.5, bgcolor: '#dbeafe', color: '#1e40af', display: 'flex' }}>
+                <BadgeRoundedIcon sx={{ fontSize: 24 }} />
+              </Box>
+              <Box sx={{ flex: 1 }}>
+                <Typography sx={{ fontWeight: 900, color: '#1e3a8a', fontSize: 15 }}>Campos principales de búsqueda e identificación</Typography>
+                <Typography variant="caption" sx={{ color: '#3b82f6', fontWeight: 800 }}>Ingrese o busque por Cédula para autocompletar la información desde Talento Humano o Estudiantes.</Typography>
+              </Box>
+            </Stack>
           </Box>
-
-          <Typography sx={{ gridColumn: { sm: '1 / -1' }, mt: 0.5, fontWeight: 900, color: '#1e3a8a' }}>Información del conductor / colaborador</Typography>
-          {renderFormField(['nombres_apellidos', 'Nombres y apellidos *'])}
-          {renderFormField(['correo', 'Correo electrónico'])}
-          {renderFormField(['vinculacion', 'Vinculación'])}
-          {String(form.vinculacion || '').toUpperCase().startsWith('OTRO') && (
+          <Box sx={{ gridColumn: { sm: '1 / -1' }, display: 'flex', gap: 1, alignItems: 'center' }}>
             <TextField
-              label="¿Cuál vinculación? *"
-              placeholder="Ej: Pasante, Proveedor, Honorarios, Pasantía..."
-              value={form.vinculacion_especificada || ''}
-              onChange={(e) => setForm((prev) => ({ ...prev, vinculacion_especificada: e.target.value }))}
-              error={submittedAttempt && !form.vinculacion_especificada?.trim()}
-              helperText={submittedAttempt && !form.vinculacion_especificada?.trim() ? 'Campo obligatorio' : 'Escriba el tipo de vinculación y se registrará oficialmente.'}
+              label="Identificación / Cédula *"
+              placeholder="Digite cédula o nit..."
+              value={form.identificacion || ''}
+              onChange={updateField('identificacion')}
+              onBlur={(e) => handleLookupPersona(e.target.value)}
+              error={submittedAttempt && !form.identificacion?.trim()}
+              helperText={submittedAttempt && !form.identificacion?.trim() ? 'La identificación es obligatoria' : 'Presione fuera del campo para buscar'}
               fullWidth size="small"
-              sx={{ gridColumn: { sm: '1 / -1' } }}
+              InputProps={{
+                endAdornment: lookingUpPerson ? <CircularProgress size={18} /> : null
+              }}
             />
-          )}
+            <Button
+              variant="outlined"
+              size="small"
+              onClick={() => handleLookupPersona(form.identificacion)}
+              disabled={lookingUpPerson || !form.identificacion?.trim()}
+              sx={{ textTransform: 'none', fontWeight: 800, whiteSpace: 'nowrap', height: 40 }}
+            >
+              Buscar persona
+            </Button>
+          </Box>
+          {renderFormField(['nombres_apellidos', 'Nombres y Apellidos *'])}
+          {renderFormField(['correo', 'Correo electrónico'])}
+
+          <Typography sx={{ gridColumn: { sm: '1 / -1' }, mt: 1, fontWeight: 900, color: '#1e3a8a' }}>Información del conductor / colaborador</Typography>
+          {renderFormField(['vinculacion', 'Tipo de vinculación'])}
           {renderFormField(['dependencia_programa', 'Dependencia o programa'])}
           {renderFormField(['campus', 'Campus'])}
           {renderFormField(['parqueadero_ingreso', 'Parqueadero de ingreso'])}
@@ -1268,10 +1295,7 @@ function ParqueaderosPesvPanel({ onBack }) {
           <Stack spacing={2}>
             <Tabs
               value={runtValidationMode}
-              onChange={(_, val) => {
-                setRuntValidationMode(val);
-                setRuntCopiedText('');
-              }}
+              onChange={(_, val) => handleRuntTabSwitch(val)}
               sx={{ borderBottom: 1, borderColor: 'divider', mb: 0.5 }}
             >
               <Tab value="vehicle" icon={<DirectionsCarRoundedIcon />} iconPosition="start" label="1. SOAT y Tecnomecánica (RUNT por Placa)" />
