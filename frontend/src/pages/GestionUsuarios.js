@@ -2607,7 +2607,7 @@ function GestionUsuarios() {
                 error={Boolean(formErrors.username)}
                 helperText={formErrors.username || 'Solo números (4 a 15 dígitos)'}
                 inputProps={{ inputMode: 'numeric', pattern: '[0-9]*', maxLength: 15 }}
-                placeholder="Ej: 1085327166"
+                placeholder="Ej: 12345678"
               />
               <TextField
                 fullWidth

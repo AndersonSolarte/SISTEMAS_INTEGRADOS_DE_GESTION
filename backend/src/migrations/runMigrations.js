@@ -260,7 +260,21 @@ const ensureDocumentSheetsView = async () => {
 const ensureReporteSalidaAdminBossSupport = async (qi) => {
   await models.ReporteSalidaSolicitud.sync();
   await models.ReporteSalidaAdjunto.sync();
-  if (models.PesvParqueaderoRegistro) await models.PesvParqueaderoRegistro.sync();
+  if (models.PesvParqueaderoRegistro) {
+    await ensureColumn(qi, 'pesv_parqueadero_registros', 'vehiculo_autorizado', { type: DataTypes.BOOLEAN, allowNull: true });
+    await ensureColumn(qi, 'pesv_parqueadero_registros', 'vehiculo_es_propio', { type: DataTypes.BOOLEAN, allowNull: true, defaultValue: true });
+    await ensureColumn(qi, 'pesv_parqueadero_registros', 'propietario_identificacion', { type: DataTypes.STRING(40), allowNull: true });
+    await ensureColumn(qi, 'pesv_parqueadero_registros', 'tiene_licencia', { type: DataTypes.BOOLEAN, allowNull: true, defaultValue: true });
+    await ensureColumn(qi, 'pesv_parqueadero_registros', 'licencia_categorias', { type: DataTypes.STRING(120), allowNull: true });
+    await ensureColumn(qi, 'pesv_parqueadero_registros', 'licencia_expedicion', { type: DataTypes.DATEONLY, allowNull: true });
+    await ensureColumn(qi, 'pesv_parqueadero_registros', 'licencia_vencimiento', { type: DataTypes.DATEONLY, allowNull: true });
+    await ensureColumn(qi, 'pesv_parqueadero_registros', 'licencia_estado', { type: DataTypes.STRING(60), allowNull: true });
+    await ensureColumn(qi, 'pesv_parqueadero_registros', 'ultima_notificacion_licencia', { type: DataTypes.DATE, allowNull: true });
+    await ensureColumn(qi, 'pesv_parqueadero_registros', 'activo', { type: DataTypes.BOOLEAN, allowNull: false, defaultValue: true });
+    await sequelize.query(`ALTER TABLE pesv_parqueadero_registros DROP COLUMN IF EXISTS categoria_ingreso, DROP COLUMN IF EXISTS curso_pas, DROP COLUMN IF EXISTS pago_validacion, DROP COLUMN IF EXISTS horario`);
+    await sequelize.query(`UPDATE pesv_parqueadero_registros SET vinculacion = CASE WHEN UPPER(TRIM(vinculacion)) IN ('ADMIN', 'ADM UNICESMAG', 'ADMINISTRATIVO', 'ADMINISTRATIVA', 'UNI CESMAG') THEN 'ADMINISTRATIVO' WHEN UPPER(TRIM(vinculacion)) = 'DOCENTE' THEN 'DOCENTE' WHEN UPPER(TRIM(vinculacion)) = 'ESTUDIANTE' THEN 'ESTUDIANTE' WHEN UPPER(TRIM(vinculacion)) = 'CONTRATISTA' THEN 'CONTRATISTA' WHEN UPPER(TRIM(vinculacion)) = 'VISITANTE' THEN 'VISITANTE' WHEN UPPER(TRIM(vinculacion)) = 'EGRESADO' THEN 'EGRESADO' ELSE UPPER(TRIM(vinculacion)) END WHERE vinculacion IS NOT NULL`);
+    await models.PesvParqueaderoRegistro.sync();
+  }
   if (models.PesvRuntValidacion) await models.PesvRuntValidacion.sync();
   if (models.PesvRuntValidacion) {
     await ensureColumn(qi, 'pesv_runt_validaciones', 'notificacion_actualizacion_en', { type: DataTypes.DATE, allowNull: true });
@@ -907,6 +921,13 @@ const repairInvertedDocumentDates = async () => {
 const normalizeUserDependencies = async () => {
   console.log('[migrate] Normalizando dependencias de usuarios a nombres oficiales...');
   const ilikeMappings = [
+    { pattern: '%evangelizac%', official: 'Vicerrectoría para la Evangelización de las Culturas' },
+    { pattern: '%evangenilizac%', official: 'Vicerrectoría para la Evangelización de las Culturas' },
+    { pattern: '%financiera%desarrollo%', official: 'Vicerrectoría Financiera y de Desarrollo Institucional' },
+    { pattern: '%financiera%', official: 'Vicerrectoría Financiera y de Desarrollo Institucional' },
+    { pattern: '%desarrollo%institucional%', official: 'Vicerrectoría Financiera y de Desarrollo Institucional' },
+    { pattern: '%vicerrec%academic%', official: 'Vicerrectoría Académica' },
+    { pattern: '%vicerrec%investigac%', official: 'Vicerrectoría de Investigaciones y Extensión' },
     { pattern: '%quimica%', official: 'Programa Academico - Licenciatura en Quimica' },
     { pattern: '%sistemas%', official: 'Programa Academico - Ingenieria de Sistemas' },
     { pattern: '%electronica%', official: 'Programa Academico - Ingenieria de Electronica' },
@@ -937,6 +958,10 @@ const normalizeUserDependencies = async () => {
         `UPDATE users SET dependencia = :official WHERE TRIM(dependencia) ILIKE :pattern AND dependencia != :official`,
         { replacements: { pattern, official }, type: QueryTypes.UPDATE }
       );
+      await sequelize.query(
+        `UPDATE pesv_parqueadero_registros SET dependencia_programa = :official WHERE TRIM(dependencia_programa) ILIKE :pattern AND dependencia_programa != :official`,
+        { replacements: { pattern, official }, type: QueryTypes.UPDATE }
+      ).catch(() => {});
     } catch (err) {
       console.error(`[migrate] Error al normalizar ${pattern}:`, err.message);
     }

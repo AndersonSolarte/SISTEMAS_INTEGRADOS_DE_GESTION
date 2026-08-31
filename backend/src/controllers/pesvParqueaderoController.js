@@ -14,11 +14,13 @@ const { sendPesvExpiryNotification, sendPesvRuntUpdateConfirmation, isBicycleVeh
 const EXCEL_FIELDS = {
   IDENTIFICACION: 'identificacion', NOMBRES_Y_APELLIDOS: 'nombres_apellidos', CORREO: 'correo',
   VINCULACION: 'vinculacion', DEPENDENCIA_PROGRAMA: 'dependencia_programa', CAMPUS: 'campus',
-  PARQUEADERO_INGRESO: 'parqueadero_ingreso', CATEGORIA_INGRESO: 'categoria_ingreso',
-  TIPO_VEHICULO: 'tipo_vehiculo', PLACA: 'placa', CURSO_PAS: 'curso_pas',
-  PAGO_VALIDACION: 'pago_validacion', VEHICULO_AUTORIZADO: 'vehiculo_autorizado',
+  PARQUEADERO_INGRESO: 'parqueadero_ingreso',
+  TIPO_VEHICULO: 'tipo_vehiculo', PLACA: 'placa',
+  TIENE_LICENCIA: 'tiene_licencia', LICENCIA_CATEGORIAS: 'licencia_categorias',
+  LICENCIA_EXPEDICION: 'licencia_expedicion', LICENCIA_VENCIMIENTO: 'licencia_vencimiento',
+  VEHICULO_AUTORIZADO: 'vehiculo_autorizado',
   VEHICULO_ES_PROPIO: 'vehiculo_es_propio', PROPIETARIO_IDENTIFICACION: 'propietario_identificacion',
-  HORARIO: 'horario', OBSERVACIONES: 'observaciones',
+  OBSERVACIONES: 'observaciones',
   VEHICULO_CLASE: 'vehiculo_clase', VEHICULO_SERVICIO: 'vehiculo_servicio', VEHICULO_MODELO: 'vehiculo_modelo',
   FECHA_MATRICULA: 'vehiculo_fecha_matricula', SOAT_FECHA_EXPEDICION: 'soat_fecha_expedicion',
   SOAT_FECHA_INICIO: 'soat_fecha_inicio', SOAT_VIGENCIA: 'soat_vigencia', SOAT_NUMERO_POLIZA: 'soat_numero_poliza',
@@ -28,39 +30,156 @@ const EXCEL_FIELDS = {
 };
 const PESV_TEMPLATE_COLUMNS = [
   'IDENTIFICACION', 'NOMBRES_Y_APELLIDOS', 'CORREO', 'VINCULACION', 'DEPENDENCIA_PROGRAMA', 'CAMPUS',
-  'PARQUEADERO_INGRESO', 'CATEGORIA_INGRESO', 'TIPO_VEHICULO', 'PLACA', 'CURSO_PAS', 'PAGO_VALIDACION',
+  'PARQUEADERO_INGRESO', 'TIPO_VEHICULO', 'PLACA', 'TIENE_LICENCIA', 'LICENCIA_CATEGORIAS',
+  'LICENCIA_EXPEDICION', 'LICENCIA_VENCIMIENTO',
   'VEHICULO_AUTORIZADO', 'VEHICULO_ES_PROPIO', 'PROPIETARIO_IDENTIFICACION',
   'VEHICULO_CLASE', 'VEHICULO_SERVICIO', 'VEHICULO_MODELO', 'FECHA_MATRICULA',
   'SOAT_FECHA_EXPEDICION', 'SOAT_FECHA_INICIO', 'SOAT_VIGENCIA', 'SOAT_NUMERO_POLIZA', 'SOAT_ENTIDAD',
   'RTM_ESTADO', 'RTM_FECHA_EXPEDICION', 'TECNOMECANICA_VIGENCIA', 'RTM_FECHA_EXIGIBILIDAD',
-  'RTM_NUMERO_CERTIFICADO', 'RTM_CDA', 'HORARIO', 'OBSERVACIONES'
+  'RTM_NUMERO_CERTIFICADO', 'RTM_CDA', 'OBSERVACIONES'
 ];
 const RUNT_PUBLIC_URL = 'https://portalpublico.runt.gov.co/#/consulta-vehiculo/consulta/consulta-ciudadana';
 const CATALOG_DEFAULTS = Object.freeze({
   vinculaciones: ['ADMINISTRATIVO', 'DOCENTE', 'ESTUDIANTE', 'CONTRATISTA', 'VISITANTE', 'EGRESADO', 'OTRO'],
   campus: ['CENTRO', 'SAN DAMIAN'],
   parqueaderos: ['PRINCIPAL', 'SAN DAMIAN', 'SAN FRANCISCO'],
-  categorias: ['VEHICULO', 'MOTOCICLETA', 'BICICLETA'],
-  tiposVehiculo: ['Automóvil', 'Motocicleta', 'Camioneta', 'Bicicleta', 'Otro'],
+  categoriasLicencia: ['A1', 'A2', 'B1', 'B2', 'B3', 'C1', 'C2', 'C3'],
+  tiposVehiculo: ['Automóvil', 'Motocicleta', 'Camioneta', 'Campero', 'Microbús / Bus', 'Motocarro', 'Bicicleta', 'Patineta / Monopatín', 'Otro'],
   clasesVehiculo: ['AUTOMOVIL', 'MOTOCICLETA', 'CAMIONETA', 'CAMPERO', 'MOTOCARRO', 'BICICLETA'],
   serviciosVehiculo: ['Particular', 'Público', 'Oficial'],
-  estadosRtm: ['VIGENTE', 'VENCIDO', 'NO_EXIGIBLE', 'SIN_REGISTRO_RUNT', 'NO_APLICA'],
-  cursosPas: ['ASISTIÓ', 'NO ASISTIÓ', 'PENDIENTE', 'NO APLICA'],
-  pagosValidacion: ['PAGADO', 'DONACIÓN', 'PENDIENTE', 'NO APLICA']
+  estadosRtm: ['VIGENTE', 'VENCIDO', 'NO_EXIGIBLE', 'SIN_REGISTRO_RUNT', 'NO_APLICA']
 });
 const CATALOG_FIELD_MAP = Object.freeze({
   vinculaciones: 'vinculacion', dependencias: 'dependencia_programa', campus: 'campus', parqueaderos: 'parqueadero_ingreso',
-  categorias: 'categoria_ingreso', tiposVehiculo: 'tipo_vehiculo', clasesVehiculo: 'vehiculo_clase',
-  serviciosVehiculo: 'vehiculo_servicio', cursosPas: 'curso_pas', pagosValidacion: 'pago_validacion',
-  aseguradoras: 'soat_entidad', centrosDiagnostico: 'rtm_cda'
+  categoriasLicencia: 'licencia_categorias', tiposVehiculo: 'tipo_vehiculo', clasesVehiculo: 'vehiculo_clase',
+  serviciosVehiculo: 'vehiculo_servicio', aseguradoras: 'soat_entidad', centrosDiagnostico: 'rtm_cda'
 });
 
-const uniqueCatalog = (defaults, values) => [...new Set([...(defaults || []), ...(values || [])]
-  .map((value) => String(value || '').trim()).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'es'));
-const buildPesvCatalogs = (rows = []) => ({
-  ...Object.fromEntries(Object.entries(CATALOG_FIELD_MAP).map(([key, field]) => [key, uniqueCatalog(CATALOG_DEFAULTS[key], rows.map((row) => row[field]))])),
-  estadosRtm: [...CATALOG_DEFAULTS.estadosRtm]
-});
+const fetchSystemDependencias = async () => {
+  try {
+    const [userRows, docenteRows, adminRows] = await Promise.all([
+      User ? User.findAll({
+        attributes: [[sequelize.fn('DISTINCT', sequelize.col('dependencia')), 'dependencia']],
+        where: { dependencia: { [Op.ne]: null } },
+        raw: true
+      }).catch(() => []) : [],
+      RecursoHumanoDocente ? RecursoHumanoDocente.findAll({
+        attributes: [[sequelize.fn('DISTINCT', sequelize.col('departamento_dependencia')), 'dependencia']],
+        where: { departamento_dependencia: { [Op.ne]: null } },
+        raw: true
+      }).catch(() => []) : [],
+      RecursoHumanoAdministrativo ? RecursoHumanoAdministrativo.findAll({
+        attributes: [[sequelize.fn('DISTINCT', sequelize.col('dependencia')), 'dependencia']],
+        where: { dependencia: { [Op.ne]: null } },
+        raw: true
+      }).catch(() => []) : []
+    ]);
+    const rawList = [...userRows, ...docenteRows, ...adminRows]
+      .map((r) => r.dependencia)
+      .filter((d) => d && String(d).trim());
+    return [...new Set(rawList)];
+  } catch (error) {
+    console.error('Error obteniendo dependencias institucionales:', error);
+    return [];
+  }
+};
+
+const normalizeVinculacion = (value) => {
+  const text = clean(value, 140);
+  if (!text) return null;
+  const upper = text.toUpperCase();
+  if (['ADMIN', 'ADM UNICESMAG', 'ADMINISTRATIVO', 'ADMINISTRATIVA', 'UNI CESMAG'].includes(upper)) return 'ADMINISTRATIVO';
+  if (upper === 'DOCENTE') return 'DOCENTE';
+  if (upper === 'ESTUDIANTE') return 'ESTUDIANTE';
+  if (upper === 'CONTRATISTA') return 'CONTRATISTA';
+  if (upper === 'VISITANTE') return 'VISITANTE';
+  if (upper === 'EGRESADO') return 'EGRESADO';
+  return text;
+};
+
+const SPANISH_LOWER_WORDS = new Set(['de', 'del', 'la', 'las', 'los', 'el', 'y', 'e', 'o', 'u', 'en', 'para', 'por', 'con', 'sin', 'a']);
+const toSpanishTitleCase = (str) => String(str).toLowerCase().replace(/[a-záéíóúñÁÉÍÓÚÑ]+/gi, (word, index) => {
+  if (index > 0 && SPANISH_LOWER_WORDS.has(word)) return word;
+  return word.charAt(0).toUpperCase() + word.slice(1);
+}).replace(/\b(musd)\b/gi, '(MUSD)').replace(/\b(cda)\b/gi, 'CDA').replace(/\b(pesv)\b/gi, 'PESV').replace(/\b(siac)\b/gi, 'SIAC');
+
+const stripAccentsKey = (str) => String(str || '')
+  .normalize('NFD')
+  .replace(/[\u0300-\u036f]/g, '')
+  .replace(/\s+/g, ' ')
+  .trim()
+  .toUpperCase();
+
+const normalizeDependenciaName = (str) => {
+  if (!str) return '';
+  let norm = String(str).replace(/\s+/g, ' ').trim();
+  const key = stripAccentsKey(norm);
+  if (key.includes('EVANGELIZAC') || key.includes('EVANGENILIZAC')) return 'Vicerrectoría para la Evangelización de las Culturas';
+  if (key.includes('FINANCIERA') && (key.includes('DESARROLLO') || key.includes('ADMINISTRATIVA'))) return 'Vicerrectoría Financiera y de Desarrollo Institucional';
+  if (key.startsWith('VICERRECTORIA ACADEMIC') || key === 'VICERRECTORIA ACADEMICA') return 'Vicerrectoría Académica';
+  if (key.includes('VICERRECTORIA') && (key.includes('INVESTIGAC') || key.includes('EXTENSION') || key.includes('POSGRADO'))) return 'Vicerrectoría de Investigaciones y Extensión';
+  if (norm === norm.toUpperCase() || norm === norm.toLowerCase()) {
+    norm = toSpanishTitleCase(norm);
+  }
+  norm = norm
+    .replace(/\bArea\b/gi, 'Área')
+    .replace(/\bBasicas\b/gi, 'Básicas')
+    .replace(/\bAsesoria\b/gi, 'Asesoría')
+    .replace(/\bInformacion\b/gi, 'Información')
+    .replace(/\bJuridica\b/gi, 'Jurídica')
+    .replace(/\bGestion\b/gi, 'Gestión')
+    .replace(/\bPlaneacion\b/gi, 'Planeación')
+    .replace(/\bEvaluacion\b/gi, 'Evaluación')
+    .replace(/\bDireccion\b/gi, 'Dirección')
+    .replace(/\bPosgrados\b/gi, 'Posgrados')
+    .replace(/\bPublicas\b/gi, 'Públicas')
+    .replace(/\bFisica\b/gi, 'Física');
+  return norm;
+};
+
+const uniqueCatalog = (defaults, values) => {
+  const rawList = [...(defaults || []), ...(values || [])]
+    .map((v) => String(v || '').trim())
+    .filter(Boolean);
+  const deduppedMap = new Map();
+  rawList.forEach((item) => {
+    const normalizedItem = normalizeDependenciaName(item);
+    const key = stripAccentsKey(normalizedItem);
+    if (!key) return;
+    if (!deduppedMap.has(key)) {
+      deduppedMap.set(key, normalizedItem);
+    } else {
+      const existing = deduppedMap.get(key);
+      const currentHasAccents = /[áéíóúÁÉÍÓÚñÑ]/.test(normalizedItem);
+      const existingHasAccents = /[áéíóúÁÉÍÓÚñÑ]/.test(existing);
+      if (currentHasAccents && !existingHasAccents) deduppedMap.set(key, normalizedItem);
+    }
+  });
+
+  const result = Array.from(deduppedMap.values());
+  const listWithoutOtro = result.filter((item) => item.toUpperCase() !== 'OTRO');
+  const otroItem = result.find((item) => item.toUpperCase() === 'OTRO');
+  listWithoutOtro.sort((a, b) => a.localeCompare(b, 'es', { sensitivity: 'base' }));
+  if (otroItem) listWithoutOtro.push(otroItem);
+  return listWithoutOtro;
+};
+const buildPesvCatalogs = (rows = [], extraDependencias = []) => {
+  const dependenciasList = extraDependencias.length
+    ? uniqueCatalog(extraDependencias, [])
+    : uniqueCatalog(CATALOG_DEFAULTS.dependencias, rows.map((row) => row.dependencia_programa));
+  const validTiposVehiculoValues = rows.map((r) => r.tipo_vehiculo).filter((v) => v && !['ARQUITECTURA'].includes(String(v).trim().toUpperCase()));
+  return {
+    ...Object.fromEntries(Object.entries(CATALOG_FIELD_MAP).map(([key, field]) => [
+      key,
+      key === 'dependencias'
+        ? dependenciasList
+        : key === 'tiposVehiculo'
+          ? uniqueCatalog(CATALOG_DEFAULTS.tiposVehiculo, validTiposVehiculoValues)
+          : uniqueCatalog(CATALOG_DEFAULTS[key], rows.map((row) => row[field]))
+    ])),
+    estadosRtm: [...CATALOG_DEFAULTS.estadosRtm]
+  };
+};
 
 const clean = (value, max = 500) => {
   const result = String(value ?? '').trim();
@@ -105,10 +224,10 @@ const expiryStatus = (value) => {
 };
 const SEARCHABLE_FIELDS = Object.freeze([
   'identificacion', 'nombres_apellidos', 'correo', 'vinculacion', 'dependencia_programa', 'campus',
-  'parqueadero_ingreso', 'categoria_ingreso', 'tipo_vehiculo', 'placa', 'curso_pas', 'pago_validacion',
+  'parqueadero_ingreso', 'tipo_vehiculo', 'placa', 'licencia_categorias',
   'propietario_identificacion',
   'vehiculo_clase', 'vehiculo_servicio', 'vehiculo_modelo', 'soat_numero_poliza', 'soat_entidad',
-  'rtm_estado', 'rtm_numero_certificado', 'rtm_cda', 'horario', 'observaciones'
+  'rtm_estado', 'rtm_numero_certificado', 'rtm_cda', 'observaciones'
 ]);
 const normalizeSearchText = (value = '') => String(value || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^a-z0-9@.-]+/g, ' ').trim();
 const getSearchScore = (row, rawQuery) => {
@@ -135,41 +254,65 @@ const getSearchScore = (row, rawQuery) => {
 };
 const serialize = (row) => {
   const data = row.toJSON ? row.toJSON() : row;
+  const tieneLic = data.tiene_licencia !== false;
+  const licenciaStatus = !tieneLic
+    ? { code: 'no_aplica', label: 'Sin licencia', days: null, priority: 3 }
+    : expiryStatus(data.licencia_vencimiento);
+
   if (isBicycleVehicle(data)) {
     const noAplica = { code: 'no_aplica', label: 'No aplica · Bicicleta', days: null, priority: 2 };
-    return { ...data, documentos_no_aplican: true, soat_estado: noAplica, tecnomecanica_estado: noAplica };
+    return { ...data, documentos_no_aplican: true, soat_estado: noAplica, tecnomecanica_estado: noAplica, licencia_estado: licenciaStatus };
   }
   const specialRtm = {
     NO_EXIGIBLE: { code: 'no_exigible', label: `RTM no exigible a la fecha${data.vehiculo_modelo ? ` · Modelo ${data.vehiculo_modelo}` : ''}`, days: daysUntil(data.rtm_fecha_exigibilidad), priority: 2 },
     SIN_REGISTRO_RUNT: { code: 'sin_registro', label: 'Sin registro en RUNT', days: null, priority: 1 },
     NO_APLICA: { code: 'no_aplica', label: 'No aplica', days: null, priority: 2 }
   }[data.rtm_estado];
-  return { ...data, soat_estado: expiryStatus(data.soat_vigencia), tecnomecanica_estado: specialRtm || expiryStatus(data.tecnomecanica_vigencia) };
+  return {
+    ...data,
+    soat_estado: expiryStatus(data.soat_vigencia),
+    tecnomecanica_estado: specialRtm || expiryStatus(data.tecnomecanica_vigencia),
+    licencia_estado: licenciaStatus
+  };
 };
 const payloadFromBody = (body = {}) => {
   const payload = {
-  identificacion: clean(body.identificacion, 40), nombres_apellidos: clean(body.nombres_apellidos, 220),
-  correo: clean(body.correo, 220)?.toLowerCase() || null, vinculacion: clean(body.vinculacion, 140),
-  dependencia_programa: clean(body.dependencia_programa, 220), campus: clean(body.campus, 120),
-  parqueadero_ingreso: clean(body.parqueadero_ingreso, 140), categoria_ingreso: clean(body.categoria_ingreso, 120),
-  tipo_vehiculo: clean(body.tipo_vehiculo, 120), placa: normalizePlate(body.placa), curso_pas: clean(body.curso_pas, 120),
-  pago_validacion: clean(body.pago_validacion, 120), soat_vigencia: parseDate(body.soat_vigencia),
-  vehiculo_autorizado: parseOptionalBoolean(body.vehiculo_autorizado),
-  vehiculo_es_propio: parseOptionalBoolean(body.vehiculo_es_propio) ?? true,
-  propietario_identificacion: clean(body.propietario_identificacion, 40)?.replace(/[^a-zA-Z0-9]/g, '') || null,
-  soat_vigencia_texto: clean(body.soat_vigencia || body.soat_vigencia_texto, 140),
-  soat_fecha_expedicion: parseDate(body.soat_fecha_expedicion), soat_fecha_inicio: parseDate(body.soat_fecha_inicio),
-  soat_numero_poliza: clean(body.soat_numero_poliza, 120), soat_entidad: clean(body.soat_entidad, 220),
-  tecnomecanica_vigencia: parseDate(body.tecnomecanica_vigencia),
-  tecnomecanica_vigencia_texto: clean(body.tecnomecanica_vigencia || body.tecnomecanica_vigencia_texto || (body.rtm_estado === 'NO_EXIGIBLE' ? 'RTM no exigible a la fecha' : null), 180),
-  rtm_estado: clean(body.rtm_estado, 60)?.toUpperCase().replace(/\s+/g, '_') || null,
-  rtm_fecha_expedicion: parseDate(body.rtm_fecha_expedicion), rtm_fecha_exigibilidad: parseDate(body.rtm_fecha_exigibilidad),
-  rtm_numero_certificado: clean(body.rtm_numero_certificado, 140), rtm_cda: clean(body.rtm_cda, 220),
-  vehiculo_fecha_matricula: parseDate(body.vehiculo_fecha_matricula), vehiculo_clase: clean(body.vehiculo_clase, 120),
-  vehiculo_servicio: clean(body.vehiculo_servicio, 120), vehiculo_modelo: clean(body.vehiculo_modelo, 20),
-    horario: clean(body.horario, 180), observaciones: clean(body.observaciones, 4000)
+    identificacion: clean(body.identificacion, 40), nombres_apellidos: clean(body.nombres_apellidos, 220),
+    correo: clean(body.correo, 220)?.toLowerCase() || null, vinculacion: normalizeVinculacion(body.vinculacion),
+    dependencia_programa: clean(body.dependencia_programa, 220), campus: clean(body.campus, 120),
+    parqueadero_ingreso: clean(body.parqueadero_ingreso, 140),
+    tipo_vehiculo: clean(body.tipo_vehiculo, 120), placa: normalizePlate(body.placa),
+    tiene_licencia: parseOptionalBoolean(body.tiene_licencia) ?? true,
+    licencia_categorias: clean(body.licencia_categorias, 120)?.toUpperCase() || null,
+    licencia_expedicion: parseDate(body.licencia_expedicion),
+    licencia_vencimiento: parseDate(body.licencia_vencimiento),
+    soat_vigencia: parseDate(body.soat_vigencia),
+    vehiculo_autorizado: parseOptionalBoolean(body.vehiculo_autorizado),
+    vehiculo_es_propio: parseOptionalBoolean(body.vehiculo_es_propio) ?? true,
+    propietario_identificacion: clean(body.propietario_identificacion, 40)?.replace(/[^a-zA-Z0-9]/g, '') || null,
+    soat_vigencia_texto: clean(body.soat_vigencia || body.soat_vigencia_texto, 140),
+    soat_fecha_expedicion: parseDate(body.soat_fecha_expedicion), soat_fecha_inicio: parseDate(body.soat_fecha_inicio),
+    soat_numero_poliza: clean(body.soat_numero_poliza, 120), soat_entidad: clean(body.soat_entidad, 220),
+    tecnomecanica_vigencia: parseDate(body.tecnomecanica_vigencia),
+    tecnomecanica_vigencia_texto: clean(body.tecnomecanica_vigencia || body.tecnomecanica_vigencia_texto || (body.rtm_estado === 'NO_EXIGIBLE' ? 'RTM no exigible a la fecha' : null), 180),
+    rtm_estado: clean(body.rtm_estado, 60)?.toUpperCase().replace(/\s+/g, '_') || null,
+    rtm_fecha_expedicion: parseDate(body.rtm_fecha_expedicion), rtm_fecha_exigibilidad: parseDate(body.rtm_fecha_exigibilidad),
+    rtm_numero_certificado: clean(body.rtm_numero_certificado, 140), rtm_cda: clean(body.rtm_cda, 220),
+    vehiculo_fecha_matricula: parseDate(body.vehiculo_fecha_matricula), vehiculo_clase: clean(body.vehiculo_clase, 120),
+    vehiculo_servicio: clean(body.vehiculo_servicio, 120), vehiculo_modelo: clean(body.vehiculo_modelo, 20),
+    observaciones: clean(body.observaciones, 4000)
   };
   if (payload.vehiculo_es_propio !== false) payload.propietario_identificacion = null;
+  if (payload.tipo_vehiculo && !payload.vehiculo_clase) {
+    payload.vehiculo_clase = payload.tipo_vehiculo.trim().toUpperCase();
+  } else if (payload.vehiculo_clase && !payload.tipo_vehiculo) {
+    payload.tipo_vehiculo = toSpanishTitleCase(payload.vehiculo_clase);
+  }
+  if (payload.tiene_licencia === false) {
+    payload.licencia_categorias = null;
+    payload.licencia_expedicion = null;
+    payload.licencia_vencimiento = null;
+  }
   if (!isBicycleVehicle(payload)) return payload;
   return {
     ...payload,
@@ -179,11 +322,47 @@ const payloadFromBody = (body = {}) => {
     rtm_fecha_expedicion: null, rtm_fecha_exigibilidad: null, rtm_numero_certificado: null, rtm_cda: null
   };
 };
+const checkLicenseVehicleCompatibility = (licenciaCategoriasRaw, tipoVehiculoRaw) => {
+  if (!tipoVehiculoRaw || !licenciaCategoriasRaw) return { compatible: true };
+  const normTipo = String(tipoVehiculoRaw).trim().toUpperCase();
+  if (['BICICLETA', 'PATINETA', 'MONOPATIN'].some(b => normTipo.includes(b))) {
+    return { compatible: true };
+  }
+  const matchedCategories = (String(licenciaCategoriasRaw || '').toUpperCase().match(/[A-C][1-3]/g) || []);
+  if (!matchedCategories.length) return { compatible: true };
+
+  const hasMotoCategory = matchedCategories.some(cat => ['A1', 'A2'].includes(cat));
+  const hasCarCategory = matchedCategories.some(cat => ['B1', 'B2', 'B3', 'C1', 'C2', 'C3'].includes(cat));
+
+  const isMotoVehicle = ['MOTO', 'MOTOCICLETA', 'MOTOCICLO', 'MOTOTRICICLO'].some(m => normTipo.includes(m));
+  const isCarVehicle = ['AUTO', 'AUTOMOVIL', 'CAMIONETA', 'CAMPERO', 'MICROBUS', 'BUS', 'MOTOCARRO', 'CAMION'].some(c => normTipo.includes(c));
+
+  if (isMotoVehicle && !hasMotoCategory) {
+    return {
+      compatible: false,
+      reason: `Incompatibilidad: La categoría de licencia (${matchedCategories.join(', ')}) solo autoriza vehículos/automóviles y NO autoriza conducir motocicletas (requiere A1 o A2).`
+    };
+  }
+  if (isCarVehicle && !hasCarCategory) {
+    return {
+      compatible: false,
+      reason: `Incompatibilidad: La categoría de licencia (${matchedCategories.join(', ')}) solo autoriza motocicletas y NO autoriza conducir automóviles o camionetas (requiere B1, B2, B3, C1, C2 o C3).`
+    };
+  }
+  return { compatible: true };
+};
+
 const validate = (payload) => {
   const errors = [];
+  if (!payload.identificacion) errors.push('La cédula / identificación es obligatoria');
   if (!payload.nombres_apellidos) errors.push('Los nombres y apellidos son obligatorios');
+  if (!payload.placa) errors.push('La placa del vehículo es obligatoria para registrar o actualizar el cupo');
   if (payload.correo && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(payload.correo)) errors.push('El correo no es válido');
   if (payload.vehiculo_es_propio === false && !payload.propietario_identificacion) errors.push('La identificación del propietario es obligatoria cuando el vehículo no es propio');
+  if (payload.tiene_licencia !== false && payload.licencia_categorias && payload.tipo_vehiculo) {
+    const compat = checkLicenseVehicleCompatibility(payload.licencia_categorias, payload.tipo_vehiculo);
+    if (!compat.compatible) errors.push(compat.reason);
+  }
   return errors;
 };
 
@@ -192,41 +371,60 @@ const getFilteredRows = async (query = {}) => {
   const where = {};
   if (query.campus) where.campus = query.campus;
   if (query.parqueadero) where.parqueadero_ingreso = query.parqueadero;
+  
+  const estadoRegistro = clean(query.estado_registro, 30);
+  if (estadoRegistro === 'inactivo') where.activo = false;
+  else if (estadoRegistro === 'todos') { /* sin filtro activo */ }
+  else where.activo = { [Op.ne]: false };
+
   const rows = await PesvParqueaderoRegistro.findAll({
     where,
     order: [['soat_vigencia', 'ASC NULLS LAST'], ['nombres_apellidos', 'ASC']]
   });
   let data = rows.map(serialize);
   if (search) data = data.map((row) => ({ ...row, _searchScore: getSearchScore(row, search) })).filter((row) => row._searchScore >= 0);
+
+  const [totalActivos, totalInactivos] = await Promise.all([
+    PesvParqueaderoRegistro.count({ where: { activo: { [Op.ne]: false } } }),
+    PesvParqueaderoRegistro.count({ where: { activo: false } })
+  ]);
+
   const summary = {
     total: data.length,
+    total_activos: totalActivos,
+    total_inactivos: totalInactivos,
     vehiculos: data.filter((r) => r.placa).length,
     soat_vencidos: data.filter((r) => r.soat_estado.code === 'vencido').length,
     soat_proximos: data.filter((r) => r.soat_estado.code === 'proximo').length,
     tecnomecanica_vencidos: data.filter((r) => r.tecnomecanica_estado.code === 'vencido').length,
-    tecnomecanica_proximos: data.filter((r) => r.tecnomecanica_estado.code === 'proximo').length
+    tecnomecanica_proximos: data.filter((r) => r.tecnomecanica_estado.code === 'proximo').length,
+    licencia_vencidos: data.filter((r) => r.licencia_estado?.code === 'vencido').length,
+    licencia_proximos: data.filter((r) => r.licencia_estado?.code === 'proximo').length
   };
   const estado = clean(query.estado, 30);
-  if (estado) data = data.filter((row) => row.soat_estado.code === estado || row.tecnomecanica_estado.code === estado);
+  if (estado) data = data.filter((row) => row.soat_estado.code === estado || row.tecnomecanica_estado.code === estado || row.licencia_estado?.code === estado);
   const indicador = clean(query.indicador, 30);
   if (indicador === 'soat_vencido') data = data.filter((row) => row.soat_estado.code === 'vencido');
   if (indicador === 'soat_proximo') data = data.filter((row) => row.soat_estado.code === 'proximo');
   if (indicador === 'rtm_vencido') data = data.filter((row) => row.tecnomecanica_estado.code === 'vencido');
   if (indicador === 'rtm_proximo') data = data.filter((row) => row.tecnomecanica_estado.code === 'proximo');
+  if (indicador === 'licencia_vencido') data = data.filter((row) => row.licencia_estado?.code === 'vencido');
+  if (indicador === 'licencia_proximo') data = data.filter((row) => row.licencia_estado?.code === 'proximo');
   data.sort((a, b) => search
     ? b._searchScore - a._searchScore || String(a.nombres_apellidos || '').localeCompare(String(b.nombres_apellidos || ''), 'es')
-    : Math.min(a.soat_estado.priority, a.tecnomecanica_estado.priority) - Math.min(b.soat_estado.priority, b.tecnomecanica_estado.priority) || (a.soat_estado.days ?? 99999) - (b.soat_estado.days ?? 99999));
+    : Math.min(a.soat_estado.priority, a.tecnomecanica_estado.priority, a.licencia_estado?.priority ?? 3) - Math.min(b.soat_estado.priority, b.tecnomecanica_estado.priority, b.licencia_estado?.priority ?? 3) || (a.soat_estado.days ?? 99999) - (b.soat_estado.days ?? 99999));
   data = data.map(({ _searchScore, ...row }) => row);
   return { data, summary };
 };
 
 const list = async (req, res) => {
   try {
-    const [{ data, summary }, catalogRows] = await Promise.all([
+    const [{ data, summary }, catalogRows, systemDependencias] = await Promise.all([
       getFilteredRows(req.query),
-      PesvParqueaderoRegistro.findAll({ attributes: [...new Set(Object.values(CATALOG_FIELD_MAP))], raw: true })
+      PesvParqueaderoRegistro.findAll({ attributes: [...new Set(Object.values(CATALOG_FIELD_MAP))], raw: true }),
+      fetchSystemDependencias()
     ]);
-    res.json({ success: true, data, summary, catalogs: buildPesvCatalogs(catalogRows) });
+    res.json({ success: true, data, summary, catalogs: buildPesvCatalogs(catalogRows, systemDependencias) });
   } catch (error) {
     console.error('Error consultando registros PESV:', error);
     res.status(500).json({ success: false, message: 'No se pudieron consultar los registros de parqueaderos' });
@@ -236,7 +434,7 @@ const list = async (req, res) => {
 const create = async (req, res) => {
   const payload = payloadFromBody(req.body); const errors = validate(payload);
   if (errors.length) return res.status(400).json({ success: false, message: errors.join('. ') });
-  try { const row = await PesvParqueaderoRegistro.create({ ...payload, creado_por: req.user?.id, actualizado_por: req.user?.id }); return res.status(201).json({ success: true, data: serialize(row) }); }
+  try { const row = await PesvParqueaderoRegistro.create({ ...payload, activo: true, creado_por: req.user?.id, actualizado_por: req.user?.id }); return res.status(201).json({ success: true, data: serialize(row) }); }
   catch (error) { return res.status(500).json({ success: false, message: 'No se pudo crear el registro' }); }
 };
 const update = async (req, res) => {
@@ -248,14 +446,27 @@ const update = async (req, res) => {
     const notificationReset = {};
     if ((row.soat_vigencia || null) !== (payload.soat_vigencia || null)) notificationReset.ultima_notificacion_soat = null;
     if ((row.tecnomecanica_vigencia || null) !== (payload.tecnomecanica_vigencia || null)) notificationReset.ultima_notificacion_tecnomecanica = null;
+    if ((row.licencia_vencimiento || null) !== (payload.licencia_vencimiento || null)) notificationReset.ultima_notificacion_licencia = null;
     await row.update({ ...payload, ...notificationReset, actualizado_por: req.user?.id });
     return res.json({ success: true, data: serialize(row) });
   }
   catch (error) { return res.status(500).json({ success: false, message: 'No se pudo actualizar el registro' }); }
 };
 const remove = async (req, res) => {
-  try { const deleted = await PesvParqueaderoRegistro.destroy({ where: { id: req.params.id } }); if (!deleted) return res.status(404).json({ success: false, message: 'Registro no encontrado' }); return res.json({ success: true, message: 'Registro eliminado' }); }
-  catch (error) { return res.status(500).json({ success: false, message: 'No se pudo eliminar el registro' }); }
+  try {
+    const row = await PesvParqueaderoRegistro.findByPk(req.params.id);
+    if (!row) return res.status(404).json({ success: false, message: 'Registro no encontrado' });
+    await row.update({ activo: false, actualizado_por: req.user?.id });
+    return res.json({ success: true, message: `El cupo de ${row.nombres_apellidos} fue pasado a inactivo (los datos históricos se conservan)` });
+  } catch (error) { return res.status(500).json({ success: false, message: 'No se pudo inactivar el registro' }); }
+};
+const reactivate = async (req, res) => {
+  try {
+    const row = await PesvParqueaderoRegistro.findByPk(req.params.id);
+    if (!row) return res.status(404).json({ success: false, message: 'Registro no encontrado' });
+    await row.update({ activo: true, actualizado_por: req.user?.id });
+    return res.json({ success: true, message: `El cupo de ${row.nombres_apellidos} fue reactivado exitosamente.` });
+  } catch (error) { return res.status(500).json({ success: false, message: 'No se pudo reactivar el registro' }); }
 };
 
 const isExpired = (session) => !session?.expira_en || new Date(session.expira_en).getTime() < Date.now();
@@ -456,6 +667,7 @@ const confirmRuntValidation = async (req, res) => {
         ...(soat ? { ultima_notificacion_soat: null } : {}),
         ...(rtm ? { ultima_notificacion_tecnomecanica: null } : {}),
         vehiculo_fecha_matricula: vehiculo.fecha_matricula, vehiculo_clase: vehiculo.clase,
+        tipo_vehiculo: toSpanishTitleCase(vehiculo.clase) || record.tipo_vehiculo,
         vehiculo_servicio: vehiculo.servicio, vehiculo_modelo: vehiculo.modelo,
         rtm_fecha_exigibilidad: vehiculo.rtm_fecha_exigibilidad,
         ultima_consulta_runt: new Date(), estado_validacion_runt: consolidated, actualizado_por: req.user.id
@@ -517,8 +729,11 @@ const getRuntHistory = async (req, res) => {
 };
 
 const buildPesvExcelWorkbook = async (dataRows = []) => {
-    const rows = await PesvParqueaderoRegistro.findAll({ attributes: [...new Set(Object.values(CATALOG_FIELD_MAP))], raw: true });
-    const catalogs = buildPesvCatalogs(rows);
+    const [rows, systemDependencias] = await Promise.all([
+      PesvParqueaderoRegistro.findAll({ attributes: [...new Set(Object.values(CATALOG_FIELD_MAP))], raw: true }),
+      fetchSystemDependencias()
+    ]);
+    const catalogs = buildPesvCatalogs(rows, systemDependencias);
     const workbook = new ExcelJS.Workbook();
     workbook.creator = 'SIAC UNICESMAG';
     workbook.created = new Date();
@@ -536,11 +751,10 @@ const buildPesvExcelWorkbook = async (dataRows = []) => {
     const listSheet = workbook.addWorksheet('LISTAS');
     const validationMap = {
       VINCULACION: catalogs.vinculaciones, DEPENDENCIA_PROGRAMA: catalogs.dependencias, CAMPUS: catalogs.campus,
-      PARQUEADERO_INGRESO: catalogs.parqueaderos, CATEGORIA_INGRESO: catalogs.categorias,
+      PARQUEADERO_INGRESO: catalogs.parqueaderos, LICENCIA_CATEGORIAS: catalogs.categoriasLicencia,
       TIPO_VEHICULO: catalogs.tiposVehiculo, VEHICULO_CLASE: catalogs.clasesVehiculo,
-      VEHICULO_SERVICIO: catalogs.serviciosVehiculo, CURSO_PAS: catalogs.cursosPas,
-      PAGO_VALIDACION: catalogs.pagosValidacion, SOAT_ENTIDAD: catalogs.aseguradoras,
-      VEHICULO_AUTORIZADO: ['SI', 'NO'], VEHICULO_ES_PROPIO: ['SI', 'NO'],
+      VEHICULO_SERVICIO: catalogs.serviciosVehiculo, SOAT_ENTIDAD: catalogs.aseguradoras,
+      VEHICULO_AUTORIZADO: ['SI', 'NO'], VEHICULO_ES_PROPIO: ['SI', 'NO'], TIENE_LICENCIA: ['SI', 'NO'],
       RTM_ESTADO: catalogs.estadosRtm, RTM_CDA: catalogs.centrosDiagnostico
     };
     Object.entries(validationMap).forEach(([header, options], listIndex) => {
@@ -561,9 +775,12 @@ const buildPesvExcelWorkbook = async (dataRows = []) => {
     });
     listSheet.state = 'veryHidden';
 
-    ['FECHA_MATRICULA', 'SOAT_FECHA_EXPEDICION', 'SOAT_FECHA_INICIO', 'SOAT_VIGENCIA', 'RTM_FECHA_EXPEDICION', 'TECNOMECANICA_VIGENCIA', 'RTM_FECHA_EXIGIBILIDAD'].forEach((header) => {
-      const column = sheet.getColumn(PESV_TEMPLATE_COLUMNS.indexOf(header) + 1);
-      column.numFmt = 'yyyy-mm-dd';
+    ['FECHA_MATRICULA', 'LICENCIA_EXPEDICION', 'LICENCIA_VENCIMIENTO', 'SOAT_FECHA_EXPEDICION', 'SOAT_FECHA_INICIO', 'SOAT_VIGENCIA', 'RTM_FECHA_EXPEDICION', 'TECNOMECANICA_VIGENCIA', 'RTM_FECHA_EXIGIBILIDAD'].forEach((header) => {
+      const columnIndex = PESV_TEMPLATE_COLUMNS.indexOf(header) + 1;
+      if (columnIndex > 0) {
+        const column = sheet.getColumn(columnIndex);
+        column.numFmt = 'yyyy-mm-dd';
+      }
     });
 
     dataRows.forEach((source, rowIndex) => {
@@ -571,7 +788,7 @@ const buildPesvExcelWorkbook = async (dataRows = []) => {
       PESV_TEMPLATE_COLUMNS.forEach((header, columnIndex) => {
         const field = EXCEL_FIELDS[header];
         const value = source[field];
-        row.getCell(columnIndex + 1).value = ['VEHICULO_AUTORIZADO', 'VEHICULO_ES_PROPIO'].includes(header) && value !== null && value !== undefined
+        row.getCell(columnIndex + 1).value = ['VEHICULO_AUTORIZADO', 'VEHICULO_ES_PROPIO', 'TIENE_LICENCIA'].includes(header) && value !== null && value !== undefined
           ? value ? 'SI' : 'NO'
           : value ?? null;
       });
@@ -583,6 +800,8 @@ const buildPesvExcelWorkbook = async (dataRows = []) => {
       { campo: 'NOMBRES_Y_APELLIDOS', indicacion: 'Obligatorio. Nombre completo de la persona asignada al cupo.' },
       { campo: 'LISTAS DESPLEGABLES', indicacion: 'En las columnas categóricas seleccione uno de los valores disponibles.' },
       { campo: 'FECHAS', indicacion: 'Utilice el formato AAAA-MM-DD.' },
+      { campo: 'TIENE_LICENCIA', indicacion: 'Seleccione SI o NO según posea licencia de conducción vigente.' },
+      { campo: 'LICENCIA_CATEGORIAS', indicacion: 'Indique la(s) categoría(s) autorizadas (ej: A2, B1, C1).' },
       { campo: 'RTM_ESTADO', indicacion: 'Seleccione VIGENTE, VENCIDO, NO_EXIGIBLE, SIN_REGISTRO_RUNT o NO_APLICA.' },
       { campo: 'VEHICULO_ES_PROPIO', indicacion: 'Seleccione SI o NO. Si selecciona NO, diligencie PROPIETARIO_IDENTIFICACION para consultar el vehículo en RUNT.' },
       { campo: 'VEHICULO_AUTORIZADO', indicacion: 'Seleccione SI o NO según la autorización institucional del vehículo.' },
@@ -637,17 +856,8 @@ const importExcel = async (req, res) => {
         mapped.nombres_apellidos = 'SIN NOMBRE REGISTRADO';
         warnings.push({ fila: index + 2, campo: 'NOMBRES_Y_APELLIDOS', detalle: 'Registro conservado sin nombre en el archivo fuente' });
       }
-      if (mapped.correo && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(mapped.correo)) && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(mapped.curso_pas || ''))) {
-        warnings.push({ fila: index + 2, detalle: 'Columnas desplazadas detectadas; se recuperaron correo y placa' });
-        mapped.correo = mapped.curso_pas;
-        mapped.curso_pas = source.CORREO;
-        if (/autom[oó]vil|motocicleta/i.test(String(source.PLACA || '')) && source.SOAT_VIGENCIA) {
-          mapped.tipo_vehiculo = source.PLACA;
-          mapped.placa = source.SOAT_VIGENCIA;
-          mapped.soat_vigencia = null;
-          mapped.soat_vigencia_texto = null;
-        }
-      }
+      mapped.licencia_expedicion = source.LICENCIA_EXPEDICION;
+      mapped.licencia_vencimiento = source.LICENCIA_VENCIMIENTO;
       mapped.soat_vigencia = source.SOAT_VIGENCIA; mapped.soat_vigencia_texto = source.SOAT_VIGENCIA;
       if (mapped.placa !== source.PLACA) { mapped.soat_vigencia = null; mapped.soat_vigencia_texto = null; }
       mapped.tecnomecanica_vigencia = source.TECNOMECANICA_VIGENCIA; mapped.tecnomecanica_vigencia_texto = source.TECNOMECANICA_VIGENCIA;
@@ -656,6 +866,7 @@ const importExcel = async (req, res) => {
       if (errors.length) { warnings.push({ fila: index + 2, detalle: errors.join('. ') }); return null; }
       if (source.SOAT_VIGENCIA && !payload.soat_vigencia) warnings.push({ fila: index + 2, campo: 'SOAT_VIGENCIA', valor: source.SOAT_VIGENCIA, detalle: 'Fecha no verificable' });
       if (source.TECNOMECANICA_VIGENCIA && !payload.tecnomecanica_vigencia) warnings.push({ fila: index + 2, campo: 'TECNOMECANICA_VIGENCIA', valor: source.TECNOMECANICA_VIGENCIA, detalle: 'Fecha no verificable' });
+      if (source.LICENCIA_VENCIMIENTO && !payload.licencia_vencimiento) warnings.push({ fila: index + 2, campo: 'LICENCIA_VENCIMIENTO', valor: source.LICENCIA_VENCIMIENTO, detalle: 'Fecha de licencia no verificable' });
       return { ...payload, creado_por: req.user?.id, actualizado_por: req.user?.id };
     }).filter(Boolean);
     await sequelize.transaction(async (transaction) => {
@@ -748,7 +959,15 @@ const lookupPersona = async (req, res) => {
     const normalizedMatch = (column) => sequelize.where(sequelize.fn('REGEXP_REPLACE', sequelize.col(column), '[^a-zA-Z0-9]', 'g'), cleanId);
 
     const [pesvRow, userRows, docenteRows, adminRows, caracterizacionRows, matriculadoRows] = await Promise.all([
-      PesvParqueaderoRegistro.findOne({ where: normalizedMatch('identificacion'), order: [['id', 'DESC']] }),
+      PesvParqueaderoRegistro.findOne({
+        where: {
+          [Op.or]: [
+            normalizedMatch('identificacion'),
+            normalizedMatch('placa')
+          ]
+        },
+        order: [['id', 'DESC']]
+      }),
       User ? User.findAll({ where: normalizedMatch('username'), order: [['updated_at', 'DESC'], ['id', 'DESC']] }) : [],
       RecursoHumanoDocente ? RecursoHumanoDocente.findAll({ where: normalizedMatch('identificacion') }) : [],
       RecursoHumanoAdministrativo ? RecursoHumanoAdministrativo.findAll({ where: normalizedMatch('numero_cedula') }) : [],
@@ -774,8 +993,38 @@ const lookupPersona = async (req, res) => {
     const vinculacion = explicitUserType || (studentScore > employeeScore ? 'ESTUDIANTE' : employeeType) || (matriculadoRow || caracterizacionRow ? 'ESTUDIANTE' : userRow ? 'ADMINISTRATIVO' : null);
 
     const pesvFallback = pesvRow ? {
-      identificacion: pesvRow.identificacion, nombres_apellidos: pesvRow.nombres_apellidos, correo: pesvRow.correo,
-      dependencia_programa: pesvRow.dependencia_programa, campus: pesvRow.campus
+      identificacion: pesvRow.identificacion,
+      nombres_apellidos: pesvRow.nombres_apellidos,
+      correo: pesvRow.correo,
+      vinculacion: pesvRow.vinculacion,
+      dependencia_programa: pesvRow.dependencia_programa,
+      campus: pesvRow.campus,
+      parqueadero_ingreso: pesvRow.parqueadero_ingreso,
+      tiene_licencia: pesvRow.tiene_licencia !== false ? 'SI' : 'NO',
+      licencia_categorias: pesvRow.licencia_categorias,
+      licencia_expedicion: pesvRow.licencia_expedicion,
+      licencia_vencimiento: pesvRow.licencia_vencimiento,
+      tipo_vehiculo: pesvRow.tipo_vehiculo,
+      placa: pesvRow.placa,
+      vehiculo_clase: pesvRow.vehiculo_clase,
+      vehiculo_servicio: pesvRow.vehiculo_servicio,
+      vehiculo_modelo: pesvRow.vehiculo_modelo,
+      vehiculo_fecha_matricula: pesvRow.vehiculo_fecha_matricula,
+      vehiculo_autorizado: pesvRow.vehiculo_autorizado === true ? 'SI' : pesvRow.vehiculo_autorizado === false ? 'NO' : '',
+      vehiculo_es_propio: pesvRow.vehiculo_es_propio === false ? 'NO' : 'SI',
+      propietario_identificacion: pesvRow.propietario_identificacion,
+      soat_vigencia: pesvRow.soat_vigencia,
+      soat_fecha_expedicion: pesvRow.soat_fecha_expedicion,
+      soat_fecha_inicio: pesvRow.soat_fecha_inicio,
+      soat_numero_poliza: pesvRow.soat_numero_poliza,
+      soat_entidad: pesvRow.soat_entidad,
+      tecnomecanica_vigencia: pesvRow.tecnomecanica_vigencia,
+      rtm_estado: pesvRow.rtm_estado,
+      rtm_fecha_expedicion: pesvRow.rtm_fecha_expedicion,
+      rtm_fecha_exigibilidad: pesvRow.rtm_fecha_exigibilidad,
+      rtm_numero_certificado: pesvRow.rtm_numero_certificado,
+      rtm_cda: pesvRow.rtm_cda,
+      observaciones: pesvRow.observaciones
     } : {};
     const commonFallback = {
       identificacion: userRow?.username || rawIdentificacion,
@@ -789,6 +1038,7 @@ const lookupPersona = async (req, res) => {
 
     if (vinculacion === 'DOCENTE') {
       data = {
+        ...pesvFallback,
         ...commonFallback,
         identificacion: docenteRow?.identificacion || commonFallback.identificacion,
         nombres_apellidos: userRow?.nombre || docenteRow?.docente || commonFallback.nombres_apellidos,
@@ -799,6 +1049,7 @@ const lookupPersona = async (req, res) => {
       sourcePeriod = docenteRow ? `${docenteRow.anio || ''} ${docenteRow.periodo || ''}`.trim() : '';
     } else if (vinculacion === 'ADMINISTRATIVO') {
       data = {
+        ...pesvFallback,
         ...commonFallback,
         identificacion: adminRow?.numero_cedula || commonFallback.identificacion,
         nombres_apellidos: userRow?.nombre || adminRow?.nombre_empleado || commonFallback.nombres_apellidos,
@@ -809,6 +1060,7 @@ const lookupPersona = async (req, res) => {
       sourcePeriod = adminRow ? `${adminRow.anio || ''} ${adminRow.periodo || ''}`.trim() : '';
     } else if (vinculacion === 'ESTUDIANTE') {
       data = {
+        ...pesvFallback,
         ...commonFallback,
         identificacion: matriculadoRow?.numero_documento || caracterizacionRow?.no_identificacion || commonFallback.identificacion,
         nombres_apellidos: matriculatedFullName(matriculadoRow) || caracterizacionRow?.apellidos_nombres || commonFallback.nombres_apellidos,
@@ -819,8 +1071,8 @@ const lookupPersona = async (req, res) => {
       source = matriculadoRow ? 'Base de Matriculados' : 'Base de Caracterización Estudiantil';
       sourcePeriod = matriculadoRow ? `${matriculadoRow.anio || ''}-${matriculadoRow.semestre || ''}`.replace(/-$/, '') : `${caracterizacionRow?.anio || ''} ${caracterizacionRow?.periodo || ''}`.trim();
     } else if (pesvRow) {
-      data = { ...commonFallback, vinculacion: pesvRow.vinculacion || '', dependencia_programa: pesvFallback.dependencia_programa || '' };
-      source = 'Registros PESV Parqueaderos (respaldo)';
+      data = { ...pesvFallback, ...commonFallback, vinculacion: pesvRow.vinculacion || '', dependencia_programa: pesvFallback.dependencia_programa || '' };
+      source = 'Registros PESV Parqueaderos (histórico de parqueaderos)';
     }
 
     if (!data) return res.json({ success: true, found: false, data: null });
@@ -832,7 +1084,7 @@ const lookupPersona = async (req, res) => {
 };
 
 module.exports = {
-  list, create, update, remove, importExcel, downloadExcelTemplate, exportExcelData, notifyExpiry,
+  list, create, update, remove, reactivate, importExcel, downloadExcelTemplate, exportExcelData, notifyExpiry,
   startRuntValidation, captureManualRuntResult, getRuntValidation,
   confirmRuntValidation, notifyRuntUpdate, getRuntHistory, lookupPersona
 };

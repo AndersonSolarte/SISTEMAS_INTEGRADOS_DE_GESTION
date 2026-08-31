@@ -10,11 +10,13 @@ const PesvParqueaderoRegistro = sequelize.define('pesv_parqueadero_registros', {
   dependencia_programa: { type: DataTypes.STRING(220), allowNull: true },
   campus: { type: DataTypes.STRING(120), allowNull: true },
   parqueadero_ingreso: { type: DataTypes.STRING(140), allowNull: true },
-  categoria_ingreso: { type: DataTypes.STRING(120), allowNull: true },
   tipo_vehiculo: { type: DataTypes.STRING(120), allowNull: true },
   placa: { type: DataTypes.STRING(30), allowNull: true },
-  curso_pas: { type: DataTypes.STRING(120), allowNull: true },
-  pago_validacion: { type: DataTypes.STRING(120), allowNull: true },
+  tiene_licencia: { type: DataTypes.BOOLEAN, allowNull: true, defaultValue: true },
+  licencia_categorias: { type: DataTypes.STRING(120), allowNull: true },
+  licencia_expedicion: { type: DataTypes.DATEONLY, allowNull: true },
+  licencia_vencimiento: { type: DataTypes.DATEONLY, allowNull: true },
+  licencia_estado: { type: DataTypes.STRING(60), allowNull: true },
   vehiculo_autorizado: { type: DataTypes.BOOLEAN, allowNull: true },
   vehiculo_es_propio: { type: DataTypes.BOOLEAN, allowNull: true, defaultValue: true },
   propietario_identificacion: { type: DataTypes.STRING(40), allowNull: true },
@@ -38,10 +40,11 @@ const PesvParqueaderoRegistro = sequelize.define('pesv_parqueadero_registros', {
   rtm_fecha_exigibilidad: { type: DataTypes.DATEONLY, allowNull: true },
   ultima_consulta_runt: { type: DataTypes.DATE, allowNull: true },
   estado_validacion_runt: { type: DataTypes.STRING(60), allowNull: false, defaultValue: 'PENDIENTE' },
-  horario: { type: DataTypes.STRING(180), allowNull: true },
   observaciones: { type: DataTypes.TEXT, allowNull: true },
   ultima_notificacion_soat: { type: DataTypes.DATE, allowNull: true },
   ultima_notificacion_tecnomecanica: { type: DataTypes.DATE, allowNull: true },
+  ultima_notificacion_licencia: { type: DataTypes.DATE, allowNull: true },
+  activo: { type: DataTypes.BOOLEAN, allowNull: false, defaultValue: true },
   creado_por: { type: DataTypes.INTEGER, allowNull: true },
   actualizado_por: { type: DataTypes.INTEGER, allowNull: true }
 }, {
@@ -50,8 +53,10 @@ const PesvParqueaderoRegistro = sequelize.define('pesv_parqueadero_registros', {
     { fields: ['placa'] },
     { fields: ['soat_vigencia'] },
     { fields: ['tecnomecanica_vigencia'] },
+    { fields: ['licencia_vencimiento'] },
     { fields: ['rtm_estado', 'rtm_fecha_exigibilidad'] },
-    { fields: ['campus', 'parqueadero_ingreso'] }
+    { fields: ['campus', 'parqueadero_ingreso'] },
+    { fields: ['activo'] }
   ]
 });
 

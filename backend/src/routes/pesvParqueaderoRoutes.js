@@ -23,6 +23,7 @@ router.get('/:id/runt/history', controller.getRuntHistory);
 router.post('/:id/notificar', controller.notifyExpiry);
 router.post('/', controller.create);
 router.put('/:id', controller.update);
+router.put('/:id/reactivate', controller.reactivate);
 router.delete('/:id', controller.remove);
 
 module.exports = router;

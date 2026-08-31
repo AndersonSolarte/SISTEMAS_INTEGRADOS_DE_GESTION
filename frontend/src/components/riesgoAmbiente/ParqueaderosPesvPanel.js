@@ -20,21 +20,70 @@ import SearchRoundedIcon from '@mui/icons-material/SearchRounded';
 import WarningAmberRoundedIcon from '@mui/icons-material/WarningAmberRounded';
 import ClearRoundedIcon from '@mui/icons-material/ClearRounded';
 import ContentCopyRoundedIcon from '@mui/icons-material/ContentCopyRounded';
+import CheckCircleRoundedIcon from '@mui/icons-material/CheckCircleRounded';
 import { useSnackbar } from 'notistack';
 import gestionInformacionService from '../../services/gestionInformacionService';
 
 const EMPTY_FORM = {
   identificacion: '', nombres_apellidos: '', correo: '', vinculacion: '', dependencia_programa: '',
-  campus: '', parqueadero_ingreso: '', categoria_ingreso: '', tipo_vehiculo: '', placa: '',
-  curso_pas: '', pago_validacion: '', soat_vigencia: '', soat_vigencia_texto: '', tecnomecanica_vigencia: '',
+  campus: '', parqueadero_ingreso: '', tipo_vehiculo: '', placa: '',
+  tiene_licencia: 'SI', licencia_categorias: '', licencia_expedicion: '', licencia_vencimiento: '',
+  soat_vigencia: '', soat_vigencia_texto: '', tecnomecanica_vigencia: '',
   vehiculo_autorizado: '', vehiculo_es_propio: 'SI', propietario_identificacion: '',
-  tecnomecanica_vigencia_texto: '', horario: '', observaciones: '',
+  tecnomecanica_vigencia_texto: '', observaciones: '',
   vehiculo_fecha_matricula: '', vehiculo_clase: '', vehiculo_servicio: '', vehiculo_modelo: '',
   soat_fecha_expedicion: '', soat_fecha_inicio: '', soat_numero_poliza: '', soat_entidad: '',
   rtm_estado: '', rtm_fecha_expedicion: '', rtm_fecha_exigibilidad: '', rtm_numero_certificado: '', rtm_cda: ''
 };
-const FORM_DATE_FIELDS = new Set(['vehiculo_fecha_matricula', 'soat_fecha_expedicion', 'soat_fecha_inicio', 'soat_vigencia', 'rtm_fecha_expedicion', 'tecnomecanica_vigencia', 'rtm_fecha_exigibilidad']);
+const FORM_DATE_FIELDS = new Set(['vehiculo_fecha_matricula', 'licencia_expedicion', 'licencia_vencimiento', 'soat_fecha_expedicion', 'soat_fecha_inicio', 'soat_vigencia', 'rtm_fecha_expedicion', 'tecnomecanica_vigencia', 'rtm_fecha_exigibilidad']);
 const BICYCLE_DOCUMENT_FIELDS = new Set(['soat_fecha_expedicion', 'soat_fecha_inicio', 'soat_vigencia', 'soat_numero_poliza', 'soat_entidad', 'rtm_fecha_expedicion', 'tecnomecanica_vigencia', 'rtm_fecha_exigibilidad', 'rtm_numero_certificado', 'rtm_cda']);
+const formatDateForInput = (val) => {
+  if (!val) return '';
+  const str = String(val).trim();
+  if (/^\d{4}-\d{2}-\d{2}/.test(str)) {
+    return str.slice(0, 10);
+  }
+  const ddmmyyyy = str.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})/);
+  if (ddmmyyyy) {
+    const [, day, month, year] = ddmmyyyy;
+    return `${year}-${month.padStart(2, '0')}-${day.padStart(2, '0')}`;
+  }
+  const yyyymmdd = str.match(/^(\d{4})[\/\-](\d{1,2})[\/\-](\d{1,2})/);
+  if (yyyymmdd) {
+    const [, year, month, day] = yyyymmdd;
+    return `${year}-${month.padStart(2, '0')}-${day.padStart(2, '0')}`;
+  }
+  return str;
+};
+const checkLicenseVehicleCompatibility = (licenciaCategoriasRaw, tipoVehiculoRaw) => {
+  if (!tipoVehiculoRaw || !licenciaCategoriasRaw) return { compatible: true };
+  const normTipo = String(tipoVehiculoRaw).trim().toUpperCase();
+  if (['BICICLETA', 'PATINETA', 'MONOPATIN'].some(b => normTipo.includes(b))) {
+    return { compatible: true };
+  }
+  const matchedCategories = (String(licenciaCategoriasRaw || '').toUpperCase().match(/[A-C][1-3]/g) || []);
+  if (!matchedCategories.length) return { compatible: true };
+
+  const hasMotoCategory = matchedCategories.some(cat => ['A1', 'A2'].includes(cat));
+  const hasCarCategory = matchedCategories.some(cat => ['B1', 'B2', 'B3', 'C1', 'C2', 'C3'].includes(cat));
+
+  const isMotoVehicle = ['MOTO', 'MOTOCICLETA', 'MOTOCICLO', 'MOTOTRICICLO'].some(m => normTipo.includes(m));
+  const isCarVehicle = ['AUTO', 'AUTOMOVIL', 'CAMIONETA', 'CAMPERO', 'MICROBUS', 'BUS', 'MOTOCARRO', 'CAMION'].some(c => normTipo.includes(c));
+
+  if (isMotoVehicle && !hasMotoCategory) {
+    return {
+      compatible: false,
+      reason: `La categoría de licencia (${matchedCategories.join(', ')}) solo autoriza vehículos/automóviles. NO autoriza conducir motocicletas (requiere categoría A1 o A2).`
+    };
+  }
+  if (isCarVehicle && !hasCarCategory) {
+    return {
+      compatible: false,
+      reason: `La categoría de licencia (${matchedCategories.join(', ')}) solo autoriza motocicletas. NO autoriza conducir automóviles o camionetas (requiere categoría B1, B2, B3, C1, C2 o C3).`
+    };
+  }
+  return { compatible: true };
+};
 const EMPTY_RUNT_FORM = {
   soat_fecha_fin: '', soat_numero_poliza: '', soat_entidad: '',
   rtm_aplica: 'SI', rtm_fecha_vigencia: '', rtm_numero_certificado: '', rtm_cda: '',
@@ -154,13 +203,15 @@ const expiryLabel = (status) => status?.code === 'vencido'
 
 function ExpiryCell({ type, date, rawText, status, row, onNotify, notifying }) {
   const style = STATUS_STYLE[status?.code] || STATUS_STYLE.sin_fecha;
-  const documentsDoNotApply = status?.code === 'no_aplica' && isBicycleVehicle(row);
-  const lastNotification = row[type === 'tecnomecanica' ? 'ultima_notificacion_tecnomecanica' : 'ultima_notificacion_soat'];
+  const isLic = type === 'licencia';
+  const isNoLic = isLic && row.tiene_licencia === false;
+  const documentsDoNotApply = status?.code === 'no_aplica' && (isBicycleVehicle(row) || isNoLic);
+  const lastNotification = row[isLic ? 'ultima_notificacion_licencia' : type === 'tecnomecanica' ? 'ultima_notificacion_tecnomecanica' : 'ultima_notificacion_soat'];
   const notificationAvailable = Number.isFinite(status?.days) && status.days <= 30;
   return (
     <Stack spacing={.65} alignItems="flex-start">
       <Typography variant="body2" sx={{ fontWeight: 800, color: '#0f172a' }}>
-        {documentsDoNotApply ? 'No aplica para bicicleta' : date ? formatDate(date) : rawText || 'Sin información'}
+        {documentsDoNotApply ? (isNoLic ? 'Sin licencia' : 'No aplica para bicicleta') : date ? formatDate(date) : rawText || 'Sin información'}
       </Typography>
       <Chip
         className="pesv-expiry-chip"
@@ -178,7 +229,7 @@ function ExpiryCell({ type, date, rawText, status, row, onNotify, notifying }) {
             }}
           />
         }
-        label={expiryLabel(status)}
+        label={isNoLic ? 'Sin licencia' : expiryLabel(status)}
         sx={{ color: style.color, bgcolor: style.bgcolor, border: `1px solid ${style.border}`, fontWeight: 800, fontSize: 11 }}
       />
       {date && status?.code !== 'no_aplica' && notificationAvailable && (
@@ -198,6 +249,7 @@ function ParqueaderosPesvPanel({ onBack }) {
   const [summary, setSummary] = useState({});
   const [catalogs, setCatalogs] = useState({ campus: [], parqueaderos: [] });
   const [loading, setLoading] = useState(true);
+  const [estadoRegistro, setEstadoRegistro] = useState('activos');
   const [search, setSearch] = useState('');
   const [campus, setCampus] = useState('');
   const [estado, setEstado] = useState('');
@@ -218,6 +270,7 @@ function ParqueaderosPesvPanel({ onBack }) {
   const [runtCopiedText, setRuntCopiedText] = useState('');
   const [history, setHistory] = useState({ open: false, row: null, loading: false, data: [] });
   const [lookingUpPerson, setLookingUpPerson] = useState(false);
+  const [submittedAttempt, setSubmittedAttempt] = useState(false);
   const [refreshKey, setRefreshKey] = useState(0);
   const loadRequestRef = useRef(0);
 
@@ -229,23 +282,47 @@ function ParqueaderosPesvPanel({ onBack }) {
       const res = await gestionInformacionService.lookupPesvPersona(query);
       if (res?.found && res?.data) {
         setForm((prev) => {
-          // La consulta institucional solo refresca datos personales. Un valor
-          // vacio nunca debe borrar informacion ya diligenciada del cupo.
-          const personalUpdates = {
+          const autoFields = {
             identificacion: res.data.identificacion || query,
             nombres_apellidos: res.data.nombres_apellidos,
             correo: res.data.correo,
             vinculacion: res.data.vinculacion,
-            dependencia_programa: res.data.dependencia_programa
+            dependencia_programa: res.data.dependencia_programa,
+            campus: res.data.campus,
+            parqueadero_ingreso: res.data.parqueadero_ingreso,
+            tiene_licencia: res.data.tiene_licencia,
+            licencia_categorias: res.data.licencia_categorias,
+            licencia_expedicion: formatDateForInput(res.data.licencia_expedicion),
+            licencia_vencimiento: formatDateForInput(res.data.licencia_vencimiento),
+            tipo_vehiculo: res.data.tipo_vehiculo,
+            placa: res.data.placa,
+            vehiculo_clase: res.data.vehiculo_clase,
+            vehiculo_servicio: res.data.vehiculo_servicio,
+            vehiculo_modelo: res.data.vehiculo_modelo,
+            vehiculo_fecha_matricula: formatDateForInput(res.data.vehiculo_fecha_matricula),
+            vehiculo_autorizado: res.data.vehiculo_autorizado,
+            vehiculo_es_propio: res.data.vehiculo_es_propio,
+            propietario_identificacion: res.data.propietario_identificacion,
+            soat_vigencia: formatDateForInput(res.data.soat_vigencia),
+            soat_fecha_expedicion: formatDateForInput(res.data.soat_fecha_expedicion),
+            soat_fecha_inicio: formatDateForInput(res.data.soat_fecha_inicio),
+            soat_numero_poliza: res.data.soat_numero_poliza,
+            soat_entidad: res.data.soat_entidad,
+            tecnomecanica_vigencia: formatDateForInput(res.data.tecnomecanica_vigencia),
+            rtm_estado: res.data.rtm_estado,
+            rtm_fecha_expedicion: formatDateForInput(res.data.rtm_fecha_expedicion),
+            rtm_fecha_exigibilidad: formatDateForInput(res.data.rtm_fecha_exigibilidad),
+            rtm_numero_certificado: res.data.rtm_numero_certificado,
+            rtm_cda: res.data.rtm_cda
           };
-          const nonEmptyPersonalUpdates = Object.fromEntries(
-            Object.entries(personalUpdates).filter(([, value]) => String(value ?? '').trim() !== '')
+          const nonEmptyUpdates = Object.fromEntries(
+            Object.entries(autoFields).filter(([, value]) => String(value ?? '').trim() !== '')
           );
-          return { ...prev, ...nonEmptyPersonalUpdates };
+          return { ...prev, ...nonEmptyUpdates };
         });
-        enqueueSnackbar(`Información personal actualizada desde ${res.source}. Revise los datos y pulse Guardar para confirmarlos.`, { variant: 'success' });
+        enqueueSnackbar(`Información histórica de ${res.data.nombres_apellidos || query} cargada desde ${res.source}. Revise los datos y actualice únicamente las fechas o datos que renovaron.`, { variant: 'success' });
       } else {
-        enqueueSnackbar('No se encontraron datos de esta cédula en el sistema. Puede digitar los campos manualmente.', { variant: 'info' });
+        enqueueSnackbar('No se encontraron datos previos de esta cédula en el sistema. Puede digitar los campos manualmente.', { variant: 'info' });
       }
     } catch (err) {
       console.error('Error autocompletando persona:', err);
@@ -260,13 +337,13 @@ function ParqueaderosPesvPanel({ onBack }) {
     try {
       let result;
       try {
-        result = await gestionInformacionService.getPesvParqueaderos({ search, campus, estado, indicador: indicator });
+        result = await gestionInformacionService.getPesvParqueaderos({ search, campus, estado, indicador: indicator, estado_registro: estadoRegistro });
       } catch (firstError) {
         const transient = !firstError.response || Number(firstError.response?.status) >= 500;
         if (!transient || requestId !== loadRequestRef.current) throw firstError;
         await new Promise((resolve) => setTimeout(resolve, 350));
         if (requestId !== loadRequestRef.current) return;
-        result = await gestionInformacionService.getPesvParqueaderos({ search, campus, estado, indicador: indicator });
+        result = await gestionInformacionService.getPesvParqueaderos({ search, campus, estado, indicador: indicator, estado_registro: estadoRegistro });
       }
       if (requestId !== loadRequestRef.current) return;
       setRows(result.data || []); setSummary(result.summary || {}); setCatalogs(result.catalogs || { campus: [], parqueaderos: [] }); setPage(0);
@@ -278,18 +355,26 @@ function ParqueaderosPesvPanel({ onBack }) {
       enqueueSnackbar(message, { variant: 'error' });
     }
     finally { if (requestId === loadRequestRef.current) setLoading(false); }
-  }, [campus, enqueueSnackbar, estado, indicator, search]);
+  }, [campus, enqueueSnackbar, estado, estadoRegistro, indicator, search]);
 
   useEffect(() => { const timer = setTimeout(load, 450); return () => clearTimeout(timer); }, [load, refreshKey]);
   const visibleRows = useMemo(() => rows.slice(page * rowsPerPage, page * rowsPerPage + rowsPerPage), [page, rows, rowsPerPage]);
-  const openCreate = () => { setForm(EMPTY_FORM); setDialog({ open: true, row: null }); };
+  const openCreate = () => { setSubmittedAttempt(false); setForm(EMPTY_FORM); setDialog({ open: true, row: null }); };
   const openEdit = (row) => {
+    setSubmittedAttempt(false);
+    const isStandardVinculacion = ['ADMINISTRATIVO', 'DOCENTE', 'ESTUDIANTE', 'CONTRATISTA', 'VISITANTE', 'EGRESADO'].includes(String(row.vinculacion || '').trim().toUpperCase());
+    const isCustomVinculacion = row.vinculacion && !isStandardVinculacion;
     setForm(Object.keys(EMPTY_FORM).reduce((acc, key) => ({
       ...acc,
-      [key]: ['vehiculo_autorizado', 'vehiculo_es_propio'].includes(key)
-        ? row[key] === true ? 'SI' : row[key] === false ? 'NO' : key === 'vehiculo_es_propio' ? 'SI' : ''
-        : row[key] || ''
-    }), {}));
+      [key]: ['vehiculo_autorizado', 'vehiculo_es_propio', 'tiene_licencia'].includes(key)
+        ? row[key] === true ? 'SI' : row[key] === false ? 'NO' : key === 'vehiculo_es_propio' || key === 'tiene_licencia' ? 'SI' : ''
+        : FORM_DATE_FIELDS.has(key)
+          ? formatDateForInput(row[key])
+          : row[key] || ''
+    }), {
+      vinculacion: isCustomVinculacion ? 'OTRO' : (row.vinculacion || ''),
+      vinculacion_especificada: isCustomVinculacion ? row.vinculacion : ''
+    }));
     setDialog({ open: true, row });
   };
   const updateField = (key) => (event) => {
@@ -299,15 +384,35 @@ function ParqueaderosPesvPanel({ onBack }) {
     setForm((prev) => ({ ...prev, [key]: value, ...(key === 'vehiculo_es_propio' && value !== 'NO' ? { propietario_identificacion: '' } : {}) }));
   };
   const save = async () => {
+    setSubmittedAttempt(true);
+    if (!form.identificacion.trim()) return enqueueSnackbar('La cédula / identificación es obligatoria', { variant: 'warning' });
     if (!form.nombres_apellidos.trim()) return enqueueSnackbar('Los nombres y apellidos son obligatorios', { variant: 'warning' });
-    if (!form.vehiculo_autorizado) return enqueueSnackbar('Seleccione si el vehículo está autorizado', { variant: 'warning' });
-    if (!form.vehiculo_es_propio) return enqueueSnackbar('Seleccione si el vehículo es propio', { variant: 'warning' });
+    if (!form.placa.trim()) return enqueueSnackbar('La placa del vehículo es obligatoria para registrar o actualizar el cupo de parqueadero', { variant: 'warning' });
     if (form.vehiculo_es_propio === 'NO' && !form.propietario_identificacion.trim()) return enqueueSnackbar('Digite la identificación del propietario del vehículo', { variant: 'warning' });
+
+    const isOtroVinculacion = String(form.vinculacion || '').trim().toUpperCase() === 'OTRO';
+    if (isOtroVinculacion && !form.vinculacion_especificada?.trim()) {
+      return enqueueSnackbar('Escriba el tipo de vinculación en el recuadro “¿Cuál vinculación?”', { variant: 'warning' });
+    }
+
+    if (form.tiene_licencia !== 'NO' && form.licencia_categorias && form.tipo_vehiculo) {
+      const compat = checkLicenseVehicleCompatibility(form.licencia_categorias, form.tipo_vehiculo);
+      if (!compat.compatible) {
+        return enqueueSnackbar(compat.reason, { variant: 'error', autoHideDuration: 8000 });
+      }
+    }
+
+    const payload = {
+      ...form,
+      vinculacion: isOtroVinculacion ? form.vinculacion_especificada.trim().toUpperCase() : form.vinculacion,
+      vehiculo_clase: form.vehiculo_clase || form.tipo_vehiculo?.trim().toUpperCase() || ''
+    };
+
     setSaving(true);
     try {
       const result = dialog.row
-        ? await gestionInformacionService.updatePesvParqueadero(dialog.row.id, form)
-        : await gestionInformacionService.createPesvParqueadero(form);
+        ? await gestionInformacionService.updatePesvParqueadero(dialog.row.id, payload)
+        : await gestionInformacionService.createPesvParqueadero(payload);
       if (result.data) {
         loadRequestRef.current += 1;
         setRows((current) => dialog.row
@@ -330,9 +435,22 @@ function ParqueaderosPesvPanel({ onBack }) {
     finally { setSaving(false); }
   };
   const remove = async (row) => {
-    if (!window.confirm(`¿Eliminar el cupo de ${row.nombres_apellidos}? Esta acción no se puede deshacer.`)) return;
-    try { await gestionInformacionService.deletePesvParqueadero(row.id); enqueueSnackbar('Registro eliminado', { variant: 'success' }); await load(); }
-    catch (error) { enqueueSnackbar(error.response?.data?.message || 'No se pudo eliminar', { variant: 'error' }); }
+    if (!window.confirm(`¿Inactivar el cupo de ${row.nombres_apellidos}? El registro dejará de mostrarse en la lista activa, pero su información histórica se conservará en el sistema.`)) return;
+    try {
+      const res = await gestionInformacionService.deletePesvParqueadero(row.id);
+      enqueueSnackbar(res.message || 'Cupo pasado a inactivo', { variant: 'success' });
+      await load();
+    }
+    catch (error) { enqueueSnackbar(error.response?.data?.message || 'No se pudo inactivar', { variant: 'error' }); }
+  };
+  const reactivateRow = async (row) => {
+    if (!window.confirm(`¿Reactivar el cupo de ${row.nombres_apellidos}?`)) return;
+    try {
+      const res = await gestionInformacionService.reactivatePesvParqueadero(row.id);
+      enqueueSnackbar(res.message || 'Cupo reactivado exitosamente', { variant: 'success' });
+      await load();
+    }
+    catch (error) { enqueueSnackbar(error.response?.data?.message || 'No se pudo reactivar el cupo', { variant: 'error' }); }
   };
   const importFile = async (event) => {
     const file = event.target.files?.[0]; event.target.value = ''; if (!file) return;
@@ -431,7 +549,7 @@ function ParqueaderosPesvPanel({ onBack }) {
   };
   const captureManualRunt = async () => {
     if (!runtForm.soat_fecha_fin) return enqueueSnackbar('Copia desde RUNT la fecha final del SOAT', { variant: 'warning' });
-    if (runtForm.rtm_aplica === 'SI' && !runtForm.rtm_fecha_vigencia) return enqueueSnackbar('Copia la vigencia de la tecnomecánica o selecciona No aplica', { variant: 'warning' });
+    if (runtForm.rtm_aplica === 'SI' && !runtForm.rtm_fecha_vigencia) return enqueueSnackbar('Copia la vigencia de la tecnomecanica o selecciona No aplica', { variant: 'warning' });
     setRuntValidation((prev) => ({ ...prev, loading: true }));
     try {
       const result = await gestionInformacionService.capturePesvRuntManual(runtValidation.sessionId, { ...runtForm, rtm_aplica: runtForm.rtm_aplica });
@@ -498,7 +616,9 @@ function ParqueaderosPesvPanel({ onBack }) {
     { key: 'soat_vencido', label: 'SOAT vencidos', value: summary.soat_vencidos || 0, color: '#dc2626', background: '#fef2f2', icon: <WarningAmberRoundedIcon /> },
     { key: 'soat_proximo', label: 'SOAT próximos (30 días)', value: summary.soat_proximos || 0, color: '#d97706', background: '#fffbeb', icon: <EmailRoundedIcon /> },
     { key: 'rtm_vencido', label: 'Tecnomecánica vencidas', value: summary.tecnomecanica_vencidos || 0, color: '#be123c', background: '#fff1f2', icon: <WarningAmberRoundedIcon /> },
-    { key: 'rtm_proximo', label: 'Tecnomecánica próximas (30 días)', value: summary.tecnomecanica_proximos || 0, color: '#7c3aed', background: '#f5f3ff', icon: <FactCheckRoundedIcon /> }
+    { key: 'rtm_proximo', label: 'Tecnomecánica próximas (30 días)', value: summary.tecnomecanica_proximos || 0, color: '#7c3aed', background: '#f5f3ff', icon: <FactCheckRoundedIcon /> },
+    { key: 'licencia_vencido', label: 'Licencias vencidas', value: summary.licencia_vencidos || 0, color: '#b91c1c', background: '#fff1f1', icon: <WarningAmberRoundedIcon /> },
+    { key: 'licencia_proximo', label: 'Licencias próximas (30 días)', value: summary.licencia_proximos || 0, color: '#0284c7', background: '#e0f2fe', icon: <EmailRoundedIcon /> }
   ];
   const applyIndicatorFilter = (key) => {
     const selectedStat = stats.find((item) => item.key === key);
@@ -524,13 +644,13 @@ function ParqueaderosPesvPanel({ onBack }) {
   const bicycleSelected = isBicycleVehicle(form);
   const formCatalogOptions = {
     vinculacion: catalogs.vinculaciones || [], dependencia_programa: catalogs.dependencias || [], campus: catalogs.campus || [],
-    parqueadero_ingreso: catalogs.parqueaderos || [], categoria_ingreso: catalogs.categorias || [],
-    curso_pas: catalogs.cursosPas || [], pago_validacion: catalogs.pagosValidacion || [],
+    parqueadero_ingreso: catalogs.parqueaderos || [], licencia_categorias: catalogs.categoriasLicencia || [],
     tipo_vehiculo: catalogs.tiposVehiculo || [], vehiculo_clase: catalogs.clasesVehiculo || [],
     vehiculo_servicio: catalogs.serviciosVehiculo || [], soat_entidad: catalogs.aseguradoras || [], rtm_cda: catalogs.centrosDiagnostico || []
   };
   const renderFormField = ([key, label]) => {
     if (key === 'identificacion') {
+      const hasError = submittedAttempt && !form.identificacion?.trim();
       return (
         <TextField
           key={key}
@@ -539,8 +659,9 @@ function ParqueaderosPesvPanel({ onBack }) {
           onChange={updateField(key)}
           onBlur={(e) => e.target.value.trim().length >= 3 && handleLookupPersona(e.target.value)}
           onKeyDown={(e) => e.key === 'Enter' && (e.preventDefault(), handleLookupPersona(form.identificacion))}
-          placeholder="Ej: 1085327166"
-          helperText="Al digitar la cédula y presionar Enter o cambiar de campo, se autocompletarán los datos."
+          placeholder="Ej: 12345678"
+          error={hasError}
+          helperText={hasError ? 'Campo obligatorio: digite la cédula' : 'Al digitar la cédula y presionar Enter o la lupa, se autocompletarán los datos.'}
           fullWidth
           size="small"
           InputProps={{
@@ -552,6 +673,7 @@ function ParqueaderosPesvPanel({ onBack }) {
                       size="small"
                       onClick={() => handleLookupPersona(form.identificacion)}
                       disabled={lookingUpPerson || !form.identificacion?.trim()}
+                      color={hasError ? 'error' : 'primary'}
                     >
                       {lookingUpPerson ? <CircularProgress size={16} /> : <SearchRoundedIcon fontSize="small" />}
                     </IconButton>
@@ -563,8 +685,40 @@ function ParqueaderosPesvPanel({ onBack }) {
         />
       );
     }
-    if (['vehiculo_autorizado', 'vehiculo_es_propio'].includes(key)) return (
-      <FormControl key={key} size="small" fullWidth>
+    if (key === 'placa') {
+      const hasError = submittedAttempt && !form.placa?.trim();
+      return (
+        <TextField
+          key={key}
+          label={label}
+          value={form[key]}
+          onChange={updateField(key)}
+          placeholder="Ej: ABC123"
+          error={hasError}
+          helperText={hasError ? 'Campo obligatorio: digite la placa' : undefined}
+          disabled={bicycleSelected && BICYCLE_DOCUMENT_FIELDS.has(key)}
+          fullWidth
+          size="small"
+        />
+      );
+    }
+    if (key === 'nombres_apellidos') {
+      const hasError = submittedAttempt && !form.nombres_apellidos?.trim();
+      return (
+        <TextField
+          key={key}
+          label={label}
+          value={form[key]}
+          onChange={updateField(key)}
+          error={hasError}
+          helperText={hasError ? 'Campo obligatorio' : undefined}
+          fullWidth
+          size="small"
+        />
+      );
+    }
+    if (['vehiculo_autorizado', 'vehiculo_es_propio', 'tiene_licencia'].includes(key)) return (
+      <FormControl key={key} size="small" fullWidth error={submittedAttempt && key === 'vehiculo_es_propio' && !form[key]}>
         <InputLabel>{label}</InputLabel>
         <Select label={label} value={form[key]} onChange={updateField(key)}>
           <MenuItem value=""><em>Seleccione una opción</em></MenuItem>
@@ -573,6 +727,54 @@ function ParqueaderosPesvPanel({ onBack }) {
         </Select>
       </FormControl>
     );
+    if (key === 'licencia_categorias') {
+      const catOptions = [
+        { code: 'A1', label: 'A1 (Motocicleta hasta 125 cc · Particular)' },
+        { code: 'A2', label: 'A2 (Motocicleta mayor a 125 cc · Particular)' },
+        { code: 'B1', label: 'B1 (Carro / Camioneta · Servicio Particular)' },
+        { code: 'B2', label: 'B2 (Camión / Bus · Servicio Particular)' },
+        { code: 'B3', label: 'B3 (Vehículo articulado · Servicio Particular)' },
+        { code: 'C1', label: 'C1 (Carro / Camioneta · Conductor Profesional / Servicio Público)' },
+        { code: 'C2', label: 'C2 (Camión / Bus · Conductor Profesional / Servicio Público)' },
+        { code: 'C3', label: 'C3 (Vehículo articulado · Conductor Profesional / Servicio Público)' }
+      ];
+      return (
+        <Autocomplete
+          key={key}
+          freeSolo
+          autoHighlight
+          options={catOptions}
+          getOptionLabel={(option) => typeof option === 'string' ? option : (option.label || option.code)}
+          renderOption={(props, option) => (
+            <li {...props} key={option.code}>
+              <Typography variant="body2" sx={{ fontWeight: 600 }}>
+                {option.label}
+              </Typography>
+            </li>
+          )}
+          value={form.licencia_categorias || ''}
+          inputValue={form.licencia_categorias || ''}
+          onChange={(_, newValue) => {
+            const val = typeof newValue === 'object' && newValue ? newValue.code : (newValue || '');
+            setForm((prev) => ({ ...prev, licencia_categorias: val }));
+          }}
+          onInputChange={(_, newInputValue) => {
+            setForm((prev) => ({ ...prev, licencia_categorias: newInputValue }));
+          }}
+          disabled={bicycleSelected && BICYCLE_DOCUMENT_FIELDS.has(key)}
+          renderInput={(params) => (
+            <TextField
+              {...params}
+              label={label}
+              placeholder="Ej: A2, B1, C1"
+              helperText="Seleccione de la lista o digite. Si posee varias categorías, puede escribir por ejemplo: A2, B1"
+              fullWidth
+              size="small"
+            />
+          )}
+        />
+      );
+    }
     const options = formCatalogOptions[key];
     if (options) return (
       <Autocomplete
@@ -583,7 +785,7 @@ function ParqueaderosPesvPanel({ onBack }) {
         renderInput={(params) => <TextField {...params} label={label} fullWidth size="small" />}
       />
     );
-    return <TextField key={key} label={label} type={FORM_DATE_FIELDS.has(key) ? 'date' : 'text'} value={form[key]} onChange={updateField(key)} disabled={bicycleSelected && BICYCLE_DOCUMENT_FIELDS.has(key)} InputLabelProps={FORM_DATE_FIELDS.has(key) ? { shrink: true } : undefined} fullWidth size="small" />;
+    return <TextField key={key} label={label} type={FORM_DATE_FIELDS.has(key) ? 'date' : 'text'} value={FORM_DATE_FIELDS.has(key) ? formatDateForInput(form[key]) : (form[key] || '')} onChange={updateField(key)} disabled={bicycleSelected && BICYCLE_DOCUMENT_FIELDS.has(key)} InputLabelProps={FORM_DATE_FIELDS.has(key) ? { shrink: true } : undefined} fullWidth size="small" />;
   };
 
   return (
@@ -603,7 +805,7 @@ function ParqueaderosPesvPanel({ onBack }) {
         <Stack direction="row" spacing={1.5} alignItems="center"><DirectionsCarRoundedIcon sx={{ fontSize: 38 }} /><Box><Typography variant="overline" sx={{ fontWeight: 900, opacity: .85 }}>PESV · Submódulo 01</Typography><Typography variant="h4" sx={{ fontWeight: 900 }}>Parqueaderos UNICESMAG</Typography><Typography sx={{ opacity: .88 }}>Gestión de cupos, vehículos y vigencias documentales.</Typography></Box></Stack>
       </Paper>
       {importResult?.warningCount > 0 && <Alert severity="warning">Se importaron {importResult.imported} registros con {importResult.warningCount} advertencias de datos. Las vigencias no reconocibles quedaron marcadas como “Sin fecha verificable”.</Alert>}
-      <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr 1fr', sm: 'repeat(3,1fr)', lg: 'repeat(5,1fr)' }, gap: 1.4 }}>
+      <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr 1fr', sm: 'repeat(3,1fr)', lg: 'repeat(7,1fr)' }, gap: 1.4 }}>
         {stats.map((item) => {
           const hasSearch = Boolean(search.trim());
           const selected = item.key ? indicator === item.key : !indicator && !estado && !hasSearch;
@@ -644,24 +846,32 @@ function ParqueaderosPesvPanel({ onBack }) {
             />
             <Typography variant="caption" sx={{ display: 'block', mt: .55, ml: .5, color: '#64748b' }}>Busca por persona, identificación, correo, dependencia, campus, parqueadero, placa, modelo, SOAT o RTM.</Typography>
           </Box>
+          <FormControl size="small" sx={{ minWidth: 150 }}><InputLabel>Ver registros</InputLabel><Select label="Ver registros" value={estadoRegistro} onChange={(e) => { setEstadoRegistro(e.target.value); setPage(0); }}><MenuItem value="activos">Activos ({summary.total_activos ?? summary.total ?? 0})</MenuItem><MenuItem value="inactivos">Inactivos ({summary.total_inactivos || 0})</MenuItem><MenuItem value="todos">Todos</MenuItem></Select></FormControl>
           <FormControl size="small" sx={{ minWidth: 180 }}><InputLabel>Campus</InputLabel><Select label="Campus" value={campus} onChange={(e) => setCampus(e.target.value)}><MenuItem value="">Todos</MenuItem>{catalogs.campus.map((item) => <MenuItem key={item} value={item}>{item}</MenuItem>)}</Select></FormControl>
           <FormControl size="small" sx={{ minWidth: 190 }}><InputLabel>Estado documental</InputLabel><Select label="Estado documental" value={estado} onChange={(e) => { setEstado(e.target.value); setIndicator(''); }}><MenuItem value="">Todos</MenuItem><MenuItem value="vencido">Vencidos</MenuItem><MenuItem value="proximo">Próximos a vencer</MenuItem><MenuItem value="vigente">Vigentes</MenuItem><MenuItem value="sin_fecha">Sin fecha verificable</MenuItem></Select></FormControl>
           <Tooltip title="Actualizar"><IconButton onClick={load}><RefreshRoundedIcon /></IconButton></Tooltip>
         </Stack>
       </Paper>
       <TableContainer component={Paper} elevation={0} sx={{ borderRadius: 3, border: '1px solid #e2e8f0', maxHeight: { xs: '65vh', md: '72vh' }, overflow: 'auto', scrollbarGutter: 'stable' }}>
-        <Table stickyHeader size="small" sx={{ width: '100%', minWidth: 1040, tableLayout: 'fixed', '& .MuiTableCell-head': { px: 1.1, py: 1.25, fontSize: 11.5, lineHeight: 1.2, bgcolor: '#eaf2ff', boxShadow: 'inset 0 -2px 0 #2563eb', zIndex: 5 }, '& .MuiTableCell-body': { px: 1.1, py: 1.15, fontSize: 12.5, verticalAlign: 'top', overflowWrap: 'anywhere' }, '& .MuiTypography-body2': { fontSize: 12.5, lineHeight: 1.3 }, '& .MuiTypography-caption': { fontSize: 10.8, lineHeight: 1.35 }, '& .MuiChip-root': { height: 22, fontSize: 10.5 }, '& .pesv-expiry-chip.MuiChip-root': { width: 'fit-content', maxWidth: '100%', height: 'auto', minHeight: 22, alignItems: 'center' }, '& .pesv-expiry-chip .MuiChip-label': { display: 'block', px: 0.8, py: 0.35, whiteSpace: 'normal', overflow: 'visible', textOverflow: 'clip', lineHeight: 1.15 }, '& .pesv-expiry-chip .MuiChip-icon': { flexShrink: 0 } }}>
-          <colgroup><col style={{ width: '18%' }} /><col style={{ width: '19%' }} /><col style={{ width: '11%' }} /><col style={{ width: '13%' }} /><col style={{ width: '11.5%' }} /><col style={{ width: '15%' }} /><col style={{ width: '12.5%' }} /></colgroup>
-          <TableHead><TableRow sx={{ bgcolor: '#eaf2ff', borderBottom: '2px solid #2563eb' }}>{['Persona / identificación', 'Contacto', 'Parqueadero', 'Vehículo / placa', 'SOAT', 'Tecnomecánica'].map((label) => <TableCell key={label} sx={{ color: '#173b72', fontWeight: 900, borderBottom: 0 }}>{label}</TableCell>)}<TableCell align="center" sx={{ color: '#173b72', fontWeight: 900, borderBottom: 0 }}>Acciones</TableCell></TableRow></TableHead>
-          <TableBody>{loading ? <TableRow><TableCell colSpan={7} align="center" sx={{ py: 7 }}><CircularProgress /></TableCell></TableRow> : visibleRows.length === 0 ? <TableRow><TableCell colSpan={7} align="center" sx={{ py: 7 }}><WarningAmberRoundedIcon sx={{ color: '#d97706' }} /><Typography sx={{ fontWeight: 800, color: '#64748b' }}>No hay registros para los filtros seleccionados</Typography></TableCell></TableRow> : visibleRows.map((row, rowIndex) => {
-            const critical = row.soat_estado?.code === 'vencido' || row.tecnomecanica_estado?.code === 'vencido';
-            return <TableRow key={row.id} sx={{ bgcolor: critical ? '#fff7f7' : rowIndex % 2 ? '#f8fbff' : '#fff', '&:hover': { bgcolor: critical ? '#feecec' : '#eef5ff' }, '& td': { borderBottomColor: '#e5edf7' } }}>
-              <TableCell><Typography variant="body2" sx={{ fontWeight: 900 }}>{row.nombres_apellidos}</Typography><Typography variant="caption" color="text.secondary">{row.identificacion ? `CC ${row.identificacion}` : 'Sin identificación'} · {row.dependencia_programa || 'Sin dependencia'}</Typography></TableCell>
+        <Table stickyHeader size="small" sx={{ width: '100%', minWidth: 1140, tableLayout: 'fixed', '& .MuiTableCell-head': { px: 1.1, py: 1.25, fontSize: 11.5, lineHeight: 1.2, bgcolor: '#eaf2ff', boxShadow: 'inset 0 -2px 0 #2563eb', zIndex: 5 }, '& .MuiTableCell-body': { px: 1.1, py: 1.15, fontSize: 12.5, verticalAlign: 'top', overflowWrap: 'anywhere' }, '& .MuiTypography-body2': { fontSize: 12.5, lineHeight: 1.3 }, '& .MuiTypography-caption': { fontSize: 10.8, lineHeight: 1.35 }, '& .MuiChip-root': { height: 22, fontSize: 10.5 }, '& .pesv-expiry-chip.MuiChip-root': { width: 'fit-content', maxWidth: '100%', height: 'auto', minHeight: 22, alignItems: 'center' }, '& .pesv-expiry-chip .MuiChip-label': { display: 'block', px: 0.8, py: 0.35, whiteSpace: 'normal', overflow: 'visible', textOverflow: 'clip', lineHeight: 1.15 }, '& .pesv-expiry-chip .MuiChip-icon': { flexShrink: 0 } }}>
+          <colgroup><col style={{ width: '17%' }} /><col style={{ width: '17%' }} /><col style={{ width: '10%' }} /><col style={{ width: '11%' }} /><col style={{ width: '11%' }} /><col style={{ width: '12.5%' }} /><col style={{ width: '12.5%' }} /><col style={{ width: '9%' }} /></colgroup>
+          <TableHead><TableRow sx={{ bgcolor: '#eaf2ff', borderBottom: '2px solid #2563eb' }}>{['Persona / identificación', 'Contacto', 'Parqueadero', 'Vehículo / placa', 'SOAT', 'Tecnomecánica', 'Licencia de conducción'].map((label) => <TableCell key={label} sx={{ color: '#173b72', fontWeight: 900, borderBottom: 0 }}>{label}</TableCell>)}<TableCell align="center" sx={{ color: '#173b72', fontWeight: 900, borderBottom: 0 }}>Acciones</TableCell></TableRow></TableHead>
+          <TableBody>{loading ? <TableRow><TableCell colSpan={8} align="center" sx={{ py: 7 }}><CircularProgress /></TableCell></TableRow> : visibleRows.length === 0 ? <TableRow><TableCell colSpan={8} align="center" sx={{ py: 7 }}><WarningAmberRoundedIcon sx={{ color: '#d97706' }} /><Typography sx={{ fontWeight: 800, color: '#64748b' }}>No hay registros para los filtros seleccionados</Typography></TableCell></TableRow> : visibleRows.map((row, rowIndex) => {
+            const critical = row.soat_estado?.code === 'vencido' || row.tecnomecanica_estado?.code === 'vencido' || row.licencia_estado?.code === 'vencido';
+            return <TableRow key={row.id} sx={{ bgcolor: row.activo === false ? '#f8fafc' : critical ? '#fff7f7' : rowIndex % 2 ? '#f8fbff' : '#fff', opacity: row.activo === false ? 0.75 : 1, '&:hover': { bgcolor: row.activo === false ? '#f1f5f9' : critical ? '#feecec' : '#eef5ff' }, '& td': { borderBottomColor: '#e5edf7' } }}>
+              <TableCell>
+                <Stack direction="row" alignItems="center" spacing={0.5}>
+                  <Typography variant="body2" sx={{ fontWeight: 900 }}>{row.nombres_apellidos}</Typography>
+                  {row.activo === false && <Chip label="INACTIVO" size="small" color="error" variant="outlined" sx={{ height: 18, fontSize: 9, fontWeight: 900 }} />}
+                </Stack>
+                <Typography variant="caption" color="text.secondary">{row.identificacion ? `CC ${row.identificacion}` : 'Sin identificación'} · {row.dependencia_programa || 'Sin dependencia'}</Typography>
+              </TableCell>
               <TableCell><Typography variant="body2">{row.correo || 'Sin correo'}</Typography><Typography variant="caption" color="text.secondary">{row.vinculacion || 'Sin vinculación'}</Typography></TableCell>
-              <TableCell><Typography variant="body2" sx={{ fontWeight: 800 }}>{row.parqueadero_ingreso || 'Sin asignar'}</Typography><Typography variant="caption" color="text.secondary">{row.campus || 'Sin campus'} · {row.categoria_ingreso || 'Sin categoría'}</Typography></TableCell>
+              <TableCell><Typography variant="body2" sx={{ fontWeight: 800 }}>{row.parqueadero_ingreso || 'Sin asignar'}</Typography><Typography variant="caption" color="text.secondary">{row.campus || 'Sin campus'}</Typography></TableCell>
               <TableCell><Chip label={row.placa || 'SIN PLACA'} size="small" sx={{ fontWeight: 900, bgcolor: '#e0e7ff', color: '#3730a3' }} /><Typography variant="caption" sx={{ display: 'block', mt: .5 }}>{row.tipo_vehiculo || 'Sin tipo'}</Typography></TableCell>
               <TableCell><ExpiryCell type="soat" date={row.soat_vigencia} rawText={row.soat_vigencia_texto} status={row.soat_estado} row={row} onNotify={notify} notifying={notifying === `${row.id}-soat`} /></TableCell>
               <TableCell><ExpiryCell type="tecnomecanica" date={row.tecnomecanica_vigencia} rawText={row.tecnomecanica_vigencia_texto} status={row.tecnomecanica_estado} row={row} onNotify={notify} notifying={notifying === `${row.id}-tecnomecanica`} /></TableCell>
+              <TableCell><ExpiryCell type="licencia" date={row.licencia_vencimiento} rawText={row.licencia_categorias ? `Cat. ${row.licencia_categorias}` : ''} status={row.licencia_estado} row={row} onNotify={notify} notifying={notifying === `${row.id}-licencia`} /></TableCell>
               <TableCell align="center">
                 <Box sx={{ display: 'inline-grid', gridTemplateColumns: 'repeat(2, auto)', gap: 0.6, justifyItems: 'center', alignItems: 'center' }}>
                   <Tooltip title={isBicycleVehicle(row) ? 'No aplica para bicicletas' : 'Validar SOAT y RTM en RUNT'} arrow placement="top">
@@ -681,11 +891,19 @@ function ParqueaderosPesvPanel({ onBack }) {
                       <EditRoundedIcon sx={{ fontSize: 16 }} />
                     </IconButton>
                   </Tooltip>
-                  <Tooltip title="Eliminar registro" arrow placement="bottom">
-                    <IconButton size="small" onClick={() => remove(row)} sx={{ color: '#dc2626', bgcolor: '#fef2f2', border: '1px solid #fecaca', p: 0.55, '&:hover': { bgcolor: '#fee2e2' } }}>
-                      <DeleteOutlineRoundedIcon sx={{ fontSize: 16 }} />
-                    </IconButton>
-                  </Tooltip>
+                  {row.activo === false ? (
+                    <Tooltip title="Reactivar cupo en parqueadero" arrow placement="bottom">
+                      <IconButton size="small" onClick={() => reactivateRow(row)} sx={{ color: '#16a34a', bgcolor: '#f0fdf4', border: '1px solid #bbf7d0', p: 0.55, '&:hover': { bgcolor: '#dcfce7' } }}>
+                        <CheckCircleRoundedIcon sx={{ fontSize: 16 }} />
+                      </IconButton>
+                    </Tooltip>
+                  ) : (
+                    <Tooltip title="Inactivar cupo (conserva historial)" arrow placement="bottom">
+                      <IconButton size="small" onClick={() => remove(row)} sx={{ color: '#dc2626', bgcolor: '#fef2f2', border: '1px solid #fecaca', p: 0.55, '&:hover': { bgcolor: '#fee2e2' } }}>
+                        <DeleteOutlineRoundedIcon sx={{ fontSize: 16 }} />
+                      </IconButton>
+                    </Tooltip>
+                  )}
                 </Box>
               </TableCell>
             </TableRow>;
@@ -696,22 +914,113 @@ function ParqueaderosPesvPanel({ onBack }) {
       <Dialog open={dialog.open} onClose={() => !saving && setDialog({ open: false, row: null })} fullWidth maxWidth="md">
         <DialogTitle sx={{ fontWeight: 900 }}>{dialog.row ? 'Editar cupo de parqueadero' : 'Registrar nuevo cupo'}</DialogTitle>
         <DialogContent dividers><Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', sm: '1fr 1fr' }, gap: 1.5 }}>
-          <Typography sx={{ gridColumn: { sm: '1 / -1' }, fontWeight: 900, color: '#1e3a8a' }}>Persona y asignación del cupo</Typography>
-          {[
-            ['identificacion', 'Identificación'], ['nombres_apellidos', 'Nombres y apellidos *'], ['correo', 'Correo electrónico'], ['vinculacion', 'Vinculación'], ['dependencia_programa', 'Dependencia o programa'], ['campus', 'Campus'], ['parqueadero_ingreso', 'Parqueadero de ingreso'], ['categoria_ingreso', 'Categoría de ingreso'], ['curso_pas', 'Curso PAS'], ['pago_validacion', 'Pago / validación'], ['horario', 'Horario']
-          ].map(renderFormField)}
+          <Box sx={{
+            gridColumn: { sm: '1 / -1' },
+            p: 1.8,
+            borderRadius: 2,
+            bgcolor: '#f0f7ff',
+            border: '1.5px solid #93c5fd',
+            boxShadow: '0 2px 8px rgba(30,58,138,0.06)'
+          }}>
+            <Typography sx={{ fontWeight: 900, color: '#1e3a8a', mb: 1, fontSize: 13.5 }}>
+              Campos principales de búsqueda e identificación
+            </Typography>
+            <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', sm: '1fr 1fr' }, gap: 1.5 }}>
+              {renderFormField(['identificacion', 'Identificación *'])}
+              {renderFormField(['placa', 'Placa *'])}
+            </Box>
+          </Box>
+
+          <Typography sx={{ gridColumn: { sm: '1 / -1' }, mt: 0.5, fontWeight: 900, color: '#1e3a8a' }}>Información del conductor / colaborador</Typography>
+          {renderFormField(['nombres_apellidos', 'Nombres y apellidos *'])}
+          {renderFormField(['correo', 'Correo electrónico'])}
+          {renderFormField(['vinculacion', 'Vinculación'])}
+          {String(form.vinculacion || '').toUpperCase().startsWith('OTRO') && (
+            <TextField
+              label="¿Cuál vinculación? *"
+              placeholder="Ej: Pasante, Proveedor, Honorarios, Pasantía..."
+              value={form.vinculacion_especificada || ''}
+              onChange={(e) => setForm((prev) => ({ ...prev, vinculacion_especificada: e.target.value }))}
+              error={submittedAttempt && !form.vinculacion_especificada?.trim()}
+              helperText={submittedAttempt && !form.vinculacion_especificada?.trim() ? 'Campo obligatorio' : 'Escriba el tipo de vinculación y se registrará oficialmente.'}
+              fullWidth size="small"
+              sx={{ gridColumn: { sm: '1 / -1' } }}
+            />
+          )}
+          {renderFormField(['dependencia_programa', 'Dependencia o programa'])}
+          {renderFormField(['campus', 'Campus'])}
+          {renderFormField(['parqueadero_ingreso', 'Parqueadero de ingreso'])}
 
           <Typography sx={{ gridColumn: { sm: '1 / -1' }, mt: 1, fontWeight: 900, color: '#1e3a8a' }}>Propiedad y autorización del vehículo</Typography>
           {[
             ['vehiculo_autorizado', '¿El vehículo está autorizado?'], ['vehiculo_es_propio', '¿El vehículo es propio?']
           ].map(renderFormField)}
-          {form.vehiculo_es_propio === 'NO' && <TextField label="Identificación del propietario *" value={form.propietario_identificacion} onChange={updateField('propietario_identificacion')} helperText="Este documento se utilizará junto con la placa para realizar la consulta pública en RUNT." fullWidth size="small" />}
-          {form.vehiculo_es_propio === 'NO' && <Alert severity="info" sx={{ alignItems: 'center' }}>La persona asignada al cupo se conserva como conductor. Para consultar el vehículo en RUNT se utilizará exclusivamente la identificación del propietario.</Alert>}
+          {form.vehiculo_es_propio === 'NO' && (
+            <TextField
+              label="Identificación del propietario *"
+              value={form.propietario_identificacion || ''}
+              onChange={updateField('propietario_identificacion')}
+              error={submittedAttempt && !form.propietario_identificacion?.trim()}
+              helperText={submittedAttempt && !form.propietario_identificacion?.trim() ? 'Campo obligatorio cuando el vehículo no es propio' : 'Este documento se utilizará junto con la placa para realizar la consulta pública en RUNT.'}
+              fullWidth size="small"
+            />
+          )}
+          {form.vehiculo_es_propio === 'NO' && <Alert severity="info" sx={{ gridColumn: { sm: '1 / -1' }, alignItems: 'center' }}>La persona asignada al cupo se conserva como conductor. Para consultar el vehículo en RUNT se utilizará exclusivamente la identificación del propietario.</Alert>}
+
+          <Typography sx={{ gridColumn: { sm: '1 / -1' }, mt: 1, fontWeight: 900, color: '#1e3a8a' }}>Licencia de conducción</Typography>
+          {[
+            ['tiene_licencia', '¿Tiene Licencia de Conducción?']
+          ].map(renderFormField)}
+          {form.tiene_licencia !== 'NO' && <>
+            {[
+              ['licencia_categorias', 'Categoría(s) autorizadas (ej: A2, B1, C1)'],
+              ['licencia_expedicion', 'Fecha de expedición'],
+              ['licencia_vencimiento', 'Fecha de vencimiento']
+            ].map(renderFormField)}
+            <Alert severity="info" sx={{ gridColumn: { sm: '1 / -1' }, fontSize: 12 }}>
+              <strong>Vigencia de licencias en Colombia (Ley 769/2002 · Ley 2161/2021):</strong><br />
+              • <strong>Servicio Particular (A1, A2, B1, B2, B3):</strong> Menores de 60 años cada 10 años · De 60 a 69 años cada 5 años · Mayores de 70 años renovación anual.<br />
+              • <strong>Servicio Público (C1, C2, C3):</strong> Menores de 60 años cada 3 años · Mayores de 60 años renovación anual.
+            </Alert>
+            {form.tiene_licencia !== 'NO' && form.licencia_categorias && form.tipo_vehiculo && (() => {
+              const compat = checkLicenseVehicleCompatibility(form.licencia_categorias, form.tipo_vehiculo);
+              if (!compat.compatible) {
+                return (
+                  <Alert severity="error" sx={{ gridColumn: { sm: '1 / -1' }, fontWeight: 800 }}>
+                    🚨 <strong>Incompatibilidad Detectada:</strong> {compat.reason}
+                  </Alert>
+                );
+              }
+              return null;
+            })()}
+          </>}
 
           <Typography sx={{ gridColumn: { sm: '1 / -1' }, mt: 1, fontWeight: 900, color: '#1e3a8a' }}>Información del vehículo</Typography>
           {[ 
-            ['tipo_vehiculo', 'Tipo de vehículo institucional'], ['placa', 'Placa'], ['vehiculo_clase', 'Clase del vehículo (RUNT)'], ['vehiculo_servicio', 'Tipo de servicio (RUNT)'], ['vehiculo_modelo', 'Modelo'], ['vehiculo_fecha_matricula', 'Fecha inicial de matrícula']
+            ['tipo_vehiculo', 'Tipo de vehículo'], ['vehiculo_servicio', 'Tipo de servicio (RUNT)'], ['vehiculo_modelo', 'Modelo'], ['vehiculo_fecha_matricula', 'Fecha inicial de matrícula']
           ].map(renderFormField)}
+          {form.tipo_vehiculo === 'Otro' && (
+            <TextField
+              label="¿Cuál tipo de vehículo? *"
+              placeholder="Ej: Patineta eléctrica, Monopatín, Triciclo..."
+              value={form.tipo_vehiculo_especificado || ''}
+              onChange={(e) => {
+                const val = e.target.value;
+                setForm((prev) => ({
+                  ...prev,
+                  tipo_vehiculo_especificado: val,
+                  ...(val.trim() ? { tipo_vehiculo_custom: val.trim() } : {})
+                }));
+              }}
+              onBlur={() => {
+                if (form.tipo_vehiculo_especificado?.trim()) {
+                  setForm((prev) => ({ ...prev, tipo_vehiculo: prev.tipo_vehiculo_especificado.trim() }));
+                }
+              }}
+              helperText="Escriba el tipo de vehículo y este se registrará como su tipo oficial."
+              fullWidth size="small"
+            />
+          )}
 
           {bicycleSelected && <Alert severity="info" sx={{ gridColumn: { sm: '1 / -1' } }}><strong>Bicicleta:</strong> no requiere SOAT, revisión técnico-mecánica ni validación en RUNT. Al guardar, estos campos se registrarán como “No aplica”.</Alert>}
 
@@ -727,8 +1036,6 @@ function ParqueaderosPesvPanel({ onBack }) {
               ['rtm_fecha_expedicion', 'Fecha de expedición RTM'], ['tecnomecanica_vigencia', 'Fin de vigencia RTM'], ['rtm_fecha_exigibilidad', 'Primera fecha de exigibilidad'], ['rtm_numero_certificado', 'Número de certificado'], ['rtm_cda', 'Centro de Diagnóstico Automotor (CDA)']
             ].map(renderFormField)}
           </>}
-
-          <TextField label="Observaciones" value={form.observaciones} onChange={updateField('observaciones')} multiline minRows={3} fullWidth sx={{ gridColumn: { sm: '1 / -1' } }} />
         </Box></DialogContent>
         <DialogActions><Button onClick={() => setDialog({ open: false, row: null })} disabled={saving}>Cancelar</Button><Button variant="contained" onClick={save} disabled={saving}>{saving ? 'Guardando…' : 'Guardar'}</Button></DialogActions>
       </Dialog>

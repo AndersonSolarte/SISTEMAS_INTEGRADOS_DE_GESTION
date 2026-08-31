@@ -205,6 +205,8 @@ const gestionInformacionService = {
     api.post('/pesv/parqueaderos', payload).then((r) => r.data),
   updatePesvParqueadero: (id, payload) =>
     api.put(`/pesv/parqueaderos/${id}`, payload).then((r) => r.data),
+  reactivatePesvParqueadero: (id) =>
+    api.put(`/pesv/parqueaderos/${id}/reactivate`).then((r) => r.data),
   deletePesvParqueadero: (id) =>
     api.delete(`/pesv/parqueaderos/${id}`).then((r) => r.data),
   importPesvParqueaderos: (file, replace = true) => {

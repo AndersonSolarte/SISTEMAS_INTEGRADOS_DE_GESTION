@@ -49,12 +49,15 @@ const senderHtml = `
 `;
 
 const sendPesvExpiryNotification = async (row, tipo) => {
+  const isLicencia = tipo === 'licencia';
   const isRtm = tipo === 'tecnomecanica';
-  const documentName = isRtm ? 'certificado de revisión técnico-mecánica (RTM)' : 'Seguro Obligatorio de Accidentes de Tránsito (SOAT)';
-  const documentTitle = isRtm ? 'Revisión Técnico-Mecánica y de Emisiones Contaminantes (RTM)' : 'SOAT';
+  const documentName = isLicencia ? 'licencia de conducción' : isRtm ? 'certificado de revisión técnico-mecánica (RTM)' : 'Seguro Obligatorio de Accidentes de Tránsito (SOAT)';
+  const documentTitle = isLicencia ? 'Licencia de Conducción' : isRtm ? 'Revisión Técnico-Mecánica y de Emisiones Contaminantes (RTM)' : 'SOAT';
   const plateLabel = row.placa || row.identificacion || 'Sin placa registrada';
-  const notificationTitle = `Plan Estratégico de Seguridad Vial - ${documentTitle} - Placa ${plateLabel}`;
-  const date = row[isRtm ? 'tecnomecanica_vigencia' : 'soat_vigencia'];
+  const notificationTitle = isLicencia
+    ? `Plan Estratégico de Seguridad Vial - Licencia de Conducción - ${row.nombres_apellidos}`
+    : `Plan Estratégico de Seguridad Vial - ${documentTitle} - Placa ${plateLabel}`;
+  const date = row[isLicencia ? 'licencia_vencimiento' : isRtm ? 'tecnomecanica_vigencia' : 'soat_vigencia'];
   const days = daysBetween(bogotaDateIso(), date);
   const dateLabel = new Intl.DateTimeFormat('es-CO', { dateStyle: 'long', timeZone: 'UTC' }).format(new Date(`${date}T00:00:00Z`));
   const daysLabel = `${days} ${Math.abs(days) === 1 ? 'día' : 'días'}`;
@@ -73,11 +76,11 @@ const sendPesvExpiryNotification = async (row, tipo) => {
   const body = `
     <p>Saludo de Paz y Bien,</p>
     <p>Estimado(a) <strong>${escapeHtml(row.nombres_apellidos)}</strong>:</p>
-    <p>En cumplimiento del <strong>Plan Estratégico de Seguridad Vial de la Universidad CESMAG</strong>, nos permitimos informarle que el <strong>${escapeHtml(documentName)}</strong> del vehículo de placa <strong>${escapeHtml(row.placa || 'sin placa registrada')}</strong> ${escapeHtml(statusText)}.</p>
+    <p>En cumplimiento del <strong>Plan Estratégico de Seguridad Vial de la Universidad CESMAG</strong>, nos permitimos informarle que su <strong>${escapeHtml(documentName)}</strong> ${row.licencia_categorias ? `(Categoría: ${escapeHtml(row.licencia_categorias)})` : ''} ${escapeHtml(statusText)}.</p>
     <p>En este sentido, ${escapeHtml(recommendationText)}.</p>
-    <p>Cuando haya finalizado la renovación, le agradecemos <strong>responder a este mismo correo</strong> confirmando la actualización. No es necesario adjuntar el documento; el equipo de Seguridad y Salud en el Trabajo verificará posteriormente su vigencia en RUNT.</p>
+    <p>Cuando haya finalizado la renovación de su documento, le agradecemos <strong>responder a este mismo correo</strong> confirmando la actualización para mantener al día el registro en el sistema institucional.</p>
     <p>Al seleccionar <strong>Responder</strong>, su mensaje será dirigido automáticamente a <a href="mailto:${escapeHtml(PESV_REPLY_TO)}" style="color:#0b3a6f;font-weight:bold;">${escapeHtml(PESV_REPLY_TO)}</a>.</p>
-    <p>La actualización de este documento es fundamental para mantener vigente la información institucional del vehículo y garantizar la continuidad de su acceso al cupo de parqueadero en nuestras instalaciones.</p>
+    <p>La vigencia de su licencia de conducción es un requisito obligatorio para la asignación y uso del cupo de parqueadero institucional.</p>
     <p>Agradecemos su atención y quedamos atentos a su confirmación.</p>
   `;
   const threadId = `<pesv-parqueadero-${row.id}@unicesmag.edu.co>`;
@@ -88,7 +91,7 @@ const sendPesvExpiryNotification = async (row, tipo) => {
     inReplyTo: threadId,
     references: threadId,
     headers: { 'In-Reply-To': threadId, References: threadId },
-    text: `Saludo de Paz y Bien. Estimado(a) ${row.nombres_apellidos}: En cumplimiento del Plan Estratégico de Seguridad Vial de la Universidad CESMAG, informamos que el ${documentName} del vehículo de placa ${row.placa || 'sin placa registrada'} ${statusText}. En este sentido, ${recommendationText}. Cuando haya finalizado la renovación, agradecemos responder a este mismo correo confirmando la actualización. No es necesario adjuntar el documento; Seguridad y Salud en el Trabajo verificará posteriormente su vigencia en RUNT. La respuesta será dirigida automáticamente a ${PESV_REPLY_TO}. La actualización es fundamental para garantizar la continuidad de acceso al cupo de parqueadero. Agradecemos su atención y quedamos atentos a su confirmación. Fraternalmente, Seguridad y Salud en el Trabajo.`,
+    text: `Saludo de Paz y Bien. Estimado(a) ${row.nombres_apellidos}: En cumplimiento del Plan Estratégico de Seguridad Vial de la Universidad CESMAG, informamos que su ${documentName} ${row.licencia_categorias ? `(Categoría: ${row.licencia_categorias})` : ''} ${statusText}. En este sentido, ${recommendationText}. Cuando haya renovado su documento, agradecemos responder a este correo confirmando la actualización. La respuesta será dirigida automáticamente a ${PESV_REPLY_TO}. La vigencia de su licencia es fundamental para el uso del cupo de parqueadero. Fraternalmente, Seguridad y Salud en el Trabajo.`,
     html: renderInstitutionalTemplate({ title: notificationTitle, introHtml: '', bodyHtml: body, senderHtml })
   });
 };
@@ -157,18 +160,21 @@ const runPesvExpiryNotifications = async ({ now = new Date() } = {}) => {
         correo: { [Op.ne]: null },
         [Op.or]: [
           { soat_vigencia: { [Op.between]: [today, limit] } },
-          { tecnomecanica_vigencia: { [Op.between]: [today, limit] } }
+          { tecnomecanica_vigencia: { [Op.between]: [today, limit] } },
+          { licencia_vencimiento: { [Op.between]: [today, limit] } }
         ]
       }
     });
     const result = { reviewed: rows.length, sent: 0, failed: 0, skipped: 0 };
     const configs = [
       { tipo: 'soat', dateField: 'soat_vigencia', notificationField: 'ultima_notificacion_soat' },
-      { tipo: 'tecnomecanica', dateField: 'tecnomecanica_vigencia', notificationField: 'ultima_notificacion_tecnomecanica' }
+      { tipo: 'tecnomecanica', dateField: 'tecnomecanica_vigencia', notificationField: 'ultima_notificacion_tecnomecanica' },
+      { tipo: 'licencia', dateField: 'licencia_vencimiento', notificationField: 'ultima_notificacion_licencia' }
     ];
     for (const row of rows) {
-      if (isBicycleVehicle(row) || !String(row.correo || '').trim()) continue;
+      if (!String(row.correo || '').trim()) continue;
       for (const config of configs) {
+        if ((config.tipo === 'soat' || config.tipo === 'tecnomecanica') && isBicycleVehicle(row)) continue;
         const outcome = await claimAndSend(row, config, now);
         result[outcome] += 1;
       }
