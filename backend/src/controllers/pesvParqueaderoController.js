@@ -369,8 +369,18 @@ const validate = (payload) => {
 const getFilteredRows = async (query = {}) => {
   const search = clean(query.search, 120);
   const where = {};
-  if (query.campus) where.campus = query.campus;
-  if (query.parqueadero) where.parqueadero_ingreso = query.parqueadero;
+  if (query.campus && String(query.campus).trim()) {
+    where[Op.and] = where[Op.and] || [];
+    where[Op.and].push(
+      sequelize.where(sequelize.fn('UPPER', sequelize.col('campus')), String(query.campus).trim().toUpperCase())
+    );
+  }
+  if (query.parqueadero && String(query.parqueadero).trim()) {
+    where[Op.and] = where[Op.and] || [];
+    where[Op.and].push(
+      sequelize.where(sequelize.fn('UPPER', sequelize.col('parqueadero_ingreso')), String(query.parqueadero).trim().toUpperCase())
+    );
+  }
   
   const estadoRegistro = clean(query.estado_registro, 30);
   if (estadoRegistro === 'inactivo') where.activo = false;
