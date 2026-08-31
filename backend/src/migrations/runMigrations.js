@@ -869,6 +869,7 @@ const runMigrations = async () => {
     await repairInvertedDocumentDates();
     await repairMatriculadosFromEstadisticas();
     await repairGeorreferenciaFromDivipola();
+    await repairDuplicatePesvRecords();
 
     console.log('[migrate] Migraciones completadas');
     await sequelize.close();
@@ -978,6 +979,49 @@ const normalizeUserDependencies = async () => {
     }
   } catch (err) {
     console.error('[migrate] Error en limpieza final de dependencias:', err.message);
+  }
+};
+
+const repairDuplicatePesvRecords = async () => {
+  console.log('[migrate] Limpiando registros duplicados en PESV Parqueaderos (conservando solo la última actualización)...');
+  try {
+    await sequelize.query(`
+      WITH ranked_by_ident AS (
+        SELECT id,
+               ROW_NUMBER() OVER (
+                 PARTITION BY UPPER(TRIM(identificacion))
+                 ORDER BY updated_at DESC, id DESC
+               ) AS rnum
+        FROM pesv_parqueadero_registros
+        WHERE activo IS NOT FALSE AND identificacion IS NOT NULL AND TRIM(identificacion) != ''
+      )
+      UPDATE pesv_parqueadero_registros
+      SET activo = false, updated_at = NOW()
+      WHERE id IN (
+        SELECT id FROM ranked_by_ident WHERE rnum > 1
+      )
+    `, { type: QueryTypes.UPDATE });
+
+    await sequelize.query(`
+      WITH ranked_by_placa AS (
+        SELECT id,
+               ROW_NUMBER() OVER (
+                 PARTITION BY UPPER(TRIM(placa))
+                 ORDER BY updated_at DESC, id DESC
+               ) AS rnum
+        FROM pesv_parqueadero_registros
+        WHERE activo IS NOT FALSE AND placa IS NOT NULL AND TRIM(placa) != ''
+      )
+      UPDATE pesv_parqueadero_registros
+      SET activo = false, updated_at = NOW()
+      WHERE id IN (
+        SELECT id FROM ranked_by_placa WHERE rnum > 1
+      )
+    `, { type: QueryTypes.UPDATE });
+
+    console.log('[migrate] Limpieza de registros duplicados en PESV completada.');
+  } catch (err) {
+    console.error('[migrate] Error al limpiar duplicados en PESV Parqueaderos:', err.message);
   }
 };
 

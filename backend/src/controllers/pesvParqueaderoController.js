@@ -432,25 +432,94 @@ const list = async (req, res) => {
 };
 
 const create = async (req, res) => {
-  const payload = payloadFromBody(req.body); const errors = validate(payload);
+  const payload = payloadFromBody(req.body);
+  const errors = validate(payload);
   if (errors.length) return res.status(400).json({ success: false, message: errors.join('. ') });
-  try { const row = await PesvParqueaderoRegistro.create({ ...payload, activo: true, creado_por: req.user?.id, actualizado_por: req.user?.id }); return res.status(201).json({ success: true, data: serialize(row) }); }
-  catch (error) { return res.status(500).json({ success: false, message: 'No se pudo crear el registro' }); }
+  try {
+    const normIdent = payload.identificacion ? payload.identificacion.trim().toUpperCase() : '';
+    const normPlaca = payload.placa ? payload.placa.trim().toUpperCase() : '';
+
+    const existingRecords = await PesvParqueaderoRegistro.findAll({
+      where: {
+        activo: { [Op.ne]: false },
+        [Op.or]: [
+          ...(normIdent ? [sequelize.where(sequelize.fn('UPPER', sequelize.fn('TRIM', sequelize.col('identificacion'))), normIdent)] : []),
+          ...(normPlaca ? [sequelize.where(sequelize.fn('UPPER', sequelize.fn('TRIM', sequelize.col('placa'))), normPlaca)] : [])
+        ]
+      },
+      order: [['updated_at', 'DESC'], ['id', 'DESC']]
+    });
+
+    let row;
+    if (existingRecords.length > 0) {
+      row = existingRecords[0];
+      const notificationReset = {};
+      if ((row.soat_vigencia || null) !== (payload.soat_vigencia || null)) notificationReset.ultima_notificacion_soat = null;
+      if ((row.tecnomecanica_vigencia || null) !== (payload.tecnomecanica_vigencia || null)) notificationReset.ultima_notificacion_tecnomecanica = null;
+      if ((row.licencia_vencimiento || null) !== (payload.licencia_vencimiento || null)) notificationReset.ultima_notificacion_licencia = null;
+
+      await row.update({
+        ...payload,
+        ...notificationReset,
+        activo: true,
+        actualizado_por: req.user?.id
+      });
+
+      for (let i = 1; i < existingRecords.length; i++) {
+        await existingRecords[i].update({ activo: false, actualizado_por: req.user?.id });
+      }
+    } else {
+      row = await PesvParqueaderoRegistro.create({
+        ...payload,
+        activo: true,
+        creado_por: req.user?.id,
+        actualizado_por: req.user?.id
+      });
+    }
+
+    return res.status(201).json({ success: true, data: serialize(row) });
+  } catch (error) {
+    return res.status(500).json({ success: false, message: 'No se pudo crear o actualizar el registro: ' + error.message });
+  }
 };
+
 const update = async (req, res) => {
-  const payload = payloadFromBody(req.body); const errors = validate(payload);
+  const payload = payloadFromBody(req.body);
+  const errors = validate(payload);
   if (errors.length) return res.status(400).json({ success: false, message: errors.join('. ') });
   try {
     const row = await PesvParqueaderoRegistro.findByPk(req.params.id);
     if (!row) return res.status(404).json({ success: false, message: 'Registro no encontrado' });
+
     const notificationReset = {};
     if ((row.soat_vigencia || null) !== (payload.soat_vigencia || null)) notificationReset.ultima_notificacion_soat = null;
     if ((row.tecnomecanica_vigencia || null) !== (payload.tecnomecanica_vigencia || null)) notificationReset.ultima_notificacion_tecnomecanica = null;
     if ((row.licencia_vencimiento || null) !== (payload.licencia_vencimiento || null)) notificationReset.ultima_notificacion_licencia = null;
-    await row.update({ ...payload, ...notificationReset, actualizado_por: req.user?.id });
+
+    await row.update({ ...payload, ...notificationReset, activo: true, actualizado_por: req.user?.id });
+
+    const normIdent = payload.identificacion ? payload.identificacion.trim().toUpperCase() : '';
+    const normPlaca = payload.placa ? payload.placa.trim().toUpperCase() : '';
+
+    const otherDuplicates = await PesvParqueaderoRegistro.findAll({
+      where: {
+        id: { [Op.ne]: row.id },
+        activo: { [Op.ne]: false },
+        [Op.or]: [
+          ...(normIdent ? [sequelize.where(sequelize.fn('UPPER', sequelize.fn('TRIM', sequelize.col('identificacion'))), normIdent)] : []),
+          ...(normPlaca ? [sequelize.where(sequelize.fn('UPPER', sequelize.fn('TRIM', sequelize.col('placa'))), normPlaca)] : [])
+        ]
+      }
+    });
+
+    for (const dup of otherDuplicates) {
+      await dup.update({ activo: false, actualizado_por: req.user?.id });
+    }
+
     return res.json({ success: true, data: serialize(row) });
+  } catch (error) {
+    return res.status(500).json({ success: false, message: 'No se pudo actualizar el registro' });
   }
-  catch (error) { return res.status(500).json({ success: false, message: 'No se pudo actualizar el registro' }); }
 };
 const remove = async (req, res) => {
   try {
