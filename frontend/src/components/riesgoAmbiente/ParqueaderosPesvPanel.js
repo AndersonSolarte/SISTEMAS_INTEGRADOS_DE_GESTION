@@ -1155,24 +1155,6 @@ function ParqueaderosPesvPanel({ onBack }) {
       <Dialog open={dialog.open} onClose={() => !saving && setDialog({ open: false, row: null })} fullWidth maxWidth="md">
         <DialogTitle sx={{ fontWeight: 900 }}>{dialog.row ? 'Editar cupo de parqueadero' : 'Registrar nuevo cupo'}</DialogTitle>
         <DialogContent dividers><Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', sm: '1fr 1fr' }, gap: 1.5 }}>
-          <Box sx={{
-            gridColumn: { sm: '1 / -1' },
-            p: 1.8,
-            borderRadius: 2,
-            bgcolor: '#f0f7ff',
-            border: '1.5px solid #93c5fd',
-            boxShadow: '0 2px 8px rgba(37,99,235,.08)'
-          }}>
-            <Stack direction="row" spacing={1.5} alignItems="center">
-              <Box sx={{ p: 1, borderRadius: 1.5, bgcolor: '#dbeafe', color: '#1e40af', display: 'flex' }}>
-                <BadgeRoundedIcon sx={{ fontSize: 24 }} />
-              </Box>
-              <Box sx={{ flex: 1 }}>
-                <Typography sx={{ fontWeight: 900, color: '#1e3a8a', fontSize: 15 }}>Campos principales de búsqueda e identificación</Typography>
-                <Typography variant="caption" sx={{ color: '#3b82f6', fontWeight: 800 }}>Ingrese o busque por Cédula para autocompletar la información desde Talento Humano o Estudiantes.</Typography>
-              </Box>
-            </Stack>
-          </Box>
           <Box sx={{ gridColumn: { sm: '1 / -1' }, display: 'grid', gridTemplateColumns: { xs: '1fr', sm: '1.2fr 0.8fr' }, gap: 1.5, alignItems: 'start' }}>
             <TextField
               label="Identificación / Cédula *"
