@@ -67,6 +67,7 @@ app.use('/api/autoevaluacion/instrumentos', require('./routes/instrumentosRoutes
 app.use('/api/public/instrumentos', require('./routes/publicInstrumentosRoutes'));
 app.use('/api/security', require('./routes/securityRoutes'));
 app.use('/api/reporte-salida', require('./routes/reporteSalidaRoutes'));
+app.use('/api/reportes-salida', require('./routes/reporteSalidaRoutes'));
 app.use('/api/desplazamientos-viaticos', require('./routes/desplazamientoViaticosRoutes'));
 app.use('/api/legalizacion-viaticos', require('./routes/legalizacionViaticosRoutes'));
 app.use('/api/cronograma-movilidad', require('./routes/cronogramaMovilidadRoutes'));

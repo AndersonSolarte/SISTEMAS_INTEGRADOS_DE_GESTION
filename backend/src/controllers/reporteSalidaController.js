@@ -4364,7 +4364,7 @@ const renderReporteSalidaReviewPage = ({
         </div>
       </div>
 
-      <form method="POST" action="/api/reportes-salida/aprobar/${escapeHtml(token)}">
+      <form method="POST" action="/api/reporte-salida/aprobar/${escapeHtml(token)}">
         ${via ? `<input type="hidden" name="via" value="${escapeHtml(via)}">` : ''}
         <label class="obs-label">Observaciones de la actuación (opcional si aprueba, obligatoria si rechaza):</label>
         <textarea name="observacion" maxlength="1200" placeholder="Escriba aquí sus observaciones..."></textarea>
@@ -7838,7 +7838,7 @@ const aprobarGrupoDesdeCorreo = async (req, res) => {
     <div class="body">
       <h3 style="margin-top:0;color:#0b3a6f;">Integrantes de la salida grupal:</h3>
       <ul style="line-height:1.6;color:#334155;">${participantes}</ul>
-      <form method="POST" action="/api/reportes-salida/aprobar-grupo/${escapeHtml(req.params.token)}">
+      <form method="POST" action="/api/reporte-salida/aprobar-grupo/${escapeHtml(req.params.token)}">
         <label style="display:block;margin-top:18px;font-weight:700;color:#0b3a6f;">Observaciones de la actuación (opcional si aprueba, obligatoria si no aprueba):</label>
         <textarea name="justificacion" style="width:100%;min-height:90px;padding:10px;margin-top:6px;border:1px solid #cbd5e1;border-radius:8px;" placeholder="Escriba aquí sus observaciones..."></textarea>
         <div class="actions">
