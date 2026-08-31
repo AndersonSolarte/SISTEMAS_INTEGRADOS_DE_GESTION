@@ -1052,7 +1052,16 @@ function ParqueaderosPesvPanel({ onBack }) {
       <TableContainer component={Paper} elevation={0} sx={{ borderRadius: 3, border: '1px solid #e2e8f0', maxHeight: { xs: '65vh', md: '72vh' }, overflow: 'auto', scrollbarGutter: 'stable' }}>
         <Table stickyHeader size="small" sx={{ width: '100%', minWidth: 1140, tableLayout: 'fixed', '& .MuiTableCell-head': { px: 0.9, py: 1, fontSize: 11, fontWeight: 900, lineHeight: 1.2, bgcolor: '#eaf2ff', boxShadow: 'inset 0 -2px 0 #2563eb', zIndex: 5, whiteSpace: 'nowrap' }, '& .MuiTableCell-body': { px: 0.9, py: 0.9, fontSize: 11.5, verticalAlign: 'top', overflowWrap: 'anywhere' }, '& .MuiTypography-body2': { fontSize: 11.5, lineHeight: 1.25 }, '& .MuiTypography-caption': { fontSize: 10, lineHeight: 1.3 }, '& .MuiChip-root': { height: 20, fontSize: 10 }, '& .pesv-expiry-chip.MuiChip-root': { width: 'fit-content', maxWidth: '100%', height: 'auto', minHeight: 20, alignItems: 'center' }, '& .pesv-expiry-chip .MuiChip-label': { display: 'block', px: 0.6, py: 0.25, whiteSpace: 'normal', overflow: 'visible', textOverflow: 'clip', lineHeight: 1.15 }, '& .pesv-expiry-chip .MuiChip-icon': { flexShrink: 0 } }}>
           <colgroup><col style={{ width: '25%' }} /><col style={{ width: '11%' }} /><col style={{ width: '12%' }} /><col style={{ width: '12%' }} /><col style={{ width: '12%' }} /><col style={{ width: '15%' }} /><col style={{ width: '13%' }} /></colgroup>
-          <TableHead><TableRow sx={{ bgcolor: '#eaf2ff', borderBottom: '2px solid #2563eb' }}>{['Persona / identificación', 'Parqueadero', 'Vehículo / placa', 'SOAT', 'Tecnomecánica', 'Licencia de conducción'].map((label) => <TableCell key={label} sx={{ color: '#173b72', fontWeight: 900, borderBottom: 0 }}>{label}</TableCell>)}<TableCell align="center" sx={{ color: '#173b72', fontWeight: 900, borderBottom: 0 }}>Acciones</TableCell></TableRow></TableHead>
+          <TableHead>
+            <TableRow sx={{ bgcolor: '#eaf2ff', borderBottom: '2px solid #2563eb' }}>
+              {['Persona / identificación', 'Parqueadero', 'Vehículo / placa', 'SOAT', 'Tecnomecánica', 'Licencia de conducción'].map((label, idx) => (
+                <TableCell key={label} align={idx === 0 ? 'left' : 'center'} sx={{ color: '#173b72', fontWeight: 900, borderBottom: 0 }}>
+                  {label}
+                </TableCell>
+              ))}
+              <TableCell align="center" sx={{ color: '#173b72', fontWeight: 900, borderBottom: 0 }}>Acciones</TableCell>
+            </TableRow>
+          </TableHead>
           <TableBody>{loading ? <TableRow><TableCell colSpan={7} align="center" sx={{ py: 7 }}><CircularProgress /></TableCell></TableRow> : visibleRows.length === 0 ? <TableRow><TableCell colSpan={7} align="center" sx={{ py: 7 }}><WarningAmberRoundedIcon sx={{ color: '#d97706' }} /><Typography sx={{ fontWeight: 800, color: '#64748b' }}>No hay registros para los filtros seleccionados</Typography></TableCell></TableRow> : visibleRows.map((row, rowIndex) => {
             const critical = row.soat_estado?.code === 'vencido' || row.tecnomecanica_estado?.code === 'vencido' || row.licencia_estado?.code === 'vencido';
             return <TableRow key={row.id} sx={{ bgcolor: row.activo === false ? '#f8fafc' : critical ? '#fff7f7' : rowIndex % 2 ? '#f8fbff' : '#fff', opacity: row.activo === false ? 0.75 : 1, '&:hover': { bgcolor: row.activo === false ? '#f1f5f9' : critical ? '#feecec' : '#eef5ff' }, '& td': { borderBottomColor: '#e5edf7' } }}>
@@ -1064,11 +1073,11 @@ function ParqueaderosPesvPanel({ onBack }) {
                 <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>{row.identificacion ? `CC ${row.identificacion}` : 'Sin identificación'} · {row.dependencia_programa || 'Sin dependencia'}</Typography>
                 <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 0.25 }}>{row.correo || 'Sin correo'} · {row.vinculacion || 'Sin vinculación'}</Typography>
               </TableCell>
-              <TableCell><Typography variant="body2" sx={{ fontWeight: 800 }}>{row.parqueadero_ingreso || 'Sin asignar'}</Typography><Typography variant="caption" color="text.secondary">{row.campus || 'Sin campus'}</Typography></TableCell>
-              <TableCell><Chip label={row.placa || 'SIN PLACA'} size="small" sx={{ fontWeight: 900, bgcolor: '#e0e7ff', color: '#3730a3' }} /><Typography variant="caption" sx={{ display: 'block', mt: .5 }}>{row.tipo_vehiculo || 'Sin tipo'}</Typography></TableCell>
-              <TableCell><ExpiryCell type="soat" date={row.soat_vigencia} rawText={row.soat_vigencia_texto} status={row.soat_estado} row={row} onNotify={notify} notifying={notifying === `${row.id}-soat`} /></TableCell>
-              <TableCell><ExpiryCell type="tecnomecanica" date={row.tecnomecanica_vigencia} rawText={row.tecnomecanica_vigencia_texto} status={row.tecnomecanica_estado} row={row} onNotify={notify} notifying={notifying === `${row.id}-tecnomecanica`} /></TableCell>
-              <TableCell><ExpiryCell type="licencia" date={row.licencia_vencimiento} rawText={row.licencia_categorias ? `Cat. ${row.licencia_categorias}` : ''} status={row.licencia_estado} row={row} onNotify={notify} notifying={notifying === `${row.id}-licencia`} /></TableCell>
+              <TableCell align="center"><Typography variant="body2" sx={{ fontWeight: 800 }}>{row.parqueadero_ingreso || 'Sin asignar'}</Typography><Typography variant="caption" color="text.secondary">{row.campus || 'Sin campus'}</Typography></TableCell>
+              <TableCell align="center"><Chip label={row.placa || 'SIN PLACA'} size="small" sx={{ fontWeight: 900, bgcolor: '#e0e7ff', color: '#3730a3' }} /><Typography variant="caption" sx={{ display: 'block', mt: .5 }}>{row.tipo_vehiculo || 'Sin tipo'}</Typography></TableCell>
+              <TableCell align="center"><ExpiryCell type="soat" date={row.soat_vigencia} rawText={row.soat_vigencia_texto} status={row.soat_estado} row={row} onNotify={notify} notifying={notifying === `${row.id}-soat`} /></TableCell>
+              <TableCell align="center"><ExpiryCell type="tecnomecanica" date={row.tecnomecanica_vigencia} rawText={row.tecnomecanica_vigencia_texto} status={row.tecnomecanica_estado} row={row} onNotify={notify} notifying={notifying === `${row.id}-tecnomecanica`} /></TableCell>
+              <TableCell align="center"><ExpiryCell type="licencia" date={row.licencia_vencimiento} rawText={row.licencia_categorias ? `Cat. ${row.licencia_categorias}` : ''} status={row.licencia_estado} row={row} onNotify={notify} notifying={notifying === `${row.id}-licencia`} /></TableCell>
               <TableCell align="center" sx={{ whiteSpace: 'nowrap' }}>
                 <Stack direction="row" spacing={0.6} alignItems="center" justifyContent="center" flexWrap="nowrap">
                   <Tooltip title={isBicycleVehicle(row) ? 'No aplica para bicicletas' : 'Validar en RUNT (SOAT, Tecnomecánica y Licencia)'} arrow placement="top">
@@ -1257,7 +1266,7 @@ function ParqueaderosPesvPanel({ onBack }) {
       </Dialog>
 
       <Dialog open={runtValidation.open} onClose={() => !runtValidation.loading && setRuntValidation({ open: false, row: null, sessionId: null, estado: '', data: null, loading: false })} fullWidth maxWidth="md">
-        <DialogTitle sx={{ fontWeight: 900, pb: 1 }}>
+        <DialogTitle sx={{ fontWeight: 900, pb: 1, textAlign: 'center', bgcolor: '#f8fafc', borderBottom: '1px solid #e2e8f0', color: '#0f172a' }}>
           Validación RUNT · {runtValidationMode === 'driver' ? `Licencia (${runtValidation.row?.nombres_apellidos || 'Conductor'})` : `Vehículo (${runtValidation.placaConsulta || runtValidation.row?.placa || ''})`}
         </DialogTitle>
         <DialogContent dividers>
@@ -1265,7 +1274,18 @@ function ParqueaderosPesvPanel({ onBack }) {
             <Tabs
               value={runtValidationMode}
               onChange={(_, val) => handleRuntTabSwitch(val)}
-              sx={{ borderBottom: 1, borderColor: 'divider', mb: 0.5 }}
+              variant="fullWidth"
+              sx={{
+                borderBottom: 1,
+                borderColor: 'divider',
+                mb: 0.5,
+                '& .MuiTab-root': {
+                  fontWeight: 900,
+                  fontSize: 13,
+                  textTransform: 'none',
+                  py: 1.2
+                }
+              }}
             >
               <Tab value="vehicle" icon={<DirectionsCarRoundedIcon />} iconPosition="start" label="1. SOAT y Tecnomecánica (RUNT por Placa)" />
               <Tab value="driver" icon={<BadgeRoundedIcon />} iconPosition="start" label="2. Licencia de Conducción (RUNT por Cédula)" />
