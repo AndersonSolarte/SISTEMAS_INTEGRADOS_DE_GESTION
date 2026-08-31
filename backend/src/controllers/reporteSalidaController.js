@@ -1704,18 +1704,22 @@ const resolveSeguimientoAccess = async (user) => {
     ReporteSalidaSolicitud.count({ where: ownPendingReposicionWhere(user) }),
     ReporteSalidaSolicitud.count({ where: bossPendingReposicionWhere(user, academicAuthorityUserIds) })
   ]);
-  const isPlaneacionReadOnly = String(user?.role || '') === ROLES.PLANEACION_ESTRATEGICA;
+  const roleStr = String(user?.role || '').toLowerCase();
+  const isSuperAdminOrPlanning = [ROLES.ADMINISTRADOR, ROLES.GESTION_INFORMACION, ROLES.PLANEACION_ESTRATEGICA, ROLES.PLANEACION_EFECTIVIDAD].includes(roleStr);
+  const isPlaneacionReadOnly = roleStr === ROLES.PLANEACION_ESTRATEGICA;
   const canViewAll = canManageAll
+    || isSuperAdminOrPlanning
     || isPlaneacionReadOnly
     || canViewReporteSalidaByPermission
     || canViewEstadisticasByPermission;
   const canViewReporteSalida = hasInstitutionalReposicionScope
     || canManageAll
+    || isSuperAdminOrPlanning
     || isPlaneacionReadOnly
     || canViewReporteSalidaByPermission
     || ownPending > 0
     || bossPending > 0;
-  const canViewEstadisticas = canManageAll || canViewEstadisticasByPermission;
+  const canViewEstadisticas = canManageAll || isSuperAdminOrPlanning || canViewEstadisticasByPermission;
 
   let mode = 'sin_pendientes';
   if (isAcademicInstitutional) mode = 'vicerrectoria_academica';
@@ -1724,7 +1728,7 @@ const resolveSeguimientoAccess = async (user) => {
   else if (isInvestigationInstitutional) mode = 'jefe';
   else if (isRectoriaInstitutional) mode = 'jefe';
   else if (isEvangelizationInstitutional) mode = 'jefe';
-  else if (canManageAll) mode = 'gestion_humana';
+  else if (canManageAll || isSuperAdminOrPlanning) mode = 'gestion_humana';
   else if (isPlaneacionReadOnly) mode = 'planeacion_estrategica';
   else if (canViewReporteSalidaByPermission || canViewEstadisticasByPermission) mode = 'consulta_institucional';
   else if (bossPending > 0) mode = ownPending > 0 ? 'jefe_y_colaborador' : 'jefe';

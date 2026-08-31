@@ -444,13 +444,13 @@ function ReporteSalidaSeguimiento({ initialAccess = null, onBack }) {
   const accessMode = access?.mode || 'sin_pendientes';
   const copy = ACCESS_COPY[accessMode] || ACCESS_COPY.sin_pendientes;
   // El alcance global lo determina exclusivamente el backend según el rol.
-  // Un permiso de visualización no debe elevar a un usuario a gestor institucional.
-  const canManageAll = Boolean(access?.canManageAll);
+  const isAdminOrPlanningRole = ['administrador', 'planeacion_estrategica', 'gestion_informacion', 'planeacion_efectividad', 'autoevaluacion', 'registros_calificados_acreditacion'].includes(String(user?.role || '').toLowerCase());
+  const canManageAll = Boolean(access?.canManageAll) || isAdminOrPlanningRole;
   const canValidateReposicion = Boolean(access?.canValidateReposicion) || canManageAll;
   const canManageTeamReposicion = Boolean(access?.canManageTeamReposicion);
-  const canViewAll = Boolean(access?.canViewAll);
-  const canViewReporteSalida = Boolean(access?.canViewReporteSalida) || canManageAll;
-  const canViewEstadisticas = Boolean(access?.canViewEstadisticas) || canManageAll;
+  const canViewAll = Boolean(access?.canViewAll) || isAdminOrPlanningRole;
+  const canViewReporteSalida = Boolean(access?.canViewReporteSalida) || canManageAll || isAdminOrPlanningRole;
+  const canViewEstadisticas = Boolean(access?.canViewEstadisticas) || canManageAll || isAdminOrPlanningRole;
   const availableReportModules = useMemo(() => REPORT_MODULES.filter((module) => (
     module.key === 'reporte_salida' ? canViewReporteSalida : canViewEstadisticas
   )), [canViewEstadisticas, canViewReporteSalida]);
@@ -1120,6 +1120,14 @@ function ReporteSalidaSeguimiento({ initialAccess = null, onBack }) {
       </Box>
     );
   };
+
+  if (loading && access === null) {
+    return (
+      <Box sx={{ py: 6, display: 'flex', justifyContent: 'center', alignItems: 'center' }}>
+        <CircularProgress size={36} />
+      </Box>
+    );
+  }
 
   if (availableReportModules.length === 0) {
     return (
