@@ -74,6 +74,7 @@ app.use('/api/cronograma-movilidad', require('./routes/cronogramaMovilidadRoutes
 app.use('/api/pesv/parqueaderos', require('./routes/pesvParqueaderoRoutes'));
 app.use('/api/planeacion/gestion-informacion/saber-pro', require('./routes/saberProAnalyticsRoutes'));
 app.use('/api/planeacion/gestion-informacion/saber-pro/consulta', require('./routes/consultaValidacionRoutes'));
+app.use('/api/planeacion/gestion-informacion/saber-pro/consulta/extraccion', require('./routes/documentExtractionRoutes'));
 app.use('/api/admin/activity', require('./routes/activityRoutes'));
 
 app.get('/api/health', (req, res) => res.json({ success: true, status: 'OK' }));

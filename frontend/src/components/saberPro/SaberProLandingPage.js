@@ -20,6 +20,7 @@ import FilterListRoundedIcon     from '@mui/icons-material/FilterListRounded';
 import ManageSearchRoundedIcon   from '@mui/icons-material/ManageSearchRounded';
 import PersonSearchRoundedIcon   from '@mui/icons-material/PersonSearchRounded';
 import UploadFileRoundedIcon     from '@mui/icons-material/UploadFileRounded';
+import DocumentScannerRoundedIcon from '@mui/icons-material/DocumentScannerRounded';
 import {
   ResponsiveContainer, LineChart, Line, BarChart, Bar,
   XAxis, YAxis, CartesianGrid, Tooltip, Legend, ReferenceLine,
@@ -73,7 +74,8 @@ const NAV_CONFIG = [
     color: '#0891b2', lightBg: '#ecfeff', icon: ManageSearchRoundedIcon,
     items: [
       { key: 'individual', label: 'Consulta Individual',   desc: 'Busca resultados por número de documento.',           icon: PersonSearchRoundedIcon, color: '#0891b2' },
-      { key: 'masiva',     label: 'Validación Masiva',     desc: 'Carga un Excel/CSV con documentos para validar masivamente.', icon: UploadFileRoundedIcon,   color: '#10b981' }
+      { key: 'masiva',     label: 'Validación Masiva',     desc: 'Carga un Excel/CSV con documentos para validar masivamente.', icon: UploadFileRoundedIcon,   color: '#10b981' },
+      { key: 'extraccion', label: 'Extraer PDF o imagen',  desc: 'Extrae datos y texto de documentos para revisión.', icon: DocumentScannerRoundedIcon, color: '#7c3aed' }
     ]
   }
 ];
@@ -114,7 +116,8 @@ const SABER_PRO_PERMISSION_BY_GROUP = {
   },
   consulta: {
     individual: 'saber_pro_consulta_individual',
-    masiva: 'saber_pro_validacion_masiva'
+    masiva: 'saber_pro_validacion_masiva',
+    extraccion: ['saber_pro_consulta_individual', 'saber_pro_validacion_masiva']
   }
 };
 

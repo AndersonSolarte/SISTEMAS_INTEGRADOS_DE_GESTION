@@ -995,75 +995,79 @@ function ParqueaderosPesvPanel({ onBack }) {
           )}
           {form.vehiculo_es_propio === 'NO' && <Alert severity="info" sx={{ gridColumn: { sm: '1 / -1' }, alignItems: 'center' }}>La persona asignada al cupo se conserva como conductor. Para consultar el vehículo en RUNT se utilizará exclusivamente la identificación del propietario.</Alert>}
 
-          <Typography sx={{ gridColumn: { sm: '1 / -1' }, mt: 1, fontWeight: 900, color: '#1e3a8a' }}>Licencia de conducción</Typography>
-          {[
-            ['tiene_licencia', '¿Tiene Licencia de Conducción?']
-          ].map(renderFormField)}
-          {form.tiene_licencia !== 'NO' && <>
-            {[
-              ['licencia_categorias', 'Categoría(s) autorizadas (ej: A2, B1, C1)'],
-              ['licencia_expedicion', 'Fecha de expedición'],
-              ['licencia_vencimiento', 'Fecha de vencimiento']
-            ].map(renderFormField)}
-            <Alert severity="info" sx={{ gridColumn: { sm: '1 / -1' }, fontSize: 12 }}>
-              <strong>Vigencia de licencias en Colombia (Ley 769/2002 · Ley 2161/2021):</strong><br />
-              • <strong>Servicio Particular (A1, A2, B1, B2, B3):</strong> Menores de 60 años cada 10 años · De 60 a 69 años cada 5 años · Mayores de 70 años renovación anual.<br />
-              • <strong>Servicio Público (C1, C2, C3):</strong> Menores de 60 años cada 3 años · Mayores de 60 años renovación anual.
-            </Alert>
-            {form.tiene_licencia !== 'NO' && form.licencia_categorias && form.tipo_vehiculo && (() => {
-              const compat = checkLicenseVehicleCompatibility(form.licencia_categorias, form.tipo_vehiculo);
-              if (!compat.compatible) {
-                return (
-                  <Alert severity="error" sx={{ gridColumn: { sm: '1 / -1' }, fontWeight: 800 }}>
-                    🚨 <strong>Incompatibilidad Detectada:</strong> {compat.reason}
-                  </Alert>
-                );
-              }
-              return null;
-            })()}
-          </>}
+          {Boolean(dialog.row) && (
+            <>
+              <Typography sx={{ gridColumn: { sm: '1 / -1' }, mt: 1, fontWeight: 900, color: '#1e3a8a' }}>Licencia de conducción</Typography>
+              {[
+                ['tiene_licencia', '¿Tiene Licencia de Conducción?']
+              ].map(renderFormField)}
+              {form.tiene_licencia !== 'NO' && <>
+                {[
+                  ['licencia_categorias', 'Categoría(s) autorizadas (ej: A2, B1, C1)'],
+                  ['licencia_expedicion', 'Fecha de expedición'],
+                  ['licencia_vencimiento', 'Fecha de vencimiento']
+                ].map(renderFormField)}
+                <Alert severity="info" sx={{ gridColumn: { sm: '1 / -1' }, fontSize: 12 }}>
+                  <strong>Vigencia de licencias en Colombia (Ley 769/2002 · Ley 2161/2021):</strong><br />
+                  • <strong>Servicio Particular (A1, A2, B1, B2, B3):</strong> Menores de 60 años cada 10 años · De 60 a 69 años cada 5 años · Mayores de 70 años renovación anual.<br />
+                  • <strong>Servicio Público (C1, C2, C3):</strong> Menores de 60 años cada 3 años · Mayores de 60 años renovación anual.
+                </Alert>
+                {form.tiene_licencia !== 'NO' && form.licencia_categorias && form.tipo_vehiculo && (() => {
+                  const compat = checkLicenseVehicleCompatibility(form.licencia_categorias, form.tipo_vehiculo);
+                  if (!compat.compatible) {
+                    return (
+                      <Alert severity="error" sx={{ gridColumn: { sm: '1 / -1' }, fontWeight: 800 }}>
+                        🚨 <strong>Incompatibilidad Detectada:</strong> {compat.reason}
+                      </Alert>
+                    );
+                  }
+                  return null;
+                })()}
+              </>}
 
-          <Typography sx={{ gridColumn: { sm: '1 / -1' }, mt: 1, fontWeight: 900, color: '#1e3a8a' }}>Información del vehículo</Typography>
-          {[ 
-            ['tipo_vehiculo', 'Tipo de vehículo'], ['vehiculo_servicio', 'Tipo de servicio (RUNT)'], ['vehiculo_modelo', 'Modelo'], ['vehiculo_fecha_matricula', 'Fecha inicial de matrícula']
-          ].map(renderFormField)}
-          {form.tipo_vehiculo === 'Otro' && (
-            <TextField
-              label="¿Cuál tipo de vehículo? *"
-              placeholder="Ej: Patineta eléctrica, Monopatín, Triciclo..."
-              value={form.tipo_vehiculo_especificado || ''}
-              onChange={(e) => {
-                const val = e.target.value;
-                setForm((prev) => ({
-                  ...prev,
-                  tipo_vehiculo_especificado: val,
-                  ...(val.trim() ? { tipo_vehiculo_custom: val.trim() } : {})
-                }));
-              }}
-              onBlur={() => {
-                if (form.tipo_vehiculo_especificado?.trim()) {
-                  setForm((prev) => ({ ...prev, tipo_vehiculo: prev.tipo_vehiculo_especificado.trim() }));
-                }
-              }}
-              helperText="Escriba el tipo de vehículo y este se registrará como su tipo oficial."
-              fullWidth size="small"
-            />
+              <Typography sx={{ gridColumn: { sm: '1 / -1' }, mt: 1, fontWeight: 900, color: '#1e3a8a' }}>Información del vehículo</Typography>
+              {[ 
+                ['tipo_vehiculo', 'Tipo de vehículo'], ['vehiculo_servicio', 'Tipo de servicio (RUNT)'], ['vehiculo_modelo', 'Modelo'], ['vehiculo_fecha_matricula', 'Fecha inicial de matrícula']
+              ].map(renderFormField)}
+              {form.tipo_vehiculo === 'Otro' && (
+                <TextField
+                  label="¿Cuál tipo de vehículo? *"
+                  placeholder="Ej: Patineta eléctrica, Monopatín, Triciclo..."
+                  value={form.tipo_vehiculo_especificado || ''}
+                  onChange={(e) => {
+                    const val = e.target.value;
+                    setForm((prev) => ({
+                      ...prev,
+                      tipo_vehiculo_especificado: val,
+                      ...(val.trim() ? { tipo_vehiculo_custom: val.trim() } : {})
+                    }));
+                  }}
+                  onBlur={() => {
+                    if (form.tipo_vehiculo_especificado?.trim()) {
+                      setForm((prev) => ({ ...prev, tipo_vehiculo: prev.tipo_vehiculo_especificado.trim() }));
+                    }
+                  }}
+                  helperText="Escriba el tipo de vehículo y este se registrará como su tipo oficial."
+                  fullWidth size="small"
+                />
+              )}
+
+              {bicycleSelected && <Alert severity="info" sx={{ gridColumn: { sm: '1 / -1' } }}><strong>Bicicleta:</strong> no requiere SOAT, revisión técnico-mecánica ni validación en RUNT. Al guardar, estos campos se registrarán como “No aplica”.</Alert>}
+
+              {!bicycleSelected && <>
+                <Typography sx={{ gridColumn: { sm: '1 / -1' }, mt: 1, fontWeight: 900, color: '#1e3a8a' }}>Seguro obligatorio — SOAT</Typography>
+                {[
+                  ['soat_fecha_expedicion', 'Fecha de expedición'], ['soat_fecha_inicio', 'Inicio de vigencia'], ['soat_vigencia', 'Fin de vigencia'], ['soat_numero_poliza', 'Número de póliza'], ['soat_entidad', 'Entidad aseguradora']
+                ].map(renderFormField)}
+
+                <Typography sx={{ gridColumn: { sm: '1 / -1' }, mt: 1, fontWeight: 900, color: '#1e3a8a' }}>Revisión técnico-mecánica — RTM</Typography>
+                <FormControl size="small" fullWidth><InputLabel>Estado de la RTM</InputLabel><Select label="Estado de la RTM" value={form.rtm_estado} onChange={updateField('rtm_estado')}><MenuItem value="">Sin clasificar</MenuItem><MenuItem value="VIGENTE">Vigente</MenuItem><MenuItem value="VENCIDO">Vencida</MenuItem><MenuItem value="NO_EXIGIBLE">RTM no exigible a la fecha</MenuItem><MenuItem value="SIN_REGISTRO_RUNT">Sin RTM registrada en RUNT</MenuItem><MenuItem value="NO_APLICA">Exento por disposición aplicable</MenuItem></Select></FormControl>
+                {[
+                  ['rtm_fecha_expedicion', 'Fecha de expedición RTM'], ['tecnomecanica_vigencia', 'Fin de vigencia RTM'], ['rtm_fecha_exigibilidad', 'Primera fecha de exigibilidad'], ['rtm_numero_certificado', 'Número de certificado'], ['rtm_cda', 'Centro de Diagnóstico Automotor (CDA)']
+                ].map(renderFormField)}
+              </>}
+            </>
           )}
-
-          {bicycleSelected && <Alert severity="info" sx={{ gridColumn: { sm: '1 / -1' } }}><strong>Bicicleta:</strong> no requiere SOAT, revisión técnico-mecánica ni validación en RUNT. Al guardar, estos campos se registrarán como “No aplica”.</Alert>}
-
-          {!bicycleSelected && <>
-            <Typography sx={{ gridColumn: { sm: '1 / -1' }, mt: 1, fontWeight: 900, color: '#1e3a8a' }}>Seguro obligatorio — SOAT</Typography>
-            {[
-              ['soat_fecha_expedicion', 'Fecha de expedición'], ['soat_fecha_inicio', 'Inicio de vigencia'], ['soat_vigencia', 'Fin de vigencia'], ['soat_numero_poliza', 'Número de póliza'], ['soat_entidad', 'Entidad aseguradora']
-            ].map(renderFormField)}
-
-            <Typography sx={{ gridColumn: { sm: '1 / -1' }, mt: 1, fontWeight: 900, color: '#1e3a8a' }}>Revisión técnico-mecánica — RTM</Typography>
-            <FormControl size="small" fullWidth><InputLabel>Estado de la RTM</InputLabel><Select label="Estado de la RTM" value={form.rtm_estado} onChange={updateField('rtm_estado')}><MenuItem value="">Sin clasificar</MenuItem><MenuItem value="VIGENTE">Vigente</MenuItem><MenuItem value="VENCIDO">Vencida</MenuItem><MenuItem value="NO_EXIGIBLE">RTM no exigible a la fecha</MenuItem><MenuItem value="SIN_REGISTRO_RUNT">Sin RTM registrada en RUNT</MenuItem><MenuItem value="NO_APLICA">Exento por disposición aplicable</MenuItem></Select></FormControl>
-            {[
-              ['rtm_fecha_expedicion', 'Fecha de expedición RTM'], ['tecnomecanica_vigencia', 'Fin de vigencia RTM'], ['rtm_fecha_exigibilidad', 'Primera fecha de exigibilidad'], ['rtm_numero_certificado', 'Número de certificado'], ['rtm_cda', 'Centro de Diagnóstico Automotor (CDA)']
-            ].map(renderFormField)}
-          </>}
         </Box></DialogContent>
         <DialogActions><Button onClick={() => setDialog({ open: false, row: null })} disabled={saving}>Cancelar</Button><Button variant="contained" onClick={save} disabled={saving}>{saving ? 'Guardando…' : 'Guardar'}</Button></DialogActions>
       </Dialog>
