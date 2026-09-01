@@ -1408,9 +1408,24 @@ function ParqueaderosPesvPanel({ onBack }) {
             ) : (
               <>
                 <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap alignItems="center" justifyContent="space-between">
-                  <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap" useFlexGap>
-                    <Chip label={`Placa: ${runtValidation.placaConsulta || ''}`} color="primary" sx={{ fontWeight: 800 }} />
-                    <Chip label={`${runtValidation.usaDocumentoPropietario ? 'Doc. Propietario' : 'Doc. Conductor'}: ${runtValidation.documentoConsulta || ''}`} sx={{ fontWeight: 800 }} />
+                  <Stack direction="row" spacing={1.5} alignItems="center" flexWrap="wrap" useFlexGap>
+                    <Stack direction="row" spacing={0.25} alignItems="center">
+                      <Chip label={`Placa: ${runtValidation.placaConsulta || ''}`} color="primary" sx={{ fontWeight: 800 }} />
+                      <Tooltip title="Copiar Placa">
+                        <IconButton size="small" onClick={() => copyRuntValue('Placa', runtValidation.placaConsulta)}>
+                          <ContentCopyRoundedIcon sx={{ fontSize: 17 }} />
+                        </IconButton>
+                      </Tooltip>
+                    </Stack>
+
+                    <Stack direction="row" spacing={0.25} alignItems="center">
+                      <Chip label={`${runtValidation.usaDocumentoPropietario ? 'Doc. Propietario' : 'Doc. Conductor'}: ${runtValidation.documentoConsulta || ''}`} sx={{ fontWeight: 800 }} />
+                      <Tooltip title="Copiar Documento">
+                        <IconButton size="small" onClick={() => copyRuntValue('Documento', runtValidation.documentoConsulta)}>
+                          <ContentCopyRoundedIcon sx={{ fontSize: 17 }} />
+                        </IconButton>
+                      </Tooltip>
+                    </Stack>
                   </Stack>
                   <Button size="small" variant="outlined" sx={{ fontWeight: 800 }} onClick={() => window.open(runtValidation.runtUrl, '_blank', 'noopener,noreferrer')}>
                     Abrir RUNT por Placa
