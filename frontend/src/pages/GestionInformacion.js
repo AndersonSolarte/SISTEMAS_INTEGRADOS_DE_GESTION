@@ -543,12 +543,7 @@ const SUBBASES_POBLACIONAL = ['Inscritos', 'Admitidos', 'Primer Curso', 'Matricu
 const GEOREFERENCIA_CANONICAL_SUBBASE = 'DIVIPOLA Departamento';
 const SUBBASES_GEOREFERENCIA = [GEOREFERENCIA_CANONICAL_SUBBASE];
 const CONTEXTO_EXTERNO_LISTAS = [
-  'PROGRAMAS CONTEXTO EXTERNO',
-  'INSCRITOS CONTEXTO EXTERNO',
-  'ADMITIDOS CONTEXTO EXTERNO',
-  'PRIMER CURSO CONTEXTO EXTERNO',
-  'MATRICULADOS CONTEXTO EXTERNO',
-  'GRADUADOS CONTEXTO EXTERNO'
+  'CONTEXTO EXTERNO GENERAL'
 ];
 const SUBBASES_SABER_PRO = ['Resultados individuales', 'Resultados agregados', 'Resultados Saber 11'];
 const SUBBASES_RECURSO_HUMANO = ['Docentes', 'Administrativos', 'Outsourcing', 'Ondas'];
@@ -4764,12 +4759,14 @@ function GestionInformacion() {
   const handleExportBaseCargada = async (row) => {
     setExportingBaseRowId(row.id);
     try {
-      const response = await gestionInformacionService.downloadCargueBase({
-        id: String(row?.id || '').startsWith('fallback-') ? '' : row.id,
-        categoria: row.categoria,
-        subcategoria: row.subcategoria,
-        variable: row.variable
-      });
+      const response = isContextoSublistaRow(row)
+        ? await gestionInformacionService.downloadContextoExternoNormalizado(row.variable)
+        : await gestionInformacionService.downloadCargueBase({
+          id: String(row?.id || '').startsWith('fallback-') ? '' : row.id,
+          categoria: row.categoria,
+          subcategoria: row.subcategoria,
+          variable: row.variable
+        });
       const url = window.URL.createObjectURL(new Blob([response.data]));
       const link = document.createElement('a');
       link.href = url;
@@ -9700,15 +9697,15 @@ const renderCategoryBars = (items = [], options = {}) => {
     const cards = [
       {
         key: 'gestion',
-        title: 'Gestión de base de datos de Contexto Externo',
-        description: 'Limpia, normaliza y prepara las bases de Contexto Externo antes de importarlas al sistema.',
-        buttonLabel: 'Abrir gestión de datos',
+        title: 'Gestión de Contexto Externo General',
+        description: 'Descarga la plantilla unificada y carga la base que alimenta exclusivamente este dashboard.',
+        buttonLabel: 'Gestionar base general',
         icon: UploadFileIcon,
         color: '#0891b2',
         lightColor: '#ecfeff',
         gradient: 'linear-gradient(135deg, #0891b2 0%, #0e7490 100%)',
         shadow: 'rgba(8,145,178,0.18)',
-        onClick: () => setPoblacionalPanel('contexto_externo_gestion')
+        onClick: () => openContextoExternoDataManagement('CONTEXTO EXTERNO GENERAL')
       },
       {
         key: 'estadistica',
@@ -17123,7 +17120,7 @@ const renderCategoryBars = (items = [], options = {}) => {
       );
     }
     if (poblacionalPanel === 'contexto_externo_estadistica') {
-      return <ContextoExternoDashboardPanel onBack={() => setPoblacionalPanel('contexto_externo_landing')} />;
+      return <ContextoExternoDashboardPanel onBack={() => setPoblacionalPanel('contexto_externo')} />;
     }
     if (poblacionalPanel === 'empleabilidad') return renderEmpleabilidadDashboardPanel();
     if (poblacionalPanel === 'resumen_estadistico') return renderResumenEstadisticoPanel();
@@ -17331,8 +17328,9 @@ const renderCategoryBars = (items = [], options = {}) => {
                     <FormControl fullWidth sx={{ minWidth: 220 }}>
                       <InputLabel>Subbase</InputLabel>
                       <Select value={subBaseSeleccionada} label="Subbase" onChange={(e) => {
-                        setSubBaseSeleccionada(e.target.value);
-                        setSubSubBaseSeleccionada('');
+                        const nextSubbase = e.target.value;
+                        setSubBaseSeleccionada(nextSubbase);
+                        setSubSubBaseSeleccionada(nextSubbase === 'Contexto Externo' ? 'CONTEXTO EXTERNO GENERAL' : '');
                       }}>
                         <MenuItem value=""><em>Sin seleccionar</em></MenuItem>
                         {availableSubbases.map((sub) => <MenuItem key={sub} value={sub}>{sub}</MenuItem>)}
@@ -17341,8 +17339,8 @@ const renderCategoryBars = (items = [], options = {}) => {
                 )}
                 {requiresSubSubBase && (
                     <FormControl fullWidth sx={{ minWidth: 220 }}>
-                      <InputLabel>Lista Contexto Externo</InputLabel>
-                      <Select value={subSubBaseSeleccionada} label="Lista Contexto Externo" onChange={(e) => setSubSubBaseSeleccionada(e.target.value)}>
+                      <InputLabel>Base Contexto Externo</InputLabel>
+                      <Select value={subSubBaseSeleccionada} label="Base Contexto Externo" onChange={(e) => setSubSubBaseSeleccionada(e.target.value)}>
                         <MenuItem value=""><em>Sin seleccionar</em></MenuItem>
                         {CONTEXTO_EXTERNO_LISTAS.map((sub) => <MenuItem key={sub} value={sub}>{sub}</MenuItem>)}
                       </Select>
@@ -17361,11 +17359,11 @@ const renderCategoryBars = (items = [], options = {}) => {
                     Exportar plantilla vacía
                   </Button>
                   <Button variant="outlined" fullWidth component="label" startIcon={<UploadFileIcon />} sx={{ py: 1.8 }}>
-                    {importFile ? importFile.name : (baseSeleccionada === 'internacionalizacion' || isPesvParkingSelection) ? 'Adjuntar archivo Excel XLSX' : 'Adjuntar archivo Excel o CSV'}
+                    {importFile ? importFile.name : (baseSeleccionada === 'internacionalizacion' || isPesvParkingSelection || requiresSubSubBase) ? 'Adjuntar archivo Excel XLSX' : 'Adjuntar archivo Excel o CSV'}
                     <input
                       type="file"
                       hidden
-                      accept={(baseSeleccionada === 'internacionalizacion' || isPesvParkingSelection) ? '.xlsx,.xls' : '.xlsx,.xls,.csv,text/csv'}
+                      accept={(baseSeleccionada === 'internacionalizacion' || isPesvParkingSelection || requiresSubSubBase) ? '.xlsx,.xls' : '.xlsx,.xls,.csv,text/csv'}
                       onChange={(e) => setImportFile(e.target.files[0])}
                     />
                   </Button>

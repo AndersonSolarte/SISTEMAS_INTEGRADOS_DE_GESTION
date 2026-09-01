@@ -577,6 +577,7 @@ const runMigrations = async () => {
     await models.PoblacionalDesercionCohorte.sync();
     await models.PoblacionalDesercionAnual.sync();
     await models.PoblacionalContextoExterno.sync();
+    await models.PoblacionalContextoExternoGeneral.sync();
     await models.PoblacionalEmpleabilidad.sync();
     await models.Saber11Resultado.sync();
     await models.VaEquivalenciaConfig.sync();
@@ -858,6 +859,9 @@ const runMigrations = async () => {
 
     // Indices de optimización integral para tablas grandes
     await qi.addIndex('poblacional_contexto_externo', ['tipo_registro', 'base_indicador', 'anio'], { name: 'idx_contexto_externo_tipo_base_anio' }).catch(() => {});
+    await qi.addIndex('poblacional_contexto_externo_general', ['seccion', 'anio', 'semestre'], { name: 'idx_contexto_externo_general_seccion_periodo' }).catch(() => {});
+    await qi.addIndex('poblacional_contexto_externo_general', ['programa'], { name: 'idx_contexto_externo_general_programa' }).catch(() => {});
+    await qi.addIndex('poblacional_contexto_externo_general', ['area_conocimiento'], { name: 'idx_contexto_externo_general_area' }).catch(() => {});
     await qi.addIndex('poblacional_caracterizacion', ['anio', 'programa'], { name: 'idx_poblacional_caracterizacion_anio_programa' }).catch(() => {});
     await qi.addIndex('poblacional_inscritos', ['anio', 'programa'], { name: 'idx_poblacional_inscritos_anio_programa' }).catch(() => {});
     await qi.addIndex('poblacional_admitidos', ['anio', 'programa'], { name: 'idx_poblacional_admitidos_anio_programa' }).catch(() => {});
@@ -921,15 +925,87 @@ const repairInvertedDocumentDates = async () => {
 
 const normalizeUserDependencies = async () => {
   console.log('[migrate] Normalizando dependencias de usuarios a nombres oficiales...');
+
+  const { DEPENDENCY_EMAILS_RAW } = require('../config/dependencyEmails');
+  const officialList = Object.keys(DEPENDENCY_EMAILS_RAW || {});
+
+  // 1. Reparación explícita para usuarios cuyo cargo o email pertenece a la Oficina de Desarrollo de Sistemas de Información
+  // pero que fueron cambiados erróneamente a Ingeniería de Sistemas en migraciones anteriores.
+  try {
+    await sequelize.query(`
+      UPDATE users
+      SET dependencia = 'Oficina de Desarrollo de Sistemas de Informacion'
+      WHERE (
+        cargo ILIKE '%desarrollo%sistemas%' 
+        OR cargo ILIKE '%sistemas%informacion%' 
+        OR cargo ILIKE '%desarrollo%software%'
+        OR email ILIKE 'dsoftware@%'
+        OR jefe_inmediato ILIKE '%ESTEFANNY%PANTOJA%'
+      )
+      AND (
+        dependencia IS NULL 
+        OR dependencia = 'Programa Academico - Ingenieria de Sistemas'
+        OR dependencia ILIKE '%sistemas%'
+      )
+      AND dependencia != 'Oficina de Desarrollo de Sistemas de Informacion'
+    `, { type: QueryTypes.UPDATE });
+  } catch (err) {
+    console.error('[migrate] Error en reparación de Oficina de Desarrollo:', err.message);
+  }
+
+  // Reparación explícita para docentes de Ciencias Básicas y Humanidades
+  try {
+    await sequelize.query(`
+      UPDATE users
+      SET dependencia = 'Departamento de Ciencias Basicas'
+      WHERE (jefe_inmediato ILIKE '%MUÑOZ CAÑAR%' OR nombre ILIKE '%MUÑOZ CAÑAR%')
+        AND (dependencia IS NULL OR dependencia = 'Vicerrectoria Academica' OR dependencia = '-' OR TRIM(dependencia) = '')
+    `, { type: QueryTypes.UPDATE });
+
+    await sequelize.query(`
+      UPDATE users
+      SET dependencia = 'Departamento de Humanidades'
+      WHERE (jefe_inmediato ILIKE '%NASIF%' OR nombre ILIKE '%NASIF%')
+        AND (dependencia IS NULL OR dependencia = 'Vicerrectoria Academica' OR dependencia = '-' OR TRIM(dependencia) = '')
+    `, { type: QueryTypes.UPDATE });
+  } catch (err) {
+    console.error('[migrate] Error en reparación de Ciencias Básicas y Humanidades:', err.message);
+  }
+
+  // 2. Mapeos para normalizar nombres no oficiales (legacy o tipeos) a nombres oficiales
+  // NOTA: Los patrones más específicos (como oficinas) van PRIMERO.
   const ilikeMappings = [
-    { pattern: '%evangelizac%', official: 'Vicerrectoría para la Evangelización de las Culturas' },
-    { pattern: '%evangenilizac%', official: 'Vicerrectoría para la Evangelización de las Culturas' },
-    { pattern: '%financiera%desarrollo%', official: 'Vicerrectoría Financiera y de Desarrollo Institucional' },
-    { pattern: '%financiera%', official: 'Vicerrectoría Financiera y de Desarrollo Institucional' },
-    { pattern: '%desarrollo%institucional%', official: 'Vicerrectoría Financiera y de Desarrollo Institucional' },
-    { pattern: '%vicerrec%academic%', official: 'Vicerrectoría Académica' },
-    { pattern: '%vicerrec%investigac%', official: 'Vicerrectoría de Investigaciones y Extensión' },
+    { pattern: '%evangelizac%', official: 'Vicerrectoría para la Evangelizacion de las Culturas' },
+    { pattern: '%evangenilizac%', official: 'Vicerrectoría para la Evangelizacion de las Culturas' },
+    { pattern: '%financiera%desarrollo%', official: 'Vicerrectoria Financiera y de Desarrollo Institucional' },
+    { pattern: '%desarrollo%institucional%', official: 'Vicerrectoria Financiera y de Desarrollo Institucional' },
+    { pattern: '%financiera%', official: 'Vicerrectoria Financiera y de Desarrollo Institucional' },
+    { pattern: '%vicerrec%academic%', official: 'Vicerrectoria Academica' },
+    { pattern: '%vicerrec%investigac%', official: 'Vicerrectoria de Investigacion y Extension' },
+
+    // OFICINAS ESPECÍFICAS (Deben procesarse antes de comodines genéricos)
+    { pattern: '%desarrollo%sistemas%', official: 'Oficina de Desarrollo de Sistemas de Informacion' },
+    { pattern: '%sistemas%informacion%', official: 'Oficina de Desarrollo de Sistemas de Informacion' },
+    { pattern: '%infraestructura%tecnol%', official: 'Oficina de Infraestructura Tecnologica' },
+    { pattern: '%infraestructura%fisica%', official: 'Oficina de Mantenimiento a la Infraestructura Fisica' },
+    { pattern: '%bienes%servicios%', official: 'Oficina de Bienes y Servicios' },
+    { pattern: '%comunicaciones%mercadeo%', official: 'Oficina de Comunicaciones y Mercadeo' },
+    { pattern: '%credito%cartera%', official: 'Oficina de Credito, Cartera y Cobranzas' },
+    { pattern: '%practicas%academicas%', official: 'Oficina de Practicas Academicas' },
+    { pattern: '%relaciones%interinstitucionales%', official: 'Oficina de Relaciones Interinstitucionales' },
+    { pattern: '%seguridad%salud%', official: 'Oficina de Seguridad y Salud en el Trabajo' },
+    { pattern: '%tesoreria%pagaduria%', official: 'Oficina de Tesoreria y Pagaduria' },
+    { pattern: '%gestion%humana%', official: 'Oficina de Gestion del Talento Humano' },
+    { pattern: '%talento%humano%', official: 'Oficina de Gestion del Talento Humano' },
+    { pattern: '%planeacion%', official: 'Direccion de Planeacion y Aseguramiento de la Calidad' },
+    { pattern: '%posgrados%', official: 'Direccion de Posgrados' },
+    { pattern: '%postgrados%', official: 'Direccion de Posgrados' },
+
+    // PROGRAMAS ACADÉMICOS
     { pattern: '%quimica%', official: 'Programa Academico - Licenciatura en Quimica' },
+    { pattern: '%ing%sistemas%', official: 'Programa Academico - Ingenieria de Sistemas' },
+    { pattern: '%programa%sistemas%', official: 'Programa Academico - Ingenieria de Sistemas' },
+    { pattern: '%ingenieria%sistemas%', official: 'Programa Academico - Ingenieria de Sistemas' },
     { pattern: '%sistemas%', official: 'Programa Academico - Ingenieria de Sistemas' },
     { pattern: '%electronica%', official: 'Programa Academico - Ingenieria de Electronica' },
     { pattern: '%diseno%grafico%', official: 'Programa Academico - Diseño Grafico' },
@@ -943,42 +1019,46 @@ const normalizeUserDependencies = async () => {
     { pattern: '%educacion%fisica%', official: 'Programa Academico - Licenciatura en Educacion fisica' },
     { pattern: '%psicologia%', official: 'Programa Academico -Psicologia' },
     { pattern: '%psicología%', official: 'Programa Academico -Psicologia' },
-    { pattern: '%ciencias%basicas%', official: 'Programa Academico- Departamento de Ciencias Basicas' },
-    { pattern: '%humanidades%', official: 'Programa Academico- Departamento de Humanidades' },
-    { pattern: '%arquitectura%', official: 'Programa Academico - Arquitectura' },
-    { pattern: '%gestion%humana%', official: 'Oficina de Gestion del Talento Humano' },
-    { pattern: '%talento%humano%', official: 'Oficina de Gestion del Talento Humano' },
-    { pattern: '%planeacion%', official: 'Direccion de Planeacion y Aseguramiento de la Calidad' },
-    { pattern: '%posgrados%', official: 'Direccion de Posgrados' },
-    { pattern: '%postgrados%', official: 'Direccion de Posgrados' }
+    { pattern: '%ciencias%basicas%', official: 'Departamento de Ciencias Basicas' },
+    { pattern: '%humanidades%', official: 'Departamento de Humanidades' },
+    { pattern: '%arquitectura%', official: 'Programa Academico - Arquitectura' }
   ];
 
   for (const { pattern, official } of ilikeMappings) {
     try {
       await sequelize.query(
-        `UPDATE users SET dependencia = :official WHERE TRIM(dependencia) ILIKE :pattern AND dependencia != :official`,
-        { replacements: { pattern, official }, type: QueryTypes.UPDATE }
+        `UPDATE users 
+         SET dependencia = :official 
+         WHERE TRIM(dependencia) ILIKE :pattern 
+           AND (dependencia IS NULL OR TRIM(dependencia) NOT IN (:officialList))`,
+        { replacements: { pattern, official, officialList }, type: QueryTypes.UPDATE }
       );
       await sequelize.query(
-        `UPDATE pesv_parqueadero_registros SET dependencia_programa = :official WHERE TRIM(dependencia_programa) ILIKE :pattern AND dependencia_programa != :official`,
-        { replacements: { pattern, official }, type: QueryTypes.UPDATE }
+        `UPDATE pesv_parqueadero_registros 
+         SET dependencia_programa = :official 
+         WHERE TRIM(dependencia_programa) ILIKE :pattern 
+           AND (dependencia_programa IS NULL OR TRIM(dependencia_programa) NOT IN (:officialList))`,
+        { replacements: { pattern, official, officialList }, type: QueryTypes.UPDATE }
       ).catch(() => {});
     } catch (err) {
       console.error(`[migrate] Error al normalizar ${pattern}:`, err.message);
     }
   }
 
+  // 3. Restauración de dependencias para usuarios cuyo valor quedó NULL pero su vicerrectoría coincide con el catálogo oficial
   try {
-    const { DEPENDENCY_EMAILS_RAW } = require('../config/dependencyEmails');
-    const officialList = Object.keys(DEPENDENCY_EMAILS_RAW || {});
     if (officialList.length > 0) {
       await sequelize.query(
-        `UPDATE users SET dependencia = NULL WHERE dependencia IS NOT NULL AND dependencia NOT IN (:officialList)`,
+        `UPDATE users 
+         SET dependencia = TRIM(vicerrectoria) 
+         WHERE (dependencia IS NULL OR TRIM(dependencia) = '' OR dependencia = '-') 
+           AND vicerrectoria IS NOT NULL 
+           AND TRIM(vicerrectoria) IN (:officialList)`,
         { replacements: { officialList }, type: QueryTypes.UPDATE }
       );
     }
   } catch (err) {
-    console.error('[migrate] Error en limpieza final de dependencias:', err.message);
+    console.error('[migrate] Error en recuperación de dependencias desde vicerrectoría:', err.message);
   }
 };
 

@@ -68,6 +68,12 @@ const {
   approveContextoExternoReview,
   rejectContextoExternoReview
 } = require('../controllers/contextoExternoCleanerController');
+const {
+  downloadContextoExternoGeneralTemplate,
+  downloadContextoExternoGeneralData,
+  importContextoExternoGeneral,
+  getContextoExternoGeneralDashboard
+} = require('../controllers/contextoExternoGeneralController');
 
 const multer = require('multer');
 const docxUpload = multer({
@@ -235,6 +241,10 @@ router.get('/matriculados-incidencias', auth, canViewEstadisticaInstitucionalByP
 router.get('/resumen', auth, canViewEstadisticaInstitucionalByPermission, getResumen);
 router.get('/cargues', auth, canImportDatabaseData, getCargues);
 router.get('/template', auth, canImportDatabaseData, downloadTemplate);
+router.get('/contexto-externo-general/dashboard', auth, canViewEstadisticaInstitucionalByPermission, getContextoExternoGeneralDashboard);
+router.get('/contexto-externo-general/template', auth, canImportDatabaseData, downloadContextoExternoGeneralTemplate);
+router.get('/contexto-externo-general/export', auth, canImportDatabaseData, downloadContextoExternoGeneralData);
+router.post('/contexto-externo-general/import', auth, canImportDatabaseData, upload.single('file'), importContextoExternoGeneral);
 router.get('/contexto-externo/export', auth, canImportDatabaseData, downloadContextoExternoNormalizado);
 router.post('/contexto-externo/limpiar', auth, canImportDatabaseData, contextoExternoCleanerUpload.single('file'), cleanContextoExternoFile);
 router.post('/contexto-externo/cleaning-jobs', auth, canImportDatabaseData, contextoExternoCleanerUpload.single('file'), createContextoExternoCleaningJob);

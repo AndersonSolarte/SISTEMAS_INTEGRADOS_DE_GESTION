@@ -102,21 +102,11 @@ const getSystemTablesCatalog = async (req, res) => {
     let contextoExternoSubdatasets = [];
     try {
       const breakdown = await sequelize.query(`
-        SELECT 
-          CASE 
-            WHEN base_indicador ILIKE '%admitid%' THEN 'ADMITIDOS'
-            WHEN base_indicador ILIKE '%inscrit%' THEN 'INSCRITOS'
-            WHEN base_indicador ILIKE '%matricul%' THEN 'MATRICULADOS'
-            WHEN base_indicador ILIKE '%graduad%' THEN 'GRADUADOS'
-            WHEN base_indicador ILIKE '%primer%curso%' THEN 'PRIMER CURSO'
-            WHEN base_indicador ILIKE '%oferta%' OR base_indicador ILIKE '%programa%' THEN 'PROGRAMAS'
-            ELSE UPPER(base_indicador)
-          END AS key_name,
+        SELECT 'GENERAL' AS key_name,
           COUNT(*)::bigint AS row_count,
           MAX(created_at) AS last_created,
           MAX(updated_at) AS last_updated
-        FROM poblacional_contexto_externo
-        GROUP BY 1
+        FROM poblacional_contexto_externo_general
       `, { type: QueryTypes.SELECT });
 
       const cargasMap = new Map();
@@ -133,12 +123,7 @@ const getSystemTablesCatalog = async (req, res) => {
       });
 
       const ALL_KEYS = [
-        { label: 'INSCRITOS CONTEXTO EXTERNO', key: 'INSCRITOS' },
-        { label: 'ADMITIDOS CONTEXTO EXTERNO', key: 'ADMITIDOS' },
-        { label: 'PRIMER CURSO CONTEXTO EXTERNO', key: 'PRIMER CURSO' },
-        { label: 'MATRICULADOS CONTEXTO EXTERNO', key: 'MATRICULADOS' },
-        { label: 'GRADUADOS CONTEXTO EXTERNO', key: 'GRADUADOS' },
-        { label: 'PROGRAMAS CONTEXTO EXTERNO', key: 'PROGRAMAS' },
+        { label: 'CONTEXTO EXTERNO GENERAL', key: 'GENERAL' }
       ];
 
       contextoExternoSubdatasets = ALL_KEYS.map(item => {
@@ -160,7 +145,7 @@ const getSystemTablesCatalog = async (req, res) => {
       ...row,
       module: resolveModule(row.table_name),
       sensitive: isSensitiveTable(row.table_name),
-      subdatasets: row.table_name === 'poblacional_contexto_externo' ? contextoExternoSubdatasets : undefined
+      subdatasets: row.table_name === 'poblacional_contexto_externo_general' ? contextoExternoSubdatasets : undefined
     }));
     return res.json({ success: true, data, total: data.length });
   } catch (error) {

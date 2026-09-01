@@ -16,6 +16,7 @@ const {
   PoblacionalDesercionCohorte,
   PoblacionalDesercionAnual,
   PoblacionalContextoExterno,
+  PoblacionalContextoExternoGeneral,
   PoblacionalEmpleabilidad,
   PoblacionalInfraestructuraFisica,
   PoblacionalEdificacionReferencia,
@@ -136,6 +137,7 @@ const clearDatasetStorage = async ({
         PoblacionalDesercionCohorte.destroy({ where: {} }),
         PoblacionalDesercionAnual.destroy({ where: {} }),
         PoblacionalContextoExterno.destroy({ where: {} }),
+        PoblacionalContextoExternoGeneral.destroy({ where: {} }),
         PoblacionalEmpleabilidad.destroy({ where: {} })
       ]);
     }
@@ -1415,8 +1417,8 @@ const POBLACIONAL_SUBCATEGORY_CONFIG = {
   CONTEXTO_EXTERNO: {
     label: 'Contexto Externo',
     headers: [],
-    model: PoblacionalContextoExterno,
-    customImport: 'contexto_externo'
+    model: PoblacionalContextoExternoGeneral,
+    customImport: 'contexto_externo_general'
   },
   DESERCION: {
     label: 'Desercion',

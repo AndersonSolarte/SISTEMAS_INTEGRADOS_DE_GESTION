@@ -1051,16 +1051,18 @@ const updateUser = async (req, res) => {
       }
     }
     
+    let finalDependencia = dependencia;
     if (dependencia) {
-      const isOfficial = Object.keys(DEPENDENCY_EMAILS_RAW || {}).some(
+      const officialMatch = Object.keys(DEPENDENCY_EMAILS_RAW || {}).find(
         (officialKey) => normalizeSearchText(officialKey) === normalizeSearchText(dependencia)
       );
-      if (!isOfficial) {
+      if (!officialMatch) {
         return res.status(400).json({
           success: false,
           message: 'La dependencia ingresada no pertenece al catálogo oficial institucional. Por favor selecciona una dependencia precargada del sistema.'
         });
       }
+      finalDependencia = officialMatch;
     }
 
     const hasPayloadField = (field) => Object.prototype.hasOwnProperty.call(req.body || {}, field);
@@ -1069,7 +1071,7 @@ const updateUser = async (req, res) => {
       nombre: nombre || user.nombre,
       email: cleanEmail || user.email,
       username: username || user.username,
-      dependencia: hasPayloadField('dependencia') ? dependencia : user.dependencia,
+      dependencia: hasPayloadField('dependencia') ? finalDependencia : user.dependencia,
       vicerrectoria: hasPayloadField('vicerrectoria') ? vicerrectoria : user.vicerrectoria,
       cargo: hasPayloadField('cargo') ? cargo : user.cargo,
       jefe_inmediato: hasPayloadField('jefe_inmediato') ? jefe_inmediato : user.jefe_inmediato,

@@ -71,17 +71,35 @@ const gestionInformacionService = {
     api.post('/planeacion/gestion-informacion/autoevaluacion/programas', payload).then((r) => r.data),
   updateAutoevaluacionPrograma: (id, payload) =>
     api.put(`/planeacion/gestion-informacion/autoevaluacion/programas/${id}`, payload).then((r) => r.data),
-  downloadTemplate: (categoria, subcategoria = '', subsubcategoria = '') =>
-    api.get('/planeacion/gestion-informacion/template', {
-      params: { categoria, subcategoria, subsubcategoria, _ts: Date.now() },
-      responseType: 'blob'
-    }),
-  downloadContextoExternoNormalizado: (variable) =>
-    api.get('/planeacion/gestion-informacion/contexto-externo/export', {
-      params: { categoria: 'poblacional', subcategoria: 'Contexto Externo', variable },
-      responseType: 'blob',
-      timeout: 0
-    }),
+  downloadTemplate: (categoria, subcategoria = '', subsubcategoria = '') => {
+    const isContextoGeneral = String(categoria).toLowerCase() === 'poblacional'
+      && String(subcategoria).toLowerCase() === 'contexto externo'
+      && String(subsubcategoria).toUpperCase() === 'CONTEXTO EXTERNO GENERAL';
+    return api.get(
+      isContextoGeneral
+        ? '/planeacion/gestion-informacion/contexto-externo-general/template'
+        : '/planeacion/gestion-informacion/template',
+      {
+        params: isContextoGeneral ? { _ts: Date.now() } : { categoria, subcategoria, subsubcategoria, _ts: Date.now() },
+        responseType: 'blob'
+      }
+    );
+  },
+  getContextoExternoGeneralDashboard: () =>
+    api.get('/planeacion/gestion-informacion/contexto-externo-general/dashboard', { timeout: 120000 }).then((r) => r.data),
+  downloadContextoExternoNormalizado: (variable) => {
+    const isContextoGeneral = String(variable).toUpperCase() === 'CONTEXTO EXTERNO GENERAL';
+    return api.get(
+      isContextoGeneral
+        ? '/planeacion/gestion-informacion/contexto-externo-general/export'
+        : '/planeacion/gestion-informacion/contexto-externo/export',
+      {
+        params: isContextoGeneral ? {} : { categoria: 'poblacional', subcategoria: 'Contexto Externo', variable },
+        responseType: 'blob',
+        timeout: 0
+      }
+    );
+  },
   cleanContextoExterno: (file, lista) => {
     const formData = new FormData();
     formData.append('file', file);
@@ -140,6 +158,17 @@ const gestionInformacionService = {
   importExcel: (categoria, file, subcategoria = '', subsubcategoria = '') => {
     const formData = new FormData();
     formData.append('file', file);
+    const isContextoGeneral = String(categoria).toLowerCase() === 'poblacional'
+      && String(subcategoria).toLowerCase() === 'contexto externo'
+      && String(subsubcategoria).toUpperCase() === 'CONTEXTO EXTERNO GENERAL';
+    if (isContextoGeneral) {
+      return api
+        .post('/planeacion/gestion-informacion/contexto-externo-general/import', formData, {
+          headers: { 'Content-Type': 'multipart/form-data' },
+          timeout: 0
+        })
+        .then((r) => r.data);
+    }
     formData.append('categoria', categoria);
     if (subcategoria) formData.append('subcategoria', subcategoria);
     if (subsubcategoria) formData.append('subsubcategoria', subsubcategoria);

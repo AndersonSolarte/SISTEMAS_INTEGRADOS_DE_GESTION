@@ -19,6 +19,7 @@ const PoblacionalDesercionPeriodo = require('./PoblacionalDesercionPeriodo');
 const PoblacionalDesercionCohorte = require('./PoblacionalDesercionCohorte');
 const PoblacionalDesercionAnual = require('./PoblacionalDesercionAnual');
 const PoblacionalContextoExterno = require('./PoblacionalContextoExterno');
+const PoblacionalContextoExternoGeneral = require('./PoblacionalContextoExternoGeneral');
 const PoblacionalEmpleabilidad = require('./PoblacionalEmpleabilidad');
 const Saber11Resultado = require('./Saber11Resultado');
 const SaberProResultadoIndividual = require('./SaberProResultadoIndividual');
@@ -185,6 +186,11 @@ PoblacionalContextoExterno.belongsTo(User, { foreignKey: 'creado_por', as: 'crea
 User.hasMany(PoblacionalContextoExterno, { foreignKey: 'actualizado_por', as: 'contextoExternoActualizados' });
 PoblacionalContextoExterno.belongsTo(User, { foreignKey: 'actualizado_por', as: 'actualizador' });
 
+User.hasMany(PoblacionalContextoExternoGeneral, { foreignKey: 'creado_por', as: 'contextoExternoGeneralCreados' });
+PoblacionalContextoExternoGeneral.belongsTo(User, { foreignKey: 'creado_por', as: 'creador' });
+User.hasMany(PoblacionalContextoExternoGeneral, { foreignKey: 'actualizado_por', as: 'contextoExternoGeneralActualizados' });
+PoblacionalContextoExternoGeneral.belongsTo(User, { foreignKey: 'actualizado_por', as: 'actualizador' });
+
 User.hasMany(PoblacionalEmpleabilidad, { foreignKey: 'creado_por', as: 'empleabilidadCreados' });
 PoblacionalEmpleabilidad.belongsTo(User, { foreignKey: 'creado_por', as: 'creador' });
 User.hasMany(PoblacionalEmpleabilidad, { foreignKey: 'actualizado_por', as: 'empleabilidadActualizados' });
@@ -339,6 +345,7 @@ module.exports = {
   PoblacionalDesercionCohorte,
   PoblacionalDesercionAnual,
   PoblacionalContextoExterno,
+  PoblacionalContextoExternoGeneral,
   PoblacionalEmpleabilidad,
   Saber11Resultado,
   SaberProResultadoIndividual,

@@ -1,1816 +1,335 @@
-import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
-  Box, Paper, Typography, Stack, Grid, TextField, MenuItem, Button, Chip,
-  Table, TableBody, TableCell, TableContainer, TableHead, TableRow, IconButton, Tabs, Tab
+  Alert,
+  Box,
+  Button,
+  Chip,
+  CircularProgress,
+  MenuItem,
+  Paper,
+  Stack,
+  Tab,
+  Tabs,
+  Table,
+  TableBody,
+  TableCell,
+  TableContainer,
+  TableHead,
+  TableRow,
+  TextField,
+  Typography
 } from '@mui/material';
-import SearchRoundedIcon from '@mui/icons-material/SearchRounded';
-import FilterAltRoundedIcon from '@mui/icons-material/FilterAltRounded';
-import DownloadRoundedIcon from '@mui/icons-material/DownloadRounded';
-import SchoolRoundedIcon from '@mui/icons-material/SchoolRounded';
-import AccountBalanceRoundedIcon from '@mui/icons-material/AccountBalanceRounded';
-import GroupsRoundedIcon from '@mui/icons-material/GroupsRounded';
-import DevicesRoundedIcon from '@mui/icons-material/DevicesRounded';
-import CalendarMonthRoundedIcon from '@mui/icons-material/CalendarMonthRounded';
-import LocationOnRoundedIcon from '@mui/icons-material/LocationOnRounded';
 import ArrowBackRoundedIcon from '@mui/icons-material/ArrowBackRounded';
-import HubRoundedIcon from '@mui/icons-material/HubRounded';
-import HexagonRoundedIcon from '@mui/icons-material/HexagonRounded';
-import ViewModuleRoundedIcon from '@mui/icons-material/ViewModuleRounded';
-import MapRoundedIcon from '@mui/icons-material/MapRounded';
-import PlaceRoundedIcon from '@mui/icons-material/PlaceRounded';
+import RefreshRoundedIcon from '@mui/icons-material/RefreshRounded';
+import PublicRoundedIcon from '@mui/icons-material/PublicRounded';
+import SchoolRoundedIcon from '@mui/icons-material/SchoolRounded';
+import GroupsRoundedIcon from '@mui/icons-material/GroupsRounded';
+import AccountBalanceRoundedIcon from '@mui/icons-material/AccountBalanceRounded';
 import {
-  ResponsiveContainer, BarChart, Bar, LineChart, Line, XAxis, YAxis,
-  CartesianGrid, Tooltip as RechartsTooltip, Legend
+  Bar,
+  BarChart,
+  CartesianGrid,
+  Legend,
+  Line,
+  LineChart,
+  ResponsiveContainer,
+  Tooltip as RechartsTooltip,
+  XAxis,
+  YAxis
 } from 'recharts';
 import gestionInformacionService from '../../services/gestionInformacionService';
 import encabezadoCorreosImg from '../../assets/Encabezado_correos.png';
 
-const normalizeStr = (str = '') =>
-  String(str || '')
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '')
-    .toUpperCase()
-    .trim();
+const ALL = 'TODOS';
+const numberFormat = new Intl.NumberFormat('es-CO');
 
-const REGIONAL_DEPARTMENTS = ['NARINO', 'CAUCA', 'VALLE DEL CAUCA', 'VALLE', 'PUTUMAYO'];
+const normalize = (value = '') => String(value || '')
+  .normalize('NFD')
+  .replace(/[\u0300-\u036f]/g, '')
+  .toUpperCase()
+  .trim();
 
-const isRegionalDept = (deptoStr = '') => {
-  const norm = normalizeStr(deptoStr);
-  return REGIONAL_DEPARTMENTS.some((d) => norm.includes(d));
+const unique = (rows, field) => [
+  ALL,
+  ...Array.from(new Set(rows.map((row) => String(row[field] || '').trim()).filter(Boolean)))
+    .sort((a, b) => a.localeCompare(b, 'es'))
+];
+
+const sum = (rows, field) => rows.reduce((total, row) => total + Number(row[field] || 0), 0);
+
+const periodSort = (a, b) => {
+  const [ay, as] = String(a.periodo || '').split('-').map(Number);
+  const [by, bs] = String(b.periodo || '').split('-').map(Number);
+  return (ay - by) || (as - bs);
 };
 
-// Coordinates for Colombia Southwest Municipalities for Map Pins
-const MUNICIPIO_COORDINATES = {
-  'SANTIAGO DE CALI': { lat: 3.4516, lng: -76.5320, top: '35%', left: '42%' },
-  'CALI': { lat: 3.4516, lng: -76.5320, top: '35%', left: '42%' },
-  'POPAYAN': { lat: 2.4448, lng: -76.6147, top: '56%', left: '38%' },
-  'PASTO': { lat: 1.2136, lng: -77.2811, top: '75%', left: '30%' },
-  'SAN JUAN DE PASTO': { lat: 1.2136, lng: -77.2811, top: '75%', left: '30%' },
-  'PALMIRA': { lat: 3.5394, lng: -76.3036, top: '38%', left: '48%' },
-  'CARTAGO': { lat: 4.7464, lng: -75.9117, top: '18%', left: '55%' },
-  'CARTAGO VALLE DEL CAUCA': { lat: 4.7464, lng: -75.9117, top: '18%', left: '55%' },
-  'TULUA': { lat: 4.0847, lng: -76.1954, top: '28%', left: '50%' },
-  'IPIALES': { lat: 0.8248, lng: -77.6433, top: '85%', left: '25%' },
-  'MIRANDA CAUCA': { lat: 3.2500, lng: -76.2333, top: '44%', left: '45%' },
-  'MIRANDA': { lat: 3.2500, lng: -76.2333, top: '44%', left: '45%' },
-  'SANTANDER DE QUILICHAO': { lat: 3.0094, lng: -76.4844, top: '48%', left: '40%' },
-  'MOCOA': { lat: 1.1528, lng: -76.6521, top: '78%', left: '48%' },
-  'NARINO': { lat: 1.2800, lng: -77.3500, top: '74%', left: '28%' },
-  'VALLE DEL CAUCA': { lat: 3.8000, lng: -76.5000, top: '32%', left: '44%' }
-};
+const metricGroups = [
+  {
+    label: 'Inscritos, admitidos y primer curso',
+    fields: [
+      ['inscritos_nacional', 'Inscritos nacional', '#1d4ed8'],
+      ['inscritos_regional', 'Inscritos regional', '#60a5fa'],
+      ['admitidos_nacional', 'Admitidos nacional', '#be123c'],
+      ['admitidos_regional', 'Admitidos regional', '#fb7185'],
+      ['primer_curso_nacional', 'Primer curso nacional', '#047857'],
+      ['primer_curso_regional', 'Primer curso regional', '#34d399']
+    ]
+  },
+  {
+    label: 'Matriculados',
+    fields: [
+      ['matriculados_nacional', 'Matriculados nacional', '#1d4ed8'],
+      ['matriculados_regional', 'Matriculados regional', '#f59e0b']
+    ]
+  },
+  {
+    label: 'Graduados',
+    fields: [
+      ['graduados_nacional', 'Graduados Colombia', '#7c3aed'],
+      ['graduados_regional', 'Graduados regional', '#ec4899']
+    ]
+  }
+];
+
+function MetricCard({ icon: Icon, label, value, color = '#2563eb' }) {
+  return (
+    <Paper elevation={0} sx={{ p: 2, border: '1px solid #dbe5f2', borderRadius: 3, minHeight: 108 }}>
+      <Stack direction="row" spacing={1.5} alignItems="center">
+        <Box sx={{ width: 42, height: 42, borderRadius: 2.2, display: 'grid', placeItems: 'center', bgcolor: `${color}14`, color }}>
+          <Icon />
+        </Box>
+        <Box>
+          <Typography sx={{ color: '#64748b', fontSize: 12, fontWeight: 800 }}>{label}</Typography>
+          <Typography sx={{ color: '#0f172a', fontSize: 25, lineHeight: 1.15, fontWeight: 900 }}>{numberFormat.format(value)}</Typography>
+        </Box>
+      </Stack>
+    </Paper>
+  );
+}
+
+function FilterSelect({ label, value, onChange, options }) {
+  return (
+    <TextField select size="small" fullWidth label={label} value={value} onChange={(event) => onChange(event.target.value)}>
+      {options.map((option) => <MenuItem key={option} value={option}>{option === ALL ? 'Todos' : option}</MenuItem>)}
+    </TextField>
+  );
+}
 
 export default function ContextoExternoDashboardPanel({ onBack }) {
-  const [mainTab, setMainTab] = useState(0); // 0: Oferta Académica, 1: Información Poblacional
-  const [poblacionalSubTab, setPoblacionalSubTab] = useState(0); // 0: Inscritos, Admitidos, Primer Curso, 1: Cobertura, 2: Salida
+  const [mainTab, setMainTab] = useState(0);
+  const [populationTab, setPopulationTab] = useState(0);
+  const [payload, setPayload] = useState({ oferta: [], poblacional: [], departamentos: [], metadata: {} });
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
 
-  const [loading, setLoading] = useState(false);
-  const [rawRows, setRawRows] = useState([]);
-  const [visualStyle, setVisualStyle] = useState('mindmap'); // 'mindmap', 'hex', 'cards'
+  const [offerSearch, setOfferSearch] = useState('');
+  const [area, setArea] = useState(ALL);
+  const [sector, setSector] = useState(ALL);
+  const [modality, setModality] = useState(ALL);
+  const [geo, setGeo] = useState(ALL);
+  const [municipality, setMunicipality] = useState(ALL);
 
-  // Filters for Oferta Académica
-  const [nivelFormacion, setNivelFormacion] = useState('TODOS');
-  const [searchKeyword, setSearchKeyword] = useState('');
-  const [selectedDepto, setSelectedDepto] = useState('TODOS');
-  const [selectedMunicipio, setSelectedMunicipio] = useState('TODOS');
-
-  // Filters for Poblacional
-  const [pobProgramaFilter, setPobProgramaFilter] = useState('TODOS');
-  const [pobPeriodo, setPobPeriodo] = useState('TODOS');
-  const [pobDepto, setPobDepto] = useState('TODOS');
+  const [program, setProgram] = useState(ALL);
+  const [period, setPeriod] = useState(ALL);
 
   const loadData = useCallback(async () => {
     setLoading(true);
+    setError('');
     try {
-      const response = await gestionInformacionService.getNormalizadosContextoExterno();
-      const rows = response?.data || response?.records || [];
-      setRawRows(rows);
-    } catch (err) {
-      console.error('Error cargando datos de Contexto Externo:', err);
+      const response = await gestionInformacionService.getContextoExternoGeneralDashboard();
+      setPayload(response?.data || { oferta: [], poblacional: [], departamentos: [], metadata: {} });
+    } catch (requestError) {
+      setError(requestError?.response?.data?.message || 'No fue posible cargar Contexto Externo General.');
     } finally {
       setLoading(false);
     }
   }, []);
 
-  useEffect(() => {
-    loadData();
-  }, [loadData]);
+  useEffect(() => { loadData(); }, [loadData]);
 
-  // Parse and extract normalized data for Oferta
-  const parsedOfertaRows = useMemo(() => {
-    return rawRows
-      .filter((r) => String(r.base_indicador || r.baseIndicador || '').toUpperCase() === 'OFERTA' || r.tipo_registro === 'oferta')
-      .map((r) => {
-        let norm = {};
-        try {
-          const raw = typeof r.raw_data === 'string' ? JSON.parse(r.raw_data) : r.raw_data || {};
-          norm = raw?.normalizado || raw?.original || {};
-        } catch (_) {}
+  const oferta = useMemo(() => payload.oferta || [], [payload.oferta]);
+  const poblacional = useMemo(() => payload.poblacional || [], [payload.poblacional]);
 
-        return {
-          id: r.id,
-          ies: r.ies || norm.NOMBRE_INSTITUCION || '',
-          programa: r.programa_comparado || norm.NOMBRE_DEL_PROGRAMA || '',
-          nivelAcademico: normalizeStr(norm.NIVEL_ACADEMICO || (norm.NIVEL_DE_FORMACION === 'UNIVERSITARIO' ? 'PREGRADO' : 'POSGRADO')),
-          nivelFormacion: normalizeStr(norm.NIVEL_DE_FORMACION || norm.NIVEL_ACADEMICO || ''),
-          caracter: normalizeStr(norm.CARACTER_ACADEMICO || ''),
-          sector: normalizeStr(norm.SECTOR || (r.ies?.toLowerCase().includes('universidad del tolima') || r.ies?.toLowerCase().includes('nacional') ? 'OFICIAL' : 'PRIVADO')),
-          modalidad: normalizeStr(r.modalidad || norm.MODALIDAD || 'PRESENCIAL'),
-          reconocimiento: normalizeStr(norm.RECONOCIMIENTO_DEL_MINISTERIO || 'REGISTRO CALIFICADO'),
-          creditos: Number(r.creditos || norm.NUMERO_CREDITOS || 0),
-          semestres: Number(r.semestres || norm.NUMERO_PERIODOS_DE_DURACION || 0),
-          costoMatricula: Number(r.costo_matricula || norm.COSTO_MATRICULA_ESTUD_NUEVOS || 0),
-          departamento: normalizeStr(r.departamento || norm.DEPARTAMENTO_OFERTA_PROGRAMA || ''),
-          municipio: normalizeStr(r.municipio || norm.MUNICIPIO_OFERTA_PROGRAMA || '')
-        };
-      });
-  }, [rawRows]);
+  const offerOptions = useMemo(() => ({
+    areas: unique(oferta, 'area_conocimiento'),
+    sectors: unique(oferta, 'sector'),
+    modalities: unique(oferta, 'modalidad'),
+    geos: unique(oferta, 'georeferencia'),
+    municipalities: unique(oferta, 'municipio')
+  }), [oferta]);
 
-  // Filtered Oferta rows by keywords & Nivel
-  const filteredOferta = useMemo(() => {
-    const keywords = searchKeyword
-      .replace(/[,;]/g, ' ')
-      .split(/\s+/)
-      .map(normalizeStr)
-      .filter((k) => k.length > 1);
-
-    return parsedOfertaRows.filter((r) => {
-      // Nivel filter
-      if (nivelFormacion !== 'TODOS') {
-        if (nivelFormacion === 'PREGRADO' && !r.nivelAcademico.includes('PREGRADO') && !r.nivelFormacion.includes('UNIVERSITARIO')) return false;
-        if (nivelFormacion === 'POSGRADO' && !r.nivelAcademico.includes('POSGRADO') && r.nivelFormacion.includes('UNIVERSITARIO')) return false;
-        if (['ESPECIALIZACION', 'MAESTRIA', 'DOCTORADO'].includes(nivelFormacion) && !r.nivelFormacion.includes(nivelFormacion)) return false;
-      }
-
-      // Depto & Municipio filter
-      if (selectedDepto !== 'TODOS' && r.departamento !== selectedDepto) return false;
-      if (selectedMunicipio !== 'TODOS' && r.municipio !== selectedMunicipio) return false;
-
-      // Keywords match
-      if (keywords.length === 0) return true;
-      const progName = normalizeStr(r.programa);
-      return keywords.some((kw) => progName.includes(kw));
+  const filteredOffer = useMemo(() => {
+    const search = normalize(offerSearch);
+    return oferta.filter((row) => {
+      if (area !== ALL && row.area_conocimiento !== area) return false;
+      if (sector !== ALL && row.sector !== sector) return false;
+      if (modality !== ALL && row.modalidad !== modality) return false;
+      if (geo !== ALL && row.georeferencia !== geo) return false;
+      if (municipality !== ALL && row.municipio !== municipality) return false;
+      if (!search) return true;
+      return [row.nombre_programa, row.institucion, row.area_conocimiento, row.municipio]
+        .some((value) => normalize(value).includes(search));
     });
-  }, [parsedOfertaRows, nivelFormacion, searchKeyword, selectedDepto, selectedMunicipio]);
+  }, [oferta, area, sector, modality, geo, municipality, offerSearch]);
 
-  // Options for Dropdowns
-  const deptoOptions = useMemo(() => {
-    return ['TODOS', ...Array.from(new Set(parsedOfertaRows.map((r) => r.departamento).filter(Boolean))).sort()];
-  }, [parsedOfertaRows]);
+  const offerMetrics = useMemo(() => ({
+    rows: filteredOffer.length,
+    programs: new Set(filteredOffer.map((row) => row.nombre_programa).filter(Boolean)).size,
+    institutions: new Set(filteredOffer.map((row) => row.institucion).filter(Boolean)).size,
+    municipalities: new Set(filteredOffer.map((row) => row.municipio).filter(Boolean)).size
+  }), [filteredOffer]);
 
-  const municipioOptions = useMemo(() => {
-    const subset = selectedDepto === 'TODOS' ? parsedOfertaRows : parsedOfertaRows.filter((r) => r.departamento === selectedDepto);
-    return ['TODOS', ...Array.from(new Set(subset.map((r) => r.municipio).filter(Boolean))).sort()];
-  }, [parsedOfertaRows, selectedDepto]);
+  const topAreas = useMemo(() => {
+    const counts = new Map();
+    filteredOffer.forEach((row) => counts.set(row.area_conocimiento || 'SIN CLASIFICAR', (counts.get(row.area_conocimiento || 'SIN CLASIFICAR') || 0) + 1));
+    return Array.from(counts, ([name, total]) => ({ name, total })).sort((a, b) => b.total - a.total).slice(0, 10);
+  }, [filteredOffer]);
 
-  // Computed Metrics for Oferta Académica
-  const ofertaMetrics = useMemo(() => {
-    const total = filteredOferta.length;
-    let acreditacionAltaCalidad = 0;
-    let registroCalificado = 0;
-    let publico = 0;
-    let privado = 0;
+  const offerDistribution = useMemo(() => {
+    const counts = new Map();
+    filteredOffer.forEach((row) => counts.set(row.modalidad || 'SIN MODALIDAD', (counts.get(row.modalidad || 'SIN MODALIDAD') || 0) + 1));
+    return Array.from(counts, ([name, total]) => ({ name, total })).sort((a, b) => b.total - a.total);
+  }, [filteredOffer]);
 
-    let presencial = 0;
-    let virtual = 0;
-    let aDistancia = 0;
-    let dual = 0;
+  const programOptions = useMemo(() => unique(poblacional, 'programa'), [poblacional]);
+  const periodOptions = useMemo(() => [ALL, ...Array.from(new Set(poblacional.map((row) => row.periodo_referencia).filter(Boolean))).sort()], [poblacional]);
+  const activeGroup = metricGroups[populationTab];
 
-    const creditosList = [];
-    const semestresMap = {};
+  const populationRows = useMemo(() => poblacional.filter((row) => {
+    if (program !== ALL && row.programa !== program) return false;
+    if (period !== ALL && row.periodo_referencia !== period) return false;
+    return activeGroup.fields.some(([field]) => row[field] !== null && row[field] !== undefined);
+  }), [poblacional, program, period, activeGroup]);
 
-    filteredOferta.forEach((r) => {
-      const rec = r.reconocimiento;
-      if (rec.includes('ALTA CALIDAD') || rec.includes('ACREDITAC')) acreditacionAltaCalidad++;
-      else registroCalificado++;
-
-      const sec = r.sector;
-      if (sec.includes('OFICIAL') || sec.includes('PUBLIC')) publico++;
-      else privado++;
-
-      const mod = r.modalidad;
-      if (mod.includes('PRESENCIAL')) presencial++;
-      else if (mod.includes('VIRTUAL')) virtual++;
-      else if (mod.includes('DISTANCIA')) aDistancia++;
-      else if (mod.includes('DUAL')) dual++;
-      else presencial++;
-
-      if (r.creditos > 0) creditosList.push(r.creditos);
-      if (r.semestres > 0) {
-        semestresMap[r.semestres] = (semestresMap[r.semestres] || 0) + 1;
-      }
+  const populationChart = useMemo(() => {
+    const byPeriod = new Map();
+    populationRows.forEach((row) => {
+      const key = row.periodo_referencia;
+      if (!key) return;
+      if (!byPeriod.has(key)) byPeriod.set(key, { periodo: key });
+      const target = byPeriod.get(key);
+      activeGroup.fields.forEach(([field]) => { target[field] = Number(target[field] || 0) + Number(row[field] || 0); });
     });
+    return Array.from(byPeriod.values()).sort(periodSort);
+  }, [populationRows, activeGroup]);
 
-    const minCreditos = creditosList.length ? Math.min(...creditosList) : 0;
-    const maxCreditos = creditosList.length ? Math.max(...creditosList) : 0;
-    const avgCreditos = creditosList.length ? Math.round(creditosList.reduce((a, b) => a + b, 0) / creditosList.length) : 0;
+  const populationTotals = useMemo(() => activeGroup.fields.map(([field, label, color]) => ({
+    field, label, color, value: sum(populationRows, field)
+  })), [populationRows, activeGroup]);
 
-    return {
-      total,
-      acreditacionAltaCalidad,
-      registroCalificado,
-      publico,
-      privado,
-      presencial,
-      virtual,
-      aDistancia,
-      dual,
-      minCreditos,
-      maxCreditos,
-      avgCreditos,
-      semestresMap
-    };
-  }, [filteredOferta]);
+  const lastUploadLabel = payload.metadata?.lastUpload
+    ? new Date(payload.metadata.lastUpload).toLocaleString('es-CO')
+    : 'Sin cargues registrados';
 
-  // Program summary table calculation matching user screenshot
-  const programSummary = useMemo(() => {
-    const map = {};
-    filteredOferta.forEach((r) => {
-      const prog = r.programa || 'NO ESPECIFICADO';
-      map[prog] = (map[prog] || 0) + 1;
-    });
-    return Object.entries(map)
-      .map(([programa, total]) => ({ programa, total }))
-      .sort((a, b) => b.total - a.total);
-  }, [filteredOferta]);
-
-  const totalProgramSum = useMemo(() => {
-    return programSummary.reduce((acc, curr) => acc + curr.total, 0);
-  }, [programSummary]);
-
-  // Departamento summary table
-  const departamentoSummary = useMemo(() => {
-    const map = {};
-    filteredOferta.forEach((r) => {
-      const dep = r.departamento || 'NO ESPECIFICADO';
-      map[dep] = (map[dep] || 0) + 1;
-    });
-    return Object.entries(map)
-      .map(([departamento, total]) => ({ departamento, total }))
-      .sort((a, b) => b.total - a.total);
-  }, [filteredOferta]);
-
-  const totalDeptoSum = useMemo(() => {
-    return departamentoSummary.reduce((acc, curr) => acc + curr.total, 0);
-  }, [departamentoSummary]);
-
-  // Municipio summary table matching user screenshot
-  const municipioSummary = useMemo(() => {
-    const map = {};
-    filteredOferta.forEach((r) => {
-      const mun = r.municipio || 'NO ESPECIFICADO';
-      map[mun] = (map[mun] || 0) + 1;
-    });
-    return Object.entries(map)
-      .map(([municipio, total]) => ({ municipio, total }))
-      .sort((a, b) => b.total - a.total);
-  }, [filteredOferta]);
-
-  const totalMunicipioSum = useMemo(() => {
-    return municipioSummary.reduce((acc, curr) => acc + curr.total, 0);
-  }, [municipioSummary]);
-
-  // Data processing for Poblacional Sub-segments
-  const parsedPoblacionalRows = useMemo(() => {
-    return rawRows
-      .filter((r) => String(r.base_indicador || r.baseIndicador || '').toUpperCase() !== 'OFERTA' && r.tipo_registro === 'serie')
-      .map((r) => {
-        let norm = {};
-        try {
-          const raw = typeof r.raw_data === 'string' ? JSON.parse(r.raw_data) : r.raw_data || {};
-          norm = raw?.normalizado || raw?.original || {};
-        } catch (_) {}
-        return {
-          ...r,
-          base: normalizeStr(r.base_indicador || r.baseIndicador || ''),
-          valorNum: Number(r.valor || norm.VALOR || 0),
-          periodo: String(r.periodo_referencia || r.anio || '').trim(),
-          ies: r.ies || norm.NOMBRE_INSTITUCION || '',
-          programa: r.programa_comparado || norm.NOMBRE_DEL_PROGRAMA || '',
-          departamento: normalizeStr(r.departamento || norm.DEPARTAMENTO_OFERTA_PROGRAMA || ''),
-          municipio: normalizeStr(r.municipio || norm.MUNICIPIO_OFERTA_PROGRAMA || ''),
-          isRegional: isRegionalDept(r.departamento || norm.DEPARTAMENTO_OFERTA_PROGRAMA || '')
-        };
-      });
-  }, [rawRows]);
-
-  const pobProgramOptions = useMemo(() => {
-    return ['TODOS', ...Array.from(new Set(parsedPoblacionalRows.map((r) => r.programa).filter(Boolean))).sort()];
-  }, [parsedPoblacionalRows]);
-
-  const activePoblacionalBase = poblacionalSubTab === 0 ? ['INSCRITOS', 'ADMITIDOS', 'PRIMER CURSO'] : poblacionalSubTab === 1 ? ['MATRICULADOS'] : ['GRADUADOS'];
-
-  const filteredPoblacional = useMemo(() => {
-    return parsedPoblacionalRows.filter((r) => {
-      if (!activePoblacionalBase.some((b) => r.base.includes(b))) return false;
-      if (pobProgramaFilter !== 'TODOS' && r.programa !== pobProgramaFilter) return false;
-      if (pobPeriodo !== 'TODOS' && r.periodo !== pobPeriodo) return false;
-      if (pobDepto !== 'TODOS' && r.departamento !== pobDepto) return false;
-      return true;
-    });
-  }, [parsedPoblacionalRows, activePoblacionalBase, pobProgramaFilter, pobPeriodo, pobDepto]);
-
-  // Aggregated Chart Data for Sub-segment A: INSCRITOS, ADMITIDOS Y PRIMER CURSO (Regional vs Nacional)
-  const chartDataSubsegmentA = useMemo(() => {
-    const periodMap = {};
-
-    filteredPoblacional.forEach((r) => {
-      const per = r.periodo;
-      if (!per) return;
-
-      if (!periodMap[per]) {
-        periodMap[per] = {
-          periodo: per,
-          inscritosNacional: 0,
-          admitidosNacional: 0,
-          primerCursoNacional: 0,
-          inscritosRegional: 0,
-          admitidosRegional: 0,
-          primerCursoRegional: 0
-        };
-      }
-
-      const isReg = r.isRegional;
-      const baseName = r.base;
-
-      if (baseName.includes('INSCRITOS')) {
-        if (isReg) periodMap[per].inscritosRegional += r.valorNum;
-        else periodMap[per].inscritosNacional += r.valorNum;
-      } else if (baseName.includes('ADMITIDOS')) {
-        if (isReg) periodMap[per].admitidosRegional += r.valorNum;
-        else periodMap[per].admitidosNacional += r.valorNum;
-      } else if (baseName.includes('PRIMER CURSO')) {
-        if (isReg) periodMap[per].primerCursoRegional += r.valorNum;
-        else periodMap[per].primerCursoNacional += r.valorNum;
-      }
-    });
-
-    return Object.values(periodMap).sort((a, b) => a.periodo.localeCompare(b.periodo));
-  }, [filteredPoblacional]);
-
-  // Helper box for metric value input display matching the reference images
-  const ValueBox = ({ value, color = '#1e293b' }) => (
-    <Box
-      sx={{
-        minWidth: 54,
-        height: 26,
-        border: '1.5px solid #94a3b8',
-        borderRadius: 1,
-        display: 'grid',
-        placeItems: 'center',
-        fontWeight: 900,
-        fontSize: 13,
-        color: color,
-        bgcolor: '#ffffff',
-        boxShadow: 'inset 0 1px 3px rgba(0,0,0,0.06)'
-      }}
-    >
-      {value}
-    </Box>
-  );
+  if (loading) {
+    return <Box sx={{ minHeight: 460, display: 'grid', placeItems: 'center' }}><Stack alignItems="center" spacing={2}><CircularProgress /><Typography>Cargando Contexto Externo General…</Typography></Stack></Box>;
+  }
 
   return (
     <Stack spacing={2.5} sx={{ width: '100%', pb: 6 }}>
-      {/* Top Header Banner — Executive UNICESMAG Blue Style */}
-      <Paper
-        elevation={0}
-        sx={{
-          p: 0,
-          borderRadius: 3.5,
-          overflow: 'hidden',
-          border: '1px solid #cbd5e1',
-          boxShadow: '0 8px 24px rgba(0, 51, 153, 0.15)',
-          bgcolor: '#ffffff'
-        }}
-      >
-        {/* Official UNICESMAG Header Image Banner on Pure Light Background */}
-        <Box
-          sx={{
-            width: '100%',
-            bgcolor: '#ffffff',
-            position: 'relative',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            overflow: 'hidden',
-            py: 1.5,
-            px: 2,
-            borderBottom: '2px solid #e2e8f0'
-          }}
-        >
-          <img
-            src={encabezadoCorreosImg}
-            alt="Encabezado Institucional UNICESMAG"
-            style={{
-              maxHeight: 95,
-              maxWidth: '100%',
-              objectFit: 'contain'
-            }}
-          />
-        </Box>
-
-        {/* Title Bar in Soft Elegant Executive Blue */}
-        <Box
-          sx={{
-            background: 'linear-gradient(135deg, #1e3a8a 0%, #2563eb 100%)',
-            color: '#ffffff',
-            py: 2,
-            px: 3,
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-            boxShadow: 'inset 0 -2px 10px rgba(0,0,0,0.1)'
-          }}
-        >
-          <Stack direction="row" spacing={2} alignItems="center">
-            {onBack && (
-              <IconButton onClick={onBack} sx={{ color: '#ffffff', bgcolor: 'rgba(255,255,255,0.18)', border: '1px solid rgba(255,255,255,0.3)', '&:hover': { bgcolor: 'rgba(255,255,255,0.3)' } }}>
-                <ArrowBackRoundedIcon />
-              </IconButton>
-            )}
-            <Box>
-              <Typography variant="h6" sx={{ fontWeight: 900, textTransform: 'uppercase', letterSpacing: 1, fontSize: { xs: 16, md: 20 }, color: '#ffffff' }}>
-                OFERTA REGIONAL DE PROGRAMAS ACADÉMICOS SIMILARES
-              </Typography>
-              <Typography variant="caption" sx={{ color: '#ffffff', fontWeight: 800, fontSize: 13, opacity: 0.95 }}>
-                Sistema de Gestión e Inteligencia de Información — UNICESMAG
-              </Typography>
-            </Box>
+      <Paper elevation={0} sx={{ border: '1px solid #cbd5e1', borderRadius: 3.5, overflow: 'hidden' }}>
+        <Box component="img" src={encabezadoCorreosImg} alt="UNICESMAG" sx={{ width: '100%', height: { xs: 62, md: 78 }, objectFit: 'contain', bgcolor: '#fff' }} />
+        <Box sx={{ px: { xs: 2, md: 3 }, py: 2, color: '#fff', background: 'linear-gradient(135deg, #173f96 0%, #2563eb 100%)' }}>
+          <Stack direction={{ xs: 'column', md: 'row' }} justifyContent="space-between" alignItems={{ xs: 'flex-start', md: 'center' }} spacing={1.5}>
+            <Stack direction="row" spacing={1.5} alignItems="center">
+              <Button onClick={onBack} sx={{ minWidth: 42, color: '#fff', borderColor: 'rgba(255,255,255,.5)' }} variant="outlined"><ArrowBackRoundedIcon /></Button>
+              <Box>
+                <Typography sx={{ fontWeight: 900, fontSize: { xs: 17, md: 21 } }}>CONTEXTO EXTERNO GENERAL</Typography>
+                <Typography sx={{ opacity: 0.86, fontSize: 12.5 }}>Oferta académica y series históricas nacional/regional</Typography>
+              </Box>
+            </Stack>
+            <Stack direction="row" spacing={1} alignItems="center">
+              <Chip label={`Actualización: ${lastUploadLabel}`} sx={{ color: '#fff', bgcolor: 'rgba(255,255,255,.16)', fontWeight: 700 }} />
+              <Button onClick={loadData} startIcon={<RefreshRoundedIcon />} variant="contained" sx={{ bgcolor: '#fff', color: '#1d4ed8', fontWeight: 800, '&:hover': { bgcolor: '#eff6ff' } }}>Actualizar</Button>
+            </Stack>
           </Stack>
-          <Chip
-            label="Contexto Externo"
-            sx={{
-              bgcolor: 'rgba(255,255,255,0.2)',
-              color: '#ffffff',
-              fontWeight: 900,
-              px: 2,
-              py: 0.5,
-              fontSize: 13,
-              border: '1px solid rgba(255,255,255,0.4)',
-              boxShadow: '0 2px 8px rgba(0,0,0,0.12)'
-            }}
-          />
         </Box>
-
-        {/* Main Full-Width Segment Cards Navigation */}
-        <Box sx={{ p: 1.8, bgcolor: '#f8fafc' }}>
-          <Tabs
-            value={mainTab}
-            onChange={(_, val) => setMainTab(val)}
-            variant="fullWidth"
-            sx={{
-              minHeight: 56,
-              '& .MuiTabs-indicator': { display: 'none' },
-              '& .MuiTabs-flexContainer': { gap: 1.5 },
-              '& .MuiTab-root': {
-                textTransform: 'none',
-                fontWeight: 900,
-                fontSize: 15.5,
-                minHeight: 54,
-                borderRadius: 2.5,
-                color: '#475569',
-                bgcolor: '#ffffff',
-                border: '1.5px solid #cbd5e1',
-                boxShadow: '0 2px 6px rgba(0,0,0,0.04)',
-                transition: 'all 0.25s ease',
-                '&:hover': { bgcolor: '#f1f5f9', transform: 'translateY(-1px)' }
-              },
-              '& .MuiTab-root.Mui-selected': {
-                color: '#ffffff !important',
-                background: mainTab === 0 ? 'linear-gradient(135deg, #003399 0%, #1d4ed8 100%)' : 'linear-gradient(135deg, #059669 0%, #10b981 100%)',
-                border: 'none',
-                boxShadow: mainTab === 0 ? '0 6px 20px rgba(0, 51, 153, 0.35)' : '0 6px 20px rgba(5, 150, 105, 0.35)'
-              }
-            }}
-          >
-            <Tab label="1. Oferta Académica" icon={<SchoolRoundedIcon />} iconPosition="start" />
-            <Tab label="2. Información Poblacional" icon={<GroupsRoundedIcon />} iconPosition="start" />
-          </Tabs>
-        </Box>
+        <Tabs value={mainTab} onChange={(_, value) => setMainTab(value)} variant="fullWidth" sx={{ p: 1, '& .MuiTab-root': { fontWeight: 900, textTransform: 'none' } }}>
+          <Tab icon={<SchoolRoundedIcon />} iconPosition="start" label="Oferta académica" />
+          <Tab icon={<GroupsRoundedIcon />} iconPosition="start" label="Información poblacional" />
+        </Tabs>
       </Paper>
 
-      {/* ==================== SECCIÓN 1: OFERTA ACADÉMICA ==================== */}
+      {error && <Alert severity="error" action={<Button onClick={loadData}>Reintentar</Button>}>{error}</Alert>}
+      {!error && !oferta.length && !poblacional.length && (
+        <Alert severity="info">Aún no hay datos. Descarga la plantilla “Contexto Externo General” desde Gestión de Bases de Datos y carga el libro diligenciado.</Alert>
+      )}
+
       {mainTab === 0 && (
         <Stack spacing={2.5}>
-          {/* Controls & Keyword Filters */}
-          <Paper elevation={0} sx={{ p: 2.5, border: '1px solid #cbd5e1', borderRadius: 3, bgcolor: '#ffffff' }}>
-            <Stack direction="row" spacing={1} alignItems="center" sx={{ mb: 2 }}>
-              <FilterAltRoundedIcon sx={{ color: '#0284c7' }} />
-              <Typography variant="subtitle1" sx={{ fontWeight: 900, color: '#0f172a' }}>
-                Filtros de Búsqueda de Oferta Académica
-              </Typography>
-            </Stack>
-
-            <Grid container spacing={2} alignItems="center">
-              <Grid item xs={12} sm={6} md={3}>
-                <TextField
-                  select
-                  fullWidth
-                  size="small"
-                  label="Nivel de Formación"
-                  value={nivelFormacion}
-                  onChange={(e) => setNivelFormacion(e.target.value)}
-                >
-                  <MenuItem value="TODOS">Todos los niveles</MenuItem>
-                  <MenuItem value="PREGRADO">Pregrado (Universitario / Tecnológico)</MenuItem>
-                  <MenuItem value="POSGRADO">Posgrado (Todos)</MenuItem>
-                  <MenuItem value="ESPECIALIZACION">Especialización</MenuItem>
-                  <MenuItem value="MAESTRIA">Maestría</MenuItem>
-                  <MenuItem value="DOCTORADO">Doctorado</MenuItem>
-                </TextField>
-              </Grid>
-
-              <Grid item xs={12} sm={6} md={4}>
-                <TextField
-                  fullWidth
-                  size="small"
-                  label="Búsqueda por Nombre / Palabras Clave"
-                  placeholder="Ej: DERECHO, PENAL, ADMINISTRACION..."
-                  value={searchKeyword}
-                  onChange={(e) => setSearchKeyword(e.target.value)}
-                  InputProps={{
-                    startAdornment: <SearchRoundedIcon fontSize="small" sx={{ color: '#64748b', mr: 1 }} />
-                  }}
-                />
-              </Grid>
-
-              <Grid item xs={12} sm={6} md={2.5}>
-                <TextField
-                  select
-                  fullWidth
-                  size="small"
-                  label="Departamento"
-                  value={selectedDepto}
-                  onChange={(e) => {
-                    setSelectedDepto(e.target.value);
-                    setSelectedMunicipio('TODOS');
-                  }}
-                >
-                  {deptoOptions.map((d) => (
-                    <MenuItem key={d} value={d}>
-                      {d}
-                    </MenuItem>
-                  ))}
-                </TextField>
-              </Grid>
-
-              <Grid item xs={12} sm={6} md={2.5}>
-                <TextField
-                  select
-                  fullWidth
-                  size="small"
-                  label="Municipio Oferta"
-                  value={selectedMunicipio}
-                  onChange={(e) => setSelectedMunicipio(e.target.value)}
-                >
-                  {municipioOptions.map((m) => (
-                    <MenuItem key={m} value={m}>
-                      {m}
-                    </MenuItem>
-                  ))}
-                </TextField>
-              </Grid>
-            </Grid>
-
-            {/* Visual Style Selector Toolbar */}
-            <Stack direction="row" spacing={1.5} alignItems="center" justifyContent="space-between" sx={{ mt: 2.5, pt: 2, borderTop: '1px dashed #cbd5e1' }}>
-              <Typography variant="body2" sx={{ fontWeight: 800, color: '#334155' }}>
-                Estilo de Visualización del Esquema:
-              </Typography>
-              <Stack direction="row" spacing={1}>
-                <Button
-                  size="small"
-                  variant={visualStyle === 'mindmap' ? 'contained' : 'outlined'}
-                  onClick={() => setVisualStyle('mindmap')}
-                  startIcon={<HubRoundedIcon />}
-                  sx={{ textTransform: 'none', fontWeight: 800, borderRadius: 2 }}
-                >
-                  Mapa Radial (Fiel a tu Imagen Referencia)
-                </Button>
-                <Button
-                  size="small"
-                  variant={visualStyle === 'hex' ? 'contained' : 'outlined'}
-                  onClick={() => setVisualStyle('hex')}
-                  startIcon={<HexagonRoundedIcon />}
-                  sx={{ textTransform: 'none', fontWeight: 800, borderRadius: 2 }}
-                >
-                  Diagrama Nodos Hexagonales
-                </Button>
-                <Button
-                  size="small"
-                  variant={visualStyle === 'cards' ? 'contained' : 'outlined'}
-                  onClick={() => setVisualStyle('cards')}
-                  startIcon={<ViewModuleRoundedIcon />}
-                  sx={{ textTransform: 'none', fontWeight: 800, borderRadius: 2 }}
-                >
-                  Módulos de Tarjetas
-                </Button>
-              </Stack>
-            </Stack>
+          <Paper elevation={0} sx={{ p: 2.2, border: '1px solid #dbe5f2', borderRadius: 3 }}>
+            <Typography sx={{ fontWeight: 900, mb: 2 }}>Filtros de oferta académica</Typography>
+            <Box sx={{ display: 'grid', gap: 1.5, gridTemplateColumns: { xs: '1fr', md: '2fr repeat(5, minmax(145px, 1fr))' } }}>
+              <TextField size="small" label="Programa, institución o palabra clave" value={offerSearch} onChange={(event) => setOfferSearch(event.target.value)} />
+              <FilterSelect label="Área" value={area} onChange={setArea} options={offerOptions.areas} />
+              <FilterSelect label="Sector" value={sector} onChange={setSector} options={offerOptions.sectors} />
+              <FilterSelect label="Modalidad" value={modality} onChange={setModality} options={offerOptions.modalities} />
+              <FilterSelect label="Cobertura" value={geo} onChange={setGeo} options={offerOptions.geos} />
+              <FilterSelect label="Municipio" value={municipality} onChange={setMunicipality} options={offerOptions.municipalities} />
+            </Box>
           </Paper>
 
-          {/* Search Result Summary Chip & Program Summary Table */}
-          <Paper elevation={0} sx={{ border: '1px solid #001b44', borderRadius: 2.5, overflow: 'hidden', bgcolor: '#ffffff', boxShadow: '0 4px 12px rgba(0,27,68,0.08)' }}>
-            <TableContainer sx={{ maxHeight: 240 }}>
-              <Table stickyHeader size="small">
-                <TableHead>
-                  <TableRow>
-                    <TableCell sx={{ bgcolor: '#001b44', color: '#ffffff', fontWeight: 900, fontSize: 13, textTransform: 'uppercase', py: 1.2 }}>
-                      PROGRAMAS ACADÉMICOS ANALIZADOS
-                    </TableCell>
-                    <TableCell align="right" sx={{ bgcolor: '#001b44', color: '#ffffff', fontWeight: 900, fontSize: 13, textTransform: 'uppercase', width: 140, py: 1.2 }}>
-                      TOTAL ▼
-                    </TableCell>
-                  </TableRow>
-                </TableHead>
-                <TableBody>
-                  {programSummary.map((item, index) => (
-                    <TableRow key={item.programa} sx={{ bgcolor: index % 2 === 0 ? '#ffffff' : '#f8fafc', '&:hover': { bgcolor: '#f1f5f9' } }}>
-                      <TableCell sx={{ fontWeight: 700, fontSize: 12.5, color: '#1e293b', py: 0.9 }}>
-                        {item.programa}
-                      </TableCell>
-                      <TableCell align="right" sx={{ fontWeight: 900, fontSize: 13, color: '#001b44', py: 0.9 }}>
-                        {item.total}
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                  {/* Total Summary Row */}
-                  <TableRow sx={{ bgcolor: '#f1f5f9', borderTop: '2px solid #001b44' }}>
-                    <TableCell sx={{ fontWeight: 900, fontSize: 13.5, color: '#001b44' }}>
-                      Total
-                    </TableCell>
-                    <TableCell align="right" sx={{ fontWeight: 900, fontSize: 14, color: '#001b44' }}>
-                      {totalProgramSum}
-                    </TableCell>
-                  </TableRow>
-                </TableBody>
-              </Table>
-            </TableContainer>
-          </Paper>
+          <Box sx={{ display: 'grid', gap: 2, gridTemplateColumns: { xs: '1fr 1fr', lg: 'repeat(4, 1fr)' } }}>
+            <MetricCard icon={PublicRoundedIcon} label="Registros de oferta" value={offerMetrics.rows} />
+            <MetricCard icon={SchoolRoundedIcon} label="Programas distintos" value={offerMetrics.programs} color="#7c3aed" />
+            <MetricCard icon={AccountBalanceRoundedIcon} label="Instituciones" value={offerMetrics.institutions} color="#047857" />
+            <MetricCard icon={PublicRoundedIcon} label="Municipios" value={offerMetrics.municipalities} color="#ea580c" />
+          </Box>
 
-          {/* ========================================================================= */}
-          {/* VARIANTE 1: RADIAL MAP / MINDMAP (RÉPLICA FIEL 1:1 DE TU IMAGEN REFERENCIA) */}
-          {/* ========================================================================= */}
-          {visualStyle === 'mindmap' && (
-            <Paper elevation={0} sx={{ p: { xs: 2, md: 3 }, border: '1px solid #cbd5e1', borderRadius: 4, bgcolor: '#ffffff', overflow: 'hidden' }}>
-              <Box sx={{ width: '100%', minHeight: 640, display: 'flex', justifyContent: 'center', alignItems: 'center' }}>
-                <Box sx={{ width: 940, height: 620, position: 'relative' }}>
-                  
-                  {/* SVG Connecting Lines Layer - Perfectly Aligned inside 940x620 Box */}
-                  <svg style={{ position: 'absolute', top: 0, left: 0, width: 940, height: 620, pointerEvents: 'none', zIndex: 1 }}>
-                    {/* Top-Left: Reconocimiento MEN (Blue #003399) */}
-                    <path d="M 405 245 Q 345 190 280 140" stroke="#003399" strokeWidth="3.5" fill="none" strokeDasharray="none" />
-                    <circle cx="405" cy="245" r="5" fill="#003399" />
-                    <circle cx="280" cy="140" r="5" fill="#003399" />
-
-                    {/* Top-Right: Sector (Green #2e7d32) */}
-                    <path d="M 535 245 Q 595 190 660 140" stroke="#2e7d32" strokeWidth="3.5" fill="none" />
-                    <circle cx="535" cy="245" r="5" fill="#2e7d32" />
-                    <circle cx="660" cy="140" r="5" fill="#2e7d32" />
-
-                    {/* Middle-Left: Modalidades (Purple #6a1b9a) */}
-                    <path d="M 376 310 Q 330 310 280 335" stroke="#6a1b9a" strokeWidth="3.5" fill="none" />
-                    <circle cx="376" cy="310" r="5" fill="#6a1b9a" />
-                    <circle cx="280" cy="335" r="5" fill="#6a1b9a" />
-
-                    {/* Middle-Right: Rango Créditos (Orange #e65100) */}
-                    <path d="M 564 310 Q 610 310 660 335" stroke="#e65100" strokeWidth="3.5" fill="none" />
-                    <circle cx="564" cy="310" r="5" fill="#e65100" />
-                    <circle cx="660" cy="335" r="5" fill="#e65100" />
-
-                    {/* Bottom-Center: N° Semestres (Teal #00838f) */}
-                    <path d="M 470 404 L 470 460" stroke="#00838f" strokeWidth="3.5" fill="none" />
-                    <circle cx="470" cy="404" r="5" fill="#00838f" />
-                    <circle cx="470" cy="460" r="5" fill="#00838f" />
-                  </svg>
-                  
-                  {/* CENTER NODE: Total programas */}
-                  <Box
-                    sx={{
-                      position: 'absolute',
-                      top: '50%',
-                      left: '50%',
-                      transform: 'translate(-50%, -50%)',
-                      width: 175,
-                      height: 175,
-                      borderRadius: '50%',
-                      background: '#ffffff',
-                      boxShadow: '0 10px 30px rgba(0, 51, 153, 0.15)',
-                      display: 'flex',
-                      flexDirection: 'column',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      zIndex: 10
-                    }}
-                  >
-                    {/* Multi-color arc ring SVG overlay */}
-                    <svg style={{ position: 'absolute', top: -8, left: -8, width: 191, height: 191, pointerEvents: 'none' }}>
-                      <circle cx="95.5" cy="95.5" r="88" stroke="#003399" strokeWidth="6" fill="none" strokeDasharray="110 440" strokeDashoffset="0" />
-                      <circle cx="95.5" cy="95.5" r="88" stroke="#2e7d32" strokeWidth="6" fill="none" strokeDasharray="110 440" strokeDashoffset="-110" />
-                      <circle cx="95.5" cy="95.5" r="88" stroke="#e65100" strokeWidth="6" fill="none" strokeDasharray="110 440" strokeDashoffset="-220" />
-                      <circle cx="95.5" cy="95.5" r="88" stroke="#00838f" strokeWidth="6" fill="none" strokeDasharray="110 440" strokeDashoffset="-330" />
-                      <circle cx="95.5" cy="95.5" r="88" stroke="#6a1b9a" strokeWidth="6" fill="none" strokeDasharray="110 440" strokeDashoffset="-440" />
-                    </svg>
-
-                    <Typography variant="h6" sx={{ fontWeight: 900, color: '#002244', textTransform: 'none', lineHeight: 1.1, textAlign: 'center', mb: 1 }}>
-                      Total<br />programas
-                    </Typography>
-                    
-                    <ValueBox value={ofertaMetrics.total} color="#003399" />
-                  </Box>
-
-                  {/* 1. TOP-LEFT: Reconocimiento MEN (Blue #003399) */}
-                  <Box sx={{ position: 'absolute', top: 20, left: 10, width: 270 }}>
-                    <Box sx={{ position: 'relative', pt: 2.5 }}>
-                      <Box
-                        sx={{
-                          position: 'absolute',
-                          top: 0,
-                          left: '50%',
-                          transform: 'translateX(-50%)',
-                          width: 44,
-                          height: 44,
-                          borderRadius: '50%',
-                          bgcolor: '#ffffff',
-                          border: '2.5px solid #003399',
-                          color: '#003399',
-                          display: 'grid',
-                          placeItems: 'center',
-                          boxShadow: '0 4px 10px rgba(0, 51, 153, 0.2)',
-                          zIndex: 3
-                        }}
-                      >
-                        <AccountBalanceRoundedIcon fontSize="small" />
-                      </Box>
-
-                      <Paper elevation={0} sx={{ border: '2px solid #003399', borderRadius: 3, bgcolor: '#ffffff', p: 1.8, pt: 3.2 }}>
-                        <Box sx={{ bgcolor: '#003399', color: '#ffffff', borderRadius: 2, textAlign: 'center', py: 0.6, mb: 1.5 }}>
-                          <Typography variant="subtitle2" sx={{ fontWeight: 900, fontSize: 13, color: '#ffffff' }}>
-                            Reconocimiento MEN
-                          </Typography>
-                        </Box>
-                        <Stack spacing={1}>
-                          <Stack direction="row" justifyContent="space-between" alignItems="center">
-                            <Typography variant="body2" sx={{ fontWeight: 700, color: '#334155', fontSize: 12 }}>
-                              • Registro calificado
-                            </Typography>
-                            <ValueBox value={ofertaMetrics.registroCalificado} />
-                          </Stack>
-                          <Stack direction="row" justifyContent="space-between" alignItems="center">
-                            <Typography variant="body2" sx={{ fontWeight: 700, color: '#334155', fontSize: 12 }}>
-                              • Acreditación de alta calidad
-                            </Typography>
-                            <ValueBox value={ofertaMetrics.acreditacionAltaCalidad} color="#003399" />
-                          </Stack>
-                        </Stack>
-                      </Paper>
-                    </Box>
-                  </Box>
-
-                  {/* 2. TOP-RIGHT: Sector (Green #2e7d32) */}
-                  <Box sx={{ position: 'absolute', top: 20, right: 10, width: 270 }}>
-                    <Box sx={{ position: 'relative', pt: 2.5 }}>
-                      <Box
-                        sx={{
-                          position: 'absolute',
-                          top: 0,
-                          left: '50%',
-                          transform: 'translateX(-50%)',
-                          width: 44,
-                          height: 44,
-                          borderRadius: '50%',
-                          bgcolor: '#ffffff',
-                          border: '2.5px solid #2e7d32',
-                          color: '#2e7d32',
-                          display: 'grid',
-                          placeItems: 'center',
-                          boxShadow: '0 4px 10px rgba(46, 125, 50, 0.2)',
-                          zIndex: 3
-                        }}
-                      >
-                        <GroupsRoundedIcon fontSize="small" />
-                      </Box>
-
-                      <Paper elevation={0} sx={{ border: '2px solid #2e7d32', borderRadius: 3, bgcolor: '#ffffff', p: 1.8, pt: 3.2 }}>
-                        <Box sx={{ bgcolor: '#2e7d32', color: '#ffffff', borderRadius: 2, textAlign: 'center', py: 0.6, mb: 1.5 }}>
-                          <Typography variant="subtitle2" sx={{ fontWeight: 900, fontSize: 13, color: '#ffffff' }}>
-                            Sector
-                          </Typography>
-                        </Box>
-                        <Stack spacing={1}>
-                          <Stack direction="row" justifyContent="space-between" alignItems="center">
-                            <Typography variant="body2" sx={{ fontWeight: 700, color: '#334155', fontSize: 12 }}>
-                              • Público
-                            </Typography>
-                            <ValueBox value={ofertaMetrics.publico} color="#2e7d32" />
-                          </Stack>
-                          <Stack direction="row" justifyContent="space-between" alignItems="center">
-                            <Typography variant="body2" sx={{ fontWeight: 700, color: '#334155', fontSize: 12 }}>
-                              • Privado
-                            </Typography>
-                            <ValueBox value={ofertaMetrics.privado} />
-                          </Stack>
-                        </Stack>
-                      </Paper>
-                    </Box>
-                  </Box>
-
-                  {/* 3. MIDDLE-LEFT: Modalidades (Purple #6a1b9a) */}
-                  <Box sx={{ position: 'absolute', top: 230, left: 10, width: 270 }}>
-                    <Box sx={{ position: 'relative', pt: 2.5 }}>
-                      <Box
-                        sx={{
-                          position: 'absolute',
-                          top: 0,
-                          left: '50%',
-                          transform: 'translateX(-50%)',
-                          width: 44,
-                          height: 44,
-                          borderRadius: '50%',
-                          bgcolor: '#ffffff',
-                          border: '2.5px solid #6a1b9a',
-                          color: '#6a1b9a',
-                          display: 'grid',
-                          placeItems: 'center',
-                          boxShadow: '0 4px 10px rgba(106, 27, 154, 0.2)',
-                          zIndex: 3
-                        }}
-                      >
-                        <DevicesRoundedIcon fontSize="small" />
-                      </Box>
-
-                      <Paper elevation={0} sx={{ border: '2px solid #6a1b9a', borderRadius: 3, bgcolor: '#ffffff', p: 1.8, pt: 3.2 }}>
-                        <Box sx={{ bgcolor: '#6a1b9a', color: '#ffffff', borderRadius: 2, textAlign: 'center', py: 0.6, mb: 1.5 }}>
-                          <Typography variant="subtitle2" sx={{ fontWeight: 900, fontSize: 13, color: '#ffffff' }}>
-                            Modalidades
-                          </Typography>
-                        </Box>
-                        <Stack spacing={0.8}>
-                          <Stack direction="row" justifyContent="space-between" alignItems="center">
-                            <Typography variant="body2" sx={{ fontWeight: 700, color: '#334155', fontSize: 12 }}>
-                              • Presencial
-                            </Typography>
-                            <ValueBox value={ofertaMetrics.presencial} color="#6a1b9a" />
-                          </Stack>
-                          <Stack direction="row" justifyContent="space-between" alignItems="center">
-                            <Typography variant="body2" sx={{ fontWeight: 700, color: '#334155', fontSize: 12 }}>
-                              • Virtual
-                            </Typography>
-                            <ValueBox value={ofertaMetrics.virtual} />
-                          </Stack>
-                          <Stack direction="row" justifyContent="space-between" alignItems="center">
-                            <Typography variant="body2" sx={{ fontWeight: 700, color: '#334155', fontSize: 12 }}>
-                              • A distancia
-                            </Typography>
-                            <ValueBox value={ofertaMetrics.aDistancia} />
-                          </Stack>
-                          <Stack direction="row" justifyContent="space-between" alignItems="center">
-                            <Typography variant="body2" sx={{ fontWeight: 700, color: '#334155', fontSize: 12 }}>
-                              • Dual
-                            </Typography>
-                            <ValueBox value={ofertaMetrics.dual} />
-                          </Stack>
-                        </Stack>
-                      </Paper>
-                    </Box>
-                  </Box>
-
-                  {/* 4. MIDDLE-RIGHT: Rango Créditos Académicos (Orange #e65100) */}
-                  <Box sx={{ position: 'absolute', top: 230, right: 10, width: 270 }}>
-                    <Box sx={{ position: 'relative', pt: 2.5 }}>
-                      <Box
-                        sx={{
-                          position: 'absolute',
-                          top: 0,
-                          left: '50%',
-                          transform: 'translateX(-50%)',
-                          width: 44,
-                          height: 44,
-                          borderRadius: '50%',
-                          bgcolor: '#ffffff',
-                          border: '2.5px solid #e65100',
-                          color: '#e65100',
-                          display: 'grid',
-                          placeItems: 'center',
-                          boxShadow: '0 4px 10px rgba(230, 81, 0, 0.2)',
-                          zIndex: 3
-                        }}
-                      >
-                        <SchoolRoundedIcon fontSize="small" />
-                      </Box>
-
-                      <Paper elevation={0} sx={{ border: '2px solid #e65100', borderRadius: 3, bgcolor: '#ffffff', p: 1.8, pt: 3.2 }}>
-                        <Box sx={{ bgcolor: '#e65100', color: '#ffffff', borderRadius: 2, textAlign: 'center', py: 0.6, mb: 1.5 }}>
-                          <Typography variant="subtitle2" sx={{ fontWeight: 900, fontSize: 13, color: '#ffffff' }}>
-                            Rango Créditos Académicos
-                          </Typography>
-                        </Box>
-                        <Stack spacing={1}>
-                          <Stack direction="row" justifyContent="space-between" alignItems="center">
-                            <Typography variant="body2" sx={{ fontWeight: 700, color: '#334155', fontSize: 12 }}>
-                              • Nº de créditos mínimo
-                            </Typography>
-                            <ValueBox value={ofertaMetrics.minCreditos} />
-                          </Stack>
-                          <Stack direction="row" justifyContent="space-between" alignItems="center">
-                            <Typography variant="body2" sx={{ fontWeight: 700, color: '#334155', fontSize: 12 }}>
-                              • Nº de créditos máximo
-                            </Typography>
-                            <ValueBox value={ofertaMetrics.maxCreditos} />
-                          </Stack>
-                          <Stack direction="row" justifyContent="space-between" alignItems="center">
-                            <Typography variant="body2" sx={{ fontWeight: 700, color: '#334155', fontSize: 12 }}>
-                              • Promedio de créditos
-                            </Typography>
-                            <ValueBox value={ofertaMetrics.avgCreditos} color="#e65100" />
-                          </Stack>
-                        </Stack>
-                      </Paper>
-                    </Box>
-                  </Box>
-
-                  {/* 5. BOTTOM-CENTER: Nº semestres (Teal #00838f) */}
-                  <Box sx={{ position: 'absolute', bottom: 10, left: '50%', transform: 'translateX(-50%)', width: 290 }}>
-                    <Box sx={{ position: 'relative', pt: 2.5 }}>
-                      <Box
-                        sx={{
-                          position: 'absolute',
-                          top: 0,
-                          left: '50%',
-                          transform: 'translateX(-50%)',
-                          width: 44,
-                          height: 44,
-                          borderRadius: '50%',
-                          bgcolor: '#ffffff',
-                          border: '2.5px solid #00838f',
-                          color: '#00838f',
-                          display: 'grid',
-                          placeItems: 'center',
-                          boxShadow: '0 4px 10px rgba(0, 131, 143, 0.2)',
-                          zIndex: 3
-                        }}
-                      >
-                        <CalendarMonthRoundedIcon fontSize="small" />
-                      </Box>
-
-                      <Paper elevation={0} sx={{ border: '2px solid #00838f', borderRadius: 3, bgcolor: '#ffffff', p: 1.8, pt: 3.2 }}>
-                        <Box sx={{ bgcolor: '#00838f', color: '#ffffff', borderRadius: 2, textAlign: 'center', py: 0.6, mb: 1.5 }}>
-                          <Typography variant="subtitle2" sx={{ fontWeight: 900, fontSize: 13, color: '#ffffff' }}>
-                            Nº semestres
-                          </Typography>
-                        </Box>
-                        <Stack spacing={0.8}>
-                          {Object.entries(ofertaMetrics.semestresMap).length === 0 ? (
-                            <Typography variant="caption" sx={{ color: '#64748b', fontStyle: 'italic', textAlign: 'center' }}>
-                              No hay información de semestres
-                            </Typography>
-                          ) : (
-                            Object.entries(ofertaMetrics.semestresMap).slice(0, 4).map(([sem, cnt]) => (
-                              <Stack direction="row" justifyContent="space-between" alignItems="center" key={sem}>
-                                <Typography variant="body2" sx={{ fontWeight: 700, color: '#334155', fontSize: 12 }}>
-                                  • {sem}
-                                </Typography>
-                                <ValueBox value={cnt} color="#00838f" />
-                              </Stack>
-                            ))
-                          )}
-                        </Stack>
-                      </Paper>
-                    </Box>
-                  </Box>
-
-                </Box>
-              </Box>
+          <Box sx={{ display: 'grid', gap: 2, gridTemplateColumns: { xs: '1fr', lg: '1.5fr 1fr' } }}>
+            <Paper elevation={0} sx={{ p: 2, border: '1px solid #dbe5f2', borderRadius: 3 }}>
+              <Typography sx={{ fontWeight: 900, mb: 1 }}>Áreas con mayor oferta</Typography>
+              <Box sx={{ height: 340 }}><ResponsiveContainer width="100%" height="100%"><BarChart data={topAreas} layout="vertical" margin={{ left: 20, right: 20 }}><CartesianGrid strokeDasharray="3 3" horizontal={false} /><XAxis type="number" /><YAxis dataKey="name" type="category" width={180} tick={{ fontSize: 10 }} /><RechartsTooltip /><Bar dataKey="total" name="Programas ofertados" fill="#2563eb" radius={[0, 6, 6, 0]} /></BarChart></ResponsiveContainer></Box>
             </Paper>
-          )}
-
-          {/* ========================================================================= */}
-          {/* VARIANTE 2: LINEAR HEXAGON FLOW DIAGRAM CON LÍNEAS DE ENLACE (Imagen 3) */}
-          {/* ========================================================================= */}
-          {visualStyle === 'hex' && (
-            <Paper elevation={0} sx={{ p: { xs: 2, md: 3 }, border: '1px solid #cbd5e1', borderRadius: 4, bgcolor: '#ffffff', position: 'relative', overflow: 'hidden' }}>
-              <Box sx={{ overflowX: 'auto', py: 2, position: 'relative' }}>
-                {/* Horizontal connecting SVG line */}
-                <svg style={{ position: 'absolute', top: 40, left: 0, width: '100%', height: 60, pointerEvents: 'none', zIndex: 1 }}>
-                  <line x1="50" y1="28" x2="850" y2="28" stroke="#cbd5e1" strokeWidth="4" />
-                </svg>
-
-                <Grid container spacing={2} sx={{ minWidth: 850, position: 'relative', zIndex: 2 }}>
-                  {/* Reconocimiento MEN */}
-                  <Grid item xs={2.4}>
-                    <Box sx={{ textAlign: 'center', mb: 1.5 }}>
-                      <Box
-                        sx={{
-                          width: 56,
-                          height: 56,
-                          mx: 'auto',
-                          borderRadius: 2,
-                          background: 'linear-gradient(135deg, #1e3a8a 0%, #3b82f6 100%)',
-                          color: '#fff',
-                          display: 'grid',
-                          placeItems: 'center',
-                          boxShadow: '0 4px 12px rgba(30,58,138,0.25)'
-                        }}
-                      >
-                        <AccountBalanceRoundedIcon fontSize="small" />
-                      </Box>
-                    </Box>
-                    <Paper elevation={0} sx={{ p: 2, border: '2px solid #1e3a8a', borderRadius: 3, textAlign: 'center', bgcolor: '#f8fafc' }}>
-                      <Typography variant="subtitle2" sx={{ fontWeight: 900, color: '#1e3a8a', mb: 1.5 }}>
-                        Reconocimiento MEN
-                      </Typography>
-                      <Stack spacing={1} sx={{ textAlign: 'left' }}>
-                        <Stack direction="row" justifyContent="space-between" alignItems="center">
-                          <Typography variant="caption" sx={{ fontWeight: 700 }}>
-                            Registro calificado
-                          </Typography>
-                          <ValueBox value={ofertaMetrics.registroCalificado} />
-                        </Stack>
-                        <Stack direction="row" justifyContent="space-between" alignItems="center">
-                          <Typography variant="caption" sx={{ fontWeight: 700 }}>
-                            Acreditación alta calidad
-                          </Typography>
-                          <ValueBox value={ofertaMetrics.acreditacionAltaCalidad} color="#1e3a8a" />
-                        </Stack>
-                      </Stack>
-                    </Paper>
-                  </Grid>
-
-                  {/* Sector */}
-                  <Grid item xs={2.4}>
-                    <Box sx={{ textAlign: 'center', mb: 1.5 }}>
-                      <Box
-                        sx={{
-                          width: 56,
-                          height: 56,
-                          mx: 'auto',
-                          borderRadius: 2,
-                          background: 'linear-gradient(135deg, #15803d 0%, #22c55e 100%)',
-                          color: '#fff',
-                          display: 'grid',
-                          placeItems: 'center',
-                          boxShadow: '0 4px 12px rgba(21,128,61,0.25)'
-                        }}
-                      >
-                        <GroupsRoundedIcon fontSize="small" />
-                      </Box>
-                    </Box>
-                    <Paper elevation={0} sx={{ p: 2, border: '2px solid #15803d', borderRadius: 3, textAlign: 'center', bgcolor: '#f8fafc' }}>
-                      <Typography variant="subtitle2" sx={{ fontWeight: 900, color: '#15803d', mb: 1.5 }}>
-                        Sector
-                      </Typography>
-                      <Stack spacing={1} sx={{ textAlign: 'left' }}>
-                        <Stack direction="row" justifyContent="space-between" alignItems="center">
-                          <Typography variant="caption" sx={{ fontWeight: 700 }}>
-                            Público / Oficial
-                          </Typography>
-                          <ValueBox value={ofertaMetrics.publico} color="#15803d" />
-                        </Stack>
-                        <Stack direction="row" justifyContent="space-between" alignItems="center">
-                          <Typography variant="caption" sx={{ fontWeight: 700 }}>
-                            Privado
-                          </Typography>
-                          <ValueBox value={ofertaMetrics.privado} />
-                        </Stack>
-                      </Stack>
-                    </Paper>
-                  </Grid>
-
-                  {/* Modalidades */}
-                  <Grid item xs={2.4}>
-                    <Box sx={{ textAlign: 'center', mb: 1.5 }}>
-                      <Box
-                        sx={{
-                          width: 56,
-                          height: 56,
-                          mx: 'auto',
-                          borderRadius: 2,
-                          background: 'linear-gradient(135deg, #7e22ce 0%, #a855f7 100%)',
-                          color: '#fff',
-                          display: 'grid',
-                          placeItems: 'center',
-                          boxShadow: '0 4px 12px rgba(126,34,206,0.25)'
-                        }}
-                      >
-                        <DevicesRoundedIcon fontSize="small" />
-                      </Box>
-                    </Box>
-                    <Paper elevation={0} sx={{ p: 2, border: '2px solid #7e22ce', borderRadius: 3, textAlign: 'center', bgcolor: '#f8fafc' }}>
-                      <Typography variant="subtitle2" sx={{ fontWeight: 900, color: '#7e22ce', mb: 1.5 }}>
-                        Modalidades
-                      </Typography>
-                      <Stack spacing={0.8} sx={{ textAlign: 'left' }}>
-                        <Stack direction="row" justifyContent="space-between" alignItems="center">
-                          <Typography variant="caption" sx={{ fontWeight: 700 }}>
-                            Presencial
-                          </Typography>
-                          <ValueBox value={ofertaMetrics.presencial} color="#7e22ce" />
-                        </Stack>
-                        <Stack direction="row" justifyContent="space-between" alignItems="center">
-                          <Typography variant="caption" sx={{ fontWeight: 700 }}>
-                            Virtual
-                          </Typography>
-                          <ValueBox value={ofertaMetrics.virtual} />
-                        </Stack>
-                        <Stack direction="row" justifyContent="space-between" alignItems="center">
-                          <Typography variant="caption" sx={{ fontWeight: 700 }}>
-                            A distancia
-                          </Typography>
-                          <ValueBox value={ofertaMetrics.aDistancia} />
-                        </Stack>
-                      </Stack>
-                    </Paper>
-                  </Grid>
-
-                  {/* N° semestres */}
-                  <Grid item xs={2.4}>
-                    <Box sx={{ textAlign: 'center', mb: 1.5 }}>
-                      <Box
-                        sx={{
-                          width: 56,
-                          height: 56,
-                          mx: 'auto',
-                          borderRadius: 2,
-                          background: 'linear-gradient(135deg, #0f766e 0%, #14b8a6 100%)',
-                          color: '#fff',
-                          display: 'grid',
-                          placeItems: 'center',
-                          boxShadow: '0 4px 12px rgba(15,118,110,0.25)'
-                        }}
-                      >
-                        <CalendarMonthRoundedIcon fontSize="small" />
-                      </Box>
-                    </Box>
-                    <Paper elevation={0} sx={{ p: 2, border: '2px solid #0f766e', borderRadius: 3, textAlign: 'center', bgcolor: '#f8fafc' }}>
-                      <Typography variant="subtitle2" sx={{ fontWeight: 900, color: '#0f766e', mb: 1.5 }}>
-                        N° semestres
-                      </Typography>
-                      <Stack spacing={0.8} sx={{ textAlign: 'left' }}>
-                        {Object.entries(ofertaMetrics.semestresMap)
-                          .slice(0, 3)
-                          .map(([sem, cnt]) => (
-                            <Stack direction="row" justifyContent="space-between" alignItems="center" key={sem}>
-                              <Typography variant="caption" sx={{ fontWeight: 700 }}>
-                                {sem} semestres
-                              </Typography>
-                              <ValueBox value={cnt} color="#0f766e" />
-                            </Stack>
-                          ))}
-                      </Stack>
-                    </Paper>
-                  </Grid>
-
-                  {/* Rango Créditos */}
-                  <Grid item xs={2.4}>
-                    <Box sx={{ textAlign: 'center', mb: 1.5 }}>
-                      <Box
-                        sx={{
-                          width: 56,
-                          height: 56,
-                          mx: 'auto',
-                          borderRadius: 2,
-                          background: 'linear-gradient(135deg, #c2410c 0%, #f97316 100%)',
-                          color: '#fff',
-                          display: 'grid',
-                          placeItems: 'center',
-                          boxShadow: '0 4px 12px rgba(194,65,12,0.25)'
-                        }}
-                      >
-                        <SchoolRoundedIcon fontSize="small" />
-                      </Box>
-                    </Box>
-                    <Paper elevation={0} sx={{ p: 2, border: '2px solid #c2410c', borderRadius: 3, textAlign: 'center', bgcolor: '#f8fafc' }}>
-                      <Typography variant="subtitle2" sx={{ fontWeight: 900, color: '#c2410c', mb: 1.5 }}>
-                        Rango Créditos
-                      </Typography>
-                      <Stack spacing={0.8} sx={{ textAlign: 'left' }}>
-                        <Stack direction="row" justifyContent="space-between" alignItems="center">
-                          <Typography variant="caption" sx={{ fontWeight: 700 }}>
-                            Mínimo
-                          </Typography>
-                          <ValueBox value={ofertaMetrics.minCreditos} />
-                        </Stack>
-                        <Stack direction="row" justifyContent="space-between" alignItems="center">
-                          <Typography variant="caption" sx={{ fontWeight: 700 }}>
-                            Máximo
-                          </Typography>
-                          <ValueBox value={ofertaMetrics.maxCreditos} />
-                        </Stack>
-                        <Stack direction="row" justifyContent="space-between" alignItems="center">
-                          <Typography variant="caption" sx={{ fontWeight: 700 }}>
-                            Promedio
-                          </Typography>
-                          <ValueBox value={ofertaMetrics.avgCreditos} color="#c2410c" />
-                        </Stack>
-                      </Stack>
-                    </Paper>
-                  </Grid>
-                </Grid>
-              </Box>
+            <Paper elevation={0} sx={{ p: 2, border: '1px solid #dbe5f2', borderRadius: 3 }}>
+              <Typography sx={{ fontWeight: 900, mb: 1 }}>Distribución por modalidad</Typography>
+              <Box sx={{ height: 340 }}><ResponsiveContainer width="100%" height="100%"><BarChart data={offerDistribution}><CartesianGrid strokeDasharray="3 3" vertical={false} /><XAxis dataKey="name" tick={{ fontSize: 10 }} /><YAxis /><RechartsTooltip /><Bar dataKey="total" name="Programas" fill="#0f766e" radius={[6, 6, 0, 0]} /></BarChart></ResponsiveContainer></Box>
             </Paper>
-          )}
+          </Box>
 
-          {/* ========================================================================= */}
-          {/* VARIANTE 3: STRUCTURED EXECUTIVE CARDS (Imagen 4) */}
-          {/* ========================================================================= */}
-          {visualStyle === 'cards' && (
-            <Paper elevation={0} sx={{ p: 3, border: '1px solid #cbd5e1', borderRadius: 4, bgcolor: '#f8fafc' }}>
-              <Box sx={{ background: 'linear-gradient(135deg, #0f172a 0%, #1e293b 100%)', color: '#fff', p: 2, px: 3, borderRadius: 3, mb: 3 }}>
-                <Stack direction="row" justifyContent="space-between" alignItems="center">
-                  <Typography variant="h6" sx={{ fontWeight: 900 }}>
-                    TOTAL PROGRAMAS ANALIZADOS
-                  </Typography>
-                  <ValueBox value={ofertaMetrics.total} color="#0284c7" />
-                </Stack>
-              </Box>
-
-              <Grid container spacing={2}>
-                <Grid item xs={12} md={6}>
-                  <Paper elevation={0} sx={{ p: 2, border: '1px solid #cbd5e1', borderRadius: 3 }}>
-                    <Typography variant="subtitle2" sx={{ fontWeight: 900, color: '#1e3a8a', mb: 1 }}>
-                      Reconocimiento MEN
-                    </Typography>
-                    <Stack spacing={1}>
-                      <Stack direction="row" justifyContent="space-between" alignItems="center">
-                        <Typography variant="body2">Registro calificado</Typography>
-                        <ValueBox value={ofertaMetrics.registroCalificado} />
-                      </Stack>
-                      <Stack direction="row" justifyContent="space-between" alignItems="center">
-                        <Typography variant="body2">Acreditación de alta calidad</Typography>
-                        <ValueBox value={ofertaMetrics.acreditacionAltaCalidad} color="#1d4ed8" />
-                      </Stack>
-                    </Stack>
-                  </Paper>
-                </Grid>
-
-                <Grid item xs={12} md={6}>
-                  <Paper elevation={0} sx={{ p: 2, border: '1px solid #cbd5e1', borderRadius: 3 }}>
-                    <Typography variant="subtitle2" sx={{ fontWeight: 900, color: '#15803d', mb: 1 }}>
-                      Sector IES
-                    </Typography>
-                    <Stack spacing={1}>
-                      <Stack direction="row" justifyContent="space-between" alignItems="center">
-                        <Typography variant="body2">Público / Oficial</Typography>
-                        <ValueBox value={ofertaMetrics.publico} color="#15803d" />
-                      </Stack>
-                      <Stack direction="row" justifyContent="space-between" alignItems="center">
-                        <Typography variant="body2">Privado</Typography>
-                        <ValueBox value={ofertaMetrics.privado} />
-                      </Stack>
-                    </Stack>
-                  </Paper>
-                </Grid>
-              </Grid>
-            </Paper>
-          )}
-
-          {/* ========================================================================= */}
-          {/* MAPAS Y TABLAS DE DATOS: DEPARTAMENTO Y MUNICIPIO (Fiel a Captura de Pantalla) */}
-          {/* ========================================================================= */}
-          <Grid container spacing={2.5}>
-            {/* 1. SECCIÓN DEPARTAMENTO OFERTA (MAPA + TABLA) */}
-            <Grid item xs={12} lg={6}>
-              <Paper elevation={0} sx={{ p: 2, border: '1px solid #cbd5e1', borderRadius: 3, height: '100%', bgcolor: '#ffffff' }}>
-                <Stack direction="row" spacing={1} alignItems="center" sx={{ mb: 1.5, pb: 1, borderBottom: '1px solid #e2e8f0' }}>
-                  <MapRoundedIcon sx={{ color: '#003399' }} />
-                  <Typography variant="subtitle2" sx={{ fontWeight: 900, color: '#0f172a', textTransform: 'uppercase' }}>
-                    DEPARTAMENTO OFERTA
-                  </Typography>
-                </Stack>
-
-                <Grid container spacing={2}>
-                  {/* Left: Departamento Map Component */}
-                  <Grid item xs={12} sm={6}>
-                    <Box
-                      sx={{
-                        width: '100%',
-                        height: 340,
-                        borderRadius: 2,
-                        bgcolor: '#f1f5f9',
-                        position: 'relative',
-                        overflow: 'hidden',
-                        border: '1px solid #cbd5e1',
-                        display: 'flex',
-                        flexDirection: 'column',
-                        alignItems: 'center',
-                        justifyContent: 'center'
-                      }}
-                    >
-                      {/* Leaflet/OpenStreetMap Embed Iframe */}
-                      <iframe
-                        title="Mapa Departamento Oferta"
-                        width="100%"
-                        height="100%"
-                        frameBorder="0"
-                        scrolling="no"
-                        src="https://www.openstreetmap.org/export/embed.html?bbox=-79.5%2C0.5%2C-73.5%2C6.5&amp;layer=mapnik"
-                        style={{ filter: 'contrast(1.05) saturate(1.1)' }}
-                      />
-                      {/* Department Pins Layer Overlay */}
-                      <Box sx={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', pointerEvents: 'none' }}>
-                        {departamentoSummary.map((d, i) => {
-                          const isReg = REGIONAL_DEPARTMENTS.some((rd) => d.departamento.includes(rd));
-                          return (
-                            <Chip
-                              key={d.departamento}
-                              size="small"
-                              label={`${d.departamento}: ${d.total}`}
-                              sx={{
-                                position: 'absolute',
-                                top: `${25 + i * 16}%`,
-                                left: `${30 + (i % 3) * 20}%`,
-                                bgcolor: isReg ? '#15803d' : '#1e3a8a',
-                                color: '#ffffff',
-                                fontWeight: 900,
-                                fontSize: 11,
-                                boxShadow: '0 2px 8px rgba(0,0,0,0.3)',
-                                border: '1.5px solid #ffffff'
-                              }}
-                            />
-                          );
-                        })}
-                      </Box>
-                    </Box>
-                  </Grid>
-
-                  {/* Right: Departamento Table (Fiel a Captura de Pantalla) */}
-                  <Grid item xs={12} sm={6}>
-                    <Paper elevation={0} sx={{ border: '1px solid #001b44', borderRadius: 2, overflow: 'hidden' }}>
-                      <TableContainer sx={{ maxHeight: 340 }}>
-                        <Table stickyHeader size="small">
-                          <TableHead>
-                            <TableRow>
-                              <TableCell sx={{ bgcolor: '#001b44', color: '#ffffff', fontWeight: 900, fontSize: 11.5, textTransform: 'uppercase', py: 1 }}>
-                                DEPARTAMENTO OFERTA PROGRAMA
-                              </TableCell>
-                              <TableCell align="right" sx={{ bgcolor: '#001b44', color: '#ffffff', fontWeight: 900, fontSize: 11.5, textTransform: 'uppercase', py: 1 }}>
-                                TOTAL PROGRAMAS ▼
-                              </TableCell>
-                            </TableRow>
-                          </TableHead>
-                          <TableBody>
-                            {departamentoSummary.map((d, index) => (
-                              <TableRow key={d.departamento} sx={{ bgcolor: index % 2 === 0 ? '#ffffff' : '#f8fafc', '&:hover': { bgcolor: '#f1f5f9' } }}>
-                                <TableCell sx={{ fontWeight: 700, fontSize: 12, color: '#1e293b', py: 0.7 }}>
-                                  {d.departamento}
-                                </TableCell>
-                                <TableCell align="right" sx={{ fontWeight: 900, fontSize: 12.5, color: '#001b44', py: 0.7 }}>
-                                  {d.total}
-                                </TableCell>
-                              </TableRow>
-                            ))}
-                            {/* Total Row */}
-                            <TableRow sx={{ bgcolor: '#f1f5f9', borderTop: '2px solid #001b44' }}>
-                              <TableCell sx={{ fontWeight: 900, fontSize: 12.5, color: '#001b44' }}>
-                                Total
-                              </TableCell>
-                              <TableCell align="right" sx={{ fontWeight: 900, fontSize: 13, color: '#001b44' }}>
-                                {totalDeptoSum}
-                              </TableCell>
-                            </TableRow>
-                          </TableBody>
-                        </Table>
-                      </TableContainer>
-                    </Paper>
-                  </Grid>
-                </Grid>
-              </Paper>
-            </Grid>
-
-            {/* 2. SECCIÓN MUNICIPIO OFERTA (MAPA + TABLA — RÉPLICA EXACTA DE TU IMAGEN REFERENCIA) */}
-            <Grid item xs={12} lg={6}>
-              <Paper elevation={0} sx={{ p: 2, border: '1px solid #cbd5e1', borderRadius: 3, height: '100%', bgcolor: '#ffffff' }}>
-                <Stack direction="row" spacing={1} alignItems="center" sx={{ mb: 1.5, pb: 1, borderBottom: '1px solid #e2e8f0' }}>
-                  <PlaceRoundedIcon sx={{ color: '#be123c' }} />
-                  <Typography variant="subtitle2" sx={{ fontWeight: 900, color: '#0f172a', textTransform: 'uppercase' }}>
-                    MUNICIPIO OFERTA
-                  </Typography>
-                </Stack>
-
-                <Grid container spacing={2}>
-                  {/* Left: Municipio OpenStreetMap Component with Pin Bubbles (Réplica Fiel a la Imagen del Usuario) */}
-                  <Grid item xs={12} sm={6}>
-                    <Box
-                      sx={{
-                        width: '100%',
-                        height: 340,
-                        borderRadius: 2,
-                        bgcolor: '#e2e8f0',
-                        position: 'relative',
-                        overflow: 'hidden',
-                        border: '1px solid #cbd5e1'
-                      }}
-                    >
-                      {/* OpenStreetMap Tile Layer */}
-                      <iframe
-                        title="Mapa Municipio Oferta"
-                        width="100%"
-                        height="100%"
-                        frameBorder="0"
-                        scrolling="no"
-                        src="https://www.openstreetmap.org/export/embed.html?bbox=-78.5%2C0.5%2C-75.2%2C5.0&amp;layer=mapnik"
-                        style={{ filter: 'contrast(1.05) saturate(1.1)' }}
-                      />
-
-                      {/* Municipio Geographic Bubble Markers Overlay */}
-                      <Box sx={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', pointerEvents: 'none' }}>
-                        {municipioSummary.slice(0, 10).map((m, idx) => {
-                          const coords = MUNICIPIO_COORDINATES[normalizeStr(m.municipio)] || { top: `${20 + idx * 7}%`, left: `${30 + (idx % 2) * 25}%` };
-                          const pinColors = ['#1d4ed8', '#7e22ce', '#c2410c', '#15803d', '#0f766e', '#be123c', '#0284c7'];
-                          const color = pinColors[idx % pinColors.length];
-
-                          return (
-                            <Box
-                              key={m.municipio}
-                              sx={{
-                                position: 'absolute',
-                                top: coords.top,
-                                left: coords.left,
-                                transform: 'translate(-50%, -50%)',
-                                display: 'flex',
-                                flexDirection: 'column',
-                                alignItems: 'center'
-                              }}
-                            >
-                              <Chip
-                                size="small"
-                                label={`${m.municipio} (${m.total})`}
-                                sx={{
-                                  bgcolor: '#1e293b',
-                                  color: '#ffffff',
-                                  fontWeight: 900,
-                                  fontSize: 10,
-                                  height: 20,
-                                  boxShadow: '0 2px 6px rgba(0,0,0,0.4)',
-                                  border: '1px solid #ffffff',
-                                  mb: 0.3
-                                }}
-                              />
-                              <Box
-                                sx={{
-                                  width: Math.max(16, m.total * 3),
-                                  height: Math.max(16, m.total * 3),
-                                  borderRadius: '50%',
-                                  bgcolor: color,
-                                  opacity: 0.75,
-                                  border: '2px solid #ffffff',
-                                  boxShadow: '0 0 10px rgba(0,0,0,0.3)'
-                                }}
-                              />
-                            </Box>
-                          );
-                        })}
-                      </Box>
-                    </Box>
-                  </Grid>
-
-                  {/* Right: Municipio Table (Fiel a la Captura de Pantalla del Usuario) */}
-                  <Grid item xs={12} sm={6}>
-                    <Paper elevation={0} sx={{ border: '1px solid #001b44', borderRadius: 2, overflow: 'hidden' }}>
-                      <TableContainer sx={{ maxHeight: 340 }}>
-                        <Table stickyHeader size="small">
-                          <TableHead>
-                            <TableRow>
-                              <TableCell sx={{ bgcolor: '#001b44', color: '#ffffff', fontWeight: 900, fontSize: 11.5, textTransform: 'uppercase', py: 1 }}>
-                                MUNICIPIO OFERTA PROGRAMA
-                              </TableCell>
-                              <TableCell align="right" sx={{ bgcolor: '#001b44', color: '#ffffff', fontWeight: 900, fontSize: 11.5, textTransform: 'uppercase', py: 1 }}>
-                                TOTAL PROGRAMAS ▼
-                              </TableCell>
-                            </TableRow>
-                          </TableHead>
-                          <TableBody>
-                            {municipioSummary.map((m, index) => (
-                              <TableRow key={m.municipio} sx={{ bgcolor: index % 2 === 0 ? '#ffffff' : '#f8fafc', '&:hover': { bgcolor: '#f1f5f9' } }}>
-                                <TableCell sx={{ fontWeight: 700, fontSize: 12, color: '#1e293b', py: 0.7 }}>
-                                  {m.municipio}
-                                </TableCell>
-                                <TableCell align="right" sx={{ fontWeight: 900, fontSize: 12.5, color: '#001b44', py: 0.7 }}>
-                                  {m.total}
-                                </TableCell>
-                              </TableRow>
-                            ))}
-                            {/* Total Row */}
-                            <TableRow sx={{ bgcolor: '#f1f5f9', borderTop: '2px solid #001b44' }}>
-                              <TableCell sx={{ fontWeight: 900, fontSize: 12.5, color: '#001b44' }}>
-                                Total
-                              </TableCell>
-                              <TableCell align="right" sx={{ fontWeight: 900, fontSize: 13, color: '#001b44' }}>
-                                {totalMunicipioSum}
-                              </TableCell>
-                            </TableRow>
-                          </TableBody>
-                        </Table>
-                      </TableContainer>
-                    </Paper>
-                  </Grid>
-                </Grid>
-              </Paper>
-            </Grid>
-          </Grid>
-
-          {/* Detailed Program List Table */}
-          <Paper elevation={0} sx={{ p: 2, border: '1px solid #cbd5e1', borderRadius: 3 }}>
-            <Stack direction="row" justifyContent="space-between" alignItems="center" sx={{ mb: 1.5 }}>
-              <Typography variant="subtitle2" sx={{ fontWeight: 900, color: '#0f172a' }}>
-                Listado Detallado de Programas Coincidentes ({filteredOferta.length})
-              </Typography>
-              <Button size="small" startIcon={<DownloadRoundedIcon />} variant="outlined" sx={{ textTransform: 'none', fontWeight: 800 }}>
-                Exportar Lista
-              </Button>
-            </Stack>
-
-            <TableContainer sx={{ maxHeight: 380 }}>
-              <Table stickyHeader size="small">
-                <TableHead>
-                  <TableRow sx={{ bgcolor: '#f1f5f9' }}>
-                    <TableCell sx={{ fontWeight: 800 }}>Institución (IES)</TableCell>
-                    <TableCell sx={{ fontWeight: 800 }}>Programa Académico</TableCell>
-                    <TableCell sx={{ fontWeight: 800 }}>Municipio</TableCell>
-                    <TableCell sx={{ fontWeight: 800 }}>Modalidad</TableCell>
-                    <TableCell align="right" sx={{ fontWeight: 800 }}>
-                      Créditos
-                    </TableCell>
-                  </TableRow>
-                </TableHead>
-                <TableBody>
-                  {filteredOferta.slice(0, 50).map((r) => (
-                    <TableRow key={r.id} hover>
-                      <TableCell sx={{ fontWeight: 700, fontSize: 12, maxWidth: 200, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                        {r.ies}
-                      </TableCell>
-                      <TableCell sx={{ fontWeight: 800, fontSize: 12, color: '#0369a1' }}>{r.programa}</TableCell>
-                      <TableCell sx={{ fontSize: 12 }}>{r.municipio}</TableCell>
-                      <TableCell sx={{ fontSize: 12 }}>
-                        <Chip size="small" label={r.modalidad} sx={{ fontSize: 10, height: 20 }} />
-                      </TableCell>
-                      <TableCell align="right" sx={{ fontWeight: 800, fontSize: 12 }}>
-                        {r.creditos || '—'}
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </TableContainer>
+          <Paper elevation={0} sx={{ p: 2, border: '1px solid #dbe5f2', borderRadius: 3 }}>
+            <Typography sx={{ fontWeight: 900, mb: 1.5 }}>Detalle de oferta ({numberFormat.format(filteredOffer.length)})</Typography>
+            <TableContainer sx={{ maxHeight: 480 }}><Table stickyHeader size="small"><TableHead><TableRow><TableCell>Institución</TableCell><TableCell>Programa</TableCell><TableCell>Área</TableCell><TableCell>Sector</TableCell><TableCell>Modalidad</TableCell><TableCell>Municipio</TableCell><TableCell>Cobertura</TableCell><TableCell align="right">Créditos</TableCell><TableCell align="right">Semestres</TableCell></TableRow></TableHead><TableBody>
+              {filteredOffer.slice(0, 300).map((row) => <TableRow hover key={row.id}><TableCell>{row.institucion}</TableCell><TableCell sx={{ fontWeight: 700, color: '#1d4ed8' }}>{row.nombre_programa}</TableCell><TableCell>{row.area_conocimiento}</TableCell><TableCell>{row.sector}</TableCell><TableCell>{row.modalidad}</TableCell><TableCell>{row.municipio}</TableCell><TableCell><Chip size="small" label={row.georeferencia || '—'} /></TableCell><TableCell align="right">{row.numero_creditos ?? '—'}</TableCell><TableCell align="right">{row.numero_semestres ?? '—'}</TableCell></TableRow>)}
+            </TableBody></Table></TableContainer>
           </Paper>
         </Stack>
       )}
 
-      {/* ==================== SECCIÓN 2: INFORMACIÓN POBLACIONAL CONTEXTO ==================== */}
       {mainTab === 1 && (
         <Stack spacing={2.5}>
-          {/* Sub-segment Tabs — Full Width Dynamic Pastel Cards */}
-          <Paper elevation={0} sx={{ border: '1px solid #cbd5e1', borderRadius: 3, p: 1, bgcolor: '#f8fafc' }}>
-            <Tabs
-              value={poblacionalSubTab}
-              onChange={(_, val) => setPoblacionalSubTab(val)}
-              variant="fullWidth"
-              sx={{
-                minHeight: 54,
-                '& .MuiTabs-indicator': { display: 'none' },
-                '& .MuiTabs-flexContainer': { gap: 1.5 },
-                '& .MuiTab-root': {
-                  textTransform: 'none',
-                  fontWeight: 900,
-                  fontSize: 14,
-                  minHeight: 48,
-                  borderRadius: 2.5,
-                  color: '#64748b',
-                  bgcolor: '#ffffff',
-                  border: '1px solid #e2e8f0',
-                  transition: 'all 0.2s ease',
-                  '&:hover': { bgcolor: '#f1f5f9' }
-                },
-                '& .MuiTab-root.Mui-selected': {
-                  color: '#991b1b',
-                  background: 'linear-gradient(135deg, #fef2f2 0%, #fee2e2 100%)',
-                  border: '2px solid #fca5a5',
-                  boxShadow: '0 4px 14px rgba(239, 68, 68, 0.12)'
-                }
-              }}
-            >
-              <Tab label="INSCRITOS, ADMITIDOS Y PRIMER CURSO" />
-              <Tab label="Cobertura y Permanencia (Matriculados)" />
-              <Tab label="Salida y Graduación (Graduados)" />
+          <Paper elevation={0} sx={{ p: 1, border: '1px solid #dbe5f2', borderRadius: 3 }}>
+            <Tabs value={populationTab} onChange={(_, value) => setPopulationTab(value)} variant="fullWidth" sx={{ '& .MuiTab-root': { fontWeight: 800, textTransform: 'none' } }}>
+              {metricGroups.map((group) => <Tab key={group.label} label={group.label} />)}
             </Tabs>
           </Paper>
-
-          {/* Program Filter Bar for Poblacional */}
-          <Paper elevation={0} sx={{ p: 2, border: '1px solid #cbd5e1', borderRadius: 3, bgcolor: '#ffffff' }}>
-            <Grid container spacing={2} alignItems="center">
-              <Grid item xs={12} md={6}>
-                <TextField
-                  select
-                  fullWidth
-                  size="small"
-                  label="Programa Académico para Análisis Poblacional"
-                  value={pobProgramaFilter}
-                  onChange={(e) => setPobProgramaFilter(e.target.value)}
-                >
-                  {pobProgramOptions.map((p) => (
-                    <MenuItem key={p} value={p}>
-                      {p}
-                    </MenuItem>
-                  ))}
-                </TextField>
-              </Grid>
-              <Grid item xs={12} sm={6} md={3}>
-                <TextField
-                  select
-                  fullWidth
-                  size="small"
-                  label="Periodo / Año"
-                  value={pobPeriodo}
-                  onChange={(e) => setPobPeriodo(e.target.value)}
-                >
-                  <MenuItem value="TODOS">Todos los periodos</MenuItem>
-                  {Array.from(new Set(parsedPoblacionalRows.map((r) => r.periodo).filter(Boolean)))
-                    .sort()
-                    .map((p) => (
-                      <MenuItem key={p} value={p}>
-                        {p}
-                      </MenuItem>
-                    ))}
-                </TextField>
-              </Grid>
-              <Grid item xs={12} sm={6} md={3}>
-                <Chip
-                  color="primary"
-                  label={`Clasificación: Regional vs Nacional`}
-                  sx={{ fontWeight: 800, py: 1, width: '100%' }}
-                />
-              </Grid>
-            </Grid>
+          <Paper elevation={0} sx={{ p: 2, border: '1px solid #dbe5f2', borderRadius: 3 }}>
+            <Box sx={{ display: 'grid', gap: 1.5, gridTemplateColumns: { xs: '1fr', md: '2fr 1fr' } }}>
+              <FilterSelect label="Programa académico" value={program} onChange={setProgram} options={programOptions} />
+              <FilterSelect label="Periodo" value={period} onChange={setPeriod} options={periodOptions} />
+            </Box>
           </Paper>
 
-          {/* ========================================================================= */}
-          {/* SUB-SEGMENTO A: INSCRITOS, ADMITIDOS Y PRIMER CURSO (RÉPLICA FIEL IMAGEN 2) */}
-          {/* ========================================================================= */}
-          {poblacionalSubTab === 0 && (
-            <Stack spacing={2.5}>
-              {/* Header Box Banner in Executive Soft Slate */}
-              <Paper elevation={0} sx={{ p: 1.5, px: 3, bgcolor: '#ffffff', color: '#0f172a', borderRadius: 3, border: '1px solid #e2e8f0', borderLeft: '6px solid #be123c' }}>
-                <Typography variant="overline" sx={{ color: '#0369a1', fontWeight: 900, letterSpacing: 1 }}>
-                  CONTEXTO EXTERNO POBLACIONAL
-                </Typography>
-                <Typography variant="h6" sx={{ fontWeight: 900, textTransform: 'uppercase', fontSize: 16, color: '#0f172a' }}>
-                  {pobProgramaFilter === 'TODOS' ? 'TODOS LOS PROGRAMAS ANALIZADOS' : pobProgramaFilter}
-                </Typography>
-              </Paper>
+          <Box sx={{ display: 'grid', gap: 2, gridTemplateColumns: { xs: '1fr 1fr', lg: `repeat(${Math.min(activeGroup.fields.length, 3)}, 1fr)` } }}>
+            {populationTotals.map((metric) => <MetricCard key={metric.field} icon={GroupsRoundedIcon} label={metric.label} value={metric.value} color={metric.color} />)}
+          </Box>
 
-              {/* 2x2 Grid of Charts matching User Image 2 */}
-              <Grid container spacing={2.5}>
-                {/* 1. TOP LEFT: INSCRITOS, ADMITIDOS Y PRIMER CURSO NACIONAL (BARRAS APILADAS) */}
-                <Grid item xs={12} md={6}>
-                  <Paper elevation={0} sx={{ p: 2, border: '2px solid #003399', borderRadius: 3, bgcolor: '#ffffff' }}>
-                    <Box sx={{ bgcolor: '#003399', color: '#fff', px: 2, py: 0.8, borderRadius: 1.5, mb: 2, textAlign: 'center' }}>
-                      <Typography variant="subtitle2" sx={{ fontWeight: 900, fontSize: 13, textTransform: 'uppercase' }}>
-                        INSCRITOS, ADMITIDOS Y PRIMER CURSO NACIONAL
-                      </Typography>
-                    </Box>
+          <Box sx={{ display: 'grid', gap: 2, gridTemplateColumns: { xs: '1fr', xl: '1fr 1fr' } }}>
+            <Paper elevation={0} sx={{ p: 2, border: '1px solid #dbe5f2', borderRadius: 3 }}>
+              <Typography sx={{ fontWeight: 900, mb: 1 }}>Tendencia histórica nacional y regional</Typography>
+              <Box sx={{ height: 380 }}><ResponsiveContainer width="100%" height="100%"><LineChart data={populationChart} margin={{ left: 10, right: 20, bottom: 20 }}><CartesianGrid strokeDasharray="3 3" /><XAxis dataKey="periodo" angle={-30} textAnchor="end" height={60} /><YAxis /><RechartsTooltip formatter={(value) => numberFormat.format(value)} /><Legend />{activeGroup.fields.map(([field, label, color]) => <Line key={field} type="monotone" dataKey={field} name={label} stroke={color} strokeWidth={2.5} dot={{ r: 3 }} connectNulls />)}</LineChart></ResponsiveContainer></Box>
+            </Paper>
+            <Paper elevation={0} sx={{ p: 2, border: '1px solid #dbe5f2', borderRadius: 3 }}>
+              <Typography sx={{ fontWeight: 900, mb: 1 }}>Comparación por periodo</Typography>
+              <Box sx={{ height: 380 }}><ResponsiveContainer width="100%" height="100%"><BarChart data={populationChart} margin={{ left: 10, right: 20, bottom: 20 }}><CartesianGrid strokeDasharray="3 3" vertical={false} /><XAxis dataKey="periodo" angle={-30} textAnchor="end" height={60} /><YAxis /><RechartsTooltip formatter={(value) => numberFormat.format(value)} /><Legend />{activeGroup.fields.map(([field, label, color]) => <Bar key={field} dataKey={field} name={label} fill={color} radius={[4, 4, 0, 0]} />)}</BarChart></ResponsiveContainer></Box>
+            </Paper>
+          </Box>
 
-                    <Box sx={{ width: '100%', height: 310 }}>
-                      <ResponsiveContainer width="100%" height="100%">
-                        <BarChart data={chartDataSubsegmentA} margin={{ top: 10, right: 10, left: -10, bottom: 25 }}>
-                          <CartesianGrid strokeDasharray="3 3" vertical={false} />
-                          <XAxis dataKey="periodo" tick={{ fontSize: 11, fontWeight: 700 }} interval={0} angle={-25} textAnchor="end" />
-                          <YAxis tick={{ fontSize: 11 }} />
-                          <RechartsTooltip />
-                          <Legend wrapperStyle={{ fontSize: 11, fontWeight: 700 }} />
-                          <Bar dataKey="inscritosNacional" name="INSCRITOS NACIONAL" stackId="a" fill="#1e3a8a" />
-                          <Bar dataKey="admitidosNacional" name="ADMITIDOS NACIONAL" stackId="a" fill="#991b1b" />
-                          <Bar dataKey="primerCursoNacional" name="PRIMER CURSO NACIONAL" stackId="a" fill="#64748b" />
-                        </BarChart>
-                      </ResponsiveContainer>
-                    </Box>
-                  </Paper>
-                </Grid>
-
-                {/* 2. TOP RIGHT: INSCRITOS, ADMITIDOS Y PRIMER CURSO REGIONAL (BARRAS APILADAS) */}
-                <Grid item xs={12} md={6}>
-                  <Paper elevation={0} sx={{ p: 2, border: '2px solid #003399', borderRadius: 3, bgcolor: '#ffffff' }}>
-                    <Box sx={{ bgcolor: '#003399', color: '#fff', px: 2, py: 0.8, borderRadius: 1.5, mb: 2, textAlign: 'center' }}>
-                      <Typography variant="subtitle2" sx={{ fontWeight: 900, fontSize: 13, textTransform: 'uppercase' }}>
-                        INSCRITOS, ADMITIDOS Y PRIMER CURSO REGIONAL
-                      </Typography>
-                    </Box>
-
-                    <Box sx={{ width: '100%', height: 310 }}>
-                      <ResponsiveContainer width="100%" height="100%">
-                        <BarChart data={chartDataSubsegmentA} margin={{ top: 10, right: 10, left: -10, bottom: 25 }}>
-                          <CartesianGrid strokeDasharray="3 3" vertical={false} />
-                          <XAxis dataKey="periodo" tick={{ fontSize: 11, fontWeight: 700 }} interval={0} angle={-25} textAnchor="end" />
-                          <YAxis tick={{ fontSize: 11 }} />
-                          <RechartsTooltip />
-                          <Legend wrapperStyle={{ fontSize: 11, fontWeight: 700 }} />
-                          <Bar dataKey="inscritosRegional" name="INSCRITOS REGIONAL" stackId="a" fill="#1e3a8a" />
-                          <Bar dataKey="admitidosRegional" name="ADMITIDOS REGIONAL" stackId="a" fill="#991b1b" />
-                          <Bar dataKey="primerCursoRegional" name="PRIMER CURSO REGIONAL" stackId="a" fill="#64748b" />
-                        </BarChart>
-                      </ResponsiveContainer>
-                    </Box>
-                  </Paper>
-                </Grid>
-
-                {/* 3. BOTTOM LEFT: INSCRITOS, ADMITIDOS Y PRIMER CURSO NACIONAL (TENDENCIAS LINEALES) */}
-                <Grid item xs={12} md={6}>
-                  <Paper elevation={0} sx={{ p: 2, border: '2px solid #003399', borderRadius: 3, bgcolor: '#ffffff' }}>
-                    <Box sx={{ bgcolor: '#003399', color: '#fff', px: 2, py: 0.8, borderRadius: 1.5, mb: 2, textAlign: 'center' }}>
-                      <Typography variant="subtitle2" sx={{ fontWeight: 900, fontSize: 13, textTransform: 'uppercase' }}>
-                        TENDENCIA HISTÓRICA NACIONAL
-                      </Typography>
-                    </Box>
-
-                    <Box sx={{ width: '100%', height: 310 }}>
-                      <ResponsiveContainer width="100%" height="100%">
-                        <LineChart data={chartDataSubsegmentA} margin={{ top: 10, right: 10, left: -10, bottom: 25 }}>
-                          <CartesianGrid strokeDasharray="3 3" vertical={false} />
-                          <XAxis dataKey="periodo" tick={{ fontSize: 11, fontWeight: 700 }} interval={0} angle={-25} textAnchor="end" />
-                          <YAxis tick={{ fontSize: 11 }} />
-                          <RechartsTooltip />
-                          <Legend wrapperStyle={{ fontSize: 11, fontWeight: 700 }} />
-                          <Line type="monotone" dataKey="inscritosNacional" name="INSCRITOS NACIONAL" stroke="#1e3a8a" strokeWidth={2.5} dot={{ r: 4 }} />
-                          <Line type="monotone" dataKey="primerCursoNacional" name="PRIMER CURSO NACIONAL" stroke="#0284c7" strokeWidth={2.5} dot={{ r: 4 }} />
-                        </LineChart>
-                      </ResponsiveContainer>
-                    </Box>
-                  </Paper>
-                </Grid>
-
-                {/* 4. BOTTOM RIGHT: INSCRITOS, ADMITIDOS Y PRIMER CURSO REGIONAL (TENDENCIAS LINEALES) */}
-                <Grid item xs={12} md={6}>
-                  <Paper elevation={0} sx={{ p: 2, border: '2px solid #003399', borderRadius: 3, bgcolor: '#ffffff' }}>
-                    <Box sx={{ bgcolor: '#003399', color: '#fff', px: 2, py: 0.8, borderRadius: 1.5, mb: 2, textAlign: 'center' }}>
-                      <Typography variant="subtitle2" sx={{ fontWeight: 900, fontSize: 13, textTransform: 'uppercase' }}>
-                        TENDENCIA HISTÓRICA REGIONAL
-                      </Typography>
-                    </Box>
-
-                    <Box sx={{ width: '100%', height: 310 }}>
-                      <ResponsiveContainer width="100%" height="100%">
-                        <LineChart data={chartDataSubsegmentA} margin={{ top: 10, right: 10, left: -10, bottom: 25 }}>
-                          <CartesianGrid strokeDasharray="3 3" vertical={false} />
-                          <XAxis dataKey="periodo" tick={{ fontSize: 11, fontWeight: 700 }} interval={0} angle={-25} textAnchor="end" />
-                          <YAxis tick={{ fontSize: 11 }} />
-                          <RechartsTooltip />
-                          <Legend wrapperStyle={{ fontSize: 11, fontWeight: 700 }} />
-                          <Line type="monotone" dataKey="inscritosRegional" name="INSCRITOS REGIONAL" stroke="#1e3a8a" strokeWidth={2.5} dot={{ r: 4 }} />
-                          <Line type="monotone" dataKey="primerCursoRegional" name="PRIMER CURSO REGIONAL" stroke="#0284c7" strokeWidth={2.5} dot={{ r: 4 }} />
-                        </LineChart>
-                      </ResponsiveContainer>
-                    </Box>
-                  </Paper>
-                </Grid>
-              </Grid>
-            </Stack>
-          )}
-
-          {/* Table of Poblacional Series */}
-          <Paper elevation={0} sx={{ p: 2.5, border: '1px solid #cbd5e1', borderRadius: 3 }}>
-            <Typography variant="h6" sx={{ fontWeight: 900, color: '#0f172a', mb: 2 }}>
-              Series Históricas Registradas en Contexto Externo ({filteredPoblacional.length})
-            </Typography>
-
-            <TableContainer sx={{ maxHeight: 420 }}>
-              <Table stickyHeader size="small">
-                <TableHead>
-                  <TableRow sx={{ bgcolor: '#f1f5f9' }}>
-                    <TableCell sx={{ fontWeight: 800 }}>Subbase / Indicador</TableCell>
-                    <TableCell sx={{ fontWeight: 800 }}>Clasificación Territorial</TableCell>
-                    <TableCell sx={{ fontWeight: 800 }}>Periodo / Año</TableCell>
-                    <TableCell sx={{ fontWeight: 800 }}>Institución (IES)</TableCell>
-                    <TableCell sx={{ fontWeight: 800 }}>Programa</TableCell>
-                    <TableCell align="right" sx={{ fontWeight: 800 }}>
-                      Valor / Conteo
-                    </TableCell>
-                  </TableRow>
-                </TableHead>
-                <TableBody>
-                  {filteredPoblacional.slice(0, 100).map((r) => (
-                    <TableRow key={r.id} hover>
-                      <TableCell>
-                        <Chip size="small" color="primary" label={r.base} sx={{ fontWeight: 800 }} />
-                      </TableCell>
-                      <TableCell>
-                        <Chip
-                          size="small"
-                          color={r.isRegional ? 'success' : 'default'}
-                          label={r.isRegional ? 'REGIONAL' : 'NACIONAL'}
-                          sx={{ fontWeight: 800, fontSize: 11 }}
-                        />
-                      </TableCell>
-                      <TableCell sx={{ fontWeight: 800, fontSize: 12 }}>{r.periodo}</TableCell>
-                      <TableCell sx={{ fontSize: 12, maxWidth: 220, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                        {r.ies}
-                      </TableCell>
-                      <TableCell sx={{ fontSize: 12, color: '#0284c7', fontWeight: 700 }}>{r.programa}</TableCell>
-                      <TableCell align="right" sx={{ fontWeight: 900, fontSize: 13, color: '#0f766e' }}>
-                        {r.valorNum.toLocaleString('es-CO')}
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </TableContainer>
+          <Paper elevation={0} sx={{ p: 2, border: '1px solid #dbe5f2', borderRadius: 3 }}>
+            <Typography sx={{ fontWeight: 900, mb: 1.5 }}>Series fuente ({numberFormat.format(populationRows.length)})</Typography>
+            <TableContainer sx={{ maxHeight: 480 }}><Table stickyHeader size="small"><TableHead><TableRow><TableCell>Periodo</TableCell><TableCell>Programa</TableCell>{activeGroup.fields.map(([field, label]) => <TableCell key={field} align="right">{label}</TableCell>)}</TableRow></TableHead><TableBody>
+              {populationRows.slice(0, 500).map((row) => <TableRow key={row.id} hover><TableCell sx={{ whiteSpace: 'nowrap', fontWeight: 800 }}>{row.periodo_referencia}</TableCell><TableCell>{row.programa}</TableCell>{activeGroup.fields.map(([field]) => <TableCell key={field} align="right">{row[field] === null || row[field] === undefined ? '—' : numberFormat.format(row[field])}</TableCell>)}</TableRow>)}
+            </TableBody></Table></TableContainer>
           </Paper>
         </Stack>
       )}
