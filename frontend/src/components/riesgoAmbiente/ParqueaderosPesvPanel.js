@@ -818,17 +818,30 @@ function ParqueaderosPesvPanel({ onBack }) {
 
   const runtUpdateDetected = Boolean(runtValidation.data?.resultado?.comparacion_actualizacion?.detectada);
 
-  const isFiltered = Boolean(search.trim() || campus || estado || indicator);
+  const isVencidoRow = (r) => r.soat_estado?.code === 'vencido' || r.tecnomecanica_estado?.code === 'vencido' || r.licencia_estado?.code === 'vencido';
+  const isProximoRow = (r) => (r.soat_estado?.code === 'proximo' || r.tecnomecanica_estado?.code === 'proximo' || r.licencia_estado?.code === 'proximo') && !isVencidoRow(r);
+
+  const hasSearchOrFilter = Boolean(search.trim() || campus || estado);
+  const isFiltered = hasSearchOrFilter || Boolean(indicator);
 
   const totalCount = isFiltered ? rows.length : (summary.total !== undefined ? summary.total : rows.length);
 
-  const vencidosCount = isFiltered
-    ? rows.filter((r) => r.soat_estado?.code === 'vencido' || r.tecnomecanica_estado?.code === 'vencido' || r.licencia_estado?.code === 'vencido').length
-    : (summary.vencidos !== undefined ? summary.vencidos : rows.filter((r) => r.soat_estado?.code === 'vencido' || r.tecnomecanica_estado?.code === 'vencido' || r.licencia_estado?.code === 'vencido').length);
+  let vencidosCount = 0;
+  let proximosCount = 0;
 
-  const proximosCount = isFiltered
-    ? rows.filter((r) => (r.soat_estado?.code === 'proximo' || r.tecnomecanica_estado?.code === 'proximo' || r.licencia_estado?.code === 'proximo') && r.soat_estado?.code !== 'vencido' && r.tecnomecanica_estado?.code !== 'vencido' && r.licencia_estado?.code !== 'vencido').length
-    : (summary.proximos !== undefined ? summary.proximos : rows.filter((r) => (r.soat_estado?.code === 'proximo' || r.tecnomecanica_estado?.code === 'proximo' || r.licencia_estado?.code === 'proximo') && r.soat_estado?.code !== 'vencido' && r.tecnomecanica_estado?.code !== 'vencido' && r.licencia_estado?.code !== 'vencido').length);
+  if (indicator === 'vencido') {
+    vencidosCount = rows.length;
+    proximosCount = 0;
+  } else if (indicator === 'proximo') {
+    vencidosCount = 0;
+    proximosCount = rows.length;
+  } else if (hasSearchOrFilter) {
+    vencidosCount = rows.filter(isVencidoRow).length;
+    proximosCount = rows.filter(isProximoRow).length;
+  } else {
+    vencidosCount = summary.vencidos !== undefined ? summary.vencidos : rows.filter(isVencidoRow).length;
+    proximosCount = summary.proximos !== undefined ? summary.proximos : rows.filter(isProximoRow).length;
+  }
 
   const stats = [
     { key: '', label: isFiltered ? `Filtrados (${totalCount})` : 'Cupos registrados', value: totalCount, color: '#1d4ed8', background: '#eff6ff', icon: <DirectionsCarRoundedIcon /> },
