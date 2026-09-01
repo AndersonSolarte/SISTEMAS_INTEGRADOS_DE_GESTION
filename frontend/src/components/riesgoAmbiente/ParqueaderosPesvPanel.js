@@ -600,15 +600,28 @@ function ParqueaderosPesvPanel({ onBack }) {
     } catch (error) { enqueueSnackbar(error.response?.data?.message || 'No se pudo descargar la base de datos', { variant: 'error' }); }
     finally { setExportingData(false); }
   };
-  const notify = async (row, tipo) => {
+  const notify = async (row, tipo, force = false) => {
     const key = `${row.id}-${tipo}`; setNotifying(key);
-    try { const result = await gestionInformacionService.notifyPesvExpiry(row.id, tipo); enqueueSnackbar(result.message, { variant: 'success' }); await load(); }
-    catch (error) {
+    try {
+      const result = await gestionInformacionService.notifyPesvExpiry(row.id, tipo, force);
+      enqueueSnackbar(result.message, { variant: 'success' });
+      await load();
+    } catch (error) {
       const alreadyNotified = Number(error.response?.status) === 409 && error.response?.data?.alreadyNotified;
-      enqueueSnackbar(error.response?.data?.message || 'No se pudo enviar la notificación', { variant: alreadyNotified ? 'warning' : 'error', autoHideDuration: alreadyNotified ? 8000 : 5000 });
-      if (alreadyNotified) await load();
+      if (alreadyNotified) {
+        showConfirm({
+          title: 'Reenviar notificación',
+          message: `${error.response.data.message} ¿Desea reenviar el correo de notificación ahora a ${row.correo}?`,
+          confirmText: 'Reenviar correo',
+          severity: 'warning',
+          onConfirm: () => notify(row, tipo, true)
+        });
+      } else {
+        enqueueSnackbar(error.response?.data?.message || 'No se pudo enviar la notificación', { variant: 'error' });
+      }
+    } finally {
+      setNotifying('');
     }
-    finally { setNotifying(''); }
   };
   const copyRuntValue = async (label, value) => {
     if (!value) return;

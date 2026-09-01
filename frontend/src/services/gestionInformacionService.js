@@ -219,8 +219,8 @@ const gestionInformacionService = {
     api.get('/pesv/parqueaderos/template', { responseType: 'blob', timeout: 60000 }).then((r) => r),
   exportPesvParqueaderos: (params = {}) =>
     api.get('/pesv/parqueaderos/export', { params, responseType: 'blob', timeout: 60000 }).then((r) => r),
-  notifyPesvExpiry: (id, tipo = 'soat') =>
-    api.post(`/pesv/parqueaderos/${id}/notificar`, { tipo }).then((r) => r.data),
+  notifyPesvExpiry: (id, tipo = 'soat', force = false) =>
+    api.post(`/pesv/parqueaderos/${id}/notificar`, { tipo, force }).then((r) => r.data),
   startPesvRuntValidation: (id) =>
     api.post(`/pesv/parqueaderos/${id}/runt/session`).then((r) => r.data),
   getPesvRuntValidation: (sessionId) =>

@@ -989,42 +989,32 @@ const notifyExpiry = async (req, res) => {
       });
     }
 
+    const force = req.body?.force === true;
     const formatNotificationDate = (value) => new Intl.DateTimeFormat('es-CO', {
       timeZone: 'America/Bogota', dateStyle: 'long', timeStyle: 'short'
     }).format(new Date(value)).replace(/\.$/, '');
-    if (row[notificationField]) {
+
+    if (row[notificationField] && !force) {
       return res.status(409).json({
         success: false,
         alreadyNotified: true,
         notifiedAt: row[notificationField],
-        message: `El aviso de ${documentType} ya fue enviado a ${row.correo} el ${formatNotificationDate(row[notificationField])}. No se envió un correo duplicado.`
+        message: `El aviso de ${documentType} ya fue registrado previamente el ${formatNotificationDate(row[notificationField])}.`
       });
     }
 
     const claimAt = new Date();
-    const [claimed] = await PesvParqueaderoRegistro.update(
+    await PesvParqueaderoRegistro.update(
       { [notificationField]: claimAt, actualizado_por: req.user?.id },
-      { where: { id: row.id, [notificationField]: null } }
+      { where: { id: row.id } }
     );
-    if (!claimed) {
-      const refreshed = await PesvParqueaderoRegistro.findByPk(row.id);
-      const notifiedAt = refreshed?.[notificationField] || null;
-      return res.status(409).json({
-        success: false,
-        alreadyNotified: true,
-        notifiedAt,
-        message: notifiedAt
-          ? `El aviso de ${documentType} ya fue enviado a ${row.correo} el ${formatNotificationDate(notifiedAt)}. No se envió un correo duplicado.`
-          : `El aviso de ${documentType} ya está siendo procesado. No se envió un correo duplicado.`
-      });
-    }
 
     const result = await sendPesvExpiryNotification(row, tipo);
     if (!result.success) {
-      await PesvParqueaderoRegistro.update({ [notificationField]: null }, { where: { id: row.id, [notificationField]: claimAt } });
+      if (!force) await PesvParqueaderoRegistro.update({ [notificationField]: null }, { where: { id: row.id } });
       return res.status(503).json({ success: false, message: `No se pudo enviar el correo: ${result.error}` });
     }
-    return res.json({ success: true, message: `Notificación de ${documentType} enviada a ${row.correo}` });
+    return res.json({ success: true, message: `Notificación de ${documentType} ${force ? 'reenviada' : 'enviada'} exitosamente a ${row.correo}` });
   } catch (error) { return res.status(500).json({ success: false, message: 'No se pudo enviar la notificación' }); }
 };
 
