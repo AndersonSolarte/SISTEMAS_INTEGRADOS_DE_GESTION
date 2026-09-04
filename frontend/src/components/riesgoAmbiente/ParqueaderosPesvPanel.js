@@ -1105,8 +1105,9 @@ function ParqueaderosPesvPanel({ onBack }) {
           background: 'linear-gradient(180deg, #ffffff 0%, #f8fafc 100%)'
         }}
       >
-        <Box sx={{ display: 'flex', flexDirection: { xs: 'column', sm: 'row' }, flexWrap: 'wrap', gap: 1.5, alignItems: 'center' }}>
-          <Box sx={{ flex: '1 1 300px', minWidth: { xs: '100%', sm: 280 } }}>
+        <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+          {/* Fila 1: Barra de Búsqueda Centrada y Prominente */}
+          <Box sx={{ width: '100%', maxWidth: 850, mx: 'auto' }}>
             <TextField
               fullWidth
               size="small"
@@ -1117,7 +1118,7 @@ function ParqueaderosPesvPanel({ onBack }) {
               InputProps={{
                 startAdornment: (
                   <InputAdornment position="start">
-                    <SearchRoundedIcon sx={{ color: '#2563eb', fontSize: 22 }} />
+                    <SearchRoundedIcon sx={{ color: '#2563eb', fontSize: 24 }} />
                   </InputAdornment>
                 ),
                 endAdornment: search ? (
@@ -1131,14 +1132,14 @@ function ParqueaderosPesvPanel({ onBack }) {
               sx={{
                 '& .MuiOutlinedInput-root': {
                   bgcolor: search ? '#eff6ff' : '#ffffff',
-                  borderRadius: 2.8,
+                  borderRadius: 3,
                   border: '2px solid #2563eb',
-                  boxShadow: search ? '0 0 0 3px rgba(37,99,235,0.18)' : '0 2px 8px rgba(37,99,235,0.1)',
+                  boxShadow: search ? '0 0 0 4px rgba(37,99,235,0.18)' : '0 3px 12px rgba(37,99,235,0.12)',
                   transition: 'all 0.2s ease-in-out',
                   '& fieldset': { border: 'none' },
                   '&:hover': {
                     bgcolor: '#ffffff',
-                    boxShadow: '0 4px 14px rgba(37,99,235,0.22)'
+                    boxShadow: '0 4px 16px rgba(37,99,235,0.22)'
                   },
                   '&.Mui-focused': {
                     bgcolor: '#ffffff',
@@ -1147,40 +1148,46 @@ function ParqueaderosPesvPanel({ onBack }) {
                 },
                 '& .MuiInputBase-input': {
                   fontWeight: 600,
-                  fontSize: '0.92rem',
+                  fontSize: '0.95rem',
                   color: '#0f172a',
-                  py: 1
+                  py: 1.2
                 }
               }}
             />
+            <Typography variant="caption" sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 0.6, mt: 1, color: '#475569', fontWeight: 600, fontSize: 11.5, textAlign: 'center' }}>
+              <Box component="span" sx={{ display: 'inline-block', width: 6, height: 6, borderRadius: '50%', bgcolor: '#2563eb' }} />
+              Busca por persona, identificación, correo, dependencia, campus, parqueadero, placa, modelo, SOAT o RTM.
+            </Typography>
           </Box>
-          <FormControl size="small" sx={{ flex: '1 1 160px', minWidth: { xs: '100%', sm: 160 }, '& .MuiOutlinedInput-root': { borderRadius: 2.5, bgcolor: '#ffffff', border: '1.5px solid #cbd5e1', '& fieldset': { border: 'none' } } }}>
-            <InputLabel sx={{ fontWeight: 600, color: '#475569' }}>Campus</InputLabel>
-            <Select label="Campus" value={campus} onChange={(e) => setCampus(e.target.value)} sx={{ fontWeight: 600 }}>
-              <MenuItem value="">Todos los campus</MenuItem>
-              {catalogs.campus.map((item) => <MenuItem key={item} value={item}>{item}</MenuItem>)}
-            </Select>
-          </FormControl>
-          <FormControl size="small" sx={{ flex: '1 1 180px', minWidth: { xs: '100%', sm: 180 }, '& .MuiOutlinedInput-root': { borderRadius: 2.5, bgcolor: '#ffffff', border: '1.5px solid #cbd5e1', '& fieldset': { border: 'none' } } }}>
-            <InputLabel sx={{ fontWeight: 600, color: '#475569' }}>Estado documental</InputLabel>
-            <Select label="Estado documental" value={estado} onChange={(e) => { setEstado(e.target.value); setIndicator(''); }} sx={{ fontWeight: 600 }}>
-              <MenuItem value="">Todos los estados</MenuItem>
-              <MenuItem value="vencido">Vencidos</MenuItem>
-              <MenuItem value="proximo">Próximos a vencer</MenuItem>
-              <MenuItem value="vigente">Vigentes</MenuItem>
-              <MenuItem value="sin_fecha">Sin fecha verificable</MenuItem>
-            </Select>
-          </FormControl>
-          <Tooltip title="Actualizar datos">
-            <IconButton onClick={load} sx={{ bgcolor: '#eff6ff', color: '#2563eb', border: '1.5px solid #bfdbfe', p: 1, borderRadius: 2.5, '&:hover': { bgcolor: '#dbeafe', color: '#1d4ed8' } }}>
-              <RefreshRoundedIcon />
-            </IconButton>
-          </Tooltip>
+
+          {/* Fila 2: Filtros secundarias con bordes sutiles y diseño centrado */}
+          <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1.5, justifyContent: 'center', alignItems: 'center', pt: 1.2, borderTop: '1px dashed #e2e8f0' }}>
+            <FormControl size="small" sx={{ minWidth: { xs: '100%', sm: 200 }, '& .MuiOutlinedInput-root': { borderRadius: 2.5, bgcolor: '#ffffff', border: '1.5px solid #94a3b8', boxShadow: '0 1px 3px rgba(0,0,0,0.04)', transition: 'all 0.2s', '& fieldset': { border: 'none' }, '&:hover': { borderColor: '#2563eb', boxShadow: '0 2px 6px rgba(37,99,235,0.12)' }, '&.Mui-focused': { borderColor: '#2563eb' } } }}>
+              <InputLabel sx={{ fontWeight: 600, color: '#334155' }}>Campus</InputLabel>
+              <Select label="Campus" value={campus} onChange={(e) => setCampus(e.target.value)} sx={{ fontWeight: 600, color: '#0f172a' }}>
+                <MenuItem value="">Todos los campus</MenuItem>
+                {catalogs.campus.map((item) => <MenuItem key={item} value={item}>{item}</MenuItem>)}
+              </Select>
+            </FormControl>
+
+            <FormControl size="small" sx={{ minWidth: { xs: '100%', sm: 220 }, '& .MuiOutlinedInput-root': { borderRadius: 2.5, bgcolor: '#ffffff', border: '1.5px solid #94a3b8', boxShadow: '0 1px 3px rgba(0,0,0,0.04)', transition: 'all 0.2s', '& fieldset': { border: 'none' }, '&:hover': { borderColor: '#2563eb', boxShadow: '0 2px 6px rgba(37,99,235,0.12)' }, '&.Mui-focused': { borderColor: '#2563eb' } } }}>
+              <InputLabel sx={{ fontWeight: 600, color: '#334155' }}>Estado documental</InputLabel>
+              <Select label="Estado documental" value={estado} onChange={(e) => { setEstado(e.target.value); setIndicator(''); }} sx={{ fontWeight: 600, color: '#0f172a' }}>
+                <MenuItem value="">Todos los estados</MenuItem>
+                <MenuItem value="vencido">Vencidos</MenuItem>
+                <MenuItem value="proximo">Próximos a vencer</MenuItem>
+                <MenuItem value="vigente">Vigentes</MenuItem>
+                <MenuItem value="sin_fecha">Sin fecha verificable</MenuItem>
+              </Select>
+            </FormControl>
+
+            <Tooltip title="Actualizar datos">
+              <IconButton onClick={load} sx={{ bgcolor: '#eff6ff', color: '#2563eb', border: '1.5px solid #bfdbfe', p: 1, borderRadius: 2.5, transition: 'all 0.2s', '&:hover': { bgcolor: '#dbeafe', color: '#1d4ed8', transform: 'scale(1.05)' } }}>
+                <RefreshRoundedIcon />
+              </IconButton>
+            </Tooltip>
+          </Box>
         </Box>
-        <Typography variant="caption" sx={{ display: 'flex', alignItems: 'center', gap: 0.6, mt: 1.2, color: '#475569', fontWeight: 600, fontSize: 11.5 }}>
-          <Box component="span" sx={{ display: 'inline-block', width: 6, height: 6, borderRadius: '50%', bgcolor: '#2563eb' }} />
-          Busca por persona, identificación, correo, dependencia, campus, parqueadero, placa, modelo, SOAT o RTM.
-        </Typography>
       </Paper>
       <TableContainer component={Paper} elevation={0} sx={{ borderRadius: 3, border: '1px solid #e2e8f0', maxHeight: { xs: '65vh', md: '72vh' }, overflow: 'auto', scrollbarGutter: 'stable' }}>
         <Table stickyHeader size="small" sx={{ width: '100%', minWidth: 1140, tableLayout: 'fixed', '& .MuiTableCell-head': { px: 0.9, py: 1, fontSize: 11, fontWeight: 900, lineHeight: 1.2, bgcolor: '#eaf2ff', boxShadow: 'inset 0 -2px 0 #2563eb', zIndex: 5, whiteSpace: 'nowrap' }, '& .MuiTableCell-body': { px: 0.9, py: 0.9, fontSize: 11.5, verticalAlign: 'top', overflowWrap: 'anywhere' }, '& .MuiTypography-body2': { fontSize: 11.5, lineHeight: 1.25 }, '& .MuiTypography-caption': { fontSize: 10, lineHeight: 1.3 }, '& .MuiChip-root': { height: 20, fontSize: 10 }, '& .pesv-expiry-chip.MuiChip-root': { width: 'fit-content', maxWidth: '100%', height: 'auto', minHeight: 20, alignItems: 'center' }, '& .pesv-expiry-chip .MuiChip-label': { display: 'block', px: 0.6, py: 0.25, whiteSpace: 'normal', overflow: 'visible', textOverflow: 'clip', lineHeight: 1.15 }, '& .pesv-expiry-chip .MuiChip-icon': { flexShrink: 0 } }}>
