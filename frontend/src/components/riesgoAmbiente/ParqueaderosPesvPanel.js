@@ -711,6 +711,22 @@ function ParqueaderosPesvPanel({ onBack }) {
   };
 
   const extractCopiedRuntDriverResult = () => {
+    const expectedDoc = String(getRuntDocument(runtValidation.row) || runtValidation.documentoConsulta || '').replace(/[^0-9]/g, '');
+
+    if (expectedDoc) {
+      const cleanText = runtCopiedText.replace(/[^0-9]/g, '');
+      const candidateDocs = (runtCopiedText.match(/\b\d{7,10}\b/g) || []).filter((d) => !d.startsWith('202') && !d.startsWith('199') && !d.startsWith('200') && !d.startsWith('201'));
+
+      if (candidateDocs.length > 0 && !cleanText.includes(expectedDoc)) {
+        const wrongDoc = candidateDocs[0];
+        const driverName = runtValidation.row?.nombres_apellidos ? ` (${runtValidation.row.nombres_apellidos})` : '';
+        return enqueueSnackbar(
+          `⚠️ Error de validación: El texto pegado contiene la cédula ${wrongDoc}, pero está consultando al conductor con documento ${expectedDoc}${driverName}. Por favor copie el resultado RUNT del conductor correspondiente.`,
+          { variant: 'error', autoHideDuration: 8000 }
+        );
+      }
+    }
+
     const parsed = parseRuntDriverCopiedText(runtCopiedText);
     if (!parsed.hasLicencia && !parsed.categorias && !parsed.vencimiento) {
       return enqueueSnackbar('No se encontraron licencias ni categorías en el texto pegado. Expande el acordeón «Licencias de Conducción» en RUNT antes de copiar.', { variant: 'warning' });
@@ -753,9 +769,32 @@ function ParqueaderosPesvPanel({ onBack }) {
     }
   };
   const extractCopiedRuntResult = () => {
+    const expectedPlate = normalizePlateForRunt(runtValidation.placaConsulta || runtValidation.row?.placa);
     const parsed = parseRuntCopiedText(runtCopiedText);
-    const expectedPlate = runtValidation.placaConsulta || normalizePlateForRunt(runtValidation.row?.placa);
-    if (parsed.plate && expectedPlate && parsed.plate !== expectedPlate) return enqueueSnackbar(`El texto corresponde a la placa ${parsed.plate}, no a ${expectedPlate}`, { variant: 'error' });
+
+    if (expectedPlate) {
+      const cleanExpected = expectedPlate.replace(/[^A-Z0-9]/g, '');
+      const cleanText = runtCopiedText.toUpperCase().replace(/[^A-Z0-9]/g, '');
+
+      if (parsed.plate && parsed.plate !== cleanExpected) {
+        return enqueueSnackbar(
+          `⚠️ Error de validación: El texto pegado corresponde al vehículo con placa ${parsed.plate}, pero está consultando la placa ${cleanExpected}. Verifique y copie la información del vehículo correcto.`,
+          { variant: 'error', autoHideDuration: 8000 }
+        );
+      }
+
+      const foundPlates = (runtCopiedText.toUpperCase().match(/\b[A-Z]{3}[-\s]?[0-9]{3}\b|\b[A-Z]{3}[-\s]?[0-9]{2}[A-Z]\b/g) || [])
+        .map((p) => p.replace(/[^A-Z0-9]/g, ''));
+
+      if (foundPlates.length > 0 && !cleanText.includes(cleanExpected)) {
+        const wrongPlate = foundPlates.find((p) => p !== cleanExpected) || foundPlates[0];
+        return enqueueSnackbar(
+          `⚠️ Error de validación: El texto pegado contiene datos de la placa ${wrongPlate}, la cual NO coincide con la placa ${cleanExpected} que está procesando actualmente.`,
+          { variant: 'error', autoHideDuration: 8000 }
+        );
+      }
+    }
+
     if (!parsed.soat && !parsed.rtm && !parsed.rtmSituation) return enqueueSnackbar('No se encontraron tablas SOAT ni RTM. Expande los acordeones antes de copiar.', { variant: 'warning' });
     setRuntForm((prev) => ({
       ...prev,
