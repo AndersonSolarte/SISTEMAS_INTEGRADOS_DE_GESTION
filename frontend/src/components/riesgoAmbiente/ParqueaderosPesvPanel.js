@@ -1030,23 +1030,35 @@ function ParqueaderosPesvPanel({ onBack }) {
   };
 
   return (
-    <Stack spacing={2}>
-      <Stack direction={{ xs: 'column', sm: 'row' }} justifyContent="space-between" spacing={1.2}>
-        <Button startIcon={<ArrowBackRoundedIcon />} onClick={onBack} sx={{ alignSelf: 'flex-start', textTransform: 'none', fontWeight: 800 }}>Volver a Seguridad Vial</Button>
-        <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
-          <Button variant="outlined" startIcon={downloadingTemplate ? <CircularProgress size={16} /> : <FileDownloadRoundedIcon />} onClick={downloadExcelTemplate} disabled={downloadingTemplate} sx={{ textTransform: 'none', fontWeight: 800 }}>{downloadingTemplate ? 'Preparando…' : 'Descargar plantilla'}</Button>
+    <Stack spacing={2.5} sx={{ width: '100%', boxSizing: 'border-box' }}>
+      <Box sx={{ display: 'flex', flexDirection: { xs: 'column', md: 'row' }, justifyContent: 'space-between', alignItems: { xs: 'stretch', md: 'center' }, gap: 1.5 }}>
+        <Button startIcon={<ArrowBackRoundedIcon />} onClick={onBack} sx={{ alignSelf: { xs: 'flex-start', md: 'center' }, textTransform: 'none', fontWeight: 800 }}>Volver a Seguridad Vial</Button>
+        <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1, alignItems: 'center', justifyContent: { xs: 'flex-start', sm: 'flex-end' } }}>
+          <Button variant="outlined" startIcon={downloadingTemplate ? <CircularProgress size={16} /> : <FileDownloadRoundedIcon />} onClick={downloadExcelTemplate} disabled={downloadingTemplate} sx={{ textTransform: 'none', fontWeight: 800, whiteSpace: 'nowrap' }}>{downloadingTemplate ? 'Preparando…' : 'Descargar plantilla'}</Button>
           <Tooltip title="Exporta los resultados actuales. Limpie la búsqueda y los filtros para descargar toda la base.">
-            <span><Button variant="outlined" startIcon={exportingData ? <CircularProgress size={16} /> : <TableViewRoundedIcon />} onClick={downloadExcelData} disabled={exportingData} sx={{ textTransform: 'none', fontWeight: 800 }}>{exportingData ? 'Descargando…' : `Descargar base (${rows.length})`}</Button></span>
+            <span><Button variant="outlined" startIcon={exportingData ? <CircularProgress size={16} /> : <TableViewRoundedIcon />} onClick={downloadExcelData} disabled={exportingData} sx={{ textTransform: 'none', fontWeight: 800, whiteSpace: 'nowrap' }}>{exportingData ? 'Descargando…' : `Descargar base (${rows.length})`}</Button></span>
           </Tooltip>
-          <Button component="label" variant="outlined" startIcon={importing ? <CircularProgress size={16} /> : <FileUploadRoundedIcon />} disabled={importing} sx={{ textTransform: 'none', fontWeight: 800 }}>Importar Excel<input hidden type="file" accept=".xlsx,.xls" onChange={importFile} /></Button>
-          <Button variant="contained" startIcon={<AddRoundedIcon />} onClick={openCreate} sx={{ textTransform: 'none', fontWeight: 800 }}>Nuevo cupo</Button>
+          <Button component="label" variant="outlined" startIcon={importing ? <CircularProgress size={16} /> : <FileUploadRoundedIcon />} disabled={importing} sx={{ textTransform: 'none', fontWeight: 800, whiteSpace: 'nowrap' }}>Importar Excel<input hidden type="file" accept=".xlsx,.xls" onChange={importFile} /></Button>
+          <Button variant="contained" startIcon={<AddRoundedIcon />} onClick={openCreate} sx={{ textTransform: 'none', fontWeight: 800, whiteSpace: 'nowrap' }}>Nuevo cupo</Button>
+        </Box>
+      </Box>
+
+      <Paper elevation={0} sx={{ p: { xs: 2, sm: 2.8 }, borderRadius: 3.5, color: '#fff', background: 'linear-gradient(135deg, #0f172a 0%, #1e3a8a 50%, #2563eb 100%)', boxShadow: '0 8px 24px rgba(30, 58, 138, 0.28)' }}>
+        <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2} alignItems={{ xs: 'flex-start', sm: 'center' }}>
+          <Box sx={{ p: 1, borderRadius: 3, bgcolor: 'rgba(255,255,255,0.1)', display: 'grid', placeItems: 'center' }}>
+            <DirectionsCarRoundedIcon sx={{ fontSize: { xs: 32, sm: 42 } }} />
+          </Box>
+          <Box>
+            <Typography variant="overline" sx={{ fontWeight: 900, opacity: .85, letterSpacing: 1.2 }}>PESV · Submódulo 01</Typography>
+            <Typography sx={{ fontWeight: 900, fontSize: { xs: '1.35rem', sm: '1.75rem', md: '2rem' }, lineHeight: 1.2 }}>Parqueaderos UNICESMAG</Typography>
+            <Typography sx={{ opacity: .88, fontSize: { xs: '0.85rem', sm: '1rem' } }}>Gestión de cupos, vehículos y vigencias documentales.</Typography>
+          </Box>
         </Stack>
-      </Stack>
-      <Paper elevation={0} sx={{ p: 2.5, borderRadius: 3.5, color: '#fff', background: 'linear-gradient(135deg, #0f172a 0%, #1e3a8a 50%, #2563eb 100%)', boxShadow: '0 8px 24px rgba(30, 58, 138, 0.28)' }}>
-        <Stack direction="row" spacing={1.5} alignItems="center"><DirectionsCarRoundedIcon sx={{ fontSize: 38 }} /><Box><Typography variant="overline" sx={{ fontWeight: 900, opacity: .85 }}>PESV · Submódulo 01</Typography><Typography variant="h4" sx={{ fontWeight: 900 }}>Parqueaderos UNICESMAG</Typography><Typography sx={{ opacity: .88 }}>Gestión de cupos, vehículos y vigencias documentales.</Typography></Box></Stack>
       </Paper>
+
       {importResult?.warningCount > 0 && <Alert severity="warning">Se importaron {importResult.imported} registros con {importResult.warningCount} advertencias de datos. Las vigencias no reconocibles quedaron marcadas como “Sin fecha verificable”.</Alert>}
-      <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', sm: 'repeat(3, 1fr)' }, gap: 1.6 }}>
+
+      <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', sm: 'repeat(auto-fit, minmax(260px, 1fr))' }, gap: 1.6 }}>
         {stats.map((item) => {
           const hasSearch = Boolean(search.trim());
           const selected = item.key ? indicator === item.key : !indicator && !estado && !hasSearch;
@@ -1056,7 +1068,7 @@ function ParqueaderosPesvPanel({ onBack }) {
             key={item.label} component="button" type="button" aria-pressed={selected} onClick={() => applyIndicatorFilter(item.key)}
             elevation={0}
             sx={{
-              position: 'relative', overflow: 'hidden', width: '100%', p: 2.4, borderRadius: 3.5, textAlign: 'left', font: 'inherit', cursor: 'pointer',
+              position: 'relative', overflow: 'hidden', width: '100%', p: 2.2, borderRadius: 3.5, textAlign: 'left', font: 'inherit', cursor: 'pointer',
               color: item.color,
               bgcolor: emphasized ? item.background : '#fff',
               backgroundImage: `radial-gradient(circle at 90% 10%, ${item.color}15 0%, transparent 65%), linear-gradient(135deg, #ffffff 0%, #f8fafc 100%)`,
@@ -1072,34 +1084,54 @@ function ParqueaderosPesvPanel({ onBack }) {
               {item.icon}
             </Box>
             <Stack direction="row" justifyContent="space-between" alignItems="center" spacing={1.5} sx={{ position: 'relative', zIndex: 1 }}>
-              <Box>
+              <Box sx={{ pr: 1 }}>
                 <Typography variant="caption" sx={{ display: 'block', color: emphasized ? item.color : '#475569', fontWeight: 900, fontSize: 13 }}>{item.label}</Typography>
-                <Typography sx={{ mt: .65, fontSize: 32, lineHeight: 1, fontWeight: 900, color: '#0f172a' }}>{item.value.toLocaleString('es-CO')}</Typography>
+                <Typography sx={{ mt: .65, fontSize: { xs: 26, sm: 32 }, lineHeight: 1, fontWeight: 900, color: '#0f172a' }}>{item.value.toLocaleString('es-CO')}</Typography>
               </Box>
-              <Box sx={{ display: 'grid', placeItems: 'center', width: 50, height: 50, flexShrink: 0, borderRadius: 2.8, color: '#fff', background: `linear-gradient(135deg, ${item.color} 0%, #1e40af 100%)`, boxShadow: `0 7px 18px ${item.color}40` }}>{item.icon}</Box>
+              <Box sx={{ display: 'grid', placeItems: 'center', width: 46, height: 46, flexShrink: 0, borderRadius: 2.8, color: '#fff', background: `linear-gradient(135deg, ${item.color} 0%, #1e40af 100%)`, boxShadow: `0 7px 18px ${item.color}40` }}>{item.icon}</Box>
             </Stack>
           </Paper>;
         })}
       </Box>
-      <Paper elevation={0} sx={{ p: 1.5, borderRadius: 3, border: '1px solid #e2e8f0' }}>
-        <Stack direction={{ xs: 'column', md: 'row' }} spacing={1.2}>
-          <Box sx={{ flex: 1 }}>
+
+      <Paper elevation={0} sx={{ p: 2, borderRadius: 3, border: '1px solid #e2e8f0', bgcolor: '#fff' }}>
+        <Box sx={{ display: 'flex', flexDirection: { xs: 'column', sm: 'row' }, flexWrap: 'wrap', gap: 1.5, alignItems: 'center' }}>
+          <Box sx={{ flex: '1 1 280px', minWidth: { xs: '100%', sm: 260 } }}>
             <TextField
               fullWidth size="small" value={search} onChange={(e) => handleSearchChange(e.target.value)}
-              placeholder="Buscar en todos los campos"
+              placeholder="Buscar en todos los campos..."
               autoComplete="off"
               InputProps={{
                 startAdornment: <InputAdornment position="start"><SearchRoundedIcon sx={{ color: '#64748b' }} /></InputAdornment>,
                 endAdornment: search ? <InputAdornment position="end"><IconButton size="small" aria-label="Limpiar búsqueda" onClick={() => handleSearchChange('')}><ClearRoundedIcon fontSize="small" /></IconButton></InputAdornment> : null
               }}
-              sx={{ '& .MuiOutlinedInput-root': { bgcolor: '#fff', borderRadius: 2.2 } }}
+              sx={{ '& .MuiOutlinedInput-root': { bgcolor: '#f8fafc', borderRadius: 2.2 } }}
             />
-            <Typography variant="caption" sx={{ display: 'block', mt: .55, ml: .5, color: '#64748b' }}>Busca por persona, identificación, correo, dependencia, campus, parqueadero, placa, modelo, SOAT o RTM.</Typography>
           </Box>
-          <FormControl size="small" sx={{ minWidth: 180 }}><InputLabel>Campus</InputLabel><Select label="Campus" value={campus} onChange={(e) => setCampus(e.target.value)}><MenuItem value="">Todos</MenuItem>{catalogs.campus.map((item) => <MenuItem key={item} value={item}>{item}</MenuItem>)}</Select></FormControl>
-          <FormControl size="small" sx={{ minWidth: 190 }}><InputLabel>Estado documental</InputLabel><Select label="Estado documental" value={estado} onChange={(e) => { setEstado(e.target.value); setIndicator(''); }}><MenuItem value="">Todos</MenuItem><MenuItem value="vencido">Vencidos</MenuItem><MenuItem value="proximo">Próximos a vencer</MenuItem><MenuItem value="vigente">Vigentes</MenuItem><MenuItem value="sin_fecha">Sin fecha verificable</MenuItem></Select></FormControl>
-          <Tooltip title="Actualizar"><IconButton onClick={load}><RefreshRoundedIcon /></IconButton></Tooltip>
-        </Stack>
+          <FormControl size="small" sx={{ flex: '1 1 150px', minWidth: { xs: '100%', sm: 150 } }}>
+            <InputLabel>Campus</InputLabel>
+            <Select label="Campus" value={campus} onChange={(e) => setCampus(e.target.value)}>
+              <MenuItem value="">Todos los campus</MenuItem>
+              {catalogs.campus.map((item) => <MenuItem key={item} value={item}>{item}</MenuItem>)}
+            </Select>
+          </FormControl>
+          <FormControl size="small" sx={{ flex: '1 1 170px', minWidth: { xs: '100%', sm: 170 } }}>
+            <InputLabel>Estado documental</InputLabel>
+            <Select label="Estado documental" value={estado} onChange={(e) => { setEstado(e.target.value); setIndicator(''); }}>
+              <MenuItem value="">Todos los estados</MenuItem>
+              <MenuItem value="vencido">Vencidos</MenuItem>
+              <MenuItem value="proximo">Próximos a vencer</MenuItem>
+              <MenuItem value="vigente">Vigentes</MenuItem>
+              <MenuItem value="sin_fecha">Sin fecha verificable</MenuItem>
+            </Select>
+          </FormControl>
+          <Tooltip title="Actualizar datos">
+            <IconButton onClick={load} sx={{ bgcolor: '#f1f5f9', p: 1, '&:hover': { bgcolor: '#e2e8f0' } }}>
+              <RefreshRoundedIcon />
+            </IconButton>
+          </Tooltip>
+        </Box>
+        <Typography variant="caption" sx={{ display: 'block', mt: 1, color: '#64748b', fontSize: 11 }}>Busca por persona, identificación, correo, dependencia, campus, parqueadero, placa, modelo, SOAT o RTM.</Typography>
       </Paper>
       <TableContainer component={Paper} elevation={0} sx={{ borderRadius: 3, border: '1px solid #e2e8f0', maxHeight: { xs: '65vh', md: '72vh' }, overflow: 'auto', scrollbarGutter: 'stable' }}>
         <Table stickyHeader size="small" sx={{ width: '100%', minWidth: 1140, tableLayout: 'fixed', '& .MuiTableCell-head': { px: 0.9, py: 1, fontSize: 11, fontWeight: 900, lineHeight: 1.2, bgcolor: '#eaf2ff', boxShadow: 'inset 0 -2px 0 #2563eb', zIndex: 5, whiteSpace: 'nowrap' }, '& .MuiTableCell-body': { px: 0.9, py: 0.9, fontSize: 11.5, verticalAlign: 'top', overflowWrap: 'anywhere' }, '& .MuiTypography-body2': { fontSize: 11.5, lineHeight: 1.25 }, '& .MuiTypography-caption': { fontSize: 10, lineHeight: 1.3 }, '& .MuiChip-root': { height: 20, fontSize: 10 }, '& .pesv-expiry-chip.MuiChip-root': { width: 'fit-content', maxWidth: '100%', height: 'auto', minHeight: 20, alignItems: 'center' }, '& .pesv-expiry-chip .MuiChip-label': { display: 'block', px: 0.6, py: 0.25, whiteSpace: 'normal', overflow: 'visible', textOverflow: 'clip', lineHeight: 1.15 }, '& .pesv-expiry-chip .MuiChip-icon': { flexShrink: 0 } }}>
