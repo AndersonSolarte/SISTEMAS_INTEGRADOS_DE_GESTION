@@ -40,6 +40,42 @@ const sectionHeader = (title, program) => ([
   { text: program, color: BLUE, bold: true, fontSize: 15, alignment: 'center', margin: [0, 7, 0, 10] }
 ]);
 
+const reportCoverPage = ({ program, nationalOffer, regionalOffer, poblacional }) => {
+  const periods = new Set(poblacional.map((row) => text(row.periodo_referencia)).filter(Boolean));
+  const generatedAt = new Intl.DateTimeFormat('es-CO', { dateStyle: 'long', timeStyle: 'short', timeZone: 'America/Bogota' }).format(new Date());
+  return [
+    ...(fs.existsSync(headerPath) ? [{ image: headerPath, fit: [690, 76], alignment: 'center', margin: [0, 4, 0, 22] }] : []),
+    {
+      table: {
+        widths: ['*'],
+        body: [[{
+          stack: [
+            { text: 'INFORME INTEGRAL', color: '#ffffff', bold: true, fontSize: 12, characterSpacing: 1.8, alignment: 'center', margin: [0, 12, 0, 5] },
+            { text: 'CONTEXTO EXTERNO GENERAL', color: '#ffffff', bold: true, fontSize: 25, alignment: 'center', margin: [0, 0, 0, 7] },
+            { text: 'Oferta académica e información poblacional nacional y regional', color: '#dce8fb', fontSize: 10, alignment: 'center', margin: [0, 0, 0, 14] }
+          ],
+          fillColor: BLUE
+        }]]
+      },
+      layout: 'noBorders',
+      margin: [0, 0, 0, 20]
+    },
+    { text: program, color: BLUE, bold: true, fontSize: 21, alignment: 'center', margin: [20, 0, 20, 20] },
+    {
+      columns: [
+        card('PROGRAMAS EN LA OFERTA NACIONAL', nationalOffer.length),
+        card('PROGRAMAS EN LA OFERTA REGIONAL', regionalOffer.length),
+        card('PERÍODOS ACADÉMICOS ANALIZADOS', periods.size)
+      ],
+      columnGap: 12,
+      margin: [45, 0, 45, 22]
+    },
+    { text: 'El documento reúne la visualización de oferta seleccionada, los mapas territoriales y los gráficos poblacionales de ambos alcances conservando datos, etiquetas y colores.', alignment: 'center', color: '#52657c', fontSize: 9, margin: [60, 0, 60, 12] },
+    { text: `Generado: ${generatedAt}`, alignment: 'center', color: '#7b8ca3', fontSize: 8 },
+    { text: '', pageBreak: 'after' }
+  ];
+};
+
 const card = (label, value) => ({
   table: {
     widths: ['*'],
@@ -551,7 +587,7 @@ const aggregateGeography = (rows, geo) => {
   return { municipalities: sort(municipalities), departments: sort(departments) };
 };
 
-const geoMapSvg = ({ geo, rows, type, color, title, width = 335, height = 255 }) => {
+const geoMapSvg = ({ geo, rows, type, color, title, width = 478, height = 390 }) => {
   const map = new Map(rows.map((row) => [row.key, row]));
   const max = Math.max(1, ...rows.map((row) => row.value));
   const paths = geo.features.map((feature) => {
@@ -564,25 +600,67 @@ const geoMapSvg = ({ geo, rows, type, color, title, width = 335, height = 255 })
   }).join('');
   const bubbles = type === 'municipality' ? rows.filter((row) => Number.isFinite(row.longitude) && Number.isFinite(row.latitude)).map((row) => {
     const point = projectGeo({ lon: row.longitude, lat: row.latitude, bbox: geo.bbox, width, height });
-    const radius = 2.5 + Math.sqrt(row.value / max) * 11;
-    return `<circle cx="${point.x.toFixed(1)}" cy="${point.y.toFixed(1)}" r="${radius.toFixed(1)}" fill="${color}" fill-opacity=".68" stroke="#fff" stroke-width="1"/>`;
+    const radius = 2.5 + Math.sqrt(row.value / max) * 7;
+    return `<circle cx="${point.x.toFixed(1)}" cy="${point.y.toFixed(1)}" r="${radius.toFixed(1)}" fill="${color}" fill-opacity=".82" stroke="#fff" stroke-width="1"/>`;
   }).join('') : '';
-  return `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}"><rect width="100%" height="100%" fill="#f4f8fd"/><text x="${width / 2}" y="12" text-anchor="middle" font-size="9" font-weight="bold" fill="${BLUE}">${escapeXml(title)}</text><g transform="translate(0 8)">${paths}${bubbles}</g></svg>`;
+  const occupied = [];
+  const labelRows = type === 'municipality'
+    ? rows.filter((row) => Number.isFinite(row.longitude) && Number.isFinite(row.latitude)).slice(0, 14)
+    : [];
+  const municipalityLabels = labelRows.map((row, index) => {
+    const point = projectGeo({ lon: row.longitude, lat: row.latitude, bbox: geo.bbox, width, height });
+    const label = text(row.label).length > 19 ? `${text(row.label).slice(0, 18)}…` : text(row.label);
+    const boxWidth = Math.max(48, Math.min(112, label.length * 4.3 + 28));
+    const candidates = [[10, -18], [10, 8], [-boxWidth - 10, -18], [-boxWidth - 10, 8], [10, -34], [-boxWidth - 10, -34]];
+    let selected = candidates[index % candidates.length];
+    for (const candidate of candidates) {
+      const x = Math.max(4, Math.min(width - boxWidth - 4, point.x + candidate[0]));
+      const y = Math.max(24, Math.min(height - 19, point.y + candidate[1]));
+      const overlaps = occupied.some((box) => x < box.x + box.w + 3 && x + boxWidth + 3 > box.x && y < box.y + 21 && y + 21 > box.y);
+      if (!overlaps) { selected = [x - point.x, y - point.y]; break; }
+    }
+    const x = Math.max(4, Math.min(width - boxWidth - 4, point.x + selected[0]));
+    const y = Math.max(24, Math.min(height - 19, point.y + selected[1]));
+    occupied.push({ x, y, w: boxWidth });
+    const anchorX = x > point.x ? x : x + boxWidth;
+    return `<line x1="${point.x.toFixed(1)}" y1="${point.y.toFixed(1)}" x2="${anchorX.toFixed(1)}" y2="${(y + 9).toFixed(1)}" stroke="${color}" stroke-width=".7" stroke-dasharray="2 2"/><rect x="${x.toFixed(1)}" y="${y.toFixed(1)}" width="${boxWidth.toFixed(1)}" height="18" rx="5" fill="#fff" stroke="${color}" stroke-width=".7"/><rect x="${(x + boxWidth - 23).toFixed(1)}" y="${(y + 1).toFixed(1)}" width="22" height="16" rx="4" fill="${color}"/><text x="${(x + 6).toFixed(1)}" y="${(y + 12).toFixed(1)}" font-size="5.7" font-weight="bold" fill="#183552">${escapeXml(label)}</text><text x="${(x + boxWidth - 12).toFixed(1)}" y="${(y + 12).toFixed(1)}" text-anchor="middle" font-size="6" font-weight="bold" fill="#fff">${format.format(row.value)}</text>`;
+  }).join('');
+  const departmentLabels = type === 'department' ? geo.features.map((feature) => {
+    const datum = map.get(feature.key);
+    if (!datum) return '';
+    const allPoints = feature.rings.flat();
+    const lons = allPoints.map((point) => point[0]);
+    const lats = allPoints.map((point) => point[1]);
+    const point = projectGeo({ lon: (Math.min(...lons) + Math.max(...lons)) / 2, lat: (Math.min(...lats) + Math.max(...lats)) / 2, bbox: geo.bbox, width, height });
+    const label = text(datum.label).length > 16 ? `${text(datum.label).slice(0, 15)}…` : text(datum.label);
+    const boxWidth = Math.max(50, Math.min(105, label.length * 4.2 + 27));
+    const x = Math.max(3, Math.min(width - boxWidth - 3, point.x - boxWidth / 2));
+    const y = Math.max(23, Math.min(height - 18, point.y - 8));
+    return `<rect x="${x.toFixed(1)}" y="${y.toFixed(1)}" width="${boxWidth.toFixed(1)}" height="17" rx="5" fill="#fff" fill-opacity=".94" stroke="${color}" stroke-width=".65"/><rect x="${(x + boxWidth - 22).toFixed(1)}" y="${(y + 1).toFixed(1)}" width="21" height="15" rx="4" fill="${color}"/><text x="${(x + 5).toFixed(1)}" y="${(y + 11.5).toFixed(1)}" font-size="5.4" font-weight="bold" fill="#183552">${escapeXml(label)}</text><text x="${(x + boxWidth - 11.5).toFixed(1)}" y="${(y + 11.5).toFixed(1)}" text-anchor="middle" font-size="5.8" font-weight="bold" fill="#fff">${format.format(datum.value)}</text>`;
+  }).join('') : '';
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}"><rect width="100%" height="100%" rx="12" fill="#f4f8fd"/><text x="16" y="18" font-size="9" font-weight="bold" fill="${BLUE}">${escapeXml(title)}</text><text x="16" y="31" font-size="6" fill="#64748b">Las etiquetas muestran el territorio y la cantidad de programas.</text><g transform="translate(0 12)">${paths}${bubbles}${municipalityLabels}${departmentLabels}</g></svg>`;
 };
 
 const geographyPages = ({ rows, regionalRows, program }) => {
   const geo = loadGeoData();
   if (!geo) return [];
   const national = aggregateGeography(rows, geo); const regional = aggregateGeography(regionalRows, geo);
+  const page = (heading, mapRows, type, color, tableTitle) => [
+    { text: '', pageBreak: 'before' },
+    ...sectionHeader(heading, program),
+    {
+      columns: [
+        { svg: geoMapSvg({ geo, rows: mapRows, type, color, title: heading, width: 478, height: 405 }), width: 478 },
+        { stack: [compactTable(tableTitle, mapRows, 18)], width: 202 }
+      ],
+      columnGap: 10
+    }
+  ];
   return [
-    { text: '', pageBreak: 'before' },
-    ...sectionHeader('DISTRIBUCIÓN TERRITORIAL DE LA OFERTA', program),
-    { columns: [compactTable('MUNICIPIOS · OFERTA NACIONAL', national.municipalities, 12), compactTable('MUNICIPIOS · OFERTA REGIONAL', regional.municipalities, 12)], columnGap: 10, margin: [0, 0, 0, 8] },
-    { columns: [{ svg: geoMapSvg({ geo, rows: national.municipalities, type: 'municipality', color: '#173f96', title: 'MAPA DE MUNICIPIOS · NACIONAL' }), width: 335 }, { svg: geoMapSvg({ geo, rows: regional.municipalities, type: 'municipality', color: RED, title: 'MAPA DE MUNICIPIOS · REGIONAL' }), width: 335 }], columnGap: 10 },
-    { text: '', pageBreak: 'before' },
-    ...sectionHeader('OFERTA POR DEPARTAMENTOS', program),
-    { columns: [compactTable('DEPARTAMENTOS · OFERTA NACIONAL', national.departments, 10), compactTable('DEPARTAMENTOS · OFERTA REGIONAL', regional.departments, 10)], columnGap: 10, margin: [0, 0, 0, 8] },
-    { columns: [{ svg: geoMapSvg({ geo, rows: national.departments, type: 'department', color: '#173f96', title: 'MAPA DE DEPARTAMENTOS · NACIONAL', width: 335, height: 275 }), width: 335 }, { svg: geoMapSvg({ geo, rows: regional.departments, type: 'department', color: RED, title: 'MAPA DE DEPARTAMENTOS · REGIONAL', width: 335, height: 275 }), width: 335 }], columnGap: 10 }
+    ...page('MAPA DE MUNICIPIOS · NACIONAL', national.municipalities, 'municipality', '#173f96', 'MUNICIPIOS DESTACADOS'),
+    ...page('MAPA DE MUNICIPIOS · REGIONAL', regional.municipalities, 'municipality', RED, 'MUNICIPIOS REGIONALES'),
+    ...page('MAPA DE DEPARTAMENTOS · NACIONAL', national.departments, 'department', '#173f96', 'DEPARTAMENTOS DESTACADOS'),
+    ...page('MAPA DE DEPARTAMENTOS · REGIONAL', regional.departments, 'department', RED, 'DEPARTAMENTOS REGIONALES')
   ];
 };
 
@@ -598,27 +676,59 @@ const aggregatePeriods = (rows, fields) => {
   return Array.from(map.values()).sort((a, b) => text(a.periodo).localeCompare(text(b.periodo)));
 };
 
-const offerPage = ({ rows, regionalRows, program }) => {
+const offerSummaryVisualSvg = ({ rows, view = 'sequence', width = 690, height = 360 }) => {
   const credits = rows.map((row) => number(row.numero_creditos)).filter((value) => value > 0);
-  const semesterCounts = labelCountRows(rows, 'numero_semestres');
-  const recognition = labelCountRows(rows, 'reconocimiento_men');
-  const sectors = labelCountRows(rows, 'sector');
-  const modalities = labelCountRows(rows, 'modalidad');
+  const semesterRows = labelCountRows(rows, 'numero_semestres').map((row) => ({ ...row, label: `${row.label} semestres` }));
+  const groups = [
+    { title: 'RECONOCIMIENTO MEN', color: '#173f96', items: labelCountRows(rows, 'reconocimiento_men') },
+    { title: 'SECTOR', color: '#3a9626', items: labelCountRows(rows, 'sector') },
+    { title: 'MODALIDADES', color: '#92278f', items: labelCountRows(rows, 'modalidad') },
+    { title: 'NÚMERO DE SEMESTRES', color: '#0891a5', items: semesterRows },
+    { title: 'RANGO DE CRÉDITOS', color: '#ea6a0a', items: credits.length ? [
+      { label: 'Mínimo', value: Math.min(...credits) },
+      { label: 'Máximo', value: Math.max(...credits) },
+      { label: 'Promedio', value: Math.round(credits.reduce((a, b) => a + b, 0) / credits.length) }
+    ] : [] }
+  ];
+  const card = (group, x, y, w, h, compact = false) => {
+    const items = group.items.slice(0, compact ? 3 : 5);
+    const startY = y + (compact ? 35 : 43);
+    const step = Math.max(15, Math.min(compact ? 19 : 27, (h - (compact ? 42 : 53)) / Math.max(1, items.length)));
+    const body = items.length ? items.map((item, index) => {
+      const iy = startY + index * step;
+      const label = text(item.label).length > 25 ? `${text(item.label).slice(0, 24)}…` : text(item.label);
+      return `<circle cx="${x + 13}" cy="${iy - 2}" r="2.5" fill="${group.color}"/><text x="${x + 21}" y="${iy}" font-size="${compact ? 5.4 : 6.5}" font-weight="bold" fill="#465b75">${escapeXml(label)}</text><rect x="${x + w - 43}" y="${iy - 10}" width="33" height="15" rx="4" fill="#fff" stroke="${group.color}" stroke-opacity=".35"/><text x="${x + w - 26.5}" y="${iy}" text-anchor="middle" font-size="${compact ? 5.8 : 7}" font-weight="bold" fill="${group.color}">${escapeXml(format.format(item.value))}</text>`;
+    }).join('') : `<text x="${x + w / 2}" y="${y + h / 2 + 10}" text-anchor="middle" font-size="7" fill="#94a3b8">Sin información</text>`;
+    return `<rect x="${x}" y="${y}" width="${w}" height="${h}" rx="11" fill="#fff" stroke="${group.color}" stroke-opacity=".32"/><rect x="${x}" y="${y}" width="${w}" height="27" rx="11" fill="${group.color}"/><rect x="${x}" y="${y + 18}" width="${w}" height="9" fill="${group.color}"/><text x="${x + w / 2}" y="${y + 18}" text-anchor="middle" font-size="${compact ? 6 : 7.2}" font-weight="bold" fill="#fff">${escapeXml(group.title)}</text>${body}`;
+  };
+  let body = '';
+  if (view === 'radial') {
+    body = `<circle cx="143" cy="196" r="93" fill="#fff" stroke="#afbdd0" stroke-width="2" stroke-dasharray="5 4"/><circle cx="143" cy="196" r="73" fill="#f3f7fc" stroke="#d5e0ee"/><text x="143" y="181" text-anchor="middle" font-size="12" font-weight="bold" fill="#082b66">OFERTA DE</text><text x="143" y="198" text-anchor="middle" font-size="12" font-weight="bold" fill="#082b66">PROGRAMAS</text><text x="143" y="228" text-anchor="middle" font-size="24" font-weight="bold" fill="#173f96">${format.format(rows.length)}</text>${groups.map((group, index) => `${card(group, 280, 54 + index * 57, 390, 50, true)}<line x1="218" y1="${125 + index * 26}" x2="280" y2="${79 + index * 57}" stroke="${group.color}" stroke-width="1.5"/>`).join('')}`;
+  } else if (view === 'orbit') {
+    const positions = [[18, 60, 192, 102], [480, 60, 192, 102], [480, 220, 192, 102], [18, 220, 192, 102], [249, 250, 192, 82]];
+    body = `<circle cx="345" cy="171" r="73" fill="#fff" stroke="#b6c6da" stroke-width="2"/><circle cx="345" cy="171" r="57" fill="#eef4fb"/><text x="345" y="159" text-anchor="middle" font-size="11" font-weight="bold" fill="#082b66">TOTAL PROGRAMAS</text><text x="345" y="190" text-anchor="middle" font-size="25" font-weight="bold" fill="#173f96">${format.format(rows.length)}</text>${groups.map((group, index) => card(group, ...positions[index], true)).join('')}`;
+  } else if (view === 'panel') {
+    const positions = [[12, 58, 327, 112], [351, 58, 327, 112], [12, 182, 214, 158], [238, 182, 214, 158], [464, 182, 214, 158]];
+    body = groups.map((group, index) => card(group, ...positions[index])).join('');
+  } else if (view === 'executive') {
+    const positions = [[12, 104, 327, 105], [351, 104, 327, 105], [12, 221, 214, 124], [238, 221, 214, 124], [464, 221, 214, 124]];
+    body = `<path d="M18 57H625L675 81L625 105H18Z" fill="#082b66"/><text x="42" y="85" font-size="10" font-weight="bold" fill="#fff">TOTAL DE PROGRAMAS ANALIZADOS</text><rect x="285" y="66" width="72" height="30" rx="5" fill="#fff"/><text x="321" y="87" text-anchor="middle" font-size="17" font-weight="bold" fill="#082b66">${format.format(rows.length)}</text>${groups.map((group, index) => card(group, ...positions[index], true)).join('')}`;
+  } else {
+    body = groups.map((group, index) => card(group, 8 + index * 136, 75, 128, 265)).join('');
+  }
+  const viewLabels = { sequence: 'VISTA SECUENCIAL', panel: 'VISTA PANEL', orbit: 'VISTA ÓRBITA', radial: 'VISTA RADIAL', executive: 'VISTA EJECUTIVA' };
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}"><defs><filter id="summary-shadow"><feDropShadow dx="0" dy="3" stdDeviation="4" flood-color="#123b7a" flood-opacity=".12"/></filter></defs><rect x=".5" y=".5" width="${width - 1}" height="${height - 1}" rx="15" fill="#f8fbff" stroke="#cbd9ea"/><text x="18" y="25" font-size="12" font-weight="bold" fill="#082b66">ANÁLISIS DE CONTEXTO EXTERNO · OFERTA ACADÉMICA</text><text x="18" y="41" font-size="7.5" fill="#64748b">Indicadores calculados con la tabla OFERTA y los filtros del programa seleccionado.</text><rect x="${width - 107}" y="14" width="89" height="21" rx="10.5" fill="#173f96"/><text x="${width - 62.5}" y="28" text-anchor="middle" font-size="6.8" font-weight="bold" fill="#fff">${viewLabels[view] || viewLabels.sequence}</text><g filter="url(#summary-shadow)">${body}</g></svg>`;
+};
+
+const offerPage = ({ rows, regionalRows, program, view }) => {
   const analyzedPrograms = labelCountRows(rows, 'nombre_programa');
   const regionalPrograms = labelCountRows(regionalRows, 'nombre_programa');
-  const characteristicTables = [
-    recognition.length ? compactTable('RECONOCIMIENTO DEL MEN', recognition, 6) : null,
-    sectors.length ? compactTable('SECTOR', sectors, 6) : null,
-    modalities.length ? compactTable('MODALIDADES', modalities, 6) : null
-  ].filter(Boolean);
   return [
     ...sectionHeader('OFERTA NACIONAL Y REGIONAL DE PROGRAMAS ACADÉMICOS SIMILARES', program),
     { columns: [compactTable('OFERTA NACIONAL · PROGRAMAS ANALIZADOS', analyzedPrograms, 10), compactTable('OFERTA REGIONAL · PROGRAMAS ANALIZADOS', regionalPrograms, 10)], columnGap: 10, margin: [0, 0, 0, 10] },
-    card('TOTAL PROGRAMAS ANALIZADOS', rows.length),
-    { text: '', margin: [0, 3] },
-    ...(characteristicTables.length ? [{ columns: characteristicTables, columnGap: 8, margin: [0, 0, 0, 8] }] : []),
-    ...(credits.length ? [{ columns: [card('MÍNIMO DE CRÉDITOS', Math.min(...credits)), card('MÁXIMO DE CRÉDITOS', Math.max(...credits)), card('PROMEDIO DE CRÉDITOS', Math.round(credits.reduce((a, b) => a + b, 0) / credits.length))], columnGap: 8, margin: [0, 0, 0, 8] }] : []),
-    ...(semesterCounts.length ? [compactTable('NÚMERO DE SEMESTRES', semesterCounts, 15)] : [])
+    { text: '', pageBreak: 'before' },
+    ...sectionHeader('RESUMEN VISUAL DE LA OFERTA ACADÉMICA', program),
+    { svg: offerSummaryVisualSvg({ rows, view }), width: 690 }
   ];
 };
 
@@ -697,6 +807,16 @@ const singleMetricSpecialChartSvg = ({ data, series, type, width = 690, height =
 
 const populationPage = ({ title, program, data, charts, selection = {}, pageBreak = false }) => {
   const selectedScope = text(selection.scope || 'nacional').toLowerCase();
+  if (selectedScope === 'ambos') {
+    return charts.flatMap((item, index) => populationPage({
+      title: `${title} · ${text(item.scope).toUpperCase()}`,
+      program,
+      data,
+      charts,
+      selection: { ...selection, scope: text(item.scope).toLowerCase() },
+      pageBreak: pageBreak || index > 0
+    }));
+  }
   const chart = charts.find((item) => text(item.scope).toLowerCase() === selectedScope) || charts[0];
   const requestedType = text(selection.chartType || 'stacked');
   const supportedType = chart.funnelSeries
@@ -760,7 +880,7 @@ const populationPage = ({ title, program, data, charts, selection = {}, pageBrea
   ];
 };
 
-const generateContextoExternoGeneralPdf = async ({ program, oferta = [], poblacional = [], section = 'completo', populationGroup = 'ingreso', visualizations = {} }) => {
+const generateContextoExternoGeneralPdf = async ({ program, oferta = [], poblacional = [], section = 'completo', populationGroup = 'ingreso', visualizations = {}, offerView = 'sequence' }) => {
   // El reporte de referencia denomina "Oferta nacional" al universo completo
   // y muestra la oferta regional como un subconjunto de ese mismo universo.
   const nationalOffer = oferta;
@@ -771,32 +891,33 @@ const generateContextoExternoGeneralPdf = async ({ program, oferta = [], poblaci
 
   const populationSections = {
     ingreso: populationPage({
-      title: 'INSCRITOS, ADMITIDOS Y PRIMER CURSO', program, data: intakeData, selection: visualizations.ingreso,
+      title: 'INSCRITOS, ADMITIDOS Y PRIMER CURSO', program, data: intakeData, selection: section === 'completo' ? { ...visualizations.ingreso, scope: 'ambos' } : visualizations.ingreso,
       charts: [
         { title: 'Flujo apilado por período', subtitle: 'Inscritos, admitidos y primer curso en una lectura consolidada.', trendSubtitle: 'Comportamiento histórico de inscritos, admitidos y estudiantes de primer curso.', scope: 'Nacional', series: [['inscritos_nacional', 'Inscritos', '#2f6fed'], ['admitidos_nacional', 'Admitidos', '#df2426'], ['primer_curso_nacional', 'Primer curso', '#687b94']].map(([key, label, color]) => ({ key, label, color })), trendSeries: [['inscritos_nacional', 'Inscritos', '#2f6fed'], ['admitidos_nacional', 'Admitidos', '#1494a8'], ['primer_curso_nacional', 'Primer curso', '#5b8f45']].map(([key, label, color]) => ({ key, label, color })), funnelSeries: [['inscritos_nacional', 'Inscritos', '#082b66'], ['admitidos_nacional', 'Admitidos', '#1f67bd'], ['primer_curso_nacional', 'Primer curso', '#27a861']].map(([key, label, color]) => ({ key, label, color })) },
         { title: 'Flujo apilado por período', subtitle: 'Inscritos, admitidos y primer curso en una lectura consolidada.', trendSubtitle: 'Comportamiento histórico de inscritos, admitidos y estudiantes de primer curso.', scope: 'Regional', series: [['inscritos_regional', 'Inscritos', '#2f6fed'], ['admitidos_regional', 'Admitidos', '#df2426'], ['primer_curso_regional', 'Primer curso', '#687b94']].map(([key, label, color]) => ({ key, label, color })), trendSeries: [['inscritos_regional', 'Inscritos', '#2f6fed'], ['admitidos_regional', 'Admitidos', '#1494a8'], ['primer_curso_regional', 'Primer curso', '#5b8f45']].map(([key, label, color]) => ({ key, label, color })), funnelSeries: [['inscritos_regional', 'Inscritos', '#082b66'], ['admitidos_regional', 'Admitidos', '#1f67bd'], ['primer_curso_regional', 'Primer curso', '#27a861']].map(([key, label, color]) => ({ key, label, color })) }
       ]
     }),
     matriculados: populationPage({
-      title: 'MATRICULADOS', program, data: enrolledData, selection: visualizations.matriculados,
+      title: 'MATRICULADOS', program, data: enrolledData, selection: section === 'completo' ? { ...visualizations.matriculados, scope: 'ambos' } : visualizations.matriculados,
       charts: [
         { title: 'Matriculados por período', subtitle: 'Evolución de estudiantes matriculados según el alcance seleccionado.', scope: 'Nacional', series: [{ key: 'matriculados_nacional', label: 'Matriculados', color: '#2f6fed' }] },
-        { title: 'Matriculados por período', subtitle: 'Evolución de estudiantes matriculados según el alcance seleccionado.', scope: 'Regional', series: [{ key: 'matriculados_regional', label: 'Matriculados', color: '#2f6fed' }] }
+        { title: 'Matriculados por período', subtitle: 'Evolución de estudiantes matriculados según el alcance seleccionado.', scope: 'Regional', series: [{ key: 'matriculados_regional', label: 'Matriculados', color: '#b5123f' }] }
       ]
     }),
     graduados: populationPage({
-      title: 'GRADUADOS', program, data: graduateData, selection: visualizations.graduados,
+      title: 'GRADUADOS', program, data: graduateData, selection: section === 'completo' ? { ...visualizations.graduados, scope: 'ambos' } : visualizations.graduados,
       charts: [
-        { title: 'Graduados por período', subtitle: 'Evolución de graduados según el alcance seleccionado.', scope: 'Nacional', series: [{ key: 'graduados_nacional', label: 'Graduados', color: '#7c3aed' }] },
-        { title: 'Graduados por período', subtitle: 'Evolución de graduados según el alcance seleccionado.', scope: 'Regional', series: [{ key: 'graduados_regional', label: 'Graduados', color: '#7c3aed' }] }
+        { title: 'Graduados por período', subtitle: 'Evolución de graduados según el alcance seleccionado.', scope: 'Nacional', series: [{ key: 'graduados_nacional', label: 'Graduados', color: '#173f96' }] },
+        { title: 'Graduados por período', subtitle: 'Evolución de graduados según el alcance seleccionado.', scope: 'Regional', series: [{ key: 'graduados_regional', label: 'Graduados', color: '#b5123f' }] }
       ]
     })
   };
   const offerContent = [
-    ...offerPage({ rows: nationalOffer, regionalRows: regionalOffer, program }),
+    ...offerPage({ rows: nationalOffer, regionalRows: regionalOffer, program, view: offerView }),
     ...geographyPages({ rows: nationalOffer, regionalRows: regionalOffer, program })
   ];
   const completeContent = [
+    ...reportCoverPage({ program, nationalOffer, regionalOffer, poblacional }),
     ...offerContent,
     { text: '', pageBreak: 'before' },
     ...populationSections.ingreso,

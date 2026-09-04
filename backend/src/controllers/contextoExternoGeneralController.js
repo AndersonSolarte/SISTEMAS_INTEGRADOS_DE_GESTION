@@ -410,13 +410,16 @@ const downloadContextoExternoGeneralPdf = async (req, res) => {
       matriculados: readVisualization('matriculados', simpleCharts),
       graduados: readVisualization('graduados', simpleCharts)
     };
+    const offerViews = ['sequence', 'panel', 'orbit', 'radial', 'executive'];
+    const offerView = offerViews.includes(cleanText(req.query?.vista_oferta)) ? cleanText(req.query?.vista_oferta) : 'sequence';
     const buffer = await generateContextoExternoGeneralPdf({
       program,
       oferta,
       poblacional,
       section,
       populationGroup,
-      visualizations
+      visualizations,
+      offerView
     });
     const slug = normalizeKey(program).toLowerCase().replace(/_+/g, '_');
     res.setHeader('Content-Disposition', `attachment; filename=contexto_externo_${slug}.pdf`);

@@ -138,8 +138,8 @@ const metricGroups = [
   {
     label: 'Graduados',
     fields: [
-      ['graduados_nacional', 'Graduados Colombia', '#7c3aed'],
-      ['graduados_regional', 'Graduados regional', '#ec4899']
+      ['graduados_nacional', 'Graduados Colombia', '#173f96'],
+      ['graduados_regional', 'Graduados regional', '#b5123f']
     ]
   }
 ];
@@ -196,7 +196,7 @@ function PopulationStackedChart({ data, groupIndex, scope, scopeBadgeLabel }) {
     {
       title: 'Graduados por período',
       subtitle: 'Evolución de graduados según el alcance seleccionado.',
-      series: [{ field: `graduados_${scope}`, label: 'Graduados', color: '#7c3aed' }]
+      series: [{ field: `graduados_${scope}`, label: 'Graduados', color: scope === 'nacional' ? '#173f96' : '#b5123f' }]
     }
   ];
   const configuration = configurations[groupIndex] || configurations[0];
@@ -273,7 +273,7 @@ function PopulationTrendChart({ data, groupIndex, scope, scopeBadgeLabel }) {
     },
     {
       subtitle: 'Comportamiento histórico de estudiantes graduados.',
-      series: [{ field: `graduados_${scope}`, label: 'Graduados', color: '#7c3aed' }]
+      series: [{ field: `graduados_${scope}`, label: 'Graduados', color: scope === 'nacional' ? '#173f96' : '#b5123f' }]
     }
   ];
   const configuration = configurations[groupIndex] || configurations[0];
@@ -1033,8 +1033,8 @@ function PopulationSingleMetricAlternative({ data, groupIndex, scope, type }) {
   const isEnrolled = groupIndex === 1;
   const field = `${isEnrolled ? 'matriculados' : 'graduados'}_${scope}`;
   const label = isEnrolled ? 'Matriculados' : 'Graduados';
-  const color = isEnrolled ? '#2f6fed' : '#7c3aed';
-  const soft = isEnrolled ? '#edf4ff' : '#f4efff';
+  const color = isEnrolled ? '#2f6fed' : (scope === 'nacional' ? '#173f96' : '#b5123f');
+  const soft = isEnrolled ? '#edf4ff' : (scope === 'nacional' ? '#eaf1fb' : '#fff0f3');
   const rows = data.filter((row) => Number(row[field] || 0) > 0).sort(periodSort);
   if (!rows.length) return <Alert severity="info">No existen datos para el programa y alcance seleccionados.</Alert>;
   const annualRows = rows.map((row) => ({ year: periodDisplay(row.periodo), value: Number(row[field] || 0) }));
@@ -3048,6 +3048,7 @@ export default function ContextoExternoDashboardPanel({ onBack }) {
     try {
       const response = await gestionInformacionService.downloadContextoExternoGeneralPdf(selectedProgram, {
         seccion: 'completo',
+        vista_oferta: summaryView,
         grafico_ingreso: populationViews[0].chartType,
         alcance_ingreso: populationViews[0].scope,
         grafico_matriculados: populationViews[1].chartType,
