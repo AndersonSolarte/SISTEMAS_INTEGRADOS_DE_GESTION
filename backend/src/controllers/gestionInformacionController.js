@@ -4107,6 +4107,12 @@ let divipolaRefCache = null;
 let divipolaRefCacheTs = 0;
 const DIVIPOLA_CACHE_TTL_MS = 60 * 60 * 1000;
 
+const clearAllPoblacionalCaches = () => {
+  poblacionalSeriesCache.clear();
+  matriculadosGeoDashboardCache.clear();
+  clearCaracterizacionCaches();
+};
+
 const getDivipolaReferenceData = async () => {
   const now = Date.now();
   if (divipolaRefCache && (now - divipolaRefCacheTs) < DIVIPOLA_CACHE_TTL_MS) {
