@@ -1094,30 +1094,76 @@ function ParqueaderosPesvPanel({ onBack }) {
         })}
       </Box>
 
-      <Paper elevation={0} sx={{ p: 2, borderRadius: 3, border: '1px solid #e2e8f0', bgcolor: '#fff' }}>
+      <Paper
+        elevation={0}
+        sx={{
+          p: 2.2,
+          borderRadius: 3.5,
+          border: '1.5px solid #cbd5e1',
+          bgcolor: '#ffffff',
+          boxShadow: '0 4px 20px rgba(15, 23, 42, 0.05)',
+          background: 'linear-gradient(180deg, #ffffff 0%, #f8fafc 100%)'
+        }}
+      >
         <Box sx={{ display: 'flex', flexDirection: { xs: 'column', sm: 'row' }, flexWrap: 'wrap', gap: 1.5, alignItems: 'center' }}>
-          <Box sx={{ flex: '1 1 280px', minWidth: { xs: '100%', sm: 260 } }}>
+          <Box sx={{ flex: '1 1 300px', minWidth: { xs: '100%', sm: 280 } }}>
             <TextField
-              fullWidth size="small" value={search} onChange={(e) => handleSearchChange(e.target.value)}
-              placeholder="Buscar en todos los campos..."
+              fullWidth
+              size="small"
+              value={search}
+              onChange={(e) => handleSearchChange(e.target.value)}
+              placeholder="Buscar en todos los campos (Cédula, Nombre, Placa, SOAT...)"
               autoComplete="off"
               InputProps={{
-                startAdornment: <InputAdornment position="start"><SearchRoundedIcon sx={{ color: '#64748b' }} /></InputAdornment>,
-                endAdornment: search ? <InputAdornment position="end"><IconButton size="small" aria-label="Limpiar búsqueda" onClick={() => handleSearchChange('')}><ClearRoundedIcon fontSize="small" /></IconButton></InputAdornment> : null
+                startAdornment: (
+                  <InputAdornment position="start">
+                    <SearchRoundedIcon sx={{ color: '#2563eb', fontSize: 22 }} />
+                  </InputAdornment>
+                ),
+                endAdornment: search ? (
+                  <InputAdornment position="end">
+                    <IconButton size="small" aria-label="Limpiar búsqueda" onClick={() => handleSearchChange('')}>
+                      <ClearRoundedIcon fontSize="small" sx={{ color: '#64748b' }} />
+                    </IconButton>
+                  </InputAdornment>
+                ) : null
               }}
-              sx={{ '& .MuiOutlinedInput-root': { bgcolor: '#f8fafc', borderRadius: 2.2 } }}
+              sx={{
+                '& .MuiOutlinedInput-root': {
+                  bgcolor: search ? '#eff6ff' : '#ffffff',
+                  borderRadius: 2.8,
+                  border: '2px solid #2563eb',
+                  boxShadow: search ? '0 0 0 3px rgba(37,99,235,0.18)' : '0 2px 8px rgba(37,99,235,0.1)',
+                  transition: 'all 0.2s ease-in-out',
+                  '& fieldset': { border: 'none' },
+                  '&:hover': {
+                    bgcolor: '#ffffff',
+                    boxShadow: '0 4px 14px rgba(37,99,235,0.22)'
+                  },
+                  '&.Mui-focused': {
+                    bgcolor: '#ffffff',
+                    boxShadow: '0 0 0 4px rgba(37,99,235,0.25)'
+                  }
+                },
+                '& .MuiInputBase-input': {
+                  fontWeight: 600,
+                  fontSize: '0.92rem',
+                  color: '#0f172a',
+                  py: 1
+                }
+              }}
             />
           </Box>
-          <FormControl size="small" sx={{ flex: '1 1 150px', minWidth: { xs: '100%', sm: 150 } }}>
-            <InputLabel>Campus</InputLabel>
-            <Select label="Campus" value={campus} onChange={(e) => setCampus(e.target.value)}>
+          <FormControl size="small" sx={{ flex: '1 1 160px', minWidth: { xs: '100%', sm: 160 }, '& .MuiOutlinedInput-root': { borderRadius: 2.5, bgcolor: '#ffffff', border: '1.5px solid #cbd5e1', '& fieldset': { border: 'none' } } }}>
+            <InputLabel sx={{ fontWeight: 600, color: '#475569' }}>Campus</InputLabel>
+            <Select label="Campus" value={campus} onChange={(e) => setCampus(e.target.value)} sx={{ fontWeight: 600 }}>
               <MenuItem value="">Todos los campus</MenuItem>
               {catalogs.campus.map((item) => <MenuItem key={item} value={item}>{item}</MenuItem>)}
             </Select>
           </FormControl>
-          <FormControl size="small" sx={{ flex: '1 1 170px', minWidth: { xs: '100%', sm: 170 } }}>
-            <InputLabel>Estado documental</InputLabel>
-            <Select label="Estado documental" value={estado} onChange={(e) => { setEstado(e.target.value); setIndicator(''); }}>
+          <FormControl size="small" sx={{ flex: '1 1 180px', minWidth: { xs: '100%', sm: 180 }, '& .MuiOutlinedInput-root': { borderRadius: 2.5, bgcolor: '#ffffff', border: '1.5px solid #cbd5e1', '& fieldset': { border: 'none' } } }}>
+            <InputLabel sx={{ fontWeight: 600, color: '#475569' }}>Estado documental</InputLabel>
+            <Select label="Estado documental" value={estado} onChange={(e) => { setEstado(e.target.value); setIndicator(''); }} sx={{ fontWeight: 600 }}>
               <MenuItem value="">Todos los estados</MenuItem>
               <MenuItem value="vencido">Vencidos</MenuItem>
               <MenuItem value="proximo">Próximos a vencer</MenuItem>
@@ -1126,12 +1172,15 @@ function ParqueaderosPesvPanel({ onBack }) {
             </Select>
           </FormControl>
           <Tooltip title="Actualizar datos">
-            <IconButton onClick={load} sx={{ bgcolor: '#f1f5f9', p: 1, '&:hover': { bgcolor: '#e2e8f0' } }}>
+            <IconButton onClick={load} sx={{ bgcolor: '#eff6ff', color: '#2563eb', border: '1.5px solid #bfdbfe', p: 1, borderRadius: 2.5, '&:hover': { bgcolor: '#dbeafe', color: '#1d4ed8' } }}>
               <RefreshRoundedIcon />
             </IconButton>
           </Tooltip>
         </Box>
-        <Typography variant="caption" sx={{ display: 'block', mt: 1, color: '#64748b', fontSize: 11 }}>Busca por persona, identificación, correo, dependencia, campus, parqueadero, placa, modelo, SOAT o RTM.</Typography>
+        <Typography variant="caption" sx={{ display: 'flex', alignItems: 'center', gap: 0.6, mt: 1.2, color: '#475569', fontWeight: 600, fontSize: 11.5 }}>
+          <Box component="span" sx={{ display: 'inline-block', width: 6, height: 6, borderRadius: '50%', bgcolor: '#2563eb' }} />
+          Busca por persona, identificación, correo, dependencia, campus, parqueadero, placa, modelo, SOAT o RTM.
+        </Typography>
       </Paper>
       <TableContainer component={Paper} elevation={0} sx={{ borderRadius: 3, border: '1px solid #e2e8f0', maxHeight: { xs: '65vh', md: '72vh' }, overflow: 'auto', scrollbarGutter: 'stable' }}>
         <Table stickyHeader size="small" sx={{ width: '100%', minWidth: 1140, tableLayout: 'fixed', '& .MuiTableCell-head': { px: 0.9, py: 1, fontSize: 11, fontWeight: 900, lineHeight: 1.2, bgcolor: '#eaf2ff', boxShadow: 'inset 0 -2px 0 #2563eb', zIndex: 5, whiteSpace: 'nowrap' }, '& .MuiTableCell-body': { px: 0.9, py: 0.9, fontSize: 11.5, verticalAlign: 'top', overflowWrap: 'anywhere' }, '& .MuiTypography-body2': { fontSize: 11.5, lineHeight: 1.25 }, '& .MuiTypography-caption': { fontSize: 10, lineHeight: 1.3 }, '& .MuiChip-root': { height: 20, fontSize: 10 }, '& .pesv-expiry-chip.MuiChip-root': { width: 'fit-content', maxWidth: '100%', height: 'auto', minHeight: 20, alignItems: 'center' }, '& .pesv-expiry-chip .MuiChip-label': { display: 'block', px: 0.6, py: 0.25, whiteSpace: 'normal', overflow: 'visible', textOverflow: 'clip', lineHeight: 1.15 }, '& .pesv-expiry-chip .MuiChip-icon': { flexShrink: 0 } }}>
