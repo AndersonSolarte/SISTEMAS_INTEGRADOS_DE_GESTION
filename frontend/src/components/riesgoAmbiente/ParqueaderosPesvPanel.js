@@ -1081,35 +1081,38 @@ function ParqueaderosPesvPanel({ onBack }) {
   };
 
   return (
-    <Stack spacing={2.5} sx={{ width: '100%', boxSizing: 'border-box' }}>
-      <Box sx={{ display: 'flex', flexDirection: { xs: 'column', md: 'row' }, justifyContent: 'space-between', alignItems: { xs: 'stretch', md: 'center' }, gap: 1.5 }}>
-        <Button startIcon={<ArrowBackRoundedIcon />} onClick={onBack} sx={{ alignSelf: { xs: 'flex-start', md: 'center' }, textTransform: 'none', fontWeight: 800 }}>Volver a Seguridad Vial</Button>
-        <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1, alignItems: 'center', justifyContent: { xs: 'flex-start', sm: 'flex-end' } }}>
-          <Button variant="outlined" startIcon={downloadingTemplate ? <CircularProgress size={16} /> : <FileDownloadRoundedIcon />} onClick={downloadExcelTemplate} disabled={downloadingTemplate} sx={{ textTransform: 'none', fontWeight: 800, whiteSpace: 'nowrap' }}>{downloadingTemplate ? 'Preparando…' : 'Descargar plantilla'}</Button>
+    <Stack spacing={1.2} sx={{ width: '100%', boxSizing: 'border-box' }}>
+      <Box sx={{ display: 'flex', flexDirection: { xs: 'column', md: 'row' }, justifyContent: 'space-between', alignItems: { xs: 'stretch', md: 'center' }, gap: 1 }}>
+        <Button size="small" startIcon={<ArrowBackRoundedIcon />} onClick={onBack} sx={{ alignSelf: { xs: 'flex-start', md: 'center' }, textTransform: 'none', fontWeight: 800 }}>Volver a Seguridad Vial</Button>
+        <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.8, alignItems: 'center', justifyContent: { xs: 'flex-start', sm: 'flex-end' } }}>
+          <Button size="small" variant="outlined" startIcon={downloadingTemplate ? <CircularProgress size={14} /> : <FileDownloadRoundedIcon />} onClick={downloadExcelTemplate} disabled={downloadingTemplate} sx={{ textTransform: 'none', fontWeight: 800, whiteSpace: 'nowrap', py: 0.5 }}>{downloadingTemplate ? 'Preparando…' : 'Descargar plantilla'}</Button>
           <Tooltip title="Exporta los resultados actuales. Limpie la búsqueda y los filtros para descargar toda la base.">
-            <span><Button variant="outlined" startIcon={exportingData ? <CircularProgress size={16} /> : <TableViewRoundedIcon />} onClick={downloadExcelData} disabled={exportingData} sx={{ textTransform: 'none', fontWeight: 800, whiteSpace: 'nowrap' }}>{exportingData ? 'Descargando…' : `Descargar base (${rows.length})`}</Button></span>
+            <span><Button size="small" variant="outlined" startIcon={exportingData ? <CircularProgress size={14} /> : <TableViewRoundedIcon />} onClick={downloadExcelData} disabled={exportingData} sx={{ textTransform: 'none', fontWeight: 800, whiteSpace: 'nowrap', py: 0.5 }}>{exportingData ? 'Descargando…' : `Descargar base (${rows.length})`}</Button></span>
           </Tooltip>
-          <Button component="label" variant="outlined" startIcon={importing ? <CircularProgress size={16} /> : <FileUploadRoundedIcon />} disabled={importing} sx={{ textTransform: 'none', fontWeight: 800, whiteSpace: 'nowrap' }}>Importar Excel<input hidden type="file" accept=".xlsx,.xls" onChange={importFile} /></Button>
-          <Button variant="contained" startIcon={<AddRoundedIcon />} onClick={openCreate} sx={{ textTransform: 'none', fontWeight: 800, whiteSpace: 'nowrap' }}>Nuevo cupo</Button>
+          <Button size="small" component="label" variant="outlined" startIcon={importing ? <CircularProgress size={14} /> : <FileUploadRoundedIcon />} disabled={importing} sx={{ textTransform: 'none', fontWeight: 800, whiteSpace: 'nowrap', py: 0.5 }}>Importar Excel<input hidden type="file" accept=".xlsx,.xls" onChange={importFile} /></Button>
+          <Button size="small" variant="contained" startIcon={<AddRoundedIcon />} onClick={openCreate} sx={{ textTransform: 'none', fontWeight: 800, whiteSpace: 'nowrap', py: 0.5 }}>Nuevo cupo</Button>
         </Box>
       </Box>
 
-      <Paper elevation={0} sx={{ p: { xs: 2, sm: 2.8 }, borderRadius: 3.5, color: '#fff', background: 'linear-gradient(135deg, #0f172a 0%, #1e3a8a 50%, #2563eb 100%)', boxShadow: '0 8px 24px rgba(30, 58, 138, 0.28)' }}>
-        <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2} alignItems={{ xs: 'flex-start', sm: 'center' }}>
-          <Box sx={{ p: 1, borderRadius: 3, bgcolor: 'rgba(255,255,255,0.1)', display: 'grid', placeItems: 'center' }}>
-            <DirectionsCarRoundedIcon sx={{ fontSize: { xs: 32, sm: 42 } }} />
-          </Box>
-          <Box>
-            <Typography variant="overline" sx={{ fontWeight: 900, opacity: .85, letterSpacing: 1.2 }}>PESV · Submódulo 01</Typography>
-            <Typography sx={{ fontWeight: 900, fontSize: { xs: '1.35rem', sm: '1.75rem', md: '2rem' }, lineHeight: 1.2 }}>Parqueaderos UNICESMAG</Typography>
-            <Typography sx={{ opacity: .88, fontSize: { xs: '0.85rem', sm: '1rem' } }}>Gestión de cupos, vehículos y vigencias documentales.</Typography>
-          </Box>
+      {/* Slim Header Banner */}
+      <Paper elevation={0} sx={{ p: 1.2, px: 2, borderRadius: 2.5, color: '#fff', background: 'linear-gradient(135deg, #0f172a 0%, #1e3a8a 50%, #2563eb 100%)', boxShadow: '0 4px 14px rgba(30, 58, 138, 0.2)' }}>
+        <Stack direction="row" alignItems="center" justifyContent="space-between" spacing={2} flexWrap="wrap">
+          <Stack direction="row" spacing={1.5} alignItems="center">
+            <Box sx={{ p: 0.7, borderRadius: 2, bgcolor: 'rgba(255,255,255,0.12)', display: 'grid', placeItems: 'center' }}>
+              <DirectionsCarRoundedIcon sx={{ fontSize: 24 }} />
+            </Box>
+            <Box>
+              <Typography sx={{ fontWeight: 900, fontSize: '1.15rem', lineHeight: 1.1 }}>Parqueaderos UNICESMAG</Typography>
+              <Typography sx={{ opacity: .85, fontSize: '0.75rem' }}>PESV Submódulo 01 · Gestión de cupos, vehículos y vigencias documentales</Typography>
+            </Box>
+          </Stack>
         </Stack>
       </Paper>
 
-      {importResult?.warningCount > 0 && <Alert severity="warning">Se importaron {importResult.imported} registros con {importResult.warningCount} advertencias de datos. Las vigencias no reconocibles quedaron marcadas como “Sin fecha verificable”.</Alert>}
+      {importResult?.warningCount > 0 && <Alert severity="warning" sx={{ py: 0.3, px: 1.5, fontSize: 12 }}>Se importaron {importResult.imported} registros con {importResult.warningCount} advertencias de datos.</Alert>}
 
-      <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', sm: 'repeat(auto-fit, minmax(260px, 1fr))' }, gap: 1.6 }}>
+      {/* Compact KPI Stat Cards */}
+      <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', sm: 'repeat(auto-fit, minmax(200px, 1fr))' }, gap: 1 }}>
         {stats.map((item) => {
           const hasSearch = Boolean(search.trim());
           const selected = item.key ? indicator === item.key : !indicator && !estado && !hasSearch;
@@ -1119,57 +1122,54 @@ function ParqueaderosPesvPanel({ onBack }) {
             key={item.label} component="button" type="button" aria-pressed={selected} onClick={() => applyIndicatorFilter(item.key)}
             elevation={0}
             sx={{
-              position: 'relative', overflow: 'hidden', width: '100%', p: 2.2, borderRadius: 3.5, textAlign: 'left', font: 'inherit', cursor: 'pointer',
+              position: 'relative', overflow: 'hidden', width: '100%', py: 0.9, px: 1.5, borderRadius: 2.5, textAlign: 'left', font: 'inherit', cursor: 'pointer',
               color: item.color,
               bgcolor: emphasized ? item.background : '#fff',
-              backgroundImage: `radial-gradient(circle at 90% 10%, ${item.color}15 0%, transparent 65%), linear-gradient(135deg, #ffffff 0%, #f8fafc 100%)`,
-              border: `1.5px solid ${emphasized ? item.color : '#e2e8f0'}`,
-              borderTop: `4px solid ${item.color}`,
-              boxShadow: emphasized ? `0 12px 24px ${item.color}2b` : '0 4px 16px rgba(15,23,42,.05)',
-              transform: selected ? 'translateY(-3px)' : 'none', transition: 'transform .18s ease, box-shadow .18s ease, border-color .18s ease, background-color .18s ease',
-              '&:hover': { transform: 'translateY(-4px)', borderColor: item.color, boxShadow: `0 14px 28px ${item.color}30` },
-              '&:focus-visible': { outline: `3px solid ${item.color}55`, outlineOffset: 2 }
+              backgroundImage: `linear-gradient(135deg, #ffffff 0%, #f8fafc 100%)`,
+              border: `1.5px solid ${emphasized ? item.color : '#cbd5e1'}`,
+              borderLeft: `4px solid ${item.color}`,
+              boxShadow: emphasized ? `0 6px 14px ${item.color}20` : '0 2px 8px rgba(15,23,42,.03)',
+              transform: selected ? 'translateY(-1px)' : 'none', transition: 'all .15s ease',
+              '&:hover': { transform: 'translateY(-2px)', borderColor: item.color, boxShadow: `0 8px 16px ${item.color}25` }
             }}
           >
-            <Box sx={{ position: 'absolute', right: -12, bottom: -12, opacity: 0.06, pointerEvents: 'none', transform: 'rotate(-10deg)', color: item.color, '& svg': { fontSize: 88 } }}>
-              {item.icon}
-            </Box>
-            <Stack direction="row" justifyContent="space-between" alignItems="center" spacing={1.5} sx={{ position: 'relative', zIndex: 1 }}>
-              <Box sx={{ pr: 1 }}>
-                <Typography variant="caption" sx={{ display: 'block', color: emphasized ? item.color : '#475569', fontWeight: 900, fontSize: 13 }}>{item.label}</Typography>
-                <Typography sx={{ mt: .65, fontSize: { xs: 26, sm: 32 }, lineHeight: 1, fontWeight: 900, color: '#0f172a' }}>{item.value.toLocaleString('es-CO')}</Typography>
+            <Stack direction="row" justifyContent="space-between" alignItems="center" spacing={1}>
+              <Box>
+                <Typography variant="caption" sx={{ display: 'block', color: emphasized ? item.color : '#475569', fontWeight: 900, fontSize: 11.5, lineHeight: 1.1 }}>{item.label}</Typography>
+                <Typography sx={{ mt: .2, fontSize: 20, lineHeight: 1, fontWeight: 900, color: '#0f172a' }}>{item.value.toLocaleString('es-CO')}</Typography>
               </Box>
-              <Box sx={{ display: 'grid', placeItems: 'center', width: 46, height: 46, flexShrink: 0, borderRadius: 2.8, color: '#fff', background: `linear-gradient(135deg, ${item.color} 0%, #1e40af 100%)`, boxShadow: `0 7px 18px ${item.color}40` }}>{item.icon}</Box>
+              <Box sx={{ display: 'grid', placeItems: 'center', width: 34, height: 34, flexShrink: 0, borderRadius: 2, color: '#fff', background: `linear-gradient(135deg, ${item.color} 0%, #1e40af 100%)`, boxShadow: `0 3px 10px ${item.color}35`, '& svg': { fontSize: 18 } }}>{item.icon}</Box>
             </Stack>
           </Paper>;
         })}
       </Box>
 
+      {/* Slim Integrated Search + Filters Container */}
       <Paper
         elevation={0}
         sx={{
-          p: 2.2,
-          borderRadius: 3.5,
+          p: 1.2,
+          px: 1.8,
+          borderRadius: 2.8,
           border: '1.5px solid #cbd5e1',
           bgcolor: '#ffffff',
-          boxShadow: '0 4px 20px rgba(15, 23, 42, 0.05)',
+          boxShadow: '0 2px 10px rgba(15, 23, 42, 0.04)',
           background: 'linear-gradient(180deg, #ffffff 0%, #f8fafc 100%)'
         }}
       >
-        <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-          {/* Fila 1: Barra de Búsqueda Centrada y Prominente */}
-          <Box sx={{ width: '100%', maxWidth: 850, mx: 'auto' }}>
+        <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1, alignItems: 'center' }}>
+          <Box sx={{ flex: '1 1 300px', minWidth: { xs: '100%', sm: 260 } }}>
             <TextField
               fullWidth
               size="small"
               value={search}
               onChange={(e) => handleSearchChange(e.target.value)}
-              placeholder="Buscar en todos los campos (Cédula, Nombre, Placa, SOAT...)"
+              placeholder="Buscar (Cédula, Nombre, Placa, SOAT...)"
               autoComplete="off"
               InputProps={{
                 startAdornment: (
                   <InputAdornment position="start">
-                    <SearchRoundedIcon sx={{ color: '#2563eb', fontSize: 24 }} />
+                    <SearchRoundedIcon sx={{ color: '#2563eb', fontSize: 20 }} />
                   </InputAdornment>
                 ),
                 endAdornment: search ? (
@@ -1183,61 +1183,42 @@ function ParqueaderosPesvPanel({ onBack }) {
               sx={{
                 '& .MuiOutlinedInput-root': {
                   bgcolor: search ? '#eff6ff' : '#ffffff',
-                  borderRadius: 3,
-                  border: '2px solid #2563eb',
-                  boxShadow: search ? '0 0 0 4px rgba(37,99,235,0.18)' : '0 3px 12px rgba(37,99,235,0.12)',
-                  transition: 'all 0.2s ease-in-out',
+                  borderRadius: 2.2,
+                  border: '1.8px solid #2563eb',
+                  boxShadow: search ? '0 0 0 3px rgba(37,99,235,0.15)' : '0 2px 6px rgba(37,99,235,0.08)',
+                  transition: 'all 0.15s ease-in-out',
                   '& fieldset': { border: 'none' },
-                  '&:hover': {
-                    bgcolor: '#ffffff',
-                    boxShadow: '0 4px 16px rgba(37,99,235,0.22)'
-                  },
-                  '&.Mui-focused': {
-                    bgcolor: '#ffffff',
-                    boxShadow: '0 0 0 4px rgba(37,99,235,0.25)'
-                  }
+                  '&:hover': { bgcolor: '#ffffff', boxShadow: '0 3px 10px rgba(37,99,235,0.18)' },
+                  '&.Mui-focused': { bgcolor: '#ffffff', boxShadow: '0 0 0 3px rgba(37,99,235,0.22)' }
                 },
-                '& .MuiInputBase-input': {
-                  fontWeight: 600,
-                  fontSize: '0.95rem',
-                  color: '#0f172a',
-                  py: 1.2
-                }
+                '& .MuiInputBase-input': { fontWeight: 600, fontSize: '0.88rem', color: '#0f172a', py: 0.6 }
               }}
             />
-            <Typography variant="caption" sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 0.6, mt: 1, color: '#475569', fontWeight: 600, fontSize: 11.5, textAlign: 'center' }}>
-              <Box component="span" sx={{ display: 'inline-block', width: 6, height: 6, borderRadius: '50%', bgcolor: '#2563eb' }} />
-              Busca por persona, identificación, correo, dependencia, campus, parqueadero, placa, modelo, SOAT o RTM.
-            </Typography>
           </Box>
+          <FormControl size="small" sx={{ minWidth: { xs: '47%', sm: 170 }, flex: '0 1 auto', '& .MuiOutlinedInput-root': { borderRadius: 2, bgcolor: '#ffffff', border: '1.2px solid #94a3b8', '& fieldset': { border: 'none' } } }}>
+            <InputLabel sx={{ fontWeight: 600, color: '#334155', fontSize: '0.85rem' }}>Campus</InputLabel>
+            <Select label="Campus" value={campus} onChange={(e) => setCampus(e.target.value)} sx={{ fontWeight: 600, color: '#0f172a', fontSize: '0.85rem' }}>
+              <MenuItem value="">Todos los campus</MenuItem>
+              {catalogs.campus.map((item) => <MenuItem key={item} value={item}>{item}</MenuItem>)}
+            </Select>
+          </FormControl>
 
-          {/* Fila 2: Filtros secundarias con bordes sutiles y diseño centrado */}
-          <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1.5, justifyContent: 'center', alignItems: 'center', pt: 1.2, borderTop: '1px dashed #e2e8f0' }}>
-            <FormControl size="small" sx={{ minWidth: { xs: '100%', sm: 200 }, '& .MuiOutlinedInput-root': { borderRadius: 2.5, bgcolor: '#ffffff', border: '1.5px solid #94a3b8', boxShadow: '0 1px 3px rgba(0,0,0,0.04)', transition: 'all 0.2s', '& fieldset': { border: 'none' }, '&:hover': { borderColor: '#2563eb', boxShadow: '0 2px 6px rgba(37,99,235,0.12)' }, '&.Mui-focused': { borderColor: '#2563eb' } } }}>
-              <InputLabel sx={{ fontWeight: 600, color: '#334155' }}>Campus</InputLabel>
-              <Select label="Campus" value={campus} onChange={(e) => setCampus(e.target.value)} sx={{ fontWeight: 600, color: '#0f172a' }}>
-                <MenuItem value="">Todos los campus</MenuItem>
-                {catalogs.campus.map((item) => <MenuItem key={item} value={item}>{item}</MenuItem>)}
-              </Select>
-            </FormControl>
+          <FormControl size="small" sx={{ minWidth: { xs: '47%', sm: 180 }, flex: '0 1 auto', '& .MuiOutlinedInput-root': { borderRadius: 2, bgcolor: '#ffffff', border: '1.2px solid #94a3b8', '& fieldset': { border: 'none' } } }}>
+            <InputLabel sx={{ fontWeight: 600, color: '#334155', fontSize: '0.85rem' }}>Estado documental</InputLabel>
+            <Select label="Estado documental" value={estado} onChange={(e) => { setEstado(e.target.value); setIndicator(''); }} sx={{ fontWeight: 600, color: '#0f172a', fontSize: '0.85rem' }}>
+              <MenuItem value="">Todos los estados</MenuItem>
+              <MenuItem value="vencido">Vencidos</MenuItem>
+              <MenuItem value="proximo">Próximos a vencer</MenuItem>
+              <MenuItem value="vigente">Vigentes</MenuItem>
+              <MenuItem value="sin_fecha">Sin fecha verificable</MenuItem>
+            </Select>
+          </FormControl>
 
-            <FormControl size="small" sx={{ minWidth: { xs: '100%', sm: 220 }, '& .MuiOutlinedInput-root': { borderRadius: 2.5, bgcolor: '#ffffff', border: '1.5px solid #94a3b8', boxShadow: '0 1px 3px rgba(0,0,0,0.04)', transition: 'all 0.2s', '& fieldset': { border: 'none' }, '&:hover': { borderColor: '#2563eb', boxShadow: '0 2px 6px rgba(37,99,235,0.12)' }, '&.Mui-focused': { borderColor: '#2563eb' } } }}>
-              <InputLabel sx={{ fontWeight: 600, color: '#334155' }}>Estado documental</InputLabel>
-              <Select label="Estado documental" value={estado} onChange={(e) => { setEstado(e.target.value); setIndicator(''); }} sx={{ fontWeight: 600, color: '#0f172a' }}>
-                <MenuItem value="">Todos los estados</MenuItem>
-                <MenuItem value="vencido">Vencidos</MenuItem>
-                <MenuItem value="proximo">Próximos a vencer</MenuItem>
-                <MenuItem value="vigente">Vigentes</MenuItem>
-                <MenuItem value="sin_fecha">Sin fecha verificable</MenuItem>
-              </Select>
-            </FormControl>
-
-            <Tooltip title="Actualizar datos">
-              <IconButton onClick={load} sx={{ bgcolor: '#eff6ff', color: '#2563eb', border: '1.5px solid #bfdbfe', p: 1, borderRadius: 2.5, transition: 'all 0.2s', '&:hover': { bgcolor: '#dbeafe', color: '#1d4ed8', transform: 'scale(1.05)' } }}>
-                <RefreshRoundedIcon />
-              </IconButton>
-            </Tooltip>
-          </Box>
+          <Tooltip title="Actualizar datos">
+            <IconButton size="small" onClick={load} sx={{ bgcolor: '#eff6ff', color: '#2563eb', border: '1.2px solid #bfdbfe', p: 0.8, borderRadius: 2, '&:hover': { bgcolor: '#dbeafe', color: '#1d4ed8' } }}>
+              <RefreshRoundedIcon fontSize="small" />
+            </IconButton>
+          </Tooltip>
         </Box>
       </Paper>
       <TableContainer component={Paper} elevation={0} sx={{ borderRadius: 3, border: '1px solid #e2e8f0', maxHeight: { xs: '65vh', md: '72vh' }, overflow: 'auto', scrollbarGutter: 'stable' }}>
