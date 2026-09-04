@@ -627,26 +627,6 @@ function DashboardLayout() {
           transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)'
         }}
       >
-        <Tooltip title={collapsed ? "Expandir menú" : "Encoger menú"} placement="right">
-          <IconButton
-            onClick={toggleCollapsed}
-            sx={{
-              position: 'absolute',
-              right: collapsed ? '50%' : 10,
-              transform: collapsed ? 'translateX(50%)' : 'none',
-              top: collapsed ? 8 : 10,
-              color: '#93c5fd',
-              bgcolor: 'rgba(147,197,253,0.08)',
-              p: 0.8,
-              '&:hover': { bgcolor: 'rgba(147,197,253,0.2)' },
-              transition: 'all 0.2s',
-              zIndex: 2
-            }}
-            size="small"
-          >
-            {collapsed ? <ChevronRightIcon fontSize="small" /> : <ChevronLeftIcon fontSize="small" />}
-          </IconButton>
-        </Tooltip>
 
         {!collapsed && (
           <>
@@ -1043,17 +1023,25 @@ function DashboardLayout() {
             <MenuIcon />
           </IconButton>
 
-          <Tooltip title={collapsed ? "Expandir menú lateral" : "Encoger menú lateral"}>
+          <Tooltip title={collapsed ? "Expandir menú lateral" : "Encoger menú lateral"} placement="bottom" arrow>
             <IconButton
               onClick={toggleCollapsed}
               sx={{
                 display: { xs: 'none', sm: 'inline-flex' },
                 mr: 2,
-                color: '#334155',
-                bgcolor: '#f1f5f9',
-                p: 0.8,
-                '&:hover': { bgcolor: '#e2e8f0', color: '#1e293b' },
-                transition: 'all 0.2s'
+                color: '#1e3a8a',
+                bgcolor: '#eff6ff',
+                border: '1px solid #bfdbfe',
+                borderRadius: 2,
+                p: 0.85,
+                boxShadow: '0 2px 6px rgba(37,99,235,0.12)',
+                '&:hover': {
+                  bgcolor: '#dbeafe',
+                  borderColor: '#93c5fd',
+                  color: '#1d4ed8',
+                  transform: 'scale(1.05)'
+                },
+                transition: 'all 0.2s cubic-bezier(0.4, 0, 0.2, 1)'
               }}
               size="small"
             >
