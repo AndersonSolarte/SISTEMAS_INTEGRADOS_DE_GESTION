@@ -177,7 +177,7 @@ function PeriodStackTick({ x, y, payload }) {
   );
 }
 
-function PopulationStackedChart({ data, groupIndex, scope }) {
+function PopulationStackedChart({ data, groupIndex, scope, scopeBadgeLabel }) {
   const configurations = [
     {
       title: 'Flujo apilado por período',
@@ -230,7 +230,7 @@ function PopulationStackedChart({ data, groupIndex, scope }) {
           <Typography sx={{ color: '#0f172a', fontWeight: 950, fontSize: 15 }}>{configuration.title}</Typography>
           <Typography sx={{ color: '#64748b', fontSize: 11.5 }}>{configuration.subtitle}</Typography>
         </Box>
-        <Chip label={scope === 'nacional' ? 'Nacional' : 'Regional'} color="primary" size="small" sx={{ fontWeight: 900, px: 0.8 }} />
+        <Chip label={scopeBadgeLabel || (scope === 'nacional' ? 'Nacional' : 'Regional')} color="primary" size="small" sx={{ fontWeight: 900, px: 0.8 }} />
       </Stack>
 
       {!chartData.length ? (
@@ -257,7 +257,7 @@ function PopulationStackedChart({ data, groupIndex, scope }) {
   );
 }
 
-function PopulationTrendChart({ data, groupIndex, scope }) {
+function PopulationTrendChart({ data, groupIndex, scope, scopeBadgeLabel }) {
   const configurations = [
     {
       subtitle: 'Comportamiento histórico de inscritos, admitidos y estudiantes de primer curso.',
@@ -290,7 +290,7 @@ function PopulationTrendChart({ data, groupIndex, scope }) {
           <Typography sx={{ color: '#0f172a', fontWeight: 950, fontSize: 15 }}>Análisis histórico</Typography>
           <Typography sx={{ color: '#64748b', fontSize: 11.5 }}>{configuration.subtitle}</Typography>
         </Box>
-        <Chip label={scope === 'nacional' ? 'Nacional' : 'Regional'} color="primary" size="small" sx={{ fontWeight: 900, px: 0.8 }} />
+        <Chip label={scopeBadgeLabel || (scope === 'nacional' ? 'Nacional' : 'Regional')} color="primary" size="small" sx={{ fontWeight: 900, px: 0.8 }} />
       </Stack>
       <Box sx={{ px: 2.2, py: 0.8, bgcolor: '#082b66', color: '#fff', textAlign: 'center', fontSize: 12, fontWeight: 950, letterSpacing: 0.5 }}>LÍNEAS DE TENDENCIA</Box>
 
@@ -316,7 +316,7 @@ function PopulationTrendChart({ data, groupIndex, scope }) {
   );
 }
 
-function PopulationIndicatorTrendBoard({ data, scope }) {
+function PopulationIndicatorTrendBoard({ data, scope, scopeBadgeLabel }) {
   const definitions = [
     { field: `inscritos_${scope}`, label: 'Inscritos', color: '#123b7a', soft: '#eaf1fb', icon: <GroupsRoundedIcon sx={{ fontSize: 19 }} /> },
     { field: `admitidos_${scope}`, label: 'Admitidos', color: '#1f67bd', soft: '#eaf4ff', icon: <WorkspacePremiumRoundedIcon sx={{ fontSize: 19 }} /> },
@@ -353,7 +353,7 @@ function PopulationIndicatorTrendBoard({ data, scope }) {
           <Typography sx={{ color: '#0f172a', fontWeight: 950, fontSize: 15 }}>Tablero de indicadores con tendencias</Typography>
           <Typography sx={{ color: '#64748b', fontSize: 11.5 }}>Valores por período y variación acumulada del primero al último período visible.</Typography>
         </Box>
-        <Chip label={scope === 'nacional' ? 'Nacional' : 'Regional'} color="primary" size="small" sx={{ fontWeight: 900, px: 0.8 }} />
+        <Chip label={scopeBadgeLabel || (scope === 'nacional' ? 'Nacional' : 'Regional')} color="primary" size="small" sx={{ fontWeight: 900, px: 0.8 }} />
       </Stack>
       <Box sx={{ px: { xs: 1, md: 2 }, pb: 2, overflowX: 'auto' }}>
         <Box sx={{ minWidth: 850, border: '1px solid #d8e3f0', borderRadius: 2.5, overflow: 'hidden', boxShadow: '0 8px 24px rgba(15,43,86,.06)' }}>
@@ -393,7 +393,7 @@ function PopulationIndicatorTrendBoard({ data, scope }) {
   );
 }
 
-function PopulationShadedTrendChart({ data, scope }) {
+function PopulationShadedTrendChart({ data, scope, scopeBadgeLabel }) {
   const series = [
     { field: `inscritos_${scope}`, label: 'Inscritos', short: 'I', color: '#123b7a', gradient: `shade-inscritos-${scope}` },
     { field: `admitidos_${scope}`, label: 'Admitidos', short: 'A', color: '#2f6fed', gradient: `shade-admitidos-${scope}` },
@@ -421,7 +421,7 @@ function PopulationShadedTrendChart({ data, scope }) {
           <Typography sx={{ color: '#0f172a', fontWeight: 950, fontSize: 15 }}>Líneas de tendencia con áreas sombreadas</Typography>
           <Typography sx={{ color: '#64748b', fontSize: 11.5 }}>Evolución comparada por período y variación acumulada por indicador.</Typography>
         </Box>
-        <Chip label={scope === 'nacional' ? 'Nacional' : 'Regional'} color="primary" size="small" sx={{ fontWeight: 900, px: 0.8 }} />
+        <Chip label={scopeBadgeLabel || (scope === 'nacional' ? 'Nacional' : 'Regional')} color="primary" size="small" sx={{ fontWeight: 900, px: 0.8 }} />
       </Stack>
       <Box sx={{ px: { xs: 0.5, md: 1.4 }, pb: 1.2, overflow: 'hidden' }}>
         <Box component="svg" viewBox={`0 0 ${width} ${height}`} preserveAspectRatio="xMidYMid meet" sx={{ width: '100%', height: 'auto', display: 'block', maxHeight: 420 }}>
@@ -474,7 +474,7 @@ function PopulationShadedTrendChart({ data, scope }) {
   );
 }
 
-function PopulationBubbleMatrixChart({ data, scope }) {
+function PopulationBubbleMatrixChart({ data, scope, scopeBadgeLabel }) {
   const series = [
     { field: `inscritos_${scope}`, label: 'Inscritos', short: 'I', color: '#123b7a', soft: '#edf3fb' },
     { field: `admitidos_${scope}`, label: 'Admitidos', short: 'A', color: '#2f6fed', soft: '#eff5ff' },
@@ -503,7 +503,7 @@ function PopulationBubbleMatrixChart({ data, scope }) {
           <Typography sx={{ color: '#0f172a', fontWeight: 950, fontSize: 15 }}>Círculos proporcionales</Typography>
           <Typography sx={{ color: '#64748b', fontSize: 11.5 }}>El área de cada círculo representa la magnitud del indicador en cada período.</Typography>
         </Box>
-        <Chip label={scope === 'nacional' ? 'Nacional' : 'Regional'} color="primary" size="small" sx={{ fontWeight: 900, px: 0.8 }} />
+        <Chip label={scopeBadgeLabel || (scope === 'nacional' ? 'Nacional' : 'Regional')} color="primary" size="small" sx={{ fontWeight: 900, px: 0.8 }} />
       </Stack>
       <Box sx={{ px: { xs: 0.5, md: 1.4 }, pb: 1.2, overflow: 'hidden' }}>
         <Box component="svg" viewBox={`0 0 ${width} ${height}`} preserveAspectRatio="xMidYMid meet" sx={{ width: '100%', height: 'auto', display: 'block', maxHeight: 390 }}>
@@ -544,7 +544,7 @@ function PopulationBubbleMatrixChart({ data, scope }) {
   );
 }
 
-function PopulationPeriodCards({ data, scope }) {
+function PopulationPeriodCards({ data, scope, scopeBadgeLabel }) {
   const fields = {
     inscritos: `inscritos_${scope}`,
     admitidos: `admitidos_${scope}`,
@@ -562,7 +562,7 @@ function PopulationPeriodCards({ data, scope }) {
           <Typography sx={{ color: '#0f172a', fontWeight: 950, fontSize: 15 }}>Tarjetas por periodo académico</Typography>
           <Typography sx={{ color: '#64748b', fontSize: 11.5 }}>Lectura individual del flujo de ingreso y su tasa de absorción.</Typography>
         </Box>
-        <Chip label={scope === 'nacional' ? 'Nacional' : 'Regional'} color="primary" size="small" sx={{ fontWeight: 900, px: 0.8 }} />
+        <Chip label={scopeBadgeLabel || (scope === 'nacional' ? 'Nacional' : 'Regional')} color="primary" size="small" sx={{ fontWeight: 900, px: 0.8 }} />
       </Stack>
       <Box sx={{ px: { xs: 1.2, md: 2 }, pb: 2, display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(min(238px, 100%), 1fr))', gap: 1.45 }}>
         {rows.map((row) => {
@@ -613,7 +613,7 @@ function PopulationPeriodCards({ data, scope }) {
   );
 }
 
-function PopulationStudentJourneyChart({ data, scope }) {
+function PopulationStudentJourneyChart({ data, scope, scopeBadgeLabel }) {
   const series = [
     { field: `inscritos_${scope}`, label: 'Inscritos', color: '#123b7a', symbol: 'journey-people' },
     { field: `admitidos_${scope}`, label: 'Admitidos', color: '#2f6fed', symbol: 'journey-check' },
@@ -639,7 +639,7 @@ function PopulationStudentJourneyChart({ data, scope }) {
           <Typography sx={{ color: '#0f172a', fontWeight: 950, fontSize: 15 }}>Camino del estudiante</Typography>
           <Typography sx={{ color: '#64748b', fontSize: 11.5 }}>Trayectoria por período desde la inscripción hasta el ingreso a primer curso.</Typography>
         </Box>
-        <Chip label={scope === 'nacional' ? 'Nacional' : 'Regional'} color="primary" size="small" sx={{ fontWeight: 900, px: 0.8 }} />
+        <Chip label={scopeBadgeLabel || (scope === 'nacional' ? 'Nacional' : 'Regional')} color="primary" size="small" sx={{ fontWeight: 900, px: 0.8 }} />
       </Stack>
       <Box sx={{ px: { xs: 0.5, md: 1.4 }, pb: 1.1, overflow: 'hidden' }}>
         <Box component="svg" viewBox={`0 0 ${width} ${height}`} preserveAspectRatio="xMidYMid meet" sx={{ width: '100%', height: 'auto', display: 'block', maxHeight: 390 }}>
@@ -691,7 +691,7 @@ function PopulationStudentJourneyChart({ data, scope }) {
   );
 }
 
-function PopulationAnnualTimelineChart({ data, scope }) {
+function PopulationAnnualTimelineChart({ data, scope, scopeBadgeLabel }) {
   const series = [
     { field: `inscritos_${scope}`, label: 'Inscritos', short: 'I', color: '#123b7a' },
     { field: `admitidos_${scope}`, label: 'Admitidos', short: 'A', color: '#2f6fed' },
@@ -721,7 +721,7 @@ function PopulationAnnualTimelineChart({ data, scope }) {
           <Typography sx={{ color: '#0f172a', fontWeight: 950, fontSize: 15 }}>Historia por período en tarjetas</Typography>
           <Typography sx={{ color: '#64748b', fontSize: 11.5 }}>Secuencia cronológica del recorrido de ingreso por período académico.</Typography>
         </Box>
-        <Chip label={scope === 'nacional' ? 'Nacional' : 'Regional'} color="primary" size="small" sx={{ fontWeight: 900, px: 0.8 }} />
+        <Chip label={scopeBadgeLabel || (scope === 'nacional' ? 'Nacional' : 'Regional')} color="primary" size="small" sx={{ fontWeight: 900, px: 0.8 }} />
       </Stack>
       <Box sx={{ px: { xs: 0.5, md: 1.4 }, pb: 1.1, overflow: 'hidden' }}>
         <Box component="svg" viewBox={`0 0 ${width} ${height}`} preserveAspectRatio="xMidYMid meet" sx={{ width: '100%', height: 'auto', display: 'block', maxHeight: 390 }}>
@@ -770,7 +770,7 @@ function PopulationAnnualTimelineChart({ data, scope }) {
   );
 }
 
-function PopulationConversionChart({ data, scope }) {
+function PopulationConversionChart({ data, scope, scopeBadgeLabel }) {
   const fields = {
     inscritos: `inscritos_${scope}`,
     admitidos: `admitidos_${scope}`,
@@ -817,7 +817,7 @@ function PopulationConversionChart({ data, scope }) {
         </Box>
         <Stack direction="row" spacing={0.8} alignItems="center">
           <Chip label="Inscritos = 100%" size="small" sx={{ bgcolor: '#eaf1fb', color: '#123b7a', fontWeight: 950 }} />
-          <Chip label={scope === 'nacional' ? 'Nacional' : 'Regional'} color="primary" size="small" sx={{ fontWeight: 900, px: 0.8 }} />
+          <Chip label={scopeBadgeLabel || (scope === 'nacional' ? 'Nacional' : 'Regional')} color="primary" size="small" sx={{ fontWeight: 900, px: 0.8 }} />
         </Stack>
       </Stack>
       <Box sx={{ px: { xs: 0.5, md: 1.4 }, overflow: 'hidden' }}>
@@ -872,7 +872,7 @@ function PopulationConversionChart({ data, scope }) {
   );
 }
 
-function PopulationStackedAreaChart({ data, scope }) {
+function PopulationStackedAreaChart({ data, scope, scopeBadgeLabel }) {
   const series = [
     { field: `primer_curso_${scope}`, label: 'Primer curso', color: '#69a83a', gradient: `area-primer-${scope}` },
     { field: `admitidos_${scope}`, label: 'Admitidos', color: '#1695a6', gradient: `area-admitidos-${scope}` },
@@ -907,7 +907,7 @@ function PopulationStackedAreaChart({ data, scope }) {
           <Typography sx={{ color: '#0f172a', fontWeight: 950, fontSize: 15 }}>Área apilada por periodo</Typography>
           <Typography sx={{ color: '#64748b', fontSize: 11.5 }}>Composición semestral del flujo de ingreso en una sola superficie comparativa.</Typography>
         </Box>
-        <Chip label={scope === 'nacional' ? 'Nacional' : 'Regional'} color="primary" size="small" sx={{ fontWeight: 900, px: 0.8 }} />
+        <Chip label={scopeBadgeLabel || (scope === 'nacional' ? 'Nacional' : 'Regional')} color="primary" size="small" sx={{ fontWeight: 900, px: 0.8 }} />
       </Stack>
       <Box sx={{ px: { xs: 0.4, md: 1.2 }, pb: 1.2, overflow: 'hidden' }}>
         <Box component="svg" viewBox={`0 0 ${width} ${height}`} preserveAspectRatio="xMidYMid meet" sx={{ width: '100%', height: 'auto', display: 'block', maxHeight: 470 }}>
@@ -946,7 +946,7 @@ function PopulationStackedAreaChart({ data, scope }) {
   );
 }
 
-function PopulationFunnelChart({ data, scope }) {
+function PopulationFunnelChart({ data, scope, scopeBadgeLabel }) {
   const series = [
     { field: `inscritos_${scope}`, label: 'Inscritos', color: '#082b66' },
     { field: `admitidos_${scope}`, label: 'Admitidos', color: '#1f67bd' },
@@ -970,7 +970,7 @@ function PopulationFunnelChart({ data, scope }) {
           <Typography sx={{ color: '#0f172a', fontWeight: 950, fontSize: 15 }}>Trayectoria de acceso por período</Typography>
           <Typography sx={{ color: '#64748b', fontSize: 11.5 }}>Comparación visual de inscritos, admitidos y estudiantes que ingresan a primer curso.</Typography>
         </Box>
-        <Chip label={scope === 'nacional' ? 'Nacional' : 'Regional'} color="primary" size="small" sx={{ fontWeight: 900, px: 0.8 }} />
+        <Chip label={scopeBadgeLabel || (scope === 'nacional' ? 'Nacional' : 'Regional')} color="primary" size="small" sx={{ fontWeight: 900, px: 0.8 }} />
       </Stack>
       <Box sx={{ px: 2.2, py: 0.72, bgcolor: '#082b66', color: '#fff', textAlign: 'center', fontSize: 11.5, fontWeight: 950, letterSpacing: 0.7 }}>EMBUDO COMPARATIVO</Box>
 
@@ -1200,7 +1200,7 @@ function PopulationSingleMetricAlternative({ data, groupIndex, scope, type }) {
   );
 }
 
-function PopulationChartSwitcher({ data, groupIndex, selection, onSelectionChange }) {
+export function PopulationChartSwitcher({ data, groupIndex, selection, onSelectionChange, showScopeSelector = true, scopeBadgeLabel }) {
   const chartType = selection?.chartType || 'stacked';
   const scope = selection?.scope || 'nacional';
   const setChartType = (nextChartType) => onSelectionChange?.({ chartType: nextChartType, scope });
@@ -1250,24 +1250,24 @@ function PopulationChartSwitcher({ data, groupIndex, selection, onSelectionChang
               </Button>
             ))}
           </Stack>
-          <Stack direction="row" spacing={0.35} sx={{ flex: '0 0 auto', p: 0.4, bgcolor: '#eef3f9', borderRadius: 2.2 }}>
+          {showScopeSelector && <Stack direction="row" spacing={0.35} sx={{ flex: '0 0 auto', p: 0.4, bgcolor: '#eef3f9', borderRadius: 2.2 }}>
             {['nacional', 'regional'].map((option) => (
               <Button key={option} size="small" onClick={() => setScope(option)} variant={scope === option ? 'contained' : 'text'} disableElevation sx={{ flex: 1, minWidth: { xs: 105, md: 92 }, px: 1.5, py: 0.72, borderRadius: 1.7, textTransform: 'capitalize', fontSize: 10.5, fontWeight: 900 }}>{option}</Button>
             ))}
-          </Stack>
+          </Stack>}
         </Stack>
       </Paper>
-      {chartType === 'stacked' && <PopulationStackedChart data={data} groupIndex={groupIndex} scope={scope} />}
-      {chartType === 'trend' && <PopulationTrendChart data={data} groupIndex={groupIndex} scope={scope} />}
-      {chartType === 'funnel' && groupIndex === 0 && <PopulationFunnelChart data={data} scope={scope} />}
-      {chartType === 'indicators' && groupIndex === 0 && <PopulationIndicatorTrendBoard data={data} scope={scope} />}
-      {chartType === 'shaded' && groupIndex === 0 && <PopulationShadedTrendChart data={data} scope={scope} />}
-      {chartType === 'bubbles' && groupIndex === 0 && <PopulationBubbleMatrixChart data={data} scope={scope} />}
-      {chartType === 'periodCards' && groupIndex === 0 && <PopulationPeriodCards data={data} scope={scope} />}
-      {chartType === 'journey' && groupIndex === 0 && <PopulationStudentJourneyChart data={data} scope={scope} />}
-      {chartType === 'timeline' && groupIndex === 0 && <PopulationAnnualTimelineChart data={data} scope={scope} />}
-      {chartType === 'conversion' && groupIndex === 0 && <PopulationConversionChart data={data} scope={scope} />}
-      {chartType === 'stackedArea' && groupIndex === 0 && <PopulationStackedAreaChart data={data} scope={scope} />}
+      {chartType === 'stacked' && <PopulationStackedChart data={data} groupIndex={groupIndex} scope={scope} scopeBadgeLabel={scopeBadgeLabel} />}
+      {chartType === 'trend' && <PopulationTrendChart data={data} groupIndex={groupIndex} scope={scope} scopeBadgeLabel={scopeBadgeLabel} />}
+      {chartType === 'funnel' && groupIndex === 0 && <PopulationFunnelChart data={data} scope={scope} scopeBadgeLabel={scopeBadgeLabel} />}
+      {chartType === 'indicators' && groupIndex === 0 && <PopulationIndicatorTrendBoard data={data} scope={scope} scopeBadgeLabel={scopeBadgeLabel} />}
+      {chartType === 'shaded' && groupIndex === 0 && <PopulationShadedTrendChart data={data} scope={scope} scopeBadgeLabel={scopeBadgeLabel} />}
+      {chartType === 'bubbles' && groupIndex === 0 && <PopulationBubbleMatrixChart data={data} scope={scope} scopeBadgeLabel={scopeBadgeLabel} />}
+      {chartType === 'periodCards' && groupIndex === 0 && <PopulationPeriodCards data={data} scope={scope} scopeBadgeLabel={scopeBadgeLabel} />}
+      {chartType === 'journey' && groupIndex === 0 && <PopulationStudentJourneyChart data={data} scope={scope} scopeBadgeLabel={scopeBadgeLabel} />}
+      {chartType === 'timeline' && groupIndex === 0 && <PopulationAnnualTimelineChart data={data} scope={scope} scopeBadgeLabel={scopeBadgeLabel} />}
+      {chartType === 'conversion' && groupIndex === 0 && <PopulationConversionChart data={data} scope={scope} scopeBadgeLabel={scopeBadgeLabel} />}
+      {chartType === 'stackedArea' && groupIndex === 0 && <PopulationStackedAreaChart data={data} scope={scope} scopeBadgeLabel={scopeBadgeLabel} />}
       {groupIndex !== 0 && ['funnel', 'indicators', 'shaded', 'bubbles', 'periodCards', 'journey', 'timeline', 'conversion', 'stackedArea'].includes(chartType) && <PopulationSingleMetricAlternative data={data} groupIndex={groupIndex} scope={scope} type={chartType} />}
     </Stack>
   );

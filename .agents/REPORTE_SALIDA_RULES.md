@@ -111,19 +111,19 @@ flowchart TD
 ### 🔹 Flujo E: Salidas de Proyección Social / Extensión
 
 #### 🔄 Secuencia de Pasos
-`[Paso 1: Radicación]` $\rightarrow$ `[Paso 2: Coordinación Proyección Social]` $\rightarrow$ `[Paso 3: Jefe Inmediato / Programa]` $\rightarrow$ `[Paso 4: Vicerrectoría]` $\rightarrow$ `[Paso 5: Talento Humano]` $\rightarrow$ `[Paso 6: SST / Viáticos (si aplica)]` $\rightarrow$ `[Paso 7: Finalizada]`
+`[Paso 1: Radicación Docente/Colaborador]` $\rightarrow$ `[Paso 2: Visto Bueno Jefe Inmediato]` $\rightarrow$ `[Paso 3: Coordinación de Proyección Social (con botones de aprobación)]` $\rightarrow$ `[Paso 4: Vicerrectoría Académica / Instancia Superior]` $\rightarrow$ `[Paso 5: Talento Humano]` $\rightarrow$ `[Paso 6: SST / Viáticos (si aplica)]` $\rightarrow$ `[Paso 7: Finalizada]`
 
 #### 📊 Transición de Estados
-`borrador` $\rightarrow$ `pendiente_aprobacion_proyeccion_social` $\rightarrow$ `pendiente_aprobacion_jefe` $\rightarrow$ `pendiente_aprobacion_vicerrectoria` $\rightarrow$ `pendiente_aprobacion_gestion_humana` $\rightarrow$ `pendiente_aprobacion_sst` $\rightarrow$ `pendiente_viaticos` $\rightarrow$ `finalizada`
+`borrador` $\rightarrow$ `pendiente_aprobacion_jefe` $\rightarrow$ `pendiente_aprobacion_proyeccion_social` $\rightarrow$ `pendiente_aprobacion_vicerrectoria_academica` $\rightarrow$ `pendiente_aprobacion_gestion_humana` $\rightarrow$ `pendiente_aprobacion_sst` $\rightarrow$ `pendiente_viaticos` $\rightarrow$ `finalizada`
 
 #### 📋 Detalle de Ejecución Paso a Paso:
-1. **Paso 1 - Radicación:** El docente/lider registra una salida de campo con comunidad o proyecto social.
-2. **Paso 2 - Proyección Social:** Notificación y visto bueno inicial por parte de `proyeccion.social@unicesmag.edu.co`.
-3. **Paso 3 - Jefe Inmediato / Programa:** Aval académico o administrativo del programa/unidad.
-4. **Paso 4 - Vicerrectoría:** Aprobación de la Vicerrectoría Académica o según corresponda.
-5. **Paso 5 - Talento Humano:** Verificación institucional de permisos.
-6. **Paso 6 - SST / Viáticos:** Revisión de coberturas ARL y asignación de presupuesto/gastos de viaje.
-7. **Paso 7 - Finalizada:** Expedición final del reporte de salida y PDF firmado.
+1. **Paso 1 - Radicación:** El docente/líder registra una salida de campo con comunidad o proyecto social. El correo inicial de aprobación se envía únicamente al **Jefe Inmediato** asignado.
+2. **Paso 2 - Visto Bueno Jefe Inmediato:** El Jefe Inmediato aprueba desde el correo o el panel. El estado cambia a `pendiente_aprobacion_proyeccion_social`.
+3. **Paso 3 - Coordinación de Proyección Social y Extensión:** La Coordinación de Proyección Social (`proyeccion.social@unicesmag.edu.co`) recibe la notificación con sus botones de acción (**AUTORIZAR PROYECCIÓN SOCIAL** / **NO AUTORIZAR**) y aprueba el trámite.
+4. **Paso 4 - Vicerrectoría / Instancia Superior:** Si es docente de 1+ días, pasa a Vicerrectoría Académica (`viceacad@unicesmag.edu.co`). Si es corta (< 1/2 jornada), salta a Talento Humano.
+5. **Paso 5 - Talento Humano:** Verificación institucional de vinculación.
+6. **Paso 6 - SST / Viáticos:** Revisión de coberturas ARL y asignación de presupuesto/gastos de viaje (si aplica).
+7. **Paso 7 - Finalizada:** Expedición final del reporte de salida y PDF firmado con copias a Proyección Social y Vicerrectoría.
 
 ---
 

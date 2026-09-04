@@ -4887,6 +4887,105 @@ const aprobarDesdeCorreo = async (req, res) => {
       });
     }
 
+    if (payload.stage === 'proyeccion_social') {
+      if (solicitud.estado !== 'pendiente_aprobacion_proyeccion_social') {
+        const isRechazada = solicitud.estado === 'no_aprobada';
+        return renderApprovalPage({
+          res,
+          tone: 'info',
+          title: isRechazada ? 'Solicitud rechazada' : 'Solicitud ya procesada',
+          message: isRechazada ? 'Esta solicitud fue rechazada anteriormente y no puede ser aprobada.' : 'Esta aprobacion ya fue registrada previamente.',
+          solicitud,
+          nextStep: 'No es necesario realizar ninguna accion adicional desde este enlace.'
+        });
+      }
+      if (solicitud.aprobacion_proyeccion_social_token_hash !== tokenHash) {
+        return renderApprovalPage({
+          res,
+          status: 403,
+          tone: 'error',
+          title: 'Enlace no autorizado',
+          message: 'El enlace no coincide con el token de aprobacion esperado para Proyeccion Social.',
+          solicitud,
+          nextStep: 'Por seguridad, la aprobacion no fue registrada.'
+        });
+      }
+
+      const psName = 'Coordinación de Proyección Social y Extensión';
+      const psEmail = getReporteSalidaRecipients().proyeccionSocial;
+
+      if (req.method === 'GET') {
+        return renderReporteSalidaReviewPage({
+          res,
+          solicitud,
+          token: req.params.token,
+          stageLabel: psName
+        });
+      }
+      if (req.body?.accion === 'rechazar') {
+        const observacion = String(req.body?.observacion || '').trim();
+        if (!observacion) {
+          return renderApprovalPage({ res, status: 400, tone: 'warning', title: 'Observación obligatoria', message: 'Debe indicar el motivo por el cual no aprueba la solicitud.', solicitud });
+        }
+        await solicitud.update({
+          estado: 'no_aprobada',
+          aprobacion_proyeccion_social_token_hash: null,
+          trazabilidad: appendTrace(solicitud, 'rechazada_proyeccion_social', { nombre: psName, email: psEmail, role: 'proyeccion_social' }, { observacion })
+        });
+        await syncLinkedViaticosRejection(solicitud, 'proyeccion_social', psName, observacion);
+        await sendRequesterNotice(solicitud, 'Solicitud no aprobada', `La solicitud no fue aprobada por ${psName}. Motivo: ${observacion}`);
+        return renderApprovalPage({ res, tone: 'info', title: 'Solicitud rechazada', message: 'La solicitud fue marcada como no aprobada y se notificó al colaborador.', solicitud });
+      }
+
+      const nextAuthority = getAuthorityAfterBoss(solicitud);
+      const nextStage = nextAuthority ? nextAuthority.stage : 'gestion_humana';
+      const nextEstado = nextAuthority ? nextAuthority.estado : 'pendiente_aprobacion_gestion_humana';
+      const nextTokenColumn = nextAuthority ? nextAuthority.tokenColumn : 'aprobacion_gh_token_hash';
+      const nextToken = createApprovalToken(nextStage, solicitud.consecutivo);
+
+      const [updatedCount] = await ReporteSalidaSolicitud.update({
+        estado: nextEstado,
+        proyeccion_social_aprobado_at: new Date(),
+        aprobacion_proyeccion_social_token_hash: null,
+        [nextTokenColumn]: hashToken(nextToken),
+        trazabilidad: appendTrace(solicitud, 'aprobada_proyeccion_social', { nombre: psName, email: psEmail, role: 'proyeccion_social' })
+      }, {
+        where: {
+          id: solicitud.id,
+          estado: 'pendiente_aprobacion_proyeccion_social',
+          aprobacion_proyeccion_social_token_hash: tokenHash
+        }
+      });
+      if (!updatedCount) {
+        await solicitud.reload();
+        return renderApprovalPage({ res, tone: 'info', title: 'Solicitud ya procesada', message: 'Esta aprobacion ya fue registrada previamente.', solicitud, nextStep: 'El boton de aprobacion ya fue utilizado.' });
+      }
+      await solicitud.reload();
+      const pdfAttachment = await buildReporteSalidaPdfAttachment(solicitud);
+      const supportAttachment = await buildReporteSalidaSupportAttachment(solicitud);
+      const nextAttachments = [pdfAttachment, supportAttachment].filter(Boolean);
+
+      const emailResult = (nextAuthority && nextAuthority.email)
+        ? await sendAuthorityApprovalEmail({
+            solicitud,
+            token: nextToken,
+            authorityName: nextAuthority.name || nextAuthority.label,
+            authorityEmail: nextAuthority.email,
+            stageLabel: nextAuthority.label || nextAuthority.name,
+            attachments: nextAttachments
+          })
+        : await sendGestionHumanaApprovalEmail(solicitud, nextToken, nextAttachments);
+
+      return renderApprovalPage({
+        res,
+        tone: 'success',
+        title: 'Aprobacion registrada',
+        message: `La solicitud fue aprobada por ${psName} y enviada a la siguiente etapa.`,
+        solicitud,
+        nextStep: 'El responsable de la siguiente etapa recibira el correo para continuar el flujo.'
+      });
+    }
+
     if (payload.stage === 'gestion_humana') {
       if (solicitud.estado !== 'pendiente_aprobacion_gestion_humana') {
         const isRechazada = solicitud.estado === 'no_aprobada';
@@ -5732,6 +5831,15 @@ const editarSolicitudAdmin = async (req, res) => {
             stageLabel: authorityAfterBoss.label,
             attachments: nextAttachments
           }).catch(e => console.error(e));
+        } else if (authorityAfterBoss && authorityAfterBoss.email) {
+          await sendAuthorityApprovalEmail({
+            solicitud,
+            token: nextToken,
+            authorityName: authorityAfterBoss.name || authorityAfterBoss.label,
+            authorityEmail: authorityAfterBoss.email,
+            stageLabel: authorityAfterBoss.label || authorityAfterBoss.name,
+            attachments: nextAttachments
+          }).catch(e => console.error(e));
         } else {
           await sendGestionHumanaApprovalEmail(solicitud, nextToken, nextAttachments).catch(e => console.error(e));
         }
@@ -5739,6 +5847,58 @@ const editarSolicitudAdmin = async (req, res) => {
         return res.json({
           success: true,
           message: 'Solicitud aprobada como Jefe Inmediato por el administrador.',
+          data: serializeSolicitud(solicitud)
+        });
+      }
+
+      if (solicitud.estado === 'pendiente_aprobacion_proyeccion_social') {
+        const nextAuthority = getAuthorityAfterBoss(solicitud);
+        const nextStage = nextAuthority ? nextAuthority.stage : 'gestion_humana';
+        const nextEstado = nextAuthority ? nextAuthority.estado : 'pendiente_aprobacion_gestion_humana';
+        const nextTokenColumn = nextAuthority ? nextAuthority.tokenColumn : 'aprobacion_gh_token_hash';
+        const nextToken = createApprovalToken(nextStage, solicitud.consecutivo);
+
+        const updateData = {
+          estado: nextEstado,
+          proyeccion_social_aprobado_at: now,
+          aprobacion_proyeccion_social_token_hash: null,
+          [nextTokenColumn]: hashToken(nextToken),
+          trazabilidad: appendTrace(solicitud, 'aprobada_proyeccion_social', req.user, {
+            via: 'admin_dashboard',
+            observacion: observacionAdmin || 'Aprobada por Administrador SIAC'
+          })
+        };
+
+        if (observacionAdmin) {
+          const logEntry = `[${now.toLocaleDateString('es-CO')}] ${actorName} (Admin): Aprobación Proyección Social - "${observacionAdmin}"`;
+          updateData.observacion_gestion_humana = solicitud.observacion_gestion_humana ? `${solicitud.observacion_gestion_humana}\n${logEntry}` : logEntry;
+        }
+
+        await solicitud.update(updateData);
+        await solicitud.reload();
+
+        await syncAdminViaticosApproval(solicitud, req.user, observacionAdmin).catch(e => console.error('[editarSolicitudAdmin] Error syncAdminViaticosApproval Proyeccion Social:', e));
+
+        const pdfAttachment = await buildReporteSalidaPdfAttachment(solicitud);
+        const supportAttachment = await buildReporteSalidaSupportAttachment(solicitud);
+        const nextAttachments = [pdfAttachment, supportAttachment].filter(Boolean);
+
+        if (nextAuthority && nextAuthority.email) {
+          await sendAuthorityApprovalEmail({
+            solicitud,
+            token: nextToken,
+            authorityName: nextAuthority.name || nextAuthority.label,
+            authorityEmail: nextAuthority.email,
+            stageLabel: nextAuthority.label || nextAuthority.name,
+            attachments: nextAttachments
+          }).catch(e => console.error(e));
+        } else {
+          await sendGestionHumanaApprovalEmail(solicitud, nextToken, nextAttachments).catch(e => console.error(e));
+        }
+
+        return res.json({
+          success: true,
+          message: 'Solicitud aprobada por Proyección Social y enviada a la siguiente etapa por el administrador.',
           data: serializeSolicitud(solicitud)
         });
       }

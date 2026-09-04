@@ -1,6 +1,11 @@
 /**
  * Proyección Social Strategy
  * Define el flujo exclusivo para solicitudes de Proyección Social.
+ *
+ * Secuencia:
+ * 1. Radicación -> Notifica al Jefe Inmediato asignado (estado: pendiente_aprobacion_jefe).
+ * 2. Visto Bueno Jefe Inmediato -> Notifica a Coordinación de Proyección Social y Extensión con sus botones (estado: pendiente_aprobacion_proyeccion_social).
+ * 3. Visto Bueno Proyección Social -> Pasa a Vicerrectoría Académica (si docente >= 1/2 día) o directamente a Gestión Humana (si menos de media jornada).
  */
 
 const BaseWorkflowStrategy = require('./baseStrategy');
@@ -16,18 +21,37 @@ class ProyeccionSocialWorkflowStrategy extends BaseWorkflowStrategy {
   }
 
   /**
-   * Determina la autoridad requerida después del jefe inmediato.
-   * - Si radica Mery (Coordinadora): Va a su jefe (Vicerrectoría de Investigaciones) y luego directamente a SST / Gestión Humana (retorna null).
-   * - Si radica Docente / Colaborador:
-   *   - Menos de media jornada: No requiere Vicerrectoría Académica.
-   *   - 1 o más días (entre 1 y 2 días, 3 o más días): Pasa a Vicerrectoría Académica.
+   * Determina la autoridad requerida después de la etapa actual.
    */
   getAuthorityAfterBoss(solicitud = {}, helpers = {}) {
     const { getSolicitudSalida, getSolicitudLaboral, isDocenteCargo } = helpers;
     const salida = getSolicitudSalida ? getSolicitudSalida(solicitud) : (solicitud.datos_formulario?.salida || {});
     const laboral = getSolicitudLaboral ? getSolicitudLaboral(solicitud) : (solicitud.datos_formulario?.laboral || {});
     const solicitante = solicitud.solicitante_snapshot || {};
+    const estadoActual = solicitud.estado || '';
+    const proyeccionSocialEmail = getReporteSalidaRecipients().proyeccionSocial;
 
+    const isLeaderSelf = isProyeccionSocialLeaderSolicitud(solicitud);
+    const hasApprovedProyeccionSocial =
+      estadoActual === 'pendiente_aprobacion_proyeccion_social' ||
+      Boolean(solicitud.proyeccion_social_aprobado_at) ||
+      (Array.isArray(solicitud.trazabilidad) && solicitud.trazabilidad.some(t => ['aprobada_proyeccion_social', 'visto_bueno_proyeccion_social'].includes(t?.event)));
+
+    // Si la solicitud está en etapa de Jefe Inmediato y no ha pasado por Proyección Social (y no es auto-solicitud de la líder):
+    // La primera autoridad después del jefe inmediato es la Coordinación de Proyección Social
+    if (estadoActual === 'pendiente_aprobacion_jefe' && !isLeaderSelf && !hasApprovedProyeccionSocial) {
+      return {
+        stage: 'proyeccion_social',
+        estado: 'pendiente_aprobacion_proyeccion_social',
+        tokenColumn: 'aprobacion_proyeccion_social_token_hash',
+        correoColumn: 'correo_proyeccion_social_enviado_at',
+        name: 'Coordinación de Proyección Social y Extensión',
+        email: proyeccionSocialEmail,
+        label: 'Coordinación de Proyección Social y Extensión'
+      };
+    }
+
+    // Una vez aprobada Proyección Social (o para auto-solicitudes de la líder):
     if (salida.duracionTipo === 'menos_media_jornada') {
       return null;
     }
@@ -47,7 +71,6 @@ class ProyeccionSocialWorkflowStrategy extends BaseWorkflowStrategy {
       };
     }
 
-    // Para administrativos: Pasa a su propia Vicerrectoría / Secretaría / Rectoría según su dependencia
     return super.getAuthorityAfterBoss(solicitud, helpers);
   }
 
@@ -60,7 +83,6 @@ class ProyeccionSocialWorkflowStrategy extends BaseWorkflowStrategy {
     const laboral = getSolicitudLaboral ? getSolicitudLaboral(solicitud) : (solicitud.datos_formulario?.laboral || {});
     const dependencia = laboral.dependencia || solicitante.dependencia || '';
     const dependenciaEmail = getDependencyEmail(dependencia);
-    const proyeccionSocialEmail = getReporteSalidaRecipients().proyeccionSocial;
 
     const targets = [];
 
@@ -77,10 +99,9 @@ class ProyeccionSocialWorkflowStrategy extends BaseWorkflowStrategy {
       });
     };
 
-    if (!isProyeccionSocialLeaderSolicitud(solicitud)) {
-      pushTarget(proyeccionSocialEmail, 'Coordinación de Proyección Social y Extensión', 'proyeccion_social', true);
+    if (dependenciaEmail) {
+      pushTarget(dependenciaEmail, dependencia, 'dependencia');
     }
-    pushTarget(dependenciaEmail, dependencia, 'dependencia');
 
     return targets;
   }

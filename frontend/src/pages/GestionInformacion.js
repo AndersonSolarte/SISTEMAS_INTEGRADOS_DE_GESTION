@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import ReactDOM from 'react-dom';
 import InfraestructuraFisicaDashboard from '../components/infraestructura/InfraestructuraFisicaDashboard';
 import ViaticosGestionDashboard from '../components/viaticos/ViaticosGestionDashboard';
-import ContextoExternoDashboardPanel from '../components/contextoExterno/ContextoExternoDashboardPanel';
+import ContextoExternoDashboardPanel, { PopulationChartSwitcher } from '../components/contextoExterno/ContextoExternoDashboardPanel';
 import CronogramaMovilidadModule from '../components/cronogramaMovilidad/CronogramaMovilidadModule';
 import FlightTakeoffIcon from '@mui/icons-material/FlightTakeoff';
 import {
@@ -2206,6 +2206,7 @@ function GestionInformacion() {
   const [gestionProcesosPanel, setGestionProcesosPanel] = useState('hub');
   const [planAccionTab, setPlanAccionTab] = useState('estadistica');
   const [poblacionalPanel, setPoblacionalPanel] = useState('hub');
+  const [flujoChartSelection, setFlujoChartSelection] = useState({ chartType: 'stacked', scope: 'nacional' });
   const [statSection, setStatSection] = useState('flujo');
   const [saberProStatSection, setSaberProStatSection] = useState('hub');
   const [statsFiltersBySection, setStatsFiltersBySection] = useState(() => buildInitialStatsFiltersBySection());
@@ -16444,17 +16445,18 @@ const renderCategoryBars = (items = [], options = {}) => {
       { key: 'admitidos', title: 'Admitidos por periodo', color: '#dc2626' },
       { key: 'primerCurso', title: 'Primer Curso por periodo', color: '#64748b' }
     ];
-    const legendItems = [
-      { label: 'Inscritos', color: INSCRITOS_BAR_BLUE },
-      { label: 'Admitidos', color: '#dc2626' },
-      { label: 'Primer Curso', color: '#64748b' }
-    ];
     const rateTrendData = flujoDashboardChartData.map((row) => ({
       periodo: row.periodo,
       year: row.year,
       semester: row.semester,
       selectividad: normalizeNumber(row.inscritos) > 0 ? Number(((normalizeNumber(row.admitidos) / normalizeNumber(row.inscritos)) * 100).toFixed(1)) : 0,
       absorcion: normalizeNumber(row.admitidos) > 0 ? Number(((normalizeNumber(row.primerCurso) / normalizeNumber(row.admitidos)) * 100).toFixed(1)) : 0
+    }));
+    const flujoDesignChartData = flujoDashboardChartData.map((row) => ({
+      periodo: `${row.year}-${row.semester === 'II' ? '2' : '1'}`,
+      inscritos_nacional: normalizeNumber(row.inscritos),
+      admitidos_nacional: normalizeNumber(row.admitidos),
+      primer_curso_nacional: normalizeNumber(row.primerCurso)
     }));
     const buildPeriodAxisGroups = (rows = []) => {
       const groups = [];
@@ -16683,57 +16685,27 @@ const renderCategoryBars = (items = [], options = {}) => {
                 ))}
               </Box>
 
-              <Paper elevation={0} sx={{ p: { xs: 1.4, md: 1.8 }, borderRadius: 3, border: '1px solid #dbe6f5', bgcolor: '#fff', width: '100%' }}>
-                    <Stack direction={{ xs: 'column', sm: 'row' }} justifyContent="space-between" spacing={1} alignItems={{ xs: 'flex-start', sm: 'center' }} sx={{ mb: 1 }}>
-                      <Box>
-                        <Typography sx={{ fontWeight: 900, color: '#0f172a', fontSize: 17 }}>Flujo apilado por periodo</Typography>
-                        <Typography sx={{ color: '#64748b', fontSize: 12.5 }}>Inscritos, Admitidos y Primer Curso en una lectura consolidada.</Typography>
-                      </Box>
-                      <Stack direction="row" spacing={0.8} data-copy-exclude="true">
-                        <Button size="small" variant="outlined" startIcon={<DownloadIconSmall />} onClick={handleDownloadPoblacionalChart} sx={GI_OUTLINE_ACTION_BTN_SX}>Descargar</Button>
-                        <Button size="small" variant="outlined" startIcon={<ContentCopyIcon />} onClick={handleCopyPoblacionalChart} sx={GI_OUTLINE_ACTION_BTN_SX}>Copiar grafico</Button>
-                      </Stack>
-                    </Stack>
-                    <Stack direction="row" spacing={1.4} alignItems="center" justifyContent="center" useFlexGap flexWrap="wrap" sx={{ mb: 1 }}>
-                      {legendItems.map((item) => (
-                        <Stack direction="row" spacing={0.7} alignItems="center" key={item.label}>
-                          <Box sx={{ width: 12, height: 12, borderRadius: 0.7, bgcolor: item.color }} />
-                          <Typography sx={{ color: '#0f172a', fontSize: 12, fontWeight: 900 }}>{item.label}</Typography>
-                        </Stack>
-                      ))}
-                    </Stack>
-                    <Box
-                      ref={(node) => {
-                        poblacionalChartRef.current = node;
-                        flujoStackedChartRef.current = node;
-                      }}
-                      data-chart-scroll="true"
-                      sx={{ overflowX: 'auto', pb: 0.5 }}
-                    >
-                      <Box sx={{ width: '100%', minWidth: Math.max(980, flujoDashboardChartData.length * 58), mx: 'auto' }}>
-                    <Box sx={{ height: { xs: 390, md: 470 } }}>
-                      <ResponsiveContainer width="100%" height="100%">
-                        <BarChart data={flujoDashboardChartData} margin={{ top: 26, right: 20, bottom: 4, left: 0 }} barCategoryGap="18%">
-                          <CartesianGrid strokeDasharray="4 4" stroke="#e2e8f0" />
-                          <XAxis dataKey="periodo" tick={false} axisLine={{ stroke: '#cbd5e1' }} height={10} padding={{ left: 0, right: 0 }} />
-                          <YAxis tickFormatter={fmtAxis} tick={{ fontSize: 15, fill: '#475569', fontWeight: 800 }} axisLine={false} tickLine={false} width={58} />
-                          <RechartsTooltip formatter={(value, name) => [formatNumber(value), name]} labelFormatter={(label) => `Periodo ${label}`} />
-                          <Bar dataKey="inscritos" name="Inscritos" stackId="flujo" fill={INSCRITOS_BAR_BLUE} radius={[0, 0, 5, 5]} maxBarSize={54} isAnimationActive={false}>
-                            <LabelList dataKey="inscritos" position="center" formatter={(v) => formatNumber(v)} style={{ fontSize: 15, fill: '#fff', fontWeight: 900 }} />
-                          </Bar>
-                          <Bar dataKey="admitidos" name="Admitidos" stackId="flujo" fill="#dc2626" maxBarSize={54} isAnimationActive={false}>
-                            <LabelList dataKey="admitidos" position="center" formatter={(v) => formatNumber(v)} style={{ fontSize: 15, fill: '#fff', fontWeight: 900 }} />
-                          </Bar>
-                          <Bar dataKey="primerCurso" name="Primer Curso" stackId="flujo" fill="#64748b" radius={[5, 5, 0, 0]} maxBarSize={54} isAnimationActive={false}>
-                            <LabelList dataKey="primerCurso" position="center" formatter={(v) => formatNumber(v)} style={{ fontSize: 15, fill: '#fff', fontWeight: 900 }} />
-                          </Bar>
-                        </BarChart>
-                      </ResponsiveContainer>
-                    </Box>
-                    {renderPeriodAxis(flujoDashboardChartData, 58, { left: 58, right: 20 })}
-                      </Box>
-                    </Box>
-                  </Paper>
+              <Box>
+                <Stack direction={{ xs: 'column', sm: 'row' }} justifyContent="flex-end" spacing={0.8} sx={{ mb: 1 }} data-copy-exclude="true">
+                  <Button size="small" variant="outlined" startIcon={<DownloadIconSmall />} onClick={handleDownloadPoblacionalChart} sx={GI_OUTLINE_ACTION_BTN_SX}>Descargar</Button>
+                  <Button size="small" variant="outlined" startIcon={<ContentCopyIcon />} onClick={handleCopyPoblacionalChart} sx={GI_OUTLINE_ACTION_BTN_SX}>Copiar gráfico</Button>
+                </Stack>
+                <Box
+                  ref={(node) => {
+                    poblacionalChartRef.current = node;
+                    flujoStackedChartRef.current = node;
+                  }}
+                >
+                  <PopulationChartSwitcher
+                    data={flujoDesignChartData}
+                    groupIndex={0}
+                    selection={flujoChartSelection}
+                    onSelectionChange={setFlujoChartSelection}
+                    showScopeSelector={false}
+                    scopeBadgeLabel="Institucional"
+                  />
+                </Box>
+              </Box>
 
               <Paper
                 elevation={0}
