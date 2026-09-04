@@ -10,8 +10,11 @@ import {
   Storage as StorageIcon, QueryStats as QueryStatsIcon,
   Hub as HubIcon,
   Favorite as FavoriteIcon,
-  AssignmentTurnedIn as AssignmentTurnedInIcon
-  ,ReceiptLong as ReceiptLongIcon
+  AssignmentTurnedIn as AssignmentTurnedInIcon,
+  ReceiptLong as ReceiptLongIcon,
+  ChevronLeft as ChevronLeftIcon,
+  ChevronRight as ChevronRightIcon,
+  MenuOpen as MenuOpenIcon
 } from '@mui/icons-material';
 import { useAuth } from '../context/AuthContext';
 import { ROLE_LABELS, ROLES } from '../constants/roles';
@@ -20,7 +23,6 @@ import planAccionWorkflowService from '../services/planAccionWorkflowService';
 import reporteSalidaService from '../services/reporteSalidaService';
 import { getEstadoLegalizacion } from '../services/legalizacionViaticosService';
 
-const drawerWidth = 280;
 const FIXED_SECTION_ORDER = [
   'planeacion_estrategica',
   'gestion_informacion',
@@ -34,6 +36,23 @@ function DashboardLayout() {
   const { user, logout } = useAuth();
   const [mobileOpen, setMobileOpen] = useState(false);
   const [anchorEl, setAnchorEl] = useState(null);
+  const [collapsed, setCollapsed] = useState(() => {
+    try {
+      return localStorage.getItem('siac_sidebar_collapsed') === 'true';
+    } catch (_) {
+      return false;
+    }
+  });
+
+  const toggleCollapsed = () => {
+    setCollapsed((prev) => {
+      const next = !prev;
+      try { localStorage.setItem('siac_sidebar_collapsed', String(next)); } catch (_) {}
+      return next;
+    });
+  };
+
+  const currentDrawerWidth = collapsed ? 72 : 280;
   const [openPlaneacionEstrategica, setOpenPlaneacionEstrategica] = useState(false);
   const [openGestionInformacion, setOpenGestionInformacion] = useState(false);
   const [openGestionProcesos, setOpenGestionProcesos] = useState(false);
@@ -589,7 +608,7 @@ function DashboardLayout() {
   }
 
   const drawer = (
-    <Box sx={{ height: '100dvh', display: 'flex', flexDirection: 'column', bgcolor: '#0f1f3a', overflow: 'hidden' }}>
+    <Box sx={{ height: '100dvh', display: 'flex', flexDirection: 'column', bgcolor: '#0f1f3a', overflow: 'hidden', transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)' }}>
       <Toolbar
         sx={{
           bgcolor: '#0b1730',
@@ -597,101 +616,152 @@ function DashboardLayout() {
           flexDirection: 'column',
           alignItems: 'center',
           justifyContent: 'center',
-          gap: 1.1,
-          px: 2,
-          py: 2,
-          minHeight: 228,
-          height: 228,
+          gap: collapsed ? 0.5 : 1.1,
+          px: collapsed ? 1 : 2,
+          py: collapsed ? 1.5 : 2,
+          minHeight: collapsed ? 80 : 228,
+          height: collapsed ? 80 : 228,
           flexShrink: 0,
-          boxSizing: 'border-box'
+          boxSizing: 'border-box',
+          position: 'relative',
+          transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)'
         }}
       >
-        <Box
-          sx={{
-            width: 118,
-            height: 118,
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            flexShrink: 0
-          }}
-        >
-          <Box
-            component="img"
-            src="/Logo Universidad CESMAG.png"
-            alt="Logo Universidad CESMAG"
+        <Tooltip title={collapsed ? "Expandir menú" : "Encoger menú"} placement="right">
+          <IconButton
+            onClick={toggleCollapsed}
             sx={{
-              width: '100%',
-              height: '100%',
-              objectFit: 'contain',
-              display: 'block'
+              position: 'absolute',
+              right: collapsed ? '50%' : 10,
+              transform: collapsed ? 'translateX(50%)' : 'none',
+              top: collapsed ? 8 : 10,
+              color: '#93c5fd',
+              bgcolor: 'rgba(147,197,253,0.08)',
+              p: 0.8,
+              '&:hover': { bgcolor: 'rgba(147,197,253,0.2)' },
+              transition: 'all 0.2s',
+              zIndex: 2
             }}
-          />
-        </Box>
-        <Box sx={{ textAlign: 'center', lineHeight: 1.25, width: '100%' }}>
-          <Typography
-            component="div"
+            size="small"
+          >
+            {collapsed ? <ChevronRightIcon fontSize="small" /> : <ChevronLeftIcon fontSize="small" />}
+          </IconButton>
+        </Tooltip>
+
+        {!collapsed && (
+          <>
+            <Box
+              sx={{
+                width: 118,
+                height: 118,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                flexShrink: 0,
+                mt: 1
+              }}
+            >
+              <Box
+                component="img"
+                src="/Logo Universidad CESMAG.png"
+                alt="Logo Universidad CESMAG"
+                sx={{
+                  width: '100%',
+                  height: '100%',
+                  objectFit: 'contain',
+                  display: 'block'
+                }}
+              />
+            </Box>
+            <Box sx={{ textAlign: 'center', lineHeight: 1.25, width: '100%' }}>
+              <Typography
+                component="div"
+                sx={{
+                  color: '#ffffff',
+                  fontWeight: 800,
+                  lineHeight: 1,
+                  display: 'flex',
+                  flexDirection: 'column',
+                  alignItems: 'center',
+                  position: 'relative',
+                  pt: 0.2
+                }}
+              >
+                <Box sx={{
+                  minWidth: 122,
+                  px: 1.6,
+                  py: 0.95,
+                  borderRadius: 3,
+                  border: '1px solid rgba(147,197,253,0.22)',
+                  background: 'linear-gradient(180deg, rgba(15,32,64,0.86), rgba(8,18,39,0.34))',
+                  boxShadow: '0 12px 30px rgba(2,8,23,0.24), inset 0 1px 0 rgba(255,255,255,0.07)',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  alignItems: 'center'
+                }}>
+                  <Box component="span" sx={{
+                    fontSize: 19,
+                    letterSpacing: 1.5,
+                    lineHeight: 1,
+                    textTransform: 'uppercase',
+                    color: '#ffffff',
+                    textShadow: '0 2px 14px rgba(96,165,250,0.35)'
+                  }}>
+                    SIAC
+                  </Box>
+                  <Box component="span" sx={{
+                    display: 'block',
+                    mt: 0.75,
+                    fontSize: 12,
+                    fontWeight: 800,
+                    letterSpacing: 1.8,
+                    color: '#bfdbfe',
+                    textTransform: 'uppercase'
+                  }}>
+                    UNICESMAG
+                  </Box>
+                  <Box sx={{
+                    width: 54,
+                    height: 2,
+                    mt: 0.9,
+                    borderRadius: 999,
+                    background: 'linear-gradient(90deg, rgba(96,165,250,0), #93c5fd, rgba(96,165,250,0))'
+                  }} />
+                </Box>
+              </Typography>
+            </Box>
+          </>
+        )}
+
+        {collapsed && (
+          <Box
             sx={{
-              color: '#ffffff',
-              fontWeight: 800,
-              lineHeight: 1,
               display: 'flex',
               flexDirection: 'column',
               alignItems: 'center',
-              position: 'relative',
-              pt: 0.2
+              justifyContent: 'center',
+              mt: 3.5
             }}
           >
-            <Box sx={{
-              minWidth: 122,
-              px: 1.6,
-              py: 0.95,
-              borderRadius: 3,
-              border: '1px solid rgba(147,197,253,0.22)',
-              background: 'linear-gradient(180deg, rgba(15,32,64,0.86), rgba(8,18,39,0.34))',
-              boxShadow: '0 12px 30px rgba(2,8,23,0.24), inset 0 1px 0 rgba(255,255,255,0.07)',
-              display: 'flex',
-              flexDirection: 'column',
-              alignItems: 'center'
-            }}>
-              <Box component="span" sx={{
-                fontSize: 19,
-                letterSpacing: 1.5,
-                lineHeight: 1,
-                textTransform: 'uppercase',
-                color: '#ffffff',
-                textShadow: '0 2px 14px rgba(96,165,250,0.35)'
-              }}>
-                SIAC
-              </Box>
-              <Box component="span" sx={{
-                display: 'block',
-                mt: 0.75,
-                fontSize: 12,
-                fontWeight: 800,
-                letterSpacing: 1.8,
-                color: '#bfdbfe',
-                textTransform: 'uppercase'
-              }}>
-                UNICESMAG
-              </Box>
-              <Box sx={{
-                width: 54,
-                height: 2,
-                mt: 0.9,
-                borderRadius: 999,
-                background: 'linear-gradient(90deg, rgba(96,165,250,0), #93c5fd, rgba(96,165,250,0))'
-              }} />
-            </Box>
-          </Typography>
-        </Box>
+            <Box
+              component="img"
+              src="/Logo Universidad CESMAG.png"
+              alt="Logo Universidad CESMAG"
+              sx={{
+                width: 32,
+                height: 32,
+                objectFit: 'contain'
+              }}
+            />
+          </Box>
+        )}
       </Toolbar>
       
       <Divider sx={{ borderColor: '#27406b', flexShrink: 0 }} />
       
       <List
         sx={{
-          px: 2,
+          px: collapsed ? 1 : 2,
           py: 2,
           flex: '1 1 auto',
           minHeight: 0,
@@ -700,9 +770,9 @@ function DashboardLayout() {
           bgcolor: '#0f1f3a',
           scrollbarWidth: 'thin',
           scrollbarColor: '#365783 #0f1f3a',
-          '&::-webkit-scrollbar': { width: 8 },
+          '&::-webkit-scrollbar': { width: 6 },
           '&::-webkit-scrollbar-track': { bgcolor: '#0f1f3a' },
-          '&::-webkit-scrollbar-thumb': { bgcolor: '#365783', borderRadius: 8 }
+          '&::-webkit-scrollbar-thumb': { bgcolor: '#365783', borderRadius: 6 }
         }}
       >
         {menuItems.map((item) => {
@@ -718,22 +788,60 @@ function DashboardLayout() {
                 ? openGestionInformacion
                 : true;
             const sectionHighlighted = isSectionActive;
+
+            if (collapsed) {
+              return (
+                <Box key={item.section} sx={{ my: 1.5 }}>
+                  <Divider sx={{ borderColor: 'rgba(147,197,253,0.15)', mb: 1 }} />
+                  {item.items.map((child) => {
+                    const childActive = isContextualActive(child);
+                    return (
+                      <Tooltip key={child.path} title={`${item.section} • ${child.label}`} placement="right" arrow>
+                        <ListItemButton
+                          onClick={() => navigateFromMenu(child.path)}
+                          disabled={Boolean(child.disabled)}
+                          sx={{
+                            mb: 1,
+                            p: 0,
+                            width: 48,
+                            height: 48,
+                            mx: 'auto',
+                            borderRadius: 2.5,
+                            justifyContent: 'center',
+                            alignItems: 'center',
+                            color: childActive ? '#ffffff' : '#d7e2f1',
+                            background: childActive ? 'linear-gradient(135deg, #2563eb, #3b82f6)' : 'transparent',
+                            boxShadow: childActive ? '0 4px 14px rgba(37,99,235,0.45)' : 'none',
+                            transition: 'all 0.2s',
+                            '&:hover': {
+                              bgcolor: childActive ? '#2563eb' : '#1f3358',
+                              transform: 'scale(1.08)'
+                            }
+                          }}
+                        >
+                          <ListItemIcon sx={{ color: 'inherit', minWidth: 0, justifyContent: 'center' }}>
+                            {child.badge ? (
+                              <Badge badgeContent={child.badge} color="error" overlap="circular" sx={{ '& .MuiBadge-badge': { fontSize: 9, minWidth: 14, height: 14, fontWeight: 800 } }}>
+                                {child.icon}
+                              </Badge>
+                            ) : child.icon}
+                          </ListItemIcon>
+                        </ListItemButton>
+                      </Tooltip>
+                    );
+                  })}
+                </Box>
+              );
+            }
+
             return (
               <Box key={item.section} sx={{ mt: 1 }}>
                 <ListItemButton
                   onClick={() => {
-                    if (item.openKey === 'gestion_procesos') {
-                      setOpenGestionProcesos((prev) => !prev);
-                    }
-                    if (item.openKey === 'gestion_informacion') {
-                      setOpenGestionInformacion((prev) => !prev);
-                    }
-                    if (item.openKey === 'planeacion_estrategica') {
-                      setOpenPlaneacionEstrategica((prev) => !prev);
-                    }
-                    if (item.openKey === 'administracion_sistema') {
-                      setOpenAdministracionSistema((prev) => !prev);
-                    }
+                    if (item.openKey === 'gestion_procesos') setOpenGestionProcesos((prev) => !prev);
+                    if (item.openKey === 'gestion_informacion') setOpenGestionInformacion((prev) => !prev);
+                    if (item.openKey === 'planeacion_estrategica') setOpenPlaneacionEstrategica((prev) => !prev);
+                    if (item.openKey === 'administracion_sistema') setOpenAdministracionSistema((prev) => !prev);
                   }}
                   sx={{
                     borderRadius: 2,
@@ -801,6 +909,44 @@ function DashboardLayout() {
             );
           }
 
+          if (collapsed) {
+            const itemActive = isContextualActive(item);
+            return (
+              <Tooltip key={item.path} title={item.label} placement="right" arrow>
+                <ListItemButton
+                  onClick={() => navigateFromMenu(item.path)}
+                  disabled={Boolean(item.disabled)}
+                  sx={{
+                    mb: 1,
+                    p: 0,
+                    width: 48,
+                    height: 48,
+                    mx: 'auto',
+                    borderRadius: 2.5,
+                    justifyContent: 'center',
+                    alignItems: 'center',
+                    color: itemActive ? '#ffffff' : '#d7e2f1',
+                    background: itemActive ? 'linear-gradient(135deg, #2563eb, #3b82f6)' : 'transparent',
+                    boxShadow: itemActive ? '0 4px 14px rgba(37,99,235,0.45)' : 'none',
+                    transition: 'all 0.2s',
+                    '&:hover': {
+                      bgcolor: itemActive ? '#2563eb' : '#1f3358',
+                      transform: 'scale(1.08)'
+                    }
+                  }}
+                >
+                  <ListItemIcon sx={{ color: 'inherit', minWidth: 0, justifyContent: 'center' }}>
+                    {item.badge ? (
+                      <Badge badgeContent={item.badge} color="error" overlap="circular" sx={{ '& .MuiBadge-badge': { fontSize: 9, minWidth: 14, height: 14, fontWeight: 800 } }}>
+                        {item.icon}
+                      </Badge>
+                    ) : item.icon}
+                  </ListItemIcon>
+                </ListItemButton>
+              </Tooltip>
+            );
+          }
+
           return (
             <ListItemButton
               key={item.path}
@@ -841,39 +987,80 @@ function DashboardLayout() {
 
       <Divider sx={{ borderColor: '#27406b', flexShrink: 0 }} />
       
-      <Box sx={{ p: 2, flexShrink: 0 }}>
-        <Box sx={{ bgcolor: '#081227', borderRadius: 2, p: 2, border: '1px solid #1f3358' }}>
-          <Typography variant="caption" sx={{ color: '#9fb5d6', display: 'block', mb: 1 }}>Usuario activo</Typography>
-          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-            <Avatar sx={{ width: 32, height: 32, bgcolor: '#3b82f6', fontSize: 14 }}>
-              {user?.nombre?.charAt(0) || 'U'}
-            </Avatar>
-            <Box sx={{ flexGrow: 1 }}>
-              <Typography sx={{ color: 'white', fontSize: 13, fontWeight: 500 }}>{user?.nombre}</Typography>
-              <Chip 
-                label={ROLE_LABELS[user?.role] || user?.role || 'Sin rol'}
-                size="small" 
-                sx={{ height: 18, fontSize: 10, bgcolor: user?.role === 'administrador' ? '#10b981' : '#6366f1', color: 'white' }} 
-              />
+      <Box sx={{ p: collapsed ? 1 : 2, flexShrink: 0 }}>
+        {!collapsed ? (
+          <Box sx={{ bgcolor: '#081227', borderRadius: 2, p: 2, border: '1px solid #1f3358' }}>
+            <Typography variant="caption" sx={{ color: '#9fb5d6', display: 'block', mb: 1 }}>Usuario activo</Typography>
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+              <Avatar sx={{ width: 32, height: 32, bgcolor: '#3b82f6', fontSize: 14 }}>
+                {user?.nombre?.charAt(0) || 'U'}
+              </Avatar>
+              <Box sx={{ flexGrow: 1 }}>
+                <Typography sx={{ color: 'white', fontSize: 13, fontWeight: 500 }}>{user?.nombre}</Typography>
+                <Chip 
+                  label={ROLE_LABELS[user?.role] || user?.role || 'Sin rol'}
+                  size="small" 
+                  sx={{ height: 18, fontSize: 10, bgcolor: user?.role === 'administrador' ? '#10b981' : '#6366f1', color: 'white' }} 
+                />
+              </Box>
             </Box>
           </Box>
-        </Box>
+        ) : (
+          <Tooltip title={`${user?.nombre || 'Usuario'} • ${ROLE_LABELS[user?.role] || user?.role || 'Sin rol'}`} placement="right" arrow>
+            <Box sx={{ display: 'flex', justifyContent: 'center', py: 0.5 }}>
+              <Avatar sx={{ width: 36, height: 36, bgcolor: '#3b82f6', fontSize: 14, border: '2px solid #1f3358' }}>
+                {user?.nombre?.charAt(0) || 'U'}
+              </Avatar>
+            </Box>
+          </Tooltip>
+        )}
       </Box>
 
       {/* Sello Vigilada MINEDUCACIÓN */}
-      <Box sx={{ pb: 1.8, pt: 0.5, display: 'flex', justifyContent: 'center', flexShrink: 0 }}>
-        <VigiladaMineducacion variant="dark" size="sm" />
-      </Box>
+      {!collapsed && (
+        <Box sx={{ pb: 1.8, pt: 0.5, display: 'flex', justifyContent: 'center', flexShrink: 0 }}>
+          <VigiladaMineducacion variant="dark" size="sm" />
+        </Box>
+      )}
     </Box>
   );
 
   return (
     <Box sx={{ display: 'flex', minHeight: '100vh' }}>
-      <AppBar position="fixed" elevation={0} sx={{ width: { sm: `calc(100% - ${drawerWidth}px)` }, ml: { sm: `${drawerWidth}px` }, bgcolor: 'white', borderBottom: '1px solid #e2e8f0' }}>
+      <AppBar
+        position="fixed"
+        elevation={0}
+        sx={{
+          width: { sm: `calc(100% - ${currentDrawerWidth}px)` },
+          ml: { sm: `${currentDrawerWidth}px` },
+          bgcolor: 'white',
+          borderBottom: '1px solid #e2e8f0',
+          transition: 'width 0.3s cubic-bezier(0.4, 0, 0.2, 1), margin-left 0.3s cubic-bezier(0.4, 0, 0.2, 1)'
+        }}
+      >
         <Toolbar variant="dense" sx={{ minHeight: 56 }}>
-          <IconButton color="primary" edge="start" onClick={() => setMobileOpen(!mobileOpen)} sx={{ mr: 2, display: { sm: 'none' } }}>
+          <IconButton color="primary" edge="start" onClick={() => setMobileOpen(!mobileOpen)} sx={{ mr: 2, display: { xs: 'flex', sm: 'none' } }}>
             <MenuIcon />
           </IconButton>
+
+          <Tooltip title={collapsed ? "Expandir menú lateral" : "Encoger menú lateral"}>
+            <IconButton
+              onClick={toggleCollapsed}
+              sx={{
+                display: { xs: 'none', sm: 'inline-flex' },
+                mr: 2,
+                color: '#334155',
+                bgcolor: '#f1f5f9',
+                p: 0.8,
+                '&:hover': { bgcolor: '#e2e8f0', color: '#1e293b' },
+                transition: 'all 0.2s'
+              }}
+              size="small"
+            >
+              {collapsed ? <MenuOpenIcon fontSize="small" /> : <ChevronLeftIcon fontSize="small" />}
+            </IconButton>
+          </Tooltip>
+
           <Box sx={{ flexGrow: 1 }} />
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
             <Tooltip title="Configuración">
@@ -905,16 +1092,49 @@ function DashboardLayout() {
         </Toolbar>
       </AppBar>
       
-      <Box component="nav" sx={{ width: { sm: drawerWidth }, flexShrink: { sm: 0 } }}>
-        <Drawer variant="temporary" open={mobileOpen} onClose={() => setMobileOpen(!mobileOpen)} ModalProps={{ keepMounted: true }} sx={{ display: { xs: 'block', sm: 'none' }, '& .MuiDrawer-paper': { width: drawerWidth, border: 'none', bgcolor: '#0f1f3a' } }}>
+      <Box component="nav" sx={{ width: { sm: currentDrawerWidth }, flexShrink: { sm: 0 }, transition: 'width 0.3s cubic-bezier(0.4, 0, 0.2, 1)' }}>
+        <Drawer
+          variant="temporary"
+          open={mobileOpen}
+          onClose={() => setMobileOpen(!mobileOpen)}
+          ModalProps={{ keepMounted: true }}
+          sx={{
+            display: { xs: 'block', sm: 'none' },
+            '& .MuiDrawer-paper': { width: 280, border: 'none', bgcolor: '#0f1f3a' }
+          }}
+        >
           {drawer}
         </Drawer>
-        <Drawer variant="permanent" sx={{ display: { xs: 'none', sm: 'block' }, '& .MuiDrawer-paper': { width: drawerWidth, border: 'none', bgcolor: '#0f1f3a' } }} open>
+        <Drawer
+          variant="permanent"
+          sx={{
+            display: { xs: 'none', sm: 'block' },
+            '& .MuiDrawer-paper': {
+              width: currentDrawerWidth,
+              border: 'none',
+              bgcolor: '#0f1f3a',
+              overflowX: 'hidden',
+              transition: 'width 0.3s cubic-bezier(0.4, 0, 0.2, 1)'
+            }
+          }}
+          open
+        >
           {drawer}
         </Drawer>
       </Box>
       
-      <Box component="main" sx={{ flexGrow: 1, p: { xs: 1.5, sm: 2, md: 2.5, lg: 3 }, width: { sm: `calc(100% - ${drawerWidth}px)` }, bgcolor: '#f8fafc', minHeight: '100vh', boxSizing: 'border-box' }}>
+      <Box
+        component="main"
+        sx={{
+          flexGrow: 1,
+          p: { xs: 1.5, sm: 2, md: 2.5, lg: 3 },
+          width: { sm: `calc(100% - ${currentDrawerWidth}px)` },
+          bgcolor: '#f8fafc',
+          minHeight: '100vh',
+          boxSizing: 'border-box',
+          transition: 'width 0.3s cubic-bezier(0.4, 0, 0.2, 1)'
+        }}
+      >
         <Toolbar variant="dense" />
         <Outlet />
       </Box>
