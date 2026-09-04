@@ -280,6 +280,10 @@ const renderInstitutionalTemplate = ({ title, introHtml, bodyHtml, senderHtml })
 };
 
 const getSandboxRecipient = () => {
+  const isProduction = process.env.NODE_ENV === 'production';
+  if (isProduction && String(process.env.ALLOW_PRODUCTION_SANDBOX || 'false').toLowerCase() !== 'true') {
+    return null;
+  }
   const raw = process.env.EMAIL_SANDBOX_RECIPIENT;
   if (!raw || !String(raw).trim()) return null;
   return String(raw).trim().toLowerCase();

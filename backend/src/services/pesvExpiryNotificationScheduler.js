@@ -185,8 +185,14 @@ const runPesvExpiryNotifications = async ({ now = new Date() } = {}) => {
   try { return await activeRun; } finally { activeRun = null; }
 };
 
+const isProductionEnvironment = () => process.env.NODE_ENV === 'production';
+
 const schedulerTick = async () => {
-  if (String(process.env.PESV_AUTOMATIC_NOTIFICATIONS_ENABLED || 'true').toLowerCase() === 'false') return;
+  const isProd = isProductionEnvironment();
+  const defaultEnabled = isProd ? 'true' : 'false';
+  const isEnabled = String(process.env.PESV_AUTOMATIC_NOTIFICATIONS_ENABLED || defaultEnabled).toLowerCase() === 'true';
+  if (!isEnabled) return;
+
   const parts = bogotaParts();
   const key = `${parts.year}-${parts.month}-${parts.day}`;
   if (Number(parts.hour) < SCHEDULE_HOUR || lastRunKey === key) return;
@@ -213,6 +219,13 @@ const scheduleNextTick = () => {
 };
 
 const startPesvExpiryNotificationScheduler = () => {
+  const isProd = isProductionEnvironment();
+  const defaultEnabled = isProd ? 'true' : 'false';
+  const isEnabled = String(process.env.PESV_AUTOMATIC_NOTIFICATIONS_ENABLED || defaultEnabled).toLowerCase() === 'true';
+  if (!isEnabled) {
+    console.log('[pesv-notificaciones] Programador automático deshabilitado en entorno local de desarrollo.');
+    return;
+  }
   schedulerTick().catch((error) => console.error('[pesv-notificaciones] Error inicial:', error.message));
   scheduleNextTick();
   console.log(`[pesv-notificaciones] Programador listo: avisos a ${NOTIFICATION_DAYS} días y el día del vencimiento, revisión diaria desde las ${String(SCHEDULE_HOUR).padStart(2, '0')}:00 ${TIMEZONE}.`);
