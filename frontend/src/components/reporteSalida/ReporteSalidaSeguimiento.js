@@ -110,6 +110,19 @@ const STATUS_LABELS = {
   no_aprobada: 'No Aprobada'
 };
 
+const STATUS_FILTER_OPTIONS = [
+  { value: 'pendiente_aprobacion_jefe', label: 'Pendiente Jefe', matches: ['pendiente_aprobacion_jefe', 'pendiente_jefe'] },
+  { value: 'pendiente_aprobacion_vicerrectoria_academica', label: 'Pendiente Vicerrectoría', matches: ['pendiente_aprobacion_vicerrectoria_academica', 'aprobada_jefe'] },
+  { value: 'pendiente_aprobacion_financiera_previa', label: 'Pendiente Vicerrectoría Financiera', matches: ['pendiente_aprobacion_financiera_previa', 'pendiente_financiera_previa'] },
+  { value: 'pendiente_aprobacion_rectoria', label: 'Pendiente Rectoría', matches: ['pendiente_aprobacion_rectoria'] },
+  { value: 'pendiente_aprobacion_gestion_humana', label: 'Pendiente Gestión del Talento Humano', matches: ['pendiente_aprobacion_gestion_humana', 'pendiente_gestion_humana'] },
+  { value: 'pendiente_aprobacion_sst', label: 'Pendiente SST', matches: ['pendiente_aprobacion_sst', 'pendiente_sst'] },
+  { value: 'pendiente_tecnico_contable', label: 'Pendiente Técnico Contable', matches: ['pendiente_tecnico_contable', 'aprobada_gestion_humana', 'en_tramite_viaticos', 'pendiente_liquidacion'] },
+  { value: 'pendiente_tesoreria', label: 'Pendiente Tesorería / Pago', matches: ['pendiente_tesoreria', 'pendiente_autorizacion_pago', 'en_tramite_tesoreria'] },
+  { value: 'finalizada', label: 'Aprobada', matches: ['finalizada', 'pago_autorizado_pendiente_legalizacion', 'legalizacion_finalizada', 'aprobada_sst'] },
+  { value: 'no_aprobada', label: 'No Aprobada', matches: ['no_aprobada'] }
+];
+
 const STATUS_COLORS = {
   pendiente_aprobacion_jefe: { bg: '#fef3c7', color: '#92400e' },
   pendiente_jefe: { bg: '#fef3c7', color: '#92400e' },
@@ -579,7 +592,9 @@ function ReporteSalidaSeguimiento({ initialAccess = null, onBack }) {
       });
     }
     if (estado) {
-      result = result.filter(r => r.estado === estado);
+      const selectedOption = STATUS_FILTER_OPTIONS.find(opt => opt.value === estado);
+      const matches = selectedOption ? selectedOption.matches : [estado];
+      result = result.filter(r => matches.includes(r.estado));
     }
     if (timeRange && timeRange !== 'todos') {
       const now = new Date();
@@ -948,11 +963,14 @@ function ReporteSalidaSeguimiento({ initialAccess = null, onBack }) {
       return;
     }
     try {
-      const res = await api.put(`/reporte-salida/solicitudes/${ghActionTarget.id}/admin`, {
+      const payload = {
         action: isReject ? 'reject' : 'approve',
-        estado: isReject ? 'no_aprobada' : 'finalizada',
         observacion: ghActionObservation
-      });
+      };
+      if (isReject) {
+        payload.estado = 'no_aprobada';
+      }
+      const res = await api.put(`/reporte-salida/solicitudes/${ghActionTarget.id}/admin`, payload);
       if (res.data.success) {
         enqueueSnackbar(res.data.message || (isReject ? 'Solicitud rechazada' : 'Solicitud aprobada'), { variant: 'success' });
         setGhActionDialogOpen(false);
@@ -1284,7 +1302,7 @@ function ReporteSalidaSeguimiento({ initialAccess = null, onBack }) {
                 </TextField>
                 <TextField select size="small" label="Estado" value={estado} onChange={(e) => setEstado(e.target.value)} sx={{ minWidth: 150, bgcolor: '#fff', borderRadius: 1.5 }}>
                   <MenuItem value="">Todos los Estados</MenuItem>
-                  {Object.entries(STATUS_LABELS).map(([key, label]) => <MenuItem key={key} value={key}>{label}</MenuItem>)}
+                  {STATUS_FILTER_OPTIONS.map((opt) => <MenuItem key={opt.value} value={opt.value}>{opt.label}</MenuItem>)}
                 </TextField>
                 <TextField select size="small" label="Período" value={timeRange} onChange={(e) => setTimeRange(e.target.value)} sx={{ minWidth: 140, bgcolor: '#fff', borderRadius: 1.5 }}>
                   <MenuItem value="todos">Todos</MenuItem>

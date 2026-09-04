@@ -87,6 +87,12 @@ const gestionInformacionService = {
   },
   getContextoExternoGeneralDashboard: () =>
     api.get('/planeacion/gestion-informacion/contexto-externo-general/dashboard', { timeout: 120000 }).then((r) => r.data),
+  downloadContextoExternoGeneralPdf: (programa, filters = {}) =>
+    api.get('/planeacion/gestion-informacion/contexto-externo-general/report.pdf', {
+      params: { programa, ...filters },
+      responseType: 'blob',
+      timeout: 120000
+    }),
   downloadContextoExternoNormalizado: (variable) => {
     const isContextoGeneral = String(variable).toUpperCase() === 'CONTEXTO EXTERNO GENERAL';
     return api.get(

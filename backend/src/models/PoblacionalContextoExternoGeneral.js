@@ -30,8 +30,6 @@ const PoblacionalContextoExternoGeneral = sequelize.define('poblacional_contexto
   municipio: { type: DataTypes.STRING(160), allowNull: true },
   georeferencia: { type: DataTypes.STRING(40), allowNull: true },
   departamento: { type: DataTypes.STRING(160), allowNull: true },
-  valor_departamento: { type: DataTypes.DECIMAL(14, 2), allowNull: true },
-  pais: { type: DataTypes.STRING(100), allowNull: true },
   creado_por: { type: DataTypes.INTEGER, allowNull: true },
   actualizado_por: { type: DataTypes.INTEGER, allowNull: true }
 });

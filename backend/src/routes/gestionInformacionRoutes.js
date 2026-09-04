@@ -71,6 +71,7 @@ const {
 const {
   downloadContextoExternoGeneralTemplate,
   downloadContextoExternoGeneralData,
+  downloadContextoExternoGeneralPdf,
   importContextoExternoGeneral,
   getContextoExternoGeneralDashboard
 } = require('../controllers/contextoExternoGeneralController');
@@ -244,6 +245,7 @@ router.get('/template', auth, canImportDatabaseData, downloadTemplate);
 router.get('/contexto-externo-general/dashboard', auth, canViewEstadisticaInstitucionalByPermission, getContextoExternoGeneralDashboard);
 router.get('/contexto-externo-general/template', auth, canImportDatabaseData, downloadContextoExternoGeneralTemplate);
 router.get('/contexto-externo-general/export', auth, canImportDatabaseData, downloadContextoExternoGeneralData);
+router.get('/contexto-externo-general/report.pdf', auth, canViewEstadisticaInstitucionalByPermission, downloadContextoExternoGeneralPdf);
 router.post('/contexto-externo-general/import', auth, canImportDatabaseData, upload.single('file'), importContextoExternoGeneral);
 router.get('/contexto-externo/export', auth, canImportDatabaseData, downloadContextoExternoNormalizado);
 router.post('/contexto-externo/limpiar', auth, canImportDatabaseData, contextoExternoCleanerUpload.single('file'), cleanContextoExternoFile);

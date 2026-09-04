@@ -2,6 +2,7 @@ const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
 const { Op } = require('sequelize');
+const { sequelize } = require('../config/database');
 const { DesplazamientoViaticosSolicitud, Documento, PlanAccion, ReporteSalidaAdjunto, ReporteSalidaSolicitud, RecursoHumanoAdministrativo, RecursoHumanoDocente, User, UserModulePermission } = require('../models');
 const { encryptPayload, decryptPayload } = require('../utils/secureUrlToken');
 const {
@@ -269,12 +270,22 @@ const getOfficialAuthorityEmailForActor = (actor = {}) => {
 const getAcademicProgramApprovalEmail = (solicitud = {}) => {
   const laboral = solicitud.datos_formulario?.laboral || {};
   const solicitante = solicitud.solicitante_snapshot || {};
+  const jefe = solicitud.jefe_snapshot || {};
   const dependencia = normalizeForMatch(laboral.dependencia || solicitante.dependencia || '');
   const requesterName = normalizeForMatch(solicitante.nombre || '');
   const requesterEmail = normalizeEmail(solicitante.email || solicitante.correo || '');
+  const jefeName = normalizeForMatch(jefe.nombre || jefe.name || jefe.label || '');
+  const jefeEmail = normalizeEmail(jefe.email || '');
 
-  // 1. Programa de Arquitectura
-  if (dependencia.includes('arquitectura')) {
+  // 1. Programa de Arquitectura (por dependencia o por jefe asignado: Magaly Martínez)
+  const isArquitectura =
+    dependencia.includes('arquitectura') ||
+    jefeName.includes('lilian magali') ||
+    jefeName.includes('martinez crespo') ||
+    sameExactEmail(jefeEmail, 'lmmartinez@unicesmag.edu.co') ||
+    sameExactEmail(jefeEmail, 'arquitectura@unicesmag.edu.co');
+
+  if (isArquitectura) {
     const isMagalySelf = requesterName.includes('lilian magali') || requesterName.includes('martinez crespo') || sameExactEmail(requesterEmail, 'lmmartinez@unicesmag.edu.co');
     if (isMagalySelf) {
       return ''; // Solicitud propia de Magaly: pasa a su jefe/correo personal
@@ -282,8 +293,16 @@ const getAcademicProgramApprovalEmail = (solicitud = {}) => {
     return getDependencyEmail('Programa Academico - Arquitectura') || 'arquitectura@unicesmag.edu.co';
   }
 
-  // 2. Programa de Diseño Gráfico
-  if (dependencia.includes('diseno grafico') || (dependencia.includes('diseno') && !dependencia.includes('modas'))) {
+  // 2. Programa de Diseño Gráfico (por dependencia o por jefe asignado: Karen Ocaña)
+  const isDiseno =
+    dependencia.includes('diseno grafico') ||
+    (dependencia.includes('diseno') && !dependencia.includes('modas')) ||
+    jefeName.includes('karen eugenia') ||
+    jefeName.includes('ocana figueroa') ||
+    sameExactEmail(jefeEmail, 'keocana@unicesmag.edu.co') ||
+    sameExactEmail(jefeEmail, 'disenografico@unicesmag.edu.co');
+
+  if (isDiseno) {
     const isDisenoLeaderSelf = requesterName.includes('karen eugenia') || requesterName.includes('ocana figueroa') || requesterName.includes('ajeen') || sameExactEmail(requesterEmail, 'disenografico@unicesmag.edu.co');
     if (isDisenoLeaderSelf) {
       return ''; // Solicitud propia de la líder de Diseño Gráfico: pasa a su jefe/correo personal
@@ -303,6 +322,19 @@ const getInitialApprovalRecipientEmails = (solicitud = {}) => {
 
   if (academicProgramEmail) {
     return [academicProgramEmail];
+  }
+
+  const laboral = solicitud.datos_formulario?.laboral || {};
+  const solicitante = solicitud.solicitante_snapshot || {};
+  const dependencia = laboral.dependencia || solicitante.dependencia || '';
+  const depNorm = normalizeForMatch(dependencia);
+
+  if (depNorm.includes('programa academico') || depNorm.includes('programa') || depNorm.includes('departamento')) {
+    const progEmail = normalizeEmail(getDependencyEmail(dependencia));
+    const recipients = [];
+    if (progEmail) recipients.push(progEmail);
+    if (jefeEmail && !recipients.includes(jefeEmail)) recipients.push(jefeEmail);
+    if (recipients.length) return recipients;
   }
 
   if (jefeName.includes('luis eduardo rubiano guaqueta')) {
@@ -351,11 +383,19 @@ const getGroupInitialApprovalRecipients = (solicitudes = []) => {
     const depNorm = normalizeForMatch(dep);
     const jefe = sol.jefe_snapshot || {};
     const jefeEmail = normalizeEmail(jefe.email);
+    const jefeName = normalizeForMatch(jefe.nombre || jefe.name || jefe.label || '');
     const requesterName = normalizeForMatch(solicitante.nombre || '');
     const requesterEmail = normalizeEmail(solicitante.email || solicitante.correo || '');
 
     // 1. Arquitectura: A arquitectura@unicesmag.edu.co salvo solicitud propia de Magaly
-    if (depNorm.includes('arquitectura')) {
+    const isArquitectura =
+      depNorm.includes('arquitectura') ||
+      jefeName.includes('lilian magali') ||
+      jefeName.includes('martinez crespo') ||
+      sameExactEmail(jefeEmail, 'lmmartinez@unicesmag.edu.co') ||
+      sameExactEmail(jefeEmail, 'arquitectura@unicesmag.edu.co');
+
+    if (isArquitectura) {
       const isMagalySelf = requesterName.includes('lilian magali') || requesterName.includes('martinez crespo') || sameExactEmail(requesterEmail, 'lmmartinez@unicesmag.edu.co');
       if (isMagalySelf && jefeEmail) {
         pushEmail(jefeEmail);
@@ -367,7 +407,15 @@ const getGroupInitialApprovalRecipients = (solicitudes = []) => {
     }
 
     // 2. Diseño Gráfico: A disenografico@unicesmag.edu.co salvo solicitud propia de la líder
-    if (depNorm.includes('diseno grafico') || (depNorm.includes('diseno') && !depNorm.includes('modas'))) {
+    const isDiseno =
+      depNorm.includes('diseno grafico') ||
+      (depNorm.includes('diseno') && !depNorm.includes('modas')) ||
+      jefeName.includes('karen eugenia') ||
+      jefeName.includes('ocana figueroa') ||
+      sameExactEmail(jefeEmail, 'keocana@unicesmag.edu.co') ||
+      sameExactEmail(jefeEmail, 'disenografico@unicesmag.edu.co');
+
+    if (isDiseno) {
       const isDisenoLeaderSelf = requesterName.includes('karen eugenia') || requesterName.includes('ocana figueroa') || requesterName.includes('ajeen') || sameExactEmail(requesterEmail, 'disenografico@unicesmag.edu.co');
       if (isDisenoLeaderSelf && jefeEmail) {
         pushEmail(jefeEmail);
@@ -5141,6 +5189,32 @@ const aprobarDesdeCorreo = async (req, res) => {
   }
 };
 
+const STATUS_FILTER_MAP = {
+  pendiente_aprobacion_jefe: ['pendiente_aprobacion_jefe', 'pendiente_jefe'],
+  pendiente_jefe: ['pendiente_aprobacion_jefe', 'pendiente_jefe'],
+  pendiente_aprobacion_vicerrectoria_academica: ['pendiente_aprobacion_vicerrectoria_academica', 'aprobada_jefe'],
+  pendiente_aprobacion_financiera_previa: ['pendiente_aprobacion_financiera_previa', 'pendiente_financiera_previa'],
+  pendiente_financiera_previa: ['pendiente_aprobacion_financiera_previa', 'pendiente_financiera_previa'],
+  pendiente_aprobacion_rectoria: ['pendiente_aprobacion_rectoria'],
+  pendiente_aprobacion_gestion_humana: ['pendiente_aprobacion_gestion_humana', 'pendiente_gestion_humana'],
+  pendiente_gestion_humana: ['pendiente_aprobacion_gestion_humana', 'pendiente_gestion_humana'],
+  pendiente_aprobacion_sst: ['pendiente_aprobacion_sst', 'pendiente_sst'],
+  pendiente_sst: ['pendiente_aprobacion_sst', 'pendiente_sst'],
+  pendiente_tecnico_contable: ['pendiente_tecnico_contable', 'aprobada_gestion_humana', 'en_tramite_viaticos', 'pendiente_liquidacion'],
+  pendiente_tesoreria: ['pendiente_tesoreria', 'pendiente_autorizacion_pago', 'en_tramite_tesoreria'],
+  finalizada: ['finalizada', 'pago_autorizado_pendiente_legalizacion', 'legalizacion_finalizada', 'aprobada_sst'],
+  no_aprobada: ['no_aprobada']
+};
+
+const getEstadoWhereCondition = (estado) => {
+  if (!estado) return null;
+  const matches = STATUS_FILTER_MAP[estado];
+  if (matches && matches.length > 1) {
+    return { [Op.in]: matches };
+  }
+  return estado;
+};
+
 const listarSolicitudes = async (req, res) => {
   if (!(await getReporteSalidaFeatureState())) return featureDisabled(res);
   try {
@@ -5151,7 +5225,8 @@ const listarSolicitudes = async (req, res) => {
     const estado = sanitizeText(req.query.estado, 80);
     const search = sanitizeText(req.query.search, 100);
     const where = {};
-    if (estado) where.estado = estado;
+    const estadoCond = getEstadoWhereCondition(estado);
+    if (estadoCond) where.estado = estadoCond;
     if (search) {
       where[Op.or] = [
         { consecutivo: { [Op.iLike]: `%${search}%` } },
@@ -5186,6 +5261,7 @@ const getSeguimientoPersonal = async (req, res) => {
     const isFetchAll = !rawLimit || rawLimit === '0' || String(rawLimit).toLowerCase() === 'all' || req.query.all === 'true';
     const limit = isFetchAll ? undefined : Math.min(100000, Math.max(1, Number(rawLimit || 50)));
     const estado = sanitizeText(req.query.estado, 80);
+    const estadoCond = getEstadoWhereCondition(estado);
     const access = await resolveSeguimientoAccess(req.user);
 
     if (!access.canView) {
@@ -5201,11 +5277,11 @@ const getSeguimientoPersonal = async (req, res) => {
 
     let where = {};
     if (access.canViewAll) {
-      if (estado) where.estado = estado;
+      if (estadoCond) where.estado = estadoCond;
     } else if (access.academicAssignmentScope) {
       const academicAuthorityUserIds = await resolveAcademicAuthorityUserIds(req.user);
       where = bossScopeWhere(req.user, academicAuthorityUserIds);
-      if (estado) where = { [Op.and]: [where, { estado }] };
+      if (estadoCond) where = { [Op.and]: [where, { estado: estadoCond }] };
     } else {
       const scopedConditions = [];
       if (access.counts.bossPending > 0) {
@@ -5214,7 +5290,7 @@ const getSeguimientoPersonal = async (req, res) => {
       }
       if (access.counts.ownPending > 0) scopedConditions.push(ownPendingReposicionWhere(req.user));
       where = scopedConditions.length === 1 ? scopedConditions[0] : { [Op.or]: scopedConditions };
-      if (estado) where = { [Op.and]: [where, { estado }] };
+      if (estadoCond) where = { [Op.and]: [where, { estado: estadoCond }] };
     }
 
     const queryOptions = {

@@ -5,6 +5,7 @@ const {
   GestionInformacionCarga,
   PoblacionalContextoExternoGeneral
 } = require('../models');
+const { generateContextoExternoGeneralPdf } = require('../services/contextoExternoGeneralPdfService');
 
 const DATASET_LABEL = 'CONTEXTO EXTERNO GENERAL';
 const SHEETS = [
@@ -27,11 +28,6 @@ const SHEETS = [
     name: 'OFERTA',
     seccion: 'oferta',
     headers: ['SECTOR', 'RECONOCIMIENTO MEN', 'ÁREA DEL CONOCIMIENTO', 'NOMBRE_INSTITUCIÓN', 'NOMBRE_DEL_PROGRAMA', 'MODALIDAD', 'NÚMERO_CRÉDITOS', 'NÚMERO_SEMESTRES', 'MUNICIPIO_OFERTA_PROGRAMA', 'GEOREFERENCIA', 'DEPARTAMENTO']
-  },
-  {
-    name: 'DEPAR',
-    seccion: 'departamento',
-    headers: ['DEPARTAMENTO', 'VALOR', 'PAIS']
   }
 ];
 
@@ -52,12 +48,6 @@ const toInteger = (value) => {
   if (value === null || value === undefined || value === '') return null;
   const number = Number(String(value).replace(/\s/g, '').replace(/,/g, ''));
   return Number.isFinite(number) ? Math.round(number) : null;
-};
-
-const toDecimal = (value) => {
-  if (value === null || value === undefined || value === '') return null;
-  const number = Number(String(value).replace(/\s/g, '').replace(/,/g, ''));
-  return Number.isFinite(number) ? number : null;
 };
 
 const getPeriod = (value) => {
@@ -120,7 +110,7 @@ const validateHeaders = (sheetName, rows, headers) => {
 const parseWorkbook = (filePath) => {
   const workbook = XLSX.readFile(filePath, { cellDates: true, cellFormula: false, cellHTML: false });
   const missingSheets = SHEETS.filter((definition) => !findSheet(workbook, definition.name)).map((definition) => definition.name);
-  if (missingSheets.length) throw new Error(`El archivo debe contener las cinco hojas de Contexto Externo General. Faltan: ${missingSheets.join(', ')}.`);
+  if (missingSheets.length) throw new Error(`El archivo debe contener las cuatro hojas de Contexto Externo General. Faltan: ${missingSheets.join(', ')}.`);
 
   const records = [];
   const counts = {};
@@ -182,16 +172,6 @@ const parseWorkbook = (filePath) => {
           municipio: cleanText(valueOf(row, 'MUNICIPIO_OFERTA_PROGRAMA')),
           georeferencia: cleanText(valueOf(row, 'GEOREFERENCIA')),
           departamento: cleanText(valueOf(row, 'DEPARTAMENTO'))
-        });
-      } else {
-        const departamento = cleanText(valueOf(row, 'DEPARTAMENTO'));
-        if (!departamento || normalizeKey(departamento) === 'FUENTES') return;
-        records.push({
-          seccion: definition.seccion,
-          hoja_fuente: definition.name,
-          departamento,
-          valor_departamento: toDecimal(valueOf(row, 'VALOR')),
-          pais: cleanText(valueOf(row, 'PAIS'))
         });
       }
       accepted += 1;
@@ -284,18 +264,15 @@ const getContextoExternoGeneralDashboard = async (_req, res) => {
     ]);
     const oferta = [];
     const poblacional = [];
-    const departamentos = [];
     rows.forEach((row) => {
       if (row.seccion === 'oferta') oferta.push(row);
       else if (row.seccion === 'poblacional') poblacional.push(row);
-      else if (row.seccion === 'departamento') departamentos.push(row);
     });
     return res.json({
       success: true,
       data: {
         oferta,
         poblacional,
-        departamentos,
         metadata: {
           total: rows.length,
           lastUpload: lastUpload?.createdAt || null,
@@ -321,8 +298,7 @@ const downloadContextoExternoGeneralData = async (_req, res) => {
       'INS,ADM, PC': [],
       MATRICULADOS: [],
       GRADUADOS: [],
-      OFERTA: [],
-      DEPAR: []
+      OFERTA: []
     };
     rows.forEach((row) => {
       if (row.hoja_fuente === 'INS,ADM, PC') bySheet['INS,ADM, PC'].push({
@@ -360,11 +336,6 @@ const downloadContextoExternoGeneralData = async (_req, res) => {
         GEOREFERENCIA: row.georeferencia,
         DEPARTAMENTO: row.departamento
       });
-      else if (row.hoja_fuente === 'DEPAR') bySheet.DEPAR.push({
-        Departamento: row.departamento,
-        Valor: row.valor_departamento,
-        PAIS: row.pais
-      });
     });
 
     const workbook = XLSX.utils.book_new();
@@ -386,12 +357,84 @@ const downloadContextoExternoGeneralData = async (_req, res) => {
   }
 };
 
+const downloadContextoExternoGeneralPdf = async (req, res) => {
+  try {
+    const program = cleanText(req.query?.programa);
+    if (!program || normalizeKey(program) === 'TODOS') {
+      return res.status(400).json({ success: false, message: 'Selecciona un programa para generar el informe PDF.' });
+    }
+    const rows = await PoblacionalContextoExternoGeneral.findAll({ raw: true });
+    const programKey = normalizeKey(program);
+    const requestedSection = normalizeKey(req.query?.seccion).toLowerCase();
+    const section = requestedSection === 'completo'
+      ? 'completo'
+      : requestedSection === 'poblacional' ? 'poblacional' : 'oferta';
+    const populationGroup = ['ingreso', 'matriculados', 'graduados'].includes(normalizeKey(req.query?.grupo).toLowerCase())
+      ? normalizeKey(req.query?.grupo).toLowerCase()
+      : 'ingreso';
+    const exactFilter = (rowValue, queryValue) => !cleanText(queryValue) || normalizeKey(rowValue) === normalizeKey(queryValue);
+    const searchKey = normalizeKey(req.query?.busqueda);
+    const searchFields = ['nombre_programa', 'institucion', 'area_conocimiento', 'municipio'];
+    const oferta = rows.filter((row) => (
+      row.seccion === 'oferta'
+      && normalizeKey(row.area_conocimiento) === programKey
+      && (section === 'completo' || exactFilter(row.sector, req.query?.sector))
+      && (section === 'completo' || exactFilter(row.modalidad, req.query?.modalidad))
+      && (section === 'completo' || exactFilter(row.municipio, req.query?.municipio))
+      && (section === 'completo' || !searchKey || searchFields.some((field) => normalizeKey(row[field]).includes(searchKey)))
+    ));
+    const poblacional = rows.filter((row) => (
+      row.seccion === 'poblacional'
+      && normalizeKey(row.programa) === programKey
+      && (section === 'completo' || exactFilter(row.periodo_referencia, req.query?.periodo))
+    ));
+    const hasVisibleData = section === 'completo'
+      ? oferta.length + poblacional.length
+      : section === 'oferta' ? oferta.length : poblacional.length;
+    if (!hasVisibleData) {
+      return res.status(404).json({ success: false, message: `No hay información disponible para ${program}.` });
+    }
+    const scopes = ['nacional', 'regional'];
+    const intakeCharts = ['stacked', 'trend', 'funnel', 'indicators', 'shaded', 'bubbles', 'periodCards', 'journey', 'timeline', 'conversion', 'stackedArea'];
+    const simpleCharts = ['stacked', 'trend', 'funnel', 'indicators', 'shaded', 'bubbles', 'periodCards', 'journey', 'timeline', 'conversion', 'stackedArea'];
+    const readVisualization = (group, allowedCharts) => {
+      const chartType = cleanText(req.query?.[`grafico_${group}`]);
+      const scope = cleanText(req.query?.[`alcance_${group}`]).toLowerCase();
+      return {
+        chartType: allowedCharts.includes(chartType) ? chartType : 'stacked',
+        scope: scopes.includes(scope) ? scope : 'nacional'
+      };
+    };
+    const visualizations = {
+      ingreso: readVisualization('ingreso', intakeCharts),
+      matriculados: readVisualization('matriculados', simpleCharts),
+      graduados: readVisualization('graduados', simpleCharts)
+    };
+    const buffer = await generateContextoExternoGeneralPdf({
+      program,
+      oferta,
+      poblacional,
+      section,
+      populationGroup,
+      visualizations
+    });
+    const slug = normalizeKey(program).toLowerCase().replace(/_+/g, '_');
+    res.setHeader('Content-Disposition', `attachment; filename=contexto_externo_${slug}.pdf`);
+    res.setHeader('Content-Type', 'application/pdf');
+    return res.send(buffer);
+  } catch (error) {
+    console.error('Error generando PDF de Contexto Externo General:', error);
+    return res.status(500).json({ success: false, message: 'No fue posible generar el informe PDF.' });
+  }
+};
+
 module.exports = {
   DATASET_LABEL,
   parseContextoExternoGeneralWorkbook: parseWorkbook,
   replaceContextoExternoGeneralData,
   downloadContextoExternoGeneralTemplate,
   downloadContextoExternoGeneralData,
+  downloadContextoExternoGeneralPdf,
   importContextoExternoGeneral,
   getContextoExternoGeneralDashboard
 };

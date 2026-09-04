@@ -578,6 +578,9 @@ const runMigrations = async () => {
     await models.PoblacionalDesercionAnual.sync();
     await models.PoblacionalContextoExterno.sync();
     await models.PoblacionalContextoExternoGeneral.sync();
+    const contextoGeneralColumns = await qi.describeTable('poblacional_contexto_externo_general').catch(() => ({}));
+    if (contextoGeneralColumns.valor_departamento) await qi.removeColumn('poblacional_contexto_externo_general', 'valor_departamento');
+    if (contextoGeneralColumns.pais) await qi.removeColumn('poblacional_contexto_externo_general', 'pais');
     await models.PoblacionalEmpleabilidad.sync();
     await models.Saber11Resultado.sync();
     await models.VaEquivalenciaConfig.sync();

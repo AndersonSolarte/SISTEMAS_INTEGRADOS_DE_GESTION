@@ -1417,8 +1417,8 @@ const POBLACIONAL_SUBCATEGORY_CONFIG = {
   CONTEXTO_EXTERNO: {
     label: 'Contexto Externo',
     headers: [],
-    model: PoblacionalContextoExternoGeneral,
-    customImport: 'contexto_externo_general'
+    model: PoblacionalContextoExterno,
+    customImport: 'contexto_externo'
   },
   DESERCION: {
     label: 'Desercion',
@@ -9908,6 +9908,7 @@ const clearByCategoria = async (req, res) => {
 
     const categoria = resolveCategoria(req.body?.categoria || req.query?.categoria);
     const subcategoria = normalizeText(req.body?.subcategoria || req.query?.subcategoria);
+    const subsubcategoria = normalizeText(req.body?.subsubcategoria || req.query?.subsubcategoria);
     const poblacionalConfig = categoria === 'Poblacional' && subcategoria ? resolvePoblacionalConfig(subcategoria) : null;
     const saberProConfig = categoria === 'Saber Pro' && subcategoria ? resolveSaberProConfig(subcategoria) : null;
     const recursoHumanoConfig = categoria === 'Recurso Humano' && subcategoria ? resolveRecursoHumanoConfig(subcategoria) : null;
@@ -9916,6 +9917,54 @@ const clearByCategoria = async (req, res) => {
       return res.status(400).json({ success: false, message: 'Debes seleccionar la base de datos destino' });
     }
     if (!enforceAutoevaluacionDatasetScope(req, res, categoria)) return null;
+
+    if (
+      categoria === 'Poblacional'
+      && normalizeHeader(subcategoria) === 'CONTEXTO_EXTERNO'
+      && normalizeHeader(subsubcategoria) === 'CONTEXTO_EXTERNO_GENERAL'
+    ) {
+      const [deletedGeneral, deletedLogs] = await Promise.all([
+        PoblacionalContextoExternoGeneral.destroy({ where: {} }),
+        GestionInformacionCarga.destroy({
+          where: {
+            categoria: 'Poblacional',
+            subcategoria: 'Contexto Externo',
+            variable: 'CONTEXTO EXTERNO GENERAL'
+          }
+        })
+      ]);
+      return res.json({
+        success: true,
+        message: `Se eliminaron ${deletedGeneral} registros de Contexto Externo General`,
+        data: { deleted: deletedGeneral, deletedLogs }
+      });
+    }
+
+    if (categoria === 'Poblacional' && normalizeHeader(subcategoria) === 'CONTEXTO_EXTERNO') {
+      const contextoConfig = resolveContextoExternoCargaConfig(subsubcategoria);
+      if (contextoConfig) {
+        const [deletedContexto, deletedLogs] = await Promise.all([
+          PoblacionalContextoExterno.destroy({
+            where: {
+              tipo_registro: contextoConfig.onlyType,
+              base_indicador: contextoConfig.baseIndicador
+            }
+          }),
+          GestionInformacionCarga.destroy({
+            where: {
+              categoria: 'Poblacional',
+              subcategoria: 'Contexto Externo',
+              variable: subsubcategoria
+            }
+          })
+        ]);
+        return res.json({
+          success: true,
+          message: `Se eliminaron ${deletedContexto} registros de ${subsubcategoria}`,
+          data: { deleted: deletedContexto, deletedLogs }
+        });
+      }
+    }
 
     const { deleted, deletedLogs } = await clearDatasetStorage({
       categoria,
