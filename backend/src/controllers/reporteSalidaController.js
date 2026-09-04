@@ -6044,7 +6044,12 @@ const editarSolicitudAdmin = async (req, res) => {
       data: serializeSolicitud(solicitud)
     });
   } catch (error) {
-    res.status(500).json({ success: false, message: 'No se pudo editar la solicitud.' });
+    console.error('[editarSolicitudAdmin] Error al editar solicitud:', error);
+    res.status(500).json({
+      success: false,
+      message: 'No se pudo editar la solicitud.',
+      error: error.message
+    });
   }
 };
 
