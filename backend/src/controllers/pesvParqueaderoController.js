@@ -452,17 +452,19 @@ const create = async (req, res) => {
   try {
     const normIdent = payload.identificacion ? payload.identificacion.trim().toUpperCase() : '';
     const normPlaca = payload.placa ? payload.placa.trim().toUpperCase() : '';
+    const isGenericPlaca = !normPlaca || normPlaca.startsWith('SIN-PLACA');
 
-    const existingRecords = await PesvParqueaderoRegistro.findAll({
-      where: {
-        activo: { [Op.ne]: false },
-        [Op.or]: [
-          ...(normIdent ? [sequelize.where(sequelize.fn('UPPER', sequelize.fn('TRIM', sequelize.col('identificacion'))), normIdent)] : []),
-          ...(normPlaca ? [sequelize.where(sequelize.fn('UPPER', sequelize.fn('TRIM', sequelize.col('placa'))), normPlaca)] : [])
-        ]
-      },
-      order: [['updated_at', 'DESC'], ['id', 'DESC']]
-    });
+    const existingRecords = normPlaca && !isGenericPlaca
+      ? await PesvParqueaderoRegistro.findAll({
+          where: {
+            activo: { [Op.ne]: false },
+            [Op.and]: [
+              sequelize.where(sequelize.fn('UPPER', sequelize.fn('TRIM', sequelize.col('placa'))), normPlaca)
+            ]
+          },
+          order: [['updated_at', 'DESC'], ['id', 'DESC']]
+        })
+      : [];
 
     let row;
     if (existingRecords.length > 0) {
@@ -512,22 +514,23 @@ const update = async (req, res) => {
 
     await row.update({ ...payload, ...notificationReset, activo: true, actualizado_por: req.user?.id });
 
-    const normIdent = payload.identificacion ? payload.identificacion.trim().toUpperCase() : '';
     const normPlaca = payload.placa ? payload.placa.trim().toUpperCase() : '';
+    const isGenericPlaca = !normPlaca || normPlaca.startsWith('SIN-PLACA');
 
-    const otherDuplicates = await PesvParqueaderoRegistro.findAll({
-      where: {
-        id: { [Op.ne]: row.id },
-        activo: { [Op.ne]: false },
-        [Op.or]: [
-          ...(normIdent ? [sequelize.where(sequelize.fn('UPPER', sequelize.fn('TRIM', sequelize.col('identificacion'))), normIdent)] : []),
-          ...(normPlaca ? [sequelize.where(sequelize.fn('UPPER', sequelize.fn('TRIM', sequelize.col('placa'))), normPlaca)] : [])
-        ]
+    if (normPlaca && !isGenericPlaca) {
+      const otherDuplicates = await PesvParqueaderoRegistro.findAll({
+        where: {
+          id: { [Op.ne]: row.id },
+          activo: { [Op.ne]: false },
+          [Op.and]: [
+            sequelize.where(sequelize.fn('UPPER', sequelize.fn('TRIM', sequelize.col('placa'))), normPlaca)
+          ]
+        }
+      });
+
+      for (const dup of otherDuplicates) {
+        await dup.update({ activo: false, actualizado_por: req.user?.id });
       }
-    });
-
-    for (const dup of otherDuplicates) {
-      await dup.update({ activo: false, actualizado_por: req.user?.id });
     }
 
     return res.json({ success: true, data: serialize(row) });

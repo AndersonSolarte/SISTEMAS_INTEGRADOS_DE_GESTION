@@ -1069,23 +1069,6 @@ const repairDuplicatePesvRecords = async () => {
   console.log('[migrate] Limpiando registros duplicados en PESV Parqueaderos (conservando solo la última actualización)...');
   try {
     await sequelize.query(`
-      WITH ranked_by_ident AS (
-        SELECT id,
-               ROW_NUMBER() OVER (
-                 PARTITION BY UPPER(TRIM(identificacion))
-                 ORDER BY updated_at DESC, id DESC
-               ) AS rnum
-        FROM pesv_parqueadero_registros
-        WHERE activo IS NOT FALSE AND identificacion IS NOT NULL AND TRIM(identificacion) != ''
-      )
-      UPDATE pesv_parqueadero_registros
-      SET activo = false, updated_at = NOW()
-      WHERE id IN (
-        SELECT id FROM ranked_by_ident WHERE rnum > 1
-      )
-    `, { type: QueryTypes.UPDATE });
-
-    await sequelize.query(`
       WITH ranked_by_placa AS (
         SELECT id,
                ROW_NUMBER() OVER (
@@ -1093,16 +1076,15 @@ const repairDuplicatePesvRecords = async () => {
                  ORDER BY updated_at DESC, id DESC
                ) AS rnum
         FROM pesv_parqueadero_registros
-        WHERE activo IS NOT FALSE AND placa IS NOT NULL AND TRIM(placa) != ''
+        WHERE placa IS NOT NULL AND TRIM(placa) != '' AND UPPER(TRIM(placa)) NOT LIKE 'SIN-PLACA%'
       )
       UPDATE pesv_parqueadero_registros
-      SET activo = false, updated_at = NOW()
-      WHERE id IN (
-        SELECT id FROM ranked_by_placa WHERE rnum > 1
-      )
+      SET activo = CASE WHEN id IN (SELECT id FROM ranked_by_placa WHERE rnum = 1) THEN true ELSE false END,
+          updated_at = NOW()
+      WHERE placa IS NOT NULL AND TRIM(placa) != '' AND UPPER(TRIM(placa)) NOT LIKE 'SIN-PLACA%';
     `, { type: QueryTypes.UPDATE });
 
-    console.log('[migrate] Limpieza de registros duplicados en PESV completada.');
+    console.log('[migrate] Limpieza de registros duplicados en PESV completada (permitiendo múltiples vehículos por cédula).');
   } catch (err) {
     console.error('[migrate] Error al limpiar duplicados en PESV Parqueaderos:', err.message);
   }
