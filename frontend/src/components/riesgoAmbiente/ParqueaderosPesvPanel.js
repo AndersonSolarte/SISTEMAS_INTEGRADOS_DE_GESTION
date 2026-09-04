@@ -304,9 +304,9 @@ function ExpiryCell({ type, date, rawText, status, row, onNotify, notifying }) {
         sx={{ color: style.color, bgcolor: style.bgcolor, border: `1px solid ${style.border}`, fontWeight: 800, fontSize: 11 }}
       />
       {date && status?.code !== 'no_aplica' && notificationAvailable && (
-        <Tooltip title={lastNotification ? `Último aviso enviado: ${formatDateTime(lastNotification)}. Pulse para consultar el estado.` : 'Enviar notificación manual'} arrow placement="bottom-start">
-          <span><Button size="small" startIcon={notifying ? <CircularProgress size={13} /> : <EmailRoundedIcon />} disabled={notifying || !row.correo} onClick={() => onNotify(row, type)} sx={{ p: 0, minWidth: 0, textTransform: 'none', fontWeight: 800, fontSize: 11.5, color: lastNotification ? '#64748b' : undefined }}>
-            {lastNotification ? 'Aviso enviado' : 'Notificar'}
+        <Tooltip title={lastNotification ? `Notificación enviada el ${formatDateTime(lastNotification)}. Haga clic si requiere reenviar la notificación.` : 'Enviar notificación manual por correo'} arrow placement="bottom-start">
+          <span><Button size="small" startIcon={notifying ? <CircularProgress size={13} /> : lastNotification ? <CheckCircleRoundedIcon sx={{ fontSize: 14, color: '#16a34a' }} /> : <EmailRoundedIcon fontSize="small" />} disabled={notifying || !row.correo} onClick={() => onNotify(row, type)} sx={{ p: 0, minWidth: 0, textTransform: 'none', fontWeight: 800, fontSize: 11, color: lastNotification ? '#15803d' : '#2563eb' }}>
+            {lastNotification ? `Enviado (${formatDate(String(lastNotification).slice(0, 10))})` : 'Notificar'}
           </Button></span>
         </Tooltip>
       )}

@@ -103,6 +103,12 @@ const toSpanishTitleCase = (str) => String(str).toLowerCase().replace(/[a-záé�
   return word.charAt(0).toUpperCase() + word.slice(1);
 }).replace(/\b(musd)\b/gi, '(MUSD)').replace(/\b(cda)\b/gi, 'CDA').replace(/\b(pesv)\b/gi, 'PESV').replace(/\b(siac)\b/gi, 'SIAC');
 
+const cleanIsoDate = (d) => {
+  if (!d) return null;
+  if (d instanceof Date) return d.toISOString().slice(0, 10);
+  return String(d).slice(0, 10);
+};
+
 const stripAccentsKey = (str) => String(str || '')
   .normalize('NFD')
   .replace(/[\u0300-\u036f]/g, '')
@@ -470,9 +476,9 @@ const create = async (req, res) => {
     if (existingRecords.length > 0) {
       row = existingRecords[0];
       const notificationReset = {};
-      if ((row.soat_vigencia || null) !== (payload.soat_vigencia || null)) notificationReset.ultima_notificacion_soat = null;
-      if ((row.tecnomecanica_vigencia || null) !== (payload.tecnomecanica_vigencia || null)) notificationReset.ultima_notificacion_tecnomecanica = null;
-      if ((row.licencia_vencimiento || null) !== (payload.licencia_vencimiento || null)) notificationReset.ultima_notificacion_licencia = null;
+      if (cleanIsoDate(row.soat_vigencia) !== cleanIsoDate(payload.soat_vigencia)) notificationReset.ultima_notificacion_soat = null;
+      if (cleanIsoDate(row.tecnomecanica_vigencia) !== cleanIsoDate(payload.tecnomecanica_vigencia)) notificationReset.ultima_notificacion_tecnomecanica = null;
+      if (cleanIsoDate(row.licencia_vencimiento) !== cleanIsoDate(payload.licencia_vencimiento)) notificationReset.ultima_notificacion_licencia = null;
 
       await row.update({
         ...payload,
@@ -508,9 +514,9 @@ const update = async (req, res) => {
     if (!row) return res.status(404).json({ success: false, message: 'Registro no encontrado' });
 
     const notificationReset = {};
-    if ((row.soat_vigencia || null) !== (payload.soat_vigencia || null)) notificationReset.ultima_notificacion_soat = null;
-    if ((row.tecnomecanica_vigencia || null) !== (payload.tecnomecanica_vigencia || null)) notificationReset.ultima_notificacion_tecnomecanica = null;
-    if ((row.licencia_vencimiento || null) !== (payload.licencia_vencimiento || null)) notificationReset.ultima_notificacion_licencia = null;
+    if (cleanIsoDate(row.soat_vigencia) !== cleanIsoDate(payload.soat_vigencia)) notificationReset.ultima_notificacion_soat = null;
+    if (cleanIsoDate(row.tecnomecanica_vigencia) !== cleanIsoDate(payload.tecnomecanica_vigencia)) notificationReset.ultima_notificacion_tecnomecanica = null;
+    if (cleanIsoDate(row.licencia_vencimiento) !== cleanIsoDate(payload.licencia_vencimiento)) notificationReset.ultima_notificacion_licencia = null;
 
     await row.update({ ...payload, ...notificationReset, activo: true, actualizado_por: req.user?.id });
 
@@ -970,11 +976,64 @@ const importExcel = async (req, res) => {
 
       return { ...payload, creado_por: req.user?.id, actualizado_por: req.user?.id };
     }).filter(Boolean);
-    await sequelize.transaction(async (transaction) => {
-      if (String(req.body?.replace || 'true') !== 'false') await PesvParqueaderoRegistro.destroy({ where: {}, transaction });
-      if (rows.length) await PesvParqueaderoRegistro.bulkCreate(rows, { transaction });
+    const existingDbRecords = await PesvParqueaderoRegistro.findAll();
+    const existingByPlaca = new Map();
+    const existingByIdent = new Map();
+    existingDbRecords.forEach((r) => {
+      if (r.placa && !r.placa.startsWith('SIN-PLACA')) {
+        existingByPlaca.set(r.placa.trim().toUpperCase(), r);
+      }
+      if (r.identificacion) {
+        existingByIdent.set(r.identificacion.trim().toUpperCase(), r);
+      }
     });
-    return res.json({ success: true, message: `${rows.length} registros importados`, data: { imported: rows.length, omitted: inputRows.length - rows.length, warnings: warnings.slice(0, 100), warningCount: warnings.length } });
+
+    const rowsToCreate = [];
+    const rowsToUpdate = [];
+
+    rows.forEach((payload) => {
+      const normPlaca = payload.placa ? payload.placa.trim().toUpperCase() : '';
+      const normIdent = payload.identificacion ? payload.identificacion.trim().toUpperCase() : '';
+      const existing = (normPlaca && !normPlaca.startsWith('SIN-PLACA') && existingByPlaca.get(normPlaca)) || existingByIdent.get(normIdent);
+
+      if (existing) {
+        const sameSoat = cleanIsoDate(existing.soat_vigencia) === cleanIsoDate(payload.soat_vigencia);
+        const sameTecno = cleanIsoDate(existing.tecnomecanica_vigencia) === cleanIsoDate(payload.tecnomecanica_vigencia);
+        const sameLicencia = cleanIsoDate(existing.licencia_vencimiento) === cleanIsoDate(payload.licencia_vencimiento);
+
+        rowsToUpdate.push({
+          id: existing.id,
+          data: {
+            ...payload,
+            ultima_notificacion_soat: sameSoat ? existing.ultima_notificacion_soat : null,
+            ultima_notificacion_tecnomecanica: sameTecno ? existing.ultima_notificacion_tecnomecanica : null,
+            ultima_notificacion_licencia: sameLicencia ? existing.ultima_notificacion_licencia : null,
+            ultima_consulta_runt: existing.ultima_consulta_runt,
+            estado_validacion_runt: existing.estado_validacion_runt,
+            creado_por: existing.creado_por || req.user?.id,
+            actualizado_por: req.user?.id,
+            activo: true
+          }
+        });
+      } else {
+        rowsToCreate.push({
+          ...payload,
+          activo: true,
+          creado_por: req.user?.id,
+          actualizado_por: req.user?.id
+        });
+      }
+    });
+
+    await sequelize.transaction(async (transaction) => {
+      for (const item of rowsToUpdate) {
+        await PesvParqueaderoRegistro.update(item.data, { where: { id: item.id }, transaction });
+      }
+      if (rowsToCreate.length) {
+        await PesvParqueaderoRegistro.bulkCreate(rowsToCreate, { transaction });
+      }
+    });
+    return res.json({ success: true, message: `${rows.length} registros procesados (${rowsToUpdate.length} actualizados, ${rowsToCreate.length} nuevos)`, data: { imported: rows.length, omitted: inputRows.length - rows.length, warnings: warnings.slice(0, 100), warningCount: warnings.length } });
   } catch (error) { return res.status(400).json({ success: false, message: `No se pudo importar el archivo: ${error.message}` }); }
   finally { if (req.file?.path) fs.promises.unlink(req.file.path).catch(() => {}); }
 };
