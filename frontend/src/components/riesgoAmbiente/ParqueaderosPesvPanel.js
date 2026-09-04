@@ -736,10 +736,15 @@ function ParqueaderosPesvPanel({ onBack }) {
         licencia_expedicion: runtDriverForm.licencia_expedicion,
         licencia_vencimiento: runtDriverForm.licencia_vencimiento
       };
-      await gestionInformacionService.updatePesvParqueadero(runtValidation.row.id, payload);
+      const res = await gestionInformacionService.updatePesvParqueadero(runtValidation.row.id, payload);
+      const updatedRow = res.data?.data || res.data;
       setSearch(String(runtValidation.row.identificacion || runtValidation.row.placa || '').trim());
       setPage(0);
-      setRuntValidation((prev) => ({ ...prev, open: false, loading: false }));
+      setRuntValidation((prev) => ({
+        ...prev,
+        loading: false,
+        row: updatedRow ? { ...prev.row, ...updatedRow } : { ...prev.row, ...payload }
+      }));
       setRefreshKey((current) => current + 1);
       enqueueSnackbar('Licencia de conducción actualizada exitosamente en SIAC.', { variant: 'success' });
     } catch (error) {
@@ -792,7 +797,14 @@ function ParqueaderosPesvPanel({ onBack }) {
       setEstado('');
       setIndicator('');
       setPage(0);
-      setRuntValidation((prev) => ({ ...prev, estado: 'CONFIRMADA', loading: false, confirmationSent: false }));
+      const updatedRow = result.data?.updatedRecord || result.updatedRecord;
+      setRuntValidation((prev) => ({
+        ...prev,
+        estado: 'CONFIRMADA',
+        loading: false,
+        confirmationSent: false,
+        row: updatedRow ? { ...prev.row, ...updatedRow } : prev.row
+      }));
       setRefreshKey((current) => current + 1);
       enqueueSnackbar(`${result.message} El registro quedó filtrado para su revisión.`, { variant: 'success' });
     } catch (error) { enqueueSnackbar(error.response?.data?.message || 'No se pudo confirmar la validación', { variant: 'error' }); setRuntValidation((prev) => ({ ...prev, loading: false })); }

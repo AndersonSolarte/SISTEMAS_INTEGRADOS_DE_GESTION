@@ -760,10 +760,11 @@ const confirmRuntValidation = async (req, res) => {
       }, { transaction });
       await session.update({ estado: 'CONFIRMADA', confirmada_en: new Date(), confirmada_por: req.user.id }, { transaction });
     });
+    const updatedRecord = await PesvParqueaderoRegistro.findByPk(session.parqueadero_registro_id);
     return res.json({
       success: true,
       message: 'Información RUNT confirmada y actualizada. Puede notificar manualmente a la persona.',
-      data: { estado_validacion: consolidated, comparacion_actualizacion: comparison, confirmacion_enviada: false }
+      data: { estado_validacion: consolidated, comparacion_actualizacion: comparison, confirmacion_enviada: false, updatedRecord: serialize(updatedRecord) }
     });
   } catch (error) { return res.status(500).json({ success: false, message: 'No se pudo confirmar la validación RUNT' }); }
 };
