@@ -36,7 +36,7 @@ const setReporteSalidaFeatureState = async (enabled, userId = null) => {
 const getReporteSalidaRecipients = () => ({
   gestionHumana: String(process.env.REPORTE_SALIDA_GESTION_HUMANA_EMAIL || 'talento.humano@unicesmag.edu.co').trim().toLowerCase(),
   sst: String(process.env.REPORTE_SALIDA_SST_EMAIL || 'seguridadysalud@unicesmag.edu.co').trim().toLowerCase(),
-  proyeccionSocial: String(process.env.REPORTE_SALIDA_PROYECCION_SOCIAL_EMAIL || 'proyeccion.social@unicesmag.edu.co').trim().toLowerCase()
+  proyeccionSocial: String(process.env.REPORTE_SALIDA_PROYECCION_SOCIAL_EMAIL || 'proyeccionsocial@unicesmag.edu.co').trim().toLowerCase()
 });
 
 const getReporteSalidaTemplatePath = () => {
@@ -64,7 +64,7 @@ const isProyeccionSocialLeaderSolicitud = (solicitud = {}) => {
   const email = String(solicitante.email || '').trim().toLowerCase();
   const cargo = String(laboral.cargo || solicitante.cargo || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
   const nombre = String(solicitante.nombre || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
-  const proyeccionSocialEmail = String(process.env.REPORTE_SALIDA_PROYECCION_SOCIAL_EMAIL || 'proyeccion.social@unicesmag.edu.co').trim().toLowerCase();
+  const proyeccionSocialEmail = String(process.env.REPORTE_SALIDA_PROYECCION_SOCIAL_EMAIL || 'proyeccionsocial@unicesmag.edu.co').trim().toLowerCase();
 
   if (email && email === proyeccionSocialEmail) return true;
   if (nombre.includes('mery')) return true;
