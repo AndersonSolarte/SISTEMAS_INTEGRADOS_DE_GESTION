@@ -934,22 +934,36 @@ const importExcel = async (req, res) => {
     const inputRows = XLSX.utils.sheet_to_json(sheet, { defval: null, raw: false });
     const warnings = [];
     const rows = inputRows.map((source, index) => {
+      const hasAnyValue = Object.values(source).some((v) => v !== null && v !== undefined && String(v).trim() !== '');
+      if (!hasAnyValue) return null;
+
       const mapped = Object.entries(EXCEL_FIELDS).reduce((acc, [column, field]) => ({ ...acc, [field]: source[column] }), {});
-      if (!mapped.nombres_apellidos && mapped.identificacion) {
+
+      if (!mapped.identificacion || !String(mapped.identificacion).trim()) {
+        mapped.identificacion = `SIN-ID-${index + 1}`;
+        warnings.push({ fila: index + 2, campo: 'IDENTIFICACION', detalle: 'Identificación faltante en Excel (asignada identificación temporal)' });
+      }
+
+      if (!mapped.nombres_apellidos || !String(mapped.nombres_apellidos).trim()) {
         mapped.nombres_apellidos = 'SIN NOMBRE REGISTRADO';
         warnings.push({ fila: index + 2, campo: 'NOMBRES_Y_APELLIDOS', detalle: 'Registro conservado sin nombre en el archivo fuente' });
       }
+
+      if (!mapped.placa || !String(mapped.placa).trim()) {
+        mapped.placa = `SIN-PLACA-${index + 1}`;
+        warnings.push({ fila: index + 2, campo: 'PLACA', detalle: 'Placa faltante en Excel (asignada placa temporal)' });
+      }
+
       mapped.licencia_expedicion = source.LICENCIA_EXPEDICION;
       mapped.licencia_vencimiento = source.LICENCIA_VENCIMIENTO;
       mapped.soat_vigencia = source.SOAT_VIGENCIA; mapped.soat_vigencia_texto = source.SOAT_VIGENCIA;
-      if (mapped.placa !== source.PLACA) { mapped.soat_vigencia = null; mapped.soat_vigencia_texto = null; }
       mapped.tecnomecanica_vigencia = source.TECNOMECANICA_VIGENCIA; mapped.tecnomecanica_vigencia_texto = source.TECNOMECANICA_VIGENCIA;
+
       const payload = payloadFromBody(mapped);
-      const errors = validate(payload);
-      if (errors.length) { warnings.push({ fila: index + 2, detalle: errors.join('. ') }); return null; }
       if (source.SOAT_VIGENCIA && !payload.soat_vigencia) warnings.push({ fila: index + 2, campo: 'SOAT_VIGENCIA', valor: source.SOAT_VIGENCIA, detalle: 'Fecha no verificable' });
       if (source.TECNOMECANICA_VIGENCIA && !payload.tecnomecanica_vigencia) warnings.push({ fila: index + 2, campo: 'TECNOMECANICA_VIGENCIA', valor: source.TECNOMECANICA_VIGENCIA, detalle: 'Fecha no verificable' });
       if (source.LICENCIA_VENCIMIENTO && !payload.licencia_vencimiento) warnings.push({ fila: index + 2, campo: 'LICENCIA_VENCIMIENTO', valor: source.LICENCIA_VENCIMIENTO, detalle: 'Fecha de licencia no verificable' });
+
       return { ...payload, creado_por: req.user?.id, actualizado_por: req.user?.id };
     }).filter(Boolean);
     await sequelize.transaction(async (transaction) => {
