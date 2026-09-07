@@ -122,9 +122,10 @@ const stackedBarChartSvg = ({ data, series, width = 690, height = 350, title = '
       const radius = seriesIndex === series.length - 1 ? ' rx="4"' : '';
       const formatted = format.format(value);
       const externalLabelWidth = Math.max(22, formatted.length * 5 + 8);
+      const labelY = (top + segmentHeight / 2 + (segmentHeight < 18 ? 2.2 : 2.5)).toFixed(1);
       const label = segmentHeight >= 12 && barWidth >= 22
-        ? `<text x="${x(rowIndex)}" y="${top + segmentHeight / 2 + 3}" text-anchor="middle" font-size="${segmentHeight < 18 ? 7.5 : 8.5}" font-weight="bold" fill="#ffffff">${escapeXml(formatted)}</text>`
-        : `<line x1="${x(rowIndex) + barWidth / 2}" y1="${top + Math.max(3, segmentHeight / 2)}" x2="${x(rowIndex) + barWidth / 2 + 4}" y2="${top + Math.max(3, segmentHeight / 2)}" stroke="#64748b" stroke-width=".8"/><rect x="${x(rowIndex) + barWidth / 2 + 4}" y="${top + Math.max(3, segmentHeight / 2) - 6}" width="${externalLabelWidth}" height="12" rx="3" fill="#fff" stroke="#94a3b8" stroke-width=".6"/><text x="${x(rowIndex) + barWidth / 2 + 4 + externalLabelWidth / 2}" y="${top + Math.max(3, segmentHeight / 2) + 2.5}" text-anchor="middle" font-size="7.8" font-weight="bold" fill="#1e293b">${escapeXml(formatted)}</text>`;
+        ? `<text x="${x(rowIndex)}" y="${labelY}" text-anchor="middle" font-size="${segmentHeight < 18 ? 7.2 : 8.2}" font-weight="bold" fill="#ffffff">${escapeXml(formatted)}</text>`
+        : `<line x1="${x(rowIndex) + barWidth / 2}" y1="${top + Math.max(3, segmentHeight / 2)}" x2="${x(rowIndex) + barWidth / 2 + 4}" y2="${top + Math.max(3, segmentHeight / 2)}" stroke="#64748b" stroke-width=".8"/><rect x="${x(rowIndex) + barWidth / 2 + 4}" y="${top + Math.max(3, segmentHeight / 2) - 6}" width="${externalLabelWidth}" height="12" rx="3" fill="#fff" stroke="#94a3b8" stroke-width=".6"/><text x="${x(rowIndex) + barWidth / 2 + 4 + externalLabelWidth / 2}" y="${(top + Math.max(3, segmentHeight / 2) + 2.5).toFixed(1)}" text-anchor="middle" font-size="7.8" font-weight="bold" fill="#1e293b">${escapeXml(formatted)}</text>`;
       return `<rect x="${x(rowIndex) - barWidth / 2}" y="${top}" width="${barWidth}" height="${segmentHeight}" fill="${item.color || COLORS[seriesIndex]}"${radius}/>${label}`;
     }).join('');
   }).join('');
