@@ -2552,14 +2552,14 @@ function RadialGroup({ title, icon: Icon, color, items, position }) {
 
 function OrbitGroup({ title, icon: Icon, color, items, position }) {
   return (
-    <Paper elevation={0} sx={{ ...position, zIndex: 2, minHeight: 102, pl: { xs: 1.2, md: 5.3 }, pr: 1.2, py: 1, border: `1.5px solid ${color}75`, borderRadius: 2.6, bgcolor: '#fff', boxShadow: '0 7px 20px rgba(15,23,42,.06)' }}>
+    <Paper elevation={0} sx={{ ...position, zIndex: 2, minHeight: 102, pl: { xs: 1.2, md: 5.3 }, pr: 1.5, py: 1.15, border: `1.5px solid ${color}75`, borderRadius: 2.6, bgcolor: '#fff', boxShadow: '0 7px 20px rgba(15,23,42,.06)' }}>
       <Box sx={{ position: { xs: 'relative', md: 'absolute' }, left: { md: -34 }, top: { md: '50%' }, transform: { md: 'translateY(-50%)' }, width: 62, height: 62, mb: { xs: 0.7, md: 0 }, borderRadius: '50%', display: 'grid', placeItems: 'center', bgcolor: color, color: '#fff', border: '6px solid #fff', outline: `1.5px solid ${color}`, boxShadow: '0 5px 14px rgba(15,23,42,.12)' }}>
         <Icon sx={{ fontSize: 29 }} />
       </Box>
       <Typography sx={{ mb: 0.45, color, fontSize: 12.5, fontWeight: 950 }}>{title}</Typography>
-      <Box sx={{ maxHeight: 70, overflowY: 'auto', pr: 0.3 }}>
+      <Box sx={{ overflow: 'visible', pr: 0.3 }}>
         {items.map((item) => (
-          <Stack key={item.label} direction="row" alignItems="center" spacing={0.8} sx={{ minHeight: 25 }}>
+          <Stack key={item.label} direction="row" alignItems="center" spacing={0.8} sx={{ minHeight: 27, py: 0.15, borderBottom: '1px solid #edf1f7', '&:last-of-type': { borderBottom: 'none' } }}>
             <Box sx={{ width: 5, height: 5, flexShrink: 0, borderRadius: '50%', bgcolor: color }} />
             <Typography sx={{ flex: 1, color: '#334155', fontSize: 10.5, lineHeight: 1.15 }}>{item.label}</Typography>
             <Box sx={{ minWidth: 64, px: 0.8, py: 0.15, color: '#102a4c', border: '1px solid #b8c5d6', bgcolor: '#fdfefe', textAlign: 'center', fontSize: 11.5, fontWeight: 950 }}>{item.value}</Box>
@@ -2614,7 +2614,7 @@ function SequenceGroup({ title, icon: Icon, color, items }) {
   );
 }
 
-function OfferSummary({ summary, view, onViewChange, program }) {
+function OfferSummary({ summary, view, onViewChange, program, scope, onScopeChange }) {
   const groups = [
     { slot: 0, title: 'Reconocimiento MEN', icon: AccountBalanceRoundedIcon, color: '#173f96', items: summary.recognition },
     { slot: 1, title: 'Sector', icon: BusinessRoundedIcon, color: '#3a9626', items: summary.sectors },
@@ -2629,17 +2629,53 @@ function OfferSummary({ summary, view, onViewChange, program }) {
     { slot: 3, points: '715,350 655,350 605,335', dot: ['605', '335'], color: '#ea6a0a' },
     { slot: 4, points: '500,450 500,510', dot: ['500', '450'], color: '#0891a5' }
   ].filter((connector) => groups.some((group) => group.slot === connector.slot));
-  const orbitConnectors = [
-    { slot: 0, points: '270,245 335,82 390,82', dot: ['270', '245'], color: '#173f96' },
-    { slot: 1, points: '300,292 345,205 390,205', dot: ['300', '292'], color: '#3a9626' },
-    { slot: 2, points: '310,345 350,328 390,328', dot: ['310', '345'], color: '#92278f' },
-    { slot: 4, points: '300,402 345,451 390,451', dot: ['300', '402'], color: '#0891a5' },
-    { slot: 3, points: '270,452 335,574 390,574', dot: ['270', '452'], color: '#ea6a0a' }
-  ].filter((connector) => groups.some((group) => group.slot === connector.slot));
+  const calculatedOrbitGroups = useMemo(() => {
+    let currentY = 20;
+    const gap = 16;
+    const centerOrbX = 173;
+    const iconX = 356;
+
+    const list = groups.map((group) => {
+      const itemsCount = Math.max(1, group.items.length);
+      const cardH = Math.max(90, 48 + itemsCount * 28);
+      const iconY = currentY + cardH / 2;
+      const startY = currentY;
+      currentY += cardH + gap;
+      return {
+        ...group,
+        cardH,
+        iconY,
+        startY
+      };
+    });
+
+    const totalHeight = Math.max(580, currentY + 10);
+    const centerOrbY = totalHeight / 2;
+
+    const connectors = list.map((item) => {
+      const dx = iconX - centerOrbX;
+      const dy = item.iconY - centerOrbY;
+      const angle = Math.atan2(dy, dx);
+      const orbDotX = centerOrbX + Math.cos(angle) * 125;
+      const orbDotY = centerOrbY + Math.sin(angle) * 125;
+      const midX = (orbDotX + iconX) / 2;
+      const points = `${orbDotX.toFixed(1)},${orbDotY.toFixed(1)} ${midX.toFixed(1)},${item.iconY.toFixed(1)} ${iconX.toFixed(1)},${item.iconY.toFixed(1)}`;
+      return {
+        slot: item.slot,
+        color: item.color,
+        points,
+        dot: [orbDotX.toFixed(1), orbDotY.toFixed(1)]
+      };
+    });
+
+    return { list, totalHeight, centerOrbY, connectors };
+  }, [groups]);
+
   const groupAt = (slot) => groups.find((group) => group.slot === slot);
+  const scopeLabel = scope === 'regional' ? 'REGIONAL' : 'NACIONAL';
   const analysisTitle = program && program !== ALL
-    ? `ANÁLISIS DE CONTEXTO EXTERNO — ${program}`
-    : 'ANÁLISIS DE CONTEXTO EXTERNO';
+    ? `ANÁLISIS DE CONTEXTO EXTERNO — ${program} · OFERTA ${scopeLabel}`
+    : `ANÁLISIS DE CONTEXTO EXTERNO · OFERTA ${scopeLabel}`;
 
   if (!summary.total) {
     return <Alert severity="info">No hay registros de oferta para los filtros seleccionados.</Alert>;
@@ -2659,6 +2695,12 @@ function OfferSummary({ summary, view, onViewChange, program }) {
             <Button size="small" variant={view === 'orbit' ? 'contained' : 'outlined'} onClick={() => onViewChange('orbit')} sx={{ minWidth: 120, fontWeight: 900, textTransform: 'none' }}>Vista órbita</Button>
             <Button size="small" variant={view === 'radial' ? 'contained' : 'outlined'} onClick={() => onViewChange('radial')} sx={{ minWidth: 120, fontWeight: 900, textTransform: 'none' }}>Vista radial</Button>
             <Button size="small" variant={view === 'executive' ? 'contained' : 'outlined'} onClick={() => onViewChange('executive')} sx={{ minWidth: 120, fontWeight: 900, textTransform: 'none' }}>Vista ejecutiva</Button>
+            {onScopeChange && (
+              <Box sx={{ ml: { sm: 0.8 }, p: 0.35, display: 'flex', bgcolor: '#edf2f8', borderRadius: 2, border: '1px solid #d6e0ec' }}>
+                <Button size="small" variant={scope === 'nacional' ? 'contained' : 'text'} onClick={() => onScopeChange('nacional')} sx={{ minWidth: 92, borderRadius: 1.5, fontWeight: 950, textTransform: 'none' }}>Nacional</Button>
+                <Button size="small" variant={scope === 'regional' ? 'contained' : 'text'} color={scope === 'regional' ? 'error' : 'primary'} onClick={() => onScopeChange('regional')} sx={{ minWidth: 92, borderRadius: 1.5, fontWeight: 950, textTransform: 'none' }}>Regional</Button>
+              </Box>
+            )}
           </Stack>
         </Stack>
       </Paper>
@@ -2698,17 +2740,17 @@ function OfferSummary({ summary, view, onViewChange, program }) {
         </Paper>
       ) : view === 'orbit' ? (
         <Paper elevation={0} sx={{ p: { xs: 1.3, md: 2 }, border: '1px solid #cbd5e1', borderRadius: 3.5, bgcolor: '#fff', overflow: 'hidden' }}>
-          <Box sx={{ textAlign: 'center', mb: { xs: 2.5, md: 0 } }}>
+          <Box sx={{ textAlign: 'center', mb: { xs: 2.5, md: 1.5 } }}>
             <Typography sx={{ color: '#082b66', fontSize: 16, fontWeight: 950 }}>OFERTA DE PROGRAMAS ACADÉMICOS</Typography>
             <Typography sx={{ color: '#64748b', fontSize: 11.5 }}>{analysisTitle}</Typography>
           </Box>
-          <Box sx={{ position: 'relative', maxWidth: 980, height: { xs: 'auto', md: 660 }, mx: 'auto' }}>
-            <Box component="svg" viewBox="0 0 950 660" preserveAspectRatio="none" sx={{ display: { xs: 'none', md: 'block' }, position: 'absolute', inset: 0, width: '100%', height: '100%', zIndex: 0 }}>
-              {orbitConnectors.map((connector) => <polyline key={`orbit-line-${connector.slot}`} points={connector.points} fill="none" stroke={connector.color} strokeWidth="2.2" />)}
-              {orbitConnectors.map((connector) => <circle key={`orbit-dot-${connector.slot}`} cx={connector.dot[0]} cy={connector.dot[1]} r="7" fill={connector.color} stroke="#fff" strokeWidth="3" />)}
+          <Box sx={{ position: 'relative', maxWidth: 980, minHeight: { md: calculatedOrbitGroups.totalHeight }, mx: 'auto' }}>
+            <Box component="svg" viewBox={`0 0 950 ${calculatedOrbitGroups.totalHeight}`} preserveAspectRatio="none" sx={{ display: { xs: 'none', md: 'block' }, position: 'absolute', inset: 0, width: '100%', height: '100%', zIndex: 0 }}>
+              {calculatedOrbitGroups.connectors.map((connector) => <polyline key={`orbit-line-${connector.slot}`} points={connector.points} fill="none" stroke={connector.color} strokeWidth="2.2" />)}
+              {calculatedOrbitGroups.connectors.map((connector) => <circle key={`orbit-dot-${connector.slot}`} cx={connector.dot[0]} cy={connector.dot[1]} r="7" fill={connector.color} stroke="#fff" strokeWidth="3" />)}
             </Box>
 
-            <Box sx={{ position: { xs: 'relative', md: 'absolute' }, zIndex: 1, left: { md: 48 }, top: { md: 220 }, width: { xs: 220, md: 250 }, height: { xs: 220, md: 250 }, mx: { xs: 'auto', md: 0 }, mb: { xs: 4.5, md: 0 }, borderRadius: '50%', p: 1.1, border: '2px dashed #aeb9c7', bgcolor: '#fff', boxShadow: '0 15px 34px rgba(15,23,42,.1)' }}>
+            <Box sx={{ position: { xs: 'relative', md: 'absolute' }, zIndex: 1, left: { md: 48 }, top: { md: calculatedOrbitGroups.centerOrbY - 125 }, width: { xs: 220, md: 250 }, height: { xs: 220, md: 250 }, mx: { xs: 'auto', md: 0 }, mb: { xs: 4.5, md: 0 }, borderRadius: '50%', p: 1.1, border: '2px dashed #aeb9c7', bgcolor: '#fff', boxShadow: '0 15px 34px rgba(15,23,42,.1)' }}>
               <Box sx={{ width: '100%', height: '100%', borderRadius: '50%', display: 'grid', placeItems: 'center', textAlign: 'center', border: '1px solid #d7e0eb', background: 'radial-gradient(circle at 40% 35%,#ffffff 0%,#f8fafc 68%,#eef2f7 100%)' }}>
                 <Box>
                   <SchoolRoundedIcon sx={{ color: '#082b66', fontSize: 57 }} />
@@ -2718,18 +2760,11 @@ function OfferSummary({ summary, view, onViewChange, program }) {
               </Box>
             </Box>
 
-            <Box sx={{ display: { xs: 'grid', md: 'block' }, gap: 4 }}>
-              {groups.map((group) => {
-                const positions = {
-                  0: { position: { md: 'absolute' }, top: { md: 30 }, left: { md: 390 }, right: { md: 12 } },
-                  1: { position: { md: 'absolute' }, top: { md: 153 }, left: { md: 390 }, right: { md: 12 } },
-                  2: { position: { md: 'absolute' }, top: { md: 276 }, left: { md: 390 }, right: { md: 12 } },
-                  4: { position: { md: 'absolute' }, top: { md: 399 }, left: { md: 390 }, right: { md: 12 } },
-                  3: { position: { md: 'absolute' }, top: { md: 522 }, left: { md: 390 }, right: { md: 12 } }
-                };
-                return <OrbitGroup key={group.title} {...group} position={positions[group.slot]} />;
-              })}
-            </Box>
+            <Stack spacing={2} sx={{ position: 'relative', zIndex: 1, ml: { md: '390px' } }}>
+              {calculatedOrbitGroups.list.map((group) => (
+                <OrbitGroup key={group.title} {...group} position={{ position: 'relative' }} />
+              ))}
+            </Stack>
           </Box>
         </Paper>
       ) : view === 'radial' ? (
@@ -2798,6 +2833,7 @@ export default function ContextoExternoDashboardPanel({ onBack }) {
   const [pdfError, setPdfError] = useState('');
   const [selectedProgram, setSelectedProgram] = useState(ALL);
   const [summaryView, setSummaryView] = useState(() => window.localStorage.getItem('contextoExternoSummaryViewV4') || 'sequence');
+  const [offerScope, setOfferScope] = useState('nacional');
   const [geoDepartments, setGeoDepartments] = useState([]);
   const [geoBbox, setGeoBbox] = useState(null);
   const [municipalityCatalog, setMunicipalityCatalog] = useState([]);
@@ -2972,39 +3008,47 @@ export default function ContextoExternoDashboardPanel({ onBack }) {
     };
   }, [filteredOffer, municipalityCatalog]);
 
-  const offerSummary = useMemo(() => {
-    const countField = (field) => {
-      const counts = new Map();
-      filteredOffer.forEach((row) => {
-        const label = String(row[field] || '').trim();
-        if (!label) return;
-        const key = normalize(label);
-        if (!counts.has(key)) counts.set(key, { label, value: 0 });
-        counts.get(key).value += 1;
-      });
-      return counts;
+  const offerSummaries = useMemo(() => {
+    const summarizeRows = (targetOffer) => {
+      const countField = (field) => {
+        const counts = new Map();
+        targetOffer.forEach((row) => {
+          const label = String(row[field] || '').trim();
+          if (!label) return;
+          const key = normalize(label);
+          if (!counts.has(key)) counts.set(key, { label, value: 0 });
+          counts.get(key).value += 1;
+        });
+        return counts;
+      };
+      const fieldItems = (field) => Array.from(countField(field).values())
+        .filter((item) => item.value > 0)
+        .sort((a, b) => b.value - a.value || a.label.localeCompare(b.label, 'es'));
+      const credits = targetOffer.map((row) => Number(row.numero_creditos)).filter((value) => Number.isFinite(value) && value > 0);
+      const semesterItems = fieldItems('numero_semestres')
+        .map((item) => ({ ...item, label: `${item.label} semestres` }))
+        .sort((a, b) => Number(a.label.split(' ')[0]) - Number(b.label.split(' ')[0]));
+      const average = credits.length ? credits.reduce((total, value) => total + value, 0) / credits.length : 0;
+      return {
+        total: targetOffer.length,
+        recognition: fieldItems('reconocimiento_men'),
+        sectors: fieldItems('sector'),
+        modalities: fieldItems('modalidad'),
+        semesters: semesterItems,
+        credits: credits.length ? [
+          { label: 'Mínimo de créditos', value: credits.length ? Math.min(...credits) : 0 },
+          { label: 'Máximo de créditos', value: credits.length ? Math.max(...credits) : 0 },
+          { label: 'Promedio de créditos', value: average.toLocaleString('es-CO', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) }
+        ] : []
+      };
     };
-    const fieldItems = (field) => Array.from(countField(field).values())
-      .filter((item) => item.value > 0)
-      .sort((a, b) => b.value - a.value || a.label.localeCompare(b.label, 'es'));
-    const credits = filteredOffer.map((row) => Number(row.numero_creditos)).filter((value) => Number.isFinite(value) && value > 0);
-    const semesterItems = fieldItems('numero_semestres')
-      .map((item) => ({ ...item, label: `${item.label} semestres` }))
-      .sort((a, b) => Number(a.label.split(' ')[0]) - Number(b.label.split(' ')[0]));
-    const average = credits.length ? credits.reduce((total, value) => total + value, 0) / credits.length : 0;
     return {
-      total: filteredOffer.length,
-      recognition: fieldItems('reconocimiento_men'),
-      sectors: fieldItems('sector'),
-      modalities: fieldItems('modalidad'),
-      semesters: semesterItems,
-      credits: credits.length ? [
-        { label: 'Mínimo de créditos', value: credits.length ? Math.min(...credits) : 0 },
-        { label: 'Máximo de créditos', value: credits.length ? Math.max(...credits) : 0 },
-        { label: 'Promedio de créditos', value: average.toLocaleString('es-CO', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) }
-      ] : []
+      nacional: summarizeRows(filteredOffer),
+      regional: summarizeRows(filteredOffer.filter((row) => normalize(row.georeferencia) === 'REGIONAL'))
     };
   }, [filteredOffer]);
+
+  const activeOfferSummary = offerScope === 'regional' ? offerSummaries.regional : offerSummaries.nacional;
 
   const programOptions = useMemo(() => [
     ALL,
@@ -3155,7 +3199,7 @@ export default function ContextoExternoDashboardPanel({ onBack }) {
             <ProgramSummaryTable title="OFERTA REGIONAL" rows={programSummaries.regional} color="#b5123f" />
           </Box>
 
-          <OfferSummary summary={offerSummary} view={summaryView} onViewChange={setSummaryView} program={selectedProgram} />
+          <OfferSummary summary={activeOfferSummary} view={summaryView} onViewChange={setSummaryView} program={selectedProgram} scope={offerScope} onScopeChange={setOfferScope} />
 
           <Paper elevation={0} sx={{ px: { xs: 1.7, md: 2.3 }, py: 1.5, border: '1px solid #cbd5e1', borderRadius: 3, bgcolor: '#f8fafc' }}>
             <Stack direction="row" spacing={1.2} alignItems="center">

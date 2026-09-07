@@ -7422,7 +7422,7 @@ const sendJefeGroupApprovalEmail = async (solicitudes, defaultToken, recipients 
 
   const leaderSol = solicitudes.find(s => s.datos_formulario?.is_leader === true) || solicitudes[0];
   const leaderNombre = leaderSol?.solicitante_snapshot?.nombre || '';
-  const grupo_id = leaderSol.grupo_id;
+  const grupo_id = leaderSol?.datos_formulario?.grupo_id || leaderSol?.grupo_id;
   const consecutivoGroup = leaderSol.consecutivo.split('-').slice(0, 3).join('-') + '-GRUPO';
   const salida = leaderSol.datos_formulario?.salida || {};
 
@@ -8032,6 +8032,7 @@ const aprobarGrupoDesdeCorreo = async (req, res) => {
     const validPurposes = [
       'reporte_salida_approve_proyeccion_social_grupo',
       'reporte_salida_approve_jefe_grupo',
+      'reporte_salida_approve_vice_academica_grupo',
       'reporte_salida_approve_gh_grupo',
       'reporte_salida_approve_sst_grupo',
       'reporte_salida_approve_grupo'
@@ -8224,7 +8225,10 @@ const aprobarGrupoDesdeCorreo = async (req, res) => {
 
       // Verificar si AÚN QUEDAN otros colaboradores del grupo pendientes de visto bueno de su Director/Jefe
       const remainingJefePendientes = await ReporteSalidaSolicitud.findAll({
-        where: { grupo_id, estado: 'pendiente_aprobacion_jefe' }
+        where: {
+          estado: 'pendiente_aprobacion_jefe',
+          datos_formulario: { [Op.contains]: { grupo_id } }
+        }
       });
 
       if (remainingJefePendientes.length > 0) {
@@ -8239,7 +8243,10 @@ const aprobarGrupoDesdeCorreo = async (req, res) => {
 
       // SI TODOS LOS DIRECTORES DE PROGRAMA INVOLUCRADOS YA APROBARON
       const allApprovedGroupSols = await ReporteSalidaSolicitud.findAll({
-        where: { grupo_id, estado: nextStage }
+        where: {
+          estado: nextStage,
+          datos_formulario: { [Op.contains]: { grupo_id } }
+        }
       });
 
       if (requiresVicerrectoria) {
@@ -8329,7 +8336,10 @@ const aprobarGrupoDesdeCorreo = async (req, res) => {
       }
 
       const allApprovedGroupSols = await ReporteSalidaSolicitud.findAll({
-        where: { grupo_id, estado: nextStage }
+        where: {
+          estado: nextStage,
+          datos_formulario: { [Op.contains]: { grupo_id } }
+        }
       });
 
       if (isNationalOrInternational) {
@@ -8574,7 +8584,9 @@ const mostrarFormularioRechazoGrupo = async (req, res) => {
   try {
     const payload = decryptPayload(req.params.token);
     const validPurposes = [
+      'reporte_salida_approve_proyeccion_social_grupo',
       'reporte_salida_approve_jefe_grupo',
+      'reporte_salida_approve_vice_academica_grupo',
       'reporte_salida_approve_gh_grupo',
       'reporte_salida_approve_sst_grupo',
       'reporte_salida_approve_grupo'
@@ -8655,7 +8667,9 @@ const procesarRechazoGrupo = async (req, res) => {
   try {
     const payload = decryptPayload(req.params.token);
     const validPurposes = [
+      'reporte_salida_approve_proyeccion_social_grupo',
       'reporte_salida_approve_jefe_grupo',
+      'reporte_salida_approve_vice_academica_grupo',
       'reporte_salida_approve_gh_grupo',
       'reporte_salida_approve_sst_grupo',
       'reporte_salida_approve_grupo'
@@ -8706,9 +8720,13 @@ const procesarRechazoGrupo = async (req, res) => {
       });
     }
 
-    const actorLabel = purpose === 'reporte_salida_approve_jefe_grupo'
-      ? 'Dirección de Programa / Jefatura'
-      : (purpose === 'reporte_salida_approve_sst_grupo' ? 'Seguridad y Salud en el Trabajo (SST)' : 'Gestión del Talento Humano');
+    const actorLabel = purpose === 'reporte_salida_approve_proyeccion_social_grupo'
+      ? 'Coordinación de Proyección Social'
+      : (purpose === 'reporte_salida_approve_vice_academica_grupo'
+        ? 'Vicerrectoría Académica'
+        : (purpose === 'reporte_salida_approve_jefe_grupo'
+          ? 'Dirección de Programa / Jefatura'
+          : (purpose === 'reporte_salida_approve_sst_grupo' ? 'Seguridad y Salud en el Trabajo (SST)' : 'Gestión del Talento Humano')));
 
     let rejectedCount = 0;
     for (const solicitud of pendientes) {
