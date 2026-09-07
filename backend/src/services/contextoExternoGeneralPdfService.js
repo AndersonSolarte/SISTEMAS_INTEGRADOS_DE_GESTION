@@ -804,7 +804,13 @@ const offerProgramTablesSvg = ({ nationalRows, regionalRows, width = 690 }) => {
   const visibleRegional = regionalRows.slice(0, maxVisibleRows);
   const maxRows = Math.max(1, visibleNational.length, visibleRegional.length);
   const height = 116 + maxRows * 23;
-  const truncate = (value, maxLength = 43) => text(value).length > maxLength ? `${text(value).slice(0, maxLength - 1)}…` : text(value);
+  const getFontSize = (str) => {
+    const len = text(str).length;
+    if (len <= 38) return 7.5;
+    if (len <= 50) return 6.6;
+    if (len <= 64) return 5.8;
+    return 5.2;
+  };
   const panel = ({ x, color, title, rows, totalValue }) => {
     const panelWidth = 338;
     const headerY = 10;
@@ -815,7 +821,8 @@ const offerProgramTablesSvg = ({ nationalRows, regionalRows, width = 690 }) => {
     const rowMarkup = rows.length ? rows.map((row, index) => {
       const y = rowsY + index * 23;
       const fill = index % 2 ? '#f7f9fc' : '#ffffff';
-      return `<rect x="${x + 1}" y="${y}" width="${panelWidth - 2}" height="23" fill="${fill}"/><line x1="${x + 1}" y1="${y + 23}" x2="${x + panelWidth - 1}" y2="${y + 23}" stroke="#e4eaf2"/><text x="${x + 14}" y="${y + 15}" font-size="7.5" fill="#203b5d">${escapeXml(truncate(row.label))}</text><rect x="${x + panelWidth - 51}" y="${y + 4}" width="37" height="15" rx="6" fill="${color}" fill-opacity=".09"/><text x="${x + panelWidth - 32.5}" y="${y + 15}" text-anchor="middle" font-size="7.5" font-weight="bold" fill="${color}">${format.format(row.value)}</text>`;
+      const labelFontSize = getFontSize(row.label);
+      return `<rect x="${x + 1}" y="${y}" width="${panelWidth - 2}" height="23" fill="${fill}"/><line x1="${x + 1}" y1="${y + 23}" x2="${x + panelWidth - 1}" y2="${y + 23}" stroke="#e4eaf2"/><text x="${x + 14}" y="${y + 15}" font-size="${labelFontSize}" font-weight="bold" fill="#203b5d">${escapeXml(text(row.label))}</text><rect x="${x + panelWidth - 51}" y="${y + 4}" width="37" height="15" rx="6" fill="${color}" fill-opacity=".09"/><text x="${x + panelWidth - 32.5}" y="${y + 15}" text-anchor="middle" font-size="7.5" font-weight="bold" fill="${color}">${format.format(row.value)}</text>`;
     }).join('') : `<rect x="${x + 1}" y="${rowsY}" width="${panelWidth - 2}" height="23" fill="#fff"/><text x="${x + panelWidth / 2}" y="${rowsY + 15}" text-anchor="middle" font-size="7.5" fill="#94a3b8">Sin registros para este alcance</text>`;
     const adjustedTotalY = rows.length ? totalY : rowsY + 23;
     const adjustedPanelHeight = adjustedTotalY + 31 - headerY;
