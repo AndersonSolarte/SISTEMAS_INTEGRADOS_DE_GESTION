@@ -40,8 +40,69 @@ const sectionHeader = (title, program) => ([
   { text: program, color: BLUE, bold: true, fontSize: 15, alignment: 'center', margin: [0, 8, 0, 14] }
 ]);
 
+const formatProgramNameSvg = (programStr) => {
+  const cleanStr = (programStr || '').trim();
+  if (!cleanStr) return { lines: ['-'], fontSize: 18, yPositions: [216], cardHeight: 72 };
+
+  const len = cleanStr.length;
+
+  if (len <= 38) {
+    const fontSize = len > 28 ? 16 : 18;
+    return {
+      lines: [cleanStr],
+      fontSize,
+      yPositions: [216],
+      cardHeight: 72
+    };
+  }
+
+  const splitIntoLines = (str, maxLen) => {
+    const words = str.split(/\s+/);
+    const lines = [];
+    let cur = '';
+    words.forEach(w => {
+      if ((cur ? cur + ' ' + w : w).length <= maxLen) {
+        cur = cur ? cur + ' ' + w : w;
+      } else {
+        if (cur) lines.push(cur);
+        cur = w;
+      }
+    });
+    if (cur) lines.push(cur);
+    return lines;
+  };
+
+  if (len <= 85) {
+    const targetPerLine = Math.ceil(len / 2) + 3;
+    const lines = splitIntoLines(cleanStr, targetPerLine);
+    const fontSize = len > 65 ? 13.5 : 14.5;
+    if (lines.length <= 2) {
+      return {
+        lines,
+        fontSize,
+        yPositions: [205, 224],
+        cardHeight: 74
+      };
+    }
+  }
+
+  const lines = splitIntoLines(cleanStr, 48);
+  const fontSize = lines.length > 3 ? 11 : 12.5;
+  const startY = lines.length > 3 ? 196 : 200;
+  const lineHeight = lines.length > 3 ? 13 : 15;
+  const yPositions = lines.map((_, i) => startY + i * lineHeight);
+  const cardHeight = Math.max(74, 52 + lines.length * lineHeight);
+
+  return { lines, fontSize, yPositions, cardHeight };
+};
+
 const reportCoverPage = ({ program, nationalOffer, regionalOffer }) => {
   const generatedAt = new Intl.DateTimeFormat('es-CO', { dateStyle: 'long', timeStyle: 'short', timeZone: 'America/Bogota' }).format(new Date());
+  const formattedProgram = formatProgramNameSvg(program);
+  const programTexts = formattedProgram.lines.map((line, idx) =>
+    `<text x="58" y="${formattedProgram.yPositions[idx]}" font-family="Helvetica" font-size="${formattedProgram.fontSize}" font-weight="bold" fill="#082b66">${escapeXml(line)}</text>`
+  ).join('');
+
   const coverSvg = `<svg xmlns="http://www.w3.org/2000/svg" width="690" height="350" viewBox="0 0 690 350">
     <defs>
       <linearGradient id="cover-bg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#061f4f"/><stop offset=".62" stop-color="#123b7a"/><stop offset="1" stop-color="#1f58c7"/></linearGradient>
@@ -56,7 +117,7 @@ const reportCoverPage = ({ program, nationalOffer, regionalOffer }) => {
     <text x="34" y="84" font-family="Helvetica" font-size="11" font-weight="bold" letter-spacing="2.2" fill="#bfd3fb">ANÁLISIS INTEGRAL</text>
     <text x="34" y="118" font-family="Helvetica" font-size="27" font-weight="bold" fill="#fff">CONTEXTO EXTERNO</text>
     <text x="34" y="142" font-family="Helvetica" font-size="10" fill="#e5edfb">Oferta académica, territorio e información poblacional</text>
-    <g filter="url(#cover-shadow)"><rect x="34" y="166" width="622" height="72" rx="13" fill="#fff"/><rect x="34" y="166" width="7" height="72" rx="3.5" fill="#b5123f"/><text x="58" y="188" font-family="Helvetica" font-size="7.5" font-weight="bold" letter-spacing="1.3" fill="#708299">PROGRAMA ACADÉMICO ANALIZADO</text><text x="58" y="216" font-family="Helvetica" font-size="18" font-weight="bold" fill="#082b66">${escapeXml(program)}</text></g>
+    <g filter="url(#cover-shadow)"><rect x="34" y="166" width="622" height="${formattedProgram.cardHeight}" rx="13" fill="#fff"/><rect x="34" y="166" width="7" height="${formattedProgram.cardHeight}" rx="3.5" fill="#b5123f"/><text x="58" y="185" font-family="Helvetica" font-size="7.5" font-weight="bold" letter-spacing="1.3" fill="#708299">PROGRAMA ACADÉMICO ANALIZADO</text>${programTexts}</g>
     <g filter="url(#cover-shadow)"><rect x="34" y="255" width="301" height="70" rx="12" fill="#fff" stroke="#cbd9ea"/><rect x="34" y="255" width="8" height="70" rx="4" fill="#173f96"/><circle cx="70" cy="290" r="21" fill="#eaf1fb"/><text x="70" y="295" text-anchor="middle" font-family="Helvetica" font-size="14" font-weight="bold" fill="#173f96">N</text><text x="102" y="278" font-family="Helvetica" font-size="7.3" font-weight="bold" letter-spacing=".7" fill="#64748b">OFERTA NACIONAL</text><text x="102" y="309" font-family="Helvetica" font-size="26" font-weight="bold" fill="#173f96">${format.format(nationalOffer.length)}</text><text x="270" y="304" text-anchor="end" font-family="Helvetica" font-size="7" fill="#64748b">PROGRAMAS</text><path d="M281 274h29v5h-29zm0 11h29v5h-29zm0 11h29v5h-29z" fill="#173f96" fill-opacity=".2"/></g>
     <g filter="url(#cover-shadow)"><rect x="355" y="255" width="301" height="70" rx="12" fill="#fff" stroke="#e3cad3"/><rect x="355" y="255" width="8" height="70" rx="4" fill="#b5123f"/><circle cx="391" cy="290" r="21" fill="#faeaf0"/><text x="391" y="295" text-anchor="middle" font-family="Helvetica" font-size="14" font-weight="bold" fill="#b5123f">R</text><text x="423" y="278" font-family="Helvetica" font-size="7.3" font-weight="bold" letter-spacing=".7" fill="#64748b">OFERTA REGIONAL</text><text x="423" y="309" font-family="Helvetica" font-size="26" font-weight="bold" fill="#b5123f">${format.format(regionalOffer.length)}</text><text x="591" y="304" text-anchor="end" font-family="Helvetica" font-size="7" fill="#64748b">PROGRAMAS</text><path d="M602 274h29v5h-29zm0 11h29v5h-29zm0 11h29v5h-29z" fill="#b5123f" fill-opacity=".18"/></g>
     <rect x="34" y="340" width="622" height="2" rx="1" fill="#d7e1ee"/>

@@ -2104,7 +2104,13 @@ function ColombiaOfferMap({ title, subtitle, type, rows, features, bbox: nationa
   const mapId = `${type}-${color.replace('#', '')}-${title.replace(/[^a-zA-Z0-9]/g, '')}`;
   const dataMap = useMemo(() => new Map(rows.map((row) => [row.key, row])), [rows]);
   const maxTotal = Math.max(1, ...rows.map((row) => row.total));
-  const topKeys = useMemo(() => new Set(rows.slice(0, type === 'municipality' ? 14 : 10).map((row) => row.key)), [rows, type]);
+  const visibleLabelKeys = useMemo(() => {
+    const locatedRows = type === 'municipality'
+      ? rows.filter((row) => Number.isFinite(row.longitude) && Number.isFinite(row.latitude))
+      : rows;
+    const limit = locatedRows.length <= 22 ? locatedRows.length : locatedRows.length <= 30 ? 20 : 16;
+    return new Set(locatedRows.slice(0, limit).map((row) => row.key));
+  }, [rows, type]);
 
   const effectiveBbox = useMemo(() => {
     if (!title.includes('REGIONAL') || !rows.length || !nationalBbox) return nationalBbox;
@@ -2319,6 +2325,35 @@ function ColombiaOfferMap({ title, subtitle, type, rows, features, bbox: nationa
                   );
                 })}
 
+                <g pointerEvents="none" aria-hidden="true">
+                  {features.map((feature) => {
+                    const center = featureCenter(feature.rings);
+                    if (!center) return null;
+                    const point = projectGeoPoint({ ...center, bbox: effectiveBbox });
+                    if (point.x < 18 || point.x > 782 || point.y < 18 || point.y > 582) return null;
+                    return (
+                      <text
+                        key={`department-watermark-${feature.name}`}
+                        x={point.x}
+                        y={point.y}
+                        textAnchor="middle"
+                        dominantBaseline="middle"
+                        fill="#294b4a"
+                        fillOpacity={type === 'municipality' ? 0.24 : 0.16}
+                        stroke="#ffffff"
+                        strokeOpacity="0.5"
+                        strokeWidth="2.4"
+                        paintOrder="stroke"
+                        fontSize={type === 'municipality' ? 11.5 : 10}
+                        fontWeight="900"
+                        letterSpacing="1.1"
+                      >
+                        {String(feature.label || '').toLocaleUpperCase('es-CO')}
+                      </text>
+                    );
+                  })}
+                </g>
+
                 {type === 'department' && (
                   <g>
                     {features.map((feature) => {
@@ -2394,7 +2429,7 @@ function ColombiaOfferMap({ title, subtitle, type, rows, features, bbox: nationa
                     })}
 
                     {municipalityMarkers
-                      .filter(({ row }) => topKeys.has(row.key) || row.total >= 3)
+                      .filter(({ row }) => visibleLabelKeys.has(row.key))
                       .map(({ row, origin, point, labelWidth, labelHeight, displaced }) => (
                         <g key={`badge-top-${row.key}`} style={{ cursor: 'pointer' }} onClick={() => onSelectMunicipality?.(row.label || row.municipio)}>
                           {displaced && <line x1={origin.x} y1={origin.y} x2={point.x} y2={point.y} stroke={color} strokeWidth=".8" opacity=".3" />}
