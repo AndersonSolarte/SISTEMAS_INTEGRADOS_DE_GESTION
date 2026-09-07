@@ -641,6 +641,12 @@ const buildOficioPdfDefinition = (solicitud, ghDirectorNombre, ghDirectorCargo) 
   const salida = data.salida || {};
   const personal = data.personal || {};
   const laboral = data.laboral || {};
+  const isSalidaMultiple = Boolean(data.is_salida_multiple || data.isSalidaMultiple);
+  const participantes = Array.isArray(data.participantes) ? data.participantes : [];
+  const estudiantesList = Array.isArray(salida.estudiantesList || salida.estudiantes)
+    ? (salida.estudiantesList || salida.estudiantes)
+    : [];
+  const numEstudiantes = estudiantesList.length;
 
   // Formatter for date: e.g. "San Juan de Pasto, 15 de julio de 2026"
   const createdAtValue = getSolicitudCreatedAt(solicitud);
@@ -984,7 +990,6 @@ const buildOficioPdfDefinition = (solicitud, ghDirectorNombre, ghDirectorCargo) 
     .join(' - ');
 
   const numDocentes = isSalidaMultiple && participantes.length > 0 ? participantes.length : 1;
-  const estudiantesList = salida.estudiantesList || salida.estudiantes || [];
   const estudiantesText = numEstudiantes > 0 ? ` y ${numEstudiantes} estudiante(s)` : '';
   const defaultPSCuerpo = `Por medio de la presente me permito informar que la Universidad CESMAG, a través del Área de Proyección Social y Extensión, lidera las acciones comunitarias e institucionales en el marco del desarrollo de proyectos y jornadas sociales. En este contexto, se desarrollará la actividad "${salida.motivo || 'Jornada Comunitaria'}", la cual tendrá lugar en ${salida.entidadDestino || salida.municipio || 'el sector programado'}.\n\n` +
     `La actividad contará con la participación de ${numDocentes} docente(s)/colaborador(es)${estudiantesText} de nuestra institución, quienes serán los responsables de orientar y dinamizar las diferentes acciones programadas durante la jornada.\n\n` +

@@ -5639,10 +5639,28 @@ const editarSolicitudAdmin = async (req, res) => {
       return res.status(404).json({ success: false, message: 'Solicitud no encontrada.' });
     }
 
-    const { action, estado, reposicion_aplica, tiempo_solicitado_minutos, reposicion_minutos_pagados, observacion } = req.body;
+    const { action, estado, expected_estado, reposicion_aplica, tiempo_solicitado_minutos, reposicion_minutos_pagados, observacion } = req.body;
     const actionSolicitada = action || (estado === 'no_aprobada' ? 'reject' : (['finalizada', 'aprobada'].includes(estado) ? 'approve' : null));
     const estadoSolicitado = sanitizeText(estado, 50);
+    const estadoEsperado = sanitizeText(expected_estado, 80);
     const observacionAdmin = sanitizeText(observacion, 600);
+
+    if (actionSolicitada && !estadoEsperado) {
+      return res.status(409).json({
+        success: false,
+        code: 'SOLICITUD_STAGE_CONFIRMATION_REQUIRED',
+        message: 'Actualice la página y vuelva a abrir la etapa que desea aprobar.'
+      });
+    }
+
+    if (actionSolicitada && estadoEsperado && solicitud.estado !== estadoEsperado) {
+      return res.status(409).json({
+        success: false,
+        code: 'SOLICITUD_STAGE_CHANGED',
+        message: 'La solicitud ya cambió de etapa. Actualice la bandeja antes de realizar una nueva aprobación.',
+        data: serializeSolicitud(solicitud)
+      });
+    }
 
     if (actionSolicitada && typeof solicitud.estado === 'string' && solicitud.estado.startsWith('pendiente_aprobacion_')) {
       const isReject = actionSolicitada === 'reject';

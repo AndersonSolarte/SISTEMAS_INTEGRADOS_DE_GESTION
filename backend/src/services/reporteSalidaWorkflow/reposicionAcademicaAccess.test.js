@@ -1,5 +1,6 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
+const fs = require('node:fs');
 const { Op } = require('sequelize');
 
 const {
@@ -13,6 +14,7 @@ const {
   resolveReposicionAbono
 } = require('../../controllers/reporteSalidaController');
 const {
+  ensureReporteSalidaPdf,
   getReposicionPdfInfo,
   buildReposicionPdfSection
 } = require('../reporteSalidaPdfService');
@@ -384,6 +386,57 @@ test('el PDF no agrega el bloque de reposicion a otros tipos de salida', () => {
   assert.deepEqual(buildReposicionPdfSection({ reposicion_aplica: false }), []);
 });
 
+test('la aprobacion administrativa regenera el PDF de un oficio individual', async () => {
+  const solicitud = {
+    id: 1298,
+    consecutivo: 'RS-03092026-032-TEST',
+    created_at: new Date('2026-09-03T22:19:54.677Z'),
+    solicitante_snapshot: {
+      nombre: 'JUAN GUILLERMO PINZON ESCANDON',
+      username: '1085289585',
+      cargo: 'Docente'
+    },
+    jefe_snapshot: {
+      nombre: 'KAREN EUGENIA OCANA FIGUEROA',
+      email: 'keocana@unicesmag.edu.co',
+      cargo: 'Directora de Programa'
+    },
+    datos_formulario: {
+      tx_id: 'test-pdf-admin-approval',
+      personal: {
+        nombre: 'JUAN GUILLERMO PINZON ESCANDON',
+        documento: '1085289585'
+      },
+      laboral: {
+        dependencia: 'Programa Academico - Diseno Grafico',
+        cargo: 'Docente',
+        vicerrectoria: 'Vicerrectoria Academica'
+      },
+      salida: {
+        categoria: 'propias_cargo',
+        tipo: 'capacitacion',
+        duracionTipo: '1_2_dias',
+        fecha: '2026-09-08',
+        fechaRegreso: '2026-09-09',
+        horaInicio: '08:00',
+        horaFin: '17:00',
+        motivo: 'Prueba de regresion',
+        entidadDestino: 'Entidad de prueba',
+        alcance: 'Local'
+      }
+    },
+    trazabilidad: []
+  };
+
+  const result = await ensureReporteSalidaPdf(solicitud);
+  try {
+    const stat = await fs.promises.stat(result.path);
+    assert.ok(stat.size > 0);
+  } finally {
+    await fs.promises.rm(result.path, { force: true });
+  }
+});
+
 test('Vicerrectoría Financiera envía la aprobación de autoridad a viceadfin@unicesmag.edu.co y no a viceacadémica', () => {
   const workflowEngine = require('./index');
   const helpers = {
@@ -461,6 +514,30 @@ test('salida grupal de Diseño Gráfico envía aprobación exclusivamente a dise
   const recipients = getGroupInitialApprovalRecipients(groupSolicitudes);
   assert.deepEqual(recipients, ['disenografico@unicesmag.edu.co']);
   assert.equal(recipients.includes('kocana@unicesmag.edu.co'), false);
+});
+
+test('salida individual con Karen Ocana como jefe envia la aprobacion al correo de Diseno Grafico', () => {
+  const { getInitialApprovalRecipientEmail } = require('../../controllers/reporteSalidaController');
+  const solicitud = {
+    solicitante_snapshot: {
+      nombre: 'JUAN GUILLERMO PINZON ESCANDON',
+      email: 'docente@unicesmag.edu.co'
+    },
+    datos_formulario: {
+      laboral: {
+        dependencia: 'DEPENDENCIA ACADEMICA',
+        cargo: 'Docente'
+      }
+    },
+    jefe_snapshot: {
+      nombre: 'KAREN EUGENIA OCANA FIGUEROA',
+      email: 'keocana@unicesmag.edu.co'
+    }
+  };
+
+  const recipient = getInitialApprovalRecipientEmail(solicitud);
+  assert.equal(recipient, 'disenografico@unicesmag.edu.co');
+  assert.notEqual(recipient, 'keocana@unicesmag.edu.co');
 });
 
 test('salida grupal de otros programas académicos envía a ambos: correo del programa y correo del director/jefe', () => {
@@ -547,6 +624,4 @@ test('Vicerrectoría de Investigación envía la aprobación de autoridad exclus
     assert.equal(vicerrectoriaTarget.forceApproval, true);
   });
 });
-
-
 

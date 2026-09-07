@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import * as XLSX from 'xlsx';
 import {
   Alert,
@@ -497,6 +497,8 @@ function ReporteSalidaSeguimiento({ initialAccess = null, onBack }) {
   const [ghActionTarget, setGhActionTarget] = useState(null);
   const [ghActionType, setGhActionType] = useState('approve');
   const [ghActionObservation, setGhActionObservation] = useState('');
+  const [ghActionSubmitting, setGhActionSubmitting] = useState(false);
+  const ghActionSubmittingRef = useRef(false);
   
   // Estados para modal de reposición parcial GH
   const [repDialogOpen, setRepDialogOpen] = useState(false);
@@ -956,15 +958,18 @@ function ReporteSalidaSeguimiento({ initialAccess = null, onBack }) {
   };
 
   const submitGhAction = async () => {
-    if (!ghActionTarget) return;
+    if (!ghActionTarget || ghActionSubmittingRef.current) return;
     const isReject = ghActionType === 'reject';
     if (isReject && !ghActionObservation.trim()) {
       enqueueSnackbar('Debe ingresar la justificación del rechazo.', { variant: 'error' });
       return;
     }
+    ghActionSubmittingRef.current = true;
+    setGhActionSubmitting(true);
     try {
       const payload = {
         action: isReject ? 'reject' : 'approve',
+        expected_estado: ghActionTarget.estado,
         observacion: ghActionObservation
       };
       if (isReject) {
@@ -979,6 +984,11 @@ function ReporteSalidaSeguimiento({ initialAccess = null, onBack }) {
       }
     } catch (error) {
       enqueueSnackbar(error.response?.data?.message || 'Error al procesar la solicitud', { variant: 'error' });
+      setGhActionDialogOpen(false);
+      await load();
+    } finally {
+      ghActionSubmittingRef.current = false;
+      setGhActionSubmitting(false);
     }
   };
 
@@ -1780,7 +1790,7 @@ function ReporteSalidaSeguimiento({ initialAccess = null, onBack }) {
               </DialogActions>
             </Dialog>
 
-            <Dialog open={ghActionDialogOpen} onClose={() => setGhActionDialogOpen(false)} maxWidth="sm" fullWidth>
+            <Dialog open={ghActionDialogOpen} onClose={() => { if (!ghActionSubmitting) setGhActionDialogOpen(false); }} maxWidth="sm" fullWidth>
               <DialogTitle sx={{ fontWeight: 900, bgcolor: '#f8fafc', borderBottom: '1px solid #e2e8f0' }}>
                 {ghActionType === 'approve'
                   ? `Aprobar Solicitud (${getPendingStageLabel(ghActionTarget?.estado)})`
@@ -1797,18 +1807,22 @@ function ReporteSalidaSeguimiento({ initialAccess = null, onBack }) {
                   label={ghActionType === 'approve' ? 'Observación / Nota administrativa (opcional)' : 'Justificación del rechazo *'}
                   value={ghActionObservation}
                   onChange={(e) => setGhActionObservation(e.target.value)}
+                  disabled={ghActionSubmitting}
                   placeholder={ghActionType === 'approve' ? 'Ej: Aprobado administrativamente por requerimiento institucional...' : 'Explique el motivo del rechazo...'}
                 />
               </DialogContent>
               <DialogActions sx={{ bgcolor: '#f8fafc', borderTop: '1px solid #e2e8f0' }}>
-                <Button onClick={() => setGhActionDialogOpen(false)} color="inherit">Cancelar</Button>
+                <Button onClick={() => setGhActionDialogOpen(false)} color="inherit" disabled={ghActionSubmitting}>Cancelar</Button>
                 <Button
                   onClick={submitGhAction}
                   variant="contained"
                   disableElevation
+                  disabled={ghActionSubmitting}
                   color={ghActionType === 'approve' ? 'success' : 'error'}
                 >
-                  {ghActionType === 'approve' ? 'Aprobar solicitud' : 'Confirmar rechazo'}
+                  {ghActionSubmitting
+                    ? <CircularProgress size={20} color="inherit" />
+                    : (ghActionType === 'approve' ? 'Aprobar solicitud' : 'Confirmar rechazo')}
                 </Button>
               </DialogActions>
             </Dialog>
