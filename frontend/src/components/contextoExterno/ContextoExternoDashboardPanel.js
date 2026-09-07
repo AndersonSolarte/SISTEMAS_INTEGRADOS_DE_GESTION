@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   Alert,
+  Autocomplete,
   Box,
   Button,
   Chip,
@@ -29,6 +30,7 @@ import RefreshRoundedIcon from '@mui/icons-material/RefreshRounded';
 import SchoolRoundedIcon from '@mui/icons-material/SchoolRounded';
 import GroupsRoundedIcon from '@mui/icons-material/GroupsRounded';
 import PictureAsPdfRoundedIcon from '@mui/icons-material/PictureAsPdfRounded';
+import DescriptionRoundedIcon from '@mui/icons-material/DescriptionRounded';
 import AccountBalanceRoundedIcon from '@mui/icons-material/AccountBalanceRounded';
 import BusinessRoundedIcon from '@mui/icons-material/BusinessRounded';
 import DevicesRoundedIcon from '@mui/icons-material/DevicesRounded';
@@ -158,6 +160,47 @@ function FilterSelect({ label, value, onChange, options }) {
   );
 }
 
+function SearchableFilterSelect({ label, value, onChange, options }) {
+  const formatOption = (option) => option === ALL ? 'Todos' : option;
+  const filterOptions = (availableOptions, state) => {
+    const terms = normalize(state.inputValue).split(/\s+/).filter(Boolean);
+    if (!terms.length) return availableOptions;
+    return availableOptions.filter((option) => {
+      const searchableText = normalize(formatOption(option));
+      return terms.every((term) => searchableText.includes(term));
+    });
+  };
+
+  return (
+    <Autocomplete
+      fullWidth
+      size="small"
+      disableClearable
+      openOnFocus
+      autoHighlight
+      selectOnFocus
+      value={value || ALL}
+      options={options}
+      filterOptions={filterOptions}
+      getOptionLabel={formatOption}
+      isOptionEqualToValue={(option, selectedValue) => option === selectedValue}
+      onChange={(_, nextValue) => onChange(nextValue || ALL)}
+      noOptionsText="No se encontraron programas"
+      slotProps={{
+        paper: { sx: { mt: 0.5, borderRadius: 2, border: '1px solid #d8e2f0', boxShadow: '0 12px 30px rgba(15, 42, 76, .16)' } },
+        listbox: { sx: { maxHeight: 320, py: 0.5, '& .MuiAutocomplete-option': { fontSize: 13, py: 1, borderRadius: 1, mx: 0.5 } } }
+      }}
+      renderInput={(params) => (
+        <TextField
+          {...params}
+          label={label}
+          placeholder="Escriba cualquier palabra del programa"
+        />
+      )}
+    />
+  );
+}
+
 const compactNumber = (value) => {
   const numeric = Number(value || 0);
   if (Math.abs(numeric) >= 1000000) return `${(numeric / 1000000).toLocaleString('es-CO', { maximumFractionDigits: 1 })} M`;
@@ -238,14 +281,14 @@ function PopulationStackedChart({ data, groupIndex, scope, scopeBadgeLabel }) {
       ) : (
         <Box sx={{ width: '100%', height: { xs: 430, md: 500 } }}>
           <ResponsiveContainer width="100%" height="100%">
-            <BarChart data={chartData} margin={{ top: 36, right: 18, left: 4, bottom: 42 }} barCategoryGap="24%">
+            <BarChart data={chartData} margin={{ top: 36, right: 18, left: 4, bottom: 42 }} barCategoryGap="12%">
               <CartesianGrid stroke="#e5eaf1" strokeDasharray="3 4" vertical={false} />
               <XAxis dataKey="periodo" tick={<PeriodStackTick />} interval={0} height={58} axisLine={{ stroke: '#91a4bd' }} tickLine={false} />
               <YAxis domain={[0, (dataMax) => Math.ceil(Number(dataMax || 0) * 1.2)]} tickFormatter={compactNumber} tick={{ fill: '#52657c', fontSize: 10.5, fontWeight: 700 }} axisLine={false} tickLine={false} width={52} />
               <RechartsTooltip labelFormatter={(label) => `Período ${label}`} formatter={(value, name) => [numberFormat.format(value), name]} contentStyle={{ borderRadius: 10, border: '1px solid #cbd5e1', boxShadow: '0 8px 22px rgba(15,23,42,.12)' }} />
               <Legend verticalAlign="top" align="center" iconType="circle" iconSize={9} wrapperStyle={{ top: 2, fontSize: 11, fontWeight: 800 }} />
               {configuration.series.map((serie, index) => (
-                <Bar key={serie.field} dataKey={serie.field} name={serie.label} stackId="flujo" fill={serie.color} maxBarSize={48} radius={index === configuration.series.length - 1 ? [5, 5, 0, 0] : [0, 0, 0, 0]}>
+                <Bar key={serie.field} dataKey={serie.field} name={serie.label} stackId="flujo" fill={serie.color} maxBarSize={70} radius={index === configuration.series.length - 1 ? [5, 5, 0, 0] : [0, 0, 0, 0]}>
                   <LabelList dataKey={serie.field} content={renderSegmentLabel} />
                 </Bar>
               ))}
@@ -2102,15 +2145,22 @@ function ExecutiveBubblesSubMap({ rows, features, bbox }) {
 function ColombiaOfferMap({ title, subtitle, type, rows, features, bbox: nationalBbox, color, onSelectMunicipality }) {
   const [mapStyle, setMapStyle] = useState('vibrant');
   const mapId = `${type}-${color.replace('#', '')}-${title.replace(/[^a-zA-Z0-9]/g, '')}`;
+  const showDepartmentWatermarks = title.includes('REGIONAL');
   const dataMap = useMemo(() => new Map(rows.map((row) => [row.key, row])), [rows]);
   const maxTotal = Math.max(1, ...rows.map((row) => row.total));
   const visibleLabelKeys = useMemo(() => {
     const locatedRows = type === 'municipality'
       ? rows.filter((row) => Number.isFinite(row.longitude) && Number.isFinite(row.latitude))
       : rows;
-    const limit = locatedRows.length <= 22 ? locatedRows.length : locatedRows.length <= 30 ? 20 : 16;
+    const limit = locatedRows.length <= 22 ? locatedRows.length : locatedRows.length <= 30 ? 15 : 13;
     return new Set(locatedRows.slice(0, limit).map((row) => row.key));
   }, [rows, type]);
+
+  const activeDepartmentKeys = useMemo(() => new Set(
+    type === 'department'
+      ? rows.filter((row) => row.total > 0).map((row) => normalizeGeo(row.key || row.label))
+      : rows.filter((row) => row.total > 0).map((row) => normalizeGeo(row.department_name || row.departamento || row.depto))
+  ), [rows, type]);
 
   const effectiveBbox = useMemo(() => {
     if (!title.includes('REGIONAL') || !rows.length || !nationalBbox) return nationalBbox;
@@ -2170,8 +2220,8 @@ function ColombiaOfferMap({ title, subtitle, type, rows, features, bbox: nationa
       .filter((row) => Number.isFinite(row.longitude) && Number.isFinite(row.latitude))
       .forEach((row) => {
         const origin = projectGeoPoint({ lon: row.longitude, lat: row.latitude, bbox: effectiveBbox });
-        const labelWidth = Math.max(54, Math.min(164, row.label.length * 4.05 + 27));
-        const labelHeight = 17;
+        const labelWidth = Math.max(46, Math.min(126, row.label.length * 3.65 + 24));
+        const labelHeight = 15;
         const clamp = (candidate) => ({
           x: Math.max(labelWidth / 2 + 4, Math.min(796 - labelWidth / 2, candidate.x)),
           y: Math.max(labelHeight / 2 + 4, Math.min(596 - labelHeight / 2, candidate.y)),
@@ -2326,7 +2376,8 @@ function ColombiaOfferMap({ title, subtitle, type, rows, features, bbox: nationa
                 })}
 
                 <g pointerEvents="none" aria-hidden="true">
-                  {features.map((feature) => {
+                  {showDepartmentWatermarks && features.map((feature) => {
+                    if (!activeDepartmentKeys.has(normalizeGeo(feature.name || feature.label))) return null;
                     const center = featureCenter(feature.rings);
                     if (!center) return null;
                     const point = projectGeoPoint({ ...center, bbox: effectiveBbox });
@@ -2338,15 +2389,16 @@ function ColombiaOfferMap({ title, subtitle, type, rows, features, bbox: nationa
                         y={point.y}
                         textAnchor="middle"
                         dominantBaseline="middle"
-                        fill="#294b4a"
-                        fillOpacity={type === 'municipality' ? 0.24 : 0.16}
+                        fill="#31545b"
+                        fillOpacity={type === 'municipality' ? 0.46 : 0.38}
                         stroke="#ffffff"
-                        strokeOpacity="0.5"
-                        strokeWidth="2.4"
+                        strokeOpacity="0.88"
+                        strokeWidth="1.8"
                         paintOrder="stroke"
-                        fontSize={type === 'municipality' ? 11.5 : 10}
+                        fontFamily="Inter, Arial, sans-serif"
+                        fontSize={String(feature.label || '').length > 18 ? 6.2 : String(feature.label || '').length > 12 ? 6.8 : 7.3}
                         fontWeight="900"
-                        letterSpacing="1.1"
+                        letterSpacing="0.7"
                       >
                         {String(feature.label || '').toLocaleUpperCase('es-CO')}
                       </text>
@@ -2435,10 +2487,10 @@ function ColombiaOfferMap({ title, subtitle, type, rows, features, bbox: nationa
                           {displaced && <line x1={origin.x} y1={origin.y} x2={point.x} y2={point.y} stroke={color} strokeWidth=".8" opacity=".3" />}
                           <g transform={`translate(${point.x} ${point.y})`}>
                             <title>{`${row.label}: ${numberFormat.format(row.total)} programas (Clic para ver en Google Maps)`}</title>
-                            <rect x={-labelWidth / 2} y={-labelHeight / 2} width={labelWidth} height={labelHeight} rx="3.5" fill="#0f172a" fillOpacity=".92" stroke="#fff" strokeWidth=".8" />
-                            <rect x={labelWidth / 2 - 21} y={-labelHeight / 2} width="21" height={labelHeight} rx="3.5" fill={color} />
-                            <text x={-labelWidth / 2 + 5} y="2.5" fill="#ffffff" fontSize="7.2" fontWeight="900">{row.label}</text>
-                            <text x={labelWidth / 2 - 10.5} y="2.8" textAnchor="middle" fill="#fff" fontSize="7.5" fontWeight="950">{row.total}</text>
+                            <rect x={-labelWidth / 2} y={-labelHeight / 2} width={labelWidth} height={labelHeight} rx="4.5" fill="#10233f" fillOpacity=".94" stroke="#fff" strokeWidth=".7" />
+                            <rect x={labelWidth / 2 - 19} y={-labelHeight / 2} width="19" height={labelHeight} rx="4.5" fill={color} />
+                            <text x={-labelWidth / 2 + 4.5} y="2.2" fill="#ffffff" fontSize="6.25" fontWeight="850">{row.label}</text>
+                            <text x={labelWidth / 2 - 9.5} y="2.4" textAnchor="middle" fill="#fff" fontSize="6.7" fontWeight="950">{row.total}</text>
                           </g>
                         </g>
                       ))}
@@ -3191,29 +3243,34 @@ export default function ContextoExternoDashboardPanel({ onBack }) {
       {pdfError && <Alert severity="warning" onClose={() => setPdfError('')}>{pdfError}</Alert>}
 
       <Paper elevation={0} sx={{ p: 2.2, border: '2px solid #bfdbfe', borderRadius: 3, bgcolor: '#f8fbff' }}>
-        <Stack direction={{ xs: 'column', md: 'row' }} spacing={1.5} alignItems={{ xs: 'stretch', md: 'center' }}>
-          <Box sx={{ flex: 1 }}>
-            <FilterSelect label="Programa para todo el análisis" value={selectedProgram} onChange={(value) => { setSelectedProgram(value); setPeriod(ALL); }} options={programOptions} />
+        <Stack spacing={1.5}>
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, flexWrap: 'wrap' }}>
+            <Typography sx={{ fontSize: 12.5, fontWeight: 900, color: '#1e3a8a', textTransform: 'uppercase', letterSpacing: 0.5 }}>
+              Programa seleccionado para el análisis:
+            </Typography>
+            <Chip
+              label={selectedProgram === ALL ? 'Vista consolidada' : selectedProgram}
+              color={selectedProgram === ALL ? 'default' : 'primary'}
+              sx={{ fontWeight: 900, fontSize: 13, height: 'auto', py: 0.4, '& .MuiChip-label': { whiteSpace: 'normal', display: 'block' } }}
+            />
           </Box>
-          <Chip
-            label={selectedProgram === ALL ? 'Vista consolidada' : selectedProgram}
-            color={selectedProgram === ALL ? 'default' : 'primary'}
-            sx={{ maxWidth: { md: 330 }, fontWeight: 800 }}
-          />
-          <Button
-            variant="contained"
-            color="error"
-            startIcon={<PictureAsPdfRoundedIcon />}
-            onClick={handleExportPdf}
-            disabled={selectedProgram === ALL || exportingPdf}
-            sx={{ minWidth: 210, py: 1.05, fontWeight: 900 }}
-          >
-            {exportingPdf ? 'Generando informe completo…' : 'Exportar informe PDF completo'}
-          </Button>
+
+          <Stack direction={{ xs: 'column', md: 'row' }} spacing={1.5} alignItems={{ xs: 'stretch', md: 'center' }}>
+            <Box sx={{ flex: 1 }}>
+              <SearchableFilterSelect label="Programa para todo el análisis" value={selectedProgram} onChange={(value) => { setSelectedProgram(value); setPeriod(ALL); }} options={programOptions} />
+            </Box>
+            <Button
+              variant="contained"
+              color="error"
+              startIcon={<PictureAsPdfRoundedIcon />}
+              onClick={handleExportPdf}
+              disabled={selectedProgram === ALL || exportingPdf}
+              sx={{ minWidth: 220, py: 1.05, fontWeight: 900 }}
+            >
+              {exportingPdf ? 'Generando informe completo…' : 'Exportar informe PDF completo'}
+            </Button>
+          </Stack>
         </Stack>
-        <Typography sx={{ mt: 1, color: '#64748b', fontSize: 12 }}>
-          El programa seleccionado controla la oferta nacional, la oferta regional y todas las series poblacionales del dashboard y del PDF.
-        </Typography>
       </Paper>
 
       {mainTab === 0 && (

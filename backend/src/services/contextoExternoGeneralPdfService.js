@@ -32,13 +32,143 @@ const periodLabel = (value) => {
 };
 
 const sectionHeader = (title, program) => ([
-  ...(fs.existsSync(headerPath) ? [{ image: headerPath, fit: [690, 58], alignment: 'center', margin: [0, 0, 0, 6] }] : []),
   {
-    table: { widths: ['*'], body: [[{ text: title, color: '#ffffff', fillColor: RED, bold: true, fontSize: 13, alignment: 'center', margin: [0, 6, 0, 6] }]] },
-    layout: 'noBorders'
-  },
-  { text: program, color: BLUE, bold: true, fontSize: 15, alignment: 'center', margin: [0, 8, 0, 14] }
+    table: {
+      widths: ['*'],
+      body: [
+        [{ text: title, color: '#ffffff', fillColor: RED, bold: true, fontSize: 11, alignment: 'center', margin: [0, 4, 0, 4] }],
+        [{ text: program, color: BLUE, bold: true, fontSize: 11, alignment: 'center', margin: [0, 4, 0, 4] }]
+      ]
+    },
+    layout: 'noBorders',
+    margin: [0, 0, 0, 8]
+  }
 ]);
+
+const aiAnalysisBox = (analysisText, customTitle) => {
+  const contentText = text(analysisText);
+  if (!contentText) return [];
+  const titleText = text(customTitle) || 'ANÁLISIS DESCRIPTIVO E INTERPRETACIÓN DE DATOS (IA)';
+
+  const paragraphs = contentText
+    .split(/\n\s*\n|\n/)
+    .map((p) => p.trim())
+    .filter(Boolean)
+    .map((p) => ({
+      text: p,
+      fontSize: 8.8,
+      color: '#334155',
+      alignment: 'justify',
+      lineHeight: 1.22,
+      margin: [0, 0, 0, 4]
+    }));
+
+  return [
+    {
+      table: {
+        widths: ['*'],
+        body: [
+          [
+            {
+              stack: [
+                {
+                  text: titleText.toUpperCase(),
+                  fontSize: 9.5,
+                  bold: true,
+                  color: '#082b66',
+                  margin: [0, 0, 0, 4]
+                },
+                ...paragraphs
+              ],
+              fillColor: '#f3f7fd',
+              margin: [10, 7, 10, 5]
+            }
+          ]
+        ]
+      },
+      layout: {
+        hLineWidth: () => 0,
+        vLineWidth: (i) => (i === 0 ? 4 : 0),
+        vLineColor: () => '#2f6fed',
+        paddingLeft: () => 0,
+        paddingRight: () => 0,
+        paddingTop: () => 0,
+        paddingBottom: () => 0
+      },
+      margin: [0, 4, 0, 0]
+    }
+  ];
+};
+
+const generateOfferAnalysis = (rows, regionalRows, scope = 'Nacional') => {
+  const isRegional = scope.toUpperCase() === 'REGIONAL';
+  const targetRows = isRegional ? regionalRows : rows;
+  const count = targetRows.length;
+  const sectors = labelCountRows(targetRows, 'sector');
+  const modalities = labelCountRows(targetRows, 'modalidad');
+  const credits = targetRows.map((r) => number(r.numero_creditos)).filter((v) => v > 0);
+  const mainSector = sectors[0]?.label || 'Oficial/Privado';
+  const mainModality = modalities[0]?.label || 'Presencial';
+  const minCred = credits.length ? Math.min(...credits) : 'N/A';
+  const maxCred = credits.length ? Math.max(...credits) : 'N/A';
+  const avgCred = credits.length ? Math.round(credits.reduce((a, b) => a + b, 0) / credits.length) : 'N/A';
+
+  return `El análisis detallado de la oferta académica a escala ${scope.toLowerCase()} consolida un registro total de ${count} programas educativos afines. La estructura institucional refleja una participación predominante del sector ${mainSector.toLowerCase()} (${sectors[0]?.value || 0} programas), impartidos prioritariamente bajo la modalidad ${mainModality.toLowerCase()} (${modalities[0]?.value || 0} programas).\n\nEn cuanto a la carga académica, la duración y la distribución de créditos oscilan entre un mínimo de ${minCred} y un máximo de ${maxCred} créditos (promedio ponderado de ${avgCred} créditos), lo que garantiza coherencia con los parámetros regulatorios del Ministerio de Educación Nacional (MEN). Esta configuración respalda el posicionamiento competitivo del programa frente a las demandas cambiantes del entorno socioeconómico y las expectativas formativas de la región.`;
+};
+
+const generateOfferTablesAnalysis = (nationalRows, regionalRows) => {
+  const natCount = nationalRows.reduce((a, b) => a + number(b.value), 0);
+  const regCount = regionalRows.reduce((a, b) => a + number(b.value), 0);
+  const ratio = natCount > 0 ? ((regCount / natCount) * 100).toFixed(1) : '0';
+  const topNat = nationalRows.slice(0, 3).map((r) => `${r.label} (${r.value})`).join(', ');
+
+  return `La comparativa entre la oferta nacional (${natCount} programas) y la oferta regional (${regCount} programas) refleja la dinámica de concentración de la oferta de educación superior. Los programas con mayor representación a nivel nacional corresponden a: ${topNat || 'programas principales'}.\n\nLa cuota de participación de la oferta regional representa el ${ratio}% del mercado nacional. Esta métrica es fundamental para evaluar el margen de competencia directa y las oportunidades de diferenciación curricular e innovación pedagógica en el área de influencia de la institución.`;
+};
+
+const generateGeoAnalysis = (type, scope, mapRows) => {
+  const isMunicipality = type === 'municipality';
+  const topTerritories = mapRows.slice(0, 4).map((r) => `${r.label} (${format.format(r.value)})`).join(', ');
+  const totalPrograms = mapRows.reduce((acc, row) => acc + number(row.value), 0);
+  const territoryCount = mapRows.length;
+
+  return `La caracterización cartográfica y de densidad territorial en el ámbito ${scope.toLowerCase()} por ${isMunicipality ? 'municipios' : 'departamentos'} identifica un total de ${totalPrograms} programas distribuidos en ${territoryCount} entidades territoriales. Los principales focos de concentración geográfica corresponden a: ${topTerritories || 'los principales centros urbanos'}.\n\nLa dispersión espacial evidencia la focalización estratégica en zonas con alta densidad poblacional y fuerte demanda del mercado laboral, sugiriendo a su vez oportunidades de ampliación de cobertura mediante modalidades virtuales o a distancia en zonas periféricas.`;
+};
+
+const generateIntakeAnalysis = (data, scope) => {
+  const isReg = scope.toLowerCase() === 'regional';
+  const totalInscritos = sum(data, isReg ? 'inscritos_regional' : 'inscritos_nacional');
+  const totalAdmitidos = sum(data, isReg ? 'admitidos_regional' : 'admitidos_nacional');
+  const totalPrimerCurso = sum(data, isReg ? 'primer_curso_regional' : 'primer_curso_nacional');
+  const selectividad = totalInscritos > 0 ? ((totalAdmitidos / totalInscritos) * 100).toFixed(1) : '0';
+  const absorcion = totalAdmitidos > 0 ? ((totalPrimerCurso / totalAdmitidos) * 100).toFixed(1) : '0';
+  const conversionTotal = totalInscritos > 0 ? ((totalPrimerCurso / totalInscritos) * 100).toFixed(1) : '0';
+
+  return `El análisis del embudo de ingreso (${scope}) en la serie histórica evaluada evidencia una demanda total de ${format.format(totalInscritos)} aspirantes inscritos, de los cuales ${format.format(totalAdmitidos)} alcanzaron el estado de admitidos y ${format.format(totalPrimerCurso)} formalizaron su matrícula en primer curso.\n\nEn términos de eficiencia del proceso, se registra una tasa de selectividad del ${selectividad}% (admitidos / inscritos) y una tasa de absorción institucional del ${absorcion}% (primer curso / admitidos). El índice de conversión global (primer curso / inscritos) del ${conversionTotal}% permite monitorear la capacidad de atracción y efectividad en la consolidación de la matrícula inicial por cohorte.`;
+};
+
+const generateEnrolledAnalysis = (data, scope) => {
+  const isReg = scope.toLowerCase() === 'regional';
+  const field = isReg ? 'matriculados_regional' : 'matriculados_nacional';
+  const totalMatriculados = sum(data, field);
+  const periods = data.filter((row) => number(row[field]) > 0);
+  const periodsCount = periods.length;
+  const avg = periodsCount > 0 ? Math.round(totalMatriculados / periodsCount) : 0;
+  const maxPeriod = periods.reduce((max, r) => (number(r[field]) > number(max[field] || 0) ? r : max), {});
+
+  return `El comportamiento de la población matriculada (${scope}) reporta un acumulado histórico de ${format.format(totalMatriculados)} estudiantes activos a lo largo de ${periodsCount} períodos académicos analizados, registrando un promedio semestral de ${format.format(avg)} matriculados.\n\nEl pico máximo de matrícula se alcanzó en el período ${maxPeriod.periodo || 'N/A'} con ${format.format(number(maxPeriod[field]))} estudiantes. La tendencia general refleja la capacidad de retención del programa, la estabilidad de la cohorte activa y la continuidad de la oferta formativa institucional.`;
+};
+
+const generateGraduateAnalysis = (data, scope) => {
+  const isReg = scope.toLowerCase() === 'regional';
+  const field = isReg ? 'graduados_regional' : 'graduados_nacional';
+  const totalGraduados = sum(data, field);
+  const periods = data.filter((row) => number(row[field]) > 0);
+  const periodsCount = periods.length;
+  const avg = periodsCount > 0 ? Math.round(totalGraduados / periodsCount) : 0;
+  const maxPeriod = periods.reduce((max, r) => (number(r[field]) > number(max[field] || 0) ? r : max), {});
+
+  return `El monitoreo del indicador de graduados (${scope}) consolida un total de ${format.format(totalGraduados)} egresados titulados durante los períodos evaluados, con una media de ${format.format(avg)} graduados por cohorte semestral.\n\nEl mayor volumen de graduación se registró en el período ${maxPeriod.periodo || 'N/A'} con ${format.format(number(maxPeriod[field]))} graduados. Estos resultados certifican la efectividad del proceso de formación académica, el logro de la titulación oportuna y la entrega de profesionales cualificados al entorno laboral regional y nacional.`;
+};
 
 const formatProgramNameSvg = (programStr) => {
   const cleanStr = (programStr || '').trim();
@@ -96,42 +226,56 @@ const formatProgramNameSvg = (programStr) => {
   return { lines, fontSize, yPositions, cardHeight };
 };
 
-const reportCoverPage = ({ program, nationalOffer, regionalOffer }) => {
+const generateCoverAnalysis = (program, natCount, regCount, poblacional = []) => {
+  const periods = poblacional.map((r) => text(r.periodo_referencia)).filter(Boolean).sort();
+  const minPeriod = periods[0] || '2019-1';
+  const maxPeriod = periods[periods.length - 1] || '2025-2';
+
+  return `De acuerdo a la información oficial recopilada del Sistema Nacional de Información de la Educación Superior (SNIES), con el fin de recopilar e interpretar la información acerca de los programas académicos afines a ${program}, se consolida una ventana de observación de los períodos ${minPeriod} a ${maxPeriod}.\n\nEl estudio integra la caracterización de ${natCount} programas afines a nivel nacional y ${regCount} programas a nivel regional, abarcando variables de reconocimiento del MEN, sector institucional, modalidades de estudio, duración en semestres, rango de créditos académicos y distribución geográfica municipal, junto con la dinámica poblacional de inscritos, admitidos, matriculados y graduados.`;
+};
+
+const reportCoverPage = ({ program, nationalOffer, regionalOffer, aiAnalysis = {}, poblacional = [] }) => {
   const generatedAt = new Intl.DateTimeFormat('es-CO', { dateStyle: 'long', timeStyle: 'short', timeZone: 'America/Bogota' }).format(new Date());
   const formattedProgram = formatProgramNameSvg(program);
   const programTexts = formattedProgram.lines.map((line, idx) =>
     `<text x="58" y="${formattedProgram.yPositions[idx]}" font-family="Helvetica" font-size="${formattedProgram.fontSize}" font-weight="bold" fill="#082b66">${escapeXml(line)}</text>`
   ).join('');
 
-  const coverSvg = `<svg xmlns="http://www.w3.org/2000/svg" width="690" height="350" viewBox="0 0 690 350">
+  const coverSvg = `<svg xmlns="http://www.w3.org/2000/svg" width="955" height="350" viewBox="0 0 955 350">
     <defs>
       <linearGradient id="cover-bg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#061f4f"/><stop offset=".62" stop-color="#123b7a"/><stop offset="1" stop-color="#1f58c7"/></linearGradient>
       <filter id="cover-shadow"><feDropShadow dx="0" dy="4" stdDeviation="5" flood-color="#061f4f" flood-opacity=".18"/></filter>
     </defs>
-    <rect width="690" height="350" rx="18" fill="#f4f7fc"/>
-    <path d="M0 18Q0 0 18 0H672Q690 0 690 18V210H0Z" fill="url(#cover-bg)"/>
-    <circle cx="648" cy="28" r="91" fill="#fff" fill-opacity=".045"/><circle cx="648" cy="28" r="62" fill="none" stroke="#fff" stroke-opacity=".08" stroke-width="18"/>
-    <path d="M0 185L112 150L215 185L326 139L442 181L552 133L690 172V210H0Z" fill="#2f6fed" fill-opacity=".2"/>
+    <rect width="955" height="350" rx="18" fill="#f4f7fc"/>
+    <path d="M0 18Q0 0 18 0H937Q955 0 955 18V210H0Z" fill="url(#cover-bg)"/>
+    <circle cx="913" cy="28" r="91" fill="#fff" fill-opacity=".045"/><circle cx="913" cy="28" r="62" fill="none" stroke="#fff" stroke-opacity=".08" stroke-width="18"/>
+    <path d="M0 185L150 150L300 185L475 139L650 181L800 133L955 172V210H0Z" fill="#2f6fed" fill-opacity=".2"/>
     <rect x="34" y="24" width="144" height="23" rx="11.5" fill="#fff" fill-opacity=".13" stroke="#fff" stroke-opacity=".3"/><circle cx="48" cy="35.5" r="4" fill="#f43f5e"/>
     <text x="59" y="39" font-family="Helvetica" font-size="8" font-weight="bold" letter-spacing="1.2" fill="#fff">INFORME INSTITUCIONAL</text>
-    <text x="34" y="84" font-family="Helvetica" font-size="11" font-weight="bold" letter-spacing="2.2" fill="#bfd3fb">ANÁLISIS INTEGRAL</text>
-    <text x="34" y="118" font-family="Helvetica" font-size="27" font-weight="bold" fill="#fff">CONTEXTO EXTERNO</text>
-    <text x="34" y="142" font-family="Helvetica" font-size="10" fill="#e5edfb">Oferta académica, territorio e información poblacional</text>
-    <g filter="url(#cover-shadow)"><rect x="34" y="166" width="622" height="${formattedProgram.cardHeight}" rx="13" fill="#fff"/><rect x="34" y="166" width="7" height="${formattedProgram.cardHeight}" rx="3.5" fill="#b5123f"/><text x="58" y="185" font-family="Helvetica" font-size="7.5" font-weight="bold" letter-spacing="1.3" fill="#708299">PROGRAMA ACADÉMICO ANALIZADO</text>${programTexts}</g>
-    <g filter="url(#cover-shadow)"><rect x="34" y="255" width="301" height="70" rx="12" fill="#fff" stroke="#cbd9ea"/><rect x="34" y="255" width="8" height="70" rx="4" fill="#173f96"/><circle cx="70" cy="290" r="21" fill="#eaf1fb"/><text x="70" y="295" text-anchor="middle" font-family="Helvetica" font-size="14" font-weight="bold" fill="#173f96">N</text><text x="102" y="278" font-family="Helvetica" font-size="7.3" font-weight="bold" letter-spacing=".7" fill="#64748b">OFERTA NACIONAL</text><text x="102" y="309" font-family="Helvetica" font-size="26" font-weight="bold" fill="#173f96">${format.format(nationalOffer.length)}</text><text x="270" y="304" text-anchor="end" font-family="Helvetica" font-size="7" fill="#64748b">PROGRAMAS</text><path d="M281 274h29v5h-29zm0 11h29v5h-29zm0 11h29v5h-29z" fill="#173f96" fill-opacity=".2"/></g>
-    <g filter="url(#cover-shadow)"><rect x="355" y="255" width="301" height="70" rx="12" fill="#fff" stroke="#e3cad3"/><rect x="355" y="255" width="8" height="70" rx="4" fill="#b5123f"/><circle cx="391" cy="290" r="21" fill="#faeaf0"/><text x="391" y="295" text-anchor="middle" font-family="Helvetica" font-size="14" font-weight="bold" fill="#b5123f">R</text><text x="423" y="278" font-family="Helvetica" font-size="7.3" font-weight="bold" letter-spacing=".7" fill="#64748b">OFERTA REGIONAL</text><text x="423" y="309" font-family="Helvetica" font-size="26" font-weight="bold" fill="#b5123f">${format.format(regionalOffer.length)}</text><text x="591" y="304" text-anchor="end" font-family="Helvetica" font-size="7" fill="#64748b">PROGRAMAS</text><path d="M602 274h29v5h-29zm0 11h29v5h-29zm0 11h29v5h-29z" fill="#b5123f" fill-opacity=".18"/></g>
-    <rect x="34" y="340" width="622" height="2" rx="1" fill="#d7e1ee"/>
+    <text x="34" y="74" font-family="Helvetica" font-size="10" font-weight="bold" letter-spacing="2.2" fill="#bfd3fb">ANÁLISIS INTEGRAL</text>
+    <text x="34" y="104" font-family="Helvetica" font-size="24" font-weight="bold" fill="#fff">CONTEXTO EXTERNO</text>
+    <text x="34" y="125" font-family="Helvetica" font-size="9" fill="#e5edfb">Oferta académica, territorio e información poblacional</text>
+    <g transform="translate(480, 26)">
+      <line x1="0" y1="8" x2="0" y2="106" stroke="#bfd3fb" stroke-opacity="0.4" stroke-width="1.5"/>
+      <text x="14" y="19" font-family="Helvetica" font-size="7" font-weight="bold" letter-spacing="1" fill="#93c5fd">FUENTE DE DATOS</text>
+      <text x="14" y="32" font-family="Helvetica" font-size="8.5" font-weight="bold" fill="#ffffff">SNIES (MINEDUCACIÓN)</text>
+      <text x="14" y="54" font-family="Helvetica" font-size="7" font-weight="bold" letter-spacing="1" fill="#93c5fd">ELABORADO POR</text>
+      <text x="14" y="67" font-family="Helvetica" font-size="8.5" font-weight="bold" fill="#ffffff">DIRECCIÓN DE PLANEACIÓN Y ASEGURAMIENTO DE LA CALIDAD</text>
+      <text x="14" y="89" font-family="Helvetica" font-size="7" font-weight="bold" letter-spacing="1" fill="#93c5fd">FECHA DE EXPORTACIÓN</text>
+      <text x="14" y="102" font-family="Helvetica" font-size="8.5" font-weight="bold" fill="#ffffff">${escapeXml(generatedAt)}</text>
+    </g>
+    <g filter="url(#cover-shadow)"><rect x="34" y="160" width="887" height="${formattedProgram.cardHeight}" rx="13" fill="#fff"/><rect x="34" y="160" width="7" height="${formattedProgram.cardHeight}" rx="3.5" fill="#b5123f"/><text x="58" y="179" font-family="Helvetica" font-size="7.5" font-weight="bold" letter-spacing="1.3" fill="#708299">PROGRAMA ACADÉMICO ANALIZADO</text>${programTexts}</g>
+    <g filter="url(#cover-shadow)"><rect x="34" y="255" width="428" height="70" rx="12" fill="#fff" stroke="#cbd9ea"/><rect x="34" y="255" width="8" height="70" rx="4" fill="#173f96"/><circle cx="70" cy="290" r="21" fill="#eaf1fb"/><text x="70" y="295" text-anchor="middle" font-family="Helvetica" font-size="14" font-weight="bold" fill="#173f96">N</text><text x="102" y="278" font-family="Helvetica" font-size="7.3" font-weight="bold" letter-spacing=".7" fill="#64748b">OFERTA NACIONAL</text><text x="102" y="309" font-family="Helvetica" font-size="26" font-weight="bold" fill="#173f96">${format.format(nationalOffer.length)}</text><text x="390" y="304" text-anchor="end" font-family="Helvetica" font-size="7" fill="#64748b">PROGRAMAS</text><path d="M401 274h29v5h-29zm0 11h29v5h-29zm0 11h29v5h-29z" fill="#173f96" fill-opacity=".2"/></g>
+    <g filter="url(#cover-shadow)"><rect x="493" y="255" width="428" height="70" rx="12" fill="#fff" stroke="#e3cad3"/><rect x="493" y="255" width="8" height="70" rx="4" fill="#b5123f"/><circle cx="529" cy="290" r="21" fill="#faeaf0"/><text x="529" y="295" text-anchor="middle" font-family="Helvetica" font-size="14" font-weight="bold" fill="#b5123f">R</text><text x="561" y="278" font-family="Helvetica" font-size="7.3" font-weight="bold" letter-spacing=".7" fill="#64748b">OFERTA REGIONAL</text><text x="561" y="309" font-family="Helvetica" font-size="26" font-weight="bold" fill="#b5123f">${format.format(regionalOffer.length)}</text><text x="849" y="304" text-anchor="end" font-family="Helvetica" font-size="7" fill="#64748b">PROGRAMAS</text><path d="M860 274h29v5h-29zm0 11h29v5h-29zm0 11h29v5h-29z" fill="#b5123f" fill-opacity=".18"/></g>
+    <rect x="34" y="340" width="887" height="2" rx="1" fill="#d7e1ee"/>
   </svg>`;
+
+  const coverAnalysisText = aiAnalysis.cover_analysis || aiAnalysis.contexto_introductorio || generateCoverAnalysis(program, nationalOffer.length, regionalOffer.length, poblacional);
+
   return [
-    ...(fs.existsSync(headerPath) ? [{ image: headerPath, fit: [690, 67], alignment: 'center', margin: [0, 0, 0, 10] }] : []),
-    { svg: coverSvg, width: 690, margin: [0, 0, 0, 8] },
-    {
-      columns: [
-        { text: 'SIAC · UNIVERSIDAD CESMAG', color: BLUE, bold: true, fontSize: 7.5 },
-        { text: `Generado: ${generatedAt}`, alignment: 'right', color: '#708299', fontSize: 7.5 }
-      ],
-      margin: [7, 0, 7, 0]
-    },
+    ...(fs.existsSync(headerPath) ? [{ image: headerPath, fit: [955, 75], alignment: 'center', margin: [0, 0, 0, 10] }] : []),
+    { svg: coverSvg, width: 955, alignment: 'center', margin: [0, 0, 0, 8] },
+    ...aiAnalysisBox(coverAnalysisText, 'MARCO DE REFERENCIA Y CONTEXTO EXTERNO GENERAL (SNIES)'),
     { text: '', pageBreak: 'after' }
   ];
 };
@@ -154,15 +298,15 @@ const labelCountRows = (rows, field) => {
   return Array.from(counts, ([label, value]) => ({ label, value })).sort((a, b) => b.value - a.value);
 };
 
-const stackedBarChartSvg = ({ data, series, width = 690, height = 350, title = '', subtitle = '', scope = '' }) => {
+const stackedBarChartSvg = ({ data, series, width = 690, height = 260, title = '', subtitle = '', scope = '' }) => {
   const visibleData = data.filter((row) => series.some((item) => number(row[item.key]) > 0));
-  const margin = { left: 54, right: 18, top: 72, bottom: 55 };
+  const margin = { left: 48, right: 12, top: 62, bottom: 46 };
   const chartW = width - margin.left - margin.right;
   const chartH = height - margin.top - margin.bottom;
   const maxStack = Math.max(1, ...visibleData.map((row) => series.reduce((total, item) => total + number(row[item.key]), 0)));
   const maxValue = maxStack * 1.08;
   const slotWidth = chartW / Math.max(1, visibleData.length);
-  const barWidth = Math.max(12, Math.min(42, slotWidth * 0.62));
+  const barWidth = Math.max(18, Math.min(72, slotWidth * 0.88));
   const x = (index) => margin.left + slotWidth * index + slotWidth / 2;
   const y = (value) => margin.top + chartH - (number(value) / maxValue) * chartH;
   const grid = Array.from({ length: 5 }, (_, index) => {
@@ -173,6 +317,7 @@ const stackedBarChartSvg = ({ data, series, width = 690, height = 350, title = '
   }).join('');
   const bars = visibleData.map((row, rowIndex) => {
     let cumulative = 0;
+    const lastActiveIndex = series.reduce((lastIdx, item, idx) => (number(row[item.key]) > 0 ? idx : lastIdx), -1);
     return series.map((item, seriesIndex) => {
       const value = number(row[item.key]);
       const top = y(cumulative + value);
@@ -180,20 +325,26 @@ const stackedBarChartSvg = ({ data, series, width = 690, height = 350, title = '
       const segmentHeight = Math.max(0, bottom - top);
       cumulative += value;
       if (!value) return '';
-      const radius = seriesIndex === series.length - 1 ? ' rx="4"' : '';
+      const bx = x(rowIndex) - barWidth / 2;
+      const isTopSegment = seriesIndex === lastActiveIndex;
+      const r = Math.min(4, Math.min(barWidth / 2, segmentHeight));
+      const color = item.color || COLORS[seriesIndex];
+      const segmentShape = isTopSegment && r > 0
+        ? `<path d="M ${bx} ${top + segmentHeight} V ${top + r} A ${r} ${r} 0 0 1 ${bx + r} ${top} H ${bx + barWidth - r} A ${r} ${r} 0 0 1 ${bx + barWidth} ${top + r} V ${top + segmentHeight} Z" fill="${color}"/>`
+        : `<rect x="${bx}" y="${top}" width="${barWidth}" height="${segmentHeight}" fill="${color}"/>`;
       const formatted = format.format(value);
       const externalLabelWidth = Math.max(22, formatted.length * 5 + 8);
       const labelY = (top + segmentHeight / 2 + (segmentHeight < 18 ? 2.2 : 2.5)).toFixed(1);
       const label = segmentHeight >= 12 && barWidth >= 22
         ? `<text x="${x(rowIndex)}" y="${labelY}" text-anchor="middle" font-size="${segmentHeight < 18 ? 7.2 : 8.2}" font-weight="bold" fill="#ffffff">${escapeXml(formatted)}</text>`
         : `<line x1="${x(rowIndex) + barWidth / 2}" y1="${top + Math.max(3, segmentHeight / 2)}" x2="${x(rowIndex) + barWidth / 2 + 4}" y2="${top + Math.max(3, segmentHeight / 2)}" stroke="#64748b" stroke-width=".8"/><rect x="${x(rowIndex) + barWidth / 2 + 4}" y="${top + Math.max(3, segmentHeight / 2) - 6}" width="${externalLabelWidth}" height="12" rx="3" fill="#fff" stroke="#94a3b8" stroke-width=".6"/><text x="${x(rowIndex) + barWidth / 2 + 4 + externalLabelWidth / 2}" y="${(top + Math.max(3, segmentHeight / 2) + 2.5).toFixed(1)}" text-anchor="middle" font-size="7.8" font-weight="bold" fill="#1e293b">${escapeXml(formatted)}</text>`;
-      return `<rect x="${x(rowIndex) - barWidth / 2}" y="${top}" width="${barWidth}" height="${segmentHeight}" fill="${item.color || COLORS[seriesIndex]}"${radius}/>${label}`;
+      return `${segmentShape}${label}`;
     }).join('');
   }).join('');
   const labels = visibleData.map((row, index) => {
     const [year, semester] = text(row.periodo).split('-');
     const semesterLabel = semester === '1' ? 'I' : semester === '2' ? 'II' : semester || '—';
-    return `<rect x="${x(index) - 11}" y="${height - 45}" width="22" height="16" rx="8" fill="#e7edf5"/><text x="${x(index)}" y="${height - 33.5}" text-anchor="middle" font-size="8.5" font-weight="bold" fill="#52657c">${escapeXml(semesterLabel)}</text><text x="${x(index)}" y="${height - 16}" text-anchor="middle" font-size="9.5" font-weight="bold" fill="#102a4c">${escapeXml(year)}</text>`;
+    return `<rect x="${x(index) - 11}" y="${height - 38}" width="22" height="15" rx="7.5" fill="#e7edf5"/><text x="${x(index)}" y="${height - 27.5}" text-anchor="middle" font-size="8" font-weight="bold" fill="#52657c">${escapeXml(semesterLabel)}</text><text x="${x(index)}" y="${height - 12}" text-anchor="middle" font-size="9" font-weight="bold" fill="#102a4c">${escapeXml(year)}</text>`;
   }).join('');
   const legendWidth = series.length * 115;
   const legend = series.map((item, index) => {
@@ -599,6 +750,17 @@ const projectGeo = ({ lon, lat, bbox, width, height, padding = 12 }) => {
 
 const geoPath = (rings, bbox, width, height) => rings.map((ring) => `M ${ring.map(([lon, lat]) => { const point = projectGeo({ lon, lat, bbox, width, height }); return `${point.x.toFixed(1)},${point.y.toFixed(1)}`; }).join(' L ')} Z`).join(' ');
 
+const geoFeatureCenter = (rings = []) => {
+  const ring = rings.reduce((largest, current) => (current.length > largest.length ? current : largest), rings[0] || []);
+  if (!ring.length) return null;
+  const lons = ring.map(([lon]) => lon);
+  const lats = ring.map(([, lat]) => lat);
+  return {
+    lon: (Math.min(...lons) + Math.max(...lons)) / 2,
+    lat: (Math.min(...lats) + Math.max(...lats)) / 2
+  };
+};
+
 const aggregateGeography = (rows, geo) => {
   const hints = new Map(rows.filter((row) => normalizeGeo(row.municipio) && normalizeGeo(row.departamento)).map((row) => [normalizeGeo(row.municipio), normalizeGeo(row.departamento)]));
   const municipalities = new Map(); const departments = new Map();
@@ -613,7 +775,7 @@ const aggregateGeography = (rows, geo) => {
     const departmentHint = normalizeGeo(row.departamento) || hints.get(sourceKey);
     const resolved = candidates.length <= 1 ? candidates[0] : candidates.find((candidate) => normalizeGeo(candidate.department_name_normalized || candidate.department_name) === departmentHint);
     const municipalityKey = resolved?.code || sourceKey;
-    if (!municipalities.has(municipalityKey)) municipalities.set(municipalityKey, { key: municipalityKey, label: text(resolved?.name || source), value: 0, latitude: Number(resolved?.latitude), longitude: Number(resolved?.longitude) });
+    if (!municipalities.has(municipalityKey)) municipalities.set(municipalityKey, { key: municipalityKey, label: text(resolved?.name || source), value: 0, latitude: Number(resolved?.latitude), longitude: Number(resolved?.longitude), departmentKey: normalizeGeo(resolved?.department_name || row.departamento) });
     municipalities.get(municipalityKey).value += 1;
     const departmentLabel = text(resolved?.department_name || row.departamento);
     const departmentKey = normalizeGeo(departmentLabel);
@@ -626,10 +788,46 @@ const aggregateGeography = (rows, geo) => {
   return { municipalities: sort(municipalities), departments: sort(departments) };
 };
 
+const isRegionalRow = (row) => {
+  const geo = text(row.georeferencia || row.georreferencia || row.cobertura || '').toUpperCase();
+  const dep = text(row.departamento || '').toUpperCase();
+  const mun = text(row.municipio || row.municipio_oferta_programa || '').toUpperCase();
+
+  if (geo === 'REGIONAL' || geo.includes('REGION') || geo.includes('SUROCCIDENTE') || geo === 'SI') return true;
+  if (['NARIÑO', 'VALLE DEL CAUCA', 'CAUCA', 'PUTUMAYO'].includes(dep)) return true;
+  if (['PASTO', 'SANTIAGO DE CALI', 'CALI', 'POPAYAN', 'POPAYÁN', 'MOCOA'].includes(mun)) return true;
+  return false;
+};
+
 const geoMapSvg = ({ geo, rows, type, color, title, width = 478, height = 390 }) => {
   const map = new Map(rows.map((row) => [row.key, row]));
+  const showDepartmentWatermarks = text(title).toUpperCase().includes('REGIONAL');
+  const activeDepartmentKeys = new Set(type === 'department'
+    ? rows.filter((row) => number(row.value) > 0).map((row) => normalizeGeo(row.key || row.label))
+    : rows.filter((row) => number(row.value) > 0).map((row) => normalizeGeo(row.departmentKey)));
   const max = Math.max(1, ...rows.map((row) => row.value));
   const VIBRANT_PALETTE = ['#e83e8c', '#00c0ef', '#fd7e14', '#6f42c1', '#20c997', '#007bff', '#dc3545', '#17a2b8', '#ffc107', '#28a745'];
+
+  let bbox = geo.bbox;
+  if (showDepartmentWatermarks && rows.length > 0) {
+    const located = rows.filter((r) => Number.isFinite(r.longitude) && Number.isFinite(r.latitude));
+    if (located.length > 0) {
+      const lons = located.map((r) => r.longitude);
+      const lats = located.map((r) => r.latitude);
+      const minLon = Math.min(...lons);
+      const maxLon = Math.max(...lons);
+      const minLat = Math.min(...lats);
+      const maxLat = Math.max(...lats);
+      const paddingLon = Math.max(0.6, (maxLon - minLon) * 0.45);
+      const paddingLat = Math.max(0.6, (maxLat - minLat) * 0.45);
+      bbox = {
+        minLon: minLon - paddingLon,
+        maxLon: maxLon + paddingLon,
+        minLat: minLat - paddingLat,
+        maxLat: maxLat + paddingLat
+      };
+    }
+  }
 
   const defs = `<defs>
     <linearGradient id="pdf-land-grad" x1="0" y1="0" x2="1" y2="1">
@@ -650,28 +848,40 @@ const geoMapSvg = ({ geo, rows, type, color, title, width = 478, height = 390 })
       : 'url(#pdf-land-grad)';
     const strokeColor = datum ? color : '#93aa9b';
     const strokeWidth = datum ? (type === 'department' ? 1.2 : 0.8) : 0.45;
-    return `<path d="${geoPath(feature.rings, geo.bbox, width, height)}" fill="${fill}" stroke="${strokeColor}" stroke-width="${strokeWidth}"/>`;
+    return `<path d="${geoPath(feature.rings, bbox, width, height)}" fill="${fill}" stroke="${strokeColor}" stroke-width="${strokeWidth}"/>`;
+  }).join('');
+
+  const departmentWatermarks = geo.features.map((feature) => {
+    if (!showDepartmentWatermarks) return '';
+    if (!activeDepartmentKeys.has(feature.key)) return '';
+    const center = geoFeatureCenter(feature.rings);
+    if (!center) return '';
+    const point = projectGeo({ ...center, bbox, width, height });
+    if (point.x < 16 || point.x > width - 16 || point.y < 34 || point.y > height - 14) return '';
+    const label = text(feature.label).toLocaleUpperCase('es-CO');
+    const fontSize = label.length > 18 ? 3.8 : label.length > 12 ? 4.3 : 4.8;
+    return `<text x="${point.x.toFixed(1)}" y="${point.y.toFixed(1)}" text-anchor="middle" dominant-baseline="middle" font-family="ReportFont, Arial, sans-serif" font-size="${fontSize}" font-weight="bold" letter-spacing=".45" fill="#31545b" fill-opacity=".46" stroke="#ffffff" stroke-opacity=".88" stroke-width="1.15" paint-order="stroke">${escapeXml(label)}</text>`;
   }).join('');
 
   const bubbles = type === 'municipality' ? rows.filter((row) => Number.isFinite(row.longitude) && Number.isFinite(row.latitude)).map((row, index) => {
-    const point = projectGeo({ lon: row.longitude, lat: row.latitude, bbox: geo.bbox, width, height });
-    const radius = 3 + Math.sqrt(row.value / max) * 7.5;
+    const point = projectGeo({ lon: row.longitude, lat: row.latitude, bbox, width, height });
+    const radius = 4 + Math.sqrt(row.value / max) * 8.5;
     const pinColor = VIBRANT_PALETTE[index % VIBRANT_PALETTE.length];
-    return `<circle cx="${point.x.toFixed(1)}" cy="${point.y.toFixed(1)}" r="${radius.toFixed(1)}" fill="${pinColor}" fill-opacity=".85" stroke="#ffffff" stroke-width="1.2"/>`;
+    return `<circle cx="${point.x.toFixed(1)}" cy="${point.y.toFixed(1)}" r="${radius.toFixed(1)}" fill="${pinColor}" fill-opacity=".85" stroke="#ffffff" stroke-width="1.4"/>`;
   }).join('') : '';
 
   const occupied = [];
   const locatedRows = rows.filter((row) => Number.isFinite(row.longitude) && Number.isFinite(row.latitude));
-  const municipalityLabelLimit = locatedRows.length <= 22 ? locatedRows.length : locatedRows.length <= 30 ? 20 : 16;
+  const municipalityLabelLimit = locatedRows.length <= 22 ? locatedRows.length : locatedRows.length <= 30 ? 15 : 13;
   const labelRows = type === 'municipality'
     ? locatedRows.slice(0, municipalityLabelLimit)
     : [];
   const municipalityLabels = labelRows.map((row, index) => {
-    const point = projectGeo({ lon: row.longitude, lat: row.latitude, bbox: geo.bbox, width, height });
+    const point = projectGeo({ lon: row.longitude, lat: row.latitude, bbox, width, height });
     const label = text(row.label).length > 19 ? `${text(row.label).slice(0, 18)}…` : text(row.label);
     const dense = labelRows.length > 16;
-    const boxHeight = dense ? 15 : 18;
-    const boxWidth = Math.max(48, Math.min(dense ? 105 : 115, label.length * (dense ? 3.9 : 4.4) + 28));
+    const boxHeight = dense ? 13 : 15;
+    const boxWidth = Math.max(42, Math.min(dense ? 88 : 98, label.length * (dense ? 3.25 : 3.65) + 24));
     const verticalOffsets = [-18, 7, -34, 23, -50, 39, -66, 55];
     const candidates = verticalOffsets.flatMap((offset) => [[9, offset], [-boxWidth - 9, offset]]);
     let selected = candidates[index % candidates.length];
@@ -699,7 +909,7 @@ const geoMapSvg = ({ geo, rows, type, color, title, width = 478, height = 390 })
     const allPoints = feature.rings.flat();
     const lons = allPoints.map((point) => point[0]);
     const lats = allPoints.map((point) => point[1]);
-    const point = projectGeo({ lon: (Math.min(...lons) + Math.max(...lons)) / 2, lat: (Math.min(...lats) + Math.max(...lats)) / 2, bbox: geo.bbox, width, height });
+    const point = projectGeo({ lon: (Math.min(...lons) + Math.max(...lons)) / 2, lat: (Math.min(...lats) + Math.max(...lats)) / 2, bbox, width, height });
     const label = text(datum.label).length > 16 ? `${text(datum.label).slice(0, 15)}…` : text(datum.label);
     const boxWidth = Math.max(50, Math.min(105, label.length * 4.2 + 27));
     const candidates = [[-boxWidth / 2, -8], [8, -8], [-boxWidth - 8, -8], [-boxWidth / 2, 10], [8, 10], [-boxWidth - 8, 10], [-boxWidth / 2, -25], [-boxWidth / 2, 27]];
@@ -722,10 +932,10 @@ const geoMapSvg = ({ geo, rows, type, color, title, width = 478, height = 390 })
   const labelNote = availableLabels > displayedLabels
     ? `Se muestran ${displayedLabels} de ${availableLabels} ${territoryName}; el resto se consolida en el ranking.`
     : 'Se muestran todas las etiquetas territoriales disponibles.';
-  return `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}">${defs}<rect width="100%" height="100%" rx="12" fill="#eef5f8" stroke="#cbd9ea"/><text x="16" y="18" font-size="9" font-weight="bold" fill="${BLUE}">${escapeXml(title)}</text><text x="16" y="31" font-size="6" fill="#64748b">${escapeXml(labelNote)}</text><g transform="translate(0 12)">${paths}${bubbles}${municipalityLabels}${departmentLabels}</g></svg>`;
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}">${defs}<rect width="100%" height="100%" rx="12" fill="#eef5f8" stroke="#cbd9ea"/><text x="16" y="18" font-size="9" font-weight="bold" fill="${BLUE}">${escapeXml(title)}</text><text x="16" y="31" font-size="6" fill="#64748b">${escapeXml(labelNote)}</text><g transform="translate(0 12)">${paths}${departmentWatermarks}${bubbles}${municipalityLabels}${departmentLabels}</g></svg>`;
 };
 
-const territoryRankingSvg = ({ title, rows, color, width = 202, height = 405 }) => {
+const territoryRankingSvg = ({ title, rows, color, width = 250, height = 405 }) => {
   const total = rows.reduce((acc, row) => acc + number(row.value), 0);
   const visibleLimit = rows.length <= 18 ? rows.length : 17;
   const visibleRows = rows.slice(0, visibleLimit);
@@ -737,36 +947,47 @@ const territoryRankingSvg = ({ title, rows, color, width = 202, height = 405 }) 
   const startY = 93;
   const footerHeight = 42;
   const rowHeight = Math.min(17, (height - startY - footerHeight - 8) / safeRows.length);
-  const truncate = (value) => text(value).length > 20 ? `${text(value).slice(0, 19)}…` : text(value);
+  const truncate = (value) => text(value).length > 24 ? `${text(value).slice(0, 23)}…` : text(value);
+  const innerW = width - 4;
+  const rowW = width - 20;
+  const badgeW = 34;
+  const badgeX = width - 44;
   const rowMarkup = safeRows.map((row, index) => {
     const y = startY + index * rowHeight;
-    const barWidth = number(row.value) > 0 ? Math.max(3, number(row.value) / max * 70) : 0;
+    const barWidth = number(row.value) > 0 ? Math.max(3, (number(row.value) / max) * (rowW - 100)) : 0;
     const rankFill = row.summarized ? '#64748b' : color;
-    return `<rect x="10" y="${y.toFixed(1)}" width="182" height="${(rowHeight - 1).toFixed(1)}" rx="4" fill="${index % 2 ? '#f8fafc' : '#fff'}"/><circle cx="21" cy="${(y + rowHeight / 2).toFixed(1)}" r="6.5" fill="${rankFill}" fill-opacity=".12"/><text x="21" y="${(y + rowHeight / 2 + 2.1).toFixed(1)}" text-anchor="middle" font-size="4.8" font-weight="bold" fill="${rankFill}">${row.summarized ? '+' : index + 1}</text><text x="32" y="${(y + rowHeight / 2 + 2).toFixed(1)}" font-size="5.7" font-weight="${row.summarized ? 'bold' : 'normal'}" fill="#29415f">${escapeXml(truncate(row.label))}</text><rect x="158" y="${(y + 2.5).toFixed(1)}" width="25" height="${Math.max(10, rowHeight - 6).toFixed(1)}" rx="5" fill="${rankFill}"/><text x="170.5" y="${(y + rowHeight / 2 + 2).toFixed(1)}" text-anchor="middle" font-size="5.7" font-weight="bold" fill="#fff">${format.format(row.value)}</text><rect x="32" y="${(y + rowHeight - 3).toFixed(1)}" width="70" height="1.6" rx=".8" fill="#e2e8f0"/><rect x="32" y="${(y + rowHeight - 3).toFixed(1)}" width="${barWidth.toFixed(1)}" height="1.6" rx=".8" fill="${rankFill}"/>`;
+    return `<rect x="10" y="${y.toFixed(1)}" width="${rowW}" height="${(rowHeight - 1).toFixed(1)}" rx="4" fill="${index % 2 ? '#f8fafc' : '#fff'}"/><circle cx="21" cy="${(y + rowHeight / 2).toFixed(1)}" r="6.5" fill="${rankFill}" fill-opacity=".12"/><text x="21" y="${(y + rowHeight / 2 + 2.1).toFixed(1)}" text-anchor="middle" font-size="4.8" font-weight="bold" fill="${rankFill}">${row.summarized ? '+' : index + 1}</text><text x="32" y="${(y + rowHeight / 2 + 2).toFixed(1)}" font-size="5.7" font-weight="${row.summarized ? 'bold' : 'normal'}" fill="#29415f">${escapeXml(truncate(row.label))}</text><rect x="${badgeX}" y="${(y + 2.5).toFixed(1)}" width="${badgeW}" height="${Math.max(10, rowHeight - 6).toFixed(1)}" rx="5" fill="${rankFill}"/><text x="${badgeX + badgeW / 2}" y="${(y + rowHeight / 2 + 2).toFixed(1)}" text-anchor="middle" font-size="5.7" font-weight="bold" fill="#fff">${format.format(row.value)}</text><rect x="32" y="${(y + rowHeight - 3).toFixed(1)}" width="${rowW - 100}" height="1.6" rx=".8" fill="#e2e8f0"/><rect x="32" y="${(y + rowHeight - 3).toFixed(1)}" width="${barWidth.toFixed(1)}" height="1.6" rx=".8" fill="${rankFill}"/>`;
   }).join('');
-  return `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}"><defs><filter id="rank-shadow"><feDropShadow dx="0" dy="3" stdDeviation="4" flood-color="#0f294f" flood-opacity=".12"/></filter></defs><rect x="2" y="2" width="198" height="401" rx="13" fill="#fff" stroke="#d5dfeb" filter="url(#rank-shadow)"/><path d="M15 2H187Q200 2 200 15V65H2V15Q2 2 15 2Z" fill="${color}"/><circle cx="24" cy="25" r="12" fill="#fff" fill-opacity=".14"/><path d="M18 25h12M24 19v12" stroke="#fff" stroke-width="2" stroke-linecap="round"/><text x="43" y="22" font-size="7.4" font-weight="bold" fill="#fff">RANKING TERRITORIAL</text><text x="43" y="37" font-size="5.5" font-weight="bold" fill="#fff" fill-opacity=".82">${escapeXml(text(title).slice(0, 28))}</text><rect x="13" y="49" width="78" height="19" rx="9.5" fill="#fff"/><text x="52" y="62" text-anchor="middle" font-size="5.8" font-weight="bold" fill="${color}">${rows.length} TERRITORIOS</text><rect x="99" y="49" width="90" height="19" rx="9.5" fill="#fff" fill-opacity=".14"/><text x="144" y="62" text-anchor="middle" font-size="5.8" font-weight="bold" fill="#fff">${format.format(total)} PROGRAMAS</text><text x="12" y="84" font-size="5.4" font-weight="bold" letter-spacing=".5" fill="#64748b">TERRITORIO</text><text x="171" y="84" text-anchor="middle" font-size="5.4" font-weight="bold" fill="#64748b">TOTAL</text>${rowMarkup}<rect x="10" y="${height - 39}" width="182" height="29" rx="8" fill="${color}" fill-opacity=".08"/><text x="20" y="${height - 21}" font-size="6.5" font-weight="bold" fill="#183552">TOTAL GENERAL</text><text x="179" y="${height - 21}" text-anchor="end" font-size="8.5" font-weight="bold" fill="${color}">${format.format(total)}</text></svg>`;
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}"><defs><filter id="rank-shadow"><feDropShadow dx="0" dy="3" stdDeviation="4" flood-color="#0f294f" flood-opacity=".12"/></filter></defs><rect x="2" y="2" width="${innerW}" height="${height - 4}" rx="13" fill="#fff" stroke="#d5dfeb" filter="url(#rank-shadow)"/><path d="M15 2H${width - 15}Q${width - 2} 2 ${width - 2} 15V65H2V15Q2 2 15 2Z" fill="${color}"/><circle cx="24" cy="25" r="12" fill="#fff" fill-opacity=".14"/><path d="M18 25h12M24 19v12" stroke="#fff" stroke-width="2" stroke-linecap="round"/><text x="43" y="22" font-size="7.4" font-weight="bold" fill="#fff">RANKING TERRITORIAL</text><text x="43" y="37" font-size="5.5" font-weight="bold" fill="#fff" fill-opacity=".82">${escapeXml(text(title).slice(0, 32))}</text><rect x="13" y="49" width="95" height="19" rx="9.5" fill="#fff"/><text x="60.5" y="62" text-anchor="middle" font-size="5.8" font-weight="bold" fill="${color}">${rows.length} TERRITORIOS</text><rect x="${width - 110}" y="49" width="95" height="19" rx="9.5" fill="#fff" fill-opacity=".14"/><text x="${width - 62.5}" y="62" text-anchor="middle" font-size="5.8" font-weight="bold" fill="#fff">${format.format(total)} PROGRAMAS</text><text x="12" y="84" font-size="5.4" font-weight="bold" letter-spacing=".5" fill="#64748b">TERRITORIO</text><text x="${width - 25}" y="84" text-anchor="middle" font-size="5.4" font-weight="bold" fill="#64748b">TOTAL</text>${rowMarkup}<rect x="10" y="${height - 39}" width="${rowW}" height="29" rx="8" fill="${color}" fill-opacity=".08"/><text x="20" y="${height - 21}" font-size="6.5" font-weight="bold" fill="#183552">TOTAL GENERAL</text><text x="${width - 20}" y="${height - 21}" text-anchor="end" font-size="8.5" font-weight="bold" fill="${color}">${format.format(total)}</text></svg>`;
 };
 
-const geographyPages = ({ rows, regionalRows, program }) => {
+const geographyPages = ({ rows, regionalRows, program, aiAnalysis = {} }) => {
   const geo = loadGeoData();
   if (!geo) return [];
-  const national = aggregateGeography(rows, geo); const regional = aggregateGeography(regionalRows, geo);
-  const page = (heading, mapRows, type, color, tableTitle) => [
-    { text: '', pageBreak: 'before' },
+  const national = aggregateGeography(rows, geo);
+  const regional = aggregateGeography(regionalRows, geo);
+  const page = (heading, mapRows, type, color, tableTitle, geoKey) => [
+    { text: '', pageBreak: 'before', pageOrientation: 'landscape' },
     ...sectionHeader(heading, program),
     {
       columns: [
-        { svg: geoMapSvg({ geo, rows: mapRows, type, color, title: heading, width: 478, height: 405 }), width: 478 },
-        { svg: territoryRankingSvg({ title: tableTitle, rows: mapRows, color, width: 202, height: 405 }), width: 202 }
+        { svg: geoMapSvg({ geo, rows: mapRows, type, color, title: heading, width: 695, height: 405 }), width: 695 },
+        { svg: territoryRankingSvg({ title: tableTitle, rows: mapRows, color, width: 250, height: 405 }), width: 250 }
       ],
-      columnGap: 10
-    }
+      columnGap: 10,
+      alignment: 'center'
+    },
+    { text: '', pageBreak: 'before' },
+    ...sectionHeader(heading, program),
+    ...aiAnalysisBox(
+      aiAnalysis[geoKey] || generateGeoAnalysis(type, heading.includes('REGIONAL') ? 'REGIONAL' : 'NACIONAL', mapRows)
+    )
   ];
   return [
-    ...page('MAPA DE MUNICIPIOS · NACIONAL', national.municipalities, 'municipality', '#173f96', 'MUNICIPIOS DESTACADOS'),
-    ...page('MAPA DE MUNICIPIOS · REGIONAL', regional.municipalities, 'municipality', RED, 'MUNICIPIOS REGIONALES'),
-    ...page('MAPA DE DEPARTAMENTOS · NACIONAL', national.departments, 'department', '#173f96', 'DEPARTAMENTOS DESTACADOS'),
-    ...page('MAPA DE DEPARTAMENTOS · REGIONAL', regional.departments, 'department', RED, 'DEPARTAMENTOS REGIONALES')
+    ...page('MAPA DE MUNICIPIOS · NACIONAL', national.municipalities, 'municipality', '#173f96', 'MUNICIPIOS DESTACADOS', 'geo_municipios_nacional'),
+    ...page('MAPA DE MUNICIPIOS · REGIONAL', regional.municipalities, 'municipality', RED, 'MUNICIPIOS REGIONALES', 'geo_municipios_regional'),
+    ...page('MAPA DE DEPARTAMENTOS · NACIONAL', national.departments, 'department', '#173f96', 'DEPARTAMENTOS DESTACADOS', 'geo_departamentos_nacional'),
+    ...page('MAPA DE DEPARTAMENTOS · REGIONAL', regional.departments, 'department', RED, 'DEPARTAMENTOS REGIONALES', 'geo_departamentos_regional')
   ];
 };
 
@@ -782,137 +1003,380 @@ const aggregatePeriods = (rows, fields) => {
   return Array.from(map.values()).sort((a, b) => text(a.periodo).localeCompare(text(b.periodo)));
 };
 
-const offerSummaryVisualSvg = ({ rows, view = 'sequence', scope = 'Nacional', width = 690, height = 360 }) => {
+const renderIconSvg = (type, x, y, color) => {
+  if (type === 'bank') {
+    return `<g transform="translate(${x}, ${y})" stroke="${color}" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" fill="none"><path d="M-5 4h10M-4 0h8M-3 -3l3 -2l3 2M-3 0v4M0 0v4M3 0v4"/></g>`;
+  }
+  if (type === 'building') {
+    return `<g transform="translate(${x}, ${y})" stroke="${color}" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" fill="none"><path d="M-4 -5h8v10h-8zM-2 -3h1M1 -3h1M-2 0h1M1 0h1M-2 3h1M1 3h1"/></g>`;
+  }
+  if (type === 'ribbon') {
+    return `<g transform="translate(${x}, ${y})" stroke="${color}" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" fill="none"><circle cx="0" cy="-2" r="3.5"/><path d="M-2 1.5l-1.5 5.5l3.5 -1.8l3.5 1.8l-1.5 -5.5"/></g>`;
+  }
+  if (type === 'calendar') {
+    return `<g transform="translate(${x}, ${y})" stroke="${color}" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" fill="none"><path d="M-4 -3h8v8h-8zM-2 -5v2M2 -5v2M-4 -1h8"/></g>`;
+  }
+  if (type === 'laptop') {
+    return `<g transform="translate(${x}, ${y})" stroke="${color}" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" fill="none"><path d="M-3 -4h6v5h-6zM-5 3h10"/></g>`;
+  }
+  return '';
+};
+
+const offerSummaryVisualSvg = ({ rows, view = 'sequence', scope = 'Nacional', program = '', width = 955, height = 380 }) => {
   const viewLabels = { sequence: 'VISTA SECUENCIAL', panel: 'VISTA PANEL', orbit: 'VISTA ÓRBITA', radial: 'VISTA RADIAL', executive: 'VISTA EJECUTIVA' };
   const scopeLabel = text(scope).toUpperCase();
   const scopeColor = scopeLabel === 'REGIONAL' ? RED : '#173f96';
   const credits = rows.map((row) => number(row.numero_creditos)).filter((value) => value > 0);
   const semesterRows = labelCountRows(rows, 'numero_semestres').map((row) => ({ ...row, label: `${row.label} semestres` }));
   const groups = [
-    { title: 'RECONOCIMIENTO MEN', color: '#173f96', items: labelCountRows(rows, 'reconocimiento_men') },
-    { title: 'SECTOR', color: '#3a9626', items: labelCountRows(rows, 'sector') },
-    { title: 'MODALIDADES', color: '#92278f', items: labelCountRows(rows, 'modalidad') },
-    { title: 'NÚMERO DE SEMESTRES', color: '#0891a5', items: semesterRows },
-    { title: 'RANGO DE CRÉDITOS', color: '#ea6a0a', items: credits.length ? [
-      { label: 'Mínimo', value: Math.min(...credits) },
-      { label: 'Máximo', value: Math.max(...credits) },
-      { label: 'Promedio', value: Math.round(credits.reduce((a, b) => a + b, 0) / credits.length) }
-    ] : [] }
+    { title: 'Reconocimiento MEN', color: '#173f96', items: labelCountRows(rows, 'reconocimiento_men'), icon: 'bank' },
+    { title: 'Sector', color: '#3a9626', items: labelCountRows(rows, 'sector'), icon: 'building' },
+    { title: 'Modalidades', color: '#92278f', items: labelCountRows(rows, 'modalidad'), icon: 'laptop' },
+    { title: 'Número de semestres', color: '#0891a5', items: semesterRows, icon: 'calendar' },
+    { title: 'Rango de créditos académicos', color: '#ea6a0a', items: credits.length ? [
+      { label: 'Mínimo de créditos', value: Math.min(...credits) },
+      { label: 'Máximo de créditos', value: Math.max(...credits) },
+      { label: 'Promedio de créditos', value: Math.round(credits.reduce((a, b) => a + b, 0) / credits.length) }
+    ] : [], icon: 'ribbon' }
   ];
   const card = (group, x, y, w, h, compact = false) => {
-    const items = group.items.slice(0, compact ? 4 : 5);
-    const startY = y + (compact ? 24 : 43);
-    const step = compact ? 12 : Math.max(16, Math.min(28, (h - 53) / Math.max(1, items.length)));
+    const availableSlots = compact
+      ? Math.max(2, Math.floor((h - 34) / 13))
+      : Math.max(2, Math.floor((h - 46) / 16));
+    const shouldSummarize = view !== 'orbit' && group.items.length > availableSlots;
+    const visibleItems = shouldSummarize ? group.items.slice(0, availableSlots - 1) : group.items;
+    const hiddenItems = shouldSummarize ? group.items.slice(availableSlots - 1) : [];
+    const items = shouldSummarize ? [
+      ...visibleItems,
+      {
+        label: `OTRAS ${hiddenItems.length} CATEGORÍAS`,
+        value: hiddenItems.reduce((total, item) => total + number(item.value), 0)
+      }
+    ] : visibleItems;
+    const startY = y + (compact ? (view === 'orbit' ? 30 : 36) : 43);
+    const step = compact ? (view === 'orbit' ? 16 : (h < 90 ? 13.5 : 15.5)) : Math.max(16, Math.min(28, (h - 53) / Math.max(1, items.length)));
+    const headerHeight = compact ? 22 : 28;
+    const headerTextY = y + (compact ? 15 : 19);
     const body = items.length ? items.map((item, index) => {
       const iy = startY + index * step;
       const label = text(item.label).length > 28 ? `${text(item.label).slice(0, 27)}…` : text(item.label);
-      return `<circle cx="${x + 14}" cy="${iy - 2.5}" r="${compact ? 2.5 : 3}" fill="${group.color}"/><text x="${x + 23}" y="${iy}" font-size="${compact ? 8 : 9}" font-weight="bold" fill="#334155">${escapeXml(label)}</text><rect x="${x + w - 48}" y="${iy - (compact ? 8.5 : 11)}" width="38" height="${compact ? 12.5 : 16}" rx="${compact ? 4 : 5}" fill="#fff" stroke="${group.color}" stroke-opacity=".4"/><text x="${x + w - 29}" y="${iy + 0.5}" text-anchor="middle" font-size="${compact ? 8.2 : 9.5}" font-weight="bold" fill="${group.color}">${escapeXml(format.format(item.value))}</text>`;
+      return `<circle cx="${x + 14}" cy="${iy - 2.5}" r="${compact ? 2.5 : 3}" fill="${group.color}"/><text x="${x + 23}" y="${iy}" font-size="${compact ? 7.8 : 9}" font-weight="bold" fill="#334155">${escapeXml(label)}</text><rect x="${x + w - 48}" y="${iy - (compact ? 8.5 : 11)}" width="38" height="${compact ? 12.5 : 16}" rx="${compact ? 4 : 5}" fill="#fff" stroke="${group.color}" stroke-opacity=".4"/><text x="${x + w - 29}" y="${iy + 0.5}" text-anchor="middle" font-size="${compact ? 8.2 : 9.5}" font-weight="bold" fill="${group.color}">${escapeXml(format.format(item.value))}</text>`;
     }).join('') : `<text x="${x + w / 2}" y="${y + h / 2 + 10}" text-anchor="middle" font-size="8.5" fill="#94a3b8">Sin información</text>`;
     if (view === 'orbit') {
       return `<rect x="${x}" y="${y}" width="${w}" height="${h}" rx="12" fill="#fff" stroke="${group.color}" stroke-width="1.4" stroke-opacity=".45"/><text x="${x + 16}" y="${y + 16}" font-size="9" font-weight="bold" fill="${group.color}">${escapeXml(group.title)}</text>${body}`;
     }
-    return `<rect x="${x}" y="${y}" width="${w}" height="${h}" rx="12" fill="#fff" stroke="${group.color}" stroke-opacity=".35"/><rect x="${x}" y="${y}" width="${w}" height="28" rx="12" fill="${group.color}"/><rect x="${x}" y="${y + 19}" width="${w}" height="9" fill="${group.color}"/><text x="${x + w / 2}" y="${y + 19}" text-anchor="middle" font-size="${compact ? 7 : 8.5}" font-weight="bold" fill="#fff">${escapeXml(group.title)}</text>${body}`;
+    return `<rect x="${x}" y="${y}" width="${w}" height="${h}" rx="12" fill="#fff" stroke="${group.color}" stroke-opacity=".35"/><rect x="${x}" y="${y}" width="${w}" height="${headerHeight}" rx="12" fill="${group.color}"/><rect x="${x}" y="${y + headerHeight - 9}" width="${w}" height="9" fill="${group.color}"/><text x="${x + w / 2}" y="${headerTextY}" text-anchor="middle" font-size="${compact ? 7.5 : 8.5}" font-weight="bold" fill="#fff">${escapeXml(group.title)}</text>${body}`;
   };
   let body = '';
+  let calculatedHeight = height;
+
   if (view === 'radial') {
-    const positions = [[18, 60, 192, 102], [480, 60, 192, 102], [480, 220, 192, 102], [18, 220, 192, 102], [249, 250, 192, 82]];
-    body = `<circle cx="345" cy="171" r="73" fill="#fff" stroke="#b6c6da" stroke-width="2"/><circle cx="345" cy="171" r="57" fill="#eef4fb"/><text x="345" y="159" text-anchor="middle" font-size="11" font-weight="bold" fill="#082b66">TOTAL PROGRAMAS</text><text x="345" y="190" text-anchor="middle" font-size="25" font-weight="bold" fill="${scopeColor}">${format.format(rows.length)}</text>${groups.map((group, index) => card(group, ...positions[index], true)).join('')}`;
+    const cx = 478;
+    const cy = 185;
+
+    const getCardH = (group) => Math.max(56, 34 + (group.items.length || 1) * 22);
+    const h0 = getCardH(groups[0]);
+    const h1 = getCardH(groups[1]);
+    const h2 = getCardH(groups[2]);
+    const h4 = getCardH(groups[4]);
+    const h3 = getCardH(groups[3]);
+
+    const radialCardsConfig = [
+      {
+        group: groups[0],
+        title: 'Reconocimiento MEN',
+        icon: 'bank',
+        card: { x: 25, y: 25, w: 250, h: h0 },
+        badge: { x: 150, y: 13 },
+        dot: { x: 420, y: 134 },
+        line: `M 275 65 L 350 65 L 420 134`
+      },
+      {
+        group: groups[1],
+        title: 'Sector',
+        icon: 'building',
+        card: { x: 680, y: 25, w: 250, h: h1 },
+        badge: { x: 805, y: 13 },
+        dot: { x: 536, y: 134 },
+        line: `M 680 65 L 605 65 L 536 134`
+      },
+      {
+        group: groups[2],
+        title: 'Modalidades',
+        icon: 'laptop',
+        card: { x: 25, y: 155, w: 250, h: h2 },
+        badge: { x: 150, y: 143 },
+        dot: { x: 410, y: 185 },
+        line: `M 275 185 L 410 185`
+      },
+      {
+        group: groups[4],
+        title: 'Rango de créditos académicos',
+        icon: 'ribbon',
+        card: { x: 680, y: 155, w: 250, h: h4 },
+        badge: { x: 805, y: 143 },
+        dot: { x: 546, y: 210 },
+        line: `M 680 210 L 605 210 L 546 210`
+      },
+      {
+        group: groups[3],
+        title: 'Número de semestres',
+        icon: 'calendar',
+        card: { x: 353, y: 300, w: 250, h: h3 },
+        badge: { x: 478, y: 287 },
+        dot: { x: 478, y: 253 },
+        line: `M 478 253 L 478 287`
+      }
+    ];
+
+    calculatedHeight = Math.max(380, 300 + h3 + 15);
+
+    const cardsMarkup = radialCardsConfig.map(({ group, title, icon, card: c, badge, dot, line }) => {
+      const { x, y, w, h } = c;
+      const startY = y + 34;
+      const items = group.items;
+      const step = 22;
+
+      const bodyMarkup = items.length ? items.map((item, index) => {
+        const iy = startY + index * step + 12;
+        const label = text(item.label);
+        return `<circle cx="${x + 14}" cy="${iy - 2.8}" r="3" fill="${group.color}"/><text x="${x + 23}" y="${iy}" font-size="8.5" font-weight="bold" fill="#334155">${escapeXml(label)}</text><rect x="${x + w - 48}" y="${iy - 10.5}" width="38" height="15" rx="5" fill="#fff" stroke="${group.color}" stroke-opacity=".4"/><text x="${x + w - 29}" y="${iy + 0.5}" text-anchor="middle" font-size="8.5" font-weight="bold" fill="${group.color}">${escapeXml(format.format(item.value))}</text>`;
+      }).join('') : `<text x="${x + w / 2}" y="${y + h / 2 + 5}" text-anchor="middle" font-size="8.5" fill="#94a3b8">Sin información</text>`;
+
+      return `
+        <path d="${line}" fill="none" stroke="${group.color}" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+        <circle cx="${dot.x}" cy="${dot.y}" r="4.8" fill="${group.color}" stroke="#fff" stroke-width="1.8"/>
+        <rect x="${x}" y="${y}" width="${w}" height="${h}" rx="12" fill="#fff" stroke="${group.color}" stroke-opacity=".35"/>
+        <rect x="${x}" y="${y}" width="${w}" height="24" rx="12" fill="${group.color}"/>
+        <rect x="${x}" y="${y + 15}" width="${w}" height="9" fill="${group.color}"/>
+        <text x="${x + w / 2}" y="${y + 16.5}" text-anchor="middle" font-size="9" font-weight="bold" fill="#fff">${escapeXml(title)}</text>
+        ${bodyMarkup}
+        <circle cx="${badge.x}" cy="${badge.y}" r="13" fill="#fff" stroke="${group.color}" stroke-width="2"/>
+        ${renderIconSvg(icon, badge.x, badge.y, group.color)}
+      `;
+    }).join('');
+
+    const donutArcs = `
+      <path d="M 420 134 A 68 68 0 0 1 536 134" fill="none" stroke="#173f96" stroke-width="9"/>
+      <path d="M 536 134 A 68 68 0 0 1 546 210" fill="none" stroke="#3a9626" stroke-width="9"/>
+      <path d="M 546 210 A 68 68 0 0 1 478 253" fill="none" stroke="#ea6a0a" stroke-width="9"/>
+      <path d="M 478 253 A 68 68 0 0 1 410 185" fill="none" stroke="#0891a5" stroke-width="9"/>
+      <path d="M 410 185 A 68 68 0 0 1 420 134" fill="none" stroke="#92278f" stroke-width="9"/>
+    `;
+
+    const centerCircle = `
+      <circle cx="${cx}" cy="${cy}" r="58" fill="#fff" stroke="#f1f5f9"/>
+      <text x="${cx}" y="${cy - 18}" text-anchor="middle" font-size="9" font-weight="bold" fill="#082b66" letter-spacing="1">TOTAL</text>
+      <text x="${cx}" y="${cy - 3}" text-anchor="middle" font-size="12" font-weight="900" fill="#082b66" letter-spacing="0.5">PROGRAMAS</text>
+      <text x="${cx}" y="${cy + 25}" text-anchor="middle" font-size="25" font-weight="900" fill="${scopeColor}">${format.format(rows.length)}</text>
+    `;
+
+    body = `<g>${donutArcs}${centerCircle}${cardsMarkup}</g>`;
   } else if (view === 'orbit') {
-    let currentY = 52;
+    let currentY = 44;
     const cardGap = 12;
-    const cardX = 300;
-    const cardWidth = 372;
-    const badgeX = 286;
-    const circleCenterX = 135;
+    const circleCenterX = Math.round(width * 0.195);
+    const badgeX = Math.round(width * 0.41);
+    const cardX = Math.round(width * 0.43);
+    const cardWidth = Math.max(260, width - cardX - 18);
 
     const cardLayouts = groups.map((group) => {
-      const itemsCount = Math.max(1, Math.min(group.items.length, 6));
-      const cardH = Math.max(58, 26 + itemsCount * 13);
+      const itemsCount = Math.max(1, group.items.length);
+      const cardH = Math.max(62, 32 + itemsCount * 17);
       const y = currentY;
       currentY += cardH + cardGap;
-      const badgeY = y + cardH / 2;
+      const badgeY = Math.round(y + cardH / 2);
       return { group, y, height: cardH, badgeY };
     });
 
-    const calculatedHeight = Math.max(380, currentY + 16);
-    const circleCenterY = Math.round((52 + currentY - cardGap) / 2);
+    calculatedHeight = Math.max(380, currentY + 16);
+    const circleCenterY = Math.round((44 + currentY - cardGap) / 2);
 
     const orbitCards = cardLayouts.map(({ group, y, height: cardH, badgeY }, index) => {
       const angle = (index - 2) * 20 * (Math.PI / 180);
       const circleEdgeX = Math.round(circleCenterX + 100 * Math.cos(angle));
       const circleEdgeY = Math.round(circleCenterY + 100 * Math.sin(angle));
-      return `<polyline points="${circleEdgeX},${circleEdgeY} ${badgeX - 30},${badgeY} ${badgeX},${badgeY}" fill="none" stroke="${group.color}" stroke-width="2"/><circle cx="${circleEdgeX}" cy="${circleEdgeY}" r="5" fill="${group.color}" stroke="#fff" stroke-width="2"/><circle cx="${badgeX}" cy="${badgeY}" r="16" fill="${group.color}" stroke="#fff" stroke-width="2.5"/><circle cx="${badgeX}" cy="${badgeY}" r="16" fill="none" stroke="${group.color}" stroke-width="1.2"/>${card(group, cardX, y, cardWidth, cardH, true)}`;
+      const iconType = group.icon || 'bank';
+      return `<polyline points="${circleEdgeX},${circleEdgeY} ${badgeX - 25},${badgeY} ${badgeX},${badgeY}" fill="none" stroke="${group.color}" stroke-width="2"/><circle cx="${circleEdgeX}" cy="${circleEdgeY}" r="5" fill="${group.color}" stroke="#fff" stroke-width="2"/><circle cx="${badgeX}" cy="${badgeY}" r="16" fill="${group.color}" stroke="#fff" stroke-width="2.5"/><circle cx="${badgeX}" cy="${badgeY}" r="16" fill="none" stroke="${group.color}" stroke-width="1.2"/>${renderIconSvg(iconType, badgeX, badgeY, '#ffffff')}${card(group, cardX, y, cardWidth, cardH, true)}`;
     }).join('');
 
     body = `<circle cx="${circleCenterX}" cy="${circleCenterY}" r="100" fill="#fff" stroke="#aeb9c7" stroke-width="1.8" stroke-dasharray="5 4"/><circle cx="${circleCenterX}" cy="${circleCenterY}" r="83" fill="#f8fafc" stroke="#d7e0eb"/><path d="M${circleCenterX - 22} ${circleCenterY - 40}l22-12 22 12-22 12zM${circleCenterX - 16} ${circleCenterY - 31}v13h32v-13M${circleCenterX - 9} ${circleCenterY - 16}v8h18v-8" fill="none" stroke="#082b66" stroke-width="3" stroke-linejoin="round"/><text x="${circleCenterX}" y="${circleCenterY + 13}" text-anchor="middle" font-size="10.5" font-weight="bold" fill="#082b66">OFERTA DE PROGRAMAS</text><text x="${circleCenterX}" y="${circleCenterY + 29}" text-anchor="middle" font-size="10.5" font-weight="bold" fill="#082b66">ACADÉMICOS</text><rect x="${circleCenterX - 29}" y="${circleCenterY + 41}" width="58" height="26" rx="8" fill="${scopeColor}"/><text x="${circleCenterX}" y="${circleCenterY + 59}" text-anchor="middle" font-size="16" font-weight="bold" fill="#fff">${format.format(rows.length)}</text>${orbitCards}`;
-
-    return `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${calculatedHeight}"><defs><filter id="summary-shadow"><feDropShadow dx="0" dy="3" stdDeviation="4" flood-color="#123b7a" flood-opacity=".12"/></filter></defs><rect x=".5" y=".5" width="${width - 1}" height="${calculatedHeight - 1}" rx="15" fill="#f8fbff" stroke="#cbd9ea"/><rect x="1" y="1" width="6" height="${calculatedHeight - 2}" rx="3" fill="${scopeColor}"/><text x="22" y="25" font-size="12" font-weight="bold" fill="#082b66">ANÁLISIS DE CONTEXTO EXTERNO · OFERTA ${scopeLabel}</text><text x="22" y="41" font-size="7.5" fill="#64748b">Indicadores calculados con la tabla OFERTA y los filtros del programa seleccionado.</text><rect x="${width - 107}" y="14" width="89" height="21" rx="10.5" fill="${scopeColor}"/><text x="${width - 62.5}" y="28" text-anchor="middle" font-size="6.8" font-weight="bold" fill="#fff">${viewLabels[view] || viewLabels.sequence}</text><g filter="url(#summary-shadow)">${body}</g></svg>`;
   } else if (view === 'panel') {
-    const positions = [[12, 58, 327, 112], [351, 58, 327, 112], [12, 182, 214, 158], [238, 182, 214, 158], [464, 182, 214, 158]];
+    const positions = [[12, 48, 460, 112], [482, 48, 460, 112], [12, 172, 302, 158], [326, 172, 302, 158], [640, 172, 302, 158]];
     body = groups.map((group, index) => card(group, ...positions[index])).join('');
   } else if (view === 'executive') {
-    const positions = [[12, 104, 327, 105], [351, 104, 327, 105], [12, 221, 214, 124], [238, 221, 214, 124], [464, 221, 214, 124]];
-    body = `<path d="M18 57H625L675 81L625 105H18Z" fill="#082b66"/><text x="42" y="85" font-size="10" font-weight="bold" fill="#fff">TOTAL DE PROGRAMAS ANALIZADOS</text><rect x="285" y="66" width="72" height="30" rx="5" fill="#fff"/><text x="321" y="87" text-anchor="middle" font-size="17" font-weight="bold" fill="#082b66">${format.format(rows.length)}</text>${groups.map((group, index) => card(group, ...positions[index], true)).join('')}`;
+    const positions = [[12, 84, 460, 105], [482, 84, 460, 105], [12, 201, 302, 124], [326, 201, 302, 124], [640, 201, 302, 124]];
+    body = `<path d="M18 37H890L940 61L890 85H18Z" fill="#082b66"/><text x="42" y="65" font-size="10" font-weight="bold" fill="#fff">TOTAL DE PROGRAMAS ANALIZADOS</text><rect x="415" y="46" width="72" height="30" rx="5" fill="#fff"/><text x="451" y="67" text-anchor="middle" font-size="17" font-weight="bold" fill="#082b66">${format.format(rows.length)}</text>${groups.map((group, index) => card(group, ...positions[index], true)).join('')}`;
   } else {
-    body = groups.map((group, index) => card(group, 8 + index * 136, 75, 128, 265)).join('');
+    // VISTA SECUENCIAL (Compact layout matching UI data, with no duplicate inner header titles)
+    const cardWidth = 174;
+    const marginX = 18;
+    const gap = 16;
+    const cardY = 98;
+
+    const maxItems = Math.max(...groups.map((g) => g.items.length || 1));
+    const cardHeight = Math.max(125, 30 + maxItems * 22);
+    calculatedHeight = cardY + cardHeight + 10;
+
+    const headerMarkup = `
+      <rect x="${width / 2 - 75}" y="10" width="150" height="20" rx="10" fill="#082b66"/>
+      <text x="${width / 2}" y="23.5" text-anchor="middle" font-size="8.5" font-weight="bold" fill="#fff">${format.format(rows.length)} programas analizados</text>
+      <line x1="105" y1="86" x2="850" y2="86" stroke="#aeb9c8" stroke-width="2"/>
+    `;
+
+    const nodesMarkup = groups.map((group, index) => {
+      const cx = marginX + index * (cardWidth + gap) + cardWidth / 2;
+      const x = cx - cardWidth / 2;
+      const iconType = group.icon || 'bank';
+
+      // Hexagon polygon (centered at cx, top y=33, height=44)
+      const hexPoints = `${cx - 13},33 ${cx + 13},33 ${cx + 22},55 ${cx + 13},77 ${cx - 13},77 ${cx - 22},55`;
+      const hexagon = `<polygon points="${hexPoints}" fill="${group.color}"/><g transform="translate(0, 0)">${renderIconSvg(iconType, cx, 55, '#ffffff')}</g>`;
+
+      // Connector line & Dot on line at y=86
+      const connectorLine = `<line x1="${cx}" y1="77" x2="${cx}" y2="98" stroke="${group.color}" stroke-width="2"/>`;
+      const dot = `<circle cx="${cx}" cy="86" r="6" fill="${group.color}" stroke="#ffffff" stroke-width="2"/>`;
+
+      // Card below
+      const items = group.items;
+      const itemsMarkup = items.length ? items.map((item, itemIdx) => {
+        const iy = cardY + 34 + itemIdx * 20;
+        const itemLabel = text(item.label).length > 24 ? `${text(item.label).slice(0, 23)}…` : text(item.label);
+        return `<circle cx="${x + 10}" cy="${iy - 3}" r="2.2" fill="${group.color}"/><text x="${x + 17}" y="${iy}" font-size="7.8" font-weight="bold" fill="#334155">${escapeXml(itemLabel)}</text><rect x="${x + cardWidth - 38}" y="${iy - 9}" width="30" height="13" rx="3" fill="#fcfdff" stroke="#bdc8d6"/><text x="${x + cardWidth - 23}" y="${iy + 1}" text-anchor="middle" font-size="8" font-weight="900" fill="#102a4c">${format.format(item.value)}</text>`;
+      }).join('') : `<text x="${cx}" y="${cardY + cardHeight / 2}" text-anchor="middle" font-size="8.5" fill="#94a3b8">Sin información</text>`;
+
+      const cardBox = `
+        <rect x="${x}" y="${cardY}" width="${cardWidth}" height="${cardHeight}" rx="10" fill="#ffffff" stroke="${group.color}" stroke-opacity=".6" stroke-width="1.3"/>
+        <text x="${cx}" y="${cardY + 16}" text-anchor="middle" font-size="8.5" font-weight="900" fill="${group.color}">${escapeXml(group.title)}</text>
+        ${itemsMarkup}
+      `;
+
+      return `<g>${hexagon}${connectorLine}${dot}${cardBox}</g>`;
+    }).join('');
+
+    body = `<g>${headerMarkup}${nodesMarkup}</g>`;
   }
-  return `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}"><defs><filter id="summary-shadow"><feDropShadow dx="0" dy="3" stdDeviation="4" flood-color="#123b7a" flood-opacity=".12"/></filter></defs><rect x=".5" y=".5" width="${width - 1}" height="${height - 1}" rx="15" fill="#f8fbff" stroke="#cbd9ea"/><rect x="1" y="1" width="6" height="${height - 2}" rx="3" fill="${scopeColor}"/><text x="22" y="25" font-size="12" font-weight="bold" fill="#082b66">ANÁLISIS DE CONTEXTO EXTERNO · OFERTA ${scopeLabel}</text><text x="22" y="41" font-size="7.5" fill="#64748b">Indicadores calculados con la tabla OFERTA y los filtros del programa seleccionado.</text><rect x="${width - 107}" y="14" width="89" height="21" rx="10.5" fill="${scopeColor}"/><text x="${width - 62.5}" y="28" text-anchor="middle" font-size="6.8" font-weight="bold" fill="#fff">${viewLabels[view] || viewLabels.sequence}</text><g filter="url(#summary-shadow)">${body}</g></svg>`;
+
+  if (view === 'radial') {
+    return `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${calculatedHeight}" viewBox="0 0 ${width} ${calculatedHeight}" preserveAspectRatio="xMidYMid meet"><rect width="100%" height="100%" fill="#ffffff"/><g>${body}</g></svg>`;
+  }
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${calculatedHeight}" viewBox="0 0 ${width} ${calculatedHeight}" preserveAspectRatio="xMidYMid meet"><rect x=".5" y=".5" width="${width - 1}" height="${calculatedHeight - 1}" rx="15" fill="#f8fbff" stroke="#cbd9ea"/><rect x="1" y="1" width="6" height="${calculatedHeight - 2}" rx="3" fill="${scopeColor}"/><g>${body}</g></svg>`;
 };
 
-const offerProgramTablesSvg = ({ nationalRows, regionalRows, width = 690 }) => {
+const offerSingleProgramTableSvg = ({ rows, scope = 'Nacional', width = 580 }) => {
   const maxVisibleRows = 10;
-  const visibleNational = nationalRows.slice(0, maxVisibleRows);
-  const visibleRegional = regionalRows.slice(0, maxVisibleRows);
-  const maxRows = Math.max(1, visibleNational.length, visibleRegional.length);
-  const height = 116 + maxRows * 23;
-  const getFontSize = (str) => {
-    const len = text(str).length;
-    if (len <= 38) return 7.5;
-    if (len <= 50) return 6.6;
-    if (len <= 64) return 5.8;
-    return 5.2;
+  const summarizeRows = (r) => r.length <= maxVisibleRows ? r : [
+    ...r.slice(0, maxVisibleRows - 1),
+    {
+      label: `OTROS ${r.length - maxVisibleRows + 1} PROGRAMAS`,
+      value: r.slice(maxVisibleRows - 1).reduce((total, row) => total + number(row.value), 0)
+    }
+  ];
+  const visibleRows = summarizeRows(rows);
+  const color = scope.toLowerCase() === 'regional' ? RED : '#082b66';
+  const title = scope.toLowerCase() === 'regional' ? 'OFERTA REGIONAL' : 'OFERTA NACIONAL';
+  const total = rows.reduce((acc, row) => acc + number(row.value), 0);
+
+  const splitLabel = (str, maxLen = 54) => {
+    const clean = text(str);
+    if (clean.length <= maxLen) return [clean];
+    const words = clean.split(/\s+/);
+    let line1 = '';
+    let line2 = '';
+    words.forEach((w) => {
+      if ((line1 ? line1 + ' ' + w : w).length <= maxLen && !line2) {
+        line1 = line1 ? line1 + ' ' + w : w;
+      } else {
+        line2 = line2 ? line2 + ' ' + w : w;
+      }
+    });
+    if (!line2) return [line1];
+    return [line1, line2];
   };
-  const panel = ({ x, color, title, rows, totalValue }) => {
-    const panelWidth = 338;
-    const headerY = 10;
-    const columnY = 52;
-    const rowsY = 78;
-    const totalY = rowsY + rows.length * 23;
-    const panelHeight = totalY + 31 - headerY;
+
+  const createPanelData = ({ x, y = 6, color, title, rows, totalValue, panelWidth = 576 }) => {
+    const headerY = y;
+    const columnY = y + 42;
+    const rowsY = y + 68;
+    let currentY = rowsY;
+
     const rowMarkup = rows.length ? rows.map((row, index) => {
-      const y = rowsY + index * 23;
+      const label = text(row.label);
+      const lines = splitLabel(label, 54);
+      const isMultiLine = lines.length > 1;
+      const rh = isMultiLine ? 34 : 22;
+      const ry = currentY;
+      currentY += rh;
       const fill = index % 2 ? '#f7f9fc' : '#ffffff';
-      const labelFontSize = getFontSize(row.label);
-      return `<rect x="${x + 1}" y="${y}" width="${panelWidth - 2}" height="23" fill="${fill}"/><line x1="${x + 1}" y1="${y + 23}" x2="${x + panelWidth - 1}" y2="${y + 23}" stroke="#e4eaf2"/><text x="${x + 14}" y="${y + 15}" font-size="${labelFontSize}" font-weight="bold" fill="#203b5d">${escapeXml(text(row.label))}</text><rect x="${x + panelWidth - 51}" y="${y + 4}" width="37" height="15" rx="6" fill="${color}" fill-opacity=".09"/><text x="${x + panelWidth - 32.5}" y="${y + 15}" text-anchor="middle" font-size="7.5" font-weight="bold" fill="${color}">${format.format(row.value)}</text>`;
-    }).join('') : `<rect x="${x + 1}" y="${rowsY}" width="${panelWidth - 2}" height="23" fill="#fff"/><text x="${x + panelWidth / 2}" y="${rowsY + 15}" text-anchor="middle" font-size="7.5" fill="#94a3b8">Sin registros para este alcance</text>`;
-    const adjustedTotalY = rows.length ? totalY : rowsY + 23;
-    const adjustedPanelHeight = adjustedTotalY + 31 - headerY;
-    const total = number(totalValue);
-    return `<g filter="url(#table-shadow)"><rect x="${x}" y="${headerY}" width="${panelWidth}" height="${adjustedPanelHeight}" rx="13" fill="#fff" stroke="#d5dfeb"/><path d="M${x + 13} ${headerY}H${x + panelWidth - 13}Q${x + panelWidth} ${headerY} ${x + panelWidth} ${headerY + 13}V${columnY}H${x}V${headerY + 13}Q${x} ${headerY} ${x + 13} ${headerY}Z" fill="${color}"/><text x="${x + 14}" y="${headerY + 25}" font-size="9.5" font-weight="bold" fill="#fff">${escapeXml(title)}</text><rect x="${x + panelWidth - 91}" y="${headerY + 11}" width="77" height="20" rx="10" fill="#fff" fill-opacity=".16"/><text x="${x + panelWidth - 52.5}" y="${headerY + 24.5}" text-anchor="middle" font-size="7" font-weight="bold" fill="#fff">${format.format(total)} REGISTROS</text><rect x="${x + 1}" y="${columnY}" width="${panelWidth - 2}" height="26" fill="#edf3fa"/><text x="${x + 14}" y="${columnY + 17}" font-size="7" font-weight="bold" letter-spacing=".45" fill="#405674">PROGRAMAS ACADÉMICOS ANALIZADOS</text><text x="${x + panelWidth - 32}" y="${columnY + 17}" text-anchor="middle" font-size="7" font-weight="bold" fill="#405674">TOTAL</text>${rowMarkup}<rect x="${x + 1}" y="${adjustedTotalY}" width="${panelWidth - 2}" height="30" fill="${color}" fill-opacity=".08"/><text x="${x + 14}" y="${adjustedTotalY + 20}" font-size="8" font-weight="bold" fill="#102f59">TOTAL GENERAL</text><text x="${x + panelWidth - 32}" y="${adjustedTotalY + 20}" text-anchor="middle" font-size="8.5" font-weight="bold" fill="${color}">${format.format(total)}</text></g>`;
+
+      const labelMarkup = isMultiLine
+        ? `<text x="${x + 14}" y="${ry + 13}" font-size="7.5" font-weight="bold" fill="#203b5d">${escapeXml(lines[0])}</text><text x="${x + 14}" y="${ry + 25}" font-size="7.5" font-weight="bold" fill="#203b5d">${escapeXml(lines[1])}</text>`
+        : `<text x="${x + 14}" y="${ry + 15}" font-size="7.5" font-weight="bold" fill="#203b5d">${escapeXml(label)}</text>`;
+
+      const badgeY = ry + (rh - 15) / 2;
+      const badgeTextY = badgeY + 10.5;
+
+      return `<rect x="${x + 1}" y="${ry}" width="${panelWidth - 2}" height="${rh}" fill="${fill}"/><line x1="${x + 1}" y1="${ry + rh}" x2="${x + panelWidth - 1}" y2="${ry + rh}" stroke="#e4eaf2"/>${labelMarkup}<rect x="${x + panelWidth - 51}" y="${badgeY}" width="37" height="15" rx="6" fill="${color}" fill-opacity=".09"/><text x="${x + panelWidth - 32.5}" y="${badgeTextY}" text-anchor="middle" font-size="7.5" font-weight="bold" fill="${color}">${format.format(row.value)}</text>`;
+    }).join('') : `<rect x="${x + 1}" y="${rowsY}" width="${panelWidth - 2}" height="24" fill="#fff"/><text x="${x + panelWidth / 2}" y="${rowsY + 15.5}" text-anchor="middle" font-size="7.5" fill="#94a3b8">Sin registros para este alcance</text>`;
+
+    const adjustedTotalY = rows.length ? currentY : rowsY + 24;
+    const totalRowHeight = 28;
+    const adjustedPanelHeight = adjustedTotalY + totalRowHeight - headerY;
+    const totalCount = number(totalValue);
+
+    const svg = `<g><rect x="${x}" y="${headerY}" width="${panelWidth}" height="${adjustedPanelHeight}" rx="13" fill="#fff" stroke="#d5dfeb"/><path d="M${x + 13} ${headerY}H${x + panelWidth - 13}Q${x + panelWidth} ${headerY} ${x + panelWidth} ${headerY + 13}V${columnY}H${x}V${headerY + 13}Q${x} ${headerY} ${x + 13} ${headerY}Z" fill="${color}"/><text x="${x + 14}" y="${headerY + 25}" font-size="9.5" font-weight="bold" fill="#fff">${escapeXml(title)}</text><rect x="${x + panelWidth - 91}" y="${headerY + 11}" width="77" height="20" rx="10" fill="#fff" fill-opacity=".16"/><text x="${x + panelWidth - 52.5}" y="${headerY + 24.5}" text-anchor="middle" font-size="7" font-weight="bold" fill="#fff">${format.format(totalCount)} REGISTROS</text><rect x="${x + 1}" y="${columnY}" width="${panelWidth - 2}" height="26" fill="#edf3fa"/><text x="${x + 14}" y="${columnY + 17}" font-size="7" font-weight="bold" letter-spacing=".45" fill="#405674">PROGRAMAS ACADÉMICOS ANALIZADOS</text><text x="${x + panelWidth - 32}" y="${columnY + 17}" text-anchor="middle" font-size="7" font-weight="bold" fill="#405674">TOTAL</text>${rowMarkup}<rect x="${x + 1}" y="${adjustedTotalY}" width="${panelWidth - 2}" height="${totalRowHeight}" fill="${color}" fill-opacity=".08"/><text x="${x + 14}" y="${adjustedTotalY + 18}" font-size="8" font-weight="bold" fill="#102f59">TOTAL GENERAL</text><text x="${x + panelWidth - 32}" y="${adjustedTotalY + 18}" text-anchor="middle" font-size="8.5" font-weight="bold" fill="${color}">${format.format(totalCount)}</text></g>`;
+
+    return { svg, height: adjustedPanelHeight };
   };
+
+  const panel = createPanelData({ x: 2, y: 6, color, title, rows: visibleRows, totalValue: total, panelWidth: width - 4 });
+  const calculatedHeight = panel.height + 14;
+
   return {
-    height,
-    svg: `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}"><defs><filter id="table-shadow"><feDropShadow dx="0" dy="3" stdDeviation="4" flood-color="#0f294f" flood-opacity=".1"/></filter></defs><rect width="${width}" height="${height}" rx="16" fill="#f6f9fd"/>${panel({ x: 2, color: '#082b66', title: 'OFERTA NACIONAL', rows: visibleNational, totalValue: nationalRows.reduce((acc, row) => acc + number(row.value), 0) })}${panel({ x: 350, color: RED, title: 'OFERTA REGIONAL', rows: visibleRegional, totalValue: regionalRows.reduce((acc, row) => acc + number(row.value), 0) })}</svg>`
+    height: calculatedHeight,
+    svg: `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${calculatedHeight}" viewBox="0 0 ${width} ${calculatedHeight}" preserveAspectRatio="xMidYMid meet"><rect width="${width}" height="${calculatedHeight}" rx="14" fill="#f6f9fd"/>${panel.svg}</svg>`
   };
 };
 
-const offerPage = ({ rows, regionalRows, program, view }) => {
+const offerPage = ({ rows, regionalRows, program, view, aiAnalysis = {} }) => {
   const analyzedPrograms = labelCountRows(rows, 'nombre_programa');
   const regionalPrograms = labelCountRows(regionalRows, 'nombre_programa');
-  const programTables = offerProgramTablesSvg({ nationalRows: analyzedPrograms, regionalRows: regionalPrograms });
+  const nationalTable = offerSingleProgramTableSvg({ rows: analyzedPrograms, scope: 'Nacional', width: 690 });
+  const regionalTable = offerSingleProgramTableSvg({ rows: regionalPrograms, scope: 'Regional', width: 690 });
+  const tablesAnalysisText = aiAnalysis.offer_tables || aiAnalysis.oferta_tablas || generateOfferTablesAnalysis(analyzedPrograms, regionalPrograms);
+
   return [
-    ...sectionHeader('OFERTA NACIONAL Y REGIONAL DE PROGRAMAS ACADÉMICOS SIMILARES', program),
-    { svg: programTables.svg, width: 690, alignment: 'center', margin: [0, 0, 0, 8] },
+    ...sectionHeader('PROGRAMAS ACADÉMICOS SIMILARES · OFERTA NACIONAL', program),
+    { svg: nationalTable.svg, width: 690, alignment: 'center', margin: [0, 4, 0, 8] },
     { text: '', pageBreak: 'before' },
-    ...sectionHeader('RESUMEN VISUAL · OFERTA NACIONAL', program),
-    { svg: offerSummaryVisualSvg({ rows, view, scope: 'Nacional', height: view === 'orbit' ? 410 : 360 }), width: 690, alignment: 'center' },
+    ...sectionHeader('PROGRAMAS ACADÉMICOS SIMILARES · OFERTA NACIONAL', program),
+    ...aiAnalysisBox(tablesAnalysisText),
     { text: '', pageBreak: 'before' },
-    ...sectionHeader('RESUMEN VISUAL · OFERTA REGIONAL', program),
-    { svg: offerSummaryVisualSvg({ rows: regionalRows, view, scope: 'Regional', height: view === 'orbit' ? 410 : 360 }), width: 690, alignment: 'center' }
+    ...sectionHeader('PROGRAMAS ACADÉMICOS SIMILARES · OFERTA REGIONAL', program),
+    { svg: regionalTable.svg, width: 690, alignment: 'center', margin: [0, 4, 0, 8] },
+    { text: '', pageBreak: 'before' },
+    ...sectionHeader('PROGRAMAS ACADÉMICOS SIMILARES · OFERTA REGIONAL', program),
+    ...aiAnalysisBox(tablesAnalysisText),
+    { text: '', pageBreak: 'before' },
+    ...sectionHeader('ANÁLISIS DE CONTEXTO EXTERNO · OFERTA NACIONAL', program),
+    { svg: offerSummaryVisualSvg({ rows, view, scope: 'Nacional', program, width: 690 }), width: 690, alignment: 'center', margin: [0, 4, 0, 8] },
+    { text: '', pageBreak: 'before' },
+    ...sectionHeader('ANÁLISIS DE CONTEXTO EXTERNO · OFERTA NACIONAL', program),
+    ...aiAnalysisBox(
+      aiAnalysis.offer_nacional || aiAnalysis.oferta_nacional || generateOfferAnalysis(rows, regionalRows, 'Nacional')
+    ),
+    { text: '', pageBreak: 'before' },
+    ...sectionHeader('ANÁLISIS DE CONTEXTO EXTERNO · OFERTA REGIONAL', program),
+    { svg: offerSummaryVisualSvg({ rows: regionalRows, view, scope: 'Regional', program, width: 690 }), width: 690, alignment: 'center', margin: [0, 4, 0, 8] },
+    { text: '', pageBreak: 'before' },
+    ...sectionHeader('ANÁLISIS DE CONTEXTO EXTERNO · OFERTA REGIONAL', program),
+    ...aiAnalysisBox(
+      aiAnalysis.offer_regional || aiAnalysis.oferta_regional || generateOfferAnalysis(rows, regionalRows, 'Regional')
+    )
   ];
 };
 
-const singleMetricCardsChartSvg = ({ data, series, width = 690, height = 300, scope = '', annual = false }) => {
+const singleMetricCardsChartSvg = ({ data, series, width = 580, height = 300, scope = '', annual = false }) => {
   const item = series[0];
   let rows;
   if (annual) {
@@ -949,14 +1413,14 @@ const singleMetricCardsChartSvg = ({ data, series, width = 690, height = 300, sc
   return `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}"><rect x=".5" y=".5" width="${width - 1}" height="${height - 1}" rx="13" fill="#fbfdff" stroke="#cbd9ea"/><text x="18" y="23" font-size="11" font-weight="bold" fill="#0f172a">${title}</text><text x="18" y="38" font-size="7.5" fill="#64748b">${escapeXml(subtitle)}</text><rect x="${width - 82}" y="14" width="64" height="20" rx="10" fill="${item.color}"/><text x="${width - 50}" y="27.5" text-anchor="middle" font-size="8" font-weight="bold" fill="#fff">${escapeXml(scope)}</text>${cards}</svg>`;
 };
 
-const singleMetricSpecialChartSvg = ({ data, series, type, width = 690, height = 285, scope = '' }) => {
+const singleMetricSpecialChartSvg = ({ data, series, type, width = 580, height = 285, scope = '' }) => {
   const item = series[0];
   const periodRows = data.map((row) => ({ periodo: text(row.periodo), value: number(row[item.key]) })).filter((row) => row.value > 0);
   if (!periodRows.length) return `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}"><rect width="100%" height="100%" fill="#fff"/><text x="${width / 2}" y="${height / 2}" text-anchor="middle" font-size="11" fill="#64748b">No existen datos para el alcance seleccionado.</text></svg>`;
   const annualRows = periodRows.map((row) => ({ ...row, periodo: periodLabel(row.periodo) }));
   const titles = {
     funnel: [`${item.label.toUpperCase()} · EMBUDO COMPARATIVO`, 'Comparación proporcional entre los períodos visibles.'],
-    indicators: [`${item.label.toUpperCase()} · TABLERO DE INDICADORES`, 'Resumen ejecutivo calculado con el alcance seleccionado.'],
+    indicators: [`${item.label.toUpperCase()} · TABLERO DE INDICADORES`, 'Resumen ejecutivo calculated con el alcance seleccionado.'],
     journey: [`${item.label.toUpperCase()} · CAMINO HISTÓRICO`, 'Trayectoria por período y cambios de dirección del indicador.'],
     conversion: [`${item.label.toUpperCase()} · ÍNDICES DE EVOLUCIÓN`, 'El primer período visible representa la base 100.'],
     stackedArea: [`${item.label.toUpperCase()} · ÁREA ACUMULADA`, 'Magnitud de cada período representada como una superficie continua.']
@@ -965,7 +1429,8 @@ const singleMetricSpecialChartSvg = ({ data, series, type, width = 690, height =
   const frame = (body) => `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}"><rect x=".5" y=".5" width="${width - 1}" height="${height - 1}" rx="13" fill="#fbfdff" stroke="#cbd9ea"/><text x="18" y="23" font-size="11" font-weight="bold" fill="#0f172a">${escapeXml(title)}</text><text x="18" y="38" font-size="7.5" fill="#64748b">${escapeXml(subtitle)}</text><rect x="${width - 82}" y="14" width="64" height="20" rx="10" fill="${item.color}"/><text x="${width - 50}" y="27.5" text-anchor="middle" font-size="8" font-weight="bold" fill="#fff">${escapeXml(scope)}</text>${body}</svg>`;
   if (type === 'indicators') {
     const values = periodRows.map((row) => row.value); const latest = values[values.length - 1]; const previous = values[values.length - 2] || 0; const variation = previous > 0 ? (latest - previous) / previous * 100 : 0;
-    const cards = [['ÚLTIMO PERÍODO', latest, item.color], ['TOTAL ACUMULADO', values.reduce((a, b) => a + b, 0), '#123b7a'], ['PROMEDIO', Math.round(values.reduce((a, b) => a + b, 0) / values.length), '#0f766e'], ['VALOR MÁXIMO', Math.max(...values), '#15803d'], ['VALOR MÍNIMO', Math.min(...values), '#b45309'], ['VARIACIÓN RECIENTE', `${variation >= 0 ? '+' : ''}${variation.toFixed(1).replace('.', ',')}%`, variation >= 0 ? '#15803d' : '#dc2626']].map(([label, value, color], index) => { const x = 14 + (index % 3) * 222; const y = 62 + Math.floor(index / 3) * 94; return `<rect x="${x}" y="${y}" width="210" height="82" rx="10" fill="#fff" stroke="#d7e1ed"/><rect x="${x}" y="${y}" width="5" height="82" rx="2.5" fill="${color}"/><text x="${x + 16}" y="${y + 25}" font-size="6.5" font-weight="bold" fill="#64748b">${escapeXml(label)}</text><text x="${x + 16}" y="${y + 57}" font-size="15" font-weight="bold" fill="${color}">${escapeXml(typeof value === 'number' ? format.format(value) : value)}</text>`; }).join('');
+    const cardW = (width - 28 - 2 * 14) / 3;
+    const cards = [['ÚLTIMO PERÍODO', latest, item.color], ['TOTAL ACUMULADO', values.reduce((a, b) => a + b, 0), '#123b7a'], ['PROMEDIO', Math.round(values.reduce((a, b) => a + b, 0) / values.length), '#0f766e'], ['VALOR MÁXIMO', Math.max(...values), '#15803d'], ['VALOR MÍNIMO', Math.min(...values), '#b45309'], ['VARIACIÓN RECIENTE', `${variation >= 0 ? '+' : ''}${variation.toFixed(1).replace('.', ',')}%`, variation >= 0 ? '#15803d' : '#dc2626']].map(([label, value, color], index) => { const x = 14 + (index % 3) * (cardW + 14); const y = 62 + Math.floor(index / 3) * 94; return `<rect x="${x}" y="${y}" width="${cardW}" height="82" rx="10" fill="#fff" stroke="#d7e1ed"/><rect x="${x}" y="${y}" width="5" height="82" rx="2.5" fill="${color}"/><text x="${x + 16}" y="${y + 25}" font-size="6.5" font-weight="bold" fill="#64748b">${escapeXml(label)}</text><text x="${x + 16}" y="${y + 57}" font-size="15" font-weight="bold" fill="${color}">${escapeXml(typeof value === 'number' ? format.format(value) : value)}</text>`; }).join('');
     return frame(cards);
   }
   const rows = ['journey', 'conversion'].includes(type) ? annualRows : periodRows;
@@ -980,12 +1445,12 @@ const singleMetricSpecialChartSvg = ({ data, series, type, width = 690, height =
     const gauges = rows.map((row, index) => { const cx = left + index * slot + slot / 2; const value = row.value / base * 100; const progress = Math.min(100, value); return `<text x="${cx}" y="75" text-anchor="middle" font-size="7" font-weight="bold" fill="#315275">${escapeXml(row.periodo)}</text><circle cx="${cx}" cy="140" r="${radius}" fill="#f1f5f9" stroke="#e1e8f1"/><circle cx="${cx}" cy="140" r="${radius}" fill="none" stroke="${item.color}" stroke-width="6" stroke-linecap="round" stroke-dasharray="${progress / 100 * circumference} ${circumference}" transform="rotate(-90 ${cx} 140)"/><text x="${cx}" y="143" text-anchor="middle" font-size="6.3" font-weight="bold" fill="${item.color}">${Math.round(value)}</text><text x="${cx}" y="184" text-anchor="middle" font-size="6.3" font-weight="bold" fill="#52657c">${escapeXml(format.format(row.value))}</text>`; }).join('');
     return frame(`<rect x="14" y="54" width="${width - 28}" height="154" rx="10" fill="#fff" stroke="#e1e9f3"/>${gauges}<text x="${width / 2}" y="235" text-anchor="middle" font-size="7" font-weight="bold" fill="#64748b">ÍNDICE BASE: ${escapeXml(rows[0].periodo)} = 100</text>`);
   }
-  const points = rows.map((row, index) => `${x(index)},${y(row.value)}`).join(' '); const labels = rows.map((row, index) => `<circle cx="${x(index)}" cy="${y(row.value)}" r="${type === 'journey' ? 7 : 3.5}" fill="${item.color}" stroke="#fff" stroke-width="1.5"/><text x="${x(index)}" y="${y(row.value) - 10}" text-anchor="middle" font-size="6" font-weight="bold" fill="${item.color}" stroke="#fff" stroke-width="2" paint-order="stroke">${escapeXml(format.format(row.value))}</text><text x="${x(index)}" y="${height - 17}" text-anchor="middle" font-size="6" font-weight="bold" fill="#315275">${escapeXml(row.periodo.replace('-', '·'))}</text>`).join('');
+  const points = rows.map((row, index) => `${x(index)},${y(row.value)}`).join(' '); const labels = rows.map((row, index) => `<circle cx="${x(index)}" cy="${y(row.value)}" r="${type === 'journey' ? 7 : 3.5}" fill="${item.color}" stroke="#fff" stroke-width="1.5"/><text x="${x(index)}" y="${y(row.value) - 10}" text-anchor="middle" font-size="6" font-weight="bold" fill="${item.color}" stroke="#fff" stroke-width="2" paint-order="stroke">${escapeXml(format.format(row.value))}</text><text x="${x(index)}" y="${height - 17}" text-anchor="middle" font-size="6" font-weight="bold" fill="${315275}">${escapeXml(row.periodo.replace('-', '·'))}</text>`).join('');
   if (type === 'journey') return frame(`<polyline points="${points}" fill="none" stroke="${item.color}" stroke-opacity=".15" stroke-width="14" stroke-linejoin="miter"/><polyline points="${points}" fill="none" stroke="${item.color}" stroke-width="2.4" stroke-linejoin="miter"/>${labels}`);
   return frame(`<polygon points="${left},${bottom} ${points} ${right},${bottom}" fill="${item.color}" fill-opacity=".76"/><polyline points="${points}" fill="none" stroke="${item.color}" stroke-width="2.5" stroke-linejoin="miter"/>${labels}`);
 };
 
-const populationPage = ({ title, program, data, charts, selection = {}, pageBreak = false }) => {
+const populationPage = ({ title, program, data, charts, selection = {}, pageBreak = false, aiAnalysis = {}, aiGroup = 'ingreso' }) => {
   const selectedScope = text(selection.scope || 'nacional').toLowerCase();
   if (selectedScope === 'ambos') {
     return charts.flatMap((item, index) => populationPage({
@@ -994,73 +1459,92 @@ const populationPage = ({ title, program, data, charts, selection = {}, pageBrea
       data,
       charts,
       selection: { ...selection, scope: text(item.scope).toLowerCase() },
-      pageBreak: pageBreak || index > 0
+      pageBreak: pageBreak || index > 0,
+      aiAnalysis,
+      aiGroup
     }));
   }
   const chart = charts.find((item) => text(item.scope).toLowerCase() === selectedScope) || charts[0];
+  const scopeName = text(chart.scope).toLowerCase();
+  const analysisKey = `${aiGroup}_${scopeName}`;
+  const customAnalysisText = aiAnalysis[analysisKey];
+
+  let defaultAnalysisText = '';
+  if (aiGroup === 'ingreso') {
+    defaultAnalysisText = generateIntakeAnalysis(data, chart.scope);
+  } else if (aiGroup === 'matriculados') {
+    defaultAnalysisText = generateEnrolledAnalysis(data, chart.scope);
+  } else if (aiGroup === 'graduados') {
+    defaultAnalysisText = generateGraduateAnalysis(data, chart.scope);
+  }
+
   const requestedType = text(selection.chartType || 'stacked');
   const supportedType = chart.funnelSeries
     ? requestedType
     : ['stacked', 'trend', 'funnel', 'indicators', 'shaded', 'bubbles', 'periodCards', 'journey', 'timeline', 'conversion', 'stackedArea'].includes(requestedType) ? requestedType : 'stacked';
   const styledSeries = (colors, softColors = []) => chart.funnelSeries.map((item, index) => ({ ...item, color: colors[index], soft: softColors[index] }));
-  let height = 350;
+  let height = 260;
   let svg;
+  const chartWidth = 690;
 
   if (supportedType === 'trend') {
-    svg = trendLineChartSvg({ data, series: chart.trendSeries || chart.series, width: 690, height, subtitle: chart.trendSubtitle || chart.subtitle, scope: chart.scope });
+    svg = trendLineChartSvg({ data, series: chart.trendSeries || chart.series, width: chartWidth, height, subtitle: chart.trendSubtitle || chart.subtitle, scope: chart.scope });
   } else if (supportedType === 'funnel') {
     height = 310;
     svg = chart.funnelSeries
-      ? funnelChartSvg({ data, series: chart.funnelSeries, width: 690, height, scope: chart.scope })
-      : singleMetricSpecialChartSvg({ data, series: chart.series, type: supportedType, width: 690, height, scope: chart.scope });
+      ? funnelChartSvg({ data, series: chart.funnelSeries, width: chartWidth, height, scope: chart.scope })
+      : singleMetricSpecialChartSvg({ data, series: chart.series, type: supportedType, width: chartWidth, height, scope: chart.scope });
   } else if (supportedType === 'indicators') {
     height = 295;
     svg = chart.funnelSeries
-      ? indicatorTrendBoardSvg({ data, series: styledSeries(['#123b7a', '#1f67bd', '#239447'], ['#eaf1fb', '#eaf4ff', '#ecf8ef']), width: 690, height, scope: chart.scope })
-      : singleMetricSpecialChartSvg({ data, series: chart.series, type: supportedType, width: 690, height, scope: chart.scope });
+      ? indicatorTrendBoardSvg({ data, series: styledSeries(['#123b7a', '#1f67bd', '#239447'], ['#eaf1fb', '#eaf4ff', '#ecf8ef']), width: chartWidth, height, scope: chart.scope })
+      : singleMetricSpecialChartSvg({ data, series: chart.series, type: supportedType, width: chartWidth, height, scope: chart.scope });
   } else if (supportedType === 'shaded') {
     height = chart.funnelSeries ? 285 : 180;
-    svg = shadedTrendChartSvg({ data, series: chart.funnelSeries ? styledSeries(['#123b7a', '#2f6fed', '#239447']) : chart.series, width: 690, height, scope: chart.scope });
+    svg = shadedTrendChartSvg({ data, series: chart.funnelSeries ? styledSeries(['#123b7a', '#2f6fed', '#239447']) : chart.series, width: chartWidth, height, scope: chart.scope });
   } else if (supportedType === 'bubbles') {
     height = chart.funnelSeries ? 260 : 180;
-    svg = bubbleMatrixChartSvg({ data, series: chart.funnelSeries ? styledSeries(['#123b7a', '#2f6fed', '#27a861'], ['#edf3fb', '#eff5ff', '#edf9f1']) : chart.series, width: 690, height, scope: chart.scope });
+    svg = bubbleMatrixChartSvg({ data, series: chart.funnelSeries ? styledSeries(['#123b7a', '#2f6fed', '#27a861'], ['#edf3fb', '#eff5ff', '#edf9f1']) : chart.series, width: chartWidth, height, scope: chart.scope });
   } else if (supportedType === 'periodCards') {
     height = chart.funnelSeries ? 350 : 300;
     svg = chart.funnelSeries
-      ? periodCardsChartSvg({ data, series: styledSeries(['#123b7a', '#1593a5', '#239447']), width: 690, height, scope: chart.scope })
-      : singleMetricCardsChartSvg({ data, series: chart.series, width: 690, height, scope: chart.scope });
+      ? periodCardsChartSvg({ data, series: styledSeries(['#123b7a', '#1593a5', '#239447']), width: chartWidth, height, scope: chart.scope })
+      : singleMetricCardsChartSvg({ data, series: chart.series, width: chartWidth, height, scope: chart.scope });
   } else if (supportedType === 'journey') {
     height = 285;
     svg = chart.funnelSeries
-      ? studentJourneyChartSvg({ data, series: styledSeries(['#123b7a', '#2f6fed', '#239447'], ['#edf3fb', '#eff5ff', '#edf9f1']), width: 690, height, scope: chart.scope })
-      : singleMetricSpecialChartSvg({ data, series: chart.series, type: supportedType, width: 690, height, scope: chart.scope });
+      ? studentJourneyChartSvg({ data, series: styledSeries(['#123b7a', '#2f6fed', '#239447'], ['#edf3fb', '#eff5ff', '#edf9f1']), width: chartWidth, height, scope: chart.scope })
+      : singleMetricSpecialChartSvg({ data, series: chart.series, type: supportedType, width: chartWidth, height, scope: chart.scope });
   } else if (supportedType === 'timeline') {
     height = 300;
     svg = chart.funnelSeries
-      ? annualTimelineChartSvg({ data, series: styledSeries(['#123b7a', '#2f6fed', '#239447']), width: 690, height, scope: chart.scope })
-      : singleMetricCardsChartSvg({ data, series: chart.series, width: 690, height, scope: chart.scope, annual: true });
+      ? annualTimelineChartSvg({ data, series: styledSeries(['#123b7a', '#2f6fed', '#239447']), width: chartWidth, height, scope: chart.scope })
+      : singleMetricCardsChartSvg({ data, series: chart.series, width: chartWidth, height, scope: chart.scope, annual: true });
   } else if (supportedType === 'conversion') {
     height = 340;
     svg = chart.funnelSeries
-      ? conversionIndicatorsChartSvg({ data, series: styledSeries(['#123b7a', '#2f6fed', '#239447']), width: 690, height, scope: chart.scope })
-      : singleMetricSpecialChartSvg({ data, series: chart.series, type: supportedType, width: 690, height, scope: chart.scope });
+      ? conversionIndicatorsChartSvg({ data, series: styledSeries(['#123b7a', '#2f6fed', '#239447']), width: chartWidth, height, scope: chart.scope })
+      : singleMetricSpecialChartSvg({ data, series: chart.series, type: supportedType, width: chartWidth, height, scope: chart.scope });
   } else if (supportedType === 'stackedArea') {
     height = 330;
     svg = chart.funnelSeries
-      ? stackedAreaChartSvg({ data, series: chart.funnelSeries, width: 690, height, scope: chart.scope })
-      : singleMetricSpecialChartSvg({ data, series: chart.series, type: supportedType, width: 690, height, scope: chart.scope });
+      ? stackedAreaChartSvg({ data, series: chart.funnelSeries, width: chartWidth, height, scope: chart.scope })
+      : singleMetricSpecialChartSvg({ data, series: chart.series, type: supportedType, width: chartWidth, height, scope: chart.scope });
   } else {
-    svg = stackedBarChartSvg({ data, series: chart.series, width: 690, height, title: chart.title, subtitle: chart.subtitle, scope: chart.scope });
+    svg = stackedBarChartSvg({ data, series: chart.series, width: chartWidth, height, title: chart.title, subtitle: chart.subtitle, scope: chart.scope });
   }
 
   return [
     ...(pageBreak ? [{ text: '', pageBreak: 'before' }] : []),
     ...sectionHeader(title, program),
-    { svg, width: 690, alignment: 'center', margin: [0, 2, 0, 0] }
+    { svg, width: 690, alignment: 'center', margin: [0, 4, 0, 8] },
+    { text: '', pageBreak: 'before' },
+    ...sectionHeader(title, program),
+    ...aiAnalysisBox(customAnalysisText || defaultAnalysisText)
   ];
 };
 
-const generateContextoExternoGeneralPdf = async ({ program, oferta = [], poblacional = [], section = 'completo', populationGroup = 'ingreso', visualizations = {}, offerView = 'sequence' }) => {
+const generateContextoExternoGeneralPdf = async ({ program, oferta = [], poblacional = [], section = 'completo', populationGroup = 'ingreso', visualizations = {}, offerView = 'sequence', aiAnalysis = {} }) => {
   // El reporte de referencia denomina "Oferta nacional" al universo completo
   // y muestra la oferta regional como un subconjunto de ese mismo universo.
   const nationalOffer = oferta;
@@ -1075,31 +1559,37 @@ const generateContextoExternoGeneralPdf = async ({ program, oferta = [], poblaci
       charts: [
         { title: 'Flujo apilado por período', subtitle: 'Inscritos, admitidos y primer curso en una lectura consolidada.', trendSubtitle: 'Comportamiento histórico de inscritos, admitidos y estudiantes de primer curso.', scope: 'Nacional', series: [['inscritos_nacional', 'Inscritos', '#2f6fed'], ['admitidos_nacional', 'Admitidos', '#df2426'], ['primer_curso_nacional', 'Primer curso', '#687b94']].map(([key, label, color]) => ({ key, label, color })), trendSeries: [['inscritos_nacional', 'Inscritos', '#2f6fed'], ['admitidos_nacional', 'Admitidos', '#1494a8'], ['primer_curso_nacional', 'Primer curso', '#5b8f45']].map(([key, label, color]) => ({ key, label, color })), funnelSeries: [['inscritos_nacional', 'Inscritos', '#082b66'], ['admitidos_nacional', 'Admitidos', '#1f67bd'], ['primer_curso_nacional', 'Primer curso', '#27a861']].map(([key, label, color]) => ({ key, label, color })) },
         { title: 'Flujo apilado por período', subtitle: 'Inscritos, admitidos y primer curso en una lectura consolidada.', trendSubtitle: 'Comportamiento histórico de inscritos, admitidos y estudiantes de primer curso.', scope: 'Regional', series: [['inscritos_regional', 'Inscritos', '#2f6fed'], ['admitidos_regional', 'Admitidos', '#df2426'], ['primer_curso_regional', 'Primer curso', '#687b94']].map(([key, label, color]) => ({ key, label, color })), trendSeries: [['inscritos_regional', 'Inscritos', '#2f6fed'], ['admitidos_regional', 'Admitidos', '#1494a8'], ['primer_curso_regional', 'Primer curso', '#5b8f45']].map(([key, label, color]) => ({ key, label, color })), funnelSeries: [['inscritos_regional', 'Inscritos', '#082b66'], ['admitidos_regional', 'Admitidos', '#1f67bd'], ['primer_curso_regional', 'Primer curso', '#27a861']].map(([key, label, color]) => ({ key, label, color })) }
-      ]
+      ],
+      aiAnalysis,
+      aiGroup: 'ingreso'
     }),
     matriculados: populationPage({
       title: 'MATRICULADOS', program, data: enrolledData, selection: section === 'completo' ? { ...visualizations.matriculados, scope: 'ambos' } : visualizations.matriculados,
       charts: [
         { title: 'Matriculados por período', subtitle: 'Evolución de estudiantes matriculados según el alcance seleccionado.', scope: 'Nacional', series: [{ key: 'matriculados_nacional', label: 'Matriculados', color: '#2f6fed' }] },
         { title: 'Matriculados por período', subtitle: 'Evolución de estudiantes matriculados según el alcance seleccionado.', scope: 'Regional', series: [{ key: 'matriculados_regional', label: 'Matriculados', color: '#b5123f' }] }
-      ]
+      ],
+      aiAnalysis,
+      aiGroup: 'matriculados'
     }),
     graduados: populationPage({
       title: 'GRADUADOS', program, data: graduateData, selection: section === 'completo' ? { ...visualizations.graduados, scope: 'ambos' } : visualizations.graduados,
       charts: [
         { title: 'Graduados por período', subtitle: 'Evolución de graduados según el alcance seleccionado.', scope: 'Nacional', series: [{ key: 'graduados_nacional', label: 'Graduados', color: '#173f96' }] },
         { title: 'Graduados por período', subtitle: 'Evolución de graduados según el alcance seleccionado.', scope: 'Regional', series: [{ key: 'graduados_regional', label: 'Graduados', color: '#b5123f' }] }
-      ]
+      ],
+      aiAnalysis,
+      aiGroup: 'graduados'
     })
   };
   const offerContent = [
-    ...offerPage({ rows: nationalOffer, regionalRows: regionalOffer, program, view: offerView }),
-    ...geographyPages({ rows: nationalOffer, regionalRows: regionalOffer, program })
+    ...offerPage({ rows: nationalOffer, regionalRows: regionalOffer, program, view: offerView, aiAnalysis }),
+    ...geographyPages({ rows: nationalOffer, regionalRows: regionalOffer, program, aiAnalysis })
   ];
   const completeContent = [
-    ...reportCoverPage({ program, nationalOffer, regionalOffer }),
+    ...reportCoverPage({ program, nationalOffer, regionalOffer, aiAnalysis, poblacional }),
     ...offerContent,
-    { text: '', pageBreak: 'before' },
+    { text: '', pageBreak: 'before', pageOrientation: 'landscape' },
     ...populationSections.ingreso,
     { text: '', pageBreak: 'before' },
     ...populationSections.matriculados,
@@ -1111,11 +1601,17 @@ const generateContextoExternoGeneralPdf = async ({ program, oferta = [], poblaci
     : section === 'poblacional' ? populationSections[populationGroup] : offerContent;
 
   const definition = {
-    pageSize: 'LETTER',
+    pageSize: 'LEGAL',
     pageOrientation: 'landscape',
-    pageMargins: [28, 22, 28, 24],
+    pageMargins: [24, 18, 24, 20],
     defaultStyle: { font: 'ReportFont', color: '#1e293b' },
-    footer: (currentPage, pageCount) => ({ text: `SIAC UNICESMAG · Contexto Externo General · Página ${currentPage} de ${pageCount}`, alignment: 'center', fontSize: 7, color: '#64748b', margin: [0, 8, 0, 0] }),
+    footer: (currentPage, pageCount) => ({
+      columns: [
+        { text: 'Fuente: SNIES (MEN) · Realizado por: Dirección de Planeación y Aseguramiento de la Calidad', fontSize: 6.8, color: '#64748b', alignment: 'left' },
+        { text: `SIAC UNICESMAG · Página ${currentPage} de ${pageCount}`, fontSize: 6.8, color: '#64748b', alignment: 'right' }
+      ],
+      margin: [28, 6, 28, 0]
+    }),
     content
   };
 
@@ -1129,4 +1625,26 @@ const generateContextoExternoGeneralPdf = async ({ program, oferta = [], poblaci
   });
 };
 
-module.exports = { generateContextoExternoGeneralPdf };
+module.exports = {
+  generateContextoExternoGeneralPdf,
+  headerPath,
+  formatProgramNameSvg,
+  generateCoverAnalysis,
+  offerSingleProgramTableSvg,
+  offerSummaryVisualSvg,
+  aggregatePeriods,
+  labelCountRows,
+  stackedBarChartSvg,
+  trendLineChartSvg,
+  funnelChartSvg,
+  indicatorTrendBoardSvg,
+  shadedTrendChartSvg,
+  bubbleMatrixChartSvg,
+  periodCardsChartSvg,
+  studentJourneyChartSvg,
+  annualTimelineChartSvg,
+  conversionIndicatorsChartSvg,
+  stackedAreaChartSvg,
+  singleMetricCardsChartSvg,
+  singleMetricSpecialChartSvg
+};

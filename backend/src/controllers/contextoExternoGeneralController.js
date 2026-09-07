@@ -357,6 +357,188 @@ const downloadContextoExternoGeneralData = async (_req, res) => {
   }
 };
 
+const fetchOpenAI = async (systemPrompt, userPrompt) => {
+  const apiKey = process.env.OPENAI_API_KEY || process.env.OPENAI_KEY;
+  if (!apiKey) return null;
+  const res = await fetch('https://api.openai.com/v1/chat/completions', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${apiKey.trim()}`
+    },
+    body: JSON.stringify({
+      model: 'gpt-4o-mini',
+      messages: [
+        { role: 'system', content: systemPrompt },
+        { role: 'user', content: userPrompt }
+      ],
+      temperature: 0.65,
+      max_tokens: 500
+    })
+  });
+  const data = await res.json();
+  return data?.choices?.[0]?.message?.content?.trim() || null;
+};
+
+const systemPrompt = `Eres un analista senior de planeación estratégica universitaria en Colombia. Tu objetivo es redactar los análisis de contexto externo universitario rigurosos, formales y fluidos de 2 a 3 párrafos bien estructurados para el Ministerio de Educación / SNIES.
+REGLAS ESTRICTAS DE REDACCIÓN:
+1. DEBES escribir en párrafos continuos y elegantes (2 a 3 párrafos máximo).
+2. NUNCA uses listas con viñetas, ni números, ni asteriscos, ni emojis, ni encabezados internos dentro del texto.
+3. Utiliza conectores formales colombianos: 'En la oferta académica...', 'Respecto a las modalidades de oferta...', 'En cuanto a las denominaciones...', 'Asimismo...', 'Por otra parte...', 'En cuanto a su distribución geográfica...', 'A nivel regional...', 'Los indicadores de inscritos, admitidos y matriculados...', 'El comportamiento de la matrícula...', 'La evolución del número de graduados...'.
+4. Incorpora de manera fluida en la narrativa las cifras y datos cuantitativos específicos que se te suministran.`;
+
+const buildOfferStats = (rows) => {
+  const total = rows.length;
+  if (!total) return null;
+  const privado = rows.filter((r) => String(r.sector || '').toUpperCase().includes('PRIVAD')).length;
+  const oficial = total - privado;
+  const semestres = rows.map((r) => Number(r.numero_semestres)).filter((n) => n > 0);
+  const semestresModa = semestres.length ? Math.round(semestres.reduce((a, b) => a + b, 0) / semestres.length) : 2;
+  const modalitiesMap = {};
+  rows.forEach((r) => { const mod = String(r.modalidad || 'Presencial').trim(); modalitiesMap[mod] = (modalitiesMap[mod] || 0) + 1; });
+  const modalidadesStr = Object.entries(modalitiesMap).map(([m, c]) => `${m} (${c})`).join(', ');
+  const creditos = rows.map((r) => Number(r.numero_creditos)).filter((n) => n > 0);
+  const minCred = creditos.length ? Math.min(...creditos) : 20;
+  const maxCred = creditos.length ? Math.max(...creditos) : 36;
+  const avgCred = creditos.length ? (creditos.reduce((a, b) => a + b, 0) / creditos.length).toFixed(1) : 29;
+  const titlesMap = {};
+  rows.forEach((r) => { const title = String(r.nombre_del_programa || r.nombre_programa || '').trim(); if (title) titlesMap[title] = (titlesMap[title] || 0) + 1; });
+  const sortedTitles = Object.entries(titlesMap).sort((a, b) => b[1] - a[1]);
+  const topTitles = sortedTitles.slice(0, 5).map(([t, c]) => `${t} con ${c}`).join(', ');
+  const otherTitles = sortedTitles.slice(5, 12).map(([t, c]) => `${t} (${c})`).join(', ');
+  const citiesMap = {};
+  rows.forEach((r) => { const city = String(r.municipio_oferta_programa || r.municipio || r.georeferencia || '').trim(); if (city) citiesMap[city] = (citiesMap[city] || 0) + 1; });
+  const sortedCities = Object.entries(citiesMap).sort((a, b) => b[1] - a[1]);
+  const topCities = sortedCities.slice(0, 6).map(([c, cnt]) => `${c} (${cnt})`).join(', ');
+
+  return { total, privado, oficial, semestresModa, modalidadesStr, minCred, maxCred, avgCred, topTitles, otherTitles, topCities };
+};
+
+const buildPopStats = (poblacionalRows, fieldPrefix, scope) => {
+  const isReg = scope.toLowerCase() === 'regional';
+  const suffix = isReg ? '_regional' : '_nacional';
+  if (!poblacionalRows || !poblacionalRows.length) return null;
+  if (fieldPrefix === 'ingreso') {
+    const rows = poblacionalRows.map((r) => ({
+      periodo: r.periodo || r.periodo_referencia || `${r.anio}-${r.semestre}`,
+      inscritos: Number(r[`inscritos${suffix}`] || 0),
+      admitidos: Number(r[`admitidos${suffix}`] || 0),
+      primerCurso: Number(r[`primer_curso${suffix}`] || 0)
+    })).filter((r) => r.inscritos > 0 || r.admitidos > 0 || r.primerCurso > 0);
+    return rows.map((r) => `${r.periodo}: Inscritos ${r.inscritos}, Admitidos ${r.admitidos}, 1er Curso ${r.primerCurso}`).join('; ');
+  }
+  const field = `${fieldPrefix}${suffix}`;
+  const rows = poblacionalRows.map((r) => ({
+    periodo: r.periodo || r.periodo_referencia || `${r.anio}-${r.semestre}`,
+    value: Number(r[field] || 0)
+  })).filter((r) => r.value > 0);
+  return rows.map((r) => `${r.periodo}: ${r.value}`).join('; ');
+};
+
+const generateOpenAIAnalysis = async (program, oferta, poblacional, aiAnalysisInput = {}) => {
+  let aiAnalysis = { ...aiAnalysisInput };
+  const apiKey = process.env.OPENAI_API_KEY || process.env.OPENAI_KEY;
+  if (!apiKey || Object.keys(aiAnalysis).length > 0) return aiAnalysis;
+
+  try {
+    const natStats = buildOfferStats(oferta);
+    const regStats = buildOfferStats(oferta.filter((r) => String(r.georeferencia || '').toUpperCase() === 'REGIONAL'));
+    const intakeNat = buildPopStats(poblacional, 'ingreso', 'nacional');
+    const intakeReg = buildPopStats(poblacional, 'ingreso', 'regional');
+    const enrolledNat = buildPopStats(poblacional, 'matriculados', 'nacional');
+    const enrolledReg = buildPopStats(poblacional, 'matriculados', 'regional');
+    const gradNat = buildPopStats(poblacional, 'graduados', 'nacional');
+    const gradReg = buildPopStats(poblacional, 'graduados', 'regional');
+
+    const promises = [];
+
+    if (natStats) {
+      promises.push(
+        fetchOpenAI(
+          systemPrompt,
+          `Redacta el análisis institucional de denominaciones de programas afines a ${program}.\nCifras SNIES:\n- Total nacional: ${natStats.total} programas.\n- Principales denominaciones: ${natStats.topTitles}.\n- Otras denominaciones con menor presencia: ${natStats.otherTitles}.\n- En la región: ${regStats ? regStats.total : 0} programas (${regStats ? regStats.topTitles : ''}).\n\nModelo de estilo esperado:\n'En cuanto a las denominaciones, se evidencia una alta concentración de la oferta en torno a la gestión, la gerencia y el derecho tributario. La denominación con mayor frecuencia es [Denominación] con [N] programas, seguida de... En un segundo nivel se encuentran... Asimismo, se observa una amplia diversidad de denominaciones con menor presencia...'`
+        ).then((res) => { if (res) aiAnalysis.offer_tables = res; })
+      );
+
+      promises.push(
+        fetchOpenAI(
+          systemPrompt,
+          `Redacta el análisis de caracterización y distribución de la oferta nacional para ${program}.\nCifras SNIES:\n- Total programas afines nacional: ${natStats.total} (${natStats.privado} del sector privado, ${natStats.oficial} del sector público/oficial).\n- Duración: la totalidad tiene una duración de ${natStats.semestresModa} semestres.\n- Modalidades: ${natStats.modalidadesStr}.\n- Créditos académicos: oscilan entre ${natStats.minCred} y ${natStats.maxCred} créditos, con promedio de ${natStats.avgCred} créditos.\n- Distribución geográfica principal: ${natStats.topCities}.\n\nModelo de estilo esperado:\n'En la oferta académica nacional se identifican ${natStats.total} programas afines a ${program}, de los cuales ${natStats.privado} son ofrecidos por instituciones universitarias del sector privado y ${natStats.oficial} por el sector oficial. La totalidad de estos programas tiene una duración de dos semestres. Respecto a las modalidades de oferta, predomina la... En cuanto a su distribución geográfica, la oferta presenta una importante concentración en las ciudades de mayor tamaño del país...'`
+        ).then((res) => { if (res) aiAnalysis.offer_nacional = res; })
+      );
+    }
+
+    if (regStats) {
+      promises.push(
+        fetchOpenAI(
+          systemPrompt,
+          `Redacta el análisis de oferta a nivel regional para ${program}.\nCifras SNIES:\n- Total regional: ${regStats.total} programas (${regStats.privado} privadas, ${regStats.oficial} pública).\n- Duración: ${regStats.semestresModa} semestres.\n- Modalidades: ${regStats.modalidadesStr}. Créditos: entre ${regStats.minCred} y ${regStats.maxCred} créditos (promedio ${regStats.avgCred}).\n- Denominaciones en la región: ${regStats.topTitles}.\n- Lugares de oferta en la región: ${regStats.topCities}.\n\nModelo de estilo esperado:\n'En la región (suroccidente colombiano), la oferta está conformada por ${regStats.total} programas afines, de los cuales ${regStats.privado} son ofrecidos por IES privadas y ${regStats.oficial} por el sector público. Respecto a las denominaciones... En cuanto a los lugares de oferta a nivel regional...'`
+        ).then((res) => { if (res) aiAnalysis.offer_regional = res; })
+      );
+    }
+
+    if (intakeNat) {
+      promises.push(
+        fetchOpenAI(
+          systemPrompt,
+          `Redacta el análisis de inscritos, admitidos y matriculados a primer curso a nivel nacional para ${program}.\nSerie histórica por período: ${intakeNat}.\n\nModelo de estilo esperado:\n'Los indicadores de inscritos, admitidos y matriculados a primer curso a nivel nacional, evidencian una tendencia favorable desde [Año], periodo en el que se consolida... El periodo... mantiene esta dinámica... Tras la disminución observada en... representa una recuperación importante... Finalmente, concentra el mejor desempeño...'`
+        ).then((res) => { if (res) aiAnalysis.ingreso_nacional = res; })
+      );
+    }
+
+    if (intakeReg) {
+      promises.push(
+        fetchOpenAI(
+          systemPrompt,
+          `Redacta el análisis de inscritos, admitidos y matriculados a primer curso a nivel regional para ${program}.\nSerie histórica regional: ${intakeReg}.\n\nModelo de estilo esperado:\n'A nivel regional, los inscritos, admitidos y matriculados a primer curso presentan un comportamiento favorable desde... En [periodo] se mantienen resultados positivos... A partir de... se observa una recuperación progresiva con resultados cada vez más favorables...'`
+        ).then((res) => { if (res) aiAnalysis.ingreso_regional = res; })
+      );
+    }
+
+    if (enrolledNat) {
+      promises.push(
+        fetchOpenAI(
+          systemPrompt,
+          `Redacta el análisis del total de matriculados a nivel nacional para ${program}.\nSerie histórica nacional: ${enrolledNat}.\n\nModelo de estilo esperado:\n'El número de matriculados a nivel nacional presenta una tendencia favorable a lo largo del periodo analizado. Tras la disminución registrada entre... a partir de... se evidencia una recuperación que se consolida... Finalmente, concentra los resultados más altos...'`
+        ).then((res) => { if (res) aiAnalysis.matriculados_nacional = res; })
+      );
+    }
+
+    if (enrolledReg) {
+      promises.push(
+        fetchOpenAI(
+          systemPrompt,
+          `Redacta el análisis del total de matriculados a nivel regional para ${program}.\nSerie histórica regional: ${enrolledReg}.\n\nModelo de estilo esperado:\n'El comportamiento de la matrícula a nivel regional muestra una trayectoria de crecimiento durante los últimos años. Después de la variación observada... marca un punto de recuperación a partir del cual la matrícula inicia una dinámica ascendente...'`
+        ).then((res) => { if (res) aiAnalysis.matriculados_regional = res; })
+      );
+    }
+
+    if (gradNat) {
+      promises.push(
+        fetchOpenAI(
+          systemPrompt,
+          `Redacta el análisis de graduados a nivel nacional para ${program}.\nSerie histórica nacional: ${gradNat}.\n\nModelo de estilo esperado:\n'La evolución del número de graduados a nivel nacional evidencia una tendencia creciente a lo largo de la serie analizada... Este comportamiento se caracteriza por una mayor concentración de graduados en los segundos periodos de cada año...'`
+        ).then((res) => { if (res) aiAnalysis.graduados_nacional = res; })
+      );
+    }
+
+    if (gradReg) {
+      promises.push(
+        fetchOpenAI(
+          systemPrompt,
+          `Redacta el análisis de graduados a nivel regional para ${program}.\nSerie histórica regional: ${gradReg}.\n\nModelo de estilo esperado:\n'El comportamiento de los graduados a nivel regional muestra una evolución ascendente... los resultados más destacados tienden a concentrarse en los segundos periodos académicos...'`
+        ).then((res) => { if (res) aiAnalysis.graduados_regional = res; })
+      );
+    }
+
+    await Promise.all(promises);
+  } catch (err) {
+    console.warn('Error generando análisis automático con OpenAI:', err.message);
+  }
+
+  return aiAnalysis;
+};
+
 const downloadContextoExternoGeneralPdf = async (req, res) => {
   try {
     const program = cleanText(req.query?.programa);
@@ -412,6 +594,19 @@ const downloadContextoExternoGeneralPdf = async (req, res) => {
     };
     const offerViews = ['sequence', 'panel', 'orbit', 'radial', 'executive'];
     const offerView = offerViews.includes(cleanText(req.query?.vista_oferta)) ? cleanText(req.query?.vista_oferta) : 'sequence';
+    let aiAnalysisInput = {};
+    try {
+      if (req.body?.aiAnalysis) {
+        aiAnalysisInput = typeof req.body.aiAnalysis === 'string' ? JSON.parse(req.body.aiAnalysis) : req.body.aiAnalysis;
+      } else if (req.query?.aiAnalysis) {
+        aiAnalysisInput = typeof req.query.aiAnalysis === 'string' ? JSON.parse(req.query.aiAnalysis) : req.query.aiAnalysis;
+      }
+    } catch (e) {
+      console.warn('Error parseando aiAnalysis para PDF:', e);
+    }
+
+    const aiAnalysis = await generateOpenAIAnalysis(program, oferta, poblacional, aiAnalysisInput);
+
     const buffer = await generateContextoExternoGeneralPdf({
       program,
       oferta,
@@ -419,7 +614,8 @@ const downloadContextoExternoGeneralPdf = async (req, res) => {
       section,
       populationGroup,
       visualizations,
-      offerView
+      offerView,
+      aiAnalysis
     });
     const slug = normalizeKey(program).toLowerCase().replace(/_+/g, '_');
     res.setHeader('Content-Disposition', `attachment; filename=contexto_externo_${slug}.pdf`);
