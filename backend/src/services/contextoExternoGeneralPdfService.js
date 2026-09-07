@@ -721,6 +721,7 @@ const aggregatePeriods = (rows, fields) => {
 };
 
 const offerSummaryVisualSvg = ({ rows, view = 'sequence', scope = 'Nacional', width = 690, height = 360 }) => {
+  const viewLabels = { sequence: 'VISTA SECUENCIAL', panel: 'VISTA PANEL', orbit: 'VISTA ÓRBITA', radial: 'VISTA RADIAL', executive: 'VISTA EJECUTIVA' };
   const scopeLabel = text(scope).toUpperCase();
   const scopeColor = scopeLabel === 'REGIONAL' ? RED : '#173f96';
   const credits = rows.map((row) => number(row.numero_creditos)).filter((value) => value > 0);
@@ -793,7 +794,6 @@ const offerSummaryVisualSvg = ({ rows, view = 'sequence', scope = 'Nacional', wi
   } else {
     body = groups.map((group, index) => card(group, 8 + index * 136, 75, 128, 265)).join('');
   }
-  const viewLabels = { sequence: 'VISTA SECUENCIAL', panel: 'VISTA PANEL', orbit: 'VISTA ÓRBITA', radial: 'VISTA RADIAL', executive: 'VISTA EJECUTIVA' };
   return `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}"><defs><filter id="summary-shadow"><feDropShadow dx="0" dy="3" stdDeviation="4" flood-color="#123b7a" flood-opacity=".12"/></filter></defs><rect x=".5" y=".5" width="${width - 1}" height="${height - 1}" rx="15" fill="#f8fbff" stroke="#cbd9ea"/><rect x="1" y="1" width="6" height="${height - 2}" rx="3" fill="${scopeColor}"/><text x="22" y="25" font-size="12" font-weight="bold" fill="#082b66">ANÁLISIS DE CONTEXTO EXTERNO · OFERTA ${scopeLabel}</text><text x="22" y="41" font-size="7.5" fill="#64748b">Indicadores calculados con la tabla OFERTA y los filtros del programa seleccionado.</text><rect x="${width - 107}" y="14" width="89" height="21" rx="10.5" fill="${scopeColor}"/><text x="${width - 62.5}" y="28" text-anchor="middle" font-size="6.8" font-weight="bold" fill="#fff">${viewLabels[view] || viewLabels.sequence}</text><g filter="url(#summary-shadow)">${body}</g></svg>`;
 };
 
