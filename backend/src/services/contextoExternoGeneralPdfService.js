@@ -977,8 +977,6 @@ const geographyPages = ({ rows, regionalRows, program, aiAnalysis = {} }) => {
       columnGap: 10,
       alignment: 'center'
     },
-    { text: '', pageBreak: 'before' },
-    ...sectionHeader(heading, program),
     ...aiAnalysisBox(
       aiAnalysis[geoKey] || generateGeoAnalysis(type, heading.includes('REGIONAL') ? 'REGIONAL' : 'NACIONAL', mapRows)
     )
@@ -1348,14 +1346,10 @@ const offerPage = ({ rows, regionalRows, program, view, aiAnalysis = {} }) => {
   return [
     ...sectionHeader('PROGRAMAS ACADÉMICOS SIMILARES · OFERTA NACIONAL', program),
     { svg: nationalTable.svg, width: 690, alignment: 'center', margin: [0, 4, 0, 8] },
-    { text: '', pageBreak: 'before' },
-    ...sectionHeader('PROGRAMAS ACADÉMICOS SIMILARES · OFERTA NACIONAL', program),
     ...aiAnalysisBox(tablesAnalysisText),
     { text: '', pageBreak: 'before' },
     ...sectionHeader('PROGRAMAS ACADÉMICOS SIMILARES · OFERTA REGIONAL', program),
     { svg: regionalTable.svg, width: 690, alignment: 'center', margin: [0, 4, 0, 8] },
-    { text: '', pageBreak: 'before' },
-    ...sectionHeader('PROGRAMAS ACADÉMICOS SIMILARES · OFERTA REGIONAL', program),
     ...aiAnalysisBox(tablesAnalysisText),
     { text: '', pageBreak: 'before' },
     ...sectionHeader('ANÁLISIS DE CONTEXTO EXTERNO · OFERTA NACIONAL', program),
@@ -1538,8 +1532,6 @@ const populationPage = ({ title, program, data, charts, selection = {}, pageBrea
     ...(pageBreak ? [{ text: '', pageBreak: 'before' }] : []),
     ...sectionHeader(title, program),
     { svg, width: 690, alignment: 'center', margin: [0, 4, 0, 8] },
-    { text: '', pageBreak: 'before' },
-    ...sectionHeader(title, program),
     ...aiAnalysisBox(customAnalysisText || defaultAnalysisText)
   ];
 };
