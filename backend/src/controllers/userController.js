@@ -1243,13 +1243,19 @@ const deleteUser = async (req, res) => {
     });
   } catch (error) {
     console.error('Error al eliminar usuario:', error);
-    const errorMessage = /statement timeout|canceling statement due to statement timeout/i.test(String(error?.message || ''))
-      ? 'No se pudo eliminar definitivamente por tiempo de espera en la base de datos. Intenta nuevamente cuando termine la preparación de índices.'
-      : 'Error al eliminar usuario';
+    const rawErrorMessage = String(error?.message || '');
+    const hasProtectedHistory = /No se puede separar la referencia obligatoria/i.test(rawErrorMessage);
+    const isStatementTimeout = /statement timeout|canceling statement due to statement timeout/i.test(rawErrorMessage);
+    const errorMessage = hasProtectedHistory
+      ? 'No se puede eliminar este usuario porque tiene registros institucionales asociados. Edite o inactive el usuario para conservar su trazabilidad.'
+      : isStatementTimeout
+        ? 'No se pudo eliminar definitivamente por tiempo de espera en la base de datos. Intenta nuevamente cuando termine la preparación de índices.'
+        : 'Error al eliminar usuario';
 
-    res.status(500).json({
+    res.status(hasProtectedHistory ? 409 : 500).json({
       success: false,
-      message: errorMessage
+      message: errorMessage,
+      ...(hasProtectedHistory ? { code: 'USER_HAS_PROTECTED_HISTORY' } : {})
     });
   }
 };
