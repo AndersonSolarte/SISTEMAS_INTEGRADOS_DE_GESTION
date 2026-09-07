@@ -123,7 +123,7 @@ const stackedBarChartSvg = ({ data, series, width = 690, height = 350, title = '
       const formatted = format.format(value);
       const externalLabelWidth = Math.max(22, formatted.length * 5 + 8);
       const label = segmentHeight >= 12 && barWidth >= 22
-        ? `<text x="${x(rowIndex)}" y="${top + segmentHeight / 2 + 3}" text-anchor="middle" font-size="${segmentHeight < 18 ? 7.5 : 8.5}" font-weight="bold" fill="#ffffff" stroke="#1e293b" stroke-width=".3" paint-order="stroke">${escapeXml(formatted)}</text>`
+        ? `<text x="${x(rowIndex)}" y="${top + segmentHeight / 2 + 3}" text-anchor="middle" font-size="${segmentHeight < 18 ? 7.5 : 8.5}" font-weight="bold" fill="#ffffff">${escapeXml(formatted)}</text>`
         : `<line x1="${x(rowIndex) + barWidth / 2}" y1="${top + Math.max(3, segmentHeight / 2)}" x2="${x(rowIndex) + barWidth / 2 + 4}" y2="${top + Math.max(3, segmentHeight / 2)}" stroke="#64748b" stroke-width=".8"/><rect x="${x(rowIndex) + barWidth / 2 + 4}" y="${top + Math.max(3, segmentHeight / 2) - 6}" width="${externalLabelWidth}" height="12" rx="3" fill="#fff" stroke="#94a3b8" stroke-width=".6"/><text x="${x(rowIndex) + barWidth / 2 + 4 + externalLabelWidth / 2}" y="${top + Math.max(3, segmentHeight / 2) + 2.5}" text-anchor="middle" font-size="7.8" font-weight="bold" fill="#1e293b">${escapeXml(formatted)}</text>`;
       return `<rect x="${x(rowIndex) - barWidth / 2}" y="${top}" width="${barWidth}" height="${segmentHeight}" fill="${item.color || COLORS[seriesIndex]}"${radius}/>${label}`;
     }).join('');
@@ -162,7 +162,7 @@ const trendLineChartSvg = ({ data, series, width = 690, height = 350, subtitle =
     const points = visibleData.map((row, index) => `${x(index)},${y(row[item.key])}`).join(' ');
     const dots = visibleData.map((row, index) => {
       const value = number(row[item.key]);
-      return `<circle cx="${x(index)}" cy="${y(value)}" r="3.5" fill="${color}" stroke="#fff" stroke-width="1.3"/><text x="${x(index)}" y="${y(value) - 8}" text-anchor="middle" font-size="7" font-weight="bold" fill="${color}" stroke="#fff" stroke-width="2.4" paint-order="stroke">${escapeXml(format.format(value))}</text>`;
+      return `<circle cx="${x(index)}" cy="${y(value)}" r="3.5" fill="${color}" stroke="#fff" stroke-width="1.3"/><text x="${x(index)}" y="${y(value) - 8}" text-anchor="middle" font-size="7.5" font-weight="bold" fill="${color}">${escapeXml(format.format(value))}</text>`;
     }).join('');
     return `<polyline points="${points}" fill="none" stroke="${color}" stroke-width="2.5" stroke-linejoin="miter" stroke-linecap="square"/>${dots}`;
   }).join('');
@@ -201,7 +201,7 @@ const funnelChartSvg = ({ data, series, width = 690, height = 310, scope = '' })
       const topY = stageTop + stageIndex * (stageHeight + gap);
       const points = `${centerX - segmentWidth / 2},${topY} ${centerX + segmentWidth / 2},${topY} ${centerX + bottomWidth / 2},${topY + stageHeight} ${centerX - bottomWidth / 2},${topY + stageHeight}`;
       const fontSize = segmentWidth < 25 ? 5 : 5.8;
-      return `<polygon points="${points}" fill="${item.color}" stroke="#fff" stroke-width="1.3"/><text x="${centerX}" y="${topY + stageHeight / 2 + 2}" text-anchor="middle" font-size="${fontSize}" font-weight="bold" fill="#fff" stroke="${item.color}" stroke-width="1" paint-order="stroke">${escapeXml(format.format(value))}</text>`;
+      return `<polygon points="${points}" fill="${item.color}" stroke="#fff" stroke-width="1.3"/><text x="${centerX}" y="${topY + stageHeight / 2 + 2}" text-anchor="middle" font-size="${fontSize}" font-weight="bold" fill="#fff">${escapeXml(format.format(value))}</text>`;
     }).join('');
     return `${header}${stages}`;
   }).join('');
@@ -270,7 +270,7 @@ const shadedTrendChartSvg = ({ data, series, width = 690, height = 285, scope = 
     const last = [...values].reverse().find((value) => value > 0) || 0;
     const variation = first > 0 ? ((last - first) / first) * 100 : 0;
     const trendColor = variation >= 0 ? '#15803d' : '#dc2626';
-    const dots = values.map((value, index) => `<circle cx="${x(index)}" cy="${y(value)}" r="3" fill="${item.color}" stroke="#fff" stroke-width="1.2"/><text x="${x(index)}" y="${y(value) - 6}" text-anchor="middle" font-size="5.8" font-weight="bold" fill="${item.color}" stroke="#fff" stroke-width="2" paint-order="stroke">${escapeXml(format.format(value))}</text>`).join('');
+    const dots = values.map((value, index) => `<circle cx="${x(index)}" cy="${y(value)}" r="3" fill="${item.color}" stroke="#fff" stroke-width="1.2"/><text x="${x(index)}" y="${y(value) - 6}" text-anchor="middle" font-size="6.5" font-weight="bold" fill="${item.color}">${escapeXml(format.format(value))}</text>`).join('');
     return `<line x1="${chartLeft}" y1="${baseline}" x2="${chartRight}" y2="${baseline}" stroke="#d9e3ef"/><rect x="12" y="${top + 5}" width="91" height="36" rx="8" fill="#fff" stroke="${item.color}" stroke-opacity=".3"/><circle cx="27" cy="${top + 23}" r="9" fill="${item.color}"/><text x="42" y="${top + 26}" font-size="6.8" font-weight="bold" fill="${item.color}">${escapeXml(item.label.toUpperCase())}</text><polygon points="${area}" fill="url(#pdf-shade-${seriesIndex})"/><polyline points="${points}" fill="none" stroke="${item.color}" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>${dots}<line x1="${chartRight + 7}" y1="${top + 23}" x2="${chartRight + 22}" y2="${top + 23}" stroke="${trendColor}" stroke-dasharray="3 3"/><circle cx="${chartRight + 50}" cy="${top + 23}" r="18" fill="${variation >= 0 ? '#f0fdf4' : '#fff5f5'}" stroke="${trendColor}" stroke-width="1.5" stroke-dasharray="3 2"/><text x="${chartRight + 50}" y="${top + 26}" text-anchor="middle" font-size="7" font-weight="bold" fill="${trendColor}">${variation >= 0 ? '+' : ''}${variation.toFixed(1).replace('.', ',')}%</text>`;
   }).join('');
   const yearLabels = years.map((row, index) => `<text x="${x(index)}" y="${height - 14}" text-anchor="middle" font-size="${years.length > 14 ? 5.1 : 7}" font-weight="bold" fill="#334155">${escapeXml(row.year)}</text>`).join('');
@@ -349,7 +349,7 @@ const studentJourneyChartSvg = ({ data, series, width = 690, height = 285, scope
     const baseY = 103 + rowIndex * 57;
     const y = (value) => baseY + 5 - ((value - min) / range) * 10;
     const points = values.map((value, index) => `${x(index)},${y(value)}`).join(' ');
-    const nodes = values.map((value, index) => `<circle cx="${x(index)}" cy="${y(value)}" r="10" fill="${item.color}" stroke="#fff" stroke-width="1.5"/><text x="${x(index)}" y="${y(value) + 3}" text-anchor="middle" font-size="5.5" font-weight="bold" fill="#fff">${rowIndex === 0 ? 'I' : rowIndex === 1 ? 'A' : 'PC'}</text><text x="${x(index)}" y="${y(value) + 21}" text-anchor="middle" font-size="6.2" font-weight="bold" fill="${item.color}" stroke="#fff" stroke-width="1.8" paint-order="stroke">${escapeXml(format.format(value))}</text>`).join('');
+    const nodes = values.map((value, index) => `<circle cx="${x(index)}" cy="${y(value)}" r="10" fill="${item.color}" stroke="#fff" stroke-width="1.5"/><text x="${x(index)}" y="${y(value) + 3}" text-anchor="middle" font-size="5.5" font-weight="bold" fill="#fff">${rowIndex === 0 ? 'I' : rowIndex === 1 ? 'A' : 'PC'}</text><text x="${x(index)}" y="${y(value) + 21}" text-anchor="middle" font-size="6.5" font-weight="bold" fill="${item.color}">${escapeXml(format.format(value))}</text>`).join('');
     const label = rowIndex === 2 ? `<text x="43" y="${baseY - 2}" font-size="6.2" font-weight="bold" fill="${item.color}">MATRICULADOS A</text><text x="43" y="${baseY + 8}" font-size="6.2" font-weight="bold" fill="${item.color}">PRIMER CURSO</text>` : `<text x="43" y="${baseY + 3}" font-size="7" font-weight="bold" fill="${item.color}">${escapeXml(item.label.toUpperCase())}</text>`;
     return `<rect x="10" y="${baseY - 24}" width="${width - 20}" height="47" rx="9" fill="${rowIndex % 2 ? '#fff' : '#fbfdff'}" stroke="#e5edf6"/><rect x="16" y="${baseY - 18}" width="88" height="35" rx="8" fill="${item.soft || '#eef4fb'}"/><circle cx="30" cy="${baseY}" r="9" fill="${item.color}"/>${label}<polyline points="${points}" fill="none" stroke="${item.color}" stroke-opacity=".22" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"/><polyline points="${points}" fill="none" stroke="${item.color}" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>${nodes}`;
   }).join('');
@@ -466,7 +466,7 @@ const stackedAreaChartSvg = ({ data, series, width = 690, height = 330, scope = 
     const value = number(row[item.key]);
     if (!value) return '';
     const centerY = (y(item.tops[index]) + y(item.bottoms[index])) / 2;
-    return `<text x="${x(index)}" y="${centerY + 2.2}" text-anchor="middle" font-size="${visibleData.length > 16 ? 4.5 : 5.7}" font-weight="bold" fill="#fff" stroke="${item.color}" stroke-width="1.4" paint-order="stroke">${escapeXml(format.format(value))}</text>`;
+    return `<text x="${x(index)}" y="${centerY + 2.2}" text-anchor="middle" font-size="${visibleData.length > 16 ? 4.5 : 5.7}" font-weight="bold" fill="#fff">${escapeXml(format.format(value))}</text>`;
   }).join('')).join('');
   const periods = visibleData.map((row, index) => {
     const [year, semester] = text(row.periodo).split('-');
