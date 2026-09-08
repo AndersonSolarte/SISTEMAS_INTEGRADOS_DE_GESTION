@@ -176,4 +176,68 @@ Antes de desplegar cualquier actualización, ejecutar la suite nativa de pruebas
 ```bash
 node --test backend/src/services/reporteSalidaWorkflow/reposicionAcademicaAccess.test.js
 ```
-Las **34 pruebas integradas** deben ejecutarse y pasar al 100%.
+La suite debe ejecutarse y pasar al 100%. No fijar aquí una cantidad de pruebas, porque debe crecer con cada regla de regresión incorporada.
+
+---
+
+## 7. Ajustes protegidos y reglas de no regresión
+
+Las siguientes reglas son obligatorias. Cualquier agente que modifique Reportes de Salida debe preservarlas, agregar pruebas para los cambios y comprobar que no altera los demás flujos.
+
+### 7.1 Aprobaciones asignadas a Sandra Bolaños
+
+1. Si `jefe_snapshot` identifica a **SANDRA LUCIA BOLAÑOS DELGADO**, ya sea por nombre, por `sbolanos@unicesmag.edu.co` o por `viceacad@unicesmag.edu.co`, la aprobación se envía **exclusivamente** a:
+   - `viceacad@unicesmag.edu.co`
+2. `sbolanos@unicesmag.edu.co` nunca debe incluirse como destinatario personal de estas solicitudes de aprobación.
+3. Esta regla tiene prioridad sobre las reglas generales de programa, departamento o dependencia.
+4. Aplica a radicaciones individuales y grupales.
+5. No modificar esta excepción al ajustar los flujos de Arquitectura, Diseño Gráfico u otros programas académicos.
+6. La lógica canónica se encuentra en `isSandraAcademicBoss` y `getInitialApprovalRecipientEmails`, dentro de `backend/src/controllers/reporteSalidaController.js`.
+
+### 7.2 Correo mostrado debajo de Jefe inmediato
+
+1. La tabla de seguimiento debe mostrar debajo del nombre del jefe el correo que **realmente recibe la solicitud de aprobación**.
+2. El backend debe exponer ese valor como `jefe.email_aprobacion` al serializar la solicitud.
+3. `jefe.email` se conserva como dato histórico del perfil y no debe usarse como primera opción visual cuando exista `email_aprobacion`.
+4. Para Sandra Bolaños, la interfaz debe mostrar `viceacad@unicesmag.edu.co`, nunca `sbolanos@unicesmag.edu.co`.
+
+### 7.3 Nombre de la Vicerrectoría en el estado
+
+1. El estado `pendiente_aprobacion_vicerrectoria_academica` es una clave técnica compartida; su etiqueta visible no debe quedar como el texto genérico "Pendiente Vicerrectoría".
+2. La interfaz debe tomar `datos_formulario.laboral.vicerrectoria` y mostrar el nombre correspondiente, por ejemplo:
+   - `Pendiente Vicerrectoría Académica`.
+   - `Pendiente Vicerrectoría de Investigación y Extensión`.
+   - `Pendiente Vicerrectoría Financiera y de Desarrollo Institucional`.
+3. Mantener el mismo nombre específico en las exportaciones a Excel.
+4. La función visual canónica es `getStatusLabel` en `frontend/src/components/reporteSalida/ReporteSalidaSeguimiento.js`.
+
+### 7.4 Detalle/Motivo y "Otra, ¿cuál?" sin recortes
+
+1. `salida.motivo` es un campo narrativo libre para **todas** las categorías y subtipos: salud, trámites personales, diligencia personal, compensatorios, actividades propias del cargo, salidas misionales, proyección social, salidas individuales, grupales y cualquier tipo futuro. No establecer `maxLength` en el formulario ni recortarlo con `slice`, `substring` o `sanitizeText(..., limite)` al guardarlo.
+2. El valor personalizado de `salida.tipo` con prefijo `otra:` tampoco debe limitarse a 60 caracteres ni a otro máximo artificial.
+3. `substring(5)` solo se permite para retirar el prefijo técnico `otra:`; nunca para truncar la descripción.
+4. Usar `sanitizeFreeText` para conservar el texto completo y sus saltos de línea, eliminando únicamente caracteres nulos.
+5. El PDF FR-002 debe imprimir todo el contenido de `Detalle/Motivo`. Si no cabe en una página, debe continuar en las páginas siguientes.
+6. Las firmas, la trazabilidad y el bloque de verificación deben fluir después del texto; nunca superponerse ni provocar su recorte.
+7. Los registros antiguos que ya fueron truncados no pueden reconstruirse automáticamente. La garantía aplica a nuevas radicaciones o textos que vuelvan a guardarse desde su fuente original.
+8. La misma garantía aplica al `objetoComision` del flujo de desplazamiento con viáticos y a `oficioCuerpo` cuando incorpora el motivo. Los PDF FR-002, los oficios de salida y los formatos de desplazamiento/viáticos deben conservar y mostrar el texto completo.
+
+### 7.5 Disciplina obligatoria al modificar el módulo
+
+1. Antes de editar, revisar esta guía completa y el diff pendiente del repositorio.
+2. Limitar cada cambio al flujo solicitado. No modificar aprobadores, destinatarios, estados, reposición, SST, Gestión Humana o viáticos si la solicitud no lo requiere expresamente.
+3. No sustituir reglas específicas por generalizaciones que cambien destinatarios institucionales.
+4. Ejecutar como mínimo:
+
+```bash
+node backend/src/services/reporteSalidaWorkflow/reposicionAcademicaAccess.test.js
+cd frontend && npm run build
+```
+
+5. Deben permanecer cubiertos por pruebas, como mínimo:
+   - Sandra como jefe en solicitud individual: solo `viceacad@unicesmag.edu.co`.
+   - Sandra como jefe en solicitud grupal: solo `viceacad@unicesmag.edu.co`.
+   - La cuenta personal de Sandra no administra la bandeja institucional de reposiciones.
+   - Los textos narrativos mayores de 600 caracteres se conservan completos y mantienen saltos de línea.
+   - Arquitectura, Diseño Gráfico, Financiera, Investigación, Evangelización, Rectoría, SST, Gestión Humana, reposiciones y viáticos conservan sus flujos existentes.
+6. Si una prueba ajena al cambio falla, no ocultarla ni eliminarla: corregir la regresión antes de entregar.

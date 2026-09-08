@@ -46,6 +46,10 @@ const REPOSICION_PENDIENTE_ESTADOS = ['pendiente', 'programada', 'incumplida'];
 const hashToken = (token) => crypto.createHash('sha256').update(String(token || '')).digest('hex');
 
 const sanitizeText = (value, max = 250) => String(value || '').trim().slice(0, max);
+// Los campos narrativos del reporte deben conservar todo lo escrito por el
+// colaborador. El límite general del cuerpo HTTP protege la solicitud; aquí no
+// se recorta el contenido que luego debe aparecer completo en el PDF.
+const sanitizeFreeText = (value) => String(value || '').replace(/\u0000/g, '').trim();
 
 const formatDateOnly = (value) => {
   if (!value) return '';
@@ -267,6 +271,14 @@ const getOfficialAuthorityEmailForActor = (actor = {}) => {
   return entry?.email || actor.email || '';
 };
 
+const isSandraAcademicBoss = (actor = {}) => {
+  const email = normalizeEmail(actor.email || actor.correo);
+  const actorName = normalizeForMatch(actor.nombre || actor.name || actor.label);
+  return actorName.includes('sandra lucia bolanos delgado')
+    || sameExactEmail(email, 'sbolanos@unicesmag.edu.co')
+    || sameExactEmail(email, ACADEMIC_VICERRECTORIA_EMAIL);
+};
+
 const getAcademicProgramApprovalEmail = (solicitud = {}) => {
   const laboral = solicitud.datos_formulario?.laboral || {};
   const solicitante = solicitud.solicitante_snapshot || {};
@@ -318,6 +330,15 @@ const getInitialApprovalRecipientEmails = (solicitud = {}) => {
   const jefeName = normalizeForMatch(jefe.nombre || jefe.name || jefe.label || '');
   const jefeEmail = normalizeEmail(jefe.email);
   const requesterName = normalizeForMatch(solicitud.solicitante_snapshot?.nombre || '');
+
+  // Regla institucional prioritaria: toda solicitud cuya aprobadora sea Sandra
+  // Bolaños debe llegar exclusivamente al buzón de Vicerrectoría Académica.
+  // Se evalúa antes de las reglas de programa/departamento para impedir que el
+  // correo personal quede incluido como destinatario adicional.
+  if (isSandraAcademicBoss(jefe)) {
+    return [ACADEMIC_VICERRECTORIA_EMAIL];
+  }
+
   const academicProgramEmail = getAcademicProgramApprovalEmail(solicitud);
 
   if (academicProgramEmail) {
@@ -386,6 +407,13 @@ const getGroupInitialApprovalRecipients = (solicitudes = []) => {
     const jefeName = normalizeForMatch(jefe.nombre || jefe.name || jefe.label || '');
     const requesterName = normalizeForMatch(solicitante.nombre || '');
     const requesterEmail = normalizeEmail(solicitante.email || solicitante.correo || '');
+
+    // La regla institucional de Sandra prevalece sobre cualquier enrutamiento
+    // por programa o departamento y excluye expresamente su correo personal.
+    if (isSandraAcademicBoss(jefe)) {
+      pushEmail(ACADEMIC_VICERRECTORIA_EMAIL);
+      continue;
+    }
 
     // 1. Arquitectura: A arquitectura@unicesmag.edu.co salvo solicitud propia de Magaly
     const isArquitectura =
@@ -2220,12 +2248,19 @@ const validateRadicacionPayload = (payload, user) => {
 
 const serializeSolicitud = (solicitud) => {
   const row = typeof solicitud.toJSON === 'function' ? solicitud.toJSON() : solicitud;
+  const approvalRecipientEmails = getInitialApprovalRecipientEmails(row);
+  const jefeSnapshot = row.jefe_snapshot || {};
   return {
     ...row,
     tiempoSolicitadoLabel: formatMinutes(row.tiempo_solicitado_minutos),
     reposicionLabel: formatMinutes(row.reposicion_minutos),
     solicitante: row.solicitante_snapshot,
-    jefe: row.jefe_snapshot
+    jefe: {
+      ...jefeSnapshot,
+      // Correo efectivo al que el sistema envía la solicitud de aprobación.
+      // Se conserva jefe.email como dato histórico del perfil.
+      email_aprobacion: approvalRecipientEmails.join(', ') || jefeSnapshot.email || ''
+    }
   };
 };
 
@@ -3741,12 +3776,12 @@ const radicarSolicitud = async (req, res) => {
               cargo: sanitizeText(p.cargo)
             },
             salida: {
-              tipo: sanitizeText(salida.tipo, 60),
+              tipo: sanitizeFreeText(salida.tipo),
               fecha: sanitizeText(salida.fecha, 20),
               fechaRegreso: sanitizeText(salida.fechaRegreso || salida.fecha, 20),
               horaInicio: sanitizeText(salida.horaInicio, 10),
               horaFin: sanitizeText(salida.horaFin, 10),
-              motivo: sanitizeText(salida.motivo, 600),
+              motivo: sanitizeFreeText(salida.motivo),
               entidadDestino: sanitizeText(salida.entidadDestino, 255),
               campusSalida: sanitizeText(salida.campusSalida, 100),
               campusDestino: sanitizeText(salida.campusDestino, 100),
@@ -4173,12 +4208,12 @@ const radicarSolicitud = async (req, res) => {
           reposicionPerfil: reposicionLaboralProfile
         },
         salida: {
-          tipo: sanitizeText(salida.tipo, 60),
+          tipo: sanitizeFreeText(salida.tipo),
           fecha: sanitizeText(salida.fecha, 20),
           fechaRegreso: sanitizeText(salida.fechaRegreso || salida.fecha, 20),
           horaInicio: sanitizeText(salida.horaInicio, 10),
           horaFin: sanitizeText(salida.horaFin, 10),
-          motivo: sanitizeText(salida.motivo, 600),
+          motivo: sanitizeFreeText(salida.motivo),
           entidadDestino: sanitizeText(salida.entidadDestino, 255),
           campusSalida: sanitizeText(salida.campusSalida, 100),
           campusDestino: sanitizeText(salida.campusDestino, 100),
@@ -4204,7 +4239,9 @@ const radicarSolicitud = async (req, res) => {
           destinatarioUbicacion: sanitizeText(destinatarioUbicacion || '', 255),
           destinatarioPais: sanitizeText(destinatarioPais || '', 100),
           oficioAsunto: sanitizeText(oficioAsunto || '', 500),
-          oficioCuerpo: sanitizeText(oficioCuerpo || '', 5000),
+          // El cuerpo del oficio incorpora el motivo narrativo y debe conservarlo
+          // completo, incluso cuando el documento necesite varias páginas.
+          oficioCuerpo: sanitizeFreeText(oficioCuerpo),
           oficioDespedida: sanitizeText(oficioDespedida || '', 100),
           oficioAnexos: sanitizeText(oficioAnexos || '', 1000),
           oficioProyecto: sanitizeText(oficioProyecto || '', 255),
@@ -9065,6 +9102,7 @@ module.exports = {
   resolveReposicionLaboralProfile,
   resolveReposicionValues,
   resolveReposicionAbono,
+  sanitizeFreeText,
   getGroupInitialApprovalRecipients,
   isSingleHomogeneousGroup,
   getStoredReposicionLaboralProfile,

@@ -110,6 +110,26 @@ const STATUS_LABELS = {
   no_aprobada: 'No Aprobada'
 };
 
+const formatVicerrectoriaName = (value = '') => String(value || '')
+  .trim()
+  .replace(/^vicerrectoria\b/i, 'Vicerrectoría')
+  .replace(/\bacademica\b/gi, 'Académica')
+  .replace(/\binvestigacion\b/gi, 'Investigación')
+  .replace(/\bextension\b/gi, 'Extensión')
+  .replace(/\bevangelizacion\b/gi, 'Evangelización');
+
+const getStatusLabel = (row = {}) => {
+  if (row.estado === 'pendiente_aprobacion_vicerrectoria_academica') {
+    const vicerrectoria = formatVicerrectoriaName(
+      row.datos_formulario?.laboral?.vicerrectoria
+      || row.solicitante?.vicerrectoria
+      || row.solicitante_snapshot?.vicerrectoria
+    );
+    return vicerrectoria ? `Pendiente ${vicerrectoria}` : STATUS_LABELS[row.estado];
+  }
+  return STATUS_LABELS[row.estado] || row.estado;
+};
+
 const STATUS_FILTER_OPTIONS = [
   { value: 'pendiente_aprobacion_jefe', label: 'Pendiente Jefe', matches: ['pendiente_aprobacion_jefe', 'pendiente_jefe'] },
   { value: 'pendiente_aprobacion_vicerrectoria_academica', label: 'Pendiente Vicerrectoría', matches: ['pendiente_aprobacion_vicerrectoria_academica', 'aprobada_jefe'] },
@@ -753,7 +773,7 @@ function ReporteSalidaSeguimiento({ initialAccess = null, onBack }) {
         segmentoText,
         tipo,
         f.salida?.motivo || f.salida?.otraDescripcion || '',
-        STATUS_LABELS[row.estado] || row.estado,
+        getStatusLabel(row),
         row.reposicion_aplica ? 'SI' : 'NO',
         row.reposicion_aplica ? (row.reposicion_estado === 'cumplida' ? 'Cumplida' : 'Pendiente') : 'N/A',
         row.tiempo_solicitado_minutos || 0
@@ -828,7 +848,7 @@ function ReporteSalidaSeguimiento({ initialAccess = null, onBack }) {
         segmentoText,
         tipo,
         f.salida?.motivo || f.salida?.otraDescripcion || '',
-        STATUS_LABELS[row.estado] || row.estado,
+        getStatusLabel(row),
         row.reposicion_aplica ? 'SI' : 'NO',
         row.reposicion_aplica ? (row.reposicion_estado === 'cumplida' ? 'Cumplida' : 'Pendiente') : 'N/A',
         row.tiempo_solicitado_minutos || 0,
@@ -1580,7 +1600,12 @@ function ReporteSalidaSeguimiento({ initialAccess = null, onBack }) {
                           </TableCell>
                           <TableCell sx={{ py: 0.8, px: 0.8 }}>
                             <Typography sx={{ fontWeight: 700, fontSize: 11.5 }}>{row.jefe?.nombre}</Typography>
-                            <Typography sx={{ color: '#64748b', fontSize: 10.5 }}>{row.jefe?.email}</Typography>
+                            <Typography
+                              sx={{ color: '#64748b', fontSize: 10.5 }}
+                              title="Correo que recibe la solicitud de aprobación"
+                            >
+                              {row.jefe?.email_aprobacion || row.jefe?.email}
+                            </Typography>
                           </TableCell>
                           <TableCell sx={{ py: 0.8, px: 0.8, maxWidth: 200 }}>
                             <Typography sx={{ fontWeight: 800, fontSize: 11, color: '#334155', textTransform: 'capitalize' }}>
@@ -1593,7 +1618,7 @@ function ReporteSalidaSeguimiento({ initialAccess = null, onBack }) {
                           <TableCell sx={{ py: 0.8, px: 0.8 }}>
                             <Stack spacing={0.5} alignItems="flex-start">
                               <Tooltip title={getTrazabilidadTooltip(row)} arrow placement="left" sx={{ cursor: 'pointer' }}>
-                                <Chip size="small" label={STATUS_LABELS[row.estado] || row.estado} sx={{ bgcolor: statusSx.bg, color: statusSx.color, fontWeight: 900, fontSize: 9, height: 18 }} />
+                                <Chip size="small" label={getStatusLabel(row)} sx={{ bgcolor: statusSx.bg, color: statusSx.color, fontWeight: 900, fontSize: 9, height: 18 }} />
                               </Tooltip>
                               {(() => {
                                 const rejectionTrace = Array.isArray(row.trazabilidad)

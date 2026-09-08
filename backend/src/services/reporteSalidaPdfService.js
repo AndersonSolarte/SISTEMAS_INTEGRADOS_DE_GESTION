@@ -1311,6 +1311,8 @@ const buildPdfBuffer = async (solicitud) => {
           {
             table: {
               widths: ['25%', '25%', '25%', '25%'],
+              // Las filas narrativas pueden continuar en otra página.
+              dontBreakRows: false,
               body: (() => {
                 const isReposicionType = salida.tipo === 'diligencia_personal';
                 const tableBody = [];
@@ -1345,13 +1347,17 @@ const buildPdfBuffer = async (solicitud) => {
                   tableBody.push([
                     { text: 'Tiempo solicitado:', bold: true },
                     { text: formatMinutes(solicitud.tiempo_solicitado_minutos) },
+                    {}, {}
+                  ]);
+                  tableBody.push([
                     { text: 'Detalle/Motivo:', bold: true },
-                    { text: motivoStr }
+                    { text: motivoStr, colSpan: 3, lineHeight: 1.15 },
+                    {}, {}
                   ]);
                 } else {
                   tableBody.push([
                     { text: 'Detalle/Motivo:', bold: true },
-                    { text: motivoStr, colSpan: 3 },
+                    { text: motivoStr, colSpan: 3, lineHeight: 1.15 },
                     {}, {}
                   ]);
                 }

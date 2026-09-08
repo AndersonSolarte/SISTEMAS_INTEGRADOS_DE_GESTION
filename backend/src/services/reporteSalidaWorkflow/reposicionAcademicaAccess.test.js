@@ -11,7 +11,8 @@ const {
   resolveHoraCatedraDuration,
   resolveReposicionLaboralProfile,
   resolveReposicionValues,
-  resolveReposicionAbono
+  resolveReposicionAbono,
+  sanitizeFreeText
 } = require('../../controllers/reporteSalidaController');
 const {
   ensureReporteSalidaPdf,
@@ -38,6 +39,17 @@ test('la reposicion aplica exclusivamente a diligencia personal', () => {
       duracionTipo
     }), false);
   }
+});
+
+test('el detalle narrativo conserva todo el texto y los saltos de linea', () => {
+  const detail = `${'Detalle amplio de la solicitud. '.repeat(250)}\nUltima linea completa.`;
+  const sanitized = sanitizeFreeText(detail);
+  assert.equal(sanitized.length, detail.length);
+  assert.equal(sanitized, detail);
+  assert.ok(sanitized.endsWith('Ultima linea completa.'));
+
+  const otraDescripcion = `otra:${'Motivo personalizado sin limite. '.repeat(250)}FIN`;
+  assert.equal(sanitizeFreeText(otraDescripcion), otraDescripcion);
 });
 
 test('hora catedra clasifica la duración usando jornada y horas solicitadas', () => {
@@ -540,6 +552,53 @@ test('salida individual con Karen Ocana como jefe envia la aprobacion al correo 
   assert.notEqual(recipient, 'keocana@unicesmag.edu.co');
 });
 
+test('salida individual con Sandra como jefe envia aprobacion exclusivamente a viceacad', () => {
+  const { getInitialApprovalRecipientEmail } = require('../../controllers/reporteSalidaController');
+  const solicitud = {
+    solicitante_snapshot: {
+      nombre: 'GERARDO ANDRES OLIVA RAMOS',
+      email: 'gaoliva@unicesmag.edu.co'
+    },
+    datos_formulario: {
+      laboral: {
+        dependencia: 'Programa Academico - Licenciatura en Educacion Infantil',
+        cargo: 'Decano (a) Facultad de Educacion'
+      }
+    },
+    jefe_snapshot: {
+      nombre: 'SANDRA LUCIA BOLAÑOS DELGADO',
+      email: 'sbolanos@unicesmag.edu.co'
+    }
+  };
+
+  const recipient = getInitialApprovalRecipientEmail(solicitud);
+  assert.equal(recipient, 'viceacad@unicesmag.edu.co');
+  assert.notEqual(recipient, 'sbolanos@unicesmag.edu.co');
+});
+
+test('salida grupal con Sandra como jefe excluye su correo personal y correos de programa', () => {
+  const { getGroupInitialApprovalRecipients } = require('../../controllers/reporteSalidaController');
+  const solicitudes = [{
+    solicitante_snapshot: {
+      nombre: 'GERARDO ANDRES OLIVA RAMOS',
+      email: 'gaoliva@unicesmag.edu.co'
+    },
+    datos_formulario: {
+      laboral: {
+        dependencia: 'Programa Academico - Licenciatura en Educacion Infantil',
+        cargo: 'Decano (a) Facultad de Educacion'
+      }
+    },
+    jefe_snapshot: {
+      nombre: 'SANDRA LUCIA BOLAÑOS DELGADO',
+      email: 'sbolanos@unicesmag.edu.co'
+    }
+  }];
+
+  const recipients = getGroupInitialApprovalRecipients(solicitudes);
+  assert.deepEqual(recipients, ['viceacad@unicesmag.edu.co']);
+});
+
 test('salida grupal de otros programas académicos envía a ambos: correo del programa y correo del director/jefe', () => {
   const { getGroupInitialApprovalRecipients } = require('../../controllers/reporteSalidaController');
   const groupSolicitudes = [
@@ -624,4 +683,3 @@ test('Vicerrectoría de Investigación envía la aprobación de autoridad exclus
     assert.equal(vicerrectoriaTarget.forceApproval, true);
   });
 });
-
