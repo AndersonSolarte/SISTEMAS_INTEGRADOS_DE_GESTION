@@ -291,28 +291,74 @@ const hasValidatedReposicion = (row) => {
   return total > 0 && paid >= total;
 };
 
+const getRejectionInfo = (row) => {
+  if (!row || row.estado !== 'no_aprobada') return null;
+
+  let rejTrace = null;
+  if (Array.isArray(row.trazabilidad) && row.trazabilidad.length > 0) {
+    rejTrace = [...row.trazabilidad].reverse().find((t) => {
+      const ev = String(t?.event || '').toLowerCase();
+      const detail = t?.detail || {};
+      return (
+        ev.includes('rechaz') ||
+        ev === 'no_aprobada' ||
+        ev.includes('no_aprob')
+      ) && Boolean(detail.justificacion || detail.observacion || detail.motivo || detail.reason || detail.comentario);
+    });
+  }
+
+  const detail = rejTrace?.detail || {};
+  const actor = rejTrace?.actor || {};
+  const observacion = detail.justificacion || detail.observacion || detail.motivo || detail.reason || detail.comentario || row.datos_formulario?.justificacion || row.datos_formulario?.observacion || row.observacion || null;
+
+  const ev = String(rejTrace?.event || '').toLowerCase();
+
+  let actorName = detail.actorName || detail.rejectedBy || (actor.nombre && actor.nombre !== 'Jefe Inmediato' ? actor.nombre : null);
+
+  if (!actorName) {
+    if (ev.includes('jefe') || ev.includes('dependencia')) {
+      const bossName = actor.nombre || row.jefe_snapshot?.nombre || row.jefe?.nombre || row.datos_formulario?.personal?.jefe_nombre;
+      actorName = bossName ? `${bossName} (Jefe Inmediato)` : 'Jefe Inmediato';
+    } else if (ev.includes('vicerrectoria')) {
+      actorName = 'Vicerrectoría Académica';
+    } else if (ev.includes('rectoria')) {
+      actorName = 'Rectoría';
+    } else if (ev.includes('proyeccion')) {
+      actorName = 'Coordinación de Proyección Social';
+    } else if (ev.includes('gestion_humana') || ev.includes('gh')) {
+      actorName = 'Gestión del Talento Humano';
+    } else if (ev.includes('sst')) {
+      actorName = 'Seguridad y Salud en el Trabajo (SST)';
+    } else if (ev.includes('admin')) {
+      actorName = 'Administrador SIAC';
+    } else {
+      const bossName = row.jefe_snapshot?.nombre || row.jefe?.nombre;
+      actorName = bossName ? `${bossName} (Jefe Inmediato)` : 'Jefe / Autoridad Institucional';
+    }
+  } else {
+    if (ev.includes('jefe') && !actorName.toLowerCase().includes('jefe')) {
+      actorName = `${actorName} (Jefe Inmediato)`;
+    }
+  }
+
+  return {
+    isRechazada: true,
+    actorName,
+    observacion
+  };
+};
+
 const getJefeObservacion = (row) => {
   if (!row) return null;
 
-  if (Array.isArray(row.trazabilidad) && row.trazabilidad.length > 0) {
-    const isRechazada = row.estado === 'no_aprobada';
-
-    if (isRechazada) {
-      const rejTrace = [...row.trazabilidad].reverse().find((t) => {
-        const ev = String(t?.event || '').toLowerCase();
-        const detail = t?.detail || {};
-        return (
-          ev.includes('rechaz') ||
-          ev === 'no_aprobada' ||
-          ev.includes('no_aprob')
-        ) && Boolean(detail.justificacion || detail.observacion || detail.motivo || detail.reason || detail.comentario);
-      });
-      if (rejTrace) {
-        const detail = rejTrace.detail || {};
-        return detail.justificacion || detail.observacion || detail.motivo || detail.reason || detail.comentario;
-      }
+  if (row.estado === 'no_aprobada') {
+    const info = getRejectionInfo(row);
+    if (info && info.observacion) {
+      return `[No aprobada por ${info.actorName}]: "${info.observacion}"`;
     }
+  }
 
+  if (Array.isArray(row.trazabilidad) && row.trazabilidad.length > 0) {
     const obsTrace = [...row.trazabilidad].reverse().find((t) => {
       const detail = t?.detail || {};
       return Boolean(detail.justificacion || detail.observacion || detail.motivo || detail.reason || detail.comentario);
@@ -1696,18 +1742,30 @@ function ReporteSalidaSeguimiento({ initialAccess = null, onBack }) {
                           </TableCell>
                           <TableCell sx={{ py: 0.8, px: 0.8, minWidth: 180, maxWidth: 260 }}>
                             {(() => {
-                              const jefeObs = getJefeObservacion(row);
-                              const ghObs = row.observacion_gestion_humana || '';
                               const isRechazada = row.estado === 'no_aprobada';
+                              const rejInfo = isRechazada ? getRejectionInfo(row) : null;
+                              const jefeObs = isRechazada ? (rejInfo?.observacion || getJefeObservacion(row)) : getJefeObservacion(row);
+                              const ghObs = row.observacion_gestion_humana || '';
                               return (
                                 <Stack spacing={0.5}>
-                                  {jefeObs && (
+                                  {isRechazada ? (
                                     <Box>
-                                      <Typography sx={{ fontSize: 9.5, fontWeight: 700, color: isRechazada ? '#b91c1c' : '#475569', display: 'inline-block', mr: 0.5 }}>
-                                        {isRechazada ? 'Motivo no aprobación:' : 'Jefe / Autoridad:'}
+                                      <Typography sx={{ fontSize: 9.5, fontWeight: 700, color: '#b91c1c', display: 'block', mb: 0.2 }}>
+                                        No aprobada por {rejInfo?.actorName || 'Jefe / Autoridad'}:
                                       </Typography>
-                                      <Typography sx={{ fontSize: 9.5, color: isRechazada ? '#991b1b' : '#64748b', fontStyle: 'italic', display: 'inline' }}>"{jefeObs}"</Typography>
+                                      <Typography sx={{ fontSize: 9.5, color: '#991b1b', fontStyle: 'italic', display: 'inline' }}>
+                                        "{jefeObs || 'Sin observación especificada.'}"
+                                      </Typography>
                                     </Box>
+                                  ) : (
+                                    jefeObs && (
+                                      <Box>
+                                        <Typography sx={{ fontSize: 9.5, fontWeight: 700, color: '#475569', display: 'inline-block', mr: 0.5 }}>
+                                          Jefe / Autoridad:
+                                        </Typography>
+                                        <Typography sx={{ fontSize: 9.5, color: '#64748b', fontStyle: 'italic', display: 'inline' }}>"{jefeObs}"</Typography>
+                                      </Box>
+                                    )
                                   )}
                                   {ghObs ? (
                                     <Box>
@@ -1721,7 +1779,7 @@ function ReporteSalidaSeguimiento({ initialAccess = null, onBack }) {
                                       </Box>
                                     </Box>
                                   ) : (
-                                    !jefeObs && <Typography sx={{ fontSize: 9.5, color: '#94a3b8', fontStyle: 'italic' }}>Sin observaciones</Typography>
+                                    !isRechazada && !jefeObs && <Typography sx={{ fontSize: 9.5, color: '#94a3b8', fontStyle: 'italic' }}>Sin observaciones</Typography>
                                   )}
                                 </Stack>
                               );
