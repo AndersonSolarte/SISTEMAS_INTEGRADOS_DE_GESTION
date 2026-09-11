@@ -188,12 +188,42 @@ const getHorasPendientes = (row) => {
 };
 
 const getJefeObservacion = (row) => {
-  if (!row || !Array.isArray(row.trazabilidad)) return null;
-  const trace = row.trazabilidad.find(t => 
-    (t.event === 'no_aprobada' || t.event === 'aprobada_jefe') && 
-    (t.detail?.justificacion || t.detail?.observacion)
-  );
-  return trace?.detail?.justificacion || trace?.detail?.observacion || null;
+  if (!row) return null;
+
+  if (Array.isArray(row.trazabilidad) && row.trazabilidad.length > 0) {
+    const isRechazada = row.estado === 'no_aprobada';
+
+    if (isRechazada) {
+      const rejTrace = [...row.trazabilidad].reverse().find((t) => {
+        const ev = String(t?.event || '').toLowerCase();
+        const detail = t?.detail || {};
+        return (
+          ev.includes('rechaz') ||
+          ev === 'no_aprobada' ||
+          ev.includes('no_aprob')
+        ) && Boolean(detail.justificacion || detail.observacion || detail.motivo || detail.reason || detail.comentario);
+      });
+      if (rejTrace) {
+        const detail = rejTrace.detail || {};
+        return detail.justificacion || detail.observacion || detail.motivo || detail.reason || detail.comentario;
+      }
+    }
+
+    const obsTrace = [...row.trazabilidad].reverse().find((t) => {
+      const detail = t?.detail || {};
+      return Boolean(detail.justificacion || detail.observacion || detail.motivo || detail.reason || detail.comentario);
+    });
+    if (obsTrace) {
+      const detail = obsTrace.detail || {};
+      return detail.justificacion || detail.observacion || detail.motivo || detail.reason || detail.comentario;
+    }
+  }
+
+  if (row.datos_formulario?.justificacion || row.datos_formulario?.observacion || row.observacion) {
+    return row.datos_formulario?.justificacion || row.datos_formulario?.observacion || row.observacion;
+  }
+
+  return null;
 };
 
 const formatElapsed = (minutes) => {
@@ -364,12 +394,15 @@ export default function TiempoReponer() {
                   {(() => {
                     const jefeObs = getJefeObservacion(row);
                     const ghObs = row.observacion_gestion_humana || '';
+                    const isRechazada = row.estado === 'no_aprobada';
                     return (
                       <Stack spacing={0.8}>
                         {jefeObs && (
                           <Box>
-                            <Typography sx={{ fontSize: 10.5, fontWeight: 700, color: '#475569', display: 'inline-block', mr: 0.5 }}>Jefe:</Typography>
-                            <Typography sx={{ fontSize: 10.5, color: '#64748b', fontStyle: 'italic', display: 'inline' }}>"{jefeObs}"</Typography>
+                            <Typography sx={{ fontSize: 10.5, fontWeight: 700, color: isRechazada ? '#b91c1c' : '#475569', display: 'inline-block', mr: 0.5 }}>
+                              {isRechazada ? 'Motivo no aprobación:' : 'Jefe / Autoridad:'}
+                            </Typography>
+                            <Typography sx={{ fontSize: 10.5, color: isRechazada ? '#991b1b' : '#64748b', fontStyle: 'italic', display: 'inline' }}>"{jefeObs}"</Typography>
                           </Box>
                         )}
                         {ghObs ? (
