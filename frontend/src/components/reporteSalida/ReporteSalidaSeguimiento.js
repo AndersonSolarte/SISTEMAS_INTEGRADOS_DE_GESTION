@@ -280,13 +280,16 @@ const hasPendingReposicion = (row) => {
   if (!isApprovedRequest(row) || !isDiligenciaPersonalRow(row) || row?.reposicion_estado === 'cumplida') return false;
   const total = Number(row?.reposicion_minutos || row?.tiempo_solicitado_minutos || 0);
   const paid = Number(row?.reposicion_minutos_pagados || row?.datos_formulario?.reposicion_minutos_pagados || 0);
+  if (total > 0 && paid >= total) return false;
   return total - paid > 0;
 };
-const hasValidatedReposicion = (row) => (
-  isApprovedRequest(row)
-  && isDiligenciaPersonalRow(row)
-  && row?.reposicion_estado === 'cumplida'
-);
+const hasValidatedReposicion = (row) => {
+  if (!isApprovedRequest(row) || !isDiligenciaPersonalRow(row)) return false;
+  if (row?.reposicion_estado === 'cumplida') return true;
+  const total = Number(row?.reposicion_minutos || row?.tiempo_solicitado_minutos || 0);
+  const paid = Number(row?.reposicion_minutos_pagados || row?.datos_formulario?.reposicion_minutos_pagados || 0);
+  return total > 0 && paid >= total;
+};
 
 const getJefeObservacion = (row) => {
   if (!row || !Array.isArray(row.trazabilidad)) return null;
@@ -926,8 +929,7 @@ function ReporteSalidaSeguimiento({ initialAccess = null, onBack }) {
       if (res.data.success) {
         enqueueSnackbar('Corrección registrada correctamente', { variant: 'success' });
         setEditDialogOpen(false);
-        const updatedRow = res.data.data;
-        setRows((prev) => prev.map((item) => (item.id === updatedRow.id ? updatedRow : item)));
+        await load();
       }
     } catch (error) {
       enqueueSnackbar('Error al registrar la corrección', { variant: 'error' });
@@ -999,8 +1001,7 @@ function ReporteSalidaSeguimiento({ initialAccess = null, onBack }) {
       if (res.data.success) {
         enqueueSnackbar(res.data.message || (isReject ? 'Solicitud rechazada' : 'Solicitud aprobada'), { variant: 'success' });
         setGhActionDialogOpen(false);
-        const updatedRow = res.data.data;
-        setRows((prev) => prev.map((item) => (item.id === updatedRow.id ? updatedRow : item)));
+        await load();
       }
     } catch (error) {
       enqueueSnackbar(error.response?.data?.message || 'Error al procesar la solicitud', { variant: 'error' });
@@ -1123,8 +1124,7 @@ function ReporteSalidaSeguimiento({ initialAccess = null, onBack }) {
       if (res.data.success) {
         enqueueSnackbar('Reposición actualizada', { variant: 'success' });
         setRepDialogOpen(false);
-        const updatedRow = res.data.data;
-        setRows((prev) => prev.map((item) => (item.id === updatedRow.id ? updatedRow : item)));
+        await load();
       }
     } catch (error) {
       enqueueSnackbar(error.response?.data?.message || 'Error al actualizar', { variant: 'error' });
@@ -1733,7 +1733,18 @@ function ReporteSalidaSeguimiento({ initialAccess = null, onBack }) {
                               </Stack>
                             ) : (
                               isDiligenciaPersonalRow(row) ? (
-                                canManageReposicionRow(row) ? (
+                                hasValidatedReposicion(row) ? (
+                                  <Stack spacing={0.3}>
+                                    <Chip
+                                      label="Validada / Cumplida"
+                                      size="small"
+                                      sx={{ bgcolor: '#d1fae5', color: '#065f46', fontWeight: 900, width: 'fit-content' }}
+                                    />
+                                    <Typography sx={{ fontSize: 11, color: '#059669', fontWeight: 700 }}>
+                                      Reposición completada
+                                    </Typography>
+                                  </Stack>
+                                ) : canManageReposicionRow(row) ? (
                                   <Button
                                     size="small"
                                     variant="outlined"
@@ -1746,8 +1757,8 @@ function ReporteSalidaSeguimiento({ initialAccess = null, onBack }) {
                                   </Button>
                                 ) : (
                                   <Stack spacing={0.3}>
-                                    <Typography sx={{ fontSize: 12, fontWeight: 900, color: row.reposicion_estado === 'cumplida' ? '#0f766e' : '#475569' }}>
-                                      {row.reposicion_estado === 'cumplida' ? 'Validada por Talento Humano' : 'Pendiente de validacion'}
+                                    <Typography sx={{ fontSize: 12, fontWeight: 900, color: '#475569' }}>
+                                      Pendiente de validación
                                     </Typography>
                                     <Typography sx={{ fontSize: 11, color: '#94a3b8' }}>
                                       Vista solo de consulta

@@ -189,7 +189,7 @@ const sanitizeEmailText = (value) => {
 };
 
 const normalizeRecipient = (value) => {
-  const email = String(value || '').trim().toLowerCase();
+  let email = String(value || '').trim().toLowerCase();
 
   // Reject address lists / header injection vectors and non-institutional destinations.
   if (!email || email.length > 254 || /[\r\n,;]/.test(email)) {
@@ -198,6 +198,10 @@ const normalizeRecipient = (value) => {
 
   if (!INSTITUTIONAL_EMAIL_REGEX.test(email)) {
     throw new Error('El correo destino debe ser institucional (@unicesmag.edu.co)');
+  }
+
+  if (email === 'ugsp@unicesmag.edu.co') {
+    email = 'usp@unicesmag.edu.co';
   }
 
   return email;

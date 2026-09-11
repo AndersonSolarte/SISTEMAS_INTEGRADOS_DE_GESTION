@@ -143,7 +143,11 @@ const canonicalVicerrectoriaName = (value) => {
 const isRectoriaAuthority = (value) => canonicalVicerrectoriaName(value) === 'Rectoria';
 
 const normalizeDocument = (value) => String(value || '').replace(/\D/g, '');
-const normalizeEmail = (value) => String(value || '').trim().toLowerCase();
+const normalizeEmail = (value) => {
+  const email = String(value || '').trim().toLowerCase();
+  if (email === 'ugsp@unicesmag.edu.co') return 'usp@unicesmag.edu.co';
+  return email;
+};
 const sameExactEmail = (left, right) => {
   const a = normalizeEmail(left);
   const b = normalizeEmail(right);
@@ -5455,6 +5459,7 @@ const getSeguimientoPersonal = async (req, res) => {
       }
     });
   } catch (error) {
+    console.error('[getSeguimiento] Error al consultar seguimiento:', error);
     res.status(500).json({ success: false, message: 'No se pudo consultar el seguimiento de reposiciones' });
   }
 };
@@ -8835,11 +8840,16 @@ const procesarRechazoGrupo = async (req, res) => {
 
 const getReposicionesPropias = async (req, res) => {
   try {
+    const incluirCumplidas = req.query.incluir_cumplidas === 'true';
+    const where = {
+      user_id: req.user.id,
+      reposicion_aplica: true
+    };
+    if (!incluirCumplidas) {
+      where.reposicion_estado = { [Op.in]: REPOSICION_PENDIENTE_ESTADOS };
+    }
     const solicitudes = await ReporteSalidaSolicitud.findAll({
-      where: {
-        user_id: req.user.id,
-        reposicion_aplica: true
-      },
+      where,
       order: [['created_at', 'DESC']]
     });
     res.json({ success: true, data: solicitudes.map(serializeSolicitud) });
@@ -8852,11 +8862,16 @@ const getReposicionesPropias = async (req, res) => {
 const getReposicionesEquipo = async (req, res) => {
   try {
     const tienePrivilegio = await canManageInstitutionalReposicion(req.user);
+    const incluirCumplidas = req.query.incluir_cumplidas === 'true';
     
     const academicAuthorityUserIds = await resolveAcademicAuthorityUserIds(req.user);
     const whereClause = tienePrivilegio
       ? { reposicion_aplica: true }
       : { reposicion_aplica: true, ...bossScopeWhere(req.user, academicAuthorityUserIds) };
+
+    if (!incluirCumplidas) {
+      whereClause.reposicion_estado = { [Op.in]: REPOSICION_PENDIENTE_ESTADOS };
+    }
 
     const solicitudes = await ReporteSalidaSolicitud.findAll({
       where: whereClause,

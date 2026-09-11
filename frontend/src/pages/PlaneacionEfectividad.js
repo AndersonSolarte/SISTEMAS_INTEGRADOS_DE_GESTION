@@ -4573,7 +4573,7 @@ function PlaneacionEfectividad() {
     <Fade in={true}>
       <Box>
         <Stack spacing={3.2}>
-          <HeroBanner compact={section !== null} onBack={[canEstadistica, canGestion, canNuevo].filter(Boolean).length > 1 ? () => setSection(null) : null} />
+          {section !== 'nuevo' && <HeroBanner compact={section !== null} onBack={[canEstadistica, canGestion, canNuevo].filter(Boolean).length > 1 ? () => setSection(null) : null} />}
 
           {section === null ? (
             <Box>
@@ -4788,7 +4788,7 @@ function PlaneacionEfectividad() {
 
 
               {section === 'nuevo' ? (
-                <StrategicPlanningPlatform />
+                <StrategicPlanningPlatform onBack={() => setSection(null)} />
               ) : section === 'gestion' ? (
                 <GestionPlanesWorkspaceV2 sourceRows={dashboard.rows || []} onWorkflowChanged={cargarDashboardPlanAccion} />
               ) : (

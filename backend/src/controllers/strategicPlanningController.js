@@ -18,10 +18,12 @@ const { generateActaBuffer } = require('../services/actaExportService');
 const { generateStrategicMinutePdf } = require('../services/strategicMinutePdfService');
 const { generatePlanAccionBuffer } = require('../services/planAccionExportService');
 const { sendInstitutionalEmail } = require('../services/emailService');
-const { ensureStrategicPlanningDefaults, DEFAULT_WORKFLOW, DEFAULT_PLAN_CODE, DEFAULT_FIELDS } = require('../services/strategicPlanningBootstrap');
+const { ensureStrategicPlanningDefaults, DEFAULT_WORKFLOW, DEFAULT_FIELDS } = require('../services/strategicPlanningBootstrap');
 const { sha256, cleanCode, audit, transitionPlan, saveActionItem, upsertMonitoring, findActionPlans } = require('../services/strategicPlanningDomainService');
 const { enqueueSync, reconcileTerm } = require('../services/strategicPlanningDriveService');
-const { previewReferenceImport, confirmReferenceImport } = require('../services/strategicReferenceService');
+const { buildReferenceWorkbook, previewReferenceImport, confirmReferenceImport } = require('../services/strategicReferenceService');
+const { buildPedSchedule } = require('../services/strategicPlanSetupService');
+const { buildDynamicActionItemWorkbook, previewDynamicActionItems, confirmDynamicActionItems } = require('../services/strategicDynamicWorkbookService');
 
 // La carpeta .private vive dentro del volumen respaldado de uploads, pero Express
 // no publica directorios con punto. Todo acceso se hace mediante endpoints con auth.
@@ -58,24 +60,97 @@ const listPlans = wrap(async (_req, res) => ok(res, await StrategicPlan.findAll(
 
 const createPlan = wrap(async (req, res) => {
   const payload = req.body || {};
-  if (!String(payload.code || '').trim() || !String(payload.name || '').trim() || !payload.starts_on || !payload.ends_on) {
+  const automaticSetup = payload.duration_years !== undefined && payload.duration_years !== null && payload.duration_years !== '';
+  const setupMode = ['blank', 'institutional', 'copy'].includes(payload.setup_mode) ? payload.setup_mode : 'institutional';
+  const schedule = automaticSetup ? buildPedSchedule({ startsOn: payload.starts_on, durationYears: payload.duration_years }) : null;
+  const templatePlan = automaticSetup && payload.template_plan_id
+    ? await StrategicPlan.findByPk(payload.template_plan_id)
+    : null;
+  if (setupMode === 'copy' && !templatePlan) throw Object.assign(new Error('Seleccione el PED que desea copiar.'), { statusCode: 422 });
+  const code = schedule?.code || payload.code;
+  const name = String(payload.name || '').trim() || schedule?.name;
+  const endsOn = schedule?.endsOn || payload.ends_on;
+  if (!String(code || '').trim() || !String(name || '').trim() || !payload.starts_on || !endsOn) {
     throw Object.assign(new Error('Código, nombre y fechas del PED son obligatorios.'), { statusCode: 422 });
   }
-  if (String(payload.ends_on) < String(payload.starts_on)) {
+  if (String(endsOn) < String(payload.starts_on)) {
     throw Object.assign(new Error('La fecha final del PED no puede ser anterior a la fecha inicial.'), { statusCode: 422 });
   }
-  const created = await StrategicPlan.create({
-    code: cleanCode(payload.code), name: payload.name, description: payload.description || null,
-    starts_on: payload.starts_on, ends_on: payload.ends_on, status: payload.status || 'draft',
-    approval_document: payload.approval_document || null,
-    administrative_act: payload.administrative_act || null,
-    approved_on: payload.approved_on || null,
-    global_budget: payload.global_budget || null,
-    responsible_user_id: payload.responsible_user_id || null, settings: { workflow: payload.workflow || DEFAULT_WORKFLOW, ...(payload.settings || {}) },
-    created_by: req.user.id, updated_by: req.user.id
+  if (await StrategicPlan.count({ where: { code: cleanCode(code), deleted_at: null } })) {
+    throw Object.assign(new Error(`Ya existe el ${cleanCode(code)}. Ábralo desde el selector para revisarlo o editarlo.`), { statusCode: 409 });
+  }
+  const created = await sequelize.transaction(async (transaction) => {
+    const plan = await StrategicPlan.create({
+      code: cleanCode(code), name, description: payload.description || null,
+      starts_on: payload.starts_on, ends_on: endsOn, status: payload.status || (automaticSetup ? 'active' : 'draft'),
+      approval_document: payload.approval_document || null,
+      administrative_act: payload.administrative_act || null,
+      approved_on: payload.approved_on || null,
+      global_budget: payload.global_budget || null,
+      responsible_user_id: payload.responsible_user_id || null,
+      settings: {
+        workflow: payload.workflow || templatePlan?.settings?.workflow || DEFAULT_WORKFLOW,
+        referenceCatalogs: setupMode === 'blank' ? [] : (templatePlan?.settings?.referenceCatalogs || []),
+        automatic_setup: automaticSetup,
+        setup_mode: setupMode,
+        ...(payload.settings || {})
+      },
+      created_by: req.user.id, updated_by: req.user.id
+    }, { transaction });
+
+    if (automaticSetup) {
+      for (const termData of schedule.terms) {
+        const { periods, ...termValues } = termData;
+        const term = await StrategicTerm.create({ strategic_plan_id: plan.id, ...termValues }, { transaction });
+        for (const period of periods) await StrategicMonitoringPeriod.create({ term_id: term.id, ...period }, { transaction });
+      }
+      if (setupMode === 'institutional') {
+        for (const [position, levelName] of ['Objetivo Estratégico', 'Lineamiento Estratégico'].entries()) {
+          await StrategicLevel.create({ strategic_plan_id: plan.id, name: levelName, position: position + 1, configuration_version: plan.configuration_version }, { transaction });
+        }
+        for (const [position, [key, label, dataType, required]] of DEFAULT_FIELDS.entries()) {
+          await StrategicFieldDefinition.create({ strategic_plan_id: plan.id, key, label, data_type: dataType, required, position: position + 1, configuration_version: plan.configuration_version, validation_rules: dataType === 'percentage' ? { min: 0, max: 100 } : {}, formula: key === 'total_progress' ? 'progress_s1 + progress_s2' : null }, { transaction });
+        }
+      }
+      if (setupMode === 'copy' && templatePlan) {
+        const [sourceLevels, sourceElements, sourceFields] = await Promise.all([
+          StrategicLevel.findAll({ where: { strategic_plan_id: templatePlan.id, configuration_version: templatePlan.configuration_version, active: true }, order: [['position', 'ASC']], transaction }),
+          StrategicElement.findAll({ where: { strategic_plan_id: templatePlan.id, version: templatePlan.configuration_version, active: true, deleted_at: null }, order: [['position', 'ASC']], transaction }),
+          StrategicFieldDefinition.findAll({ where: { strategic_plan_id: templatePlan.id, configuration_version: templatePlan.configuration_version, active: true }, order: [['position', 'ASC']], transaction })
+        ]);
+        const levelIds = new Map();
+        for (const source of sourceLevels) {
+          const cloned = await StrategicLevel.create({ strategic_plan_id: plan.id, name: source.name, position: source.position, configuration_version: plan.configuration_version, active: true }, { transaction });
+          levelIds.set(String(source.id), cloned.id);
+        }
+        const elementIds = new Map();
+        for (const source of sourceElements) {
+          const cloned = await StrategicElement.create({ strategic_plan_id: plan.id, level_id: levelIds.get(String(source.level_id)), parent_id: null, code: source.code, name: source.name, description: source.description, position: source.position, version: plan.configuration_version, active: true }, { transaction });
+          elementIds.set(String(source.id), cloned.id);
+        }
+        for (const source of sourceElements) {
+          if (source.parent_id) await StrategicElement.update({ parent_id: elementIds.get(String(source.parent_id)) || null }, { where: { id: elementIds.get(String(source.id)) }, transaction });
+        }
+        if (sourceFields.length) await StrategicFieldDefinition.bulkCreate(sourceFields.map((field) => ({ strategic_plan_id: plan.id, key: field.key, label: field.label, data_type: field.data_type, required: field.required, position: field.position, validation_rules: field.validation_rules || {}, options: field.options || [], formula: field.formula || null, configuration_version: plan.configuration_version, active: true })), { transaction });
+      }
+      if (setupMode !== 'blank' && templatePlan) {
+        const references = await StrategicCatalogItem.findAll({ where: { strategic_plan_id: templatePlan.id, active: true }, transaction });
+        if (references.length) await StrategicCatalogItem.bulkCreate(references.map((item) => ({
+          strategic_plan_id: plan.id,
+          catalog_type: item.catalog_type,
+          code: item.code,
+          name: item.name,
+          metadata: item.metadata || {},
+          starts_on: item.starts_on || null,
+          ends_on: item.ends_on || null,
+          active: true
+        })), { transaction });
+      }
+    }
+    await audit(req, 'strategic_plan.create', 'strategic_plan', plan.id, null, plan.toJSON(), automaticSetup ? `Creación automática de PED en modo ${setupMode}, con vigencias y semestres` : null, transaction);
+    return plan;
   });
-  await audit(req, 'strategic_plan.create', 'strategic_plan', created.id, null, created.toJSON());
-  res.status(201); ok(res, created, 'PED creado.');
+  res.status(201); ok(res, created, automaticSetup ? 'PED creado. Ahora puede diseñar su estructura y formulario desde la interfaz.' : 'PED creado.');
 });
 
 const updatePlan = wrap(async (req, res) => {
@@ -84,25 +159,58 @@ const updatePlan = wrap(async (req, res) => {
   const previous = plan.toJSON();
   const allowed = ['code', 'name', 'description', 'starts_on', 'ends_on', 'status', 'approval_document', 'administrative_act', 'approved_on', 'global_budget', 'responsible_user_id', 'drive_root_id'];
   const changes = Object.fromEntries(allowed.filter((key) => req.body[key] !== undefined).map((key) => [key, req.body[key]]));
+  for (const nullableKey of ['approval_document', 'administrative_act', 'approved_on', 'global_budget', 'responsible_user_id', 'drive_root_id']) {
+    if (changes[nullableKey] === '') changes[nullableKey] = null;
+  }
+  if (plan.settings?.automatic_setup && (changes.starts_on !== undefined || changes.ends_on !== undefined)) {
+    const nextStartYear = Number(String(changes.starts_on || plan.starts_on).slice(0, 4));
+    const nextEndYear = Number(String(changes.ends_on || plan.ends_on).slice(0, 4));
+    const automaticCode = `PED-${nextStartYear}-${nextEndYear}`;
+    const duplicate = await StrategicPlan.count({ where: { id: { [Op.ne]: plan.id }, code: automaticCode, deleted_at: null } });
+    if (duplicate) throw Object.assign(new Error(`Ya existe el ${automaticCode}. Selecciónelo desde la lista para consultarlo.`), { statusCode: 409 });
+    changes.code = automaticCode;
+    changes.name = `Plan Estratégico de Desarrollo ${nextStartYear}–${nextEndYear}`;
+  }
   if (changes.code) changes.code = cleanCode(changes.code);
   if (String(changes.ends_on || plan.ends_on) < String(changes.starts_on || plan.starts_on)) throw Object.assign(new Error('La fecha final no puede ser anterior a la inicial.'), { statusCode: 422 });
   if (req.body.settings) changes.settings = { ...(plan.settings || {}), ...req.body.settings };
   if (req.body.new_configuration_version) changes.configuration_version = Number(plan.configuration_version) + 1;
   changes.updated_by = req.user.id;
-  await plan.update(changes);
-  await audit(req, 'strategic_plan.update', 'strategic_plan', plan.id, previous, plan.toJSON(), req.body.justification);
+  await sequelize.transaction(async (transaction) => {
+    await plan.update(changes, { transaction });
+
+    if (changes.starts_on !== undefined || changes.ends_on !== undefined) {
+      const startYear = Number(String(plan.starts_on).slice(0, 4));
+      const endYear = Number(String(plan.ends_on).slice(0, 4));
+      const existingTerms = await StrategicTerm.findAll({ where: { strategic_plan_id: plan.id }, transaction });
+      const existingYears = new Set(existingTerms.map((term) => Number(term.year)));
+
+      for (let year = startYear; year <= endYear; year += 1) {
+        if (existingYears.has(year)) continue;
+        const term = await StrategicTerm.create({
+          strategic_plan_id: plan.id,
+          year,
+          name: `Año ${year}`,
+          starts_on: year === startYear ? plan.starts_on : `${year}-01-01`,
+          ends_on: year === endYear ? plan.ends_on : `${year}-12-31`,
+          status: 'planned'
+        }, { transaction });
+        await StrategicMonitoringPeriod.bulkCreate([
+          { term_id: term.id, code: 'S1', name: 'Informe de gestión · Semestre 1', starts_on: `${year}-01-01`, ends_on: `${year}-06-30`, position: 1, weight: 0.5, status: 'planned' },
+          { term_id: term.id, code: 'S2', name: 'Informe de gestión · Semestre 2', starts_on: `${year}-07-01`, ends_on: `${year}-12-31`, position: 2, weight: 0.5, status: 'planned' }
+        ], { transaction });
+      }
+    }
+
+    await audit(req, 'strategic_plan.update', 'strategic_plan', plan.id, previous, plan.toJSON(), req.body.justification, transaction);
+  });
   ok(res, plan, 'Configuración actualizada.');
 });
 
 const deletePlan = wrap(async (req, res) => {
   const plan = await StrategicPlan.findByPk(req.params.id);
   if (!plan || plan.deleted_at) throw Object.assign(new Error('PED no encontrado.'), { statusCode: 404 });
-  if (plan.code === DEFAULT_PLAN_CODE) throw Object.assign(new Error('El PED institucional base no puede eliminarse; puede cerrarse y conservarse como histórico.'), { statusCode: 409 });
-  if (plan.status === 'active') throw Object.assign(new Error('Primero cambie el PED activo a cerrado o histórico.'), { statusCode: 409 });
-  const previous = plan.toJSON();
-  await plan.update({ deleted_at: new Date(), status: 'deleted', updated_by: req.user.id });
-  await audit(req, 'strategic_plan.delete', 'strategic_plan', plan.id, previous, plan.toJSON(), req.body?.justification || 'Eliminación lógica');
-  ok(res, { id: plan.id }, 'PED eliminado de forma lógica; su historial permanece protegido.');
+  throw Object.assign(new Error('Los PED forman parte del historial institucional y no se pueden eliminar. Puede consultarlos, editarlos o cerrarlos.'), { statusCode: 409 });
 });
 
 const createLevel = wrap(async (req, res) => {
@@ -172,7 +280,8 @@ const applyInstitutionalTemplate = wrap(async (req, res) => {
       await StrategicLevel.findOrCreate({ where: { strategic_plan_id: plan.id, configuration_version: plan.configuration_version, position: position + 1 }, defaults: { strategic_plan_id: plan.id, name, position: position + 1, configuration_version: plan.configuration_version }, transaction });
     }
     for (const [position, [key, label, dataType, required]] of DEFAULT_FIELDS.entries()) {
-      await StrategicFieldDefinition.findOrCreate({ where: { strategic_plan_id: plan.id, key, configuration_version: plan.configuration_version }, defaults: { strategic_plan_id: plan.id, key, label, data_type: dataType, required, position: position + 1, configuration_version: plan.configuration_version, validation_rules: dataType === 'percentage' ? { min: 0, max: 100 } : {}, formula: key === 'total_progress' ? 'progress_s1 + progress_s2' : null }, transaction });
+      const [field, created] = await StrategicFieldDefinition.findOrCreate({ where: { strategic_plan_id: plan.id, key, configuration_version: plan.configuration_version }, defaults: { strategic_plan_id: plan.id, key, label, data_type: dataType, required, position: position + 1, configuration_version: plan.configuration_version, validation_rules: dataType === 'percentage' ? { min: 0, max: 100 } : {}, formula: key === 'total_progress' ? 'progress_s1 + progress_s2' : null }, transaction });
+      if (!created && !field.active) await field.update({ active: true }, { transaction });
     }
     await audit(req, 'instrument.template.apply', 'strategic_plan', plan.id, null, { template: 'DIR-PE-FR-003', version: 5 }, 'Aplicación de plantilla institucional', transaction);
   });
@@ -184,8 +293,12 @@ const createFieldDefinition = wrap(async (req, res) => {
   const plan = await StrategicPlan.findByPk(req.params.planId);
   if (!plan) throw Object.assign(new Error('PED no encontrado.'), { statusCode: 404 });
   if (!req.body.label || !req.body.key || !req.body.data_type) throw Object.assign(new Error('Nombre, código y tipo del campo son obligatorios.'), { statusCode: 422 });
-  const field = await StrategicFieldDefinition.create({ strategic_plan_id: plan.id, key: cleanCode(req.body.key).toLowerCase().replace(/-/g, '_'), label: req.body.label, data_type: req.body.data_type, required: req.body.required === true, position: req.body.position || ((await StrategicFieldDefinition.max('position', { where: { strategic_plan_id: plan.id, configuration_version: plan.configuration_version } })) || 0) + 1, validation_rules: req.body.validation_rules || {}, options: req.body.options || [], formula: req.body.formula || null, configuration_version: plan.configuration_version, active: true });
-  await audit(req, 'field.create', 'field_definition', field.id, null, field.toJSON());
+  const key = cleanCode(req.body.key).toLowerCase().replace(/-/g, '_');
+  const values = { strategic_plan_id: plan.id, key, label: req.body.label, data_type: req.body.data_type, required: req.body.required === true, position: req.body.position || ((await StrategicFieldDefinition.max('position', { where: { strategic_plan_id: plan.id, configuration_version: plan.configuration_version } })) || 0) + 1, validation_rules: req.body.validation_rules || {}, options: req.body.options || [], formula: req.body.formula || null, configuration_version: plan.configuration_version, active: true };
+  const existing = await StrategicFieldDefinition.findOne({ where: { strategic_plan_id: plan.id, key, configuration_version: plan.configuration_version } });
+  const previous = existing?.toJSON() || null;
+  const field = existing ? await existing.update(values) : await StrategicFieldDefinition.create(values);
+  await audit(req, existing ? 'field.reactivate' : 'field.create', 'field_definition', field.id, previous, field.toJSON());
   res.status(201); ok(res, field, 'Campo creado.');
 });
 
@@ -242,6 +355,13 @@ const deleteCatalog = wrap(async (req, res) => {
   await item.update({ active: false, ends_on: item.ends_on || new Date().toISOString().slice(0, 10) });
   await audit(req, 'catalog.delete', 'catalog_item', item.id, previous, item.toJSON(), 'Eliminación lógica');
   ok(res, { id: item.id }, 'Referencia eliminada de forma lógica; puede reactivarse.');
+});
+
+const downloadReferenceTemplate = wrap(async (req, res) => {
+  const buffer = await buildReferenceWorkbook(req.params.planId);
+  res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+  res.setHeader('Content-Disposition', `attachment; filename="LISTAS_INSTITUCIONALES_${req.params.planId}.xlsx"`);
+  res.send(Buffer.from(buffer));
 });
 
 const referencePreview = wrap(async (req, res) => {
@@ -346,7 +466,13 @@ const createActionPlan = wrap(async (req, res) => {
   const responsible = req.body.responsible_user_id ? await User.findOne({ where: { id: req.body.responsible_user_id, estado: 'activo' } }) : null;
   if (!term || !unit || !responsible) throw Object.assign(new Error('El año, la dependencia y el líder activo son obligatorios.'), { statusCode: 422 });
   if (String(unit.strategic_plan_id) !== String(term.strategic_plan_id)) throw Object.assign(new Error('La dependencia seleccionada no pertenece al PED del año elegido.'), { statusCode: 422 });
-  const code = cleanCode(req.body.code || `${term.year}-${unit.code}`);
+  const baseCode = cleanCode(req.body.code || `${term.year}-${unit.code}`);
+  let code = baseCode;
+  let sequence = 2;
+  while (await StrategicActionPlan.count({ where: { code } })) {
+    code = `${baseCode}-${String(sequence).padStart(2, '0')}`;
+    sequence += 1;
+  }
   const created = await sequelize.transaction(async (transaction) => {
     const action = await StrategicActionPlan.create({
     term_id: term.id, catalog_item_id: unit.id, responsible_user_id: responsible.id,
@@ -378,6 +504,22 @@ const addActionItem = wrap(async (req, res) => {
   const actionPlan = await StrategicActionPlan.findByPk(req.params.id);
   if (!actionPlan) throw Object.assign(new Error('Plan no encontrado.'), { statusCode: 404 });
   const item = await saveActionItem({ req, actionPlan, payload: req.body }); res.status(201); ok(res, item);
+});
+
+const downloadDynamicItemTemplate = wrap(async (req, res) => {
+  const { buffer, code } = await buildDynamicActionItemWorkbook(req.params.id);
+  res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+  res.setHeader('Content-Disposition', `attachment; filename="PLANTILLA_DINAMICA_${cleanCode(code)}.xlsx"`);
+  res.send(Buffer.from(buffer));
+});
+
+const previewDynamicItems = wrap(async (req, res) => {
+  if (!req.file) throw Object.assign(new Error('Seleccione la plantilla dinámica en formato .xlsx.'), { statusCode: 422 });
+  ok(res, await previewDynamicActionItems({ actionPlanId: req.params.id, file: req.file, userId: req.user.id }), 'Vista previa generada. Todavía no se modificaron registros.');
+});
+
+const confirmDynamicItems = wrap(async (req, res) => {
+  ok(res, await confirmDynamicActionItems({ importId: req.params.importId, req }), 'Carga masiva confirmada correctamente.');
 });
 
 const updateActionItem = wrap(async (req, res) => {
@@ -747,8 +889,8 @@ module.exports = {
   bootstrap, listPlans, createPlan, updatePlan, deletePlan, createLevel, updateLevel, deleteLevel,
   createElement, updateElement, deleteElement, listStructure, upsertCatalog, updateCatalog, deleteCatalog,
   applyInstitutionalTemplate, createFieldDefinition, updateFieldDefinition, deleteFieldDefinition,
-  referencePreview, referenceConfirm, leaderOptions, transferLeader, createTerm, updateTerm, deleteTerm,
-  listActionPlans, getActionPlan, createActionPlan, updateActionPlan, addActionItem, updateActionItem, deleteActionItem,
+  downloadReferenceTemplate, referencePreview, referenceConfirm, leaderOptions, transferLeader, createTerm, updateTerm, deleteTerm,
+  listActionPlans, getActionPlan, createActionPlan, updateActionPlan, addActionItem, downloadDynamicItemTemplate, previewDynamicItems, confirmDynamicItems, updateActionItem, deleteActionItem,
   transitionActionPlan, saveMonitoring, createMeeting, createMinuteVersion, publishMinute, addProposal, resolveProposal,
   getPublicMinute, requestExternalOtp, signInternal, signExternal, registerUserSignature, downloadMinuteWord, downloadMinutePdf, validateMinute, finalizeMinute,
   uploadEvidence, downloadEvidence, retrySync, reconcile, closeTerm, previewBudget, confirmBudget, reverseBudget,

@@ -27,6 +27,7 @@ router.delete('/plans/:planId/fields/:fieldId', permit('pei_configurar'), c.dele
 router.post('/plans/:planId/catalog-items', permit('pei_configurar'), c.upsertCatalog);
 router.patch('/plans/:planId/catalog-items/:itemId', permit('pei_configurar'), c.updateCatalog);
 router.delete('/plans/:planId/catalog-items/:itemId', permit('pei_configurar'), c.deleteCatalog);
+router.get('/plans/:planId/reference-template', permit('pei_configurar'), c.downloadReferenceTemplate);
 router.post('/plans/:planId/reference-imports/preview', permit('pei_configurar'), upload.single('file'), c.referencePreview);
 router.post('/reference-imports/:importId/confirm', permit('pei_configurar'), c.referenceConfirm);
 router.get('/plans/:planId/leader-options', permit('pei_formular'), c.leaderOptions);
@@ -39,6 +40,9 @@ router.post('/action-plans', permit('pei_formular'), c.createActionPlan);
 router.get('/action-plans/:id', permit(), c.getActionPlan);
 router.patch('/action-plans/:id', permit('pei_formular'), c.updateActionPlan);
 router.post('/action-plans/:id/items', permit('pei_formular'), c.addActionItem);
+router.get('/action-plans/:id/items-template', permit('pei_formular'), c.downloadDynamicItemTemplate);
+router.post('/action-plans/:id/items-import/preview', permit('pei_formular'), upload.single('file'), c.previewDynamicItems);
+router.post('/action-items-imports/:importId/confirm', permit('pei_formular'), c.confirmDynamicItems);
 router.patch('/action-plans/:id/items/:itemId', permit('pei_formular'), c.updateActionItem);
 router.delete('/action-plans/:id/items/:itemId', permit('pei_formular'), c.deleteActionItem);
 router.post('/action-plans/:id/transitions', permit('pei_formular', 'pei_revision_tecnica', 'pei_validar_responsable'), c.transitionActionPlan);

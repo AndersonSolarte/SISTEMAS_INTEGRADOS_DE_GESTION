@@ -5,21 +5,21 @@ import {
   Table, TableBody, TableCell, TableContainer, TableHead, TableRow, TextField, Typography
 } from '@mui/material';
 import {
-  AccountTree, Add, Analytics, AssignmentTurnedIn, CloudSync, Description, Folder,
-  Payments, Settings, SwapHoriz, Timeline, UploadFile
+  AccountTree, Add, Analytics, ArrowBack, AssignmentTurnedIn, CalendarMonth, CheckCircleOutline, CloudSync,
+  Description, Download, EditOutlined, Folder, LockOutlined, Payments, Settings, SwapHoriz, Timeline, UploadFile
 } from '@mui/icons-material';
 import { useSnackbar } from 'notistack';
 import strategicPlanningService from '../services/strategicPlanningService';
 import StrategicActionPlanEditor from './StrategicActionPlanEditor';
 
 const SPACES = [
-  { key: 'configuration', label: 'Configuración', icon: <Settings /> },
-  { key: 'planning', label: 'Estructura del PED', icon: <AccountTree /> },
-  { key: 'instrument', label: 'Campos del Plan', icon: <Description /> },
-  { key: 'actions', label: 'Planes de Acción', icon: <AssignmentTurnedIn /> },
-  { key: 'monitoring', label: 'Seguimiento', icon: <Timeline /> },
+  { key: 'configuration', label: '1. PED', icon: <Settings /> },
+  { key: 'planning', label: '2. Estructura', icon: <AccountTree /> },
+  { key: 'instrument', label: '3. Formulario', icon: <Description /> },
+  { key: 'actions', label: '4. Planes de Acción', icon: <AssignmentTurnedIn /> },
+  { key: 'monitoring', label: '5. Informes', icon: <Timeline /> },
   { key: 'budget', label: 'Presupuesto', icon: <Payments /> },
-  { key: 'analytics', label: 'Analítica', icon: <Analytics /> }
+  { key: 'analytics', label: 'Resultados', icon: <Analytics /> }
 ];
 
 const STATUS_LABEL = {
@@ -44,14 +44,47 @@ const FIELD_TYPE_LABEL = {
   file: 'Archivo o evidencia', formula: 'Fórmula'
 };
 
-const SectionHeader = ({ title, description, action }) => (
+const SectionHeader = ({ step, title, description, action }) => (
   <Stack direction={{ xs: 'column', md: 'row' }} justifyContent="space-between" alignItems={{ md: 'center' }} gap={2} mb={2.5}>
-    <Box><Typography variant="h5" fontWeight={900}>{title}</Typography><Typography color="text.secondary">{description}</Typography></Box>
+    <Box>{step && <Typography variant="overline" color="primary" fontWeight={900} letterSpacing={1}>{`PASO ${step} DE 5`}</Typography>}<Typography variant="h5" fontWeight={900}>{title}</Typography>{description && <Typography color="text.secondary" mt={0.25}>{description}</Typography>}</Box>
     {action}
   </Stack>
 );
 
-export default function StrategicPlanningPlatform() {
+const StepNavigation = ({ onBack, onNext, nextLabel }) => (
+  <Stack direction="row" justifyContent={onBack ? 'space-between' : 'flex-end'} alignItems="center" mt={3} pt={2} sx={{ borderTop: '1px solid', borderColor: 'divider' }}>
+    {onBack && <Button variant="text" onClick={onBack} sx={{ textTransform: 'none', fontWeight: 800 }}>Anterior</Button>}
+    {onNext && <Button variant="contained" onClick={onNext} sx={{ borderRadius: 2.5, px: 3, textTransform: 'none', fontWeight: 900 }}>{nextLabel || 'Continuar'}</Button>}
+  </Stack>
+);
+
+const SubstepHeader = ({ number, title, description, action }) => (
+  <Stack direction={{ xs: 'column', sm: 'row' }} justifyContent="space-between" alignItems={{ sm: 'center' }} gap={1.5} mb={1.5} mt={number === 1 ? 0 : 3}>
+    <Stack direction="row" alignItems="center" gap={1.25}>
+      <Box sx={{ width: 34, height: 34, flex: '0 0 34px', borderRadius: '50%', bgcolor: '#2563eb', color: 'white', display: 'grid', placeItems: 'center', fontWeight: 950, boxShadow: '0 5px 12px rgba(37,99,235,.18)' }}>{number}</Box>
+      <Box><Typography fontWeight={950} fontSize={18}>{title}</Typography>{description && <Typography variant="body2" color="text.secondary">{description}</Typography>}</Box>
+    </Stack>
+    {action}
+  </Stack>
+);
+
+const emptyStrategicPlanForm = {
+  code: '', name: '', description: '', starts_on: '', ends_on: '', duration_years: 7,
+  status: 'draft', administrative_act: '', approved_on: '', global_budget: '', setup_mode: 'blank'
+};
+
+const copDigits = (value) => {
+  const text = String(value ?? '').trim();
+  if (/^\d+\.\d{1,2}$/.test(text)) return text.split('.')[0];
+  return text.replace(/\D/g, '').replace(/^0+(?=\d)/, '');
+};
+
+const formatCop = (value) => {
+  const digits = copDigits(value);
+  return digits ? `$ ${digits.replace(/\B(?=(\d{3})+(?!\d))/g, '.')}` : '';
+};
+
+export default function StrategicPlanningPlatform({ onBack }) {
   const { enqueueSnackbar } = useSnackbar();
   const [space, setSpace] = useState('configuration');
   const [loading, setLoading] = useState(true);
@@ -77,10 +110,7 @@ export default function StrategicPlanningPlatform() {
   const [newReference, setNewReference] = useState({ code: '', name: '' });
   const [editingReferenceId, setEditingReferenceId] = useState(null);
   const [newCatalog, setNewCatalog] = useState({ code: '', name: '', scope: 'action_plans' });
-  const [strategicPlanForm, setStrategicPlanForm] = useState({
-    code: '', name: '', description: '', starts_on: '', ends_on: '', status: 'draft',
-    administrative_act: '', approved_on: '', global_budget: ''
-  });
+  const [strategicPlanForm, setStrategicPlanForm] = useState(emptyStrategicPlanForm);
   const [editorPlanId, setEditorPlanId] = useState(null);
   const [structure, setStructure] = useState([]);
   const [structureLoading, setStructureLoading] = useState(false);
@@ -91,7 +121,7 @@ export default function StrategicPlanningPlatform() {
   const [levelForm, setLevelForm] = useState({ id: null, name: '' });
   const [elementForm, setElementForm] = useState({ id: null, level_id: '', parent_id: '', code: '', name: '', description: '' });
   const [termForm, setTermForm] = useState({ id: null, year: '', starts_on: '', ends_on: '', status: 'planned' });
-  const [fieldForm, setFieldForm] = useState({ id: null, key: '', label: '', data_type: 'text', required: false, options_text: '', formula: '' });
+  const [fieldForm, setFieldForm] = useState({ id: null, key: '', label: '', data_type: 'text', required: false, options_text: '', formula: '', catalog_type: '' });
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -129,6 +159,11 @@ export default function StrategicPlanningPlatform() {
     years: terms.length, units: units.length, plans: visiblePlans.length,
     activities: visiblePlans.reduce((sum, item) => sum + (item.items?.length || 0), 0)
   }), [visiblePlans, terms.length, units.length]);
+  const institutionalListsReady = units.length > 0 && leaders.length > 0;
+  const activeFieldDefinitions = (plan?.fieldDefinitions || []).filter((field) => field.active !== false);
+  const newPedStartYear = Number(String(strategicPlanForm.starts_on || '').slice(0, 4));
+  const newPedEndYear = newPedStartYear && Number(strategicPlanForm.duration_years) > 0
+    ? newPedStartYear + Number(strategicPlanForm.duration_years) : null;
 
   useEffect(() => {
     if (!plan?.id) return;
@@ -190,32 +225,32 @@ export default function StrategicPlanningPlatform() {
   const parentCandidates = structure.filter((item) => Number(item.level?.position || 0) < Number(selectedElementLevel?.position || 0));
 
   const saveStrategicPlan = async () => {
-    if (!strategicPlanForm.code.trim() || !strategicPlanForm.name.trim() || !strategicPlanForm.starts_on || !strategicPlanForm.ends_on) {
-      return enqueueSnackbar('Complete código, nombre y fechas del PED.', { variant: 'warning' });
+    const wasEditing = Boolean(editingPlanId);
+    if ((!wasEditing && (!strategicPlanForm.starts_on || !strategicPlanForm.duration_years)) || (wasEditing && (!strategicPlanForm.code.trim() || !strategicPlanForm.name.trim() || !strategicPlanForm.starts_on || !strategicPlanForm.ends_on))) {
+      return enqueueSnackbar(wasEditing ? 'Complete código, nombre y fechas del PED.' : 'Seleccione la fecha inicial y la duración del PED.', { variant: 'warning' });
     }
     setSaving(true);
     try {
-      const wasEditing = Boolean(editingPlanId);
-      const response = wasEditing ? await strategicPlanningService.updatePlan(editingPlanId, { ...strategicPlanForm, justification: 'Actualización desde configuración' }) : await strategicPlanningService.createPlan(strategicPlanForm);
+      const response = wasEditing ? await strategicPlanningService.updatePlan(editingPlanId, {
+        ...strategicPlanForm,
+        approved_on: strategicPlanForm.approved_on || null,
+        global_budget: strategicPlanForm.global_budget === '' ? null : strategicPlanForm.global_budget,
+        administrative_act: strategicPlanForm.administrative_act.trim() || null,
+        justification: 'Actualización desde configuración'
+      }) : await strategicPlanningService.createPlan({ ...strategicPlanForm, template_plan_id: strategicPlanForm.setup_mode === 'blank' ? null : (plan?.id || null) });
       setOpenStrategicPlan(false);
       setEditingPlanId(null);
-      setStrategicPlanForm({ code: '', name: '', description: '', starts_on: '', ends_on: '', status: 'draft', administrative_act: '', approved_on: '', global_budget: '' });
+      setStrategicPlanForm(emptyStrategicPlanForm);
       await load(); setSelectedPlanId(response.data.id);
-      enqueueSnackbar(wasEditing ? 'PED actualizado correctamente.' : 'PED creado. Ahora configure su estructura, vigencias y tablas de referencia.', { variant: 'success' });
+      enqueueSnackbar(wasEditing ? 'PED actualizado correctamente.' : 'PED creado con sus años y semestres. Ya puede diseñar su estructura.', { variant: 'success' });
     } catch (error) { enqueueSnackbar(error.response?.data?.message || 'No fue posible guardar el PED.', { variant: 'error' }); }
     finally { setSaving(false); }
   };
 
   const editStrategicPlan = () => {
     setEditingPlanId(plan.id);
-    setStrategicPlanForm({ code: plan.code || '', name: plan.name || '', description: plan.description || '', starts_on: plan.starts_on || '', ends_on: plan.ends_on || '', status: plan.status || 'draft', administrative_act: plan.administrative_act || '', approved_on: plan.approved_on || '', global_budget: plan.global_budget || '' });
+    setStrategicPlanForm({ code: plan.code || '', name: plan.name || '', description: plan.description || '', starts_on: plan.starts_on || '', ends_on: plan.ends_on || '', duration_years: '', status: plan.status || 'draft', administrative_act: plan.administrative_act || '', approved_on: plan.approved_on || '', global_budget: copDigits(plan.global_budget) });
     setOpenStrategicPlan(true);
-  };
-
-  const deleteStrategicPlan = async () => {
-    if (!window.confirm(`¿Eliminar el PED "${plan.name}"? Se ocultará, pero su historial permanecerá protegido.`)) return;
-    try { await strategicPlanningService.deletePlan(plan.id); setSelectedPlanId(''); await load(); enqueueSnackbar('PED eliminado de forma lógica.', { variant: 'success' }); }
-    catch (error) { enqueueSnackbar(error.response?.data?.message || 'No fue posible eliminar el PED.', { variant: 'error' }); }
   };
 
   const saveTerm = async () => {
@@ -237,12 +272,6 @@ export default function StrategicPlanningPlatform() {
     finally { setSaving(false); }
   };
 
-  const deleteTerm = async (term) => {
-    if (!window.confirm(`¿Eliminar el año ${term.year}?`)) return;
-    try { await strategicPlanningService.deleteTerm(term.id); await load(); enqueueSnackbar('Año eliminado de forma lógica.', { variant: 'success' }); }
-    catch (error) { enqueueSnackbar(error.response?.data?.message || 'No fue posible eliminar el año.', { variant: 'error' }); }
-  };
-
   const applyInstitutionalTemplate = async () => {
     if (!window.confirm('¿Aplicar a este PED los niveles y campos del formato institucional DIR-PE-FR-003 versión 5? No se duplicarán los existentes.')) return;
     setSaving(true);
@@ -255,10 +284,10 @@ export default function StrategicPlanningPlatform() {
     if (!fieldForm.key.trim() || !fieldForm.label.trim() || !fieldForm.data_type) return enqueueSnackbar('Complete nombre, código y tipo del campo.', { variant: 'warning' });
     setSaving(true);
     try {
-      const payload = { key: fieldForm.key, label: fieldForm.label, data_type: fieldForm.data_type, required: fieldForm.required, options: fieldForm.options_text.split('\n').map((item) => item.trim()).filter(Boolean), formula: fieldForm.formula || null };
+      const payload = { key: fieldForm.key, label: fieldForm.label, data_type: fieldForm.data_type, required: fieldForm.required, options: fieldForm.options_text.split('\n').map((item) => item.trim()).filter(Boolean), formula: fieldForm.formula || null, validation_rules: fieldForm.catalog_type ? { catalog_type: fieldForm.catalog_type } : {} };
       if (fieldForm.id) await strategicPlanningService.updateField(plan.id, fieldForm.id, { ...payload, justification: 'Edición desde constructor de campos' });
       else await strategicPlanningService.createField(plan.id, payload);
-      const wasEditing = Boolean(fieldForm.id); setOpenField(false); setFieldForm({ id: null, key: '', label: '', data_type: 'text', required: false, options_text: '', formula: '' }); await load();
+      const wasEditing = Boolean(fieldForm.id); setOpenField(false); setFieldForm({ id: null, key: '', label: '', data_type: 'text', required: false, options_text: '', formula: '', catalog_type: '' }); await load();
       enqueueSnackbar(wasEditing ? 'Campo actualizado.' : 'Campo agregado al Plan de Acción.', { variant: 'success' });
     } catch (error) { enqueueSnackbar(error.response?.data?.message || 'No fue posible guardar el campo.', { variant: 'error' }); }
     finally { setSaving(false); }
@@ -323,6 +352,14 @@ export default function StrategicPlanningPlatform() {
     try { const response = await strategicPlanningService.previewReferences(plan.id, body); setReferencePreview(response.data); enqueueSnackbar('Tablas analizadas. Revise el cruce de responsables antes de confirmar.', { variant: 'success' }); }
     catch (error) { enqueueSnackbar(error.response?.data?.message || 'No fue posible analizar las tablas.', { variant: 'error' }); }
   };
+  const downloadReferenceTemplate = async () => {
+    try {
+      const blob = await strategicPlanningService.downloadReferenceTemplate(plan.id);
+      const url = URL.createObjectURL(blob); const anchor = document.createElement('a');
+      anchor.href = url; anchor.download = `LISTAS_INSTITUCIONALES_${plan.code}.xlsx`; anchor.click(); URL.revokeObjectURL(url);
+      enqueueSnackbar('Plantilla descargada. Edítela y vuelva a subirla en el paso 2.', { variant: 'success' });
+    } catch (error) { enqueueSnackbar(error.response?.data?.message || 'No fue posible descargar la plantilla.', { variant: 'error' }); }
+  };
   const confirmReferences = async () => {
     try { await strategicPlanningService.confirmReferences(referencePreview.id); setReferencePreview(null); await load(); enqueueSnackbar('Referencias dinámicas cargadas correctamente.', { variant: 'success' }); }
     catch (error) { enqueueSnackbar(error.response?.data?.message || 'No fue posible confirmar las referencias.', { variant: 'error' }); }
@@ -356,9 +393,14 @@ export default function StrategicPlanningPlatform() {
   return (
     <Stack spacing={2.5}>
       <Paper elevation={0} sx={{ p: { xs: 2.5, md: 4 }, borderRadius: 4, color: 'white', background: 'linear-gradient(120deg,#173b8f,#2563eb 58%,#7c3aed)' }}>
-        <Chip label="NUEVA PLATAFORMA · INDEPENDIENTE" sx={{ mb: 1.5, color: 'white', border: '1px solid rgba(255,255,255,.4)', fontWeight: 800 }} />
-        <Typography variant="h4" fontWeight={950}>Gestión, Seguimiento y Evaluación de la Planeación Estratégica Institucional</Typography>
-        <Typography sx={{ mt: 1, opacity: .9 }}>{plan.name} · Fuente oficial SIAC · Expediente definitivo en Drive</Typography>
+        <Stack direction={{ xs: 'column', md: 'row' }} justifyContent="space-between" alignItems={{ md: 'center' }} gap={2}>
+          <Box>
+            {onBack && <Button onClick={onBack} startIcon={<ArrowBack />} sx={{ mb: 1.5, color: 'white', border: '1px solid rgba(255,255,255,.45)', borderRadius: 3, textTransform: 'none', fontWeight: 800 }}>Volver a submódulos</Button>}
+            <Chip label="NUEVA PLATAFORMA · INDEPENDIENTE" sx={{ mb: 1.5, ml: onBack ? { xs: 0, sm: 1 } : 0, color: 'white', border: '1px solid rgba(255,255,255,.4)', fontWeight: 800 }} />
+            <Typography variant="h4" fontWeight={950}>Gestión, Seguimiento y Evaluación de la Planeación Estratégica Institucional</Typography>
+            <Typography sx={{ mt: 1, opacity: .9 }}>{plan.name} · Fuente oficial SIAC · Expediente definitivo en Drive</Typography>
+          </Box>
+        </Stack>
       </Paper>
 
       <Paper elevation={0} sx={{ border: '1px solid #dbeafe', borderRadius: 3, overflow: 'hidden' }}>
@@ -368,8 +410,7 @@ export default function StrategicPlanningPlatform() {
       </Paper>
 
       {space === 'planning' && <Box>
-        <SectionHeader title="Estructura del Plan Estratégico" description="Defina los niveles y elementos que despliegan el PED antes de generar Planes de Acción." action={<Stack direction={{ xs: 'column', sm: 'row' }} gap={1}><Button variant="outlined" startIcon={<Add />} onClick={() => { setLevelForm({ id: null, name: '' }); setOpenLevel(true); }}>Agregar nivel</Button><Button variant="contained" startIcon={<Add />} disabled={!(plan.levels || []).length} onClick={() => { setElementForm({ id: null, level_id: '', parent_id: '', code: '', name: '', description: '' }); setOpenElement(true); }}>Agregar elemento</Button></Stack>} />
-        <Alert severity="info" sx={{ mb: 2 }}>PED seleccionado: <strong>{plan.name}</strong>. La estructura pertenece exclusivamente a este PED y conserva su versión histórica.</Alert>
+        <SectionHeader step="2" title="Diseñe la estructura propia del PED" description="Cree los niveles que este plan necesita: proyectos, programas, productos, objetivos u otra organización." action={<Stack direction={{ xs: 'column', sm: 'row' }} gap={1}><Button variant="outlined" startIcon={<Add />} onClick={() => { setLevelForm({ id: null, name: '' }); setOpenLevel(true); }}>Agregar nivel</Button><Button variant="contained" startIcon={<Add />} disabled={!(plan.levels || []).length} onClick={() => { setElementForm({ id: null, level_id: '', parent_id: '', code: '', name: '', description: '' }); setOpenElement(true); }}>Agregar elemento</Button></Stack>} />
         <Grid container spacing={2}>{[
           ['Años configurados', metrics.years], ['Dependencias', metrics.units], ['Planes de Acción', metrics.plans], ['Actividades', metrics.activities]
         ].map(([label, value]) => <Grid item xs={12} sm={6} md={3} key={label}><Card variant="outlined" sx={{ borderRadius: 3 }}><CardContent><Typography color="text.secondary" fontWeight={700}>{label}</Typography><Typography variant="h4" fontWeight={950} color="primary">{value}</Typography></CardContent></Card></Grid>)}</Grid>
@@ -384,55 +425,90 @@ export default function StrategicPlanningPlatform() {
           {structureLoading ? <LinearProgress /> : !structure.length ? <Box sx={{ p: 4, textAlign: 'center' }}><AccountTree color="primary" sx={{ fontSize: 48 }} /><Typography variant="h6" fontWeight={900} mt={1}>La estructura todavía está vacía</Typography><Typography color="text.secondary" mb={2}>Puede copiar la estructura del formato institucional actual o construir una diferente para este nuevo PED.</Typography><Stack direction={{ xs: 'column', sm: 'row' }} justifyContent="center" gap={1.5}><Button variant="contained" onClick={applyInstitutionalTemplate}>Usar plantilla actual DIR-PE-FR-003</Button><Button variant="outlined" startIcon={<Add />} onClick={() => { if ((plan.levels || []).length) { setElementForm({ id: null, level_id: '', parent_id: '', code: '', name: '', description: '' }); setOpenElement(true); } else { setLevelForm({ id: null, name: '' }); setOpenLevel(true); } }}>Configurar desde cero</Button></Stack></Box> :
             <TableContainer sx={{ maxHeight: 480 }}><Table stickyHeader><TableHead><TableRow><TableCell>Nivel</TableCell><TableCell>Código</TableCell><TableCell>Elemento estratégico</TableCell><TableCell>Depende de</TableCell><TableCell>Estado</TableCell><TableCell>Acciones</TableCell></TableRow></TableHead><TableBody>{[...(plan.levels || [])].sort((a,b) => a.position-b.position).flatMap((level) => structure.filter((item) => item.level_id === level.id).map((item) => <TableRow key={item.id} hover><TableCell><Chip size="small" variant="outlined" label={level.name} /></TableCell><TableCell><strong>{item.code}</strong></TableCell><TableCell><Typography fontWeight={800}>{item.name}</Typography>{item.description && <Typography variant="body2" color="text.secondary">{item.description}</Typography>}</TableCell><TableCell>{structure.find((parent) => parent.id === item.parent_id)?.name || <Typography color="text.secondary">Nivel raíz</Typography>}</TableCell><TableCell><Chip size="small" color={item.active === false ? 'default' : 'success'} label={item.active === false ? 'Inactivo' : 'Activo'} /></TableCell><TableCell><Stack direction="row" gap={1}><Button size="small" onClick={() => { setElementForm({ id: item.id, level_id: item.level_id, parent_id: item.parent_id || '', code: item.code, name: item.name, description: item.description || '' }); setOpenElement(true); }}>Editar</Button><Button size="small" color="error" onClick={() => deleteStructureElement(item)}>Eliminar</Button></Stack></TableCell></TableRow>))}</TableBody></Table></TableContainer>}
         </Paper>
+        <StepNavigation onBack={() => setSpace('configuration')} onNext={() => setSpace('instrument')} nextLabel="Continuar al formulario" />
       </Box>}
 
       {space === 'instrument' && <Box>
-        <SectionHeader title="Campos del Plan de Acción" description="Aquí se define exactamente qué información se diligenciará en los Planes de Acción de este PED." action={<Stack direction={{ xs: 'column', sm: 'row' }} gap={1}><Button variant="outlined" onClick={applyInstitutionalTemplate}>Usar formato actual</Button><Button variant="contained" startIcon={<Add />} onClick={() => { setFieldForm({ id: null, key: '', label: '', data_type: 'text', required: false, options_text: '', formula: '' }); setOpenField(true); }}>Agregar campo</Button></Stack>} />
-        <Alert severity="info" sx={{ mb: 2 }}><strong>PED seleccionado: {plan.name}.</strong> El formato actual corresponde al DIR-PE-FR-003 versión 5. En futuros PED puede cambiar, agregar o retirar campos sin modificar el código del sistema.</Alert>
-        {!(plan.fieldDefinitions || []).length ? <Paper variant="outlined" sx={{ p: 4, borderRadius: 3, textAlign: 'center' }}><Description color="primary" sx={{ fontSize: 52 }} /><Typography variant="h6" fontWeight={900}>Este PED todavía no tiene un formulario</Typography><Typography color="text.secondary" mb={2}>Utilice la plantilla institucional actual o agregue los campos uno por uno.</Typography><Stack direction={{ xs: 'column', sm: 'row' }} justifyContent="center" gap={1.5}><Button variant="contained" onClick={applyInstitutionalTemplate}>Aplicar DIR-PE-FR-003 versión 5</Button><Button variant="outlined" onClick={() => setOpenField(true)}>Crear primer campo</Button></Stack></Paper> :
-          <TableContainer component={Paper} variant="outlined" sx={{ borderRadius: 3, maxHeight: 600 }}><Table stickyHeader><TableHead><TableRow><TableCell>Orden</TableCell><TableCell>Campo</TableCell><TableCell>Tipo de dato</TableCell><TableCell>Obligatorio</TableCell><TableCell>Opciones / fórmula</TableCell><TableCell>Acciones</TableCell></TableRow></TableHead><TableBody>{[...(plan.fieldDefinitions || [])].sort((a,b) => a.position-b.position).map((field) => <TableRow key={field.id} hover><TableCell>{field.position}</TableCell><TableCell><Typography fontWeight={900}>{field.label}</Typography><Typography variant="caption" color="text.secondary">{field.key}</Typography></TableCell><TableCell><Chip size="small" variant="outlined" label={FIELD_TYPE_LABEL[field.data_type] || field.data_type} /></TableCell><TableCell><Chip size="small" color={field.required ? 'success' : 'default'} label={field.required ? 'Sí' : 'No'} /></TableCell><TableCell>{field.data_type === 'formula' ? field.formula : (field.options || []).join(', ') || '—'}</TableCell><TableCell><Stack direction="row" gap={1}><Button size="small" onClick={() => { setFieldForm({ id: field.id, key: field.key, label: field.label, data_type: field.data_type, required: field.required, options_text: (field.options || []).join('\n'), formula: field.formula || '' }); setOpenField(true); }}>Editar</Button><Button size="small" color="error" onClick={() => deleteField(field)}>Eliminar</Button></Stack></TableCell></TableRow>)}</TableBody></Table></TableContainer>}
+        <SectionHeader step="3" title="Diseñe el formulario de este PED" description="Agregue únicamente los campos que necesita. El sistema construirá el formulario automáticamente." action={<Stack direction={{ xs: 'column', sm: 'row' }} gap={1}><Button variant="outlined" onClick={applyInstitutionalTemplate}>Usar formato institucional</Button><Button variant="contained" startIcon={<Add />} onClick={() => { setFieldForm({ id: null, key: '', label: '', data_type: 'text', required: false, options_text: '', formula: '', catalog_type: '' }); setOpenField(true); }}>Agregar campo</Button></Stack>} />
+        {!activeFieldDefinitions.length ? <Paper variant="outlined" sx={{ p: 4, borderRadius: 3, textAlign: 'center' }}><Description color="primary" sx={{ fontSize: 52 }} /><Typography variant="h6" fontWeight={900}>Este PED todavía no tiene un formulario</Typography><Typography color="text.secondary" mb={2}>Utilice la plantilla institucional actual o agregue los campos uno por uno.</Typography><Stack direction={{ xs: 'column', sm: 'row' }} justifyContent="center" gap={1.5}><Button variant="contained" onClick={applyInstitutionalTemplate}>Aplicar DIR-PE-FR-003 versión 5</Button><Button variant="outlined" onClick={() => { setFieldForm({ id: null, key: '', label: '', data_type: 'text', required: false, options_text: '', formula: '', catalog_type: '' }); setOpenField(true); }}>Crear primer campo</Button></Stack></Paper> :
+          <TableContainer component={Paper} variant="outlined" sx={{ borderRadius: 3, maxHeight: 600 }}><Table stickyHeader><TableHead><TableRow><TableCell>Orden</TableCell><TableCell>Campo</TableCell><TableCell>Tipo de dato</TableCell><TableCell>Obligatorio</TableCell><TableCell>Opciones / fuente</TableCell><TableCell>Acciones</TableCell></TableRow></TableHead><TableBody>{[...activeFieldDefinitions].sort((a,b) => a.position-b.position).map((field) => <TableRow key={field.id} hover><TableCell>{field.position}</TableCell><TableCell><Typography fontWeight={900}>{field.label}</Typography><Typography variant="caption" color="text.secondary">{field.key}</Typography></TableCell><TableCell><Chip size="small" variant="outlined" label={FIELD_TYPE_LABEL[field.data_type] || field.data_type} /></TableCell><TableCell><Chip size="small" color={field.required ? 'success' : 'default'} label={field.required ? 'Sí' : 'No'} /></TableCell><TableCell>{field.validation_rules?.catalog_type ? catalogOptions.find(([code]) => code === field.validation_rules.catalog_type)?.[1] || field.validation_rules.catalog_type : field.data_type === 'formula' ? field.formula : (field.options || []).join(', ') || '—'}</TableCell><TableCell><Stack direction="row" gap={1}><Button size="small" onClick={() => { setFieldForm({ id: field.id, key: field.key, label: field.label, data_type: field.data_type, required: field.required, options_text: (field.options || []).join('\n'), formula: field.formula || '', catalog_type: field.validation_rules?.catalog_type || '' }); setOpenField(true); }}>Editar</Button><Button size="small" color="error" onClick={() => deleteField(field)}>Eliminar</Button></Stack></TableCell></TableRow>)}</TableBody></Table></TableContainer>}
+        <StepNavigation onBack={() => setSpace('planning')} onNext={() => setSpace('actions')} nextLabel="Continuar a Planes de Acción" />
       </Box>}
 
       {space === 'configuration' && <Box>
-        <SectionHeader title="Configuración inicial" description="Primero cree o seleccione el PED; después configure sus vigencias, estructura y tablas de referencia." action={<Button size="large" variant="contained" startIcon={<Add />} onClick={() => { setEditingPlanId(null); setStrategicPlanForm({ code: '', name: '', description: '', starts_on: '', ends_on: '', status: 'draft', administrative_act: '', approved_on: '', global_budget: '' }); setOpenStrategicPlan(true); }}>Crear nuevo PED</Button>} />
-        <Paper variant="outlined" sx={{ p: 2.5, mb: 2, borderRadius: 3 }}>
+        <SectionHeader step="1" title="Seleccione el PED con el que va a trabajar" description="Si el PED que aparece abajo es correcto, no debe configurar nada más aquí: pulse el botón Continuar." />
+        <SubstepHeader number={1} title="PED seleccionado" description="Puede cambiarlo en la lista o crear uno nuevo solamente cuando comience otro periodo institucional." action={<Button variant="outlined" startIcon={<Add />} onClick={() => { setEditingPlanId(null); setStrategicPlanForm(emptyStrategicPlanForm); setOpenStrategicPlan(true); }}>Crear otro PED</Button>} />
+        <Paper variant="outlined" sx={{ p: { xs: 1.5, md: 2 }, mb: 2, borderRadius: 3, borderColor: '#dbe3f0', boxShadow: '0 6px 18px rgba(15,23,42,.035)', overflow: 'hidden' }}>
           <Stack direction={{ xs: 'column', md: 'row' }} justifyContent="space-between" alignItems={{ md: 'center' }} gap={2}>
-            <TextField select fullWidth label="Plan Estratégico de Desarrollo que desea configurar" value={plan?.id || ''} onChange={(event) => setSelectedPlanId(event.target.value)} sx={{ maxWidth: 700 }}>
+            <TextField select fullWidth label="Seleccione el PED que desea consultar" value={plan?.id || ''} onChange={(event) => setSelectedPlanId(event.target.value)} sx={{ maxWidth: 880 }}>
               {strategicPlans.map((item) => <MenuItem key={item.id} value={item.id}>{item.code} · {item.name} · {PLAN_STATUS_LABEL[item.status] || item.status}</MenuItem>)}
             </TextField>
-            <Chip color={plan.status === 'active' ? 'success' : 'default'} label={`PED ${String(PLAN_STATUS_LABEL[plan.status] || plan.status).toLowerCase()}`} />
+            <Chip size="small" color={plan.status === 'active' ? 'success' : 'default'} label={PLAN_STATUS_LABEL[plan.status] || plan.status} sx={{ px: 0.5, fontWeight: 800 }} />
           </Stack>
-          <Grid container spacing={2} mt={0.5}>
-            <Grid item xs={12} md={5}><Typography variant="caption" color="text.secondary">Nombre</Typography><Typography fontWeight={900}>{plan.name}</Typography></Grid>
-            <Grid item xs={6} md={2}><Typography variant="caption" color="text.secondary">Inicio</Typography><Typography fontWeight={800}>{plan.starts_on}</Typography></Grid>
-            <Grid item xs={6} md={2}><Typography variant="caption" color="text.secondary">Finalización</Typography><Typography fontWeight={800}>{plan.ends_on}</Typography></Grid>
-            <Grid item xs={12} md={3}><Typography variant="caption" color="text.secondary">Versión de configuración</Typography><Typography fontWeight={800}>{plan.configuration_version}</Typography></Grid>
-          </Grid>
-          <Stack direction="row" justifyContent="flex-end" gap={1} mt={2}><Button variant="outlined" onClick={editStrategicPlan}>Editar PED</Button><Button color="error" variant="outlined" disabled={strategicPlans.length <= 1} onClick={deleteStrategicPlan}>Eliminar PED</Button></Stack>
+
+          <Box sx={{ mt: 1.75, display: 'grid', gridTemplateColumns: { xs: '1fr', md: 'minmax(280px,1.7fr) repeat(3,minmax(125px,.55fr))' }, gap: 1, alignItems: 'stretch' }}>
+            <Box sx={{ px: 1.75, py: 1.4, borderRadius: 2.5, color: '#1e3a8a', background: 'linear-gradient(135deg,#eff6ff,#f5f3ff)', border: '1px solid #dbeafe' }}>
+              <Typography variant="caption" sx={{ color: '#2563eb', fontWeight: 900, letterSpacing: .7 }}>PED SELECCIONADO</Typography>
+              <Typography fontWeight={900} lineHeight={1.25} mt={0.35}>{plan.name}</Typography>
+              <Typography variant="caption" color="text.secondary">{plan.code}</Typography>
+            </Box>
+            {[
+              ['Inicio', plan.starts_on, <CalendarMonth fontSize="small" />],
+              ['Finaliza', plan.ends_on, <CalendarMonth fontSize="small" />],
+              ['Vigencias', terms.length, <Timeline fontSize="small" />]
+            ].map(([label, value, icon]) => <Box key={label} sx={{ px: 1.5, py: 1.25, borderRadius: 2.5, bgcolor: '#fafcff', border: '1px solid #e5eaf2', display: 'flex', flexDirection: 'column', justifyContent: 'center' }}><Stack direction="row" alignItems="center" gap={0.6} color="#5b75a5">{icon}<Typography variant="caption" fontWeight={800} textTransform="uppercase">{label}</Typography></Stack><Typography mt={0.35} fontWeight={900} fontSize={16}>{value}</Typography></Box>)}
+          </Box>
+
+          <Stack direction={{ xs: 'column', sm: 'row' }} justifyContent="space-between" alignItems={{ sm: 'center' }} gap={1} mt={1.5} pt={1.25} sx={{ borderTop: '1px solid #edf0f5' }}><Stack direction="row" alignItems="center" gap={0.75} color="text.secondary"><LockOutlined sx={{ fontSize: 18 }} /><Typography variant="caption">Historial institucional protegido · Versión {plan.configuration_version}</Typography></Stack><Button size="small" variant="text" startIcon={<EditOutlined />} onClick={editStrategicPlan} sx={{ textTransform: 'none', fontWeight: 850 }}>Editar información</Button></Stack>
         </Paper>
-        <Alert severity="info" sx={{ mb: 2 }}>Los cambios se guardan por versión. Los Planes de Acción ya creados conservan la versión del instrumento y del flujo institucional con la que nacieron.</Alert>
-        <Stack direction={{ xs: 'column', sm: 'row' }} gap={1.5} mb={2}>
-          <Button component="label" variant="outlined" startIcon={<UploadFile />}>Importar tablas desde Excel<input hidden type="file" accept=".xlsx" onChange={(e) => previewReferences(e.target.files?.[0])} /></Button>
-          <Button variant="contained" startIcon={<Add />} onClick={() => setOpenCatalog(true)}>Crear nueva tabla de referencia</Button>
+        <Paper elevation={0} sx={{ p: { xs: 2, md: 2.5 }, mb: 3, borderRadius: 3, color: 'white', background: 'linear-gradient(110deg,#1d4ed8,#4f46e5)' }}><Stack direction={{ xs: 'column', md: 'row' }} justifyContent="space-between" alignItems={{ md: 'center' }} gap={1.5}><Box><Typography fontWeight={950} fontSize={20}>¿Este es el PED correcto?</Typography><Typography sx={{ opacity: .9 }}>El siguiente paso es decidir si tendrá proyectos, programas, objetivos u otros niveles.</Typography></Box><Button variant="contained" onClick={() => setSpace('planning')} sx={{ bgcolor: 'white', color: '#1d4ed8', px: 3, py: 1.25, borderRadius: 2.5, fontWeight: 950, textTransform: 'none', '&:hover': { bgcolor: '#eff6ff' } }}>Continuar a diseñar la estructura →</Button></Stack></Paper>
+
+        <Box sx={{ mb: 1.5 }}><Typography variant="overline" color="text.secondary" fontWeight={900} letterSpacing={1}>CONFIGURACIÓN OPCIONAL</Typography><Typography variant="body2" color="text.secondary">Puede revisar estas opciones ahora o regresar después. No impiden continuar.</Typography></Box>
+        <SubstepHeader number="A" title="Dependencias y responsables" description="Opcional: utilice este Excel solamente cuando necesite actualizar las listas institucionales." />
+        <Paper variant="outlined" sx={{ px: 2, py: 1.5, mb: 1.5, borderRadius: 3, borderColor: institutionalListsReady ? '#bbf7d0' : '#fde68a', bgcolor: institutionalListsReady ? '#f0fdf4' : '#fffbeb' }}>
+          <Stack direction={{ xs: 'column', md: 'row' }} justifyContent="space-between" alignItems={{ md: 'center' }} gap={1.5}>
+            <Stack direction="row" alignItems="center" gap={1.25}>
+              <CheckCircleOutline sx={{ color: institutionalListsReady ? '#16a34a' : '#d97706' }} />
+              <Box><Typography fontWeight={900}>{institutionalListsReady ? 'Listas disponibles para usar' : 'Falta completar las listas'}</Typography><Typography variant="body2" color="text.secondary">{institutionalListsReady ? `${units.length} dependencias registradas y ${leaders.length} usuarios activos de SIAC. Puede continuar o actualizar estos datos con Excel.` : 'Descargue la plantilla, complétela y vuelva a subirla antes de crear Planes de Acción.'}</Typography></Box>
+            </Stack>
+            {institutionalListsReady && <Chip size="small" color="success" label="Completado" sx={{ fontWeight: 900 }} />}
+          </Stack>
+        </Paper>
+        <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', md: 'repeat(3,1fr)' }, gap: 1, mb: 1.5 }}>
+          {[
+            ['1', 'Descargue las listas', 'Incluye dependencias y una hoja con usuarios activos de SIAC.'],
+            ['2', 'Edítela en Excel', 'Cambie nombres, agregue filas y no renombre las hojas.'],
+            ['3', 'Súbala y confirme', 'Primero verá una vista previa; nada cambia sin confirmar.']
+          ].map(([number, title, text]) => <Box key={number} sx={{ px: 1.5, py: 1.25, borderRadius: 2.5, bgcolor: '#f8fafc', border: '1px solid #e2e8f0' }}><Stack direction="row" gap={1}><Chip size="small" color="primary" label={number} sx={{ fontWeight: 900 }} /><Box><Typography variant="body2" fontWeight={900}>{title}</Typography><Typography variant="caption" color="text.secondary">{text}</Typography></Box></Stack></Box>)}
+        </Box>
+        <Typography variant="caption" color="text.secondary" fontWeight={800}>PLANTILLA DE LISTAS OPERATIVAS</Typography>
+        <Stack direction={{ xs: 'column', sm: 'row' }} gap={1.5} mt={0.5} mb={2}>
+          <Button variant="outlined" startIcon={<Download />} onClick={downloadReferenceTemplate}>Descargar dependencias y responsables</Button>
+          <Button component="label" variant="contained" startIcon={<UploadFile />}>{institutionalListsReady ? 'Actualizar estas listas' : 'Subir listas completadas'}<input hidden type="file" accept=".xlsx" onChange={(e) => { previewReferences(e.target.files?.[0]); e.target.value = ''; }} /></Button>
         </Stack>
-        {referencePreview && <Alert severity={referencePreview.summary?.unmatched_leaders ? 'warning' : 'success'} sx={{ mb: 2 }} action={<Button color="inherit" size="small" onClick={confirmReferences}>Confirmar carga</Button>}>Dependencias: {referencePreview.summary?.dependencies}; líderes vinculados con usuario/correo: {referencePreview.summary?.matched_leaders}; pendientes de vincular: {referencePreview.summary?.unmatched_leaders}. También se cargarán objetivos, lineamientos, macroactividades, estados y lugares.</Alert>}
-        <Paper variant="outlined" sx={{ borderRadius: 3, overflow: 'hidden' }}><Stack direction={{ xs: 'column', sm: 'row' }} justifyContent="space-between" alignItems={{ sm: 'center' }} gap={1} sx={{ p: 2 }}><Box><Typography variant="h6" fontWeight={900}>Años y periodos del PED</Typography><Typography variant="body2" color="text.secondary">Crear, consultar, editar y eliminar años de ejecución.</Typography></Box><Button variant="contained" startIcon={<Add />} onClick={() => { setTermForm({ id: null, year: '', starts_on: '', ends_on: '', status: 'planned' }); setOpenTerm(true); }}>Agregar año</Button></Stack><TableContainer><Table><TableHead><TableRow><TableCell>Año</TableCell><TableCell>Estado</TableCell><TableCell>Periodos</TableCell><TableCell>Retención local</TableCell><TableCell>Acciones</TableCell></TableRow></TableHead><TableBody>{[...terms].filter((term) => term.status !== 'inactive').sort((a,b) => a.year-b.year).map((term) => <TableRow key={term.id}><TableCell>{term.year}</TableCell><TableCell><Chip size="small" color={term.status === 'active' ? 'success' : 'default'} label={TERM_STATUS_LABEL[term.status] || term.status} /></TableCell><TableCell>{term.monitoringPeriods?.map((p) => p.code).join(', ')}</TableCell><TableCell>Hasta el cierre verificado</TableCell><TableCell><Stack direction="row" gap={1}><Button size="small" onClick={() => { setTermForm({ id: term.id, year: term.year, starts_on: term.starts_on, ends_on: term.ends_on, status: term.status }); setOpenTerm(true); }}>Editar</Button><Button size="small" color="error" onClick={() => deleteTerm(term)}>Eliminar</Button></Stack></TableCell></TableRow>)}</TableBody></Table></TableContainer></Paper>
-        <Paper variant="outlined" sx={{ mt: 2, p: 2.5, borderRadius: 3 }}><Typography variant="h6" fontWeight={900} mb={0.5}>Tablas de referencia y listas desplegables</Typography><Typography color="text.secondary" mb={2}>Seleccione una tabla y administre sus registros sin borrar el histórico.</Typography><Grid container spacing={1.5} alignItems="center"><Grid item xs={12} md={4}><TextField fullWidth select label="Tabla de referencia" value={catalogType} onChange={(e) => { if (e.target.value === '__create_catalog__') setOpenCatalog(true); else { setCatalogType(e.target.value); setEditingReferenceId(null); setNewReference({ code: '', name: '' }); } }}>{catalogOptions.map(([value,label]) => <MenuItem key={value} value={value}>{label}</MenuItem>)}<MenuItem value="__create_catalog__" sx={{ color: 'primary.main', fontWeight: 900, borderTop: '1px solid', borderColor: 'divider' }}><Add fontSize="small" sx={{ mr: 1 }} />Otra / Crear nueva tabla</MenuItem></TextField></Grid><Grid item xs={12} md={2}><TextField fullWidth disabled={Boolean(editingReferenceId)} label="Código del registro" value={newReference.code} onChange={(e) => setNewReference({ ...newReference, code: e.target.value })} /></Grid><Grid item xs={12} md={4}><TextField fullWidth label="Nombre del registro" value={newReference.name} onChange={(e) => setNewReference({ ...newReference, name: e.target.value })} /></Grid><Grid item xs={12} md={2}><Button fullWidth variant="contained" startIcon={<Add />} disabled={!newReference.code.trim() || !newReference.name.trim()} onClick={saveReference}>{editingReferenceId ? 'Actualizar' : 'Agregar registro'}</Button></Grid></Grid>
+        {referencePreview && <Alert severity={referencePreview.summary?.unmatched_leaders ? 'warning' : 'success'} sx={{ mb: 2 }} action={<Button color="inherit" size="small" onClick={confirmReferences}>Confirmar actualización</Button>}>Vista previa: {referencePreview.summary?.dependencies} dependencias; {referencePreview.summary?.matched_leaders} responsables vinculados; {referencePreview.summary?.unmatched_leaders} pendientes. Los datos todavía no se han modificado.</Alert>}
+        <Paper variant="outlined" sx={{ p: 2, mb: 2, borderRadius: 3, bgcolor: '#f5f3ff', borderColor: '#c4b5fd' }}><Stack direction={{ xs: 'column', md: 'row' }} justifyContent="space-between" alignItems={{ md: 'center' }} gap={1.5}><Box><Typography fontWeight={950} color="#4c1d95">¿Busca la plantilla de respuestas creada con sus campos?</Typography><Typography variant="body2" color="text.secondary">Primero diseñe la estructura y el formulario. Después cree un Plan de Acción y ábralo; allí aparecerán “Descargar plantilla dinámica” y “Subir plantilla diligenciada”.</Typography></Box><Stack direction={{ xs: 'column', sm: 'row' }} gap={1}><Button variant="outlined" onClick={() => setSpace('planning')}>Ir a Estructura</Button><Button variant="contained" onClick={() => setSpace('instrument')}>Ir al Formulario</Button></Stack></Stack></Paper>
+        <SubstepHeader number="B" title="Vigencias creadas automáticamente" description="Opcional: los años y los informes S1–S2 ya fueron creados; modifíquelos solo si existe una excepción." />
+        <Paper variant="outlined" sx={{ borderRadius: 3, overflow: 'hidden' }}><Stack direction={{ xs: 'column', sm: 'row' }} justifyContent="space-between" alignItems={{ sm: 'center' }} gap={1} sx={{ p: 2 }}><Typography variant="h6" fontWeight={900}>Vigencias e informes S1–S2</Typography><Button variant="outlined" startIcon={<Add />} onClick={() => { setTermForm({ id: null, year: '', starts_on: '', ends_on: '', status: 'planned' }); setOpenTerm(true); }}>Agregar año excepcional</Button></Stack><TableContainer><Table><TableHead><TableRow><TableCell>Año</TableCell><TableCell>Estado</TableCell><TableCell>Informes</TableCell><TableCell>Conservación</TableCell><TableCell>Acciones</TableCell></TableRow></TableHead><TableBody>{[...terms].filter((term) => term.status !== 'inactive').sort((a,b) => a.year-b.year).map((term) => <TableRow key={term.id}><TableCell>{term.year}</TableCell><TableCell><Chip size="small" color={term.status === 'active' ? 'success' : 'default'} label={TERM_STATUS_LABEL[term.status] || term.status} /></TableCell><TableCell>{term.monitoringPeriods?.map((p) => p.code).join(' y ')}</TableCell><TableCell>Historial permanente</TableCell><TableCell><Button size="small" onClick={() => { setTermForm({ id: term.id, year: term.year, starts_on: term.starts_on, ends_on: term.ends_on, status: term.status }); setOpenTerm(true); }}>Editar</Button></TableCell></TableRow>)}</TableBody></Table></TableContainer></Paper>
+        <Paper variant="outlined" sx={{ mt: 2, p: 2.5, borderRadius: 3 }}><Typography variant="h6" fontWeight={900} mb={0.5}>Administración manual de listas</Typography><Typography variant="body2" color="text.secondary" mb={2}>Opcional: úsela solamente para corregir o agregar un registro específico.</Typography><Grid container spacing={1.5} alignItems="center"><Grid item xs={12} md={4}><TextField fullWidth select label="Tabla de referencia" value={catalogType} onChange={(e) => { if (e.target.value === '__create_catalog__') setOpenCatalog(true); else { setCatalogType(e.target.value); setEditingReferenceId(null); setNewReference({ code: '', name: '' }); } }}>{catalogOptions.map(([value,label]) => <MenuItem key={value} value={value}>{label}</MenuItem>)}<MenuItem value="__create_catalog__" sx={{ color: 'primary.main', fontWeight: 900, borderTop: '1px solid', borderColor: 'divider' }}><Add fontSize="small" sx={{ mr: 1 }} />Otra / Crear nueva tabla</MenuItem></TextField></Grid><Grid item xs={12} md={2}><TextField fullWidth disabled={Boolean(editingReferenceId)} label="Código del registro" value={newReference.code} onChange={(e) => setNewReference({ ...newReference, code: e.target.value })} /></Grid><Grid item xs={12} md={4}><TextField fullWidth label="Nombre del registro" value={newReference.name} onChange={(e) => setNewReference({ ...newReference, name: e.target.value })} /></Grid><Grid item xs={12} md={2}><Button fullWidth variant="contained" startIcon={<Add />} disabled={!newReference.code.trim() || !newReference.name.trim()} onClick={saveReference}>{editingReferenceId ? 'Actualizar' : 'Agregar registro'}</Button></Grid></Grid>
           {customCatalogs.find((item) => item.code === catalogType) && <Alert severity="info" sx={{ mt: 2 }}>Tabla personalizada: <strong>{customCatalogs.find((item) => item.code === catalogType)?.name}</strong>. Se usará en: <strong>{{ action_plans: 'Planes de Acción', activities: 'Actividades', meetings: 'Reuniones y actas', monitoring: 'Seguimiento', budget: 'Presupuesto', analytics: 'Analítica', general: 'Uso general' }[customCatalogs.find((item) => item.code === catalogType)?.scope] || 'Uso general'}</strong>.</Alert>}
           <TableContainer sx={{ mt: 2, maxHeight: 330 }}><Table stickyHeader size="small"><TableHead><TableRow><TableCell>Código</TableCell><TableCell>Referencia</TableCell><TableCell>Estado</TableCell><TableCell>Acciones</TableCell></TableRow></TableHead><TableBody>{(plan.catalogItems || []).filter((item) => item.catalog_type === catalogType).sort((a,b) => a.name.localeCompare(b.name,'es')).map((item) => <TableRow key={item.id}><TableCell>{item.code}</TableCell><TableCell>{item.name}</TableCell><TableCell><Chip size="small" color={item.active ? 'success' : 'default'} label={item.active ? 'Activa' : 'Inactiva'} /></TableCell><TableCell><Stack direction="row" gap={0.5}><Button size="small" onClick={() => { setEditingReferenceId(item.id); setNewReference({ code: item.code, name: item.name }); }}>Editar</Button><Button size="small" color={item.active ? 'warning' : 'success'} onClick={() => toggleReference(item)}>{item.active ? 'Desactivar' : 'Reactivar'}</Button><Button size="small" color="error" disabled={!item.active} onClick={() => deleteReference(item)}>Eliminar</Button></Stack></TableCell></TableRow>)}</TableBody></Table></TableContainer>
         </Paper>
+        <StepNavigation onNext={() => setSpace('planning')} nextLabel="Continuar a la estructura" />
       </Box>}
 
       {space === 'actions' && <Box>
-        <SectionHeader title="Planes de Acción" description="Formulación y flujo institucional con trazabilidad." action={<Button variant="contained" startIcon={<Add />} onClick={() => setOpenPlan(true)}>Crear Plan de Acción</Button>} />
-        {!visiblePlans.length ? <Alert severity="info">Este PED aún no tiene Planes de Acción. Termine primero su configuración institucional.</Alert> :
-          <TableContainer component={Paper} variant="outlined"><Table><TableHead><TableRow><TableCell>Código</TableCell><TableCell>Dependencia</TableCell><TableCell>Líder actual</TableCell><TableCell>Vigencia</TableCell><TableCell>Estado</TableCell><TableCell>Actividades</TableCell><TableCell /></TableRow></TableHead><TableBody>{visiblePlans.map((item) => <TableRow key={item.id} hover><TableCell><strong>{item.code}</strong></TableCell><TableCell>{item.organizationalUnit?.name}</TableCell><TableCell>{item.responsibleUser ? <Box><strong>{item.responsibleUser.nombre}</strong><Typography variant="caption" display="block" color="text.secondary">{item.responsibleUser.cargo || 'Sin cargo'} · {item.responsibleUser.email}</Typography></Box> : <Chip size="small" color="warning" label="Sin asignar" />}</TableCell><TableCell>{item.term?.year}</TableCell><TableCell><Chip size="small" color="primary" variant="outlined" label={STATUS_LABEL[item.status] || item.status} /></TableCell><TableCell>{item.items?.length || 0}</TableCell><TableCell><Stack direction="row" gap={1}><Button size="small" variant="contained" onClick={() => setEditorPlanId(item.id)}>Abrir formulario</Button><Button size="small" startIcon={<SwapHoriz />} onClick={() => setTransfer({ plan: item, user_id: '', reason: '' })}>Transferir</Button></Stack></TableCell></TableRow>)}</TableBody></Table></TableContainer>}
+        <SectionHeader step="4" title="Cree los Planes de Acción" description="Seleccione el año, la dependencia y su líder." action={<Button variant="contained" startIcon={<Add />} onClick={() => setOpenPlan(true)}>Crear Plan de Acción</Button>} />
+        {!visiblePlans.length ? <Alert severity="info">Este PED aún no tiene Planes de Acción. Pulse “Crear Plan de Acción”, seleccione el año, la dependencia y el líder. Después ábralo para registrar datos individualmente o mediante Excel.</Alert> :
+          <TableContainer component={Paper} variant="outlined"><Table><TableHead><TableRow><TableCell>Código</TableCell><TableCell>Dependencia</TableCell><TableCell>Líder actual</TableCell><TableCell>Vigencia</TableCell><TableCell>Estado</TableCell><TableCell>Actividades</TableCell><TableCell /></TableRow></TableHead><TableBody>{visiblePlans.map((item) => <TableRow key={item.id} hover><TableCell><strong>{item.code}</strong></TableCell><TableCell>{item.organizationalUnit?.name}</TableCell><TableCell>{item.responsibleUser ? <Box><strong>{item.responsibleUser.nombre}</strong><Typography variant="caption" display="block" color="text.secondary">{item.responsibleUser.cargo || 'Sin cargo'} · {item.responsibleUser.email}</Typography></Box> : <Chip size="small" color="warning" label="Sin asignar" />}</TableCell><TableCell>{item.term?.year}</TableCell><TableCell><Chip size="small" color="primary" variant="outlined" label={STATUS_LABEL[item.status] || item.status} /></TableCell><TableCell>{item.items?.length || 0}</TableCell><TableCell><Stack direction="row" gap={1}><Button size="small" variant="contained" onClick={() => setEditorPlanId(item.id)}>Abrir / cargar Excel</Button><Button size="small" startIcon={<SwapHoriz />} onClick={() => setTransfer({ plan: item, user_id: '', reason: '' })}>Transferir</Button></Stack></TableCell></TableRow>)}</TableBody></Table></TableContainer>}
+        <StepNavigation onBack={() => setSpace('instrument')} onNext={() => setSpace('monitoring')} nextLabel="Continuar a informes" />
       </Box>}
 
       {space === 'monitoring' && <Box>
-        <SectionHeader title="Seguimiento y evidencias" description="Evidencia privada temporal, cola persistente y conciliación con Drive." />
-        <Alert severity="success" icon={<Folder />} sx={{ mb: 2 }}>La copia local se conserva durante toda la vigencia. El cierre no autoriza limpieza si falta un archivo, un hash o una sincronización.</Alert>
-        <TableContainer component={Paper} variant="outlined"><Table size="small"><TableHead><TableRow><TableCell>Trabajo</TableCell><TableCell>Operación</TableCell><TableCell>Estado</TableCell><TableCell>Intentos</TableCell><TableCell>Progreso</TableCell><TableCell>Error</TableCell></TableRow></TableHead><TableBody>{syncJobs.slice(0, 30).map((job) => <TableRow key={job.id}><TableCell>{job.entity_type}</TableCell><TableCell>{job.operation}</TableCell><TableCell><Chip size="small" label={job.status} color={job.status === 'completed' ? 'success' : job.status === 'failed' ? 'error' : 'warning'} /></TableCell><TableCell>{job.attempts}</TableCell><TableCell sx={{ minWidth: 130 }}><LinearProgress variant="determinate" value={job.progress || 0} /></TableCell><TableCell>{job.error_message || '—'}</TableCell></TableRow>)}</TableBody></Table></TableContainer>
+        <SectionHeader step="5" title="Diligencie los informes semestrales" description="Abra un plan y registre sus avances y evidencias en S1 o S2." />
+        {!visiblePlans.length ? <Alert severity="warning">Todavía no hay Planes de Acción para este PED.</Alert> : <TableContainer component={Paper} variant="outlined"><Table><TableHead><TableRow><TableCell>Año</TableCell><TableCell>Dependencia</TableCell><TableCell>Plan de Acción</TableCell><TableCell>Actividades</TableCell><TableCell>Avance general</TableCell><TableCell /></TableRow></TableHead><TableBody>{visiblePlans.map((actionPlan) => { const actionItems=actionPlan.items || []; const progress=actionItems.length ? actionItems.reduce((sum, row) => sum + Number(row.current_progress || 0), 0) / actionItems.length : 0; return <TableRow key={actionPlan.id}><TableCell>{actionPlan.term?.year}</TableCell><TableCell>{actionPlan.organizationalUnit?.name}</TableCell><TableCell><Typography fontWeight={800}>{actionPlan.title}</Typography><Typography variant="caption">{actionPlan.code}</Typography></TableCell><TableCell>{actionItems.length}</TableCell><TableCell sx={{ minWidth: 160 }}><Typography variant="body2" fontWeight={800}>{progress.toFixed(1)}%</Typography><LinearProgress variant="determinate" value={progress} /></TableCell><TableCell><Button variant="contained" size="small" onClick={() => setEditorPlanId(actionPlan.id)}>Llenar informe</Button></TableCell></TableRow>; })}</TableBody></Table></TableContainer>}
+        {!!syncJobs.length && <Alert severity="success" icon={<Folder />} sx={{ mt: 2 }}>Las evidencias se conservan y se sincronizan automáticamente con el expediente institucional.</Alert>}
+        <StepNavigation onBack={() => setSpace('actions')} onNext={() => setSpace('analytics')} nextLabel="Ver resultados" />
       </Box>}
 
       {space === 'budget' && <Box>
@@ -459,7 +535,8 @@ export default function StrategicPlanningPlatform() {
           <Grid item xs={12} md={5}><TextField required fullWidth disabled={Boolean(fieldForm.id)} label="Código interno" value={fieldForm.key} onChange={(e) => setFieldForm({ ...fieldForm, key: e.target.value })} /></Grid>
           <Grid item xs={12} md={7}><TextField required fullWidth select label="Tipo de información" value={fieldForm.data_type} onChange={(e) => setFieldForm({ ...fieldForm, data_type: e.target.value })}>{Object.entries(FIELD_TYPE_LABEL).map(([value,label]) => <MenuItem key={value} value={value}>{label}</MenuItem>)}</TextField></Grid>
           <Grid item xs={12} md={5}><FormControlLabel control={<Switch checked={fieldForm.required} onChange={(e) => setFieldForm({ ...fieldForm, required: e.target.checked })} />} label="Campo obligatorio" /></Grid>
-          {['list','catalog','catalog_multi'].includes(fieldForm.data_type) && <Grid item xs={12}><TextField fullWidth multiline minRows={4} label="Opciones de la lista" helperText="Escriba una opción por línea. Para catálogos institucionales también podrá vincular una tabla de referencia." value={fieldForm.options_text} onChange={(e) => setFieldForm({ ...fieldForm, options_text: e.target.value })} /></Grid>}
+          {fieldForm.data_type === 'list' && <Grid item xs={12}><TextField fullWidth multiline minRows={4} label="Opciones de la lista" helperText="Escriba una opción por línea." value={fieldForm.options_text} onChange={(e) => setFieldForm({ ...fieldForm, options_text: e.target.value })} /></Grid>}
+          {['catalog','catalog_multi'].includes(fieldForm.data_type) && <Grid item xs={12}><TextField fullWidth select label="Tabla que alimentará este campo" value={fieldForm.catalog_type} onChange={(e) => setFieldForm({ ...fieldForm, catalog_type: e.target.value })} helperText="Las opciones aparecerán automáticamente desde la tabla seleccionada."><MenuItem value="">Seleccione una tabla</MenuItem>{catalogOptions.map(([value, label]) => <MenuItem key={value} value={value}>{label}</MenuItem>)}</TextField></Grid>}
           {fieldForm.data_type === 'formula' && <Grid item xs={12}><TextField fullWidth label="Fórmula" placeholder="avance_periodo_1 + avance_periodo_2" value={fieldForm.formula} onChange={(e) => setFieldForm({ ...fieldForm, formula: e.target.value })} /></Grid>}
           <Grid item xs={12}><Alert severity="info">Este campo se aplicará a los nuevos Planes de Acción del PED seleccionado. Las versiones anteriores conservarán su estructura.</Alert></Grid>
         </Grid></DialogContent>
@@ -496,20 +573,56 @@ export default function StrategicPlanningPlatform() {
         <DialogActions><Button onClick={() => setOpenElement(false)}>Cancelar</Button><Button variant="contained" disabled={saving || !elementForm.level_id || !elementForm.code.trim() || !elementForm.name.trim()} onClick={saveStructureElement}>{saving ? 'Guardando…' : elementForm.id ? 'Actualizar elemento' : 'Crear elemento'}</Button></DialogActions>
       </Dialog>
 
-      <Dialog open={openStrategicPlan} onClose={() => setOpenStrategicPlan(false)} fullWidth maxWidth="md">
-        <DialogTitle fontWeight={900}>{editingPlanId ? 'Editar Plan Estratégico de Desarrollo' : 'Crear Plan Estratégico de Desarrollo'}</DialogTitle>
-        <DialogContent><Grid container spacing={2} mt={0.25}>
-          <Grid item xs={12} md={4}><TextField required fullWidth label="Código" placeholder="PED-2030-2037" value={strategicPlanForm.code} onChange={(e) => setStrategicPlanForm({ ...strategicPlanForm, code: e.target.value })} /></Grid>
-          <Grid item xs={12} md={8}><TextField required fullWidth label="Nombre del PED" value={strategicPlanForm.name} onChange={(e) => setStrategicPlanForm({ ...strategicPlanForm, name: e.target.value })} /></Grid>
-          <Grid item xs={12}><TextField fullWidth multiline minRows={2} label="Descripción o lema" value={strategicPlanForm.description} onChange={(e) => setStrategicPlanForm({ ...strategicPlanForm, description: e.target.value })} /></Grid>
-          <Grid item xs={12} md={4}><TextField required fullWidth type="date" InputLabelProps={{ shrink: true }} label="Fecha inicial" value={strategicPlanForm.starts_on} onChange={(e) => setStrategicPlanForm({ ...strategicPlanForm, starts_on: e.target.value })} /></Grid>
-          <Grid item xs={12} md={4}><TextField required fullWidth type="date" InputLabelProps={{ shrink: true }} label="Fecha final" value={strategicPlanForm.ends_on} onChange={(e) => setStrategicPlanForm({ ...strategicPlanForm, ends_on: e.target.value })} /></Grid>
-          <Grid item xs={12} md={4}><TextField select fullWidth label="Estado inicial" value={strategicPlanForm.status} onChange={(e) => setStrategicPlanForm({ ...strategicPlanForm, status: e.target.value })}><MenuItem value="draft">Borrador</MenuItem><MenuItem value="active">Activo</MenuItem><MenuItem value="planned">Planeado</MenuItem></TextField></Grid>
-          <Grid item xs={12} md={4}><TextField fullWidth label="Acto administrativo" value={strategicPlanForm.administrative_act} onChange={(e) => setStrategicPlanForm({ ...strategicPlanForm, administrative_act: e.target.value })} /></Grid>
-          <Grid item xs={12} md={4}><TextField fullWidth type="date" InputLabelProps={{ shrink: true }} label="Fecha de aprobación" value={strategicPlanForm.approved_on} onChange={(e) => setStrategicPlanForm({ ...strategicPlanForm, approved_on: e.target.value })} /></Grid>
-          <Grid item xs={12} md={4}><TextField fullWidth type="number" label="Presupuesto general" value={strategicPlanForm.global_budget} onChange={(e) => setStrategicPlanForm({ ...strategicPlanForm, global_budget: e.target.value })} /></Grid>
-        </Grid></DialogContent>
-        <DialogActions><Button onClick={() => { setOpenStrategicPlan(false); setEditingPlanId(null); }}>Cancelar</Button><Button variant="contained" disabled={saving} onClick={saveStrategicPlan}>{saving ? 'Guardando…' : editingPlanId ? 'Actualizar PED' : 'Crear PED'}</Button></DialogActions>
+      <Dialog open={openStrategicPlan} onClose={() => setOpenStrategicPlan(false)} fullWidth maxWidth={editingPlanId ? 'md' : 'sm'} PaperProps={{ sx: { borderRadius: 4, overflow: 'hidden' } }}>
+        <DialogTitle sx={{ px: 3, pt: 2.5, pb: 1, fontWeight: 900 }}>{editingPlanId ? 'Editar Plan Estratégico de Desarrollo' : 'Crear Plan Estratégico de Desarrollo'}</DialogTitle>
+        <DialogContent sx={{ px: 3, pt: '16px !important', pb: 3 }}>
+          {!editingPlanId ? <Stack spacing={2.25}>
+            <Alert severity="info" sx={{ borderRadius: 2.5, alignItems: 'center', py: 0.75 }}>Defina el periodo y elija cómo iniciará este PED. Sus niveles, listas y campos pertenecerán únicamente a este plan.</Alert>
+
+            <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', sm: '1fr 1fr' }, gap: 2 }}>
+              <TextField required fullWidth type="date" InputLabelProps={{ shrink: true }} label="Fecha de inicio" value={strategicPlanForm.starts_on} onChange={(e) => setStrategicPlanForm({ ...strategicPlanForm, starts_on: e.target.value })} helperText="Ejemplo: 01/01/2030" />
+              <TextField required fullWidth type="number" inputProps={{ min: 1, max: 30 }} label="Años hasta finalizar" value={strategicPlanForm.duration_years} onChange={(e) => setStrategicPlanForm({ ...strategicPlanForm, duration_years: e.target.value })} helperText="Ejemplo: 5 crea el PED 2030–2035" />
+            </Box>
+
+            {newPedEndYear && <Paper variant="outlined" sx={{ px: 2.25, py: 1.75, borderRadius: 2.5, bgcolor: '#f5f3ff', borderColor: '#c4b5fd' }}><Stack direction={{ xs: 'column', sm: 'row' }} alignItems={{ sm: 'center' }} justifyContent="space-between" gap={0.5}><Box><Typography fontWeight={900} color="primary">PED {newPedStartYear}–{newPedEndYear}</Typography><Typography variant="body2" color="text.secondary">{Number(strategicPlanForm.duration_years) + 1} vigencias con informes S1 y S2</Typography></Box><Chip size="small" color="secondary" label="Configuración automática" /></Stack></Paper>}
+
+            <TextField select fullWidth label="¿Cómo desea construir la estructura?" value={strategicPlanForm.setup_mode} onChange={(e) => setStrategicPlanForm({ ...strategicPlanForm, setup_mode: e.target.value })} helperText={{ blank: 'Empieza sin objetivos ni lineamientos. Usted crea los niveles y campos desde la interfaz.', institutional: 'Usa Objetivo → Lineamiento y el formulario institucional como punto de partida.', copy: `Copia niveles, elementos, campos y listas del PED seleccionado: ${plan?.code || 'anterior'}.` }[strategicPlanForm.setup_mode]}>
+              <MenuItem value="blank">Crear una estructura nueva desde cero</MenuItem>
+              <MenuItem value="institutional">Usar la estructura institucional actual</MenuItem>
+              <MenuItem value="copy" disabled={!plan?.id}>Copiar la estructura del PED seleccionado</MenuItem>
+            </TextField>
+
+            <TextField fullWidth multiline minRows={2} maxRows={4} label="Descripción o lema (opcional)" placeholder="Ejemplo: La meta es transformar" value={strategicPlanForm.description} onChange={(e) => setStrategicPlanForm({ ...strategicPlanForm, description: e.target.value })} />
+          </Stack> : <Stack spacing={2.5}>
+            <Box>
+              <Typography variant="subtitle2" fontWeight={900} color="#334155" mb={1.25}>Información general</Typography>
+              <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', md: 'minmax(190px,.8fr) minmax(320px,2fr)' }, gap: 2 }}>
+                <TextField required fullWidth label="Código del PED" value={strategicPlanForm.code} onChange={(e) => setStrategicPlanForm({ ...strategicPlanForm, code: e.target.value })} />
+                <TextField required fullWidth label="Nombre del PED" value={strategicPlanForm.name} onChange={(e) => setStrategicPlanForm({ ...strategicPlanForm, name: e.target.value })} />
+              </Box>
+              <TextField sx={{ mt: 2 }} fullWidth multiline minRows={2} maxRows={4} label="Descripción o lema" value={strategicPlanForm.description} onChange={(e) => setStrategicPlanForm({ ...strategicPlanForm, description: e.target.value })} />
+            </Box>
+
+            <Box sx={{ pt: 2.25, borderTop: '1px solid #e2e8f0' }}>
+              <Typography variant="subtitle2" fontWeight={900} color="#334155" mb={1.25}>Vigencia y estado</Typography>
+              <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', sm: 'repeat(3,minmax(0,1fr))' }, gap: 2 }}>
+                <TextField required fullWidth type="date" InputLabelProps={{ shrink: true }} label="Fecha inicial" value={strategicPlanForm.starts_on} onChange={(e) => setStrategicPlanForm({ ...strategicPlanForm, starts_on: e.target.value })} />
+                <TextField required fullWidth type="date" InputLabelProps={{ shrink: true }} label="Fecha final" value={strategicPlanForm.ends_on} onChange={(e) => setStrategicPlanForm({ ...strategicPlanForm, ends_on: e.target.value })} />
+                <TextField select fullWidth label="Estado del PED" value={strategicPlanForm.status} onChange={(e) => setStrategicPlanForm({ ...strategicPlanForm, status: e.target.value })}><MenuItem value="draft">Borrador</MenuItem><MenuItem value="active">Activo</MenuItem><MenuItem value="planned">Planeado</MenuItem><MenuItem value="closed">Cerrado / histórico</MenuItem></TextField>
+              </Box>
+            </Box>
+
+            <Box sx={{ pt: 2.25, borderTop: '1px solid #e2e8f0' }}>
+              <Typography variant="subtitle2" fontWeight={900} color="#334155" mb={1.25}>Información administrativa</Typography>
+              <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', md: '1.5fr 1fr 1fr' }, gap: 2 }}>
+                <TextField fullWidth label="Acto administrativo" placeholder="Ejemplo: Acuerdo 012 de 2029" value={strategicPlanForm.administrative_act} onChange={(e) => setStrategicPlanForm({ ...strategicPlanForm, administrative_act: e.target.value })} />
+                <TextField fullWidth type="date" InputLabelProps={{ shrink: true }} label="Fecha de aprobación" value={strategicPlanForm.approved_on} onChange={(e) => setStrategicPlanForm({ ...strategicPlanForm, approved_on: e.target.value })} />
+                <TextField fullWidth type="text" label="Presupuesto general" value={formatCop(strategicPlanForm.global_budget)} onChange={(e) => setStrategicPlanForm({ ...strategicPlanForm, global_budget: copDigits(e.target.value) })} inputProps={{ inputMode: 'numeric' }} helperText="Pesos colombianos (COP)" placeholder="$ 0" />
+              </Box>
+            </Box>
+          </Stack>}
+        </DialogContent>
+        <DialogActions sx={{ px: 3, py: 2, borderTop: '1px solid', borderColor: 'divider', gap: 1 }}><Button onClick={() => { setOpenStrategicPlan(false); setEditingPlanId(null); }} sx={{ textTransform: 'none', fontWeight: 800 }}>Cancelar</Button><Button variant="contained" disabled={saving || (!editingPlanId && (!strategicPlanForm.starts_on || !strategicPlanForm.duration_years))} onClick={saveStrategicPlan} sx={{ minWidth: 220, borderRadius: 2.5, py: 1, textTransform: 'none', fontWeight: 900 }}>{saving ? 'Creando PED…' : editingPlanId ? 'Guardar cambios' : 'Crear PED y diseñar estructura'}</Button></DialogActions>
       </Dialog>
 
       <Dialog open={openCatalog} onClose={() => setOpenCatalog(false)} fullWidth maxWidth="sm">

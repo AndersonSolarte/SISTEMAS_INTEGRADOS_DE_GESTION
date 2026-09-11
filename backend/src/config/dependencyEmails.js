@@ -1,7 +1,7 @@
 const DEPENDENCY_EMAILS_RAW = {
   "Area de Acompañamiento Integral": "acompanamiento@unicesmag.edu.co",
   "Area de Deporte y Cultura": "deporte@unicesmag.edu.co",
-  "Area de Desarrollo Humano y Salud": "ugsp@unicesmag.edu.co",
+  "Area de Desarrollo Humano y Salud": "usp@unicesmag.edu.co",
   "Consultorío Jurídico": "consultoriojuridico@unicesmag.edu.co",
   "Departamento de Idiomas": "idiomas@unicesmag.edu.co",
   "Deporte Universitario": "deporte@unicesmag.edu.co",
@@ -89,7 +89,10 @@ const SYNONYMS = {
   "vicerrectoria de investigacion y extension": "viceinvestiga@unicesmag.edu.co",
   "vicerrectoria para la evangelizacion de las culturas": "vicebien@unicesmag.edu.co",
   "vicerrectoria de evangelizacion": "vicebien@unicesmag.edu.co",
-  "evangelizacion de las culturas": "vicebien@unicesmag.edu.co"
+  "evangelizacion de las culturas": "vicebien@unicesmag.edu.co",
+  "desarrollo humano y salud": "usp@unicesmag.edu.co",
+  "desarrollo humano": "usp@unicesmag.edu.co",
+  "area de desarrollo humano y salud": "usp@unicesmag.edu.co"
 };
 
 Object.entries(SYNONYMS).forEach(([key, val]) => {
@@ -119,6 +122,9 @@ const getDependencyEmail = (dependencyName) => {
   }
   if (normalized.includes('medios educativos')) {
     return 'medioseducativos@unicesmag.edu.co';
+  }
+  if (normalized.includes('desarrollo humano') || normalized.includes('salud')) {
+    return 'usp@unicesmag.edu.co';
   }
 
   return null;

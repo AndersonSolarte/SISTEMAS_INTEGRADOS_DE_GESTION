@@ -45,6 +45,59 @@ const parseReferenceWorkbook = async (buffer) => {
   };
 };
 
+const buildReferenceWorkbook = async (strategicPlanId) => {
+  const plan = await StrategicPlan.findByPk(strategicPlanId);
+  if (!plan) throw Object.assign(new Error('PED no encontrado.'), { statusCode: 404 });
+  const [catalogs, terms, users] = await Promise.all([
+    StrategicCatalogItem.findAll({ where: { strategic_plan_id: plan.id, active: true }, order: [['name', 'ASC']] }),
+    StrategicTerm.findAll({ where: { strategic_plan_id: plan.id }, order: [['year', 'ASC']] }),
+    User.findAll({ where: { estado: 'activo' }, attributes: ['nombre', 'email', 'dependencia', 'cargo'], order: [['nombre', 'ASC']], raw: true })
+  ]);
+  const workbook = new ExcelJS.Workbook();
+  workbook.creator = 'SIAC UNICESMAG';
+  workbook.created = new Date();
+
+  const styleHeader = (row) => {
+    row.font = { bold: true, color: { argb: 'FFFFFFFF' } };
+    row.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF2563EB' } };
+    row.alignment = { vertical: 'middle' };
+    row.height = 24;
+  };
+  const addSimpleSheet = (name, header, rows) => {
+    const sheet = workbook.addWorksheet(name);
+    sheet.addRow(header); styleHeader(sheet.getRow(1));
+    rows.forEach((row) => sheet.addRow(Array.isArray(row) ? row : [row]));
+    sheet.columns.forEach((column) => { column.width = 34; });
+    sheet.views = [{ state: 'frozen', ySplit: 1 }];
+    sheet.autoFilter = { from: { row: 1, column: 1 }, to: { row: 1, column: header.length } };
+    return sheet;
+  };
+
+  const instructions = workbook.addWorksheet('INSTRUCCIONES');
+  instructions.addRows([
+    ['PLANTILLA DE LISTAS INSTITUCIONALES', plan.name],
+    ['Paso 1', 'Esta plantilla actualiza únicamente las listas operativas. La estructura y el formulario del PED se diseñan en la interfaz.'],
+    ['Paso 2', 'En DEPENDENCIAS, el responsable debe coincidir con el nombre de un usuario activo de SIAC.'],
+    ['Consulta', 'La hoja RESPONSABLES_SIAC contiene los nombres válidos. Cópielos exactamente en la columna RESPONSABLE EN SIAC.'],
+    ['Paso 3', 'Guarde el archivo en formato .xlsx y súbalo desde “Subir Excel actualizado”.'],
+    ['Paso 4', 'Revise la vista previa y pulse “Confirmar actualización”.'],
+    ['Importante', 'El código identifica cada registro. Manténgalo para actualizar y use uno nuevo para agregar.']
+  ]);
+  instructions.getColumn(1).width = 24; instructions.getColumn(2).width = 100;
+  styleHeader(instructions.getRow(1));
+
+  addSimpleSheet('DEPENDENCIAS', ['CÓDIGO', 'DEPENDENCIA', 'RESPONSABLE EN SIAC'], catalogs
+    .filter((item) => ['organizational_unit', 'dependency'].includes(item.catalog_type))
+    .map((item) => [item.code, item.name, item.metadata?.reference_leader_name || '']));
+  addSimpleSheet('RESPONSABLES_SIAC', ['NOMBRE EN SIAC', 'CORREO', 'DEPENDENCIA', 'CARGO'], users
+    .map((user) => [user.nombre, user.email || '', user.dependencia || '', user.cargo || '']));
+
+  addSimpleSheet('AÑOS', ['AÑO'], terms.map((term) => term.year));
+  addSimpleSheet('ESTADOS', ['ESTADO'], catalogs.filter((item) => item.catalog_type === 'reference_status').map((item) => item.name));
+  addSimpleSheet('LUGARES', ['LUGAR DE REUNIÓN'], catalogs.filter((item) => item.catalog_type === 'meeting_location').map((item) => item.name));
+  return workbook.xlsx.writeBuffer();
+};
+
 const previewReferenceImport = async ({ strategicPlanId, file, userId }) => {
   const parsed = await parseReferenceWorkbook(file.buffer);
   const users = await User.findAll({ where: { estado: 'activo' }, attributes: ['id', 'nombre', 'email', 'dependencia', 'cargo'], raw: true });
@@ -91,8 +144,8 @@ const confirmReferenceImport = async ({ importId, userId }) => sequelize.transac
   const plan = await StrategicPlan.findByPk(batch.strategic_plan_id, { transaction });
   const levels = await StrategicLevel.findAll({ where: { strategic_plan_id: plan.id, active: true }, order: [['position', 'ASC']], transaction });
   const objectiveLevel = levels[0]; const guidelineLevel = levels[1];
-  if (!objectiveLevel || !guidelineLevel) throw Object.assign(new Error('El PED necesita al menos dos niveles para importar objetivos y lineamientos.'), { statusCode: 422 });
   const parsed = batch.parsed_data;
+  if ((parsed.objectives?.length && !objectiveLevel) || (parsed.guidelines?.length && !guidelineLevel)) throw Object.assign(new Error('El archivo contiene una estructura antigua de objetivos o lineamientos que este PED no utiliza.'), { statusCode: 422 });
   for (const [position, item] of parsed.objectives.entries()) await StrategicElement.findOrCreate({ where: { strategic_plan_id: plan.id, code: item.code, version: plan.configuration_version }, defaults: { strategic_plan_id: plan.id, level_id: objectiveLevel.id, code: item.code, name: item.name, position: position + 1, version: plan.configuration_version }, transaction });
   for (const [position, item] of parsed.guidelines.entries()) await StrategicElement.findOrCreate({ where: { strategic_plan_id: plan.id, code: item.code, version: plan.configuration_version }, defaults: { strategic_plan_id: plan.id, level_id: guidelineLevel.id, code: item.code, name: item.name, position: position + 1, version: plan.configuration_version }, transaction });
   for (const item of parsed.macroactivities) await upsertCatalog(transaction, plan.id, 'macroactivity', item);
@@ -122,4 +175,4 @@ const confirmReferenceImport = async ({ importId, userId }) => sequelize.transac
   return batch;
 });
 
-module.exports = { normalize, parseReferenceWorkbook, previewReferenceImport, confirmReferenceImport, deactivateDuplicateUnits };
+module.exports = { normalize, parseReferenceWorkbook, buildReferenceWorkbook, previewReferenceImport, confirmReferenceImport, deactivateDuplicateUnits };
