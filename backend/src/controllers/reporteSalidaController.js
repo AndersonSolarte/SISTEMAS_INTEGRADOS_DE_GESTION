@@ -1371,6 +1371,141 @@ const appendTrace = (solicitud, event, actor = null, detail = {}) => ([
   }
 ]);
 
+const getWorkflowRejectionRecipients = (solicitud) => {
+  const recipients = new Set();
+  const datos = solicitud?.datos_formulario || {};
+  const solicitante = solicitud?.solicitante_snapshot || datos.personal || {};
+  const jefe = solicitud?.jefe_snapshot || {};
+  const laboral = datos.laboral || {};
+
+  const userEmail = normalizeEmail(solicitante.email || solicitante.correo);
+  if (userEmail) recipients.add(userEmail);
+
+  const jefeEmail = normalizeEmail(jefe.email || jefe.correo);
+  if (jefeEmail) recipients.add(jefeEmail);
+
+  const depEmail = normalizeEmail(getDependencyEmail(laboral.dependencia || solicitud.dependencia));
+  if (depEmail) recipients.add(depEmail);
+
+  const globalRecipients = getReporteSalidaRecipients();
+  if (globalRecipients.gestionHumana) recipients.add(normalizeEmail(globalRecipients.gestionHumana));
+  if (globalRecipients.sst) recipients.add(normalizeEmail(globalRecipients.sst));
+
+  const vicerrectoriaName = laboral.vicerrectoria || getSolicitudVicerrectoria(solicitud);
+  const viceEmail = normalizeEmail(getDependencyEmail(vicerrectoriaName));
+  if (viceEmail) recipients.add(viceEmail);
+
+  return Array.from(recipients).filter(Boolean);
+};
+
+const sendControlledCopyRejectionEmail = async ({ solicitudes, actorName, actorRole, justificacion }) => {
+  try {
+    const list = Array.isArray(solicitudes) ? solicitudes : [solicitudes];
+    if (!list.length) return { success: false, error: 'No solicitudes provided' };
+
+    const first = list[0];
+    const isGroup = list.length > 1 || Boolean(first.datos_formulario?.is_salida_multiple);
+    const consecutivoLabel = isGroup
+      ? `${first.consecutivo.split('-').slice(0, 3).join('-')}-GRUPO`
+      : first.consecutivo;
+
+    const recipientSet = new Set();
+    list.forEach((sol) => {
+      getWorkflowRejectionRecipients(sol).forEach((em) => recipientSet.add(em));
+    });
+    const toRecipients = Array.from(recipientSet);
+    if (!toRecipients.length) return { success: false, error: 'No valid recipients' };
+
+    const actorDisplay = actorName || actorRole || 'Jefatura / Autoridad Institucional';
+    const subject = `REPORTE DE SALIDA ${consecutivoLabel} | Solicitud NO APROBADA por ${actorDisplay}`;
+
+    const reasonBoxHtml = `
+      <div style="margin: 18px 0; padding: 16px 20px; background-color: #fef2f2; border-left: 5px solid #dc2626; border-radius: 8px;">
+        <p style="margin: 0 0 6px 0; font-size: 12.5px; font-weight: 800; color: #991b1b; text-transform: uppercase; letter-spacing: 0.03em;">
+          Motivo / Observación de No Aprobación (${escapeHtml(actorDisplay)}):
+        </p>
+        <p style="margin: 0; font-size: 14px; font-style: italic; color: #1e293b; line-height: 1.5; white-space: pre-wrap;">
+          "${escapeHtml(justificacion || 'Sin observaciones especificadas.')}"
+        </p>
+      </div>
+    `;
+
+    let participantsHtml = '';
+    if (isGroup) {
+      let rows = '';
+      list.forEach((sol, idx) => {
+        const p = sol.datos_formulario?.personal || sol.solicitante_snapshot || {};
+        const lab = sol.datos_formulario?.laboral || {};
+        rows += `
+          <tr>
+            <td style="border:1px solid #dbe6f5;padding:8px;text-align:center;">${idx + 1}</td>
+            <td style="border:1px solid #dbe6f5;padding:8px;"><strong>${escapeHtml(p.nombre)}</strong> ${sol.datos_formulario?.is_leader ? '<span style="color:#0f52ba;font-size:11px;font-weight:bold;">(Líder)</span>' : ''}</td>
+            <td style="border:1px solid #dbe6f5;padding:8px;">${escapeHtml(lab.cargo || p.cargo || '')}</td>
+            <td style="border:1px solid #dbe6f5;padding:8px;">${escapeHtml(lab.dependencia || p.dependencia || '')}</td>
+            <td style="border:1px solid #dbe6f5;padding:8px;">${escapeHtml(p.correo || p.email || '')}</td>
+          </tr>
+        `;
+      });
+      participantsHtml = `
+        <p style="margin: 14px 0 6px 0; font-weight: 700;">Participantes de la salida grupal:</p>
+        <table style="width:100%;border-collapse:collapse;margin:10px 0;font-size:13px;">
+          <thead>
+            <tr style="background:#f1f5f9;">
+              <th style="border:1px solid #dbe6f5;padding:8px;text-align:center;width:35px;">#</th>
+              <th style="border:1px solid #dbe6f5;padding:8px;text-align:left;">Nombre</th>
+              <th style="border:1px solid #dbe6f5;padding:8px;text-align:left;">Cargo</th>
+              <th style="border:1px solid #dbe6f5;padding:8px;text-align:left;">Dependencia</th>
+              <th style="border:1px solid #dbe6f5;padding:8px;text-align:left;">Correo</th>
+            </tr>
+          </thead>
+          <tbody>${rows}</tbody>
+        </table>
+      `;
+    } else {
+      const p = first.datos_formulario?.personal || first.solicitante_snapshot || {};
+      const lab = first.datos_formulario?.laboral || {};
+      const salida = first.datos_formulario?.salida || {};
+      participantsHtml = `
+        <ul style="line-height: 1.6; color: #334155; margin: 10px 0;">
+          <li><strong>Colaborador(a):</strong> ${escapeHtml(p.nombre)}</li>
+          <li><strong>Cargo:</strong> ${escapeHtml(lab.cargo || p.cargo || 'N/A')}</li>
+          <li><strong>Dependencia:</strong> ${escapeHtml(lab.dependencia || p.dependencia || 'N/A')}</li>
+          <li><strong>Tipo de Salida:</strong> ${escapeHtml(salida.tipo || 'N/A')}</li>
+          <li><strong>Fecha:</strong> ${escapeHtml(salida.fecha || '')} (${escapeHtml(salida.horaInicio || '')} a ${escapeHtml(salida.horaFin || '')})</li>
+        </ul>
+      `;
+    }
+
+    const html = renderInstitutionalTemplate({
+      title: 'Notificación de No Aprobación - Copia Controlada',
+      introHtml: `
+        <p style="margin: 0 0 12px 0;">Saludo de paz y bien,</p>
+        <p style="margin: 0 0 8px 0; color: #475569;">Estimados(as) integrantes de la comunidad institucional,</p>
+        <p style="margin: 0 0 12px 0;">
+          Le informamos que la solicitud de reporte de salida <strong>${escapeHtml(consecutivoLabel)}</strong> ha sido registrada como <strong>NO APROBADA</strong> por parte de <strong>${escapeHtml(actorDisplay)}</strong>.
+        </p>
+      `,
+      bodyHtml: `
+        ${reasonBoxHtml}
+        ${participantsHtml}
+        <p style="font-size: 12px; color: #64748b; margin-top: 18px; border-top: 1px dashed #cbd5e1; padding-top: 10px;">
+          * Esta notificación se emite como <strong>Copia Controlada</strong> a todas las partes involucradas en el flujo institucional (Colaborador(a), Jefe Inmediato, Dirección de Programa/Dependencia, Gestión del Talento Humano y SST).
+        </p>
+      `
+    });
+
+    return await sendInstitutionalEmail({
+      to: toRecipients,
+      subject,
+      text: `La solicitud ${consecutivoLabel} fue marcada como no aprobada por ${actorDisplay}. Motivo: ${justificacion}`,
+      html
+    });
+  } catch (err) {
+    console.error('Error enviando correo de no aprobacion con copia controlada:', err);
+    return { success: false, error: err.message };
+  }
+};
+
 const SEGUIMIENTO_REPORTE_MANAGE_KEYS = ['seguimiento_reportes_rrhh', 'recurso_humano_seguimiento'];
 const REPORTE_SALIDA_VIEW_KEYS = [...SEGUIMIENTO_REPORTE_MANAGE_KEYS, 'recurso_humano_reporte_salida'];
 const AUSENTISMO_VIEW_KEYS = [...SEGUIMIENTO_REPORTE_MANAGE_KEYS, 'recurso_humano_indicadores_ausentismo'];
@@ -4602,7 +4737,7 @@ const aprobarDesdeCorreo = async (req, res) => {
           trazabilidad: appendTrace(solicitud, 'rechazada_jefe', initialApprovalActor, { observacion, via: initialApprovalVia })
         });
         await syncLinkedViaticosRejection(solicitud, 'jefe', initialApprovalActor?.nombre || 'Jefe Inmediato', observacion);
-        await sendRequesterNotice(solicitud, 'Solicitud no aprobada', `La solicitud no fue aprobada por ${initialApprovalVia === 'dependencia' ? 'la dependencia' : 'el jefe inmediato'}. Motivo: ${observacion}`);
+        await sendControlledCopyRejectionEmail({ solicitudes: solicitud, actorName: initialApprovalActor?.nombre || (initialApprovalVia === 'dependencia' ? 'Líder de Dependencia' : 'Jefe Inmediato'), actorRole: initialApprovalVia === 'dependencia' ? 'Líder de Dependencia' : 'Jefe Inmediato', justificacion: observacion });
         return renderApprovalPage({
           res,
           tone: 'info',
@@ -4774,8 +4909,8 @@ const aprobarDesdeCorreo = async (req, res) => {
           trazabilidad: appendTrace(solicitud, 'rechazada_vicerrectoria_academica', { nombre: vicerrectoriaName, email: vicerrectoriaEmail, role: 'vicerrectoria' }, { observacion })
         });
         await syncLinkedViaticosRejection(solicitud, 'vicerrectoria_academica', vicerrectoriaName, observacion);
-        await sendRequesterNotice(solicitud, 'Solicitud no aprobada', `La solicitud no fue aprobada por ${vicerrectoriaName}. Motivo: ${observacion}`);
-        return renderApprovalPage({ res, tone: 'info', title: 'Solicitud rechazada', message: 'La solicitud fue marcada como no aprobada y se notificó al colaborador.', solicitud });
+        await sendControlledCopyRejectionEmail({ solicitudes: solicitud, actorName: vicerrectoriaName, actorRole: 'Vicerrectoría', justificacion: observacion });
+        return renderApprovalPage({ res, tone: 'info', title: 'Solicitud rechazada', message: 'La solicitud fue marcada como no aprobada y se notificó a las partes interesadas.', solicitud });
       }
       const goesToRectoria = requiresRectoriaApproval(solicitud);
       const skipRectoriaAfterVicerrectoria = goesToRectoria && sameEmail(RECTORIA_EMAIL, vicerrectoriaEmail);
@@ -4886,8 +5021,8 @@ const aprobarDesdeCorreo = async (req, res) => {
           trazabilidad: appendTrace(solicitud, 'rechazada_rectoria', { nombre: 'Rectoría', email: RECTORIA_EMAIL, role: 'rectoria' }, { observacion })
         });
         await syncLinkedViaticosRejection(solicitud, 'rectoria', 'Rectoría', observacion);
-        await sendRequesterNotice(solicitud, 'Solicitud no aprobada', `La solicitud no fue aprobada por Rectoría. Motivo: ${observacion}`);
-        return renderApprovalPage({ res, tone: 'info', title: 'Solicitud rechazada', message: 'La solicitud fue marcada como no aprobada y se notificó al colaborador.', solicitud });
+        await sendControlledCopyRejectionEmail({ solicitudes: solicitud, actorName: 'Rectoría', actorRole: 'Rectoría', justificacion: observacion });
+        return renderApprovalPage({ res, tone: 'info', title: 'Solicitud rechazada', message: 'La solicitud fue marcada como no aprobada y se notificó a las partes interesadas.', solicitud });
       }
       const ghToken = createApprovalToken('gestion_humana', solicitud.consecutivo);
       const [updatedCount] = await ReporteSalidaSolicitud.update({
@@ -4974,8 +5109,8 @@ const aprobarDesdeCorreo = async (req, res) => {
           trazabilidad: appendTrace(solicitud, 'rechazada_proyeccion_social', { nombre: psName, email: psEmail, role: 'proyeccion_social' }, { observacion })
         });
         await syncLinkedViaticosRejection(solicitud, 'proyeccion_social', psName, observacion);
-        await sendRequesterNotice(solicitud, 'Solicitud no aprobada', `La solicitud no fue aprobada por ${psName}. Motivo: ${observacion}`);
-        return renderApprovalPage({ res, tone: 'info', title: 'Solicitud rechazada', message: 'La solicitud fue marcada como no aprobada y se notificó al colaborador.', solicitud });
+        await sendControlledCopyRejectionEmail({ solicitudes: solicitud, actorName: psName, actorRole: 'Proyección Social', justificacion: observacion });
+        return renderApprovalPage({ res, tone: 'info', title: 'Solicitud rechazada', message: 'La solicitud fue marcada como no aprobada y se notificó a las partes interesadas.', solicitud });
       }
 
       const nextAuthority = getAuthorityAfterBoss(solicitud);
@@ -5082,8 +5217,8 @@ const aprobarDesdeCorreo = async (req, res) => {
           trazabilidad: appendTrace(solicitud, 'rechazada_gestion_humana', { nombre: 'Gestión del Talento Humano', role: 'gestion_humana' }, { observacion })
         });
         await syncLinkedViaticosRejection(solicitud, 'gestion_humana', 'Gestión del Talento Humano', observacion);
-        await sendRequesterNotice(solicitud, 'Solicitud no aprobada', `La solicitud no fue aprobada por Gestión del Talento Humano. Motivo: ${observacion}`);
-        return renderApprovalPage({ res, tone: 'info', title: 'Solicitud rechazada', message: 'La solicitud fue marcada como no aprobada y se notificó al colaborador.', solicitud });
+        await sendControlledCopyRejectionEmail({ solicitudes: solicitud, actorName: 'Gestión del Talento Humano', actorRole: 'Gestión del Talento Humano', justificacion: observacion });
+        return renderApprovalPage({ res, tone: 'info', title: 'Solicitud rechazada', message: 'La solicitud fue marcada como no aprobada y se notificó a las partes interesadas.', solicitud });
       }
       const isMisionalNacionalOInternacional = shouldAdvanceToSst(solicitud);
 
@@ -5254,8 +5389,8 @@ const aprobarDesdeCorreo = async (req, res) => {
           trazabilidad: appendTrace(solicitud, 'rechazada_sst', { nombre: 'Seguridad y Salud en el Trabajo', role: 'sst' }, { observacion })
         });
         await syncLinkedViaticosRejection(solicitud, 'sst', 'Seguridad y Salud en el Trabajo', observacion);
-        await sendRequesterNotice(solicitud, 'Solicitud no aprobada', `La solicitud no fue aprobada por SST. Motivo: ${observacion}`);
-        return renderApprovalPage({ res, tone: 'info', title: 'Solicitud rechazada', message: 'La solicitud fue marcada como no aprobada y se notificó al colaborador.', solicitud });
+        await sendControlledCopyRejectionEmail({ solicitudes: solicitud, actorName: 'Seguridad y Salud en el Trabajo', actorRole: 'SST', justificacion: observacion });
+        return renderApprovalPage({ res, tone: 'info', title: 'Solicitud rechazada', message: 'La solicitud fue marcada como no aprobada y se notificó a las partes interesadas.', solicitud });
       }
       const [updatedCount] = await ReporteSalidaSolicitud.update({
         estado: 'finalizada',
@@ -5746,14 +5881,13 @@ const editarSolicitudAdmin = async (req, res) => {
               })
             });
             deleteSupportFile(s);
-            if (s.solicitante_snapshot?.email) {
-              await sendCollaboratorRejectionEmail({
-                solicitud: s,
-                rejectedBy: `${actorName} (Administrador)`,
-                justificacion: observacionAdmin
-              }).catch(e => console.error('Error group rejection email:', e));
-            }
           }
+
+          await sendControlledCopyRejectionEmail({
+            solicitudes: groupSolicitudes,
+            actorName: `${actorName} (Administrador)`,
+            justificacion: observacionAdmin
+          }).catch(e => console.error('Error group rejection email:', e));
 
           return res.json({
             success: true,
@@ -5791,11 +5925,11 @@ const editarSolicitudAdmin = async (req, res) => {
 
         await syncAdminViaticosRejection(solicitud, req.user, observacionAdmin).catch(e => console.error('[editarSolicitudAdmin] Error syncAdminViaticosRejection:', e));
 
-        if (solicitud.estado === 'pendiente_aprobacion_jefe') {
-          await sendCollaboratorRejectionEmail({ solicitud, rejectedBy: `${actorName} (Administrador)`, justificacion: observacionAdmin }).catch(e => console.error('Error rejection email:', e));
-        } else {
-          await sendGHRejectionEmails({ solicitud, justificacion: observacionAdmin, isSST: solicitud.estado === 'pendiente_aprobacion_sst' }).catch(e => console.error('Error rejection email:', e));
-        }
+        await sendControlledCopyRejectionEmail({
+          solicitudes: solicitud,
+          actorName: `${actorName} (Administrador)`,
+          justificacion: observacionAdmin
+        }).catch(e => console.error('Error rejection email:', e));
 
         return res.json({
           success: true,
@@ -7210,7 +7344,7 @@ const procesarRechazo = async (req, res) => {
       }
       await solicitud.reload();
       deleteSupportFile(solicitud);
-      await sendGHRejectionEmails({ solicitud, justificacion });
+      await sendControlledCopyRejectionEmail({ solicitudes: solicitud, actorName, justificacion });
       return renderApprovalPage({
         res,
         tone: 'success',
@@ -7292,9 +7426,9 @@ const procesarRechazo = async (req, res) => {
 
       await solicitud.reload();
       deleteSupportFile(solicitud);
-      await sendCollaboratorRejectionEmail({
-        solicitud,
-        rejectedBy: initialApprovalVia === 'dependencia' ? 'su dependencia' : 'su jefe inmediato',
+      await sendControlledCopyRejectionEmail({
+        solicitudes: solicitud,
+        actorName: initialApprovalVia === 'dependencia' ? 'Líder de Dependencia' : 'Jefe Inmediato',
         justificacion
       });
 
@@ -7362,8 +7496,9 @@ const procesarRechazo = async (req, res) => {
 
       await solicitud.reload();
       deleteSupportFile(solicitud);
-      await sendGHRejectionEmails({
-        solicitud,
+      await sendControlledCopyRejectionEmail({
+        solicitudes: solicitud,
+        actorName: 'Gestión del Talento Humano',
         justificacion
       });
 
@@ -7430,10 +7565,10 @@ const procesarRechazo = async (req, res) => {
 
       await solicitud.reload();
       deleteSupportFile(solicitud);
-      await sendGHRejectionEmails({
-        solicitud,
-        justificacion,
-        isSST: true
+      await sendControlledCopyRejectionEmail({
+        solicitudes: solicitud,
+        actorName: 'Seguridad y Salud en el Trabajo',
+        justificacion
       });
 
       return renderApprovalPage({
@@ -8788,32 +8923,17 @@ const procesarRechazoGrupo = async (req, res) => {
       rejectedCount++;
       await solicitud.reload();
       deleteSupportFile(solicitud);
+    }
 
+    if (rejectedCount > 0) {
       try {
-        const solicitante = solicitud.solicitante_snapshot || {};
-        const userSubject = `REPORTE DE SALIDA GRUPAL ${solicitud.consecutivo} | Solicitud no aprobada por ${actorLabel}`;
-        const userHtml = renderInstitutionalTemplate({
-          title: `Reporte de salida grupal no aprobado`,
-          introHtml: `<p style="margin: 0 0 12px 0;">Saludo de paz y bien,</p><p style="margin: 0 0 4px 0;">Estimado(a) colaborador(a),</p><p style="margin: 0 0 16px 0;"><strong>${escapeHtml(solicitante.nombre)}</strong></p><p>Reciba un cordial saludo. En atención a la solicitud de reporte de salida de modalidad grupal con consecutivo <strong>${escapeHtml(solicitud.consecutivo)}</strong>, le informamos que la solicitud ha sido marcada como <strong>no aprobada</strong> por parte de <strong>${escapeHtml(actorLabel)}</strong>.</p>`,
-          bodyHtml: `
-            <p><strong>Motivo / Justificacion del rechazo:</strong></p>
-            <div style="margin:15px 0;padding:12px 16px;background:#fef2f2;border-left:4px solid #e11d48;color:#1e293b;font-style:italic;border-radius:4px;">
-              ${escapeHtml(justificacion)}
-            </div>
-            <p>Consulte más información en el módulo de Seguimiento a reportes del sistema SIAC.</p>
-          `
+        await sendControlledCopyRejectionEmail({
+          solicitudes: pendientes,
+          actorName: actorLabel,
+          justificacion
         });
-
-        if (solicitante.email) {
-          await sendInstitutionalEmail({
-            to: solicitante.email,
-            subject: userSubject,
-            text: `Reporte grupal ${solicitud.consecutivo} no aprobado por ${actorLabel}: ${justificacion}`,
-            html: userHtml
-          });
-        }
       } catch (err) {
-        console.error(`Error enviando correo de rechazo grupal a participante ${solicitud.consecutivo}:`, err);
+        console.error('Error enviando correo de rechazo copia controlada para grupo:', err);
       }
     }
 
@@ -8822,7 +8942,7 @@ const procesarRechazoGrupo = async (req, res) => {
       tone: 'warning',
       title: 'Rechazo de Salida Grupal registrado',
       message: `Se ha registrado el rechazo de la salida grupal para ${rejectedCount} colaboradores(as).`,
-      nextStep: 'Se ha notificado por correo electronico a los participantes con la justificacion indicada.'
+      nextStep: 'Se ha notificado por correo electrónico con Copia Controlada a todos los participantes e involucrados en el flujo con la justificación indicada.'
     });
 
   } catch (error) {
