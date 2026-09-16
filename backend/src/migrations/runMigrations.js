@@ -696,6 +696,12 @@ const runMigrations = async () => {
     await sequelize.query("CREATE INDEX IF NOT EXISTS plan_accion_estado_idx ON plan_accion (estado_workflow)");
     await sequelize.query("CREATE INDEX IF NOT EXISTS plan_accion_responsable_idx ON plan_accion (responsable_id)");
 
+    if (models.RegistroCalificadoResolucion) {
+      await models.RegistroCalificadoResolucion.sync();
+      await ensureColumn(qi, 'registros_calificados_resoluciones', 'conserva_denominacion', { type: DataTypes.BOOLEAN, allowNull: true, defaultValue: true });
+      await ensureColumn(qi, 'registros_calificados_resoluciones', 'historial_denominaciones', { type: DataTypes.JSONB, allowNull: true });
+    }
+
     await qi.changeColumn('estadisticas', 'programa', { type: DataTypes.STRING(500), allowNull: true });
     await qi.changeColumn('estadisticas', 'dependencia', { type: DataTypes.STRING(500), allowNull: true });
     await qi.changeColumn('estadisticas', 'indicador', { type: DataTypes.STRING(500), allowNull: false });
