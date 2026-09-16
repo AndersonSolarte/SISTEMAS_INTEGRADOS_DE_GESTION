@@ -82,7 +82,8 @@ import {
   MonitorHeart as MonitorHeartIcon,
   ExpandMore as ExpandMoreIcon,
   ShowChart as ShowChartIcon,
-  OpenInNew as OpenInNewIcon
+  OpenInNew as OpenInNewIcon,
+  PictureAsPdf as PictureAsPdfIcon
 } from '@mui/icons-material';
 import ZoomInIcon from '@mui/icons-material/ZoomIn';
 import CloseIcon from '@mui/icons-material/Close';
@@ -555,7 +556,7 @@ const SUBBASES_SABER_PRO = ['Resultados individuales', 'Resultados agregados', '
 const SUBBASES_RECURSO_HUMANO = ['Docentes', 'Administrativos', 'Outsourcing', 'Ondas'];
 const SUBBASES_GESTION_RIESGO_AMBIENTE = ['Parqueaderos PESV'];
 const SUBBASES_AUTOEVALUACION = ['Autoevaluación', 'Participantes', 'informacion_programas'];
-const SUBBASES_REGISTROS_CALIFICADOS = ['Historico_RC'];
+const SUBBASES_REGISTROS_CALIFICADOS = ['Historico_RC', 'Resoluciones'];
 const SUBBASE_ORDER = SUBBASES_POBLACIONAL.reduce((acc, item, index) => ({ ...acc, [item]: index + 1 }), {});
 
 const BASE_LABEL = BASES.reduce((acc, item) => ({ ...acc, [item.key]: item.label }), {});
@@ -981,13 +982,15 @@ const PROGRAM_ALIAS_RULES = [
   { pattern: /^TECNOLOGO \(A\) EN GESTION FINANCIERA$/, canonical: 'TECNOLOGIA EN GESTION FINANCIERA', label: 'TECNOLOGÁA EN GESTIÁ"N FINANCIERA' },
   { pattern: /^LIC\. EN EDUCACION FISICA$/, canonical: 'LICENCIATURA EN EDUCACION FISICA', label: 'LICENCIATURA EN EDUCACIÁ"N FÁSICA' },
   { pattern: /^LIC\. EN EDUCACION INFANTIL$/, canonical: 'LICENCIATURA EN EDUCACION INFANTIL', label: 'LICENCIATURA EN EDUCACIÁ"N INFANTIL' },
-  { pattern: /^LIC\. EN QUIMICA$/, canonical: 'LICENCIATURA EN QUIMICA', label: 'LICENCIATURA EN QUÁMICA' },
-  { pattern: /^ESP\.? EN ARQUITECTURA Y URBANISMO BIOCLIMATICO$/, canonical: 'ESPECIALIZACION EN ARQUITECTURA Y URBANISMO BIOCLIMATICO', label: 'ESPECIALIZACIÁ"N EN ARQUITECTURA Y URBANISMO BIOCLIMÁTICO' },
+  { pattern: /^LIC\. EN QUIMICA$/, canonical: 'LICENCIATURA EN QUIMICA', label: 'LICENCIATURA EN QUÁ MICA' },
+  { pattern: /^ESP\.? EN ARQUITECTURA Y URBANISMO BIOCLIMATICO$/, canonical: 'ESPECIALIZACION EN ARQUITECTURA Y URBANISMO BIOCLIMATICO', label: 'ESPECIALIZACIÁ"N EN ARQUITECTURA Y URBANISMO BIOCLIMÁ TICO' },
   { pattern: /^ESP\.? EN DERECHO EMPRESARIAL$/, canonical: 'ESPECIALIZACION EN DERECHO EMPRESARIAL', label: 'ESPECIALIZACIÁ"N EN DERECHO EMPRESARIAL' },
   { pattern: /^ESP\.? EN GERENCIA DE PROYECTOS$/, canonical: 'ESPECIALIZACION EN GERENCIA DE PROYECTOS', label: 'ESPECIALIZACIÁ"N EN GERENCIA DE PROYECTOS' },
   { pattern: /^ESP\.? EN INFANCIA, CULTURA Y DESARROLLO$/, canonical: 'ESPECIALIZACION EN INFANCIA, CULTURA Y DESARROLLO', label: 'ESPECIALIZACIÁ"N EN INFANCIA, CULTURA Y DESARROLLO' },
-  { pattern: /^ESP\.? EN PEDAGOGIA DEL ENTRENAMIENTO DEPORTIVO$/, canonical: 'ESPECIALIZACION EN PEDAGOGIA DEL ENTRENAMIENTO DEPORTIVO', label: 'ESPECIALIZACIÁ"N EN PEDAGOGÁA DEL ENTRENAMIENTO DEPORTIVO' },
-  { pattern: /^ESPECIALIZACION EN PEDAGOGIA DEL ENTRENAMIENTO$/, canonical: 'ESPECIALIZACION EN PEDAGOGIA DEL ENTRENAMIENTO DEPORTIVO', label: 'ESPECIALIZACIÁ"N EN PEDAGOGÁA DEL ENTRENAMIENTO DEPORTIVO' }
+  { pattern: /^ESP\.? EN PEDAGOGIA DEL ENTRENAMIENTO DEPORTIVO$/, canonical: 'ESPECIALIZACION EN PEDAGOGIA DEL ENTRENAMIENTO DEPORTIVO', label: 'ESPECIALIZACIÁ"N EN PEDAGOGÁ A DEL ENTRENAMIENTO DEPORTIVO' },
+  { pattern: /^ESPECIALIZACION EN PEDAGOGIA DEL ENTRENAMIENTO$/, canonical: 'ESPECIALIZACION EN PEDAGOGIA DEL ENTRENAMIENTO DEPORTIVO', label: 'ESPECIALIZACIÁ"N EN PEDAGOGÁ A DEL ENTRENAMIENTO DEPORTIVO' },
+  { pattern: /^FISIOTERAPEUTA$/, canonical: 'FISIOTERAPIA', label: 'FISIOTERAPIA' },
+  { pattern: /^FISIOTERAPIA$/, canonical: 'FISIOTERAPIA', label: 'FISIOTERAPIA' }
 ];
 
 const getCanonicalProgramMeta = (value = '') => {
@@ -1007,6 +1010,7 @@ const getCanonicalProgramMeta = (value = '') => {
     { test: (text) => /ESPECIALIZACION.*SEGURIDAD INFORMATICA|ESP.*SEGURIDAD INFORMATICA/.test(text), canonical: 'ESPECIALIZACION EN SEGURIDAD INFORMATICA' },
     { test: (text) => /MAESTRIA.*GERENCIA DE PROYECTOS/.test(text), canonical: 'MAESTRIA EN GERENCIA DE PROYECTOS' },
     // Generic professional programs
+    { test: (text) => /FISIOTERAP/.test(text), canonical: 'FISIOTERAPIA' },
     { test: (text) => /CONTADUR.*BLICA|CONTADOR.*PUBLICO/.test(text), canonical: 'CONTADURIA PUBLICA' },
     { test: (text) => /DISE.*GRAFICO|DISENADOR.*GRAFICO/.test(text), canonical: 'DISENO GRAFICO' },
     { test: (text) => /PSICOLOG/.test(text), canonical: 'PSICOLOGIA' },
@@ -1046,6 +1050,7 @@ const getCanonicalProgramMeta = (value = '') => {
     .replace(/\bADMINISTRADOR \(A\) DE\b/g, 'ADMINISTRACION DE')
     .replace(/\bCONTADOR \(A\) PUBLICO \(A\)\b/g, 'CONTADURIA PUBLICA')
     .replace(/\bDISENADOR \(A\) GRAFICO \(A\)\b/g, 'DISENO GRAFICO')
+    .replace(/\bFISIOTERAPEUTA\b/g, 'FISIOTERAPIA')
     .replace(/\bTECNOLOGIA EN CONTADURIA Y FINANZAS\b/g, 'TECNOLOGIA EN CONTABILIDAD Y FINANZAS');
 
   // After inline replacements, check rules again (covers "LIC. EN EDUCACION FISICA" → canonical)
@@ -1598,11 +1603,16 @@ const CountryFlagIcon = ({ countryName = '', alt = '', sx = {} }) => {
   );
 };
 const classifyProgramLevel = (programa = '') => {
-  const upper = String(programa).toUpperCase().trim();
-  if (/^(DOC|DOCTOR|DOCTORADO)\b/.test(upper) || upper.includes('DOCTOR')) return 'DOCTORADO';
-  if (/^MAE\b/.test(upper) || upper.startsWith('MAE ') || upper.startsWith('MAES')) return 'MAESTRIA';
-  if (/^SP\b/.test(upper) || upper.startsWith('SP ') || upper.startsWith('ESPE')) return 'ESPECIALIZACION';
-  if (/^TEC\b/.test(upper) || upper.startsWith('TEC ') || upper.startsWith('TECNO')) return 'TECNOLOGICO';
+  const norm = String(programa || '')
+    .toUpperCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .trim();
+  if (!norm) return 'PROFESIONAL';
+  if (/\b(DOC|DOCTOR|DOCTORADO)\b/.test(norm)) return 'DOCTORADO';
+  if (/\b(MAE|MAESTR|MASTER)\b/.test(norm) || norm.startsWith('MAES')) return 'MAESTRIA';
+  if (/\b(SP|ESPEC)\b/.test(norm) || norm.startsWith('ESPE')) return 'ESPECIALIZACION';
+  if (/\bTECNOL/.test(norm) || /^TEC\b/.test(norm)) return 'TECNOLOGICO';
   return 'PROFESIONAL';
 };
 const FACULTY_ORDER = [
@@ -1611,6 +1621,7 @@ const FACULTY_ORDER = [
   'Ciencias Sociales y Humanas',
   'Educación',
   'Ingeniería',
+  'Ciencias de la Salud',
   'Otras'
 ];
 const classifyProgramFaculty = (programa = '') => {
@@ -1619,15 +1630,20 @@ const classifyProgramFaculty = (programa = '') => {
       u.includes('ELECTRONI') || u.includes('SISTEMAS') || u.includes('FINANCIER') ||
       u.includes('INDUSTRIAL') || u.includes('MECATRON') || u.includes('CIVIL'))
     return 'Ingeniería';
-  if (u.includes('ARQUITECTURA') || u.includes('DISE\u00d1O') || u.includes('DISENO') ||
-      u.includes('GRAFICO') || u.includes('GR\u00c1FICO') || u.includes('URBANISMO') ||
+  if (u.includes('ARQUITECTURA') || u.includes('DISEÑO') || u.includes('DISENO') ||
+      u.includes('GRAFICO') || u.includes('GRÁFICO') || u.includes('URBANISMO') ||
       u.includes('BELLAS ARTES') || u.includes('ARTES PLASTICAS') || u.includes('PLASTICAS'))
     return 'Arquitectura y Bellas Artes';
   if (u.includes('LICENCIATURA') || u.includes('PREESCOLAR') || u.includes('INFANCIA') ||
       u.includes('ENTRENAMIENTO') || u.includes('PEDAGOGIA') || u.includes('PEDAGOGÍA') ||
       u.includes('DEPORTIVO') || (u.includes('EDUCACI') && !u.includes('EDUCACION FISICA Y DEPORTE')))
     return 'Educación';
-  if (u.includes('DERECHO') || u.includes('PSICOLOG') || u.includes('COMUNICACI') ||
+  if (u.includes('FISIOTERAPIA') || u.includes('FISIOTERAPEUTA') || u.includes('PSICOLOG') || u.includes('CIENCIAS DE LA SALUD') ||
+      (u.includes('SALUD') && !u.includes('SEGURIDAD Y SALUD') && !u.includes('SALUD EN EL TRABAJO')) ||
+      u.includes('ENFERMER') || u.includes('MEDICIN') || u.includes('NUTRICI') ||
+      u.includes('ODONTOLOG') || u.includes('FONOAUDIOLOG') || u.includes('TERAPIA'))
+    return 'Ciencias de la Salud';
+  if (u.includes('DERECHO') || u.includes('COMUNICACI') ||
       u.includes('TRABAJO SOCIAL') || u.includes('SOCIOLOG') || u.includes('FILOSOF'))
     return 'Ciencias Sociales y Humanas';
   if (u.includes('ADMINISTRACION') || u.includes('ADMINISTRACIÓN') || u.includes('CONTADURIA') ||
@@ -2247,6 +2263,8 @@ function GestionInformacion() {
   });
   const [empleabilidadUi, setEmpleabilidadUi] = useState({ programa: '', anios: [] });
   const [resumenEstadisticoUi, setResumenEstadisticoUi] = useState({ programa: '', module: 'informacion_general' });
+  const [selectedIntegralProgram, setSelectedIntegralProgram] = useState('');
+  const [generatingIntegralPdf, setGeneratingIntegralPdf] = useState(false);
   const [registrosCalificadosData, setRegistrosCalificadosData] = useState(null);
   const [registrosCalificadosLoading, setRegistrosCalificadosLoading] = useState(false);
   const [registrosCalificadosUi, setRegistrosCalificadosUi] = useState({ programa: '', estado: 'activos' });
@@ -2825,7 +2843,8 @@ function GestionInformacion() {
         periodos: isExplicitNonePeriod ? ['__NONE__'] : _selPeriodos,
         sexos: [...(geoFiltersRef.current.sexos || [])],
         niveles: [...(geoFiltersRef.current.niveles || [])],
-        _bust: Math.floor(Date.now() / (5 * 60 * 1000))
+        force: 'true',
+        _bust: Date.now()
       };
       const response = await gestionInformacionService.getEstadisticas(requestParams);
       if (matriculadosPanelReqRef.current !== requestId) return;
@@ -2863,6 +2882,10 @@ function GestionInformacion() {
     matriculadosPanelDataRef.current = matriculadosPanelData;
   }, [matriculadosPanelData]);
   const requestMatriculadosRefresh = useCallback(() => {
+    matLoadedKeyRef.current = null;
+    matriculadosPanelDataRef.current = null;
+    setMatHistoricoCache(null);
+    setMatProgramaCache({});
     setMatriculadosRefreshToken((prev) => prev + 1);
   }, []);
 
@@ -9543,17 +9566,91 @@ const renderCategoryBars = (items = [], options = {}) => {
     );
   };
 
+  const handleDownloadIntegralPdf = async () => {
+    if (!selectedIntegralProgram) {
+      enqueueSnackbar('Por favor selecciona un programa académico para exportar el informe integral.', { variant: 'warning' });
+      return;
+    }
+    setGeneratingIntegralPdf(true);
+    try {
+      const response = await gestionInformacionService.downloadInformeIntegralProgramaPdf(selectedIntegralProgram);
+      const url = window.URL.createObjectURL(response.data);
+      const link = document.createElement('a');
+      link.href = url;
+      const cleanSlug = selectedIntegralProgram
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, '_')
+        .replace(/^_+|_+$/g, '');
+      link.download = `informe_integral_${cleanSlug}.pdf`;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.setTimeout(() => window.URL.revokeObjectURL(url), 1000);
+      enqueueSnackbar(`Informe integral PDF de ${selectedIntegralProgram} descargado exitosamente.`, { variant: 'success' });
+    } catch (requestError) {
+      let message = 'No fue posible generar el informe PDF integral.';
+      const blob = requestError?.response?.data;
+      if (blob instanceof Blob) {
+        try {
+          message = JSON.parse(await blob.text())?.message || message;
+        } catch (_) {}
+      } else if (requestError?.response?.data?.message) {
+        message = requestError.response.data.message;
+      }
+      enqueueSnackbar(message, { variant: 'error' });
+    } finally {
+      setGeneratingIntegralPdf(false);
+    }
+  };
+
   const renderPoblacionalHub = () => (
     <Stack spacing={2.2}>
-      <Paper elevation={0} sx={{ p: 2.5, border: '1px solid #dbe6f5', borderRadius: 3, background: 'linear-gradient(120deg, #f8fbff 0%, #eef6ff 100%)' }}>
-        <Stack direction={{ xs: 'column', md: 'row' }} spacing={1.4} justifyContent="space-between" alignItems={{ xs: 'flex-start', md: 'center' }}>
-          <Stack direction="row" spacing={1} alignItems="center">
+      <Paper elevation={0} sx={{ p: 2, border: '1px solid #dbe6f5', borderRadius: 3, background: 'linear-gradient(120deg, #f8fbff 0%, #eef6ff 100%)' }}>
+        <Stack direction={{ xs: 'column', lg: 'row' }} spacing={1.8} justifyContent="space-between" alignItems={{ xs: 'stretch', lg: 'center' }}>
+          <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap" useFlexGap>
             <Button variant="outlined" startIcon={<ArrowBackRoundedIcon />} onClick={returnToCards}>Volver a tarjetas</Button>
-            <Chip label="Modulo Poblacional" color="primary" variant="outlined" />
+            <Chip label="Módulo Poblacional" color="primary" variant="outlined" />
           </Stack>
-          <Typography variant="caption" sx={{ color: '#64748b' }}>
-            Selecciona un dashboard interno. Los permisos controlan qué tarjetas ve cada usuario.
-          </Typography>
+
+          <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1.5} alignItems="center" sx={{ width: { xs: '100%', lg: 'auto' } }}>
+            <Autocomplete
+              size="small"
+              options={ACADEMIC_PROGRAMS.map((p) => p.name)}
+              value={selectedIntegralProgram || null}
+              onChange={(_, newValue) => setSelectedIntegralProgram(newValue || '')}
+              renderInput={(params) => (
+                <TextField
+                  {...params}
+                  label="Programa para informe integral"
+                  placeholder="Selecciona programa académico..."
+                  sx={{ bgcolor: '#ffffff', borderRadius: 1.5 }}
+                />
+              )}
+              sx={{ minWidth: { xs: '100%', sm: 300, md: 360 } }}
+            />
+            <Button
+              variant="contained"
+              disabled={generatingIntegralPdf}
+              onClick={handleDownloadIntegralPdf}
+              startIcon={generatingIntegralPdf ? <CircularProgress size={18} color="inherit" /> : <PictureAsPdfIcon />}
+              sx={{
+                bgcolor: '#082b66',
+                '&:hover': { bgcolor: '#061f4a' },
+                color: '#ffffff',
+                borderRadius: 2,
+                px: 2.4,
+                py: 0.95,
+                whiteSpace: 'nowrap',
+                fontWeight: 600,
+                textTransform: 'none',
+                boxShadow: '0 4px 12px rgba(8, 43, 102, 0.2)'
+              }}
+            >
+              {generatingIntegralPdf ? 'Generando PDF Integral...' : 'Exportar informe PDF integral'}
+            </Button>
+          </Stack>
         </Stack>
       </Paper>
 
@@ -15860,6 +15957,9 @@ const renderCategoryBars = (items = [], options = {}) => {
 
               const resolveFacForProg = (progName) => {
                 const canonKey = normalizeProgramKey(progName);
+                if (canonKey.includes('PSICOLOG') || canonKey.includes('FISIOTERAPIA')) {
+                  return 'Ciencias de la Salud';
+                }
                 if (dbProgToFacMap.has(canonKey)) {
                   const rawFac = dbProgToFacMap.get(canonKey);
                   if (normalizeRawProgramKey(rawFac) !== 'OTRAS') return rawFac;
@@ -15877,13 +15977,19 @@ const renderCategoryBars = (items = [], options = {}) => {
                 if (u.includes('ADMINISTRATIVA') || u.includes('CONTABLE') || u.includes('EMPRESA')) {
                   return { color: '#1d4ed8', bgGrad: 'linear-gradient(135deg, #eff6ff 0%, #dbeafe 100%)', iconSvg: <AccountBalanceIcon sx={{ fontSize: 18, color: '#1d4ed8' }} /> };
                 }
-                if (u.includes('SOCIAL') || u.includes('HUMANA') || u.includes('DERECHO') || u.includes('PSICOLOG')) {
+                if (u.includes('SOCIAL') || u.includes('HUMANA') || u.includes('DERECHO')) {
                   return { color: '#7c3aed', bgGrad: 'linear-gradient(135deg, #f5f3ff 0%, #ede9fe 100%)', iconSvg: <GroupsIcon sx={{ fontSize: 18, color: '#7c3aed' }} /> };
                 }
                 if (u.includes('EDUCACION') || u.includes('LICENCIATURA')) {
                   return { color: '#059669', bgGrad: 'linear-gradient(135deg, #ecfdf5 0%, #d1fae5 100%)', iconSvg: <MenuBookIcon sx={{ fontSize: 18, color: '#059669' }} /> };
                 }
-                return { color: '#0891b2', bgGrad: 'linear-gradient(135deg, #ecfeff 0%, #cffafe 100%)', iconSvg: <EngineeringIcon sx={{ fontSize: 18, color: '#0891b2' }} /> };
+                if (u.includes('SALUD') || u.includes('FISIOTERAPIA') || u.includes('PSICOLOG')) {
+                  return { color: '#e11d48', bgGrad: 'linear-gradient(135deg, #fff1f2 0%, #ffe4e6 100%)', iconSvg: <MonitorHeartIcon sx={{ fontSize: 18, color: '#e11d48' }} /> };
+                }
+                if (u.includes('INGENIER')) {
+                  return { color: '#0891b2', bgGrad: 'linear-gradient(135deg, #ecfeff 0%, #cffafe 100%)', iconSvg: <EngineeringIcon sx={{ fontSize: 18, color: '#0891b2' }} /> };
+                }
+                return { color: '#64748b', bgGrad: 'linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%)', iconSvg: <SchoolIcon sx={{ fontSize: 18, color: '#64748b' }} /> };
               };
 
               const cacheKeys = Object.keys(matProgramaCache || {});
@@ -16063,6 +16169,9 @@ const renderCategoryBars = (items = [], options = {}) => {
 
               const resolveFacForProg = (progName) => {
                 const canonKey = normalizeProgramKey(progName);
+                if (canonKey.includes('PSICOLOG') || canonKey.includes('FISIOTERAPIA')) {
+                  return 'Ciencias de la Salud';
+                }
                 if (dbProgToFacMap.has(canonKey)) {
                   const rawFac = dbProgToFacMap.get(canonKey);
                   if (normalizeRawProgramKey(rawFac) !== 'OTRAS') return rawFac;
@@ -16080,13 +16189,19 @@ const renderCategoryBars = (items = [], options = {}) => {
                 if (u.includes('ADMINISTRATIVA') || u.includes('CONTABLE') || u.includes('EMPRESA')) {
                   return { color: '#1d4ed8', bgGrad: 'linear-gradient(135deg, #eff6ff 0%, #dbeafe 100%)', iconSvg: <AccountBalanceIcon sx={{ fontSize: 16, color: '#1d4ed8' }} /> };
                 }
-                if (u.includes('SOCIAL') || u.includes('HUMANA') || u.includes('DERECHO') || u.includes('PSICOLOG')) {
+                if (u.includes('SOCIAL') || u.includes('HUMANA') || u.includes('DERECHO')) {
                   return { color: '#7c3aed', bgGrad: 'linear-gradient(135deg, #f5f3ff 0%, #ede9fe 100%)', iconSvg: <GroupsIcon sx={{ fontSize: 16, color: '#7c3aed' }} /> };
                 }
                 if (u.includes('EDUCACION') || u.includes('LICENCIATURA')) {
                   return { color: '#059669', bgGrad: 'linear-gradient(135deg, #ecfdf5 0%, #d1fae5 100%)', iconSvg: <MenuBookIcon sx={{ fontSize: 16, color: '#059669' }} /> };
                 }
-                return { color: '#0891b2', bgGrad: 'linear-gradient(135deg, #ecfeff 0%, #cffafe 100%)', iconSvg: <EngineeringIcon sx={{ fontSize: 16, color: '#0891b2' }} /> };
+                if (u.includes('SALUD') || u.includes('FISIOTERAPIA') || u.includes('PSICOLOG')) {
+                  return { color: '#e11d48', bgGrad: 'linear-gradient(135deg, #fff1f2 0%, #ffe4e6 100%)', iconSvg: <MonitorHeartIcon sx={{ fontSize: 16, color: '#e11d48' }} /> };
+                }
+                if (u.includes('INGENIER')) {
+                  return { color: '#0891b2', bgGrad: 'linear-gradient(135deg, #ecfeff 0%, #cffafe 100%)', iconSvg: <EngineeringIcon sx={{ fontSize: 16, color: '#0891b2' }} /> };
+                }
+                return { color: '#64748b', bgGrad: 'linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%)', iconSvg: <SchoolIcon sx={{ fontSize: 16, color: '#64748b' }} /> };
               };
 
               const buildCompactMatTableData = () => {

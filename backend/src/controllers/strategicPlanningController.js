@@ -17,13 +17,34 @@ const {
 const { generateActaBuffer } = require('../services/actaExportService');
 const { generateStrategicMinutePdf } = require('../services/strategicMinutePdfService');
 const { generatePlanAccionBuffer } = require('../services/planAccionExportService');
-const { sendInstitutionalEmail } = require('../services/emailService');
+const { sendInstitutionalEmail, renderInstitutionalTemplate, escapeHtml } = require('../services/emailService');
 const { ensureStrategicPlanningDefaults, DEFAULT_WORKFLOW, DEFAULT_FIELDS } = require('../services/strategicPlanningBootstrap');
 const { sha256, cleanCode, audit, transitionPlan, saveActionItem, upsertMonitoring, findActionPlans } = require('../services/strategicPlanningDomainService');
 const { enqueueSync, reconcileTerm } = require('../services/strategicPlanningDriveService');
 const { buildReferenceWorkbook, previewReferenceImport, confirmReferenceImport } = require('../services/strategicReferenceService');
 const { buildPedSchedule } = require('../services/strategicPlanSetupService');
 const { buildDynamicActionItemWorkbook, previewDynamicActionItems, confirmDynamicActionItems } = require('../services/strategicDynamicWorkbookService');
+const { previewFieldSchemaImport, confirmFieldSchemaImport } = require('../services/strategicFieldSchemaService');
+const {
+  listTermDependencies, buildTermDependencyWorkbook, previewTermDependencyImport,
+  confirmTermDependencyImport, addTermDependency, removeTermDependency
+} = require('../services/strategicTermDependencyService');
+const { captureActionPlanSchema } = require('../services/strategicActionPlanSchemaService');
+const { improveStrategicMinuteText, generateStrategicMinuteSummary } = require('../services/strategicMinuteWritingService');
+
+const PLANNING_DEPARTMENT_NAME = 'Dirección de Planeación y Aseguramiento de la Calidad';
+
+const ensureActionPlanSchemaSnapshot = async (actionPlan, transaction = null) => {
+  if (actionPlan.metadata?.form_schema) return actionPlan.metadata.form_schema;
+  const term = await StrategicTerm.findByPk(actionPlan.term_id, { transaction });
+  if (!term) throw Object.assign(new Error('La vigencia del Plan de Acción no existe.'), { statusCode: 404 });
+  const formSchema = await captureActionPlanSchema(term.strategic_plan_id, transaction);
+  await actionPlan.update({
+    metadata: { ...(actionPlan.metadata || {}), form_schema: formSchema },
+    instrument_version: formSchema.configuration_version
+  }, { transaction });
+  return formSchema;
+};
 
 // La carpeta .private vive dentro del volumen respaldado de uploads, pero Express
 // no publica directorios con punto. Todo acceso se hace mediante endpoints con auth.
@@ -35,6 +56,19 @@ const fail = (res, error) => res.status(error.statusCode || 500).json({ success:
 const wrap = (fn) => async (req, res) => { try { await fn(req, res); } catch (error) { console.error('PEI:', error); fail(res, error); } };
 const hashObject = (value) => sha256(Buffer.from(JSON.stringify(value)));
 const randomToken = (bytes = 32) => crypto.randomBytes(bytes).toString('base64url');
+const safeWebOrigin = (value) => {
+  try {
+    const url = new URL(String(value || ''));
+    return ['http:', 'https:'].includes(url.protocol) ? url.origin : null;
+  } catch (_) { return null; }
+};
+const signingFrontendOrigin = (req) => (
+  safeWebOrigin(req.body?.public_base_url)
+  || safeWebOrigin(process.env.PUBLIC_FRONTEND_URL)
+  || safeWebOrigin(process.env.FRONTEND_URL)
+  || safeWebOrigin(req.get('origin'))
+  || `${req.protocol}://${req.get('host')}`
+);
 const parseDataUrl = (value) => {
   const match = String(value || '').match(/^data:image\/(png|jpeg);base64,([a-zA-Z0-9+/=]+)$/);
   if (!match) throw Object.assign(new Error('La firma debe enviarse como imagen PNG o JPEG.'), { statusCode: 422 });
@@ -210,7 +244,21 @@ const updatePlan = wrap(async (req, res) => {
 const deletePlan = wrap(async (req, res) => {
   const plan = await StrategicPlan.findByPk(req.params.id);
   if (!plan || plan.deleted_at) throw Object.assign(new Error('PED no encontrado.'), { statusCode: 404 });
-  throw Object.assign(new Error('Los PED forman parte del historial institucional y no se pueden eliminar. Puede consultarlos, editarlos o cerrarlos.'), { statusCode: 409 });
+  if (plan.status !== 'draft') {
+    throw Object.assign(new Error('Solo se pueden eliminar PED en estado Borrador. Los PED activos, cerrados o históricos permanecen protegidos.'), { statusCode: 409 });
+  }
+  const previous = plan.toJSON();
+  await sequelize.transaction(async (transaction) => {
+    const deletedCode = `${String(plan.code).slice(0, 22)}-DEL-${Date.now().toString(36)}`;
+    await plan.update({
+      code: deletedCode,
+      deleted_at: new Date(),
+      updated_by: req.user.id,
+      settings: { ...(plan.settings || {}), deleted_original_code: previous.code }
+    }, { transaction });
+    await audit(req, 'strategic_plan.delete_draft', 'strategic_plan', plan.id, previous, plan.toJSON(), 'Retiro de PED en borrador', transaction);
+  });
+  ok(res, { id: plan.id }, 'PED en borrador eliminado correctamente.');
 });
 
 const createLevel = wrap(async (req, res) => {
@@ -320,6 +368,23 @@ const deleteFieldDefinition = wrap(async (req, res) => {
   ok(res, { id: field.id }, 'Campo eliminado de forma lógica.');
 });
 
+const previewFieldSchema = wrap(async (req, res) => {
+  if (!req.file) throw Object.assign(new Error('Seleccione el Excel del formato que desea convertir en campos.'), { statusCode: 422 });
+  const batch = await previewFieldSchemaImport({ strategicPlanId: req.params.planId, file: req.file, userId: req.user.id });
+  ok(res, batch, 'Encabezados detectados. Revise los campos antes de crear la tabla del PED.');
+});
+
+const confirmFieldSchema = wrap(async (req, res) => {
+  const batch = await confirmFieldSchemaImport({
+    importId: req.params.importId,
+    userId: req.user.id,
+    fields: req.body.fields,
+    replaceExisting: req.body.replace_existing === true
+  });
+  await audit(req, 'field_schema_import.confirm', 'reference_import', batch.id, null, batch.summary);
+  ok(res, batch, 'La tabla dinámica del PED fue creada con los campos seleccionados.');
+});
+
 const listStructure = wrap(async (req, res) => ok(res, await StrategicElement.findAll({
   where: { strategic_plan_id: req.params.planId, deleted_at: null },
   include: [{ model: StrategicLevel, as: 'level' }, { model: StrategicElement, as: 'children', required: false }],
@@ -394,6 +459,56 @@ const leaderOptions = wrap(async (req, res) => {
   })));
 });
 
+const termDependencies = wrap(async (req, res) => {
+  const rows = await listTermDependencies({ planId: req.params.planId, termId: req.query.termId || null });
+  ok(res, rows);
+});
+
+const lookupMeetingParticipant = wrap(async (req, res) => {
+  const plan = await StrategicPlan.findByPk(req.params.planId, { attributes: ['id'] });
+  if (!plan) throw Object.assign(new Error('PED no encontrado.'), { statusCode: 404 });
+  const document = String(req.query.document || '').trim();
+  if (!document) throw Object.assign(new Error('Digite la cédula del participante.'), { statusCode: 422 });
+  const user = await User.findOne({
+    where: { username: document, estado: 'activo' },
+    attributes: ['id', 'username', 'nombre', 'email', 'dependencia', 'vicerrectoria', 'cargo']
+  });
+  if (!user) throw Object.assign(new Error('No se encontró un usuario activo con esta cédula en SIAC.'), { statusCode: 404 });
+  ok(res, {
+    id: user.id, document: user.username, name: user.nombre, email: user.email,
+    dependency: user.dependencia, viceRectorate: user.vicerrectoria, position: user.cargo
+  });
+});
+
+const downloadTermDependencyTemplate = wrap(async (req, res) => {
+  const buffer = await buildTermDependencyWorkbook(req.params.termId);
+  res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+  res.setHeader('Content-Disposition', `attachment; filename="DEPENDENCIAS_VIGENCIA_${req.params.termId}.xlsx"`);
+  res.send(Buffer.from(buffer));
+});
+
+const termDependencyPreview = wrap(async (req, res) => {
+  if (!req.file) throw Object.assign(new Error('Seleccione la plantilla Excel de la vigencia.'), { statusCode: 422 });
+  const batch = await previewTermDependencyImport({ termId: req.params.termId, file: req.file, userId: req.user.id });
+  ok(res, batch, 'Revise el cruce con SIAC. Todav\u00eda no se ha modificado la vigencia.');
+});
+
+const termDependencyConfirm = wrap(async (req, res) => {
+  const batch = await confirmTermDependencyImport({ importId: req.params.importId, userId: req.user.id });
+  await audit(req, 'term_dependencies.confirm', 'reference_import', batch.id, null, batch.summary);
+  ok(res, batch, 'Dependencias de la vigencia actualizadas.');
+});
+
+const createTermDependency = wrap(async (req, res) => {
+  const row = await addTermDependency({ termId: req.params.termId, dependencyName: req.body.dependency, document: req.body.document, userId: req.user.id });
+  res.status(201); ok(res, row, 'Dependencia vinculada a la vigencia.');
+});
+
+const deleteTermDependency = wrap(async (req, res) => {
+  const row = await removeTermDependency({ termId: req.params.termId, assignmentId: req.params.assignmentId, userId: req.user.id });
+  ok(res, row, 'Dependencia retirada de esta vigencia.');
+});
+
 const transferLeader = wrap(async (req, res) => {
   const actionPlan = await StrategicActionPlan.findByPk(req.params.id, { include: [{ model: StrategicTerm, as: 'term' }, { model: StrategicCatalogItem, as: 'organizationalUnit' }] });
   const nextUser = await User.findOne({ where: { id: req.body.user_id, estado: 'activo' } });
@@ -447,16 +562,37 @@ const listActionPlans = wrap(async (req, res) => ok(res, await findActionPlans(r
 const getActionPlan = wrap(async (req, res) => {
   const actionPlan = await StrategicActionPlan.findByPk(req.params.id, {
     include: [
-      { model: StrategicTerm, as: 'term', include: [{ model: StrategicPlan, as: 'strategicPlan' }, { model: StrategicMonitoringPeriod, as: 'monitoringPeriods' }] },
+      { model: StrategicTerm, as: 'term', include: [{ model: StrategicPlan, as: 'strategicPlan' }, { model: StrategicMonitoringPeriod, as: 'monitoringPeriods', separate: true, order: [['position', 'ASC']] }] },
       { model: StrategicCatalogItem, as: 'organizationalUnit' },
       { model: StrategicResponsibility, as: 'currentResponsibility', required: false, include: [{ model: StrategicCatalogItem, as: 'position', required: false }, { model: User, as: 'responsibleUser', attributes: ['id', 'nombre', 'email', 'dependencia', 'cargo'], required: false }] },
-      { model: StrategicResponsibility, as: 'responsibilityHistory', required: false, include: [{ model: StrategicCatalogItem, as: 'position', required: false }, { model: User, as: 'responsibleUser', attributes: ['id', 'nombre', 'email', 'dependencia', 'cargo'], required: false }] },
-      { model: StrategicActionItem, as: 'items', where: { deleted_at: null }, required: false, include: [{ model: StrategicMonitoringResult, as: 'monitoringResults', required: false }, { model: StrategicEvidence, as: 'evidence', required: false }] },
-      { model: StrategicWorkflowEvent, as: 'workflowEvents', required: false },
-      { model: StrategicMeeting, as: 'meetings', required: false, include: [{ model: StrategicMeetingParticipant, as: 'participants', required: false }, { model: StrategicMinuteVersion, as: 'minuteVersions', required: false }] }
+      { model: StrategicResponsibility, as: 'responsibilityHistory', required: false, separate: true, include: [{ model: StrategicCatalogItem, as: 'position', required: false }, { model: User, as: 'responsibleUser', attributes: ['id', 'nombre', 'email', 'dependencia', 'cargo'], required: false }] },
+      { model: StrategicActionItem, as: 'items', where: { deleted_at: null }, required: false, separate: true, order: [['code', 'ASC']], include: [{ model: StrategicMonitoringResult, as: 'monitoringResults', required: false, separate: true }, { model: StrategicEvidence, as: 'evidence', required: false, separate: true }] },
+      { model: StrategicWorkflowEvent, as: 'workflowEvents', required: false, separate: true, order: [['created_at', 'ASC']] },
+      { model: StrategicMeeting, as: 'meetings', required: false, separate: true, order: [['starts_at', 'DESC']], include: [{ model: StrategicMeetingParticipant, as: 'participants', required: false, separate: true, include: [{ model: User, as: 'user', attributes: ['id', 'username'], required: false }] }, { model: StrategicMinuteVersion, as: 'minuteVersions', required: false, separate: true, include: [{ model: StrategicMinuteSignature, as: 'signatures', required: false }] }] }
     ]
   });
   if (!actionPlan || actionPlan.deleted_at) throw Object.assign(new Error('Plan de Acción no encontrado.'), { statusCode: 404 });
+  const storedSchema = actionPlan.metadata?.form_schema;
+  actionPlan.setDataValue('form_schema', storedSchema || await captureActionPlanSchema(actionPlan.term.strategic_plan_id));
+  actionPlan.setDataValue('schema_is_snapshot', Boolean(storedSchema));
+  for (const meeting of actionPlan.meetings || []) {
+    for (const minute of meeting.minuteVersions || []) {
+      for (const signature of minute.signatures || []) {
+        const storageKey = signature.signature_storage_key;
+        if (storageKey && fs.existsSync(storageKey)) {
+          const stats = fs.statSync(storageKey);
+          if (stats.isFile() && stats.size <= 2 * 1024 * 1024) {
+            const mime = /\.jpe?g$/i.test(storageKey) ? 'image/jpeg' : 'image/png';
+            signature.setDataValue('signature_preview', `data:${mime};base64,${fs.readFileSync(storageKey).toString('base64')}`);
+          }
+        }
+        // La ruta privada del archivo nunca debe salir en la respuesta de la API.
+        signature.setDataValue('signature_storage_key', null);
+        signature.setDataValue('ip_address', null);
+        signature.setDataValue('user_agent', null);
+      }
+    }
+  }
   ok(res, actionPlan);
 });
 
@@ -466,6 +602,11 @@ const createActionPlan = wrap(async (req, res) => {
   const responsible = req.body.responsible_user_id ? await User.findOne({ where: { id: req.body.responsible_user_id, estado: 'activo' } }) : null;
   if (!term || !unit || !responsible) throw Object.assign(new Error('El año, la dependencia y el líder activo son obligatorios.'), { statusCode: 422 });
   if (String(unit.strategic_plan_id) !== String(term.strategic_plan_id)) throw Object.assign(new Error('La dependencia seleccionada no pertenece al PED del año elegido.'), { statusCode: 422 });
+  const annualAssignment = await StrategicResponsibility.findOne({ where: { term_id: term.id, catalog_item_id: unit.id, action_plan_id: null, responsibility_type: 'reference_leader', status: 'active' } });
+  if (!annualAssignment) throw Object.assign(new Error(`Primero configure la dependencia ${unit.name} en la vigencia ${term.year}.`), { statusCode: 422 });
+  if (String(annualAssignment.user_id) !== String(responsible.id)) throw Object.assign(new Error('El responsable no coincide con el configurado para esta dependencia y vigencia. Actualícelo primero en el paso 3.'), { statusCode: 422 });
+  const existingForDependency = await StrategicActionPlan.findOne({ where: { term_id: term.id, catalog_item_id: unit.id, deleted_at: null } });
+  if (existingForDependency) throw Object.assign(new Error(`La dependencia ${unit.name} ya tiene un Plan de Acción para ${term.year}. Ábralo desde la tarjeta correspondiente.`), { statusCode: 409 });
   const baseCode = cleanCode(req.body.code || `${term.year}-${unit.code}`);
   let code = baseCode;
   let sequence = 2;
@@ -474,11 +615,12 @@ const createActionPlan = wrap(async (req, res) => {
     sequence += 1;
   }
   const created = await sequelize.transaction(async (transaction) => {
+    const formSchema = await captureActionPlanSchema(term.strategic_plan_id, transaction);
     const action = await StrategicActionPlan.create({
     term_id: term.id, catalog_item_id: unit.id, responsible_user_id: responsible.id,
     code, title: req.body.title || `Plan de Acción ${unit.name} ${term.year}`, status: 'convocation',
     workflow_version: term.strategicPlan.configuration_version, instrument_version: term.strategicPlan.configuration_version,
-    metadata: req.body.metadata || {}, created_by: req.user.id, updated_by: req.user.id
+    metadata: { ...(req.body.metadata || {}), form_schema: formSchema }, created_by: req.user.id, updated_by: req.user.id
     }, { transaction });
     if (responsible) {
       const responsibility = await StrategicResponsibility.create({ term_id: term.id, catalog_item_id: unit.id, action_plan_id: action.id, position_catalog_item_id: req.body.position_catalog_item_id || null, user_id: responsible.id, responsibility_type: 'action_plan_leader', starts_on: new Date().toISOString().slice(0, 10), status: 'active', created_by: req.user.id }, { transaction });
@@ -495,7 +637,10 @@ const updateActionPlan = wrap(async (req, res) => {
   const actionPlan = await StrategicActionPlan.findByPk(req.params.id);
   if (!actionPlan || actionPlan.deleted_at) throw Object.assign(new Error('Plan no encontrado.'), { statusCode: 404 });
   const previous = actionPlan.toJSON();
-  await actionPlan.update({ title: req.body.title ?? actionPlan.title, responsible_user_id: req.body.responsible_user_id ?? actionPlan.responsible_user_id, metadata: req.body.metadata ? { ...actionPlan.metadata, ...req.body.metadata } : actionPlan.metadata, updated_by: req.user.id });
+  const protectedMetadata = req.body.metadata
+    ? { ...actionPlan.metadata, ...req.body.metadata, form_schema: actionPlan.metadata?.form_schema }
+    : actionPlan.metadata;
+  await actionPlan.update({ title: req.body.title ?? actionPlan.title, responsible_user_id: req.body.responsible_user_id ?? actionPlan.responsible_user_id, metadata: protectedMetadata, updated_by: req.user.id });
   await audit(req, 'action_plan.update', 'action_plan', actionPlan.id, previous, actionPlan.toJSON(), req.body.justification);
   ok(res, actionPlan);
 });
@@ -503,10 +648,14 @@ const updateActionPlan = wrap(async (req, res) => {
 const addActionItem = wrap(async (req, res) => {
   const actionPlan = await StrategicActionPlan.findByPk(req.params.id);
   if (!actionPlan) throw Object.assign(new Error('Plan no encontrado.'), { statusCode: 404 });
+  await ensureActionPlanSchemaSnapshot(actionPlan);
   const item = await saveActionItem({ req, actionPlan, payload: req.body }); res.status(201); ok(res, item);
 });
 
 const downloadDynamicItemTemplate = wrap(async (req, res) => {
+  const actionPlan = await StrategicActionPlan.findByPk(req.params.id);
+  if (!actionPlan || actionPlan.deleted_at) throw Object.assign(new Error('Plan de Acción no encontrado.'), { statusCode: 404 });
+  await ensureActionPlanSchemaSnapshot(actionPlan);
   const { buffer, code } = await buildDynamicActionItemWorkbook(req.params.id);
   res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
   res.setHeader('Content-Disposition', `attachment; filename="PLANTILLA_DINAMICA_${cleanCode(code)}.xlsx"`);
@@ -515,6 +664,9 @@ const downloadDynamicItemTemplate = wrap(async (req, res) => {
 
 const previewDynamicItems = wrap(async (req, res) => {
   if (!req.file) throw Object.assign(new Error('Seleccione la plantilla dinámica en formato .xlsx.'), { statusCode: 422 });
+  const actionPlan = await StrategicActionPlan.findByPk(req.params.id);
+  if (!actionPlan || actionPlan.deleted_at) throw Object.assign(new Error('Plan de Acción no encontrado.'), { statusCode: 404 });
+  await ensureActionPlanSchemaSnapshot(actionPlan);
   ok(res, await previewDynamicActionItems({ actionPlanId: req.params.id, file: req.file, userId: req.user.id }), 'Vista previa generada. Todavía no se modificaron registros.');
 });
 
@@ -524,14 +676,15 @@ const confirmDynamicItems = wrap(async (req, res) => {
 
 const updateActionItem = wrap(async (req, res) => {
   const item = await StrategicActionItem.findByPk(req.params.itemId);
-  if (!item) throw Object.assign(new Error('Actividad no encontrada.'), { statusCode: 404 });
+  if (!item || String(item.action_plan_id) !== String(req.params.id)) throw Object.assign(new Error('Actividad no encontrada en este Plan de Acción.'), { statusCode: 404 });
   const actionPlan = await StrategicActionPlan.findByPk(item.action_plan_id);
+  await ensureActionPlanSchemaSnapshot(actionPlan);
   ok(res, await saveActionItem({ req, actionPlan, payload: req.body, item }));
 });
 
 const deleteActionItem = wrap(async (req, res) => {
   const item = await StrategicActionItem.findByPk(req.params.itemId);
-  if (!item) throw Object.assign(new Error('Actividad no encontrada.'), { statusCode: 404 });
+  if (!item || String(item.action_plan_id) !== String(req.params.id)) throw Object.assign(new Error('Actividad no encontrada en este Plan de Acción.'), { statusCode: 404 });
   const previous = item.toJSON(); await item.update({ deleted_at: new Date(), status: 'deleted', updated_by: req.user.id });
   await audit(req, 'action_item.soft_delete', 'action_item', item.id, previous, item.toJSON(), req.body?.justification);
   ok(res, null, 'Actividad eliminada lógicamente.');
@@ -562,12 +715,73 @@ const createMeeting = wrap(async (req, res) => {
   res.status(201); ok(res, meeting, 'Reunión creada.');
 });
 
+const improveMinuteText = wrap(async (req, res) => {
+  const actionPlan = await StrategicActionPlan.findByPk(req.params.id, {
+    include: [{ model: StrategicCatalogItem, as: 'organizationalUnit', required: false }]
+  });
+  if (!actionPlan || actionPlan.deleted_at) throw Object.assign(new Error('Plan de Acción no encontrado.'), { statusCode: 404 });
+
+  const result = await improveStrategicMinuteText({
+    field: req.body.field,
+    text: req.body.text,
+    context: {
+      action_plan: actionPlan.title || actionPlan.code || '',
+      responsible_area: actionPlan.organizationalUnit?.name || '',
+      objective: req.body.context?.objective,
+      development: req.body.context?.development,
+      conclusions: req.body.context?.conclusions
+    }
+  });
+  await audit(req, 'minute_text.improve', 'action_plan', actionPlan.id, null, {
+    field: req.body.field,
+    model: result.model
+  }, 'Asistencia de redacción institucional con IA');
+  ok(res, result, 'Redacción institucional mejorada. Revísela antes de guardar.');
+});
+
+const generateMinuteSummary = wrap(async (req, res) => {
+  const actionPlan = await StrategicActionPlan.findByPk(req.params.id, {
+    include: [
+      { model: StrategicCatalogItem, as: 'organizationalUnit', required: false },
+      { model: StrategicTerm, as: 'term', required: false },
+      { model: StrategicActionItem, as: 'items', where: { deleted_at: null }, required: false, separate: true, order: [['code', 'ASC']] }
+    ]
+  });
+  if (!actionPlan || actionPlan.deleted_at) throw Object.assign(new Error('Plan de Acción no encontrado.'), { statusCode: 404 });
+
+  const activities = (actionPlan.items || []).map((item) => ({
+    codigo: item.code,
+    actividad: item.activity,
+    tipo_indicador: item.indicator_type || '',
+    indicador: item.indicator || '',
+    meta: item.target || '',
+    fecha_inicio: item.starts_on || '',
+    fecha_fin: item.ends_on || '',
+    corresponsables: item.co_responsibles || [],
+    campos_adicionales: item.custom_values || {}
+  }));
+  const result = await generateStrategicMinuteSummary({
+    context: {
+      action_plan: actionPlan.title || actionPlan.code || '',
+      responsible_area: actionPlan.organizationalUnit?.name || '',
+      term: actionPlan.term?.year || '',
+      objective: req.body?.objective || ''
+    },
+    activities
+  });
+  await audit(req, 'minute_summary.generate', 'action_plan', actionPlan.id, null, {
+    model: result.model,
+    activities_analyzed: result.activities_analyzed
+  }, 'Resumen analítico del acta generado con IA');
+  ok(res, result, `Resumen generado a partir de ${result.activities_analyzed} actividades. Revíselo antes de guardar.`);
+});
+
 const minutePayload = async (meeting) => {
   const participants = await StrategicMeetingParticipant.findAll({ where: { meeting_id: meeting.id }, order: [['created_at', 'ASC']] });
   const actionPlan = await StrategicActionPlan.findByPk(meeting.action_plan_id, { include: [{ model: StrategicCatalogItem, as: 'organizationalUnit' }] });
   return {
-    responsables: participants.filter((p) => p.signature_required).map((p) => p.name).join(', '),
-    dependencia: actionPlan?.organizationalUnit?.name || '', lugar: meeting.location || '',
+    responsables: actionPlan?.organizationalUnit?.name || '',
+    dependencia: PLANNING_DEPARTMENT_NAME, lugar: meeting.location || '',
     fecha: new Date(meeting.starts_at).toLocaleDateString('es-CO'),
     horario: `${new Date(meeting.starts_at).toLocaleTimeString('es-CO')} - ${meeting.ends_at ? new Date(meeting.ends_at).toLocaleTimeString('es-CO') : ''}`,
     participantes: participants.map((p) => ({ nombre: p.name, dependencia: p.organization || '', cargo: p.role_title || '' })),
@@ -590,11 +804,15 @@ const createMinuteVersion = wrap(async (req, res) => {
 const publishMinute = wrap(async (req, res) => {
   const minute = await StrategicMinuteVersion.findByPk(req.params.minuteId);
   if (!minute) throw Object.assign(new Error('Acta no encontrada.'), { statusCode: 404 });
+  const canRegenerate = minute.status === 'signing' && req.body.regenerate === true;
+  if (!['draft', 'review'].includes(minute.status) && !canRegenerate) throw Object.assign(new Error('Esta versión del acta ya fue habilitada para firmas o finalizada.'), { statusCode: 409 });
   const pending = await StrategicMinuteProposal.count({ where: { minute_version_id: minute.id, status: 'pending' } });
   if (pending) throw Object.assign(new Error('Hay propuestas de cambio pendientes por resolver.'), { statusCode: 409 });
   const token = randomToken();
   await minute.update({ status: 'signing', public_token_hash: sha256(token), token_expires_at: new Date(Date.now() + 45 * 24 * 60 * 60 * 1000), published_at: new Date() });
-  const baseUrl = String(process.env.FRONTEND_URL || `${req.protocol}://${req.get('host')}`).replace(/\/$/, '');
+  // En producción PUBLIC_FRONTEND_URL debe ser el dominio público. El origen
+  // enviado por la interfaz permite que el mismo flujo funcione en otros entornos.
+  const baseUrl = signingFrontendOrigin(req).replace(/\/$/, '');
   const signingUrl = `${baseUrl}/firmar-acta/${token}`;
   const qr_data_url = await QRCode.toDataURL(signingUrl, { errorCorrectionLevel: 'M', margin: 1, width: 360 });
   ok(res, { minute, signing_url: signingUrl, qr_data_url }, 'Acta congelada y habilitada para firmas.');
@@ -618,16 +836,38 @@ const getPublicMinute = wrap(async (req, res) => {
   const minute = await StrategicMinuteVersion.findOne({ where: { public_token_hash: sha256(req.params.token), status: { [Op.in]: ['signing', 'finalized'] }, token_expires_at: { [Op.gt]: new Date() } } });
   if (!minute) throw Object.assign(new Error('Enlace de firma inválido o vencido.'), { statusCode: 404 });
   const meeting = await StrategicMeeting.findByPk(minute.meeting_id, { include: [{ model: StrategicMeetingParticipant, as: 'participants' }] });
-  ok(res, { id: minute.id, version: minute.version, status: minute.status, content: minute.content, content_hash: minute.content_hash, meeting: { id: meeting.id, starts_at: meeting.starts_at, objective: meeting.objective }, participants: meeting.participants.map((p) => ({ id: p.id, name: p.name, email_hint: p.email ? `${p.email.slice(0, 2)}***@${p.email.split('@')[1]}` : '', participant_type: p.participant_type, signed: p.status === 'signed' })) });
+  ok(res, { id: minute.id, version: minute.version, status: minute.status, content: minute.content, content_hash: minute.content_hash, meeting: { id: meeting.id, starts_at: meeting.starts_at, objective: meeting.objective }, participants: meeting.participants.filter((p) => p.signature_required).map((p) => ({ id: p.id, name: p.name, organization: p.organization || '', role_title: p.role_title || '', email_hint: p.email ? `${p.email.slice(0, 2)}***@${p.email.split('@')[1]}` : '', participant_type: p.participant_type, signed: p.status === 'signed' })) });
 });
 
 const requestExternalOtp = wrap(async (req, res) => {
   const minute = await StrategicMinuteVersion.findOne({ where: { public_token_hash: sha256(req.params.token), status: 'signing', token_expires_at: { [Op.gt]: new Date() } } });
-  const participant = minute && await StrategicMeetingParticipant.findOne({ where: { id: req.body.participant_id, meeting_id: minute.meeting_id, participant_type: 'external' } });
+  const participant = minute && await StrategicMeetingParticipant.findOne({ where: { id: req.body.participant_id, meeting_id: minute.meeting_id, signature_required: true } });
   if (!participant || String(participant.email || '').toLowerCase() !== String(req.body.email || '').trim().toLowerCase()) throw Object.assign(new Error('Los datos no coinciden con la invitación.'), { statusCode: 422 });
   const otp = String(crypto.randomInt(100000, 999999));
   await participant.update({ otp_hash: sha256(otp), otp_expires_at: new Date(Date.now() + 10 * 60 * 1000), otp_attempts: 0 });
-  const sent = await sendInstitutionalEmail({ to: participant.email, subject: 'Código para firmar acta SIAC', text: `Su código temporal es ${otp}. Vence en 10 minutos.` });
+  const signingUrl = `${signingFrontendOrigin(req).replace(/\/$/, '')}/firmar-acta/${encodeURIComponent(req.params.token)}`;
+  const safeName = escapeHtml(participant.name || 'Participante');
+  const html = renderInstitutionalTemplate({
+    title: 'Código para firmar el acta',
+    introHtml: `<p style="margin:0 0 18px;">Hola <strong>${safeName}</strong>. Use este código para confirmar su identidad y registrar su firma:</p>`,
+    bodyHtml: `
+      <div style="margin:0 auto 18px;max-width:360px;padding:20px;text-align:center;background:#eff6ff;border:1px solid #bfdbfe;border-radius:14px;">
+        <div style="margin-bottom:7px;font-size:12px;font-weight:700;letter-spacing:.08em;color:#475569;text-transform:uppercase;">Código de verificación</div>
+        <div style="font-family:Consolas,Monaco,monospace;font-size:34px;font-weight:800;letter-spacing:9px;color:#174ea6;user-select:all;">${otp}</div>
+        <div style="margin-top:8px;font-size:12px;color:#64748b;">Seleccione o mantenga presionado el código para copiarlo.</div>
+      </div>
+      <div style="text-align:center;margin:20px 0;">
+        <a href="${escapeHtml(signingUrl)}" style="display:inline-block;padding:12px 24px;background:#2563eb;color:#ffffff;text-decoration:none;border-radius:9px;font-weight:700;">Abrir y firmar el acta</a>
+      </div>
+      <p style="margin:0;padding:12px 14px;background:#f8fafc;border-radius:9px;color:#475569;font-size:13px;">El código vence en <strong>10 minutos</strong>. Si usted no solicitó esta firma, puede ignorar el mensaje.</p>
+    `
+  });
+  const sent = await sendInstitutionalEmail({
+    to: participant.email,
+    subject: `${otp} · Código para firmar acta SIAC`,
+    text: `Hola ${participant.name || 'participante'}. Su código para firmar el acta es ${otp}. Vence en 10 minutos. Abra el acta: ${signingUrl}`,
+    html
+  });
   if (!sent.success) throw Object.assign(new Error('No fue posible enviar el código al correo.'), { statusCode: 503 });
   ok(res, null, 'Código enviado.');
 });
@@ -676,13 +916,15 @@ const registerUserSignature = wrap(async (req, res) => {
 
 const signExternal = wrap(async (req, res) => {
   const minute = await StrategicMinuteVersion.findOne({ where: { public_token_hash: sha256(req.params.token), status: 'signing', token_expires_at: { [Op.gt]: new Date() } } });
-  const participant = minute && await StrategicMeetingParticipant.findOne({ where: { id: req.body.participant_id, meeting_id: minute.meeting_id, participant_type: 'external' } });
+  const participant = minute && await StrategicMeetingParticipant.findOne({ where: { id: req.body.participant_id, meeting_id: minute.meeting_id, signature_required: true } });
   if (!participant) throw Object.assign(new Error('Participante no válido.'), { statusCode: 404 });
+  if (participant.status === 'signed') throw Object.assign(new Error('Este participante ya firmó el acta.'), { statusCode: 409 });
   if (participant.otp_attempts >= 5 || !participant.otp_expires_at || participant.otp_expires_at < new Date() || participant.otp_hash !== sha256(String(req.body.otp || ''))) {
     await participant.increment('otp_attempts'); throw Object.assign(new Error('Código inválido o vencido.'), { statusCode: 422 });
   }
-  await participant.update({ name: req.body.name || participant.name, organization: req.body.organization || participant.organization, role_title: req.body.role_title || participant.role_title, email_verified_at: new Date(), otp_hash: null, otp_expires_at: null });
-  const signature = await storeSignature({ participant, minute, signatureData: req.body.signature_data, method: 'external_drawn', verified: true, req });
+  // La identidad procede de SIAC/invitación y no se modifica desde el enlace público.
+  await participant.update({ email_verified_at: new Date(), otp_hash: null, otp_expires_at: null });
+  const signature = await storeSignature({ participant, minute, signatureData: req.body.signature_data, signerUserId: participant.user_id, method: participant.user_id ? 'qr_internal_drawn' : 'external_drawn', verified: true, req });
   await participant.update({ status: 'signed' }); ok(res, { id: signature.id }, 'Firma electrónica registrada.');
 });
 
@@ -836,10 +1078,12 @@ const confirmHistorical = wrap(async (req, res) => {
   const term = await StrategicTerm.findByPk(batch.term_id);
   if (!unit || !term) throw Object.assign(new Error('Seleccione una dependencia válida para asociar las filas.'), { statusCode: 422 });
   const actionPlan = await sequelize.transaction(async (transaction) => {
+    const formSchema = await captureActionPlanSchema(term.strategic_plan_id, transaction);
     const [plan] = await StrategicActionPlan.findOrCreate({
       where: { code: cleanCode(req.body.action_plan_code || `${term.year}-${unit.code}`) },
-      defaults: { term_id: term.id, catalog_item_id: unit.id, responsible_user_id: req.body.responsible_user_id || null, title: req.body.title || `Plan de Acción ${unit.name} ${term.year}`, status: 'formulation', metadata: { historical_import_id: batch.id }, created_by: req.user.id, updated_by: req.user.id }, transaction
+      defaults: { term_id: term.id, catalog_item_id: unit.id, responsible_user_id: req.body.responsible_user_id || null, title: req.body.title || `Plan de Acción ${unit.name} ${term.year}`, status: 'formulation', instrument_version: formSchema.configuration_version, metadata: { historical_import_id: batch.id, form_schema: formSchema }, created_by: req.user.id, updated_by: req.user.id }, transaction
     });
+    await ensureActionPlanSchemaSnapshot(plan, transaction);
     for (const row of batch.rows || []) {
       const [item] = await StrategicActionItem.findOrCreate({
         where: { action_plan_id: plan.id, code: cleanCode(row.code) },
@@ -888,10 +1132,11 @@ const listSyncJobs = wrap(async (_req, res) => ok(res, await StrategicSyncJob.fi
 module.exports = {
   bootstrap, listPlans, createPlan, updatePlan, deletePlan, createLevel, updateLevel, deleteLevel,
   createElement, updateElement, deleteElement, listStructure, upsertCatalog, updateCatalog, deleteCatalog,
-  applyInstitutionalTemplate, createFieldDefinition, updateFieldDefinition, deleteFieldDefinition,
-  downloadReferenceTemplate, referencePreview, referenceConfirm, leaderOptions, transferLeader, createTerm, updateTerm, deleteTerm,
+  applyInstitutionalTemplate, createFieldDefinition, updateFieldDefinition, deleteFieldDefinition, previewFieldSchema, confirmFieldSchema,
+  downloadReferenceTemplate, referencePreview, referenceConfirm, leaderOptions, lookupMeetingParticipant, termDependencies, downloadTermDependencyTemplate,
+  termDependencyPreview, termDependencyConfirm, createTermDependency, deleteTermDependency, transferLeader, createTerm, updateTerm, deleteTerm,
   listActionPlans, getActionPlan, createActionPlan, updateActionPlan, addActionItem, downloadDynamicItemTemplate, previewDynamicItems, confirmDynamicItems, updateActionItem, deleteActionItem,
-  transitionActionPlan, saveMonitoring, createMeeting, createMinuteVersion, publishMinute, addProposal, resolveProposal,
+  transitionActionPlan, saveMonitoring, createMeeting, improveMinuteText, generateMinuteSummary, createMinuteVersion, publishMinute, addProposal, resolveProposal,
   getPublicMinute, requestExternalOtp, signInternal, signExternal, registerUserSignature, downloadMinuteWord, downloadMinutePdf, validateMinute, finalizeMinute,
   uploadEvidence, downloadEvidence, retrySync, reconcile, closeTerm, previewBudget, confirmBudget, reverseBudget,
   previewHistorical, confirmHistorical, exportActionPlan, analytics, listAudit, listSyncJobs

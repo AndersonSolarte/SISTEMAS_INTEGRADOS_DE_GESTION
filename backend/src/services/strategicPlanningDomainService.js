@@ -14,6 +14,7 @@ const {
   StrategicMonitoringResult
 } = require('../models');
 const { DEFAULT_WORKFLOW } = require('./strategicPlanningBootstrap');
+const { reconcileLegacyActionPlans } = require('./strategicLegacyActionPlanService');
 
 const sha256 = (value) => crypto.createHash('sha256').update(value).digest('hex');
 const cleanCode = (value, fallback = 'SIN-CODIGO') => String(value || fallback)
@@ -86,7 +87,12 @@ const saveActionItem = async ({ req, actionPlan, payload, item = null }) => sequ
     updated_by: req.user.id
   };
   if (!values.activity) {
-    const err = new Error('La actividad es obligatoria.'); err.statusCode = 422; throw err;
+    const firstCustomVal = Object.values(values.custom_values || {}).find((val) => String(val || '').trim().length > 0);
+    if (firstCustomVal) {
+      values.activity = String(firstCustomVal).trim();
+    } else {
+      const err = new Error('La actividad es obligatoria.'); err.statusCode = 422; throw err;
+    }
   }
   if (item) {
     await StrategicActionItemVersion.create({
@@ -127,6 +133,7 @@ const upsertMonitoring = async ({ req, actionItem, periodId, payload }) => seque
 });
 
 const findActionPlans = async ({ year, termId, status, catalogItemId } = {}) => {
+  await reconcileLegacyActionPlans();
   const termWhere = {};
   if (year) termWhere.year = Number(year);
   const where = { deleted_at: null };

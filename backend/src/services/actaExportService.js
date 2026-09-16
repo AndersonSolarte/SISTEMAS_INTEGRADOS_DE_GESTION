@@ -9,6 +9,7 @@ const {
   TableCell,
   TextRun,
   ImageRun,
+  ExternalHyperlink,
   AlignmentType,
   VerticalAlign,
   WidthType,
@@ -19,7 +20,7 @@ const {
   TableLayoutType
 } = require('docx');
 
-const LOGO_PATH = path.join(__dirname, '..', 'assets', 'logo-cesmag.png');
+const LOGO_PATH = path.join(__dirname, '..', 'assets', 'logo_formatos.jpg');
 
 const ACTA_HEADER = {
   codigo: 'COM-IF-FR-002',
@@ -50,6 +51,7 @@ const textRun = (text, opts = {}) =>
     text: text === undefined || text === null ? '' : String(text),
     bold: Boolean(opts.bold),
     italics: Boolean(opts.italics),
+    underline: opts.underline ? {} : undefined,
     size: opts.size || 20,
     font: opts.font || 'Arial',
     color: opts.color || '000000'
@@ -58,6 +60,7 @@ const textRun = (text, opts = {}) =>
 const paragraph = (runs = [], opts = {}) =>
   new Paragraph({
     alignment: opts.alignment || AlignmentType.LEFT,
+    indent: opts.indent ? { left: opts.indent } : undefined,
     spacing: { before: opts.before || 0, after: opts.after || 0, line: opts.line || 276 },
     children: Array.isArray(runs) ? runs : [runs]
   });
@@ -103,7 +106,8 @@ const sectionHeaderRow = (label, { columns = 4 } = {}) =>
     ]
   });
 
-const buildHeaderTable = () => {
+const buildHeaderTable = (header = {}) => {
+  const resolvedHeader = { ...ACTA_HEADER, ...(header || {}) };
   const logoParagraph = fs.existsSync(LOGO_PATH)
     ? new Paragraph({
         alignment: AlignmentType.CENTER,
@@ -111,7 +115,7 @@ const buildHeaderTable = () => {
         children: [
           new ImageRun({
             data: fs.readFileSync(LOGO_PATH),
-            transformation: { width: 85, height: 85 }
+            transformation: { width: 150, height: 54 }
           })
         ]
       })
@@ -133,7 +137,7 @@ const buildHeaderTable = () => {
             width: columnWidths[1],
             verticalAlign: VerticalAlign.CENTER,
             children: [
-              paragraph(textRun(ACTA_HEADER.titulo, { bold: true, size: 28 }), {
+              paragraph(textRun(resolvedHeader.titulo, { bold: true, size: 28 }), {
                 alignment: AlignmentType.CENTER
               })
             ]
@@ -141,9 +145,9 @@ const buildHeaderTable = () => {
           cell({
             width: columnWidths[2],
             children: [
-              paragraph(textRun(`CÓDIGO: ${ACTA_HEADER.codigo}`, { bold: true, size: 18 })),
-              paragraph(textRun(`VERSIÓN: ${ACTA_HEADER.version}`, { bold: true, size: 18 })),
-              paragraph(textRun(`FECHA: ${ACTA_HEADER.fecha}`, { bold: true, size: 18 }))
+              paragraph(textRun(`CÓDIGO: ${resolvedHeader.codigo}`, { bold: true, size: 18 })),
+              paragraph(textRun(`VERSIÓN: ${resolvedHeader.version}`, { bold: true, size: 18 })),
+              paragraph(textRun(`FECHA: ${resolvedHeader.fecha}`, { bold: true, size: 18 }))
             ]
           })
         ]
@@ -246,6 +250,10 @@ const buildParticipantesTable = (participantes = []) => {
 
   for (let i = 0; i < total; i += 1) {
     const p = participantes[i] || {};
+    const signatureMatch = String(p.firma_data_url || '').match(/^data:image\/(?:png|jpeg);base64,([A-Za-z0-9+/=]+)$/);
+    const signatureParagraph = signatureMatch
+      ? new Paragraph({ alignment: AlignmentType.CENTER, spacing: { before: 0, after: 0 }, children: [new ImageRun({ data: Buffer.from(signatureMatch[1], 'base64'), transformation: { width: 105, height: 34 } })] })
+      : paragraph(textRun(p.firma || '', { size: 18 }), { alignment: AlignmentType.CENTER });
     filas.push(new TableRow({
       height: { value: 360, rule: HeightRule.ATLEAST },
       children: [
@@ -263,7 +271,7 @@ const buildParticipantesTable = (participantes = []) => {
         }),
         cell({
           width: columnWidths[3],
-          children: [paragraph(textRun('', { size: 20 }))]
+          children: [signatureParagraph]
         })
       ]
     }));
@@ -304,12 +312,142 @@ const buildParticipantesTable = (participantes = []) => {
   });
 };
 
+const decodeHtml = (value = '') => String(value)
+  .replace(/&nbsp;/gi, ' ')
+  .replace(/&amp;/gi, '&')
+  .replace(/&lt;/gi, '<')
+  .replace(/&gt;/gi, '>')
+  .replace(/&quot;/gi, '"')
+  .replace(/&#39;/gi, "'");
+
+const plainHtml = (value = '') => decodeHtml(String(value).replace(/<br\s*\/?\s*>/gi, '\n').replace(/<[^>]+>/g, '')).trim();
+
+const wordColor = (value = '') => {
+  const hex = String(value).match(/^#([0-9a-f]{6})$/i)?.[1];
+  if (hex) return hex.toUpperCase();
+  const rgb = String(value).match(/^rgb\(\s*(\d{1,3})\s*,\s*(\d{1,3})\s*,\s*(\d{1,3})\s*\)$/i);
+  return rgb ? rgb.slice(1).map((part) => Math.min(255, Number(part)).toString(16).padStart(2, '0')).join('').toUpperCase() : '000000';
+};
+
+const inlineRunsFromHtml = (value = '', { bold: initialBold = false, italics: initialItalics = false, size: initialSize = 20 } = {}) => {
+  const tokens = String(value).split(/(<[^>]+>)/g);
+  let bold = initialBold;
+  let italics = initialItalics;
+  let underline = false;
+  let color = '000000';
+  let font = 'Arial';
+  let size = initialSize;
+  let link = '';
+  const runs = [];
+  for (const token of tokens) {
+    if (/^<(strong|b)(?:\s[^>]*)?>$/i.test(token)) { bold = true; continue; }
+    if (/^<\/(strong|b)>$/i.test(token)) { bold = initialBold; continue; }
+    if (/^<(em|i)(?:\s[^>]*)?>$/i.test(token)) { italics = true; continue; }
+    if (/^<\/(em|i)>$/i.test(token)) { italics = initialItalics; continue; }
+    if (/^<u(?:\s[^>]*)?>$/i.test(token)) { underline = true; continue; }
+    if (/^<\/u>$/i.test(token)) { underline = false; continue; }
+    if (/^<a\b/i.test(token)) { link = /href=["']([^"']+)["']/i.exec(token)?.[1] || ''; underline = true; color = '1D5FD1'; continue; }
+    if (/^<\/a>$/i.test(token)) { link = ''; underline = false; color = '000000'; continue; }
+    if (/^<(font|span)\b/i.test(token)) {
+      const rawColor = /color\s*:\s*([^;"']+)/i.exec(token)?.[1] || /\bcolor=["']([^"']+)["']/i.exec(token)?.[1];
+      const rawFont = /font-family\s*:\s*([^;"']+)/i.exec(token)?.[1] || /\bface=["']([^"']+)["']/i.exec(token)?.[1];
+      const rawSize = /font-size\s*:\s*(\d{1,2})(px|pt)/i.exec(token);
+      const legacySize = Number(/\bsize=["']?([1-7])/i.exec(token)?.[1] || 0);
+      if (rawColor) color = wordColor(rawColor.trim());
+      if (rawFont && /^(Arial|Georgia|Times New Roman|Verdana|sans-serif)$/i.test(rawFont.trim())) font = rawFont.trim();
+      if (rawSize) size = Math.round(Number(rawSize[1]) * (rawSize[2].toLowerCase() === 'px' ? 1.5 : 2));
+      if (legacySize) size = [0, 16, 18, 20, 24, 28, 32, 36][legacySize];
+      continue;
+    }
+    if (/^<\/(font|span)>$/i.test(token)) { color = '000000'; font = 'Arial'; size = initialSize; continue; }
+    if (/^<[^>]+>$/.test(token)) continue;
+    const text = decodeHtml(token.replace(/<br\s*\/?\s*>/gi, '\n').replace(/<[^>]+>/g, ''));
+    if (text) {
+      const run = textRun(text, { size, bold, italics, underline, color, font });
+      runs.push(link ? new ExternalHyperlink({ link, children: [run] }) : run);
+    }
+  }
+  return runs.length ? runs : [textRun('', { size: 20 })];
+};
+
+const alignmentFromAttributes = (attributes = '') => {
+  const alignment = /text-align\s*:\s*(left|center|right|justify)/i.exec(attributes)?.[1]?.toLowerCase();
+  return alignment === 'center' ? AlignmentType.CENTER
+    : alignment === 'right' ? AlignmentType.RIGHT
+      : alignment === 'justify' ? AlignmentType.JUSTIFIED
+        : AlignmentType.LEFT;
+};
+
+const richTableFromHtml = (html = '') => {
+  const rows = [];
+  for (const rowMatch of String(html).matchAll(/<tr[^>]*>([\s\S]*?)<\/tr>/gi)) {
+    const cells = [];
+    for (const cellMatch of rowMatch[1].matchAll(/<(th|td)([^>]*)>([\s\S]*?)<\/\1>/gi)) {
+      const isHeader = cellMatch[1].toLowerCase() === 'th';
+      cells.push(cell({
+        shading: isHeader ? LIGHT_GRAY : undefined,
+        children: [paragraph(inlineRunsFromHtml(cellMatch[3], { bold: isHeader }), { alignment: alignmentFromAttributes(cellMatch[2]) })]
+      }));
+    }
+    if (cells.length) rows.push(new TableRow({ children: cells }));
+  }
+  if (!rows.length) return null;
+  return new Table({
+    width: { size: 100, type: WidthType.PERCENTAGE },
+    layout: TableLayoutType.FIXED,
+    borders: { top: thin, bottom: thin, left: thin, right: thin, insideHorizontal: thin, insideVertical: thin },
+    rows
+  });
+};
+
+const richParagraphsFromHtml = (html = '') => {
+  const nodes = [];
+  let normalized = String(html);
+  normalized = normalized.replace(/<ol[^>]*>([\s\S]*?)<\/ol>/gi, (_, listBody) => {
+    let index = 0;
+    return [...listBody.matchAll(/<li[^>]*>([\s\S]*?)<\/li>/gi)].map((item) => `<p>${++index}. ${item[1]}</p>`).join('');
+  });
+  normalized = normalized.replace(/<ul[^>]*>([\s\S]*?)<\/ul>/gi, (_, listBody) => [...listBody.matchAll(/<li[^>]*>([\s\S]*?)<\/li>/gi)].map((item) => `<p>• ${item[1]}</p>`).join(''));
+  normalized = normalized.replace(/<hr\s*\/?\s*>/gi, '<p>────────────────────────</p>').replace(/<br\s*\/?\s*>/gi, '<p></p>');
+  const blockPattern = /<(h2|h3|p|div|li|blockquote)([^>]*)>([\s\S]*?)<\/\1>/gi;
+  let cursor = 0;
+  for (const match of normalized.matchAll(blockPattern)) {
+    const before = normalized.slice(cursor, match.index);
+    if (plainHtml(before)) nodes.push(paragraph(inlineRunsFromHtml(before)));
+    const tag = match[1].toLowerCase();
+    const prefix = tag === 'li' ? [textRun('• ', { bold: true, size: 20 })] : tag === 'blockquote' ? [textRun('“ ', { bold: true, size: 22, color: '64748B' })] : [];
+    const indentPixels = Number(/margin-left\s*:\s*(\d{1,3})px/i.exec(match[2])?.[1] || 0);
+    nodes.push(paragraph([...prefix, ...inlineRunsFromHtml(match[3], { bold: tag === 'h2' || tag === 'h3', italics: tag === 'blockquote', size: tag === 'h2' || tag === 'h3' ? 24 : 20 })], {
+      alignment: alignmentFromAttributes(match[2]),
+      indent: indentPixels ? indentPixels * 15 : tag === 'blockquote' ? 360 : 0,
+      before: tag === 'h2' || tag === 'h3' ? 80 : 0,
+      after: 40
+    }));
+    cursor = match.index + match[0].length;
+  }
+  const after = normalized.slice(cursor);
+  if (plainHtml(after)) nodes.push(paragraph(inlineRunsFromHtml(after)));
+  return nodes;
+};
+
+const richContentNodes = (bodyLines = []) => {
+  const source = (Array.isArray(bodyLines) ? bodyLines : [bodyLines]).filter(Boolean).join('<br>');
+  if (!source) return [paragraph(textRun('', { size: 20 }))];
+  if (!/<[a-z][\s\S]*>/i.test(source)) return source.split(/\r?\n/).map((line) => paragraph(textRun(line, { size: 20 }), { alignment: AlignmentType.JUSTIFIED }));
+  const nodes = [];
+  for (const segment of source.split(/(<table[^>]*>[\s\S]*?<\/table>)/gi)) {
+    if (!segment) continue;
+    if (/^<table/i.test(segment)) {
+      const table = richTableFromHtml(segment);
+      if (table) nodes.push(table);
+    } else nodes.push(...richParagraphsFromHtml(segment));
+  }
+  return nodes.length ? nodes : [paragraph(textRun(plainHtml(source), { size: 20 }))];
+};
+
 const buildBlockTable = (title, bodyLines = []) => {
   const columnWidths = [CONTENT_WIDTH_TWIPS];
-  const lines = bodyLines.length ? bodyLines : [''];
-  const paragraphs = lines.map((line) =>
-    paragraph(textRun(line, { size: 20 }), { alignment: AlignmentType.JUSTIFIED })
-  );
+  const contentNodes = richContentNodes(bodyLines);
 
   return buildTable({
     columnWidths,
@@ -321,7 +459,7 @@ const buildBlockTable = (title, bodyLines = []) => {
           cell({
             width: columnWidths[0],
             verticalAlign: VerticalAlign.TOP,
-            children: paragraphs
+            children: contentNodes
           })
         ]
       })
@@ -341,11 +479,12 @@ const buildActaDocument = (payload = {}) => {
     participantes = [],
     objetivo = [],
     desarrollo = [],
-    conclusiones = []
+    conclusiones = [],
+    header = null
   } = payload;
 
   const children = [
-    buildHeaderTable(),
+    buildHeaderTable(header),
     buildBasicsTable({ responsables, dependencia }),
     buildInformacionReunionTable({ lugar, fecha, horario }),
     buildParticipantesTable(participantes),

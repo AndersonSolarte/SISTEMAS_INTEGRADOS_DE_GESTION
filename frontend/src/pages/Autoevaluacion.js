@@ -158,7 +158,7 @@ const PROGRAM_CATALOG = [
   { programa: 'DISENO GRAFICO', codigoSnies: '19062', facultad: 'Arquitectura y Bellas Artes', nivelFormacion: 'Pregrado' },
   { programa: 'ESPECIALIZACION EN ARQUITECTURA Y URBANISMO BIOCLIMATICO', codigoSnies: '108376', facultad: 'Arquitectura y Bellas Artes', nivelFormacion: 'Posgrado' },
   { programa: 'DERECHO', codigoSnies: '52939', facultad: 'Ciencias Sociales y Humanas', nivelFormacion: 'Pregrado' },
-  { programa: 'PSICOLOGIA', codigoSnies: '53874', facultad: 'Ciencias Sociales y Humanas', nivelFormacion: 'Pregrado' },
+  { programa: 'PSICOLOGIA', codigoSnies: '53874', facultad: 'Ciencias de la Salud', nivelFormacion: 'Pregrado' },
   { programa: 'ESPECIALIZACION EN DERECHO EMPRESARIAL', codigoSnies: '108870', facultad: 'Ciencias Sociales y Humanas', nivelFormacion: 'Posgrado' },
   { programa: 'LICENCIATURA EN EDUCACION FISICA', codigoSnies: '16489', facultad: 'Educacion', nivelFormacion: 'Pregrado' },
   { programa: 'LICENCIATURA EN EDUCACION INFANTIL', codigoSnies: '106286', facultad: 'Educacion', nivelFormacion: 'Pregrado' },
@@ -170,7 +170,8 @@ const PROGRAM_CATALOG = [
   { programa: 'INGENIERIA INDUSTRIAL', codigoSnies: '118273', facultad: 'Ingenieria', nivelFormacion: 'Pregrado' },
   { programa: 'INGENIERIA FINANCIERA', codigoSnies: '118327', facultad: 'Ingenieria', nivelFormacion: 'Pregrado' },
   { programa: 'ESPECIALIZACION EN BIG DATA', codigoSnies: '117642', facultad: 'Ingenieria', nivelFormacion: 'Posgrado' },
-  { programa: 'ESPECIALIZACION EN SEGURIDAD INFORMATICA', codigoSnies: '117789', facultad: 'Ingenieria', nivelFormacion: 'Posgrado' }
+  { programa: 'ESPECIALIZACION EN SEGURIDAD INFORMATICA', codigoSnies: '117789', facultad: 'Ingenieria', nivelFormacion: 'Posgrado' },
+  { programa: 'FISIOTERAPIA', codigoSnies: '', facultad: 'Ciencias de la Salud', nivelFormacion: 'Pregrado' }
 ];
 
 const FACULTY_OPTIONS = Array.from(new Set((PROGRAM_CATALOG || []).map((item) => item?.facultad).filter(Boolean))).sort((a, b) => String(a).localeCompare(String(b), 'es'));

@@ -286,7 +286,6 @@ const getReposicionPdfInfo = (solicitud = {}) => {
     || '';
   return {
     applies: Boolean(solicitud.reposicion_aplica),
-    requested: Number(solicitud.tiempo_solicitado_minutos || total),
     total,
     paid,
     pending: Math.max(0, total - paid),
@@ -304,10 +303,10 @@ const buildReposicionPdfSection = (solicitud = {}, sectionTitle = 'Informacion d
   const info = getReposicionPdfInfo(solicitud);
   if (!info.applies) return [];
   const rows = [
-    [{ text: 'Tiempo solicitado:', bold: true }, { text: formatMinutes(info.requested) }, { text: 'Jornada diaria:', bold: true }, { text: formatMinutes(info.daily) }],
+    [{ text: 'Jornada diaria:', bold: true }, { text: formatMinutes(info.daily) }, {}, {}],
     [{ text: 'Perfil laboral:', bold: true }, { text: info.profileLabel }, { text: 'Nivel de contratacion:', bold: true }, { text: info.contractLevel }],
     [{ text: 'Duracion del permiso:', bold: true }, { text: info.durationLabel }, { text: 'Estado de reposicion:', bold: true }, { text: info.stateLabel }],
-    [{ text: 'Total a reponer:', bold: true }, { text: formatMinutes(info.total) }, { text: 'Saldo pendiente:', bold: true }, { text: formatMinutes(info.pending) }],
+    [{ text: 'Tiempo por reponer:', bold: true }, { text: formatMinutes(info.total) }, { text: 'Saldo pendiente:', bold: true }, { text: formatMinutes(info.pending) }],
     [{ text: 'Tiempo abonado:', bold: true }, { text: formatMinutes(info.paid) }, { text: 'Soporte adjunto:', bold: true }, { text: info.attachmentName || 'No adjuntado' }]
   ];
   const plan = info.reposicion || {};
@@ -1344,11 +1343,6 @@ const buildPdfBuffer = async (solicitud) => {
                   ]);
                 }
                 if (isReposicionType) {
-                  tableBody.push([
-                    { text: 'Tiempo solicitado:', bold: true },
-                    { text: formatMinutes(solicitud.tiempo_solicitado_minutos) },
-                    {}, {}
-                  ]);
                   tableBody.push([
                     { text: 'Detalle/Motivo:', bold: true },
                     { text: motivoStr, colSpan: 3, lineHeight: 1.15 },

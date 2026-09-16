@@ -49,6 +49,7 @@ const Autoevaluacion = require('./Autoevaluacion');
 const AutoevaluacionParticipante = require('./AutoevaluacionParticipante');
 const AutoevaluacionPrograma = require('./AutoevaluacionPrograma');
 const RegistroCalificadoHistorico = require('./RegistroCalificadoHistorico');
+const RegistroCalificadoResolucion = require('./RegistroCalificadoResolucion');
 const InstrumentForm = require('./InstrumentForm');
 const InstrumentSection = require('./InstrumentSection');
 const InstrumentQuestion = require('./InstrumentQuestion');
@@ -69,6 +70,9 @@ const DesplazamientoViaticosSolicitud = require('./DesplazamientoViaticosSolicit
 const ViaticosLegalizacion = require('./ViaticosLegalizacion');
 const SystemSetting = require('./SystemSetting');
 const DatabaseBackupRun = require('./DatabaseBackupRun');
+const DigitalMeetingMinute = require('./DigitalMeetingMinute');
+const DigitalMeetingParticipant = require('./DigitalMeetingParticipant');
+const DigitalMeetingSignature = require('./DigitalMeetingSignature');
 const CronogramaMovilidad = require('./CronogramaMovilidad');
 const CronogramaMovilidadActividad = require('./CronogramaMovilidadActividad');
 const strategicPlanning = require('./StrategicPlanning');
@@ -90,6 +94,17 @@ SubProceso.hasMany(Documento, { foreignKey: 'subproceso_id', as: 'documentos' })
 Documento.belongsTo(SubProceso, { foreignKey: 'subproceso_id', as: 'subproceso' });
 TipoDocumentacion.hasMany(Documento, { foreignKey: 'tipo_documentacion_id', as: 'documentos' });
 Documento.belongsTo(TipoDocumentacion, { foreignKey: 'tipo_documentacion_id', as: 'tipoDocumentacion' });
+
+Documento.hasMany(DigitalMeetingMinute, { foreignKey: 'documento_id', as: 'digitalMeetingMinutes' });
+DigitalMeetingMinute.belongsTo(Documento, { foreignKey: 'documento_id', as: 'documento' });
+User.hasMany(DigitalMeetingMinute, { foreignKey: 'created_by', as: 'digitalMeetingMinutes' });
+DigitalMeetingMinute.belongsTo(User, { foreignKey: 'created_by', as: 'creator' });
+DigitalMeetingMinute.hasMany(DigitalMeetingParticipant, { foreignKey: 'minute_id', as: 'participants', onDelete: 'CASCADE' });
+DigitalMeetingParticipant.belongsTo(DigitalMeetingMinute, { foreignKey: 'minute_id', as: 'minute' });
+DigitalMeetingParticipant.belongsTo(User, { foreignKey: 'user_id', as: 'user' });
+DigitalMeetingMinute.hasMany(DigitalMeetingSignature, { foreignKey: 'minute_id', as: 'signatures', onDelete: 'CASCADE' });
+DigitalMeetingSignature.belongsTo(DigitalMeetingMinute, { foreignKey: 'minute_id', as: 'minute' });
+DigitalMeetingSignature.belongsTo(DigitalMeetingParticipant, { foreignKey: 'participant_id', as: 'participant' });
 
 // Favoritos de documentos
 User.hasMany(DocumentoFavorito, { foreignKey: 'user_id', as: 'favoritos' });
@@ -257,6 +272,10 @@ User.hasMany(RegistroCalificadoHistorico, { foreignKey: 'creado_por', as: 'regis
 RegistroCalificadoHistorico.belongsTo(User, { foreignKey: 'creado_por', as: 'creador' });
 User.hasMany(RegistroCalificadoHistorico, { foreignKey: 'actualizado_por', as: 'registrosCalificadosHistoricoActualizados' });
 RegistroCalificadoHistorico.belongsTo(User, { foreignKey: 'actualizado_por', as: 'actualizador' });
+User.hasMany(RegistroCalificadoResolucion, { foreignKey: 'creado_por', as: 'registrosCalificadosResolucionesCreadas' });
+RegistroCalificadoResolucion.belongsTo(User, { foreignKey: 'creado_por', as: 'creador' });
+User.hasMany(RegistroCalificadoResolucion, { foreignKey: 'actualizado_por', as: 'registrosCalificadosResolucionesActualizadas' });
+RegistroCalificadoResolucion.belongsTo(User, { foreignKey: 'actualizado_por', as: 'actualizador' });
 User.hasMany(InternacionalizacionMovilidad, { foreignKey: 'creado_por', as: 'internacionalizacionMovilidadCreadas' });
 InternacionalizacionMovilidad.belongsTo(User, { foreignKey: 'creado_por', as: 'creador' });
 User.hasMany(InternacionalizacionMovilidad, { foreignKey: 'actualizado_por', as: 'internacionalizacionMovilidadActualizadas' });
@@ -375,6 +394,7 @@ module.exports = {
   AutoevaluacionParticipante,
   AutoevaluacionPrograma,
   RegistroCalificadoHistorico,
+  RegistroCalificadoResolucion,
   InstrumentForm,
   InstrumentSection,
   InstrumentQuestion,
@@ -395,6 +415,9 @@ module.exports = {
   ViaticosLegalizacion,
   SystemSetting,
   DatabaseBackupRun,
+  DigitalMeetingMinute,
+  DigitalMeetingParticipant,
+  DigitalMeetingSignature,
   CronogramaMovilidad,
   CronogramaMovilidadActividad,
   ...strategicPlanning

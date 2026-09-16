@@ -32,7 +32,9 @@ app.use(helmet({
 }));
 app.use(cors(corsOptions));
 app.options('*', cors(corsOptions));
-app.use(express.json({ limit: process.env.JSON_BODY_LIMIT || '1mb' }));
+// Las firmas manuscritas viajan como una imagen Base64. El controlador conserva
+// un límite estricto de 2 MB para la imagen decodificada.
+app.use(express.json({ limit: process.env.JSON_BODY_LIMIT || '3mb' }));
 app.use(express.urlencoded({ extended: false, limit: process.env.URLENCODED_BODY_LIMIT || '256kb' }));
 app.use(morgan('dev'));
 app.use(compression());
@@ -69,6 +71,7 @@ app.use('/api/public/instrumentos', require('./routes/publicInstrumentosRoutes')
 app.use('/api/security', require('./routes/securityRoutes'));
 app.use('/api/reporte-salida', require('./routes/reporteSalidaRoutes'));
 app.use('/api/reportes-salida', require('./routes/reporteSalidaRoutes'));
+app.use('/api/meeting-minutes', require('./routes/meetingMinuteRoutes'));
 app.use('/api/desplazamientos-viaticos', require('./routes/desplazamientoViaticosRoutes'));
 app.use('/api/legalizacion-viaticos', require('./routes/legalizacionViaticosRoutes'));
 app.use('/api/cronograma-movilidad', require('./routes/cronogramaMovilidadRoutes'));
@@ -307,6 +310,7 @@ testConnection()
       const AutoevaluacionParticipante = require('./models/AutoevaluacionParticipante');
       const AutoevaluacionPrograma = require('./models/AutoevaluacionPrograma');
       const RegistroCalificadoHistorico = require('./models/RegistroCalificadoHistorico');
+      const RegistroCalificadoResolucion = require('./models/RegistroCalificadoResolucion');
       const {
         InstrumentForm,
         InstrumentSection,
@@ -326,6 +330,7 @@ testConnection()
       await AutoevaluacionParticipante.sync();
       await AutoevaluacionPrograma.sync();
       await RegistroCalificadoHistorico.sync();
+      await RegistroCalificadoResolucion.sync();
       await InstrumentForm.sync();
       await InstrumentSection.sync();
       await InstrumentQuestion.sync();
@@ -344,6 +349,9 @@ testConnection()
       const ViaticosLegalizacion = require('./models/ViaticosLegalizacion');
       const SystemSetting = require('./models/SystemSetting');
       const DatabaseBackupRun = require('./models/DatabaseBackupRun');
+      const DigitalMeetingMinute = require('./models/DigitalMeetingMinute');
+      const DigitalMeetingParticipant = require('./models/DigitalMeetingParticipant');
+      const DigitalMeetingSignature = require('./models/DigitalMeetingSignature');
       await ReporteSalidaSolicitud.sync();
       await DesplazamientoViaticosSolicitud.sync();
       await ViaticosLegalizacion.sync();
@@ -406,6 +414,26 @@ testConnection()
       await ensureReporteSalidaColumn('correo_sst_enviado_at', { type: DataTypes.DATE, allowNull: true });
       await ensureReporteSalidaColumn('observacion_gestion_humana', { type: DataTypes.TEXT, allowNull: true });
       await SystemSetting.sync();
+      await DigitalMeetingMinute.sync();
+      await DigitalMeetingParticipant.sync();
+      await DigitalMeetingSignature.sync();
+      const meetingMinuteTable = await qi.describeTable('digital_meeting_minutes');
+      if (!meetingMinuteTable.finalized_at) {
+        await qi.addColumn('digital_meeting_minutes', 'finalized_at', { type: DataTypes.DATE, allowNull: true });
+      }
+      if (!meetingMinuteTable.distributed_at) {
+        await qi.addColumn('digital_meeting_minutes', 'distributed_at', { type: DataTypes.DATE, allowNull: true });
+      }
+      if (!meetingMinuteTable.distribution_count) {
+        await qi.addColumn('digital_meeting_minutes', 'distribution_count', { type: DataTypes.INTEGER, allowNull: false, defaultValue: 0 });
+      }
+      const meetingSignatureTable = await qi.describeTable('digital_meeting_signatures');
+      if (!meetingSignatureTable.privacy_accepted_at) {
+        await qi.addColumn('digital_meeting_signatures', 'privacy_accepted_at', { type: DataTypes.DATE, allowNull: true });
+      }
+      if (!meetingSignatureTable.privacy_policy_version) {
+        await qi.addColumn('digital_meeting_signatures', 'privacy_policy_version', { type: DataTypes.STRING(40), allowNull: true });
+      }
       await DatabaseBackupRun.sync();
       const { startDatabaseBackupScheduler } = require('./services/databaseBackupScheduler');
       await startDatabaseBackupScheduler();

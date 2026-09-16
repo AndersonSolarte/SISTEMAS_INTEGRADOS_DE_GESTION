@@ -25,6 +25,7 @@ import TiempoReponer from './pages/TiempoReponer';
 import LegalizacionViaticos from './pages/LegalizacionViaticos';
 import VerificacionReporte from './pages/VerificacionReporte';
 import StrategicMinuteSigning from './pages/StrategicMinuteSigning';
+import MeetingMinuteSigning from './pages/MeetingMinuteSigning';
 import CronogramaMovilidadModule from './components/cronogramaMovilidad/CronogramaMovilidadModule';
 import SessionTimeoutModal from './components/SessionTimeoutModal';
 import AppSnackbar from './components/AppSnackbar';
@@ -96,6 +97,7 @@ function App() {
                 <Route path="/instrumentos/preview/:id" element={<PrivateRoute><InstrumentoPublicView previewMode /></PrivateRoute>} />
                 <Route path="/verificar/:id" element={<VerificacionReporte />} />
                 <Route path="/firmar-acta/:token" element={<StrategicMinuteSigning />} />
+                <Route path="/firmar-acta-reunion/:token" element={<MeetingMinuteSigning />} />
 
                 {/* Rutas protegidas */}
                 <Route path="/dashboard" element={<PrivateRoute><DashboardLayout /></PrivateRoute>}>

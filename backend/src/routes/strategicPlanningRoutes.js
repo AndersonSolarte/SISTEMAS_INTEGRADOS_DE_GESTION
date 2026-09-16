@@ -24,6 +24,8 @@ router.post('/plans/:planId/apply-institutional-template', permit('pei_configura
 router.post('/plans/:planId/fields', permit('pei_configurar'), c.createFieldDefinition);
 router.patch('/plans/:planId/fields/:fieldId', permit('pei_configurar'), c.updateFieldDefinition);
 router.delete('/plans/:planId/fields/:fieldId', permit('pei_configurar'), c.deleteFieldDefinition);
+router.post('/plans/:planId/field-schema/preview', permit('pei_configurar'), upload.single('file'), c.previewFieldSchema);
+router.post('/field-schema-imports/:importId/confirm', permit('pei_configurar'), c.confirmFieldSchema);
 router.post('/plans/:planId/catalog-items', permit('pei_configurar'), c.upsertCatalog);
 router.patch('/plans/:planId/catalog-items/:itemId', permit('pei_configurar'), c.updateCatalog);
 router.delete('/plans/:planId/catalog-items/:itemId', permit('pei_configurar'), c.deleteCatalog);
@@ -31,6 +33,13 @@ router.get('/plans/:planId/reference-template', permit('pei_configurar'), c.down
 router.post('/plans/:planId/reference-imports/preview', permit('pei_configurar'), upload.single('file'), c.referencePreview);
 router.post('/reference-imports/:importId/confirm', permit('pei_configurar'), c.referenceConfirm);
 router.get('/plans/:planId/leader-options', permit('pei_formular'), c.leaderOptions);
+router.get('/plans/:planId/participant-lookup', permit('pei_formular'), c.lookupMeetingParticipant);
+router.get('/plans/:planId/term-dependencies', permit(), c.termDependencies);
+router.get('/terms/:termId/dependencies-template', permit('pei_configurar'), c.downloadTermDependencyTemplate);
+router.post('/terms/:termId/dependencies-import/preview', permit('pei_configurar'), upload.single('file'), c.termDependencyPreview);
+router.post('/term-dependency-imports/:importId/confirm', permit('pei_configurar'), c.termDependencyConfirm);
+router.post('/terms/:termId/dependencies', permit('pei_configurar'), c.createTermDependency);
+router.delete('/terms/:termId/dependencies/:assignmentId', permit('pei_configurar'), c.deleteTermDependency);
 router.post('/plans/:planId/terms', permit('pei_configurar'), c.createTerm);
 router.patch('/terms/:termId', permit('pei_configurar'), c.updateTerm);
 router.delete('/terms/:termId', permit('pei_configurar'), c.deleteTerm);
@@ -51,6 +60,8 @@ router.get('/action-plans/:id/export', permit(), c.exportActionPlan);
 router.put('/action-items/:itemId/monitoring/:periodId', permit('pei_seguimiento'), c.saveMonitoring);
 
 router.post('/action-plans/:id/meetings', permit('pei_formular'), c.createMeeting);
+router.post('/action-plans/:id/improve-minute-text', permit('pei_formular'), c.improveMinuteText);
+router.post('/action-plans/:id/generate-minute-summary', permit('pei_formular'), c.generateMinuteSummary);
 router.post('/meetings/:meetingId/minutes', permit('pei_formular'), c.createMinuteVersion);
 router.post('/minutes/:minuteId/proposals', permit(), c.addProposal);
 router.patch('/minute-proposals/:proposalId', permit('pei_formular'), c.resolveProposal);

@@ -1,4 +1,4 @@
-const { Op, fn, col, literal, QueryTypes } = require('sequelize');
+const { Op, fn, col, literal, QueryTypes, DataTypes } = require('sequelize');
 const crypto = require('crypto');
 const {
   User,
@@ -40,6 +40,7 @@ const {
   AutoevaluacionParticipante,
   AutoevaluacionPrograma,
   RegistroCalificadoHistorico,
+  RegistroCalificadoResolucion,
   MacroProceso,
   Proceso,
   SubProceso,
@@ -228,9 +229,13 @@ const clearDatasetStorage = async ({
 
   if (categoria === 'Registros Calificados y Acreditación') {
     await ensureRegistrosCalificadosTable();
+    await ensureRegistrosCalificadosResolucionesTable();
     const subKey = normalizeCategoryToken(subcategoria);
     if (!subcategoria || subKey === 'historico_rc') {
       await RegistroCalificadoHistorico.destroy({ where: {} });
+    }
+    if (!subcategoria || subKey === 'resoluciones') {
+      await RegistroCalificadoResolucion.destroy({ where: {} });
     }
   }
 
@@ -485,6 +490,103 @@ const REGISTROS_CALIFICADOS_ROW_ALIASES = {
   enlace: ['Enlace', 'Link', 'URL', 'Carpeta Drive']
 };
 
+const REGISTROS_CALIFICADOS_RESOLUCIONES_SUBBASE = 'Resoluciones';
+
+const REGISTROS_CALIFICADOS_RESOLUCIONES_TEMPLATE_HEADERS = [
+  'No.',
+  'Nivel de formación',
+  'Código SNIES',
+  'Programa académico',
+  'Cupos estudiantes',
+  'Créditos',
+  'Semestres',
+  'No. Resolución',
+  'Enlace resolución',
+  'Fecha RRC',
+  'Vencimiento RC',
+  'Límite elab. doc. RRC',
+  'Sugerida radicación SACES',
+  'Límite radicación SACES',
+  'Vigencia / Fecha RC',
+  'Novedades vigencia',
+  'Observaciones'
+];
+
+const REGISTROS_CALIFICADOS_RESOLUCIONES_ESTRUCTURA_ROWS = [
+  ['No.', 'Número consecutivo de registro (ej. 1, 2, A).'],
+  ['Nivel de formación', 'Nivel educativo: Profesional, Tecnológico, Especialización, Maestría, etc.'],
+  ['Código SNIES', 'Código oficial SNIES del programa académico.'],
+  ['Programa académico', 'Nombre oficial del programa académico o condición institucional.'],
+  ['Cupos estudiantes', 'Número de estudiantes a admitir en primer curso / cupos autorizados.'],
+  ['Créditos', 'Número total de créditos académicos del programa.'],
+  ['Semestres', 'Número de semestres o duración estimada de la formación.'],
+  ['No. Resolución', 'Número de resolución del Ministerio de Educación Nacional o concepto favorable.'],
+  ['Enlace resolución', 'Enlace directo al documento de la resolución o carpeta en Google Drive.'],
+  ['Fecha RRC', 'Fecha de expedición de la resolución o renovación del registro calificado (dd/mm/aaaa).'],
+  ['Vencimiento RC', 'Fecha oficial de vencimiento del registro calificado (dd/mm/aaaa).'],
+  ['Límite elab. doc. RRC', 'Fecha máxima sugerida para elaborar el documento maestro RRC (dd/mm/aaaa).'],
+  ['Sugerida radicación SACES', 'Fecha sugerida para radicar la solicitud en la plataforma SACES (dd/mm/aaaa).'],
+  ['Límite radicación SACES', 'Fecha máxima legal o conteo de días para radicar en SACES antes del vencimiento.'],
+  ['Vigencia / Fecha RC', 'Fecha de registro calificado o conteo de días restantes de vigencia.'],
+  ['Novedades vigencia', 'Novedades de vigencia, decretos transitorios, prórrogas o acuerdos.'],
+  ['Observaciones', 'Observaciones adicionales, estado de la solicitud o planes de contingencia.']
+];
+
+const REGISTROS_CALIFICADOS_RESOLUCIONES_ROW_ALIASES = {
+  consecutivo: ['No.', 'No', 'Item', 'Consecutivo', 'Nro'],
+  nivel_formacion: ['Nivel de formación', 'Nivel de formacion', 'Nivel', 'NIVEL', 'Nivel formación', 'Nivel formacion'],
+  codigo_snies: ['Código SNIES', 'Codigo SNIES', 'SNIES', 'Snies', 'Código Snies', 'Codigo Snies'],
+  nombre_programa: ['Programa académico', 'Programa academico', 'NOMBRE', 'Nombre', 'Programa', 'PROGRAMA', 'Nombre del programa'],
+  numero_estudiantes: ['Cupos estudiantes', 'No. Estud.', 'No. Estud', 'No Estud', 'Estudiantes', 'Cupos', 'No. Estudiantes'],
+  creditos: ['Créditos', 'Creditos', 'Cr.', 'Cr', 'CR'],
+  semestres: ['Semestres', 'Sem', 'Semestre', 'SEM'],
+  numero_resolucion: ['No. Resolución', 'No. Resolucion', 'Número resolución', 'Numero resolucion', 'Resolución', 'Resolucion', 'No Resolución'],
+  enlace_resolucion: ['Enlace resolución', 'Enlace resolucion', 'Enlace', 'Link', 'URL', 'Carpeta', 'Enlace resolucion'],
+  fecha_rrc: ['Fecha RRC', 'Fecha renovacion', 'Fecha Renovación', 'Fecha resolución', 'Fecha resolucion'],
+  fecha_vencimiento_rc: ['Vencimiento RC', 'Fecha vencimiento RC', 'Fecha vencimiento', 'Vencimiento', 'Fecha Vencimiento'],
+  fecha_maxima_documento_rrc: [
+    'Límite elab. doc. RRC',
+    'Limite elab. doc. RRC',
+    'Fecha máx. doc. RRC',
+    'Fecha max. doc. RRC',
+    'Fecha máxima sugerida para elaborar documento RRC',
+    'Fecha maxima sugerida para elaborar documento RRC'
+  ],
+  fecha_sugerida_radicar_saces: [
+    'Sugerida radicación SACES',
+    'Sugerida radicacion SACES',
+    'Fecha sugerida SACES',
+    'Fecha sugerida para radicar en SACES',
+    'Fecha sugerida para radicar en saces'
+  ],
+  fecha_maxima_radicar_saces: [
+    'Límite radicación SACES',
+    'Limite radicacion SACES',
+    'Fecha máx. SACES',
+    'Fecha max. SACES',
+    'FECHA MÁXIMA PARA RADICAR EN SACES',
+    'FECHA MAXIMA PARA RADICAR EN SACES',
+    'Fecha máxima para radicar en SACES',
+    'Dias radicar SACES'
+  ],
+  fecha_registro_calificado: [
+    'Vigencia / Fecha RC',
+    'FECHA REGISTRO CALIFICADO',
+    'Fecha Registro Calificado',
+    'Fecha registro calificado',
+    'Fecha RC',
+    'Dias vigencia RC'
+  ],
+  novedades_vigencia: [
+    'Novedades vigencia',
+    'Novedades Vigencia RC',
+    'Novedades vigencia RC',
+    'Novedades',
+    'Vigencia RC'
+  ],
+  observaciones: ['Observaciones', 'OBSERVACIONES', 'Observacion', 'OBSERVACION', 'Notas']
+};
+
 const INFRAESTRUCTURA_FISICA_TEMPLATE_HEADERS = [
   'CAMPUS',
   'COMPONENTE',
@@ -510,6 +612,22 @@ const pickInfraestructuraCell = (row = {}, aliases = []) => {
   for (const alias of aliases) {
     const value = normalizedRow[normalizeHeader(alias)];
     if (value !== undefined && value !== null && String(value).trim() !== '') return value;
+  }
+  return null;
+};
+
+const pickRegistroCalificadoResolucionCell = (row = {}, field) => {
+  const aliases = REGISTROS_CALIFICADOS_RESOLUCIONES_ROW_ALIASES[field] || [];
+  const keys = Object.keys(row || {});
+  const normalizedRow = keys.reduce((acc, key) => {
+    acc[normalizeHeaderKey(key)] = row[key];
+    return acc;
+  }, {});
+  for (const alias of aliases) {
+    const key = normalizeHeaderKey(alias);
+    if (normalizedRow[key] !== undefined && normalizedRow[key] !== null && String(normalizedRow[key]).trim() !== '') {
+      return normalizedRow[key];
+    }
   }
   return null;
 };
@@ -764,6 +882,27 @@ const mapRegistroCalificadoRow = (row) => ({
   resolucion_rc: normalizeText(pickRegistroCalificadoCell(row, 'resolucion_rc')),
   plan_estudios: normalizeText(pickRegistroCalificadoCell(row, 'plan_estudios')),
   enlace: normalizeText(pickRegistroCalificadoCell(row, 'enlace')),
+  raw_data: row
+});
+
+const mapRegistroCalificadoResolucionRow = (row) => ({
+  consecutivo: normalizeText(pickRegistroCalificadoResolucionCell(row, 'consecutivo')),
+  nivel_formacion: normalizeText(pickRegistroCalificadoResolucionCell(row, 'nivel_formacion')),
+  codigo_snies: normalizeText(pickRegistroCalificadoResolucionCell(row, 'codigo_snies')),
+  nombre_programa: normalizeText(pickRegistroCalificadoResolucionCell(row, 'nombre_programa')),
+  numero_estudiantes: toNullableInteger(pickRegistroCalificadoResolucionCell(row, 'numero_estudiantes')),
+  creditos: toNullableInteger(pickRegistroCalificadoResolucionCell(row, 'creditos')),
+  semestres: toNullableInteger(pickRegistroCalificadoResolucionCell(row, 'semestres')),
+  numero_resolucion: normalizeText(pickRegistroCalificadoResolucionCell(row, 'numero_resolucion')),
+  enlace_resolucion: normalizeText(pickRegistroCalificadoResolucionCell(row, 'enlace_resolucion')),
+  fecha_rrc: parseRegistroCalificadoDate(pickRegistroCalificadoResolucionCell(row, 'fecha_rrc')),
+  fecha_vencimiento_rc: parseRegistroCalificadoDate(pickRegistroCalificadoResolucionCell(row, 'fecha_vencimiento_rc')),
+  fecha_maxima_documento_rrc: parseRegistroCalificadoDate(pickRegistroCalificadoResolucionCell(row, 'fecha_maxima_documento_rrc')),
+  fecha_sugerida_radicar_saces: parseRegistroCalificadoDate(pickRegistroCalificadoResolucionCell(row, 'fecha_sugerida_radicar_saces')),
+  fecha_maxima_radicar_saces: normalizeText(pickRegistroCalificadoResolucionCell(row, 'fecha_maxima_radicar_saces')),
+  fecha_registro_calificado: normalizeText(pickRegistroCalificadoResolucionCell(row, 'fecha_registro_calificado')),
+  novedades_vigencia: normalizeText(pickRegistroCalificadoResolucionCell(row, 'novedades_vigencia')),
+  observaciones: normalizeText(pickRegistroCalificadoResolucionCell(row, 'observaciones')),
   raw_data: row
 });
 
@@ -3558,7 +3697,7 @@ const importGestionProcesosFromWorkbook = async ({ workbook, fileName, userId })
   return result;
 };
 
-const resolveDefaultImportSheetName = (workbook, categoria) => {
+const resolveDefaultImportSheetName = (workbook, categoria, subcategoria = '') => {
   const sheetNames = Array.isArray(workbook?.SheetNames) ? workbook.SheetNames : [];
   if (!sheetNames.length) return null;
 
@@ -3572,6 +3711,21 @@ const resolveDefaultImportSheetName = (workbook, categoria) => {
   if (categoria === 'Plan de Acción') {
     const exactPlanSheet = validSheetNames.find((name) => normalizeHeader(name) === 'PLAN DE ACCION');
     if (exactPlanSheet) return exactPlanSheet;
+  }
+
+  if (categoria === 'Registros Calificados y Acreditación') {
+    const subToken = normalizeCategoryToken(subcategoria);
+    if (subToken === 'resoluciones') {
+      const resolSheet = validSheetNames.find((name) => {
+        const h = normalizeHeader(name);
+        return h.includes('RESOLUCION') || h.includes('RESOLUCIONES');
+      });
+      if (resolSheet) return resolSheet;
+    }
+    if (subToken === 'historico_rc') {
+      const histSheet = validSheetNames.find((name) => normalizeHeader(name).includes('HISTORICO'));
+      if (histSheet) return histSheet;
+    }
   }
 
   const firstDataSheet = validSheetNames.find((name) => !normalizeHeader(name).includes('ESTRUCTURA'));
@@ -3634,6 +3788,45 @@ const ensureRegistrosCalificadosTable = async () => {
     });
   }
   return registrosCalificadosSyncPromise;
+};
+
+let registrosCalificadosResolucionesSyncPromise = null;
+
+const ensureRegistrosCalificadosResolucionesTable = async () => {
+  if (!registrosCalificadosResolucionesSyncPromise) {
+    registrosCalificadosResolucionesSyncPromise = (async () => {
+      await RegistroCalificadoResolucion.sync();
+      try {
+        const queryInterface = RegistroCalificadoResolucion.sequelize.getQueryInterface();
+        const tableDesc = await queryInterface.describeTable('registros_calificados_resoluciones').catch(() => ({}));
+        const addColIfNotExists = async (colName, colDef) => {
+          if (!tableDesc[colName]) {
+            await queryInterface.addColumn('registros_calificados_resoluciones', colName, colDef).catch(() => {});
+          }
+        };
+        await addColIfNotExists('estado_ciclo', { type: DataTypes.STRING(80), allowNull: true });
+        await addColIfNotExists('decision_tipo', { type: DataTypes.STRING(80), allowNull: true });
+        await addColIfNotExists('acto_administrativo_no_renovacion', { type: DataTypes.STRING(255), allowNull: true });
+        await addColIfNotExists('fecha_acto_administrativo', { type: DataTypes.DATEONLY, allowNull: true });
+        await addColIfNotExists('fecha_limite_radicar_contingencia', { type: DataTypes.DATEONLY, allowNull: true });
+        await addColIfNotExists('fecha_radicacion_contingencia', { type: DataTypes.DATEONLY, allowNull: true });
+        await addColIfNotExists('estado_contingencia', { type: DataTypes.STRING(80), allowNull: true });
+        await addColIfNotExists('fecha_inicio_contingencia', { type: DataTypes.DATEONLY, allowNull: true });
+        await addColIfNotExists('fecha_fin_contingencia', { type: DataTypes.DATEONLY, allowNull: true });
+        await addColIfNotExists('contingencia_observaciones', { type: DataTypes.TEXT, allowNull: true });
+        await addColIfNotExists('resolucion_renovacion_nueva', { type: DataTypes.STRING(160), allowNull: true });
+        await addColIfNotExists('fecha_renovacion_nueva', { type: DataTypes.DATEONLY, allowNull: true });
+        await addColIfNotExists('conserva_denominacion', { type: DataTypes.BOOLEAN, allowNull: true, defaultValue: true });
+        await addColIfNotExists('historial_denominaciones', { type: DataTypes.JSONB, allowNull: true });
+      } catch (colErr) {
+        console.warn('Advertencia asegurando columnas de ciclo y contingencia:', colErr.message);
+      }
+    })().catch((error) => {
+      registrosCalificadosResolucionesSyncPromise = null;
+      throw error;
+    });
+  }
+  return registrosCalificadosResolucionesSyncPromise;
 };
 
 const parseAutoevaluacionPrefix = (value = '', fallbackPrefix = '') => {
@@ -3915,6 +4108,68 @@ const buildRegistrosCalificadosDashboardPayload = ({ rows = [], programa = '', e
       planEstudios: row.plan_estudios,
       enlace: row.enlace,
       estado: isRegistroCalificadoActiveRow(row, latestDateByProgram) ? 'Activo' : 'Inactivo'
+    }))
+  };
+};
+
+const buildRegistrosCalificadosResolucionesDashboardPayload = ({ rows = [], programa = '', nivel = '' }) => {
+  const normalizedPrograma = normalizeHeader(programa);
+  const normalizedNivel = normalizeHeader(nivel);
+
+  const filteredRows = rows.filter((row) => {
+    if (normalizedPrograma && !normalizeHeader(row.nombre_programa).includes(normalizedPrograma)) return false;
+    if (normalizedNivel && normalizeHeader(row.nivel_formacion) !== normalizedNivel) return false;
+    return true;
+  });
+
+  const programasDisponibles = Array.from(new Set(rows.map((r) => r.nombre_programa).filter(Boolean)))
+    .sort((a, b) => String(a).localeCompare(String(b), 'es'));
+  const nivelesDisponibles = Array.from(new Set(rows.map((r) => r.nivel_formacion).filter(Boolean)))
+    .sort((a, b) => String(a).localeCompare(String(b), 'es'));
+
+  return {
+    filtros: { programa: programa || null, nivel: nivel || null },
+    programasDisponibles,
+    nivelesDisponibles,
+    resumen: {
+      total: filteredRows.length,
+      totalGeneral: rows.length,
+      programas: programasDisponibles.length,
+      niveles: nivelesDisponibles.length
+    },
+    registros: filteredRows.map((row) => ({
+      id: row.id,
+      consecutivo: row.consecutivo,
+      nivelFormacion: row.nivel_formacion,
+      codigoSnies: row.codigo_snies,
+      nombrePrograma: row.nombre_programa,
+      numeroEstudiantes: row.numero_estudiantes,
+      creditos: row.creditos,
+      semestres: row.semestres,
+      numeroResolucion: row.numero_resolucion,
+      enlaceResolucion: row.enlace_resolucion,
+      fechaRrc: normalizeRegistroCalificadoDateForView(row.fecha_rrc),
+      fechaVencimientoRc: normalizeRegistroCalificadoDateForView(row.fecha_vencimiento_rc),
+      fechaMaximaDocumentoRrc: normalizeRegistroCalificadoDateForView(row.fecha_maxima_documento_rrc),
+      fechaSugeridaRadicarSaces: normalizeRegistroCalificadoDateForView(row.fecha_sugerida_radicar_saces),
+      fechaMaximaRadicarSaces: row.fecha_maxima_radicar_saces,
+      fechaRegistroCalificado: row.fecha_registro_calificado,
+      novedadesVigencia: row.novedades_vigencia,
+      observaciones: row.observaciones,
+      estadoCiclo: row.estado_ciclo,
+      decisionTipo: row.decision_tipo,
+      actoAdministrativoNoRenovacion: row.acto_administrativo_no_renovacion,
+      fechaActoAdministrativo: normalizeRegistroCalificadoDateForView(row.fecha_acto_administrativo),
+      fechaLimiteRadicarContingencia: normalizeRegistroCalificadoDateForView(row.fecha_limite_radicar_contingencia),
+      fechaRadicacionContingencia: normalizeRegistroCalificadoDateForView(row.fecha_radicacion_contingencia),
+      estadoContingencia: row.estado_contingencia,
+      fechaInicioContingencia: normalizeRegistroCalificadoDateForView(row.fecha_inicio_contingencia),
+      fechaFinContingencia: normalizeRegistroCalificadoDateForView(row.fecha_fin_contingencia),
+      contingenciaObservaciones: row.contingencia_observaciones,
+      resolucionRenovacionNueva: row.resolucion_renovacion_nueva,
+      fechaRenovacionNueva: normalizeRegistroCalificadoDateForView(row.fecha_renovacion_nueva),
+      conservaDenominacion: row.conserva_denominacion !== false,
+      historialDenominaciones: Array.isArray(row.historial_denominaciones) ? row.historial_denominaciones : []
     }))
   };
 };
@@ -5161,6 +5416,22 @@ const getEstadisticas = async (req, res) => {
       });
     }
 
+    if (aggregate === 'registros_calificados_resoluciones_dashboard') {
+      await ensureRegistrosCalificadosResolucionesTable();
+      const resolucionesRows = await RegistroCalificadoResolucion.findAll({
+        order: [['id', 'ASC']],
+        raw: true
+      });
+      return res.json({
+        success: true,
+        data: buildRegistrosCalificadosResolucionesDashboardPayload({
+          rows: resolucionesRows,
+          programa,
+          nivel: req.query.nivel || ''
+        })
+      });
+    }
+
     if (aggregate === 'movilidad_dashboard') {
       const {
         periodo: periodoFilter = '',
@@ -6258,7 +6529,10 @@ const getResumen = async (req, res) => {
         raw: true
       }),
       PoblacionalInfraestructuraFisica.count().catch(() => 0),
-      RegistroCalificadoHistorico.count().catch(() => 0)
+      Promise.all([
+        RegistroCalificadoHistorico.count().catch(() => 0),
+        RegistroCalificadoResolucion.count().catch(() => 0)
+      ]).then(([c1, c2]) => c1 + c2).catch(() => 0)
     ]);
 
     const topCategorias = await Estadistica.findAll({
@@ -6827,18 +7101,44 @@ const downloadTemplate = async (req, res) => {
 
     if (categoria === 'Registros Calificados y Acreditación') {
       const workbook = XLSX.utils.book_new();
-      const estructuraSheet = XLSX.utils.aoa_to_sheet([['Nombre de campo', 'Contenido'], ...REGISTROS_CALIFICADOS_ESTRUCTURA_ROWS]);
+      const subKey = normalizeCategoryToken(subcategoriaRaw);
+
+      const estructuraRows = subKey === 'resoluciones'
+        ? REGISTROS_CALIFICADOS_RESOLUCIONES_ESTRUCTURA_ROWS
+        : subKey === 'historico_rc'
+          ? REGISTROS_CALIFICADOS_ESTRUCTURA_ROWS
+          : [
+              ...REGISTROS_CALIFICADOS_ESTRUCTURA_ROWS.map(([h, c]) => [`[Historico_RC] ${h}`, c]),
+              ...REGISTROS_CALIFICADOS_RESOLUCIONES_ESTRUCTURA_ROWS.map(([h, c]) => [`[Resoluciones] ${h}`, c])
+            ];
+
+      const estructuraSheet = XLSX.utils.aoa_to_sheet([['Nombre de campo', 'Contenido'], ...estructuraRows]);
       estructuraSheet['!cols'] = [{ wch: 34 }, { wch: 86 }];
       XLSX.utils.book_append_sheet(workbook, estructuraSheet, 'ESTRUCTURA');
 
-      const dataSheet = buildHeaderOnlyWorksheet(REGISTROS_CALIFICADOS_TEMPLATE_HEADERS);
-      dataSheet['!cols'] = REGISTROS_CALIFICADOS_TEMPLATE_HEADERS.map((header) => ({
-        wch: Math.max(16, Math.min(52, String(header).length + 10))
-      }));
-      XLSX.utils.book_append_sheet(workbook, dataSheet, REGISTROS_CALIFICADOS_SUBBASE);
+      if (!subKey || subKey === 'historico_rc' || subKey === 'todos') {
+        const dataSheet = buildHeaderOnlyWorksheet(REGISTROS_CALIFICADOS_TEMPLATE_HEADERS);
+        dataSheet['!cols'] = REGISTROS_CALIFICADOS_TEMPLATE_HEADERS.map((header) => ({
+          wch: Math.max(16, Math.min(52, String(header).length + 10))
+        }));
+        XLSX.utils.book_append_sheet(workbook, dataSheet, REGISTROS_CALIFICADOS_SUBBASE);
+      }
+
+      if (!subKey || subKey === 'resoluciones' || subKey === 'todos') {
+        const resolucionesSheet = buildHeaderOnlyWorksheet(REGISTROS_CALIFICADOS_RESOLUCIONES_TEMPLATE_HEADERS);
+        resolucionesSheet['!cols'] = REGISTROS_CALIFICADOS_RESOLUCIONES_TEMPLATE_HEADERS.map((header) => ({
+          wch: Math.max(16, Math.min(52, String(header).length + 6))
+        }));
+        XLSX.utils.book_append_sheet(workbook, resolucionesSheet, REGISTROS_CALIFICADOS_RESOLUCIONES_SUBBASE);
+      }
 
       const buffer = XLSX.write(workbook, { type: 'buffer', bookType: 'xlsx' });
-      res.setHeader('Content-Disposition', 'attachment; filename=plantilla_registros_calificados_historico_rc.xlsx');
+      const filename = subKey === 'resoluciones'
+        ? 'plantilla_registros_calificados_resoluciones.xlsx'
+        : subKey === 'historico_rc'
+          ? 'plantilla_registros_calificados_historico_rc.xlsx'
+          : 'plantilla_registros_calificados_y_acreditacion.xlsx';
+      res.setHeader('Content-Disposition', `attachment; filename=${filename}`);
       res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
       return res.send(buffer);
     }
@@ -9230,7 +9530,7 @@ const importFromExcel = async (req, res) => {
         return cleanRow;
       });
     } else {
-      const sheetName = resolveDefaultImportSheetName(workbook, categoria);
+      const sheetName = resolveDefaultImportSheetName(workbook, categoria, fixedSubcategoria);
       if (!sheetName) {
         return res.status(400).json({ success: false, message: 'El archivo Excel no contiene hojas con datos válidos' });
       }
@@ -9250,7 +9550,12 @@ const importFromExcel = async (req, res) => {
         headerRowIndex = detectHeaderRowIndex(matrix, expectedAutoHeaders);
       }
       if (categoria === 'Registros Calificados y Acreditación') {
-        headerRowIndex = detectHeaderRowIndex(matrix, REGISTROS_CALIFICADOS_TEMPLATE_HEADERS);
+        const subKey = normalizeCategoryToken(fixedSubcategoria);
+        if (subKey === 'resoluciones' || normalizeHeader(sheetName).includes('RESOLUCION')) {
+          headerRowIndex = detectHeaderRowIndex(matrix, REGISTROS_CALIFICADOS_RESOLUCIONES_TEMPLATE_HEADERS);
+        } else {
+          headerRowIndex = detectHeaderRowIndex(matrix, REGISTROS_CALIFICADOS_TEMPLATE_HEADERS);
+        }
       }
 
       if ((categoria === 'Poblacional' && poblacionalConfig?.strictHeaders) || (categoria === 'Saber Pro' && saberProConfig?.strictHeaders)) {
@@ -9338,7 +9643,12 @@ const importFromExcel = async (req, res) => {
       await clearDatasetStorage({ categoria: 'Autoevaluación', subcategoria: fixedSubcategoria });
     }
     if (categoria === 'Registros Calificados y Acreditación') {
-      await clearDatasetStorage({ categoria: 'Registros Calificados y Acreditación', subcategoria: fixedSubcategoria || REGISTROS_CALIFICADOS_SUBBASE });
+      const subKey = normalizeCategoryToken(fixedSubcategoria);
+      const isResoluciones = subKey === 'resoluciones' || (sheetName && normalizeHeader(sheetName).includes('RESOLUCION'));
+      await clearDatasetStorage({
+        categoria: 'Registros Calificados y Acreditación',
+        subcategoria: isResoluciones ? REGISTROS_CALIFICADOS_RESOLUCIONES_SUBBASE : (fixedSubcategoria || REGISTROS_CALIFICADOS_SUBBASE)
+      });
     }
 
     // Deduplicación en-memoria para subcategorías con uniqueKeys definidos (ej. Matriculados: codigo_estudiante+periodo)
@@ -9797,6 +10107,25 @@ const importFromExcel = async (req, res) => {
       }
 
       if (categoria === 'Registros Calificados y Acreditación') {
+        const subKey = normalizeCategoryToken(fixedSubcategoria);
+        const isResoluciones = subKey === 'resoluciones' || (sheetName && normalizeHeader(sheetName).includes('RESOLUCION'));
+
+        if (isResoluciones) {
+          await ensureRegistrosCalificadosResolucionesTable();
+          const payload = mapRegistroCalificadoResolucionRow(row);
+          if (!payload.nombre_programa) {
+            result.errores.push({ fila, error: 'Campo obligatorio: Programa académico / NOMBRE' });
+            continue;
+          }
+          await RegistroCalificadoResolucion.create({
+            ...payload,
+            creado_por: req.user?.id || null,
+            actualizado_por: req.user?.id || null
+          });
+          result.importados += 1;
+          continue;
+        }
+
         await ensureRegistrosCalificadosTable();
         const payload = mapRegistroCalificadoRow(row);
         if (!payload.programa_academico) {
@@ -10376,22 +10705,51 @@ const downloadCargueBase = async (req, res) => {
         sheetName = 'AUTOEVALUACION';
       }
     } else if (categoriaResolved === 'Registros Calificados y Acreditación') {
-      await ensureRegistrosCalificadosTable();
-      const rows = await RegistroCalificadoHistorico.findAll({
-        order: [['programa_academico', 'ASC'], ['fecha_resolucion', 'DESC'], ['id', 'ASC']],
-        raw: true
-      });
-      records = rows.map((row) => ({
-        'Programa académico': row.programa_academico,
-        'Nivel': row.nivel,
-        'Tipo aprobación': row.tipo_aprobacion,
-        'Resolución MEN': row.resolucion_men,
-        'Fecha Resolución': row.fecha_resolucion,
-        'Resolucion RC': row.resolucion_rc,
-        'Plan de Estudios': row.plan_estudios,
-        'Enlace': row.enlace
-      }));
-      sheetName = REGISTROS_CALIFICADOS_SUBBASE;
+      const subKey = normalizeCategoryToken(subcategoriaRaw);
+      if (subKey === 'resoluciones') {
+        await ensureRegistrosCalificadosResolucionesTable();
+        const rows = await RegistroCalificadoResolucion.findAll({
+          order: [['id', 'ASC']],
+          raw: true
+        });
+        records = rows.map((row) => ({
+          'No.': row.consecutivo,
+          'Nivel de formación': row.nivel_formacion,
+          'Código SNIES': row.codigo_snies,
+          'Programa académico': row.nombre_programa,
+          'Cupos estudiantes': row.numero_estudiantes,
+          'Créditos': row.creditos,
+          'Semestres': row.semestres,
+          'No. Resolución': row.numero_resolucion,
+          'Enlace resolución': row.enlace_resolucion,
+          'Fecha RRC': row.fecha_rrc,
+          'Vencimiento RC': row.fecha_vencimiento_rc,
+          'Límite elab. doc. RRC': row.fecha_maxima_documento_rrc,
+          'Sugerida radicación SACES': row.fecha_sugerida_radicar_saces,
+          'Límite radicación SACES': row.fecha_maxima_radicar_saces,
+          'Vigencia / Fecha RC': row.fecha_registro_calificado,
+          'Novedades vigencia': row.novedades_vigencia,
+          'Observaciones': row.observaciones
+        }));
+        sheetName = REGISTROS_CALIFICADOS_RESOLUCIONES_SUBBASE;
+      } else {
+        await ensureRegistrosCalificadosTable();
+        const rows = await RegistroCalificadoHistorico.findAll({
+          order: [['programa_academico', 'ASC'], ['fecha_resolucion', 'DESC'], ['id', 'ASC']],
+          raw: true
+        });
+        records = rows.map((row) => ({
+          'Programa académico': row.programa_academico,
+          'Nivel': row.nivel,
+          'Tipo aprobación': row.tipo_aprobacion,
+          'Resolución MEN': row.resolucion_men,
+          'Fecha Resolución': row.fecha_resolucion,
+          'Resolucion RC': row.resolucion_rc,
+          'Plan de Estudios': row.plan_estudios,
+          'Enlace': row.enlace
+        }));
+        sheetName = REGISTROS_CALIFICADOS_SUBBASE;
+      }
     } else if (categoriaResolved === 'Georreferencia') {
       const [deptRows, muniRows] = await Promise.all([
         GeorreferenciaDepartamento.findAll({ order: [['codigo_departamento', 'ASC']], raw: true }),
@@ -10975,7 +11333,294 @@ const uploadAuditorioFoto = async (req, res) => {
   }
 };
 
+
+const { buildAndGenerateInformeIntegralPdf } = require('../services/informeIntegralProgramaPdfService');
+
+const downloadInformeIntegralProgramaPdf = async (req, res) => {
+  try {
+    const programa = String(req.query?.programa || '').trim();
+    if (!programa || programa.toUpperCase() === 'TODOS') {
+      return res.status(400).json({ success: false, message: 'Debes especificar un programa para generar el informe integral.' });
+    }
+    const pdfBuffer = await buildAndGenerateInformeIntegralPdf(programa);
+    const safeName = programa.replace(/[^a-zA-Z0-9_-]/g, '_');
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `attachment; filename="Informe_Integral_${safeName}.pdf"`);
+    return res.send(pdfBuffer);
+  } catch (error) {
+    console.error('Error al generar informe integral del programa:', error);
+    return res.status(500).json({ success: false, message: 'Error al generar el informe integral del programa en PDF' });
+  }
+};
+
+const notificarMonitoreoRegistrosCalificados = async (req, res) => {
+  try {
+    const {
+      destinatarios = ['planeacion@unicesmag.edu.co'],
+      asunto = '[ALERTA SGC] Monitoreo de Registros Calificados - Ciclo de Renovación y Vencimientos',
+      programas = [],
+      observaciones = '',
+      directorNombre = 'Director de Planeación y Aseguramiento de la Calidad'
+    } = req.body;
+
+    const emailService = require('../services/emailService');
+
+    const cleanEmails = (Array.isArray(destinatarios) ? destinatarios : String(destinatarios).split(','))
+      .map((e) => String(e || '').trim())
+      .filter((e) => e.length > 3 && e.includes('@'));
+
+    const recipients = cleanEmails.length > 0 ? cleanEmails : ['planeacion@unicesmag.edu.co'];
+
+    const rowsHtml = (programas || []).map((p, idx) => {
+      const isRed = p.estadoSemaforo === 'CRITICO' || p.estadoSemaforo === 'ROJO';
+      const isYellow = p.estadoSemaforo === 'ALERTA' || p.estadoSemaforo === 'AMARILLO';
+      const badgeBg = isRed ? '#fee2e2' : isYellow ? '#fef3c7' : '#dcfce7';
+      const badgeColor = isRed ? '#991b1b' : isYellow ? '#92400e' : '#166534';
+      const badgeText = isRed ? '🔴 Radicación SACES (<=14m)' : isYellow ? '🟡 Elaborar Doc. RRC (<=26m)' : '🟢 Vigente';
+
+      return `
+        <tr style="border-bottom: 1px solid #e2e8f0; font-size: 12px;">
+          <td style="padding: 10px 8px; font-weight: bold; color: #64748b;">${idx + 1}</td>
+          <td style="padding: 10px 8px;">
+            <strong style="color: #0f172a; font-size: 13px;">${p.nombrePrograma || '-'}</strong><br/>
+            <span style="color: #64748b; font-size: 11px;">SNIES: ${p.codigoSnies || '-'} · ${p.nivelFormacion || '-'}</span>
+          </td>
+          <td style="padding: 10px 8px; font-weight: bold; color: #1e293b;">${p.fechaVencimientoRc || '-'}</td>
+          <td style="padding: 10px 8px; color: #475569;">${p.fechaMaximaRadicarSaces || p.fechaSugeridaRadicarSaces || '-'}</td>
+          <td style="padding: 10px 8px; text-align: center;">
+            <span style="background: ${badgeBg}; color: ${badgeColor}; padding: 4px 8px; border-radius: 9999px; font-weight: bold; font-size: 11px;">
+              ${badgeText}
+            </span>
+          </td>
+        </tr>
+      `;
+    }).join('');
+
+    const htmlContent = `
+      <div style="font-family: Arial, Helvetica, sans-serif; max-width: 720px; margin: 0 auto; background: #ffffff; border: 1px solid #cbd5e1; border-radius: 8px; overflow: hidden;">
+        <div style="background: linear-gradient(135deg, #0f2f57 0%, #1e40af 100%); padding: 24px; color: #ffffff; text-align: center;">
+          <h2 style="margin: 0; font-size: 20px; font-weight: 800; letter-spacing: 0.5px;">SISTEMA INTEGRADO DE GESTIÓN DE LA CALIDAD (SIAC)</h2>
+          <p style="margin: 6px 0 0; font-size: 14px; opacity: 0.9;">Dirección de Planeación y Aseguramiento de la Calidad - UNICESMAG</p>
+        </div>
+
+        <div style="padding: 24px;">
+          <div style="background: #eff6ff; border-left: 4px solid #1d4ed8; padding: 14px 18px; border-radius: 4px; margin-bottom: 20px;">
+            <h3 style="margin: 0 0 6px; color: #1e40af; font-size: 15px;">Alerta de Monitoreo Semafórico de Registros Calificados</h3>
+            <p style="margin: 0; font-size: 13px; color: #334155; line-height: 1.5;">
+              Estimado(a) <strong>${directorNombre}</strong>, se genera el presente reporte preventivo para el seguimiento a los hitos normativos de renovación de Registros Calificados:
+              <strong>26 meses antes</strong> para inicio de elaboración del documento maestro RRC y <strong>14 meses antes</strong> para radicación formal en SACES.
+            </p>
+          </div>
+
+          ${observaciones ? `
+            <div style="background: #f8fafc; border: 1px dashed #94a3b8; padding: 12px 16px; border-radius: 6px; margin-bottom: 20px; font-size: 13px; color: #334155;">
+              <strong>Observaciones de la Dirección:</strong><br/>
+              ${observaciones.replace(/\n/g, '<br/>')}
+            </div>
+          ` : ''}
+
+          <h4 style="margin: 18px 0 10px; color: #0f172a; font-size: 14px; text-transform: uppercase;">
+            Programas Académicos en Seguimiento (${(programas || []).length})
+          </h4>
+
+          <table style="width: 100%; border-collapse: collapse; margin-bottom: 24px;">
+            <thead>
+              <tr style="background: #f1f5f9; text-align: left; font-size: 11px; text-transform: uppercase; color: #475569; border-bottom: 2px solid #cbd5e1;">
+                <th style="padding: 8px;">No.</th>
+                <th style="padding: 8px;">Programa Académico</th>
+                <th style="padding: 8px;">Vencimiento RC</th>
+                <th style="padding: 8px;">Límite SACES</th>
+                <th style="padding: 8px; text-align: center;">Estado Semáforo</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${rowsHtml || '<tr><td colspan="5" style="text-align: center; padding: 16px; color: #94a3b8;">No se especificaron programas.</td></tr>'}
+            </tbody>
+          </table>
+
+          <div style="border-top: 1px solid #e2e8f0; padding-top: 16px; font-size: 11.5px; color: #64748b; line-height: 1.5;">
+            <p style="margin: 0 0 4px;"><strong>Marco Normativo:</strong> Decreto 1330 de 2019 / Resolución MEN - Aseguramiento de la Calidad en Educación Superior.</p>
+            <p style="margin: 0;">Generado automáticamente desde la plataforma de Planeación Estratégica y Gestión Integrada.</p>
+          </div>
+        </div>
+      </div>
+    `;
+
+    try {
+      await emailService.sendInstitutionalEmail({
+        to: recipients,
+        subject: asunto,
+        html: htmlContent,
+        text: `Alerta de Monitoreo de Registros Calificados para ${programas.length} programas.`
+      });
+      return res.json({
+        success: true,
+        message: `Notificación enviada exitosamente a ${recipients.join(', ')}`,
+        recipients,
+        totalProgramas: programas.length
+      });
+    } catch (emailErr) {
+      console.warn('Advertencia en envío de correo (posible entorno local sin SMTP):', emailErr.message);
+      return res.json({
+        success: true,
+        message: `Notificación registrada correctamente para ${recipients.join(', ')} (Modo informativo en entorno local)`,
+        simulated: true,
+        recipients,
+        totalProgramas: programas.length
+      });
+    }
+  } catch (error) {
+    console.error('Error en notificarMonitoreoRegistrosCalificados:', error);
+    return res.status(500).json({ success: false, message: 'Error interno al procesar la notificación de monitoreo' });
+  }
+};
+
+const actualizarCicloProgramaResolucion = async (req, res) => {
+  try {
+    await ensureRegistrosCalificadosResolucionesTable();
+    const id = Number(req.params.id);
+    if (!Number.isFinite(id) || id <= 0) {
+      return res.status(400).json({ success: false, message: 'ID de registro inválido.' });
+    }
+
+    const row = await RegistroCalificadoResolucion.findByPk(id);
+    if (!row) {
+      return res.status(404).json({ success: false, message: 'Registro de resolución no encontrado.' });
+    }
+
+    const {
+      decisionTipo,
+      actoAdministrativoNoRenovacion,
+      fechaActoAdministrativo,
+      fechaLimiteRadicarContingencia,
+      fechaRadicacionContingencia,
+      estadoContingencia,
+      fechaInicioContingencia,
+      fechaFinContingencia,
+      contingenciaObservaciones,
+      resolucionRenovacionNueva,
+      fechaRenovacionNueva,
+      reiniciarCicloSieteAnos,
+      conservaDenominacion,
+      nuevaDenominacion
+    } = req.body;
+
+    if (decisionTipo !== undefined) row.decision_tipo = decisionTipo || null;
+    if (actoAdministrativoNoRenovacion !== undefined) row.acto_administrativo_no_renovacion = actoAdministrativoNoRenovacion || null;
+    if (fechaActoAdministrativo !== undefined) {
+      row.fecha_acto_administrativo = fechaActoAdministrativo || null;
+      if (fechaActoAdministrativo && !fechaLimiteRadicarContingencia) {
+        const d = new Date(fechaActoAdministrativo);
+        d.setMonth(d.getMonth() + 2);
+        row.fecha_limite_radicar_contingencia = d.toISOString().slice(0, 10);
+      }
+    }
+    if (fechaLimiteRadicarContingencia !== undefined) row.fecha_limite_radicar_contingencia = fechaLimiteRadicarContingencia || null;
+    if (fechaRadicacionContingencia !== undefined) row.fecha_radicacion_contingencia = fechaRadicacionContingencia || null;
+    if (estadoContingencia !== undefined) row.estado_contingencia = estadoContingencia || null;
+    if (fechaInicioContingencia !== undefined) row.fecha_inicio_contingencia = fechaInicioContingencia || null;
+    if (fechaFinContingencia !== undefined) row.fecha_fin_contingencia = fechaFinContingencia || null;
+    if (contingenciaObservaciones !== undefined) row.contingencia_observaciones = contingenciaObservaciones || null;
+    if (resolucionRenovacionNueva !== undefined) row.resolucion_renovacion_nueva = resolucionRenovacionNueva || null;
+    if (fechaRenovacionNueva !== undefined) row.fecha_renovacion_nueva = fechaRenovacionNueva || null;
+
+    if (decisionTipo === 'RENOVADO_MEN') {
+      if (conservaDenominacion !== undefined) {
+        row.conserva_denominacion = Boolean(conservaDenominacion);
+      }
+
+      // Trazabilidad histórica de cambios de denominación académica
+      if (conservaDenominacion === false && nuevaDenominacion && String(nuevaDenominacion).trim()) {
+        const nombreAnterior = row.nombre_programa;
+        const nuevoNombre = String(nuevaDenominacion).trim();
+
+        if (nuevoNombre !== nombreAnterior) {
+          let historial = Array.isArray(row.historial_denominaciones) ? [...row.historial_denominaciones] : [];
+
+          let anioInicio = 'Inicio';
+          if (row.fecha_rrc) {
+            const y = new Date(row.fecha_rrc).getFullYear();
+            if (Number.isFinite(y) && y > 1950) anioInicio = String(y);
+          } else if (row.raw_data && row.raw_data['Fecha RRC']) {
+            anioInicio = String(row.raw_data['Fecha RRC']).slice(0, 4);
+          }
+
+          let anioFin = String(new Date().getFullYear());
+          if (fechaRenovacionNueva) {
+            const y = new Date(fechaRenovacionNueva).getFullYear();
+            if (Number.isFinite(y) && y > 1950) anioFin = String(y);
+          }
+
+          const nuevoHito = {
+            id: Date.now(),
+            denominacionAnterior: nombreAnterior,
+            nuevaDenominacion: nuevoNombre,
+            periodo: `${anioInicio} - ${anioFin}`,
+            anioInicio,
+            anioFin,
+            resolucionAnterior: row.numero_resolucion ? `Res. ${row.numero_resolucion}` : 'Resolución inicial',
+            resolucionNueva: resolucionRenovacionNueva ? `Res. ${resolucionRenovacionNueva}` : 'Nueva Resolución MEN',
+            fechaResolucion: fechaRenovacionNueva || new Date().toISOString().slice(0, 10),
+            fechaRegistro: new Date().toISOString(),
+            descripcion: `De ${anioInicio} a ${anioFin} se denominó «${nombreAnterior}» (bajo ${row.numero_resolucion ? `Res. ${row.numero_resolucion}` : 'resolución previa'}). A partir de ${anioFin} se denomina «${nuevoNombre}» por renovación aprobada en Resolución MEN ${resolucionRenovacionNueva || ''}.`
+          };
+
+          historial.push(nuevoHito);
+          row.historial_denominaciones = historial;
+          row.nombre_programa = nuevoNombre;
+          row.conserva_denominacion = false;
+        }
+      }
+    }
+
+    if (reiniciarCicloSieteAnos && (fechaRenovacionNueva || resolucionRenovacionNueva)) {
+      const fechaNueva = fechaRenovacionNueva ? new Date(fechaRenovacionNueva) : new Date();
+      const nuevoVencimiento = new Date(fechaNueva);
+      nuevoVencimiento.setFullYear(nuevoVencimiento.getFullYear() + 7);
+
+      const nuevoDocRrc = new Date(nuevoVencimiento);
+      nuevoDocRrc.setMonth(nuevoDocRrc.getMonth() - 26);
+
+      const nuevoSaces = new Date(nuevoVencimiento);
+      nuevoSaces.setMonth(nuevoSaces.getMonth() - 14);
+
+      row.numero_resolucion = resolucionRenovacionNueva || row.numero_resolucion;
+      row.fecha_vencimiento_rc = nuevoVencimiento.toISOString().slice(0, 10);
+      row.fecha_maxima_documento_rrc = nuevoDocRrc.toISOString().slice(0, 10);
+      row.fecha_sugerida_radicar_saces = nuevoSaces.toISOString().slice(0, 10);
+      row.decision_tipo = 'RENOVADO_MEN';
+      row.estado_ciclo = 'VIGENTE';
+    } else if (decisionTipo === 'NO_RENOVAR_INSTITUCIONAL') {
+      row.estado_ciclo = 'NO_RENOVACION';
+    } else if (decisionTipo === 'NEGADO_MEN') {
+      row.estado_ciclo = 'NEGADO_MEN';
+    } else if (estadoContingencia === 'EN_EJECUCION') {
+      row.estado_ciclo = 'CONTINGENCIA_EN_CURSO';
+    } else if (estadoContingencia === 'FINALIZADO') {
+      row.estado_ciclo = 'CULMINADO';
+    }
+
+    if (req.user?.id) {
+      const userExists = await User.findByPk(req.user.id).catch(() => null);
+      if (userExists) {
+        row.actualizado_por = req.user.id;
+      }
+    }
+    await row.save();
+
+    return res.json({
+      success: true,
+      message: 'Ciclo de vida y plan de contingencia actualizados exitosamente.',
+      data: row
+    });
+  } catch (error) {
+    console.error('Error al actualizar ciclo del programa:', error);
+    return res.status(500).json({ success: false, message: 'Error interno al actualizar el ciclo del programa.' });
+  }
+};
+
 module.exports = {
+  downloadInformeIntegralProgramaPdf,
   uploadAuditorioFoto,
   getEstadisticas,
   exportCaracterizacionRegistros,
@@ -11012,7 +11657,9 @@ module.exports = {
   getEdificacionesReferencia,
   createEdificacionReferencia,
   updateEdificacionReferencia,
-  deleteEdificacionReferencia
+  deleteEdificacionReferencia,
+  notificarMonitoreoRegistrosCalificados,
+  actualizarCicloProgramaResolucion
 };
 
 

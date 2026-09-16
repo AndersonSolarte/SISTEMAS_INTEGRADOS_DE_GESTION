@@ -12,6 +12,9 @@ import api from '../services/api';
 import ReporteSalidaFormDialog from '../components/reporteSalida/ReporteSalidaFormDialog';
 import { isReporteSalidaDocument } from '../config/reporteSalida';
 import reporteSalidaService from '../services/reporteSalidaService';
+import MeetingMinuteFormDialog from '../components/meetingMinute/MeetingMinuteFormDialog';
+import { isMeetingMinuteDocument } from '../config/meetingMinute';
+import meetingMinuteService from '../services/meetingMinuteService';
 import { FaFileWord, FaFileExcel, FaFilePowerpoint, FaFilePdf } from 'react-icons/fa';
 import { BsFileEarmarkText } from 'react-icons/bs';
 
@@ -596,6 +599,8 @@ const hasDocumentalManagementPermission = useMemo(() => {
   const [favoriteIds, setFavoriteIds] = useState(new Set());
   const [reporteSalidaDoc, setReporteSalidaDoc] = useState(null);
   const [reporteSalidaFeature, setReporteSalidaFeature] = useState({ enabled: false, canToggle: false, loading: false });
+  const [meetingMinuteDoc, setMeetingMinuteDoc] = useState(null);
+  const [meetingMinuteFeature, setMeetingMinuteFeature] = useState({ enabled: false, canToggle: false, loading: false });
   const [loadingFavorites, setLoadingFavorites] = useState(false);
   const [syncingSheet, setSyncingSheet] = useState(false);
   const [openClearDialog, setOpenClearDialog] = useState(false);
@@ -726,10 +731,20 @@ const hasDocumentalManagementPermission = useMemo(() => {
     }
   }, []);
 
+  const loadMeetingMinuteFeature = useCallback(async () => {
+    try {
+      const response = await meetingMinuteService.getConfig();
+      setMeetingMinuteFeature({ enabled: Boolean(response?.data?.enabled), canToggle: Boolean(response?.data?.canToggle), loading: false });
+    } catch (_) {
+      setMeetingMinuteFeature((previous) => ({ ...previous, loading: false }));
+    }
+  }, []);
+
   useEffect(() => {
     if (!user?.id) return;
     loadReporteSalidaFeature();
-  }, [loadReporteSalidaFeature, user?.id]);
+    loadMeetingMinuteFeature();
+  }, [loadMeetingMinuteFeature, loadReporteSalidaFeature, user?.id]);
 
   useEffect(() => {
     const params = new URLSearchParams(location.search || '');
@@ -1123,6 +1138,18 @@ const hasDocumentalManagementPermission = useMemo(() => {
     }
   };
 
+  const toggleMeetingMinuteFeature = async (nextEnabled) => {
+    setMeetingMinuteFeature((previous) => ({ ...previous, loading: true }));
+    try {
+      const response = await meetingMinuteService.updateConfig(nextEnabled);
+      setMeetingMinuteFeature({ enabled: Boolean(response?.data?.enabled), canToggle: Boolean(response?.data?.canToggle), loading: false });
+      enqueueSnackbar(response?.message || (nextEnabled ? 'Formulario de actas activado' : 'Formulario de actas desactivado'), { variant: 'success' });
+    } catch (error) {
+      setMeetingMinuteFeature((previous) => ({ ...previous, loading: false }));
+      enqueueSnackbar(getApiErrorMessage(error, 'No se pudo actualizar la configuración del acta'), { variant: 'error' });
+    }
+  };
+
   const getEstadoColor = (estado) => {
     switch (estado) {
       case 'vigente': return 'success';
@@ -1390,7 +1417,7 @@ const hasDocumentalManagementPermission = useMemo(() => {
   const isFiltering = loading;
   const displayDocumentos = useMemo(() => {
     if (!filters.formatos_digitales) return documentos;
-    return documentos.filter(doc => isReporteSalidaDocument(doc));
+    return documentos.filter((doc) => isReporteSalidaDocument(doc) || isMeetingMinuteDocument(doc));
   }, [documentos, filters.formatos_digitales]);
 
   useEffect(() => {
@@ -2060,6 +2087,41 @@ const hasDocumentalManagementPermission = useMemo(() => {
                                       </span>
                                     </Tooltip>
                                   )}
+                                  {isMeetingMinuteDocument(doc) && meetingMinuteFeature.canToggle && (
+                                    <Tooltip title={meetingMinuteFeature.enabled ? 'Desactivar formulario de actas de reunión' : 'Activar formulario de actas de reunión'} arrow>
+                                      <span>
+                                        <Switch
+                                          size="small"
+                                          checked={meetingMinuteFeature.enabled}
+                                          disabled={meetingMinuteFeature.loading}
+                                          onChange={(event) => toggleMeetingMinuteFeature(event.target.checked)}
+                                          sx={{
+                                            '& .MuiSwitch-switchBase.Mui-checked': { color: '#2458a6' },
+                                            '& .MuiSwitch-switchBase.Mui-checked + .MuiSwitch-track': { bgcolor: '#2458a6' }
+                                          }}
+                                        />
+                                      </span>
+                                    </Tooltip>
+                                  )}
+                                  {meetingMinuteFeature.enabled && isMeetingMinuteDocument(doc) && (
+                                    <Tooltip title="Redactar acta de reunión" arrow>
+                                      <span>
+                                        <IconButton
+                                          size="small"
+                                          sx={{
+                                            width: { xs: 24, sm: 26, md: 28 },
+                                            height: { xs: 24, sm: 26, md: 28 },
+                                            color: '#2458a6',
+                                            bgcolor: '#dbeafe',
+                                            '&:hover': { bgcolor: '#bfdbfe' }
+                                          }}
+                                          onClick={() => setMeetingMinuteDoc(doc)}
+                                        >
+                                          <PostAddIcon sx={{ fontSize: { xs: 15, md: 17 } }} />
+                                        </IconButton>
+                                      </span>
+                                    </Tooltip>
+                                  )}
                                   <Tooltip title="Ver documento" arrow>
                                     <span>
                                       <IconButton
@@ -2172,6 +2234,12 @@ const hasDocumentalManagementPermission = useMemo(() => {
           user={user}
           onClose={() => setReporteSalidaDoc(null)}
           onSubmitted={(response) => enqueueSnackbar(response?.message || 'Solicitud radicada correctamente', { variant: 'success' })}
+        />
+        <MeetingMinuteFormDialog
+          open={Boolean(meetingMinuteDoc)}
+          document={meetingMinuteDoc}
+          user={user}
+          onClose={() => setMeetingMinuteDoc(null)}
         />
         <Dialog open={openPreviewDialog} onClose={closeDocumentPreview} maxWidth="lg" fullWidth>
           <DialogTitle sx={{ fontWeight: 700, pr: 2 }}>

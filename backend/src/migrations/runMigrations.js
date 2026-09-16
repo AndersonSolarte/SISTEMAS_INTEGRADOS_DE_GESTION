@@ -560,6 +560,14 @@ const runMigrations = async () => {
     await models.SubProceso.sync();
     await models.TipoDocumentacion.sync();
     await models.Documento.sync();
+    await models.DigitalMeetingMinute.sync();
+    await models.DigitalMeetingParticipant.sync();
+    await models.DigitalMeetingSignature.sync();
+    await ensureColumn(qi, 'digital_meeting_minutes', 'finalized_at', { type: DataTypes.DATE, allowNull: true });
+    await ensureColumn(qi, 'digital_meeting_minutes', 'distributed_at', { type: DataTypes.DATE, allowNull: true });
+    await ensureColumn(qi, 'digital_meeting_minutes', 'distribution_count', { type: DataTypes.INTEGER, allowNull: false, defaultValue: 0 });
+    await ensureColumn(qi, 'digital_meeting_signatures', 'privacy_accepted_at', { type: DataTypes.DATE, allowNull: true });
+    await ensureColumn(qi, 'digital_meeting_signatures', 'privacy_policy_version', { type: DataTypes.STRING(40), allowNull: true });
     await ensureDocumentTextColumns(qi);
     await ensureDocumentSheetsView();
     await models.DocumentoFavorito.sync();

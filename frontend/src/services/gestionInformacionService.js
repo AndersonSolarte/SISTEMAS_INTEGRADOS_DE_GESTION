@@ -57,8 +57,17 @@ const gestionInformacionService = {
       params: { aggregate: 'registros_calificados_dashboard', categoria: 'Registros Calificados y Acreditacion', ...params },
       timeout: 120000
     }).then((r) => r.data),
+  getRegistrosCalificadosResolucionesDashboard: (params = {}) =>
+    api.get('/planeacion/gestion-informacion', {
+      params: { aggregate: 'registros_calificados_resoluciones_dashboard', categoria: 'Registros Calificados y Acreditacion', ...params },
+      timeout: 120000
+    }).then((r) => r.data),
   getRegistrosCalificadosEvidencias: (id) =>
     api.get(`/planeacion/gestion-informacion/registros-calificados/${id}/evidencias`, { timeout: 60000 }).then((r) => r.data),
+  notificarMonitoreoRegistrosCalificados: (payload) =>
+    api.post('/planeacion/gestion-informacion/registros-calificados/notificar', payload).then((r) => r.data),
+  updateCicloProgramaResolucion: (id, payload) =>
+    api.put(`/planeacion/gestion-informacion/registros-calificados/resoluciones/${id}/ciclo`, payload).then((r) => r.data),
   updateAutoevaluacionAspecto: (id, payload) =>
     api.put(`/planeacion/gestion-informacion/autoevaluacion/aspectos/${id}`, payload).then((r) => r.data),
   createAutoevaluacionParticipante: (payload) =>
@@ -92,6 +101,12 @@ const gestionInformacionService = {
       params: { programa, ...filters },
       responseType: 'blob',
       timeout: 120000
+    }),
+  downloadInformeIntegralProgramaPdf: (programa) =>
+    api.get('/planeacion/gestion-informacion/informe-integral-programa/report.pdf', {
+      params: { programa },
+      responseType: 'blob',
+      timeout: 180000
     }),
   downloadContextoExternoNormalizado: (variable) => {
     const isContextoGeneral = String(variable).toUpperCase() === 'CONTEXTO EXTERNO GENERAL';

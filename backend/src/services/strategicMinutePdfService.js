@@ -1,4 +1,5 @@
 const fs = require('fs');
+const path = require('path');
 const PdfPrinter = require('pdfmake');
 
 const printer = new PdfPrinter({
@@ -7,6 +8,8 @@ const printer = new PdfPrinter({
 
 const text = (value) => String(value ?? '').trim();
 const paragraphs = (value) => (Array.isArray(value) ? value : [value]).filter(Boolean).map((line) => ({ text: text(line), margin: [0, 2, 0, 2] }));
+const logoPath = path.join(__dirname, '..', 'assets', 'logo_formatos.jpg');
+const formatLogo = fs.existsSync(logoPath) ? `data:image/jpeg;base64,${fs.readFileSync(logoPath).toString('base64')}` : null;
 
 const generateStrategicMinutePdf = ({ minute, signatures = [], validationUrl = '', qrDataUrl = '' }) => {
   const content = minute.content || {};
@@ -24,7 +27,7 @@ const generateStrategicMinutePdf = ({ minute, signatures = [], validationUrl = '
   const definition = {
     pageSize: 'LETTER', pageMargins: [40, 40, 40, 45],
     content: [
-      { table: { widths: ['*', 120], body: [[{ text: 'REGISTRO DE ASISTENCIA Y REUNIÓN', bold: true, fontSize: 15, alignment: 'center', margin: [0, 15] }, { text: 'CÓDIGO: COM-IF-FR-002\nVERSIÓN: 1\nFECHA: 6/MAR/2020', fontSize: 8 }]] } },
+      { table: { widths: [155, '*', 120], body: [[formatLogo ? { image: formatLogo, fit: [145, 54], alignment: 'center', margin: [0, 3] } : '', { text: 'REGISTRO DE ASISTENCIA Y REUNIÓN', bold: true, fontSize: 15, alignment: 'center', margin: [0, 15] }, { text: 'CÓDIGO: COM-IF-FR-002\nVERSIÓN: 1\nFECHA: 6/MAR/2020', bold: true, fontSize: 8, margin: [2, 7] }]] } },
       { text: `Acta versión ${minute.version}`, bold: true, fontSize: 12, margin: [0, 14, 0, 8] },
       { columns: [{ text: `Responsable(s): ${text(content.responsables)}` }, { text: `Dependencia: ${text(content.dependencia)}` }] },
       { text: `Lugar: ${text(content.lugar)}   Fecha: ${text(content.fecha)}   Horario: ${text(content.horario)}`, margin: [0, 7] },

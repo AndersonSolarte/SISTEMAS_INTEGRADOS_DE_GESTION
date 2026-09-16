@@ -4,11 +4,12 @@ const { auth, hasAnyRole, hasAnyRoleOrModulePermission } = require('../middlewar
 const fs = require('fs');
 const path = require('path');
 const {
+  downloadInformeIntegralProgramaPdf,
+  getResumen,
   uploadAuditorioFoto,
   getEstadisticas,
   exportCaracterizacionRegistros,
   getMatriculadosIncidencias,
-  getResumen,
   getCargues,
   createEstadistica,
   updateEstadistica,
@@ -24,6 +25,8 @@ const {
   downloadCargueErrores,
   downloadCargueBase,
   getRegistrosCalificadosEvidencias,
+  notificarMonitoreoRegistrosCalificados,
+  actualizarCicloProgramaResolucion,
   getDivipolaIncidencias,
   resolveDivipolaIncidencia,
   importFromExcel,
@@ -246,6 +249,7 @@ router.get('/contexto-externo-general/dashboard', auth, canViewEstadisticaInstit
 router.get('/contexto-externo-general/template', auth, canImportDatabaseData, downloadContextoExternoGeneralTemplate);
 router.get('/contexto-externo-general/export', auth, canImportDatabaseData, downloadContextoExternoGeneralData);
 router.get('/contexto-externo-general/report.pdf', auth, canViewEstadisticaInstitucionalByPermission, downloadContextoExternoGeneralPdf);
+router.get('/informe-integral-programa/report.pdf', auth, canViewEstadisticaInstitucionalByPermission, downloadInformeIntegralProgramaPdf);
 router.post('/contexto-externo-general/import', auth, canImportDatabaseData, upload.single('file'), importContextoExternoGeneral);
 router.get('/contexto-externo/export', auth, canImportDatabaseData, downloadContextoExternoNormalizado);
 router.post('/contexto-externo/limpiar', auth, canImportDatabaseData, contextoExternoCleanerUpload.single('file'), cleanContextoExternoFile);
@@ -268,6 +272,8 @@ router.post('/database/backup-monitor/run', auth, hasAnyRole(ROLES.ADMINISTRADOR
 router.post('/database/backup-monitor/pause', auth, hasAnyRole(ROLES.ADMINISTRADOR), pauseAutomaticBackups);
 router.post('/database/backup-monitor/resume', auth, hasAnyRole(ROLES.ADMINISTRADOR), resumeAutomaticBackups);
 router.get('/registros-calificados/:id/evidencias', auth, canViewEstadisticaInstitucionalByPermission, getRegistrosCalificadosEvidencias);
+router.post('/registros-calificados/notificar', auth, canViewEstadisticaInstitucionalByPermission, notificarMonitoreoRegistrosCalificados);
+router.put('/registros-calificados/resoluciones/:id/ciclo', auth, canManageBasesByPermission, actualizarCicloProgramaResolucion);
 router.get('/divipola/incidencias', auth, canViewEstadisticaInstitucionalByPermission, getDivipolaIncidencias);
 router.put('/divipola/incidencias/:id', auth, canViewEstadisticaInstitucionalByPermission, resolveDivipolaIncidencia);
 router.post('/plan-accion/export', auth, hasAnyRole(ROLES.ADMINISTRADOR, ROLES.PLANEACION_EFECTIVIDAD, ROLES.PLANEACION_ESTRATEGICA, ROLES.CONSULTA), exportPlanAccionInstitucional);

@@ -74,6 +74,7 @@ import gestionInformacionService from '../services/gestionInformacionService';
 import planAccionWorkflowService, { ESTADOS_WORKFLOW, ESTADO_LABEL, ESTADO_COLOR } from '../services/planAccionWorkflowService';
 import { useAuth } from '../context/AuthContext';
 import { ROLES } from '../constants/roles';
+import logoFormatos from '../assets/logo_formatos.jpg';
 import StrategicPlanningPlatform from './StrategicPlanningPlatform';
 
 const PED_YEAR_WEIGHT = 14.28;
@@ -4248,7 +4249,7 @@ function GestionPlanesWorkspaceV2({ sourceRows = [], onWorkflowChanged }) {
               {/* Header: Logo | Título | Código/Versión/Fecha */}
               <Box sx={{ display: 'grid', gridTemplateColumns: '20% 60% 20%', borderBottom: '1px solid #000', minHeight: 90 }}>
                 <Box sx={{ borderRight: '1px solid #000', p: 0.6, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                  <Box component="img" src="/Logo Universidad CESMAG.png" alt="CESMAG" sx={{ maxHeight: 70, maxWidth: '100%', objectFit: 'contain' }} />
+                  <Box component="img" src={logoFormatos} alt="Universidad CESMAG" sx={{ width: '94%', maxHeight: 70, objectFit: 'contain' }} />
                 </Box>
                 <Box sx={{ borderRight: '1px solid #000', p: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', textAlign: 'center', fontWeight: 900, fontSize: 14 }}>
                   REGISTRO DE ASISTENCIA Y REUNIÓN

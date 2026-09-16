@@ -36,23 +36,31 @@ const loadConfiguration = async (actionPlanId) => {
   const term = await StrategicTerm.findByPk(actionPlan.term_id);
   const plan = term && await StrategicPlan.findByPk(term.strategic_plan_id);
   if (!plan) throw Object.assign(new Error('PED no encontrado.'), { statusCode: 404 });
+  const snapshot = actionPlan.metadata?.form_schema;
+  if (snapshot?.fields) return {
+    actionPlan, term, plan, levels: snapshot.levels || [], elements: snapshot.elements || [],
+    fields: snapshot.fields || [], catalogs: snapshot.catalogs || [], schemaVersion: snapshot.configuration_version || actionPlan.instrument_version
+  };
   const [levels, elements, fields, catalogs] = await Promise.all([
-    StrategicLevel.findAll({ where: { strategic_plan_id: plan.id, configuration_version: plan.configuration_version, active: true }, order: [['position', 'ASC']] }),
+    StrategicLevel.findAll({ where: { strategic_plan_id: plan.id, configuration_version: actionPlan.instrument_version, active: true }, order: [['position', 'ASC']] }),
     StrategicElement.findAll({ where: { strategic_plan_id: plan.id, active: true, deleted_at: null }, order: [['position', 'ASC']] }),
-    StrategicFieldDefinition.findAll({ where: { strategic_plan_id: plan.id, configuration_version: plan.configuration_version, active: true }, order: [['position', 'ASC']] }),
+    StrategicFieldDefinition.findAll({ where: { strategic_plan_id: plan.id, configuration_version: actionPlan.instrument_version, active: true }, order: [['position', 'ASC']] }),
     StrategicCatalogItem.findAll({ where: { strategic_plan_id: plan.id, active: true }, order: [['name', 'ASC']] })
   ]);
-  return { actionPlan, term, plan, levels, elements, fields, catalogs };
+  return { actionPlan, term, plan, levels, elements, fields, catalogs, schemaVersion: actionPlan.instrument_version };
 };
 
-const columnsFor = ({ levels, fields }) => [
-  { key: 'code', label: 'Código (vacío = nuevo)', type: 'text', required: false },
-  ...levels.map((level) => ({ key: `structure_level_${level.id}`, label: level.name, type: 'structure', levelId: level.id, required: false })),
-  { key: 'activity', label: 'Nombre o descripción principal', type: 'long_text', required: true },
-  ...fields.filter((field) => !SKIP_FIELDS.has(field.key) && field.data_type !== 'formula' && field.data_type !== 'strategic_relation').map((field) => ({
-    key: field.key, label: field.label, type: field.data_type, required: field.required, catalogType: field.validation_rules?.catalog_type || null, options: field.options || []
-  }))
-];
+const columnsFor = ({ levels, fields }) => {
+  const mainField = fields.find((field) => field.key === 'activity');
+  return [
+    { key: 'code', label: 'Código (vacío = nuevo)', type: 'text', required: false },
+    ...levels.map((level) => ({ key: `structure_level_${level.id}`, label: level.name, type: 'structure', levelId: level.id, required: false })),
+    { key: 'activity', label: mainField?.label || 'Nombre o descripción principal', type: mainField?.data_type || 'long_text', required: true },
+    ...fields.filter((field) => !SKIP_FIELDS.has(field.key) && field.data_type !== 'formula' && field.data_type !== 'strategic_relation').map((field) => ({
+      key: field.key, label: field.label, type: field.data_type, required: field.required, catalogType: field.validation_rules?.catalog_type || null, options: field.options || []
+    }))
+  ];
+};
 
 const itemValue = (item, column, elements, catalogs) => {
   if (column.key === 'code') return item.code;
@@ -81,7 +89,7 @@ const buildDynamicActionItemWorkbook = async (actionPlanId) => {
   metadata.addRows([
     ['strategic_plan_id', config.plan.id],
     ['action_plan_id', config.actionPlan.id],
-    ['configuration_version', config.plan.configuration_version]
+    ['configuration_version', config.schemaVersion]
   ]);
   metadata.state = 'veryHidden';
   const instructions = workbook.addWorksheet('INSTRUCCIONES');
@@ -119,8 +127,8 @@ const previewDynamicActionItems = async ({ actionPlanId, file, userId }) => {
   if (!metadata || metadataValues.get('action_plan_id') !== String(actionPlanId) || metadataValues.get('strategic_plan_id') !== String(config.plan.id)) {
     throw Object.assign(new Error('Esta plantilla pertenece a otro PED o Plan de Acción. Descargue una plantilla nueva desde este formulario.'), { statusCode: 422 });
   }
-  if (Number(metadataValues.get('configuration_version')) !== Number(config.plan.configuration_version)) {
-    throw Object.assign(new Error('La estructura del PED cambió después de descargar esta plantilla. Descargue la versión actual.'), { statusCode: 409 });
+  if (Number(metadataValues.get('configuration_version')) !== Number(config.schemaVersion)) {
+    throw Object.assign(new Error('La plantilla no corresponde a la estructura guardada para este Plan de Acción. Descárguela nuevamente.'), { statusCode: 409 });
   }
   const sheet = workbook.getWorksheet('REGISTROS');
   if (!sheet) throw Object.assign(new Error('El archivo no contiene la hoja REGISTROS.'), { statusCode: 422 });
@@ -174,7 +182,7 @@ const previewDynamicActionItems = async ({ actionPlanId, file, userId }) => {
     rows.push({ source_row: rowNumber, payload });
   }
   const record = await StrategicHistoricalImport.create({
-    strategic_plan_id: config.plan.id, term_id: config.term.id, format_code: 'PED-DYNAMIC', format_version: config.plan.configuration_version,
+    strategic_plan_id: config.plan.id, term_id: config.term.id, format_code: 'PED-DYNAMIC', format_version: config.schemaVersion,
     mapping: { action_plan_id: actionPlanId, columns: expectedColumns.map(({ key, label }) => ({ key, label })) }, original_name: file.originalname,
     sha256: sha256(file.buffer), rows, errors, created_by: userId
   });

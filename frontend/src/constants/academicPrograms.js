@@ -6,7 +6,7 @@ export const ACADEMIC_PROGRAMS = [
   { name: 'Tecnología en Marketing Digital', snies: '117522', faculty: 'Ciencias Administrativas y Contables', level: 'Pregrado' },
   { name: 'Fisioterapia', snies: '', faculty: 'Ciencias de la Salud', level: 'Pregrado' },
   { name: 'Derecho', snies: '52939', faculty: 'Ciencias Sociales y Humanas', level: 'Pregrado' },
-  { name: 'Psicología', snies: '53874', faculty: 'Ciencias Sociales y Humanas', level: 'Pregrado' },
+  { name: 'Psicología', snies: '53874', faculty: 'Ciencias de la Salud', level: 'Pregrado' },
   { name: 'Licenciatura en Educación Física', snies: '16489', faculty: 'Educación', level: 'Pregrado' },
   { name: 'Licenciatura en Educación Infantil', snies: '106286', faculty: 'Educación', level: 'Pregrado' },
   { name: 'Ingeniería Electrónica', snies: '90715', faculty: 'Ingeniería', level: 'Pregrado' },

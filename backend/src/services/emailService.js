@@ -17,6 +17,7 @@ const transporter = nodemailer.createTransport({
 const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:3000';
 const isLocal = frontendUrl.includes('localhost') || frontendUrl.includes('127.0.0.1');
 const INSTITUTIONAL_EMAIL_REGEX = /^[a-zA-Z0-9._%+-]+@unicesmag\.edu\.co$/i;
+const GENERAL_EMAIL_REGEX = /^[a-zA-Z0-9.!#$%&'*+/=?^_`{|}~-]+@[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(?:\.[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)+$/;
 
 
 const roleLabels = {
@@ -188,7 +189,7 @@ const sanitizeEmailText = (value) => {
   return repairMojibake(value);
 };
 
-const normalizeRecipient = (value) => {
+const normalizeRecipient = (value, { allowExternal = false } = {}) => {
   let email = String(value || '').trim().toLowerCase();
 
   // Reject address lists / header injection vectors and non-institutional destinations.
@@ -196,7 +197,8 @@ const normalizeRecipient = (value) => {
     throw new Error('Correo destino inválido');
   }
 
-  if (!INSTITUTIONAL_EMAIL_REGEX.test(email)) {
+  if (!(allowExternal ? GENERAL_EMAIL_REGEX : INSTITUTIONAL_EMAIL_REGEX).test(email)) {
+    if (allowExternal) throw new Error('Correo destino inválido');
     throw new Error('El correo destino debe ser institucional (@unicesmag.edu.co)');
   }
 
@@ -553,9 +555,9 @@ const sendTemporaryPasswordEmail = async (user, tempPassword) => {
   }
 };
 
-const sendInstitutionalEmail = async ({ to, subject, text, html, attachments = [], replyTo = '', headers = {}, messageId = '', inReplyTo = '', references = '' }) => {
+const sendInstitutionalEmail = async ({ to, subject, text, html, attachments = [], replyTo = '', headers = {}, messageId = '', inReplyTo = '', references = '', allowExternalRecipients = false }) => {
   const recipients = Array.isArray(to) ? to : [to];
-  const safeRecipients = recipients.map(normalizeRecipient);
+  const safeRecipients = recipients.map((recipient) => normalizeRecipient(recipient, { allowExternal: allowExternalRecipients }));
 
   const smtpConfigError = getSmtpConfigError();
   if (smtpConfigError) {

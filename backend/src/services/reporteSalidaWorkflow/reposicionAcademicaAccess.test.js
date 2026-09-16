@@ -394,6 +394,24 @@ test('el PDF conserva la parametrizacion completa de una salida con reposicion',
   assert.match(JSON.stringify(section), /soporte-permiso\.pdf/);
 });
 
+test('el PDF omite el tiempo calculado y muestra el valor declarado como tiempo por reponer', () => {
+  const solicitud = {
+    tiempo_solicitado_minutos: 930,
+    reposicion_aplica: true,
+    reposicion_minutos: 120,
+    datos_formulario: {
+      salida: { duracionTipo: 'menos_media_jornada' }
+    }
+  };
+
+  const sectionText = JSON.stringify(buildReposicionPdfSection(solicitud));
+
+  assert.match(sectionText, /Tiempo por reponer/);
+  assert.match(sectionText, /2h 00m/);
+  assert.doesNotMatch(sectionText, /Tiempo solicitado/);
+  assert.doesNotMatch(sectionText, /15h 30m/);
+});
+
 test('el PDF no agrega el bloque de reposicion a otros tipos de salida', () => {
   assert.deepEqual(buildReposicionPdfSection({ reposicion_aplica: false }), []);
 });
