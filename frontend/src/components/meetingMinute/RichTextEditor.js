@@ -44,6 +44,7 @@ export const sanitizeRichHtml = (html = '') => {
 export default function RichTextEditor({ label, value, onChange, disabled = false, minHeight = 130 }) {
   const editorRef = useRef(null);
   const savedRange = useRef(null);
+  const formatRange = useRef(null);
   const [linkDialog, setLinkDialog] = useState(false);
   const [linkUrl, setLinkUrl] = useState('https://');
   const [active, setActive] = useState({});
@@ -58,6 +59,7 @@ export default function RichTextEditor({ label, value, onChange, disabled = fals
   const readActiveFormats = () => {
     const selection = window.getSelection();
     if (!selection?.rangeCount || !editorRef.current?.contains(selection.anchorNode)) return;
+    formatRange.current = selection.getRangeAt(0).cloneRange();
     const valueOf = (name) => String(document.queryCommandValue(name) || '').replace(/["']/g, '').trim();
     const block = valueOf('formatBlock').toLowerCase();
     const rawFont = valueOf('fontName').split(',')[0].trim();
@@ -78,6 +80,11 @@ export default function RichTextEditor({ label, value, onChange, disabled = fals
   const emit = () => onChange(sanitizeRichHtml(editorRef.current?.innerHTML || ''));
   const command = (name, commandValue = null) => {
     editorRef.current?.focus();
+    const selection = window.getSelection();
+    if (formatRange.current && selection && !editorRef.current?.contains(selection.anchorNode)) {
+      selection.removeAllRanges();
+      selection.addRange(formatRange.current);
+    }
     document.execCommand(name, false, commandValue);
     emit();
     window.setTimeout(readActiveFormats, 0);
@@ -137,7 +144,10 @@ export default function RichTextEditor({ label, value, onChange, disabled = fals
       suppressContentEditableWarning
       role="textbox"
       aria-label={label}
-      onInput={emit}
+      onInput={() => { emit(); readActiveFormats(); }}
+      onFocus={readActiveFormats}
+      onMouseUp={readActiveFormats}
+      onKeyUp={readActiveFormats}
       sx={{ minHeight, px: 1.8, py: 1.35, outline: 'none', fontSize: 15, lineHeight: 1.6, color: '#1e293b', '&:empty::before': { content: '"Escriba aquí…"', color: '#94a3b8' }, '& h2, & h3': { mt: 1, mb: 0.5, fontWeight: 800 }, '& p': { my: 0.5 }, '& blockquote': { my: 1, mx: 0, pl: 2, borderLeft: '4px solid #93b4dc', color: '#475569' }, '& hr': { my: 1.25, border: 0, borderTop: '1px solid #b8c8da' }, '& a': { color: '#1d5fd1', textDecoration: 'underline' }, '& ul, & ol': { my: 0.5, pl: 3 }, '& table': { width: '100%', borderCollapse: 'collapse', my: 1 }, '& th, & td': { border: '1px solid #94a3b8', p: 0.75, minWidth: 70 }, '& th': { bgcolor: '#eff6ff', fontWeight: 800 } }}
     />
     <Dialog open={linkDialog} onClose={() => setLinkDialog(false)} maxWidth="xs" fullWidth><DialogTitle fontWeight={900}>Insertar hipervínculo</DialogTitle><DialogContent><TextField autoFocus fullWidth label="Dirección web o correo" value={linkUrl} onChange={(event) => setLinkUrl(event.target.value)} helperText="Ejemplo: https://www.unicesmag.edu.co o mailto:correo@ejemplo.com" sx={{ mt: 1 }} /></DialogContent><DialogActions><Button onClick={() => setLinkDialog(false)}>Cancelar</Button><Button variant="contained" onClick={insertLink}>Insertar enlace</Button></DialogActions></Dialog>
