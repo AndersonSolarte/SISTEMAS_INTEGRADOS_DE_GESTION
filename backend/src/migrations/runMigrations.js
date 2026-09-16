@@ -700,6 +700,28 @@ const runMigrations = async () => {
       await models.RegistroCalificadoResolucion.sync();
       await ensureColumn(qi, 'registros_calificados_resoluciones', 'conserva_denominacion', { type: DataTypes.BOOLEAN, allowNull: true, defaultValue: true });
       await ensureColumn(qi, 'registros_calificados_resoluciones', 'historial_denominaciones', { type: DataTypes.JSONB, allowNull: true });
+
+      const countResoluciones = await models.RegistroCalificadoResolucion.count().catch(() => 0);
+      if (countResoluciones === 0) {
+        const seedPath = path.join(__dirname, '../seeds/registros_calificados_resoluciones_initial.json');
+        if (fs.existsSync(seedPath)) {
+          console.log('[migrate] Sembrando registros calificados iniciales en producción...');
+          const initialRows = JSON.parse(fs.readFileSync(seedPath, 'utf8'));
+          const cleanRows = initialRows.map(({ id, createdAt, updatedAt, ...rest }) => rest);
+          await models.RegistroCalificadoResolucion.bulkCreate(cleanRows);
+          console.log(`[migrate] ${cleanRows.length} registros calificados iniciales sembrados exitosamente.`);
+        }
+      }
+    }
+
+    if (models.RegistroCalificadoHistorico) {
+      await models.RegistroCalificadoHistorico.sync();
+    }
+    if (models.PesvRtmHistorico) {
+      await models.PesvRtmHistorico.sync();
+    }
+    if (models.PesvSoatHistorico) {
+      await models.PesvSoatHistorico.sync();
     }
 
     await qi.changeColumn('estadisticas', 'programa', { type: DataTypes.STRING(500), allowNull: true });
