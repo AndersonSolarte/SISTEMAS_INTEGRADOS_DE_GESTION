@@ -529,6 +529,7 @@ const buildApprovalPlan = ({ jefe = {}, laboral = {}, personal = {} }) => {
   }
   steps.push(
     { key: 'sst', label: 'Seguridad y Salud en el Trabajo', email: recipients.sst, action: 'approval' },
+    { key: 'rectoria', label: 'Rectoría', email: recipients.rectoria, action: 'approval' },
     { key: 'gestion_humana', label: 'Oficina de Gestión del Talento Humano', email: recipients.gestionHumana, action: 'approval' },
     { key: 'tecnico_contable', label: 'Técnico contable', email: recipients.tecnicoContable, action: 'liquidacion' },
     { key: 'tesoreria', label: 'Tesorería / Pagaduría', email: recipients.tesoreria, action: 'pago', infoEmails: [recipients.financiera] }

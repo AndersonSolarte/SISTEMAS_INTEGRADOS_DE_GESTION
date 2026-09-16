@@ -35,7 +35,7 @@ test('la interfaz del técnico reproduce el FR-004 con datos reales y formato in
       entidadBancaria: 'Bancolombia',
       numeroCuenta: '123456789'
     }
-  });
+  }, { currentStepKey: 'tecnico_contable', formId: 'liquidacion-form', isTechnician: true });
 
   assert.match(html, /logo-formatos\.jpg/);
   assert.match(html, /SOLICITUD DE DESPLAZAMIENTO/);
