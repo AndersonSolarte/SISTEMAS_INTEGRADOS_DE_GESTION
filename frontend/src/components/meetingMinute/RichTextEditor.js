@@ -65,11 +65,40 @@ export const insertTableColumnAfter = (currentCell) => {
   [...table.rows].forEach((row, rowIndex) => {
     const isHeaderRow = [...row.cells].some((cell) => cell.tagName === 'TH');
     const cell = document.createElement(isHeaderRow ? 'th' : 'td');
-    cell.innerHTML = isHeaderRow ? `Título ${insertAt + 1}` : '<br>';
+    cell.innerHTML = isHeaderRow ? `Título ${row.cells.length + 1}` : '<br>';
     row.insertBefore(cell, row.cells[insertAt] || null);
     if (rowIndex === selectedRowIndex) targetCell = cell;
   });
+  const headerCells = [...(table.rows[0]?.cells || [])];
+  if (headerCells.length && headerCells.every((cell) => /^Título\s+\d+$/i.test(cell.textContent.trim()))) {
+    headerCells.forEach((cell, index) => { cell.textContent = `Título ${index + 1}`; });
+  }
   return targetCell;
+};
+
+export const removeSelectedTableRow = (currentCell) => {
+  const currentRow = currentCell?.closest?.('tr');
+  const table = currentCell?.closest?.('table');
+  if (!currentRow || !table || table.rows.length <= 1) return null;
+  const rowIndex = currentRow.rowIndex;
+  const columnIndex = currentCell.cellIndex;
+  currentRow.remove();
+  const targetRow = table.rows[Math.min(rowIndex, table.rows.length - 1)];
+  return targetRow?.cells[Math.min(columnIndex, targetRow.cells.length - 1)] || null;
+};
+
+export const removeSelectedTableColumn = (currentCell) => {
+  const table = currentCell?.closest?.('table');
+  if (!currentCell || !table || Math.max(...[...table.rows].map((row) => row.cells.length)) <= 1) return null;
+  const rowIndex = currentCell.parentElement.rowIndex;
+  const columnIndex = currentCell.cellIndex;
+  [...table.rows].forEach((row) => row.cells[columnIndex]?.remove());
+  const headerCells = [...(table.rows[0]?.cells || [])];
+  if (headerCells.length && headerCells.every((cell) => /^Título\s+\d+$/i.test(cell.textContent.trim()))) {
+    headerCells.forEach((cell, index) => { cell.textContent = `Título ${index + 1}`; });
+  }
+  const targetRow = table.rows[Math.min(rowIndex, table.rows.length - 1)];
+  return targetRow?.cells[Math.min(columnIndex, targetRow.cells.length - 1)] || null;
 };
 
 export default function RichTextEditor({ label, value, onChange, disabled = false, minHeight = 130 }) {
@@ -99,11 +128,13 @@ export default function RichTextEditor({ label, value, onChange, disabled = fals
     const selectedElement = selection.anchorNode?.nodeType === Node.ELEMENT_NODE ? selection.anchorNode : selection.anchorNode?.parentElement;
     const tableCell = selectedElement?.closest?.('td,th');
     tableCellRef.current = tableCell && editorRef.current.contains(tableCell) ? tableCell : null;
+    const selectedTable = tableCellRef.current?.closest('table');
     setActive({
       bold: document.queryCommandState('bold'), italic: document.queryCommandState('italic'), underline: document.queryCommandState('underline'),
       bullets: document.queryCommandState('insertUnorderedList'), numbers: document.queryCommandState('insertOrderedList'),
       left: document.queryCommandState('justifyLeft'), center: document.queryCommandState('justifyCenter'), right: document.queryCommandState('justifyRight'),
-      title: /h2|h3/.test(block), quote: block === 'blockquote', fontName, fontSize: valueOf('fontSize'), color: valueOf('foreColor'), table: Boolean(tableCellRef.current)
+      title: /h2|h3/.test(block), quote: block === 'blockquote', fontName, fontSize: valueOf('fontSize'), color: valueOf('foreColor'), table: Boolean(tableCellRef.current),
+      tableRows: selectedTable?.rows.length || 0, tableColumns: selectedTable ? Math.max(...[...selectedTable.rows].map((row) => row.cells.length)) : 0
     });
   };
 
@@ -152,7 +183,8 @@ export default function RichTextEditor({ label, value, onChange, disabled = fals
     selection?.removeAllRanges();
     selection?.addRange(range);
     formatRange.current = range.cloneRange();
-    setActive((current) => ({ ...current, table: true }));
+    const table = cell.closest('table');
+    setActive((current) => ({ ...current, table: true, tableRows: table?.rows.length || 0, tableColumns: table ? Math.max(...[...table.rows].map((row) => row.cells.length)) : 0 }));
   };
   const addTableRow = () => {
     const targetCell = insertTableRowAfter(tableCellRef.current);
@@ -162,6 +194,18 @@ export default function RichTextEditor({ label, value, onChange, disabled = fals
   };
   const addTableColumn = () => {
     const targetCell = insertTableColumnAfter(tableCellRef.current);
+    if (!targetCell) return;
+    emit();
+    focusTableCell(targetCell);
+  };
+  const removeTableRow = () => {
+    const targetCell = removeSelectedTableRow(tableCellRef.current);
+    if (!targetCell) return;
+    emit();
+    focusTableCell(targetCell);
+  };
+  const removeTableColumn = () => {
+    const targetCell = removeSelectedTableColumn(tableCellRef.current);
     if (!targetCell) return;
     emit();
     focusTableCell(targetCell);
@@ -198,10 +242,12 @@ export default function RichTextEditor({ label, value, onChange, disabled = fals
       {tool('Insertar tabla de 2 × 2', <TableChart fontSize="small" />, () => command('insertHTML', TABLE_HTML))}
       {tool('Limpiar formato', <FormatClear fontSize="small" />, () => command('removeFormat'))}
     </Stack>
-    {active.table && !disabled && <Stack direction="row" alignItems="center" gap={0.75} sx={{ px: 1.25, py: 0.75, borderBottom: '1px solid #dbe5f0', bgcolor: '#f8fbff' }}>
+    {active.table && !disabled && <Stack direction="row" alignItems="center" gap={0.75} flexWrap="wrap" sx={{ px: 1.25, py: 0.75, borderBottom: '1px solid #dbe5f0', bgcolor: '#f8fbff' }}>
       <Typography variant="caption" fontWeight={800} color="text.secondary" sx={{ mr: 0.5 }}>Editar tabla</Typography>
       <Button size="small" variant="outlined" onMouseDown={(event) => { event.preventDefault(); addTableRow(); }} sx={{ minHeight: 30, textTransform: 'none', fontWeight: 800 }}>+ Agregar fila</Button>
       <Button size="small" variant="outlined" onMouseDown={(event) => { event.preventDefault(); addTableColumn(); }} sx={{ minHeight: 30, textTransform: 'none', fontWeight: 800 }}>+ Agregar columna</Button>
+      <Button size="small" color="error" variant="outlined" disabled={active.tableRows <= 1} onMouseDown={(event) => { event.preventDefault(); removeTableRow(); }} sx={{ minHeight: 30, textTransform: 'none', fontWeight: 800 }}>− Eliminar fila</Button>
+      <Button size="small" color="error" variant="outlined" disabled={active.tableColumns <= 1} onMouseDown={(event) => { event.preventDefault(); removeTableColumn(); }} sx={{ minHeight: 30, textTransform: 'none', fontWeight: 800 }}>− Eliminar columna</Button>
     </Stack>}
     <Box
       ref={editorRef}
