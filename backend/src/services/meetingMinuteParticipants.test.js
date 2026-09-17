@@ -61,3 +61,10 @@ test('muestra entidad y cargo para participantes externos', () => {
   assert.equal(_internals.participantRoleLabel({ user_id: null, organization: 'Fundación Ejemplo', role_title: 'Contratista' }), 'Fundación Ejemplo · Contratista');
   assert.equal(_internals.participantRoleLabel({ user_id: 9, organization: 'Universidad CESMAG', role_title: 'Docente' }), 'Docente');
 });
+
+test('conserva completos los espacios de escritura sin límite de caracteres', () => {
+  const content = `<p>${'Contenido institucional completo. '.repeat(10000)}</p>`;
+  const sanitized = _internals.sanitizeRichText(content);
+  assert.equal(sanitized.length, content.length);
+  assert.match(sanitized, /Contenido institucional completo/);
+});

@@ -158,6 +158,11 @@ const sqlInjectionGuard = (req, res, next) => {
   const isGoogleAuthRequest = /^\/api\/auth\/google(?:\/redirect)?(?:\?|$)/i.test(String(req.originalUrl || ''));
   const isSignatureRequest = /^\/api\/(?:public\/strategic-planning\/minutes\/[^/]+\/sign|strategic-planning\/(?:minutes\/[^/]+\/sign-internal|my-signature)|meeting-minutes\/public\/[^/]+\/sign)(?:\?|$)/i
     .test(String(req.originalUrl || ''));
+  const isMeetingMinuteDraftRequest = req.method === 'POST'
+    && /^\/api\/meeting-minutes\/?(?:\?|$)/i.test(String(req.originalUrl || ''));
+  const unrestrictedMeetingMinuteFields = new Set([
+    'body.objetivo', 'body.desarrollo', 'body.conclusiones'
+  ]);
   const maxSignatureDataLength = Number(process.env.SIGNATURE_MAX_DATA_URL_LENGTH || 2.8 * 1024 * 1024);
   const stack = containers.map((item) => ({ ...item, path: item.source, depth: 0 }));
 
@@ -166,6 +171,12 @@ const sqlInjectionGuard = (req, res, next) => {
     if (value === null || value === undefined) continue;
 
     if (typeof value === 'string') {
+      if (isMeetingMinuteDraftRequest && unrestrictedMeetingMinuteFields.has(currentPath)) {
+        // Estos campos son documentos enriquecidos de extensión libre. Se limpian
+        // mediante una lista blanca de etiquetas en meetingMinuteController y se
+        // guardan con consultas parametrizadas; no deben recortarse aquí.
+        continue;
+      }
       if (isSignatureRequest && currentPath === 'body.signature_data') {
         if (value.length > maxSignatureDataLength) {
           return res.status(413).json({

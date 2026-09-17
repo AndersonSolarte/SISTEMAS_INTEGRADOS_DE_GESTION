@@ -25,6 +25,7 @@ const hash = (value) => crypto.createHash('sha256').update(Buffer.isBuffer(value
 const contentHash = (value) => hash(JSON.stringify(value));
 const isAdmin = (user) => String(user?.role || '') === 'administrador';
 const clean = (value, max = 8000) => String(value || '').replace(/\u0000/g, '').trim().slice(0, max);
+const cleanRichText = (value) => String(value || '').replace(/\u0000/g, '').trim();
 const buildPrivacyPolicyEmailSection = (isExternal) => {
   if (!isExternal) return { html: '', text: '' };
   const paragraphs = PRIVACY_POLICY_NOTICE.split('\n\n').map((paragraph) => `<p style="margin:0 0 12px;line-height:1.65">${escapeHtml(paragraph)}</p>`).join('');
@@ -34,7 +35,7 @@ const buildPrivacyPolicyEmailSection = (isExternal) => {
   };
 };
 const RICH_TAGS = new Set(['div', 'p', 'br', 'strong', 'b', 'em', 'i', 'u', 'ul', 'ol', 'li', 'h2', 'h3', 'blockquote', 'hr', 'a', 'span', 'font', 'table', 'thead', 'tbody', 'tr', 'th', 'td']);
-const sanitizeRichText = (value) => clean(value, 120000)
+const sanitizeRichText = (value) => cleanRichText(value)
   .replace(/<!--[\s\S]*?-->/g, '')
   .replace(/<(script|style)[^>]*>[\s\S]*?<\/\1>/gi, '')
   .replace(/<(\/)?([a-z0-9]+)([^>]*)>/gi, (source, closing, rawTag, attributes) => {
@@ -473,4 +474,4 @@ const sendFinalMinute = wrap(async (req, res) => {
   res.json({ success: true, message: `Acta firmada enviada a ${recipients.length} participante(s).`, data: { status: 'distributed', distributed_at: sentAt, recipients: recipients.length } });
 });
 
-module.exports = { downloadPdf, downloadWord, getConfig, getMinute, getSigningAccess, listMinutes, lookupParticipant, publicMinute, publish, reopenForEditing, requestCode, resendInvitations, saveDraft, sendFinalMinute, sign, updateConfig, _internals: { buildPrivacyPolicyEmailSection, buildSigningInvitationEmail, participantRoleLabel, placeResponsibleFirst } };
+module.exports = { downloadPdf, downloadWord, getConfig, getMinute, getSigningAccess, listMinutes, lookupParticipant, publicMinute, publish, reopenForEditing, requestCode, resendInvitations, saveDraft, sendFinalMinute, sign, updateConfig, _internals: { buildPrivacyPolicyEmailSection, buildSigningInvitationEmail, participantRoleLabel, placeResponsibleFirst, sanitizeRichText } };
