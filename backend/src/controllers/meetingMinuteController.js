@@ -314,6 +314,35 @@ const publish = wrap(async (req, res) => {
   res.json({ success: true, message, data: { minute: { id: minute.id, code: minute.code, status: minute.status, version: minute.version }, signing_url: signingUrl, qr_data_url, invitations } });
 });
 
+const getSigningAccess = wrap(async (req, res) => {
+  const minute = await DigitalMeetingMinute.findByPk(req.params.id);
+  if (!minute || minute.deleted_at) throw Object.assign(new Error('Acta no encontrada.'), { statusCode: 404 });
+  if (!isAdmin(req.user) && Number(minute.created_by) !== Number(req.user.id)) throw Object.assign(new Error('No tiene permiso para consultar el acceso de esta acta.'), { statusCode: 403 });
+  if (minute.status !== 'signing') throw Object.assign(new Error('El acceso solo está disponible mientras el acta se encuentra en firmas.'), { statusCode: 409 });
+  const token = crypto.randomBytes(32).toString('base64url');
+  const expiresAt = minute.token_expires_at && minute.token_expires_at > new Date()
+    ? minute.token_expires_at
+    : new Date(Date.now() + 45 * 24 * 60 * 60 * 1000);
+  await minute.update({ public_token_hash: hash(token), token_expires_at: expiresAt });
+  const signingUrl = `${publicFrontend(req)}/firmar-acta-reunion/${token}`;
+  const qr_data_url = await QRCode.toDataURL(signingUrl, { errorCorrectionLevel: 'M', margin: 1, width: 360 });
+  res.json({ success: true, message: 'Se generó un acceso QR vigente. El QR general anterior queda reemplazado.', data: { signing_url: signingUrl, qr_data_url } });
+});
+
+const reopenForEditing = wrap(async (req, res) => {
+  const minute = await DigitalMeetingMinute.findByPk(req.params.id);
+  if (!minute || minute.deleted_at) throw Object.assign(new Error('Acta no encontrada.'), { statusCode: 404 });
+  if (!isAdmin(req.user) && Number(minute.created_by) !== Number(req.user.id)) throw Object.assign(new Error('No tiene permiso para ajustar esta acta.'), { statusCode: 403 });
+  if (minute.status !== 'signing') throw Object.assign(new Error('Solo un acta que está en firmas puede regresar a borrador.'), { statusCode: 409 });
+  const signedCount = await DigitalMeetingSignature.count({ where: { minute_id: minute.id } });
+  if (signedCount > 0) throw Object.assign(new Error('No se puede modificar el acta porque ya tiene firmas. Esto protege el contenido que las personas aprobaron.'), { statusCode: 409 });
+  await sequelize.transaction(async (transaction) => {
+    await minute.update({ status: 'draft', public_token_hash: null, token_expires_at: null, published_at: null }, { transaction });
+    await DigitalMeetingParticipant.update({ status: 'invited', otp_hash: null, otp_expires_at: null, otp_attempts: 0, signing_token_hash: null, signing_token_expires_at: null, invitation_sent_at: null }, { where: { minute_id: minute.id }, transaction });
+  });
+  res.json({ success: true, message: 'El acta regresó a borrador. Los enlaces anteriores fueron invalidados y ya puede realizar ajustes.', data: { id: minute.id, status: 'draft' } });
+});
+
 const resendInvitations = wrap(async (req, res) => {
   const minute = await DigitalMeetingMinute.findByPk(req.params.id, { include: [{ model: DigitalMeetingParticipant, as: 'participants' }] });
   if (!minute || minute.deleted_at) throw Object.assign(new Error('Acta no encontrada.'), { statusCode: 404 });
@@ -429,4 +458,4 @@ const sendFinalMinute = wrap(async (req, res) => {
   res.json({ success: true, message: `Acta firmada enviada a ${recipients.length} participante(s).`, data: { status: 'distributed', distributed_at: sentAt, recipients: recipients.length } });
 });
 
-module.exports = { downloadWord, getConfig, getMinute, listMinutes, lookupParticipant, publicMinute, publish, requestCode, resendInvitations, saveDraft, sendFinalMinute, sign, updateConfig, _internals: { buildPrivacyPolicyEmailSection, buildSigningInvitationEmail, placeResponsibleFirst } };
+module.exports = { downloadWord, getConfig, getMinute, getSigningAccess, listMinutes, lookupParticipant, publicMinute, publish, reopenForEditing, requestCode, resendInvitations, saveDraft, sendFinalMinute, sign, updateConfig, _internals: { buildPrivacyPolicyEmailSection, buildSigningInvitationEmail, placeResponsibleFirst } };
