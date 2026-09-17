@@ -22,6 +22,20 @@ const contentHash = (value) => hash(JSON.stringify(value));
 const isAdmin = (user) => String(user?.role || '') === 'administrador';
 const clean = (value, max = 8000) => String(value || '').replace(/\u0000/g, '').trim().slice(0, max);
 const PRIVACY_POLICY_VERSION = 'LEY-1581-2012-DEC-1074-2015';
+const PRIVACY_POLICY_URL = 'https://www.unicesmag.edu.co/documentos/DATOS-UNICESMAG.pdf';
+const PRIVACY_POLICY_NOTICE = [
+  'En la Universidad CESMAG, tratamos sus datos personales conforme a la Ley 1581 de 2012 y el Decreto 1074 de 2015. El tratamiento de sus datos incluye la recolección, almacenamiento, uso, circulación y supresión de la información. La finalidad de este tratamiento comprende, pero no se limita a gestión de procesos académicos, financieros, administrativos, de investigación, proyección social y de recursos humanos, desarrollo de programas de bienestar y desarrollo estudiantil, seguridad y control de acceso, cumplimiento de obligaciones legales. En algunos casos, podríamos solicitar datos personales sensibles.',
+  `Usted tiene derecho a conocer, actualizar, rectificar y suprimir sus datos personales, así como a revocar la autorización otorgada para su tratamiento en los términos de la normativa vigente. Para más información sobre nuestras políticas de tratamiento de datos personales y sus cambios sustanciales, visite: ${PRIVACY_POLICY_URL}`,
+  'Para ejercer estos derechos o si tiene alguna pregunta sobre este aviso de privacidad o sobre el tratamiento de sus datos personales, contáctenos a través del correo correspondencia@unicesmag.edu.co, o presencialmente en las instalaciones de la Universidad CESMAG (Campus Centro), ubicada en la Carrera 20 A No. 14-54 de la ciudad de Pasto.'
+].join('\n\n');
+const buildPrivacyPolicyEmailSection = (isExternal) => {
+  if (!isExternal) return { html: '', text: '' };
+  const paragraphs = PRIVACY_POLICY_NOTICE.split('\n\n').map((paragraph) => `<p style="margin:0 0 12px;line-height:1.65">${escapeHtml(paragraph)}</p>`).join('');
+  return {
+    html: `<div style="margin:20px 0;padding:18px;border:1px solid #bfdbfe;border-radius:12px;background:#f8fbff"><h3 style="margin:0 0 12px;color:#174ea6">Autorización para el tratamiento de datos personales</h3>${paragraphs}<p style="margin:12px 0"><a href="${PRIVACY_POLICY_URL}" target="_blank" rel="noopener noreferrer">Consultar la política institucional completa</a></p><p style="margin:12px 0 0;font-weight:700">Para continuar, abra el acta y marque la casilla de autorización antes de confirmar su firma.</p></div>`,
+    text: `\n\nAUTORIZACIÓN PARA EL TRATAMIENTO DE DATOS PERSONALES\n\n${PRIVACY_POLICY_NOTICE}\n\nPara continuar, abra el acta y marque la casilla de autorización antes de confirmar su firma.`
+  };
+};
 const RICH_TAGS = new Set(['div', 'p', 'br', 'strong', 'b', 'em', 'i', 'u', 'ul', 'ol', 'li', 'h2', 'h3', 'blockquote', 'hr', 'a', 'span', 'font', 'table', 'thead', 'tbody', 'tr', 'th', 'td']);
 const sanitizeRichText = (value) => clean(value)
   .replace(/<!--[\s\S]*?-->/g, '')
@@ -245,8 +259,9 @@ const requestCode = wrap(async (req, res) => {
   const otp = String(crypto.randomInt(100000, 999999));
   await participant.update({ otp_hash: hash(otp), otp_expires_at: new Date(Date.now() + 10 * 60 * 1000), otp_attempts: 0 });
   const url = `${publicFrontend(req)}/firmar-acta-reunion/${req.params.token}`;
-  const html = renderInstitutionalTemplate({ title: 'Código para firmar el acta de reunión', introHtml: `<p>Hola <strong>${escapeHtml(participant.name)}</strong>. Use este código para confirmar su firma:</p>`, bodyHtml: `<div style="padding:20px;text-align:center;background:#eff6ff;border-radius:12px"><div style="font-size:34px;font-weight:800;letter-spacing:8px;color:#174ea6;user-select:all">${otp}</div><p>Vence en 10 minutos.</p></div><p style="text-align:center"><a href="${escapeHtml(url)}">Abrir el acta para firmar</a></p>` });
-  const sent = await sendInstitutionalEmail({ to: participant.email, subject: `${otp} · Código para firmar acta de reunión`, text: `Su código para firmar el acta es ${otp}. Vence en 10 minutos.`, html, allowExternalRecipients: true });
+  const privacyPolicy = buildPrivacyPolicyEmailSection(!participant.user_id);
+  const html = renderInstitutionalTemplate({ title: 'Código para firmar el acta de reunión', introHtml: `<p>Hola <strong>${escapeHtml(participant.name)}</strong>. Use este código para confirmar su firma:</p>`, bodyHtml: `<div style="padding:20px;text-align:center;background:#eff6ff;border-radius:12px"><div style="font-size:34px;font-weight:800;letter-spacing:8px;color:#174ea6;user-select:all">${otp}</div><p>Vence en 10 minutos.</p></div>${privacyPolicy.html}<p style="text-align:center"><a href="${escapeHtml(url)}">Leer, autorizar y firmar el acta</a></p>` });
+  const sent = await sendInstitutionalEmail({ to: participant.email, subject: `${otp} · Código para firmar acta de reunión`, text: `Su código para firmar el acta es ${otp}. Vence en 10 minutos.${privacyPolicy.text}\n\nAbrir el acta: ${url}`, html, allowExternalRecipients: true });
   if (!sent.success) throw Object.assign(new Error('No fue posible enviar el código al correo.'), { statusCode: 503 });
   res.json({ success: true, message: 'Código enviado al correo institucional.' });
 });
@@ -330,4 +345,4 @@ const sendFinalMinute = wrap(async (req, res) => {
   res.json({ success: true, message: `Acta firmada enviada a ${recipients.length} participante(s).`, data: { status: 'distributed', distributed_at: sentAt, recipients: recipients.length } });
 });
 
-module.exports = { downloadWord, getConfig, getMinute, listMinutes, lookupParticipant, publicMinute, publish, requestCode, saveDraft, sendFinalMinute, sign, updateConfig, _internals: { placeResponsibleFirst } };
+module.exports = { downloadWord, getConfig, getMinute, listMinutes, lookupParticipant, publicMinute, publish, requestCode, saveDraft, sendFinalMinute, sign, updateConfig, _internals: { buildPrivacyPolicyEmailSection, placeResponsibleFirst } };

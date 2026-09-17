@@ -23,3 +23,13 @@ test('evita duplicar al responsable cuando solo coincide el correo', () => {
   assert.equal(result.length, 1);
   assert.equal(result[0].document, '10850001');
 });
+
+test('incluye la política de datos solamente en el correo del participante externo', () => {
+  const external = _internals.buildPrivacyPolicyEmailSection(true);
+  const internal = _internals.buildPrivacyPolicyEmailSection(false);
+  assert.match(external.text, /Ley 1581 de 2012/);
+  assert.match(external.text, /DATOS-UNICESMAG\.pdf/);
+  assert.match(external.html, /marque la casilla de autorización/);
+  assert.equal(internal.text, '');
+  assert.equal(internal.html, '');
+});
