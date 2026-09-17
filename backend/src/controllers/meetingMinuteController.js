@@ -72,6 +72,11 @@ const participantIdentity = (participant = {}) => ({
   document: clean(participant.document, 100).toLowerCase(),
   email: clean(participant.email, 254).toLowerCase()
 });
+const participantRoleLabel = (participant = {}) => {
+  const role = clean(participant.role_title, 220);
+  const organization = clean(participant.organization, 240);
+  return !participant.user_id && organization ? [organization, role].filter(Boolean).join(' · ') : (role || organization);
+};
 const placeResponsibleFirst = (participants = [], responsible = {}) => {
   const responsibleParticipant = {
     user_id: responsible.id || responsible.user_id || null,
@@ -187,7 +192,7 @@ const buildSignedMinuteBuffer = async (minute) => {
     const signatureData = signature?.signature_storage_key && fs.existsSync(signature.signature_storage_key)
       ? `data:${/\.jpe?g$/i.test(signature.signature_storage_key) ? 'image/jpeg' : 'image/png'};base64,${fs.readFileSync(signature.signature_storage_key).toString('base64')}`
       : '';
-    return { nombre: participant.name, cargo: participant.role_title || participant.organization || '', firma: participant.status === 'signed' ? 'Firmado electrónicamente' : 'Pendiente · QR', firma_data_url: signatureData };
+    return { nombre: participant.name, cargo: participantRoleLabel(participant), firma: participant.status === 'signed' ? 'Firmado electrónicamente' : 'Pendiente · QR', firma_data_url: signatureData };
   }) };
   return generateActaBuffer(payload);
 };
@@ -361,7 +366,7 @@ const publicMinute = wrap(async (req, res) => {
   const { minute, invitedParticipant, invitationVerified } = access;
   const available = invitationVerified ? [invitedParticipant] : minute.participants.filter((p) => p.status !== 'signed');
   if (invitationVerified && invitedParticipant.status === 'signed') throw Object.assign(new Error('Esta firma ya fue registrada.'), { statusCode: 409 });
-  res.json({ success: true, data: { id: minute.id, code: minute.code, version: minute.version, content: minute.content, invitation_verified: invitationVerified, invited_participant_id: invitedParticipant?.id || null, preview_participants: minute.participants.map((p) => ({ id: p.id, name: p.name, role_title: p.role_title, status: p.status })), participants: available.map((p) => ({ id: p.id, name: p.name, role_title: p.role_title, organization: p.organization, external: !p.user_id, email_hint: p.email ? `${p.email.slice(0, 2)}***@${p.email.split('@')[1]}` : '' })) } });
+  res.json({ success: true, data: { id: minute.id, code: minute.code, version: minute.version, content: minute.content, invitation_verified: invitationVerified, invited_participant_id: invitedParticipant?.id || null, preview_participants: minute.participants.map((p) => ({ id: p.id, name: p.name, role_title: p.role_title, organization: p.organization, external: !p.user_id, status: p.status })), participants: available.map((p) => ({ id: p.id, name: p.name, role_title: p.role_title, organization: p.organization, external: !p.user_id, email_hint: p.email ? `${p.email.slice(0, 2)}***@${p.email.split('@')[1]}` : '' })) } });
 });
 
 const requestCode = wrap(async (req, res) => {
@@ -460,4 +465,4 @@ const sendFinalMinute = wrap(async (req, res) => {
   res.json({ success: true, message: `Acta firmada enviada a ${recipients.length} participante(s).`, data: { status: 'distributed', distributed_at: sentAt, recipients: recipients.length } });
 });
 
-module.exports = { downloadWord, getConfig, getMinute, getSigningAccess, listMinutes, lookupParticipant, publicMinute, publish, reopenForEditing, requestCode, resendInvitations, saveDraft, sendFinalMinute, sign, updateConfig, _internals: { buildPrivacyPolicyEmailSection, buildSigningInvitationEmail, placeResponsibleFirst } };
+module.exports = { downloadWord, getConfig, getMinute, getSigningAccess, listMinutes, lookupParticipant, publicMinute, publish, reopenForEditing, requestCode, resendInvitations, saveDraft, sendFinalMinute, sign, updateConfig, _internals: { buildPrivacyPolicyEmailSection, buildSigningInvitationEmail, participantRoleLabel, placeResponsibleFirst } };

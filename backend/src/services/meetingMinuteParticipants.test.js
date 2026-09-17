@@ -56,3 +56,8 @@ test('incluye la autorización de datos en la invitación del externo', () => {
   assert.match(invitation.text, /Ley 1581 de 2012/);
   assert.match(invitation.html, /tratamiento de datos personales/i);
 });
+
+test('muestra entidad y cargo para participantes externos', () => {
+  assert.equal(_internals.participantRoleLabel({ user_id: null, organization: 'Fundación Ejemplo', role_title: 'Contratista' }), 'Fundación Ejemplo · Contratista');
+  assert.equal(_internals.participantRoleLabel({ user_id: 9, organization: 'Universidad CESMAG', role_title: 'Docente' }), 'Docente');
+});
