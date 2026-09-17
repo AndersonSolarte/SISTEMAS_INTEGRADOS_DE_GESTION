@@ -282,7 +282,21 @@ export default function MeetingMinuteFormDialog({ open, document, user, onClose 
             </Paper>
           </Stack>
           <Paper variant="outlined" sx={{ width: { xs: '100%', lg: '54%' }, p: 2, borderRadius: 3, position: { lg: 'sticky' }, top: 16 }}>
-            <Stack direction={{ xs: 'column', sm: 'row' }} justifyContent="space-between" alignItems={{ xs: 'stretch', sm: 'center' }} gap={1} mb={1.5}><Box><Typography fontWeight={900}>Vista previa del acta</Typography><Typography variant="caption" color="text.secondary">Se actualiza mientras escribe.</Typography></Box><Stack direction="row" gap={1} flexWrap="wrap"><Button startIcon={<Download />} disabled={!form.id} onClick={download} variant="outlined" sx={{ textTransform: 'none', fontWeight: 800 }}>Descargar Word</Button>{form.status === 'signing' && <Button startIcon={<QrCode2 />} disabled={loading} onClick={showSigningAccess} variant="outlined" sx={{ textTransform: 'none', fontWeight: 800 }}>Ver enlace y QR</Button>}{form.status === 'signing' && !allSigned && <Button startIcon={<Email />} disabled={loading} onClick={resendInvitations} variant="outlined" sx={{ textTransform: 'none', fontWeight: 800 }}>Reenviar invitaciones</Button>}{form.status === 'signing' && !hasSignatures && <Button startIcon={<Edit />} disabled={loading} onClick={() => setConfirmAdjust(true)} color="warning" variant="outlined" sx={{ textTransform: 'none', fontWeight: 800 }}>Hacer ajustes</Button>}{locked && <Button startIcon={<Refresh />} disabled={loading} onClick={() => openMinute(form.id)} variant="outlined" sx={{ textTransform: 'none', fontWeight: 800 }}>Actualizar firmas</Button>}{canSendFinal && <Button startIcon={<Send />} disabled={loading} onClick={sendFinal} color="success" variant="contained" sx={{ textTransform: 'none', fontWeight: 850 }}>{form.status === 'distributed' ? 'Reenviar acta firmada' : 'Enviar acta firmada'}</Button>}{!locked && <Button startIcon={<Email />} onClick={publish} disabled={loading || !form.participants.length} variant="contained" sx={{ textTransform: 'none', fontWeight: 850 }}>Habilitar y enviar invitaciones</Button>}</Stack></Stack>
+            <Box sx={{ mb: 2, pb: 2, borderBottom: '1px solid #e2e8f0' }}>
+              <Box sx={{ mb: 1.5 }}>
+                <Typography fontWeight={900}>Vista previa del acta</Typography>
+                <Typography variant="caption" color="text.secondary">Se actualiza mientras escribe.</Typography>
+              </Box>
+              <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', sm: 'repeat(2,minmax(0,1fr))', xl: 'repeat(3,minmax(0,1fr))' }, gap: 1, '& .MuiButton-root': { minHeight: 42, px: 1.5, textTransform: 'none', fontWeight: 800, whiteSpace: 'nowrap' } }}>
+                <Button fullWidth startIcon={<Download />} disabled={!form.id} onClick={download} variant="outlined">Descargar Word</Button>
+                {form.status === 'signing' && <Button fullWidth startIcon={<QrCode2 />} disabled={loading} onClick={showSigningAccess} variant="outlined">Ver enlace y QR</Button>}
+                {form.status === 'signing' && !allSigned && <Button fullWidth startIcon={<Email />} disabled={loading} onClick={resendInvitations} variant="outlined">Reenviar invitaciones</Button>}
+                {form.status === 'signing' && !hasSignatures && <Button fullWidth startIcon={<Edit />} disabled={loading} onClick={() => setConfirmAdjust(true)} color="warning" variant="outlined">Hacer ajustes</Button>}
+                {locked && <Button fullWidth startIcon={<Refresh />} disabled={loading} onClick={() => openMinute(form.id)} variant="outlined">Actualizar firmas</Button>}
+                {canSendFinal && <Button fullWidth startIcon={<Send />} disabled={loading} onClick={sendFinal} color="success" variant="contained" sx={{ fontWeight: 850 }}>{form.status === 'distributed' ? 'Reenviar acta firmada' : 'Enviar acta firmada'}</Button>}
+                {!locked && <Button fullWidth startIcon={<Email />} onClick={publish} disabled={loading || !form.participants.length} variant="contained" sx={{ fontWeight: 850 }}>Habilitar y enviar invitaciones</Button>}
+              </Box>
+            </Box>
             <Box sx={{ overflowX: 'auto' }}><MeetingPreview document={document} form={form} signatures={signatures} /></Box>
           </Paper>
         </Stack>
