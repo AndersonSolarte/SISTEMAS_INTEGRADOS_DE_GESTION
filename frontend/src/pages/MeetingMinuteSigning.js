@@ -3,6 +3,45 @@ import { useParams } from 'react-router-dom';
 import { Alert, Box, Button, Card, CardContent, Checkbox, CircularProgress, FormControlLabel, Link, MenuItem, Stack, TextField, Typography } from '@mui/material';
 import { CheckCircle, Draw, Email, PersonSearch } from '@mui/icons-material';
 import meetingMinuteService from '../services/meetingMinuteService';
+import logoFormatos from '../assets/logo_formatos.jpg';
+import { sanitizeRichHtml } from '../components/meetingMinute/RichTextEditor';
+
+const displayDate = (value) => {
+  const match = String(value || '').match(/^(\d{4})-(\d{2})-(\d{2})/);
+  return match ? `${match[3]}/${match[2]}/${match[1]}` : value || '';
+};
+
+function PublicActaPreview({ minute }) {
+  if (!minute) return null;
+  const content = minute.content || {};
+  const participants = minute.preview_participants || [];
+  const cell = { px: 1, py: 0.75, borderBottom: '1px solid #111', fontSize: 12 };
+  return <Box sx={{ mb: 3 }}>
+    <Typography fontWeight={900} mb={0.5}>Acta que va a firmar</Typography>
+    <Typography variant="body2" color="text.secondary" mb={1.5}>Revise el contenido completo antes de confirmar su firma.</Typography>
+    <Box sx={{ overflowX: 'auto', border: '1px solid #dbe5f0', borderRadius: 2 }}>
+      <Box sx={{ border: '1px solid #111', bgcolor: '#fff', color: '#111', fontFamily: 'Arial, sans-serif', minWidth: 720 }}>
+        <Box sx={{ display: 'grid', gridTemplateColumns: '22% 56% 22%', minHeight: 82, borderBottom: '1px solid #111' }}>
+          <Box sx={{ borderRight: '1px solid #111', p: 0.75, display: 'grid', placeItems: 'center' }}><Box component="img" src={logoFormatos} alt="Universidad CESMAG" sx={{ maxWidth: '95%', maxHeight: 65 }} /></Box>
+          <Box sx={{ borderRight: '1px solid #111', display: 'grid', placeItems: 'center', textAlign: 'center', fontWeight: 900 }}>REGISTRO DE ASISTENCIA Y REUNIÓN</Box>
+          <Box sx={{ p: 1, display: 'flex', flexDirection: 'column', justifyContent: 'center', fontWeight: 800, fontSize: 10 }}><span>CÓDIGO: {content.header?.codigo || 'COM-ID-FR-002'}</span><span>VERSIÓN: {content.header?.version || minute.version || '1'}</span><span>FECHA: {displayDate(content.fecha)}</span></Box>
+        </Box>
+        <Box sx={cell}><strong>Responsable(s):</strong> {content.responsables}</Box>
+        <Box sx={cell}><strong>Dependencia que cita:</strong> {content.dependencia}</Box>
+        <Box sx={{ ...cell, bgcolor: '#d9d9d9', textAlign: 'center', fontWeight: 900 }}>Información de la Reunión</Box>
+        <Box sx={cell}><strong>Lugar:</strong> {content.lugar}</Box>
+        <Box sx={{ display: 'grid', gridTemplateColumns: '2fr 1fr', borderBottom: '1px solid #111' }}><Box sx={{ p: 0.8, borderRight: '1px solid #111' }}><strong>Fecha:</strong> {displayDate(content.fecha)}</Box><Box sx={{ p: 0.8 }}><strong>Horario:</strong> {content.horario}</Box></Box>
+        <Box sx={{ ...cell, bgcolor: '#d9d9d9', textAlign: 'center', fontWeight: 900 }}>Participantes</Box>
+        <Box sx={{ display: 'grid', gridTemplateColumns: '45px 1.5fr 1fr 150px', bgcolor: '#f2f2f2', borderBottom: '1px solid #111', fontWeight: 900, textAlign: 'center' }}><Box /><Box sx={{ p: 0.6, borderLeft: '1px solid #111' }}>Nombres y Apellidos</Box><Box sx={{ p: 0.6, borderLeft: '1px solid #111' }}>Cargo</Box><Box sx={{ p: 0.6, borderLeft: '1px solid #111' }}>Firma</Box></Box>
+        {participants.map((participant, index) => <Box key={participant.id} sx={{ display: 'grid', gridTemplateColumns: '45px 1.5fr 1fr 150px', borderBottom: '1px solid #111' }}><Box sx={{ p: 0.6, textAlign: 'center', fontWeight: 800 }}>{index + 1}</Box><Box sx={{ p: 0.6, borderLeft: '1px solid #111' }}>{participant.name}</Box><Box sx={{ p: 0.6, borderLeft: '1px solid #111' }}>{participant.role_title}</Box><Box sx={{ p: 0.6, borderLeft: '1px solid #111', textAlign: 'center', color: participant.status === 'signed' ? '#15803d' : '#64748b', fontWeight: 800 }}>{participant.status === 'signed' ? 'Firmado' : 'Pendiente'}</Box></Box>)}
+        {['Objetivo', 'Desarrollo', 'Conclusiones / Compromisos'].map((title) => {
+          const key = title === 'Objetivo' ? 'objetivo' : title === 'Desarrollo' ? 'desarrollo' : 'conclusiones';
+          return <React.Fragment key={title}><Box sx={{ ...cell, bgcolor: '#d9d9d9', textAlign: 'center', fontWeight: 900 }}>{title}</Box><Box sx={{ p: 1, minHeight: key === 'objetivo' ? 62 : 90, fontSize: 12, '& table': { width: '100%', borderCollapse: 'collapse' }, '& th, & td': { border: '1px solid #555', p: 0.5 }, '& a': { color: '#1d5fd1' } }} dangerouslySetInnerHTML={{ __html: sanitizeRichHtml(content[key]?.[0] || '') }} /></React.Fragment>;
+        })}
+      </Box>
+    </Box>
+  </Box>;
+}
 
 export default function MeetingMinuteSigning() {
   const { token } = useParams();
@@ -58,8 +97,9 @@ export default function MeetingMinuteSigning() {
   };
 
   if (loading) return <Stack minHeight="100vh" justifyContent="center" alignItems="center" gap={2}><CircularProgress /><Typography>Cargando acta…</Typography></Stack>;
-  return <Box sx={{ minHeight: '100vh', bgcolor: '#f4f7fb', p: { xs: 1.5, sm: 3, md: 5 } }}><Card sx={{ maxWidth: 760, mx: 'auto', borderRadius: 4, boxShadow: '0 18px 50px rgba(23,59,115,.15)' }}><Box sx={{ p: { xs: 2.5, md: 4 }, background: 'linear-gradient(135deg,#214c9c,#315ee8)', color: '#fff' }}><Typography fontWeight={900} fontSize={13}>SIAC · UNIVERSIDAD CESMAG</Typography><Typography variant="h4" fontWeight={950}>Firma electrónica del acta</Typography><Typography sx={{ opacity: .9 }}>{minute?.code} · {minute?.content?.objetivo?.[0]}</Typography></Box><CardContent sx={{ p: { xs: 2.5, md: 4 } }}>
+  return <Box sx={{ minHeight: '100vh', bgcolor: '#f4f7fb', p: { xs: 1.5, sm: 3, md: 5 } }}><Card sx={{ maxWidth: 1120, mx: 'auto', borderRadius: 4, boxShadow: '0 18px 50px rgba(23,59,115,.15)' }}><Box sx={{ p: { xs: 2.5, md: 4 }, background: 'linear-gradient(135deg,#214c9c,#315ee8)', color: '#fff' }}><Typography fontWeight={900} fontSize={13}>SIAC · UNIVERSIDAD CESMAG</Typography><Typography variant="h4" fontWeight={950}>Revisión y firma electrónica</Typography><Typography sx={{ opacity: .9 }}>{minute?.code}</Typography></Box><CardContent sx={{ p: { xs: 2.5, md: 4 } }}>
     <Alert severity="info" sx={{ mb: 2.5 }}>{personalInvitation ? 'Su correo ya fue verificado mediante este enlace personal. Revise sus datos, dibuje la firma y confirme.' : 'Puede firmar desde celular, tableta o computador. Seleccione su nombre y valide el correo para continuar.'}</Alert>{message && <Alert severity={message.severity} sx={{ mb: 2.5 }}>{message.text}</Alert>}
+    <PublicActaPreview minute={minute} />
     {signed ? <Stack alignItems="center" py={5} gap={1}><CheckCircle color="success" sx={{ fontSize: 76 }} /><Typography variant="h5" fontWeight={950}>Firma guardada</Typography><Typography color="text.secondary">Puede cerrar esta página.</Typography></Stack> : minute && <Stack gap={3}>
       <Box><Stack direction="row" gap={1} alignItems="center"><PersonSearch color="primary" /><Typography fontWeight={900}>{personalInvitation ? '1. Confirme sus datos' : '1. Seleccione su nombre'}</Typography></Stack>{personalInvitation ? <PaperParticipant participant={selectedParticipant} /> : <TextField fullWidth select label="Participante" value={participantId} onChange={(event) => { setParticipantId(event.target.value); setSent(false); setEmail(''); setOtp(''); setHasInk(false); setPrivacyAccepted(false); }} sx={{ mt: 1.25 }}>{minute.participants.map((participant) => <MenuItem key={participant.id} value={participant.id}>{participant.name} · {participant.role_title}{participant.external ? ' · Externo' : ''}</MenuItem>)}</TextField>}</Box>
       {requiresPrivacyConsent && <Box sx={{ p: 2, border: '1px solid #bfdbfe', borderRadius: 3, bgcolor: '#f8fbff' }}><Typography fontWeight={900} mb={1}>Autorización para el tratamiento de datos personales</Typography><Typography variant="body2" color="text.secondary" sx={{ lineHeight: 1.65 }}>En la Universidad CESMAG, tratamos sus datos personales conforme a la Ley 1581 de 2012 y el Decreto 1074 de 2015. El tratamiento de sus datos incluye la recolección, almacenamiento, uso, circulación y supresión de la información. La finalidad de este tratamiento comprende, pero no se limita a gestión de procesos académicos, financieros, administrativos, de investigación, proyección social y de recursos humanos, desarrollo de programas de bienestar y desarrollo estudiantil, seguridad y control de acceso, cumplimiento de obligaciones legales. En algunos casos, podríamos solicitar datos personales sensibles. Usted tiene derecho a conocer, actualizar, rectificar y suprimir sus datos personales, así como a revocar la autorización otorgada para su tratamiento en los términos de la normativa vigente. Para más información sobre nuestras políticas de tratamiento de datos personales y sus cambios sustanciales, visite el siguiente enlace: <Link href="https://www.unicesmag.edu.co/documentos/DATOS-UNICESMAG.pdf" target="_blank" rel="noopener noreferrer">Política de tratamiento de datos personales</Link>. Para ejercer estos derechos o si tiene alguna pregunta sobre este aviso de privacidad o sobre el tratamiento de sus datos personales, contáctenos a través del correo <Link href="mailto:correspondencia@unicesmag.edu.co">correspondencia@unicesmag.edu.co</Link>, o presencialmente en las instalaciones de la Universidad CESMAG, Campus Centro, ubicada en la <Link href="https://www.google.com/maps/search/Carrera+20+A+No.+14-54" target="_blank" rel="noopener noreferrer">Carrera 20 A No. 14-54 de la ciudad de Pasto</Link>.</Typography><FormControlLabel sx={{ mt: 1 }} control={<Checkbox checked={privacyAccepted} onChange={(event) => setPrivacyAccepted(event.target.checked)} />} label={<Typography variant="body2" fontWeight={800}>He leído y autorizo el tratamiento de mis datos personales para participar y firmar esta acta.</Typography>} /></Box>}

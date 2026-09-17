@@ -41,7 +41,8 @@ test('crea una invitación personal para firmar sin copiar códigos', () => {
     signingUrl: 'https://siac.example/firmar-acta-reunion/token-personal'
   });
   assert.match(invitation.subject, /ACTA-2026-001/);
-  assert.match(invitation.html, />Firmar acta</);
+  assert.match(invitation.html, />Revisar y firmar acta</);
+  assert.match(invitation.html, /Adjuntamos una copia del acta/);
   assert.match(invitation.text, /no necesita copiar ningún código/i);
   assert.doesNotMatch(invitation.text, /\b\d{6}\b/);
 });

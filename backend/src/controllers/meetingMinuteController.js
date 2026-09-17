@@ -99,13 +99,13 @@ const buildSigningInvitationEmail = ({ participant, minute, signingUrl }) => {
   const externalPolicy = buildPrivacyPolicyEmailSection(!participant.user_id);
   const meetingDate = formatDate(minute.content?.fecha);
   const html = renderInstitutionalTemplate({
-    title: 'Invitación para firmar acta de reunión',
+    title: 'Revise y firme el acta de reunión',
     introHtml: `<p>Hola <strong>${escapeHtml(participant.name)}</strong>.</p><p>El acta <strong>${escapeHtml(minute.code)}</strong>${meetingDate ? ` del ${escapeHtml(meetingDate)}` : ''} está disponible para su firma.</p>`,
-    bodyHtml: `<div style="margin:20px 0;padding:18px;border:1px solid #bfdbfe;border-radius:12px;background:#f8fbff"><p style="margin:0 0 14px">Este enlace es personal y confirma que usted recibió la invitación en su correo. No necesita copiar códigos ni volver a escribir su dirección.</p><p style="margin:0;text-align:center"><a href="${escapeHtml(signingUrl)}" style="display:inline-block;padding:13px 24px;border-radius:8px;background:#2459d3;color:#fff;text-decoration:none;font-weight:700">Firmar acta</a></p></div>${externalPolicy.html}<p style="font-size:13px;color:#64748b">Por seguridad, el enlace es individual, vence al finalizar el proceso y no debe compartirse.</p>`
+    bodyHtml: `<div style="margin:20px 0;padding:18px;border:1px solid #bfdbfe;border-radius:12px;background:#f8fbff"><p style="margin:0 0 10px">Adjuntamos una copia del acta para su revisión. También puede leerla completa al abrir el siguiente enlace personal.</p><p style="margin:0 0 14px">Su correo queda verificado mediante el enlace; no necesita copiar códigos ni volver a escribir su dirección.</p><p style="margin:0;text-align:center"><a href="${escapeHtml(signingUrl)}" style="display:inline-block;padding:13px 24px;border-radius:8px;background:#2459d3;color:#fff;text-decoration:none;font-weight:700">Revisar y firmar acta</a></p></div>${externalPolicy.html}<p style="font-size:13px;color:#64748b">Por seguridad, el enlace es individual, vence al finalizar el proceso y no debe compartirse.</p>`
   });
   return {
     subject: `${minute.code} · Invitación para firmar acta`,
-    text: `Hola ${participant.name}. El acta ${minute.code}${meetingDate ? ` del ${meetingDate}` : ''} está disponible para su firma. Abra su enlace personal; no necesita copiar ningún código: ${signingUrl}${externalPolicy.text}`,
+    text: `Hola ${participant.name}. Adjuntamos una copia del acta ${minute.code}${meetingDate ? ` del ${meetingDate}` : ''} para su revisión. Abra su enlace personal para leerla y firmarla; no necesita copiar ningún código: ${signingUrl}${externalPolicy.text}`,
     html
   };
 };
@@ -117,6 +117,8 @@ const sendParticipantInvitations = async ({ minute, baseUrl }) => {
   if (!minute.token_expires_at || minute.token_expires_at <= new Date()) {
     await minute.update({ token_expires_at: expiresAt });
   }
+  const reviewBuffer = await buildSignedMinuteBuffer(minute);
+  const reviewAttachment = { filename: `${minute.code}-PARA-REVISION.docx`, content: reviewBuffer, contentType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' };
   const summary = { sent: 0, failed: 0 };
   for (const participant of (minute.participants || []).filter((item) => item.status !== 'signed')) {
     const invitationToken = crypto.randomBytes(32).toString('base64url');
@@ -128,7 +130,7 @@ const sendParticipantInvitations = async ({ minute, baseUrl }) => {
     };
     try {
       await participant.update({ signing_token_hash: hash(invitationToken), signing_token_expires_at: expiresAt });
-      const result = await sendInstitutionalEmail({ to: participant.email, ...email, allowExternalRecipients: true });
+      const result = await sendInstitutionalEmail({ to: participant.email, ...email, attachments: [reviewAttachment], allowExternalRecipients: true });
       if (!result.success) throw new Error(result.error || 'El servicio de correo rechazó la invitación.');
       await participant.update({ invitation_sent_at: new Date() });
       summary.sent += 1;
@@ -359,7 +361,7 @@ const publicMinute = wrap(async (req, res) => {
   const { minute, invitedParticipant, invitationVerified } = access;
   const available = invitationVerified ? [invitedParticipant] : minute.participants.filter((p) => p.status !== 'signed');
   if (invitationVerified && invitedParticipant.status === 'signed') throw Object.assign(new Error('Esta firma ya fue registrada.'), { statusCode: 409 });
-  res.json({ success: true, data: { id: minute.id, code: minute.code, version: minute.version, content: minute.content, invitation_verified: invitationVerified, invited_participant_id: invitedParticipant?.id || null, participants: available.map((p) => ({ id: p.id, name: p.name, role_title: p.role_title, organization: p.organization, external: !p.user_id, email_hint: p.email ? `${p.email.slice(0, 2)}***@${p.email.split('@')[1]}` : '' })) } });
+  res.json({ success: true, data: { id: minute.id, code: minute.code, version: minute.version, content: minute.content, invitation_verified: invitationVerified, invited_participant_id: invitedParticipant?.id || null, preview_participants: minute.participants.map((p) => ({ id: p.id, name: p.name, role_title: p.role_title, status: p.status })), participants: available.map((p) => ({ id: p.id, name: p.name, role_title: p.role_title, organization: p.organization, external: !p.user_id, email_hint: p.email ? `${p.email.slice(0, 2)}***@${p.email.split('@')[1]}` : '' })) } });
 });
 
 const requestCode = wrap(async (req, res) => {
