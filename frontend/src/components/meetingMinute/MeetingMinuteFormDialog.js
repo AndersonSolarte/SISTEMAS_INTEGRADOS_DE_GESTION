@@ -285,9 +285,8 @@ export default function MeetingMinuteFormDialog({ open, document, user, onClose 
             <Box sx={{ mb: 2, pb: 2, borderBottom: '1px solid #e2e8f0' }}>
               <Box sx={{ mb: 1.5 }}>
                 <Typography fontWeight={900}>Vista previa del acta</Typography>
-                <Typography variant="caption" color="text.secondary">Se actualiza mientras escribe.</Typography>
               </Box>
-              <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', sm: 'repeat(2,minmax(0,1fr))', xl: 'repeat(3,minmax(0,1fr))' }, gap: 1, '& .MuiButton-root': { minHeight: 42, px: 1.5, textTransform: 'none', fontWeight: 800, whiteSpace: 'nowrap' } }}>
+              <Box sx={{ display: { xs: 'grid', lg: 'flex' }, gridTemplateColumns: { xs: '1fr', sm: 'repeat(2,minmax(0,1fr))' }, gap: 1, '& .MuiButton-root': { flex: { lg: '1 1 0' }, minWidth: 0, minHeight: 42, px: { xs: 1.5, lg: 1 }, textTransform: 'none', fontWeight: 800, fontSize: { lg: 13 }, whiteSpace: 'nowrap' } }}>
                 <Button fullWidth startIcon={<Download />} disabled={!form.id} onClick={download} variant="outlined">Descargar Word</Button>
                 {form.status === 'signing' && <Button fullWidth startIcon={<QrCode2 />} disabled={loading} onClick={showSigningAccess} variant="outlined">Ver enlace y QR</Button>}
                 {form.status === 'signing' && !allSigned && <Button fullWidth startIcon={<Email />} disabled={loading} onClick={resendInvitations} variant="outlined">Reenviar invitaciones</Button>}
