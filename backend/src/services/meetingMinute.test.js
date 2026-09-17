@@ -27,7 +27,7 @@ test('exporta contenido enriquecido y tablas del acta', async () => {
     header: { codigo: 'COM-ID-FR-002', version: '1', fecha: '16/09/2026' },
     fecha: '16/09/2026',
     objetivo: ['<h3 style="text-align:center">Objetivo institucional</h3><p><strong>Texto destacado</strong> con <u>subrayado</u> y <a href="https://www.unicesmag.edu.co" target="_blank" rel="noopener noreferrer">enlace institucional</a>.</p>'],
-    desarrollo: ['<ul><li>Primer asunto</li><li>Segundo asunto</li></ul><table><tbody><tr><th>Compromiso</th><th>Responsable</th></tr><tr><td>Entregar informe</td><td>Planeación</td></tr></tbody></table>'],
+    desarrollo: ['<ul><li>Primer asunto</li><li>Segundo asunto</li></ul><table><tbody><tr><th>Compromiso</th><th>Responsable</th><th>Fecha</th></tr><tr><td>Entregar informe</td><td>Planeación</td><td>30/09/2026</td></tr><tr><td>Revisar resultados</td><td>Calidad</td><td>15/10/2026</td></tr></tbody></table>'],
     conclusiones: ['<ol><li>Primer acuerdo</li><li>Segundo acuerdo</li></ol>']
   });
   assert.ok(Buffer.isBuffer(buffer));

@@ -41,10 +41,42 @@ export const sanitizeRichHtml = (html = '') => {
   return parsed.body.firstElementChild?.innerHTML || '';
 };
 
+export const insertTableRowAfter = (currentCell) => {
+  const currentRow = currentCell?.closest?.('tr');
+  const table = currentCell?.closest?.('table');
+  if (!currentRow || !table) return null;
+  const columnCount = Math.max(1, ...[...table.rows].map((row) => row.cells.length));
+  const newRow = document.createElement('tr');
+  for (let index = 0; index < columnCount; index += 1) {
+    const cell = document.createElement('td');
+    cell.innerHTML = '<br>';
+    newRow.appendChild(cell);
+  }
+  currentRow.insertAdjacentElement('afterend', newRow);
+  return newRow.cells[0];
+};
+
+export const insertTableColumnAfter = (currentCell) => {
+  const table = currentCell?.closest?.('table');
+  if (!currentCell || !table) return null;
+  const insertAt = currentCell.cellIndex + 1;
+  const selectedRowIndex = currentCell.parentElement.rowIndex;
+  let targetCell = null;
+  [...table.rows].forEach((row, rowIndex) => {
+    const isHeaderRow = [...row.cells].some((cell) => cell.tagName === 'TH');
+    const cell = document.createElement(isHeaderRow ? 'th' : 'td');
+    cell.innerHTML = isHeaderRow ? `Título ${insertAt + 1}` : '<br>';
+    row.insertBefore(cell, row.cells[insertAt] || null);
+    if (rowIndex === selectedRowIndex) targetCell = cell;
+  });
+  return targetCell;
+};
+
 export default function RichTextEditor({ label, value, onChange, disabled = false, minHeight = 130 }) {
   const editorRef = useRef(null);
   const savedRange = useRef(null);
   const formatRange = useRef(null);
+  const tableCellRef = useRef(null);
   const [linkDialog, setLinkDialog] = useState(false);
   const [linkUrl, setLinkUrl] = useState('https://');
   const [active, setActive] = useState({});
@@ -64,11 +96,14 @@ export default function RichTextEditor({ label, value, onChange, disabled = fals
     const block = valueOf('formatBlock').toLowerCase();
     const rawFont = valueOf('fontName').split(',')[0].trim();
     const fontName = ['Arial', 'Georgia', 'Times New Roman', 'Verdana'].find((item) => item.toLowerCase() === rawFont.toLowerCase()) || '';
+    const selectedElement = selection.anchorNode?.nodeType === Node.ELEMENT_NODE ? selection.anchorNode : selection.anchorNode?.parentElement;
+    const tableCell = selectedElement?.closest?.('td,th');
+    tableCellRef.current = tableCell && editorRef.current.contains(tableCell) ? tableCell : null;
     setActive({
       bold: document.queryCommandState('bold'), italic: document.queryCommandState('italic'), underline: document.queryCommandState('underline'),
       bullets: document.queryCommandState('insertUnorderedList'), numbers: document.queryCommandState('insertOrderedList'),
       left: document.queryCommandState('justifyLeft'), center: document.queryCommandState('justifyCenter'), right: document.queryCommandState('justifyRight'),
-      title: /h2|h3/.test(block), quote: block === 'blockquote', fontName, fontSize: valueOf('fontSize'), color: valueOf('foreColor')
+      title: /h2|h3/.test(block), quote: block === 'blockquote', fontName, fontSize: valueOf('fontSize'), color: valueOf('foreColor'), table: Boolean(tableCellRef.current)
     });
   };
 
@@ -106,6 +141,31 @@ export default function RichTextEditor({ label, value, onChange, disabled = fals
     editorRef.current?.querySelectorAll('a').forEach((anchor) => { anchor.target = '_blank'; anchor.rel = 'noopener noreferrer'; });
     emit(); setLinkDialog(false); savedRange.current = null;
   };
+  const focusTableCell = (cell) => {
+    if (!cell) return;
+    tableCellRef.current = cell;
+    editorRef.current?.focus();
+    const range = document.createRange();
+    range.selectNodeContents(cell);
+    range.collapse(true);
+    const selection = window.getSelection();
+    selection?.removeAllRanges();
+    selection?.addRange(range);
+    formatRange.current = range.cloneRange();
+    setActive((current) => ({ ...current, table: true }));
+  };
+  const addTableRow = () => {
+    const targetCell = insertTableRowAfter(tableCellRef.current);
+    if (!targetCell) return;
+    emit();
+    focusTableCell(targetCell);
+  };
+  const addTableColumn = () => {
+    const targetCell = insertTableColumnAfter(tableCellRef.current);
+    if (!targetCell) return;
+    emit();
+    focusTableCell(targetCell);
+  };
   const tool = (title, icon, action, selected = false) => <Tooltip title={title}><span><IconButton size="small" disabled={disabled} aria-pressed={selected} onMouseDown={(event) => { event.preventDefault(); action(); }} sx={{ borderRadius: 1.5, color: selected ? '#174ea6' : '#52657d', bgcolor: selected ? '#dbeafe' : 'transparent', boxShadow: selected ? 'inset 0 0 0 1px #93b4dc' : 'none', '&:hover': { bgcolor: selected ? '#cfe3fb' : '#e5edf7' } }}>{icon}</IconButton></span></Tooltip>;
 
   return <Paper variant="outlined" sx={{ gridColumn: '1 / -1', overflow: 'hidden', borderRadius: 2.5, bgcolor: disabled ? '#f5f7fa' : '#fff' }}>
@@ -138,6 +198,11 @@ export default function RichTextEditor({ label, value, onChange, disabled = fals
       {tool('Insertar tabla de 2 × 2', <TableChart fontSize="small" />, () => command('insertHTML', TABLE_HTML))}
       {tool('Limpiar formato', <FormatClear fontSize="small" />, () => command('removeFormat'))}
     </Stack>
+    {active.table && !disabled && <Stack direction="row" alignItems="center" gap={0.75} sx={{ px: 1.25, py: 0.75, borderBottom: '1px solid #dbe5f0', bgcolor: '#f8fbff' }}>
+      <Typography variant="caption" fontWeight={800} color="text.secondary" sx={{ mr: 0.5 }}>Editar tabla</Typography>
+      <Button size="small" variant="outlined" onMouseDown={(event) => { event.preventDefault(); addTableRow(); }} sx={{ minHeight: 30, textTransform: 'none', fontWeight: 800 }}>+ Agregar fila</Button>
+      <Button size="small" variant="outlined" onMouseDown={(event) => { event.preventDefault(); addTableColumn(); }} sx={{ minHeight: 30, textTransform: 'none', fontWeight: 800 }}>+ Agregar columna</Button>
+    </Stack>}
     <Box
       ref={editorRef}
       contentEditable={!disabled}
@@ -148,7 +213,7 @@ export default function RichTextEditor({ label, value, onChange, disabled = fals
       onFocus={readActiveFormats}
       onMouseUp={readActiveFormats}
       onKeyUp={readActiveFormats}
-      sx={{ minHeight, px: 1.8, py: 1.35, outline: 'none', fontSize: 15, lineHeight: 1.6, color: '#1e293b', '&:empty::before': { content: '"Escriba aquí…"', color: '#94a3b8' }, '& h2, & h3': { mt: 1, mb: 0.5, fontWeight: 800 }, '& p': { my: 0.5 }, '& blockquote': { my: 1, mx: 0, pl: 2, borderLeft: '4px solid #93b4dc', color: '#475569' }, '& hr': { my: 1.25, border: 0, borderTop: '1px solid #b8c8da' }, '& a': { color: '#1d5fd1', textDecoration: 'underline' }, '& ul, & ol': { my: 0.5, pl: 3 }, '& table': { width: '100%', borderCollapse: 'collapse', my: 1 }, '& th, & td': { border: '1px solid #94a3b8', p: 0.75, minWidth: 70 }, '& th': { bgcolor: '#eff6ff', fontWeight: 800 } }}
+      sx={{ minHeight, px: 1.8, py: 1.35, overflowX: 'auto', outline: 'none', fontSize: 15, lineHeight: 1.6, color: '#1e293b', '&:empty::before': { content: '"Escriba aquí…"', color: '#94a3b8' }, '& h2, & h3': { mt: 1, mb: 0.5, fontWeight: 800 }, '& p': { my: 0.5 }, '& blockquote': { my: 1, mx: 0, pl: 2, borderLeft: '4px solid #93b4dc', color: '#475569' }, '& hr': { my: 1.25, border: 0, borderTop: '1px solid #b8c8da' }, '& a': { color: '#1d5fd1', textDecoration: 'underline' }, '& ul, & ol': { my: 0.5, pl: 3 }, '& table': { width: 'max-content', minWidth: '100%', borderCollapse: 'collapse', my: 1 }, '& th, & td': { border: '1px solid #94a3b8', p: 0.75, minWidth: 110 }, '& th': { bgcolor: '#eff6ff', fontWeight: 800 } }}
     />
     <Dialog open={linkDialog} onClose={() => setLinkDialog(false)} maxWidth="xs" fullWidth><DialogTitle fontWeight={900}>Insertar hipervínculo</DialogTitle><DialogContent><TextField autoFocus fullWidth label="Dirección web o correo" value={linkUrl} onChange={(event) => setLinkUrl(event.target.value)} helperText="Ejemplo: https://www.unicesmag.edu.co o mailto:correo@ejemplo.com" sx={{ mt: 1 }} /></DialogContent><DialogActions><Button onClick={() => setLinkDialog(false)}>Cancelar</Button><Button variant="contained" onClick={insertLink}>Insertar enlace</Button></DialogActions></Dialog>
   </Paper>;
