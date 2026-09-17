@@ -156,7 +156,7 @@ const sqlInjectionGuard = (req, res, next) => {
     ['body.turnstileToken', 4096]
   ]);
   const isGoogleAuthRequest = /^\/api\/auth\/google(?:\/redirect)?(?:\?|$)/i.test(String(req.originalUrl || ''));
-  const isStrategicSignatureRequest = /^\/api\/(?:public\/strategic-planning\/minutes\/[^/]+\/sign|strategic-planning\/(?:minutes\/[^/]+\/sign-internal|my-signature))(?:\?|$)/i
+  const isSignatureRequest = /^\/api\/(?:public\/strategic-planning\/minutes\/[^/]+\/sign|strategic-planning\/(?:minutes\/[^/]+\/sign-internal|my-signature)|meeting-minutes\/public\/[^/]+\/sign)(?:\?|$)/i
     .test(String(req.originalUrl || ''));
   const maxSignatureDataLength = Number(process.env.SIGNATURE_MAX_DATA_URL_LENGTH || 2.8 * 1024 * 1024);
   const stack = containers.map((item) => ({ ...item, path: item.source, depth: 0 }));
@@ -166,7 +166,7 @@ const sqlInjectionGuard = (req, res, next) => {
     if (value === null || value === undefined) continue;
 
     if (typeof value === 'string') {
-      if (isStrategicSignatureRequest && currentPath === 'body.signature_data') {
+      if (isSignatureRequest && currentPath === 'body.signature_data') {
         if (value.length > maxSignatureDataLength) {
           return res.status(413).json({
             success: false,
