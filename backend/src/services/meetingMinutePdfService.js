@@ -1,6 +1,7 @@
 const fs = require('fs');
 const path = require('path');
 const PdfPrinter = require('pdfmake');
+const { PRIVACY_POLICY_PARAGRAPHS, PRIVACY_POLICY_URL } = require('../constants/privacyPolicy');
 
 const printer = new PdfPrinter({
   SIAC: { normal: 'Helvetica', bold: 'Helvetica-Bold', italics: 'Helvetica-Oblique', bolditalics: 'Helvetica-BoldOblique' }
@@ -114,7 +115,16 @@ const generateMeetingMinutePdf = async (payload = {}) => {
       },
       section('Objetivo', payload.objetivo),
       section('Desarrollo', payload.desarrollo),
-      section('Conclusiones / Compromisos', payload.conclusiones)
+      section('Conclusiones / Compromisos', payload.conclusiones),
+      {
+        unbreakable: false,
+        margin: [0, 8, 0, 0],
+        stack: [
+          { text: 'TRATAMIENTO DE DATOS PERSONALES', bold: true, color: '#174ea6', fontSize: 9, margin: [0, 0, 0, 5] },
+          ...PRIVACY_POLICY_PARAGRAPHS.map((paragraph) => ({ text: paragraph, fontSize: 7.5, color: '#475569', lineHeight: 1.2, margin: [0, 0, 0, 5] })),
+          { text: 'Consultar la política institucional completa', link: PRIVACY_POLICY_URL, decoration: 'underline', color: '#174ea6', fontSize: 7.5 }
+        ]
+      }
     ],
     defaultStyle: { font: 'SIAC', fontSize: 9, color: '#111111' }
   };
