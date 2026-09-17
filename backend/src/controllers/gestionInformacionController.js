@@ -11342,10 +11342,24 @@ const downloadInformeIntegralProgramaPdf = async (req, res) => {
     if (!programa || programa.toUpperCase() === 'TODOS') {
       return res.status(400).json({ success: false, message: 'Debes especificar un programa para generar el informe integral.' });
     }
-    const pdfBuffer = await buildAndGenerateInformeIntegralPdf(programa);
+    let anios = null;
+    if (req.query?.anios) {
+      anios = String(req.query.anios)
+        .split(',')
+        .map((y) => Number(y.trim()))
+        .filter((y) => !isNaN(y) && y > 1900 && y < 2100);
+    } else if (req.query?.anioInicio) {
+      const start = Number(req.query.anioInicio);
+      if (!isNaN(start)) {
+        anios = Array.from({ length: 2027 - start }, (_, i) => start + i);
+      }
+    }
+
+    const pdfBuffer = await buildAndGenerateInformeIntegralPdf(programa, anios);
     const safeName = programa.replace(/[^a-zA-Z0-9_-]/g, '_');
+    const safeYearSuffix = anios && anios.length ? `_anios_${anios.join('_')}` : '';
     res.setHeader('Content-Type', 'application/pdf');
-    res.setHeader('Content-Disposition', `attachment; filename="Informe_Integral_${safeName}.pdf"`);
+    res.setHeader('Content-Disposition', `attachment; filename="Informe_Integral_${safeName}${safeYearSuffix}.pdf"`);
     return res.send(pdfBuffer);
   } catch (error) {
     console.error('Error al generar informe integral del programa:', error);

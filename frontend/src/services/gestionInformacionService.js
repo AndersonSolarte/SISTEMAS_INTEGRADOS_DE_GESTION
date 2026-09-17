@@ -102,9 +102,12 @@ const gestionInformacionService = {
       responseType: 'blob',
       timeout: 120000
     }),
-  downloadInformeIntegralProgramaPdf: (programa) =>
+  downloadInformeIntegralProgramaPdf: (programa, anios = null) =>
     api.get('/planeacion/gestion-informacion/informe-integral-programa/report.pdf', {
-      params: { programa },
+      params: {
+        programa,
+        ...(anios ? { anios: Array.isArray(anios) ? anios.join(',') : anios } : {})
+      },
       responseType: 'blob',
       timeout: 180000
     }),

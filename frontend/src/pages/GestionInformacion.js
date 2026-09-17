@@ -2264,6 +2264,7 @@ function GestionInformacion() {
   const [empleabilidadUi, setEmpleabilidadUi] = useState({ programa: '', anios: [] });
   const [resumenEstadisticoUi, setResumenEstadisticoUi] = useState({ programa: '', module: 'informacion_general' });
   const [selectedIntegralProgram, setSelectedIntegralProgram] = useState('');
+  const [selectedIntegralYears, setSelectedIntegralYears] = useState([]);
   const [generatingIntegralPdf, setGeneratingIntegralPdf] = useState(false);
   const [registrosCalificadosData, setRegistrosCalificadosData] = useState(null);
   const [registrosCalificadosLoading, setRegistrosCalificadosLoading] = useState(false);
@@ -9571,9 +9572,15 @@ const renderCategoryBars = (items = [], options = {}) => {
       enqueueSnackbar('Por favor selecciona un programa académico para exportar el informe integral.', { variant: 'warning' });
       return;
     }
+    if (selectedIntegralYears.length === 1 && selectedIntegralYears[0] === '__NONE__') {
+      enqueueSnackbar('Por favor selecciona al menos un año para el informe integral.', { variant: 'warning' });
+      return;
+    }
     setGeneratingIntegralPdf(true);
     try {
-      const response = await gestionInformacionService.downloadInformeIntegralProgramaPdf(selectedIntegralProgram);
+      const isAll = !selectedIntegralYears.length;
+      const aniosParam = isAll ? null : selectedIntegralYears.filter((y) => y !== '__NONE__').join(',');
+      const response = await gestionInformacionService.downloadInformeIntegralProgramaPdf(selectedIntegralProgram, aniosParam);
       const url = window.URL.createObjectURL(response.data);
       const link = document.createElement('a');
       link.href = url;
@@ -9583,7 +9590,8 @@ const renderCategoryBars = (items = [], options = {}) => {
         .toLowerCase()
         .replace(/[^a-z0-9]+/g, '_')
         .replace(/^_+|_+$/g, '');
-      link.download = `informe_integral_${cleanSlug}.pdf`;
+      const yearSuffix = aniosParam ? `_anios_${aniosParam.replace(/,/g, '_')}` : '';
+      link.download = `informe_integral_${cleanSlug}${yearSuffix}.pdf`;
       document.body.appendChild(link);
       link.click();
       link.remove();
@@ -9615,6 +9623,16 @@ const renderCategoryBars = (items = [], options = {}) => {
           </Stack>
 
           <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1.5} alignItems="center" sx={{ width: { xs: '100%', lg: 'auto' } }}>
+            <Box sx={{ width: { xs: '100%', sm: 175, md: 195 } }}>
+              <DocFilterPanel
+                label="AÑOS"
+                placeholder="Buscar año..."
+                options={['2016', '2017', '2018', '2019', '2020', '2021', '2022', '2023', '2024', '2025', '2026']}
+                value={selectedIntegralYears}
+                onChange={(nextYears) => setSelectedIntegralYears(nextYears)}
+                accentColor="#082b66"
+              />
+            </Box>
             <Autocomplete
               size="small"
               options={ACADEMIC_PROGRAMS.map((p) => p.name)}
@@ -9625,10 +9643,14 @@ const renderCategoryBars = (items = [], options = {}) => {
                   {...params}
                   label="Programa para informe integral"
                   placeholder="Selecciona programa académico..."
-                  sx={{ bgcolor: '#ffffff', borderRadius: 1.5 }}
+                  sx={{
+                    bgcolor: '#ffffff',
+                    borderRadius: 1.5,
+                    '& .MuiOutlinedInput-root': { minHeight: 52 }
+                  }}
                 />
               )}
-              sx={{ minWidth: { xs: '100%', sm: 300, md: 360 } }}
+              sx={{ minWidth: { xs: '100%', sm: 280, md: 340 } }}
             />
             <Button
               variant="contained"
@@ -9641,9 +9663,10 @@ const renderCategoryBars = (items = [], options = {}) => {
                 color: '#ffffff',
                 borderRadius: 2,
                 px: 2.4,
-                py: 0.95,
+                minHeight: 52,
+                height: 52,
                 whiteSpace: 'nowrap',
-                fontWeight: 600,
+                fontWeight: 700,
                 textTransform: 'none',
                 boxShadow: '0 4px 12px rgba(8, 43, 102, 0.2)'
               }}
@@ -11227,33 +11250,70 @@ const renderCategoryBars = (items = [], options = {}) => {
     const hayPrograma = Boolean(empleabilidadUi.programa);
 
     const byYearMapAll = new Map();
-    parsed.filter((r) => !hayPrograma || r.programa === empleabilidadUi.programa).forEach((r) => {
-      const anio = Number(r.anio) || 0;
-      if (!anio) return;
-      if (!byYearMapAll.has(anio)) byYearMapAll.set(anio, { anio, programa: 0 });
-      if (r.metric === 'programa') byYearMapAll.get(anio).programa += r.valorNum;
-    });
+    if (hayPrograma) {
+      parsed.filter((r) => r.programa === empleabilidadUi.programa).forEach((r) => {
+        const anio = Number(r.anio) || 0;
+        if (!anio) return;
+        if (!byYearMapAll.has(anio)) {
+          byYearMapAll.set(anio, { anio, programa: null, nacional: null, progCount: 0, nacCount: 0 });
+        }
+        const target = byYearMapAll.get(anio);
+        if (r.metric === 'programa' && r.valorNum > 0) {
+          target.programa = (target.programa || 0) + r.valorNum;
+          target.progCount += 1;
+        } else if (r.metric === 'nacional' && r.valorNum > 0) {
+          target.nacional = (target.nacional || 0) + r.valorNum;
+          target.nacCount += 1;
+        }
+      });
+      byYearMapAll.forEach((val) => {
+        if (val.progCount > 1) val.programa = parseFloat((val.programa / val.progCount).toFixed(2));
+        if (val.nacCount > 1) val.nacional = parseFloat((val.nacional / val.nacCount).toFixed(2));
+      });
+    } else {
+      parsed.forEach((r) => {
+        const anio = Number(r.anio) || 0;
+        if (!anio) return;
+        if (!byYearMapAll.has(anio)) {
+          byYearMapAll.set(anio, { anio, progSum: 0, progCount: 0, nacSum: 0, nacCount: 0 });
+        }
+        const target = byYearMapAll.get(anio);
+        if (r.metric === 'programa' && r.valorNum > 0) {
+          target.progSum += r.valorNum;
+          target.progCount += 1;
+        } else if (r.metric === 'nacional' && r.valorNum > 0) {
+          target.nacSum += r.valorNum;
+          target.nacCount += 1;
+        }
+      });
+      byYearMapAll.forEach((val) => {
+        val.programa = val.progCount > 0 ? parseFloat((val.progSum / val.progCount).toFixed(2)) : null;
+        val.nacional = val.nacCount > 0 ? parseFloat((val.nacSum / val.nacCount).toFixed(2)) : null;
+      });
+    }
+
     const todosLosAnios = Array.from(byYearMapAll.keys()).sort((a, b) => a - b);
-    const aniosDisponibles = hayPrograma ? todosLosAnios : [];
+    const aniosDisponibles = todosLosAnios;
 
     const aniosSeleccionados = empleabilidadUi.anios || [];
-    const lineData = (hayPrograma
-      ? (aniosSeleccionados.length > 0
-          ? aniosDisponibles.filter((a) => aniosSeleccionados.includes(a))
-          : aniosDisponibles)
-      : []
+    const lineData = (
+      aniosSeleccionados.length > 0
+        ? aniosDisponibles.filter((a) => aniosSeleccionados.includes(a))
+        : aniosDisponibles
     ).map((a) => byYearMapAll.get(a)).filter(Boolean);
 
-    const programaValues = lineData.map((r) => r.programa).filter((v) => v > 0);
+    const programaValues = lineData.map((r) => r.programa).filter((v) => typeof v === 'number' && v > 0);
     const maxEmpVal = programaValues.length ? Math.max(...programaValues) : null;
     const minEmpVal = programaValues.length ? Math.min(...programaValues) : null;
-    const avgEmpVal = programaValues.length ? programaValues.reduce((a, b) => a + b, 0) / programaValues.length : null;
+    const avgEmpVal = programaValues.length ? parseFloat((programaValues.reduce((a, b) => a + b, 0) / programaValues.length).toFixed(2)) : null;
     const maxEmpAnio = maxEmpVal !== null ? (lineData.find((r) => r.programa === maxEmpVal)?.anio ?? '') : '';
     const minEmpAnio = minEmpVal !== null ? (lineData.find((r) => r.programa === minEmpVal)?.anio ?? '') : '';
 
     const dataAvailable = Boolean(empleabilidadRows.length);
-    const chartTitle = empleabilidadUi.programa ? `UNICESMAG (Pasto) — ${empleabilidadUi.programa}` : '';
-    const hayFiltroActivo = hayPrograma;
+    const chartTitle = hayPrograma
+      ? `UNICESMAG (Pasto) — ${empleabilidadUi.programa}`
+      : 'UNICESMAG (Pasto) — Promedio Institucional (Todos los programas)';
+    const hayFiltroActivo = true;
     const hayFiltroAnio = aniosSeleccionados.length > 0;
 
     // Ranking data — todos los programas, sin slice
@@ -11325,25 +11385,25 @@ const renderCategoryBars = (items = [], options = {}) => {
 
     const EMP_KPIS = [
       {
-        label: 'PORCENTAJE MÁXIMO EMPLEABILIDAD',
-        value: hayFiltroActivo && maxEmpVal !== null ? `${maxEmpVal.toFixed(2)} %` : '—',
-        sub: hayFiltroActivo && maxEmpAnio ? `Año ${maxEmpAnio}` : 'Selecciona un programa',
+        label: hayPrograma ? 'PORCENTAJE MÁXIMO EMPLEABILIDAD' : 'MÁXIMO INSTITUCIONAL HISTÓRICO',
+        value: maxEmpVal !== null ? `${maxEmpVal.toFixed(2)} %` : '—',
+        sub: maxEmpAnio ? `Año ${maxEmpAnio}${!hayPrograma ? ' (Promedio)' : ''}` : (hayPrograma ? 'Sin datos' : 'Todos los programas'),
         gradient: 'linear-gradient(135deg, #0f2d6b 0%, #1d4ed8 100%)',
         shadow: 'rgba(29,78,216,0.28)',
         icon: <TrendingUpIcon sx={{ fontSize: 56 }} />
       },
       {
-        label: 'PORCENTAJE MÍNIMO EMPLEABILIDAD',
-        value: hayFiltroActivo && minEmpVal !== null ? `${minEmpVal.toFixed(2)} %` : '—',
-        sub: hayFiltroActivo && minEmpAnio ? `Año ${minEmpAnio}` : 'Selecciona un programa',
+        label: hayPrograma ? 'PORCENTAJE MÍNIMO EMPLEABILIDAD' : 'MÍNIMO INSTITUCIONAL HISTÓRICO',
+        value: minEmpVal !== null ? `${minEmpVal.toFixed(2)} %` : '—',
+        sub: minEmpAnio ? `Año ${minEmpAnio}${!hayPrograma ? ' (Promedio)' : ''}` : (hayPrograma ? 'Sin datos' : 'Todos los programas'),
         gradient: 'linear-gradient(135deg, #1e3a8a 0%, #2563eb 100%)',
         shadow: 'rgba(37,99,235,0.28)',
         icon: <TrendingDownIcon sx={{ fontSize: 56 }} />
       },
       {
-        label: 'PROMEDIO DE EMPLEABILIDAD',
-        value: hayFiltroActivo && avgEmpVal !== null ? `${avgEmpVal.toFixed(2)} %` : '—',
-        sub: hayFiltroActivo ? `${lineData.length} año${lineData.length !== 1 ? 's' : ''} analizado${lineData.length !== 1 ? 's' : ''}` : 'Selecciona un programa',
+        label: hayPrograma ? 'PROMEDIO DE EMPLEABILIDAD' : 'PROMEDIO INSTITUCIONAL GLOBAL',
+        value: avgEmpVal !== null ? `${avgEmpVal.toFixed(2)} %` : '—',
+        sub: `${lineData.length} año${lineData.length !== 1 ? 's' : ''} analizado${lineData.length !== 1 ? 's' : ''}${!hayPrograma ? ' · Todos los programas' : ''}`,
         gradient: 'linear-gradient(135deg, #1d4ed8 0%, #60a5fa 100%)',
         shadow: 'rgba(96,165,250,0.28)',
         icon: <AutoGraphIcon sx={{ fontSize: 56 }} />
@@ -11415,7 +11475,6 @@ const renderCategoryBars = (items = [], options = {}) => {
                   multiple disableCloseOnSelect
                   options={aniosDisponibles}
                   value={aniosSeleccionados}
-                  disabled={!hayPrograma}
                   onChange={(_, newVal) => setEmpleabilidadUi((prev) => ({ ...prev, anios: newVal }))}
                   limitTags={2} size="small" fullWidth
                   noOptionsText="Sin años disponibles"
@@ -11430,9 +11489,9 @@ const renderCategoryBars = (items = [], options = {}) => {
                   renderInput={(params) => (
                     <TextField {...params} label="Años específicos" placeholder={aniosSeleccionados.length === 0 ? 'Todos los años' : ''}
                       sx={{
-                        '& .MuiOutlinedInput-root': { color: '#fff', bgcolor: hayPrograma ? 'rgba(255,255,255,0.15)' : 'rgba(255,255,255,0.06)', borderRadius: 2,
+                        '& .MuiOutlinedInput-root': { color: '#fff', bgcolor: 'rgba(255,255,255,0.15)', borderRadius: 2,
                           '& fieldset': { borderColor: 'rgba(255,255,255,0.4)' },
-                          '&:hover fieldset': { borderColor: hayPrograma ? 'rgba(255,255,255,0.7)' : 'rgba(255,255,255,0.4)' },
+                          '&:hover fieldset': { borderColor: 'rgba(255,255,255,0.7)' },
                           '&.Mui-focused fieldset': { borderColor: '#fff' },
                           '& input': { color: '#fff' },
                           '& input::placeholder': { color: 'rgba(255,255,255,0.55)', opacity: 1 } },
@@ -11500,7 +11559,7 @@ const renderCategoryBars = (items = [], options = {}) => {
             </Box>
 
             {/* GRAFICA DE LINEAS */}
-            {hayFiltroActivo && (
+            {dataAvailable && (
               <Paper elevation={0} sx={{ p: { xs: 1.5, md: 2 }, borderRadius: 3, border: '1px solid #e8edf5', bgcolor: '#fff', boxShadow: '0 4px 24px rgba(15,23,42,0.07)', position: 'relative' }}>
                 <Stack direction="row" justifyContent="space-between" alignItems="center" sx={{ mb: 1.5, px: 0.5 }}>
                   <Box>
@@ -11525,27 +11584,35 @@ const renderCategoryBars = (items = [], options = {}) => {
                     <Typography sx={{ fontWeight: 700, color: '#475569', fontSize: 14 }}>Sin datos para los años seleccionados</Typography>
                   </Box>
                 ) : (
-                  <Box id="emp-line-chart" sx={{ height: lineData.length === 1 ? 220 : 380 }}>
+                  <Box id="emp-line-chart" sx={{ height: lineData.length === 1 ? 240 : 400 }}>
                     <ResponsiveContainer width="100%" height="100%">
-                      <LineChart data={lineData} margin={{ top: 22, right: 30, left: 10, bottom: 28 }}>
+                      <LineChart data={lineData} margin={{ top: 24, right: 30, left: 10, bottom: 20 }}>
                         <CartesianGrid strokeDasharray="6 3" stroke="#c8d6e5" strokeWidth={1} />
                         <XAxis dataKey="anio" tick={{ fontSize: 12, fontWeight: 700, fill: '#475569' }}
                           axisLine={{ stroke: '#e2e8f0', strokeWidth: 1.5 }} tickLine={false}
-                          label={{ value: 'Año', position: 'insideBottom', offset: -16, fill: '#64748b', fontWeight: 700, fontSize: 12 }} />
+                          label={{ value: 'Año', position: 'insideBottom', offset: -12, fill: '#64748b', fontWeight: 700, fontSize: 12 }} />
                         <YAxis tick={{ fontSize: 11, fill: '#475569' }} axisLine={false} tickLine={false}
                           tickFormatter={(v) => `${v}%`}
                           label={{ value: 'PORCENTAJE DE EMPLEABILIDAD', angle: -90, position: 'insideLeft', offset: -6, fill: '#64748b', fontWeight: 700, fontSize: 10 }} />
                         <RechartsTooltip
                           contentStyle={{ borderRadius: 10, border: '1px solid #e2e8f0', boxShadow: '0 8px 24px rgba(0,0,0,0.12)', fontSize: 13, fontWeight: 600 }}
-                          formatter={(v) => [`${Number(v).toFixed(2)}%`, 'Empleabilidad']}
+                          formatter={(v, name) => [v !== null && v !== undefined ? `${Number(v).toFixed(2)}%` : 'Sin dato', name]}
                           labelFormatter={(l) => `Año ${l}`}
                           cursor={{ stroke: '#1d4ed8', strokeWidth: 1.5, strokeDasharray: '4 2' }} />
-                        <Line type="linear" dataKey="programa" name="Empleabilidad" stroke="#1d4ed8" strokeWidth={2.8}
+                        <Legend verticalAlign="bottom" height={36} wrapperStyle={{ paddingTop: 10, fontSize: 12, fontWeight: 700 }} />
+                        <Line type="linear" dataKey="programa" name={hayPrograma ? 'Tasa Programa' : 'Promedio Institucional'} stroke="#1d4ed8" strokeWidth={2.8}
                           dot={{ r: 5, fill: '#1d4ed8', stroke: '#fff', strokeWidth: 2.5 }}
                           activeDot={{ r: 9, fill: '#1d4ed8', stroke: '#fff', strokeWidth: 3 }}>
                           <LabelList dataKey="programa" position="top" offset={8}
-                            formatter={(v) => `${Number(v).toFixed(1)}`}
+                            formatter={(v) => (v !== null && v !== undefined ? `${Number(v).toFixed(1)}%` : '')}
                             style={{ fontSize: 11, fontWeight: 800, fill: '#1d4ed8' }} />
+                        </Line>
+                        <Line type="linear" dataKey="nacional" name="Referente Nacional" stroke="#64748b" strokeWidth={2.2} strokeDasharray="4 3"
+                          dot={{ r: 4, fill: '#64748b', stroke: '#fff', strokeWidth: 2 }}
+                          activeDot={{ r: 7, fill: '#64748b', stroke: '#fff', strokeWidth: 2 }}>
+                          <LabelList dataKey="nacional" position="bottom" offset={8}
+                            formatter={(v) => (v !== null && v !== undefined ? `${Number(v).toFixed(1)}%` : '')}
+                            style={{ fontSize: 10, fontWeight: 700, fill: '#64748b' }} />
                         </Line>
                       </LineChart>
                     </ResponsiveContainer>
@@ -15749,6 +15816,99 @@ const renderCategoryBars = (items = [], options = {}) => {
     );
   };
 
+  const buildPeriodAxisGroups = (rows = []) => {
+    const groups = [];
+    rows.forEach((row, index) => {
+      const year = String(row.year || row.periodo || '').split('-')[0] || 'Sin año';
+      const last = groups[groups.length - 1];
+      if (last && last.year === year) {
+        last.count += 1;
+      } else {
+        groups.push({ year, start: index, count: 1 });
+      }
+    });
+    return groups;
+  };
+
+  const renderPeriodAxis = (rows = [], slotWidth = 58, offsets = {}, onPeriodClick = null) => {
+    if (!rows.length) return null;
+    const groups = buildPeriodAxisGroups(rows);
+    const left = Number(offsets.left || 0);
+    const right = Number(offsets.right || 0);
+    return (
+      <Box sx={{ mt: 0.2, pl: `${left}px`, pr: `${right}px` }}>
+        <Box
+          sx={{
+            display: 'grid',
+            gridTemplateColumns: `repeat(${rows.length}, minmax(${slotWidth}px, 1fr))`,
+            columnGap: 0,
+            alignItems: 'center'
+          }}
+        >
+          {rows.map((row, index) => {
+            const isSelected = Boolean(row.isSelected);
+            return (
+              <Box
+                key={`sem-${row.periodo || index}`}
+                onClick={() => onPeriodClick && onPeriodClick(row.rawPeriod || row.periodo, index)}
+                sx={{
+                  display: 'grid',
+                  placeItems: 'center',
+                  cursor: onPeriodClick ? 'pointer' : 'default',
+                  transition: 'transform 0.15s ease',
+                  '&:hover': onPeriodClick ? { transform: 'scale(1.1)' } : {}
+                }}
+              >
+                <Box
+                  sx={{
+                    width: 28,
+                    height: 23,
+                    borderRadius: 999,
+                    bgcolor: isSelected ? '#1d4ed8' : '#e2e8f0',
+                    color: isSelected ? '#ffffff' : '#64748b',
+                    display: 'grid',
+                    placeItems: 'center',
+                    boxShadow: isSelected ? '0 2px 6px rgba(29,78,216,0.3)' : 'none'
+                  }}
+                >
+                  <Typography sx={{ fontSize: 13, fontWeight: 900, lineHeight: 1, color: 'inherit' }}>
+                    {row.semester || (String(row.periodo || '').endsWith('II') ? 'II' : 'I')}
+                  </Typography>
+                </Box>
+              </Box>
+            );
+          })}
+        </Box>
+        <Box
+          sx={{
+            display: 'grid',
+            gridTemplateColumns: `repeat(${rows.length}, minmax(${slotWidth}px, 1fr))`,
+            columnGap: 0,
+            mt: 0.45
+          }}
+        >
+          {groups.map((group) => (
+            <Box
+              key={`yr-${group.year}-${group.start}`}
+              sx={{
+                gridColumn: `${group.start + 1} / ${group.start + group.count + 1}`,
+                minHeight: 32,
+                display: 'grid',
+                placeItems: 'center',
+                border: '1px solid #94a3b8',
+                bgcolor: '#f8fafc'
+              }}
+            >
+              <Typography sx={{ color: '#0f172a', fontWeight: 900, fontSize: 15 }}>
+                {group.year}
+              </Typography>
+            </Box>
+          ))}
+        </Box>
+      </Box>
+    );
+  };
+
   const renderMatriculadosRechartsChart = (series) => {
     if (!series || series.length === 0) return null;
     const selectedYears = matFilters.anios || [];
@@ -15797,8 +15957,19 @@ const renderCategoryBars = (items = [], options = {}) => {
 
     const chartData = filteredSeries.map((row) => {
       const rawPeriod = String(row.periodLabel || '').toLowerCase();
-      const fmtName = rawPeriod.replace(/-1$/, '-I').replace(/-2$/, '-II').toUpperCase();
-      return { name: fmtName, rawPeriod, value: normalizeNumber(row.matriculados || 0) };
+      const [yearRaw = '', semRaw = ''] = rawPeriod.split('-');
+      const semester = semRaw === '2' || semRaw === 'ii' ? 'II' : 'I';
+      const fmtName = yearRaw ? `${yearRaw}-${semester}` : rawPeriod.toUpperCase();
+      const isSelected = selectedPeriods.includes(rawPeriod);
+      return {
+        name: fmtName,
+        periodo: fmtName,
+        year: yearRaw,
+        semester,
+        rawPeriod,
+        isSelected,
+        value: normalizeNumber(row.matriculados || 0)
+      };
     });
 
     const handleBarClick = (_, index) => {
@@ -15839,10 +16010,17 @@ const renderCategoryBars = (items = [], options = {}) => {
       const isSelected = hasSelection && selectedPeriods.includes(chartData[index]?.rawPeriod);
       const isDimmed = hasSelection && !isSelected;
       return (
-        <text x={x + width / 2} y={y - 6} textAnchor="middle"
-          fill={isDimmed ? '#bfdbfe' : '#1d4ed8'}
-          fontSize={isSelected ? 17 : 15}
-          fontWeight={isSelected ? 900 : 700}>
+        <text
+          x={x + width / 2}
+          y={y - 8}
+          textAnchor="middle"
+          fill={isDimmed ? '#bfdbfe' : isSelected ? '#1d4ed8' : '#1e40af'}
+          fontSize={isSelected ? 15 : 13}
+          fontWeight={900}
+          stroke="#ffffff"
+          strokeWidth={3}
+          paintOrder="stroke"
+        >
           {formatNumber(value)}
         </text>
       );
@@ -16409,82 +16587,100 @@ const renderCategoryBars = (items = [], options = {}) => {
             })()}
 
             {matChartViewMode === 'line' && (
-              <Box sx={{ height: 360 }}>
-                <ResponsiveContainer width="100%" height="100%">
-                  <AreaChart data={chartData} margin={{ top: 36, right: 20, left: 0, bottom: 4 }} onClick={(e) => e && e.activeTooltipIndex != null && handleBarClick(null, e.activeTooltipIndex)}>
-                    <defs>
-                      <linearGradient id="matAreaGrad" x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="0%" stopColor="#2563eb" stopOpacity={0.35} />
-                        <stop offset="100%" stopColor="#1d4ed8" stopOpacity={0.01} />
-                      </linearGradient>
-                    </defs>
-                    <CartesianGrid strokeDasharray="3 3" stroke="#cbd5e1" strokeWidth={0.8} />
-                    <XAxis dataKey="name" tick={{ fontSize: 13, fill: '#334155', fontWeight: 800 }} axisLine={{ stroke: '#94a3b8', strokeWidth: 1 }} tickLine={false} interval={0} />
-                    <YAxis
-                      domain={[0, 'auto']}
-                      tick={{ fontSize: 13, fill: '#475569', fontWeight: 700 }}
-                      axisLine={false}
-                      tickLine={false}
-                      tickFormatter={fmtAxis}
-                      width={52}
-                    />
-                    <RechartsTooltip content={<CustomTooltip />} />
-                    <Area
-                      type="linear"
-                      dataKey="value"
-                      stroke="#1d4ed8"
-                      strokeWidth={3.5}
-                      fill="url(#matAreaGrad)"
-                      dot={{ r: 4.5, fill: '#1d4ed8', stroke: '#ffffff', strokeWidth: 2 }}
-                      activeDot={{ r: 8, fill: '#2563eb', stroke: '#ffffff', strokeWidth: 3 }}
-                    >
-                      <LabelList dataKey="value" position="top" content={<CustomLabel />} />
-                    </Area>
-                  </AreaChart>
-                </ResponsiveContainer>
+              <Box sx={{ width: '100%', minWidth: Math.max(960, chartData.length * 58), mx: 'auto' }}>
+                <Box sx={{ height: 360 }}>
+                  <ResponsiveContainer width="100%" height="100%">
+                    <AreaChart data={chartData} margin={{ top: 36, right: 18, left: 0, bottom: 4 }} onClick={(e) => e && e.activeTooltipIndex != null && handleBarClick(null, e.activeTooltipIndex)}>
+                      <defs>
+                        <linearGradient id="matAreaGrad" x1="0" y1="0" x2="0" y2="1">
+                          <stop offset="0%" stopColor="#2563eb" stopOpacity={0.35} />
+                          <stop offset="100%" stopColor="#1d4ed8" stopOpacity={0.01} />
+                        </linearGradient>
+                      </defs>
+                      <CartesianGrid strokeDasharray="4 4" stroke="#e2e8f0" />
+                      <XAxis dataKey="periodo" tick={false} axisLine={{ stroke: '#cbd5e1' }} height={10} padding={{ left: 29, right: 29 }} />
+                      <YAxis
+                        domain={[0, 'auto']}
+                        tick={{ fontSize: 14, fill: '#475569', fontWeight: 800 }}
+                        axisLine={false}
+                        tickLine={false}
+                        tickFormatter={fmtAxis}
+                        width={54}
+                      />
+                      <RechartsTooltip content={<CustomTooltip />} />
+                      <Area
+                        type="linear"
+                        dataKey="value"
+                        stroke="#1d4ed8"
+                        strokeWidth={3.5}
+                        fill="url(#matAreaGrad)"
+                        dot={{ r: 4.5, fill: '#1d4ed8', stroke: '#ffffff', strokeWidth: 2 }}
+                        activeDot={{ r: 8, fill: '#2563eb', stroke: '#ffffff', strokeWidth: 3 }}
+                      >
+                        <LabelList dataKey="value" position="top" content={<CustomLabel />} />
+                      </Area>
+                    </AreaChart>
+                  </ResponsiveContainer>
+                </Box>
+                {renderPeriodAxis(chartData, 58, { left: 54, right: 18 }, (p) => {
+                  setMatFilters((prev) => {
+                    const cur = prev.periodos || [];
+                    if (cur.length === 1 && cur[0] === p) return { ...prev, periodos: [] };
+                    return { ...prev, periodos: [p] };
+                  });
+                })}
               </Box>
             )}
 
             {matChartViewMode === 'bar' && (
-              <Box sx={{ height: 360 }}>
-                <ResponsiveContainer width="100%" height="100%">
-                  <BarChart data={chartData} margin={{ top: showLabels ? 32 : 14, right: 16, left: 0, bottom: 4 }} barCategoryGap="12%">
-                    <defs>
-                      <linearGradient id="matBarGrad2" x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="0%" stopColor="#3b82f6" stopOpacity={1} />
-                        <stop offset="100%" stopColor="#1d4ed8" stopOpacity={0.92} />
-                      </linearGradient>
-                      <linearGradient id="matBarGradSel" x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="0%" stopColor="#60a5fa" stopOpacity={1} />
-                        <stop offset="100%" stopColor="#2563eb" stopOpacity={1} />
-                      </linearGradient>
-                      <filter id="matBarGlow" x="-20%" y="-20%" width="140%" height="140%">
-                        <feDropShadow dx="0" dy="2" stdDeviation="4" floodColor="#3b82f6" floodOpacity="0.5" />
-                      </filter>
-                    </defs>
-                    <CartesianGrid strokeDasharray="4 3" stroke="#93b8d8" strokeWidth={0.9} />
-                    <XAxis dataKey="name" tick={{ fontSize: 13, fill: '#334155', fontWeight: 800 }} axisLine={{ stroke: '#94a3b8', strokeWidth: 1 }} tickLine={false} interval={0} />
-                    <YAxis tick={{ fontSize: 13, fill: '#64748b', fontWeight: 700 }} axisLine={false} tickLine={false} tickFormatter={fmtAxis} width={54} />
-                    <RechartsTooltip content={<CustomTooltip />} cursor={{ fill: 'rgba(29,78,216,0.05)' }} />
-                    <Bar dataKey="value" radius={[5, 5, 0, 0]} cursor="pointer" onClick={handleBarClick} isAnimationActive={false}>
-                      {chartData.map((entry, index) => {
-                        const isSelected = selectedPeriods.includes(entry.rawPeriod);
-                        const isDimmed = hasSelection && !isSelected;
-                        return (
-                          <Cell
-                            key={`cell-${index}`}
-                            fill="url(#matBarGrad2)"
-                            opacity={isDimmed ? 0.28 : 1}
-                            stroke={isSelected ? '#1e40af' : 'none'}
-                            strokeWidth={isSelected ? 2 : 0}
-                            style={isSelected ? { filter: 'url(#matBarGlow)' } : {}}
-                          />
-                        );
-                      })}
-                      <LabelList dataKey="value" position="top" content={<CustomLabel />} />
-                    </Bar>
-                  </BarChart>
-                </ResponsiveContainer>
+              <Box sx={{ width: '100%', minWidth: Math.max(960, chartData.length * 58), mx: 'auto' }}>
+                <Box sx={{ height: { xs: 330, md: 380 } }}>
+                  <ResponsiveContainer width="100%" height="100%">
+                    <BarChart data={chartData} margin={{ top: showLabels ? 32 : 18, right: 18, bottom: 4, left: 0 }} barCategoryGap="18%">
+                      <defs>
+                        <linearGradient id="matBarGrad2" x1="0" y1="0" x2="0" y2="1">
+                          <stop offset="0%" stopColor="#3b82f6" stopOpacity={1} />
+                          <stop offset="100%" stopColor="#1d4ed8" stopOpacity={0.92} />
+                        </linearGradient>
+                        <linearGradient id="matBarGradSel" x1="0" y1="0" x2="0" y2="1">
+                          <stop offset="0%" stopColor="#60a5fa" stopOpacity={1} />
+                          <stop offset="100%" stopColor="#2563eb" stopOpacity={1} />
+                        </linearGradient>
+                        <filter id="matBarGlow" x="-20%" y="-20%" width="140%" height="140%">
+                          <feDropShadow dx="0" dy="2" stdDeviation="4" floodColor="#3b82f6" floodOpacity="0.5" />
+                        </filter>
+                      </defs>
+                      <CartesianGrid strokeDasharray="4 4" stroke="#e2e8f0" />
+                      <XAxis dataKey="periodo" tick={false} axisLine={{ stroke: '#cbd5e1' }} height={10} padding={{ left: 0, right: 0 }} />
+                      <YAxis tick={{ fontSize: 14, fill: '#475569', fontWeight: 800 }} axisLine={false} tickLine={false} tickFormatter={fmtAxis} width={54} />
+                      <RechartsTooltip content={<CustomTooltip />} cursor={{ fill: 'rgba(29,78,216,0.05)' }} />
+                      <Bar dataKey="value" radius={[6, 6, 0, 0]} maxBarSize={54} cursor="pointer" onClick={handleBarClick} isAnimationActive={false}>
+                        {chartData.map((entry, index) => {
+                          const isSelected = selectedPeriods.includes(entry.rawPeriod);
+                          const isDimmed = hasSelection && !isSelected;
+                          return (
+                            <Cell
+                              key={`cell-${index}`}
+                              fill="url(#matBarGrad2)"
+                              opacity={isDimmed ? 0.28 : 1}
+                              stroke={isSelected ? '#1e40af' : 'none'}
+                              strokeWidth={isSelected ? 2 : 0}
+                              style={isSelected ? { filter: 'url(#matBarGlow)' } : {}}
+                            />
+                          );
+                        })}
+                        <LabelList dataKey="value" position="top" content={<CustomLabel />} />
+                      </Bar>
+                    </BarChart>
+                  </ResponsiveContainer>
+                </Box>
+                {renderPeriodAxis(chartData, 58, { left: 54, right: 18 }, (p) => {
+                  setMatFilters((prev) => {
+                    const cur = prev.periodos || [];
+                    if (cur.length === 1 && cur[0] === p) return { ...prev, periodos: [] };
+                    return { ...prev, periodos: [p] };
+                  });
+                })}
               </Box>
             )}
           </Box>
@@ -16573,73 +16769,6 @@ const renderCategoryBars = (items = [], options = {}) => {
       admitidos_nacional: normalizeNumber(row.admitidos),
       primer_curso_nacional: normalizeNumber(row.primerCurso)
     }));
-    const buildPeriodAxisGroups = (rows = []) => {
-      const groups = [];
-      rows.forEach((row, index) => {
-        const year = String(row.year || row.periodo || '').split('-')[0] || 'Sin año';
-        const last = groups[groups.length - 1];
-        if (last && last.year === year) {
-          last.count += 1;
-        } else {
-          groups.push({ year, start: index, count: 1 });
-        }
-      });
-      return groups;
-    };
-    const renderPeriodAxis = (rows = [], slotWidth = 58, offsets = {}) => {
-      if (!rows.length) return null;
-      const groups = buildPeriodAxisGroups(rows);
-      const left = Number(offsets.left || 0);
-      const right = Number(offsets.right || 0);
-      return (
-        <Box sx={{ mt: 0.2, pl: `${left}px`, pr: `${right}px` }}>
-          <Box
-            sx={{
-              display: 'grid',
-              gridTemplateColumns: `repeat(${rows.length}, minmax(${slotWidth}px, 1fr))`,
-              columnGap: 0,
-              alignItems: 'center'
-            }}
-          >
-            {rows.map((row, index) => (
-              <Box key={`sem-${row.periodo || index}`} sx={{ display: 'grid', placeItems: 'center' }}>
-                <Box sx={{ width: 28, height: 23, borderRadius: 999, bgcolor: '#e2e8f0', display: 'grid', placeItems: 'center' }}>
-                  <Typography sx={{ color: '#64748b', fontSize: 13, fontWeight: 900, lineHeight: 1 }}>
-                    {row.semester || (String(row.periodo || '').endsWith('II') ? 'II' : 'I')}
-                  </Typography>
-                </Box>
-              </Box>
-            ))}
-          </Box>
-          <Box
-            sx={{
-              display: 'grid',
-              gridTemplateColumns: `repeat(${rows.length}, minmax(${slotWidth}px, 1fr))`,
-              columnGap: 0,
-              mt: 0.45
-            }}
-          >
-            {groups.map((group) => (
-              <Box
-                key={`yr-${group.year}-${group.start}`}
-                sx={{
-                  gridColumn: `${group.start + 1} / ${group.start + group.count + 1}`,
-                  minHeight: 32,
-                  display: 'grid',
-                  placeItems: 'center',
-                  border: '1px solid #94a3b8',
-                  bgcolor: '#f8fafc'
-                }}
-              >
-                <Typography sx={{ color: '#0f172a', fontWeight: 900, fontSize: 15 }}>
-                  {group.year}
-                </Typography>
-              </Box>
-            ))}
-          </Box>
-        </Box>
-      );
-    };
     const renderRateValueLabel = (color, verticalOffset) => ({ x, y, value }) => {
       if (value === null || value === undefined) return null;
       return (
