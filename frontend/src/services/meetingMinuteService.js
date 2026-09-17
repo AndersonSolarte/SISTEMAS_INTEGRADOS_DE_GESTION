@@ -11,6 +11,7 @@ const meetingMinuteService = {
   get: (id) => api.get(`${root}/${id}`).then(unwrap),
   save: (payload) => api.post(root, payload).then(unwrap),
   publish: (id, payload = {}) => api.post(`${root}/${id}/publish`, payload).then(unwrap),
+  resendInvitations: (id, payload = {}) => api.post(`${root}/${id}/resend-invitations`, payload).then(unwrap),
   sendFinal: (id) => api.post(`${root}/${id}/send-final`).then(unwrap),
   downloadWord: (id) => api.get(`${root}/${id}/word`, { responseType: 'blob' }).then((response) => response.data),
   publicMinute: (token) => api.get(`${root}/public/${token}`, { skipAuthRedirect: true }).then(unwrap),

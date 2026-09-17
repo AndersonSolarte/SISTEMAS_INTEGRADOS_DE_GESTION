@@ -14,7 +14,10 @@ const DigitalMeetingParticipant = sequelize.define('DigitalMeetingParticipant', 
   otp_hash: { type: DataTypes.STRING(64), allowNull: true },
   otp_expires_at: { type: DataTypes.DATE, allowNull: true },
   otp_attempts: { type: DataTypes.INTEGER, allowNull: false, defaultValue: 0 },
-  email_verified_at: { type: DataTypes.DATE, allowNull: true }
+  email_verified_at: { type: DataTypes.DATE, allowNull: true },
+  signing_token_hash: { type: DataTypes.STRING(64), allowNull: true },
+  signing_token_expires_at: { type: DataTypes.DATE, allowNull: true },
+  invitation_sent_at: { type: DataTypes.DATE, allowNull: true }
 }, {
   tableName: 'digital_meeting_participants',
   timestamps: true,

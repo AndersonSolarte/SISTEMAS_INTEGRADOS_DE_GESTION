@@ -33,3 +33,25 @@ test('incluye la política de datos solamente en el correo del participante exte
   assert.equal(internal.text, '');
   assert.equal(internal.html, '');
 });
+
+test('crea una invitación personal para firmar sin copiar códigos', () => {
+  const invitation = _internals.buildSigningInvitationEmail({
+    participant: { name: 'PARTICIPANTE INTERNO', user_id: 7 },
+    minute: { code: 'ACTA-2026-001', content: { fecha: '2026-09-17' } },
+    signingUrl: 'https://siac.example/firmar-acta-reunion/token-personal'
+  });
+  assert.match(invitation.subject, /ACTA-2026-001/);
+  assert.match(invitation.html, />Firmar acta</);
+  assert.match(invitation.text, /no necesita copiar ningún código/i);
+  assert.doesNotMatch(invitation.text, /\b\d{6}\b/);
+});
+
+test('incluye la autorización de datos en la invitación del externo', () => {
+  const invitation = _internals.buildSigningInvitationEmail({
+    participant: { name: 'PARTICIPANTE EXTERNO', user_id: null },
+    minute: { code: 'ACTA-2026-002', content: {} },
+    signingUrl: 'https://siac.example/firmar-acta-reunion/token-externo'
+  });
+  assert.match(invitation.text, /Ley 1581 de 2012/);
+  assert.match(invitation.html, /tratamiento de datos personales/i);
+});

@@ -434,6 +434,16 @@ testConnection()
       if (!meetingSignatureTable.privacy_policy_version) {
         await qi.addColumn('digital_meeting_signatures', 'privacy_policy_version', { type: DataTypes.STRING(40), allowNull: true });
       }
+      const meetingParticipantTable = await qi.describeTable('digital_meeting_participants');
+      if (!meetingParticipantTable.signing_token_hash) {
+        await qi.addColumn('digital_meeting_participants', 'signing_token_hash', { type: DataTypes.STRING(64), allowNull: true });
+      }
+      if (!meetingParticipantTable.signing_token_expires_at) {
+        await qi.addColumn('digital_meeting_participants', 'signing_token_expires_at', { type: DataTypes.DATE, allowNull: true });
+      }
+      if (!meetingParticipantTable.invitation_sent_at) {
+        await qi.addColumn('digital_meeting_participants', 'invitation_sent_at', { type: DataTypes.DATE, allowNull: true });
+      }
       await DatabaseBackupRun.sync();
       const { startDatabaseBackupScheduler } = require('./services/databaseBackupScheduler');
       await startDatabaseBackupScheduler();

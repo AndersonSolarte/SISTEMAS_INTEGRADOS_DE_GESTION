@@ -95,6 +95,71 @@ const formatDate = (value) => {
 };
 const publicFrontend = (req) => clean(req.body?.public_base_url || process.env.PUBLIC_FRONTEND_URL || process.env.FRONTEND_URL || `${req.protocol}://${req.get('host')}`, 500).replace(/\/$/, '');
 
+const buildSigningInvitationEmail = ({ participant, minute, signingUrl }) => {
+  const externalPolicy = buildPrivacyPolicyEmailSection(!participant.user_id);
+  const meetingDate = formatDate(minute.content?.fecha);
+  const html = renderInstitutionalTemplate({
+    title: 'Invitación para firmar acta de reunión',
+    introHtml: `<p>Hola <strong>${escapeHtml(participant.name)}</strong>.</p><p>El acta <strong>${escapeHtml(minute.code)}</strong>${meetingDate ? ` del ${escapeHtml(meetingDate)}` : ''} está disponible para su firma.</p>`,
+    bodyHtml: `<div style="margin:20px 0;padding:18px;border:1px solid #bfdbfe;border-radius:12px;background:#f8fbff"><p style="margin:0 0 14px">Este enlace es personal y confirma que usted recibió la invitación en su correo. No necesita copiar códigos ni volver a escribir su dirección.</p><p style="margin:0;text-align:center"><a href="${escapeHtml(signingUrl)}" style="display:inline-block;padding:13px 24px;border-radius:8px;background:#2459d3;color:#fff;text-decoration:none;font-weight:700">Firmar acta</a></p></div>${externalPolicy.html}<p style="font-size:13px;color:#64748b">Por seguridad, el enlace es individual, vence al finalizar el proceso y no debe compartirse.</p>`
+  });
+  return {
+    subject: `${minute.code} · Invitación para firmar acta`,
+    text: `Hola ${participant.name}. El acta ${minute.code}${meetingDate ? ` del ${meetingDate}` : ''} está disponible para su firma. Abra su enlace personal; no necesita copiar ningún código: ${signingUrl}${externalPolicy.text}`,
+    html
+  };
+};
+
+const sendParticipantInvitations = async ({ minute, baseUrl }) => {
+  const expiresAt = minute.token_expires_at && minute.token_expires_at > new Date()
+    ? minute.token_expires_at
+    : new Date(Date.now() + 45 * 24 * 60 * 60 * 1000);
+  if (!minute.token_expires_at || minute.token_expires_at <= new Date()) {
+    await minute.update({ token_expires_at: expiresAt });
+  }
+  const summary = { sent: 0, failed: 0 };
+  for (const participant of (minute.participants || []).filter((item) => item.status !== 'signed')) {
+    const invitationToken = crypto.randomBytes(32).toString('base64url');
+    const signingUrl = `${baseUrl}/firmar-acta-reunion/${invitationToken}`;
+    const email = buildSigningInvitationEmail({ participant, minute, signingUrl });
+    const previousToken = {
+      signing_token_hash: participant.signing_token_hash,
+      signing_token_expires_at: participant.signing_token_expires_at
+    };
+    try {
+      await participant.update({ signing_token_hash: hash(invitationToken), signing_token_expires_at: expiresAt });
+      const result = await sendInstitutionalEmail({ to: participant.email, ...email, allowExternalRecipients: true });
+      if (!result.success) throw new Error(result.error || 'El servicio de correo rechazó la invitación.');
+      await participant.update({ invitation_sent_at: new Date() });
+      summary.sent += 1;
+    } catch (error) {
+      await participant.update(previousToken).catch(() => {});
+      console.error('[digital-meeting-minute] invitation', participant.id, error.message);
+      summary.failed += 1;
+    }
+  }
+  return summary;
+};
+
+const resolveSigningAccess = async (token) => {
+  const tokenHash = hash(token);
+  const now = new Date();
+  const minute = await DigitalMeetingMinute.findOne({
+    where: { public_token_hash: tokenHash, status: 'signing', token_expires_at: { [Op.gt]: now } },
+    include: [{ model: DigitalMeetingParticipant, as: 'participants' }]
+  });
+  if (minute) return { minute, invitedParticipant: null, invitationVerified: false };
+  const invitedParticipant = await DigitalMeetingParticipant.findOne({
+    where: { signing_token_hash: tokenHash, signing_token_expires_at: { [Op.gt]: now } }
+  });
+  if (!invitedParticipant) return null;
+  const invitedMinute = await DigitalMeetingMinute.findOne({
+    where: { id: invitedParticipant.minute_id, status: 'signing', token_expires_at: { [Op.gt]: now } },
+    include: [{ model: DigitalMeetingParticipant, as: 'participants' }]
+  });
+  return invitedMinute ? { minute: invitedMinute, invitedParticipant, invitationVerified: true } : null;
+};
+
 const parseDataUrl = (value) => {
   const match = String(value || '').match(/^data:image\/(png|jpeg);base64,([A-Za-z0-9+/=]+)$/);
   if (!match) throw Object.assign(new Error('La firma enviada no tiene un formato válido.'), { statusCode: 422 });
@@ -242,13 +307,30 @@ const publish = wrap(async (req, res) => {
   await minute.update({ status: 'signing', public_token_hash: hash(token), token_expires_at: new Date(Date.now() + 45 * 24 * 60 * 60 * 1000), published_at: new Date(), content_hash: contentHash(minute.content) });
   const signingUrl = `${publicFrontend(req)}/firmar-acta-reunion/${token}`;
   const qr_data_url = await QRCode.toDataURL(signingUrl, { errorCorrectionLevel: 'M', margin: 1, width: 360 });
-  res.json({ success: true, message: 'Acta habilitada para firmas mediante QR.', data: { minute: { id: minute.id, code: minute.code, status: minute.status, version: minute.version }, signing_url: signingUrl, qr_data_url } });
+  const invitations = await sendParticipantInvitations({ minute, baseUrl: publicFrontend(req) });
+  const message = invitations.failed
+    ? `Acta habilitada. Se enviaron ${invitations.sent} invitaciones y ${invitations.failed} requieren reenvío.`
+    : `Acta habilitada y ${invitations.sent} invitación(es) enviada(s) por correo.`;
+  res.json({ success: true, message, data: { minute: { id: minute.id, code: minute.code, status: minute.status, version: minute.version }, signing_url: signingUrl, qr_data_url, invitations } });
+});
+
+const resendInvitations = wrap(async (req, res) => {
+  const minute = await DigitalMeetingMinute.findByPk(req.params.id, { include: [{ model: DigitalMeetingParticipant, as: 'participants' }] });
+  if (!minute || minute.deleted_at) throw Object.assign(new Error('Acta no encontrada.'), { statusCode: 404 });
+  if (!isAdmin(req.user) && Number(minute.created_by) !== Number(req.user.id)) throw Object.assign(new Error('No tiene permiso para reenviar estas invitaciones.'), { statusCode: 403 });
+  if (minute.status !== 'signing') throw Object.assign(new Error('Solo se pueden reenviar invitaciones de un acta que está en firmas.'), { statusCode: 409 });
+  const invitations = await sendParticipantInvitations({ minute, baseUrl: publicFrontend(req) });
+  if (!invitations.sent && invitations.failed) throw Object.assign(new Error('No fue posible enviar las invitaciones. Verifique el servicio de correo.'), { statusCode: 503 });
+  res.json({ success: true, message: invitations.failed ? `Se reenviaron ${invitations.sent} invitaciones; ${invitations.failed} no pudieron enviarse.` : `Se reenviaron ${invitations.sent} invitación(es) pendiente(s).`, data: invitations });
 });
 
 const publicMinute = wrap(async (req, res) => {
-  const minute = await DigitalMeetingMinute.findOne({ where: { public_token_hash: hash(req.params.token), status: 'signing', token_expires_at: { [Op.gt]: new Date() } }, include: [{ model: DigitalMeetingParticipant, as: 'participants' }] });
-  if (!minute) throw Object.assign(new Error('El enlace de firma no es válido o venció.'), { statusCode: 404 });
-  res.json({ success: true, data: { id: minute.id, code: minute.code, version: minute.version, content: minute.content, participants: minute.participants.filter((p) => p.status !== 'signed').map((p) => ({ id: p.id, name: p.name, role_title: p.role_title, organization: p.organization, external: !p.user_id, email_hint: p.email ? `${p.email.slice(0, 2)}***@${p.email.split('@')[1]}` : '' })) } });
+  const access = await resolveSigningAccess(req.params.token);
+  if (!access) throw Object.assign(new Error('El enlace de firma no es válido o venció.'), { statusCode: 404 });
+  const { minute, invitedParticipant, invitationVerified } = access;
+  const available = invitationVerified ? [invitedParticipant] : minute.participants.filter((p) => p.status !== 'signed');
+  if (invitationVerified && invitedParticipant.status === 'signed') throw Object.assign(new Error('Esta firma ya fue registrada.'), { statusCode: 409 });
+  res.json({ success: true, data: { id: minute.id, code: minute.code, version: minute.version, content: minute.content, invitation_verified: invitationVerified, invited_participant_id: invitedParticipant?.id || null, participants: available.map((p) => ({ id: p.id, name: p.name, role_title: p.role_title, organization: p.organization, external: !p.user_id, email_hint: p.email ? `${p.email.slice(0, 2)}***@${p.email.split('@')[1]}` : '' })) } });
 });
 
 const requestCode = wrap(async (req, res) => {
@@ -267,12 +349,14 @@ const requestCode = wrap(async (req, res) => {
 });
 
 const sign = wrap(async (req, res) => {
-  const minute = await DigitalMeetingMinute.findOne({ where: { public_token_hash: hash(req.params.token), status: 'signing', token_expires_at: { [Op.gt]: new Date() } } });
+  const access = await resolveSigningAccess(req.params.token);
+  const minute = access?.minute;
   const participant = minute && await DigitalMeetingParticipant.findOne({ where: { id: req.body.participant_id, minute_id: minute.id } });
   if (!participant) throw Object.assign(new Error('Participante no válido.'), { statusCode: 404 });
   if (participant.status === 'signed') throw Object.assign(new Error('Este participante ya firmó el acta.'), { statusCode: 409 });
   if (!participant.user_id && req.body.privacy_accepted !== true) throw Object.assign(new Error('Debe aceptar la autorización de tratamiento de datos personales para firmar.'), { statusCode: 422 });
-  if (participant.otp_attempts >= 5 || !participant.otp_expires_at || participant.otp_expires_at < new Date() || participant.otp_hash !== hash(req.body.otp)) {
+  const personalInvitation = Boolean(access?.invitationVerified && String(access.invitedParticipant.id) === String(participant.id));
+  if (!personalInvitation && (participant.otp_attempts >= 5 || !participant.otp_expires_at || participant.otp_expires_at < new Date() || participant.otp_hash !== hash(req.body.otp))) {
     await participant.increment('otp_attempts');
     throw Object.assign(new Error('Código inválido o vencido.'), { statusCode: 422 });
   }
@@ -282,7 +366,7 @@ const sign = wrap(async (req, res) => {
   fs.writeFileSync(storage, parsed.buffer, { flag: 'wx' });
   const signedAt = new Date();
   await DigitalMeetingSignature.create({ minute_id: minute.id, participant_id: participant.id, signer_name: participant.name, signer_email: participant.email, signature_storage_key: storage, signature_hash: hash(parsed.buffer), content_hash: minute.content_hash, signed_at: signedAt, privacy_accepted_at: !participant.user_id ? signedAt : null, privacy_policy_version: !participant.user_id ? PRIVACY_POLICY_VERSION : null, ip_address: req.ip, user_agent: clean(req.headers['user-agent'], 500) });
-  await participant.update({ status: 'signed', email_verified_at: new Date(), otp_hash: null, otp_expires_at: null });
+  await participant.update({ status: 'signed', email_verified_at: new Date(), otp_hash: null, otp_expires_at: null, signing_token_hash: null, signing_token_expires_at: null });
   const [participantCount, signedCount] = await Promise.all([
     DigitalMeetingParticipant.count({ where: { minute_id: minute.id } }),
     DigitalMeetingParticipant.count({ where: { minute_id: minute.id, status: 'signed' } })
@@ -345,4 +429,4 @@ const sendFinalMinute = wrap(async (req, res) => {
   res.json({ success: true, message: `Acta firmada enviada a ${recipients.length} participante(s).`, data: { status: 'distributed', distributed_at: sentAt, recipients: recipients.length } });
 });
 
-module.exports = { downloadWord, getConfig, getMinute, listMinutes, lookupParticipant, publicMinute, publish, requestCode, saveDraft, sendFinalMinute, sign, updateConfig, _internals: { buildPrivacyPolicyEmailSection, placeResponsibleFirst } };
+module.exports = { downloadWord, getConfig, getMinute, listMinutes, lookupParticipant, publicMinute, publish, requestCode, resendInvitations, saveDraft, sendFinalMinute, sign, updateConfig, _internals: { buildPrivacyPolicyEmailSection, buildSigningInvitationEmail, placeResponsibleFirst } };

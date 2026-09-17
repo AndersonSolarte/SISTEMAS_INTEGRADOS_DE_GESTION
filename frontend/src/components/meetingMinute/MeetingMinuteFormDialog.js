@@ -4,8 +4,8 @@ import {
   DialogTitle, IconButton, MenuItem, Paper, Stack, TextField, Typography
 } from '@mui/material';
 import {
-  Add, Close, ContentCopy, DeleteOutline, Download, PersonSearch,
-  QrCode2, Refresh, Save, Send
+  Add, Close, ContentCopy, DeleteOutline, Download, Email, PersonSearch,
+  Refresh, Save, Send
 } from '@mui/icons-material';
 import { useSnackbar } from 'notistack';
 import meetingMinuteService from '../../services/meetingMinuteService';
@@ -185,8 +185,17 @@ export default function MeetingMinuteFormDialog({ open, document, user, onClose 
     try {
       const response = await meetingMinuteService.publish(row.id, { public_base_url: window.location.origin });
       setQr(response.data); setForm((previous) => ({ ...previous, id: row.id, status: 'signing' })); await loadMinutes();
-      enqueueSnackbar('Firmas por QR habilitadas.', { variant: 'success' });
+      enqueueSnackbar(response.message || 'Firmas habilitadas e invitaciones enviadas.', { variant: response.data?.invitations?.failed ? 'warning' : 'success' });
     } catch (error) { enqueueSnackbar(error.response?.data?.message || 'No fue posible habilitar las firmas.', { variant: 'error' }); }
+    finally { setLoading(false); }
+  };
+  const resendInvitations = async () => {
+    if (!form.id) return;
+    setLoading(true);
+    try {
+      const response = await meetingMinuteService.resendInvitations(form.id, { public_base_url: window.location.origin });
+      enqueueSnackbar(response.message || 'Invitaciones reenviadas.', { variant: response.data?.failed ? 'warning' : 'success' });
+    } catch (error) { enqueueSnackbar(error.response?.data?.message || 'No fue posible reenviar las invitaciones.', { variant: 'error' }); }
     finally { setLoading(false); }
   };
   const download = async () => {
@@ -218,7 +227,7 @@ export default function MeetingMinuteFormDialog({ open, document, user, onClose 
               <Stack direction={{ xs: 'column', sm: 'row' }} justifyContent="space-between" gap={1.5} mb={2}><Box><Typography fontWeight={900}>Actas de reunión</Typography><Typography variant="body2" color="text.secondary">Cree una nueva o continúe un borrador anterior. Este flujo no modifica los Planes de Acción.</Typography></Box><Button variant="outlined" onClick={() => { setForm(emptyForm(user)); setSignatures([]); setQr(null); setResponsibleDocument(''); setResponsibleCandidate(null); setExternalMode(false); }} sx={{ textTransform: 'none', fontWeight: 800 }}>Nueva acta</Button></Stack>
               <TextField fullWidth select size="small" label="Abrir un acta guardada" value={form.id} onChange={(event) => openMinute(event.target.value)}><MenuItem value="">Nueva acta</MenuItem>{minutes.map((minute) => <MenuItem key={minute.id} value={minute.id}>{minute.code} · {minute.content?.fecha || 'Sin fecha'} · {{ draft: 'Borrador', signing: 'En firmas', signed: 'Firmada', distributed: 'Enviada' }[minute.status] || minute.status}</MenuItem>)}</TextField>
             </Paper>
-            {locked && !allSigned && <Alert severity="info">El acta está habilitada para firmas. Use “Actualizar firmas” para consultar quiénes ya firmaron.</Alert>}
+            {locked && !allSigned && <Alert severity="info">Las invitaciones personales ya fueron enviadas por correo. Cada participante abre el botón “Firmar acta”, dibuja su firma y confirma; no debe copiar códigos.</Alert>}
             {allSigned && <Alert severity="success">Todas las personas firmaron el acta. Ya puede enviar la versión final a sus correos.</Alert>}
             <Paper variant="outlined" sx={{ p: 2.25, borderRadius: 3 }}>
               <Typography fontWeight={900} mb={2}>1. Información de la reunión</Typography>
@@ -249,13 +258,13 @@ export default function MeetingMinuteFormDialog({ open, document, user, onClose 
             </Paper>
           </Stack>
           <Paper variant="outlined" sx={{ width: { xs: '100%', lg: '54%' }, p: 2, borderRadius: 3, position: { lg: 'sticky' }, top: 16 }}>
-            <Stack direction={{ xs: 'column', sm: 'row' }} justifyContent="space-between" alignItems={{ xs: 'stretch', sm: 'center' }} gap={1} mb={1.5}><Box><Typography fontWeight={900}>Vista previa del acta</Typography><Typography variant="caption" color="text.secondary">Se actualiza mientras escribe.</Typography></Box><Stack direction="row" gap={1} flexWrap="wrap"><Button startIcon={<Download />} disabled={!form.id} onClick={download} variant="outlined" sx={{ textTransform: 'none', fontWeight: 800 }}>Descargar Word</Button>{locked && <Button startIcon={<Refresh />} disabled={loading} onClick={() => openMinute(form.id)} variant="outlined" sx={{ textTransform: 'none', fontWeight: 800 }}>Actualizar firmas</Button>}{canSendFinal && <Button startIcon={<Send />} disabled={loading} onClick={sendFinal} color="success" variant="contained" sx={{ textTransform: 'none', fontWeight: 850 }}>{form.status === 'distributed' ? 'Reenviar acta firmada' : 'Enviar acta firmada'}</Button>}{!locked && <Button startIcon={<QrCode2 />} onClick={publish} disabled={loading || !form.participants.length} variant="contained" sx={{ textTransform: 'none', fontWeight: 850 }}>Habilitar firmas QR</Button>}</Stack></Stack>
+            <Stack direction={{ xs: 'column', sm: 'row' }} justifyContent="space-between" alignItems={{ xs: 'stretch', sm: 'center' }} gap={1} mb={1.5}><Box><Typography fontWeight={900}>Vista previa del acta</Typography><Typography variant="caption" color="text.secondary">Se actualiza mientras escribe.</Typography></Box><Stack direction="row" gap={1} flexWrap="wrap"><Button startIcon={<Download />} disabled={!form.id} onClick={download} variant="outlined" sx={{ textTransform: 'none', fontWeight: 800 }}>Descargar Word</Button>{locked && !allSigned && <Button startIcon={<Email />} disabled={loading} onClick={resendInvitations} variant="outlined" sx={{ textTransform: 'none', fontWeight: 800 }}>Reenviar invitaciones</Button>}{locked && <Button startIcon={<Refresh />} disabled={loading} onClick={() => openMinute(form.id)} variant="outlined" sx={{ textTransform: 'none', fontWeight: 800 }}>Actualizar firmas</Button>}{canSendFinal && <Button startIcon={<Send />} disabled={loading} onClick={sendFinal} color="success" variant="contained" sx={{ textTransform: 'none', fontWeight: 850 }}>{form.status === 'distributed' ? 'Reenviar acta firmada' : 'Enviar acta firmada'}</Button>}{!locked && <Button startIcon={<Email />} onClick={publish} disabled={loading || !form.participants.length} variant="contained" sx={{ textTransform: 'none', fontWeight: 850 }}>Habilitar y enviar invitaciones</Button>}</Stack></Stack>
             <Box sx={{ overflowX: 'auto' }}><MeetingPreview document={document} form={form} signatures={signatures} /></Box>
           </Paper>
         </Stack>
       </DialogContent>
       <DialogActions sx={{ px: { xs: 2, md: 4 }, py: 1.5, bgcolor: '#fff', borderTop: '1px solid #dbe5f0' }}><Button onClick={onClose}>Cerrar</Button>{!locked && <Button variant="contained" startIcon={loading ? <CircularProgress size={16} color="inherit" /> : <Save />} disabled={loading} onClick={() => save()} sx={{ px: 3, textTransform: 'none', fontWeight: 900 }}>Guardar borrador</Button>}</DialogActions>
     </Dialog>
-    <Dialog open={Boolean(qr)} onClose={() => setQr(null)} maxWidth="xs" fullWidth><DialogTitle fontWeight={900}>Firmas habilitadas</DialogTitle><DialogContent><Stack alignItems="center" gap={1.5}><Alert severity="success">Los participantes pueden escanear este QR desde cualquier dispositivo.</Alert>{qr?.qr_data_url && <Box component="img" src={qr.qr_data_url} alt="QR para firmar" sx={{ width: 260, height: 260 }} />}<TextField fullWidth size="small" value={qr?.signing_url || ''} InputProps={{ readOnly: true }} /><Button startIcon={<ContentCopy />} onClick={() => { navigator.clipboard.writeText(qr?.signing_url || ''); enqueueSnackbar('Enlace copiado.', { variant: 'success' }); }}>Copiar enlace</Button></Stack></DialogContent><DialogActions><Button onClick={() => setQr(null)}>Cerrar</Button></DialogActions></Dialog>
+    <Dialog open={Boolean(qr)} onClose={() => setQr(null)} maxWidth="xs" fullWidth><DialogTitle fontWeight={900}>Invitaciones enviadas</DialogTitle><DialogContent><Stack alignItems="center" gap={1.5}><Alert severity="success">Cada participante recibió un botón personal para firmar sin copiar códigos. Este QR queda como alternativa para una firma presencial.</Alert>{qr?.qr_data_url && <Box component="img" src={qr.qr_data_url} alt="QR alternativo para firmar" sx={{ width: 260, height: 260 }} />}<TextField fullWidth size="small" value={qr?.signing_url || ''} InputProps={{ readOnly: true }} /><Button startIcon={<ContentCopy />} onClick={() => { navigator.clipboard.writeText(qr?.signing_url || ''); enqueueSnackbar('Enlace copiado.', { variant: 'success' }); }}>Copiar enlace alternativo</Button></Stack></DialogContent><DialogActions><Button onClick={() => setQr(null)}>Cerrar</Button></DialogActions></Dialog>
   </>;
 }

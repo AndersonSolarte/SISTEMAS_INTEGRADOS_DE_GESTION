@@ -16,6 +16,7 @@ router.get('/', auth, controller.listMinutes);
 router.post('/', auth, controller.saveDraft);
 router.get('/:id', auth, controller.getMinute);
 router.post('/:id/publish', auth, controller.publish);
+router.post('/:id/resend-invitations', auth, controller.resendInvitations);
 router.post('/:id/send-final', auth, controller.sendFinalMinute);
 router.get('/:id/word', auth, controller.downloadWord);
 
