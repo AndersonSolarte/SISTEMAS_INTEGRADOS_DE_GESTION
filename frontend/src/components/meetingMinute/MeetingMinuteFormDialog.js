@@ -137,8 +137,22 @@ export default function MeetingMinuteFormDialog({ open, document, user, onClose 
   };
   const applyResponsible = () => {
     if (!responsibleCandidate) return;
-    setForm((previous) => ({ ...previous, responsables: responsibleCandidate.name, responsable_document: responsibleCandidate.document, responsable_role: responsibleCandidate.role_title || '', dependencia: responsibleCandidate.organization || '' }));
+    setForm((previous) => {
+      const oldResponsibleDocument = String(previous.responsable_document || '').toLowerCase();
+      const candidateDocument = String(responsibleCandidate.document || '').toLowerCase();
+      const candidateEmail = String(responsibleCandidate.email || '').toLowerCase();
+      const remainingParticipants = previous.participants.filter((participant) => {
+        const participantDocument = String(participant.document || '').toLowerCase();
+        const participantEmail = String(participant.email || '').toLowerCase();
+        return participantDocument !== oldResponsibleDocument
+          && participantDocument !== candidateDocument
+          && participantEmail !== candidateEmail;
+      });
+      const responsibleParticipant = { user_id: responsibleCandidate.id, document: responsibleCandidate.document, name: responsibleCandidate.name, email: responsibleCandidate.email, organization: responsibleCandidate.organization, role_title: responsibleCandidate.role_title, status: 'invited' };
+      return { ...previous, responsables: responsibleCandidate.name, responsable_document: responsibleCandidate.document, responsable_role: responsibleCandidate.role_title || '', dependencia: responsibleCandidate.organization || '', participants: [responsibleParticipant, ...remainingParticipants] };
+    });
     setResponsibleDocument(responsibleCandidate.document || responsibleDocument); setResponsibleCandidate(null);
+    enqueueSnackbar('Responsable agregado como primer participante.', { variant: 'success' });
   };
   const addExternalParticipant = () => {
     const external = Object.fromEntries(Object.entries(externalDraft).map(([key, value]) => [key, String(value || '').trim()]));

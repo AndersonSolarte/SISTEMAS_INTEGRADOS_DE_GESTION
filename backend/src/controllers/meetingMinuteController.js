@@ -54,6 +54,27 @@ const sanitizeRichText = (value) => clean(value)
     return `<${tag}${style}${tag === 'font' && legacySize ? ` size="${legacySize}"` : ''}>`;
   });
 const richPlainText = (value) => sanitizeRichText(value).replace(/<[^>]+>/g, ' ').replace(/&nbsp;/gi, ' ').replace(/\s+/g, ' ').trim();
+const participantIdentity = (participant = {}) => ({
+  document: clean(participant.document, 100).toLowerCase(),
+  email: clean(participant.email, 254).toLowerCase()
+});
+const placeResponsibleFirst = (participants = [], responsible = {}) => {
+  const responsibleParticipant = {
+    user_id: responsible.id || responsible.user_id || null,
+    document: clean(responsible.username || responsible.document, 100),
+    name: clean(responsible.nombre || responsible.name, 240),
+    email: clean(responsible.email, 254).toLowerCase(),
+    organization: clean(responsible.dependencia || responsible.organization, 240),
+    role_title: clean(responsible.cargo || responsible.role_title, 220),
+    status: 'invited'
+  };
+  const responsibleKey = participantIdentity(responsibleParticipant);
+  return [responsibleParticipant, ...participants.filter((participant) => {
+    const participantKey = participantIdentity(participant);
+    return !(responsibleKey.document && participantKey.document === responsibleKey.document)
+      && !(responsibleKey.email && participantKey.email === responsibleKey.email);
+  })];
+};
 const formatDate = (value) => {
   const match = String(value || '').match(/^(\d{4})-(\d{2})-(\d{2})/);
   return match ? `${match[3]}/${match[2]}/${match[1]}` : clean(value, 50);
@@ -149,13 +170,15 @@ const saveDraft = wrap(async (req, res) => {
   if (!(await getMeetingMinuteFeatureState())) throw Object.assign(new Error('El formulario de actas de reunión no está habilitado.'), { statusCode: 403 });
   const document = await Documento.findByPk(req.body.documento_id);
   if (!document || !isMeetingMinuteDocument(document)) throw Object.assign(new Error('El formato seleccionado no corresponde al Registro de Asistencia y Reunión.'), { statusCode: 422 });
-  const participants = Array.isArray(req.body.participants) ? req.body.participants : [];
-  if (!clean(req.body.responsable_document)) throw Object.assign(new Error('Consulte al responsable mediante su cédula.'), { statusCode: 422 });
+  const responsableDocument = clean(req.body.responsable_document, 100);
+  if (!responsableDocument) throw Object.assign(new Error('Consulte al responsable mediante su cédula.'), { statusCode: 422 });
+  const responsibleUser = await User.findOne({ where: { username: responsableDocument, estado: 'activo' }, attributes: ['id', 'username', 'nombre', 'email', 'dependencia', 'cargo'] });
+  if (!responsibleUser) throw Object.assign(new Error('El responsable seleccionado ya no está disponible en SIAC.'), { statusCode: 422 });
+  const participants = placeResponsibleFirst(Array.isArray(req.body.participants) ? req.body.participants : [], responsibleUser);
   if (!clean(req.body.responsables)) throw Object.assign(new Error('Consulte y seleccione el responsable de la reunión.'), { statusCode: 422 });
   if (!clean(req.body.dependencia)) throw Object.assign(new Error('La dependencia que cita es obligatoria.'), { statusCode: 422 });
   if (!clean(req.body.lugar)) throw Object.assign(new Error('Seleccione o escriba el lugar de la reunión.'), { statusCode: 422 });
   if (!/^\d{4}-\d{2}-\d{2}$/.test(clean(req.body.fecha, 50))) throw Object.assign(new Error('Seleccione una fecha válida para la reunión.'), { statusCode: 422 });
-  if (!participants.length) throw Object.assign(new Error('Agregue al menos un participante.'), { statusCode: 422 });
   if (participants.some((participant) => !clean(participant.name, 240) || !clean(participant.email, 254))) throw Object.assign(new Error('Todos los participantes deben tener nombre y correo.'), { statusCode: 422 });
   const participantKeys = participants.map((participant) => clean(participant.document || participant.email, 254).toLowerCase()).filter(Boolean);
   if (new Set(participantKeys).size !== participantKeys.length) throw Object.assign(new Error('Hay participantes repetidos en el acta.'), { statusCode: 422 });
@@ -165,7 +188,13 @@ const saveDraft = wrap(async (req, res) => {
     let row = req.body.id ? await DigitalMeetingMinute.findByPk(req.body.id, { transaction }) : null;
     if (row && !isAdmin(req.user) && Number(row.created_by) !== Number(req.user.id)) throw Object.assign(new Error('No tiene permiso para editar esta acta.'), { statusCode: 403 });
     if (row && row.status !== 'draft') throw Object.assign(new Error('El acta ya fue habilitada para firmas y no puede modificarse.'), { statusCode: 409 });
-    const content = normalizeContent(req.body, req.user, document);
+    const content = normalizeContent({
+      ...req.body,
+      responsables: responsibleUser.nombre,
+      responsable_document: responsibleUser.username,
+      responsable_role: responsibleUser.cargo,
+      dependencia: responsibleUser.dependencia
+    }, req.user, document);
     if (!row) {
       const code = `ACTA-${new Date().getFullYear()}-${Date.now().toString().slice(-9)}`;
       row = await DigitalMeetingMinute.create({ documento_id: document.id, code, content, content_hash: contentHash(content), created_by: req.user.id, updated_by: req.user.id }, { transaction });
@@ -301,4 +330,4 @@ const sendFinalMinute = wrap(async (req, res) => {
   res.json({ success: true, message: `Acta firmada enviada a ${recipients.length} participante(s).`, data: { status: 'distributed', distributed_at: sentAt, recipients: recipients.length } });
 });
 
-module.exports = { downloadWord, getConfig, getMinute, listMinutes, lookupParticipant, publicMinute, publish, requestCode, saveDraft, sendFinalMinute, sign, updateConfig };
+module.exports = { downloadWord, getConfig, getMinute, listMinutes, lookupParticipant, publicMinute, publish, requestCode, saveDraft, sendFinalMinute, sign, updateConfig, _internals: { placeResponsibleFirst } };
