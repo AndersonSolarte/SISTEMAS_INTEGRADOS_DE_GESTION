@@ -225,7 +225,7 @@ export default function MeetingMinuteFormDialog({ open, document, user, onClose 
   const download = async () => {
     if (!form.id) return enqueueSnackbar('Guarde primero el borrador.', { variant: 'warning' });
     try {
-      const blob = await meetingMinuteService.downloadWord(form.id); const url = URL.createObjectURL(blob); const anchor = window.document.createElement('a'); anchor.href = url; anchor.download = `ACTA-${form.fecha || 'REUNION'}.docx`; anchor.click(); URL.revokeObjectURL(url);
+      const blob = await meetingMinuteService.downloadPdf(form.id); const url = URL.createObjectURL(blob); const anchor = window.document.createElement('a'); anchor.href = url; anchor.download = `ACTA-${form.fecha || 'REUNION'}.pdf`; anchor.click(); URL.revokeObjectURL(url);
     } catch (error) { enqueueSnackbar(error.response?.data?.message || 'No fue posible descargar el acta.', { variant: 'error' }); }
   };
   const sendFinal = async () => {
@@ -288,7 +288,7 @@ export default function MeetingMinuteFormDialog({ open, document, user, onClose 
                 <Typography fontWeight={900}>Vista previa del acta</Typography>
               </Box>
               <Box sx={{ display: { xs: 'grid', lg: 'flex' }, gridTemplateColumns: { xs: '1fr', sm: 'repeat(2,minmax(0,1fr))' }, gap: 1, '& .MuiButton-root': { flex: { lg: '1 1 0' }, minWidth: 0, minHeight: 42, px: { xs: 1.5, lg: 1 }, textTransform: 'none', fontWeight: 800, fontSize: { lg: 13 }, whiteSpace: 'nowrap' } }}>
-                <Button fullWidth startIcon={<Download />} disabled={!form.id} onClick={download} variant="outlined">Descargar Word</Button>
+                <Button fullWidth startIcon={<Download />} disabled={!form.id} onClick={download} variant="outlined">Descargar PDF</Button>
                 {form.status === 'signing' && <Button fullWidth startIcon={<QrCode2 />} disabled={loading} onClick={showSigningAccess} variant="outlined">Ver enlace y QR</Button>}
                 {form.status === 'signing' && !allSigned && <Button fullWidth startIcon={<Email />} disabled={loading} onClick={resendInvitations} variant="outlined">Reenviar invitaciones</Button>}
                 {form.status === 'signing' && !hasSignatures && <Button fullWidth startIcon={<Edit />} disabled={loading} onClick={() => setConfirmAdjust(true)} color="warning" variant="outlined">Hacer ajustes</Button>}

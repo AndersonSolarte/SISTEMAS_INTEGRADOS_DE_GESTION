@@ -12,6 +12,7 @@ const {
   getMeetingMinuteFeatureState, isMeetingMinuteDocument, setMeetingMinuteFeatureState
 } = require('../config/meetingMinuteConfig');
 const { generateActaBuffer } = require('../services/actaExportService');
+const { generateMeetingMinutePdf } = require('../services/meetingMinutePdfService');
 const { sendInstitutionalEmail, renderInstitutionalTemplate, escapeHtml } = require('../services/emailService');
 
 const PRIVATE_ROOT = path.resolve(process.env.SIAC_MEETING_MINUTE_DIR || path.join(__dirname, '../../uploads/.private/digital-meeting-minutes'));
@@ -122,8 +123,8 @@ const sendParticipantInvitations = async ({ minute, baseUrl }) => {
   if (!minute.token_expires_at || minute.token_expires_at <= new Date()) {
     await minute.update({ token_expires_at: expiresAt });
   }
-  const reviewBuffer = await buildSignedMinuteBuffer(minute);
-  const reviewAttachment = { filename: `${minute.code}-PARA-REVISION.docx`, content: reviewBuffer, contentType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' };
+  const reviewBuffer = await buildSignedMinutePdfBuffer(minute);
+  const reviewAttachment = { filename: `${minute.code}-PARA-REVISION.pdf`, content: reviewBuffer, contentType: 'application/pdf' };
   const summary = { sent: 0, failed: 0 };
   for (const participant of (minute.participants || []).filter((item) => item.status !== 'signed')) {
     const invitationToken = crypto.randomBytes(32).toString('base64url');
@@ -185,17 +186,18 @@ const includeRelations = [
   { model: Documento, as: 'documento', required: false }
 ];
 
-const buildSignedMinuteBuffer = async (minute) => {
+const buildSignedMinutePayload = (minute) => {
   const signatures = new Map((minute.signatures || []).map((signature) => [String(signature.participant_id), signature]));
-  const payload = { ...minute.content, fecha: formatDate(minute.content?.fecha), header: { ...(minute.content?.header || {}), fecha: formatDate(minute.content?.fecha) }, participantes: minute.participants.map((participant) => {
+  return { ...minute.content, fecha: formatDate(minute.content?.fecha), header: { ...(minute.content?.header || {}), fecha: formatDate(minute.content?.fecha) }, participantes: minute.participants.map((participant) => {
     const signature = signatures.get(String(participant.id));
     const signatureData = signature?.signature_storage_key && fs.existsSync(signature.signature_storage_key)
       ? `data:${/\.jpe?g$/i.test(signature.signature_storage_key) ? 'image/jpeg' : 'image/png'};base64,${fs.readFileSync(signature.signature_storage_key).toString('base64')}`
       : '';
     return { nombre: participant.name, cargo: participantRoleLabel(participant), firma: participant.status === 'signed' ? 'Firmado electrónicamente' : 'Pendiente · QR', firma_data_url: signatureData };
   }) };
-  return generateActaBuffer(payload);
 };
+const buildSignedMinuteBuffer = async (minute) => generateActaBuffer(buildSignedMinutePayload(minute));
+const buildSignedMinutePdfBuffer = async (minute) => generateMeetingMinutePdf(buildSignedMinutePayload(minute));
 
 const getConfig = wrap(async (req, res) => {
   res.json({ success: true, data: { enabled: await getMeetingMinuteFeatureState(), canToggle: isAdmin(req.user) } });
@@ -423,6 +425,16 @@ const downloadWord = wrap(async (req, res) => {
   res.send(buffer);
 });
 
+const downloadPdf = wrap(async (req, res) => {
+  const minute = await DigitalMeetingMinute.findByPk(req.params.id, { include: [{ model: DigitalMeetingParticipant, as: 'participants' }, { model: DigitalMeetingSignature, as: 'signatures' }] });
+  if (!minute || minute.deleted_at) throw Object.assign(new Error('Acta no encontrada.'), { statusCode: 404 });
+  if (!isAdmin(req.user) && Number(minute.created_by) !== Number(req.user.id)) throw Object.assign(new Error('No tiene permiso para descargar esta acta.'), { statusCode: 403 });
+  const buffer = await buildSignedMinutePdfBuffer(minute);
+  res.setHeader('Content-Type', 'application/pdf');
+  res.setHeader('Content-Disposition', `attachment; filename="${minute.code}.pdf"`);
+  res.send(buffer);
+});
+
 const sendFinalMinute = wrap(async (req, res) => {
   const minute = await DigitalMeetingMinute.findByPk(req.params.id, { include: [{ model: DigitalMeetingParticipant, as: 'participants' }, { model: DigitalMeetingSignature, as: 'signatures' }] });
   if (!minute || minute.deleted_at) throw Object.assign(new Error('Acta no encontrada.'), { statusCode: 404 });
@@ -433,9 +445,9 @@ const sendFinalMinute = wrap(async (req, res) => {
 
   const recipients = [...new Set(minute.participants.map((participant) => clean(participant.email, 254).toLowerCase()).filter(Boolean))];
   if (!recipients.length) throw Object.assign(new Error('El acta no tiene correos de participantes para el envío.'), { statusCode: 422 });
-  const buffer = await buildSignedMinuteBuffer(minute);
+  const buffer = await buildSignedMinutePdfBuffer(minute);
   const meetingDate = formatDate(minute.content?.fecha);
-  const attachment = { filename: `${minute.code}.docx`, content: buffer, contentType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' };
+  const attachment = { filename: `${minute.code}.pdf`, content: buffer, contentType: 'application/pdf' };
   const html = renderInstitutionalTemplate({
     title: 'Acta de reunión firmada',
     introHtml: '<p>Cordial saludo,</p><p>El proceso de firma del acta de reunión ha finalizado.</p>',
@@ -465,4 +477,4 @@ const sendFinalMinute = wrap(async (req, res) => {
   res.json({ success: true, message: `Acta firmada enviada a ${recipients.length} participante(s).`, data: { status: 'distributed', distributed_at: sentAt, recipients: recipients.length } });
 });
 
-module.exports = { downloadWord, getConfig, getMinute, getSigningAccess, listMinutes, lookupParticipant, publicMinute, publish, reopenForEditing, requestCode, resendInvitations, saveDraft, sendFinalMinute, sign, updateConfig, _internals: { buildPrivacyPolicyEmailSection, buildSigningInvitationEmail, participantRoleLabel, placeResponsibleFirst } };
+module.exports = { downloadPdf, downloadWord, getConfig, getMinute, getSigningAccess, listMinutes, lookupParticipant, publicMinute, publish, reopenForEditing, requestCode, resendInvitations, saveDraft, sendFinalMinute, sign, updateConfig, _internals: { buildPrivacyPolicyEmailSection, buildSigningInvitationEmail, participantRoleLabel, placeResponsibleFirst } };
