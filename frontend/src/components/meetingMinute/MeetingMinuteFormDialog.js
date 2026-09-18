@@ -342,22 +342,27 @@ export default function MeetingMinuteFormDialog({ open, document, user, onClose 
                 overflowY: 'auto',
                 overflowX: 'auto',
                 minHeight: 0,
-                pr: 0.5,
+                pr: 1,
+                // Barra de scroll de la vista previa ampliada y de fácil agarre
                 '&::-webkit-scrollbar': {
-                  width: '10px',
-                  height: '10px'
+                  width: '14px',
+                  height: '14px'
                 },
                 '&::-webkit-scrollbar-track': {
-                  bgcolor: '#f1f5f9',
-                  borderRadius: '6px'
+                  bgcolor: '#e2e8f0',
+                  borderRadius: '8px',
+                  border: '1px solid #cbd5e1'
                 },
                 '&::-webkit-scrollbar-thumb': {
-                  bgcolor: '#cbd5e1',
-                  borderRadius: '6px',
-                  '&:hover': { bgcolor: '#94a3b8' }
+                  bgcolor: '#475569',
+                  borderRadius: '8px',
+                  border: '2.5px solid #e2e8f0',
+                  '&:hover': {
+                    bgcolor: '#1e293b'
+                  }
                 },
-                scrollbarWidth: 'thin',
-                scrollbarColor: '#cbd5e1 #f1f5f9'
+                scrollbarWidth: 'auto',
+                scrollbarColor: '#475569 #e2e8f0'
               }}
             >
               <MeetingPreview document={document} form={form} signatures={signatures} />
