@@ -373,7 +373,7 @@ export default function MeetingMinuteFormDialog({ open, document, user, onClose 
                         }
                       }}
                     >
-                      {layoutMode === 'split' ? <ArrowBack fontSize="small" /> : <ArrowForward fontSize="small" />}
+                      {layoutMode === 'split' ? <ArrowForward fontSize="small" /> : <ArrowBack fontSize="small" />}
                     </IconButton>
                   </Tooltip>
                 </Stack>
@@ -457,7 +457,7 @@ export default function MeetingMinuteFormDialog({ open, document, user, onClose 
                         }
                       }}
                     >
-                      {layoutMode === 'split' ? <ArrowForward fontSize="small" /> : <ArrowBack fontSize="small" />}
+                      {layoutMode === 'split' ? <ArrowBack fontSize="small" /> : <ArrowForward fontSize="small" />}
                     </IconButton>
                   </Tooltip>
                   <Typography fontWeight={900}>Vista previa del acta</Typography>
