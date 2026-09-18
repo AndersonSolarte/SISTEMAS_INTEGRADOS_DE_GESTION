@@ -47,6 +47,9 @@ import RefreshIcon from '@mui/icons-material/Refresh';
 import BarChartIcon from '@mui/icons-material/BarChart';
 import CheckCircleIcon from '@mui/icons-material/CheckCircle';
 import ContentCopyIcon from '@mui/icons-material/ContentCopy';
+import DescriptionOutlinedIcon from '@mui/icons-material/DescriptionOutlined';
+import AccessTimeOutlinedIcon from '@mui/icons-material/AccessTimeOutlined';
+import CalendarMonthOutlinedIcon from '@mui/icons-material/CalendarMonthOutlined';
 import reporteSalidaService from '../../services/reporteSalidaService';
 import ReporteSalidaEstadisticas from './ReporteSalidaEstadisticas';
 
@@ -175,6 +178,84 @@ const formatDateTime = (value) => {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return '-';
   return date.toLocaleString('es-CO', { dateStyle: 'short', timeStyle: 'short' });
+};
+
+const getDocumentoYDuracionInfo = (row = {}) => {
+  const salida = row?.datos_formulario?.salida || {};
+  const categoria = salida.categoria || salida.category || '';
+  const tipo = salida.tipo || '';
+  const duracionTipo = salida.duracionTipo;
+  const duracionDias = salida.duracionDias;
+
+  // Lógica oficial: Es Oficio cuando es actividad propia del cargo / proyección social fuera de campus y duración de 1 o más días
+  const isOficio = (categoria === 'propias_cargo' || tipo === 'proyeccion_social')
+    && tipo !== 'salida_campus'
+    && (duracionTipo ? duracionTipo !== 'menos_media_jornada' : (duracionDias >= 1 || (row.tiempo_solicitado_minutos && row.tiempo_solicitado_minutos >= 480)));
+
+  const docTipoLabel = isOficio ? 'Oficio' : 'Formato FR-002';
+
+  let duracionLabel = '';
+  let duracionColor = '#0369a1';
+  let duracionBg = '#f0f9ff';
+  let duracionBorder = '#bae6fd';
+
+  if (duracionTipo === '1_2_dias') {
+    const numDias = duracionDias || 1;
+    duracionLabel = `1 o 2 días (${numDias} ${numDias === 1 ? 'día' : 'días'})`;
+    duracionColor = '#b45309';
+    duracionBg = '#fffbeb';
+    duracionBorder = '#fde68a';
+  } else if (duracionTipo === '3_mas_dias') {
+    const numDias = duracionDias || 3;
+    duracionLabel = `3 o más días (${numDias} días)`;
+    duracionColor = '#6b21a8';
+    duracionBg = '#faf5ff';
+    duracionBorder = '#e9d5ff';
+  } else if (duracionTipo === 'menos_media_jornada') {
+    if (tipo === 'jurado_votacion') duracionLabel = 'Equivale a 1 día';
+    else if (tipo === 'sufragante') duracionLabel = 'Equivale a 1/2 jornada';
+    else duracionLabel = 'Menos de media jornada';
+    duracionColor = '#0369a1';
+    duracionBg = '#f0f9ff';
+    duracionBorder = '#bae6fd';
+  } else {
+    // Solicitudes existentes/históricas en base de datos sin duracionTipo explícito:
+    if (isOficio) {
+      if (duracionDias >= 3) {
+        duracionLabel = `3 o más días (${duracionDias} días)`;
+        duracionColor = '#6b21a8';
+        duracionBg = '#faf5ff';
+        duracionBorder = '#e9d5ff';
+      } else if (duracionDias === 1 || duracionDias === 2) {
+        duracionLabel = `1 o 2 días (${duracionDias} ${duracionDias === 1 ? 'día' : 'días'})`;
+        duracionColor = '#b45309';
+        duracionBg = '#fffbeb';
+        duracionBorder = '#fde68a';
+      } else {
+        duracionLabel = '1 o más días';
+        duracionColor = '#b45309';
+        duracionBg = '#fffbeb';
+        duracionBorder = '#fde68a';
+      }
+    } else {
+      duracionLabel = 'Menos de media jornada';
+      duracionColor = '#0369a1';
+      duracionBg = '#f0f9ff';
+      duracionBorder = '#bae6fd';
+    }
+  }
+
+  const isDias = duracionTipo === '1_2_dias' || duracionTipo === '3_mas_dias' || (isOficio && Boolean(duracionDias));
+
+  return {
+    isOficio,
+    isDias,
+    docTipoLabel,
+    duracionLabel,
+    duracionColor,
+    duracionBg,
+    duracionBorder
+  };
 };
 
 const getCreatedAtValue = (row) => row?.created_at || row?.createdAt || row?.fecha_radicacion || null;
@@ -821,13 +902,14 @@ function ReporteSalidaSeguimiento({ initialAccess = null, onBack }) {
     // -------------------------------------------------------------
     const headersSummary = [
       'Consecutivo', 'Fecha Creación', 'Fecha Radicación', 'Colaborador(a)', 'Documento', 'Dependencia', 'Cargo', 
-      'Jefe Inmediato', 'Segmento', 'Tipo Permiso', 'Motivo / Detalles', 'Estado', 
+      'Jefe Inmediato', 'Segmento', 'Tipo Permiso', 'Documento Entregable', 'Duración Estimada', 'Motivo / Detalles', 'Estado', 
       'Requiere Reposicion', 'Estado Reposicion', 'Tiempo Solicitado (Min)'
     ];
 
     const dataSummary = groupedRows.map(row => {
       const f = row.datos_formulario || {};
       const tipo = f.salida?.tipo || 'N/A';
+      const docInfo = getDocumentoYDuracionInfo(row);
       
       let segmentoText = 'N/A';
       const rowCat = f.salida?.categoria;
@@ -851,6 +933,8 @@ function ReporteSalidaSeguimiento({ initialAccess = null, onBack }) {
         row.jefe?.nombre || 'N/A',
         segmentoText,
         tipo,
+        docInfo.docTipoLabel,
+        docInfo.duracionLabel,
         f.salida?.motivo || f.salida?.otraDescripcion || '',
         getStatusLabel(row),
         row.reposicion_aplica ? 'SI' : 'NO',
@@ -867,7 +951,7 @@ function ReporteSalidaSeguimiento({ initialAccess = null, onBack }) {
     const headersDetail = [
       'Consecutivo', 'Fecha Creación', 'Fecha Aprobación Jefe', 'Fecha Aprobación GH', 'Fecha Radicación (Finalización)', 
       'Colaborador(a)', 'Documento', 'Dependencia', 'Cargo', 'Jefe Inmediato', 
-      'Segmento', 'Tipo Permiso', 'Motivo / Detalles', 'Estado Solicitud', 
+      'Segmento', 'Tipo Permiso', 'Documento Entregable', 'Duración Estimada', 'Motivo / Detalles', 'Estado Solicitud', 
       'Requiere Reposición', 'Estado Reposición', 
       'Tiempo Solicitado (Min)', 'Tiempo Solicitado (Hrs)', 
       'Tiempo Repuesto / Abonado (Hrs)', 'Saldo Pendiente (Hrs)', 
@@ -878,6 +962,7 @@ function ReporteSalidaSeguimiento({ initialAccess = null, onBack }) {
     const dataDetail = filteredRows.map(row => {
       const f = row.datos_formulario || {};
       const tipo = f.salida?.tipo || 'N/A';
+      const docInfo = getDocumentoYDuracionInfo(row);
       
       let segmentoText = 'N/A';
       const rowCat = f.salida?.categoria;
@@ -926,6 +1011,8 @@ function ReporteSalidaSeguimiento({ initialAccess = null, onBack }) {
         row.jefe?.nombre || 'N/A',
         segmentoText,
         tipo,
+        docInfo.docTipoLabel,
+        docInfo.duracionLabel,
         f.salida?.motivo || f.salida?.otraDescripcion || '',
         getStatusLabel(row),
         row.reposicion_aplica ? 'SI' : 'NO',
@@ -1683,11 +1770,57 @@ function ReporteSalidaSeguimiento({ initialAccess = null, onBack }) {
                               {row.jefe?.email_aprobacion || row.jefe?.email}
                             </Typography>
                           </TableCell>
-                          <TableCell sx={{ py: 0.8, px: 0.8, maxWidth: 200 }}>
-                            <Typography sx={{ fontWeight: 800, fontSize: 11, color: '#334155', textTransform: 'capitalize' }}>
+                          <TableCell sx={{ py: 0.8, px: 0.8, minWidth: 155, maxWidth: 225 }}>
+                            <Typography sx={{ fontWeight: 800, fontSize: 11, color: '#1e293b', textTransform: 'capitalize', lineHeight: 1.2 }}>
                               {(row.datos_formulario?.salida?.tipo || '').replace(/_/g, ' ')}
                             </Typography>
-                            <Typography sx={{ color: '#64748b', fontSize: 10, display: '-webkit-box', WebkitLineClamp: 3, WebkitBoxOrient: 'vertical', overflow: 'hidden' }} title={row.datos_formulario?.salida?.motivo || row.datos_formulario?.salida?.otraDescripcion || 'Sin descripción'}>
+                            {(() => {
+                              const docInfo = getDocumentoYDuracionInfo(row);
+                              const DurationIcon = docInfo.isDias ? CalendarMonthOutlinedIcon : AccessTimeOutlinedIcon;
+                              return (
+                                <Box sx={{ my: 0.35 }}>
+                                  <Stack direction="row" spacing={0.4} alignItems="center" flexWrap="wrap" sx={{ gap: 0.4 }}>
+                                    <Box
+                                      component="span"
+                                      sx={{
+                                        display: 'inline-flex',
+                                        alignItems: 'center',
+                                        px: 0.6,
+                                        py: 0.15,
+                                        borderRadius: 1,
+                                        fontSize: 8.5,
+                                        fontWeight: 800,
+                                        bgcolor: docInfo.isOficio ? '#fff7ed' : '#ecfdf5',
+                                        color: docInfo.isOficio ? '#c2410c' : '#047857',
+                                        border: `1px solid ${docInfo.isOficio ? '#fed7aa' : '#a7f3d0'}`
+                                      }}
+                                    >
+                                      <DescriptionOutlinedIcon sx={{ fontSize: 10.5, mr: 0.35 }} />
+                                      {docInfo.docTipoLabel}
+                                    </Box>
+                                    <Box
+                                      component="span"
+                                      sx={{
+                                        display: 'inline-flex',
+                                        alignItems: 'center',
+                                        px: 0.6,
+                                        py: 0.15,
+                                        borderRadius: 1,
+                                        fontSize: 8.5,
+                                        fontWeight: 700,
+                                        bgcolor: docInfo.duracionBg,
+                                        color: docInfo.duracionColor,
+                                        border: `1px solid ${docInfo.duracionBorder}`
+                                      }}
+                                    >
+                                      <DurationIcon sx={{ fontSize: 10.5, mr: 0.35 }} />
+                                      {docInfo.duracionLabel}
+                                    </Box>
+                                  </Stack>
+                                </Box>
+                              );
+                            })()}
+                            <Typography sx={{ color: '#64748b', fontSize: 9.5, display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden', lineHeight: 1.2 }} title={row.datos_formulario?.salida?.motivo || row.datos_formulario?.salida?.otraDescripcion || 'Sin descripción'}>
                               {row.datos_formulario?.salida?.motivo || row.datos_formulario?.salida?.otraDescripcion || 'Sin descripción'}
                             </Typography>
                           </TableCell>
