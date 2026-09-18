@@ -150,7 +150,7 @@ const resolveSigningAccess = async (token) => {
   const tokenHash = hash(token);
   const now = new Date();
   const minute = await DigitalMeetingMinute.findOne({
-    where: { public_token_hash: tokenHash, status: 'signing', token_expires_at: { [Op.gt]: now } },
+    where: { public_token_hash: tokenHash, status: { [Op.in]: ['signing', 'signed', 'distributed'] }, token_expires_at: { [Op.gt]: now } },
     include: [{ model: DigitalMeetingParticipant, as: 'participants' }]
   });
   if (minute) return { minute, invitedParticipant: null, invitationVerified: false };
@@ -159,7 +159,7 @@ const resolveSigningAccess = async (token) => {
   });
   if (!invitedParticipant) return null;
   const invitedMinute = await DigitalMeetingMinute.findOne({
-    where: { id: invitedParticipant.minute_id, status: 'signing', token_expires_at: { [Op.gt]: now } },
+    where: { id: invitedParticipant.minute_id, status: { [Op.in]: ['signing', 'signed', 'distributed'] } },
     include: [{ model: DigitalMeetingParticipant, as: 'participants' }]
   });
   return invitedMinute ? { minute: invitedMinute, invitedParticipant, invitationVerified: true } : null;
@@ -372,9 +372,66 @@ const publicMinute = wrap(async (req, res) => {
   const access = await resolveSigningAccess(req.params.token);
   if (!access) throw Object.assign(new Error('El enlace de firma no es válido o venció.'), { statusCode: 404 });
   const { minute, invitedParticipant, invitationVerified } = access;
+  const alreadySigned = Boolean(invitationVerified && invitedParticipant?.status === 'signed');
   const available = invitationVerified ? [invitedParticipant] : minute.participants.filter((p) => p.status !== 'signed');
-  if (invitationVerified && invitedParticipant.status === 'signed') throw Object.assign(new Error('Esta firma ya fue registrada.'), { statusCode: 409 });
-  res.json({ success: true, data: { id: minute.id, code: minute.code, version: minute.version, content: minute.content, invitation_verified: invitationVerified, invited_participant_id: invitedParticipant?.id || null, preview_participants: minute.participants.map((p) => ({ id: p.id, name: p.name, role_title: p.role_title, organization: p.organization, external: !p.user_id, status: p.status })), participants: available.map((p) => ({ id: p.id, name: p.name, role_title: p.role_title, organization: p.organization, external: !p.user_id, email_hint: p.email ? `${p.email.slice(0, 2)}***@${p.email.split('@')[1]}` : '' })) } });
+
+  let signatureInfo = null;
+  if (alreadySigned && invitedParticipant) {
+    const signatureRow = await DigitalMeetingSignature.findOne({
+      where: { minute_id: minute.id, participant_id: invitedParticipant.id }
+    });
+    if (signatureRow) {
+      let preview = null;
+      if (signatureRow.signature_storage_key && fs.existsSync(signatureRow.signature_storage_key)) {
+        try {
+          preview = `data:image/png;base64,${fs.readFileSync(signatureRow.signature_storage_key).toString('base64')}`;
+        } catch (_) {}
+      }
+      signatureInfo = {
+        signed_at: signatureRow.signed_at,
+        signature_preview: preview
+      };
+    }
+  }
+
+  res.json({
+    success: true,
+    data: {
+      id: minute.id,
+      code: minute.code,
+      version: minute.version,
+      status: minute.status,
+      content: minute.content,
+      invitation_verified: invitationVerified,
+      invited_participant_id: invitedParticipant?.id || null,
+      already_signed: alreadySigned,
+      participant: invitedParticipant ? {
+        id: invitedParticipant.id,
+        name: invitedParticipant.name,
+        role_title: invitedParticipant.role_title,
+        organization: invitedParticipant.organization,
+        external: !invitedParticipant.user_id,
+        status: invitedParticipant.status
+      } : null,
+      signature_info: signatureInfo,
+      preview_participants: minute.participants.map((p) => ({
+        id: p.id,
+        name: p.name,
+        role_title: p.role_title,
+        organization: p.organization,
+        external: !p.user_id,
+        status: p.status
+      })),
+      participants: available.map((p) => ({
+        id: p.id,
+        name: p.name,
+        role_title: p.role_title,
+        organization: p.organization,
+        external: !p.user_id,
+        email_hint: p.email ? `${p.email.slice(0, 2)}***@${p.email.split('@')[1]}` : ''
+      }))
+    }
+  });
 });
 
 const requestCode = wrap(async (req, res) => {
@@ -397,7 +454,7 @@ const sign = wrap(async (req, res) => {
   const minute = access?.minute;
   const participant = minute && await DigitalMeetingParticipant.findOne({ where: { id: req.body.participant_id, minute_id: minute.id } });
   if (!participant) throw Object.assign(new Error('Participante no válido.'), { statusCode: 404 });
-  if (participant.status === 'signed') throw Object.assign(new Error('Este participante ya firmó el acta.'), { statusCode: 409 });
+  if (participant.status === 'signed') throw Object.assign(new Error('Usted ya firmó este documento anteriormente.'), { statusCode: 409 });
   if (!participant.user_id && req.body.privacy_accepted !== true) throw Object.assign(new Error('Debe aceptar la autorización de tratamiento de datos personales para firmar.'), { statusCode: 422 });
   const personalInvitation = Boolean(access?.invitationVerified && String(access.invitedParticipant.id) === String(participant.id));
   if (!personalInvitation && (participant.otp_attempts >= 5 || !participant.otp_expires_at || participant.otp_expires_at < new Date() || participant.otp_hash !== hash(req.body.otp))) {
@@ -410,13 +467,13 @@ const sign = wrap(async (req, res) => {
   fs.writeFileSync(storage, parsed.buffer, { flag: 'wx' });
   const signedAt = new Date();
   await DigitalMeetingSignature.create({ minute_id: minute.id, participant_id: participant.id, signer_name: participant.name, signer_email: participant.email, signature_storage_key: storage, signature_hash: hash(parsed.buffer), content_hash: minute.content_hash, signed_at: signedAt, privacy_accepted_at: !participant.user_id ? signedAt : null, privacy_policy_version: !participant.user_id ? PRIVACY_POLICY_VERSION : null, ip_address: req.ip, user_agent: clean(req.headers['user-agent'], 500) });
-  await participant.update({ status: 'signed', email_verified_at: new Date(), otp_hash: null, otp_expires_at: null, signing_token_hash: null, signing_token_expires_at: null });
+  await participant.update({ status: 'signed', email_verified_at: new Date(), otp_hash: null, otp_expires_at: null });
   const [participantCount, signedCount] = await Promise.all([
     DigitalMeetingParticipant.count({ where: { minute_id: minute.id } }),
     DigitalMeetingParticipant.count({ where: { minute_id: minute.id, status: 'signed' } })
   ]);
   if (participantCount > 0 && signedCount === participantCount) {
-    await minute.update({ status: 'signed', finalized_at: signedAt, token_expires_at: signedAt });
+    await minute.update({ status: 'signed', finalized_at: signedAt });
   }
   res.json({ success: true, message: 'Firma registrada y vinculada al acta.', data: { id: participant.id } });
 });
