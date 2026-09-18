@@ -268,7 +268,7 @@ export default function MeetingMinuteFormDialog({ open, document, user, onClose 
         <Stack direction="row" justifyContent="space-between" alignItems="center" gap={2} flexWrap="wrap">
           <Box>
             <Typography variant="h5" fontWeight={950}>Registro de Asistencia y Reunión</Typography>
-            <Typography sx={{ opacity: .9, fontSize: 13 }}>{document?.codigo} · Formato digital institucional independiente</Typography>
+            <Typography sx={{ opacity: .9, fontSize: 13 }}>{document?.codigo || 'COM-ID-FR-002'}</Typography>
           </Box>
           <Stack direction="row" alignItems="center" gap={1.5}>
             <ToggleButtonGroup
@@ -354,10 +354,7 @@ export default function MeetingMinuteFormDialog({ open, document, user, onClose 
           >
             <Paper variant="outlined" sx={{ p: 2.25, borderRadius: 3 }}>
               <Stack direction={{ xs: 'column', sm: 'row' }} justifyContent="space-between" alignItems={{ sm: 'center' }} gap={1.5} mb={2}>
-                <Box>
-                  <Typography fontWeight={900}>Actas de reunión</Typography>
-                  <Typography variant="body2" color="text.secondary">Cree una nueva o continúe un borrador anterior. Este flujo no modifica los Planes de Acción.</Typography>
-                </Box>
+                <Typography fontWeight={900}>Actas de reunión</Typography>
                 <Stack direction="row" alignItems="center" gap={1}>
                   <Button variant="outlined" onClick={() => { setForm(emptyForm(user)); setSignatures([]); setQr(null); setResponsibleDocument(''); setResponsibleCandidate(null); setExternalMode(false); }} sx={{ textTransform: 'none', fontWeight: 800 }}>Nueva acta</Button>
                   <Tooltip title={layoutMode === 'split' ? 'Expandir formulario a pantalla completa' : 'Restaurar vista dividida (50/50)'}>
@@ -407,10 +404,7 @@ export default function MeetingMinuteFormDialog({ open, document, user, onClose 
             </Paper>
             <Paper variant="outlined" sx={{ p: 2.25, borderRadius: 3 }}>
               <Stack direction={{ xs: 'column', sm: 'row' }} justifyContent="space-between" alignItems={{ sm: 'center' }} gap={1} mb={1}>
-                <Box>
-                  <Typography fontWeight={900}>2. Participantes y firmas</Typography>
-                  <Typography variant="body2" color="text.secondary">Digite la cédula. Si la persona no existe en SIAC, puede agregarla solamente a esta acta.</Typography>
-                </Box>
+                <Typography fontWeight={900}>2. Participantes y firmas</Typography>
                 {additionalParticipants.length > 0 ? (
                   <Chip size="small" color="success" label={`${additionalParticipants.length} participante(s) adicional(es)`} sx={{ fontWeight: 850 }} />
                 ) : (
