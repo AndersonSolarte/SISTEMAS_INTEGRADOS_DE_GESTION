@@ -96,7 +96,7 @@ const generateMeetingMinutePdf = async (payload = {}) => {
           { text: `CÓDIGO: ${header.codigo || 'COM-ID-FR-002'}\nVERSIÓN: ${header.version || '1'}\nFECHA: ${header.fecha || payload.fecha || ''}`, bold: true, fontSize: 8, margin: [2, 9, 0, 0] }
         ]] }, layout: borderLayout
       },
-      { table: { widths: ['*'], body: [[{ text: [{ text: 'Responsable(s): ', bold: true }, payload.responsables || ''] }], [{ text: [{ text: 'Dependencia que cita: ', bold: true }, payload.dependencia || ''] }]] }, layout: borderLayout },
+      { table: { widths: ['*'], body: [[{ text: [{ text: 'Responsable(s): ', bold: true }, payload.responsables?.includes('\n') ? `\n${payload.responsables}` : (payload.responsables || '')] }], [{ text: [{ text: 'Dependencia que cita: ', bold: true }, payload.dependencia || ''] }]] }, layout: borderLayout },
       { table: { widths: ['*'], body: [[{ text: 'Información de la Reunión', bold: true, alignment: 'center', fillColor: '#d9d9d9' }], [{ text: [{ text: 'Lugar: ', bold: true }, payload.lugar || ''] }]] }, layout: borderLayout },
       { table: { widths: ['*', 150], body: [[{ text: [{ text: 'Fecha: ', bold: true }, payload.fecha || ''] }, { text: [{ text: 'Horario: ', bold: true }, payload.horario || ''] }]] }, layout: borderLayout },
       {

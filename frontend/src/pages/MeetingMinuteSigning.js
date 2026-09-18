@@ -29,7 +29,16 @@ function PublicActaPreview({ minute }) {
           <Box sx={{ borderRight: '1px solid #111', display: 'grid', placeItems: 'center', textAlign: 'center', fontWeight: 900 }}>REGISTRO DE ASISTENCIA Y REUNIÓN</Box>
           <Box sx={{ p: 1, display: 'flex', flexDirection: 'column', justifyContent: 'center', fontWeight: 800, fontSize: 10 }}><span>CÓDIGO: {content.header?.codigo || 'COM-ID-FR-002'}</span><span>VERSIÓN: {content.header?.version || minute.version || '1'}</span><span>FECHA: {displayDate(content.fecha)}</span></Box>
         </Box>
-        <Box sx={cell}><strong>Responsable(s):</strong> {content.responsables}</Box>
+        <Box sx={{ ...cell, whiteSpace: 'pre-line' }}>
+          <strong>Responsable(s):</strong>{' '}
+          {content.responsables?.includes('\n') ? (
+            <Box component="span" sx={{ display: 'block', mt: 0.35, pl: 0.5 }}>
+              {content.responsables}
+            </Box>
+          ) : (
+            content.responsables
+          )}
+        </Box>
         <Box sx={cell}><strong>Dependencia que cita:</strong> {content.dependencia}</Box>
         <Box sx={{ ...cell, bgcolor: '#d9d9d9', textAlign: 'center', fontWeight: 900 }}>Información de la Reunión</Box>
         <Box sx={cell}><strong>Lugar:</strong> {content.lugar}</Box>

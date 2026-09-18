@@ -26,10 +26,81 @@ const MEETING_PLACES = [
 ];
 const emptyForm = (user = {}) => ({
   id: '', status: 'draft', created_by: user.id || '', responsables: '', dependencia: '',
-  responsable_document: '', responsable_role: '',
+  responsable_document: '', responsable_role: '', responsables_data: [],
   lugar: '', fecha: today(), hora_inicio: '08:00', hora_fin: '10:00',
   objetivo: '', desarrollo: '', conclusiones: '', participants: []
 });
+
+const formatResponsablesText = (list = []) => {
+  if (!list || !list.length) return '';
+  if (list.length === 1) {
+    const r = list[0];
+    const details = [r.role_title, r.organization].filter(Boolean).join(' · ');
+    return details ? `${r.name} (${details})` : r.name;
+  }
+  return list.map((r) => {
+    const details = [r.role_title, r.organization].filter(Boolean).join(' · ');
+    return `• ${r.name}${details ? ` (${details})` : ''}`;
+  }).join('\n');
+};
+
+const loadResponsablesFromMinute = (content = {}) => {
+  if (Array.isArray(content.responsables_data) && content.responsables_data.length > 0) {
+    return content.responsables_data.map((r, i) => ({
+      user_id: r.user_id || null,
+      document: r.document || '',
+      name: r.name || '',
+      email: r.email || '',
+      organization: r.organization || '',
+      role_title: r.role_title || '',
+      is_primary: i === 0 || Boolean(r.is_primary)
+    }));
+  }
+  if (content.responsable_document || content.responsables) {
+    return [{
+      user_id: null,
+      document: content.responsable_document || '',
+      name: content.responsables || '',
+      email: '',
+      organization: content.dependencia || '',
+      role_title: content.responsable_role || '',
+      is_primary: true
+    }];
+  }
+  return [];
+};
+
+const syncParticipantsWithResponsables = (currentParticipants = [], newResponsables = []) => {
+  const respDocs = new Set(newResponsables.map((r) => String(r.document || '').trim().toLowerCase()).filter(Boolean));
+  const respEmails = new Set(newResponsables.map((r) => String(r.email || '').trim().toLowerCase()).filter(Boolean));
+
+  const respParticipants = newResponsables.map((r, idx) => {
+    const doc = String(r.document || '').trim().toLowerCase();
+    const email = String(r.email || '').trim().toLowerCase();
+    const existing = currentParticipants.find((p) =>
+      (doc && String(p.document || '').trim().toLowerCase() === doc) ||
+      (email && String(p.email || '').trim().toLowerCase() === email)
+    );
+    return {
+      id: existing?.id || undefined,
+      user_id: r.user_id || existing?.user_id || null,
+      document: r.document || existing?.document || '',
+      name: r.name || existing?.name || '',
+      email: r.email || existing?.email || '',
+      organization: r.organization || existing?.organization || '',
+      role_title: r.role_title || existing?.role_title || (idx === 0 ? 'Responsable Principal' : 'Co-responsable'),
+      status: existing?.status || 'invited'
+    };
+  });
+
+  const nonRespParticipants = currentParticipants.filter((p) => {
+    const pDoc = String(p.document || '').trim().toLowerCase();
+    const pEmail = String(p.email || '').trim().toLowerCase();
+    return !(pDoc && respDocs.has(pDoc)) && !(pEmail && respEmails.has(pEmail));
+  });
+
+  return [...respParticipants, ...nonRespParticipants];
+};
 
 const MeetingPreview = ({ document, form, signatures = [] }) => {
   const signed = new Set(signatures.map((signature) => String(signature.participant_id)));
@@ -44,7 +115,16 @@ const MeetingPreview = ({ document, form, signatures = [] }) => {
           <span>CÓDIGO: {document?.codigo || 'COM-ID-FR-002'}</span><span>VERSIÓN: {document?.version || '1'}</span><span>FECHA: {formatDate(form.fecha)}</span>
         </Box>
       </Box>
-      <Box sx={cell}><strong>Responsable(s):</strong> {form.responsables}</Box>
+      <Box sx={{ ...cell, whiteSpace: 'pre-line' }}>
+        <strong>Responsable(s):</strong>{' '}
+        {form.responsables?.includes('\n') ? (
+          <Box component="span" sx={{ display: 'block', mt: 0.35, pl: 0.5 }}>
+            {form.responsables}
+          </Box>
+        ) : (
+          form.responsables
+        )}
+      </Box>
       <Box sx={cell}><strong>Dependencia que cita:</strong> {form.dependencia}</Box>
       <Box sx={{ ...cell, bgcolor: '#d9d9d9', textAlign: 'center', fontWeight: 900 }}>Información de la Reunión</Box>
       <Box sx={cell}><strong>Lugar:</strong> {form.lugar}</Box>
@@ -68,6 +148,7 @@ const MeetingPreview = ({ document, form, signatures = [] }) => {
 export default function MeetingMinuteFormDialog({ open, document, user, onClose }) {
   const { enqueueSnackbar } = useSnackbar();
   const [form, setForm] = useState(() => emptyForm(user));
+  const [responsablesList, setResponsablesList] = useState([]);
   const [minutes, setMinutes] = useState([]);
   const [signatures, setSignatures] = useState([]);
   const [documentNumber, setDocumentNumber] = useState('');
@@ -88,102 +169,273 @@ export default function MeetingMinuteFormDialog({ open, document, user, onClose 
   const canSendFinal = allSigned && Number(form.created_by) === Number(user?.id);
   const horario = useMemo(() => `${form.hora_inicio || ''} - ${form.hora_fin || ''}`, [form.hora_inicio, form.hora_fin]);
   const additionalParticipants = useMemo(() => {
-    const respDoc = String(form.responsable_document || '').trim().toLowerCase();
-    const respName = String(form.responsables || '').trim().toLowerCase();
+    const respDocs = new Set((responsablesList || []).map((r) => String(r.document || '').trim().toLowerCase()).filter(Boolean));
+    const respEmails = new Set((responsablesList || []).map((r) => String(r.email || '').trim().toLowerCase()).filter(Boolean));
     return (form.participants || []).filter((p) => {
       const pDoc = String(p.document || '').trim().toLowerCase();
-      const pName = String(p.name || '').trim().toLowerCase();
-      const isResp = (respDoc && pDoc && pDoc === respDoc) || (respName && pName && pName === respName);
-      return !isResp;
+      const pEmail = String(p.email || '').trim().toLowerCase();
+      return !(pDoc && respDocs.has(pDoc)) && !(pEmail && respEmails.has(pEmail));
     });
-  }, [form.participants, form.responsable_document, form.responsables]);
+  }, [form.participants, responsablesList]);
 
   const loadMinutes = async () => {
     try { const response = await meetingMinuteService.list(); setMinutes(response.data || []); } catch (_) { setMinutes([]); }
   };
   useEffect(() => {
     if (!open) return;
-    setForm(emptyForm(user)); setSignatures([]); setQr(null); setCandidate(null); setDocumentNumber('');
-    setResponsibleDocument(''); setResponsibleCandidate(null); setExternalMode(false); loadMinutes();
+    setForm(emptyForm(user));
+    setResponsablesList([]);
+    setSignatures([]);
+    setQr(null);
+    setCandidate(null);
+    setDocumentNumber('');
+    setResponsibleDocument('');
+    setResponsibleCandidate(null);
+    setExternalMode(false);
+    loadMinutes();
   }, [open, user]);
 
   const setField = (key, value) => setForm((previous) => ({ ...previous, [key]: value }));
   const openMinute = async (id) => {
-    if (!id) return setForm(emptyForm(user));
+    if (!id) {
+      setForm(emptyForm(user));
+      setResponsablesList([]);
+      return;
+    }
     setLoading(true);
     try {
       const response = await meetingMinuteService.get(id);
       const row = response.data;
       const content = row.content || {};
       const [start = '', end = ''] = String(content.horario || '').split('-').map((part) => part.trim());
-      setForm({ id: row.id, status: row.status, created_by: row.created_by, responsables: content.responsables || '', responsable_document: content.responsable_document || '', responsable_role: content.responsable_role || '', dependencia: content.dependencia || '', lugar: content.lugar || '', fecha: content.fecha || today(), hora_inicio: start || '08:00', hora_fin: end || '10:00', objetivo: content.objetivo?.[0] || '', desarrollo: content.desarrollo?.[0] || '', conclusiones: content.conclusiones?.[0] || '', participants: row.participants || [] });
-      setResponsibleDocument(content.responsable_document || ''); setResponsibleCandidate(null);
-      setSignatures(row.signatures || []); setQr(null);
-    } catch (error) { enqueueSnackbar(error.response?.data?.message || 'No fue posible abrir el acta.', { variant: 'error' }); }
-    finally { setLoading(false); }
+      const loadedResponsables = loadResponsablesFromMinute(content);
+      setResponsablesList(loadedResponsables);
+      const formattedText = content.responsables || formatResponsablesText(loadedResponsables);
+      setForm({
+        id: row.id,
+        status: row.status,
+        created_by: row.created_by,
+        responsables: formattedText,
+        responsable_document: content.responsable_document || loadedResponsables[0]?.document || '',
+        responsable_role: content.responsable_role || loadedResponsables[0]?.role_title || '',
+        responsables_data: loadedResponsables,
+        dependencia: content.dependencia || '',
+        lugar: content.lugar || '',
+        fecha: content.fecha || today(),
+        hora_inicio: start || '08:00',
+        hora_fin: end || '10:00',
+        objetivo: content.objetivo?.[0] || '',
+        desarrollo: content.desarrollo?.[0] || '',
+        conclusiones: content.conclusiones?.[0] || '',
+        participants: row.participants || []
+      });
+      setResponsibleDocument('');
+      setResponsibleCandidate(null);
+      setSignatures(row.signatures || []);
+      setQr(null);
+    } catch (error) {
+      enqueueSnackbar(error.response?.data?.message || 'No fue posible abrir el acta.', { variant: 'error' });
+    } finally {
+      setLoading(false);
+    }
   };
+
   const lookup = async () => {
     if (!documentNumber.trim()) return;
-    setSearching(true); setCandidate(null);
-    try { const response = await meetingMinuteService.lookupParticipant(documentNumber.trim()); setCandidate(response.data); }
-    catch (error) {
+    setSearching(true);
+    setCandidate(null);
+    try {
+      const response = await meetingMinuteService.lookupParticipant(documentNumber.trim());
+      setCandidate(response.data);
+    } catch (error) {
       if (error.response?.status === 404) {
         setExternalDraft({ document: documentNumber.trim(), name: '', email: '', organization: '', role_title: '' });
         setExternalMode(true);
         enqueueSnackbar('La persona no está registrada. Puede agregarla únicamente a esta acta.', { variant: 'info' });
-      } else enqueueSnackbar(error.response?.data?.message || 'No se encontró la cédula.', { variant: 'error' });
+      } else {
+        enqueueSnackbar(error.response?.data?.message || 'No se encontró la cédula.', { variant: 'error' });
+      }
+    } finally {
+      setSearching(false);
     }
-    finally { setSearching(false); }
   };
+
   const addParticipant = () => {
     if (!candidate) return;
     if (!candidate.email) return enqueueSnackbar('El usuario no tiene correo institucional para la firma.', { variant: 'warning' });
-    if (form.participants.some((participant) => String(participant.user_id) === String(candidate.id))) return enqueueSnackbar('La persona ya está agregada.', { variant: 'info' });
+    const doc = String(candidate.document || '').trim().toLowerCase();
+    const email = String(candidate.email || '').trim().toLowerCase();
+    if (form.participants.some((participant) => {
+      const pDoc = String(participant.document || '').trim().toLowerCase();
+      const pEmail = String(participant.email || '').trim().toLowerCase();
+      return (candidate.id && String(participant.user_id) === String(candidate.id)) || (doc && pDoc === doc) || (email && pEmail === email);
+    })) {
+      return enqueueSnackbar('La persona ya está agregada.', { variant: 'info' });
+    }
     setField('participants', [...form.participants, { user_id: candidate.id, document: candidate.document, name: candidate.name, email: candidate.email, organization: candidate.organization, role_title: candidate.role_title, status: 'invited' }]);
-    setCandidate(null); setDocumentNumber('');
+    setCandidate(null);
+    setDocumentNumber('');
   };
+
   const lookupResponsible = async () => {
     if (!responsibleDocument.trim()) return;
-    setSearchingResponsible(true); setResponsibleCandidate(null);
-    try { const response = await meetingMinuteService.lookupParticipant(responsibleDocument.trim()); setResponsibleCandidate(response.data); }
-    catch (error) { enqueueSnackbar(error.response?.data?.message || 'No se encontró el responsable.', { variant: 'error' }); }
-    finally { setSearchingResponsible(false); }
+    setSearchingResponsible(true);
+    setResponsibleCandidate(null);
+    try {
+      const response = await meetingMinuteService.lookupParticipant(responsibleDocument.trim());
+      setResponsibleCandidate(response.data);
+    } catch (error) {
+      enqueueSnackbar(error.response?.data?.message || 'No se encontró el responsable.', { variant: 'error' });
+    } finally {
+      setSearchingResponsible(false);
+    }
   };
-  const applyResponsible = () => {
+
+  const addResponsableCandidate = (isPrimary = false) => {
     if (!responsibleCandidate) return;
-    setForm((previous) => {
-      const oldResponsibleDocument = String(previous.responsable_document || '').toLowerCase();
-      const candidateDocument = String(responsibleCandidate.document || '').toLowerCase();
-      const candidateEmail = String(responsibleCandidate.email || '').toLowerCase();
-      const remainingParticipants = previous.participants.filter((participant) => {
-        const participantDocument = String(participant.document || '').toLowerCase();
-        const participantEmail = String(participant.email || '').toLowerCase();
-        return participantDocument !== oldResponsibleDocument
-          && participantDocument !== candidateDocument
-          && participantEmail !== candidateEmail;
-      });
-      const responsibleParticipant = { user_id: responsibleCandidate.id, document: responsibleCandidate.document, name: responsibleCandidate.name, email: responsibleCandidate.email, organization: responsibleCandidate.organization, role_title: responsibleCandidate.role_title, status: 'invited' };
-      return { ...previous, responsables: responsibleCandidate.name, responsable_document: responsibleCandidate.document, responsable_role: responsibleCandidate.role_title || '', dependencia: responsibleCandidate.organization || '', participants: [responsibleParticipant, ...remainingParticipants] };
-    });
-    setResponsibleDocument(responsibleCandidate.document || responsibleDocument); setResponsibleCandidate(null);
-    enqueueSnackbar('Responsable agregado como primer participante.', { variant: 'success' });
+    const doc = String(responsibleCandidate.document || '').trim();
+    if (responsablesList.some((r) => String(r.document || '').toLowerCase() === doc.toLowerCase())) {
+      enqueueSnackbar('Esta persona ya está agregada como responsable.', { variant: 'info' });
+      return;
+    }
+
+    const newResp = {
+      user_id: responsibleCandidate.id || null,
+      document: responsibleCandidate.document || '',
+      name: responsibleCandidate.name || '',
+      email: responsibleCandidate.email || '',
+      organization: responsibleCandidate.organization || '',
+      role_title: responsibleCandidate.role_title || '',
+      is_primary: isPrimary || responsablesList.length === 0
+    };
+
+    let updatedList = [];
+    if (newResp.is_primary) {
+      updatedList = [newResp, ...responsablesList.map((r) => ({ ...r, is_primary: false }))];
+    } else {
+      updatedList = [...responsablesList, newResp];
+    }
+
+    const primaryResp = updatedList.find((r) => r.is_primary) || updatedList[0];
+    const textFormatted = formatResponsablesText(updatedList);
+    const updatedParticipants = syncParticipantsWithResponsables(form.participants, updatedList);
+
+    setResponsablesList(updatedList);
+    setForm((prev) => ({
+      ...prev,
+      responsables: textFormatted,
+      responsable_document: primaryResp?.document || '',
+      responsable_role: primaryResp?.role_title || '',
+      responsables_data: updatedList,
+      dependencia: (isPrimary || !prev.dependencia) ? (primaryResp?.organization || prev.dependencia) : prev.dependencia,
+      participants: updatedParticipants
+    }));
+
+    setResponsibleCandidate(null);
+    setResponsibleDocument('');
+    enqueueSnackbar(newResp.is_primary ? 'Responsable Principal asignado.' : 'Co-responsable agregado.', { variant: 'success' });
   };
+
+  const makePrimaryResponsable = (index) => {
+    if (index < 0 || index >= responsablesList.length) return;
+    const target = { ...responsablesList[index], is_primary: true };
+    const others = responsablesList.filter((_, i) => i !== index).map((r) => ({ ...r, is_primary: false }));
+    const updatedList = [target, ...others];
+    const primaryResp = updatedList[0];
+    const textFormatted = formatResponsablesText(updatedList);
+    const updatedParticipants = syncParticipantsWithResponsables(form.participants, updatedList);
+
+    setResponsablesList(updatedList);
+    setForm((prev) => ({
+      ...prev,
+      responsables: textFormatted,
+      responsable_document: primaryResp.document || '',
+      responsable_role: primaryResp.role_title || '',
+      responsables_data: updatedList,
+      dependencia: primaryResp.organization || prev.dependencia,
+      participants: updatedParticipants
+    }));
+    enqueueSnackbar(`${primaryResp.name} ahora es el Responsable Principal.`, { variant: 'info' });
+  };
+
+  const removeResponsable = (index) => {
+    if (index < 0 || index >= responsablesList.length) return;
+    const wasPrimary = responsablesList[index].is_primary;
+    let remaining = responsablesList.filter((_, i) => i !== index);
+    if (wasPrimary && remaining.length > 0) {
+      remaining = remaining.map((r, i) => (i === 0 ? { ...r, is_primary: true } : r));
+    }
+    const primaryResp = remaining.find((r) => r.is_primary) || remaining[0];
+    const textFormatted = formatResponsablesText(remaining);
+    const updatedParticipants = syncParticipantsWithResponsables(form.participants, remaining);
+
+    setResponsablesList(remaining);
+    setForm((prev) => ({
+      ...prev,
+      responsables: textFormatted,
+      responsable_document: primaryResp?.document || '',
+      responsable_role: primaryResp?.role_title || '',
+      responsables_data: remaining,
+      dependencia: wasPrimary && primaryResp ? (primaryResp.organization || prev.dependencia) : (remaining.length === 0 ? '' : prev.dependencia),
+      participants: updatedParticipants
+    }));
+    enqueueSnackbar('Responsable removido.', { variant: 'info' });
+  };
+
   const addExternalParticipant = () => {
     const external = Object.fromEntries(Object.entries(externalDraft).map(([key, value]) => [key, String(value || '').trim()]));
     if (!external.document || !external.name || !external.email || !external.role_title) return enqueueSnackbar('Complete cédula, nombre, correo y cargo.', { variant: 'warning' });
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(external.email)) return enqueueSnackbar('Digite un correo válido.', { variant: 'warning' });
     if (form.participants.some((participant) => String(participant.document || '').toLowerCase() === external.document.toLowerCase() || String(participant.email || '').toLowerCase() === external.email.toLowerCase())) return enqueueSnackbar('La persona ya está agregada.', { variant: 'info' });
     setField('participants', [...form.participants, { ...external, user_id: null, status: 'invited', external: true }]);
-    setExternalMode(false); setExternalDraft({ document: '', name: '', email: '', organization: '', role_title: '' }); setDocumentNumber('');
+    setExternalMode(false);
+    setExternalDraft({ document: '', name: '', email: '', organization: '', role_title: '' });
+    setDocumentNumber('');
   };
-  const payload = () => ({ id: form.id || undefined, documento_id: document.id, responsables: form.responsables, responsable_document: form.responsable_document, responsable_role: form.responsable_role, dependencia: form.dependencia, lugar: form.lugar, fecha: form.fecha, horario, objetivo: form.objetivo, desarrollo: form.desarrollo, conclusiones: form.conclusiones, participants: form.participants });
+
+  const removeParticipant = (index) => {
+    const p = form.participants[index];
+    const pDoc = String(p?.document || '').toLowerCase();
+    const pEmail = String(p?.email || '').toLowerCase();
+    const respIdx = responsablesList.findIndex((r) =>
+      (pDoc && String(r.document || '').toLowerCase() === pDoc) ||
+      (pEmail && String(r.email || '').toLowerCase() === pEmail)
+    );
+    if (respIdx >= 0) {
+      if (responsablesList[respIdx].is_primary && responsablesList.length === 1) {
+        enqueueSnackbar('No puede eliminar al único Responsable Principal desde aquí. Modifíquelo en la sección 1.', { variant: 'warning' });
+        return;
+      }
+      removeResponsable(respIdx);
+      return;
+    }
+    setField('participants', form.participants.filter((_, i) => i !== index));
+  };
+
+  const payload = () => ({
+    id: form.id || undefined,
+    documento_id: document.id,
+    responsables: form.responsables,
+    responsable_document: form.responsable_document,
+    responsable_role: form.responsable_role,
+    responsables_data: responsablesList,
+    dependencia: form.dependencia,
+    lugar: form.lugar,
+    fecha: form.fecha,
+    horario,
+    objetivo: form.objetivo,
+    desarrollo: form.desarrollo,
+    conclusiones: form.conclusiones,
+    participants: form.participants
+  });
+
   const save = async ({ quiet = false } = {}) => {
-    if (!form.responsable_document || !form.responsables) {
+    if (!responsablesList.length || !form.responsables) {
       enqueueSnackbar('Consulte y seleccione primero al responsable de la reunión.', { variant: 'warning' });
       return null;
     }
-    if (!additionalParticipants.length) {
-      enqueueSnackbar('Debe agregar al menos un participante aparte del responsable en la sección "2. Participantes y firmas".', { variant: 'warning' });
+    if (form.participants.length < 2) {
+      enqueueSnackbar('Debe haber al menos dos participantes en la reunión (responsables y/o participantes convocados).', { variant: 'warning' });
       return null;
     }
     setLoading(true);
@@ -194,26 +446,37 @@ export default function MeetingMinuteFormDialog({ open, document, user, onClose 
       await loadMinutes();
       if (!quiet) enqueueSnackbar('Borrador del acta guardado.', { variant: 'success' });
       return row;
-    } catch (error) { enqueueSnackbar(error.response?.data?.message || 'No fue posible guardar el acta.', { variant: 'error' }); return null; }
-    finally { setLoading(false); }
+    } catch (error) {
+      enqueueSnackbar(error.response?.data?.message || 'No fue posible guardar el acta.', { variant: 'error' });
+      return null;
+    } finally {
+      setLoading(false);
+    }
   };
+
   const publish = async () => {
-    if (!additionalParticipants.length) {
-      enqueueSnackbar('Debe agregar al menos un participante aparte del responsable en la sección "2. Participantes y firmas".', { variant: 'warning' });
+    if (!responsablesList.length || !form.responsables) {
+      enqueueSnackbar('Consulte y seleccione primero al responsable de la reunión.', { variant: 'warning' });
       return;
     }
-    // Guarde siempre la versión visible antes de abrir la etapa de firmas.
-    // Así, los cambios hechos después del último borrador también llegan al
-    // enlace público y al documento institucional.
+    if (form.participants.length < 2) {
+      enqueueSnackbar('Debe haber al menos dos participantes en la reunión (responsables y/o participantes convocados).', { variant: 'warning' });
+      return;
+    }
     const row = await save({ quiet: true });
     if (!row) return;
     setLoading(true);
     try {
       const response = await meetingMinuteService.publish(row.id, { public_base_url: window.location.origin });
-      setQr(response.data); setForm((previous) => ({ ...previous, id: row.id, status: 'signing' })); await loadMinutes();
+      setQr(response.data);
+      setForm((previous) => ({ ...previous, id: row.id, status: 'signing' }));
+      await loadMinutes();
       enqueueSnackbar(response.message || 'Firmas habilitadas e invitaciones enviadas.', { variant: response.data?.invitations?.failed ? 'warning' : 'success' });
-    } catch (error) { enqueueSnackbar(error.response?.data?.message || 'No fue posible habilitar las firmas.', { variant: 'error' }); }
-    finally { setLoading(false); }
+    } catch (error) {
+      enqueueSnackbar(error.response?.data?.message || 'No fue posible habilitar las firmas.', { variant: 'error' });
+    } finally {
+      setLoading(false);
+    }
   };
   const resendInvitations = async () => {
     if (!form.id) return;
@@ -387,12 +650,178 @@ export default function MeetingMinuteFormDialog({ open, document, user, onClose 
               <Typography fontWeight={900} mb={2}>1. Información de la reunión</Typography>
               <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', sm: 'repeat(2,minmax(0,1fr))' }, gap: 1.5 }}>
                 <Stack direction={{ xs: 'column', sm: 'row' }} gap={1} sx={{ gridColumn: '1 / -1' }}>
-                  <TextField disabled={locked} fullWidth label="Cédula del responsable" value={responsibleDocument} onChange={(e) => { setResponsibleDocument(e.target.value.replace(/[^0-9A-Za-z-]/g, '')); setResponsibleCandidate(null); setForm((previous) => ({ ...previous, responsables: '', responsable_document: '', responsable_role: '', dependencia: '' })); }} onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); lookupResponsible(); } }} />
-                  <Button disabled={locked || searchingResponsible || !responsibleDocument} variant="outlined" startIcon={searchingResponsible ? <CircularProgress size={16} /> : <PersonSearch />} onClick={lookupResponsible} sx={{ minWidth: 135, textTransform: 'none', fontWeight: 800 }}>Consultar</Button>
+                  <TextField
+                    disabled={locked}
+                    fullWidth
+                    label={responsablesList.length === 0 ? "Cédula del Responsable Principal *" : "Cédula de responsable o co-responsable"}
+                    placeholder="Ingrese cédula y presione Consultar"
+                    value={responsibleDocument}
+                    onChange={(e) => {
+                      setResponsibleDocument(e.target.value.replace(/[^0-9A-Za-z-]/g, ''));
+                      setResponsibleCandidate(null);
+                    }}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') {
+                        e.preventDefault();
+                        lookupResponsible();
+                      }
+                    }}
+                  />
+                  <Button
+                    disabled={locked || searchingResponsible || !responsibleDocument}
+                    variant="outlined"
+                    startIcon={searchingResponsible ? <CircularProgress size={16} /> : <PersonSearch />}
+                    onClick={lookupResponsible}
+                    sx={{ minWidth: 135, textTransform: 'none', fontWeight: 800 }}
+                  >
+                    Consultar
+                  </Button>
                 </Stack>
-                {responsibleCandidate && <Paper variant="outlined" sx={{ gridColumn: '1 / -1', p: 1.5, borderRadius: 2, bgcolor: '#f8fbff' }}><Stack direction={{ xs: 'column', sm: 'row' }} justifyContent="space-between" alignItems={{ xs: 'stretch', sm: 'center' }} gap={1}><Box><Typography fontWeight={850}>{responsibleCandidate.name}</Typography><Typography variant="body2" color="text.secondary">{responsibleCandidate.role_title} · {responsibleCandidate.organization}</Typography></Box><Button variant="contained" onClick={applyResponsible}>Usar como responsable</Button></Stack></Paper>}
-                <TextField disabled={locked} fullWidth label="Responsable" value={form.responsables} InputProps={{ readOnly: true }} helperText={form.responsable_role || 'Se completa al consultar la cédula.'} />
-                <TextField disabled={locked} fullWidth label="Dependencia que cita" value={form.dependencia} onChange={(e) => setField('dependencia', e.target.value)} />
+
+                {responsibleCandidate && (
+                  <Paper
+                    variant="outlined"
+                    sx={{
+                      gridColumn: '1 / -1',
+                      p: 1.5,
+                      borderRadius: 2.5,
+                      bgcolor: '#f8fbff',
+                      border: '1.5px solid #93c5fd',
+                      boxShadow: '0 2px 8px rgba(37, 99, 235, 0.08)'
+                    }}
+                  >
+                    <Stack direction={{ xs: 'column', sm: 'row' }} justifyContent="space-between" alignItems={{ xs: 'stretch', sm: 'center' }} gap={1.5}>
+                      <Box>
+                        <Stack direction="row" alignItems="center" gap={1} flexWrap="wrap">
+                          <Typography fontWeight={900} fontSize={15}>{responsibleCandidate.name}</Typography>
+                          <Chip size="small" label={`CC: ${responsibleCandidate.document}`} variant="outlined" sx={{ fontWeight: 700 }} />
+                        </Stack>
+                        <Typography variant="body2" color="text.secondary" sx={{ mt: 0.25 }}>
+                          {[responsibleCandidate.role_title, responsibleCandidate.organization].filter(Boolean).join(' · ')}
+                        </Typography>
+                        {responsibleCandidate.email && (
+                          <Typography variant="caption" color="text.secondary">{responsibleCandidate.email}</Typography>
+                        )}
+                      </Box>
+                      <Stack direction="row" gap={1} flexWrap="wrap">
+                        {responsablesList.length === 0 ? (
+                          <Button
+                            variant="contained"
+                            color="primary"
+                            onClick={() => addResponsableCandidate(true)}
+                            sx={{ textTransform: 'none', fontWeight: 800 }}
+                          >
+                            Asignar como Responsable Principal
+                          </Button>
+                        ) : (
+                          <>
+                            <Button
+                              variant="contained"
+                              color="primary"
+                              onClick={() => addResponsableCandidate(false)}
+                              sx={{ textTransform: 'none', fontWeight: 800 }}
+                            >
+                              + Agregar Co-responsable
+                            </Button>
+                            <Button
+                              variant="outlined"
+                              color="primary"
+                              onClick={() => addResponsableCandidate(true)}
+                              sx={{ textTransform: 'none', fontWeight: 800 }}
+                            >
+                              Cambiar Principal
+                            </Button>
+                          </>
+                        )}
+                      </Stack>
+                    </Stack>
+                  </Paper>
+                )}
+
+                {/* Lista de Responsables Convocantes */}
+                <Box sx={{ gridColumn: '1 / -1' }}>
+                  <Typography variant="subtitle2" fontWeight={900} color="#1e293b" mb={0.75} sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                    Responsables de la reunión ({responsablesList.length}):
+                  </Typography>
+                  {responsablesList.length === 0 ? (
+                    <Alert severity="info" sx={{ borderRadius: 2 }}>
+                      Consulte la cédula para asignar al <strong>Responsable Principal</strong> de la reunión.
+                    </Alert>
+                  ) : (
+                    <Stack gap={1}>
+                      {responsablesList.map((resp, idx) => (
+                        <Paper
+                          key={resp.document || idx}
+                          variant="outlined"
+                          sx={{
+                            p: 1.25,
+                            borderRadius: 2,
+                            bgcolor: resp.is_primary ? '#f0fdf4' : '#ffffff',
+                            borderColor: resp.is_primary ? '#86efac' : '#cbd5e1',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'space-between',
+                            gap: 1.5
+                          }}
+                        >
+                          <Box sx={{ minWidth: 0, flex: 1 }}>
+                            <Stack direction="row" alignItems="center" gap={1} flexWrap="wrap">
+                              <Typography variant="body2" fontWeight={900} color="#0f172a">
+                                {resp.name}
+                              </Typography>
+                              {resp.is_primary ? (
+                                <Chip size="small" label="Principal" color="success" sx={{ fontWeight: 850, height: 22, fontSize: 11 }} />
+                              ) : (
+                                <Chip size="small" label="Co-responsable" color="default" sx={{ fontWeight: 750, height: 22, fontSize: 11 }} />
+                              )}
+                              <Typography variant="caption" sx={{ color: 'text.secondary', bgcolor: '#f1f5f9', px: 0.8, py: 0.2, borderRadius: 1 }}>
+                                CC: {resp.document}
+                              </Typography>
+                            </Stack>
+                            <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 0.25 }}>
+                              {[resp.role_title, resp.organization].filter(Boolean).join(' · ')} {resp.email ? `(${resp.email})` : ''}
+                            </Typography>
+                          </Box>
+                          {!locked && (
+                            <Stack direction="row" alignItems="center" gap={0.5}>
+                              {!resp.is_primary && (
+                                <Tooltip title="Asignar como Responsable Principal">
+                                  <Button
+                                    size="small"
+                                    variant="outlined"
+                                    color="primary"
+                                    onClick={() => makePrimaryResponsable(idx)}
+                                    sx={{ textTransform: 'none', fontSize: 11, fontWeight: 800, py: 0.2, px: 1 }}
+                                  >
+                                    Hacer principal
+                                  </Button>
+                                </Tooltip>
+                              )}
+                              <Tooltip title="Eliminar de los responsables">
+                                <IconButton size="small" color="error" onClick={() => removeResponsable(idx)}>
+                                  <DeleteOutline fontSize="small" />
+                                </IconButton>
+                              </Tooltip>
+                            </Stack>
+                          )}
+                        </Paper>
+                      ))}
+                    </Stack>
+                  )}
+                </Box>
+
+                <TextField
+                  disabled={locked}
+                  fullWidth
+                  multiline
+                  maxRows={3}
+                  label="Responsable(s) en formato institucional"
+                  value={form.responsables}
+                  InputProps={{ readOnly: true }}
+                  helperText={responsablesList.length > 1 ? `${responsablesList.length} responsables listados con su cargo.` : (form.responsable_role || 'Se genera automáticamente con los responsables agregados.')}
+                  sx={{ gridColumn: '1 / -1' }}
+                />
+                <TextField disabled={locked} fullWidth label="Dependencia que cita *" value={form.dependencia} onChange={(e) => setField('dependencia', e.target.value)} helperText="Asignada desde el responsable principal o editable si es conjunta." />
                 <Autocomplete freeSolo disabled={locked} options={MEETING_PLACES} value={form.lugar || ''} onChange={(_, value) => setField('lugar', value || '')} onInputChange={(_, value) => setField('lugar', value)} renderInput={(params) => <TextField {...params} fullWidth label="Lugar" helperText="Seleccione una opción o escriba otro lugar." />} />
                 <TextField disabled={locked} fullWidth type="date" InputLabelProps={{ shrink: true }} label="Fecha" value={form.fecha} onChange={(e) => setField('fecha', e.target.value)} />
                 <TextField disabled={locked} fullWidth type="time" InputLabelProps={{ shrink: true }} label="Hora de inicio" value={form.hora_inicio} onChange={(e) => setField('hora_inicio', e.target.value)} />
@@ -405,22 +834,55 @@ export default function MeetingMinuteFormDialog({ open, document, user, onClose 
             <Paper variant="outlined" sx={{ p: 2.25, borderRadius: 3 }}>
               <Stack direction={{ xs: 'column', sm: 'row' }} justifyContent="space-between" alignItems={{ sm: 'center' }} gap={1} mb={1}>
                 <Typography fontWeight={900}>2. Participantes y firmas</Typography>
-                {additionalParticipants.length > 0 ? (
-                  <Chip size="small" color="success" label={`${additionalParticipants.length} participante(s) adicional(es)`} sx={{ fontWeight: 850 }} />
+                {form.participants.length >= 2 ? (
+                  <Chip size="small" color="success" label={`${form.participants.length} personas en la reunión (${additionalParticipants.length} convocados)`} sx={{ fontWeight: 850 }} />
                 ) : (
-                  <Chip size="small" color="warning" label="Al menos 1 adicional requerido" sx={{ fontWeight: 850 }} />
+                  <Chip size="small" color="warning" label="Al menos 2 participantes requeridos" sx={{ fontWeight: 850 }} />
                 )}
               </Stack>
-              {additionalParticipants.length === 0 && (
+              {form.participants.length < 2 && (
                 <Alert severity="warning" sx={{ my: 1.5, borderRadius: 2 }}>
-                  <strong>Participante requerido:</strong> Para generar o enviar el acta debe agregar en esta sección al menos un participante aparte del responsable ({form.responsables || 'responsable de la reunión'}).
+                  <strong>Participantes requeridos:</strong> Para habilitar firmas y generar el acta debe haber al menos dos participantes en la reunión (responsables y/o participantes convocados).
                 </Alert>
               )}
               {!locked && <Stack direction={{ xs: 'column', sm: 'row' }} gap={1}><TextField fullWidth size="small" label="Cédula" value={documentNumber} onChange={(e) => { setDocumentNumber(e.target.value.replace(/[^0-9A-Za-z-]/g, '')); setCandidate(null); }} onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); lookup(); } }} /><Button variant="outlined" startIcon={searching ? <CircularProgress size={16} /> : <PersonSearch />} disabled={searching || !documentNumber} onClick={lookup} sx={{ minWidth: 125, textTransform: 'none', fontWeight: 800 }}>Consultar</Button></Stack>}
               {candidate && <Paper variant="outlined" sx={{ p: 1.5, mt: 1.5, borderRadius: 2, bgcolor: '#f8fbff' }}><Stack direction="row" justifyContent="space-between" alignItems="center" gap={1}><Box><Typography fontWeight={850}>{candidate.name}</Typography><Typography variant="body2" color="text.secondary">{candidate.role_title} · {candidate.organization}</Typography><Typography variant="caption">{candidate.email}</Typography></Box><Button variant="contained" startIcon={<Add />} onClick={addParticipant}>Agregar</Button></Stack></Paper>}
               {!locked && !externalMode && <Button startIcon={<Add />} onClick={() => { setExternalDraft({ document: documentNumber, name: '', email: '', organization: '', role_title: '' }); setExternalMode(true); }} sx={{ mt: 1, textTransform: 'none', fontWeight: 800 }}>Agregar participante externo</Button>}
               {externalMode && !locked && <Paper variant="outlined" sx={{ p: 1.5, mt: 1.5, borderRadius: 2.5, bgcolor: '#f8fbff' }}><Typography fontWeight={850} mb={1}>Participante externo para esta acta</Typography><Alert severity="info" sx={{ mb: 1.5 }}>Al recibir el código, esta persona también recibirá la política institucional y deberá aceptar el tratamiento de datos antes de firmar.</Alert><Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', sm: 'repeat(2,minmax(0,1fr))' }, gap: 1 }}><TextField size="small" label="Cédula o identificación" value={externalDraft.document} onChange={(e) => setExternalDraft((old) => ({ ...old, document: e.target.value }))} /><TextField size="small" label="Nombre completo" value={externalDraft.name} onChange={(e) => setExternalDraft((old) => ({ ...old, name: e.target.value }))} /><TextField size="small" type="email" label="Correo empresarial o personal" value={externalDraft.email} onChange={(e) => setExternalDraft((old) => ({ ...old, email: e.target.value }))} /><TextField size="small" label="Cargo" value={externalDraft.role_title} onChange={(e) => setExternalDraft((old) => ({ ...old, role_title: e.target.value }))} /><TextField size="small" label="Empresa o entidad (opcional)" value={externalDraft.organization} onChange={(e) => setExternalDraft((old) => ({ ...old, organization: e.target.value }))} sx={{ gridColumn: { sm: '1 / -1' } }} /></Box><Stack direction="row" justifyContent="flex-end" gap={1} mt={1.25}><Button onClick={() => setExternalMode(false)}>Cancelar</Button><Button variant="contained" startIcon={<Add />} onClick={addExternalParticipant}>Agregar al acta</Button></Stack></Paper>}
-              <Stack gap={1} mt={2}>{form.participants.map((participant, index) => <Box key={participant.id || participant.user_id || `${participant.document}-${index}`} sx={{ display: 'grid', gridTemplateColumns: '1fr auto', gap: 1, alignItems: 'center', p: 1.25, border: '1px solid #dbe5f0', borderRadius: 2 }}><Box><Stack direction="row" alignItems="center" gap={1}><Typography variant="body2" fontWeight={850}>{participant.name}</Typography>{!participant.user_id && <Chip size="small" label="Externo" variant="outlined" color="primary" />}</Stack><Typography variant="caption" color="text.secondary">{participant.role_title} · {participant.email}</Typography></Box><Stack direction="row" alignItems="center"><Chip size="small" label={participant.status === 'signed' ? 'Firmado' : 'Pendiente'} color={participant.status === 'signed' ? 'success' : 'default'} />{!locked && <IconButton color="error" size="small" onClick={() => setField('participants', form.participants.filter((_, current) => current !== index))}><DeleteOutline /></IconButton>}</Stack></Box>)}</Stack>
+              <Stack gap={1} mt={2}>
+                {form.participants.map((participant, index) => {
+                  const pDoc = String(participant.document || '').toLowerCase();
+                  const pEmail = String(participant.email || '').toLowerCase();
+                  const respItem = responsablesList.find((r) =>
+                    (pDoc && String(r.document || '').toLowerCase() === pDoc) ||
+                    (pEmail && String(r.email || '').toLowerCase() === pEmail)
+                  );
+                  const isResp = Boolean(respItem);
+                  const isPrimary = Boolean(respItem?.is_primary);
+
+                  return (
+                    <Box key={participant.id || participant.user_id || `${participant.document}-${index}`} sx={{ display: 'grid', gridTemplateColumns: '1fr auto', gap: 1, alignItems: 'center', p: 1.25, border: '1px solid #dbe5f0', borderRadius: 2, bgcolor: isPrimary ? '#f0fdf4' : isResp ? '#f8fafc' : '#ffffff' }}>
+                      <Box>
+                        <Stack direction="row" alignItems="center" gap={1} flexWrap="wrap">
+                          <Typography variant="body2" fontWeight={850}>{participant.name}</Typography>
+                          {isPrimary && <Chip size="small" label="Responsable Principal" color="success" sx={{ height: 20, fontSize: 11, fontWeight: 800 }} />}
+                          {isResp && !isPrimary && <Chip size="small" label="Co-responsable" color="primary" variant="outlined" sx={{ height: 20, fontSize: 11, fontWeight: 750 }} />}
+                          {!participant.user_id && !isResp && <Chip size="small" label="Externo" variant="outlined" color="primary" sx={{ height: 20, fontSize: 11 }} />}
+                        </Stack>
+                        <Typography variant="caption" color="text.secondary">{participant.role_title} · {participant.email}</Typography>
+                      </Box>
+                      <Stack direction="row" alignItems="center" gap={0.5}>
+                        <Chip size="small" label={participant.status === 'signed' ? 'Firmado' : 'Pendiente'} color={participant.status === 'signed' ? 'success' : 'default'} />
+                        {!locked && (
+                          <IconButton color="error" size="small" onClick={() => removeParticipant(index)}>
+                            <DeleteOutline fontSize="small" />
+                          </IconButton>
+                        )}
+                      </Stack>
+                    </Box>
+                  );
+                })}
+              </Stack>
             </Paper>
           </Stack>
           <Paper

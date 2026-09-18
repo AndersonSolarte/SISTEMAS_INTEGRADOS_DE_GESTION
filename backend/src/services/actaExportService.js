@@ -156,6 +156,13 @@ const buildHeaderTable = (header = {}) => {
   });
 };
 
+const formatResponsablesRuns = (responsables) => {
+  const lines = String(responsables || '').split('\n').map((l) => l.trim()).filter(Boolean);
+  if (!lines.length) return [textRun('', { size: 20 })];
+  if (lines.length === 1) return [textRun(lines[0], { size: 20 })];
+  return lines.map((line) => new TextRun({ break: 1, text: `  ${line}`, size: 20, font: 'Arial' }));
+};
+
 const buildBasicsTable = ({ responsables, dependencia }) => {
   const columnWidths = [CONTENT_WIDTH_TWIPS];
   return buildTable({
@@ -169,7 +176,7 @@ const buildBasicsTable = ({ responsables, dependencia }) => {
             children: [
               paragraph([
                 textRun('Responsable(s): ', { bold: true, size: 20 }),
-                textRun(responsables || '', { size: 20 })
+                ...formatResponsablesRuns(responsables)
               ])
             ]
           })

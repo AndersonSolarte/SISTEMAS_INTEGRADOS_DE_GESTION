@@ -80,3 +80,20 @@ test('valida la existencia de participantes adicionales aparte del responsable',
   assert.equal(withAdditional.filter((_, idx) => idx > 0).length, 1);
 });
 
+test('ubica a múltiples responsables al inicio sin duplicar entre sí ni con participantes', () => {
+  const responsibles = [
+    { id: 7, username: '10850001', nombre: 'RESPONSABLE 1', email: 'resp1@unicesmag.edu.co', cargo: 'Director' },
+    { id: 9, username: '10850003', nombre: 'RESPONSABLE 2', email: 'resp2@unicesmag.edu.co', cargo: 'Decano' }
+  ];
+  const participants = [
+    { user_id: 8, document: '10850002', name: 'INVITADO', email: 'invitado@unicesmag.edu.co' },
+    { user_id: 9, document: '10850003', name: 'RESPONSABLE 2', email: 'resp2@unicesmag.edu.co' }
+  ];
+  const result = _internals.placeResponsibleFirst(participants, responsibles);
+  assert.equal(result.length, 3);
+  assert.equal(result[0].document, '10850001');
+  assert.equal(result[1].document, '10850003');
+  assert.equal(result[2].document, '10850002');
+});
+
+

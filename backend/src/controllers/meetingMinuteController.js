@@ -76,21 +76,37 @@ const participantRoleLabel = (participant = {}) => {
   return !participant.user_id && organization ? [organization, role].filter(Boolean).join(' · ') : (role || organization);
 };
 const placeResponsibleFirst = (participants = [], responsible = {}) => {
-  const responsibleParticipant = {
-    user_id: responsible.id || responsible.user_id || null,
-    document: clean(responsible.username || responsible.document, 100),
-    name: clean(responsible.nombre || responsible.name, 240),
-    email: clean(responsible.email, 254).toLowerCase(),
-    organization: clean(responsible.dependencia || responsible.organization, 240),
-    role_title: clean(responsible.cargo || responsible.role_title, 220),
+  const responsiblesList = Array.isArray(responsible) ? responsible : [responsible];
+  const respParticipants = responsiblesList.filter(Boolean).map((r) => ({
+    user_id: r.id || r.user_id || null,
+    document: clean(r.username || r.document, 100),
+    name: clean(r.nombre || r.name, 240),
+    email: clean(r.email, 254).toLowerCase(),
+    organization: clean(r.dependencia || r.organization, 240),
+    role_title: clean(r.cargo || r.role_title, 220),
     status: 'invited'
-  };
-  const responsibleKey = participantIdentity(responsibleParticipant);
-  return [responsibleParticipant, ...participants.filter((participant) => {
-    const participantKey = participantIdentity(participant);
-    return !(responsibleKey.document && participantKey.document === responsibleKey.document)
-      && !(responsibleKey.email && participantKey.email === responsibleKey.email);
-  })];
+  }));
+  const seen = new Set();
+  const uniqueResponsibles = [];
+  for (const resp of respParticipants) {
+    const key = participantIdentity(resp);
+    const idStr = key.document ? `doc:${key.document}` : (key.email ? `email:${key.email}` : null);
+    if (!idStr || !seen.has(idStr)) {
+      if (idStr) seen.add(idStr);
+      uniqueResponsibles.push(resp);
+    }
+  }
+  return [
+    ...uniqueResponsibles,
+    ...participants.filter((participant) => {
+      const participantKey = participantIdentity(participant);
+      return !uniqueResponsibles.some((resp) => {
+        const rKey = participantIdentity(resp);
+        return (rKey.document && participantKey.document === rKey.document)
+          || (rKey.email && participantKey.email === rKey.email);
+      });
+    })
+  ];
 };
 const formatDate = (value) => {
   const match = String(value || '').match(/^(\d{4})-(\d{2})-(\d{2})/);
@@ -239,9 +255,10 @@ const getMinute = wrap(async (req, res) => {
 
 const normalizeContent = (body, user, document) => ({
   header: { codigo: document.codigo || 'COM-ID-FR-002', version: document.version || '1', fecha: formatDate(body.fecha || document.fecha_creacion) },
-  responsables: clean(body.responsables || user.dependencia, 500),
+  responsables: clean(body.responsables || user.dependencia, 1500),
   responsable_document: clean(body.responsable_document, 100),
   responsable_role: clean(body.responsable_role, 220),
+  responsables_data: Array.isArray(body.responsables_data) ? body.responsables_data : null,
   dependencia: clean(body.dependencia || user.dependencia, 500),
   lugar: clean(body.lugar, 500),
   fecha: clean(body.fecha, 50),
@@ -255,13 +272,71 @@ const saveDraft = wrap(async (req, res) => {
   if (!(await getMeetingMinuteFeatureState())) throw Object.assign(new Error('El formulario de actas de reunión no está habilitado.'), { statusCode: 403 });
   const document = await Documento.findByPk(req.body.documento_id);
   if (!document || !isMeetingMinuteDocument(document)) throw Object.assign(new Error('El formato seleccionado no corresponde al Registro de Asistencia y Reunión.'), { statusCode: 422 });
-  const responsableDocument = clean(req.body.responsable_document, 100);
-  if (!responsableDocument) throw Object.assign(new Error('Consulte al responsable mediante su cédula.'), { statusCode: 422 });
-  const responsibleUser = await User.findOne({ where: { username: responsableDocument, estado: 'activo' }, attributes: ['id', 'username', 'nombre', 'email', 'dependencia', 'cargo'] });
+  const rawResponsablesData = Array.isArray(req.body.responsables_data) && req.body.responsables_data.length > 0
+    ? req.body.responsables_data
+    : null;
+  const primaryDoc = clean(req.body.responsable_document || rawResponsablesData?.find((r) => r.is_primary)?.document || rawResponsablesData?.[0]?.document, 100);
+  if (!primaryDoc) throw Object.assign(new Error('Consulte al responsable mediante su cédula.'), { statusCode: 422 });
+  const responsibleUser = await User.findOne({ where: { username: primaryDoc, estado: 'activo' }, attributes: ['id', 'username', 'nombre', 'email', 'dependencia', 'cargo'] });
   if (!responsibleUser) throw Object.assign(new Error('El responsable seleccionado ya no está disponible en SIAC.'), { statusCode: 422 });
-  const participants = placeResponsibleFirst(Array.isArray(req.body.participants) ? req.body.participants : [], responsibleUser);
-  const additionalParticipants = participants.filter((_, idx) => idx > 0);
-  if (!additionalParticipants.length) {
+
+  const allResponsables = [{
+    id: responsibleUser.id,
+    user_id: responsibleUser.id,
+    username: responsibleUser.username,
+    document: responsibleUser.username,
+    nombre: responsibleUser.nombre,
+    name: responsibleUser.nombre,
+    email: responsibleUser.email,
+    dependencia: responsibleUser.dependencia,
+    organization: responsibleUser.dependencia,
+    cargo: responsibleUser.cargo,
+    role_title: responsibleUser.cargo,
+    is_primary: true
+  }];
+
+  if (rawResponsablesData && rawResponsablesData.length > 1) {
+    for (const coResp of rawResponsablesData) {
+      const coDoc = clean(coResp.document, 100);
+      if (coDoc && coDoc !== responsibleUser.username && !allResponsables.some((r) => r.document === coDoc)) {
+        const u = await User.findOne({ where: { username: coDoc, estado: 'activo' }, attributes: ['id', 'username', 'nombre', 'email', 'dependencia', 'cargo'] });
+        if (u) {
+          allResponsables.push({
+            id: u.id,
+            user_id: u.id,
+            username: u.username,
+            document: u.username,
+            nombre: u.nombre,
+            name: u.nombre,
+            email: u.email,
+            dependencia: u.dependencia,
+            organization: u.dependencia,
+            cargo: u.cargo,
+            role_title: u.cargo,
+            is_primary: false
+          });
+        } else {
+          allResponsables.push({
+            id: coResp.user_id || null,
+            user_id: coResp.user_id || null,
+            username: coDoc,
+            document: coDoc,
+            nombre: clean(coResp.name || coResp.nombre, 240),
+            name: clean(coResp.name || coResp.nombre, 240),
+            email: clean(coResp.email, 254),
+            dependencia: clean(coResp.organization || coResp.dependencia, 240),
+            organization: clean(coResp.organization || coResp.dependencia, 240),
+            cargo: clean(coResp.role_title || coResp.cargo, 220),
+            role_title: clean(coResp.role_title || coResp.cargo, 220),
+            is_primary: false
+          });
+        }
+      }
+    }
+  }
+
+  const participants = placeResponsibleFirst(Array.isArray(req.body.participants) ? req.body.participants : [], allResponsables);
+  if (participants.length < 2) {
     throw Object.assign(new Error('Debe agregar al menos un participante aparte del responsable en la sección "2. Participantes y firmas".'), { statusCode: 422 });
   }
   if (!clean(req.body.responsables)) throw Object.assign(new Error('Consulte y seleccione el responsable de la reunión.'), { statusCode: 422 });
@@ -279,10 +354,19 @@ const saveDraft = wrap(async (req, res) => {
     if (row && row.status !== 'draft') throw Object.assign(new Error('El acta ya fue habilitada para firmas y no puede modificarse.'), { statusCode: 409 });
     const content = normalizeContent({
       ...req.body,
-      responsables: responsibleUser.nombre,
+      responsables: clean(req.body.responsables, 1500) || responsibleUser.nombre,
       responsable_document: responsibleUser.username,
       responsable_role: responsibleUser.cargo,
-      dependencia: responsibleUser.dependencia
+      responsables_data: allResponsables.map((r) => ({
+        user_id: r.id || null,
+        document: r.username || r.document,
+        name: r.nombre || r.name,
+        email: r.email,
+        organization: r.dependencia || r.organization,
+        role_title: r.cargo || r.role_title,
+        is_primary: Boolean(r.is_primary)
+      })),
+      dependencia: clean(req.body.dependencia, 500) || responsibleUser.dependencia
     }, req.user, document);
     if (!row) {
       const code = `ACTA-${new Date().getFullYear()}-${Date.now().toString().slice(-9)}`;
