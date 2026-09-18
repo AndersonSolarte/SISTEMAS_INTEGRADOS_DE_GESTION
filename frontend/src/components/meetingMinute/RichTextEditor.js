@@ -6,7 +6,7 @@ import {
   FormatQuote, FormatUnderlined, HorizontalRule, Link as LinkIcon, Redo, TableChart, Title, Undo
 } from '@mui/icons-material';
 
-const TABLE_HTML = '<table><tbody><tr><th>Título 1</th><th>Título 2</th></tr><tr><td>Dato</td><td>Dato</td></tr></tbody></table><p><br></p>';
+const TABLE_HTML = '<table style="width:100%;max-width:100%;table-layout:fixed;border-collapse:collapse;"><tbody><tr><th style="width:50%;padding:8px;">Título 1</th><th style="width:50%;padding:8px;">Título 2</th></tr><tr><td style="padding:8px;">Dato</td><td style="padding:8px;">Dato</td></tr></tbody></table><p><br></p>';
 
 export const sanitizeRichHtml = (html = '') => {
   if (typeof window === 'undefined') return String(html || '');
@@ -25,6 +25,19 @@ export const sanitizeRichHtml = (html = '') => {
     const indent = /margin-left\s*:\s*(\d{1,3})px/i.exec(previousStyle)?.[1];
     const href = node.getAttribute('href') || '';
     const legacySize = node.getAttribute('size');
+    const colspan = node.getAttribute('colspan');
+    const rowspan = node.getAttribute('rowspan');
+
+    const widthMatch = /width\s*:\s*(\d+(?:\.\d+)?(?:%|px))/i.exec(previousStyle);
+    const width = widthMatch?.[1];
+    const heightMatch = /height\s*:\s*(\d+(?:\.\d+)?(?:%|px))/i.exec(previousStyle);
+    const height = heightMatch?.[1];
+    const paddingMatch = /padding\s*:\s*(\d+(?:\.\d+)?px)/i.exec(previousStyle);
+    const padding = paddingMatch?.[1];
+    const tableLayout = /table-layout\s*:\s*(fixed|auto)/i.exec(previousStyle)?.[1];
+    const verticalAlign = /vertical-align\s*:\s*(top|middle|bottom)/i.exec(previousStyle)?.[1];
+    const bgColor = /background(?:-color)?\s*:\s*(#[0-9a-f]{3,8}|rgb\([^)]+\)|#?[a-z0-9]+)/i.exec(previousStyle)?.[1];
+
     [...node.attributes].forEach((attribute) => node.removeAttribute(attribute.name));
     const styles = [];
     if (alignment) styles.push(`text-align:${alignment.toLowerCase()}`);
@@ -32,13 +45,115 @@ export const sanitizeRichHtml = (html = '') => {
     if (fontFamily && /^(Arial|Georgia|Times New Roman|Verdana|sans-serif)$/i.test(fontFamily)) styles.push(`font-family:${fontFamily}`);
     if (fontSize) styles.push(`font-size:${Math.min(32, Math.max(9, Number(fontSize[1])))}${fontSize[2].toLowerCase()}`);
     if (indent) styles.push(`margin-left:${Math.min(200, Number(indent))}px`);
+
+    if (width) styles.push(`width:${width}`);
+    if (height) styles.push(`height:${height}`);
+    if (padding) styles.push(`padding:${padding}`);
+    if (tableLayout) styles.push(`table-layout:${tableLayout}`);
+    if (verticalAlign) styles.push(`vertical-align:${verticalAlign}`);
+    if (bgColor && /^(#[0-9a-f]{3,8}|rgb\([^)]+\)|#?[a-z0-9]+)$/i.test(bgColor)) styles.push(`background-color:${bgColor}`);
+
     if (styles.length) node.setAttribute('style', styles.join(';'));
+    if (colspan && /^\d+$/.test(colspan)) node.setAttribute('colspan', colspan);
+    if (rowspan && /^\d+$/.test(rowspan)) node.setAttribute('rowspan', rowspan);
     if (node.tagName === 'FONT' && /^(1|2|3|4|5|6|7)$/.test(legacySize || '')) node.setAttribute('size', legacySize);
     if (node.tagName === 'A' && /^(https?:\/\/|mailto:)/i.test(href)) {
       node.setAttribute('href', href); node.setAttribute('target', '_blank'); node.setAttribute('rel', 'noopener noreferrer');
     } else if (node.tagName === 'A') node.replaceWith(...node.childNodes);
   });
   return parsed.body.firstElementChild?.innerHTML || '';
+};
+
+export const adjustTableRowPadding = (currentCell, delta) => {
+  const row = currentCell?.closest?.('tr');
+  if (!row) return null;
+  [...row.cells].forEach((cell) => {
+    const computed = parseFloat(window.getComputedStyle(cell).paddingTop) || 8;
+    const current = parseFloat(cell.style.paddingTop || cell.style.padding) || computed;
+    const next = Math.max(2, Math.min(35, Math.round(current + delta)));
+    cell.style.padding = `${next}px`;
+  });
+  return currentCell;
+};
+
+export const adjustTableColumnWidth = (currentCell, delta) => {
+  const table = currentCell?.closest?.('table');
+  if (!currentCell || !table || !table.rows.length) return null;
+  const colIndex = currentCell.cellIndex;
+  const firstRow = table.rows[0];
+  const numCols = firstRow.cells.length;
+  if (numCols <= 1) return currentCell;
+
+  table.style.width = '100%';
+  table.style.maxWidth = '100%';
+  table.style.tableLayout = 'fixed';
+
+  const widths = [...firstRow.cells].map((c) => {
+    const raw = parseFloat(c.style.width);
+    return isNaN(raw) ? 100 / numCols : raw;
+  });
+
+  const targetWidth = Math.max(10, Math.min(80, widths[colIndex] + delta));
+  const diff = targetWidth - widths[colIndex];
+  widths[colIndex] = targetWidth;
+
+  const otherCols = numCols - 1;
+  const adj = diff / otherCols;
+  widths.forEach((w, idx) => {
+    if (idx !== colIndex) {
+      widths[idx] = Math.max(10, w - adj);
+    }
+  });
+
+  const total = widths.reduce((s, w) => s + w, 0);
+  [...table.rows].forEach((r) => {
+    [...r.cells].forEach((c, idx) => {
+      c.style.width = `${((widths[idx] / total) * 100).toFixed(2)}%`;
+      c.style.wordBreak = 'break-word';
+      c.style.overflowWrap = 'anywhere';
+      c.style.whiteSpace = 'normal';
+    });
+  });
+
+  return currentCell;
+};
+
+export const distributeTableColumns = (currentCell) => {
+  const table = currentCell?.closest?.('table');
+  if (!table || !table.rows.length) return null;
+  table.style.width = '100%';
+  table.style.maxWidth = '100%';
+  table.style.tableLayout = 'fixed';
+  const numCols = Math.max(1, ...[...table.rows].map((r) => r.cells.length));
+  const pct = (100 / numCols).toFixed(2);
+  [...table.rows].forEach((r) => {
+    [...r.cells].forEach((c) => {
+      c.style.width = `${pct}%`;
+      c.style.wordBreak = 'break-word';
+      c.style.overflowWrap = 'anywhere';
+      c.style.whiteSpace = 'normal';
+    });
+  });
+  return currentCell;
+};
+
+export const fitTableToWindow = (currentCell) => {
+  const table = currentCell?.closest?.('table');
+  if (!table) return null;
+  table.style.width = '100%';
+  table.style.maxWidth = '100%';
+  table.style.tableLayout = 'fixed';
+  const numCols = Math.max(1, ...[...table.rows].map((r) => r.cells.length));
+  const pct = (100 / numCols).toFixed(2);
+  [...table.rows].forEach((r) => {
+    [...r.cells].forEach((c) => {
+      if (!c.style.width) c.style.width = `${pct}%`;
+      c.style.wordBreak = 'break-word';
+      c.style.overflowWrap = 'anywhere';
+      c.style.whiteSpace = 'normal';
+    });
+  });
+  return currentCell;
 };
 
 export const insertTableRowAfter = (currentCell) => {
@@ -50,6 +165,10 @@ export const insertTableRowAfter = (currentCell) => {
   for (let index = 0; index < columnCount; index += 1) {
     const cell = document.createElement('td');
     cell.innerHTML = '<br>';
+    cell.style.padding = currentRow.cells[index]?.style.padding || '8px';
+    cell.style.wordBreak = 'break-word';
+    cell.style.overflowWrap = 'anywhere';
+    cell.style.whiteSpace = 'normal';
     newRow.appendChild(cell);
   }
   currentRow.insertAdjacentElement('afterend', newRow);
@@ -66,9 +185,14 @@ export const insertTableColumnAfter = (currentCell) => {
     const isHeaderRow = [...row.cells].some((cell) => cell.tagName === 'TH');
     const cell = document.createElement(isHeaderRow ? 'th' : 'td');
     cell.innerHTML = isHeaderRow ? `Título ${row.cells.length + 1}` : '<br>';
+    cell.style.padding = '8px';
+    cell.style.wordBreak = 'break-word';
+    cell.style.overflowWrap = 'anywhere';
+    cell.style.whiteSpace = 'normal';
     row.insertBefore(cell, row.cells[insertAt] || null);
     if (rowIndex === selectedRowIndex) targetCell = cell;
   });
+  distributeTableColumns(targetCell || currentCell);
   const headerCells = [...(table.rows[0]?.cells || [])];
   if (headerCells.length && headerCells.every((cell) => /^Título\s+\d+$/i.test(cell.textContent.trim()))) {
     headerCells.forEach((cell, index) => { cell.textContent = `Título ${index + 1}`; });
@@ -93,6 +217,7 @@ export const removeSelectedTableColumn = (currentCell) => {
   const rowIndex = currentCell.parentElement.rowIndex;
   const columnIndex = currentCell.cellIndex;
   [...table.rows].forEach((row) => row.cells[columnIndex]?.remove());
+  distributeTableColumns(table.rows[0]?.cells[0]);
   const headerCells = [...(table.rows[0]?.cells || [])];
   if (headerCells.length && headerCells.every((cell) => /^Título\s+\d+$/i.test(cell.textContent.trim()))) {
     headerCells.forEach((cell, index) => { cell.textContent = `Título ${index + 1}`; });
@@ -210,6 +335,30 @@ export default function RichTextEditor({ label, value, onChange, disabled = fals
     emit();
     focusTableCell(targetCell);
   };
+  const handleAdjustRowHeight = (delta) => {
+    const targetCell = adjustTableRowPadding(tableCellRef.current, delta);
+    if (!targetCell) return;
+    emit();
+    focusTableCell(targetCell);
+  };
+  const handleAdjustColumnWidth = (delta) => {
+    const targetCell = adjustTableColumnWidth(tableCellRef.current, delta);
+    if (!targetCell) return;
+    emit();
+    focusTableCell(targetCell);
+  };
+  const handleDistributeCols = () => {
+    const targetCell = distributeTableColumns(tableCellRef.current);
+    if (!targetCell) return;
+    emit();
+    focusTableCell(targetCell);
+  };
+  const handleFitWindow = () => {
+    const targetCell = fitTableToWindow(tableCellRef.current);
+    if (!targetCell) return;
+    emit();
+    focusTableCell(targetCell);
+  };
   const tool = (title, icon, action, selected = false) => <Tooltip title={title}><span><IconButton size="small" disabled={disabled} aria-pressed={selected} onMouseDown={(event) => { event.preventDefault(); action(); }} sx={{ borderRadius: 1.5, color: selected ? '#174ea6' : '#52657d', bgcolor: selected ? '#dbeafe' : 'transparent', boxShadow: selected ? 'inset 0 0 0 1px #93b4dc' : 'none', '&:hover': { bgcolor: selected ? '#cfe3fb' : '#e5edf7' } }}>{icon}</IconButton></span></Tooltip>;
 
   return <Paper variant="outlined" sx={{ gridColumn: '1 / -1', overflow: 'hidden', borderRadius: 2.5, bgcolor: disabled ? '#f5f7fa' : '#fff' }}>
@@ -239,16 +388,46 @@ export default function RichTextEditor({ label, value, onChange, disabled = fals
       {tool('Insertar hipervínculo', <LinkIcon fontSize="small" />, openLinkDialog)}
       {tool('Cita', <FormatQuote fontSize="small" />, () => command('formatBlock', active.quote ? 'p' : 'blockquote'), active.quote)}
       {tool('Línea divisoria', <HorizontalRule fontSize="small" />, () => command('insertHorizontalRule'))}
-      {tool('Insertar tabla de 2 × 2', <TableChart fontSize="small" />, () => command('insertHTML', TABLE_HTML))}
+      {tool('Insertar tabla', <TableChart fontSize="small" />, () => command('insertHTML', TABLE_HTML))}
       {tool('Limpiar formato', <FormatClear fontSize="small" />, () => command('removeFormat'))}
     </Stack>
-    {active.table && !disabled && <Stack direction="row" alignItems="center" gap={0.75} flexWrap="wrap" sx={{ px: 1.25, py: 0.75, borderBottom: '1px solid #dbe5f0', bgcolor: '#f8fbff' }}>
-      <Typography variant="caption" fontWeight={800} color="text.secondary" sx={{ mr: 0.5 }}>Editar tabla</Typography>
-      <Button size="small" variant="outlined" onMouseDown={(event) => { event.preventDefault(); addTableRow(); }} sx={{ minHeight: 30, textTransform: 'none', fontWeight: 800 }}>+ Agregar fila</Button>
-      <Button size="small" variant="outlined" onMouseDown={(event) => { event.preventDefault(); addTableColumn(); }} sx={{ minHeight: 30, textTransform: 'none', fontWeight: 800 }}>+ Agregar columna</Button>
-      <Button size="small" color="error" variant="outlined" disabled={active.tableRows <= 1} onMouseDown={(event) => { event.preventDefault(); removeTableRow(); }} sx={{ minHeight: 30, textTransform: 'none', fontWeight: 800 }}>− Eliminar fila</Button>
-      <Button size="small" color="error" variant="outlined" disabled={active.tableColumns <= 1} onMouseDown={(event) => { event.preventDefault(); removeTableColumn(); }} sx={{ minHeight: 30, textTransform: 'none', fontWeight: 800 }}>− Eliminar columna</Button>
-    </Stack>}
+    {active.table && !disabled && (
+      <Stack direction="row" alignItems="center" gap={0.75} flexWrap="wrap" sx={{ px: 1.25, py: 0.75, borderBottom: '1px solid #dbe5f0', bgcolor: '#f8fbff' }}>
+        <Typography variant="caption" fontWeight={900} color="#1e40af" sx={{ mr: 0.5 }}>Editar tabla:</Typography>
+        <Tooltip title="Agregar una nueva fila">
+          <Button size="small" variant="outlined" onMouseDown={(event) => { event.preventDefault(); addTableRow(); }} sx={{ minHeight: 28, textTransform: 'none', fontWeight: 800, fontSize: 12 }}>+ Fila</Button>
+        </Tooltip>
+        <Tooltip title="Eliminar fila actual">
+          <span><Button size="small" color="error" variant="outlined" disabled={active.tableRows <= 1} onMouseDown={(event) => { event.preventDefault(); removeTableRow(); }} sx={{ minHeight: 28, textTransform: 'none', fontWeight: 800, fontSize: 12 }}>− Fila</Button></span>
+        </Tooltip>
+        <Tooltip title="Aumentar altura / espaciado de esta fila (hacerla más grande)">
+          <Button size="small" variant="outlined" onMouseDown={(event) => { event.preventDefault(); handleAdjustRowHeight(3); }} sx={{ minHeight: 28, textTransform: 'none', fontWeight: 800, fontSize: 12, bgcolor: '#eff6ff' }}>+ Alto fila</Button>
+        </Tooltip>
+        <Tooltip title="Reducir altura / espaciado de esta fila (hacerla más compacta)">
+          <Button size="small" variant="outlined" onMouseDown={(event) => { event.preventDefault(); handleAdjustRowHeight(-3); }} sx={{ minHeight: 28, textTransform: 'none', fontWeight: 800, fontSize: 12, bgcolor: '#eff6ff' }}>− Alto fila</Button>
+        </Tooltip>
+        <Divider orientation="vertical" flexItem sx={{ mx: 0.5 }} />
+        <Tooltip title="Agregar una nueva columna">
+          <Button size="small" variant="outlined" onMouseDown={(event) => { event.preventDefault(); addTableColumn(); }} sx={{ minHeight: 28, textTransform: 'none', fontWeight: 800, fontSize: 12 }}>+ Columna</Button>
+        </Tooltip>
+        <Tooltip title="Eliminar columna actual">
+          <span><Button size="small" color="error" variant="outlined" disabled={active.tableColumns <= 1} onMouseDown={(event) => { event.preventDefault(); removeTableColumn(); }} sx={{ minHeight: 28, textTransform: 'none', fontWeight: 800, fontSize: 12 }}>− Columna</Button></span>
+        </Tooltip>
+        <Tooltip title="Aumentar ancho de esta columna">
+          <Button size="small" variant="outlined" onMouseDown={(event) => { event.preventDefault(); handleAdjustColumnWidth(5); }} sx={{ minHeight: 28, textTransform: 'none', fontWeight: 800, fontSize: 12, bgcolor: '#eff6ff' }}>+ Ancho col</Button>
+        </Tooltip>
+        <Tooltip title="Reducir ancho de esta columna">
+          <Button size="small" variant="outlined" onMouseDown={(event) => { event.preventDefault(); handleAdjustColumnWidth(-5); }} sx={{ minHeight: 28, textTransform: 'none', fontWeight: 800, fontSize: 12, bgcolor: '#eff6ff' }}>− Ancho col</Button>
+        </Tooltip>
+        <Divider orientation="vertical" flexItem sx={{ mx: 0.5 }} />
+        <Tooltip title="Distribuir todas las columnas en proporciones iguales">
+          <Button size="small" variant="outlined" onMouseDown={(event) => { event.preventDefault(); handleDistributeCols(); }} sx={{ minHeight: 28, textTransform: 'none', fontWeight: 800, fontSize: 12 }}>Columnas iguales</Button>
+        </Tooltip>
+        <Tooltip title="Ajustar la tabla para que encaje al 100% de la ventana sin salirse">
+          <Button size="small" color="primary" variant="contained" onMouseDown={(event) => { event.preventDefault(); handleFitWindow(); }} sx={{ minHeight: 28, textTransform: 'none', fontWeight: 800, fontSize: 12 }}>Ajustar 100%</Button>
+        </Tooltip>
+      </Stack>
+    )}
     <Box
       ref={editorRef}
       contentEditable={!disabled}
@@ -259,7 +438,42 @@ export default function RichTextEditor({ label, value, onChange, disabled = fals
       onFocus={readActiveFormats}
       onMouseUp={readActiveFormats}
       onKeyUp={readActiveFormats}
-      sx={{ minHeight, px: 1.8, py: 1.35, overflowX: 'auto', outline: 'none', fontSize: 15, lineHeight: 1.6, color: '#1e293b', '&:empty::before': { content: '"Escriba aquí…"', color: '#94a3b8' }, '& h2, & h3': { mt: 1, mb: 0.5, fontWeight: 800 }, '& p': { my: 0.5 }, '& blockquote': { my: 1, mx: 0, pl: 2, borderLeft: '4px solid #93b4dc', color: '#475569' }, '& hr': { my: 1.25, border: 0, borderTop: '1px solid #b8c8da' }, '& a': { color: '#1d5fd1', textDecoration: 'underline' }, '& ul, & ol': { my: 0.5, pl: 3 }, '& table': { width: 'max-content', minWidth: '100%', borderCollapse: 'collapse', my: 1 }, '& th, & td': { border: '1px solid #94a3b8', p: 0.75, minWidth: 110 }, '& th': { bgcolor: '#eff6ff', fontWeight: 800 } }}
+      sx={{
+        minHeight,
+        px: 1.8,
+        py: 1.35,
+        overflowX: 'auto',
+        outline: 'none',
+        fontSize: 15,
+        lineHeight: 1.6,
+        color: '#1e293b',
+        '&:empty::before': { content: '"Escriba aquí…"', color: '#94a3b8' },
+        '& h2, & h3': { mt: 1, mb: 0.5, fontWeight: 800 },
+        '& p': { my: 0.5 },
+        '& blockquote': { my: 1, mx: 0, pl: 2, borderLeft: '4px solid #93b4dc', color: '#475569' },
+        '& hr': { my: 1.25, border: 0, borderTop: '1px solid #b8c8da' },
+        '& a': { color: '#1d5fd1', textDecoration: 'underline' },
+        '& ul, & ol': { my: 0.5, pl: 3 },
+        '& table': {
+          width: '100%',
+          maxWidth: '100%',
+          tableLayout: 'fixed',
+          borderCollapse: 'collapse',
+          my: 1,
+          boxSizing: 'border-box'
+        },
+        '& th, & td': {
+          border: '1px solid #94a3b8',
+          p: 1,
+          minWidth: 40,
+          whiteSpace: 'normal',
+          wordBreak: 'break-word',
+          overflowWrap: 'anywhere',
+          verticalAlign: 'top',
+          boxSizing: 'border-box'
+        },
+        '& th': { bgcolor: '#eff6ff', fontWeight: 800 }
+      }}
     />
     <Dialog open={linkDialog} onClose={() => setLinkDialog(false)} maxWidth="xs" fullWidth><DialogTitle fontWeight={900}>Insertar hipervínculo</DialogTitle><DialogContent><TextField autoFocus fullWidth label="Dirección web o correo" value={linkUrl} onChange={(event) => setLinkUrl(event.target.value)} helperText="Ejemplo: https://www.unicesmag.edu.co o mailto:correo@ejemplo.com" sx={{ mt: 1 }} /></DialogContent><DialogActions><Button onClick={() => setLinkDialog(false)}>Cancelar</Button><Button variant="contained" onClick={insertLink}>Insertar enlace</Button></DialogActions></Dialog>
   </Paper>;

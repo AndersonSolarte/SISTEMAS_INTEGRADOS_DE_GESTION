@@ -1,4 +1,5 @@
 import {
+  adjustTableColumnWidth, adjustTableRowPadding, distributeTableColumns, fitTableToWindow,
   insertTableColumnAfter, insertTableRowAfter, removeSelectedTableColumn,
   removeSelectedTableRow, sanitizeRichHtml
 } from './RichTextEditor';
@@ -18,7 +19,7 @@ test('permite agregar filas y columnas a una tabla del acta', () => {
 
   expect(table.rows).toHaveLength(3);
   expect([...table.rows].every((row) => row.cells.length === 3)).toBe(true);
-  expect(sanitizeRichHtml(container.innerHTML)).toContain('<table>');
+  expect(sanitizeRichHtml(container.innerHTML)).toMatch(/<table[^>]*>/);
 });
 
 test('permite eliminar la fila y la columna seleccionadas sin borrar toda la tabla', () => {
@@ -37,4 +38,22 @@ test('permite eliminar la fila y la columna seleccionadas sin borrar toda la tab
   expect(removeSelectedTableRow(table.rows[0].cells[0])).toBeNull();
   expect(removeSelectedTableColumn(table.rows[0].cells[1])).not.toBeNull();
   expect(removeSelectedTableColumn(table.rows[0].cells[0])).toBeNull();
+});
+
+test('permite ajustar altura de filas, ancho de columnas y ajustar al 100% de la ventana', () => {
+  const container = createTable();
+  const table = container.querySelector('table');
+
+  fitTableToWindow(table.rows[0].cells[0]);
+  expect(table.style.width).toBe('100%');
+  expect(table.style.tableLayout).toBe('fixed');
+
+  adjustTableRowPadding(table.rows[1].cells[0], 5);
+  expect(parseFloat(table.rows[1].cells[0].style.padding)).toBeGreaterThan(8);
+
+  distributeTableColumns(table.rows[0].cells[0]);
+  expect(table.rows[0].cells[0].style.width).toBe('50.00%');
+
+  adjustTableColumnWidth(table.rows[0].cells[0], 10);
+  expect(parseFloat(table.rows[0].cells[0].style.width)).toBeGreaterThan(50);
 });
