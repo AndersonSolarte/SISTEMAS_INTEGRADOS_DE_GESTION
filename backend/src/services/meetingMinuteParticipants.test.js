@@ -96,4 +96,17 @@ test('ubica a múltiples responsables al inicio sin duplicar entre sí ni con pa
   assert.equal(result[2].document, '10850002');
 });
 
+test('asegura asunto e identificadores de hilo para agrupar correos en una misma conversacion', () => {
+  const code = 'ACTA-2026-762045576';
+  const email = 'docente@unicesmag.edu.co';
+  const subject = _internals.minuteThreadSubject(code);
+  const rootId = _internals.minuteRootMessageId(code);
+  const participantMsgId = _internals.minuteParticipantMessageId(code, email);
+
+  assert.equal(subject, 'ACTA-2026-762045576 · Acta de reunión');
+  assert.match(rootId, /^<minute\.acta-2026-762045576@unicesmag\.edu\.co>$/);
+  assert.match(participantMsgId, /^<minute\.acta-2026-762045576\.docenteunicesmageduco@unicesmag\.edu\.co>$/);
+});
+
+
 

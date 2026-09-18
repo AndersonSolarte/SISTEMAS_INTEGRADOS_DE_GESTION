@@ -114,6 +114,19 @@ const formatDate = (value) => {
 };
 const publicFrontend = (req) => clean(req.body?.public_base_url || process.env.PUBLIC_FRONTEND_URL || process.env.FRONTEND_URL || `${req.protocol}://${req.get('host')}`, 500).replace(/\/$/, '');
 
+const minuteThreadSubject = (minuteCode) => `${minuteCode} · Acta de reunión`;
+
+const minuteRootMessageId = (minuteCode) => {
+  const safeCode = String(minuteCode || '').toLowerCase().replace(/[^a-z0-9-]/g, '');
+  return `<minute.${safeCode}@unicesmag.edu.co>`;
+};
+
+const minuteParticipantMessageId = (minuteCode, recipientEmail) => {
+  const safeCode = String(minuteCode || '').toLowerCase().replace(/[^a-z0-9-]/g, '');
+  const safeEmail = String(recipientEmail || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+  return `<minute.${safeCode}.${safeEmail}@unicesmag.edu.co>`;
+};
+
 const buildSigningInvitationEmail = ({ participant, minute, signingUrl }) => {
   const externalPolicy = buildPrivacyPolicyEmailSection(!participant.user_id);
   const meetingDate = formatDate(minute.content?.fecha);
@@ -123,7 +136,7 @@ const buildSigningInvitationEmail = ({ participant, minute, signingUrl }) => {
     bodyHtml: `<div style="margin:20px 0;padding:18px;border:1px solid #bfdbfe;border-radius:12px;background:#f8fbff"><p style="margin:0 0 10px">Adjuntamos una copia del acta para su revisión. También puede leerla completa al abrir el siguiente enlace personal.</p><p style="margin:0 0 14px">Su correo queda verificado mediante el enlace; no necesita copiar códigos ni volver a escribir su dirección.</p><p style="margin:0;text-align:center"><a href="${escapeHtml(signingUrl)}" style="display:inline-block;padding:13px 24px;border-radius:8px;background:#2459d3;color:#fff;text-decoration:none;font-weight:700">Revisar y firmar acta</a></p></div>${externalPolicy.html}<p style="font-size:13px;color:#64748b">Por seguridad, el enlace es individual, vence al finalizar el proceso y no debe compartirse.</p>`
   });
   return {
-    subject: `${minute.code} · Invitación para firmar acta`,
+    subject: minuteThreadSubject(minute.code),
     text: `Hola ${participant.name}. Adjuntamos una copia del acta ${minute.code}${meetingDate ? ` del ${meetingDate}` : ''} para su revisión. Abra su enlace personal para leerla y firmarla; no necesita copiar ningún código: ${signingUrl}${externalPolicy.text}`,
     html
   };
@@ -139,17 +152,34 @@ const sendParticipantInvitations = async ({ minute, baseUrl }) => {
   const reviewBuffer = await buildSignedMinutePdfBuffer(minute);
   const reviewAttachment = { filename: `${minute.code}-PARA-REVISION.pdf`, content: reviewBuffer, contentType: 'application/pdf' };
   const summary = { sent: 0, failed: 0 };
+  const rootId = minuteRootMessageId(minute.code);
+
   for (const participant of (minute.participants || []).filter((item) => item.status !== 'signed')) {
     const invitationToken = crypto.randomBytes(32).toString('base64url');
     const signingUrl = `${baseUrl}/firmar-acta-reunion/${invitationToken}`;
     const email = buildSigningInvitationEmail({ participant, minute, signingUrl });
+    const recipientEmail = clean(participant.email, 254).toLowerCase();
+    const participantMsgId = minuteParticipantMessageId(minute.code, recipientEmail);
+    const isResend = Boolean(participant.invitation_sent_at);
+    const safeCode = String(minute.code || '').toLowerCase().replace(/[^a-z0-9-]/g, '');
+    const safeEmail = recipientEmail.replace(/[^a-z0-9]/g, '');
+
     const previousToken = {
       signing_token_hash: participant.signing_token_hash,
       signing_token_expires_at: participant.signing_token_expires_at
     };
     try {
       await participant.update({ signing_token_hash: hash(invitationToken), signing_token_expires_at: expiresAt });
-      const result = await sendInstitutionalEmail({ to: participant.email, ...email, attachments: [reviewAttachment], allowExternalRecipients: true });
+      const result = await sendInstitutionalEmail({
+        to: participant.email,
+        ...email,
+        subject: isResend ? `Re: ${minuteThreadSubject(minute.code)}` : minuteThreadSubject(minute.code),
+        messageId: isResend ? `<minute.${safeCode}.${safeEmail}.resend.${Date.now()}@unicesmag.edu.co>` : participantMsgId,
+        inReplyTo: isResend ? participantMsgId : undefined,
+        references: isResend ? `${rootId} ${participantMsgId}` : rootId,
+        attachments: [reviewAttachment],
+        allowExternalRecipients: true
+      });
       if (!result.success) throw new Error(result.error || 'El servicio de correo rechazó la invitación.');
       await participant.update({ invitation_sent_at: new Date() });
       summary.sent += 1;
@@ -601,12 +631,21 @@ const sendFinalMinute = wrap(async (req, res) => {
     bodyHtml: `<div style="padding:16px;background:#eff6ff;border:1px solid #bfdbfe;border-radius:10px"><p style="margin:0 0 6px"><strong>Acta:</strong> ${escapeHtml(minute.code)}</p><p style="margin:0"><strong>Fecha:</strong> ${escapeHtml(meetingDate)}</p></div><p>Se adjunta la versión final con las firmas registradas.</p>`
   });
 
+  const rootId = minuteRootMessageId(minute.code);
+  const safeCode = String(minute.code || '').toLowerCase().replace(/[^a-z0-9-]/g, '');
+
   const results = [];
   for (const recipient of recipients) {
+    const participantMsgId = minuteParticipantMessageId(minute.code, recipient);
+    const safeEmail = recipient.replace(/[^a-z0-9]/g, '');
+    const finalMsgId = `<minute.${safeCode}.${safeEmail}.final.${Date.now()}@unicesmag.edu.co>`;
     try {
       const result = await sendInstitutionalEmail({
         to: recipient,
-        subject: `${minute.code} · Acta de reunión firmada`,
+        subject: `Re: ${minuteThreadSubject(minute.code)}`,
+        messageId: finalMsgId,
+        inReplyTo: participantMsgId,
+        references: `${rootId} ${participantMsgId}`,
         text: `El acta ${minute.code}, con fecha ${meetingDate}, ha sido firmada por todos los participantes. Se adjunta la versión final.`,
         html,
         attachments: [attachment],
@@ -624,4 +663,4 @@ const sendFinalMinute = wrap(async (req, res) => {
   res.json({ success: true, message: `Acta firmada enviada a ${recipients.length} participante(s).`, data: { status: 'distributed', distributed_at: sentAt, recipients: recipients.length } });
 });
 
-module.exports = { downloadPdf, downloadWord, getConfig, getMinute, getSigningAccess, listMinutes, lookupParticipant, publicMinute, publish, reopenForEditing, requestCode, resendInvitations, saveDraft, sendFinalMinute, sign, updateConfig, _internals: { buildPrivacyPolicyEmailSection, buildSigningInvitationEmail, participantRoleLabel, placeResponsibleFirst, sanitizeRichText } };
+module.exports = { downloadPdf, downloadWord, getConfig, getMinute, getSigningAccess, listMinutes, lookupParticipant, publicMinute, publish, reopenForEditing, requestCode, resendInvitations, saveDraft, sendFinalMinute, sign, updateConfig, _internals: { buildPrivacyPolicyEmailSection, buildSigningInvitationEmail, minuteThreadSubject, minuteRootMessageId, minuteParticipantMessageId, participantRoleLabel, placeResponsibleFirst, sanitizeRichText } };
