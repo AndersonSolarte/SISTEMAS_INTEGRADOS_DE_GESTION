@@ -481,17 +481,40 @@ export default function MeetingMinuteFormDialog({ open, document, user, onClose 
                   </Tooltip>
                 )}
               </Stack>
-              <Box sx={{ display: { xs: 'grid', lg: 'flex' }, gridTemplateColumns: { xs: '1fr', sm: 'repeat(2,minmax(0,1fr))' }, gap: 1, '& .MuiButton-root': { flex: { lg: '1 1 0' }, minWidth: 0, minHeight: 42, px: { xs: 1.5, lg: 1 }, textTransform: 'none', fontWeight: 800, fontSize: { lg: 13 }, whiteSpace: 'nowrap' } }}>
-                <Button fullWidth startIcon={<Download />} disabled={!form.id} onClick={download} variant="outlined">Descargar PDF</Button>
-                {form.status === 'signing' && <Button fullWidth startIcon={<QrCode2 />} disabled={loading} onClick={showSigningAccess} variant="outlined">Ver enlace y QR</Button>}
-                {form.status === 'signing' && !allSigned && <Button fullWidth startIcon={<Email />} disabled={loading} onClick={resendInvitations} variant="outlined">Reenviar invitaciones</Button>}
-                {form.status === 'signing' && !hasSignatures && <Button fullWidth startIcon={<Edit />} disabled={loading} onClick={() => setConfirmAdjust(true)} color="warning" variant="outlined">Hacer ajustes</Button>}
-                {locked && <Button fullWidth startIcon={<Refresh />} disabled={loading} onClick={() => openMinute(form.id)} variant="outlined">Actualizar firmas</Button>}
-                {canSendFinal && <Button fullWidth startIcon={<Send />} disabled={loading} onClick={sendFinal} color="success" variant="contained" sx={{ fontWeight: 850 }}>{form.status === 'distributed' ? 'Reenviar acta firmada' : 'Enviar acta firmada'}</Button>}
+              <Box
+                sx={{
+                  display: { xs: 'grid', lg: 'flex' },
+                  gridTemplateColumns: { xs: '1fr', sm: 'repeat(2,minmax(0,1fr))' },
+                  gap: 1,
+                  '& .MuiButton-root': {
+                    flex: { lg: '1 1 0' },
+                    minWidth: 0,
+                    minHeight: 46,
+                    px: { xs: 1.5, lg: 0.75 },
+                    py: 0.5,
+                    textTransform: 'none',
+                    fontWeight: 800,
+                    fontSize: { xs: 12.5, lg: 11.5 },
+                    lineHeight: 1.15,
+                    whiteSpace: 'pre-line',
+                    textAlign: 'center',
+                    '& .MuiButton-startIcon': {
+                      mr: { xs: 1, lg: 0.5 },
+                      ml: 0
+                    }
+                  }
+                }}
+              >
+                <Button fullWidth startIcon={<Download />} disabled={!form.id} onClick={download} variant="outlined">{"Descargar\nPDF"}</Button>
+                {form.status === 'signing' && <Button fullWidth startIcon={<QrCode2 />} disabled={loading} onClick={showSigningAccess} variant="outlined">{"Ver enlace\ny QR"}</Button>}
+                {form.status === 'signing' && !allSigned && <Button fullWidth startIcon={<Email />} disabled={loading} onClick={resendInvitations} variant="outlined">{"Reenviar\ninvitaciones"}</Button>}
+                {form.status === 'signing' && !hasSignatures && <Button fullWidth startIcon={<Edit />} disabled={loading} onClick={() => setConfirmAdjust(true)} color="warning" variant="outlined">{"Hacer\najustes"}</Button>}
+                {locked && <Button fullWidth startIcon={<Refresh />} disabled={loading} onClick={() => openMinute(form.id)} variant="outlined">{"Actualizar\nfirmas"}</Button>}
+                {canSendFinal && <Button fullWidth startIcon={<Send />} disabled={loading} onClick={sendFinal} color="success" variant="contained" sx={{ fontWeight: 850 }}>{form.status === 'distributed' ? "Reenviar acta\nfirmada" : "Enviar acta\nfirmada"}</Button>}
                 {!locked && (
                   <Tooltip title={!additionalParticipants.length ? 'Debe agregar al menos 1 participante adicional en la sección 2' : ''}>
                     <span>
-                      <Button fullWidth startIcon={<Email />} onClick={publish} disabled={loading || !additionalParticipants.length} variant="contained" sx={{ fontWeight: 850 }}>Habilitar y enviar invitaciones</Button>
+                      <Button fullWidth startIcon={<Email />} onClick={publish} disabled={loading || !additionalParticipants.length} variant="contained" sx={{ fontWeight: 850 }}>{"Habilitar y enviar\ninvitaciones"}</Button>
                     </span>
                   </Tooltip>
                 )}
