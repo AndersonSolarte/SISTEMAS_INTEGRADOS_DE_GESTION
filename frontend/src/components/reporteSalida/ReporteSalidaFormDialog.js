@@ -1824,7 +1824,11 @@ function ReporteSalidaFormDialog({ open, documento, user, onClose, onSubmitted }
       setSuccessResponse(response);
       setShowSuccessModal(true);
     } catch (error) {
-      setErrorMessage(error?.response?.data?.message || error?.message || 'No se pudo radicar la solicitud.');
+      const rawMsg = error?.response?.data?.message || error?.message || 'No se pudo radicar la solicitud.';
+      const friendlyMsg = error?.code === 'ECONNABORTED' || String(rawMsg).toLowerCase().includes('timeout')
+        ? 'El tiempo de espera para procesar la solicitud o el archivo adjunto se agotó. Por favor verifica tu conexión e inténtalo de nuevo.'
+        : rawMsg;
+      setErrorMessage(friendlyMsg);
     } finally {
       setSubmitting(false);
     }

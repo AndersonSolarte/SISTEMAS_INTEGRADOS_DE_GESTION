@@ -3,7 +3,7 @@ import axios from 'axios';
 const api = axios.create({
   baseURL: process.env.REACT_APP_API_URL || '/api',
   headers: { 'Content-Type': 'application/json' },
-  timeout: Number(process.env.REACT_APP_API_TIMEOUT_MS || 10000),
+  timeout: Number(process.env.REACT_APP_API_TIMEOUT_MS || 60000),
   paramsSerializer: (params = {}) => {
     const searchParams = new URLSearchParams();
     Object.entries(params || {}).forEach(([key, value]) => {

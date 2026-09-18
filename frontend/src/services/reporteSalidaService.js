@@ -40,7 +40,8 @@ const reporteSalidaService = {
     const response = await api.post('/reporte-salida/upload-adjunto', formData, {
       headers: {
         'Content-Type': 'multipart/form-data'
-      }
+      },
+      timeout: 120000
     });
     return response.data;
   },
