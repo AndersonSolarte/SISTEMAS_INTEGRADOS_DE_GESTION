@@ -68,3 +68,15 @@ test('conserva completos los espacios de escritura sin límite de caracteres', (
   assert.equal(sanitized.length, content.length);
   assert.match(sanitized, /Contenido institucional completo/);
 });
+
+test('valida la existencia de participantes adicionales aparte del responsable', () => {
+  const responsible = { id: 7, username: '10850001', nombre: 'RESPONSABLE PRINCIPAL', email: 'responsable@unicesmag.edu.co' };
+  const onlyResponsible = _internals.placeResponsibleFirst([], responsible);
+  const withAdditional = _internals.placeResponsibleFirst([
+    { document: '10850002', name: 'PARTICIPANTE ADICIONAL', email: 'adicional@unicesmag.edu.co' }
+  ], responsible);
+
+  assert.equal(onlyResponsible.filter((_, idx) => idx > 0).length, 0);
+  assert.equal(withAdditional.filter((_, idx) => idx > 0).length, 1);
+});
+

@@ -260,6 +260,10 @@ const saveDraft = wrap(async (req, res) => {
   const responsibleUser = await User.findOne({ where: { username: responsableDocument, estado: 'activo' }, attributes: ['id', 'username', 'nombre', 'email', 'dependencia', 'cargo'] });
   if (!responsibleUser) throw Object.assign(new Error('El responsable seleccionado ya no está disponible en SIAC.'), { statusCode: 422 });
   const participants = placeResponsibleFirst(Array.isArray(req.body.participants) ? req.body.participants : [], responsibleUser);
+  const additionalParticipants = participants.filter((_, idx) => idx > 0);
+  if (!additionalParticipants.length) {
+    throw Object.assign(new Error('Debe agregar al menos un participante aparte del responsable en la sección "2. Participantes y firmas".'), { statusCode: 422 });
+  }
   if (!clean(req.body.responsables)) throw Object.assign(new Error('Consulte y seleccione el responsable de la reunión.'), { statusCode: 422 });
   if (!clean(req.body.dependencia)) throw Object.assign(new Error('La dependencia que cita es obligatoria.'), { statusCode: 422 });
   if (!clean(req.body.lugar)) throw Object.assign(new Error('Seleccione o escriba el lugar de la reunión.'), { statusCode: 422 });
@@ -308,7 +312,12 @@ const publish = wrap(async (req, res) => {
   const minute = await DigitalMeetingMinute.findByPk(req.params.id, { include: [{ model: DigitalMeetingParticipant, as: 'participants' }, { model: DigitalMeetingSignature, as: 'signatures' }] });
   if (!minute || minute.deleted_at) throw Object.assign(new Error('Acta no encontrada.'), { statusCode: 404 });
   if (!isAdmin(req.user) && Number(minute.created_by) !== Number(req.user.id)) throw Object.assign(new Error('No tiene permiso para publicar esta acta.'), { statusCode: 403 });
-  if (!minute.participants?.length || minute.participants.some((participant) => !participant.email)) throw Object.assign(new Error('Todos los participantes deben tener correo para habilitar las firmas.'), { statusCode: 422 });
+  if (!minute.participants?.length || minute.participants.length < 2) {
+    throw Object.assign(new Error('Debe agregar al menos un participante aparte del responsable en la sección "2. Participantes y firmas".'), { statusCode: 422 });
+  }
+  if (minute.participants.some((participant) => !participant.email)) {
+    throw Object.assign(new Error('Todos los participantes deben tener correo para habilitar las firmas.'), { statusCode: 422 });
+  }
   const token = crypto.randomBytes(32).toString('base64url');
   await minute.update({ status: 'signing', public_token_hash: hash(token), token_expires_at: new Date(Date.now() + 45 * 24 * 60 * 60 * 1000), published_at: new Date(), content_hash: contentHash(minute.content) });
   const signingUrl = `${publicFrontend(req)}/firmar-acta-reunion/${token}`;

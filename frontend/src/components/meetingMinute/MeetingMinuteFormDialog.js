@@ -1,11 +1,11 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import {
   Alert, Autocomplete, Box, Button, Chip, CircularProgress, Dialog, DialogActions, DialogContent,
-  DialogTitle, IconButton, MenuItem, Paper, Stack, TextField, Typography
+  DialogTitle, IconButton, MenuItem, Paper, Stack, TextField, ToggleButton, ToggleButtonGroup, Tooltip, Typography
 } from '@mui/material';
 import {
-  Add, Close, ContentCopy, DeleteOutline, Download, Edit, Email, PersonSearch,
-  QrCode2, Refresh, Save, Send
+  Add, ArrowBack, ArrowForward, Close, ContentCopy, DeleteOutline, Download, Edit, EditNote, Email, PersonSearch,
+  QrCode2, Refresh, Save, Send, ViewSidebar, Visibility
 } from '@mui/icons-material';
 import { useSnackbar } from 'notistack';
 import meetingMinuteService from '../../services/meetingMinuteService';
@@ -81,11 +81,22 @@ export default function MeetingMinuteFormDialog({ open, document, user, onClose 
   const [searching, setSearching] = useState(false);
   const [qr, setQr] = useState(null);
   const [confirmAdjust, setConfirmAdjust] = useState(false);
+  const [layoutMode, setLayoutMode] = useState('split'); // 'split' | 'form' | 'preview'
   const locked = form.status !== 'draft';
   const hasSignatures = signatures.length > 0;
   const allSigned = Boolean(form.participants.length) && form.participants.every((participant) => participant.status === 'signed');
   const canSendFinal = allSigned && Number(form.created_by) === Number(user?.id);
   const horario = useMemo(() => `${form.hora_inicio || ''} - ${form.hora_fin || ''}`, [form.hora_inicio, form.hora_fin]);
+  const additionalParticipants = useMemo(() => {
+    const respDoc = String(form.responsable_document || '').trim().toLowerCase();
+    const respName = String(form.responsables || '').trim().toLowerCase();
+    return (form.participants || []).filter((p) => {
+      const pDoc = String(p.document || '').trim().toLowerCase();
+      const pName = String(p.name || '').trim().toLowerCase();
+      const isResp = (respDoc && pDoc && pDoc === respDoc) || (respName && pName && pName === respName);
+      return !isResp;
+    });
+  }, [form.participants, form.responsable_document, form.responsables]);
 
   const loadMinutes = async () => {
     try { const response = await meetingMinuteService.list(); setMinutes(response.data || []); } catch (_) { setMinutes([]); }
@@ -167,6 +178,14 @@ export default function MeetingMinuteFormDialog({ open, document, user, onClose 
   };
   const payload = () => ({ id: form.id || undefined, documento_id: document.id, responsables: form.responsables, responsable_document: form.responsable_document, responsable_role: form.responsable_role, dependencia: form.dependencia, lugar: form.lugar, fecha: form.fecha, horario, objetivo: form.objetivo, desarrollo: form.desarrollo, conclusiones: form.conclusiones, participants: form.participants });
   const save = async ({ quiet = false } = {}) => {
+    if (!form.responsable_document || !form.responsables) {
+      enqueueSnackbar('Consulte y seleccione primero al responsable de la reunión.', { variant: 'warning' });
+      return null;
+    }
+    if (!additionalParticipants.length) {
+      enqueueSnackbar('Debe agregar al menos un participante aparte del responsable en la sección "2. Participantes y firmas".', { variant: 'warning' });
+      return null;
+    }
     setLoading(true);
     try {
       const response = await meetingMinuteService.save(payload());
@@ -179,10 +198,14 @@ export default function MeetingMinuteFormDialog({ open, document, user, onClose 
     finally { setLoading(false); }
   };
   const publish = async () => {
-      // Guarde siempre la versión visible antes de abrir la etapa de firmas.
-      // Así, los cambios hechos después del último borrador también llegan al
-      // enlace público y al documento institucional.
-      const row = await save({ quiet: true });
+    if (!additionalParticipants.length) {
+      enqueueSnackbar('Debe agregar al menos un participante aparte del responsable en la sección "2. Participantes y firmas".', { variant: 'warning' });
+      return;
+    }
+    // Guarde siempre la versión visible antes de abrir la etapa de firmas.
+    // Así, los cambios hechos después del último borrador también llegan al
+    // enlace público y al documento institucional.
+    const row = await save({ quiet: true });
     if (!row) return;
     setLoading(true);
     try {
@@ -241,16 +264,71 @@ export default function MeetingMinuteFormDialog({ open, document, user, onClose 
 
   return <>
     <Dialog open={open} onClose={onClose} fullScreen PaperProps={{ sx: { bgcolor: '#f4f7fb', height: '100vh', display: 'flex', flexDirection: 'column', overflow: 'hidden' } }}>
-      <DialogTitle sx={{ px: { xs: 2, md: 4 }, py: 1.75, background: 'linear-gradient(135deg,#214c9c,#315ee8)', color: '#fff', flexShrink: 0 }}>
-        <Stack direction="row" justifyContent="space-between" alignItems="center" gap={2}><Box><Typography variant="h5" fontWeight={950}>Registro de Asistencia y Reunión</Typography><Typography sx={{ opacity: .9, fontSize: 13 }}>{document?.codigo} · Formato digital institucional independiente</Typography></Box><IconButton onClick={onClose} sx={{ color: '#fff', border: '1px solid rgba(255,255,255,.5)', borderRadius: 2 }}><Close /></IconButton></Stack>
+      <DialogTitle sx={{ px: { xs: 2, md: 4 }, py: 1.5, background: 'linear-gradient(135deg,#214c9c,#315ee8)', color: '#fff', flexShrink: 0 }}>
+        <Stack direction="row" justifyContent="space-between" alignItems="center" gap={2} flexWrap="wrap">
+          <Box>
+            <Typography variant="h5" fontWeight={950}>Registro de Asistencia y Reunión</Typography>
+            <Typography sx={{ opacity: .9, fontSize: 13 }}>{document?.codigo} · Formato digital institucional independiente</Typography>
+          </Box>
+          <Stack direction="row" alignItems="center" gap={1.5}>
+            <ToggleButtonGroup
+              value={layoutMode}
+              exclusive
+              onChange={(_, val) => val && setLayoutMode(val)}
+              size="small"
+              sx={{
+                bgcolor: 'rgba(255, 255, 255, 0.15)',
+                border: '1px solid rgba(255, 255, 255, 0.35)',
+                borderRadius: 2,
+                '& .MuiToggleButton-root': {
+                  color: 'rgba(255, 255, 255, 0.9)',
+                  fontWeight: 800,
+                  fontSize: 12,
+                  px: { xs: 1, sm: 1.5 },
+                  py: 0.5,
+                  textTransform: 'none',
+                  border: 'none',
+                  '&.Mui-selected': {
+                    bgcolor: '#ffffff',
+                    color: '#1d4ed8',
+                    fontWeight: 900,
+                    boxShadow: '0 2px 4px rgba(0,0,0,0.15)',
+                    '&:hover': { bgcolor: '#f8fafc' }
+                  },
+                  '&:hover': {
+                    bgcolor: 'rgba(255, 255, 255, 0.25)',
+                    color: '#fff'
+                  }
+                }
+              }}
+            >
+              <ToggleButton value="form" title="Ocultar vista previa y expandir formulario">
+                <EditNote sx={{ fontSize: 19, mr: { xs: 0, sm: 0.5 } }} />
+                <Box component="span" sx={{ display: { xs: 'none', sm: 'inline' } }}>Formulario</Box>
+              </ToggleButton>
+              <ToggleButton value="split" title="Vista dividida (50/50)">
+                <ViewSidebar sx={{ fontSize: 19, mr: { xs: 0, sm: 0.5 } }} />
+                <Box component="span" sx={{ display: { xs: 'none', sm: 'inline' } }}>Dividido</Box>
+              </ToggleButton>
+              <ToggleButton value="preview" title="Ocultar formulario y expandir vista previa">
+                <Visibility sx={{ fontSize: 19, mr: { xs: 0, sm: 0.5 } }} />
+                <Box component="span" sx={{ display: { xs: 'none', sm: 'inline' } }}>Vista previa</Box>
+              </ToggleButton>
+            </ToggleButtonGroup>
+            <IconButton onClick={onClose} sx={{ color: '#fff', border: '1px solid rgba(255,255,255,.5)', borderRadius: 2 }}><Close /></IconButton>
+          </Stack>
+        </Stack>
       </DialogTitle>
       <DialogContent sx={{ p: { xs: 1.5, md: 2.5 }, flex: 1, overflow: { xs: 'auto', lg: 'hidden' }, display: 'flex', flexDirection: 'column', minHeight: 0 }}>
         <Box sx={{ display: 'flex', flexDirection: { xs: 'column', lg: 'row' }, gap: 2.5, width: '100%', height: { lg: '100%' }, minHeight: 0, flex: 1 }}>
           <Stack
             gap={2}
             sx={{
-              width: { xs: '100%', lg: '47%' },
+              width: layoutMode === 'form' ? '100%' : { xs: '100%', lg: '47%' },
+              maxWidth: layoutMode === 'form' ? '1250px' : 'none',
+              mx: layoutMode === 'form' ? 'auto' : 0,
               height: { lg: '100%' },
+              display: layoutMode === 'preview' ? 'none' : 'flex',
               overflowY: { lg: 'auto' },
               pr: { lg: 1.5 },
               // Barra de scroll ubicada al medio, ampliada y de fácil agarre
@@ -275,7 +353,41 @@ export default function MeetingMinuteFormDialog({ open, document, user, onClose 
             }}
           >
             <Paper variant="outlined" sx={{ p: 2.25, borderRadius: 3 }}>
-              <Stack direction={{ xs: 'column', sm: 'row' }} justifyContent="space-between" gap={1.5} mb={2}><Box><Typography fontWeight={900}>Actas de reunión</Typography><Typography variant="body2" color="text.secondary">Cree una nueva o continúe un borrador anterior. Este flujo no modifica los Planes de Acción.</Typography></Box><Button variant="outlined" onClick={() => { setForm(emptyForm(user)); setSignatures([]); setQr(null); setResponsibleDocument(''); setResponsibleCandidate(null); setExternalMode(false); }} sx={{ textTransform: 'none', fontWeight: 800 }}>Nueva acta</Button></Stack>
+              <Stack direction={{ xs: 'column', sm: 'row' }} justifyContent="space-between" alignItems={{ sm: 'center' }} gap={1.5} mb={2}>
+                <Box>
+                  <Typography fontWeight={900}>Actas de reunión</Typography>
+                  <Typography variant="body2" color="text.secondary">Cree una nueva o continúe un borrador anterior. Este flujo no modifica los Planes de Acción.</Typography>
+                </Box>
+                <Stack direction="row" alignItems="center" gap={1} flexWrap="wrap">
+                  <Button variant="outlined" onClick={() => { setForm(emptyForm(user)); setSignatures([]); setQr(null); setResponsibleDocument(''); setResponsibleCandidate(null); setExternalMode(false); }} sx={{ textTransform: 'none', fontWeight: 800 }}>Nueva acta</Button>
+                  {layoutMode === 'split' ? (
+                    <Tooltip title="Ocultar vista previa y expandir formulario a pantalla completa">
+                      <Button
+                        size="small"
+                        variant="contained"
+                        color="inherit"
+                        startIcon={<ArrowBack />}
+                        onClick={() => setLayoutMode('form')}
+                        sx={{ textTransform: 'none', fontWeight: 800, bgcolor: '#e2e8f0', color: '#1e293b', '&:hover': { bgcolor: '#cbd5e1' } }}
+                      >
+                        Expandir formulario
+                      </Button>
+                    </Tooltip>
+                  ) : (
+                    <Tooltip title="Restaurar vista dividida (50/50)">
+                      <Button
+                        size="small"
+                        variant="outlined"
+                        startIcon={<ViewSidebar />}
+                        onClick={() => setLayoutMode('split')}
+                        sx={{ textTransform: 'none', fontWeight: 800 }}
+                      >
+                        Dividir pantalla
+                      </Button>
+                    </Tooltip>
+                  )}
+                </Stack>
+              </Stack>
               <TextField fullWidth select size="small" label="Abrir un acta guardada" value={form.id} onChange={(event) => openMinute(event.target.value)}><MenuItem value="">Nueva acta</MenuItem>{minutes.map((minute) => <MenuItem key={minute.id} value={minute.id}>{minute.code} · {minute.content?.fecha || 'Sin fecha'} · {{ draft: 'Borrador', signing: 'En firmas', signed: 'Firmada', distributed: 'Enviada' }[minute.status] || minute.status}</MenuItem>)}</TextField>
             </Paper>
             {form.status === 'signing' && !allSigned && <Alert severity="info">Las invitaciones personales ya fueron enviadas por correo. Puede volver a mostrar el QR, reenviar invitaciones o regresar a borrador mientras nadie haya firmado.</Alert>}
@@ -301,7 +413,22 @@ export default function MeetingMinuteFormDialog({ open, document, user, onClose 
               </Box>
             </Paper>
             <Paper variant="outlined" sx={{ p: 2.25, borderRadius: 3 }}>
-              <Typography fontWeight={900}>2. Participantes y firmas</Typography><Typography variant="body2" color="text.secondary" mb={2}>Digite la cédula. Si la persona no existe en SIAC, puede agregarla solamente a esta acta.</Typography>
+              <Stack direction={{ xs: 'column', sm: 'row' }} justifyContent="space-between" alignItems={{ sm: 'center' }} gap={1} mb={1}>
+                <Box>
+                  <Typography fontWeight={900}>2. Participantes y firmas</Typography>
+                  <Typography variant="body2" color="text.secondary">Digite la cédula. Si la persona no existe en SIAC, puede agregarla solamente a esta acta.</Typography>
+                </Box>
+                {additionalParticipants.length > 0 ? (
+                  <Chip size="small" color="success" label={`${additionalParticipants.length} participante(s) adicional(es)`} sx={{ fontWeight: 850 }} />
+                ) : (
+                  <Chip size="small" color="warning" label="Al menos 1 adicional requerido" sx={{ fontWeight: 850 }} />
+                )}
+              </Stack>
+              {additionalParticipants.length === 0 && (
+                <Alert severity="warning" sx={{ my: 1.5, borderRadius: 2 }}>
+                  <strong>Participante requerido:</strong> Para generar o enviar el acta debe agregar en esta sección al menos un participante aparte del responsable ({form.responsables || 'responsable de la reunión'}).
+                </Alert>
+              )}
               {!locked && <Stack direction={{ xs: 'column', sm: 'row' }} gap={1}><TextField fullWidth size="small" label="Cédula" value={documentNumber} onChange={(e) => { setDocumentNumber(e.target.value.replace(/[^0-9A-Za-z-]/g, '')); setCandidate(null); }} onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); lookup(); } }} /><Button variant="outlined" startIcon={searching ? <CircularProgress size={16} /> : <PersonSearch />} disabled={searching || !documentNumber} onClick={lookup} sx={{ minWidth: 125, textTransform: 'none', fontWeight: 800 }}>Consultar</Button></Stack>}
               {candidate && <Paper variant="outlined" sx={{ p: 1.5, mt: 1.5, borderRadius: 2, bgcolor: '#f8fbff' }}><Stack direction="row" justifyContent="space-between" alignItems="center" gap={1}><Box><Typography fontWeight={850}>{candidate.name}</Typography><Typography variant="body2" color="text.secondary">{candidate.role_title} · {candidate.organization}</Typography><Typography variant="caption">{candidate.email}</Typography></Box><Button variant="contained" startIcon={<Add />} onClick={addParticipant}>Agregar</Button></Stack></Paper>}
               {!locked && !externalMode && <Button startIcon={<Add />} onClick={() => { setExternalDraft({ document: documentNumber, name: '', email: '', organization: '', role_title: '' }); setExternalMode(true); }} sx={{ mt: 1, textTransform: 'none', fontWeight: 800 }}>Agregar participante externo</Button>}
@@ -312,9 +439,11 @@ export default function MeetingMinuteFormDialog({ open, document, user, onClose 
           <Paper
             variant="outlined"
             sx={{
-              width: { xs: '100%', lg: '53%' },
+              width: layoutMode === 'preview' ? '100%' : { xs: '100%', lg: '53%' },
+              maxWidth: layoutMode === 'preview' ? '1250px' : 'none',
+              mx: layoutMode === 'preview' ? 'auto' : 0,
               height: { lg: '100%' },
-              display: 'flex',
+              display: layoutMode === 'form' ? 'none' : 'flex',
               flexDirection: 'column',
               p: 2,
               borderRadius: 3,
@@ -323,9 +452,35 @@ export default function MeetingMinuteFormDialog({ open, document, user, onClose 
             }}
           >
             <Box sx={{ mb: 2, pb: 2, borderBottom: '1px solid #e2e8f0', flexShrink: 0 }}>
-              <Box sx={{ mb: 1.5 }}>
+              <Stack direction="row" justifyContent="space-between" alignItems="center" mb={1.5}>
                 <Typography fontWeight={900}>Vista previa del acta</Typography>
-              </Box>
+                {layoutMode === 'split' ? (
+                  <Tooltip title="Ocultar formulario y expandir vista previa a pantalla completa">
+                    <Button
+                      size="small"
+                      variant="contained"
+                      color="inherit"
+                      endIcon={<ArrowForward />}
+                      onClick={() => setLayoutMode('preview')}
+                      sx={{ textTransform: 'none', fontWeight: 800, bgcolor: '#e2e8f0', color: '#1e293b', '&:hover': { bgcolor: '#cbd5e1' } }}
+                    >
+                      Expandir vista previa
+                    </Button>
+                  </Tooltip>
+                ) : (
+                  <Tooltip title="Restaurar vista dividida (50/50)">
+                    <Button
+                      size="small"
+                      variant="outlined"
+                      startIcon={<ViewSidebar />}
+                      onClick={() => setLayoutMode('split')}
+                      sx={{ textTransform: 'none', fontWeight: 800 }}
+                    >
+                      Dividir pantalla
+                    </Button>
+                  </Tooltip>
+                )}
+              </Stack>
               <Box sx={{ display: { xs: 'grid', lg: 'flex' }, gridTemplateColumns: { xs: '1fr', sm: 'repeat(2,minmax(0,1fr))' }, gap: 1, '& .MuiButton-root': { flex: { lg: '1 1 0' }, minWidth: 0, minHeight: 42, px: { xs: 1.5, lg: 1 }, textTransform: 'none', fontWeight: 800, fontSize: { lg: 13 }, whiteSpace: 'nowrap' } }}>
                 <Button fullWidth startIcon={<Download />} disabled={!form.id} onClick={download} variant="outlined">Descargar PDF</Button>
                 {form.status === 'signing' && <Button fullWidth startIcon={<QrCode2 />} disabled={loading} onClick={showSigningAccess} variant="outlined">Ver enlace y QR</Button>}
@@ -333,7 +488,13 @@ export default function MeetingMinuteFormDialog({ open, document, user, onClose 
                 {form.status === 'signing' && !hasSignatures && <Button fullWidth startIcon={<Edit />} disabled={loading} onClick={() => setConfirmAdjust(true)} color="warning" variant="outlined">Hacer ajustes</Button>}
                 {locked && <Button fullWidth startIcon={<Refresh />} disabled={loading} onClick={() => openMinute(form.id)} variant="outlined">Actualizar firmas</Button>}
                 {canSendFinal && <Button fullWidth startIcon={<Send />} disabled={loading} onClick={sendFinal} color="success" variant="contained" sx={{ fontWeight: 850 }}>{form.status === 'distributed' ? 'Reenviar acta firmada' : 'Enviar acta firmada'}</Button>}
-                {!locked && <Button fullWidth startIcon={<Email />} onClick={publish} disabled={loading || !form.participants.length} variant="contained" sx={{ fontWeight: 850 }}>Habilitar y enviar invitaciones</Button>}
+                {!locked && (
+                  <Tooltip title={!additionalParticipants.length ? 'Debe agregar al menos 1 participante adicional en la sección 2' : ''}>
+                    <span>
+                      <Button fullWidth startIcon={<Email />} onClick={publish} disabled={loading || !additionalParticipants.length} variant="contained" sx={{ fontWeight: 850 }}>Habilitar y enviar invitaciones</Button>
+                    </span>
+                  </Tooltip>
+                )}
               </Box>
             </Box>
             <Box
@@ -370,7 +531,22 @@ export default function MeetingMinuteFormDialog({ open, document, user, onClose 
           </Paper>
         </Box>
       </DialogContent>
-      <DialogActions sx={{ px: { xs: 2, md: 4 }, py: 1.5, bgcolor: '#fff', borderTop: '1px solid #dbe5f0', flexShrink: 0 }}><Button onClick={onClose}>Cerrar</Button>{!locked && <Button variant="contained" startIcon={loading ? <CircularProgress size={16} color="inherit" /> : <Save />} disabled={loading} onClick={() => save()} sx={{ px: 3, textTransform: 'none', fontWeight: 900 }}>Guardar borrador</Button>}</DialogActions>
+      <DialogActions sx={{ px: { xs: 2, md: 4 }, py: 1.5, bgcolor: '#fff', borderTop: '1px solid #dbe5f0', flexShrink: 0, justifyContent: 'space-between' }}>
+        <Stack direction="row" alignItems="center" gap={1}>
+          <Button onClick={onClose}>Cerrar</Button>
+          {layoutMode === 'form' && (
+            <Button startIcon={<Visibility />} onClick={() => setLayoutMode('preview')} sx={{ textTransform: 'none', fontWeight: 800 }}>
+              Ver vista previa
+            </Button>
+          )}
+          {layoutMode === 'preview' && (
+            <Button startIcon={<EditNote />} onClick={() => setLayoutMode('form')} sx={{ textTransform: 'none', fontWeight: 800 }}>
+              Volver al formulario
+            </Button>
+          )}
+        </Stack>
+        {!locked && <Button variant="contained" startIcon={loading ? <CircularProgress size={16} color="inherit" /> : <Save />} disabled={loading} onClick={() => save()} sx={{ px: 3, textTransform: 'none', fontWeight: 900 }}>Guardar borrador</Button>}
+      </DialogActions>
     </Dialog>
     <Dialog open={Boolean(qr)} onClose={() => setQr(null)} maxWidth="xs" fullWidth><DialogTitle fontWeight={900}>Acceso para firmar</DialogTitle><DialogContent><Stack alignItems="center" gap={1.5}><Alert severity="info">Este QR y enlace sirven como alternativa presencial. Los enlaces personales enviados por correo continúan funcionando de manera independiente.</Alert>{qr?.qr_data_url && <Box component="img" src={qr.qr_data_url} alt="QR alternativo para firmar" sx={{ width: 260, height: 260 }} />}<TextField fullWidth size="small" value={qr?.signing_url || ''} InputProps={{ readOnly: true }} /><Button startIcon={<ContentCopy />} onClick={() => { navigator.clipboard.writeText(qr?.signing_url || ''); enqueueSnackbar('Enlace copiado.', { variant: 'success' }); }}>Copiar enlace alternativo</Button></Stack></DialogContent><DialogActions><Button onClick={() => setQr(null)}>Cerrar</Button></DialogActions></Dialog>
     <Dialog open={confirmAdjust} onClose={() => !loading && setConfirmAdjust(false)} maxWidth="sm" fullWidth><DialogTitle fontWeight={900}>Regresar el acta a borrador</DialogTitle><DialogContent><Alert severity="warning" sx={{ mt: 1 }}>Los enlaces de firma y el QR actuales dejarán de funcionar. Después de ajustar el acta deberá habilitar y enviar nuevamente las invitaciones.</Alert></DialogContent><DialogActions><Button disabled={loading} onClick={() => setConfirmAdjust(false)}>Cancelar</Button><Button disabled={loading} onClick={reopenForEditing} color="warning" variant="contained">Regresar y editar</Button></DialogActions></Dialog>
