@@ -19,6 +19,14 @@ function PublicActaPreview({ minute }) {
   const content = minute.content || {};
   const participants = minute.preview_participants || [];
   const cell = { px: 1, py: 0.75, borderBottom: '1px solid #111', fontSize: 12 };
+  const responsablesArray = (Array.isArray(content.responsables_data) && content.responsables_data.length > 0)
+    ? content.responsables_data
+    : (typeof content.responsables === 'string' && content.responsables.trim()
+      ? content.responsables.split('\n').map((l) => l.replace(/^[•\-\*\s]+/, '').trim()).filter(Boolean).map((line, idx) => {
+        const match = line.match(/^([^(]+)(?:\((.*)\))?$/);
+        return { name: match ? match[1].trim() : line, role_title: match ? (match[2] || '').trim() : '', is_primary: idx === 0 };
+      })
+      : []);
   return <Box sx={{ mb: 3 }}>
     <Typography fontWeight={900} mb={0.5}>Acta que va a firmar</Typography>
     <Typography variant="body2" color="text.secondary" mb={1.5}>Revise el contenido completo antes de confirmar su firma.</Typography>
@@ -29,14 +37,67 @@ function PublicActaPreview({ minute }) {
           <Box sx={{ borderRight: '1px solid #111', display: 'grid', placeItems: 'center', textAlign: 'center', fontWeight: 900 }}>REGISTRO DE ASISTENCIA Y REUNIÓN</Box>
           <Box sx={{ p: 1, display: 'flex', flexDirection: 'column', justifyContent: 'center', fontWeight: 800, fontSize: 10 }}><span>CÓDIGO: {content.header?.codigo || 'COM-ID-FR-002'}</span><span>VERSIÓN: {content.header?.version || minute.version || '1'}</span><span>FECHA: {displayDate(content.fecha)}</span></Box>
         </Box>
-        <Box sx={{ ...cell, whiteSpace: 'pre-line' }}>
-          <strong>Responsable(s):</strong>{' '}
-          {content.responsables?.includes('\n') ? (
-            <Box component="span" sx={{ display: 'block', mt: 0.35, pl: 0.5 }}>
-              {content.responsables}
+        <Box sx={{ ...cell, py: 1 }}>
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 0.75 }}>
+            <strong>Responsable(s):</strong>
+            {responsablesArray.length > 1 && (
+              <Box component="span" sx={{ fontSize: 10, color: '#334155', fontWeight: 800, bgcolor: '#f1f5f9', px: 0.8, py: 0.2, borderRadius: 1 }}>
+                {responsablesArray.length} asignados
+              </Box>
+            )}
+          </Box>
+          {responsablesArray.length === 0 ? (
+            <Box sx={{ fontSize: 11, color: '#64748b', fontStyle: 'italic', pl: 0.5 }}>
+              (Sin responsables asignados)
             </Box>
           ) : (
-            content.responsables
+            <Box
+              sx={{
+                display: 'grid',
+                gridTemplateColumns: responsablesArray.length > 1 ? 'repeat(auto-fit, minmax(280px, 1fr))' : '1fr',
+                gap: 1
+              }}
+            >
+              {responsablesArray.map((r, i) => {
+                const isPrimary = Boolean(r.is_primary) || i === 0;
+                const roleOrg = [r.role_title, r.organization].filter(Boolean).join(' · ');
+                return (
+                  <Box
+                    key={i}
+                    sx={{
+                      border: '1px solid #cbd5e1',
+                      borderRadius: 1.5,
+                      bgcolor: isPrimary ? '#f8fafc' : '#ffffff',
+                      p: 0.85,
+                      borderLeft: isPrimary ? '4px solid #1e3a8a' : '4px solid #64748b'
+                    }}
+                  >
+                    <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 0.25 }}>
+                      <Box
+                        component="span"
+                        sx={{
+                          fontSize: 9.5,
+                          fontWeight: 900,
+                          textTransform: 'uppercase',
+                          letterSpacing: 0.5,
+                          color: isPrimary ? '#1e3a8a' : '#475569'
+                        }}
+                      >
+                        {isPrimary ? 'Responsable Principal' : 'Co-responsable'}
+                      </Box>
+                    </Box>
+                    <Box sx={{ fontSize: 12, fontWeight: 850, color: '#0f172a' }}>
+                      {r.name}
+                    </Box>
+                    {roleOrg && (
+                      <Box sx={{ fontSize: 10.5, color: '#475569', mt: 0.2 }}>
+                        {roleOrg}
+                      </Box>
+                    )}
+                  </Box>
+                );
+              })}
+            </Box>
           )}
         </Box>
         <Box sx={cell}><strong>Dependencia que cita:</strong> {content.dependencia}</Box>

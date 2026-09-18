@@ -74,6 +74,100 @@ const section = (title, lines) => ({
   margin: [0, 0, 0, 8]
 });
 
+const parseResponsablesList = (payload = {}) => {
+  if (Array.isArray(payload.responsables_data) && payload.responsables_data.length > 0) {
+    return payload.responsables_data;
+  }
+  if (typeof payload.responsables === 'string' && payload.responsables.trim()) {
+    const lines = payload.responsables.split('\n').map((l) => l.replace(/^[•\-\*\s]+/, '').trim()).filter(Boolean);
+    return lines.map((line, idx) => {
+      const match = line.match(/^([^(]+)(?:\((.*)\))?$/);
+      if (match) {
+        return { name: match[1].trim(), role_title: (match[2] || '').trim(), is_primary: idx === 0 };
+      }
+      return { name: line, role_title: '', is_primary: idx === 0 };
+    });
+  }
+  return [];
+};
+
+const buildResponsablesPdfContent = (payload = {}) => {
+  const list = parseResponsablesList(payload);
+  if (!list.length) {
+    return [{ text: [{ text: 'Responsable(s): ', bold: true }, { text: '(Sin asignar)', italics: true, color: '#64748b' }] }];
+  }
+
+  const cards = list.map((r, idx) => {
+    const isPrimary = Boolean(r.is_primary) || idx === 0;
+    const roleOrg = [r.role_title, r.organization].filter(Boolean).join(' · ');
+    return {
+      table: {
+        widths: ['*'],
+        body: [
+          [
+            {
+              stack: [
+                {
+                  text: isPrimary ? 'RESPONSABLE PRINCIPAL' : 'CO-RESPONSABLE',
+                  fontSize: 7,
+                  bold: true,
+                  color: isPrimary ? '#1e3a8a' : '#475569',
+                  margin: [0, 0, 0, 1.5]
+                },
+                {
+                  text: r.name || '',
+                  fontSize: 9.5,
+                  bold: true,
+                  color: '#0f172a'
+                },
+                ...(roleOrg ? [{
+                  text: roleOrg,
+                  fontSize: 8,
+                  color: '#475569',
+                  margin: [0, 1.5, 0, 0]
+                }] : [])
+              ],
+              fillColor: isPrimary ? '#f8fafc' : '#ffffff'
+            }
+          ]
+        ]
+      },
+      layout: {
+        hLineWidth: () => 0.6,
+        vLineWidth: () => 0.6,
+        hLineColor: () => '#94a3b8',
+        vLineColor: () => '#94a3b8',
+        paddingLeft: () => 6,
+        paddingRight: () => 6,
+        paddingTop: () => 3.5,
+        paddingBottom: () => 3.5
+      }
+    };
+  });
+
+  let cardLayout;
+  if (cards.length === 1) {
+    cardLayout = cards[0];
+  } else if (cards.length === 2) {
+    cardLayout = { columns: [cards[0], cards[1]], columnGap: 6, margin: [0, 2, 0, 0] };
+  } else {
+    const rows = [];
+    for (let i = 0; i < cards.length; i += 2) {
+      if (i + 1 < cards.length) {
+        rows.push({ columns: [cards[i], cards[i + 1]], columnGap: 6, margin: [0, 1.5, 0, 1.5] });
+      } else {
+        rows.push({ ...cards[i], margin: [0, 1.5, 0, 1.5] });
+      }
+    }
+    cardLayout = { stack: rows };
+  }
+
+  return [
+    { text: 'Responsable(s):', bold: true, fontSize: 9.5, margin: [0, 0, 0, 3] },
+    cardLayout
+  ];
+};
+
 const generateMeetingMinutePdf = async (payload = {}) => {
   const header = payload.header || {};
   const participants = Array.isArray(payload.participantes) ? payload.participantes : [];
@@ -96,7 +190,16 @@ const generateMeetingMinutePdf = async (payload = {}) => {
           { text: `CÓDIGO: ${header.codigo || 'COM-ID-FR-002'}\nVERSIÓN: ${header.version || '1'}\nFECHA: ${header.fecha || payload.fecha || ''}`, bold: true, fontSize: 8, margin: [2, 9, 0, 0] }
         ]] }, layout: borderLayout
       },
-      { table: { widths: ['*'], body: [[{ text: [{ text: 'Responsable(s): ', bold: true }, payload.responsables?.includes('\n') ? `\n${payload.responsables}` : (payload.responsables || '')] }], [{ text: [{ text: 'Dependencia que cita: ', bold: true }, payload.dependencia || ''] }]] }, layout: borderLayout },
+      {
+        table: {
+          widths: ['*'],
+          body: [
+            [{ stack: buildResponsablesPdfContent(payload) }],
+            [{ text: [{ text: 'Dependencia que cita: ', bold: true }, payload.dependencia || ''] }]
+          ]
+        },
+        layout: borderLayout
+      },
       { table: { widths: ['*'], body: [[{ text: 'Información de la Reunión', bold: true, alignment: 'center', fillColor: '#d9d9d9' }], [{ text: [{ text: 'Lugar: ', bold: true }, payload.lugar || ''] }]] }, layout: borderLayout },
       { table: { widths: ['*', 150], body: [[{ text: [{ text: 'Fecha: ', bold: true }, payload.fecha || ''] }, { text: [{ text: 'Horario: ', bold: true }, payload.horario || ''] }]] }, layout: borderLayout },
       {

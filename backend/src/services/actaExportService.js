@@ -156,15 +156,89 @@ const buildHeaderTable = (header = {}) => {
   });
 };
 
-const formatResponsablesRuns = (responsables) => {
-  const lines = String(responsables || '').split('\n').map((l) => l.trim()).filter(Boolean);
-  if (!lines.length) return [textRun('', { size: 20 })];
-  if (lines.length === 1) return [textRun(lines[0], { size: 20 })];
-  return lines.map((line) => new TextRun({ break: 1, text: `  ${line}`, size: 20, font: 'Arial' }));
+const parseResponsablesFromText = (responsables, responsablesData) => {
+  if (Array.isArray(responsablesData) && responsablesData.length > 0) {
+    return responsablesData;
+  }
+  if (typeof responsables === 'string' && responsables.trim()) {
+    const lines = responsables.split('\n').map((l) => l.replace(/^[•\-\*\s]+/, '').trim()).filter(Boolean);
+    return lines.map((line, idx) => {
+      const match = line.match(/^([^(]+)(?:\((.*)\))?$/);
+      if (match) {
+        return { name: match[1].trim(), role_title: (match[2] || '').trim(), is_primary: idx === 0 };
+      }
+      return { name: line, role_title: '', is_primary: idx === 0 };
+    });
+  }
+  return [];
 };
 
-const buildBasicsTable = ({ responsables, dependencia }) => {
+const buildBasicsTable = ({ responsables, responsables_data, dependencia }) => {
   const columnWidths = [CONTENT_WIDTH_TWIPS];
+  const items = parseResponsablesFromText(responsables, responsables_data);
+
+  const responsablesChildren = [
+    paragraph([textRun('Responsable(s):', { bold: true, size: 20 })], { after: items.length ? 60 : 0 })
+  ];
+
+  if (!items.length) {
+    responsablesChildren.push(
+      paragraph([textRun('(Sin asignar)', { size: 20, italics: true, color: '64748B' })])
+    );
+  } else {
+    const subRows = items.map((r, idx) => {
+      const isPrimary = Boolean(r.is_primary) || idx === 0;
+      const roleOrg = [r.role_title, r.organization].filter(Boolean).join(' · ');
+      const tag = isPrimary ? 'RESPONSABLE PRINCIPAL' : 'CO-RESPONSABLE';
+
+      return new TableRow({
+        children: [
+          new TableCell({
+            width: { size: CONTENT_WIDTH_TWIPS - 240, type: WidthType.DXA },
+            shading: { type: ShadingType.CLEAR, color: 'auto', fill: isPrimary ? 'F8FAFC' : 'FFFFFF' },
+            borders: {
+              top: { style: BorderStyle.SINGLE, size: 4, color: '94A3B8' },
+              bottom: { style: BorderStyle.SINGLE, size: 4, color: '94A3B8' },
+              left: { style: BorderStyle.SINGLE, size: isPrimary ? 16 : 8, color: isPrimary ? '1E3A8A' : '64748B' },
+              right: { style: BorderStyle.SINGLE, size: 4, color: '94A3B8' }
+            },
+            children: [
+              paragraph([
+                textRun(tag, { bold: true, size: 16, color: isPrimary ? '1E3A8A' : '475569' })
+              ], { before: 40, after: 20, indent: 80 }),
+              paragraph([
+                textRun(r.name || '', { bold: true, size: 20, color: '0F172A' })
+              ], { before: 0, after: roleOrg ? 20 : 40, indent: 80 }),
+              ...(roleOrg ? [
+                paragraph([
+                  textRun(roleOrg, { size: 18, color: '475569' })
+                ], { before: 0, after: 40, indent: 80 })
+              ] : [])
+            ]
+          })
+        ]
+      });
+    });
+
+    const subTable = new Table({
+      width: { size: CONTENT_WIDTH_TWIPS - 240, type: WidthType.DXA },
+      layout: TableLayoutType.FIXED,
+      columnWidths: [CONTENT_WIDTH_TWIPS - 240],
+      borders: {
+        top: { style: BorderStyle.NONE },
+        bottom: { style: BorderStyle.NONE },
+        left: { style: BorderStyle.NONE },
+        right: { style: BorderStyle.NONE },
+        insideHorizontal: { style: BorderStyle.NONE },
+        insideVertical: { style: BorderStyle.NONE }
+      },
+      rows: subRows
+    });
+
+    responsablesChildren.push(subTable);
+    responsablesChildren.push(paragraph([], { after: 30 }));
+  }
+
   return buildTable({
     columnWidths,
     rows: [
@@ -173,12 +247,7 @@ const buildBasicsTable = ({ responsables, dependencia }) => {
         children: [
           cell({
             width: columnWidths[0],
-            children: [
-              paragraph([
-                textRun('Responsable(s): ', { bold: true, size: 20 }),
-                ...formatResponsablesRuns(responsables)
-              ])
-            ]
+            children: responsablesChildren
           })
         ]
       }),
@@ -479,6 +548,7 @@ const spacerParagraph = () => new Paragraph({ spacing: { before: 0, after: 0, li
 const buildActaDocument = (payload = {}) => {
   const {
     responsables = '',
+    responsables_data = [],
     dependencia = '',
     lugar = '',
     fecha = '',
@@ -492,7 +562,7 @@ const buildActaDocument = (payload = {}) => {
 
   const children = [
     buildHeaderTable(header),
-    buildBasicsTable({ responsables, dependencia }),
+    buildBasicsTable({ responsables, responsables_data, dependencia }),
     buildInformacionReunionTable({ lugar, fecha, horario }),
     buildParticipantesTable(participantes),
     buildBlockTable('Objetivo', objetivo),

@@ -33,3 +33,24 @@ test('exporta contenido enriquecido y tablas del acta', async () => {
   assert.ok(Buffer.isBuffer(buffer));
   assert.ok(buffer.length > 1500);
 });
+
+test('genera el documento Word con múltiples responsables en cuadros estructurados', async () => {
+  const buffer = await generateActaBuffer({
+    header: { codigo: 'COM-ID-FR-002', version: '1', fecha: '18/09/2026' },
+    responsables_data: [
+      { name: 'Dr. Principal', role_title: 'Director de Calidad', organization: 'Vicerrectoría', is_primary: true },
+      { name: 'Dra. Adjunta', role_title: 'Coordinadora de Procesos', organization: 'Planeación', is_primary: false }
+    ],
+    dependencia: 'Vicerrectoría de Aseguramiento',
+    participantes: [
+      { nombre: 'Dr. Principal', cargo: 'Director de Calidad', firma: 'Firmado' },
+      { nombre: 'Dra. Adjunta', cargo: 'Coordinadora de Procesos', firma: 'Firmado' },
+      { nombre: 'Invitado Externo', cargo: 'Asesor', firma: 'Pendiente' }
+    ],
+    objetivo: ['Revisión institucional'],
+    desarrollo: ['Desarrollo de puntos'],
+    conclusiones: ['Compromisos acordados']
+  });
+  assert.ok(Buffer.isBuffer(buffer));
+  assert.ok(buffer.length > 1500);
+});

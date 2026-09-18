@@ -106,6 +106,15 @@ const MeetingPreview = ({ document, form, signatures = [] }) => {
   const signed = new Set(signatures.map((signature) => String(signature.participant_id)));
   const signatureByParticipant = new Map(signatures.map((signature) => [String(signature.participant_id), signature]));
   const cell = { px: 0.8, py: 0.65, borderBottom: '1px solid #111', fontSize: 11.5 };
+  const responsablesArray = (Array.isArray(form.responsables_data) && form.responsables_data.length > 0)
+    ? form.responsables_data
+    : (typeof form.responsables === 'string' && form.responsables.trim()
+      ? form.responsables.split('\n').map((l) => l.replace(/^[•\-\*\s]+/, '').trim()).filter(Boolean).map((line, idx) => {
+        const match = line.match(/^([^(]+)(?:\((.*)\))?$/);
+        return { name: match ? match[1].trim() : line, role_title: match ? (match[2] || '').trim() : '', is_primary: idx === 0 };
+      })
+      : []);
+
   return (
     <Box sx={{ border: '1px solid #111', bgcolor: '#fff', color: '#111', fontFamily: 'Arial, sans-serif', minWidth: 650 }}>
       <Box sx={{ display: 'grid', gridTemplateColumns: '22% 56% 22%', minHeight: 82, borderBottom: '1px solid #111' }}>
@@ -115,14 +124,67 @@ const MeetingPreview = ({ document, form, signatures = [] }) => {
           <span>CÓDIGO: {document?.codigo || 'COM-ID-FR-002'}</span><span>VERSIÓN: {document?.version || '1'}</span><span>FECHA: {formatDate(form.fecha)}</span>
         </Box>
       </Box>
-      <Box sx={{ ...cell, whiteSpace: 'pre-line' }}>
-        <strong>Responsable(s):</strong>{' '}
-        {form.responsables?.includes('\n') ? (
-          <Box component="span" sx={{ display: 'block', mt: 0.35, pl: 0.5 }}>
-            {form.responsables}
+      <Box sx={{ ...cell, py: 1 }}>
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 0.75 }}>
+          <strong>Responsable(s):</strong>
+          {responsablesArray.length > 1 && (
+            <Box component="span" sx={{ fontSize: 10, color: '#334155', fontWeight: 800, bgcolor: '#f1f5f9', px: 0.8, py: 0.2, borderRadius: 1 }}>
+              {responsablesArray.length} asignados
+            </Box>
+          )}
+        </Box>
+        {responsablesArray.length === 0 ? (
+          <Box sx={{ fontSize: 11, color: '#64748b', fontStyle: 'italic', pl: 0.5 }}>
+            (Sin responsables asignados)
           </Box>
         ) : (
-          form.responsables
+          <Box
+            sx={{
+              display: 'grid',
+              gridTemplateColumns: responsablesArray.length > 1 ? 'repeat(auto-fit, minmax(280px, 1fr))' : '1fr',
+              gap: 1
+            }}
+          >
+            {responsablesArray.map((r, i) => {
+              const isPrimary = Boolean(r.is_primary) || i === 0;
+              const roleOrg = [r.role_title, r.organization].filter(Boolean).join(' · ');
+              return (
+                <Box
+                  key={i}
+                  sx={{
+                    border: '1px solid #cbd5e1',
+                    borderRadius: 1.5,
+                    bgcolor: isPrimary ? '#f8fafc' : '#ffffff',
+                    p: 0.85,
+                    borderLeft: isPrimary ? '4px solid #1e3a8a' : '4px solid #64748b'
+                  }}
+                >
+                  <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 0.25 }}>
+                    <Box
+                      component="span"
+                      sx={{
+                        fontSize: 9.5,
+                        fontWeight: 900,
+                        textTransform: 'uppercase',
+                        letterSpacing: 0.5,
+                        color: isPrimary ? '#1e3a8a' : '#475569'
+                      }}
+                    >
+                      {isPrimary ? 'Responsable Principal' : 'Co-responsable'}
+                    </Box>
+                  </Box>
+                  <Box sx={{ fontSize: 11.5, fontWeight: 850, color: '#0f172a' }}>
+                    {r.name}
+                  </Box>
+                  {roleOrg && (
+                    <Box sx={{ fontSize: 10.5, color: '#475569', mt: 0.2 }}>
+                      {roleOrg}
+                    </Box>
+                  )}
+                </Box>
+              );
+            })}
+          </Box>
         )}
       </Box>
       <Box sx={cell}><strong>Dependencia que cita:</strong> {form.dependencia}</Box>
@@ -810,17 +872,6 @@ export default function MeetingMinuteFormDialog({ open, document, user, onClose 
                   )}
                 </Box>
 
-                <TextField
-                  disabled={locked}
-                  fullWidth
-                  multiline
-                  maxRows={3}
-                  label="Responsable(s) en formato institucional"
-                  value={form.responsables}
-                  InputProps={{ readOnly: true }}
-                  helperText={responsablesList.length > 1 ? `${responsablesList.length} responsables listados con su cargo.` : (form.responsable_role || 'Se genera automáticamente con los responsables agregados.')}
-                  sx={{ gridColumn: '1 / -1' }}
-                />
                 <TextField disabled={locked} fullWidth label="Dependencia que cita *" value={form.dependencia} onChange={(e) => setField('dependencia', e.target.value)} helperText="Asignada desde el responsable principal o editable si es conjunta." />
                 <Autocomplete freeSolo disabled={locked} options={MEETING_PLACES} value={form.lugar || ''} onChange={(_, value) => setField('lugar', value || '')} onInputChange={(_, value) => setField('lugar', value)} renderInput={(params) => <TextField {...params} fullWidth label="Lugar" helperText="Seleccione una opción o escriba otro lugar." />} />
                 <TextField disabled={locked} fullWidth type="date" InputLabelProps={{ shrink: true }} label="Fecha" value={form.fecha} onChange={(e) => setField('fecha', e.target.value)} />
