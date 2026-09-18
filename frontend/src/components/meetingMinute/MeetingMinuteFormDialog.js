@@ -358,34 +358,27 @@ export default function MeetingMinuteFormDialog({ open, document, user, onClose 
                   <Typography fontWeight={900}>Actas de reunión</Typography>
                   <Typography variant="body2" color="text.secondary">Cree una nueva o continúe un borrador anterior. Este flujo no modifica los Planes de Acción.</Typography>
                 </Box>
-                <Stack direction="row" alignItems="center" gap={1} flexWrap="wrap">
+                <Stack direction="row" alignItems="center" gap={1}>
                   <Button variant="outlined" onClick={() => { setForm(emptyForm(user)); setSignatures([]); setQr(null); setResponsibleDocument(''); setResponsibleCandidate(null); setExternalMode(false); }} sx={{ textTransform: 'none', fontWeight: 800 }}>Nueva acta</Button>
-                  {layoutMode === 'split' ? (
-                    <Tooltip title="Ocultar vista previa y expandir formulario a pantalla completa">
-                      <Button
-                        size="small"
-                        variant="contained"
-                        color="inherit"
-                        startIcon={<ArrowBack />}
-                        onClick={() => setLayoutMode('form')}
-                        sx={{ textTransform: 'none', fontWeight: 800, bgcolor: '#e2e8f0', color: '#1e293b', '&:hover': { bgcolor: '#cbd5e1' } }}
-                      >
-                        Expandir formulario
-                      </Button>
-                    </Tooltip>
-                  ) : (
-                    <Tooltip title="Restaurar vista dividida (50/50)">
-                      <Button
-                        size="small"
-                        variant="outlined"
-                        startIcon={<ViewSidebar />}
-                        onClick={() => setLayoutMode('split')}
-                        sx={{ textTransform: 'none', fontWeight: 800 }}
-                      >
-                        Dividir pantalla
-                      </Button>
-                    </Tooltip>
-                  )}
+                  <Tooltip title={layoutMode === 'split' ? 'Expandir formulario a pantalla completa' : 'Restaurar vista dividida (50/50)'}>
+                    <IconButton
+                      size="small"
+                      onClick={() => setLayoutMode(layoutMode === 'split' ? 'form' : 'split')}
+                      sx={{
+                        bgcolor: layoutMode === 'form' ? '#0f3a68' : '#e2e8f0',
+                        color: layoutMode === 'form' ? '#fff' : '#1e293b',
+                        border: '1px solid #cbd5e1',
+                        borderRadius: 2,
+                        width: 36,
+                        height: 36,
+                        '&:hover': {
+                          bgcolor: layoutMode === 'form' ? '#0b2b4d' : '#cbd5e1'
+                        }
+                      }}
+                    >
+                      {layoutMode === 'split' ? <ArrowBack fontSize="small" /> : <ArrowForward fontSize="small" />}
+                    </IconButton>
+                  </Tooltip>
                 </Stack>
               </Stack>
               <TextField fullWidth select size="small" label="Abrir un acta guardada" value={form.id} onChange={(event) => openMinute(event.target.value)}><MenuItem value="">Nueva acta</MenuItem>{minutes.map((minute) => <MenuItem key={minute.id} value={minute.id}>{minute.code} · {minute.content?.fecha || 'Sin fecha'} · {{ draft: 'Borrador', signing: 'En firmas', signed: 'Firmada', distributed: 'Enviada' }[minute.status] || minute.status}</MenuItem>)}</TextField>
@@ -453,33 +446,28 @@ export default function MeetingMinuteFormDialog({ open, document, user, onClose 
           >
             <Box sx={{ mb: 2, pb: 2, borderBottom: '1px solid #e2e8f0', flexShrink: 0 }}>
               <Stack direction="row" justifyContent="space-between" alignItems="center" mb={1.5}>
-                <Typography fontWeight={900}>Vista previa del acta</Typography>
-                {layoutMode === 'split' ? (
-                  <Tooltip title="Ocultar formulario y expandir vista previa a pantalla completa">
-                    <Button
+                <Stack direction="row" alignItems="center" gap={1}>
+                  <Tooltip title={layoutMode === 'split' ? 'Expandir vista previa a pantalla completa' : 'Restaurar vista dividida (50/50)'}>
+                    <IconButton
                       size="small"
-                      variant="contained"
-                      color="inherit"
-                      endIcon={<ArrowForward />}
-                      onClick={() => setLayoutMode('preview')}
-                      sx={{ textTransform: 'none', fontWeight: 800, bgcolor: '#e2e8f0', color: '#1e293b', '&:hover': { bgcolor: '#cbd5e1' } }}
+                      onClick={() => setLayoutMode(layoutMode === 'split' ? 'preview' : 'split')}
+                      sx={{
+                        bgcolor: layoutMode === 'preview' ? '#0f3a68' : '#e2e8f0',
+                        color: layoutMode === 'preview' ? '#fff' : '#1e293b',
+                        border: '1px solid #cbd5e1',
+                        borderRadius: 2,
+                        width: 36,
+                        height: 36,
+                        '&:hover': {
+                          bgcolor: layoutMode === 'preview' ? '#0b2b4d' : '#cbd5e1'
+                        }
+                      }}
                     >
-                      Expandir vista previa
-                    </Button>
+                      {layoutMode === 'split' ? <ArrowForward fontSize="small" /> : <ArrowBack fontSize="small" />}
+                    </IconButton>
                   </Tooltip>
-                ) : (
-                  <Tooltip title="Restaurar vista dividida (50/50)">
-                    <Button
-                      size="small"
-                      variant="outlined"
-                      startIcon={<ViewSidebar />}
-                      onClick={() => setLayoutMode('split')}
-                      sx={{ textTransform: 'none', fontWeight: 800 }}
-                    >
-                      Dividir pantalla
-                    </Button>
-                  </Tooltip>
-                )}
+                  <Typography fontWeight={900}>Vista previa del acta</Typography>
+                </Stack>
               </Stack>
               <Box
                 sx={{
