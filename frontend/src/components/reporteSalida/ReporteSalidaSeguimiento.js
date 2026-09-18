@@ -180,6 +180,20 @@ const formatDateTime = (value) => {
   return date.toLocaleString('es-CO', { dateStyle: 'short', timeStyle: 'short' });
 };
 
+const CARGO_SUBTYPES = [
+  'practica_integral_movilidad',
+  'ponencia',
+  'visita_ies',
+  'capacitacion',
+  'proyecto_investigacion',
+  'asistente_congreso',
+  'practica_academica',
+  'proyeccion_social',
+  'torneo_deportivo',
+  'otra'
+];
+const isCargoSubtype = (t = '') => CARGO_SUBTYPES.includes(t) || String(t).startsWith('otra:');
+
 const getDocumentoYDuracionInfo = (row = {}) => {
   const salida = row?.datos_formulario?.salida || {};
   const categoria = salida.categoria || salida.category || '';
@@ -187,10 +201,12 @@ const getDocumentoYDuracionInfo = (row = {}) => {
   const duracionTipo = salida.duracionTipo;
   const duracionDias = salida.duracionDias;
 
-  // Lógica oficial: Es Oficio cuando es actividad propia del cargo / proyección social fuera de campus y duración de 1 o más días
-  const isOficio = (categoria === 'propias_cargo' || tipo === 'proyeccion_social')
-    && tipo !== 'salida_campus'
-    && (duracionTipo ? duracionTipo !== 'menos_media_jornada' : (duracionDias >= 1 || (row.tiempo_solicitado_minutos && row.tiempo_solicitado_minutos >= 480)));
+  const isCargo = (categoria === 'propias_cargo' || isCargoSubtype(tipo)) && tipo !== 'salida_campus';
+  const isOficio = isCargo && (
+    duracionTipo
+      ? duracionTipo !== 'menos_media_jornada'
+      : (Number(duracionDias) >= 1 || (salida.fechaRegreso && salida.fechaRegreso !== salida.fecha) || (row.tiempo_solicitado_minutos && row.tiempo_solicitado_minutos >= 480))
+  );
 
   const docTipoLabel = isOficio ? 'Oficio' : 'Formato FR-002';
 

@@ -1195,16 +1195,33 @@ const isInvestigacionSolicitud = (solicitud = {}) => {
   return isInvestigacionVicerrectoria(getSolicitudVicerrectoria(solicitud));
 };
 
+const PROPIAS_CARGO_SUBTYPES = [
+  'practica_integral_movilidad',
+  'ponencia',
+  'visita_ies',
+  'capacitacion',
+  'proyecto_investigacion',
+  'asistente_congreso',
+  'practica_academica',
+  'proyeccion_social',
+  'torneo_deportivo',
+  'otra'
+];
+const isPropiasCargoSubtype = (t = '') => PROPIAS_CARGO_SUBTYPES.includes(t) || String(t).startsWith('otra:');
+
 const isOficioSolicitud = (solicitud = {}) => {
   const salida = getSolicitudSalida(solicitud);
+  if (salida.tipo === 'salida_campus') return false;
   const categoria = salida.categoria || salida.category;
+  const isCargo = categoria === 'propias_cargo' || isPropiasCargoSubtype(salida.tipo);
+  if (!isCargo) return false;
   const duracionTipo = salida.duracionTipo;
-  return Boolean(
-    categoria === 'propias_cargo' &&
-    salida.tipo !== 'salida_campus' &&
-    duracionTipo &&
-    duracionTipo !== 'menos_media_jornada'
-  );
+  if (duracionTipo === 'menos_media_jornada') return false;
+  if (duracionTipo === '1_2_dias' || duracionTipo === '3_mas_dias') return true;
+  if (salida.duracionDias && Number(salida.duracionDias) >= 1) return true;
+  if (salida.fechaRegreso && salida.fechaRegreso !== salida.fecha) return true;
+  if (solicitud.tiempo_solicitado_minutos && Number(solicitud.tiempo_solicitado_minutos) >= 480) return true;
+  return false;
 };
 
 const isPermisoElectoralSinVicerrectoria = (solicitud = {}) => {
@@ -2519,10 +2536,12 @@ const buildTerapiasHtml = (solicitud) => {
 
 const getReporteSalidaEmailLabel = (solicitud) => {
   if (!isOficioSolicitud(solicitud)) return 'REPORTE DE SALIDA';
-  const duracionTipo = solicitud.datos_formulario?.salida?.duracionTipo;
-  if (duracionTipo === '1_2_dias') return 'OFICIO DE SOLICITUD DE SALIDA - 1 O 2 DIAS';
-  if (duracionTipo === '3_mas_dias') return 'OFICIO DE SOLICITUD DE SALIDA - 3 O MAS DIAS';
-  return 'REPORTE DE SALIDA';
+  const salida = getSolicitudSalida(solicitud);
+  const duracionTipo = salida?.duracionTipo;
+  const duracionDias = Number(salida?.duracionDias || 0);
+  if (duracionTipo === '3_mas_dias' || duracionDias >= 3) return 'OFICIO DE SOLICITUD DE SALIDA - 3 O MAS DIAS';
+  if (duracionTipo === '1_2_dias' || duracionDias >= 1) return 'OFICIO DE SOLICITUD DE SALIDA - 1 O 2 DIAS';
+  return 'OFICIO DE SOLICITUD DE SALIDA';
 };
 
 const getThreadHeadersFromId = (threadId) =>

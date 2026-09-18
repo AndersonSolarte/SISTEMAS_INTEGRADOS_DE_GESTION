@@ -359,7 +359,16 @@ const getTipoSalidaLabel = (tipo) => {
     comisiones_sindicales: 'Permiso: Comisiones sindicales',
     obligaciones_escolares: 'Permiso: Obligaciones escolares',
     citaciones_judiciales: 'Permiso: Citaciones judiciales, administrativas y de policía',
-    cuidado_hijo_ley_2174: 'Permiso: Cuidado de hijo(a) - Ley 2174 de 2021'
+    cuidado_hijo_ley_2174: 'Permiso: Cuidado de hijo(a) - Ley 2174 de 2021',
+    practica_integral_movilidad: 'Práctica integral y movilidad académica',
+    ponencia: 'Ponencia en evento académico / científico',
+    visita_ies: 'Visita técnica a IES o entidad',
+    capacitacion: 'Capacitación o formación docente/administrativa',
+    proyecto_investigacion: 'Proyecto de investigación o trabajo de campo',
+    asistente_congreso: 'Asistencia a congreso, seminario o simposio',
+    practica_academica: 'Práctica académica de campo con estudiantes',
+    torneo_deportivo: 'Participación en torneo deportivo o cultural',
+    salida_campus: 'Salida o traslado entre sedes/campus'
   };
   if (!tipo) return '';
   if (mapping[tipo]) return mapping[tipo];
@@ -633,6 +642,83 @@ const PDF_FONTS = {
   [PDF_FONT_FAMILY]: PDF_FONT_FILES
 };
 
+const PROPIAS_CARGO_SUBTYPES = [
+  'practica_integral_movilidad',
+  'ponencia',
+  'visita_ies',
+  'capacitacion',
+  'proyecto_investigacion',
+  'asistente_congreso',
+  'practica_academica',
+  'proyeccion_social',
+  'torneo_deportivo',
+  'otra'
+];
+
+const isPropiasCargoSubtype = (t = '') =>
+  PROPIAS_CARGO_SUBTYPES.includes(t) || String(t).startsWith('otra:');
+
+const isOficioSalida = (salida = {}, solicitud = {}) => {
+  if (salida.tipo === 'salida_campus') return false;
+  const categoria = salida.categoria || salida.category;
+  const isCargo = categoria === 'propias_cargo' || isPropiasCargoSubtype(salida.tipo);
+  if (!isCargo) return false;
+  const duracionTipo = salida.duracionTipo;
+  if (duracionTipo === 'menos_media_jornada') return false;
+  if (duracionTipo === '1_2_dias' || duracionTipo === '3_mas_dias') return true;
+  if (salida.duracionDias && Number(salida.duracionDias) >= 1) return true;
+  if (salida.fechaRegreso && salida.fechaRegreso !== salida.fecha) return true;
+  if (solicitud.tiempo_solicitado_minutos && Number(solicitud.tiempo_solicitado_minutos) >= 480) return true;
+  return false;
+};
+
+const getOficioDuracionInfo = (salida = {}, solicitud = {}) => {
+  const duracionTipo = salida.duracionTipo;
+  const duracionDias = Number(salida.duracionDias || 0);
+
+  if (duracionTipo === '3_mas_dias' || duracionDias >= 3) {
+    return {
+      codigo: '3_mas_dias',
+      label: duracionDias >= 3 ? `3 o más días (${duracionDias} días)` : '3 o más días',
+      tipoDocumento: 'Oficio de Solicitud (3 o más días)',
+      instancia: 'Aprobación: Jefe Inmediato -> Vicerrectoría -> Rectoría / Gestión Humana'
+    };
+  }
+  if (duracionTipo === '1_2_dias' || duracionDias >= 1) {
+    return {
+      codigo: '1_2_dias',
+      label: duracionDias >= 1 ? `Entre 1 y 2 días (${duracionDias} ${duracionDias === 1 ? 'día' : 'días'})` : 'Entre 1 y 2 días',
+      tipoDocumento: 'Oficio de Solicitud (1 o 2 días)',
+      instancia: 'Aprobación: Jefe Inmediato -> Vicerrectoría / Gestión Humana'
+    };
+  }
+  if (salida.fechaRegreso && salida.fecha && salida.fechaRegreso !== salida.fecha) {
+    return {
+      codigo: '1_2_dias',
+      label: 'Más de 1 día (Fechas extendidas)',
+      tipoDocumento: 'Oficio de Solicitud (1 o 2 días)',
+      instancia: 'Aprobación: Jefe Inmediato -> Vicerrectoría / Gestión Humana'
+    };
+  }
+  if (solicitud.tiempo_solicitado_minutos && Number(solicitud.tiempo_solicitado_minutos) >= 480) {
+    const dias = Math.round(Number(solicitud.tiempo_solicitado_minutos) / 480);
+    return {
+      codigo: dias >= 3 ? '3_mas_dias' : '1_2_dias',
+      label: `${dias} día(s)`,
+      tipoDocumento: `Oficio de Solicitud (${dias >= 3 ? '3 o más días' : '1 o 2 días'})`,
+      instancia: dias >= 3
+        ? 'Aprobación: Jefe Inmediato -> Vicerrectoría -> Rectoría / Gestión Humana'
+        : 'Aprobación: Jefe Inmediato -> Vicerrectoría / Gestión Humana'
+    };
+  }
+  return {
+    codigo: 'oficio',
+    label: 'Oficio institucional por días',
+    tipoDocumento: 'Oficio de Solicitud',
+    instancia: 'Aprobación: Flujo institucional según duración'
+  };
+};
+
 const buildOficioPdfDefinition = (solicitud, ghDirectorNombre, ghDirectorCargo) => {
   const data = solicitud?.datos_formulario || {};
   const solicitante = solicitud?.solicitante_snapshot || {};
@@ -675,17 +761,17 @@ const buildOficioPdfDefinition = (solicitud, ghDirectorNombre, ghDirectorCargo) 
   const rectoriaDate = rectoriaDateValue ? formatDateTime(rectoriaDateValue) : 'Pendiente';
   const ghDate = ghDateValue ? formatDateTime(ghDateValue) : 'Pendiente';
 
-  const isPropiasCargoSubtype = ['practica_integral_movilidad', 'ponencia', 'visita_ies', 'capacitacion', 'proyecto_investigacion', 'asistente_congreso', 'practica_academica', 'proyeccion_social', 'torneo_deportivo', 'salida_campus', 'otra'].includes(salida.tipo) || String(salida.tipo).startsWith('otra:');
-  const isPropiasCargo = salida.categoria === 'propias_cargo' && salida.tipo !== 'salida_campus';
-  const alcance = isPropiasCargo ? (salida.alcance || 'Local') : 'Local';
-  const requiresSst = isPropiasCargoSubtype && ['Nacional', 'Internacional'].includes(alcance);
+  const duracionInfo = getOficioDuracionInfo(salida, solicitud);
+  const isCargo = (salida.categoria === 'propias_cargo' || isPropiasCargoSubtype(salida.tipo)) && salida.tipo !== 'salida_campus';
+  const alcance = isCargo ? (salida.alcance || 'Local') : 'Local';
+  const requiresSst = (isCargo || isPropiasCargoSubtype(salida.tipo)) && ['Nacional', 'Internacional'].includes(alcance);
   const hasVicerrectoriaApproval = Boolean(vicerrectoriaDateValue);
   const hasRectoriaApproval = Boolean(rectoriaDateValue);
   const vicerrectoriaName = laboral.vicerrectoria || solicitante.vicerrectoria || 'Vicerrectoria';
   const normalizedVicerrectoria = stripAccents(vicerrectoriaName).toLowerCase();
   const isRectoriaAuthority = normalizedVicerrectoria.includes('rectoria') && !normalizedVicerrectoria.includes('vicerrectoria') && !normalizedVicerrectoria.includes('vicerectoria');
-  const isOneOrTwoDaysOficio = isPropiasCargo && salida.duracionTipo === '1_2_dias';
-  const isThreeOrMoreDaysOficio = isPropiasCargo && salida.duracionTipo === '3_mas_dias';
+  const isOneOrTwoDaysOficio = duracionInfo.codigo === '1_2_dias';
+  const isThreeOrMoreDaysOficio = duracionInfo.codigo === '3_mas_dias';
   const requiresVicerrectoriaSignature = (isOneOrTwoDaysOficio || isThreeOrMoreDaysOficio) && !isRectoriaAuthority;
   const requiresRectoriaSignature = hasRectoriaApproval || (isRectoriaAuthority && !isThreeOrMoreDaysOficio);
 
@@ -999,9 +1085,17 @@ const buildOficioPdfDefinition = (solicitud, ghDirectorNombre, ghDirectorCargo) 
     `• Hora estimada de retorno: ${salida.horaFin || ''}\n\n` +
     `Agradezco su atención y el apoyo brindado para el desarrollo de esta actividad, la cual contribuye al fortalecimiento de los procesos de interacción social, participación comunitaria y construcción de tejido social en el territorio.`;
 
-  const finalOficioAsunto = isProyeccionSocial ? (salida.oficioAsunto || defaultPSAsunto) : (salida.oficioAsunto || '');
+  const defaultPSAsunto = 'Solicitud de autorización para salida institucional de Proyección Social';
+  const defaultOficioAsunto = `SOLICITUD DE AUTORIZACIÓN DE SALIDA - ${duracionInfo.tipoDocumento.toUpperCase()}`;
+  const finalOficioAsunto = salida.oficioAsunto || (isProyeccionSocial ? defaultPSAsunto : defaultOficioAsunto);
+  const defaultOficioCuerpo = `Por medio de la presente me permito solicitar formalmente la debida autorización para la salida institucional con motivo de ${salida.motivo || getTipoSalidaLabel(salida.tipo) || 'actividades inherentes al cargo'}.\n\n` +
+    `Información logística de la comisión:\n` +
+    `• Fecha(s): ${salida.fecha || ''}${salida.fechaRegreso && salida.fechaRegreso !== salida.fecha ? ` al ${salida.fechaRegreso}` : ''}\n` +
+    `• Horario: ${salida.horaInicio || ''} - ${salida.horaFin || ''}\n` +
+    `• Alcance / Lugar: ${salida.alcance || 'Local'}${salida.municipio ? ` (${salida.municipio})` : ''}${salida.entidadDestino ? ` - ${salida.entidadDestino}` : ''}\n\n` +
+    `Agradezco su atención y trámite correspondiente para la presente comisión.`;
   const finalOficioSaludo = isProyeccionSocial ? 'Estimada Dra. Sandra,\n\nReciba un cordial saludo de Paz y Bien.' : 'Paz y bien:';
-  const finalOficioCuerpo = isProyeccionSocial ? (salida.oficioCuerpo || defaultPSCuerpo) : (salida.oficioCuerpo || '');
+  const finalOficioCuerpo = salida.oficioCuerpo || (isProyeccionSocial ? defaultPSCuerpo : defaultOficioCuerpo);
   const finalOficioDespedida = isProyeccionSocial ? (salida.oficioDespedida || 'Fraternalmente,') : (salida.oficioDespedida || 'Cordialmente,');
 
   const docentesRows = [];
@@ -1076,6 +1170,56 @@ const buildOficioPdfDefinition = (solicitud, ghDirectorNombre, ghDirectorCargo) 
       },
       
       { text: `Asunto: ${finalOficioAsunto}`, bold: true, margin: [0, 0, 0, 10] },
+
+      {
+        table: {
+          widths: ['28%', '72%'],
+          body: [
+            [
+              {
+                text: `EXTRACTO DE SOLICITUD - ${duracionInfo.tipoDocumento.toUpperCase()}`,
+                bold: true,
+                fontSize: 8.5,
+                fillColor: '#f1f5f9',
+                colSpan: 2,
+                alignment: 'center'
+              },
+              {}
+            ],
+            [
+              { text: 'Documento entregable:', bold: true, fontSize: 8 },
+              { text: duracionInfo.tipoDocumento, fontSize: 8 }
+            ],
+            [
+              { text: 'Duración seleccionada:', bold: true, fontSize: 8 },
+              { text: `${duracionInfo.label}${salida.duracionDias ? ` (${salida.duracionDias} día(s) calendario)` : ''}`, fontSize: 8, bold: true }
+            ],
+            [
+              { text: 'Motivo / Actividad:', bold: true, fontSize: 8 },
+              { text: salida.motivo || getTipoSalidaLabel(salida.tipo), fontSize: 8 }
+            ],
+            [
+              { text: 'Lugar / Destino:', bold: true, fontSize: 8 },
+              { text: `${salida.alcance || 'Local'}${salida.municipio ? ` (${salida.municipio})` : ''}${salida.entidadDestino ? ` - ${salida.entidadDestino}` : ''}`, fontSize: 8 }
+            ],
+            [
+              { text: 'Flujo de aprobación:', bold: true, fontSize: 7.5 },
+              { text: duracionInfo.instancia, fontSize: 7.5, color: '#334155' }
+            ]
+          ]
+        },
+        layout: {
+          hLineWidth: () => 0.5,
+          vLineWidth: () => 0.5,
+          hLineColor: () => '#cbd5e1',
+          vLineColor: () => '#cbd5e1',
+          paddingLeft: () => 6,
+          paddingRight: () => 6,
+          paddingTop: () => 3,
+          paddingBottom: () => 3
+        },
+        margin: [0, 0, 0, 10]
+      },
       
       { text: finalOficioSaludo, bold: true, margin: [0, 0, 0, 8] },
       
@@ -1174,7 +1318,7 @@ const buildPdfBuffer = async (solicitud) => {
       const data = solicitud?.datos_formulario || {};
       const salida = data.salida || {};
 
-      const isPropiasCargoOficio = (salida.categoria === 'propias_cargo' || salida.tipo === 'proyeccion_social') && salida.tipo !== 'salida_campus' && salida.duracionTipo && salida.duracionTipo !== 'menos_media_jornada';
+      const isPropiasCargoOficio = isOficioSalida(salida, solicitud);
       if (isPropiasCargoOficio) {
         const docDefinition = sanitizePdfDefinition(buildOficioPdfDefinition(solicitud, ghDirectorNombre, ghDirectorCargo));
         const pdfDoc = printer.createPdfKitDocument(docDefinition);
@@ -1334,6 +1478,18 @@ const buildPdfBuffer = async (solicitud) => {
                   { text: ubicacionStr },
                   { text: 'Categoría:', bold: true },
                   { text: getTipoSalidaLabel(salida.tipo) }
+                ]);
+                const duracionLabelFR002 = salida.duracionTipo === 'menos_media_jornada'
+                  ? 'Menos de media jornada (Formato digital THM-DP-FR-002)'
+                  : (salida.duracionTipo === '1_2_dias'
+                    ? `Entre 1 y 2 días (${salida.duracionDias || 1} día(s))`
+                    : (salida.duracionTipo === '3_mas_dias'
+                      ? `3 o más días (${salida.duracionDias || 3} días)`
+                      : (salida.duracionDias ? `${salida.duracionDias} día(s)` : 'Menos de media jornada')));
+                tableBody.push([
+                  { text: 'Duración / Tipo:', bold: true },
+                  { text: duracionLabelFR002, colSpan: 3 },
+                  {}, {}
                 ]);
                 if (entidadDestinoStr) {
                   tableBody.push([
@@ -1939,7 +2095,7 @@ const ensureReporteSalidaPdf = async (solicitud, docxAttachment = null) => {
   await fs.promises.mkdir(outDir, { recursive: true });
   
   const data = solicitud.datos_formulario || {};
-  const isOficio = data.salida?.categoria === 'propias_cargo' && data.salida?.tipo !== 'salida_campus' && data.salida?.duracionTipo && data.salida?.duracionTipo !== 'menos_media_jornada';
+  const isOficio = isOficioSalida(data.salida || {}, solicitud);
   const docType = isOficio ? 'Oficio-Salida' : 'FR-002-digital';
   
   const filename = `REPORTE-SALIDA-${String(solicitud.consecutivo || solicitud.id).replace(/[^a-zA-Z0-9_-]/g, '_')}-${docType}.pdf`;
