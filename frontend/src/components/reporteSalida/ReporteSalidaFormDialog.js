@@ -1265,7 +1265,11 @@ function ReporteSalidaFormDialog({ open, documento, user, onClose, onSubmitted }
   }, [form.salida.fecha, form.salida.fechaRegreso, form.salida.horaInicio]);
   const reposicionHasAnyValue = Boolean(form.reposicion.fecha || form.reposicion.fechaFin || form.reposicion.horaInicio || form.reposicion.horaFin);
   const reposicionPlanComplete = Boolean(form.reposicion.fecha && form.reposicion.fechaFin && form.reposicion.horaInicio && form.reposicion.horaFin);
-  const isOficioSolicitud = category === 'propias_cargo' && subtype !== 'salida_campus' && form.salida.duracionTipo !== 'menos_media_jornada';
+  const isOficioSolicitud = form.salida.duracionTipo !== 'menos_media_jornada' && (
+    form.salida.duracionTipo === '1_2_dias' ||
+    form.salida.duracionTipo === '3_mas_dias' ||
+    Number(form.salida.duracionDias) >= 1
+  );
   const reposicionLaboralProfile = form.laboral.reposicionPerfil || {};
   const isDiligenciaPersonal = category === 'personales' && subtype === 'diligencia_personal';
   const requiresManualProfileTime = isDiligenciaPersonal && reposicionLaboralProfile.manualTime === true;
@@ -2019,7 +2023,7 @@ function ReporteSalidaFormDialog({ open, documento, user, onClose, onSubmitted }
               <SectionTitle title={isSalidaMultiple ? "Información laboral del líder de la actividad" : "Información laboral"} />
               <Box sx={responsiveFieldGrid('minmax(240px, 0.95fr) minmax(300px, 1.25fr) minmax(240px, 0.9fr)')}>
                 <Autocomplete
-                  disabled={!isAdmin}
+                  disabled={!isAdmin && Boolean(user?.vicerrectoria)}
                   fullWidth
                   openOnFocus
                   options={vicerrectoriaOptions}
@@ -2036,7 +2040,7 @@ function ReporteSalidaFormDialog({ open, documento, user, onClose, onSubmitted }
                       }
                     }
                   }}
-                  renderInput={(params) => <TextField {...params} sx={inputSx} fullWidth size="small" required={isOficioSolicitud} label="Rectoría / Vicerrectoría" placeholder={isOficioSolicitud ? "Seleccione Rectoría / Vicerrectoría" : "Opcional para media jornada"} helperText={!isAdmin ? "Dato precargado institucional" : ""} />}
+                  renderInput={(params) => <TextField {...params} sx={inputSx} fullWidth size="small" required={isOficioSolicitud} label="Rectoría / Vicerrectoría" placeholder={isOficioSolicitud ? "Seleccione Rectoría / Vicerrectoría" : "Opcional para media jornada"} helperText={!isAdmin && Boolean(user?.vicerrectoria) ? "Dato precargado institucional" : ""} />}
                 />
                 <Autocomplete
                   disabled={!isAdmin}

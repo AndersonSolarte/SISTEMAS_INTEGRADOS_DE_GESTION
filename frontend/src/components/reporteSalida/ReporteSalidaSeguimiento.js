@@ -201,12 +201,9 @@ const getDocumentoYDuracionInfo = (row = {}) => {
   const duracionTipo = salida.duracionTipo;
   const duracionDias = salida.duracionDias;
 
-  const isCargo = (categoria === 'propias_cargo' || isCargoSubtype(tipo)) && tipo !== 'salida_campus';
-  const isOficio = isCargo && (
-    duracionTipo
-      ? duracionTipo !== 'menos_media_jornada'
-      : (Number(duracionDias) >= 1 || (salida.fechaRegreso && salida.fechaRegreso !== salida.fecha) || (row.tiempo_solicitado_minutos && row.tiempo_solicitado_minutos >= 480))
-  );
+  const isOficio = duracionTipo
+    ? duracionTipo !== 'menos_media_jornada'
+    : (Number(duracionDias) >= 1 || (salida.fechaRegreso && salida.fecha && salida.fechaRegreso !== salida.fecha) || (row.tiempo_solicitado_minutos && row.tiempo_solicitado_minutos >= 480));
 
   const docTipoLabel = isOficio ? 'Oficio' : 'Formato FR-002';
 

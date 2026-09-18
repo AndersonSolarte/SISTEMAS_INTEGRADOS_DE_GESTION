@@ -659,16 +659,12 @@ const isPropiasCargoSubtype = (t = '') =>
   PROPIAS_CARGO_SUBTYPES.includes(t) || String(t).startsWith('otra:');
 
 const isOficioSalida = (salida = {}, solicitud = {}) => {
-  if (salida.tipo === 'salida_campus') return false;
-  const categoria = salida.categoria || salida.category;
-  const isCargo = categoria === 'propias_cargo' || isPropiasCargoSubtype(salida.tipo);
-  if (!isCargo) return false;
   const duracionTipo = salida.duracionTipo;
   if (duracionTipo === 'menos_media_jornada') return false;
   if (duracionTipo === '1_2_dias' || duracionTipo === '3_mas_dias') return true;
   if (salida.duracionDias && Number(salida.duracionDias) >= 1) return true;
-  if (salida.fechaRegreso && salida.fechaRegreso !== salida.fecha) return true;
-  if (solicitud.tiempo_solicitado_minutos && Number(solicitud.tiempo_solicitado_minutos) >= 480) return true;
+  if (salida.fechaRegreso && salida.fecha && salida.fechaRegreso !== salida.fecha) return true;
+  if (solicitud?.tiempo_solicitado_minutos && Number(solicitud.tiempo_solicitado_minutos) >= 480) return true;
   return false;
 };
 
@@ -1088,11 +1084,18 @@ const buildOficioPdfDefinition = (solicitud, ghDirectorNombre, ghDirectorCargo) 
   const defaultPSAsunto = 'Solicitud de autorización para salida institucional de Proyección Social';
   const defaultOficioAsunto = `SOLICITUD DE AUTORIZACIÓN DE SALIDA - ${duracionInfo.tipoDocumento.toUpperCase()}`;
   const finalOficioAsunto = salida.oficioAsunto || (isProyeccionSocial ? defaultPSAsunto : defaultOficioAsunto);
-  const defaultOficioCuerpo = `Por medio de la presente me permito solicitar formalmente la debida autorización para la salida institucional con motivo de ${salida.motivo || getTipoSalidaLabel(salida.tipo) || 'actividades inherentes al cargo'}.\n\n` +
+  const isSalidaCampus = salida.tipo === 'salida_campus';
+  const campusLugar = isSalidaCampus
+    ? `Desplazamiento entre campus: de ${salida.campusSalida || 'Campus Principal'} a ${salida.campusDestino || 'Campus destino'}`
+    : `${salida.alcance || 'Local'}${salida.municipio ? ` (${salida.municipio})` : ''}${salida.entidadDestino ? ` - ${salida.entidadDestino}` : ''}`;
+  const motivoTexto = isSalidaCampus
+    ? `desplazamiento institucional entre campus (${salida.campusSalida || 'Campus Principal'} a ${salida.campusDestino || 'Campus destino'})${salida.motivo ? `: ${salida.motivo}` : ''}`
+    : (salida.motivo || getTipoSalidaLabel(salida.tipo) || 'actividades inherentes al cargo');
+  const defaultOficioCuerpo = `Por medio de la presente me permito solicitar formalmente la debida autorización para la salida institucional con motivo de ${motivoTexto}.\n\n` +
     `Información logística de la comisión:\n` +
     `• Fecha(s): ${salida.fecha || ''}${salida.fechaRegreso && salida.fechaRegreso !== salida.fecha ? ` al ${salida.fechaRegreso}` : ''}\n` +
     `• Horario: ${salida.horaInicio || ''} - ${salida.horaFin || ''}\n` +
-    `• Alcance / Lugar: ${salida.alcance || 'Local'}${salida.municipio ? ` (${salida.municipio})` : ''}${salida.entidadDestino ? ` - ${salida.entidadDestino}` : ''}\n\n` +
+    `• Alcance / Lugar: ${campusLugar}\n\n` +
     `Agradezco su atención y trámite correspondiente para la presente comisión.`;
   const finalOficioSaludo = isProyeccionSocial ? 'Estimada Dra. Sandra,\n\nReciba un cordial saludo de Paz y Bien.' : 'Paz y bien:';
   const finalOficioCuerpo = salida.oficioCuerpo || (isProyeccionSocial ? defaultPSCuerpo : defaultOficioCuerpo);

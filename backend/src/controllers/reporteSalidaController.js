@@ -1211,15 +1211,11 @@ const isPropiasCargoSubtype = (t = '') => PROPIAS_CARGO_SUBTYPES.includes(t) || 
 
 const isOficioSolicitud = (solicitud = {}) => {
   const salida = getSolicitudSalida(solicitud);
-  if (salida.tipo === 'salida_campus') return false;
-  const categoria = salida.categoria || salida.category;
-  const isCargo = categoria === 'propias_cargo' || isPropiasCargoSubtype(salida.tipo);
-  if (!isCargo) return false;
   const duracionTipo = salida.duracionTipo;
   if (duracionTipo === 'menos_media_jornada') return false;
   if (duracionTipo === '1_2_dias' || duracionTipo === '3_mas_dias') return true;
   if (salida.duracionDias && Number(salida.duracionDias) >= 1) return true;
-  if (salida.fechaRegreso && salida.fechaRegreso !== salida.fecha) return true;
+  if (salida.fechaRegreso && salida.fecha && salida.fechaRegreso !== salida.fecha) return true;
   if (solicitud.tiempo_solicitado_minutos && Number(solicitud.tiempo_solicitado_minutos) >= 480) return true;
   return false;
 };
