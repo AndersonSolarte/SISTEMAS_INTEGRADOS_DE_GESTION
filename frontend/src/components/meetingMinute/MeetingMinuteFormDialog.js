@@ -240,13 +240,40 @@ export default function MeetingMinuteFormDialog({ open, document, user, onClose 
   };
 
   return <>
-    <Dialog open={open} onClose={onClose} fullScreen PaperProps={{ sx: { bgcolor: '#f4f7fb' } }}>
-      <DialogTitle sx={{ px: { xs: 2, md: 4 }, py: 2, background: 'linear-gradient(135deg,#214c9c,#315ee8)', color: '#fff' }}>
+    <Dialog open={open} onClose={onClose} fullScreen PaperProps={{ sx: { bgcolor: '#f4f7fb', height: '100vh', display: 'flex', flexDirection: 'column', overflow: 'hidden' } }}>
+      <DialogTitle sx={{ px: { xs: 2, md: 4 }, py: 1.75, background: 'linear-gradient(135deg,#214c9c,#315ee8)', color: '#fff', flexShrink: 0 }}>
         <Stack direction="row" justifyContent="space-between" alignItems="center" gap={2}><Box><Typography variant="h5" fontWeight={950}>Registro de Asistencia y Reunión</Typography><Typography sx={{ opacity: .9, fontSize: 13 }}>{document?.codigo} · Formato digital institucional independiente</Typography></Box><IconButton onClick={onClose} sx={{ color: '#fff', border: '1px solid rgba(255,255,255,.5)', borderRadius: 2 }}><Close /></IconButton></Stack>
       </DialogTitle>
-      <DialogContent sx={{ p: { xs: 1.5, md: 3 } }}>
-        <Stack direction={{ xs: 'column', lg: 'row' }} gap={2.5} alignItems="flex-start">
-          <Stack gap={2} sx={{ width: { xs: '100%', lg: '46%' } }}>
+      <DialogContent sx={{ p: { xs: 1.5, md: 2.5 }, flex: 1, overflow: { xs: 'auto', lg: 'hidden' }, display: 'flex', flexDirection: 'column', minHeight: 0 }}>
+        <Box sx={{ display: 'flex', flexDirection: { xs: 'column', lg: 'row' }, gap: 2.5, width: '100%', height: { lg: '100%' }, minHeight: 0, flex: 1 }}>
+          <Stack
+            gap={2}
+            sx={{
+              width: { xs: '100%', lg: '47%' },
+              height: { lg: '100%' },
+              overflowY: { lg: 'auto' },
+              pr: { lg: 1.5 },
+              // Barra de scroll ubicada al medio, ampliada y de fácil agarre
+              '&::-webkit-scrollbar': {
+                width: '14px'
+              },
+              '&::-webkit-scrollbar-track': {
+                bgcolor: '#e2e8f0',
+                borderRadius: '8px',
+                border: '1px solid #cbd5e1'
+              },
+              '&::-webkit-scrollbar-thumb': {
+                bgcolor: '#475569',
+                borderRadius: '8px',
+                border: '2.5px solid #e2e8f0',
+                '&:hover': {
+                  bgcolor: '#1e293b'
+                }
+              },
+              scrollbarWidth: 'auto',
+              scrollbarColor: '#475569 #e2e8f0'
+            }}
+          >
             <Paper variant="outlined" sx={{ p: 2.25, borderRadius: 3 }}>
               <Stack direction={{ xs: 'column', sm: 'row' }} justifyContent="space-between" gap={1.5} mb={2}><Box><Typography fontWeight={900}>Actas de reunión</Typography><Typography variant="body2" color="text.secondary">Cree una nueva o continúe un borrador anterior. Este flujo no modifica los Planes de Acción.</Typography></Box><Button variant="outlined" onClick={() => { setForm(emptyForm(user)); setSignatures([]); setQr(null); setResponsibleDocument(''); setResponsibleCandidate(null); setExternalMode(false); }} sx={{ textTransform: 'none', fontWeight: 800 }}>Nueva acta</Button></Stack>
               <TextField fullWidth select size="small" label="Abrir un acta guardada" value={form.id} onChange={(event) => openMinute(event.target.value)}><MenuItem value="">Nueva acta</MenuItem>{minutes.map((minute) => <MenuItem key={minute.id} value={minute.id}>{minute.code} · {minute.content?.fecha || 'Sin fecha'} · {{ draft: 'Borrador', signing: 'En firmas', signed: 'Firmada', distributed: 'Enviada' }[minute.status] || minute.status}</MenuItem>)}</TextField>
@@ -282,8 +309,20 @@ export default function MeetingMinuteFormDialog({ open, document, user, onClose 
               <Stack gap={1} mt={2}>{form.participants.map((participant, index) => <Box key={participant.id || participant.user_id || `${participant.document}-${index}`} sx={{ display: 'grid', gridTemplateColumns: '1fr auto', gap: 1, alignItems: 'center', p: 1.25, border: '1px solid #dbe5f0', borderRadius: 2 }}><Box><Stack direction="row" alignItems="center" gap={1}><Typography variant="body2" fontWeight={850}>{participant.name}</Typography>{!participant.user_id && <Chip size="small" label="Externo" variant="outlined" color="primary" />}</Stack><Typography variant="caption" color="text.secondary">{participant.role_title} · {participant.email}</Typography></Box><Stack direction="row" alignItems="center"><Chip size="small" label={participant.status === 'signed' ? 'Firmado' : 'Pendiente'} color={participant.status === 'signed' ? 'success' : 'default'} />{!locked && <IconButton color="error" size="small" onClick={() => setField('participants', form.participants.filter((_, current) => current !== index))}><DeleteOutline /></IconButton>}</Stack></Box>)}</Stack>
             </Paper>
           </Stack>
-          <Paper variant="outlined" sx={{ width: { xs: '100%', lg: '54%' }, p: 2, borderRadius: 3, position: { lg: 'sticky' }, top: 16 }}>
-            <Box sx={{ mb: 2, pb: 2, borderBottom: '1px solid #e2e8f0' }}>
+          <Paper
+            variant="outlined"
+            sx={{
+              width: { xs: '100%', lg: '53%' },
+              height: { lg: '100%' },
+              display: 'flex',
+              flexDirection: 'column',
+              p: 2,
+              borderRadius: 3,
+              minHeight: 0,
+              bgcolor: '#fff'
+            }}
+          >
+            <Box sx={{ mb: 2, pb: 2, borderBottom: '1px solid #e2e8f0', flexShrink: 0 }}>
               <Box sx={{ mb: 1.5 }}>
                 <Typography fontWeight={900}>Vista previa del acta</Typography>
               </Box>
@@ -297,11 +336,36 @@ export default function MeetingMinuteFormDialog({ open, document, user, onClose 
                 {!locked && <Button fullWidth startIcon={<Email />} onClick={publish} disabled={loading || !form.participants.length} variant="contained" sx={{ fontWeight: 850 }}>Habilitar y enviar invitaciones</Button>}
               </Box>
             </Box>
-            <Box sx={{ overflowX: 'auto' }}><MeetingPreview document={document} form={form} signatures={signatures} /></Box>
+            <Box
+              sx={{
+                flex: 1,
+                overflowY: 'auto',
+                overflowX: 'auto',
+                minHeight: 0,
+                pr: 0.5,
+                '&::-webkit-scrollbar': {
+                  width: '10px',
+                  height: '10px'
+                },
+                '&::-webkit-scrollbar-track': {
+                  bgcolor: '#f1f5f9',
+                  borderRadius: '6px'
+                },
+                '&::-webkit-scrollbar-thumb': {
+                  bgcolor: '#cbd5e1',
+                  borderRadius: '6px',
+                  '&:hover': { bgcolor: '#94a3b8' }
+                },
+                scrollbarWidth: 'thin',
+                scrollbarColor: '#cbd5e1 #f1f5f9'
+              }}
+            >
+              <MeetingPreview document={document} form={form} signatures={signatures} />
+            </Box>
           </Paper>
-        </Stack>
+        </Box>
       </DialogContent>
-      <DialogActions sx={{ px: { xs: 2, md: 4 }, py: 1.5, bgcolor: '#fff', borderTop: '1px solid #dbe5f0' }}><Button onClick={onClose}>Cerrar</Button>{!locked && <Button variant="contained" startIcon={loading ? <CircularProgress size={16} color="inherit" /> : <Save />} disabled={loading} onClick={() => save()} sx={{ px: 3, textTransform: 'none', fontWeight: 900 }}>Guardar borrador</Button>}</DialogActions>
+      <DialogActions sx={{ px: { xs: 2, md: 4 }, py: 1.5, bgcolor: '#fff', borderTop: '1px solid #dbe5f0', flexShrink: 0 }}><Button onClick={onClose}>Cerrar</Button>{!locked && <Button variant="contained" startIcon={loading ? <CircularProgress size={16} color="inherit" /> : <Save />} disabled={loading} onClick={() => save()} sx={{ px: 3, textTransform: 'none', fontWeight: 900 }}>Guardar borrador</Button>}</DialogActions>
     </Dialog>
     <Dialog open={Boolean(qr)} onClose={() => setQr(null)} maxWidth="xs" fullWidth><DialogTitle fontWeight={900}>Acceso para firmar</DialogTitle><DialogContent><Stack alignItems="center" gap={1.5}><Alert severity="info">Este QR y enlace sirven como alternativa presencial. Los enlaces personales enviados por correo continúan funcionando de manera independiente.</Alert>{qr?.qr_data_url && <Box component="img" src={qr.qr_data_url} alt="QR alternativo para firmar" sx={{ width: 260, height: 260 }} />}<TextField fullWidth size="small" value={qr?.signing_url || ''} InputProps={{ readOnly: true }} /><Button startIcon={<ContentCopy />} onClick={() => { navigator.clipboard.writeText(qr?.signing_url || ''); enqueueSnackbar('Enlace copiado.', { variant: 'success' }); }}>Copiar enlace alternativo</Button></Stack></DialogContent><DialogActions><Button onClick={() => setQr(null)}>Cerrar</Button></DialogActions></Dialog>
     <Dialog open={confirmAdjust} onClose={() => !loading && setConfirmAdjust(false)} maxWidth="sm" fullWidth><DialogTitle fontWeight={900}>Regresar el acta a borrador</DialogTitle><DialogContent><Alert severity="warning" sx={{ mt: 1 }}>Los enlaces de firma y el QR actuales dejarán de funcionar. Después de ajustar el acta deberá habilitar y enviar nuevamente las invitaciones.</Alert></DialogContent><DialogActions><Button disabled={loading} onClick={() => setConfirmAdjust(false)}>Cancelar</Button><Button disabled={loading} onClick={reopenForEditing} color="warning" variant="contained">Regresar y editar</Button></DialogActions></Dialog>
