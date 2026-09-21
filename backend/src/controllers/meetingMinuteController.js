@@ -426,15 +426,47 @@ const lookupParticipant = wrap(async (req, res) => {
 
 const listMinutes = wrap(async (req, res) => {
   const where = { deleted_at: null };
-  if (!isAdmin(req.user)) where.created_by = req.user.id;
-  const rows = await DigitalMeetingMinute.findAll({ where, include: [participantInclude, { model: Documento, as: 'documento', required: false }], order: [['created_at', 'DESC']], limit: 100 });
-  res.json({ success: true, data: rows });
+  if (!isAdmin(req.user)) {
+    const userId = Number(req.user.id);
+    const userDoc = String(req.user.username || req.user.documento || req.user.cedula || '').trim();
+    const userEmail = clean(req.user.email, 254).toLowerCase();
+
+    const orConditions = [{ created_by: userId }];
+    if (userDoc) {
+      orConditions.push(sequelize.literal(`content::text ILIKE '%${userDoc.replace(/'/g, "''")}%'`));
+    }
+    if (userEmail) {
+      orConditions.push(sequelize.literal(`content::text ILIKE '%${userEmail.replace(/'/g, "''")}%'`));
+    }
+    where[Op.or] = orConditions;
+  }
+
+  const rows = await DigitalMeetingMinute.findAll({
+    where,
+    include: [participantInclude, { model: Documento, as: 'documento', required: false }],
+    order: [['created_at', 'DESC']],
+    limit: 200
+  });
+
+  if (isAdmin(req.user)) {
+    return res.json({ success: true, data: rows });
+  }
+
+  const authorizedRows = [];
+  for (const row of rows) {
+    if (await canAccessMinuteFullSignatures(req.user, row)) {
+      authorizedRows.push(row);
+    }
+  }
+
+  res.json({ success: true, data: authorizedRows });
 });
 
 const getMinute = wrap(async (req, res) => {
   const row = await DigitalMeetingMinute.findByPk(req.params.id, { include: includeRelations });
   if (!row || row.deleted_at) throw Object.assign(new Error('Acta no encontrada.'), { statusCode: 404 });
-  if (!isAdmin(req.user) && Number(row.created_by) !== Number(req.user.id)) throw Object.assign(new Error('No tiene permiso para consultar esta acta.'), { statusCode: 403 });
+  const authorized = await canAccessMinuteFullSignatures(req.user, row);
+  if (!authorized) throw Object.assign(new Error('No tiene permiso para consultar esta acta.'), { statusCode: 403 });
   for (const signature of row.signatures || []) {
     if (signature.signature_storage_key && fs.existsSync(signature.signature_storage_key)) {
       const mime = /\.jpe?g$/i.test(signature.signature_storage_key) ? 'image/jpeg' : 'image/png';
@@ -628,7 +660,8 @@ const saveDraft = wrap(async (req, res) => {
 const publish = wrap(async (req, res) => {
   const minute = await DigitalMeetingMinute.findByPk(req.params.id, { include: [{ model: DigitalMeetingParticipant, as: 'participants' }, { model: DigitalMeetingSignature, as: 'signatures' }] });
   if (!minute || minute.deleted_at) throw Object.assign(new Error('Acta no encontrada.'), { statusCode: 404 });
-  if (!isAdmin(req.user) && Number(minute.created_by) !== Number(req.user.id)) throw Object.assign(new Error('No tiene permiso para publicar esta acta.'), { statusCode: 403 });
+  const authorized = await canAccessMinuteFullSignatures(req.user, minute);
+  if (!authorized) throw Object.assign(new Error('No tiene permiso para publicar esta acta.'), { statusCode: 403 });
   if (!minute.participants?.length || minute.participants.length < 2) {
     throw Object.assign(new Error('Debe agregar al menos un participante aparte del responsable en la sección "2. Participantes y firmas".'), { statusCode: 422 });
   }
@@ -649,7 +682,8 @@ const publish = wrap(async (req, res) => {
 const getSigningAccess = wrap(async (req, res) => {
   const minute = await DigitalMeetingMinute.findByPk(req.params.id);
   if (!minute || minute.deleted_at) throw Object.assign(new Error('Acta no encontrada.'), { statusCode: 404 });
-  if (!isAdmin(req.user) && Number(minute.created_by) !== Number(req.user.id)) throw Object.assign(new Error('No tiene permiso para consultar el acceso de esta acta.'), { statusCode: 403 });
+  const authorized = await canAccessMinuteFullSignatures(req.user, minute);
+  if (!authorized) throw Object.assign(new Error('No tiene permiso para consultar el acceso de esta acta.'), { statusCode: 403 });
   if (minute.status !== 'signing') throw Object.assign(new Error('El acceso solo está disponible mientras el acta se encuentra en firmas.'), { statusCode: 409 });
   const token = crypto.randomBytes(32).toString('base64url');
   const expiresAt = minute.token_expires_at && minute.token_expires_at > new Date()
@@ -664,7 +698,8 @@ const getSigningAccess = wrap(async (req, res) => {
 const reopenForEditing = wrap(async (req, res) => {
   const minute = await DigitalMeetingMinute.findByPk(req.params.id);
   if (!minute || minute.deleted_at) throw Object.assign(new Error('Acta no encontrada.'), { statusCode: 404 });
-  if (!isAdmin(req.user) && Number(minute.created_by) !== Number(req.user.id)) throw Object.assign(new Error('No tiene permiso para ajustar esta acta.'), { statusCode: 403 });
+  const authorized = await canAccessMinuteFullSignatures(req.user, minute);
+  if (!authorized) throw Object.assign(new Error('No tiene permiso para ajustar esta acta.'), { statusCode: 403 });
   if (minute.status !== 'signing') throw Object.assign(new Error('Solo un acta que está en firmas puede regresar a borrador.'), { statusCode: 409 });
   const signedCount = await DigitalMeetingSignature.count({ where: { minute_id: minute.id } });
   if (signedCount > 0) throw Object.assign(new Error('No se puede modificar el acta porque ya tiene firmas. Esto protege el contenido que las personas aprobaron.'), { statusCode: 409 });
@@ -678,7 +713,8 @@ const reopenForEditing = wrap(async (req, res) => {
 const resendInvitations = wrap(async (req, res) => {
   const minute = await DigitalMeetingMinute.findByPk(req.params.id, { include: [{ model: DigitalMeetingParticipant, as: 'participants' }] });
   if (!minute || minute.deleted_at) throw Object.assign(new Error('Acta no encontrada.'), { statusCode: 404 });
-  if (!isAdmin(req.user) && Number(minute.created_by) !== Number(req.user.id)) throw Object.assign(new Error('No tiene permiso para reenviar estas invitaciones.'), { statusCode: 403 });
+  const authorized = await canAccessMinuteFullSignatures(req.user, minute);
+  if (!authorized) throw Object.assign(new Error('No tiene permiso para reenviar estas invitaciones.'), { statusCode: 403 });
   if (minute.status !== 'signing') throw Object.assign(new Error('Solo se pueden reenviar invitaciones de un acta que está en firmas.'), { statusCode: 409 });
   const invitations = await sendParticipantInvitations({ minute, baseUrl: publicFrontend(req) });
   if (!invitations.sent && invitations.failed) throw Object.assign(new Error('No fue posible enviar las invitaciones. Verifique el servicio de correo.'), { statusCode: 503 });
@@ -946,17 +982,8 @@ const updateComments = wrap(async (req, res) => {
   });
   if (!minute || minute.deleted_at) throw Object.assign(new Error('Acta no encontrada.'), { statusCode: 404 });
 
-  const content = minute.content || {};
-  const data = Array.isArray(content.responsables_data) ? content.responsables_data : [];
-  const userDoc = String(req.user.username || '').trim().toLowerCase();
-  const userId = Number(req.user.id);
-  const isCreator = Number(minute.created_by) === userId;
-  const isResp = data.some((r) =>
-    (r.document && String(r.document).trim().toLowerCase() === userDoc) ||
-    (r.user_id && Number(r.user_id) === userId)
-  ) || (content.responsable_document && String(content.responsable_document).trim().toLowerCase() === userDoc);
-
-  if (!isAdmin(req.user) && !isCreator && !isResp) {
+  const authorized = await canAccessMinuteFullSignatures(req.user, minute);
+  if (!authorized) {
     throw Object.assign(new Error('Solo el responsable de la reunión o el creador del acta pueden registrar comentarios adicionales.'), { statusCode: 403 });
   }
 
