@@ -17,6 +17,7 @@ const { sendInstitutionalEmail, renderInstitutionalTemplate, escapeHtml } = requ
 const {
   PRIVACY_POLICY_NOTICE, PRIVACY_POLICY_URL, PRIVACY_POLICY_VERSION
 } = require('../constants/privacyPolicy');
+const { formatPersonName } = require('../utils/formatPersonName');
 
 const PRIVATE_ROOT = path.resolve(process.env.SIAC_MEETING_MINUTE_DIR || path.join(__dirname, '../../uploads/.private/digital-meeting-minutes'));
 const SIGNATURE_ROOT = path.join(PRIVATE_ROOT, 'signatures');
@@ -133,7 +134,7 @@ const resolveMinutePrimaryResponsible = async (minute) => {
   const primary = data.find((r) => r.is_primary) || data[0];
   if (primary?.email) {
     return {
-      name: primary.name || primary.nombre || 'Responsable de la reunión',
+      name: formatPersonName(primary.name || primary.nombre || 'Responsable de la reunión'),
       email: clean(primary.email, 254).toLowerCase()
     };
   }
@@ -142,7 +143,7 @@ const resolveMinutePrimaryResponsible = async (minute) => {
     const user = await User.findOne({ where: { username: doc }, attributes: ['nombre', 'email'] });
     if (user?.email) {
       return {
-        name: user.nombre,
+        name: formatPersonName(user.nombre),
         email: clean(user.email, 254).toLowerCase()
       };
     }
@@ -151,7 +152,7 @@ const resolveMinutePrimaryResponsible = async (minute) => {
     const creator = await User.findByPk(minute.created_by, { attributes: ['nombre', 'email'] });
     if (creator?.email) {
       return {
-        name: creator.nombre,
+        name: formatPersonName(creator.nombre),
         email: clean(creator.email, 254).toLowerCase()
       };
     }
@@ -374,7 +375,7 @@ const buildSignedMinutePayload = (minute, options = {}) => {
         : '';
       const isSigned = participant.status === 'signed';
       return {
-        nombre: participant.name,
+        nombre: formatPersonName(participant.name),
         cargo: participantRoleLabel(participant),
         status: participant.status,
         firma: isSigned ? 'Firmado' : 'Pendiente · QR',
@@ -401,7 +402,7 @@ const lookupParticipant = wrap(async (req, res) => {
   if (!document) throw Object.assign(new Error('Digite la cédula del participante.'), { statusCode: 422 });
   const user = await User.findOne({ where: { username: document, estado: 'activo' }, attributes: ['id', 'username', 'nombre', 'email', 'dependencia', 'cargo'] });
   if (!user) throw Object.assign(new Error('No se encontró una persona activa con esa cédula.'), { statusCode: 404 });
-  res.json({ success: true, data: { id: user.id, document: user.username, name: user.nombre, email: user.email, organization: user.dependencia, role_title: user.cargo } });
+  res.json({ success: true, data: { id: user.id, document: user.username, name: formatPersonName(user.nombre), email: user.email, organization: user.dependencia, role_title: user.cargo } });
 });
 
 const listMinutes = wrap(async (req, res) => {
@@ -531,13 +532,13 @@ const saveDraft = wrap(async (req, res) => {
     if (row && row.status !== 'draft') throw Object.assign(new Error('El acta ya fue habilitada para firmas y no puede modificarse.'), { statusCode: 409 });
     const content = normalizeContent({
       ...req.body,
-      responsables: clean(req.body.responsables, 1500) || responsibleUser.nombre,
+      responsables: clean(req.body.responsables, 1500) || formatPersonName(responsibleUser.nombre),
       responsable_document: responsibleUser.username,
       responsable_role: responsibleUser.cargo,
       responsables_data: allResponsables.map((r) => ({
         user_id: r.id || null,
         document: r.username || r.document,
-        name: r.nombre || r.name,
+        name: formatPersonName(r.nombre || r.name),
         email: r.email,
         organization: r.dependencia || r.organization,
         role_title: r.cargo || r.role_title,
@@ -557,7 +558,7 @@ const saveDraft = wrap(async (req, res) => {
         minute_id: row.id,
         user_id: participant.user_id || null,
         document: clean(participant.document, 100) || null,
-        name: clean(participant.name, 240),
+        name: formatPersonName(clean(participant.name, 240)),
         email: clean(participant.email, 254).toLowerCase() || null,
         organization: clean(participant.organization, 240) || null,
         role_title: clean(participant.role_title, 220) || null

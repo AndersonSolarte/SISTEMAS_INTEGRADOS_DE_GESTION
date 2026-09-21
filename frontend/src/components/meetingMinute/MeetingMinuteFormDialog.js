@@ -11,6 +11,7 @@ import { useSnackbar } from 'notistack';
 import meetingMinuteService from '../../services/meetingMinuteService';
 import logoFormatos from '../../assets/logo_formatos.jpg';
 import RichTextEditor, { sanitizeRichHtml } from './RichTextEditor';
+import formatPersonName from '../../utils/formatPersonName';
 
 const today = () => new Date().toISOString().slice(0, 10);
 const formatDate = (value) => {
@@ -35,12 +36,13 @@ const formatResponsablesText = (list = []) => {
   if (!list || !list.length) return '';
   if (list.length === 1) {
     const r = list[0];
+    const name = formatPersonName(r.name);
     const details = [r.role_title, r.organization].filter(Boolean).join(' · ');
-    return details ? `${r.name} (${details})` : r.name;
+    return details ? `${name} (${details})` : name;
   }
   return list.map((r) => {
     const details = [r.role_title, r.organization].filter(Boolean).join(' · ');
-    return `• ${r.name}${details ? ` (${details})` : ''}`;
+    return `• ${formatPersonName(r.name)}${details ? ` (${details})` : ''}`;
   }).join('\n');
 };
 
@@ -49,7 +51,7 @@ const loadResponsablesFromMinute = (content = {}) => {
     return content.responsables_data.map((r, i) => ({
       user_id: r.user_id || null,
       document: r.document || '',
-      name: r.name || '',
+      name: formatPersonName(r.name || ''),
       email: r.email || '',
       organization: r.organization || '',
       role_title: r.role_title || '',
@@ -60,7 +62,7 @@ const loadResponsablesFromMinute = (content = {}) => {
     return [{
       user_id: null,
       document: content.responsable_document || '',
-      name: content.responsables || '',
+      name: formatPersonName(content.responsables || ''),
       email: '',
       organization: content.dependencia || '',
       role_title: content.responsable_role || '',
@@ -85,7 +87,7 @@ const syncParticipantsWithResponsables = (currentParticipants = [], newResponsab
       id: existing?.id || undefined,
       user_id: r.user_id || existing?.user_id || null,
       document: r.document || existing?.document || '',
-      name: r.name || existing?.name || '',
+      name: formatPersonName(r.name || existing?.name || ''),
       email: r.email || existing?.email || '',
       organization: r.organization || existing?.organization || '',
       role_title: r.role_title || existing?.role_title || (idx === 0 ? 'Responsable Principal' : 'Co-responsable'),
@@ -174,7 +176,7 @@ const MeetingPreview = ({ document, form, signatures = [] }) => {
                     </Box>
                   </Box>
                   <Box sx={{ fontSize: 11.5, fontWeight: 850, color: '#0f172a' }}>
-                    {r.name}
+                    {formatPersonName(r.name)}
                   </Box>
                   {roleOrg && (
                     <Box sx={{ fontSize: 10.5, color: '#475569', mt: 0.2 }}>
@@ -197,7 +199,7 @@ const MeetingPreview = ({ document, form, signatures = [] }) => {
         const signature = signatureByParticipant.get(String(participant.id));
         const isSigned = signed.has(String(participant.id)) || participant.status === 'signed';
         const roleLabel = !participant.user_id && participant.organization ? [participant.organization, participant.role_title].filter(Boolean).join(' · ') : (participant.role_title || participant.organization || '');
-        return <Box key={participant.id || participant.user_id || index} sx={{ display: 'grid', gridTemplateColumns: '45px 1.5fr 1fr 150px', borderBottom: '1px solid #111' }}><Box sx={{ p: 0.6, textAlign: 'center', fontWeight: 800 }}>{index + 1}</Box><Box sx={{ p: 0.6, borderLeft: '1px solid #111' }}>{participant.name}</Box><Box sx={{ p: 0.6, borderLeft: '1px solid #111' }}>{roleLabel}</Box><Box sx={{ minHeight: 42, p: 0.45, borderLeft: '1px solid #111', display: 'grid', placeItems: 'center', textAlign: 'center', color: isSigned ? '#15803d' : '#64748b', fontWeight: 800 }}>{signature?.signature_preview ? <Box component="img" src={signature.signature_preview} alt={`Firma de ${participant.name}`} sx={{ width: '100%', height: 38, objectFit: 'contain' }} /> : isSigned ? '✓ Firmado' : 'Pendiente · QR'}</Box></Box>;
+        return <Box key={participant.id || participant.user_id || index} sx={{ display: 'grid', gridTemplateColumns: '45px 1.5fr 1fr 150px', borderBottom: '1px solid #111' }}><Box sx={{ p: 0.6, textAlign: 'center', fontWeight: 800 }}>{index + 1}</Box><Box sx={{ p: 0.6, borderLeft: '1px solid #111' }}>{formatPersonName(participant.name)}</Box><Box sx={{ p: 0.6, borderLeft: '1px solid #111' }}>{roleLabel}</Box><Box sx={{ minHeight: 42, p: 0.45, borderLeft: '1px solid #111', display: 'grid', placeItems: 'center', textAlign: 'center', color: isSigned ? '#15803d' : '#64748b', fontWeight: 800 }}>{signature?.signature_preview ? <Box component="img" src={signature.signature_preview} alt={`Firma de ${formatPersonName(participant.name)}`} sx={{ width: '100%', height: 38, objectFit: 'contain' }} /> : isSigned ? '✓ Firmado' : 'Pendiente · QR'}</Box></Box>;
       })}
       {['Objetivo', 'Desarrollo', 'Conclusiones / Compromisos'].map((title) => {
         const key = title === 'Objetivo' ? 'objetivo' : title === 'Desarrollo' ? 'desarrollo' : 'conclusiones';
@@ -343,7 +345,7 @@ export default function MeetingMinuteFormDialog({ open, document, user, onClose 
     })) {
       return enqueueSnackbar('La persona ya está agregada.', { variant: 'info' });
     }
-    setField('participants', [...form.participants, { user_id: candidate.id, document: candidate.document, name: candidate.name, email: candidate.email, organization: candidate.organization, role_title: candidate.role_title, status: 'invited' }]);
+    setField('participants', [...form.participants, { user_id: candidate.id, document: candidate.document, name: formatPersonName(candidate.name), email: candidate.email, organization: candidate.organization, role_title: candidate.role_title, status: 'invited' }]);
     setCandidate(null);
     setDocumentNumber('');
   };
@@ -373,7 +375,7 @@ export default function MeetingMinuteFormDialog({ open, document, user, onClose 
     const newResp = {
       user_id: responsibleCandidate.id || null,
       document: responsibleCandidate.document || '',
-      name: responsibleCandidate.name || '',
+      name: formatPersonName(responsibleCandidate.name || ''),
       email: responsibleCandidate.email || '',
       organization: responsibleCandidate.organization || '',
       role_title: responsibleCandidate.role_title || '',
@@ -426,7 +428,7 @@ export default function MeetingMinuteFormDialog({ open, document, user, onClose 
       dependencia: primaryResp.organization || prev.dependencia,
       participants: updatedParticipants
     }));
-    enqueueSnackbar(`${primaryResp.name} ahora es el Responsable Principal.`, { variant: 'info' });
+    enqueueSnackbar(`${formatPersonName(primaryResp.name)} ahora es el Responsable Principal.`, { variant: 'info' });
   };
 
   const removeResponsable = (index) => {
@@ -458,7 +460,7 @@ export default function MeetingMinuteFormDialog({ open, document, user, onClose 
     if (!external.document || !external.name || !external.email || !external.role_title) return enqueueSnackbar('Complete cédula, nombre, correo y cargo.', { variant: 'warning' });
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(external.email)) return enqueueSnackbar('Digite un correo válido.', { variant: 'warning' });
     if (form.participants.some((participant) => String(participant.document || '').toLowerCase() === external.document.toLowerCase() || String(participant.email || '').toLowerCase() === external.email.toLowerCase())) return enqueueSnackbar('La persona ya está agregada.', { variant: 'info' });
-    setField('participants', [...form.participants, { ...external, user_id: null, status: 'invited', external: true }]);
+    setField('participants', [...form.participants, { ...external, name: formatPersonName(external.name), user_id: null, status: 'invited', external: true }]);
     setExternalMode(false);
     setExternalDraft({ document: '', name: '', email: '', organization: '', role_title: '' });
     setDocumentNumber('');
@@ -791,7 +793,7 @@ export default function MeetingMinuteFormDialog({ open, document, user, onClose 
                     <Stack direction={{ xs: 'column', sm: 'row' }} justifyContent="space-between" alignItems={{ xs: 'stretch', sm: 'center' }} gap={1.5}>
                       <Box>
                         <Stack direction="row" alignItems="center" gap={1} flexWrap="wrap">
-                          <Typography fontWeight={900} fontSize={15}>{responsibleCandidate.name}</Typography>
+                          <Typography fontWeight={900} fontSize={15}>{formatPersonName(responsibleCandidate.name)}</Typography>
                           <Chip size="small" label={`CC: ${responsibleCandidate.document}`} variant="outlined" sx={{ fontWeight: 700 }} />
                         </Stack>
                         <Typography variant="body2" color="text.secondary" sx={{ mt: 0.25 }}>
@@ -865,7 +867,7 @@ export default function MeetingMinuteFormDialog({ open, document, user, onClose 
                           <Box sx={{ minWidth: 0, flex: 1 }}>
                             <Stack direction="row" alignItems="center" gap={1} flexWrap="wrap">
                               <Typography variant="body2" fontWeight={900} color="#0f172a">
-                                {resp.name}
+                                {formatPersonName(resp.name)}
                               </Typography>
                               {resp.is_primary ? (
                                 <Chip size="small" label="Principal" color="success" sx={{ fontWeight: 850, height: 22, fontSize: 11 }} />
@@ -965,7 +967,7 @@ export default function MeetingMinuteFormDialog({ open, document, user, onClose 
                 </Alert>
               )}
               {!locked && <Stack direction={{ xs: 'column', sm: 'row' }} gap={1}><TextField fullWidth size="small" label="Cédula" value={documentNumber} onChange={(e) => { setDocumentNumber(e.target.value.replace(/[^0-9A-Za-z-]/g, '')); setCandidate(null); }} onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); lookup(); } }} /><Button variant="outlined" startIcon={searching ? <CircularProgress size={16} /> : <PersonSearch />} disabled={searching || !documentNumber} onClick={lookup} sx={{ minWidth: 125, textTransform: 'none', fontWeight: 800 }}>Consultar</Button></Stack>}
-              {candidate && <Paper variant="outlined" sx={{ p: 1.5, mt: 1.5, borderRadius: 2, bgcolor: '#f8fbff' }}><Stack direction="row" justifyContent="space-between" alignItems="center" gap={1}><Box><Typography fontWeight={850}>{candidate.name}</Typography><Typography variant="body2" color="text.secondary">{candidate.role_title} · {candidate.organization}</Typography><Typography variant="caption">{candidate.email}</Typography></Box><Button variant="contained" startIcon={<Add />} onClick={addParticipant}>Agregar</Button></Stack></Paper>}
+              {candidate && <Paper variant="outlined" sx={{ p: 1.5, mt: 1.5, borderRadius: 2, bgcolor: '#f8fbff' }}><Stack direction="row" justifyContent="space-between" alignItems="center" gap={1}><Box><Typography fontWeight={850}>{formatPersonName(candidate.name)}</Typography><Typography variant="body2" color="text.secondary">{candidate.role_title} · {candidate.organization}</Typography><Typography variant="caption">{candidate.email}</Typography></Box><Button variant="contained" startIcon={<Add />} onClick={addParticipant}>Agregar</Button></Stack></Paper>}
               {!locked && !externalMode && <Button startIcon={<Add />} onClick={() => { setExternalDraft({ document: documentNumber, name: '', email: '', organization: '', role_title: '' }); setExternalMode(true); }} sx={{ mt: 1, textTransform: 'none', fontWeight: 800 }}>Agregar participante externo</Button>}
               {externalMode && !locked && <Paper variant="outlined" sx={{ p: 1.5, mt: 1.5, borderRadius: 2.5, bgcolor: '#f8fbff' }}><Typography fontWeight={850} mb={1}>Participante externo para esta acta</Typography><Alert severity="info" sx={{ mb: 1.5 }}>Al recibir el código, esta persona también recibirá la política institucional y deberá aceptar el tratamiento de datos antes de firmar.</Alert><Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', sm: 'repeat(2,minmax(0,1fr))' }, gap: 1 }}><TextField size="small" label="Cédula o identificación" value={externalDraft.document} onChange={(e) => setExternalDraft((old) => ({ ...old, document: e.target.value }))} /><TextField size="small" label="Nombre completo" value={externalDraft.name} onChange={(e) => setExternalDraft((old) => ({ ...old, name: e.target.value }))} /><TextField size="small" type="email" label="Correo empresarial o personal" value={externalDraft.email} onChange={(e) => setExternalDraft((old) => ({ ...old, email: e.target.value }))} /><TextField size="small" label="Cargo" value={externalDraft.role_title} onChange={(e) => setExternalDraft((old) => ({ ...old, role_title: e.target.value }))} /><TextField size="small" label="Empresa o entidad (opcional)" value={externalDraft.organization} onChange={(e) => setExternalDraft((old) => ({ ...old, organization: e.target.value }))} sx={{ gridColumn: { sm: '1 / -1' } }} /></Box><Stack direction="row" justifyContent="flex-end" gap={1} mt={1.25}><Button onClick={() => setExternalMode(false)}>Cancelar</Button><Button variant="contained" startIcon={<Add />} onClick={addExternalParticipant}>Agregar al acta</Button></Stack></Paper>}
               <Stack gap={1} mt={2}>
@@ -983,7 +985,7 @@ export default function MeetingMinuteFormDialog({ open, document, user, onClose 
                     <Box key={participant.id || participant.user_id || `${participant.document}-${index}`} sx={{ display: 'grid', gridTemplateColumns: '1fr auto', gap: 1, alignItems: 'center', p: 1.25, border: '1px solid #dbe5f0', borderRadius: 2, bgcolor: isPrimary ? '#f0fdf4' : isResp ? '#f8fafc' : '#ffffff' }}>
                       <Box>
                         <Stack direction="row" alignItems="center" gap={1} flexWrap="wrap">
-                          <Typography variant="body2" fontWeight={850}>{participant.name}</Typography>
+                          <Typography variant="body2" fontWeight={850}>{formatPersonName(participant.name)}</Typography>
                           {isPrimary && <Chip size="small" label="Responsable Principal" color="success" sx={{ height: 20, fontSize: 11, fontWeight: 800 }} />}
                           {isResp && !isPrimary && <Chip size="small" label="Co-responsable" color="primary" variant="outlined" sx={{ height: 20, fontSize: 11, fontWeight: 750 }} />}
                           {!participant.user_id && !isResp && <Chip size="small" label="Externo" variant="outlined" color="primary" sx={{ height: 20, fontSize: 11 }} />}

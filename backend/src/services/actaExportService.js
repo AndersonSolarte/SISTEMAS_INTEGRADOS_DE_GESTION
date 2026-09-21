@@ -1,5 +1,6 @@
 const path = require('path');
 const fs = require('fs');
+const { formatPersonName } = require('../utils/formatPersonName');
 const {
   Document,
   Packer,
@@ -207,7 +208,7 @@ const buildBasicsTable = ({ responsables, responsables_data, dependencia }) => {
                 textRun(tag, { bold: true, size: 16, color: isPrimary ? '1E3A8A' : '475569' })
               ], { before: 40, after: 20, indent: 80 }),
               paragraph([
-                textRun(r.name || '', { bold: true, size: 20, color: '0F172A' })
+                textRun(formatPersonName(r.name || ''), { bold: true, size: 20, color: '0F172A' })
               ], { before: 0, after: roleOrg ? 20 : 40, indent: 80 }),
               ...(roleOrg ? [
                 paragraph([
@@ -339,7 +340,7 @@ const buildParticipantesTable = (participantes = []) => {
         }),
         cell({
           width: columnWidths[1],
-          children: [paragraph(textRun(p.nombre || '', { size: 20 }))]
+          children: [paragraph(textRun(formatPersonName(p.nombre || ''), { size: 20 }))]
         }),
         cell({
           width: columnWidths[2],

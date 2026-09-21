@@ -2,6 +2,7 @@ const fs = require('fs');
 const path = require('path');
 const PdfPrinter = require('pdfmake');
 const { PRIVACY_POLICY_PARAGRAPHS, PRIVACY_POLICY_URL } = require('../constants/privacyPolicy');
+const { formatPersonName } = require('../utils/formatPersonName');
 
 const printer = new PdfPrinter({
   SIAC: { normal: 'Helvetica', bold: 'Helvetica-Bold', italics: 'Helvetica-Oblique', bolditalics: 'Helvetica-BoldOblique' }
@@ -115,7 +116,7 @@ const buildResponsablesPdfContent = (payload = {}) => {
                   margin: [0, 0, 0, 1.5]
                 },
                 {
-                  text: r.name || '',
+                  text: formatPersonName(r.name || ''),
                   fontSize: 9.5,
                   bold: true,
                   color: '#0f172a'
@@ -182,7 +183,7 @@ const generateMeetingMinutePdf = async (payload = {}, options = {}) => {
     } else {
       signatureCell = { text: participant.firma || 'Pendiente', alignment: 'center', color: '#64748b', bold: true, fontSize: 8.5 };
     }
-    return [{ text: String(index + 1), alignment: 'center', bold: true }, participant.nombre || '', participant.cargo || '', signatureCell];
+    return [{ text: String(index + 1), alignment: 'center', bold: true }, formatPersonName(participant.nombre || ''), participant.cargo || '', signatureCell];
   });
   const definition = {
     pageSize: 'LETTER',

@@ -54,3 +54,14 @@ test('genera el documento Word con múltiples responsables en cuadros estructura
   assert.ok(Buffer.isBuffer(buffer));
   assert.ok(buffer.length > 1500);
 });
+
+test('formatea nombres propios a formato formal (Title Case) con partículas en minúscula', () => {
+  const { formatPersonName } = require('../utils/formatPersonName');
+  assert.strictEqual(formatPersonName('ANDERSON DAVID SOLARTE CAICEDO'), 'Anderson David Solarte Caicedo');
+  assert.strictEqual(formatPersonName('GUILLERMO DE CASTELLANA'), 'Guillermo de Castellana');
+  assert.strictEqual(formatPersonName('MARIA DEL CARMEN LASSO'), 'Maria del Carmen Lasso');
+  assert.strictEqual(formatPersonName('juan sebastian lopez-perez'), 'Juan Sebastian Lopez-Perez');
+  assert.strictEqual(formatPersonName('  DAVID   SOLARTE  '), 'David Solarte');
+  assert.strictEqual(formatPersonName(''), '');
+  assert.strictEqual(formatPersonName(null), '');
+});

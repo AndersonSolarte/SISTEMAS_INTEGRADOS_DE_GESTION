@@ -8,6 +8,7 @@ import { CheckCircle, Draw, Email, PersonSearch, VerifiedUser } from '@mui/icons
 import meetingMinuteService from '../services/meetingMinuteService';
 import logoFormatos from '../assets/logo_formatos.jpg';
 import { sanitizeRichHtml } from '../components/meetingMinute/RichTextEditor';
+import formatPersonName from '../utils/formatPersonName';
 
 const displayDate = (value) => {
   const match = String(value || '').match(/^(\d{4})-(\d{2})-(\d{2})/);
@@ -93,7 +94,7 @@ function PublicActaPreview({ minute }) {
                       </Box>
                     </Box>
                     <Box sx={{ fontSize: 12, fontWeight: 850, color: '#0f172a' }}>
-                      {r.name}
+                      {formatPersonName(r.name)}
                     </Box>
                     {roleOrg && (
                       <Box sx={{ fontSize: 10.5, color: '#475569', mt: 0.2 }}>
@@ -114,7 +115,7 @@ function PublicActaPreview({ minute }) {
         <Box sx={{ display: 'grid', gridTemplateColumns: '45px 1.5fr 1fr 150px', bgcolor: '#f2f2f2', borderBottom: '1px solid #111', fontWeight: 900, textAlign: 'center' }}><Box /><Box sx={{ p: 0.6, borderLeft: '1px solid #111' }}>Nombres y Apellidos</Box><Box sx={{ p: 0.6, borderLeft: '1px solid #111' }}>Cargo</Box><Box sx={{ p: 0.6, borderLeft: '1px solid #111' }}>Firma</Box></Box>
         {participants.map((participant, index) => {
           const roleLabel = participant.external && participant.organization ? [participant.organization, participant.role_title].filter(Boolean).join(' · ') : (participant.role_title || participant.organization || '');
-          return <Box key={participant.id} sx={{ display: 'grid', gridTemplateColumns: '45px 1.5fr 1fr 150px', borderBottom: '1px solid #111' }}><Box sx={{ p: 0.6, textAlign: 'center', fontWeight: 800 }}>{index + 1}</Box><Box sx={{ p: 0.6, borderLeft: '1px solid #111' }}>{participant.name}</Box><Box sx={{ p: 0.6, borderLeft: '1px solid #111' }}>{roleLabel}</Box><Box sx={{ p: 0.6, borderLeft: '1px solid #111', textAlign: 'center', color: participant.status === 'signed' ? '#15803d' : '#64748b', fontWeight: 800 }}>{participant.status === 'signed' ? 'Firmado' : 'Pendiente'}</Box></Box>;
+          return <Box key={participant.id} sx={{ display: 'grid', gridTemplateColumns: '45px 1.5fr 1fr 150px', borderBottom: '1px solid #111' }}><Box sx={{ p: 0.6, textAlign: 'center', fontWeight: 800 }}>{index + 1}</Box><Box sx={{ p: 0.6, borderLeft: '1px solid #111' }}>{formatPersonName(participant.name)}</Box><Box sx={{ p: 0.6, borderLeft: '1px solid #111' }}>{roleLabel}</Box><Box sx={{ p: 0.6, borderLeft: '1px solid #111', textAlign: 'center', color: participant.status === 'signed' ? '#15803d' : '#64748b', fontWeight: 800 }}>{participant.status === 'signed' ? 'Firmado' : 'Pendiente'}</Box></Box>;
         })}
         {['Objetivo', 'Desarrollo', 'Conclusiones / Compromisos'].map((title) => {
           const key = title === 'Objetivo' ? 'objetivo' : title === 'Desarrollo' ? 'desarrollo' : 'conclusiones';
@@ -229,7 +230,7 @@ export default function MeetingMinuteSigning() {
             Documento firmado
           </Typography>
           <Typography variant="body1" color="text.secondary" sx={{ mt: 0.5, maxWidth: 650, mx: 'auto', lineHeight: 1.6 }}>
-            Apreciado(a) <strong>{minute.participant?.name || 'participante'}</strong>, le confirmamos que su documento firmado ya fue registrado y vinculado exitosamente a esta acta.
+            Apreciado(a) <strong>{formatPersonName(minute.participant?.name) || 'participante'}</strong>, le confirmamos que su documento firmado ya fue registrado y vinculado exitosamente a esta acta.
           </Typography>
         </Box>
 
@@ -252,7 +253,7 @@ export default function MeetingMinuteSigning() {
             <Stack direction="row" justifyContent="space-between" alignItems="center" pb={1} borderBottom="1px solid #e2e8f0">
               <Typography variant="body2" color="text.secondary">Participante registrado:</Typography>
               <Typography variant="body2" fontWeight={850}>
-                {minute.participant?.name} {minute.participant?.role_title ? `· ${minute.participant.role_title}` : ''}
+                {formatPersonName(minute.participant?.name)} {minute.participant?.role_title ? `· ${minute.participant.role_title}` : ''}
               </Typography>
             </Stack>
             {minute.signature_info?.signed_at && (
@@ -357,7 +358,7 @@ export default function MeetingMinuteSigning() {
               </Box>
             ) : (
               <TextField fullWidth select label="Participante" value={participantId} onChange={(event) => { setParticipantId(event.target.value); setSent(false); setEmail(''); setOtp(''); setHasInk(false); setPrivacyAccepted(false); }} sx={{ mt: 1.25 }}>
-                {minute.participants.map((participant) => <MenuItem key={participant.id} value={participant.id}>{participant.name} · {participant.role_title}{participant.external ? ' · Externo' : ''}</MenuItem>)}
+                {minute.participants.map((participant) => <MenuItem key={participant.id} value={participant.id}>{formatPersonName(participant.name)} · {participant.role_title}{participant.external ? ' · Externo' : ''}</MenuItem>)}
               </TextField>
             )}
           </Box>
@@ -374,7 +375,7 @@ function PaperParticipant({ participant }) {
   if (!participant) return null;
   return (
     <Box sx={{ mt: 1.25, p: 2, border: '1px solid #bfdbfe', borderRadius: 3, bgcolor: '#f8fbff' }}>
-      <Typography fontWeight={900}>{participant.name}</Typography>
+      <Typography fontWeight={900}>{formatPersonName(participant.name)}</Typography>
       <Typography variant="body2" color="text.secondary">{participant.role_title || 'Participante'}{participant.organization ? ` · ${participant.organization}` : ''}</Typography>
       {participant.email && (
         <Typography variant="caption" sx={{ display: 'block', mt: 0.5, color: '#1e3a8a', fontWeight: 700 }}>
