@@ -440,10 +440,7 @@ const normalizeContent = (body, user, document) => ({
   horario: clean(body.horario, 100),
   objetivo: [sanitizeRichText(body.objetivo)],
   desarrollo: [sanitizeRichText(body.desarrollo)],
-  conclusiones: [sanitizeRichText(body.conclusiones)],
-  comentarios_adicionales: Array.isArray(body.comentarios_adicionales)
-    ? body.comentarios_adicionales.map(sanitizeRichText)
-    : (body.comentarios_adicionales ? [sanitizeRichText(body.comentarios_adicionales)] : [])
+  conclusiones: [sanitizeRichText(body.conclusiones)]
 });
 
 const saveDraft = wrap(async (req, res) => {

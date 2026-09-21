@@ -226,9 +226,6 @@ const generateMeetingMinutePdf = async (payload = {}, options = {}) => {
       section('Objetivo', payload.objetivo),
       section('Desarrollo', payload.desarrollo),
       section('Conclusiones / Compromisos', payload.conclusiones),
-      ...((payload.comentarios_adicionales && (Array.isArray(payload.comentarios_adicionales) ? payload.comentarios_adicionales.some(Boolean) : Boolean(payload.comentarios_adicionales)))
-        ? [section('Comentarios / Observaciones Adicionales', payload.comentarios_adicionales)]
-        : []),
       {
         unbreakable: false,
         margin: [0, 8, 0, 0],

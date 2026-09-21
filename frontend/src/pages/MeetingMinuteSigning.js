@@ -121,12 +121,6 @@ function PublicActaPreview({ minute }) {
           const key = title === 'Objetivo' ? 'objetivo' : title === 'Desarrollo' ? 'desarrollo' : 'conclusiones';
           return <React.Fragment key={title}><Box sx={{ ...cell, bgcolor: '#d9d9d9', textAlign: 'center', fontWeight: 900 }}>{title}</Box><Box sx={{ p: 1, minHeight: key === 'objetivo' ? 62 : 90, fontSize: 12, '& table': { width: '100%', maxWidth: '100%', tableLayout: 'fixed', borderCollapse: 'collapse', my: 0.5, boxSizing: 'border-box' }, '& th, & td': { border: '1px solid #555', p: 0.6, whiteSpace: 'normal', wordBreak: 'break-word', overflowWrap: 'anywhere', verticalAlign: 'top', boxSizing: 'border-box' }, '& a': { color: '#1d5fd1' } }} dangerouslySetInnerHTML={{ __html: sanitizeRichHtml(content[key]?.[0] || content[key] || '') }} /></React.Fragment>;
         })}
-        {Boolean(content.comentarios_adicionales?.[0] || content.comentarios_adicionales) && (
-          <React.Fragment>
-            <Box sx={{ ...cell, bgcolor: '#d9d9d9', textAlign: 'center', fontWeight: 900 }}>Comentarios / Observaciones Adicionales</Box>
-            <Box sx={{ p: 1, minHeight: 60, fontSize: 12, '& table': { width: '100%', maxWidth: '100%', tableLayout: 'fixed', borderCollapse: 'collapse', my: 0.5, boxSizing: 'border-box' }, '& th, & td': { border: '1px solid #555', p: 0.6, whiteSpace: 'normal', wordBreak: 'break-word', overflowWrap: 'anywhere', verticalAlign: 'top', boxSizing: 'border-box' }, '& a': { color: '#1d5fd1' } }} dangerouslySetInnerHTML={{ __html: sanitizeRichHtml(content.comentarios_adicionales?.[0] || content.comentarios_adicionales || '') }} />
-          </React.Fragment>
-        )}
       </Box>
     </Box>
   </Box>;
