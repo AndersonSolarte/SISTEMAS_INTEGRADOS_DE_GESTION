@@ -328,9 +328,11 @@ const buildParticipantesTable = (participantes = []) => {
   for (let i = 0; i < total; i += 1) {
     const p = participantes[i] || {};
     const signatureMatch = String(p.firma_data_url || '').match(/^data:image\/(?:png|jpeg);base64,([A-Za-z0-9+/=]+)$/);
+    const isSigned = p.status === 'signed' || String(p.firma || '').toUpperCase().includes('FIRMADO');
+    const signatureText = isSigned ? 'ORIGINAL FIRMADO' : (p.firma || '');
     const signatureParagraph = signatureMatch
       ? new Paragraph({ alignment: AlignmentType.CENTER, spacing: { before: 0, after: 0 }, children: [new ImageRun({ data: Buffer.from(signatureMatch[1], 'base64'), transformation: { width: 105, height: 34 } })] })
-      : paragraph(textRun(p.firma || '', { size: 18 }), { alignment: AlignmentType.CENTER });
+      : paragraph(textRun(signatureText, { bold: isSigned, color: isSigned ? '166534' : '64748b', size: 18 }), { alignment: AlignmentType.CENTER });
     filas.push(new TableRow({
       height: { value: 360, rule: HeightRule.ATLEAST },
       children: [

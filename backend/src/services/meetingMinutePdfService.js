@@ -174,12 +174,12 @@ const generateMeetingMinutePdf = async (payload = {}, options = {}) => {
   const participants = Array.isArray(payload.participantes) ? payload.participantes : [];
   const participantRows = participants.map((participant, index) => {
     const signature = String(participant.firma_data_url || '');
-    const isSigned = participant.status === 'signed' || String(participant.firma || '').toLowerCase().startsWith('firmado');
+    const isSigned = participant.status === 'signed' || String(participant.firma || '').toUpperCase().includes('FIRMADO');
     let signatureCell;
     if (!options.hideSignatures && /^data:image\/(png|jpeg);base64,/i.test(signature)) {
       signatureCell = { image: signature, fit: [92, 32], alignment: 'center' };
     } else if (isSigned) {
-      signatureCell = { text: 'Firmado', alignment: 'center', color: '#0f172a', bold: true, fontSize: 9.5 };
+      signatureCell = { text: 'ORIGINAL FIRMADO', alignment: 'center', color: '#166534', bold: true, fontSize: 8.5 };
     } else {
       signatureCell = { text: participant.firma || 'Pendiente', alignment: 'center', color: '#64748b', bold: true, fontSize: 8.5 };
     }

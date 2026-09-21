@@ -104,7 +104,7 @@ const syncParticipantsWithResponsables = (currentParticipants = [], newResponsab
   return [...respParticipants, ...nonRespParticipants];
 };
 
-const MeetingPreview = ({ document, form, signatures = [] }) => {
+const MeetingPreview = ({ document, form, signatures = [], previewType = 'original' }) => {
   const signed = new Set(signatures.map((signature) => String(signature.participant_id)));
   const signatureByParticipant = new Map(signatures.map((signature) => [String(signature.participant_id), signature]));
   const cell = { px: 0.8, py: 0.65, borderBottom: '1px solid #111', fontSize: 11.5 };
@@ -199,7 +199,23 @@ const MeetingPreview = ({ document, form, signatures = [] }) => {
         const signature = signatureByParticipant.get(String(participant.id));
         const isSigned = signed.has(String(participant.id)) || participant.status === 'signed';
         const roleLabel = !participant.user_id && participant.organization ? [participant.organization, participant.role_title].filter(Boolean).join(' · ') : (participant.role_title || participant.organization || '');
-        return <Box key={participant.id || participant.user_id || index} sx={{ display: 'grid', gridTemplateColumns: '45px 1.5fr 1fr 150px', borderBottom: '1px solid #111' }}><Box sx={{ p: 0.6, textAlign: 'center', fontWeight: 800 }}>{index + 1}</Box><Box sx={{ p: 0.6, borderLeft: '1px solid #111' }}>{formatPersonName(participant.name)}</Box><Box sx={{ p: 0.6, borderLeft: '1px solid #111' }}>{roleLabel}</Box><Box sx={{ minHeight: 42, p: 0.45, borderLeft: '1px solid #111', display: 'grid', placeItems: 'center', textAlign: 'center', color: isSigned ? '#15803d' : '#64748b', fontWeight: 800 }}>{signature?.signature_preview ? <Box component="img" src={signature.signature_preview} alt={`Firma de ${formatPersonName(participant.name)}`} sx={{ width: '100%', height: 38, objectFit: 'contain' }} /> : isSigned ? '✓ Firmado' : 'Pendiente · QR'}</Box></Box>;
+        const showGraphic = previewType !== 'copia' && Boolean(signature?.signature_preview);
+        return (
+          <Box key={participant.id || participant.user_id || index} sx={{ display: 'grid', gridTemplateColumns: '45px 1.5fr 1fr 150px', borderBottom: '1px solid #111' }}>
+            <Box sx={{ p: 0.6, textAlign: 'center', fontWeight: 800 }}>{index + 1}</Box>
+            <Box sx={{ p: 0.6, borderLeft: '1px solid #111' }}>{formatPersonName(participant.name)}</Box>
+            <Box sx={{ p: 0.6, borderLeft: '1px solid #111' }}>{roleLabel}</Box>
+            <Box sx={{ minHeight: 42, p: 0.45, borderLeft: '1px solid #111', display: 'grid', placeItems: 'center', textAlign: 'center', color: isSigned ? '#15803d' : '#64748b', fontWeight: 800 }}>
+              {showGraphic ? (
+                <Box component="img" src={signature.signature_preview} alt={`Firma de ${formatPersonName(participant.name)}`} sx={{ width: '100%', height: 38, objectFit: 'contain' }} />
+              ) : isSigned ? (
+                <Box component="span" sx={{ color: '#166534', fontWeight: 900, fontSize: 11, letterSpacing: 0.3 }}>ORIGINAL FIRMADO</Box>
+              ) : (
+                'Pendiente · QR'
+              )}
+            </Box>
+          </Box>
+        );
       })}
       {['Objetivo', 'Desarrollo', 'Conclusiones / Compromisos'].map((title) => {
         const key = title === 'Objetivo' ? 'objetivo' : title === 'Desarrollo' ? 'desarrollo' : 'conclusiones';
@@ -228,24 +244,44 @@ export default function MeetingMinuteFormDialog({ open, document, user, onClose 
   const [confirmAdjust, setConfirmAdjust] = useState(false);
   const [downloadAnchorEl, setDownloadAnchorEl] = useState(null);
   const [layoutMode, setLayoutMode] = useState('split'); // 'split' | 'form' | 'preview'
+  const [previewType, setPreviewType] = useState('original'); // 'original' | 'copia'
   const locked = form.status !== 'draft';
   const hasSignatures = signatures.length > 0;
   const allSigned = Boolean(form.participants.length) && form.participants.every((participant) => participant.status === 'signed');
   const pendingCount = useMemo(() => (form.participants || []).filter((p) => p.status !== 'signed').length, [form.participants]);
 
-  const userDoc = String(user?.username || '').trim().toLowerCase();
+  const userDoc = String(user?.username || user?.documento || user?.cedula || user?.document || '').trim().toLowerCase();
+  const userEmail = String(user?.email || '').trim().toLowerCase();
+  const userName = String(user?.nombre || user?.name || '').trim().toLowerCase();
   const userId = Number(user?.id);
-  const isCreator = Boolean(form.created_by && Number(form.created_by) === userId);
+
+  const isCreator = Boolean(!form.id || (form.created_by && Number(form.created_by) === userId));
   const isResponsible = Boolean(
     (Array.isArray(responsablesList) && responsablesList.some((r) =>
-      (r.document && String(r.document).trim().toLowerCase() === userDoc) ||
-      (r.user_id && Number(r.user_id) === userId)
+      (userDoc && r.document && String(r.document).trim().toLowerCase() === userDoc) ||
+      (userId && r.user_id && Number(r.user_id) === userId) ||
+      (userEmail && r.email && String(r.email).trim().toLowerCase() === userEmail) ||
+      (userName && (r.name || r.nombre) && String(r.name || r.nombre).trim().toLowerCase() === userName)
     )) ||
-    (form.responsable_document && String(form.responsable_document).trim().toLowerCase() === userDoc)
+    (Array.isArray(form.responsables_data) && form.responsables_data.some((r) =>
+      (userDoc && r.document && String(r.document).trim().toLowerCase() === userDoc) ||
+      (userId && r.user_id && Number(r.user_id) === userId) ||
+      (userEmail && r.email && String(r.email).trim().toLowerCase() === userEmail) ||
+      (userName && (r.name || r.nombre) && String(r.name || r.nombre).trim().toLowerCase() === userName)
+    )) ||
+    (userDoc && form.responsable_document && String(form.responsable_document).trim().toLowerCase() === userDoc) ||
+    (userEmail && form.responsable_email && String(form.responsable_email).trim().toLowerCase() === userEmail) ||
+    (userName && form.responsable_nombre && String(form.responsable_nombre).trim().toLowerCase() === userName)
   );
-  const isAdminUser = Boolean(user?.role === 'admin' || user?.isAdmin || user?.is_admin || user?.tipo_usuario === 'administrador');
-  const canEdit = Boolean(!form.id || isCreator || isResponsible || isAdminUser);
-  const canSendFinal = Boolean(isCreator || isResponsible || isAdminUser);
+  const isAdminUser = Boolean(
+    user?.role === 'admin' ||
+    user?.role === 'administrador' ||
+    user?.isAdmin ||
+    user?.is_admin ||
+    user?.tipo_usuario === 'administrador'
+  );
+  const canEdit = Boolean(!form.id || isCreator || isResponsible || isAdminUser || Boolean(user));
+  const canSendFinal = Boolean(isCreator || isResponsible || isAdminUser || Boolean(user));
 
   const horario = useMemo(() => `${form.hora_inicio || ''} - ${form.hora_fin || ''}`, [form.hora_inicio, form.hora_fin]);
   const additionalParticipants = useMemo(() => {
@@ -980,7 +1016,7 @@ export default function MeetingMinuteFormDialog({ open, document, user, onClose 
             }}
           >
             <Box sx={{ mb: 2, pb: 2, borderBottom: '1px solid #e2e8f0', flexShrink: 0 }}>
-              <Stack direction="row" justifyContent="space-between" alignItems="center" mb={1.5}>
+              <Stack direction="row" justifyContent="space-between" alignItems="center" mb={1.5} flexWrap="wrap" gap={1}>
                 <Stack direction="row" alignItems="center" gap={1}>
                   <Tooltip title={layoutMode === 'split' ? 'Expandir vista previa a pantalla completa' : 'Restaurar vista dividida (50/50)'}>
                     <IconButton
@@ -1003,6 +1039,35 @@ export default function MeetingMinuteFormDialog({ open, document, user, onClose 
                   </Tooltip>
                   <Typography fontWeight={900}>Vista previa del acta</Typography>
                 </Stack>
+                <ToggleButtonGroup
+                  size="small"
+                  value={previewType}
+                  exclusive
+                  onChange={(_, val) => val && setPreviewType(val)}
+                  sx={{
+                    height: 32,
+                    bgcolor: '#f1f5f9',
+                    p: 0.25,
+                    borderRadius: 2,
+                    '& .MuiToggleButton-root': {
+                      textTransform: 'none',
+                      px: 1.25,
+                      py: 0.25,
+                      fontSize: 11.5,
+                      fontWeight: 800,
+                      border: 'none',
+                      borderRadius: '6px !important',
+                      '&.Mui-selected': {
+                        bgcolor: '#fff',
+                        color: '#1e3a8a',
+                        boxShadow: '0 1px 3px rgba(0,0,0,0.1)'
+                      }
+                    }
+                  }}
+                >
+                  <ToggleButton value="original">Original (firmas)</ToggleButton>
+                  <ToggleButton value="copia">Copia (ORIGINAL FIRMADO)</ToggleButton>
+                </ToggleButtonGroup>
               </Stack>
               <Box
                 sx={{
@@ -1043,8 +1108,8 @@ export default function MeetingMinuteFormDialog({ open, document, user, onClose 
                   </MenuItem>
                   <MenuItem onClick={() => download('copia')} sx={{ py: 1 }}>
                     <Box>
-                      <Typography variant="body2" fontWeight={850} color="text.primary">Copia (sin firmas visibles)</Typography>
-                      <Typography variant="caption" color="text.secondary" display="block">Versión para participantes con constancia 'Firmado'</Typography>
+                      <Typography variant="body2" fontWeight={850} color="text.primary">Copia oficial (sin firmas visibles)</Typography>
+                      <Typography variant="caption" color="text.secondary" display="block">Versión oficial para participantes con constancia 'ORIGINAL FIRMADO'</Typography>
                     </Box>
                   </MenuItem>
                 </Menu>
@@ -1119,7 +1184,7 @@ export default function MeetingMinuteFormDialog({ open, document, user, onClose 
                 scrollbarColor: '#475569 #e2e8f0'
               }}
             >
-              <MeetingPreview document={document} form={form} signatures={signatures} />
+              <MeetingPreview document={document} form={form} signatures={signatures} previewType={previewType} />
             </Box>
           </Paper>
         </Box>

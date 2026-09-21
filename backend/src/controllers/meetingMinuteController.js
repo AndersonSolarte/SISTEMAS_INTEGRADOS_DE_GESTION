@@ -189,17 +189,20 @@ const canAccessMinuteFullSignatures = async (user, minute) => {
   if (!user || !minute) return false;
   if (isAdmin(user)) return true;
   const userId = Number(user.id);
-  if (Number(minute.created_by) === userId) return true;
-  const userDoc = String(user.username || '').trim().toLowerCase();
+  if (minute.created_by && Number(minute.created_by) === userId) return true;
+  const userDoc = String(user.username || user.documento || user.cedula || '').trim().toLowerCase();
   const userEmail = clean(user.email, 254).toLowerCase();
+  const userName = String(user.nombre || user.name || '').trim().toLowerCase();
   const content = minute.content || {};
   const data = Array.isArray(content.responsables_data) ? content.responsables_data : [];
   const isResp = data.some((r) =>
-    (r.document && String(r.document).trim().toLowerCase() === userDoc) ||
-    (r.user_id && Number(r.user_id) === userId) ||
-    (r.email && clean(r.email, 254).toLowerCase() === userEmail)
-  ) || (content.responsable_document && String(content.responsable_document).trim().toLowerCase() === userDoc)
-    || (content.responsable_email && clean(content.responsable_email, 254).toLowerCase() === userEmail);
+    (userDoc && r.document && String(r.document).trim().toLowerCase() === userDoc) ||
+    (userId && r.user_id && Number(r.user_id) === userId) ||
+    (userEmail && r.email && clean(r.email, 254).toLowerCase() === userEmail) ||
+    (userName && (r.name || r.nombre) && String(r.name || r.nombre).trim().toLowerCase() === userName)
+  ) || (userDoc && content.responsable_document && String(content.responsable_document).trim().toLowerCase() === userDoc)
+    || (userEmail && content.responsable_email && clean(content.responsable_email, 254).toLowerCase() === userEmail)
+    || (userName && content.responsable_nombre && String(content.responsable_nombre).trim().toLowerCase() === userName);
   return Boolean(isResp);
 };
 
@@ -378,7 +381,7 @@ const buildSignedMinutePayload = (minute, options = {}) => {
         nombre: formatPersonName(participant.name),
         cargo: participantRoleLabel(participant),
         status: participant.status,
-        firma: isSigned ? 'Firmado' : 'Pendiente · QR',
+        firma: isSigned ? 'ORIGINAL FIRMADO' : 'Pendiente · QR',
         firma_data_url: signatureData
       };
     })
@@ -836,7 +839,7 @@ const sendFinalMinute = wrap(async (req, res) => {
 
   // 1. Original PDF con firmas gráficas completas para custodia y archivo del responsable
   const originalBuffer = await buildSignedMinutePdfBuffer(minute, { hideSignatures: false });
-  // 2. Copia oficial donde en la columna Firma aparece 'Firmado' sin exponer los trazos de firma
+  // 2. Copia oficial donde en la columna Firma aparece 'ORIGINAL FIRMADO' sin exponer los trazos de firma
   const copyBuffer = await buildSignedMinutePdfBuffer(minute, { hideSignatures: true });
 
   const meetingDate = formatDate(minute.content?.fecha);
@@ -871,7 +874,7 @@ const sendFinalMinute = wrap(async (req, res) => {
         <p style="margin:0;font-size:13px;color:#15803d;line-height:1.5;">${
           isResponsibleRecipient
             ? 'Se adjunta a este mensaje el documento <strong>ORIGINAL</strong> en formato PDF con las firmas gráficas de los participantes para su custodia y archivo institucional.'
-            : 'Se adjunta a este mensaje la copia oficial en formato PDF debidamente firmada con su constancia de firma.'
+            : 'Se adjunta a este mensaje la copia oficial en formato PDF debidamente certificada con la constancia <strong>ORIGINAL FIRMADO</strong>.'
         }</p>
       </div>
 
@@ -904,7 +907,7 @@ const sendFinalMinute = wrap(async (req, res) => {
         messageId: finalMsgId,
         inReplyTo: participantMsgId,
         references: `${rootId} ${participantMsgId}`,
-        text: `ACTA N° ${minute.code}\nCordial saludo de paz y bien,\n\nEl proceso de firma del acta institucional ${minute.code} con fecha ${meetingDate} ha finalizado satisfactoriamente por todos los participantes convocados. Se adjunta ${isResponsibleRecipient ? 'el documento original con las firmas para su custodia' : 'la copia oficial firmada'}.\n\nResponsable: ${respNombre}${respEmail ? ` (${respEmail})` : ''}\nSi tiene comentarios o aclaraciones adicionales, responda directamente a este correo.`,
+        text: `ACTA N° ${minute.code}\nCordial saludo de paz y bien,\n\nEl proceso de firma del acta institucional ${minute.code} con fecha ${meetingDate} ha finalizado satisfactoriamente por todos los participantes convocados. Se adjunta ${isResponsibleRecipient ? 'el documento original con las firmas para su custodia' : 'la copia oficial con la constancia ORIGINAL FIRMADO'}.\n\nResponsable: ${respNombre}${respEmail ? ` (${respEmail})` : ''}\nSi tiene comentarios o aclaraciones adicionales, responda directamente a este correo.`,
         html,
         attachments: [attachmentForRecipient],
         allowExternalRecipients: true
