@@ -557,8 +557,13 @@ const buildActaDocument = (payload = {}) => {
     objetivo = [],
     desarrollo = [],
     conclusiones = [],
+    comentarios_adicionales = [],
     header = null
   } = payload;
+
+  const hasComments = Array.isArray(comentarios_adicionales)
+    ? comentarios_adicionales.some(Boolean)
+    : Boolean(comentarios_adicionales);
 
   const children = [
     buildHeaderTable(header),
@@ -566,8 +571,11 @@ const buildActaDocument = (payload = {}) => {
     buildInformacionReunionTable({ lugar, fecha, horario }),
     buildParticipantesTable(participantes),
     buildBlockTable('Objetivo', objetivo),
+    spacerParagraph(),
     buildBlockTable('Desarrollo', desarrollo),
+    spacerParagraph(),
     buildBlockTable('Conclusiones / Compromisos', conclusiones),
+    ...(hasComments ? [spacerParagraph(), buildBlockTable('Comentarios / Observaciones Adicionales', comentarios_adicionales)] : []),
     spacerParagraph()
   ];
 

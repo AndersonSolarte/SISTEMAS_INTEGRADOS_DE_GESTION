@@ -127,19 +127,105 @@ const minuteParticipantMessageId = (minuteCode, recipientEmail) => {
   return `<minute.${safeCode}.${safeEmail}@unicesmag.edu.co>`;
 };
 
-const buildSigningInvitationEmail = ({ participant, minute, signingUrl }) => {
+const resolveMinutePrimaryResponsible = async (minute) => {
+  const content = minute?.content || {};
+  const data = Array.isArray(content.responsables_data) ? content.responsables_data : [];
+  const primary = data.find((r) => r.is_primary) || data[0];
+  if (primary?.email) {
+    return {
+      name: primary.name || primary.nombre || 'Responsable de la reunión',
+      email: clean(primary.email, 254).toLowerCase()
+    };
+  }
+  const doc = primary?.document || content.responsable_document;
+  if (doc) {
+    const user = await User.findOne({ where: { username: doc }, attributes: ['nombre', 'email'] });
+    if (user?.email) {
+      return {
+        name: user.nombre,
+        email: clean(user.email, 254).toLowerCase()
+      };
+    }
+  }
+  if (minute?.created_by) {
+    const creator = await User.findByPk(minute.created_by, { attributes: ['nombre', 'email'] });
+    if (creator?.email) {
+      return {
+        name: creator.nombre,
+        email: clean(creator.email, 254).toLowerCase()
+      };
+    }
+  }
+  return null;
+};
+
+const buildSigningInvitationEmail = ({ participant, minute, signingUrl, responsible }) => {
   const externalPolicy = buildPrivacyPolicyEmailSection(!participant.user_id);
   const meetingDate = formatDate(minute.content?.fecha);
+  const dependencia = minute.content?.dependencia || 'Universidad CESMAG';
+  const rawObjetivo = Array.isArray(minute.content?.objetivo) ? minute.content.objetivo.join(' ') : (minute.content?.objetivo || '');
+  const cleanObjetivo = String(rawObjetivo).replace(/<[^>]+>/g, '').trim();
+  const truncatedObjetivo = cleanObjetivo.length > 250 ? `${cleanObjetivo.substring(0, 247)}...` : cleanObjetivo;
+  const respNombre = responsible?.name || 'Responsable de la reunión';
+  const respEmail = responsible?.email || '';
+
+  const subject = `${minute.code} · Solicitud de firma de acta de reunión`;
+
+  const introHtml = `
+    <p style="margin:0 0 10px;font-size:17px;font-weight:800;color:#1e3a8a;letter-spacing:0.3px;">ACTA N° ${escapeHtml(minute.code)}</p>
+    <p style="margin:0 0 12px;font-size:15px;color:#334155;">Cordial saludo de paz y bien,</p>
+    <p style="margin:0 0 12px;font-size:14px;color:#334155;">Estimado(a) <strong>${escapeHtml(participant.name)}</strong>:</p>
+    <p style="margin:0;font-size:14px;color:#334155;line-height:1.6;">Se convoca a su revisión y firma el acta de reunión institucional <strong>${escapeHtml(minute.code)}</strong>.</p>
+  `;
+
+  const bodyHtml = `
+    <div style="margin:16px 0;padding:16px;border:1px solid #cbd5e1;border-radius:10px;background:#f8fafc;">
+      <p style="margin:0 0 10px;font-size:12px;font-weight:800;color:#475569;text-transform:uppercase;letter-spacing:0.5px;">Contexto de la reunión</p>
+      <table style="width:100%;border-collapse:collapse;font-size:13.5px;color:#1e293b;">
+        <tr>
+          <td style="padding:4px 0;width:130px;color:#64748b;"><strong>N° Acta:</strong></td>
+          <td style="padding:4px 0;font-weight:700;">${escapeHtml(minute.code)}</td>
+        </tr>
+        ${meetingDate ? `<tr><td style="padding:4px 0;color:#64748b;"><strong>Fecha:</strong></td><td style="padding:4px 0;">${escapeHtml(meetingDate)}</td></tr>` : ''}
+        ${dependencia ? `<tr><td style="padding:4px 0;color:#64748b;"><strong>Dependencia:</strong></td><td style="padding:4px 0;">${escapeHtml(dependencia)}</td></tr>` : ''}
+        ${truncatedObjetivo ? `<tr><td style="padding:4px 0;color:#64748b;vertical-align:top;"><strong>Objetivo:</strong></td><td style="padding:4px 0;">${escapeHtml(truncatedObjetivo)}</td></tr>` : ''}
+        ${respNombre ? `<tr><td style="padding:4px 0;color:#64748b;"><strong>Responsable:</strong></td><td style="padding:4px 0;">${escapeHtml(respNombre)}${respEmail ? ` (${escapeHtml(respEmail)})` : ''}</td></tr>` : ''}
+      </table>
+    </div>
+
+    <div style="margin:20px 0;padding:20px;border:1px solid #bfdbfe;border-radius:12px;background:#eff6ff;text-align:center;">
+      <p style="margin:0 0 14px;font-size:14px;color:#1e3a8a;line-height:1.5;">Adjuntamos una copia en PDF del acta para su lectura previa. Para revisar y firmar el documento directamente en la plataforma, haga clic en el siguiente botón:</p>
+      <p style="margin:0;text-align:center;">
+        <a href="${escapeHtml(signingUrl)}" style="display:inline-block;padding:14px 28px;border-radius:8px;background:#1e40af;color:#ffffff;text-decoration:none;font-weight:700;font-size:15px;box-shadow:0 2px 4px rgba(0,0,0,0.1);">Revisar y firmar acta</a>
+      </p>
+      <p style="margin:14px 0 0;font-size:12px;color:#64748b;">Este enlace es individual e intransferible. Por seguridad, solo puede ser firmado por el destinatario registrado (<strong>${escapeHtml(participant.email)}</strong>).</p>
+    </div>
+
+    ${respEmail ? `<div style="margin:16px 0;padding:12px 16px;border-left:4px solid #3b82f6;background:#f0f9ff;font-size:13px;color:#1e40af;line-height:1.5;"><p style="margin:0;"><strong>¿Tiene dudas, observaciones o comentarios adicionales?</strong> Responda directamente a este correo electrónico para comunicarse con el/la responsable principal de la reunión: <strong>${escapeHtml(respNombre)}</strong> &lt;${escapeHtml(respEmail)}&gt;.</p></div>` : ''}
+
+    ${externalPolicy.html}
+  `;
+
   const html = renderInstitutionalTemplate({
-    title: 'Revise y firme el acta de reunión',
-    introHtml: `<p>Hola <strong>${escapeHtml(participant.name)}</strong>.</p><p>El acta <strong>${escapeHtml(minute.code)}</strong>${meetingDate ? ` del ${escapeHtml(meetingDate)}` : ''} está disponible para su firma.</p>`,
-    bodyHtml: `<div style="margin:20px 0;padding:18px;border:1px solid #bfdbfe;border-radius:12px;background:#f8fbff"><p style="margin:0 0 10px">Adjuntamos una copia del acta para su revisión. También puede leerla completa al abrir el siguiente enlace personal.</p><p style="margin:0 0 14px">Su correo queda verificado mediante el enlace; no necesita copiar códigos ni volver a escribir su dirección.</p><p style="margin:0;text-align:center"><a href="${escapeHtml(signingUrl)}" style="display:inline-block;padding:13px 24px;border-radius:8px;background:#2459d3;color:#fff;text-decoration:none;font-weight:700">Revisar y firmar acta</a></p></div>${externalPolicy.html}<p style="font-size:13px;color:#64748b">Por seguridad, el enlace es individual, vence al finalizar el proceso y no debe compartirse.</p>`
+    title: `Acta de Reunión · ${minute.code}`,
+    introHtml,
+    bodyHtml
   });
-  return {
-    subject: minuteThreadSubject(minute.code),
-    text: `Hola ${participant.name}. Adjuntamos una copia del acta ${minute.code}${meetingDate ? ` del ${meetingDate}` : ''} para su revisión. Abra su enlace personal para leerla y firmarla; no necesita copiar ningún código: ${signingUrl}${externalPolicy.text}`,
-    html
-  };
+
+  const text = `ACTA N° ${minute.code}
+Cordial saludo de paz y bien,
+Estimado(a) ${participant.name}:
+
+Se convoca a su revisión y firma el acta de reunión institucional ${minute.code}${meetingDate ? ` con fecha ${meetingDate}` : ''}.
+Dependencia: ${dependencia}
+${truncatedObjetivo ? `Objetivo: ${truncatedObjetivo}\n` : ''}Responsable: ${respNombre}${respEmail ? ` (${respEmail})` : ''}
+
+Para revisar y firmar el acta, ingrese al siguiente enlace institucional:
+${signingUrl}
+
+Si tiene observaciones, comentarios o dudas, responda directamente a este correo para contactar al/a la responsable principal (${respNombre} - ${respEmail}).${externalPolicy.text}`;
+
+  return { subject, text, html };
 };
 
 const sendParticipantInvitations = async ({ minute, baseUrl }) => {
@@ -153,11 +239,12 @@ const sendParticipantInvitations = async ({ minute, baseUrl }) => {
   const reviewAttachment = { filename: `${minute.code}-PARA-REVISION.pdf`, content: reviewBuffer, contentType: 'application/pdf' };
   const summary = { sent: 0, failed: 0 };
   const rootId = minuteRootMessageId(minute.code);
+  const responsible = await resolveMinutePrimaryResponsible(minute);
 
   for (const participant of (minute.participants || []).filter((item) => item.status !== 'signed')) {
     const invitationToken = crypto.randomBytes(32).toString('base64url');
     const signingUrl = `${baseUrl}/firmar-acta-reunion/${invitationToken}`;
-    const email = buildSigningInvitationEmail({ participant, minute, signingUrl });
+    const email = buildSigningInvitationEmail({ participant, minute, signingUrl, responsible });
     const recipientEmail = clean(participant.email, 254).toLowerCase();
     const participantMsgId = minuteParticipantMessageId(minute.code, recipientEmail);
     const isResend = Boolean(participant.invitation_sent_at);
@@ -173,7 +260,8 @@ const sendParticipantInvitations = async ({ minute, baseUrl }) => {
       const result = await sendInstitutionalEmail({
         to: participant.email,
         ...email,
-        subject: isResend ? `Re: ${minuteThreadSubject(minute.code)}` : minuteThreadSubject(minute.code),
+        replyTo: responsible?.email || undefined,
+        subject: isResend ? `Re: ${email.subject}` : email.subject,
         messageId: isResend ? `<minute.${safeCode}.${safeEmail}.resend.${Date.now()}@unicesmag.edu.co>` : participantMsgId,
         inReplyTo: isResend ? participantMsgId : undefined,
         references: isResend ? `${rootId} ${participantMsgId}` : rootId,
@@ -295,7 +383,10 @@ const normalizeContent = (body, user, document) => ({
   horario: clean(body.horario, 100),
   objetivo: [sanitizeRichText(body.objetivo)],
   desarrollo: [sanitizeRichText(body.desarrollo)],
-  conclusiones: [sanitizeRichText(body.conclusiones)]
+  conclusiones: [sanitizeRichText(body.conclusiones)],
+  comentarios_adicionales: Array.isArray(body.comentarios_adicionales)
+    ? body.comentarios_adicionales.map(sanitizeRichText)
+    : (body.comentarios_adicionales ? [sanitizeRichText(body.comentarios_adicionales)] : [])
 });
 
 const saveDraft = wrap(async (req, res) => {
@@ -527,6 +618,7 @@ const publicMinute = wrap(async (req, res) => {
         name: invitedParticipant.name,
         role_title: invitedParticipant.role_title,
         organization: invitedParticipant.organization,
+        email: invitedParticipant.email,
         external: !invitedParticipant.user_id,
         status: invitedParticipant.status
       } : null,
@@ -574,6 +666,13 @@ const sign = wrap(async (req, res) => {
   if (participant.status === 'signed') throw Object.assign(new Error('Usted ya firmó este documento anteriormente.'), { statusCode: 409 });
   if (!participant.user_id && req.body.privacy_accepted !== true) throw Object.assign(new Error('Debe aceptar la autorización de tratamiento de datos personales para firmar.'), { statusCode: 422 });
   const personalInvitation = Boolean(access?.invitationVerified && String(access.invitedParticipant.id) === String(participant.id));
+  if (personalInvitation && req.body.signer_email) {
+    const cleanSigner = clean(req.body.signer_email, 254).toLowerCase();
+    const cleanParticipant = clean(participant.email, 254).toLowerCase();
+    if (cleanSigner !== cleanParticipant) {
+      throw Object.assign(new Error(`El correo ingresado (${cleanSigner}) no coincide con el destinatario registrado (${cleanParticipant}). Si este enlace fue reenviado, únicamente el destinatario original puede firmar.`), { statusCode: 403 });
+    }
+  }
   if (!personalInvitation && (participant.otp_attempts >= 5 || !participant.otp_expires_at || participant.otp_expires_at < new Date() || participant.otp_hash !== hash(req.body.otp))) {
     await participant.increment('otp_attempts');
     throw Object.assign(new Error('Código inválido o vencido.'), { statusCode: 422 });
@@ -628,11 +727,44 @@ const sendFinalMinute = wrap(async (req, res) => {
   if (!recipients.length) throw Object.assign(new Error('El acta no tiene correos de participantes para el envío.'), { statusCode: 422 });
   const buffer = await buildSignedMinutePdfBuffer(minute);
   const meetingDate = formatDate(minute.content?.fecha);
+  const dependencia = minute.content?.dependencia || 'Universidad CESMAG';
+  const responsible = await resolveMinutePrimaryResponsible(minute);
+  const respNombre = responsible?.name || 'Responsable de la reunión';
+  const respEmail = responsible?.email || '';
+
   const attachment = { filename: `${minute.code}.pdf`, content: buffer, contentType: 'application/pdf' };
+  const introHtml = `
+    <p style="margin:0 0 10px;font-size:17px;font-weight:800;color:#1e3a8a;letter-spacing:0.3px;">ACTA N° ${escapeHtml(minute.code)}</p>
+    <p style="margin:0 0 12px;font-size:15px;color:#334155;">Cordial saludo de paz y bien,</p>
+    <p style="margin:0 0 14px;font-size:14px;color:#334155;">El proceso de revisión y firma del acta de reunión institucional <strong>${escapeHtml(minute.code)}</strong> ha finalizado satisfactoriamente.</p>
+  `;
+
+  const bodyHtml = `
+    <div style="margin:16px 0;padding:16px;border:1px solid #cbd5e1;border-radius:10px;background:#f8fafc;">
+      <p style="margin:0 0 10px;font-size:12px;font-weight:800;color:#475569;text-transform:uppercase;letter-spacing:0.5px;">Información del documento final</p>
+      <table style="width:100%;border-collapse:collapse;font-size:13.5px;color:#1e293b;">
+        <tr>
+          <td style="padding:4px 0;width:130px;color:#64748b;"><strong>N° Acta:</strong></td>
+          <td style="padding:4px 0;font-weight:700;">${escapeHtml(minute.code)}</td>
+        </tr>
+        ${meetingDate ? `<tr><td style="padding:4px 0;color:#64748b;"><strong>Fecha:</strong></td><td style="padding:4px 0;">${escapeHtml(meetingDate)}</td></tr>` : ''}
+        ${dependencia ? `<tr><td style="padding:4px 0;color:#64748b;"><strong>Dependencia:</strong></td><td style="padding:4px 0;">${escapeHtml(dependencia)}</td></tr>` : ''}
+        ${respNombre ? `<tr><td style="padding:4px 0;color:#64748b;"><strong>Responsable:</strong></td><td style="padding:4px 0;">${escapeHtml(respNombre)}${respEmail ? ` (${escapeHtml(respEmail)})` : ''}</td></tr>` : ''}
+      </table>
+    </div>
+
+    <div style="margin:20px 0;padding:18px;border:1px solid #bbf7d0;border-radius:12px;background:#f0fdf4;">
+      <p style="margin:0 0 6px;font-size:14px;color:#166534;font-weight:700;">✓ Documento formalmente firmado por todos los convocados</p>
+      <p style="margin:0;font-size:13px;color:#15803d;line-height:1.5;">Se adjunta a este mensaje la copia oficial en formato PDF debidamente firmada con su trazabilidad de seguridad y códigos de verificación.</p>
+    </div>
+
+    ${respEmail ? `<div style="margin:16px 0;padding:12px 16px;border-left:4px solid #3b82f6;background:#f0f9ff;font-size:13px;color:#1e40af;line-height:1.5;"><p style="margin:0;"><strong>¿Requiere aclaraciones o comentarios posteriores?</strong> Puede responder directamente a este mensaje para comunicarse con el/la responsable principal: <strong>${escapeHtml(respNombre)}</strong> &lt;${escapeHtml(respEmail)}&gt;.</p></div>` : ''}
+  `;
+
   const html = renderInstitutionalTemplate({
-    title: 'Acta de reunión firmada',
-    introHtml: '<p>Cordial saludo,</p><p>El proceso de firma del acta de reunión ha finalizado.</p>',
-    bodyHtml: `<div style="padding:16px;background:#eff6ff;border:1px solid #bfdbfe;border-radius:10px"><p style="margin:0 0 6px"><strong>Acta:</strong> ${escapeHtml(minute.code)}</p><p style="margin:0"><strong>Fecha:</strong> ${escapeHtml(meetingDate)}</p></div><p>Se adjunta la versión final con las firmas registradas.</p>`
+    title: `Acta de Reunión Firmada · ${minute.code}`,
+    introHtml,
+    bodyHtml
   });
 
   const rootId = minuteRootMessageId(minute.code);
@@ -646,11 +778,12 @@ const sendFinalMinute = wrap(async (req, res) => {
     try {
       const result = await sendInstitutionalEmail({
         to: recipient,
-        subject: `Re: ${minuteThreadSubject(minute.code)}`,
+        replyTo: responsible?.email || undefined,
+        subject: `Re: ${minute.code} · Solicitud de firma de acta de reunión`,
         messageId: finalMsgId,
         inReplyTo: participantMsgId,
         references: `${rootId} ${participantMsgId}`,
-        text: `El acta ${minute.code}, con fecha ${meetingDate}, ha sido firmada por todos los participantes. Se adjunta la versión final.`,
+        text: `ACTA N° ${minute.code}\nCordial saludo de paz y bien,\n\nEl proceso de firma del acta institucional ${minute.code} con fecha ${meetingDate} ha finalizado satisfactoriamente por todos los participantes convocados. Se adjunta la versión final oficial en PDF.\n\nResponsable: ${respNombre}${respEmail ? ` (${respEmail})` : ''}\nSi tiene comentarios o aclaraciones adicionales, responda directamente a este correo.`,
         html,
         attachments: [attachment],
         allowExternalRecipients: true
@@ -667,4 +800,71 @@ const sendFinalMinute = wrap(async (req, res) => {
   res.json({ success: true, message: `Acta firmada enviada a ${recipients.length} participante(s).`, data: { status: 'distributed', distributed_at: sentAt, recipients: recipients.length } });
 });
 
-module.exports = { downloadPdf, downloadWord, getConfig, getMinute, getSigningAccess, listMinutes, lookupParticipant, publicMinute, publish, reopenForEditing, requestCode, resendInvitations, saveDraft, sendFinalMinute, sign, updateConfig, _internals: { buildPrivacyPolicyEmailSection, buildSigningInvitationEmail, minuteThreadSubject, minuteRootMessageId, minuteParticipantMessageId, participantRoleLabel, placeResponsibleFirst, sanitizeRichText } };
+const updateComments = wrap(async (req, res) => {
+  const minute = await DigitalMeetingMinute.findByPk(req.params.id, {
+    include: [{ model: DigitalMeetingParticipant, as: 'participants' }]
+  });
+  if (!minute || minute.deleted_at) throw Object.assign(new Error('Acta no encontrada.'), { statusCode: 404 });
+
+  const content = minute.content || {};
+  const data = Array.isArray(content.responsables_data) ? content.responsables_data : [];
+  const userDoc = String(req.user.username || '').trim().toLowerCase();
+  const userId = Number(req.user.id);
+  const isCreator = Number(minute.created_by) === userId;
+  const isResp = data.some((r) =>
+    (r.document && String(r.document).trim().toLowerCase() === userDoc) ||
+    (r.user_id && Number(r.user_id) === userId)
+  ) || (content.responsable_document && String(content.responsable_document).trim().toLowerCase() === userDoc);
+
+  if (!isAdmin(req.user) && !isCreator && !isResp) {
+    throw Object.assign(new Error('Solo el responsable de la reunión o el creador del acta pueden registrar comentarios adicionales.'), { statusCode: 403 });
+  }
+
+  const rawComments = req.body.comentarios_adicionales;
+  const sanitized = Array.isArray(rawComments)
+    ? rawComments.map(sanitizeRichText)
+    : (rawComments ? [sanitizeRichText(rawComments)] : []);
+
+  minute.content = {
+    ...content,
+    comentarios_adicionales: sanitized
+  };
+  minute.changed('content', true);
+  await minute.save();
+
+  res.json({
+    success: true,
+    message: 'Comentarios adicionales guardados correctamente.',
+    data: { comentarios_adicionales: minute.content.comentarios_adicionales }
+  });
+});
+
+module.exports = {
+  downloadPdf,
+  downloadWord,
+  getConfig,
+  getMinute,
+  getSigningAccess,
+  listMinutes,
+  lookupParticipant,
+  publicMinute,
+  publish,
+  reopenForEditing,
+  requestCode,
+  resendInvitations,
+  saveDraft,
+  sendFinalMinute,
+  sign,
+  updateComments,
+  updateConfig,
+  _internals: {
+    buildPrivacyPolicyEmailSection,
+    buildSigningInvitationEmail,
+    minuteThreadSubject,
+    minuteRootMessageId,
+    minuteParticipantMessageId,
+    participantRoleLabel,
+    placeResponsibleFirst,
+    sanitizeRichText
+  }
+};

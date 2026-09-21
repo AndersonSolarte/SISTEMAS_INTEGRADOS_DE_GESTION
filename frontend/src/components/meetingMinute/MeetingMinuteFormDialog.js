@@ -28,7 +28,7 @@ const emptyForm = (user = {}) => ({
   id: '', status: 'draft', created_by: user.id || '', responsables: '', dependencia: '',
   responsable_document: '', responsable_role: '', responsables_data: [],
   lugar: '', fecha: today(), hora_inicio: '08:00', hora_fin: '10:00',
-  objetivo: '', desarrollo: '', conclusiones: '', participants: []
+  objetivo: '', desarrollo: '', conclusiones: '', comentarios_adicionales: '', participants: []
 });
 
 const formatResponsablesText = (list = []) => {
@@ -203,6 +203,12 @@ const MeetingPreview = ({ document, form, signatures = [] }) => {
         const key = title === 'Objetivo' ? 'objetivo' : title === 'Desarrollo' ? 'desarrollo' : 'conclusiones';
         return <React.Fragment key={title}><Box sx={{ ...cell, bgcolor: '#d9d9d9', textAlign: 'center', fontWeight: 900 }}>{title}</Box><Box sx={{ p: 1, minHeight: key === 'objetivo' ? 62 : 90, fontSize: 11.5, '& p': { my: 0.3 }, '& h2, & h3': { my: 0.4 }, '& a': { color: '#1d5fd1', textDecoration: 'underline' }, '& blockquote': { my: 0.5, mx: 0, pl: 1, borderLeft: '3px solid #94a3b8' }, '& hr': { border: 0, borderTop: '1px solid #777' }, '& ul, & ol': { my: 0.4, pl: 2.5 }, '& table': { width: '100%', maxWidth: '100%', tableLayout: 'fixed', borderCollapse: 'collapse', my: 0.5, boxSizing: 'border-box' }, '& th, & td': { border: '1px solid #555', p: 0.6, whiteSpace: 'normal', wordBreak: 'break-word', overflowWrap: 'anywhere', verticalAlign: 'top', boxSizing: 'border-box' }, '& th': { bgcolor: '#f2f2f2' } }} dangerouslySetInnerHTML={{ __html: sanitizeRichHtml(form[key]) }} /></React.Fragment>;
       })}
+      {Boolean(form.comentarios_adicionales) && (
+        <React.Fragment>
+          <Box sx={{ ...cell, bgcolor: '#d9d9d9', textAlign: 'center', fontWeight: 900 }}>Comentarios / Observaciones Adicionales</Box>
+          <Box sx={{ p: 1, minHeight: 60, fontSize: 11.5, '& p': { my: 0.3 }, '& h2, & h3': { my: 0.4 }, '& a': { color: '#1d5fd1', textDecoration: 'underline' }, '& blockquote': { my: 0.5, mx: 0, pl: 1, borderLeft: '3px solid #94a3b8' }, '& hr': { border: 0, borderTop: '1px solid #777' }, '& ul, & ol': { my: 0.4, pl: 2.5 }, '& table': { width: '100%', maxWidth: '100%', tableLayout: 'fixed', borderCollapse: 'collapse', my: 0.5, boxSizing: 'border-box' }, '& th, & td': { border: '1px solid #555', p: 0.6, whiteSpace: 'normal', wordBreak: 'break-word', overflowWrap: 'anywhere', verticalAlign: 'top', boxSizing: 'border-box' }, '& th': { bgcolor: '#f2f2f2' } }} dangerouslySetInnerHTML={{ __html: sanitizeRichHtml(form.comentarios_adicionales) }} />
+        </React.Fragment>
+      )}
     </Box>
   );
 };
@@ -224,6 +230,7 @@ export default function MeetingMinuteFormDialog({ open, document, user, onClose 
   const [searching, setSearching] = useState(false);
   const [qr, setQr] = useState(null);
   const [confirmAdjust, setConfirmAdjust] = useState(false);
+  const [savingComments, setSavingComments] = useState(false);
   const [layoutMode, setLayoutMode] = useState('split'); // 'split' | 'form' | 'preview'
   const locked = form.status !== 'draft';
   const hasSignatures = signatures.length > 0;
@@ -289,6 +296,7 @@ export default function MeetingMinuteFormDialog({ open, document, user, onClose 
         objetivo: content.objetivo?.[0] || '',
         desarrollo: content.desarrollo?.[0] || '',
         conclusiones: content.conclusiones?.[0] || '',
+        comentarios_adicionales: content.comentarios_adicionales?.[0] || content.comentarios_adicionales || '',
         participants: row.participants || []
       });
       setResponsibleDocument('');
@@ -488,6 +496,7 @@ export default function MeetingMinuteFormDialog({ open, document, user, onClose 
     objetivo: form.objetivo,
     desarrollo: form.desarrollo,
     conclusiones: form.conclusiones,
+    comentarios_adicionales: form.comentarios_adicionales,
     participants: form.participants
   });
 
@@ -513,6 +522,22 @@ export default function MeetingMinuteFormDialog({ open, document, user, onClose 
       return null;
     } finally {
       setLoading(false);
+    }
+  };
+
+  const saveComments = async () => {
+    if (!form.id) return;
+    setSavingComments(true);
+    try {
+      await meetingMinuteService.updateComments(form.id, {
+        comentarios_adicionales: form.comentarios_adicionales
+      });
+      enqueueSnackbar('Comentarios adicionales guardados exitosamente.', { variant: 'success' });
+      await loadMinutes();
+    } catch (error) {
+      enqueueSnackbar(error.response?.data?.message || 'No fue posible guardar los comentarios adicionales.', { variant: 'error' });
+    } finally {
+      setSavingComments(false);
     }
   };
 
@@ -880,6 +905,38 @@ export default function MeetingMinuteFormDialog({ open, document, user, onClose 
                 <RichTextEditor disabled={locked} label="Objetivo *" value={form.objetivo} onChange={(value) => setField('objetivo', value)} minHeight={90} />
                 <RichTextEditor disabled={locked} label="Desarrollo de la reunión" value={form.desarrollo} onChange={(value) => setField('desarrollo', value)} minHeight={150} />
                 <RichTextEditor disabled={locked} label="Conclusiones / Compromisos" value={form.conclusiones} onChange={(value) => setField('conclusiones', value)} minHeight={120} />
+                <Box sx={{ gridColumn: '1 / -1', mt: 1 }}>
+                  <Stack direction={{ xs: 'column', sm: 'row' }} alignItems={{ sm: 'center' }} justifyContent="space-between" gap={1} mb={0.75}>
+                    <Typography variant="subtitle2" fontWeight={900} color="#1e3a8a">
+                      Comentarios / Observaciones Adicionales {locked ? '(Editable por el Responsable)' : ''}
+                    </Typography>
+                    {locked && form.id && (
+                      <Button
+                        size="small"
+                        variant="contained"
+                        color="primary"
+                        startIcon={savingComments ? <CircularProgress size={14} color="inherit" /> : <Save />}
+                        disabled={savingComments}
+                        onClick={saveComments}
+                        sx={{ textTransform: 'none', fontWeight: 850, fontSize: 12 }}
+                      >
+                        {savingComments ? 'Guardando…' : 'Guardar comentarios'}
+                      </Button>
+                    )}
+                  </Stack>
+                  {locked && (
+                    <Alert severity="info" sx={{ mb: 1, py: 0.5, borderRadius: 2 }}>
+                      Como responsable o creador, puede registrar o actualizar comentarios u observaciones adicionales posfirma sin anular las firmas existentes.
+                    </Alert>
+                  )}
+                  <RichTextEditor
+                    disabled={false}
+                    label="Comentarios u observaciones adicionales del responsable"
+                    value={form.comentarios_adicionales}
+                    onChange={(value) => setField('comentarios_adicionales', value)}
+                    minHeight={100}
+                  />
+                </Box>
               </Box>
             </Paper>
             <Paper variant="outlined" sx={{ p: 2.25, borderRadius: 3 }}>
@@ -1063,7 +1120,11 @@ export default function MeetingMinuteFormDialog({ open, document, user, onClose 
             </Button>
           )}
         </Stack>
-        {!locked && <Button variant="contained" startIcon={loading ? <CircularProgress size={16} color="inherit" /> : <Save />} disabled={loading} onClick={() => save()} sx={{ px: 3, textTransform: 'none', fontWeight: 900 }}>Guardar borrador</Button>}
+        {!locked ? (
+          <Button variant="contained" startIcon={loading ? <CircularProgress size={16} color="inherit" /> : <Save />} disabled={loading} onClick={() => save()} sx={{ px: 3, textTransform: 'none', fontWeight: 900 }}>Guardar borrador</Button>
+        ) : form.id ? (
+          <Button variant="contained" color="primary" startIcon={savingComments ? <CircularProgress size={16} color="inherit" /> : <Save />} disabled={savingComments} onClick={saveComments} sx={{ px: 3, textTransform: 'none', fontWeight: 900 }}>Guardar comentarios adicionales</Button>
+        ) : null}
       </DialogActions>
     </Dialog>
     <Dialog open={Boolean(qr)} onClose={() => setQr(null)} maxWidth="xs" fullWidth><DialogTitle fontWeight={900}>Acceso para firmar</DialogTitle><DialogContent><Stack alignItems="center" gap={1.5}><Alert severity="info">Este QR y enlace sirven como alternativa presencial. Los enlaces personales enviados por correo continúan funcionando de manera independiente.</Alert>{qr?.qr_data_url && <Box component="img" src={qr.qr_data_url} alt="QR alternativo para firmar" sx={{ width: 260, height: 260 }} />}<TextField fullWidth size="small" value={qr?.signing_url || ''} InputProps={{ readOnly: true }} /><Button startIcon={<ContentCopy />} onClick={() => { navigator.clipboard.writeText(qr?.signing_url || ''); enqueueSnackbar('Enlace copiado.', { variant: 'success' }); }}>Copiar enlace alternativo</Button></Stack></DialogContent><DialogActions><Button onClick={() => setQr(null)}>Cerrar</Button></DialogActions></Dialog>

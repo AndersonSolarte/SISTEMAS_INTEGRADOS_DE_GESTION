@@ -28,7 +28,7 @@ function PublicActaPreview({ minute }) {
   const responsablesArray = (Array.isArray(content.responsables_data) && content.responsables_data.length > 0)
     ? content.responsables_data
     : (typeof content.responsables === 'string' && content.responsables.trim()
-      ? content.responsables.split('\n').map((l) => l.replace(/^[•\-\*\s]+/, '').trim()).filter(Boolean).map((line, idx) => {
+      ? content.responsables.split('\n').map((l) => l.replace(/^[•\-*\s]+/, '').trim()).filter(Boolean).map((line, idx) => {
         const match = line.match(/^([^(]+)(?:\((.*)\))?$/);
         return { name: match ? match[1].trim() : line, role_title: match ? (match[2] || '').trim() : '', is_primary: idx === 0 };
       })
@@ -118,8 +118,14 @@ function PublicActaPreview({ minute }) {
         })}
         {['Objetivo', 'Desarrollo', 'Conclusiones / Compromisos'].map((title) => {
           const key = title === 'Objetivo' ? 'objetivo' : title === 'Desarrollo' ? 'desarrollo' : 'conclusiones';
-          return <React.Fragment key={title}><Box sx={{ ...cell, bgcolor: '#d9d9d9', textAlign: 'center', fontWeight: 900 }}>{title}</Box><Box sx={{ p: 1, minHeight: key === 'objetivo' ? 62 : 90, fontSize: 12, '& table': { width: '100%', maxWidth: '100%', tableLayout: 'fixed', borderCollapse: 'collapse', my: 0.5, boxSizing: 'border-box' }, '& th, & td': { border: '1px solid #555', p: 0.6, whiteSpace: 'normal', wordBreak: 'break-word', overflowWrap: 'anywhere', verticalAlign: 'top', boxSizing: 'border-box' }, '& a': { color: '#1d5fd1' } }} dangerouslySetInnerHTML={{ __html: sanitizeRichHtml(content[key]?.[0] || '') }} /></React.Fragment>;
+          return <React.Fragment key={title}><Box sx={{ ...cell, bgcolor: '#d9d9d9', textAlign: 'center', fontWeight: 900 }}>{title}</Box><Box sx={{ p: 1, minHeight: key === 'objetivo' ? 62 : 90, fontSize: 12, '& table': { width: '100%', maxWidth: '100%', tableLayout: 'fixed', borderCollapse: 'collapse', my: 0.5, boxSizing: 'border-box' }, '& th, & td': { border: '1px solid #555', p: 0.6, whiteSpace: 'normal', wordBreak: 'break-word', overflowWrap: 'anywhere', verticalAlign: 'top', boxSizing: 'border-box' }, '& a': { color: '#1d5fd1' } }} dangerouslySetInnerHTML={{ __html: sanitizeRichHtml(content[key]?.[0] || content[key] || '') }} /></React.Fragment>;
         })}
+        {Boolean(content.comentarios_adicionales?.[0] || content.comentarios_adicionales) && (
+          <React.Fragment>
+            <Box sx={{ ...cell, bgcolor: '#d9d9d9', textAlign: 'center', fontWeight: 900 }}>Comentarios / Observaciones Adicionales</Box>
+            <Box sx={{ p: 1, minHeight: 60, fontSize: 12, '& table': { width: '100%', maxWidth: '100%', tableLayout: 'fixed', borderCollapse: 'collapse', my: 0.5, boxSizing: 'border-box' }, '& th, & td': { border: '1px solid #555', p: 0.6, whiteSpace: 'normal', wordBreak: 'break-word', overflowWrap: 'anywhere', verticalAlign: 'top', boxSizing: 'border-box' }, '& a': { color: '#1d5fd1' } }} dangerouslySetInnerHTML={{ __html: sanitizeRichHtml(content.comentarios_adicionales?.[0] || content.comentarios_adicionales || '') }} />
+          </React.Fragment>
+        )}
       </Box>
     </Box>
   </Box>;
@@ -132,6 +138,7 @@ export default function MeetingMinuteSigning() {
   const [minute, setMinute] = useState(null);
   const [participantId, setParticipantId] = useState('');
   const [email, setEmail] = useState('');
+  const [confirmedEmail, setConfirmedEmail] = useState('');
   const [otp, setOtp] = useState('');
   const [sent, setSent] = useState(false);
   const [hasInk, setHasInk] = useState(false);
@@ -141,8 +148,12 @@ export default function MeetingMinuteSigning() {
   const [privacyAccepted, setPrivacyAccepted] = useState(false);
   const [message, setMessage] = useState(null);
   const selectedParticipant = minute?.participants?.find((participant) => String(participant.id) === String(participantId));
+  const invitedParticipant = minute?.participant;
   const requiresPrivacyConsent = Boolean(selectedParticipant?.external);
   const personalInvitation = Boolean(minute?.invitation_verified);
+  const registeredEmail = (invitedParticipant?.email || selectedParticipant?.email || '').trim().toLowerCase();
+  const isEmailValid = !personalInvitation || (Boolean(confirmedEmail.trim()) && confirmedEmail.trim().toLowerCase() === registeredEmail);
+  const emailMismatch = personalInvitation && Boolean(confirmedEmail.trim()) && !isEmailValid;
 
   useEffect(() => {
     meetingMinuteService.publicMinute(token).then((response) => {
@@ -173,7 +184,17 @@ export default function MeetingMinuteSigning() {
   };
   const sign = async () => {
     setWorking(true); setMessage(null);
-    try { await meetingMinuteService.sign(token, { participant_id: participantId, otp: personalInvitation ? undefined : otp, privacy_accepted: privacyAccepted, signature_data: canvasRef.current.toDataURL('image/png') }); setSigned(true); setMessage({ severity: 'success', text: 'Firma guardada y vinculada al acta.' }); }
+    try {
+      await meetingMinuteService.sign(token, {
+        participant_id: participantId,
+        signer_email: personalInvitation ? confirmedEmail.trim().toLowerCase() : undefined,
+        otp: personalInvitation ? undefined : otp,
+        privacy_accepted: privacyAccepted,
+        signature_data: canvasRef.current.toDataURL('image/png')
+      });
+      setSigned(true);
+      setMessage({ severity: 'success', text: 'Firma guardada y vinculada al acta.' });
+    }
     catch (error) { setMessage({ severity: 'error', text: error.response?.data?.message || 'No fue posible guardar la firma.' }); }
     finally { setWorking(false); }
   };
@@ -300,10 +321,49 @@ export default function MeetingMinuteSigning() {
         {message && <Alert severity={message.severity} sx={{ mb: 2.5 }}>{message.text}</Alert>}
         <PublicActaPreview minute={minute} />
         <Stack gap={3}>
-          <Box><Stack direction="row" gap={1} alignItems="center"><PersonSearch color="primary" /><Typography fontWeight={900}>{personalInvitation ? '1. Confirme sus datos' : '1. Seleccione su nombre'}</Typography></Stack>{personalInvitation ? <PaperParticipant participant={selectedParticipant} /> : <TextField fullWidth select label="Participante" value={participantId} onChange={(event) => { setParticipantId(event.target.value); setSent(false); setEmail(''); setOtp(''); setHasInk(false); setPrivacyAccepted(false); }} sx={{ mt: 1.25 }}>{minute.participants.map((participant) => <MenuItem key={participant.id} value={participant.id}>{participant.name} · {participant.role_title}{participant.external ? ' · Externo' : ''}</MenuItem>)}</TextField>}</Box>
+          <Box>
+            <Stack direction="row" gap={1} alignItems="center">
+              <PersonSearch color="primary" />
+              <Typography fontWeight={900}>{personalInvitation ? '1. Confirme sus datos y correo registrado' : '1. Seleccione su nombre'}</Typography>
+            </Stack>
+            {personalInvitation ? (
+              <Box>
+                <PaperParticipant participant={invitedParticipant || selectedParticipant} />
+                <Box sx={{ mt: 1.5, p: 2, bgcolor: '#f8fafc', borderRadius: 2.5, border: '1px solid #cbd5e1' }}>
+                  <Typography variant="subtitle2" fontWeight={850} color="#1e293b" mb={0.5}>
+                    Seguridad institucional contra reenvíos
+                  </Typography>
+                  <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 1.25, lineHeight: 1.5 }}>
+                    Para certificar que usted es el destinatario convocado y prevenir firmas no autorizadas por reenvío de correos, confirme su dirección de correo electrónico registrada:
+                  </Typography>
+                  <TextField
+                    fullWidth
+                    size="small"
+                    type="email"
+                    label="Correo electrónico registrado *"
+                    placeholder="nombre.apellido@unicesmag.edu.co"
+                    value={confirmedEmail}
+                    onChange={(event) => setConfirmedEmail(event.target.value)}
+                    error={emailMismatch}
+                    helperText={
+                      emailMismatch
+                        ? `⚠️ El correo ingresado no coincide con el registrado en esta invitación (${registeredEmail}). Si este mensaje fue reenviado, solo el destinatario convocado tiene autorización para firmar.`
+                        : isEmailValid && confirmedEmail.trim()
+                        ? '✓ Correo validado correctamente.'
+                        : 'Ingrese el correo registrado para habilitar la firma del documento.'
+                    }
+                  />
+                </Box>
+              </Box>
+            ) : (
+              <TextField fullWidth select label="Participante" value={participantId} onChange={(event) => { setParticipantId(event.target.value); setSent(false); setEmail(''); setOtp(''); setHasInk(false); setPrivacyAccepted(false); }} sx={{ mt: 1.25 }}>
+                {minute.participants.map((participant) => <MenuItem key={participant.id} value={participant.id}>{participant.name} · {participant.role_title}{participant.external ? ' · Externo' : ''}</MenuItem>)}
+              </TextField>
+            )}
+          </Box>
           {requiresPrivacyConsent && <Box sx={{ p: 2, border: '1px solid #bfdbfe', borderRadius: 3, bgcolor: '#f8fbff' }}><Typography fontWeight={900} mb={1}>Autorización para el tratamiento de datos personales</Typography><Typography variant="body2" color="text.secondary" sx={{ lineHeight: 1.65 }}>En la Universidad CESMAG, tratamos sus datos personales conforme a la Ley 1581 de 2012 y el Decreto 1074 de 2015. El tratamiento de sus datos incluye la recolección, almacenamiento, uso, circulación y supresión de la información. La finalidad de este tratamiento comprende, pero no se limita a gestión de procesos académicos, financieros, administrativos, de investigación, proyección social y de recursos humanos, desarrollo de programas de bienestar y desarrollo estudiantil, seguridad y control de acceso, cumplimiento de obligaciones legales. En algunos casos, podríamos solicitar datos personales sensibles. Usted tiene derecho a conocer, actualizar, rectificar y suprimir sus datos personales, así como a revocar la autorización otorgada para su tratamiento en los términos de la normativa vigente. Para más información sobre nuestras políticas de tratamiento de datos personales y sus cambios sustanciales, visite el siguiente enlace: <Link href="https://www.unicesmag.edu.co/documentos/DATOS-UNICESMAG.pdf" target="_blank" rel="noopener noreferrer">Política de tratamiento de datos personales</Link>. Para ejercer estos derechos o si tiene alguna pregunta sobre este aviso de privacidad o sobre el tratamiento de sus datos personales, contáctenos a través del correo <Link href="mailto:correspondencia@unicesmag.edu.co">correspondencia@unicesmag.edu.co</Link>, o presencialmente en las instalaciones de la Universidad CESMAG, Campus Centro, ubicada en la <Link href="https://www.google.com/maps/search/Carrera+20+A+No.+14-54" target="_blank" rel="noopener noreferrer">Carrera 20 A No. 14-54 de la ciudad de Pasto</Link>.</Typography><FormControlLabel sx={{ mt: 1 }} control={<Checkbox checked={privacyAccepted} onChange={(event) => setPrivacyAccepted(event.target.checked)} />} label={<Typography variant="body2" fontWeight={800}>He leído y autorizo el tratamiento de mis datos personales para participar y firmar esta acta.</Typography>} /></Box>}
           {!personalInvitation && <Box><Stack direction="row" gap={1} alignItems="center"><Email color="primary" /><Typography fontWeight={900}>2. Verifique su correo</Typography></Stack><Stack direction={{ xs: 'column', sm: 'row' }} gap={1} mt={1.25}><TextField fullWidth type="email" label="Correo de la invitación" value={email} onChange={(event) => setEmail(event.target.value)} /><Button variant="outlined" disabled={!participantId || !email || working || (requiresPrivacyConsent && !privacyAccepted)} onClick={requestCode} sx={{ minWidth: 180, textTransform: 'none', fontWeight: 850 }}>{working ? 'Enviando…' : 'Enviar código'}</Button></Stack></Box>}
-          <Box sx={{ opacity: sent ? 1 : .45, pointerEvents: sent ? 'auto' : 'none' }}><Stack direction="row" gap={1} alignItems="center"><Draw color="primary" /><Typography fontWeight={900}>{personalInvitation ? '2. Dibuje y confirme su firma' : '3. Dibuje y confirme su firma'}</Typography></Stack>{!personalInvitation && <TextField fullWidth label="Código de 6 dígitos" value={otp} onChange={(event) => setOtp(event.target.value.replace(/\D/g, '').slice(0, 6))} sx={{ my: 1.25 }} />}<canvas ref={canvasRef} width="680" height="220" style={{ display: 'block', width: '100%', height: 220, marginTop: 10, border: '2px dashed #7da4d2', borderRadius: 12, background: '#fff', touchAction: 'none' }} /><Stack direction="row" justifyContent="space-between" mt={1}><Button size="small" onClick={() => { canvasRef.current.getContext('2d').clearRect(0, 0, 680, 220); setHasInk(false); }}>Limpiar</Button><Button variant="contained" disabled={!hasInk || (!personalInvitation && otp.length !== 6) || working || (requiresPrivacyConsent && !privacyAccepted)} onClick={sign} sx={{ px: 3, textTransform: 'none', fontWeight: 900 }}>Confirmar y firmar</Button></Stack></Box>
+          <Box sx={{ opacity: sent ? 1 : .45, pointerEvents: sent ? 'auto' : 'none' }}><Stack direction="row" gap={1} alignItems="center"><Draw color="primary" /><Typography fontWeight={900}>{personalInvitation ? '2. Dibuje y confirme su firma' : '3. Dibuje y confirme su firma'}</Typography></Stack>{!personalInvitation && <TextField fullWidth label="Código de 6 dígitos" value={otp} onChange={(event) => setOtp(event.target.value.replace(/\D/g, '').slice(0, 6))} sx={{ my: 1.25 }} />}<canvas ref={canvasRef} width="680" height="220" style={{ display: 'block', width: '100%', height: 220, marginTop: 10, border: '2px dashed #7da4d2', borderRadius: 12, background: '#fff', touchAction: 'none' }} /><Stack direction="row" justifyContent="space-between" mt={1}><Button size="small" onClick={() => { canvasRef.current.getContext('2d').clearRect(0, 0, 680, 220); setHasInk(false); }}>Limpiar</Button><Button variant="contained" disabled={!hasInk || (!personalInvitation && otp.length !== 6) || (personalInvitation && (!confirmedEmail.trim() || !isEmailValid)) || working || (requiresPrivacyConsent && !privacyAccepted)} onClick={sign} sx={{ px: 3, textTransform: 'none', fontWeight: 900 }}>Confirmar y firmar</Button></Stack></Box>
         </Stack>
       </>
     )}
@@ -312,5 +372,16 @@ export default function MeetingMinuteSigning() {
 
 function PaperParticipant({ participant }) {
   if (!participant) return null;
-  return <Box sx={{ mt: 1.25, p: 2, border: '1px solid #bfdbfe', borderRadius: 3, bgcolor: '#f8fbff' }}><Typography fontWeight={900}>{participant.name}</Typography><Typography variant="body2" color="text.secondary">{participant.role_title || 'Participante'}{participant.organization ? ` · ${participant.organization}` : ''}</Typography><Typography variant="caption" color="primary.main">Invitación personal verificada</Typography></Box>;
+  return (
+    <Box sx={{ mt: 1.25, p: 2, border: '1px solid #bfdbfe', borderRadius: 3, bgcolor: '#f8fbff' }}>
+      <Typography fontWeight={900}>{participant.name}</Typography>
+      <Typography variant="body2" color="text.secondary">{participant.role_title || 'Participante'}{participant.organization ? ` · ${participant.organization}` : ''}</Typography>
+      {participant.email && (
+        <Typography variant="caption" sx={{ display: 'block', mt: 0.5, color: '#1e3a8a', fontWeight: 700 }}>
+          Destinatario registrado: {participant.email}
+        </Typography>
+      )}
+      <Typography variant="caption" color="primary.main">Invitación personal verificada</Typography>
+    </Box>
+  );
 }

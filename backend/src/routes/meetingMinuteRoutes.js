@@ -20,6 +20,7 @@ router.post('/:id/signing-access', auth, controller.getSigningAccess);
 router.post('/:id/resend-invitations', auth, controller.resendInvitations);
 router.post('/:id/reopen', auth, controller.reopenForEditing);
 router.post('/:id/send-final', auth, controller.sendFinalMinute);
+router.post('/:id/comments', auth, controller.updateComments);
 router.get('/:id/word', auth, controller.downloadWord);
 router.get('/:id/pdf', auth, controller.downloadPdf);
 

@@ -593,7 +593,11 @@ const sendInstitutionalEmail = async ({ to, subject, text, html, attachments = [
   }
 
   if (replyTo) {
-    mailOptions.replyTo = normalizeRecipient(replyTo);
+    try {
+      mailOptions.replyTo = normalizeRecipient(replyTo, { allowExternal: allowExternalRecipients });
+    } catch (_replyToErr) {
+      console.warn('⚠️ Dirección replyTo no válida para normalización institucional, se omite:', replyTo);
+    }
   }
 
   try {
