@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Box, Button, Dialog, DialogActions, DialogContent, DialogTitle, Divider, IconButton, Paper, Stack, TextField, Tooltip, Typography } from '@mui/material';
 import {
+  Add, DeleteOutline, DeleteSweep, FitScreen,
   FormatAlignCenter, FormatAlignLeft, FormatAlignRight, FormatBold, FormatClear, FormatColorText,
   FormatIndentDecrease, FormatIndentIncrease, FormatItalic, FormatListBulleted, FormatListNumbered,
   FormatQuote, FormatUnderlined, HorizontalRule, Link as LinkIcon, Redo, TableChart, Title, Undo
@@ -392,39 +393,129 @@ export default function RichTextEditor({ label, value, onChange, disabled = fals
       {tool('Limpiar formato', <FormatClear fontSize="small" />, () => command('removeFormat'))}
     </Stack>
     {active.table && !disabled && (
-      <Stack direction="row" alignItems="center" gap={0.75} flexWrap="wrap" sx={{ px: 1.25, py: 0.75, borderBottom: '1px solid #dbe5f0', bgcolor: '#f8fbff' }}>
-        <Typography variant="caption" fontWeight={900} color="#1e40af" sx={{ mr: 0.5 }}>Editar tabla:</Typography>
-        <Tooltip title="Agregar una nueva fila">
-          <Button size="small" variant="outlined" onMouseDown={(event) => { event.preventDefault(); addTableRow(); }} sx={{ minHeight: 28, textTransform: 'none', fontWeight: 800, fontSize: 12 }}>+ Fila</Button>
+      <Stack
+        direction="row"
+        alignItems="center"
+        gap={1}
+        flexWrap="wrap"
+        sx={{
+          px: 1.5,
+          py: 0.6,
+          borderBottom: '1px solid #dbe5f0',
+          bgcolor: '#f8fafc'
+        }}
+      >
+        <Stack direction="row" alignItems="center" gap={0.6} sx={{ color: '#1e40af', mr: 0.5 }}>
+          <TableChart sx={{ fontSize: 16 }} />
+          <Typography variant="caption" fontWeight={900} letterSpacing={0.5}>TABLA</Typography>
+        </Stack>
+
+        <Divider orientation="vertical" flexItem sx={{ my: 0.5 }} />
+
+        {/* Filas */}
+        <Stack direction="row" alignItems="center" gap={0.5}>
+          <Tooltip title="Agregar fila abajo">
+            <Button
+              size="small"
+              variant="outlined"
+              startIcon={<Add sx={{ fontSize: '15px !important' }} />}
+              onMouseDown={(event) => { event.preventDefault(); addTableRow(); }}
+              sx={{ minHeight: 26, py: 0.2, px: 1, textTransform: 'none', fontWeight: 750, fontSize: 11.5, borderColor: '#cbd5e1', color: '#1e293b' }}
+            >
+              Fila
+            </Button>
+          </Tooltip>
+          <Tooltip title="Eliminar fila actual">
+            <span>
+              <Button
+                size="small"
+                variant="outlined"
+                color="error"
+                disabled={active.tableRows <= 1}
+                startIcon={<DeleteOutline sx={{ fontSize: '15px !important' }} />}
+                onMouseDown={(event) => { event.preventDefault(); removeTableRow(); }}
+                sx={{ minHeight: 26, py: 0.2, px: 1, textTransform: 'none', fontWeight: 750, fontSize: 11.5 }}
+              >
+                Fila
+              </Button>
+            </span>
+          </Tooltip>
+        </Stack>
+
+        <Divider orientation="vertical" flexItem sx={{ my: 0.5 }} />
+
+        {/* Columnas */}
+        <Stack direction="row" alignItems="center" gap={0.5}>
+          <Tooltip title="Agregar columna a la derecha">
+            <Button
+              size="small"
+              variant="outlined"
+              startIcon={<Add sx={{ fontSize: '15px !important' }} />}
+              onMouseDown={(event) => { event.preventDefault(); addTableColumn(); }}
+              sx={{ minHeight: 26, py: 0.2, px: 1, textTransform: 'none', fontWeight: 750, fontSize: 11.5, borderColor: '#cbd5e1', color: '#1e293b' }}
+            >
+              Columna
+            </Button>
+          </Tooltip>
+          <Tooltip title="Eliminar columna actual">
+            <span>
+              <Button
+                size="small"
+                variant="outlined"
+                color="error"
+                disabled={active.tableColumns <= 1}
+                startIcon={<DeleteOutline sx={{ fontSize: '15px !important' }} />}
+                onMouseDown={(event) => { event.preventDefault(); removeTableColumn(); }}
+                sx={{ minHeight: 26, py: 0.2, px: 1, textTransform: 'none', fontWeight: 750, fontSize: 11.5 }}
+              >
+                Columna
+              </Button>
+            </span>
+          </Tooltip>
+        </Stack>
+
+        <Divider orientation="vertical" flexItem sx={{ my: 0.5 }} />
+
+        {/* Ajuste al 100% */}
+        <Tooltip title="Distribuir columnas y ajustar la tabla al 100% de la ventana">
+          <Button
+            size="small"
+            variant="outlined"
+            color="primary"
+            startIcon={<FitScreen sx={{ fontSize: '15px !important' }} />}
+            onMouseDown={(event) => {
+              event.preventDefault();
+              handleFitWindow();
+              handleDistributeCols();
+            }}
+            sx={{ minHeight: 26, py: 0.2, px: 1.25, textTransform: 'none', fontWeight: 750, fontSize: 11.5 }}
+          >
+            Ajustar al 100%
+          </Button>
         </Tooltip>
-        <Tooltip title="Eliminar fila actual">
-          <span><Button size="small" color="error" variant="outlined" disabled={active.tableRows <= 1} onMouseDown={(event) => { event.preventDefault(); removeTableRow(); }} sx={{ minHeight: 28, textTransform: 'none', fontWeight: 800, fontSize: 12 }}>− Fila</Button></span>
-        </Tooltip>
-        <Tooltip title="Aumentar altura / espaciado de esta fila (hacerla más grande)">
-          <Button size="small" variant="outlined" onMouseDown={(event) => { event.preventDefault(); handleAdjustRowHeight(3); }} sx={{ minHeight: 28, textTransform: 'none', fontWeight: 800, fontSize: 12, bgcolor: '#eff6ff' }}>+ Alto fila</Button>
-        </Tooltip>
-        <Tooltip title="Reducir altura / espaciado de esta fila (hacerla más compacta)">
-          <Button size="small" variant="outlined" onMouseDown={(event) => { event.preventDefault(); handleAdjustRowHeight(-3); }} sx={{ minHeight: 28, textTransform: 'none', fontWeight: 800, fontSize: 12, bgcolor: '#eff6ff' }}>− Alto fila</Button>
-        </Tooltip>
-        <Divider orientation="vertical" flexItem sx={{ mx: 0.5 }} />
-        <Tooltip title="Agregar una nueva columna">
-          <Button size="small" variant="outlined" onMouseDown={(event) => { event.preventDefault(); addTableColumn(); }} sx={{ minHeight: 28, textTransform: 'none', fontWeight: 800, fontSize: 12 }}>+ Columna</Button>
-        </Tooltip>
-        <Tooltip title="Eliminar columna actual">
-          <span><Button size="small" color="error" variant="outlined" disabled={active.tableColumns <= 1} onMouseDown={(event) => { event.preventDefault(); removeTableColumn(); }} sx={{ minHeight: 28, textTransform: 'none', fontWeight: 800, fontSize: 12 }}>− Columna</Button></span>
-        </Tooltip>
-        <Tooltip title="Aumentar ancho de esta columna">
-          <Button size="small" variant="outlined" onMouseDown={(event) => { event.preventDefault(); handleAdjustColumnWidth(5); }} sx={{ minHeight: 28, textTransform: 'none', fontWeight: 800, fontSize: 12, bgcolor: '#eff6ff' }}>+ Ancho col</Button>
-        </Tooltip>
-        <Tooltip title="Reducir ancho de esta columna">
-          <Button size="small" variant="outlined" onMouseDown={(event) => { event.preventDefault(); handleAdjustColumnWidth(-5); }} sx={{ minHeight: 28, textTransform: 'none', fontWeight: 800, fontSize: 12, bgcolor: '#eff6ff' }}>− Ancho col</Button>
-        </Tooltip>
-        <Divider orientation="vertical" flexItem sx={{ mx: 0.5 }} />
-        <Tooltip title="Distribuir todas las columnas en proporciones iguales">
-          <Button size="small" variant="outlined" onMouseDown={(event) => { event.preventDefault(); handleDistributeCols(); }} sx={{ minHeight: 28, textTransform: 'none', fontWeight: 800, fontSize: 12 }}>Columnas iguales</Button>
-        </Tooltip>
-        <Tooltip title="Ajustar la tabla para que encaje al 100% de la ventana sin salirse">
-          <Button size="small" color="primary" variant="contained" onMouseDown={(event) => { event.preventDefault(); handleFitWindow(); }} sx={{ minHeight: 28, textTransform: 'none', fontWeight: 800, fontSize: 12 }}>Ajustar 100%</Button>
+
+        <Divider orientation="vertical" flexItem sx={{ my: 0.5 }} />
+
+        {/* Eliminar tabla completa */}
+        <Tooltip title="Eliminar toda la tabla">
+          <Button
+            size="small"
+            color="error"
+            startIcon={<DeleteSweep sx={{ fontSize: '16px !important' }} />}
+            onMouseDown={(event) => {
+              event.preventDefault();
+              const table = tableCellRef.current?.closest('table');
+              if (table) {
+                table.remove();
+                emit();
+                editorRef.current?.focus();
+                readActiveFormats();
+              }
+            }}
+            sx={{ minHeight: 26, py: 0.2, px: 1, textTransform: 'none', fontWeight: 750, fontSize: 11.5 }}
+          >
+            Eliminar tabla
+          </Button>
         </Tooltip>
       </Stack>
     )}
