@@ -4,7 +4,7 @@ import {
   Alert, Box, Button, Card, CardContent, Checkbox, Chip, CircularProgress,
   FormControlLabel, Link, MenuItem, Paper, Stack, TextField, Typography
 } from '@mui/material';
-import { CheckCircle, Draw, Email, PersonSearch, VerifiedUser } from '@mui/icons-material';
+import { CheckCircle, Draw, Email, Lock, PersonSearch, VerifiedUser } from '@mui/icons-material';
 import meetingMinuteService from '../services/meetingMinuteService';
 import logoFormatos from '../assets/logo_formatos.jpg';
 import { sanitizeRichHtml } from '../components/meetingMinute/RichTextEditor';
@@ -17,8 +17,18 @@ const displayDate = (value) => {
 
 const formatIpAddress = (ip) => {
   if (!ip) return '';
-  if (ip === '::1' || ip === '127.0.0.1' || ip === '::ffff:127.0.0.1') return '127.0.0.1 (Local)';
-  return String(ip).replace(/^::ffff:/, '');
+  const cleanIp = String(ip).replace(/^::ffff:/, '').trim();
+  if (cleanIp.includes('***') || cleanIp.includes('Cifrada') || cleanIp.includes('Protegida')) return cleanIp;
+  if (cleanIp === '::1' || cleanIp === '127.0.0.1') return '127.***.***.1 (Protegida · Cifrada)';
+  const parts = cleanIp.split('.');
+  if (parts.length === 4) {
+    return `${parts[0]}.${parts[1]}.***.*** (Protegida · Cifrada)`;
+  }
+  if (cleanIp.includes(':')) {
+    const v6 = cleanIp.split(':');
+    return `${v6.slice(0, 2).join(':')}:****:**** (Protegida · Cifrada)`;
+  }
+  return '***.***.***.*** (Protegida · Cifrada)';
 };
 
 function PublicActaPreview({ minute }) {
@@ -263,11 +273,26 @@ export default function MeetingMinuteSigning() {
               <Chip size="small" color="success" label="✓ Documento firmado" sx={{ fontWeight: 800 }} />
             </Stack>
             {minute.signature_info?.ip_address && (
-              <Stack direction="row" justifyContent="space-between" alignItems="center" pb={1} borderBottom="1px solid #e2e8f0">
-                <Typography variant="body2" color="text.secondary">IP del dispositivo (Trazabilidad):</Typography>
-                <Typography variant="body2" fontFamily="monospace" fontWeight={850} color="#1e293b">
-                  {formatIpAddress(minute.signature_info.ip_address)}
-                </Typography>
+              <Stack direction="row" justifyContent="space-between" alignItems="center" pb={1} borderBottom="1px solid #e2e8f0" flexWrap="wrap" gap={1}>
+                <Box>
+                  <Typography variant="body2" color="text.secondary">IP del dispositivo:</Typography>
+                  <Typography variant="caption" color="text.secondary" sx={{ fontSize: 10.5, display: 'block' }}>
+                    Protegida por confidencialidad
+                  </Typography>
+                </Box>
+                <Chip
+                  size="small"
+                  icon={<Lock sx={{ fontSize: '13px !important' }} />}
+                  label={formatIpAddress(minute.signature_info.ip_address)}
+                  variant="outlined"
+                  sx={{
+                    fontFamily: 'monospace',
+                    fontWeight: 800,
+                    color: '#1e3a8a',
+                    borderColor: '#cbd5e1',
+                    bgcolor: '#f8fafc'
+                  }}
+                />
               </Stack>
             )}
             {minute.signature_info?.signature_hash && (
@@ -291,6 +316,11 @@ export default function MeetingMinuteSigning() {
                 />
               </Box>
             )}
+            <Box sx={{ mt: 1, p: 1.25, bgcolor: '#f8fafc', borderRadius: 2, border: '1px solid #e2e8f0' }}>
+              <Typography variant="caption" color="text.secondary" sx={{ display: 'block', lineHeight: 1.4, fontSize: 11 }}>
+                🔒 <strong>Privacidad del dispositivo:</strong> La dirección IP real y los datos de red de su equipo permanecen cifrados bajo estricta reserva institucional en los servidores de SIAC. Nadie que acceda o reenvíe este enlace podrá visualizar la dirección IP de su dispositivo.
+              </Typography>
+            </Box>
           </Stack>
         </Paper>
 

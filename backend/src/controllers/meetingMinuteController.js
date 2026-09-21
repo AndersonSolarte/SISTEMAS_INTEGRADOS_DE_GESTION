@@ -26,6 +26,22 @@ const hash = (value) => crypto.createHash('sha256').update(Buffer.isBuffer(value
 const contentHash = (value) => hash(JSON.stringify(value));
 const isAdmin = (user) => String(user?.role || '') === 'administrador';
 const clean = (value, max = 8000) => String(value || '').replace(/\u0000/g, '').trim().slice(0, max);
+const maskAndEncryptIp = (ip = '') => {
+  if (!ip) return null;
+  const cleanIp = String(ip).replace(/^::ffff:/, '').trim();
+  if (cleanIp === '::1' || cleanIp === '127.0.0.1') {
+    return '127.***.***.1 (Protegida · Cifrada)';
+  }
+  const parts = cleanIp.split('.');
+  if (parts.length === 4) {
+    return `${parts[0]}.${parts[1]}.***.*** (Protegida · Cifrada)`;
+  }
+  if (cleanIp.includes(':')) {
+    const v6 = cleanIp.split(':');
+    return `${v6.slice(0, 2).join(':')}:****:**** (Protegida · Cifrada)`;
+  }
+  return '***.***.***.*** (Protegida · Cifrada)';
+};
 const cleanRichText = (value) => String(value || '').replace(/\u0000/g, '').trim();
 const buildPrivacyPolicyEmailSection = (isExternal) => {
   if (!isExternal) return { html: '', text: '' };
@@ -691,8 +707,8 @@ const publicMinute = wrap(async (req, res) => {
       signatureInfo = {
         signed_at: signatureRow.signed_at,
         signature_preview: preview,
-        ip_address: signatureRow.ip_address,
-        user_agent: signatureRow.user_agent,
+        ip_address: maskAndEncryptIp(signatureRow.ip_address),
+        user_agent: signatureRow.user_agent ? 'Dispositivo verificado institucionalmente' : null,
         signature_hash: signatureRow.signature_hash
       };
     }
