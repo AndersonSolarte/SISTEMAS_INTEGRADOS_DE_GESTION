@@ -889,17 +889,12 @@ const sign = wrap(async (req, res) => {
   if (!participant) throw Object.assign(new Error('Participante no válido.'), { statusCode: 404 });
   if (participant.status === 'signed') throw Object.assign(new Error('Usted ya firmó este documento anteriormente.'), { statusCode: 409 });
   if (!participant.user_id && req.body.privacy_accepted !== true) throw Object.assign(new Error('Debe aceptar la autorización de tratamiento de datos personales para firmar.'), { statusCode: 422 });
-  const personalInvitation = Boolean(access?.invitationVerified && String(access.invitedParticipant.id) === String(participant.id));
-  if (personalInvitation && req.body.signer_email) {
+  if (req.body.signer_email) {
     const cleanSigner = clean(req.body.signer_email, 254).toLowerCase();
     const cleanParticipant = clean(participant.email, 254).toLowerCase();
-    if (cleanSigner !== cleanParticipant) {
-      throw Object.assign(new Error(`El correo ingresado (${cleanSigner}) no coincide con el destinatario registrado (${cleanParticipant}). Si este enlace fue reenviado, únicamente el destinatario original puede firmar.`), { statusCode: 403 });
+    if (cleanSigner && cleanParticipant && cleanSigner !== cleanParticipant) {
+      throw Object.assign(new Error(`El correo ingresado (${cleanSigner}) no coincide con el destinatario registrado (${cleanParticipant}).`), { statusCode: 403 });
     }
-  }
-  if (!personalInvitation && (participant.otp_attempts >= 5 || !participant.otp_expires_at || participant.otp_expires_at < new Date() || participant.otp_hash !== hash(req.body.otp))) {
-    await participant.increment('otp_attempts');
-    throw Object.assign(new Error('Código inválido o vencido.'), { statusCode: 422 });
   }
   const parsed = parseDataUrl(req.body.signature_data);
   ensureDir(SIGNATURE_ROOT);
