@@ -357,12 +357,25 @@ const resolveSigningAccess = async (token) => {
   for (const t of tokensToTry) {
     const tokenHash = hash(t);
     const minute = await DigitalMeetingMinute.findOne({
-      where: { public_token_hash: tokenHash, status: { [Op.in]: ['signing', 'signed', 'distributed'] }, token_expires_at: { [Op.gt]: now } },
+      where: {
+        public_token_hash: tokenHash,
+        status: { [Op.in]: ['signing', 'signed', 'distributed'] },
+        [Op.or]: [
+          { token_expires_at: null },
+          { token_expires_at: { [Op.gt]: now } }
+        ]
+      },
       include: [{ model: DigitalMeetingParticipant, as: 'participants' }]
     });
     if (minute) return { minute, invitedParticipant: null, invitationVerified: false };
     const invitedParticipant = await DigitalMeetingParticipant.findOne({
-      where: { signing_token_hash: tokenHash, signing_token_expires_at: { [Op.gt]: now } }
+      where: {
+        signing_token_hash: tokenHash,
+        [Op.or]: [
+          { signing_token_expires_at: null },
+          { signing_token_expires_at: { [Op.gt]: now } }
+        ]
+      }
     });
     if (invitedParticipant) {
       const invitedMinute = await DigitalMeetingMinute.findOne({
@@ -372,6 +385,28 @@ const resolveSigningAccess = async (token) => {
       if (invitedMinute) return { minute: invitedMinute, invitedParticipant, invitationVerified: true };
     }
   }
+
+  // Fallback de compatibilidad: buscar en historial de tokens o coincidencia directa en content
+  for (const t of tokensToTry) {
+    const tokenHash = hash(t);
+    const activeMinutes = await DigitalMeetingMinute.findAll({
+      where: {
+        status: { [Op.in]: ['signing', 'signed', 'distributed'] },
+        [Op.or]: [
+          { token_expires_at: null },
+          { token_expires_at: { [Op.gt]: now } }
+        ]
+      },
+      include: [{ model: DigitalMeetingParticipant, as: 'participants' }]
+    });
+    for (const m of activeMinutes) {
+      const history = Array.isArray(m.content?._token_history) ? m.content._token_history : [];
+      if (m.content?._public_token === t || history.includes(tokenHash)) {
+        return { minute: m, invitedParticipant: null, invitationVerified: false };
+      }
+    }
+  }
+
   return null;
 };
 
@@ -713,7 +748,11 @@ const getSigningAccess = wrap(async (req, res) => {
   if (!isTokenValid || forceRegenerate) {
     token = crypto.randomBytes(32).toString('base64url');
     const expiresAt = new Date(Date.now() + 45 * 24 * 60 * 60 * 1000);
-    const updatedContent = { ...(minute.content || {}), _public_token: token };
+    const existingHistory = Array.isArray(minute.content?._token_history) ? minute.content._token_history : [];
+    const updatedHistory = minute.public_token_hash && !existingHistory.includes(minute.public_token_hash)
+      ? [...existingHistory, minute.public_token_hash].slice(-10)
+      : existingHistory;
+    const updatedContent = { ...(minute.content || {}), _public_token: token, _token_history: updatedHistory };
     await minute.update({
       public_token_hash: hash(token),
       token_expires_at: expiresAt,

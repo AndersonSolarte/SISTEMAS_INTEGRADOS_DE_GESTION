@@ -675,7 +675,8 @@ export default function MeetingMinuteFormDialog({ open, document, user, onClose 
     if (!form.id) return;
     setLoading(true);
     try {
-      const response = await meetingMinuteService.getSigningAccess(form.id, { public_base_url: window.location.origin, regenerate });
+      const shouldRegenerate = regenerate === true;
+      const response = await meetingMinuteService.getSigningAccess(form.id, { public_base_url: window.location.origin, regenerate: shouldRegenerate });
       setQr(response.data);
       enqueueSnackbar(response.message || 'Acceso QR obtenido.', { variant: 'success' });
     } catch (error) { enqueueSnackbar(error.response?.data?.message || 'No fue posible recuperar el acceso de firma.', { variant: 'error' }); }
@@ -1210,7 +1211,7 @@ export default function MeetingMinuteFormDialog({ open, document, user, onClose 
                     }}
                   >
                     {form.status === 'signing' && (
-                      <Button fullWidth startIcon={<QrCode2 />} disabled={loading} onClick={showSigningAccess} variant="outlined">
+                      <Button fullWidth startIcon={<QrCode2 />} disabled={loading} onClick={() => showSigningAccess(false)} variant="outlined">
                         Ver enlace y QR
                       </Button>
                     )}
