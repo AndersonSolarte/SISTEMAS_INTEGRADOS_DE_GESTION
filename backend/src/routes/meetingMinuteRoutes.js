@@ -23,5 +23,6 @@ router.post('/:id/send-final', auth, controller.sendFinalMinute);
 router.post('/:id/comments', auth, controller.updateComments);
 router.get('/:id/word', auth, controller.downloadWord);
 router.get('/:id/pdf', auth, controller.downloadPdf);
+router.delete('/:id', auth, controller.deleteMinute);
 
 module.exports = router;

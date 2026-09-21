@@ -472,8 +472,31 @@ const lookupParticipant = wrap(async (req, res) => {
   res.json({ success: true, data: { id: user.id, document: user.username, name: formatPersonName(user.nombre), email: user.email, organization: user.dependencia, role_title: user.cargo } });
 });
 
+const purgeExpiredMinutes = async () => {
+  const retentionCutoff = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+  try {
+    await DigitalMeetingMinute.update(
+      { deleted_at: new Date() },
+      {
+        where: {
+          deleted_at: null,
+          created_at: { [Op.lt]: retentionCutoff }
+        }
+      }
+    );
+  } catch (err) {
+    console.warn('[meeting-minute] Auto-purge warning:', err.message);
+  }
+};
+
 const listMinutes = wrap(async (req, res) => {
-  const where = { deleted_at: null };
+  await purgeExpiredMinutes();
+
+  const retentionCutoff = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+  const where = {
+    deleted_at: null,
+    created_at: { [Op.gte]: retentionCutoff }
+  };
   if (!isAdmin(req.user)) {
     const userId = Number(req.user.id);
     const userDoc = String(req.user.username || req.user.documento || req.user.cedula || '').trim();
@@ -512,7 +535,10 @@ const listMinutes = wrap(async (req, res) => {
 
 const getMinute = wrap(async (req, res) => {
   const row = await DigitalMeetingMinute.findByPk(req.params.id, { include: includeRelations });
-  if (!row || row.deleted_at) throw Object.assign(new Error('Acta no encontrada.'), { statusCode: 404 });
+  const retentionCutoff = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+  if (!row || row.deleted_at || (row.created_at && new Date(row.created_at) < retentionCutoff)) {
+    throw Object.assign(new Error('Acta no encontrada o vencida tras 30 días.'), { statusCode: 404 });
+  }
   const authorized = await canAccessMinuteFullSignatures(req.user, row);
   if (!authorized) throw Object.assign(new Error('No tiene permiso para consultar esta acta.'), { statusCode: 403 });
   for (const signature of row.signatures || []) {
@@ -525,6 +551,21 @@ const getMinute = wrap(async (req, res) => {
     signature.setDataValue('user_agent', null);
   }
   res.json({ success: true, data: row });
+});
+
+const deleteMinute = wrap(async (req, res) => {
+  const minute = await DigitalMeetingMinute.findByPk(req.params.id);
+  if (!minute || minute.deleted_at) throw Object.assign(new Error('Acta no encontrada o ya fue eliminada.'), { statusCode: 404 });
+  const authorized = await canAccessMinuteFullSignatures(req.user, minute);
+  if (!authorized) throw Object.assign(new Error('No tiene permiso para eliminar esta acta.'), { statusCode: 403 });
+
+  await minute.update({ deleted_at: new Date(), updated_by: req.user.id });
+
+  res.json({
+    success: true,
+    message: `Acta ${minute.code} eliminada del sistema.`,
+    data: { id: minute.id }
+  });
 });
 
 const normalizeContent = (body, user, document, existingContent = {}) => ({
@@ -1078,6 +1119,7 @@ const updateComments = wrap(async (req, res) => {
 });
 
 module.exports = {
+  deleteMinute,
   downloadPdf,
   downloadWord,
   getConfig,

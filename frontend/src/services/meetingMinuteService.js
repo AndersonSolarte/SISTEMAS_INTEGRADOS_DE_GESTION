@@ -18,6 +18,7 @@ const meetingMinuteService = {
   updateComments: (id, payload) => api.post(`${root}/${id}/comments`, payload).then(unwrap),
   downloadWord: (id, params = {}) => api.get(`${root}/${id}/word`, { params, responseType: 'blob' }).then((response) => response.data),
   downloadPdf: (id, params = {}) => api.get(`${root}/${id}/pdf`, { params, responseType: 'blob' }).then((response) => response.data),
+  deleteMinute: (id) => api.delete(`${root}/${id}`).then(unwrap),
   publicMinute: (token) => api.get(`${root}/public/${encodeURIComponent(String(token || '').trim())}`, { skipAuthRedirect: true }).then(unwrap),
   requestCode: (token, payload) => api.post(`${root}/public/${encodeURIComponent(String(token || '').trim())}/request-code`, payload, { skipAuthRedirect: true }).then(unwrap),
   sign: (token, payload) => api.post(`${root}/public/${encodeURIComponent(String(token || '').trim())}/sign`, payload, { skipAuthRedirect: true }).then(unwrap)
