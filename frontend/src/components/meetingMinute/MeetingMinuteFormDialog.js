@@ -356,6 +356,74 @@ export default function MeetingMinuteFormDialog({ open, document, user, onClose 
     }
   };
 
+  // Sincronización automática en tiempo real entre responsable y corresponsables
+  useEffect(() => {
+    if (!open) return;
+
+    let isMounted = true;
+    const syncInterval = setInterval(async () => {
+      if (!isMounted) return;
+
+      // 1. Refrescar la lista de actas guardadas en segundo plano
+      try {
+        const listRes = await meetingMinuteService.list();
+        if (isMounted && Array.isArray(listRes.data)) {
+          setMinutes(listRes.data);
+        }
+      } catch (_) {}
+
+      // 2. Si hay un acta seleccionada, sincronizar participantes, firmas y estado en vivo
+      if (form.id && !loading) {
+        try {
+          const detailRes = await meetingMinuteService.get(form.id);
+          const row = detailRes.data;
+          if (isMounted && row && row.id === form.id) {
+            if (Array.isArray(row.signatures)) {
+              setSignatures(row.signatures);
+            }
+            if (Array.isArray(row.participants)) {
+              setForm((prev) => {
+                if (prev.id !== row.id) return prev;
+                const rowContent = row.content || {};
+                const loadedResp = loadResponsablesFromMinute(rowContent);
+                if (layoutMode === 'preview') {
+                  const [start = '', end = ''] = String(rowContent.horario || '').split('-').map((p) => p.trim());
+                  return {
+                    ...prev,
+                    status: row.status,
+                    responsables: rowContent.responsables || formatResponsablesText(loadedResp),
+                    responsable_document: rowContent.responsable_document || loadedResp[0]?.document || '',
+                    responsable_role: rowContent.responsable_role || loadedResp[0]?.role_title || '',
+                    responsables_data: loadedResp,
+                    dependencia: rowContent.dependencia || prev.dependencia,
+                    lugar: rowContent.lugar || prev.lugar,
+                    fecha: rowContent.fecha || prev.fecha,
+                    hora_inicio: start || prev.hora_inicio,
+                    hora_fin: end || prev.hora_fin,
+                    objetivo: rowContent.objetivo?.[0] || prev.objetivo,
+                    desarrollo: rowContent.desarrollo?.[0] || prev.desarrollo,
+                    conclusiones: rowContent.conclusiones?.[0] || prev.conclusiones,
+                    participants: row.participants || []
+                  };
+                }
+                return {
+                  ...prev,
+                  status: row.status,
+                  participants: row.participants || prev.participants
+                };
+              });
+            }
+          }
+        } catch (_) {}
+      }
+    }, 5000);
+
+    return () => {
+      isMounted = false;
+      clearInterval(syncInterval);
+    };
+  }, [open, form.id, layoutMode, loading]);
+
   const lookup = async () => {
     if (!documentNumber.trim()) return;
     setSearching(true);
@@ -1054,6 +1122,12 @@ export default function MeetingMinuteFormDialog({ open, document, user, onClose 
                   </Tooltip>
                   <Typography fontWeight={900}>Vista previa del acta</Typography>
                 </Stack>
+                {form.id && (
+                  <Stack direction="row" alignItems="center" gap={0.75} sx={{ color: '#16a34a', fontSize: 11, fontWeight: 750, bgcolor: '#f0fdf4', px: 1, py: 0.3, borderRadius: 1.5, border: '1px solid #bbf7d0' }}>
+                    <Box sx={{ width: 7, height: 7, borderRadius: '50%', bgcolor: '#22c55e' }} />
+                    <span>En vivo · Sincronizado</span>
+                  </Stack>
+                )}
               </Stack>
               <Menu
                 anchorEl={downloadAnchorEl}
