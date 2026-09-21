@@ -47,3 +47,31 @@ test('conserva el contenido textual y las tablas enriquecidas', () => {
   assert.equal(table.table.body.length, 2);
   assert.equal(table.table.body[1][0].text, 'Entregar informe');
 });
+
+test('soporta modo copia con texto Firmado y modo original con firma gráfica', async () => {
+  // 1x1 transparent png base64
+  const sampleSignature = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==';
+  const payload = {
+    header: { codigo: 'COM-ID-FR-002', version: '1', fecha: '21/09/2026' },
+    responsables: 'RESPONSABLE PRINCIPAL',
+    dependencia: 'Dirección de Planeación y Aseguramiento de la Calidad',
+    fecha: '21/09/2026',
+    horario: '08:00 - 10:00',
+    participantes: [
+      { nombre: 'LUISA ORTEGA', cargo: 'Analista', status: 'signed', firma: 'Firmado', firma_data_url: sampleSignature },
+      { nombre: 'DIEGO JOJOA', cargo: 'Secretario', status: 'signed', firma: 'Firmado', firma_data_url: sampleSignature },
+      { nombre: 'ANDERSON SOLARTE', cargo: 'Coordinador', status: 'signed', firma: 'Firmado', firma_data_url: sampleSignature }
+    ],
+    objetivo: ['<p>Objetivo institucional.</p>'],
+    desarrollo: ['<p>Desarrollo institucional.</p>'],
+    conclusiones: ['<p>Conclusiones.</p>']
+  };
+
+  const originalBuffer = await generateMeetingMinutePdf(payload, { hideSignatures: false });
+  assert.ok(Buffer.isBuffer(originalBuffer));
+  assert.equal(originalBuffer.subarray(0, 4).toString(), '%PDF');
+
+  const copyBuffer = await generateMeetingMinutePdf(payload, { hideSignatures: true });
+  assert.ok(Buffer.isBuffer(copyBuffer));
+  assert.equal(copyBuffer.subarray(0, 4).toString(), '%PDF');
+});

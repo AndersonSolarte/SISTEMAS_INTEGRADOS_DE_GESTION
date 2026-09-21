@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import {
   Alert, Autocomplete, Box, Button, Chip, CircularProgress, Dialog, DialogActions, DialogContent,
-  DialogTitle, IconButton, MenuItem, Paper, Stack, TextField, ToggleButton, ToggleButtonGroup, Tooltip, Typography
+  DialogTitle, IconButton, Menu, MenuItem, Paper, Stack, TextField, ToggleButton, ToggleButtonGroup, Tooltip, Typography
 } from '@mui/material';
 import {
   Add, ArrowBack, ArrowForward, Close, ContentCopy, DeleteOutline, Download, Edit, EditNote, Email, PersonSearch,
@@ -231,6 +231,7 @@ export default function MeetingMinuteFormDialog({ open, document, user, onClose 
   const [qr, setQr] = useState(null);
   const [confirmAdjust, setConfirmAdjust] = useState(false);
   const [savingComments, setSavingComments] = useState(false);
+  const [downloadAnchorEl, setDownloadAnchorEl] = useState(null);
   const [layoutMode, setLayoutMode] = useState('split'); // 'split' | 'form' | 'preview'
   const locked = form.status !== 'draft';
   const hasSignatures = signatures.length > 0;
@@ -595,11 +596,21 @@ export default function MeetingMinuteFormDialog({ open, document, user, onClose 
     } catch (error) { enqueueSnackbar(error.response?.data?.message || 'No fue posible habilitar los ajustes.', { variant: 'error' }); }
     finally { setLoading(false); }
   };
-  const download = async () => {
+  const download = async (tipo = 'original') => {
+    setDownloadAnchorEl(null);
     if (!form.id) return enqueueSnackbar('Guarde primero el borrador.', { variant: 'warning' });
     try {
-      const blob = await meetingMinuteService.downloadPdf(form.id); const url = URL.createObjectURL(blob); const anchor = window.document.createElement('a'); anchor.href = url; anchor.download = `ACTA-${form.fecha || 'REUNION'}.pdf`; anchor.click(); URL.revokeObjectURL(url);
-    } catch (error) { enqueueSnackbar(error.response?.data?.message || 'No fue posible descargar el acta.', { variant: 'error' }); }
+      const isCopia = tipo === 'copia';
+      const blob = await meetingMinuteService.downloadPdf(form.id, isCopia ? { tipo: 'copia' } : {});
+      const url = URL.createObjectURL(blob);
+      const anchor = window.document.createElement('a');
+      anchor.href = url;
+      anchor.download = `ACTA-${form.fecha || 'REUNION'}${isCopia ? '-COPIA' : ''}.pdf`;
+      anchor.click();
+      URL.revokeObjectURL(url);
+    } catch (error) {
+      enqueueSnackbar(error.response?.data?.message || 'No fue posible descargar el acta.', { variant: 'error' });
+    }
   };
   const sendFinal = async () => {
     if (!canSendFinal || !form.id) return;
@@ -1057,7 +1068,26 @@ export default function MeetingMinuteFormDialog({ open, document, user, onClose 
                   }
                 }}
               >
-                <Button fullWidth startIcon={<Download />} disabled={!form.id} onClick={download} variant="outlined">{"Descargar\nPDF"}</Button>
+                <Button fullWidth startIcon={<Download />} disabled={!form.id} onClick={(e) => setDownloadAnchorEl(e.currentTarget)} variant="outlined">{"Descargar\nPDF"}</Button>
+                <Menu
+                  anchorEl={downloadAnchorEl}
+                  open={Boolean(downloadAnchorEl)}
+                  onClose={() => setDownloadAnchorEl(null)}
+                  PaperProps={{ sx: { minWidth: 260, borderRadius: 2.5, boxShadow: '0 10px 30px rgba(0,0,0,0.15)' } }}
+                >
+                  <MenuItem onClick={() => download('original')} sx={{ py: 1 }}>
+                    <Box>
+                      <Typography variant="body2" fontWeight={850} color="primary.main">Original (con firmas gráficas)</Typography>
+                      <Typography variant="caption" color="text.secondary" display="block">Documento máster custodiado por el responsable</Typography>
+                    </Box>
+                  </MenuItem>
+                  <MenuItem onClick={() => download('copia')} sx={{ py: 1 }}>
+                    <Box>
+                      <Typography variant="body2" fontWeight={850} color="text.primary">Copia (sin firmas visibles)</Typography>
+                      <Typography variant="caption" color="text.secondary" display="block">Versión para participantes con constancia 'Firmado'</Typography>
+                    </Box>
+                  </MenuItem>
+                </Menu>
                 {form.status === 'signing' && <Button fullWidth startIcon={<QrCode2 />} disabled={loading} onClick={showSigningAccess} variant="outlined">{"Ver enlace\ny QR"}</Button>}
                 {form.status === 'signing' && !allSigned && <Button fullWidth startIcon={<Email />} disabled={loading} onClick={resendInvitations} variant="outlined">{"Reenviar\ninvitaciones"}</Button>}
                 {form.status === 'signing' && !hasSignatures && <Button fullWidth startIcon={<Edit />} disabled={loading} onClick={() => setConfirmAdjust(true)} color="warning" variant="outlined">{"Hacer\najustes"}</Button>}
