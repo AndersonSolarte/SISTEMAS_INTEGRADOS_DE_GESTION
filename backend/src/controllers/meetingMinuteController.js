@@ -525,8 +525,10 @@ const saveDraft = wrap(async (req, res) => {
 
   const minute = await sequelize.transaction(async (transaction) => {
     let row = req.body.id ? await DigitalMeetingMinute.findByPk(req.body.id, { transaction }) : null;
-    if (row && !isAdmin(req.user) && Number(row.created_by) !== Number(req.user.id)) throw Object.assign(new Error('No tiene permiso para editar esta acta.'), { statusCode: 403 });
-    if (row && row.status !== 'draft') throw Object.assign(new Error('El acta ya fue habilitada para firmas y no puede modificarse.'), { statusCode: 409 });
+    if (row) {
+      const authorized = await canAccessMinuteFullSignatures(req.user, row);
+      if (!authorized) throw Object.assign(new Error('No tiene permiso para editar esta acta.'), { statusCode: 403 });
+    }
     const content = normalizeContent({
       ...req.body,
       responsables: clean(req.body.responsables, 1500) || formatPersonName(responsibleUser.nombre),
@@ -546,25 +548,62 @@ const saveDraft = wrap(async (req, res) => {
     if (!row) {
       const code = `ACTA-${new Date().getFullYear()}-${Date.now().toString().slice(-9)}`;
       row = await DigitalMeetingMinute.create({ documento_id: document.id, code, content, content_hash: contentHash(content), created_by: req.user.id, updated_by: req.user.id }, { transaction });
-    } else {
+      for (const participant of participants) {
+        await DigitalMeetingParticipant.create({
+          minute_id: row.id,
+          user_id: participant.user_id || null,
+          document: clean(participant.document, 100) || null,
+          name: formatPersonName(clean(participant.name, 240)),
+          email: clean(participant.email, 254).toLowerCase() || null,
+          organization: clean(participant.organization, 240) || null,
+          role_title: clean(participant.role_title, 220) || null
+        }, { transaction });
+      }
+    } else if (row.status === 'draft') {
       await row.update({ content, content_hash: contentHash(content), updated_by: req.user.id }, { transaction });
       await DigitalMeetingParticipant.destroy({ where: { minute_id: row.id }, transaction });
-    }
-    for (const participant of participants) {
-      await DigitalMeetingParticipant.create({
-        minute_id: row.id,
-        user_id: participant.user_id || null,
-        document: clean(participant.document, 100) || null,
-        name: formatPersonName(clean(participant.name, 240)),
-        email: clean(participant.email, 254).toLowerCase() || null,
-        organization: clean(participant.organization, 240) || null,
-        role_title: clean(participant.role_title, 220) || null
-      }, { transaction });
+      for (const participant of participants) {
+        await DigitalMeetingParticipant.create({
+          minute_id: row.id,
+          user_id: participant.user_id || null,
+          document: clean(participant.document, 100) || null,
+          name: formatPersonName(clean(participant.name, 240)),
+          email: clean(participant.email, 254).toLowerCase() || null,
+          organization: clean(participant.organization, 240) || null,
+          role_title: clean(participant.role_title, 220) || null
+        }, { transaction });
+      }
+    } else {
+      // En fases de firma o posteriores, se actualiza el contenido (objetivo, desarrollo, acuerdos, etc.)
+      // preservando las firmas y participantes ya registrados en el acta
+      await row.update({ content, content_hash: contentHash(content), updated_by: req.user.id }, { transaction });
+
+      const existingParticipants = await DigitalMeetingParticipant.findAll({ where: { minute_id: row.id }, transaction });
+      const existingDocs = new Set(existingParticipants.map((p) => String(p.document || '').trim().toLowerCase()).filter(Boolean));
+      const existingEmails = new Set(existingParticipants.map((p) => String(p.email || '').trim().toLowerCase()).filter(Boolean));
+
+      for (const participant of participants) {
+        const pDoc = String(participant.document || '').trim().toLowerCase();
+        const pEmail = String(participant.email || '').trim().toLowerCase();
+        const alreadyExists = (pDoc && existingDocs.has(pDoc)) || (pEmail && existingEmails.has(pEmail));
+        if (!alreadyExists) {
+          await DigitalMeetingParticipant.create({
+            minute_id: row.id,
+            user_id: participant.user_id || null,
+            document: clean(participant.document, 100) || null,
+            name: formatPersonName(clean(participant.name, 240)),
+            email: clean(participant.email, 254).toLowerCase() || null,
+            organization: clean(participant.organization, 240) || null,
+            role_title: clean(participant.role_title, 220) || null,
+            status: 'invited'
+          }, { transaction });
+        }
+      }
     }
     return row;
   });
   const result = await DigitalMeetingMinute.findByPk(minute.id, { include: includeRelations });
-  res.status(req.body.id ? 200 : 201).json({ success: true, message: 'Borrador del acta guardado.', data: result });
+  res.status(req.body.id ? 200 : 201).json({ success: true, message: minute.status === 'draft' ? 'Borrador del acta guardado.' : 'Cambios del acta guardados exitosamente.', data: result });
 });
 
 const publish = wrap(async (req, res) => {

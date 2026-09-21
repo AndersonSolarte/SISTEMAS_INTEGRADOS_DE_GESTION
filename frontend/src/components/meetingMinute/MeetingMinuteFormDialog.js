@@ -231,7 +231,22 @@ export default function MeetingMinuteFormDialog({ open, document, user, onClose 
   const locked = form.status !== 'draft';
   const hasSignatures = signatures.length > 0;
   const allSigned = Boolean(form.participants.length) && form.participants.every((participant) => participant.status === 'signed');
-  const canSendFinal = allSigned && Number(form.created_by) === Number(user?.id);
+  const pendingCount = useMemo(() => (form.participants || []).filter((p) => p.status !== 'signed').length, [form.participants]);
+
+  const userDoc = String(user?.username || '').trim().toLowerCase();
+  const userId = Number(user?.id);
+  const isCreator = Boolean(form.created_by && Number(form.created_by) === userId);
+  const isResponsible = Boolean(
+    (Array.isArray(responsablesList) && responsablesList.some((r) =>
+      (r.document && String(r.document).trim().toLowerCase() === userDoc) ||
+      (r.user_id && Number(r.user_id) === userId)
+    )) ||
+    (form.responsable_document && String(form.responsable_document).trim().toLowerCase() === userDoc)
+  );
+  const isAdminUser = Boolean(user?.role === 'admin' || user?.isAdmin || user?.is_admin || user?.tipo_usuario === 'administrador');
+  const canEdit = Boolean(!form.id || isCreator || isResponsible || isAdminUser);
+  const canSendFinal = Boolean(isCreator || isResponsible || isAdminUser);
+
   const horario = useMemo(() => `${form.hora_inicio || ''} - ${form.hora_fin || ''}`, [form.hora_inicio, form.hora_fin]);
   const additionalParticipants = useMemo(() => {
     const respDocs = new Set((responsablesList || []).map((r) => String(r.document || '').trim().toLowerCase()).filter(Boolean));
@@ -509,7 +524,7 @@ export default function MeetingMinuteFormDialog({ open, document, user, onClose 
       const row = response.data;
       setForm((previous) => ({ ...previous, id: row.id, status: row.status, created_by: row.created_by || previous.created_by, participants: row.participants || previous.participants }));
       await loadMinutes();
-      if (!quiet) enqueueSnackbar('Borrador del acta guardado.', { variant: 'success' });
+      if (!quiet) enqueueSnackbar(form.status === 'draft' ? 'Borrador del acta guardado.' : 'Cambios del acta guardados exitosamente.', { variant: 'success' });
       return row;
     } catch (error) {
       enqueueSnackbar(error.response?.data?.message || 'No fue posible guardar el acta.', { variant: 'error' });
@@ -718,15 +733,15 @@ export default function MeetingMinuteFormDialog({ open, document, user, onClose 
               </Stack>
               <TextField fullWidth select size="small" label="Abrir un acta guardada" value={form.id} onChange={(event) => openMinute(event.target.value)}><MenuItem value="">Nueva acta</MenuItem>{minutes.map((minute) => <MenuItem key={minute.id} value={minute.id}>{minute.code} · {minute.content?.fecha || 'Sin fecha'} · {{ draft: 'Borrador', signing: 'En firmas', signed: 'Firmada', distributed: 'Enviada' }[minute.status] || minute.status}</MenuItem>)}</TextField>
             </Paper>
-            {form.status === 'signing' && !allSigned && <Alert severity="info">Las invitaciones personales ya fueron enviadas por correo. Puede volver a mostrar el QR, reenviar invitaciones o regresar a borrador mientras nadie haya firmado.</Alert>}
-            {form.status === 'signing' && hasSignatures && !allSigned && <Alert severity="warning">El acta ya tiene {signatures.length} firma(s). Su contenido queda protegido y ya no puede regresar a borrador.</Alert>}
-            {allSigned && <Alert severity="success">Todas las personas firmaron el acta. Ya puede enviar la versión final a sus correos.</Alert>}
+            {form.status === 'signing' && !allSigned && !hasSignatures && <Alert severity="info" sx={{ my: 1 }}>Las invitaciones personales ya fueron enviadas por correo. Puede volver a mostrar el QR, reenviar invitaciones o ajustar el acta.</Alert>}
+            {form.status === 'signing' && hasSignatures && !allSigned && <Alert severity="info" sx={{ my: 1 }}>El acta tiene {signatures.length} firma(s) registrada(s). Como responsable puede seguir ajustando y guardando el contenido ante cualquier observación antes del envío final.</Alert>}
+            {allSigned && <Alert severity="success" sx={{ my: 1 }}>Todas las personas firmaron el acta. Como responsable puede revisar, ajustar el texto si lo requiere y enviar el acta firmada a todos los participantes.</Alert>}
             <Paper variant="outlined" sx={{ p: 2.25, borderRadius: 3 }}>
               <Typography fontWeight={900} mb={2}>1. Información de la reunión</Typography>
               <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', sm: 'repeat(2,minmax(0,1fr))' }, gap: 1.5 }}>
                 <Stack direction={{ xs: 'column', sm: 'row' }} gap={1} sx={{ gridColumn: '1 / -1' }}>
                   <TextField
-                    disabled={locked}
+                    disabled={!canEdit}
                     fullWidth
                     label={responsablesList.length === 0 ? "Cédula del Responsable Principal *" : "Cédula de responsable o co-responsable"}
                     placeholder="Ingrese cédula y presione Consultar"
@@ -885,14 +900,14 @@ export default function MeetingMinuteFormDialog({ open, document, user, onClose 
                   )}
                 </Box>
 
-                <TextField disabled={locked} fullWidth label="Dependencia que cita *" value={form.dependencia} onChange={(e) => setField('dependencia', e.target.value)} helperText="Asignada desde el responsable principal o editable si es conjunta." />
-                <Autocomplete freeSolo disabled={locked} options={MEETING_PLACES} value={form.lugar || ''} onChange={(_, value) => setField('lugar', value || '')} onInputChange={(_, value) => setField('lugar', value)} renderInput={(params) => <TextField {...params} fullWidth label="Lugar" helperText="Seleccione una opción o escriba otro lugar." />} />
-                <TextField disabled={locked} fullWidth type="date" InputLabelProps={{ shrink: true }} label="Fecha" value={form.fecha} onChange={(e) => setField('fecha', e.target.value)} />
-                <TextField disabled={locked} fullWidth type="time" InputLabelProps={{ shrink: true }} label="Hora de inicio" value={form.hora_inicio} onChange={(e) => setField('hora_inicio', e.target.value)} />
-                <TextField disabled={locked} fullWidth type="time" InputLabelProps={{ shrink: true }} label="Hora de finalización" value={form.hora_fin} onChange={(e) => setField('hora_fin', e.target.value)} />
-                <RichTextEditor disabled={locked} label="Objetivo *" value={form.objetivo} onChange={(value) => setField('objetivo', value)} minHeight={90} />
-                <RichTextEditor disabled={locked} label="Desarrollo de la reunión" value={form.desarrollo} onChange={(value) => setField('desarrollo', value)} minHeight={150} />
-                <RichTextEditor disabled={locked} label="Conclusiones / Compromisos" value={form.conclusiones} onChange={(value) => setField('conclusiones', value)} minHeight={120} />
+                <TextField disabled={!canEdit} fullWidth label="Dependencia que cita *" value={form.dependencia} onChange={(e) => setField('dependencia', e.target.value)} helperText="Asignada desde el responsable principal o editable si es conjunta." />
+                <Autocomplete freeSolo disabled={!canEdit} options={MEETING_PLACES} value={form.lugar || ''} onChange={(_, value) => setField('lugar', value || '')} onInputChange={(_, value) => setField('lugar', value)} renderInput={(params) => <TextField {...params} fullWidth label="Lugar" helperText="Seleccione una opción o escriba otro lugar." />} />
+                <TextField disabled={!canEdit} fullWidth type="date" InputLabelProps={{ shrink: true }} label="Fecha" value={form.fecha} onChange={(e) => setField('fecha', e.target.value)} />
+                <TextField disabled={!canEdit} fullWidth type="time" InputLabelProps={{ shrink: true }} label="Hora de inicio" value={form.hora_inicio} onChange={(e) => setField('hora_inicio', e.target.value)} />
+                <TextField disabled={!canEdit} fullWidth type="time" InputLabelProps={{ shrink: true }} label="Hora de finalización" value={form.hora_fin} onChange={(e) => setField('hora_fin', e.target.value)} />
+                <RichTextEditor disabled={!canEdit} label="Objetivo *" value={form.objetivo} onChange={(value) => setField('objetivo', value)} minHeight={90} />
+                <RichTextEditor disabled={!canEdit} label="Desarrollo de la reunión" value={form.desarrollo} onChange={(value) => setField('desarrollo', value)} minHeight={150} />
+                <RichTextEditor disabled={!canEdit} label="Conclusiones / Compromisos" value={form.conclusiones} onChange={(value) => setField('conclusiones', value)} minHeight={120} />
               </Box>
             </Paper>
             <Paper variant="outlined" sx={{ p: 2.25, borderRadius: 3 }}>
@@ -909,10 +924,10 @@ export default function MeetingMinuteFormDialog({ open, document, user, onClose 
                   <strong>Participantes requeridos:</strong> Para habilitar firmas y generar el acta debe haber al menos dos participantes en la reunión (responsables y/o participantes convocados).
                 </Alert>
               )}
-              {!locked && <Stack direction={{ xs: 'column', sm: 'row' }} gap={1}><TextField fullWidth size="small" label="Cédula" value={documentNumber} onChange={(e) => { setDocumentNumber(e.target.value.replace(/[^0-9A-Za-z-]/g, '')); setCandidate(null); }} onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); lookup(); } }} /><Button variant="outlined" startIcon={searching ? <CircularProgress size={16} /> : <PersonSearch />} disabled={searching || !documentNumber} onClick={lookup} sx={{ minWidth: 125, textTransform: 'none', fontWeight: 800 }}>Consultar</Button></Stack>}
+              {canEdit && <Stack direction={{ xs: 'column', sm: 'row' }} gap={1}><TextField fullWidth size="small" label="Cédula" value={documentNumber} onChange={(e) => { setDocumentNumber(e.target.value.replace(/[^0-9A-Za-z-]/g, '')); setCandidate(null); }} onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); lookup(); } }} /><Button variant="outlined" startIcon={searching ? <CircularProgress size={16} /> : <PersonSearch />} disabled={searching || !documentNumber} onClick={lookup} sx={{ minWidth: 125, textTransform: 'none', fontWeight: 800 }}>Consultar</Button></Stack>}
               {candidate && <Paper variant="outlined" sx={{ p: 1.5, mt: 1.5, borderRadius: 2, bgcolor: '#f8fbff' }}><Stack direction="row" justifyContent="space-between" alignItems="center" gap={1}><Box><Typography fontWeight={850}>{formatPersonName(candidate.name)}</Typography><Typography variant="body2" color="text.secondary">{candidate.role_title} · {candidate.organization}</Typography><Typography variant="caption">{candidate.email}</Typography></Box><Button variant="contained" startIcon={<Add />} onClick={addParticipant}>Agregar</Button></Stack></Paper>}
-              {!locked && !externalMode && <Button startIcon={<Add />} onClick={() => { setExternalDraft({ document: documentNumber, name: '', email: '', organization: '', role_title: '' }); setExternalMode(true); }} sx={{ mt: 1, textTransform: 'none', fontWeight: 800 }}>Agregar participante externo</Button>}
-              {externalMode && !locked && <Paper variant="outlined" sx={{ p: 1.5, mt: 1.5, borderRadius: 2.5, bgcolor: '#f8fbff' }}><Typography fontWeight={850} mb={1}>Participante externo para esta acta</Typography><Alert severity="info" sx={{ mb: 1.5 }}>Al recibir el código, esta persona también recibirá la política institucional y deberá aceptar el tratamiento de datos antes de firmar.</Alert><Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', sm: 'repeat(2,minmax(0,1fr))' }, gap: 1 }}><TextField size="small" label="Cédula o identificación" value={externalDraft.document} onChange={(e) => setExternalDraft((old) => ({ ...old, document: e.target.value }))} /><TextField size="small" label="Nombre completo" value={externalDraft.name} onChange={(e) => setExternalDraft((old) => ({ ...old, name: e.target.value }))} /><TextField size="small" type="email" label="Correo empresarial o personal" value={externalDraft.email} onChange={(e) => setExternalDraft((old) => ({ ...old, email: e.target.value }))} /><TextField size="small" label="Cargo" value={externalDraft.role_title} onChange={(e) => setExternalDraft((old) => ({ ...old, role_title: e.target.value }))} /><TextField size="small" label="Empresa o entidad (opcional)" value={externalDraft.organization} onChange={(e) => setExternalDraft((old) => ({ ...old, organization: e.target.value }))} sx={{ gridColumn: { sm: '1 / -1' } }} /></Box><Stack direction="row" justifyContent="flex-end" gap={1} mt={1.25}><Button onClick={() => setExternalMode(false)}>Cancelar</Button><Button variant="contained" startIcon={<Add />} onClick={addExternalParticipant}>Agregar al acta</Button></Stack></Paper>}
+              {!externalMode && canEdit && <Button startIcon={<Add />} onClick={() => { setExternalDraft({ document: documentNumber, name: '', email: '', organization: '', role_title: '' }); setExternalMode(true); }} sx={{ mt: 1, textTransform: 'none', fontWeight: 800 }}>Agregar participante externo</Button>}
+              {externalMode && canEdit && <Paper variant="outlined" sx={{ p: 1.5, mt: 1.5, borderRadius: 2.5, bgcolor: '#f8fbff' }}><Typography fontWeight={850} mb={1}>Participante externo para esta acta</Typography><Alert severity="info" sx={{ mb: 1.5 }}>Al recibir el código, esta persona también recibirá la política institucional y deberá aceptar el tratamiento de datos antes de firmar.</Alert><Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', sm: 'repeat(2,minmax(0,1fr))' }, gap: 1 }}><TextField size="small" label="Cédula o identificación" value={externalDraft.document} onChange={(e) => setExternalDraft((old) => ({ ...old, document: e.target.value }))} /><TextField size="small" label="Nombre completo" value={externalDraft.name} onChange={(e) => setExternalDraft((old) => ({ ...old, name: e.target.value }))} /><TextField size="small" type="email" label="Correo empresarial o personal" value={externalDraft.email} onChange={(e) => setExternalDraft((old) => ({ ...old, email: e.target.value }))} /><TextField size="small" label="Cargo" value={externalDraft.role_title} onChange={(e) => setExternalDraft((old) => ({ ...old, role_title: e.target.value }))} /><TextField size="small" label="Empresa o entidad (opcional)" value={externalDraft.organization} onChange={(e) => setExternalDraft((old) => ({ ...old, organization: e.target.value }))} sx={{ gridColumn: { sm: '1 / -1' } }} /></Box><Stack direction="row" justifyContent="flex-end" gap={1} mt={1.25}><Button onClick={() => setExternalMode(false)}>Cancelar</Button><Button variant="contained" startIcon={<Add />} onClick={addExternalParticipant}>Agregar al acta</Button></Stack></Paper>}
               <Stack gap={1} mt={2}>
                 {form.participants.map((participant, index) => {
                   const pDoc = String(participant.document || '').toLowerCase();
@@ -937,7 +952,7 @@ export default function MeetingMinuteFormDialog({ open, document, user, onClose 
                       </Box>
                       <Stack direction="row" alignItems="center" gap={0.5}>
                         <Chip size="small" label={participant.status === 'signed' ? 'Firmado' : 'Pendiente'} color={participant.status === 'signed' ? 'success' : 'default'} />
-                        {!locked && (
+                        {canEdit && participant.status !== 'signed' && (
                           <IconButton color="error" size="small" onClick={() => removeParticipant(index)}>
                             <DeleteOutline fontSize="small" />
                           </IconButton>
@@ -1035,9 +1050,37 @@ export default function MeetingMinuteFormDialog({ open, document, user, onClose 
                 </Menu>
                 {form.status === 'signing' && <Button fullWidth startIcon={<QrCode2 />} disabled={loading} onClick={showSigningAccess} variant="outlined">{"Ver enlace\ny QR"}</Button>}
                 {form.status === 'signing' && !allSigned && <Button fullWidth startIcon={<Email />} disabled={loading} onClick={resendInvitations} variant="outlined">{"Reenviar\ninvitaciones"}</Button>}
-                {form.status === 'signing' && !hasSignatures && <Button fullWidth startIcon={<Edit />} disabled={loading} onClick={() => setConfirmAdjust(true)} color="warning" variant="outlined">{"Hacer\najustes"}</Button>}
+                {canEdit && (
+                  <Button
+                    fullWidth
+                    startIcon={loading ? <CircularProgress size={16} color="inherit" /> : <Save />}
+                    disabled={loading}
+                    onClick={() => save()}
+                    color="primary"
+                    variant="contained"
+                    sx={{ fontWeight: 850 }}
+                  >
+                    {form.status === 'draft' ? "Guardar\nborrador" : "Guardar\ncambios"}
+                  </Button>
+                )}
                 {locked && <Button fullWidth startIcon={<Refresh />} disabled={loading} onClick={() => openMinute(form.id)} variant="outlined">{"Actualizar\nfirmas"}</Button>}
-                {canSendFinal && <Button fullWidth startIcon={<Send />} disabled={loading} onClick={sendFinal} color="success" variant="contained" sx={{ fontWeight: 850 }}>{form.status === 'distributed' ? "Reenviar acta\nfirmada" : "Enviar acta\nfirmada"}</Button>}
+                {locked && canSendFinal && (
+                  <Tooltip title={!allSigned ? `Se habilitará cuando todos los participantes hayan firmado (${pendingCount} pendiente${pendingCount === 1 ? '' : 's'})` : 'Enviar versión final del acta con firmas a todos los participantes'}>
+                    <span>
+                      <Button
+                        fullWidth
+                        startIcon={<Send />}
+                        disabled={loading || !allSigned}
+                        onClick={sendFinal}
+                        color="success"
+                        variant={allSigned ? "contained" : "outlined"}
+                        sx={{ fontWeight: 850 }}
+                      >
+                        {form.status === 'distributed' ? "Reenviar acta\nfirmada" : "Enviar acta\nfirmada"}
+                      </Button>
+                    </span>
+                  </Tooltip>
+                )}
                 {!locked && (
                   <Tooltip title={!additionalParticipants.length ? 'Debe agregar al menos 1 participante adicional en la sección 2' : ''}>
                     <span>
@@ -1095,8 +1138,16 @@ export default function MeetingMinuteFormDialog({ open, document, user, onClose 
             </Button>
           )}
         </Stack>
-        {!locked && (
-          <Button variant="contained" startIcon={loading ? <CircularProgress size={16} color="inherit" /> : <Save />} disabled={loading} onClick={() => save()} sx={{ px: 3, textTransform: 'none', fontWeight: 900 }}>Guardar borrador</Button>
+        {canEdit && (
+          <Button
+            variant="contained"
+            startIcon={loading ? <CircularProgress size={16} color="inherit" /> : <Save />}
+            disabled={loading}
+            onClick={() => save()}
+            sx={{ px: 3, textTransform: 'none', fontWeight: 900 }}
+          >
+            {form.status === 'draft' ? 'Guardar borrador' : 'Guardar cambios del acta'}
+          </Button>
         )}
       </DialogActions>
     </Dialog>
