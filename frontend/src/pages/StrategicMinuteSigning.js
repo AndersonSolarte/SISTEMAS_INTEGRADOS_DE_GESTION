@@ -79,7 +79,7 @@ export default function StrategicMinuteSigning() {
     <Card sx={{ maxWidth: 760, mx: 'auto', borderRadius: { xs: 2.5, md: 4 }, border: '1px solid #dbe5f0', boxShadow: '0 18px 48px rgba(23,59,115,.12)' }}>
       <Box sx={{ px: { xs: 2.25, md: 4 }, py: 2.5, background: 'linear-gradient(135deg,#204698,#2563eb)', color: '#fff' }}>
         <Typography fontWeight={850} fontSize={13}>SIAC · UNIVERSIDAD CESMAG</Typography>
-        <Typography variant="h4" fontWeight={950} mt={0.5} sx={{ fontSize: { xs: 25, md: 32 } }}>Firma electrónica del acta</Typography>
+        <Typography variant="h4" fontWeight={950} mt={0.5} sx={{ fontSize: { xs: 25, md: 32 } }}>Firma del acta</Typography>
         <Typography sx={{ opacity: 0.9, mt: 0.5 }}>Acta versión {minute?.version} · {minute?.meeting?.objective}</Typography>
       </Box>
       <CardContent sx={{ p: { xs: 2.25, md: 4 } }}>

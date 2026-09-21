@@ -503,7 +503,10 @@ const publicMinute = wrap(async (req, res) => {
       }
       signatureInfo = {
         signed_at: signatureRow.signed_at,
-        signature_preview: preview
+        signature_preview: preview,
+        ip_address: signatureRow.ip_address,
+        user_agent: signatureRow.user_agent,
+        signature_hash: signatureRow.signature_hash
       };
     }
   }
@@ -580,7 +583,8 @@ const sign = wrap(async (req, res) => {
   const storage = path.join(SIGNATURE_ROOT, `${minute.id}-${participant.id}-${Date.now()}.${parsed.extension}`);
   fs.writeFileSync(storage, parsed.buffer, { flag: 'wx' });
   const signedAt = new Date();
-  await DigitalMeetingSignature.create({ minute_id: minute.id, participant_id: participant.id, signer_name: participant.name, signer_email: participant.email, signature_storage_key: storage, signature_hash: hash(parsed.buffer), content_hash: minute.content_hash, signed_at: signedAt, privacy_accepted_at: !participant.user_id ? signedAt : null, privacy_policy_version: !participant.user_id ? PRIVACY_POLICY_VERSION : null, ip_address: req.ip, user_agent: clean(req.headers['user-agent'], 500) });
+  const clientIp = clean(req.headers['x-forwarded-for']?.split(',')[0]?.trim() || req.ip || req.socket?.remoteAddress, 80);
+  await DigitalMeetingSignature.create({ minute_id: minute.id, participant_id: participant.id, signer_name: participant.name, signer_email: participant.email, signature_storage_key: storage, signature_hash: hash(parsed.buffer), content_hash: minute.content_hash, signed_at: signedAt, privacy_accepted_at: !participant.user_id ? signedAt : null, privacy_policy_version: !participant.user_id ? PRIVACY_POLICY_VERSION : null, ip_address: clientIp, user_agent: clean(req.headers['user-agent'], 500) });
   await participant.update({ status: 'signed', email_verified_at: new Date(), otp_hash: null, otp_expires_at: null });
   const [participantCount, signedCount] = await Promise.all([
     DigitalMeetingParticipant.count({ where: { minute_id: minute.id } }),

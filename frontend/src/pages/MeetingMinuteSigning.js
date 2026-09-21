@@ -14,6 +14,12 @@ const displayDate = (value) => {
   return match ? `${match[3]}/${match[2]}/${match[1]}` : value || '';
 };
 
+const formatIpAddress = (ip) => {
+  if (!ip) return '';
+  if (ip === '::1' || ip === '127.0.0.1' || ip === '::ffff:127.0.0.1') return '127.0.0.1 (Local)';
+  return String(ip).replace(/^::ffff:/, '');
+};
+
 function PublicActaPreview({ minute }) {
   if (!minute) return null;
   const content = minute.content || {};
@@ -173,7 +179,7 @@ export default function MeetingMinuteSigning() {
   };
 
   if (loading) return <Stack minHeight="100vh" justifyContent="center" alignItems="center" gap={2}><CircularProgress /><Typography>Cargando acta…</Typography></Stack>;
-  return <Box sx={{ minHeight: '100vh', bgcolor: '#f4f7fb', p: { xs: 1.5, sm: 3, md: 5 } }}><Card sx={{ maxWidth: 1120, mx: 'auto', borderRadius: 4, boxShadow: '0 18px 50px rgba(23,59,115,.15)' }}><Box sx={{ p: { xs: 2.5, md: 4 }, background: 'linear-gradient(135deg,#214c9c,#315ee8)', color: '#fff' }}><Typography fontWeight={900} fontSize={13}>SIAC · UNIVERSIDAD CESMAG</Typography><Typography variant="h4" fontWeight={950}>Revisión y firma electrónica</Typography><Typography sx={{ opacity: .9 }}>{minute?.code}</Typography></Box><CardContent sx={{ p: { xs: 2.5, md: 4 } }}>
+  return <Box sx={{ minHeight: '100vh', bgcolor: '#f4f7fb', p: { xs: 1.5, sm: 3, md: 5 } }}><Card sx={{ maxWidth: 1120, mx: 'auto', borderRadius: 4, boxShadow: '0 18px 50px rgba(23,59,115,.15)' }}><Box sx={{ p: { xs: 2.5, md: 4 }, background: 'linear-gradient(135deg,#214c9c,#315ee8)', color: '#fff' }}><Typography fontWeight={900} fontSize={13}>SIAC · UNIVERSIDAD CESMAG</Typography><Typography variant="h4" fontWeight={950}>Revisión y firma de documento</Typography><Typography sx={{ opacity: .9 }}>{minute?.code}</Typography></Box><CardContent sx={{ p: { xs: 2.5, md: 4 } }}>
     {minute?.already_signed ? (
       <Stack alignItems="center" py={2} gap={2.5}>
         <Box
@@ -195,14 +201,14 @@ export default function MeetingMinuteSigning() {
           <Chip
             size="small"
             color="success"
-            label="FIRMA REGISTRADA EN EL SISTEMA"
+            label="DOCUMENTO FIRMADO"
             sx={{ fontWeight: 900, letterSpacing: 0.5, mb: 1, px: 1 }}
           />
           <Typography variant="h4" fontWeight={950} color="#0f172a">
-            Usted ya firmó este documento
+            Documento firmado
           </Typography>
           <Typography variant="body1" color="text.secondary" sx={{ mt: 0.5, maxWidth: 650, mx: 'auto', lineHeight: 1.6 }}>
-            Apreciado(a) <strong>{minute.participant?.name || 'participante'}</strong>, le confirmamos que su firma electrónica ya fue registrada y vinculada exitosamente a esta acta.
+            Apreciado(a) <strong>{minute.participant?.name || 'participante'}</strong>, le confirmamos que su documento firmado ya fue registrado y vinculado exitosamente a esta acta.
           </Typography>
         </Box>
 
@@ -236,14 +242,30 @@ export default function MeetingMinuteSigning() {
                 </Typography>
               </Stack>
             )}
-            <Stack direction="row" justifyContent="space-between" alignItems="center">
-              <Typography variant="body2" color="text.secondary">Estado de su firma:</Typography>
-              <Chip size="small" color="success" label="✓ Aprobado y Firmado" sx={{ fontWeight: 800 }} />
+            <Stack direction="row" justifyContent="space-between" alignItems="center" pb={minute.signature_info?.ip_address ? 1 : 0} borderBottom={minute.signature_info?.ip_address ? "1px solid #e2e8f0" : "none"}>
+              <Typography variant="body2" color="text.secondary">Estado del documento:</Typography>
+              <Chip size="small" color="success" label="✓ Documento firmado" sx={{ fontWeight: 800 }} />
             </Stack>
+            {minute.signature_info?.ip_address && (
+              <Stack direction="row" justifyContent="space-between" alignItems="center" pb={1} borderBottom="1px solid #e2e8f0">
+                <Typography variant="body2" color="text.secondary">IP del dispositivo (Trazabilidad):</Typography>
+                <Typography variant="body2" fontFamily="monospace" fontWeight={850} color="#1e293b">
+                  {formatIpAddress(minute.signature_info.ip_address)}
+                </Typography>
+              </Stack>
+            )}
+            {minute.signature_info?.signature_hash && (
+              <Stack direction="row" justifyContent="space-between" alignItems="center" pb={1} borderBottom="1px solid #e2e8f0">
+                <Typography variant="body2" color="text.secondary">Código de trazabilidad (Hash):</Typography>
+                <Typography variant="caption" fontFamily="monospace" color="#64748b" sx={{ wordBreak: 'break-all', maxWidth: '60%', textAlign: 'right' }}>
+                  {minute.signature_info.signature_hash}
+                </Typography>
+              </Stack>
+            )}
             {minute.signature_info?.signature_preview && (
               <Box sx={{ mt: 1, pt: 1.5, borderTop: '1px dashed #cbd5e1', textAlign: 'center' }}>
                 <Typography variant="caption" color="text.secondary" display="block" mb={0.75} fontWeight={700}>
-                  Firma digital registrada:
+                  Firma registrada:
                 </Typography>
                 <Box
                   component="img"
@@ -267,7 +289,7 @@ export default function MeetingMinuteSigning() {
     ) : signed ? (
       <Stack alignItems="center" py={5} gap={1.5}>
         <CheckCircle color="success" sx={{ fontSize: 76 }} />
-        <Typography variant="h5" fontWeight={950}>Firma guardada exitosamente</Typography>
+        <Typography variant="h5" fontWeight={950}>Documento firmado exitosamente</Typography>
         <Typography color="text.secondary" textAlign="center" maxWidth={500}>
           Su firma ha sido vinculada al acta institucional. Puede cerrar esta página con total tranquilidad.
         </Typography>
