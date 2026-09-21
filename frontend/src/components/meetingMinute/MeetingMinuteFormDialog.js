@@ -1086,29 +1086,27 @@ export default function MeetingMinuteFormDialog({ open, document, user, onClose 
               </Stack>
               <Box
                 sx={{
-                  display: { xs: 'grid', lg: 'flex' },
-                  gridTemplateColumns: { xs: '1fr', sm: 'repeat(2,minmax(0,1fr))' },
+                  display: 'flex',
+                  flexWrap: 'wrap',
+                  alignItems: 'center',
                   gap: 1,
                   '& .MuiButton-root': {
-                    flex: { lg: '1 1 0' },
-                    minWidth: 0,
-                    minHeight: 46,
-                    px: { xs: 1.5, lg: 0.75 },
-                    py: 0.5,
+                    whiteSpace: 'nowrap',
                     textTransform: 'none',
                     fontWeight: 800,
-                    fontSize: { xs: 12.5, lg: 11.5 },
-                    lineHeight: 1.15,
-                    whiteSpace: 'pre-line',
-                    textAlign: 'center',
+                    fontSize: 12.5,
+                    minHeight: 36,
+                    px: 1.5,
+                    py: 0.6,
+                    flexShrink: 0,
                     '& .MuiButton-startIcon': {
-                      mr: { xs: 1, lg: 0.5 },
+                      mr: 0.75,
                       ml: 0
                     }
                   }
                 }}
               >
-                <Button fullWidth startIcon={<Download />} disabled={!form.id} onClick={(e) => setDownloadAnchorEl(e.currentTarget)} variant="outlined">{"Descargar\nPDF"}</Button>
+                <Button startIcon={<Download />} disabled={!form.id} onClick={(e) => setDownloadAnchorEl(e.currentTarget)} variant="outlined">Descargar PDF</Button>
                 <Menu
                   anchorEl={downloadAnchorEl}
                   open={Boolean(downloadAnchorEl)}
@@ -1128,26 +1126,24 @@ export default function MeetingMinuteFormDialog({ open, document, user, onClose 
                     </Box>
                   </MenuItem>
                 </Menu>
-                {form.status === 'signing' && <Button fullWidth startIcon={<QrCode2 />} disabled={loading} onClick={showSigningAccess} variant="outlined">{"Ver enlace\ny QR"}</Button>}
-                {form.status === 'signing' && !allSigned && <Button fullWidth startIcon={<Email />} disabled={loading} onClick={resendInvitations} variant="outlined">{"Reenviar\ninvitaciones"}</Button>}
+                {form.status === 'signing' && <Button startIcon={<QrCode2 />} disabled={loading} onClick={showSigningAccess} variant="outlined">Ver enlace y QR</Button>}
+                {form.status === 'signing' && !allSigned && <Button startIcon={<Email />} disabled={loading} onClick={resendInvitations} variant="outlined">Reenviar invitaciones</Button>}
                 {canEdit && (
                   <Button
-                    fullWidth
                     startIcon={<EditNote />}
                     onClick={handleEditActaClick}
                     color="primary"
                     variant="outlined"
                     sx={{ fontWeight: 850 }}
                   >
-                    {"Editar\nacta"}
+                    Editar acta
                   </Button>
                 )}
-                {locked && <Button fullWidth startIcon={<Refresh />} disabled={loading} onClick={() => openMinute(form.id)} variant="outlined">{"Actualizar\nfirmas"}</Button>}
+                {locked && <Button startIcon={<Refresh />} disabled={loading} onClick={() => openMinute(form.id)} variant="outlined">Actualizar firmas</Button>}
                 {locked && canSendFinal && (
                   <Tooltip title={!allSigned ? `Se habilitará cuando todos los participantes hayan firmado (${pendingCount} pendiente${pendingCount === 1 ? '' : 's'})` : 'Enviar versión final del acta con firmas a todos los participantes'}>
                     <span>
                       <Button
-                        fullWidth
                         startIcon={<Send />}
                         disabled={loading || !allSigned}
                         onClick={sendFinal}
@@ -1155,7 +1151,7 @@ export default function MeetingMinuteFormDialog({ open, document, user, onClose 
                         variant={allSigned ? "contained" : "outlined"}
                         sx={{ fontWeight: 850 }}
                       >
-                        {form.status === 'distributed' ? "Reenviar acta\nfirmada" : "Enviar acta\nfirmada"}
+                        {form.status === 'distributed' ? "Reenviar acta firmada" : "Enviar acta firmada"}
                       </Button>
                     </span>
                   </Tooltip>
@@ -1163,7 +1159,7 @@ export default function MeetingMinuteFormDialog({ open, document, user, onClose 
                 {!locked && (
                   <Tooltip title={!additionalParticipants.length ? 'Debe agregar al menos 1 participante adicional en la sección 2' : ''}>
                     <span>
-                      <Button fullWidth startIcon={<Email />} onClick={publish} disabled={loading || !additionalParticipants.length} variant="contained" sx={{ fontWeight: 850 }}>{"Habilitar y enviar\ninvitaciones"}</Button>
+                      <Button startIcon={<Email />} onClick={publish} disabled={loading || !additionalParticipants.length} variant="contained" sx={{ fontWeight: 850 }}>Habilitar y enviar invitaciones</Button>
                     </span>
                   </Tooltip>
                 )}
