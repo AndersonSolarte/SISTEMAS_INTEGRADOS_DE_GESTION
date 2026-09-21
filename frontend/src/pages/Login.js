@@ -149,19 +149,47 @@ function Login() {
     return () => document.removeEventListener("contextmenu", blockCtx);
   }, []);
 
+  const renderGoogleButton = useCallback(() => {
+    if (!window.google?.accounts?.id || !googleButtonRef.current) return;
+    googleButtonRef.current.innerHTML = "";
+    window.google.accounts.id.renderButton(googleButtonRef.current, {
+      type: "standard",
+      theme: "outline",
+      size: "large",
+      shape: "pill",
+      text: "signin_with",
+      logo_alignment: "left",
+      width: 360,
+    });
+  }, []);
+
   useEffect(() => {
     let cancelled = false;
     const initGoogle = () => {
       if (cancelled) return;
       if (!clientId) { setError("Falta configurar REACT_APP_GOOGLE_CLIENT_ID en el frontend."); return; }
       if (!window.google?.accounts?.id) { setTimeout(initGoogle, 250); return; }
-      window.google.accounts.id.initialize({ client_id: clientId, callback: handleGoogleCredential, ux_mode: "popup", auto_select: false, button_auto_select: false, use_fedcm_for_button: false, hd: "unicesmag.edu.co" });
-      if (googleButtonRef.current) { googleButtonRef.current.innerHTML = ""; window.google.accounts.id.renderButton(googleButtonRef.current, { type: "standard", theme: "outline", size: "large", shape: "pill", text: "signin_with", logo_alignment: "left", width: 360 }); }
+      window.google.accounts.id.initialize({
+        client_id: clientId,
+        callback: handleGoogleCredential,
+        ux_mode: "popup",
+        auto_select: false,
+        button_auto_select: false,
+        use_fedcm_for_button: false,
+        hd: "unicesmag.edu.co",
+      });
+      renderGoogleButton();
       setGoogleReady(true);
     };
     initGoogle();
     return () => { cancelled = true; if (window.google?.accounts?.id) window.google.accounts.id.cancel(); };
-  }, [clientId, handleGoogleCredential]);
+  }, [clientId, handleGoogleCredential, renderGoogleButton]);
+
+  useEffect(() => {
+    if (turnstileVisualReady && googleReady) {
+      renderGoogleButton();
+    }
+  }, [turnstileVisualReady, googleReady, renderGoogleButton]);
 
   const features = [
     { icon: <AccountBalanceIcon sx={{ fontSize: 22 }} />, label: "Fortalecimiento institucional" },
@@ -286,7 +314,38 @@ function Login() {
                 />
                 {turnstileError && <Typography variant="caption" sx={{ display: "block", mt: 0.5, color: "#be123c", fontWeight: 700 }}>{turnstileError}</Typography>}
               </Box>
-              <Box ref={googleButtonRef} sx={{ minHeight: 48, width: "100%", maxWidth: 420, display: turnstileVisualReady ? "flex" : "none", justifyContent: "center", alignItems: "center", p: 1, borderRadius: 3, transition: "opacity 0.25s ease", opacity: loading ? 0 : 1, pointerEvents: loading ? "none" : "auto", "&:hover": { background: "rgba(59,130,246,0.04)", borderRadius: 3 }, "& iframe": { maxWidth: "100% !important" } }} />
+              <Box
+                ref={googleButtonRef}
+                sx={{
+                  minHeight: 52,
+                  width: "100%",
+                  maxWidth: 420,
+                  display: "flex",
+                  justifyContent: "center",
+                  alignItems: "center",
+                  py: 0.5,
+                  px: 1,
+                  borderRadius: 3,
+                  overflow: "visible",
+                  visibility: turnstileVisualReady ? "visible" : "hidden",
+                  opacity: turnstileVisualReady ? (loading ? 0 : 1) : 0,
+                  pointerEvents: turnstileVisualReady && !loading ? "auto" : "none",
+                  transition: "opacity 0.25s ease",
+                  "&:hover": { background: "rgba(59,130,246,0.04)", borderRadius: 3 },
+                  "& iframe": {
+                    maxWidth: "100% !important",
+                    minHeight: "44px !important",
+                    height: "44px !important",
+                    margin: "0 auto !important",
+                  },
+                  "& > div": {
+                    overflow: "visible !important",
+                    minHeight: "44px !important",
+                    display: "flex !important",
+                    justifyContent: "center !important",
+                  },
+                }}
+              />
               {!loading && googleReady && showPruebaSelector && (
                 <FormControlLabel
                   control={
