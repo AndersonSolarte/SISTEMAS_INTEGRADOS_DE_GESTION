@@ -344,22 +344,35 @@ const sendParticipantInvitations = async ({ minute, baseUrl }) => {
 };
 
 const resolveSigningAccess = async (token) => {
-  const tokenHash = hash(token);
+  if (!token) return null;
+  const rawToken = String(token).trim();
+  let decodedToken = rawToken;
+  try {
+    decodedToken = decodeURIComponent(rawToken).trim();
+  } catch (_) {}
+
+  const tokensToTry = Array.from(new Set([rawToken, decodedToken].filter(Boolean)));
   const now = new Date();
-  const minute = await DigitalMeetingMinute.findOne({
-    where: { public_token_hash: tokenHash, status: { [Op.in]: ['signing', 'signed', 'distributed'] }, token_expires_at: { [Op.gt]: now } },
-    include: [{ model: DigitalMeetingParticipant, as: 'participants' }]
-  });
-  if (minute) return { minute, invitedParticipant: null, invitationVerified: false };
-  const invitedParticipant = await DigitalMeetingParticipant.findOne({
-    where: { signing_token_hash: tokenHash, signing_token_expires_at: { [Op.gt]: now } }
-  });
-  if (!invitedParticipant) return null;
-  const invitedMinute = await DigitalMeetingMinute.findOne({
-    where: { id: invitedParticipant.minute_id, status: { [Op.in]: ['signing', 'signed', 'distributed'] } },
-    include: [{ model: DigitalMeetingParticipant, as: 'participants' }]
-  });
-  return invitedMinute ? { minute: invitedMinute, invitedParticipant, invitationVerified: true } : null;
+
+  for (const t of tokensToTry) {
+    const tokenHash = hash(t);
+    const minute = await DigitalMeetingMinute.findOne({
+      where: { public_token_hash: tokenHash, status: { [Op.in]: ['signing', 'signed', 'distributed'] }, token_expires_at: { [Op.gt]: now } },
+      include: [{ model: DigitalMeetingParticipant, as: 'participants' }]
+    });
+    if (minute) return { minute, invitedParticipant: null, invitationVerified: false };
+    const invitedParticipant = await DigitalMeetingParticipant.findOne({
+      where: { signing_token_hash: tokenHash, signing_token_expires_at: { [Op.gt]: now } }
+    });
+    if (invitedParticipant) {
+      const invitedMinute = await DigitalMeetingMinute.findOne({
+        where: { id: invitedParticipant.minute_id, status: { [Op.in]: ['signing', 'signed', 'distributed'] } },
+        include: [{ model: DigitalMeetingParticipant, as: 'participants' }]
+      });
+      if (invitedMinute) return { minute: invitedMinute, invitedParticipant, invitationVerified: true };
+    }
+  }
+  return null;
 };
 
 const parseDataUrl = (value) => {
@@ -479,7 +492,7 @@ const getMinute = wrap(async (req, res) => {
   res.json({ success: true, data: row });
 });
 
-const normalizeContent = (body, user, document) => ({
+const normalizeContent = (body, user, document, existingContent = {}) => ({
   header: { codigo: document.codigo || 'COM-ID-FR-002', version: document.version || '1', fecha: formatDate(body.fecha || document.fecha_creacion) },
   responsables: clean(body.responsables || user.dependencia, 1500),
   responsable_document: clean(body.responsable_document, 100),
@@ -491,7 +504,8 @@ const normalizeContent = (body, user, document) => ({
   horario: clean(body.horario, 100),
   objetivo: [sanitizeRichText(body.objetivo)],
   desarrollo: [sanitizeRichText(body.desarrollo)],
-  conclusiones: [sanitizeRichText(body.conclusiones)]
+  conclusiones: [sanitizeRichText(body.conclusiones)],
+  _public_token: body._public_token || existingContent?._public_token || null
 });
 
 const saveDraft = wrap(async (req, res) => {
@@ -595,7 +609,7 @@ const saveDraft = wrap(async (req, res) => {
         is_primary: Boolean(r.is_primary)
       })),
       dependencia: clean(req.body.dependencia, 500) || responsibleUser.dependencia
-    }, req.user, document);
+    }, req.user, document, row?.content || {});
     if (!row) {
       const code = `ACTA-${new Date().getFullYear()}-${Date.now().toString().slice(-9)}`;
       row = await DigitalMeetingMinute.create({ documento_id: document.id, code, content, content_hash: contentHash(content), created_by: req.user.id, updated_by: req.user.id }, { transaction });
@@ -669,7 +683,8 @@ const publish = wrap(async (req, res) => {
     throw Object.assign(new Error('Todos los participantes deben tener correo para habilitar las firmas.'), { statusCode: 422 });
   }
   const token = crypto.randomBytes(32).toString('base64url');
-  await minute.update({ status: 'signing', public_token_hash: hash(token), token_expires_at: new Date(Date.now() + 45 * 24 * 60 * 60 * 1000), published_at: new Date(), content_hash: contentHash(minute.content) });
+  const updatedContent = { ...(minute.content || {}), _public_token: token };
+  await minute.update({ status: 'signing', public_token_hash: hash(token), token_expires_at: new Date(Date.now() + 45 * 24 * 60 * 60 * 1000), published_at: new Date(), content_hash: contentHash(minute.content), content: updatedContent });
   const signingUrl = `${publicFrontend(req)}/firmar-acta-reunion/${token}`;
   const qr_data_url = await QRCode.toDataURL(signingUrl, { errorCorrectionLevel: 'M', margin: 1, width: 360 });
   const invitations = await sendParticipantInvitations({ minute, baseUrl: publicFrontend(req) });
@@ -685,14 +700,33 @@ const getSigningAccess = wrap(async (req, res) => {
   const authorized = await canAccessMinuteFullSignatures(req.user, minute);
   if (!authorized) throw Object.assign(new Error('No tiene permiso para consultar el acceso de esta acta.'), { statusCode: 403 });
   if (minute.status !== 'signing') throw Object.assign(new Error('El acceso solo está disponible mientras el acta se encuentra en firmas.'), { statusCode: 409 });
-  const token = crypto.randomBytes(32).toString('base64url');
-  const expiresAt = minute.token_expires_at && minute.token_expires_at > new Date()
-    ? minute.token_expires_at
-    : new Date(Date.now() + 45 * 24 * 60 * 60 * 1000);
-  await minute.update({ public_token_hash: hash(token), token_expires_at: expiresAt });
+
+  const forceRegenerate = req.body?.regenerate === true || req.query?.regenerate === 'true';
+  const existingToken = minute.content?._public_token;
+  const isTokenValid = existingToken &&
+    minute.public_token_hash &&
+    hash(existingToken) === minute.public_token_hash &&
+    minute.token_expires_at &&
+    new Date(minute.token_expires_at) > new Date();
+
+  let token = existingToken;
+  if (!isTokenValid || forceRegenerate) {
+    token = crypto.randomBytes(32).toString('base64url');
+    const expiresAt = new Date(Date.now() + 45 * 24 * 60 * 60 * 1000);
+    const updatedContent = { ...(minute.content || {}), _public_token: token };
+    await minute.update({
+      public_token_hash: hash(token),
+      token_expires_at: expiresAt,
+      content: updatedContent
+    });
+  }
   const signingUrl = `${publicFrontend(req)}/firmar-acta-reunion/${token}`;
   const qr_data_url = await QRCode.toDataURL(signingUrl, { errorCorrectionLevel: 'M', margin: 1, width: 360 });
-  res.json({ success: true, message: 'Se generó un acceso QR vigente. El QR general anterior queda reemplazado.', data: { signing_url: signingUrl, qr_data_url } });
+  res.json({
+    success: true,
+    message: forceRegenerate ? 'Se regeneró el acceso QR vigente. El QR general anterior queda reemplazado.' : 'Acceso QR vigente obtenido.',
+    data: { signing_url: signingUrl, qr_data_url }
+  });
 });
 
 const reopenForEditing = wrap(async (req, res) => {
@@ -704,7 +738,8 @@ const reopenForEditing = wrap(async (req, res) => {
   const signedCount = await DigitalMeetingSignature.count({ where: { minute_id: minute.id } });
   if (signedCount > 0) throw Object.assign(new Error('No se puede modificar el acta porque ya tiene firmas. Esto protege el contenido que las personas aprobaron.'), { statusCode: 409 });
   await sequelize.transaction(async (transaction) => {
-    await minute.update({ status: 'draft', public_token_hash: null, token_expires_at: null, published_at: null }, { transaction });
+    const updatedContent = { ...(minute.content || {}), _public_token: null };
+    await minute.update({ status: 'draft', public_token_hash: null, token_expires_at: null, published_at: null, content: updatedContent }, { transaction });
     await DigitalMeetingParticipant.update({ status: 'invited', otp_hash: null, otp_expires_at: null, otp_attempts: 0, signing_token_hash: null, signing_token_expires_at: null, invitation_sent_at: null }, { where: { minute_id: minute.id }, transaction });
   });
   res.json({ success: true, message: 'El acta regresó a borrador. Los enlaces anteriores fueron invalidados y ya puede realizar ajustes.', data: { id: minute.id, status: 'draft' } });
@@ -792,8 +827,10 @@ const publicMinute = wrap(async (req, res) => {
 });
 
 const requestCode = wrap(async (req, res) => {
-  const minute = await DigitalMeetingMinute.findOne({ where: { public_token_hash: hash(req.params.token), status: 'signing', token_expires_at: { [Op.gt]: new Date() } } });
-  const participant = minute && await DigitalMeetingParticipant.findOne({ where: { id: req.body.participant_id, minute_id: minute.id } });
+  const access = await resolveSigningAccess(req.params.token);
+  const minute = access?.minute;
+  if (!minute) throw Object.assign(new Error('El enlace de firma no es válido o venció.'), { statusCode: 404 });
+  const participant = await DigitalMeetingParticipant.findOne({ where: { id: req.body.participant_id, minute_id: minute.id } });
   if (!participant || clean(participant.email).toLowerCase() !== clean(req.body.email).toLowerCase()) throw Object.assign(new Error('Los datos no coinciden con la invitación.'), { statusCode: 422 });
   if (!participant.user_id && req.body.privacy_accepted !== true) throw Object.assign(new Error('Debe aceptar la autorización de tratamiento de datos personales para continuar.'), { statusCode: 422 });
   const otp = String(crypto.randomInt(100000, 999999));

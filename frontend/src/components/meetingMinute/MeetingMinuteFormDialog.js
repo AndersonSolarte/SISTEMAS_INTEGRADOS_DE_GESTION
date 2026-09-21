@@ -671,13 +671,13 @@ export default function MeetingMinuteFormDialog({ open, document, user, onClose 
     } catch (error) { enqueueSnackbar(error.response?.data?.message || 'No fue posible reenviar las invitaciones.', { variant: 'error' }); }
     finally { setLoading(false); }
   };
-  const showSigningAccess = async () => {
+  const showSigningAccess = async (regenerate = false) => {
     if (!form.id) return;
     setLoading(true);
     try {
-      const response = await meetingMinuteService.getSigningAccess(form.id, { public_base_url: window.location.origin });
+      const response = await meetingMinuteService.getSigningAccess(form.id, { public_base_url: window.location.origin, regenerate });
       setQr(response.data);
-      enqueueSnackbar(response.message || 'Acceso QR actualizado.', { variant: 'success' });
+      enqueueSnackbar(response.message || 'Acceso QR obtenido.', { variant: 'success' });
     } catch (error) { enqueueSnackbar(error.response?.data?.message || 'No fue posible recuperar el acceso de firma.', { variant: 'error' }); }
     finally { setLoading(false); }
   };
@@ -1346,7 +1346,38 @@ export default function MeetingMinuteFormDialog({ open, document, user, onClose 
         )}
       </DialogActions>
     </Dialog>
-    <Dialog open={Boolean(qr)} onClose={() => setQr(null)} maxWidth="xs" fullWidth><DialogTitle fontWeight={900}>Acceso para firmar</DialogTitle><DialogContent><Stack alignItems="center" gap={1.5}><Alert severity="info">Este QR y enlace sirven como alternativa presencial. Los enlaces personales enviados por correo continúan funcionando de manera independiente.</Alert>{qr?.qr_data_url && <Box component="img" src={qr.qr_data_url} alt="QR alternativo para firmar" sx={{ width: 260, height: 260 }} />}<TextField fullWidth size="small" value={qr?.signing_url || ''} InputProps={{ readOnly: true }} /><Button startIcon={<ContentCopy />} onClick={() => { navigator.clipboard.writeText(qr?.signing_url || ''); enqueueSnackbar('Enlace copiado.', { variant: 'success' }); }}>Copiar enlace alternativo</Button></Stack></DialogContent><DialogActions><Button onClick={() => setQr(null)}>Cerrar</Button></DialogActions></Dialog>
+    <Dialog open={Boolean(qr)} onClose={() => setQr(null)} maxWidth="xs" fullWidth>
+      <DialogTitle fontWeight={900}>Acceso presencial para firmar</DialogTitle>
+      <DialogContent>
+        <Stack alignItems="center" gap={1.5} pt={0.5}>
+          <Alert severity="info" sx={{ fontSize: 12.5 }}>
+            Este código QR y enlace presencial son permanentes mientras el acta esté en firmas. Los asistentes pueden escanearlo desde la cámara de su celular para firmar.
+          </Alert>
+          {qr?.qr_data_url && <Box component="img" src={qr.qr_data_url} alt="QR alternativo para firmar" sx={{ width: 260, height: 260, borderRadius: 2, border: '1px solid #e2e8f0' }} />}
+          <TextField fullWidth size="small" value={qr?.signing_url || ''} InputProps={{ readOnly: true }} />
+          <Button
+            fullWidth
+            variant="contained"
+            startIcon={<ContentCopy />}
+            onClick={() => { navigator.clipboard.writeText(qr?.signing_url || ''); enqueueSnackbar('Enlace copiado al portapapeles.', { variant: 'success' }); }}
+            sx={{ textTransform: 'none', fontWeight: 800 }}
+          >
+            Copiar enlace para firmar
+          </Button>
+          <Button
+            size="small"
+            color="warning"
+            onClick={() => showSigningAccess(true)}
+            sx={{ textTransform: 'none', fontSize: 11.5, color: '#b45309' }}
+          >
+            Regenerar código QR (invalidará el QR anterior)
+          </Button>
+        </Stack>
+      </DialogContent>
+      <DialogActions>
+        <Button onClick={() => setQr(null)}>Cerrar</Button>
+      </DialogActions>
+    </Dialog>
     <Dialog open={confirmAdjust} onClose={() => !loading && setConfirmAdjust(false)} maxWidth="sm" fullWidth><DialogTitle fontWeight={900}>Regresar el acta a borrador</DialogTitle><DialogContent><Alert severity="warning" sx={{ mt: 1 }}>Los enlaces de firma y el QR actuales dejarán de funcionar. Después de ajustar el acta deberá habilitar y enviar nuevamente las invitaciones.</Alert></DialogContent><DialogActions><Button disabled={loading} onClick={() => setConfirmAdjust(false)}>Cancelar</Button><Button disabled={loading} onClick={reopenForEditing} color="warning" variant="contained">Regresar y editar</Button></DialogActions></Dialog>
   </>;
 }

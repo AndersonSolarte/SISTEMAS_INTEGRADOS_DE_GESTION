@@ -1,10 +1,10 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { useParams } from 'react-router-dom';
 import {
-  Alert, Box, Button, Card, CardContent, Checkbox, Chip, CircularProgress,
-  FormControlLabel, Link, MenuItem, Paper, Stack, TextField, Typography
+  Accordion, AccordionDetails, AccordionSummary, Alert, Box, Button, Card, CardContent, Checkbox, Chip, CircularProgress,
+  FormControlLabel, Link, MenuItem, Paper, Stack, TextField, Typography, useMediaQuery
 } from '@mui/material';
-import { CheckCircle, Draw, Email, Lock, PersonSearch, VerifiedUser } from '@mui/icons-material';
+import { Article, CheckCircle, Draw, Email, ErrorOutline, ExpandMore, Lock, PersonSearch, Refresh, VerifiedUser } from '@mui/icons-material';
 import meetingMinuteService from '../services/meetingMinuteService';
 import logoFormatos from '../assets/logo_formatos.jpg';
 import { sanitizeRichHtml } from '../components/meetingMinute/RichTextEditor';
@@ -147,6 +147,8 @@ export default function MeetingMinuteSigning() {
   const [otp, setOtp] = useState('');
   const [sent, setSent] = useState(false);
   const [hasInk, setHasInk] = useState(false);
+  const isMobile = useMediaQuery('(max-width:768px)');
+  const [expandedPreview, setExpandedPreview] = useState(false);
   const [loading, setLoading] = useState(true);
   const [working, setWorking] = useState(false);
   const [signed, setSigned] = useState(false);
@@ -161,14 +163,23 @@ export default function MeetingMinuteSigning() {
   const emailMismatch = personalInvitation && Boolean(confirmedEmail.trim()) && !isEmailValid;
 
   useEffect(() => {
-    meetingMinuteService.publicMinute(token).then((response) => {
+    const cleanToken = String(token || '').trim();
+    if (!cleanToken) {
+      setMessage({ severity: 'error', text: 'No se especificó un enlace de firma válido.' });
+      setLoading(false);
+      return;
+    }
+    meetingMinuteService.publicMinute(cleanToken).then((response) => {
       setMinute(response.data);
       if (response.data.invitation_verified && response.data.invited_participant_id) {
         setParticipantId(response.data.invited_participant_id);
         setSent(true);
       }
-    }).catch((error) => setMessage({ severity: 'error', text: error.response?.data?.message || 'El enlace no es válido o venció.' })).finally(() => setLoading(false));
-  }, [token]);
+      setExpandedPreview(!isMobile);
+    }).catch((error) => {
+      setMessage({ severity: 'error', text: error.response?.data?.message || 'El enlace no es válido o venció.' });
+    }).finally(() => setLoading(false));
+  }, [token, isMobile]);
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas || !sent) return undefined;
@@ -204,9 +215,103 @@ export default function MeetingMinuteSigning() {
     finally { setWorking(false); }
   };
 
-  if (loading) return <Stack minHeight="100vh" justifyContent="center" alignItems="center" gap={2}><CircularProgress /><Typography>Cargando acta…</Typography></Stack>;
-  return <Box sx={{ minHeight: '100vh', bgcolor: '#f4f7fb', p: { xs: 1.5, sm: 3, md: 5 } }}><Card sx={{ maxWidth: 1120, mx: 'auto', borderRadius: 4, boxShadow: '0 18px 50px rgba(23,59,115,.15)' }}><Box sx={{ p: { xs: 2.5, md: 4 }, background: 'linear-gradient(135deg,#214c9c,#315ee8)', color: '#fff' }}><Typography fontWeight={900} fontSize={13}>SIAC · UNIVERSIDAD CESMAG</Typography><Typography variant="h4" fontWeight={950}>Revisión y firma de documento</Typography><Typography sx={{ opacity: .9 }}>{minute?.code}</Typography></Box><CardContent sx={{ p: { xs: 2.5, md: 4 } }}>
-    {minute?.already_signed ? (
+  if (loading) {
+    return (
+      <Stack minHeight="100vh" justifyContent="center" alignItems="center" gap={2} bgcolor="#f4f7fb">
+        <CircularProgress />
+        <Typography fontWeight={700} color="text.secondary">Cargando acta institucional…</Typography>
+      </Stack>
+    );
+  }
+
+  return (
+    <Box sx={{ minHeight: '100vh', bgcolor: '#f4f7fb', p: { xs: 1.5, sm: 3, md: 5 } }}>
+      <Card sx={{ maxWidth: 1120, mx: 'auto', borderRadius: 4, boxShadow: '0 18px 50px rgba(23,59,115,.15)', overflow: 'hidden' }}>
+        <Box sx={{ p: { xs: 2.5, sm: 3, md: 4 }, background: 'linear-gradient(135deg,#214c9c,#315ee8)', color: '#fff' }}>
+          <Typography fontWeight={900} fontSize={13}>SIAC · UNIVERSIDAD CESMAG</Typography>
+          <Typography variant="h5" fontWeight={950} sx={{ fontSize: { xs: '1.25rem', sm: '1.65rem', md: '2rem' }, mt: 0.25 }}>
+            Revisión y firma de documento
+          </Typography>
+          {minute?.code && (
+            <Typography sx={{ opacity: 0.9, fontWeight: 800, mt: 0.5, fontSize: { xs: 12, sm: 14 } }}>
+              {minute.code}
+            </Typography>
+          )}
+        </Box>
+        <CardContent sx={{ p: { xs: 2, sm: 3, md: 4 } }}>
+          {!minute ? (
+            <Stack alignItems="center" py={{ xs: 3, md: 5 }} px={{ xs: 1, sm: 3 }} gap={2.5} textAlign="center">
+              <Box
+                sx={{
+                  width: 76,
+                  height: 76,
+                  borderRadius: '50%',
+                  bgcolor: '#fef2f2',
+                  border: '3px solid #fca5a5',
+                  display: 'grid',
+                  placeItems: 'center',
+                  boxShadow: '0 8px 24px rgba(239, 68, 68, 0.16)'
+                }}
+              >
+                <ErrorOutline sx={{ fontSize: 44, color: '#dc2626' }} />
+              </Box>
+
+              <Box maxWidth={540}>
+                <Chip
+                  size="small"
+                  color="error"
+                  label="ACCESO NO DISPONIBLE"
+                  sx={{ fontWeight: 900, letterSpacing: 0.5, mb: 1.25, px: 1 }}
+                />
+                <Typography variant="h5" fontWeight={950} color="#0f172a" sx={{ fontSize: { xs: '1.25rem', sm: '1.5rem' } }}>
+                  No fue posible abrir el documento para firmar
+                </Typography>
+                <Typography variant="body1" color="text.secondary" sx={{ mt: 1, lineHeight: 1.6 }}>
+                  {message?.text || 'El enlace o código QR de firma no es válido, ya fue utilizado o ha vencido.'}
+                </Typography>
+              </Box>
+
+              <Paper
+                variant="outlined"
+                sx={{
+                  p: { xs: 2, sm: 2.5 },
+                  borderRadius: 3,
+                  bgcolor: '#f8fafc',
+                  border: '1px solid #cbd5e1',
+                  maxWidth: 580,
+                  width: '100%',
+                  textAlign: 'left'
+                }}
+              >
+                <Typography variant="subtitle2" fontWeight={850} color="#1e293b" mb={1}>
+                  ¿Qué puede haber ocurrido?
+                </Typography>
+                <Stack gap={1} sx={{ fontSize: 13, color: '#475569', lineHeight: 1.5 }}>
+                  <Box sx={{ display: 'flex', gap: 1 }}>
+                    <span>•</span>
+                    <span><strong>Si escaneó un código QR:</strong> Solicite al responsable que mantenga visible el código QR en pantalla e intente escanearlo nuevamente.</span>
+                  </Box>
+                  <Box sx={{ display: 'flex', gap: 1 }}>
+                    <span>•</span>
+                    <span><strong>Si el acta está en ajuste:</strong> El responsable pudo haber devuelto el acta a borrador para corregir observaciones. Los enlaces anteriores quedan desactivados por seguridad.</span>
+                  </Box>
+                  <Box sx={{ display: 'flex', gap: 1 }}>
+                    <span>•</span>
+                    <span><strong>Si recibió la invitación por correo:</strong> Verifique si recibió un correo institucional más reciente con un enlace actualizado.</span>
+                  </Box>
+                </Stack>
+              </Paper>
+
+              <Button
+                variant="contained"
+                startIcon={<Refresh />}
+                onClick={() => window.location.reload()}
+                sx={{ textTransform: 'none', fontWeight: 900, py: 1.2, px: 3, borderRadius: 2 }}
+              >
+                Reintentar carga
+              </Button>
+            </Stack>
+          ) : minute?.already_signed ? (
       <Stack alignItems="center" py={2} gap={2.5}>
         <Box
           sx={{
@@ -340,11 +445,39 @@ export default function MeetingMinuteSigning() {
           Su firma ha sido vinculada al acta institucional. Puede cerrar esta página con total tranquilidad.
         </Typography>
       </Stack>
-    ) : minute && (
+    ) : (
       <>
         <Alert severity="info" sx={{ mb: 2.5 }}>{personalInvitation ? 'Su correo ya fue verificado mediante este enlace personal. Revise sus datos, dibuje la firma y confirme.' : 'Puede firmar desde celular, tableta o computador. Seleccione su nombre y valide el correo para continuar.'}</Alert>
         {message && <Alert severity={message.severity} sx={{ mb: 2.5 }}>{message.text}</Alert>}
-        <PublicActaPreview minute={minute} />
+        <Accordion
+          expanded={expandedPreview}
+          onChange={(_, isExp) => setExpandedPreview(isExp)}
+          sx={{
+            border: '1px solid #cbd5e1',
+            borderRadius: '12px !important',
+            '&:before': { display: 'none' },
+            mb: 2.5,
+            boxShadow: 'none',
+            overflow: 'hidden'
+          }}
+        >
+          <AccordionSummary expandIcon={<ExpandMore />} sx={{ bgcolor: '#f8fafc', px: 2 }}>
+            <Stack direction="row" alignItems="center" gap={1.25}>
+              <Article color="primary" />
+              <Box>
+                <Typography fontWeight={900} fontSize={14} color="#0f172a">
+                  {expandedPreview ? 'Ocultar contenido completo del acta' : 'Ver contenido completo del acta'}
+                </Typography>
+                <Typography variant="caption" color="text.secondary">
+                  {minute.code} · {displayDate(minute.content?.fecha)} {minute.content?.dependencia ? `· ${minute.content.dependencia}` : ''}
+                </Typography>
+              </Box>
+            </Stack>
+          </AccordionSummary>
+          <AccordionDetails sx={{ p: { xs: 1, sm: 2 } }}>
+            <PublicActaPreview minute={minute} />
+          </AccordionDetails>
+        </Accordion>
         <Stack gap={3}>
           <Box>
             <Stack direction="row" gap={1} alignItems="center">
@@ -388,11 +521,70 @@ export default function MeetingMinuteSigning() {
           </Box>
           {requiresPrivacyConsent && <Box sx={{ p: 2, border: '1px solid #bfdbfe', borderRadius: 3, bgcolor: '#f8fbff' }}><Typography fontWeight={900} mb={1}>Autorización para el tratamiento de datos personales</Typography><Typography variant="body2" color="text.secondary" sx={{ lineHeight: 1.65 }}>En la Universidad CESMAG, tratamos sus datos personales conforme a la Ley 1581 de 2012 y el Decreto 1074 de 2015. El tratamiento de sus datos incluye la recolección, almacenamiento, uso, circulación y supresión de la información. La finalidad de este tratamiento comprende, pero no se limita a gestión de procesos académicos, financieros, administrativos, de investigación, proyección social y de recursos humanos, desarrollo de programas de bienestar y desarrollo estudiantil, seguridad y control de acceso, cumplimiento de obligaciones legales. En algunos casos, podríamos solicitar datos personales sensibles. Usted tiene derecho a conocer, actualizar, rectificar y suprimir sus datos personales, así como a revocar la autorización otorgada para su tratamiento en los términos de la normativa vigente. Para más información sobre nuestras políticas de tratamiento de datos personales y sus cambios sustanciales, visite el siguiente enlace: <Link href="https://www.unicesmag.edu.co/documentos/DATOS-UNICESMAG.pdf" target="_blank" rel="noopener noreferrer">Política de tratamiento de datos personales</Link>. Para ejercer estos derechos o si tiene alguna pregunta sobre este aviso de privacidad o sobre el tratamiento de sus datos personales, contáctenos a través del correo <Link href="mailto:correspondencia@unicesmag.edu.co">correspondencia@unicesmag.edu.co</Link>, o presencialmente en las instalaciones de la Universidad CESMAG, Campus Centro, ubicada en la <Link href="https://www.google.com/maps/search/Carrera+20+A+No.+14-54" target="_blank" rel="noopener noreferrer">Carrera 20 A No. 14-54 de la ciudad de Pasto</Link>.</Typography><FormControlLabel sx={{ mt: 1 }} control={<Checkbox checked={privacyAccepted} onChange={(event) => setPrivacyAccepted(event.target.checked)} />} label={<Typography variant="body2" fontWeight={800}>He leído y autorizo el tratamiento de mis datos personales para participar y firmar esta acta.</Typography>} /></Box>}
           {!personalInvitation && <Box><Stack direction="row" gap={1} alignItems="center"><Email color="primary" /><Typography fontWeight={900}>2. Verifique su correo</Typography></Stack><Stack direction={{ xs: 'column', sm: 'row' }} gap={1} mt={1.25}><TextField fullWidth type="email" label="Correo de la invitación" value={email} onChange={(event) => setEmail(event.target.value)} /><Button variant="outlined" disabled={!participantId || !email || working || (requiresPrivacyConsent && !privacyAccepted)} onClick={requestCode} sx={{ minWidth: 180, textTransform: 'none', fontWeight: 850 }}>{working ? 'Enviando…' : 'Enviar código'}</Button></Stack></Box>}
-          <Box sx={{ opacity: sent ? 1 : .45, pointerEvents: sent ? 'auto' : 'none' }}><Stack direction="row" gap={1} alignItems="center"><Draw color="primary" /><Typography fontWeight={900}>{personalInvitation ? '2. Dibuje y confirme su firma' : '3. Dibuje y confirme su firma'}</Typography></Stack>{!personalInvitation && <TextField fullWidth label="Código de 6 dígitos" value={otp} onChange={(event) => setOtp(event.target.value.replace(/\D/g, '').slice(0, 6))} sx={{ my: 1.25 }} />}<canvas ref={canvasRef} width="680" height="220" style={{ display: 'block', width: '100%', height: 220, marginTop: 10, border: '2px dashed #7da4d2', borderRadius: 12, background: '#fff', touchAction: 'none' }} /><Stack direction="row" justifyContent="space-between" mt={1}><Button size="small" onClick={() => { canvasRef.current.getContext('2d').clearRect(0, 0, 680, 220); setHasInk(false); }}>Limpiar</Button><Button variant="contained" disabled={!hasInk || (!personalInvitation && otp.length !== 6) || (personalInvitation && (!confirmedEmail.trim() || !isEmailValid)) || working || (requiresPrivacyConsent && !privacyAccepted)} onClick={sign} sx={{ px: 3, textTransform: 'none', fontWeight: 900 }}>Confirmar y firmar</Button></Stack></Box>
+          <Box sx={{ opacity: sent ? 1 : 0.45, pointerEvents: sent ? 'auto' : 'none' }}>
+            <Stack direction="row" gap={1} alignItems="center">
+              <Draw color="primary" />
+              <Typography fontWeight={900}>
+                {personalInvitation ? '2. Dibuje y confirme su firma' : '3. Dibuje y confirme su firma'}
+              </Typography>
+            </Stack>
+            {!personalInvitation && (
+              <TextField
+                fullWidth
+                label="Código de 6 dígitos"
+                value={otp}
+                onChange={(event) => setOtp(event.target.value.replace(/\D/g, '').slice(0, 6))}
+                sx={{ my: 1.25 }}
+              />
+            )}
+            <canvas
+              ref={canvasRef}
+              width="680"
+              height="220"
+              style={{
+                display: 'block',
+                width: '100%',
+                height: 220,
+                marginTop: 10,
+                border: '2px dashed #7da4d2',
+                borderRadius: 12,
+                background: '#fff',
+                touchAction: 'none'
+              }}
+            />
+            <Stack direction="row" justifyContent="space-between" mt={1}>
+              <Button
+                size="small"
+                onClick={() => {
+                  canvasRef.current.getContext('2d').clearRect(0, 0, 680, 220);
+                  setHasInk(false);
+                }}
+              >
+                Limpiar
+              </Button>
+              <Button
+                variant="contained"
+                disabled={
+                  !hasInk ||
+                  (!personalInvitation && otp.length !== 6) ||
+                  (personalInvitation && (!confirmedEmail.trim() || !isEmailValid)) ||
+                  working ||
+                  (requiresPrivacyConsent && !privacyAccepted)
+                }
+                onClick={sign}
+                sx={{ px: 3, textTransform: 'none', fontWeight: 900 }}
+              >
+                Confirmar y firmar
+              </Button>
+            </Stack>
+          </Box>
         </Stack>
       </>
     )}
-  </CardContent></Card></Box>;
+  </CardContent>
+    </Card>
+  </Box>
+  );
 }
 
 function PaperParticipant({ participant }) {

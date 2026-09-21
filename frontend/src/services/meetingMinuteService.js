@@ -18,9 +18,9 @@ const meetingMinuteService = {
   updateComments: (id, payload) => api.post(`${root}/${id}/comments`, payload).then(unwrap),
   downloadWord: (id, params = {}) => api.get(`${root}/${id}/word`, { params, responseType: 'blob' }).then((response) => response.data),
   downloadPdf: (id, params = {}) => api.get(`${root}/${id}/pdf`, { params, responseType: 'blob' }).then((response) => response.data),
-  publicMinute: (token) => api.get(`${root}/public/${token}`, { skipAuthRedirect: true }).then(unwrap),
-  requestCode: (token, payload) => api.post(`${root}/public/${token}/request-code`, payload, { skipAuthRedirect: true }).then(unwrap),
-  sign: (token, payload) => api.post(`${root}/public/${token}/sign`, payload, { skipAuthRedirect: true }).then(unwrap)
+  publicMinute: (token) => api.get(`${root}/public/${encodeURIComponent(String(token || '').trim())}`, { skipAuthRedirect: true }).then(unwrap),
+  requestCode: (token, payload) => api.post(`${root}/public/${encodeURIComponent(String(token || '').trim())}/request-code`, payload, { skipAuthRedirect: true }).then(unwrap),
+  sign: (token, payload) => api.post(`${root}/public/${encodeURIComponent(String(token || '').trim())}/sign`, payload, { skipAuthRedirect: true }).then(unwrap)
 };
 
 export default meetingMinuteService;
