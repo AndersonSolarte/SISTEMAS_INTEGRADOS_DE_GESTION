@@ -1054,123 +1054,162 @@ export default function MeetingMinuteFormDialog({ open, document, user, onClose 
                   </Tooltip>
                   <Typography fontWeight={900}>Vista previa del acta</Typography>
                 </Stack>
-                <ToggleButtonGroup
-                  size="small"
-                  value={previewType}
-                  exclusive
-                  onChange={(_, val) => val && setPreviewType(val)}
-                  sx={{
-                    height: 32,
-                    bgcolor: '#f1f5f9',
-                    p: 0.25,
-                    borderRadius: 2,
-                    '& .MuiToggleButton-root': {
-                      textTransform: 'none',
-                      px: 1.25,
-                      py: 0.25,
-                      fontSize: 11.5,
-                      fontWeight: 800,
-                      border: 'none',
-                      borderRadius: '6px !important',
-                      '&.Mui-selected': {
-                        bgcolor: '#fff',
-                        color: '#1e3a8a',
-                        boxShadow: '0 1px 3px rgba(0,0,0,0.1)'
+              </Stack>
+              <Menu
+                anchorEl={downloadAnchorEl}
+                open={Boolean(downloadAnchorEl)}
+                onClose={() => setDownloadAnchorEl(null)}
+                PaperProps={{ sx: { minWidth: 260, borderRadius: 2.5, boxShadow: '0 10px 30px rgba(0,0,0,0.15)' } }}
+              >
+                <MenuItem onClick={() => download('original')} sx={{ py: 1 }}>
+                  <Box>
+                    <Typography variant="body2" fontWeight={850} color="primary.main">Original (con firmas gráficas)</Typography>
+                    <Typography variant="caption" color="text.secondary" display="block">Documento máster custodiado por el responsable</Typography>
+                  </Box>
+                </MenuItem>
+                <MenuItem onClick={() => download('copia')} sx={{ py: 1 }}>
+                  <Box>
+                    <Typography variant="body2" fontWeight={850} color="text.primary">Copia oficial (sin firmas visibles)</Typography>
+                    <Typography variant="caption" color="text.secondary" display="block">Versión oficial para participantes con constancia 'ORIGINAL FIRMADO'</Typography>
+                  </Box>
+                </MenuItem>
+              </Menu>
+
+              {locked ? (
+                <Stack spacing={1} sx={{ width: '100%' }}>
+                  {/* Fila 1: Documento y Control del Acta */}
+                  <Box
+                    sx={{
+                      display: 'grid',
+                      gridTemplateColumns: { xs: '1fr', sm: canEdit ? 'repeat(3, minmax(0, 1fr))' : 'repeat(2, minmax(0, 1fr))' },
+                      gap: 1,
+                      width: '100%',
+                      '& .MuiButton-root': {
+                        width: '100%',
+                        minHeight: 38,
+                        py: 0.6,
+                        px: 1.5,
+                        textTransform: 'none',
+                        fontWeight: 800,
+                        fontSize: { xs: 11.5, sm: 12.5 },
+                        borderRadius: 2,
+                        boxShadow: 'none',
+                        '& .MuiButton-startIcon': { mr: 0.75, ml: 0 }
                       }
+                    }}
+                  >
+                    <Button fullWidth startIcon={<Download />} disabled={!form.id} onClick={(e) => setDownloadAnchorEl(e.currentTarget)} variant="outlined">
+                      Descargar PDF
+                    </Button>
+                    {canEdit && (
+                      <Button fullWidth startIcon={<EditNote />} onClick={handleEditActaClick} color="primary" variant="outlined" sx={{ fontWeight: 850 }}>
+                        Editar acta
+                      </Button>
+                    )}
+                    <Button fullWidth startIcon={<Refresh />} disabled={loading} onClick={() => openMinute(form.id)} variant="outlined">
+                      Actualizar firmas
+                    </Button>
+                  </Box>
+
+                  {/* Fila 2: Gestión de Firmas y Envío */}
+                  <Box
+                    sx={{
+                      display: 'grid',
+                      gridTemplateColumns: {
+                        xs: '1fr',
+                        sm: `repeat(${((form.status === 'signing' ? 1 : 0) + (form.status === 'signing' && !allSigned ? 1 : 0) + (canSendFinal ? 1 : 0)) || 1}, minmax(0, 1fr))`
+                      },
+                      gap: 1,
+                      width: '100%',
+                      '& .MuiButton-root': {
+                        width: '100%',
+                        minHeight: 38,
+                        py: 0.6,
+                        px: 1.5,
+                        textTransform: 'none',
+                        fontWeight: 800,
+                        fontSize: { xs: 11.5, sm: 12.5 },
+                        borderRadius: 2,
+                        boxShadow: 'none',
+                        '& .MuiButton-startIcon': { mr: 0.75, ml: 0 }
+                      }
+                    }}
+                  >
+                    {form.status === 'signing' && (
+                      <Button fullWidth startIcon={<QrCode2 />} disabled={loading} onClick={showSigningAccess} variant="outlined">
+                        Ver enlace y QR
+                      </Button>
+                    )}
+                    {form.status === 'signing' && !allSigned && (
+                      <Button fullWidth startIcon={<Email />} disabled={loading} onClick={resendInvitations} variant="outlined">
+                        Reenviar invitaciones
+                      </Button>
+                    )}
+                    {canSendFinal && (
+                      <Tooltip title={!allSigned ? `Se habilitará cuando todos los participantes hayan firmado (${pendingCount} pendiente${pendingCount === 1 ? '' : 's'})` : 'Enviar versión final del acta con firmas a todos los participantes'}>
+                        <Box component="span" sx={{ display: 'flex', width: '100%' }}>
+                          <Button
+                            fullWidth
+                            startIcon={<Send />}
+                            disabled={loading || !allSigned}
+                            onClick={sendFinal}
+                            color="success"
+                            variant={allSigned ? "contained" : "outlined"}
+                            sx={{ fontWeight: 850 }}
+                          >
+                            {form.status === 'distributed' ? "Reenviar acta firmada" : "Enviar acta firmada"}
+                          </Button>
+                        </Box>
+                      </Tooltip>
+                    )}
+                  </Box>
+                </Stack>
+              ) : (
+                /* Modo Borrador (Draft) - 3 botones equilibrados en 1 sola fila */
+                <Box
+                  sx={{
+                    display: 'grid',
+                    gridTemplateColumns: { xs: '1fr', sm: canEdit ? 'repeat(3, minmax(0, 1fr))' : 'repeat(2, minmax(0, 1fr))' },
+                    gap: 1,
+                    width: '100%',
+                    '& .MuiButton-root': {
+                      width: '100%',
+                      minHeight: 38,
+                      py: 0.6,
+                      px: 1.5,
+                      textTransform: 'none',
+                      fontWeight: 800,
+                      fontSize: { xs: 11.5, sm: 12.5 },
+                      borderRadius: 2,
+                      boxShadow: 'none',
+                      '& .MuiButton-startIcon': { mr: 0.75, ml: 0 }
                     }
                   }}
                 >
-                  <ToggleButton value="original">Original (firmas)</ToggleButton>
-                  <ToggleButton value="copia">Copia (ORIGINAL FIRMADO)</ToggleButton>
-                </ToggleButtonGroup>
-              </Stack>
-              <Box
-                sx={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: 1,
-                  width: '100%',
-                  '& > .MuiButton-root, & > span': {
-                    flex: '1 1 0px',
-                    minWidth: 0,
-                    display: 'flex'
-                  },
-                  '& .MuiButton-root': {
-                    width: '100%',
-                    whiteSpace: 'nowrap',
-                    textTransform: 'none',
-                    fontWeight: 800,
-                    fontSize: { xs: 11.5, sm: 12, md: 12.5 },
-                    minHeight: 38,
-                    px: 1.5,
-                    py: 0.6,
-                    '& .MuiButton-startIcon': {
-                      mr: 0.75,
-                      ml: 0
-                    }
-                  }
-                }}
-              >
-                <Button fullWidth startIcon={<Download />} disabled={!form.id} onClick={(e) => setDownloadAnchorEl(e.currentTarget)} variant="outlined">Descargar PDF</Button>
-                <Menu
-                  anchorEl={downloadAnchorEl}
-                  open={Boolean(downloadAnchorEl)}
-                  onClose={() => setDownloadAnchorEl(null)}
-                  PaperProps={{ sx: { minWidth: 260, borderRadius: 2.5, boxShadow: '0 10px 30px rgba(0,0,0,0.15)' } }}
-                >
-                  <MenuItem onClick={() => download('original')} sx={{ py: 1 }}>
-                    <Box>
-                      <Typography variant="body2" fontWeight={850} color="primary.main">Original (con firmas gráficas)</Typography>
-                      <Typography variant="caption" color="text.secondary" display="block">Documento máster custodiado por el responsable</Typography>
-                    </Box>
-                  </MenuItem>
-                  <MenuItem onClick={() => download('copia')} sx={{ py: 1 }}>
-                    <Box>
-                      <Typography variant="body2" fontWeight={850} color="text.primary">Copia oficial (sin firmas visibles)</Typography>
-                      <Typography variant="caption" color="text.secondary" display="block">Versión oficial para participantes con constancia 'ORIGINAL FIRMADO'</Typography>
-                    </Box>
-                  </MenuItem>
-                </Menu>
-                {form.status === 'signing' && <Button fullWidth startIcon={<QrCode2 />} disabled={loading} onClick={showSigningAccess} variant="outlined">Ver enlace y QR</Button>}
-                {form.status === 'signing' && !allSigned && <Button fullWidth startIcon={<Email />} disabled={loading} onClick={resendInvitations} variant="outlined">Reenviar invitaciones</Button>}
-                {canEdit && (
-                  <Button
-                    fullWidth
-                    startIcon={<EditNote />}
-                    onClick={handleEditActaClick}
-                    color="primary"
-                    variant="outlined"
-                    sx={{ fontWeight: 850 }}
-                  >
-                    Editar acta
+                  <Button fullWidth startIcon={<Download />} disabled={!form.id} onClick={(e) => setDownloadAnchorEl(e.currentTarget)} variant="outlined">
+                    Descargar PDF
                   </Button>
-                )}
-                {locked && <Button fullWidth startIcon={<Refresh />} disabled={loading} onClick={() => openMinute(form.id)} variant="outlined">Actualizar firmas</Button>}
-                {locked && canSendFinal && (
-                  <Tooltip title={!allSigned ? `Se habilitará cuando todos los participantes hayan firmado (${pendingCount} pendiente${pendingCount === 1 ? '' : 's'})` : 'Enviar versión final del acta con firmas a todos los participantes'}>
-                    <span style={{ flex: '1 1 0px', minWidth: 0, display: 'flex' }}>
+                  {canEdit && (
+                    <Button fullWidth startIcon={<EditNote />} onClick={handleEditActaClick} color="primary" variant="outlined" sx={{ fontWeight: 850 }}>
+                      Editar acta
+                    </Button>
+                  )}
+                  <Tooltip title={!additionalParticipants.length ? 'Debe agregar al menos 1 participante adicional en la sección 2' : ''}>
+                    <Box component="span" sx={{ display: 'flex', width: '100%' }}>
                       <Button
                         fullWidth
-                        startIcon={<Send />}
-                        disabled={loading || !allSigned}
-                        onClick={sendFinal}
-                        color="success"
-                        variant={allSigned ? "contained" : "outlined"}
+                        startIcon={<Email />}
+                        onClick={publish}
+                        disabled={loading || !additionalParticipants.length}
+                        variant="contained"
                         sx={{ fontWeight: 850 }}
                       >
-                        {form.status === 'distributed' ? "Reenviar acta firmada" : "Enviar acta firmada"}
+                        Habilitar y enviar invitaciones
                       </Button>
-                    </span>
+                    </Box>
                   </Tooltip>
-                )}
-                {!locked && (
-                  <Tooltip title={!additionalParticipants.length ? 'Debe agregar al menos 1 participante adicional en la sección 2' : ''}>
-                    <span style={{ flex: '1 1 0px', minWidth: 0, display: 'flex' }}>
-                      <Button fullWidth startIcon={<Email />} onClick={publish} disabled={loading || !additionalParticipants.length} variant="contained" sx={{ fontWeight: 850 }}>Habilitar y enviar invitaciones</Button>
-                    </span>
-                  </Tooltip>
-                )}
-              </Box>
+                </Box>
+              )}
             </Box>
             <Box
               sx={{
