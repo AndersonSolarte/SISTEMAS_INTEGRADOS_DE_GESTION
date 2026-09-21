@@ -613,6 +613,20 @@ export default function MeetingMinuteFormDialog({ open, document, user, onClose 
     } catch (error) { enqueueSnackbar(error.response?.data?.message || 'No fue posible recuperar el acceso de firma.', { variant: 'error' }); }
     finally { setLoading(false); }
   };
+  const handleEditActaClick = () => {
+    if (layoutMode === 'preview') {
+      setLayoutMode('split');
+    }
+    const formPanel = window.document.getElementById('meeting-minute-form-panel');
+    if (formPanel) {
+      formPanel.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      const firstTarget = formPanel.querySelector('input:not([disabled]), textarea:not([disabled]), [contenteditable="true"]');
+      if (firstTarget) {
+        firstTarget.focus();
+      }
+    }
+    enqueueSnackbar('Modo edición activo. Puede ajustar datos, observaciones o compromisos y guardar con "Guardar cambios" en el pie.', { variant: 'info' });
+  };
   const reopenForEditing = async () => {
     if (!form.id) return;
     setLoading(true);
@@ -711,6 +725,7 @@ export default function MeetingMinuteFormDialog({ open, document, user, onClose 
       <DialogContent sx={{ p: { xs: 1.5, md: 2.5 }, flex: 1, overflow: { xs: 'auto', lg: 'hidden' }, display: 'flex', flexDirection: 'column', minHeight: 0 }}>
         <Box sx={{ display: 'flex', flexDirection: { xs: 'column', lg: 'row' }, gap: 2.5, width: '100%', height: { lg: '100%' }, minHeight: 0, flex: 1 }}>
           <Stack
+            id="meeting-minute-form-panel"
             gap={2}
             sx={{
               width: layoutMode === 'form' ? '100%' : { xs: '100%', lg: '47%' },
@@ -1118,14 +1133,13 @@ export default function MeetingMinuteFormDialog({ open, document, user, onClose 
                 {canEdit && (
                   <Button
                     fullWidth
-                    startIcon={loading ? <CircularProgress size={16} color="inherit" /> : <Save />}
-                    disabled={loading}
-                    onClick={() => save()}
+                    startIcon={<EditNote />}
+                    onClick={handleEditActaClick}
                     color="primary"
-                    variant="contained"
+                    variant="outlined"
                     sx={{ fontWeight: 850 }}
                   >
-                    {form.status === 'draft' ? "Guardar\nborrador" : "Guardar\ncambios"}
+                    {"Editar\nacta"}
                   </Button>
                 )}
                 {locked && <Button fullWidth startIcon={<Refresh />} disabled={loading} onClick={() => openMinute(form.id)} variant="outlined">{"Actualizar\nfirmas"}</Button>}
