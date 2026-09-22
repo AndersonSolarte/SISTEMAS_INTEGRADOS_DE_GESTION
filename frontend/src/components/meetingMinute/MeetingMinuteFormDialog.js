@@ -26,7 +26,7 @@ const MEETING_PLACES = [
   'Sala de Juntas Campus San Damián'
 ];
 const emptyForm = (user = {}) => ({
-  id: '', status: 'draft', created_by: user.id || '', responsables: '', dependencia: '',
+  id: '', code: '', status: 'draft', created_by: user.id || '', responsables: '', dependencia: '',
   responsable_document: '', responsable_role: '', responsables_data: [],
   lugar: '', fecha: today(), hora_inicio: '08:00', hora_fin: '10:00',
   objetivo: '', desarrollo: '', conclusiones: '', participants: []
@@ -284,6 +284,47 @@ export default function MeetingMinuteFormDialog({ open, document, user, onClose 
   const canEdit = Boolean(!form.id || isCreator || isResponsible || isAdminUser || Boolean(user));
   const canSendFinal = Boolean(isCreator || isResponsible || isAdminUser || Boolean(user));
 
+  const canDeleteMinute = (target) => {
+    if (!target) return false;
+    if (isAdminUser) return true;
+
+    // Creator can delete
+    if (target.created_by && Number(target.created_by) === userId) {
+      return true;
+    }
+
+    // Primary responsible can delete
+    const respData = Array.isArray(target.content?.responsables_data)
+      ? target.content.responsables_data
+      : (Array.isArray(target.responsables_data) ? target.responsables_data : []);
+    const primary = respData.find((r) => r.is_primary) || respData[0];
+    if (primary) {
+      if (userDoc && primary.document && String(primary.document).trim().toLowerCase() === userDoc) return true;
+      if (userId && primary.user_id && Number(primary.user_id) === userId) return true;
+      if (userEmail && primary.email && String(primary.email).trim().toLowerCase() === userEmail) return true;
+    }
+
+    const singleDoc = target.content?.responsable_document || target.responsable_document;
+    if (singleDoc && userDoc && String(singleDoc).trim().toLowerCase() === userDoc) {
+      return true;
+    }
+
+    return false;
+  };
+
+  const handleRestoreAll = async () => {
+    setLoading(true);
+    try {
+      const response = await meetingMinuteService.restoreAll();
+      enqueueSnackbar(response.message || 'Actas restauradas.', { variant: 'success' });
+      await loadMinutes();
+    } catch (error) {
+      enqueueSnackbar(error.response?.data?.message || 'No fue posible restaurar las actas.', { variant: 'error' });
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const horario = useMemo(() => `${form.hora_inicio || ''} - ${form.hora_fin || ''}`, [form.hora_inicio, form.hora_fin]);
   const additionalParticipants = useMemo(() => {
     const respDocs = new Set((responsablesList || []).map((r) => String(r.document || '').trim().toLowerCase()).filter(Boolean));
@@ -330,6 +371,7 @@ export default function MeetingMinuteFormDialog({ open, document, user, onClose 
       const formattedText = content.responsables || formatResponsablesText(loadedResponsables);
       setForm({
         id: row.id,
+        code: row.code,
         status: row.status,
         created_by: row.created_by,
         responsables: formattedText,
@@ -895,47 +937,57 @@ export default function MeetingMinuteFormDialog({ open, document, user, onClose 
                   <MenuItem value="">
                     <em>+ Nueva acta</em>
                   </MenuItem>
-                  {minutes.map((minute) => (
-                    <MenuItem
-                      key={minute.id}
-                      value={minute.id}
-                      sx={{
-                        display: 'flex',
-                        justifyContent: 'space-between',
-                        alignItems: 'center',
-                        gap: 1,
-                        py: 0.85,
-                        pr: 1
-                      }}
-                    >
-                      <Box component="span" sx={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1, fontSize: 13 }}>
-                        {minute.code} · {minute.content?.fecha || 'Sin fecha'} · {{ draft: 'Borrador', signing: 'En firmas', signed: 'Firmada', distributed: 'Enviada' }[minute.status] || minute.status}
-                      </Box>
-                      <Tooltip title={`Eliminar acta ${minute.code}`}>
-                        <IconButton
-                          size="small"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            setMinuteToDelete(minute);
-                          }}
-                          sx={{
-                            color: '#ef4444',
-                            p: 0.5,
-                            borderRadius: 1.5,
-                            '&:hover': { bgcolor: '#fee2e2', color: '#dc2626' }
-                          }}
-                        >
-                          <DeleteOutline fontSize="small" />
-                        </IconButton>
-                      </Tooltip>
-                    </MenuItem>
-                  ))}
+                  {minutes.map((minute) => {
+                    const canDelete = canDeleteMinute(minute);
+                    const isCreator = minute.created_by && Number(minute.created_by) === userId;
+                    const creatorLabel = !isCreator && minute.creator?.nombre
+                      ? ` · Creada por: ${formatPersonName(minute.creator.nombre)}`
+                      : '';
+                    const statusLabel = { draft: 'Borrador', signing: 'En firmas', signed: 'Firmada', distributed: 'Enviada' }[minute.status] || minute.status;
+                    return (
+                      <MenuItem
+                        key={minute.id}
+                        value={minute.id}
+                        sx={{
+                          display: 'flex',
+                          justifyContent: 'space-between',
+                          alignItems: 'center',
+                          gap: 1,
+                          py: 0.85,
+                          pr: 1
+                        }}
+                      >
+                        <Box component="span" sx={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1, fontSize: 13 }}>
+                          {minute.code} · {minute.content?.fecha || 'Sin fecha'} · {statusLabel}{creatorLabel}
+                        </Box>
+                        {canDelete && (
+                          <Tooltip title={`Eliminar acta ${minute.code}`}>
+                            <IconButton
+                              size="small"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setMinuteToDelete(minute);
+                              }}
+                              sx={{
+                                color: '#ef4444',
+                                p: 0.5,
+                                borderRadius: 1.5,
+                                '&:hover': { bgcolor: '#fee2e2', color: '#dc2626' }
+                              }}
+                            >
+                              <DeleteOutline fontSize="small" />
+                            </IconButton>
+                          </Tooltip>
+                        )}
+                      </MenuItem>
+                    );
+                  })}
                 </TextField>
-                {form.id && (
+                {form.id && canDeleteMinute(form) && (
                   <Tooltip title={`Eliminar acta actual (${form.code || 'abierta'})`}>
                     <IconButton
                       color="error"
-                      onClick={() => setMinuteToDelete({ id: form.id, code: form.code || 'esta acta' })}
+                      onClick={() => setMinuteToDelete({ id: form.id, code: form.code || 'esta acta', created_by: form.created_by, content: { responsable_document: form.responsable_document, responsables_data: form.responsables_data } })}
                       sx={{
                         border: '1px solid #fca5a5',
                         borderRadius: 2,
@@ -949,9 +1001,24 @@ export default function MeetingMinuteFormDialog({ open, document, user, onClose 
                     </IconButton>
                   </Tooltip>
                 )}
+                {isAdminUser && (
+                  <Tooltip title="Restaurar todas las actas del sistema">
+                    <Button
+                      size="small"
+                      variant="outlined"
+                      color="secondary"
+                      onClick={handleRestoreAll}
+                      disabled={loading}
+                      startIcon={<Refresh fontSize="small" />}
+                      sx={{ textTransform: 'none', fontSize: 12, borderRadius: 2, whiteSpace: 'nowrap' }}
+                    >
+                      Restaurar actas
+                    </Button>
+                  </Tooltip>
+                )}
               </Stack>
               <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 0.75, fontSize: 11, lineHeight: 1.4 }}>
-                🕒 <strong>Vigencia en el sistema:</strong> Las actas se conservan en el sistema durante <strong>30 días</strong> y luego se depuran automáticamente. El respaldo final reposa en las bandejas de correo electrónico enviadas a los participantes.
+                📌 <strong>Propiedad de actas:</strong> Cada acta pertenece a su creador y responsable principal. Los corresponsables pueden consultar y editar según asignación, pero únicamente el creador o responsable principal pueden eliminarla de su listado.
               </Typography>
             </Paper>
             {form.status === 'signing' && !allSigned && !hasSignatures && <Alert severity="info" sx={{ my: 1 }}>Las invitaciones personales ya fueron enviadas por correo. Puede volver a mostrar el QR, reenviar invitaciones o ajustar el acta.</Alert>}
@@ -1487,10 +1554,10 @@ export default function MeetingMinuteFormDialog({ open, document, user, onClose 
       </DialogTitle>
       <DialogContent>
         <Typography variant="body2" sx={{ mb: 1.5, lineHeight: 1.6 }}>
-          ¿Está seguro de eliminar el acta <strong>{minuteToDelete?.code}</strong> de su lista del sistema?
+          ¿Está seguro de eliminar el acta <strong>{minuteToDelete?.code}</strong> del sistema?
         </Typography>
         <Alert severity="warning" sx={{ fontSize: 12.5 }}>
-          Esta acción retirará el acta del sistema. Si ya fue enviada, los participantes seguirán teniendo su copia final en PDF en sus correos electrónicos.
+          Esta acción retirará el acta del sistema. Solo el creador o responsable principal pueden realizar esta acción. Si el acta ya fue enviada, los participantes conservarán su copia en PDF en sus correos.
         </Alert>
       </DialogContent>
       <DialogActions sx={{ p: 2 }}>

@@ -472,31 +472,16 @@ const lookupParticipant = wrap(async (req, res) => {
   res.json({ success: true, data: { id: user.id, document: user.username, name: formatPersonName(user.nombre), email: user.email, organization: user.dependencia, role_title: user.cargo } });
 });
 
-const purgeExpiredMinutes = async () => {
-  const retentionCutoff = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
-  try {
-    await DigitalMeetingMinute.update(
-      { deleted_at: new Date() },
-      {
-        where: {
-          deleted_at: null,
-          created_at: { [Op.lt]: retentionCutoff }
-        }
-      }
-    );
-  } catch (err) {
-    console.warn('[meeting-minute] Auto-purge warning:', err.message);
-  }
-};
+// Restauración automática al inicio para recuperar actas afectadas
+DigitalMeetingMinute.update(
+  { deleted_at: null },
+  { where: { deleted_at: { [Op.ne]: null } } }
+).then(([count]) => {
+  if (count > 0) console.log(`[meeting-minute] Se restauraron automáticamente ${count} acta(s) eliminada(s).`);
+}).catch((err) => console.warn('[meeting-minute] auto-restore on boot error:', err.message));
 
 const listMinutes = wrap(async (req, res) => {
-  await purgeExpiredMinutes();
-
-  const retentionCutoff = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
-  const where = {
-    deleted_at: null,
-    created_at: { [Op.gte]: retentionCutoff }
-  };
+  const where = { deleted_at: null };
   if (!isAdmin(req.user)) {
     const userId = Number(req.user.id);
     const userDoc = String(req.user.username || req.user.documento || req.user.cedula || '').trim();
@@ -514,7 +499,11 @@ const listMinutes = wrap(async (req, res) => {
 
   const rows = await DigitalMeetingMinute.findAll({
     where,
-    include: [participantInclude, { model: Documento, as: 'documento', required: false }],
+    include: [
+      participantInclude,
+      { model: Documento, as: 'documento', required: false },
+      { model: User, as: 'creator', attributes: ['id', 'nombre', 'username', 'email'] }
+    ],
     order: [['created_at', 'DESC']],
     limit: 200
   });
@@ -535,9 +524,8 @@ const listMinutes = wrap(async (req, res) => {
 
 const getMinute = wrap(async (req, res) => {
   const row = await DigitalMeetingMinute.findByPk(req.params.id, { include: includeRelations });
-  const retentionCutoff = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
-  if (!row || row.deleted_at || (row.created_at && new Date(row.created_at) < retentionCutoff)) {
-    throw Object.assign(new Error('Acta no encontrada o vencida tras 30 días.'), { statusCode: 404 });
+  if (!row || row.deleted_at) {
+    throw Object.assign(new Error('Acta no encontrada.'), { statusCode: 404 });
   }
   const authorized = await canAccessMinuteFullSignatures(req.user, row);
   if (!authorized) throw Object.assign(new Error('No tiene permiso para consultar esta acta.'), { statusCode: 403 });
@@ -556,8 +544,19 @@ const getMinute = wrap(async (req, res) => {
 const deleteMinute = wrap(async (req, res) => {
   const minute = await DigitalMeetingMinute.findByPk(req.params.id);
   if (!minute || minute.deleted_at) throw Object.assign(new Error('Acta no encontrada o ya fue eliminada.'), { statusCode: 404 });
-  const authorized = await canAccessMinuteFullSignatures(req.user, minute);
-  if (!authorized) throw Object.assign(new Error('No tiene permiso para eliminar esta acta.'), { statusCode: 403 });
+
+  const userId = Number(req.user.id);
+  const userDoc = String(req.user.username || req.user.documento || req.user.cedula || '').trim().toLowerCase();
+  const isCreator = minute.created_by && Number(minute.created_by) === userId;
+  const respData = Array.isArray(minute.content?.responsables_data) ? minute.content.responsables_data : [];
+  const primary = respData.find((r) => r.is_primary) || respData[0];
+  const isPrimaryResp = (primary?.document && String(primary.document).trim().toLowerCase() === userDoc)
+    || (minute.content?.responsable_document && String(minute.content.responsable_document).trim().toLowerCase() === userDoc);
+  const isUserAdmin = isAdmin(req.user);
+
+  if (!isCreator && !isPrimaryResp && !isUserAdmin) {
+    throw Object.assign(new Error('Solo el creador o el responsable principal pueden eliminar esta acta. Los corresponsables no tienen permiso de eliminación.'), { statusCode: 403 });
+  }
 
   await minute.update({ deleted_at: new Date(), updated_by: req.user.id });
 
@@ -565,6 +564,29 @@ const deleteMinute = wrap(async (req, res) => {
     success: true,
     message: `Acta ${minute.code} eliminada del sistema.`,
     data: { id: minute.id }
+  });
+});
+
+const restoreMinute = wrap(async (req, res) => {
+  const minute = await DigitalMeetingMinute.findByPk(req.params.id);
+  if (!minute) throw Object.assign(new Error('Acta no encontrada.'), { statusCode: 404 });
+  await minute.update({ deleted_at: null, updated_by: req.user.id });
+  res.json({
+    success: true,
+    message: `Acta ${minute.code} restaurada correctamente.`,
+    data: { id: minute.id }
+  });
+});
+
+const restoreAllMinutes = wrap(async (req, res) => {
+  const [restored] = await DigitalMeetingMinute.update(
+    { deleted_at: null },
+    { where: { deleted_at: { [Op.ne]: null } } }
+  );
+  res.json({
+    success: true,
+    message: `Se restauraron exitosamente ${restored} acta(s).`,
+    data: { restored }
   });
 });
 
@@ -1132,6 +1154,8 @@ module.exports = {
   reopenForEditing,
   requestCode,
   resendInvitations,
+  restoreAllMinutes,
+  restoreMinute,
   saveDraft,
   sendFinalMinute,
   sign,
