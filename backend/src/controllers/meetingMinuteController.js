@@ -724,17 +724,65 @@ const saveDraft = wrap(async (req, res) => {
       }
     } else if (row.status === 'draft') {
       await row.update({ content, content_hash: contentHash(content), updated_by: req.user.id }, { transaction });
-      await DigitalMeetingParticipant.destroy({ where: { minute_id: row.id }, transaction });
-      for (const participant of participants) {
-        await DigitalMeetingParticipant.create({
-          minute_id: row.id,
-          user_id: participant.user_id || null,
-          document: clean(participant.document, 100) || null,
-          name: formatPersonName(clean(participant.name, 240)),
-          email: clean(participant.email, 254).toLowerCase() || null,
-          organization: clean(participant.organization, 240) || null,
-          role_title: clean(participant.role_title, 220) || null
-        }, { transaction });
+      const isCollaborativeAutosave = req.body.autosave === true;
+      const participantsChanged = req.body.participants_changed === true;
+
+      if (!isCollaborativeAutosave) {
+        await DigitalMeetingParticipant.destroy({ where: { minute_id: row.id }, transaction });
+        for (const participant of participants) {
+          await DigitalMeetingParticipant.create({
+            minute_id: row.id,
+            user_id: participant.user_id || null,
+            document: clean(participant.document, 100) || null,
+            name: formatPersonName(clean(participant.name, 240)),
+            email: clean(participant.email, 254).toLowerCase() || null,
+            organization: clean(participant.organization, 240) || null,
+            role_title: clean(participant.role_title, 220) || null
+          }, { transaction });
+        }
+      } else if (participantsChanged) {
+        // El autoguardado colaborativo aplica cambios incrementales: nunca elimina
+        // participantes de otro editor solo porque su pantalla tenia una copia anterior.
+        const removalKeys = new Set(
+          (Array.isArray(req.body.removed_participant_keys) ? req.body.removed_participant_keys : [])
+            .map((key) => clean(key, 320).toLowerCase())
+            .filter(Boolean)
+        );
+        let existingParticipants = await DigitalMeetingParticipant.findAll({ where: { minute_id: row.id }, transaction });
+        const idsToRemove = existingParticipants
+          .filter((participant) => {
+            const docKey = participant.document ? `doc:${String(participant.document).trim().toLowerCase()}` : '';
+            const emailKey = participant.email ? `email:${String(participant.email).trim().toLowerCase()}` : '';
+            return (docKey && removalKeys.has(docKey)) || (emailKey && removalKeys.has(emailKey));
+          })
+          .map((participant) => participant.id);
+        if (idsToRemove.length) {
+          await DigitalMeetingParticipant.destroy({ where: { id: { [Op.in]: idsToRemove } }, transaction });
+          existingParticipants = existingParticipants.filter((participant) => !idsToRemove.includes(participant.id));
+        }
+
+        for (const participant of participants) {
+          const pDoc = clean(participant.document, 100).toLowerCase();
+          const pEmail = clean(participant.email, 254).toLowerCase();
+          const existing = existingParticipants.find((current) =>
+            (pDoc && String(current.document || '').trim().toLowerCase() === pDoc) ||
+            (pEmail && String(current.email || '').trim().toLowerCase() === pEmail)
+          );
+          const values = {
+            user_id: participant.user_id || null,
+            document: pDoc || null,
+            name: formatPersonName(clean(participant.name, 240)),
+            email: pEmail || null,
+            organization: clean(participant.organization, 240) || null,
+            role_title: clean(participant.role_title, 220) || null
+          };
+          if (existing) {
+            await existing.update(values, { transaction });
+          } else {
+            const created = await DigitalMeetingParticipant.create({ minute_id: row.id, ...values }, { transaction });
+            existingParticipants.push(created);
+          }
+        }
       }
     } else {
       // En fases de firma o posteriores, se actualiza el contenido (objetivo, desarrollo, acuerdos, etc.)

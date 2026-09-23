@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Alert, Autocomplete, Box, Button, Chip, CircularProgress, Dialog, DialogActions, DialogContent,
   DialogTitle, IconButton, Menu, MenuItem, Paper, Stack, TextField, ToggleButton, ToggleButtonGroup, Tooltip, Typography
@@ -246,6 +246,14 @@ export default function MeetingMinuteFormDialog({ open, document, user, onClose 
   const [downloadAnchorEl, setDownloadAnchorEl] = useState(null);
   const [layoutMode, setLayoutMode] = useState('split'); // 'split' | 'form' | 'preview'
   const [previewType, setPreviewType] = useState('original'); // 'original' | 'copia'
+  const [autoSaving, setAutoSaving] = useState(false);
+  const [saveStatus, setSaveStatus] = useState('saved'); // 'saved' | 'pending' | 'saving' | 'error'
+  // El sondeo remoto nunca debe reemplazar cambios que el usuario todavia no ha guardado.
+  const hasUnsavedChangesRef = useRef(false);
+  const localChangeVersionRef = useRef(0);
+  const failedAutoSaveVersionRef = useRef(null);
+  const participantsDirtyRef = useRef(false);
+  const removedParticipantKeysRef = useRef(new Set());
   const locked = form.status !== 'draft';
   const hasSignatures = signatures.length > 0;
   const allSigned = Boolean(form.participants.length) && form.participants.every((participant) => participant.status === 'signed');
@@ -341,6 +349,12 @@ export default function MeetingMinuteFormDialog({ open, document, user, onClose 
   };
   useEffect(() => {
     if (!open) return;
+    hasUnsavedChangesRef.current = false;
+    localChangeVersionRef.current = 0;
+    failedAutoSaveVersionRef.current = null;
+    participantsDirtyRef.current = false;
+    removedParticipantKeysRef.current.clear();
+    setSaveStatus('saved');
     setForm(emptyForm(user));
     setResponsablesList([]);
     setSignatures([]);
@@ -353,9 +367,26 @@ export default function MeetingMinuteFormDialog({ open, document, user, onClose 
     loadMinutes();
   }, [open, user]);
 
-  const setField = (key, value) => setForm((previous) => ({ ...previous, [key]: value }));
+  const markUnsavedChanges = ({ participants = false } = {}) => {
+    hasUnsavedChangesRef.current = true;
+    localChangeVersionRef.current += 1;
+    failedAutoSaveVersionRef.current = null;
+    if (participants) participantsDirtyRef.current = true;
+    setSaveStatus('pending');
+  };
+
+  const setField = (key, value) => {
+    markUnsavedChanges({ participants: key === 'participants' });
+    setForm((previous) => ({ ...previous, [key]: value }));
+  };
   const openMinute = async (id) => {
     if (!id) {
+      hasUnsavedChangesRef.current = false;
+      localChangeVersionRef.current = 0;
+      failedAutoSaveVersionRef.current = null;
+      participantsDirtyRef.current = false;
+      removedParticipantKeysRef.current.clear();
+      setSaveStatus('saved');
       setForm(emptyForm(user));
       setResponsablesList([]);
       return;
@@ -367,6 +398,12 @@ export default function MeetingMinuteFormDialog({ open, document, user, onClose 
       const content = row.content || {};
       const [start = '', end = ''] = String(content.horario || '').split('-').map((part) => part.trim());
       const loadedResponsables = loadResponsablesFromMinute(content);
+      hasUnsavedChangesRef.current = false;
+      localChangeVersionRef.current = 0;
+      failedAutoSaveVersionRef.current = null;
+      participantsDirtyRef.current = false;
+      removedParticipantKeysRef.current.clear();
+      setSaveStatus('saved');
       setResponsablesList(loadedResponsables);
       const formattedText = content.responsables || formatResponsablesText(loadedResponsables);
       setForm({
@@ -429,7 +466,8 @@ export default function MeetingMinuteFormDialog({ open, document, user, onClose 
                 if (prev.id !== row.id) return prev;
                 const rowContent = row.content || {};
                 const loadedResp = loadResponsablesFromMinute(rowContent);
-                if (layoutMode === 'preview') {
+                const hasUnsavedChanges = hasUnsavedChangesRef.current;
+                if (layoutMode === 'preview' && !hasUnsavedChanges) {
                   const [start = '', end = ''] = String(rowContent.horario || '').split('-').map((p) => p.trim());
                   return {
                     ...prev,
@@ -452,7 +490,10 @@ export default function MeetingMinuteFormDialog({ open, document, user, onClose 
                 return {
                   ...prev,
                   status: row.status,
-                  participants: row.participants || prev.participants
+                  // Si hay ediciones locales, el servidor aun no conoce participantes
+                  // recien agregados o eliminados. Conservarlos evita que desaparezcan
+                  // durante el sondeo de cinco segundos.
+                  participants: hasUnsavedChanges ? prev.participants : (row.participants || prev.participants)
                 };
               });
             }
@@ -547,6 +588,7 @@ export default function MeetingMinuteFormDialog({ open, document, user, onClose 
     const textFormatted = formatResponsablesText(updatedList);
     const updatedParticipants = syncParticipantsWithResponsables(form.participants, updatedList);
 
+    markUnsavedChanges({ participants: true });
     setResponsablesList(updatedList);
     setForm((prev) => ({
       ...prev,
@@ -572,6 +614,7 @@ export default function MeetingMinuteFormDialog({ open, document, user, onClose 
     const textFormatted = formatResponsablesText(updatedList);
     const updatedParticipants = syncParticipantsWithResponsables(form.participants, updatedList);
 
+    markUnsavedChanges({ participants: true });
     setResponsablesList(updatedList);
     setForm((prev) => ({
       ...prev,
@@ -596,6 +639,12 @@ export default function MeetingMinuteFormDialog({ open, document, user, onClose 
     const textFormatted = formatResponsablesText(remaining);
     const updatedParticipants = syncParticipantsWithResponsables(form.participants, remaining);
 
+    const removedResponsible = responsablesList[index];
+    const removedDoc = String(removedResponsible?.document || '').trim().toLowerCase();
+    const removedEmail = String(removedResponsible?.email || '').trim().toLowerCase();
+    if (removedDoc) removedParticipantKeysRef.current.add(`doc:${removedDoc}`);
+    if (removedEmail) removedParticipantKeysRef.current.add(`email:${removedEmail}`);
+    markUnsavedChanges({ participants: true });
     setResponsablesList(remaining);
     setForm((prev) => ({
       ...prev,
@@ -636,6 +685,8 @@ export default function MeetingMinuteFormDialog({ open, document, user, onClose 
       removeResponsable(respIdx);
       return;
     }
+    if (pDoc) removedParticipantKeysRef.current.add(`doc:${pDoc}`);
+    if (pEmail) removedParticipantKeysRef.current.add(`email:${pEmail}`);
     setField('participants', form.participants.filter((_, i) => i !== index));
   };
 
@@ -656,29 +707,99 @@ export default function MeetingMinuteFormDialog({ open, document, user, onClose 
     participants: form.participants
   });
 
-  const save = async ({ quiet = false } = {}) => {
+  const hasSavableData = () => Boolean(
+    responsablesList.length &&
+    form.responsables &&
+    form.dependencia &&
+    form.lugar &&
+    form.fecha &&
+    form.objetivo &&
+    form.participants.length >= 2
+  );
+
+  const save = async ({ quiet = false, automatic = false } = {}) => {
+    const changeVersionAtStart = localChangeVersionRef.current;
+    const participantsChangedAtStart = participantsDirtyRef.current;
+    const removedParticipantKeysAtStart = [...removedParticipantKeysRef.current];
     if (!responsablesList.length || !form.responsables) {
-      enqueueSnackbar('Consulte y seleccione primero al responsable de la reunión.', { variant: 'warning' });
+      if (!automatic) enqueueSnackbar('Consulte y seleccione primero al responsable de la reunión.', { variant: 'warning' });
       return null;
     }
     if (form.participants.length < 2) {
-      enqueueSnackbar('Debe haber al menos dos participantes en la reunión (responsables y/o participantes convocados).', { variant: 'warning' });
+      if (!automatic) enqueueSnackbar('Debe haber al menos dos participantes en la reunión (responsables y/o participantes convocados).', { variant: 'warning' });
       return null;
     }
-    setLoading(true);
+    if (automatic) {
+      setAutoSaving(true);
+      setSaveStatus('saving');
+    } else {
+      setLoading(true);
+    }
     try {
-      const response = await meetingMinuteService.save(payload());
+      const requestPayload = {
+        ...payload(),
+        autosave: automatic,
+        participants_changed: participantsChangedAtStart,
+        removed_participant_keys: removedParticipantKeysAtStart
+      };
+      const response = await meetingMinuteService.save(requestPayload);
       const row = response.data;
-      setForm((previous) => ({ ...previous, id: row.id, status: row.status, created_by: row.created_by || previous.created_by, participants: row.participants || previous.participants }));
+      const noNewerLocalChanges = localChangeVersionRef.current === changeVersionAtStart;
+      removedParticipantKeysAtStart.forEach((key) => removedParticipantKeysRef.current.delete(key));
+      if (noNewerLocalChanges) {
+        hasUnsavedChangesRef.current = false;
+        failedAutoSaveVersionRef.current = null;
+        participantsDirtyRef.current = false;
+        setSaveStatus('saved');
+      } else {
+        setSaveStatus('pending');
+      }
+      setForm((previous) => ({
+        ...previous,
+        id: row.id,
+        status: row.status,
+        created_by: row.created_by || previous.created_by,
+        // Una respuesta antigua no puede borrar cambios hechos mientras se guardaba.
+        participants: noNewerLocalChanges ? (row.participants || previous.participants) : previous.participants
+      }));
       await loadMinutes();
       if (!quiet) enqueueSnackbar(form.status === 'draft' ? 'Borrador del acta guardado.' : 'Cambios del acta guardados exitosamente.', { variant: 'success' });
       return row;
     } catch (error) {
+      setSaveStatus('error');
+      if (automatic) {
+        failedAutoSaveVersionRef.current = changeVersionAtStart;
+      }
       enqueueSnackbar(error.response?.data?.message || 'No fue posible guardar el acta.', { variant: 'error' });
       return null;
     } finally {
-      setLoading(false);
+      if (automatic) setAutoSaving(false);
+      else setLoading(false);
     }
+  };
+
+  // Guardado automático: agrupa la escritura durante una pausa breve y persiste
+  // el acta sin exigir que el usuario pulse el botón de guardar.
+  useEffect(() => {
+    if (!open || !hasUnsavedChangesRef.current || loading || autoSaving) return undefined;
+    if (failedAutoSaveVersionRef.current === localChangeVersionRef.current) return undefined;
+    if (!hasSavableData()) return undefined;
+
+    const timer = window.setTimeout(() => {
+      save({ quiet: true, automatic: true });
+    }, 900);
+    return () => window.clearTimeout(timer);
+    // `save` pertenece al mismo render que los datos incluidos arriba.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, form, responsablesList, loading, autoSaving]);
+
+  const handleClose = async () => {
+    if (loading || autoSaving) return;
+    if (hasUnsavedChangesRef.current && hasSavableData()) {
+      const saved = await save({ quiet: true, automatic: true });
+      if (!saved) return;
+    }
+    onClose();
   };
 
   const publish = async () => {
@@ -737,7 +858,7 @@ export default function MeetingMinuteFormDialog({ open, document, user, onClose 
         firstTarget.focus();
       }
     }
-    enqueueSnackbar('Modo edición activo. Puede ajustar datos, observaciones o compromisos y guardar con "Guardar cambios" en el pie.', { variant: 'info' });
+    enqueueSnackbar('Modo edición activo. Los cambios se guardarán automáticamente mientras trabaja.', { variant: 'info' });
   };
   const reopenForEditing = async () => {
     if (!form.id) return;
@@ -757,7 +878,14 @@ export default function MeetingMinuteFormDialog({ open, document, user, onClose 
       const response = await meetingMinuteService.deleteMinute(minuteToDelete.id);
       enqueueSnackbar(response.message || 'Acta eliminada del sistema.', { variant: 'success' });
       if (form.id === minuteToDelete.id) {
+        hasUnsavedChangesRef.current = false;
+        localChangeVersionRef.current = 0;
+        failedAutoSaveVersionRef.current = null;
+        participantsDirtyRef.current = false;
+        removedParticipantKeysRef.current.clear();
+        setSaveStatus('saved');
         setForm(emptyForm(user));
+        setResponsablesList([]);
         setSignatures([]);
         setQr(null);
         setResponsibleDocument('');
@@ -800,7 +928,7 @@ export default function MeetingMinuteFormDialog({ open, document, user, onClose 
   };
 
   return <>
-    <Dialog open={open} onClose={onClose} fullScreen PaperProps={{ sx: { bgcolor: '#f4f7fb', height: '100vh', display: 'flex', flexDirection: 'column', overflow: 'hidden' } }}>
+    <Dialog open={open} onClose={handleClose} fullScreen PaperProps={{ sx: { bgcolor: '#f4f7fb', height: '100vh', display: 'flex', flexDirection: 'column', overflow: 'hidden' } }}>
       <DialogTitle sx={{ px: { xs: 2, md: 4 }, py: 1.5, background: 'linear-gradient(135deg,#214c9c,#315ee8)', color: '#fff', flexShrink: 0 }}>
         <Stack direction="row" justifyContent="space-between" alignItems="center" gap={2} flexWrap="wrap">
           <Box>
@@ -852,7 +980,7 @@ export default function MeetingMinuteFormDialog({ open, document, user, onClose 
                 <Box component="span" sx={{ display: { xs: 'none', sm: 'inline' } }}>Vista previa</Box>
               </ToggleButton>
             </ToggleButtonGroup>
-            <IconButton onClick={onClose} sx={{ color: '#fff', border: '1px solid rgba(255,255,255,.5)', borderRadius: 2 }}><Close /></IconButton>
+            <IconButton disabled={loading || autoSaving} onClick={handleClose} sx={{ color: '#fff', border: '1px solid rgba(255,255,255,.5)', borderRadius: 2 }}><Close /></IconButton>
           </Stack>
         </Stack>
       </DialogTitle>
@@ -894,7 +1022,7 @@ export default function MeetingMinuteFormDialog({ open, document, user, onClose 
               <Stack direction={{ xs: 'column', sm: 'row' }} justifyContent="space-between" alignItems={{ sm: 'center' }} gap={1.5} mb={2}>
                 <Typography fontWeight={900}>Actas de reunión</Typography>
                 <Stack direction="row" alignItems="center" gap={1}>
-                  <Button variant="outlined" onClick={() => { setForm(emptyForm(user)); setSignatures([]); setQr(null); setResponsibleDocument(''); setResponsibleCandidate(null); setExternalMode(false); }} sx={{ textTransform: 'none', fontWeight: 800 }}>Nueva acta</Button>
+                  <Button variant="outlined" onClick={() => { hasUnsavedChangesRef.current = false; localChangeVersionRef.current = 0; failedAutoSaveVersionRef.current = null; participantsDirtyRef.current = false; removedParticipantKeysRef.current.clear(); setSaveStatus('saved'); setForm(emptyForm(user)); setResponsablesList([]); setSignatures([]); setQr(null); setResponsibleDocument(''); setResponsibleCandidate(null); setExternalMode(false); }} sx={{ textTransform: 'none', fontWeight: 800 }}>Nueva acta</Button>
                   <Tooltip title={layoutMode === 'split' ? 'Expandir formulario a pantalla completa' : 'Restaurar vista dividida (50/50)'}>
                     <IconButton
                       size="small"
@@ -1291,10 +1419,10 @@ export default function MeetingMinuteFormDialog({ open, document, user, onClose 
                   </Tooltip>
                   <Typography fontWeight={900}>Vista previa del acta</Typography>
                 </Stack>
-                {form.id && (
-                  <Stack direction="row" alignItems="center" gap={0.75} sx={{ color: '#16a34a', fontSize: 11, fontWeight: 750, bgcolor: '#f0fdf4', px: 1, py: 0.3, borderRadius: 1.5, border: '1px solid #bbf7d0' }}>
-                    <Box sx={{ width: 7, height: 7, borderRadius: '50%', bgcolor: '#22c55e' }} />
-                    <span>En vivo · Sincronizado</span>
+                {(form.id || saveStatus !== 'saved') && (
+                  <Stack direction="row" alignItems="center" gap={0.75} sx={{ color: saveStatus === 'error' ? '#b91c1c' : saveStatus === 'saved' ? '#15803d' : '#a16207', fontSize: 11, fontWeight: 750, bgcolor: saveStatus === 'error' ? '#fef2f2' : saveStatus === 'saved' ? '#f0fdf4' : '#fffbeb', px: 1, py: 0.3, borderRadius: 1.5, border: `1px solid ${saveStatus === 'error' ? '#fecaca' : saveStatus === 'saved' ? '#bbf7d0' : '#fde68a'}` }}>
+                    {saveStatus === 'saving' ? <CircularProgress size={10} color="inherit" /> : <Box sx={{ width: 7, height: 7, borderRadius: '50%', bgcolor: saveStatus === 'error' ? '#ef4444' : saveStatus === 'saved' ? '#22c55e' : '#eab308' }} />}
+                    <span>{saveStatus === 'saving' ? 'Guardando automáticamente…' : saveStatus === 'pending' ? 'Cambios pendientes…' : saveStatus === 'error' ? 'Error al guardar' : 'Todo guardado · Autoguardado activo'}</span>
                   </Stack>
                 )}
               </Stack>
@@ -1490,7 +1618,7 @@ export default function MeetingMinuteFormDialog({ open, document, user, onClose 
       </DialogContent>
       <DialogActions sx={{ px: { xs: 2, md: 4 }, py: 1.5, bgcolor: '#fff', borderTop: '1px solid #dbe5f0', flexShrink: 0, justifyContent: 'space-between' }}>
         <Stack direction="row" alignItems="center" gap={1}>
-          <Button onClick={onClose}>Cerrar</Button>
+          <Button disabled={loading || autoSaving} onClick={handleClose}>Cerrar</Button>
           {layoutMode === 'form' && (
             <Button startIcon={<Visibility />} onClick={() => setLayoutMode('preview')} sx={{ textTransform: 'none', fontWeight: 800 }}>
               Ver vista previa
@@ -1505,12 +1633,12 @@ export default function MeetingMinuteFormDialog({ open, document, user, onClose 
         {canEdit && (
           <Button
             variant="contained"
-            startIcon={loading ? <CircularProgress size={16} color="inherit" /> : <Save />}
-            disabled={loading}
+            startIcon={(loading || autoSaving) ? <CircularProgress size={16} color="inherit" /> : <Save />}
+            disabled={loading || autoSaving}
             onClick={() => save()}
             sx={{ px: 3, textTransform: 'none', fontWeight: 900 }}
           >
-            {form.status === 'draft' ? 'Guardar borrador' : 'Guardar cambios del acta'}
+            {form.id ? 'Guardar ahora' : 'Guardar borrador ahora'}
           </Button>
         )}
       </DialogActions>
