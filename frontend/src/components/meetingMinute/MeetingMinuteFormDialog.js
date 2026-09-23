@@ -1649,7 +1649,7 @@ export default function MeetingMinuteFormDialog({ open, document, user, onClose 
             onClick={() => save()}
             sx={{ px: 3, textTransform: 'none', fontWeight: 900 }}
           >
-            {form.id ? 'Guardar ahora' : 'Guardar borrador ahora'}
+            {form.id ? 'Guardar ahora' : 'Guardar borrador'}
           </Button>
         )}
       </DialogActions>
