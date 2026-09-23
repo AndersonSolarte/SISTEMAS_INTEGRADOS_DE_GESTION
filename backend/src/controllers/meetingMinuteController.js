@@ -366,7 +366,10 @@ const resolveSigningAccess = async (token) => {
           { token_expires_at: { [Op.gt]: now } }
         ]
       },
-      include: [{ model: DigitalMeetingParticipant, as: 'participants' }]
+      include: [
+        { model: DigitalMeetingParticipant, as: 'participants' },
+        { model: Documento, as: 'documento', required: false }
+      ]
     });
     if (minute) return { minute, invitedParticipant: null, invitationVerified: false };
     const invitedParticipant = await DigitalMeetingParticipant.findOne({
@@ -381,7 +384,10 @@ const resolveSigningAccess = async (token) => {
     if (invitedParticipant) {
       const invitedMinute = await DigitalMeetingMinute.findOne({
         where: { id: invitedParticipant.minute_id, status: { [Op.in]: ['signing', 'signed', 'distributed'] } },
-        include: [{ model: DigitalMeetingParticipant, as: 'participants' }]
+        include: [
+          { model: DigitalMeetingParticipant, as: 'participants' },
+          { model: Documento, as: 'documento', required: false }
+        ]
       });
       if (invitedMinute) return { minute: invitedMinute, invitedParticipant, invitationVerified: true };
     }
@@ -398,7 +404,10 @@ const resolveSigningAccess = async (token) => {
           { token_expires_at: { [Op.gt]: now } }
         ]
       },
-      include: [{ model: DigitalMeetingParticipant, as: 'participants' }]
+      include: [
+        { model: DigitalMeetingParticipant, as: 'participants' },
+        { model: Documento, as: 'documento', required: false }
+      ]
     });
     for (const m of activeMinutes) {
       const history = Array.isArray(m.content?._token_history) ? m.content._token_history : [];
@@ -429,12 +438,19 @@ const includeRelations = [
   { model: Documento, as: 'documento', required: false }
 ];
 
+const resolveMinuteHeader = (minute) => ({
+  ...(minute?.content?.header || {}),
+  codigo: minute?.documento?.codigo || minute?.content?.header?.codigo || 'COM-ID-FR-002',
+  version: minute?.documento?.version || minute?.content?.header?.version || '1',
+  fecha: formatDate(minute?.documento?.fecha_creacion || minute?.content?.header?.fecha)
+});
+
 const buildSignedMinutePayload = (minute, options = {}) => {
   const signatures = new Map((minute.signatures || []).map((signature) => [String(signature.participant_id), signature]));
   return {
     ...minute.content,
     fecha: formatDate(minute.content?.fecha),
-    header: { ...(minute.content?.header || {}), fecha: formatDate(minute.content?.fecha) },
+    header: resolveMinuteHeader(minute),
     participantes: (minute.participants || []).map((participant) => {
       const signature = signatures.get(String(participant.id));
       const hasSignature = Boolean(signature?.signature_storage_key && fs.existsSync(signature.signature_storage_key));
@@ -592,7 +608,7 @@ const restoreAllMinutes = wrap(async (req, res) => {
 });
 
 const normalizeContent = (body, user, document, existingContent = {}) => ({
-  header: { codigo: document.codigo || 'COM-ID-FR-002', version: document.version || '1', fecha: formatDate(body.fecha || document.fecha_creacion) },
+  header: { codigo: document.codigo || 'COM-ID-FR-002', version: document.version || '1', fecha: formatDate(document.fecha_creacion) },
   responsables: clean(body.responsables || user.dependencia, 1500),
   responsable_document: clean(body.responsable_document, 100),
   responsable_role: clean(body.responsable_role, 220),
@@ -819,7 +835,7 @@ const saveDraft = wrap(async (req, res) => {
 });
 
 const publish = wrap(async (req, res) => {
-  const minute = await DigitalMeetingMinute.findByPk(req.params.id, { include: [{ model: DigitalMeetingParticipant, as: 'participants' }, { model: DigitalMeetingSignature, as: 'signatures' }] });
+  const minute = await DigitalMeetingMinute.findByPk(req.params.id, { include: [{ model: DigitalMeetingParticipant, as: 'participants' }, { model: DigitalMeetingSignature, as: 'signatures' }, { model: Documento, as: 'documento', required: false }] });
   if (!minute || minute.deleted_at) throw Object.assign(new Error('Acta no encontrada.'), { statusCode: 404 });
   const authorized = await canAccessMinuteFullSignatures(req.user, minute);
   if (!authorized) throw Object.assign(new Error('No tiene permiso para publicar esta acta.'), { statusCode: 403 });
@@ -897,7 +913,7 @@ const reopenForEditing = wrap(async (req, res) => {
 });
 
 const resendInvitations = wrap(async (req, res) => {
-  const minute = await DigitalMeetingMinute.findByPk(req.params.id, { include: [{ model: DigitalMeetingParticipant, as: 'participants' }] });
+  const minute = await DigitalMeetingMinute.findByPk(req.params.id, { include: [{ model: DigitalMeetingParticipant, as: 'participants' }, { model: Documento, as: 'documento', required: false }] });
   if (!minute || minute.deleted_at) throw Object.assign(new Error('Acta no encontrada.'), { statusCode: 404 });
   const authorized = await canAccessMinuteFullSignatures(req.user, minute);
   if (!authorized) throw Object.assign(new Error('No tiene permiso para reenviar estas invitaciones.'), { statusCode: 403 });
@@ -912,8 +928,8 @@ const publicMinute = wrap(async (req, res) => {
   if (!access) throw Object.assign(new Error('El enlace de firma no es válido o venció.'), { statusCode: 404 });
   const { minute, invitedParticipant, invitationVerified } = access;
   const alreadySigned = Boolean(invitationVerified && invitedParticipant?.status === 'signed');
-  // El QR general nunca expone una lista seleccionable. La identidad se resuelve
-  // mediante Google institucional o un enlace personal enviado al correo registrado.
+  // El QR general nunca expone una lista seleccionable. Google confirma la
+  // propiedad del correo y el servidor lo compara con el registrado en el acta.
   const available = invitationVerified ? [invitedParticipant] : [];
 
   let signatureInfo = null;
@@ -945,9 +961,9 @@ const publicMinute = wrap(async (req, res) => {
       code: minute.code,
       version: minute.version,
       status: minute.status,
-      content: invitationVerified ? minute.content : null,
+      content: invitationVerified ? { ...(minute.content || {}), header: resolveMinuteHeader(minute) } : null,
       invitation_verified: invitationVerified,
-      requires_personal_link: !invitationVerified,
+      requires_identity_verification: !invitationVerified,
       invited_participant_id: invitedParticipant?.id || null,
       already_signed: alreadySigned,
       participant: invitedParticipant ? {
@@ -980,57 +996,14 @@ const publicMinute = wrap(async (req, res) => {
   });
 });
 
-const requestSigningLink = wrap(async (req, res) => {
-  const access = await resolveSigningAccess(req.params.token);
-  const minute = access?.minute;
-  if (!minute) throw Object.assign(new Error('El enlace de firma no es válido o venció.'), { statusCode: 404 });
-  if (access.invitationVerified) throw Object.assign(new Error('Este enlace personal ya valida al participante invitado.'), { statusCode: 409 });
-  const requestedEmail = clean(req.body.email, 254).toLowerCase();
-  if (!requestedEmail) throw Object.assign(new Error('Digite el correo registrado en el acta.'), { statusCode: 422 });
-  const participant = minute.participants.find((item) => clean(item.email, 254).toLowerCase() === requestedEmail);
-  if (!participant) {
-    throw Object.assign(new Error('El correo ingresado no coincide con ningún participante registrado en esta acta. Verifique el correo o solicite al responsable que actualice sus datos.'), { statusCode: 422 });
-  }
-  if (participant.status === 'signed') throw Object.assign(new Error('Este participante ya firmó el documento.'), { statusCode: 409 });
-
-  const personalToken = crypto.randomBytes(32).toString('base64url');
-  const previousToken = {
-    signing_token_hash: participant.signing_token_hash,
-    signing_token_expires_at: participant.signing_token_expires_at
-  };
-  await participant.update({
-    signing_token_hash: hash(personalToken),
-    signing_token_expires_at: new Date(Date.now() + 30 * 60 * 1000)
-  });
-  const url = `${publicFrontend(req)}/firmar-acta-reunion/${personalToken}`;
-  const privacyPolicy = buildPrivacyPolicyEmailSection(!participant.user_id);
-  const html = renderInstitutionalTemplate({
-    title: 'Enlace personal para firmar el acta',
-    introHtml: `<p>Hola <strong>${escapeHtml(participant.name)}</strong>. Solicitó acceso desde el código QR del acta <strong>${escapeHtml(minute.code)}</strong>.</p>`,
-    bodyHtml: `<p>Use el siguiente botón para abrir únicamente su registro y firmar. El enlace vence en 30 minutos y no debe compartirlo.</p><p style="text-align:center;margin:24px 0"><a href="${escapeHtml(url)}" style="display:inline-block;padding:12px 22px;background:#2457d6;color:#fff;text-decoration:none;border-radius:8px;font-weight:700">Abrir y firmar mi registro</a></p>${privacyPolicy.html}`
-  });
-  const sent = await sendInstitutionalEmail({
-    to: participant.email,
-    subject: `${minute.code} · Enlace personal para firmar`,
-    text: `Hola ${participant.name}. Abra únicamente su registro y firme el acta desde este enlace personal, vigente durante 30 minutos: ${url}${privacyPolicy.text}`,
-    html,
-    allowExternalRecipients: true
-  });
-  if (!sent.success) {
-    await participant.update(previousToken).catch(() => {});
-    throw Object.assign(new Error('No fue posible enviar el enlace personal al correo.'), { statusCode: 503 });
-  }
-  res.json({ success: true, message: 'Enlace personal enviado. Abra el correo y pulse “Abrir y firmar mi registro”.' });
-});
-
 const googleSigningAccess = wrap(async (req, res) => {
   const access = await resolveSigningAccess(req.params.token);
   const minute = access?.minute;
-  if (!minute || access.invitationVerified) throw Object.assign(new Error('El acceso institucional no es válido.'), { statusCode: 404 });
+  if (!minute || access.invitationVerified) throw Object.assign(new Error('El acceso de firma no es válido.'), { statusCode: 404 });
 
   const googleClientId = String(process.env.GOOGLE_CLIENT_ID || '').trim();
   const credential = clean(req.body.credential, 8192);
-  if (!googleClientId) throw Object.assign(new Error('El inicio de sesión institucional no está configurado.'), { statusCode: 503 });
+  if (!googleClientId) throw Object.assign(new Error('La verificación con Google no está configurada.'), { statusCode: 503 });
   if (!credential) throw Object.assign(new Error('Google no proporcionó una credencial válida.'), { statusCode: 400 });
 
   let googlePayload;
@@ -1038,33 +1011,17 @@ const googleSigningAccess = wrap(async (req, res) => {
     const ticket = await new OAuth2Client(googleClientId).verifyIdToken({ idToken: credential, audience: googleClientId });
     googlePayload = ticket.getPayload() || {};
   } catch (_) {
-    throw Object.assign(new Error('No fue posible validar la cuenta institucional con Google.'), { statusCode: 401 });
+    throw Object.assign(new Error('No fue posible validar la cuenta con Google.'), { statusCode: 401 });
   }
 
   const googleEmail = clean(googlePayload.email, 254).toLowerCase();
-  const institutionalDomain = String(process.env.INSTITUTIONAL_EMAIL_DOMAIN || 'unicesmag.edu.co').trim().toLowerCase();
-  const hostedDomain = clean(googlePayload.hd, 254).toLowerCase();
   if (!googleEmail || googlePayload.email_verified !== true) {
     throw Object.assign(new Error('Google no confirmó el correo de la cuenta.'), { statusCode: 401 });
-  }
-  if (!googleEmail.endsWith(`@${institutionalDomain}`) || (hostedDomain && hostedDomain !== institutionalDomain)) {
-    throw Object.assign(new Error('Debe iniciar sesión con su cuenta institucional.'), { statusCode: 403 });
-  }
-
-  const institutionalUser = await User.findOne({ where: { email: googleEmail } });
-  if (!institutionalUser) {
-    throw Object.assign(new Error(`La cuenta ${googleEmail} fue validada por Google, pero no está registrada como usuario del sistema. Solicite al administrador que revise sus datos.`), { statusCode: 403 });
-  }
-  if (institutionalUser.estado !== 'activo') {
-    throw Object.assign(new Error(`La cuenta ${googleEmail} está inactiva en el sistema. Contacte al administrador.`), { statusCode: 403 });
   }
 
   const participant = minute.participants.find((item) => clean(item.email, 254).toLowerCase() === googleEmail);
   if (!participant) {
-    throw Object.assign(new Error(`La cuenta ${googleEmail} no coincide con el correo de ningún participante registrado en esta acta. Inicie sesión con la cuenta correcta o solicite al responsable que actualice el acta.`), { statusCode: 403 });
-  }
-  if (participant.user_id && String(participant.user_id) !== String(institutionalUser.id)) {
-    throw Object.assign(new Error('El correo coincide, pero el usuario vinculado al acta es diferente. Por seguridad no se puede continuar; solicite al responsable que corrija el participante.'), { statusCode: 403 });
+    throw Object.assign(new Error(`La cuenta ${googleEmail} no coincide con el correo de ningún participante registrado en esta acta. Continúe con la cuenta correcta o solicite al responsable que actualice el correo.`), { statusCode: 403 });
   }
   if (participant.status === 'signed') throw Object.assign(new Error('Usted ya firmó este documento anteriormente.'), { statusCode: 409 });
 
@@ -1077,7 +1034,7 @@ const googleSigningAccess = wrap(async (req, res) => {
   const signingUrl = `${publicFrontend(req)}/firmar-acta-reunion/${personalToken}`;
   res.json({
     success: true,
-    message: 'Cuenta institucional validada. Abriendo únicamente su registro.',
+    message: 'Correo validado con Google. Abriendo únicamente su registro.',
     data: { signing_url: signingUrl }
   });
 });
@@ -1087,7 +1044,7 @@ const sign = wrap(async (req, res) => {
   const minute = access?.minute;
   if (!minute) throw Object.assign(new Error('El enlace de firma no es válido o venció.'), { statusCode: 404 });
   if (!access.invitationVerified || !access.invitedParticipant) {
-    throw Object.assign(new Error('Por seguridad, solicite y abra el enlace personal enviado a su correo.'), { statusCode: 403 });
+    throw Object.assign(new Error('Por seguridad, verifique con Google el mismo correo registrado en el acta.'), { statusCode: 403 });
   }
   const participant = access.invitedParticipant;
   if (participant.status === 'signed') throw Object.assign(new Error('Usted ya firmó este documento anteriormente.'), { statusCode: 409 });
@@ -1111,7 +1068,7 @@ const sign = wrap(async (req, res) => {
 });
 
 const downloadWord = wrap(async (req, res) => {
-  const minute = await DigitalMeetingMinute.findByPk(req.params.id, { include: [{ model: DigitalMeetingParticipant, as: 'participants' }, { model: DigitalMeetingSignature, as: 'signatures' }] });
+  const minute = await DigitalMeetingMinute.findByPk(req.params.id, { include: [{ model: DigitalMeetingParticipant, as: 'participants' }, { model: DigitalMeetingSignature, as: 'signatures' }, { model: Documento, as: 'documento', required: false }] });
   if (!minute || minute.deleted_at) throw Object.assign(new Error('Acta no encontrada.'), { statusCode: 404 });
   const isAuthorized = await canAccessMinuteFullSignatures(req.user, minute);
   if (!isAuthorized) throw Object.assign(new Error('No tiene permiso para descargar esta acta.'), { statusCode: 403 });
@@ -1123,7 +1080,7 @@ const downloadWord = wrap(async (req, res) => {
 });
 
 const downloadPdf = wrap(async (req, res) => {
-  const minute = await DigitalMeetingMinute.findByPk(req.params.id, { include: [{ model: DigitalMeetingParticipant, as: 'participants' }, { model: DigitalMeetingSignature, as: 'signatures' }] });
+  const minute = await DigitalMeetingMinute.findByPk(req.params.id, { include: [{ model: DigitalMeetingParticipant, as: 'participants' }, { model: DigitalMeetingSignature, as: 'signatures' }, { model: Documento, as: 'documento', required: false }] });
   if (!minute || minute.deleted_at) throw Object.assign(new Error('Acta no encontrada.'), { statusCode: 404 });
   const isAuthorized = await canAccessMinuteFullSignatures(req.user, minute);
   if (!isAuthorized) throw Object.assign(new Error('No tiene permiso para descargar esta acta.'), { statusCode: 403 });
@@ -1135,7 +1092,7 @@ const downloadPdf = wrap(async (req, res) => {
 });
 
 const sendFinalMinute = wrap(async (req, res) => {
-  const minute = await DigitalMeetingMinute.findByPk(req.params.id, { include: [{ model: DigitalMeetingParticipant, as: 'participants' }, { model: DigitalMeetingSignature, as: 'signatures' }] });
+  const minute = await DigitalMeetingMinute.findByPk(req.params.id, { include: [{ model: DigitalMeetingParticipant, as: 'participants' }, { model: DigitalMeetingSignature, as: 'signatures' }, { model: Documento, as: 'documento', required: false }] });
   if (!minute || minute.deleted_at) throw Object.assign(new Error('Acta no encontrada.'), { statusCode: 404 });
   const isAuthorized = await canAccessMinuteFullSignatures(req.user, minute);
   if (!isAuthorized) throw Object.assign(new Error('Solo el responsable de la reunión o el creador del acta pueden enviarla.'), { statusCode: 403 });
@@ -1286,7 +1243,6 @@ module.exports = {
   publicMinute,
   publish,
   reopenForEditing,
-  requestSigningLink,
   resendInvitations,
   restoreAllMinutes,
   restoreMinute,

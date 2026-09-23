@@ -23,7 +23,6 @@ const meetingMinuteService = {
   restoreAll: () => api.post(`${root}/restore-all`).then(unwrap),
   publicMinute: (token) => api.get(`${root}/public/${encodeURIComponent(String(token || '').trim())}`, { skipAuthRedirect: true }).then(unwrap),
   googleSigningAccess: (token, payload) => api.post(`${root}/public/${encodeURIComponent(String(token || '').trim())}/google-access`, payload, { skipAuthRedirect: true }).then(unwrap),
-  requestSigningLink: (token, payload) => api.post(`${root}/public/${encodeURIComponent(String(token || '').trim())}/request-link`, payload, { skipAuthRedirect: true }).then(unwrap),
   sign: (token, payload) => api.post(`${root}/public/${encodeURIComponent(String(token || '').trim())}/sign`, payload, { skipAuthRedirect: true }).then(unwrap)
 };
 

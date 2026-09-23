@@ -123,7 +123,7 @@ const MeetingPreview = ({ document, form, signatures = [], previewType = 'origin
         <Box sx={{ borderRight: '1px solid #111', p: 0.75, display: 'grid', placeItems: 'center' }}><Box component="img" src={logoFormatos} alt="Universidad CESMAG" sx={{ maxWidth: '95%', maxHeight: 65 }} /></Box>
         <Box sx={{ borderRight: '1px solid #111', display: 'grid', placeItems: 'center', textAlign: 'center', fontWeight: 900 }}>REGISTRO DE ASISTENCIA Y REUNIÓN</Box>
         <Box sx={{ p: 1, display: 'flex', flexDirection: 'column', justifyContent: 'center', fontWeight: 800, fontSize: 10 }}>
-          <span>CÓDIGO: {document?.codigo || 'COM-ID-FR-002'}</span><span>VERSIÓN: {document?.version || '1'}</span><span>FECHA: {formatDate(form.fecha)}</span>
+          <span>CÓDIGO: {document?.codigo || 'COM-ID-FR-002'}</span><span>VERSIÓN: {document?.version || '1'}</span><span>FECHA: {formatDate(document?.fecha_creacion)}</span>
         </Box>
       </Box>
       <Box sx={{ ...cell, py: 1 }}>
@@ -289,8 +289,10 @@ export default function MeetingMinuteFormDialog({ open, document, user, onClose 
     user?.is_admin ||
     user?.tipo_usuario === 'administrador'
   );
-  const canEdit = Boolean(!form.id || isCreator || isResponsible || isAdminUser || Boolean(user));
-  const canSendFinal = Boolean(isCreator || isResponsible || isAdminUser || Boolean(user));
+  // Mantener la misma regla del servidor: estar autenticado no concede por sí solo
+  // permiso para modificar actas de otros usuarios.
+  const canEdit = Boolean(!form.id || isCreator || isResponsible || isAdminUser);
+  const canSendFinal = Boolean(isCreator || isResponsible || isAdminUser);
 
   const canDeleteMinute = (target) => {
     if (!target) return false;
@@ -718,6 +720,10 @@ export default function MeetingMinuteFormDialog({ open, document, user, onClose 
   );
 
   const save = async ({ quiet = false, automatic = false } = {}) => {
+    if (!canEdit) {
+      if (!automatic) enqueueSnackbar('Esta acta está en modo consulta. Solo el creador, los responsables asignados o un administrador pueden editarla.', { variant: 'warning' });
+      return null;
+    }
     const changeVersionAtStart = localChangeVersionRef.current;
     const participantsChangedAtStart = participantsDirtyRef.current;
     const removedParticipantKeysAtStart = [...removedParticipantKeysRef.current];
@@ -781,7 +787,7 @@ export default function MeetingMinuteFormDialog({ open, document, user, onClose 
   // Guardado automático: agrupa la escritura durante una pausa breve y persiste
   // el acta sin exigir que el usuario pulse el botón de guardar.
   useEffect(() => {
-    if (!open || !hasUnsavedChangesRef.current || loading || autoSaving) return undefined;
+    if (!open || !canEdit || !hasUnsavedChangesRef.current || loading || autoSaving) return undefined;
     if (failedAutoSaveVersionRef.current === localChangeVersionRef.current) return undefined;
     if (!hasSavableData()) return undefined;
 
@@ -791,7 +797,7 @@ export default function MeetingMinuteFormDialog({ open, document, user, onClose 
     return () => window.clearTimeout(timer);
     // `save` pertenece al mismo render que los datos incluidos arriba.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, form, responsablesList, loading, autoSaving]);
+  }, [open, form, responsablesList, loading, autoSaving, canEdit]);
 
   const handleClose = async () => {
     if (loading || autoSaving) return;
@@ -1149,6 +1155,11 @@ export default function MeetingMinuteFormDialog({ open, document, user, onClose 
                 📌 <strong>Propiedad de actas:</strong> Cada acta pertenece a su creador y responsable principal. Los corresponsables pueden consultar y editar según asignación, pero únicamente el creador o responsable principal pueden eliminarla de su listado.
               </Typography>
             </Paper>
+            {form.id && !canEdit && (
+              <Alert severity="info" sx={{ my: 1 }}>
+                Esta acta está en modo consulta. Solo el creador, los responsables asignados o un administrador pueden modificarla.
+              </Alert>
+            )}
             {form.status === 'signing' && !allSigned && !hasSignatures && <Alert severity="info" sx={{ my: 1 }}>Las invitaciones personales ya fueron enviadas por correo. Puede volver a mostrar el QR, reenviar invitaciones o ajustar el acta.</Alert>}
             {form.status === 'signing' && hasSignatures && !allSigned && <Alert severity="info" sx={{ my: 1 }}>El acta tiene {signatures.length} firma(s) registrada(s). Como responsable puede seguir ajustando y guardando el contenido ante cualquier observación antes del envío final.</Alert>}
             {allSigned && <Alert severity="success" sx={{ my: 1 }}>Todas las personas firmaron el acta. Como responsable puede revisar, ajustar el texto si lo requiere y enviar el acta firmada a todos los participantes.</Alert>}
@@ -1648,7 +1659,7 @@ export default function MeetingMinuteFormDialog({ open, document, user, onClose 
       <DialogContent>
         <Stack alignItems="center" gap={1.5} pt={0.5}>
           <Alert severity="info" sx={{ fontSize: 12.5 }}>
-            Este código QR permite solicitar acceso. El personal interno valida su cuenta Google institucional y abre directamente solo su registro; los participantes externos reciben un enlace personal en el correo registrado.
+            Al escanear, cada participante continúa con Google usando el mismo correo registrado en el acta. Puede ser institucional o externo y solo se abrirá su propio registro.
           </Alert>
           {qr?.qr_data_url && <Box component="img" src={qr.qr_data_url} alt="QR alternativo para firmar" sx={{ width: 260, height: 260, borderRadius: 2, border: '1px solid #e2e8f0' }} />}
           <TextField fullWidth size="small" value={qr?.signing_url || ''} InputProps={{ readOnly: true }} />

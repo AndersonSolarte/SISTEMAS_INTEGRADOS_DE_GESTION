@@ -2,7 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { useParams } from 'react-router-dom';
 import {
   Accordion, AccordionDetails, AccordionSummary, Alert, Box, Button, Card, CardContent, Checkbox, Chip, CircularProgress,
-  FormControlLabel, Link, Paper, Stack, TextField, Typography, useMediaQuery
+  FormControlLabel, Link, Paper, Stack, Typography, useMediaQuery
 } from '@mui/material';
 import { Article, CheckCircle, Draw, ErrorOutline, ExpandMore, Lock, PersonSearch, Refresh, VerifiedUser } from '@mui/icons-material';
 import meetingMinuteService from '../services/meetingMinuteService';
@@ -53,7 +53,7 @@ function PublicActaPreview({ minute }) {
         <Box sx={{ display: 'grid', gridTemplateColumns: '22% 56% 22%', minHeight: 82, borderBottom: '1px solid #111' }}>
           <Box sx={{ borderRight: '1px solid #111', p: 0.75, display: 'grid', placeItems: 'center' }}><Box component="img" src={logoFormatos} alt="Universidad CESMAG" sx={{ maxWidth: '95%', maxHeight: 65 }} /></Box>
           <Box sx={{ borderRight: '1px solid #111', display: 'grid', placeItems: 'center', textAlign: 'center', fontWeight: 900 }}>REGISTRO DE ASISTENCIA Y REUNIÓN</Box>
-          <Box sx={{ p: 1, display: 'flex', flexDirection: 'column', justifyContent: 'center', fontWeight: 800, fontSize: 10 }}><span>CÓDIGO: {content.header?.codigo || 'COM-ID-FR-002'}</span><span>VERSIÓN: {content.header?.version || minute.version || '1'}</span><span>FECHA: {displayDate(content.fecha)}</span></Box>
+          <Box sx={{ p: 1, display: 'flex', flexDirection: 'column', justifyContent: 'center', fontWeight: 800, fontSize: 10 }}><span>CÓDIGO: {content.header?.codigo || 'COM-ID-FR-002'}</span><span>VERSIÓN: {content.header?.version || minute.version || '1'}</span><span>FECHA: {displayDate(content.header?.fecha)}</span></Box>
         </Box>
         <Box sx={{ ...cell, py: 1 }}>
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 0.75 }}>
@@ -151,8 +151,6 @@ export default function MeetingMinuteSigning() {
   const [signed, setSigned] = useState(false);
   const [privacyAccepted, setPrivacyAccepted] = useState(false);
   const [message, setMessage] = useState(null);
-  const [identityEmail, setIdentityEmail] = useState('');
-  const [linkSent, setLinkSent] = useState(false);
   const selectedParticipant = minute?.participants?.find((participant) => String(participant.id) === String(participantId));
   const invitedParticipant = minute?.participant;
   const requiresPrivacyConsent = Boolean(selectedParticipant?.external || (invitedParticipant?.external && String(invitedParticipant?.id) === String(participantId)));
@@ -225,7 +223,7 @@ export default function MeetingMinuteSigning() {
     };
   }, [participantId]);
 
-  const useInstitutionalGoogleAccount = async (credential) => {
+  const useGoogleAccount = async (credential) => {
     setWorking(true);
     setMessage(null);
     try {
@@ -237,26 +235,7 @@ export default function MeetingMinuteSigning() {
       if (!signingUrl) throw new Error('Google validó la cuenta, pero no se generó el acceso personal.');
       window.location.replace(signingUrl);
     } catch (error) {
-      setMessage({ severity: 'error', text: error.response?.data?.message || error.message || 'No fue posible validar la cuenta institucional.' });
-      setWorking(false);
-    }
-  };
-
-  const requestPersonalLink = async () => {
-    const email = identityEmail.trim().toLowerCase();
-    if (!email) {
-      setMessage({ severity: 'warning', text: 'Digite el correo con el que fue registrado en el acta.' });
-      return;
-    }
-    setWorking(true);
-    setMessage(null);
-    try {
-      const response = await meetingMinuteService.requestSigningLink(token, { email });
-      setLinkSent(true);
-      setMessage({ severity: 'success', text: response.message || 'Enlace personal enviado. Revise su correo.' });
-    } catch (error) {
-      setMessage({ severity: 'error', text: error.response?.data?.message || 'No fue posible enviar el enlace personal.' });
-    } finally {
+      setMessage({ severity: 'error', text: error.response?.data?.message || error.message || 'No fue posible validar la cuenta con Google.' });
       setWorking(false);
     }
   };
@@ -364,7 +343,7 @@ export default function MeetingMinuteSigning() {
                   </Box>
                   <Box sx={{ display: 'flex', gap: 1 }}>
                     <span>•</span>
-                    <span><strong>Si recibió la invitación por correo:</strong> Verifique si recibió un correo institucional más reciente con un enlace actualizado.</span>
+                    <span><strong>Si recibió la invitación por correo:</strong> Verifique si recibió un mensaje más reciente con un enlace actualizado.</span>
                   </Box>
                 </Stack>
               </Paper>
@@ -517,7 +496,7 @@ export default function MeetingMinuteSigning() {
         <Alert severity="info" sx={{ mb: 2.5, borderRadius: 2 }}>
           {personalInvitation
             ? 'Su identidad fue validada mediante este enlace personal. Revise los datos, dibuje su firma y confirme.'
-            : 'Personal interno: continúe con su cuenta Google institucional y accederá directamente a su registro. Participantes externos: soliciten el enlace personal por correo.'}
+            : 'Continúe con Google usando exactamente el mismo correo registrado en el acta. Puede ser institucional o externo.'}
         </Alert>
         {message && <Alert severity={message.severity} sx={{ mb: 2.5, borderRadius: 2 }}>{message.text}</Alert>}
         {identityVerified && <Accordion
@@ -560,56 +539,15 @@ export default function MeetingMinuteSigning() {
             {identityVerified ? (
               <PaperParticipant participant={invitedParticipant || selectedParticipant} />
             ) : (
-              <Stack gap={2}>
-                <Paper variant="outlined" sx={{ p: 2.25, borderRadius: 3, bgcolor: '#f0fdf4', borderColor: '#86efac', textAlign: 'center' }}>
-                  <Typography fontWeight={900} color="#166534">Personal interno</Typography>
-                  <Typography variant="body2" color="text.secondary" sx={{ my: 1, lineHeight: 1.6 }}>
-                    Si el celular ya reconoce su cuenta institucional autorizada, abriremos automáticamente su registro. De lo contrario, confirme la cuenta con Google.
-                  </Typography>
-                  <GoogleIdentityVerification
-                    active={!working}
-                    autoSelect
-                    onVerify={useInstitutionalGoogleAccount}
-                    onError={(text) => setMessage({ severity: 'error', text })}
-                  />
-                  {working && <CircularProgress size={22} sx={{ mt: 1 }} />}
-                </Paper>
-
-                <Typography textAlign="center" color="text.secondary" fontWeight={800} fontSize={12}>O USE EL CORREO REGISTRADO</Typography>
-
-                <Paper variant="outlined" sx={{ p: 2, borderRadius: 3, bgcolor: '#f8fbff', borderColor: '#bfdbfe' }}>
-                  <Typography variant="body2" color="text.secondary" sx={{ mb: 1.5, lineHeight: 1.6 }}>
-                    Alternativa para participantes externos: enviaremos un botón seguro a su correo; al abrirlo verá únicamente su nombre y su espacio de firma.
-                  </Typography>
-                  <Stack gap={1.5}>
-                    <TextField
-                      fullWidth
-                      type="email"
-                      label="Correo registrado *"
-                      value={identityEmail}
-                      disabled={working}
-                      onChange={(event) => {
-                        setIdentityEmail(event.target.value);
-                        setLinkSent(false);
-                      }}
-                      onKeyDown={(event) => {
-                        if (event.key === 'Enter') {
-                          event.preventDefault();
-                          requestPersonalLink();
-                        }
-                      }}
-                    />
-                    <Button variant="contained" disabled={working || !identityEmail.trim()} onClick={requestPersonalLink} sx={{ textTransform: 'none', fontWeight: 900 }}>
-                      {working ? 'Enviando enlace…' : linkSent ? 'Reenviar enlace personal' : 'Enviar enlace para firmar'}
-                    </Button>
-                    {linkSent && (
-                      <Alert severity="success" sx={{ borderRadius: 2 }}>
-                        Revise el correo y pulse <strong>“Abrir y firmar mi registro”</strong>. Este enlace vence en 30 minutos.
-                      </Alert>
-                    )}
-                  </Stack>
-                </Paper>
-              </Stack>
+              <Box sx={{ py: 1.5, textAlign: 'center' }}>
+                <GoogleIdentityVerification
+                  active={!working}
+                  autoSelect
+                  onVerify={useGoogleAccount}
+                  onError={(text) => setMessage({ severity: 'error', text })}
+                />
+                {working && <CircularProgress size={22} sx={{ mt: 1 }} />}
+              </Box>
             )}
           </Box>
           {requiresPrivacyConsent && (

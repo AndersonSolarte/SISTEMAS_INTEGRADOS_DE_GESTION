@@ -7,7 +7,6 @@ const router = express.Router();
 
 router.get('/public/:token', publicLimiter, controller.publicMinute);
 router.post('/public/:token/google-access', publicLimiter, controller.googleSigningAccess);
-router.post('/public/:token/request-link', publicLimiter, controller.requestSigningLink);
 router.post('/public/:token/sign', publicLimiter, controller.sign);
 
 router.get('/config', auth, controller.getConfig);
