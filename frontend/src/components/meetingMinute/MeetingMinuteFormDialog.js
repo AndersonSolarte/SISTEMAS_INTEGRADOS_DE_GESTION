@@ -26,7 +26,7 @@ const MEETING_PLACES = [
   'Sala de Juntas Campus San Damián'
 ];
 const emptyForm = (user = {}) => ({
-  id: '', code: '', status: 'draft', created_by: user.id || '', responsables: '', dependencia: '',
+  id: '', code: '', status: 'draft', created_by: user.id || '', titulo: '', responsables: '', dependencia: '',
   responsable_document: '', responsable_role: '', responsables_data: [],
   lugar: '', fecha: today(), hora_inicio: '08:00', hora_fin: '10:00',
   objetivo: '', desarrollo: '', conclusiones: '', participants: []
@@ -413,6 +413,7 @@ export default function MeetingMinuteFormDialog({ open, document, user, onClose 
         code: row.code,
         status: row.status,
         created_by: row.created_by,
+        titulo: content.titulo || '',
         responsables: formattedText,
         responsable_document: content.responsable_document || loadedResponsables[0]?.document || '',
         responsable_role: content.responsable_role || loadedResponsables[0]?.role_title || '',
@@ -474,6 +475,7 @@ export default function MeetingMinuteFormDialog({ open, document, user, onClose 
                   return {
                     ...prev,
                     status: row.status,
+                    titulo: rowContent.titulo || '',
                     responsables: rowContent.responsables || formatResponsablesText(loadedResp),
                     responsable_document: rowContent.responsable_document || loadedResp[0]?.document || '',
                     responsable_role: rowContent.responsable_role || loadedResp[0]?.role_title || '',
@@ -492,6 +494,7 @@ export default function MeetingMinuteFormDialog({ open, document, user, onClose 
                 return {
                   ...prev,
                   status: row.status,
+                  titulo: hasUnsavedChanges ? prev.titulo : (rowContent.titulo || ''),
                   // Si hay ediciones locales, el servidor aun no conoce participantes
                   // recien agregados o eliminados. Conservarlos evita que desaparezcan
                   // durante el sondeo de cinco segundos.
@@ -695,6 +698,7 @@ export default function MeetingMinuteFormDialog({ open, document, user, onClose 
   const payload = () => ({
     id: form.id || undefined,
     documento_id: document.id,
+    titulo: form.titulo,
     responsables: form.responsables,
     responsable_document: form.responsable_document,
     responsable_role: form.responsable_role,
@@ -1064,7 +1068,8 @@ export default function MeetingMinuteFormDialog({ open, document, user, onClose 
                       const min = minutes.find((m) => m.id === selected);
                       if (!min) return 'Nueva acta';
                       const statusLabel = { draft: 'Borrador', signing: 'En firmas', signed: 'Firmada', distributed: 'Enviada' }[min.status] || min.status;
-                      return `${min.code} · ${min.content?.fecha || 'Sin fecha'} · ${statusLabel}`;
+                      const shortTitle = String(min.content?.titulo || '').trim();
+                      return `${shortTitle ? `${shortTitle} · ` : ''}${min.code} · ${min.content?.fecha || 'Sin fecha'} · ${statusLabel}`;
                     }
                   }}
                 >
@@ -1073,11 +1078,11 @@ export default function MeetingMinuteFormDialog({ open, document, user, onClose 
                   </MenuItem>
                   {minutes.map((minute) => {
                     const canDelete = canDeleteMinute(minute);
-                    const isCreator = minute.created_by && Number(minute.created_by) === userId;
-                    const creatorLabel = !isCreator && minute.creator?.nombre
+                    const creatorLabel = minute.creator?.nombre
                       ? ` · Creada por: ${formatPersonName(minute.creator.nombre)}`
                       : '';
                     const statusLabel = { draft: 'Borrador', signing: 'En firmas', signed: 'Firmada', distributed: 'Enviada' }[minute.status] || minute.status;
+                    const shortTitle = String(minute.content?.titulo || '').trim();
                     return (
                       <MenuItem
                         key={minute.id}
@@ -1091,8 +1096,15 @@ export default function MeetingMinuteFormDialog({ open, document, user, onClose 
                           pr: 1
                         }}
                       >
-                        <Box component="span" sx={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1, fontSize: 13 }}>
-                          {minute.code} · {minute.content?.fecha || 'Sin fecha'} · {statusLabel}{creatorLabel}
+                        <Box component="span" sx={{ overflow: 'hidden', flex: 1, minWidth: 0 }}>
+                          {shortTitle && (
+                            <Typography component="span" display="block" fontSize={13} fontWeight={850} noWrap>
+                              {shortTitle}
+                            </Typography>
+                          )}
+                          <Typography component="span" display="block" variant="caption" color={shortTitle ? 'text.secondary' : 'text.primary'} noWrap>
+                            {minute.code} · {minute.content?.fecha || 'Sin fecha'} · {statusLabel}{creatorLabel}
+                          </Typography>
                         </Box>
                         {canDelete && (
                           <Tooltip title={`Eliminar acta ${minute.code}`}>
@@ -1327,6 +1339,16 @@ export default function MeetingMinuteFormDialog({ open, document, user, onClose 
                   )}
                 </Box>
 
+                <TextField
+                  disabled={!canEdit}
+                  fullWidth
+                  label="Título corto del acta"
+                  value={form.titulo || ''}
+                  onChange={(e) => setField('titulo', e.target.value.slice(0, 120))}
+                  inputProps={{ maxLength: 120 }}
+                  helperText="Nombre breve para identificar y encontrar esta acta con facilidad."
+                  sx={{ gridColumn: '1 / -1' }}
+                />
                 <TextField disabled={!canEdit} fullWidth label="Dependencia que cita *" value={form.dependencia} onChange={(e) => setField('dependencia', e.target.value)} helperText="Asignada desde el responsable principal o editable si es conjunta." />
                 <Autocomplete freeSolo disabled={!canEdit} options={MEETING_PLACES} value={form.lugar || ''} onChange={(_, value) => setField('lugar', value || '')} onInputChange={(_, value) => setField('lugar', value)} renderInput={(params) => <TextField {...params} fullWidth label="Lugar" helperText="Seleccione una opción o escriba otro lugar." />} />
                 <TextField disabled={!canEdit} fullWidth type="date" InputLabelProps={{ shrink: true }} label="Fecha" value={form.fecha} onChange={(e) => setField('fecha', e.target.value)} />

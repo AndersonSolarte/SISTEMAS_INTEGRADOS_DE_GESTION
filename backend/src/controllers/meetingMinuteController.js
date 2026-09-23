@@ -609,6 +609,7 @@ const restoreAllMinutes = wrap(async (req, res) => {
 
 const normalizeContent = (body, user, document, existingContent = {}) => ({
   header: { codigo: document.codigo || 'COM-ID-FR-002', version: document.version || '1', fecha: formatDate(document.fecha_creacion) },
+  titulo: clean(body.titulo, 120),
   responsables: clean(body.responsables || user.dependencia, 1500),
   responsable_document: clean(body.responsable_document, 100),
   responsable_role: clean(body.responsable_role, 220),
