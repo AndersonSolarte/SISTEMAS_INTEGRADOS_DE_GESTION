@@ -248,6 +248,7 @@ export default function MeetingMinuteFormDialog({ open, document, user, onClose 
   const [previewType, setPreviewType] = useState('original'); // 'original' | 'copia'
   const [autoSaving, setAutoSaving] = useState(false);
   const [saveStatus, setSaveStatus] = useState('saved'); // 'saved' | 'pending' | 'saving' | 'error'
+  const [fieldErrors, setFieldErrors] = useState({});
   // El sondeo remoto nunca debe reemplazar cambios que el usuario todavia no ha guardado.
   const hasUnsavedChangesRef = useRef(false);
   const localChangeVersionRef = useRef(0);
@@ -357,6 +358,7 @@ export default function MeetingMinuteFormDialog({ open, document, user, onClose 
     participantsDirtyRef.current = false;
     removedParticipantKeysRef.current.clear();
     setSaveStatus('saved');
+    setFieldErrors({});
     setForm(emptyForm(user));
     setResponsablesList([]);
     setSignatures([]);
@@ -379,6 +381,7 @@ export default function MeetingMinuteFormDialog({ open, document, user, onClose 
 
   const setField = (key, value) => {
     markUnsavedChanges({ participants: key === 'participants' });
+    setFieldErrors((previous) => previous[key] ? { ...previous, [key]: false } : previous);
     setForm((previous) => ({ ...previous, [key]: value }));
   };
   const openMinute = async (id) => {
@@ -389,6 +392,7 @@ export default function MeetingMinuteFormDialog({ open, document, user, onClose 
       participantsDirtyRef.current = false;
       removedParticipantKeysRef.current.clear();
       setSaveStatus('saved');
+      setFieldErrors({});
       setForm(emptyForm(user));
       setResponsablesList([]);
       return;
@@ -594,6 +598,7 @@ export default function MeetingMinuteFormDialog({ open, document, user, onClose 
     const updatedParticipants = syncParticipantsWithResponsables(form.participants, updatedList);
 
     markUnsavedChanges({ participants: true });
+    setFieldErrors((previous) => ({ ...previous, responsables: false, dependencia: false, participants: false }));
     setResponsablesList(updatedList);
     setForm((prev) => ({
       ...prev,
@@ -723,22 +728,63 @@ export default function MeetingMinuteFormDialog({ open, document, user, onClose 
     form.participants.length >= 2
   );
 
+  const validateRequiredFields = () => {
+    const richObjective = sanitizeRichHtml(form.objetivo || '').replace(/<[^>]+>/g, ' ').replace(/&nbsp;/gi, ' ').trim();
+    return {
+      responsables: !responsablesList.length || !String(form.responsables || '').trim(),
+      dependencia: !String(form.dependencia || '').trim(),
+      lugar: !String(form.lugar || '').trim(),
+      fecha: !String(form.fecha || '').trim(),
+      hora_inicio: !String(form.hora_inicio || '').trim(),
+      hora_fin: !String(form.hora_fin || '').trim(),
+      objetivo: !richObjective,
+      participants: form.participants.length < 2
+    };
+  };
+
+  const focusFirstInvalidField = (errors) => {
+    const order = [
+      ['responsables', 'responsible-document-field'],
+      ['dependencia', 'meeting-dependencia-field'],
+      ['lugar', 'meeting-lugar-field'],
+      ['fecha', 'meeting-fecha-field'],
+      ['hora_inicio', 'meeting-hora-inicio-field'],
+      ['hora_fin', 'meeting-hora-fin-field'],
+      ['objetivo', 'meeting-objetivo-field'],
+      ['participants', 'meeting-participants-section']
+    ];
+    const targetId = order.find(([key]) => errors[key])?.[1];
+    if (!targetId) return;
+    if (layoutMode === 'preview') setLayoutMode('form');
+    window.setTimeout(() => {
+      const target = window.document.getElementById(targetId);
+      if (!target) return;
+      target.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      const focusable = target.matches?.('input,textarea,[contenteditable="true"]')
+        ? target
+        : target.querySelector?.('input,textarea,[contenteditable="true"],button');
+      focusable?.focus?.();
+    }, 120);
+  };
+
   const save = async ({ quiet = false, automatic = false } = {}) => {
     if (!canEdit) {
       if (!automatic) enqueueSnackbar('Esta acta está en modo consulta. Solo el creador, los responsables asignados o un administrador pueden editarla.', { variant: 'warning' });
       return null;
     }
+    const validationErrors = validateRequiredFields();
+    if (Object.values(validationErrors).some(Boolean)) {
+      if (!automatic) {
+        setFieldErrors(validationErrors);
+        focusFirstInvalidField(validationErrors);
+        enqueueSnackbar('Complete los campos obligatorios marcados en rojo.', { variant: 'warning' });
+      }
+      return null;
+    }
+    setFieldErrors({});
     const changeVersionAtStart = localChangeVersionRef.current;
     const participantsChangedAtStart = participantsDirtyRef.current;
     const removedParticipantKeysAtStart = [...removedParticipantKeysRef.current];
-    if (!responsablesList.length || !form.responsables) {
-      if (!automatic) enqueueSnackbar('Consulte y seleccione primero al responsable de la reunión.', { variant: 'warning' });
-      return null;
-    }
-    if (form.participants.length < 2) {
-      if (!automatic) enqueueSnackbar('Debe haber al menos dos participantes en la reunión (responsables y/o participantes convocados).', { variant: 'warning' });
-      return null;
-    }
     if (automatic) {
       setAutoSaving(true);
       setSaveStatus('saving');
@@ -1028,11 +1074,19 @@ export default function MeetingMinuteFormDialog({ open, document, user, onClose 
               scrollbarColor: '#475569 #e2e8f0'
             }}
           >
-            <Paper variant="outlined" sx={{ p: 2.25, borderRadius: 3 }}>
+            <Paper variant="outlined" sx={{
+              p: 2.25,
+              borderRadius: 3,
+              borderColor: '#94a3b8',
+              '& .MuiOutlinedInput-notchedOutline': { borderColor: '#94a3b8', borderWidth: '1.5px' },
+              '& .MuiOutlinedInput-root:hover .MuiOutlinedInput-notchedOutline': { borderColor: '#64748b' },
+              '& .MuiOutlinedInput-root.Mui-focused .MuiOutlinedInput-notchedOutline': { borderWidth: '2px' },
+              '& .MuiOutlinedInput-root.Mui-error .MuiOutlinedInput-notchedOutline': { borderColor: '#dc2626', borderWidth: '2px' }
+            }}>
               <Stack direction={{ xs: 'column', sm: 'row' }} justifyContent="space-between" alignItems={{ sm: 'center' }} gap={1.5} mb={2}>
                 <Typography fontWeight={900}>Actas de reunión</Typography>
                 <Stack direction="row" alignItems="center" gap={1}>
-                  <Button variant="outlined" onClick={() => { hasUnsavedChangesRef.current = false; localChangeVersionRef.current = 0; failedAutoSaveVersionRef.current = null; participantsDirtyRef.current = false; removedParticipantKeysRef.current.clear(); setSaveStatus('saved'); setForm(emptyForm(user)); setResponsablesList([]); setSignatures([]); setQr(null); setResponsibleDocument(''); setResponsibleCandidate(null); setExternalMode(false); }} sx={{ textTransform: 'none', fontWeight: 800 }}>Nueva acta</Button>
+                  <Button variant="outlined" onClick={() => { hasUnsavedChangesRef.current = false; localChangeVersionRef.current = 0; failedAutoSaveVersionRef.current = null; participantsDirtyRef.current = false; removedParticipantKeysRef.current.clear(); setSaveStatus('saved'); setFieldErrors({}); setForm(emptyForm(user)); setResponsablesList([]); setSignatures([]); setQr(null); setResponsibleDocument(''); setResponsibleCandidate(null); setExternalMode(false); }} sx={{ textTransform: 'none', fontWeight: 800 }}>Nueva acta</Button>
                   <Tooltip title={layoutMode === 'split' ? 'Expandir formulario a pantalla completa' : 'Restaurar vista dividida (50/50)'}>
                     <IconButton
                       size="small"
@@ -1175,13 +1229,23 @@ export default function MeetingMinuteFormDialog({ open, document, user, onClose 
             {form.status === 'signing' && !allSigned && !hasSignatures && <Alert severity="info" sx={{ my: 1 }}>Las invitaciones personales ya fueron enviadas por correo. Puede volver a mostrar el QR, reenviar invitaciones o ajustar el acta.</Alert>}
             {form.status === 'signing' && hasSignatures && !allSigned && <Alert severity="info" sx={{ my: 1 }}>El acta tiene {signatures.length} firma(s) registrada(s). Como responsable puede seguir ajustando y guardando el contenido ante cualquier observación antes del envío final.</Alert>}
             {allSigned && <Alert severity="success" sx={{ my: 1 }}>Todas las personas firmaron el acta. Como responsable puede revisar, ajustar el texto si lo requiere y enviar el acta firmada a todos los participantes.</Alert>}
-            <Paper variant="outlined" sx={{ p: 2.25, borderRadius: 3 }}>
+            <Paper variant="outlined" sx={{
+              p: 2.25,
+              borderRadius: 3,
+              borderColor: '#94a3b8',
+              '& .MuiOutlinedInput-notchedOutline': { borderColor: '#94a3b8', borderWidth: '1.5px' },
+              '& .MuiOutlinedInput-root:hover .MuiOutlinedInput-notchedOutline': { borderColor: '#64748b' },
+              '& .MuiOutlinedInput-root.Mui-focused .MuiOutlinedInput-notchedOutline': { borderWidth: '2px' },
+              '& .MuiOutlinedInput-root.Mui-error .MuiOutlinedInput-notchedOutline': { borderColor: '#dc2626', borderWidth: '2px' }
+            }}>
               <Typography fontWeight={900} mb={2}>1. Información de la reunión</Typography>
               <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', sm: 'repeat(2,minmax(0,1fr))' }, gap: 1.5 }}>
                 <Stack direction={{ xs: 'column', sm: 'row' }} gap={1} sx={{ gridColumn: '1 / -1' }}>
                   <TextField
+                    id="responsible-document-field"
                     disabled={!canEdit}
                     fullWidth
+                    error={Boolean(fieldErrors.responsables)}
                     label={responsablesList.length === 0 ? "Cédula del Responsable Principal *" : "Cédula de responsable o co-responsable"}
                     placeholder="Ingrese cédula y presione Consultar"
                     value={responsibleDocument}
@@ -1346,20 +1410,19 @@ export default function MeetingMinuteFormDialog({ open, document, user, onClose 
                   value={form.titulo || ''}
                   onChange={(e) => setField('titulo', e.target.value.slice(0, 120))}
                   inputProps={{ maxLength: 120 }}
-                  helperText="Nombre breve para identificar y encontrar esta acta con facilidad."
                   sx={{ gridColumn: '1 / -1' }}
                 />
-                <TextField disabled={!canEdit} fullWidth label="Dependencia que cita *" value={form.dependencia} onChange={(e) => setField('dependencia', e.target.value)} helperText="Asignada desde el responsable principal o editable si es conjunta." />
-                <Autocomplete freeSolo disabled={!canEdit} options={MEETING_PLACES} value={form.lugar || ''} onChange={(_, value) => setField('lugar', value || '')} onInputChange={(_, value) => setField('lugar', value)} renderInput={(params) => <TextField {...params} fullWidth label="Lugar" helperText="Seleccione una opción o escriba otro lugar." />} />
-                <TextField disabled={!canEdit} fullWidth type="date" InputLabelProps={{ shrink: true }} label="Fecha" value={form.fecha} onChange={(e) => setField('fecha', e.target.value)} />
-                <TextField disabled={!canEdit} fullWidth type="time" InputLabelProps={{ shrink: true }} label="Hora de inicio" value={form.hora_inicio} onChange={(e) => setField('hora_inicio', e.target.value)} />
-                <TextField disabled={!canEdit} fullWidth type="time" InputLabelProps={{ shrink: true }} label="Hora de finalización" value={form.hora_fin} onChange={(e) => setField('hora_fin', e.target.value)} />
-                <RichTextEditor disabled={!canEdit} label="Objetivo *" value={form.objetivo} onChange={(value) => setField('objetivo', value)} minHeight={90} />
+                <TextField id="meeting-dependencia-field" error={Boolean(fieldErrors.dependencia)} disabled={!canEdit} fullWidth label="Dependencia que cita *" value={form.dependencia} onChange={(e) => setField('dependencia', e.target.value)} />
+                <Autocomplete freeSolo disabled={!canEdit} options={MEETING_PLACES} value={form.lugar || ''} onChange={(_, value) => setField('lugar', value || '')} onInputChange={(_, value) => setField('lugar', value)} renderInput={(params) => <TextField {...params} id="meeting-lugar-field" error={Boolean(fieldErrors.lugar)} fullWidth label="Lugar *" />} />
+                <TextField id="meeting-fecha-field" error={Boolean(fieldErrors.fecha)} disabled={!canEdit} fullWidth type="date" InputLabelProps={{ shrink: true }} label="Fecha *" value={form.fecha} onChange={(e) => setField('fecha', e.target.value)} />
+                <TextField id="meeting-hora-inicio-field" error={Boolean(fieldErrors.hora_inicio)} disabled={!canEdit} fullWidth type="time" InputLabelProps={{ shrink: true }} label="Hora de inicio *" value={form.hora_inicio} onChange={(e) => setField('hora_inicio', e.target.value)} />
+                <TextField id="meeting-hora-fin-field" error={Boolean(fieldErrors.hora_fin)} disabled={!canEdit} fullWidth type="time" InputLabelProps={{ shrink: true }} label="Hora de finalización *" value={form.hora_fin} onChange={(e) => setField('hora_fin', e.target.value)} />
+                <RichTextEditor id="meeting-objetivo-field" error={Boolean(fieldErrors.objetivo)} disabled={!canEdit} label="Objetivo *" value={form.objetivo} onChange={(value) => setField('objetivo', value)} minHeight={90} />
                 <RichTextEditor disabled={!canEdit} label="Desarrollo de la reunión" value={form.desarrollo} onChange={(value) => setField('desarrollo', value)} minHeight={150} />
                 <RichTextEditor disabled={!canEdit} label="Conclusiones / Compromisos" value={form.conclusiones} onChange={(value) => setField('conclusiones', value)} minHeight={120} />
               </Box>
             </Paper>
-            <Paper variant="outlined" sx={{ p: 2.25, borderRadius: 3 }}>
+            <Paper id="meeting-participants-section" variant="outlined" sx={{ p: 2.25, borderRadius: 3, borderWidth: fieldErrors.participants ? '2px' : '1.5px', borderColor: fieldErrors.participants ? '#dc2626' : '#94a3b8', boxShadow: fieldErrors.participants ? '0 0 0 2px rgba(220,38,38,0.12)' : 'none' }}>
               <Stack direction={{ xs: 'column', sm: 'row' }} justifyContent="space-between" alignItems={{ sm: 'center' }} gap={1} mb={1}>
                 <Typography fontWeight={900}>2. Participantes y firmas</Typography>
                 {form.participants.length >= 2 ? (

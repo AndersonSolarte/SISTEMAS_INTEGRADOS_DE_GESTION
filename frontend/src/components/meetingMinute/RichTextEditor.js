@@ -227,7 +227,7 @@ export const removeSelectedTableColumn = (currentCell) => {
   return targetRow?.cells[Math.min(columnIndex, targetRow.cells.length - 1)] || null;
 };
 
-export default function RichTextEditor({ label, value, onChange, disabled = false, minHeight = 130 }) {
+export default function RichTextEditor({ label, value, onChange, disabled = false, minHeight = 130, error = false, id }) {
   const editorRef = useRef(null);
   const savedRange = useRef(null);
   const formatRange = useRef(null);
@@ -362,7 +362,7 @@ export default function RichTextEditor({ label, value, onChange, disabled = fals
   };
   const tool = (title, icon, action, selected = false) => <Tooltip title={title}><span><IconButton size="small" disabled={disabled} aria-pressed={selected} onMouseDown={(event) => { event.preventDefault(); action(); }} sx={{ borderRadius: 1.5, color: selected ? '#174ea6' : '#52657d', bgcolor: selected ? '#dbeafe' : 'transparent', boxShadow: selected ? 'inset 0 0 0 1px #93b4dc' : 'none', '&:hover': { bgcolor: selected ? '#cfe3fb' : '#e5edf7' } }}>{icon}</IconButton></span></Tooltip>;
 
-  return <Paper variant="outlined" sx={{ gridColumn: '1 / -1', overflow: 'hidden', borderRadius: 2.5, bgcolor: disabled ? '#f5f7fa' : '#fff' }}>
+  return <Paper id={id} variant="outlined" sx={{ gridColumn: '1 / -1', overflow: 'hidden', borderRadius: 2.5, bgcolor: disabled ? '#f5f7fa' : '#fff', borderWidth: '1.5px', borderColor: error ? '#dc2626' : '#94a3b8', boxShadow: error ? '0 0 0 2px rgba(220,38,38,0.12)' : 'none' }}>
     <Box sx={{ px: 1.5, pt: 1.1 }}><Typography variant="caption" color="text.secondary" fontWeight={700}>{label}</Typography></Box>
     <Stack direction="row" alignItems="center" gap={0.25} flexWrap="wrap" sx={{ px: 1, py: 0.6, borderBottom: '1px solid #dbe5f0', bgcolor: '#f1f6fc' }}>
       {tool('Deshacer', <Undo fontSize="small" />, () => command('undo'))}
@@ -525,6 +525,7 @@ export default function RichTextEditor({ label, value, onChange, disabled = fals
       suppressContentEditableWarning
       role="textbox"
       aria-label={label}
+      aria-invalid={error}
       onInput={() => { emit(); readActiveFormats(); }}
       onFocus={readActiveFormats}
       onMouseUp={readActiveFormats}
