@@ -2,12 +2,13 @@ import React, { useEffect, useRef, useState } from 'react';
 import { useParams } from 'react-router-dom';
 import {
   Accordion, AccordionDetails, AccordionSummary, Alert, Box, Button, Card, CardContent, Checkbox, Chip, CircularProgress,
-  FormControlLabel, Link, MenuItem, Paper, Stack, TextField, Typography, useMediaQuery
+  FormControlLabel, Link, Paper, Stack, TextField, Typography, useMediaQuery
 } from '@mui/material';
 import { Article, CheckCircle, Draw, ErrorOutline, ExpandMore, Lock, PersonSearch, Refresh, VerifiedUser } from '@mui/icons-material';
 import meetingMinuteService from '../services/meetingMinuteService';
 import logoFormatos from '../assets/logo_formatos.jpg';
 import { sanitizeRichHtml } from '../components/meetingMinute/RichTextEditor';
+import GoogleIdentityVerification from '../components/security/GoogleIdentityVerification';
 import formatPersonName from '../utils/formatPersonName';
 
 const displayDate = (value) => {
@@ -150,10 +151,13 @@ export default function MeetingMinuteSigning() {
   const [signed, setSigned] = useState(false);
   const [privacyAccepted, setPrivacyAccepted] = useState(false);
   const [message, setMessage] = useState(null);
+  const [identityEmail, setIdentityEmail] = useState('');
+  const [linkSent, setLinkSent] = useState(false);
   const selectedParticipant = minute?.participants?.find((participant) => String(participant.id) === String(participantId));
   const invitedParticipant = minute?.participant;
   const requiresPrivacyConsent = Boolean(selectedParticipant?.external || (invitedParticipant?.external && String(invitedParticipant?.id) === String(participantId)));
   const personalInvitation = Boolean(minute?.invitation_verified);
+  const identityVerified = personalInvitation;
 
   useEffect(() => {
     const cleanToken = String(token || '').trim();
@@ -167,8 +171,6 @@ export default function MeetingMinuteSigning() {
       setMinute(data);
       if (data.invitation_verified && data.invited_participant_id) {
         setParticipantId(data.invited_participant_id);
-      } else if (!data.invitation_verified && Array.isArray(data.participants) && data.participants.length === 1) {
-        setParticipantId(data.participants[0].id);
       }
       setExpandedPreview(!isMobile);
     }).catch((error) => {
@@ -222,6 +224,42 @@ export default function MeetingMinuteSigning() {
       window.removeEventListener('touchend', stop);
     };
   }, [participantId]);
+
+  const useInstitutionalGoogleAccount = async (credential) => {
+    setWorking(true);
+    setMessage(null);
+    try {
+      const response = await meetingMinuteService.googleSigningAccess(token, {
+        credential,
+        public_base_url: window.location.origin
+      });
+      const signingUrl = response.data?.signing_url;
+      if (!signingUrl) throw new Error('Google validó la cuenta, pero no se generó el acceso personal.');
+      window.location.replace(signingUrl);
+    } catch (error) {
+      setMessage({ severity: 'error', text: error.response?.data?.message || error.message || 'No fue posible validar la cuenta institucional.' });
+      setWorking(false);
+    }
+  };
+
+  const requestPersonalLink = async () => {
+    const email = identityEmail.trim().toLowerCase();
+    if (!email) {
+      setMessage({ severity: 'warning', text: 'Digite el correo con el que fue registrado en el acta.' });
+      return;
+    }
+    setWorking(true);
+    setMessage(null);
+    try {
+      const response = await meetingMinuteService.requestSigningLink(token, { email });
+      setLinkSent(true);
+      setMessage({ severity: 'success', text: response.message || 'Enlace personal enviado. Revise su correo.' });
+    } catch (error) {
+      setMessage({ severity: 'error', text: error.response?.data?.message || 'No fue posible enviar el enlace personal.' });
+    } finally {
+      setWorking(false);
+    }
+  };
 
   const sign = async () => {
     if (!canvasRef.current || !participantId) return;
@@ -479,10 +517,10 @@ export default function MeetingMinuteSigning() {
         <Alert severity="info" sx={{ mb: 2.5, borderRadius: 2 }}>
           {personalInvitation
             ? 'Su identidad fue validada mediante este enlace personal. Revise los datos, dibuje su firma y confirme.'
-            : 'Acceso presencial directo. Seleccione su nombre de la lista, dibuje su firma y confirme.'}
+            : 'Personal interno: continúe con su cuenta Google institucional y accederá directamente a su registro. Participantes externos: soliciten el enlace personal por correo.'}
         </Alert>
         {message && <Alert severity={message.severity} sx={{ mb: 2.5, borderRadius: 2 }}>{message.text}</Alert>}
-        <Accordion
+        {identityVerified && <Accordion
           expanded={expandedPreview}
           onChange={(_, isExp) => setExpandedPreview(isExp)}
           sx={{
@@ -510,60 +548,68 @@ export default function MeetingMinuteSigning() {
           <AccordionDetails sx={{ p: { xs: 1, sm: 2 } }}>
             <PublicActaPreview minute={minute} />
           </AccordionDetails>
-        </Accordion>
+        </Accordion>}
         <Stack gap={2.5}>
           <Box>
             <Stack direction="row" gap={1} alignItems="center" mb={1}>
               <PersonSearch color="primary" />
               <Typography fontWeight={900} fontSize={15}>
-                {personalInvitation ? '1. Datos del participante convocado' : '1. Seleccione su nombre'}
+                {identityVerified ? '1. Datos del participante verificado' : '1. Verifique su identidad'}
               </Typography>
             </Stack>
-            {personalInvitation ? (
+            {identityVerified ? (
               <PaperParticipant participant={invitedParticipant || selectedParticipant} />
             ) : (
-              <Box>
-                {(!minute.participants || minute.participants.length === 0) ? (
-                  <Alert severity="success" sx={{ borderRadius: 2 }}>
-                    Todos los participantes convocados ya han firmado esta acta.
-                  </Alert>
-                ) : (
-                  <>
+              <Stack gap={2}>
+                <Paper variant="outlined" sx={{ p: 2.25, borderRadius: 3, bgcolor: '#f0fdf4', borderColor: '#86efac', textAlign: 'center' }}>
+                  <Typography fontWeight={900} color="#166534">Personal interno</Typography>
+                  <Typography variant="body2" color="text.secondary" sx={{ my: 1, lineHeight: 1.6 }}>
+                    Si el celular ya reconoce su cuenta institucional autorizada, abriremos automáticamente su registro. De lo contrario, confirme la cuenta con Google.
+                  </Typography>
+                  <GoogleIdentityVerification
+                    active={!working}
+                    autoSelect
+                    onVerify={useInstitutionalGoogleAccount}
+                    onError={(text) => setMessage({ severity: 'error', text })}
+                  />
+                  {working && <CircularProgress size={22} sx={{ mt: 1 }} />}
+                </Paper>
+
+                <Typography textAlign="center" color="text.secondary" fontWeight={800} fontSize={12}>O USE EL CORREO REGISTRADO</Typography>
+
+                <Paper variant="outlined" sx={{ p: 2, borderRadius: 3, bgcolor: '#f8fbff', borderColor: '#bfdbfe' }}>
+                  <Typography variant="body2" color="text.secondary" sx={{ mb: 1.5, lineHeight: 1.6 }}>
+                    Alternativa para participantes externos: enviaremos un botón seguro a su correo; al abrirlo verá únicamente su nombre y su espacio de firma.
+                  </Typography>
+                  <Stack gap={1.5}>
                     <TextField
                       fullWidth
-                      select
-                      label="Seleccione su nombre *"
-                      value={participantId}
+                      type="email"
+                      label="Correo registrado *"
+                      value={identityEmail}
+                      disabled={working}
                       onChange={(event) => {
-                        setParticipantId(event.target.value);
-                        setHasInk(false);
-                        setPrivacyAccepted(false);
-                        if (canvasRef.current) {
-                          canvasRef.current.getContext('2d').clearRect(0, 0, 680, 220);
+                        setIdentityEmail(event.target.value);
+                        setLinkSent(false);
+                      }}
+                      onKeyDown={(event) => {
+                        if (event.key === 'Enter') {
+                          event.preventDefault();
+                          requestPersonalLink();
                         }
                       }}
-                      sx={{ mt: 0.5 }}
-                      helperText={participantId ? "✓ Participante seleccionado. Proceda a firmar abajo." : "Elija su nombre de la lista de asistentes convocados"}
-                    >
-                      {minute.participants.map((participant) => (
-                        <MenuItem key={participant.id} value={participant.id}>
-                          {formatPersonName(participant.name)} · {participant.role_title || participant.organization || 'Participante'}{participant.external ? ' (Externo)' : ''}
-                        </MenuItem>
-                      ))}
-                    </TextField>
-                    {selectedParticipant && (
-                      <Box sx={{ mt: 1.25, p: 1.5, bgcolor: '#f1f5f9', borderRadius: 2, border: '1px solid #cbd5e1' }}>
-                        <Typography variant="body2" fontWeight={850} color="#0f172a">
-                          {formatPersonName(selectedParticipant.name)}
-                        </Typography>
-                        <Typography variant="caption" color="text.secondary">
-                          {selectedParticipant.role_title || 'Participante'} {selectedParticipant.organization ? `· ${selectedParticipant.organization}` : ''}
-                        </Typography>
-                      </Box>
+                    />
+                    <Button variant="contained" disabled={working || !identityEmail.trim()} onClick={requestPersonalLink} sx={{ textTransform: 'none', fontWeight: 900 }}>
+                      {working ? 'Enviando enlace…' : linkSent ? 'Reenviar enlace personal' : 'Enviar enlace para firmar'}
+                    </Button>
+                    {linkSent && (
+                      <Alert severity="success" sx={{ borderRadius: 2 }}>
+                        Revise el correo y pulse <strong>“Abrir y firmar mi registro”</strong>. Este enlace vence en 30 minutos.
+                      </Alert>
                     )}
-                  </>
-                )}
-              </Box>
+                  </Stack>
+                </Paper>
+              </Stack>
             )}
           </Box>
           {requiresPrivacyConsent && (
@@ -579,7 +625,7 @@ export default function MeetingMinuteSigning() {
               />
             </Box>
           )}
-          <Box sx={{ opacity: participantId ? 1 : 0.45, pointerEvents: participantId ? 'auto' : 'none' }}>
+          {identityVerified && <Box sx={{ opacity: participantId ? 1 : 0.45, pointerEvents: participantId ? 'auto' : 'none' }}>
             <Stack direction="row" gap={1} alignItems="center">
               <Draw color="primary" />
               <Typography fontWeight={900}>
@@ -641,7 +687,7 @@ export default function MeetingMinuteSigning() {
                 {working ? 'Guardando firma…' : 'Confirmar y firmar'}
               </Button>
             </Stack>
-          </Box>
+          </Box>}
         </Stack>
       </>
     )}
@@ -665,7 +711,7 @@ function PaperParticipant({ participant }) {
           Destinatario registrado: {participant.email}
         </Typography>
       )}
-      <Chip size="small" color="primary" label="✓ Invitación personal verificada · Listo para firmar" sx={{ mt: 1, fontWeight: 800 }} />
+      <Chip size="small" color="primary" label="✓ Identidad verificada · Listo para firmar" sx={{ mt: 1, fontWeight: 800 }} />
     </Box>
   );
 }

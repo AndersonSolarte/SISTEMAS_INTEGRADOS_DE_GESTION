@@ -1,9 +1,10 @@
 import React, { useEffect, useRef } from 'react';
 import { Box } from '@mui/material';
 
-function GoogleIdentityVerification({ active = true, onVerify, onError, sx }) {
+function GoogleIdentityVerification({ active = true, autoSelect = false, onVerify, onError, sx }) {
   const containerRef = useRef(null);
   const callbacksRef = useRef({ onVerify, onError });
+  const autoPromptAttemptedRef = useRef(false);
   const clientId = String(process.env.REACT_APP_GOOGLE_CLIENT_ID || '').trim();
 
   useEffect(() => {
@@ -29,10 +30,10 @@ function GoogleIdentityVerification({ active = true, onVerify, onError, sx }) {
       containerRef.current.innerHTML = '';
       window.google.accounts.id.initialize({
         client_id: clientId,
-        auto_select: false,
-        button_auto_select: false,
+        auto_select: Boolean(autoSelect),
+        button_auto_select: Boolean(autoSelect),
         cancel_on_tap_outside: true,
-        use_fedcm_for_button: false,
+        use_fedcm_for_button: Boolean(autoSelect),
         callback: (response) => {
           const credential = String(response?.credential || '').trim();
           if (!credential) {
@@ -51,6 +52,10 @@ function GoogleIdentityVerification({ active = true, onVerify, onError, sx }) {
         logo_alignment: 'left',
         width: 320
       });
+      if (autoSelect && !autoPromptAttemptedRef.current) {
+        autoPromptAttemptedRef.current = true;
+        window.google.accounts.id.prompt();
+      }
     };
 
     renderGoogleButton();
@@ -59,7 +64,7 @@ function GoogleIdentityVerification({ active = true, onVerify, onError, sx }) {
       if (retryTimer) window.clearTimeout(retryTimer);
       if (containerRef.current) containerRef.current.innerHTML = '';
     };
-  }, [active, clientId]);
+  }, [active, autoSelect, clientId]);
 
   return <Box ref={containerRef} sx={{ minHeight: 44, display: 'flex', justifyContent: 'center', alignItems: 'center', ...sx }} />;
 }

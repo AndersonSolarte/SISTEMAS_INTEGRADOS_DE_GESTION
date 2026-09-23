@@ -155,7 +155,7 @@ const sqlInjectionGuard = (req, res, next) => {
     ['body.credential', 8192],
     ['body.turnstileToken', 4096]
   ]);
-  const isGoogleAuthRequest = /^\/api\/auth\/google(?:\/redirect)?(?:\?|$)/i.test(String(req.originalUrl || ''));
+  const isGoogleAuthRequest = /^(?:\/api\/auth\/google(?:\/redirect)?|\/api\/meeting-minutes\/public\/[^/]+\/google-access)(?:\?|$)/i.test(String(req.originalUrl || ''));
   const isSignatureRequest = /^\/api\/(?:public\/strategic-planning\/minutes\/[^/]+\/sign|strategic-planning\/(?:minutes\/[^/]+\/sign-internal|my-signature)|meeting-minutes\/public\/[^/]+\/sign)(?:\?|$)/i
     .test(String(req.originalUrl || ''));
   const isMeetingMinuteDraftRequest = req.method === 'POST'

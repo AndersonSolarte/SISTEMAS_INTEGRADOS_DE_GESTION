@@ -1648,7 +1648,7 @@ export default function MeetingMinuteFormDialog({ open, document, user, onClose 
       <DialogContent>
         <Stack alignItems="center" gap={1.5} pt={0.5}>
           <Alert severity="info" sx={{ fontSize: 12.5 }}>
-            Este código QR y enlace presencial permiten a los asistentes escanear con la cámara de su celular y firmar directamente de inmediato (sin códigos ni pasos adicionales).
+            Este código QR permite solicitar acceso. El personal interno valida su cuenta Google institucional y abre directamente solo su registro; los participantes externos reciben un enlace personal en el correo registrado.
           </Alert>
           {qr?.qr_data_url && <Box component="img" src={qr.qr_data_url} alt="QR alternativo para firmar" sx={{ width: 260, height: 260, borderRadius: 2, border: '1px solid #e2e8f0' }} />}
           <TextField fullWidth size="small" value={qr?.signing_url || ''} InputProps={{ readOnly: true }} />

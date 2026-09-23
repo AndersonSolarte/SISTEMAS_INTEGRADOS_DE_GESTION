@@ -2,6 +2,7 @@ const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
 const QRCode = require('qrcode');
+const { OAuth2Client } = require('google-auth-library');
 const { Op } = require('sequelize');
 const { sequelize } = require('../config/database');
 const {
@@ -911,7 +912,9 @@ const publicMinute = wrap(async (req, res) => {
   if (!access) throw Object.assign(new Error('El enlace de firma no es válido o venció.'), { statusCode: 404 });
   const { minute, invitedParticipant, invitationVerified } = access;
   const alreadySigned = Boolean(invitationVerified && invitedParticipant?.status === 'signed');
-  const available = invitationVerified ? [invitedParticipant] : minute.participants.filter((p) => p.status !== 'signed');
+  // El QR general nunca expone una lista seleccionable. La identidad se resuelve
+  // mediante Google institucional o un enlace personal enviado al correo registrado.
+  const available = invitationVerified ? [invitedParticipant] : [];
 
   let signatureInfo = null;
   if (alreadySigned && invitedParticipant) {
@@ -942,8 +945,9 @@ const publicMinute = wrap(async (req, res) => {
       code: minute.code,
       version: minute.version,
       status: minute.status,
-      content: minute.content,
+      content: invitationVerified ? minute.content : null,
       invitation_verified: invitationVerified,
+      requires_personal_link: !invitationVerified,
       invited_participant_id: invitedParticipant?.id || null,
       already_signed: alreadySigned,
       participant: invitedParticipant ? {
@@ -956,7 +960,7 @@ const publicMinute = wrap(async (req, res) => {
         status: invitedParticipant.status
       } : null,
       signature_info: signatureInfo,
-      preview_participants: minute.participants.map((p) => ({
+      preview_participants: (invitationVerified ? minute.participants : []).map((p) => ({
         id: p.id,
         name: p.name,
         role_title: p.role_title,
@@ -976,37 +980,118 @@ const publicMinute = wrap(async (req, res) => {
   });
 });
 
-const requestCode = wrap(async (req, res) => {
+const requestSigningLink = wrap(async (req, res) => {
   const access = await resolveSigningAccess(req.params.token);
   const minute = access?.minute;
   if (!minute) throw Object.assign(new Error('El enlace de firma no es válido o venció.'), { statusCode: 404 });
-  const participant = await DigitalMeetingParticipant.findOne({ where: { id: req.body.participant_id, minute_id: minute.id } });
-  if (!participant || clean(participant.email).toLowerCase() !== clean(req.body.email).toLowerCase()) throw Object.assign(new Error('Los datos no coinciden con la invitación.'), { statusCode: 422 });
-  if (!participant.user_id && req.body.privacy_accepted !== true) throw Object.assign(new Error('Debe aceptar la autorización de tratamiento de datos personales para continuar.'), { statusCode: 422 });
-  const otp = String(crypto.randomInt(100000, 999999));
-  await participant.update({ otp_hash: hash(otp), otp_expires_at: new Date(Date.now() + 10 * 60 * 1000), otp_attempts: 0 });
-  const url = `${publicFrontend(req)}/firmar-acta-reunion/${req.params.token}`;
+  if (access.invitationVerified) throw Object.assign(new Error('Este enlace personal ya valida al participante invitado.'), { statusCode: 409 });
+  const requestedEmail = clean(req.body.email, 254).toLowerCase();
+  if (!requestedEmail) throw Object.assign(new Error('Digite el correo registrado en el acta.'), { statusCode: 422 });
+  const participant = minute.participants.find((item) => clean(item.email, 254).toLowerCase() === requestedEmail);
+  if (!participant) {
+    throw Object.assign(new Error('El correo ingresado no coincide con ningún participante registrado en esta acta. Verifique el correo o solicite al responsable que actualice sus datos.'), { statusCode: 422 });
+  }
+  if (participant.status === 'signed') throw Object.assign(new Error('Este participante ya firmó el documento.'), { statusCode: 409 });
+
+  const personalToken = crypto.randomBytes(32).toString('base64url');
+  const previousToken = {
+    signing_token_hash: participant.signing_token_hash,
+    signing_token_expires_at: participant.signing_token_expires_at
+  };
+  await participant.update({
+    signing_token_hash: hash(personalToken),
+    signing_token_expires_at: new Date(Date.now() + 30 * 60 * 1000)
+  });
+  const url = `${publicFrontend(req)}/firmar-acta-reunion/${personalToken}`;
   const privacyPolicy = buildPrivacyPolicyEmailSection(!participant.user_id);
-  const html = renderInstitutionalTemplate({ title: 'Código para firmar el acta de reunión', introHtml: `<p>Hola <strong>${escapeHtml(participant.name)}</strong>. Use este código para confirmar su firma:</p>`, bodyHtml: `<div style="padding:20px;text-align:center;background:#eff6ff;border-radius:12px"><div style="font-size:34px;font-weight:800;letter-spacing:8px;color:#174ea6;user-select:all">${otp}</div><p>Vence en 10 minutos.</p></div>${privacyPolicy.html}<p style="text-align:center"><a href="${escapeHtml(url)}">Leer, autorizar y firmar el acta</a></p>` });
-  const sent = await sendInstitutionalEmail({ to: participant.email, subject: `${otp} · Código para firmar acta de reunión`, text: `Su código para firmar el acta es ${otp}. Vence en 10 minutos.${privacyPolicy.text}\n\nAbrir el acta: ${url}`, html, allowExternalRecipients: true });
-  if (!sent.success) throw Object.assign(new Error('No fue posible enviar el código al correo.'), { statusCode: 503 });
-  res.json({ success: true, message: 'Código enviado al correo institucional.' });
+  const html = renderInstitutionalTemplate({
+    title: 'Enlace personal para firmar el acta',
+    introHtml: `<p>Hola <strong>${escapeHtml(participant.name)}</strong>. Solicitó acceso desde el código QR del acta <strong>${escapeHtml(minute.code)}</strong>.</p>`,
+    bodyHtml: `<p>Use el siguiente botón para abrir únicamente su registro y firmar. El enlace vence en 30 minutos y no debe compartirlo.</p><p style="text-align:center;margin:24px 0"><a href="${escapeHtml(url)}" style="display:inline-block;padding:12px 22px;background:#2457d6;color:#fff;text-decoration:none;border-radius:8px;font-weight:700">Abrir y firmar mi registro</a></p>${privacyPolicy.html}`
+  });
+  const sent = await sendInstitutionalEmail({
+    to: participant.email,
+    subject: `${minute.code} · Enlace personal para firmar`,
+    text: `Hola ${participant.name}. Abra únicamente su registro y firme el acta desde este enlace personal, vigente durante 30 minutos: ${url}${privacyPolicy.text}`,
+    html,
+    allowExternalRecipients: true
+  });
+  if (!sent.success) {
+    await participant.update(previousToken).catch(() => {});
+    throw Object.assign(new Error('No fue posible enviar el enlace personal al correo.'), { statusCode: 503 });
+  }
+  res.json({ success: true, message: 'Enlace personal enviado. Abra el correo y pulse “Abrir y firmar mi registro”.' });
+});
+
+const googleSigningAccess = wrap(async (req, res) => {
+  const access = await resolveSigningAccess(req.params.token);
+  const minute = access?.minute;
+  if (!minute || access.invitationVerified) throw Object.assign(new Error('El acceso institucional no es válido.'), { statusCode: 404 });
+
+  const googleClientId = String(process.env.GOOGLE_CLIENT_ID || '').trim();
+  const credential = clean(req.body.credential, 8192);
+  if (!googleClientId) throw Object.assign(new Error('El inicio de sesión institucional no está configurado.'), { statusCode: 503 });
+  if (!credential) throw Object.assign(new Error('Google no proporcionó una credencial válida.'), { statusCode: 400 });
+
+  let googlePayload;
+  try {
+    const ticket = await new OAuth2Client(googleClientId).verifyIdToken({ idToken: credential, audience: googleClientId });
+    googlePayload = ticket.getPayload() || {};
+  } catch (_) {
+    throw Object.assign(new Error('No fue posible validar la cuenta institucional con Google.'), { statusCode: 401 });
+  }
+
+  const googleEmail = clean(googlePayload.email, 254).toLowerCase();
+  const institutionalDomain = String(process.env.INSTITUTIONAL_EMAIL_DOMAIN || 'unicesmag.edu.co').trim().toLowerCase();
+  const hostedDomain = clean(googlePayload.hd, 254).toLowerCase();
+  if (!googleEmail || googlePayload.email_verified !== true) {
+    throw Object.assign(new Error('Google no confirmó el correo de la cuenta.'), { statusCode: 401 });
+  }
+  if (!googleEmail.endsWith(`@${institutionalDomain}`) || (hostedDomain && hostedDomain !== institutionalDomain)) {
+    throw Object.assign(new Error('Debe iniciar sesión con su cuenta institucional.'), { statusCode: 403 });
+  }
+
+  const institutionalUser = await User.findOne({ where: { email: googleEmail } });
+  if (!institutionalUser) {
+    throw Object.assign(new Error(`La cuenta ${googleEmail} fue validada por Google, pero no está registrada como usuario del sistema. Solicite al administrador que revise sus datos.`), { statusCode: 403 });
+  }
+  if (institutionalUser.estado !== 'activo') {
+    throw Object.assign(new Error(`La cuenta ${googleEmail} está inactiva en el sistema. Contacte al administrador.`), { statusCode: 403 });
+  }
+
+  const participant = minute.participants.find((item) => clean(item.email, 254).toLowerCase() === googleEmail);
+  if (!participant) {
+    throw Object.assign(new Error(`La cuenta ${googleEmail} no coincide con el correo de ningún participante registrado en esta acta. Inicie sesión con la cuenta correcta o solicite al responsable que actualice el acta.`), { statusCode: 403 });
+  }
+  if (participant.user_id && String(participant.user_id) !== String(institutionalUser.id)) {
+    throw Object.assign(new Error('El correo coincide, pero el usuario vinculado al acta es diferente. Por seguridad no se puede continuar; solicite al responsable que corrija el participante.'), { statusCode: 403 });
+  }
+  if (participant.status === 'signed') throw Object.assign(new Error('Usted ya firmó este documento anteriormente.'), { statusCode: 409 });
+
+  const personalToken = crypto.randomBytes(32).toString('base64url');
+  await participant.update({
+    signing_token_hash: hash(personalToken),
+    signing_token_expires_at: new Date(Date.now() + 30 * 60 * 1000),
+    email_verified_at: new Date()
+  });
+  const signingUrl = `${publicFrontend(req)}/firmar-acta-reunion/${personalToken}`;
+  res.json({
+    success: true,
+    message: 'Cuenta institucional validada. Abriendo únicamente su registro.',
+    data: { signing_url: signingUrl }
+  });
 });
 
 const sign = wrap(async (req, res) => {
   const access = await resolveSigningAccess(req.params.token);
   const minute = access?.minute;
-  const participant = minute && await DigitalMeetingParticipant.findOne({ where: { id: req.body.participant_id, minute_id: minute.id } });
-  if (!participant) throw Object.assign(new Error('Participante no válido.'), { statusCode: 404 });
+  if (!minute) throw Object.assign(new Error('El enlace de firma no es válido o venció.'), { statusCode: 404 });
+  if (!access.invitationVerified || !access.invitedParticipant) {
+    throw Object.assign(new Error('Por seguridad, solicite y abra el enlace personal enviado a su correo.'), { statusCode: 403 });
+  }
+  const participant = access.invitedParticipant;
   if (participant.status === 'signed') throw Object.assign(new Error('Usted ya firmó este documento anteriormente.'), { statusCode: 409 });
   if (!participant.user_id && req.body.privacy_accepted !== true) throw Object.assign(new Error('Debe aceptar la autorización de tratamiento de datos personales para firmar.'), { statusCode: 422 });
-  if (req.body.signer_email) {
-    const cleanSigner = clean(req.body.signer_email, 254).toLowerCase();
-    const cleanParticipant = clean(participant.email, 254).toLowerCase();
-    if (cleanSigner && cleanParticipant && cleanSigner !== cleanParticipant) {
-      throw Object.assign(new Error(`El correo ingresado (${cleanSigner}) no coincide con el destinatario registrado (${cleanParticipant}).`), { statusCode: 403 });
-    }
-  }
   const parsed = parseDataUrl(req.body.signature_data);
   ensureDir(SIGNATURE_ROOT);
   const storage = path.join(SIGNATURE_ROOT, `${minute.id}-${participant.id}-${Date.now()}.${parsed.extension}`);
@@ -1193,6 +1278,7 @@ module.exports = {
   downloadPdf,
   downloadWord,
   getConfig,
+  googleSigningAccess,
   getMinute,
   getSigningAccess,
   listMinutes,
@@ -1200,7 +1286,7 @@ module.exports = {
   publicMinute,
   publish,
   reopenForEditing,
-  requestCode,
+  requestSigningLink,
   resendInvitations,
   restoreAllMinutes,
   restoreMinute,
