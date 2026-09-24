@@ -9,7 +9,10 @@ const { parseFieldSchemaWorkbook } = require('./strategicFieldSchemaService');
 const { parseTermDependencyWorkbook, normalizeDocument } = require('./strategicTermDependencyService');
 const { mapLegacyStatus } = require('./strategicLegacyActionPlanService');
 const { validateAdministrativeActDate } = require('./strategicPlanDateValidationService');
-const { repositoryName, compactFolderName, compactFileName, intersectsPeriod, buildRepositoryPeriods } = require('./actionPlanRepositoryDriveService');
+const {
+  repositoryName, compactFolderName, compactFileName, intersectsPeriod,
+  buildRepositoryPeriods, buildOfficialWorkbook
+} = require('./actionPlanRepositoryDriveService');
 
 test('workflow institucional contiene el recorrido completo y parametrizable', () => {
   assert.equal(DEFAULT_WORKFLOW.states[0].key, 'convocation');
@@ -118,4 +121,25 @@ test('las rutas del repositorio usan nombres compactos aptos para copiar a disco
   assert.ok(folder.startsWith('ACT-001_'));
   assert.ok(file.length <= 64);
   assert.ok(file.endsWith('.xlsx'));
+});
+
+test('el repositorio genera el Excel oficial con las actividades del plan', async () => {
+  const buffer = await buildOfficialWorkbook({
+    code: '2026-R74',
+    term: { year: 2026 },
+    organizationalUnit: { name: 'Área de Acompañamiento Integral' },
+    items: [{
+      activity: 'Diseñar rúbricas de evaluación',
+      indicator_type: 'Gestión',
+      starts_on: '2026-01-15',
+      ends_on: '2026-06-30',
+      indicator: 'Rúbricas implementadas',
+      target: '1',
+      co_responsibles: [],
+      custom_values: {},
+      monitoringResults: []
+    }]
+  });
+  assert.ok(Buffer.isBuffer(buffer));
+  assert.ok(buffer.length > 0);
 });

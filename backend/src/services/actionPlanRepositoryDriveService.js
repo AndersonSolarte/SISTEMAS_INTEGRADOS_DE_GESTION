@@ -119,7 +119,7 @@ const buildOfficialWorkbook = async (actionPlan) => {
   });
   return generatePlanAccionBuffer({
     planData: { anio: actionPlan.term.year, codigoPlan: actionPlan.code, responsable: actionPlan.organizationalUnit?.name },
-    actividades, corresponsabilidades: []
+    actividades: activities, corresponsabilidades: []
   });
 };
 
@@ -231,4 +231,12 @@ const syncActionPlanRepositoryTerm = async (termId) => {
   };
 };
 
-module.exports = { syncActionPlanRepositoryTerm, repositoryName, compactFolderName, compactFileName, intersectsPeriod, buildRepositoryPeriods };
+module.exports = {
+  syncActionPlanRepositoryTerm,
+  repositoryName,
+  compactFolderName,
+  compactFileName,
+  intersectsPeriod,
+  buildRepositoryPeriods,
+  buildOfficialWorkbook
+};
