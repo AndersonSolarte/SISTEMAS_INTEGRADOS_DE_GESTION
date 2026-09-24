@@ -69,6 +69,7 @@ import {
   XAxis,
   YAxis
 } from 'recharts';
+import XLSXStyle from 'xlsx-js-style';
 import { useSnackbar } from 'notistack';
 import gestionInformacionService from '../services/gestionInformacionService';
 import planAccionWorkflowService, { ESTADOS_WORKFLOW, ESTADO_LABEL, ESTADO_COLOR } from '../services/planAccionWorkflowService';
@@ -1171,6 +1172,123 @@ function MatrixTable({ title, subtitle, rows, years, rowKey, totalsByYear, gener
 
   const visibleRows = initialVisibleRows ? rows.slice(0, visibleCount) : rows;
 
+  const handleExport = useCallback(() => {
+    if (!rows.length) return;
+
+    const generatedAt = new Date();
+    const headers = [rowKey, ...years.map(String), totalLabel];
+    const exportRows = rows.map((row) => [
+      row[rowKey] || '',
+      ...years.map((year) => {
+        const value = row.byYear?.[year];
+        return value === null || value === undefined ? 'Sin datos' : Number(value) / 100;
+      }),
+      row.total === null || row.total === undefined ? 'Sin datos' : Number(row.total) / 100
+    ]);
+    const totalRow = [
+      'PROMEDIO GENERAL',
+      ...years.map((year) => {
+        const value = totalsByYear?.[year];
+        return value === null || value === undefined ? 'Sin datos' : Number(value) / 100;
+      }),
+      Number(generalTotal || 0) / 100
+    ];
+    const aoa = [
+      [title],
+      [subtitle],
+      [`Generado: ${generatedAt.toLocaleString('es-CO')}`],
+      [],
+      headers,
+      ...exportRows,
+      totalRow
+    ];
+    const worksheet = XLSXStyle.utils.aoa_to_sheet(aoa);
+    const lastColumn = Math.max(0, headers.length - 1);
+    const lastColumnLetter = XLSXStyle.utils.encode_col(lastColumn);
+    const totalRowIndex = aoa.length - 1;
+    worksheet['!merges'] = [0, 1, 2].map((rowIndex) => ({
+      s: { r: rowIndex, c: 0 },
+      e: { r: rowIndex, c: lastColumn }
+    }));
+    worksheet['!autofilter'] = { ref: `A5:${lastColumnLetter}${aoa.length}` };
+    worksheet['!freeze'] = { xSplit: 1, ySplit: 5 };
+    worksheet['!cols'] = headers.map((header, index) => ({
+      wch: index === 0 ? 72 : Math.max(14, String(header).length + 5)
+    }));
+    worksheet['!rows'] = aoa.map((_, index) => ({ hpt: index === 0 ? 28 : index === 1 ? 22 : index >= 5 ? 34 : 18 }));
+
+    const border = {
+      top: { style: 'thin', color: { rgb: 'DBEAFE' } },
+      bottom: { style: 'thin', color: { rgb: 'DBEAFE' } },
+      left: { style: 'thin', color: { rgb: 'DBEAFE' } },
+      right: { style: 'thin', color: { rgb: 'DBEAFE' } }
+    };
+    const titleStyle = {
+      font: { bold: true, color: { rgb: 'FFFFFF' }, sz: 16 },
+      fill: { fgColor: { rgb: '2563EB' } },
+      alignment: { horizontal: 'left', vertical: 'center' }
+    };
+    const subtitleStyle = {
+      font: { bold: true, color: { rgb: '1E40AF' }, sz: 11 },
+      fill: { fgColor: { rgb: 'DBEAFE' } },
+      alignment: { horizontal: 'left', vertical: 'center' }
+    };
+    const generatedStyle = {
+      font: { italic: true, color: { rgb: '64748B' }, sz: 9 },
+      fill: { fgColor: { rgb: 'F8FAFC' } },
+      alignment: { horizontal: 'left', vertical: 'center' }
+    };
+    const headerStyle = {
+      font: { bold: true, color: { rgb: 'FFFFFF' }, sz: 10 },
+      fill: { fgColor: { rgb: '2563EB' } },
+      alignment: { horizontal: 'center', vertical: 'center', wrapText: true },
+      border
+    };
+    const labelStyle = (isTotal = false) => ({
+      font: { bold: true, color: { rgb: '1E40AF' }, sz: 10 },
+      fill: { fgColor: { rgb: isTotal ? 'DBEAFE' : 'FFFFFF' } },
+      alignment: { horizontal: 'left', vertical: 'center', wrapText: true },
+      border
+    });
+    const metricStyle = (rawValue, isTotal = false) => {
+      const numeric = typeof rawValue === 'number' ? rawValue * 100 : null;
+      const color = numeric === null ? '94A3B8' : numeric >= 80 ? '059669' : numeric >= 60 ? 'D97706' : 'DC2626';
+      const fill = numeric === null ? 'F1F5F9' : numeric >= 80 ? 'D1FAE5' : numeric >= 60 ? 'FEF3C7' : 'FEE2E2';
+      return {
+        font: { bold: true, color: { rgb: color }, sz: isTotal ? 12 : 11 },
+        fill: { fgColor: { rgb: fill } },
+        alignment: { horizontal: 'center', vertical: 'center' },
+        border,
+        ...(numeric === null ? {} : { numFmt: '0.00%' })
+      };
+    };
+
+    const range = XLSXStyle.utils.decode_range(worksheet['!ref']);
+    for (let r = range.s.r; r <= range.e.r; r += 1) {
+      for (let c = range.s.c; c <= range.e.c; c += 1) {
+        const address = XLSXStyle.utils.encode_cell({ r, c });
+        const cell = worksheet[address];
+        if (!cell) continue;
+        if (r === 0) cell.s = titleStyle;
+        else if (r === 1) cell.s = subtitleStyle;
+        else if (r === 2) cell.s = generatedStyle;
+        else if (r === 4) cell.s = headerStyle;
+        else if (r >= 5) cell.s = c === 0 ? labelStyle(r === totalRowIndex) : metricStyle(cell.v, r === totalRowIndex);
+      }
+    }
+
+    const workbook = XLSXStyle.utils.book_new();
+    const sheetName = String(rowKey || 'Datos').replace(/[\\/?*:[\]]/g, ' ').slice(0, 31) || 'Datos';
+    XLSXStyle.utils.book_append_sheet(workbook, worksheet, sheetName);
+    const safeName = `${title}_${subtitle}`
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .replace(/[^a-zA-Z0-9]+/g, '_')
+      .replace(/^_+|_+$/g, '')
+      .toLowerCase();
+    XLSXStyle.writeFile(workbook, `${safeName || 'plan_estrategico'}_${generatedAt.toISOString().slice(0, 10)}.xlsx`);
+  }, [generalTotal, rowKey, rows, subtitle, title, totalLabel, totalsByYear, years]);
+
   return (
     <Paper elevation={0} sx={{ borderRadius: 3, border: '1px solid #dbeafe', overflow: 'hidden', boxShadow: '0 4px 20px rgba(59,130,246,.12)' }}>
       <Box sx={{ p: 2.3, color: 'white', background: 'linear-gradient(135deg,#2563eb 0%,#3b82f6 50%,#60a5fa 100%)' }}>
@@ -1178,19 +1296,31 @@ function MatrixTable({ title, subtitle, rows, years, rowKey, totalsByYear, gener
         <Typography sx={{ fontSize: 13, opacity: 0.95 }}>{subtitle}</Typography>
       </Box>
       <Box sx={{ p: 2, bgcolor: 'linear-gradient(180deg,#fff 0%,#f0f9ff 100%)' }}>
-        <Stack direction="row" spacing={2.5} sx={{ flexWrap: 'wrap', color: '#64748b', fontSize: 12, fontWeight: 700 }}>
-          <Stack direction="row" spacing={1} alignItems="center">
-            <Box sx={{ width: 16, height: 16, bgcolor: '#10b981', borderRadius: 1 }} />
-            <Typography sx={{ fontSize: 12, color: '#047857', fontWeight: 700 }}>≥80%</Typography>
+        <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1.5} justifyContent="space-between" alignItems={{ xs: 'stretch', sm: 'center' }}>
+          <Stack direction="row" spacing={2.5} sx={{ flexWrap: 'wrap', color: '#64748b', fontSize: 12, fontWeight: 700 }}>
+            <Stack direction="row" spacing={1} alignItems="center">
+              <Box sx={{ width: 16, height: 16, bgcolor: '#10b981', borderRadius: 1 }} />
+              <Typography sx={{ fontSize: 12, color: '#047857', fontWeight: 700 }}>≥80%</Typography>
+            </Stack>
+            <Stack direction="row" spacing={1} alignItems="center">
+              <Box sx={{ width: 16, height: 16, bgcolor: '#f59e0b', borderRadius: 1 }} />
+              <Typography sx={{ fontSize: 12, color: '#b45309', fontWeight: 700 }}>60-79%</Typography>
+            </Stack>
+            <Stack direction="row" spacing={1} alignItems="center">
+              <Box sx={{ width: 16, height: 16, bgcolor: '#ef4444', borderRadius: 1 }} />
+              <Typography sx={{ fontSize: 12, color: '#b91c1c', fontWeight: 700 }}>&lt;60%</Typography>
+            </Stack>
           </Stack>
-          <Stack direction="row" spacing={1} alignItems="center">
-            <Box sx={{ width: 16, height: 16, bgcolor: '#f59e0b', borderRadius: 1 }} />
-            <Typography sx={{ fontSize: 12, color: '#b45309', fontWeight: 700 }}>60-79%</Typography>
-          </Stack>
-          <Stack direction="row" spacing={1} alignItems="center">
-            <Box sx={{ width: 16, height: 16, bgcolor: '#ef4444', borderRadius: 1 }} />
-            <Typography sx={{ fontSize: 12, color: '#b91c1c', fontWeight: 700 }}>&lt;60%</Typography>
-          </Stack>
+          <Button
+            variant="outlined"
+            size="small"
+            startIcon={<DownloadIcon />}
+            onClick={handleExport}
+            disabled={!rows.length}
+            sx={{ alignSelf: { xs: 'stretch', sm: 'center' }, borderRadius: 2, px: 1.8, py: 0.75, textTransform: 'none', fontWeight: 900, whiteSpace: 'nowrap', bgcolor: 'white' }}
+          >
+            Exportar datos
+          </Button>
         </Stack>
       </Box>
       <TableContainer sx={{ maxHeight: 520 }}>
