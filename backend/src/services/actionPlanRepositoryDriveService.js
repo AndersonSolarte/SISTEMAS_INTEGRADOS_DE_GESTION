@@ -2,19 +2,65 @@ const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
 const { Readable } = require('stream');
+const { google } = require('googleapis');
 const {
   StrategicPlan, StrategicTerm, StrategicActionPlan, StrategicActionItem,
   StrategicCatalogItem, StrategicMonitoringPeriod, StrategicMonitoringResult,
   StrategicEvidence, StrategicMeeting, StrategicMinuteVersion
 } = require('../models');
-const { buildWritableDriveClient } = require('./strategicPlanningDriveService');
 const { generatePlanAccionBuffer } = require('./planAccionExportService');
 
 // Este servicio es deliberadamente independiente de la sincronizacion PEI existente.
-// Solo comparte el cliente autenticado de Google; usa sus propias claves de Drive y no
-// modifica drive_file_id, drive_folder_id ni sync_status de evidencias o actas.
+// Usa exclusivamente el OAuth de Planes de Accion y no modifica el cliente de Drive
+// ni las credenciales de correo/autenticacion de los demas modulos de SIAC.
 const ROOT_ENV = 'SIAC_ACTION_REPOSITORY_ROOT_ID';
 const DRIVE_FOLDER = 'application/vnd.google-apps.folder';
+
+const buildActionRepositoryDriveAuth = () => {
+  const clientId = String(process.env.PLAN_ACTION_GOOGLE_CLIENT_ID || '').trim();
+  const clientSecret = String(process.env.PLAN_ACTION_GOOGLE_CLIENT_SECRET || '').trim();
+  const refreshToken = String(process.env.PLAN_ACTION_GOOGLE_REFRESH_TOKEN || '').trim();
+  if (!clientId || !clientSecret || !refreshToken) {
+    const error = new Error('El Drive de Planes de Acción requiere PLAN_ACTION_GOOGLE_CLIENT_ID, PLAN_ACTION_GOOGLE_CLIENT_SECRET y PLAN_ACTION_GOOGLE_REFRESH_TOKEN.');
+    error.statusCode = 503;
+    throw error;
+  }
+  const auth = new google.auth.OAuth2(clientId, clientSecret);
+  auth.setCredentials({ refresh_token: refreshToken });
+  return auth;
+};
+
+const buildActionRepositoryDriveClient = () => google.drive({ version: 'v3', auth: buildActionRepositoryDriveAuth() });
+
+const verifyRepositoryRoot = async (drive, rootId) => {
+  try {
+    const response = await drive.files.get({
+      fileId: rootId,
+      fields: 'id,name,mimeType',
+      supportsAllDrives: true
+    });
+    if (response.data?.mimeType !== DRIVE_FOLDER) {
+      const error = new Error('SIAC_ACTION_REPOSITORY_ROOT_ID debe corresponder a una carpeta de Google Drive.');
+      error.statusCode = 400;
+      throw error;
+    }
+  } catch (error) {
+    if (error.statusCode) throw error;
+    const status = Number(error?.response?.status || error?.code || 0);
+    const reason = String(error?.response?.data?.error?.errors?.[0]?.reason || error?.message || '').toLowerCase();
+    if (status === 404) {
+      const notFound = new Error('La carpeta raíz no existe o planeacionestrategica@unicesmag.edu.co no tiene acceso a ella.');
+      notFound.statusCode = 404;
+      throw notFound;
+    }
+    if (status === 403 && (reason.includes('scope') || reason.includes('permission'))) {
+      const forbidden = new Error('El token OAuth de Planes de Acción no incluye permiso de Google Drive. Genere un nuevo Refresh Token con gmail.send y drive.');
+      forbidden.statusCode = 403;
+      throw forbidden;
+    }
+    throw error;
+  }
+};
 
 const repositoryName = (value, max = 140) => String(value || 'SIN NOMBRE')
   .replace(/[<>:"/\\|?*\u0000-\u001f]/g, '-')
@@ -154,7 +200,8 @@ const syncActionPlanRepositoryTerm = async (termId) => {
     order: [[{ model: StrategicCatalogItem, as: 'organizationalUnit' }, 'name', 'ASC']]
   });
 
-  const drive = buildWritableDriveClient();
+  const drive = buildActionRepositoryDriveClient();
+  await verifyRepositoryRoot(drive, rootId);
   const counters = { folders_created: 0, folders_updated: 0, folders_existing: 0, files_created: 0, files_updated: 0, files_unchanged: 0, plans: actionPlans.length, activities: 0, evidence: 0, minutes: 0 };
   const yearFolder = await ensureFolder(drive, {
     parentId: rootId, name: `PLANES DE ACCIÓN ${term.year}`,
@@ -238,5 +285,6 @@ module.exports = {
   compactFileName,
   intersectsPeriod,
   buildRepositoryPeriods,
-  buildOfficialWorkbook
+  buildOfficialWorkbook,
+  buildActionRepositoryDriveAuth
 };

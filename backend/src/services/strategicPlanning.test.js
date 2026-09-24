@@ -11,7 +11,7 @@ const { mapLegacyStatus } = require('./strategicLegacyActionPlanService');
 const { validateAdministrativeActDate } = require('./strategicPlanDateValidationService');
 const {
   repositoryName, compactFolderName, compactFileName, intersectsPeriod,
-  buildRepositoryPeriods, buildOfficialWorkbook
+  buildRepositoryPeriods, buildOfficialWorkbook, buildActionRepositoryDriveAuth
 } = require('./actionPlanRepositoryDriveService');
 
 test('workflow institucional contiene el recorrido completo y parametrizable', () => {
@@ -142,4 +142,23 @@ test('el repositorio genera el Excel oficial con las actividades del plan', asyn
   });
   assert.ok(Buffer.isBuffer(buffer));
   assert.ok(buffer.length > 0);
+});
+
+test('el repositorio usa exclusivamente el OAuth de Planes de Acción', () => {
+  const keys = ['PLAN_ACTION_GOOGLE_CLIENT_ID', 'PLAN_ACTION_GOOGLE_CLIENT_SECRET', 'PLAN_ACTION_GOOGLE_REFRESH_TOKEN'];
+  const previous = Object.fromEntries(keys.map((key) => [key, process.env[key]]));
+  process.env.PLAN_ACTION_GOOGLE_CLIENT_ID = 'plan-action-client';
+  process.env.PLAN_ACTION_GOOGLE_CLIENT_SECRET = 'plan-action-secret';
+  process.env.PLAN_ACTION_GOOGLE_REFRESH_TOKEN = 'plan-action-refresh';
+  try {
+    const auth = buildActionRepositoryDriveAuth();
+    assert.equal(auth._clientId, 'plan-action-client');
+    assert.equal(auth._clientSecret, 'plan-action-secret');
+    assert.equal(auth.credentials.refresh_token, 'plan-action-refresh');
+  } finally {
+    keys.forEach((key) => {
+      if (previous[key] === undefined) delete process.env[key];
+      else process.env[key] = previous[key];
+    });
+  }
 });
