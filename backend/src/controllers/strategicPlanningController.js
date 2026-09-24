@@ -17,7 +17,8 @@ const {
 const { generateActaBuffer } = require('../services/actaExportService');
 const { generateStrategicMinutePdf } = require('../services/strategicMinutePdfService');
 const { generatePlanAccionBuffer } = require('../services/planAccionExportService');
-const { sendInstitutionalEmail, renderInstitutionalTemplate, escapeHtml } = require('../services/emailService');
+const { renderInstitutionalTemplate, escapeHtml } = require('../services/emailService');
+const { sendStrategicPlanningEmail } = require('../services/strategicPlanningEmailService');
 const { ensureStrategicPlanningDefaults, DEFAULT_WORKFLOW, DEFAULT_FIELDS } = require('../services/strategicPlanningBootstrap');
 const { sha256, cleanCode, audit, transitionPlan, saveActionItem, upsertMonitoring, findActionPlans } = require('../services/strategicPlanningDomainService');
 const { enqueueSync, reconcileTerm } = require('../services/strategicPlanningDriveService');
@@ -31,6 +32,8 @@ const {
 } = require('../services/strategicTermDependencyService');
 const { captureActionPlanSchema } = require('../services/strategicActionPlanSchemaService');
 const { improveStrategicMinuteText, generateStrategicMinuteSummary } = require('../services/strategicMinuteWritingService');
+const { validateAdministrativeActDate } = require('../services/strategicPlanDateValidationService');
+const { syncActionPlanRepositoryTerm } = require('../services/actionPlanRepositoryDriveService');
 
 const PLANNING_DEPARTMENT_NAME = 'Dirección de Planeación y Aseguramiento de la Calidad';
 
@@ -110,6 +113,7 @@ const createPlan = wrap(async (req, res) => {
   if (String(endsOn) < String(payload.starts_on)) {
     throw Object.assign(new Error('La fecha final del PED no puede ser anterior a la fecha inicial.'), { statusCode: 422 });
   }
+  validateAdministrativeActDate({ startsOn: payload.starts_on, approvedOn: payload.approved_on });
   if (await StrategicPlan.count({ where: { code: cleanCode(code), deleted_at: null } })) {
     throw Object.assign(new Error(`Ya existe el ${cleanCode(code)}. Ábralo desde el selector para revisarlo o editarlo.`), { statusCode: 409 });
   }
@@ -207,6 +211,10 @@ const updatePlan = wrap(async (req, res) => {
   }
   if (changes.code) changes.code = cleanCode(changes.code);
   if (String(changes.ends_on || plan.ends_on) < String(changes.starts_on || plan.starts_on)) throw Object.assign(new Error('La fecha final no puede ser anterior a la inicial.'), { statusCode: 422 });
+  validateAdministrativeActDate({
+    startsOn: changes.starts_on || plan.starts_on,
+    approvedOn: changes.approved_on !== undefined ? changes.approved_on : plan.approved_on
+  });
   if (req.body.settings) changes.settings = { ...(plan.settings || {}), ...req.body.settings };
   if (req.body.new_configuration_version) changes.configuration_version = Number(plan.configuration_version) + 1;
   changes.updated_by = req.user.id;
@@ -862,7 +870,7 @@ const requestExternalOtp = wrap(async (req, res) => {
       <p style="margin:0;padding:12px 14px;background:#f8fafc;border-radius:9px;color:#475569;font-size:13px;">El código vence en <strong>10 minutos</strong>. Si usted no solicitó esta firma, puede ignorar el mensaje.</p>
     `
   });
-  const sent = await sendInstitutionalEmail({
+  const sent = await sendStrategicPlanningEmail({
     to: participant.email,
     subject: `${otp} · Código para firmar acta SIAC`,
     text: `Hola ${participant.name || 'participante'}. Su código para firmar el acta es ${otp}. Vence en 10 minutos. Abra el acta: ${signingUrl}`,
@@ -953,7 +961,7 @@ const finalizeMinute = wrap(async (req, res) => {
   await minute.update({ status: 'finalized', finalized_at: new Date(), finalized_by: req.user.id, final_pdf_storage_key: finalPdfPath, final_pdf_hash: sha256(pdfBuffer) });
   await StrategicMeeting.update({ status: 'formalized' }, { where: { id: minute.meeting_id } });
   for (const participant of required.filter((p) => p.email)) {
-    await sendInstitutionalEmail({ to: participant.email, subject: 'Acta formalizada en SIAC', text: `El acta versión ${minute.version} fue formalizada. Código de validación: ${minute.id}.`, attachments: [{ filename: path.basename(finalPdfPath), content: pdfBuffer }] });
+    await sendStrategicPlanningEmail({ to: participant.email, subject: 'Acta formalizada en SIAC', text: `El acta versión ${minute.version} fue formalizada. Código de validación: ${minute.id}.`, attachments: [{ filename: path.basename(finalPdfPath), content: pdfBuffer }] });
   }
   await enqueueSync({ entityType: 'minute', entityId: minute.id, createdBy: req.user.id });
   await audit(req, 'minute.finalize', 'minute_version', minute.id, null, minute.toJSON(), req.body.justification);
@@ -1006,6 +1014,11 @@ const retrySync = wrap(async (req, res) => {
 });
 
 const reconcile = wrap(async (req, res) => ok(res, await reconcileTerm(req.params.termId, req.user.id), 'Conciliación programada.'));
+const syncActionRepository = wrap(async (req, res) => {
+  const result = await syncActionPlanRepositoryTerm(req.params.termId);
+  await audit(req, 'action_repository.sync', 'term', req.params.termId, null, result);
+  ok(res, result, `Repositorio ${result.year} sincronizado correctamente.`);
+});
 
 const closeTerm = wrap(async (req, res) => {
   const term = await StrategicTerm.findByPk(req.params.termId);
@@ -1138,6 +1151,6 @@ module.exports = {
   listActionPlans, getActionPlan, createActionPlan, updateActionPlan, addActionItem, downloadDynamicItemTemplate, previewDynamicItems, confirmDynamicItems, updateActionItem, deleteActionItem,
   transitionActionPlan, saveMonitoring, createMeeting, improveMinuteText, generateMinuteSummary, createMinuteVersion, publishMinute, addProposal, resolveProposal,
   getPublicMinute, requestExternalOtp, signInternal, signExternal, registerUserSignature, downloadMinuteWord, downloadMinutePdf, validateMinute, finalizeMinute,
-  uploadEvidence, downloadEvidence, retrySync, reconcile, closeTerm, previewBudget, confirmBudget, reverseBudget,
+  uploadEvidence, downloadEvidence, retrySync, reconcile, syncActionRepository, closeTerm, previewBudget, confirmBudget, reverseBudget,
   previewHistorical, confirmHistorical, exportActionPlan, analytics, listAudit, listSyncJobs
 };

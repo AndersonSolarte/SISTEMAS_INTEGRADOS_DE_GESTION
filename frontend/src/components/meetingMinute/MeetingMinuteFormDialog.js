@@ -4,7 +4,7 @@ import {
   DialogTitle, IconButton, Menu, MenuItem, Paper, Stack, TextField, ToggleButton, ToggleButtonGroup, Tooltip, Typography
 } from '@mui/material';
 import {
-  Add, ArrowBack, ArrowForward, Close, ContentCopy, DeleteOutline, Download, Edit, EditNote, Email, PersonSearch,
+  Add, ArrowBack, ArrowForward, Close, ContentCopy, DeleteOutline, Download, EditNote, Email, PersonSearch,
   QrCode2, Refresh, Save, Send, ViewSidebar, Visibility
 } from '@mui/icons-material';
 import { useSnackbar } from 'notistack';
@@ -245,7 +245,7 @@ export default function MeetingMinuteFormDialog({ open, document, user, onClose 
   const [minuteToDelete, setMinuteToDelete] = useState(null);
   const [downloadAnchorEl, setDownloadAnchorEl] = useState(null);
   const [layoutMode, setLayoutMode] = useState('split'); // 'split' | 'form' | 'preview'
-  const [previewType, setPreviewType] = useState('original'); // 'original' | 'copia'
+  const [previewType] = useState('original'); // 'original' | 'copia'
   const [autoSaving, setAutoSaving] = useState(false);
   const [saveStatus, setSaveStatus] = useState('saved'); // 'saved' | 'pending' | 'saving' | 'error'
   const [fieldErrors, setFieldErrors] = useState({});
@@ -718,26 +718,37 @@ export default function MeetingMinuteFormDialog({ open, document, user, onClose 
     participants: form.participants
   });
 
+  const hasRichTextValue = (value) => Boolean(
+    sanitizeRichHtml(value || '').replace(/<[^>]+>/g, ' ').replace(/&nbsp;/gi, ' ').trim()
+  );
+
   const hasSavableData = () => Boolean(
     responsablesList.length &&
     form.responsables &&
+    form.titulo &&
     form.dependencia &&
     form.lugar &&
     form.fecha &&
-    form.objetivo &&
+    form.hora_inicio &&
+    form.hora_fin &&
+    hasRichTextValue(form.objetivo) &&
+    hasRichTextValue(form.desarrollo) &&
+    hasRichTextValue(form.conclusiones) &&
     form.participants.length >= 2
   );
 
   const validateRequiredFields = () => {
-    const richObjective = sanitizeRichHtml(form.objetivo || '').replace(/<[^>]+>/g, ' ').replace(/&nbsp;/gi, ' ').trim();
     return {
       responsables: !responsablesList.length || !String(form.responsables || '').trim(),
+      titulo: !String(form.titulo || '').trim(),
       dependencia: !String(form.dependencia || '').trim(),
       lugar: !String(form.lugar || '').trim(),
       fecha: !String(form.fecha || '').trim(),
       hora_inicio: !String(form.hora_inicio || '').trim(),
       hora_fin: !String(form.hora_fin || '').trim(),
-      objetivo: !richObjective,
+      objetivo: !hasRichTextValue(form.objetivo),
+      desarrollo: !hasRichTextValue(form.desarrollo),
+      conclusiones: !hasRichTextValue(form.conclusiones),
       participants: form.participants.length < 2
     };
   };
@@ -745,12 +756,15 @@ export default function MeetingMinuteFormDialog({ open, document, user, onClose 
   const focusFirstInvalidField = (errors) => {
     const order = [
       ['responsables', 'responsible-document-field'],
+      ['titulo', 'meeting-titulo-field'],
       ['dependencia', 'meeting-dependencia-field'],
       ['lugar', 'meeting-lugar-field'],
       ['fecha', 'meeting-fecha-field'],
       ['hora_inicio', 'meeting-hora-inicio-field'],
       ['hora_fin', 'meeting-hora-fin-field'],
       ['objetivo', 'meeting-objetivo-field'],
+      ['desarrollo', 'meeting-desarrollo-field'],
+      ['conclusiones', 'meeting-conclusiones-field'],
       ['participants', 'meeting-participants-section']
     ];
     const targetId = order.find(([key]) => errors[key])?.[1];
@@ -1404,9 +1418,11 @@ export default function MeetingMinuteFormDialog({ open, document, user, onClose 
                 </Box>
 
                 <TextField
+                  id="meeting-titulo-field"
+                  error={Boolean(fieldErrors.titulo)}
                   disabled={!canEdit}
                   fullWidth
-                  label="Título corto del acta"
+                  label="Título corto del acta *"
                   value={form.titulo || ''}
                   onChange={(e) => setField('titulo', e.target.value.slice(0, 120))}
                   inputProps={{ maxLength: 120 }}
@@ -1418,8 +1434,8 @@ export default function MeetingMinuteFormDialog({ open, document, user, onClose 
                 <TextField id="meeting-hora-inicio-field" error={Boolean(fieldErrors.hora_inicio)} disabled={!canEdit} fullWidth type="time" InputLabelProps={{ shrink: true }} label="Hora de inicio *" value={form.hora_inicio} onChange={(e) => setField('hora_inicio', e.target.value)} />
                 <TextField id="meeting-hora-fin-field" error={Boolean(fieldErrors.hora_fin)} disabled={!canEdit} fullWidth type="time" InputLabelProps={{ shrink: true }} label="Hora de finalización *" value={form.hora_fin} onChange={(e) => setField('hora_fin', e.target.value)} />
                 <RichTextEditor id="meeting-objetivo-field" error={Boolean(fieldErrors.objetivo)} disabled={!canEdit} label="Objetivo *" value={form.objetivo} onChange={(value) => setField('objetivo', value)} minHeight={90} />
-                <RichTextEditor disabled={!canEdit} label="Desarrollo de la reunión" value={form.desarrollo} onChange={(value) => setField('desarrollo', value)} minHeight={150} />
-                <RichTextEditor disabled={!canEdit} label="Conclusiones / Compromisos" value={form.conclusiones} onChange={(value) => setField('conclusiones', value)} minHeight={120} />
+                <RichTextEditor id="meeting-desarrollo-field" error={Boolean(fieldErrors.desarrollo)} disabled={!canEdit} label="Desarrollo de la reunión *" value={form.desarrollo} onChange={(value) => setField('desarrollo', value)} minHeight={150} />
+                <RichTextEditor id="meeting-conclusiones-field" error={Boolean(fieldErrors.conclusiones)} disabled={!canEdit} label="Conclusiones / Compromisos *" value={form.conclusiones} onChange={(value) => setField('conclusiones', value)} minHeight={120} />
               </Box>
             </Paper>
             <Paper id="meeting-participants-section" variant="outlined" sx={{ p: 2.25, borderRadius: 3, borderWidth: fieldErrors.participants ? '2px' : '1.5px', borderColor: fieldErrors.participants ? '#dc2626' : '#94a3b8', boxShadow: fieldErrors.participants ? '0 0 0 2px rgba(220,38,38,0.12)' : 'none' }}>
@@ -1734,7 +1750,7 @@ export default function MeetingMinuteFormDialog({ open, document, user, onClose 
             onClick={() => save()}
             sx={{ px: 3, textTransform: 'none', fontWeight: 900 }}
           >
-            {form.id ? 'Guardar ahora' : 'Guardar borrador'}
+            Guardar borrador
           </Button>
         )}
       </DialogActions>

@@ -696,13 +696,17 @@ const saveDraft = wrap(async (req, res) => {
     throw Object.assign(new Error('Debe agregar al menos un participante aparte del responsable en la sección "2. Participantes y firmas".'), { statusCode: 422 });
   }
   if (!clean(req.body.responsables)) throw Object.assign(new Error('Consulte y seleccione el responsable de la reunión.'), { statusCode: 422 });
+  if (!clean(req.body.titulo, 120)) throw Object.assign(new Error('El título corto del acta es obligatorio.'), { statusCode: 422 });
   if (!clean(req.body.dependencia)) throw Object.assign(new Error('La dependencia que cita es obligatoria.'), { statusCode: 422 });
   if (!clean(req.body.lugar)) throw Object.assign(new Error('Seleccione o escriba el lugar de la reunión.'), { statusCode: 422 });
   if (!/^\d{4}-\d{2}-\d{2}$/.test(clean(req.body.fecha, 50))) throw Object.assign(new Error('Seleccione una fecha válida para la reunión.'), { statusCode: 422 });
+  if (!/^\d{2}:\d{2}\s*-\s*\d{2}:\d{2}$/.test(clean(req.body.horario, 100))) throw Object.assign(new Error('La hora de inicio y finalización son obligatorias.'), { statusCode: 422 });
   if (participants.some((participant) => !clean(participant.name, 240) || !clean(participant.email, 254))) throw Object.assign(new Error('Todos los participantes deben tener nombre y correo.'), { statusCode: 422 });
   const participantKeys = participants.map((participant) => clean(participant.document || participant.email, 254).toLowerCase()).filter(Boolean);
   if (new Set(participantKeys).size !== participantKeys.length) throw Object.assign(new Error('Hay participantes repetidos en el acta.'), { statusCode: 422 });
   if (!richPlainText(req.body.objetivo)) throw Object.assign(new Error('El objetivo de la reunión es obligatorio.'), { statusCode: 422 });
+  if (!richPlainText(req.body.desarrollo)) throw Object.assign(new Error('El desarrollo de la reunión es obligatorio.'), { statusCode: 422 });
+  if (!richPlainText(req.body.conclusiones)) throw Object.assign(new Error('Las conclusiones o compromisos son obligatorios.'), { statusCode: 422 });
 
   const minute = await sequelize.transaction(async (transaction) => {
     let row = req.body.id ? await DigitalMeetingMinute.findByPk(req.body.id, { transaction }) : null;

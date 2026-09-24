@@ -8,6 +8,8 @@ const ExcelJS = require('exceljs');
 const { parseFieldSchemaWorkbook } = require('./strategicFieldSchemaService');
 const { parseTermDependencyWorkbook, normalizeDocument } = require('./strategicTermDependencyService');
 const { mapLegacyStatus } = require('./strategicLegacyActionPlanService');
+const { validateAdministrativeActDate } = require('./strategicPlanDateValidationService');
+const { repositoryName, compactFolderName, compactFileName, intersectsPeriod, buildRepositoryPeriods } = require('./actionPlanRepositoryDriveService');
 
 test('workflow institucional contiene el recorrido completo y parametrizable', () => {
   assert.equal(DEFAULT_WORKFLOW.states[0].key, 'convocation');
@@ -73,4 +75,47 @@ test('la plantilla anual conserva dependencia y cédula como texto', async () =>
 test('los estados de planes históricos se conservan al integrarlos al PED', () => {
   assert.equal(mapLegacyStatus('Aprobado'), 'active');
   assert.equal(mapLegacyStatus('Borrador'), 'convocation');
+});
+
+test('la fecha del acto administrativo parte desde el inicio del PED', () => {
+  assert.doesNotThrow(() => validateAdministrativeActDate({ startsOn: '2022-01-01', approvedOn: '2022-01-01' }));
+  assert.doesNotThrow(() => validateAdministrativeActDate({ startsOn: '2022-01-01', approvedOn: '2022-02-15' }));
+  assert.doesNotThrow(() => validateAdministrativeActDate({ startsOn: '2022-01-01', approvedOn: null }));
+  assert.throws(
+    () => validateAdministrativeActDate({ startsOn: '2022-01-01', approvedOn: '2021-12-31' }),
+    /no puede ser anterior a la fecha inicial del PED/
+  );
+});
+
+test('el repositorio conserva nombres legibles y elimina caracteres no válidos', () => {
+  assert.equal(repositoryName('ACT-01 / Gestión académica: 2027'), 'ACT-01 - Gestión académica- 2027');
+});
+
+test('cada actividad se ubica solamente en los periodos que intersecta', () => {
+  const first = { starts_on: '2027-01-01', ends_on: '2027-07-31' };
+  const second = { starts_on: '2027-08-01', ends_on: '2027-12-31' };
+  assert.equal(intersectsPeriod({ starts_on: '2027-02-01', ends_on: '2027-04-30' }, first), true);
+  assert.equal(intersectsPeriod({ starts_on: '2027-02-01', ends_on: '2027-04-30' }, second), false);
+  assert.equal(intersectsPeriod({ starts_on: null, ends_on: null }, second), true);
+});
+
+test('el repositorio divide cada vigencia en enero-julio y agosto-diciembre', () => {
+  const periods = buildRepositoryPeriods({
+    year: 2027,
+    monitoringPeriods: [
+      { id: 's1', position: 1, starts_on: '2027-01-01', ends_on: '2027-06-30' },
+      { id: 's2', position: 2, starts_on: '2027-07-01', ends_on: '2027-12-31' }
+    ]
+  });
+  assert.equal(periods[0].ends_on, '2027-07-31');
+  assert.equal(periods[1].starts_on, '2027-08-01');
+});
+
+test('las rutas del repositorio usan nombres compactos aptos para copiar a disco', () => {
+  const folder = compactFolderName('ACT-001', 'Diseñar e implementar una estrategia institucional extremadamente extensa para todas las dependencias', 48);
+  const file = compactFileName('Evidencia final consolidada con anexos y soportes documentales de toda la actividad institucional.xlsx', 'EV-12345678', 64);
+  assert.ok(folder.length <= 48);
+  assert.ok(folder.startsWith('ACT-001_'));
+  assert.ok(file.length <= 64);
+  assert.ok(file.endsWith('.xlsx'));
 });

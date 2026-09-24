@@ -76,6 +76,7 @@ router.post('/action-items/:itemId/evidence', permit('pei_seguimiento'), upload.
 router.get('/evidence/:evidenceId/download', permit(), c.downloadEvidence);
 router.post('/evidence/:evidenceId/retry', permit('pei_drive'), c.retrySync);
 router.post('/terms/:termId/reconcile', permit('pei_drive'), c.reconcile);
+router.post('/terms/:termId/action-repository/sync', permit('pei_drive'), c.syncActionRepository);
 router.post('/terms/:termId/close', permit('pei_configurar', 'pei_drive'), c.closeTerm);
 router.get('/sync-jobs', permit('pei_drive'), c.listSyncJobs);
 

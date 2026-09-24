@@ -60,6 +60,7 @@ const strategicPlanningService = {
   finalizeMinute: (minuteId, payload = {}) => api.post(`${root}/minutes/${minuteId}/finalize`, payload).then(data),
   uploadEvidence: (itemId, formData) => api.post(`${root}/action-items/${itemId}/evidence`, formData, { headers: { 'Content-Type': 'multipart/form-data' }, timeout: 60000 }).then(data),
   reconcile: (termId) => api.post(`${root}/terms/${termId}/reconcile`).then(data),
+  syncActionRepository: (termId) => api.post(`${root}/terms/${termId}/action-repository/sync`, {}, { timeout: 300000 }).then(data),
   closeTerm: (termId) => api.post(`${root}/terms/${termId}/close`).then(data),
   syncJobs: () => api.get(`${root}/sync-jobs`).then(data),
   analytics: (params = {}) => api.get(`${root}/analytics`, { params }).then(data),

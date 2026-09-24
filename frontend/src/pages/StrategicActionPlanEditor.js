@@ -348,7 +348,7 @@ export default function StrategicActionPlanEditor({ open, planId, platformPlan, 
           minRows={field.data_type === 'long_text' || field.key === 'activity' ? 2 : undefined}
           type={!select && field.data_type === 'date' ? 'date' : !select && ['number','percentage','currency'].includes(field.data_type) ? 'number' : 'text'}
           InputLabelProps={field.data_type === 'date' ? { shrink: true } : undefined}
-          SelectProps={multiple ? { multiple: true } : undefined}
+          SelectProps={multiple ? { multiple: true, MenuProps: { PaperProps: { sx: { maxWidth: 480 } } } } : { MenuProps: { PaperProps: { sx: { maxWidth: 480 } } } }}
           inputProps={field.data_type === 'percentage' ? { min: 0, max: 100 } : undefined}
           label={field.label}
           value={currentValue}
@@ -369,7 +369,7 @@ export default function StrategicActionPlanEditor({ open, planId, platformPlan, 
           }}
         >
           {select && options.map((option) => (
-            <MenuItem key={option.value} value={option.value}>
+            <MenuItem key={option.value} value={option.value} sx={{ whiteSpace: 'normal', lineHeight: 1.45, py: 1 }}>
               {option.label}
             </MenuItem>
           ))}
