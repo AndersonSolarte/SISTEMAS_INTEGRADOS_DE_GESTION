@@ -84,22 +84,41 @@ const compactFileName = (name, prefix, max = 78) => {
 const driveEscape = (value) => String(value).replace(/'/g, "\\'");
 const contentHash = (buffer) => crypto.createHash('sha256').update(buffer).digest('hex');
 
-const findByRepositoryKey = async (drive, parentId, key, mimeType) => {
+const findByRepositoryKey = async (drive, parentId, key, mimeType, expectedName = '') => {
   const mimeQuery = mimeType ? ` and mimeType='${driveEscape(mimeType)}'` : '';
   const response = await drive.files.list({
     q: `'${driveEscape(parentId)}' in parents and trashed=false${mimeQuery} and appProperties has { key='siacActionRepositoryKey' and value='${driveEscape(key)}' }`,
     fields: 'files(id,name,mimeType,appProperties,webViewLink)', spaces: 'drive',
     supportsAllDrives: true, includeItemsFromAllDrives: true, pageSize: 2
   });
-  return response.data.files?.[0] || null;
+  if (response.data.files?.[0]) return response.data.files[0];
+
+  // Compatibilidad de transición: la primera sincronización pudo ejecutarse con
+  // otra identidad de Google. appProperties son privadas para la aplicación que
+  // las creó, por lo que también reconocemos el elemento por nombre y carpeta.
+  const safeName = repositoryName(expectedName, 180);
+  if (!safeName) return null;
+  const byName = await drive.files.list({
+    q: `'${driveEscape(parentId)}' in parents and trashed=false${mimeQuery} and name='${driveEscape(safeName)}'`,
+    fields: 'files(id,name,mimeType,appProperties,webViewLink)', spaces: 'drive',
+    supportsAllDrives: true, includeItemsFromAllDrives: true, pageSize: 2
+  });
+  return byName.data.files?.[0] || null;
 };
 
 const ensureFolder = async (drive, { parentId, name, key }, counters) => {
-  const found = await findByRepositoryKey(drive, parentId, key, DRIVE_FOLDER);
   const desiredName = repositoryName(name);
+  const found = await findByRepositoryKey(drive, parentId, key, DRIVE_FOLDER, desiredName);
   if (found) {
-    if (found.name !== desiredName) {
-      await drive.files.update({ fileId: found.id, requestBody: { name: desiredName }, fields: 'id', supportsAllDrives: true });
+    if (found.name !== desiredName || found.appProperties?.siacActionRepositoryKey !== String(key)) {
+      await drive.files.update({
+        fileId: found.id,
+        requestBody: {
+          name: desiredName,
+          appProperties: { ...(found.appProperties || {}), siacActionRepositoryKey: String(key) }
+        },
+        fields: 'id', supportsAllDrives: true
+      });
       counters.folders_updated += 1;
     } else counters.folders_existing += 1;
     return found.id;
@@ -116,7 +135,7 @@ const ensureFolder = async (drive, { parentId, name, key }, counters) => {
 };
 
 const upsertFile = async (drive, { parentId, name, key, mimeType, buffer, hash }, counters) => {
-  const found = await findByRepositoryKey(drive, parentId, key);
+  const found = await findByRepositoryKey(drive, parentId, key, null, name);
   if (found?.appProperties?.contentHash === hash) {
     counters.files_unchanged += 1;
     return found.id;
