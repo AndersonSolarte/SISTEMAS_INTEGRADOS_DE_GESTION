@@ -77,7 +77,7 @@ import { ROLES } from '../constants/roles';
 import logoFormatos from '../assets/logo_formatos.jpg';
 import StrategicPlanningPlatform from './StrategicPlanningPlatform';
 
-const resolveYearWeight = (years = []) => years.length ? (100 / years.length) : 0;
+const PED_YEAR_WEIGHT = 14.28;
 
 const DEPENDENCIA_QUE_CITA_FIJA = 'Dirección de Planeación y Aseguramiento de la Calidad - Planeación y Efectividad';
 
@@ -201,7 +201,6 @@ const buildMetrics = (rows = []) => {
 
   const years = Array.from(new Set(rows.map((row) => row.anio).filter(Boolean)));
   const lineamientosList = Array.from(lineamientos);
-  const weightPerYear = resolveYearWeight(years);
 
   let totalGeneral = 0;
   lineamientosList.forEach((lineamiento) => {
@@ -209,7 +208,7 @@ const buildMetrics = (rows = []) => {
       const subset = rows.filter((row) => row.lineamiento_estrategico === lineamiento && row.anio === anio);
       if (!subset.length) return;
       const avgFraction = subset.reduce((acc, row) => acc + ((percent(row.avance_total) || 0) / 100), 0) / subset.length;
-      totalGeneral += avgFraction * weightPerYear;
+      totalGeneral += avgFraction * PED_YEAR_WEIGHT;
     });
   });
 
@@ -228,8 +227,8 @@ const buildMetrics = (rows = []) => {
 };
 
 const buildLineamientosStats = (rows = []) => {
+  const weightPerYear = PED_YEAR_WEIGHT;
   const years = Array.from(new Set(rows.map((row) => Number(row.anio)).filter((value) => Number.isFinite(value)))).sort((a, b) => a - b);
-  const weightPerYear = resolveYearWeight(years);
   const lineamientos = Array.from(new Set(rows.map((row) => row.lineamiento_estrategico).filter(Boolean))).sort((a, b) => String(a).localeCompare(String(b), 'es'));
 
   const avgByLineamientoYear = new Map();
@@ -323,6 +322,7 @@ const buildLineamientosStats = (rows = []) => {
 };
 
 const buildActividadesStats = (rows = []) => {
+  const weightPerYear = PED_YEAR_WEIGHT;
   const yearsSet = new Set();
   const actividadesSet = new Set();
   const lineamientosSet = new Set();
@@ -370,7 +370,6 @@ const buildActividadesStats = (rows = []) => {
   });
 
   const years = Array.from(yearsSet).sort((a, b) => a - b);
-  const weightPerYear = resolveYearWeight(years);
   const actividades = Array.from(actividadesSet).sort((a, b) => String(a).localeCompare(String(b), 'es'));
   const lineamientos = Array.from(lineamientosSet);
 
@@ -468,8 +467,8 @@ const buildActividadesStats = (rows = []) => {
 };
 
 const buildObjetivosStats = (rows = []) => {
+  const weightPerYear = PED_YEAR_WEIGHT;
   const years = Array.from(new Set(rows.map((row) => Number(row.anio)).filter((value) => Number.isFinite(value)))).sort((a, b) => a - b);
-  const weightPerYear = resolveYearWeight(years);
   const objetivos = Array.from(new Set(rows.map((row) => row.objetivo_estrategico).filter(Boolean))).sort((a, b) => String(a).localeCompare(String(b), 'es'));
   const lineamientos = Array.from(new Set(rows.map((row) => row.lineamiento_estrategico).filter(Boolean)));
 
