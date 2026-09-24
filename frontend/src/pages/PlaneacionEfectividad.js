@@ -77,7 +77,7 @@ import { ROLES } from '../constants/roles';
 import logoFormatos from '../assets/logo_formatos.jpg';
 import StrategicPlanningPlatform from './StrategicPlanningPlatform';
 
-const PED_YEAR_WEIGHT = 14.28;
+const resolveYearWeight = (years = []) => years.length ? (100 / years.length) : 0;
 
 const DEPENDENCIA_QUE_CITA_FIJA = 'Dirección de Planeación y Aseguramiento de la Calidad - Planeación y Efectividad';
 
@@ -201,6 +201,7 @@ const buildMetrics = (rows = []) => {
 
   const years = Array.from(new Set(rows.map((row) => row.anio).filter(Boolean)));
   const lineamientosList = Array.from(lineamientos);
+  const weightPerYear = resolveYearWeight(years);
 
   let totalGeneral = 0;
   lineamientosList.forEach((lineamiento) => {
@@ -208,7 +209,7 @@ const buildMetrics = (rows = []) => {
       const subset = rows.filter((row) => row.lineamiento_estrategico === lineamiento && row.anio === anio);
       if (!subset.length) return;
       const avgFraction = subset.reduce((acc, row) => acc + ((percent(row.avance_total) || 0) / 100), 0) / subset.length;
-      totalGeneral += avgFraction * PED_YEAR_WEIGHT;
+      totalGeneral += avgFraction * weightPerYear;
     });
   });
 
@@ -227,8 +228,8 @@ const buildMetrics = (rows = []) => {
 };
 
 const buildLineamientosStats = (rows = []) => {
-  const weightPerYear = PED_YEAR_WEIGHT;
   const years = Array.from(new Set(rows.map((row) => Number(row.anio)).filter((value) => Number.isFinite(value)))).sort((a, b) => a - b);
+  const weightPerYear = resolveYearWeight(years);
   const lineamientos = Array.from(new Set(rows.map((row) => row.lineamiento_estrategico).filter(Boolean))).sort((a, b) => String(a).localeCompare(String(b), 'es'));
 
   const avgByLineamientoYear = new Map();
@@ -322,7 +323,6 @@ const buildLineamientosStats = (rows = []) => {
 };
 
 const buildActividadesStats = (rows = []) => {
-  const weightPerYear = 14.28;
   const yearsSet = new Set();
   const actividadesSet = new Set();
   const lineamientosSet = new Set();
@@ -370,6 +370,7 @@ const buildActividadesStats = (rows = []) => {
   });
 
   const years = Array.from(yearsSet).sort((a, b) => a - b);
+  const weightPerYear = resolveYearWeight(years);
   const actividades = Array.from(actividadesSet).sort((a, b) => String(a).localeCompare(String(b), 'es'));
   const lineamientos = Array.from(lineamientosSet);
 
@@ -467,8 +468,8 @@ const buildActividadesStats = (rows = []) => {
 };
 
 const buildObjetivosStats = (rows = []) => {
-  const weightPerYear = 14.28;
   const years = Array.from(new Set(rows.map((row) => Number(row.anio)).filter((value) => Number.isFinite(value)))).sort((a, b) => a - b);
+  const weightPerYear = resolveYearWeight(years);
   const objetivos = Array.from(new Set(rows.map((row) => row.objetivo_estrategico).filter(Boolean))).sort((a, b) => String(a).localeCompare(String(b), 'es'));
   const lineamientos = Array.from(new Set(rows.map((row) => row.lineamiento_estrategico).filter(Boolean)));
 
@@ -874,29 +875,33 @@ function PlanesAccionTab({ rows }) {
   const enProceso = rows.filter((row) => resolveEstado(row.avance_total) === 'En ejecución').length;
   const pendientes = rows.filter((row) => resolveEstado(row.avance_total) === 'Sin iniciar').length;
 
-  const monitoreoIP = totalIndicadores
-    ? Number((rows.reduce((acc, row) => acc + (percent(row.avance_ip) || 0), 0) / totalIndicadores).toFixed(2))
+  const valoresIP = rows.map((row) => percent(row.avance_ip)).filter((value) => value !== null);
+  const valoresIIP = rows.map((row) => percent(row.avance_iip)).filter((value) => value !== null);
+  const valoresTotales = rows.map((row) => percent(row.avance_total)).filter((value) => value !== null);
+  const monitoreoIP = valoresIP.length
+    ? Number((valoresIP.reduce((acc, value) => acc + value, 0) / valoresIP.length).toFixed(2))
     : 0;
-  const monitoreoIIP = totalIndicadores
-    ? Number((rows.reduce((acc, row) => acc + (percent(row.avance_iip) || 0), 0) / totalIndicadores).toFixed(2))
+  const monitoreoIIP = valoresIIP.length
+    ? Number((valoresIIP.reduce((acc, value) => acc + value, 0) / valoresIIP.length).toFixed(2))
     : 0;
-  const avanceGeneral = totalIndicadores
-    ? Number((rows.reduce((acc, row) => acc + (percent(row.avance_total) || 0), 0) / totalIndicadores).toFixed(2))
+  const avanceGeneral = valoresTotales.length
+    ? Number((valoresTotales.reduce((acc, value) => acc + value, 0) / valoresTotales.length).toFixed(2))
     : 0;
 
   const pctCumplidos = totalIndicadores ? Number(((cumplidos * 100) / totalIndicadores).toFixed(1)) : 0;
   const pctEnProceso = totalIndicadores ? Number(((enProceso * 100) / totalIndicadores).toFixed(1)) : 0;
   const pctPendientes = totalIndicadores ? Number(((pendientes * 100) / totalIndicadores).toFixed(1)) : 0;
 
-  const getProgressTone = (value) => {
+  const getProgressTone = (value, hasData = true) => {
+    if (!hasData) return { color: '#94a3b8', bg: '#f1f5f9', status: 'SIN DATOS' };
     if (value >= 80) return { color: '#059669', bg: '#d1fae5', status: 'ÓPTIMO' };
     if (value >= 50) return { color: '#d97706', bg: '#fef3c7', status: 'AVANZANDO' };
     if (value > 0) return { color: '#dc2626', bg: '#fee2e2', status: 'INICIANDO' };
-    return { color: '#94a3b8', bg: '#f1f5f9', status: 'SIN DATOS' };
+    return { color: '#64748b', bg: '#f1f5f9', status: 'SIN INICIAR' };
   };
 
-  const ipTone = getProgressTone(monitoreoIP);
-  const iipTone = getProgressTone(monitoreoIIP);
+  const ipTone = getProgressTone(monitoreoIP, valoresIP.length > 0);
+  const iipTone = getProgressTone(monitoreoIIP, valoresIIP.length > 0);
 
   if (!totalIndicadores) {
     return (
@@ -912,118 +917,115 @@ function PlanesAccionTab({ rows }) {
   return (
     <Stack spacing={2}>
       <Paper elevation={0} sx={{ borderRadius: 4, overflow: 'hidden', border: '1px solid #dbeafe', boxShadow: '0 18px 40px rgba(15,23,42,.08)' }}>
-        <Box sx={{ position: 'relative', p: { xs: 2.4, md: 3 }, background: 'linear-gradient(135deg, #0f172a 0%, #1e3a8a 50%, #2563eb 100%)', color: 'white' }}>
-          <Box sx={{ position: 'absolute', right: 20, top: 16, px: 1.6, py: 0.9, borderRadius: 2, bgcolor: 'rgba(255,255,255,.15)' }}>
-            <Typography sx={{ fontSize: 10, color: 'rgba(255,255,255,.72)', textTransform: 'uppercase', letterSpacing: 1 }}>Actualizado</Typography>
-            <Typography sx={{ fontSize: 13, fontWeight: 800 }}>{new Date().toLocaleDateString('es-CO')}</Typography>
+        <Box sx={{ position: 'relative', p: { xs: 2, md: 2.2 }, background: 'linear-gradient(135deg, #0f172a 0%, #1e3a8a 50%, #2563eb 100%)', color: 'white' }}>
+          <Box sx={{ position: 'absolute', right: 18, top: 14, px: 1.4, py: 0.7, borderRadius: 2, bgcolor: 'rgba(255,255,255,.15)' }}>
+            <Typography sx={{ fontSize: 9, color: 'rgba(255,255,255,.72)', textTransform: 'uppercase', letterSpacing: 1 }}>Actualizado</Typography>
+            <Typography sx={{ fontSize: 11.5, fontWeight: 800 }}>{new Date().toLocaleDateString('es-CO')}</Typography>
           </Box>
-          <Typography sx={{ display: 'inline-flex', px: 1.5, py: 0.6, borderRadius: 999, bgcolor: 'rgba(255,255,255,.14)', fontSize: 11, fontWeight: 800, textTransform: 'uppercase', letterSpacing: 1.5, mb: 1.1 }}>
+          <Typography sx={{ display: 'inline-flex', px: 1.3, py: 0.45, borderRadius: 999, bgcolor: 'rgba(255,255,255,.14)', fontSize: 9.5, fontWeight: 800, textTransform: 'uppercase', letterSpacing: 1.3, mb: 0.9 }}>
             Dashboard Interactivo
           </Typography>
-          <Typography sx={{ fontSize: { xs: 28, md: 34 }, fontWeight: 900, lineHeight: 1 }}>
+          <Typography sx={{ fontSize: { xs: 25, md: 29 }, fontWeight: 900, lineHeight: 1.05 }}>
             Plan de Acción {textoAnio}
           </Typography>
-          <Stack direction="row" spacing={1} alignItems="center" sx={{ mt: 1.2 }}>
-            <AssignmentTurnedInIcon sx={{ color: '#fbbf24' }} />
-            <Typography sx={{ fontSize: 18, fontWeight: 800, color: '#fde68a' }}>
+          <Stack direction="row" spacing={0.8} alignItems="center" sx={{ mt: 0.9 }}>
+            <AssignmentTurnedInIcon sx={{ color: '#fbbf24', fontSize: 20 }} />
+            <Typography sx={{ fontSize: 15, fontWeight: 800, color: '#fde68a' }}>
               {textoResponsable}
             </Typography>
           </Stack>
         </Box>
 
-        <Box sx={{ p: 2.2, display: 'grid', gap: 1.6, gridTemplateColumns: { xs: '1fr', lg: '1.3fr 1fr 1fr 1fr 1.2fr' }, bgcolor: '#fff' }}>
-          <Paper elevation={0} sx={{ p: 2.2, borderRadius: 3, border: '2px solid #e2e8f0' }}>
-            <Stack direction="row" spacing={1.2} alignItems="center" sx={{ mb: 1.4 }}>
-              <Box sx={{ width: 42, height: 42, borderRadius: 2, display: 'grid', placeItems: 'center', background: 'linear-gradient(135deg, #1e3a8a, #3b82f6)' }}>
-                <InsightsIcon sx={{ color: 'white' }} />
+        <Box sx={{ p: { xs: 1.5, md: 2.2 }, display: 'grid', gap: 1.5, gridTemplateColumns: { xs: '1fr', sm: 'repeat(2, minmax(0, 1fr))', lg: 'repeat(3, minmax(0, 1fr))', xl: 'repeat(5, minmax(0, 1fr))' }, alignItems: 'stretch', bgcolor: '#f8fafc' }}>
+          <Paper elevation={0} sx={{ p: 1.6, minHeight: 168, borderRadius: 3, border: '1px solid #dbe3ef', display: 'flex', flexDirection: 'column', justifyContent: 'space-between' }}>
+            <Stack direction="row" spacing={1} alignItems="center" sx={{ mb: 1 }}>
+              <Box sx={{ width: 36, height: 36, borderRadius: 2, display: 'grid', placeItems: 'center', background: 'linear-gradient(135deg, #1e3a8a, #3b82f6)' }}>
+                <InsightsIcon sx={{ color: 'white', fontSize: 21 }} />
               </Box>
-              <Typography sx={{ fontSize: 11, fontWeight: 800, color: '#64748b', textTransform: 'uppercase', letterSpacing: 0.8 }}>
+              <Typography sx={{ fontSize: 10, fontWeight: 800, color: '#64748b', textTransform: 'uppercase', letterSpacing: 0.7 }}>
                 Total Indicadores
               </Typography>
             </Stack>
-            <Stack direction={{ xs: 'column', md: 'row' }} spacing={2.2}>
-              <Typography sx={{ fontSize: 42, lineHeight: 1, fontWeight: 900, color: '#1e3a8a' }}>{totalIndicadores}</Typography>
-              <Stack spacing={0.8} sx={{ flex: 1 }}>
+            <Stack spacing={0.9}>
+              <Typography sx={{ fontSize: 32, lineHeight: 1, fontWeight: 900, color: '#1e3a8a' }}>{formatNumber(totalIndicadores)}</Typography>
+              <Stack spacing={0.55}>
                 {[
                   ['Cumplidos', pctCumplidos, cumplidos, '#10b981'],
                   ['En Proceso', pctEnProceso, enProceso, '#f59e0b'],
                   ['Pendientes', pctPendientes, pendientes, '#ef4444']
                 ].map(([label, pct, total, color]) => (
                   <Stack key={label} direction="row" spacing={1} alignItems="center">
-                    <Typography sx={{ width: 78, fontSize: 11, color: '#64748b', fontWeight: 700 }}>{label}</Typography>
-                    <Box sx={{ flex: 1, height: 8, borderRadius: 99, bgcolor: 'rgba(148,163,184,.18)', overflow: 'hidden' }}>
+                    <Typography sx={{ width: 68, fontSize: 9.5, color: '#64748b', fontWeight: 800 }}>{label}</Typography>
+                    <Box sx={{ flex: 1, height: 6, borderRadius: 99, bgcolor: 'rgba(148,163,184,.18)', overflow: 'hidden' }}>
                       <Box sx={{ width: `${pct}%`, height: '100%', bgcolor: color, borderRadius: 99 }} />
                     </Box>
-                    <Typography sx={{ width: 24, textAlign: 'right', color, fontWeight: 900, fontSize: 12 }}>{total}</Typography>
+                    <Typography sx={{ minWidth: 26, textAlign: 'right', color, fontWeight: 900, fontSize: 10.5 }}>{total}</Typography>
                   </Stack>
                 ))}
               </Stack>
             </Stack>
           </Paper>
 
-          {[
-            ['Planes de Acción', totalPlanesAccion, null, '#7c3aed', <AssignmentTurnedInIcon sx={{ color: 'white' }} />, 'Responsables'],
-            ['Total Indicadores', totalIndicadores, null, '#1e40af', <InsightsIcon sx={{ color: 'white' }} />, 'En seguimiento']
-          ].map(([label, total, pct, color, icon]) => (
-            <Paper key={label} elevation={0} sx={{ p: 2.2, borderRadius: 3, border: '2px solid #e2e8f0' }}>
-              <Stack direction="row" spacing={1.2} alignItems="center" sx={{ mb: 1.2 }}>
-                <Box sx={{ width: 42, height: 42, borderRadius: 2, display: 'grid', placeItems: 'center', bgcolor: color }}>
-                  {icon}
-                </Box>
-                <Typography sx={{ fontSize: 11, fontWeight: 800, color: '#64748b', textTransform: 'uppercase', letterSpacing: 0.8 }}>
-                  {label}
-                </Typography>
-              </Stack>
-              <Typography sx={{ fontSize: 40, lineHeight: 1, fontWeight: 900, color }}>{total}</Typography>
-              <Typography sx={{ mt: 0.8, fontSize: 12, color: '#94a3b8' }}>{arguments[0]?.[5] || ''}</Typography>
-            </Paper>
-          ))}
+          <Paper elevation={0} sx={{ p: 1.6, minHeight: 168, borderRadius: 3, border: '1px solid #ddd6fe', display: 'flex', flexDirection: 'column', justifyContent: 'space-between' }}>
+            <Stack direction="row" spacing={1} alignItems="center">
+              <Box sx={{ width: 36, height: 36, borderRadius: 2, display: 'grid', placeItems: 'center', bgcolor: '#7c3aed' }}>
+                <AssignmentTurnedInIcon sx={{ color: 'white', fontSize: 21 }} />
+              </Box>
+              <Typography sx={{ fontSize: 10, fontWeight: 900, color: '#64748b', textTransform: 'uppercase', letterSpacing: 0.7 }}>
+                Planes de Acción
+              </Typography>
+            </Stack>
+            <Box>
+              <Typography sx={{ fontSize: 34, lineHeight: 1, fontWeight: 900, color: '#7c3aed' }}>{formatNumber(totalPlanesAccion)}</Typography>
+              <Typography sx={{ mt: 0.6, fontSize: 10.5, color: '#64748b' }}>Responsables con plan</Typography>
+            </Box>
+          </Paper>
 
           {[
             ['Monitoreo IP', monitoreoIP, ipTone, 'Primer Período'],
             ['Monitoreo IIP', monitoreoIIP, iipTone, 'Segundo Período']
           ].map(([label, value, tone, subtitle]) => (
-            <Paper key={label} elevation={0} sx={{ p: 2.2, borderRadius: 3, border: `2px solid ${tone.color}33`, borderLeft: `5px solid ${tone.color}` }}>
-              <Stack direction="row" justifyContent="space-between" spacing={1.2} alignItems="flex-start" sx={{ mb: 1.2 }}>
+            <Paper key={label} elevation={0} sx={{ p: 1.6, minHeight: 168, borderRadius: 3, border: `1px solid ${tone.color}40`, borderTop: `4px solid ${tone.color}`, display: 'flex', flexDirection: 'column', justifyContent: 'space-between' }}>
+              <Stack direction="row" justifyContent="space-between" spacing={1} alignItems="flex-start" sx={{ mb: 0.8 }}>
                 <Box
                   sx={{
-                    width: 42,
-                    height: 42,
+                    width: 36,
+                    height: 36,
                     borderRadius: 2,
                     display: 'grid',
                     placeItems: 'center',
                     background: `linear-gradient(135deg, ${tone.color}, ${tone.color}bb)`
                   }}
                 >
-                  <CheckCircleIcon sx={{ color: 'white' }} />
+                  <CheckCircleIcon sx={{ color: 'white', fontSize: 21 }} />
                 </Box>
-                <Chip label={tone.status} sx={{ bgcolor: tone.bg, color: tone.color, fontSize: 10, fontWeight: 900 }} />
+                <Chip label={tone.status} size="small" sx={{ bgcolor: tone.bg, color: tone.color, fontSize: 9, fontWeight: 900, height: 25 }} />
               </Stack>
-              <Typography sx={{ fontSize: 11, fontWeight: 800, color: '#64748b', textTransform: 'uppercase', letterSpacing: 0.8 }}>
+              <Typography sx={{ fontSize: 10, fontWeight: 800, color: '#64748b', textTransform: 'uppercase', letterSpacing: 0.7 }}>
                 {label}
               </Typography>
-              <Typography sx={{ fontSize: 40, lineHeight: 1, fontWeight: 900, color: tone.color, mt: 0.5 }}>{formatPercent(value)}</Typography>
-              <Typography sx={{ mt: 0.5, fontSize: 12, color: '#94a3b8' }}>{subtitle}</Typography>
-              <Box sx={{ mt: 1, height: 8, borderRadius: 99, bgcolor: '#f1f5f9', overflow: 'hidden' }}>
-                <Box sx={{ width: `${value > 0 ? value : 100}%`, height: '100%', bgcolor: value > 0 ? tone.color : '#e2e8f0', borderRadius: 99 }} />
+              <Typography sx={{ fontSize: 31, lineHeight: 1, fontWeight: 900, color: tone.color, mt: 0.35 }}>{formatPercent(value)}</Typography>
+              <Typography sx={{ mt: 0.35, fontSize: 10.5, color: '#94a3b8' }}>{subtitle}</Typography>
+              <Box sx={{ mt: 0.7, height: 6, borderRadius: 99, bgcolor: '#f1f5f9', overflow: 'hidden' }}>
+                <Box sx={{ width: `${Math.min(Math.max(value, 0), 100)}%`, height: '100%', bgcolor: tone.color, borderRadius: 99 }} />
               </Box>
             </Paper>
           ))}
 
-          <Paper elevation={0} sx={{ p: 2.2, borderRadius: 3, color: 'white', background: 'linear-gradient(135deg, #1e3a8a 0%, #2563eb 60%, #3b82f6 100%)' }}>
-            <Stack direction="row" spacing={1.2} alignItems="center" sx={{ mb: 1.2 }}>
-              <Box sx={{ width: 42, height: 42, borderRadius: 2, display: 'grid', placeItems: 'center', bgcolor: 'rgba(255,255,255,.18)', border: '1px solid rgba(255,255,255,.25)' }}>
-                <TrendingUpIcon sx={{ color: 'white' }} />
+          <Paper elevation={0} sx={{ p: 1.6, minHeight: 168, borderRadius: 3, color: 'white', background: 'linear-gradient(135deg, #1e3a8a 0%, #2563eb 60%, #3b82f6 100%)', display: 'flex', flexDirection: 'column', justifyContent: 'space-between' }}>
+            <Stack direction="row" spacing={1} alignItems="center" sx={{ mb: 0.8 }}>
+              <Box sx={{ width: 36, height: 36, borderRadius: 2, display: 'grid', placeItems: 'center', bgcolor: 'rgba(255,255,255,.18)', border: '1px solid rgba(255,255,255,.25)' }}>
+                <TrendingUpIcon sx={{ color: 'white', fontSize: 21 }} />
               </Box>
-              <Typography sx={{ fontSize: 11, fontWeight: 800, color: 'rgba(255,255,255,.78)', textTransform: 'uppercase', letterSpacing: 0.8 }}>
+              <Typography sx={{ fontSize: 10, fontWeight: 800, color: 'rgba(255,255,255,.78)', textTransform: 'uppercase', letterSpacing: 0.7 }}>
                 Avance General
               </Typography>
             </Stack>
-            <Typography sx={{ fontSize: 42, lineHeight: 1, fontWeight: 900 }}>{formatPercent(avanceGeneral)}</Typography>
-            <Box sx={{ mt: 1.2, height: 9, borderRadius: 99, bgcolor: 'rgba(255,255,255,.18)', overflow: 'hidden' }}>
+            <Typography sx={{ fontSize: 33, lineHeight: 1, fontWeight: 900 }}>{formatPercent(avanceGeneral)}</Typography>
+            <Box sx={{ mt: 0.8, height: 7, borderRadius: 99, bgcolor: 'rgba(255,255,255,.18)', overflow: 'hidden' }}>
               <Box sx={{ width: `${Math.min(avanceGeneral, 100)}%`, height: '100%', bgcolor: 'rgba(255,255,255,.92)', borderRadius: 99 }} />
             </Box>
-            <Typography sx={{ mt: 0.8, fontSize: 12, color: 'rgba(255,255,255,.72)' }}>Promedio Total</Typography>
+            <Typography sx={{ mt: 0.6, fontSize: 10.5, color: 'rgba(255,255,255,.72)' }}>Promedio Total</Typography>
           </Paper>
         </Box>
 

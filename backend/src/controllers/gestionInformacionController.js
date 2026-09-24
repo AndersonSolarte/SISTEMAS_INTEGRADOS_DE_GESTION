@@ -966,26 +966,37 @@ const parsePlanAccionPorcentaje = (value) => {
   return numeric > 0 && numeric <= 1 ? Number((numeric * 100).toFixed(2)) : Number(numeric.toFixed(2));
 };
 
-const mapPlanAccionRow = (row) => ({
-  anio: parseAnio(pickPlanAccionCell(row, 'anio')),
-  ped: normalizeText(pickPlanAccionCell(row, 'ped')),
-  objetivo_estrategico: normalizeText(pickPlanAccionCell(row, 'objetivo_estrategico')),
-  lineamiento_estrategico: normalizeText(pickPlanAccionCell(row, 'lineamiento_estrategico')),
-  macroactividad: normalizeText(pickPlanAccionCell(row, 'macroactividad')),
-  actividad: normalizeText(pickPlanAccionCell(row, 'actividad')),
-  tipo_indicador: normalizeText(pickPlanAccionCell(row, 'tipo_indicador')),
-  fecha_inicio: parsePlanAccionFecha(pickPlanAccionCell(row, 'fecha_inicio')),
-  fecha_fin: parsePlanAccionFecha(pickPlanAccionCell(row, 'fecha_fin')),
-  indicador: normalizeText(pickPlanAccionCell(row, 'indicador')),
-  meta: normalizeText(pickPlanAccionCell(row, 'meta')),
-  responsable: normalizeText(pickPlanAccionCell(row, 'responsable')),
-  corresponsable: normalizeText(pickPlanAccionCell(row, 'corresponsable')),
-  avance_ip: parsePlanAccionPorcentaje(pickPlanAccionCell(row, 'avance_ip')),
-  observaciones_ip: normalizeText(pickPlanAccionCell(row, 'observaciones_ip')),
-  avance_iip: parsePlanAccionPorcentaje(pickPlanAccionCell(row, 'avance_iip')),
-  observaciones_iip: normalizeText(pickPlanAccionCell(row, 'observaciones_iip')),
-  total_ejecucion: parsePlanAccionPorcentaje(pickPlanAccionCell(row, 'total_ejecucion'))
-});
+const resolvePlanAccionTotal = (avanceIp, avanceIip, totalReportado) => {
+  const total = parsePlanAccionPorcentaje(totalReportado);
+  if (total !== null) return total;
+  if (avanceIp === null && avanceIip === null) return null;
+  return Number(Math.min(100, Math.max(0, (avanceIp || 0) + (avanceIip || 0))).toFixed(2));
+};
+
+const mapPlanAccionRow = (row) => {
+  const avanceIp = parsePlanAccionPorcentaje(pickPlanAccionCell(row, 'avance_ip'));
+  const avanceIip = parsePlanAccionPorcentaje(pickPlanAccionCell(row, 'avance_iip'));
+  return {
+    anio: parseAnio(pickPlanAccionCell(row, 'anio')),
+    ped: normalizeText(pickPlanAccionCell(row, 'ped')),
+    objetivo_estrategico: normalizeText(pickPlanAccionCell(row, 'objetivo_estrategico')),
+    lineamiento_estrategico: normalizeText(pickPlanAccionCell(row, 'lineamiento_estrategico')),
+    macroactividad: normalizeText(pickPlanAccionCell(row, 'macroactividad')),
+    actividad: normalizeText(pickPlanAccionCell(row, 'actividad')),
+    tipo_indicador: normalizeText(pickPlanAccionCell(row, 'tipo_indicador')),
+    fecha_inicio: parsePlanAccionFecha(pickPlanAccionCell(row, 'fecha_inicio')),
+    fecha_fin: parsePlanAccionFecha(pickPlanAccionCell(row, 'fecha_fin')),
+    indicador: normalizeText(pickPlanAccionCell(row, 'indicador')),
+    meta: normalizeText(pickPlanAccionCell(row, 'meta')),
+    responsable: normalizeText(pickPlanAccionCell(row, 'responsable')),
+    corresponsable: normalizeText(pickPlanAccionCell(row, 'corresponsable')),
+    avance_ip: avanceIp,
+    observaciones_ip: normalizeText(pickPlanAccionCell(row, 'observaciones_ip')),
+    avance_iip: avanceIip,
+    observaciones_iip: normalizeText(pickPlanAccionCell(row, 'observaciones_iip')),
+    total_ejecucion: resolvePlanAccionTotal(avanceIp, avanceIip, pickPlanAccionCell(row, 'total_ejecucion'))
+  };
+};
 
 const GEOREFERENCIA_TEMPLATE_HEADERS = {
   'DIVIPOLA Departamento': {
@@ -3709,7 +3720,7 @@ const resolveDefaultImportSheetName = (workbook, categoria, subcategoria = '') =
   if (!validSheetNames.length) return null;
 
   if (categoria === 'Plan de Acción') {
-    const exactPlanSheet = validSheetNames.find((name) => normalizeHeader(name) === 'PLAN DE ACCION');
+    const exactPlanSheet = validSheetNames.find((name) => normalizeHeader(name) === 'PLAN_DE_ACCION');
     if (exactPlanSheet) return exactPlanSheet;
   }
 
@@ -5043,7 +5054,7 @@ const buildPlanAccionDashboardPayload = (rows = []) => {
   const mappedRows = (Array.isArray(rows) ? rows : []).map((row) => {
     const avanceIp = normalizePlanAccionPercent(row.avance_ip);
     const avanceIip = normalizePlanAccionPercent(row.avance_iip);
-    const avanceTotal = normalizePlanAccionPercent(row.total_ejecucion);
+    const avanceTotal = resolvePlanAccionTotal(avanceIp, avanceIip, row.total_ejecucion);
     return {
       id: row.id,
       anio: Number(row.anio || 0) || null,
@@ -9622,6 +9633,75 @@ const importFromExcel = async (req, res) => {
       });
     }
 
+    if (categoria === 'Plan de Acción') {
+      const receivedHeaders = new Set(headers.map((header) => normalizeHeader(header)));
+      const missingHeaders = PLAN_ACCION_TEMPLATE_HEADERS.filter(
+        (header) => !receivedHeaders.has(normalizeHeader(header))
+      );
+
+      if (missingHeaders.length > 0) {
+        return res.status(400).json({
+          success: false,
+          message: `No se importó ningún registro. La hoja de Plan de Acción no tiene la estructura esperada. Faltan columnas: ${missingHeaders.join(', ')}`
+        });
+      }
+
+      const preparedRows = rows.map((row, index) => ({
+        fila: index + 2,
+        payload: mapPlanAccionRow(row)
+      }));
+      const validationErrors = preparedRows
+        .filter(({ payload }) => !payload.anio)
+        .map(({ fila }) => ({ fila, error: 'Campo obligatorio inválido: AÑO' }));
+
+      if (validationErrors.length > 0) {
+        return res.status(400).json({
+          success: false,
+          message: `No se importó ningún registro. Corrige las ${validationErrors.length} filas inválidas; la información anterior se conservó.`,
+          data: { total: rows.length, importados: 0, errores: validationErrors.slice(0, 50) }
+        });
+      }
+
+      await ensurePlanAccionTable();
+      const transaction = await PlanAccion.sequelize.transaction();
+      try {
+        await Estadistica.destroy({ where: { categoria: 'Plan de Acción' }, transaction });
+        await PlanAccion.destroy({ where: {}, transaction });
+        await PlanAccion.bulkCreate(
+          preparedRows.map(({ payload }) => ({
+            ...payload,
+            estado_workflow: 'Aprobado',
+            creado_por: req.user?.id || null,
+            actualizado_por: req.user?.id || null
+          })),
+          { transaction, validate: true }
+        );
+        await GestionInformacionCarga.create({
+          categoria: 'Plan de Acción',
+          subcategoria: fixedSubcategoria,
+          variable: fixedSubcategoria || 'Plan de Acción',
+          archivo_nombre: req.file?.originalname || null,
+          total_plantilla: preparedRows.length,
+          total_cargados: preparedRows.length,
+          total_omitidos: 0,
+          porcentaje_cargado: 100,
+          estado: 'exitoso',
+          detalle: null,
+          creado_por: req.user?.id || null
+        }, { transaction });
+        await transaction.commit();
+      } catch (error) {
+        await transaction.rollback();
+        throw error;
+      }
+
+      return res.json({
+        success: true,
+        message: `Importación finalizada para Plan de Acción: ${preparedRows.length}/${preparedRows.length} registros`,
+        data: { total: preparedRows.length, importados: preparedRows.length, errores: [] }
+      });
+    }
+
     if (categoria === 'Poblacional' && poblacionalConfig) {
       await clearDatasetStorage({
         categoria: 'Poblacional',
@@ -9635,9 +9715,6 @@ const importFromExcel = async (req, res) => {
         subcategoria: saberProConfig.label,
         saberProConfig
       });
-    }
-    if (categoria === 'Plan de Acción') {
-      await clearDatasetStorage({ categoria: 'Plan de Acción' });
     }
     if (categoria === 'Autoevaluación') {
       await clearDatasetStorage({ categoria: 'Autoevaluación', subcategoria: fixedSubcategoria });
@@ -10037,23 +10114,6 @@ const importFromExcel = async (req, res) => {
             actualizado_por: req.user?.id || null
           });
         }
-        result.importados += 1;
-        continue;
-      }
-
-      if (categoria === 'Plan de Acción') {
-        await ensurePlanAccionTable();
-        const payload = mapPlanAccionRow(row);
-        if (!payload.anio) {
-          result.errores.push({ fila, error: 'Campo obligatorio inválido: AÑO' });
-          continue;
-        }
-        await PlanAccion.create({
-          ...payload,
-          estado_workflow: 'Aprobado',
-          creado_por: req.user?.id || null,
-          actualizado_por: req.user?.id || null
-        });
         result.importados += 1;
         continue;
       }
@@ -11675,6 +11735,3 @@ module.exports = {
   notificarMonitoreoRegistrosCalificados,
   actualizarCicloProgramaResolucion
 };
-
-
-
