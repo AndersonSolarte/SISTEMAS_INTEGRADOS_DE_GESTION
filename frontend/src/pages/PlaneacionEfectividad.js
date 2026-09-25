@@ -1059,8 +1059,8 @@ function PlanesAccionTab({ rows }) {
           <Typography sx={{ fontSize: 15, fontWeight: 900, color: '#1e293b' }}>Detalle de Indicadores</Typography>
         </Stack>
 
-        <Box sx={{ p: 2.2, bgcolor: '#f8fafc', maxHeight: 720, overflowY: 'auto' }}>
-          <Stack spacing={1.5}>
+        <Box sx={{ p: { xs: 1, md: 1.4 }, bgcolor: '#f8fafc', maxHeight: 720, overflowY: 'auto' }}>
+          <Stack spacing={1}>
             {visibleRows.map((row) => {
               const ip = percent(row.avance_ip) || 0;
               const iipReal = percent(row.avance_iip) || 0;
@@ -1070,87 +1070,84 @@ function PlanesAccionTab({ rows }) {
               const totalTone = getProgressTone(total);
               const ipTone = getProgressTone(ip);
               const iipTone = esAutoIip ? { color: '#059669', bg: '#d1fae5' } : getProgressTone(iip);
-              const circleSize = Math.min(total, 100) * 2.07;
               return (
-                <Paper key={row.id} elevation={0} sx={{ p: 2.2, borderRadius: 3, borderLeft: `5px solid ${totalTone.color}`, boxShadow: '0 2px 12px rgba(0,0,0,.04)' }}>
-                  <Stack direction={{ xs: 'column', md: 'row' }} spacing={2} justifyContent="space-between" sx={{ mb: 1.4 }}>
-                    <Stack spacing={1}>
+                <Paper
+                  key={row.id}
+                  elevation={0}
+                  sx={{
+                    p: { xs: 1.25, md: 1.5 },
+                    borderRadius: 2.5,
+                    border: '1px solid #e2e8f0',
+                    borderLeft: `4px solid ${totalTone.color}`,
+                    boxShadow: '0 2px 8px rgba(15,23,42,.035)'
+                  }}
+                >
+                  <Stack direction={{ xs: 'column', sm: 'row' }} spacing={0.8} justifyContent="space-between" alignItems={{ xs: 'stretch', sm: 'flex-start' }} sx={{ mb: 1 }}>
+                    <Stack spacing={0.55} sx={{ minWidth: 0, flex: 1 }}>
                       {!selectedResponsable && (
-                        <Chip label={row.responsable || 'Sin responsable'} sx={{ width: 'fit-content', bgcolor: '#f1f5f9', color: totalTone.color, fontWeight: 800 }} />
+                        <Chip
+                          label={row.responsable || 'Sin responsable'}
+                          size="small"
+                          sx={{ width: 'fit-content', height: 24, bgcolor: '#f1f5f9', color: '#64748b', fontWeight: 800, fontSize: 10.5 }}
+                        />
                       )}
-                      <Typography sx={{ fontSize: 15, fontWeight: 900, color: '#1e3a8a' }}>
+                      <Typography sx={{ fontSize: { xs: 12.5, md: 13.5 }, lineHeight: 1.35, fontWeight: 900, color: '#1e3a8a', overflowWrap: 'anywhere' }}>
                         {row.indicador || row.actividad || '-'}
                       </Typography>
-                      <Box sx={{ p: 1.2, borderRadius: 2, bgcolor: '#f8fafc', border: '1px solid #e2e8f0' }}>
-                        <Typography sx={{ fontSize: 12, color: '#1e40af', fontWeight: 800 }}>Lineamiento</Typography>
-                        <Typography sx={{ fontSize: 12.5, color: '#475569' }}>{row.lineamiento_estrategico || '-'}</Typography>
-                        <Typography sx={{ fontSize: 12, color: '#1e40af', fontWeight: 800, mt: 1 }}>Objetivo</Typography>
-                        <Typography sx={{ fontSize: 12.5, color: '#475569' }}>{row.objetivo_estrategico || '-'}</Typography>
-                        {(row.observaciones_ip || row.observaciones_iip) && (
-                          <>
-                            <Typography sx={{ fontSize: 12, color: '#a16207', fontWeight: 800, mt: 1 }}>Observaciones</Typography>
-                            <Typography sx={{ fontSize: 12.5, color: '#713f12' }}>{row.observaciones_ip || row.observaciones_iip}</Typography>
-                          </>
-                        )}
-                      </Box>
                     </Stack>
 
-                    <Chip label={total >= 100 ? 'Cumplido' : total > 0 ? 'En Proceso' : 'Pendiente'} sx={{ alignSelf: 'flex-start', bgcolor: totalTone.bg, color: totalTone.color, fontWeight: 900 }} />
+                    <Chip
+                      label={total >= 100 ? 'Cumplido' : total > 0 ? 'En Proceso' : 'Pendiente'}
+                      size="small"
+                      sx={{ alignSelf: 'flex-start', height: 26, bgcolor: totalTone.bg, color: totalTone.color, fontWeight: 900, fontSize: 10.5 }}
+                    />
                   </Stack>
 
-                  <Stack direction={{ xs: 'column', lg: 'row' }} spacing={2} alignItems={{ xs: 'stretch', lg: 'center' }}>
-                    <Box sx={{ flex: 1, display: 'grid', gap: 1, gridTemplateColumns: { xs: '1fr', md: 'repeat(4, 1fr)' } }}>
-                      <Paper elevation={0} sx={{ p: 1.4, borderRadius: 2, textAlign: 'center', bgcolor: '#eff6ff', border: '1px solid #93c5fd' }}>
-                        <Typography sx={{ fontSize: 10, color: '#64748b', fontWeight: 800, textTransform: 'uppercase' }}>Meta</Typography>
-                        <Typography sx={{ fontSize: 22, color: '#1e40af', fontWeight: 900 }}>{row.meta || '-'}</Typography>
+                  <Box sx={{ display: 'grid', gap: 1, gridTemplateColumns: { xs: '1fr', lg: 'minmax(300px, .9fr) minmax(560px, 1.7fr)' }, alignItems: 'stretch' }}>
+                    <Box sx={{ p: 1, borderRadius: 2, bgcolor: '#f8fafc', border: '1px solid #e2e8f0', display: 'grid', gap: 0.65 }}>
+                      <Box>
+                        <Typography sx={{ fontSize: 9.5, lineHeight: 1.2, color: '#1e40af', fontWeight: 900, textTransform: 'uppercase' }}>Lineamiento</Typography>
+                        <Typography sx={{ mt: 0.2, fontSize: 11, lineHeight: 1.35, color: '#475569' }}>{row.lineamiento_estrategico || '-'}</Typography>
+                      </Box>
+                      <Box>
+                        <Typography sx={{ fontSize: 9.5, lineHeight: 1.2, color: '#1e40af', fontWeight: 900, textTransform: 'uppercase' }}>Objetivo</Typography>
+                        <Typography sx={{ mt: 0.2, fontSize: 11, lineHeight: 1.35, color: '#475569' }}>{row.objetivo_estrategico || '-'}</Typography>
+                      </Box>
+                      {(row.observaciones_ip || row.observaciones_iip) && (
+                        <Box sx={{ pt: 0.55, borderTop: '1px dashed #fde68a' }}>
+                          <Typography sx={{ fontSize: 9.5, color: '#a16207', fontWeight: 900, textTransform: 'uppercase' }}>Observaciones</Typography>
+                          <Typography sx={{ mt: 0.2, fontSize: 10.5, lineHeight: 1.35, color: '#713f12' }}>{row.observaciones_ip || row.observaciones_iip}</Typography>
+                        </Box>
+                      )}
+                    </Box>
+
+                    <Box sx={{ display: 'grid', gap: 0.75, gridTemplateColumns: { xs: '1fr', sm: 'repeat(2, minmax(0, 1fr))', md: 'repeat(4, minmax(0, 1fr))' } }}>
+                      <Paper elevation={0} sx={{ p: 1, minHeight: 82, borderRadius: 2, textAlign: 'left', bgcolor: '#eff6ff', border: '1px solid #bfdbfe', display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
+                        <Typography sx={{ fontSize: 9, color: '#64748b', fontWeight: 900, textTransform: 'uppercase', letterSpacing: 0.35 }}>Meta</Typography>
+                        <Typography sx={{ mt: 0.35, fontSize: { xs: 13, md: 14 }, lineHeight: 1.3, color: '#1e40af', fontWeight: 900, overflowWrap: 'anywhere' }}>{row.meta || '-'}</Typography>
                       </Paper>
                       {[
                         ['Período I', ip, ipTone, false],
                         ['Período II', iip, iipTone, esAutoIip]
                       ].map(([label, value, tone, auto]) => (
-                        <Paper key={label} elevation={0} sx={{ p: 1.4, borderRadius: 2, textAlign: 'center', bgcolor: '#f8fafc', border: '1px solid #e2e8f0' }}>
-                          <Typography sx={{ fontSize: 10, color: '#64748b', fontWeight: 800, textTransform: 'uppercase' }}>
+                        <Paper key={label} elevation={0} sx={{ p: 1, minHeight: 82, borderRadius: 2, textAlign: 'left', bgcolor: '#fff', border: '1px solid #e2e8f0', display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
+                          <Typography sx={{ fontSize: 9, color: '#64748b', fontWeight: 900, textTransform: 'uppercase', letterSpacing: 0.35 }}>
                             {label} {auto ? <Box component="span" sx={{ px: 0.5, py: 0.1, borderRadius: 1, bgcolor: '#3b82f6', color: 'white', fontSize: 9 }}>AUTO</Box> : null}
                           </Typography>
-                          <Typography sx={{ fontSize: 22, color: tone.color, fontWeight: 900 }}>{formatPercent(value)}</Typography>
-                          <Box sx={{ mt: 0.8, height: 4, borderRadius: 99, bgcolor: '#e2e8f0', overflow: 'hidden' }}>
+                          <Typography sx={{ mt: 0.3, fontSize: 19, lineHeight: 1.1, color: tone.color, fontWeight: 900 }}>{formatPercent(value)}</Typography>
+                          <Box sx={{ mt: 0.65, height: 4, borderRadius: 99, bgcolor: '#e2e8f0', overflow: 'hidden' }}>
                             <Box sx={{ width: `${Math.min(value, 100)}%`, height: '100%', bgcolor: value > 0 ? tone.color : '#e2e8f0' }} />
                           </Box>
                         </Paper>
                       ))}
-                      <Paper elevation={0} sx={{ p: 1.4, borderRadius: 2, textAlign: 'center', bgcolor: '#f0fdf4', border: '1px solid #86efac' }}>
-                        <Typography sx={{ fontSize: 10, color: '#64748b', fontWeight: 800, textTransform: 'uppercase' }}>Avance Total</Typography>
-                        <Typography sx={{ fontSize: 24, color: totalTone.color, fontWeight: 900 }}>{formatPercent(total)}</Typography>
+                      <Paper elevation={0} sx={{ p: 1, minHeight: 82, borderRadius: 2, textAlign: 'left', bgcolor: totalTone.bg, border: `1px solid ${totalTone.color}40`, display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
+                        <Typography sx={{ fontSize: 9, color: '#64748b', fontWeight: 900, textTransform: 'uppercase', letterSpacing: 0.35 }}>Avance Total</Typography>
+                        <Typography sx={{ mt: 0.3, fontSize: 20, lineHeight: 1.1, color: totalTone.color, fontWeight: 900 }}>{formatPercent(total)}</Typography>
+                        <Box sx={{ mt: 0.65, height: 4, borderRadius: 99, bgcolor: 'rgba(148,163,184,.22)', overflow: 'hidden' }}>
+                          <Box sx={{ width: `${Math.min(total, 100)}%`, height: '100%', bgcolor: total > 0 ? totalTone.color : '#cbd5e1' }} />
+                        </Box>
                       </Paper>
                     </Box>
-
-                    <Box sx={{ width: 92, height: 92, position: 'relative', alignSelf: 'center' }}>
-                      <Box
-                        component="svg"
-                        viewBox="0 0 80 80"
-                        sx={{ width: '100%', height: '100%', transform: 'rotate(-90deg)' }}
-                      >
-                        <circle cx="40" cy="40" r="33" fill="none" stroke="#e2e8f0" strokeWidth="6" />
-                        <circle
-                          cx="40"
-                          cy="40"
-                          r="33"
-                          fill="none"
-                          stroke={total > 0 ? totalTone.color : '#e2e8f0'}
-                          strokeWidth="6"
-                          strokeLinecap="round"
-                          strokeDasharray={`${circleSize} 207`}
-                        />
-                      </Box>
-                      <Stack spacing={0} alignItems="center" justifyContent="center" sx={{ position: 'absolute', inset: 0 }}>
-                        <Typography sx={{ fontSize: 26, lineHeight: 1, fontWeight: 900, color: totalTone.color }}>{Math.round(total)}</Typography>
-                        <Typography sx={{ fontSize: 12, fontWeight: 800, color: '#64748b' }}>%</Typography>
-                      </Stack>
-                    </Box>
-                  </Stack>
-
-                  <Box sx={{ mt: 1.4, height: 4, borderRadius: 99, bgcolor: '#e2e8f0', overflow: 'hidden' }}>
-                    <Box sx={{ width: `${Math.min(total, 100)}%`, height: '100%', background: total > 0 ? `linear-gradient(90deg, ${totalTone.color}, ${totalTone.color}99)` : '#e2e8f0' }} />
                   </Box>
                 </Paper>
               );
