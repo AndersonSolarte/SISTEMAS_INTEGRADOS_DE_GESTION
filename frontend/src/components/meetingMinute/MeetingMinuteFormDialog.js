@@ -1021,7 +1021,16 @@ export default function MeetingMinuteFormDialog({ open, document, user, onClose 
       const url = URL.createObjectURL(blob);
       const anchor = window.document.createElement('a');
       anchor.href = url;
-      anchor.download = `ACTA-${form.fecha || 'REUNION'}${isCopia ? '-COPIA' : ''}.pdf`;
+      const cleanTitle = (form.titulo || '')
+        .replace(/[/\\?%*:|"<>]/g, '')
+        .replace(/\s+/g, ' ')
+        .trim()
+        .slice(0, 60)
+        .trim();
+      const datePart = form.fecha || 'REUNION';
+      const titleSuffix = cleanTitle ? ` - ${cleanTitle}` : '';
+      const copySuffix = isCopia ? ' - COPIA' : '';
+      anchor.download = `ACTA-${datePart}${titleSuffix}${copySuffix}.pdf`;
       anchor.click();
       URL.revokeObjectURL(url);
     } catch (error) {

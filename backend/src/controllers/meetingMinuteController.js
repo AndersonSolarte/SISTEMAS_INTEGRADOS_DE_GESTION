@@ -1184,8 +1184,17 @@ const downloadPdf = wrap(async (req, res) => {
   if (!isAuthorized) throw Object.assign(new Error('No tiene permiso para descargar esta acta.'), { statusCode: 403 });
   const isCopy = req.query.tipo === 'copia' || req.query.copia === 'true';
   const buffer = await buildSignedMinutePdfBuffer(minute, { hideSignatures: isCopy });
+  const rawTitle = minute.content?.titulo || '';
+  const cleanTitle = String(rawTitle).replace(/[/\\?%*:|"<>]/g, '').replace(/\s+/g, ' ').trim().slice(0, 60).trim();
+  const datePart = minute.content?.fecha || minute.code;
+  const safeAsciiTitle = cleanTitle.normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+  const titlePartAscii = safeAsciiTitle ? ` - ${safeAsciiTitle}` : '';
+  const titlePartUtf8 = cleanTitle ? ` - ${cleanTitle}` : '';
+  const copySuffix = isCopy ? ' - COPIA' : '';
+  const asciiFilename = `ACTA-${datePart}${titlePartAscii}${copySuffix}.pdf`;
+  const encodedFilename = encodeURIComponent(`ACTA-${datePart}${titlePartUtf8}${copySuffix}.pdf`);
   res.setHeader('Content-Type', 'application/pdf');
-  res.setHeader('Content-Disposition', `attachment; filename="${minute.code}${isCopy ? '-COPIA' : ''}.pdf"`);
+  res.setHeader('Content-Disposition', `attachment; filename="${asciiFilename}"; filename*=UTF-8''${encodedFilename}`);
   res.send(buffer);
 });
 
