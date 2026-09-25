@@ -12,8 +12,9 @@ const { generatePlanAccionBuffer } = require('./planAccionExportService');
 const { listTermDependencies } = require('./strategicTermDependencyService');
 
 // Este servicio es deliberadamente independiente de la sincronizacion PEI existente.
-// Usa exclusivamente el OAuth de Planes de Accion y no modifica el cliente de Drive
-// ni las credenciales de correo/autenticacion de los demas modulos de SIAC.
+// Mientras se habilita el OAuth de Planes de Accion puede reutilizar, solo para Drive,
+// la cuenta de servicio ya configurada. No modifica sus credenciales ni el cliente de
+// Drive, correo o autenticacion de los demas modulos de SIAC.
 const ROOT_ENV = 'SIAC_ACTION_REPOSITORY_ROOT_ID';
 const DRIVE_FOLDER = 'application/vnd.google-apps.folder';
 const REPOSITORY_PROPERTY = 'siacActionRepositoryKey';
@@ -43,7 +44,41 @@ const buildActionRepositoryDriveAuth = () => {
   return auth;
 };
 
-const buildActionRepositoryDriveClient = () => google.drive({ version: 'v3', auth: buildActionRepositoryDriveAuth() });
+const hasUsableActionRepositoryOAuth = () => {
+  const clientId = String(process.env.PLAN_ACTION_GOOGLE_CLIENT_ID || '').trim();
+  const clientSecret = String(process.env.PLAN_ACTION_GOOGLE_CLIENT_SECRET || '').trim();
+  const refreshToken = String(process.env.PLAN_ACTION_GOOGLE_REFRESH_TOKEN || '').trim();
+  return Boolean(clientId && clientSecret && /^1\/\//.test(refreshToken));
+};
+
+const buildActionRepositoryServiceAccountAuth = () => {
+  const directEmail = String(process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL || '').trim();
+  const directKey = String(process.env.GOOGLE_PRIVATE_KEY || '').replace(/\\n/g, '\n').trim();
+  const source = String(process.env.GOOGLE_SERVICE_ACCOUNT_JSON || process.env.GOOGLE_SERVICE_ACCOUNT_FILE || '').trim();
+  let credentials = null;
+
+  if (source) {
+    const resolved = path.isAbsolute(source) ? source : path.resolve(__dirname, '../../', source);
+    const raw = source.startsWith('{') ? source : fs.readFileSync(resolved, 'utf8');
+    credentials = JSON.parse(raw);
+  }
+
+  const email = directEmail || String(credentials?.client_email || '').trim();
+  const key = directKey || String(credentials?.private_key || '').replace(/\\n/g, '\n').trim();
+  if (!email || !key) {
+    const error = new Error('El OAuth de Planes de Acción aún no está disponible y tampoco se encontró la cuenta de servicio existente para sincronizar con Drive.');
+    error.statusCode = 503;
+    throw error;
+  }
+  return new google.auth.JWT({ email, key, scopes: ['https://www.googleapis.com/auth/drive'] });
+};
+
+const buildActionRepositoryDriveClient = () => {
+  const auth = hasUsableActionRepositoryOAuth()
+    ? buildActionRepositoryDriveAuth()
+    : buildActionRepositoryServiceAccountAuth();
+  return google.drive({ version: 'v3', auth });
+};
 
 const verifyRepositoryRoot = async (drive, rootId) => {
   try {
@@ -267,6 +302,7 @@ const syncActionPlanRepositoryTerm = async (termId) => {
   const assignments = await listTermDependencies({ planId: term.strategic_plan_id, termId: term.id });
   const repositoryEntries = buildRepositoryEntries(assignments, actionPlans);
 
+  const usingOAuth = hasUsableActionRepositoryOAuth();
   const drive = buildActionRepositoryDriveClient();
   await verifyRepositoryRoot(drive, rootId);
   const counters = { folders_created: 0, folders_updated: 0, folders_existing: 0, files_created: 0, files_updated: 0, files_unchanged: 0, dependencies: repositoryEntries.length, plans: actionPlans.length, pending_plans: repositoryEntries.filter((entry) => !entry.actionPlan).length, activities: 0, evidence: 0, minutes: 0 };
@@ -275,6 +311,7 @@ const syncActionPlanRepositoryTerm = async (termId) => {
     key: `action-repository:term:${term.id}`
   }, counters);
   const periods = buildRepositoryPeriods(term);
+  const planContexts = [];
 
   for (const entry of repositoryEntries) {
     const { actionPlan, unit } = entry;
@@ -299,6 +336,36 @@ const syncActionPlanRepositoryTerm = async (termId) => {
     // pero no crea registros ni archivos de Plan de Accion dentro de SIAC.
     if (!actionPlan) continue;
 
+    const activityFolders = new Map();
+    for (const item of actionPlan.items || []) {
+      counters.activities += 1;
+      const evidencePeriodIds = new Set((item.evidence || []).map((file) => String(file.monitoring_period_id)));
+      const applicablePeriods = periods.filter((period) => evidencePeriodIds.has(String(period.id)) || intersectsPeriod(item, period));
+      for (const period of (applicablePeriods.length ? applicablePeriods : periods)) {
+        const activityFolder = await ensureFolder(drive, {
+          parentId: periodFolders.get(String(period.id)),
+          name: compactFolderName(item.code, item.activity, 48),
+          key: `action-repository:activity:${item.id}:period:${period.id}`
+        }, counters);
+        activityFolders.set(`${item.id}:${period.id}`, activityFolder);
+      }
+    }
+    planContexts.push({ actionPlan, minutesFolder, officialFolder, activityFolders });
+  }
+
+  // Las cuentas de servicio pueden organizar carpetas compartidas en "Mi unidad",
+  // pero Google no les concede cuota para crear archivos. En este modo temporal se
+  // prepara toda la estructura; los documentos se incorporan al instalar el OAuth.
+  if (!usingOAuth) {
+    return {
+      ...counters, year: term.year, folder_id: yearFolder,
+      folder_url: `https://drive.google.com/drive/folders/${yearFolder}`,
+      drive_mode: 'service_account_folders_only', files_deferred: true
+    };
+  }
+
+  for (const context of planContexts) {
+    const { actionPlan, minutesFolder, officialFolder, activityFolders } = context;
     const workbook = await buildOfficialWorkbook(actionPlan);
     await upsertFile(drive, {
       parentId: officialFolder, name: `DIR-PE-FR-003_${actionPlan.code}_${term.year}.xlsx`,
@@ -321,15 +388,10 @@ const syncActionPlanRepositoryTerm = async (termId) => {
     }
 
     for (const item of actionPlan.items || []) {
-      counters.activities += 1;
       const evidencePeriodIds = new Set((item.evidence || []).map((file) => String(file.monitoring_period_id)));
       const applicablePeriods = periods.filter((period) => evidencePeriodIds.has(String(period.id)) || intersectsPeriod(item, period));
       for (const period of (applicablePeriods.length ? applicablePeriods : periods)) {
-        const activityFolder = await ensureFolder(drive, {
-          parentId: periodFolders.get(String(period.id)),
-          name: compactFolderName(item.code, item.activity, 48),
-          key: `action-repository:activity:${item.id}:period:${period.id}`
-        }, counters);
+        const activityFolder = activityFolders.get(`${item.id}:${period.id}`);
         for (const evidence of (item.evidence || []).filter((file) => String(file.monitoring_period_id) === String(period.id))) {
           if (!evidence.storage_key || !fs.existsSync(evidence.storage_key)) continue;
           const buffer = fs.readFileSync(evidence.storage_key);
@@ -361,6 +423,8 @@ module.exports = {
   buildOfficialWorkbook,
   buildRepositoryEntries,
   buildActionRepositoryDriveAuth,
+  buildActionRepositoryServiceAccountAuth,
+  hasUsableActionRepositoryOAuth,
   repositoryPropertyValue,
   REPOSITORY_PROPERTY,
   MAX_APP_PROPERTY_BYTES

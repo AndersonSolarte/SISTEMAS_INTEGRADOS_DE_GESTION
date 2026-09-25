@@ -201,6 +201,27 @@ const getDocumentoYDuracionInfo = (row = {}) => {
   const duracionTipo = salida.duracionTipo;
   const duracionDias = salida.duracionDias;
 
+  const isDocente = (() => {
+    const data = row?.datos_formulario || {};
+    const laboral = data.laboral || {};
+    const snapshot = row?.solicitante_snapshot || {};
+    const cargo = laboral.cargo || data.personal?.cargo || snapshot.cargo || row?.cargo || '';
+    const vice = laboral.vicerrectoria || snapshot.vicerrectoria || '';
+    const perfilKey = String(laboral.reposicionPerfil?.key || row?.reposicion_perfil_laboral?.key || '').toLowerCase();
+
+    if (perfilKey.startsWith('docente')) return true;
+
+    const c = String(cargo || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+    const isDocenteCargo = /\b(docente|catedrat|profesor)\b/.test(c);
+
+    if (!isDocenteCargo) return false;
+
+    const v = String(vice || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+    if (v && !v.includes('academica') && !v.includes('facultad')) return false;
+
+    return true;
+  })();
+
   const isOficio = duracionTipo
     ? duracionTipo !== 'menos_media_jornada'
     : (Number(duracionDias) >= 1 || (salida.fechaRegreso && salida.fecha && salida.fechaRegreso !== salida.fecha) || (row.tiempo_solicitado_minutos && row.tiempo_solicitado_minutos >= 480));
@@ -212,49 +233,95 @@ const getDocumentoYDuracionInfo = (row = {}) => {
   let duracionBg = '#f0f9ff';
   let duracionBorder = '#bae6fd';
 
-  if (duracionTipo === '1_2_dias') {
-    const numDias = duracionDias || 1;
-    duracionLabel = `1 o 2 días (${numDias} ${numDias === 1 ? 'día' : 'días'})`;
-    duracionColor = '#b45309';
-    duracionBg = '#fffbeb';
-    duracionBorder = '#fde68a';
-  } else if (duracionTipo === '3_mas_dias') {
-    const numDias = duracionDias || 3;
-    duracionLabel = `3 o más días (${numDias} días)`;
-    duracionColor = '#6b21a8';
-    duracionBg = '#faf5ff';
-    duracionBorder = '#e9d5ff';
-  } else if (duracionTipo === 'menos_media_jornada') {
-    if (tipo === 'jurado_votacion') duracionLabel = 'Equivale a 1 día';
-    else if (tipo === 'sufragante') duracionLabel = 'Equivale a 1/2 jornada';
-    else duracionLabel = 'Menos de media jornada';
-    duracionColor = '#0369a1';
-    duracionBg = '#f0f9ff';
-    duracionBorder = '#bae6fd';
-  } else {
-    // Solicitudes existentes/históricas en base de datos sin duracionTipo explícito:
-    if (isOficio) {
-      if (duracionDias >= 3) {
-        duracionLabel = `3 o más días (${duracionDias} días)`;
-        duracionColor = '#6b21a8';
-        duracionBg = '#faf5ff';
-        duracionBorder = '#e9d5ff';
-      } else if (duracionDias === 1 || duracionDias === 2) {
-        duracionLabel = `1 o 2 días (${duracionDias} ${duracionDias === 1 ? 'día' : 'días'})`;
-        duracionColor = '#b45309';
-        duracionBg = '#fffbeb';
-        duracionBorder = '#fde68a';
-      } else {
-        duracionLabel = '1 o más días';
-        duracionColor = '#b45309';
-        duracionBg = '#fffbeb';
-        duracionBorder = '#fde68a';
-      }
-    } else {
-      duracionLabel = 'Menos de media jornada';
+  if (isDocente) {
+    if (duracionTipo === 'menos_media_jornada') {
+      duracionLabel = 'Hasta 1 día';
       duracionColor = '#0369a1';
       duracionBg = '#f0f9ff';
       duracionBorder = '#bae6fd';
+    } else if (duracionTipo === '1_2_dias') {
+      duracionLabel = '2 días';
+      duracionColor = '#b45309';
+      duracionBg = '#fffbeb';
+      duracionBorder = '#fde68a';
+    } else if (duracionTipo === '3_mas_dias') {
+      const numDias = Number(duracionDias) >= 3 ? duracionDias : 3;
+      duracionLabel = numDias > 3 ? `${numDias} días` : '3 días o más';
+      duracionColor = '#6b21a8';
+      duracionBg = '#faf5ff';
+      duracionBorder = '#e9d5ff';
+    } else {
+      // Solicitudes docentes históricas sin duracionTipo explícito:
+      if (isOficio) {
+        if (duracionDias >= 3) {
+          duracionLabel = `${duracionDias} días`;
+          duracionColor = '#6b21a8';
+          duracionBg = '#faf5ff';
+          duracionBorder = '#e9d5ff';
+        } else if (duracionDias === 2) {
+          duracionLabel = '2 días';
+          duracionColor = '#b45309';
+          duracionBg = '#fffbeb';
+          duracionBorder = '#fde68a';
+        } else {
+          duracionLabel = 'Hasta 1 día';
+          duracionColor = '#0369a1';
+          duracionBg = '#f0f9ff';
+          duracionBorder = '#bae6fd';
+        }
+      } else {
+        duracionLabel = 'Hasta 1 día';
+        duracionColor = '#0369a1';
+        duracionBg = '#f0f9ff';
+        duracionBorder = '#bae6fd';
+      }
+    }
+  } else {
+    // Administrativos y demás colaboradores (lógica original intacta)
+    if (duracionTipo === '1_2_dias') {
+      const numDias = duracionDias || 1;
+      duracionLabel = `1 o 2 días (${numDias} ${numDias === 1 ? 'día' : 'días'})`;
+      duracionColor = '#b45309';
+      duracionBg = '#fffbeb';
+      duracionBorder = '#fde68a';
+    } else if (duracionTipo === '3_mas_dias') {
+      const numDias = duracionDias || 3;
+      duracionLabel = `3 o más días (${numDias} días)`;
+      duracionColor = '#6b21a8';
+      duracionBg = '#faf5ff';
+      duracionBorder = '#e9d5ff';
+    } else if (duracionTipo === 'menos_media_jornada') {
+      if (tipo === 'jurado_votacion') duracionLabel = 'Equivale a 1 día';
+      else if (tipo === 'sufragante') duracionLabel = 'Equivale a 1/2 jornada';
+      else duracionLabel = 'Menos de media jornada';
+      duracionColor = '#0369a1';
+      duracionBg = '#f0f9ff';
+      duracionBorder = '#bae6fd';
+    } else {
+      // Solicitudes existentes/históricas en base de datos sin duracionTipo explícito:
+      if (isOficio) {
+        if (duracionDias >= 3) {
+          duracionLabel = `3 o más días (${duracionDias} días)`;
+          duracionColor = '#6b21a8';
+          duracionBg = '#faf5ff';
+          duracionBorder = '#e9d5ff';
+        } else if (duracionDias === 1 || duracionDias === 2) {
+          duracionLabel = `1 o 2 días (${duracionDias} ${duracionDias === 1 ? 'día' : 'días'})`;
+          duracionColor = '#b45309';
+          duracionBg = '#fffbeb';
+          duracionBorder = '#fde68a';
+        } else {
+          duracionLabel = '1 o más días';
+          duracionColor = '#b45309';
+          duracionBg = '#fffbeb';
+          duracionBorder = '#fde68a';
+        }
+      } else {
+        duracionLabel = 'Menos de media jornada';
+        duracionColor = '#0369a1';
+        duracionBg = '#f0f9ff';
+        duracionBorder = '#bae6fd';
+      }
     }
   }
 

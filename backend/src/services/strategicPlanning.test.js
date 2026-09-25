@@ -12,7 +12,8 @@ const { validateAdministrativeActDate } = require('./strategicPlanDateValidation
 const {
   repositoryName, compactFolderName, compactFileName, intersectsPeriod,
   buildRepositoryPeriods, buildOfficialWorkbook, buildActionRepositoryDriveAuth,
-  buildRepositoryEntries, repositoryPropertyValue, REPOSITORY_PROPERTY, MAX_APP_PROPERTY_BYTES
+  buildRepositoryEntries, hasUsableActionRepositoryOAuth, repositoryPropertyValue,
+  REPOSITORY_PROPERTY, MAX_APP_PROPERTY_BYTES
 } = require('./actionPlanRepositoryDriveService');
 
 test('workflow institucional contiene el recorrido completo y parametrizable', () => {
@@ -166,7 +167,7 @@ test('el repositorio genera el Excel oficial con las actividades del plan', asyn
   assert.ok(buffer.length > 0);
 });
 
-test('el repositorio usa exclusivamente el OAuth de Planes de Acción', () => {
+test('el OAuth del repositorio usa credenciales exclusivas de Planes de Acción', () => {
   const keys = ['PLAN_ACTION_GOOGLE_CLIENT_ID', 'PLAN_ACTION_GOOGLE_CLIENT_SECRET', 'PLAN_ACTION_GOOGLE_REFRESH_TOKEN'];
   const previous = Object.fromEntries(keys.map((key) => [key, process.env[key]]));
   process.env.PLAN_ACTION_GOOGLE_CLIENT_ID = 'plan-action-client';
@@ -196,6 +197,24 @@ test('el repositorio rechaza un Access Token pegado como Refresh Token', () => {
       () => buildActionRepositoryDriveAuth(),
       /Access Token temporal/
     );
+  } finally {
+    keys.forEach((key) => {
+      if (previous[key] === undefined) delete process.env[key];
+      else process.env[key] = previous[key];
+    });
+  }
+});
+
+test('el repositorio usa temporalmente la cuenta de servicio si OAuth solo tiene un Access Token', () => {
+  const keys = ['PLAN_ACTION_GOOGLE_CLIENT_ID', 'PLAN_ACTION_GOOGLE_CLIENT_SECRET', 'PLAN_ACTION_GOOGLE_REFRESH_TOKEN'];
+  const previous = Object.fromEntries(keys.map((key) => [key, process.env[key]]));
+  process.env.PLAN_ACTION_GOOGLE_CLIENT_ID = 'plan-action-client';
+  process.env.PLAN_ACTION_GOOGLE_CLIENT_SECRET = 'plan-action-secret';
+  process.env.PLAN_ACTION_GOOGLE_REFRESH_TOKEN = 'ya29.token-temporal';
+  try {
+    assert.equal(hasUsableActionRepositoryOAuth(), false);
+    process.env.PLAN_ACTION_GOOGLE_REFRESH_TOKEN = '1//refresh-token-valido';
+    assert.equal(hasUsableActionRepositoryOAuth(), true);
   } finally {
     keys.forEach((key) => {
       if (previous[key] === undefined) delete process.env[key];

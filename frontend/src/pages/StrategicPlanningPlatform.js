@@ -456,7 +456,12 @@ export default function StrategicPlanningPlatform({ onBack }) {
     try {
       const response = await strategicPlanningService.syncActionRepository(selectedActionTerm.id);
       setRepositoryResult(response.data);
-      enqueueSnackbar(`Repositorio de ${selectedActionTerm.year} sincronizado correctamente.`, { variant: 'success' });
+      enqueueSnackbar(
+        response.data?.files_deferred
+          ? `Estructura de carpetas de ${selectedActionTerm.year} preparada. Los archivos se subirán al habilitar OAuth.`
+          : `Repositorio de ${selectedActionTerm.year} sincronizado correctamente.`,
+        { variant: response.data?.files_deferred ? 'warning' : 'success' }
+      );
     } catch (error) {
       enqueueSnackbar(error.response?.data?.message || 'No fue posible sincronizar el repositorio con Drive.', { variant: 'error' });
     } finally { setRepositorySyncing(false); }
@@ -843,8 +848,8 @@ export default function StrategicPlanningPlatform({ onBack }) {
             </Button>
           </Stack>
           {!selectedActionUnits.length && <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 1 }}>Configure por lo menos una dependencia para esta vigencia.</Typography>}
-          {repositoryResult && <Alert severity="success" sx={{ mt: 1.75, borderRadius: 2.25 }} action={<Button color="inherit" size="small" href={repositoryResult.folder_url} target="_blank" rel="noreferrer" sx={{ fontWeight: 900 }}>Abrir Drive</Button>}>
-            <strong>Sincronización completa:</strong> {repositoryResult.dependencies ?? repositoryResult.plans} dependencias preparadas ({repositoryResult.plans} con plan y {repositoryResult.pending_plans ?? 0} pendientes), {repositoryResult.activities} actividades, {repositoryResult.evidence} evidencias y {repositoryResult.minutes} actas. Se crearon {repositoryResult.folders_created} carpetas y {repositoryResult.files_created} archivos.
+          {repositoryResult && <Alert severity={repositoryResult.files_deferred ? 'warning' : 'success'} sx={{ mt: 1.75, borderRadius: 2.25 }} action={<Button color="inherit" size="small" href={repositoryResult.folder_url} target="_blank" rel="noreferrer" sx={{ fontWeight: 900 }}>Abrir Drive</Button>}>
+            <strong>{repositoryResult.files_deferred ? 'Estructura de carpetas preparada:' : 'Sincronización completa:'}</strong> {repositoryResult.dependencies ?? repositoryResult.plans} dependencias preparadas ({repositoryResult.plans} con plan y {repositoryResult.pending_plans ?? 0} pendientes), {repositoryResult.activities} actividades y {repositoryResult.folders_created} carpetas nuevas.{repositoryResult.files_deferred ? ' Los Excel, actas y evidencias se incorporarán cuando Planeación autorice OAuth.' : ` ${repositoryResult.evidence} evidencias y ${repositoryResult.minutes} actas; ${repositoryResult.files_created} archivos creados.`}
           </Alert>}
         </Paper>}
 
