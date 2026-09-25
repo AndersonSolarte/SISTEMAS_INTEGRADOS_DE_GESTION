@@ -1558,13 +1558,15 @@ function LineamientosDashboard({ rows }) {
       />
       <MatrixTable
         title="Estadística del Plan Estratégico de Desarrollo"
-        subtitle="Ejecución Cualitativa de Lineamientos Estratégicos"
+        subtitle={`Ejecución Cualitativa de Lineamientos Estratégicos | Cada Año = ${stats.weightPerYear.toFixed(2)}% del total`}
         rows={stats.ejecucionRows.map((row) => ({ ...row, 'LINEAMIENTOS ESTRATÉGICOS': row.lineamiento }))}
         years={stats.years}
         rowKey="LINEAMIENTOS ESTRATÉGICOS"
         totalsByYear={stats.ejecucionTotalsByYear}
         generalTotal={stats.ejecucionGeneralProm}
-        footerNote={`NOTA: La ejecución representa el avance ponderado por el peso de cada año (${stats.weightPerYear.toFixed(2)}%).`}
+        annualScaleMax={stats.weightPerYear}
+        totalScaleMax={stats.weightPerYear * stats.years.length}
+        footerNote={`NOTA: Cada año tiene un máximo ponderado de ${stats.weightPerYear.toFixed(2)}%. Los colores y las barras se calculan tomando ese valor como el 100% anual. El total se evalúa sobre ${(stats.weightPerYear * stats.years.length).toFixed(2)}% para los ${stats.years.length} años visibles.`}
       />
     </Stack>
   );
@@ -1707,7 +1709,7 @@ function ActividadesDashboard({ rows }) {
       />
       <MatrixTable
         title="Estadística del Plan Estratégico de Desarrollo"
-        subtitle="Ejecución Cualitativa de Macroactividades Estratégicas"
+        subtitle={`Ejecución Cualitativa de Macroactividades Estratégicas | Cada Año = ${stats.weightPerYear.toFixed(2)}% del total`}
         rows={stats.ejecucionRows.map((row) => ({ ...row, 'MACROACTIVIDADES ESTRATÉGICAS': row.macroactividad }))}
         years={stats.years}
         rowKey="MACROACTIVIDADES ESTRATÉGICAS"
@@ -1715,7 +1717,9 @@ function ActividadesDashboard({ rows }) {
         generalTotal={stats.ejecucionGeneralProm}
         initialVisibleRows={40}
         loadMoreStep={40}
-        footerNote={`NOTA: La ejecución representa el avance ponderado por el peso de cada año (${stats.weightPerYear.toFixed(2)}%). El promedio se calcula dividiendo entre el número de lineamientos estratégicos del plan.`}
+        annualScaleMax={stats.weightPerYear}
+        totalScaleMax={stats.weightPerYear * stats.years.length}
+        footerNote={`NOTA: Cada año tiene un máximo ponderado de ${stats.weightPerYear.toFixed(2)}%. Los colores y las barras se calculan tomando ese valor como el 100% anual. El total se evalúa sobre ${(stats.weightPerYear * stats.years.length).toFixed(2)}% para los ${stats.years.length} años visibles.`}
       />
     </Stack>
   );
