@@ -11,13 +11,10 @@ import {
   DialogContent,
   DialogTitle,
   Fade,
-  FormControl,
   IconButton,
-  InputLabel,
   Link as MuiLink,
   MenuItem,
   Paper,
-  Select,
   Stack,
   Tooltip,
   Tab,
@@ -766,24 +763,70 @@ function HeroBanner({ compact, onBack }) {
 }
 
 function FilterBar({ filters, options, onChange, onReset }) {
+  const smartFilterOptions = useCallback((availableOptions, state) => {
+    const query = normalizeCatalogKey(state.inputValue);
+    if (!query) return availableOptions;
+
+    const terms = query.split(' ').filter(Boolean);
+    return availableOptions
+      .filter((option) => {
+        const normalizedOption = normalizeCatalogKey(option);
+        return terms.every((term) => normalizedOption.includes(term));
+      })
+      .sort((left, right) => {
+        const normalizedLeft = normalizeCatalogKey(left);
+        const normalizedRight = normalizeCatalogKey(right);
+        const leftStarts = normalizedLeft.startsWith(query) ? 0 : 1;
+        const rightStarts = normalizedRight.startsWith(query) ? 0 : 1;
+        return leftStarts - rightStarts || normalizedLeft.localeCompare(normalizedRight, 'es', { numeric: true });
+      });
+  }, []);
+
+  const responsableOptions = options.responsables || [];
+  const yearOptions = (options.anios || []).map(String);
+
   return (
     <Paper elevation={0} sx={{ p: 2.2, borderRadius: 3, border: '1px solid #dbeafe', bgcolor: '#f8fbff' }}>
       <Box sx={{ display: 'grid', gap: 1.5, gridTemplateColumns: { xs: '1fr', md: 'repeat(2, minmax(0, 1fr))' } }}>
-        <FormControl fullWidth>
-          <InputLabel>Responsable de Ejecución</InputLabel>
-          <Select value={filters.responsable} label="Responsable de Ejecución" onChange={(e) => onChange('responsable', e.target.value)}>
-            <MenuItem value="">Todos</MenuItem>
-            {(options.responsables || []).map((item) => <MenuItem key={item} value={item}>{item}</MenuItem>)}
-          </Select>
-        </FormControl>
+        <Autocomplete
+          fullWidth
+          autoHighlight
+          clearOnEscape
+          options={responsableOptions}
+          value={filters.responsable || null}
+          onChange={(_, value) => onChange('responsable', value || '')}
+          filterOptions={smartFilterOptions}
+          noOptionsText="No se encontraron responsables"
+          isOptionEqualToValue={(option, value) => option === value}
+          renderInput={(params) => (
+            <TextField
+              {...params}
+              label="Responsable de Ejecución"
+              placeholder="Escribe un nombre o dependencia"
+              helperText={filters.responsable ? 'Filtro aplicado' : 'Todos los responsables'}
+            />
+          )}
+        />
 
-        <FormControl fullWidth>
-          <InputLabel>Año</InputLabel>
-          <Select value={filters.anio} label="Año" onChange={(e) => onChange('anio', e.target.value)}>
-            <MenuItem value="">Todos</MenuItem>
-            {(options.anios || []).map((item) => <MenuItem key={item} value={String(item)}>{item}</MenuItem>)}
-          </Select>
-        </FormControl>
+        <Autocomplete
+          fullWidth
+          autoHighlight
+          clearOnEscape
+          options={yearOptions}
+          value={filters.anio ? String(filters.anio) : null}
+          onChange={(_, value) => onChange('anio', value || '')}
+          filterOptions={smartFilterOptions}
+          noOptionsText="No se encontró el año"
+          isOptionEqualToValue={(option, value) => option === value}
+          renderInput={(params) => (
+            <TextField
+              {...params}
+              label="Año"
+              placeholder="Escribe el año"
+              helperText={filters.anio ? 'Filtro aplicado' : 'Todos los años'}
+            />
+          )}
+        />
 
       </Box>
 
