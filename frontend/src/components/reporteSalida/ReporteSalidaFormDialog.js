@@ -1265,12 +1265,60 @@ function ReporteSalidaFormDialog({ open, documento, user, onClose, onSubmitted }
   }, [form.salida.fecha, form.salida.fechaRegreso, form.salida.horaInicio]);
   const reposicionHasAnyValue = Boolean(form.reposicion.fecha || form.reposicion.fechaFin || form.reposicion.horaInicio || form.reposicion.horaFin);
   const reposicionPlanComplete = Boolean(form.reposicion.fecha && form.reposicion.fechaFin && form.reposicion.horaInicio && form.reposicion.horaFin);
-  const isOficioSolicitud = form.salida.duracionTipo !== 'menos_media_jornada' && (
-    form.salida.duracionTipo === '1_2_dias' ||
-    form.salida.duracionTipo === '3_mas_dias' ||
-    Number(form.salida.duracionDias) >= 1
-  );
-  const reposicionLaboralProfile = form.laboral.reposicionPerfil || {};
+
+  // ── Detección de docente de Vicerrectoría Académica ───────────────────────────
+  // Para salidas individuales: el cargo del formulario determina si es docente académico.
+  // Para salidas grupales: solo muestra las opciones de docente si TODOS los participantes
+  // (incluido el solicitante actual) son docentes de la Vicerrectoría Académica.
+  const isDocenteAcademico = (() => {
+    const esDocenteAcad = (cargo, vice) => {
+      const c = String(cargo || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+      const v = String(vice || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+      return /\bdocente\b/.test(c) && v.includes('vicerrectoria academica');
+    };
+
+    const solicitanteEsDocente = esDocenteAcad(form.laboral.cargo, form.laboral.vicerrectoria);
+
+    if (!isSalidaMultiple) {
+      return solicitanteEsDocente;
+    }
+
+    // Grupal: todos deben ser docentes académicos (el solicitante + participantes)
+    if (!solicitanteEsDocente) return false;
+    return participantes.every(p => esDocenteAcad(p.cargo, form.laboral.vicerrectoria));
+  })();
+
+  const isOficioSolicitud = isDocenteAcademico
+    // Para docentes: cualquier segmento con días (incluido menos_media_jornada = 1 día) genera oficio
+    ? (form.salida.duracionTipo === 'menos_media_jornada' ||
+       form.salida.duracionTipo === '1_2_dias' ||
+       form.salida.duracionTipo === '3_mas_dias')
+    // Para no-docentes: solo 1_2_dias y 3_mas_dias
+    : (form.salida.duracionTipo !== 'menos_media_jornada' && (
+        form.salida.duracionTipo === '1_2_dias' ||
+        form.salida.duracionTipo === '3_mas_dias' ||
+        Number(form.salida.duracionDias) >= 1
+      ));
+
+
+
+  const reposicionLaboralProfile = (() => {
+    if (!isDocenteAcademico) {
+      return { key: 'administrativo', label: 'Administrativo', minutesPerDay: 520, manualTime: false };
+    }
+    const c = String(form.laboral.cargo || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+    if (c.includes('catedra')) {
+      return { key: 'docente_hora_catedra', label: 'Docente hora catedra', minutesPerDay: null, manualTime: true };
+    }
+    if (c.includes('medio tiempo') || c.includes('media jornada')) {
+      return { key: 'docente_medio_tiempo', label: 'Docente medio tiempo', minutesPerDay: 480, manualTime: false };
+    }
+    if (form.laboral.reposicionPerfil && String(form.laboral.reposicionPerfil.key || '').startsWith('docente')) {
+      return form.laboral.reposicionPerfil;
+    }
+    return { key: 'docente_tiempo_completo', label: 'Docente tiempo completo', minutesPerDay: 480, manualTime: false };
+  })();
+
   const isDiligenciaPersonal = category === 'personales' && subtype === 'diligencia_personal';
   const requiresManualProfileTime = isDiligenciaPersonal && reposicionLaboralProfile.manualTime === true;
   const shouldRequestReposicionHoras = isDiligenciaPersonal;
@@ -1289,13 +1337,30 @@ function ReporteSalidaFormDialog({ open, documento, user, onClose, onSubmitted }
 
   useEffect(() => {
     if (!isDiligenciaPersonal || reposicionEquivalentDays <= 0) return;
-    const nextDurationType = requestedReposicionMinutes < dailyJornadaMinutes
-      ? 'menos_media_jornada'
-      : (reposicionEquivalentDays <= 2 ? '1_2_dias' : '3_mas_dias');
-    const nextDurationDays = nextDurationType === 'menos_media_jornada' ? 0 : reposicionEquivalentDays;
+    let nextDurationType;
+    let nextDurationDays;
+
+    if (isDocenteAcademico) {
+      if (reposicionEquivalentDays <= 1) {
+        nextDurationType = 'menos_media_jornada'; // Hasta 1 día
+        nextDurationDays = 1;
+      } else if (reposicionEquivalentDays === 2) {
+        nextDurationType = '1_2_dias'; // 2 días
+        nextDurationDays = 2;
+      } else {
+        nextDurationType = '3_mas_dias'; // 3 días o más
+        nextDurationDays = reposicionEquivalentDays;
+      }
+    } else {
+      nextDurationType = requestedReposicionMinutes < dailyJornadaMinutes
+        ? 'menos_media_jornada'
+        : (reposicionEquivalentDays <= 2 ? '1_2_dias' : '3_mas_dias');
+      nextDurationDays = nextDurationType === 'menos_media_jornada' ? 0 : reposicionEquivalentDays;
+    }
+
     if (form.salida.duracionTipo !== nextDurationType) update('salida', 'duracionTipo', nextDurationType);
     if (Number(form.salida.duracionDias || 0) !== nextDurationDays) update('salida', 'duracionDias', nextDurationDays);
-  }, [dailyJornadaMinutes, form.salida.duracionDias, form.salida.duracionTipo, isDiligenciaPersonal, reposicionEquivalentDays, requestedReposicionMinutes]);
+  }, [dailyJornadaMinutes, form.salida.duracionDias, form.salida.duracionTipo, isDiligenciaPersonal, isDocenteAcademico, reposicionEquivalentDays, requestedReposicionMinutes]);
   const reposicionRangeIssue = useMemo(() => {
     if (!reposicionHasAnyValue) return '';
     if (!reposicionPlanComplete) {
@@ -2845,6 +2910,7 @@ function ReporteSalidaFormDialog({ open, documento, user, onClose, onSubmitted }
                   reposicionProfileLabel={reposicionLaboralProfile.label || 'Administrativo'}
                   reposicionTotalMinutes={declaredReposicionMinutes}
                   reposicionDailyMinutes={dailyJornadaMinutes}
+                  isDocenteAcademico={isDocenteAcademico}
                   subtype={subtype}
                   update={update}
                 />
@@ -2856,8 +2922,10 @@ function ReporteSalidaFormDialog({ open, documento, user, onClose, onSubmitted }
                   fieldSx={duracionDiasFieldSx}
                   locked={isDiligenciaPersonal}
                   onChange={(field, value) => update('salida', field, value)}
+                  isDocente={isDocenteAcademico}
                 />
               )}
+
 
               {!requiresViaticosFlow && subtype !== 'terapias' && hasCompletedPropiasCargoSteps && hasCompletedSaludMotivo && hasEnteredDiligenciaTime && (
                 <CamposDuracionSalida
@@ -2878,6 +2946,7 @@ function ReporteSalidaFormDialog({ open, documento, user, onClose, onSubmitted }
                   reposicionTotalMinutes={declaredReposicionMinutes}
                   reposicionDailyMinutes={dailyJornadaMinutes}
                   reposicionEquivalentDays={reposicionEquivalentDays}
+                  isDocenteAcademico={isDocenteAcademico}
                   subtype={subtype}
                   todayString={todayString}
                   update={update}

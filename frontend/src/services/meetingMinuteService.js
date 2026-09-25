@@ -7,6 +7,7 @@ const meetingMinuteService = {
   getConfig: () => api.get(`${root}/config`).then(unwrap),
   updateConfig: (enabled) => api.patch(`${root}/config`, { enabled }).then(unwrap),
   lookupParticipant: (document) => api.get(`${root}/participants/lookup`, { params: { document } }).then(unwrap),
+  listLocations: () => api.get(`${root}/locations`).then(unwrap),
   list: () => api.get(root).then(unwrap),
   get: (id) => api.get(`${root}/${id}`).then(unwrap),
   save: (payload) => api.post(root, payload).then(unwrap),

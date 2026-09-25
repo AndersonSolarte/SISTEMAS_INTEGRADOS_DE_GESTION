@@ -27,6 +27,12 @@ const hash = (value) => crypto.createHash('sha256').update(Buffer.isBuffer(value
 const contentHash = (value) => hash(JSON.stringify(value));
 const isAdmin = (user) => String(user?.role || '') === 'administrador';
 const clean = (value, max = 8000) => String(value || '').replace(/\u0000/g, '').trim().slice(0, max);
+const formatDependencyOfficeLocation = (value) => {
+  const dependency = clean(value, 220).replace(/\s+/g, ' ');
+  if (!dependency) return '';
+  if (/^oficina\b/i.test(dependency)) return dependency;
+  return `Oficina de ${dependency}`;
+};
 const maskAndEncryptIp = (ip = '') => {
   if (!ip) return null;
   const cleanIp = String(ip).replace(/^::ffff:/, '').trim();
@@ -88,6 +94,18 @@ const participantIdentity = (participant = {}) => ({
   document: clean(participant.document, 100).toLowerCase(),
   email: clean(participant.email, 254).toLowerCase()
 });
+const participantMembershipKey = (participant = {}) => {
+  if (participant.user_id) return `user:${participant.user_id}`;
+  const identity = participantIdentity(participant);
+  if (identity.document) return `doc:${identity.document}`;
+  if (identity.email) return `email:${identity.email}`;
+  return '';
+};
+const hasSameParticipantMembership = (currentParticipants = [], requestedParticipants = []) => {
+  const current = currentParticipants.map(participantMembershipKey).filter(Boolean).sort();
+  const requested = requestedParticipants.map(participantMembershipKey).filter(Boolean).sort();
+  return current.length === requested.length && current.every((key, index) => key === requested[index]);
+};
 const participantRoleLabel = (participant = {}) => {
   const role = clean(participant.role_title, 220);
   const organization = clean(participant.organization, 240);
@@ -202,25 +220,28 @@ const resolveMinuteResponsibleEmails = async (minute) => {
   return emails;
 };
 
-const canAccessMinuteFullSignatures = async (user, minute) => {
+const isMinuteResponsible = (user, minute) => {
   if (!user || !minute) return false;
-  if (isAdmin(user)) return true;
   const userId = Number(user.id);
-  if (minute.created_by && Number(minute.created_by) === userId) return true;
   const userDoc = String(user.username || user.documento || user.cedula || '').trim().toLowerCase();
   const userEmail = clean(user.email, 254).toLowerCase();
-  const userName = String(user.nombre || user.name || '').trim().toLowerCase();
   const content = minute.content || {};
   const data = Array.isArray(content.responsables_data) ? content.responsables_data : [];
   const isResp = data.some((r) =>
     (userDoc && r.document && String(r.document).trim().toLowerCase() === userDoc) ||
     (userId && r.user_id && Number(r.user_id) === userId) ||
-    (userEmail && r.email && clean(r.email, 254).toLowerCase() === userEmail) ||
-    (userName && (r.name || r.nombre) && String(r.name || r.nombre).trim().toLowerCase() === userName)
+    (userEmail && r.email && clean(r.email, 254).toLowerCase() === userEmail)
   ) || (userDoc && content.responsable_document && String(content.responsable_document).trim().toLowerCase() === userDoc)
-    || (userEmail && content.responsable_email && clean(content.responsable_email, 254).toLowerCase() === userEmail)
-    || (userName && content.responsable_nombre && String(content.responsable_nombre).trim().toLowerCase() === userName);
+    || (userEmail && content.responsable_email && clean(content.responsable_email, 254).toLowerCase() === userEmail);
   return Boolean(isResp);
+};
+
+const canAccessMinuteFullSignatures = async (user, minute) => {
+  if (!user || !minute) return false;
+  if (isAdmin(user)) return true;
+  const userId = Number(user.id);
+  if (minute.created_by && Number(minute.created_by) === userId) return true;
+  return isMinuteResponsible(user, minute);
 };
 
 const buildSigningInvitationEmail = ({ participant, minute, signingUrl, responsible }) => {
@@ -232,6 +253,7 @@ const buildSigningInvitationEmail = ({ participant, minute, signingUrl, responsi
   const truncatedObjetivo = cleanObjetivo.length > 250 ? `${cleanObjetivo.substring(0, 247)}...` : cleanObjetivo;
   const respNombre = responsible?.name || 'Responsable de la reunión';
   const respEmail = responsible?.email || '';
+  const isRevision = Boolean(minute.content?._revision?.requires_resignature);
 
   const subject = `${minute.code} · Solicitud de firma de acta de reunión`;
 
@@ -239,7 +261,9 @@ const buildSigningInvitationEmail = ({ participant, minute, signingUrl, responsi
     <p style="margin:0 0 10px;font-size:17px;font-weight:800;color:#1e3a8a;letter-spacing:0.3px;">ACTA N° ${escapeHtml(minute.code)}</p>
     <p style="margin:0 0 12px;font-size:15px;color:#334155;">Cordial saludo de paz y bien,</p>
     <p style="margin:0 0 12px;font-size:14px;color:#334155;">Estimado(a) <strong>${escapeHtml(participant.name)}</strong>:</p>
-    <p style="margin:0;font-size:14px;color:#334155;line-height:1.6;">Se convoca a su revisión y firma el acta de reunión institucional <strong>${escapeHtml(minute.code)}</strong>.</p>
+    <p style="margin:0;font-size:14px;color:#334155;line-height:1.6;">${isRevision
+      ? `Se incorporaron ajustes al acta de reunión institucional <strong>${escapeHtml(minute.code)}</strong>. Debido a estos cambios, las firmas de la versión anterior fueron invalidadas y es necesario revisar y firmar nuevamente el documento.`
+      : `Se convoca a su revisión y firma el acta de reunión institucional <strong>${escapeHtml(minute.code)}</strong>.`}</p>
   `;
 
   const bodyHtml = `
@@ -280,7 +304,9 @@ const buildSigningInvitationEmail = ({ participant, minute, signingUrl, responsi
 Cordial saludo de paz y bien,
 Estimado(a) ${participant.name}:
 
-Se convoca a su revisión y firma el acta de reunión institucional ${minute.code}${meetingDate ? ` con fecha ${meetingDate}` : ''}.
+${isRevision
+    ? `Se incorporaron ajustes al acta de reunión institucional ${minute.code}. Las firmas anteriores fueron invalidadas y se requiere revisar y firmar nuevamente el documento.`
+    : `Se convoca a su revisión y firma el acta de reunión institucional ${minute.code}${meetingDate ? ` con fecha ${meetingDate}` : ''}.`}
 Dependencia: ${dependencia}
 ${truncatedObjetivo ? `Objetivo: ${truncatedObjetivo}\n` : ''}Responsable: ${respNombre}${respEmail ? ` (${respEmail})` : ''}
 
@@ -489,6 +515,24 @@ const lookupParticipant = wrap(async (req, res) => {
   res.json({ success: true, data: { id: user.id, document: user.username, name: formatPersonName(user.nombre), email: user.email, organization: user.dependencia, role_title: user.cargo } });
 });
 
+const listMeetingLocations = wrap(async (_req, res) => {
+  const users = await User.findAll({
+    where: { estado: 'activo', dependencia: { [Op.ne]: null } },
+    attributes: ['dependencia'],
+    raw: true
+  });
+  const uniqueLocations = new Map();
+  users.forEach((user) => {
+    const location = formatDependencyOfficeLocation(user.dependencia);
+    if (!location) return;
+    const key = location.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+    if (!uniqueLocations.has(key)) uniqueLocations.set(key, location);
+  });
+  const locations = Array.from(uniqueLocations.values())
+    .sort((a, b) => a.localeCompare(b, 'es', { sensitivity: 'base' }));
+  res.json({ success: true, data: locations });
+});
+
 // Restauración automática al inicio para recuperar actas afectadas
 DigitalMeetingMinute.update(
   { deleted_at: null },
@@ -621,7 +665,9 @@ const normalizeContent = (body, user, document, existingContent = {}) => ({
   objetivo: [sanitizeRichText(body.objetivo)],
   desarrollo: [sanitizeRichText(body.desarrollo)],
   conclusiones: [sanitizeRichText(body.conclusiones)],
-  _public_token: body._public_token || existingContent?._public_token || null
+  _public_token: body._public_token || existingContent?._public_token || null,
+  _token_history: Array.isArray(existingContent?._token_history) ? existingContent._token_history : [],
+  _revision: existingContent?._revision || null
 });
 
 const saveDraft = wrap(async (req, res) => {
@@ -710,16 +756,25 @@ const saveDraft = wrap(async (req, res) => {
 
   const minute = await sequelize.transaction(async (transaction) => {
     let row = req.body.id ? await DigitalMeetingMinute.findByPk(req.body.id, { transaction }) : null;
+    let isRevisionDraft = false;
     if (row) {
-      const authorized = await canAccessMinuteFullSignatures(req.user, row);
+      if (row.status !== 'draft') {
+        throw Object.assign(new Error('Para modificar un acta enviada a firmas debe usar la opción “Editar acta”. Las firmas anteriores deberán renovarse.'), { statusCode: 409 });
+      }
+      isRevisionDraft = Boolean(row.content?._revision?.requires_resignature);
+      const authorized = isRevisionDraft
+        ? isMinuteResponsible(req.user, row)
+        : await canAccessMinuteFullSignatures(req.user, row);
       if (!authorized) throw Object.assign(new Error('No tiene permiso para editar esta acta.'), { statusCode: 403 });
     }
     const content = normalizeContent({
       ...req.body,
-      responsables: clean(req.body.responsables, 1500) || formatPersonName(responsibleUser.nombre),
-      responsable_document: responsibleUser.username,
-      responsable_role: responsibleUser.cargo,
-      responsables_data: allResponsables.map((r) => ({
+      responsables: isRevisionDraft
+        ? row.content?.responsables
+        : (clean(req.body.responsables, 1500) || formatPersonName(responsibleUser.nombre)),
+      responsable_document: isRevisionDraft ? row.content?.responsable_document : responsibleUser.username,
+      responsable_role: isRevisionDraft ? row.content?.responsable_role : responsibleUser.cargo,
+      responsables_data: isRevisionDraft ? row.content?.responsables_data : allResponsables.map((r) => ({
         user_id: r.id || null,
         document: r.username || r.document,
         name: formatPersonName(r.nombre || r.name),
@@ -745,6 +800,14 @@ const saveDraft = wrap(async (req, res) => {
         }, { transaction });
       }
     } else if (row.status === 'draft') {
+      if (isRevisionDraft) {
+        const existingParticipants = await DigitalMeetingParticipant.findAll({ where: { minute_id: row.id }, transaction });
+        if (!hasSameParticipantMembership(existingParticipants, participants)) {
+          throw Object.assign(new Error('Después de enviar el acta a firmas no se pueden agregar, eliminar ni reemplazar responsables o participantes. Solo puede ajustar el contenido del acta.'), { statusCode: 409 });
+        }
+        await row.update({ content, content_hash: contentHash(content), updated_by: req.user.id }, { transaction });
+        return row;
+      }
       await row.update({ content, content_hash: contentHash(content), updated_by: req.user.id }, { transaction });
       const isCollaborativeAutosave = req.body.autosave === true;
       const participantsChanged = req.body.participants_changed === true;
@@ -806,32 +869,6 @@ const saveDraft = wrap(async (req, res) => {
           }
         }
       }
-    } else {
-      // En fases de firma o posteriores, se actualiza el contenido (objetivo, desarrollo, acuerdos, etc.)
-      // preservando las firmas y participantes ya registrados en el acta
-      await row.update({ content, content_hash: contentHash(content), updated_by: req.user.id }, { transaction });
-
-      const existingParticipants = await DigitalMeetingParticipant.findAll({ where: { minute_id: row.id }, transaction });
-      const existingDocs = new Set(existingParticipants.map((p) => String(p.document || '').trim().toLowerCase()).filter(Boolean));
-      const existingEmails = new Set(existingParticipants.map((p) => String(p.email || '').trim().toLowerCase()).filter(Boolean));
-
-      for (const participant of participants) {
-        const pDoc = String(participant.document || '').trim().toLowerCase();
-        const pEmail = String(participant.email || '').trim().toLowerCase();
-        const alreadyExists = (pDoc && existingDocs.has(pDoc)) || (pEmail && existingEmails.has(pEmail));
-        if (!alreadyExists) {
-          await DigitalMeetingParticipant.create({
-            minute_id: row.id,
-            user_id: participant.user_id || null,
-            document: clean(participant.document, 100) || null,
-            name: formatPersonName(clean(participant.name, 240)),
-            email: clean(participant.email, 254).toLowerCase() || null,
-            organization: clean(participant.organization, 240) || null,
-            role_title: clean(participant.role_title, 220) || null,
-            status: 'invited'
-          }, { transaction });
-        }
-      }
     }
     return row;
   });
@@ -842,8 +879,12 @@ const saveDraft = wrap(async (req, res) => {
 const publish = wrap(async (req, res) => {
   const minute = await DigitalMeetingMinute.findByPk(req.params.id, { include: [{ model: DigitalMeetingParticipant, as: 'participants' }, { model: DigitalMeetingSignature, as: 'signatures' }, { model: Documento, as: 'documento', required: false }] });
   if (!minute || minute.deleted_at) throw Object.assign(new Error('Acta no encontrada.'), { statusCode: 404 });
-  const authorized = await canAccessMinuteFullSignatures(req.user, minute);
+  const isRevision = Boolean(minute.content?._revision?.requires_resignature);
+  const authorized = isRevision
+    ? isMinuteResponsible(req.user, minute)
+    : await canAccessMinuteFullSignatures(req.user, minute);
   if (!authorized) throw Object.assign(new Error('No tiene permiso para publicar esta acta.'), { statusCode: 403 });
+  if (minute.status !== 'draft') throw Object.assign(new Error('El acta debe estar en borrador antes de enviarse a firmas.'), { statusCode: 409 });
   if (!minute.participants?.length || minute.participants.length < 2) {
     throw Object.assign(new Error('Debe agregar al menos un participante aparte del responsable en la sección "2. Participantes y firmas".'), { statusCode: 422 });
   }
@@ -851,14 +892,20 @@ const publish = wrap(async (req, res) => {
     throw Object.assign(new Error('Todos los participantes deben tener correo para habilitar las firmas.'), { statusCode: 422 });
   }
   const token = crypto.randomBytes(32).toString('base64url');
-  const updatedContent = { ...(minute.content || {}), _public_token: token };
+  const updatedContent = {
+    ...(minute.content || {}),
+    _public_token: token,
+    _revision: isRevision ? { ...(minute.content._revision || {}), republished_at: new Date().toISOString() } : null
+  };
   await minute.update({ status: 'signing', public_token_hash: hash(token), token_expires_at: new Date(Date.now() + 45 * 24 * 60 * 60 * 1000), published_at: new Date(), content_hash: contentHash(minute.content), content: updatedContent });
   const signingUrl = `${publicFrontend(req)}/firmar-acta-reunion/${token}`;
   const qr_data_url = await QRCode.toDataURL(signingUrl, { errorCorrectionLevel: 'M', margin: 1, width: 360 });
   const invitations = await sendParticipantInvitations({ minute, baseUrl: publicFrontend(req) });
   const message = invitations.failed
     ? `Acta habilitada. Se enviaron ${invitations.sent} invitaciones y ${invitations.failed} requieren reenvío.`
-    : `Acta habilitada y ${invitations.sent} invitación(es) enviada(s) por correo.`;
+    : isRevision
+      ? `Los ajustes fueron enviados en el mismo hilo y se solicitaron nuevamente ${invitations.sent} firma(s).`
+      : `Acta habilitada y ${invitations.sent} invitación(es) enviada(s) por correo.`;
   res.json({ success: true, message, data: { minute: { id: minute.id, code: minute.code, status: minute.status, version: minute.version }, signing_url: signingUrl, qr_data_url, invitations } });
 });
 
@@ -904,17 +951,63 @@ const getSigningAccess = wrap(async (req, res) => {
 const reopenForEditing = wrap(async (req, res) => {
   const minute = await DigitalMeetingMinute.findByPk(req.params.id);
   if (!minute || minute.deleted_at) throw Object.assign(new Error('Acta no encontrada.'), { statusCode: 404 });
-  const authorized = await canAccessMinuteFullSignatures(req.user, minute);
-  if (!authorized) throw Object.assign(new Error('No tiene permiso para ajustar esta acta.'), { statusCode: 403 });
-  if (minute.status !== 'signing') throw Object.assign(new Error('Solo un acta que está en firmas puede regresar a borrador.'), { statusCode: 409 });
-  const signedCount = await DigitalMeetingSignature.count({ where: { minute_id: minute.id } });
-  if (signedCount > 0) throw Object.assign(new Error('No se puede modificar el acta porque ya tiene firmas. Esto protege el contenido que las personas aprobaron.'), { statusCode: 409 });
+  if (!isMinuteResponsible(req.user, minute)) {
+    throw Object.assign(new Error('Solo el responsable principal o un corresponsable pueden ajustar un acta enviada a firmas.'), { statusCode: 403 });
+  }
+  if (!['signing', 'signed'].includes(minute.status)) {
+    throw Object.assign(new Error('Solo un acta enviada a firmas puede regresar a borrador para ajustes.'), { statusCode: 409 });
+  }
+  const signatures = await DigitalMeetingSignature.findAll({ where: { minute_id: minute.id }, attributes: ['signature_storage_key'] });
   await sequelize.transaction(async (transaction) => {
-    const updatedContent = { ...(minute.content || {}), _public_token: null };
-    await minute.update({ status: 'draft', public_token_hash: null, token_expires_at: null, published_at: null, content: updatedContent }, { transaction });
-    await DigitalMeetingParticipant.update({ status: 'invited', otp_hash: null, otp_expires_at: null, otp_attempts: 0, signing_token_hash: null, signing_token_expires_at: null, invitation_sent_at: null }, { where: { minute_id: minute.id }, transaction });
+    const currentContent = minute.content || {};
+    const previousRevision = currentContent._revision || {};
+    const updatedContent = {
+      ...currentContent,
+      _public_token: null,
+      _token_history: [],
+      _revision: {
+        cycle: Number(previousRevision.cycle || 0) + 1,
+        requires_resignature: true,
+        reopened_at: new Date().toISOString(),
+        reopened_by: req.user.id,
+        previous_status: minute.status,
+        previous_content_hash: minute.content_hash || null
+      }
+    };
+    await DigitalMeetingSignature.destroy({ where: { minute_id: minute.id }, transaction });
+    await minute.update({
+      status: 'draft',
+      version: Number(minute.version || 1) + 1,
+      public_token_hash: null,
+      token_expires_at: null,
+      published_at: null,
+      finalized_at: null,
+      content: updatedContent,
+      content_hash: contentHash(updatedContent),
+      updated_by: req.user.id
+    }, { transaction });
+    await DigitalMeetingParticipant.update({
+      status: 'invited',
+      otp_hash: null,
+      otp_expires_at: null,
+      otp_attempts: 0,
+      email_verified_at: null,
+      signing_token_hash: null,
+      signing_token_expires_at: null
+    }, { where: { minute_id: minute.id }, transaction });
   });
-  res.json({ success: true, message: 'El acta regresó a borrador. Los enlaces anteriores fueron invalidados y ya puede realizar ajustes.', data: { id: minute.id, status: 'draft' } });
+  signatures.forEach((signature) => {
+    const storagePath = path.resolve(String(signature.signature_storage_key || ''));
+    const signatureRoot = path.resolve(SIGNATURE_ROOT);
+    if (storagePath.startsWith(`${signatureRoot}${path.sep}`) && fs.existsSync(storagePath)) {
+      try { fs.unlinkSync(storagePath); } catch (_) {}
+    }
+  });
+  res.json({
+    success: true,
+    message: 'El acta regresó a borrador. Las firmas y enlaces anteriores fueron invalidados; después de los ajustes deberá enviarse nuevamente a firma.',
+    data: { id: minute.id, status: 'draft', requires_resignature: true }
+  });
 });
 
 const resendInvitations = wrap(async (req, res) => {
@@ -1243,6 +1336,7 @@ module.exports = {
   googleSigningAccess,
   getMinute,
   getSigningAccess,
+  listMeetingLocations,
   listMinutes,
   lookupParticipant,
   publicMinute,
@@ -1259,6 +1353,9 @@ module.exports = {
   _internals: {
     buildPrivacyPolicyEmailSection,
     buildSigningInvitationEmail,
+    formatDependencyOfficeLocation,
+    hasSameParticipantMembership,
+    isMinuteResponsible,
     minuteThreadSubject,
     minuteRootMessageId,
     minuteParticipantMessageId,

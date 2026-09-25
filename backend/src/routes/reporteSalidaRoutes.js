@@ -55,7 +55,11 @@ const {
   eliminarSolicitud,
   limpiarMocks,
   editarSolicitudAdmin,
-  verificarReportePublico
+  verificarReportePublico,
+  verDocumentoPdfDesdeCorreo,
+  verSoporteDesdeCorreo,
+  verDocumentoPdfGrupoDesdeCorreo,
+  verSoporteGrupoDesdeCorreo
 } = require('../controllers/reporteSalidaController');
 const { auth, hasAnyRoleOrModulePermission } = require('../middlewares/auth');
 const { publicLimiter } = require('../middlewares/security');
@@ -67,10 +71,14 @@ router.get('/aprobar/:token', publicLimiter, aprobarDesdeCorreo);
 router.post('/aprobar/:token', publicLimiter, aprobarDesdeCorreo);
 router.get('/rechazar/:token', publicLimiter, mostrarFormularioRechazo);
 router.post('/rechazar/:token', publicLimiter, procesarRechazo);
+router.get('/documento/:token', publicLimiter, verDocumentoPdfDesdeCorreo);
+router.get('/soporte/:token', publicLimiter, verSoporteDesdeCorreo);
 router.get('/aprobar-grupo/:token', publicLimiter, aprobarGrupoDesdeCorreo);
 router.post('/aprobar-grupo/:token', publicLimiter, aprobarGrupoDesdeCorreo);
 router.get('/rechazar-grupo/:token', publicLimiter, mostrarFormularioRechazoGrupo);
 router.post('/rechazar-grupo/:token', publicLimiter, procesarRechazoGrupo);
+router.get('/documento-grupo/:token', publicLimiter, verDocumentoPdfGrupoDesdeCorreo);
+router.get('/soporte-grupo/:token', publicLimiter, verSoporteGrupoDesdeCorreo);
 router.get('/public/verificar/:id', verificarReportePublico);
 router.get('/config', auth, getFeatureConfig);
 router.patch('/config', auth, updateFeatureConfig);

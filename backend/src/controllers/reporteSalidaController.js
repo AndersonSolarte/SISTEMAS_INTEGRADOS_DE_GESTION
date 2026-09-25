@@ -77,6 +77,31 @@ const formatHourAmPm = (value) => {
   return `${hour}:${minutes} ${suffix}`;
 };
 
+const getTipoLabel = (tipo) => {
+  const types = {
+    cita_eps: 'Cita medica por EPS',
+    cita_particular: 'Cita medica particular',
+    cita_medica_laboral: 'Cita medica laboral',
+    terapias: 'Terapias o tratamiento medico',
+    urgencia_medica: 'Urgencia medica',
+    diligencia_personal: 'Diligencia personal',
+    proyeccion_social: 'Proyección Social',
+    ponencia: 'Ponencia/Conferencia',
+    visita_ies: 'Visita a otras IES/Entidades',
+    capacitacion: 'Capacitacion/Curso externo',
+    proyecto_investigacion: 'Trabajo de campo / Investigacion',
+    asistente_congreso: 'Asistente a congreso/evento',
+    practica_academica: 'Practica academica extramuros',
+    torneo_deportivo: 'Torneo deportivo/Representacion',
+    salida_campus: 'Salida de campus (mision institucional)',
+    otra: 'Otra actividad propia del cargo'
+  };
+  if (String(tipo).startsWith('otra:')) {
+    return String(tipo).substring(5) || 'Otra';
+  }
+  return types[tipo] || tipo || '';
+};
+
 const cleanDependenciaLabel = (value) =>
   sanitizeText(value, 400)
     .replace(/^[A-Z]{0,3}\d+[_\-\s]+/i, '')
@@ -1187,6 +1212,40 @@ const isAcademicTeacherSolicitud = (solicitud = {}) => {
   return isDocenteCargo(cargo) && isVicerrectoriaAcademica(getSolicitudVicerrectoria(solicitud));
 };
 
+/**
+ * Devuelve true si la solicitud corresponde a un docente de la Vicerrectoría Académica
+ * que requiere permiso remunerado con oficio (cualquier segmento de días: 1, 2 o 3+).
+ *
+ * Para docentes, el segmento 'menos_media_jornada' equivale a "1 día" normativo con oficio,
+ * a diferencia del personal administrativo donde equivale a un reporte sin oficio.
+ */
+const isDocentePermisoRemunerado = (solicitud = {}) => {
+  if (!isAcademicTeacherSolicitud(solicitud)) return false;
+  const salida = getSolicitudSalida(solicitud);
+  // Para docentes: los tres segmentos generan permiso remunerado con oficio
+  return ['menos_media_jornada', '1_2_dias', '3_mas_dias'].includes(salida.duracionTipo);
+};
+
+/**
+ * Para docentes con permiso remunerado, retorna el segmento normativo:
+ *   1  → "1 día"   (duracionTipo === 'menos_media_jornada')
+ *   2  → "2 días"  (duracionTipo === '1_2_dias')
+ *   3+ → días solicitados ≥ 3 (duracionTipo === '3_mas_dias')
+ * Retorna null si la solicitud no corresponde a un docente con permiso remunerado.
+ */
+const getDocentePermisoSegmento = (solicitud = {}) => {
+  if (!isDocentePermisoRemunerado(solicitud)) return null;
+  const salida = getSolicitudSalida(solicitud);
+  if (salida.duracionTipo === 'menos_media_jornada') return 1;
+  if (salida.duracionTipo === '1_2_dias') return 2;
+  if (salida.duracionTipo === '3_mas_dias') return Math.max(3, Number(salida.duracionDias || 3));
+  return null;
+};
+
+
+
+
+
 const isEvangelizacionSolicitud = (solicitud = {}) => {
   return isEvangelizacionVicerrectoria(getSolicitudVicerrectoria(solicitud));
 };
@@ -1579,7 +1638,7 @@ const findCurrentTeacherRow = async (user = {}) => {
 const REPOSICION_LABORAL_PROFILES = Object.freeze({
   ADMINISTRATIVO: Object.freeze({ key: 'administrativo', label: 'Administrativo', minutesPerDay: 520, manualTime: false }),
   DOCENTE_TIEMPO_COMPLETO: Object.freeze({ key: 'docente_tiempo_completo', label: 'Docente tiempo completo', minutesPerDay: 480, manualTime: false }),
-  DOCENTE_MEDIO_TIEMPO: Object.freeze({ key: 'docente_medio_tiempo', label: 'Docente medio tiempo', minutesPerDay: 240, manualTime: false }),
+  DOCENTE_MEDIO_TIEMPO: Object.freeze({ key: 'docente_medio_tiempo', label: 'Docente medio tiempo', minutesPerDay: 480, manualTime: false }),
   DOCENTE_HORA_CATEDRA: Object.freeze({ key: 'docente_hora_catedra', label: 'Docente hora catedra', minutesPerDay: null, manualTime: true }),
   DOCENTE_SIN_CLASIFICAR: Object.freeze({ key: 'docente_sin_clasificar', label: 'Docente por horas', minutesPerDay: null, manualTime: true })
 });
@@ -1594,6 +1653,13 @@ const resolveReposicionLaboralProfile = ({ teacherRow = null, cargo = '' } = {})
       administrativeOverride: 'decanatura'
     };
   }
+
+  // Si se especifica un cargo explícito y NO contiene término docente, es administrativo
+  const isTeacherCargo = /\b(docente|catedrat|profesor)\b/.test(cargoDescriptor);
+  if (cargo && !isTeacherCargo) {
+    return { ...REPOSICION_LABORAL_PROFILES.ADMINISTRATIVO, totalContractHours: null };
+  }
+
   const descriptor = normalizeForMatch([
     teacherRow?.tipo_vinculacion,
     teacherRow?.nivel_contratacion,
@@ -1617,8 +1683,22 @@ const resolveReposicionLaboralProfile = ({ teacherRow = null, cargo = '' } = {})
 };
 
 const resolveUserReposicionLaboralProfile = async (user, cargo = '') => {
+  const resolvedCargo = cargo || user?.cargo || '';
+  const cargoDescriptor = normalizeForMatch(resolvedCargo);
+  const isTeacherCargo = /\b(docente|catedrat|profesor)\b/.test(cargoDescriptor);
+
+  if (resolvedCargo && !isTeacherCargo) {
+    return {
+      ...REPOSICION_LABORAL_PROFILES.ADMINISTRATIVO,
+      source: 'regla_institucional_cargo',
+      tipoVinculacion: 'Administrativo',
+      nivelContratacion: '',
+      totalContractHours: 40
+    };
+  }
+
   const teacherRow = await findCurrentTeacherRow(user);
-  const profile = resolveReposicionLaboralProfile({ teacherRow, cargo });
+  const profile = resolveReposicionLaboralProfile({ teacherRow, cargo: resolvedCargo });
   const usesAdministrativeOverride = Boolean(profile.administrativeOverride);
   return {
     ...profile,
@@ -1985,14 +2065,29 @@ const isReposicionEligibleSalida = (salida = {}) => (
   && sanitizeText(salida.tipo, 100) === 'diligencia_personal'
 );
 
-const resolveHoraCatedraDuration = ({ dailyMinutes = 0, requestedMinutes = 0 } = {}) => {
+const resolveHoraCatedraDuration = ({ dailyMinutes = 0, requestedMinutes = 0, isDocente = false } = {}) => {
   const daily = Math.max(0, Math.round(Number(dailyMinutes) || 0));
   const requested = Math.max(0, Math.round(Number(requestedMinutes) || 0));
   if (!daily || !requested) return { valid: false, durationType: '', durationDays: 0 };
+  const durationDays = Math.ceil(requested / daily);
+
+  if (isDocente) {
+    if (durationDays <= 1) {
+      return { valid: true, durationType: 'menos_media_jornada', durationDays: 1 };
+    }
+    if (durationDays === 2) {
+      return { valid: true, durationType: '1_2_dias', durationDays: 2 };
+    }
+    return {
+      valid: true,
+      durationType: '3_mas_dias',
+      durationDays
+    };
+  }
+
   if (requested < daily) {
     return { valid: true, durationType: 'menos_media_jornada', durationDays: 0 };
   }
-  const durationDays = Math.ceil(requested / daily);
   return {
     valid: true,
     durationType: durationDays <= 2 ? '1_2_dias' : '3_mas_dias',
@@ -2532,6 +2627,15 @@ const buildTerapiasHtml = (solicitud) => {
 
 const getReporteSalidaEmailLabel = (solicitud) => {
   if (!isOficioSolicitud(solicitud)) return 'REPORTE DE SALIDA';
+
+  // Etiquetas específicas para permisos remunerados de docentes
+  const segmento = getDocentePermisoSegmento(solicitud);
+  if (segmento !== null) {
+    if (segmento === 1) return 'SOLICITUD DE PERMISO - 1 DÍA';
+    if (segmento === 2) return 'SOLICITUD DE PERMISO - 2 DÍAS';
+    return 'SOLICITUD DE PERMISO - 3 O MÁS DÍAS';
+  }
+
   const salida = getSolicitudSalida(solicitud);
   const duracionTipo = salida?.duracionTipo;
   const duracionDias = Number(salida?.duracionDias || 0);
@@ -2539,6 +2643,7 @@ const getReporteSalidaEmailLabel = (solicitud) => {
   if (duracionTipo === '1_2_dias' || duracionDias >= 1) return 'OFICIO DE SOLICITUD DE SALIDA - 1 O 2 DIAS';
   return 'OFICIO DE SOLICITUD DE SALIDA';
 };
+
 
 const getThreadHeadersFromId = (threadId) =>
   threadId ? { 'In-Reply-To': threadId, 'References': threadId } : {};
@@ -3862,6 +3967,136 @@ const radicarSolicitud = async (req, res) => {
       const userRows = await getUserProfileLaboralRows();
       const { rows: rhRows } = await getLatestAdministrativos();
 
+      const duracionDiasSolicitada = Number(salida.duracionDias || 0);
+      const isDocenteAcademicoRadicando =
+        isDocenteCargo(req.body.laboral?.cargo || req.user.cargo || '') &&
+        isVicerrectoriaAcademica(canonicalVicerrectoriaName(req.body.laboral?.vicerrectoria || req.user.vicerrectoria || ''));
+
+      const isOficio = isDocenteAcademicoRadicando
+        ? ['menos_media_jornada', '1_2_dias', '3_mas_dias'].includes(salida.duracionTipo)
+        : (salida.duracionTipo !== 'menos_media_jornada' && (
+            salida.duracionTipo === '1_2_dias' ||
+            salida.duracionTipo === '3_mas_dias' ||
+            duracionDiasSolicitada >= 1
+          ));
+
+      let codigoDependencia = '';
+      let destinatarioTratamiento = 'Señor(a)';
+      let destinatarioNombre = '';
+      let destinatarioCargo = '';
+      let destinatarioEmpresa = 'UNICESMAG';
+      let destinatarioDireccionEmail = '';
+      let destinatarioTelefono = '7240000';
+      let destinatarioUbicacion = 'San Juan de Pasto, Nariño';
+      let destinatarioPais = 'Colombia';
+      let oficioAsunto = '';
+      let oficioCuerpo = '';
+      let oficioDespedida = 'Cordialmente,';
+      let oficioAnexos = req.body.datos_formulario?.adjunto_path ? 'Soporte adjunto en plataforma' : 'Ninguno';
+
+      if (isOficio) {
+        const depName = req.body.laboral?.dependencia || req.user.dependencia || participantes[0]?.dependencia || '';
+        const words = depName.replace(/de|la|y|del|o/gi, '').split(/\s+/).filter(Boolean);
+        const code = words.map(w => w[0]).join('').toUpperCase().slice(0, 5);
+        codigoDependencia = code || 'DP';
+
+        const userVicerrectoriaName = canonicalVicerrectoriaName(req.body.laboral?.vicerrectoria || req.user.vicerrectoria || participantes[0]?.vicerrectoria || '');
+
+        let oficioDirigidoARectoria = false;
+        let oficioAuthorityName = '';
+        let oficioAuthorityEmail = '';
+        let oficioDestinatarioEsJefeInmediato = false;
+
+        if (isDocenteAcademicoRadicando) {
+          const durTipo = salida.duracionTipo;
+          if (durTipo === 'menos_media_jornada') {
+            oficioDestinatarioEsJefeInmediato = true;
+          } else if (durTipo === '1_2_dias') {
+            oficioAuthorityName = userVicerrectoriaName || 'Vicerrectoria Academica';
+            oficioAuthorityEmail = getDependencyEmail(oficioAuthorityName) || ACADEMIC_VICERRECTORIA_EMAIL;
+          } else {
+            oficioDirigidoARectoria = true;
+            oficioAuthorityName = 'Rectoria';
+            oficioAuthorityEmail = RECTORIA_EMAIL;
+          }
+        } else {
+          oficioDirigidoARectoria = salida.duracionTipo === '3_mas_dias' || isRectoriaAuthority(userVicerrectoriaName);
+          oficioAuthorityName = oficioDirigidoARectoria ? 'Rectoria' : (userVicerrectoriaName || '');
+          oficioAuthorityEmail = oficioDirigidoARectoria ? RECTORIA_EMAIL : (getDependencyEmail(oficioAuthorityName) || '');
+        }
+
+        const authorityRecipient = oficioAuthorityName
+          ? await getAuthorityRecipient(oficioAuthorityName, oficioAuthorityEmail)
+          : null;
+
+        if (oficioDestinatarioEsJefeInmediato) {
+          destinatarioNombre = 'DIRECTOR(A) DE PROGRAMA / JEFE INMEDIATO';
+          destinatarioCargo = 'Director(a) del Programa';
+          destinatarioEmpresa = 'Universidad CESMAG';
+        } else if (oficioAuthorityName) {
+          destinatarioNombre = authorityRecipient?.nombre || oficioAuthorityName.toUpperCase();
+          destinatarioCargo = authorityRecipient?.cargo || (oficioDirigidoARectoria ? 'Rectoria' : oficioAuthorityName);
+          destinatarioDireccionEmail = authorityRecipient?.email || oficioAuthorityEmail;
+          if (oficioDirigidoARectoria) {
+            destinatarioTratamiento = 'Fray';
+            destinatarioCargo = 'Rector';
+            destinatarioEmpresa = 'Universidad CESMAG';
+          }
+        }
+
+        const cargoLower = (destinatarioCargo || '').toLowerCase();
+        if (cargoLower.includes('decano') || cargoLower.includes('rector') || cargoLower.includes('vicerrec')) {
+          destinatarioTratamiento = oficioDirigidoARectoria ? 'Fray' : 'Señor(a)';
+        }
+
+        const tipoLabel = getTipoLabel(salida.tipo);
+        if (isDocenteAcademicoRadicando) {
+          const durTipo = salida.duracionTipo;
+          const segmentoText = durTipo === 'menos_media_jornada'
+            ? 'un (1) dia'
+            : durTipo === '1_2_dias'
+              ? 'dos (2) dias'
+              : `${duracionDiasSolicitada || 3} dias`;
+          oficioAsunto = `Solicitud de permiso remunerado - ${segmentoText} - ${tipoLabel}`;
+        } else {
+          oficioAsunto = `Solicitud de permiso de salida grupal - ${tipoLabel}`;
+        }
+
+        const totalDias = duracionDiasSolicitada || 1;
+        const formattedStartDate = formatDateOnly(salida.fecha);
+        const formattedEndDate = formatDateOnly(salida.fechaRegreso || salida.fecha);
+        const startHour = formatHourAmPm(salida.horaInicio);
+        const endHour = formatHourAmPm(salida.horaFin);
+        const oficioDurationText = totalDias === 1 ? 'un (1) dia' : `${totalDias} dias`;
+        const requestSubject = 'para que el grupo de colaboradores registrado en el sistema haga uso del permiso de salida';
+        const fechaHoraText = endHour
+          ? `durante el periodo comprendido entre el ${formattedStartDate} a las ${startHour} y el ${formattedEndDate} a las ${endHour}, correspondiente a ${oficioDurationText}`
+          : `durante el periodo comprendido entre el ${formattedStartDate} a las ${startHour} y hasta el ${formattedEndDate}, correspondiente a ${oficioDurationText}`;
+
+        const locationValues = [salida.municipio, salida.departamento].filter(Boolean).join(', ');
+        const entityText = salida.entidadDestino ? `ante la entidad o institucion ${salida.entidadDestino}` : '';
+        const categoriaSalida = salida.categoria || salida.category || '';
+        const hasPropiasCargoDetails = categoriaSalida === 'propias_cargo' && salida.tipo !== 'salida_campus';
+        let contextText = '';
+        if (hasPropiasCargoDetails) {
+          if (salida.alcance === 'Internacional') {
+            contextText = `La actividad corresponde a una salida de alcance internacional${salida.pais ? `, con destino a ${salida.pais}` : ''}${entityText ? `, ${entityText}` : ''}.`;
+          } else if (salida.alcance === 'Nacional') {
+            contextText = `La actividad corresponde a una salida de alcance nacional${locationValues ? `, con destino a ${locationValues}` : ''}${entityText ? `, ${entityText}` : ''}.`;
+          } else if (salida.alcance === 'Regional') {
+            contextText = `La actividad corresponde a una salida de alcance regional${salida.municipio ? `, con destino al municipio de ${salida.municipio}` : ''}${entityText ? `, ${entityText}` : ''}.`;
+          } else if (entityText) {
+            contextText = `La actividad se desarrollara ${entityText}.`;
+          }
+        }
+
+        const purposeText = `para atender la actividad institucional relacionada con ${tipoLabel || 'la actividad registrada'}`;
+        const openingText = `Respetuosamente, solicito autorizacion ${requestSubject} ${fechaHoraText}, ${purposeText}.${contextText ? ` ${contextText}` : ''}`;
+        const closingText = 'Agradecemos la atencion prestada y la colaboracion brindada para el tramite de la presente solicitud.';
+
+        oficioCuerpo = [openingText, closingText].filter(Boolean).join('\n\n');
+      }
+
       const creadas = [];
 
       for (let i = 0; i < participantes.length; i++) {
@@ -3917,6 +4152,7 @@ const radicarSolicitud = async (req, res) => {
             grupo_id,
             is_salida_multiple: true,
             is_leader: i === 0,
+            participantes: participantes,
             adjunto_path: req.body.datos_formulario?.adjunto_path ? sanitizeText(req.body.datos_formulario.adjunto_path, 255) : null,
             adjunto_metadata: sanitizeAttachmentMetadata(req.body.datos_formulario?.adjunto_metadata),
             personal: {
@@ -3947,10 +4183,24 @@ const radicarSolicitud = async (req, res) => {
               departamento: (salida.categoria === 'propias_cargo' && salida.alcance === 'Nacional') ? sanitizeText(salida.departamento || '', 100) : '',
               municipio: (salida.categoria === 'propias_cargo' && ['Nacional', 'Regional'].includes(salida.alcance)) ? sanitizeText(salida.municipio || '', 100) : '',
               duracionTipo: sanitizeText(salida.duracionTipo || 'menos_media_jornada', 50),
-              duracionDias: salida.duracionDias ? Number(salida.duracionDias) : 0,
+              duracionDias: isOficio ? (duracionDiasSolicitada || 1) : 0,
               incluyeEstudiantes: salida.tipo === 'proyeccion_social' ? Boolean(salida.incluyeEstudiantes) : false,
-              estudiantesList: (salida.tipo === 'proyeccion_social' && salida.incluyeEstudiantes) ? (salida.estudiantesList || salida.estudiantes || []) : []
+              estudiantesList: (salida.tipo === 'proyeccion_social' && salida.incluyeEstudiantes) ? (salida.estudiantesList || salida.estudiantes || []) : [],
+              codigoDependencia: sanitizeText(codigoDependencia || '', 50),
+              destinatarioTratamiento: sanitizeText(destinatarioTratamiento || '', 100),
+              destinatarioNombre: sanitizeText(destinatarioNombre || '', 255),
+              destinatarioCargo: sanitizeText(destinatarioCargo || '', 255),
+              destinatarioEmpresa: sanitizeText(destinatarioEmpresa || '', 255),
+              destinatarioDireccionEmail: sanitizeText(destinatarioDireccionEmail || '', 255),
+              destinatarioTelefono: sanitizeText(destinatarioTelefono || '', 100),
+              destinatarioUbicacion: sanitizeText(destinatarioUbicacion || '', 255),
+              destinatarioPais: sanitizeText(destinatarioPais || '', 100),
+              oficioAsunto: sanitizeText(oficioAsunto || '', 500),
+              oficioCuerpo: sanitizeFreeText(oficioCuerpo),
+              oficioDespedida: sanitizeText(oficioDespedida || '', 100),
+              oficioAnexos: sanitizeText(oficioAnexos || '', 1000)
             },
+
             reposicion: {
               fecha: '',
               fechaFin: '',
@@ -4091,8 +4341,19 @@ const radicarSolicitud = async (req, res) => {
     const declaracionSinAdjunto = isSaludNoAdjuntoDeclarado
       ? sanitizeText(salida.declaracionSinAdjunto || DEFAULT_DECLARACION_SIN_ADJUNTO_SALUD, 1200)
       : '';
-    if (salida.duracionTipo === '1_2_dias' && ![1, 2].includes(duracionDiasSolicitada)) {
-      return res.status(400).json({ success: false, message: 'Seleccione si el permiso sera de 1 o 2 dias.' });
+    const isDocenteAcademicoRadicando =
+      isDocenteCargo(req.body.laboral?.cargo || req.user.cargo || '') &&
+      isVicerrectoriaAcademica(canonicalVicerrectoriaName(req.body.laboral?.vicerrectoria || req.user.vicerrectoria || ''));
+
+    if (salida.duracionTipo === '1_2_dias') {
+      if (isDocenteAcademicoRadicando) {
+        // Para docentes, este segmento corresponde exclusivamente a 2 días
+        if (duracionDiasSolicitada !== 2) {
+          return res.status(400).json({ success: false, message: 'Para docentes, el permiso remunerado de este segmento corresponde a dos (2) dias.' });
+        }
+      } else if (![1, 2].includes(duracionDiasSolicitada)) {
+        return res.status(400).json({ success: false, message: 'Seleccione si el permiso sera de 1 o 2 dias.' });
+      }
     }
 
     if (salida.duracionTipo === '3_mas_dias' && (!Number.isInteger(duracionDiasSolicitada) || duracionDiasSolicitada < 3)) {
@@ -4134,15 +4395,61 @@ const radicarSolicitud = async (req, res) => {
       codigoDependencia = code || 'DP';
 
       const userVicerrectoriaName = selectedVicerrectoriaName;
-      const oficioDirigidoARectoria = salida.duracionTipo === '3_mas_dias' || isRectoriaAuthority(userVicerrectoriaName);
-      const oficioAuthorityName = oficioDirigidoARectoria ? 'Rectoria' : (userVicerrectoriaName || '');
-      const oficioAuthorityEmail = oficioDirigidoARectoria ? RECTORIA_EMAIL : (getDependencyEmail(oficioAuthorityName) || '');
+
+      // ── Determinación del destinatario del oficio ──────────────────────────────
+      // Para docentes de la Vicerrectoría Académica aplica la normativa institucional:
+      //   Segmento 1 día  → dirigido al Jefe Inmediato (Director del Programa)
+      //   Segmento 2 días → dirigido a la Vicerrectoría Académica
+      //   Segmento 3+ días → dirigido al Rector de la UNICESMAG
+      // Para el demás personal se mantiene la lógica previa:
+      //   3+ días o quien pertenece a Rectoría → Rector; resto → Vicerrectoría correspondiente.
+      const isDocenteAcademicoRequest =
+        isDocenteCargo(req.body.laboral?.cargo || req.user.cargo || '') &&
+        isVicerrectoriaAcademica(userVicerrectoriaName);
+
+      let oficioDirigidoARectoria;
+      let oficioAuthorityName;
+      let oficioAuthorityEmail;
+      let oficioDestinatarioEsJefeInmediato = false;
+
+      if (isDocenteAcademicoRequest) {
+        const durTipo = salida.duracionTipo;
+        if (durTipo === 'menos_media_jornada') {
+          // 1 día → Jefe Inmediato (Director del Programa)
+          oficioDestinatarioEsJefeInmediato = true;
+          oficioDirigidoARectoria = false;
+          oficioAuthorityName = '';
+          oficioAuthorityEmail = '';
+        } else if (durTipo === '1_2_dias') {
+          // 2 días → Vicerrectoría Académica
+          oficioDirigidoARectoria = false;
+          oficioAuthorityName = userVicerrectoriaName || 'Vicerrectoria Academica';
+          oficioAuthorityEmail = getDependencyEmail(oficioAuthorityName) || ACADEMIC_VICERRECTORIA_EMAIL;
+        } else {
+          // 3+ días → Rector
+          oficioDirigidoARectoria = true;
+          oficioAuthorityName = 'Rectoria';
+          oficioAuthorityEmail = RECTORIA_EMAIL;
+        }
+      } else {
+        // Lógica original para no-docentes
+        oficioDirigidoARectoria = salida.duracionTipo === '3_mas_dias' || isRectoriaAuthority(userVicerrectoriaName);
+        oficioAuthorityName = oficioDirigidoARectoria ? 'Rectoria' : (userVicerrectoriaName || '');
+        oficioAuthorityEmail = oficioDirigidoARectoria ? RECTORIA_EMAIL : (getDependencyEmail(oficioAuthorityName) || '');
+      }
+
       const authorityRecipient = oficioAuthorityName
         ? await getAuthorityRecipient(oficioAuthorityName, oficioAuthorityEmail)
         : null;
 
       // 2. Destinatario
-      if (oficioAuthorityName) {
+      if (oficioDestinatarioEsJefeInmediato) {
+        // Docente 1 día: dirigido al Director del Programa (jefe inmediato)
+        destinatarioNombre = (jefeSnapshot.nombre || '').toUpperCase();
+        destinatarioCargo = jefeSnapshot.cargo || 'Director(a) del Programa';
+        destinatarioDireccionEmail = jefeSnapshot.email || '';
+        destinatarioEmpresa = 'Universidad CESMAG';
+      } else if (oficioAuthorityName) {
         destinatarioNombre = authorityRecipient?.nombre || oficioAuthorityName.toUpperCase();
         destinatarioCargo = authorityRecipient?.cargo || (oficioDirigidoARectoria ? 'Rectoria' : oficioAuthorityName);
         destinatarioDireccionEmail = authorityRecipient?.email || oficioAuthorityEmail;
@@ -4195,32 +4502,21 @@ const radicarSolicitud = async (req, res) => {
         : (vName ? `${vName} / UNICESMAG` : 'UNICESMAG');
 
       // 5. Asunto
-      const getTipoLabel = (tipo) => {
-        const types = {
-          cita_eps: 'Cita medica por EPS',
-          cita_particular: 'Cita medica particular',
-          cita_medica_laboral: 'Cita medica laboral',
-          terapias: 'Terapias o tratamiento medico',
-          urgencia_medica: 'Urgencia medica',
-          diligencia_personal: 'Diligencia personal',
-          proyeccion_social: 'Proyección Social',
-          ponencia: 'Ponencia/Conferencia',
-          visita_ies: 'Visita a otras IES/Entidades',
-          capacitacion: 'Capacitacion/Curso externo',
-          proyecto_investigacion: 'Trabajo de campo / Investigacion',
-          asistente_congreso: 'Asistente a congreso/evento',
-          practica_academica: 'Practica academica extramuros',
-          torneo_deportivo: 'Torneo deportivo/Representacion',
-          salida_campus: 'Salida de campus (mision institucional)',
-          otra: 'Otra actividad propia del cargo'
-        };
-        if (String(tipo).startsWith('otra:')) {
-          return String(tipo).substring(5) || 'Otra';
-        }
-        return types[tipo] || tipo || '';
-      };
       const tipoLabel = getTipoLabel(salida.tipo);
-      oficioAsunto = `Solicitud de permiso de salida - ${tipoLabel}`;
+
+      if (isDocenteAcademicoRequest) {
+        const durTipo = salida.duracionTipo;
+        const segmentoText = durTipo === 'menos_media_jornada'
+          ? 'un (1) dia'
+          : durTipo === '1_2_dias'
+            ? 'dos (2) dias'
+            : `${duracionDiasSolicitada} dias`;
+        oficioAsunto = `Solicitud de permiso remunerado - ${segmentoText} - ${tipoLabel}`;
+      } else {
+        oficioAsunto = `Solicitud de permiso de salida - ${tipoLabel}`;
+      }
+
+
 
       // 6. Anexos
       if (isSaludNoAdjuntoDeclarado) {
@@ -4295,7 +4591,7 @@ const radicarSolicitud = async (req, res) => {
     );
     const effectiveDailyMinutes = reposicionLaboralProfile.manualTime
       ? bodyReposicionMinutosPorDia
-      : Number(reposicionLaboralProfile.minutesPerDay);
+      : (isDocenteAcademicoRadicando ? 480 : Number(reposicionLaboralProfile.minutesPerDay));
     if (isDiligenciaPersonal && reposicionLaboralProfile.manualTime && (!Number.isInteger(bodyReposicionMinutosPorDia) || bodyReposicionMinutosPorDia <= 0)) {
       return res.status(400).json({
         success: false,
@@ -4308,7 +4604,8 @@ const radicarSolicitud = async (req, res) => {
     if (isDiligenciaPersonal) {
       const derivedDuration = resolveHoraCatedraDuration({
         dailyMinutes: effectiveDailyMinutes,
-        requestedMinutes: bodyReposicionMinutos
+        requestedMinutes: bodyReposicionMinutos,
+        isDocente: isDocenteAcademicoRadicando
       });
       const hasExpectedDuration = derivedDuration.valid
         && salida.duracionTipo === derivedDuration.durationType
@@ -4514,6 +4811,128 @@ const radicarSolicitud = async (req, res) => {
   }
 };
 
+const verDocumentoPdfDesdeCorreo = async (req, res) => {
+  try {
+    const payload = decryptPayload(req.params.token);
+    if (!payload?.consecutivo) {
+      return res.status(403).send('Enlace no válido o expirado.');
+    }
+    const solicitud = await ReporteSalidaSolicitud.findOne({ where: { consecutivo: payload.consecutivo } });
+    if (!solicitud) {
+      return res.status(404).send('Solicitud no encontrada.');
+    }
+    const pdfAttachment = await ensureReporteSalidaPdf(solicitud);
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `inline; filename="${pdfAttachment.filename}"`);
+    const fileStream = fs.createReadStream(pdfAttachment.path);
+    return fileStream.pipe(res);
+  } catch (error) {
+    console.error('[verDocumentoPdfDesdeCorreo] Error:', error);
+    return res.status(500).send('Error generando el documento PDF.');
+  }
+};
+
+const verSoporteDesdeCorreo = async (req, res) => {
+  try {
+    const payload = decryptPayload(req.params.token);
+    if (!payload?.consecutivo) {
+      return res.status(403).send('Enlace no válido o expirado.');
+    }
+    const solicitud = await ReporteSalidaSolicitud.findOne({ where: { consecutivo: payload.consecutivo } });
+    if (!solicitud) {
+      return res.status(404).send('Solicitud no encontrada.');
+    }
+    const supportAttachment = await buildReporteSalidaSupportAttachment(solicitud);
+    if (!supportAttachment) {
+      return res.status(404).send('No se encontró archivo de soporte adjunto para esta solicitud.');
+    }
+    if (supportAttachment.content) {
+      res.setHeader('Content-Type', supportAttachment.contentType || 'application/octet-stream');
+      res.setHeader('Content-Disposition', `inline; filename="${supportAttachment.filename}"`);
+      return res.send(supportAttachment.content);
+    }
+    if (supportAttachment.path && fs.existsSync(supportAttachment.path)) {
+      res.setHeader('Content-Type', supportAttachment.contentType || 'application/octet-stream');
+      res.setHeader('Content-Disposition', `inline; filename="${supportAttachment.filename}"`);
+      const fileStream = fs.createReadStream(supportAttachment.path);
+      return fileStream.pipe(res);
+    }
+    return res.status(404).send('El archivo de soporte no está disponible.');
+  } catch (error) {
+    console.error('[verSoporteDesdeCorreo] Error:', error);
+    return res.status(500).send('Error recuperando el soporte adjunto.');
+  }
+};
+
+const verDocumentoPdfGrupoDesdeCorreo = async (req, res) => {
+  try {
+    const payload = decryptPayload(req.params.token);
+    if (!payload?.grupo_id) {
+      return res.status(403).send('Enlace no válido o expirado.');
+    }
+    const leaderSol = await ReporteSalidaSolicitud.findOne({
+      where: {
+        datos_formulario: { [Op.contains]: { grupo_id: payload.grupo_id, is_leader: true } }
+      }
+    }) || await ReporteSalidaSolicitud.findOne({
+      where: {
+        datos_formulario: { [Op.contains]: { grupo_id: payload.grupo_id } }
+      }
+    });
+    if (!leaderSol) {
+      return res.status(404).send('Solicitud grupal no encontrada.');
+    }
+    const pdfAttachment = await ensureReporteSalidaPdf(leaderSol);
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `inline; filename="${pdfAttachment.filename}"`);
+    const fileStream = fs.createReadStream(pdfAttachment.path);
+    return fileStream.pipe(res);
+  } catch (error) {
+    console.error('[verDocumentoPdfGrupoDesdeCorreo] Error:', error);
+    return res.status(500).send('Error generando el documento PDF del grupo.');
+  }
+};
+
+const verSoporteGrupoDesdeCorreo = async (req, res) => {
+  try {
+    const payload = decryptPayload(req.params.token);
+    if (!payload?.grupo_id) {
+      return res.status(403).send('Enlace no válido o expirado.');
+    }
+    const leaderSol = await ReporteSalidaSolicitud.findOne({
+      where: {
+        datos_formulario: { [Op.contains]: { grupo_id: payload.grupo_id, is_leader: true } }
+      }
+    }) || await ReporteSalidaSolicitud.findOne({
+      where: {
+        datos_formulario: { [Op.contains]: { grupo_id: payload.grupo_id } }
+      }
+    });
+    if (!leaderSol) {
+      return res.status(404).send('Solicitud grupal no encontrada.');
+    }
+    const supportAttachment = await buildReporteSalidaSupportAttachment(leaderSol);
+    if (!supportAttachment) {
+      return res.status(404).send('No se encontró archivo de soporte adjunto para esta salida grupal.');
+    }
+    if (supportAttachment.content) {
+      res.setHeader('Content-Type', supportAttachment.contentType || 'application/octet-stream');
+      res.setHeader('Content-Disposition', `inline; filename="${supportAttachment.filename}"`);
+      return res.send(supportAttachment.content);
+    }
+    if (supportAttachment.path && fs.existsSync(supportAttachment.path)) {
+      res.setHeader('Content-Type', supportAttachment.contentType || 'application/octet-stream');
+      res.setHeader('Content-Disposition', `inline; filename="${supportAttachment.filename}"`);
+      const fileStream = fs.createReadStream(supportAttachment.path);
+      return fileStream.pipe(res);
+    }
+    return res.status(404).send('El archivo de soporte no está disponible.');
+  } catch (error) {
+    console.error('[verSoporteGrupoDesdeCorreo] Error:', error);
+    return res.status(500).send('Error recuperando el soporte adjunto.');
+  }
+};
+
 const renderReporteSalidaReviewPage = ({
   res,
   solicitud,
@@ -4523,7 +4942,12 @@ const renderReporteSalidaReviewPage = ({
 }) => {
   const consecutivo = solicitud?.consecutivo || '';
   const solicitante = solicitud?.solicitante_snapshot?.nombre || '';
-  const documento = solicitud?.solicitante_snapshot?.documento || '';
+  const docIdentidad = solicitud?.solicitante_snapshot?.documento
+    || solicitud?.solicitante_snapshot?.username
+    || solicitud?.datos_formulario?.personal?.documento
+    || '';
+  const solicitanteConDoc = docIdentidad ? `${solicitante} (C.C. ${docIdentidad})` : solicitante;
+
   const cargo = solicitud?.datos_formulario?.laboral?.cargo || solicitud?.solicitante_snapshot?.cargo || 'No registrado';
   const dependencia = solicitud?.datos_formulario?.laboral?.dependencia || solicitud?.solicitante_snapshot?.dependencia || 'No registrada';
   
@@ -4533,13 +4957,87 @@ const renderReporteSalidaReviewPage = ({
   const destino = salida.municipio
     ? `${salida.municipio}${salida.departamento ? `, ${salida.departamento}` : ''}`
     : (salida.pais || 'San Juan de Pasto');
+  const alcance = salida.alcance || 'Local';
+  const destinoCompleto = `${destino} (${alcance})`;
   
-  const fechas = `${salida.fecha || ''} al ${salida.fechaRegreso || ''}`;
-  const horario = `${salida.horaInicio || ''} a ${salida.horaFin || ''}`;
+  const fechas = `${salida.fecha || ''}${salida.fechaRegreso && salida.fechaRegreso !== salida.fecha ? ` al ${salida.fechaRegreso}` : ''}`;
+  const horaInicioFormatted = formatHourAmPm(salida.horaInicio) || salida.horaInicio || '';
+  const horaFinFormatted = formatHourAmPm(salida.horaFin) || salida.horaFin || '';
+  const horario = horaFinFormatted ? `${horaInicioFormatted} a ${horaFinFormatted}` : horaInicioFormatted;
   const motivo = salida.motivo || 'No registrado';
+  const tipoSalidaLabel = getTipoLabel(salida.tipo) || salida.tipo || 'Salida institucional';
+
   const requiereViaticosText = (viaticos.requiereViaticos || solicitud.origen_flujo === 'desplazamiento_viaticos')
     ? 'Sí requiere viáticos (ADF-PP-FR-004)'
     : 'No requiere viáticos';
+
+  // ── Identificación del tipo de trámite y duración normativa ──
+  const esDocente = isDocentePermisoRemunerado(solicitud);
+  const segmentoDocente = getDocentePermisoSegmento(solicitud);
+  const duracionDias = Number(salida.duracionDias || (salida.duracionTipo === 'menos_media_jornada' ? 1 : 0));
+  const tiempoMinutos = solicitud?.tiempo_solicitado_minutos || 0;
+  const tiempoTexto = formatMinutes(tiempoMinutos);
+
+  let bannerTitulo = '';
+  let bannerSubtitulo = '';
+  let bannerBg = '#eff6ff';
+  let bannerBorder = '#93c5fd';
+  let bannerColor = '#1e40af';
+  let duracionDetalle = '';
+
+  if (esDocente) {
+    if (segmentoDocente === 1 || salida.duracionTipo === 'menos_media_jornada') {
+      bannerTitulo = 'SOLICITUD DE PERMISO — HASTA 1 DÍA';
+      bannerSubtitulo = 'Competencia normativa: Otorgado por el Director del Programa o quien haga sus veces como jefe inmediato del docente.';
+      bannerBg = '#ecfdf5';
+      bannerBorder = '#6ee7b7';
+      bannerColor = '#065f46';
+      duracionDetalle = `1 día (${tiempoTexto || 'Jornada completa'})`;
+    } else if (segmentoDocente === 2 || salida.duracionTipo === '1_2_dias') {
+      bannerTitulo = 'SOLICITUD DE PERMISO — DOS (2) DÍAS';
+      bannerSubtitulo = 'Competencia normativa: Otorgado por el Vicerrector Académico con el visto bueno del Director del Programa.';
+      bannerBg = '#eff6ff';
+      bannerBorder = '#93c5fd';
+      bannerColor = '#1e40af';
+      duracionDetalle = `2 días (${tiempoTexto || '2 jornadas completas'})`;
+    } else {
+      const diasNum = Math.max(3, duracionDias);
+      bannerTitulo = `SOLICITUD DE PERMISO — TRES (3) DÍAS EN ADELANTE (${diasNum} DÍAS)`;
+      bannerSubtitulo = 'Competencia normativa: Otorgado por el Rector de la UNICESMAG previo visto bueno del Director del Programa y del Vicerrector Académico.';
+      bannerBg = '#fffbeb';
+      bannerBorder = '#fcd34d';
+      bannerColor = '#92400e';
+      duracionDetalle = `${diasNum} días (${tiempoTexto})`;
+    }
+  } else {
+    if (salida.duracionTipo === 'menos_media_jornada') {
+      bannerTitulo = 'REPORTE DE SALIDA INSTITUCIONAL — HASTA MEDIA JORNADA';
+      bannerSubtitulo = 'Trámite ordinario: Visto bueno del Jefe Inmediato y validación institucional de Gestión del Talento Humano.';
+      bannerBg = '#f8fafc';
+      bannerBorder = '#cbd5e1';
+      bannerColor = '#334155';
+      duracionDetalle = `Hasta media jornada (${tiempoTexto})`;
+    } else if (salida.duracionTipo === '1_2_dias') {
+      bannerTitulo = 'OFICIO DE SOLICITUD DE SALIDA — 1 A 2 DÍAS';
+      bannerSubtitulo = 'Trámite por días: Visto bueno del Jefe Inmediato y aprobación por Vicerrectoría / Gestión Humana.';
+      bannerBg = '#eff6ff';
+      bannerBorder = '#93c5fd';
+      bannerColor = '#1e40af';
+      duracionDetalle = `${duracionDias || '1 a 2'} días (${tiempoTexto})`;
+    } else {
+      const diasNum = Math.max(3, duracionDias);
+      bannerTitulo = `OFICIO DE SOLICITUD DE SALIDA — TRES (3) O MÁS DÍAS (${diasNum} DÍAS)`;
+      bannerSubtitulo = 'Trámite extendido: Visto bueno de autoridades y aprobación por Rectoría / Gestión Humana.';
+      bannerBg = '#fffbeb';
+      bannerBorder = '#fcd34d';
+      bannerColor = '#92400e';
+      duracionDetalle = `${diasNum} días (${tiempoTexto})`;
+    }
+  }
+
+  const hasAttachment = Boolean(getSolicitudAttachmentKey(solicitud));
+  const pdfViewUrl = `${publicBackendUrl.replace(/\/$/, '')}/api/reporte-salida/documento/${encodeURIComponent(token)}`;
+  const supportViewUrl = `${publicBackendUrl.replace(/\/$/, '')}/api/reporte-salida/soporte/${encodeURIComponent(token)}`;
 
   res.setHeader("Content-Security-Policy", "default-src * 'unsafe-inline' 'unsafe-eval' data: blob:; script-src * 'unsafe-inline' 'unsafe-eval'; style-src * 'unsafe-inline'; form-action *;");
   return res.status(200).type('html').send(`<!doctype html>
@@ -4547,29 +5045,111 @@ const renderReporteSalidaReviewPage = ({
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Revisar Solicitud de Salida - ${escapeHtml(consecutivo)}</title>
+  <title>Revisar Solicitud - ${escapeHtml(consecutivo)}</title>
   <style>
     * { box-sizing: border-box; }
-    body { margin: 0; font-family: Arial, sans-serif; background: #f1f5f9; color: #334155; padding: 24px 16px; }
-    .card { max-width: 780px; margin: 0 auto; background: #fff; border: 1px solid #cbd5e1; border-radius: 16px; box-shadow: 0 12px 35px rgba(15,23,42,0.12); overflow: hidden; }
-    .header { background: linear-gradient(90deg, #0b1730, #123a7a); color: #fff; padding: 20px 26px; }
-    .header h1 { margin: 0; font-size: 20px; font-weight: 800; }
-    .header p { margin: 4px 0 0 0; color: #bfdbfe; font-size: 13px; }
-    .body { padding: 26px; }
+    body { margin: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif; background: #f1f5f9; color: #1e293b; padding: 24px 16px; }
+    .card { max-width: 820px; margin: 0 auto; background: #fff; border: 1px solid #cbd5e1; border-radius: 16px; box-shadow: 0 12px 35px rgba(15,23,42,0.12); overflow: hidden; }
+    .header { background: linear-gradient(90deg, #0b1730, #123a7a); color: #fff; padding: 22px 28px; }
+    .header h1 { margin: 0; font-size: 20px; font-weight: 800; letter-spacing: -0.01em; }
+    .header p { margin: 6px 0 0 0; color: #bfdbfe; font-size: 13.5px; }
+    .body { padding: 28px; }
+    
+    .tramite-banner {
+      background: ${bannerBg};
+      border: 1.5px solid ${bannerBorder};
+      color: ${bannerColor};
+      border-radius: 12px;
+      padding: 14px 18px;
+      margin-bottom: 22px;
+    }
+    .tramite-banner .badge-title {
+      font-size: 13.5px;
+      font-weight: 900;
+      letter-spacing: 0.02em;
+      text-transform: uppercase;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .tramite-banner .badge-desc {
+      font-size: 12.5px;
+      margin-top: 4px;
+      opacity: 0.92;
+      line-height: 1.4;
+    }
+
+    .docs-section {
+      background: #f8fafc;
+      border: 1px solid #e2e8f0;
+      border-radius: 12px;
+      padding: 14px 18px;
+      margin-bottom: 22px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 14px;
+      flex-wrap: wrap;
+    }
+    .docs-title {
+      font-size: 12px;
+      font-weight: 800;
+      color: #475569;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+    }
+    .docs-btns {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+    .doc-btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 9px 16px;
+      border-radius: 8px;
+      text-decoration: none;
+      font-weight: 800;
+      font-size: 13px;
+      transition: all 0.15s ease;
+    }
+    .btn-pdf {
+      background: #0b3a6f;
+      color: #fff;
+      box-shadow: 0 2px 6px rgba(11,58,111,0.25);
+    }
+    .btn-pdf:hover { background: #082a52; }
+    .btn-soporte {
+      background: #fff;
+      color: #0b3a6f;
+      border: 1.5px solid #cbd5e1;
+    }
+    .btn-soporte:hover { background: #f1f5f9; border-color: #94a3b8; }
+
     .section-title { font-size: 11px; font-weight: 900; text-transform: uppercase; color: #64748b; letter-spacing: 0.05em; margin-bottom: 8px; }
-    .grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 12px; padding: 16px; margin-bottom: 20px; }
+    .grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 12px; padding: 18px; margin-bottom: 22px; }
     .full { grid-column: 1 / -1; }
-    .item label { display: block; font-size: 11px; font-weight: 800; color: #64748b; text-transform: uppercase; }
-    .item div { font-size: 14.5px; font-weight: 700; color: #0f172a; margin-top: 3px; word-break: break-word; }
-    label.obs-label { display: block; margin-top: 18px; font-weight: 700; color: #0b3a6f; font-size: 14px; }
-    textarea { width: 100%; padding: 12px; border: 1px solid #cbd5e1; border-radius: 8px; margin-top: 6px; font-family: inherit; font-size: 14px; box-sizing: border-box; min-height: 90px; }
+    .item label { display: block; font-size: 11px; font-weight: 800; color: #64748b; text-transform: uppercase; letter-spacing: 0.03em; }
+    .item div { font-size: 14px; font-weight: 700; color: #0f172a; margin-top: 4px; word-break: break-word; line-height: 1.4; }
+    
+    label.obs-label { display: block; margin-top: 20px; font-weight: 800; color: #0b3a6f; font-size: 13.5px; }
+    textarea { width: 100%; padding: 12px; border: 1.5px solid #cbd5e1; border-radius: 8px; margin-top: 6px; font-family: inherit; font-size: 14px; box-sizing: border-box; min-height: 90px; }
+    textarea:focus { outline: none; border-color: #2563eb; }
     .actions { display: flex; gap: 14px; justify-content: center; margin-top: 24px; flex-wrap: wrap; }
-    button { border: 0; border-radius: 8px; padding: 12px 28px; font-size: 14.5px; font-weight: 800; cursor: pointer; transition: all 0.15s ease; min-width: 180px; text-align: center; }
+    button { border: 0; border-radius: 8px; padding: 13px 30px; font-size: 14.5px; font-weight: 800; cursor: pointer; transition: all 0.15s ease; min-width: 190px; text-align: center; }
     button.ok { background: #166534; color: #fff; box-shadow: 0 4px 12px rgba(22,101,52,0.25); }
     button.ok:hover { background: #15803d; }
     button.bad { background: #b91c1c; color: #fff; box-shadow: 0 4px 12px rgba(185,28,28,0.25); }
     button.bad:hover { background: #dc2626; }
-    @media(max-width: 600px) { .grid { grid-template-columns: 1fr; } .actions { flex-direction: column; } button { width: 100%; } }
+    @media(max-width: 650px) { 
+      .grid { grid-template-columns: 1fr; } 
+      .docs-section { flex-direction: column; align-items: stretch; }
+      .docs-btns { flex-direction: column; }
+      .doc-btn { justify-content: center; }
+      .actions { flex-direction: column; } 
+      button { width: 100%; } 
+    }
   </style>
 </head>
 <body>
@@ -4579,19 +5159,49 @@ const renderReporteSalidaReviewPage = ({
       <p>${escapeHtml(stageLabel)} — Solicitud: <strong>${escapeHtml(consecutivo)}</strong></p>
     </div>
     <div class="body">
-      <div class="section-title">Información general de la salida</div>
+      
+      <!-- Banner Normativo del Permiso / Salida -->
+      <div class="tramite-banner">
+        <div class="badge-title">📋 ${escapeHtml(bannerTitulo)}</div>
+        <div class="badge-desc">${escapeHtml(bannerSubtitulo)}</div>
+      </div>
+
+      <!-- Botones para previsualizar Formato/Oficio y Soporte Adjunto -->
+      <div class="docs-section">
+        <div class="docs-title">Documentos asociados al trámite:</div>
+        <div class="docs-btns">
+          <a href="${pdfViewUrl}" target="_blank" class="doc-btn btn-pdf" title="Ver documento oficial en PDF">
+            📄 Ver Formato / Oficio PDF
+          </a>
+          ${hasAttachment ? `
+            <a href="${supportViewUrl}" target="_blank" class="doc-btn btn-soporte" title="Ver archivo soporte adjuntado">
+              📎 Ver Soporte Adjunto
+            </a>
+          ` : ''}
+        </div>
+      </div>
+
+      <div class="section-title">Información detallada de la solicitud</div>
       <div class="grid">
         <div class="item">
           <label>Solicitante</label>
-          <div>${escapeHtml(solicitante)} (${escapeHtml(documento)})</div>
+          <div>${escapeHtml(solicitanteConDoc)}</div>
         </div>
         <div class="item">
           <label>Cargo / Dependencia</label>
           <div>${escapeHtml(cargo)} — ${escapeHtml(dependencia)}</div>
         </div>
         <div class="item">
-          <label>Destino</label>
-          <div>${escapeHtml(destino)}</div>
+          <label>Tipo de Trámite / Actividad</label>
+          <div>${escapeHtml(tipoSalidaLabel)}</div>
+        </div>
+        <div class="item">
+          <label>Duración Solicitada</label>
+          <div style="color: #0b3a6f; font-weight: 800;">${escapeHtml(duracionDetalle)}</div>
+        </div>
+        <div class="item">
+          <label>Destino y Alcance</label>
+          <div>${escapeHtml(destinoCompleto)}</div>
         </div>
         <div class="item">
           <label>Fechas de salida y regreso</label>
@@ -4621,6 +5231,7 @@ const renderReporteSalidaReviewPage = ({
 </body>
 </html>`);
 };
+
 
 const aprobarDesdeCorreo = async (req, res) => {
   if (!(await getReporteSalidaFeatureState())) {
@@ -4927,7 +5538,9 @@ const aprobarDesdeCorreo = async (req, res) => {
         await sendControlledCopyRejectionEmail({ solicitudes: solicitud, actorName: vicerrectoriaName, actorRole: 'Vicerrectoría', justificacion: observacion });
         return renderApprovalPage({ res, tone: 'info', title: 'Solicitud rechazada', message: 'La solicitud fue marcada como no aprobada y se notificó a las partes interesadas.', solicitud });
       }
-      const goesToRectoria = requiresRectoriaApproval(solicitud);
+      const goesToRectoria = requiresRectoriaApproval(solicitud) ||
+        // Docente con permiso remunerado de 3 o más días: después de Vicerrectoría → Rectoría
+        (isDocentePermisoRemunerado(solicitud) && getSolicitudSalida(solicitud).duracionTipo === '3_mas_dias');
       const skipRectoriaAfterVicerrectoria = goesToRectoria && sameEmail(RECTORIA_EMAIL, vicerrectoriaEmail);
       const nextStage = goesToRectoria && !skipRectoriaAfterVicerrectoria ? 'rectoria' : 'gestion_humana';
       const nextToken = createApprovalToken(nextStage, solicitud.consecutivo);
@@ -7609,6 +8222,91 @@ const procesarRechazo = async (req, res) => {
   }
 };
 
+const buildGroupEmailAttachments = async (solicitudes = []) => {
+  if (!solicitudes || !solicitudes.length) return [];
+  const leaderSol = solicitudes.find(s => s.datos_formulario?.is_leader === true) || solicitudes[0];
+  try {
+    const pdfAttachment = await buildReporteSalidaPdfAttachment(leaderSol);
+    const supportAttachment = await buildReporteSalidaSupportAttachment(leaderSol);
+    return [pdfAttachment, supportAttachment].filter(Boolean);
+  } catch (err) {
+    console.error('[buildGroupEmailAttachments] Error generando adjuntos para correo grupal:', err);
+    return [];
+  }
+};
+
+const sendProyeccionSocialGroupApprovalEmail = async (solicitudes, token) => {
+  const leaderSol = solicitudes.find(s => s.datos_formulario?.is_leader === true) || solicitudes[0];
+  const leaderNombre = leaderSol?.solicitante_snapshot?.nombre || '';
+  const grupo_id = leaderSol?.datos_formulario?.grupo_id || leaderSol?.grupo_id;
+  const consecutivoGroup = leaderSol.consecutivo.split('-').slice(0, 3).join('-') + '-GRUPO';
+  const salida = leaderSol.datos_formulario?.salida || {};
+
+  const approveUrl = `${publicBackendUrl.replace(/\/$/, '')}/api/reporte-salida/aprobar-grupo/${encodeURIComponent(token)}`;
+  const rejectUrl = `${publicBackendUrl.replace(/\/$/, '')}/api/reporte-salida/rechazar-grupo/${encodeURIComponent(token)}`;
+
+  const subject = `REPORTE DE SALIDA GRUPAL ${consecutivoGroup} | Revisión y Aprobación Proyección Social`;
+
+  let tableRows = '';
+  solicitudes.forEach((sol, idx) => {
+    const p = sol.datos_formulario?.personal || sol.solicitante_snapshot || {};
+    const lab = sol.datos_formulario?.laboral || {};
+    tableRows += `
+      <tr>
+        <td style="border:1px solid #dbe6f5;padding:8px;text-align:center;">${idx + 1}</td>
+        <td style="border:1px solid #dbe6f5;padding:8px;"><strong>${escapeHtml(p.nombre)}</strong> ${sol.datos_formulario?.is_leader ? '<span style="color:#0f52ba;font-size:11px;font-weight:bold;">(Líder)</span>' : ''}</td>
+        <td style="border:1px solid #dbe6f5;padding:8px;">${escapeHtml(lab.cargo || p.cargo || '')}</td>
+        <td style="border:1px solid #dbe6f5;padding:8px;">${escapeHtml(lab.dependencia || p.dependencia || '')}</td>
+        <td style="border:1px solid #dbe6f5;padding:8px;">${escapeHtml(p.correo || p.email || '')}</td>
+      </tr>
+    `;
+  });
+
+  const attachments = await buildGroupEmailAttachments(solicitudes);
+
+  const html = renderInstitutionalTemplate({
+    title: 'Revisión Salida Grupal - Proyección Social',
+    introHtml: `<p style="margin: 0 0 12px 0;">Saludo de paz y bien,</p><p style="margin: 0 0 4px 0; color: #475569;">Estimada Coordinación de Proyección Social y Extensión,</p><p>Reciba un cordial saludo. Se ha radicado una salida grupal institucional liderada por <strong>${escapeHtml(leaderNombre)}</strong> con <strong>${solicitudes.length}</strong> colaboradores(as) participantes, la cual requiere su visto bueno previo.</p>`,
+    bodyHtml: `
+      <p><strong>Detalles de la salida:</strong></p>
+      <ul>
+        <li><strong>Fecha y hora salida:</strong> ${escapeHtml(salida.fecha)} a las ${escapeHtml(salida.horaInicio)}</li>
+        <li><strong>Fecha y hora regreso:</strong> ${escapeHtml(salida.fechaRegreso)} a las ${escapeHtml(salida.horaFin)}</li>
+        <li><strong>Motivo / Descripción:</strong> ${escapeHtml(salida.motivo || 'N/A')}</li>
+        ${salida.entidadDestino ? `<li><strong>Entidad / Lugar Destino:</strong> ${escapeHtml(salida.entidadDestino)}</li>` : ''}
+      </ul>
+      <p><strong>Colaboradores(as) participantes:</strong></p>
+      <table style="width:100%;border-collapse:collapse;margin:15px 0;font-size:13px;">
+        <thead>
+          <tr style="background:#f1f5f9;">
+            <th style="border:1px solid #dbe6f5;padding:8px;text-align:center;width:35px;">#</th>
+            <th style="border:1px solid #dbe6f5;padding:8px;text-align:left;">Nombre</th>
+            <th style="border:1px solid #dbe6f5;padding:8px;text-align:left;">Cargo</th>
+            <th style="border:1px solid #dbe6f5;padding:8px;text-align:left;">Dependencia / Programa</th>
+            <th style="border:1px solid #dbe6f5;padding:8px;text-align:left;">Correo</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${tableRows}
+        </tbody>
+      </table>
+      <div style="text-align:center;margin:24px 0;">
+        <a href="${approveUrl}" style="display:inline-block;background:#0b3a6f;color:#fff;padding:12px 24px;border-radius:8px;text-decoration:none;font-weight:700;margin:5px 10px;">DAR VISTO BUENO / AUTORIZAR</a>
+        <a href="${rejectUrl}" style="display:inline-block;background:#b91c1c;color:#fff;padding:12px 24px;border-radius:8px;text-decoration:none;font-weight:700;margin:5px 10px;">NO AUTORIZAR SALIDA</a>
+      </div>
+    `
+  });
+
+  const psEmail = PROYECCION_SOCIAL_LEADER_EMAIL || 'proyeccionsocial@unicesmag.edu.co';
+  return sendInstitutionalEmail({
+    to: [psEmail],
+    subject,
+    text: `Solicitud de visto bueno de Proyección Social para salida grupal liderada por ${leaderNombre}. Para autorizar ingrese a ${approveUrl}.`,
+    html,
+    attachments
+  });
+};
+
 const sendJefeGroupApprovalEmail = async (solicitudes, defaultToken, recipients = []) => {
   if (!recipients.length) return { success: false, error: 'No recipients' };
 
@@ -7646,6 +8344,7 @@ const sendJefeGroupApprovalEmail = async (solicitudes, defaultToken, recipients 
     return tipo;
   };
 
+  const attachments = await buildGroupEmailAttachments(solicitudes);
   let lastResult = { success: true };
 
   for (const rEmail of recipients) {
@@ -7709,7 +8408,8 @@ const sendJefeGroupApprovalEmail = async (solicitudes, defaultToken, recipients 
       to: [rEmail],
       subject,
       text: `Solicitud de visto bueno para salida grupal liderada por ${leaderNombre} con ${solicitudes.length} participantes. Para autorizar ingrese a ${approveUrl}.`,
-      html
+      html,
+      attachments
     });
   }
 
@@ -7742,6 +8442,8 @@ const sendSSTGroupApprovalEmail = async (solicitudes, token) => {
       </tr>
     `;
   });
+
+  const attachments = await buildGroupEmailAttachments(solicitudes);
 
   const html = renderInstitutionalTemplate({
     title: 'Visto Bueno SST - Salida Grupal',
@@ -7780,7 +8482,8 @@ const sendSSTGroupApprovalEmail = async (solicitudes, token) => {
     to: recipients.sst,
     subject,
     text: `Solicitud de visto bueno SST para salida grupal con ${solicitudes.length} participantes. Para autorizar ingrese a ${approveUrl}.`,
-    html
+    html,
+    attachments
   });
 };
 
@@ -7848,6 +8551,8 @@ const sendGestionHumanaGroupApprovalEmail = async (solicitudes, token) => {
     `;
   }
 
+  const attachments = await buildGroupEmailAttachments(solicitudes);
+
   const html = renderInstitutionalTemplate({
     title: 'Aprobacion de Salida Grupal',
     introHtml: `<p style="margin: 0 0 12px 0;">Saludo de paz y bien,</p><p style="margin: 0 0 4px 0;">Estimados(as) integrantes de Gestion del Talento Humano,</p><p>Reciba un cordial saludo. Se ha radicado en el sistema un reporte de salida de modalidad grupal con un total de <strong>${solicitudes.length}</strong> colaboradores(as) participantes, la cual requiere su respectiva validacion y aprobacion.</p>`,
@@ -7885,7 +8590,8 @@ const sendGestionHumanaGroupApprovalEmail = async (solicitudes, token) => {
     to: recipients.gestionHumana,
     subject,
     text: `Solicitud de salida grupal con ${solicitudes.length} participantes. Para aprobar ingrese a ${approveUrl}.`,
-    html
+    html,
+    attachments
   });
 };
 
@@ -7915,7 +8621,7 @@ const sendVicerrectoriaGroupApprovalEmail = async (solicitudes, token) => {
     `;
   });
 
-  const attachments = await buildReporteSalidaSupportAttachments(leaderSol);
+  const attachments = await buildGroupEmailAttachments(solicitudes);
 
   const html = renderInstitutionalTemplate({
     title: 'Solicitud de Aprobación - Vicerrectoría Académica (Grupal)',
@@ -7959,6 +8665,7 @@ const sendVicerrectoriaGroupApprovalEmail = async (solicitudes, token) => {
     attachments
   });
 };
+
 
 const renderRejectionFormPageGrupo = ({ res, solicitudes, token }) => {
   const consecutivo = solicitudes[0]?.consecutivo.split('-').slice(0, 3).join('-') + '-GRUPO';
@@ -8265,41 +8972,283 @@ const aprobarGrupoDesdeCorreo = async (req, res) => {
     }
 
     if (req.method === 'GET') {
-      const participantes = solicitudes.map(s => `<li>${escapeHtml(s.solicitante_snapshot?.nombre || 'Colaborador')} — C.C. ${escapeHtml(s.solicitante_snapshot?.documento || '')}</li>`).join('');
+      const leaderSol = solicitudes.find(s => s.datos_formulario?.is_leader === true) || solicitudes[0];
+      const leaderNombre = leaderSol?.solicitante_snapshot?.nombre || '';
+      const salida = leaderSol?.datos_formulario?.salida || {};
+      const consecutivoGroup = leaderSol.consecutivo.split('-').slice(0, 3).join('-') + '-GRUPO';
+      const tipoSalidaLabel = getTipoLabel(salida.tipo) || salida.tipo || 'Salida grupal';
+
+      const fechas = `${salida.fecha || ''}${salida.fechaRegreso && salida.fechaRegreso !== salida.fecha ? ` al ${salida.fechaRegreso}` : ''}`;
+      const horaInicioFormatted = formatHourAmPm(salida.horaInicio) || salida.horaInicio || '';
+      const horaFinFormatted = formatHourAmPm(salida.horaFin) || salida.horaFin || '';
+      const horario = horaFinFormatted ? `${horaInicioFormatted} a ${horaFinFormatted}` : horaInicioFormatted;
+      const destino = salida.municipio
+        ? `${salida.municipio}${salida.departamento ? `, ${salida.departamento}` : ''}`
+        : (salida.pais || 'San Juan de Pasto');
+      const alcance = salida.alcance || 'Local';
+      const destinoCompleto = `${destino} (${alcance})`;
+      const tiempoTexto = formatMinutes(solicitudes[0]?.tiempo_solicitado_minutos || 0);
+
+      // Determinación de tipo de trámite grupal
+      const allDocentes = solicitudes.every(s =>
+        isDocenteCargo(s.datos_formulario?.laboral?.cargo || s.solicitante_snapshot?.cargo || '') &&
+        isVicerrectoriaAcademica(s.datos_formulario?.laboral?.vicerrectoria || s.solicitante_snapshot?.vicerrectoria || '')
+      );
+      const grupoDuracionTipo = salida.duracionTipo || 'menos_media_jornada';
+      const duracionDias = Number(salida.duracionDias || (grupoDuracionTipo === 'menos_media_jornada' ? 1 : 0));
+
+      let bannerTitulo = '';
+      let bannerSubtitulo = '';
+      let bannerBg = '#eff6ff';
+      let bannerBorder = '#93c5fd';
+      let bannerColor = '#1e40af';
+      let duracionDetalle = '';
+
+      if (allDocentes) {
+        if (grupoDuracionTipo === 'menos_media_jornada') {
+          bannerTitulo = 'SALIDA GRUPAL — HASTA 1 DÍA';
+          bannerSubtitulo = 'Competencia normativa: Otorgado por las Direcciones de Programa correspondientes.';
+          bannerBg = '#ecfdf5';
+          bannerBorder = '#6ee7b7';
+          bannerColor = '#065f46';
+          duracionDetalle = `1 día (${tiempoTexto || 'Jornada laboral'})`;
+        } else if (grupoDuracionTipo === '1_2_dias') {
+          bannerTitulo = 'SALIDA GRUPAL — DOS DÍAS';
+          bannerSubtitulo = 'Competencia normativa: Visto bueno de Direcciones de Programa y Aprobación de Vicerrectoría Académica.';
+          bannerBg = '#eff6ff';
+          bannerBorder = '#93c5fd';
+          bannerColor = '#1e40af';
+          duracionDetalle = `2 días (${tiempoTexto || '2 jornadas'})`;
+        } else {
+          const diasNum = Math.max(3, duracionDias);
+          bannerTitulo = `SALIDA GRUPAL — ${diasNum} DÍAS EN ADELANTE`;
+          bannerSubtitulo = 'Competencia normativa: Visto bueno Direcciones de Programa y Vicerrectoría Académica, Aprobación final Rectoría.';
+          bannerBg = '#fffbeb';
+          bannerBorder = '#fcd34d';
+          bannerColor = '#92400e';
+          duracionDetalle = `${diasNum} días (${tiempoTexto})`;
+        }
+      } else {
+        bannerTitulo = `REPORTE DE SALIDA INSTITUCIONAL GRUPAL (${solicitudes.length} INTEGRANTES)`;
+        bannerSubtitulo = 'Trámite grupal institucional: Visto bueno de Direcciones de Programa/Jefaturas correspondientes.';
+        bannerBg = '#f8fafc';
+        bannerBorder = '#cbd5e1';
+        bannerColor = '#334155';
+        duracionDetalle = `${tiempoTexto} por persona`;
+      }
+
+      const hasAttachment = Boolean(getSolicitudAttachmentKey(leaderSol));
+      const pdfViewUrl = `${publicBackendUrl.replace(/\/$/, '')}/api/reporte-salida/documento-grupo/${encodeURIComponent(req.params.token)}`;
+      const supportViewUrl = `${publicBackendUrl.replace(/\/$/, '')}/api/reporte-salida/soporte-grupo/${encodeURIComponent(req.params.token)}`;
+
+      let tableRows = '';
+      solicitudes.forEach((sol, idx) => {
+        const p = sol.datos_formulario?.personal || sol.solicitante_snapshot || {};
+        const lab = sol.datos_formulario?.laboral || {};
+        const doc = p.documento || sol.solicitante_snapshot?.documento || sol.solicitante_snapshot?.username || '';
+        tableRows += `
+          <tr>
+            <td style="border:1px solid #dbe6f5;padding:8px;text-align:center;">${idx + 1}</td>
+            <td style="border:1px solid #dbe6f5;padding:8px;"><strong>${escapeHtml(p.nombre)}</strong> ${sol.datos_formulario?.is_leader ? '<span style="color:#0b3a6f;font-size:11px;font-weight:bold;">(Líder)</span>' : ''} ${doc ? `<br><span style="color:#64748b;font-size:11.5px;">C.C. ${escapeHtml(doc)}</span>` : ''}</td>
+            <td style="border:1px solid #dbe6f5;padding:8px;">${escapeHtml(lab.cargo || p.cargo || '')}</td>
+            <td style="border:1px solid #dbe6f5;padding:8px;">${escapeHtml(lab.dependencia || p.dependencia || '')}</td>
+            <td style="border:1px solid #dbe6f5;padding:8px;">${escapeHtml(p.correo || p.email || '')}</td>
+          </tr>
+        `;
+      });
+
       return res.status(200).type('html').send(`<!doctype html>
 <html lang="es">
 <head>
   <meta charset="utf-8">
-  <title>Revisar Salida Grupal - ${escapeHtml(grupo_id)}</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Revisar Salida Grupal - ${escapeHtml(consecutivoGroup)}</title>
   <style>
     * { box-sizing: border-box; }
-    body { margin: 0; font-family: Arial, sans-serif; background: #f1f5f9; color: #334155; padding: 24px 16px; }
-    .card { max-width: 780px; margin: 0 auto; background: #fff; border: 1px solid #cbd5e1; border-radius: 16px; box-shadow: 0 12px 35px rgba(15,23,42,0.12); overflow: hidden; }
-    .header { background: linear-gradient(90deg, #0b1730, #123a7a); color: #fff; padding: 20px 26px; }
-    .header h1 { margin: 0; font-size: 20px; font-weight: 800; }
-    .header p { margin: 4px 0 0 0; color: #bfdbfe; font-size: 13px; }
-    .body { padding: 26px; }
-    .actions { display: flex; gap: 14px; justify-content: center; margin-top: 24px; }
-    button { border: 0; border-radius: 8px; padding: 12px 28px; font-size: 14.5px; font-weight: 800; cursor: pointer; }
-    button.ok { background: #166534; color: #fff; }
-    button.bad { background: #b91c1c; color: #fff; }
+    body { margin: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif; background: #f1f5f9; color: #1e293b; padding: 24px 16px; }
+    .card { max-width: 860px; margin: 0 auto; background: #fff; border: 1px solid #cbd5e1; border-radius: 16px; box-shadow: 0 12px 35px rgba(15,23,42,0.12); overflow: hidden; }
+    .header { background: linear-gradient(90deg, #0b1730, #123a7a); color: #fff; padding: 22px 28px; }
+    .header h1 { margin: 0; font-size: 20px; font-weight: 800; letter-spacing: -0.01em; }
+    .header p { margin: 6px 0 0 0; color: #bfdbfe; font-size: 13.5px; }
+    .body { padding: 28px; }
+
+    .tramite-banner {
+      background: ${bannerBg};
+      border: 1.5px solid ${bannerBorder};
+      color: ${bannerColor};
+      border-radius: 12px;
+      padding: 14px 18px;
+      margin-bottom: 22px;
+    }
+    .tramite-banner .badge-title {
+      font-size: 13.5px;
+      font-weight: 900;
+      letter-spacing: 0.02em;
+      text-transform: uppercase;
+    }
+    .tramite-banner .badge-desc {
+      font-size: 12.5px;
+      margin-top: 4px;
+      opacity: 0.92;
+      line-height: 1.4;
+    }
+
+    .docs-section {
+      background: #f8fafc;
+      border: 1px solid #e2e8f0;
+      border-radius: 12px;
+      padding: 14px 18px;
+      margin-bottom: 22px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 14px;
+      flex-wrap: wrap;
+    }
+    .docs-title {
+      font-size: 12px;
+      font-weight: 800;
+      color: #475569;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+    }
+    .docs-btns {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+    .doc-btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 9px 16px;
+      border-radius: 8px;
+      text-decoration: none;
+      font-weight: 800;
+      font-size: 13px;
+      transition: all 0.15s ease;
+    }
+    .btn-pdf {
+      background: #0b3a6f;
+      color: #fff;
+      box-shadow: 0 2px 6px rgba(11,58,111,0.25);
+    }
+    .btn-pdf:hover { background: #082a52; }
+    .btn-soporte {
+      background: #fff;
+      color: #0b3a6f;
+      border: 1.5px solid #cbd5e1;
+    }
+    .btn-soporte:hover { background: #f1f5f9; border-color: #94a3b8; }
+
+    .section-title { font-size: 11px; font-weight: 900; text-transform: uppercase; color: #64748b; letter-spacing: 0.05em; margin-bottom: 8px; }
+    .grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 12px; padding: 18px; margin-bottom: 22px; }
+    .full { grid-column: 1 / -1; }
+    .item label { display: block; font-size: 11px; font-weight: 800; color: #64748b; text-transform: uppercase; letter-spacing: 0.03em; }
+    .item div { font-size: 14px; font-weight: 700; color: #0f172a; margin-top: 4px; word-break: break-word; line-height: 1.4; }
+
+    table { width: 100%; border-collapse: collapse; margin: 15px 0 22px 0; font-size: 13px; }
+    th { background: #f1f5f9; border: 1px solid #dbe6f5; padding: 9px; text-align: left; font-weight: 800; color: #334155; }
+    td { border: 1px solid #dbe6f5; padding: 8px; }
+
+    label.obs-label { display: block; margin-top: 20px; font-weight: 800; color: #0b3a6f; font-size: 13.5px; }
+    textarea { width: 100%; padding: 12px; border: 1.5px solid #cbd5e1; border-radius: 8px; margin-top: 6px; font-family: inherit; font-size: 14px; box-sizing: border-box; min-height: 90px; }
+    textarea:focus { outline: none; border-color: #2563eb; }
+    .actions { display: flex; gap: 14px; justify-content: center; margin-top: 24px; flex-wrap: wrap; }
+    button { border: 0; border-radius: 8px; padding: 13px 30px; font-size: 14.5px; font-weight: 800; cursor: pointer; transition: all 0.15s ease; min-width: 190px; text-align: center; }
+    button.ok { background: #166534; color: #fff; box-shadow: 0 4px 12px rgba(22,101,52,0.25); }
+    button.ok:hover { background: #15803d; }
+    button.bad { background: #b91c1c; color: #fff; box-shadow: 0 4px 12px rgba(185,28,28,0.25); }
+    button.bad:hover { background: #dc2626; }
+    @media(max-width: 650px) { 
+      .grid { grid-template-columns: 1fr; } 
+      .docs-section { flex-direction: column; align-items: stretch; }
+      .docs-btns { flex-direction: column; }
+      .doc-btn { justify-content: center; }
+      .actions { flex-direction: column; } 
+      button { width: 100%; } 
+    }
   </style>
 </head>
 <body>
   <main class="card">
     <div class="header">
       <h1>SIAC UNICESMAG</h1>
-      <p>Revisión de Salida Grupal: <strong>${escapeHtml(grupo_id)}</strong> (${solicitudes.length} integrantes)</p>
+      <p>Revisión de Salida Grupal: <strong>${escapeHtml(consecutivoGroup)}</strong> (${solicitudes.length} participantes)</p>
     </div>
     <div class="body">
-      <h3 style="margin-top:0;color:#0b3a6f;">Integrantes de la salida grupal:</h3>
-      <ul style="line-height:1.6;color:#334155;">${participantes}</ul>
+
+      <!-- Banner Normativo del Permiso / Salida Grupal -->
+      <div class="tramite-banner">
+        <div class="badge-title">📋 ${escapeHtml(bannerTitulo)}</div>
+        <div class="badge-desc">${escapeHtml(bannerSubtitulo)}</div>
+      </div>
+
+      <!-- Botones para previsualizar Formato/Oficio y Soporte Adjunto -->
+      <div class="docs-section">
+        <div class="docs-title">Documentos asociados a la salida grupal:</div>
+        <div class="docs-btns">
+          <a href="${pdfViewUrl}" target="_blank" class="doc-btn btn-pdf" title="Ver documento oficial de la salida grupal en PDF">
+            📄 Ver Formato / Oficio PDF
+          </a>
+          ${hasAttachment ? `
+            <a href="${supportViewUrl}" target="_blank" class="doc-btn btn-soporte" title="Ver archivo soporte adjuntado">
+              📎 Ver Soporte Adjunto
+            </a>
+          ` : ''}
+        </div>
+      </div>
+
+      <div class="section-title">Información de la actividad grupal</div>
+      <div class="grid">
+        <div class="item">
+          <label>Líder del Grupo</label>
+          <div>${escapeHtml(leaderNombre)}</div>
+        </div>
+        <div class="item">
+          <label>Tipo de Salida / Actividad</label>
+          <div>${escapeHtml(tipoSalidaLabel)}</div>
+        </div>
+        <div class="item">
+          <label>Duración Estimada</label>
+          <div style="color: #0b3a6f; font-weight: 800;">${escapeHtml(duracionDetalle)}</div>
+        </div>
+        <div class="item">
+          <label>Destino y Alcance</label>
+          <div>${escapeHtml(destinoCompleto)}</div>
+        </div>
+        <div class="item full">
+          <label>Fechas de salida y regreso</label>
+          <div>${escapeHtml(fechas)} (${escapeHtml(horario)})</div>
+        </div>
+        <div class="item full">
+          <label>Propósito / Motivo</label>
+          <div>${escapeHtml(salida.motivo || 'N/A')}</div>
+        </div>
+      </div>
+
+      <div class="section-title">Colaboradores(as) participantes (${solicitudes.length})</div>
+      <table>
+        <thead>
+          <tr>
+            <th style="width: 35px; text-align: center;">#</th>
+            <th>Nombre y Cédula</th>
+            <th>Cargo</th>
+            <th>Dependencia / Programa</th>
+            <th>Correo</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${tableRows}
+        </tbody>
+      </table>
+
       <form method="POST" action="/api/reporte-salida/aprobar-grupo/${escapeHtml(req.params.token)}">
-        <label style="display:block;margin-top:18px;font-weight:700;color:#0b3a6f;">Observaciones de la actuación (opcional si aprueba, obligatoria si no aprueba):</label>
-        <textarea name="justificacion" style="width:100%;min-height:90px;padding:10px;margin-top:6px;border:1px solid #cbd5e1;border-radius:8px;" placeholder="Escriba aquí sus observaciones..."></textarea>
+        <label class="obs-label">Observaciones de la actuación (opcional si aprueba, obligatoria si rechaza):</label>
+        <textarea name="justificacion" maxlength="1200" placeholder="Escriba aquí sus observaciones..."></textarea>
         <div class="actions">
-          <button type="submit" name="accion" value="aprobar" class="ok">✓ Dar visto bueno al grupo</button>
-          <button type="submit" name="accion" value="rechazar" class="bad">✕ No aprobar salida grupal</button>
+          <button type="submit" name="accion" value="aprobar" class="ok">✓ Dar visto bueno / Autorizar</button>
+          <button type="submit" name="accion" value="rechazar" class="bad">✕ No autorizar salida</button>
         </div>
       </form>
     </div>
@@ -8307,6 +9256,7 @@ const aprobarGrupoDesdeCorreo = async (req, res) => {
 </body>
 </html>`);
     }
+
 
     // ETAPA 0: APROBACIÓN PROYECCIÓN SOCIAL (GRUPAL)
     if (purpose === 'reporte_salida_approve_proyeccion_social_grupo') {
@@ -8388,7 +9338,41 @@ const aprobarGrupoDesdeCorreo = async (req, res) => {
       });
 
       const hasDocenteParticipant = solicitudes.some(s => isDocenteCargo(s.datos_formulario?.laboral?.cargo || s.solicitante_snapshot?.cargo || ''));
-      const requiresVicerrectoria = solicitudes.some(s => s.datos_formulario?.salida?.duracionTipo !== 'menos_media_jornada') && hasDocenteParticipant;
+
+      // ── Normativa de permisos remunerados para docentes en salidas grupales ──────
+      // Si TODOS los participantes son docentes de la Vicerrectoría Académica, aplicamos
+      // la normativa de permisos remunerados por segmento de días.
+      // Si el grupo es mixto (hay no-docentes), se mantiene la lógica genérica.
+      const allDocentes = solicitudes.every(s =>
+        isDocenteCargo(s.datos_formulario?.laboral?.cargo || s.solicitante_snapshot?.cargo || '') &&
+        isVicerrectoriaAcademica(s.datos_formulario?.laboral?.vicerrectoria || s.solicitante_snapshot?.vicerrectoria || '')
+      );
+
+      // Segmento predominante del grupo (tomamos la duración del leader/primera solicitud)
+      // — todos comparten el mismo duracionTipo en una salida grupal
+      const grupoDuracionTipo = solicitudes[0]?.datos_formulario?.salida?.duracionTipo || 'menos_media_jornada';
+
+      let requiresVicerrectoria;
+      let requiresRectoriaAfterVicerrectoriaGrupal = false;
+
+      if (allDocentes) {
+        // Grupo de solo docentes académicos: aplicar normativa por segmento
+        if (grupoDuracionTipo === 'menos_media_jornada') {
+          // 1 día: solo jefe → directamente GTH (sin vice, sin rector)
+          requiresVicerrectoria = false;
+        } else if (grupoDuracionTipo === '1_2_dias') {
+          // 2 días: jefe → Vicerrectoría Académica → GTH
+          requiresVicerrectoria = true;
+          requiresRectoriaAfterVicerrectoriaGrupal = false;
+        } else {
+          // 3+ días: jefe → Vicerrectoría Académica → Rectoría → GTH
+          requiresVicerrectoria = true;
+          requiresRectoriaAfterVicerrectoriaGrupal = true;
+        }
+      } else {
+        // Grupo mixto o sin docentes: lógica original
+        requiresVicerrectoria = solicitudes.some(s => s.datos_formulario?.salida?.duracionTipo !== 'menos_media_jornada') && hasDocenteParticipant;
+      }
 
       const nextStage = requiresVicerrectoria
         ? 'pendiente_aprobacion_vicerrectoria_academica'
@@ -8398,7 +9382,13 @@ const aprobarGrupoDesdeCorreo = async (req, res) => {
         ? 'reporte_salida_approve_vice_academica_grupo'
         : (isNationalOrInternational ? 'reporte_salida_approve_sst_grupo' : 'reporte_salida_approve_gh_grupo');
 
-      const nextToken = encryptPayload({ purpose: nextTokenPurpose, grupo_id }, null);
+      // Si el grupo de docentes requiere pasar por Rectoría después de Vice, lo incluimos
+      // en el payload del token para que la etapa de Vicerrectoría grupal lo sepa.
+      const nextToken = encryptPayload({
+        purpose: nextTokenPurpose,
+        grupo_id,
+        ...(requiresRectoriaAfterVicerrectoriaGrupal ? { requires_rectoria: true } : {})
+      }, null);
       const nextTokenHash = hashToken(nextToken);
       const now = new Date();
 
@@ -8507,8 +9497,21 @@ const aprobarGrupoDesdeCorreo = async (req, res) => {
         return alcance === 'Nacional' || alcance === 'Internacional';
       });
 
-      const nextStage = isNationalOrInternational ? 'pendiente_aprobacion_sst' : 'pendiente_aprobacion_gestion_humana';
-      const nextTokenPurpose = isNationalOrInternational ? 'reporte_salida_approve_sst_grupo' : 'reporte_salida_approve_gh_grupo';
+      // Si el token trae requires_rectoria=true, significa que es un grupo de docentes 3+ días
+      // que después de Vicerrectoría debe pasar a Rectoría antes de GTH.
+      const grupalRequiresRectoria = Boolean(payload.requires_rectoria);
+
+      let nextStage, nextTokenPurpose;
+      if (grupalRequiresRectoria) {
+        nextStage = 'pendiente_aprobacion_rectoria';
+        nextTokenPurpose = 'reporte_salida_approve_rectoria_grupo';
+      } else if (isNationalOrInternational) {
+        nextStage = 'pendiente_aprobacion_sst';
+        nextTokenPurpose = 'reporte_salida_approve_sst_grupo';
+      } else {
+        nextStage = 'pendiente_aprobacion_gestion_humana';
+        nextTokenPurpose = 'reporte_salida_approve_gh_grupo';
+      }
 
       const nextToken = encryptPayload({ purpose: nextTokenPurpose, grupo_id }, null);
       const nextTokenHash = hashToken(nextToken);
@@ -8519,7 +9522,11 @@ const aprobarGrupoDesdeCorreo = async (req, res) => {
           estado: nextStage,
           vicerrectoria_aprobado_at: now,
           aprobacion_vicerrectoria_token_hash: null,
-          ...(isNationalOrInternational ? { aprobacion_sst_token_hash: nextTokenHash } : { aprobacion_gh_token_hash: nextTokenHash }),
+          ...(grupalRequiresRectoria
+            ? { aprobacion_rectoria_token_hash: nextTokenHash }
+            : isNationalOrInternational
+              ? { aprobacion_sst_token_hash: nextTokenHash }
+              : { aprobacion_gh_token_hash: nextTokenHash }),
           trazabilidad: appendTrace(sol, 'aprobada_vicerrectoria', null, { via: 'correo_grupo' })
         }, {
           where: { id: sol.id }
@@ -8534,7 +9541,29 @@ const aprobarGrupoDesdeCorreo = async (req, res) => {
         }
       });
 
-      if (isNationalOrInternational) {
+      if (grupalRequiresRectoria) {
+        const emailResult = await sendAuthorityApprovalEmail({
+          solicitud: allApprovedGroupSols[0],
+          token: nextToken,
+          authorityName: 'Rectoria',
+          authorityEmail: RECTORIA_EMAIL,
+          stageLabel: 'Rectoria',
+          attachments: []
+        });
+        for (const sol of allApprovedGroupSols) {
+          await sol.update({
+            correo_rectoria_enviado_at: emailResult.success ? new Date() : null,
+            trazabilidad: appendTrace(sol, emailResult.success ? 'correo_rectoria_enviado' : 'correo_rectoria_error', null, { error: emailResult.error || '' })
+          });
+        }
+        return renderApprovalPage({
+          res,
+          tone: 'success',
+          title: 'Aprobación de Vicerrectoría Académica registrada',
+          message: `Se aprobó la salida grupal de docentes por Vicerrectoría Académica. Al ser un permiso de 3 o más días, fue remitida a la Rectoría para su aprobación final.`,
+          nextStep: 'La Rectoría recibirá la notificación para su aprobación antes de pasar a Gestión del Talento Humano.'
+        });
+      } else if (isNationalOrInternational) {
         const emailResult = await sendSSTGroupApprovalEmail(allApprovedGroupSols, nextToken);
         for (const sol of allApprovedGroupSols) {
           await sol.update({
@@ -8566,6 +9595,8 @@ const aprobarGrupoDesdeCorreo = async (req, res) => {
         });
       }
     }
+
+
 
     // ETAPA 2: APROBACION GESTION DEL TALENTO HUMANO
     if (purpose === 'reporte_salida_approve_gh_grupo' || purpose === 'reporte_salida_approve_grupo') {
@@ -9237,8 +10268,14 @@ module.exports = {
   limpiarMocks,
   editarSolicitudAdmin,
   verificarReportePublico,
+  verDocumentoPdfDesdeCorreo,
+  verSoporteDesdeCorreo,
+  verDocumentoPdfGrupoDesdeCorreo,
+  verSoporteGrupoDesdeCorreo,
   // Helper functions exported for testing
   isAcademicTeacherSolicitud,
+  isDocentePermisoRemunerado,
+  getDocentePermisoSegmento,
   getOfficialAuthorityEmailForActor,
   getInitialApprovalRecipientEmail,
   getJefeCopyRecipientEmail,
@@ -9259,5 +10296,6 @@ module.exports = {
   REPOSICION_LABORAL_PROFILES,
   REPOSICION_WORKDAY_MINUTES
 };
+
 
 

@@ -17,14 +17,37 @@ class AcademicaWorkflowStrategy extends BaseWorkflowStrategy {
 
   /**
    * Determina la autoridad requerida después del jefe inmediato.
-   * - Solicitudes de menos de media jornada: Salta vicerrectoría.
-   * - Oficios / Salidas de 3+ días: Requieren la aprobación de la Vicerrectora Académica.
+   *
+   * Para DOCENTES de la Vicerrectoría Académica aplican las siguientes competencias:
+   *   - 1 día  (menos_media_jornada): solo jefe inmediato → sin vicerrectoría.
+   *   - 2 días (1_2_dias):            jefe + Vicerrectoría Académica → Gestión Humana.
+   *   - 3+ días (3_mas_dias):         jefe + Vicerrectoría Académica + Rectoría → Gestión Humana.
+   *              (el paso a Rectoría se resuelve en el controller al aprobar la vicerrectoría)
+   *
+   * Para el demás personal la lógica no cambia: cualquier oficio requiere Vicerrectoría.
    */
   getAuthorityAfterBoss(solicitud = {}, helpers = {}) {
-    const { isOficioSolicitud, isPermisoElectoralSinVicerrectoria, getSolicitudVicerrectoria } = helpers;
+    const {
+      isOficioSolicitud,
+      isPermisoElectoralSinVicerrectoria,
+      isAcademicTeacherSolicitud,
+      getSolicitudSalida,
+      getSolicitudVicerrectoria
+    } = helpers;
 
     if (!isOficioSolicitud(solicitud)) return null;
     if (isPermisoElectoralSinVicerrectoria(solicitud)) return null;
+
+    // ── Docentes Vicerrectoría Académica: 1 día solo necesita jefe inmediato ──
+    if (isAcademicTeacherSolicitud && isAcademicTeacherSolicitud(solicitud)) {
+      const duracionTipo = getSolicitudSalida ? getSolicitudSalida(solicitud).duracionTipo : null;
+      if (duracionTipo === 'menos_media_jornada') {
+        // 1 día para docentes → aprobación final en el jefe, sin escalar a vicerrectoría
+        return null;
+      }
+      // 2 días y 3+ días → pasan por Vicerrectoría Académica
+      // (para 3+ días el controller añade el paso a Rectoría después)
+    }
 
     const vicerrectoriaName = getSolicitudVicerrectoria(solicitud);
 

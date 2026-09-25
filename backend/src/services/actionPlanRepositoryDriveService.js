@@ -9,12 +9,15 @@ const {
   StrategicEvidence, StrategicMeeting, StrategicMinuteVersion
 } = require('../models');
 const { generatePlanAccionBuffer } = require('./planAccionExportService');
+const { listTermDependencies } = require('./strategicTermDependencyService');
 
 // Este servicio es deliberadamente independiente de la sincronizacion PEI existente.
 // Usa exclusivamente el OAuth de Planes de Accion y no modifica el cliente de Drive
 // ni las credenciales de correo/autenticacion de los demas modulos de SIAC.
 const ROOT_ENV = 'SIAC_ACTION_REPOSITORY_ROOT_ID';
 const DRIVE_FOLDER = 'application/vnd.google-apps.folder';
+const REPOSITORY_PROPERTY = 'siacActionRepositoryKey';
+const MAX_APP_PROPERTY_BYTES = 124;
 
 const buildActionRepositoryDriveAuth = () => {
   const clientId = String(process.env.PLAN_ACTION_GOOGLE_CLIENT_ID || '').trim();
@@ -22,6 +25,16 @@ const buildActionRepositoryDriveAuth = () => {
   const refreshToken = String(process.env.PLAN_ACTION_GOOGLE_REFRESH_TOKEN || '').trim();
   if (!clientId || !clientSecret || !refreshToken) {
     const error = new Error('El Drive de Planes de Acción requiere PLAN_ACTION_GOOGLE_CLIENT_ID, PLAN_ACTION_GOOGLE_CLIENT_SECRET y PLAN_ACTION_GOOGLE_REFRESH_TOKEN.');
+    error.statusCode = 503;
+    throw error;
+  }
+  if (refreshToken.startsWith('ya29.')) {
+    const error = new Error('La configuración de Planes de Acción contiene un Access Token temporal. Copie en PLAN_ACTION_GOOGLE_REFRESH_TOKEN el Refresh Token que comienza por 1//.');
+    error.statusCode = 503;
+    throw error;
+  }
+  if (refreshToken.startsWith('4/')) {
+    const error = new Error('La configuración de Planes de Acción contiene el código de autorización. Intercámbielo en OAuth Playground y copie el Refresh Token que comienza por 1//.');
     error.statusCode = 503;
     throw error;
   }
@@ -48,6 +61,11 @@ const verifyRepositoryRoot = async (drive, rootId) => {
     if (error.statusCode) throw error;
     const status = Number(error?.response?.status || error?.code || 0);
     const reason = String(error?.response?.data?.error?.errors?.[0]?.reason || error?.message || '').toLowerCase();
+    if (reason.includes('invalid_grant')) {
+      const invalidGrant = new Error('El Refresh Token de Planes de Acción venció, fue revocado o no corresponde al Client ID configurado. Genere uno nuevo en OAuth Playground con los permisos gmail.send y drive.');
+      invalidGrant.statusCode = 503;
+      throw invalidGrant;
+    }
     if (status === 404) {
       const notFound = new Error('La carpeta raíz no existe o planeacionestrategica@unicesmag.edu.co no tiene acceso a ella.');
       notFound.statusCode = 404;
@@ -83,11 +101,19 @@ const compactFileName = (name, prefix, max = 78) => {
 
 const driveEscape = (value) => String(value).replace(/'/g, "\\'");
 const contentHash = (buffer) => crypto.createHash('sha256').update(buffer).digest('hex');
+const repositoryPropertyValue = (key) => {
+  const value = String(key);
+  if (Buffer.byteLength(REPOSITORY_PROPERTY, 'utf8') + Buffer.byteLength(value, 'utf8') <= MAX_APP_PROPERTY_BYTES) {
+    return value;
+  }
+  return `sha256:${crypto.createHash('sha256').update(value).digest('hex')}`;
+};
 
 const findByRepositoryKey = async (drive, parentId, key, mimeType, expectedName = '') => {
+  const propertyValue = repositoryPropertyValue(key);
   const mimeQuery = mimeType ? ` and mimeType='${driveEscape(mimeType)}'` : '';
   const response = await drive.files.list({
-    q: `'${driveEscape(parentId)}' in parents and trashed=false${mimeQuery} and appProperties has { key='siacActionRepositoryKey' and value='${driveEscape(key)}' }`,
+    q: `'${driveEscape(parentId)}' in parents and trashed=false${mimeQuery} and appProperties has { key='${REPOSITORY_PROPERTY}' and value='${driveEscape(propertyValue)}' }`,
     fields: 'files(id,name,mimeType,appProperties,webViewLink)', spaces: 'drive',
     supportsAllDrives: true, includeItemsFromAllDrives: true, pageSize: 2
   });
@@ -108,14 +134,15 @@ const findByRepositoryKey = async (drive, parentId, key, mimeType, expectedName 
 
 const ensureFolder = async (drive, { parentId, name, key }, counters) => {
   const desiredName = repositoryName(name);
+  const propertyValue = repositoryPropertyValue(key);
   const found = await findByRepositoryKey(drive, parentId, key, DRIVE_FOLDER, desiredName);
   if (found) {
-    if (found.name !== desiredName || found.appProperties?.siacActionRepositoryKey !== String(key)) {
+    if (found.name !== desiredName || found.appProperties?.[REPOSITORY_PROPERTY] !== propertyValue) {
       await drive.files.update({
         fileId: found.id,
         requestBody: {
           name: desiredName,
-          appProperties: { ...(found.appProperties || {}), siacActionRepositoryKey: String(key) }
+          appProperties: { ...(found.appProperties || {}), [REPOSITORY_PROPERTY]: propertyValue }
         },
         fields: 'id', supportsAllDrives: true
       });
@@ -126,7 +153,7 @@ const ensureFolder = async (drive, { parentId, name, key }, counters) => {
   const created = await drive.files.create({
     requestBody: {
       name: desiredName, mimeType: DRIVE_FOLDER, parents: [parentId],
-      appProperties: { siacActionRepositoryKey: String(key) }
+      appProperties: { [REPOSITORY_PROPERTY]: propertyValue }
     },
     fields: 'id', supportsAllDrives: true
   });
@@ -142,7 +169,7 @@ const upsertFile = async (drive, { parentId, name, key, mimeType, buffer, hash }
   }
   const requestBody = {
     name: repositoryName(name, 180),
-    appProperties: { siacActionRepositoryKey: String(key), contentHash: String(hash) }
+    appProperties: { [REPOSITORY_PROPERTY]: repositoryPropertyValue(key), contentHash: String(hash) }
   };
   const media = { mimeType, body: Readable.from(buffer) };
   const response = found
@@ -188,6 +215,25 @@ const buildOfficialWorkbook = async (actionPlan) => {
   });
 };
 
+const buildRepositoryEntries = (assignments = [], actionPlans = []) => {
+  const plansByUnit = new Map(actionPlans
+    .filter((plan) => plan.catalog_item_id || plan.organizationalUnit?.id)
+    .map((plan) => [String(plan.catalog_item_id || plan.organizationalUnit.id), plan]));
+  const entries = assignments
+    .filter((assignment) => assignment.dependency?.id)
+    .map((assignment) => {
+      const unitId = String(assignment.dependency.id);
+      return { unit: assignment.dependency, assignment, actionPlan: plansByUnit.get(unitId) || null };
+    });
+  const includedUnitIds = new Set(entries.map((entry) => String(entry.unit.id)));
+  actionPlans.forEach((actionPlan) => {
+    const unit = actionPlan.organizationalUnit;
+    if (!unit?.id || includedUnitIds.has(String(unit.id))) return;
+    entries.push({ unit, assignment: null, actionPlan });
+  });
+  return entries.sort((a, b) => String(a.unit.name || '').localeCompare(String(b.unit.name || ''), 'es'));
+};
+
 const syncActionPlanRepositoryTerm = async (termId) => {
   const term = await StrategicTerm.findByPk(termId, {
     include: [
@@ -218,32 +264,40 @@ const syncActionPlanRepositoryTerm = async (termId) => {
     ],
     order: [[{ model: StrategicCatalogItem, as: 'organizationalUnit' }, 'name', 'ASC']]
   });
+  const assignments = await listTermDependencies({ planId: term.strategic_plan_id, termId: term.id });
+  const repositoryEntries = buildRepositoryEntries(assignments, actionPlans);
 
   const drive = buildActionRepositoryDriveClient();
   await verifyRepositoryRoot(drive, rootId);
-  const counters = { folders_created: 0, folders_updated: 0, folders_existing: 0, files_created: 0, files_updated: 0, files_unchanged: 0, plans: actionPlans.length, activities: 0, evidence: 0, minutes: 0 };
+  const counters = { folders_created: 0, folders_updated: 0, folders_existing: 0, files_created: 0, files_updated: 0, files_unchanged: 0, dependencies: repositoryEntries.length, plans: actionPlans.length, pending_plans: repositoryEntries.filter((entry) => !entry.actionPlan).length, activities: 0, evidence: 0, minutes: 0 };
   const yearFolder = await ensureFolder(drive, {
     parentId: rootId, name: `PLANES DE ACCIÓN ${term.year}`,
     key: `action-repository:term:${term.id}`
   }, counters);
   const periods = buildRepositoryPeriods(term);
 
-  for (const actionPlan of actionPlans) {
-    const unitCode = actionPlan.organizationalUnit?.code || actionPlan.code;
-    const unitName = actionPlan.organizationalUnit?.name || actionPlan.title;
+  for (const entry of repositoryEntries) {
+    const { actionPlan, unit } = entry;
+    const unitCode = unit?.code || actionPlan?.code;
+    const unitName = unit?.name || actionPlan?.title;
+    const unitScope = `${term.id}:${unit?.id || actionPlan.id}`;
     const planFolder = await ensureFolder(drive, {
-      parentId: yearFolder, name: compactFolderName(unitCode, unitName, 44), key: `action-repository:plan:${actionPlan.id}`
+      parentId: yearFolder, name: compactFolderName(unitCode, unitName, 44), key: `action-repository:unit:${unitScope}`
     }, counters);
-    const minutesFolder = await ensureFolder(drive, { parentId: planFolder, name: 'ACTAS DE REUNIÓN', key: `action-repository:minutes:${actionPlan.id}` }, counters);
-    const officialFolder = await ensureFolder(drive, { parentId: planFolder, name: 'PLAN DE ACCIÓN OFICIAL DIR-PE-FR-003', key: `action-repository:official:${actionPlan.id}` }, counters);
+    const minutesFolder = await ensureFolder(drive, { parentId: planFolder, name: 'ACTAS DE REUNIÓN', key: `action-repository:minutes:${unitScope}` }, counters);
+    const officialFolder = await ensureFolder(drive, { parentId: planFolder, name: 'PLAN DE ACCIÓN OFICIAL DIR-PE-FR-003', key: `action-repository:official:${unitScope}` }, counters);
     const periodFolders = new Map();
     for (const [index, period] of periods.entries()) {
       const folderId = await ensureFolder(drive, {
         parentId: planFolder, name: `${term.year}-${index + 1}`,
-        key: `action-repository:period:${actionPlan.id}:${period.id}`
+        key: `action-repository:period:${unitScope}:${period.id}`
       }, counters);
       periodFolders.set(String(period.id), folderId);
     }
+
+    // Una dependencia pendiente recibe la estructura base del repositorio,
+    // pero no crea registros ni archivos de Plan de Accion dentro de SIAC.
+    if (!actionPlan) continue;
 
     const workbook = await buildOfficialWorkbook(actionPlan);
     await upsertFile(drive, {
@@ -305,5 +359,9 @@ module.exports = {
   intersectsPeriod,
   buildRepositoryPeriods,
   buildOfficialWorkbook,
-  buildActionRepositoryDriveAuth
+  buildRepositoryEntries,
+  buildActionRepositoryDriveAuth,
+  repositoryPropertyValue,
+  REPOSITORY_PROPERTY,
+  MAX_APP_PROPERTY_BYTES
 };

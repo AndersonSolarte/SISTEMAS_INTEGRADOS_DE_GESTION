@@ -1,7 +1,18 @@
 import React, { useMemo } from 'react';
 import { Box, InputAdornment, MenuItem, Radio, TextField, Typography } from '@mui/material';
 
-const DuracionSelector = ({ salida, fieldSx, locked = false, onChange }) => {
+/**
+ * DuracionSelector
+ *
+ * Prop `isDocente` (boolean): cuando true aplica la nomenclatura y restricciones
+ * de la normativa de permisos remunerados para docentes de la Vicerrectoría Académica:
+ *   - "Hasta 1 día"   → duracionTipo='menos_media_jornada', duracionDias=1
+ *   - "2 días"        → duracionTipo='1_2_dias',  duracionDias=2 (fijo, no se selecciona)
+ *   - "3 días o más"  → duracionTipo='3_mas_dias', duracionDias≥3
+ *
+ * Para el demás personal las etiquetas y comportamiento son los mismos de siempre.
+ */
+const DuracionSelector = ({ salida, fieldSx, locked = false, onChange, isDocente = false }) => {
   const requiresViaticos = salida?.requiereViaticos === 'Sí';
   const isEcuador = salida?.alcance === 'Internacional' && String(salida?.pais || '').trim().toLowerCase() === 'ecuador';
   const requiresMinTwoDays = requiresViaticos && (salida?.alcance === 'Nacional' || (salida?.alcance === 'Internacional' && !isEcuador));
@@ -10,26 +21,38 @@ const DuracionSelector = ({ salida, fieldSx, locked = false, onChange }) => {
     const isElectoral = ['jurado_votacion', 'sufragante'].includes(salida.tipo);
     const isOnlyHalfDay = isElectoral || ['entierro_companero', 'obligaciones_escolares'].includes(salida.tipo);
 
+    // Etiquetas según si es docente o no
+    const labelMenosMedia = isDocente
+      ? 'Hasta 1 día'
+      : salida.tipo === 'jurado_votacion'
+        ? 'Equivale a un dia'
+        : (salida.tipo === 'sufragante' ? 'Equivale a media jornada' : 'Hasta media jornada');
+    const label1_2 = isDocente ? '2 días' : 'Entre 1 y 2 dias';
+    const label3mas = isDocente ? '3 días o más' : '3 o mas dias';
+
     return [
-      {
-        value: 'menos_media_jornada',
-        label: salida.tipo === 'jurado_votacion'
-          ? 'Equivale a un dia'
-          : (salida.tipo === 'sufragante' ? 'Equivale a media jornada' : 'Hasta media jornada')
-      },
-      { value: '1_2_dias', label: 'Entre 1 y 2 dias' },
-      { value: '3_mas_dias', label: '3 o mas dias' }
+      { value: 'menos_media_jornada', label: labelMenosMedia },
+      { value: '1_2_dias', label: label1_2 },
+      { value: '3_mas_dias', label: label3mas }
     ].filter((opt) => {
       if (isOnlyHalfDay) return opt.value === 'menos_media_jornada';
       if (requiresMinTwoDays) return opt.value !== 'menos_media_jornada';
       return true;
     });
-  }, [salida.tipo, salida.alcance, requiresMinTwoDays]);
+  }, [salida.tipo, salida.alcance, requiresMinTwoDays, isDocente]);
 
   const selectDuration = (value) => {
     if (locked) return;
     onChange('duracionTipo', value);
-    const defaultDays = value === 'menos_media_jornada' ? 0 : (value === '1_2_dias' ? (requiresMinTwoDays ? 2 : 1) : 3);
+    // Para docentes: 'menos_media_jornada' equivale a 1 día; '1_2_dias' siempre son 2 días
+    let defaultDays;
+    if (isDocente) {
+      if (value === 'menos_media_jornada') defaultDays = 1;
+      else if (value === '1_2_dias') defaultDays = 2;
+      else defaultDays = 3;
+    } else {
+      defaultDays = value === 'menos_media_jornada' ? 0 : (value === '1_2_dias' ? (requiresMinTwoDays ? 2 : 1) : 3);
+    }
     onChange('duracionDias', defaultDays);
   };
 
@@ -69,7 +92,8 @@ const DuracionSelector = ({ salida, fieldSx, locked = false, onChange }) => {
           );
         })}
 
-        {salida.duracionTipo === '1_2_dias' && (
+        {/* Selector de cantidad de días — solo para no-docentes en segmento 1_2_dias */}
+        {salida.duracionTipo === '1_2_dias' && !isDocente && (
           <TextField
             select
             size="small"
@@ -108,3 +132,4 @@ const DuracionSelector = ({ salida, fieldSx, locked = false, onChange }) => {
 };
 
 export default React.memo(DuracionSelector);
+

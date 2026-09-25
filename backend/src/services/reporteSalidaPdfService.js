@@ -262,6 +262,15 @@ const formatMinutes = (minutes) => {
   return `${h}h ${String(m).padStart(2, '0')}m`;
 };
 
+const isDocentePdf = (solicitud = {}) => {
+  const data = solicitud?.datos_formulario || {};
+  const cargo = data.laboral?.cargo || data.personal?.cargo || solicitud?.solicitante_snapshot?.cargo || solicitud?.cargo || '';
+  const rol = String(solicitud?.rol || '').toLowerCase();
+  const tipoContrato = String(data.laboral?.tipoContrato || solicitud?.tipoContrato || '').toLowerCase();
+  const c = String(cargo || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+  return /\bdocente\b/.test(c) || rol.includes('docente') || tipoContrato.includes('docente');
+};
+
 const getReposicionPdfInfo = (solicitud = {}) => {
   const data = solicitud.datos_formulario || {};
   const salida = data.salida || {};
@@ -273,11 +282,19 @@ const getReposicionPdfInfo = (solicitud = {}) => {
   const total = Number(solicitud.reposicion_minutos || solicitud.tiempo_solicitado_minutos || 0);
   const paid = Number(solicitud.reposicion_minutos_pagados || data.reposicion_minutos_pagados || 0);
   const daily = Number(solicitud.reposicion_minutos_por_dia || data.parametrizacion_tiempo?.reposicion_minutos_por_dia || profile.minutesPerDay || 0);
-  const durationLabels = {
-    menos_media_jornada: 'Hasta media jornada',
-    '1_2_dias': 'Entre 1 y 2 dias',
-    '3_mas_dias': '3 o mas dias'
-  };
+  const isDocente = isDocentePdf(solicitud);
+  const durationLabels = isDocente
+    ? {
+        menos_media_jornada: '1 día',
+        '1_2_dias': '2 días',
+        '3_mas_dias': '3 o más días'
+      }
+    : {
+        menos_media_jornada: 'Hasta media jornada',
+        '1_2_dias': 'Entre 1 y 2 días',
+        '3_mas_dias': '3 o más días'
+      };
+
   const stateLabels = { no_aplica: 'No aplica', pendiente: 'Pendiente', programada: 'Programada', cumplida: 'Cumplida', incumplida: 'Incumplida' };
   const attachmentName = data.adjunto_metadata?.nombre_original
     || data.adjunto_path
@@ -669,9 +686,39 @@ const isOficioSalida = (salida = {}, solicitud = {}) => {
 };
 
 const getOficioDuracionInfo = (salida = {}, solicitud = {}) => {
+  const isDocente = isDocentePdf(solicitud);
   const duracionTipo = salida.duracionTipo;
   const duracionDias = Number(salida.duracionDias || 0);
 
+  if (isDocente) {
+    if (duracionTipo === 'menos_media_jornada') {
+      return {
+        codigo: 'menos_media_jornada',
+        label: 'Hasta 1 día',
+        tipoDocumento: 'Oficio de Solicitud (Hasta 1 día)',
+        instancia: 'Artículo 51 Estatuto Docente (Literal a): Otorgado por el Director del Programa o quien haga sus veces como jefe inmediato del docente -> Gestión del Talento Humano'
+      };
+    }
+    if (duracionTipo === '1_2_dias' || duracionDias === 2) {
+      return {
+        codigo: '1_2_dias',
+        label: '2 días',
+        tipoDocumento: 'Oficio de Solicitud (Hasta 2 días)',
+        instancia: 'Artículo 51 Estatuto Docente (Literal b): Otorgado por el Vicerrector Académico con visto bueno del Director del Programa o quien haga sus veces como jefe inmediato del docente -> Gestión del Talento Humano'
+      };
+    }
+    if (duracionTipo === '3_mas_dias' || duracionDias >= 3) {
+      const dias = duracionDias >= 3 ? duracionDias : 3;
+      return {
+        codigo: '3_mas_dias',
+        label: `${dias} días`,
+        tipoDocumento: `Oficio de Solicitud (${dias} días en adelante)`,
+        instancia: 'Artículo 51 Estatuto Docente (Literal c): Otorgado por el Rector de la UNICESMAG previo visto bueno del Director del Programa y del Vicerrector Académico'
+      };
+    }
+  }
+
+  // Personal administrativo y demás dependencias (lógica original)
   if (duracionTipo === '3_mas_dias' || duracionDias >= 3) {
     return {
       codigo: '3_mas_dias',
@@ -714,6 +761,39 @@ const getOficioDuracionInfo = (salida = {}, solicitud = {}) => {
     instancia: 'Aprobación: Flujo institucional según duración'
   };
 };
+
+const getDuracionLabelFR002 = (salida = {}, solicitud = {}) => {
+  const isDocente = isDocentePdf(solicitud);
+  const duracionTipo = salida.duracionTipo;
+  const duracionDias = Number(salida.duracionDias || 0);
+
+  if (isDocente) {
+    if (duracionTipo === 'menos_media_jornada') {
+      return 'Hasta 1 día';
+    }
+    if (duracionTipo === '1_2_dias') {
+      return '2 días';
+    }
+    if (duracionTipo === '3_mas_dias') {
+      const dias = duracionDias >= 3 ? duracionDias : 3;
+      return `${dias} días o más`;
+    }
+    return duracionDias ? `${duracionDias} día(s)` : 'Hasta 1 día';
+  }
+
+  // Administrativos y demás colaboradores (lógica original)
+  if (duracionTipo === 'menos_media_jornada') {
+    return 'Menos de media jornada (Formato digital THM-DP-FR-002)';
+  }
+  if (duracionTipo === '1_2_dias') {
+    return `Entre 1 y 2 días (${duracionDias || 1} día(s))`;
+  }
+  if (duracionTipo === '3_mas_dias') {
+    return `3 o más días (${duracionDias || 3} días)`;
+  }
+  return duracionDias ? `${duracionDias} día(s)` : 'Menos de media jornada';
+};
+
 
 const buildOficioPdfDefinition = (solicitud, ghDirectorNombre, ghDirectorCargo) => {
   const data = solicitud?.datos_formulario || {};
@@ -928,30 +1008,30 @@ const buildOficioPdfDefinition = (solicitud, ghDirectorNombre, ghDirectorCargo) 
   const oficioSignatureHeaderFill = '#eaf4ff';
   const buildOficioSignatureCell = ({ signed, name, cargo, date, extra = {} }) => ({
     text: [
-      { text: signed ? 'Firmado electrónicamente por:\n' : '\n', bold: true, fontSize: 7.6 },
-      { text: `${signed ? name : 'Pendiente'}\n`, fontSize: 8.4 },
-      { text: `Cargo: ${cargo || ''}\n`, fontSize: 6.9 },
-      { text: `Fecha y hora: ${date}\n`, fontSize: 6.9 },
-      { text: signed ? `ID Transacción: ${txId}\n` : '\n', fontSize: 6.3, color: 'gray' }
+      { text: signed ? 'Firmado electrónicamente por:\n' : '\n', bold: true, fontSize: 7.2 },
+      { text: `${signed ? name : 'Pendiente'}\n`, fontSize: 8 },
+      { text: `Cargo: ${cargo || ''}\n`, fontSize: 6.6 },
+      { text: `Fecha y hora: ${date}\n`, fontSize: 6.6 },
+      { text: signed ? `ID Transacción: ${txId}\n` : '\n', fontSize: 6, color: 'gray' }
     ],
-    margin: [4, 4, 4, 4],
+    margin: [3, 2, 3, 2],
     ...extra
   });
   signatureTableBody.push(
     [
-      { text: 'Firma del trabajador solicitante', bold: true, alignment: 'center', fillColor: oficioSignatureHeaderFill, fontSize: 8.4 },
-      { text: 'VISTO BUENO del jefe inmediato', bold: true, alignment: 'center', fillColor: oficioSignatureHeaderFill, fontSize: 8.4 }
+      { text: 'Firma del trabajador solicitante', bold: true, alignment: 'center', fillColor: oficioSignatureHeaderFill, fontSize: 8 },
+      { text: 'VISTO BUENO del jefe inmediato', bold: true, alignment: 'center', fillColor: oficioSignatureHeaderFill, fontSize: 8 }
     ],
     [
       {
         text: [
-          { text: 'Firmado electrónicamente por:\n', bold: true, fontSize: 7.6 },
-          { text: `${solicitante.nombre || personal.nombre || ''}\n`, fontSize: 8.4 },
-          { text: `Documento: ${solicitante.username || personal.documento || ''}\n`, fontSize: 6.9 },
-          { text: `Fecha y hora: ${reqDate}\n`, fontSize: 6.9 },
-          { text: `ID Transacción: ${txId}\n`, fontSize: 6.3, color: 'gray' }
+          { text: 'Firmado electrónicamente por:\n', bold: true, fontSize: 7.2 },
+          { text: `${solicitante.nombre || personal.nombre || ''}\n`, fontSize: 8 },
+          { text: `Documento: ${solicitante.username || personal.documento || ''}\n`, fontSize: 6.6 },
+          { text: `Fecha y hora: ${reqDate}\n`, fontSize: 6.6 },
+          { text: `ID Transacción: ${txId}\n`, fontSize: 6, color: 'gray' }
         ],
-        margin: [4, 4, 4, 4]
+        margin: [3, 2, 3, 2]
       },
       buildOficioSignatureCell({
           signed: hasInitialApproval,
@@ -965,8 +1045,8 @@ const buildOficioPdfDefinition = (solicitud, ghDirectorNombre, ghDirectorCargo) 
   if (requiresVicerrectoriaSignature && requiresRectoriaSignature) {
     signatureTableBody.push(
       [
-        { text: `APROBACION de ${vicerrectoriaName}`, bold: true, alignment: 'center', fillColor: oficioSignatureHeaderFill, fontSize: 8.4 },
-        { text: 'APROBACION de Rectoria', bold: true, alignment: 'center', fillColor: oficioSignatureHeaderFill, fontSize: 8.4 }
+        { text: `APROBACION de ${vicerrectoriaName}`, bold: true, alignment: 'center', fillColor: oficioSignatureHeaderFill, fontSize: 8 },
+        { text: 'APROBACION de Rectoria', bold: true, alignment: 'center', fillColor: oficioSignatureHeaderFill, fontSize: 8 }
       ],
       [
         buildOficioSignatureCell({
@@ -986,7 +1066,7 @@ const buildOficioPdfDefinition = (solicitud, ghDirectorNombre, ghDirectorCargo) 
   } else if (requiresVicerrectoriaSignature) {
     signatureTableBody.push(
       [
-        { text: `APROBACION de ${vicerrectoriaName}`, bold: true, alignment: 'center', colSpan: 2, fillColor: oficioSignatureHeaderFill, fontSize: 8.4 },
+        { text: `APROBACION de ${vicerrectoriaName}`, bold: true, alignment: 'center', colSpan: 2, fillColor: oficioSignatureHeaderFill, fontSize: 8 },
         {}
       ],
       [
@@ -1003,7 +1083,7 @@ const buildOficioPdfDefinition = (solicitud, ghDirectorNombre, ghDirectorCargo) 
   } else if (requiresRectoriaSignature) {
     signatureTableBody.push(
       [
-        { text: 'APROBACION de Rectoria', bold: true, alignment: 'center', colSpan: 2, fillColor: oficioSignatureHeaderFill, fontSize: 8.4 },
+        { text: 'APROBACION de Rectoria', bold: true, alignment: 'center', colSpan: 2, fillColor: oficioSignatureHeaderFill, fontSize: 8 },
         {}
       ],
       [
@@ -1022,8 +1102,8 @@ const buildOficioPdfDefinition = (solicitud, ghDirectorNombre, ghDirectorCargo) 
   if (requiresSst) {
     signatureTableBody.push(
       [
-        { text: 'VISTO BUENO / RECIBIDO (Gestión del Talento Humano)', bold: true, alignment: 'center', fillColor: oficioSignatureHeaderFill, fontSize: 8.4 },
-        { text: 'VISTO BUENO (Seguridad y Salud en el Trabajo)', bold: true, alignment: 'center', fillColor: oficioSignatureHeaderFill, fontSize: 8.4 }
+        { text: 'VISTO BUENO / RECIBIDO (Gestión del Talento Humano)', bold: true, alignment: 'center', fillColor: oficioSignatureHeaderFill, fontSize: 8 },
+        { text: 'VISTO BUENO (Seguridad y Salud en el Trabajo)', bold: true, alignment: 'center', fillColor: oficioSignatureHeaderFill, fontSize: 8 }
       ],
       [
         buildOficioSignatureCell({
@@ -1043,7 +1123,7 @@ const buildOficioPdfDefinition = (solicitud, ghDirectorNombre, ghDirectorCargo) 
   } else {
     signatureTableBody.push(
       [
-        { text: 'VISTO BUENO / RECIBIDO (Gestión del Talento Humano)', bold: true, alignment: 'center', colSpan: 2, fillColor: oficioSignatureHeaderFill, fontSize: 8.4 },
+        { text: 'VISTO BUENO / RECIBIDO (Gestión del Talento Humano)', bold: true, alignment: 'center', colSpan: 2, fillColor: oficioSignatureHeaderFill, fontSize: 8 },
         {}
       ],
       [
@@ -1100,6 +1180,16 @@ const buildOficioPdfDefinition = (solicitud, ghDirectorNombre, ghDirectorCargo) 
   const finalOficioSaludo = isProyeccionSocial ? 'Estimada Dra. Sandra,\n\nReciba un cordial saludo de Paz y Bien.' : 'Paz y bien:';
   const finalOficioCuerpo = salida.oficioCuerpo || (isProyeccionSocial ? defaultPSCuerpo : defaultOficioCuerpo);
   const finalOficioDespedida = isProyeccionSocial ? (salida.oficioDespedida || 'Fraternalmente,') : (salida.oficioDespedida || 'Cordialmente,');
+  const isDocente = isDocentePdf(solicitud);
+  const declaracionText = getDeclaracionSinAdjunto(salida);
+  let cuerpoPrincipal = finalOficioCuerpo || '';
+  let agradecimientoTexto = '';
+
+  const matchAgradecimiento = cuerpoPrincipal.match(/\n\n(Agradezc[oa] la atenci[oó]n[\s\S]*)$/i);
+  if (matchAgradecimiento) {
+    agradecimientoTexto = matchAgradecimiento[1].trim();
+    cuerpoPrincipal = cuerpoPrincipal.slice(0, matchAgradecimiento.index).trim();
+  }
 
   const docentesRows = [];
   if (isSalidaMultiple && participantes.length > 0) {
@@ -1126,8 +1216,8 @@ const buildOficioPdfDefinition = (solicitud, ghDirectorNombre, ghDirectorCargo) 
 
   return {
     pageSize: 'LETTER',
-    pageMargins: [60, 104, 60, 72],
-    defaultStyle: { font: PDF_FONT_FAMILY, fontSize: 11, color: '#000000', lineHeight: 1.12 },
+    pageMargins: [55, 96, 55, 56],
+    defaultStyle: { font: PDF_FONT_FAMILY, fontSize: 10, color: '#000000', lineHeight: 1.1 },
     background: () => ({
       image: fr013Background,
       width: 612,
@@ -1139,28 +1229,28 @@ const buildOficioPdfDefinition = (solicitud, ghDirectorNombre, ghDirectorCargo) 
         text: `Página ${currentPage} de ${pageCount}`,
         alignment: 'right',
         fontSize: 8,
-        margin: [0, 0, 70, 58]
+        margin: [0, 0, 55, 42]
       };
     },
 
     content: [
       {
         qr: verifyUrl,
-        fit: 78,
-        absolutePosition: { x: 474, y: 104 }
+        fit: 74,
+        absolutePosition: { x: 478, y: 96 }
       },
       {
         text: [
           { text: 'Validar oficio:\n', bold: true },
           { text: verifyUrl, link: verifyUrl, color: '#005baa' }
         ],
-        fontSize: 6.4,
+        fontSize: 6.2,
         alignment: 'center',
         width: 132,
-        absolutePosition: { x: 447, y: 185 }
+        absolutePosition: { x: 450, y: 174 }
       },
-      { text: consecutiveText, margin: [0, 0, 0, 8] },
-      { text: dateFormatted, margin: [0, 0, 0, 16] },
+      { text: consecutiveText, margin: [0, 0, 0, 4] },
+      { text: dateFormatted, margin: [0, 0, 0, 10] },
       
       {
         text: [
@@ -1169,72 +1259,33 @@ const buildOficioPdfDefinition = (solicitud, ghDirectorNombre, ghDirectorCargo) 
           { text: destCargo ? `${destCargo}\n` : '' },
           { text: destDependencia ? `${destDependencia}\n` : '' }
         ],
-        margin: [0, 0, 0, 12]
+        margin: [0, 0, 0, 8]
       },
       
-      { text: `Asunto: ${finalOficioAsunto}`, bold: true, margin: [0, 0, 0, 10] },
+      { text: `Asunto: ${finalOficioAsunto}`, bold: true, margin: [0, 0, 0, 8] },
 
-      {
-        table: {
-          widths: ['28%', '72%'],
-          body: [
-            [
-              {
-                text: `EXTRACTO DE SOLICITUD - ${duracionInfo.tipoDocumento.toUpperCase()}`,
-                bold: true,
-                fontSize: 8.5,
-                fillColor: '#f1f5f9',
-                colSpan: 2,
-                alignment: 'center'
-              },
-              {}
-            ],
-            [
-              { text: 'Documento entregable:', bold: true, fontSize: 8 },
-              { text: duracionInfo.tipoDocumento, fontSize: 8 }
-            ],
-            [
-              { text: 'Duración seleccionada:', bold: true, fontSize: 8 },
-              { text: `${duracionInfo.label}${salida.duracionDias ? ` (${salida.duracionDias} día(s) calendario)` : ''}`, fontSize: 8, bold: true }
-            ],
-            [
-              { text: 'Motivo / Actividad:', bold: true, fontSize: 8 },
-              { text: salida.motivo || getTipoSalidaLabel(salida.tipo), fontSize: 8 }
-            ],
-            [
-              { text: 'Lugar / Destino:', bold: true, fontSize: 8 },
-              { text: `${salida.alcance || 'Local'}${salida.municipio ? ` (${salida.municipio})` : ''}${salida.entidadDestino ? ` - ${salida.entidadDestino}` : ''}`, fontSize: 8 }
-            ],
-            [
-              { text: 'Flujo de aprobación:', bold: true, fontSize: 7.5 },
-              { text: duracionInfo.instancia, fontSize: 7.5, color: '#334155' }
-            ]
-          ]
-        },
-        layout: {
-          hLineWidth: () => 0.5,
-          vLineWidth: () => 0.5,
-          hLineColor: () => '#cbd5e1',
-          vLineColor: () => '#cbd5e1',
-          paddingLeft: () => 6,
-          paddingRight: () => 6,
-          paddingTop: () => 3,
-          paddingBottom: () => 3
-        },
-        margin: [0, 0, 0, 10]
-      },
+      { text: finalOficioSaludo, bold: true, margin: [0, 0, 0, 6] },
       
-      { text: finalOficioSaludo, bold: true, margin: [0, 0, 0, 8] },
-      
-      { text: finalOficioCuerpo, alignment: 'justify', margin: [0, 0, 0, 12] },
-      
-      { text: finalOficioDespedida, margin: [0, 0, 0, 12] },
-      
-      ...(getDeclaracionSinAdjunto(salida) ? [
-        { text: `Declaracion de soportes: ${getDeclaracionSinAdjunto(salida)}`, fontSize: 8.2, italics: true, color: '#334155', margin: [0, 0, 0, 4] }
+      { text: cuerpoPrincipal, alignment: 'justify', margin: [0, 0, 0, declaracionText ? 5 : 6] },
+
+      ...(declaracionText ? [
+        {
+          text: [
+            { text: 'Declaración de soportes: ', bold: true, italics: true },
+            { text: declaracionText, italics: true }
+          ],
+          fontSize: 8.2,
+          alignment: 'justify',
+          color: '#334155',
+          margin: [0, 0, 0, 5]
+        }
       ] : []),
 
-      ...buildReposicionPdfSection(solicitud, 'REPOSICION DE TIEMPO ASOCIADA A LA SALIDA'),
+      ...(agradecimientoTexto ? [
+        { text: agradecimientoTexto, alignment: 'justify', margin: [0, 0, 0, 6] }
+      ] : []),
+      
+      { text: finalOficioDespedida, margin: [0, 0, 0, 8] },
       
       // Signatures container
       {
@@ -1246,31 +1297,88 @@ const buildOficioPdfDefinition = (solicitud, ghDirectorNombre, ghDirectorCargo) 
         layout: 'borders',
         margin: [0, 0, 0, 10]
       },
-      { text: `Anexos: ${salida.oficioAnexos || (estudiantesRows.length > 0 ? 'Listado Docentes y Estudiantes' : 'Listado Docentes')}`, fontSize: 7.6, margin: [0, 0, 0, 1] },
-      { text: `Proyecto: ${salida.oficioProyecto || 'Proyección Social y Extensión'}`, fontSize: 7.6, margin: [0, 0, 0, 10] },
-      
-      // Anexo 1: Listado Docentes / Colaboradores
-      { text: 'Anexo.', bold: true, fontSize: 10, pageBreak: 'before', margin: [0, 10, 0, 6] },
-      { text: '1. Listado Docentes / Colaboradores', bold: true, fontSize: 9.5, margin: [0, 0, 0, 6] },
+
+      // Tabla de extracto / datos de control institucional (ubicada abajo)
       {
+        unbreakable: true,
         table: {
-          headerRows: 1,
-          widths: ['45%', '35%', '20%'],
+          widths: ['28%', '72%'],
           body: [
             [
-              { text: 'NOMBRE Y APELLIDOS', bold: true, fillColor: '#f1f5f9', fontSize: 8.5 },
-              { text: 'PROGRAMA / DEPENDENCIA', bold: true, fillColor: '#f1f5f9', fontSize: 8.5 },
-              { text: 'CÉDULA', bold: true, fillColor: '#f1f5f9', fontSize: 8.5, alignment: 'center' }
+              {
+                text: `DATOS DE CONTROL INSTITUCIONAL DE LA SOLICITUD`,
+                bold: true,
+                fontSize: 8,
+                fillColor: '#f1f5f9',
+                colSpan: 2,
+                alignment: 'center'
+              },
+              {}
             ],
-            ...docentesRows
+            [
+              { text: 'Documento entregable:', bold: true, fontSize: 7.5 },
+              { text: duracionInfo.tipoDocumento, fontSize: 7.5 }
+            ],
+            [
+              { text: 'Duración seleccionada:', bold: true, fontSize: 7.5 },
+              { text: duracionInfo.label, fontSize: 7.5, bold: true }
+            ],
+            [
+              { text: 'Motivo / Actividad:', bold: true, fontSize: 7.5 },
+              { text: salida.motivo || getTipoSalidaLabel(salida.tipo), fontSize: 7.5 }
+            ],
+            [
+              { text: 'Lugar / Destino:', bold: true, fontSize: 7.5 },
+              { text: `${salida.alcance || 'Local'}${salida.municipio ? ` (${salida.municipio})` : ''}${salida.entidadDestino ? ` - ${salida.entidadDestino}` : ''}`, fontSize: 7.5 }
+            ],
+            [
+              { text: isDocente ? 'Flujo de aprobación (Art. 51 Estatuto Docente):' : 'Flujo de aprobación:', bold: true, fontSize: 7.5 },
+              { text: duracionInfo.instancia, fontSize: 7.5, color: '#334155' }
+            ]
           ]
         },
-        margin: [0, 0, 0, 14]
+        layout: {
+          hLineWidth: () => 0.5,
+          vLineWidth: () => 0.5,
+          hLineColor: () => '#cbd5e1',
+          vLineColor: () => '#cbd5e1',
+          paddingLeft: () => 6,
+          paddingRight: () => 6,
+          paddingTop: () => 2.5,
+          paddingBottom: () => 2.5
+        },
+        margin: [0, 0, 0, 8]
       },
+
+      ...buildReposicionPdfSection(solicitud, 'REPOSICION DE TIEMPO ASOCIADA A LA SALIDA'),
+      
+      { text: `Anexos: ${salida.oficioAnexos || (estudiantesRows.length > 0 ? ((isSalidaMultiple && participantes.length > 1) ? 'Listado Docentes y Estudiantes' : 'Listado Estudiantes') : ((isSalidaMultiple && participantes.length > 1) ? 'Listado Docentes / Colaboradores' : 'Ninguno'))}`, fontSize: 7.6, margin: [0, 0, 0, 1] },
+      { text: `Proyecto: ${salida.oficioProyecto || 'Proyección Social y Extensión'}`, fontSize: 7.6, margin: [0, 0, 0, 8] },
+      
+      // Anexo 1: Listado Docentes / Colaboradores (SOLO para salidas grupales con más de 1 participante)
+      ...((isSalidaMultiple && participantes.length > 1) ? [
+        { text: 'Anexo.', bold: true, fontSize: 10, pageBreak: 'before', margin: [0, 10, 0, 6] },
+        { text: '1. Listado Docentes / Colaboradores', bold: true, fontSize: 9.5, margin: [0, 0, 0, 6] },
+        {
+          table: {
+            headerRows: 1,
+            widths: ['45%', '35%', '20%'],
+            body: [
+              [
+                { text: 'NOMBRE Y APELLIDOS', bold: true, fillColor: '#f1f5f9', fontSize: 8.5 },
+                { text: 'PROGRAMA / DEPENDENCIA', bold: true, fillColor: '#f1f5f9', fontSize: 8.5 },
+                { text: 'CÉDULA', bold: true, fillColor: '#f1f5f9', fontSize: 8.5, alignment: 'center' }
+              ],
+              ...docentesRows
+            ]
+          },
+          margin: [0, 0, 0, 14]
+        }
+      ] : []),
 
       // Anexo 2: Listado Estudiantes (si aplica)
       ...(estudiantesRows.length > 0 ? [
-        { text: '2. Listado estudiantes', bold: true, fontSize: 9.5, margin: [0, 0, 0, 6] },
+        { text: `${isSalidaMultiple || isProyeccionSocial ? '2.' : '1.'} Listado estudiantes`, bold: true, fontSize: 9.5, pageBreak: (isSalidaMultiple || isProyeccionSocial) ? undefined : 'before', margin: [0, 0, 0, 6] },
         {
           table: {
             headerRows: 1,
@@ -1482,13 +1590,8 @@ const buildPdfBuffer = async (solicitud) => {
                   { text: 'Categoría:', bold: true },
                   { text: getTipoSalidaLabel(salida.tipo) }
                 ]);
-                const duracionLabelFR002 = salida.duracionTipo === 'menos_media_jornada'
-                  ? 'Menos de media jornada (Formato digital THM-DP-FR-002)'
-                  : (salida.duracionTipo === '1_2_dias'
-                    ? `Entre 1 y 2 días (${salida.duracionDias || 1} día(s))`
-                    : (salida.duracionTipo === '3_mas_dias'
-                      ? `3 o más días (${salida.duracionDias || 3} días)`
-                      : (salida.duracionDias ? `${salida.duracionDias} día(s)` : 'Menos de media jornada')));
+                const duracionLabelFR002 = getDuracionLabelFR002(salida, solicitud);
+
                 tableBody.push([
                   { text: 'Duración / Tipo:', bold: true },
                   { text: duracionLabelFR002, colSpan: 3 },
@@ -2134,5 +2237,9 @@ module.exports = {
   ensureReporteSalidaPdf,
   formatMinutes,
   getReposicionPdfInfo,
-  buildReposicionPdfSection
+  buildReposicionPdfSection,
+  isDocentePdf,
+  getDuracionLabelFR002,
+  getOficioDuracionInfo
 };
+

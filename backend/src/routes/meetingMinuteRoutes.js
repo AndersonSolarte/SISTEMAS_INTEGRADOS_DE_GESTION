@@ -12,6 +12,7 @@ router.post('/public/:token/sign', publicLimiter, controller.sign);
 router.get('/config', auth, controller.getConfig);
 router.patch('/config', auth, controller.updateConfig);
 router.get('/participants/lookup', auth, controller.lookupParticipant);
+router.get('/locations', auth, controller.listMeetingLocations);
 router.get('/', auth, controller.listMinutes);
 router.post('/restore-all', auth, controller.restoreAllMinutes);
 router.post('/', auth, controller.saveDraft);

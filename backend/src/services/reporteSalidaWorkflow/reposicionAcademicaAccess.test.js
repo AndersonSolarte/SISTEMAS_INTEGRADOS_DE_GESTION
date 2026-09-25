@@ -335,7 +335,7 @@ test('el abono diario respeta la jornada del docente de medio tiempo', () => {
   assert.equal(resolveReposicionAbono(
     { unidadReposicion: 'dias', diasAbonados: 1 },
     resolveReposicionLaboralProfile({ cargo: 'Docente medio tiempo' })
-  ).minutes, 240);
+  ).minutes, 480);
 });
 
 test('hora catedra no permite registrar reposicion por dias', () => {
@@ -387,7 +387,7 @@ test('el PDF conserva la parametrizacion completa de una salida con reposicion',
   assert.equal(info.pending, 350);
   assert.equal(info.daily, 480);
   assert.equal(info.attachmentName, 'soporte-permiso.pdf');
-  assert.equal(info.durationLabel, 'Entre 1 y 2 dias');
+  assert.equal(info.durationLabel, 'Entre 1 y 2 días');
   const section = buildReposicionPdfSection(solicitud);
   assert.equal(section.length, 2);
   assert.match(JSON.stringify(section), /Seguimiento de reposicion/);

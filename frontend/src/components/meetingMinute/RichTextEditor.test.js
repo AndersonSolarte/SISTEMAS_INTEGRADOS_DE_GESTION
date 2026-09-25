@@ -1,5 +1,6 @@
 import {
-  adjustTableColumnWidth, adjustTableRowPadding, distributeTableColumns, fitTableToWindow,
+  adjustTableColumnWidth, adjustTableRowPadding, appendDictationText, distributeTableColumns, fitTableToWindow,
+  getDictationParagraph,
   insertTableColumnAfter, insertTableRowAfter, removeSelectedTableColumn,
   removeSelectedTableRow, sanitizeRichHtml
 } from './RichTextEditor';
@@ -56,4 +57,16 @@ test('permite ajustar altura de filas, ancho de columnas y ajustar al 100% de la
 
   adjustTableColumnWidth(table.rows[0].cells[0], 10);
   expect(parseFloat(table.rows[0].cells[0].style.width)).toBeGreaterThan(50);
+});
+
+test('continúa el dictado en un párrafo nuevo al volver a activar el micrófono', () => {
+  const editor = document.createElement('div');
+  const firstParagraph = getDictationParagraph(editor, false);
+  appendDictationText(firstParagraph, 'Primer texto dictado.');
+  const secondParagraph = getDictationParagraph(editor, true);
+  appendDictationText(secondParagraph, 'Segundo texto dictado.');
+
+  expect(editor.querySelectorAll('p')).toHaveLength(2);
+  expect(editor.querySelectorAll('p')[0].textContent).toBe('Primer texto dictado.');
+  expect(editor.querySelectorAll('p')[1].textContent).toBe('Segundo texto dictado.');
 });

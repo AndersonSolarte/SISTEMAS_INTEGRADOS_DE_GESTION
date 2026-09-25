@@ -398,16 +398,14 @@ const CamposDuracionSalida = (props) => {
               <Box sx={{ px: 1.5, py: 0.9, border: '1px solid #bfdbfe', borderRadius: 1.5, bgcolor: '#ffffff' }}>
                 <Typography sx={{ fontSize: 10.5, fontWeight: 800, color: '#64748b', textTransform: 'uppercase' }}>
                   {props.reposicionProfileKey === 'docente_medio_tiempo'
-                    ? '20 horas semanales'
+                    ? 'Docente medio tiempo'
                     : props.reposicionProfileKey === 'docente_tiempo_completo'
-                      ? '40 horas semanales'
+                      ? 'Docente tiempo completo'
                     : 'Jornada diaria según contrato'}
                 </Typography>
                 <Typography sx={{ mt: 0.2, fontSize: 14, fontWeight: 800, color: '#173f78' }}>
-                  {props.reposicionProfileKey === 'docente_medio_tiempo'
-                    ? '1 día equivale a 4 horas'
-                    : props.reposicionProfileKey === 'docente_tiempo_completo'
-                      ? '1 día equivale a 8 horas'
+                  {props.isDocenteAcademico || props.reposicionProfileKey === 'docente_medio_tiempo' || props.reposicionProfileKey === 'docente_tiempo_completo'
+                    ? '1 día equivale a 8 horas'
                     : formatMinutes(props.reposicionDailyMinutes)}
                 </Typography>
               </Box>

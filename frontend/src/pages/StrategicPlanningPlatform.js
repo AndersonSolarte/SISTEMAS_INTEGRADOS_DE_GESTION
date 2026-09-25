@@ -835,16 +835,16 @@ export default function StrategicPlanningPlatform({ onBack }) {
               <Box sx={{ width: 44, height: 44, flex: '0 0 44px', borderRadius: 2.5, bgcolor: '#dbeafe', color: '#1d4ed8', display: 'grid', placeItems: 'center' }}><Folder /></Box>
               <Box>
                 <Typography fontWeight={950}>Repositorio de Planes de Acción {selectedActionTerm.year}</Typography>
-                <Typography variant="body2" color="text.secondary">Crea en Drive las carpetas de cada plan, periodo y actividad; dentro de cada actividad organiza sus evidencias.</Typography>
+                <Typography variant="body2" color="text.secondary">Prepara en Drive todas las dependencias del año. Los planes creados incorporan además su archivo oficial, actividades y evidencias.</Typography>
               </Box>
             </Stack>
-            <Button variant="contained" startIcon={repositorySyncing ? <CircularProgress size={18} color="inherit" /> : <CloudSync />} disabled={repositorySyncing || !selectedYearPlans.length} onClick={syncActionRepository} sx={{ minWidth: 225, height: 46, borderRadius: 2.25, textTransform: 'none', fontWeight: 900 }}>
+            <Button variant="contained" startIcon={repositorySyncing ? <CircularProgress size={18} color="inherit" /> : <CloudSync />} disabled={repositorySyncing || !selectedActionUnits.length} onClick={syncActionRepository} sx={{ minWidth: 225, height: 46, borderRadius: 2.25, textTransform: 'none', fontWeight: 900 }}>
               {repositorySyncing ? 'Sincronizando…' : 'Sincronizar con Drive'}
             </Button>
           </Stack>
-          {!selectedYearPlans.length && <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 1 }}>Cree al menos un Plan de Acción para habilitar la sincronización.</Typography>}
+          {!selectedActionUnits.length && <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 1 }}>Configure por lo menos una dependencia para esta vigencia.</Typography>}
           {repositoryResult && <Alert severity="success" sx={{ mt: 1.75, borderRadius: 2.25 }} action={<Button color="inherit" size="small" href={repositoryResult.folder_url} target="_blank" rel="noreferrer" sx={{ fontWeight: 900 }}>Abrir Drive</Button>}>
-            <strong>Sincronización completa:</strong> {repositoryResult.plans} planes, {repositoryResult.activities} actividades, {repositoryResult.evidence} evidencias y {repositoryResult.minutes} actas. Se crearon {repositoryResult.folders_created} carpetas y {repositoryResult.files_created} archivos.
+            <strong>Sincronización completa:</strong> {repositoryResult.dependencies ?? repositoryResult.plans} dependencias preparadas ({repositoryResult.plans} con plan y {repositoryResult.pending_plans ?? 0} pendientes), {repositoryResult.activities} actividades, {repositoryResult.evidence} evidencias y {repositoryResult.minutes} actas. Se crearon {repositoryResult.folders_created} carpetas y {repositoryResult.files_created} archivos.
           </Alert>}
         </Paper>}
 

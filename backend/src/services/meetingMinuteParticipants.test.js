@@ -56,6 +56,48 @@ test('incluye la autorización de datos en la invitación del externo', () => {
   assert.match(invitation.html, /tratamiento de datos personales/i);
 });
 
+test('avisa en el mismo correo que un acta ajustada debe firmarse nuevamente', () => {
+  const invitation = _internals.buildSigningInvitationEmail({
+    participant: { name: 'PARTICIPANTE', email: 'participante@unicesmag.edu.co', user_id: 8 },
+    minute: {
+      code: 'ACTA-2026-003',
+      content: { _revision: { requires_resignature: true }, fecha: '2026-09-25' }
+    },
+    signingUrl: 'https://siac.example/firmar-acta-reunion/nuevo-token'
+  });
+  assert.match(invitation.text, /incorporaron ajustes/i);
+  assert.match(invitation.text, /firmas anteriores fueron invalidadas/i);
+  assert.match(invitation.text, /firmar nuevamente/i);
+});
+
+test('solo reconoce como responsables de revisión al principal y corresponsables', () => {
+  const minute = {
+    created_by: 99,
+    content: {
+      responsables_data: [
+        { user_id: 7, document: '10850001', email: 'principal@unicesmag.edu.co', is_primary: true },
+        { user_id: 8, document: '10850002', email: 'corresponsable@unicesmag.edu.co', is_primary: false }
+      ]
+    }
+  };
+  assert.equal(_internals.isMinuteResponsible({ id: 7, username: '10850001' }, minute), true);
+  assert.equal(_internals.isMinuteResponsible({ id: 8, email: 'corresponsable@unicesmag.edu.co' }, minute), true);
+  assert.equal(_internals.isMinuteResponsible({ id: 99, email: 'creador@unicesmag.edu.co' }, minute), false);
+  assert.equal(_internals.isMinuteResponsible({ id: 10, nombre: 'Mismo nombre del responsable' }, minute), false);
+});
+
+test('impide cambiar la lista de personas durante una revisión posterior a firmas', () => {
+  const current = [
+    { user_id: 7, document: '10850001', email: 'principal@unicesmag.edu.co' },
+    { user_id: 8, document: '10850002', email: 'participante@unicesmag.edu.co' },
+    { document: 'EXT-1', email: 'externo@example.com' }
+  ];
+  assert.equal(_internals.hasSameParticipantMembership(current, [...current].reverse()), true);
+  assert.equal(_internals.hasSameParticipantMembership(current, current.slice(0, 2)), false);
+  assert.equal(_internals.hasSameParticipantMembership(current, [...current, { document: 'EXT-2', email: 'otro@example.com' }]), false);
+  assert.equal(_internals.hasSameParticipantMembership(current, [current[0], current[2], { user_id: 9, document: '10850003' }]), false);
+});
+
 test('muestra entidad y cargo para participantes externos', () => {
   assert.equal(_internals.participantRoleLabel({ user_id: null, organization: 'Fundación Ejemplo', role_title: 'Contratista' }), 'Fundación Ejemplo · Contratista');
   assert.equal(_internals.participantRoleLabel({ user_id: 9, organization: 'Universidad CESMAG', role_title: 'Docente' }), 'Docente');
@@ -107,5 +149,9 @@ test('asegura asunto e identificadores de hilo para agrupar correos en una misma
   assert.match(participantMsgId, /^<minute\.acta-2026-762045576\.docenteunicesmageduco@unicesmag\.edu\.co>$/);
 });
 
-
-
+test('convierte las dependencias en lugares de oficina sin duplicar el prefijo', () => {
+  assert.equal(_internals.formatDependencyOfficeLocation('Dirección de Planeación'), 'Oficina de Dirección de Planeación');
+  assert.equal(_internals.formatDependencyOfficeLocation('Oficina de Archivo'), 'Oficina de Archivo');
+  assert.equal(_internals.formatDependencyOfficeLocation('  Gestión   Humana  '), 'Oficina de Gestión Humana');
+  assert.equal(_internals.formatDependencyOfficeLocation(''), '');
+});

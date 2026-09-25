@@ -11,7 +11,8 @@ const { mapLegacyStatus } = require('./strategicLegacyActionPlanService');
 const { validateAdministrativeActDate } = require('./strategicPlanDateValidationService');
 const {
   repositoryName, compactFolderName, compactFileName, intersectsPeriod,
-  buildRepositoryPeriods, buildOfficialWorkbook, buildActionRepositoryDriveAuth
+  buildRepositoryPeriods, buildOfficialWorkbook, buildActionRepositoryDriveAuth,
+  buildRepositoryEntries, repositoryPropertyValue, REPOSITORY_PROPERTY, MAX_APP_PROPERTY_BYTES
 } = require('./actionPlanRepositoryDriveService');
 
 test('workflow institucional contiene el recorrido completo y parametrizable', () => {
@@ -123,6 +124,27 @@ test('las rutas del repositorio usan nombres compactos aptos para copiar a disco
   assert.ok(file.endsWith('.xlsx'));
 });
 
+test('las claves privadas de Drive respetan el limite de 124 bytes', () => {
+  const raw = `action-repository:activity:${'a'.repeat(80)}:period:${'b'.repeat(80)}`;
+  const compact = repositoryPropertyValue(raw);
+  assert.match(compact, /^sha256:[a-f0-9]{64}$/);
+  assert.ok(Buffer.byteLength(REPOSITORY_PROPERTY) + Buffer.byteLength(compact) <= MAX_APP_PROPERTY_BYTES);
+  assert.equal(repositoryPropertyValue(raw), compact);
+  assert.equal(repositoryPropertyValue('action-repository:term:2026'), 'action-repository:term:2026');
+});
+
+test('el repositorio prepara todas las dependencias del año sin crear planes pendientes', () => {
+  const assignments = [
+    { id: 'a1', dependency: { id: 'u1', code: 'R74', name: 'Área A' } },
+    { id: 'a2', dependency: { id: 'u2', code: 'R75', name: 'Área B' } }
+  ];
+  const plan = { id: 'p1', catalog_item_id: 'u1', organizationalUnit: assignments[0].dependency };
+  const entries = buildRepositoryEntries(assignments, [plan]);
+  assert.equal(entries.length, 2);
+  assert.equal(entries.find((entry) => entry.unit.id === 'u1').actionPlan, plan);
+  assert.equal(entries.find((entry) => entry.unit.id === 'u2').actionPlan, null);
+});
+
 test('el repositorio genera el Excel oficial con las actividades del plan', async () => {
   const buffer = await buildOfficialWorkbook({
     code: '2026-R74',
@@ -155,6 +177,25 @@ test('el repositorio usa exclusivamente el OAuth de Planes de Acción', () => {
     assert.equal(auth._clientId, 'plan-action-client');
     assert.equal(auth._clientSecret, 'plan-action-secret');
     assert.equal(auth.credentials.refresh_token, 'plan-action-refresh');
+  } finally {
+    keys.forEach((key) => {
+      if (previous[key] === undefined) delete process.env[key];
+      else process.env[key] = previous[key];
+    });
+  }
+});
+
+test('el repositorio rechaza un Access Token pegado como Refresh Token', () => {
+  const keys = ['PLAN_ACTION_GOOGLE_CLIENT_ID', 'PLAN_ACTION_GOOGLE_CLIENT_SECRET', 'PLAN_ACTION_GOOGLE_REFRESH_TOKEN'];
+  const previous = Object.fromEntries(keys.map((key) => [key, process.env[key]]));
+  process.env.PLAN_ACTION_GOOGLE_CLIENT_ID = 'plan-action-client';
+  process.env.PLAN_ACTION_GOOGLE_CLIENT_SECRET = 'plan-action-secret';
+  process.env.PLAN_ACTION_GOOGLE_REFRESH_TOKEN = 'ya29.token-temporal';
+  try {
+    assert.throws(
+      () => buildActionRepositoryDriveAuth(),
+      /Access Token temporal/
+    );
   } finally {
     keys.forEach((key) => {
       if (previous[key] === undefined) delete process.env[key];
