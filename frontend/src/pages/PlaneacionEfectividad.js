@@ -835,35 +835,35 @@ function EstadisticaTab({ rows, metrics }) {
       </Box>
 
       <Box sx={{ display: 'grid', gap: 2.2, gridTemplateColumns: { xs: '1fr', xl: '1fr 1fr' } }}>
-        <Paper elevation={0} sx={{ p: 2.2, borderRadius: 3, border: '1px solid #e2e8f0' }}>
+        <Paper elevation={0} sx={{ p: { xs: 1.5, md: 1.8 }, borderRadius: 3, border: '1px solid #e2e8f0' }}>
           <SectionTitle title="Distribución por Estado" subtitle="Cantidad de registros según el avance total reportado." />
-          <Box sx={{ width: '100%', height: 320 }}>
+          <Box sx={{ width: '100%', height: { xs: 250, md: 280 } }}>
             <ResponsiveContainer>
-              <BarChart data={estadoChart}>
+              <BarChart data={estadoChart} margin={{ top: 24, right: 8, left: -8, bottom: 0 }} barCategoryGap="24%">
                 <CartesianGrid vertical={false} strokeDasharray="3 3" />
-                <XAxis dataKey="label" tick={{ fontSize: 12 }} />
-                <YAxis allowDecimals={false} />
+                <XAxis dataKey="label" tick={{ fontSize: 11, fill: '#64748b' }} axisLine={{ stroke: '#cbd5e1' }} tickLine={false} />
+                <YAxis allowDecimals={false} width={44} tick={{ fontSize: 11, fill: '#64748b' }} axisLine={false} tickLine={false} domain={[0, (dataMax) => Math.ceil(Math.max(dataMax * 1.15, 1))]} />
                 <RechartsTooltip formatter={(value) => [formatNumber(value), 'Registros']} />
-                <Bar dataKey="total" radius={[10, 10, 0, 0]}>
+                <Bar dataKey="total" radius={[8, 8, 0, 0]} maxBarSize={140}>
                   {estadoChart.map((entry) => <Cell key={entry.label} fill={entry.color} />)}
-                  <LabelList dataKey="total" position="top" style={{ fontSize: 13, fontWeight: 700, fill: '#1e293b' }} formatter={(v) => formatNumber(v)} />
+                  <LabelList dataKey="total" position="top" offset={8} style={{ fontSize: 12, fontWeight: 800, fill: '#1e293b' }} formatter={(v) => formatNumber(v)} />
                 </Bar>
               </BarChart>
             </ResponsiveContainer>
           </Box>
         </Paper>
 
-        <Paper elevation={0} sx={{ p: 2.2, borderRadius: 3, border: '1px solid #e2e8f0' }}>
+        <Paper elevation={0} sx={{ p: { xs: 1.5, md: 1.8 }, borderRadius: 3, border: '1px solid #e2e8f0' }}>
           <SectionTitle title="Avance Promedio por Año" subtitle="Promedio del avance total según el año de planeación." />
-          <Box sx={{ width: '100%', height: 320 }}>
+          <Box sx={{ width: '100%', height: { xs: 250, md: 280 } }}>
             <ResponsiveContainer>
-              <BarChart data={anioChart}>
+              <BarChart data={anioChart} margin={{ top: 24, right: 8, left: -4, bottom: 0 }}>
                 <CartesianGrid vertical={false} strokeDasharray="3 3" />
-                <XAxis dataKey="anio" tick={{ fontSize: 12 }} />
-                <YAxis domain={[0, 100]} tickFormatter={(value) => `${value}%`} />
+                <XAxis dataKey="anio" tick={{ fontSize: 11, fill: '#64748b' }} axisLine={{ stroke: '#cbd5e1' }} tickLine={false} />
+                <YAxis domain={[0, 100]} width={48} tick={{ fontSize: 11, fill: '#64748b' }} axisLine={false} tickLine={false} tickFormatter={(value) => `${value}%`} />
                 <RechartsTooltip formatter={(value) => [formatPercent(value), 'Avance promedio']} />
-                <Bar dataKey="avance" fill="#2563eb" radius={[10, 10, 0, 0]}>
-                  <LabelList dataKey="avance" position="top" style={{ fontSize: 13, fontWeight: 700, fill: '#1e293b' }} formatter={(v) => formatPercent(v)} />
+                <Bar dataKey="avance" fill="#2563eb" radius={[8, 8, 0, 0]} maxBarSize={140}>
+                  <LabelList dataKey="avance" position="top" offset={8} style={{ fontSize: 12, fontWeight: 800, fill: '#1e293b' }} formatter={(v) => formatPercent(v)} />
                 </Bar>
               </BarChart>
             </ResponsiveContainer>
