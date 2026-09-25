@@ -143,21 +143,6 @@ const ensureStrategicPlanningDefaults = async () => {
     });
   }
 
-  const startYear = Number(String(plan.starts_on || '').slice(0, 4));
-  const endYear = Number(String(plan.ends_on || '').slice(0, 4));
-  if (startYear && endYear && endYear >= startYear) {
-    const expectedCode = `PED-${startYear}-${endYear}`;
-    const expectedName = `Plan Estratégico de Desarrollo ${startYear}–${endYear}`;
-    if ((plan.code === 'PED-2022-2029' && expectedCode === 'PED-2023-2029') || /^PED-\d{4}-\d{4}$/.test(plan.code)) {
-      if (plan.code !== expectedCode || plan.name !== expectedName) {
-        await plan.update({
-          code: expectedCode,
-          name: expectedName,
-          settings: { ...(plan.settings || {}), automatic_setup: true }
-        });
-      }
-    }
-  }
 
   if (!Array.isArray(plan.settings?.workflow?.transitions)) {
     await plan.update({ settings: { ...(plan.settings || {}), workflow: DEFAULT_WORKFLOW, automatic_setup: true } });

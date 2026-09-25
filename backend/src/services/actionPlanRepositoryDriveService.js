@@ -135,6 +135,10 @@ const compactFileName = (name, prefix, max = 78) => {
 };
 
 const buildPedFolderName = (plan) => {
+  const codeMatch = String(plan?.code || '').match(/PED-(\d{4})-(\d{4})/i);
+  if (codeMatch) return `PED ${codeMatch[1]}-${codeMatch[2]}`;
+  const nameMatch = String(plan?.name || '').match(/(\d{4})[–-](\d{4})/);
+  if (nameMatch) return `PED ${nameMatch[1]}-${nameMatch[2]}`;
   const startYear = String(plan?.starts_on || '').slice(0, 4);
   const endYear = String(plan?.ends_on || '').slice(0, 4);
   if (/^\d{4}$/.test(startYear) && /^\d{4}$/.test(endYear)) return `PED ${startYear}-${endYear}`;

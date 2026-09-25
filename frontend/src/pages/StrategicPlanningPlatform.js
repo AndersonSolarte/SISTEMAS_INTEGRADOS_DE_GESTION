@@ -353,13 +353,11 @@ export default function StrategicPlanningPlatform({ onBack }) {
     let nextCode = strategicPlanForm.code;
     let nextName = strategicPlanForm.name;
 
-    if (/^\d{4}$/.test(startYear) && /^\d{4}$/.test(endYear)) {
-      if (!nextCode || /^PED-\d{4}-\d{4}$/.test(nextCode)) {
-        nextCode = `PED-${startYear}-${endYear}`;
-      }
-      if (!nextName || /^Plan Estratégico de Desarrollo \d{4}[–-]\d{4}$/.test(nextName)) {
-        nextName = `Plan Estratégico de Desarrollo ${startYear}–${endYear}`;
-      }
+    if (!nextCode && /^\d{4}$/.test(startYear) && /^\d{4}$/.test(endYear)) {
+      nextCode = `PED-${startYear}-${endYear}`;
+    }
+    if (!nextName && /^\d{4}$/.test(startYear) && /^\d{4}$/.test(endYear)) {
+      nextName = `Plan Estratégico de Desarrollo ${startYear}–${endYear}`;
     }
 
     setStrategicPlanForm((prev) => ({
@@ -369,6 +367,7 @@ export default function StrategicPlanningPlatform({ onBack }) {
       name: nextName
     }));
   };
+
 
   const saveTerm = async () => {
     if (!termForm.year || !termForm.starts_on || !termForm.ends_on) return enqueueSnackbar('Complete el año y sus fechas.', { variant: 'warning' });

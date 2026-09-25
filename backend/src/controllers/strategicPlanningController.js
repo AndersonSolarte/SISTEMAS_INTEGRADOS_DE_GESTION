@@ -231,30 +231,17 @@ const updatePlan = wrap(async (req, res) => {
     const automaticCode = `PED-${nextStartYear}-${nextEndYear}`;
     const automaticName = `Plan Estratégico de Desarrollo ${nextStartYear}–${nextEndYear}`;
 
-    const prevStartYear = Number(String(plan.starts_on).slice(0, 4));
-    const prevEndYear = Number(String(plan.ends_on).slice(0, 4));
-
-    const isStandardCode = !changes.code
-      || changes.code === plan.code
-      || changes.code === `PED-${prevStartYear}-${prevEndYear}`
-      || /^PED-\d{4}-\d{4}$/.test(changes.code);
-
-    const isStandardName = !changes.name
-      || changes.name === plan.name
-      || changes.name === `Plan Estratégico de Desarrollo ${prevStartYear}–${prevEndYear}`
-      || changes.name === `Plan Estratégico de Desarrollo ${prevStartYear}-${prevEndYear}`
-      || /^Plan Estratégico de Desarrollo \d{4}[–-]\d{4}$/.test(changes.name);
-
-    if (plan.settings?.automatic_setup || isStandardCode) {
-      const duplicate = await StrategicPlan.count({ where: { id: { [Op.ne]: plan.id }, code: automaticCode, deleted_at: null } });
-      if (duplicate) throw Object.assign(new Error(`Ya existe el ${automaticCode}. Selecciónelo desde la lista para consultarlo.`), { statusCode: 409 });
-      changes.code = automaticCode;
-    }
-    if (plan.settings?.automatic_setup || isStandardName) {
-      changes.name = automaticName;
+    if (!changes.code) changes.code = automaticCode;
+    if (!changes.name) changes.name = automaticName;
+  }
+  if (changes.code) {
+    changes.code = cleanCode(changes.code);
+    if (changes.code !== plan.code) {
+      const duplicate = await StrategicPlan.count({ where: { id: { [Op.ne]: plan.id }, code: changes.code, deleted_at: null } });
+      if (duplicate) throw Object.assign(new Error(`Ya existe el ${changes.code}. Selecciónelo desde la lista para consultarlo.`), { statusCode: 409 });
     }
   }
-  if (changes.code) changes.code = cleanCode(changes.code);
+
   if (String(changes.ends_on || plan.ends_on) < String(changes.starts_on || plan.starts_on)) throw Object.assign(new Error('La fecha final no puede ser anterior a la inicial.'), { statusCode: 422 });
   validateAdministrativeActDate({
     startsOn: changes.starts_on || plan.starts_on,
