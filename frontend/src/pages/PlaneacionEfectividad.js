@@ -1232,15 +1232,15 @@ function MatrixTable({
       row[rowKey] || '',
       ...years.map((year) => {
         const value = row.byYear?.[year];
-        return value === null || value === undefined ? 'Sin datos' : Number(value) / 100;
+        return value === null || value === undefined ? 0 : Number(value) / 100;
       }),
-      row.total === null || row.total === undefined ? 'Sin datos' : Number(row.total) / 100
+      row.total === null || row.total === undefined ? 0 : Number(row.total) / 100
     ]);
     const totalRow = [
       'PROMEDIO GENERAL',
       ...years.map((year) => {
         const value = totalsByYear?.[year];
-        return value === null || value === undefined ? 'Sin datos' : Number(value) / 100;
+        return value === null || value === undefined ? 0 : Number(value) / 100;
       }),
       Number(generalTotal || 0) / 100
     ];
@@ -1402,10 +1402,7 @@ function MatrixTable({
               <TableRow key={row[rowKey]} hover>
                 <TableCell sx={{ fontWeight: 700, color: '#1e40af' }}>{row[rowKey]}</TableCell>
                 {years.map((year) => {
-                  const value = row.byYear[year];
-                  if (value === null || value === undefined || value === 0) {
-                    return <TableCell key={`${row[rowKey]}-${year}`} align="center" sx={{ bgcolor: '#f1f5f9', color: '#94a3b8' }}>Sin datos</TableCell>;
-                  }
+                  const value = row.byYear[year] ?? 0;
                   const tone = getMatrixTone(value, annualScaleMax);
                   return (
                     <TableCell key={`${row[rowKey]}-${year}`} align="center" sx={{ bgcolor: tone.bg }}>
