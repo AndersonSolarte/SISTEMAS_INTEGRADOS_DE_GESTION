@@ -207,6 +207,7 @@ const confirmDynamicActionItems = async ({ importId, req }) => {
     await batch.update({ status: 'confirmed', confirmed_by: req.user.id, confirmed_at: new Date() }, { transaction });
     await audit(req, 'dynamic_items_import.confirm', 'historical_import', batch.id, null, { action_plan_id: actionPlan.id, rows: batch.rows.length }, null, transaction);
   });
+  batch.setDataValue('term_id', actionPlan.term_id);
   return batch;
 };
 

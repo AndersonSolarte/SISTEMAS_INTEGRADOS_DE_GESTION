@@ -24,7 +24,7 @@ const SPACES = [
 ];
 
 const TERM_STATUS_LABEL = {
-  active: 'Activa', closed: 'Cerrada', planned: 'Programada', draft: 'Borrador', inactive: 'Eliminada'
+  active: 'Activa', closed: 'Cerrada', planned: 'Programada', draft: 'Borrador', inactive: 'Eliminada', archived: 'Archivada'
 };
 
 const PLAN_STATUS_LABEL = {
@@ -166,11 +166,22 @@ export default function StrategicPlanningPlatform({ onBack }) {
   }, [space]);
 
   const plan = strategicPlans.find((item) => item.id === selectedPlanId) || boot?.plan;
+  const planStartYear = Number(String(plan?.starts_on || '').slice(0, 4)) || null;
+  const planEndYear = Number(String(plan?.ends_on || '').slice(0, 4)) || null;
+  const isTermInPlanRange = (term) => {
+    const year = Number(term?.year);
+    if (!year) return false;
+    if (planStartYear && year < planStartYear) return false;
+    if (planEndYear && year > planEndYear) return false;
+    return true;
+  };
   const terms = plan?.terms || [];
   const selectedTerm = terms.find((term) => String(term.id) === String(form.term_id));
   const units = (plan?.catalogItems || []).filter((item) => ['dependency', 'organizational_unit'].includes(item.catalog_type) && item.active);
   const visiblePlans = plans.filter((item) => item.term?.strategicPlan?.id === plan?.id);
-  const actionTerms = [...terms].filter((term) => term.status !== 'inactive').sort((a, b) => a.year - b.year);
+  const actionTerms = [...terms]
+    .filter((term) => term.status !== 'inactive' && term.status !== 'archived' && isTermInPlanRange(term))
+    .sort((a, b) => a.year - b.year);
   const selectedActionTerm = actionTerms.find((term) => String(term.id) === String(selectedActionTermId)) || actionTerms.find((term) => term.status === 'active') || actionTerms[0];
   const selectedYearPlans = visiblePlans.filter((item) => String(item.term_id || item.term?.id) === String(selectedActionTerm?.id));
   const normalizedDependencySearch = dependencySearch.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim();
@@ -331,6 +342,32 @@ export default function StrategicPlanningPlatform({ onBack }) {
     setEditingPlanId(plan.id);
     setStrategicPlanForm({ code: plan.code || '', name: plan.name || '', description: plan.description || '', starts_on: plan.starts_on || '', ends_on: plan.ends_on || '', duration_years: '', status: plan.status || 'draft', administrative_act: plan.administrative_act || '', approved_on: plan.approved_on || '', global_budget: copDigits(plan.global_budget) });
     setOpenStrategicPlan(true);
+  };
+
+  const handlePlanDateChange = (field, value) => {
+    const nextStartsOn = field === 'starts_on' ? value : strategicPlanForm.starts_on;
+    const nextEndsOn = field === 'ends_on' ? value : strategicPlanForm.ends_on;
+    const startYear = String(nextStartsOn || '').slice(0, 4);
+    const endYear = String(nextEndsOn || '').slice(0, 4);
+
+    let nextCode = strategicPlanForm.code;
+    let nextName = strategicPlanForm.name;
+
+    if (/^\d{4}$/.test(startYear) && /^\d{4}$/.test(endYear)) {
+      if (!nextCode || /^PED-\d{4}-\d{4}$/.test(nextCode)) {
+        nextCode = `PED-${startYear}-${endYear}`;
+      }
+      if (!nextName || /^Plan Estratégico de Desarrollo \d{4}[–-]\d{4}$/.test(nextName)) {
+        nextName = `Plan Estratégico de Desarrollo ${startYear}–${endYear}`;
+      }
+    }
+
+    setStrategicPlanForm((prev) => ({
+      ...prev,
+      [field]: value,
+      code: nextCode,
+      name: nextName
+    }));
   };
 
   const saveTerm = async () => {
@@ -727,7 +764,7 @@ export default function StrategicPlanningPlatform({ onBack }) {
             {[
               ['Inicio', plan.starts_on, <CalendarMonth fontSize="small" />],
               ['Finaliza', plan.ends_on, <CalendarMonth fontSize="small" />],
-              ['Vigencias', terms.length, <Timeline fontSize="small" />]
+              ['Vigencias', actionTerms.length, <Timeline fontSize="small" />]
             ].map(([label, value, icon]) => <Box key={label} sx={{ px: 1.5, py: 1.25, borderRadius: 2.5, bgcolor: '#fafcff', border: '1px solid #e5eaf2', display: 'flex', flexDirection: 'column', justifyContent: 'center' }}><Stack direction="row" alignItems="center" gap={0.6} color="#5b75a5">{icon}<Typography variant="caption" fontWeight={800} textTransform="uppercase">{label}</Typography></Stack><Typography mt={0.35} fontWeight={900} fontSize={16}>{value}</Typography></Box>)}
           </Box>
 
@@ -761,7 +798,24 @@ export default function StrategicPlanningPlatform({ onBack }) {
         {referencePreview && <Alert severity={referencePreview.summary?.unmatched_leaders ? 'warning' : 'success'} sx={{ mb: 2 }} action={<Button color="inherit" size="small" onClick={confirmReferences}>Confirmar actualización</Button>}>Vista previa: {referencePreview.summary?.dependencies} dependencias; {referencePreview.summary?.matched_leaders} responsables vinculados; {referencePreview.summary?.unmatched_leaders} pendientes. Los datos todavía no se han modificado.</Alert>}
         <Paper variant="outlined" sx={{ p: 2, mb: 2, borderRadius: 3, bgcolor: '#f5f3ff', borderColor: '#c4b5fd' }}><Stack direction={{ xs: 'column', md: 'row' }} justifyContent="space-between" alignItems={{ md: 'center' }} gap={1.5}><Box><Typography fontWeight={950} color="#4c1d95">¿Busca la plantilla de respuestas creada con sus campos?</Typography><Typography variant="body2" color="text.secondary">Primero defina los campos. Después cree un Plan de Acción y ábralo; allí podrá descargar o subir la plantilla dinámica.</Typography></Box><Button variant="contained" onClick={() => setSpace('planning')}>Ir a definir campos</Button></Stack></Paper>
         <SubstepHeader number="B" title="Vigencias creadas automáticamente" description="Opcional: los años y los informes S1–S2 ya fueron creados; modifíquelos solo si existe una excepción." />
-        <Paper variant="outlined" sx={{ borderRadius: 3, overflow: 'hidden' }}><Stack direction={{ xs: 'column', sm: 'row' }} justifyContent="space-between" alignItems={{ sm: 'center' }} gap={1} sx={{ p: 2 }}><Typography variant="h6" fontWeight={900}>Vigencias e informes S1–S2</Typography><Button variant="outlined" startIcon={<Add />} onClick={() => { setTermForm({ id: null, year: '', starts_on: '', ends_on: '', status: 'planned' }); setOpenTerm(true); }}>Agregar año excepcional</Button></Stack><TableContainer><Table><TableHead><TableRow><TableCell>Año</TableCell><TableCell>Estado</TableCell><TableCell>Informes</TableCell><TableCell>Conservación</TableCell><TableCell>Acciones</TableCell></TableRow></TableHead><TableBody>{[...terms].filter((term) => term.status !== 'inactive').sort((a,b) => a.year-b.year).map((term) => <TableRow key={term.id}><TableCell>{term.year}</TableCell><TableCell><Chip size="small" color={term.status === 'active' ? 'success' : 'default'} label={TERM_STATUS_LABEL[term.status] || term.status} /></TableCell><TableCell>{term.monitoringPeriods?.map((p) => p.code).join(' y ')}</TableCell><TableCell>Historial permanente</TableCell><TableCell><Button size="small" onClick={() => { setTermForm({ id: term.id, year: term.year, starts_on: term.starts_on, ends_on: term.ends_on, status: term.status }); setOpenTerm(true); }}>Editar</Button></TableCell></TableRow>)}</TableBody></Table></TableContainer></Paper>
+        <Paper variant="outlined" sx={{ borderRadius: 3, overflow: 'hidden' }}><Stack direction={{ xs: 'column', sm: 'row' }} justifyContent="space-between" alignItems={{ sm: 'center' }} gap={1} sx={{ p: 2 }}><Typography variant="h6" fontWeight={900}>Vigencias e informes S1–S2</Typography><Button variant="outlined" startIcon={<Add />} onClick={() => { setTermForm({ id: null, year: '', starts_on: '', ends_on: '', status: 'planned' }); setOpenTerm(true); }}>Agregar año excepcional</Button></Stack><TableContainer><Table><TableHead><TableRow><TableCell>Año</TableCell><TableCell>Estado</TableCell><TableCell>Informes</TableCell><TableCell>Conservación</TableCell><TableCell>Acciones</TableCell></TableRow></TableHead><TableBody>{[...terms].filter((term) => term.status !== 'inactive').sort((a,b) => a.year-b.year).map((term) => {
+          const isOutside = !isTermInPlanRange(term) || term.status === 'archived';
+          return (
+            <TableRow key={term.id}>
+              <TableCell>
+                <Stack direction="row" alignItems="center" gap={1}>
+                  <Typography fontWeight={isOutside ? 600 : 900}>{term.year}</Typography>
+                  {isOutside && <Chip size="small" variant="outlined" color="warning" label="Fuera de rango" sx={{ height: 20, fontSize: 10 }} />}
+                </Stack>
+              </TableCell>
+              <TableCell><Chip size="small" color={term.status === 'active' ? 'success' : term.status === 'archived' ? 'warning' : 'default'} label={TERM_STATUS_LABEL[term.status] || term.status} /></TableCell>
+              <TableCell>{term.monitoringPeriods?.map((p) => p.code).join(' y ') || '—'}</TableCell>
+              <TableCell>{term.status === 'archived' ? 'Historial protegido (archivado)' : 'Historial permanente'}</TableCell>
+              <TableCell><Button size="small" onClick={() => { setTermForm({ id: term.id, year: term.year, starts_on: term.starts_on, ends_on: term.ends_on, status: term.status }); setOpenTerm(true); }}>Editar</Button></TableCell>
+            </TableRow>
+          );
+        })}</TableBody></Table></TableContainer></Paper>
+
         <Paper variant="outlined" sx={{ mt: 2, p: 2.5, borderRadius: 3 }}><Typography variant="h6" fontWeight={900} mb={0.5}>Administración manual de listas</Typography><Typography variant="body2" color="text.secondary" mb={2}>Opcional: úsela solamente para corregir o agregar un registro específico.</Typography><Grid container spacing={1.5} alignItems="center"><Grid item xs={12} md={4}><TextField fullWidth select label="Tabla de referencia" value={catalogType} onChange={(e) => { if (e.target.value === '__create_catalog__') setOpenCatalog(true); else { setCatalogType(e.target.value); setEditingReferenceId(null); setNewReference({ code: '', name: '' }); } }}>{catalogOptions.map(([value,label]) => <MenuItem key={value} value={value}>{label}</MenuItem>)}<MenuItem value="__create_catalog__" sx={{ color: 'primary.main', fontWeight: 900, borderTop: '1px solid', borderColor: 'divider' }}><Add fontSize="small" sx={{ mr: 1 }} />Otra / Crear nueva tabla</MenuItem></TextField></Grid><Grid item xs={12} md={2}><TextField fullWidth disabled={Boolean(editingReferenceId)} label="Código del registro" value={newReference.code} onChange={(e) => setNewReference({ ...newReference, code: e.target.value })} /></Grid><Grid item xs={12} md={4}><TextField fullWidth label="Nombre del registro" value={newReference.name} onChange={(e) => setNewReference({ ...newReference, name: e.target.value })} /></Grid><Grid item xs={12} md={2}><Button fullWidth variant="contained" startIcon={<Add />} disabled={!newReference.code.trim() || !newReference.name.trim()} onClick={saveReference}>{editingReferenceId ? 'Actualizar' : 'Agregar registro'}</Button></Grid></Grid>
           {customCatalogs.find((item) => item.code === catalogType) && <Alert severity="info" sx={{ mt: 2 }}>Tabla personalizada: <strong>{customCatalogs.find((item) => item.code === catalogType)?.name}</strong>. Se usará en: <strong>{{ action_plans: 'Planes de Acción', activities: 'Actividades', meetings: 'Reuniones y actas', monitoring: 'Seguimiento', budget: 'Presupuesto', analytics: 'Analítica', general: 'Uso general' }[customCatalogs.find((item) => item.code === catalogType)?.scope] || 'Uso general'}</strong>.</Alert>}
           <TableContainer sx={{ mt: 2, maxHeight: 330 }}><Table stickyHeader size="small"><TableHead><TableRow><TableCell>Código</TableCell><TableCell>Referencia</TableCell><TableCell>Estado</TableCell><TableCell>Acciones</TableCell></TableRow></TableHead><TableBody>{(plan.catalogItems || []).filter((item) => item.catalog_type === catalogType).sort((a,b) => a.name.localeCompare(b.name,'es')).map((item) => <TableRow key={item.id}><TableCell>{item.code}</TableCell><TableCell>{item.name}</TableCell><TableCell><Chip size="small" color={item.active ? 'success' : 'default'} label={item.active ? 'Activa' : 'Inactiva'} /></TableCell><TableCell><Stack direction="row" gap={0.5}><Button size="small" onClick={() => { setEditingReferenceId(item.id); setNewReference({ code: item.code, name: item.name }); }}>Editar</Button><Button size="small" color={item.active ? 'warning' : 'success'} onClick={() => toggleReference(item)}>{item.active ? 'Desactivar' : 'Reactivar'}</Button><Button size="small" color="error" disabled={!item.active} onClick={() => deleteReference(item)}>Eliminar</Button></Stack></TableCell></TableRow>)}</TableBody></Table></TableContainer>

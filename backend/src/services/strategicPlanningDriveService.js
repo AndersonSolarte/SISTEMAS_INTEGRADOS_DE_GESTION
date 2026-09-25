@@ -119,6 +119,28 @@ const enqueueSync = async ({ entityType = 'evidence', entityId, operation = 'ups
   return existing || StrategicSyncJob.create({ entity_type: entityType, entity_id: entityId, operation, payload, created_by: createdBy });
 };
 
+// Consolida varios cambios cercanos del mismo año en una sola sincronización.
+// Si ya hay un trabajo procesándose, conserva además uno pendiente para no perder
+// los cambios que hayan ocurrido mientras Drive estaba siendo actualizado.
+const enqueueActionRepositorySync = async ({ termId, reason = 'data_changed', createdBy = null }) => {
+  if (!termId) return null;
+  const queued = await StrategicSyncJob.findOne({
+    where: { entity_type: 'action_repository_term', entity_id: termId, operation: 'refresh', status: 'queued' },
+    order: [['created_at', 'DESC']]
+  });
+  const nextAttemptAt = new Date(Date.now() + Number(process.env.SIAC_ACTION_REPOSITORY_DEBOUNCE_MS || 8000));
+  if (queued) {
+    const reasons = Array.from(new Set([...(queued.payload?.reasons || []), reason])).slice(-20);
+    await queued.update({ payload: { ...(queued.payload || {}), reasons, last_change_at: new Date().toISOString() }, next_attempt_at: nextAttemptAt });
+    return queued;
+  }
+  return StrategicSyncJob.create({
+    entity_type: 'action_repository_term', entity_id: termId, operation: 'refresh', status: 'queued',
+    next_attempt_at: nextAttemptAt,
+    payload: { reasons: [reason], last_change_at: new Date().toISOString() }, created_by: createdBy
+  });
+};
+
 const processOneSyncJob = async () => {
   const now = new Date();
   const job = await StrategicSyncJob.findOne({
@@ -128,10 +150,19 @@ const processOneSyncJob = async () => {
   if (!job) return false;
   await job.update({ status: 'processing', leased_until: new Date(Date.now() + 5 * 60 * 1000), attempts: Number(job.attempts) + 1, progress: 10 });
   try {
-    if (job.entity_type === 'evidence') await syncEvidence(job.entity_id);
-    else if (job.entity_type === 'minute') await syncMinute(job.entity_id);
+    let result = null;
+    if (job.entity_type === 'evidence') result = await syncEvidence(job.entity_id);
+    else if (job.entity_type === 'minute') result = await syncMinute(job.entity_id);
+    else if (job.entity_type === 'action_repository_term') {
+      // Importación diferida para mantener independientes ambos servicios Drive.
+      const { syncActionPlanRepositoryTerm } = require('./actionPlanRepositoryDriveService');
+      result = await syncActionPlanRepositoryTerm(job.entity_id);
+    }
     else throw new Error(`Tipo de sincronización no soportado: ${job.entity_type}`);
-    await job.update({ status: 'completed', progress: 100, completed_at: new Date(), leased_until: null, error_message: null });
+    await job.update({
+      status: 'completed', progress: 100, completed_at: new Date(), leased_until: null, error_message: null,
+      payload: { ...(job.payload || {}), result, synchronized_at: new Date().toISOString() }
+    });
   } catch (error) {
     const attempts = Number(job.attempts || 1);
     await job.update({
@@ -170,4 +201,4 @@ const reconcileTerm = async (termId, createdBy) => {
   return { total: evidence.length, pending: pending.length };
 };
 
-module.exports = { buildWritableDriveClient, enqueueSync, syncEvidence, syncMinute, reconcileTerm, processOneSyncJob, startStrategicPlanningSyncWorker, safeName };
+module.exports = { buildWritableDriveClient, enqueueSync, enqueueActionRepositorySync, syncEvidence, syncMinute, reconcileTerm, processOneSyncJob, startStrategicPlanningSyncWorker, safeName };

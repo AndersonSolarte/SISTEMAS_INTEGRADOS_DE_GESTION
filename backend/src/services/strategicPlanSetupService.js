@@ -37,4 +37,70 @@ const buildPedSchedule = ({ startsOn, durationYears }) => {
   };
 };
 
-module.exports = { buildPedSchedule };
+const reconcilePlanTerms = async (plan, transaction = null) => {
+  const { StrategicTerm, StrategicMonitoringPeriod, StrategicActionPlan } = require('../models');
+  const startYear = Number(String(plan?.starts_on || '').slice(0, 4));
+  const endYear = Number(String(plan?.ends_on || '').slice(0, 4));
+  if (!startYear || !endYear || endYear < startYear) return [];
+
+  const existingTerms = await StrategicTerm.findAll({
+    where: { strategic_plan_id: plan.id },
+    transaction
+  });
+
+  const existingByYear = new Map();
+  for (const term of existingTerms) {
+    existingByYear.set(Number(term.year), term);
+  }
+
+  // 1. Garantiza que todos los años dentro de [startYear, endYear] existan y estén activos/programados.
+  for (let year = startYear; year <= endYear; year += 1) {
+    const existing = existingByYear.get(year);
+    if (existing) {
+      if (['inactive', 'archived'].includes(existing.status)) {
+        await existing.update({ status: 'planned' }, { transaction });
+      }
+    } else {
+      const term = await StrategicTerm.create({
+        strategic_plan_id: plan.id,
+        year,
+        name: `Vigencia ${year}`,
+        starts_on: year === startYear ? plan.starts_on : `${year}-01-01`,
+        ends_on: year === endYear ? plan.ends_on : `${year}-12-31`,
+        status: 'planned'
+      }, { transaction });
+      await StrategicMonitoringPeriod.bulkCreate([
+        { term_id: term.id, code: 'S1', name: 'Informe de gestión · Semestre 1', starts_on: `${year}-01-01`, ends_on: `${year}-06-30`, position: 1, weight: 0.5, status: 'planned' },
+        { term_id: term.id, code: 'S2', name: 'Informe de gestión · Semestre 2', starts_on: `${year}-07-01`, ends_on: `${year}-12-31`, position: 2, weight: 0.5, status: 'planned' }
+      ], { transaction });
+    }
+  }
+
+  // 2. Reconcilia los años fuera de [startYear, endYear]: archiva si tienen datos históricos, inactiva si no tienen planes.
+  for (const term of existingTerms) {
+    const year = Number(term.year);
+    if (year < startYear || year > endYear) {
+      const plansCount = await StrategicActionPlan.count({
+        where: { term_id: term.id, deleted_at: null },
+        transaction
+      });
+      if (plansCount > 0) {
+        if (term.status !== 'archived') {
+          await term.update({ status: 'archived' }, { transaction });
+        }
+      } else {
+        if (term.status !== 'inactive') {
+          await term.update({ status: 'inactive' }, { transaction });
+        }
+      }
+    }
+  }
+
+  return StrategicTerm.findAll({
+    where: { strategic_plan_id: plan.id },
+    transaction
+  });
+};
+
+module.exports = { buildPedSchedule, reconcilePlanTerms };
+

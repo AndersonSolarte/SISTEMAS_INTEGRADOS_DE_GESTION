@@ -114,9 +114,19 @@ const seedCatalogFromUsers = async (strategicPlanId) => {
 };
 
 const ensureStrategicPlanningDefaults = async () => {
-  const [plan] = await StrategicPlan.findOrCreate({
-    where: { code: DEFAULT_PLAN_CODE },
-    defaults: {
+  let plan = await StrategicPlan.findOne({
+    where: {
+      [Op.or]: [
+        { code: DEFAULT_PLAN_CODE },
+        { code: { [Op.like]: 'PED-%' } }
+      ],
+      deleted_at: null
+    },
+    order: [['created_at', 'ASC']]
+  });
+
+  if (!plan) {
+    plan = await StrategicPlan.create({
       code: DEFAULT_PLAN_CODE,
       name: 'Plan Estratégico de Desarrollo 2022–2029',
       description: 'Plan estratégico institucional configurado como base inicial del nuevo módulo.',
@@ -127,6 +137,7 @@ const ensureStrategicPlanningDefaults = async () => {
       approved_on: null,
       configuration_version: 1,
       settings: {
+        automatic_setup: true,
         workflow: DEFAULT_WORKFLOW,
         trafficLights: [
           { key: 'red', min: 0, max: 69.99, color: '#dc2626' },
@@ -135,10 +146,27 @@ const ensureStrategicPlanningDefaults = async () => {
         ],
         drive: { rootName: 'SIAC-PEI', maxRelativePathLength: 160, account: 'planeacionestrategica@unicesmag.edu.co' }
       }
+    });
+  }
+
+  const startYear = Number(String(plan.starts_on || '').slice(0, 4));
+  const endYear = Number(String(plan.ends_on || '').slice(0, 4));
+  if (startYear && endYear && endYear >= startYear) {
+    const expectedCode = `PED-${startYear}-${endYear}`;
+    const expectedName = `Plan Estratégico de Desarrollo ${startYear}–${endYear}`;
+    if ((plan.code === 'PED-2022-2029' && expectedCode === 'PED-2023-2029') || /^PED-\d{4}-\d{4}$/.test(plan.code)) {
+      if (plan.code !== expectedCode || plan.name !== expectedName) {
+        await plan.update({
+          code: expectedCode,
+          name: expectedName,
+          settings: { ...(plan.settings || {}), automatic_setup: true }
+        });
+      }
     }
-  });
+  }
+
   if (!Array.isArray(plan.settings?.workflow?.transitions)) {
-    await plan.update({ settings: { ...(plan.settings || {}), workflow: DEFAULT_WORKFLOW } });
+    await plan.update({ settings: { ...(plan.settings || {}), workflow: DEFAULT_WORKFLOW, automatic_setup: true } });
   }
 
   for (const [position, name] of ['Objetivo Estratégico', 'Lineamiento Estratégico'].entries()) {
@@ -148,28 +176,9 @@ const ensureStrategicPlanningDefaults = async () => {
     });
   }
 
-  for (let year = 2022; year <= 2029; year += 1) {
-    const [term] = await StrategicTerm.findOrCreate({
-      where: { strategic_plan_id: plan.id, year },
-      defaults: {
-        strategic_plan_id: plan.id,
-        year,
-        name: `Vigencia ${year}`,
-        starts_on: `${year}-01-01`,
-        ends_on: `${year}-12-31`,
-        status: year === 2026 ? 'active' : (year < 2026 ? 'closed' : 'planned')
-      }
-    });
-    for (const period of [
-      { code: 'S1', name: 'Seguimiento 1', starts_on: `${year}-01-01`, ends_on: `${year}-06-30`, position: 1, weight: 0.5 },
-      { code: 'S2', name: 'Seguimiento 2 / Cierre', starts_on: `${year}-07-01`, ends_on: `${year}-12-31`, position: 2, weight: 0.5 }
-    ]) {
-      await StrategicMonitoringPeriod.findOrCreate({
-        where: { term_id: term.id, code: period.code },
-        defaults: { term_id: term.id, ...period, status: year === 2026 ? 'active' : 'planned' }
-      });
-    }
-  }
+  const { reconcilePlanTerms } = require('./strategicPlanSetupService');
+  await reconcilePlanTerms(plan);
+
 
   for (const [position, [key, label, dataType, required]] of DEFAULT_FIELDS.entries()) {
     await StrategicFieldDefinition.findOrCreate({

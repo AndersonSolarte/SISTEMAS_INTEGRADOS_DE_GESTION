@@ -21,9 +21,9 @@ const { renderInstitutionalTemplate, escapeHtml } = require('../services/emailSe
 const { sendStrategicPlanningEmail } = require('../services/strategicPlanningEmailService');
 const { ensureStrategicPlanningDefaults, DEFAULT_WORKFLOW, DEFAULT_FIELDS } = require('../services/strategicPlanningBootstrap');
 const { sha256, cleanCode, audit, transitionPlan, saveActionItem, upsertMonitoring, findActionPlans } = require('../services/strategicPlanningDomainService');
-const { enqueueSync, reconcileTerm } = require('../services/strategicPlanningDriveService');
+const { enqueueSync, enqueueActionRepositorySync, reconcileTerm } = require('../services/strategicPlanningDriveService');
 const { buildReferenceWorkbook, previewReferenceImport, confirmReferenceImport } = require('../services/strategicReferenceService');
-const { buildPedSchedule } = require('../services/strategicPlanSetupService');
+const { buildPedSchedule, reconcilePlanTerms } = require('../services/strategicPlanSetupService');
 const { buildDynamicActionItemWorkbook, previewDynamicActionItems, confirmDynamicActionItems } = require('../services/strategicDynamicWorkbookService');
 const { previewFieldSchemaImport, confirmFieldSchemaImport } = require('../services/strategicFieldSchemaService');
 const {
@@ -36,6 +36,22 @@ const { validateAdministrativeActDate } = require('../services/strategicPlanDate
 const { syncActionPlanRepositoryTerm } = require('../services/actionPlanRepositoryDriveService');
 
 const PLANNING_DEPARTMENT_NAME = 'Dirección de Planeación y Aseguramiento de la Calidad';
+
+const refreshActionRepository = (termId, req, reason) => enqueueActionRepositorySync({
+  termId, reason, createdBy: req.user?.id || null
+});
+
+const refreshPedRepository = async (planId, req, reason) => {
+  const terms = await StrategicTerm.findAll({
+    where: {
+      strategic_plan_id: planId,
+      status: { [Op.ne]: 'inactive' }
+    },
+    attributes: ['id']
+  });
+  await Promise.all(terms.map((term) => refreshActionRepository(term.id, req, reason)));
+  return terms.length;
+};
 
 const ensureActionPlanSchemaSnapshot = async (actionPlan, transaction = null) => {
   if (actionPlan.metadata?.form_schema) return actionPlan.metadata.form_schema;
@@ -82,7 +98,15 @@ const parseDataUrl = (value) => {
 
 const planIncludes = [
   { model: StrategicLevel, as: 'levels', where: { active: true }, required: false, separate: true, order: [['position', 'ASC']] },
-  { model: StrategicTerm, as: 'terms', separate: true, order: [['year', 'ASC']], include: [{ model: StrategicMonitoringPeriod, as: 'monitoringPeriods' }] },
+  {
+    model: StrategicTerm,
+    as: 'terms',
+    where: { status: { [Op.ne]: 'inactive' } },
+    required: false,
+    separate: true,
+    order: [['year', 'ASC']],
+    include: [{ model: StrategicMonitoringPeriod, as: 'monitoringPeriods' }]
+  },
   { model: StrategicCatalogItem, as: 'catalogItems', separate: true, order: [['catalog_type', 'ASC'], ['name', 'ASC']] },
   { model: StrategicFieldDefinition, as: 'fieldDefinitions', where: { active: true }, required: false, separate: true, order: [['position', 'ASC']] }
 ];
@@ -188,6 +212,7 @@ const createPlan = wrap(async (req, res) => {
     await audit(req, 'strategic_plan.create', 'strategic_plan', plan.id, null, plan.toJSON(), automaticSetup ? `Creación automática de PED en modo ${setupMode}, con vigencias y semestres` : null, transaction);
     return plan;
   });
+  await refreshPedRepository(created.id, req, 'strategic_plan_created');
   res.status(201); ok(res, created, automaticSetup ? 'PED creado. Ahora puede diseñar su estructura y formulario desde la interfaz.' : 'PED creado.');
 });
 
@@ -200,14 +225,34 @@ const updatePlan = wrap(async (req, res) => {
   for (const nullableKey of ['approval_document', 'administrative_act', 'approved_on', 'global_budget', 'responsible_user_id', 'drive_root_id']) {
     if (changes[nullableKey] === '') changes[nullableKey] = null;
   }
-  if (plan.settings?.automatic_setup && (changes.starts_on !== undefined || changes.ends_on !== undefined)) {
+  if (changes.starts_on !== undefined || changes.ends_on !== undefined) {
     const nextStartYear = Number(String(changes.starts_on || plan.starts_on).slice(0, 4));
     const nextEndYear = Number(String(changes.ends_on || plan.ends_on).slice(0, 4));
     const automaticCode = `PED-${nextStartYear}-${nextEndYear}`;
-    const duplicate = await StrategicPlan.count({ where: { id: { [Op.ne]: plan.id }, code: automaticCode, deleted_at: null } });
-    if (duplicate) throw Object.assign(new Error(`Ya existe el ${automaticCode}. Selecciónelo desde la lista para consultarlo.`), { statusCode: 409 });
-    changes.code = automaticCode;
-    changes.name = `Plan Estratégico de Desarrollo ${nextStartYear}–${nextEndYear}`;
+    const automaticName = `Plan Estratégico de Desarrollo ${nextStartYear}–${nextEndYear}`;
+
+    const prevStartYear = Number(String(plan.starts_on).slice(0, 4));
+    const prevEndYear = Number(String(plan.ends_on).slice(0, 4));
+
+    const isStandardCode = !changes.code
+      || changes.code === plan.code
+      || changes.code === `PED-${prevStartYear}-${prevEndYear}`
+      || /^PED-\d{4}-\d{4}$/.test(changes.code);
+
+    const isStandardName = !changes.name
+      || changes.name === plan.name
+      || changes.name === `Plan Estratégico de Desarrollo ${prevStartYear}–${prevEndYear}`
+      || changes.name === `Plan Estratégico de Desarrollo ${prevStartYear}-${prevEndYear}`
+      || /^Plan Estratégico de Desarrollo \d{4}[–-]\d{4}$/.test(changes.name);
+
+    if (plan.settings?.automatic_setup || isStandardCode) {
+      const duplicate = await StrategicPlan.count({ where: { id: { [Op.ne]: plan.id }, code: automaticCode, deleted_at: null } });
+      if (duplicate) throw Object.assign(new Error(`Ya existe el ${automaticCode}. Selecciónelo desde la lista para consultarlo.`), { statusCode: 409 });
+      changes.code = automaticCode;
+    }
+    if (plan.settings?.automatic_setup || isStandardName) {
+      changes.name = automaticName;
+    }
   }
   if (changes.code) changes.code = cleanCode(changes.code);
   if (String(changes.ends_on || plan.ends_on) < String(changes.starts_on || plan.starts_on)) throw Object.assign(new Error('La fecha final no puede ser anterior a la inicial.'), { statusCode: 422 });
@@ -222,31 +267,15 @@ const updatePlan = wrap(async (req, res) => {
     await plan.update(changes, { transaction });
 
     if (changes.starts_on !== undefined || changes.ends_on !== undefined) {
-      const startYear = Number(String(plan.starts_on).slice(0, 4));
-      const endYear = Number(String(plan.ends_on).slice(0, 4));
-      const existingTerms = await StrategicTerm.findAll({ where: { strategic_plan_id: plan.id }, transaction });
-      const existingYears = new Set(existingTerms.map((term) => Number(term.year)));
-
-      for (let year = startYear; year <= endYear; year += 1) {
-        if (existingYears.has(year)) continue;
-        const term = await StrategicTerm.create({
-          strategic_plan_id: plan.id,
-          year,
-          name: `Año ${year}`,
-          starts_on: year === startYear ? plan.starts_on : `${year}-01-01`,
-          ends_on: year === endYear ? plan.ends_on : `${year}-12-31`,
-          status: 'planned'
-        }, { transaction });
-        await StrategicMonitoringPeriod.bulkCreate([
-          { term_id: term.id, code: 'S1', name: 'Informe de gestión · Semestre 1', starts_on: `${year}-01-01`, ends_on: `${year}-06-30`, position: 1, weight: 0.5, status: 'planned' },
-          { term_id: term.id, code: 'S2', name: 'Informe de gestión · Semestre 2', starts_on: `${year}-07-01`, ends_on: `${year}-12-31`, position: 2, weight: 0.5, status: 'planned' }
-        ], { transaction });
-      }
+      await reconcilePlanTerms(plan, transaction);
     }
 
     await audit(req, 'strategic_plan.update', 'strategic_plan', plan.id, previous, plan.toJSON(), req.body.justification, transaction);
   });
-  ok(res, plan, 'Configuración actualizada.');
+  await refreshPedRepository(plan.id, req, 'strategic_plan_updated');
+  const reloaded = await StrategicPlan.findByPk(plan.id, { include: planIncludes });
+  ok(res, reloaded, 'Configuración actualizada.');
+
 });
 
 const deletePlan = wrap(async (req, res) => {
@@ -504,16 +533,19 @@ const termDependencyPreview = wrap(async (req, res) => {
 const termDependencyConfirm = wrap(async (req, res) => {
   const batch = await confirmTermDependencyImport({ importId: req.params.importId, userId: req.user.id });
   await audit(req, 'term_dependencies.confirm', 'reference_import', batch.id, null, batch.summary);
+  await refreshActionRepository(batch.parsed_data?.term_id, req, 'term_dependencies_imported');
   ok(res, batch, 'Dependencias de la vigencia actualizadas.');
 });
 
 const createTermDependency = wrap(async (req, res) => {
   const row = await addTermDependency({ termId: req.params.termId, dependencyName: req.body.dependency, document: req.body.document, userId: req.user.id });
+  await refreshActionRepository(req.params.termId, req, 'term_dependency_added');
   res.status(201); ok(res, row, 'Dependencia vinculada a la vigencia.');
 });
 
 const deleteTermDependency = wrap(async (req, res) => {
   const row = await removeTermDependency({ termId: req.params.termId, assignmentId: req.params.assignmentId, userId: req.user.id });
+  await refreshActionRepository(req.params.termId, req, 'term_dependency_removed');
   ok(res, row, 'Dependencia retirada de esta vigencia.');
 });
 
@@ -638,6 +670,7 @@ const createActionPlan = wrap(async (req, res) => {
     return action;
   });
   await audit(req, 'action_plan.create', 'action_plan', created.id, null, created.toJSON());
+  await refreshActionRepository(created.term_id, req, 'action_plan_created');
   res.status(201); ok(res, created, 'Plan de Acción creado.');
 });
 
@@ -650,6 +683,7 @@ const updateActionPlan = wrap(async (req, res) => {
     : actionPlan.metadata;
   await actionPlan.update({ title: req.body.title ?? actionPlan.title, responsible_user_id: req.body.responsible_user_id ?? actionPlan.responsible_user_id, metadata: protectedMetadata, updated_by: req.user.id });
   await audit(req, 'action_plan.update', 'action_plan', actionPlan.id, previous, actionPlan.toJSON(), req.body.justification);
+  await refreshActionRepository(actionPlan.term_id, req, 'action_plan_updated');
   ok(res, actionPlan);
 });
 
@@ -657,7 +691,9 @@ const addActionItem = wrap(async (req, res) => {
   const actionPlan = await StrategicActionPlan.findByPk(req.params.id);
   if (!actionPlan) throw Object.assign(new Error('Plan no encontrado.'), { statusCode: 404 });
   await ensureActionPlanSchemaSnapshot(actionPlan);
-  const item = await saveActionItem({ req, actionPlan, payload: req.body }); res.status(201); ok(res, item);
+  const item = await saveActionItem({ req, actionPlan, payload: req.body });
+  await refreshActionRepository(actionPlan.term_id, req, 'activity_created');
+  res.status(201); ok(res, item);
 });
 
 const downloadDynamicItemTemplate = wrap(async (req, res) => {
@@ -679,7 +715,9 @@ const previewDynamicItems = wrap(async (req, res) => {
 });
 
 const confirmDynamicItems = wrap(async (req, res) => {
-  ok(res, await confirmDynamicActionItems({ importId: req.params.importId, req }), 'Carga masiva confirmada correctamente.');
+  const batch = await confirmDynamicActionItems({ importId: req.params.importId, req });
+  await refreshActionRepository(batch.term_id, req, 'activities_imported');
+  ok(res, batch, 'Carga masiva confirmada correctamente.');
 });
 
 const updateActionItem = wrap(async (req, res) => {
@@ -687,7 +725,9 @@ const updateActionItem = wrap(async (req, res) => {
   if (!item || String(item.action_plan_id) !== String(req.params.id)) throw Object.assign(new Error('Actividad no encontrada en este Plan de Acción.'), { statusCode: 404 });
   const actionPlan = await StrategicActionPlan.findByPk(item.action_plan_id);
   await ensureActionPlanSchemaSnapshot(actionPlan);
-  ok(res, await saveActionItem({ req, actionPlan, payload: req.body, item }));
+  const updated = await saveActionItem({ req, actionPlan, payload: req.body, item });
+  await refreshActionRepository(actionPlan.term_id, req, 'activity_updated');
+  ok(res, updated);
 });
 
 const deleteActionItem = wrap(async (req, res) => {
@@ -695,6 +735,8 @@ const deleteActionItem = wrap(async (req, res) => {
   if (!item || String(item.action_plan_id) !== String(req.params.id)) throw Object.assign(new Error('Actividad no encontrada en este Plan de Acción.'), { statusCode: 404 });
   const previous = item.toJSON(); await item.update({ deleted_at: new Date(), status: 'deleted', updated_by: req.user.id });
   await audit(req, 'action_item.soft_delete', 'action_item', item.id, previous, item.toJSON(), req.body?.justification);
+  const actionPlan = await StrategicActionPlan.findByPk(item.action_plan_id, { attributes: ['term_id'] });
+  await refreshActionRepository(actionPlan?.term_id, req, 'activity_deleted');
   ok(res, null, 'Actividad eliminada lógicamente.');
 });
 
@@ -708,7 +750,9 @@ const saveMonitoring = wrap(async (req, res) => {
   const item = await StrategicActionItem.findByPk(req.params.itemId);
   const period = await StrategicMonitoringPeriod.findByPk(req.params.periodId);
   if (!item || !period) throw Object.assign(new Error('Actividad o periodo no encontrado.'), { statusCode: 404 });
-  ok(res, await upsertMonitoring({ req, actionItem: item, periodId: period.id, payload: req.body }), 'Seguimiento guardado.');
+  const result = await upsertMonitoring({ req, actionItem: item, periodId: period.id, payload: req.body });
+  await refreshActionRepository(period.term_id, req, 'monitoring_updated');
+  ok(res, result, 'Seguimiento guardado.');
 });
 
 const createMeeting = wrap(async (req, res) => {
@@ -964,6 +1008,8 @@ const finalizeMinute = wrap(async (req, res) => {
     await sendStrategicPlanningEmail({ to: participant.email, subject: 'Acta formalizada en SIAC', text: `El acta versión ${minute.version} fue formalizada. Código de validación: ${minute.id}.`, attachments: [{ filename: path.basename(finalPdfPath), content: pdfBuffer }] });
   }
   await enqueueSync({ entityType: 'minute', entityId: minute.id, createdBy: req.user.id });
+  const meeting = await StrategicMeeting.findByPk(minute.meeting_id, { include: [{ model: StrategicActionPlan, as: 'actionPlan', attributes: ['term_id'] }] });
+  await refreshActionRepository(meeting?.actionPlan?.term_id, req, 'minute_finalized');
   await audit(req, 'minute.finalize', 'minute_version', minute.id, null, minute.toJSON(), req.body.justification);
   ok(res, minute, 'Acta formalizada y notificada.');
 });
@@ -996,6 +1042,7 @@ const uploadEvidence = wrap(async (req, res) => {
   const storageKey = path.join(yearDir, storedName); fs.writeFileSync(storageKey, req.file.buffer, { flag: 'wx' });
   const evidence = await StrategicEvidence.create({ action_item_id: item.id, monitoring_period_id: period.id, original_name: req.file.originalname, stored_name: storedName, storage_key: storageKey, mime_type: req.file.mimetype || 'application/octet-stream', size_bytes: req.file.size, sha256: digest, version: nextVersion, description: req.body.description || null, uploaded_by: req.user.id });
   await enqueueSync({ entityId: evidence.id, createdBy: req.user.id });
+  await refreshActionRepository(item.actionPlan.term_id, req, 'evidence_uploaded');
   await audit(req, 'evidence.upload', 'evidence', evidence.id, null, { ...evidence.toJSON(), storage_key: '[PRIVATE]' });
   res.status(201); ok(res, evidence, 'Evidencia almacenada temporalmente y puesta en cola para Drive.');
 });
@@ -1113,6 +1160,7 @@ const confirmHistorical = wrap(async (req, res) => {
     await audit(req, 'historical_import.confirm', 'historical_import', batch.id, null, { action_plan_id: plan.id, rows: batch.rows.length }, null, transaction);
     return plan;
   });
+  await refreshActionRepository(term.id, req, 'historical_activities_imported');
   ok(res, actionPlan, 'Importación histórica confirmada transaccionalmente.');
 });
 
