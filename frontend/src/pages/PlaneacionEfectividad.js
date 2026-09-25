@@ -1185,7 +1185,21 @@ function PlanesAccionTab({ rows }) {
   );
 }
 
-function MatrixTable({ title, subtitle, rows, years, rowKey, totalsByYear, generalTotal, totalLabel = 'TOTAL', footerNote = '', initialVisibleRows = null, loadMoreStep = 30 }) {
+function MatrixTable({
+  title,
+  subtitle,
+  rows,
+  years,
+  rowKey,
+  totalsByYear,
+  generalTotal,
+  totalLabel = 'TOTAL',
+  footerNote = '',
+  initialVisibleRows = null,
+  loadMoreStep = 30,
+  annualScaleMax = 100,
+  totalScaleMax = 100
+}) {
   const [visibleCount, setVisibleCount] = useState(initialVisibleRows || rows.length);
 
   useEffect(() => {
@@ -1193,6 +1207,21 @@ function MatrixTable({ title, subtitle, rows, years, rowKey, totalsByYear, gener
   }, [rows, initialVisibleRows]);
 
   const visibleRows = initialVisibleRows ? rows.slice(0, visibleCount) : rows;
+  const normalizeToScale = useCallback((value, scaleMax = 100) => {
+    const numericValue = Number(value || 0);
+    const numericMax = Number(scaleMax || 100);
+    if (!Number.isFinite(numericValue) || !Number.isFinite(numericMax) || numericMax <= 0) return 0;
+    return Math.min(Math.max((numericValue / numericMax) * 100, 0), 100);
+  }, []);
+  const getMatrixTone = useCallback((value, scaleMax = 100) => {
+    const normalized = normalizeToScale(value, scaleMax);
+    if (normalized >= 80) return { color: '#10b981', bg: '#d1fae5', normalized };
+    if (normalized >= 60) return { color: '#f59e0b', bg: '#fef3c7', normalized };
+    return { color: '#ef4444', bg: '#fee2e2', normalized };
+  }, [normalizeToScale]);
+  const usesWeightedScale = annualScaleMax !== 100;
+  const annualGreenThreshold = annualScaleMax * 0.8;
+  const annualYellowThreshold = annualScaleMax * 0.6;
 
   const handleExport = useCallback(() => {
     if (!rows.length) return;
@@ -1272,10 +1301,11 @@ function MatrixTable({ title, subtitle, rows, years, rowKey, totalsByYear, gener
       alignment: { horizontal: 'left', vertical: 'center', wrapText: true },
       border
     });
-    const metricStyle = (rawValue, isTotal = false) => {
+    const metricStyle = (rawValue, isTotal = false, scaleMax = 100) => {
       const numeric = typeof rawValue === 'number' ? rawValue * 100 : null;
-      const color = numeric === null ? '94A3B8' : numeric >= 80 ? '059669' : numeric >= 60 ? 'D97706' : 'DC2626';
-      const fill = numeric === null ? 'F1F5F9' : numeric >= 80 ? 'D1FAE5' : numeric >= 60 ? 'FEF3C7' : 'FEE2E2';
+      const normalized = numeric === null ? null : normalizeToScale(numeric, scaleMax);
+      const color = normalized === null ? '94A3B8' : normalized >= 80 ? '059669' : normalized >= 60 ? 'D97706' : 'DC2626';
+      const fill = normalized === null ? 'F1F5F9' : normalized >= 80 ? 'D1FAE5' : normalized >= 60 ? 'FEF3C7' : 'FEE2E2';
       return {
         font: { bold: true, color: { rgb: color }, sz: isTotal ? 12 : 11 },
         fill: { fgColor: { rgb: fill } },
@@ -1295,7 +1325,9 @@ function MatrixTable({ title, subtitle, rows, years, rowKey, totalsByYear, gener
         else if (r === 1) cell.s = subtitleStyle;
         else if (r === 2) cell.s = generatedStyle;
         else if (r === 4) cell.s = headerStyle;
-        else if (r >= 5) cell.s = c === 0 ? labelStyle(r === totalRowIndex) : metricStyle(cell.v, r === totalRowIndex);
+        else if (r >= 5) cell.s = c === 0
+          ? labelStyle(r === totalRowIndex)
+          : metricStyle(cell.v, r === totalRowIndex, c === lastColumn ? totalScaleMax : annualScaleMax);
       }
     }
 
@@ -1309,7 +1341,7 @@ function MatrixTable({ title, subtitle, rows, years, rowKey, totalsByYear, gener
       .replace(/^_+|_+$/g, '')
       .toLowerCase();
     XLSXStyle.writeFile(workbook, `${safeName || 'plan_estrategico'}_${generatedAt.toISOString().slice(0, 10)}.xlsx`);
-  }, [generalTotal, rowKey, rows, subtitle, title, totalLabel, totalsByYear, years]);
+  }, [annualScaleMax, generalTotal, normalizeToScale, rowKey, rows, subtitle, title, totalLabel, totalScaleMax, totalsByYear, years]);
 
   return (
     <Paper elevation={0} sx={{ borderRadius: 3, border: '1px solid #dbeafe', overflow: 'hidden', boxShadow: '0 4px 20px rgba(59,130,246,.12)' }}>
@@ -1322,15 +1354,21 @@ function MatrixTable({ title, subtitle, rows, years, rowKey, totalsByYear, gener
           <Stack direction="row" spacing={2.5} sx={{ flexWrap: 'wrap', color: '#64748b', fontSize: 12, fontWeight: 700 }}>
             <Stack direction="row" spacing={1} alignItems="center">
               <Box sx={{ width: 16, height: 16, bgcolor: '#10b981', borderRadius: 1 }} />
-              <Typography sx={{ fontSize: 12, color: '#047857', fontWeight: 700 }}>≥80%</Typography>
+              <Typography sx={{ fontSize: 12, color: '#047857', fontWeight: 700 }}>
+                {usesWeightedScale ? `Óptimo ≥ ${formatPercent(annualGreenThreshold)}` : '≥80%'}
+              </Typography>
             </Stack>
             <Stack direction="row" spacing={1} alignItems="center">
               <Box sx={{ width: 16, height: 16, bgcolor: '#f59e0b', borderRadius: 1 }} />
-              <Typography sx={{ fontSize: 12, color: '#b45309', fontWeight: 700 }}>60-79%</Typography>
+              <Typography sx={{ fontSize: 12, color: '#b45309', fontWeight: 700 }}>
+                {usesWeightedScale ? `Avance ${formatPercent(annualYellowThreshold)}–${formatPercent(annualGreenThreshold)}` : '60-79%'}
+              </Typography>
             </Stack>
             <Stack direction="row" spacing={1} alignItems="center">
               <Box sx={{ width: 16, height: 16, bgcolor: '#ef4444', borderRadius: 1 }} />
-              <Typography sx={{ fontSize: 12, color: '#b91c1c', fontWeight: 700 }}>&lt;60%</Typography>
+              <Typography sx={{ fontSize: 12, color: '#b91c1c', fontWeight: 700 }}>
+                {usesWeightedScale ? `Bajo < ${formatPercent(annualYellowThreshold)}` : '<60%'}
+              </Typography>
             </Stack>
           </Stack>
           <Button
@@ -1368,22 +1406,22 @@ function MatrixTable({ title, subtitle, rows, years, rowKey, totalsByYear, gener
                   if (value === null || value === undefined || value === 0) {
                     return <TableCell key={`${row[rowKey]}-${year}`} align="center" sx={{ bgcolor: '#f1f5f9', color: '#94a3b8' }}>Sin datos</TableCell>;
                   }
-                  const tone = value >= 80 ? { color: '#10b981', bg: '#d1fae5' } : value >= 60 ? { color: '#f59e0b', bg: '#fef3c7' } : { color: '#ef4444', bg: '#fee2e2' };
+                  const tone = getMatrixTone(value, annualScaleMax);
                   return (
                     <TableCell key={`${row[rowKey]}-${year}`} align="center" sx={{ bgcolor: tone.bg }}>
                       <Typography sx={{ fontSize: 22, fontWeight: 900, color: tone.color }}>{formatPercent(value)}</Typography>
                       <Box sx={{ mt: 0.8, height: 6, bgcolor: '#e0f2fe', borderRadius: 99, overflow: 'hidden' }}>
-                        <Box sx={{ width: `${Math.min(value, 100)}%`, height: '100%', bgcolor: tone.color }} />
+                        <Box sx={{ width: `${tone.normalized}%`, height: '100%', bgcolor: tone.color }} />
                       </Box>
                     </TableCell>
                   );
                 })}
-                <TableCell align="center" sx={{ bgcolor: row.total >= 80 ? '#d1fae5' : row.total >= 60 ? '#fef3c7' : '#fee2e2' }}>
-                  <Typography sx={{ fontSize: 24, fontWeight: 900, color: row.total >= 80 ? '#10b981' : row.total >= 60 ? '#f59e0b' : '#ef4444' }}>
+                <TableCell align="center" sx={{ bgcolor: getMatrixTone(row.total, totalScaleMax).bg }}>
+                  <Typography sx={{ fontSize: 24, fontWeight: 900, color: getMatrixTone(row.total, totalScaleMax).color }}>
                     {formatPercent(row.total)}
                   </Typography>
                   <Box sx={{ mt: 0.8, height: 8, bgcolor: '#e0f2fe', borderRadius: 99, overflow: 'hidden' }}>
-                    <Box sx={{ width: `${Math.min(row.total, 100)}%`, height: '100%', bgcolor: row.total >= 80 ? '#10b981' : row.total >= 60 ? '#f59e0b' : '#ef4444' }} />
+                    <Box sx={{ width: `${getMatrixTone(row.total, totalScaleMax).normalized}%`, height: '100%', bgcolor: getMatrixTone(row.total, totalScaleMax).color }} />
                   </Box>
                 </TableCell>
               </TableRow>
@@ -1392,22 +1430,22 @@ function MatrixTable({ title, subtitle, rows, years, rowKey, totalsByYear, gener
               <TableCell sx={{ fontWeight: 900, color: '#1e40af' }}>PROMEDIO GENERAL</TableCell>
               {years.map((year) => {
                 const value = totalsByYear[year];
-                const tone = value >= 80 ? { color: '#10b981', bg: '#d1fae5' } : value >= 60 ? { color: '#f59e0b', bg: '#fef3c7' } : { color: '#ef4444', bg: '#fee2e2' };
+                const tone = getMatrixTone(value, annualScaleMax);
                 return (
                   <TableCell key={`total-${year}`} align="center" sx={{ bgcolor: tone.bg }}>
                     <Typography sx={{ fontSize: 24, fontWeight: 900, color: tone.color }}>{formatPercent(value)}</Typography>
                     <Box sx={{ mt: 0.8, height: 7, bgcolor: '#e0f2fe', borderRadius: 99, overflow: 'hidden' }}>
-                      <Box sx={{ width: `${Math.min(value, 100)}%`, height: '100%', bgcolor: tone.color }} />
+                      <Box sx={{ width: `${tone.normalized}%`, height: '100%', bgcolor: tone.color }} />
                     </Box>
                   </TableCell>
                 );
               })}
-              <TableCell align="center" sx={{ bgcolor: generalTotal >= 80 ? '#d1fae5' : generalTotal >= 60 ? '#fef3c7' : '#fee2e2' }}>
-                <Typography sx={{ fontSize: 28, fontWeight: 900, color: generalTotal >= 80 ? '#10b981' : generalTotal >= 60 ? '#f59e0b' : '#ef4444' }}>
+              <TableCell align="center" sx={{ bgcolor: getMatrixTone(generalTotal, totalScaleMax).bg }}>
+                <Typography sx={{ fontSize: 28, fontWeight: 900, color: getMatrixTone(generalTotal, totalScaleMax).color }}>
                   {formatPercent(generalTotal)}
                 </Typography>
                 <Box sx={{ mt: 0.8, height: 10, bgcolor: '#e0f2fe', borderRadius: 99, overflow: 'hidden' }}>
-                  <Box sx={{ width: `${Math.min(generalTotal, 100)}%`, height: '100%', bgcolor: generalTotal >= 80 ? '#10b981' : generalTotal >= 60 ? '#f59e0b' : '#ef4444' }} />
+                  <Box sx={{ width: `${getMatrixTone(generalTotal, totalScaleMax).normalized}%`, height: '100%', bgcolor: getMatrixTone(generalTotal, totalScaleMax).color }} />
                 </Box>
               </TableCell>
             </TableRow>
@@ -1591,12 +1629,14 @@ function ObjetivosDashboard({ rows }) {
       <MatrixTable
         title="Ejecución Cualitativa del Plan Estratégico de Desarrollo"
         subtitle={`Evaluación de Objetivos Estratégicos por Año | Cada Año = ${stats.weightPerYear.toFixed(2)}% del total`}
-        rows={stats.ejecucionRows.map((row) => ({ ...row, objetivoLabel: row.objetivo }))}
+        rows={stats.ejecucionRows.map((row) => ({ ...row, 'OBJETIVOS ESTRATÉGICOS': row.objetivo }))}
         years={stats.years}
-        rowKey="objetivoLabel"
+        rowKey="OBJETIVOS ESTRATÉGICOS"
         totalsByYear={stats.ejecucionTotalsByYear}
         generalTotal={stats.ejecucionGeneralProm}
-        footerNote={`NOTA: La ejecución representa el avance ponderado por el peso de cada año (${stats.weightPerYear.toFixed(2)}%). El promedio se calcula dividiendo entre el número de lineamientos estratégicos del plan.`}
+        annualScaleMax={stats.weightPerYear}
+        totalScaleMax={stats.weightPerYear * stats.years.length}
+        footerNote={`NOTA: Cada año tiene un máximo ponderado de ${stats.weightPerYear.toFixed(2)}%. Los colores y las barras se calculan tomando ese valor como el 100% anual. El total se evalúa sobre ${(stats.weightPerYear * stats.years.length).toFixed(2)}% para los ${stats.years.length} años visibles.`}
       />
     </Stack>
   );
