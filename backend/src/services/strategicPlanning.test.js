@@ -13,7 +13,7 @@ const {
   repositoryName, compactFolderName, compactFileName, intersectsPeriod,
   buildRepositoryPeriods, buildOfficialWorkbook, buildActionRepositoryDriveAuth,
   buildRepositoryEntries, hasUsableActionRepositoryOAuth, repositoryPropertyValue,
-  REPOSITORY_PROPERTY, MAX_APP_PROPERTY_BYTES
+  buildPedFolderName, REPOSITORY_PROPERTY, MAX_APP_PROPERTY_BYTES
 } = require('./actionPlanRepositoryDriveService');
 
 test('workflow institucional contiene el recorrido completo y parametrizable', () => {
@@ -34,6 +34,11 @@ test('nombres Drive son cortos y compatibles con Windows', () => {
   assert.ok(result.length <= 32);
   assert.doesNotMatch(result, /[<>:"/\\|?*]/);
   assert.match(result, /^Direccion-Planeacion/);
+});
+
+test('el repositorio agrupa las vigencias bajo el rango parametrizado del PED', () => {
+  assert.equal(buildPedFolderName({ starts_on: '2022-01-01', ends_on: '2029-12-31' }), 'PED 2022-2029');
+  assert.equal(buildPedFolderName({ starts_on: '2030-01-01', ends_on: '2034-12-31' }), 'PED 2030-2034');
 });
 
 test('cruce de responsables tolera tildes, mayúsculas y espacios', () => {

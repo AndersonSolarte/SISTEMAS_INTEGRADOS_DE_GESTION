@@ -840,7 +840,7 @@ export default function StrategicPlanningPlatform({ onBack }) {
               <Box sx={{ width: 44, height: 44, flex: '0 0 44px', borderRadius: 2.5, bgcolor: '#dbeafe', color: '#1d4ed8', display: 'grid', placeItems: 'center' }}><Folder /></Box>
               <Box>
                 <Typography fontWeight={950}>Repositorio de Planes de Acción {selectedActionTerm.year}</Typography>
-                <Typography variant="body2" color="text.secondary">Prepara en Drive todas las dependencias del año. Los planes creados incorporan además su archivo oficial, actividades y evidencias.</Typography>
+                <Typography variant="body2" color="text.secondary">Organiza el año dentro de la carpeta de su PED y prepara todas las dependencias. La sincronización reutiliza carpetas y archivos existentes.</Typography>
               </Box>
             </Stack>
             <Button variant="contained" startIcon={repositorySyncing ? <CircularProgress size={18} color="inherit" /> : <CloudSync />} disabled={repositorySyncing || !selectedActionUnits.length} onClick={syncActionRepository} sx={{ minWidth: 225, height: 46, borderRadius: 2.25, textTransform: 'none', fontWeight: 900 }}>
@@ -849,7 +849,7 @@ export default function StrategicPlanningPlatform({ onBack }) {
           </Stack>
           {!selectedActionUnits.length && <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 1 }}>Configure por lo menos una dependencia para esta vigencia.</Typography>}
           {repositoryResult && <Alert severity={repositoryResult.files_deferred ? 'warning' : 'success'} sx={{ mt: 1.75, borderRadius: 2.25 }} action={<Button color="inherit" size="small" href={repositoryResult.folder_url} target="_blank" rel="noreferrer" sx={{ fontWeight: 900 }}>Abrir Drive</Button>}>
-            <strong>{repositoryResult.files_deferred ? 'Estructura de carpetas preparada:' : 'Sincronización completa:'}</strong> {repositoryResult.dependencies ?? repositoryResult.plans} dependencias preparadas ({repositoryResult.plans} con plan y {repositoryResult.pending_plans ?? 0} pendientes), {repositoryResult.activities} actividades y {repositoryResult.folders_created} carpetas nuevas.{repositoryResult.files_deferred ? ' Los Excel, actas y evidencias se incorporarán cuando Planeación autorice OAuth.' : ` ${repositoryResult.evidence} evidencias y ${repositoryResult.minutes} actas; ${repositoryResult.files_created} archivos creados.`}
+            <strong>{repositoryResult.files_deferred ? 'Estructura de carpetas preparada:' : 'Sincronización completa:'}</strong> {repositoryResult.ped_folder_name ? `${repositoryResult.ped_folder_name} → ` : ''}Planes de Acción {repositoryResult.year}. {repositoryResult.dependencies ?? repositoryResult.plans} dependencias preparadas ({repositoryResult.plans} con plan y {repositoryResult.pending_plans ?? 0} pendientes), {repositoryResult.activities} actividades y {repositoryResult.folders_created} carpetas nuevas.{repositoryResult.files_deferred ? ' Los Excel, actas y evidencias se incorporarán cuando Planeación autorice OAuth.' : ` ${repositoryResult.evidence} evidencias y ${repositoryResult.minutes} actas; ${repositoryResult.files_created} archivos creados.`}
           </Alert>}
         </Paper>}
 

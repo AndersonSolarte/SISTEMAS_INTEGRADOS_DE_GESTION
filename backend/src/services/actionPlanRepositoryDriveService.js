@@ -134,6 +134,13 @@ const compactFileName = (name, prefix, max = 78) => {
   return `${safePrefix}_${repositoryName(base, available)}${extension}`;
 };
 
+const buildPedFolderName = (plan) => {
+  const startYear = String(plan?.starts_on || '').slice(0, 4);
+  const endYear = String(plan?.ends_on || '').slice(0, 4);
+  if (/^\d{4}$/.test(startYear) && /^\d{4}$/.test(endYear)) return `PED ${startYear}-${endYear}`;
+  return repositoryName(plan?.code || plan?.name || 'PED');
+};
+
 const driveEscape = (value) => String(value).replace(/'/g, "\\'");
 const contentHash = (buffer) => crypto.createHash('sha256').update(buffer).digest('hex');
 const repositoryPropertyValue = (key) => {
@@ -149,7 +156,7 @@ const findByRepositoryKey = async (drive, parentId, key, mimeType, expectedName 
   const mimeQuery = mimeType ? ` and mimeType='${driveEscape(mimeType)}'` : '';
   const response = await drive.files.list({
     q: `'${driveEscape(parentId)}' in parents and trashed=false${mimeQuery} and appProperties has { key='${REPOSITORY_PROPERTY}' and value='${driveEscape(propertyValue)}' }`,
-    fields: 'files(id,name,mimeType,appProperties,webViewLink)', spaces: 'drive',
+    fields: 'files(id,name,mimeType,parents,appProperties,webViewLink)', spaces: 'drive',
     supportsAllDrives: true, includeItemsFromAllDrives: true, pageSize: 2
   });
   if (response.data.files?.[0]) return response.data.files[0];
@@ -161,20 +168,31 @@ const findByRepositoryKey = async (drive, parentId, key, mimeType, expectedName 
   if (!safeName) return null;
   const byName = await drive.files.list({
     q: `'${driveEscape(parentId)}' in parents and trashed=false${mimeQuery} and name='${driveEscape(safeName)}'`,
-    fields: 'files(id,name,mimeType,appProperties,webViewLink)', spaces: 'drive',
+    fields: 'files(id,name,mimeType,parents,appProperties,webViewLink)', spaces: 'drive',
     supportsAllDrives: true, includeItemsFromAllDrives: true, pageSize: 2
   });
   return byName.data.files?.[0] || null;
 };
 
-const ensureFolder = async (drive, { parentId, name, key }, counters) => {
+const ensureFolder = async (drive, { parentId, name, key, legacyParentIds = [] }, counters) => {
   const desiredName = repositoryName(name);
   const propertyValue = repositoryPropertyValue(key);
-  const found = await findByRepositoryKey(drive, parentId, key, DRIVE_FOLDER, desiredName);
+  let found = await findByRepositoryKey(drive, parentId, key, DRIVE_FOLDER, desiredName);
+  let previousParents = [];
+  if (!found) {
+    for (const legacyParentId of legacyParentIds.filter(Boolean)) {
+      found = await findByRepositoryKey(drive, legacyParentId, key, DRIVE_FOLDER, desiredName);
+      if (found) {
+        previousParents = (found.parents || []).filter((id) => id !== parentId);
+        break;
+      }
+    }
+  }
   if (found) {
-    if (found.name !== desiredName || found.appProperties?.[REPOSITORY_PROPERTY] !== propertyValue) {
+    if (previousParents.length || found.name !== desiredName || found.appProperties?.[REPOSITORY_PROPERTY] !== propertyValue) {
       await drive.files.update({
         fileId: found.id,
+        ...(previousParents.length ? { addParents: parentId, removeParents: previousParents.join(',') } : {}),
         requestBody: {
           name: desiredName,
           appProperties: { ...(found.appProperties || {}), [REPOSITORY_PROPERTY]: propertyValue }
@@ -269,6 +287,20 @@ const buildRepositoryEntries = (assignments = [], actionPlans = []) => {
   return entries.sort((a, b) => String(a.unit.name || '').localeCompare(String(b.unit.name || ''), 'es'));
 };
 
+const mapWithConcurrency = async (items, concurrency, worker) => {
+  const results = new Array(items.length);
+  let cursor = 0;
+  const runners = Array.from({ length: Math.min(concurrency, items.length) }, async () => {
+    while (cursor < items.length) {
+      const index = cursor;
+      cursor += 1;
+      results[index] = await worker(items[index], index);
+    }
+  });
+  await Promise.all(runners);
+  return results;
+};
+
 const syncActionPlanRepositoryTerm = async (termId) => {
   const term = await StrategicTerm.findByPk(termId, {
     include: [
@@ -306,14 +338,21 @@ const syncActionPlanRepositoryTerm = async (termId) => {
   const drive = buildActionRepositoryDriveClient();
   await verifyRepositoryRoot(drive, rootId);
   const counters = { folders_created: 0, folders_updated: 0, folders_existing: 0, files_created: 0, files_updated: 0, files_unchanged: 0, dependencies: repositoryEntries.length, plans: actionPlans.length, pending_plans: repositoryEntries.filter((entry) => !entry.actionPlan).length, activities: 0, evidence: 0, minutes: 0 };
+  const pedFolderName = buildPedFolderName(term.strategicPlan);
+  const pedFolder = await ensureFolder(drive, {
+    parentId: rootId,
+    name: pedFolderName,
+    key: `action-repository:ped:${term.strategic_plan_id}`
+  }, counters);
   const yearFolder = await ensureFolder(drive, {
-    parentId: rootId, name: `PLANES DE ACCIÓN ${term.year}`,
-    key: `action-repository:term:${term.id}`
+    parentId: pedFolder, name: `PLANES DE ACCIÓN ${term.year}`,
+    key: `action-repository:term:${term.id}`,
+    legacyParentIds: [rootId]
   }, counters);
   const periods = buildRepositoryPeriods(term);
   const planContexts = [];
 
-  for (const entry of repositoryEntries) {
+  const contexts = await mapWithConcurrency(repositoryEntries, 6, async (entry) => {
     const { actionPlan, unit } = entry;
     const unitCode = unit?.code || actionPlan?.code;
     const unitName = unit?.name || actionPlan?.title;
@@ -334,7 +373,7 @@ const syncActionPlanRepositoryTerm = async (termId) => {
 
     // Una dependencia pendiente recibe la estructura base del repositorio,
     // pero no crea registros ni archivos de Plan de Accion dentro de SIAC.
-    if (!actionPlan) continue;
+    if (!actionPlan) return null;
 
     const activityFolders = new Map();
     for (const item of actionPlan.items || []) {
@@ -350,15 +389,16 @@ const syncActionPlanRepositoryTerm = async (termId) => {
         activityFolders.set(`${item.id}:${period.id}`, activityFolder);
       }
     }
-    planContexts.push({ actionPlan, minutesFolder, officialFolder, activityFolders });
-  }
+    return { actionPlan, minutesFolder, officialFolder, activityFolders };
+  });
+  planContexts.push(...contexts.filter(Boolean));
 
   // Las cuentas de servicio pueden organizar carpetas compartidas en "Mi unidad",
   // pero Google no les concede cuota para crear archivos. En este modo temporal se
   // prepara toda la estructura; los documentos se incorporan al instalar el OAuth.
   if (!usingOAuth) {
     return {
-      ...counters, year: term.year, folder_id: yearFolder,
+      ...counters, year: term.year, ped_folder_id: pedFolder, ped_folder_name: pedFolderName, folder_id: yearFolder,
       folder_url: `https://drive.google.com/drive/folders/${yearFolder}`,
       drive_mode: 'service_account_folders_only', files_deferred: true
     };
@@ -408,7 +448,7 @@ const syncActionPlanRepositoryTerm = async (termId) => {
   }
 
   return {
-    ...counters, year: term.year, folder_id: yearFolder,
+    ...counters, year: term.year, ped_folder_id: pedFolder, ped_folder_name: pedFolderName, folder_id: yearFolder,
     folder_url: `https://drive.google.com/drive/folders/${yearFolder}`
   };
 };
@@ -418,6 +458,7 @@ module.exports = {
   repositoryName,
   compactFolderName,
   compactFileName,
+  buildPedFolderName,
   intersectsPeriod,
   buildRepositoryPeriods,
   buildOfficialWorkbook,
