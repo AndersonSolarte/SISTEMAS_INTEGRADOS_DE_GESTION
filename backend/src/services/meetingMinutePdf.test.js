@@ -43,9 +43,31 @@ test('no recorta actas extensas y genera todas sus páginas', async () => {
 
 test('conserva el contenido textual y las tablas enriquecidas', () => {
   assert.equal(_internals.plainHtml('<p>Texto <strong>completo</strong></p>'), 'Texto completo');
+  assert.equal(
+    _internals.plainHtml('<div>Definir,</div><div>coordinar y hacer seguimiento al plan de trabajo</div><div>interinstitucional para la gestión institucional.</div>'),
+    'Definir, coordinar y hacer seguimiento al plan de trabajo interinstitucional para la gestión institucional.'
+  );
+  assert.equal(
+    _internals.plainHtml('<p>Primer párrafo completo.</p><p>Segundo párrafo completo.</p>'),
+    'Primer párrafo completo.\n\nSegundo párrafo completo.'
+  );
   const table = _internals.richTable('<table><tr><th>Compromiso</th><th>Fecha</th></tr><tr><td>Entregar informe</td><td>30/09/2026</td></tr></table>');
   assert.equal(table.table.body.length, 2);
   assert.equal(table.table.body[1][0].text, 'Entregar informe');
+});
+
+test('dibuja código, versión y fecha en tres celdas independientes', () => {
+  const metadata = _internals.buildHeaderMetadata({
+    codigo: 'COM-ID-FR-002',
+    version: '2',
+    fecha: '18/09/2026'
+  });
+  assert.equal(metadata.table.body.length, 3);
+  assert.equal(metadata.table.body[0][0].text, 'CÓDIGO: COM-ID-FR-002');
+  assert.equal(metadata.table.body[1][0].text, 'VERSIÓN: 2');
+  assert.equal(metadata.table.body[2][0].text, 'FECHA: 18/09/2026');
+  assert.equal(metadata.layout.hLineWidth(1, metadata), 0.7);
+  assert.equal(metadata.layout.hLineWidth(2, metadata), 0.7);
 });
 
 test('soporta modo copia con texto Firmado y modo original con firma gráfica', async () => {

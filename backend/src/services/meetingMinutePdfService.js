@@ -23,12 +23,37 @@ const borderLayout = {
 const decodeHtml = (value = '') => String(value)
   .replace(/&nbsp;/gi, ' ').replace(/&amp;/gi, '&').replace(/&lt;/gi, '<')
   .replace(/&gt;/gi, '>').replace(/&quot;/gi, '"').replace(/&#39;/gi, "'");
-const plainHtml = (value = '') => decodeHtml(String(value)
-  .replace(/<br\s*\/?\s*>/gi, '\n')
-  .replace(/<\/\s*(p|div|h2|h3|li|blockquote)\s*>/gi, '\n')
-  .replace(/<li[^>]*>/gi, '• ')
-  .replace(/<[^>]+>/g, ''))
-  .replace(/[ \t]+\n/g, '\n').replace(/\n{3,}/g, '\n\n').trim();
+const joinSoftWrappedLines = (value = '') => String(value)
+  .replace(/\r\n?/g, '\n')
+  .replace(/[ \t]+\n/g, '\n')
+  .replace(/\n[ \t]+/g, '\n')
+  .replace(/\n{3,}/g, '\n\n')
+  .split(/\n{2,}/)
+  .map((paragraph) => paragraph
+    .split('\n')
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .reduce((text, line) => {
+      if (!text) return line;
+      return /^[•\-]\s+/.test(line) ? `${text}\n${line}` : `${text} ${line}`;
+    }, ''))
+  .filter(Boolean)
+  .join('\n\n');
+
+const plainHtml = (value = '') => {
+  const text = decodeHtml(String(value)
+    // Un bloque vacío sí representa un párrafo nuevo en el editor.
+    .replace(/<(p|div)[^>]*>\s*(?:<br\s*\/?\s*>|&nbsp;|\s)*<\/\1>/gi, '\n\n')
+    .replace(/<br\s*\/?\s*>/gi, '\n')
+    // Chrome suele crear un DIV por línea al pegar o dictar. Son cortes
+    // suaves; los párrafos semánticos conservan una línea en blanco.
+    .replace(/<\/\s*div\s*>/gi, '\n')
+    .replace(/<\/\s*(p|h2|h3|blockquote)\s*>/gi, '\n\n')
+    .replace(/<\/\s*li\s*>/gi, '\n')
+    .replace(/<li[^>]*>/gi, '• ')
+    .replace(/<[^>]+>/g, ''));
+  return joinSoftWrappedLines(text).trim();
+};
 
 const richTable = (html = '') => {
   const body = [];
@@ -47,7 +72,7 @@ const richTable = (html = '') => {
 };
 
 const richNodes = (lines = []) => {
-  const source = (Array.isArray(lines) ? lines : [lines]).filter(Boolean).join('<br>');
+  const source = (Array.isArray(lines) ? lines : [lines]).filter(Boolean).join('<br><br>');
   if (!source) return [{ text: '', margin: [0, 2] }];
   const nodes = [];
   for (const segment of source.split(/(<table[^>]*>[\s\S]*?<\/table>)/gi)) {
@@ -57,7 +82,7 @@ const richNodes = (lines = []) => {
       if (table) nodes.push(table);
     } else {
       const text = plainHtml(segment);
-      if (text) nodes.push({ text, lineHeight: 1.25, margin: [0, 2, 0, 4] });
+      if (text) nodes.push({ text, lineHeight: 1.25, alignment: 'justify', margin: [0, 2, 0, 4] });
     }
   }
   return nodes.length ? nodes : [{ text: plainHtml(source), margin: [0, 2] }];
@@ -73,6 +98,26 @@ const section = (title, lines) => ({
   },
   layout: borderLayout,
   margin: [0, 0, 0, 8]
+});
+
+const buildHeaderMetadata = (header = {}, meetingDate = '') => ({
+  table: {
+    widths: ['*'],
+    body: [
+      [{ text: `CÓDIGO: ${header.codigo || 'COM-ID-FR-002'}`, bold: true, fontSize: 8 }],
+      [{ text: `VERSIÓN: ${header.version || '1'}`, bold: true, fontSize: 8 }],
+      [{ text: `FECHA: ${header.fecha || meetingDate || ''}`, bold: true, fontSize: 8 }]
+    ]
+  },
+  layout: {
+    hLineWidth: (index, node) => (index > 0 && index < node.table.body.length ? 0.7 : 0),
+    vLineWidth: () => 0,
+    hLineColor: () => '#111111',
+    paddingLeft: () => 5,
+    paddingRight: () => 5,
+    paddingTop: () => 5,
+    paddingBottom: () => 5
+  }
 });
 
 const parseResponsablesList = (payload = {}) => {
@@ -194,8 +239,15 @@ const generateMeetingMinutePdf = async (payload = {}, options = {}) => {
         table: { widths: [155, '*', 130], body: [[
           logo ? { image: logo, fit: [145, 54], alignment: 'center', margin: [0, 4] } : { text: 'UNIVERSIDAD CESMAG', bold: true, alignment: 'center' },
           { text: 'REGISTRO DE ASISTENCIA Y REUNIÓN', bold: true, fontSize: 14, alignment: 'center', margin: [0, 18, 0, 0] },
-          { text: `CÓDIGO: ${header.codigo || 'COM-ID-FR-002'}\nVERSIÓN: ${header.version || '1'}\nFECHA: ${header.fecha || payload.fecha || ''}`, bold: true, fontSize: 8, margin: [2, 9, 0, 0] }
-        ]] }, layout: borderLayout
+          buildHeaderMetadata(header, payload.fecha)
+        ]] },
+        layout: {
+          ...borderLayout,
+          paddingLeft: (index) => (index === 2 ? 0 : 5),
+          paddingRight: (index) => (index === 2 ? 0 : 5),
+          paddingTop: (index) => (index === 2 ? 0 : 4),
+          paddingBottom: (index) => (index === 2 ? 0 : 4)
+        }
       },
       {
         table: {
@@ -248,4 +300,4 @@ const generateMeetingMinutePdf = async (payload = {}, options = {}) => {
   });
 };
 
-module.exports = { generateMeetingMinutePdf, _internals: { plainHtml, richTable } };
+module.exports = { generateMeetingMinutePdf, _internals: { plainHtml, richTable, buildHeaderMetadata } };
