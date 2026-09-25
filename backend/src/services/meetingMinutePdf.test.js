@@ -51,6 +51,14 @@ test('conserva el contenido textual y las tablas enriquecidas', () => {
     _internals.plainHtml('<p>Primer párrafo completo.</p><p>Segundo párrafo completo.</p>'),
     'Primer párrafo completo.\n\nSegundo párrafo completo.'
   );
+  assert.equal(
+    _internals.plainHtml('<p>Definir,</p><p>coordinar y hacer seguimiento al plan de trabajo interinstitucional para la</p><p>gestión institucional.</p>'),
+    'Definir, coordinar y hacer seguimiento al plan de trabajo interinstitucional para la gestión institucional.'
+  );
+  assert.equal(
+    _internals.plainHtml('<p>Aspectos clave:</p><p>1.</p><p>Mecanismos de pre-registro e inscripción:</p><p>Explicación completa.</p>'),
+    'Aspectos clave:\n\n1. Mecanismos de pre-registro e inscripción:\n\nExplicación completa.'
+  );
   const table = _internals.richTable('<table><tr><th>Compromiso</th><th>Fecha</th></tr><tr><td>Entregar informe</td><td>30/09/2026</td></tr></table>');
   assert.equal(table.table.body.length, 2);
   assert.equal(table.table.body[1][0].text, 'Entregar informe');

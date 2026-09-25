@@ -23,22 +23,37 @@ const borderLayout = {
 const decodeHtml = (value = '') => String(value)
   .replace(/&nbsp;/gi, ' ').replace(/&amp;/gi, '&').replace(/&lt;/gi, '<')
   .replace(/&gt;/gi, '>').replace(/&quot;/gi, '"').replace(/&#39;/gi, "'");
-const joinSoftWrappedLines = (value = '') => String(value)
-  .replace(/\r\n?/g, '\n')
-  .replace(/[ \t]+\n/g, '\n')
-  .replace(/\n[ \t]+/g, '\n')
-  .replace(/\n{3,}/g, '\n\n')
-  .split(/\n{2,}/)
-  .map((paragraph) => paragraph
-    .split('\n')
-    .map((line) => line.trim())
-    .filter(Boolean)
-    .reduce((text, line) => {
-      if (!text) return line;
-      return /^[•\-]\s+/.test(line) ? `${text}\n${line}` : `${text} ${line}`;
-    }, ''))
-  .filter(Boolean)
-  .join('\n\n');
+const joinSoftWrappedLines = (value = '') => {
+  const paragraphs = String(value)
+    .replace(/\r\n?/g, '\n')
+    .replace(/[ \t]+\n/g, '\n')
+    .replace(/\n[ \t]+/g, '\n')
+    .replace(/\n{3,}/g, '\n\n')
+    .split(/\n{2,}/)
+    .map((paragraph) => paragraph
+      .split('\n')
+      .map((line) => line.trim())
+      .filter(Boolean)
+      .reduce((text, line) => {
+        if (!text) return line;
+        return /^[•\-]\s+/.test(line) ? `${text}\n${line}` : `${text} ${line}`;
+      }, ''))
+    .filter(Boolean);
+
+  return paragraphs.reduce((result, paragraph) => {
+    if (!result.length) return [paragraph];
+    const previous = result[result.length - 1];
+    const standaloneListMarker = /^(?:\d+[.)]?|[•.\-])$/u.test(previous.trim());
+    const previousCompletesParagraph = /[.!?;:]$/u.test(previous.trim());
+    const nextStartsListItem = /^(?:[•\-]\s+|\d+[.)]\s+)/u.test(paragraph);
+    if (standaloneListMarker || (!previousCompletesParagraph && !nextStartsListItem)) {
+      result[result.length - 1] = `${previous} ${paragraph}`;
+    } else {
+      result.push(paragraph);
+    }
+    return result;
+  }, []).join('\n\n');
+};
 
 const plainHtml = (value = '') => {
   const text = decodeHtml(String(value)
@@ -82,7 +97,7 @@ const richNodes = (lines = []) => {
       if (table) nodes.push(table);
     } else {
       const text = plainHtml(segment);
-      if (text) nodes.push({ text, lineHeight: 1.25, alignment: 'justify', margin: [0, 2, 0, 4] });
+      if (text) nodes.push({ text, lineHeight: 1.25, alignment: 'left', margin: [0, 2, 0, 4] });
     }
   }
   return nodes.length ? nodes : [{ text: plainHtml(source), margin: [0, 2] }];
