@@ -227,3 +227,13 @@ test('el repositorio usa temporalmente la cuenta de servicio si OAuth solo tiene
     });
   }
 });
+
+test('el PED 2023–2029 genera exactamente 7 vigencias y ajusta codigo/nombre dinámicamente', () => {
+  const schedule = buildPedSchedule({ startsOn: '2023-01-01', durationYears: 6 });
+  assert.equal(schedule.code, 'PED-2023-2029');
+  assert.equal(schedule.name, 'Plan Estratégico de Desarrollo 2023–2029');
+  assert.equal(schedule.terms.length, 7);
+  assert.equal(schedule.terms[0].year, 2023);
+  assert.equal(schedule.terms[6].year, 2029);
+});
+

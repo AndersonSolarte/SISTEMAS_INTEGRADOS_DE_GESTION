@@ -1164,11 +1164,25 @@ export default function StrategicPlanningPlatform({ onBack }) {
             <Box sx={{ pt: 2.25, borderTop: '1px solid #e2e8f0' }}>
               <Typography variant="subtitle2" fontWeight={900} color="#334155" mb={1.25}>Vigencia y estado</Typography>
               <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', sm: 'repeat(3,minmax(0,1fr))' }, gap: 2 }}>
-                <TextField required fullWidth type="date" InputLabelProps={{ shrink: true }} label="Fecha inicial" value={strategicPlanForm.starts_on} onChange={(e) => setStrategicPlanForm({ ...strategicPlanForm, starts_on: e.target.value })} />
-                <TextField required fullWidth type="date" InputLabelProps={{ shrink: true }} label="Fecha final" value={strategicPlanForm.ends_on} onChange={(e) => setStrategicPlanForm({ ...strategicPlanForm, ends_on: e.target.value })} />
+                <TextField required fullWidth type="date" InputLabelProps={{ shrink: true }} label="Fecha inicial" value={strategicPlanForm.starts_on} onChange={(e) => handlePlanDateChange('starts_on', e.target.value)} />
+                <TextField required fullWidth type="date" InputLabelProps={{ shrink: true }} label="Fecha final" value={strategicPlanForm.ends_on} onChange={(e) => handlePlanDateChange('ends_on', e.target.value)} />
                 <TextField select fullWidth label="Estado del PED" value={strategicPlanForm.status} onChange={(e) => setStrategicPlanForm({ ...strategicPlanForm, status: e.target.value })}><MenuItem value="draft">Borrador</MenuItem><MenuItem value="active">Activo</MenuItem><MenuItem value="planned">Planeado</MenuItem><MenuItem value="closed">Cerrado / histórico</MenuItem></TextField>
               </Box>
+              {Boolean(editingPlanId && strategicPlanForm.starts_on && strategicPlanForm.ends_on) && (() => {
+                const sYear = Number(String(strategicPlanForm.starts_on).slice(0, 4));
+                const eYear = Number(String(strategicPlanForm.ends_on).slice(0, 4));
+                const count = (sYear && eYear && eYear >= sYear) ? (eYear - sYear + 1) : 0;
+                if (!count) return null;
+                return (
+                  <Paper variant="outlined" sx={{ mt: 1.5, px: 2, py: 1.25, borderRadius: 2, bgcolor: '#f0fdf4', borderColor: '#bbf7d0' }}>
+                    <Typography variant="body2" color="#166534" fontWeight={850}>
+                      {count} {count === 1 ? 'vigencia' : 'vigencias'} ({sYear} a {eYear}) · Código y nombre ajustados automáticamente.
+                    </Typography>
+                  </Paper>
+                );
+              })()}
             </Box>
+
 
             <Box sx={{ pt: 2.25, borderTop: '1px solid #e2e8f0' }}>
               <Typography variant="subtitle2" fontWeight={900} color="#334155" mb={1.25}>Información administrativa</Typography>
