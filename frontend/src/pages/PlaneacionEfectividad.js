@@ -115,6 +115,24 @@ const formatNumber = (value) => Number(value || 0).toLocaleString('es-CO');
 const formatPercent = (value) => `${Number(value || 0).toLocaleString('es-CO', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}%`;
 const FIXED_PLAN_YEARS = ['2023', '2024', '2025', '2026', '2027', '2028', '2029'];
 
+const macroactivityCodeNumber = (value) => {
+  const match = String(value || '').match(/\bA\s*-?\s*0*(\d+)\b/i);
+  return match ? Number(match[1]) : null;
+};
+
+const compareMacroactivities = (left, right) => {
+  const leftNumber = macroactivityCodeNumber(left);
+  const rightNumber = macroactivityCodeNumber(right);
+
+  if (leftNumber !== null && rightNumber !== null && leftNumber !== rightNumber) {
+    return leftNumber - rightNumber;
+  }
+
+  if (leftNumber !== null && rightNumber === null) return -1;
+  if (leftNumber === null && rightNumber !== null) return 1;
+  return String(left).localeCompare(String(right), 'es', { numeric: true, sensitivity: 'base' });
+};
+
 const normalizeCatalogKey = (value) => String(value || '')
   .normalize('NFD')
   .replace(/[\u0300-\u036f]/g, '')
@@ -325,12 +343,11 @@ const buildLineamientosStats = (rows = []) => {
 const buildActividadesStats = (rows = []) => {
   const weightPerYear = PED_YEAR_WEIGHT;
   const yearsSet = new Set();
-  const actividadesSet = new Set();
+  const macroactividadesSet = new Set();
   const lineamientosSet = new Set();
-  const actividadYearAgg = new Map();
+  const macroactividadYearAgg = new Map();
   const lineamientoYearAgg = new Map();
   const yearAgg = new Map();
-  const actividadesByYear = new Map();
 
   rows.forEach((row) => {
     const anio = Number(row.anio);
@@ -338,21 +355,17 @@ const buildActividadesStats = (rows = []) => {
 
     yearsSet.add(anio);
 
-    const actividad = row.actividad || '';
+    const macroactividad = row.macroactividad || '';
     const lineamiento = row.lineamiento_estrategico || '';
     const avance = percent(row.avance_total) || 0;
 
-    if (actividad) {
-      actividadesSet.add(actividad);
-      const actividadYearKey = `${actividad}||${anio}`;
-      const actividadYearCurrent = actividadYearAgg.get(actividadYearKey) || { total: 0, count: 0 };
-      actividadYearCurrent.total += avance;
-      actividadYearCurrent.count += 1;
-      actividadYearAgg.set(actividadYearKey, actividadYearCurrent);
-
-      const yearActivities = actividadesByYear.get(anio) || new Set();
-      yearActivities.add(actividad);
-      actividadesByYear.set(anio, yearActivities);
+    if (macroactividad) {
+      macroactividadesSet.add(macroactividad);
+      const macroactividadYearKey = `${macroactividad}||${anio}`;
+      const macroactividadYearCurrent = macroactividadYearAgg.get(macroactividadYearKey) || { total: 0, count: 0 };
+      macroactividadYearCurrent.total += avance;
+      macroactividadYearCurrent.count += 1;
+      macroactividadYearAgg.set(macroactividadYearKey, macroactividadYearCurrent);
     }
 
     if (lineamiento) {
@@ -371,16 +384,27 @@ const buildActividadesStats = (rows = []) => {
   });
 
   const years = Array.from(yearsSet).sort((a, b) => a - b);
-  const actividades = Array.from(actividadesSet).sort((a, b) => String(a).localeCompare(String(b), 'es'));
+  const macroactividades = Array.from(macroactividadesSet).sort(compareMacroactivities);
   const lineamientos = Array.from(lineamientosSet);
 
-  const avgByActividadYear = new Map();
-  actividadYearAgg.forEach((agg, key) => {
+  const avgByMacroactividadYear = new Map();
+  macroactividadYearAgg.forEach((agg, key) => {
     if (!agg.count) return;
-    avgByActividadYear.set(key, Number((agg.total / agg.count).toFixed(2)));
+    avgByMacroactividadYear.set(key, Number((agg.total / agg.count).toFixed(2)));
   });
 
-  const totalActividades = years.reduce((acc, anio) => acc + ((actividadesByYear.get(anio) || new Set()).size), 0);
+  const totalMacroactividades = macroactividades.length;
+  const macroactivityNumbers = macroactividades
+    .map(macroactivityCodeNumber)
+    .filter((value) => Number.isFinite(value));
+  const maxMacroactivityNumber = macroactivityNumbers.length ? Math.max(...macroactivityNumbers) : 0;
+  const macroactivityNumberSet = new Set(macroactivityNumbers);
+  const missingMacroactivityCodes = Array.from(
+    { length: maxMacroactivityNumber },
+    (_, index) => index + 1
+  )
+    .filter((value) => !macroactivityNumberSet.has(value))
+    .map((value) => `A-${String(value).padStart(3, '0')}`);
 
   const yearlyAvgs = years
     .map((anio) => {
@@ -404,14 +428,14 @@ const buildActividadesStats = (rows = []) => {
   });
   const ejecucionGeneral = lineamientos.length ? Number((totalGeneral / lineamientos.length).toFixed(2)) : 0;
 
-  const cumplimientoRows = actividades.map((actividad) => {
+  const cumplimientoRows = macroactividades.map((macroactividad) => {
     const byYear = {};
     years.forEach((anio) => {
-      byYear[anio] = avgByActividadYear.get(`${actividad}||${anio}`) ?? null;
+      byYear[anio] = avgByMacroactividadYear.get(`${macroactividad}||${anio}`) ?? null;
     });
     const values = Object.values(byYear).filter((value) => value !== null && value > 0);
     const total = values.length ? Number((values.reduce((acc, value) => acc + value, 0) / values.length).toFixed(2)) : 0;
-    return { actividad, byYear, total };
+    return { macroactividad, byYear, total };
   });
 
   const cumplimientoTotalsByYear = Object.fromEntries(
@@ -423,15 +447,15 @@ const buildActividadesStats = (rows = []) => {
     })
   );
 
-  const ejecucionRows = actividades.map((actividad) => {
+  const ejecucionRows = macroactividades.map((macroactividad) => {
     const byYear = {};
     years.forEach((anio) => {
-      const avg = avgByActividadYear.get(`${actividad}||${anio}`);
+      const avg = avgByMacroactividadYear.get(`${macroactividad}||${anio}`);
       byYear[anio] = avg === undefined ? null : Number((((avg / 100) * weightPerYear)).toFixed(2));
     });
     const values = Object.values(byYear).filter((value) => value !== null);
     const total = values.length ? Number(values.reduce((acc, value) => acc + value, 0).toFixed(2)) : 0;
-    return { actividad, byYear, total };
+    return { macroactividad, byYear, total };
   });
 
   const ejecucionTotalsByYear = Object.fromEntries(
@@ -452,8 +476,9 @@ const buildActividadesStats = (rows = []) => {
 
   return {
     years,
-    actividades,
-    totalActividades,
+    macroactividades,
+    totalMacroactividades,
+    missingMacroactivityCodes,
     promActividadesPed,
     ejecucionGeneral,
     cumplimientoRows,
@@ -1584,14 +1609,14 @@ function ActividadesDashboard({ rows }) {
   const stats = useMemo(() => buildActividadesStats(rows), [rows]);
   const cards = [
     {
-      label: 'Total Actividades',
-      value: formatNumber(stats.totalActividades),
+      label: 'Total Macroactividades',
+      value: formatNumber(stats.totalMacroactividades),
       progress: 100,
-      footer: 'Registradas en el plan',
+      footer: 'Registradas en el PED',
       color: '#f59e0b',
       gradient: 'linear-gradient(135deg, #f59e0b, #d97706)',
       shadow: 'rgba(245, 158, 11, 0.25)',
-      badge: 'ACTIVIDADES',
+      badge: 'MACROACTIVIDADES',
       badgeBg: '#fef3c7',
       badgeColor: '#92400e',
       icon: <ListAltIcon sx={{ color: 'white' }} />
@@ -1604,7 +1629,7 @@ function ActividadesDashboard({ rows }) {
       color: '#2563eb',
       gradient: 'linear-gradient(135deg, #2563eb, #1e40af)',
       shadow: 'rgba(37, 99, 235, 0.25)',
-      badge: 'ACTIVIDADES PED',
+      badge: 'MACROACTIVIDADES PED',
       badgeBg: '#dbeafe',
       badgeColor: '#1e40af',
       icon: <CheckCircleIcon sx={{ color: 'white' }} />
@@ -1627,12 +1652,17 @@ function ActividadesDashboard({ rows }) {
   return (
     <Stack spacing={2.2}>
       <KpiStrip cards={cards} />
+      {stats.missingMacroactivityCodes.length > 0 && (
+        <Alert severity="warning" sx={{ borderRadius: 3 }}>
+          La carga no contiene {stats.missingMacroactivityCodes.join(', ')}. Se muestran y calculan únicamente las macroactividades presentes en los datos.
+        </Alert>
+      )}
       <MatrixTable
         title="Estadística del Plan Estratégico de Desarrollo"
-        subtitle="Cumplimiento de Actividades PED por Año"
-        rows={stats.cumplimientoRows.map((row) => ({ ...row, 'ACTIVIDADES PED': row.actividad }))}
+        subtitle="Cumplimiento de Macroactividades Estratégicas por Año"
+        rows={stats.cumplimientoRows.map((row) => ({ ...row, 'MACROACTIVIDADES ESTRATÉGICAS': row.macroactividad }))}
         years={stats.years}
-        rowKey="ACTIVIDADES PED"
+        rowKey="MACROACTIVIDADES ESTRATÉGICAS"
         totalsByYear={stats.cumplimientoTotalsByYear}
         generalTotal={stats.cumplimientoGeneral}
         initialVisibleRows={40}
@@ -1640,10 +1670,10 @@ function ActividadesDashboard({ rows }) {
       />
       <MatrixTable
         title="Estadística del Plan Estratégico de Desarrollo"
-        subtitle="Ejecución Cualitativa de Actividades PED"
-        rows={stats.ejecucionRows.map((row) => ({ ...row, 'ACTIVIDADES PED': row.actividad }))}
+        subtitle="Ejecución Cualitativa de Macroactividades Estratégicas"
+        rows={stats.ejecucionRows.map((row) => ({ ...row, 'MACROACTIVIDADES ESTRATÉGICAS': row.macroactividad }))}
         years={stats.years}
-        rowKey="ACTIVIDADES PED"
+        rowKey="MACROACTIVIDADES ESTRATÉGICAS"
         totalsByYear={stats.ejecucionTotalsByYear}
         generalTotal={stats.ejecucionGeneralProm}
         initialVisibleRows={40}
@@ -1666,7 +1696,7 @@ function SeguimientoTabV2({ rows, filtersNode }) {
             ? 'Monitoreo estratégico del PED por objetivos.'
             : subTab === 'lineamientos'
               ? 'Monitoreo estratégico del PED por lineamientos.'
-              : 'Monitoreo estratégico del PED por actividades.'
+              : 'Monitoreo estratégico del PED por macroactividades.'
         }
       />
 
@@ -1722,7 +1752,7 @@ function SeguimientoTabV2({ rows, filtersNode }) {
         >
           <Tab value="objetivos" icon={<FlagIcon fontSize="small" />} iconPosition="start" label="PED por Objetivos" />
           <Tab value="lineamientos" icon={<AccountTreeIcon fontSize="small" />} iconPosition="start" label="PED por Lineamientos" />
-          <Tab value="actividades" icon={<TimelineIcon fontSize="small" />} iconPosition="start" label="PED por Actividades" />
+          <Tab value="actividades" icon={<TimelineIcon fontSize="small" />} iconPosition="start" label="PED por Macroactividades" />
         </Tabs>
       </Paper>
 
