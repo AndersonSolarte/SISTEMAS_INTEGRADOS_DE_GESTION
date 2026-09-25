@@ -115,13 +115,7 @@ const seedCatalogFromUsers = async (strategicPlanId) => {
 
 const ensureStrategicPlanningDefaults = async () => {
   let plan = await StrategicPlan.findOne({
-    where: {
-      [Op.or]: [
-        { code: DEFAULT_PLAN_CODE },
-        { code: { [Op.like]: 'PED-%' } }
-      ],
-      deleted_at: null
-    },
+    where: { deleted_at: null },
     order: [['created_at', 'ASC']]
   });
 
