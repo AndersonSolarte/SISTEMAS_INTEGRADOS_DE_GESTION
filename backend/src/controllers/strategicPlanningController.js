@@ -21,7 +21,7 @@ const { renderInstitutionalTemplate, escapeHtml } = require('../services/emailSe
 const { sendStrategicPlanningEmail } = require('../services/strategicPlanningEmailService');
 const { ensureStrategicPlanningDefaults, DEFAULT_WORKFLOW, DEFAULT_FIELDS } = require('../services/strategicPlanningBootstrap');
 const { sha256, cleanCode, audit, transitionPlan, saveActionItem, upsertMonitoring, findActionPlans } = require('../services/strategicPlanningDomainService');
-const { enqueueSync, enqueueActionRepositorySync, reconcileTerm } = require('../services/strategicPlanningDriveService');
+const { enqueueSync, enqueueActionRepositorySync, reconcileTerm, syncMinute } = require('../services/strategicPlanningDriveService');
 const { buildReferenceWorkbook, previewReferenceImport, confirmReferenceImport } = require('../services/strategicReferenceService');
 const { buildPedSchedule, reconcilePlanTerms } = require('../services/strategicPlanSetupService');
 const { buildDynamicActionItemWorkbook, previewDynamicActionItems, confirmDynamicActionItems } = require('../services/strategicDynamicWorkbookService');
@@ -34,6 +34,7 @@ const { captureActionPlanSchema } = require('../services/strategicActionPlanSche
 const { improveStrategicMinuteText, generateStrategicMinuteSummary } = require('../services/strategicMinuteWritingService');
 const { validateAdministrativeActDate } = require('../services/strategicPlanDateValidationService');
 const { syncActionPlanRepositoryTerm } = require('../services/actionPlanRepositoryDriveService');
+const { PRIVACY_POLICY_NOTICE, PRIVACY_POLICY_URL, PRIVACY_POLICY_VERSION } = require('../constants/privacyPolicy');
 
 const PLANNING_DEPARTMENT_NAME = 'Dirección de Planeación y Aseguramiento de la Calidad';
 
@@ -744,14 +745,87 @@ const saveMonitoring = wrap(async (req, res) => {
 
 const createMeeting = wrap(async (req, res) => {
   const meeting = await sequelize.transaction(async (transaction) => {
-    const row = await StrategicMeeting.create({ action_plan_id: req.params.id, monitoring_period_id: req.body.monitoring_period_id || null, type: req.body.type || 'formulation', starts_at: req.body.starts_at, ends_at: req.body.ends_at || null, location: req.body.location || null, modality: req.body.modality || null, objective: req.body.objective, development: req.body.development || null, commitments: req.body.commitments || [], created_by: req.user.id, updated_by: req.user.id }, { transaction });
-    for (const p of (req.body.participants || [])) {
+    const row = await StrategicMeeting.create({ action_plan_id: req.params.id, monitoring_period_id: req.body.monitoring_period_id || null, title: req.body.title || null, type: req.body.type || 'formulation', starts_at: req.body.starts_at, ends_at: req.body.ends_at || null, location: req.body.location || null, modality: req.body.modality || null, objective: req.body.objective, development: req.body.development || null, commitments: req.body.commitments || [], created_by: req.user.id, updated_by: req.user.id }, { transaction });
+    const allowedMeetingRoles = new Set(['principal', 'co_responsible', 'collaborator', 'participant']);
+    const requestedParticipants = req.body.participants || [];
+    const requestedHasPrincipal = requestedParticipants.some((participant) => participant.meeting_role === 'principal');
+    let principalAssigned = false;
+    for (const [index, p] of requestedParticipants.entries()) {
       const matchedUser = p.user_id ? await User.findByPk(p.user_id, { transaction }) : (p.email ? await User.findOne({ where: { email: { [Op.iLike]: String(p.email).trim() }, estado: 'activo' }, transaction }) : null);
-      await StrategicMeetingParticipant.create({ meeting_id: row.id, user_id: matchedUser?.id || null, participant_type: matchedUser ? 'internal' : 'external', name: p.name || matchedUser?.nombre, email: p.email || matchedUser?.email || null, organization: p.organization || matchedUser?.dependencia || null, role_title: p.role_title || matchedUser?.cargo || null, signature_required: p.signature_required !== false }, { transaction });
+      let meetingRole = allowedMeetingRoles.has(p.meeting_role) ? p.meeting_role : (index === 0 ? 'principal' : 'participant');
+      if (!requestedHasPrincipal && index === 0) meetingRole = 'principal';
+      if (meetingRole === 'principal') {
+        if (principalAssigned) meetingRole = 'co_responsible';
+        principalAssigned = true;
+      }
+      await StrategicMeetingParticipant.create({ meeting_id: row.id, user_id: matchedUser?.id || null, participant_type: matchedUser ? 'internal' : 'external', meeting_role: meetingRole, document: p.document || matchedUser?.username || null, name: p.name || matchedUser?.nombre, email: p.email || matchedUser?.email || null, organization: p.organization || matchedUser?.dependencia || null, role_title: p.role_title || matchedUser?.cargo || null, signature_required: p.signature_required !== false }, { transaction });
     }
     await audit(req, 'meeting.create', 'meeting', row.id, null, row.toJSON(), null, transaction); return row;
   });
   res.status(201); ok(res, meeting, 'Reunión creada.');
+});
+
+const updateMeeting = wrap(async (req, res) => {
+  const meeting = await sequelize.transaction(async (transaction) => {
+    const row = await StrategicMeeting.findByPk(req.params.meetingId, { transaction, lock: transaction.LOCK.UPDATE });
+    if (!row) throw Object.assign(new Error('Reunión no encontrada.'), { statusCode: 404 });
+    const before = row.toJSON();
+    await row.update({
+      title: req.body.title ?? row.title,
+      starts_at: req.body.starts_at, ends_at: req.body.ends_at || null,
+      location: req.body.location || null, modality: req.body.modality || null,
+      objective: req.body.objective, development: req.body.development || null,
+      commitments: req.body.commitments || [], updated_by: req.user.id
+    }, { transaction });
+
+    const allowedMeetingRoles = new Set(['principal', 'co_responsible', 'collaborator', 'participant']);
+    const requestedParticipants = req.body.participants || [];
+    const requestedHasPrincipal = requestedParticipants.some((participant) => participant.meeting_role === 'principal');
+    const existingParticipants = await StrategicMeetingParticipant.findAll({ where: { meeting_id: row.id }, transaction, lock: transaction.LOCK.UPDATE });
+    const existingById = new Map(existingParticipants.map((participant) => [String(participant.id), participant]));
+    const retainedIds = [];
+    let principalAssigned = false;
+    for (const [index, participant] of requestedParticipants.entries()) {
+      const stored = participant.id ? existingById.get(String(participant.id)) : null;
+      const matchedUser = participant.user_id
+        ? await User.findByPk(participant.user_id, { transaction })
+        : (participant.email ? await User.findOne({ where: { email: { [Op.iLike]: String(participant.email).trim() }, estado: 'activo' }, transaction }) : null);
+      let meetingRole = allowedMeetingRoles.has(participant.meeting_role) ? participant.meeting_role : (index === 0 ? 'principal' : 'participant');
+      if (!requestedHasPrincipal && index === 0) meetingRole = 'principal';
+      if (meetingRole === 'principal') {
+        if (principalAssigned) meetingRole = 'co_responsible';
+        principalAssigned = true;
+      }
+      const values = {
+        user_id: matchedUser?.id || participant.user_id || null,
+        participant_type: matchedUser ? 'internal' : (participant.participant_type || 'external'),
+        meeting_role: meetingRole,
+        document: participant.document || matchedUser?.username || stored?.document || null,
+        name: participant.name || matchedUser?.nombre,
+        email: participant.email || matchedUser?.email || null,
+        organization: participant.organization || matchedUser?.dependencia || null,
+        role_title: participant.role_title || matchedUser?.cargo || null,
+        signature_required: participant.signature_required !== false
+      };
+      if (stored) {
+        if (stored.status === 'signed' && stored.meeting_role !== meetingRole) {
+          throw Object.assign(new Error(`No puede cambiar el rol de ${stored.name} porque ya firmó el acta.`), { statusCode: 409 });
+        }
+        await stored.update(values, { transaction });
+        retainedIds.push(stored.id);
+      } else {
+        const created = await StrategicMeetingParticipant.create({ meeting_id: row.id, ...values }, { transaction });
+        retainedIds.push(created.id);
+      }
+    }
+    const removableIds = existingParticipants
+      .filter((participant) => !retainedIds.some((id) => String(id) === String(participant.id)) && participant.status !== 'signed')
+      .map((participant) => participant.id);
+    if (removableIds.length) await StrategicMeetingParticipant.destroy({ where: { id: removableIds }, transaction });
+    await audit(req, 'meeting.update', 'meeting', row.id, before, row.toJSON(), null, transaction);
+    return row;
+  });
+  ok(res, meeting, 'Reunión y participantes actualizados.');
 });
 
 const improveMinuteText = wrap(async (req, res) => {
@@ -817,16 +891,30 @@ const generateMinuteSummary = wrap(async (req, res) => {
 
 const minutePayload = async (meeting) => {
   const participants = await StrategicMeetingParticipant.findAll({ where: { meeting_id: meeting.id }, order: [['created_at', 'ASC']] });
+  const hasPrincipal = participants.some((participant) => participant.meeting_role === 'principal');
+  const normalizedParticipants = participants.map((participant, index) => ({
+    participant,
+    meetingRole: participant.meeting_role === 'principal' || hasPrincipal
+      ? participant.meeting_role
+      : (index === 0 ? 'principal' : 'participant')
+  })).sort((a, b) => {
+    const position = { principal: 0, co_responsible: 1, collaborator: 2, participant: 3 };
+    return (position[a.meetingRole] ?? 3) - (position[b.meetingRole] ?? 3);
+  });
   const actionPlan = await StrategicActionPlan.findByPk(meeting.action_plan_id, { include: [{ model: StrategicCatalogItem, as: 'organizationalUnit' }] });
+  const responsibleNames = normalizedParticipants
+    .filter(({ meetingRole }) => ['principal', 'co_responsible'].includes(meetingRole))
+    .map(({ participant }) => participant.name)
+    .filter(Boolean);
   return {
-    responsables: actionPlan?.organizationalUnit?.name || '',
+    responsables: responsibleNames.join(', ') || actionPlan?.organizationalUnit?.name || '',
     dependencia: PLANNING_DEPARTMENT_NAME, lugar: meeting.location || '',
     fecha: new Date(meeting.starts_at).toLocaleDateString('es-CO'),
     horario: `${new Date(meeting.starts_at).toLocaleTimeString('es-CO')} - ${meeting.ends_at ? new Date(meeting.ends_at).toLocaleTimeString('es-CO') : ''}`,
-    participantes: participants.map((p) => ({ nombre: p.name, dependencia: p.organization || '', cargo: p.role_title || '' })),
+    participantes: normalizedParticipants.map(({ participant: p, meetingRole }) => ({ nombre: p.name, dependencia: p.organization || '', cargo: p.role_title || '', rol_reunion: meetingRole })),
     objetivo: [meeting.objective], desarrollo: [meeting.development || ''],
     conclusiones: (meeting.commitments || []).map((c) => typeof c === 'string' ? c : `${c.description || ''}${c.responsible ? ` — ${c.responsible}` : ''}`),
-    meeting: meeting.toJSON(), participants: participants.map((p) => p.toJSON())
+    meeting: meeting.toJSON(), participants: normalizedParticipants.map(({ participant, meetingRole }) => ({ ...participant.toJSON(), meeting_role: meetingRole }))
   };
 };
 
@@ -834,11 +922,48 @@ const createMinuteVersion = wrap(async (req, res) => {
   const meeting = await StrategicMeeting.findByPk(req.params.meetingId);
   if (!meeting) throw Object.assign(new Error('Reunión no encontrada.'), { statusCode: 404 });
   const last = await StrategicMinuteVersion.max('version', { where: { meeting_id: meeting.id } }) || 0;
-  const content = req.body.content || await minutePayload(meeting);
+  const canonicalContent = await minutePayload(meeting);
+  const content = req.body.content ? {
+    ...canonicalContent,
+    ...req.body.content,
+    responsables: canonicalContent.responsables,
+    participantes: canonicalContent.participantes,
+    participants: canonicalContent.participants,
+    meeting: canonicalContent.meeting
+  } : canonicalContent;
   const minute = await StrategicMinuteVersion.create({ meeting_id: meeting.id, version: Number(last) + 1, content, content_hash: hashObject(content), created_by: req.user.id });
   await audit(req, 'minute.version.create', 'minute_version', minute.id, null, minute.toJSON(), req.body.justification);
   res.status(201); ok(res, minute, 'Versión de acta creada; las firmas se vincularán solo a esta versión.');
 });
+
+const resolveStrategicSigningAccess = async (token, allowedStatuses = ['signing', 'finalized']) => {
+  const tokenHash = sha256(String(token || ''));
+  const genericMinute = await StrategicMinuteVersion.findOne({
+    where: {
+      public_token_hash: tokenHash,
+      status: { [Op.in]: allowedStatuses },
+      token_expires_at: { [Op.gt]: new Date() }
+    }
+  });
+  if (genericMinute) return { minute: genericMinute, participant: null, invitationVerified: false };
+
+  const participant = await StrategicMeetingParticipant.findOne({
+    where: { external_token_hash: tokenHash, signature_required: true }
+  });
+  if (!participant) return { minute: null, participant: null, invitationVerified: false };
+
+  const minute = await StrategicMinuteVersion.findOne({
+    where: {
+      meeting_id: participant.meeting_id,
+      status: { [Op.in]: allowedStatuses },
+      token_expires_at: { [Op.gt]: new Date() }
+    },
+    order: [['version', 'DESC']]
+  });
+  return minute
+    ? { minute, participant, invitationVerified: true }
+    : { minute: null, participant: null, invitationVerified: false };
+};
 
 const publishMinute = wrap(async (req, res) => {
   const minute = await StrategicMinuteVersion.findByPk(req.params.minuteId);
@@ -854,7 +979,63 @@ const publishMinute = wrap(async (req, res) => {
   const baseUrl = signingFrontendOrigin(req).replace(/\/$/, '');
   const signingUrl = `${baseUrl}/firmar-acta/${token}`;
   const qr_data_url = await QRCode.toDataURL(signingUrl, { errorCorrectionLevel: 'M', margin: 1, width: 360 });
-  ok(res, { minute, signing_url: signingUrl, qr_data_url }, 'Acta congelada y habilitada para firmas.');
+  const meeting = await StrategicMeeting.findByPk(minute.meeting_id, {
+    include: [{ model: StrategicMeetingParticipant, as: 'participants' }]
+  });
+  const invitees = (meeting?.participants || []).filter((participant) => (
+    participant.signature_required
+    && participant.status !== 'signed'
+    && String(participant.email || '').trim()
+  ));
+  const meetingDate = meeting?.starts_at
+    ? new Date(meeting.starts_at).toLocaleDateString('es-CO')
+    : '';
+  const invitationResults = await Promise.all(invitees.map(async (participant) => {
+    const invitationToken = randomToken();
+    const participantSigningUrl = `${baseUrl}/firmar-acta/${invitationToken}`;
+    const previousInvitationTokenHash = participant.external_token_hash;
+    await participant.update({ external_token_hash: sha256(invitationToken) });
+    const safeName = escapeHtml(participant.name || 'Participante');
+    const privacyHtml = participant.participant_type === 'external' ? `
+      <div style="margin:18px 0;padding:16px;background:#f8fafc;border:1px solid #dbe5f0;border-radius:10px;color:#475569;font-size:12px;line-height:1.55;">
+        <strong style="display:block;margin-bottom:6px;color:#17345f;">Tratamiento de datos personales</strong>
+        ${escapeHtml(PRIVACY_POLICY_NOTICE).replace(/\n\n/g, '<br><br>')}
+        <br><a href="${escapeHtml(PRIVACY_POLICY_URL)}">Consultar política institucional</a>
+      </div>` : '';
+    const html = renderInstitutionalTemplate({
+      title: 'Invitación para firmar acta',
+      introHtml: `<p style="margin:0 0 18px;">Hola <strong>${safeName}</strong>. El acta de la reunión${meetingDate ? ` del <strong>${escapeHtml(meetingDate)}</strong>` : ''} está disponible para su revisión y firma.</p>`,
+      bodyHtml: `
+        <div style="text-align:center;margin:22px 0;">
+          <a href="${escapeHtml(participantSigningUrl)}" style="display:inline-block;padding:13px 26px;background:#2563eb;color:#ffffff;text-decoration:none;border-radius:9px;font-weight:700;">Revisar y firmar el acta</a>
+        </div>
+        <p style="margin:0;padding:13px 15px;background:#f8fafc;border-radius:9px;color:#475569;font-size:13px;line-height:1.5;">Este enlace es personal. Al abrirlo podrá revisar el acta completa y firmarla directamente, sin volver a escribir su nombre, correo ni códigos.</p>
+        ${privacyHtml}
+      `
+    });
+    const sent = await sendStrategicPlanningEmail({
+      to: participant.email,
+      subject: 'Acta disponible para revisión y firma',
+      text: `Hola ${participant.name || 'participante'}. Revise y firme el acta en: ${participantSigningUrl}${participant.participant_type === 'external' ? `\n\nTratamiento de datos personales:\n${PRIVACY_POLICY_NOTICE}\n${PRIVACY_POLICY_URL}` : ''}`,
+      html
+    });
+    // Si el correo falla, conserve el enlace personal anterior. Así, un simple
+    // reenvío no invalida una invitación que el participante ya recibió.
+    if (!sent.success) await participant.update({ external_token_hash: previousInvitationTokenHash || null });
+    return { participant_id: participant.id, email: participant.email, success: sent.success, error: sent.error || null };
+  }));
+  const sentCount = invitationResults.filter((result) => result.success).length;
+  const failedCount = invitationResults.length - sentCount;
+  const message = failedCount
+    ? `Acta habilitada para firmas. Se enviaron ${sentCount} de ${invitationResults.length} invitaciones.`
+    : `Acta habilitada y ${sentCount} invitaci${sentCount === 1 ? 'ón enviada' : 'ones enviadas'}.`;
+  ok(res, {
+    minute,
+    signing_url: signingUrl,
+    qr_data_url,
+    invitation_summary: { total: invitationResults.length, sent: sentCount, failed: failedCount },
+    invitation_results: invitationResults
+  }, message);
 });
 
 const addProposal = wrap(async (req, res) => {
@@ -872,10 +1053,44 @@ const resolveProposal = wrap(async (req, res) => {
 });
 
 const getPublicMinute = wrap(async (req, res) => {
-  const minute = await StrategicMinuteVersion.findOne({ where: { public_token_hash: sha256(req.params.token), status: { [Op.in]: ['signing', 'finalized'] }, token_expires_at: { [Op.gt]: new Date() } } });
+  const access = await resolveStrategicSigningAccess(req.params.token);
+  const { minute } = access;
   if (!minute) throw Object.assign(new Error('Enlace de firma inválido o vencido.'), { statusCode: 404 });
   const meeting = await StrategicMeeting.findByPk(minute.meeting_id, { include: [{ model: StrategicMeetingParticipant, as: 'participants' }] });
-  ok(res, { id: minute.id, version: minute.version, status: minute.status, content: minute.content, content_hash: minute.content_hash, meeting: { id: meeting.id, starts_at: meeting.starts_at, objective: meeting.objective }, participants: meeting.participants.filter((p) => p.signature_required).map((p) => ({ id: p.id, name: p.name, organization: p.organization || '', role_title: p.role_title || '', email_hint: p.email ? `${p.email.slice(0, 2)}***@${p.email.split('@')[1]}` : '', participant_type: p.participant_type, signed: p.status === 'signed' })) });
+  const requiredParticipants = meeting.participants.filter((participant) => participant.signature_required);
+  const visibleParticipants = access.invitationVerified ? [access.participant] : requiredParticipants;
+  ok(res, {
+    id: minute.id,
+    version: minute.version,
+    status: minute.status,
+    content: minute.content,
+    content_hash: minute.content_hash,
+    invitation_verified: access.invitationVerified,
+    invited_participant_id: access.participant?.id || null,
+    already_signed: access.participant?.status === 'signed',
+    meeting: { id: meeting.id, starts_at: meeting.starts_at, objective: meeting.objective },
+    privacy_policy: { notice: PRIVACY_POLICY_NOTICE, url: PRIVACY_POLICY_URL, version: PRIVACY_POLICY_VERSION },
+    preview_participants: requiredParticipants.map((p) => ({
+      id: p.id,
+      name: p.name,
+      organization: p.organization || '',
+      role_title: p.role_title || '',
+      participant_type: p.participant_type,
+      external: p.participant_type === 'external',
+      status: p.status,
+      signed: p.status === 'signed'
+    })),
+    participants: visibleParticipants.map((p) => ({
+      id: p.id,
+      name: p.name,
+      organization: p.organization || '',
+      role_title: p.role_title || '',
+      email: access.invitationVerified ? (p.email || '') : undefined,
+      email_hint: p.email ? `${p.email.slice(0, 2)}***@${p.email.split('@')[1]}` : '',
+      participant_type: p.participant_type,
+      signed: p.status === 'signed'
+    }))
+  });
 });
 
 const requestExternalOtp = wrap(async (req, res) => {
@@ -886,6 +1101,12 @@ const requestExternalOtp = wrap(async (req, res) => {
   await participant.update({ otp_hash: sha256(otp), otp_expires_at: new Date(Date.now() + 10 * 60 * 1000), otp_attempts: 0 });
   const signingUrl = `${signingFrontendOrigin(req).replace(/\/$/, '')}/firmar-acta/${encodeURIComponent(req.params.token)}`;
   const safeName = escapeHtml(participant.name || 'Participante');
+  const privacyHtml = participant.participant_type === 'external' ? `
+      <div style="margin:18px 0;padding:16px;background:#f8fafc;border:1px solid #dbe5f0;border-radius:10px;color:#475569;font-size:12px;line-height:1.55;">
+        <strong style="display:block;margin-bottom:6px;color:#17345f;">Tratamiento de datos personales</strong>
+        ${escapeHtml(PRIVACY_POLICY_NOTICE).replace(/\n\n/g, '<br><br>')}
+        <br><a href="${escapeHtml(PRIVACY_POLICY_URL)}">Consultar política institucional</a>
+      </div>` : '';
   const html = renderInstitutionalTemplate({
     title: 'Código para firmar el acta',
     introHtml: `<p style="margin:0 0 18px;">Hola <strong>${safeName}</strong>. Use este código para confirmar su identidad y registrar su firma:</p>`,
@@ -899,19 +1120,20 @@ const requestExternalOtp = wrap(async (req, res) => {
         <a href="${escapeHtml(signingUrl)}" style="display:inline-block;padding:12px 24px;background:#2563eb;color:#ffffff;text-decoration:none;border-radius:9px;font-weight:700;">Abrir y firmar el acta</a>
       </div>
       <p style="margin:0;padding:12px 14px;background:#f8fafc;border-radius:9px;color:#475569;font-size:13px;">El código vence en <strong>10 minutos</strong>. Si usted no solicitó esta firma, puede ignorar el mensaje.</p>
+      ${privacyHtml}
     `
   });
   const sent = await sendStrategicPlanningEmail({
     to: participant.email,
     subject: `${otp} · Código para firmar acta SIAC`,
-    text: `Hola ${participant.name || 'participante'}. Su código para firmar el acta es ${otp}. Vence en 10 minutos. Abra el acta: ${signingUrl}`,
+    text: `Hola ${participant.name || 'participante'}. Su código para firmar el acta es ${otp}. Vence en 10 minutos. Abra el acta: ${signingUrl}${participant.participant_type === 'external' ? `\n\nTratamiento de datos personales:\n${PRIVACY_POLICY_NOTICE}` : ''}`,
     html
   });
   if (!sent.success) throw Object.assign(new Error('No fue posible enviar el código al correo.'), { statusCode: 503 });
   ok(res, null, 'Código enviado.');
 });
 
-const storeSignature = ({ participant, minute, signatureData, signerUserId, method, verified, req }) => {
+const storeSignature = ({ participant, minute, signatureData, signerUserId, method, verified, privacyAccepted = false, req }) => {
   ensureDir(SIGNATURE_ROOT);
   const parsed = parseDataUrl(signatureData);
   const hash = sha256(parsed.buffer);
@@ -922,6 +1144,8 @@ const storeSignature = ({ participant, minute, signatureData, signerUserId, meth
     signer_name: participant.name, signer_email: participant.email || null, signer_organization: participant.organization || null,
     signer_role: participant.role_title || null, signature_method: method, signature_storage_key: filePath,
     signature_hash: hash, content_hash: minute.content_hash, verified_email: verified,
+    privacy_accepted_at: privacyAccepted ? new Date() : null,
+    privacy_policy_version: privacyAccepted ? PRIVACY_POLICY_VERSION : null,
     signed_at: new Date(), ip_address: req.ip, user_agent: String(req.headers['user-agent'] || '').slice(0, 500)
   });
 };
@@ -954,16 +1178,32 @@ const registerUserSignature = wrap(async (req, res) => {
 });
 
 const signExternal = wrap(async (req, res) => {
-  const minute = await StrategicMinuteVersion.findOne({ where: { public_token_hash: sha256(req.params.token), status: 'signing', token_expires_at: { [Op.gt]: new Date() } } });
+  const access = await resolveStrategicSigningAccess(req.params.token, ['signing']);
+  const { minute } = access;
   const participant = minute && await StrategicMeetingParticipant.findOne({ where: { id: req.body.participant_id, meeting_id: minute.meeting_id, signature_required: true } });
+  if (access.invitationVerified && participant?.id !== access.participant?.id) {
+    throw Object.assign(new Error('Este enlace de firma pertenece a otro participante.'), { statusCode: 403 });
+  }
+  if (participant?.participant_type === 'external' && req.body.privacy_accepted !== true) {
+    throw Object.assign(new Error('Debe aceptar la autorizacion de tratamiento de datos personales para firmar.'), { statusCode: 422 });
+  }
   if (!participant) throw Object.assign(new Error('Participante no válido.'), { statusCode: 404 });
   if (participant.status === 'signed') throw Object.assign(new Error('Este participante ya firmó el acta.'), { statusCode: 409 });
-  if (participant.otp_attempts >= 5 || !participant.otp_expires_at || participant.otp_expires_at < new Date() || participant.otp_hash !== sha256(String(req.body.otp || ''))) {
+  if (!access.invitationVerified && (participant.otp_attempts >= 5 || !participant.otp_expires_at || participant.otp_expires_at < new Date() || participant.otp_hash !== sha256(String(req.body.otp || '')))) {
     await participant.increment('otp_attempts'); throw Object.assign(new Error('Código inválido o vencido.'), { statusCode: 422 });
   }
   // La identidad procede de SIAC/invitación y no se modifica desde el enlace público.
   await participant.update({ email_verified_at: new Date(), otp_hash: null, otp_expires_at: null });
-  const signature = await storeSignature({ participant, minute, signatureData: req.body.signature_data, signerUserId: participant.user_id, method: participant.user_id ? 'qr_internal_drawn' : 'external_drawn', verified: true, req });
+  const signature = await storeSignature({
+    participant,
+    minute,
+    signatureData: req.body.signature_data,
+    signerUserId: participant.user_id,
+    method: participant.user_id ? 'qr_internal_drawn' : 'external_drawn',
+    verified: true,
+    privacyAccepted: participant.participant_type === 'external',
+    req
+  });
   await participant.update({ status: 'signed' }); ok(res, { id: signature.id }, 'Firma electrónica registrada.');
 });
 
@@ -977,35 +1217,219 @@ const downloadMinuteWord = wrap(async (req, res) => {
 
 const finalizeMinute = wrap(async (req, res) => {
   const minute = await StrategicMinuteVersion.findByPk(req.params.minuteId);
-  if (!minute || minute.status !== 'signing') throw Object.assign(new Error('El acta no está en firma.'), { statusCode: 409 });
+  if (!minute) throw Object.assign(new Error('Acta no encontrada.'), { statusCode: 404 });
+
+  // Si el acta ya estaba formalizada/finalizada, permitir re-sincronizarla con Google Drive
+  if (minute.status === 'finalized') {
+    // Regenerar el PDF con el diseño institucional actualizado y firmas
+    const signatures = await StrategicMinuteSignature.findAll({ where: { minute_version_id: minute.id }, order: [['signed_at', 'ASC']] });
+    const baseUrl = signingFrontendOrigin(req).replace(/\/$/, '');
+    const validationUrl = `${baseUrl}/api/public/strategic-planning/validate/${minute.id}`;
+    const qrDataUrl = await QRCode.toDataURL(validationUrl, { errorCorrectionLevel: 'M', margin: 1, width: 300 });
+    const originalBuffer = await generateStrategicMinutePdf({
+      minute,
+      signatures,
+      validationUrl,
+      qrDataUrl,
+      hideGraphicSignatures: false
+    });
+    const reportsDir = path.join(PRIVATE_ROOT, '_minutes'); ensureDir(reportsDir);
+    const finalPdfPath = minute.final_pdf_storage_key || path.join(reportsDir, `ACTA-${minute.meeting_id}-V${minute.version}.pdf`);
+    fs.writeFileSync(finalPdfPath, originalBuffer);
+    await minute.update({ final_pdf_storage_key: finalPdfPath, final_pdf_hash: sha256(originalBuffer) });
+
+    let driveSync = null;
+    try {
+      driveSync = await syncMinute(minute.id);
+    } catch (driveErr) {
+      console.warn('PEI: Sincronización con Drive no completada, encolando tarea:', driveErr.message);
+      await enqueueSync({ entityType: 'minute', entityId: minute.id, createdBy: req.user.id });
+    }
+    const meeting = await StrategicMeeting.findByPk(minute.meeting_id, {
+      include: [{ model: StrategicActionPlan, as: 'actionPlan', attributes: ['term_id'] }]
+    });
+    await refreshActionRepository(meeting?.actionPlan?.term_id, req, 'minute_resynced');
+    const successMsg = driveSync
+      ? `Acta y repositorio sincronizados en Google Drive como "${driveSync.fileName}".`
+      : 'Sincronización con Google Drive programada en la cola de tareas.';
+    return ok(res, { ...minute.toJSON(), driveSync }, successMsg);
+  }
+
+  if (minute.status !== 'signing') throw Object.assign(new Error('El acta no está en firma ni finalizada.'), { statusCode: 409 });
   const required = await StrategicMeetingParticipant.findAll({ where: { meeting_id: minute.meeting_id, signature_required: true } });
   const missing = required.filter((p) => p.status !== 'signed' && !p.absence_justification);
+
   if (missing.length) throw Object.assign(new Error(`Faltan ${missing.length} firmas requeridas o su justificación de ausencia.`), { statusCode: 409 });
   const signatures = await StrategicMinuteSignature.findAll({ where: { minute_version_id: minute.id }, order: [['signed_at', 'ASC']] });
-  const baseUrl = String(process.env.FRONTEND_URL || `${req.protocol}://${req.get('host')}`).replace(/\/$/, '');
-  const validationUrl = `${req.protocol}://${req.get('host')}/api/public/strategic-planning/validate/${minute.id}`;
+  const baseUrl = signingFrontendOrigin(req).replace(/\/$/, '');
+  const validationUrl = `${baseUrl}/api/public/strategic-planning/validate/${minute.id}`;
   const qrDataUrl = await QRCode.toDataURL(validationUrl, { errorCorrectionLevel: 'M', margin: 1, width: 300 });
-  const pdfBuffer = await generateStrategicMinutePdf({ minute, signatures, validationUrl, qrDataUrl });
+
+  // 1. Buffer Original con firmas gráficas para archivo institucional y responsable
+  const originalBuffer = await generateStrategicMinutePdf({
+    minute,
+    signatures,
+    validationUrl,
+    qrDataUrl,
+    hideGraphicSignatures: false
+  });
+
+  // 2. Buffer Copia Oficial con constancia ORIGINAL FIRMADO (sin firmas gráficas) para participantes
+  const copyBuffer = await generateStrategicMinutePdf({
+    minute,
+    signatures,
+    validationUrl,
+    qrDataUrl,
+    hideGraphicSignatures: true
+  });
+
   const reportsDir = path.join(PRIVATE_ROOT, '_minutes'); ensureDir(reportsDir);
   const finalPdfPath = path.join(reportsDir, `ACTA-${minute.meeting_id}-V${minute.version}.pdf`);
-  fs.writeFileSync(finalPdfPath, pdfBuffer);
-  await minute.update({ status: 'finalized', finalized_at: new Date(), finalized_by: req.user.id, final_pdf_storage_key: finalPdfPath, final_pdf_hash: sha256(pdfBuffer) });
+  fs.writeFileSync(finalPdfPath, originalBuffer);
+  await minute.update({ status: 'finalized', finalized_at: new Date(), finalized_by: req.user.id, final_pdf_storage_key: finalPdfPath, final_pdf_hash: sha256(originalBuffer) });
   await StrategicMeeting.update({ status: 'formalized' }, { where: { id: minute.meeting_id } });
-  for (const participant of required.filter((p) => p.email)) {
-    await sendStrategicPlanningEmail({ to: participant.email, subject: 'Acta formalizada en SIAC', text: `El acta versión ${minute.version} fue formalizada. Código de validación: ${minute.id}.`, attachments: [{ filename: path.basename(finalPdfPath), content: pdfBuffer }] });
+
+  // Identificar responsables y co-responsables del acta
+  const meeting = await StrategicMeeting.findByPk(minute.meeting_id, {
+    include: [{
+      model: StrategicActionPlan,
+      as: 'actionPlan',
+      attributes: ['id', 'code', 'term_id', 'responsible_user_id']
+    }]
+  });
+  const allMeetingParticipants = await StrategicMeetingParticipant.findAll({ where: { meeting_id: minute.meeting_id } });
+  const responsibleEmails = new Set();
+
+  allMeetingParticipants.forEach((p) => {
+    if (['principal', 'co_responsible'].includes(p.meeting_role) && p.email) {
+      responsibleEmails.add(String(p.email).trim().toLowerCase());
+    }
+  });
+
+  if (meeting?.actionPlan?.responsible_user_id) {
+    const respUser = await User.findByPk(meeting.actionPlan.responsible_user_id);
+    if (respUser?.email) {
+      responsibleEmails.add(String(respUser.email).trim().toLowerCase());
+    }
   }
-  await enqueueSync({ entityType: 'minute', entityId: minute.id, createdBy: req.user.id });
-  const meeting = await StrategicMeeting.findByPk(minute.meeting_id, { include: [{ model: StrategicActionPlan, as: 'actionPlan', attributes: ['term_id'] }] });
+
+  if (responsibleEmails.size === 0 && allMeetingParticipants.length > 0) {
+    const firstWithEmail = allMeetingParticipants.find((p) => p.email);
+    if (firstWithEmail?.email) {
+      responsibleEmails.add(String(firstWithEmail.email).trim().toLowerCase());
+    }
+  }
+
+  const meetingDate = minute.content?.fecha || '';
+  const minuteCode = `ACTA-${minute.meeting_id}-V${minute.version}`;
+  const originalAttachment = { filename: `${minuteCode}-ORIGINAL.pdf`, content: originalBuffer, contentType: 'application/pdf' };
+  const copyAttachment = { filename: `${minuteCode}.pdf`, content: copyBuffer, contentType: 'application/pdf' };
+
+  for (const participant of required.filter((p) => p.email)) {
+    const safeEmail = String(participant.email).trim().toLowerCase();
+    const isResponsibleRecipient = responsibleEmails.has(safeEmail);
+    const attachment = isResponsibleRecipient ? originalAttachment : copyAttachment;
+
+    const introHtml = `
+      <p style="margin:0 0 10px;font-size:16px;font-weight:800;color:#1e3a8a;">ACTA FORMALIZADA · ${escapeHtml(minuteCode)}</p>
+      <p style="margin:0 0 12px;font-size:14px;color:#334155;">Cordial saludo de paz y bien,</p>
+      <p style="margin:0 0 14px;font-size:13.5px;color:#334155;">El proceso de revisión y firma electrónica del acta de seguimiento al Plan de Acción ha finalizado satisfactoriamente.</p>
+    `;
+
+    const bodyHtml = `
+      <div style="margin:16px 0;padding:16px;border:1px solid #cbd5e1;border-radius:10px;background:#f8fafc;">
+        <table style="width:100%;border-collapse:collapse;font-size:13px;color:#1e293b;">
+          <tr>
+            <td style="padding:4px 0;width:130px;color:#64748b;"><strong>Versión:</strong></td>
+            <td style="padding:4px 0;font-weight:700;">Versión ${minute.version}</td>
+          </tr>
+          ${meetingDate ? `<tr><td style="padding:4px 0;color:#64748b;"><strong>Fecha reunión:</strong></td><td style="padding:4px 0;">${escapeHtml(meetingDate)}</td></tr>` : ''}
+          <tr>
+            <td style="padding:4px 0;color:#64748b;"><strong>Validación SIAC:</strong></td>
+            <td style="padding:4px 0;font-family:Consolas,monospace;font-size:12px;">${escapeHtml(minute.id)}</td>
+          </tr>
+        </table>
+      </div>
+      <div style="margin:20px 0;padding:16px;border:1px solid #bbf7d0;border-radius:10px;background:#f0fdf4;">
+        <p style="margin:0 0 6px;font-size:13.5px;color:#166534;font-weight:700;">✓ Documento formalmente firmado por todos los convocados</p>
+        <p style="margin:0;font-size:13px;color:#15803d;line-height:1.5;">${
+          isResponsibleRecipient
+            ? 'Se adjunta a este mensaje el documento <strong>ORIGINAL</strong> en formato PDF con las firmas gráficas de los participantes para su custodia y archivo institucional.'
+            : 'Se adjunta a este mensaje la <strong>copia oficial</strong> en formato PDF debidamente certificada con la constancia <strong>ORIGINAL FIRMADO</strong>.'
+        }</p>
+      </div>
+    `;
+
+    const html = renderInstitutionalTemplate({
+      title: `Acta de Reunión Firmada · ${minuteCode}${isResponsibleRecipient ? ' (Original)' : ''}`,
+      introHtml,
+      bodyHtml
+    });
+
+    await sendStrategicPlanningEmail({
+      to: participant.email,
+      subject: `Acta de Reunión Firmada · ${minuteCode}${isResponsibleRecipient ? ' (Original)' : ''}`,
+      text: `El acta versión ${minute.version} fue formalizada por todos los participantes. Se adjunta ${isResponsibleRecipient ? 'el documento original con las firmas para su custodia' : 'la copia oficial con la constancia ORIGINAL FIRMADO'}. Código de validación: ${minute.id}.`,
+      html,
+      attachments: [attachment]
+    });
+  }
+
+  let driveSync = null;
+  try {
+    driveSync = await syncMinute(minute.id);
+  } catch (driveErr) {
+    console.warn('PEI: Sincronización inmediata con Drive no completada, encolando tarea:', driveErr.message);
+    await enqueueSync({ entityType: 'minute', entityId: minute.id, createdBy: req.user.id });
+  }
+
   await refreshActionRepository(meeting?.actionPlan?.term_id, req, 'minute_finalized');
   await audit(req, 'minute.finalize', 'minute_version', minute.id, null, minute.toJSON(), req.body.justification);
-  ok(res, minute, 'Acta formalizada y notificada.');
+  const successMsg = driveSync
+    ? `Acta formalizada, notificada y sincronizada en Google Drive como "${driveSync.fileName}".`
+    : 'Acta formalizada y notificada en SIAC. Sincronización con Google Drive programada.';
+  ok(res, { ...minute.toJSON(), driveSync }, successMsg);
 });
 
 const downloadMinutePdf = wrap(async (req, res) => {
   const minute = await StrategicMinuteVersion.findByPk(req.params.minuteId);
-  if (!minute?.final_pdf_storage_key || !fs.existsSync(minute.final_pdf_storage_key)) throw Object.assign(new Error('El PDF final aún no está disponible.'), { statusCode: 404 });
-  res.download(minute.final_pdf_storage_key, `ACTA-${minute.meeting_id}-V${minute.version}.pdf`);
+  if (!minute) throw Object.assign(new Error('Acta no encontrada.'), { statusCode: 404 });
+
+  const type = req.query.type || 'original';
+  const hideGraphicSignatures = type === 'official_copy';
+
+  const signatures = await StrategicMinuteSignature.findAll({
+    where: { minute_version_id: minute.id },
+    order: [['signed_at', 'ASC']]
+  });
+
+  const baseUrl = signingFrontendOrigin(req).replace(/\/$/, '');
+  const validationUrl = `${baseUrl}/api/public/strategic-planning/validate/${minute.id}`;
+  const qrDataUrl = await QRCode.toDataURL(validationUrl, { errorCorrectionLevel: 'M', margin: 1, width: 300 });
+
+  const pdfBuffer = await generateStrategicMinutePdf({
+    minute,
+    signatures,
+    validationUrl,
+    qrDataUrl,
+    hideGraphicSignatures
+  });
+
+  if (!hideGraphicSignatures && minute.status === 'finalized' && minute.final_pdf_storage_key) {
+    try {
+      fs.writeFileSync(minute.final_pdf_storage_key, pdfBuffer);
+    } catch (_) {}
+  }
+
+  const filename = type === 'official_copy'
+    ? `ACTA-${minute.meeting_id}-V${minute.version}_COPIA_OFICIAL.pdf`
+    : `ACTA-${minute.meeting_id}-V${minute.version}_ORIGINAL.pdf`;
+
+  res.setHeader('Content-Type', 'application/pdf');
+  res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+  res.send(pdfBuffer);
 });
+
 
 const validateMinute = wrap(async (req, res) => {
   const minute = await StrategicMinuteVersion.findByPk(req.params.minuteId, { attributes: ['id', 'meeting_id', 'version', 'status', 'content_hash', 'final_pdf_hash', 'finalized_at'] });
@@ -1184,7 +1608,7 @@ module.exports = {
   downloadReferenceTemplate, referencePreview, referenceConfirm, leaderOptions, lookupMeetingParticipant, termDependencies, downloadTermDependencyTemplate,
   termDependencyPreview, termDependencyConfirm, createTermDependency, deleteTermDependency, transferLeader, createTerm, updateTerm, deleteTerm,
   listActionPlans, getActionPlan, createActionPlan, updateActionPlan, addActionItem, downloadDynamicItemTemplate, previewDynamicItems, confirmDynamicItems, updateActionItem, deleteActionItem,
-  transitionActionPlan, saveMonitoring, createMeeting, improveMinuteText, generateMinuteSummary, createMinuteVersion, publishMinute, addProposal, resolveProposal,
+  transitionActionPlan, saveMonitoring, createMeeting, updateMeeting, improveMinuteText, generateMinuteSummary, createMinuteVersion, publishMinute, addProposal, resolveProposal,
   getPublicMinute, requestExternalOtp, signInternal, signExternal, registerUserSignature, downloadMinuteWord, downloadMinutePdf, validateMinute, finalizeMinute,
   uploadEvidence, downloadEvidence, retrySync, reconcile, syncActionRepository, closeTerm, previewBudget, confirmBudget, reverseBudget,
   previewHistorical, confirmHistorical, exportActionPlan, analytics, listAudit, listSyncJobs

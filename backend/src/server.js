@@ -1,4 +1,5 @@
 const path = require('path');
+// SGC server entrypoint - drive parent fix applied
 require('dotenv').config({ path: path.resolve(__dirname, '../.env') });
 require('dotenv').config({ path: path.resolve(__dirname, '../.env.local') });
 const express = require('express');

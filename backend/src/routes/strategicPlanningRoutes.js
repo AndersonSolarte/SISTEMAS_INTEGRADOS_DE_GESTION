@@ -60,6 +60,7 @@ router.get('/action-plans/:id/export', permit(), c.exportActionPlan);
 router.put('/action-items/:itemId/monitoring/:periodId', permit('pei_seguimiento'), c.saveMonitoring);
 
 router.post('/action-plans/:id/meetings', permit('pei_formular'), c.createMeeting);
+router.put('/meetings/:meetingId', permit('pei_formular'), c.updateMeeting);
 router.post('/action-plans/:id/improve-minute-text', permit('pei_formular'), c.improveMinuteText);
 router.post('/action-plans/:id/generate-minute-summary', permit('pei_formular'), c.generateMinuteSummary);
 router.post('/meetings/:meetingId/minutes', permit('pei_formular'), c.createMinuteVersion);

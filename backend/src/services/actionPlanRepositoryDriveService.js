@@ -422,11 +422,22 @@ const syncActionPlanRepositoryTerm = async (termId) => {
       for (const minute of meeting.minuteVersions || []) {
         if (!minute.final_pdf_storage_key || !fs.existsSync(minute.final_pdf_storage_key)) continue;
         const buffer = fs.readFileSync(minute.final_pdf_storage_key);
-        await upsertFile(drive, {
-          parentId: minutesFolder, name: `ACTA_${actionPlan.code}_V${minute.version}.pdf`,
+        const meetingDate = meeting.starts_at && !Number.isNaN(new Date(meeting.starts_at).getTime())
+          ? new Date(meeting.starts_at).toISOString().slice(0, 10)
+          : String(minute.finalized_at || minute.created_at || '').slice(0, 10);
+        const minuteLabel = compactFileName(
+          `ACTA_${meetingDate || term.year}_${actionPlan.organizationalUnit?.name || actionPlan.code}.pdf`,
+          `ACTA_${meetingDate || term.year}_${actionPlan.code}`,
+          96
+        );
+        const driveFileId = await upsertFile(drive, {
+          parentId: minutesFolder, name: minuteLabel,
           key: `action-repository:minute:${minute.id}`, mimeType: 'application/pdf', buffer,
           hash: minute.final_pdf_hash || contentHash(buffer)
         }, counters);
+        if (driveFileId && minute.drive_file_id !== driveFileId) {
+          await minute.update({ drive_file_id: driveFileId });
+        }
         counters.minutes += 1;
       }
     }
@@ -467,6 +478,7 @@ module.exports = {
   buildRepositoryPeriods,
   buildOfficialWorkbook,
   buildRepositoryEntries,
+  buildActionRepositoryDriveClient,
   buildActionRepositoryDriveAuth,
   buildActionRepositoryServiceAccountAuth,
   hasUsableActionRepositoryOAuth,

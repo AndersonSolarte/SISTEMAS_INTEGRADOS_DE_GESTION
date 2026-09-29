@@ -115,29 +115,47 @@ const sendWithGoogleOAuth = async (config, mailOptions) => {
   return { messageId: response.data?.id };
 };
 
-// Transporte exclusivo de Gestión de Planes de Acción.
-// No reutiliza ni modifica SMTP_USER/SMTP_PASS del resto de SIAC.
+const { sendInstitutionalEmail } = require('./emailService');
+
+// Transporte de Planes de Acción con respaldo automático en sendInstitutionalEmail.
 const sendStrategicPlanningEmail = async ({
   to, subject, text, html, attachments = [], replyTo = '', headers = {}
 }) => {
+  if (process.env.PLAN_ACTION_SMTP_USER) {
+    try {
+      const recipients = (Array.isArray(to) ? to : [to]).map(normalizeRecipient);
+      const originalTargets = recipients.join(', ');
+      const sandboxRecipient = getSandboxRecipient();
+      const targetRecipients = sandboxRecipient ? [sandboxRecipient] : recipients;
+      const targetSubject = sandboxRecipient
+        ? `[PRUEBA SANDBOX · Para: ${originalTargets}] ${String(subject || '')}`
+        : String(subject || '');
+      const config = resolveConfig();
+      const mailOptions = buildMailOptions({
+        config, recipients: targetRecipients, subject: targetSubject, text, html, attachments, replyTo, headers
+      });
+      const info = config.authMethod === 'oauth2'
+        ? await sendWithGoogleOAuth(config, mailOptions)
+        : await getTransporter(config).sendMail(mailOptions);
+      return { success: true, messageId: info?.messageId };
+    } catch (error) {
+      console.warn('[strategic-planning-email] PLAN_ACTION_SMTP falló, usando correo institucional por defecto:', error.message);
+    }
+  }
+
   try {
-    const recipients = (Array.isArray(to) ? to : [to]).map(normalizeRecipient);
-    const originalTargets = recipients.join(', ');
-    const sandboxRecipient = getSandboxRecipient();
-    const targetRecipients = sandboxRecipient ? [sandboxRecipient] : recipients;
-    const targetSubject = sandboxRecipient
-      ? `[PRUEBA SANDBOX · Para: ${originalTargets}] ${String(subject || '')}`
-      : String(subject || '');
-    const config = resolveConfig();
-    const mailOptions = buildMailOptions({
-      config, recipients: targetRecipients, subject: targetSubject, text, html, attachments, replyTo, headers
+    const result = await sendInstitutionalEmail({
+      to,
+      subject,
+      text,
+      html,
+      attachments,
+      replyTo: replyTo || undefined,
+      allowExternalRecipients: true
     });
-    const info = config.authMethod === 'oauth2'
-      ? await sendWithGoogleOAuth(config, mailOptions)
-      : await getTransporter(config).sendMail(mailOptions);
-    return { success: true, messageId: info?.messageId };
+    return result;
   } catch (error) {
-    console.error('Error enviando correo exclusivo de Planes de Acción:', error);
+    console.error('Error enviando correo institucional para Planes de Acción:', error);
     return { success: false, error: error.message };
   }
 };

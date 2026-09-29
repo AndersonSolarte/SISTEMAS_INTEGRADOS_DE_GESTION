@@ -82,6 +82,9 @@ const ensureStrategicPlanningColumns = async () => {
   await ensureColumn('pei_responsibilities', 'created_by', { type: DataTypes.INTEGER, allowNull: true });
   await ensureColumn('pei_responsibilities', 'ended_by', { type: DataTypes.INTEGER, allowNull: true });
   await ensureColumn('pei_action_plans', 'responsibility_id', { type: DataTypes.UUID, allowNull: true });
+  await ensureColumn('pei_meetings', 'title', { type: DataTypes.STRING(180), allowNull: true });
+  await ensureColumn('pei_meeting_participants', 'meeting_role', { type: DataTypes.STRING(24), allowNull: false, defaultValue: 'participant' });
+  await ensureColumn('pei_meeting_participants', 'document', { type: DataTypes.STRING(80), allowNull: true });
   await ensureColumn('pei_meeting_participants', 'external_token_hash', { type: DataTypes.STRING(64), allowNull: true });
   await ensureColumn('pei_meeting_participants', 'otp_hash', { type: DataTypes.STRING(64), allowNull: true });
   await ensureColumn('pei_meeting_participants', 'otp_expires_at', { type: DataTypes.DATE, allowNull: true });
@@ -89,6 +92,8 @@ const ensureStrategicPlanningColumns = async () => {
   await ensureColumn('pei_meeting_participants', 'email_verified_at', { type: DataTypes.DATE, allowNull: true });
   await ensureColumn('pei_minute_versions', 'final_pdf_storage_key', { type: DataTypes.STRING(500), allowNull: true });
   await ensureColumn('pei_minute_versions', 'final_pdf_hash', { type: DataTypes.STRING(64), allowNull: true });
+  await ensureColumn('pei_minute_signatures', 'privacy_accepted_at', { type: DataTypes.DATE, allowNull: true });
+  await ensureColumn('pei_minute_signatures', 'privacy_policy_version', { type: DataTypes.STRING(40), allowNull: true });
 };
 
 const syncStrategicPlanningModels = async () => {

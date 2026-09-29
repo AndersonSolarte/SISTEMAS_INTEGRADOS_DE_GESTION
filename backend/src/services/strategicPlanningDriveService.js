@@ -7,25 +7,14 @@ const {
   StrategicCatalogItem, StrategicTerm, StrategicPlan, StrategicMonitoringPeriod,
   StrategicMinuteVersion, StrategicMeeting
 } = require('../models');
+const {
+  buildActionRepositoryDriveClient,
+  buildPedFolderName,
+  compactFolderName
+} = require('./actionPlanRepositoryDriveService');
 
 const buildWritableDriveClient = () => {
-  const clientEmail = String(process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL || '').trim();
-  const privateKey = String(process.env.GOOGLE_PRIVATE_KEY || '').replace(/\\n/g, '\n').trim();
-  let credentials = null;
-  const source = String(process.env.GOOGLE_SERVICE_ACCOUNT_JSON || process.env.GOOGLE_SERVICE_ACCOUNT_FILE || '').trim();
-  if (source) {
-    const raw = source.startsWith('{') ? source : fs.readFileSync(path.isAbsolute(source) ? source : path.resolve(__dirname, '../../', source), 'utf8');
-    credentials = JSON.parse(raw);
-  }
-  const email = clientEmail || credentials?.client_email;
-  const key = privateKey || String(credentials?.private_key || '').replace(/\\n/g, '\n');
-  if (!email || !key) {
-    const err = new Error('Drive de Planeación no está configurado con una cuenta de servicio/OAuth institucional.');
-    err.statusCode = 503;
-    throw err;
-  }
-  const auth = new google.auth.JWT({ email, key, scopes: ['https://www.googleapis.com/auth/drive'] });
-  return google.drive({ version: 'v3', auth });
+  return buildActionRepositoryDriveClient();
 };
 
 const safeName = (value, max = 80) => String(value || 'SIN-CODIGO').normalize('NFD')
@@ -33,14 +22,17 @@ const safeName = (value, max = 80) => String(value || 'SIN-CODIGO').normalize('N
   .replace(/\s+/g, '-').replace(/-+/g, '-').replace(/^-|-$/g, '').slice(0, max) || 'SIN-CODIGO';
 
 const findOrCreateFolder = async (drive, { parentId, name, key }) => {
+  const cleanName = String(name || '').trim();
+  const escapedName = cleanName.replace(/'/g, "\\'");
+  const escapedSafeName = safeName(cleanName).replace(/'/g, "\\'");
   const escapedKey = String(key).replace(/'/g, "\\'");
   const response = await drive.files.list({
-    q: `'${parentId}' in parents and trashed=false and mimeType='application/vnd.google-apps.folder' and appProperties has { key='siacPeiKey' and value='${escapedKey}' }`,
+    q: `'${parentId}' in parents and trashed=false and mimeType='application/vnd.google-apps.folder' and (name='${escapedName}' or name='${escapedSafeName}' or appProperties has { key='siacPeiKey' and value='${escapedKey}' } or appProperties has { key='siacActionRepository' and value='${escapedKey}' })`,
     fields: 'files(id,name)', spaces: 'drive', supportsAllDrives: true, includeItemsFromAllDrives: true, pageSize: 2
   });
   if (response.data.files?.[0]) return response.data.files[0].id;
   const created = await drive.files.create({
-    requestBody: { name: safeName(name), mimeType: 'application/vnd.google-apps.folder', parents: [parentId], appProperties: { siacPeiKey: String(key) } },
+    requestBody: { name: cleanName || safeName(name), mimeType: 'application/vnd.google-apps.folder', parents: [parentId], appProperties: { siacPeiKey: String(key), siacActionRepository: String(key) } },
     fields: 'id', supportsAllDrives: true
   });
   return created.data.id;
@@ -55,12 +47,14 @@ const ensureEvidenceFolder = async (drive, evidence) => {
   }] });
   const period = await StrategicMonitoringPeriod.findByPk(evidence.monitoring_period_id);
   const plan = item?.actionPlan?.term?.strategicPlan;
-  const rootId = plan?.drive_root_id || process.env.SIAC_PEI_DRIVE_ROOT_ID;
-  if (!rootId) throw Object.assign(new Error('Falta SIAC_PEI_DRIVE_ROOT_ID o el ID raíz de Drive en el PED.'), { statusCode: 503 });
+  const rootId = plan?.drive_root_id || process.env.SIAC_PEI_DRIVE_ROOT_ID || process.env.SIAC_ACTION_REPOSITORY_ROOT_ID;
+  if (!rootId) throw Object.assign(new Error('Falta SIAC_PEI_DRIVE_ROOT_ID o SIAC_ACTION_REPOSITORY_ROOT_ID en la configuración de Drive.'), { statusCode: 503 });
   const pedFolder = await findOrCreateFolder(drive, { parentId: rootId, name: safeName(plan.code), key: `ped:${plan.id}` });
-  const yearFolder = await findOrCreateFolder(drive, { parentId: pedFolder, name: item.actionPlan.term.year, key: `term:${item.actionPlan.term.id}` });
-  const unitCode = safeName(item.actionPlan.organizationalUnit?.code || item.actionPlan.code, 45);
-  const actionFolder = await findOrCreateFolder(drive, { parentId: yearFolder, name: `PA-${unitCode}`, key: `action-plan:${item.actionPlan.id}` });
+  const yearFolder = await findOrCreateFolder(drive, { parentId: pedFolder, name: `PLANES DE ACCIÓN ${item.actionPlan.term.year}`, key: `term:${item.actionPlan.term.id}` });
+  const unitCode = item.actionPlan.organizationalUnit?.code || item.actionPlan.code;
+  const unitName = item.actionPlan.organizationalUnit?.name || item.actionPlan.title;
+  const planFolderName = compactFolderName(unitCode, unitName, 44);
+  const actionFolder = await findOrCreateFolder(drive, { parentId: yearFolder, name: planFolderName, key: `action-plan:${item.actionPlan.id}` });
   return findOrCreateFolder(drive, {
     parentId: actionFolder,
     name: `EVID-${safeName(period?.code || 'PERIODO', 20)}`,
@@ -69,14 +63,19 @@ const ensureEvidenceFolder = async (drive, evidence) => {
 };
 
 const ensureActionPlanFolder = async (drive, actionPlan) => {
-  const plan = actionPlan.term?.strategicPlan;
-  const rootId = plan?.drive_root_id || process.env.SIAC_PEI_DRIVE_ROOT_ID;
-  if (!rootId) throw Object.assign(new Error('Falta SIAC_PEI_DRIVE_ROOT_ID o el ID raíz de Drive en el PED.'), { statusCode: 503 });
-  const pedFolder = await findOrCreateFolder(drive, { parentId: rootId, name: safeName(plan.code), key: `ped:${plan.id}` });
-  const yearFolder = await findOrCreateFolder(drive, { parentId: pedFolder, name: actionPlan.term.year, key: `term:${actionPlan.term.id}` });
-  const unitCode = safeName(actionPlan.organizationalUnit?.code || actionPlan.code, 45);
-  return findOrCreateFolder(drive, { parentId: yearFolder, name: `PA-${unitCode}`, key: `action-plan:${actionPlan.id}` });
+  const plan = actionPlan.term?.strategicPlan || await StrategicPlan.findByPk(actionPlan.term?.strategic_plan_id);
+  const rootId = plan?.drive_root_id || process.env.SIAC_PEI_DRIVE_ROOT_ID || process.env.SIAC_ACTION_REPOSITORY_ROOT_ID;
+  if (!rootId) throw Object.assign(new Error('Falta SIAC_PEI_DRIVE_ROOT_ID o SIAC_ACTION_REPOSITORY_ROOT_ID en la configuración de Drive.'), { statusCode: 503 });
+  const pedFolderName = buildPedFolderName(plan);
+  const pedFolder = await findOrCreateFolder(drive, { parentId: rootId, name: pedFolderName, key: `action-repository:ped:${plan?.id || 'default'}` });
+  const yearFolder = await findOrCreateFolder(drive, { parentId: pedFolder, name: `PLANES DE ACCIÓN ${actionPlan.term?.year || 'VIGENCIA'}`, key: `action-repository:term:${actionPlan.term?.id || 'default'}` });
+  const unitCode = actionPlan.organizationalUnit?.code || actionPlan.code;
+  const unitName = actionPlan.organizationalUnit?.name || actionPlan.title;
+  const planFolderName = compactFolderName(unitCode, unitName, 44);
+  const unitScope = `${actionPlan.term_id}:${actionPlan.catalog_item_id || actionPlan.id}`;
+  return findOrCreateFolder(drive, { parentId: yearFolder, name: planFolderName, key: `action-repository:unit:${unitScope}` });
 };
+
 
 const syncEvidence = async (evidenceId) => {
   const evidence = await StrategicEvidence.findByPk(evidenceId);
@@ -100,18 +99,95 @@ const syncEvidence = async (evidenceId) => {
 };
 
 const syncMinute = async (minuteId) => {
-  const minute = await StrategicMinuteVersion.findByPk(minuteId, { include: [{ model: StrategicMeeting, as: 'meeting', include: [{ model: StrategicActionPlan, as: 'actionPlan', include: [{ model: StrategicCatalogItem, as: 'organizationalUnit' }, { model: StrategicTerm, as: 'term', include: [{ model: StrategicPlan, as: 'strategicPlan' }] }] }] }] });
-  if (!minute?.final_pdf_storage_key || !fs.existsSync(minute.final_pdf_storage_key)) throw new Error('El PDF final del acta no existe en almacenamiento temporal.');
+  const minute = await StrategicMinuteVersion.findByPk(minuteId, {
+    include: [{
+      model: StrategicMeeting, as: 'meeting',
+      include: [{
+        model: StrategicActionPlan, as: 'actionPlan',
+        include: [
+          { model: StrategicCatalogItem, as: 'organizationalUnit' },
+          { model: StrategicTerm, as: 'term', include: [{ model: StrategicPlan, as: 'strategicPlan' }] }
+        ]
+      }]
+    }]
+  });
+  if (!minute?.final_pdf_storage_key || !fs.existsSync(minute.final_pdf_storage_key)) {
+    throw new Error('El PDF final del acta no existe en almacenamiento temporal.');
+  }
   const drive = buildWritableDriveClient();
-  const actionFolder = await ensureActionPlanFolder(drive, minute.meeting.actionPlan);
-  const folderId = await findOrCreateFolder(drive, { parentId: actionFolder, name: 'ACTAS', key: `actas:${minute.meeting.actionPlan.id}` });
-  const requestBody = { name: safeName(path.basename(minute.final_pdf_storage_key), 160), appProperties: { siacPeiMinuteId: String(minute.id), contentHash: minute.content_hash, version: String(minute.version) } };
+  const actionPlan = minute.meeting?.actionPlan;
+  const meeting = minute.meeting || {};
+  const actionFolder = await ensureActionPlanFolder(drive, actionPlan);
+  const folderId = await findOrCreateFolder(drive, {
+    parentId: actionFolder,
+    name: 'ACTAS DE REUNIÓN',
+    key: `action-repository:minutes:${actionPlan.term_id}:${actionPlan.catalog_item_id || actionPlan.id}`
+  });
+
+  const meetingDate = meeting.starts_at && !Number.isNaN(new Date(meeting.starts_at).getTime())
+    ? new Date(meeting.starts_at).toISOString().slice(0, 10)
+    : String(minute.finalized_at || minute.created_at || '').slice(0, 10);
+  const titleClean = safeName(meeting.title || 'Concertacion', 60);
+  const planCodeClean = safeName(actionPlan?.code || 'PA', 30);
+  const minuteFileName = `ACTA_${meetingDate}_${planCodeClean}_${titleClean}.pdf`;
+
+  const requestBody = {
+    name: safeName(minuteFileName, 160),
+    appProperties: {
+      siacPeiMinuteId: String(minute.id),
+      contentHash: minute.content_hash,
+      version: String(minute.version),
+      meetingDate: meetingDate,
+      actionPlanCode: actionPlan?.code || ''
+    }
+  };
   const media = { mimeType: 'application/pdf', body: fs.createReadStream(minute.final_pdf_storage_key) };
-  const response = minute.drive_file_id
-    ? await drive.files.update({ fileId: minute.drive_file_id, requestBody, media, fields: 'id', supportsAllDrives: true })
-    : await drive.files.create({ requestBody: { ...requestBody, parents: [folderId] }, media, fields: 'id', supportsAllDrives: true });
-  await minute.update({ drive_file_id: response.data.id });
-  return { id: response.data.id, folderId };
+  let response;
+  if (minute.drive_file_id) {
+    try {
+      const existing = await drive.files.get({ fileId: minute.drive_file_id, fields: 'id,parents,trashed', supportsAllDrives: true });
+      const currentParents = existing.data?.parents || [];
+      const hasParent = currentParents.includes(folderId);
+      response = await drive.files.update({
+        fileId: minute.drive_file_id,
+        ...(hasParent ? {} : { addParents: folderId }),
+        requestBody: { ...requestBody, trashed: false },
+        media,
+        fields: 'id,webViewLink',
+        supportsAllDrives: true
+      });
+    } catch (_) {
+      response = await drive.files.create({
+        requestBody: { ...requestBody, parents: [folderId] },
+        media,
+        fields: 'id,webViewLink',
+        supportsAllDrives: true
+      });
+    }
+  } else {
+    response = await drive.files.create({
+      requestBody: { ...requestBody, parents: [folderId] },
+      media,
+      fields: 'id,webViewLink',
+      supportsAllDrives: true
+    });
+  }
+  const folderWebViewLink = `https://drive.google.com/drive/folders/${folderId}`;
+  const updatedContent = {
+    ...(minute.content || {}),
+    drive_folder_id: folderId,
+    drive_folder_url: folderWebViewLink,
+    drive_file_id: response.data.id,
+    drive_file_url: response.data.webViewLink
+  };
+  await minute.update({ drive_file_id: response.data.id, content: updatedContent });
+  return {
+    id: response.data.id,
+    folderId,
+    fileName: minuteFileName,
+    webViewLink: response.data.webViewLink,
+    folderWebViewLink
+  };
 };
 
 const enqueueSync = async ({ entityType = 'evidence', entityId, operation = 'upsert', payload = {}, createdBy = null }) => {

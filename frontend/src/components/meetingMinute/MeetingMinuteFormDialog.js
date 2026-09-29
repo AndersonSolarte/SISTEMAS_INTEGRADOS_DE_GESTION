@@ -1282,19 +1282,7 @@ export default function MeetingMinuteFormDialog({ open, document, user, onClose 
                   </Tooltip>
                 )}
               </Stack>
-              <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 0.75, fontSize: 11, lineHeight: 1.4 }}>
-                📌 <strong>Propiedad de actas:</strong> Cada acta pertenece a su creador y responsable principal. Los corresponsables pueden consultar y editar según asignación, pero únicamente el creador o responsable principal pueden eliminarla de su listado.
-              </Typography>
             </Paper>
-            {form.id && !canEdit && !canRevise && (
-              <Alert severity="info" sx={{ my: 1 }}>
-                Esta acta está en modo consulta. Una vez enviada a firmas, únicamente el responsable principal o un corresponsable pueden reabrirla para ajustes.
-              </Alert>
-            )}
-            {form.status === 'signing' && !allSigned && !hasSignatures && <Alert severity="info" sx={{ my: 1 }}>Las invitaciones personales ya fueron enviadas. Para modificar el contenido, el responsable o un corresponsable deberá reabrir el acta y enviarla nuevamente a firmas.</Alert>}
-            {form.status === 'signing' && hasSignatures && !allSigned && <Alert severity="warning" sx={{ my: 1 }}>El acta tiene {signatures.length} firma(s). Si se realiza cualquier ajuste, todas las firmas actuales serán invalidadas y deberán registrarse nuevamente.</Alert>}
-            {allSigned && <Alert severity="success" sx={{ my: 1 }}>Todas las personas firmaron el acta. Cualquier ajuste posterior invalidará estas firmas y exigirá un nuevo proceso de firma.</Alert>}
-            {form.status === 'draft' && form.revision_required && <Alert severity="warning" sx={{ my: 1 }}>Esta es una revisión del acta. Después de guardar los ajustes debe enviarla nuevamente; los participantes recibirán en el mismo hilo la solicitud de volver a firmar.</Alert>}
             <Paper variant="outlined" sx={{
               p: 2.25,
               borderRadius: 3,
@@ -1795,8 +1783,13 @@ export default function MeetingMinuteFormDialog({ open, document, user, onClose 
           </Paper>
         </Box>
       </DialogContent>
-      <DialogActions sx={{ px: { xs: 2, md: 4 }, py: 1.5, bgcolor: '#fff', borderTop: '1px solid #dbe5f0', flexShrink: 0, justifyContent: 'space-between' }}>
-        <Stack direction="row" alignItems="center" gap={1}>
+      <DialogActions sx={{
+        px: { xs: 1.5, md: 4 }, py: 1.25, bgcolor: '#fff',
+        borderTop: '1px solid #dbe5f0', flexShrink: 0,
+        justifyContent: 'space-between', flexWrap: 'wrap', gap: 1,
+        boxShadow: '0 -8px 24px rgba(30,64,175,.06)'
+      }}>
+        <Stack direction="row" alignItems="center" gap={1} flexWrap="wrap" useFlexGap>
           <Button disabled={loading || autoSaving} onClick={handleClose}>Cerrar</Button>
           {layoutMode === 'form' && (
             <Button startIcon={<Visibility />} onClick={() => setLayoutMode('preview')} sx={{ textTransform: 'none', fontWeight: 800 }}>
@@ -1809,17 +1802,58 @@ export default function MeetingMinuteFormDialog({ open, document, user, onClose 
             </Button>
           )}
         </Stack>
-        {canEdit && (
-          <Button
-            variant="contained"
-            startIcon={(loading || autoSaving) ? <CircularProgress size={16} color="inherit" /> : <Save />}
-            disabled={loading || autoSaving}
-            onClick={() => save()}
-            sx={{ px: 3, textTransform: 'none', fontWeight: 900 }}
-          >
-            Guardar borrador
-          </Button>
-        )}
+        <Stack direction="row" alignItems="center" justifyContent="flex-end" gap={1} flexWrap="wrap" useFlexGap sx={{ ml: 'auto' }}>
+          {locked && form.id && (
+            <Button variant="outlined" startIcon={<Download />} onClick={(event) => setDownloadAnchorEl(event.currentTarget)} disabled={loading} sx={{ textTransform: 'none', fontWeight: 850 }}>
+              Descargar PDF
+            </Button>
+          )}
+          {form.status === 'signing' && (
+            <Button variant="outlined" startIcon={<Refresh />} onClick={() => openMinute(form.id)} disabled={loading} sx={{ textTransform: 'none', fontWeight: 850 }}>
+              Actualizar firmas
+            </Button>
+          )}
+          {form.status === 'signing' && !allSigned && (
+            <Button variant="outlined" startIcon={<Email />} onClick={resendInvitations} disabled={loading} sx={{ textTransform: 'none', fontWeight: 850 }}>
+              Reenviar invitaciones
+            </Button>
+          )}
+          {canSendFinal && (
+            <Tooltip title={!allSigned ? `Disponible cuando todos hayan firmado (${pendingCount} pendiente${pendingCount === 1 ? '' : 's'})` : 'Enviar el acta firmada a todos los participantes'}>
+              <Box component="span">
+                <Button variant={allSigned ? 'contained' : 'outlined'} color="success" startIcon={<Send />} onClick={sendFinal} disabled={loading || !allSigned} sx={{ textTransform: 'none', fontWeight: 900 }}>
+                  {form.status === 'distributed' ? 'Reenviar acta firmada' : 'Enviar acta firmada'}
+                </Button>
+              </Box>
+            </Tooltip>
+          )}
+          {canEdit && !locked && (
+            <>
+              <Button
+                variant="outlined"
+                startIcon={(loading || autoSaving) ? <CircularProgress size={16} color="inherit" /> : <Save />}
+                disabled={loading || autoSaving}
+                onClick={() => save()}
+                sx={{ px: { xs: 1.5, sm: 2.5 }, textTransform: 'none', fontWeight: 850 }}
+              >
+                Guardar borrador
+              </Button>
+              <Tooltip title={!additionalParticipants.length ? 'Agregue al menos un participante adicional para enviar el acta a firmas' : 'Guardar, habilitar firmas y enviar las invitaciones'}>
+                <Box component="span">
+                  <Button
+                    variant="contained"
+                    startIcon={<Email />}
+                    disabled={loading || autoSaving || !additionalParticipants.length}
+                    onClick={publish}
+                    sx={{ px: { xs: 1.5, sm: 3 }, textTransform: 'none', fontWeight: 900 }}
+                  >
+                    Enviar para firmas
+                  </Button>
+                </Box>
+              </Tooltip>
+            </>
+          )}
+        </Stack>
       </DialogActions>
     </Dialog>
     <Dialog open={Boolean(qr)} onClose={() => setQr(null)} maxWidth="xs" fullWidth>

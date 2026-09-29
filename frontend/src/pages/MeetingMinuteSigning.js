@@ -32,7 +32,7 @@ const formatIpAddress = (ip) => {
   return '***.***.***.*** (Protegida · Cifrada)';
 };
 
-function PublicActaPreview({ minute }) {
+export function PublicActaPreview({ minute }) {
   if (!minute) return null;
   const content = minute.content || {};
   const participants = minute.preview_participants || [];
