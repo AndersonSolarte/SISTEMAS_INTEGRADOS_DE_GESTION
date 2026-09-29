@@ -180,46 +180,61 @@ export default function MeetingMinuteSigning() {
     const canvas = canvasRef.current;
     if (!canvas || !participantId) return undefined;
     const context = canvas.getContext('2d');
-    context.lineWidth = 2.8;
     context.lineCap = 'round';
+    context.lineJoin = 'round';
     context.strokeStyle = '#173b73';
     const point = (event) => {
       const rect = canvas.getBoundingClientRect();
-      const source = event.touches?.[0] || event;
       return {
-        x: (source.clientX - rect.left) * (canvas.width / rect.width),
-        y: (source.clientY - rect.top) * (canvas.height / rect.height)
+        x: (event.clientX - rect.left) * (canvas.width / rect.width),
+        y: (event.clientY - rect.top) * (canvas.height / rect.height)
       };
     };
     const start = (event) => {
+      if (event.button !== undefined && event.button !== 0) return;
       event.preventDefault();
       drawing.current = true;
       setHasInk(true);
+      canvas.setPointerCapture?.(event.pointerId);
       const position = point(event);
+      context.lineWidth = event.pointerType === 'pen' && event.pressure > 0
+        ? 1.8 + (event.pressure * 2.8)
+        : 2.8;
       context.beginPath();
       context.moveTo(position.x, position.y);
     };
     const move = (event) => {
       if (!drawing.current) return;
       event.preventDefault();
-      const position = point(event);
-      context.lineTo(position.x, position.y);
-      context.stroke();
+      const samples = typeof event.getCoalescedEvents === 'function'
+        ? event.getCoalescedEvents()
+        : [event];
+      samples.forEach((sample) => {
+        if (sample.pointerType === 'pen' && sample.pressure > 0) {
+          context.lineWidth = 1.8 + (sample.pressure * 2.8);
+        }
+        const position = point(sample);
+        context.lineTo(position.x, position.y);
+        context.stroke();
+      });
     };
-    const stop = () => { drawing.current = false; };
-    canvas.addEventListener('mousedown', start);
-    canvas.addEventListener('mousemove', move);
-    window.addEventListener('mouseup', stop);
-    canvas.addEventListener('touchstart', start, { passive: false });
-    canvas.addEventListener('touchmove', move, { passive: false });
-    window.addEventListener('touchend', stop);
+    const stop = (event) => {
+      drawing.current = false;
+      if (event?.pointerId !== undefined && canvas.hasPointerCapture?.(event.pointerId)) {
+        canvas.releasePointerCapture(event.pointerId);
+      }
+    };
+    canvas.addEventListener('pointerdown', start);
+    canvas.addEventListener('pointermove', move);
+    canvas.addEventListener('pointerup', stop);
+    canvas.addEventListener('pointercancel', stop);
+    canvas.addEventListener('lostpointercapture', stop);
     return () => {
-      canvas.removeEventListener('mousedown', start);
-      canvas.removeEventListener('mousemove', move);
-      window.removeEventListener('mouseup', stop);
-      canvas.removeEventListener('touchstart', start);
-      canvas.removeEventListener('touchmove', move);
-      window.removeEventListener('touchend', stop);
+      canvas.removeEventListener('pointerdown', start);
+      canvas.removeEventListener('pointermove', move);
+      canvas.removeEventListener('pointerup', stop);
+      canvas.removeEventListener('pointercancel', stop);
+      canvas.removeEventListener('lostpointercapture', stop);
     };
   }, [participantId]);
 
@@ -571,7 +586,7 @@ export default function MeetingMinuteSigning() {
               </Typography>
             </Stack>
             <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5, mb: 1 }}>
-              Dibuje su firma con el dedo (en celular o tableta) o con el ratón (en computador) dentro del recuadro:
+              Dibuje su firma con el dedo, el ratón o un lápiz/tableta de firma conectado al computador dentro del recuadro:
             </Typography>
             <canvas
               ref={canvasRef}
