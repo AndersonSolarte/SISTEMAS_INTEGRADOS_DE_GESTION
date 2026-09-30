@@ -233,6 +233,29 @@ const StrategicMeetingParticipant = sequelize.define('StrategicMeetingParticipan
   status: { type: DataTypes.STRING(24), allowNull: false, defaultValue: 'invited' }
 }, commonOptions('pei_meeting_participants', [{ fields: ['meeting_id', 'email'] }]));
 
+const StrategicMeetingSchedule = sequelize.define('StrategicMeetingSchedule', {
+  id: uuidPk(),
+  meeting_id: { type: DataTypes.UUID, allowNull: false, unique: true },
+  organizer_email: { type: DataTypes.STRING(254), allowNull: false },
+  summary: { type: DataTypes.STRING(240), allowNull: false },
+  description: { type: DataTypes.TEXT, allowNull: true },
+  location: { type: DataTypes.STRING(500), allowNull: true },
+  start_at: { type: DataTypes.DATE, allowNull: false },
+  end_at: { type: DataTypes.DATE, allowNull: false },
+  timezone: { type: DataTypes.STRING(80), allowNull: false, defaultValue: 'America/Bogota' },
+  attendees: { type: DataTypes.JSONB, allowNull: false, defaultValue: [] },
+  google_event_id: { type: DataTypes.STRING(255), allowNull: true },
+  google_event_url: { type: DataTypes.TEXT, allowNull: true },
+  status: { type: DataTypes.STRING(24), allowNull: false, defaultValue: 'scheduled' },
+  last_error: { type: DataTypes.TEXT, allowNull: true },
+  created_by: userId(false),
+  updated_by: userId()
+}, commonOptions('pei_meeting_schedules', [
+  { unique: true, fields: ['meeting_id'] },
+  { fields: ['organizer_email', 'start_at'] },
+  { fields: ['status'] }
+]));
+
 const StrategicMinuteVersion = sequelize.define('StrategicMinuteVersion', {
   id: uuidPk(),
   meeting_id: { type: DataTypes.UUID, allowNull: false },
@@ -438,6 +461,7 @@ const models = {
   StrategicWorkflowEvent,
   StrategicMeeting,
   StrategicMeetingParticipant,
+  StrategicMeetingSchedule,
   StrategicMinuteVersion,
   StrategicMinuteProposal,
   StrategicMinuteSignature,
@@ -483,6 +507,9 @@ const registerStrategicPlanningAssociations = ({ User }) => {
   StrategicActionPlan.hasMany(StrategicMeeting, { foreignKey: 'action_plan_id', as: 'meetings' });
   StrategicMeeting.belongsTo(StrategicActionPlan, { foreignKey: 'action_plan_id', as: 'actionPlan' });
   StrategicMeeting.hasMany(StrategicMeetingParticipant, { foreignKey: 'meeting_id', as: 'participants' });
+  StrategicMeetingParticipant.belongsTo(StrategicMeeting, { foreignKey: 'meeting_id', as: 'meeting' });
+  StrategicMeeting.hasOne(StrategicMeetingSchedule, { foreignKey: 'meeting_id', as: 'calendarSchedule', onDelete: 'CASCADE' });
+  StrategicMeetingSchedule.belongsTo(StrategicMeeting, { foreignKey: 'meeting_id', as: 'meeting' });
   StrategicMeeting.hasMany(StrategicMinuteVersion, { foreignKey: 'meeting_id', as: 'minuteVersions' });
   StrategicMinuteVersion.belongsTo(StrategicMeeting, { foreignKey: 'meeting_id', as: 'meeting' });
   StrategicMinuteVersion.hasMany(StrategicMinuteProposal, { foreignKey: 'minute_version_id', as: 'proposals' });
