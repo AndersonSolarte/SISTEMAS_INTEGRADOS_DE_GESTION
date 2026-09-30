@@ -5,7 +5,7 @@ import {
   DialogTitle, Grid, IconButton, Menu, MenuItem, Paper, Stack, Tab, Tabs, Table, TableBody, TableCell,
   TableContainer, TableHead, TableRow, TextField, ToggleButton, ToggleButtonGroup, Typography
 } from '@mui/material';
-import { Add, ArrowBack, AutoAwesome, CheckCircle, CheckCircleOutline, CloudUpload, ContentCopy, DeleteOutline, Description, Download, Edit, EditNote, Event, InsertDriveFile, KeyboardArrowDown, OpenInNew, PersonSearch, PlayArrow, QrCode2, Refresh, Save, Send, ViewSidebar, Visibility } from '@mui/icons-material';
+import { Add, ArrowBack, AutoAwesome, CheckCircle, CheckCircleOutline, CloudUpload, ContentCopy, DeleteOutline, Description, Download, Edit, EditNote, Event, InsertDriveFile, KeyboardArrowDown, PersonSearch, PlayArrow, QrCode2, Refresh, Save, Send, ViewSidebar, Visibility } from '@mui/icons-material';
 import { useSnackbar } from 'notistack';
 import strategicPlanningService from '../services/strategicPlanningService';
 import logoFormatos from '../assets/logo_formatos.jpg';
@@ -1601,38 +1601,6 @@ export default function StrategicActionPlanEditor({ open, planId, platformPlan, 
                               {syncingMinute ? 'Sincronizando con Drive...' : 'Sincronizar con Google Drive'}
                             </Button>
                           );
-                          const driveFileId = latestMinute?.drive_file_id || lastDriveSync?.id;
-                          const driveFileUrl = latestMinute?.content?.drive_file_url || (driveFileId ? `https://drive.google.com/file/d/${driveFileId}/view` : null);
-                          const driveFolderUrl = latestMinute?.content?.drive_folder_url || (lastDriveSync?.folderId ? `https://drive.google.com/drive/folders/${lastDriveSync.folderId}` : null);
-
-                          if (driveFileUrl) {
-                            row2Buttons.push(
-                              <Button
-                                key="open-drive-action"
-                                fullWidth
-                                variant="outlined"
-                                startIcon={<OpenInNew fontSize="small" />}
-                                onClick={() => window.open(driveFileUrl, '_blank')}
-                                sx={{ borderColor: '#2563eb', color: '#1d4ed8', '&:hover': { bgcolor: '#eff6ff', borderColor: '#1d4ed8' } }}
-                              >
-                                Ver archivo del acta (PDF)
-                              </Button>
-                            );
-                          }
-                          if (driveFolderUrl) {
-                            row2Buttons.push(
-                              <Button
-                                key="open-drive-folder-action"
-                                fullWidth
-                                variant="outlined"
-                                startIcon={<OpenInNew fontSize="small" />}
-                                onClick={() => window.open(driveFolderUrl, '_blank')}
-                                sx={{ borderColor: '#16a34a', color: '#15803d', '&:hover': { bgcolor: '#f0fdf4', borderColor: '#15803d' } }}
-                              >
-                                Abrir carpeta de Actas en Drive
-                              </Button>
-                            );
-                          }
                         }
 
                         if (!row2Buttons.length) return null;
